@@ -1,0 +1,163 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id         Int      @id @default(autoincrement())
+  email      String   @unique
+  password   String
+  role       String   @default("user") // user | admin
+  status     String   @default("正常")
+  inviteCode String   @unique @default(uuid())
+  createdAt  DateTime @default(now())
+
+  pointAccount  PointAccount?
+  orders        Order[]
+  pointLogs     PointLog[]
+  checkins      CheckinRecord[]
+  refreshTokens RefreshToken[]
+  invitedBy     InviteRelation[] @relation("invitee")
+  invites       InviteRelation[] @relation("inviter")
+  adminLogs     AdminLog[]
+}
+
+model RefreshToken {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  tokenHash String
+  revoked   Boolean  @default(false)
+  expiresAt DateTime
+  userAgent String?
+  ip        String?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+model PointAccount {
+  id      Int  @id @default(autoincrement())
+  userId  Int  @unique
+  balance Int  @default(0)
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+model PointLog {
+  id           Int      @id @default(autoincrement())
+  userId       Int
+  type         String // in | out
+  amount       Int
+  balanceAfter Int
+  reason       String?
+  createdAt    DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+model Product {
+  id              Int      @id @default(autoincrement())
+  name            String
+  description     String?
+  richDescription String?
+  type            String // 网络节点 / 共享账号 / 充值卡密 / 邀请码
+  icon            String   @default("package")
+  imageUrl        String?
+  price           Int
+  originalPrice   Int?
+  stock           Int      @default(0) // 缓存字段，真实库存以 InventoryItem 为准
+  sales           Int      @default(0)
+  isHot           Boolean  @default(false)
+  status          String   @default("active") // active | inactive
+  createdAt       DateTime @default(now())
+
+  reviews   Review[]
+  orders    Order[]
+  inventory InventoryItem[]
+}
+
+model Review {
+  id        Int      @id @default(autoincrement())
+  productId Int
+  userName  String
+  rating    Int
+  comment   String?
+  createdAt DateTime @default(now())
+
+  product Product @relation(fields: [productId], references: [id])
+}
+
+model InventoryItem {
+  id           Int       @id @default(autoincrement())
+  productId    Int
+  content      String // 卡密 / 账号 / 订阅链接
+  status       String    @default("available") // available | sold | void
+  orderId      Int?      @unique // 唯一约束防重复绑定
+  soldToUserId Int?
+  soldAt       DateTime?
+  createdAt    DateTime  @default(now())
+
+  product Product @relation(fields: [productId], references: [id])
+}
+
+model Order {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  productId Int
+  price     Int
+  status    String   @default("completed")
+  createdAt DateTime @default(now())
+
+  user     User            @relation(fields: [userId], references: [id])
+  product  Product         @relation(fields: [productId], references: [id])
+  delivery DeliveryRecord?
+}
+
+model DeliveryRecord {
+  id        Int      @id @default(autoincrement())
+  orderId   Int      @unique
+  userId    Int
+  productId Int
+  content   String
+  status    String   @default("delivered")
+  createdAt DateTime @default(now())
+
+  order Order @relation(fields: [orderId], references: [id])
+}
+
+model CheckinRecord {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  date      String // YYYY-MM-DD
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([userId, date])
+}
+
+model InviteRelation {
+  id        Int      @id @default(autoincrement())
+  inviterId Int
+  inviteeId Int      @unique // 一个用户只能被邀请一次
+  createdAt DateTime @default(now())
+
+  inviter User @relation("inviter", fields: [inviterId], references: [id])
+  invitee User @relation("invitee", fields: [inviteeId], references: [id])
+}
+
+model AdminLog {
+  id          Int      @id @default(autoincrement())
+  adminUserId Int
+  action      String
+  targetType  String?
+  targetId    Int?
+  detail      String?
+  createdAt   DateTime @default(now())
+
+  admin User @relation(fields: [adminUserId], references: [id])
+}

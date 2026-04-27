@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <title>MoYuan Logo - Dark Mode</title>
+  <desc>A premium digital treasure box with a glowing spark, representing curated digital goods.</desc>
+  
+  <defs>
+    <!-- 亮卡其色发光渐变 (适合暗色背景) -->
+    <linearGradient id="starGradDark" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#E2C7AE" />
+      <stop offset="100%" stop-color="#D4A373" />
+    </linearGradient>
+    
+    <!-- 强化的星光阴影 -->
+    <filter id="glowDark" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#E2C7AE" flood-opacity="0.4"/>
+    </filter>
+  </defs>
+
+  <!-- 散落的数字节点 (Digital Nodes / Sparks) -->
+  <circle cx="390" cy="110" r="14" fill="#D4A373" opacity="0.9" />
+  <circle cx="140" cy="80" r="10" fill="#FCFBF8" opacity="0.4" />
+  <circle cx="420" cy="280" r="8" fill="#D4A373" opacity="0.6" />
+
+  <!-- 3D 极简开启的宝箱 (Isometric Open Box) - 燕麦白线条 -->
+  <g stroke="#FCFBF8" stroke-width="32" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <!-- 宝箱内侧后边缘 -->
+    <path d="M 120 225 L 256 145 L 392 225" stroke-opacity="0.25" />
+    
+    <!-- 宝箱外侧三面轮廓 -->
+    <path d="M 120 225 L 120 385 L 256 465 L 392 385 L 392 225" />
+    
+    <!-- 宝箱正面的 Y 型折痕 -->
+    <path d="M 120 225 L 256 305 L 392 225" />
+    <line x1="256" y1="305" x2="256" y2="465" />
+  </g>
+
+  <!-- 悬浮的数字好物核心 (Glowing Digital Spark) -->
+  <g filter="url(#glowDark)">
+    <!-- 星芒外廓 -->
+    <path d="M 256 45 Q 256 155 366 155 Q 256 155 256 265 Q 256 155 146 155 Q 256 155 256 45 Z" fill="url(#starGradDark)" />
+    <!-- 星芒内侧高光 (更亮) -->
+    <path d="M 256 100 Q 256 155 311 155 Q 256 155 256 210 Q 256 155 201 155 Q 256 155 256 100 Z" fill="#FFFFFF" opacity="0.9" />
+  </g>
+</svg>

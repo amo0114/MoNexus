@@ -1,0 +1,1723 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MoYuan - 精选数字好物</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    
+    <!-- 防止加载时主题闪烁 (FOUC) -->
+    <script>
+        if (localStorage.getItem('theme') === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+            document.documentElement.classList.add('dark');
+        }
+    </script>
+
+    <style>
+        :root {
+            /* --- 浅色模式 (Warm Latte) --- */
+            --c-bg-base: #DBCBBD;
+            --c-bg-app: #FCFBF8;
+            --c-bg-card: #FFFFFF;
+            --c-bg-image: #EAE1D9;
+            
+            --c-text-main: #5C4D43;
+            --c-text-sub: #A0938A;
+            --c-text-muted: #7A6E65;
+            
+            --c-accent: #D4A373;
+            --c-accent-hover: #C5915D;
+            
+            --c-border-light: rgba(212, 163, 115, 0.2);
+            --c-border-faint: rgba(212, 163, 115, 0.1);
+            
+            --c-glass-bg: rgba(255, 255, 255, 0.9);
+            --c-glass-border: rgba(212, 163, 115, 0.15);
+            --c-shadow: rgba(212, 163, 115, 0.05);
+            --c-grid-dot: #EAE1D9;
+            
+            --c-toast-bg: #5C4D43;
+            --c-toast-text: #FCFBF8;
+
+            /* 映射核心变量 */
+            --app-bg: var(--c-bg-app);
+            --card-bg: var(--c-bg-card);
+            --text-main: var(--c-text-main);
+            --text-secondary: var(--c-text-sub);
+            --accent: var(--c-accent);
+            --accent-hover: var(--c-accent-hover);
+            --border-color: var(--c-border-light);
+        }
+
+        .dark {
+            /* --- 护眼暗色模式 (Soft Cocoa / Warm Slate) --- */
+            --c-bg-base: #292522; 
+            --c-bg-app: #312C29;  
+            --c-bg-card: #3A3531; 
+            --c-bg-image: #45403C;
+            
+            --c-text-main: #EAE1D9; 
+            --c-text-sub: #A8A099;
+            --c-text-muted: #8E867F;
+            
+            --c-accent: #D4A373;   
+            --c-accent-hover: #E2C7AE;
+            
+            --c-border-light: rgba(234, 225, 217, 0.12);
+            --c-border-faint: rgba(234, 225, 217, 0.06);
+            
+            --c-glass-bg: rgba(58, 53, 49, 0.9);
+            --c-glass-border: rgba(234, 225, 217, 0.15);
+            --c-shadow: rgba(0, 0, 0, 0.2); 
+            --c-grid-dot: #3E3935;
+            
+            --c-toast-bg: #45403C;
+            --c-toast-text: #EAE1D9;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Icons", "Helvetica Neue", Helvetica, Arial, sans-serif;
+            background-color: var(--app-bg);
+            color: var(--text-main);
+            -webkit-font-smoothing: antialiased;
+            overflow-x: hidden;
+            transition: background-color 0.5s ease;
+        }
+
+        /* 背景缩放与景深效果 */
+        #mainContainer {
+            transition: transform 0.5s cubic-bezier(0.16, 1, 0.3, 1), filter 0.5s cubic-bezier(0.16, 1, 0.3, 1), border-radius 0.5s ease;
+            transform-origin: center top;
+            min-height: 100vh;
+            background-color: var(--c-bg-app);
+        }
+        
+        body.modal-open #mainContainer {
+            transform: scale(0.96) translateY(12px);
+            filter: blur(4px);
+            border-radius: 24px;
+            overflow: hidden;
+            pointer-events: none;
+            box-shadow: 0 20px 40px var(--c-shadow);
+        }
+
+        /* 动态网格背景 */
+        .bg-grid-pattern {
+            background-image: radial-gradient(var(--c-grid-dot) 1px, transparent 1px);
+            background-size: 24px 24px;
+        }
+
+        /* 极致毛玻璃 */
+        .glass {
+            background: var(--c-glass-bg);
+            backdrop-filter: blur(16px) saturate(180%);
+            -webkit-backdrop-filter: blur(16px) saturate(180%);
+            border-bottom: 1px solid var(--c-glass-border);
+        }
+        
+        .glass-bottom {
+            background: var(--c-glass-bg);
+            backdrop-filter: blur(16px) saturate(180%);
+            border-top: 1px solid var(--c-glass-border);
+        }
+
+        /* 圆润卡片 UI */
+        .apple-card {
+            background: var(--card-bg);
+            border-radius: 24px;
+            box-shadow: 0 4px 20px var(--c-shadow);
+            border: 1px solid var(--border-color);
+            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+            cursor: pointer;
+        }
+
+        .apple-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 12px 30px calc(var(--c-shadow) * 2);
+            border-color: rgba(212, 163, 115, 0.3);
+        }
+
+        /* 焦糖色主按钮 */
+        .apple-btn {
+            background: var(--accent);
+            color: white;
+            border-radius: 16px;
+            font-weight: bold;
+            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .apple-btn:hover {
+            background: var(--accent-hover);
+            transform: scale(1.02);
+            box-shadow: 0 8px 20px var(--c-shadow);
+        }
+
+        .apple-btn:active {
+            transform: scale(0.98);
+        }
+
+        /* 次要按钮 */
+        .apple-btn-secondary {
+            background: var(--c-border-faint);
+            color: var(--text-main);
+            border-radius: 16px;
+            font-weight: bold;
+            transition: all 0.3s ease;
+        }
+        
+        .apple-btn-secondary:hover {
+            background: var(--c-border-light);
+        }
+        
+        /* 摩卡强调按钮 */
+        .btn-mocha {
+            background: var(--text-main);
+            color: var(--c-bg-app);
+        }
+        .btn-mocha:hover {
+            background: var(--text-secondary);
+            box-shadow: 0 8px 20px var(--c-shadow);
+        }
+
+        /* 分类标签样式 */
+        .category-pill {
+            padding: 8px 20px;
+            border-radius: 980px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+            white-space: nowrap;
+            border: 1px solid transparent;
+        }
+        
+        .category-pill.active {
+            background: var(--text-main);
+            color: var(--c-bg-app);
+            box-shadow: 0 4px 12px var(--c-shadow);
+        }
+        
+        .category-pill.inactive {
+            background: transparent;
+            color: var(--text-secondary);
+            border-color: var(--border-color);
+        }
+        
+        .category-pill.inactive:hover {
+            background: var(--c-border-faint);
+            color: var(--text-main);
+            border-color: var(--c-accent);
+        }
+
+        /* 动画 */
+        .fade-in {
+            animation: fadeIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+            opacity: 0;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(15px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .toast-enter {
+            animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+        @keyframes slideUp {
+            from { transform: translate(-50%, 100%); opacity: 0; }
+            to { transform: translate(-50%, 0); opacity: 1; }
+        }
+
+        /* 居中详情弹窗动画 */
+        .modal-pop-in {
+            transform: translateY(0) scale(1) !important;
+            opacity: 1 !important;
+        }
+
+        /* 自定义滚动条 */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: var(--c-border-light); border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--c-accent); }
+        .hide-scrollbar::-webkit-scrollbar { display: none; }
+        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+        /* 评价星星 */
+        .star-filled { color: #F59E0B; fill: #F59E0B; }
+        .star-empty { color: var(--c-bg-image); fill: var(--c-bg-image); }
+
+        /* 后台管理表格样式适配主题 */
+        .admin-table { width: 100%; border-collapse: separate; border-spacing: 0; }
+        .admin-table th { text-align: left; padding: 1rem; color: var(--text-secondary); font-weight: bold; font-size: 0.875rem; border-bottom: 1px solid var(--border-color); }
+        .admin-table td { padding: 1rem; border-bottom: 1px solid var(--c-border-faint); vertical-align: middle; color: var(--text-main); }
+        .admin-table tr:last-child td { border-bottom: none; }
+        .admin-table tr:hover td { background-color: var(--c-border-faint); }
+        
+        .admin-nav-item { display: flex; align-items: center; gap: 0.75rem; padding: 0.75rem 1rem; border-radius: 12px; color: var(--text-secondary); font-weight: bold; transition: all 0.2s ease; cursor: pointer; }
+        .admin-nav-item:hover { background-color: var(--c-border-faint); color: var(--text-main); }
+        .admin-nav-item.active { background-color: var(--text-main); color: var(--c-bg-app); }
+    </style>
+</head>
+<body class="bg-[var(--c-bg-base)]">
+
+    <!-- Login Overlay -->
+    <div id="loginView" class="fixed inset-0 bg-[var(--c-bg-app)] bg-grid-pattern z-[60] flex items-center justify-center fade-in">
+        <div class="apple-card w-full max-w-md p-10 text-center mx-4 relative overflow-hidden cursor-default hover:transform-none hover:box-shadow-none shadow-xl">
+            
+            <div class="w-24 h-24 mx-auto mb-4 flex items-center justify-center">
+                <!-- Login Light Mode SVG -->
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" class="w-full h-full block dark:hidden">
+                  <title>MoYuan Logo - Light Mode</title>
+                  <desc>A premium digital treasure box with a glowing spark, representing curated digital goods.</desc>
+                  <defs>
+                    <linearGradient id="starGradLight-login" x1="0%" y1="0%" x2="0%" y2="100%">
+                      <stop offset="0%" stop-color="#D4A373" />
+                      <stop offset="100%" stop-color="#B6804A" />
+                    </linearGradient>
+                    <filter id="glowLight-login" x="-20%" y="-20%" width="140%" height="140%">
+                      <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#D4A373" flood-opacity="0.35"/>
+                    </filter>
+                  </defs>
+                  <circle cx="390" cy="110" r="14" fill="#D4A373" opacity="0.8" />
+                  <circle cx="140" cy="80" r="10" fill="#5C4D43" opacity="0.25" />
+                  <circle cx="420" cy="280" r="8" fill="#D4A373" opacity="0.5" />
+                  <g stroke="#5C4D43" stroke-width="32" stroke-linecap="round" stroke-linejoin="round" fill="none">
+                    <path d="M 120 225 L 256 145 L 392 225" stroke-opacity="0.15" />
+                    <path d="M 120 225 L 120 385 L 256 465 L 392 385 L 392 225" />
+                    <path d="M 120 225 L 256 305 L 392 225" />
+                    <line x1="256" y1="305" x2="256" y2="465" />
+                  </g>
+                  <g filter="url(#glowLight-login)">
+                    <path d="M 256 45 Q 256 155 366 155 Q 256 155 256 265 Q 256 155 146 155 Q 256 155 256 45 Z" fill="url(#starGradLight-login)" />
+                    <path d="M 256 100 Q 256 155 311 155 Q 256 155 256 210 Q 256 155 201 155 Q 256 155 256 100 Z" fill="#FFFFFF" opacity="0.7" />
+                  </g>
+                </svg>
+
+                <!-- Login Dark Mode SVG -->
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" class="w-full h-full hidden dark:block">
+                  <title>MoYuan Logo - Dark Mode</title>
+                  <desc>A premium digital treasure box with a glowing spark, representing curated digital goods.</desc>
+                  <defs>
+                    <linearGradient id="starGradDark-login" x1="0%" y1="0%" x2="0%" y2="100%">
+                      <stop offset="0%" stop-color="#E2C7AE" />
+                      <stop offset="100%" stop-color="#D4A373" />
+                    </linearGradient>
+                    <filter id="glowDark-login" x="-20%" y="-20%" width="140%" height="140%">
+                      <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#E2C7AE" flood-opacity="0.4"/>
+                    </filter>
+                  </defs>
+                  <circle cx="390" cy="110" r="14" fill="#D4A373" opacity="0.9" />
+                  <circle cx="140" cy="80" r="10" fill="#FCFBF8" opacity="0.4" />
+                  <circle cx="420" cy="280" r="8" fill="#D4A373" opacity="0.6" />
+                  <g stroke="#FCFBF8" stroke-width="32" stroke-linecap="round" stroke-linejoin="round" fill="none">
+                    <path d="M 120 225 L 256 145 L 392 225" stroke-opacity="0.25" />
+                    <path d="M 120 225 L 120 385 L 256 465 L 392 385 L 392 225" />
+                    <path d="M 120 225 L 256 305 L 392 225" />
+                    <line x1="256" y1="305" x2="256" y2="465" />
+                  </g>
+                  <g filter="url(#glowDark-login)">
+                    <path d="M 256 45 Q 256 155 366 155 Q 256 155 256 265 Q 256 155 146 155 Q 256 155 256 45 Z" fill="url(#starGradDark-login)" />
+                    <path d="M 256 100 Q 256 155 311 155 Q 256 155 256 210 Q 256 155 201 155 Q 256 155 256 100 Z" fill="#FFFFFF" opacity="0.9" />
+                  </g>
+                </svg>
+            </div>
+
+            <h1 class="text-3xl font-bold mb-2 text-[var(--c-text-main)]">欢迎来到 MoYuan</h1>
+            <p class="text-[var(--c-text-sub)] mb-8 font-medium">轻松获取您的数字好物</p>
+            
+            <div class="space-y-4">
+                <input type="text" placeholder="邮箱或手机号 (演示随便填)" class="w-full px-5 py-4 bg-[var(--c-bg-card)] border border-[var(--c-border-light)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--c-accent)]/40 transition-all text-base shadow-sm text-[var(--c-text-main)]">
+                <input type="password" placeholder="密码 (演示随便填)" class="w-full px-5 py-4 bg-[var(--c-bg-card)] border border-[var(--c-border-light)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--c-accent)]/40 transition-all text-base shadow-sm text-[var(--c-text-main)]">
+                <button onclick="login()" class="apple-btn w-full py-4 text-base mt-2 shadow-md">
+                    一键登入 / 注册
+                </button>
+            </div>
+            <div class="mt-6 flex items-center justify-center gap-2 text-sm text-[var(--c-accent)] bg-[var(--c-border-faint)] py-2.5 rounded-lg font-bold border border-[var(--c-border-light)]">
+                <i data-lucide="gift" class="w-4 h-4"></i> 新朋友注册立送 500 积分
+            </div>
+        </div>
+    </div>
+
+    <!-- 带有景深动画的主容器 -->
+    <div id="mainContainer" class="bg-grid-pattern relative pb-10">
+        <div id="mainApp" class="hidden flex-col min-h-screen relative">
+            
+            <!-- Navigation -->
+            <nav class="glass sticky top-0 z-40 w-full px-4 sm:px-6 py-3">
+                <div class="max-w-7xl mx-auto flex justify-between items-center">
+                    <div class="flex items-center gap-2.5 cursor-pointer" onclick="switchTab('store')">
+                        
+                        <!-- Nav Light Mode SVG -->
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" class="w-10 h-10 block dark:hidden drop-shadow-sm">
+                          <title>MoYuan Logo - Light Mode</title>
+                          <defs>
+                            <linearGradient id="starGradLight-nav" x1="0%" y1="0%" x2="0%" y2="100%">
+                              <stop offset="0%" stop-color="#D4A373" />
+                              <stop offset="100%" stop-color="#B6804A" />
+                            </linearGradient>
+                            <filter id="glowLight-nav" x="-20%" y="-20%" width="140%" height="140%">
+                              <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#D4A373" flood-opacity="0.35"/>
+                            </filter>
+                          </defs>
+                          <circle cx="390" cy="110" r="14" fill="#D4A373" opacity="0.8" />
+                          <circle cx="140" cy="80" r="10" fill="#5C4D43" opacity="0.25" />
+                          <circle cx="420" cy="280" r="8" fill="#D4A373" opacity="0.5" />
+                          <g stroke="#5C4D43" stroke-width="32" stroke-linecap="round" stroke-linejoin="round" fill="none">
+                            <path d="M 120 225 L 256 145 L 392 225" stroke-opacity="0.15" />
+                            <path d="M 120 225 L 120 385 L 256 465 L 392 385 L 392 225" />
+                            <path d="M 120 225 L 256 305 L 392 225" />
+                            <line x1="256" y1="305" x2="256" y2="465" />
+                          </g>
+                          <g filter="url(#glowLight-nav)">
+                            <path d="M 256 45 Q 256 155 366 155 Q 256 155 256 265 Q 256 155 146 155 Q 256 155 256 45 Z" fill="url(#starGradLight-nav)" />
+                            <path d="M 256 100 Q 256 155 311 155 Q 256 155 256 210 Q 256 155 201 155 Q 256 155 256 100 Z" fill="#FFFFFF" opacity="0.7" />
+                          </g>
+                        </svg>
+
+                        <!-- Nav Dark Mode SVG -->
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" class="w-10 h-10 hidden dark:block drop-shadow-sm">
+                          <title>MoYuan Logo - Dark Mode</title>
+                          <defs>
+                            <linearGradient id="starGradDark-nav" x1="0%" y1="0%" x2="0%" y2="100%">
+                              <stop offset="0%" stop-color="#E2C7AE" />
+                              <stop offset="100%" stop-color="#D4A373" />
+                            </linearGradient>
+                            <filter id="glowDark-nav" x="-20%" y="-20%" width="140%" height="140%">
+                              <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#E2C7AE" flood-opacity="0.4"/>
+                            </filter>
+                          </defs>
+                          <circle cx="390" cy="110" r="14" fill="#D4A373" opacity="0.9" />
+                          <circle cx="140" cy="80" r="10" fill="#FCFBF8" opacity="0.4" />
+                          <circle cx="420" cy="280" r="8" fill="#D4A373" opacity="0.6" />
+                          <g stroke="#FCFBF8" stroke-width="32" stroke-linecap="round" stroke-linejoin="round" fill="none">
+                            <path d="M 120 225 L 256 145 L 392 225" stroke-opacity="0.25" />
+                            <path d="M 120 225 L 120 385 L 256 465 L 392 385 L 392 225" />
+                            <path d="M 120 225 L 256 305 L 392 225" />
+                            <line x1="256" y1="305" x2="256" y2="465" />
+                          </g>
+                          <g filter="url(#glowDark-nav)">
+                            <path d="M 256 45 Q 256 155 366 155 Q 256 155 256 265 Q 256 155 146 155 Q 256 155 256 45 Z" fill="url(#starGradDark-nav)" />
+                            <path d="M 256 100 Q 256 155 311 155 Q 256 155 256 210 Q 256 155 201 155 Q 256 155 256 100 Z" fill="#FFFFFF" opacity="0.9" />
+                          </g>
+                        </svg>
+
+                        <span class="text-xl font-bold tracking-tight text-[var(--c-text-main)] ml-0.5">MoYuan</span>
+                    </div>
+                    
+                    <div class="flex items-center gap-3 sm:gap-4">
+                        <!-- Admin Portal Button -->
+                        <div class="hidden md:flex items-center gap-1.5 px-3 py-2 bg-[var(--c-border-faint)] text-[var(--c-accent)] rounded-full cursor-pointer hover:bg-[var(--c-border-light)] transition-colors border border-[var(--c-border-light)]" onclick="switchTab('admin')">
+                            <i data-lucide="shield-check" class="w-4 h-4"></i>
+                            <span class="font-bold text-xs">管理后台</span>
+                        </div>
+
+                        <!-- Theme Toggle Button -->
+                        <button id="themeToggleBtn" onclick="toggleTheme()" class="w-10 h-10 rounded-full flex items-center justify-center text-[var(--c-text-main)] hover:bg-[var(--c-border-faint)] transition-colors border border-transparent hover:border-[var(--c-border-light)]">
+                            <i data-lucide="moon" class="w-5 h-5"></i>
+                        </button>
+
+                        <div class="hidden md:flex items-center gap-1.5 px-4 py-2 bg-[var(--c-bg-card)] border border-[var(--c-border-light)] rounded-full cursor-pointer hover:bg-[var(--c-bg-base)] transition-all shadow-sm" onclick="switchTab('profile')">
+                            <i data-lucide="coins" class="w-4 h-4 text-[var(--c-accent)]"></i>
+                            <span id="navBalance" class="font-bold text-sm text-[var(--c-text-main)]">--</span>
+                        </div>
+                        
+                        <button onclick="switchTab('profile')" class="flex items-center gap-2 hover:opacity-80 transition-opacity">
+                            <div class="w-10 h-10 rounded-full bg-gradient-to-br from-[var(--c-accent-hover)] to-[var(--c-accent)] flex items-center justify-center text-white shadow-sm border border-[var(--c-border-light)]">
+                                <i data-lucide="user" class="w-5 h-5"></i>
+                            </div>
+                        </button>
+                    </div>
+                </div>
+            </nav>
+
+            <!-- Content Area -->
+            <main class="flex-grow max-w-7xl mx-auto w-full px-4 sm:px-6 py-6 sm:py-8">
+                
+                <!-- Store View -->
+                <div id="storeView" class="fade-in space-y-8 max-w-6xl mx-auto" style="animation-delay: 0.1s;">
+                    <div class="text-center pt-2 pb-2">
+                        <h2 class="text-3xl sm:text-4xl font-extrabold tracking-tight mb-3 text-[var(--c-text-main)]">发现实用好物。</h2>
+                        <p class="text-base text-[var(--c-text-sub)] font-medium">做任务赚积分，在这里免费兑换你需要的数字资源。</p>
+                    </div>
+
+                    <!-- 搜索与分类区 -->
+                    <div class="max-w-3xl mx-auto w-full space-y-4">
+                        <div class="relative group">
+                            <i data-lucide="search" class="w-5 h-5 absolute left-5 top-1/2 -translate-y-1/2 text-[var(--c-text-sub)] group-focus-within:text-[var(--c-accent)] transition-colors"></i>
+                            <input type="text" id="searchInput" oninput="handleSearch(this.value)" placeholder="搜账号、卡密、教程..." class="w-full pl-12 pr-6 py-4 glass border border-[var(--c-border-light)] rounded-2xl shadow-sm hover:shadow-md focus:shadow-lg focus:outline-none focus:ring-2 focus:ring-[var(--c-accent)]/30 focus:border-[var(--c-accent)] transition-all text-base text-[var(--c-text-main)]">
+                        </div>
+                        
+                        <div class="flex gap-2.5 overflow-x-auto hide-scrollbar px-1 py-1" id="categoryContainer">
+                            <!-- 分类标签由 JS 注入 -->
+                        </div>
+                    </div>
+
+                    <!-- Products Grid -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pt-2" id="productGrid">
+                        <!-- Products will be injected here via JS -->
+                    </div>
+                </div>
+
+                <!-- Profile View -->
+                <div id="profileView" class="hidden fade-in space-y-8 max-w-5xl mx-auto pt-2">
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
+                        <div class="apple-card p-8 col-span-1 md:col-span-2 relative overflow-hidden text-white bg-gradient-to-br from-[#D4A373] to-[#C5915D] cursor-default hover:transform-none border-none shadow-md">
+                            <div class="absolute -right-6 -bottom-6 opacity-20">
+                                <i data-lucide="coins" class="w-48 h-48"></i>
+                            </div>
+                            <div class="relative z-10">
+                                <p class="text-white/80 font-medium mb-1 text-sm flex items-center gap-1.5"><i data-lucide="wallet" class="w-4 h-4"></i> 我的可用积分</p>
+                                <h3 id="profileBalance" class="text-5xl font-bold mb-6 tracking-tight drop-shadow-sm">--</h3>
+                                <div class="flex flex-wrap gap-3">
+                                    <button id="checkInBtn" onclick="checkIn()" class="bg-white text-[#D4A373] px-6 py-3 rounded-xl font-bold hover:bg-[#FCFBF8] transition-colors flex items-center gap-2 shadow-sm text-sm">
+                                        <i data-lucide="calendar-check" class="w-4 h-4"></i> 每日打卡
+                                    </button>
+                                    <button onclick="switchProfileTab('history')" class="bg-white/20 text-white border border-white/30 px-6 py-3 rounded-xl font-medium hover:bg-white/30 transition-colors flex items-center gap-2 text-sm">
+                                        查流水明细
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="apple-card p-6 flex flex-col justify-center cursor-default hover:transform-none bg-[var(--c-bg-card)]">
+                            <div class="w-10 h-10 bg-[var(--c-bg-app)] border border-[var(--c-border-light)] text-[var(--c-accent)] rounded-xl flex items-center justify-center mb-3">
+                                <i data-lucide="users" class="w-5 h-5"></i>
+                            </div>
+                            <h4 class="text-lg font-bold mb-1 text-[var(--c-text-main)]">邀请赚积分</h4>
+                            <p class="text-[var(--c-text-sub)] text-xs mb-4 leading-relaxed">每邀请一人注册，您可获得 <span class="text-[var(--c-accent)] font-bold">200</span> 积分。</p>
+                            <div class="bg-[var(--c-bg-app)] rounded-xl p-2.5 flex justify-between items-center border border-[var(--c-border-light)]">
+                                <span class="font-mono text-sm font-bold text-[var(--c-text-main)] ml-1" id="inviteCodeDisplay">MOYUAN26</span>
+                                <button onclick="copyInvite()" class="text-white bg-[var(--c-accent)] hover:bg-[var(--c-accent-hover)] px-3 py-1.5 rounded-lg shadow-sm font-medium text-xs transition-colors">
+                                    复制分享
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="apple-card p-4 sm:p-6 mt-4 cursor-default hover:transform-none bg-[var(--c-bg-card)]">
+                        <div class="flex gap-6 border-b border-[var(--c-border-light)] mb-5 pb-1 overflow-x-auto hide-scrollbar">
+                            <button onclick="switchProfileTab('orders')" id="tab-orders" class="text-base font-bold border-b-2 border-[var(--c-accent)] text-[var(--c-text-main)] pb-2 transition-colors whitespace-nowrap px-1">我兑换的商品</button>
+                            <button onclick="switchProfileTab('history')" id="tab-history" class="text-base font-medium text-[var(--c-text-sub)] hover:text-[var(--c-text-main)] border-b-2 border-transparent pb-2 transition-colors whitespace-nowrap px-1">积分变动明细</button>
+                        </div>
+
+                        <div id="ordersList" class="space-y-3"></div>
+                        <div id="historyList" class="hidden space-y-2"></div>
+                    </div>
+                    
+                    <div class="pt-2 flex justify-center">
+                        <button onclick="logout()" class="text-[var(--c-text-sub)] font-medium hover:text-red-500 flex items-center gap-1.5 px-4 py-2 rounded-xl hover:bg-[var(--c-border-faint)] transition-colors text-sm">
+                            <i data-lucide="log-out" class="w-4 h-4"></i> 退出当前账号
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Admin View (后台管理) -->
+                <div id="adminView" class="hidden fade-in pt-2">
+                    <div class="flex flex-col md:flex-row gap-6 max-w-7xl mx-auto">
+                        
+                        <!-- Admin Sidebar -->
+                        <aside class="w-full md:w-56 flex-shrink-0 space-y-1">
+                            <h3 class="text-xs font-bold text-[var(--c-text-sub)] uppercase tracking-wider mb-3 px-3">系统管理</h3>
+                            <div class="admin-nav-item active" id="nav-admin-dashboard" onclick="switchAdminTab('dashboard')">
+                                <i data-lucide="layout-dashboard" class="w-4 h-4"></i> 数据仪表盘
+                            </div>
+                            <div class="admin-nav-item" id="nav-admin-users" onclick="switchAdminTab('users')">
+                                <i data-lucide="users-round" class="w-4 h-4"></i> 用户管理
+                            </div>
+                            <div class="admin-nav-item" id="nav-admin-products" onclick="switchAdminTab('products')">
+                                <i data-lucide="package" class="w-4 h-4"></i> 商品与库存
+                            </div>
+                            <div class="admin-nav-item" id="nav-admin-orders" onclick="switchAdminTab('orders')">
+                                <i data-lucide="shopping-cart" class="w-4 h-4"></i> 订单记录
+                            </div>
+                            <div class="admin-nav-item" id="nav-admin-logs" onclick="switchAdminTab('logs')">
+                                <i data-lucide="activity" class="w-4 h-4"></i> 系统流水日志
+                            </div>
+                        </aside>
+
+                        <!-- Admin Main Content -->
+                        <div class="flex-grow apple-card p-6 sm:p-8 min-h-[600px] overflow-x-auto bg-[var(--c-bg-card)] cursor-default hover:transform-none">
+                            
+                            <!-- Dashboard Panel -->
+                            <div id="panel-dashboard" class="space-y-6">
+                                <h2 class="text-xl font-bold mb-4 text-[var(--c-text-main)]">数据仪表盘</h2>
+                                <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                    <div class="bg-[var(--c-bg-app)] p-5 rounded-2xl border border-[var(--c-border-light)]">
+                                        <div class="text-[var(--c-text-sub)] text-xs font-bold mb-1.5 flex items-center gap-1.5"><i data-lucide="users" class="w-3.5 h-3.5"></i> 注册用户总数</div>
+                                        <div class="text-2xl font-bold text-[var(--c-text-main)]" id="stat-users">1,204</div>
+                                    </div>
+                                    <div class="bg-[var(--c-bg-app)] p-5 rounded-2xl border border-[var(--c-border-light)]">
+                                        <div class="text-[var(--c-text-sub)] text-xs font-bold mb-1.5 flex items-center gap-1.5"><i data-lucide="shopping-bag" class="w-3.5 h-3.5"></i> 累计完成订单</div>
+                                        <div class="text-2xl font-bold text-[var(--c-text-main)]" id="stat-orders">892</div>
+                                    </div>
+                                    <div class="bg-[var(--c-border-faint)] p-5 rounded-2xl border border-[var(--c-accent)]">
+                                        <div class="text-[var(--c-accent)] text-xs font-bold mb-1.5 flex items-center gap-1.5"><i data-lucide="coins" class="w-3.5 h-3.5"></i> 流通积分总额</div>
+                                        <div class="text-2xl font-bold text-[var(--c-accent)]" id="stat-points">84,500</div>
+                                    </div>
+                                </div>
+                                <div class="mt-8">
+                                    <h3 class="text-base font-bold mb-3 text-[var(--c-text-main)]">快捷操作</h3>
+                                    <div class="flex gap-3">
+                                        <button onclick="switchAdminTab('users')" class="apple-btn-secondary px-5 py-2.5 text-sm flex items-center gap-2"><i data-lucide="plus-circle" class="w-4 h-4"></i> 手动调整积分</button>
+                                        <button onclick="switchAdminTab('products')" class="apple-btn-secondary px-5 py-2.5 text-sm flex items-center gap-2"><i data-lucide="package-plus" class="w-4 h-4"></i> 补充卡密库存</button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Users Panel -->
+                            <div id="panel-users" class="hidden space-y-4">
+                                <div class="flex justify-between items-center mb-4">
+                                    <h2 class="text-xl font-bold text-[var(--c-text-main)]">用户管理</h2>
+                                    <div class="relative">
+                                        <i data-lucide="search" class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--c-text-sub)]"></i>
+                                        <input type="text" placeholder="搜索用户 / 邮箱" class="pl-9 pr-4 py-2 bg-[var(--c-bg-app)] border border-[var(--c-border-light)] rounded-full text-xs text-[var(--c-text-main)] focus:outline-none focus:ring-2 focus:ring-[var(--c-accent)]">
+                                    </div>
+                                </div>
+                                <div class="overflow-x-auto">
+                                    <table class="admin-table">
+                                        <thead>
+                                            <tr>
+                                                <th>UID / 邮箱</th>
+                                                <th>注册时间</th>
+                                                <th>当前积分</th>
+                                                <th>状态</th>
+                                                <th class="text-right">操作</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="adminUsersTableBody"></tbody>
+                                    </table>
+                                </div>
+                            </div>
+
+                            <!-- Products Panel -->
+                            <div id="panel-products" class="hidden space-y-4">
+                                <div class="flex justify-between items-center mb-4">
+                                    <h2 class="text-xl font-bold text-[var(--c-text-main)]">商品与库存</h2>
+                                    <button class="apple-btn px-4 py-2 text-xs flex items-center gap-1.5"><i data-lucide="plus" class="w-3.5 h-3.5"></i> 发布新商品</button>
+                                </div>
+                                <div class="overflow-x-auto">
+                                    <table class="admin-table">
+                                        <thead>
+                                            <tr>
+                                                <th>商品名称</th>
+                                                <th>类型</th>
+                                                <th>售价 (积分)</th>
+                                                <th>剩余库存</th>
+                                                <th class="text-right">操作</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="adminProductsTableBody"></tbody>
+                                    </table>
+                                </div>
+                            </div>
+
+                            <!-- Orders Panel -->
+                            <div id="panel-orders" class="hidden space-y-4">
+                                <h2 class="text-xl font-bold mb-4 text-[var(--c-text-main)]">订单记录</h2>
+                                <div class="overflow-x-auto">
+                                    <table class="admin-table">
+                                        <thead>
+                                            <tr>
+                                                <th>订单号 / 时间</th>
+                                                <th>买家</th>
+                                                <th>商品信息</th>
+                                                <th>扣除积分</th>
+                                                <th>状态</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="adminOrdersTableBody"></tbody>
+                                    </table>
+                                </div>
+                            </div>
+
+                            <!-- Logs Panel -->
+                            <div id="panel-logs" class="hidden space-y-4">
+                                <div class="flex justify-between items-center mb-4">
+                                    <h2 class="text-xl font-bold text-[var(--c-text-main)]">系统流水日志</h2>
+                                    <select class="bg-[var(--c-bg-app)] border border-[var(--c-border-light)] text-[var(--c-text-main)] rounded-lg px-2.5 py-1.5 text-xs focus:outline-none">
+                                        <option>全部分类</option>
+                                        <option>签到/任务</option>
+                                        <option>邀请奖励</option>
+                                        <option>商品兑换</option>
+                                        <option>后台人工调整</option>
+                                    </select>
+                                </div>
+                                <div class="overflow-x-auto">
+                                    <table class="admin-table">
+                                        <thead>
+                                            <tr>
+                                                <th>时间</th>
+                                                <th>关联用户</th>
+                                                <th>事件描述</th>
+                                                <th class="text-right">积分变动</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="adminLogsTableBody"></tbody>
+                                    </table>
+                                </div>
+                            </div>
+
+                        </div>
+                    </div>
+                </div>
+
+            </main>
+        </div>
+    </div>
+
+    <!-- 高级居中商品详情页 (Centered Modal) -->
+    <div id="productDetailsModal" class="fixed inset-0 z-50 hidden flex items-end sm:items-center justify-center sm:p-6">
+        <div class="absolute inset-0 bg-black/40 backdrop-blur-[2px] transition-opacity opacity-0" id="pdBackdrop" onclick="closeProductDetails()"></div>
+        
+        <div id="pdPanel" class="relative w-full max-w-2xl max-h-[90vh] h-[90vh] sm:h-auto bg-[var(--c-bg-app)] shadow-2xl rounded-t-3xl sm:rounded-3xl flex flex-col overflow-hidden border border-[var(--c-border-light)] transform translate-y-full sm:translate-y-0 sm:scale-95 opacity-0 transition-all duration-400">
+            
+            <div class="flex-grow overflow-y-auto hide-scrollbar pb-24 relative">
+                <button onclick="closeProductDetails()" class="absolute top-4 right-4 z-20 w-9 h-9 glass rounded-full flex items-center justify-center text-[var(--c-text-main)] hover:bg-[var(--c-bg-card)] transition-colors shadow-sm">
+                    <i data-lucide="x" class="w-4 h-4"></i>
+                </button>
+
+                <div class="w-full h-56 sm:h-64 bg-[var(--c-bg-image)] relative">
+                    <img id="pdImage" src="" class="w-full h-full object-cover" />
+                    <!-- 修复毛玻璃标签可视度问题 -->
+                    <div class="absolute bottom-4 left-4 text-[var(--c-text-main)]">
+                        <span id="pdType" class="text-xs font-bold px-3 py-1.5 rounded-lg shadow-sm flex items-center gap-1.5" style="background: var(--c-glass-bg); border: 1px solid var(--c-glass-border); backdrop-filter: blur(12px);">
+                            类型
+                        </span>
+                    </div>
+                </div>
+
+                <div class="p-6">
+                    <div class="mb-4">
+                        <h2 id="pdName" class="text-2xl font-bold text-[var(--c-text-main)] leading-snug">商品名称</h2>
+                    </div>
+
+                    <div class="bg-[var(--c-bg-card)] rounded-2xl p-5 mb-6 flex justify-between items-center border border-[var(--c-border-light)] shadow-sm">
+                        <div class="flex flex-col">
+                            <span class="text-xs text-[var(--c-text-sub)] font-medium mb-1">兑换需要</span>
+                            <div class="flex items-end gap-1.5">
+                                <span class="text-3xl font-bold text-[var(--c-accent)] flex items-center gap-1.5">
+                                    <i data-lucide="coins" class="w-5 h-5"></i><span id="pdPrice">0</span>
+                                </span>
+                                <span class="text-sm text-[var(--c-text-sub)] line-through mb-1 hidden" id="pdOriginalPrice">0</span>
+                            </div>
+                        </div>
+                        <div class="w-px h-10 bg-[var(--c-border-light)] mx-2"></div>
+                        <div class="flex flex-col gap-1.5 text-right">
+                            <span class="text-xs text-[var(--c-text-sub)] font-medium">已售 <span id="pdSales" class="text-[var(--c-text-main)] font-bold">0</span></span>
+                            <span class="text-xs text-[var(--c-text-sub)] font-medium">库存 <span id="pdStock" class="text-[var(--c-text-main)] font-bold">0</span></span>
+                        </div>
+                    </div>
+
+                    <div class="mb-8">
+                        <h3 class="text-base font-bold mb-3 flex items-center gap-2 text-[var(--c-text-main)]"><i data-lucide="file-text" class="w-4 h-4 text-[var(--c-accent)]"></i> 图文介绍</h3>
+                        <div id="pdDesc" class="text-[var(--c-text-muted)] leading-relaxed space-y-3 text-sm bg-[var(--c-bg-card)] p-5 rounded-2xl border border-[var(--c-border-faint)]">
+                        </div>
+                    </div>
+
+                    <div>
+                        <h3 class="text-base font-bold mb-3 flex items-center gap-2 text-[var(--c-text-main)]"><i data-lucide="message-square" class="w-4 h-4 text-[var(--c-accent)]"></i> 买家评价</h3>
+                        <div id="pdReviews" class="space-y-3">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="absolute bottom-0 left-0 w-full glass-bottom p-4 flex items-center justify-between z-20">
+                <div class="flex flex-col ml-2">
+                    <span class="text-xs text-[var(--c-text-sub)] font-medium">合计扣除</span>
+                    <span class="text-lg font-bold text-[var(--c-text-main)] flex items-center gap-1"><i data-lucide="coins" class="w-4 h-4 text-[var(--c-accent)]"></i> <span id="pdActionPrice">0</span></span>
+                </div>
+                <button id="pdBuyBtn" onclick="openPurchaseFromDetails()" class="apple-btn btn-mocha px-8 py-3 text-base shadow-lg">立即兑换</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Purchase Modal -->
+    <div id="purchaseModal" class="fixed inset-0 z-[70] hidden items-center justify-center">
+        <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" onclick="closeModal('purchaseModal')"></div>
+        <div class="apple-card w-full max-w-sm p-8 mx-4 transform scale-95 transition-transform duration-300 relative z-10 cursor-default hover:transform-none" id="purchaseModalContent">
+            <h3 class="text-xl font-bold mb-2 text-[var(--c-text-main)]">确认兑换</h3>
+            <p class="text-[var(--c-text-sub)] mb-6 text-sm">您即将消耗积分兑换以下商品：</p>
+            
+            <div class="bg-[var(--c-bg-app)] rounded-2xl p-4 mb-6 border border-[var(--c-border-light)]">
+                <div class="font-bold text-base mb-1 text-[var(--c-text-main)] line-clamp-1" id="modalProductName">商品名称</div>
+                <div class="flex justify-between items-center text-sm mt-3 pt-3 border-t border-[var(--c-border-light)] border-dashed">
+                    <span class="text-[var(--c-text-sub)]">实扣积分</span>
+                    <span class="font-bold text-[var(--c-accent)] flex items-center gap-1 text-lg">
+                        <i data-lucide="coins" class="w-4 h-4"></i> <span id="modalProductPrice">0</span>
+                    </span>
+                </div>
+            </div>
+
+            <div class="flex gap-3">
+                <button onclick="closeModal('purchaseModal')" class="flex-1 apple-btn-secondary py-3 text-sm">再想想</button>
+                <button onclick="confirmPurchase()" class="flex-1 apple-btn btn-mocha py-3 text-sm shadow-md">确认支付</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Success Modal -->
+    <div id="successModal" class="fixed inset-0 z-[70] hidden items-center justify-center">
+        <div class="absolute inset-0 bg-black/40 backdrop-blur-sm"></div>
+        <div class="apple-card w-full max-w-sm p-8 mx-4 text-center relative z-10 cursor-default hover:transform-none">
+            <div class="w-16 h-16 bg-[var(--c-bg-app)] border-2 border-[var(--c-accent)] text-[var(--c-accent)] rounded-full flex items-center justify-center mx-auto mb-5 shadow-sm">
+                <i data-lucide="check" class="w-8 h-8 font-bold"></i>
+            </div>
+            <h3 class="text-2xl font-bold mb-2 text-[var(--c-text-main)]">兑换成功</h3>
+            <p class="text-[var(--c-text-sub)] mb-6 text-sm font-medium">商品已下发，请查收下方信息</p>
+            
+            <div class="bg-[var(--c-bg-app)] rounded-2xl p-4 mb-6 border border-[var(--c-border-light)] text-left">
+                <p class="text-[10px] text-[var(--c-text-sub)] mb-2 font-bold">提卡内容区</p>
+                <div class="font-mono text-sm break-all text-[var(--c-text-main)] select-all bg-[var(--c-bg-card)] p-3 rounded-xl border border-[var(--c-border-faint)] shadow-sm leading-relaxed" id="successKeyDisplay">
+                    XXXX-XXXX-XXXX-XXXX
+                </div>
+            </div>
+
+            <button onclick="copyKeyAndClose()" class="w-full apple-btn btn-mocha py-3.5 text-base shadow-md flex justify-center items-center gap-2">
+                <i data-lucide="copy" class="w-4 h-4"></i> 复制发货信息并关闭
+            </button>
+        </div>
+    </div>
+
+    <!-- Admin Adjust Points Modal -->
+    <div id="adjustPointsModal" class="fixed inset-0 z-[70] hidden items-center justify-center">
+        <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" onclick="closeModal('adjustPointsModal')"></div>
+        <div class="apple-card w-full max-w-sm p-8 mx-4 transform scale-95 transition-transform duration-300 relative z-10 cursor-default hover:transform-none" id="adjustPointsModalContent">
+            <div class="flex justify-between items-center mb-5">
+                <h3 class="text-xl font-bold text-[var(--c-text-main)]">调整用户积分</h3>
+                <button onclick="closeModal('adjustPointsModal')" class="text-[var(--c-text-sub)] hover:text-[var(--c-text-main)]"><i data-lucide="x" class="w-5 h-5"></i></button>
+            </div>
+            
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-xs font-bold text-[var(--c-text-sub)] mb-1.5">目标用户</label>
+                    <input type="text" id="adminAdjustUser" disabled class="w-full px-4 py-2.5 bg-[var(--c-bg-app)] border border-[var(--c-border-light)] rounded-xl text-[var(--c-text-muted)] text-sm cursor-not-allowed">
+                </div>
+                
+                <div class="grid grid-cols-2 gap-3">
+                    <label class="flex items-center gap-2 p-2.5 border border-[var(--c-border-light)] rounded-xl cursor-pointer hover:bg-[var(--c-bg-app)]">
+                        <input type="radio" name="adjustType" value="add" checked class="accent-[var(--c-accent)]">
+                        <span class="font-bold text-[#4ADE80] text-sm">增加 (+)</span>
+                    </label>
+                    <label class="flex items-center gap-2 p-2.5 border border-[var(--c-border-light)] rounded-xl cursor-pointer hover:bg-[var(--c-bg-app)]">
+                        <input type="radio" name="adjustType" value="deduct" class="accent-[var(--c-accent)]">
+                        <span class="font-bold text-[#F87171] text-sm">扣除 (-)</span>
+                    </label>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold text-[var(--c-text-sub)] mb-1.5">调整数量</label>
+                    <input type="number" id="adminAdjustAmount" placeholder="输入整数" class="w-full px-4 py-2.5 bg-[var(--c-bg-card)] border border-[var(--c-border-light)] rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[var(--c-accent)]/30 text-[var(--c-text-main)]">
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold text-[var(--c-text-sub)] mb-1.5">操作原因 (记入全局流水)</label>
+                    <input type="text" id="adminAdjustReason" placeholder="例如：参与活动奖励" class="w-full px-4 py-2.5 bg-[var(--c-bg-card)] border border-[var(--c-border-light)] rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[var(--c-accent)]/30 text-[var(--c-text-main)]">
+                </div>
+
+                <button onclick="confirmAdjustPoints()" class="w-full apple-btn btn-mocha py-3 text-sm font-bold mt-2 shadow-md">确认执行</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification Container -->
+    <div id="toastContainer" class="fixed bottom-10 left-1/2 -translate-x-1/2 z-[80] flex flex-col gap-3 pointer-events-none"></div>
+
+    <script>
+        // --- State Management ---
+        const AppState = {
+            user: {
+                id: 'U8801',
+                email: 'user_1234@qq.com',
+                points: 5000, 
+                hasCheckedIn: false,
+                inviteCode: 'MOYUAN26'
+            },
+            orders: [], 
+            history: [ 
+                { id: 'h1', type: 'in', amount: 5000, reason: '新用户注册奖励', date: getFormattedDate() }
+            ],
+            selectedProductId: null,
+            searchQuery: '',
+            activeCategory: '全部'
+        };
+
+        const Categories = ['全部', '网络节点', '共享账号', '充值卡密', '邀请码'];
+
+        // Admin Mock Data
+        const AdminState = {
+            activeTab: 'dashboard',
+            selectedUserId: null,
+            users: [
+                { id: 'U8801', email: 'user_1234@qq.com', points: AppState.user.points, registered: '今日', status: '正常' },
+                { id: 'U1024', email: 'admin_root@moyuan.net', points: 99999, registered: '2026-01-10', status: '正常' },
+                { id: 'U2099', email: 'buyer_test@gmail.com', points: 1200, registered: '2026-04-25', status: '正常' },
+                { id: 'U3041', email: 'spammer_bot99@163.com', points: 0, registered: '2026-04-26', status: '已封禁' }
+            ],
+            globalOrders: [
+                { id: 'ORD-1001', date: '2026-04-26 14:30', buyer: 'U2099', product: 'Netflix 4K 高级合租位', price: 1200, status: '已完成' },
+                { id: 'ORD-1002', date: '2026-04-25 09:15', buyer: 'U1024', product: '稳定专线节点订阅 (30天)', price: 800, status: '已完成' }
+            ],
+            globalLogs: [
+                { id: 'L1', date: '2026-04-27 10:05', user: 'U8801', event: '新用户注册奖励', amount: '+5000', type: 'in' },
+                { id: 'L2', date: '2026-04-26 14:30', user: 'U2099', event: '商品兑换: Netflix 4K', amount: '-1200', type: 'out' },
+                { id: 'L3', date: '2026-04-26 08:00', user: 'U2099', event: '每日打卡签到', amount: '+50', type: 'in' },
+                { id: 'L4', date: '2026-04-25 16:20', user: 'U1024', event: '后台调整: 补偿用户积分', amount: '+1000', type: 'in' }
+            ]
+        };
+
+        const Products = [
+            {
+                id: 1,
+                name: '稳定专线节点订阅 (30天)',
+                desc: '秒开 4K，晚高峰不卡顿。全平台通用，一键导入使用。',
+                richDesc: `
+                    <p><b>商品特点：</b></p>
+                    <ul class="list-disc pl-5 space-y-1 mt-1 text-[var(--c-text-muted)]">
+                        <li>速度快：国内多线 BGP 接入</li>
+                        <li>流媒体：解锁大部分海外视频网站</li>
+                        <li>客户端：支持 Clash, V2rayN, Shadowrocket 等</li>
+                    </ul>
+                    <p class="mt-3 text-xs text-[#F87171]">注意：购买后发放订阅链接，请勿分享给他人，否则会被封号。</p>
+                `,
+                price: 800,
+                originalPrice: 1000,
+                stock: 99,
+                sales: 1250,
+                isHot: true,
+                type: '网络节点',
+                icon: 'wifi',
+                image: 'https://images.unsplash.com/photo-1544197150-b99a580bb7a8?auto=format&fit=crop&q=80&w=800',
+                reviews: [
+                    { user: '匿名用户', rating: 5, date: '2026-04-20', comment: '性价比很高，下载能跑到 50M/s，非常给力！' },
+                    { user: '飞***猪', rating: 5, date: '2026-04-18', comment: '买了好几次了，老板发货很快，很靠谱。' }
+                ]
+            },
+            {
+                id: 2,
+                name: 'ChatGPT Plus 共享车位',
+                desc: '5 人小车队，原生 GPT-4 接口，便宜好用的生产力工具。',
+                richDesc: `
+                    <p><b>使用说明：</b></p>
+                    <ul class="list-disc pl-5 space-y-1 mt-1 text-[var(--c-text-muted)]">
+                        <li>发货格式：账号----密码</li>
+                        <li>请在官方网页版登录</li>
+                        <li>禁止使用 API，禁止乱改密码</li>
+                    </ul>
+                `,
+                price: 1500,
+                stock: 5,
+                sales: 842,
+                isHot: true,
+                type: '共享账号',
+                icon: 'message-square',
+                image: 'https://images.unsplash.com/photo-1677442136019-21780ecad995?auto=format&fit=crop&q=80&w=800',
+                reviews: [
+                    { user: '学***渣', rating: 5, date: '2026-04-22', comment: '写作业全靠它了，虽然是共享的但很少被顶号。' },
+                    { user: 'Q***Q', rating: 4, date: '2026-04-10', comment: '挺划算的，一个人买太贵，合租刚刚好。' }
+                ]
+            },
+            {
+                id: 3,
+                name: 'Netflix 4K 高级合租位',
+                desc: '一个人一个专属头像和 PIN 码，记录独立互不干扰。',
+                richDesc: `
+                    <p>正规实体卡开通，非月抛黑卡：</p>
+                    <ul class="list-disc pl-5 space-y-1 mt-1 text-[var(--c-text-muted)]">
+                        <li>质保首月，掉线包退补</li>
+                        <li>支持电视端、手机端、网页端</li>
+                        <li>请仅登录自己的子频道，勿动他人配置</li>
+                    </ul>
+                `,
+                price: 1200,
+                originalPrice: 1500,
+                stock: 12,
+                sales: 520,
+                isHot: false,
+                type: '共享账号',
+                icon: 'tv',
+                image: 'https://images.unsplash.com/photo-1522869635100-9f4c5e86aa37?auto=format&fit=crop&q=80&w=800',
+                reviews: [
+                    { user: '追剧达人', rating: 5, date: '2026-04-25', comment: '画质真的没得说，看剧贼爽。' }
+                ]
+            },
+            {
+                id: 4,
+                name: 'Apple ID 美区全新空白号',
+                desc: '手工注册白号，带密保问题，可自行改密码，安全防找回。',
+                richDesc: `
+                    <p>用途广泛，极度安全：</p>
+                    <ul class="list-disc pl-5 space-y-1 mt-1 text-[var(--c-text-muted)]">
+                        <li>可用于下载国区没有的各类 App 软件</li>
+                        <li>发货格式：账号----密码----密保1----密保2----密保3----生日</li>
+                        <li>强烈建议拿到手后登录官网修改所有信息</li>
+                    </ul>
+                `,
+                price: 300,
+                stock: 50,
+                sales: 3100,
+                isHot: true,
+                type: '充值卡密',
+                icon: 'apple',
+                image: 'https://images.unsplash.com/photo-1611186871348-b1ce696e52c9?auto=format&fit=crop&q=80&w=800',
+                reviews: [
+                    { user: 'A***', rating: 5, date: '2026-04-26', comment: '自动发卡，马上就收到了，照着教程改了密码，美滋滋。' }
+                ]
+            }
+        ];
+
+        // --- Initialization ---
+        document.addEventListener('DOMContentLoaded', () => {
+            const isDark = document.documentElement.classList.contains('dark');
+            const themeBtn = document.getElementById('themeToggleBtn');
+            if (themeBtn) {
+                themeBtn.innerHTML = `<i data-lucide="${isDark ? 'sun' : 'moon'}" class="w-5 h-5"></i>`;
+            }
+
+            lucide.createIcons();
+            renderCategories();
+            filterAndRenderProducts();
+            updateDashboardUI();
+        });
+
+        // --- Theme Toggle Logic ---
+        function toggleTheme() {
+            const html = document.documentElement;
+            const isDark = html.classList.toggle('dark');
+            localStorage.setItem('theme', isDark ? 'dark' : 'light');
+            
+            const themeBtn = document.getElementById('themeToggleBtn');
+            if (themeBtn) {
+                themeBtn.innerHTML = `<i data-lucide="${isDark ? 'sun' : 'moon'}" class="w-5 h-5"></i>`;
+                lucide.createIcons();
+            }
+        }
+
+        // --- Core Functions ---
+        function login() {
+            document.getElementById('loginView').classList.add('hidden');
+            document.getElementById('mainApp').classList.remove('hidden');
+            showToast('登录成功！已赠送 5000 积分。');
+        }
+
+        function logout() {
+            document.getElementById('mainApp').classList.add('hidden');
+            document.getElementById('loginView').classList.remove('hidden');
+            switchTab('store');
+        }
+
+        function switchTab(tabId) {
+            document.getElementById('storeView').classList.add('hidden');
+            document.getElementById('profileView').classList.add('hidden');
+            document.getElementById('adminView').classList.add('hidden');
+
+            if (tabId === 'store') {
+                document.getElementById('storeView').classList.remove('hidden');
+            } else if (tabId === 'profile') {
+                document.getElementById('profileView').classList.remove('hidden');
+                renderOrders();
+                renderHistory();
+            } else if (tabId === 'admin') {
+                document.getElementById('adminView').classList.remove('hidden');
+                switchAdminTab('dashboard');
+            }
+        }
+
+        function switchProfileTab(tabId) {
+            const btnOrders = document.getElementById('tab-orders');
+            const btnHistory = document.getElementById('tab-history');
+            const listOrders = document.getElementById('ordersList');
+            const listHistory = document.getElementById('historyList');
+
+            if (tabId === 'orders') {
+                btnOrders.className = 'text-base font-bold border-b-2 border-[var(--c-accent)] text-[var(--c-text-main)] pb-2 transition-colors whitespace-nowrap px-1';
+                btnHistory.className = 'text-base font-medium text-[var(--c-text-sub)] hover:text-[var(--c-text-main)] border-b-2 border-transparent pb-2 transition-colors whitespace-nowrap px-1';
+                listOrders.classList.remove('hidden');
+                listHistory.classList.add('hidden');
+            } else {
+                btnHistory.className = 'text-base font-bold border-b-2 border-[var(--c-accent)] text-[var(--c-text-main)] pb-2 transition-colors whitespace-nowrap px-1';
+                btnOrders.className = 'text-base font-medium text-[var(--c-text-sub)] hover:text-[var(--c-text-main)] border-b-2 border-transparent pb-2 transition-colors whitespace-nowrap px-1';
+                listHistory.classList.remove('hidden');
+                listOrders.classList.add('hidden');
+            }
+        }
+
+        // --- Admin UI Rendering & Logic ---
+        function switchAdminTab(tabId) {
+            document.querySelectorAll('.admin-nav-item').forEach(el => el.classList.remove('active'));
+            document.getElementById(`nav-admin-${tabId}`).classList.add('active');
+
+            ['dashboard', 'users', 'products', 'orders', 'logs'].forEach(panel => {
+                document.getElementById(`panel-${panel}`).classList.add('hidden');
+            });
+
+            document.getElementById(`panel-${tabId}`).classList.remove('hidden');
+
+            if (tabId === 'dashboard') renderAdminDashboard();
+            if (tabId === 'users') renderAdminUsers();
+            if (tabId === 'products') renderAdminProducts();
+            if (tabId === 'orders') renderAdminOrders();
+            if (tabId === 'logs') renderAdminLogs();
+        }
+
+        function renderAdminDashboard() {
+            animateValue('stat-users', AdminState.users.length + 1200);
+            animateValue('stat-orders', AdminState.globalOrders.length + 890);
+            const totalPoints = AdminState.users.reduce((sum, u) => sum + u.points, 0) + 80000;
+            animateValue('stat-points', totalPoints);
+        }
+
+        function renderAdminUsers() {
+            const tbody = document.getElementById('adminUsersTableBody');
+            tbody.innerHTML = AdminState.users.map(u => `
+                <tr>
+                    <td>
+                        <div class="font-bold text-[var(--c-text-main)]">${u.id} ${u.id === AppState.user.id ? '<span class="text-[10px] bg-[var(--c-border-light)] text-[var(--c-accent)] px-1.5 py-0.5 rounded ml-1">我</span>' : ''}</div>
+                        <div class="text-xs text-[var(--c-text-sub)] mt-1">${u.email}</div>
+                    </td>
+                    <td class="text-[var(--c-text-sub)] text-sm">${u.registered}</td>
+                    <td class="font-bold text-[var(--c-accent)]">${u.points}</td>
+                    <td><span class="px-2.5 py-1 text-[11px] rounded font-bold ${u.status==='正常'?'bg-green-500/10 text-[#4ADE80]':'bg-red-500/10 text-[#F87171]'}">${u.status}</span></td>
+                    <td class="text-right">
+                        <button onclick="openAdjustPointsModal('${u.id}')" class="text-[var(--c-accent)] hover:text-[var(--c-accent-hover)] font-bold text-xs px-3 py-1.5 rounded-lg hover:bg-[var(--c-border-faint)] transition-colors border border-[var(--c-border-faint)]">调整积分</button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function renderAdminProducts() {
+            const tbody = document.getElementById('adminProductsTableBody');
+            tbody.innerHTML = Products.map(p => `
+                <tr>
+                    <td>
+                        <div class="font-bold text-[var(--c-text-main)] flex items-center gap-2">
+                            <i data-lucide="${p.icon}" class="w-4 h-4 text-[var(--c-accent)]"></i> ${p.name}
+                        </div>
+                    </td>
+                    <td><span class="bg-[var(--c-bg-app)] border border-[var(--c-border-light)] text-[var(--c-text-sub)] px-2 py-1 rounded text-xs font-bold">${p.type}</span></td>
+                    <td class="font-bold text-[var(--c-text-main)]">${p.price}</td>
+                    <td>
+                        <span class="font-bold ${p.stock === 0 ? 'text-[#F87171]' : 'text-[var(--c-text-sub)]'}">${p.stock}</span>
+                    </td>
+                    <td class="text-right">
+                        <button onclick="showToast('模拟操作：已补货','success')" class="text-green-500 hover:text-green-400 font-bold text-xs px-3 py-1.5 rounded-lg hover:bg-green-500/10 mr-1 border border-transparent">补货</button>
+                        <button class="text-[var(--c-text-sub)] hover:text-[var(--c-text-main)] font-bold text-xs px-3 py-1.5 rounded-lg hover:bg-[var(--c-border-faint)] border border-transparent">编辑</button>
+                    </td>
+                </tr>
+            `).join('');
+            lucide.createIcons();
+        }
+
+        function renderAdminOrders() {
+            const tbody = document.getElementById('adminOrdersTableBody');
+            const allOrders = [...AdminState.globalOrders, ...AppState.orders.map(o => ({
+                id: 'ORD-' + Math.floor(Math.random()*9000+1000),
+                date: o.date,
+                buyer: AppState.user.id,
+                product: o.productName,
+                price: o.price,
+                status: '已完成'
+            }))].sort((a,b) => new Date(b.date) - new Date(a.date));
+
+            tbody.innerHTML = allOrders.map(o => `
+                <tr>
+                    <td>
+                        <div class="font-mono text-xs text-[var(--c-text-sub)]">${o.id}</div>
+                        <div class="text-[10px] text-[var(--c-text-muted)] mt-1">${o.date}</div>
+                    </td>
+                    <td class="font-bold text-sm">${o.buyer}</td>
+                    <td class="text-[var(--c-text-sub)] text-sm">${o.product}</td>
+                    <td class="text-[var(--c-accent)] font-bold">${o.price}</td>
+                    <td><span class="px-2 py-1 text-[11px] rounded font-bold bg-green-500/10 text-[#4ADE80]">${o.status}</span></td>
+                </tr>
+            `).join('');
+        }
+
+        function renderAdminLogs() {
+            const tbody = document.getElementById('adminLogsTableBody');
+            const allLogs = [...AdminState.globalLogs, ...AppState.history.map(h => ({
+                date: h.date,
+                user: AppState.user.id,
+                event: h.reason,
+                amount: (h.type === 'in' ? '+' : '-') + h.amount,
+                type: h.type
+            }))].sort((a,b) => new Date(b.date) - new Date(a.date));
+
+            tbody.innerHTML = allLogs.map(l => `
+                <tr>
+                    <td class="text-[var(--c-text-muted)] text-[11px]">${l.date}</td>
+                    <td class="font-bold text-[var(--c-text-main)] text-sm">${l.user}</td>
+                    <td class="text-sm text-[var(--c-text-sub)]">${l.event}</td>
+                    <td class="text-right font-bold text-base ${l.type === 'in' ? 'text-[#4ADE80]' : 'text-[var(--c-text-main)]'}">${l.amount}</td>
+                </tr>
+            `).join('');
+        }
+
+        // --- Admin Actions ---
+        function openAdjustPointsModal(userId) {
+            AdminState.selectedUserId = userId;
+            const user = AdminState.users.find(u => u.id === userId);
+            
+            document.getElementById('adminAdjustUser').value = `${user.id} (${user.email}) - 当前: ${user.points}`;
+            document.getElementById('adminAdjustAmount').value = '';
+            document.getElementById('adminAdjustReason').value = '';
+            
+            const modal = document.getElementById('adjustPointsModal');
+            const content = document.getElementById('adjustPointsModalContent');
+            
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+            
+            setTimeout(() => {
+                content.classList.remove('scale-95');
+                content.classList.add('scale-100');
+            }, 10);
+        }
+
+        function confirmAdjustPoints() {
+            const amountInput = document.getElementById('adminAdjustAmount').value;
+            const reason = document.getElementById('adminAdjustReason').value;
+            const type = document.querySelector('input[name="adjustType"]:checked').value;
+            
+            const amount = parseInt(amountInput);
+            if (!amount || amount <= 0 || !reason) {
+                showToast('请填写有效的数量和原因', 'error');
+                return;
+            }
+
+            const user = AdminState.users.find(u => u.id === AdminState.selectedUserId);
+            if (!user) return;
+
+            if (type === 'add') {
+                user.points += amount;
+                if(user.id === AppState.user.id) AppState.user.points += amount;
+            } else {
+                if (user.points < amount) {
+                    showToast('扣除数量不能大于用户当前余额', 'error');
+                    return;
+                }
+                user.points -= amount;
+                if(user.id === AppState.user.id) AppState.user.points -= amount;
+            }
+
+            const logEntry = {
+                id: 'L' + Date.now(),
+                date: getFormattedDate(),
+                user: user.id,
+                event: `后台调整: ${reason}`,
+                amount: (type === 'add' ? '+' : '-') + amount,
+                type: type === 'add' ? 'in' : 'out'
+            };
+            AdminState.globalLogs.unshift(logEntry);
+
+            if(user.id === AppState.user.id) {
+                AppState.history.push({
+                    id: Date.now().toString(),
+                    type: type === 'add' ? 'in' : 'out',
+                    amount: amount,
+                    reason: `后台调整: ${reason}`,
+                    date: getFormattedDate()
+                });
+            }
+
+            updateDashboardUI();
+            renderAdminUsers(); 
+            closeModal('adjustPointsModal');
+            showToast(`已成功${type==='add'?'发放':'扣除'} ${amount} 积分`);
+        }
+
+        // --- Categories & Filtering ---
+        function renderCategories() {
+            const container = document.getElementById('categoryContainer');
+            container.innerHTML = Categories.map(cat => `
+                <button onclick="setCategory('${cat}')" 
+                        class="category-pill ${AppState.activeCategory === cat ? 'active' : 'inactive'}">
+                    ${cat}
+                </button>
+            `).join('');
+        }
+
+        function setCategory(cat) {
+            AppState.activeCategory = cat;
+            renderCategories();
+            filterAndRenderProducts();
+        }
+
+        function handleSearch(query) {
+            AppState.searchQuery = query.toLowerCase().trim();
+            filterAndRenderProducts();
+        }
+
+        function filterAndRenderProducts() {
+            let filtered = Products;
+            if (AppState.activeCategory !== '全部') {
+                filtered = filtered.filter(p => p.type === AppState.activeCategory);
+            }
+            if (AppState.searchQuery) {
+                filtered = filtered.filter(p => 
+                    p.name.toLowerCase().includes(AppState.searchQuery) || 
+                    p.desc.toLowerCase().includes(AppState.searchQuery) ||
+                    p.type.toLowerCase().includes(AppState.searchQuery)
+                );
+            }
+            renderProducts(filtered);
+        }
+
+        // --- Store UI Rendering ---
+        function renderProducts(filteredProducts) {
+            const grid = document.getElementById('productGrid');
+            grid.innerHTML = '';
+
+            if (filteredProducts.length === 0) {
+                grid.innerHTML = `
+                    <div class="col-span-full text-center py-20 text-[var(--c-text-sub)] flex flex-col items-center fade-in">
+                        <div class="w-16 h-16 bg-[var(--c-bg-card)] border border-[var(--c-border-light)] rounded-full flex items-center justify-center mb-4 shadow-sm">
+                            <i data-lucide="search-x" class="w-6 h-6 text-[var(--c-accent)]"></i>
+                        </div>
+                        <p class="text-lg font-bold text-[var(--c-text-main)] mb-1">未找到相关好物</p>
+                        <p class="text-sm">请尝试更换搜素词，或者看下其他分类</p>
+                    </div>
+                `;
+                lucide.createIcons();
+                return;
+            }
+
+            filteredProducts.forEach((product, index) => {
+                const isOutOfStock = product.stock === 0;
+                let discountHtml = '';
+                if (product.originalPrice && product.originalPrice > product.price) {
+                    discountHtml = `
+                        <div class="flex items-center gap-1.5 mb-0.5">
+                            <span class="text-xs text-[var(--c-text-sub)] line-through">${product.originalPrice}</span>
+                        </div>
+                    `;
+                }
+
+                const hotBadgeHtml = product.isHot ? `
+                    <div class="absolute top-0 right-0 bg-[#E85D04] text-white text-[10px] font-bold px-2.5 py-1 rounded-bl-xl z-10 shadow-sm flex items-center gap-1">
+                        <i data-lucide="flame" class="w-3 h-3"></i> 热卖推荐
+                    </div>
+                ` : '';
+
+                const delay = index * 0.06;
+
+                const card = document.createElement('div');
+                card.className = `apple-card flex flex-col h-full fade-in relative overflow-hidden group ${isOutOfStock ? 'opacity-60 grayscale' : ''}`;
+                card.style.animationDelay = `${delay}s`;
+                card.onclick = () => openProductDetails(product.id);
+                
+                card.innerHTML = `
+                    <div class="relative h-40 w-full bg-[var(--c-bg-image)] overflow-hidden border-b border-[var(--c-border-faint)] shrink-0">
+                        <img src="${product.image}" alt="${product.name}" class="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" />
+                        <div class="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                        ${hotBadgeHtml}
+                        <div class="absolute bottom-2.5 left-2.5 z-10">
+                            <!-- 修复毛玻璃标签可视度问题：采用固定且高强度的 CSS 定义 -->
+                            <span class="text-[11px] font-bold px-2.5 py-1 rounded-lg text-[var(--c-text-main)] shadow-sm flex items-center gap-1.5" style="background: var(--c-glass-bg); border: 1px solid var(--c-glass-border); backdrop-filter: blur(12px);">
+                                <i data-lucide="${product.icon}" class="w-3 h-3 text-[var(--c-accent)]"></i> ${product.type}
+                            </span>
+                        </div>
+                    </div>
+                    
+                    <div class="p-5 flex flex-col flex-grow bg-[var(--c-bg-card)]">
+                        <h3 class="text-base font-bold leading-snug pr-2 group-hover:text-[var(--c-accent)] transition-colors text-[var(--c-text-main)] mb-1.5">${product.name}</h3>
+                        
+                        <p class="text-[var(--c-text-sub)] text-xs flex-grow mb-4 leading-relaxed line-clamp-2">${product.desc}</p>
+                        
+                        <div class="flex items-end justify-between mt-auto">
+                            <div class="flex flex-col">
+                                ${discountHtml}
+                                <div class="flex items-center gap-1 text-[var(--c-accent)] font-bold text-xl tracking-tight">
+                                    <i data-lucide="coins" class="w-4 h-4"></i>
+                                    ${product.price}
+                                </div>
+                            </div>
+                            <div class="flex flex-col items-end gap-1 text-[10px] text-[var(--c-text-sub)]">
+                                <span>已售 ${product.sales}</span>
+                                <span>库存 ${product.stock}</span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                grid.appendChild(card);
+            });
+            lucide.createIcons();
+        }
+
+        // --- Product Details Centered Modal ---
+        function openProductDetails(id) {
+            const product = Products.find(p => p.id === id);
+            if (!product) return;
+            AppState.selectedProductId = id;
+
+            document.getElementById('pdImage').src = product.image;
+            document.getElementById('pdType').innerHTML = `<i data-lucide="${product.icon}" class="w-3 h-3 inline mr-1 text-[var(--c-accent)]"></i>${product.type}`;
+            document.getElementById('pdName').textContent = product.name;
+            document.getElementById('pdPrice').textContent = product.price;
+            document.getElementById('pdActionPrice').textContent = product.price;
+            
+            const origPriceEl = document.getElementById('pdOriginalPrice');
+            if (product.originalPrice && product.originalPrice > product.price) {
+                origPriceEl.textContent = `${product.originalPrice} 积分`;
+                origPriceEl.classList.remove('hidden');
+            } else {
+                origPriceEl.classList.add('hidden');
+            }
+
+            document.getElementById('pdSales').textContent = product.sales;
+            document.getElementById('pdStock').textContent = product.stock;
+            document.getElementById('pdDesc').innerHTML = product.richDesc || product.desc;
+
+            const reviewsContainer = document.getElementById('pdReviews');
+            if (product.reviews && product.reviews.length > 0) {
+                reviewsContainer.innerHTML = product.reviews.map(r => `
+                    <div class="bg-[var(--c-bg-card)] p-4 rounded-xl border border-[var(--c-border-light)] shadow-sm">
+                        <div class="flex justify-between items-center mb-1.5">
+                            <span class="font-bold text-sm text-[var(--c-text-main)]">${r.user}</span>
+                            <span class="text-[10px] text-[var(--c-text-sub)]">${r.date}</span>
+                        </div>
+                        <div class="flex gap-0.5 mb-2">
+                            ${Array(5).fill(0).map((_, i) => `<svg class="w-3.5 h-3.5 ${i < r.rating ? 'star-filled' : 'star-empty'}" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>`).join('')}
+                        </div>
+                        <p class="text-[var(--c-text-muted)] text-xs leading-relaxed">${r.comment}</p>
+                    </div>
+                `).join('');
+            } else {
+                reviewsContainer.innerHTML = '<p class="text-xs text-[var(--c-text-sub)] italic">暂无买家评价</p>';
+            }
+
+            const buyBtn = document.getElementById('pdBuyBtn');
+            if (product.stock === 0) {
+                buyBtn.textContent = '已抢光';
+                buyBtn.disabled = true;
+                // 用 inline style 或原生 class 修改替代直接切换 bg-gray
+                buyBtn.classList.replace('btn-mocha', 'opacity-50');
+                buyBtn.classList.add('cursor-not-allowed', 'shadow-none');
+            } else {
+                buyBtn.textContent = '立即兑换';
+                buyBtn.disabled = false;
+                buyBtn.classList.replace('opacity-50', 'btn-mocha');
+                buyBtn.classList.remove('cursor-not-allowed', 'shadow-none');
+            }
+
+            lucide.createIcons();
+
+            const modal = document.getElementById('productDetailsModal');
+            const panel = document.getElementById('pdPanel');
+            const backdrop = document.getElementById('pdBackdrop');
+            
+            modal.classList.remove('hidden');
+            document.body.classList.add('modal-open'); 
+            
+            requestAnimationFrame(() => {
+                backdrop.classList.remove('opacity-0');
+                backdrop.classList.add('opacity-100');
+                panel.classList.add('modal-pop-in');
+            });
+        }
+
+        function closeProductDetails() {
+            const modal = document.getElementById('productDetailsModal');
+            const panel = document.getElementById('pdPanel');
+            const backdrop = document.getElementById('pdBackdrop');
+            
+            panel.classList.remove('modal-pop-in');
+            backdrop.classList.remove('opacity-100');
+            backdrop.classList.add('opacity-0');
+            document.body.classList.remove('modal-open');
+            
+            setTimeout(() => {
+                modal.classList.add('hidden');
+            }, 400);
+        }
+
+        function openPurchaseFromDetails() {
+            if(AppState.selectedProductId) {
+                openPurchaseModal(AppState.selectedProductId, true);
+            }
+        }
+
+
+        // --- Profile UI Rendering ---
+        function updateDashboardUI() {
+            animateValue("navBalance", AppState.user.points);
+            animateValue("profileBalance", AppState.user.points);
+            
+            // Sync Admin User State
+            const adminSelf = AdminState.users.find(u => u.id === AppState.user.id);
+            if(adminSelf) adminSelf.points = AppState.user.points;
+
+            const checkInBtn = document.getElementById('checkInBtn');
+            if (AppState.user.hasCheckedIn) {
+                checkInBtn.classList.replace('bg-white', 'bg-white/30');
+                checkInBtn.classList.replace('text-[var(--c-accent)]', 'text-white');
+                checkInBtn.innerHTML = '<i data-lucide="check" class="w-4 h-4"></i> 今日已打卡';
+                checkInBtn.disabled = true;
+            }
+            lucide.createIcons();
+        }
+
+        function renderOrders() {
+            const container = document.getElementById('ordersList');
+            if (AppState.orders.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center py-8 text-[var(--c-text-sub)] bg-[var(--c-bg-app)] rounded-xl border border-dashed border-[var(--c-border-light)]">
+                        <i data-lucide="inbox" class="w-8 h-8 mx-auto mb-2 opacity-50"></i>
+                        <p class="text-xs">还没兑换过商品，快去大厅逛逛吧</p>
+                    </div>`;
+                lucide.createIcons();
+                return;
+            }
+
+            container.innerHTML = [...AppState.orders].reverse().map(order => `
+                <div class="bg-[var(--c-bg-app)] rounded-xl p-4 border border-[var(--c-border-light)] flex flex-col sm:flex-row justify-between gap-3 shadow-sm hover:shadow-md transition-shadow">
+                    <div>
+                        <div class="flex items-center gap-2 mb-1.5">
+                            <span class="px-1.5 py-0.5 bg-green-500/10 text-[#4ADE80] border border-[#4ADE80]/20 text-[10px] font-bold rounded">发货成功</span>
+                            <span class="text-[11px] text-[var(--c-text-sub)]">${order.date}</span>
+                        </div>
+                        <h4 class="font-bold text-sm mb-2 text-[var(--c-text-main)]">${order.productName}</h4>
+                        <div class="bg-[var(--c-bg-card)] px-3 py-1.5 rounded-lg border border-[var(--c-border-faint)] text-xs font-mono text-[var(--c-text-main)] select-all inline-block shadow-sm">
+                            ${order.key}
+                        </div>
+                    </div>
+                    <div class="flex items-start sm:items-center text-[var(--c-accent)] font-bold whitespace-nowrap text-sm">
+                        -<i data-lucide="coins" class="w-3.5 h-3.5 mx-0.5"></i>${order.price}
+                    </div>
+                </div>
+            `).join('');
+            lucide.createIcons();
+        }
+
+        function renderHistory() {
+            const container = document.getElementById('historyList');
+            if (AppState.history.length === 0) return;
+
+            container.innerHTML = [...AppState.history].reverse().map(item => `
+                <div class="flex items-center justify-between p-3 border-b border-[var(--c-border-faint)] last:border-0 hover:bg-[var(--c-bg-app)] rounded-lg transition-colors">
+                    <div class="flex items-center gap-3">
+                        <div class="w-8 h-8 rounded-full flex items-center justify-center ${item.type === 'in' ? 'bg-[var(--c-bg-app)] border border-[var(--c-accent)]/20 text-[var(--c-accent)]' : 'bg-[var(--c-text-main)] text-[var(--c-bg-app)]'} shadow-sm">
+                            <i data-lucide="${item.type === 'in' ? 'arrow-down-left' : 'arrow-up-right'}" class="w-4 h-4"></i>
+                        </div>
+                        <div>
+                            <p class="font-bold text-xs text-[var(--c-text-main)]">${item.reason}</p>
+                            <p class="text-[10px] text-[var(--c-text-sub)] mt-0.5">${item.date}</p>
+                        </div>
+                    </div>
+                    <div class="font-bold text-sm ${item.type === 'in' ? 'text-[var(--c-accent)]' : 'text-[var(--c-text-main)]'}">
+                        ${item.type === 'in' ? '+' : '-'}${item.amount}
+                    </div>
+                </div>
+            `).join('');
+            lucide.createIcons();
+        }
+
+        // --- User Actions ---
+        function checkIn() {
+            if (AppState.user.hasCheckedIn) return;
+            const reward = 50;
+            AppState.user.points += reward;
+            AppState.user.hasCheckedIn = true;
+            AppState.history.push({
+                id: Date.now().toString(),
+                type: 'in',
+                amount: reward,
+                reason: '每日打卡签到',
+                date: getFormattedDate()
+            });
+            updateDashboardUI();
+            if(!document.getElementById('profileView').classList.contains('hidden')) renderHistory();
+            showToast(`打卡成功！积分 +${reward}`);
+        }
+
+        function copyInvite() {
+            copyToClipboard(AppState.user.inviteCode);
+            showToast('邀请码已复制，快去发给好友吧');
+        }
+
+        // --- Purchase Flow ---
+        function openPurchaseModal(productId, fromDetails = false) {
+            const product = Products.find(p => p.id === productId);
+            if (!product) return;
+
+            AppState.selectedProductId = productId;
+            document.getElementById('modalProductName').textContent = product.name;
+            document.getElementById('modalProductPrice').textContent = product.price;
+            
+            const modal = document.getElementById('purchaseModal');
+            const content = document.getElementById('purchaseModalContent');
+            
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+            
+            if(!fromDetails) document.body.classList.add('modal-open');
+            
+            setTimeout(() => {
+                content.classList.remove('scale-95');
+                content.classList.add('scale-100');
+            }, 10);
+        }
+
+        function closeModal(modalId) {
+            const modal = document.getElementById(modalId);
+            const content = modal.children[1] || modal.children[0]; 
+            
+            content.classList.remove('scale-100');
+            content.classList.add('scale-95');
+            
+            setTimeout(() => {
+                modal.classList.add('hidden');
+                modal.classList.remove('flex');
+                
+                if (modalId === 'purchaseModal' && document.getElementById('productDetailsModal').classList.contains('hidden')) {
+                    document.body.classList.remove('modal-open');
+                    AppState.selectedProductId = null;
+                }
+            }, 250);
+        }
+
+        function confirmPurchase() {
+            const product = Products.find(p => p.id === AppState.selectedProductId);
+            if (!product) return;
+
+            if (AppState.user.points < product.price) {
+                closeModal('purchaseModal');
+                showToast('糟糕，积分不够啦！快去打卡做任务赚积分', 'error');
+                return;
+            }
+
+            AppState.user.points -= product.price;
+            product.stock -= 1; 
+            
+            const generatedKey = generateMockAsset(product.type);
+            
+            AppState.orders.push({
+                id: Date.now().toString(),
+                productName: product.name,
+                price: product.price,
+                key: generatedKey,
+                date: getFormattedDate()
+            });
+
+            AppState.history.push({
+                id: Date.now().toString(),
+                type: 'out',
+                amount: product.price,
+                reason: `兑换商品: ${product.name}`,
+                date: getFormattedDate()
+            });
+
+            filterAndRenderProducts(); 
+            updateDashboardUI();
+            
+            if(!document.getElementById('profileView').classList.contains('hidden')) {
+                renderOrders();
+                renderHistory();
+            }
+            if(!document.getElementById('adminView').classList.contains('hidden')) {
+                renderAdminOrders();
+                renderAdminProducts();
+            }
+
+            closeModal('purchaseModal');
+            if(!document.getElementById('productDetailsModal').classList.contains('hidden')){
+                closeProductDetails();
+            }
+            
+            setTimeout(() => {
+                document.getElementById('successKeyDisplay').textContent = generatedKey;
+                const sModal = document.getElementById('successModal');
+                sModal.classList.remove('hidden');
+                sModal.classList.add('flex');
+                document.body.classList.add('modal-open');
+                sModal.dataset.currentKey = generatedKey;
+            }, 300); 
+        }
+
+        function copyKeyAndClose() {
+            const key = document.getElementById('successModal').dataset.currentKey;
+            copyToClipboard(key);
+            showToast('发货信息已复制');
+            closeModal('successModal');
+            document.body.classList.remove('modal-open');
+        }
+
+        // --- Utility Functions ---
+        function generateMockAsset(type) {
+            const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+            let key = '';
+            if (type.includes('节点') || type.includes('订阅')) return `https://api.moyuan.net/sub/${Math.random().toString(36).substring(2, 12)}`;
+            if (type.includes('账号')) return `账号: user_${Math.floor(Math.random()*999)}@163.com\n密码: Pw${Math.floor(Math.random()*999999)}`;
+            
+            for (let i = 0; i < 4; i++) {
+                let segment = '';
+                for(let j=0; j<4; j++) segment += chars.charAt(Math.floor(Math.random() * chars.length));
+                key += segment + (i < 3 ? '-' : '');
+            }
+            return key;
+        }
+
+        function getFormattedDate() {
+            const now = new Date();
+            return `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+        }
+
+        function showToast(message, type = 'success') {
+            const container = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+            
+            const bgColorClass = type === 'success' ? 'bg-[var(--c-toast-bg)]' : 'bg-red-500';
+            const textColorClass = type === 'success' ? 'text-[var(--c-toast-text)]' : 'text-white';
+            
+            toast.className = `toast-enter ${bgColorClass} ${textColorClass} px-5 py-3 rounded-xl shadow-xl flex items-center gap-2 font-bold pointer-events-auto z-[90] relative text-sm border border-[var(--c-border-faint)]`;
+            toast.innerHTML = `
+                <i data-lucide="${type === 'success' ? 'check-circle-2' : 'alert-circle'}" class="w-4 h-4 ${textColorClass}"></i>
+                ${message}
+            `;
+            
+            container.appendChild(toast);
+            lucide.createIcons();
+
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                toast.style.transform = 'translate(-50%, 20px)';
+                toast.style.transition = 'all 0.4s cubic-bezier(0.16, 1, 0.3, 1)';
+                setTimeout(() => toast.remove(), 400);
+            }, 2500);
+        }
+
+        function copyToClipboard(text) {
+            const textArea = document.createElement("textarea");
+            textArea.value = text;
+            textArea.style.position = "fixed";
+            textArea.style.opacity = "0";
+            document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
+            try { document.execCommand('copy'); } catch (err) {}
+            textArea.remove();
+        }
+
+        function animateValue(id, end, duration = 1000) {
+            const obj = document.getElementById(id);
+            if (!obj) return;
+            const start = parseInt(obj.innerText.replace(/,/g, '')) || 0;
+            if (start === end) return;
+            
+            let startTimestamp = null;
+            const step = (timestamp) => {
+                if (!startTimestamp) startTimestamp = timestamp;
+                const progress = Math.min((timestamp - startTimestamp) / duration, 1);
+                const easeOut = 1 - Math.pow(1 - progress, 4);
+                const current = Math.floor(easeOut * (end - start) + start);
+                
+                obj.innerText = current;
+                if (progress < 1) window.requestAnimationFrame(step);
+                else obj.innerText = end;
+            };
+            window.requestAnimationFrame(step);
+        }
+    </script>
+</body>
+</html>

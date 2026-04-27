@@ -1,0 +1,9 @@
+.ace-tool/
+
+.worktrees/
+node_modules/
+server/node_modules/
+dist/
+server/dist/
+.env
+server/.env
