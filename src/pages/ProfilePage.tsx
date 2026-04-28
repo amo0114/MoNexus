@@ -4,6 +4,7 @@ import { Coins, Wallet, Users, CalendarCheck, LogOut, ArrowDownLeft, ArrowUpRigh
 import { useAuthStore } from '../stores/authStore'
 import { useAppStore } from '../stores/appStore'
 import api from '../api/client'
+import { getApiErrorMessage } from '../api/error'
 
 export default function ProfilePage() {
   const navigate = useNavigate()
@@ -32,15 +33,21 @@ export default function ProfilePage() {
       showToast(`打卡成功！积分 +${data.reward}`)
       api.get('/points/history').then(({ data: h }) => setHistory(h))
     } catch (err: any) {
-      showToast(err.response?.data?.error || '签到失败', 'error')
+      showToast(getApiErrorMessage(err, '签到失败'), 'error')
     } finally {
       setCheckingIn(false)
     }
   }
 
-  function handleLogout() {
-    logout()
-    navigate('/login')
+  async function handleLogout() {
+    try {
+      await api.post('/auth/logout')
+    } catch (e) {
+      // ignore
+    } finally {
+      logout()
+      navigate('/login')
+    }
   }
 
   function copyInvite() {

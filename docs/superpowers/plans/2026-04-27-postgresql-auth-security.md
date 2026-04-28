@@ -1834,7 +1834,7 @@ Expected: no unnecessary commits.
 **Files:**
 - Modify: `src/stores/authStore.ts`
 
-- [ ] **Step 1: Update auth state interface**
+- [x] **Step 1: Update auth state interface**
 
 In `src/stores/authStore.ts`, remove:
 
@@ -1852,7 +1852,7 @@ logout: () => void
 
 Expected: auth store no longer models refresh token.
 
-- [ ] **Step 2: Update initial state and methods**
+- [x] **Step 2: Update initial state and methods**
 
 Replace store body with this shape:
 
@@ -1888,7 +1888,7 @@ export const useAuthStore = create<AuthState>()(
 
 Expected: persisted storage excludes accessToken and refreshToken.
 
-- [ ] **Step 3: Search for old token methods**
+- [x] **Step 3: Search for old token methods**
 
 Run:
 
@@ -1898,7 +1898,7 @@ grep -R "refreshToken\|setTokens" -n src || true
 
 Expected: output may show `src/api/client.ts` until Task 20, but `src/stores/authStore.ts` should no longer contain `refreshToken` or `setTokens`.
 
-- [ ] **Step 4: Build frontend**
+- [x] **Step 4: Build frontend**
 
 Run:
 
@@ -1908,7 +1908,7 @@ npm run build
 
 Expected at this step: may fail because callers still use old methods. Continue to Task 20 if that is the only failure.
 
-- [ ] **Step 5: Commit auth store change**
+- [x] **Step 5: Commit auth store change**
 
 Run:
 
@@ -1926,7 +1926,7 @@ Expected: commit succeeds, or if not in git, note that commit was skipped.
 **Files:**
 - Modify: `src/api/client.ts`
 
-- [ ] **Step 1: Enable credentials on Axios instance**
+- [x] **Step 1: Enable credentials on Axios instance**
 
 Update `src/api/client.ts` Axios instance:
 
@@ -1940,7 +1940,7 @@ const api = axios.create({
 
 Expected: browser sends refresh cookie to backend.
 
-- [ ] **Step 2: Update refresh interceptor**
+- [x] **Step 2: Update refresh interceptor**
 
 Replace the 401 refresh block with:
 
@@ -1961,7 +1961,7 @@ if (error.response?.status === 401 && !originalRequest._retry) {
 
 Expected: refresh request sends empty body and uses Cookie.
 
-- [ ] **Step 3: Verify no refresh token remains in client**
+- [x] **Step 3: Verify no refresh token remains in client**
 
 Run:
 
@@ -1971,7 +1971,7 @@ grep -R "refreshToken\|setTokens" -n src/api src/stores || true
 
 Expected: no output.
 
-- [ ] **Step 4: Build frontend**
+- [x] **Step 4: Build frontend**
 
 Run:
 
@@ -1981,7 +1981,7 @@ npm run build
 
 Expected at this step: may fail because login page still calls old store methods. Continue to Task 21 if that is the only failure.
 
-- [ ] **Step 5: Commit Axios change**
+- [x] **Step 5: Commit Axios change**
 
 Run:
 
@@ -2000,7 +2000,7 @@ Expected: commit succeeds, or if not in git, note that commit was skipped.
 - Modify: `src/pages/LoginPage.tsx`
 - Modify: other `src/**` files found by grep that call `login(user, access, refresh)` or `setTokens(access, refresh)`.
 
-- [ ] **Step 1: Find old login and token call sites**
+- [x] **Step 1: Find old login and token call sites**
 
 Run:
 
@@ -2010,7 +2010,7 @@ grep -R "login(.*refresh\|setTokens\|refreshToken" -n src || true
 
 Expected: identify all frontend call sites that need updating.
 
-- [ ] **Step 2: Update login success calls**
+- [x] **Step 2: Update login success calls**
 
 Where code currently does:
 
@@ -2032,7 +2032,7 @@ login(data.user, data.accessToken)
 
 Expected: no frontend code expects `data.refreshToken`.
 
-- [ ] **Step 3: Update register success calls**
+- [x] **Step 3: Update register success calls**
 
 Where register success uses refresh token, use the same two-argument login call:
 
@@ -2042,7 +2042,7 @@ login(data.user, data.accessToken)
 
 Expected: register consumes `{ user, accessToken }` only.
 
-- [ ] **Step 4: Build frontend**
+- [x] **Step 4: Build frontend**
 
 Run:
 
@@ -2052,7 +2052,7 @@ npm run build
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit login/register consumer changes**
+- [x] **Step 5: Commit login/register consumer changes**
 
 Run:
 
@@ -2071,7 +2071,7 @@ Expected: commit succeeds, or if not in git, note that commit was skipped.
 - Modify: `src/components/Layout.tsx` or the file containing the logout button/action.
 - Modify: `src/stores/authStore.ts` only if logout action signature must remain unchanged.
 
-- [ ] **Step 1: Find logout call site**
+- [x] **Step 1: Find logout call site**
 
 Run:
 
@@ -2081,7 +2081,7 @@ grep -R "logout" -n src | head -20
 
 Expected: identify the component that handles logout.
 
-- [ ] **Step 2: Update logout action handler**
+- [x] **Step 2: Update logout action handler**
 
 In the logout UI handler, call backend logout before clearing local state:
 
@@ -2104,7 +2104,7 @@ import api from '../api/client'
 
 Expected: logout clears backend Cookie and frontend state.
 
-- [ ] **Step 3: Build frontend**
+- [x] **Step 3: Build frontend**
 
 Run:
 
@@ -2114,7 +2114,7 @@ npm run build
 
 Expected: PASS.
 
-- [ ] **Step 4: Verify no refresh token storage remains**
+- [x] **Step 4: Verify no refresh token storage remains**
 
 Run:
 
@@ -2124,7 +2124,7 @@ grep -R "refreshToken\|setTokens" -n src || true
 
 Expected: no output.
 
-- [ ] **Step 5: Commit logout integration**
+- [x] **Step 5: Commit logout integration**
 
 Run:
 
@@ -2146,7 +2146,7 @@ Expected: commit succeeds, or if not in git, note that commit was skipped.
 **Files:**
 - No source modifications expected.
 
-- [ ] **Step 1: Start PostgreSQL**
+- [x] **Step 1: Start PostgreSQL**
 
 Run:
 
@@ -2156,7 +2156,7 @@ docker compose up -d postgres
 
 Expected: PostgreSQL is healthy and listening on port 5432.
 
-- [ ] **Step 2: Apply migrations**
+- [x] **Step 2: Apply migrations**
 
 Run:
 
@@ -2166,7 +2166,7 @@ cd server && npx prisma migrate deploy
 
 Expected: migrations applied.
 
-- [ ] **Step 3: Seed database**
+- [x] **Step 3: Seed database**
 
 Run:
 
@@ -2176,7 +2176,7 @@ npm --prefix server run db:seed
 
 Expected: seed succeeds.
 
-- [ ] **Step 4: Build backend**
+- [x] **Step 4: Build backend**
 
 Run:
 
@@ -2186,7 +2186,7 @@ npm --prefix server run build
 
 Expected: PASS.
 
-- [ ] **Step 5: Build frontend**
+- [x] **Step 5: Build frontend**
 
 Run:
 
@@ -2196,7 +2196,7 @@ npm run build
 
 Expected: PASS.
 
-- [ ] **Step 6: Start backend**
+- [x] **Step 6: Start backend**
 
 Run:
 
@@ -2206,7 +2206,7 @@ npm --prefix server run dev
 
 Expected: backend running on `http://localhost:3000`.
 
-- [ ] **Step 7: Start frontend**
+- [x] **Step 7: Start frontend**
 
 Run in another terminal:
 
@@ -2216,7 +2216,7 @@ npm run dev
 
 Expected: frontend running on `http://localhost:5173`.
 
-- [ ] **Step 8: Verify browser login**
+- [x] **Step 8: Verify browser login**
 
 Open `http://localhost:5173/login`, log in with seeded user:
 
@@ -2227,7 +2227,7 @@ Password: user123
 
 Expected: login succeeds and navigates into the protected app.
 
-- [ ] **Step 9: Verify Cookie security in browser**
+- [x] **Step 9: Verify Cookie security in browser**
 
 In DevTools Application tab, inspect Cookies for `http://localhost:3000` or proxied origin.
 
@@ -2240,7 +2240,7 @@ JavaScript cannot read document.cookie value for refreshToken
 localStorage monexus-auth does not contain refreshToken
 ```
 
-- [ ] **Step 10: Verify API refresh behavior**
+- [x] **Step 10: Verify API refresh behavior**
 
 Manually expire or temporarily shorten access token during local testing, then trigger a protected API call.
 
@@ -2253,7 +2253,7 @@ response returns accessToken
 original failed request is retried successfully
 ```
 
-- [ ] **Step 11: Verify logout**
+- [x] **Step 11: Verify logout**
 
 Click logout.
 
@@ -2266,7 +2266,7 @@ frontend navigates to /login
 protected API calls fail with 401 until login again
 ```
 
-- [ ] **Step 12: Record integration result**
+- [x] **Step 12: Record integration result**
 
 Add implementation note in the task tracker or PR description:
 
@@ -2287,7 +2287,7 @@ Expected: final reviewer can see exact completed checks.
 **Files:**
 - No source modifications expected unless checks reveal defects.
 
-- [ ] **Step 1: Run backend build**
+- [x] **Step 1: Run backend build**
 
 Run:
 
@@ -2297,7 +2297,7 @@ npm --prefix server run build
 
 Expected: PASS.
 
-- [ ] **Step 2: Run frontend build**
+- [x] **Step 2: Run frontend build**
 
 Run:
 
@@ -2307,7 +2307,7 @@ npm run build
 
 Expected: PASS.
 
-- [ ] **Step 3: Search for forbidden refresh-token storage**
+- [x] **Step 3: Search for forbidden refresh-token storage**
 
 Run:
 
@@ -2317,7 +2317,7 @@ grep -R "refreshToken" -n src || true
 
 Expected: no frontend storage or request-body usage. Mentions in comments are not allowed unless they describe the backend Cookie contract in a doc.
 
-- [ ] **Step 4: Search for raw backend errors**
+- [x] **Step 4: Search for raw backend errors**
 
 Run:
 
@@ -2327,7 +2327,7 @@ grep -R "res.status(500).json({ error: err.message\|throw new Error" -n server/s
 
 Expected: no raw error response patterns. Remaining `throw new Error` is allowed only for impossible internal programmer errors, not user-facing business cases.
 
-- [ ] **Step 5: Search for unsafe param parsing**
+- [x] **Step 5: Search for unsafe param parsing**
 
 Run:
 
@@ -2337,7 +2337,7 @@ grep -R "parseInt(req.params" -n server/src || true
 
 Expected: no output.
 
-- [ ] **Step 6: Search for SQLite datasource**
+- [x] **Step 6: Search for SQLite datasource**
 
 Run:
 
@@ -2347,7 +2347,7 @@ grep -R "provider = \"sqlite\"" -n server || true
 
 Expected: no output.
 
-- [ ] **Step 7: Final commit if fixes were required**
+- [x] **Step 7: Final commit if fixes were required**
 
 Run only if files changed during final checks:
 
@@ -2360,13 +2360,13 @@ Expected: commit succeeds, or if not in git, note that commit was skipped.
 
 ## Self-Review
 
-- [ ] Spec coverage: PostgreSQL switch is covered by Tasks 2, 3, 5, 18, 23, 24.
-- [ ] Spec coverage: `.env` required validation is covered by Task 3.
-- [ ] Spec coverage: Prisma migration is covered by Task 5.
-- [ ] Spec coverage: body/params/query validation is covered by Tasks 8, 9, 10, 11, 24.
-- [ ] Spec coverage: safe error envelopes are covered by Tasks 6, 7, 17, 24.
-- [ ] Spec coverage: security middleware is covered by Tasks 12 and 13.
-- [ ] Spec coverage: Refresh Token HttpOnly Cookie storage is covered by Tasks 14, 15, 16, 19, 20, 21, 22, 23.
-- [ ] Frontend/backend separation is explicitly stated in workflow rules and owner labels.
-- [ ] Placeholder scan: no `TBD`, `TODO`, `implement later`, or unspecified validation remains.
-- [ ] Type consistency: frontend `login(user, accessToken)`, backend `{ user, accessToken }`, refresh `{ accessToken }`, logout `{ ok: true }` are consistent.
+- [x] Spec coverage: PostgreSQL switch is covered by Tasks 2, 3, 5, 18, 23, 24.
+- [x] Spec coverage: `.env` required validation is covered by Task 3.
+- [x] Spec coverage: Prisma migration is covered by Task 5.
+- [x] Spec coverage: body/params/query validation is covered by Tasks 8, 9, 10, 11, 24.
+- [x] Spec coverage: safe error envelopes are covered by Tasks 6, 7, 17, 24.
+- [x] Spec coverage: security middleware is covered by Tasks 12 and 13.
+- [x] Spec coverage: Refresh Token HttpOnly Cookie storage is covered by Tasks 14, 15, 16, 19, 20, 21, 22, 23.
+- [x] Frontend/backend separation is explicitly stated in workflow rules and owner labels.
+- [x] Placeholder scan: no `TBD`, `TODO`, `implement later`, or unspecified validation remains.
+- [x] Type consistency: frontend `login(user, accessToken)`, backend `{ user, accessToken }`, refresh `{ accessToken }`, logout `{ ok: true }` are consistent.

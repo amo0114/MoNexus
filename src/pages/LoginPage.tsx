@@ -4,6 +4,7 @@ import { Gift } from 'lucide-react'
 import { useAuthStore } from '../stores/authStore'
 import { useAppStore } from '../stores/appStore'
 import api from '../api/client'
+import { getApiErrorMessage } from '../api/error'
 
 export default function LoginPage() {
   const navigate = useNavigate()
@@ -31,11 +32,11 @@ export default function LoginPage() {
         headers: { Authorization: `Bearer ${data.accessToken}` }
       })
 
-      login(profile, data.accessToken, data.refreshToken)
+      login(profile, data.accessToken)
       showToast(isRegister ? '注册成功！已赠送 500 积分。' : '登录成功！')
       navigate('/')
     } catch (err: any) {
-      showToast(err.response?.data?.error || '操作失败', 'error')
+      showToast(getApiErrorMessage(err, '操作失败'), 'error')
     } finally {
       setLoading(false)
     }

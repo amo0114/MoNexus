@@ -4,6 +4,7 @@ import { useAuthStore } from '../stores/authStore'
 const api = axios.create({
   baseURL: '/api',
   timeout: 15000,
+  withCredentials: true,
 })
 
 // 请求拦截 - 注入 Access Token
@@ -22,17 +23,14 @@ api.interceptors.response.use(
     const originalRequest = error.config
     if (error.response?.status === 401 && !originalRequest._retry) {
       originalRequest._retry = true
-      const refreshToken = useAuthStore.getState().refreshToken
 
-      if (refreshToken) {
-        try {
-          const { data } = await axios.post('/api/auth/refresh', { refreshToken })
-          useAuthStore.getState().setTokens(data.accessToken, data.refreshToken)
-          originalRequest.headers.Authorization = `Bearer ${data.accessToken}`
-          return api(originalRequest)
-        } catch {
-          useAuthStore.getState().logout()
-        }
+      try {
+        const { data } = await axios.post('/api/auth/refresh', undefined, { withCredentials: true })
+        useAuthStore.getState().setAccessToken(data.accessToken)
+        originalRequest.headers.Authorization = `Bearer ${data.accessToken}`
+        return api(originalRequest)
+      } catch {
+        useAuthStore.getState().logout()
       }
     }
     return Promise.reject(error)

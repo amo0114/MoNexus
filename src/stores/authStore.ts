@@ -12,11 +12,10 @@ interface User {
 interface AuthState {
   user: User | null
   accessToken: string | null
-  refreshToken: string | null
   isLoggedIn: boolean
   setUser: (user: User) => void
-  setTokens: (access: string, refresh: string) => void
-  login: (user: User, access: string, refresh: string) => void
+  setAccessToken: (access: string) => void
+  login: (user: User, access: string) => void
   logout: () => void
   updatePoints: (points: number) => void
 }
@@ -26,23 +25,28 @@ export const useAuthStore = create<AuthState>()(
     (set) => ({
       user: null,
       accessToken: null,
-      refreshToken: null,
       isLoggedIn: false,
 
       setUser: (user) => set({ user }),
-      setTokens: (access, refresh) => set({ accessToken: access, refreshToken: refresh }),
+      setAccessToken: (access) => set({ accessToken: access }),
 
-      login: (user, access, refresh) =>
-        set({ user, accessToken: access, refreshToken: refresh, isLoggedIn: true }),
+      login: (user, access) =>
+        set({ user, accessToken: access, isLoggedIn: true }),
 
       logout: () =>
-        set({ user: null, accessToken: null, refreshToken: null, isLoggedIn: false }),
+        set({ user: null, accessToken: null, isLoggedIn: false }),
 
       updatePoints: (points) =>
         set((state) => ({
           user: state.user ? { ...state.user, points } : null,
         })),
     }),
-    { name: 'monexus-auth' }
+    {
+      name: 'monexus-auth',
+      partialize: (state) => ({
+        user: state.user,
+        isLoggedIn: state.isLoggedIn,
+      }),
+    }
   )
 )
