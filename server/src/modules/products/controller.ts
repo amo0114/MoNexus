@@ -16,7 +16,7 @@ export async function list(req: Request, res: Response, next: NextFunction) {
 
 export async function detail(req: Request, res: Response, next: NextFunction) {
   try {
-    const id = parseInt(req.params.id)
+    const id = req.params.id as unknown as number
     const product = await productService.getProductDetail(id)
     res.json(product)
   } catch (err) {

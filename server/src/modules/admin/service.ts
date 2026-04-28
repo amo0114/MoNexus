@@ -1,4 +1,6 @@
-import { prisma } from '../auth/service.js'
+import { Prisma } from '@prisma/client'
+import { prisma } from '../../lib/prisma.js'
+import { badRequest, notFound } from '../../lib/httpError.js'
 
 export async function getStats() {
   const [userCount, orderCount, totalPoints] = await Promise.all([
@@ -15,9 +17,9 @@ export async function getStats() {
 }
 
 export async function listUsers(query?: string) {
-  const where: any = {}
+  const where: Prisma.UserWhereInput = {}
   if (query) {
-    where.email = { contains: query }
+    where.email = { contains: query, mode: 'insensitive' }
   }
 
   return prisma.user.findMany({
@@ -34,12 +36,12 @@ export async function adjustUserPoints(
   amount: number,
   reason: string
 ) {
-  return prisma.$transaction(async (tx) => {
+  return prisma.$transaction(async tx => {
     const account = await tx.pointAccount.findUnique({ where: { userId: targetUserId } })
-    if (!account) throw new Error('目标用户积分账户不存在')
+    if (!account) throw notFound('目标用户积分账户不存在')
 
     if (type === 'deduct' && account.balance < amount) {
-      throw new Error('扣除数量不能大于用户当前余额')
+      throw badRequest('扣除数量不能大于用户当前余额')
     }
 
     const newBalance = type === 'add' ? account.balance + amount : account.balance - amount
@@ -73,19 +75,22 @@ export async function adjustUserPoints(
   })
 }
 
-export async function createProduct(data: any) {
+export async function createProduct(data: Prisma.ProductCreateInput) {
   return prisma.product.create({ data })
 }
 
-export async function updateProduct(id: number, data: any) {
+export async function updateProduct(id: number, data: Prisma.ProductUpdateInput) {
+  const product = await prisma.product.findUnique({ where: { id } })
+  if (!product) throw notFound('商品不存在')
+
   return prisma.product.update({ where: { id }, data })
 }
 
 export async function importInventory(productId: number, items: string[], adminUserId: number) {
   const product = await prisma.product.findUnique({ where: { id: productId } })
-  if (!product) throw new Error('商品不存在')
+  if (!product) throw notFound('商品不存在')
 
-  return prisma.$transaction(async (tx) => {
+  return prisma.$transaction(async tx => {
     for (const content of items) {
       await tx.inventoryItem.create({ data: { productId, content } })
     }

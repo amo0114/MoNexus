@@ -18,3 +18,15 @@ export async function list(req: Request, res: Response, next: NextFunction) {
     next(err)
   }
 }
+
+export async function detail(req: Request, res: Response, next: NextFunction) {
+  try {
+    const order = await orderService.getOrderDetail(
+      req.params.id as unknown as number,
+      req.user!.userId,
+    )
+    res.json(order)
+  } catch (err) {
+    next(err)
+  }
+}

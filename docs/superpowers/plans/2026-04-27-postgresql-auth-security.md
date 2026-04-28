@@ -197,7 +197,7 @@ Expected: commit succeeds, or if this directory is not a git repository, record 
 - Modify: `server/package.json`
 - Modify: `server/package-lock.json`
 
-- [ ] **Step 1: Install backend runtime dependencies**
+- [x] **Step 1: Install backend runtime dependencies**
 
 Run:
 
@@ -207,7 +207,7 @@ npm install --prefix server cookie-parser dotenv express-rate-limit helmet
 
 Expected: `server/package.json` dependencies include `cookie-parser`, `dotenv`, `express-rate-limit`, and `helmet`.
 
-- [ ] **Step 2: Install backend type dependencies**
+- [x] **Step 2: Install backend type dependencies**
 
 Run:
 
@@ -217,7 +217,7 @@ npm install --prefix server -D @types/cookie-parser
 
 Expected: `server/package.json` devDependencies include `@types/cookie-parser`.
 
-- [ ] **Step 3: Replace backend scripts**
+- [x] **Step 3: Replace backend scripts**
 
 Update `server/package.json` scripts to this exact shape:
 
@@ -236,7 +236,7 @@ Update `server/package.json` scripts to this exact shape:
 
 Expected: `db:push` is no longer the primary database workflow.
 
-- [ ] **Step 4: Verify backend dependency install**
+- [x] **Step 4: Verify backend dependency install**
 
 Run:
 
@@ -246,7 +246,7 @@ npm --prefix server run build
 
 Expected at this step: build may fail because imports are not added yet, but dependency installation itself must complete. If build fails only because later tasks are not implemented, record the error and continue.
 
-- [ ] **Step 5: Commit backend dependency changes**
+- [x] **Step 5: Commit backend dependency changes**
 
 Run:
 
@@ -265,7 +265,7 @@ Expected: commit succeeds, or if not in git, note that commit was skipped.
 - Create: `server/.env.example`
 - Modify: `server/src/config/index.ts`
 
-- [ ] **Step 1: Create backend environment example**
+- [x] **Step 1: Create backend environment example**
 
 Create `server/.env.example` with:
 
@@ -280,7 +280,7 @@ COOKIE_SECURE=false
 
 Expected: no real production secret is committed.
 
-- [ ] **Step 2: Replace config implementation**
+- [x] **Step 2: Replace config implementation**
 
 Replace `server/src/config/index.ts` with:
 
@@ -334,7 +334,7 @@ export const config = {
 
 Expected: config no longer has fallback JWT secrets.
 
-- [ ] **Step 3: Verify missing env fails safely**
+- [x] **Step 3: Verify missing env fails safely**
 
 Temporarily run with an empty environment:
 
@@ -344,7 +344,7 @@ cd server && env -i PATH="$PATH" npm run build
 
 Expected: TypeScript build should not execute config and should compile. Runtime env validation is verified after app startup tasks.
 
-- [ ] **Step 4: Verify backend typecheck**
+- [x] **Step 4: Verify backend typecheck**
 
 Run:
 
@@ -354,7 +354,7 @@ npm --prefix server run build
 
 Expected: PASS after current task if later imports are not broken.
 
-- [ ] **Step 5: Commit configuration changes**
+- [x] **Step 5: Commit configuration changes**
 
 Run:
 
@@ -379,7 +379,7 @@ Expected: commit succeeds, or if not in git, note that commit was skipped.
 - Modify: `server/src/prisma/seed.ts`
 - Modify: `server/src/middlewares/auth.ts`
 
-- [ ] **Step 1: Create Prisma client module**
+- [x] **Step 1: Create Prisma client module**
 
 Create `server/src/lib/prisma.ts`:
 
@@ -391,7 +391,7 @@ export const prisma = new PrismaClient()
 
 Expected: all modules can import Prisma from infrastructure, not auth service.
 
-- [ ] **Step 2: Update auth service import**
+- [x] **Step 2: Update auth service import**
 
 In `server/src/modules/auth/service.ts`, remove:
 
@@ -413,7 +413,7 @@ import { prisma } from '../../lib/prisma.js'
 
 Expected: auth service still uses `prisma` variable.
 
-- [ ] **Step 3: Update all service imports**
+- [x] **Step 3: Update all service imports**
 
 For every backend file importing Prisma from auth service:
 
@@ -441,7 +441,7 @@ import { prisma } from '../lib/prisma.js'
 
 Expected: only `server/src/lib/prisma.ts` creates `new PrismaClient()`.
 
-- [ ] **Step 4: Remove unused Prisma import from auth middleware**
+- [x] **Step 4: Remove unused Prisma import from auth middleware**
 
 In `server/src/middlewares/auth.ts`, delete this line:
 
@@ -451,7 +451,7 @@ import { prisma } from '../modules/auth/service.js'
 
 Expected: auth middleware has no unused imports.
 
-- [ ] **Step 5: Verify single Prisma client construction**
+- [x] **Step 5: Verify single Prisma client construction**
 
 Run:
 
@@ -465,7 +465,7 @@ Expected output:
 server/src/lib/prisma.ts:3:export const prisma = new PrismaClient()
 ```
 
-- [ ] **Step 6: Build backend**
+- [x] **Step 6: Build backend**
 
 Run:
 
@@ -475,7 +475,7 @@ npm --prefix server run build
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit Prisma module extraction**
+- [x] **Step 7: Commit Prisma module extraction**
 
 Run:
 
@@ -498,7 +498,7 @@ Expected: commit succeeds, or if not in git, note that commit was skipped.
 - Modify: `server/prisma/schema.prisma`
 - Create: `server/prisma/migrations/**`
 
-- [ ] **Step 1: Update Prisma datasource provider**
+- [x] **Step 1: Update Prisma datasource provider**
 
 Change `server/prisma/schema.prisma` datasource to:
 
@@ -511,7 +511,7 @@ datasource db {
 
 Expected: Prisma uses PostgreSQL.
 
-- [ ] **Step 2: Ensure local PostgreSQL is running**
+- [x] **Step 2: Ensure local PostgreSQL is running**
 
 Run:
 
@@ -521,7 +521,7 @@ docker compose up -d postgres
 
 Expected: PostgreSQL container `monexus-db` is running.
 
-- [ ] **Step 3: Create local backend `.env` if missing**
+- [x] **Step 3: Create local backend `.env` if missing**
 
 If `server/.env` does not exist, create it from example and replace secrets:
 
@@ -536,7 +536,7 @@ COOKIE_SECURE=false
 
 Expected: `server/.env` exists locally and is not committed.
 
-- [ ] **Step 4: Generate Prisma migration**
+- [x] **Step 4: Generate Prisma migration**
 
 Run:
 
@@ -546,7 +546,7 @@ cd server && npx prisma migrate dev --name init_postgresql
 
 Expected: a new directory appears under `server/prisma/migrations/`, and Prisma Client is generated.
 
-- [ ] **Step 5: Verify migration status**
+- [x] **Step 5: Verify migration status**
 
 Run:
 
@@ -556,7 +556,7 @@ cd server && npx prisma migrate status
 
 Expected: database schema is up to date.
 
-- [ ] **Step 6: Run seed against PostgreSQL**
+- [x] **Step 6: Run seed against PostgreSQL**
 
 Run:
 
@@ -566,7 +566,7 @@ npm --prefix server run db:seed
 
 Expected: seed completes and logs seeded admin/test user information.
 
-- [ ] **Step 7: Commit PostgreSQL migration**
+- [x] **Step 7: Commit PostgreSQL migration**
 
 Run:
 
@@ -588,7 +588,7 @@ Expected: commit succeeds, or if not in git, note that commit was skipped.
 **Files:**
 - Create: `server/src/lib/httpError.ts`
 
-- [ ] **Step 1: Create HTTP error helper**
+- [x] **Step 1: Create HTTP error helper**
 
 Create `server/src/lib/httpError.ts`:
 
@@ -642,7 +642,7 @@ export function conflict(message: string) {
 
 Expected: business code can throw safe HTTP errors.
 
-- [ ] **Step 2: Build backend**
+- [x] **Step 2: Build backend**
 
 Run:
 
@@ -652,7 +652,7 @@ npm --prefix server run build
 
 Expected: PASS.
 
-- [ ] **Step 3: Commit HTTP error helper**
+- [x] **Step 3: Commit HTTP error helper**
 
 Run:
 
@@ -670,7 +670,7 @@ Expected: commit succeeds, or if not in git, note that commit was skipped.
 **Files:**
 - Modify: `server/src/middlewares/errorHandler.ts`
 
-- [ ] **Step 1: Replace error handler implementation**
+- [x] **Step 1: Replace error handler implementation**
 
 Replace `server/src/middlewares/errorHandler.ts` with:
 
@@ -717,7 +717,7 @@ export function errorHandler(err: Error, _req: Request, res: Response, _next: Ne
 
 Expected: raw `err.message` is no longer returned for unknown errors.
 
-- [ ] **Step 2: Build backend**
+- [x] **Step 2: Build backend**
 
 Run:
 
@@ -727,7 +727,7 @@ npm --prefix server run build
 
 Expected: PASS.
 
-- [ ] **Step 3: Commit safe error handler**
+- [x] **Step 3: Commit safe error handler**
 
 Run:
 
@@ -745,7 +745,7 @@ Expected: commit succeeds, or if not in git, note that commit was skipped.
 **Files:**
 - Modify: `server/src/middlewares/validate.ts`
 
-- [ ] **Step 1: Replace validation middleware**
+- [x] **Step 1: Replace validation middleware**
 
 Replace `server/src/middlewares/validate.ts` with:
 
@@ -814,7 +814,7 @@ export const idParamSchema = z.object({
 
 Expected: old `validate(schema)` calls still work for body validation.
 
-- [ ] **Step 2: Build backend**
+- [x] **Step 2: Build backend**
 
 Run:
 
@@ -824,7 +824,7 @@ npm --prefix server run build
 
 Expected: PASS.
 
-- [ ] **Step 3: Commit validation middleware**
+- [x] **Step 3: Commit validation middleware**
 
 Run:
 
@@ -844,7 +844,7 @@ Expected: commit succeeds, or if not in git, note that commit was skipped.
 - Modify: `server/src/modules/products/controller.ts`
 - Modify: `server/src/modules/products/service.ts` only if service currently throws raw missing-resource errors.
 
-- [ ] **Step 1: Update product routes**
+- [x] **Step 1: Update product routes**
 
 Modify `server/src/modules/products/routes.ts` so `/:id` routes use `idParamSchema`:
 
@@ -863,7 +863,7 @@ export { router as productRoutes }
 
 Expected: product detail receives numeric `req.params.id`.
 
-- [ ] **Step 2: Update product controller id parsing**
+- [x] **Step 2: Update product controller id parsing**
 
 In `server/src/modules/products/controller.ts`, replace product detail id parsing with:
 
@@ -873,7 +873,7 @@ const id = req.params.id as unknown as number
 
 Expected: no `parseInt(req.params.id)` remains in products controller.
 
-- [ ] **Step 3: Replace not-found throw if present**
+- [x] **Step 3: Replace not-found throw if present**
 
 If `server/src/modules/products/service.ts` throws `new Error('商品不存在')`, replace it with:
 
@@ -889,7 +889,7 @@ throw notFound('商品不存在')
 
 Expected: product not found returns safe 404 envelope.
 
-- [ ] **Step 4: Verify no product parseInt remains**
+- [x] **Step 4: Verify no product parseInt remains**
 
 Run:
 
@@ -899,7 +899,7 @@ grep -R "parseInt(req.params" -n server/src/modules/products || true
 
 Expected: no output.
 
-- [ ] **Step 5: Build backend**
+- [x] **Step 5: Build backend**
 
 Run:
 
@@ -909,7 +909,7 @@ npm --prefix server run build
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit product validation changes**
+- [x] **Step 6: Commit product validation changes**
 
 Run:
 
@@ -930,7 +930,7 @@ Expected: commit succeeds, or if not in git, note that commit was skipped.
 - Modify: `server/src/modules/admin/controller.ts`
 - Modify: `server/src/modules/admin/service.ts` only for safe HTTP errors.
 
-- [ ] **Step 1: Add admin query schema**
+- [x] **Step 1: Add admin query schema**
 
 Append to `server/src/modules/admin/schema.ts`:
 
@@ -942,7 +942,7 @@ export const listUsersQuerySchema = z.object({
 
 Expected: admin user search query is typed.
 
-- [ ] **Step 2: Update admin route validation**
+- [x] **Step 2: Update admin route validation**
 
 Update `server/src/modules/admin/routes.ts` imports:
 
@@ -967,7 +967,7 @@ router.post('/products/:id/inventory', validate({ params: idParamSchema, body: i
 
 Expected: admin routes do not rely on controller parsing for ids.
 
-- [ ] **Step 3: Update admin controller ids**
+- [x] **Step 3: Update admin controller ids**
 
 In `server/src/modules/admin/controller.ts`, replace every:
 
@@ -983,7 +983,7 @@ req.params.id as unknown as number
 
 Expected: no `parseInt(req.params.id)` remains in admin controller.
 
-- [ ] **Step 4: Replace raw conflict/not found errors if present**
+- [x] **Step 4: Replace raw conflict/not found errors if present**
 
 In `server/src/modules/admin/service.ts`, use these imports when matching messages exist:
 
@@ -1001,7 +1001,7 @@ throw badRequest('库存数据无效')
 
 Expected: known admin business errors return typed envelopes.
 
-- [ ] **Step 5: Verify no admin parseInt remains**
+- [x] **Step 5: Verify no admin parseInt remains**
 
 Run:
 
@@ -1011,7 +1011,7 @@ grep -R "parseInt(req.params" -n server/src/modules/admin || true
 
 Expected: no output.
 
-- [ ] **Step 6: Build backend**
+- [x] **Step 6: Build backend**
 
 Run:
 
@@ -1021,7 +1021,7 @@ npm --prefix server run build
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit admin validation changes**
+- [x] **Step 7: Commit admin validation changes**
 
 Run:
 
@@ -1044,7 +1044,7 @@ Expected: commit succeeds, or if not in git, note that commit was skipped.
 - Modify: `server/src/modules/points/routes.ts`
 - Modify: `server/src/modules/points/controller.ts`
 
-- [ ] **Step 1: Add order query schema**
+- [x] **Step 1: Add order query schema**
 
 Append to `server/src/modules/orders/schema.ts`:
 
@@ -1056,7 +1056,7 @@ export const listOrdersQuerySchema = z.object({
 
 Expected: order list query is typed if status filtering exists.
 
-- [ ] **Step 2: Update order route validation**
+- [x] **Step 2: Update order route validation**
 
 In `server/src/modules/orders/routes.ts`, import:
 
@@ -1075,7 +1075,7 @@ router.get('/:id', authenticate, validate({ params: idParamSchema }), controller
 
 Expected: order id params are validated before controller.
 
-- [ ] **Step 3: Update order controller ids**
+- [x] **Step 3: Update order controller ids**
 
 In `server/src/modules/orders/controller.ts`, replace `parseInt(req.params.id)` with:
 
@@ -1085,7 +1085,7 @@ req.params.id as unknown as number
 
 Expected: no `parseInt(req.params.id)` remains in orders controller.
 
-- [ ] **Step 4: Update points route validation if params exist**
+- [x] **Step 4: Update points route validation if params exist**
 
 If `server/src/modules/points/routes.ts` has routes containing `:id`, import `validate` and `idParamSchema`, then apply:
 
@@ -1095,7 +1095,7 @@ validate({ params: idParamSchema })
 
 Expected: points params are validated if points uses params.
 
-- [ ] **Step 5: Replace raw service errors with typed HTTP errors**
+- [x] **Step 5: Replace raw service errors with typed HTTP errors**
 
 In `server/src/modules/orders/service.ts`, import when needed:
 
@@ -1114,7 +1114,7 @@ throw badRequest('库存不足')
 
 Expected: expected order business failures return typed envelopes.
 
-- [ ] **Step 6: Verify no route param parseInt remains in modules**
+- [x] **Step 6: Verify no route param parseInt remains in modules**
 
 Run:
 
@@ -1124,7 +1124,7 @@ grep -R "parseInt(req.params" -n server/src/modules || true
 
 Expected: no output.
 
-- [ ] **Step 7: Build backend**
+- [x] **Step 7: Build backend**
 
 Run:
 
@@ -1134,7 +1134,7 @@ npm --prefix server run build
 
 Expected: PASS.
 
-- [ ] **Step 8: Commit order and points validation changes**
+- [x] **Step 8: Commit order and points validation changes**
 
 Run:
 
@@ -1156,7 +1156,7 @@ Expected: commit succeeds, or if not in git, note that commit was skipped.
 **Files:**
 - Modify: `server/src/app.ts`
 
-- [ ] **Step 1: Replace app middleware setup**
+- [x] **Step 1: Replace app middleware setup**
 
 Update `server/src/app.ts` imports:
 
@@ -1205,7 +1205,7 @@ app.use('/api', apiLimiter)
 
 Expected: all `/api` routes have security middleware and CORS credentials.
 
-- [ ] **Step 2: Build backend**
+- [x] **Step 2: Build backend**
 
 Run:
 
@@ -1215,7 +1215,7 @@ npm --prefix server run build
 
 Expected: PASS.
 
-- [ ] **Step 3: Commit app security middleware**
+- [x] **Step 3: Commit app security middleware**
 
 Run:
 
@@ -1233,7 +1233,7 @@ Expected: commit succeeds, or if not in git, note that commit was skipped.
 **Files:**
 - Modify: `server/src/modules/auth/routes.ts`
 
-- [ ] **Step 1: Add auth limiter to auth routes**
+- [x] **Step 1: Add auth limiter to auth routes**
 
 Update `server/src/modules/auth/routes.ts`:
 
@@ -1271,7 +1271,7 @@ export { router as authRoutes }
 
 Expected: refresh no longer validates request body; logout route exists.
 
-- [ ] **Step 2: Build backend**
+- [x] **Step 2: Build backend**
 
 Run:
 
@@ -1281,7 +1281,7 @@ npm --prefix server run build
 
 Expected at this step: may fail because `controller.logout` is not implemented until Task 15. If the only error is missing `logout`, continue.
 
-- [ ] **Step 3: Commit auth routes**
+- [x] **Step 3: Commit auth routes**
 
 Run:
 
@@ -1303,7 +1303,7 @@ Expected: commit succeeds, or if not in git, note that commit was skipped.
 **Files:**
 - Create: `server/src/lib/cookies.ts`
 
-- [ ] **Step 1: Create cookie helper**
+- [x] **Step 1: Create cookie helper**
 
 Create `server/src/lib/cookies.ts`:
 
@@ -1337,7 +1337,7 @@ export function clearRefreshTokenCookie(res: Response) {
 
 Expected: controllers can set and clear refresh cookie consistently.
 
-- [ ] **Step 2: Build backend**
+- [x] **Step 2: Build backend**
 
 Run:
 
@@ -1347,7 +1347,7 @@ npm --prefix server run build
 
 Expected: PASS if Task 13 missing logout is already addressed later; otherwise same known missing logout error may remain.
 
-- [ ] **Step 3: Commit cookie helper**
+- [x] **Step 3: Commit cookie helper**
 
 Run:
 
@@ -1366,7 +1366,7 @@ Expected: commit succeeds, or if not in git, note that commit was skipped.
 - Modify: `server/src/modules/auth/schema.ts`
 - Modify: `server/src/modules/auth/service.ts`
 
-- [ ] **Step 1: Remove refresh body schema export**
+- [x] **Step 1: Remove refresh body schema export**
 
 In `server/src/modules/auth/schema.ts`, remove:
 
@@ -1378,7 +1378,7 @@ export const refreshSchema = z.object({
 
 Expected: refresh endpoint does not accept body token.
 
-- [ ] **Step 2: Add typed auth result helpers**
+- [x] **Step 2: Add typed auth result helpers**
 
 In `server/src/modules/auth/service.ts`, ensure imports include:
 
@@ -1391,7 +1391,7 @@ Use `conflict('该邮箱已注册')` instead of `new Error('该邮箱已注册')
 
 Expected: known auth business errors use HTTP errors.
 
-- [ ] **Step 3: Ensure login/register return raw refresh token separately**
+- [x] **Step 3: Ensure login/register return raw refresh token separately**
 
 Update `registerUser` and `loginUser` return shape to include `refreshToken` for controller use, while controller will omit it from JSON:
 
@@ -1411,7 +1411,7 @@ return {
 
 Expected: service returns refresh token only to backend controller.
 
-- [ ] **Step 4: Replace refresh function signature**
+- [x] **Step 4: Replace refresh function signature**
 
 Implement or replace refresh function with:
 
@@ -1457,7 +1457,7 @@ export async function refreshAccessToken(rawRefreshToken: string | undefined, ip
 
 Expected: refresh rotates tokens and returns new raw token for Cookie only.
 
-- [ ] **Step 5: Add logout service function**
+- [x] **Step 5: Add logout service function**
 
 Add to `server/src/modules/auth/service.ts`:
 
@@ -1480,7 +1480,7 @@ export async function logout(rawRefreshToken: string | undefined) {
 
 Expected: logout is idempotent.
 
-- [ ] **Step 6: Build backend**
+- [x] **Step 6: Build backend**
 
 Run:
 
@@ -1490,7 +1490,7 @@ npm --prefix server run build
 
 Expected at this step: may fail because controller still expects old refresh API. Continue to Task 16 if that is the only error.
 
-- [ ] **Step 7: Commit auth service refresh changes**
+- [x] **Step 7: Commit auth service refresh changes**
 
 Run:
 
@@ -1508,7 +1508,7 @@ Expected: commit succeeds, or if not in git, note that commit was skipped.
 **Files:**
 - Modify: `server/src/modules/auth/controller.ts`
 
-- [ ] **Step 1: Add cookie helper imports**
+- [x] **Step 1: Add cookie helper imports**
 
 Add to `server/src/modules/auth/controller.ts`:
 
@@ -1518,7 +1518,7 @@ import { clearRefreshTokenCookie, refreshTokenCookieName, setRefreshTokenCookie 
 
 Expected: controller can manage refresh cookie.
 
-- [ ] **Step 2: Update register handler**
+- [x] **Step 2: Update register handler**
 
 In `register`, after service call:
 
@@ -1533,7 +1533,7 @@ res.status(201).json({ user: result.user, accessToken: result.accessToken })
 
 Expected: response body excludes refreshToken.
 
-- [ ] **Step 3: Update login handler**
+- [x] **Step 3: Update login handler**
 
 In `login`, after service call:
 
@@ -1548,7 +1548,7 @@ res.json({ user: result.user, accessToken: result.accessToken })
 
 Expected: response body excludes refreshToken.
 
-- [ ] **Step 4: Replace refresh handler**
+- [x] **Step 4: Replace refresh handler**
 
 Replace refresh handler body with:
 
@@ -1571,7 +1571,7 @@ export async function refresh(req: Request, res: Response, next: NextFunction) {
 
 Expected: refresh reads Cookie only and rotates Cookie.
 
-- [ ] **Step 5: Add logout handler**
+- [x] **Step 5: Add logout handler**
 
 Add:
 
@@ -1589,7 +1589,7 @@ export async function logout(req: Request, res: Response, next: NextFunction) {
 
 Expected: `/api/auth/logout` is implemented.
 
-- [ ] **Step 6: Build backend**
+- [x] **Step 6: Build backend**
 
 Run:
 
@@ -1599,7 +1599,7 @@ npm --prefix server run build
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit auth controller Cookie contract**
+- [x] **Step 7: Commit auth controller Cookie contract**
 
 Run:
 
@@ -1617,7 +1617,7 @@ Expected: commit succeeds, or if not in git, note that commit was skipped.
 **Files:**
 - Modify: `server/src/middlewares/auth.ts`
 
-- [ ] **Step 1: Replace direct 401/403 responses**
+- [x] **Step 1: Replace direct 401/403 responses**
 
 Replace `server/src/middlewares/auth.ts` with:
 
@@ -1668,7 +1668,7 @@ export function requireAdmin(req: Request, _res: Response, next: NextFunction) {
 
 Expected: auth errors use global error envelope.
 
-- [ ] **Step 2: Build backend**
+- [x] **Step 2: Build backend**
 
 Run:
 
@@ -1678,7 +1678,7 @@ npm --prefix server run build
 
 Expected: PASS.
 
-- [ ] **Step 3: Commit auth middleware errors**
+- [x] **Step 3: Commit auth middleware errors**
 
 Run:
 
@@ -1700,7 +1700,7 @@ Expected: commit succeeds, or if not in git, note that commit was skipped.
 **Files:**
 - No source modifications expected.
 
-- [ ] **Step 1: Start PostgreSQL**
+- [x] **Step 1: Start PostgreSQL**
 
 Run:
 
@@ -1710,7 +1710,7 @@ docker compose up -d postgres
 
 Expected: `monexus-db` is running.
 
-- [ ] **Step 2: Deploy migrations**
+- [x] **Step 2: Deploy migrations**
 
 Run:
 
@@ -1720,7 +1720,7 @@ cd server && npx prisma migrate deploy
 
 Expected: migrations applied successfully.
 
-- [ ] **Step 3: Seed database**
+- [x] **Step 3: Seed database**
 
 Run:
 
@@ -1730,7 +1730,7 @@ npm --prefix server run db:seed
 
 Expected: seed completes.
 
-- [ ] **Step 4: Build backend**
+- [x] **Step 4: Build backend**
 
 Run:
 
@@ -1740,7 +1740,7 @@ npm --prefix server run build
 
 Expected: PASS.
 
-- [ ] **Step 5: Start backend**
+- [x] **Step 5: Start backend**
 
 Run:
 
@@ -1750,7 +1750,7 @@ npm --prefix server run dev
 
 Expected: server logs `MoNexus API running at http://localhost:3000`.
 
-- [ ] **Step 6: Verify health endpoint**
+- [x] **Step 6: Verify health endpoint**
 
 In another terminal, run:
 
@@ -1760,7 +1760,7 @@ curl -i http://localhost:3000/api/health
 
 Expected: `HTTP/1.1 200 OK` and JSON contains `"status":"ok"`.
 
-- [ ] **Step 7: Verify login sets Cookie and omits refresh token body**
+- [x] **Step 7: Verify login sets Cookie and omits refresh token body**
 
 Run:
 
@@ -1780,7 +1780,7 @@ Set-Cookie: refreshToken=...
 
 Response JSON contains `accessToken` and `user`, and does not contain `refreshToken`.
 
-- [ ] **Step 8: Verify refresh uses Cookie only**
+- [x] **Step 8: Verify refresh uses Cookie only**
 
 Run:
 
@@ -1791,7 +1791,7 @@ curl -i -b /tmp/monexus-cookies.txt -c /tmp/monexus-cookies.txt \
 
 Expected: `HTTP/1.1 200 OK`, response JSON contains `accessToken`, and response updates `refreshToken` Cookie.
 
-- [ ] **Step 9: Verify logout clears Cookie**
+- [x] **Step 9: Verify logout clears Cookie**
 
 Run:
 
@@ -1802,7 +1802,7 @@ curl -i -b /tmp/monexus-cookies.txt -c /tmp/monexus-cookies.txt \
 
 Expected: `HTTP/1.1 200 OK`, response JSON is `{ "ok": true }`, and `Set-Cookie` clears `refreshToken`.
 
-- [ ] **Step 10: Verify validation envelope**
+- [x] **Step 10: Verify validation envelope**
 
 Run:
 
@@ -1812,7 +1812,7 @@ curl -i http://localhost:3000/api/products/not-a-number
 
 Expected: `HTTP/1.1 400 Bad Request` and response JSON has `error.code` equal to `VALIDATION_ERROR`.
 
-- [ ] **Step 11: Commit backend verification notes if any docs were updated**
+- [x] **Step 11: Commit backend verification notes if any docs were updated**
 
 If no files changed, do not commit. If implementation notes were added, run:
 

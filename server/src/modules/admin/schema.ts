@@ -34,3 +34,7 @@ export const updateProductSchema = z.object({
 export const importInventorySchema = z.object({
   items: z.array(z.string().min(1)).min(1, '至少提供一条库存'),
 })
+
+export const listUsersQuerySchema = z.object({
+  q: z.string().optional(),
+})
