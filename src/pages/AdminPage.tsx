@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { LayoutDashboard, UsersRound, Package, ShoppingCart, Activity, Users, ShoppingBag, Coins, PlusCircle, PackagePlus, X, Plus } from 'lucide-react'
 import api from '../api/client'
+import { getApiErrorMessage } from '../api/error'
 import { useAppStore } from '../stores/appStore'
 
 type AdminTab = 'dashboard' | 'users' | 'products' | 'orders' | 'logs'
@@ -57,7 +58,7 @@ export default function AdminPage() {
         setLogs(data)
       }
     } catch (err: any) {
-      showToast(err.response?.data?.error || '加载失败', 'error')
+      showToast(getApiErrorMessage(err, '加载失败'), 'error')
     }
   }
 
@@ -77,7 +78,7 @@ export default function AdminPage() {
       setShowAdjust(false)
       loadTabData('users')
     } catch (err: any) {
-      showToast(err.response?.data?.error || '操作失败', 'error')
+      showToast(getApiErrorMessage(err, '操作失败'), 'error')
     }
   }
 
@@ -94,7 +95,7 @@ export default function AdminPage() {
       setInventoryText('')
       loadTabData('products')
     } catch (err: any) {
-      showToast(err.response?.data?.error || '导入失败', 'error')
+      showToast(getApiErrorMessage(err, '导入失败'), 'error')
     }
   }
 

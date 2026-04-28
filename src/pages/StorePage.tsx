@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Search, SearchX, Coins, Flame } from 'lucide-react'
 import api from '../api/client'
+import { getApiErrorMessage } from '../api/error'
 import { useAppStore } from '../stores/appStore'
 import { useAuthStore } from '../stores/authStore'
 import ProductDetailModal from '../components/ProductDetailModal'
@@ -66,7 +67,7 @@ export default function StorePage() {
       fetchProducts()
       showToast('兑换成功！')
     } catch (err: any) {
-      showToast(err.response?.data?.error || '兑换失败', 'error')
+      showToast(getApiErrorMessage(err, '兑换失败'), 'error')
       setShowPurchase(false)
     }
   }
