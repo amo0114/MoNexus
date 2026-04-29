@@ -1,6 +1,6 @@
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuthStore } from '../stores/authStore'
-import { Moon, Sun, Coins, User, ShieldCheck } from 'lucide-react'
+import { Moon, Sun, Coins, User, ShieldCheck, Store } from 'lucide-react'
 import { useState, useEffect } from 'react'
 
 export default function Layout({ children }: { children: React.ReactNode }) {
@@ -18,8 +18,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
   // Refresh user data on mount
   useEffect(() => {
-    import('../api/client').then(({ default: api }) => {
-      api.get('/auth/me').then(({ data }) => {
+    import('../api/auth').then(({ getMe }) => {
+      getMe().then((data) => {
         useAuthStore.getState().setUser(data)
       })
     })
@@ -63,6 +63,16 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           </div>
 
           <div className="flex items-center gap-3 sm:gap-4">
+            {/* Merchant Portal */}
+            {user?.role === 'merchant' && user.merchant?.status === 'active' && (
+              <div
+                className="hidden md:flex items-center gap-1.5 px-3 py-2 bg-[var(--c-border-faint)] text-[var(--c-accent)] rounded-full cursor-pointer hover:bg-[var(--c-border-light)] transition-colors border border-[var(--c-border-light)]"
+                onClick={() => navigate('/merchant')}
+              >
+                <Store className="w-4 h-4" />
+                <span className="font-bold text-xs">商家后台</span>
+              </div>
+            )}
             {/* Admin Portal */}
             {user?.role === 'admin' && (
               <div

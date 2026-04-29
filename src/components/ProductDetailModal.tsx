@@ -1,4 +1,4 @@
-import { X, Coins, FileText, MessageSquare } from 'lucide-react'
+import { X, Coins, FileText, MessageSquare, Store } from 'lucide-react'
 
 interface Review {
   id: number
@@ -21,6 +21,7 @@ interface Product {
   stock: number
   sales: number
   reviews: Review[]
+  merchant?: { id: number; name: string } | null
 }
 
 export default function ProductDetailModal({
@@ -49,13 +50,22 @@ export default function ProductDetailModal({
           {/* Image */}
           <div className="w-full h-56 sm:h-64 bg-[var(--c-bg-image)] relative">
             <img src={product.imageUrl} className="w-full h-full object-cover" alt={product.name} />
-            <div className="absolute bottom-4 left-4">
+            <div className="absolute bottom-4 left-4 flex gap-2">
               <span
                 className="text-xs font-bold px-3 py-1.5 rounded-lg text-[var(--c-text-main)] shadow-sm flex items-center gap-1.5"
                 style={{ background: 'var(--c-glass-bg)', border: '1px solid var(--c-glass-border)', backdropFilter: 'blur(12px)' }}
               >
                 {product.type}
               </span>
+              {product.merchant && (
+                <span
+                  className="text-xs font-bold px-3 py-1.5 rounded-lg text-blue-500 shadow-sm flex items-center gap-1.5"
+                  style={{ background: 'var(--c-glass-bg)', border: '1px solid var(--c-glass-border)', backdropFilter: 'blur(12px)' }}
+                >
+                  <Store className="w-3 h-3" />
+                  {product.merchant.name}
+                </span>
+              )}
             </div>
           </div>
 

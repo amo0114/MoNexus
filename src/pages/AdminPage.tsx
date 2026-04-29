@@ -1,13 +1,25 @@
 import { useState, useEffect } from 'react'
-import { LayoutDashboard, UsersRound, Package, ShoppingCart, Activity, Users, ShoppingBag, Coins, PlusCircle, PackagePlus, X, Plus } from 'lucide-react'
+import { LayoutDashboard, UsersRound, Package, ShoppingCart, Activity, Users, ShoppingBag, Coins, PlusCircle, PackagePlus, X, Plus, Store, DollarSign } from 'lucide-react'
 import api from '../api/client'
 import { getApiErrorMessage } from '../api/error'
 import { useAppStore } from '../stores/appStore'
+import {
+  getAdminMerchants,
+  approveMerchant,
+  rejectMerchant,
+  suspendMerchant,
+  updateMerchantCommission,
+  getAdminSettlements,
+  batchSettle
+} from '../api/adminMerchant'
+import { Merchant, Settlement } from '../types/merchant'
 
-type AdminTab = 'dashboard' | 'users' | 'products' | 'orders' | 'logs'
+type AdminTab = 'dashboard' | 'users' | 'products' | 'orders' | 'logs' | 'merchants' | 'settlements'
 
 const NAV_ITEMS: { id: AdminTab; label: string; icon: any }[] = [
   { id: 'dashboard', label: '数据仪表盘', icon: LayoutDashboard },
+  { id: 'merchants', label: '商家管理', icon: Store },
+  { id: 'settlements', label: '结算管理', icon: DollarSign },
   { id: 'users', label: '用户管理', icon: UsersRound },
   { id: 'products', label: '商品与库存', icon: Package },
   { id: 'orders', label: '订单记录', icon: ShoppingCart },
@@ -22,6 +34,8 @@ export default function AdminPage() {
   const [products, setProducts] = useState<any[]>([])
   const [orders, setOrders] = useState<any[]>([])
   const [logs, setLogs] = useState<any[]>([])
+  const [merchants, setMerchants] = useState<Merchant[]>([])
+  const [settlements, setSettlements] = useState<Settlement[]>([])
 
   // Adjust points modal
   const [showAdjust, setShowAdjust] = useState(false)
@@ -34,6 +48,9 @@ export default function AdminPage() {
   const [showInventory, setShowInventory] = useState(false)
   const [inventoryProductId, setInventoryProductId] = useState(0)
   const [inventoryText, setInventoryText] = useState('')
+
+  // Settle multiselect
+  const [selectedSettlements, setSelectedSettlements] = useState<number[]>([])
 
   useEffect(() => {
     loadTabData(activeTab)
@@ -56,6 +73,13 @@ export default function AdminPage() {
       } else if (tab === 'logs') {
         const { data } = await api.get('/admin/logs')
         setLogs(data)
+      } else if (tab === 'merchants') {
+        const data = await getAdminMerchants()
+        setMerchants(data)
+      } else if (tab === 'settlements') {
+        const data = await getAdminSettlements()
+        setSettlements(data)
+        setSelectedSettlements([])
       }
     } catch (err: any) {
       showToast(getApiErrorMessage(err, '加载失败'), 'error')
@@ -96,6 +120,70 @@ export default function AdminPage() {
       loadTabData('products')
     } catch (err: any) {
       showToast(getApiErrorMessage(err, '导入失败'), 'error')
+    }
+  }
+
+  // Merchant actions
+  async function handleApproveMerchant(id: number) {
+    try {
+      await approveMerchant(id)
+      showToast('已通过审核')
+      loadTabData('merchants')
+    } catch (err: any) {
+      showToast(getApiErrorMessage(err, '操作失败'), 'error')
+    }
+  }
+
+  async function handleRejectMerchant(id: number) {
+    try {
+      await rejectMerchant(id, {})
+      showToast('已拒绝入驻')
+      loadTabData('merchants')
+    } catch (err: any) {
+      showToast(getApiErrorMessage(err, '操作失败'), 'error')
+    }
+  }
+
+  async function handleSuspendMerchant(id: number) {
+    try {
+      await suspendMerchant(id)
+      showToast('已停用商家')
+      loadTabData('merchants')
+    } catch (err: any) {
+      showToast(getApiErrorMessage(err, '操作失败'), 'error')
+    }
+  }
+
+  async function handleUpdateCommission(id: number) {
+    const rate = prompt('请输入新的抽成比例 (0 到 1 之间的小数):')
+    if (rate !== null) {
+      const r = parseFloat(rate)
+      if (isNaN(r) || r < 0 || r > 1) {
+        showToast('比例无效', 'error')
+        return
+      }
+      try {
+        await updateMerchantCommission(id, { commissionRate: r })
+        showToast('抽成更新成功')
+        loadTabData('merchants')
+      } catch (err: any) {
+        showToast(getApiErrorMessage(err, '操作失败'), 'error')
+      }
+    }
+  }
+
+  // Settlement actions
+  async function handleBatchSettle() {
+    if (selectedSettlements.length === 0) {
+      showToast('请选择待结算记录', 'error')
+      return
+    }
+    try {
+      const { settled } = await batchSettle({ settlementIds: selectedSettlements })
+      showToast(`成功结算 ${settled} 笔订单`)
+      loadTabData('settlements')
+    } catch (err: any) {
+      showToast(getApiErrorMessage(err, '批量结算失败'), 'error')
     }
   }
 
@@ -146,16 +234,149 @@ export default function AdminPage() {
                   <div className="text-2xl font-bold text-[var(--c-accent)]">{stats.totalPoints}</div>
                 </div>
               </div>
-              <div className="mt-8">
-                <h3 className="text-base font-bold mb-3 text-[var(--c-text-main)]">快捷操作</h3>
-                <div className="flex gap-3">
-                  <button onClick={() => setActiveTab('users')} className="bg-[var(--c-border-faint)] text-[var(--c-text-main)] px-5 py-2.5 rounded-2xl font-bold text-sm flex items-center gap-2 hover:bg-[var(--c-border-light)] transition-colors">
-                    <PlusCircle className="w-4 h-4" /> 手动调整积分
-                  </button>
-                  <button onClick={() => setActiveTab('products')} className="bg-[var(--c-border-faint)] text-[var(--c-text-main)] px-5 py-2.5 rounded-2xl font-bold text-sm flex items-center gap-2 hover:bg-[var(--c-border-light)] transition-colors">
-                    <PackagePlus className="w-4 h-4" /> 补充卡密库存
-                  </button>
-                </div>
+            </div>
+          )}
+
+          {/* Merchants */}
+          {activeTab === 'merchants' && (
+            <div className="space-y-4">
+              <h2 className="text-xl font-bold mb-4 text-[var(--c-text-main)]">商家管理</h2>
+              <div className="overflow-x-auto">
+                <table className="admin-table">
+                  <thead>
+                    <tr>
+                      <th>商家名称</th>
+                      <th>联系人</th>
+                      <th>抽成比例</th>
+                      <th>状态</th>
+                      <th className="text-right">操作</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {merchants.map((m) => (
+                      <tr key={m.id}>
+                        <td>
+                          <div className="font-bold text-[var(--c-text-main)]">{m.name}</div>
+                          <div className="text-xs text-[var(--c-text-sub)] mt-1">{m.description?.slice(0, 20)}</div>
+                        </td>
+                        <td className="text-sm">
+                          <div>{m.contactEmail || '-'}</div>
+                          <div className="text-xs text-[var(--c-text-sub)]">{m.contactPhone || '-'}</div>
+                        </td>
+                        <td className="text-[var(--c-accent)] font-bold">
+                          {(Number(m.commissionRate) * 100).toFixed(0)}%
+                        </td>
+                        <td>
+                          <span className={`px-2.5 py-1 text-[11px] rounded font-bold ${
+                            m.status === 'active' ? 'bg-green-500/10 text-[#4ADE80]' :
+                            m.status === 'pending' ? 'bg-orange-500/10 text-orange-400' :
+                            'bg-red-500/10 text-[#F87171]'
+                          }`}>
+                            {m.status === 'active' ? '营业中' : m.status === 'pending' ? '待审核' : m.status === 'suspended' ? '已停用' : '已拒绝'}
+                          </span>
+                        </td>
+                        <td className="text-right space-x-2">
+                          {m.status === 'pending' && (
+                            <>
+                              <button onClick={() => handleApproveMerchant(m.id)} className="text-green-500 hover:underline text-xs">通过</button>
+                              <button onClick={() => handleRejectMerchant(m.id)} className="text-red-500 hover:underline text-xs">拒绝</button>
+                            </>
+                          )}
+                          {m.status === 'active' && (
+                            <>
+                              <button onClick={() => handleUpdateCommission(m.id)} className="text-blue-500 hover:underline text-xs">改抽成</button>
+                              <button onClick={() => handleSuspendMerchant(m.id)} className="text-red-500 hover:underline text-xs">停用</button>
+                            </>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Settlements */}
+          {activeTab === 'settlements' && (
+            <div className="space-y-4">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-xl font-bold text-[var(--c-text-main)]">结算管理</h2>
+                <button
+                  onClick={handleBatchSettle}
+                  disabled={selectedSettlements.length === 0}
+                  className="bg-blue-500 text-white px-4 py-2 rounded-lg text-sm font-bold disabled:opacity-50"
+                >
+                  批量结算 ({selectedSettlements.length})
+                </button>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="admin-table">
+                  <thead>
+                    <tr>
+                      <th className="w-10">
+                        <input
+                          type="checkbox"
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedSettlements(settlements.filter(s => s.status === 'pending').map(s => s.id))
+                            } else {
+                              setSelectedSettlements([])
+                            }
+                          }}
+                          checked={settlements.length > 0 && selectedSettlements.length === settlements.filter(s => s.status === 'pending').length}
+                        />
+                      </th>
+                      <th>订单信息</th>
+                      <th>商家</th>
+                      <th>抽成/订单金额</th>
+                      <th>结算金额</th>
+                      <th>状态</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {settlements.map((s) => (
+                      <tr key={s.id}>
+                        <td>
+                          {s.status === 'pending' && (
+                            <input
+                              type="checkbox"
+                              checked={selectedSettlements.includes(s.id)}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setSelectedSettlements([...selectedSettlements, s.id])
+                                } else {
+                                  setSelectedSettlements(selectedSettlements.filter(id => id !== s.id))
+                                }
+                              }}
+                            />
+                          )}
+                        </td>
+                        <td>
+                          <div className="font-mono text-xs text-[var(--c-text-sub)]">ORD-{s.orderId}</div>
+                          <div className="text-[10px] text-[var(--c-text-muted)] mt-1">{new Date(s.createdAt).toLocaleString()}</div>
+                        </td>
+                        <td className="font-bold text-sm text-[var(--c-text-main)]">
+                          {s.merchant?.name || s.merchantId}
+                        </td>
+                        <td className="text-sm">
+                          <div>平台抽: <span className="text-[var(--c-text-sub)]">{s.commissionAmount}</span> ({(Number(s.commissionRate) * 100).toFixed(0)}%)</div>
+                          <div>单总额: <span className="text-[var(--c-text-main)]">{s.orderAmount}</span></div>
+                        </td>
+                        <td className="font-bold text-green-600 dark:text-green-400">
+                          {s.settlementAmount}
+                        </td>
+                        <td>
+                          <span className={`px-2 py-1 text-[11px] rounded font-bold ${
+                            s.status === 'settled' ? 'bg-green-500/10 text-[#4ADE80]' : 'bg-orange-500/10 text-orange-400'
+                          }`}>
+                            {s.status === 'settled' ? '已结算' : '待结算'}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </div>
           )}

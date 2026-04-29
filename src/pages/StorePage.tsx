@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Search, SearchX, Coins, Flame } from 'lucide-react'
+import { Search, SearchX, Coins, Flame, Store } from 'lucide-react'
 import api from '../api/client'
 import { getApiErrorMessage } from '../api/error'
 import { useAppStore } from '../stores/appStore'
@@ -20,6 +20,7 @@ interface Product {
   stock: number
   sales: number
   isHot: boolean
+  merchant?: { id: number; name: string } | null
 }
 
 const CATEGORIES = ['全部', '网络节点', '共享账号', '充值卡密', '邀请码']
@@ -34,6 +35,7 @@ export default function StorePage() {
   const [showPurchase, setShowPurchase] = useState(false)
   const [showSuccess, setShowSuccess] = useState(false)
   const [deliveryContent, setDeliveryContent] = useState('')
+  const [merchantName, setMerchantName] = useState('')
   const [loading, setLoading] = useState(true)
 
   const fetchProducts = useCallback(async () => {
@@ -61,6 +63,7 @@ export default function StorePage() {
       const { data } = await api.post('/orders', { productId })
       useAuthStore.getState().updatePoints(data.balanceAfter)
       setDeliveryContent(data.deliveryContent)
+      setMerchantName(data.merchantName || '')
       setShowPurchase(false)
       setShowDetail(false)
       setShowSuccess(true)
@@ -160,7 +163,7 @@ export default function StorePage() {
                   </div>
                 )}
 
-                <div className="absolute bottom-2.5 left-2.5 z-10">
+                <div className="absolute bottom-2.5 left-2.5 z-10 flex gap-2">
                   <span
                     className="text-[11px] font-bold px-2.5 py-1 rounded-lg text-[var(--c-text-main)] shadow-sm flex items-center gap-1.5"
                     style={{
@@ -171,6 +174,19 @@ export default function StorePage() {
                   >
                     {product.type}
                   </span>
+                  {product.merchant && (
+                    <span
+                      className="text-[11px] font-bold px-2.5 py-1 rounded-lg text-blue-500 shadow-sm flex items-center gap-1.5"
+                      style={{
+                        background: 'var(--c-glass-bg)',
+                        border: '1px solid var(--c-glass-border)',
+                        backdropFilter: 'blur(12px)',
+                      }}
+                    >
+                      <Store className="w-3 h-3" />
+                      {product.merchant.name}
+                    </span>
+                  )}
                 </div>
               </div>
 
@@ -227,6 +243,7 @@ export default function StorePage() {
       {showSuccess && (
         <SuccessModal
           deliveryContent={deliveryContent}
+          merchantName={merchantName}
           onClose={() => setShowSuccess(false)}
         />
       )}

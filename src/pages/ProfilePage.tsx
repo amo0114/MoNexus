@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Coins, Wallet, Users, CalendarCheck, LogOut, ArrowDownLeft, ArrowUpRight } from 'lucide-react'
+import { Coins, Wallet, Users, CalendarCheck, LogOut, ArrowDownLeft, ArrowUpRight, Store } from 'lucide-react'
 import { useAuthStore } from '../stores/authStore'
 import { useAppStore } from '../stores/appStore'
 import api from '../api/client'
@@ -117,6 +117,35 @@ export default function ProfilePage() {
         </div>
       </div>
 
+      {/* Merchant Entry Card */}
+      {user?.role === 'user' && user.merchant?.status !== 'active' && (
+        <div className="apple-card p-6 bg-[var(--c-bg-card)] flex flex-col sm:flex-row justify-between items-center gap-4">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 bg-blue-50 dark:bg-blue-900/20 text-blue-500 rounded-full flex items-center justify-center">
+              <Store className="w-6 h-6" />
+            </div>
+            <div>
+              <h4 className="font-bold text-[var(--c-text-main)] mb-1">成为商家</h4>
+              <p className="text-sm text-[var(--c-text-sub)]">
+                {user.merchant?.status === 'pending'
+                  ? '您的入驻申请正在审核中，请耐心等待。'
+                  : user.merchant?.status === 'rejected'
+                  ? '您的入驻申请被拒绝，可重新提交申请。'
+                  : user.merchant?.status === 'suspended'
+                  ? '您的商家账号已被停用，请联系平台。'
+                  : '入驻平台，上架您自己的商品获取收益。'}
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => navigate('/merchant/apply')}
+            className="btn-primary whitespace-nowrap"
+          >
+            {user.merchant?.status ? '查看状态' : '立即申请'}
+          </button>
+        </div>
+      )}
+
       {/* Orders / History tabs */}
       <div className="apple-card p-4 sm:p-6 bg-[var(--c-bg-card)]">
         <div className="flex gap-6 border-b border-[var(--c-border-light)] mb-5 pb-1 overflow-x-auto hide-scrollbar">
@@ -153,8 +182,13 @@ export default function ProfilePage() {
                         {new Date(order.createdAt).toLocaleString()}
                       </span>
                     </div>
-                    <h4 className="font-bold text-sm mb-2 text-[var(--c-text-main)]">
+                    <h4 className="font-bold text-sm mb-2 text-[var(--c-text-main)] flex items-center gap-2">
                       {order.product?.name}
+                      {order.merchant && (
+                        <span className="text-xs font-normal text-blue-500 bg-blue-50 dark:bg-blue-900/20 px-1.5 py-0.5 rounded border border-blue-200 dark:border-blue-900/30">
+                          {order.merchant.name}
+                        </span>
+                      )}
                     </h4>
                     <div className="bg-[var(--c-bg-card)] px-3 py-1.5 rounded-lg border border-[var(--c-border-faint)] text-xs font-mono text-[var(--c-text-main)] select-all inline-block shadow-sm whitespace-pre-wrap">
                       {order.delivery?.content || '---'}

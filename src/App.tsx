@@ -1,14 +1,31 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { useEffect } from 'react'
 import { useAuthStore } from './stores/authStore'
+import { getMe } from './api/auth'
 import Layout from './components/Layout'
 import Toast from './components/Toast'
 import LoginPage from './pages/LoginPage'
 import StorePage from './pages/StorePage'
 import ProfilePage from './pages/ProfilePage'
 import AdminPage from './pages/AdminPage'
+import MerchantApplyPage from './pages/MerchantApplyPage'
+import MerchantDashboardPage from './pages/MerchantDashboardPage'
+import RoleGuard from './components/RoleGuard'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const isLoggedIn = useAuthStore((s) => s.isLoggedIn)
+  const setUser = useAuthStore((s) => s.setUser)
+  const logout = useAuthStore((s) => s.logout)
+
+  useEffect(() => {
+    if (isLoggedIn) {
+      getMe().then(setUser).catch(() => {
+        // If getting me fails, we shouldn't necessarily log out immediately on every network error,
+        // but if it's 401, axios interceptor will handle the refresh and logout if refresh fails.
+      })
+    }
+  }, [isLoggedIn, setUser])
+
   return isLoggedIn ? <>{children}</> : <Navigate to="/login" />
 }
 
@@ -25,7 +42,23 @@ export default function App() {
                 <Routes>
                   <Route path="/" element={<StorePage />} />
                   <Route path="/profile" element={<ProfilePage />} />
-                  <Route path="/admin" element={<AdminPage />} />
+                  <Route 
+                    path="/admin" 
+                    element={
+                      <RoleGuard allowedRoles={['admin']}>
+                        <AdminPage />
+                      </RoleGuard>
+                    } 
+                  />
+                  <Route path="/merchant/apply" element={<MerchantApplyPage />} />
+                  <Route 
+                    path="/merchant/*" 
+                    element={
+                      <RoleGuard allowedRoles={['merchant']} requireActiveMerchant>
+                        <MerchantDashboardPage />
+                      </RoleGuard>
+                    } 
+                  />
                 </Routes>
               </Layout>
             </ProtectedRoute>
@@ -36,3 +69,4 @@ export default function App() {
     </BrowserRouter>
   )
 }
+
