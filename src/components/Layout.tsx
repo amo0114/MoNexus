@@ -1,6 +1,6 @@
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuthStore } from '../stores/authStore'
-import { Moon, Sun, Coins, User, ShieldCheck, Store } from 'lucide-react'
+import { Moon, Sun, Coins, User, ShieldCheck, Store, Clock, XCircle, AlertTriangle, Plus } from 'lucide-react'
 import { useState, useEffect } from 'react'
 
 export default function Layout({ children }: { children: React.ReactNode }) {
@@ -78,7 +78,45 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
           {/* Right Actions */}
           <div className="flex items-center gap-2 sm:gap-3">
-            {/* Merchant Portal */}
+            {/* Merchant Portal entry — depends on user.role × merchant.status */}
+            {user?.role === 'user' && !user.merchant && (
+              <div
+                className="hidden md:flex items-center gap-1.5 px-3 py-2 bg-[var(--c-border-faint)] text-[var(--c-accent)] rounded-full cursor-pointer hover:bg-[var(--c-border-light)] transition-colors border border-[var(--c-border-light)]"
+                onClick={() => navigate('/merchant/apply')}
+                title="申请成为商家"
+              >
+                <Plus className="w-4 h-4" />
+                <span className="font-bold text-xs">申请成为商家</span>
+              </div>
+            )}
+            {user?.role === 'user' && user.merchant?.status === 'pending' && (
+              <div
+                className="hidden md:flex items-center gap-1.5 px-3 py-2 bg-[var(--c-border-faint)] text-[var(--c-text-sub)] rounded-full border border-[var(--c-border-light)]"
+                title="商家申请审核中"
+              >
+                <Clock className="w-4 h-4" />
+                <span className="font-bold text-xs">商家申请审核中</span>
+              </div>
+            )}
+            {user?.role === 'user' && user.merchant?.status === 'rejected' && (
+              <div
+                className="hidden md:flex items-center gap-1.5 px-3 py-2 bg-[var(--c-border-faint)] text-[var(--c-text-sub)] rounded-full cursor-pointer hover:bg-[var(--c-border-light)] transition-colors border border-[var(--c-border-light)]"
+                onClick={() => navigate('/merchant/apply')}
+                title="申请被拒绝，可重新申请"
+              >
+                <XCircle className="w-4 h-4" />
+                <span className="font-bold text-xs">申请被拒，重试</span>
+              </div>
+            )}
+            {user?.role === 'user' && user.merchant?.status === 'suspended' && (
+              <div
+                className="hidden md:flex items-center gap-1.5 px-3 py-2 bg-[var(--c-border-faint)] text-[var(--c-text-sub)] rounded-full border border-[var(--c-border-light)]"
+                title="商家账号已被停用，请联系平台"
+              >
+                <AlertTriangle className="w-4 h-4" />
+                <span className="font-bold text-xs">账号已停用</span>
+              </div>
+            )}
             {user?.role === 'merchant' && user.merchant?.status === 'active' && (
               <div
                 className="hidden md:flex items-center gap-1.5 px-3 py-2 bg-[var(--c-border-faint)] text-[var(--c-accent)] rounded-full cursor-pointer hover:bg-[var(--c-border-light)] transition-colors border border-[var(--c-border-light)]"
