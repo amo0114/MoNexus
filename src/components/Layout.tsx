@@ -18,10 +18,14 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
   // Refresh user data on mount
   useEffect(() => {
-    import('../api/auth').then(({ getMe }) => {
-      getMe().then((data) => {
-        useAuthStore.getState().setUser(data)
-      })
+    import('../api/auth').then(({ fetchMeWithRoleHealing }) => {
+      fetchMeWithRoleHealing()
+        .then((data) => {
+          useAuthStore.getState().setUser(data)
+        })
+        .catch(() => {
+          // Soft-fail: axios interceptor handles 401; transient errors keep stale user.
+        })
     })
   }, [location.pathname])
 
