@@ -1,21 +1,14 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-
-interface User {
-  id: number
-  email: string
-  role: string
-  inviteCode: string
-  points: number
-}
+import { AuthUser } from '../types/merchant'
 
 interface AuthState {
-  user: User | null
+  user: AuthUser | null
   accessToken: string | null
   isLoggedIn: boolean
-  setUser: (user: User) => void
+  setUser: (user: AuthUser) => void
   setAccessToken: (access: string) => void
-  login: (user: User, access: string) => void
+  login: (user: AuthUser, access: string) => void
   logout: () => void
   updatePoints: (points: number) => void
 }
