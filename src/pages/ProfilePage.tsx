@@ -214,6 +214,11 @@ export default function ProfilePage() {
                     
                     <h4 className="font-bold text-sm mb-1 text-[var(--c-text-main)]">
                       {order.product?.name}
+                      {order.merchant && (
+                        <span className="text-xs font-normal text-blue-500 bg-blue-50 dark:bg-blue-900/20 px-1.5 py-0.5 rounded border border-blue-200 dark:border-blue-900/30">
+                          {order.merchant.name}
+                        </span>
+                      )}
                     </h4>
                     
                     <div className="flex items-center gap-2 mt-2">
