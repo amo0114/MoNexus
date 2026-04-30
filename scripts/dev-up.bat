@@ -72,14 +72,15 @@ if /I "%SEED%"=="true" (
 popd
 
 echo [INFO] Starting backend and frontend in new windows...
-start "MoNexus Backend" cmd /k "cd /d \"%BACKEND_DIR%\" && npm run dev"
-start "MoNexus Frontend" cmd /k "cd /d \"%FRONTEND_DIR%\" && npm run dev"
+start "MoNexus Backend" /D "%BACKEND_DIR%" cmd /k "npm run dev"
+start "MoNexus Frontend" /D "%FRONTEND_DIR%" cmd /k "npm run dev"
 
 echo.
 echo Backend:  http://localhost:3000
 echo Frontend: http://localhost:5173
 echo Admin:    admin@moyuan.net / admin123
 echo User:     test@moyuan.net / user123
+echo Merchant: merchant@moyuan.net / merchant123
 echo.
 echo Tip: use "scripts\dev-up.bat --seed" when you want to re-run seed.
 exit /b 0

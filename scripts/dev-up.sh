@@ -73,6 +73,7 @@ echo 'Backend:  http://localhost:3000'
 echo 'Frontend: http://localhost:5173'
 echo 'Admin:    admin@moyuan.net / admin123'
 echo 'User:     test@moyuan.net / user123'
+echo 'Merchant: merchant@moyuan.net / merchant123'
 echo
 echo 'Tip: use "bash scripts/dev-up.sh --seed" when you want to re-run seed.'
 
