@@ -1,10 +1,13 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Coins, Wallet, Users, CalendarCheck, LogOut, ArrowDownLeft, ArrowUpRight } from 'lucide-react'
+import { Coins, Wallet, Users, CalendarCheck, LogOut, ArrowDownLeft, ArrowUpRight, Store, Eye, Loader2 } from 'lucide-react'
 import { useAuthStore } from '../stores/authStore'
 import { useAppStore } from '../stores/appStore'
 import api from '../api/client'
 import { getApiErrorMessage } from '../api/error'
+import { getOrders, getOrderDetail } from '../api/orders'
+import { UserOrderListItem, UserOrderDetail } from '../types/order'
+import OrderDetailModal from '../components/OrderDetailModal'
 
 export default function ProfilePage() {
   const navigate = useNavigate()
@@ -13,13 +16,16 @@ export default function ProfilePage() {
   const showToast = useAppStore((s) => s.showToast)
 
   const [activeTab, setActiveTab] = useState<'orders' | 'history'>('orders')
-  const [orders, setOrders] = useState<any[]>([])
+  const [orders, setOrders] = useState<UserOrderListItem[]>([])
   const [history, setHistory] = useState<any[]>([])
   const [hasCheckedIn, setHasCheckedIn] = useState(false)
   const [checkingIn, setCheckingIn] = useState(false)
 
+  const [selectedOrder, setSelectedOrder] = useState<UserOrderDetail | null>(null)
+  const [loadingOrderId, setLoadingOrderId] = useState<number | null>(null)
+
   useEffect(() => {
-    api.get('/orders').then(({ data }) => setOrders(data))
+    getOrders().then(setOrders).catch(() => {})
     api.get('/points/history').then(({ data }) => setHistory(data))
     api.get('/points/checkin/status').then(({ data }) => setHasCheckedIn(data.hasCheckedIn))
   }, [])
@@ -55,6 +61,18 @@ export default function ProfilePage() {
     showToast('邀请码已复制，快去发给好友吧')
   }
 
+  async function openOrderDetail(orderId: number) {
+    setLoadingOrderId(orderId)
+    try {
+      const detail = await getOrderDetail(orderId)
+      setSelectedOrder(detail)
+    } catch (err) {
+      showToast(getApiErrorMessage(err, '获取订单详情失败'), 'error')
+    } finally {
+      setLoadingOrderId(null)
+    }
+  }
+
   return (
     <div className="fade-in space-y-8 max-w-5xl mx-auto pt-2" style={{ animationDelay: '0.1s' }}>
       {/* Top cards */}
@@ -77,8 +95,8 @@ export default function ProfilePage() {
                 disabled={hasCheckedIn || checkingIn}
                 className={`px-6 py-3 rounded-xl font-bold flex items-center gap-2 shadow-sm text-sm transition-colors ${
                   hasCheckedIn
-                    ? 'bg-white/30 text-white cursor-not-allowed'
-                    : 'bg-white text-[#D4A373] hover:bg-[#FCFBF8]'
+                    ? 'bg-black/20 text-white/90 cursor-not-allowed'
+                    : 'bg-white text-[#5C4D43] hover:bg-gray-50'
                 }`}
               >
                 <CalendarCheck className="w-4 h-4" />
@@ -86,7 +104,7 @@ export default function ProfilePage() {
               </button>
               <button
                 onClick={() => setActiveTab('history')}
-                className="bg-white/20 text-white border border-white/30 px-6 py-3 rounded-xl font-medium hover:bg-white/30 transition-colors flex items-center gap-2 text-sm"
+                className="bg-black/10 hover:bg-black/20 text-white border border-white/30 px-6 py-3 rounded-xl font-medium transition-colors flex items-center gap-2 text-sm"
               >
                 查流水明细
               </button>
@@ -117,6 +135,35 @@ export default function ProfilePage() {
         </div>
       </div>
 
+      {/* Merchant Entry Card */}
+      {user?.role === 'user' && user.merchant?.status !== 'active' && (
+        <div className="apple-card p-6 bg-[var(--c-bg-card)] flex flex-col sm:flex-row justify-between items-center gap-4">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 bg-blue-50 dark:bg-blue-900/20 text-blue-500 rounded-full flex items-center justify-center">
+              <Store className="w-6 h-6" />
+            </div>
+            <div>
+              <h4 className="font-bold text-[var(--c-text-main)] mb-1">成为商家</h4>
+              <p className="text-sm text-[var(--c-text-sub)]">
+                {user.merchant?.status === 'pending'
+                  ? '您的入驻申请正在审核中，请耐心等待。'
+                  : user.merchant?.status === 'rejected'
+                  ? '您的入驻申请被拒绝，可重新提交申请。'
+                  : user.merchant?.status === 'suspended'
+                  ? '您的商家账号已被停用，请联系平台。'
+                  : '入驻平台，上架您自己的商品获取收益。'}
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => navigate('/merchant/apply')}
+            className="btn-primary whitespace-nowrap"
+          >
+            {user.merchant?.status ? '查看状态' : '立即申请'}
+          </button>
+        </div>
+      )}
+
       {/* Orders / History tabs */}
       <div className="apple-card p-4 sm:p-6 bg-[var(--c-bg-card)]">
         <div className="flex gap-6 border-b border-[var(--c-border-light)] mb-5 pb-1 overflow-x-auto hide-scrollbar">
@@ -142,26 +189,60 @@ export default function ProfilePage() {
             </div>
           ) : (
             <div className="space-y-3">
-              {orders.map((order: any) => (
-                <div key={order.id} className="bg-[var(--c-bg-app)] rounded-xl p-4 border border-[var(--c-border-light)] flex flex-col sm:flex-row justify-between gap-3 shadow-sm hover:shadow-md transition-shadow">
-                  <div>
-                    <div className="flex items-center gap-2 mb-1.5">
-                      <span className="px-1.5 py-0.5 bg-green-500/10 text-[#4ADE80] border border-[#4ADE80]/20 text-[10px] font-bold rounded">
-                        发货成功
-                      </span>
-                      <span className="text-[11px] text-[var(--c-text-sub)]">
-                        {new Date(order.createdAt).toLocaleString()}
-                      </span>
+              {orders.map((order) => (
+                <div key={order.id} className="bg-[var(--c-bg-app)] rounded-xl p-4 border border-[var(--c-border-light)] flex flex-col sm:flex-row justify-between gap-4 shadow-sm hover:shadow-md transition-shadow">
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        {order.delivery?.status === 'delivered' ? (
+                          <span className="px-1.5 py-0.5 bg-green-500/10 text-[#4ADE80] border border-[#4ADE80]/20 text-[10px] font-bold rounded">
+                            发货成功
+                          </span>
+                        ) : (
+                          <span className="px-1.5 py-0.5 bg-orange-500/10 text-orange-400 border border-orange-400/20 text-[10px] font-bold rounded">
+                            待发货
+                          </span>
+                        )}
+                        <span className="text-[11px] text-[var(--c-text-sub)]">
+                          {new Date(order.createdAt).toLocaleString()}
+                        </span>
+                      </div>
+                      <div className="flex items-center text-[var(--c-accent)] font-bold whitespace-nowrap text-sm sm:hidden">
+                        -<Coins className="w-3.5 h-3.5 mx-0.5 inline" />{order.price}
+                      </div>
                     </div>
-                    <h4 className="font-bold text-sm mb-2 text-[var(--c-text-main)]">
+                    
+                    <h4 className="font-bold text-sm mb-1 text-[var(--c-text-main)]">
                       {order.product?.name}
                     </h4>
-                    <div className="bg-[var(--c-bg-card)] px-3 py-1.5 rounded-lg border border-[var(--c-border-faint)] text-xs font-mono text-[var(--c-text-main)] select-all inline-block shadow-sm whitespace-pre-wrap">
-                      {order.delivery?.content || '---'}
+                    
+                    <div className="flex items-center gap-2 mt-2">
+                      <span className="text-[10px] bg-[var(--c-bg-card)] px-1.5 py-0.5 rounded border border-[var(--c-border-faint)] text-[var(--c-text-sub)] font-medium">
+                        {order.product?.type}
+                      </span>
+                      <span className="text-[10px] font-medium text-blue-500 bg-blue-50 dark:bg-blue-900/20 px-1.5 py-0.5 rounded border border-blue-200 dark:border-blue-900/30 inline-flex items-center gap-1">
+                        <Store className="w-3 h-3" />
+                        {order.merchant?.name || '平台自营'}
+                      </span>
                     </div>
                   </div>
-                  <div className="flex items-start sm:items-center text-[var(--c-accent)] font-bold whitespace-nowrap text-sm">
-                    -<Coins className="w-3.5 h-3.5 mx-0.5 inline" />{order.price}
+
+                  <div className="flex items-center justify-between sm:flex-col sm:items-end sm:justify-center gap-2 sm:gap-4 shrink-0 sm:border-l sm:border-[var(--c-border-light)] sm:pl-4 pt-3 sm:pt-0 border-t border-[var(--c-border-light)] sm:border-t-0">
+                    <div className="hidden sm:flex items-center text-[var(--c-accent)] font-bold whitespace-nowrap text-sm">
+                      -<Coins className="w-3.5 h-3.5 mx-0.5 inline" />{order.price}
+                    </div>
+                    <button
+                      onClick={() => openOrderDetail(order.id)}
+                      disabled={loadingOrderId === order.id}
+                      className="btn-primary py-2 px-4 text-xs flex items-center gap-1.5 whitespace-nowrap shadow-none w-full sm:w-auto justify-center"
+                    >
+                      {loadingOrderId === order.id ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Eye className="w-3.5 h-3.5" />
+                      )}
+                      查看发货内容
+                    </button>
                   </div>
                 </div>
               ))}
@@ -204,6 +285,14 @@ export default function ProfilePage() {
           <LogOut className="w-4 h-4" /> 退出当前账号
         </button>
       </div>
+
+      {/* Order Detail Modal */}
+      {selectedOrder && (
+        <OrderDetailModal
+          order={selectedOrder}
+          onClose={() => setSelectedOrder(null)}
+        />
+      )}
     </div>
   )
 }
