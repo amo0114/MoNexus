@@ -1,10 +1,16 @@
 .ace-tool/
-
+.claude/
+.codex
+.geminiignore
 .worktrees/
+worktrees
+
 node_modules/
 server/node_modules/
 dist/
 server/dist/
 .env
 server/.env
+server/.env.test
 tsconfig.tsbuildinfo
+*.log
