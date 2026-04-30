@@ -17,11 +17,12 @@ function hashRefreshToken(refreshToken: string) {
   return crypto.createHash('sha256').update(refreshToken).digest('hex')
 }
 
-function buildAuthUser(user: { id: number; email: string; role: string; inviteCode: string }, points = 0) {
+function buildAuthUser(user: { id: number; email: string; role: string; inviteCode: string; status: string }, points = 0) {
   return {
     id: user.id,
     email: user.email,
     role: user.role,
+    status: user.status,
     inviteCode: user.inviteCode,
     points,
   }
@@ -130,18 +131,31 @@ export async function loginUser(email: string, password: string, ip?: string, us
 export async function refreshAccessToken(rawRefreshToken: string, ip?: string, userAgent?: string) {
   const tokenHash = hashRefreshToken(rawRefreshToken)
 
+  // Look up token regardless of revoked status for reuse detection
   const storedToken = await prisma.refreshToken.findFirst({
-    where: { tokenHash, revoked: false },
+    where: { tokenHash },
     include: { user: true },
   })
 
   if (!storedToken) throw unauthenticated('Refresh Token 无效')
+
+  // Reuse detection: if token is already revoked, an attacker may have stolen it.
+  // Revoke the entire token family for this user to force re-login.
+  if (storedToken.revoked) {
+    await prisma.refreshToken.updateMany({
+      where: { userId: storedToken.userId, revoked: false },
+      data: { revoked: true },
+    })
+    throw unauthenticated('Refresh Token 已被使用，请重新登录')
+  }
+
   if (storedToken.expiresAt < new Date()) {
     await prisma.refreshToken.update({ where: { id: storedToken.id }, data: { revoked: true } })
     throw unauthenticated('Refresh Token 已过期')
   }
   if (storedToken.user.status === '已封禁') throw badRequest('账号已被封禁')
 
+  // Rotate: revoke the old token, issue a new one
   await prisma.refreshToken.update({ where: { id: storedToken.id }, data: { revoked: true } })
   const refreshToken = await createStoredRefreshToken(storedToken.userId, ip, userAgent)
   const accessToken = generateAccessToken(storedToken.userId, storedToken.user.role)
@@ -160,7 +174,7 @@ export async function revokeRefreshToken(rawRefreshToken: string) {
 export async function getUserProfile(userId: number) {
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    include: { pointAccount: true },
+    include: { pointAccount: true, merchant: true },
   })
   if (!user) throw notFound('用户不存在')
 
@@ -172,5 +186,13 @@ export async function getUserProfile(userId: number) {
     inviteCode: user.inviteCode,
     points: user.pointAccount?.balance ?? 0,
     createdAt: user.createdAt,
+    merchant: user.merchant
+      ? {
+          id: user.merchant.id,
+          name: user.merchant.name,
+          status: user.merchant.status,
+          commissionRate: user.merchant.commissionRate.toString(),
+        }
+      : null,
   }
 }

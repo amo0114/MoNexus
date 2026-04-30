@@ -2,21 +2,40 @@ import { Prisma } from '@prisma/client'
 import { prisma } from '../../lib/prisma.js'
 import { badRequest, notFound } from '../../lib/httpError.js'
 
+function getShanghaiDayRange() {
+  const now = new Date()
+  const shanghai = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Shanghai' }))
+  const start = new Date(shanghai.getFullYear(), shanghai.getMonth(), shanghai.getDate())
+  const end = new Date(start.getTime() + 24 * 60 * 60 * 1000)
+  return { gte: start, lt: end }
+}
+
 export async function getStats() {
-  const [userCount, orderCount, totalPoints] = await Promise.all([
-    prisma.user.count(),
-    prisma.order.count(),
-    prisma.pointAccount.aggregate({ _sum: { balance: true } }),
-  ])
+  const todayRange = getShanghaiDayRange()
+
+  const [userCount, orderCount, totalPoints, todayOrders, todayCheckins, productCount, availableInventory] =
+    await Promise.all([
+      prisma.user.count(),
+      prisma.order.count(),
+      prisma.pointAccount.aggregate({ _sum: { balance: true } }),
+      prisma.order.count({ where: { createdAt: todayRange } }),
+      prisma.checkinRecord.count({ where: { createdAt: todayRange } }),
+      prisma.product.count({ where: { status: 'active' } }),
+      prisma.inventoryItem.count({ where: { status: 'available' } }),
+    ])
 
   return {
     users: userCount,
     orders: orderCount,
     totalPoints: totalPoints._sum.balance ?? 0,
+    todayOrders,
+    todayCheckins,
+    productCount,
+    availableInventory,
   }
 }
 
-export async function listUsers(query?: string) {
+export async function listUsers(query?: string, page = 1, pageSize = 20) {
   const where: Prisma.UserWhereInput = {}
   if (query) {
     where.email = { contains: query, mode: 'insensitive' }
@@ -24,8 +43,18 @@ export async function listUsers(query?: string) {
 
   return prisma.user.findMany({
     where,
-    include: { pointAccount: { select: { balance: true } } },
+    select: {
+      id: true,
+      email: true,
+      role: true,
+      status: true,
+      inviteCode: true,
+      createdAt: true,
+      pointAccount: { select: { balance: true } },
+    },
     orderBy: { createdAt: 'desc' },
+    skip: (page - 1) * pageSize,
+    take: pageSize,
   })
 }
 
@@ -114,15 +143,17 @@ export async function importInventory(productId: number, items: string[], adminU
   })
 }
 
-export async function listAllOrders() {
+export async function listAllOrders(page = 1, pageSize = 20) {
   return prisma.order.findMany({
     include: {
       user: { select: { id: true, email: true } },
+      merchant: { select: { id: true, name: true } },
       product: { select: { name: true } },
       delivery: { select: { content: true } },
     },
     orderBy: { createdAt: 'desc' },
-    take: 100,
+    skip: (page - 1) * pageSize,
+    take: pageSize,
   })
 }
 
@@ -133,6 +164,211 @@ export async function listLogs() {
     },
     orderBy: { createdAt: 'desc' },
     take: 100,
+  })
+}
+
+export async function getOrderDetail(orderId: number) {
+  const order = await prisma.order.findUnique({
+    where: { id: orderId },
+    include: {
+      user: { select: { id: true, email: true } },
+      merchant: { select: { id: true, name: true } },
+      product: {
+        select: { id: true, name: true, icon: true, type: true, price: true },
+      },
+      delivery: { select: { content: true, status: true } },
+    },
+  })
+  if (!order) throw notFound('订单不存在')
+  return order
+}
+
+// ---- Merchant Management ----
+
+export async function listMerchants(status?: string, q?: string, page = 1, pageSize = 20) {
+  const where: Prisma.MerchantWhereInput = {}
+  if (status) where.status = status
+  if (q) where.name = { contains: q, mode: 'insensitive' }
+
+  return prisma.merchant.findMany({
+    where,
+    include: { user: { select: { id: true, email: true } } },
+    orderBy: { createdAt: 'desc' },
+    skip: (page - 1) * pageSize,
+    take: pageSize,
+  })
+}
+
+export async function getMerchantDetail(id: number) {
+  const merchant = await prisma.merchant.findUnique({
+    where: { id },
+    include: {
+      user: { select: { id: true, email: true } },
+      products: { select: { id: true, name: true, status: true } },
+      _count: { select: { orders: true } },
+    },
+  })
+  if (!merchant) throw notFound('商家不存在')
+  return merchant
+}
+
+export async function approveMerchant(adminUserId: number, merchantId: number) {
+  return prisma.$transaction(async tx => {
+    const merchant = await tx.merchant.findUnique({ where: { id: merchantId } })
+    if (!merchant) throw notFound('商家不存在')
+    if (merchant.status !== 'pending') throw badRequest('只能审核待审核的商家')
+
+    const updated = await tx.merchant.update({
+      where: { id: merchantId },
+      data: { status: 'active', approvedAt: new Date(), approvedBy: adminUserId },
+    })
+
+    await tx.user.update({
+      where: { id: merchant.userId },
+      data: { role: 'merchant' },
+    })
+
+    await tx.adminLog.create({
+      data: {
+        adminUserId,
+        action: '审核通过商家',
+        targetType: 'merchant',
+        targetId: merchantId,
+        detail: `商家 ${merchant.name} 审核通过`,
+      },
+    })
+
+    return updated
+  })
+}
+
+export async function rejectMerchant(adminUserId: number, merchantId: number, reason?: string) {
+  const merchant = await prisma.merchant.findUnique({ where: { id: merchantId } })
+  if (!merchant) throw notFound('商家不存在')
+  if (merchant.status !== 'pending') throw badRequest('只能审核待审核的商家')
+
+  const updated = await prisma.merchant.update({
+    where: { id: merchantId },
+    data: { status: 'rejected' },
+  })
+
+  await prisma.adminLog.create({
+    data: {
+      adminUserId,
+      action: '拒绝商家入驻',
+      targetType: 'merchant',
+      targetId: merchantId,
+      detail: reason ? `拒绝原因: ${reason}` : undefined,
+    },
+  })
+
+  return updated
+}
+
+export async function suspendMerchant(adminUserId: number, merchantId: number) {
+  const merchant = await prisma.merchant.findUnique({ where: { id: merchantId } })
+  if (!merchant) throw notFound('商家不存在')
+  if (merchant.status !== 'active') throw badRequest('只能停用已激活的商家')
+
+  return prisma.$transaction(async tx => {
+    const updated = await tx.merchant.update({
+      where: { id: merchantId },
+      data: { status: 'suspended' },
+    })
+
+    await tx.user.update({
+      where: { id: merchant.userId },
+      data: { role: 'user' },
+    })
+
+    await tx.adminLog.create({
+      data: {
+        adminUserId,
+        action: '停用商家',
+        targetType: 'merchant',
+        targetId: merchantId,
+        detail: `商家 ${merchant.name} 已停用`,
+      },
+    })
+
+    return updated
+  })
+}
+
+export async function updateCommission(adminUserId: number, merchantId: number, commissionRate: number) {
+  const merchant = await prisma.merchant.findUnique({ where: { id: merchantId } })
+  if (!merchant) throw notFound('商家不存在')
+
+  const updated = await prisma.merchant.update({
+    where: { id: merchantId },
+    data: { commissionRate },
+  })
+
+  await prisma.adminLog.create({
+    data: {
+      adminUserId,
+      action: '调整抽成比例',
+      targetType: 'merchant',
+      targetId: merchantId,
+      detail: `抽成比例调整为 ${commissionRate}`,
+    },
+  })
+
+  return updated
+}
+
+// ---- Settlements ----
+
+export async function listAllSettlements(status?: string, page = 1, pageSize = 20) {
+  const where: Prisma.SettlementWhereInput = {}
+  if (status) where.status = status
+
+  return prisma.settlement.findMany({
+    where,
+    include: {
+      merchant: { select: { id: true, name: true } },
+      order: { select: { id: true, price: true, createdAt: true } },
+    },
+    orderBy: { createdAt: 'desc' },
+    skip: (page - 1) * pageSize,
+    take: pageSize,
+  })
+}
+
+export async function batchSettle(adminUserId: number, settlementIds: number[]) {
+  return prisma.$transaction(async tx => {
+    const settlements = await tx.settlement.findMany({
+      where: { id: { in: settlementIds } },
+      select: { id: true, status: true },
+    })
+
+    if (
+      settlements.length !== settlementIds.length ||
+      settlements.some(settlement => settlement.status !== 'pending')
+    ) {
+      throw badRequest('存在不可结算的记录')
+    }
+
+    const now = new Date()
+    const result = await tx.settlement.updateMany({
+      where: { id: { in: settlementIds }, status: 'pending' },
+      data: { status: 'settled', settledAt: now },
+    })
+
+    if (result.count !== settlementIds.length) {
+      throw badRequest('存在不可结算的记录')
+    }
+
+    await tx.adminLog.create({
+      data: {
+        adminUserId,
+        action: '批量结算',
+        targetType: 'settlement',
+        detail: `结算 ${result.count} 笔`,
+      },
+    })
+
+    return { settled: result.count }
   })
 }
 

@@ -9,7 +9,7 @@ async function main() {
   const adminPassword = await bcrypt.hash('admin123', 10)
   const admin = await prisma.user.upsert({
     where: { email: 'admin@moyuan.net' },
-    update: {},
+    update: { password: adminPassword, role: 'admin' },
     create: {
       email: 'admin@moyuan.net',
       password: adminPassword,
@@ -19,7 +19,7 @@ async function main() {
   })
   await prisma.pointAccount.upsert({
     where: { userId: admin.id },
-    update: {},
+    update: { balance: 99999 },
     create: { userId: admin.id, balance: 99999 },
   })
 
@@ -27,7 +27,7 @@ async function main() {
   const userPassword = await bcrypt.hash('user123', 10)
   const testUser = await prisma.user.upsert({
     where: { email: 'test@moyuan.net' },
-    update: {},
+    update: { password: userPassword, role: 'user' },
     create: {
       email: 'test@moyuan.net',
       password: userPassword,
@@ -37,8 +37,50 @@ async function main() {
   })
   await prisma.pointAccount.upsert({
     where: { userId: testUser.id },
-    update: {},
+    update: { balance: 5000 },
     create: { userId: testUser.id, balance: 5000 },
+  })
+
+  // 创建示例商家
+  const merchantPassword = await bcrypt.hash('merchant123', 10)
+  const merchantUser = await prisma.user.upsert({
+    where: { email: 'merchant@moyuan.net' },
+    update: { password: merchantPassword, role: 'merchant', status: '正常' },
+    create: {
+      email: 'merchant@moyuan.net',
+      password: merchantPassword,
+      role: 'merchant',
+      inviteCode: 'MERCHANT-MOYUAN',
+    },
+  })
+  await prisma.pointAccount.upsert({
+    where: { userId: merchantUser.id },
+    update: { balance: 5000 },
+    create: { userId: merchantUser.id, balance: 5000 },
+  })
+  const merchant = await prisma.merchant.upsert({
+    where: { userId: merchantUser.id },
+    update: {
+      name: '墨缘精选商家',
+      description: '平台认证示例商家，提供可直接联调的自营商品。',
+      status: 'active',
+      commissionRate: '0.1000',
+      contactEmail: 'merchant@moyuan.net',
+      contactPhone: '13800000000',
+      approvedAt: new Date(),
+      approvedBy: admin.id,
+    },
+    create: {
+      userId: merchantUser.id,
+      name: '墨缘精选商家',
+      description: '平台认证示例商家，提供可直接联调的自营商品。',
+      status: 'active',
+      commissionRate: '0.1000',
+      contactEmail: 'merchant@moyuan.net',
+      contactPhone: '13800000000',
+      approvedAt: new Date(),
+      approvedBy: admin.id,
+    },
   })
 
   // 创建商品
@@ -133,6 +175,63 @@ async function main() {
     }
   }
 
+  const merchantInventoryItems = [
+    '商家专线订阅链接: https://merchant.moyuan.net/sub/demo-001',
+    '商家专线订阅链接: https://merchant.moyuan.net/sub/demo-002',
+    '商家专线订阅链接: https://merchant.moyuan.net/sub/demo-003',
+  ]
+  const existingMerchantProduct = await prisma.product.findFirst({
+    where: { merchantId: merchant.id, name: '商家自营高速节点包' },
+  })
+  const merchantProduct = existingMerchantProduct
+    ? await prisma.product.update({
+        where: { id: existingMerchantProduct.id },
+        data: {
+          description: '示例商家的自营商品，可用于商家端订单与结算联调。',
+          richDescription: '<p>由示例商家提供的高速节点订阅包，用于本地联调商家订单与结算流程。</p>',
+          type: '网络节点',
+          icon: 'wifi',
+          imageUrl: 'https://images.unsplash.com/photo-1558494949-ef010cbdcc31?auto=format&fit=crop&q=80&w=800',
+          price: 600,
+          originalPrice: 800,
+          isHot: true,
+          status: 'active',
+          merchantId: merchant.id,
+        },
+      })
+    : await prisma.product.create({
+        data: {
+          name: '商家自营高速节点包',
+          description: '示例商家的自营商品，可用于商家端订单与结算联调。',
+          richDescription: '<p>由示例商家提供的高速节点订阅包，用于本地联调商家订单与结算流程。</p>',
+          type: '网络节点',
+          icon: 'wifi',
+          imageUrl: 'https://images.unsplash.com/photo-1558494949-ef010cbdcc31?auto=format&fit=crop&q=80&w=800',
+          price: 600,
+          originalPrice: 800,
+          stock: merchantInventoryItems.length,
+          sales: 0,
+          isHot: true,
+          status: 'active',
+          merchantId: merchant.id,
+        },
+      })
+
+  const existingMerchantInventory = await prisma.inventoryItem.count({ where: { productId: merchantProduct.id } })
+  if (existingMerchantInventory === 0) {
+    await prisma.inventoryItem.createMany({
+      data: merchantInventoryItems.map(content => ({
+        productId: merchantProduct.id,
+        content,
+        status: 'available',
+      })),
+    })
+    await prisma.product.update({
+      where: { id: merchantProduct.id },
+      data: { stock: merchantInventoryItems.length },
+    })
+  }
+
   // 创建评价
   const reviewData = [
     { productId: 1, userName: '匿名用户', rating: 5, comment: '性价比很高，下载能跑到 50M/s，非常给力！' },
@@ -155,13 +254,15 @@ async function main() {
       data: [
         { userId: admin.id, type: 'in', amount: 99999, balanceAfter: 99999, reason: '管理员初始积分' },
         { userId: testUser.id, type: 'in', amount: 5000, balanceAfter: 5000, reason: '新用户注册奖励' },
+        { userId: merchantUser.id, type: 'in', amount: 5000, balanceAfter: 5000, reason: '示例商家初始积分' },
       ],
     })
   }
 
   console.log('✅ Seed completed!')
-  console.log('  Admin: admin@moyuan.net / admin123')
-  console.log('  User:  test@moyuan.net / user123')
+  console.log('  Admin:    admin@moyuan.net / admin123')
+  console.log('  User:     test@moyuan.net / user123')
+  console.log('  Merchant: merchant@moyuan.net / merchant123')
 }
 
 main()

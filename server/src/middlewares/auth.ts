@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express'
 import jwt from 'jsonwebtoken'
 import { config } from '../config/index.js'
 import { forbidden, unauthenticated } from '../lib/httpError.js'
+import { prisma } from '../lib/prisma.js'
 
 export interface AuthPayload {
   userId: number
@@ -39,4 +40,27 @@ export function requireAdmin(req: Request, _res: Response, next: NextFunction) {
     return
   }
   next()
+}
+
+export async function requireMerchant(req: Request, _res: Response, next: NextFunction) {
+  if (!req.user || req.user.role !== 'merchant') {
+    next(forbidden('需要商家权限'))
+    return
+  }
+
+  try {
+    const merchant = await prisma.merchant.findUnique({
+      where: { userId: req.user.userId },
+      select: { status: true },
+    })
+
+    if (!merchant || merchant.status !== 'active') {
+      next(forbidden('需要已激活商家权限'))
+      return
+    }
+
+    next()
+  } catch (err) {
+    next(err)
+  }
 }

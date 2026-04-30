@@ -12,7 +12,7 @@ model User {
   id         Int      @id @default(autoincrement())
   email      String   @unique
   password   String
-  role       String   @default("user") // user | admin
+  role       String   @default("user") // user | admin | merchant
   status     String   @default("正常")
   inviteCode String   @unique @default(uuid())
   createdAt  DateTime @default(now())
@@ -24,7 +24,30 @@ model User {
   refreshTokens RefreshToken[]
   invitedBy     InviteRelation[] @relation("invitee")
   invites       InviteRelation[] @relation("inviter")
-  adminLogs     AdminLog[]
+  adminLogs         AdminLog[]
+  approvedMerchants Merchant[]     @relation("MerchantApprovedBy")
+  merchant          Merchant?
+}
+
+model Merchant {
+  id             Int       @id @default(autoincrement())
+  userId         Int       @unique
+  name           String
+  description    String?
+  status         String    @default("pending") // pending | active | suspended | rejected
+  commissionRate Decimal   @default(0.10) @db.Decimal(5, 4)
+  contactEmail   String?
+  contactPhone   String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  approvedAt     DateTime?
+  approvedBy     Int?
+
+  user          User          @relation(fields: [userId], references: [id])
+  approvedByUser User?        @relation("MerchantApprovedBy", fields: [approvedBy], references: [id])
+  products      Product[]
+  orders        Order[]
+  settlements   Settlement[]
 }
 
 model RefreshToken {
@@ -55,9 +78,11 @@ model PointLog {
   amount       Int
   balanceAfter Int
   reason       String?
+  orderId      Int?
   createdAt    DateTime @default(now())
 
-  user User @relation(fields: [userId], references: [id])
+  user  User  @relation(fields: [userId], references: [id])
+  order Order? @relation(fields: [orderId], references: [id])
 }
 
 model Product {
@@ -70,12 +95,14 @@ model Product {
   imageUrl        String?
   price           Int
   originalPrice   Int?
-  stock           Int      @default(0) // 缓存字段，真实库存以 InventoryItem 为准
+  stock           Int      @default(0)
   sales           Int      @default(0)
   isHot           Boolean  @default(false)
   status          String   @default("active") // active | inactive
+  merchantId      Int?
   createdAt       DateTime @default(now())
 
+  merchant  Merchant?        @relation(fields: [merchantId], references: [id])
   reviews   Review[]
   orders    Order[]
   inventory InventoryItem[]
@@ -95,9 +122,9 @@ model Review {
 model InventoryItem {
   id           Int       @id @default(autoincrement())
   productId    Int
-  content      String // 卡密 / 账号 / 订阅链接
+  content      String
   status       String    @default("available") // available | sold | void
-  orderId      Int?      @unique // 唯一约束防重复绑定
+  orderId      Int?      @unique
   soldToUserId Int?
   soldAt       DateTime?
   createdAt    DateTime  @default(now())
@@ -106,16 +133,22 @@ model InventoryItem {
 }
 
 model Order {
-  id        Int      @id @default(autoincrement())
-  userId    Int
-  productId Int
-  price     Int
-  status    String   @default("completed")
-  createdAt DateTime @default(now())
+  id               Int       @id @default(autoincrement())
+  userId           Int
+  productId        Int
+  price            Int
+  status           String    @default("completed")
+  merchantId       Int?
+  commissionRate   Decimal?  @db.Decimal(5, 4)
+  commissionAmount Int       @default(0)
+  createdAt        DateTime  @default(now())
 
-  user     User            @relation(fields: [userId], references: [id])
-  product  Product         @relation(fields: [productId], references: [id])
-  delivery DeliveryRecord?
+  user       User             @relation(fields: [userId], references: [id])
+  product    Product          @relation(fields: [productId], references: [id])
+  merchant   Merchant?        @relation(fields: [merchantId], references: [id])
+  delivery   DeliveryRecord?
+  settlement Settlement?
+  pointLogs  PointLog[]
 }
 
 model DeliveryRecord {
@@ -128,6 +161,22 @@ model DeliveryRecord {
   createdAt DateTime @default(now())
 
   order Order @relation(fields: [orderId], references: [id])
+}
+
+model Settlement {
+  id               Int       @id @default(autoincrement())
+  merchantId       Int
+  orderId          Int       @unique
+  orderAmount      Int
+  commissionRate   Decimal   @db.Decimal(5, 4)
+  commissionAmount Int
+  settlementAmount Int
+  status           String    @default("pending") // pending | settled
+  settledAt        DateTime?
+  createdAt        DateTime  @default(now())
+
+  merchant Merchant @relation(fields: [merchantId], references: [id])
+  order    Order    @relation(fields: [orderId], references: [id])
 }
 
 model CheckinRecord {
@@ -144,7 +193,7 @@ model CheckinRecord {
 model InviteRelation {
   id        Int      @id @default(autoincrement())
   inviterId Int
-  inviteeId Int      @unique // 一个用户只能被邀请一次
+  inviteeId Int      @unique
   createdAt DateTime @default(now())
 
   inviter User @relation("inviter", fields: [inviterId], references: [id])

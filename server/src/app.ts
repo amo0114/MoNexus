@@ -10,6 +10,7 @@ import { productRoutes } from './modules/products/routes.js'
 import { pointRoutes } from './modules/points/routes.js'
 import { orderRoutes } from './modules/orders/routes.js'
 import { adminRoutes } from './modules/admin/routes.js'
+import { merchantRoutes } from './modules/merchant/routes.js'
 
 const app = express()
 
@@ -40,6 +41,7 @@ app.use('/api/products', productRoutes)
 app.use('/api/points', pointRoutes)
 app.use('/api/orders', orderRoutes)
 app.use('/api/admin', adminRoutes)
+app.use('/api/merchant', merchantRoutes)
 
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', time: new Date().toISOString() })

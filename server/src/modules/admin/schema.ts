@@ -37,4 +37,31 @@ export const importInventorySchema = z.object({
 
 export const listUsersQuerySchema = z.object({
   q: z.string().optional(),
+  page: z.coerce.number().int().positive().default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+})
+
+export const listMerchantsQuerySchema = z.object({
+  status: z.enum(['pending', 'active', 'suspended', 'rejected']).optional(),
+  q: z.string().optional(),
+  page: z.coerce.number().int().positive().default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+})
+
+export const reviewMerchantSchema = z.object({
+  reason: z.string().optional(),
+})
+
+export const updateCommissionSchema = z.object({
+  commissionRate: z.number().min(0).max(1),
+})
+
+export const listSettlementsQuerySchema = z.object({
+  status: z.enum(['pending', 'settled']).optional(),
+  page: z.coerce.number().int().positive().default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+})
+
+export const batchSettleSchema = z.object({
+  settlementIds: z.array(z.number().int().positive()).min(1, '至少选择一条结算记录'),
 })
