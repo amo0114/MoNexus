@@ -1,7 +1,12 @@
 import { Router } from 'express'
 import { authenticate, requireAdmin } from '../../middlewares/auth.js'
-import { validate } from '../../middlewares/validate.js'
-import { adjustPointsSchema, createProductSchema, updateProductSchema, importInventorySchema } from './schema.js'
+import { validate, idParamSchema } from '../../middlewares/validate.js'
+import {
+  adjustPointsSchema, createProductSchema, updateProductSchema,
+  importInventorySchema, listUsersQuerySchema,
+  listMerchantsQuerySchema, reviewMerchantSchema, updateCommissionSchema,
+  listSettlementsQuerySchema, batchSettleSchema,
+} from './schema.js'
 import * as controller from './controller.js'
 
 const router = Router()
@@ -9,13 +14,26 @@ const router = Router()
 router.use(authenticate, requireAdmin)
 
 router.get('/stats', controller.stats)
-router.get('/users', controller.users)
-router.post('/users/:id/adjust', validate(adjustPointsSchema), controller.adjustPoints)
+router.get('/users', validate({ query: listUsersQuerySchema }), controller.users)
+router.post('/users/:id/adjust', validate({ params: idParamSchema, body: adjustPointsSchema }), controller.adjustPoints)
 router.get('/products', controller.products)
 router.post('/products', validate(createProductSchema), controller.createProduct)
-router.put('/products/:id', validate(updateProductSchema), controller.updateProduct)
-router.post('/products/:id/inventory', validate(importInventorySchema), controller.importInventory)
+router.put('/products/:id', validate({ params: idParamSchema, body: updateProductSchema }), controller.updateProduct)
+router.post('/products/:id/inventory', validate({ params: idParamSchema, body: importInventorySchema }), controller.importInventory)
 router.get('/orders', controller.orders)
+router.get('/orders/:id', validate({ params: idParamSchema }), controller.orderDetail)
 router.get('/logs', controller.logs)
+
+// Merchant management
+router.get('/merchants', validate({ query: listMerchantsQuerySchema }), controller.listMerchants)
+router.get('/merchants/:id', validate({ params: idParamSchema }), controller.merchantDetail)
+router.put('/merchants/:id/approve', validate({ params: idParamSchema }), controller.approveMerchant)
+router.put('/merchants/:id/reject', validate({ params: idParamSchema, body: reviewMerchantSchema }), controller.rejectMerchant)
+router.put('/merchants/:id/suspend', validate({ params: idParamSchema }), controller.suspendMerchant)
+router.put('/merchants/:id/commission', validate({ params: idParamSchema, body: updateCommissionSchema }), controller.updateCommission)
+
+// Settlements
+router.get('/settlements', validate({ query: listSettlementsQuerySchema }), controller.listSettlements)
+router.post('/settlements/batch-settle', validate(batchSettleSchema), controller.batchSettle)
 
 export { router as adminRoutes }

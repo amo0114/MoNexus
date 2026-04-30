@@ -35,11 +35,10 @@ export default function ProductDetailModal({
 }) {
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-6">
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px]" onClick={onClose} />
+      <div className="absolute inset-0 bg-black/15 backdrop-blur-sm" onClick={onClose} />
 
       <div className="relative w-full max-w-2xl max-h-[90vh] h-[90vh] sm:h-auto bg-[var(--c-bg-app)] shadow-2xl rounded-t-3xl sm:rounded-3xl flex flex-col overflow-hidden border border-[var(--c-border-light)] z-10 fade-in">
         <div className="flex-grow overflow-y-auto hide-scrollbar pb-24 relative">
-          {/* Close button */}
           <button
             onClick={onClose}
             className="absolute top-4 right-4 z-20 w-9 h-9 glass rounded-full flex items-center justify-center text-[var(--c-text-main)] hover:bg-[var(--c-bg-card)] transition-colors shadow-sm"
@@ -47,7 +46,6 @@ export default function ProductDetailModal({
             <X className="w-4 h-4" />
           </button>
 
-          {/* Image */}
           <div className="w-full h-56 sm:h-64 bg-[var(--c-bg-image)] relative">
             <img src={product.imageUrl} className="w-full h-full object-cover" alt={product.name} />
             <div className="absolute bottom-4 left-4 flex gap-2">
@@ -57,15 +55,13 @@ export default function ProductDetailModal({
               >
                 {product.type}
               </span>
-              {product.merchant && (
-                <span
-                  className="text-xs font-bold px-3 py-1.5 rounded-lg text-blue-500 shadow-sm flex items-center gap-1.5"
-                  style={{ background: 'var(--c-glass-bg)', border: '1px solid var(--c-glass-border)', backdropFilter: 'blur(12px)' }}
-                >
-                  <Store className="w-3 h-3" />
-                  {product.merchant.name}
-                </span>
-              )}
+              <span
+                className="text-xs font-bold px-3 py-1.5 rounded-lg text-blue-500 shadow-sm flex items-center gap-1.5"
+                style={{ background: 'var(--c-glass-bg)', border: '1px solid var(--c-glass-border)', backdropFilter: 'blur(12px)' }}
+              >
+                <Store className="w-3 h-3" />
+                {product.merchant?.name || '平台自营'}
+              </span>
             </div>
           </div>
 
@@ -74,7 +70,6 @@ export default function ProductDetailModal({
               {product.name}
             </h2>
 
-            {/* Price card */}
             <div className="bg-[var(--c-bg-card)] rounded-2xl p-5 mb-6 flex justify-between items-center border border-[var(--c-border-light)] shadow-sm">
               <div className="flex flex-col">
                 <span className="text-xs text-[var(--c-text-sub)] font-medium mb-1">兑换需要</span>
@@ -100,7 +95,6 @@ export default function ProductDetailModal({
               </div>
             </div>
 
-            {/* Description */}
             <div className="mb-8">
               <h3 className="text-base font-bold mb-3 flex items-center gap-2 text-[var(--c-text-main)]">
                 <FileText className="w-4 h-4 text-[var(--c-accent)]" /> 图文介绍
@@ -111,7 +105,6 @@ export default function ProductDetailModal({
               />
             </div>
 
-            {/* Reviews */}
             <div>
               <h3 className="text-base font-bold mb-3 flex items-center gap-2 text-[var(--c-text-main)]">
                 <MessageSquare className="w-4 h-4 text-[var(--c-accent)]" /> 买家评价
@@ -142,7 +135,6 @@ export default function ProductDetailModal({
           </div>
         </div>
 
-        {/* Bottom bar */}
         <div className="absolute bottom-0 left-0 w-full glass-bottom p-4 flex items-center justify-between z-20">
           <div className="flex flex-col ml-2">
             <span className="text-xs text-[var(--c-text-sub)] font-medium">合计扣除</span>

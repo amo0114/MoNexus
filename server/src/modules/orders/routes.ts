@@ -1,13 +1,14 @@
 import { Router } from 'express'
 import { authenticate } from '../../middlewares/auth.js'
-import { validate } from '../../middlewares/validate.js'
-import { createOrderSchema } from './schema.js'
+import { validate, idParamSchema } from '../../middlewares/validate.js'
+import { createOrderSchema, listOrdersQuerySchema } from './schema.js'
 import * as controller from './controller.js'
 
 const router = Router()
 
 router.use(authenticate)
 router.post('/', validate(createOrderSchema), controller.create)
-router.get('/', controller.list)
+router.get('/', validate({ query: listOrdersQuerySchema }), controller.list)
+router.get('/:id', validate({ params: idParamSchema }), controller.detail)
 
 export { router as orderRoutes }

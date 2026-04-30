@@ -12,8 +12,25 @@ export async function create(req: Request, res: Response, next: NextFunction) {
 
 export async function list(req: Request, res: Response, next: NextFunction) {
   try {
-    const orders = await orderService.getUserOrders(req.user!.userId)
+    const { page, pageSize } = req.query as Record<string, string>
+    const orders = await orderService.getUserOrders(
+      req.user!.userId,
+      Number(page) || 1,
+      Number(pageSize) || 20
+    )
     res.json(orders)
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function detail(req: Request, res: Response, next: NextFunction) {
+  try {
+    const order = await orderService.getOrderDetail(
+      req.params.id as unknown as number,
+      req.user!.userId,
+    )
+    res.json(order)
   } catch (err) {
     next(err)
   }

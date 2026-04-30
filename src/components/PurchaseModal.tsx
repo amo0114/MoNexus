@@ -10,8 +10,8 @@ export default function PurchaseModal({
   onConfirm: () => void
 }) {
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
+    <div className="fixed inset-0 z-[110] flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/15 backdrop-blur-sm" onClick={onClose} />
       <div className="apple-card w-full max-w-sm p-8 mx-4 relative z-10 fade-in">
         <h3 className="text-xl font-bold mb-2 text-[var(--c-text-main)]">确认兑换</h3>
         <p className="text-[var(--c-text-sub)] mb-6 text-sm">您即将消耗积分兑换以下商品：</p>

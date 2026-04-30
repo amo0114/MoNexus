@@ -1,12 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Search, SearchX, Coins, Flame, Store } from 'lucide-react'
 import api from '../api/client'
-import { getApiErrorMessage } from '../api/error'
 import { useAppStore } from '../stores/appStore'
-import { useAuthStore } from '../stores/authStore'
-import ProductDetailModal from '../components/ProductDetailModal'
-import PurchaseModal from '../components/PurchaseModal'
-import SuccessModal from '../components/SuccessModal'
 
 interface Product {
   id: number
@@ -27,15 +23,11 @@ const CATEGORIES = ['全部', '网络节点', '共享账号', '充值卡密', '�
 
 export default function StorePage() {
   const showToast = useAppStore((s) => s.showToast)
+  const navigate = useNavigate()
+  
   const [products, setProducts] = useState<Product[]>([])
   const [category, setCategory] = useState('全部')
   const [searchQuery, setSearchQuery] = useState('')
-  const [selectedProduct, setSelectedProduct] = useState<any>(null)
-  const [showDetail, setShowDetail] = useState(false)
-  const [showPurchase, setShowPurchase] = useState(false)
-  const [showSuccess, setShowSuccess] = useState(false)
-  const [deliveryContent, setDeliveryContent] = useState('')
-  const [merchantName, setMerchantName] = useState('')
   const [loading, setLoading] = useState(true)
 
   const fetchProducts = useCallback(async () => {
@@ -58,29 +50,8 @@ export default function StorePage() {
     return () => clearTimeout(timer)
   }, [fetchProducts])
 
-  async function handlePurchase(productId: number) {
-    try {
-      const { data } = await api.post('/orders', { productId })
-      useAuthStore.getState().updatePoints(data.balanceAfter)
-      setDeliveryContent(data.deliveryContent)
-      setMerchantName(data.merchantName || '')
-      setShowPurchase(false)
-      setShowDetail(false)
-      setShowSuccess(true)
-      fetchProducts()
-      showToast('兑换成功！')
-    } catch (err: any) {
-      showToast(getApiErrorMessage(err, '兑换失败'), 'error')
-      setShowPurchase(false)
-    }
-  }
-
   function openDetail(product: Product) {
-    // Load full detail
-    api.get(`/products/${product.id}`).then(({ data }) => {
-      setSelectedProduct(data)
-      setShowDetail(true)
-    })
+    navigate(`/product/${product.id}`)
   }
 
   return (
@@ -174,19 +145,17 @@ export default function StorePage() {
                   >
                     {product.type}
                   </span>
-                  {product.merchant && (
-                    <span
-                      className="text-[11px] font-bold px-2.5 py-1 rounded-lg text-blue-500 shadow-sm flex items-center gap-1.5"
-                      style={{
-                        background: 'var(--c-glass-bg)',
-                        border: '1px solid var(--c-glass-border)',
-                        backdropFilter: 'blur(12px)',
-                      }}
-                    >
-                      <Store className="w-3 h-3" />
-                      {product.merchant.name}
-                    </span>
-                  )}
+                  <span
+                    className="text-[11px] font-bold px-2.5 py-1 rounded-lg text-blue-500 shadow-sm flex items-center gap-1.5"
+                    style={{
+                      background: 'var(--c-glass-bg)',
+                      border: '1px solid var(--c-glass-border)',
+                      backdropFilter: 'blur(12px)',
+                    }}
+                  >
+                    <Store className="w-3 h-3" />
+                    {product.merchant?.name || '平台自营'}
+                  </span>
                 </div>
               </div>
 
@@ -219,33 +188,6 @@ export default function StorePage() {
             </div>
           ))}
         </div>
-      )}
-
-      {/* Modals */}
-      {showDetail && selectedProduct && (
-        <ProductDetailModal
-          product={selectedProduct}
-          onClose={() => setShowDetail(false)}
-          onBuy={() => {
-            setShowPurchase(true)
-          }}
-        />
-      )}
-
-      {showPurchase && selectedProduct && (
-        <PurchaseModal
-          product={selectedProduct}
-          onClose={() => setShowPurchase(false)}
-          onConfirm={() => handlePurchase(selectedProduct.id)}
-        />
-      )}
-
-      {showSuccess && (
-        <SuccessModal
-          deliveryContent={deliveryContent}
-          merchantName={merchantName}
-          onClose={() => setShowSuccess(false)}
-        />
       )}
     </div>
   )

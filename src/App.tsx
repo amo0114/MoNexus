@@ -6,6 +6,7 @@ import Layout from './components/Layout'
 import Toast from './components/Toast'
 import LoginPage from './pages/LoginPage'
 import StorePage from './pages/StorePage'
+import ProductDetailPage from './pages/ProductDetailPage'
 import ProfilePage from './pages/ProfilePage'
 import AdminPage from './pages/AdminPage'
 import MerchantApplyPage from './pages/MerchantApplyPage'
@@ -41,6 +42,7 @@ export default function App() {
               <Layout>
                 <Routes>
                   <Route path="/" element={<StorePage />} />
+                  <Route path="/product/:id" element={<ProductDetailPage />} />
                   <Route path="/profile" element={<ProfilePage />} />
                   <Route 
                     path="/admin" 

@@ -43,8 +43,13 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="fixed inset-0 bg-[var(--c-bg-app)] bg-grid-pattern z-[60] flex items-center justify-center fade-in">
-      <form onSubmit={handleSubmit} className="apple-card w-full max-w-md p-10 text-center mx-4 relative overflow-hidden shadow-xl">
+    <div className="fixed inset-0 bg-[var(--c-bg-app)] z-[60] flex items-center justify-center fade-in overflow-hidden">
+      {/* Decorative background blobs */}
+      <div className="absolute top-[-20%] left-[-10%] w-[600px] h-[600px] rounded-full bg-[var(--c-accent)]/15 blur-[120px] pointer-events-none" />
+      <div className="absolute bottom-[-10%] right-[-5%] w-[500px] h-[500px] rounded-full bg-[var(--c-accent)]/10 blur-[100px] pointer-events-none" />
+      <div className="absolute inset-0 bg-grid-pattern opacity-50 pointer-events-none" />
+
+      <form onSubmit={handleSubmit} className="apple-card w-full max-w-md p-10 text-center mx-4 relative overflow-hidden shadow-2xl z-10 bg-[var(--c-bg-card)]/90 backdrop-blur-xl">
         {/* Logo */}
         <div className="w-24 h-24 mx-auto mb-4 flex items-center justify-center">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" className="w-full h-full">
@@ -85,7 +90,7 @@ export default function LoginPage() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
-            className="w-full px-5 py-4 bg-[var(--c-bg-card)] border border-[var(--c-border-light)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--c-accent)]/40 transition-all text-base shadow-sm text-[var(--c-text-main)]"
+            className="input-field py-4 text-base"
           />
           <input
             type="password"
@@ -94,7 +99,7 @@ export default function LoginPage() {
             onChange={(e) => setPassword(e.target.value)}
             required
             minLength={6}
-            className="w-full px-5 py-4 bg-[var(--c-bg-card)] border border-[var(--c-border-light)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--c-accent)]/40 transition-all text-base shadow-sm text-[var(--c-text-main)]"
+            className="input-field py-4 text-base"
           />
 
           {isRegister && (
@@ -103,14 +108,14 @@ export default function LoginPage() {
               placeholder="邀请码（可选）"
               value={inviteCode}
               onChange={(e) => setInviteCode(e.target.value)}
-              className="w-full px-5 py-4 bg-[var(--c-bg-card)] border border-[var(--c-border-light)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--c-accent)]/40 transition-all text-base shadow-sm text-[var(--c-text-main)]"
+              className="input-field py-4 text-base"
             />
           )}
 
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-4 bg-[var(--c-accent)] text-white rounded-2xl font-bold text-base mt-2 shadow-md hover:bg-[var(--c-accent-hover)] hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50"
+            className="btn-primary w-full py-4 rounded-2xl text-base mt-2"
           >
             {loading ? '处理中...' : isRegister ? '注册账号' : '登录'}
           </button>
@@ -123,6 +128,36 @@ export default function LoginPage() {
         >
           {isRegister ? '已有账号？去登录' : '没有账号？注册新账号'}
         </button>
+
+        {/* 快速登录测试按钮 (仅登录模式显示) */}
+        {!isRegister && (
+          <div className="mt-6 border-t border-[var(--c-border-light)] pt-6">
+            <p className="text-xs text-[var(--c-text-sub)] mb-3 font-medium uppercase tracking-wider">🛠 开发环境快捷登录</p>
+            <div className="grid grid-cols-3 gap-2">
+              <button
+                type="button"
+                onClick={() => { setEmail('test@moyuan.net'); setPassword('user123'); }}
+                className="px-2 py-2 text-xs font-medium rounded-lg bg-[var(--c-bg-card)] border border-[var(--c-border-light)] text-[var(--c-text-sub)] hover:text-[var(--c-text-main)] hover:bg-[var(--c-border-faint)] transition-colors"
+              >
+                普通用户
+              </button>
+              <button
+                type="button"
+                onClick={() => { setEmail('merchant@moyuan.net'); setPassword('merchant123'); }}
+                className="px-2 py-2 text-xs font-medium rounded-lg bg-[var(--c-bg-card)] border border-[var(--c-border-light)] text-[var(--c-text-sub)] hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
+              >
+                商家账号
+              </button>
+              <button
+                type="button"
+                onClick={() => { setEmail('admin@moyuan.net'); setPassword('admin123'); }}
+                className="px-2 py-2 text-xs font-medium rounded-lg bg-[var(--c-bg-card)] border border-[var(--c-border-light)] text-[var(--c-text-sub)] hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+              >
+                管理员
+              </button>
+            </div>
+          </div>
+        )}
 
         <div className="mt-6 flex items-center justify-center gap-2 text-sm text-[var(--c-accent)] bg-[var(--c-border-faint)] py-2.5 rounded-lg font-bold border border-[var(--c-border-light)]">
           <Gift className="w-4 h-4" /> 新朋友注册立送 500 积分

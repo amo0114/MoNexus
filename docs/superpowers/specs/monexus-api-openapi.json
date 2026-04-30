@@ -1,0 +1,720 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "MoNexus Merchant Settlement API",
+    "version": "1.0.0",
+    "description": "MoNexus 商家端、平台商家管理、订单分润与结算冻结契约。测试账号由 seed 输出；merchant@moyuan.net / merchant123 为建议商家账号。"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:3000",
+      "description": "本地开发，所有业务路径带 /api 前缀"
+    }
+  ],
+  "tags": [
+    { "name": "Auth" },
+    { "name": "Products" },
+    { "name": "Orders" },
+    { "name": "Merchant" },
+    { "name": "Admin Merchants" },
+    { "name": "Admin Settlements" }
+  ],
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    },
+    "schemas": {
+      "ErrorEnvelope": {
+        "type": "object",
+        "required": ["error"],
+        "properties": {
+          "error": {
+            "type": "object",
+            "required": ["code", "message"],
+            "properties": {
+              "code": { "type": "string", "example": "VALIDATION_ERROR" },
+              "message": { "type": "string", "example": "参数校验失败" },
+              "details": {
+                "type": "array",
+                "items": { "type": "object", "additionalProperties": true }
+              }
+            }
+          }
+        }
+      },
+      "MerchantStatus": {
+        "type": "string",
+        "enum": ["pending", "active", "suspended", "rejected"]
+      },
+      "SettlementStatus": {
+        "type": "string",
+        "enum": ["pending", "settled"]
+      },
+      "ProductStatus": {
+        "type": "string",
+        "enum": ["active", "inactive"]
+      },
+      "MerchantSummary": {
+        "type": "object",
+        "required": ["id", "name"],
+        "properties": {
+          "id": { "type": "integer" },
+          "name": { "type": "string" }
+        }
+      },
+      "AuthMerchantSummary": {
+        "type": "object",
+        "required": ["id", "name", "status", "commissionRate"],
+        "properties": {
+          "id": { "type": "integer" },
+          "name": { "type": "string" },
+          "status": { "$ref": "#/components/schemas/MerchantStatus" },
+          "commissionRate": { "type": "string", "example": "0.1000" }
+        }
+      },
+      "AuthUser": {
+        "type": "object",
+        "required": ["id", "email", "role", "status", "inviteCode", "points", "merchant"],
+        "properties": {
+          "id": { "type": "integer" },
+          "email": { "type": "string", "format": "email" },
+          "role": { "type": "string", "enum": ["user", "admin", "merchant"] },
+          "status": { "type": "string" },
+          "inviteCode": { "type": "string" },
+          "points": { "type": "integer" },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "merchant": {
+            "nullable": true,
+            "oneOf": [
+              { "$ref": "#/components/schemas/AuthMerchantSummary" }
+            ]
+          }
+        }
+      },
+      "Merchant": {
+        "type": "object",
+        "required": ["id", "userId", "name", "status", "commissionRate", "createdAt", "updatedAt"],
+        "properties": {
+          "id": { "type": "integer" },
+          "userId": { "type": "integer" },
+          "name": { "type": "string" },
+          "description": { "type": "string", "nullable": true },
+          "status": { "$ref": "#/components/schemas/MerchantStatus" },
+          "commissionRate": { "type": "string", "example": "0.1000" },
+          "contactEmail": { "type": "string", "format": "email", "nullable": true },
+          "contactPhone": { "type": "string", "nullable": true },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" },
+          "approvedAt": { "type": "string", "format": "date-time", "nullable": true },
+          "approvedBy": { "type": "integer", "nullable": true }
+        }
+      },
+      "MerchantProduct": {
+        "type": "object",
+        "required": ["id", "merchantId", "name", "type", "icon", "price", "stock", "sales", "isHot", "status", "createdAt"],
+        "properties": {
+          "id": { "type": "integer" },
+          "merchantId": { "type": "integer", "nullable": true },
+          "name": { "type": "string" },
+          "description": { "type": "string", "nullable": true },
+          "richDescription": { "type": "string", "nullable": true },
+          "type": { "type": "string" },
+          "icon": { "type": "string" },
+          "imageUrl": { "type": "string", "nullable": true },
+          "price": { "type": "integer" },
+          "originalPrice": { "type": "integer", "nullable": true },
+          "stock": { "type": "integer" },
+          "sales": { "type": "integer" },
+          "isHot": { "type": "boolean" },
+          "status": { "$ref": "#/components/schemas/ProductStatus" },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "merchant": {
+            "nullable": true,
+            "oneOf": [
+              { "$ref": "#/components/schemas/MerchantSummary" }
+            ]
+          },
+          "_count": {
+            "type": "object",
+            "properties": {
+              "inventory": { "type": "integer" }
+            }
+          }
+        }
+      },
+      "Settlement": {
+        "type": "object",
+        "required": ["id", "merchantId", "orderId", "orderAmount", "commissionRate", "commissionAmount", "settlementAmount", "status", "createdAt"],
+        "properties": {
+          "id": { "type": "integer" },
+          "merchantId": { "type": "integer" },
+          "orderId": { "type": "integer" },
+          "orderAmount": { "type": "integer" },
+          "commissionRate": { "type": "string", "example": "0.1000" },
+          "commissionAmount": { "type": "integer" },
+          "settlementAmount": { "type": "integer" },
+          "status": { "$ref": "#/components/schemas/SettlementStatus" },
+          "settledAt": { "type": "string", "format": "date-time", "nullable": true },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "merchant": { "$ref": "#/components/schemas/MerchantSummary" },
+          "order": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "integer" },
+              "price": { "type": "integer" },
+              "createdAt": { "type": "string", "format": "date-time" }
+            }
+          }
+        }
+      },
+      "MerchantOrder": {
+        "type": "object",
+        "required": ["id", "userId", "productId", "merchantId", "price", "commissionRate", "commissionAmount", "settlementAmount", "status", "createdAt"],
+        "properties": {
+          "id": { "type": "integer" },
+          "userId": { "type": "integer" },
+          "productId": { "type": "integer" },
+          "merchantId": { "type": "integer" },
+          "price": { "type": "integer" },
+          "commissionRate": { "type": "string", "example": "0.1000" },
+          "commissionAmount": { "type": "integer" },
+          "settlementAmount": { "type": "integer" },
+          "status": { "type": "string" },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "user": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "integer" },
+              "email": { "type": "string", "format": "email" }
+            }
+          },
+          "product": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "integer" },
+              "name": { "type": "string" },
+              "icon": { "type": "string" },
+              "type": { "type": "string" }
+            }
+          },
+          "delivery": {
+            "type": "object",
+            "nullable": true,
+            "properties": {
+              "content": { "type": "string" },
+              "status": { "type": "string" }
+            }
+          },
+          "settlement": {
+            "nullable": true,
+            "oneOf": [
+              { "$ref": "#/components/schemas/Settlement" }
+            ]
+          }
+        }
+      },
+      "MerchantStats": {
+        "type": "object",
+        "required": ["productCount", "orderCount", "totalRevenue", "pendingSettlement"],
+        "properties": {
+          "productCount": { "type": "integer" },
+          "orderCount": { "type": "integer" },
+          "totalRevenue": { "type": "integer" },
+          "pendingSettlement": { "type": "integer" }
+        }
+      },
+      "ApplyMerchantRequest": {
+        "type": "object",
+        "required": ["name"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1, "maxLength": 100 },
+          "description": { "type": "string" },
+          "contactEmail": { "type": "string", "format": "email" },
+          "contactPhone": { "type": "string" }
+        }
+      },
+      "UpdateMerchantRequest": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "minLength": 1, "maxLength": 100 },
+          "description": { "type": "string" },
+          "contactEmail": { "type": "string", "format": "email" },
+          "contactPhone": { "type": "string" }
+        }
+      },
+      "CreateMerchantProductRequest": {
+        "type": "object",
+        "required": ["name", "type", "price"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "description": { "type": "string" },
+          "richDescription": { "type": "string" },
+          "type": { "type": "string", "minLength": 1 },
+          "icon": { "type": "string", "default": "package" },
+          "imageUrl": { "type": "string" },
+          "price": { "type": "integer", "minimum": 1 },
+          "originalPrice": { "type": "integer", "minimum": 1 },
+          "isHot": { "type": "boolean", "default": false }
+        }
+      },
+      "UpdateMerchantProductRequest": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "description": { "type": "string" },
+          "richDescription": { "type": "string" },
+          "type": { "type": "string", "minLength": 1 },
+          "icon": { "type": "string" },
+          "imageUrl": { "type": "string" },
+          "price": { "type": "integer", "minimum": 1 },
+          "originalPrice": { "type": "integer", "minimum": 1 },
+          "isHot": { "type": "boolean" },
+          "status": { "$ref": "#/components/schemas/ProductStatus" }
+        }
+      },
+      "ImportInventoryRequest": {
+        "type": "object",
+        "required": ["items"],
+        "properties": {
+          "items": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "string", "minLength": 1 }
+          }
+        }
+      },
+      "RejectMerchantRequest": {
+        "type": "object",
+        "properties": {
+          "reason": { "type": "string" }
+        }
+      },
+      "UpdateCommissionRequest": {
+        "type": "object",
+        "required": ["commissionRate"],
+        "properties": {
+          "commissionRate": { "type": "number", "minimum": 0, "maximum": 1 }
+        }
+      },
+      "BatchSettleRequest": {
+        "type": "object",
+        "required": ["settlementIds"],
+        "properties": {
+          "settlementIds": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "integer", "minimum": 1 }
+          }
+        }
+      },
+      "MerchantDetail": {
+        "allOf": [
+          { "$ref": "#/components/schemas/Merchant" },
+          {
+            "type": "object",
+            "properties": {
+              "user": {
+                "type": "object",
+                "properties": {
+                  "id": { "type": "integer" },
+                  "email": { "type": "string", "format": "email" },
+                  "status": { "type": "string" },
+                  "createdAt": { "type": "string", "format": "date-time" }
+                }
+              },
+              "products": {
+                "type": "array",
+                "items": { "$ref": "#/components/schemas/MerchantProduct" }
+              },
+              "orderCount": { "type": "integer" },
+              "settlementCount": { "type": "integer" }
+            }
+          }
+        ]
+      }
+    },
+    "responses": {
+      "Unauthenticated": {
+        "description": "未登录",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } } }
+      },
+      "Forbidden": {
+        "description": "无权限",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } } }
+      },
+      "ValidationError": {
+        "description": "参数校验失败",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } } }
+      },
+      "Conflict": {
+        "description": "资源冲突",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } } }
+      }
+    }
+  },
+  "paths": {
+    "/api/auth/me": {
+      "get": {
+        "tags": ["Auth"],
+        "summary": "当前用户与商家上下文",
+        "description": "前端判断角色、商家状态与入口展示的唯一入口。审核通过或停用后旧 access token 可能包含旧 role，前端需 refresh 后再调用本接口。",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": {
+            "description": "当前用户",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AuthUser" } } }
+          },
+          "401": { "$ref": "#/components/responses/Unauthenticated" }
+        }
+      }
+    },
+    "/api/products": {
+      "get": {
+        "tags": ["Products"],
+        "summary": "商品列表，商品可包含商家摘要",
+        "parameters": [
+          { "name": "category", "in": "query", "schema": { "type": "string" } },
+          { "name": "q", "in": "query", "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "商品列表",
+            "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/MerchantProduct" } } } }
+          }
+        }
+      }
+    },
+    "/api/products/{id}": {
+      "get": {
+        "tags": ["Products"],
+        "summary": "商品详情，商品可包含商家摘要",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "商品详情",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MerchantProduct" } } }
+          },
+          "404": { "description": "商品不存在" }
+        }
+      }
+    },
+    "/api/orders": {
+      "post": {
+        "tags": ["Orders"],
+        "summary": "兑换商品；商家商品会同步生成结算记录",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "type": "object", "required": ["productId"], "properties": { "productId": { "type": "integer" } } } } }
+        },
+        "responses": {
+          "201": {
+            "description": "兑换成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "orderId": { "type": "integer" },
+                    "productName": { "type": "string" },
+                    "price": { "type": "integer" },
+                    "deliveryContent": { "type": "string" },
+                    "balanceAfter": { "type": "integer" },
+                    "merchantId": { "type": "integer", "nullable": true },
+                    "merchantName": { "type": "string", "nullable": true }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/ValidationError" },
+          "401": { "$ref": "#/components/responses/Unauthenticated" }
+        }
+      },
+      "get": {
+        "tags": ["Orders"],
+        "summary": "我的订单列表，订单项可包含商家摘要",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": {
+            "description": "我的订单列表",
+            "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/MerchantOrder" } } } }
+          },
+          "401": { "$ref": "#/components/responses/Unauthenticated" }
+        }
+      }
+    },
+    "/api/orders/{id}": {
+      "get": {
+        "tags": ["Orders"],
+        "summary": "订单详情，订单可包含商家摘要",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "订单详情",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MerchantOrder" } } }
+          },
+          "401": { "$ref": "#/components/responses/Unauthenticated" },
+          "404": { "description": "订单不存在或不属于当前用户" }
+        }
+      }
+    },
+    "/api/merchant/register": {
+      "post": {
+        "tags": ["Merchant"],
+        "summary": "提交商家入驻申请",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ApplyMerchantRequest" } } }
+        },
+        "responses": {
+          "201": {
+            "description": "申请已提交",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Merchant" } } }
+          },
+          "401": { "$ref": "#/components/responses/Unauthenticated" },
+          "409": { "$ref": "#/components/responses/Conflict" }
+        }
+      }
+    },
+    "/api/merchant/me": {
+      "get": {
+        "tags": ["Merchant"],
+        "summary": "商家资料",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": { "description": "商家资料", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Merchant" } } } },
+          "401": { "$ref": "#/components/responses/Unauthenticated" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      },
+      "put": {
+        "tags": ["Merchant"],
+        "summary": "更新商家资料",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": { "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UpdateMerchantRequest" } } } },
+        "responses": {
+          "200": { "description": "更新后的商家资料", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Merchant" } } } },
+          "400": { "$ref": "#/components/responses/ValidationError" },
+          "401": { "$ref": "#/components/responses/Unauthenticated" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/api/merchant/stats": {
+      "get": {
+        "tags": ["Merchant"],
+        "summary": "商家概览",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": { "description": "商家概览", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MerchantStats" } } } },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/api/merchant/products": {
+      "get": {
+        "tags": ["Merchant"],
+        "summary": "商家自有商品列表",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "pageSize", "in": "query", "schema": { "type": "integer", "default": 20, "maximum": 100 } },
+          { "name": "status", "in": "query", "schema": { "$ref": "#/components/schemas/ProductStatus" } }
+        ],
+        "responses": { "200": { "description": "商品数组", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/MerchantProduct" } } } } } }
+      },
+      "post": {
+        "tags": ["Merchant"],
+        "summary": "创建商家商品",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateMerchantProductRequest" } } } },
+        "responses": { "201": { "description": "创建后的商品", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MerchantProduct" } } } } }
+      }
+    },
+    "/api/merchant/products/{id}": {
+      "put": {
+        "tags": ["Merchant"],
+        "summary": "更新商家自有商品",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "requestBody": { "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UpdateMerchantProductRequest" } } } },
+        "responses": {
+          "200": { "description": "更新后的商品", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MerchantProduct" } } } },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "description": "商品不存在或不属于当前商家" }
+        }
+      }
+    },
+    "/api/merchant/products/{id}/inventory": {
+      "post": {
+        "tags": ["Merchant"],
+        "summary": "导入商家自有商品库存",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ImportInventoryRequest" } } } },
+        "responses": {
+          "200": { "description": "导入结果", "content": { "application/json": { "schema": { "type": "object", "properties": { "imported": { "type": "integer" } } } } } },
+          "404": { "description": "商品不存在或不属于当前商家" }
+        }
+      }
+    },
+    "/api/merchant/orders": {
+      "get": {
+        "tags": ["Merchant"],
+        "summary": "商家订单列表",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "pageSize", "in": "query", "schema": { "type": "integer", "default": 20, "maximum": 100 } }
+        ],
+        "responses": { "200": { "description": "商家订单数组", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/MerchantOrder" } } } } } }
+      }
+    },
+    "/api/merchant/orders/{id}": {
+      "get": {
+        "tags": ["Merchant"],
+        "summary": "商家订单详情",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "200": { "description": "商家订单详情", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MerchantOrder" } } } },
+          "404": { "description": "订单不存在或不属于当前商家" }
+        }
+      }
+    },
+    "/api/merchant/settlements": {
+      "get": {
+        "tags": ["Merchant"],
+        "summary": "商家结算列表",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "pageSize", "in": "query", "schema": { "type": "integer", "default": 20, "maximum": 100 } },
+          { "name": "status", "in": "query", "schema": { "$ref": "#/components/schemas/SettlementStatus" } }
+        ],
+        "responses": { "200": { "description": "商家结算数组", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Settlement" } } } } } }
+      }
+    },
+    "/api/admin/merchants": {
+      "get": {
+        "tags": ["Admin Merchants"],
+        "summary": "平台商家列表",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "status", "in": "query", "schema": { "$ref": "#/components/schemas/MerchantStatus" } },
+          { "name": "q", "in": "query", "schema": { "type": "string" } },
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "pageSize", "in": "query", "schema": { "type": "integer", "default": 20, "maximum": 100 } }
+        ],
+        "responses": {
+          "200": { "description": "商家数组", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Merchant" } } } } },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/api/admin/merchants/{id}": {
+      "get": {
+        "tags": ["Admin Merchants"],
+        "summary": "平台商家详情",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "responses": { "200": { "description": "商家详情", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MerchantDetail" } } } } }
+      }
+    },
+    "/api/admin/merchants/{id}/approve": {
+      "put": {
+        "tags": ["Admin Merchants"],
+        "summary": "审核通过商家",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "responses": { "200": { "description": "审核后的商家", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Merchant" } } } } }
+      }
+    },
+    "/api/admin/merchants/{id}/reject": {
+      "put": {
+        "tags": ["Admin Merchants"],
+        "summary": "拒绝商家入驻",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "requestBody": { "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RejectMerchantRequest" } } } },
+        "responses": { "200": { "description": "拒绝后的商家", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Merchant" } } } } }
+      }
+    },
+    "/api/admin/merchants/{id}/suspend": {
+      "put": {
+        "tags": ["Admin Merchants"],
+        "summary": "停用商家",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "responses": { "200": { "description": "停用后的商家", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Merchant" } } } } }
+      }
+    },
+    "/api/admin/merchants/{id}/commission": {
+      "put": {
+        "tags": ["Admin Merchants"],
+        "summary": "调整商家抽成比例",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UpdateCommissionRequest" } } } },
+        "responses": {
+          "200": { "description": "更新后的商家", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Merchant" } } } },
+          "400": { "$ref": "#/components/responses/ValidationError" }
+        }
+      }
+    },
+    "/api/admin/settlements": {
+      "get": {
+        "tags": ["Admin Settlements"],
+        "summary": "平台结算列表",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "status", "in": "query", "schema": { "$ref": "#/components/schemas/SettlementStatus" } },
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "pageSize", "in": "query", "schema": { "type": "integer", "default": 20, "maximum": 100 } }
+        ],
+        "responses": { "200": { "description": "结算数组", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Settlement" } } } } } }
+      }
+    },
+    "/api/admin/settlements/batch-settle": {
+      "post": {
+        "tags": ["Admin Settlements"],
+        "summary": "批量结算 pending 记录",
+        "description": "只允许 pending 记录；任一记录不是 pending 时整体返回 400 BAD_REQUEST。",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/BatchSettleRequest" } } } },
+        "responses": {
+          "200": { "description": "批量结算结果", "content": { "application/json": { "schema": { "type": "object", "properties": { "settled": { "type": "integer" } } } } } },
+          "400": { "$ref": "#/components/responses/ValidationError" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    }
+  }
+}

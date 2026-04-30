@@ -1,24 +1,26 @@
-import { prisma } from '../auth/service.js'
+import { prisma } from '../../lib/prisma.js'
 import { config } from '../../config/index.js'
+import { badRequest, notFound } from '../../lib/httpError.js'
 
-export async function checkin(userId: number) {
-  // 格式化为 YYYY-MM-DD（Asia/Shanghai 时区）
+function getShanghaiDateString() {
   const now = new Date()
   const yyyy = now.toLocaleString('en-US', { timeZone: 'Asia/Shanghai', year: 'numeric' })
   const mm = now.toLocaleString('en-US', { timeZone: 'Asia/Shanghai', month: '2-digit' })
   const dd = now.toLocaleString('en-US', { timeZone: 'Asia/Shanghai', day: '2-digit' })
-  const dateStr = `${yyyy}-${mm}-${dd}`
+  return `${yyyy}-${mm}-${dd}`
+}
 
-  return prisma.$transaction(async (tx) => {
-    // 检查是否已签到（唯一约束兜底）
+export async function checkin(userId: number) {
+  const dateStr = getShanghaiDateString()
+
+  return prisma.$transaction(async tx => {
     const existing = await tx.checkinRecord.findUnique({
       where: { userId_date: { userId, date: dateStr } },
     })
-    if (existing) throw new Error('今日已签到')
+    if (existing) throw badRequest('今日已签到')
 
-    // 获取积分账户
     const account = await tx.pointAccount.findUnique({ where: { userId } })
-    if (!account) throw new Error('积分账户不存在')
+    if (!account) throw notFound('积分账户不存在')
 
     const newBalance = account.balance + config.checkinReward
 
@@ -54,11 +56,7 @@ export async function getHistory(userId: number) {
 }
 
 export async function hasCheckedInToday(userId: number) {
-  const now = new Date()
-  const yyyy = now.toLocaleString('en-US', { timeZone: 'Asia/Shanghai', year: 'numeric' })
-  const mm = now.toLocaleString('en-US', { timeZone: 'Asia/Shanghai', month: '2-digit' })
-  const dd = now.toLocaleString('en-US', { timeZone: 'Asia/Shanghai', day: '2-digit' })
-  const dateStr = `${yyyy}-${mm}-${dd}`
+  const dateStr = getShanghaiDateString()
 
   const record = await prisma.checkinRecord.findUnique({
     where: { userId_date: { userId, date: dateStr } },

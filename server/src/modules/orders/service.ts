@@ -1,49 +1,59 @@
-import { prisma } from '../auth/service.js'
+import { prisma } from '../../lib/prisma.js'
+import { badRequest, notFound } from '../../lib/httpError.js'
 
-/**
- * 兑换订单 - 核心事务
- * 
- * 注意：当前使用 SQLite（开发环境），不支持 FOR UPDATE 行级锁。
- * 上线切换到 PostgreSQL 后，应将 findUnique 替换为 $queryRaw + FOR UPDATE。
- * SQLite 的事务隔离级别为 Serializable，天然串行化。
- */
 export async function createOrder(userId: number, productId: number) {
-  return prisma.$transaction(async (tx) => {
-    // 1. 获取积分账户
+  return prisma.$transaction(async tx => {
     const account = await tx.pointAccount.findUnique({ where: { userId } })
-    if (!account) throw new Error('积分账户不存在')
+    if (!account) throw notFound('积分账户不存在')
 
-    // 2. 检查商品状态
     const product = await tx.product.findUnique({ where: { id: productId } })
-    if (!product) throw new Error('商品不存在')
-    if (product.status !== 'active') throw new Error('商品已下架')
+    if (!product) throw notFound('商品不存在')
+    if (product.status !== 'active') throw badRequest('商品已下架')
 
-    // 3. 检查余额
-    if (account.balance < product.price) throw new Error('积分不足')
+    if (account.balance < product.price) throw badRequest('积分不足')
 
-    // 4. 查找可用库存
     const item = await tx.inventoryItem.findFirst({
       where: { productId, status: 'available' },
       orderBy: { id: 'asc' },
     })
-    if (!item) throw new Error('库存不足，请稍后再试')
+    if (!item) throw badRequest('库存不足，请稍后再试')
+
+    let merchantId: number | null = null
+    let merchantName: string | null = null
+    let commissionRate = 0
+    let commissionAmount = 0
+
+    if (product.merchantId != null) {
+      const merchant = await tx.merchant.findUnique({ where: { id: product.merchantId } })
+      if (!merchant || merchant.status !== 'active') throw badRequest('商家暂不可用')
+
+      merchantId = merchant.id
+      merchantName = merchant.name
+      commissionRate = Number(merchant.commissionRate)
+      commissionAmount = Math.floor(product.price * commissionRate)
+    }
 
     const newBalance = account.balance - product.price
 
-    // 5. 扣积分
     await tx.pointAccount.update({
       where: { userId },
       data: { balance: newBalance },
     })
 
-    // 6. 创建订单
     const order = await tx.order.create({
-      data: { userId, productId, price: product.price, status: 'completed' },
+      data: {
+        userId,
+        productId,
+        price: product.price,
+        status: 'completed',
+        merchantId,
+        commissionRate,
+        commissionAmount,
+      },
     })
 
-    // 7. 标记库存已售
-    await tx.inventoryItem.update({
-      where: { id: item.id },
+    const reservedItem = await tx.inventoryItem.updateMany({
+      where: { id: item.id, status: 'available' },
       data: {
         status: 'sold',
         orderId: order.id,
@@ -51,8 +61,8 @@ export async function createOrder(userId: number, productId: number) {
         soldAt: new Date(),
       },
     })
+    if (reservedItem.count !== 1) throw badRequest('库存不足，请稍后再试')
 
-    // 8. 创建发货记录
     await tx.deliveryRecord.create({
       data: {
         orderId: order.id,
@@ -63,7 +73,6 @@ export async function createOrder(userId: number, productId: number) {
       },
     })
 
-    // 9. 写积分流水
     await tx.pointLog.create({
       data: {
         userId,
@@ -71,10 +80,24 @@ export async function createOrder(userId: number, productId: number) {
         amount: product.price,
         balanceAfter: newBalance,
         reason: `兑换商品: ${product.name}`,
+        orderId: order.id,
       },
     })
 
-    // 10. 更新商品缓存字段
+    if (merchantId != null) {
+      await tx.settlement.create({
+        data: {
+          merchantId,
+          orderId: order.id,
+          orderAmount: product.price,
+          commissionRate,
+          commissionAmount,
+          settlementAmount: product.price - commissionAmount,
+          status: 'pending',
+        },
+      })
+    }
+
     await tx.product.update({
       where: { id: productId },
       data: { stock: { decrement: 1 }, sales: { increment: 1 } },
@@ -86,17 +109,35 @@ export async function createOrder(userId: number, productId: number) {
       price: product.price,
       deliveryContent: item.content,
       balanceAfter: newBalance,
+      merchantId,
+      merchantName,
     }
   })
 }
 
-export async function getUserOrders(userId: number) {
+export async function getOrderDetail(orderId: number, userId: number) {
+  const order = await prisma.order.findFirst({
+    where: { id: orderId, userId },
+    include: {
+      merchant: { select: { id: true, name: true } },
+      product: { select: { id: true, name: true, icon: true, type: true, imageUrl: true } },
+      delivery: { select: { status: true, content: true } },
+    },
+  })
+  if (!order) throw notFound('订单不存在')
+  return order
+}
+
+export async function getUserOrders(userId: number, page = 1, pageSize = 20) {
   return prisma.order.findMany({
     where: { userId },
     include: {
-      product: { select: { name: true, icon: true, type: true } },
-      delivery: { select: { content: true } },
+      merchant: { select: { id: true, name: true } },
+      product: { select: { id: true, name: true, icon: true, type: true, imageUrl: true } },
+      delivery: { select: { status: true } },
     },
     orderBy: { createdAt: 'desc' },
+    skip: (page - 1) * pageSize,
+    take: pageSize,
   })
 }

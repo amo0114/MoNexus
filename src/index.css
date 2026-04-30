@@ -64,8 +64,10 @@ body {
 }
 
 .bg-grid-pattern {
-  background-image: radial-gradient(var(--c-grid-dot) 1px, transparent 1px);
-  background-size: 24px 24px;
+  background-image: 
+    linear-gradient(to right, var(--c-grid-dot) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--c-grid-dot) 1px, transparent 1px);
+  background-size: 32px 32px;
 }
 
 .glass {
@@ -87,6 +89,8 @@ body {
   box-shadow: 0 4px 20px var(--c-shadow);
   border: 1px solid var(--c-border-light);
   transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  /* 解决背景穿透或子元素定位可能导致的层叠异常（修复黑框） */
+  isolation: isolate; 
 }
 
 .apple-card-hover:hover {
@@ -112,6 +116,23 @@ body {
 
 .toast-enter {
   animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Buttons and Inputs */
+.btn-primary {
+  @apply bg-[var(--c-accent)] text-white px-5 py-2.5 rounded-xl font-bold text-sm shadow-md transition-all hover:bg-[var(--c-accent-hover)] hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100;
+}
+
+.input-field {
+  @apply w-full px-4 py-3 bg-[var(--c-bg-app)] border border-[var(--c-border-light)] rounded-xl focus:outline-none transition-all text-sm text-[var(--c-text-main)] shadow-inner placeholder:text-[var(--c-text-muted)];
+}
+
+.input-field:focus {
+  box-shadow: 0 0 0 2px rgba(212, 163, 115, 0.4);
+}
+
+.dark .input-field:focus {
+  box-shadow: 0 0 0 2px rgba(212, 163, 115, 0.4);
 }
 
 /* Scrollbar */

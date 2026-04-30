@@ -19,6 +19,8 @@ import {
 } from '../types/merchant'
 import { Store, Package, ShoppingBag, DollarSign, Settings, Plus, Upload, Edit } from 'lucide-react'
 import { useAppStore } from '../stores/appStore'
+import MerchantProductFormModal from '../components/merchant/MerchantProductFormModal'
+import MerchantInventoryImportModal from '../components/merchant/MerchantInventoryImportModal'
 
 export default function MerchantDashboardPage() {
   const showToast = useAppStore((s) => s.showToast)
@@ -77,6 +79,42 @@ export default function MerchantDashboardPage() {
       loadData()
     } catch (e: any) {
       showToast(e.response?.data?.error?.message || '更新失败', 'error')
+    }
+  }
+
+  // --- Product Modals State ---
+  const [isProductFormOpen, setIsProductFormOpen] = useState(false)
+  const [editingProduct, setEditingProduct] = useState<MerchantProduct | null>(null)
+  
+  const [isInventoryModalOpen, setIsInventoryModalOpen] = useState(false)
+  const [importingProduct, setImportingProduct] = useState<{ id: number, name: string } | null>(null)
+
+  async function handleProductSubmit(payload: any) {
+    if (editingProduct) {
+      await updateMerchantProduct(editingProduct.id, payload)
+      showToast('商品更新成功')
+    } else {
+      await createMerchantProduct(payload)
+      showToast('商品创建成功')
+    }
+    loadData()
+  }
+
+  async function handleInventorySubmit(items: string[]) {
+    if (!importingProduct) return
+    await importMerchantInventory(importingProduct.id, { items })
+    showToast(`成功导入 ${items.length} 条库存`)
+    loadData()
+  }
+
+  async function handleToggleProductStatus(product: MerchantProduct) {
+    const nextStatus = product.status === 'active' ? 'inactive' : 'active'
+    try {
+      await updateMerchantProduct(product.id, { status: nextStatus })
+      showToast(`商品已${nextStatus === 'active' ? '上架' : '下架'}`)
+      loadData()
+    } catch (e: any) {
+      showToast(e.response?.data?.error?.message || '操作失败', 'error')
     }
   }
 
@@ -174,7 +212,7 @@ export default function MerchantDashboardPage() {
             <div className="fade-in">
               <div className="flex justify-between items-center mb-6">
                 <h2 className="text-xl font-bold text-[var(--c-text-main)]">商品管理</h2>
-                <button className="btn-primary py-1.5 px-3 text-sm flex items-center gap-1" onClick={() => showToast('请使用 API 客户端创建商品')}>
+                <button className="btn-primary py-1.5 px-3 text-sm flex items-center gap-1" onClick={() => { setEditingProduct(null); setIsProductFormOpen(true); }}>
                   <Plus className="w-4 h-4" /> 新建商品
                 </button>
               </div>
@@ -210,8 +248,11 @@ export default function MerchantDashboardPage() {
                             </span>
                           </td>
                           <td className="py-3 px-2 text-right">
-                            <button className="text-[var(--c-accent)] hover:underline text-sm mr-3" onClick={() => showToast('请使用 API 客户端导入库存')}>导入库存</button>
-                            <button className="text-[var(--c-accent)] hover:underline text-sm" onClick={() => showToast('请使用 API 客户端编辑商品')}>编辑</button>
+                            <button className="text-[var(--c-accent)] hover:underline text-sm mr-3" onClick={() => { setImportingProduct({ id: p.id, name: p.name }); setIsInventoryModalOpen(true); }}>导入库存</button>
+                            <button className="text-[var(--c-accent)] hover:underline text-sm mr-3" onClick={() => { setEditingProduct(p); setIsProductFormOpen(true); }}>编辑</button>
+                            <button className="text-[var(--c-accent)] hover:underline text-sm" onClick={() => handleToggleProductStatus(p)}>
+                              {p.status === 'active' ? '下架' : '上架'}
+                            </button>
                           </td>
                         </tr>
                       ))
@@ -358,6 +399,20 @@ export default function MerchantDashboardPage() {
           )}
         </div>
       </div>
+
+      <MerchantProductFormModal
+        isOpen={isProductFormOpen}
+        onClose={() => setIsProductFormOpen(false)}
+        onSubmit={handleProductSubmit}
+        product={editingProduct}
+      />
+      
+      <MerchantInventoryImportModal
+        isOpen={isInventoryModalOpen}
+        onClose={() => setIsInventoryModalOpen(false)}
+        onSubmit={handleInventorySubmit}
+        productName={importingProduct?.name || ''}
+      />
     </div>
   )
 }

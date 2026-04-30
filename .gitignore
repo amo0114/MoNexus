@@ -7,3 +7,4 @@ dist/
 server/dist/
 .env
 server/.env
+tsconfig.tsbuildinfo
