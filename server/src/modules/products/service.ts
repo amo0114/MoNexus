@@ -2,7 +2,7 @@ import { Prisma } from '@prisma/client'
 import { prisma } from '../../lib/prisma.js'
 import { badRequest, notFound } from '../../lib/httpError.js'
 
-export async function listProducts(query?: string, category?: string) {
+export async function listProducts(query?: string, category?: string, page = 1, pageSize = 20) {
   const where: Prisma.ProductWhereInput = { status: 'active' }
 
   if (category && category !== '全部') {
@@ -33,7 +33,10 @@ export async function listProducts(query?: string, category?: string) {
       sales: true,
       isHot: true,
       status: true,
+      merchant: { select: { id: true, name: true } },
     },
+    skip: (page - 1) * pageSize,
+    take: pageSize,
   })
 }
 
@@ -41,6 +44,7 @@ export async function getProductDetail(id: number) {
   const product = await prisma.product.findUnique({
     where: { id },
     include: {
+      merchant: { select: { id: true, name: true } },
       reviews: { orderBy: { createdAt: 'desc' }, take: 10 },
     },
   })
