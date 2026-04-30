@@ -235,3 +235,61 @@ describe('POST /api/admin/settlements/batch-settle', () => {
     expect(unchanged.settledAt).toBeNull()
   })
 })
+
+describe('Refresh token revocation on merchant lifecycle', () => {
+  it('should revoke refresh tokens after approving merchant application', async () => {
+    await createTestUser('approve-admin@test.local', 'admin123', 'admin')
+    const { user, merchant } = await createTestMerchant('approve-applicant@test.local', 'pass123', {
+      role: 'user',
+      status: 'pending',
+      name: '待审批商家',
+    })
+
+    const applicantLogin = await loginAs('approve-applicant@test.local', 'pass123')
+    const admin = await loginAs('approve-admin@test.local', 'admin123')
+
+    await api
+      .put(`/api/admin/merchants/${merchant.id}/approve`)
+      .set(authHeader(admin.accessToken))
+      .expect(200)
+
+    const refreshRes = await api
+      .post('/api/auth/refresh')
+      .set('Cookie', applicantLogin.cookies)
+      .expect(401)
+
+    expect(refreshRes.body.error.code).toBe('UNAUTHENTICATED')
+
+    const tokens = await prisma.refreshToken.findMany({ where: { userId: user.id } })
+    expect(tokens.length).toBeGreaterThan(0)
+    expect(tokens.every(t => t.revoked)).toBe(true)
+  })
+
+  it('should revoke refresh tokens after suspending an active merchant', async () => {
+    await createTestUser('suspend-admin@test.local', 'admin123', 'admin')
+    const { user, merchant } = await createTestMerchant('suspend-target@test.local', 'pass123', {
+      role: 'merchant',
+      status: 'active',
+      name: '即将停用商家',
+    })
+
+    const merchantLogin = await loginAs('suspend-target@test.local', 'pass123')
+    const admin = await loginAs('suspend-admin@test.local', 'admin123')
+
+    await api
+      .put(`/api/admin/merchants/${merchant.id}/suspend`)
+      .set(authHeader(admin.accessToken))
+      .expect(200)
+
+    const refreshRes = await api
+      .post('/api/auth/refresh')
+      .set('Cookie', merchantLogin.cookies)
+      .expect(401)
+
+    expect(refreshRes.body.error.code).toBe('UNAUTHENTICATED')
+
+    const tokens = await prisma.refreshToken.findMany({ where: { userId: user.id } })
+    expect(tokens.length).toBeGreaterThan(0)
+    expect(tokens.every(t => t.revoked)).toBe(true)
+  })
+})
