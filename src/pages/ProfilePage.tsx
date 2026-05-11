@@ -8,6 +8,7 @@ import { getApiErrorMessage } from '../api/error'
 import { getOrders, getOrderDetail } from '../api/orders'
 import { UserOrderListItem, UserOrderDetail } from '../types/order'
 import OrderDetailModal from '../components/OrderDetailModal'
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/ui/Tabs'
 
 export default function ProfilePage() {
   const navigate = useNavigate()
@@ -77,26 +78,32 @@ export default function ProfilePage() {
     <div className="fade-in space-y-8 max-w-5xl mx-auto pt-2" style={{ animationDelay: '0.1s' }}>
       {/* Top cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-        {/* Points card */}
-        <div className="apple-card p-8 col-span-1 md:col-span-2 relative overflow-hidden text-white bg-gradient-to-br from-[#D4A373] to-[#C5915D] border-none shadow-md">
-          <div className="absolute -right-6 -bottom-6 opacity-20">
+        {/* Points hero — indigo gradient (replaces old Warm Latte brown) */}
+        <div
+          className="col-span-1 md:col-span-2 relative overflow-hidden rounded-xl p-8 text-white shadow-md"
+          style={{
+            background:
+              'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-hover) 100%)',
+          }}
+        >
+          <div className="absolute -right-6 -bottom-6 opacity-15">
             <Coins className="w-48 h-48" />
           </div>
           <div className="relative z-10">
-            <p className="text-white/80 font-medium mb-1 text-sm flex items-center gap-1.5">
+            <p className="text-white/85 font-medium mb-1 text-sm flex items-center gap-1.5">
               <Wallet className="w-4 h-4" /> 我的可用积分
             </p>
-            <h3 className="text-5xl font-bold mb-6 tracking-tight drop-shadow-sm">
+            <h3 className="font-heading text-5xl font-bold mb-6 tracking-tight drop-shadow-sm">
               {user?.points ?? '--'}
             </h3>
             <div className="flex flex-wrap gap-3">
               <button
                 onClick={handleCheckin}
                 disabled={hasCheckedIn || checkingIn}
-                className={`px-6 py-3 rounded-xl font-bold flex items-center gap-2 shadow-sm text-sm transition-colors ${
+                className={`inline-flex items-center gap-2 px-6 py-3 rounded-lg font-semibold shadow-sm text-sm transition-colors cursor-pointer ${
                   hasCheckedIn
-                    ? 'bg-black/20 text-white/90 cursor-not-allowed'
-                    : 'bg-white text-[#5C4D43] hover:bg-gray-50'
+                    ? 'bg-black/20 text-white/85 cursor-not-allowed'
+                    : 'bg-white text-[var(--color-primary)] hover:bg-white/90'
                 }`}
               >
                 <CalendarCheck className="w-4 h-4" />
@@ -104,7 +111,7 @@ export default function ProfilePage() {
               </button>
               <button
                 onClick={() => setActiveTab('history')}
-                className="bg-black/10 hover:bg-black/20 text-white border border-white/30 px-6 py-3 rounded-xl font-medium transition-colors flex items-center gap-2 text-sm"
+                className="inline-flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white border border-white/30 px-6 py-3 rounded-lg font-medium text-sm transition-colors cursor-pointer"
               >
                 查流水明细
               </button>
@@ -113,21 +120,21 @@ export default function ProfilePage() {
         </div>
 
         {/* Invite card */}
-        <div className="apple-card p-6 flex flex-col justify-center bg-[var(--c-bg-card)]">
-          <div className="w-10 h-10 bg-[var(--c-bg-app)] border border-[var(--c-border-light)] text-[var(--c-accent)] rounded-xl flex items-center justify-center mb-3">
+        <div className="card flex flex-col justify-center">
+          <div className="w-10 h-10 bg-[var(--color-primary)]/10 text-[var(--color-primary)] rounded-xl flex items-center justify-center mb-3">
             <Users className="w-5 h-5" />
           </div>
-          <h4 className="text-lg font-bold mb-1 text-[var(--c-text-main)]">邀请赚积分</h4>
-          <p className="text-[var(--c-text-sub)] text-xs mb-4 leading-relaxed">
-            每邀请一人注册，您可获得 <span className="text-[var(--c-accent)] font-bold">200</span> 积分。
+          <h4 className="font-heading text-lg font-bold mb-1 text-[var(--color-text)]">邀请赚积分</h4>
+          <p className="text-[var(--color-text-muted)] text-xs mb-4 leading-relaxed">
+            每邀请一人注册，您可获得 <span className="text-[var(--color-cta)] font-bold">200</span> 积分。
           </p>
-          <div className="bg-[var(--c-bg-app)] rounded-xl p-2.5 flex justify-between items-center border border-[var(--c-border-light)]">
-            <span className="font-mono text-sm font-bold text-[var(--c-text-main)] ml-1">
+          <div className="bg-[var(--color-background)] rounded-lg p-2.5 flex justify-between items-center border border-[var(--color-border)]">
+            <span className="font-mono text-sm font-bold text-[var(--color-text)] ml-1">
               {user?.inviteCode || 'MOYUAN26'}
             </span>
             <button
               onClick={copyInvite}
-              className="text-white bg-[var(--c-accent)] hover:bg-[var(--c-accent-hover)] px-3 py-1.5 rounded-lg shadow-sm font-medium text-xs transition-colors"
+              className="cursor-pointer text-white bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] px-3 py-1.5 rounded-lg shadow-sm font-medium text-xs transition-colors"
             >
               复制分享
             </button>
@@ -137,14 +144,14 @@ export default function ProfilePage() {
 
       {/* Merchant Entry Card */}
       {user?.role === 'user' && user.merchant?.status !== 'active' && (
-        <div className="apple-card p-6 bg-[var(--c-bg-card)] flex flex-col sm:flex-row justify-between items-center gap-4">
+        <div className="card flex flex-col sm:flex-row justify-between items-center gap-4">
           <div className="flex items-center gap-4">
-            <div className="w-12 h-12 bg-blue-50 dark:bg-blue-900/20 text-blue-500 rounded-full flex items-center justify-center">
+            <div className="w-12 h-12 bg-[var(--color-primary)]/10 text-[var(--color-primary)] rounded-full flex items-center justify-center">
               <Store className="w-6 h-6" />
             </div>
             <div>
-              <h4 className="font-bold text-[var(--c-text-main)] mb-1">成为商家</h4>
-              <p className="text-sm text-[var(--c-text-sub)]">
+              <h4 className="font-heading font-bold text-[var(--color-text)] mb-1">成为商家</h4>
+              <p className="text-sm text-[var(--color-text-muted)]">
                 {user.merchant?.status === 'pending'
                   ? '您的入驻申请正在审核中，请耐心等待。'
                   : user.merchant?.status === 'rejected'
@@ -164,128 +171,126 @@ export default function ProfilePage() {
         </div>
       )}
 
-      {/* Orders / History tabs */}
-      <div className="apple-card p-4 sm:p-6 bg-[var(--c-bg-card)]">
-        <div className="flex gap-6 border-b border-[var(--c-border-light)] mb-5 pb-1 overflow-x-auto hide-scrollbar">
-          {(['orders', 'history'] as const).map((tab) => (
-            <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              className={`text-base pb-2 transition-colors whitespace-nowrap px-1 border-b-2 ${
-                activeTab === tab
-                  ? 'font-bold border-[var(--c-accent)] text-[var(--c-text-main)]'
-                  : 'font-medium text-[var(--c-text-sub)] hover:text-[var(--c-text-main)] border-transparent'
-              }`}
-            >
-              {tab === 'orders' ? '我兑换的商品' : '积分变动明细'}
-            </button>
-          ))}
-        </div>
+      {/* Tabs: Orders / History */}
+      <div className="card !p-4 sm:!p-6">
+        <Tabs
+          value={activeTab}
+          onValueChange={(v) => setActiveTab(v as 'orders' | 'history')}
+          className="w-full"
+        >
+          <TabsList className="mb-1">
+            <TabsTrigger value="orders">我兑换的商品</TabsTrigger>
+            <TabsTrigger value="history">积分变动明细</TabsTrigger>
+          </TabsList>
 
-        {activeTab === 'orders' ? (
-          orders.length === 0 ? (
-            <div className="text-center py-8 text-[var(--c-text-sub)] bg-[var(--c-bg-app)] rounded-xl border border-dashed border-[var(--c-border-light)]">
-              <p className="text-xs">还没兑换过商品，快去大厅逛逛吧</p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {orders.map((order) => (
-                <div key={order.id} className="bg-[var(--c-bg-app)] rounded-xl p-4 border border-[var(--c-border-light)] flex flex-col sm:flex-row justify-between gap-4 shadow-sm hover:shadow-md transition-shadow">
-                  <div className="flex-1">
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-2">
-                        {order.delivery?.status === 'delivered' ? (
-                          <span className="px-1.5 py-0.5 bg-green-500/10 text-[#4ADE80] border border-[#4ADE80]/20 text-[10px] font-bold rounded">
-                            发货成功
+          <TabsContent value="orders">
+            {orders.length === 0 ? (
+              <div className="text-center py-8 text-[var(--color-text-muted)] bg-[var(--color-background)] rounded-lg border border-dashed border-[var(--color-border)]">
+                <p className="text-xs">还没兑换过商品，快去大厅逛逛吧</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {orders.map((order) => (
+                  <div key={order.id} className="bg-[var(--color-background)] rounded-lg p-4 border border-[var(--color-border)] flex flex-col sm:flex-row justify-between gap-4 shadow-sm hover:shadow-md transition-shadow">
+                    <div className="flex-1">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          {order.delivery?.status === 'delivered' ? (
+                            <span className="px-1.5 py-0.5 bg-[var(--color-cta)]/10 text-[var(--color-cta)] border border-[var(--color-cta)]/25 text-[10px] font-bold rounded">
+                              发货成功
+                            </span>
+                          ) : (
+                            <span className="px-1.5 py-0.5 bg-orange-500/10 text-orange-500 border border-orange-500/25 text-[10px] font-bold rounded">
+                              待发货
+                            </span>
+                          )}
+                          <span className="text-[11px] text-[var(--color-text-muted)]">
+                            {new Date(order.createdAt).toLocaleString()}
                           </span>
-                        ) : (
-                          <span className="px-1.5 py-0.5 bg-orange-500/10 text-orange-400 border border-orange-400/20 text-[10px] font-bold rounded">
-                            待发货
-                          </span>
-                        )}
-                        <span className="text-[11px] text-[var(--c-text-sub)]">
-                          {new Date(order.createdAt).toLocaleString()}
+                        </div>
+                        <div className="flex items-center text-[var(--color-cta)] font-bold whitespace-nowrap text-sm sm:hidden">
+                          -<Coins className="w-3.5 h-3.5 mx-0.5 inline" />{order.price}
+                        </div>
+                      </div>
+
+                      <h4 className="font-bold text-sm mb-1 text-[var(--color-text)]">
+                        {order.product?.name}
+                      </h4>
+
+                      <div className="flex items-center gap-2 mt-2 flex-wrap">
+                        <span className="text-[10px] bg-[var(--color-surface)] px-1.5 py-0.5 rounded border border-[var(--color-border)] text-[var(--color-text-muted)] font-medium">
+                          {order.product?.type}
+                        </span>
+                        <span className="text-[10px] font-medium text-[var(--color-primary)] bg-[var(--color-primary)]/10 px-1.5 py-0.5 rounded border border-[var(--color-primary)]/20 inline-flex items-center gap-1">
+                          <Store className="w-3 h-3" />
+                          {order.merchant?.name || '平台自营'}
                         </span>
                       </div>
-                      <div className="flex items-center text-[var(--c-accent)] font-bold whitespace-nowrap text-sm sm:hidden">
+                    </div>
+
+                    <div className="flex items-center justify-between sm:flex-col sm:items-end sm:justify-center gap-2 sm:gap-4 shrink-0 sm:border-l sm:border-[var(--color-border)] sm:pl-4 pt-3 sm:pt-0 border-t border-[var(--color-border)] sm:border-t-0">
+                      <div className="hidden sm:flex items-center text-[var(--color-cta)] font-bold whitespace-nowrap text-sm">
                         -<Coins className="w-3.5 h-3.5 mx-0.5 inline" />{order.price}
                       </div>
-                    </div>
-                    
-                    <h4 className="font-bold text-sm mb-1 text-[var(--c-text-main)]">
-                      {order.product?.name}
-                      {order.merchant && (
-                        <span className="text-xs font-normal text-blue-500 bg-blue-50 dark:bg-blue-900/20 px-1.5 py-0.5 rounded border border-blue-200 dark:border-blue-900/30">
-                          {order.merchant.name}
-                        </span>
-                      )}
-                    </h4>
-                    
-                    <div className="flex items-center gap-2 mt-2">
-                      <span className="text-[10px] bg-[var(--c-bg-card)] px-1.5 py-0.5 rounded border border-[var(--c-border-faint)] text-[var(--c-text-sub)] font-medium">
-                        {order.product?.type}
-                      </span>
-                      <span className="text-[10px] font-medium text-blue-500 bg-blue-50 dark:bg-blue-900/20 px-1.5 py-0.5 rounded border border-blue-200 dark:border-blue-900/30 inline-flex items-center gap-1">
-                        <Store className="w-3 h-3" />
-                        {order.merchant?.name || '平台自营'}
-                      </span>
+                      <button
+                        onClick={() => openOrderDetail(order.id)}
+                        disabled={loadingOrderId === order.id}
+                        className="inline-flex items-center justify-center gap-1.5 cursor-pointer
+                          bg-[var(--color-primary)] text-white text-xs font-semibold
+                          px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap
+                          hover:bg-[var(--color-primary-hover)]
+                          focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)]
+                          disabled:opacity-50 disabled:cursor-not-allowed
+                          w-full sm:w-auto"
+                      >
+                        {loadingOrderId === order.id ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <Eye className="w-3.5 h-3.5" />
+                        )}
+                        查看发货内容
+                      </button>
                     </div>
                   </div>
+                ))}
+              </div>
+            )}
+          </TabsContent>
 
-                  <div className="flex items-center justify-between sm:flex-col sm:items-end sm:justify-center gap-2 sm:gap-4 shrink-0 sm:border-l sm:border-[var(--c-border-light)] sm:pl-4 pt-3 sm:pt-0 border-t border-[var(--c-border-light)] sm:border-t-0">
-                    <div className="hidden sm:flex items-center text-[var(--c-accent)] font-bold whitespace-nowrap text-sm">
-                      -<Coins className="w-3.5 h-3.5 mx-0.5 inline" />{order.price}
+          <TabsContent value="history">
+            <div className="space-y-2">
+              {history.map((item: any) => (
+                <div key={item.id} className="flex items-center justify-between p-3 border-b border-[var(--color-border)] last:border-0 hover:bg-[var(--color-background)] rounded-lg transition-colors">
+                  <div className="flex items-center gap-3">
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center shadow-sm ${
+                      item.type === 'in'
+                        ? 'bg-[var(--color-cta)]/10 border border-[var(--color-cta)]/25 text-[var(--color-cta)]'
+                        : 'bg-[var(--color-text-muted)]/15 border border-[var(--color-text-muted)]/25 text-[var(--color-text-muted)]'
+                    }`}>
+                      {item.type === 'in' ? <ArrowDownLeft className="w-4 h-4" /> : <ArrowUpRight className="w-4 h-4" />}
                     </div>
-                    <button
-                      onClick={() => openOrderDetail(order.id)}
-                      disabled={loadingOrderId === order.id}
-                      className="btn-primary py-2 px-4 text-xs flex items-center gap-1.5 whitespace-nowrap shadow-none w-full sm:w-auto justify-center"
-                    >
-                      {loadingOrderId === order.id ? (
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      ) : (
-                        <Eye className="w-3.5 h-3.5" />
-                      )}
-                      查看发货内容
-                    </button>
+                    <div>
+                      <p className="font-bold text-xs text-[var(--color-text)]">{item.reason}</p>
+                      <p className="text-[10px] text-[var(--color-text-muted)] mt-0.5">
+                        {new Date(item.createdAt).toLocaleString()}
+                      </p>
+                    </div>
+                  </div>
+                  <div className={`font-bold text-sm ${item.type === 'in' ? 'text-[var(--color-cta)]' : 'text-[var(--color-text)]'}`}>
+                    {item.type === 'in' ? '+' : '-'}{item.amount}
                   </div>
                 </div>
               ))}
             </div>
-          )
-        ) : (
-          <div className="space-y-2">
-            {history.map((item: any) => (
-              <div key={item.id} className="flex items-center justify-between p-3 border-b border-[var(--c-border-faint)] last:border-0 hover:bg-[var(--c-bg-app)] rounded-lg transition-colors">
-                <div className="flex items-center gap-3">
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center shadow-sm ${
-                    item.type === 'in'
-                      ? 'bg-[var(--c-bg-app)] border border-[var(--c-accent)]/20 text-[var(--c-accent)]'
-                      : 'bg-[var(--c-text-main)] text-[var(--c-bg-app)]'
-                  }`}>
-                    {item.type === 'in' ? <ArrowDownLeft className="w-4 h-4" /> : <ArrowUpRight className="w-4 h-4" />}
-                  </div>
-                  <div>
-                    <p className="font-bold text-xs text-[var(--c-text-main)]">{item.reason}</p>
-                    <p className="text-[10px] text-[var(--c-text-sub)] mt-0.5">
-                      {new Date(item.createdAt).toLocaleString()}
-                    </p>
-                  </div>
-                </div>
-                <div className={`font-bold text-sm ${item.type === 'in' ? 'text-[var(--c-accent)]' : 'text-[var(--c-text-main)]'}`}>
-                  {item.type === 'in' ? '+' : '-'}{item.amount}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+          </TabsContent>
+        </Tabs>
       </div>
 
       {/* Logout */}
       <div className="pt-2 flex justify-center">
         <button
           onClick={handleLogout}
-          className="text-[var(--c-text-sub)] font-medium hover:text-red-500 flex items-center gap-1.5 px-4 py-2 rounded-xl hover:bg-[var(--c-border-faint)] transition-colors text-sm"
+          className="cursor-pointer text-[var(--color-text-muted)] font-medium hover:text-red-500 flex items-center gap-1.5 px-4 py-2 rounded-lg hover:bg-red-500/10 transition-colors text-sm"
         >
           <LogOut className="w-4 h-4" /> 退出当前账号
         </button>
