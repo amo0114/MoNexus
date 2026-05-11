@@ -5,12 +5,32 @@
 .worktrees/
 worktrees
 
+# IDE / Editor local config
+.cursor/
+.gemini/
+.vscode/
+.idea/
+
+# Dependency directories
 node_modules/
 server/node_modules/
+
+# Build output
 dist/
 server/dist/
+tsconfig.tsbuildinfo
+**/*.tsbuildinfo
+
+# Env files (never commit secrets)
 .env
+.env.local
+.env.*.local
 server/.env
 server/.env.test
-tsconfig.tsbuildinfo
+
+# Logs
 *.log
+npm-debug.log*
+
+# One-off / throwaway patch scripts
+patch*.py
