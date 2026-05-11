@@ -17,6 +17,17 @@ const envSchema = z.object({
   JWT_SECRET: z.string().min(32, 'JWT_SECRET must be at least 32 characters'),
   FRONTEND_ORIGIN: z.string().url(),
   COOKIE_SECURE: booleanEnvSchema.default(false),
+
+  // --- Object storage (P0-C). All optional: when any are missing the
+  // server falls back to an in-memory adapter that's only safe for dev
+  // and tests. Production validation below enforces all-or-nothing.
+  STORAGE_ENDPOINT: z.string().url().optional(),
+  STORAGE_REGION: z.string().optional(),
+  STORAGE_BUCKET: z.string().min(1).optional(),
+  STORAGE_ACCESS_KEY: z.string().min(1).optional(),
+  STORAGE_SECRET_KEY: z.string().min(1).optional(),
+  STORAGE_PUBLIC_URL_BASE: z.string().url().optional(),
+  STORAGE_FORCE_PATH_STYLE: booleanEnvSchema.default(true),
 })
 
 const parsed = envSchema.safeParse(process.env)
@@ -36,6 +47,22 @@ if (env.NODE_ENV === 'production' && !env.COOKIE_SECURE) {
   process.exit(1)
 }
 
+// Storage env vars are optional in dev/test (we fall back to in-memory
+// storage) but in production all four core values must be present so we
+// never silently lose user uploads to a process-local Map.
+const hasAllStorageVars =
+  !!env.STORAGE_ENDPOINT &&
+  !!env.STORAGE_BUCKET &&
+  !!env.STORAGE_ACCESS_KEY &&
+  !!env.STORAGE_SECRET_KEY
+
+if (env.NODE_ENV === 'production' && !hasAllStorageVars) {
+  console.error(
+    '[Config] STORAGE_ENDPOINT, STORAGE_BUCKET, STORAGE_ACCESS_KEY, and STORAGE_SECRET_KEY are all required in production'
+  )
+  process.exit(1)
+}
+
 export const config = {
   nodeEnv: env.NODE_ENV,
   isProduction: env.NODE_ENV === 'production',
@@ -49,4 +76,16 @@ export const config = {
   checkinReward: 50,
   registerReward: 500,
   inviteReward: 200,
+  storage: hasAllStorageVars
+    ? {
+        kind: 's3' as const,
+        endpoint: env.STORAGE_ENDPOINT!,
+        region: env.STORAGE_REGION ?? 'us-east-1',
+        bucket: env.STORAGE_BUCKET!,
+        accessKey: env.STORAGE_ACCESS_KEY!,
+        secretKey: env.STORAGE_SECRET_KEY!,
+        publicUrlBase: env.STORAGE_PUBLIC_URL_BASE,
+        forcePathStyle: env.STORAGE_FORCE_PATH_STYLE,
+      }
+    : ({ kind: 'memory' as const }),
 }
