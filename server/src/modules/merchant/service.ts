@@ -98,6 +98,7 @@ export async function listMyOrders(merchantId: number, page = 1, pageSize = 20) 
       user: { select: { id: true, email: true } },
       product: { select: { name: true } },
       delivery: { select: { content: true } },
+      settlement: { select: { settlementAmount: true, status: true, settledAt: true } },
     },
     orderBy: { createdAt: 'desc' },
     skip: (page - 1) * pageSize,
@@ -112,6 +113,7 @@ export async function getMyOrderDetail(merchantId: number, orderId: number) {
       user: { select: { id: true, email: true } },
       product: { select: { id: true, name: true, icon: true, type: true, price: true } },
       delivery: { select: { content: true, status: true } },
+      settlement: { select: { settlementAmount: true, status: true, settledAt: true } },
     },
   })
   if (!order) throw notFound('订单不存在')

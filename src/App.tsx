@@ -1,7 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { useEffect } from 'react'
 import { useAuthStore } from './stores/authStore'
-import { getMe } from './api/auth'
+import { fetchMeWithRoleHealing } from './api/auth'
 import Layout from './components/Layout'
 import Toast from './components/Toast'
 import LoginPage from './pages/LoginPage'
@@ -19,13 +19,17 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const logout = useAuthStore((s) => s.logout)
 
   useEffect(() => {
-    if (isLoggedIn) {
-      getMe().then(setUser).catch(() => {
-        // If getting me fails, we shouldn't necessarily log out immediately on every network error,
-        // but if it's 401, axios interceptor will handle the refresh and logout if refresh fails.
+    if (!isLoggedIn) return
+    fetchMeWithRoleHealing()
+      .then(setUser)
+      .catch((err) => {
+        // role-skew healing failed (refresh rejected) — only logout on hard auth errors.
+        // Transient network failures should not boot the user.
+        if (err?.response?.status === 401) {
+          logout()
+        }
       })
-    }
-  }, [isLoggedIn, setUser])
+  }, [isLoggedIn, setUser, logout])
 
   return isLoggedIn ? <>{children}</> : <Navigate to="/login" />
 }

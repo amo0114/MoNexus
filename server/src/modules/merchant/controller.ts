@@ -54,18 +54,32 @@ export async function importInventory(req: Request, res: Response, next: NextFun
 
 // ---- Orders ----
 
+type OrderWithSettlement = {
+  settlement?: { settlementAmount: number; status: string; settledAt: Date | null } | null
+  [key: string]: unknown
+}
+
+function flattenSettlement<T extends OrderWithSettlement>(order: T) {
+  return {
+    ...order,
+    settlementAmount: order.settlement?.settlementAmount ?? 0,
+  }
+}
+
 export async function listOrders(req: Request, res: Response, next: NextFunction) {
   try {
     const merchant = await merchantService.getMyMerchant(req.user!.userId)
     const { page, pageSize } = req.query as Record<string, string>
-    res.json(await merchantService.listMyOrders(merchant.id, Number(page) || 1, Number(pageSize) || 20))
+    const orders = await merchantService.listMyOrders(merchant.id, Number(page) || 1, Number(pageSize) || 20)
+    res.json(orders.map(flattenSettlement))
   } catch (err) { next(err) }
 }
 
 export async function orderDetail(req: Request, res: Response, next: NextFunction) {
   try {
     const merchant = await merchantService.getMyMerchant(req.user!.userId)
-    res.json(await merchantService.getMyOrderDetail(merchant.id, req.params.id as unknown as number))
+    const order = await merchantService.getMyOrderDetail(merchant.id, req.params.id as unknown as number)
+    res.json(flattenSettlement(order))
   } catch (err) { next(err) }
 }
 

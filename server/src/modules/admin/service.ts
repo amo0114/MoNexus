@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client'
 import { prisma } from '../../lib/prisma.js'
 import { badRequest, notFound } from '../../lib/httpError.js'
+import { revokeAllUserRefreshTokens } from '../auth/service.js'
 
 function getShanghaiDayRange() {
   const now = new Date()
@@ -228,6 +229,8 @@ export async function approveMerchant(adminUserId: number, merchantId: number) {
       data: { role: 'merchant' },
     })
 
+    await revokeAllUserRefreshTokens(merchant.userId, tx)
+
     await tx.adminLog.create({
       data: {
         adminUserId,
@@ -280,6 +283,8 @@ export async function suspendMerchant(adminUserId: number, merchantId: number) {
       where: { id: merchant.userId },
       data: { role: 'user' },
     })
+
+    await revokeAllUserRefreshTokens(merchant.userId, tx)
 
     await tx.adminLog.create({
       data: {

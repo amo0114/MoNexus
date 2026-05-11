@@ -1,6 +1,7 @@
 import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 import crypto from 'crypto'
+import { Prisma } from '@prisma/client'
 import { config } from '../../config/index.js'
 import { prisma } from '../../lib/prisma.js'
 import { badRequest, conflict, notFound, unauthenticated } from '../../lib/httpError.js'
@@ -167,6 +168,17 @@ export async function revokeRefreshToken(rawRefreshToken: string) {
   const tokenHash = hashRefreshToken(rawRefreshToken)
   await prisma.refreshToken.updateMany({
     where: { tokenHash, revoked: false },
+    data: { revoked: true },
+  })
+}
+
+export async function revokeAllUserRefreshTokens(
+  userId: number,
+  tx?: Prisma.TransactionClient
+) {
+  const client = tx ?? prisma
+  await client.refreshToken.updateMany({
+    where: { userId, revoked: false },
     data: { revoked: true },
   })
 }

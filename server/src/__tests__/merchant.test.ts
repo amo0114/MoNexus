@@ -109,6 +109,22 @@ describe('Merchant product and order flows', () => {
     expect(orders.body).toHaveLength(1)
     expect(orders.body[0].merchantId).toBe(merchant.id)
     expect(orders.body[0].user.email).toBe('merchant-buyer@test.local')
+    expect(orders.body[0].settlementAmount).toBe(400)
+    expect(orders.body[0].settlement).toMatchObject({
+      settlementAmount: 400,
+      status: 'pending',
+    })
+
+    const orderDetail = await api
+      .get(`/api/merchant/orders/${created.body.orderId}`)
+      .set(authHeader(merchantLogin.accessToken))
+      .expect(200)
+
+    expect(orderDetail.body.settlementAmount).toBe(400)
+    expect(orderDetail.body.settlement).toMatchObject({
+      settlementAmount: 400,
+      status: 'pending',
+    })
 
     const settlements = await api
       .get('/api/merchant/settlements')
