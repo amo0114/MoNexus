@@ -4,6 +4,7 @@ import { useAuthStore } from './stores/authStore'
 import { fetchMeWithRoleHealing } from './api/auth'
 import Layout from './components/Layout'
 import Toast from './components/Toast'
+import ScrollToTop from './components/ScrollToTop'
 import LoginPage from './pages/LoginPage'
 import ForgotPasswordPage from './pages/ForgotPasswordPage'
 import ResetPasswordPage from './pages/ResetPasswordPage'
@@ -40,6 +41,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 export default function App() {
   return (
     <BrowserRouter>
+      <ScrollToTop />
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
