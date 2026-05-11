@@ -43,21 +43,15 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       <nav className="glass sticky top-0 z-40 w-full px-4 sm:px-6 py-4 border-b border-[var(--color-border)]">
         <div className="max-w-7xl mx-auto flex justify-between items-center relative">
 
-          {/* Wordmark — indigo block + Orbitron MONEXUS, in sync with LoginPage */}
+          {/* Wordmark — Orbitron only. The graphic brand mark is on hold
+              pending a professional redesign; see
+              design-system/monexus/LOGO-BRIEF.md. Drop the new mark in
+              alongside this span when it arrives. */}
           <div
-            className="flex items-center gap-2.5 cursor-pointer group"
+            className="cursor-pointer group"
             onClick={() => navigate('/')}
           >
-            <div
-              className="w-9 h-9 rounded-lg flex items-center justify-center font-heading font-bold text-white text-base shadow-sm group-hover:shadow-md transition-shadow shrink-0"
-              style={{
-                background:
-                  'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-hover) 100%)',
-              }}
-            >
-              M
-            </div>
-            <span className="font-heading text-lg font-bold tracking-[0.15em] text-[var(--color-text)] leading-none">
+            <span className="font-heading text-lg font-bold tracking-[0.18em] text-[var(--color-text)] leading-none transition-colors group-hover:text-[var(--color-primary)]">
               MONEXUS
             </span>
           </div>
@@ -177,17 +171,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       <footer className="w-full mt-auto border-t border-[var(--color-border)] bg-[var(--color-surface)]/50 backdrop-blur-md relative overflow-hidden z-10 shrink-0">
         <div className="absolute inset-0 bg-gradient-to-b from-transparent to-[var(--color-primary)]/5 pointer-events-none" />
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 relative z-10 flex flex-col md:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-2 opacity-80">
-            <div
-              className="w-5 h-5 rounded flex items-center justify-center font-heading font-bold text-white text-[10px]"
-              style={{
-                background:
-                  'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-hover) 100%)',
-              }}
-            >
-              M
-            </div>
-            <span className="text-sm font-bold text-[var(--color-text-muted)] tracking-tight">MoNexus</span>
+          <div className="opacity-80">
+            <span className="font-heading text-sm font-bold text-[var(--color-text-muted)] tracking-[0.15em]">MONEXUS</span>
           </div>
           <div className="flex items-center gap-6 text-xs font-medium text-[var(--color-text-muted)]">
             <a href="#" className="hover:text-[var(--color-primary)] transition-colors">关于我们</a>
