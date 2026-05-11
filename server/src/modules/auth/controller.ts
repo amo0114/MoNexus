@@ -69,3 +69,43 @@ export async function me(req: Request, res: Response, next: NextFunction) {
     next(err)
   }
 }
+
+// Always returns 200 with the same payload, whether or not the email
+// exists. Hiding the result prevents account enumeration via this
+// endpoint while still letting real users get a reset link.
+export async function forgotPassword(req: Request, res: Response, next: NextFunction) {
+  try {
+    await authService.requestPasswordReset(req.body.email)
+    res.json({ message: '如果该邮箱已注册，重置链接已发送' })
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function resetPassword(req: Request, res: Response, next: NextFunction) {
+  try {
+    await authService.resetPasswordWithToken(req.body.token, req.body.password)
+    res.json({ ok: true })
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function sendVerification(req: Request, res: Response, next: NextFunction) {
+  try {
+    await authService.sendEmailVerification(req.user!.userId)
+    res.json({ ok: true })
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function verifyEmail(req: Request, res: Response, next: NextFunction) {
+  try {
+    const token = String(req.query.token ?? '')
+    await authService.verifyEmailWithToken(token)
+    res.json({ ok: true })
+  } catch (err) {
+    next(err)
+  }
+}

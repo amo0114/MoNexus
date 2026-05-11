@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, Link } from 'react-router-dom'
 import { Gift } from 'lucide-react'
 import { useAuthStore } from '../stores/authStore'
 import { useAppStore } from '../stores/appStore'
@@ -128,6 +128,17 @@ export default function LoginPage() {
         >
           {isRegister ? '已有账号？去登录' : '没有账号？注册新账号'}
         </button>
+
+        {!isRegister && (
+          <div className="mt-2">
+            <Link
+              to="/forgot-password"
+              className="text-sm text-[var(--c-text-sub)] hover:text-[var(--c-accent)] hover:underline transition-colors"
+            >
+              忘记密码？
+            </Link>
+          </div>
+        )}
 
         {/* 快速登录测试按钮 (仅登录模式显示) */}
         {!isRegister && (

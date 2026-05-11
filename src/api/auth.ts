@@ -51,3 +51,22 @@ export async function fetchMeWithRoleHealing(): Promise<AuthUser> {
   await refreshAccessToken()
   return getMe()
 }
+
+// --- Password reset + email verification (P0-D) ---
+
+export async function forgotPassword(email: string): Promise<{ message: string }> {
+  const { data } = await api.post<{ message: string }>('/auth/forgot-password', { email })
+  return data
+}
+
+export async function resetPassword(token: string, password: string): Promise<void> {
+  await api.post('/auth/reset-password', { token, password })
+}
+
+export async function sendVerificationEmail(): Promise<void> {
+  await api.post('/auth/send-verification')
+}
+
+export async function verifyEmail(token: string): Promise<void> {
+  await api.get('/auth/verify-email', { params: { token } })
+}

@@ -28,6 +28,20 @@ const envSchema = z.object({
   STORAGE_SECRET_KEY: z.string().min(1).optional(),
   STORAGE_PUBLIC_URL_BASE: z.string().url().optional(),
   STORAGE_FORCE_PATH_STYLE: booleanEnvSchema.default(true),
+
+  // --- SMTP for transactional email (P0-D). Optional in dev/test
+  // (server falls back to a console-logging mailer); required in
+  // production so password resets actually leave the box.
+  SMTP_HOST: z.string().min(1).optional(),
+  SMTP_PORT: z.coerce.number().int().positive().default(587),
+  SMTP_SECURE: booleanEnvSchema.default(false),
+  SMTP_USER: z.string().optional(),
+  SMTP_PASS: z.string().optional(),
+  SMTP_FROM: z.string().email().optional(),
+
+  // --- Public app URL used to build links inside transactional emails.
+  // Defaults to FRONTEND_ORIGIN if not set explicitly.
+  APP_BASE_URL: z.string().url().optional(),
 })
 
 const parsed = envSchema.safeParse(process.env)
@@ -63,6 +77,17 @@ if (env.NODE_ENV === 'production' && !hasAllStorageVars) {
   process.exit(1)
 }
 
+// Mailer: in production all four SMTP basics must be set so password
+// reset emails actually leave the box. In dev/test we use a
+// console-logging fallback that prints the message body to stdout.
+const hasSmtp = !!env.SMTP_HOST && !!env.SMTP_USER && !!env.SMTP_PASS && !!env.SMTP_FROM
+if (env.NODE_ENV === 'production' && !hasSmtp) {
+  console.error(
+    '[Config] SMTP_HOST, SMTP_USER, SMTP_PASS, and SMTP_FROM are all required in production'
+  )
+  process.exit(1)
+}
+
 export const config = {
   nodeEnv: env.NODE_ENV,
   isProduction: env.NODE_ENV === 'production',
@@ -88,4 +113,18 @@ export const config = {
         forcePathStyle: env.STORAGE_FORCE_PATH_STYLE,
       }
     : ({ kind: 'memory' as const }),
+  mailer: hasSmtp
+    ? {
+        kind: 'smtp' as const,
+        host: env.SMTP_HOST!,
+        port: env.SMTP_PORT,
+        secure: env.SMTP_SECURE,
+        user: env.SMTP_USER!,
+        pass: env.SMTP_PASS!,
+        from: env.SMTP_FROM!,
+      }
+    : ({ kind: 'console' as const }),
+  appBaseUrl: env.APP_BASE_URL ?? env.FRONTEND_ORIGIN,
+  passwordResetTokenMaxAgeMs: 30 * 60 * 1000, // 30 min
+  emailVerificationTokenMaxAgeMs: 24 * 60 * 60 * 1000, // 24h
 }
