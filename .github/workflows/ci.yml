@@ -1,0 +1,124 @@
+name: CI
+
+on:
+  push:
+    branches: [master, "chore/**", "feat/**", "fix/**"]
+  pull_request:
+    branches: [master]
+
+# Cancel in-flight runs when a PR is updated; saves minutes.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  server-test:
+    name: Server (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["20.x", "22.x"]
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: monexus
+          POSTGRES_PASSWORD: monexus_test
+          POSTGRES_DB: monexus_test
+        ports:
+          - 5432:5432
+        # Block job from starting steps until postgres is genuinely accepting
+        # connections, not just listening on the port.
+        options: >-
+          --health-cmd "pg_isready -U monexus -d monexus_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://monexus:monexus_test@localhost:5432/monexus_test?schema=public
+      TEST_DATABASE_URL: postgresql://monexus:monexus_test@localhost:5432/monexus_test?schema=public
+      JWT_SECRET: ci-jwt-secret-at-least-32-characters-long-xx
+      FRONTEND_ORIGIN: http://localhost:5173
+      COOKIE_SECURE: "false"
+      NODE_ENV: test
+
+    defaults:
+      run:
+        working-directory: server
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Apply migrations to test database
+        run: npx prisma migrate deploy
+
+      - name: Type-check
+        run: npx tsc --noEmit
+
+      - name: Run vitest
+        run: npm test
+
+  frontend-build:
+    name: Frontend (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["20.x", "22.x"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type-check and build
+        run: npm run build
+
+      - name: Upload build artifact
+        if: matrix.node == '20.x'
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: dist
+          retention-days: 7
+
+  # Aggregate gate — a single status check the branch protection rule can
+  # require. Avoids having to list every matrix shard individually.
+  ci-pass:
+    name: CI Pass
+    runs-on: ubuntu-latest
+    needs: [server-test, frontend-build]
+    if: always()
+    steps:
+      - name: Fail if any required job failed
+        if: ${{ needs.server-test.result != 'success' || needs.frontend-build.result != 'success' }}
+        run: |
+          echo "server-test=${{ needs.server-test.result }}"
+          echo "frontend-build=${{ needs.frontend-build.result }}"
+          exit 1
+      - name: All required jobs passed
+        run: echo "OK"
