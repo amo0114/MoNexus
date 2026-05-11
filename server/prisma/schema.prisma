@@ -9,13 +9,14 @@ datasource db {
 }
 
 model User {
-  id         Int      @id @default(autoincrement())
-  email      String   @unique
-  password   String
-  role       String   @default("user") // user | admin | merchant
-  status     String   @default("正常")
-  inviteCode String   @unique @default(uuid())
-  createdAt  DateTime @default(now())
+  id            Int       @id @default(autoincrement())
+  email         String    @unique
+  password      String
+  role          String    @default("user") // user | admin | merchant
+  status        String    @default("正常")
+  inviteCode    String    @unique @default(uuid())
+  emailVerified DateTime?
+  createdAt     DateTime  @default(now())
 
   pointAccount  PointAccount?
   orders        Order[]
@@ -27,6 +28,30 @@ model User {
   adminLogs         AdminLog[]
   approvedMerchants Merchant[]     @relation("MerchantApprovedBy")
   merchant          Merchant?
+  passwordResetTokens     PasswordResetToken[]
+  emailVerificationTokens EmailVerificationToken[]
+}
+
+model PasswordResetToken {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  tokenHash String   @unique
+  used      Boolean  @default(false)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+model EmailVerificationToken {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  tokenHash String   @unique
+  used      Boolean  @default(false)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
 }
 
 model Merchant {

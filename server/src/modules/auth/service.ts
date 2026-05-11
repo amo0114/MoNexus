@@ -5,6 +5,7 @@ import { Prisma } from '@prisma/client'
 import { config } from '../../config/index.js'
 import { prisma } from '../../lib/prisma.js'
 import { badRequest, conflict, notFound, unauthenticated } from '../../lib/httpError.js'
+import { getMailer } from '../../lib/mailer/index.js'
 
 function generateAccessToken(userId: number, role: string) {
   return jwt.sign({ userId, role }, config.jwtSecret, { expiresIn: config.jwtExpiresIn })
@@ -197,6 +198,7 @@ export async function getUserProfile(userId: number) {
     status: user.status,
     inviteCode: user.inviteCode,
     points: user.pointAccount?.balance ?? 0,
+    emailVerified: user.emailVerified,
     createdAt: user.createdAt,
     merchant: user.merchant
       ? {
@@ -207,4 +209,105 @@ export async function getUserProfile(userId: number) {
         }
       : null,
   }
+}
+
+// ============================================================
+// Password reset + email verification (P0-D)
+// ============================================================
+
+function hashAuthToken(raw: string) {
+  return crypto.createHash('sha256').update(raw).digest('hex')
+}
+
+function generateAuthToken() {
+  return crypto.randomBytes(32).toString('hex')
+}
+
+export async function requestPasswordReset(email: string) {
+  const user = await prisma.user.findUnique({ where: { email } })
+  // Silently no-op for unknown emails so the public endpoint can return
+  // the same 200 response regardless of existence (no enumeration).
+  if (!user) return
+  if (user.status === '已封禁') return
+
+  const rawToken = generateAuthToken()
+  await prisma.passwordResetToken.create({
+    data: {
+      userId: user.id,
+      tokenHash: hashAuthToken(rawToken),
+      expiresAt: new Date(Date.now() + config.passwordResetTokenMaxAgeMs),
+    },
+  })
+
+  const mailer = await getMailer()
+  const link = `${config.appBaseUrl}/reset-password/${rawToken}`
+  await mailer.send({
+    to: user.email,
+    subject: 'MoNexus 密码重置',
+    text: `您正在重置 MoNexus 账户的密码。\n\n请在 30 分钟内点击下面的链接完成重置：\n${link}\n\n如非本人操作请忽略此邮件，账户密码不会被更改。`,
+  })
+}
+
+export async function resetPasswordWithToken(rawToken: string, newPassword: string) {
+  const tokenHash = hashAuthToken(rawToken)
+  const stored = await prisma.passwordResetToken.findUnique({
+    where: { tokenHash },
+    include: { user: true },
+  })
+  if (!stored) throw badRequest('重置链接无效', 'BAD_REQUEST')
+  if (stored.used) throw badRequest('重置链接已被使用', 'BAD_REQUEST')
+  if (stored.expiresAt < new Date()) throw badRequest('重置链接已过期', 'BAD_REQUEST')
+
+  const hashed = await bcrypt.hash(newPassword, 10)
+  await prisma.$transaction(async tx => {
+    await tx.user.update({ where: { id: stored.userId }, data: { password: hashed } })
+    await tx.passwordResetToken.update({ where: { id: stored.id }, data: { used: true } })
+    // Revoke every refresh token outstanding for this user — if the
+    // password is being reset, assume the prior session is compromised.
+    await revokeAllUserRefreshTokens(stored.userId, tx)
+  })
+}
+
+export async function sendEmailVerification(userId: number) {
+  const user = await prisma.user.findUnique({ where: { id: userId } })
+  if (!user) throw notFound('用户不存在')
+  if (user.emailVerified) throw badRequest('邮箱已验证')
+
+  const rawToken = generateAuthToken()
+  await prisma.emailVerificationToken.create({
+    data: {
+      userId: user.id,
+      tokenHash: hashAuthToken(rawToken),
+      expiresAt: new Date(Date.now() + config.emailVerificationTokenMaxAgeMs),
+    },
+  })
+
+  const mailer = await getMailer()
+  const link = `${config.appBaseUrl}/verify-email?token=${rawToken}`
+  await mailer.send({
+    to: user.email,
+    subject: 'MoNexus 邮箱验证',
+    text: `请在 24 小时内点击下面的链接完成邮箱验证：\n${link}\n\n如非本人操作请忽略此邮件。`,
+  })
+}
+
+export async function verifyEmailWithToken(rawToken: string) {
+  const tokenHash = hashAuthToken(rawToken)
+  const stored = await prisma.emailVerificationToken.findUnique({
+    where: { tokenHash },
+  })
+  if (!stored) throw badRequest('验证链接无效', 'BAD_REQUEST')
+  if (stored.used) throw badRequest('验证链接已被使用', 'BAD_REQUEST')
+  if (stored.expiresAt < new Date()) throw badRequest('验证链接已过期', 'BAD_REQUEST')
+
+  await prisma.$transaction(async tx => {
+    await tx.user.update({
+      where: { id: stored.userId },
+      data: { emailVerified: new Date() },
+    })
+    await tx.emailVerificationToken.update({
+      where: { id: stored.id },
+      data: { used: true },
+    })
+  })
 }

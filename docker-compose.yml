@@ -11,6 +11,54 @@ services:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U monexus -d monexus"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # S3-compatible object storage for image uploads.
+  # Gated behind the `storage` profile so `docker compose up` stays
+  # lightweight; opt in with `docker compose --profile storage up`.
+  # When MinIO is off, the server's in-memory storage adapter takes over.
+  minio:
+    image: minio/minio:latest
+    container_name: monexus-minio
+    restart: unless-stopped
+    profiles: [storage]
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minio
+      MINIO_ROOT_PASSWORD: minio_dev_password
+    ports:
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # web console
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:9000/minio/health/live || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # One-shot init container: creates the upload bucket on first run
+  # and opens it for anonymous downloads so browsers can fetch the URLs
+  # the upload API returns without signing each request.
+  minio-init:
+    image: minio/mc:latest
+    container_name: monexus-minio-init
+    profiles: [storage]
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 minio minio_dev_password &&
+      mc mb --ignore-existing local/monexus-uploads &&
+      mc anonymous set download local/monexus-uploads &&
+      echo 'bucket monexus-uploads ready'
+      "
 
 volumes:
   pgdata:
+  miniodata:

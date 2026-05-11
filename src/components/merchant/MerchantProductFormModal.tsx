@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react'
-import { X, Package, Tag, DollarSign, Image as ImageIcon, FileText } from 'lucide-react'
+import { useState, useEffect, useRef } from 'react'
+import { X, Package, Tag, DollarSign, Image as ImageIcon, FileText, Upload, Loader2 } from 'lucide-react'
 import { MerchantProduct } from '../../types/merchant'
 import { useAppStore } from '../../stores/appStore'
+import { uploadImage, UploadError } from '../../api/uploads'
 
 interface Props {
   isOpen: boolean
@@ -13,6 +14,8 @@ interface Props {
 export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, product }: Props) {
   const showToast = useAppStore((s) => s.showToast)
   const [loading, setLoading] = useState(false)
+  const [uploadingImage, setUploadingImage] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const [form, setForm] = useState({
     name: '',
     type: '网络节点',
@@ -237,14 +240,81 @@ export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, pr
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-[var(--c-text-sub)] mb-1.5 ml-1">封面大图 URL</label>
-                    <input
-                      type="url"
-                      placeholder="https://..."
-                      className="input-field"
-                      value={form.imageUrl}
-                      onChange={(e) => setForm({ ...form, imageUrl: e.target.value })}
-                    />
+                    <label className="block text-xs font-bold text-[var(--c-text-sub)] mb-1.5 ml-1">封面大图</label>
+                    <div className="flex gap-2">
+                      <input
+                        type="url"
+                        placeholder="粘贴图片 URL，或点右侧上传"
+                        className="input-field flex-1"
+                        value={form.imageUrl}
+                        onChange={(e) => setForm({ ...form, imageUrl: e.target.value })}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={uploadingImage}
+                        className="px-4 py-2 rounded-xl font-bold flex items-center gap-2 bg-[var(--c-bg-app)] border border-[var(--c-border-light)] text-[var(--c-text-main)] hover:bg-[var(--c-border-faint)] disabled:opacity-60 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
+                        title="上传本地图片"
+                      >
+                        {uploadingImage ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            <span className="text-sm">上传中</span>
+                          </>
+                        ) : (
+                          <>
+                            <Upload className="w-4 h-4" />
+                            <span className="text-sm">上传</span>
+                          </>
+                        )}
+                      </button>
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp,image/gif"
+                        className="hidden"
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0]
+                          if (!file) return
+                          setUploadingImage(true)
+                          try {
+                            const result = await uploadImage(file)
+                            setForm((prev) => ({ ...prev, imageUrl: result.url }))
+                            showToast('图片上传成功')
+                          } catch (err) {
+                            if (err instanceof UploadError) {
+                              showToast(err.message, 'error')
+                            } else {
+                              const msg = (err as any)?.response?.data?.error?.message || '图片上传失败'
+                              showToast(msg, 'error')
+                            }
+                          } finally {
+                            setUploadingImage(false)
+                            // Reset so same file can be picked again after error.
+                            if (fileInputRef.current) fileInputRef.current.value = ''
+                          }
+                        }}
+                      />
+                    </div>
+                    {form.imageUrl && (
+                      <div className="mt-2 flex items-center gap-2">
+                        <img
+                          src={form.imageUrl}
+                          alt="预览"
+                          className="w-16 h-16 rounded-lg object-cover border border-[var(--c-border-light)]"
+                          onError={(e) => {
+                            ;(e.target as HTMLImageElement).style.display = 'none'
+                          }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setForm({ ...form, imageUrl: '' })}
+                          className="text-xs text-[var(--c-text-sub)] hover:text-red-500 transition-colors"
+                        >
+                          移除
+                        </button>
+                      </div>
+                    )}
                   </div>
                   
                   {/* Toggle switch for isHot */}

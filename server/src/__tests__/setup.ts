@@ -21,6 +21,8 @@ beforeEach(async () => {
     "InviteRelation",
     "Review",
     "RefreshToken",
+    "PasswordResetToken",
+    "EmailVerificationToken",
     "Product",
     "Merchant",
     "PointAccount",
