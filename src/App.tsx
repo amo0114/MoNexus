@@ -15,6 +15,7 @@ import ProfilePage from './pages/ProfilePage'
 import AdminPage from './pages/AdminPage'
 import MerchantApplyPage from './pages/MerchantApplyPage'
 import MerchantDashboardPage from './pages/MerchantDashboardPage'
+import DesignTokensPage from './pages/_design-tokens'
 import RoleGuard from './components/RoleGuard'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -47,6 +48,8 @@ export default function App() {
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
         <Route path="/reset-password/:token" element={<ResetPasswordPage />} />
         <Route path="/verify-email" element={<VerifyEmailPage />} />
+        {/* Phase 2 internal preview — removed before Phase 3 merge */}
+        <Route path="/_dev/tokens" element={<DesignTokensPage />} />
         <Route
           path="/*"
           element={
