@@ -9,6 +9,8 @@ import {
   DialogClose,
 } from '../components/ui/Dialog'
 import { Coins, Sparkles, ShoppingBag } from 'lucide-react'
+import Logo from '../components/ui/Logo'
+import { useLogoStore, type LogoVariant } from '../stores/logoStore'
 
 /**
  * Phase 2 token + component preview page.
@@ -25,6 +27,10 @@ export default function DesignTokensPage() {
             New component system preview. Switch dark mode in any other tab — this page reacts.
           </p>
         </header>
+
+        <Section title="Brand Mark">
+          <BrandMarkSwitcher />
+        </Section>
 
         <Section title="Colors">
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
@@ -222,5 +228,89 @@ function DialogDemo() {
         </div>
       </DialogContent>
     </Dialog>
+  )
+}
+
+function BrandMarkSwitcher() {
+  const variant = useLogoStore((s) => s.variant)
+  const setVariant = useLogoStore((s) => s.setVariant)
+
+  const options: { value: LogoVariant; label: string; blurb: string }[] = [
+    {
+      value: 'flow',
+      label: 'Flow',
+      blurb: '两条垂直直线 + 两个完美 180° 半圆，连续单笔成型。读作抽象化的 N，但不沦为字标。',
+    },
+    {
+      value: 'concentric',
+      label: 'Concentric',
+      blurb: '实心中心节点 + 两道同心弧。借鉴 AirDrop / Podcasts 的"hub 广播"语言。',
+    },
+  ]
+
+  return (
+    <div className="space-y-6">
+      {/* Segmented control */}
+      <div className="inline-flex rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-1">
+        {options.map((opt) => (
+          <button
+            key={opt.value}
+            onClick={() => setVariant(opt.value)}
+            className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors cursor-pointer ${
+              variant === opt.value
+                ? 'bg-[var(--color-primary)] text-white'
+                : 'text-[var(--color-text-muted)] hover:text-[var(--color-text)]'
+            }`}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+
+      <p className="text-sm text-[var(--color-text-muted)] max-w-2xl">
+        {options.find((o) => o.value === variant)?.blurb}
+      </p>
+
+      {/* Renderings at production sizes */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <SizePreview label="Favicon · 16px" size="w-4 h-4" />
+        <SizePreview label="Nav · 32px" size="w-8 h-8" />
+        <SizePreview label="Login · 80px" size="w-20 h-20" />
+        <SizePreview label="Hero · 128px" size="w-32 h-32" />
+      </div>
+
+      {/* Lockups in real product surfaces */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="card">
+          <div className="text-xs text-[var(--color-text-muted)] uppercase tracking-widest mb-3">Nav lockup</div>
+          <div className="flex items-center gap-2.5">
+            <Logo className="w-8 h-8 text-[var(--color-primary)]" />
+            <span className="font-heading text-lg font-bold tracking-[0.18em] text-[var(--color-text)] leading-none">
+              MONEXUS
+            </span>
+          </div>
+        </div>
+        <div className="card !bg-[var(--color-text)] !border-0">
+          <div className="text-xs text-white/60 uppercase tracking-widest mb-3">On dark surface</div>
+          <div className="flex items-center gap-2.5">
+            <Logo className="w-8 h-8 text-white" />
+            <span className="font-heading text-lg font-bold tracking-[0.18em] text-white leading-none">
+              MONEXUS
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function SizePreview({ label, size }: { label: string; size: string }) {
+  return (
+    <div className="card flex flex-col items-center gap-3">
+      <div className="flex-1 flex items-center justify-center min-h-[140px]">
+        <Logo className={`${size} text-[var(--color-primary)]`} />
+      </div>
+      <div className="text-[10px] uppercase tracking-widest text-[var(--color-text-muted)]">{label}</div>
+    </div>
   )
 }

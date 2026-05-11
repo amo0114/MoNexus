@@ -3,6 +3,7 @@ import { useAuthStore } from '../stores/authStore'
 import { Moon, Sun, Coins, User, ShieldCheck, Store, Clock, XCircle, AlertTriangle, Plus } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import EmailVerificationBanner from './EmailVerificationBanner'
+import Logo from './ui/Logo'
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate()
@@ -43,15 +44,14 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       <nav className="glass sticky top-0 z-40 w-full px-4 sm:px-6 py-4 border-b border-[var(--color-border)]">
         <div className="max-w-7xl mx-auto flex justify-between items-center relative">
 
-          {/* Wordmark — Orbitron only. The graphic brand mark is on hold
-              pending a professional redesign; see
-              design-system/monexus/LOGO-BRIEF.md. Drop the new mark in
-              alongside this span when it arrives. */}
+          {/* Brand mark + Orbitron wordmark. Active mark variant lives in
+              the logoStore; switch via /_dev/tokens. See LOGO-BRIEF.md. */}
           <div
-            className="cursor-pointer group"
+            className="flex items-center gap-2.5 cursor-pointer group"
             onClick={() => navigate('/')}
           >
-            <span className="font-heading text-lg font-bold tracking-[0.18em] text-[var(--color-text)] leading-none transition-colors group-hover:text-[var(--color-primary)]">
+            <Logo className="w-8 h-8 text-[var(--color-primary)] transition-transform group-hover:scale-105 shrink-0" />
+            <span className="font-heading text-lg font-bold tracking-[0.18em] text-[var(--color-text)] leading-none">
               MONEXUS
             </span>
           </div>
@@ -171,7 +171,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       <footer className="w-full mt-auto border-t border-[var(--color-border)] bg-[var(--color-surface)]/50 backdrop-blur-md relative overflow-hidden z-10 shrink-0">
         <div className="absolute inset-0 bg-gradient-to-b from-transparent to-[var(--color-primary)]/5 pointer-events-none" />
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 relative z-10 flex flex-col md:flex-row items-center justify-between gap-4">
-          <div className="opacity-80">
+          <div className="flex items-center gap-2 opacity-80">
+            <Logo className="w-5 h-5 text-[var(--color-primary)] shrink-0" />
             <span className="font-heading text-sm font-bold text-[var(--color-text-muted)] tracking-[0.15em]">MONEXUS</span>
           </div>
           <div className="flex items-center gap-6 text-xs font-medium text-[var(--color-text-muted)]">
