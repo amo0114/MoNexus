@@ -2,69 +2,139 @@
 @tailwind components;
 @tailwind utilities;
 
+/* =========================================================
+   MoNexus Design System — Phase 1 tokens (revised 2026-05-11)
+   Strategy: neutral slate skeleton + indigo as focus accent + green CTA.
+   Indigo is reserved for interactive elements (buttons, links, focus rings,
+   badges). Background / surface / text use neutral slate so indigo never
+   dominates the page. Per MASTER.md style revision and user feedback.
+   Legacy --c-* variables are remapped onto the new palette so existing
+   pages render in the new theme without code changes; they will be
+   removed in Phase 4 once all pages migrate to --color-*.
+   ========================================================= */
+
 :root {
-  /* --- 浅色模式 (Warm Latte) --- */
-  --c-bg-base: #DBCBBD;
-  --c-bg-app: #FCFBF8;
-  --c-bg-card: #FFFFFF;
-  --c-bg-image: #EAE1D9;
+  /* --- New design tokens --- */
+  --color-primary: #6366F1;          /* indigo-500 — interactive accent */
+  --color-primary-hover: #4F46E5;    /* indigo-600 */
+  --color-secondary: #818CF8;        /* indigo-400 */
+  --color-cta: #22C55E;              /* green-500 */
+  --color-cta-hover: #16A34A;        /* green-600 */
+  --color-background: #F8FAFC;       /* slate-50 — neutral page bg */
+  --color-surface: #FFFFFF;
+  --color-text: #1E293B;             /* slate-800 — neutral body text */
+  --color-text-muted: #64748B;       /* slate-500 */
+  --color-border: #E2E8F0;           /* slate-200 */
 
-  --c-text-main: #5C4D43;
-  --c-text-sub: #A0938A;
-  --c-text-muted: #7A6E65;
+  /* Spacing */
+  --space-xs: 0.25rem;
+  --space-sm: 0.5rem;
+  --space-md: 1rem;
+  --space-lg: 1.5rem;
+  --space-xl: 2rem;
+  --space-2xl: 3rem;
+  --space-3xl: 4rem;
 
-  --c-accent: #D4A373;
-  --c-accent-hover: #C5915D;
+  /* Shadows (neutral, not indigo-tinted) */
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.05);
+  --shadow-md: 0 4px 6px rgba(15, 23, 42, 0.08);
+  --shadow-lg: 0 10px 15px rgba(15, 23, 42, 0.1);
+  --shadow-xl: 0 20px 25px rgba(15, 23, 42, 0.12);
+  --shadow-focus: 0 0 0 3px rgba(99, 102, 241, 0.22);
 
-  --c-border-light: rgba(212, 163, 115, 0.2);
-  --c-border-faint: rgba(212, 163, 115, 0.1);
+  /* --- Legacy aliases remapped (compat for un-migrated pages) --- */
+  --c-bg-base: var(--color-background);
+  --c-bg-app: var(--color-surface);
+  --c-bg-card: var(--color-surface);
+  --c-bg-image: #F1F5F9;             /* slate-100 placeholder */
 
-  --c-glass-bg: rgba(255, 255, 255, 0.9);
-  --c-glass-border: rgba(212, 163, 115, 0.15);
-  --c-shadow: rgba(212, 163, 115, 0.05);
-  --c-grid-dot: #EAE1D9;
+  --c-text-main: var(--color-text);
+  --c-text-sub: #475569;             /* slate-600 */
+  --c-text-muted: var(--color-text-muted);
 
-  --c-toast-bg: #5C4D43;
-  --c-toast-text: #FCFBF8;
+  --c-accent: var(--color-primary);
+  --c-accent-hover: var(--color-primary-hover);
+
+  --c-border-light: rgba(99, 102, 241, 0.18);   /* indigo-tinted border for interactive zones */
+  --c-border-faint: rgba(99, 102, 241, 0.08);
+
+  --c-glass-bg: rgba(255, 255, 255, 0.85);
+  --c-glass-border: rgba(99, 102, 241, 0.12);
+  --c-shadow: rgba(15, 23, 42, 0.06);           /* neutral shadow */
+  --c-grid-dot: #E2E8F0;                        /* slate-200 grid */
+
+  --c-toast-bg: var(--color-text);
+  --c-toast-text: var(--color-surface);
 }
 
 .dark {
-  /* --- 护眼暗色模式 (Soft Cocoa) --- */
-  --c-bg-base: #292522;
-  --c-bg-app: #312C29;
-  --c-bg-card: #3A3531;
-  --c-bg-image: #45403C;
+  /* --- New tokens in dark mode (near-black bg + brighter indigo accent) --- */
+  --color-primary: #818CF8;          /* indigo-400, brightened for dark bg */
+  --color-primary-hover: #A5B4FC;    /* indigo-300 */
+  --color-secondary: #A5B4FC;
+  --color-cta: #4ADE80;              /* green-400, brighter on dark */
+  --color-cta-hover: #86EFAC;        /* green-300 */
+  --color-background: #0A0A14;       /* near-black with a hint of purple */
+  --color-surface: #161629;          /* one step lighter than bg for clear separation */
+  --color-text: #F1F5F9;             /* slate-100 — neutral, not all-purple */
+  --color-text-muted: #94A3B8;       /* slate-400 */
+  --color-border: #1E293B;           /* slate-800 */
 
-  --c-text-main: #EAE1D9;
-  --c-text-sub: #A8A099;
-  --c-text-muted: #8E867F;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.35);
+  --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.4);
+  --shadow-xl: 0 20px 25px rgba(0, 0, 0, 0.5);
+  --shadow-focus: 0 0 0 3px rgba(129, 140, 248, 0.4);
 
-  --c-accent: #D4A373;
-  --c-accent-hover: #E2C7AE;
+  /* Legacy aliases */
+  --c-bg-base: var(--color-background);
+  --c-bg-app: var(--color-surface);
+  --c-bg-card: var(--color-surface);
+  --c-bg-image: #1F1F36;
 
-  --c-border-light: rgba(234, 225, 217, 0.12);
-  --c-border-faint: rgba(234, 225, 217, 0.06);
+  --c-text-main: var(--color-text);
+  --c-text-sub: #CBD5E1;             /* slate-300 */
+  --c-text-muted: var(--color-text-muted);
 
-  --c-glass-bg: rgba(58, 53, 49, 0.9);
-  --c-glass-border: rgba(234, 225, 217, 0.15);
-  --c-shadow: rgba(0, 0, 0, 0.2);
-  --c-grid-dot: #3E3935;
+  --c-accent: var(--color-primary);
+  --c-accent-hover: var(--color-primary-hover);
 
-  --c-toast-bg: #45403C;
-  --c-toast-text: #EAE1D9;
+  --c-border-light: rgba(129, 140, 248, 0.2);
+  --c-border-faint: rgba(129, 140, 248, 0.08);
+
+  --c-glass-bg: rgba(22, 22, 41, 0.85);
+  --c-glass-border: rgba(129, 140, 248, 0.15);
+  --c-shadow: rgba(0, 0, 0, 0.4);
+  --c-grid-dot: #1E293B;             /* slate-800 grid on near-black */
+
+  --c-toast-bg: var(--color-surface);
+  --c-toast-text: var(--color-text);
 }
 
+/* =========================================================
+   Typography
+   ========================================================= */
+
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif;
-  background-color: var(--c-bg-base);
-  color: var(--c-text-main);
+  font-family: 'Exo 2', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  background-color: var(--color-background);
+  color: var(--color-text);
   -webkit-font-smoothing: antialiased;
   overflow-x: hidden;
   transition: background-color 0.5s ease;
 }
 
+h1, h2, h3, h4 {
+  font-family: 'Orbitron', 'Exo 2', sans-serif;
+  letter-spacing: 0.01em;
+}
+
+/* =========================================================
+   Utilities — kept from previous palette, now driven by new tokens
+   ========================================================= */
+
 .bg-grid-pattern {
-  background-image: 
+  background-image:
     linear-gradient(to right, var(--c-grid-dot) 1px, transparent 1px),
     linear-gradient(to bottom, var(--c-grid-dot) 1px, transparent 1px);
   background-size: 32px 32px;
@@ -89,14 +159,13 @@ body {
   box-shadow: 0 4px 20px var(--c-shadow);
   border: 1px solid var(--c-border-light);
   transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-  /* 解决背景穿透或子元素定位可能导致的层叠异常（修复黑框） */
-  isolation: isolate; 
+  isolation: isolate;
 }
 
 .apple-card-hover:hover {
   transform: translateY(-4px);
   box-shadow: 0 12px 30px var(--c-shadow);
-  border-color: rgba(212, 163, 115, 0.3);
+  border-color: rgba(99, 102, 241, 0.3);
 }
 
 @keyframes fadeIn {
@@ -118,7 +187,10 @@ body {
   animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
-/* Buttons and Inputs */
+/* Legacy buttons / inputs — kept until Phase 2 introduces new components.
+   Note: existing scale-on-hover violates the new design system's
+   "no layout-shift hovers" rule. It will be replaced in Phase 2; left
+   alone here so Phase 1 stays a token-only change. */
 .btn-primary {
   @apply bg-[var(--c-accent)] text-white px-5 py-2.5 rounded-xl font-bold text-sm shadow-md transition-all hover:bg-[var(--c-accent-hover)] hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100;
 }
@@ -128,11 +200,11 @@ body {
 }
 
 .input-field:focus {
-  box-shadow: 0 0 0 2px rgba(212, 163, 115, 0.4);
+  box-shadow: var(--shadow-focus);
 }
 
 .dark .input-field:focus {
-  box-shadow: 0 0 0 2px rgba(212, 163, 115, 0.4);
+  box-shadow: var(--shadow-focus);
 }
 
 /* Scrollbar */
