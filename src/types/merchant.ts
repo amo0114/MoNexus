@@ -25,6 +25,7 @@ export interface AuthUser {
   status: string
   inviteCode: string
   points: number
+  emailVerified?: string | null
   createdAt?: string
   merchant: null | {
     id: number

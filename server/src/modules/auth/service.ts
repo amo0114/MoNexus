@@ -198,6 +198,7 @@ export async function getUserProfile(userId: number) {
     status: user.status,
     inviteCode: user.inviteCode,
     points: user.pointAccount?.balance ?? 0,
+    emailVerified: user.emailVerified,
     createdAt: user.createdAt,
     merchant: user.merchant
       ? {

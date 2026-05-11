@@ -2,6 +2,7 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuthStore } from '../stores/authStore'
 import { Moon, Sun, Coins, User, ShieldCheck, Store, Clock, XCircle, AlertTriangle, Plus } from 'lucide-react'
 import { useState, useEffect } from 'react'
+import EmailVerificationBanner from './EmailVerificationBanner'
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate()
@@ -175,6 +176,9 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           </div>
         </div>
       </nav>
+
+      {/* Email verification nudge — silent when verified or dismissed */}
+      <EmailVerificationBanner />
 
       {/* Content */}
       <main className="flex-grow max-w-7xl mx-auto w-full px-4 sm:px-6 py-6 sm:py-8 z-0 relative">
