@@ -2,20 +2,49 @@ import 'dotenv/config'
 import { prisma } from '../lib/prisma.js'
 import bcrypt from 'bcryptjs'
 
+const FORCE_RESET = process.argv.includes('--force-reset')
+
+async function upsertUser(opts: {
+  email: string
+  password: string
+  role: string
+  inviteCode: string
+  extraUpdate?: Record<string, unknown>
+}) {
+  const { email, password, role, inviteCode, extraUpdate = {} } = opts
+  const existing = await prisma.user.findUnique({ where: { email } })
+  const hashed = await bcrypt.hash(password, 10)
+
+  if (existing) {
+    // 默认不覆盖密码，--force-reset 时才重置
+    const updateData: Record<string, unknown> = { role, ...extraUpdate }
+    if (FORCE_RESET) {
+      updateData.password = hashed
+      console.log(`  ↻ ${email} — 密码已重置`)
+    } else {
+      console.log(`  ✓ ${email} — 已存在，跳过密码`)
+    }
+    return prisma.user.update({ where: { email }, data: updateData })
+  }
+
+  console.log(`  + ${email} — 已创建`)
+  return prisma.user.create({
+    data: { email, password: hashed, role, inviteCode },
+  })
+}
+
 async function main() {
   console.log('🌱 Seeding database...')
+  if (FORCE_RESET) {
+    console.log('  ⚠ --force-reset 模式：将重置所有用户密码')
+  }
 
   // 创建管理员
-  const adminPassword = await bcrypt.hash('admin123', 10)
-  const admin = await prisma.user.upsert({
-    where: { email: 'admin@moyuan.net' },
-    update: { password: adminPassword, role: 'admin' },
-    create: {
-      email: 'admin@moyuan.net',
-      password: adminPassword,
-      role: 'admin',
-      inviteCode: 'ADMIN-MOYUAN',
-    },
+  const admin = await upsertUser({
+    email: 'admin@moyuan.net',
+    password: 'admin123',
+    role: 'admin',
+    inviteCode: 'ADMIN-MOYUAN',
   })
   await prisma.pointAccount.upsert({
     where: { userId: admin.id },
@@ -24,16 +53,11 @@ async function main() {
   })
 
   // 创建测试用户
-  const userPassword = await bcrypt.hash('user123', 10)
-  const testUser = await prisma.user.upsert({
-    where: { email: 'test@moyuan.net' },
-    update: { password: userPassword, role: 'user' },
-    create: {
-      email: 'test@moyuan.net',
-      password: userPassword,
-      role: 'user',
-      inviteCode: 'MOYUAN26',
-    },
+  const testUser = await upsertUser({
+    email: 'test@moyuan.net',
+    password: 'user123',
+    role: 'user',
+    inviteCode: 'MOYUAN26',
   })
   await prisma.pointAccount.upsert({
     where: { userId: testUser.id },
@@ -42,16 +66,12 @@ async function main() {
   })
 
   // 创建示例商家
-  const merchantPassword = await bcrypt.hash('merchant123', 10)
-  const merchantUser = await prisma.user.upsert({
-    where: { email: 'merchant@moyuan.net' },
-    update: { password: merchantPassword, role: 'merchant', status: '正常' },
-    create: {
-      email: 'merchant@moyuan.net',
-      password: merchantPassword,
-      role: 'merchant',
-      inviteCode: 'MERCHANT-MOYUAN',
-    },
+  const merchantUser = await upsertUser({
+    email: 'merchant@moyuan.net',
+    password: 'merchant123',
+    role: 'merchant',
+    inviteCode: 'MERCHANT-MOYUAN',
+    extraUpdate: { status: '正常' },
   })
   await prisma.pointAccount.upsert({
     where: { userId: merchantUser.id },

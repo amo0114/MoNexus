@@ -21,14 +21,26 @@ if errorlevel 1 (
   exit /b 1
 )
 
-set "PG_CONTAINER="
-for /f %%I in ('docker ps --filter "name=monexus-db" --filter "status=running" --format "{{.Names}}"') do set "PG_CONTAINER=%%I"
+set "PG_RUNNING="
+for /f %%I in ('docker ps --filter "name=monexus-db" --filter "status=running" --format "{{.Names}}"') do set "PG_RUNNING=%%I"
 
-if /I not "%PG_CONTAINER%"=="monexus-db" (
-  echo [ERROR] PostgreSQL container "monexus-db" is not running.
-  echo Please start it manually first:
-  echo   docker compose up -d postgres
-  exit /b 1
+if /I "%PG_RUNNING%"=="monexus-db" (
+  echo [INFO] PostgreSQL container is already running.
+) else (
+  REM Container exists but stopped? Restart it. Otherwise compose up.
+  set "PG_EXISTS="
+  for /f %%I in ('docker ps -a --filter "name=monexus-db" --format "{{.Names}}"') do set "PG_EXISTS=%%I"
+  if /I "%PG_EXISTS%"=="monexus-db" (
+    echo [INFO] Restarting existing PostgreSQL container...
+    docker start monexus-db
+  ) else (
+    echo [INFO] Creating PostgreSQL container...
+    docker compose up -d postgres
+  )
+  if errorlevel 1 (
+    echo [ERROR] Failed to start PostgreSQL container.
+    exit /b 1
+  )
 )
 
 if not exist "%BACKEND_DIR%\.env" (

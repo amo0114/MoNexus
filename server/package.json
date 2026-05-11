@@ -11,6 +11,7 @@
     "db:migrate": "prisma migrate dev",
     "db:migrate:deploy": "prisma migrate deploy",
     "db:seed": "tsx src/prisma/seed.ts",
+    "db:seed:force": "tsx src/prisma/seed.ts --force-reset",
     "db:studio": "prisma studio",
     "test": "vitest run",
     "test:watch": "vitest"

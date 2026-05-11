@@ -21,11 +21,20 @@ if ! command -v docker >/dev/null 2>&1; then
   exit 1
 fi
 
-if ! docker ps --filter "name=monexus-db" --filter "status=running" --format '{{.Names}}' | grep -qx 'monexus-db'; then
-  echo '[ERROR] PostgreSQL container "monexus-db" is not running.'
-  echo 'Please start it manually first:'
-  echo '  docker compose up -d postgres'
-  exit 1
+if docker ps --filter "name=monexus-db" --filter "status=running" --format '{{.Names}}' | grep -qx 'monexus-db'; then
+  echo '[INFO] PostgreSQL container is already running.'
+else
+  if docker ps -a --filter "name=monexus-db" --format '{{.Names}}' | grep -qx 'monexus-db'; then
+    echo '[INFO] Restarting existing PostgreSQL container...'
+    docker start monexus-db
+  else
+    echo '[INFO] Creating PostgreSQL container...'
+    docker compose up -d postgres
+  fi
+  if ! docker ps --filter "name=monexus-db" --filter "status=running" --format '{{.Names}}' | grep -qx 'monexus-db'; then
+    echo '[ERROR] Failed to start PostgreSQL container.'
+    exit 1
+  fi
 fi
 
 if [[ ! -f "$BACKEND_DIR/.env" ]]; then
