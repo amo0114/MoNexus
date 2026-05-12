@@ -35,6 +35,18 @@ export async function unbanUser(req: Request, res: Response, next: NextFunction)
   } catch (err) { next(err) }
 }
 
+export async function listConfig(_req: Request, res: Response, next: NextFunction) {
+  try {
+    res.json(await adminService.listSystemConfig())
+  } catch (err) { next(err) }
+}
+
+export async function updateConfig(req: Request, res: Response, next: NextFunction) {
+  try {
+    res.json(await adminService.updateSystemConfig(req.user!.userId, String(req.params.key), req.body.value))
+  } catch (err) { next(err) }
+}
+
 export async function createProduct(req: Request, res: Response, next: NextFunction) {
   try { res.status(201).json(await adminService.createProduct(req.body)) } catch (err) { next(err) }
 }

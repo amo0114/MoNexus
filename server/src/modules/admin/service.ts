@@ -1,6 +1,10 @@
 import { Prisma } from '@prisma/client'
 import { prisma } from '../../lib/prisma.js'
 import { badRequest, notFound } from '../../lib/httpError.js'
+import {
+  listSystemConfigs,
+  updateSystemConfig as saveSystemConfig,
+} from '../../lib/systemConfig.js'
 import { revokeAllUserRefreshTokens } from '../auth/service.js'
 
 function getShanghaiDayRange() {
@@ -163,6 +167,14 @@ export async function unbanUser(adminUserId: number, targetUserId: number) {
 
     return updated
   })
+}
+
+export async function listSystemConfig() {
+  return listSystemConfigs()
+}
+
+export async function updateSystemConfig(adminUserId: number, key: string, value: number) {
+  return saveSystemConfig(adminUserId, key, value)
 }
 
 export async function createProduct(data: Prisma.ProductCreateInput) {

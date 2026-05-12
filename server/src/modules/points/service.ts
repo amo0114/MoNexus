@@ -1,6 +1,6 @@
 import { prisma } from '../../lib/prisma.js'
-import { config } from '../../config/index.js'
 import { badRequest, notFound } from '../../lib/httpError.js'
+import { getSystemConfigValue } from '../../lib/systemConfig.js'
 
 function getShanghaiDateString() {
   const now = new Date()
@@ -14,6 +14,7 @@ export async function checkin(userId: number) {
   const dateStr = getShanghaiDateString()
 
   return prisma.$transaction(async tx => {
+    const checkinReward = await getSystemConfigValue('checkinReward', tx)
     const existing = await tx.checkinRecord.findUnique({
       where: { userId_date: { userId, date: dateStr } },
     })
@@ -22,7 +23,7 @@ export async function checkin(userId: number) {
     const account = await tx.pointAccount.findUnique({ where: { userId } })
     if (!account) throw notFound('积分账户不存在')
 
-    const newBalance = account.balance + config.checkinReward
+    const newBalance = account.balance + checkinReward
 
     await tx.pointAccount.update({
       where: { userId },
@@ -37,13 +38,13 @@ export async function checkin(userId: number) {
       data: {
         userId,
         type: 'in',
-        amount: config.checkinReward,
+        amount: checkinReward,
         balanceAfter: newBalance,
         reason: '每日打卡签到',
       },
     })
 
-    return { reward: config.checkinReward, balanceAfter: newBalance }
+    return { reward: checkinReward, balanceAfter: newBalance }
   })
 }
 
