@@ -59,6 +59,122 @@ describe('GET /api/admin/users', () => {
   })
 })
 
+describe('PUT /api/admin/users/:id/ban and /unban', () => {
+  it('should ban a normal user, revoke refresh tokens, block login, and write an audit log', async () => {
+    await createTestUser('ban-admin@test.local', 'admin123', 'admin')
+    const { user: target, password } = await createTestUser('ban-target@test.local', 'pass123', 'user')
+    const targetLogin = await loginAs(target.email, password)
+    const admin = await loginAs('ban-admin@test.local', 'admin123')
+
+    const res = await api
+      .put(`/api/admin/users/${target.id}/ban`)
+      .set(authHeader(admin.accessToken))
+      .send({ reason: 'abuse' })
+      .expect(200)
+
+    expect(res.body.status).toBe('已封禁')
+
+    const updated = await prisma.user.findUniqueOrThrow({ where: { id: target.id } })
+    expect(updated.status).toBe('已封禁')
+
+    await api
+      .post('/api/auth/login')
+      .send({ email: target.email, password })
+      .expect(400)
+
+    await api
+      .post('/api/auth/refresh')
+      .set('Cookie', targetLogin.cookies)
+      .expect(401)
+
+    const tokens = await prisma.refreshToken.findMany({ where: { userId: target.id } })
+    expect(tokens.length).toBeGreaterThan(0)
+    expect(tokens.every(token => token.revoked)).toBe(true)
+
+    const log = await prisma.adminLog.findFirstOrThrow({
+      where: { adminUserId: 1, targetType: 'user', targetId: target.id },
+    })
+    expect(log.action).toContain('封禁')
+    expect(log.detail).toContain('abuse')
+  })
+
+  it('should unban a user, allow login again, and write an audit log', async () => {
+    await createTestUser('unban-admin@test.local', 'admin123', 'admin')
+    const { user: target, password } = await createTestUser('unban-target@test.local', 'pass123', 'user')
+    await prisma.user.update({
+      where: { id: target.id },
+      data: { status: '已封禁' },
+    })
+    const admin = await loginAs('unban-admin@test.local', 'admin123')
+
+    const res = await api
+      .put(`/api/admin/users/${target.id}/unban`)
+      .set(authHeader(admin.accessToken))
+      .expect(200)
+
+    expect(res.body.status).toBe('正常')
+
+    const updated = await prisma.user.findUniqueOrThrow({ where: { id: target.id } })
+    expect(updated.status).toBe('正常')
+
+    await api
+      .post('/api/auth/login')
+      .send({ email: target.email, password })
+      .expect(200)
+
+    const log = await prisma.adminLog.findFirstOrThrow({
+      where: { adminUserId: 1, targetType: 'user', targetId: target.id },
+    })
+    expect(log.action).toContain('解封')
+  })
+
+  it('should reject non-admin ban attempts', async () => {
+    await createTestUser('ban-normal@test.local', 'pass123', 'user')
+    const { user: target } = await createTestUser('ban-normal-target@test.local', 'pass123', 'user')
+    const normal = await loginAs('ban-normal@test.local', 'pass123')
+
+    await api
+      .put(`/api/admin/users/${target.id}/ban`)
+      .set(authHeader(normal.accessToken))
+      .send({ reason: 'abuse' })
+      .expect(403)
+  })
+
+  it('should reject self-ban', async () => {
+    const { user: adminUser } = await createTestUser('self-ban-admin@test.local', 'admin123', 'admin')
+    const admin = await loginAs('self-ban-admin@test.local', 'admin123')
+
+    await api
+      .put(`/api/admin/users/${adminUser.id}/ban`)
+      .set(authHeader(admin.accessToken))
+      .send({ reason: 'mistake' })
+      .expect(400)
+  })
+
+  it('should reject banning another admin', async () => {
+    await createTestUser('ban-admin-actor@test.local', 'admin123', 'admin')
+    const { user: targetAdmin } = await createTestUser('ban-admin-target@test.local', 'admin123', 'admin')
+    const admin = await loginAs('ban-admin-actor@test.local', 'admin123')
+
+    await api
+      .put(`/api/admin/users/${targetAdmin.id}/ban`)
+      .set(authHeader(admin.accessToken))
+      .send({ reason: 'abuse' })
+      .expect(400)
+  })
+
+  it('should return 404 when the target user does not exist', async () => {
+    await createTestUser('ban-missing-admin@test.local', 'admin123', 'admin')
+    const admin = await loginAs('ban-missing-admin@test.local', 'admin123')
+
+    await api
+      .put('/api/admin/users/9999/ban')
+      .set(authHeader(admin.accessToken))
+      .send({ reason: 'missing' })
+      .expect(404)
+  })
+})
+
 describe('POST /api/admin/users/:id/adjust', () => {
   it('should add points to user', async () => {
     await createTestUser('boss3@test.local', 'admin789', 'admin')

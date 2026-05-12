@@ -6,6 +6,10 @@ export const adjustPointsSchema = z.object({
   reason: z.string().min(1, '请填写操作原因'),
 })
 
+export const banUserSchema = z.object({
+  reason: z.string().min(1, '请填写封禁原因'),
+})
+
 export const createProductSchema = z.object({
   name: z.string().min(1),
   description: z.string().optional(),

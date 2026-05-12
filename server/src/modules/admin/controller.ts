@@ -21,6 +21,20 @@ export async function adjustPoints(req: Request, res: Response, next: NextFuncti
   } catch (err) { next(err) }
 }
 
+export async function banUser(req: Request, res: Response, next: NextFunction) {
+  try {
+    const targetId = req.params.id as unknown as number
+    res.json(await adminService.banUser(req.user!.userId, targetId, req.body.reason))
+  } catch (err) { next(err) }
+}
+
+export async function unbanUser(req: Request, res: Response, next: NextFunction) {
+  try {
+    const targetId = req.params.id as unknown as number
+    res.json(await adminService.unbanUser(req.user!.userId, targetId))
+  } catch (err) { next(err) }
+}
+
 export async function createProduct(req: Request, res: Response, next: NextFunction) {
   try { res.status(201).json(await adminService.createProduct(req.body)) } catch (err) { next(err) }
 }
