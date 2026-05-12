@@ -8,6 +8,16 @@ const booleanEnvSchema = z.preprocess(value => {
   return value
 }, z.boolean())
 
+const optionalUrlEnvSchema = z.preprocess(value => {
+  if (value === undefined || value === '') return undefined
+  return value
+}, z.string().url().optional())
+
+const logLevelEnvSchema = z.preprocess(value => {
+  if (value === undefined || value === '') return undefined
+  return value
+}, z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'))
+
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().default(3000),
@@ -42,6 +52,10 @@ const envSchema = z.object({
   // --- Public app URL used to build links inside transactional emails.
   // Defaults to FRONTEND_ORIGIN if not set explicitly.
   APP_BASE_URL: z.string().url().optional(),
+
+  // --- Observability. SENTRY_DSN is optional so local/dev/test runs stay quiet.
+  SENTRY_DSN: optionalUrlEnvSchema,
+  LOG_LEVEL: logLevelEnvSchema,
 })
 
 const parsed = envSchema.safeParse(process.env)
@@ -125,6 +139,8 @@ export const config = {
       }
     : ({ kind: 'console' as const }),
   appBaseUrl: env.APP_BASE_URL ?? env.FRONTEND_ORIGIN,
+  sentryDsn: env.SENTRY_DSN,
+  logLevel: env.LOG_LEVEL,
   passwordResetTokenMaxAgeMs: 30 * 60 * 1000, // 30 min
   emailVerificationTokenMaxAgeMs: 24 * 60 * 60 * 1000, // 24h
 }
