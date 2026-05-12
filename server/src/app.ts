@@ -4,6 +4,7 @@ import helmet from 'helmet'
 import rateLimit from 'express-rate-limit'
 import cookieParser from 'cookie-parser'
 import { config } from './config/index.js'
+import { prisma } from './lib/prisma.js'
 import { errorHandler } from './middlewares/errorHandler.js'
 import { authRoutes } from './modules/auth/routes.js'
 import { productRoutes } from './modules/products/routes.js'
@@ -45,8 +46,15 @@ app.use('/api/admin', adminRoutes)
 app.use('/api/merchant', merchantRoutes)
 app.use('/api/uploads', uploadsRoutes)
 
-app.get('/api/health', (_req, res) => {
-  res.json({ status: 'ok', time: new Date().toISOString() })
+app.get('/api/health', async (_req, res) => {
+  const time = new Date().toISOString()
+
+  try {
+    await prisma.$queryRaw`SELECT 1`
+    res.json({ status: 'ok', db: 'ok', time })
+  } catch {
+    res.status(503).json({ status: 'fail', db: 'fail', time })
+  }
 })
 
 app.use(errorHandler)
