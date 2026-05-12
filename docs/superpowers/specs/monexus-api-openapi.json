@@ -1,31 +1,30 @@
 {
   "openapi": "3.0.3",
   "info": {
-    "title": "MoNexus Merchant Settlement API",
-    "version": "1.0.0",
-    "description": "MoNexus 商家端、平台商家管理、订单分润与结算冻结契约。测试账号由 seed 输出；merchant@moyuan.net / merchant123 为建议商家账号。"
+    "title": "MoNexus API",
+    "version": "1.1.0",
+    "description": "MoNexus 内部积分制数字商品市场 API。三种角色：user / merchant / admin。无任何法币 / 充值 / 提现。1.1.0 同步 M2 GA：health 含 db 字段、登录密码修改、用户封禁 / 解封、平台系统配置。"
   },
   "servers": [
-    {
-      "url": "http://localhost:3000",
-      "description": "本地开发，所有业务路径带 /api 前缀"
-    }
+    { "url": "http://localhost:3000", "description": "本地开发，所有业务路径带 /api 前缀" }
   ],
   "tags": [
-    { "name": "Auth" },
+    { "name": "Health", "description": "服务健康探针" },
+    { "name": "Auth", "description": "注册 / 登录 / 刷新 / 密码 / 邮箱验证" },
     { "name": "Products" },
     { "name": "Orders" },
     { "name": "Merchant" },
+    { "name": "Admin Users", "description": "用户管理：列表 / 调整积分 / 封禁 / 解封" },
+    { "name": "Admin Config", "description": "系统配置：注册 / 签到 / 邀请奖励、refresh token 有效期" },
+    { "name": "Admin Products" },
+    { "name": "Admin Orders" },
+    { "name": "Admin Audit" },
     { "name": "Admin Merchants" },
     { "name": "Admin Settlements" }
   ],
   "components": {
     "securitySchemes": {
-      "bearerAuth": {
-        "type": "http",
-        "scheme": "bearer",
-        "bearerFormat": "JWT"
-      }
+      "bearerAuth": { "type": "http", "scheme": "bearer", "bearerFormat": "JWT" }
     },
     "schemas": {
       "ErrorEnvelope": {
@@ -46,18 +45,43 @@
           }
         }
       },
-      "MerchantStatus": {
-        "type": "string",
-        "enum": ["pending", "active", "suspended", "rejected"]
+      "OkResponse": {
+        "type": "object",
+        "required": ["ok"],
+        "properties": { "ok": { "type": "boolean", "example": true } }
       },
-      "SettlementStatus": {
-        "type": "string",
-        "enum": ["pending", "settled"]
+      "MessageResponse": {
+        "type": "object",
+        "required": ["message"],
+        "properties": { "message": { "type": "string" } }
       },
-      "ProductStatus": {
-        "type": "string",
-        "enum": ["active", "inactive"]
+      "HealthOk": {
+        "type": "object",
+        "required": ["status", "db", "time"],
+        "properties": {
+          "status": { "type": "string", "enum": ["ok"] },
+          "db": { "type": "string", "enum": ["ok"] },
+          "time": { "type": "string", "format": "date-time" }
+        }
       },
+      "HealthFail": {
+        "type": "object",
+        "required": ["status", "db", "time"],
+        "properties": {
+          "status": { "type": "string", "enum": ["fail"] },
+          "db": { "type": "string", "enum": ["fail"] },
+          "time": { "type": "string", "format": "date-time" }
+        }
+      },
+      "MerchantStatus": { "type": "string", "enum": ["pending", "active", "suspended", "rejected"] },
+      "SettlementStatus": { "type": "string", "enum": ["pending", "settled"] },
+      "ProductStatus": { "type": "string", "enum": ["active", "inactive"] },
+      "UserStatus": {
+        "type": "string",
+        "enum": ["正常", "已封禁"],
+        "description": "用户账号状态。已封禁用户无法登录或刷新 access token。"
+      },
+      "UserRole": { "type": "string", "enum": ["user", "merchant", "admin"] },
       "MerchantSummary": {
         "type": "object",
         "required": ["id", "name"],
@@ -78,20 +102,275 @@
       },
       "AuthUser": {
         "type": "object",
-        "required": ["id", "email", "role", "status", "inviteCode", "points", "merchant"],
+        "required": ["id", "email", "role", "status", "inviteCode", "points"],
         "properties": {
           "id": { "type": "integer" },
           "email": { "type": "string", "format": "email" },
-          "role": { "type": "string", "enum": ["user", "admin", "merchant"] },
-          "status": { "type": "string" },
+          "role": { "$ref": "#/components/schemas/UserRole" },
+          "status": { "$ref": "#/components/schemas/UserStatus" },
           "inviteCode": { "type": "string" },
-          "points": { "type": "integer" },
+          "points": { "type": "integer", "minimum": 0 },
           "createdAt": { "type": "string", "format": "date-time" },
           "merchant": {
             "nullable": true,
-            "oneOf": [
-              { "$ref": "#/components/schemas/AuthMerchantSummary" }
-            ]
+            "oneOf": [{ "$ref": "#/components/schemas/AuthMerchantSummary" }]
+          }
+        }
+      },
+      "RegisterRequest": {
+        "type": "object",
+        "required": ["email", "password"],
+        "properties": {
+          "email": { "type": "string", "format": "email" },
+          "password": { "type": "string", "minLength": 6 },
+          "inviteCode": { "type": "string" }
+        }
+      },
+      "LoginRequest": {
+        "type": "object",
+        "required": ["email", "password"],
+        "properties": {
+          "email": { "type": "string", "format": "email" },
+          "password": { "type": "string", "minLength": 1 }
+        }
+      },
+      "AuthSession": {
+        "type": "object",
+        "required": ["user", "accessToken"],
+        "description": "登录 / 注册成功响应。refresh token 通过 HttpOnly Cookie 下发，不出现在 JSON body 中。",
+        "properties": {
+          "user": { "$ref": "#/components/schemas/AuthUser" },
+          "accessToken": { "type": "string", "description": "JWT access token，前端在 Authorization: Bearer 头中携带" }
+        }
+      },
+      "RefreshResponse": {
+        "type": "object",
+        "required": ["accessToken"],
+        "properties": { "accessToken": { "type": "string" } }
+      },
+      "ForgotPasswordRequest": {
+        "type": "object",
+        "required": ["email"],
+        "properties": { "email": { "type": "string", "format": "email" } }
+      },
+      "ResetPasswordRequest": {
+        "type": "object",
+        "required": ["token", "password"],
+        "properties": {
+          "token": { "type": "string", "minLength": 1 },
+          "password": { "type": "string", "minLength": 6 }
+        }
+      },
+      "PasswordChangeRequest": {
+        "type": "object",
+        "required": ["currentPassword", "newPassword"],
+        "properties": {
+          "currentPassword": { "type": "string", "minLength": 1 },
+          "newPassword": { "type": "string", "minLength": 6 }
+        }
+      },
+      "AdminStats": {
+        "type": "object",
+        "required": ["users", "orders", "totalPoints", "todayOrders", "todayCheckins", "productCount", "availableInventory"],
+        "properties": {
+          "users": { "type": "integer" },
+          "orders": { "type": "integer" },
+          "totalPoints": { "type": "integer" },
+          "todayOrders": { "type": "integer" },
+          "todayCheckins": { "type": "integer" },
+          "productCount": { "type": "integer" },
+          "availableInventory": { "type": "integer" }
+        }
+      },
+      "AdminUserRow": {
+        "type": "object",
+        "required": ["id", "email", "role", "status", "inviteCode", "createdAt"],
+        "properties": {
+          "id": { "type": "integer" },
+          "email": { "type": "string", "format": "email" },
+          "role": { "$ref": "#/components/schemas/UserRole" },
+          "status": { "$ref": "#/components/schemas/UserStatus" },
+          "inviteCode": { "type": "string" },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "pointAccount": {
+            "nullable": true,
+            "type": "object",
+            "properties": { "balance": { "type": "integer" } }
+          }
+        }
+      },
+      "AdminUserMutation": {
+        "type": "object",
+        "required": ["id", "email", "role", "status"],
+        "description": "封禁 / 解封后的简化用户对象。",
+        "properties": {
+          "id": { "type": "integer" },
+          "email": { "type": "string", "format": "email" },
+          "role": { "$ref": "#/components/schemas/UserRole" },
+          "status": { "$ref": "#/components/schemas/UserStatus" }
+        }
+      },
+      "AdjustPointsRequest": {
+        "type": "object",
+        "required": ["type", "amount", "reason"],
+        "properties": {
+          "type": { "type": "string", "enum": ["add", "deduct"] },
+          "amount": { "type": "integer", "minimum": 1 },
+          "reason": { "type": "string", "minLength": 1 }
+        }
+      },
+      "AdjustPointsResponse": {
+        "type": "object",
+        "required": ["newBalance"],
+        "properties": { "newBalance": { "type": "integer", "minimum": 0 } }
+      },
+      "BanUserRequest": {
+        "type": "object",
+        "required": ["reason"],
+        "properties": { "reason": { "type": "string", "minLength": 1 } }
+      },
+      "SystemConfigKey": {
+        "type": "string",
+        "enum": ["registerReward", "checkinReward", "inviteReward", "refreshTokenMaxAgeDays"],
+        "description": "已知系统配置项：注册奖励 / 签到奖励 / 邀请奖励 / refresh token 有效天数。"
+      },
+      "SystemConfigEntry": {
+        "type": "object",
+        "required": ["key", "value", "defaultValue"],
+        "properties": {
+          "key": { "$ref": "#/components/schemas/SystemConfigKey" },
+          "value": { "type": "integer", "minimum": 0, "description": "当前生效值；未持久化时回落到默认值" },
+          "defaultValue": { "type": "integer", "minimum": 0 },
+          "updatedAt": { "type": "string", "format": "date-time", "nullable": true },
+          "updatedBy": { "type": "integer", "nullable": true, "description": "最后一次更新的 admin user id" }
+        }
+      },
+      "UpdateSystemConfigRequest": {
+        "type": "object",
+        "required": ["value"],
+        "properties": {
+          "value": { "type": "integer", "minimum": 0, "description": "非负整数" }
+        }
+      },
+      "AdminProduct": {
+        "type": "object",
+        "required": ["id", "name", "type", "icon", "price", "status"],
+        "properties": {
+          "id": { "type": "integer" },
+          "merchantId": { "type": "integer", "nullable": true },
+          "name": { "type": "string" },
+          "description": { "type": "string", "nullable": true },
+          "richDescription": { "type": "string", "nullable": true },
+          "type": { "type": "string" },
+          "icon": { "type": "string" },
+          "imageUrl": { "type": "string", "nullable": true },
+          "price": { "type": "integer", "minimum": 1 },
+          "originalPrice": { "type": "integer", "minimum": 1, "nullable": true },
+          "stock": { "type": "integer", "minimum": 0 },
+          "sales": { "type": "integer", "minimum": 0 },
+          "isHot": { "type": "boolean" },
+          "status": { "$ref": "#/components/schemas/ProductStatus" },
+          "createdAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "CreateAdminProductRequest": {
+        "type": "object",
+        "required": ["name", "type", "price"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "description": { "type": "string" },
+          "richDescription": { "type": "string" },
+          "type": { "type": "string", "minLength": 1 },
+          "icon": { "type": "string", "default": "package" },
+          "imageUrl": { "type": "string" },
+          "price": { "type": "integer", "minimum": 1 },
+          "originalPrice": { "type": "integer", "minimum": 1 },
+          "isHot": { "type": "boolean", "default": false }
+        }
+      },
+      "UpdateAdminProductRequest": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "description": { "type": "string" },
+          "richDescription": { "type": "string" },
+          "type": { "type": "string" },
+          "icon": { "type": "string" },
+          "imageUrl": { "type": "string" },
+          "price": { "type": "integer", "minimum": 1 },
+          "originalPrice": { "type": "integer", "minimum": 1 },
+          "isHot": { "type": "boolean" },
+          "status": { "$ref": "#/components/schemas/ProductStatus" }
+        }
+      },
+      "AdminOrderRow": {
+        "type": "object",
+        "required": ["id", "userId", "productId", "price", "status", "createdAt"],
+        "properties": {
+          "id": { "type": "integer" },
+          "userId": { "type": "integer" },
+          "productId": { "type": "integer" },
+          "merchantId": { "type": "integer", "nullable": true },
+          "price": { "type": "integer", "minimum": 0 },
+          "status": { "type": "string" },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "user": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "integer" },
+              "email": { "type": "string", "format": "email" }
+            }
+          },
+          "merchant": {
+            "nullable": true,
+            "oneOf": [{ "$ref": "#/components/schemas/MerchantSummary" }]
+          },
+          "product": {
+            "type": "object",
+            "properties": { "name": { "type": "string" } }
+          },
+          "delivery": {
+            "type": "object",
+            "nullable": true,
+            "properties": { "content": { "type": "string" } }
+          }
+        }
+      },
+      "AdminOrderDetail": {
+        "allOf": [
+          { "$ref": "#/components/schemas/AdminOrderRow" },
+          {
+            "type": "object",
+            "properties": {
+              "delivery": {
+                "type": "object",
+                "nullable": true,
+                "properties": {
+                  "content": { "type": "string" },
+                  "status": { "type": "string" }
+                }
+              }
+            }
+          }
+        ]
+      },
+      "PointLogEntry": {
+        "type": "object",
+        "required": ["id", "userId", "type", "amount", "balanceAfter", "reason", "createdAt"],
+        "properties": {
+          "id": { "type": "integer" },
+          "userId": { "type": "integer" },
+          "type": { "type": "string", "enum": ["in", "out"] },
+          "amount": { "type": "integer", "minimum": 0 },
+          "balanceAfter": { "type": "integer", "minimum": 0 },
+          "reason": { "type": "string" },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "user": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "integer" },
+              "email": { "type": "string", "format": "email" }
+            }
           }
         }
       },
@@ -134,15 +413,11 @@
           "createdAt": { "type": "string", "format": "date-time" },
           "merchant": {
             "nullable": true,
-            "oneOf": [
-              { "$ref": "#/components/schemas/MerchantSummary" }
-            ]
+            "oneOf": [{ "$ref": "#/components/schemas/MerchantSummary" }]
           },
           "_count": {
             "type": "object",
-            "properties": {
-              "inventory": { "type": "integer" }
-            }
+            "properties": { "inventory": { "type": "integer" } }
           }
         }
       },
@@ -211,9 +486,7 @@
           },
           "settlement": {
             "nullable": true,
-            "oneOf": [
-              { "$ref": "#/components/schemas/Settlement" }
-            ]
+            "oneOf": [{ "$ref": "#/components/schemas/Settlement" }]
           }
         }
       },
@@ -289,9 +562,7 @@
       },
       "RejectMerchantRequest": {
         "type": "object",
-        "properties": {
-          "reason": { "type": "string" }
-        }
+        "properties": { "reason": { "type": "string" } }
       },
       "UpdateCommissionRequest": {
         "type": "object",
@@ -339,11 +610,11 @@
     },
     "responses": {
       "Unauthenticated": {
-        "description": "未登录",
+        "description": "未登录 / token 失效 / 账号已封禁",
         "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } } }
       },
       "Forbidden": {
-        "description": "无权限",
+        "description": "无权限（如普通用户访问 admin 端点）",
         "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } } }
       },
       "ValidationError": {
@@ -353,10 +624,102 @@
       "Conflict": {
         "description": "资源冲突",
         "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } } }
+      },
+      "NotFound": {
+        "description": "资源不存在",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } } }
+      },
+      "RateLimited": {
+        "description": "请求频次超限",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } } }
       }
     }
   },
   "paths": {
+    "/api/health": {
+      "get": {
+        "tags": ["Health"],
+        "summary": "服务与数据库健康探针",
+        "description": "无需认证。同步执行 `SELECT 1` 检查数据库连通性。响应包含 `status`、`db`、`time`。DB 不可达时返回 503。",
+        "responses": {
+          "200": {
+            "description": "服务与数据库正常",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/HealthOk" } } }
+          },
+          "503": {
+            "description": "数据库连接失败",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/HealthFail" } } }
+          }
+        }
+      }
+    },
+    "/api/auth/register": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "用户注册",
+        "description": "成功后写 `PointLog`（注册奖励积分）；如果带 `inviteCode` 且邀请人有效，会创建 `InviteRelation`。response body 不含 refresh token，refresh token 通过 HttpOnly Cookie 下发。",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RegisterRequest" } } }
+        },
+        "responses": {
+          "201": {
+            "description": "注册成功",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AuthSession" } } }
+          },
+          "400": { "$ref": "#/components/responses/ValidationError" },
+          "409": { "$ref": "#/components/responses/Conflict" },
+          "429": { "$ref": "#/components/responses/RateLimited" }
+        }
+      }
+    },
+    "/api/auth/login": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "用户登录",
+        "description": "已封禁用户（`status = 已封禁`）登录被拒绝。",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/LoginRequest" } } }
+        },
+        "responses": {
+          "200": {
+            "description": "登录成功",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AuthSession" } } }
+          },
+          "400": { "$ref": "#/components/responses/ValidationError" },
+          "401": { "$ref": "#/components/responses/Unauthenticated" },
+          "429": { "$ref": "#/components/responses/RateLimited" }
+        }
+      }
+    },
+    "/api/auth/refresh": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "刷新 access token（带轮换）",
+        "description": "通过 HttpOnly Cookie 提交 refresh token；服务端验证哈希、轮换出一份新的 refresh token 并下发新 Cookie。已封禁用户、密码已修改 / 重置后的旧 refresh token 全部失效。",
+        "responses": {
+          "200": {
+            "description": "新的 access token",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RefreshResponse" } } }
+          },
+          "401": { "$ref": "#/components/responses/Unauthenticated" }
+        }
+      }
+    },
+    "/api/auth/logout": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "登出",
+        "description": "如果 Cookie 中存在 refresh token，将其撤销并清除 Cookie。",
+        "responses": {
+          "200": {
+            "description": "登出成功",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/OkResponse" } } }
+          }
+        }
+      }
+    },
     "/api/auth/me": {
       "get": {
         "tags": ["Auth"],
@@ -369,6 +732,94 @@
             "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AuthUser" } } }
           },
           "401": { "$ref": "#/components/responses/Unauthenticated" }
+        }
+      }
+    },
+    "/api/auth/password-change": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "已登录用户修改密码",
+        "description": "需要 bearer + 同时校验 `currentPassword`。**修改成功后撤销该用户所有 refresh token**——所有设备需重新登录。",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PasswordChangeRequest" } } }
+        },
+        "responses": {
+          "200": {
+            "description": "修改成功",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MessageResponse" } } }
+          },
+          "400": { "$ref": "#/components/responses/ValidationError" },
+          "401": { "$ref": "#/components/responses/Unauthenticated" },
+          "429": { "$ref": "#/components/responses/RateLimited" }
+        }
+      }
+    },
+    "/api/auth/forgot-password": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "请求重置密码邮件",
+        "description": "**始终返回 200**，无论邮箱是否存在——防止账号枚举。",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ForgotPasswordRequest" } } }
+        },
+        "responses": {
+          "200": {
+            "description": "如邮箱存在则发送链接",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MessageResponse" } } }
+          },
+          "429": { "$ref": "#/components/responses/RateLimited" }
+        }
+      }
+    },
+    "/api/auth/reset-password": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "用邮件中的 token 重置密码",
+        "description": "成功后撤销该用户所有 refresh token。",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ResetPasswordRequest" } } }
+        },
+        "responses": {
+          "200": {
+            "description": "重置成功",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/OkResponse" } } }
+          },
+          "400": { "$ref": "#/components/responses/ValidationError" }
+        }
+      }
+    },
+    "/api/auth/send-verification": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "向当前已登录用户发送邮箱验证链接",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": {
+            "description": "已发送",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/OkResponse" } } }
+          },
+          "401": { "$ref": "#/components/responses/Unauthenticated" },
+          "429": { "$ref": "#/components/responses/RateLimited" }
+        }
+      }
+    },
+    "/api/auth/verify-email": {
+      "get": {
+        "tags": ["Auth"],
+        "summary": "通过邮件 token 验证邮箱",
+        "parameters": [
+          { "name": "token", "in": "query", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "验证成功",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/OkResponse" } } }
+          },
+          "400": { "$ref": "#/components/responses/ValidationError" }
         }
       }
     },
@@ -400,7 +851,7 @@
             "description": "商品详情",
             "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MerchantProduct" } } }
           },
-          "404": { "description": "商品不存在" }
+          "404": { "$ref": "#/components/responses/NotFound" }
         }
       }
     },
@@ -408,6 +859,7 @@
       "post": {
         "tags": ["Orders"],
         "summary": "兑换商品；商家商品会同步生成结算记录",
+        "description": "事务内执行：锁定一条 `available` 库存 → 扣积分 + 写 `PointLog` → 创建 `Order` + `Delivery` → 商家商品则同步创建 `Settlement(pending)`。库存为零或积分不足时整事务回滚。",
         "security": [{ "bearerAuth": [] }],
         "requestBody": {
           "required": true,
@@ -439,11 +891,16 @@
       },
       "get": {
         "tags": ["Orders"],
-        "summary": "我的订单列表，订单项可包含商家摘要",
+        "summary": "我的订单列表",
         "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "status", "in": "query", "schema": { "type": "string" } },
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "pageSize", "in": "query", "schema": { "type": "integer", "default": 20, "maximum": 100 } }
+        ],
         "responses": {
           "200": {
-            "description": "我的订单列表",
+            "description": "我的订单",
             "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/MerchantOrder" } } } }
           },
           "401": { "$ref": "#/components/responses/Unauthenticated" }
@@ -453,7 +910,8 @@
     "/api/orders/{id}": {
       "get": {
         "tags": ["Orders"],
-        "summary": "订单详情，订单可包含商家摘要",
+        "summary": "订单详情（仅本人可读）",
+        "description": "他人订单返回 404（不暴露存在性）。",
         "security": [{ "bearerAuth": [] }],
         "parameters": [
           { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
@@ -464,7 +922,233 @@
             "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MerchantOrder" } } }
           },
           "401": { "$ref": "#/components/responses/Unauthenticated" },
-          "404": { "description": "订单不存在或不属于当前用户" }
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/admin/stats": {
+      "get": {
+        "tags": ["Admin Audit"],
+        "summary": "首页概览数字",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": { "description": "概览", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AdminStats" } } } },
+          "401": { "$ref": "#/components/responses/Unauthenticated" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/api/admin/users": {
+      "get": {
+        "tags": ["Admin Users"],
+        "summary": "用户列表（支持邮箱模糊搜索）",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "q", "in": "query", "schema": { "type": "string" }, "description": "邮箱模糊匹配" },
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "pageSize", "in": "query", "schema": { "type": "integer", "default": 20, "maximum": 100 } }
+        ],
+        "responses": {
+          "200": { "description": "用户数组", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/AdminUserRow" } } } } },
+          "401": { "$ref": "#/components/responses/Unauthenticated" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/api/admin/users/{id}/adjust": {
+      "post": {
+        "tags": ["Admin Users"],
+        "summary": "调整用户积分（增 / 扣）",
+        "description": "事务内：更新余额 → 写 `PointLog` → 写 `AdminLog`。扣除时余额不足返回 400。",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AdjustPointsRequest" } } }
+        },
+        "responses": {
+          "200": { "description": "调整后的余额", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AdjustPointsResponse" } } } },
+          "400": { "$ref": "#/components/responses/ValidationError" },
+          "401": { "$ref": "#/components/responses/Unauthenticated" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/admin/users/{id}/ban": {
+      "put": {
+        "tags": ["Admin Users"],
+        "summary": "封禁用户",
+        "description": "事务内：将 `status` 置为 `已封禁` → **撤销该用户所有 refresh token** → 写 `AdminLog`。不能封禁自己，不能封禁其他管理员。被封禁用户的 access token 在过期前仍有效，但 refresh / login 都会失败。",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/BanUserRequest" } } }
+        },
+        "responses": {
+          "200": { "description": "封禁后的用户", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AdminUserMutation" } } } },
+          "400": { "description": "不能封禁自己或管理员", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } } } },
+          "401": { "$ref": "#/components/responses/Unauthenticated" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/admin/users/{id}/unban": {
+      "put": {
+        "tags": ["Admin Users"],
+        "summary": "解封用户",
+        "description": "将 `status` 置回 `正常` 并写 `AdminLog`。用户需重新登录以获取新会话。",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "200": { "description": "解封后的用户", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AdminUserMutation" } } } },
+          "401": { "$ref": "#/components/responses/Unauthenticated" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/admin/config": {
+      "get": {
+        "tags": ["Admin Config"],
+        "summary": "列出全部已知系统配置（含未持久化项的默认值）",
+        "description": "返回 4 个内置 key 的当前值：`registerReward` / `checkinReward` / `inviteReward` / `refreshTokenMaxAgeDays`。未在 `SystemConfig` 表中持久化的项回落到环境变量或代码默认值。",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": {
+            "description": "配置列表",
+            "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/SystemConfigEntry" } } } }
+          },
+          "401": { "$ref": "#/components/responses/Unauthenticated" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/api/admin/config/{key}": {
+      "put": {
+        "tags": ["Admin Config"],
+        "summary": "更新单个系统配置项",
+        "description": "key 必须是已知配置项之一；value 为非负整数。事务内 upsert `SystemConfig` 行并写 `AdminLog`。新值在下一次读取（`getSystemConfigValue`）时立即生效。",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "key", "in": "path", "required": true, "schema": { "$ref": "#/components/schemas/SystemConfigKey" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UpdateSystemConfigRequest" } } }
+        },
+        "responses": {
+          "200": { "description": "更新后的配置项", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SystemConfigEntry" } } } },
+          "400": { "description": "未知 key 或值不是非负整数", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } } } },
+          "401": { "$ref": "#/components/responses/Unauthenticated" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/api/admin/products": {
+      "get": {
+        "tags": ["Admin Products"],
+        "summary": "全平台商品列表（含 inactive）",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": { "description": "商品数组", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/AdminProduct" } } } } }
+        }
+      },
+      "post": {
+        "tags": ["Admin Products"],
+        "summary": "管理员上架商品（平台自营）",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateAdminProductRequest" } } }
+        },
+        "responses": {
+          "201": { "description": "创建后的商品", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AdminProduct" } } } },
+          "400": { "$ref": "#/components/responses/ValidationError" }
+        }
+      }
+    },
+    "/api/admin/products/{id}": {
+      "put": {
+        "tags": ["Admin Products"],
+        "summary": "更新平台商品",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UpdateAdminProductRequest" } } }
+        },
+        "responses": {
+          "200": { "description": "更新后的商品", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AdminProduct" } } } },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/admin/products/{id}/inventory": {
+      "post": {
+        "tags": ["Admin Products"],
+        "summary": "为平台商品导入库存",
+        "description": "事务内：批量插入 `InventoryItem` → `product.stock` 累加 → 写 `AdminLog`。",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ImportInventoryRequest" } } }
+        },
+        "responses": {
+          "200": { "description": "导入结果", "content": { "application/json": { "schema": { "type": "object", "properties": { "imported": { "type": "integer" } } } } } },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/admin/orders": {
+      "get": {
+        "tags": ["Admin Orders"],
+        "summary": "全平台订单列表",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "pageSize", "in": "query", "schema": { "type": "integer", "default": 20 } }
+        ],
+        "responses": {
+          "200": { "description": "订单数组", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/AdminOrderRow" } } } } }
+        }
+      }
+    },
+    "/api/admin/orders/{id}": {
+      "get": {
+        "tags": ["Admin Orders"],
+        "summary": "订单详情（含 delivery）",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "200": { "description": "订单详情", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AdminOrderDetail" } } } },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/admin/logs": {
+      "get": {
+        "tags": ["Admin Audit"],
+        "summary": "最近积分变动（PointLog，按时间倒序取 100 条）",
+        "description": "注意：当前实现返回的是 `PointLog`（用户积分变动），不是 `AdminLog`。`AdminLog` 由所有 admin 写操作持久化，但暂无独立读 API。未来计划见 `server/src/modules/admin/README.md`。",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": { "description": "PointLog 数组（最近 100 条）", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/PointLogEntry" } } } } }
         }
       }
     },
@@ -554,7 +1238,7 @@
         "responses": {
           "200": { "description": "更新后的商品", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MerchantProduct" } } } },
           "403": { "$ref": "#/components/responses/Forbidden" },
-          "404": { "description": "商品不存在或不属于当前商家" }
+          "404": { "description": "商品不存在或不属于当前商家（不区分以防探测）" }
         }
       }
     },
