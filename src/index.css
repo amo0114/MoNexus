@@ -3,18 +3,15 @@
 @tailwind utilities;
 
 /* =========================================================
-   MoNexus Design System — Phase 1 tokens (revised 2026-05-11)
+   MoNexus Design System (revised 2026-05-12)
    Strategy: neutral slate skeleton + indigo as focus accent + green CTA.
-   Indigo is reserved for interactive elements (buttons, links, focus rings,
-   badges). Background / surface / text use neutral slate so indigo never
-   dominates the page. Per MASTER.md style revision and user feedback.
-   Legacy --c-* variables are remapped onto the new palette so existing
-   pages render in the new theme without code changes; they will be
-   removed in Phase 4 once all pages migrate to --color-*.
+   Indigo is reserved for interactive elements (buttons, links, focus
+   rings, badges). Background / surface / text use neutral slate so
+   indigo never dominates the page.
    ========================================================= */
 
 :root {
-  /* --- New design tokens --- */
+  /* --- Core tokens --- */
   --color-primary: #6366F1;          /* indigo-500 — interactive accent */
   --color-primary-hover: #4F46E5;    /* indigo-600 */
   --color-secondary: #818CF8;        /* indigo-400 */
@@ -25,6 +22,12 @@
   --color-text: #1E293B;             /* slate-800 — neutral body text */
   --color-text-muted: #64748B;       /* slate-500 */
   --color-border: #E2E8F0;           /* slate-200 */
+
+  /* --- Auxiliary tokens (utility-specific) --- */
+  --color-image-placeholder: #F1F5F9; /* slate-100 — empty image / star-empty */
+  --color-grid-dot: #E2E8F0;          /* slate-200 — .bg-grid-pattern */
+  --color-glass-bg: rgba(255, 255, 255, 0.85);
+  --color-glass-border: rgba(99, 102, 241, 0.12);
 
   /* Spacing */
   --space-xs: 0.25rem;
@@ -41,74 +44,30 @@
   --shadow-lg: 0 10px 15px rgba(15, 23, 42, 0.1);
   --shadow-xl: 0 20px 25px rgba(15, 23, 42, 0.12);
   --shadow-focus: 0 0 0 3px rgba(99, 102, 241, 0.22);
-
-  /* --- Legacy aliases remapped (compat for un-migrated pages) --- */
-  --c-bg-base: var(--color-background);
-  --c-bg-app: var(--color-surface);
-  --c-bg-card: var(--color-surface);
-  --c-bg-image: #F1F5F9;             /* slate-100 placeholder */
-
-  --c-text-main: var(--color-text);
-  --c-text-sub: #475569;             /* slate-600 */
-  --c-text-muted: var(--color-text-muted);
-
-  --c-accent: var(--color-primary);
-  --c-accent-hover: var(--color-primary-hover);
-
-  --c-border-light: rgba(99, 102, 241, 0.18);   /* indigo-tinted border for interactive zones */
-  --c-border-faint: rgba(99, 102, 241, 0.08);
-
-  --c-glass-bg: rgba(255, 255, 255, 0.85);
-  --c-glass-border: rgba(99, 102, 241, 0.12);
-  --c-shadow: rgba(15, 23, 42, 0.06);           /* neutral shadow */
-  --c-grid-dot: #E2E8F0;                        /* slate-200 grid */
-
-  --c-toast-bg: var(--color-text);
-  --c-toast-text: var(--color-surface);
 }
 
 .dark {
-  /* --- New tokens in dark mode (near-black bg + brighter indigo accent) --- */
-  --color-primary: #818CF8;          /* indigo-400, brightened for dark bg */
-  --color-primary-hover: #A5B4FC;    /* indigo-300 */
+  --color-primary: #818CF8;          /* indigo-400 brightened for dark bg */
+  --color-primary-hover: #A5B4FC;
   --color-secondary: #A5B4FC;
-  --color-cta: #4ADE80;              /* green-400, brighter on dark */
-  --color-cta-hover: #86EFAC;        /* green-300 */
+  --color-cta: #4ADE80;
+  --color-cta-hover: #86EFAC;
   --color-background: #0A0A14;       /* near-black with a hint of purple */
-  --color-surface: #161629;          /* one step lighter than bg for clear separation */
-  --color-text: #F1F5F9;             /* slate-100 — neutral, not all-purple */
+  --color-surface: #161629;
+  --color-text: #F1F5F9;             /* slate-100 */
   --color-text-muted: #94A3B8;       /* slate-400 */
   --color-border: #1E293B;           /* slate-800 */
+
+  --color-image-placeholder: #1F1F36;
+  --color-grid-dot: #1E293B;
+  --color-glass-bg: rgba(22, 22, 41, 0.85);
+  --color-glass-border: rgba(129, 140, 248, 0.15);
 
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
   --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.35);
   --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.4);
   --shadow-xl: 0 20px 25px rgba(0, 0, 0, 0.5);
   --shadow-focus: 0 0 0 3px rgba(129, 140, 248, 0.4);
-
-  /* Legacy aliases */
-  --c-bg-base: var(--color-background);
-  --c-bg-app: var(--color-surface);
-  --c-bg-card: var(--color-surface);
-  --c-bg-image: #1F1F36;
-
-  --c-text-main: var(--color-text);
-  --c-text-sub: #CBD5E1;             /* slate-300 */
-  --c-text-muted: var(--color-text-muted);
-
-  --c-accent: var(--color-primary);
-  --c-accent-hover: var(--color-primary-hover);
-
-  --c-border-light: rgba(129, 140, 248, 0.2);
-  --c-border-faint: rgba(129, 140, 248, 0.08);
-
-  --c-glass-bg: rgba(22, 22, 41, 0.85);
-  --c-glass-border: rgba(129, 140, 248, 0.15);
-  --c-shadow: rgba(0, 0, 0, 0.4);
-  --c-grid-dot: #1E293B;             /* slate-800 grid on near-black */
-
-  --c-toast-bg: var(--color-surface);
-  --c-toast-text: var(--color-text);
 }
 
 /* =========================================================
@@ -130,42 +89,27 @@ h1, h2, h3, h4 {
 }
 
 /* =========================================================
-   Utilities — kept from previous palette, now driven by new tokens
+   Utilities
    ========================================================= */
 
 .bg-grid-pattern {
   background-image:
-    linear-gradient(to right, var(--c-grid-dot) 1px, transparent 1px),
-    linear-gradient(to bottom, var(--c-grid-dot) 1px, transparent 1px);
+    linear-gradient(to right, var(--color-grid-dot) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--color-grid-dot) 1px, transparent 1px);
   background-size: 32px 32px;
 }
 
 .glass {
-  background: var(--c-glass-bg);
+  background: var(--color-glass-bg);
   backdrop-filter: blur(16px) saturate(180%);
   -webkit-backdrop-filter: blur(16px) saturate(180%);
-  border-bottom: 1px solid var(--c-glass-border);
+  border-bottom: 1px solid var(--color-glass-border);
 }
 
 .glass-bottom {
-  background: var(--c-glass-bg);
+  background: var(--color-glass-bg);
   backdrop-filter: blur(16px) saturate(180%);
-  border-top: 1px solid var(--c-glass-border);
-}
-
-.apple-card {
-  background: var(--c-bg-card);
-  border-radius: 24px;
-  box-shadow: 0 4px 20px var(--c-shadow);
-  border: 1px solid var(--c-border-light);
-  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-  isolation: isolate;
-}
-
-.apple-card-hover:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 12px 30px var(--c-shadow);
-  border-color: rgba(99, 102, 241, 0.3);
+  border-top: 1px solid var(--color-glass-border);
 }
 
 @keyframes fadeIn {
@@ -188,13 +132,14 @@ h1, h2, h3, h4 {
 }
 
 /* =========================================================
-   Phase 2 — Component classes
-   Naming convention:
+   Component classes
    - .btn-primary  : filled indigo, main interaction (login, submit, save)
    - .btn-cta      : filled green, conversion CTA (buy, claim, redeem)
    - .btn-secondary: outlined indigo, secondary actions (cancel, back)
-   No layout-shifting hovers — translateY only. Per MASTER pre-delivery
-   checklist (cursor:pointer + visible focus state + 200ms transitions).
+   - .card / .card-interactive
+   - .input
+   - .modal-overlay / .modal
+   All hovers respect "no layout shift" (translateY only).
    ========================================================= */
 
 .btn-primary {
@@ -318,34 +263,22 @@ h1, h2, h3, h4 {
   width: calc(100% - 2rem);
 }
 
-/* Legacy .input-field — kept for un-migrated pages. New pages use .input. */
-.input-field {
-  @apply w-full px-4 py-3 bg-[var(--c-bg-app)] border border-[var(--c-border-light)] rounded-xl focus:outline-none transition-all text-sm text-[var(--c-text-main)] shadow-inner placeholder:text-[var(--c-text-muted)];
-}
-
-.input-field:focus {
-  box-shadow: var(--shadow-focus);
-}
-
-.dark .input-field:focus {
-  box-shadow: var(--shadow-focus);
-}
-
 /* Scrollbar */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--c-border-light); border-radius: 10px; }
-::-webkit-scrollbar-thumb:hover { background: var(--c-accent); }
+::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover { background: var(--color-primary); }
 .hide-scrollbar::-webkit-scrollbar { display: none; }
 .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 
-/* Stars */
+/* Stars (rating system) */
 .star-filled { color: #F59E0B; fill: #F59E0B; }
-.star-empty { color: var(--c-bg-image); fill: var(--c-bg-image); }
+.star-empty { color: var(--color-image-placeholder); fill: var(--color-image-placeholder); }
 
 /* Admin table */
 .admin-table { width: 100%; border-collapse: separate; border-spacing: 0; }
-.admin-table th { text-align: left; padding: 1rem; color: var(--c-text-sub); font-weight: bold; font-size: 0.875rem; border-bottom: 1px solid var(--c-border-light); }
-.admin-table td { padding: 1rem; border-bottom: 1px solid var(--c-border-faint); vertical-align: middle; color: var(--c-text-main); }
+.admin-table th { text-align: left; padding: 1rem; color: var(--color-text-muted); font-weight: bold; font-size: 0.875rem; border-bottom: 1px solid var(--color-border); }
+.admin-table td { padding: 1rem; border-bottom: 1px solid var(--color-border); vertical-align: middle; color: var(--color-text); }
 .admin-table tr:last-child td { border-bottom: none; }
-.admin-table tr:hover td { background-color: var(--c-border-faint); }
+.admin-table tr:hover td { background-color: rgba(99, 102, 241, 0.06); }
+.dark .admin-table tr:hover td { background-color: rgba(129, 140, 248, 0.08); }

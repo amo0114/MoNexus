@@ -96,7 +96,7 @@ export default function ProductDetailPage() {
     return (
       <div className="max-w-4xl mx-auto pb-8 fade-in relative animate-pulse">
         <div className="w-24 h-6 bg-[var(--color-border)] rounded-lg mb-4"></div>
-        <div className="w-full h-64 sm:h-80 md:h-96 bg-[var(--c-bg-image)] rounded-xl mb-8 border border-[var(--color-border)]"></div>
+        <div className="w-full h-64 sm:h-80 md:h-96 bg-[var(--color-image-placeholder)] rounded-xl mb-8 border border-[var(--color-border)]"></div>
         <div className="w-full h-32 bg-[var(--color-surface)] rounded-xl mb-8 border border-[var(--color-border)]"></div>
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2 space-y-4">
@@ -127,7 +127,7 @@ export default function ProductDetailPage() {
       </button>
 
       <div className="rounded-xl overflow-hidden bg-[var(--color-surface)] border border-[var(--color-border)] shadow-md mb-8">
-        <div className="w-full h-64 sm:h-80 md:h-96 bg-[var(--c-bg-image)] relative shrink-0">
+        <div className="w-full h-64 sm:h-80 md:h-96 bg-[var(--color-image-placeholder)] relative shrink-0">
           <img src={product.imageUrl} className="w-full h-full object-cover" alt={product.name} />
           <div className="absolute inset-0 bg-gradient-to-t from-black/45 via-black/10 to-transparent" />
 

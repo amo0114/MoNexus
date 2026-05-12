@@ -7,7 +7,7 @@ type ListProps = React.ComponentPropsWithoutRef<typeof TabsPrimitive.List>
 export const TabsList = forwardRef<HTMLDivElement, ListProps>(({ className = '', ...props }, ref) => (
   <TabsPrimitive.List
     ref={ref}
-    className={`inline-flex items-center justify-center gap-1 rounded-lg bg-[var(--c-bg-image)] p-1 ${className}`}
+    className={`inline-flex items-center justify-center gap-1 rounded-lg bg-[var(--color-image-placeholder)] p-1 ${className}`}
     {...props}
   />
 ))

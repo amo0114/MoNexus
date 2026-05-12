@@ -87,7 +87,7 @@ export default function StorePage() {
               className={`px-5 py-2 rounded-full text-sm font-medium cursor-pointer transition-colors whitespace-nowrap border ${
                 category === cat
                   ? 'bg-[var(--color-text)] text-[var(--color-background)] border-transparent shadow-sm'
-                  : 'bg-transparent text-[var(--color-text-muted)] border-[var(--color-border)] hover:bg-[var(--c-border-faint)] hover:text-[var(--color-text)] hover:border-[var(--color-primary)]'
+                  : 'bg-transparent text-[var(--color-text-muted)] border-[var(--color-border)] hover:bg-[var(--color-primary)]/8 hover:text-[var(--color-text)] hover:border-[var(--color-primary)]'
               }`}
             >
               {cat}
@@ -121,7 +121,7 @@ export default function StorePage() {
               style={{ animationDelay: `${i * 0.06}s` }}
             >
               {/* Image */}
-              <div className="relative h-40 w-full bg-[var(--c-bg-image)] overflow-hidden border-b border-[var(--color-border)] shrink-0">
+              <div className="relative h-40 w-full bg-[var(--color-image-placeholder)] overflow-hidden border-b border-[var(--color-border)] shrink-0">
                 <img
                   src={product.imageUrl}
                   alt={product.name}
@@ -140,8 +140,8 @@ export default function StorePage() {
                   <span
                     className="text-[11px] font-bold px-2.5 py-1 rounded-lg text-[var(--color-text)] shadow-sm flex items-center gap-1.5"
                     style={{
-                      background: 'var(--c-glass-bg)',
-                      border: '1px solid var(--c-glass-border)',
+                      background: 'var(--color-glass-bg)',
+                      border: '1px solid var(--color-glass-border)',
                       backdropFilter: 'blur(12px)',
                     }}
                   >
@@ -150,8 +150,8 @@ export default function StorePage() {
                   <span
                     className="text-[11px] font-bold px-2.5 py-1 rounded-lg text-[var(--color-primary)] shadow-sm flex items-center gap-1.5"
                     style={{
-                      background: 'var(--c-glass-bg)',
-                      border: '1px solid var(--c-glass-border)',
+                      background: 'var(--color-glass-bg)',
+                      border: '1px solid var(--color-glass-border)',
                       backdropFilter: 'blur(12px)',
                     }}
                   >

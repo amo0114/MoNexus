@@ -215,7 +215,7 @@ function DialogDemo() {
         <DialogDescription>
           这是一个 Radix 包装的可访问 Dialog。ESC 关闭，焦点会自动 trap 在内部，关闭后焦点回到触发器。
         </DialogDescription>
-        <div className="mt-4 card !bg-[var(--c-bg-image)] !border-0">
+        <div className="mt-4 card !bg-[var(--color-image-placeholder)] !border-0">
           <p className="text-sm">点击计数：{count}</p>
         </div>
         <div className="flex justify-end gap-2 mt-6">

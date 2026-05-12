@@ -47,18 +47,18 @@ export default function ProductDetailModal({
             <X className="w-4 h-4" />
           </button>
 
-          <div className="w-full h-56 sm:h-64 bg-[var(--c-bg-image)] relative">
+          <div className="w-full h-56 sm:h-64 bg-[var(--color-image-placeholder)] relative">
             <img src={product.imageUrl} className="w-full h-full object-cover" alt={product.name} />
             <div className="absolute bottom-4 left-4 flex gap-2 flex-wrap">
               <span
                 className="text-xs font-bold px-3 py-1.5 rounded-lg text-[var(--color-text)] shadow-sm flex items-center gap-1.5"
-                style={{ background: 'var(--c-glass-bg)', border: '1px solid var(--c-glass-border)', backdropFilter: 'blur(12px)' }}
+                style={{ background: 'var(--color-glass-bg)', border: '1px solid var(--color-glass-border)', backdropFilter: 'blur(12px)' }}
               >
                 {product.type}
               </span>
               <span
                 className="text-xs font-bold px-3 py-1.5 rounded-lg text-[var(--color-primary)] shadow-sm flex items-center gap-1.5"
-                style={{ background: 'var(--c-glass-bg)', border: '1px solid var(--c-glass-border)', backdropFilter: 'blur(12px)' }}
+                style={{ background: 'var(--color-glass-bg)', border: '1px solid var(--color-glass-border)', backdropFilter: 'blur(12px)' }}
               >
                 <Store className="w-3 h-3" />
                 {product.merchant?.name || '平台自营'}

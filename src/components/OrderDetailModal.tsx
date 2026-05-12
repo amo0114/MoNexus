@@ -45,7 +45,7 @@ export default function OrderDetailModal({ order, onClose }: OrderDetailModalPro
               {order.product.imageUrl ? (
                 <img src={order.product.imageUrl} alt={order.product.name} className="w-16 h-16 rounded-lg object-cover shrink-0 border border-[var(--color-border)]" />
               ) : (
-                <div className="w-16 h-16 rounded-lg bg-[var(--c-bg-image)] border border-[var(--color-border)] flex items-center justify-center shrink-0">
+                <div className="w-16 h-16 rounded-lg bg-[var(--color-image-placeholder)] border border-[var(--color-border)] flex items-center justify-center shrink-0">
                   <Package className="w-6 h-6 text-[var(--color-text-muted)]" />
                 </div>
               )}
