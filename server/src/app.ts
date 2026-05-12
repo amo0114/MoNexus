@@ -5,6 +5,8 @@ import rateLimit from 'express-rate-limit'
 import cookieParser from 'cookie-parser'
 import { config } from './config/index.js'
 import { prisma } from './lib/prisma.js'
+import { initErrorReporter } from './lib/errorReporter.js'
+import { requestLogger } from './middlewares/requestLogger.js'
 import { errorHandler } from './middlewares/errorHandler.js'
 import { authRoutes } from './modules/auth/routes.js'
 import { productRoutes } from './modules/products/routes.js'
@@ -15,6 +17,7 @@ import { merchantRoutes } from './modules/merchant/routes.js'
 import { uploadsRoutes } from './modules/uploads/routes.js'
 
 const app = express()
+initErrorReporter()
 
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -29,6 +32,7 @@ const apiLimiter = rateLimit({
   },
 })
 
+app.use(requestLogger)
 app.use(helmet())
 app.use(cors({
   origin: config.frontendOrigin,
