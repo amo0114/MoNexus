@@ -11,18 +11,18 @@ export default function PurchaseModal({
 }) {
   return (
     <div className="fixed inset-0 z-[110] flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/15 backdrop-blur-sm" onClick={onClose} />
-      <div className="apple-card w-full max-w-sm p-8 mx-4 relative z-10 fade-in">
-        <h3 className="text-xl font-bold mb-2 text-[var(--c-text-main)]">确认兑换</h3>
-        <p className="text-[var(--c-text-sub)] mb-6 text-sm">您即将消耗积分兑换以下商品：</p>
+      <div className="modal-overlay" onClick={onClose} />
+      <div className="modal relative z-10 fade-in !max-w-sm">
+        <h3 className="font-heading text-xl font-bold mb-2 text-[var(--color-text)]">确认兑换</h3>
+        <p className="text-[var(--color-text-muted)] mb-6 text-sm">您即将消耗积分兑换以下商品：</p>
 
-        <div className="bg-[var(--c-bg-app)] rounded-2xl p-4 mb-6 border border-[var(--c-border-light)]">
-          <div className="font-bold text-base mb-1 text-[var(--c-text-main)] line-clamp-1">
+        <div className="bg-[var(--color-background)] rounded-lg p-4 mb-6 border border-[var(--color-border)]">
+          <div className="font-bold text-base mb-1 text-[var(--color-text)] line-clamp-1">
             {product.name}
           </div>
-          <div className="flex justify-between items-center text-sm mt-3 pt-3 border-t border-[var(--c-border-light)] border-dashed">
-            <span className="text-[var(--c-text-sub)]">实扣积分</span>
-            <span className="font-bold text-[var(--c-accent)] flex items-center gap-1 text-lg">
+          <div className="flex justify-between items-center text-sm mt-3 pt-3 border-t border-[var(--color-border)] border-dashed">
+            <span className="text-[var(--color-text-muted)]">实扣积分</span>
+            <span className="font-heading font-bold text-[var(--color-cta)] flex items-center gap-1 text-lg">
               <Coins className="w-4 h-4" /> {product.price}
             </span>
           </div>
@@ -31,13 +31,13 @@ export default function PurchaseModal({
         <div className="flex gap-3">
           <button
             onClick={onClose}
-            className="flex-1 bg-[var(--c-border-faint)] text-[var(--c-text-main)] py-3 rounded-2xl font-bold text-sm hover:bg-[var(--c-border-light)] transition-all"
+            className="btn-secondary flex-1 !px-0"
           >
             再想想
           </button>
           <button
             onClick={onConfirm}
-            className="flex-1 bg-[var(--c-text-main)] text-[var(--c-bg-app)] py-3 rounded-2xl font-bold text-sm shadow-md hover:bg-[var(--c-text-sub)] transition-all"
+            className="btn-cta flex-1 !px-0"
           >
             确认支付
           </button>
