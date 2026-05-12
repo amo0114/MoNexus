@@ -20,6 +20,11 @@ export const resetPasswordSchema = z.object({
   password: z.string().min(6, '密码至少 6 位'),
 })
 
+export const passwordChangeSchema = z.object({
+  currentPassword: z.string().min(1, '请输入当前密码'),
+  newPassword: z.string().min(6, '密码至少 6 位'),
+})
+
 export const verifyEmailQuerySchema = z.object({
   token: z.string().min(1, '令牌不能为空'),
 })

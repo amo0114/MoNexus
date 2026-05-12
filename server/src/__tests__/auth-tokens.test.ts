@@ -133,6 +133,71 @@ describe('Auth token flows (P0-D)', () => {
     })
   })
 
+  describe('POST /api/auth/password-change', () => {
+    it('should reject unauthenticated password changes', async () => {
+      await api
+        .post('/api/auth/password-change')
+        .send({ currentPassword: 'old-password', newPassword: 'new-password' })
+        .expect(401)
+    })
+
+    it('should change the password and revoke existing refresh tokens', async () => {
+      const { user, password } = await createTestUser('change-ok@test.local', 'current-password')
+      const login = await loginAs(user.email, password)
+
+      const res = await api
+        .post('/api/auth/password-change')
+        .set(authHeader(login.accessToken))
+        .send({ currentPassword: password, newPassword: 'new-password' })
+        .expect(200)
+
+      expect(res.body.message).toBe('密码已修改，请重新登录')
+
+      await api
+        .post('/api/auth/refresh')
+        .set('Cookie', login.cookies)
+        .expect(401)
+
+      await api
+        .post('/api/auth/login')
+        .send({ email: user.email, password })
+        .expect(401)
+
+      await api
+        .post('/api/auth/login')
+        .send({ email: user.email, password: 'new-password' })
+        .expect(200)
+
+      const activeTokens = await prisma.refreshToken.count({
+        where: { userId: user.id, revoked: false },
+      })
+      expect(activeTokens).toBe(1)
+    })
+
+    it('should reject a wrong current password without changing the password', async () => {
+      const { user, password } = await createTestUser('change-wrong@test.local', 'current-password')
+      const login = await loginAs(user.email, password)
+
+      const res = await api
+        .post('/api/auth/password-change')
+        .set(authHeader(login.accessToken))
+        .send({ currentPassword: 'wrong-password', newPassword: 'new-password' })
+        .expect(401)
+
+      expect(res.body.error.message).toMatch(/密码/)
+
+      await api
+        .post('/api/auth/login')
+        .send({ email: user.email, password })
+        .expect(200)
+
+      await api
+        .post('/api/auth/login')
+        .send({ email: user.email, password: 'new-password' })
+        .expect(401)
+    })
+  })
+
   describe('POST /api/auth/send-verification', () => {
     it('should return 401 when not authenticated', async () => {
       await api.post('/api/auth/send-verification').expect(401)
