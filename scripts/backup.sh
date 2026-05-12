@@ -20,7 +20,9 @@ timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
 backup_file="$BACKUP_DIR/monexus-${timestamp}.sql.gz"
 
 echo "[INFO] Dumping database to $backup_file"
-pg_dump "$DATABASE_URL" | gzip -c > "$backup_file"
+# Strip Prisma query params (e.g. ?schema=public) — pg_dump rejects unknown URI params
+db_url_for_pg_dump="${DATABASE_URL%%\?*}"
+pg_dump "$db_url_for_pg_dump" | gzip -c > "$backup_file"
 
 echo "[INFO] Pruning backups older than ${RETENTION_DAYS} days under $BACKUP_DIR"
 find "$BACKUP_DIR" -name 'monexus-*.sql.gz' -mtime "+${RETENTION_DAYS}" -delete
