@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { LayoutDashboard, UsersRound, Package, ShoppingCart, Activity, Users, ShoppingBag, Coins, PlusCircle, PackagePlus, X, Plus, Store, DollarSign } from 'lucide-react'
+import { LayoutDashboard, UsersRound, Package, ShoppingCart, Activity, Users, ShoppingBag, Coins, X, Store, DollarSign } from 'lucide-react'
 import api from '../api/client'
 import { getApiErrorMessage } from '../api/error'
 import { useAppStore } from '../stores/appStore'
@@ -192,47 +192,32 @@ export default function AdminPage() {
       <div className="flex flex-col md:flex-row gap-6 max-w-7xl mx-auto">
         {/* Sidebar */}
         <aside className="w-full md:w-56 flex-shrink-0 space-y-1">
-          <h3 className="text-xs font-bold text-[var(--c-text-sub)] uppercase tracking-wider mb-3 px-3">系统管理</h3>
+          <h3 className="text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-3 px-3">系统管理</h3>
           {NAV_ITEMS.map(({ id, label, icon: Icon }) => (
-            <div
+            <button
               key={id}
               onClick={() => setActiveTab(id)}
-              className={`flex items-center gap-3 px-4 py-3 rounded-xl font-bold transition-all cursor-pointer text-sm ${
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg font-semibold transition-colors cursor-pointer text-sm ${
                 activeTab === id
-                  ? 'bg-[var(--c-text-main)] text-[var(--c-bg-app)]'
-                  : 'text-[var(--c-text-sub)] hover:bg-[var(--c-border-faint)] hover:text-[var(--c-text-main)]'
+                  ? 'bg-[var(--color-primary)] text-white shadow-sm'
+                  : 'text-[var(--color-text-muted)] hover:bg-[var(--color-primary)]/8 hover:text-[var(--color-text)]'
               }`}
             >
-              <Icon className="w-4 h-4" /> {label}
-            </div>
+              <Icon className="w-4 h-4 shrink-0" /> {label}
+            </button>
           ))}
         </aside>
 
         {/* Main Content */}
-        <div className="flex-grow apple-card p-6 sm:p-8 min-h-[600px] overflow-x-auto bg-[var(--c-bg-card)]">
+        <div className="flex-grow card !p-6 sm:!p-8 min-h-[600px] overflow-x-auto">
           {/* Dashboard */}
           {activeTab === 'dashboard' && stats && (
             <div className="space-y-6">
-              <h2 className="text-xl font-bold mb-4 text-[var(--c-text-main)]">数据仪表盘</h2>
+              <h2 className="font-heading text-xl font-bold mb-4 text-[var(--color-text)]">数据仪表盘</h2>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div className="bg-[var(--c-bg-app)] p-5 rounded-2xl border border-[var(--c-border-light)]">
-                  <div className="text-[var(--c-text-sub)] text-xs font-bold mb-1.5 flex items-center gap-1.5">
-                    <Users className="w-3.5 h-3.5" /> 注册用户总数
-                  </div>
-                  <div className="text-2xl font-bold text-[var(--c-text-main)]">{stats.users}</div>
-                </div>
-                <div className="bg-[var(--c-bg-app)] p-5 rounded-2xl border border-[var(--c-border-light)]">
-                  <div className="text-[var(--c-text-sub)] text-xs font-bold mb-1.5 flex items-center gap-1.5">
-                    <ShoppingBag className="w-3.5 h-3.5" /> 累计完成订单
-                  </div>
-                  <div className="text-2xl font-bold text-[var(--c-text-main)]">{stats.orders}</div>
-                </div>
-                <div className="bg-[var(--c-border-faint)] p-5 rounded-2xl border border-[var(--c-accent)]">
-                  <div className="text-[var(--c-accent)] text-xs font-bold mb-1.5 flex items-center gap-1.5">
-                    <Coins className="w-3.5 h-3.5" /> 流通积分总额
-                  </div>
-                  <div className="text-2xl font-bold text-[var(--c-accent)]">{stats.totalPoints}</div>
-                </div>
+                <DashStat icon={Users} label="注册用户总数" value={stats.users} />
+                <DashStat icon={ShoppingBag} label="累计完成订单" value={stats.orders} />
+                <DashStat icon={Coins} label="流通积分总额" value={stats.totalPoints} tone="cta" />
               </div>
             </div>
           )}
@@ -240,7 +225,7 @@ export default function AdminPage() {
           {/* Merchants */}
           {activeTab === 'merchants' && (
             <div className="space-y-4">
-              <h2 className="text-xl font-bold mb-4 text-[var(--c-text-main)]">商家管理</h2>
+              <h2 className="font-heading text-xl font-bold mb-4 text-[var(--color-text)]">商家管理</h2>
               <div className="overflow-x-auto">
                 <table className="admin-table">
                   <thead>
@@ -256,36 +241,30 @@ export default function AdminPage() {
                     {merchants.map((m) => (
                       <tr key={m.id}>
                         <td>
-                          <div className="font-bold text-[var(--c-text-main)]">{m.name}</div>
-                          <div className="text-xs text-[var(--c-text-sub)] mt-1">{m.description?.slice(0, 20)}</div>
+                          <div className="font-bold text-[var(--color-text)]">{m.name}</div>
+                          <div className="text-xs text-[var(--color-text-muted)] mt-1">{m.description?.slice(0, 20)}</div>
                         </td>
                         <td className="text-sm">
-                          <div>{m.contactEmail || '-'}</div>
-                          <div className="text-xs text-[var(--c-text-sub)]">{m.contactPhone || '-'}</div>
+                          <div className="text-[var(--color-text)]">{m.contactEmail || '-'}</div>
+                          <div className="text-xs text-[var(--color-text-muted)]">{m.contactPhone || '-'}</div>
                         </td>
-                        <td className="text-[var(--c-accent)] font-bold">
+                        <td className="text-[var(--color-primary)] font-bold">
                           {(Number(m.commissionRate) * 100).toFixed(0)}%
                         </td>
                         <td>
-                          <span className={`px-2.5 py-1 text-[11px] rounded font-bold ${
-                            m.status === 'active' ? 'bg-green-500/10 text-[#4ADE80]' :
-                            m.status === 'pending' ? 'bg-orange-500/10 text-orange-400' :
-                            'bg-red-500/10 text-[#F87171]'
-                          }`}>
-                            {m.status === 'active' ? '营业中' : m.status === 'pending' ? '待审核' : m.status === 'suspended' ? '已停用' : '已拒绝'}
-                          </span>
+                          <MerchantStatusPill status={m.status} />
                         </td>
-                        <td className="text-right space-x-2">
+                        <td className="text-right space-x-3 whitespace-nowrap">
                           {m.status === 'pending' && (
                             <>
-                              <button onClick={() => handleApproveMerchant(m.id)} className="text-green-500 hover:underline text-xs">通过</button>
-                              <button onClick={() => handleRejectMerchant(m.id)} className="text-red-500 hover:underline text-xs">拒绝</button>
+                              <ActionLink tone="cta" onClick={() => handleApproveMerchant(m.id)}>通过</ActionLink>
+                              <ActionLink tone="danger" onClick={() => handleRejectMerchant(m.id)}>拒绝</ActionLink>
                             </>
                           )}
                           {m.status === 'active' && (
                             <>
-                              <button onClick={() => handleUpdateCommission(m.id)} className="text-blue-500 hover:underline text-xs">改抽成</button>
-                              <button onClick={() => handleSuspendMerchant(m.id)} className="text-red-500 hover:underline text-xs">停用</button>
+                              <ActionLink tone="primary" onClick={() => handleUpdateCommission(m.id)}>改抽成</ActionLink>
+                              <ActionLink tone="danger" onClick={() => handleSuspendMerchant(m.id)}>停用</ActionLink>
                             </>
                           )}
                         </td>
@@ -301,11 +280,11 @@ export default function AdminPage() {
           {activeTab === 'settlements' && (
             <div className="space-y-4">
               <div className="flex justify-between items-center mb-4">
-                <h2 className="text-xl font-bold text-[var(--c-text-main)]">结算管理</h2>
+                <h2 className="font-heading text-xl font-bold text-[var(--color-text)]">结算管理</h2>
                 <button
                   onClick={handleBatchSettle}
                   disabled={selectedSettlements.length === 0}
-                  className="bg-blue-500 text-white px-4 py-2 rounded-lg text-sm font-bold disabled:opacity-50"
+                  className="btn-cta !px-4 !py-2 !text-sm"
                 >
                   批量结算 ({selectedSettlements.length})
                 </button>
@@ -317,6 +296,7 @@ export default function AdminPage() {
                       <th className="w-10">
                         <input
                           type="checkbox"
+                          className="accent-[var(--color-primary)] cursor-pointer"
                           onChange={(e) => {
                             if (e.target.checked) {
                               setSelectedSettlements(settlements.filter(s => s.status === 'pending').map(s => s.id))
@@ -341,6 +321,7 @@ export default function AdminPage() {
                           {s.status === 'pending' && (
                             <input
                               type="checkbox"
+                              className="accent-[var(--color-primary)] cursor-pointer"
                               checked={selectedSettlements.includes(s.id)}
                               onChange={(e) => {
                                 if (e.target.checked) {
@@ -353,25 +334,21 @@ export default function AdminPage() {
                           )}
                         </td>
                         <td>
-                          <div className="font-mono text-xs text-[var(--c-text-sub)]">ORD-{s.orderId}</div>
-                          <div className="text-[10px] text-[var(--c-text-muted)] mt-1">{new Date(s.createdAt).toLocaleString()}</div>
+                          <div className="font-mono text-xs text-[var(--color-text-muted)]">ORD-{s.orderId}</div>
+                          <div className="text-[10px] text-[var(--color-text-muted)] mt-1">{new Date(s.createdAt).toLocaleString()}</div>
                         </td>
-                        <td className="font-bold text-sm text-[var(--c-text-main)]">
+                        <td className="font-bold text-sm text-[var(--color-text)]">
                           {s.merchant?.name || s.merchantId}
                         </td>
                         <td className="text-sm">
-                          <div>平台抽: <span className="text-[var(--c-text-sub)]">{s.commissionAmount}</span> ({(Number(s.commissionRate) * 100).toFixed(0)}%)</div>
-                          <div>单总额: <span className="text-[var(--c-text-main)]">{s.orderAmount}</span></div>
+                          <div className="text-[var(--color-text)]">平台抽: <span className="text-[var(--color-text-muted)]">{s.commissionAmount}</span> ({(Number(s.commissionRate) * 100).toFixed(0)}%)</div>
+                          <div className="text-[var(--color-text)]">单总额: <span className="text-[var(--color-text)]">{s.orderAmount}</span></div>
                         </td>
-                        <td className="font-bold text-green-600 dark:text-green-400">
+                        <td className="font-bold text-[var(--color-cta)]">
                           {s.settlementAmount}
                         </td>
                         <td>
-                          <span className={`px-2 py-1 text-[11px] rounded font-bold ${
-                            s.status === 'settled' ? 'bg-green-500/10 text-[#4ADE80]' : 'bg-orange-500/10 text-orange-400'
-                          }`}>
-                            {s.status === 'settled' ? '已结算' : '待结算'}
-                          </span>
+                          <SettlementStatusPill status={s.status} />
                         </td>
                       </tr>
                     ))}
@@ -384,7 +361,7 @@ export default function AdminPage() {
           {/* Users */}
           {activeTab === 'users' && (
             <div className="space-y-4">
-              <h2 className="text-xl font-bold mb-4 text-[var(--c-text-main)]">用户管理</h2>
+              <h2 className="font-heading text-xl font-bold mb-4 text-[var(--color-text)]">用户管理</h2>
               <div className="overflow-x-auto">
                 <table className="admin-table">
                   <thead>
@@ -400,18 +377,22 @@ export default function AdminPage() {
                     {users.map((u: any) => (
                       <tr key={u.id}>
                         <td>
-                          <div className="font-bold text-[var(--c-text-main)]">
+                          <div className="font-bold text-[var(--color-text)] flex items-center gap-1.5">
                             U{u.id}
                             {u.role === 'admin' && (
-                              <span className="text-[10px] bg-[var(--c-border-light)] text-[var(--c-accent)] px-1.5 py-0.5 rounded ml-1">管理员</span>
+                              <span className="text-[10px] bg-[var(--color-primary)]/12 text-[var(--color-primary)] border border-[var(--color-primary)]/25 px-1.5 py-0.5 rounded font-medium">管理员</span>
                             )}
                           </div>
-                          <div className="text-xs text-[var(--c-text-sub)] mt-1">{u.email}</div>
+                          <div className="text-xs text-[var(--color-text-muted)] mt-1">{u.email}</div>
                         </td>
-                        <td className="text-[var(--c-text-sub)] text-sm">{new Date(u.createdAt).toLocaleDateString()}</td>
-                        <td className="font-bold text-[var(--c-accent)]">{u.pointAccount?.balance ?? 0}</td>
+                        <td className="text-[var(--color-text-muted)] text-sm">{new Date(u.createdAt).toLocaleDateString()}</td>
+                        <td className="font-bold text-[var(--color-cta)]">{u.pointAccount?.balance ?? 0}</td>
                         <td>
-                          <span className={`px-2.5 py-1 text-[11px] rounded font-bold ${u.status === '正常' ? 'bg-green-500/10 text-[#4ADE80]' : 'bg-red-500/10 text-[#F87171]'}`}>
+                          <span className={`inline-flex items-center px-2.5 py-1 text-[11px] rounded font-bold border ${
+                            u.status === '正常'
+                              ? 'bg-[var(--color-cta)]/10 text-[var(--color-cta)] border-[var(--color-cta)]/25'
+                              : 'bg-red-500/10 text-red-500 border-red-500/25'
+                          }`}>
                             {u.status}
                           </span>
                         </td>
@@ -424,7 +405,7 @@ export default function AdminPage() {
                               setAdjustReason('')
                               setShowAdjust(true)
                             }}
-                            className="text-[var(--c-accent)] hover:text-[var(--c-accent-hover)] font-bold text-xs px-3 py-1.5 rounded-lg hover:bg-[var(--c-border-faint)] transition-colors border border-[var(--c-border-faint)]"
+                            className="text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 font-semibold text-xs px-3 py-1.5 rounded-lg transition-colors border border-[var(--color-primary)]/25 cursor-pointer"
                           >
                             调整积分
                           </button>
@@ -441,7 +422,7 @@ export default function AdminPage() {
           {activeTab === 'products' && (
             <div className="space-y-4">
               <div className="flex justify-between items-center mb-4">
-                <h2 className="text-xl font-bold text-[var(--c-text-main)]">商品与库存</h2>
+                <h2 className="font-heading text-xl font-bold text-[var(--color-text)]">商品与库存</h2>
               </div>
               <div className="overflow-x-auto">
                 <table className="admin-table">
@@ -458,12 +439,16 @@ export default function AdminPage() {
                     {products.map((p: any) => (
                       <tr key={p.id}>
                         <td>
-                          <div className="font-bold text-[var(--c-text-main)]">{p.name}</div>
+                          <div className="font-bold text-[var(--color-text)]">{p.name}</div>
                         </td>
-                        <td><span className="bg-[var(--c-bg-app)] border border-[var(--c-border-light)] text-[var(--c-text-sub)] px-2 py-1 rounded text-xs font-bold">{p.type}</span></td>
-                        <td className="font-bold text-[var(--c-text-main)]">{p.price}</td>
                         <td>
-                          <span className={`font-bold ${p._count?.inventory === 0 ? 'text-[#F87171]' : 'text-[var(--c-text-sub)]'}`}>
+                          <span className="bg-[var(--color-background)] border border-[var(--color-border)] text-[var(--color-text-muted)] px-2 py-1 rounded text-xs font-bold">
+                            {p.type}
+                          </span>
+                        </td>
+                        <td className="font-bold text-[var(--color-text)]">{p.price}</td>
+                        <td>
+                          <span className={`font-bold ${p._count?.inventory === 0 ? 'text-red-500' : 'text-[var(--color-text-muted)]'}`}>
                             {p._count?.inventory ?? p.stock}
                           </span>
                         </td>
@@ -474,7 +459,7 @@ export default function AdminPage() {
                               setInventoryText('')
                               setShowInventory(true)
                             }}
-                            className="text-green-500 hover:text-green-400 font-bold text-xs px-3 py-1.5 rounded-lg hover:bg-green-500/10 mr-1 border border-transparent"
+                            className="text-[var(--color-cta)] hover:bg-[var(--color-cta)]/10 font-semibold text-xs px-3 py-1.5 rounded-lg transition-colors border border-[var(--color-cta)]/25 cursor-pointer"
                           >
                             补货
                           </button>
@@ -490,7 +475,7 @@ export default function AdminPage() {
           {/* Orders */}
           {activeTab === 'orders' && (
             <div className="space-y-4">
-              <h2 className="text-xl font-bold mb-4 text-[var(--c-text-main)]">订单记录</h2>
+              <h2 className="font-heading text-xl font-bold mb-4 text-[var(--color-text)]">订单记录</h2>
               <div className="overflow-x-auto">
                 <table className="admin-table">
                   <thead>
@@ -506,13 +491,17 @@ export default function AdminPage() {
                     {orders.map((o: any) => (
                       <tr key={o.id}>
                         <td>
-                          <div className="font-mono text-xs text-[var(--c-text-sub)]">ORD-{o.id}</div>
-                          <div className="text-[10px] text-[var(--c-text-muted)] mt-1">{new Date(o.createdAt).toLocaleString()}</div>
+                          <div className="font-mono text-xs text-[var(--color-text-muted)]">ORD-{o.id}</div>
+                          <div className="text-[10px] text-[var(--color-text-muted)] mt-1">{new Date(o.createdAt).toLocaleString()}</div>
                         </td>
-                        <td className="font-bold text-sm">U{o.user?.id}</td>
-                        <td className="text-[var(--c-text-sub)] text-sm">{o.product?.name}</td>
-                        <td className="text-[var(--c-accent)] font-bold">{o.price}</td>
-                        <td><span className="px-2 py-1 text-[11px] rounded font-bold bg-green-500/10 text-[#4ADE80]">{o.status}</span></td>
+                        <td className="font-bold text-sm text-[var(--color-text)]">U{o.user?.id}</td>
+                        <td className="text-[var(--color-text-muted)] text-sm">{o.product?.name}</td>
+                        <td className="text-[var(--color-cta)] font-bold">{o.price}</td>
+                        <td>
+                          <span className="inline-flex items-center px-2 py-1 text-[11px] rounded font-bold border bg-[var(--color-cta)]/10 text-[var(--color-cta)] border-[var(--color-cta)]/25">
+                            {o.status}
+                          </span>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -524,7 +513,7 @@ export default function AdminPage() {
           {/* Logs */}
           {activeTab === 'logs' && (
             <div className="space-y-4">
-              <h2 className="text-xl font-bold mb-4 text-[var(--c-text-main)]">系统流水日志</h2>
+              <h2 className="font-heading text-xl font-bold mb-4 text-[var(--color-text)]">系统流水日志</h2>
               <div className="overflow-x-auto">
                 <table className="admin-table">
                   <thead>
@@ -538,10 +527,10 @@ export default function AdminPage() {
                   <tbody>
                     {logs.map((l: any) => (
                       <tr key={l.id}>
-                        <td className="text-[var(--c-text-muted)] text-[11px]">{new Date(l.createdAt).toLocaleString()}</td>
-                        <td className="font-bold text-[var(--c-text-main)] text-sm">U{l.user?.id}</td>
-                        <td className="text-sm text-[var(--c-text-sub)]">{l.reason}</td>
-                        <td className={`text-right font-bold text-base ${l.type === 'in' ? 'text-[#4ADE80]' : 'text-[var(--c-text-main)]'}`}>
+                        <td className="text-[var(--color-text-muted)] text-[11px]">{new Date(l.createdAt).toLocaleString()}</td>
+                        <td className="font-bold text-[var(--color-text)] text-sm">U{l.user?.id}</td>
+                        <td className="text-sm text-[var(--color-text-muted)]">{l.reason}</td>
+                        <td className={`text-right font-bold text-base ${l.type === 'in' ? 'text-[var(--color-cta)]' : 'text-[var(--color-text)]'}`}>
                           {l.type === 'in' ? '+' : '-'}{l.amount}
                         </td>
                       </tr>
@@ -554,42 +543,74 @@ export default function AdminPage() {
         </div>
       </div>
 
-      {/* Adjust Points Modal */}
+      {/* Adjust Points Modal — kept inline; will migrate to <Dialog/> in the modal batch */}
       {showAdjust && adjustTarget && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setShowAdjust(false)} />
-          <div className="apple-card w-full max-w-sm p-8 mx-4 relative z-10 fade-in">
+          <div className="modal-overlay" onClick={() => setShowAdjust(false)} />
+          <div className="modal relative z-10 fade-in !max-w-sm">
             <div className="flex justify-between items-center mb-5">
-              <h3 className="text-xl font-bold text-[var(--c-text-main)]">调整用户积分</h3>
-              <button onClick={() => setShowAdjust(false)} className="text-[var(--c-text-sub)] hover:text-[var(--c-text-main)]"><X className="w-5 h-5" /></button>
+              <h3 className="font-heading text-xl font-bold text-[var(--color-text)]">调整用户积分</h3>
+              <button
+                onClick={() => setShowAdjust(false)}
+                className="text-[var(--color-text-muted)] hover:text-[var(--color-text)] cursor-pointer"
+                aria-label="关闭"
+              >
+                <X className="w-5 h-5" />
+              </button>
             </div>
             <div className="space-y-4">
               <div>
-                <label className="block text-xs font-bold text-[var(--c-text-sub)] mb-1.5">目标用户</label>
-                <input type="text" disabled value={`U${adjustTarget.id} (${adjustTarget.email}) - 当前: ${adjustTarget.pointAccount?.balance ?? 0}`}
-                  className="w-full px-4 py-2.5 bg-[var(--c-bg-app)] border border-[var(--c-border-light)] rounded-xl text-[var(--c-text-muted)] text-sm cursor-not-allowed" />
+                <label className="block text-xs font-bold text-[var(--color-text-muted)] mb-1.5 uppercase tracking-wider">目标用户</label>
+                <input
+                  type="text"
+                  disabled
+                  value={`U${adjustTarget.id} (${adjustTarget.email}) - 当前: ${adjustTarget.pointAccount?.balance ?? 0}`}
+                  className="input !text-sm !bg-[var(--color-background)] !text-[var(--color-text-muted)] cursor-not-allowed"
+                />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 {(['add', 'deduct'] as const).map((t) => (
-                  <label key={t} className={`flex items-center gap-2 p-2.5 border rounded-xl cursor-pointer hover:bg-[var(--c-bg-app)] ${adjustType === t ? 'border-[var(--c-accent)]' : 'border-[var(--c-border-light)]'}`}>
-                    <input type="radio" checked={adjustType === t} onChange={() => setAdjustType(t)} className="accent-[var(--c-accent)]" />
-                    <span className={`font-bold text-sm ${t === 'add' ? 'text-[#4ADE80]' : 'text-[#F87171]'}`}>
+                  <label
+                    key={t}
+                    className={`flex items-center gap-2 p-2.5 border rounded-lg cursor-pointer transition-colors hover:bg-[var(--color-background)] ${
+                      adjustType === t
+                        ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/5'
+                        : 'border-[var(--color-border)]'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      checked={adjustType === t}
+                      onChange={() => setAdjustType(t)}
+                      className="accent-[var(--color-primary)]"
+                    />
+                    <span className={`font-bold text-sm ${t === 'add' ? 'text-[var(--color-cta)]' : 'text-red-500'}`}>
                       {t === 'add' ? '增加 (+)' : '扣除 (-)'}
                     </span>
                   </label>
                 ))}
               </div>
               <div>
-                <label className="block text-xs font-bold text-[var(--c-text-sub)] mb-1.5">调整数量</label>
-                <input type="number" value={adjustAmount} onChange={(e) => setAdjustAmount(e.target.value)} placeholder="输入整数"
-                  className="w-full px-4 py-2.5 bg-[var(--c-bg-card)] border border-[var(--c-border-light)] rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[var(--c-accent)]/30 text-[var(--c-text-main)]" />
+                <label className="block text-xs font-bold text-[var(--color-text-muted)] mb-1.5 uppercase tracking-wider">调整数量</label>
+                <input
+                  type="number"
+                  value={adjustAmount}
+                  onChange={(e) => setAdjustAmount(e.target.value)}
+                  placeholder="输入整数"
+                  className="input"
+                />
               </div>
               <div>
-                <label className="block text-xs font-bold text-[var(--c-text-sub)] mb-1.5">操作原因</label>
-                <input type="text" value={adjustReason} onChange={(e) => setAdjustReason(e.target.value)} placeholder="例如：参与活动奖励"
-                  className="w-full px-4 py-2.5 bg-[var(--c-bg-card)] border border-[var(--c-border-light)] rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[var(--c-accent)]/30 text-[var(--c-text-main)]" />
+                <label className="block text-xs font-bold text-[var(--color-text-muted)] mb-1.5 uppercase tracking-wider">操作原因</label>
+                <input
+                  type="text"
+                  value={adjustReason}
+                  onChange={(e) => setAdjustReason(e.target.value)}
+                  placeholder="例如：参与活动奖励"
+                  className="input"
+                />
               </div>
-              <button onClick={confirmAdjust} className="w-full bg-[var(--c-text-main)] text-[var(--c-bg-app)] py-3 rounded-2xl text-sm font-bold mt-2 shadow-md hover:bg-[var(--c-text-sub)] transition-all">
+              <button onClick={confirmAdjust} className="btn-primary w-full mt-2">
                 确认执行
               </button>
             </div>
@@ -597,29 +618,120 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* Import Inventory Modal */}
+      {/* Import Inventory Modal — kept inline; will migrate to <Dialog/> in the modal batch */}
       {showInventory && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setShowInventory(false)} />
-          <div className="apple-card w-full max-w-md p-8 mx-4 relative z-10 fade-in">
+          <div className="modal-overlay" onClick={() => setShowInventory(false)} />
+          <div className="modal relative z-10 fade-in">
             <div className="flex justify-between items-center mb-5">
-              <h3 className="text-xl font-bold text-[var(--c-text-main)]">导入库存</h3>
-              <button onClick={() => setShowInventory(false)} className="text-[var(--c-text-sub)] hover:text-[var(--c-text-main)]"><X className="w-5 h-5" /></button>
+              <h3 className="font-heading text-xl font-bold text-[var(--color-text)]">导入库存</h3>
+              <button
+                onClick={() => setShowInventory(false)}
+                className="text-[var(--color-text-muted)] hover:text-[var(--color-text)] cursor-pointer"
+                aria-label="关闭"
+              >
+                <X className="w-5 h-5" />
+              </button>
             </div>
-            <p className="text-xs text-[var(--c-text-sub)] mb-3">每行一条库存内容（卡密/账号/链接）：</p>
+            <p className="text-xs text-[var(--color-text-muted)] mb-3">每行一条库存内容（卡密/账号/链接）：</p>
             <textarea
               value={inventoryText}
               onChange={(e) => setInventoryText(e.target.value)}
               rows={8}
               placeholder="XXXX-XXXX-XXXX-XXXX&#10;YYYY-YYYY-YYYY-YYYY"
-              className="w-full px-4 py-3 bg-[var(--c-bg-card)] border border-[var(--c-border-light)] rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[var(--c-accent)]/30 text-[var(--c-text-main)] font-mono resize-none mb-4"
+              className="input font-mono resize-none mb-4 !text-sm"
             />
-            <button onClick={confirmImportInventory} className="w-full bg-[var(--c-text-main)] text-[var(--c-bg-app)] py-3 rounded-2xl text-sm font-bold shadow-md hover:bg-[var(--c-text-sub)] transition-all">
+            <button onClick={confirmImportInventory} className="btn-primary w-full">
               确认导入
             </button>
           </div>
         </div>
       )}
     </div>
+  )
+}
+
+// ---------- Local presentational helpers ----------
+
+function DashStat({
+  icon: Icon,
+  label,
+  value,
+  tone,
+}: {
+  icon: React.ComponentType<{ className?: string }>
+  label: string
+  value: number | string
+  tone?: 'cta'
+}) {
+  const isCta = tone === 'cta'
+  return (
+    <div
+      className={`p-5 rounded-lg border ${
+        isCta
+          ? 'bg-[var(--color-cta)]/8 border-[var(--color-cta)]/25'
+          : 'bg-[var(--color-background)] border-[var(--color-border)]'
+      }`}
+    >
+      <div className={`text-xs font-bold mb-1.5 flex items-center gap-1.5 ${isCta ? 'text-[var(--color-cta)]' : 'text-[var(--color-text-muted)]'}`}>
+        <Icon className="w-3.5 h-3.5" /> {label}
+      </div>
+      <div className={`font-heading text-2xl font-bold ${isCta ? 'text-[var(--color-cta)]' : 'text-[var(--color-text)]'}`}>
+        {value}
+      </div>
+    </div>
+  )
+}
+
+function MerchantStatusPill({ status }: { status: string }) {
+  const styles: Record<string, { bg: string; text: string; border: string; label: string }> = {
+    active:    { bg: 'bg-[var(--color-cta)]/10',   text: 'text-[var(--color-cta)]',   border: 'border-[var(--color-cta)]/25',   label: '营业中' },
+    pending:   { bg: 'bg-orange-500/10',           text: 'text-orange-500',           border: 'border-orange-500/25',           label: '待审核' },
+    suspended: { bg: 'bg-red-500/10',              text: 'text-red-500',              border: 'border-red-500/25',              label: '已停用' },
+    rejected:  { bg: 'bg-red-500/10',              text: 'text-red-500',              border: 'border-red-500/25',              label: '已拒绝' },
+  }
+  const s = styles[status] || { bg: 'bg-[var(--color-text-muted)]/10', text: 'text-[var(--color-text-muted)]', border: 'border-[var(--color-text-muted)]/25', label: status }
+  return (
+    <span className={`inline-flex items-center px-2.5 py-1 text-[11px] rounded font-bold border ${s.bg} ${s.text} ${s.border}`}>
+      {s.label}
+    </span>
+  )
+}
+
+function SettlementStatusPill({ status }: { status: string }) {
+  const isSettled = status === 'settled'
+  return (
+    <span className={`inline-flex items-center px-2 py-1 text-[11px] rounded font-bold border ${
+      isSettled
+        ? 'bg-[var(--color-cta)]/10 text-[var(--color-cta)] border-[var(--color-cta)]/25'
+        : 'bg-orange-500/10 text-orange-500 border-orange-500/25'
+    }`}>
+      {isSettled ? '已结算' : '待结算'}
+    </span>
+  )
+}
+
+function ActionLink({
+  children,
+  onClick,
+  tone,
+}: {
+  children: React.ReactNode
+  onClick: () => void
+  tone: 'cta' | 'danger' | 'primary'
+}) {
+  const colors = {
+    cta: 'text-[var(--color-cta)]',
+    danger: 'text-red-500',
+    primary: 'text-[var(--color-primary)]',
+  }
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`${colors[tone]} hover:underline text-xs font-semibold cursor-pointer`}
+    >
+      {children}
+    </button>
   )
 }

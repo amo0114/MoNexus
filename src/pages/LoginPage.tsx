@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
-import { Gift } from 'lucide-react'
+import { Gift, Wrench } from 'lucide-react'
 import { useAuthStore } from '../stores/authStore'
 import { useAppStore } from '../stores/appStore'
 import api from '../api/client'
@@ -43,45 +43,33 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="fixed inset-0 bg-[var(--c-bg-app)] z-[60] flex items-center justify-center fade-in overflow-hidden">
-      {/* Decorative background blobs */}
-      <div className="absolute top-[-20%] left-[-10%] w-[600px] h-[600px] rounded-full bg-[var(--c-accent)]/15 blur-[120px] pointer-events-none" />
-      <div className="absolute bottom-[-10%] right-[-5%] w-[500px] h-[500px] rounded-full bg-[var(--c-accent)]/10 blur-[100px] pointer-events-none" />
-      <div className="absolute inset-0 bg-grid-pattern opacity-50 pointer-events-none" />
+    <div className="fixed inset-0 bg-[var(--color-background)] z-[60] flex items-center justify-center fade-in overflow-hidden">
+      {/* Decorative background — indigo blobs softened, grid for web3 feel */}
+      <div className="absolute top-[-20%] left-[-10%] w-[600px] h-[600px] rounded-full bg-[var(--color-primary)]/10 blur-[120px] pointer-events-none" />
+      <div className="absolute bottom-[-10%] right-[-5%] w-[500px] h-[500px] rounded-full bg-[var(--color-primary)]/8 blur-[100px] pointer-events-none" />
+      <div className="absolute inset-0 bg-grid-pattern opacity-40 pointer-events-none" />
 
-      <form onSubmit={handleSubmit} className="apple-card w-full max-w-md p-10 text-center mx-4 relative overflow-hidden shadow-2xl z-10 bg-[var(--c-bg-card)]/90 backdrop-blur-xl">
-        {/* Logo */}
-        <div className="w-24 h-24 mx-auto mb-4 flex items-center justify-center">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" className="w-full h-full">
-            <defs>
-              <linearGradient id="starGradLogin" x1="0%" y1="0%" x2="0%" y2="100%">
-                <stop offset="0%" stopColor="var(--c-accent-hover)" />
-                <stop offset="100%" stopColor="var(--c-accent)" />
-              </linearGradient>
-              <filter id="glowLogin" x="-20%" y="-20%" width="140%" height="140%">
-                <feDropShadow dx="0" dy="12" stdDeviation="16" floodColor="var(--c-accent)" floodOpacity="0.35" />
-              </filter>
-            </defs>
-            <circle cx="390" cy="110" r="14" fill="var(--c-accent)" opacity="0.8" />
-            <circle cx="140" cy="80" r="10" fill="var(--c-text-main)" opacity="0.25" />
-            <circle cx="420" cy="280" r="8" fill="var(--c-accent)" opacity="0.5" />
-            <g stroke="var(--c-text-main)" strokeWidth="32" strokeLinecap="round" strokeLinejoin="round" fill="none">
-              <path d="M 120 225 L 256 145 L 392 225" strokeOpacity="0.15" />
-              <path d="M 120 225 L 120 385 L 256 465 L 392 385 L 392 225" />
-              <path d="M 120 225 L 256 305 L 392 225" />
-              <line x1="256" y1="305" x2="256" y2="465" />
-            </g>
-            <g filter="url(#glowLogin)">
-              <path d="M 256 45 Q 256 155 366 155 Q 256 155 256 265 Q 256 155 146 155 Q 256 155 256 45 Z" fill="url(#starGradLogin)" />
-              <path d="M 256 100 Q 256 155 311 155 Q 256 155 256 210 Q 256 155 201 155 Q 256 155 256 100 Z" fill="#FFFFFF" opacity="0.7" />
-            </g>
-          </svg>
+      <form
+        onSubmit={handleSubmit}
+        className="card w-full max-w-md p-10 text-center mx-4 relative overflow-hidden z-10 bg-[var(--color-surface)]/95 backdrop-blur-xl"
+      >
+        {/* Wordmark — Orbitron, replaces previous soft SVG logo */}
+        <div className="mx-auto mb-6">
+          <h1 className="font-heading text-4xl font-bold tracking-[0.18em] text-[var(--color-text)]">
+            MONEXUS
+          </h1>
+          <div className="mx-auto mt-2 h-0.5 w-12 bg-[var(--color-primary)]" />
+          <p className="mt-3 text-[10px] uppercase tracking-[0.35em] text-[var(--color-text-muted)]">
+            Digital · Marketplace
+          </p>
         </div>
 
-        <h1 className="text-3xl font-bold mb-2 text-[var(--c-text-main)]">
-          欢迎来到 MoYuan
-        </h1>
-        <p className="text-[var(--c-text-sub)] mb-8 font-medium">轻松获取您的数字好物</p>
+        <h2 className="font-heading text-2xl font-semibold mb-1 text-[var(--color-text)]">
+          {isRegister ? '创建账号' : '欢迎回来'}
+        </h2>
+        <p className="text-[var(--color-text-muted)] text-sm mb-8">
+          轻松获取您的数字好物
+        </p>
 
         <div className="space-y-4">
           <input
@@ -90,7 +78,7 @@ export default function LoginPage() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
-            className="input-field py-4 text-base"
+            className="input"
           />
           <input
             type="password"
@@ -99,7 +87,7 @@ export default function LoginPage() {
             onChange={(e) => setPassword(e.target.value)}
             required
             minLength={6}
-            className="input-field py-4 text-base"
+            className="input"
           />
 
           {isRegister && (
@@ -108,14 +96,14 @@ export default function LoginPage() {
               placeholder="邀请码（可选）"
               value={inviteCode}
               onChange={(e) => setInviteCode(e.target.value)}
-              className="input-field py-4 text-base"
+              className="input"
             />
           )}
 
           <button
             type="submit"
             disabled={loading}
-            className="btn-primary w-full py-4 rounded-2xl text-base mt-2"
+            className="btn-primary w-full mt-2"
           >
             {loading ? '处理中...' : isRegister ? '注册账号' : '登录'}
           </button>
@@ -124,7 +112,7 @@ export default function LoginPage() {
         <button
           type="button"
           onClick={() => setIsRegister(!isRegister)}
-          className="mt-4 text-sm text-[var(--c-accent)] hover:underline"
+          className="mt-4 text-sm text-[var(--color-primary)] hover:underline cursor-pointer"
         >
           {isRegister ? '已有账号？去登录' : '没有账号？注册新账号'}
         </button>
@@ -133,36 +121,39 @@ export default function LoginPage() {
           <div className="mt-2">
             <Link
               to="/forgot-password"
-              className="text-sm text-[var(--c-text-sub)] hover:text-[var(--c-accent)] hover:underline transition-colors"
+              className="text-sm text-[var(--color-text-muted)] hover:text-[var(--color-primary)] hover:underline transition-colors"
             >
               忘记密码？
             </Link>
           </div>
         )}
 
-        {/* 快速登录测试按钮 (仅登录模式显示) */}
+        {/* Dev-only quick login — email values are seed accounts; do not rename without syncing server seed. */}
         {!isRegister && (
-          <div className="mt-6 border-t border-[var(--c-border-light)] pt-6">
-            <p className="text-xs text-[var(--c-text-sub)] mb-3 font-medium uppercase tracking-wider">🛠 开发环境快捷登录</p>
+          <div className="mt-6 border-t border-[var(--color-border)] pt-6">
+            <p className="flex items-center justify-center gap-1.5 text-xs text-[var(--color-text-muted)] mb-3 font-medium uppercase tracking-wider">
+              <Wrench className="w-3.5 h-3.5" />
+              开发环境快捷登录
+            </p>
             <div className="grid grid-cols-3 gap-2">
               <button
                 type="button"
                 onClick={() => { setEmail('test@moyuan.net'); setPassword('user123'); }}
-                className="px-2 py-2 text-xs font-medium rounded-lg bg-[var(--c-bg-card)] border border-[var(--c-border-light)] text-[var(--c-text-sub)] hover:text-[var(--c-text-main)] hover:bg-[var(--c-border-faint)] transition-colors"
+                className="px-2 py-2 text-xs font-medium rounded-lg bg-[var(--color-surface)] border border-[var(--color-border)] text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:border-[var(--color-primary)]/40 transition-colors cursor-pointer"
               >
                 普通用户
               </button>
               <button
                 type="button"
                 onClick={() => { setEmail('merchant@moyuan.net'); setPassword('merchant123'); }}
-                className="px-2 py-2 text-xs font-medium rounded-lg bg-[var(--c-bg-card)] border border-[var(--c-border-light)] text-[var(--c-text-sub)] hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
+                className="px-2 py-2 text-xs font-medium rounded-lg bg-[var(--color-surface)] border border-[var(--color-border)] text-[var(--color-text-muted)] hover:text-[var(--color-primary)] hover:border-[var(--color-primary)]/40 transition-colors cursor-pointer"
               >
                 商家账号
               </button>
               <button
                 type="button"
                 onClick={() => { setEmail('admin@moyuan.net'); setPassword('admin123'); }}
-                className="px-2 py-2 text-xs font-medium rounded-lg bg-[var(--c-bg-card)] border border-[var(--c-border-light)] text-[var(--c-text-sub)] hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                className="px-2 py-2 text-xs font-medium rounded-lg bg-[var(--color-surface)] border border-[var(--color-border)] text-[var(--color-text-muted)] hover:text-red-500 hover:border-red-300 transition-colors cursor-pointer"
               >
                 管理员
               </button>
@@ -170,7 +161,8 @@ export default function LoginPage() {
           </div>
         )}
 
-        <div className="mt-6 flex items-center justify-center gap-2 text-sm text-[var(--c-accent)] bg-[var(--c-border-faint)] py-2.5 rounded-lg font-bold border border-[var(--c-border-light)]">
+        {/* Points incentive — uses CTA green since it's about earning, not navigation */}
+        <div className="mt-6 flex items-center justify-center gap-2 text-sm text-[var(--color-cta)] bg-[var(--color-cta)]/10 py-2.5 rounded-lg font-semibold border border-[var(--color-cta)]/25">
           <Gift className="w-4 h-4" /> 新朋友注册立送 500 积分
         </div>
       </form>

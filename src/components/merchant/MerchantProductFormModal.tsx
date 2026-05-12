@@ -65,18 +65,18 @@ export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, pr
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    
+
     if (!form.name.trim()) {
       showToast('商品名称不能为空', 'error')
       return
     }
-    
+
     const priceNum = Number(form.price)
     if (isNaN(priceNum) || priceNum <= 0) {
       showToast('价格必须是大于0的数字', 'error')
       return
     }
-    
+
     let originalPriceNum: number | undefined = undefined
     if (form.originalPrice.trim() !== '') {
       originalPriceNum = Number(form.originalPrice)
@@ -117,53 +117,55 @@ export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, pr
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/15 backdrop-blur-sm fade-in overflow-hidden">
-      <div className="apple-card w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden relative">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 fade-in overflow-hidden">
+      <div className="modal-overlay" onClick={onClose} />
+      <div className="relative z-10 w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl shadow-xl">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-5 border-b border-[var(--c-border-light)] bg-[var(--c-bg-card)] relative z-10">
+        <div className="flex items-center justify-between px-6 py-5 border-b border-[var(--color-border)]">
           <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-2xl bg-[var(--c-accent)]/10 flex items-center justify-center text-[var(--c-accent)]">
+            <div className="w-12 h-12 rounded-xl bg-[var(--color-primary)]/10 flex items-center justify-center text-[var(--color-primary)]">
               <Package className="w-6 h-6" />
             </div>
             <div>
-              <h2 className="text-xl font-bold text-[var(--c-text-main)]">
+              <h2 className="font-heading text-xl font-bold text-[var(--color-text)]">
                 {product ? '编辑商品' : '发布新商品'}
               </h2>
-              <p className="text-xs text-[var(--c-text-sub)] mt-0.5 font-medium">
+              <p className="text-xs text-[var(--color-text-muted)] mt-0.5 font-medium">
                 {product ? '更新商品的属性、定价和详情' : '填写基础信息上架到商店'}
               </p>
             </div>
           </div>
-          <button onClick={onClose} className="p-2.5 rounded-full hover:bg-[var(--c-bg-app)] transition-colors text-[var(--c-text-sub)] hover:text-[var(--c-text-main)]">
+          <button
+            onClick={onClose}
+            className="p-2.5 rounded-full hover:bg-[var(--color-background)] transition-colors text-[var(--color-text-muted)] hover:text-[var(--color-text)] cursor-pointer"
+            aria-label="关闭"
+          >
             <X className="w-5 h-5" />
           </button>
         </div>
-        
+
         {/* Body */}
-        <div className="px-6 py-6 overflow-y-auto flex-1 hide-scrollbar bg-[var(--c-bg-app)]/50">
-          <form id="productForm" onSubmit={handleSubmit} className="space-y-8">
-            
+        <div className="px-6 py-6 overflow-y-auto flex-1 hide-scrollbar bg-[var(--color-background)]">
+          <form id="productForm" onSubmit={handleSubmit} className="space-y-6">
+
             {/* Section: 基础信息 */}
-            <div className="bg-[var(--c-bg-card)] p-5 rounded-2xl border border-[var(--c-border-faint)] shadow-sm">
-              <h3 className="flex items-center gap-2 text-sm font-bold text-[var(--c-text-main)] mb-4 uppercase tracking-wider">
-                <Tag className="w-4 h-4 text-[var(--c-accent)]" /> 基本属性
-              </h3>
+            <FormSection title="基本属性" icon={Tag}>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                 <div className="md:col-span-2">
-                  <label className="block text-xs font-bold text-[var(--c-text-sub)] mb-1.5 ml-1">商品名称 <span className="text-red-400">*</span></label>
+                  <FieldLabel required>商品名称</FieldLabel>
                   <input
                     type="text"
                     required
                     placeholder="输入吸引人的商品名称"
-                    className="input-field"
+                    className="input"
                     value={form.name}
                     onChange={(e) => setForm({ ...form, name: e.target.value })}
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-[var(--c-text-sub)] mb-1.5 ml-1">商品类别 <span className="text-red-400">*</span></label>
+                  <FieldLabel required>商品类别</FieldLabel>
                   <select
-                    className="input-field appearance-none cursor-pointer"
+                    className="input appearance-none cursor-pointer"
                     value={form.type}
                     onChange={(e) => setForm({ ...form, type: e.target.value })}
                   >
@@ -175,77 +177,71 @@ export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, pr
                 </div>
                 {product && (
                   <div>
-                    <label className="block text-xs font-bold text-[var(--c-text-sub)] mb-1.5 ml-1">上架状态</label>
+                    <FieldLabel>上架状态</FieldLabel>
                     <select
-                      className="input-field appearance-none cursor-pointer"
+                      className="input appearance-none cursor-pointer"
                       value={form.status}
                       onChange={(e) => setForm({ ...form, status: e.target.value as 'active' | 'inactive' })}
                     >
-                      <option value="active">🟢 当前上架中</option>
-                      <option value="inactive">⚪ 已下架隐藏</option>
+                      <option value="active">当前上架中</option>
+                      <option value="inactive">已下架隐藏</option>
                     </select>
                   </div>
                 )}
               </div>
-            </div>
+            </FormSection>
 
             {/* Section: 价格与展示 */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-              <div className="bg-[var(--c-bg-card)] p-5 rounded-2xl border border-[var(--c-border-faint)] shadow-sm">
-                <h3 className="flex items-center gap-2 text-sm font-bold text-[var(--c-text-main)] mb-4 uppercase tracking-wider">
-                  <DollarSign className="w-4 h-4 text-[var(--c-accent)]" /> 定价策略
-                </h3>
+              <FormSection title="定价策略" icon={DollarSign}>
                 <div className="space-y-4">
                   <div>
-                    <label className="block text-xs font-bold text-[var(--c-text-sub)] mb-1.5 ml-1">销售价格 (¥) <span className="text-red-400">*</span></label>
+                    <FieldLabel required>销售价格 (积分)</FieldLabel>
                     <input
                       type="number"
-                      step="0.01"
-                      min="0.01"
+                      step="1"
+                      min="1"
                       required
-                      placeholder="0.00"
-                      className="input-field font-mono text-lg"
+                      placeholder="0"
+                      className="input font-mono text-lg"
                       value={form.price}
                       onChange={(e) => setForm({ ...form, price: e.target.value })}
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-[var(--c-text-sub)] mb-1.5 ml-1">划线原价 (¥) - 可选</label>
+                    <FieldLabel>划线原价 - 可选</FieldLabel>
                     <input
                       type="number"
-                      step="0.01"
-                      min="0.01"
-                      placeholder="0.00"
-                      className="input-field font-mono"
+                      step="1"
+                      min="1"
+                      placeholder="0"
+                      className="input font-mono"
                       value={form.originalPrice}
                       onChange={(e) => setForm({ ...form, originalPrice: e.target.value })}
                     />
                   </div>
                 </div>
-              </div>
+              </FormSection>
 
-              <div className="bg-[var(--c-bg-card)] p-5 rounded-2xl border border-[var(--c-border-faint)] shadow-sm">
-                <h3 className="flex items-center gap-2 text-sm font-bold text-[var(--c-text-main)] mb-4 uppercase tracking-wider">
-                  <ImageIcon className="w-4 h-4 text-[var(--c-accent)]" /> 视觉效果
-                </h3>
+              <FormSection title="视觉效果" icon={ImageIcon}>
                 <div className="space-y-4">
                   <div>
-                    <label className="block text-xs font-bold text-[var(--c-text-sub)] mb-1.5 ml-1">图标字符 (Emoji/Icon)</label>
+                    <FieldLabel>图标字符 / Lucide 名称</FieldLabel>
                     <input
                       type="text"
-                      placeholder="🚀, 💎, 或者 Lucide 名称"
-                      className="input-field"
+                      placeholder="例如 Sparkles / Coins"
+                      className="input"
                       value={form.icon}
                       onChange={(e) => setForm({ ...form, icon: e.target.value })}
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-[var(--c-text-sub)] mb-1.5 ml-1">封面大图</label>
+                    <FieldLabel>封面大图</FieldLabel>
                     <div className="flex gap-2">
                       <input
                         type="url"
                         placeholder="粘贴图片 URL，或点右侧上传"
-                        className="input-field flex-1"
+                        className="input flex-1"
                         value={form.imageUrl}
                         onChange={(e) => setForm({ ...form, imageUrl: e.target.value })}
                       />
@@ -253,18 +249,18 @@ export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, pr
                         type="button"
                         onClick={() => fileInputRef.current?.click()}
                         disabled={uploadingImage}
-                        className="px-4 py-2 rounded-xl font-bold flex items-center gap-2 bg-[var(--c-bg-app)] border border-[var(--c-border-light)] text-[var(--c-text-main)] hover:bg-[var(--c-border-faint)] disabled:opacity-60 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
+                        className="btn-secondary !px-4 !py-2 !text-sm whitespace-nowrap"
                         title="上传本地图片"
                       >
                         {uploadingImage ? (
                           <>
                             <Loader2 className="w-4 h-4 animate-spin" />
-                            <span className="text-sm">上传中</span>
+                            上传中
                           </>
                         ) : (
                           <>
                             <Upload className="w-4 h-4" />
-                            <span className="text-sm">上传</span>
+                            上传
                           </>
                         )}
                       </button>
@@ -290,7 +286,6 @@ export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, pr
                             }
                           } finally {
                             setUploadingImage(false)
-                            // Reset so same file can be picked again after error.
                             if (fileInputRef.current) fileInputRef.current.value = ''
                           }
                         }}
@@ -301,7 +296,7 @@ export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, pr
                         <img
                           src={form.imageUrl}
                           alt="预览"
-                          className="w-16 h-16 rounded-lg object-cover border border-[var(--c-border-light)]"
+                          className="w-16 h-16 rounded-lg object-cover border border-[var(--color-border)]"
                           onError={(e) => {
                             ;(e.target as HTMLImageElement).style.display = 'none'
                           }}
@@ -309,67 +304,68 @@ export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, pr
                         <button
                           type="button"
                           onClick={() => setForm({ ...form, imageUrl: '' })}
-                          className="text-xs text-[var(--c-text-sub)] hover:text-red-500 transition-colors"
+                          className="text-xs text-[var(--color-text-muted)] hover:text-red-500 transition-colors cursor-pointer"
                         >
                           移除
                         </button>
                       </div>
                     )}
                   </div>
-                  
+
                   {/* Toggle switch for isHot */}
-                  <div className="flex items-center justify-between mt-2 pt-2 border-t border-[var(--c-border-faint)]">
+                  <div className="flex items-center justify-between mt-2 pt-3 border-t border-[var(--color-border)]">
                     <div className="flex flex-col">
-                      <span className="text-sm font-bold text-[var(--c-text-main)]">设为热门推荐</span>
-                      <span className="text-xs text-[var(--c-text-sub)]">在商店中将显示 Hot 徽章</span>
+                      <span className="text-sm font-bold text-[var(--color-text)]">设为热门推荐</span>
+                      <span className="text-xs text-[var(--color-text-muted)]">在商店中显示 Hot 徽章</span>
                     </div>
                     <button
                       type="button"
                       onClick={() => setForm({ ...form, isHot: !form.isHot })}
-                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--c-accent)] focus:ring-offset-2 ${form.isHot ? 'bg-[var(--c-accent)]' : 'bg-gray-200 dark:bg-gray-700'}`}
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors cursor-pointer focus:outline-none focus-visible:[box-shadow:var(--shadow-focus)] ${
+                        form.isHot ? 'bg-[var(--color-cta)]' : 'bg-[var(--color-border)]'
+                      }`}
+                      aria-pressed={form.isHot}
+                      aria-label="设为热门推荐"
                     >
                       <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${form.isHot ? 'translate-x-6' : 'translate-x-1'}`} />
                     </button>
                   </div>
                 </div>
-              </div>
+              </FormSection>
             </div>
 
             {/* Section: 详情 */}
-            <div className="bg-[var(--c-bg-card)] p-5 rounded-2xl border border-[var(--c-border-faint)] shadow-sm">
-              <h3 className="flex items-center gap-2 text-sm font-bold text-[var(--c-text-main)] mb-4 uppercase tracking-wider">
-                <FileText className="w-4 h-4 text-[var(--c-accent)]" /> 介绍文案
-              </h3>
+            <FormSection title="介绍文案" icon={FileText}>
               <div className="space-y-4">
                 <div>
-                  <label className="block text-xs font-bold text-[var(--c-text-sub)] mb-1.5 ml-1">一句话简介</label>
+                  <FieldLabel>一句话简介</FieldLabel>
                   <textarea
                     placeholder="简明扼要地概括商品亮点..."
-                    className="input-field min-h-[60px] resize-y"
+                    className="input min-h-[60px] resize-y"
                     value={form.description}
                     onChange={(e) => setForm({ ...form, description: e.target.value })}
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-[var(--c-text-sub)] mb-1.5 ml-1">完整图文详情 (支持 Markdown)</label>
+                  <FieldLabel>完整图文详情 (支持 Markdown)</FieldLabel>
                   <textarea
                     placeholder="在这里详细描述您的商品特性、使用教程、售后承诺等..."
-                    className="input-field min-h-[160px] resize-y font-mono text-xs leading-relaxed"
+                    className="input min-h-[160px] resize-y font-mono text-xs leading-relaxed"
                     value={form.richDescription}
                     onChange={(e) => setForm({ ...form, richDescription: e.target.value })}
                   />
                 </div>
               </div>
-            </div>
+            </FormSection>
           </form>
         </div>
-        
+
         {/* Footer */}
-        <div className="px-6 py-5 border-t border-[var(--c-border-light)] flex justify-end gap-3 bg-[var(--c-bg-card)] relative z-10">
+        <div className="px-6 py-5 border-t border-[var(--color-border)] flex justify-end gap-3">
           <button
             type="button"
             onClick={onClose}
-            className="px-6 py-2.5 rounded-xl font-bold text-[var(--c-text-sub)] hover:text-[var(--c-text-main)] hover:bg-[var(--c-bg-app)] transition-all"
+            className="btn-secondary !px-6 !py-2.5"
             disabled={loading}
           >
             取消
@@ -388,3 +384,29 @@ export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, pr
   )
 }
 
+function FormSection({
+  title,
+  icon: Icon,
+  children,
+}: {
+  title: string
+  icon: React.ComponentType<{ className?: string }>
+  children: React.ReactNode
+}) {
+  return (
+    <div className="bg-[var(--color-surface)] p-5 rounded-lg border border-[var(--color-border)]">
+      <h3 className="font-heading flex items-center gap-2 text-sm font-bold text-[var(--color-text)] mb-4 uppercase tracking-wider">
+        <Icon className="w-4 h-4 text-[var(--color-primary)]" /> {title}
+      </h3>
+      {children}
+    </div>
+  )
+}
+
+function FieldLabel({ children, required }: { children: React.ReactNode; required?: boolean }) {
+  return (
+    <label className="block text-xs font-bold text-[var(--color-text-muted)] mb-1.5 uppercase tracking-wider">
+      {children} {required && <span className="text-red-500 normal-case">*</span>}
+    </label>
+  )
+}

@@ -17,14 +17,24 @@ import {
   Settlement,
   Merchant
 } from '../types/merchant'
-import { Store, Package, ShoppingBag, DollarSign, Settings, Plus, Upload, Edit } from 'lucide-react'
+import { Store, Package, ShoppingBag, DollarSign, Settings, Plus } from 'lucide-react'
 import { useAppStore } from '../stores/appStore'
 import MerchantProductFormModal from '../components/merchant/MerchantProductFormModal'
 import MerchantInventoryImportModal from '../components/merchant/MerchantInventoryImportModal'
 
+type TabKey = 'dashboard' | 'products' | 'orders' | 'settlements' | 'profile'
+
+const TABS: { key: TabKey; label: string; Icon: typeof Store }[] = [
+  { key: 'dashboard', label: '概览', Icon: Store },
+  { key: 'products', label: '商品管理', Icon: Package },
+  { key: 'orders', label: '订单管理', Icon: ShoppingBag },
+  { key: 'settlements', label: '结算管理', Icon: DollarSign },
+  { key: 'profile', label: '商家资料', Icon: Settings },
+]
+
 export default function MerchantDashboardPage() {
   const showToast = useAppStore((s) => s.showToast)
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'products' | 'orders' | 'settlements' | 'profile'>('dashboard')
+  const [activeTab, setActiveTab] = useState<TabKey>('dashboard')
   const [stats, setStats] = useState<MerchantStats | null>(null)
   const [products, setProducts] = useState<MerchantProduct[]>([])
   const [orders, setOrders] = useState<MerchantOrder[]>([])
@@ -85,7 +95,7 @@ export default function MerchantDashboardPage() {
   // --- Product Modals State ---
   const [isProductFormOpen, setIsProductFormOpen] = useState(false)
   const [editingProduct, setEditingProduct] = useState<MerchantProduct | null>(null)
-  
+
   const [isInventoryModalOpen, setIsInventoryModalOpen] = useState(false)
   const [importingProduct, setImportingProduct] = useState<{ id: number, name: string } | null>(null)
 
@@ -121,89 +131,36 @@ export default function MerchantDashboardPage() {
   return (
     <div className="max-w-6xl mx-auto flex flex-col md:flex-row gap-6 mt-4">
       {/* Sidebar */}
-      <div className="w-full md:w-64 flex-shrink-0">
-        <div className="bg-[var(--c-bg-card)] border border-[var(--c-border-light)] rounded-2xl p-4 flex flex-col gap-2 shadow-sm">
-          <button
-            onClick={() => setActiveTab('dashboard')}
-            className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-colors ${
-              activeTab === 'dashboard'
-                ? 'bg-[var(--c-accent)] text-white font-bold shadow-sm'
-                : 'text-[var(--c-text-sub)] hover:bg-[var(--c-bg-app)] hover:text-[var(--c-text-main)] font-medium'
-            }`}
-          >
-            <Store className="w-5 h-5" />
-            概览
-          </button>
-          <button
-            onClick={() => setActiveTab('products')}
-            className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-colors ${
-              activeTab === 'products'
-                ? 'bg-[var(--c-accent)] text-white font-bold shadow-sm'
-                : 'text-[var(--c-text-sub)] hover:bg-[var(--c-bg-app)] hover:text-[var(--c-text-main)] font-medium'
-            }`}
-          >
-            <Package className="w-5 h-5" />
-            商品管理
-          </button>
-          <button
-            onClick={() => setActiveTab('orders')}
-            className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-colors ${
-              activeTab === 'orders'
-                ? 'bg-[var(--c-accent)] text-white font-bold shadow-sm'
-                : 'text-[var(--c-text-sub)] hover:bg-[var(--c-bg-app)] hover:text-[var(--c-text-main)] font-medium'
-            }`}
-          >
-            <ShoppingBag className="w-5 h-5" />
-            订单管理
-          </button>
-          <button
-            onClick={() => setActiveTab('settlements')}
-            className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-colors ${
-              activeTab === 'settlements'
-                ? 'bg-[var(--c-accent)] text-white font-bold shadow-sm'
-                : 'text-[var(--c-text-sub)] hover:bg-[var(--c-bg-app)] hover:text-[var(--c-text-main)] font-medium'
-            }`}
-          >
-            <DollarSign className="w-5 h-5" />
-            结算管理
-          </button>
-          <button
-            onClick={() => setActiveTab('profile')}
-            className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-colors ${
-              activeTab === 'profile'
-                ? 'bg-[var(--c-accent)] text-white font-bold shadow-sm'
-                : 'text-[var(--c-text-sub)] hover:bg-[var(--c-bg-app)] hover:text-[var(--c-text-main)] font-medium'
-            }`}
-          >
-            <Settings className="w-5 h-5" />
-            商家资料
-          </button>
-        </div>
-      </div>
+      <aside className="w-full md:w-64 flex-shrink-0">
+        <nav className="card !p-2 flex flex-col gap-1">
+          {TABS.map(({ key, label, Icon }) => (
+            <button
+              key={key}
+              onClick={() => setActiveTab(key)}
+              className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors cursor-pointer text-sm ${
+                activeTab === key
+                  ? 'bg-[var(--color-primary)] text-white font-semibold shadow-sm'
+                  : 'text-[var(--color-text-muted)] hover:bg-[var(--color-primary)]/8 hover:text-[var(--color-text)] font-medium'
+              }`}
+            >
+              <Icon className="w-5 h-5 shrink-0" />
+              {label}
+            </button>
+          ))}
+        </nav>
+      </aside>
 
       {/* Main Content */}
       <div className="flex-1 min-w-0">
-        <div className="bg-[var(--c-bg-card)] border border-[var(--c-border-light)] rounded-2xl p-6 shadow-sm min-h-[500px]">
+        <div className="card min-h-[500px]">
           {activeTab === 'dashboard' && (
             <div className="fade-in">
-              <h2 className="text-xl font-bold mb-6 text-[var(--c-text-main)]">数据概览</h2>
+              <h2 className="font-heading text-xl font-bold mb-6 text-[var(--color-text)]">数据概览</h2>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div className="p-4 bg-[var(--c-bg-app)] rounded-xl border border-[var(--c-border-light)]">
-                  <div className="text-[var(--c-text-sub)] text-sm mb-1">商品数</div>
-                  <div className="text-2xl font-bold">{stats?.productCount ?? '--'}</div>
-                </div>
-                <div className="p-4 bg-[var(--c-bg-app)] rounded-xl border border-[var(--c-border-light)]">
-                  <div className="text-[var(--c-text-sub)] text-sm mb-1">订单数</div>
-                  <div className="text-2xl font-bold">{stats?.orderCount ?? '--'}</div>
-                </div>
-                <div className="p-4 bg-[var(--c-bg-app)] rounded-xl border border-[var(--c-border-light)]">
-                  <div className="text-[var(--c-text-sub)] text-sm mb-1">累计收益</div>
-                  <div className="text-2xl font-bold text-green-600 dark:text-green-400">{stats?.totalRevenue ?? '--'}</div>
-                </div>
-                <div className="p-4 bg-[var(--c-bg-app)] rounded-xl border border-[var(--c-border-light)]">
-                  <div className="text-[var(--c-text-sub)] text-sm mb-1">待结算</div>
-                  <div className="text-2xl font-bold text-orange-500">{stats?.pendingSettlement ?? '--'}</div>
-                </div>
+                <StatCard label="商品数" value={stats?.productCount ?? '--'} />
+                <StatCard label="订单数" value={stats?.orderCount ?? '--'} />
+                <StatCard label="累计收益" value={stats?.totalRevenue ?? '--'} tone="cta" />
+                <StatCard label="待结算" value={stats?.pendingSettlement ?? '--'} tone="warning" />
               </div>
             </div>
           )}
@@ -211,48 +168,53 @@ export default function MerchantDashboardPage() {
           {activeTab === 'products' && (
             <div className="fade-in">
               <div className="flex justify-between items-center mb-6">
-                <h2 className="text-xl font-bold text-[var(--c-text-main)]">商品管理</h2>
-                <button className="btn-primary py-1.5 px-3 text-sm flex items-center gap-1" onClick={() => { setEditingProduct(null); setIsProductFormOpen(true); }}>
+                <h2 className="font-heading text-xl font-bold text-[var(--color-text)]">商品管理</h2>
+                <button
+                  className="btn-primary !px-3 !py-1.5 !text-sm"
+                  onClick={() => { setEditingProduct(null); setIsProductFormOpen(true); }}
+                >
                   <Plus className="w-4 h-4" /> 新建商品
                 </button>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse">
                   <thead>
-                    <tr className="border-b border-[var(--c-border-light)]">
-                      <th className="py-3 px-2 font-medium text-[var(--c-text-sub)] text-sm">ID</th>
-                      <th className="py-3 px-2 font-medium text-[var(--c-text-sub)] text-sm">名称</th>
-                      <th className="py-3 px-2 font-medium text-[var(--c-text-sub)] text-sm">价格</th>
-                      <th className="py-3 px-2 font-medium text-[var(--c-text-sub)] text-sm">库存/销量</th>
-                      <th className="py-3 px-2 font-medium text-[var(--c-text-sub)] text-sm">状态</th>
-                      <th className="py-3 px-2 font-medium text-[var(--c-text-sub)] text-sm text-right">操作</th>
+                    <tr className="border-b border-[var(--color-border)]">
+                      <Th>ID</Th>
+                      <Th>名称</Th>
+                      <Th>价格</Th>
+                      <Th>库存/销量</Th>
+                      <Th>状态</Th>
+                      <Th align="right">操作</Th>
                     </tr>
                   </thead>
                   <tbody>
                     {products.length === 0 ? (
                       <tr>
-                        <td colSpan={6} className="py-8 text-center text-[var(--c-text-sub)] text-sm">
+                        <td colSpan={6} className="py-8 text-center text-[var(--color-text-muted)] text-sm">
                           暂无商品
                         </td>
                       </tr>
                     ) : (
                       products.map((p) => (
-                        <tr key={p.id} className="border-b border-[var(--c-border-faint)] hover:bg-[var(--c-bg-app)]">
-                          <td className="py-3 px-2 text-sm">{p.id}</td>
-                          <td className="py-3 px-2 text-sm font-medium">{p.name}</td>
-                          <td className="py-3 px-2 text-sm">{p.price}</td>
-                          <td className="py-3 px-2 text-sm">{p._count?.inventory ?? p.stock} / {p.sales}</td>
+                        <tr key={p.id} className="border-b border-[var(--color-border)] hover:bg-[var(--color-background)] transition-colors">
+                          <td className="py-3 px-2 text-sm text-[var(--color-text-muted)]">{p.id}</td>
+                          <td className="py-3 px-2 text-sm font-medium text-[var(--color-text)]">{p.name}</td>
+                          <td className="py-3 px-2 text-sm text-[var(--color-text)]">{p.price}</td>
+                          <td className="py-3 px-2 text-sm text-[var(--color-text-muted)]">{p._count?.inventory ?? p.stock} / {p.sales}</td>
                           <td className="py-3 px-2 text-sm">
-                            <span className={`px-2 py-0.5 rounded text-xs ${p.status === 'active' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400'}`}>
-                              {p.status === 'active' ? '上架中' : '已下架'}
-                            </span>
+                            <StatusPill kind={p.status === 'active' ? 'active' : 'inactive'} />
                           </td>
-                          <td className="py-3 px-2 text-right">
-                            <button className="text-[var(--c-accent)] hover:underline text-sm mr-3" onClick={() => { setImportingProduct({ id: p.id, name: p.name }); setIsInventoryModalOpen(true); }}>导入库存</button>
-                            <button className="text-[var(--c-accent)] hover:underline text-sm mr-3" onClick={() => { setEditingProduct(p); setIsProductFormOpen(true); }}>编辑</button>
-                            <button className="text-[var(--c-accent)] hover:underline text-sm" onClick={() => handleToggleProductStatus(p)}>
+                          <td className="py-3 px-2 text-right whitespace-nowrap">
+                            <LinkAction onClick={() => { setImportingProduct({ id: p.id, name: p.name }); setIsInventoryModalOpen(true); }}>
+                              导入库存
+                            </LinkAction>
+                            <LinkAction onClick={() => { setEditingProduct(p); setIsProductFormOpen(true); }}>
+                              编辑
+                            </LinkAction>
+                            <LinkAction onClick={() => handleToggleProductStatus(p)}>
                               {p.status === 'active' ? '下架' : '上架'}
-                            </button>
+                            </LinkAction>
                           </td>
                         </tr>
                       ))
@@ -265,39 +227,39 @@ export default function MerchantDashboardPage() {
 
           {activeTab === 'orders' && (
             <div className="fade-in">
-              <h2 className="text-xl font-bold mb-6 text-[var(--c-text-main)]">订单管理</h2>
+              <h2 className="font-heading text-xl font-bold mb-6 text-[var(--color-text)]">订单管理</h2>
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse">
                   <thead>
-                    <tr className="border-b border-[var(--c-border-light)]">
-                      <th className="py-3 px-2 font-medium text-[var(--c-text-sub)] text-sm">订单号</th>
-                      <th className="py-3 px-2 font-medium text-[var(--c-text-sub)] text-sm">商品</th>
-                      <th className="py-3 px-2 font-medium text-[var(--c-text-sub)] text-sm">用户</th>
-                      <th className="py-3 px-2 font-medium text-[var(--c-text-sub)] text-sm">金额/抽成</th>
-                      <th className="py-3 px-2 font-medium text-[var(--c-text-sub)] text-sm">结算金额</th>
-                      <th className="py-3 px-2 font-medium text-[var(--c-text-sub)] text-sm">状态</th>
+                    <tr className="border-b border-[var(--color-border)]">
+                      <Th>订单号</Th>
+                      <Th>商品</Th>
+                      <Th>用户</Th>
+                      <Th>金额/抽成</Th>
+                      <Th>结算金额</Th>
+                      <Th>状态</Th>
                     </tr>
                   </thead>
                   <tbody>
                     {orders.length === 0 ? (
                       <tr>
-                        <td colSpan={6} className="py-8 text-center text-[var(--c-text-sub)] text-sm">
+                        <td colSpan={6} className="py-8 text-center text-[var(--color-text-muted)] text-sm">
                           暂无订单
                         </td>
                       </tr>
                     ) : (
                       orders.map((o) => (
-                        <tr key={o.id} className="border-b border-[var(--c-border-faint)] hover:bg-[var(--c-bg-app)]">
-                          <td className="py-3 px-2 text-sm">{o.id}</td>
-                          <td className="py-3 px-2 text-sm">{o.product?.name}</td>
-                          <td className="py-3 px-2 text-sm">{o.user?.email}</td>
-                          <td className="py-3 px-2 text-sm">
-                            {o.price} (抽成 {(Number(o.commissionRate) * 100).toFixed(0)}%)
+                        <tr key={o.id} className="border-b border-[var(--color-border)] hover:bg-[var(--color-background)] transition-colors">
+                          <td className="py-3 px-2 text-sm text-[var(--color-text-muted)]">{o.id}</td>
+                          <td className="py-3 px-2 text-sm font-medium text-[var(--color-text)]">{o.product?.name}</td>
+                          <td className="py-3 px-2 text-sm text-[var(--color-text-muted)]">{o.user?.email}</td>
+                          <td className="py-3 px-2 text-sm text-[var(--color-text)]">
+                            {o.price} <span className="text-[var(--color-text-muted)]">(抽成 {(Number(o.commissionRate) * 100).toFixed(0)}%)</span>
                           </td>
-                          <td className="py-3 px-2 text-sm font-bold text-green-600 dark:text-green-400">
+                          <td className="py-3 px-2 text-sm font-bold text-[var(--color-cta)]">
                             {o.settlementAmount}
                           </td>
-                          <td className="py-3 px-2 text-sm">{o.status}</td>
+                          <td className="py-3 px-2 text-sm text-[var(--color-text-muted)]">{o.status}</td>
                         </tr>
                       ))
                     )}
@@ -309,38 +271,36 @@ export default function MerchantDashboardPage() {
 
           {activeTab === 'settlements' && (
             <div className="fade-in">
-              <h2 className="text-xl font-bold mb-6 text-[var(--c-text-main)]">结算管理</h2>
+              <h2 className="font-heading text-xl font-bold mb-6 text-[var(--color-text)]">结算管理</h2>
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse">
                   <thead>
-                    <tr className="border-b border-[var(--c-border-light)]">
-                      <th className="py-3 px-2 font-medium text-[var(--c-text-sub)] text-sm">ID</th>
-                      <th className="py-3 px-2 font-medium text-[var(--c-text-sub)] text-sm">订单号</th>
-                      <th className="py-3 px-2 font-medium text-[var(--c-text-sub)] text-sm">订单金额</th>
-                      <th className="py-3 px-2 font-medium text-[var(--c-text-sub)] text-sm">平台抽成</th>
-                      <th className="py-3 px-2 font-medium text-[var(--c-text-sub)] text-sm">结算金额</th>
-                      <th className="py-3 px-2 font-medium text-[var(--c-text-sub)] text-sm">状态</th>
+                    <tr className="border-b border-[var(--color-border)]">
+                      <Th>ID</Th>
+                      <Th>订单号</Th>
+                      <Th>订单金额</Th>
+                      <Th>平台抽成</Th>
+                      <Th>结算金额</Th>
+                      <Th>状态</Th>
                     </tr>
                   </thead>
                   <tbody>
                     {settlements.length === 0 ? (
                       <tr>
-                        <td colSpan={6} className="py-8 text-center text-[var(--c-text-sub)] text-sm">
+                        <td colSpan={6} className="py-8 text-center text-[var(--color-text-muted)] text-sm">
                           暂无结算记录
                         </td>
                       </tr>
                     ) : (
                       settlements.map((s) => (
-                        <tr key={s.id} className="border-b border-[var(--c-border-faint)] hover:bg-[var(--c-bg-app)]">
-                          <td className="py-3 px-2 text-sm">{s.id}</td>
-                          <td className="py-3 px-2 text-sm">{s.orderId}</td>
-                          <td className="py-3 px-2 text-sm">{s.orderAmount}</td>
-                          <td className="py-3 px-2 text-sm">{s.commissionAmount} ({(Number(s.commissionRate) * 100).toFixed(0)}%)</td>
-                          <td className="py-3 px-2 text-sm font-bold text-green-600 dark:text-green-400">{s.settlementAmount}</td>
+                        <tr key={s.id} className="border-b border-[var(--color-border)] hover:bg-[var(--color-background)] transition-colors">
+                          <td className="py-3 px-2 text-sm text-[var(--color-text-muted)]">{s.id}</td>
+                          <td className="py-3 px-2 text-sm text-[var(--color-text)]">{s.orderId}</td>
+                          <td className="py-3 px-2 text-sm text-[var(--color-text)]">{s.orderAmount}</td>
+                          <td className="py-3 px-2 text-sm text-[var(--color-text-muted)]">{s.commissionAmount} ({(Number(s.commissionRate) * 100).toFixed(0)}%)</td>
+                          <td className="py-3 px-2 text-sm font-bold text-[var(--color-cta)]">{s.settlementAmount}</td>
                           <td className="py-3 px-2 text-sm">
-                            <span className={`px-2 py-0.5 rounded text-xs ${s.status === 'settled' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400'}`}>
-                              {s.status === 'settled' ? '已结算' : '待结算'}
-                            </span>
+                            <StatusPill kind={s.status === 'settled' ? 'settled' : 'pending'} />
                           </td>
                         </tr>
                       ))
@@ -353,40 +313,40 @@ export default function MerchantDashboardPage() {
 
           {activeTab === 'profile' && (
             <div className="fade-in max-w-lg">
-              <h2 className="text-xl font-bold mb-6 text-[var(--c-text-main)]">商家资料</h2>
+              <h2 className="font-heading text-xl font-bold mb-6 text-[var(--color-text)]">商家资料</h2>
               <form onSubmit={handleProfileSubmit} className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium mb-1">商家名称</label>
+                  <label className="block text-sm font-medium mb-1.5 text-[var(--color-text)]">商家名称</label>
                   <input
                     type="text"
                     required
-                    className="input-field"
+                    className="input"
                     value={profileForm.name}
                     onChange={(e) => setProfileForm({ ...profileForm, name: e.target.value })}
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium mb-1">简介</label>
+                  <label className="block text-sm font-medium mb-1.5 text-[var(--color-text)]">简介</label>
                   <textarea
-                    className="input-field min-h-[100px]"
+                    className="input min-h-[100px] resize-y"
                     value={profileForm.description}
                     onChange={(e) => setProfileForm({ ...profileForm, description: e.target.value })}
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium mb-1">联系邮箱</label>
+                  <label className="block text-sm font-medium mb-1.5 text-[var(--color-text)]">联系邮箱</label>
                   <input
                     type="email"
-                    className="input-field"
+                    className="input"
                     value={profileForm.contactEmail}
                     onChange={(e) => setProfileForm({ ...profileForm, contactEmail: e.target.value })}
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium mb-1">联系电话</label>
+                  <label className="block text-sm font-medium mb-1.5 text-[var(--color-text)]">联系电话</label>
                   <input
                     type="text"
-                    className="input-field"
+                    className="input"
                     value={profileForm.contactPhone}
                     onChange={(e) => setProfileForm({ ...profileForm, contactPhone: e.target.value })}
                   />
@@ -406,7 +366,7 @@ export default function MerchantDashboardPage() {
         onSubmit={handleProductSubmit}
         product={editingProduct}
       />
-      
+
       <MerchantInventoryImportModal
         isOpen={isInventoryModalOpen}
         onClose={() => setIsInventoryModalOpen(false)}
@@ -417,3 +377,54 @@ export default function MerchantDashboardPage() {
   )
 }
 
+// ---------- Local presentational helpers ----------
+
+function StatCard({ label, value, tone }: { label: string; value: number | string; tone?: 'cta' | 'warning' }) {
+  const valueColor =
+    tone === 'cta'
+      ? 'text-[var(--color-cta)]'
+      : tone === 'warning'
+      ? 'text-orange-500'
+      : 'text-[var(--color-text)]'
+  return (
+    <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] p-4">
+      <div className="text-[var(--color-text-muted)] text-sm mb-1">{label}</div>
+      <div className={`font-heading text-2xl font-bold ${valueColor}`}>{value}</div>
+    </div>
+  )
+}
+
+function Th({ children, align }: { children: React.ReactNode; align?: 'left' | 'right' }) {
+  return (
+    <th className={`py-3 px-2 font-medium text-[var(--color-text-muted)] text-xs uppercase tracking-wider ${align === 'right' ? 'text-right' : 'text-left'}`}>
+      {children}
+    </th>
+  )
+}
+
+function StatusPill({ kind }: { kind: 'active' | 'inactive' | 'settled' | 'pending' }) {
+  const styles: Record<typeof kind, { bg: string; text: string; border: string; label: string }> = {
+    active:   { bg: 'bg-[var(--color-cta)]/10',          text: 'text-[var(--color-cta)]',          border: 'border-[var(--color-cta)]/25',          label: '上架中' },
+    inactive: { bg: 'bg-[var(--color-text-muted)]/10',   text: 'text-[var(--color-text-muted)]',   border: 'border-[var(--color-text-muted)]/25',   label: '已下架' },
+    settled:  { bg: 'bg-[var(--color-cta)]/10',          text: 'text-[var(--color-cta)]',          border: 'border-[var(--color-cta)]/25',          label: '已结算' },
+    pending:  { bg: 'bg-orange-500/10',                  text: 'text-orange-500',                  border: 'border-orange-500/25',                  label: '待结算' },
+  }
+  const s = styles[kind]
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold border ${s.bg} ${s.text} ${s.border}`}>
+      {s.label}
+    </span>
+  )
+}
+
+function LinkAction({ children, onClick }: { children: React.ReactNode; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="text-[var(--color-primary)] hover:underline text-sm mr-3 last:mr-0 cursor-pointer"
+    >
+      {children}
+    </button>
+  )
+}

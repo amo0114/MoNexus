@@ -31,35 +31,35 @@ export default function VerifyEmailPage() {
   }, [search, navigate])
 
   return (
-    <div className="fixed inset-0 bg-[var(--c-bg-app)] z-[60] flex items-center justify-center fade-in">
-      <div className="apple-card w-full max-w-md p-10 mx-4 text-center bg-[var(--c-bg-card)]/90 backdrop-blur-xl shadow-2xl">
+    <div className="fixed inset-0 bg-[var(--color-background)] z-[60] flex items-center justify-center fade-in">
+      <div className="card w-full max-w-md p-10 mx-4 text-center bg-[var(--color-surface)]/95 backdrop-blur-xl">
         {status === 'pending' && (
           <>
-            <div className="w-16 h-16 rounded-full bg-[var(--c-accent)]/10 flex items-center justify-center mx-auto mb-4">
-              <Loader2 className="w-8 h-8 text-[var(--c-accent)] animate-spin" />
+            <div className="w-16 h-16 rounded-full bg-[var(--color-primary)]/10 flex items-center justify-center mx-auto mb-4">
+              <Loader2 className="w-8 h-8 text-[var(--color-primary)] animate-spin" />
             </div>
-            <h2 className="text-xl font-bold text-[var(--c-text-main)] mb-2">正在验证邮箱…</h2>
+            <h2 className="font-heading text-xl font-bold text-[var(--color-text)] mb-2">正在验证邮箱…</h2>
           </>
         )}
         {status === 'success' && (
           <>
-            <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-4">
-              <CheckCircle2 className="w-8 h-8 text-green-600" />
+            <div className="w-16 h-16 rounded-full bg-[var(--color-cta)]/10 flex items-center justify-center mx-auto mb-4">
+              <CheckCircle2 className="w-8 h-8 text-[var(--color-cta)]" />
             </div>
-            <h2 className="text-2xl font-bold text-[var(--c-text-main)] mb-2">邮箱已验证</h2>
-            <p className="text-sm text-[var(--c-text-sub)]">即将跳转到个人中心...</p>
+            <h2 className="font-heading text-2xl font-bold text-[var(--color-text)] mb-2">邮箱已验证</h2>
+            <p className="text-sm text-[var(--color-text-muted)]">即将跳转到个人中心...</p>
           </>
         )}
         {status === 'error' && (
           <>
-            <div className="w-16 h-16 rounded-full bg-red-100 flex items-center justify-center mx-auto mb-4">
-              <XCircle className="w-8 h-8 text-red-600" />
+            <div className="w-16 h-16 rounded-full bg-red-500/10 flex items-center justify-center mx-auto mb-4">
+              <XCircle className="w-8 h-8 text-red-500" />
             </div>
-            <h2 className="text-2xl font-bold text-[var(--c-text-main)] mb-2">验证失败</h2>
-            <p className="text-sm text-[var(--c-text-sub)] mb-6">{errorMsg}</p>
+            <h2 className="font-heading text-2xl font-bold text-[var(--color-text)] mb-2">验证失败</h2>
+            <p className="text-sm text-[var(--color-text-muted)] mb-6">{errorMsg}</p>
             <button
               onClick={() => navigate('/login')}
-              className="btn-primary px-6 py-3 rounded-xl text-sm"
+              className="btn-primary"
             >
               返回登录
             </button>

@@ -10,10 +10,10 @@ export default function Toast() {
         <div
           key={t.id}
           className={`toast-enter ${
-            t.type === 'success' ? 'bg-[var(--c-toast-bg)]' : 'bg-red-500'
-          } ${
-            t.type === 'success' ? 'text-[var(--c-toast-text)]' : 'text-white'
-          } px-5 py-3 rounded-xl shadow-xl flex items-center gap-2 font-bold pointer-events-auto z-[90] relative text-sm border border-[var(--c-border-faint)]`}
+            t.type === 'success'
+              ? 'bg-[var(--color-text)] text-[var(--color-background)] border-[var(--color-border)]'
+              : 'bg-red-500 text-white border-red-400'
+          } px-5 py-3 rounded-lg shadow-xl flex items-center gap-2 font-semibold pointer-events-auto z-[90] relative text-sm border`}
         >
           {t.type === 'success' ? (
             <CheckCircle2 className="w-4 h-4" />

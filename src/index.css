@@ -2,101 +2,114 @@
 @tailwind components;
 @tailwind utilities;
 
+/* =========================================================
+   MoNexus Design System (revised 2026-05-12)
+   Strategy: neutral slate skeleton + indigo as focus accent + green CTA.
+   Indigo is reserved for interactive elements (buttons, links, focus
+   rings, badges). Background / surface / text use neutral slate so
+   indigo never dominates the page.
+   ========================================================= */
+
 :root {
-  /* --- 浅色模式 (Warm Latte) --- */
-  --c-bg-base: #DBCBBD;
-  --c-bg-app: #FCFBF8;
-  --c-bg-card: #FFFFFF;
-  --c-bg-image: #EAE1D9;
+  /* --- Core tokens --- */
+  --color-primary: #6366F1;          /* indigo-500 — interactive accent */
+  --color-primary-hover: #4F46E5;    /* indigo-600 */
+  --color-secondary: #818CF8;        /* indigo-400 */
+  --color-cta: #22C55E;              /* green-500 */
+  --color-cta-hover: #16A34A;        /* green-600 */
+  --color-background: #F8FAFC;       /* slate-50 — neutral page bg */
+  --color-surface: #FFFFFF;
+  --color-text: #1E293B;             /* slate-800 — neutral body text */
+  --color-text-muted: #64748B;       /* slate-500 */
+  --color-border: #E2E8F0;           /* slate-200 */
 
-  --c-text-main: #5C4D43;
-  --c-text-sub: #A0938A;
-  --c-text-muted: #7A6E65;
+  /* --- Auxiliary tokens (utility-specific) --- */
+  --color-image-placeholder: #F1F5F9; /* slate-100 — empty image / star-empty */
+  --color-grid-dot: #E2E8F0;          /* slate-200 — .bg-grid-pattern */
+  --color-glass-bg: rgba(255, 255, 255, 0.85);
+  --color-glass-border: rgba(99, 102, 241, 0.12);
 
-  --c-accent: #D4A373;
-  --c-accent-hover: #C5915D;
+  /* Spacing */
+  --space-xs: 0.25rem;
+  --space-sm: 0.5rem;
+  --space-md: 1rem;
+  --space-lg: 1.5rem;
+  --space-xl: 2rem;
+  --space-2xl: 3rem;
+  --space-3xl: 4rem;
 
-  --c-border-light: rgba(212, 163, 115, 0.2);
-  --c-border-faint: rgba(212, 163, 115, 0.1);
-
-  --c-glass-bg: rgba(255, 255, 255, 0.9);
-  --c-glass-border: rgba(212, 163, 115, 0.15);
-  --c-shadow: rgba(212, 163, 115, 0.05);
-  --c-grid-dot: #EAE1D9;
-
-  --c-toast-bg: #5C4D43;
-  --c-toast-text: #FCFBF8;
+  /* Shadows (neutral, not indigo-tinted) */
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.05);
+  --shadow-md: 0 4px 6px rgba(15, 23, 42, 0.08);
+  --shadow-lg: 0 10px 15px rgba(15, 23, 42, 0.1);
+  --shadow-xl: 0 20px 25px rgba(15, 23, 42, 0.12);
+  --shadow-focus: 0 0 0 3px rgba(99, 102, 241, 0.22);
 }
 
 .dark {
-  /* --- 护眼暗色模式 (Soft Cocoa) --- */
-  --c-bg-base: #292522;
-  --c-bg-app: #312C29;
-  --c-bg-card: #3A3531;
-  --c-bg-image: #45403C;
+  --color-primary: #818CF8;          /* indigo-400 brightened for dark bg */
+  --color-primary-hover: #A5B4FC;
+  --color-secondary: #A5B4FC;
+  --color-cta: #4ADE80;
+  --color-cta-hover: #86EFAC;
+  --color-background: #0A0A14;       /* near-black with a hint of purple */
+  --color-surface: #161629;
+  --color-text: #F1F5F9;             /* slate-100 */
+  --color-text-muted: #94A3B8;       /* slate-400 */
+  --color-border: #1E293B;           /* slate-800 */
 
-  --c-text-main: #EAE1D9;
-  --c-text-sub: #A8A099;
-  --c-text-muted: #8E867F;
+  --color-image-placeholder: #1F1F36;
+  --color-grid-dot: #1E293B;
+  --color-glass-bg: rgba(22, 22, 41, 0.85);
+  --color-glass-border: rgba(129, 140, 248, 0.15);
 
-  --c-accent: #D4A373;
-  --c-accent-hover: #E2C7AE;
-
-  --c-border-light: rgba(234, 225, 217, 0.12);
-  --c-border-faint: rgba(234, 225, 217, 0.06);
-
-  --c-glass-bg: rgba(58, 53, 49, 0.9);
-  --c-glass-border: rgba(234, 225, 217, 0.15);
-  --c-shadow: rgba(0, 0, 0, 0.2);
-  --c-grid-dot: #3E3935;
-
-  --c-toast-bg: #45403C;
-  --c-toast-text: #EAE1D9;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.35);
+  --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.4);
+  --shadow-xl: 0 20px 25px rgba(0, 0, 0, 0.5);
+  --shadow-focus: 0 0 0 3px rgba(129, 140, 248, 0.4);
 }
 
+/* =========================================================
+   Typography
+   ========================================================= */
+
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif;
-  background-color: var(--c-bg-base);
-  color: var(--c-text-main);
+  font-family: 'Exo 2', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  background-color: var(--color-background);
+  color: var(--color-text);
   -webkit-font-smoothing: antialiased;
   overflow-x: hidden;
   transition: background-color 0.5s ease;
 }
 
+h1, h2, h3, h4 {
+  font-family: 'Orbitron', 'Exo 2', sans-serif;
+  letter-spacing: 0.01em;
+}
+
+/* =========================================================
+   Utilities
+   ========================================================= */
+
 .bg-grid-pattern {
-  background-image: 
-    linear-gradient(to right, var(--c-grid-dot) 1px, transparent 1px),
-    linear-gradient(to bottom, var(--c-grid-dot) 1px, transparent 1px);
+  background-image:
+    linear-gradient(to right, var(--color-grid-dot) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--color-grid-dot) 1px, transparent 1px);
   background-size: 32px 32px;
 }
 
 .glass {
-  background: var(--c-glass-bg);
+  background: var(--color-glass-bg);
   backdrop-filter: blur(16px) saturate(180%);
   -webkit-backdrop-filter: blur(16px) saturate(180%);
-  border-bottom: 1px solid var(--c-glass-border);
+  border-bottom: 1px solid var(--color-glass-border);
 }
 
 .glass-bottom {
-  background: var(--c-glass-bg);
+  background: var(--color-glass-bg);
   backdrop-filter: blur(16px) saturate(180%);
-  border-top: 1px solid var(--c-glass-border);
-}
-
-.apple-card {
-  background: var(--c-bg-card);
-  border-radius: 24px;
-  box-shadow: 0 4px 20px var(--c-shadow);
-  border: 1px solid var(--c-border-light);
-  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-  /* 解决背景穿透或子元素定位可能导致的层叠异常（修复黑框） */
-  isolation: isolate; 
-}
-
-.apple-card-hover:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 12px 30px var(--c-shadow);
-  border-color: rgba(212, 163, 115, 0.3);
+  border-top: 1px solid var(--color-glass-border);
 }
 
 @keyframes fadeIn {
@@ -118,38 +131,154 @@ body {
   animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
-/* Buttons and Inputs */
+/* =========================================================
+   Component classes
+   - .btn-primary  : filled indigo, main interaction (login, submit, save)
+   - .btn-cta      : filled green, conversion CTA (buy, claim, redeem)
+   - .btn-secondary: outlined indigo, secondary actions (cancel, back)
+   - .card / .card-interactive
+   - .input
+   - .modal-overlay / .modal
+   All hovers respect "no layout shift" (translateY only).
+   ========================================================= */
+
 .btn-primary {
-  @apply bg-[var(--c-accent)] text-white px-5 py-2.5 rounded-xl font-bold text-sm shadow-md transition-all hover:bg-[var(--c-accent-hover)] hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100;
+  @apply inline-flex items-center justify-center gap-2 cursor-pointer
+         bg-[var(--color-primary)] text-white font-semibold text-sm
+         px-6 py-3 rounded-lg shadow-md transition-all duration-200
+         hover:bg-[var(--color-primary-hover)] hover:-translate-y-px hover:shadow-lg
+         focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)]
+         active:translate-y-0 active:shadow-sm
+         disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:shadow-md;
 }
 
-.input-field {
-  @apply w-full px-4 py-3 bg-[var(--c-bg-app)] border border-[var(--c-border-light)] rounded-xl focus:outline-none transition-all text-sm text-[var(--c-text-main)] shadow-inner placeholder:text-[var(--c-text-muted)];
+.btn-cta {
+  @apply inline-flex items-center justify-center gap-2 cursor-pointer
+         bg-[var(--color-cta)] text-white font-semibold text-sm
+         px-6 py-3 rounded-lg shadow-md transition-all duration-200
+         hover:bg-[var(--color-cta-hover)] hover:-translate-y-px hover:shadow-lg
+         focus-visible:outline-none focus-visible:[box-shadow:0_0_0_3px_rgba(34,197,94,0.25)]
+         active:translate-y-0 active:shadow-sm
+         disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:shadow-md;
 }
 
-.input-field:focus {
-  box-shadow: 0 0 0 2px rgba(212, 163, 115, 0.4);
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  background: transparent;
+  color: var(--color-primary);
+  border: 2px solid var(--color-primary);
+  font-weight: 600;
+  font-size: 0.875rem;
+  padding: 12px 24px;
+  border-radius: 8px;
+  transition: background-color 200ms ease, box-shadow 200ms ease;
+  font-family: inherit;
 }
 
-.dark .input-field:focus {
-  box-shadow: 0 0 0 2px rgba(212, 163, 115, 0.4);
+.btn-secondary:hover:not(:disabled) {
+  background: rgba(99, 102, 241, 0.1);
+}
+
+.dark .btn-secondary:hover:not(:disabled) {
+  background: rgba(129, 140, 248, 0.12);
+}
+
+.btn-secondary:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+}
+
+.btn-secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  padding: var(--space-lg);
+  box-shadow: var(--shadow-md);
+  transition: border-color 200ms ease, box-shadow 200ms ease, transform 200ms ease;
+}
+
+.card-interactive {
+  cursor: pointer;
+}
+
+.card-interactive:hover {
+  border-color: rgba(99, 102, 241, 0.35);
+  box-shadow: var(--shadow-lg);
+  transform: translateY(-2px);
+}
+
+.input {
+  width: 100%;
+  padding: 12px 16px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  font-size: 16px;
+  color: var(--color-text);
+  font-family: inherit;
+  transition: border-color 200ms ease, box-shadow 200ms ease;
+}
+
+.input::placeholder {
+  color: var(--color-text-muted);
+}
+
+.input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: var(--shadow-focus);
+}
+
+.input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  z-index: 50;
+}
+
+.modal {
+  background: var(--color-surface);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  border-radius: 16px;
+  padding: var(--space-xl);
+  box-shadow: var(--shadow-xl);
+  max-width: 500px;
+  width: calc(100% - 2rem);
 }
 
 /* Scrollbar */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--c-border-light); border-radius: 10px; }
-::-webkit-scrollbar-thumb:hover { background: var(--c-accent); }
+::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover { background: var(--color-primary); }
 .hide-scrollbar::-webkit-scrollbar { display: none; }
 .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 
-/* Stars */
+/* Stars (rating system) */
 .star-filled { color: #F59E0B; fill: #F59E0B; }
-.star-empty { color: var(--c-bg-image); fill: var(--c-bg-image); }
+.star-empty { color: var(--color-image-placeholder); fill: var(--color-image-placeholder); }
 
 /* Admin table */
 .admin-table { width: 100%; border-collapse: separate; border-spacing: 0; }
-.admin-table th { text-align: left; padding: 1rem; color: var(--c-text-sub); font-weight: bold; font-size: 0.875rem; border-bottom: 1px solid var(--c-border-light); }
-.admin-table td { padding: 1rem; border-bottom: 1px solid var(--c-border-faint); vertical-align: middle; color: var(--c-text-main); }
+.admin-table th { text-align: left; padding: 1rem; color: var(--color-text-muted); font-weight: bold; font-size: 0.875rem; border-bottom: 1px solid var(--color-border); }
+.admin-table td { padding: 1rem; border-bottom: 1px solid var(--color-border); vertical-align: middle; color: var(--color-text); }
 .admin-table tr:last-child td { border-bottom: none; }
-.admin-table tr:hover td { background-color: var(--c-border-faint); }
+.admin-table tr:hover td { background-color: rgba(99, 102, 241, 0.06); }
+.dark .admin-table tr:hover td { background-color: rgba(129, 140, 248, 0.08); }
