@@ -1,14 +1,116 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Coins, Wallet, Users, CalendarCheck, LogOut, ArrowDownLeft, ArrowUpRight, Store, Eye, Loader2 } from 'lucide-react'
+import { Coins, Wallet, Users, CalendarCheck, LogOut, ArrowDownLeft, ArrowUpRight, Store, Eye, Loader2, Shield } from 'lucide-react'
 import { useAuthStore } from '../stores/authStore'
 import { useAppStore } from '../stores/appStore'
 import api from '../api/client'
 import { getApiErrorMessage } from '../api/error'
 import { getOrders, getOrderDetail } from '../api/orders'
+import { changePassword } from '../api/auth'
 import { UserOrderListItem, UserOrderDetail } from '../types/order'
 import OrderDetailModal from '../components/OrderDetailModal'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/ui/Tabs'
+
+function PasswordChangeCard() {
+  const navigate = useNavigate()
+  const logout = useAuthStore((s) => s.logout)
+  const showToast = useAppStore((s) => s.showToast)
+
+  const [currentPassword, setCurrentPassword] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [errorMsg, setErrorMsg] = useState('')
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    setErrorMsg('')
+
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      setErrorMsg('请填写所有密码字段')
+      return
+    }
+
+    if (newPassword !== confirmPassword) {
+      setErrorMsg('两次输入的新密码不一致')
+      return
+    }
+
+    if (newPassword.length < 6) {
+      setErrorMsg('新密码长度不能少于 6 个字符')
+      return
+    }
+
+    setLoading(true)
+    try {
+      await changePassword({ currentPassword, newPassword })
+      showToast('密码已修改，请重新登录')
+      logout()
+      navigate('/login')
+    } catch (err: any) {
+      setErrorMsg(getApiErrorMessage(err, '修改密码失败'))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="card flex flex-col gap-4">
+      <div className="flex items-center gap-4">
+        <div className="w-12 h-12 bg-[var(--color-primary)]/10 text-[var(--color-primary)] rounded-full flex items-center justify-center">
+          <Shield className="w-6 h-6" />
+        </div>
+        <div>
+          <h4 className="font-heading font-bold text-[var(--color-text)] mb-1">账号安全</h4>
+          <p className="text-sm text-[var(--color-text-muted)]">修改您的登录密码。成功修改后将需要重新登录。</p>
+        </div>
+      </div>
+      <form onSubmit={handleSubmit} className="flex flex-col gap-3 mt-2 border-t border-[var(--color-border)] pt-4">
+        {errorMsg && (
+          <div className="text-red-500 text-sm font-medium bg-red-500/10 px-3 py-2 rounded-lg">
+            {errorMsg}
+          </div>
+        )}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <input
+            type="password"
+            placeholder="当前密码"
+            value={currentPassword}
+            onChange={(e) => setCurrentPassword(e.target.value)}
+            className="input"
+            disabled={loading}
+          />
+          <input
+            type="password"
+            placeholder="新密码（至少 6 位）"
+            value={newPassword}
+            onChange={(e) => setNewPassword(e.target.value)}
+            className="input"
+            disabled={loading}
+          />
+          <input
+            type="password"
+            placeholder="确认新密码"
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            className="input"
+            disabled={loading}
+          />
+        </div>
+        <div className="flex justify-end mt-1">
+          <button
+            type="submit"
+            disabled={loading}
+            className="btn-primary"
+          >
+            {loading ? <Loader2 className="w-4 h-4 animate-spin inline mr-2" /> : null}
+            {loading ? '提交中...' : '确认修改'}
+          </button>
+        </div>
+      </form>
+    </div>
+  )
+}
 
 export default function ProfilePage() {
   const navigate = useNavigate()
@@ -170,6 +272,9 @@ export default function ProfilePage() {
           </button>
         </div>
       )}
+
+      {/* Password Change Card */}
+      <PasswordChangeCard />
 
       {/* Tabs: Orders / History */}
       <div className="card !p-4 sm:!p-6">
