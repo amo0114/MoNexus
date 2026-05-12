@@ -268,6 +268,24 @@ export async function resetPasswordWithToken(rawToken: string, newPassword: stri
   })
 }
 
+export async function changePassword(userId: number, currentPassword: string, newPassword: string) {
+  const user = await prisma.user.findUnique({ where: { id: userId } })
+  if (!user) throw notFound('用户不存在')
+  if (user.status === '已封禁') throw badRequest('账号已被封禁')
+
+  const valid = await bcrypt.compare(currentPassword, user.password)
+  if (!valid) throw unauthenticated('当前密码错误')
+
+  const hashed = await bcrypt.hash(newPassword, 10)
+  await prisma.$transaction(async tx => {
+    await tx.user.update({
+      where: { id: userId },
+      data: { password: hashed },
+    })
+    await revokeAllUserRefreshTokens(userId, tx)
+  })
+}
+
 export async function sendEmailVerification(userId: number) {
   const user = await prisma.user.findUnique({ where: { id: userId } })
   if (!user) throw notFound('用户不存在')
