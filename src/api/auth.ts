@@ -18,6 +18,14 @@ export async function refreshAccessToken(): Promise<string> {
   return data.accessToken
 }
 
+export async function changePassword(payload: {
+  currentPassword: string
+  newPassword: string
+}): Promise<{ message: string }> {
+  const { data } = await api.post('/auth/password-change', payload)
+  return data
+}
+
 export function decodeAccessTokenRole(token: string | null): UserRole | null {
   if (!token) return null
   const parts = token.split('.')
