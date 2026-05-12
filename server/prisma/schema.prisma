@@ -18,16 +18,17 @@ model User {
   emailVerified DateTime?
   createdAt     DateTime  @default(now())
 
-  pointAccount  PointAccount?
-  orders        Order[]
-  pointLogs     PointLog[]
-  checkins      CheckinRecord[]
-  refreshTokens RefreshToken[]
-  invitedBy     InviteRelation[] @relation("invitee")
-  invites       InviteRelation[] @relation("inviter")
-  adminLogs         AdminLog[]
-  approvedMerchants Merchant[]     @relation("MerchantApprovedBy")
-  merchant          Merchant?
+  pointAccount            PointAccount?
+  orders                  Order[]
+  pointLogs               PointLog[]
+  checkins                CheckinRecord[]
+  refreshTokens           RefreshToken[]
+  invitedBy               InviteRelation[]         @relation("invitee")
+  invites                 InviteRelation[]         @relation("inviter")
+  adminLogs               AdminLog[]
+  updatedSystemConfigs    SystemConfig[]           @relation("SystemConfigUpdatedBy")
+  approvedMerchants       Merchant[]               @relation("MerchantApprovedBy")
+  merchant                Merchant?
   passwordResetTokens     PasswordResetToken[]
   emailVerificationTokens EmailVerificationToken[]
 }
@@ -68,11 +69,11 @@ model Merchant {
   approvedAt     DateTime?
   approvedBy     Int?
 
-  user          User          @relation(fields: [userId], references: [id])
+  user           User         @relation(fields: [userId], references: [id])
   approvedByUser User?        @relation("MerchantApprovedBy", fields: [approvedBy], references: [id])
-  products      Product[]
-  orders        Order[]
-  settlements   Settlement[]
+  products       Product[]
+  orders         Order[]
+  settlements    Settlement[]
 }
 
 model RefreshToken {
@@ -89,9 +90,9 @@ model RefreshToken {
 }
 
 model PointAccount {
-  id      Int  @id @default(autoincrement())
-  userId  Int  @unique
-  balance Int  @default(0)
+  id      Int @id @default(autoincrement())
+  userId  Int @unique
+  balance Int @default(0)
 
   user User @relation(fields: [userId], references: [id])
 }
@@ -106,7 +107,7 @@ model PointLog {
   orderId      Int?
   createdAt    DateTime @default(now())
 
-  user  User  @relation(fields: [userId], references: [id])
+  user  User   @relation(fields: [userId], references: [id])
   order Order? @relation(fields: [orderId], references: [id])
 }
 
@@ -127,7 +128,7 @@ model Product {
   merchantId      Int?
   createdAt       DateTime @default(now())
 
-  merchant  Merchant?        @relation(fields: [merchantId], references: [id])
+  merchant  Merchant?       @relation(fields: [merchantId], references: [id])
   reviews   Review[]
   orders    Order[]
   inventory InventoryItem[]
@@ -158,19 +159,19 @@ model InventoryItem {
 }
 
 model Order {
-  id               Int       @id @default(autoincrement())
+  id               Int      @id @default(autoincrement())
   userId           Int
   productId        Int
   price            Int
-  status           String    @default("completed")
+  status           String   @default("completed")
   merchantId       Int?
-  commissionRate   Decimal?  @db.Decimal(5, 4)
-  commissionAmount Int       @default(0)
-  createdAt        DateTime  @default(now())
+  commissionRate   Decimal? @db.Decimal(5, 4)
+  commissionAmount Int      @default(0)
+  createdAt        DateTime @default(now())
 
-  user       User             @relation(fields: [userId], references: [id])
-  product    Product          @relation(fields: [productId], references: [id])
-  merchant   Merchant?        @relation(fields: [merchantId], references: [id])
+  user       User            @relation(fields: [userId], references: [id])
+  product    Product         @relation(fields: [productId], references: [id])
+  merchant   Merchant?       @relation(fields: [merchantId], references: [id])
   delivery   DeliveryRecord?
   settlement Settlement?
   pointLogs  PointLog[]
@@ -235,4 +236,14 @@ model AdminLog {
   createdAt   DateTime @default(now())
 
   admin User @relation(fields: [adminUserId], references: [id])
+}
+
+model SystemConfig {
+  key         String   @id @unique
+  value       Int
+  description String?
+  updatedAt   DateTime @updatedAt
+  updatedBy   Int?
+
+  updatedByUser User? @relation("SystemConfigUpdatedBy", fields: [updatedBy], references: [id])
 }
