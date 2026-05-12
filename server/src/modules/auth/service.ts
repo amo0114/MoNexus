@@ -6,6 +6,7 @@ import { config } from '../../config/index.js'
 import { prisma } from '../../lib/prisma.js'
 import { badRequest, conflict, notFound, unauthenticated } from '../../lib/httpError.js'
 import { getMailer } from '../../lib/mailer/index.js'
+import { getSystemConfigValue } from '../../lib/systemConfig.js'
 
 function generateAccessToken(userId: number, role: string) {
   return jwt.sign({ userId, role }, config.jwtSecret, { expiresIn: config.jwtExpiresIn })
@@ -50,21 +51,24 @@ export async function registerUser(email: string, password: string, inviteCode?:
 
   const hashedPassword = await bcrypt.hash(password, 10)
 
-  const user = await prisma.$transaction(async tx => {
+  const result = await prisma.$transaction(async tx => {
+    const registerReward = await getSystemConfigValue('registerReward', tx)
+    const inviteReward = await getSystemConfigValue('inviteReward', tx)
+
     const newUser = await tx.user.create({
       data: { email, password: hashedPassword },
     })
 
     await tx.pointAccount.create({
-      data: { userId: newUser.id, balance: config.registerReward },
+      data: { userId: newUser.id, balance: registerReward },
     })
 
     await tx.pointLog.create({
       data: {
         userId: newUser.id,
         type: 'in',
-        amount: config.registerReward,
-        balanceAfter: config.registerReward,
+        amount: registerReward,
+        balanceAfter: registerReward,
         reason: '新用户注册奖励',
       },
     })
@@ -78,7 +82,7 @@ export async function registerUser(email: string, password: string, inviteCode?:
 
         const inviterAccount = await tx.pointAccount.findUnique({ where: { userId: inviter.id } })
         if (inviterAccount) {
-          const newBalance = inviterAccount.balance + config.inviteReward
+          const newBalance = inviterAccount.balance + inviteReward
           await tx.pointAccount.update({
             where: { userId: inviter.id },
             data: { balance: newBalance },
@@ -87,7 +91,7 @@ export async function registerUser(email: string, password: string, inviteCode?:
             data: {
               userId: inviter.id,
               type: 'in',
-              amount: config.inviteReward,
+              amount: inviteReward,
               balanceAfter: newBalance,
               reason: `邀请新用户 ${email} 注册奖励`,
             },
@@ -96,16 +100,16 @@ export async function registerUser(email: string, password: string, inviteCode?:
       }
     }
 
-    return newUser
+    return { user: newUser, registerReward }
   })
 
-  const refreshToken = await createStoredRefreshToken(user.id, ip, userAgent)
-  const accessToken = generateAccessToken(user.id, user.role)
+  const refreshToken = await createStoredRefreshToken(result.user.id, ip, userAgent)
+  const accessToken = generateAccessToken(result.user.id, result.user.role)
 
   return {
     accessToken,
     refreshToken,
-    user: buildAuthUser(user, config.registerReward),
+    user: buildAuthUser(result.user, result.registerReward),
   }
 }
 
@@ -265,6 +269,24 @@ export async function resetPasswordWithToken(rawToken: string, newPassword: stri
     // Revoke every refresh token outstanding for this user — if the
     // password is being reset, assume the prior session is compromised.
     await revokeAllUserRefreshTokens(stored.userId, tx)
+  })
+}
+
+export async function changePassword(userId: number, currentPassword: string, newPassword: string) {
+  const user = await prisma.user.findUnique({ where: { id: userId } })
+  if (!user) throw notFound('用户不存在')
+  if (user.status === '已封禁') throw badRequest('账号已被封禁')
+
+  const valid = await bcrypt.compare(currentPassword, user.password)
+  if (!valid) throw unauthenticated('当前密码错误')
+
+  const hashed = await bcrypt.hash(newPassword, 10)
+  await prisma.$transaction(async tx => {
+    await tx.user.update({
+      where: { id: userId },
+      data: { password: hashed },
+    })
+    await revokeAllUserRefreshTokens(userId, tx)
   })
 }
 

@@ -42,8 +42,8 @@ export default function EmailVerificationBanner() {
 
   return (
     <div className="max-w-7xl mx-auto w-full px-4 sm:px-6 pt-4">
-      <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-100 fade-in">
-        <MailWarning className="w-5 h-5 shrink-0" />
+      <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-[var(--color-warning-bg)] border border-[var(--color-warning-border)] text-[var(--color-warning-text)] fade-in">
+        <MailWarning className="w-5 h-5 shrink-0 text-[var(--color-warning-accent)]" />
         <div className="flex-1 min-w-0 text-sm">
           <span className="font-semibold">邮箱尚未验证。</span>
           <span className="hidden sm:inline">验证后可在忘记密码时通过邮件找回账户。</span>
@@ -52,14 +52,14 @@ export default function EmailVerificationBanner() {
           type="button"
           onClick={handleSend}
           disabled={sending}
-          className="px-3 py-1.5 rounded-lg text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white disabled:opacity-60 transition-colors whitespace-nowrap"
+          className="px-3 py-1.5 rounded-lg text-xs font-bold bg-[var(--color-warning-accent)] hover:bg-[var(--color-warning-accent-hover)] text-white disabled:opacity-60 transition-colors whitespace-nowrap focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)]"
         >
           {sending ? '发送中…' : '发送验证邮件'}
         </button>
         <button
           type="button"
           onClick={handleDismiss}
-          className="p-1 rounded hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-colors"
+          className="p-1 rounded hover:bg-[var(--color-warning-border)] transition-colors focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)]"
           aria-label="关闭"
         >
           <X className="w-4 h-4" />

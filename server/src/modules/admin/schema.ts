@@ -1,9 +1,22 @@
 import { z } from 'zod'
+import { systemConfigKeys } from '../../lib/systemConfig.js'
 
 export const adjustPointsSchema = z.object({
   type: z.enum(['add', 'deduct']),
   amount: z.number().int().positive('调整数量必须为正整数'),
   reason: z.string().min(1, '请填写操作原因'),
+})
+
+export const banUserSchema = z.object({
+  reason: z.string().min(1, '请填写封禁原因'),
+})
+
+export const systemConfigKeyParamSchema = z.object({
+  key: z.enum(systemConfigKeys),
+})
+
+export const updateSystemConfigSchema = z.object({
+  value: z.number().int('配置值必须是整数').min(0, '配置值必须是非负整数'),
 })
 
 export const createProductSchema = z.object({

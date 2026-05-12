@@ -91,6 +91,19 @@ export async function resetPassword(req: Request, res: Response, next: NextFunct
   }
 }
 
+export async function changePassword(req: Request, res: Response, next: NextFunction) {
+  try {
+    await authService.changePassword(
+      req.user!.userId,
+      req.body.currentPassword,
+      req.body.newPassword
+    )
+    res.json({ message: '密码已修改，请重新登录' })
+  } catch (err) {
+    next(err)
+  }
+}
+
 export async function sendVerification(req: Request, res: Response, next: NextFunction) {
   try {
     await authService.sendEmailVerification(req.user!.userId)

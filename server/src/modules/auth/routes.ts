@@ -8,6 +8,7 @@ import {
   loginSchema,
   forgotPasswordSchema,
   resetPasswordSchema,
+  passwordChangeSchema,
   verifyEmailQuerySchema,
 } from './schema.js'
 import * as controller from './controller.js'
@@ -53,6 +54,7 @@ router.post('/login', authLimiter, validate(loginSchema), controller.login)
 router.post('/refresh', authLimiter, controller.refresh)
 router.post('/logout', controller.logout)
 router.get('/me', authenticate, controller.me)
+router.post('/password-change', authLimiter, authenticate, validate(passwordChangeSchema), controller.changePassword)
 
 router.post('/forgot-password', mailLimiter, validate(forgotPasswordSchema), controller.forgotPassword)
 router.post('/reset-password', authLimiter, validate(resetPasswordSchema), controller.resetPassword)

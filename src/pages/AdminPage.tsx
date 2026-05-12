@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react'
-import { LayoutDashboard, UsersRound, Package, ShoppingCart, Activity, Users, ShoppingBag, Coins, X, Store, DollarSign } from 'lucide-react'
+import { LayoutDashboard, UsersRound, Package, ShoppingCart, Activity, Users, ShoppingBag, Coins, X, Store, DollarSign, Settings } from 'lucide-react'
 import api from '../api/client'
 import { getApiErrorMessage } from '../api/error'
 import { useAppStore } from '../stores/appStore'
+import { useAuthStore } from '../stores/authStore'
 import {
   getAdminMerchants,
   approveMerchant,
@@ -13,8 +14,10 @@ import {
   batchSettle
 } from '../api/adminMerchant'
 import { Merchant, Settlement } from '../types/merchant'
+import { getAdminConfig, updateAdminConfig, AdminSystemConfig } from '../api/adminConfig'
+import { banUser, unbanUser } from '../api/admin'
 
-type AdminTab = 'dashboard' | 'users' | 'products' | 'orders' | 'logs' | 'merchants' | 'settlements'
+type AdminTab = 'dashboard' | 'users' | 'products' | 'orders' | 'logs' | 'merchants' | 'settlements' | 'config'
 
 const NAV_ITEMS: { id: AdminTab; label: string; icon: any }[] = [
   { id: 'dashboard', label: '数据仪表盘', icon: LayoutDashboard },
@@ -24,10 +27,12 @@ const NAV_ITEMS: { id: AdminTab; label: string; icon: any }[] = [
   { id: 'products', label: '商品与库存', icon: Package },
   { id: 'orders', label: '订单记录', icon: ShoppingCart },
   { id: 'logs', label: '系统流水日志', icon: Activity },
+  { id: 'config', label: '系统配置', icon: Settings },
 ]
 
 export default function AdminPage() {
   const showToast = useAppStore((s) => s.showToast)
+  const currentUser = useAuthStore((s) => s.user)
   const [activeTab, setActiveTab] = useState<AdminTab>('dashboard')
   const [stats, setStats] = useState<any>(null)
   const [users, setUsers] = useState<any[]>([])
@@ -36,6 +41,14 @@ export default function AdminPage() {
   const [logs, setLogs] = useState<any[]>([])
   const [merchants, setMerchants] = useState<Merchant[]>([])
   const [settlements, setSettlements] = useState<Settlement[]>([])
+  const [configs, setConfigs] = useState<AdminSystemConfig[]>([])
+  const [configValues, setConfigValues] = useState<Record<string, string>>({})
+  const [savingConfigKey, setSavingConfigKey] = useState<string | null>(null)
+
+  // Ban User Modal
+  const [showBan, setShowBan] = useState(false)
+  const [banTarget, setBanTarget] = useState<any>(null)
+  const [banReason, setBanReason] = useState('')
 
   // Adjust points modal
   const [showAdjust, setShowAdjust] = useState(false)
@@ -80,9 +93,59 @@ export default function AdminPage() {
         const data = await getAdminSettlements()
         setSettlements(data)
         setSelectedSettlements([])
+      } else if (tab === 'config') {
+        const data = await getAdminConfig()
+        setConfigs(data)
+        const initialValues: Record<string, string> = {}
+        data.forEach(c => initialValues[c.key] = c.value.toString())
+        setConfigValues(initialValues)
       }
     } catch (err: any) {
       showToast(getApiErrorMessage(err, '加载失败'), 'error')
+    }
+  }
+
+  async function confirmBan() {
+    if (!banReason.trim()) {
+      showToast('请输入封禁原因', 'error')
+      return
+    }
+    try {
+      await banUser(banTarget.id, banReason)
+      showToast('已成功封禁该用户')
+      setShowBan(false)
+      loadTabData('users')
+    } catch (err: any) {
+      showToast(getApiErrorMessage(err, '封禁失败'), 'error')
+    }
+  }
+
+  async function handleUnban(userId: number) {
+    if (!confirm('确定要解封该用户吗？')) return
+    try {
+      await unbanUser(userId)
+      showToast('已成功解封该用户')
+      loadTabData('users')
+    } catch (err: any) {
+      showToast(getApiErrorMessage(err, '解封失败'), 'error')
+    }
+  }
+
+  async function handleSaveConfig(key: any) {
+    const val = parseInt(configValues[key], 10)
+    if (isNaN(val) || val < 0) {
+      showToast('请输入有效的非负整数', 'error')
+      return
+    }
+    setSavingConfigKey(key)
+    try {
+      await updateAdminConfig(key, val)
+      showToast('配置已更新')
+      loadTabData('config')
+    } catch (err: any) {
+      showToast(getApiErrorMessage(err, '更新配置失败'), 'error')
+    } finally {
+      setSavingConfigKey(null)
     }
   }
 
@@ -396,7 +459,28 @@ export default function AdminPage() {
                             {u.status}
                           </span>
                         </td>
-                        <td className="text-right">
+                        <td className="text-right space-x-2 whitespace-nowrap">
+                          {u.status === '正常' && u.role !== 'admin' && (
+                            <button
+                              disabled={u.id === currentUser?.id}
+                              onClick={() => {
+                                setBanTarget(u)
+                                setBanReason('')
+                                setShowBan(true)
+                              }}
+                              className="text-red-500 hover:bg-red-500/10 font-semibold text-xs px-3 py-1.5 rounded-lg transition-colors border border-red-500/25 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              封禁
+                            </button>
+                          )}
+                          {u.status === '已封禁' && u.role !== 'admin' && (
+                            <button
+                              onClick={() => handleUnban(u.id)}
+                              className="text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 font-semibold text-xs px-3 py-1.5 rounded-lg transition-colors border border-[var(--color-primary)]/25 cursor-pointer"
+                            >
+                              解封
+                            </button>
+                          )}
                           <button
                             onClick={() => {
                               setAdjustTarget(u)
@@ -540,8 +624,97 @@ export default function AdminPage() {
               </div>
             </div>
           )}
+
+          {/* Configs */}
+          {activeTab === 'config' && (
+            <div className="space-y-4">
+              <h2 className="font-heading text-xl font-bold mb-4 text-[var(--color-text)]">系统配置</h2>
+              <div className="overflow-x-auto">
+                <table className="admin-table">
+                  <thead>
+                    <tr>
+                      <th>配置项</th>
+                      <th>值</th>
+                      <th>默认值</th>
+                      <th className="text-right">操作</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {configs.map((c) => (
+                      <tr key={c.key}>
+                        <td className="font-bold text-[var(--color-text)]">{c.key}</td>
+                        <td>
+                          <input
+                            type="number"
+                            min="0"
+                            step="1"
+                            value={configValues[c.key] ?? ''}
+                            onChange={(e) => setConfigValues({ ...configValues, [c.key]: e.target.value })}
+                            className="input !text-sm !py-1 !px-2 w-24"
+                          />
+                        </td>
+                        <td className="text-[var(--color-text-muted)] text-sm">{c.defaultValue}</td>
+                        <td className="text-right">
+                          <button
+                            disabled={savingConfigKey === c.key}
+                            onClick={() => handleSaveConfig(c.key)}
+                            className="text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 font-semibold text-xs px-3 py-1.5 rounded-lg transition-colors border border-[var(--color-primary)]/25 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            {savingConfigKey === c.key ? '保存中...' : '保存'}
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
       </div>
+
+      {/* Ban User Modal */}
+      {showBan && banTarget && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center">
+          <div className="modal-overlay" onClick={() => setShowBan(false)} />
+          <div className="modal relative z-10 fade-in !max-w-sm">
+            <div className="flex justify-between items-center mb-5">
+              <h3 className="font-heading text-xl font-bold text-[var(--color-text)]">封禁用户</h3>
+              <button
+                onClick={() => setShowBan(false)}
+                className="text-[var(--color-text-muted)] hover:text-[var(--color-text)] cursor-pointer"
+                aria-label="关闭"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-[var(--color-text-muted)] mb-1.5 uppercase tracking-wider">目标用户</label>
+                <input
+                  type="text"
+                  disabled
+                  value={`U${banTarget.id} (${banTarget.email})`}
+                  className="input !text-sm !bg-[var(--color-background)] !text-[var(--color-text-muted)] cursor-not-allowed"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-[var(--color-text-muted)] mb-1.5 uppercase tracking-wider">封禁原因</label>
+                <input
+                  type="text"
+                  value={banReason}
+                  onChange={(e) => setBanReason(e.target.value)}
+                  placeholder="请输入封禁原因"
+                  className="input"
+                />
+              </div>
+              <button onClick={confirmBan} className="btn-primary w-full mt-2 bg-red-500 hover:bg-red-600 border-red-500 text-white shadow-md">
+                确认封禁
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Adjust Points Modal — kept inline; will migrate to <Dialog/> in the modal batch */}
       {showAdjust && adjustTarget && (

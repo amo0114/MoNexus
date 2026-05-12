@@ -48,8 +48,10 @@ export default function App() {
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
         <Route path="/reset-password/:token" element={<ResetPasswordPage />} />
         <Route path="/verify-email" element={<VerifyEmailPage />} />
-        {/* Phase 2 internal preview — removed before Phase 3 merge */}
-        <Route path="/_dev/tokens" element={<DesignTokensPage />} />
+        {/* Design-token preview — dev only; never registered in production builds. */}
+        {import.meta.env.DEV && (
+          <Route path="/_dev/tokens" element={<DesignTokensPage />} />
+        )}
         <Route
           path="/*"
           element={

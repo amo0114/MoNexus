@@ -38,6 +38,13 @@
   --space-2xl: 3rem;
   --space-3xl: 4rem;
 
+  /* Warning (amber family) — for unverified-email banners, soft alerts */
+  --color-warning-bg: #FFFBEB;          /* amber-50 */
+  --color-warning-border: #FDE68A;      /* amber-200 */
+  --color-warning-text: #78350F;        /* amber-900 */
+  --color-warning-accent: #D97706;      /* amber-600 — icon / CTA fill */
+  --color-warning-accent-hover: #B45309;/* amber-700 */
+
   /* Shadows (neutral, not indigo-tinted) */
   --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.05);
   --shadow-md: 0 4px 6px rgba(15, 23, 42, 0.08);
@@ -62,6 +69,13 @@
   --color-grid-dot: #1E293B;
   --color-glass-bg: rgba(22, 22, 41, 0.85);
   --color-glass-border: rgba(129, 140, 248, 0.15);
+
+  /* Warning (amber family) — tuned for dark surfaces */
+  --color-warning-bg: rgba(180, 83, 9, 0.18);  /* amber-700 @ ~18% */
+  --color-warning-border: #92400E;             /* amber-800 */
+  --color-warning-text: #FEF3C7;               /* amber-100 */
+  --color-warning-accent: #FBBF24;             /* amber-400 — brighter on dark */
+  --color-warning-accent-hover: #F59E0B;       /* amber-500 */
 
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
   --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.35);
