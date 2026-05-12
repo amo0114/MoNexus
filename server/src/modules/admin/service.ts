@@ -105,6 +105,66 @@ export async function adjustUserPoints(
   })
 }
 
+export async function banUser(adminUserId: number, targetUserId: number, reason: string) {
+  return prisma.$transaction(async tx => {
+    const target = await tx.user.findUnique({
+      where: { id: targetUserId },
+      select: { id: true, email: true, role: true, status: true },
+    })
+    if (!target) throw notFound('用户不存在')
+    if (target.id === adminUserId) throw badRequest('不能封禁自己的账号')
+    if (target.role === 'admin') throw badRequest('不能封禁管理员账号')
+
+    const updated = await tx.user.update({
+      where: { id: target.id },
+      data: { status: '已封禁' },
+      select: { id: true, email: true, role: true, status: true },
+    })
+
+    await revokeAllUserRefreshTokens(target.id, tx)
+
+    await tx.adminLog.create({
+      data: {
+        adminUserId,
+        action: '封禁用户',
+        targetType: 'user',
+        targetId: target.id,
+        detail: `用户 ${target.email} 已封禁，原因: ${reason}`,
+      },
+    })
+
+    return updated
+  })
+}
+
+export async function unbanUser(adminUserId: number, targetUserId: number) {
+  return prisma.$transaction(async tx => {
+    const target = await tx.user.findUnique({
+      where: { id: targetUserId },
+      select: { id: true, email: true, role: true, status: true },
+    })
+    if (!target) throw notFound('用户不存在')
+
+    const updated = await tx.user.update({
+      where: { id: target.id },
+      data: { status: '正常' },
+      select: { id: true, email: true, role: true, status: true },
+    })
+
+    await tx.adminLog.create({
+      data: {
+        adminUserId,
+        action: '解封用户',
+        targetType: 'user',
+        targetId: target.id,
+        detail: `用户 ${target.email} 已解封`,
+      },
+    })
+
+    return updated
+  })
+}
+
 export async function createProduct(data: Prisma.ProductCreateInput) {
   return prisma.product.create({ data })
 }

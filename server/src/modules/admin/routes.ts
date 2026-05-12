@@ -2,7 +2,7 @@ import { Router } from 'express'
 import { authenticate, requireAdmin } from '../../middlewares/auth.js'
 import { validate, idParamSchema } from '../../middlewares/validate.js'
 import {
-  adjustPointsSchema, createProductSchema, updateProductSchema,
+  adjustPointsSchema, banUserSchema, createProductSchema, updateProductSchema,
   importInventorySchema, listUsersQuerySchema,
   listMerchantsQuerySchema, reviewMerchantSchema, updateCommissionSchema,
   listSettlementsQuerySchema, batchSettleSchema,
@@ -16,6 +16,8 @@ router.use(authenticate, requireAdmin)
 router.get('/stats', controller.stats)
 router.get('/users', validate({ query: listUsersQuerySchema }), controller.users)
 router.post('/users/:id/adjust', validate({ params: idParamSchema, body: adjustPointsSchema }), controller.adjustPoints)
+router.put('/users/:id/ban', validate({ params: idParamSchema, body: banUserSchema }), controller.banUser)
+router.put('/users/:id/unban', validate({ params: idParamSchema }), controller.unbanUser)
 router.get('/products', controller.products)
 router.post('/products', validate(createProductSchema), controller.createProduct)
 router.put('/products/:id', validate({ params: idParamSchema, body: updateProductSchema }), controller.updateProduct)
