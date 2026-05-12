@@ -10,7 +10,6 @@ import {
 } from '../components/ui/Dialog'
 import { Coins, Sparkles, ShoppingBag } from 'lucide-react'
 import Logo from '../components/ui/Logo'
-import { useLogoStore, type LogoVariant } from '../stores/logoStore'
 
 /**
  * Phase 2 token + component preview page.
@@ -232,43 +231,11 @@ function DialogDemo() {
 }
 
 function BrandMarkSwitcher() {
-  const variant = useLogoStore((s) => s.variant)
-  const setVariant = useLogoStore((s) => s.setVariant)
-
-  const options: { value: LogoVariant; label: string; blurb: string }[] = [
-    {
-      value: 'flow',
-      label: 'Flow',
-      blurb: '两条垂直直线 + 两个完美 180° 半圆，连续单笔成型。读作抽象化的 N，但不沦为字标。',
-    },
-    {
-      value: 'concentric',
-      label: 'Concentric',
-      blurb: '实心中心节点 + 两道同心弧。借鉴 AirDrop / Podcasts 的"hub 广播"语言。',
-    },
-  ]
-
   return (
     <div className="space-y-6">
-      {/* Segmented control */}
-      <div className="inline-flex rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-1">
-        {options.map((opt) => (
-          <button
-            key={opt.value}
-            onClick={() => setVariant(opt.value)}
-            className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors cursor-pointer ${
-              variant === opt.value
-                ? 'bg-[var(--color-primary)] text-white'
-                : 'text-[var(--color-text-muted)] hover:text-[var(--color-text)]'
-            }`}
-          >
-            {opt.label}
-          </button>
-        ))}
-      </div>
-
       <p className="text-sm text-[var(--color-text-muted)] max-w-2xl">
-        {options.find((o) => o.value === variant)?.blurb}
+        Concentric Nexus — 实心中心节点 + 两道同心弧。借鉴 AirDrop / Podcasts 的"hub 广播"语言，
+        直接表达品牌名 Nexus 的"中心枢纽 + 辐射连接"含义。
       </p>
 
       {/* Renderings at production sizes */}
