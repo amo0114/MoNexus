@@ -54,6 +54,17 @@ export const listUsersQuerySchema = z.object({
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
 })
 
+export const listAdminAuditQuerySchema = z.object({
+  page: z.coerce.number().int().positive().default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+  adminId: z.coerce.number().int().positive().optional(),
+  action: z.string().min(1).optional(),
+  fromDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, '必须是 ISO 日期').optional(),
+  toDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, '必须是 ISO 日期').optional(),
+}).strict()
+
+export type ListAdminAuditQuery = z.infer<typeof listAdminAuditQuerySchema>
+
 export const listMerchantsQuerySchema = z.object({
   status: z.enum(['pending', 'active', 'suspended', 'rejected']).optional(),
   q: z.string().optional(),
