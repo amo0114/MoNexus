@@ -5,6 +5,7 @@ import {
   listSystemConfigs,
   updateSystemConfig as saveSystemConfig,
 } from '../../lib/systemConfig.js'
+import { invalidate as invalidateUserStatusCache } from '../../lib/userStatusCache.js'
 import { revokeAllUserRefreshTokens } from '../auth/service.js'
 import type { ListAdminAuditQuery } from './schema.js'
 
@@ -111,7 +112,7 @@ export async function adjustUserPoints(
 }
 
 export async function banUser(adminUserId: number, targetUserId: number, reason: string) {
-  return prisma.$transaction(async tx => {
+  const updated = await prisma.$transaction(async tx => {
     const target = await tx.user.findUnique({
       where: { id: targetUserId },
       select: { id: true, email: true, role: true, status: true },
@@ -140,10 +141,13 @@ export async function banUser(adminUserId: number, targetUserId: number, reason:
 
     return updated
   })
+
+  invalidateUserStatusCache(targetUserId)
+  return updated
 }
 
 export async function unbanUser(adminUserId: number, targetUserId: number) {
-  return prisma.$transaction(async tx => {
+  const updated = await prisma.$transaction(async tx => {
     const target = await tx.user.findUnique({
       where: { id: targetUserId },
       select: { id: true, email: true, role: true, status: true },
@@ -168,6 +172,9 @@ export async function unbanUser(adminUserId: number, targetUserId: number) {
 
     return updated
   })
+
+  invalidateUserStatusCache(targetUserId)
+  return updated
 }
 
 export async function listSystemConfig() {
