@@ -293,3 +293,318 @@ curl -fsS https://<prod-host>/api/health
 For a frontend-only rollback, redeploy the previous build artifact — no DB action needed.
 
 Post-rollback: write an incident note (what, when, blast radius, follow-up tickets) and link the relevant commits and log excerpts. Schedule a postmortem within 48 hours.
+
+## 14. Email Configuration (M3)
+
+M3 replaces the dev-only console mailer with a real SMTP adapter (nodemailer). The console fallback stays alive for local development so you can run the app without an SMTP relay.
+
+### Selection rule
+
+The selector lives in `server/src/config/index.ts`:
+
+| `SMTP_HOST` | Adapter | What happens |
+| --- | --- | --- |
+| unset / empty | `console` | Each send logs the payload (to / subject / text snippet) via the structured logger. No network egress. |
+| set | `smtp` | `nodemailer` opens a connection to that host using the supplied port / security / credentials. |
+
+`SMTP_FROM` (or `SMTP_USER` as a fallback) becomes the `From:` header. In production, `SMTP_HOST` + a from address is **required** — boot fails fast if `SMTP_HOST` is set but neither `SMTP_FROM` nor `SMTP_USER` is.
+
+### Env variables
+
+| Var | Required | Default | Purpose |
+| --- | --- | --- | --- |
+| `SMTP_HOST` | prod only | — | SMTP server hostname; opts into real delivery |
+| `SMTP_PORT` | no | `587` | Submission port (`587` STARTTLS / `465` implicit TLS / `25` MTA-only) |
+| `SMTP_SECURE` | no | `false` | `true` for implicit TLS (port 465); `false` lets nodemailer STARTTLS on 587 |
+| `SMTP_USER` | provider-dep. | — | Auth username — leave empty for relays that accept unauthenticated submissions |
+| `SMTP_PASS` | provider-dep. | — | Auth password — pair with `SMTP_USER` |
+| `SMTP_FROM` | yes if `SMTP_HOST` set | `SMTP_USER` | `From:` header. Verified / DMARC-aligned addresses only |
+| `APP_BASE_URL` | no | `FRONTEND_ORIGIN` | Base URL injected into reset / verify links inside emails |
+
+### Local dev: MailHog
+
+MailHog is a single-binary SMTP catcher with a web UI — emails are caught instead of delivered.
+
+```bash
+docker run --rm --name mailhog \
+  -p 1025:1025 -p 8025:8025 \
+  mailhog/mailhog
+
+# Backend env (server/.env):
+SMTP_HOST=localhost
+SMTP_PORT=1025
+SMTP_SECURE=false
+SMTP_FROM=noreply@monexus.local
+# (no SMTP_USER / SMTP_PASS needed)
+
+# Trigger a password reset, then open http://localhost:8025 — the
+# message shows up with full HTML + headers.
+```
+
+### Production providers
+
+Use the provider's documentation for the canonical values — these are starting points.
+
+| Provider | Host | Port | Secure | Notes |
+| --- | --- | --- | --- | --- |
+| AWS SES SMTP | `email-smtp.<region>.amazonaws.com` | `587` | `false` (STARTTLS) | SMTP credentials are SES-specific, **not** IAM root keys. Domain / from-address must be verified in SES first. |
+| Mailtrap (staging) | `sandbox.smtp.mailtrap.io` | `2525` | `false` | Inbox is a sandbox — safe for QA, never points at real users. |
+| Gmail SMTP | `smtp.gmail.com` | `465` | `true` | Requires app-password or OAuth proxy; rate-limited; production-discouraged. |
+| Self-hosted Postfix | depends | `587` | `false` | Ensure SPF / DKIM / DMARC are aligned — providers drop unauthenticated mail. |
+
+### Verification recipe
+
+```bash
+# Backend hot-load env, then trigger a reset for a test user:
+curl -fsS -X POST http://localhost:3000/api/auth/password-reset/request \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"qa+reset@example.com"}'
+
+# Expected:
+# - SMTP_HOST unset: backend log line "[mailer/console] -> qa+reset@example.com subject=..."
+# - SMTP_HOST set:   MailHog UI shows message (dev) or provider's outbound log confirms delivery (prod).
+# - Sentry: no error events for `password reset` if delivery succeeded.
+```
+
+If the SMTP handshake fails (auth / TLS / DNS), nodemailer throws and the request returns 500 — check structured logs for the underlying error code (`EAUTH`, `ETIMEDOUT`, `ENOTFOUND`) before re-trying.
+
+## 15. Object Storage (M3)
+
+M3-A2 replaces the in-memory uploads adapter with a real S3-compatible client (`@aws-sdk/client-s3`). The in-memory adapter stays alive for local dev / tests so you can run without provisioning a bucket.
+
+### Selection rule
+
+| Env state | Adapter | Notes |
+| --- | --- | --- |
+| All of `STORAGE_ENDPOINT`, `STORAGE_BUCKET`, `STORAGE_ACCESS_KEY`, `STORAGE_SECRET_KEY` set | `s3` | Real PUT / GET to the bucket. |
+| Any of the four missing | `memory` | Process-local Map. Lost on restart. Safe for dev / tests only. |
+
+Production refuses to boot in `memory` mode — `server/src/config/index.ts` enforces this when `NODE_ENV=production`.
+
+### Env variables
+
+| Var | Required (prod) | Default | Purpose |
+| --- | --- | --- | --- |
+| `STORAGE_ENDPOINT` | yes | — | S3 endpoint URL (MinIO / R2 / S3 / OSS / Backblaze) |
+| `STORAGE_REGION` | no | `us-east-1` | Required by the SDK signer; most non-AWS providers accept any non-empty value |
+| `STORAGE_BUCKET` | yes | — | Bucket name |
+| `STORAGE_ACCESS_KEY` | yes | — | Access key |
+| `STORAGE_SECRET_KEY` | yes | — | Secret key |
+| `STORAGE_PUBLIC_URL_BASE` | no | derived | Public URL prefix served to the frontend. Set when you front the bucket with a CDN / custom domain. |
+| `STORAGE_FORCE_PATH_STYLE` | no | `true` | `true` for MinIO / R2 / Backblaze. Set `false` for AWS S3 modern endpoints (virtual-hosted style). |
+
+### Local dev: MinIO
+
+```bash
+docker run --rm --name minio \
+  -p 9000:9000 -p 9001:9001 \
+  -e MINIO_ROOT_USER=minio \
+  -e MINIO_ROOT_PASSWORD=minio_dev_password \
+  quay.io/minio/minio server /data --console-address ':9001'
+
+# Create the bucket once (via UI at http://localhost:9001 with the
+# credentials above, or via mc CLI):
+docker exec minio mc alias set local http://localhost:9000 minio minio_dev_password
+docker exec minio mc mb local/monexus-uploads
+
+# server/.env:
+STORAGE_ENDPOINT=http://localhost:9000
+STORAGE_BUCKET=monexus-uploads
+STORAGE_ACCESS_KEY=minio
+STORAGE_SECRET_KEY=minio_dev_password
+STORAGE_PUBLIC_URL_BASE=http://localhost:9000/monexus-uploads
+STORAGE_FORCE_PATH_STYLE=true
+```
+
+### Production providers
+
+| Provider | Endpoint | `FORCE_PATH_STYLE` | Notes |
+| --- | --- | --- | --- |
+| AWS S3 | `https://s3.<region>.amazonaws.com` | `false` | Modern endpoints prefer virtual-hosted style; bucket name must be DNS-compatible. |
+| Cloudflare R2 | `https://<account-id>.r2.cloudflarestorage.com` | `true` | Region literal: `auto`. Public read via R2 public bucket or workers. |
+| Backblaze B2 (S3 API) | `https://s3.<region>.backblazeb2.com` | `true` | Egress to Cloudflare via Bandwidth Alliance is free. |
+| MinIO (self-host) | `http://minio:9000` | `true` | Use `https://` once you front it with a reverse proxy + certs. |
+
+### Verification recipe
+
+```bash
+# After uploading a product image via the admin UI, watch the
+# request-id header in the backend log and confirm S3 PUT:
+curl -fsS -X POST http://localhost:3000/api/admin/products/<id>/icon \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -F "file=@/path/to/icon.png"
+
+# Then look for the uploaded object via the provider's tooling:
+docker exec minio mc ls local/monexus-uploads/  # MinIO
+aws s3 ls "s3://$STORAGE_BUCKET/"                # AWS
+```
+
+`STORAGE_PUBLIC_URL_BASE` is what the frontend renders in `<img src>` — confirm browser DevTools resolves it without a 403 (signed URLs are not used for product imagery).
+
+## 16. CI Pipeline (M3)
+
+M3-A3 wires a `.github/workflows/ci.yml` that runs on every PR and every push to `master`. There is no CD yet (deferred to M4 once the production target is decided).
+
+### Jobs
+
+| Job | Step | Notes |
+| --- | --- | --- |
+| `build` | `npm ci`, `npm run build`, `npm --prefix server ci`, `npm --prefix server run build` | Catches TS regressions in both root frontend and `server/`. |
+| `test` | `postgres:16` service container, `npm --prefix server run test` | Real Postgres; ≥82 backend tests. Run order matters because some tests share a schema reset hook. |
+
+The Postgres service uses `monexus_test` as DB name, `monexus` as user, and a throwaway password — the workflow injects `DATABASE_URL` accordingly.
+
+### Adding secrets
+
+Secrets land in **Settings → Secrets and variables → Actions** on GitHub. The current workflow does **not** read any secrets — production-only env (SMTP, real Sentry DSN, real S3 creds) gets added when the deployment job lands. Suggested names when CD arrives:
+
+- `PROD_SMTP_HOST`, `PROD_SMTP_USER`, `PROD_SMTP_PASS`
+- `PROD_SENTRY_DSN`, `PROD_VITE_SENTRY_DSN`
+- `PROD_STORAGE_*`
+
+Never commit production credentials to `.env.example`.
+
+### Branch protection (recommended)
+
+After the workflow goes green at least once:
+
+1. Settings → Branches → Add rule for `master`.
+2. Require status checks to pass: enable `CI / build` and `CI / test`.
+3. Require linear history (matches the existing PR-merge workflow).
+
+### Re-running locally
+
+```bash
+# Reproduce the test job locally:
+docker run --rm -d --name monexus-ci-pg \
+  -e POSTGRES_USER=monexus -e POSTGRES_PASSWORD=ci -e POSTGRES_DB=monexus_test \
+  -p 5433:5432 postgres:16
+DATABASE_URL='postgresql://monexus:ci@localhost:5433/monexus_test' \
+  npm --prefix server test
+docker stop monexus-ci-pg
+```
+
+## 17. Error Reporting (Sentry / GlitchTip)
+
+M2 GA shipped both backend and frontend Sentry integration; M3 documents the setup.
+
+### Backend
+
+- Hooked in `server/src/lib/observability/*` and initialized in `server/src/app.ts`.
+- Set `SENTRY_DSN` to your Sentry / self-hosted GlitchTip project DSN to enable event forwarding.
+- Errors from Express middlewares + unhandled rejections flow automatically. The request-id header (`x-request-id`) is attached to each event for cross-referencing with logs.
+
+### Frontend
+
+- Hooked in `src/lib/sentry.ts` and initialized in `src/main.tsx`.
+- `VITE_SENTRY_DSN` is baked at **build time** (Vite) — changing it requires a rebuild, not a redeploy of a static bundle.
+- A React error boundary at the root catches render-time failures (`src/components/ErrorBoundary.tsx`).
+
+### Verify a live DSN
+
+```bash
+# Backend: force an error and confirm it lands in Sentry.
+curl -fsS -X POST http://localhost:3000/api/internal/_sentry-smoke 2>/dev/null || true
+# (no such endpoint exists by design — use a test deploy and an
+#  intentional throw inside a known route guarded by an admin token)
+
+# Frontend: paste into the JS console on a built page:
+window.Sentry?.captureException(new Error('sentry smoke'));
+# Expect: the event appears in the project's "Issues" list within ~1 minute.
+```
+
+### Self-hosted GlitchTip
+
+GlitchTip is API-compatible with Sentry — set the DSN the same way. The platform tag and source map upload (frontend) work as long as your GlitchTip is on a recent release. Configure source map upload as a CI step once CD is in place; do it manually until then with `sentry-cli` or `glitchtip-cli`.
+
+If the DSN is set but events never arrive: check egress firewall, check the DSN host (must include `/` after the project id), and check that the React app is built **after** the env var was injected.
+
+## 18. Auth Performance — User Status Cache (M3)
+
+M3-A5 adds an in-memory LRU cache for `User.status` to skip the per-request Prisma lookup that M2.1 introduced. The cache lives in `server/src/lib/userStatusCache.ts` and is consumed by `requireActiveUser` middleware.
+
+### Tuning
+
+| Var | Default | Effect |
+| --- | --- | --- |
+| `USER_STATUS_CACHE_TTL_SEC` | `60` | Entry TTL. `0` disables the cache (every request reads Prisma — pre-M3 behavior). |
+
+The cache holds up to ~10 000 entries with LRU eviction; `getCached` re-inserts on hit to refresh recency.
+
+### Trade-off
+
+| Scenario | Behavior |
+| --- | --- |
+| Admin bans a user | `banUser` invalidates the cache entry **before** committing — next request sees `已封禁` and 403s immediately. |
+| Admin unbans a user | Same path: cache cleared, next request reads `正常`. |
+| User changes password | `changePassword` invalidates explicitly. |
+| Raw DB edit (`UPDATE "User" SET status = …`) | Cache only catches up after TTL — up to `USER_STATUS_CACHE_TTL_SEC` seconds of stale state. |
+
+Set TTL to `0` in operator environments where status mutations happen out-of-band (e.g. an external admin tool writing Prisma directly). Otherwise leave the default.
+
+### Diagnostics
+
+The cache has no metric output yet (deferred to M4 observability work). To estimate hit ratio in production, temporarily drop TTL to `0`, watch `requireActiveUser` latency in your APM, then restore TTL.
+
+## 19. refreshTokenMaxAgeDays Semantics (M3)
+
+M3-A4 wires the `refreshTokenMaxAgeDays` system config key (admin-editable via `PUT /api/admin/config/{key}`) into the actual refresh-token mint path.
+
+### What "takes effect" means
+
+- Reading the config returns the live value via `getRefreshTokenMaxAgeMs()`.
+- **Newly-issued** refresh tokens (after login / refresh / register / verify-email-and-auto-login) use the new value for both DB `expiresAt` and Set-Cookie `Max-Age`.
+- **Already-issued** refresh tokens **keep their original `expiresAt`** — there is no DB-wide UPDATE on config change. This is intentional: rotating the value to a smaller number must not retroactively shorten live sessions without an explicit operator decision.
+
+### Forcing logout
+
+To shorten effective session length for a specific user **immediately**, use one of:
+
+```bash
+# 1) Ban + unban — revokes all refresh tokens, user must log in again.
+curl -fsS -X PUT "http://localhost:3000/api/admin/users/<userId>/ban" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" -H 'Content-Type: application/json' \
+  -d '{"reason":"force re-auth for shortened-TTL rollout"}'
+curl -fsS -X PUT "http://localhost:3000/api/admin/users/<userId>/unban" \
+  -H "Authorization: Bearer $ADMIN_TOKEN"
+
+# 2) Or: have the user change their password (same revocation effect).
+```
+
+To force a global rotation, run a manual SQL on the refresh-token table — coordinate with the team first, file an incident note, and clear the user-status cache (`docker restart monexus-backend`) afterwards so banned states aren't held stale.
+
+## 20. Operator Audit Log (M3)
+
+M3-A6 + A7 add an operator-facing audit log surface: a paginated, filterable read API over `AdminLog` plus an "操作审计" tab in the admin console UI. The pre-existing `/api/admin/logs` endpoint still exists and still returns `PointLog` — it has been renamed in the UI as "积分流水" to keep the two streams distinct.
+
+### Endpoint
+
+`GET /api/admin/audit?page=&pageSize=&adminId=&action=&fromDate=&toDate=`
+
+- All params optional; defaults are `page=1` and `pageSize=20` (max 100).
+- `action` is an **exact** match (e.g. `ban`, `unban`, `config_update`, `point_adjust`, `merchant_approve`).
+- `fromDate` / `toDate` are `YYYY-MM-DD`; `toDate` is treated as end-of-day inclusive.
+- Returns `{items, total, page, pageSize}` — see `AdminLogList` in `docs/superpowers/specs/monexus-api-openapi.json`.
+
+### Common queries
+
+```bash
+ADMIN_TOKEN='<bearer-token-of-admin>'
+BASE=http://localhost:3000
+
+# Everything in the last 24h
+curl -fsS "$BASE/api/admin/audit?fromDate=$(date -u +%F)" \
+  -H "Authorization: Bearer $ADMIN_TOKEN"
+
+# Bans only
+curl -fsS "$BASE/api/admin/audit?action=ban" \
+  -H "Authorization: Bearer $ADMIN_TOKEN"
+
+# What did admin id 7 do this week
+curl -fsS "$BASE/api/admin/audit?adminId=7&fromDate=$(date -u -d '7 days ago' +%F)" \
+  -H "Authorization: Bearer $ADMIN_TOKEN"
+```
+
+### Frontend
+
+The "操作审计" tab in `AdminPage.tsx` exposes the same filters as form controls — operators can drill in without touching curl. The "积分流水" tab next to it is the historical `/api/admin/logs` view, kept for backwards compatibility with operator muscle memory.
