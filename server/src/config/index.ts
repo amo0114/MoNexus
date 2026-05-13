@@ -27,6 +27,7 @@ const envSchema = z.object({
   JWT_SECRET: z.string().min(32, 'JWT_SECRET must be at least 32 characters'),
   FRONTEND_ORIGIN: z.string().url(),
   COOKIE_SECURE: booleanEnvSchema.default(false),
+  USER_STATUS_CACHE_TTL_SEC: z.coerce.number().int().min(0).default(60),
 
   // --- Object storage (P0-C). All optional: when any are missing the
   // server falls back to an in-memory adapter that's only safe for dev
@@ -110,6 +111,7 @@ export const config = {
   jwtSecret: env.JWT_SECRET,
   frontendOrigin: env.FRONTEND_ORIGIN,
   cookieSecure: env.COOKIE_SECURE,
+  userStatusCacheTtlSec: env.USER_STATUS_CACHE_TTL_SEC,
   jwtExpiresIn: '15m' as const,
   refreshTokenMaxAgeMs: 7 * 24 * 60 * 60 * 1000,
   checkinReward: 50,
