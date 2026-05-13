@@ -75,6 +75,14 @@ export async function getSystemConfigValue(
   return row?.value ?? systemConfigDefaults[key]
 }
 
+export async function getRefreshTokenMaxAgeMs(): Promise<number> {
+  const days = await getSystemConfigValue('refreshTokenMaxAgeDays')
+  if (typeof days === 'number' && days > 0) {
+    return days * oneDayMs
+  }
+  return config.refreshTokenMaxAgeMs
+}
+
 export async function listSystemConfigs() {
   const rows = await prisma.systemConfig.findMany({
     where: { key: { in: [...systemConfigKeys] } },
