@@ -4,6 +4,7 @@ import { Moon, Sun, Coins, User, ShieldCheck, Store, Clock, XCircle, AlertTriang
 import { useState, useEffect } from 'react'
 import EmailVerificationBanner from './EmailVerificationBanner'
 import Logo from './ui/Logo'
+import ThemeToggle from './ThemeToggle'
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate()
@@ -117,6 +118,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               </div>
             )}
 
+            <ThemeToggle />
             {/* Theme Toggle */}
             <button
               onClick={toggleTheme}

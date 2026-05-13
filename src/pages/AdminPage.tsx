@@ -1063,9 +1063,3 @@ function ActionLink({
     </button>
   )
 }
-underline text-xs font-semibold cursor-pointer`}
-    >
-      {children}
-    </button>
-  )
-}
