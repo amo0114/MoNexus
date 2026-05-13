@@ -91,13 +91,13 @@ if (env.NODE_ENV === 'production' && !hasAllStorageVars) {
   process.exit(1)
 }
 
-// Mailer: in production all four SMTP basics must be set so password
-// reset emails actually leave the box. In dev/test we use a
-// console-logging fallback that prints the message body to stdout.
-const hasSmtp = !!env.SMTP_HOST && !!env.SMTP_USER && !!env.SMTP_PASS && !!env.SMTP_FROM
-if (env.NODE_ENV === 'production' && !hasSmtp) {
+// Mailer: SMTP_HOST opts into real delivery. Without it, dev/test and
+// intentionally-unconfigured environments use the console fallback.
+const hasSmtp = !!env.SMTP_HOST
+const smtpFrom = env.SMTP_FROM ?? env.SMTP_USER
+if (env.NODE_ENV === 'production' && hasSmtp && !smtpFrom) {
   console.error(
-    '[Config] SMTP_HOST, SMTP_USER, SMTP_PASS, and SMTP_FROM are all required in production'
+    '[Config] SMTP_FROM or SMTP_USER is required when SMTP_HOST is set in production'
   )
   process.exit(1)
 }
@@ -133,9 +133,9 @@ export const config = {
         host: env.SMTP_HOST!,
         port: env.SMTP_PORT,
         secure: env.SMTP_SECURE,
-        user: env.SMTP_USER!,
-        pass: env.SMTP_PASS!,
-        from: env.SMTP_FROM!,
+        user: env.SMTP_USER,
+        pass: env.SMTP_PASS,
+        from: smtpFrom,
       }
     : ({ kind: 'console' as const }),
   appBaseUrl: env.APP_BASE_URL ?? env.FRONTEND_ORIGIN,
