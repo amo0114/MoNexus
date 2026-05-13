@@ -1,5 +1,5 @@
 import { Router } from 'express'
-import { authenticate, requireMerchant } from '../../middlewares/auth.js'
+import { authenticate, requireActiveUser, requireMerchant } from '../../middlewares/auth.js'
 import { validate, idParamSchema } from '../../middlewares/validate.js'
 import {
   applyMerchantSchema, updateMerchantSchema,
@@ -11,10 +11,10 @@ import * as controller from './controller.js'
 const router = Router()
 
 // Registration: any authenticated user can apply
-router.post('/register', authenticate, validate(applyMerchantSchema), controller.apply)
+router.post('/register', authenticate, requireActiveUser, validate(applyMerchantSchema), controller.apply)
 
 // All other routes require merchant role
-router.use(authenticate, requireMerchant)
+router.use(authenticate, requireActiveUser, requireMerchant)
 
 router.get('/me', controller.me)
 router.put('/me', validate(updateMerchantSchema), controller.updateMe)

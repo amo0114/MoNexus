@@ -1,6 +1,6 @@
 import { Router, Request, Response, NextFunction } from 'express'
 import multer, { MulterError } from 'multer'
-import { authenticate } from '../../middlewares/auth.js'
+import { authenticate, requireActiveUser } from '../../middlewares/auth.js'
 import { badRequest } from '../../lib/httpError.js'
 import { getStorage } from '../../lib/storage/index.js'
 
@@ -50,7 +50,7 @@ function attachFile(req: Request, res: Response, next: NextFunction) {
   })
 }
 
-router.post('/image', authenticate, attachFile, async (req, res, next) => {
+router.post('/image', authenticate, requireActiveUser, attachFile, async (req, res, next) => {
   if (!req.file) {
     return next(badRequest('未选择文件', 'NO_FILE'))
   }
