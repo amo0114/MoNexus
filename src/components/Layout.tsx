@@ -4,6 +4,7 @@ import { Moon, Sun, Coins, User, ShieldCheck, Store, Clock, XCircle, AlertTriang
 import { useState, useEffect } from 'react'
 import EmailVerificationBanner from './EmailVerificationBanner'
 import Logo from './ui/Logo'
+import ThemeToggle from './ThemeToggle'
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate()
@@ -90,7 +91,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             )}
             {user?.role === 'user' && user.merchant?.status === 'suspended' && (
               <div
-                className="hidden md:flex items-center gap-1.5 px-3 py-2 bg-red-500/10 text-red-500 rounded-full border border-red-500/20"
+                className="hidden md:flex items-center gap-1.5 px-3 py-2 bg-[var(--color-danger)]/10 text-[var(--color-danger)] rounded-full border border-[var(--color-danger)]/20"
                 title="商家账号已被停用，请联系平台"
               >
                 <AlertTriangle className="w-4 h-4" />
@@ -117,6 +118,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               </div>
             )}
 
+            <ThemeToggle />
             {/* Theme Toggle */}
             <button
               onClick={toggleTheme}

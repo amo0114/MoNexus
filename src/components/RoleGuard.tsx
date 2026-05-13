@@ -19,7 +19,7 @@ export default function RoleGuard({ children, allowedRoles, requireActiveMerchan
     return (
       <div className="flex flex-col items-center justify-center p-8 text-center">
         <h2 className="text-xl font-bold mb-2">访问被拒绝</h2>
-        <p className="text-gray-500">您没有权限访问此页面</p>
+        <p className="text-[var(--color-text-muted)]">您没有权限访问此页面</p>
       </div>
     )
   }

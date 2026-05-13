@@ -304,7 +304,7 @@ export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, pr
                         <button
                           type="button"
                           onClick={() => setForm({ ...form, imageUrl: '' })}
-                          className="text-xs text-[var(--color-text-muted)] hover:text-red-500 transition-colors cursor-pointer"
+                          className="text-xs text-[var(--color-text-muted)] hover:text-[var(--color-danger)] transition-colors cursor-pointer"
                         >
                           移除
                         </button>

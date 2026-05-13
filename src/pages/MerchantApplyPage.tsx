@@ -80,20 +80,20 @@ export default function MerchantApplyPage() {
     <div className="max-w-xl mx-auto mt-10">
       <h2 className="font-heading text-2xl font-bold mb-6 text-[var(--color-text)]">商家入驻申请</h2>
       {isRejected && (
-        <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 rounded-lg border border-red-200 dark:border-red-900/30 text-sm">
+        <div className="mb-6 p-4 bg-[var(--color-danger)]/10 text-[var(--color-danger)] rounded-lg border border-[var(--color-danger)]/30 text-sm">
           您的上次申请被拒绝，您可以重新提交申请。
         </div>
       )}
       <form onSubmit={handleSubmit} className="card flex flex-col gap-5">
         {error && (
-          <div className="text-red-600 dark:text-red-400 text-sm p-3 bg-red-50 dark:bg-red-900/10 rounded-lg border border-red-200 dark:border-red-900/20">
+          <div className="text-[var(--color-danger)] text-sm p-3 bg-[var(--color-danger)]/10 rounded-lg border border-[var(--color-danger)]/20">
             {error}
           </div>
         )}
 
         <div>
           <label className="block text-sm font-medium mb-1.5 text-[var(--color-text)]">
-            商家名称 <span className="text-red-500">*</span>
+            商家名称 <span className="text-[var(--color-danger)]">*</span>
           </label>
           <input
             type="text"

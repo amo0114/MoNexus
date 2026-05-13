@@ -153,7 +153,7 @@ export default function LoginPage() {
               <button
                 type="button"
                 onClick={() => { setEmail('admin@moyuan.net'); setPassword('admin123'); }}
-                className="px-2 py-2 text-xs font-medium rounded-lg bg-[var(--color-surface)] border border-[var(--color-border)] text-[var(--color-text-muted)] hover:text-red-500 hover:border-red-300 transition-colors cursor-pointer"
+                className="px-2 py-2 text-xs font-medium rounded-lg bg-[var(--color-surface)] border border-[var(--color-border)] text-[var(--color-text-muted)] hover:text-[var(--color-danger)] hover:border-[var(--color-danger)]/50 transition-colors cursor-pointer"
               >
                 管理员
               </button>

@@ -51,6 +51,27 @@
   --shadow-lg: 0 10px 15px rgba(15, 23, 42, 0.1);
   --shadow-xl: 0 20px 25px rgba(15, 23, 42, 0.12);
   --shadow-focus: 0 0 0 3px rgba(99, 102, 241, 0.22);
+
+  /* --- Radius tokens (multi-theme prep) --- */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-2xl: 20px;
+  --radius-pill: 9999px;
+
+  /* --- Font tokens --- */
+  --font-body: 'Exo 2', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-heading: 'Orbitron', 'Exo 2', sans-serif;
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+
+  /* --- Semantic state colors (multi-theme prep) --- */
+  --color-warning: #F59E0B;
+  --color-success: #22C55E;
+  --color-danger: #EF4444;
 }
 
 .dark {
@@ -82,6 +103,10 @@
   --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.4);
   --shadow-xl: 0 20px 25px rgba(0, 0, 0, 0.5);
   --shadow-focus: 0 0 0 3px rgba(129, 140, 248, 0.4);
+
+  --color-warning: #FBBF24;
+  --color-success: #4ADE80;
+  --color-danger: #F87171;
 }
 
 /* =========================================================
@@ -89,7 +114,7 @@
    ========================================================= */
 
 body {
-  font-family: 'Exo 2', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  font-family: var(--font-body);
   background-color: var(--color-background);
   color: var(--color-text);
   -webkit-font-smoothing: antialiased;
@@ -98,7 +123,7 @@ body {
 }
 
 h1, h2, h3, h4 {
-  font-family: 'Orbitron', 'Exo 2', sans-serif;
+  font-family: var(--font-heading);
   letter-spacing: 0.01em;
 }
 
@@ -188,7 +213,7 @@ h1, h2, h3, h4 {
   font-weight: 600;
   font-size: 0.875rem;
   padding: 12px 24px;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   transition: background-color 200ms ease, box-shadow 200ms ease;
   font-family: inherit;
 }
@@ -214,7 +239,7 @@ h1, h2, h3, h4 {
 .card {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   padding: var(--space-lg);
   box-shadow: var(--shadow-md);
   transition: border-color 200ms ease, box-shadow 200ms ease, transform 200ms ease;
@@ -235,7 +260,7 @@ h1, h2, h3, h4 {
   padding: 12px 16px;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   font-size: 16px;
   color: var(--color-text);
   font-family: inherit;
@@ -272,7 +297,7 @@ h1, h2, h3, h4 {
   background: var(--color-surface);
   color: var(--color-text);
   border: 1px solid var(--color-border);
-  border-radius: 16px;
+  border-radius: var(--radius-xl);
   padding: var(--space-xl);
   box-shadow: var(--shadow-xl);
   max-width: 500px;
@@ -298,3 +323,54 @@ h1, h2, h3, h4 {
 .admin-table tr:last-child td { border-bottom: none; }
 .admin-table tr:hover td { background-color: rgba(99, 102, 241, 0.06); }
 .dark .admin-table tr:hover td { background-color: rgba(129, 140, 248, 0.08); }
+
+/* =========================================================
+   Soft theme — warm yellow palette, rounded shapes, soft shadows
+   Inspired by warm-curative aesthetics (no IP likeness).
+   ========================================================= */
+:root[data-theme="soft"] {
+  --color-primary: #FF8C42;
+  --color-primary-hover: #E67333;
+  --color-secondary: #FFB088;
+  --color-cta: #6BBE6B;
+  --color-cta-hover: #5AAA5A;
+  --color-background: #FFF8EC;
+  --color-surface: #FFFEFB;
+  --color-text: #5D3A1F;
+  --color-text-muted: #A07050;
+  --color-border: #FFE4C4;
+
+  --color-image-placeholder: #FFF1DB;
+  --color-grid-dot: #FFE4C4;
+  --color-glass-bg: rgba(255, 248, 236, 0.85);
+  --color-glass-border: rgba(255, 140, 66, 0.18);
+
+  --color-warning: #F5A340;
+  --color-success: #6BBE6B;
+  --color-danger: #FF7B6B;
+
+  --shadow-sm: 0 1px 3px rgba(255, 140, 66, 0.08);
+  --shadow-md: 0 4px 12px rgba(255, 140, 66, 0.12);
+  --shadow-lg: 0 8px 24px rgba(255, 140, 66, 0.18);
+  --shadow-xl: 0 16px 40px rgba(255, 140, 66, 0.22);
+  --shadow-focus: 0 0 0 4px rgba(255, 140, 66, 0.25);
+
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 18px;
+  --radius-xl: 22px;
+  --radius-2xl: 28px;
+  --radius-pill: 9999px;
+
+  --font-body: 'Nunito', 'Hiragino Maru Gothic ProN', 'Microsoft YaHei UI', 'PingFang SC', system-ui, sans-serif;
+  --font-heading: 'Nunito', 'Hiragino Maru Gothic ProN', 'Microsoft YaHei UI', 'PingFang SC', system-ui, sans-serif;
+  --font-weight-normal: 500;
+  --font-weight-medium: 600;
+  --font-weight-semibold: 700;
+  --font-weight-bold: 800;
+}
+
+:root[data-theme="soft"] .star-filled {
+  color: #F5A340;
+  fill: #F5A340;
+}

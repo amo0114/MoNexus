@@ -52,8 +52,8 @@ export default function VerifyEmailPage() {
         )}
         {status === 'error' && (
           <>
-            <div className="w-16 h-16 rounded-full bg-red-500/10 flex items-center justify-center mx-auto mb-4">
-              <XCircle className="w-8 h-8 text-red-500" />
+            <div className="w-16 h-16 rounded-full bg-[var(--color-danger)]/10 flex items-center justify-center mx-auto mb-4">
+              <XCircle className="w-8 h-8 text-[var(--color-danger)]" />
             </div>
             <h2 className="font-heading text-2xl font-bold text-[var(--color-text)] mb-2">验证失败</h2>
             <p className="text-sm text-[var(--color-text-muted)] mb-6">{errorMsg}</p>

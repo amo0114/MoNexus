@@ -184,7 +184,7 @@ export default function ProductDetailPage() {
                   我的余额: <strong className="text-[var(--color-text)] text-sm">{userPoints} 积分</strong>
                 </span>
                 {isInsufficient && !isSoldOut && (
-                  <span className="text-red-600 font-bold bg-red-50 dark:bg-red-900/20 px-2 py-0.5 rounded border border-red-200 dark:border-red-900/30">
+                  <span className="text-[var(--color-danger)] font-bold bg-[var(--color-danger)]/10 px-2 py-0.5 rounded border border-[var(--color-danger)]/30">
                     余额不足
                   </span>
                 )}

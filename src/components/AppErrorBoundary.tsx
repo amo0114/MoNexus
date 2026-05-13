@@ -29,7 +29,7 @@ export class AppErrorBoundary extends Component<Props, State> {
       return (
         <div className="min-h-screen flex items-center justify-center bg-[var(--color-background)] p-4">
           <div className="card max-w-sm w-full text-center space-y-4">
-            <div className="w-12 h-12 bg-red-500/10 text-red-500 rounded-full flex items-center justify-center mx-auto mb-2">
+            <div className="w-12 h-12 bg-[var(--color-danger)]/10 text-[var(--color-danger)] rounded-full flex items-center justify-center mx-auto mb-2">
               <AlertTriangle className="w-6 h-6" />
             </div>
             <h2 className="font-heading text-xl font-bold text-[var(--color-text)]">出错了</h2>

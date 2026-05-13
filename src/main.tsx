@@ -4,6 +4,7 @@ import App from './App'
 import './index.css'
 import * as Sentry from '@sentry/react'
 import { AppErrorBoundary } from './components/AppErrorBoundary'
+import { ThemeProvider } from './lib/ThemeProvider'
 
 if (import.meta.env.VITE_SENTRY_DSN) {
   Sentry.init({
@@ -15,7 +16,9 @@ if (import.meta.env.VITE_SENTRY_DSN) {
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <AppErrorBoundary>
-      <App />
+      <ThemeProvider>
+        <App />
+      </ThemeProvider>
     </AppErrorBoundary>
   </React.StrictMode>,
 )

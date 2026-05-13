@@ -12,7 +12,7 @@ export default function Toast() {
           className={`toast-enter ${
             t.type === 'success'
               ? 'bg-[var(--color-text)] text-[var(--color-background)] border-[var(--color-border)]'
-              : 'bg-red-500 text-white border-red-400'
+              : 'bg-[var(--color-danger)] text-white border-[var(--color-danger)]'
           } px-5 py-3 rounded-lg shadow-xl flex items-center gap-2 font-semibold pointer-events-auto z-[90] relative text-sm border`}
         >
           {t.type === 'success' ? (
