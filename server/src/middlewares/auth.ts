@@ -42,6 +42,34 @@ export function requireAdmin(req: Request, _res: Response, next: NextFunction) {
   next()
 }
 
+export async function requireActiveUser(req: Request, _res: Response, next: NextFunction) {
+  if (!req.user) {
+    next(unauthenticated('未登录'))
+    return
+  }
+
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.userId },
+      select: { status: true },
+    })
+
+    if (!user) {
+      next(unauthenticated('未登录'))
+      return
+    }
+
+    if (user.status === '已封禁') {
+      next(forbidden('账号已被封禁'))
+      return
+    }
+
+    next()
+  } catch (err) {
+    next(err)
+  }
+}
+
 export async function requireMerchant(req: Request, _res: Response, next: NextFunction) {
   if (!req.user || req.user.role !== 'merchant') {
     next(forbidden('需要商家权限'))

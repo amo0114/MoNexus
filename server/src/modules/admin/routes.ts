@@ -1,5 +1,5 @@
 import { Router } from 'express'
-import { authenticate, requireAdmin } from '../../middlewares/auth.js'
+import { authenticate, requireActiveUser, requireAdmin } from '../../middlewares/auth.js'
 import { validate, idParamSchema } from '../../middlewares/validate.js'
 import {
   adjustPointsSchema, banUserSchema, createProductSchema, updateProductSchema,
@@ -12,7 +12,7 @@ import * as controller from './controller.js'
 
 const router = Router()
 
-router.use(authenticate, requireAdmin)
+router.use(authenticate, requireActiveUser, requireAdmin)
 
 router.get('/stats', controller.stats)
 router.get('/config', controller.listConfig)

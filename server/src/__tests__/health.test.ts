@@ -32,4 +32,19 @@ describe('GET /api/health', () => {
       spy.mockRestore()
     }
   })
+
+  it('should not get rate limited', async () => {
+    const spy = vi
+      .spyOn(prisma, '$queryRaw')
+      .mockResolvedValue([])
+
+    try {
+      for (let i = 0; i < 305; i++) {
+        const res = await api.get('/api/health')
+        expect(res.status).toBe(200)
+      }
+    } finally {
+      spy.mockRestore()
+    }
+  })
 })

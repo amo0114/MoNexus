@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import rateLimit from 'express-rate-limit'
 import { validate } from '../../middlewares/validate.js'
-import { authenticate } from '../../middlewares/auth.js'
+import { authenticate, requireActiveUser } from '../../middlewares/auth.js'
 import { config } from '../../config/index.js'
 import {
   registerSchema,
@@ -53,12 +53,12 @@ router.post('/register', authLimiter, validate(registerSchema), controller.regis
 router.post('/login', authLimiter, validate(loginSchema), controller.login)
 router.post('/refresh', authLimiter, controller.refresh)
 router.post('/logout', controller.logout)
-router.get('/me', authenticate, controller.me)
-router.post('/password-change', authLimiter, authenticate, validate(passwordChangeSchema), controller.changePassword)
+router.get('/me', authenticate, requireActiveUser, controller.me)
+router.post('/password-change', authLimiter, authenticate, requireActiveUser, validate(passwordChangeSchema), controller.changePassword)
 
 router.post('/forgot-password', mailLimiter, validate(forgotPasswordSchema), controller.forgotPassword)
 router.post('/reset-password', authLimiter, validate(resetPasswordSchema), controller.resetPassword)
-router.post('/send-verification', mailLimiter, authenticate, controller.sendVerification)
+router.post('/send-verification', mailLimiter, authenticate, requireActiveUser, controller.sendVerification)
 router.get('/verify-email', validate({ query: verifyEmailQuerySchema }), controller.verifyEmail)
 
 export { router as authRoutes }

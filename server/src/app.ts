@@ -40,15 +40,6 @@ app.use(cors({
 }))
 app.use(cookieParser())
 app.use(express.json({ limit: '1mb' }))
-app.use('/api', apiLimiter)
-
-app.use('/api/auth', authRoutes)
-app.use('/api/products', productRoutes)
-app.use('/api/points', pointRoutes)
-app.use('/api/orders', orderRoutes)
-app.use('/api/admin', adminRoutes)
-app.use('/api/merchant', merchantRoutes)
-app.use('/api/uploads', uploadsRoutes)
 
 app.get('/api/health', async (_req, res) => {
   const time = new Date().toISOString()
@@ -60,6 +51,16 @@ app.get('/api/health', async (_req, res) => {
     res.status(503).json({ status: 'fail', db: 'fail', time })
   }
 })
+
+app.use('/api', apiLimiter)
+
+app.use('/api/auth', authRoutes)
+app.use('/api/products', productRoutes)
+app.use('/api/points', pointRoutes)
+app.use('/api/orders', orderRoutes)
+app.use('/api/admin', adminRoutes)
+app.use('/api/merchant', merchantRoutes)
+app.use('/api/uploads', uploadsRoutes)
 
 app.use(errorHandler)
 
