@@ -89,7 +89,7 @@ export default function OrderDetailModal({ order, onClose }: OrderDetailModalPro
                 {order.delivery?.status === 'delivered' ? (
                   <span className="text-[var(--color-cta)] font-bold">发货成功</span>
                 ) : (
-                  <span className="text-orange-500 font-bold">待发货</span>
+                  <span className="text-[var(--color-warning)] font-bold">待发货</span>
                 )}
               </div>
             </div>

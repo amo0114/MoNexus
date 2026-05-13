@@ -68,7 +68,7 @@ function PasswordChangeCard() {
       </div>
       <form onSubmit={handleSubmit} className="flex flex-col gap-3 mt-2 border-t border-[var(--color-border)] pt-4">
         {errorMsg && (
-          <div className="text-red-500 text-sm font-medium bg-red-500/10 px-3 py-2 rounded-lg">
+          <div className="text-[var(--color-danger)] text-sm font-medium bg-[var(--color-danger)]/10 px-3 py-2 rounded-lg">
             {errorMsg}
           </div>
         )}
@@ -308,7 +308,7 @@ export default function ProfilePage() {
                               发货成功
                             </span>
                           ) : (
-                            <span className="px-1.5 py-0.5 bg-orange-500/10 text-orange-500 border border-orange-500/25 text-[10px] font-bold rounded">
+                            <span className="px-1.5 py-0.5 bg-[var(--color-warning)]/10 text-[var(--color-warning)] border border-[var(--color-warning)]/25 text-[10px] font-bold rounded">
                               待发货
                             </span>
                           )}
@@ -398,7 +398,7 @@ export default function ProfilePage() {
       <div className="pt-2 flex justify-center">
         <button
           onClick={handleLogout}
-          className="cursor-pointer text-[var(--color-text-muted)] font-medium hover:text-red-500 flex items-center gap-1.5 px-4 py-2 rounded-lg hover:bg-red-500/10 transition-colors text-sm"
+          className="cursor-pointer text-[var(--color-text-muted)] font-medium hover:text-[var(--color-danger)] flex items-center gap-1.5 px-4 py-2 rounded-lg hover:bg-[var(--color-danger)]/10 transition-colors text-sm"
         >
           <LogOut className="w-4 h-4" /> 退出当前账号
         </button>

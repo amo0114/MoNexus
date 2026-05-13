@@ -526,7 +526,7 @@ export default function AdminPage() {
                                 setBanReason('')
                                 setShowBan(true)
                               }}
-                              className="text-red-500 hover:bg-red-500/10 font-semibold text-xs px-3 py-1.5 rounded-lg transition-colors border border-red-500/25 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                              className="text-[var(--color-danger)] hover:bg-[var(--color-danger)]/10 font-semibold text-xs px-3 py-1.5 rounded-lg transition-colors border border-[var(--color-danger)]/25 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                               封禁
                             </button>
@@ -863,7 +863,7 @@ export default function AdminPage() {
                   className="input"
                 />
               </div>
-              <button onClick={confirmBan} className="btn-primary w-full mt-2 bg-red-500 hover:bg-red-600 border-red-500 text-white shadow-md">
+              <button onClick={confirmBan} className="btn-primary w-full mt-2 bg-[var(--color-danger)] hover:opacity-90 border-[var(--color-danger)] text-white shadow-md">
                 确认封禁
               </button>
             </div>
@@ -1050,7 +1050,7 @@ function ActionLink({
 }) {
   const colors = {
     cta: 'text-[var(--color-cta)]',
-    danger: 'text-red-500',
+    danger: 'text-[var(--color-danger)]',
     primary: 'text-[var(--color-primary)]',
   }
   return (
@@ -1058,6 +1058,12 @@ function ActionLink({
       type="button"
       onClick={onClick}
       className={`${colors[tone]} hover:underline text-xs font-semibold cursor-pointer`}
+    >
+      {children}
+    </button>
+  )
+}
+underline text-xs font-semibold cursor-pointer`}
     >
       {children}
     </button>

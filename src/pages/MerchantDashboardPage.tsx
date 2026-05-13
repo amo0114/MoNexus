@@ -407,7 +407,7 @@ function StatusPill({ kind }: { kind: 'active' | 'inactive' | 'settled' | 'pendi
     active:   { bg: 'bg-[var(--color-cta)]/10',          text: 'text-[var(--color-cta)]',          border: 'border-[var(--color-cta)]/25',          label: '上架中' },
     inactive: { bg: 'bg-[var(--color-text-muted)]/10',   text: 'text-[var(--color-text-muted)]',   border: 'border-[var(--color-text-muted)]/25',   label: '已下架' },
     settled:  { bg: 'bg-[var(--color-cta)]/10',          text: 'text-[var(--color-cta)]',          border: 'border-[var(--color-cta)]/25',          label: '已结算' },
-    pending:  { bg: 'bg-orange-500/10',                  text: 'text-orange-500',                  border: 'border-orange-500/25',                  label: '待结算' },
+    pending:  { bg: 'bg-[var(--color-warning)]/10',                  text: 'text-[var(--color-warning)]',                  border: 'border-[var(--color-warning)]/25',                  label: '待结算' },
   }
   const s = styles[kind]
   return (

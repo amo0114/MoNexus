@@ -16,8 +16,19 @@ export default {
         },
       },
       fontFamily: {
-        heading: ['Orbitron', 'sans-serif'],
-        body: ['"Exo 2"', 'sans-serif'],
+        heading: ['var(--font-heading)'],
+        body: ['var(--font-body)'],
+        sans: ['var(--font-body)'],
+      },
+      borderRadius: {
+        sm: 'var(--radius-sm)',
+        DEFAULT: 'var(--radius-md)',
+        md: 'var(--radius-md)',
+        lg: 'var(--radius-lg)',
+        xl: 'var(--radius-xl)',
+        '2xl': 'var(--radius-2xl)',
+        '3xl': 'var(--radius-2xl)',
+        full: 'var(--radius-pill)',
       },
       boxShadow: {
         sm: '0 1px 2px rgba(0, 0, 0, 0.05)',

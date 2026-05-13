@@ -90,7 +90,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             )}
             {user?.role === 'user' && user.merchant?.status === 'suspended' && (
               <div
-                className="hidden md:flex items-center gap-1.5 px-3 py-2 bg-red-500/10 text-red-500 rounded-full border border-red-500/20"
+                className="hidden md:flex items-center gap-1.5 px-3 py-2 bg-[var(--color-danger)]/10 text-[var(--color-danger)] rounded-full border border-[var(--color-danger)]/20"
                 title="商家账号已被停用，请联系平台"
               >
                 <AlertTriangle className="w-4 h-4" />
