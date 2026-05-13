@@ -263,7 +263,9 @@ h1, h2, h3, h4 {
   background: rgba(0, 0, 0, 0.55);
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
-  z-index: 50;
+  /* No z-index here: the overlay must NOT layer above its sibling .modal
+     content inside the parent stacking context. DOM order (overlay first,
+     content second) plus modal's own z-index handles stacking correctly. */
 }
 
 .modal {
