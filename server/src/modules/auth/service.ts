@@ -6,7 +6,7 @@ import { config } from '../../config/index.js'
 import { prisma } from '../../lib/prisma.js'
 import { badRequest, conflict, notFound, unauthenticated } from '../../lib/httpError.js'
 import { getMailer } from '../../lib/mailer/index.js'
-import { getSystemConfigValue } from '../../lib/systemConfig.js'
+import { getRefreshTokenMaxAgeMs, getSystemConfigValue } from '../../lib/systemConfig.js'
 
 function generateAccessToken(userId: number, role: string) {
   return jwt.sign({ userId, role }, config.jwtSecret, { expiresIn: config.jwtExpiresIn })
@@ -33,16 +33,17 @@ function buildAuthUser(user: { id: number; email: string; role: string; inviteCo
 
 async function createStoredRefreshToken(userId: number, ip?: string, userAgent?: string) {
   const refreshToken = generateRefreshToken()
+  const maxAgeMs = await getRefreshTokenMaxAgeMs()
   await prisma.refreshToken.create({
     data: {
       userId,
       tokenHash: hashRefreshToken(refreshToken),
-      expiresAt: new Date(Date.now() + config.refreshTokenMaxAgeMs),
+      expiresAt: new Date(Date.now() + maxAgeMs),
       ip,
       userAgent,
     },
   })
-  return refreshToken
+  return { refreshToken, maxAgeMs }
 }
 
 export async function registerUser(email: string, password: string, inviteCode?: string, ip?: string, userAgent?: string) {
@@ -103,12 +104,13 @@ export async function registerUser(email: string, password: string, inviteCode?:
     return { user: newUser, registerReward }
   })
 
-  const refreshToken = await createStoredRefreshToken(result.user.id, ip, userAgent)
+  const { refreshToken, maxAgeMs } = await createStoredRefreshToken(result.user.id, ip, userAgent)
   const accessToken = generateAccessToken(result.user.id, result.user.role)
 
   return {
     accessToken,
     refreshToken,
+    refreshTokenMaxAgeMs: maxAgeMs,
     user: buildAuthUser(result.user, result.registerReward),
   }
 }
@@ -124,12 +126,13 @@ export async function loginUser(email: string, password: string, ip?: string, us
   const valid = await bcrypt.compare(password, user.password)
   if (!valid) throw unauthenticated('邮箱或密码错误')
 
-  const refreshToken = await createStoredRefreshToken(user.id, ip, userAgent)
+  const { refreshToken, maxAgeMs } = await createStoredRefreshToken(user.id, ip, userAgent)
   const accessToken = generateAccessToken(user.id, user.role)
 
   return {
     accessToken,
     refreshToken,
+    refreshTokenMaxAgeMs: maxAgeMs,
     user: buildAuthUser(user, user.pointAccount?.balance ?? 0),
   }
 }
@@ -163,10 +166,10 @@ export async function refreshAccessToken(rawRefreshToken: string, ip?: string, u
 
   // Rotate: revoke the old token, issue a new one
   await prisma.refreshToken.update({ where: { id: storedToken.id }, data: { revoked: true } })
-  const refreshToken = await createStoredRefreshToken(storedToken.userId, ip, userAgent)
+  const { refreshToken, maxAgeMs } = await createStoredRefreshToken(storedToken.userId, ip, userAgent)
   const accessToken = generateAccessToken(storedToken.userId, storedToken.user.role)
 
-  return { accessToken, refreshToken }
+  return { accessToken, refreshToken, refreshTokenMaxAgeMs: maxAgeMs }
 }
 
 export async function revokeRefreshToken(rawRefreshToken: string) {

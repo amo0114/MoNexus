@@ -5,9 +5,9 @@ export interface SmtpConfig {
   host: string
   port: number
   secure: boolean
-  user: string
-  pass: string
-  from: string
+  user?: string
+  pass?: string
+  from?: string
 }
 
 export class SmtpMailer implements Mailer {
@@ -18,7 +18,7 @@ export class SmtpMailer implements Mailer {
       host: cfg.host,
       port: cfg.port,
       secure: cfg.secure,
-      auth: { user: cfg.user, pass: cfg.pass },
+      ...(cfg.user && cfg.pass ? { auth: { user: cfg.user, pass: cfg.pass } } : {}),
     })
   }
 

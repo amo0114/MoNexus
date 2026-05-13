@@ -8,11 +8,13 @@ const refreshTokenCookieOptions = {
   secure: config.cookieSecure,
   sameSite: 'lax' as const,
   path: '/api/auth',
-  maxAge: config.refreshTokenMaxAgeMs,
 }
 
-export function setRefreshTokenCookie(res: Response, refreshToken: string) {
-  res.cookie(refreshTokenCookieName, refreshToken, refreshTokenCookieOptions)
+export function setRefreshTokenCookie(res: Response, refreshToken: string, maxAgeMs: number) {
+  res.cookie(refreshTokenCookieName, refreshToken, {
+    ...refreshTokenCookieOptions,
+    maxAge: maxAgeMs,
+  })
 }
 
 export function clearRefreshTokenCookie(res: Response) {

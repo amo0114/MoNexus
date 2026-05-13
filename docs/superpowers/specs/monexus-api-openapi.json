@@ -2,8 +2,8 @@
   "openapi": "3.0.3",
   "info": {
     "title": "MoNexus API",
-    "version": "1.1.0",
-    "description": "MoNexus 内部积分制数字商品市场 API。三种角色：user / merchant / admin。无任何法币 / 充值 / 提现。1.1.0 同步 M2 GA：health 含 db 字段、登录密码修改、用户封禁 / 解封、平台系统配置。"
+    "version": "1.2.0",
+    "description": "MoNexus 内部积分制数字商品市场 API。三种角色：user / merchant / admin。无任何法币 / 充值 / 提现。1.1.0 同步 M2 GA：health 含 db 字段、登录密码修改、用户封禁 / 解封、平台系统配置。1.2.0 同步 M3：新增 `GET /api/admin/audit`（操作员可读的 AdminLog 列表，支持分页与过滤），并标注 `refreshTokenMaxAgeDays` 现已对新签发的 refresh token 实际生效。"
   },
   "servers": [
     { "url": "http://localhost:3000", "description": "本地开发，所有业务路径带 /api 前缀" }
@@ -372,6 +372,30 @@
               "email": { "type": "string", "format": "email" }
             }
           }
+        }
+      },
+      "AdminLogEntry": {
+        "type": "object",
+        "required": ["id", "adminId", "adminEmail", "action", "createdAt"],
+        "properties": {
+          "id": { "type": "integer" },
+          "adminId": { "type": "integer", "description": "执行该动作的管理员 User.id" },
+          "adminEmail": { "type": "string", "format": "email", "description": "执行该动作的管理员邮箱（用于前端展示，避免再发一次 user 详情请求）" },
+          "action": { "type": "string", "description": "管理员动作枚举字符串，例如 `ban` / `unban` / `point_adjust` / `config_update` / `merchant_approve` / `merchant_reject` / `merchant_suspend` / `settlement_batch_settle`。" },
+          "targetType": { "type": "string", "nullable": true, "description": "动作的对象类型，例如 `user` / `merchant` / `settlement` / `config`。" },
+          "targetId": { "type": "integer", "nullable": true, "description": "对象的整型主键；对全局动作（如批量结算）可为 null。" },
+          "metadata": { "type": "object", "nullable": true, "additionalProperties": true, "description": "原 `AdminLog.detail`，按 action 不同结构不同（例如 ban 携带 reason；config_update 携带 key/value）。" },
+          "createdAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "AdminLogList": {
+        "type": "object",
+        "required": ["items", "total", "page", "pageSize"],
+        "properties": {
+          "items": { "type": "array", "items": { "$ref": "#/components/schemas/AdminLogEntry" } },
+          "total": { "type": "integer", "minimum": 0, "description": "命中过滤条件的总条目数（不受分页限制）" },
+          "page": { "type": "integer", "minimum": 1 },
+          "pageSize": { "type": "integer", "minimum": 1 }
         }
       },
       "Merchant": {
@@ -1036,7 +1060,7 @@
       "put": {
         "tags": ["Admin Config"],
         "summary": "更新单个系统配置项",
-        "description": "key 必须是已知配置项之一；value 为非负整数。事务内 upsert `SystemConfig` 行并写 `AdminLog`。新值在下一次读取（`getSystemConfigValue`）时立即生效。",
+        "description": "key 必须是已知配置项之一；value 为非负整数。事务内 upsert `SystemConfig` 行并写 `AdminLog`。新值在下一次读取（`getSystemConfigValue`）时立即生效。\n\nM3 备注：`refreshTokenMaxAgeDays` 现已真正生效——下一次签发 refresh token（登录 / refresh / 注册 / 邮箱验证后自动登录等路径）时会读取最新值，落到 DB `expiresAt` 和 Set-Cookie `Max-Age`。但**已签发**仍在有效期内的 token 保留原始过期时间，不会被回溯缩短；如需即刻强制下线，请使用 ban / unban，或让用户改密（这两条路径都会显式撤销该用户的全部 refresh token）。",
         "security": [{ "bearerAuth": [] }],
         "parameters": [
           { "name": "key", "in": "path", "required": true, "schema": { "$ref": "#/components/schemas/SystemConfigKey" } }
@@ -1141,11 +1165,36 @@
         }
       }
     },
+    "/api/admin/audit": {
+      "get": {
+        "tags": ["Admin Audit"],
+        "summary": "操作员审计日志列表（AdminLog，分页 + 过滤）",
+        "description": "返回 `AdminLog` —— 所有管理员写操作（封禁/解封、积分调整、系统配置变更、商家审核/停用/佣金、批量结算等）的持久化记录，按时间倒序、可分页、可按 adminId / action / 日期区间过滤。M3 新增，填补 M2 已知 doc gap：之前 `AdminLog` 仅写不读。\n\n查询 schema 为 `.strict()`：未知 query 参数会触发 400。`fromDate` / `toDate` 为 `YYYY-MM-DD`，服务端把 `toDate` 解释成「当日 23:59:59.999」以保证闭区间含当日记录。`metadata` 字段反映原 `AdminLog.detail`，结构按 action 而异，详见 `AdminLogEntry`。",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "page", "in": "query", "schema": { "type": "integer", "minimum": 1, "default": 1 } },
+          { "name": "pageSize", "in": "query", "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 20 } },
+          { "name": "adminId", "in": "query", "schema": { "type": "integer", "minimum": 1 }, "description": "精确过滤指定管理员 User.id 的操作记录" },
+          { "name": "action", "in": "query", "schema": { "type": "string", "minLength": 1 }, "description": "对 `AdminLog.action` 做精确匹配（不是模糊匹配），例如 `ban` / `config_update`" },
+          { "name": "fromDate", "in": "query", "schema": { "type": "string", "format": "date" }, "description": "起始日期（含），格式 `YYYY-MM-DD`" },
+          { "name": "toDate", "in": "query", "schema": { "type": "string", "format": "date" }, "description": "结束日期（含），格式 `YYYY-MM-DD`" }
+        ],
+        "responses": {
+          "200": {
+            "description": "命中条目分页结果",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AdminLogList" } } }
+          },
+          "400": { "$ref": "#/components/responses/ValidationError" },
+          "401": { "$ref": "#/components/responses/Unauthenticated" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
     "/api/admin/logs": {
       "get": {
         "tags": ["Admin Audit"],
         "summary": "最近积分变动（PointLog，按时间倒序取 100 条）",
-        "description": "注意：当前实现返回的是 `PointLog`（用户积分变动），不是 `AdminLog`。`AdminLog` 由所有 admin 写操作持久化，但暂无独立读 API。未来计划见 `server/src/modules/admin/README.md`。",
+        "description": "返回 `PointLog`（用户积分变动流水），**不是** `AdminLog`。前端在 M3 中已重命名展示为「积分流水」。如需读取管理员写操作审计，使用 `GET /api/admin/audit`（M3 新增，分页 + 过滤）。",
         "security": [{ "bearerAuth": [] }],
         "responses": {
           "200": { "description": "PointLog 数组（最近 100 条）", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/PointLogEntry" } } } } }

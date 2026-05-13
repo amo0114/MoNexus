@@ -5,7 +5,9 @@ import {
   listSystemConfigs,
   updateSystemConfig as saveSystemConfig,
 } from '../../lib/systemConfig.js'
+import { invalidate as invalidateUserStatusCache } from '../../lib/userStatusCache.js'
 import { revokeAllUserRefreshTokens } from '../auth/service.js'
+import type { ListAdminAuditQuery } from './schema.js'
 
 function getShanghaiDayRange() {
   const now = new Date()
@@ -110,7 +112,7 @@ export async function adjustUserPoints(
 }
 
 export async function banUser(adminUserId: number, targetUserId: number, reason: string) {
-  return prisma.$transaction(async tx => {
+  const updated = await prisma.$transaction(async tx => {
     const target = await tx.user.findUnique({
       where: { id: targetUserId },
       select: { id: true, email: true, role: true, status: true },
@@ -139,10 +141,13 @@ export async function banUser(adminUserId: number, targetUserId: number, reason:
 
     return updated
   })
+
+  invalidateUserStatusCache(targetUserId)
+  return updated
 }
 
 export async function unbanUser(adminUserId: number, targetUserId: number) {
-  return prisma.$transaction(async tx => {
+  const updated = await prisma.$transaction(async tx => {
     const target = await tx.user.findUnique({
       where: { id: targetUserId },
       select: { id: true, email: true, role: true, status: true },
@@ -167,6 +172,9 @@ export async function unbanUser(adminUserId: number, targetUserId: number) {
 
     return updated
   })
+
+  invalidateUserStatusCache(targetUserId)
+  return updated
 }
 
 export async function listSystemConfig() {
@@ -238,6 +246,52 @@ export async function listLogs() {
     orderBy: { createdAt: 'desc' },
     take: 100,
   })
+}
+
+function toDateEndOfDay(date: string) {
+  const end = new Date(date)
+  end.setUTCHours(23, 59, 59, 999)
+  return end
+}
+
+export async function listAdminLogs(query: ListAdminAuditQuery) {
+  const where: Prisma.AdminLogWhereInput = {}
+
+  if (query.adminId) where.adminUserId = query.adminId
+  if (query.action) where.action = query.action
+  if (query.fromDate || query.toDate) {
+    where.createdAt = {
+      ...(query.fromDate ? { gte: new Date(query.fromDate) } : {}),
+      ...(query.toDate ? { lte: toDateEndOfDay(query.toDate) } : {}),
+    }
+  }
+
+  const [items, total] = await prisma.$transaction([
+    prisma.adminLog.findMany({
+      where,
+      include: { admin: { select: { email: true } } },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      skip: (query.page - 1) * query.pageSize,
+      take: query.pageSize,
+    }),
+    prisma.adminLog.count({ where }),
+  ])
+
+  return {
+    items: items.map(log => ({
+      id: log.id,
+      adminId: log.adminUserId,
+      adminEmail: log.admin.email,
+      action: log.action,
+      targetType: log.targetType,
+      targetId: log.targetId,
+      metadata: log.detail ? { detail: log.detail } : null,
+      createdAt: log.createdAt,
+    })),
+    total,
+    page: query.page,
+    pageSize: query.pageSize,
+  }
 }
 
 export async function getOrderDetail(orderId: number) {

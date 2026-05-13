@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express'
 import * as adminService from './service.js'
+import type { ListAdminAuditQuery } from './schema.js'
 
 export async function stats(_req: Request, res: Response, next: NextFunction) {
   try { res.json(await adminService.getStats()) } catch (err) { next(err) }
@@ -82,6 +83,12 @@ export async function orderDetail(req: Request, res: Response, next: NextFunctio
 
 export async function logs(_req: Request, res: Response, next: NextFunction) {
   try { res.json(await adminService.listLogs()) } catch (err) { next(err) }
+}
+
+export async function audit(req: Request, res: Response, next: NextFunction) {
+  try {
+    res.json(await adminService.listAdminLogs(req.query as unknown as ListAdminAuditQuery))
+  } catch (err) { next(err) }
 }
 
 export async function products(_req: Request, res: Response, next: NextFunction) {

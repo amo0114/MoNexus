@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken'
 import { config } from '../config/index.js'
 import { forbidden, unauthenticated } from '../lib/httpError.js'
 import { prisma } from '../lib/prisma.js'
+import { getCached, setCached } from '../lib/userStatusCache.js'
 
 export interface AuthPayload {
   userId: number
@@ -49,17 +50,30 @@ export async function requireActiveUser(req: Request, _res: Response, next: Next
   }
 
   try {
-    const user = await prisma.user.findUnique({
-      where: { id: req.user.userId },
-      select: { status: true },
-    })
+    const userId = req.user.userId
+    // Admin routes are low volume and privilege-sensitive; always read
+    // their current status before authorization.
+    const shouldUseCache = req.user.role !== 'admin'
+    let status = shouldUseCache ? getCached(userId) : undefined
 
-    if (!user) {
-      next(unauthenticated('未登录'))
-      return
+    if (!status) {
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { status: true },
+      })
+
+      if (!user) {
+        next(unauthenticated('未登录'))
+        return
+      }
+
+      status = user.status
+      if (shouldUseCache) {
+        setCached(userId, status)
+      }
     }
 
-    if (user.status === '已封禁') {
+    if (status === '已封禁') {
       next(forbidden('账号已被封禁'))
       return
     }

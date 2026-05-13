@@ -10,7 +10,7 @@ export async function register(req: Request, res: Response, next: NextFunction) 
       email, password, inviteCode,
       req.ip, req.headers['user-agent']
     )
-    setRefreshTokenCookie(res, result.refreshToken)
+    setRefreshTokenCookie(res, result.refreshToken, result.refreshTokenMaxAgeMs)
     res.status(201).json({ user: result.user, accessToken: result.accessToken })
   } catch (err) {
     next(err)
@@ -24,7 +24,7 @@ export async function login(req: Request, res: Response, next: NextFunction) {
       email, password,
       req.ip, req.headers['user-agent']
     )
-    setRefreshTokenCookie(res, result.refreshToken)
+    setRefreshTokenCookie(res, result.refreshToken, result.refreshTokenMaxAgeMs)
     res.json({ user: result.user, accessToken: result.accessToken })
   } catch (err) {
     next(err)
@@ -41,7 +41,7 @@ export async function refresh(req: Request, res: Response, next: NextFunction) {
       req.ip,
       req.headers['user-agent']
     )
-    setRefreshTokenCookie(res, result.refreshToken)
+    setRefreshTokenCookie(res, result.refreshToken, result.refreshTokenMaxAgeMs)
     res.json({ accessToken: result.accessToken })
   } catch (err) {
     next(err)

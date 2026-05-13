@@ -1,5 +1,4 @@
 import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3'
-import type { Readable } from 'stream'
 import { StorageAdapter, PutOptions, PutResult, hashKey } from './types.js'
 
 export interface S3StorageConfig {
@@ -56,12 +55,8 @@ export class S3StorageAdapter implements StorageAdapter {
         new GetObjectCommand({ Bucket: this.cfg.bucket, Key: key })
       )
       if (!res.Body) return null
-      const chunks: Buffer[] = []
-      for await (const chunk of res.Body as Readable) {
-        chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : Buffer.from(chunk))
-      }
       return {
-        buffer: Buffer.concat(chunks),
+        buffer: await bodyToBuffer(res.Body),
         mimeType: res.ContentType ?? 'application/octet-stream',
       }
     } catch (err: unknown) {
@@ -72,4 +67,17 @@ export class S3StorageAdapter implements StorageAdapter {
       throw err
     }
   }
+}
+
+async function bodyToBuffer(body: unknown): Promise<Buffer> {
+  const maybeByteArrayBody = body as { transformToByteArray?: () => Promise<Uint8Array> }
+  if (typeof maybeByteArrayBody.transformToByteArray === 'function') {
+    return Buffer.from(await maybeByteArrayBody.transformToByteArray())
+  }
+
+  const chunks: Buffer[] = []
+  for await (const chunk of body as AsyncIterable<Buffer | Uint8Array | string>) {
+    chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : Buffer.from(chunk))
+  }
+  return Buffer.concat(chunks)
 }

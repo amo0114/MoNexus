@@ -27,6 +27,7 @@ const envSchema = z.object({
   JWT_SECRET: z.string().min(32, 'JWT_SECRET must be at least 32 characters'),
   FRONTEND_ORIGIN: z.string().url(),
   COOKIE_SECURE: booleanEnvSchema.default(false),
+  USER_STATUS_CACHE_TTL_SEC: z.coerce.number().int().min(0).default(60),
 
   // --- Object storage (P0-C). All optional: when any are missing the
   // server falls back to an in-memory adapter that's only safe for dev
@@ -91,13 +92,13 @@ if (env.NODE_ENV === 'production' && !hasAllStorageVars) {
   process.exit(1)
 }
 
-// Mailer: in production all four SMTP basics must be set so password
-// reset emails actually leave the box. In dev/test we use a
-// console-logging fallback that prints the message body to stdout.
-const hasSmtp = !!env.SMTP_HOST && !!env.SMTP_USER && !!env.SMTP_PASS && !!env.SMTP_FROM
-if (env.NODE_ENV === 'production' && !hasSmtp) {
+// Mailer: SMTP_HOST opts into real delivery. Without it, dev/test and
+// intentionally-unconfigured environments use the console fallback.
+const hasSmtp = !!env.SMTP_HOST
+const smtpFrom = env.SMTP_FROM ?? env.SMTP_USER
+if (env.NODE_ENV === 'production' && hasSmtp && !smtpFrom) {
   console.error(
-    '[Config] SMTP_HOST, SMTP_USER, SMTP_PASS, and SMTP_FROM are all required in production'
+    '[Config] SMTP_FROM or SMTP_USER is required when SMTP_HOST is set in production'
   )
   process.exit(1)
 }
@@ -110,6 +111,7 @@ export const config = {
   jwtSecret: env.JWT_SECRET,
   frontendOrigin: env.FRONTEND_ORIGIN,
   cookieSecure: env.COOKIE_SECURE,
+  userStatusCacheTtlSec: env.USER_STATUS_CACHE_TTL_SEC,
   jwtExpiresIn: '15m' as const,
   refreshTokenMaxAgeMs: 7 * 24 * 60 * 60 * 1000,
   checkinReward: 50,
@@ -133,9 +135,9 @@ export const config = {
         host: env.SMTP_HOST!,
         port: env.SMTP_PORT,
         secure: env.SMTP_SECURE,
-        user: env.SMTP_USER!,
-        pass: env.SMTP_PASS!,
-        from: env.SMTP_FROM!,
+        user: env.SMTP_USER,
+        pass: env.SMTP_PASS,
+        from: smtpFrom,
       }
     : ({ kind: 'console' as const }),
   appBaseUrl: env.APP_BASE_URL ?? env.FRONTEND_ORIGIN,
