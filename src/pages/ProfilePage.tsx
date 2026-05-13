@@ -10,6 +10,7 @@ import { changePassword } from '../api/auth'
 import { UserOrderListItem, UserOrderDetail } from '../types/order'
 import OrderDetailModal from '../components/OrderDetailModal'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/ui/Tabs'
+import CoinIcon from '../components/ui/CoinIcon'
 
 function PasswordChangeCard() {
   const navigate = useNavigate()
@@ -188,8 +189,8 @@ export default function ProfilePage() {
               'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-hover) 100%)',
           }}
         >
-          <div className="absolute -right-6 -bottom-6 opacity-15">
-            <Coins className="w-48 h-48" />
+          <div className="absolute -right-10 -bottom-10 opacity-25 pointer-events-none">
+            <CoinIcon className="w-56 h-56" />
           </div>
           <div className="relative z-10">
             <p className="text-white/85 font-medium mb-1 text-sm flex items-center gap-1.5">
@@ -280,7 +281,7 @@ export default function ProfilePage() {
       <div className="card !p-4 sm:!p-6">
         <Tabs
           value={activeTab}
-          onValueChange={(v) => setActiveTab(v as 'orders' | 'history')}
+          onValueChange={(v: string) => setActiveTab(v as 'orders' | 'history')}
           className="w-full"
         >
           <TabsList className="mb-1">
