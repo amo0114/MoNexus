@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react'
-import { LayoutDashboard, UsersRound, Package, ShoppingCart, Activity, Users, ShoppingBag, Coins, X, Store, DollarSign, Settings } from 'lucide-react'
+import { LayoutDashboard, UsersRound, Package, ShoppingCart, Activity, Users, ShoppingBag, Coins, X, Store, DollarSign, Settings, ClipboardList } from 'lucide-react'
 import api from '../api/client'
 import { getApiErrorMessage } from '../api/error'
 import { useAppStore } from '../stores/appStore'
 import { useAuthStore } from '../stores/authStore'
+import { listAdminAudit, AdminLogEntry } from '../api/adminAudit'
 import {
   getAdminMerchants,
   approveMerchant,
@@ -17,7 +18,7 @@ import { Merchant, Settlement } from '../types/merchant'
 import { getAdminConfig, updateAdminConfig, AdminSystemConfig } from '../api/adminConfig'
 import { banUser, unbanUser } from '../api/admin'
 
-type AdminTab = 'dashboard' | 'users' | 'products' | 'orders' | 'logs' | 'merchants' | 'settlements' | 'config'
+type AdminTab = 'dashboard' | 'users' | 'products' | 'orders' | 'logs' | 'audit' | 'merchants' | 'settlements' | 'config'
 
 const NAV_ITEMS: { id: AdminTab; label: string; icon: any }[] = [
   { id: 'dashboard', label: '数据仪表盘', icon: LayoutDashboard },
@@ -26,7 +27,8 @@ const NAV_ITEMS: { id: AdminTab; label: string; icon: any }[] = [
   { id: 'users', label: '用户管理', icon: UsersRound },
   { id: 'products', label: '商品与库存', icon: Package },
   { id: 'orders', label: '订单记录', icon: ShoppingCart },
-  { id: 'logs', label: '系统流水日志', icon: Activity },
+  { id: 'logs', label: '积分流水', icon: Activity },
+  { id: 'audit', label: '操作审计', icon: ClipboardList },
   { id: 'config', label: '系统配置', icon: Settings },
 ]
 
@@ -44,6 +46,15 @@ export default function AdminPage() {
   const [configs, setConfigs] = useState<AdminSystemConfig[]>([])
   const [configValues, setConfigValues] = useState<Record<string, string>>({})
   const [savingConfigKey, setSavingConfigKey] = useState<string | null>(null)
+
+  // Audit state
+  const [auditLogs, setAuditLogs] = useState<AdminLogEntry[]>([])
+  const [auditTotal, setAuditTotal] = useState(0)
+  const [auditPage, setAuditPage] = useState(1)
+  const [auditFilterAdminId, setAuditFilterAdminId] = useState('')
+  const [auditFilterAction, setAuditFilterAction] = useState('')
+  const [auditFilterFrom, setAuditFilterFrom] = useState('')
+  const [auditFilterTo, setAuditFilterTo] = useState('')
 
   // Ban User Modal
   const [showBan, setShowBan] = useState(false)
@@ -69,6 +80,51 @@ export default function AdminPage() {
     loadTabData(activeTab)
   }, [activeTab])
 
+  useEffect(() => {
+    if (activeTab === 'audit') {
+      fetchAudit()
+    }
+  }, [auditPage])
+
+  async function fetchAudit() {
+    try {
+      const query: any = { page: auditPage, pageSize: 20 }
+      if (auditFilterAdminId) query.adminId = Number(auditFilterAdminId)
+      if (auditFilterAction) query.action = auditFilterAction
+      if (auditFilterFrom) query.fromDate = auditFilterFrom
+      if (auditFilterTo) query.toDate = auditFilterTo
+
+      const data = await listAdminAudit(query)
+      setAuditLogs(data.items)
+      setAuditTotal(data.total)
+    } catch (err: any) {
+      showToast(getApiErrorMessage(err, '加载审计日志失败'), 'error')
+    }
+  }
+
+  function handleAuditSearch() {
+    setAuditPage(1)
+    fetchAudit()
+  }
+
+  function handleAuditReset() {
+    setAuditFilterAdminId('')
+    setAuditFilterAction('')
+    setAuditFilterFrom('')
+    setAuditFilterTo('')
+    setAuditPage(1)
+    // useEffect on auditPage won't trigger if it was already 1, so we need to fetch explicitly after state updates.
+    // Use setTimeout to allow state to settle, or just fetch with empty query inline.
+    setTimeout(() => {
+      listAdminAudit({ page: 1, pageSize: 20 })
+        .then(data => {
+          setAuditLogs(data.items)
+          setAuditTotal(data.total)
+        })
+        .catch(err => showToast(getApiErrorMessage(err, '加载失败'), 'error'))
+    }, 0)
+  }
+
   async function loadTabData(tab: AdminTab) {
     try {
       if (tab === 'dashboard') {
@@ -86,6 +142,8 @@ export default function AdminPage() {
       } else if (tab === 'logs') {
         const { data } = await api.get('/admin/logs')
         setLogs(data)
+      } else if (tab === 'audit') {
+        fetchAudit()
       } else if (tab === 'merchants') {
         const data = await getAdminMerchants()
         setMerchants(data)
@@ -597,7 +655,7 @@ export default function AdminPage() {
           {/* Logs */}
           {activeTab === 'logs' && (
             <div className="space-y-4">
-              <h2 className="font-heading text-xl font-bold mb-4 text-[var(--color-text)]">系统流水日志</h2>
+              <h2 className="font-heading text-xl font-bold mb-4 text-[var(--color-text)]">积分流水</h2>
               <div className="overflow-x-auto">
                 <table className="admin-table">
                   <thead>
@@ -622,6 +680,103 @@ export default function AdminPage() {
                   </tbody>
                 </table>
               </div>
+            </div>
+          )}
+
+          {/* Audit */}
+          {activeTab === 'audit' && (
+            <div className="space-y-4">
+              <h2 className="font-heading text-xl font-bold mb-4 text-[var(--color-text)]">操作审计</h2>
+              <div className="flex flex-wrap gap-3 mb-4">
+                <input
+                  type="text"
+                  placeholder="管理员ID"
+                  value={auditFilterAdminId}
+                  onChange={(e) => setAuditFilterAdminId(e.target.value)}
+                  className="input !py-1.5 !text-sm w-32"
+                />
+                <input
+                  type="text"
+                  placeholder="操作动作 (如: ban)"
+                  value={auditFilterAction}
+                  onChange={(e) => setAuditFilterAction(e.target.value)}
+                  className="input !py-1.5 !text-sm w-40"
+                />
+                <input
+                  type="date"
+                  value={auditFilterFrom}
+                  onChange={(e) => setAuditFilterFrom(e.target.value)}
+                  className="input !py-1.5 !text-sm w-36"
+                />
+                <input
+                  type="date"
+                  value={auditFilterTo}
+                  onChange={(e) => setAuditFilterTo(e.target.value)}
+                  className="input !py-1.5 !text-sm w-36"
+                />
+                <button onClick={handleAuditSearch} className="btn-primary !py-1.5 !text-sm">查询</button>
+                <button onClick={handleAuditReset} className="btn-secondary !py-1.5 !text-sm">重置</button>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="admin-table">
+                  <thead>
+                    <tr>
+                      <th>时间</th>
+                      <th>操作员</th>
+                      <th>动作</th>
+                      <th>目标</th>
+                      <th>元数据</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {auditLogs.map((l) => (
+                      <tr key={l.id}>
+                        <td className="text-[var(--color-text-muted)] text-[11px] whitespace-nowrap">{new Date(l.createdAt).toLocaleString()}</td>
+                        <td className="font-bold text-[var(--color-text)] text-sm">
+                          U{l.adminId} <span className="text-xs font-normal text-[var(--color-text-muted)]">({l.adminEmail})</span>
+                        </td>
+                        <td className="text-sm font-mono text-[var(--color-primary)]">{l.action}</td>
+                        <td className="text-sm text-[var(--color-text)]">
+                          {l.targetType} {l.targetId ? `#${l.targetId}` : ''}
+                        </td>
+                        <td className="text-xs text-[var(--color-text-muted)]">
+                          {l.metadata ? (
+                            <pre className="max-w-[200px] overflow-hidden text-ellipsis m-0">{JSON.stringify(l.metadata)}</pre>
+                          ) : '-'}
+                        </td>
+                      </tr>
+                    ))}
+                    {auditLogs.length === 0 && (
+                      <tr>
+                        <td colSpan={5} className="text-center py-8 text-[var(--color-text-muted)]">
+                          暂无数据
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              {auditTotal > 20 && (
+                <div className="flex justify-between items-center mt-4 text-sm">
+                  <span className="text-[var(--color-text-muted)]">共 {auditTotal} 条记录</span>
+                  <div className="flex gap-2">
+                    <button
+                      disabled={auditPage === 1}
+                      onClick={() => setAuditPage(auditPage - 1)}
+                      className="px-3 py-1 border border-[var(--color-border)] rounded hover:bg-[var(--color-background)] disabled:opacity-50"
+                    >
+                      上一页
+                    </button>
+                    <button
+                      disabled={auditPage * 20 >= auditTotal}
+                      onClick={() => setAuditPage(auditPage + 1)}
+                      className="px-3 py-1 border border-[var(--color-border)] rounded hover:bg-[var(--color-background)] disabled:opacity-50"
+                    >
+                      下一页
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
