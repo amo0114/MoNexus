@@ -122,7 +122,7 @@ export default function ProfilePage() {
   const [activeTab, setActiveTab] = useState<'orders' | 'history'>('orders')
   const [orders, setOrders] = useState<UserOrderListItem[]>([])
   const [history, setHistory] = useState<any[]>([])
-  const [hasCheckedIn, setHasCheckedIn] = useState(false)
+  const [hasCheckedIn, setHasCheckedIn] = useState<boolean | null>(null)
   const [checkingIn, setCheckingIn] = useState(false)
 
   const [selectedOrder, setSelectedOrder] = useState<UserOrderDetail | null>(null)
@@ -202,15 +202,17 @@ export default function ProfilePage() {
             <div className="flex flex-wrap gap-3">
               <button
                 onClick={handleCheckin}
-                disabled={hasCheckedIn || checkingIn}
+                disabled={hasCheckedIn !== false || checkingIn}
                 className={`inline-flex items-center gap-2 px-6 py-3 rounded-lg font-semibold shadow-sm text-sm transition-colors cursor-pointer ${
-                  hasCheckedIn
+                  hasCheckedIn === null
+                    ? 'bg-white/10 text-white/60 cursor-wait'
+                    : hasCheckedIn
                     ? 'bg-black/20 text-white/85 cursor-not-allowed'
                     : 'bg-white text-[var(--color-primary)] hover:bg-white/90'
                 }`}
               >
                 <CalendarCheck className="w-4 h-4" />
-                {hasCheckedIn ? '今日已打卡' : '每日打卡'}
+                {hasCheckedIn === null ? '加载中…' : hasCheckedIn ? '今日已打卡' : '每日打卡'}
               </button>
               <button
                 onClick={() => setActiveTab('history')}
