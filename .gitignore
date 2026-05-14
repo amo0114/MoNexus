@@ -32,5 +32,10 @@ server/.env.test
 *.log
 npm-debug.log*
 
+# Playwright
+test-results/
+playwright-report/
+playwright/.cache/
+
 # One-off / throwaway patch scripts
 patch*.py
