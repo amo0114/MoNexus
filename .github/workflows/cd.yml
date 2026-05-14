@@ -1,0 +1,92 @@
+name: CD Build Artifact
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Branch or tag to build (defaults to master)'
+        required: false
+        default: 'master'
+
+concurrency:
+  group: cd-${{ github.event.inputs.ref || 'master' }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.ref || 'master' }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            server/package-lock.json
+
+      - name: Install root deps
+        run: npm ci
+
+      - name: Install server deps
+        run: npm ci --prefix server
+
+      - name: Generate Prisma client
+        run: npx prisma generate --schema=server/prisma/schema.prisma
+
+      - name: Build frontend
+        run: npm run build
+        env:
+          VITE_API_URL: ${{ vars.VITE_API_URL || '' }}
+          VITE_SENTRY_DSN: ${{ vars.VITE_SENTRY_DSN || '' }}
+
+      - name: Build server
+        run: npm run build --prefix server
+
+      - name: Show artifact sizes
+        run: |
+          echo "=== Frontend dist ==="
+          du -sh dist/
+          ls -lah dist/
+          echo "=== Server dist ==="
+          du -sh server/dist/
+          ls -lah server/dist/
+
+      - name: Stamp build info
+        run: |
+          mkdir -p dist server/dist
+          cat > dist/BUILD_INFO.json <<EOF
+          {
+            "ref": "${{ github.event.inputs.ref || 'master' }}",
+            "commit": "${{ github.sha }}",
+            "buildTime": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "actor": "${{ github.actor }}"
+          }
+          EOF
+          cp dist/BUILD_INFO.json server/dist/BUILD_INFO.json
+
+      - name: Upload frontend artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist-${{ github.sha }}
+          path: dist/
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Upload server artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-dist-${{ github.sha }}
+          path: |
+            server/dist/
+            server/package.json
+            server/package-lock.json
+            server/prisma/
+          retention-days: 30
+          if-no-files-found: error
