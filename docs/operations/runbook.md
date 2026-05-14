@@ -840,3 +840,7 @@ External monitors (Sentry, Pingdom, Uptime Robot, etc.) configured against `/api
 - → `/api/health/live` if you want them to **only alert on "process is dead"**.
 
 The `/api/health` alias will stay through M5 to avoid forcing a coordinated cutover. Plan to remove it in M6+ once all known external probes are migrated.
+
+## 27. M5 Rollback Pointer
+
+The focused M5 rollback procedure lives in `docs/operations/rollback-runbook.md`. Use it for artifact rollback, frontend/server release symlink rollback, env rollback, failed health checks, Prisma migration fallback, backup restore rehearsal, forward fix decisions, and alert routing escalation. A8 owns the final M5 runbook rollup after A4/A5/A6 are merged.
