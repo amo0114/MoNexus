@@ -15,8 +15,21 @@ on:
         options:
           - production
           - staging
+      release_action:
+        description: 'Release action to execute'
+        required: true
+        default: 'deploy_candidate'
+        type: choice
+        options:
+          - deploy_candidate
+          - promote
+          - rollback
+      target_release:
+        description: 'Existing release id for promote or rollback'
+        required: false
+        default: ''
       dry_run:
-        description: 'Build and print the deploy plan without changing the host'
+        description: 'Build and print the release plan without changing the host'
         required: true
         default: true
         type: boolean
@@ -28,6 +41,7 @@ concurrency:
 jobs:
   build:
     name: Build deploy artifacts
+    if: ${{ github.event.inputs.release_action == 'deploy_candidate' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     outputs:
@@ -81,7 +95,8 @@ jobs:
             "commit": "${{ steps.resolve_ref.outputs.deploy_commit }}",
             "buildTime": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
             "actor": "${{ github.actor }}",
-            "workflow": "deploy"
+            "workflow": "deploy",
+            "releaseAction": "deploy_candidate"
           }
           EOF
           cp dist/BUILD_INFO.json server/dist/BUILD_INFO.json
@@ -100,9 +115,10 @@ jobs:
           retention-days: 30
           if-no-files-found: error
 
-  deploy:
-    name: Deploy to selected environment
+  release:
+    name: Run release action
     needs: build
+    if: ${{ always() }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: ${{ github.event.inputs.environment || 'production' }}
@@ -114,14 +130,17 @@ jobs:
       DEPLOY_BASE_PATH: ${{ vars.DEPLOY_BASE_PATH || '/opt/monexus' }}
       PRODUCTION_HEALTHCHECK_URL: ${{ vars.PRODUCTION_HEALTHCHECK_URL || '' }}
       DEPLOY_COMMIT: ${{ needs.build.outputs.deploy_commit }}
+      RELEASE_ACTION: ${{ github.event.inputs.release_action || 'deploy_candidate' }}
+      TARGET_RELEASE: ${{ github.event.inputs.target_release || '' }}
     steps:
       - name: Download deploy artifacts
+        if: env.RELEASE_ACTION == 'deploy_candidate'
         uses: actions/download-artifact@v4
         with:
           name: monexus-deploy-${{ needs.build.outputs.deploy_commit }}
           path: artifacts/
 
-      - name: Check deploy readiness
+      - name: Check release readiness
         id: readiness
         run: |
           set -euo pipefail
@@ -139,25 +158,46 @@ jobs:
             missing+=("DEPLOY_SSH_PRIVATE_KEY")
           fi
 
+          if [ "$RELEASE_ACTION" = "deploy_candidate" ] && [ -z "$DEPLOY_COMMIT" ]; then
+            missing+=("DEPLOY_COMMIT")
+          fi
+
+          if [ "$RELEASE_ACTION" = "rollback" ] && [ -z "$TARGET_RELEASE" ]; then
+            missing+=("TARGET_RELEASE")
+          fi
+
           if [ "${#missing[@]}" -gt 0 ]; then
             echo "ready=false" >> "$GITHUB_OUTPUT"
-            printf '::notice::Skipping deploy because required GitHub environment values are missing: %s\n' "${missing[*]}"
+            printf '::notice::Skipping release action because required values are missing: %s\n' "${missing[*]}"
             exit 0
           fi
 
           echo "ready=true" >> "$GITHUB_OUTPUT"
-          echo "::notice::Deploy values are present; live deploy is allowed when dry_run is false."
+          echo "::notice::Release values are present; host changes are allowed when dry_run is false."
 
-      - name: Render deployment plan
+      - name: Render release plan
         run: |
           set -euo pipefail
           echo "environment=${{ github.event.inputs.environment || 'production' }}"
+          echo "release_action=${RELEASE_ACTION}"
           echo "ref=${{ github.event.inputs.ref || 'master' }}"
-          echo "commit=${DEPLOY_COMMIT}"
+          echo "deploy_commit=${DEPLOY_COMMIT}"
+          echo "target_release=${TARGET_RELEASE}"
           echo "dry_run=${{ github.event.inputs.dry_run }}"
           echo "deploy_base_path=$DEPLOY_BASE_PATH"
-          echo "artifacts:"
-          ls -lh artifacts
+
+          if [ "$RELEASE_ACTION" = "deploy_candidate" ]; then
+            echo "candidate_release=${DEPLOY_COMMIT}"
+            echo "migration=will run during deploy_candidate only"
+            echo "artifacts:"
+            ls -lh artifacts
+          elif [ "$RELEASE_ACTION" = "promote" ]; then
+            echo "promote_source=${TARGET_RELEASE:-candidate symlink}"
+            echo "migration=not run during promote"
+          elif [ "$RELEASE_ACTION" = "rollback" ]; then
+            echo "rollback_target=${TARGET_RELEASE}"
+            echo "migration=not run during rollback"
+          fi
 
       - name: Configure SSH
         if: steps.readiness.outputs.ready == 'true' && github.event.inputs.dry_run == 'false'
@@ -169,56 +209,108 @@ jobs:
           chmod 600 ~/.ssh/monexus_deploy
           ssh-keyscan -p "$DEPLOY_SSH_PORT" -H "$DEPLOY_SSH_HOST" >> ~/.ssh/known_hosts
 
-      - name: Upload artifacts to host
-        if: steps.readiness.outputs.ready == 'true' && github.event.inputs.dry_run == 'false'
+      - name: Upload candidate artifacts to host
+        if: steps.readiness.outputs.ready == 'true' && github.event.inputs.dry_run == 'false' && env.RELEASE_ACTION == 'deploy_candidate'
         run: |
           set -euo pipefail
           remote_tmp="/tmp/monexus-${DEPLOY_COMMIT}"
           ssh -i ~/.ssh/monexus_deploy -p "$DEPLOY_SSH_PORT" "$DEPLOY_SSH_USER@$DEPLOY_SSH_HOST" "mkdir -p '$remote_tmp'"
           scp -i ~/.ssh/monexus_deploy -P "$DEPLOY_SSH_PORT" artifacts/frontend-dist.tar.gz artifacts/server-dist.tar.gz "$DEPLOY_SSH_USER@$DEPLOY_SSH_HOST:$remote_tmp/"
 
-      - name: Activate release on host
+      - name: Apply release action on host
         if: steps.readiness.outputs.ready == 'true' && github.event.inputs.dry_run == 'false'
         run: |
           set -euo pipefail
           ssh -i ~/.ssh/monexus_deploy -p "$DEPLOY_SSH_PORT" "$DEPLOY_SSH_USER@$DEPLOY_SSH_HOST" \
-            "bash -s -- '${DEPLOY_COMMIT}' '${DEPLOY_BASE_PATH}'" <<'REMOTE'
+            "bash -s -- '${RELEASE_ACTION}' '${DEPLOY_COMMIT}' '${TARGET_RELEASE}' '${DEPLOY_BASE_PATH}'" <<'REMOTE'
           set -euo pipefail
 
-          release_id="$1"
-          base_path="$2"
-          remote_tmp="/tmp/monexus-${release_id}"
-          release_path="${base_path}/releases/${release_id}"
+          release_action="$1"
+          deploy_commit="$2"
+          target_release="$3"
+          base_path="$4"
 
-          mkdir -p "${release_path}/frontend" "${release_path}/server"
-          tar -xzf "${remote_tmp}/frontend-dist.tar.gz" -C "${release_path}/frontend"
-          tar -xzf "${remote_tmp}/server-dist.tar.gz" -C "${release_path}/server"
+          restart_runtime() {
+            if command -v systemctl >/dev/null 2>&1 && systemctl cat monexus-api.service >/dev/null 2>&1; then
+              sudo systemctl restart monexus-api
+            elif command -v pm2 >/dev/null 2>&1; then
+              cd "${base_path}/current/server"
+              pm2 reload monexus-api || pm2 start dist/main.js --name monexus-api
+              pm2 save
+            else
+              echo "No supported process supervisor found for monexus-api" >&2
+              exit 1
+            fi
 
-          cd "${release_path}/server"
-          npm ci
-          npx prisma migrate deploy
-          npm prune --omit=dev
+            sudo nginx -t
+            sudo systemctl reload nginx
+          }
 
-          ln -sfn "${release_path}" "${base_path}/current"
+          resolve_candidate_release() {
+            if [ -n "$target_release" ]; then
+              printf '%s\n' "$target_release"
+              return
+            fi
 
-          if command -v systemctl >/dev/null 2>&1 && systemctl cat monexus-api.service >/dev/null 2>&1; then
-            sudo systemctl restart monexus-api
-          elif command -v pm2 >/dev/null 2>&1; then
-            cd "${base_path}/current/server"
-            pm2 reload monexus-api || pm2 start dist/main.js --name monexus-api
-            pm2 save
-          else
-            echo "No supported process supervisor found for monexus-api" >&2
-            exit 1
-          fi
+            if [ ! -L "${base_path}/candidate" ]; then
+              echo "No candidate symlink exists and target_release is empty" >&2
+              exit 1
+            fi
 
-          sudo nginx -t
-          sudo systemctl reload nginx
-          rm -rf "${remote_tmp}"
+            basename "$(readlink -f "${base_path}/candidate")"
+          }
+
+          case "$release_action" in
+            deploy_candidate)
+              release_id="$deploy_commit"
+              remote_tmp="/tmp/monexus-${release_id}"
+              release_path="${base_path}/releases/${release_id}"
+
+              mkdir -p "${release_path}/frontend" "${release_path}/server"
+              tar -xzf "${remote_tmp}/frontend-dist.tar.gz" -C "${release_path}/frontend"
+              tar -xzf "${remote_tmp}/server-dist.tar.gz" -C "${release_path}/server"
+
+              cd "${release_path}/server"
+              npm ci
+              npx prisma migrate deploy
+              npm prune --omit=dev
+
+              ln -sfn "${release_path}" "${base_path}/candidate"
+              rm -rf "${remote_tmp}"
+              echo "Candidate release prepared at ${release_path}"
+              ;;
+            promote)
+              release_id="$(resolve_candidate_release)"
+              release_path="${base_path}/releases/${release_id}"
+              test -d "${release_path}/frontend"
+              test -d "${release_path}/server/dist"
+              ln -sfn "${release_path}" "${base_path}/current"
+              restart_runtime
+              echo "Promoted release ${release_id} to current"
+              ;;
+            rollback)
+              if [ -z "$target_release" ]; then
+                echo "rollback requires target_release" >&2
+                exit 1
+              fi
+
+              release_id="$target_release"
+              release_path="${base_path}/releases/${release_id}"
+              test -d "${release_path}/frontend"
+              test -d "${release_path}/server/dist"
+              ln -sfn "${release_path}" "${base_path}/current"
+              restart_runtime
+              echo "Rolled back current to release ${release_id}"
+              ;;
+            *)
+              echo "Unsupported release action: ${release_action}" >&2
+              exit 1
+              ;;
+          esac
           REMOTE
 
-      - name: Post-deploy health check
-        if: steps.readiness.outputs.ready == 'true' && github.event.inputs.dry_run == 'false' && env.PRODUCTION_HEALTHCHECK_URL != ''
+      - name: Post-switch health check
+        if: steps.readiness.outputs.ready == 'true' && github.event.inputs.dry_run == 'false' && env.RELEASE_ACTION != 'deploy_candidate' && env.PRODUCTION_HEALTHCHECK_URL != ''
         run: |
           set -euo pipefail
           curl -fsS "$PRODUCTION_HEALTHCHECK_URL"
@@ -229,4 +321,5 @@ jobs:
           set -euo pipefail
           echo "No production host changes were made."
           echo "readiness=${{ steps.readiness.outputs.ready }}"
+          echo "release_action=${RELEASE_ACTION}"
           echo "dry_run=${{ github.event.inputs.dry_run }}"
