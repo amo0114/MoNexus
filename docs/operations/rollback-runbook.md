@@ -2,9 +2,11 @@
 
 Review date: 2026-05-14. Scope: M5 production rollback for the self-hosted nginx + systemd/PM2 target. This runbook covers artifact rollback, frontend rollback, server rollback, env rollback, failed health checks, Prisma migration fallback, backup restore rehearsal, forward fix policy, and escalation handoff.
 
-## Dependency Note
+## Related Procedures
 
-This branch is based on Wave 1. `docs/operations/gray-release.md` is not present here yet. The commands below use the A1 release directory and `current` symlink model from `docs/operations/deployment-target.md`. A5 合入后由 A8/协调员补齐 gray release 引用.
+- `docs/operations/deployment-target.md` defines the self-hosted nginx + systemd/PM2 target and release directory layout.
+- `docs/operations/gray-release.md` defines the `deploy_candidate`, `promote`, and `rollback` workflow actions and the `candidate` / `current` symlink model.
+- `docs/operations/alert-routing.md` defines Slack-first routing, email fallback, P1/P2 severity handling, and first responder ownership.
 
 ## Rollback Decision Tree
 
@@ -22,6 +24,16 @@ This branch is based on Wave 1. `docs/operations/gray-release.md` is not present
    - No: keep monitoring Sentry and alert routing until the next alert window stays clear.
 
 ## Identify Candidate Artifacts
+
+For normal operator flow, prefer the gray release workflow from `docs/operations/gray-release.md`:
+
+```text
+release_action=rollback
+target_release=<known-good-sha>
+dry_run=false
+```
+
+Use the host commands below only when GitHub Actions is unavailable or an operator needs to verify the release directory state directly.
 
 ```bash
 ssh <deploy-user>@<host> '
@@ -195,13 +207,13 @@ Forward fix steps:
 
 ## Escalation / Alert Routing Handoff
 
-Use `docs/operations/sentry-alert-rules.md` for rule definitions and labels. A4 owns final routing details; if `docs/operations/alert-routing.md` is not present yet, use this temporary mapping:
+Use `docs/operations/sentry-alert-rules.md` for rule definitions and labels, and use `docs/operations/alert-routing.md` for final Slack/email/PagerDuty routing behavior.
 
-| Alert label | Severity | First responder |
+| Alert label | Severity | Routing procedure |
 | --- | --- | --- |
-| `backend-error-p1` | P1 | Backend on-call |
-| `release-regression-p1` | P1 | Release manager |
-| `api-latency-p2` | P2 | Backend on-call |
-| `frontend-vitals-p2` | P2 | Frontend on-call |
+| `backend-error-p1` | P1 | Urgent route in `docs/operations/alert-routing.md` |
+| `release-regression-p1` | P1 | Urgent route in `docs/operations/alert-routing.md` |
+| `api-latency-p2` | P2 | Team notification route in `docs/operations/alert-routing.md` |
+| `frontend-vitals-p2` | P2 | Team notification route in `docs/operations/alert-routing.md` |
 
-P1 incidents require an urgent Slack/email route and an assigned owner. P2 incidents require team notification and monitoring for the next alert window. A8 should replace this temporary handoff with a link to A4's routing procedure after Wave 2 is merged.
+P1 incidents require the urgent Slack/email route and an assigned owner. P2 incidents require team notification and monitoring for the next alert window. Keep the alert thread updated until rollback, forward fix, or health recovery is complete.
