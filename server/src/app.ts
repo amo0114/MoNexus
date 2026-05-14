@@ -6,6 +6,8 @@ import cookieParser from 'cookie-parser'
 import { config } from './config/index.js'
 import { prisma } from './lib/prisma.js'
 import { initErrorReporter } from './lib/errorReporter.js'
+import { registry } from './lib/metrics.js'
+import { metricsMiddleware } from './middlewares/metrics.js'
 import { requestLogger } from './middlewares/requestLogger.js'
 import { errorHandler } from './middlewares/errorHandler.js'
 import { authRoutes } from './modules/auth/routes.js'
@@ -40,6 +42,7 @@ app.use(cors({
 }))
 app.use(cookieParser())
 app.use(express.json({ limit: '1mb' }))
+app.use(metricsMiddleware)
 
 app.get('/api/health', async (_req, res) => {
   const time = new Date().toISOString()
@@ -49,6 +52,24 @@ app.get('/api/health', async (_req, res) => {
     res.json({ status: 'ok', db: 'ok', time })
   } catch {
     res.status(503).json({ status: 'fail', db: 'fail', time })
+  }
+})
+
+app.get('/api/metrics', async (req, res) => {
+  if (config.metricsToken) {
+    const auth = req.headers.authorization
+    if (auth !== `Bearer ${config.metricsToken}`) {
+      res.status(401).type('text/plain').send('unauthorized')
+      return
+    }
+  }
+
+  try {
+    res.set('Content-Type', registry.contentType)
+    res.send(await registry.metrics())
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'unknown error'
+    res.status(500).type('text/plain').send(`metrics error: ${message}`)
   }
 })
 

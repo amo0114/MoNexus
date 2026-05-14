@@ -57,6 +57,7 @@ const envSchema = z.object({
   // --- Observability. SENTRY_DSN is optional so local/dev/test runs stay quiet.
   SENTRY_DSN: optionalUrlEnvSchema,
   LOG_LEVEL: logLevelEnvSchema,
+  METRICS_TOKEN: z.string().optional(),
 })
 
 const parsed = envSchema.safeParse(process.env)
@@ -143,6 +144,7 @@ export const config = {
   appBaseUrl: env.APP_BASE_URL ?? env.FRONTEND_ORIGIN,
   sentryDsn: env.SENTRY_DSN,
   logLevel: env.LOG_LEVEL,
+  metricsToken: env.METRICS_TOKEN,
   passwordResetTokenMaxAgeMs: 30 * 60 * 1000, // 30 min
   emailVerificationTokenMaxAgeMs: 24 * 60 * 60 * 1000, // 24h
 }
