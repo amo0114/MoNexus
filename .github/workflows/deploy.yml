@@ -1,0 +1,232 @@
+name: Production Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Branch, tag, or SHA to deploy'
+        required: false
+        default: 'master'
+      environment:
+        description: 'GitHub environment containing production deploy values'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - production
+          - staging
+      dry_run:
+        description: 'Build and print the deploy plan without changing the host'
+        required: true
+        default: true
+        type: boolean
+
+concurrency:
+  group: deploy-${{ github.event.inputs.environment || 'production' }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build deploy artifacts
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      deploy_commit: ${{ steps.resolve_ref.outputs.deploy_commit }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.ref || 'master' }}
+
+      - name: Resolve deploy commit
+        id: resolve_ref
+        run: |
+          set -euo pipefail
+          deploy_commit="$(git rev-parse HEAD)"
+          echo "deploy_commit=${deploy_commit}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            server/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Install backend dependencies
+        run: npm ci --prefix server
+
+      - name: Generate Prisma client
+        run: npm run db:generate --prefix server
+
+      - name: Build frontend
+        run: npm run build
+        env:
+          VITE_API_URL: ${{ vars.VITE_API_URL || '' }}
+          VITE_SENTRY_DSN: ${{ vars.VITE_SENTRY_DSN || '' }}
+
+      - name: Build backend
+        run: npm run build --prefix server
+
+      - name: Stamp build info
+        run: |
+          mkdir -p dist server/dist artifacts
+          cat > dist/BUILD_INFO.json <<EOF
+          {
+            "ref": "${{ github.event.inputs.ref || 'master' }}",
+            "commit": "${{ steps.resolve_ref.outputs.deploy_commit }}",
+            "buildTime": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "actor": "${{ github.actor }}",
+            "workflow": "deploy"
+          }
+          EOF
+          cp dist/BUILD_INFO.json server/dist/BUILD_INFO.json
+
+      - name: Package deploy artifacts
+        run: |
+          tar -czf artifacts/frontend-dist.tar.gz -C dist .
+          tar -czf artifacts/server-dist.tar.gz -C server dist package.json package-lock.json prisma
+          ls -lh artifacts
+
+      - name: Upload deploy artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: monexus-deploy-${{ steps.resolve_ref.outputs.deploy_commit }}
+          path: artifacts/
+          retention-days: 30
+          if-no-files-found: error
+
+  deploy:
+    name: Deploy to selected environment
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: ${{ github.event.inputs.environment || 'production' }}
+    env:
+      DEPLOY_SSH_HOST: ${{ secrets.DEPLOY_SSH_HOST }}
+      DEPLOY_SSH_USER: ${{ secrets.DEPLOY_SSH_USER }}
+      DEPLOY_SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+      DEPLOY_SSH_PORT: ${{ secrets.DEPLOY_SSH_PORT || '22' }}
+      DEPLOY_BASE_PATH: ${{ vars.DEPLOY_BASE_PATH || '/opt/monexus' }}
+      PRODUCTION_HEALTHCHECK_URL: ${{ vars.PRODUCTION_HEALTHCHECK_URL || '' }}
+      DEPLOY_COMMIT: ${{ needs.build.outputs.deploy_commit }}
+    steps:
+      - name: Download deploy artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: monexus-deploy-${{ needs.build.outputs.deploy_commit }}
+          path: artifacts/
+
+      - name: Check deploy readiness
+        id: readiness
+        run: |
+          set -euo pipefail
+          missing=()
+
+          if [ -z "$DEPLOY_SSH_HOST" ]; then
+            missing+=("DEPLOY_SSH_HOST")
+          fi
+
+          if [ -z "$DEPLOY_SSH_USER" ]; then
+            missing+=("DEPLOY_SSH_USER")
+          fi
+
+          if [ -z "$DEPLOY_SSH_PRIVATE_KEY" ]; then
+            missing+=("DEPLOY_SSH_PRIVATE_KEY")
+          fi
+
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            printf '::notice::Skipping deploy because required GitHub environment values are missing: %s\n' "${missing[*]}"
+            exit 0
+          fi
+
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+          echo "::notice::Deploy values are present; live deploy is allowed when dry_run is false."
+
+      - name: Render deployment plan
+        run: |
+          set -euo pipefail
+          echo "environment=${{ github.event.inputs.environment || 'production' }}"
+          echo "ref=${{ github.event.inputs.ref || 'master' }}"
+          echo "commit=${DEPLOY_COMMIT}"
+          echo "dry_run=${{ github.event.inputs.dry_run }}"
+          echo "deploy_base_path=$DEPLOY_BASE_PATH"
+          echo "artifacts:"
+          ls -lh artifacts
+
+      - name: Configure SSH
+        if: steps.readiness.outputs.ready == 'true' && github.event.inputs.dry_run == 'false'
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_PRIVATE_KEY" > ~/.ssh/monexus_deploy
+          chmod 600 ~/.ssh/monexus_deploy
+          ssh-keyscan -p "$DEPLOY_SSH_PORT" -H "$DEPLOY_SSH_HOST" >> ~/.ssh/known_hosts
+
+      - name: Upload artifacts to host
+        if: steps.readiness.outputs.ready == 'true' && github.event.inputs.dry_run == 'false'
+        run: |
+          set -euo pipefail
+          remote_tmp="/tmp/monexus-${DEPLOY_COMMIT}"
+          ssh -i ~/.ssh/monexus_deploy -p "$DEPLOY_SSH_PORT" "$DEPLOY_SSH_USER@$DEPLOY_SSH_HOST" "mkdir -p '$remote_tmp'"
+          scp -i ~/.ssh/monexus_deploy -P "$DEPLOY_SSH_PORT" artifacts/frontend-dist.tar.gz artifacts/server-dist.tar.gz "$DEPLOY_SSH_USER@$DEPLOY_SSH_HOST:$remote_tmp/"
+
+      - name: Activate release on host
+        if: steps.readiness.outputs.ready == 'true' && github.event.inputs.dry_run == 'false'
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/monexus_deploy -p "$DEPLOY_SSH_PORT" "$DEPLOY_SSH_USER@$DEPLOY_SSH_HOST" \
+            "bash -s -- '${DEPLOY_COMMIT}' '${DEPLOY_BASE_PATH}'" <<'REMOTE'
+          set -euo pipefail
+
+          release_id="$1"
+          base_path="$2"
+          remote_tmp="/tmp/monexus-${release_id}"
+          release_path="${base_path}/releases/${release_id}"
+
+          mkdir -p "${release_path}/frontend" "${release_path}/server"
+          tar -xzf "${remote_tmp}/frontend-dist.tar.gz" -C "${release_path}/frontend"
+          tar -xzf "${remote_tmp}/server-dist.tar.gz" -C "${release_path}/server"
+
+          cd "${release_path}/server"
+          npm ci
+          npx prisma migrate deploy
+          npm prune --omit=dev
+
+          ln -sfn "${release_path}" "${base_path}/current"
+
+          if command -v systemctl >/dev/null 2>&1 && systemctl cat monexus-api.service >/dev/null 2>&1; then
+            sudo systemctl restart monexus-api
+          elif command -v pm2 >/dev/null 2>&1; then
+            cd "${base_path}/current/server"
+            pm2 reload monexus-api || pm2 start dist/main.js --name monexus-api
+            pm2 save
+          else
+            echo "No supported process supervisor found for monexus-api" >&2
+            exit 1
+          fi
+
+          sudo nginx -t
+          sudo systemctl reload nginx
+          rm -rf "${remote_tmp}"
+          REMOTE
+
+      - name: Post-deploy health check
+        if: steps.readiness.outputs.ready == 'true' && github.event.inputs.dry_run == 'false' && env.PRODUCTION_HEALTHCHECK_URL != ''
+        run: |
+          set -euo pipefail
+          curl -fsS "$PRODUCTION_HEALTHCHECK_URL"
+
+      - name: Dry-run or missing-values summary
+        if: steps.readiness.outputs.ready != 'true' || github.event.inputs.dry_run != 'false'
+        run: |
+          set -euo pipefail
+          echo "No production host changes were made."
+          echo "readiness=${{ steps.readiness.outputs.ready }}"
+          echo "dry_run=${{ github.event.inputs.dry_run }}"
