@@ -1,0 +1,94 @@
+name: Database Backup
+
+on:
+  schedule:
+    # Every day at 02:17 UTC. Off-the-hour to avoid GitHub's hourly cron stampede.
+    - cron: '17 2 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: db-backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      BACKUP_DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+    steps:
+      - name: Check secret is configured
+        run: |
+          if [ -z "$BACKUP_DATABASE_URL" ]; then
+            echo "::error::BACKUP_DATABASE_URL secret is not configured. See docs/operations/runbook.md Database Backup section."
+            exit 1
+          fi
+
+      - name: Install postgres client (matching prod major version)
+        run: |
+          # PostgreSQL 16 client. Adjust to match production major version.
+          # Bookworm has 15; install 16 from PGDG.
+          sudo apt-get update
+          sudo apt-get install -y wget ca-certificates lsb-release
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo wget -O /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] \
+            https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | \
+            sudo tee /etc/apt/sources.list.d/pgdg.list > /dev/null
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client-16
+          pg_dump --version
+
+      - name: Run pg_dump
+        id: dump
+        run: |
+          set -euo pipefail
+          STAMP=$(date -u +%Y%m%dT%H%M%SZ)
+          OUT="monexus-backup-${STAMP}.sql.gz"
+          DUMP_DATABASE_URL="${BACKUP_DATABASE_URL%%\?*}"
+          # --no-owner --no-privileges -> portable across roles
+          # --clean --if-exists -> restore script can be re-run safely
+          # Compressed inline to save artifact storage
+          pg_dump \
+            --no-owner \
+            --no-privileges \
+            --clean \
+            --if-exists \
+            --format=plain \
+            "$DUMP_DATABASE_URL" | gzip -9 > "$OUT"
+          ls -lah "$OUT"
+          echo "filename=$OUT" >> "$GITHUB_OUTPUT"
+          echo "stamp=$STAMP" >> "$GITHUB_OUTPUT"
+
+      - name: Verify dump is non-trivial
+        run: |
+          SIZE=$(stat -c%s "${{ steps.dump.outputs.filename }}")
+          # Compressed empty dump is ~200 bytes; real schema+data is many KB+.
+          # Refuse to upload if suspiciously small.
+          if [ "$SIZE" -lt 1024 ]; then
+            echo "::error::Backup file is suspiciously small ($SIZE bytes). Aborting upload."
+            exit 1
+          fi
+          echo "Backup size: $(numfmt --to=iec $SIZE)"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: db-backup-${{ steps.dump.outputs.stamp }}
+          path: ${{ steps.dump.outputs.filename }}
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Backup summary
+        if: success()
+        run: |
+          echo "## Backup successful" >> "$GITHUB_STEP_SUMMARY"
+          echo "- File: \`${{ steps.dump.outputs.filename }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Stamp: \`${{ steps.dump.outputs.stamp }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Retention: 7 days" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "To restore locally: download artifact, then:" >> "$GITHUB_STEP_SUMMARY"
+          echo "\`\`\`bash" >> "$GITHUB_STEP_SUMMARY"
+          echo "gunzip -c ${{ steps.dump.outputs.filename }} | psql \"\$RESTORE_TARGET_URL\"" >> "$GITHUB_STEP_SUMMARY"
+          echo "\`\`\`" >> "$GITHUB_STEP_SUMMARY"
