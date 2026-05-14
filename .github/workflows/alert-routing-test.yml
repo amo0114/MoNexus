@@ -1,0 +1,125 @@
+name: Alert Routing Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'GitHub environment containing alert routing values'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+      routing_label:
+        description: 'Routing label to rehearse'
+        required: true
+        default: 'backend-error-p1'
+        type: choice
+        options:
+          - backend-error-p1
+          - release-regression-p1
+          - api-latency-p2
+          - frontend-vitals-p2
+      severity:
+        description: 'Severity to include in the test notification'
+        required: true
+        default: 'P1'
+        type: choice
+        options:
+          - P1
+          - P2
+      dry_run:
+        description: 'Print the routing plan without sending Slack'
+        required: true
+        default: true
+        type: boolean
+      summary:
+        description: 'Short test message'
+        required: false
+        default: 'MoNexus alert routing rehearsal'
+
+concurrency:
+  group: alert-routing-test-${{ github.event.inputs.environment || 'staging' }}
+  cancel-in-progress: false
+
+jobs:
+  test-routing:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: ${{ github.event.inputs.environment || 'staging' }}
+    env:
+      ALERT_SLACK_WEBHOOK_URL: ${{ secrets.ALERT_SLACK_WEBHOOK_URL }}
+      ALERT_EMAIL_TO: ${{ vars.ALERT_EMAIL_TO || '' }}
+      ALERT_EMAIL_FROM: ${{ vars.ALERT_EMAIL_FROM || '' }}
+      PAGERDUTY_ROUTING_KEY: ${{ secrets.PAGERDUTY_ROUTING_KEY }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Validate routing documentation
+        run: |
+          set -euo pipefail
+          doc="docs/operations/alert-routing.md"
+          test -f "$doc"
+
+          for label in backend-error-p1 release-regression-p1 api-latency-p2 frontend-vitals-p2; do
+            if ! grep -Fq "$label" "$doc"; then
+              echo "::error::Missing routing label in alert-routing.md: $label"
+              exit 1
+            fi
+          done
+
+      - name: Send or plan test notification
+        run: |
+          set -euo pipefail
+
+          routing_label="${{ github.event.inputs.routing_label }}"
+          severity="${{ github.event.inputs.severity }}"
+          environment="${{ github.event.inputs.environment || 'staging' }}"
+          summary="${{ github.event.inputs.summary }}"
+          dry_run="${{ github.event.inputs.dry_run }}"
+          message="[${severity}] ${routing_label} (${environment}): ${summary}"
+
+          echo "routing_label=${routing_label}"
+          echo "severity=${severity}"
+          echo "environment=${environment}"
+          echo "dry_run=${dry_run}"
+
+          if [ -n "$ALERT_EMAIL_TO" ] && [ -n "$ALERT_EMAIL_FROM" ]; then
+            echo "::notice::Email fallback is configured for ${ALERT_EMAIL_TO} from ${ALERT_EMAIL_FROM}."
+          else
+            echo "::notice::Email fallback is not fully configured; set ALERT_EMAIL_TO and ALERT_EMAIL_FROM."
+          fi
+
+          if [ "$severity" = "P1" ] && [ -n "$PAGERDUTY_ROUTING_KEY" ]; then
+            echo "::notice::Optional production PagerDuty routing key is present; this workflow does not page by default."
+          fi
+
+          if [ "$dry_run" != "false" ]; then
+            echo "::notice::Dry run only. Planned Slack message: ${message}"
+            exit 0
+          fi
+
+          if [ -z "$ALERT_SLACK_WEBHOOK_URL" ]; then
+            echo "::notice::Slack webhook is missing; no notification sent."
+            exit 0
+          fi
+
+          export ALERT_MESSAGE="$message"
+          payload="$(python3 - <<'PY'
+          import json
+          import os
+
+          print(json.dumps({"text": os.environ["ALERT_MESSAGE"]}))
+          PY
+          )"
+
+          curl -fsS \
+            -X POST \
+            -H 'Content-type: application/json' \
+            --data "$payload" \
+            "$ALERT_SLACK_WEBHOOK_URL" \
+            >/dev/null
+
+          echo "Slack test notification sent."
