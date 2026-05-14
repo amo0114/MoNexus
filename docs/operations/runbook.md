@@ -608,3 +608,235 @@ curl -fsS "$BASE/api/admin/audit?adminId=7&fromDate=$(date -u -d '7 days ago' +%
 ### Frontend
 
 The "操作审计" tab in `AdminPage.tsx` exposes the same filters as form controls — operators can drill in without touching curl. The "积分流水" tab next to it is the historical `/api/admin/logs` view, kept for backwards compatibility with operator muscle memory.
+
+## 21. E2E Testing (M4)
+
+We use Playwright (chromium-only) for end-to-end coverage of the 3 highest-value user paths: register → login → profile, daily check-in, and product-detail → exchange modal. The suite is intentionally tiny (3 tests) and will only be expanded when a regression escapes review.
+
+### Run locally
+
+```bash
+# In one shell: backend
+cd server && npm run dev   # :3000
+
+# In another: frontend
+npm run dev                # :5173
+
+# In a third: tests (one-time browser install)
+npx playwright install --with-deps chromium
+
+# Headless
+npm run e2e
+
+# Interactive dev mode
+npm run e2e:ui
+```
+
+The Playwright config lives at `playwright.config.ts`; specs live at `e2e/*.spec.ts`. The runner expects both 3000 and 5173 to already be up — it does **not** start them itself.
+
+### Read CI failures
+
+GitHub Actions → failed `e2e` job → bottom of the page → `playwright-report` artifact. Download → unzip → open `index.html` → see screenshots, traces, and console logs for each failed test.
+
+### Add a new test
+
+Don't create page objects yet. Until we cross ~10 tests, inline selectors in a new `e2e/<name>.spec.ts` and match existing patterns in `e2e/auth.spec.ts`. Each test should self-bootstrap (register an inline user with a unique email) — no shared seed data, no test ordering, no cleanup hooks.
+
+## 22. CD Pipeline (M4)
+
+M4 introduces the first half of CD: build-and-package on manual trigger. The second half (real deployment target + post-deploy smoke + rollback) lands in M5.
+
+### Trigger a build
+
+GitHub → Actions → **"CD Build Artifact"** → Run workflow → optionally override `ref` (default `master`) → Run.
+
+Build runs for ~3-5 minutes. Two artifacts are produced and retained 30 days:
+
+- `frontend-dist-<sha>` — Vite output, `BUILD_INFO.json` stamped with commit + build timestamp.
+- `server-dist-<sha>` — compiled server + `package.json` + `prisma/`, ready for `npm ci && npx prisma migrate deploy` at the deploy target.
+
+### Repo-level vars to set before the first production build
+
+Settings → Secrets and variables → Actions → **Variables** tab:
+
+- `VITE_API_URL` — production API origin (e.g., `https://api.monexus.example.com`).
+- `VITE_SENTRY_DSN` — frontend Sentry DSN (public; same one used in dev `.env.local`).
+
+These are **vars** (not secrets) because the frontend bundle embeds them — they are visible to anyone with the bundle anyway. Marking them as secrets would just make CI logs noisier without adding any real protection.
+
+### M5 roadmap
+
+M5 will add: target deployment step (ssh / k8s / etc.), smoke check post-deploy, and a rollback workflow that rebuilds and redeploys a previous `ref`.
+
+## 23. Metrics & Prometheus (M4)
+
+The server exposes `GET /api/metrics` in Prometheus text exposition format. Default Node.js process metrics (CPU, RSS, event-loop lag, GC, FD count, …) **plus** two custom HTTP-layer metrics:
+
+- `monexus_http_requests_total{method, route, status_code}` — counter.
+- `monexus_http_request_duration_seconds{method, route, status_code}` — histogram (buckets: 5ms / 10ms / 25ms / 50ms / 100ms / 250ms / 500ms / 1s / 2.5s / 5s / 10s).
+
+The `route` label uses Express's matched route pattern (`/api/products/:id`) not the raw path (`/api/products/123`) to bound cardinality.
+
+### Production setup — protect with a bearer token
+
+Set `METRICS_TOKEN` in the server environment:
+
+```bash
+# Generate a strong random token
+METRICS_TOKEN=$(openssl rand -hex 32)
+```
+
+When set, `/api/metrics` requires `Authorization: Bearer <token>`. When unset, the endpoint is open to anyone who can reach the port — acceptable for dev / private network behind a firewall, **NOT** for production exposure.
+
+### Prometheus scrape config
+
+```yaml
+scrape_configs:
+  - job_name: monexus
+    scheme: https
+    scrape_interval: 30s
+    metrics_path: /api/metrics
+    bearer_token: <METRICS_TOKEN value>
+    static_configs:
+      - targets: ['api.monexus.example.com']
+```
+
+### Useful queries
+
+- Request rate by route: `sum by (route) (rate(monexus_http_requests_total[1m]))`
+- P95 latency by route: `histogram_quantile(0.95, sum by (le, route) (rate(monexus_http_request_duration_seconds_bucket[5m])))`
+- Error rate: `sum(rate(monexus_http_requests_total{status_code=~"5.."}[5m])) / sum(rate(monexus_http_requests_total[5m]))`
+
+## 24. Database Backup (M4)
+
+GitHub Actions runs `pg_dump` against production daily at **02:17 UTC** and uploads a gzipped SQL dump as a 7-day-retention artifact. Manual trigger is also available for ad-hoc backups before risky changes.
+
+### One-time secret setup
+
+1. In your production PostgreSQL, create a read-only backup role:
+
+   ```sql
+   CREATE ROLE monexus_backup WITH LOGIN PASSWORD '<strong random>';
+   GRANT CONNECT ON DATABASE monexus TO monexus_backup;
+   GRANT USAGE ON SCHEMA public TO monexus_backup;
+   GRANT SELECT ON ALL TABLES IN SCHEMA public TO monexus_backup;
+   GRANT SELECT ON ALL SEQUENCES IN SCHEMA public TO monexus_backup;
+   ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO monexus_backup;
+   ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON SEQUENCES TO monexus_backup;
+   ```
+
+2. GitHub → Settings → Secrets and variables → Actions → **New repository secret**:
+   - Name: `BACKUP_DATABASE_URL`
+   - Value: `postgresql://monexus_backup:<password>@<host>:5432/monexus?sslmode=require`
+
+The workflow refuses to run if this secret is missing — it fails fast rather than silently producing an empty dump.
+
+### Trigger a manual backup
+
+GitHub → Actions → **"Database Backup"** → Run workflow. Useful before any risky schema migration or before a production rollback rehearsal.
+
+### Restore from a backup artifact
+
+```bash
+# 1. Download the artifact from the run's summary page
+unzip db-backup-20260513T021700Z.zip   # produces monexus-backup-20260513T021700Z.sql.gz
+
+# 2. Restore into a target database (e.g., a fresh staging DB)
+gunzip -c monexus-backup-*.sql.gz | psql "$RESTORE_TARGET_URL"
+
+# 3. Verify
+psql "$RESTORE_TARGET_URL" -c "SELECT count(*) FROM \"User\";"
+```
+
+The `--clean --if-exists` flags on `pg_dump` mean the dump can be replayed against a database that already has the schema — useful for refreshing staging from prod.
+
+### Retention & M5 roadmap
+
+7 days is the M4 floor — set deliberately low while we settle on encryption and storage location. M5 will add: longer retention via off-region object storage, encryption at rest (`age` or `gpg`), and a quarterly automated restore-to-scratch-DB verification job.
+
+## 25. Web Vitals (M4)
+
+The frontend reports Core Web Vitals (LCP, CLS, INP, FCP, TTFB) to Sentry on **production builds only** when `VITE_SENTRY_DSN` is set. Disabled in dev mode to avoid HMR noise and quota burn.
+
+### Find them in Sentry
+
+- **Performance** → filter by transaction or by tag `webvital.lcp.rating` / `webvital.inp.rating` / etc.
+- Each metric is reported three ways:
+  - **Breadcrumb** — visible in Issues alongside the user's session trail.
+  - **Measurement** — numeric value indexed in Performance dashboards.
+  - **Tag** — `webvital.<metric>.rating = good | needs-improvement | poor`, useful for grouping.
+
+### Standard thresholds (Google)
+
+| Metric | Good   | Needs improvement | Poor    |
+|--------|--------|-------------------|---------|
+| LCP    | ≤2.5s  | ≤4.0s             | >4.0s   |
+| INP    | ≤200ms | ≤500ms            | >500ms  |
+| CLS    | ≤0.1   | ≤0.25             | >0.25   |
+| FCP    | ≤1.8s  | ≤3.0s             | >3.0s   |
+| TTFB   | ≤0.8s  | ≤1.8s             | >1.8s   |
+
+### Sampling
+
+We don't filter at collection time — every page reports its vitals. Volume is controlled by Sentry's `tracesSampleRate` in `src/lib/sentry.ts` (default `0.1` = 10% of transactions). If quota becomes an issue, lower that rate first — don't add custom filtering on the frontend.
+
+### Suggested dashboards (operator follow-up)
+
+- **LCP rating distribution week-over-week** — weekly trend of good / needs / poor share.
+- **INP P95 by route** — find pages with slow interactivity.
+- **CLS by build** — catch layout-shift regressions per deploy.
+
+M4 only collects the data; building these dashboards in Sentry is an operator follow-up.
+
+## 26. Health Endpoints (M4)
+
+M4 split the old single `/api/health` into two semantically distinct routes. **This section supersedes section 2 for any caller written after M4** — section 2 is kept for historical context.
+
+| Route | Always 200? | Touches DB? | Use case |
+|-------|-------------|-------------|----------|
+| `GET /api/health/live` | Yes (when process is up) | No | k8s `livenessProbe`, "restart this container?" |
+| `GET /api/health/ready` | No (200 / 503) | Yes (2s ping) | k8s `readinessProbe`, LB health check, "route traffic here?" |
+| `GET /api/health` | Yes | No | **DEPRECATED** — alias of `/live` for backwards compatibility |
+
+### Why split
+
+The classic anti-pattern is a single conflated endpoint: a slow DB causes liveness to fail → orchestrator restarts healthy app instances → cascading failure. Splitting means: if the DB is slow, readiness fails (LB stops routing traffic to this instance) but liveness stays green (instance stays alive, can recover when DB comes back).
+
+### Quick verify
+
+```bash
+BASE=http://localhost:3000
+
+curl -fsS "$BASE/api/health/live"   # {"status":"live","uptime":...,"timestamp":...}
+curl -fsS "$BASE/api/health/ready"  # {"status":"ready","checks":{"database":"ok","config":"ok"},...}
+curl -fsS "$BASE/api/health"        # alias of /live, identical body
+```
+
+### Kubernetes example
+
+```yaml
+livenessProbe:
+  httpGet:
+    path: /api/health/live
+    port: 3000
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  failureThreshold: 3   # 30s grace before kill
+
+readinessProbe:
+  httpGet:
+    path: /api/health/ready
+    port: 3000
+  initialDelaySeconds: 5
+  periodSeconds: 5
+  failureThreshold: 2   # 10s grace before LB stops routing
+```
+
+### Migration from M3 monitors
+
+External monitors (Sentry, Pingdom, Uptime Robot, etc.) configured against `/api/health` keep working — they hit the alias, which behaves like `/live`. Update them:
+
+- → `/api/health/ready` if you want them to **alert on DB issues**.
+- → `/api/health/live` if you want them to **only alert on "process is dead"**.
+
+The `/api/health` alias will stay through M5 to avoid forcing a coordinated cutover. Plan to remove it in M6+ once all known external probes are migrated.
