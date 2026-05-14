@@ -4,12 +4,12 @@ import helmet from 'helmet'
 import rateLimit from 'express-rate-limit'
 import cookieParser from 'cookie-parser'
 import { config } from './config/index.js'
-import { prisma } from './lib/prisma.js'
 import { initErrorReporter } from './lib/errorReporter.js'
 import { registry } from './lib/metrics.js'
 import { metricsMiddleware } from './middlewares/metrics.js'
 import { requestLogger } from './middlewares/requestLogger.js'
 import { errorHandler } from './middlewares/errorHandler.js'
+import healthRoutes from './modules/health/routes.js'
 import { authRoutes } from './modules/auth/routes.js'
 import { productRoutes } from './modules/products/routes.js'
 import { pointRoutes } from './modules/points/routes.js'
@@ -44,16 +44,7 @@ app.use(cookieParser())
 app.use(express.json({ limit: '1mb' }))
 app.use(metricsMiddleware)
 
-app.get('/api/health', async (_req, res) => {
-  const time = new Date().toISOString()
-
-  try {
-    await prisma.$queryRaw`SELECT 1`
-    res.json({ status: 'ok', db: 'ok', time })
-  } catch {
-    res.status(503).json({ status: 'fail', db: 'fail', time })
-  }
-})
+app.use('/api/health', healthRoutes)
 
 app.get('/api/metrics', async (req, res) => {
   if (config.metricsToken) {
