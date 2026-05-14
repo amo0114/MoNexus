@@ -841,6 +841,214 @@ External monitors (Sentry, Pingdom, Uptime Robot, etc.) configured against `/api
 
 The `/api/health` alias will stay through M5 to avoid forcing a coordinated cutover. Plan to remove it in M6+ once all known external probes are migrated.
 
-## 27. M5 Rollback Pointer
+## 27. M5 Production Deploy
 
-The focused M5 rollback procedure lives in `docs/operations/rollback-runbook.md`. Use it for artifact rollback, frontend/server release symlink rollback, env rollback, failed health checks, Prisma migration fallback, backup restore rehearsal, forward fix decisions, and alert routing escalation. A8 owns the final M5 runbook rollup after A4/A5/A6 are merged.
+M5 chooses the self-hosted nginx + systemd/PM2 target from `docs/operations/deployment-target.md`. The default host layout is:
+
+```text
+/opt/monexus/
+  candidate -> /opt/monexus/releases/<candidate-sha>
+  current   -> /opt/monexus/releases/<active-sha>
+  releases/
+    <sha>/
+      frontend/
+      server/
+```
+
+Production entry point: GitHub Actions -> **Production Deploy** -> **Run workflow**.
+
+Use `release_action=deploy_candidate` for a new artifact build. Keep `dry_run=true` first, confirm the resolved `DEPLOY_COMMIT`, then rerun with `dry_run=false` only after the selected GitHub environment has deploy values configured.
+
+Required production host checks before the first live deploy:
+
+- nginx serves `/opt/monexus/current/frontend` and proxies `/api/` to the backend process.
+- Node.js 20, npm, tar, curl, PostgreSQL access, and either systemd or PM2 are available.
+- A non-root deploy user can write `/opt/monexus/releases` and restart only `monexus-api`.
+- TLS and DNS are already configured for frontend and API origins.
+
+The deploy workflow builds frontend and backend, generates Prisma client with the server package, packages artifacts, prepares a release directory, runs `prisma migrate deploy` during `deploy_candidate` only, and updates `candidate`.
+
+## 28. M5 Production Secrets
+
+Use GitHub Actions Environments named `staging` and `production` as documented in `docs/operations/secrets-management.md`.
+
+Minimum operator setup:
+
+1. GitHub -> Settings -> Environments -> create `staging` and `production`.
+2. Protect `production` with at least one required reviewer and restrict it to `master` and release tags.
+3. Put credentials in environment secrets, not environment variables.
+4. Put public build-time values such as `VITE_API_URL` and `VITE_SENTRY_DSN` in environment variables because Vite embeds them into the frontend bundle.
+5. Never paste secret values into docs, PR comments, issue comments, screenshots, or workflow logs.
+
+Key groups to verify before production:
+
+| Group | Required examples | Consumer |
+| --- | --- | --- |
+| Deploy | `DEPLOY_SSH_HOST`, `DEPLOY_SSH_USER`, `DEPLOY_SSH_PRIVATE_KEY` | Production Deploy workflow |
+| Backend runtime | `DATABASE_URL`, `JWT_SECRET`, `SENTRY_DSN`, SMTP/storage values | deploy host env and backend process |
+| Metrics | `METRICS_TOKEN` | backend runtime and scrape target |
+| Backup | `BACKUP_DATABASE_URL`, `RESTORE_TARGET_URL` | backup workflow and restore rehearsal |
+| Alert routing | `ALERT_SLACK_WEBHOOK_URL`, `ALERT_EMAIL_TO`, `ALERT_EMAIL_FROM` | Alert Routing Test and incident procedure |
+
+Rotate secrets by changing GitHub environment values or host runtime env, restarting only the consuming component, and recording secret version identifiers rather than values.
+
+## 29. M5 Sentry Alert Rules
+
+`docs/operations/sentry-alert-rules.md` defines the production alert rules built on the M4 Sentry, metrics, and web-vitals foundation.
+
+| Rule | Severity | Window | Routing label |
+| --- | --- | --- | --- |
+| `MoNexus Backend error spike` | P1 | 5 minutes | `backend-error-p1` |
+| `MoNexus Release regression after deploy` | P1 | 30 minutes after deploy | `release-regression-p1` |
+| `MoNexus API P95 latency` | P2, critical can escalate | 10 minutes | `api-latency-p2` |
+| `MoNexus Frontend LCP poor` | P2 | 15 minutes | `frontend-vitals-p2` |
+| `MoNexus Frontend INP poor` | P2 | 15 minutes | `frontend-vitals-p2` |
+| `MoNexus Frontend CLS poor` | P2 | 15 minutes | `frontend-vitals-p2` |
+
+Manual setup checklist:
+
+1. Create rules in Sentry for `staging` first.
+2. Use the exact rule names, thresholds, owners, and routing labels from the focused doc.
+3. Validate staging with temporary low thresholds, then restore production thresholds.
+4. Use `.github/workflows/sentry-alert-check.yml` only as a read-only dry-run/helper. It validates documented rule names and optional Sentry API read access; it does not create or mutate alert rules.
+
+If backend Sentry performance transactions are not available yet, keep the API P95 Sentry rule in dry-run documentation and use the M4 Prometheus latency query operationally.
+
+## 30. M5 Alert Routing
+
+`docs/operations/alert-routing.md` is the source of truth for routing labels, severity policy, Slack/email fallback, and first responder ownership.
+
+Severity policy:
+
+- P1 urgent: Slack incident channel first, email fallback, assign an owner within 10 minutes. PagerDuty is optional for production P0/P1 only and is not a default M5 dependency.
+- P2 team notification: Slack team channel first, email fallback, watch the next alert window before escalating.
+
+Routing matrix:
+
+| Label | Owner | Default path |
+| --- | --- | --- |
+| `backend-error-p1` | Backend on-call | Slack urgent route, email fallback |
+| `release-regression-p1` | Release manager | Slack urgent route, email fallback |
+| `api-latency-p2` | Backend on-call | Slack team notification, email fallback |
+| `frontend-vitals-p2` | Frontend on-call | Slack team notification, email fallback |
+
+Test notification procedure:
+
+1. GitHub Actions -> **Alert Routing Test** -> **Run workflow**.
+2. Use `staging`, keep `dry_run=true`, and choose a representative routing label.
+3. Confirm missing webhook/email values only print the plan and exit without failure.
+4. Configure `ALERT_SLACK_WEBHOOK_URL` in the selected environment, then rerun with `dry_run=false`.
+5. Confirm the Slack message reaches the expected channel. Email fallback remains an operator procedure; do not add mailbox passwords to the repo.
+
+## 31. M5 Gray Release
+
+M5 uses release directories plus `candidate` and `current` symlinks; it does not add an application feature flag platform. Full commands live in `docs/operations/gray-release.md`.
+
+Normal flow:
+
+```text
+release_action=deploy_candidate
+ref=<branch-tag-or-sha>
+dry_run=true
+```
+
+After reviewing the dry-run plan, rerun with `dry_run=false` to prepare `/opt/monexus/candidate`.
+
+Smoke gate before promote:
+
+- `candidate/frontend/BUILD_INFO.json` exists and matches the resolved commit.
+- `candidate/server/dist/main.js` exists.
+- `prisma migrate deploy` finished during `deploy_candidate`.
+- If a candidate-only backend port exists, smoke `/api/health/live` and `/api/health/ready` there.
+
+Promote:
+
+```text
+release_action=promote
+target_release=<candidate-sha or empty to use candidate symlink>
+dry_run=false
+```
+
+Rollback:
+
+```text
+release_action=rollback
+target_release=<known-good-sha>
+dry_run=false
+```
+
+`promote` and `rollback` restart the runtime and reload nginx, but they do not run migrations.
+
+## 32. M5 Post-deploy Smoke
+
+Run these checks after promote, rollback, or any host env change:
+
+```bash
+curl -fsS https://<api-origin>/api/health/live
+curl -fsS https://<api-origin>/api/health/ready
+curl -fsS https://<frontend-origin>/BUILD_INFO.json
+```
+
+Then verify the operator-facing signals:
+
+- `BUILD_INFO.json` commit equals the promoted or rolled-back release id.
+- Sentry receives no new `release-regression-p1` events for the current release window.
+- `/api/metrics` remains scrapeable by the approved monitoring target.
+- nginx config validates with `sudo nginx -t` if the host was touched.
+- `systemctl status monexus-api` or `pm2 status` shows the backend process healthy.
+
+If `/api/health/live` fails, inspect the process supervisor and recent backend logs. If `/api/health/ready` fails, treat database/config readiness as degraded and do not restart-loop the API while the dependency is down.
+
+## 33. M5 Rollback / Migration Fallback
+
+Use `docs/operations/rollback-runbook.md` for the full decision tree. This runbook keeps only the operator entry points.
+
+Start with the workflow path when GitHub Actions is available:
+
+```text
+release_action=rollback
+target_release=<known-good-sha>
+dry_run=false
+```
+
+Host fallback when GitHub Actions is unavailable:
+
+```bash
+GOOD=<known-good-sha>
+ssh <deploy-user>@<host> "
+  set -euo pipefail
+  cd /opt/monexus
+  test -d releases/${GOOD}/frontend
+  test -d releases/${GOOD}/server/dist
+  ln -sfn /opt/monexus/releases/${GOOD} current
+  sudo systemctl restart monexus-api
+  sudo nginx -t
+  sudo systemctl reload nginx
+"
+```
+
+Migration fallback policy:
+
+- Do not promise or run `prisma migrate down` in production.
+- Do not handwrite a down migration during an incident.
+- If a migration failed before applying, keep `current` on the previous release and fix the candidate.
+- If a migration applied and the app is broken, freeze further deploys, take a fresh backup, rehearse restore in staging, and prefer a forward fix unless restore is clearly safer.
+- Keep alert routing open until health checks and the next Sentry alert window recover.
+
+Backup restore rehearsal stays in staging first:
+
+```bash
+RESTORE_TARGET_URL='<staging-restore-url>'
+BACKUP=monexus-backup-YYYYMMDDTHHMMSSZ.sql.gz
+
+psql "$RESTORE_TARGET_URL" -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;'
+gunzip -c "$BACKUP" | psql "$RESTORE_TARGET_URL"
+```
+
+## 34. M5 OpenAPI Decision
+
+A7 owns the final OpenAPI decision note. If `docs/operations/openapi-m5-note.md` is present, link it from release notes and use it as the source of truth.
+
+Expected M5 decision: no OpenAPI bump. M5 adds GitHub Actions workflows and operations documents, but no public `/api/*` endpoint, request schema, response schema, auth behavior, or error contract. Keep `docs/superpowers/specs/monexus-api-openapi.json` at `v1.3.0` unless A7 finds a real contract change.
+
+Bump to `v1.4.0` only when a future change adds or changes a public HTTP endpoint or externally visible API behavior.
