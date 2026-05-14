@@ -7,9 +7,9 @@ describe('observability middleware', () => {
 
     expect(res.headers['x-request-id']).toEqual(expect.any(String))
     expect(res.body).toEqual({
-      status: 'ok',
-      db: 'ok',
-      time: expect.any(String),
+      status: 'live',
+      uptime: expect.any(Number),
+      timestamp: expect.any(String),
     })
   })
 
@@ -23,9 +23,9 @@ describe('observability middleware', () => {
 
     expect(res.headers['x-request-id']).toBe(requestId)
     expect(res.body).toEqual({
-      status: 'ok',
-      db: 'ok',
-      time: expect.any(String),
+      status: 'live',
+      uptime: expect.any(Number),
+      timestamp: expect.any(String),
     })
   })
 
