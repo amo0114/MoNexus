@@ -1,0 +1,90 @@
+name: Sentry Alert Rule Check
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'GitHub environment containing Sentry read credentials'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+      require_api:
+        description: 'Fail if Sentry API read credentials are missing'
+        required: true
+        default: false
+        type: boolean
+
+concurrency:
+  group: sentry-alert-check-${{ github.event.inputs.environment || 'staging' }}
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: ${{ github.event.inputs.environment || 'staging' }}
+    env:
+      SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+      SENTRY_ORG: ${{ vars.SENTRY_ORG || '' }}
+      SENTRY_BACKEND_PROJECT: ${{ vars.SENTRY_BACKEND_PROJECT || '' }}
+      SENTRY_FRONTEND_PROJECT: ${{ vars.SENTRY_FRONTEND_PROJECT || '' }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Validate documented rule names
+        run: |
+          set -euo pipefail
+          doc="docs/operations/sentry-alert-rules.md"
+          test -f "$doc"
+
+          required_rules=(
+            "MoNexus Backend error spike"
+            "MoNexus API P95 latency"
+            "MoNexus Frontend LCP poor"
+            "MoNexus Frontend INP poor"
+            "MoNexus Frontend CLS poor"
+            "MoNexus Release regression after deploy"
+          )
+
+          for rule in "${required_rules[@]}"; do
+            if ! grep -Fq "$rule" "$doc"; then
+              echo "::error::Missing documented Sentry alert rule: $rule"
+              exit 1
+            fi
+          done
+
+      - name: Read-only Sentry API connectivity check
+        run: |
+          set -euo pipefail
+
+          missing=()
+          if [ -z "$SENTRY_AUTH_TOKEN" ]; then missing+=("SENTRY_AUTH_TOKEN"); fi
+          if [ -z "$SENTRY_ORG" ]; then missing+=("SENTRY_ORG"); fi
+          if [ -z "$SENTRY_BACKEND_PROJECT" ]; then missing+=("SENTRY_BACKEND_PROJECT"); fi
+          if [ -z "$SENTRY_FRONTEND_PROJECT" ]; then missing+=("SENTRY_FRONTEND_PROJECT"); fi
+
+          if [ "${#missing[@]}" -gt 0 ]; then
+            printf '::notice::Skipping Sentry API check. Missing values: %s\n' "${missing[*]}"
+            if [ "${{ github.event.inputs.require_api }}" = "true" ]; then
+              exit 1
+            fi
+            exit 0
+          fi
+
+          curl -fsS \
+            -H "Authorization: Bearer ${SENTRY_AUTH_TOKEN}" \
+            -H "Accept: application/json" \
+            "https://sentry.io/api/0/projects/${SENTRY_ORG}/${SENTRY_BACKEND_PROJECT}/" \
+            >/dev/null
+
+          curl -fsS \
+            -H "Authorization: Bearer ${SENTRY_AUTH_TOKEN}" \
+            -H "Accept: application/json" \
+            "https://sentry.io/api/0/projects/${SENTRY_ORG}/${SENTRY_FRONTEND_PROJECT}/" \
+            >/dev/null
+
+          echo "Sentry project read checks completed."
