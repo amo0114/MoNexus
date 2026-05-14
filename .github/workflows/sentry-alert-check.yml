@@ -29,8 +29,8 @@ jobs:
     env:
       SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
       SENTRY_ORG: ${{ vars.SENTRY_ORG || '' }}
-      SENTRY_BACKEND_PROJECT: ${{ vars.SENTRY_BACKEND_PROJECT || '' }}
-      SENTRY_FRONTEND_PROJECT: ${{ vars.SENTRY_FRONTEND_PROJECT || '' }}
+      SENTRY_PROJECT_BACKEND: ${{ vars.SENTRY_PROJECT_BACKEND || '' }}
+      SENTRY_PROJECT_FRONTEND: ${{ vars.SENTRY_PROJECT_FRONTEND || '' }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -64,8 +64,8 @@ jobs:
           missing=()
           if [ -z "$SENTRY_AUTH_TOKEN" ]; then missing+=("SENTRY_AUTH_TOKEN"); fi
           if [ -z "$SENTRY_ORG" ]; then missing+=("SENTRY_ORG"); fi
-          if [ -z "$SENTRY_BACKEND_PROJECT" ]; then missing+=("SENTRY_BACKEND_PROJECT"); fi
-          if [ -z "$SENTRY_FRONTEND_PROJECT" ]; then missing+=("SENTRY_FRONTEND_PROJECT"); fi
+          if [ -z "$SENTRY_PROJECT_BACKEND" ]; then missing+=("SENTRY_PROJECT_BACKEND"); fi
+          if [ -z "$SENTRY_PROJECT_FRONTEND" ]; then missing+=("SENTRY_PROJECT_FRONTEND"); fi
 
           if [ "${#missing[@]}" -gt 0 ]; then
             printf '::notice::Skipping Sentry API check. Missing values: %s\n' "${missing[*]}"
@@ -78,13 +78,13 @@ jobs:
           curl -fsS \
             -H "Authorization: Bearer ${SENTRY_AUTH_TOKEN}" \
             -H "Accept: application/json" \
-            "https://sentry.io/api/0/projects/${SENTRY_ORG}/${SENTRY_BACKEND_PROJECT}/" \
+            "https://sentry.io/api/0/projects/${SENTRY_ORG}/${SENTRY_PROJECT_BACKEND}/" \
             >/dev/null
 
           curl -fsS \
             -H "Authorization: Bearer ${SENTRY_AUTH_TOKEN}" \
             -H "Accept: application/json" \
-            "https://sentry.io/api/0/projects/${SENTRY_ORG}/${SENTRY_FRONTEND_PROJECT}/" \
+            "https://sentry.io/api/0/projects/${SENTRY_ORG}/${SENTRY_PROJECT_FRONTEND}/" \
             >/dev/null
 
           echo "Sentry project read checks completed."

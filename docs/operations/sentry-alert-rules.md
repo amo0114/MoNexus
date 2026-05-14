@@ -155,8 +155,8 @@ Required environment values for the optional API check:
 
 - Secret: `SENTRY_AUTH_TOKEN`
 - Variable: `SENTRY_ORG`
-- Variable: `SENTRY_BACKEND_PROJECT`
-- Variable: `SENTRY_FRONTEND_PROJECT`
+- Variable: `SENTRY_PROJECT_BACKEND`
+- Variable: `SENTRY_PROJECT_FRONTEND`
 
 ## Handoff Notes
 
