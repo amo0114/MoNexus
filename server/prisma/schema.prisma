@@ -23,6 +23,7 @@ model User {
   pointLogs               PointLog[]
   checkins                CheckinRecord[]
   refreshTokens           RefreshToken[]
+  orderStatusEvents       OrderStatusEvent[]
   invitedBy               InviteRelation[]         @relation("invitee")
   invites                 InviteRelation[]         @relation("inviter")
   adminLogs               AdminLog[]
@@ -125,6 +126,7 @@ model Product {
   sales           Int      @default(0)
   isHot           Boolean  @default(false)
   status          String   @default("active") // active | inactive
+  deliveryMode    String   @default("instant_inventory") // instant_inventory | manual_service
   merchantId      Int?
   createdAt       DateTime @default(now())
 
@@ -163,30 +165,52 @@ model Order {
   userId           Int
   productId        Int
   price            Int
-  status           String   @default("completed")
+  status           String   @default("pending")
   merchantId       Int?
   commissionRate   Decimal? @db.Decimal(5, 4)
   commissionAmount Int      @default(0)
   createdAt        DateTime @default(now())
 
-  user       User            @relation(fields: [userId], references: [id])
-  product    Product         @relation(fields: [productId], references: [id])
-  merchant   Merchant?       @relation(fields: [merchantId], references: [id])
-  delivery   DeliveryRecord?
-  settlement Settlement?
-  pointLogs  PointLog[]
+  user         User               @relation(fields: [userId], references: [id])
+  product      Product            @relation(fields: [productId], references: [id])
+  merchant     Merchant?          @relation(fields: [merchantId], references: [id])
+  delivery     DeliveryRecord?
+  settlement   Settlement?
+  pointLogs    PointLog[]
+  statusEvents OrderStatusEvent[]
 }
 
 model DeliveryRecord {
-  id        Int      @id @default(autoincrement())
-  orderId   Int      @unique
-  userId    Int
-  productId Int
-  content   String
-  status    String   @default("delivered")
-  createdAt DateTime @default(now())
+  id          Int       @id @default(autoincrement())
+  orderId     Int       @unique
+  userId      Int
+  productId   Int
+  content     String?
+  status      String    @default("delivered")
+  publicNote  String?
+  deliveredAt DateTime?
+  createdAt   DateTime  @default(now())
 
   order Order @relation(fields: [orderId], references: [id])
+}
+
+model OrderStatusEvent {
+  id           Int      @id @default(autoincrement())
+  orderId      Int
+  actorUserId  Int?
+  actorRole    String
+  fromStatus   String?
+  toStatus     String
+  action       String
+  publicNote   String?
+  internalNote String?
+  createdAt    DateTime @default(now())
+
+  order     Order @relation(fields: [orderId], references: [id])
+  actorUser User? @relation(fields: [actorUserId], references: [id])
+
+  @@index([orderId, createdAt])
+  @@index([actorUserId])
 }
 
 model Settlement {
