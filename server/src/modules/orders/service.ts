@@ -1,9 +1,11 @@
+import type { Prisma } from '@prisma/client'
 import { prisma } from '../../lib/prisma.js'
 import { badRequest, notFound } from '../../lib/httpError.js'
 import {
   createOrderStatusEvent,
   getProductFulfillmentMode,
   normalizeOrderStatus,
+  transitionOrderStatus,
 } from './fulfillment.js'
 import { serializeUserOrderDetail, serializeUserOrderList } from './serializers.js'
 
@@ -173,9 +175,21 @@ export async function getOrderDetail(orderId: number, userId: number) {
   return serializeUserOrderDetail(order)
 }
 
-export async function getUserOrders(userId: number, page = 1, pageSize = 20) {
+function buildUserOrderWhere(userId: number, status?: string): Prisma.OrderWhereInput {
+  const where: Prisma.OrderWhereInput = { userId }
+  if (!status) return where
+
+  const normalizedStatus = normalizeOrderStatus(status)
+  where.status = normalizedStatus === 'delivered'
+    ? { in: ['delivered', 'completed'] }
+    : normalizedStatus
+
+  return where
+}
+
+export async function getUserOrders(userId: number, page = 1, pageSize = 20, status?: string) {
   const orders = await prisma.order.findMany({
-    where: { userId },
+    where: buildUserOrderWhere(userId, status),
     include: {
       merchant: { select: { id: true, name: true } },
       product: { select: { id: true, name: true, icon: true, type: true, imageUrl: true, deliveryMode: true } },
@@ -186,4 +200,40 @@ export async function getUserOrders(userId: number, page = 1, pageSize = 20) {
     take: pageSize,
   })
   return orders.map(serializeUserOrderList)
+}
+
+async function assertUserOwnsOrder(orderId: number, userId: number) {
+  const order = await prisma.order.findFirst({
+    where: { id: orderId, userId },
+    select: { id: true },
+  })
+  if (!order) throw notFound('订单不存在')
+}
+
+export async function disputeOrder(orderId: number, userId: number) {
+  await assertUserOwnsOrder(orderId, userId)
+  await transitionOrderStatus({
+    orderId,
+    toStatus: 'disputed',
+    actorRole: 'user',
+    actorUserId: userId,
+    action: 'user.dispute',
+    publicNote: '用户发起争议',
+  })
+
+  return getOrderDetail(orderId, userId)
+}
+
+export async function closeOrder(orderId: number, userId: number) {
+  await assertUserOwnsOrder(orderId, userId)
+  await transitionOrderStatus({
+    orderId,
+    toStatus: 'closed',
+    actorRole: 'user',
+    actorUserId: userId,
+    action: 'user.close',
+    publicNote: '用户确认关闭',
+  })
+
+  return getOrderDetail(orderId, userId)
 }

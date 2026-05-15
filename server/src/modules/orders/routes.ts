@@ -9,6 +9,8 @@ const router = Router()
 router.use(authenticate, requireActiveUser)
 router.post('/', validate(createOrderSchema), controller.create)
 router.get('/', validate({ query: listOrdersQuerySchema }), controller.list)
+router.post('/:id/dispute', validate({ params: idParamSchema }), controller.dispute)
+router.post('/:id/close', validate({ params: idParamSchema }), controller.close)
 router.get('/:id', validate({ params: idParamSchema }), controller.detail)
 
 export { router as orderRoutes }

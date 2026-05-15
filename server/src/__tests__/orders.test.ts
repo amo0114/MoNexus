@@ -237,6 +237,15 @@ describe('fulfillment state machine', () => {
 
     expect(res.body.status).toBe('delivered')
     expect(res.body.delivery.content).toBe('legacy-content')
+    expect(res.body.deliveryMode).toBe('instant_inventory')
+    expect(res.body.timeline).toEqual([
+      expect.objectContaining({
+        actorRole: 'system',
+        fromStatus: null,
+        toStatus: 'delivered',
+        action: 'order.legacy.completed',
+      }),
+    ])
   })
 })
 
@@ -265,6 +274,44 @@ describe('GET /api/orders', () => {
     expect(res.body[0].product.imageUrl).toBeNull()
     expect(res.body[0].delivery.status).toBe('delivered')
     expect(res.body[0].delivery.content).toBeUndefined()
+    expect(res.body[0].deliveryMode).toBe('instant_inventory')
+  })
+
+  it('should filter delivered orders across legacy completed and new delivered statuses', async () => {
+    const { user } = await createTestUser('order-filter@test.local', 'pass123', 'user', 5000)
+    const product = await createTestProduct('筛选商品', 100, 2, ['filter-1', 'filter-2'])
+    const { accessToken } = await loginAs('order-filter@test.local', 'pass123')
+
+    await api
+      .post('/api/orders')
+      .set(authHeader(accessToken))
+      .send({ productId: product.id })
+      .expect(201)
+
+    await prisma.order.create({
+      data: {
+        userId: user.id,
+        productId: product.id,
+        price: 100,
+        status: 'completed',
+      },
+    })
+    await prisma.order.create({
+      data: {
+        userId: user.id,
+        productId: product.id,
+        price: 100,
+        status: 'pending',
+      },
+    })
+
+    const res = await api
+      .get('/api/orders?status=delivered')
+      .set(authHeader(accessToken))
+      .expect(200)
+
+    expect(res.body).toHaveLength(2)
+    expect(res.body.map((order: { status: string }) => order.status)).toEqual(['delivered', 'delivered'])
   })
 })
 
@@ -291,6 +338,15 @@ describe('GET /api/orders/:id', () => {
     expect(res.body.delivery.status).toBe('delivered')
     expect(res.body.delivery.content).toBe('det-1')
     expect(res.body.merchant).toBeNull()
+    expect(res.body.deliveryMode).toBe('instant_inventory')
+    expect(res.body.timeline).toEqual([
+      expect.objectContaining({
+        actorRole: 'user',
+        fromStatus: null,
+        toStatus: 'delivered',
+        action: 'order.created.instant_inventory',
+      }),
+    ])
   })
 
   it('should include merchant commission detail for merchant order', async () => {
@@ -353,6 +409,78 @@ describe('GET /api/orders/:id', () => {
     await api
       .get(`/api/orders/${created.body.orderId}`)
       .set(authHeader(b.accessToken))
+      .expect(404)
+  })
+})
+
+describe('POST /api/orders/:id fulfillment actions', () => {
+  it('should allow user to dispute and close own delivered orders with events', async () => {
+    await createTestUser('order-action@test.local', 'pass123', 'user', 5000)
+    await createTestProduct('操作商品', 100, 2, ['action-1', 'action-2'])
+    const { accessToken } = await loginAs('order-action@test.local', 'pass123')
+
+    const disputedOrder = await api
+      .post('/api/orders')
+      .set(authHeader(accessToken))
+      .send({ productId: 1 })
+      .expect(201)
+
+    const disputed = await api
+      .post(`/api/orders/${disputedOrder.body.orderId}/dispute`)
+      .set(authHeader(accessToken))
+      .expect(200)
+
+    expect(disputed.body.status).toBe('disputed')
+    expect(disputed.body.timeline.at(-1)).toMatchObject({
+      actorRole: 'user',
+      fromStatus: 'delivered',
+      toStatus: 'disputed',
+      action: 'user.dispute',
+    })
+
+    const closedOrder = await api
+      .post('/api/orders')
+      .set(authHeader(accessToken))
+      .send({ productId: 1 })
+      .expect(201)
+
+    const closed = await api
+      .post(`/api/orders/${closedOrder.body.orderId}/close`)
+      .set(authHeader(accessToken))
+      .expect(200)
+
+    expect(closed.body.status).toBe('closed')
+    expect(closed.body.timeline.at(-1)).toMatchObject({
+      actorRole: 'user',
+      fromStatus: 'delivered',
+      toStatus: 'closed',
+      action: 'user.close',
+    })
+
+    const events = await prisma.orderStatusEvent.findMany({
+      where: { orderId: { in: [disputedOrder.body.orderId, closedOrder.body.orderId] } },
+      orderBy: { id: 'asc' },
+    })
+    expect(events.filter(event => event.action === 'user.dispute')).toHaveLength(1)
+    expect(events.filter(event => event.action === 'user.close')).toHaveLength(1)
+  })
+
+  it('should return 404 when user disputes another user order', async () => {
+    await createTestUser('order-action-owner@test.local', 'pass123', 'user', 5000)
+    await createTestProduct('隔离操作商品', 100, 1, ['isolated-action'])
+    const owner = await loginAs('order-action-owner@test.local', 'pass123')
+    const created = await api
+      .post('/api/orders')
+      .set(authHeader(owner.accessToken))
+      .send({ productId: 1 })
+      .expect(201)
+
+    await createTestUser('order-action-foreign@test.local', 'pass123', 'user', 5000)
+    const foreign = await loginAs('order-action-foreign@test.local', 'pass123')
+
+    await api
+      .post(`/api/orders/${created.body.orderId}/dispute`)
+      .set(authHeader(foreign.accessToken))
       .expect(404)
   })
 })

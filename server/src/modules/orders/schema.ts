@@ -1,5 +1,10 @@
 import { z } from 'zod'
-import { FULFILLMENT_MODES, ORDER_STATUSES, ORDER_STATUS_ACTOR_ROLES } from './fulfillment.js'
+import {
+  FULFILLMENT_MODES,
+  ORDER_STATUSES,
+  ORDER_STATUS_ACTOR_ROLES,
+  normalizeOrderStatus,
+} from './fulfillment.js'
 
 export const fulfillmentModeSchema = z.enum(FULFILLMENT_MODES)
 export const fulfillmentOrderStatusSchema = z.enum(ORDER_STATUSES)
@@ -17,8 +22,13 @@ export const transitionOrderStatusSchema = z.object({
   deliveryContent: z.string().trim().max(5000).optional(),
 })
 
+const orderStatusFilterSchema = z.union([
+  fulfillmentOrderStatusSchema,
+  z.literal('completed'),
+]).transform(status => normalizeOrderStatus(status))
+
 export const listOrdersQuerySchema = z.object({
-  status: fulfillmentOrderStatusSchema.optional(),
+  status: orderStatusFilterSchema.optional(),
   page: z.coerce.number().int().positive().default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
 })
