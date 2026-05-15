@@ -25,8 +25,7 @@ export async function updateMe(req: Request, res: Response, next: NextFunction) 
 export async function listProducts(req: Request, res: Response, next: NextFunction) {
   try {
     const merchant = await merchantService.getMyMerchant(req.user!.userId)
-    const { page, pageSize } = req.query as Record<string, string>
-    res.json(await merchantService.listMyProducts(merchant.id, Number(page) || 1, Number(pageSize) || 20))
+    res.json(await merchantService.listMyProducts(merchant.id, req.query))
   } catch (err) { next(err) }
 }
 
@@ -44,11 +43,19 @@ export async function updateProduct(req: Request, res: Response, next: NextFunct
   } catch (err) { next(err) }
 }
 
+export async function previewInventory(req: Request, res: Response, next: NextFunction) {
+  try {
+    const merchant = await merchantService.getMyMerchant(req.user!.userId)
+    const productId = req.params.id as unknown as number
+    res.json(await merchantService.previewMyInventoryImport(merchant.id, productId, req.body))
+  } catch (err) { next(err) }
+}
+
 export async function importInventory(req: Request, res: Response, next: NextFunction) {
   try {
     const merchant = await merchantService.getMyMerchant(req.user!.userId)
     const productId = req.params.id as unknown as number
-    res.json(await merchantService.importMyInventory(merchant.id, productId, req.body.items))
+    res.json(await merchantService.importMyInventory(merchant.id, productId, req.body))
   } catch (err) { next(err) }
 }
 

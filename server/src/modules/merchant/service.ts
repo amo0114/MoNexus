@@ -1,5 +1,8 @@
+import { Prisma } from '@prisma/client'
 import { prisma } from '../../lib/prisma.js'
+import { businessRegistry } from '../../lib/businessRegistry.js'
 import { badRequest, notFound, conflict } from '../../lib/httpError.js'
+import { getSystemConfigValue } from '../../lib/systemConfig.js'
 import { serializeMerchantOrder } from '../orders/serializers.js'
 
 // ---- Application ----
@@ -45,14 +48,220 @@ export async function updateMyMerchant(
 
 // ---- Products ----
 
-export async function listMyProducts(merchantId: number, page = 1, pageSize = 20) {
-  return prisma.product.findMany({
-    where: { merchantId },
-    include: { _count: { select: { inventory: { where: { status: 'available' } } } } },
-    orderBy: { createdAt: 'desc' },
-    skip: (page - 1) * pageSize,
-    take: pageSize,
-  })
+const productListInclude = {
+  _count: { select: { inventory: { where: { status: 'available' } } } },
+} as const
+
+type ProductWithAvailableStock = Prisma.ProductGetPayload<{ include: typeof productListInclude }>
+
+export interface MerchantProductListFilters {
+  page?: number
+  pageSize?: number
+  status?: string
+  q?: string
+  type?: string
+  deliveryMode?: string
+  lowStock?: boolean
+}
+
+export interface InventoryImportPayload {
+  text?: string
+  items?: string[]
+}
+
+type InventoryAnalysis = {
+  totalRows: number
+  validRows: number
+  emptyRows: number
+  duplicateRows: number
+  existingDuplicateRows: number
+  canImport: boolean
+  itemsToImport: string[]
+}
+
+type InventoryClient = typeof prisma | Prisma.TransactionClient
+
+async function resolvePagination(page?: number, pageSize?: number) {
+  const [defaultPageSize, maxPageSize] = await Promise.all([
+    getSystemConfigValue('defaultPageSize'),
+    getSystemConfigValue('maxPageSize'),
+  ])
+  const safeDefaultPageSize = defaultPageSize > 0 ? defaultPageSize : businessRegistry.pagination.defaultPageSize
+  const safeMaxPageSize = maxPageSize > 0 ? maxPageSize : businessRegistry.pagination.maxPageSize
+  const resolvedPage = page && page > 0 ? page : 1
+  const requestedPageSize = pageSize && pageSize > 0 ? pageSize : safeDefaultPageSize
+
+  return {
+    page: resolvedPage,
+    pageSize: Math.min(requestedPageSize, safeMaxPageSize),
+  }
+}
+
+function buildProductWhere(merchantId: number, filters: MerchantProductListFilters): Prisma.ProductWhereInput {
+  const where: Prisma.ProductWhereInput = { merchantId }
+
+  if (filters.status) where.status = filters.status
+  if (filters.type) where.type = filters.type
+  if (filters.deliveryMode) where.deliveryMode = filters.deliveryMode
+  if (filters.q) {
+    where.OR = [
+      { name: { contains: filters.q, mode: Prisma.QueryMode.insensitive } },
+      { description: { contains: filters.q, mode: Prisma.QueryMode.insensitive } },
+      { type: { contains: filters.q, mode: Prisma.QueryMode.insensitive } },
+    ]
+  }
+
+  return where
+}
+
+function isLowStockProduct(product: ProductWithAvailableStock, threshold: number) {
+  const availableStock = product._count.inventory
+  return product.deliveryMode === 'instant_inventory' && availableStock <= threshold
+}
+
+function serializeMerchantProduct(product: ProductWithAvailableStock, lowStockThreshold: number) {
+  const availableStock = product._count.inventory
+  return {
+    id: product.id,
+    name: product.name,
+    description: product.description,
+    richDescription: product.richDescription,
+    type: product.type,
+    icon: product.icon,
+    imageUrl: product.imageUrl,
+    price: product.price,
+    originalPrice: product.originalPrice,
+    stock: product.stock,
+    availableStock,
+    sales: product.sales,
+    isHot: product.isHot,
+    status: product.status,
+    deliveryMode: product.deliveryMode,
+    merchantId: product.merchantId,
+    createdAt: product.createdAt,
+    lowStock: isLowStockProduct(product, lowStockThreshold),
+  }
+}
+
+function inventoryRowsFromPayload(payload: InventoryImportPayload) {
+  const rows: string[] = []
+  if (typeof payload.text === 'string') rows.push(...payload.text.split(/\r?\n/))
+  if (Array.isArray(payload.items)) rows.push(...payload.items)
+  return rows
+}
+
+async function analyzeInventoryPayload(
+  productId: number,
+  payload: InventoryImportPayload,
+  client: InventoryClient = prisma
+): Promise<InventoryAnalysis> {
+  const rows = inventoryRowsFromPayload(payload)
+  const seen = new Set<string>()
+  const uniqueRows: string[] = []
+  let emptyRows = 0
+  let duplicateRows = 0
+
+  for (const row of rows) {
+    const normalized = row.trim()
+    if (!normalized) {
+      emptyRows += 1
+      continue
+    }
+    if (seen.has(normalized)) {
+      duplicateRows += 1
+      continue
+    }
+    seen.add(normalized)
+    uniqueRows.push(normalized)
+  }
+
+  const existingRows = uniqueRows.length > 0
+    ? await client.inventoryItem.findMany({
+        where: { productId, content: { in: uniqueRows } },
+        select: { content: true },
+      })
+    : []
+  const existingContents = new Set(existingRows.map(row => row.content))
+  const itemsToImport = uniqueRows.filter(row => !existingContents.has(row))
+
+  return {
+    totalRows: rows.length,
+    validRows: itemsToImport.length,
+    emptyRows,
+    duplicateRows,
+    existingDuplicateRows: existingContents.size,
+    canImport: itemsToImport.length > 0 && duplicateRows === 0 && existingContents.size === 0,
+    itemsToImport,
+  }
+}
+
+function duplicateImportDetails(analysis: InventoryAnalysis) {
+  return [
+    { field: 'items', message: `duplicateRows=${analysis.duplicateRows}` },
+    { field: 'items', message: `existingDuplicateRows=${analysis.existingDuplicateRows}` },
+  ]
+}
+
+export async function listMyProducts(merchantId: number, filters: MerchantProductListFilters = {}) {
+  const { page, pageSize } = await resolvePagination(filters.page, filters.pageSize)
+  const lowStockThreshold = await getSystemConfigValue('lowStockThreshold')
+  const where = buildProductWhere(merchantId, filters)
+  const orderBy = { createdAt: 'desc' } as const
+
+  if (typeof filters.lowStock === 'boolean') {
+    const products = await prisma.product.findMany({
+      where,
+      include: productListInclude,
+      orderBy,
+    })
+    const filtered = products
+      .filter(product => isLowStockProduct(product, lowStockThreshold) === filters.lowStock)
+      .map(product => serializeMerchantProduct(product, lowStockThreshold))
+
+    return {
+      items: filtered.slice((page - 1) * pageSize, page * pageSize),
+      total: filtered.length,
+      page,
+      pageSize,
+    }
+  }
+
+  const [total, products] = await prisma.$transaction([
+    prisma.product.count({ where }),
+    prisma.product.findMany({
+      where,
+      include: productListInclude,
+      orderBy,
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+    }),
+  ])
+
+  return {
+    items: products.map(product => serializeMerchantProduct(product, lowStockThreshold)),
+    total,
+    page,
+    pageSize,
+  }
+}
+
+export async function previewMyInventoryImport(
+  merchantId: number,
+  productId: number,
+  payload: InventoryImportPayload
+) {
+  const product = await prisma.product.findFirst({ where: { id: productId, merchantId }, select: { id: true } })
+  if (!product) throw notFound('商品不存在')
+
+  const analysis = await analyzeInventoryPayload(productId, payload)
+  return {
+    totalRows: analysis.totalRows,
+    validRows: analysis.validRows,
+    emptyRows: analysis.emptyRows,
+    duplicateRows: analysis.duplicateRows,
+    existingDuplicateRows: analysis.existingDuplicateRows,
+    canImport: analysis.canImport,
+  }
 }
 
 export async function createMyProduct(
@@ -60,7 +269,7 @@ export async function createMyProduct(
   data: {
     name: string; description?: string; richDescription?: string;
     type: string; icon?: string; imageUrl?: string;
-    price: number; originalPrice?: number; isHot?: boolean
+    price: number; originalPrice?: number; isHot?: boolean; deliveryMode?: string
   }
 ) {
   return prisma.product.create({
@@ -74,19 +283,38 @@ export async function updateMyProduct(merchantId: number, productId: number, dat
   return prisma.product.update({ where: { id: productId }, data })
 }
 
-export async function importMyInventory(merchantId: number, productId: number, items: string[]) {
-  const product = await prisma.product.findFirst({ where: { id: productId, merchantId } })
+export async function importMyInventory(
+  merchantId: number,
+  productId: number,
+  payload: InventoryImportPayload
+) {
+  const product = await prisma.product.findFirst({ where: { id: productId, merchantId }, select: { id: true } })
   if (!product) throw notFound('商品不存在')
 
   return prisma.$transaction(async tx => {
-    for (const content of items) {
+    const analysis = await analyzeInventoryPayload(productId, payload, tx)
+    if (analysis.duplicateRows > 0 || analysis.existingDuplicateRows > 0) {
+      throw badRequest('库存导入包含重复项', duplicateImportDetails(analysis))
+    }
+    if (analysis.validRows === 0) {
+      throw badRequest('至少提供一条有效库存')
+    }
+
+    for (const content of analysis.itemsToImport) {
       await tx.inventoryItem.create({ data: { productId, content } })
     }
     await tx.product.update({
       where: { id: productId },
-      data: { stock: { increment: items.length } },
+      data: { stock: { increment: analysis.itemsToImport.length } },
     })
-    return { imported: items.length }
+    return {
+      imported: analysis.itemsToImport.length,
+      totalRows: analysis.totalRows,
+      validRows: analysis.validRows,
+      skippedEmptyRows: analysis.emptyRows,
+      duplicateRows: analysis.duplicateRows,
+      existingDuplicateRows: analysis.existingDuplicateRows,
+    }
   })
 }
 
