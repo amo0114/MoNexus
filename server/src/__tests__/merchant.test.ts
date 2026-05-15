@@ -87,7 +87,7 @@ describe('Merchant product and order flows', () => {
       commissionRate: 0.2,
     })
     await createTestUser('merchant-buyer@test.local', 'buyer123', 'user', 5000)
-    const product = await createTestProduct('商家售卖商品', 500, 2, ['m-order-1', 'm-order-2'], merchant.id)
+    const product = await createTestProduct('商家售卖商品', 500, 2, ['m-order-secret-1', 'm-order-secret-2'], merchant.id)
 
     const buyer = await loginAs('merchant-buyer@test.local', 'buyer123')
     const created = await api
@@ -109,6 +109,8 @@ describe('Merchant product and order flows', () => {
     expect(orders.body).toHaveLength(1)
     expect(orders.body[0].merchantId).toBe(merchant.id)
     expect(orders.body[0].user.email).toBe('merchant-buyer@test.local')
+    expect(orders.body[0].delivery.status).toBe('delivered')
+    expect(orders.body[0].delivery.content).toBeUndefined()
     expect(orders.body[0].settlementAmount).toBe(400)
     expect(orders.body[0].settlement).toMatchObject({
       settlementAmount: 400,
@@ -121,6 +123,8 @@ describe('Merchant product and order flows', () => {
       .expect(200)
 
     expect(orderDetail.body.settlementAmount).toBe(400)
+    expect(orderDetail.body.delivery.status).toBe('delivered')
+    expect(orderDetail.body.delivery.content).toBeUndefined()
     expect(orderDetail.body.settlement).toMatchObject({
       settlementAmount: 400,
       status: 'pending',
@@ -135,6 +139,35 @@ describe('Merchant product and order flows', () => {
     expect(settlements.body[0].merchantId).toBe(merchant.id)
     expect(settlements.body[0].commissionAmount).toBe(100)
     expect(settlements.body[0].settlementAmount).toBe(400)
+  })
+
+  it('should return 404 when merchant tries to view another merchant order', async () => {
+    const { merchant: ownerMerchant } = await createTestMerchant('merchant-owner-order@test.local', 'pass123', {
+      role: 'merchant',
+      status: 'active',
+      name: '订单所属商家',
+    })
+    await createTestMerchant('merchant-foreign-order@test.local', 'pass123', {
+      role: 'merchant',
+      status: 'active',
+      name: '外部商家',
+    })
+    await createTestUser('foreign-order-buyer@test.local', 'buyer123', 'user', 5000)
+    const product = await createTestProduct('隔离商品', 500, 1, ['foreign-secret'], ownerMerchant.id)
+
+    const buyer = await loginAs('foreign-order-buyer@test.local', 'buyer123')
+    const created = await api
+      .post('/api/orders')
+      .set(authHeader(buyer.accessToken))
+      .send({ productId: product.id })
+      .expect(201)
+
+    const foreignMerchant = await loginAsMerchant('merchant-foreign-order@test.local', 'pass123')
+
+    await api
+      .get(`/api/merchant/orders/${created.body.orderId}`)
+      .set(authHeader(foreignMerchant.accessToken))
+      .expect(404)
   })
 
   it('should reject merchant access for regular users', async () => {

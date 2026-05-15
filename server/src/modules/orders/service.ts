@@ -1,5 +1,6 @@
 import { prisma } from '../../lib/prisma.js'
 import { badRequest, notFound } from '../../lib/httpError.js'
+import { serializeUserOrderDetail, serializeUserOrderList } from './serializers.js'
 
 export async function createOrder(userId: number, productId: number) {
   return prisma.$transaction(async tx => {
@@ -125,11 +126,11 @@ export async function getOrderDetail(orderId: number, userId: number) {
     },
   })
   if (!order) throw notFound('订单不存在')
-  return order
+  return serializeUserOrderDetail(order)
 }
 
 export async function getUserOrders(userId: number, page = 1, pageSize = 20) {
-  return prisma.order.findMany({
+  const orders = await prisma.order.findMany({
     where: { userId },
     include: {
       merchant: { select: { id: true, name: true } },
@@ -140,4 +141,5 @@ export async function getUserOrders(userId: number, page = 1, pageSize = 20) {
     skip: (page - 1) * pageSize,
     take: pageSize,
   })
+  return orders.map(serializeUserOrderList)
 }

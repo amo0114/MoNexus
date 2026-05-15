@@ -222,8 +222,18 @@ describe('POST /api/admin/products/:id/inventory', () => {
 })
 
 describe('GET /api/admin/orders', () => {
-  it('should list all orders', async () => {
+  it('should list all orders without raw delivery content', async () => {
     await createTestUser('boss6@test.local', 'admin222', 'admin')
+    await createTestUser('admin-order-buyer@test.local', 'buyerpass', 'user', 5000)
+    await createTestProduct('后台列表商品', 300, 1, ['admin-list-secret'])
+
+    const buyer = await loginAs('admin-order-buyer@test.local', 'buyerpass')
+    await api
+      .post('/api/orders')
+      .set(authHeader(buyer.accessToken))
+      .send({ productId: 1 })
+      .expect(201)
+
     const { accessToken } = await loginAs('boss6@test.local', 'admin222')
 
     const res = await api
@@ -232,6 +242,9 @@ describe('GET /api/admin/orders', () => {
       .expect(200)
 
     expect(Array.isArray(res.body)).toBe(true)
+    expect(res.body).toHaveLength(1)
+    expect(res.body[0].delivery.status).toBe('delivered')
+    expect(res.body[0].delivery.content).toBeUndefined()
   })
 })
 
@@ -256,7 +269,8 @@ describe('GET /api/admin/orders/:id', () => {
 
     expect(res.body.user.email).toBe('buyer@test.local')
     expect(res.body.product.name).toBe('管理查看商品')
-    expect(res.body.delivery.content).toBeDefined()
+    expect(res.body.delivery.status).toBe('delivered')
+    expect(res.body.delivery.content).toBe('mgmt-1')
   })
 })
 
