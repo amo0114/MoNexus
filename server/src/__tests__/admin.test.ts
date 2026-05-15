@@ -364,6 +364,42 @@ describe('POST /api/admin/settlements/batch-settle', () => {
     expect(unchanged.status).toBe('pending')
     expect(unchanged.settledAt).toBeNull()
   })
+
+  it('should reject pending settlements whose orders are not payable', async () => {
+    await createTestUser('settle-admin-gate@test.local', 'admin123', 'admin')
+    const { merchant } = await createTestMerchant('settle-merchant-gate@test.local', 'merchant123', {
+      role: 'merchant',
+      status: 'active',
+      name: '结算门禁商家',
+    })
+    await createTestUser('settle-buyer-gate@test.local', 'buyerpass', 'user', 5000)
+    const product = await createTestProduct('待履约结算商品', 200, 0, [], merchant.id)
+    await prisma.product.update({
+      where: { id: product.id },
+      data: { deliveryMode: 'manual_service', stock: 0 },
+    })
+    const buyer = await loginAs('settle-buyer-gate@test.local', 'buyerpass')
+    const created = await api
+      .post('/api/orders')
+      .set(authHeader(buyer.accessToken))
+      .send({ productId: product.id })
+      .expect(201)
+
+    const settlement = await prisma.settlement.findUniqueOrThrow({
+      where: { orderId: created.body.orderId },
+    })
+    const admin = await loginAs('settle-admin-gate@test.local', 'admin123')
+
+    await api
+      .post('/api/admin/settlements/batch-settle')
+      .set(authHeader(admin.accessToken))
+      .send({ settlementIds: [settlement.id] })
+      .expect(400)
+
+    const unchanged = await prisma.settlement.findUniqueOrThrow({ where: { id: settlement.id } })
+    expect(unchanged.status).toBe('pending')
+    expect(unchanged.settledAt).toBeNull()
+  })
 })
 
 describe('Refresh token revocation on merchant lifecycle', () => {

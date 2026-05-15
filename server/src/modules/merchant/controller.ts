@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express'
 import * as merchantService from './service.js'
+import type { MerchantOrderListQuery } from './schema.js'
 
 // ---- Application ----
 
@@ -69,9 +70,14 @@ function flattenSettlement<T extends OrderWithSettlement>(order: T) {
 export async function listOrders(req: Request, res: Response, next: NextFunction) {
   try {
     const merchant = await merchantService.getMyMerchant(req.user!.userId)
-    const { page, pageSize } = req.query as Record<string, string>
-    const orders = await merchantService.listMyOrders(merchant.id, Number(page) || 1, Number(pageSize) || 20)
-    res.json(orders.map(flattenSettlement))
+    const orders = await merchantService.listMyOrders(
+      merchant.id,
+      req.query as unknown as MerchantOrderListQuery
+    )
+    res.json({
+      ...orders,
+      items: orders.items.map(flattenSettlement),
+    })
   } catch (err) { next(err) }
 }
 
@@ -79,6 +85,45 @@ export async function orderDetail(req: Request, res: Response, next: NextFunctio
   try {
     const merchant = await merchantService.getMyMerchant(req.user!.userId)
     const order = await merchantService.getMyOrderDetail(merchant.id, req.params.id as unknown as number)
+    res.json(flattenSettlement(order))
+  } catch (err) { next(err) }
+}
+
+export async function startFulfillment(req: Request, res: Response, next: NextFunction) {
+  try {
+    const merchant = await merchantService.getMyMerchant(req.user!.userId)
+    const order = await merchantService.startOrderFulfillment(
+      merchant.id,
+      req.user!.userId,
+      req.params.id as unknown as number,
+      req.body
+    )
+    res.json(flattenSettlement(order))
+  } catch (err) { next(err) }
+}
+
+export async function deliverFulfillment(req: Request, res: Response, next: NextFunction) {
+  try {
+    const merchant = await merchantService.getMyMerchant(req.user!.userId)
+    const order = await merchantService.deliverOrderFulfillment(
+      merchant.id,
+      req.user!.userId,
+      req.params.id as unknown as number,
+      req.body
+    )
+    res.json(flattenSettlement(order))
+  } catch (err) { next(err) }
+}
+
+export async function respondDispute(req: Request, res: Response, next: NextFunction) {
+  try {
+    const merchant = await merchantService.getMyMerchant(req.user!.userId)
+    const order = await merchantService.respondToOrderDispute(
+      merchant.id,
+      req.user!.userId,
+      req.params.id as unknown as number,
+      req.body
+    )
     res.json(flattenSettlement(order))
   } catch (err) { next(err) }
 }
