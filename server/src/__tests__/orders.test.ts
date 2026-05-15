@@ -134,7 +134,7 @@ describe('GET /api/orders/:id', () => {
     expect(res.body.product.name).toBe('详细商品')
     expect(res.body.product.imageUrl).toBeNull()
     expect(res.body.delivery.status).toBe('delivered')
-    expect(res.body.delivery.content).toBeDefined()
+    expect(res.body.delivery.content).toBe('det-1')
     expect(res.body.merchant).toBeNull()
   })
 

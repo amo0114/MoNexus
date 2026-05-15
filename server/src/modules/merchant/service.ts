@@ -1,5 +1,6 @@
 import { prisma } from '../../lib/prisma.js'
 import { badRequest, notFound, conflict } from '../../lib/httpError.js'
+import { serializeMerchantOrder } from '../orders/serializers.js'
 
 // ---- Application ----
 
@@ -92,18 +93,19 @@ export async function importMyInventory(merchantId: number, productId: number, i
 // ---- Orders ----
 
 export async function listMyOrders(merchantId: number, page = 1, pageSize = 20) {
-  return prisma.order.findMany({
+  const orders = await prisma.order.findMany({
     where: { merchantId },
     include: {
       user: { select: { id: true, email: true } },
       product: { select: { name: true } },
-      delivery: { select: { content: true } },
+      delivery: { select: { status: true } },
       settlement: { select: { settlementAmount: true, status: true, settledAt: true } },
     },
     orderBy: { createdAt: 'desc' },
     skip: (page - 1) * pageSize,
     take: pageSize,
   })
+  return orders.map(serializeMerchantOrder)
 }
 
 export async function getMyOrderDetail(merchantId: number, orderId: number) {
@@ -112,12 +114,12 @@ export async function getMyOrderDetail(merchantId: number, orderId: number) {
     include: {
       user: { select: { id: true, email: true } },
       product: { select: { id: true, name: true, icon: true, type: true, price: true } },
-      delivery: { select: { content: true, status: true } },
+      delivery: { select: { status: true } },
       settlement: { select: { settlementAmount: true, status: true, settledAt: true } },
     },
   })
   if (!order) throw notFound('订单不存在')
-  return order
+  return serializeMerchantOrder(order)
 }
 
 // ---- Settlements ----

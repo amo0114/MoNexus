@@ -7,6 +7,7 @@ import {
 } from '../../lib/systemConfig.js'
 import { invalidate as invalidateUserStatusCache } from '../../lib/userStatusCache.js'
 import { revokeAllUserRefreshTokens } from '../auth/service.js'
+import { serializeAdminOrderDetail, serializeAdminOrderList } from '../orders/serializers.js'
 import type { ListAdminAuditQuery } from './schema.js'
 
 function getShanghaiDayRange() {
@@ -225,17 +226,18 @@ export async function importInventory(productId: number, items: string[], adminU
 }
 
 export async function listAllOrders(page = 1, pageSize = 20) {
-  return prisma.order.findMany({
+  const orders = await prisma.order.findMany({
     include: {
       user: { select: { id: true, email: true } },
       merchant: { select: { id: true, name: true } },
       product: { select: { name: true } },
-      delivery: { select: { content: true } },
+      delivery: { select: { status: true } },
     },
     orderBy: { createdAt: 'desc' },
     skip: (page - 1) * pageSize,
     take: pageSize,
   })
+  return orders.map(serializeAdminOrderList)
 }
 
 export async function listLogs() {
@@ -307,7 +309,7 @@ export async function getOrderDetail(orderId: number) {
     },
   })
   if (!order) throw notFound('订单不存在')
-  return order
+  return serializeAdminOrderDetail(order)
 }
 
 // ---- Merchant Management ----
