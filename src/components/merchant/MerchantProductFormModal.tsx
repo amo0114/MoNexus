@@ -13,6 +13,7 @@ interface Props {
 
 export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, product }: Props) {
   const showToast = useAppStore((s) => s.showToast)
+  const registry = useAppStore((s) => s.registry)
   const [loading, setLoading] = useState(false)
   const [uploadingImage, setUploadingImage] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -26,7 +27,8 @@ export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, pr
     icon: '',
     imageUrl: '',
     isHot: false,
-    status: 'active'
+    status: 'active',
+    deliveryMode: 'instant_inventory'
   })
 
   useEffect(() => {
@@ -42,12 +44,15 @@ export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, pr
           icon: product.icon || '',
           imageUrl: product.imageUrl || '',
           isHot: product.isHot || false,
-          status: product.status || 'active'
+          status: product.status || 'active',
+          deliveryMode: product.deliveryMode || 'instant_inventory'
         })
       } else {
+        const defaultType = registry?.productTypes?.[0]?.value || '网络节点'
+        const defaultMode = registry?.productTypes?.find(t => t.value === defaultType)?.deliveryModes?.[0] || 'instant_inventory'
         setForm({
           name: '',
-          type: '网络节点',
+          type: defaultType,
           price: '',
           originalPrice: '',
           description: '',
@@ -55,11 +60,12 @@ export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, pr
           icon: '',
           imageUrl: '',
           isHot: false,
-          status: 'active'
+          status: 'active',
+          deliveryMode: defaultMode
         })
       }
     }
-  }, [isOpen, product])
+  }, [isOpen, product, registry])
 
   if (!isOpen) return null
 
@@ -94,7 +100,8 @@ export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, pr
       richDescription: form.richDescription.trim() || undefined,
       icon: form.icon.trim() || undefined,
       imageUrl: form.imageUrl.trim() || undefined,
-      isHot: form.isHot
+      isHot: form.isHot,
+      deliveryMode: form.deliveryMode
     }
 
     if (originalPriceNum !== undefined) {
@@ -167,13 +174,39 @@ export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, pr
                   <select
                     className="input appearance-none cursor-pointer"
                     value={form.type}
-                    onChange={(e) => setForm({ ...form, type: e.target.value })}
+                    onChange={(e) => {
+                      const newType = e.target.value
+                      const typeConfig = registry?.productTypes?.find(t => t.value === newType)
+                      const availableModes = typeConfig?.deliveryModes || ['instant_inventory']
+                      const newMode = availableModes.includes(form.deliveryMode) ? form.deliveryMode : availableModes[0]
+                      setForm({ ...form, type: newType, deliveryMode: newMode })
+                    }}
                   >
-                    <option value="网络节点">网络节点</option>
-                    <option value="共享账号">共享账号</option>
-                    <option value="充值卡密">充值卡密</option>
-                    <option value="邀请码">邀请码</option>
+                    {registry?.productTypes?.map(pt => (
+                      <option key={pt.value} value={pt.value}>{pt.label}</option>
+                    ))}
                   </select>
+                </div>
+                <div>
+                  <FieldLabel required>发货模式</FieldLabel>
+                  <div className="flex gap-4 items-center h-[46px]">
+                    {registry?.productTypes?.find(t => t.value === form.type)?.deliveryModes?.map(modeValue => {
+                      const modeLabel = registry?.deliveryModes?.find(m => m.value === modeValue)?.label || modeValue
+                      return (
+                        <label key={modeValue} className="flex items-center gap-2 cursor-pointer text-sm">
+                          <input
+                            type="radio"
+                            name="deliveryMode"
+                            value={modeValue}
+                            checked={form.deliveryMode === modeValue}
+                            onChange={(e) => setForm({ ...form, deliveryMode: e.target.value })}
+                            className="w-4 h-4 text-[var(--color-primary)] border-[var(--color-border)] focus:ring-[var(--color-primary)]"
+                          />
+                          {modeLabel}
+                        </label>
+                      )
+                    })}
+                  </div>
                 </div>
                 {product && (
                   <div>
