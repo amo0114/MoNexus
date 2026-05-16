@@ -2,45 +2,101 @@
   "openapi": "3.0.3",
   "info": {
     "title": "MoNexus API",
-    "version": "1.3.0",
-    "description": "MoNexus 内部积分制数字商品市场 API。三种角色：user / merchant / admin。无任何法币 / 充值 / 提现。1.1.0 同步 M2 GA：health 含 db 字段、登录密码修改、用户封禁 / 解封、平台系统配置。1.2.0 同步 M3：新增 `GET /api/admin/audit`（操作员可读的 AdminLog 列表，支持分页与过滤），并标注 `refreshTokenMaxAgeDays` 现已对新签发的 refresh token 实际生效。1.3.0 同步 M4：拆分 `/api/health` 为 `/api/health/live`（liveness）和 `/api/health/ready`（readiness），保留老 `/api/health` 作为 `/live` 的兼容别名并标记为 deprecated；新增 `GET /api/metrics`（Prometheus 文本格式，可选 `METRICS_TOKEN` bearer 保护）。"
+    "version": "1.4.0",
+    "description": "MoNexus 内部积分制数字商品市场 API。三种角色：user / merchant / admin。无任何法币 / 充值 / 提现。1.1.0 同步 M2 GA：health 含 db 字段、登录密码修改、用户封禁 / 解封、平台系统配置。1.2.0 同步 M3：新增 `GET /api/admin/audit`（操作员可读的 AdminLog 列表，支持分页与过滤），并标注 `refreshTokenMaxAgeDays` 现已对新签发的 refresh token 实际生效。1.3.0 同步 M4：拆分 `/api/health` 为 `/api/health/live`（liveness）和 `/api/health/ready`（readiness），保留老 `/api/health` 作为 `/live` 的兼容别名并标记为 deprecated；新增 `GET /api/metrics`（Prometheus 文本格式，可选 `METRICS_TOKEN` bearer 保护）。 1.4.0 同步 M6 履约域重构 + 商家经营闭环：拆分订单 DTO 为按角色（user / merchant / admin）的边界，商家与平台列表不再返回 `delivery.content`；商品引入 `deliveryMode` 履约模式（`instant_inventory` / `manual_service`）；订单状态机扩展为 `pending → processing → delivered → disputed → closed`，旧值 `completed` 在响应中规范化为 `delivered`；新增 `POST /api/orders/{id}/dispute`、`/close`，新增商家履约动作 `start/deliver/respond-dispute`；商家商品列表、订单列表统一为 `{items,total,page,pageSize}` envelope，并支持搜索 / 筛选 / 低库存等参数；商家库存导入拆分 `preview` 与 `import`，请求体接受 `text` 或 `items`，响应携带空行 / 重复行 / 既存重复行统计；商家结算列表新增 `payable` 与 `blockReason`，与履约状态绑定（`disputed` 或未履约不可结算）；新增 `GET /api/config/registry` 暴露前端可消费的产品类型 / 履约模式 / 订单状态 / 结算状态 / 分页 / 低库存阈值的标签 + tone 注册表。"
   },
   "servers": [
-    { "url": "http://localhost:3000", "description": "本地开发，所有业务路径带 /api 前缀" }
+    {
+      "url": "http://localhost:3000",
+      "description": "本地开发，所有业务路径带 /api 前缀"
+    }
   ],
   "tags": [
-    { "name": "Health", "description": "服务健康探针（liveness / readiness / 兼容旧 `/api/health`）" },
-    { "name": "Observability", "description": "Prometheus 指标 / 监控相关端点" },
-    { "name": "Auth", "description": "注册 / 登录 / 刷新 / 密码 / 邮箱验证" },
-    { "name": "Products" },
-    { "name": "Orders" },
-    { "name": "Merchant" },
-    { "name": "Admin Users", "description": "用户管理：列表 / 调整积分 / 封禁 / 解封" },
-    { "name": "Admin Config", "description": "系统配置：注册 / 签到 / 邀请奖励、refresh token 有效期" },
-    { "name": "Admin Products" },
-    { "name": "Admin Orders" },
-    { "name": "Admin Audit" },
-    { "name": "Admin Merchants" },
-    { "name": "Admin Settlements" }
+    {
+      "name": "Health",
+      "description": "服务健康探针（liveness / readiness / 兼容旧 `/api/health`）"
+    },
+    {
+      "name": "Observability",
+      "description": "Prometheus 指标 / 监控相关端点"
+    },
+    {
+      "name": "Auth",
+      "description": "注册 / 登录 / 刷新 / 密码 / 邮箱验证"
+    },
+    {
+      "name": "Products"
+    },
+    {
+      "name": "Orders"
+    },
+    {
+      "name": "Merchant"
+    },
+    {
+      "name": "Admin Users",
+      "description": "用户管理：列表 / 调整积分 / 封禁 / 解封"
+    },
+    {
+      "name": "Admin Config",
+      "description": "系统配置：注册 / 签到 / 邀请奖励、refresh token 有效期"
+    },
+    {
+      "name": "Admin Products"
+    },
+    {
+      "name": "Admin Orders"
+    },
+    {
+      "name": "Admin Audit"
+    },
+    {
+      "name": "Admin Merchants"
+    },
+    {
+      "name": "Admin Settlements"
+    },
+    {
+      "name": "Config",
+      "description": "前端可消费的业务 registry（标签 / tone / 分页默认值 / 低库存阈值）"
+    }
   ],
   "components": {
     "securitySchemes": {
-      "bearerAuth": { "type": "http", "scheme": "bearer", "bearerFormat": "JWT" }
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
     },
     "schemas": {
       "ErrorEnvelope": {
         "type": "object",
-        "required": ["error"],
+        "required": [
+          "error"
+        ],
         "properties": {
           "error": {
             "type": "object",
-            "required": ["code", "message"],
+            "required": [
+              "code",
+              "message"
+            ],
             "properties": {
-              "code": { "type": "string", "example": "VALIDATION_ERROR" },
-              "message": { "type": "string", "example": "参数校验失败" },
+              "code": {
+                "type": "string",
+                "example": "VALIDATION_ERROR"
+              },
+              "message": {
+                "type": "string",
+                "example": "参数校验失败"
+              },
               "details": {
                 "type": "array",
-                "items": { "type": "object", "additionalProperties": true }
+                "items": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
               }
             }
           }
@@ -48,335 +104,826 @@
       },
       "OkResponse": {
         "type": "object",
-        "required": ["ok"],
-        "properties": { "ok": { "type": "boolean", "example": true } }
+        "required": [
+          "ok"
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "example": true
+          }
+        }
       },
       "MessageResponse": {
         "type": "object",
-        "required": ["message"],
-        "properties": { "message": { "type": "string" } }
+        "required": [
+          "message"
+        ],
+        "properties": {
+          "message": {
+            "type": "string"
+          }
+        }
       },
       "HealthOk": {
         "type": "object",
-        "required": ["status", "db", "time"],
+        "required": [
+          "status",
+          "db",
+          "time"
+        ],
         "properties": {
-          "status": { "type": "string", "enum": ["ok"] },
-          "db": { "type": "string", "enum": ["ok"] },
-          "time": { "type": "string", "format": "date-time" }
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok"
+            ]
+          },
+          "db": {
+            "type": "string",
+            "enum": [
+              "ok"
+            ]
+          },
+          "time": {
+            "type": "string",
+            "format": "date-time"
+          }
         }
       },
       "HealthFail": {
         "type": "object",
-        "required": ["status", "db", "time"],
+        "required": [
+          "status",
+          "db",
+          "time"
+        ],
         "properties": {
-          "status": { "type": "string", "enum": ["fail"] },
-          "db": { "type": "string", "enum": ["fail"] },
-          "time": { "type": "string", "format": "date-time" }
+          "status": {
+            "type": "string",
+            "enum": [
+              "fail"
+            ]
+          },
+          "db": {
+            "type": "string",
+            "enum": [
+              "fail"
+            ]
+          },
+          "time": {
+            "type": "string",
+            "format": "date-time"
+          }
         }
       },
       "HealthLive": {
         "type": "object",
-        "required": ["status", "uptime", "timestamp"],
+        "required": [
+          "status",
+          "uptime",
+          "timestamp"
+        ],
         "description": "`/api/health/live` 响应：进程存活快照，不查 DB。",
         "properties": {
-          "status": { "type": "string", "enum": ["live"] },
-          "uptime": { "type": "integer", "description": "进程运行秒数（process.uptime() 取整）" },
-          "timestamp": { "type": "string", "format": "date-time" }
+          "status": {
+            "type": "string",
+            "enum": [
+              "live"
+            ]
+          },
+          "uptime": {
+            "type": "integer",
+            "description": "进程运行秒数（process.uptime() 取整）"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
         }
       },
       "HealthReady": {
         "type": "object",
-        "required": ["status", "checks", "timestamp"],
+        "required": [
+          "status",
+          "checks",
+          "timestamp"
+        ],
         "description": "`/api/health/ready` 响应：服务是否可以承接流量。`status=unready` 时返回 503，错误聚合在 `error` 字段。",
         "properties": {
-          "status": { "type": "string", "enum": ["ready", "unready"] },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "unready"
+            ]
+          },
           "checks": {
             "type": "object",
-            "required": ["database", "config"],
+            "required": [
+              "database",
+              "config"
+            ],
             "properties": {
-              "database": { "type": "string", "enum": ["ok", "fail"] },
-              "config": { "type": "string", "enum": ["ok", "fail"] }
+              "database": {
+                "type": "string",
+                "enum": [
+                  "ok",
+                  "fail"
+                ]
+              },
+              "config": {
+                "type": "string",
+                "enum": [
+                  "ok",
+                  "fail"
+                ]
+              }
             }
           },
-          "timestamp": { "type": "string", "format": "date-time" },
-          "error": { "type": "string", "description": "聚合错误信息，仅 status=unready 时出现" }
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "error": {
+            "type": "string",
+            "description": "聚合错误信息，仅 status=unready 时出现"
+          }
         }
       },
-      "MerchantStatus": { "type": "string", "enum": ["pending", "active", "suspended", "rejected"] },
-      "SettlementStatus": { "type": "string", "enum": ["pending", "settled"] },
-      "ProductStatus": { "type": "string", "enum": ["active", "inactive"] },
+      "MerchantStatus": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "active",
+          "suspended",
+          "rejected"
+        ]
+      },
+      "SettlementStatus": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "settled"
+        ]
+      },
+      "ProductStatus": {
+        "type": "string",
+        "enum": [
+          "active",
+          "inactive"
+        ]
+      },
       "UserStatus": {
         "type": "string",
-        "enum": ["正常", "已封禁"],
+        "enum": [
+          "正常",
+          "已封禁"
+        ],
         "description": "用户账号状态。已封禁用户无法登录或刷新 access token。"
       },
-      "UserRole": { "type": "string", "enum": ["user", "merchant", "admin"] },
+      "UserRole": {
+        "type": "string",
+        "enum": [
+          "user",
+          "merchant",
+          "admin"
+        ]
+      },
       "MerchantSummary": {
         "type": "object",
-        "required": ["id", "name"],
+        "required": [
+          "id",
+          "name"
+        ],
         "properties": {
-          "id": { "type": "integer" },
-          "name": { "type": "string" }
+          "id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          }
         }
       },
       "AuthMerchantSummary": {
         "type": "object",
-        "required": ["id", "name", "status", "commissionRate"],
+        "required": [
+          "id",
+          "name",
+          "status",
+          "commissionRate"
+        ],
         "properties": {
-          "id": { "type": "integer" },
-          "name": { "type": "string" },
-          "status": { "$ref": "#/components/schemas/MerchantStatus" },
-          "commissionRate": { "type": "string", "example": "0.1000" }
+          "id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/MerchantStatus"
+          },
+          "commissionRate": {
+            "type": "string",
+            "example": "0.1000"
+          }
         }
       },
       "AuthUser": {
         "type": "object",
-        "required": ["id", "email", "role", "status", "inviteCode", "points"],
+        "required": [
+          "id",
+          "email",
+          "role",
+          "status",
+          "inviteCode",
+          "points"
+        ],
         "properties": {
-          "id": { "type": "integer" },
-          "email": { "type": "string", "format": "email" },
-          "role": { "$ref": "#/components/schemas/UserRole" },
-          "status": { "$ref": "#/components/schemas/UserStatus" },
-          "inviteCode": { "type": "string" },
-          "points": { "type": "integer", "minimum": 0 },
-          "createdAt": { "type": "string", "format": "date-time" },
+          "id": {
+            "type": "integer"
+          },
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "role": {
+            "$ref": "#/components/schemas/UserRole"
+          },
+          "status": {
+            "$ref": "#/components/schemas/UserStatus"
+          },
+          "inviteCode": {
+            "type": "string"
+          },
+          "points": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
           "merchant": {
             "nullable": true,
-            "oneOf": [{ "$ref": "#/components/schemas/AuthMerchantSummary" }]
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AuthMerchantSummary"
+              }
+            ]
           }
         }
       },
       "RegisterRequest": {
         "type": "object",
-        "required": ["email", "password"],
+        "required": [
+          "email",
+          "password"
+        ],
         "properties": {
-          "email": { "type": "string", "format": "email" },
-          "password": { "type": "string", "minLength": 6 },
-          "inviteCode": { "type": "string" }
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "password": {
+            "type": "string",
+            "minLength": 6
+          },
+          "inviteCode": {
+            "type": "string"
+          }
         }
       },
       "LoginRequest": {
         "type": "object",
-        "required": ["email", "password"],
+        "required": [
+          "email",
+          "password"
+        ],
         "properties": {
-          "email": { "type": "string", "format": "email" },
-          "password": { "type": "string", "minLength": 1 }
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "password": {
+            "type": "string",
+            "minLength": 1
+          }
         }
       },
       "AuthSession": {
         "type": "object",
-        "required": ["user", "accessToken"],
+        "required": [
+          "user",
+          "accessToken"
+        ],
         "description": "登录 / 注册成功响应。refresh token 通过 HttpOnly Cookie 下发，不出现在 JSON body 中。",
         "properties": {
-          "user": { "$ref": "#/components/schemas/AuthUser" },
-          "accessToken": { "type": "string", "description": "JWT access token，前端在 Authorization: Bearer 头中携带" }
+          "user": {
+            "$ref": "#/components/schemas/AuthUser"
+          },
+          "accessToken": {
+            "type": "string",
+            "description": "JWT access token，前端在 Authorization: Bearer 头中携带"
+          }
         }
       },
       "RefreshResponse": {
         "type": "object",
-        "required": ["accessToken"],
-        "properties": { "accessToken": { "type": "string" } }
+        "required": [
+          "accessToken"
+        ],
+        "properties": {
+          "accessToken": {
+            "type": "string"
+          }
+        }
       },
       "ForgotPasswordRequest": {
         "type": "object",
-        "required": ["email"],
-        "properties": { "email": { "type": "string", "format": "email" } }
+        "required": [
+          "email"
+        ],
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email"
+          }
+        }
       },
       "ResetPasswordRequest": {
         "type": "object",
-        "required": ["token", "password"],
+        "required": [
+          "token",
+          "password"
+        ],
         "properties": {
-          "token": { "type": "string", "minLength": 1 },
-          "password": { "type": "string", "minLength": 6 }
+          "token": {
+            "type": "string",
+            "minLength": 1
+          },
+          "password": {
+            "type": "string",
+            "minLength": 6
+          }
         }
       },
       "PasswordChangeRequest": {
         "type": "object",
-        "required": ["currentPassword", "newPassword"],
+        "required": [
+          "currentPassword",
+          "newPassword"
+        ],
         "properties": {
-          "currentPassword": { "type": "string", "minLength": 1 },
-          "newPassword": { "type": "string", "minLength": 6 }
+          "currentPassword": {
+            "type": "string",
+            "minLength": 1
+          },
+          "newPassword": {
+            "type": "string",
+            "minLength": 6
+          }
         }
       },
       "AdminStats": {
         "type": "object",
-        "required": ["users", "orders", "totalPoints", "todayOrders", "todayCheckins", "productCount", "availableInventory"],
+        "required": [
+          "users",
+          "orders",
+          "totalPoints",
+          "todayOrders",
+          "todayCheckins",
+          "productCount",
+          "availableInventory"
+        ],
         "properties": {
-          "users": { "type": "integer" },
-          "orders": { "type": "integer" },
-          "totalPoints": { "type": "integer" },
-          "todayOrders": { "type": "integer" },
-          "todayCheckins": { "type": "integer" },
-          "productCount": { "type": "integer" },
-          "availableInventory": { "type": "integer" }
+          "users": {
+            "type": "integer"
+          },
+          "orders": {
+            "type": "integer"
+          },
+          "totalPoints": {
+            "type": "integer"
+          },
+          "todayOrders": {
+            "type": "integer"
+          },
+          "todayCheckins": {
+            "type": "integer"
+          },
+          "productCount": {
+            "type": "integer"
+          },
+          "availableInventory": {
+            "type": "integer"
+          }
         }
       },
       "AdminUserRow": {
         "type": "object",
-        "required": ["id", "email", "role", "status", "inviteCode", "createdAt"],
+        "required": [
+          "id",
+          "email",
+          "role",
+          "status",
+          "inviteCode",
+          "createdAt"
+        ],
         "properties": {
-          "id": { "type": "integer" },
-          "email": { "type": "string", "format": "email" },
-          "role": { "$ref": "#/components/schemas/UserRole" },
-          "status": { "$ref": "#/components/schemas/UserStatus" },
-          "inviteCode": { "type": "string" },
-          "createdAt": { "type": "string", "format": "date-time" },
+          "id": {
+            "type": "integer"
+          },
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "role": {
+            "$ref": "#/components/schemas/UserRole"
+          },
+          "status": {
+            "$ref": "#/components/schemas/UserStatus"
+          },
+          "inviteCode": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
           "pointAccount": {
             "nullable": true,
             "type": "object",
-            "properties": { "balance": { "type": "integer" } }
+            "properties": {
+              "balance": {
+                "type": "integer"
+              }
+            }
           }
         }
       },
       "AdminUserMutation": {
         "type": "object",
-        "required": ["id", "email", "role", "status"],
+        "required": [
+          "id",
+          "email",
+          "role",
+          "status"
+        ],
         "description": "封禁 / 解封后的简化用户对象。",
         "properties": {
-          "id": { "type": "integer" },
-          "email": { "type": "string", "format": "email" },
-          "role": { "$ref": "#/components/schemas/UserRole" },
-          "status": { "$ref": "#/components/schemas/UserStatus" }
+          "id": {
+            "type": "integer"
+          },
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "role": {
+            "$ref": "#/components/schemas/UserRole"
+          },
+          "status": {
+            "$ref": "#/components/schemas/UserStatus"
+          }
         }
       },
       "AdjustPointsRequest": {
         "type": "object",
-        "required": ["type", "amount", "reason"],
+        "required": [
+          "type",
+          "amount",
+          "reason"
+        ],
         "properties": {
-          "type": { "type": "string", "enum": ["add", "deduct"] },
-          "amount": { "type": "integer", "minimum": 1 },
-          "reason": { "type": "string", "minLength": 1 }
+          "type": {
+            "type": "string",
+            "enum": [
+              "add",
+              "deduct"
+            ]
+          },
+          "amount": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1
+          }
         }
       },
       "AdjustPointsResponse": {
         "type": "object",
-        "required": ["newBalance"],
-        "properties": { "newBalance": { "type": "integer", "minimum": 0 } }
+        "required": [
+          "newBalance"
+        ],
+        "properties": {
+          "newBalance": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
       },
       "BanUserRequest": {
         "type": "object",
-        "required": ["reason"],
-        "properties": { "reason": { "type": "string", "minLength": 1 } }
+        "required": [
+          "reason"
+        ],
+        "properties": {
+          "reason": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
       },
       "SystemConfigKey": {
         "type": "string",
-        "enum": ["registerReward", "checkinReward", "inviteReward", "refreshTokenMaxAgeDays"],
+        "enum": [
+          "registerReward",
+          "checkinReward",
+          "inviteReward",
+          "refreshTokenMaxAgeDays"
+        ],
         "description": "已知系统配置项：注册奖励 / 签到奖励 / 邀请奖励 / refresh token 有效天数。"
       },
       "SystemConfigEntry": {
         "type": "object",
-        "required": ["key", "value", "defaultValue"],
+        "required": [
+          "key",
+          "value",
+          "defaultValue"
+        ],
         "properties": {
-          "key": { "$ref": "#/components/schemas/SystemConfigKey" },
-          "value": { "type": "integer", "minimum": 0, "description": "当前生效值；未持久化时回落到默认值" },
-          "defaultValue": { "type": "integer", "minimum": 0 },
-          "updatedAt": { "type": "string", "format": "date-time", "nullable": true },
-          "updatedBy": { "type": "integer", "nullable": true, "description": "最后一次更新的 admin user id" }
+          "key": {
+            "$ref": "#/components/schemas/SystemConfigKey"
+          },
+          "value": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "当前生效值；未持久化时回落到默认值"
+          },
+          "defaultValue": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "updatedBy": {
+            "type": "integer",
+            "nullable": true,
+            "description": "最后一次更新的 admin user id"
+          }
         }
       },
       "UpdateSystemConfigRequest": {
         "type": "object",
-        "required": ["value"],
+        "required": [
+          "value"
+        ],
         "properties": {
-          "value": { "type": "integer", "minimum": 0, "description": "非负整数" }
+          "value": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "非负整数"
+          }
         }
       },
       "AdminProduct": {
         "type": "object",
-        "required": ["id", "name", "type", "icon", "price", "status"],
+        "required": [
+          "id",
+          "name",
+          "type",
+          "icon",
+          "price",
+          "status"
+        ],
         "properties": {
-          "id": { "type": "integer" },
-          "merchantId": { "type": "integer", "nullable": true },
-          "name": { "type": "string" },
-          "description": { "type": "string", "nullable": true },
-          "richDescription": { "type": "string", "nullable": true },
-          "type": { "type": "string" },
-          "icon": { "type": "string" },
-          "imageUrl": { "type": "string", "nullable": true },
-          "price": { "type": "integer", "minimum": 1 },
-          "originalPrice": { "type": "integer", "minimum": 1, "nullable": true },
-          "stock": { "type": "integer", "minimum": 0 },
-          "sales": { "type": "integer", "minimum": 0 },
-          "isHot": { "type": "boolean" },
-          "status": { "$ref": "#/components/schemas/ProductStatus" },
-          "createdAt": { "type": "string", "format": "date-time" }
+          "id": {
+            "type": "integer"
+          },
+          "merchantId": {
+            "type": "integer",
+            "nullable": true
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "richDescription": {
+            "type": "string",
+            "nullable": true
+          },
+          "type": {
+            "type": "string"
+          },
+          "icon": {
+            "type": "string"
+          },
+          "imageUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "price": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "originalPrice": {
+            "type": "integer",
+            "minimum": 1,
+            "nullable": true
+          },
+          "stock": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "sales": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "isHot": {
+            "type": "boolean"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ProductStatus"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
         }
       },
       "CreateAdminProductRequest": {
         "type": "object",
-        "required": ["name", "type", "price"],
+        "required": [
+          "name",
+          "type",
+          "price"
+        ],
         "properties": {
-          "name": { "type": "string", "minLength": 1 },
-          "description": { "type": "string" },
-          "richDescription": { "type": "string" },
-          "type": { "type": "string", "minLength": 1 },
-          "icon": { "type": "string", "default": "package" },
-          "imageUrl": { "type": "string" },
-          "price": { "type": "integer", "minimum": 1 },
-          "originalPrice": { "type": "integer", "minimum": 1 },
-          "isHot": { "type": "boolean", "default": false }
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": {
+            "type": "string"
+          },
+          "richDescription": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "minLength": 1
+          },
+          "icon": {
+            "type": "string",
+            "default": "package"
+          },
+          "imageUrl": {
+            "type": "string"
+          },
+          "price": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "originalPrice": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "isHot": {
+            "type": "boolean",
+            "default": false
+          }
         }
       },
       "UpdateAdminProductRequest": {
         "type": "object",
         "properties": {
-          "name": { "type": "string", "minLength": 1 },
-          "description": { "type": "string" },
-          "richDescription": { "type": "string" },
-          "type": { "type": "string" },
-          "icon": { "type": "string" },
-          "imageUrl": { "type": "string" },
-          "price": { "type": "integer", "minimum": 1 },
-          "originalPrice": { "type": "integer", "minimum": 1 },
-          "isHot": { "type": "boolean" },
-          "status": { "$ref": "#/components/schemas/ProductStatus" }
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": {
+            "type": "string"
+          },
+          "richDescription": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "icon": {
+            "type": "string"
+          },
+          "imageUrl": {
+            "type": "string"
+          },
+          "price": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "originalPrice": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "isHot": {
+            "type": "boolean"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ProductStatus"
+          }
         }
       },
       "AdminOrderRow": {
         "type": "object",
-        "required": ["id", "userId", "productId", "price", "status", "createdAt"],
+        "required": [
+          "id",
+          "userId",
+          "productId",
+          "price",
+          "status",
+          "createdAt"
+        ],
         "properties": {
-          "id": { "type": "integer" },
-          "userId": { "type": "integer" },
-          "productId": { "type": "integer" },
-          "merchantId": { "type": "integer", "nullable": true },
-          "price": { "type": "integer", "minimum": 0 },
-          "status": { "type": "string" },
-          "createdAt": { "type": "string", "format": "date-time" },
+          "id": {
+            "type": "integer"
+          },
+          "userId": {
+            "type": "integer"
+          },
+          "productId": {
+            "type": "integer"
+          },
+          "merchantId": {
+            "type": "integer",
+            "nullable": true
+          },
+          "price": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "status": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
           "user": {
             "type": "object",
             "properties": {
-              "id": { "type": "integer" },
-              "email": { "type": "string", "format": "email" }
+              "id": {
+                "type": "integer"
+              },
+              "email": {
+                "type": "string",
+                "format": "email"
+              }
             }
           },
           "merchant": {
             "nullable": true,
-            "oneOf": [{ "$ref": "#/components/schemas/MerchantSummary" }]
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/MerchantSummary"
+              }
+            ]
           },
           "product": {
             "type": "object",
-            "properties": { "name": { "type": "string" } }
+            "properties": {
+              "name": {
+                "type": "string"
+              }
+            }
           },
           "delivery": {
-            "type": "object",
-            "nullable": true,
-            "properties": { "content": { "type": "string" } }
+            "$ref": "#/components/schemas/DeliveryRecordPublic"
           }
         }
       },
       "AdminOrderDetail": {
         "allOf": [
-          { "$ref": "#/components/schemas/AdminOrderRow" },
+          {
+            "$ref": "#/components/schemas/AdminOrderRow"
+          },
           {
             "type": "object",
+            "description": "管理员订单详情。`delivery` 携带 `content`（管理员可查证敏感交付内容用于客服 / 风控）；附带 `statusEvents` 时间线。",
             "properties": {
               "delivery": {
-                "type": "object",
-                "nullable": true,
-                "properties": {
-                  "content": { "type": "string" },
-                  "status": { "type": "string" }
+                "$ref": "#/components/schemas/DeliveryRecordWithContent"
+              },
+              "statusEvents": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/OrderStatusEvent"
                 }
               }
             }
@@ -385,362 +932,1574 @@
       },
       "PointLogEntry": {
         "type": "object",
-        "required": ["id", "userId", "type", "amount", "balanceAfter", "reason", "createdAt"],
+        "required": [
+          "id",
+          "userId",
+          "type",
+          "amount",
+          "balanceAfter",
+          "reason",
+          "createdAt"
+        ],
         "properties": {
-          "id": { "type": "integer" },
-          "userId": { "type": "integer" },
-          "type": { "type": "string", "enum": ["in", "out"] },
-          "amount": { "type": "integer", "minimum": 0 },
-          "balanceAfter": { "type": "integer", "minimum": 0 },
-          "reason": { "type": "string" },
-          "createdAt": { "type": "string", "format": "date-time" },
+          "id": {
+            "type": "integer"
+          },
+          "userId": {
+            "type": "integer"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "in",
+              "out"
+            ]
+          },
+          "amount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "balanceAfter": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "reason": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
           "user": {
             "type": "object",
             "properties": {
-              "id": { "type": "integer" },
-              "email": { "type": "string", "format": "email" }
+              "id": {
+                "type": "integer"
+              },
+              "email": {
+                "type": "string",
+                "format": "email"
+              }
             }
           }
         }
       },
       "AdminLogEntry": {
         "type": "object",
-        "required": ["id", "adminId", "adminEmail", "action", "createdAt"],
+        "required": [
+          "id",
+          "adminId",
+          "adminEmail",
+          "action",
+          "createdAt"
+        ],
         "properties": {
-          "id": { "type": "integer" },
-          "adminId": { "type": "integer", "description": "执行该动作的管理员 User.id" },
-          "adminEmail": { "type": "string", "format": "email", "description": "执行该动作的管理员邮箱（用于前端展示，避免再发一次 user 详情请求）" },
-          "action": { "type": "string", "description": "管理员动作枚举字符串，例如 `ban` / `unban` / `point_adjust` / `config_update` / `merchant_approve` / `merchant_reject` / `merchant_suspend` / `settlement_batch_settle`。" },
-          "targetType": { "type": "string", "nullable": true, "description": "动作的对象类型，例如 `user` / `merchant` / `settlement` / `config`。" },
-          "targetId": { "type": "integer", "nullable": true, "description": "对象的整型主键；对全局动作（如批量结算）可为 null。" },
-          "metadata": { "type": "object", "nullable": true, "additionalProperties": true, "description": "原 `AdminLog.detail`，按 action 不同结构不同（例如 ban 携带 reason；config_update 携带 key/value）。" },
-          "createdAt": { "type": "string", "format": "date-time" }
+          "id": {
+            "type": "integer"
+          },
+          "adminId": {
+            "type": "integer",
+            "description": "执行该动作的管理员 User.id"
+          },
+          "adminEmail": {
+            "type": "string",
+            "format": "email",
+            "description": "执行该动作的管理员邮箱（用于前端展示，避免再发一次 user 详情请求）"
+          },
+          "action": {
+            "type": "string",
+            "description": "管理员动作枚举字符串，例如 `ban` / `unban` / `point_adjust` / `config_update` / `merchant_approve` / `merchant_reject` / `merchant_suspend` / `settlement_batch_settle`。"
+          },
+          "targetType": {
+            "type": "string",
+            "nullable": true,
+            "description": "动作的对象类型，例如 `user` / `merchant` / `settlement` / `config`。"
+          },
+          "targetId": {
+            "type": "integer",
+            "nullable": true,
+            "description": "对象的整型主键；对全局动作（如批量结算）可为 null。"
+          },
+          "metadata": {
+            "type": "object",
+            "nullable": true,
+            "additionalProperties": true,
+            "description": "原 `AdminLog.detail`，按 action 不同结构不同（例如 ban 携带 reason；config_update 携带 key/value）。"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
         }
       },
       "AdminLogList": {
         "type": "object",
-        "required": ["items", "total", "page", "pageSize"],
+        "required": [
+          "items",
+          "total",
+          "page",
+          "pageSize"
+        ],
         "properties": {
-          "items": { "type": "array", "items": { "$ref": "#/components/schemas/AdminLogEntry" } },
-          "total": { "type": "integer", "minimum": 0, "description": "命中过滤条件的总条目数（不受分页限制）" },
-          "page": { "type": "integer", "minimum": 1 },
-          "pageSize": { "type": "integer", "minimum": 1 }
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminLogEntry"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "命中过滤条件的总条目数（不受分页限制）"
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "pageSize": {
+            "type": "integer",
+            "minimum": 1
+          }
         }
       },
       "Merchant": {
         "type": "object",
-        "required": ["id", "userId", "name", "status", "commissionRate", "createdAt", "updatedAt"],
+        "required": [
+          "id",
+          "userId",
+          "name",
+          "status",
+          "commissionRate",
+          "createdAt",
+          "updatedAt"
+        ],
         "properties": {
-          "id": { "type": "integer" },
-          "userId": { "type": "integer" },
-          "name": { "type": "string" },
-          "description": { "type": "string", "nullable": true },
-          "status": { "$ref": "#/components/schemas/MerchantStatus" },
-          "commissionRate": { "type": "string", "example": "0.1000" },
-          "contactEmail": { "type": "string", "format": "email", "nullable": true },
-          "contactPhone": { "type": "string", "nullable": true },
-          "createdAt": { "type": "string", "format": "date-time" },
-          "updatedAt": { "type": "string", "format": "date-time" },
-          "approvedAt": { "type": "string", "format": "date-time", "nullable": true },
-          "approvedBy": { "type": "integer", "nullable": true }
+          "id": {
+            "type": "integer"
+          },
+          "userId": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "status": {
+            "$ref": "#/components/schemas/MerchantStatus"
+          },
+          "commissionRate": {
+            "type": "string",
+            "example": "0.1000"
+          },
+          "contactEmail": {
+            "type": "string",
+            "format": "email",
+            "nullable": true
+          },
+          "contactPhone": {
+            "type": "string",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "approvedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "approvedBy": {
+            "type": "integer",
+            "nullable": true
+          }
         }
       },
       "MerchantProduct": {
         "type": "object",
-        "required": ["id", "merchantId", "name", "type", "icon", "price", "stock", "sales", "isHot", "status", "createdAt"],
+        "required": [
+          "id",
+          "merchantId",
+          "name",
+          "type",
+          "icon",
+          "price",
+          "stock",
+          "sales",
+          "isHot",
+          "status",
+          "createdAt"
+        ],
         "properties": {
-          "id": { "type": "integer" },
-          "merchantId": { "type": "integer", "nullable": true },
-          "name": { "type": "string" },
-          "description": { "type": "string", "nullable": true },
-          "richDescription": { "type": "string", "nullable": true },
-          "type": { "type": "string" },
-          "icon": { "type": "string" },
-          "imageUrl": { "type": "string", "nullable": true },
-          "price": { "type": "integer" },
-          "originalPrice": { "type": "integer", "nullable": true },
-          "stock": { "type": "integer" },
-          "sales": { "type": "integer" },
-          "isHot": { "type": "boolean" },
-          "status": { "$ref": "#/components/schemas/ProductStatus" },
-          "createdAt": { "type": "string", "format": "date-time" },
+          "id": {
+            "type": "integer"
+          },
+          "merchantId": {
+            "type": "integer",
+            "nullable": true
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "richDescription": {
+            "type": "string",
+            "nullable": true
+          },
+          "type": {
+            "type": "string"
+          },
+          "icon": {
+            "type": "string"
+          },
+          "imageUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "price": {
+            "type": "integer"
+          },
+          "originalPrice": {
+            "type": "integer",
+            "nullable": true
+          },
+          "stock": {
+            "type": "integer"
+          },
+          "sales": {
+            "type": "integer"
+          },
+          "isHot": {
+            "type": "boolean"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ProductStatus"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
           "merchant": {
             "nullable": true,
-            "oneOf": [{ "$ref": "#/components/schemas/MerchantSummary" }]
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/MerchantSummary"
+              }
+            ]
           },
           "_count": {
             "type": "object",
-            "properties": { "inventory": { "type": "integer" } }
+            "properties": {
+              "inventory": {
+                "type": "integer"
+              }
+            }
           }
         }
       },
       "Settlement": {
         "type": "object",
-        "required": ["id", "merchantId", "orderId", "orderAmount", "commissionRate", "commissionAmount", "settlementAmount", "status", "createdAt"],
+        "required": [
+          "id",
+          "merchantId",
+          "orderId",
+          "orderAmount",
+          "commissionRate",
+          "commissionAmount",
+          "settlementAmount",
+          "status",
+          "createdAt"
+        ],
         "properties": {
-          "id": { "type": "integer" },
-          "merchantId": { "type": "integer" },
-          "orderId": { "type": "integer" },
-          "orderAmount": { "type": "integer" },
-          "commissionRate": { "type": "string", "example": "0.1000" },
-          "commissionAmount": { "type": "integer" },
-          "settlementAmount": { "type": "integer" },
-          "status": { "$ref": "#/components/schemas/SettlementStatus" },
-          "settledAt": { "type": "string", "format": "date-time", "nullable": true },
-          "createdAt": { "type": "string", "format": "date-time" },
-          "merchant": { "$ref": "#/components/schemas/MerchantSummary" },
+          "id": {
+            "type": "integer"
+          },
+          "merchantId": {
+            "type": "integer"
+          },
+          "orderId": {
+            "type": "integer"
+          },
+          "orderAmount": {
+            "type": "integer"
+          },
+          "commissionRate": {
+            "type": "string",
+            "example": "0.1000"
+          },
+          "commissionAmount": {
+            "type": "integer"
+          },
+          "settlementAmount": {
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/SettlementStatus"
+          },
+          "settledAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "merchant": {
+            "$ref": "#/components/schemas/MerchantSummary"
+          },
           "order": {
             "type": "object",
             "properties": {
-              "id": { "type": "integer" },
-              "price": { "type": "integer" },
-              "createdAt": { "type": "string", "format": "date-time" }
+              "id": {
+                "type": "integer"
+              },
+              "price": {
+                "type": "integer"
+              },
+              "createdAt": {
+                "type": "string",
+                "format": "date-time"
+              }
             }
           }
         }
       },
       "MerchantOrder": {
+        "deprecated": true,
+        "description": "**Deprecated in v1.4.0**：旧版混合 DTO，曾同时用于用户 / 商家订单视图，是 A1 修复的越权口子。新代码请使用 `UserOrderListItem` / `UserOrderDetail` / `MerchantOrderListItem` / `MerchantOrderDetail`。此 schema 保留仅为说明历史用法。",
         "type": "object",
-        "required": ["id", "userId", "productId", "merchantId", "price", "commissionRate", "commissionAmount", "settlementAmount", "status", "createdAt"],
         "properties": {
-          "id": { "type": "integer" },
-          "userId": { "type": "integer" },
-          "productId": { "type": "integer" },
-          "merchantId": { "type": "integer" },
-          "price": { "type": "integer" },
-          "commissionRate": { "type": "string", "example": "0.1000" },
-          "commissionAmount": { "type": "integer" },
-          "settlementAmount": { "type": "integer" },
-          "status": { "type": "string" },
-          "createdAt": { "type": "string", "format": "date-time" },
-          "user": {
-            "type": "object",
-            "properties": {
-              "id": { "type": "integer" },
-              "email": { "type": "string", "format": "email" }
-            }
+          "id": {
+            "type": "integer"
           },
-          "product": {
-            "type": "object",
-            "properties": {
-              "id": { "type": "integer" },
-              "name": { "type": "string" },
-              "icon": { "type": "string" },
-              "type": { "type": "string" }
-            }
-          },
-          "delivery": {
-            "type": "object",
-            "nullable": true,
-            "properties": {
-              "content": { "type": "string" },
-              "status": { "type": "string" }
-            }
-          },
-          "settlement": {
-            "nullable": true,
-            "oneOf": [{ "$ref": "#/components/schemas/Settlement" }]
+          "status": {
+            "$ref": "#/components/schemas/FulfillmentOrderStatus"
           }
         }
       },
       "MerchantStats": {
         "type": "object",
-        "required": ["productCount", "orderCount", "totalRevenue", "pendingSettlement"],
+        "required": [
+          "productCount",
+          "orderCount",
+          "totalRevenue",
+          "pendingSettlement"
+        ],
         "properties": {
-          "productCount": { "type": "integer" },
-          "orderCount": { "type": "integer" },
-          "totalRevenue": { "type": "integer" },
-          "pendingSettlement": { "type": "integer" }
+          "productCount": {
+            "type": "integer"
+          },
+          "orderCount": {
+            "type": "integer"
+          },
+          "totalRevenue": {
+            "type": "integer"
+          },
+          "pendingSettlement": {
+            "type": "integer"
+          }
         }
       },
       "ApplyMerchantRequest": {
         "type": "object",
-        "required": ["name"],
+        "required": [
+          "name"
+        ],
         "properties": {
-          "name": { "type": "string", "minLength": 1, "maxLength": 100 },
-          "description": { "type": "string" },
-          "contactEmail": { "type": "string", "format": "email" },
-          "contactPhone": { "type": "string" }
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "description": {
+            "type": "string"
+          },
+          "contactEmail": {
+            "type": "string",
+            "format": "email"
+          },
+          "contactPhone": {
+            "type": "string"
+          }
         }
       },
       "UpdateMerchantRequest": {
         "type": "object",
         "properties": {
-          "name": { "type": "string", "minLength": 1, "maxLength": 100 },
-          "description": { "type": "string" },
-          "contactEmail": { "type": "string", "format": "email" },
-          "contactPhone": { "type": "string" }
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "description": {
+            "type": "string"
+          },
+          "contactEmail": {
+            "type": "string",
+            "format": "email"
+          },
+          "contactPhone": {
+            "type": "string"
+          }
         }
       },
       "CreateMerchantProductRequest": {
         "type": "object",
-        "required": ["name", "type", "price"],
+        "required": [
+          "name",
+          "type",
+          "price"
+        ],
         "properties": {
-          "name": { "type": "string", "minLength": 1 },
-          "description": { "type": "string" },
-          "richDescription": { "type": "string" },
-          "type": { "type": "string", "minLength": 1 },
-          "icon": { "type": "string", "default": "package" },
-          "imageUrl": { "type": "string" },
-          "price": { "type": "integer", "minimum": 1 },
-          "originalPrice": { "type": "integer", "minimum": 1 },
-          "isHot": { "type": "boolean", "default": false }
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": {
+            "type": "string"
+          },
+          "richDescription": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "minLength": 1
+          },
+          "icon": {
+            "type": "string",
+            "default": "package"
+          },
+          "imageUrl": {
+            "type": "string"
+          },
+          "price": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "originalPrice": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "isHot": {
+            "type": "boolean",
+            "default": false
+          },
+          "deliveryMode": {
+            "$ref": "#/components/schemas/FulfillmentMode",
+            "default": "instant_inventory"
+          }
         }
       },
       "UpdateMerchantProductRequest": {
         "type": "object",
         "properties": {
-          "name": { "type": "string", "minLength": 1 },
-          "description": { "type": "string" },
-          "richDescription": { "type": "string" },
-          "type": { "type": "string", "minLength": 1 },
-          "icon": { "type": "string" },
-          "imageUrl": { "type": "string" },
-          "price": { "type": "integer", "minimum": 1 },
-          "originalPrice": { "type": "integer", "minimum": 1 },
-          "isHot": { "type": "boolean" },
-          "status": { "$ref": "#/components/schemas/ProductStatus" }
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": {
+            "type": "string"
+          },
+          "richDescription": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "minLength": 1
+          },
+          "icon": {
+            "type": "string"
+          },
+          "imageUrl": {
+            "type": "string"
+          },
+          "price": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "originalPrice": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "isHot": {
+            "type": "boolean"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ProductStatus"
+          },
+          "deliveryMode": {
+            "$ref": "#/components/schemas/FulfillmentMode"
+          }
         }
       },
       "ImportInventoryRequest": {
         "type": "object",
-        "required": ["items"],
+        "required": [
+          "items"
+        ],
         "properties": {
           "items": {
             "type": "array",
             "minItems": 1,
-            "items": { "type": "string", "minLength": 1 }
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
           }
         }
       },
       "RejectMerchantRequest": {
         "type": "object",
-        "properties": { "reason": { "type": "string" } }
+        "properties": {
+          "reason": {
+            "type": "string"
+          }
+        }
       },
       "UpdateCommissionRequest": {
         "type": "object",
-        "required": ["commissionRate"],
+        "required": [
+          "commissionRate"
+        ],
         "properties": {
-          "commissionRate": { "type": "number", "minimum": 0, "maximum": 1 }
+          "commissionRate": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          }
         }
       },
       "BatchSettleRequest": {
         "type": "object",
-        "required": ["settlementIds"],
+        "required": [
+          "settlementIds"
+        ],
         "properties": {
           "settlementIds": {
             "type": "array",
             "minItems": 1,
-            "items": { "type": "integer", "minimum": 1 }
+            "items": {
+              "type": "integer",
+              "minimum": 1
+            }
           }
         }
       },
       "MerchantDetail": {
         "allOf": [
-          { "$ref": "#/components/schemas/Merchant" },
+          {
+            "$ref": "#/components/schemas/Merchant"
+          },
           {
             "type": "object",
             "properties": {
               "user": {
                 "type": "object",
                 "properties": {
-                  "id": { "type": "integer" },
-                  "email": { "type": "string", "format": "email" },
-                  "status": { "type": "string" },
-                  "createdAt": { "type": "string", "format": "date-time" }
+                  "id": {
+                    "type": "integer"
+                  },
+                  "email": {
+                    "type": "string",
+                    "format": "email"
+                  },
+                  "status": {
+                    "type": "string"
+                  },
+                  "createdAt": {
+                    "type": "string",
+                    "format": "date-time"
+                  }
                 }
               },
               "products": {
                 "type": "array",
-                "items": { "$ref": "#/components/schemas/MerchantProduct" }
+                "items": {
+                  "$ref": "#/components/schemas/MerchantProduct"
+                }
               },
-              "orderCount": { "type": "integer" },
-              "settlementCount": { "type": "integer" }
+              "orderCount": {
+                "type": "integer"
+              },
+              "settlementCount": {
+                "type": "integer"
+              }
             }
           }
         ]
+      },
+      "FulfillmentMode": {
+        "type": "string",
+        "enum": [
+          "instant_inventory",
+          "manual_service"
+        ],
+        "description": "商品履约模式。`instant_inventory` = 即时库存发货；`manual_service` = 人工服务履约。"
+      },
+      "FulfillmentOrderStatus": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "processing",
+          "delivered",
+          "disputed",
+          "closed"
+        ],
+        "description": "订单履约状态机。合法迁移：pending→processing；processing→delivered；delivered→disputed|closed；disputed→processing|closed。响应侧旧值 `completed` 已规范化为 `delivered`。"
+      },
+      "OrderStatusActorRole": {
+        "type": "string",
+        "enum": [
+          "user",
+          "merchant",
+          "admin",
+          "system"
+        ],
+        "description": "订单状态事件的操作者角色。"
+      },
+      "OrderStatusEvent": {
+        "type": "object",
+        "required": [
+          "actorRole",
+          "toStatus",
+          "action"
+        ],
+        "description": "订单状态事件（时间线）。`id` 在合成兜底（旧订单无事件记录）时为 null。",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "nullable": true
+          },
+          "actorRole": {
+            "$ref": "#/components/schemas/OrderStatusActorRole"
+          },
+          "fromStatus": {
+            "$ref": "#/components/schemas/FulfillmentOrderStatus",
+            "nullable": true
+          },
+          "toStatus": {
+            "$ref": "#/components/schemas/FulfillmentOrderStatus"
+          },
+          "action": {
+            "type": "string",
+            "description": "操作语义键，如 `order.created.instant_inventory`、`merchant.fulfillment.start`、`user.dispute`。"
+          },
+          "publicNote": {
+            "type": "string",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        }
+      },
+      "DeliveryRecordPublic": {
+        "type": "object",
+        "nullable": true,
+        "description": "交付记录的公开摘要。**不包含** `content` 字段；用户详情才暴露内容。",
+        "properties": {
+          "status": {
+            "type": "string",
+            "example": "delivered"
+          },
+          "publicNote": {
+            "type": "string",
+            "nullable": true
+          },
+          "deliveredAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        }
+      },
+      "DeliveryRecordWithContent": {
+        "type": "object",
+        "nullable": true,
+        "description": "交付记录（含敏感 `content`）。仅订单所有者（user）或管理员详情可见。",
+        "properties": {
+          "status": {
+            "type": "string",
+            "example": "delivered"
+          },
+          "content": {
+            "type": "string",
+            "description": "交付内容（如卡密、激活码、节点信息）。属于敏感字段。"
+          },
+          "publicNote": {
+            "type": "string",
+            "nullable": true
+          },
+          "deliveredAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        }
+      },
+      "UserOrderListItem": {
+        "type": "object",
+        "required": [
+          "id",
+          "userId",
+          "productId",
+          "price",
+          "status",
+          "createdAt"
+        ],
+        "description": "用户视角的订单列表项。`delivery.content` 已剥离；状态规范化为 v1.4 五态机；附带 `deliveryMode`。",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "userId": {
+            "type": "integer"
+          },
+          "productId": {
+            "type": "integer"
+          },
+          "merchantId": {
+            "type": "integer",
+            "nullable": true
+          },
+          "price": {
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/FulfillmentOrderStatus"
+          },
+          "deliveryMode": {
+            "$ref": "#/components/schemas/FulfillmentMode"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "merchant": {
+            "nullable": true,
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "integer"
+              },
+              "name": {
+                "type": "string"
+              }
+            }
+          },
+          "product": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "integer"
+              },
+              "name": {
+                "type": "string"
+              },
+              "icon": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string"
+              },
+              "imageUrl": {
+                "type": "string",
+                "nullable": true
+              },
+              "deliveryMode": {
+                "$ref": "#/components/schemas/FulfillmentMode"
+              }
+            }
+          },
+          "delivery": {
+            "$ref": "#/components/schemas/DeliveryRecordPublic"
+          }
+        }
+      },
+      "UserOrderDetail": {
+        "type": "object",
+        "required": [
+          "id",
+          "userId",
+          "productId",
+          "price",
+          "status",
+          "createdAt"
+        ],
+        "description": "用户视角的订单详情。仅订单所有者可读，他人订单返回 404 不暴露存在性。`delivery.content` 在详情可见（订单所有者才有权看到自己的交付内容）；附带 `timeline`（状态事件列表，无事件时合成兜底）。",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "userId": {
+            "type": "integer"
+          },
+          "productId": {
+            "type": "integer"
+          },
+          "merchantId": {
+            "type": "integer",
+            "nullable": true
+          },
+          "price": {
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/FulfillmentOrderStatus"
+          },
+          "deliveryMode": {
+            "$ref": "#/components/schemas/FulfillmentMode"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "merchant": {
+            "nullable": true,
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "integer"
+              },
+              "name": {
+                "type": "string"
+              }
+            }
+          },
+          "product": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "integer"
+              },
+              "name": {
+                "type": "string"
+              },
+              "icon": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string"
+              },
+              "imageUrl": {
+                "type": "string",
+                "nullable": true
+              },
+              "deliveryMode": {
+                "$ref": "#/components/schemas/FulfillmentMode"
+              }
+            }
+          },
+          "delivery": {
+            "$ref": "#/components/schemas/DeliveryRecordWithContent"
+          },
+          "timeline": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OrderStatusEvent"
+            }
+          }
+        }
+      },
+      "MerchantOrderListItem": {
+        "type": "object",
+        "required": [
+          "id",
+          "userId",
+          "productId",
+          "merchantId",
+          "price",
+          "status",
+          "createdAt"
+        ],
+        "description": "商家视角的订单列表项。**不暴露** `delivery.content`；附带 `availableActions` 表示当前状态下商家可执行的履约动作，附带 flatten 的 `settlementAmount`（取自关联结算记录）。",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "userId": {
+            "type": "integer"
+          },
+          "productId": {
+            "type": "integer"
+          },
+          "merchantId": {
+            "type": "integer"
+          },
+          "price": {
+            "type": "integer"
+          },
+          "commissionRate": {
+            "type": "string",
+            "example": "0.1000"
+          },
+          "commissionAmount": {
+            "type": "integer"
+          },
+          "settlementAmount": {
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/FulfillmentOrderStatus"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "user": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "integer"
+              },
+              "email": {
+                "type": "string",
+                "format": "email"
+              }
+            }
+          },
+          "product": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "integer"
+              },
+              "name": {
+                "type": "string"
+              },
+              "icon": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string"
+              },
+              "price": {
+                "type": "integer"
+              },
+              "deliveryMode": {
+                "$ref": "#/components/schemas/FulfillmentMode"
+              }
+            }
+          },
+          "delivery": {
+            "$ref": "#/components/schemas/DeliveryRecordPublic"
+          },
+          "settlement": {
+            "nullable": true,
+            "type": "object",
+            "properties": {
+              "settlementAmount": {
+                "type": "integer"
+              },
+              "status": {
+                "$ref": "#/components/schemas/SettlementStatus"
+              },
+              "settledAt": {
+                "type": "string",
+                "format": "date-time",
+                "nullable": true
+              }
+            }
+          },
+          "availableActions": {
+            "type": "array",
+            "description": "当前状态下商家可执行的履约动作枚举。可能值：`start_fulfillment` / `deliver` / `respond_dispute`。空数组表示无可用动作（例如已交付或已关闭）。",
+            "items": {
+              "type": "string",
+              "enum": [
+                "start_fulfillment",
+                "deliver",
+                "respond_dispute"
+              ]
+            }
+          }
+        }
+      },
+      "MerchantOrderDetail": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/MerchantOrderListItem"
+          },
+          {
+            "type": "object",
+            "description": "商家订单详情。额外包含 `statusEvents` 时间线。",
+            "properties": {
+              "statusEvents": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/OrderStatusEvent"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "MerchantSettlement": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Settlement"
+          },
+          {
+            "type": "object",
+            "required": [
+              "payable"
+            ],
+            "description": "A3 引入的结算门禁：基于订单履约状态判定 `payable` 与 `blockReason`。`delivered` / `closed` 订单为可结算；`pending` / `processing` / `disputed` 暂不可结算并附 `blockReason`。",
+            "properties": {
+              "payable": {
+                "type": "boolean"
+              },
+              "blockReason": {
+                "type": "string",
+                "nullable": true
+              }
+            }
+          }
+        ]
+      },
+      "MerchantProductRow": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/MerchantProduct"
+          },
+          {
+            "type": "object",
+            "required": [
+              "deliveryMode",
+              "availableStock",
+              "lowStock"
+            ],
+            "description": "M6 商家商品列表项。在 `MerchantProduct` 基础上补充 `deliveryMode`、`availableStock`（仅统计 `available` 状态的库存项）和 `lowStock` 标记。",
+            "properties": {
+              "deliveryMode": {
+                "$ref": "#/components/schemas/FulfillmentMode"
+              },
+              "availableStock": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "lowStock": {
+                "type": "boolean",
+                "description": "`true` 表示该商品履约模式为 `instant_inventory` 且 `availableStock <= lowStockThreshold`（阈值来自 SystemConfig，缺省 5）。"
+              }
+            }
+          }
+        ]
+      },
+      "MerchantProductListEnvelope": {
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "page",
+          "pageSize"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MerchantProductRow"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "pageSize": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      },
+      "MerchantOrderListEnvelope": {
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "page",
+          "pageSize"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MerchantOrderListItem"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "pageSize": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      },
+      "InventoryPayloadRequest": {
+        "type": "object",
+        "description": "商家库存预览 / 导入请求体。`text` 与 `items` 至少提供一项；服务端按行 trim、去空行、去重，再与 `InventoryItem.content` 比对既存重复。",
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "多行库存文本（按 `\\n` 或 `\\r\\n` 切分）。"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "InventoryPreviewResponse": {
+        "type": "object",
+        "required": [
+          "totalRows",
+          "validRows",
+          "emptyRows",
+          "duplicateRows",
+          "existingDuplicateRows",
+          "canImport"
+        ],
+        "description": "商家库存导入预览结果。`canImport=true` 表示真正调用导入时不会因重复 / 既存重复被拒。",
+        "properties": {
+          "totalRows": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "validRows": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "去重 + 排除既存重复后将真正写入的行数。"
+          },
+          "emptyRows": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "duplicateRows": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "请求内部重复的行数。"
+          },
+          "existingDuplicateRows": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "与既有库存 `content` 重复的行数。"
+          },
+          "canImport": {
+            "type": "boolean"
+          }
+        }
+      },
+      "MerchantInventoryImportResponse": {
+        "type": "object",
+        "required": [
+          "imported",
+          "totalRows",
+          "validRows",
+          "skippedEmptyRows",
+          "duplicateRows",
+          "existingDuplicateRows"
+        ],
+        "description": "商家库存导入结果。当 `duplicateRows>0` 或 `existingDuplicateRows>0` 时事务回滚并返回 `400 VALIDATION_ERROR`，`details` 中含 `duplicateRows=...` / `existingDuplicateRows=...` 消息行。",
+        "properties": {
+          "imported": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "totalRows": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "validRows": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "skippedEmptyRows": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "duplicateRows": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "existingDuplicateRows": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "StartFulfillmentRequest": {
+        "type": "object",
+        "description": "商家开始履约（`pending → processing`）。可选填公开备注 / 内部备注。",
+        "properties": {
+          "publicNote": {
+            "type": "string",
+            "maxLength": 1000
+          },
+          "internalNote": {
+            "type": "string",
+            "maxLength": 2000
+          }
+        },
+        "additionalProperties": false
+      },
+      "DeliverFulfillmentRequest": {
+        "type": "object",
+        "description": "商家完成人工履约交付（`processing → delivered`）。仅 `deliveryMode=manual_service` 的订单可由商家此动作交付，否则 400。",
+        "properties": {
+          "deliveryContent": {
+            "type": "string",
+            "maxLength": 5000,
+            "description": "商家发送给用户的交付内容（卡密、激活码、操作步骤等）。属于敏感字段，会被写入 `DeliveryRecord.content`。"
+          },
+          "publicNote": {
+            "type": "string",
+            "maxLength": 1000
+          },
+          "internalNote": {
+            "type": "string",
+            "maxLength": 2000
+          }
+        },
+        "additionalProperties": false
+      },
+      "RespondDisputeRequest": {
+        "type": "object",
+        "required": [
+          "resolution"
+        ],
+        "description": "商家响应争议。`resume` → 回到 `processing`；`close` → 关单。",
+        "properties": {
+          "resolution": {
+            "type": "string",
+            "enum": [
+              "resume",
+              "close"
+            ]
+          },
+          "publicNote": {
+            "type": "string",
+            "maxLength": 1000
+          },
+          "internalNote": {
+            "type": "string",
+            "maxLength": 2000
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreateOrderResponse": {
+        "type": "object",
+        "required": [
+          "orderId",
+          "productName",
+          "price",
+          "status",
+          "deliveryMode",
+          "balanceAfter"
+        ],
+        "description": "兑换成功响应。`deliveryMode=instant_inventory` 时事务内已发货，`status=delivered` 且返回 `deliveryContent`；`deliveryMode=manual_service` 时 `status=pending`，不返回 `deliveryContent`，等待商家履约。",
+        "properties": {
+          "orderId": {
+            "type": "integer"
+          },
+          "productName": {
+            "type": "string"
+          },
+          "price": {
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/FulfillmentOrderStatus"
+          },
+          "deliveryMode": {
+            "$ref": "#/components/schemas/FulfillmentMode"
+          },
+          "deliveryContent": {
+            "type": "string",
+            "description": "仅 `instant_inventory` 且成功扣库存时返回。"
+          },
+          "balanceAfter": {
+            "type": "integer"
+          },
+          "merchantId": {
+            "type": "integer",
+            "nullable": true
+          },
+          "merchantName": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "RegistryLabel": {
+        "type": "object",
+        "required": [
+          "value",
+          "label"
+        ],
+        "description": "registry 的标签条目。`tone` 由前端用来渲染语义色。",
+        "properties": {
+          "value": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "tone": {
+            "type": "string",
+            "enum": [
+              "success",
+              "info",
+              "warning",
+              "danger",
+              "neutral"
+            ]
+          }
+        },
+        "additionalProperties": true
+      },
+      "ConfigRegistry": {
+        "type": "object",
+        "required": [
+          "productTypes",
+          "deliveryModes",
+          "orderStatuses",
+          "settlementStatuses",
+          "pagination",
+          "inventory"
+        ],
+        "description": "前端可消费的业务注册表。代码级 `businessRegistry` 提供枚举值 + 标签，`SystemConfig` 提供运营可调整值（分页 / 低库存阈值）。",
+        "properties": {
+          "productTypes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RegistryLabel"
+            }
+          },
+          "deliveryModes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RegistryLabel"
+            }
+          },
+          "orderStatuses": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RegistryLabel"
+            }
+          },
+          "settlementStatuses": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RegistryLabel"
+            }
+          },
+          "pagination": {
+            "type": "object",
+            "required": [
+              "defaultPageSize",
+              "maxPageSize"
+            ],
+            "properties": {
+              "defaultPageSize": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "maxPageSize": {
+                "type": "integer",
+                "minimum": 1
+              }
+            }
+          },
+          "inventory": {
+            "type": "object",
+            "required": [
+              "lowStockThreshold"
+            ],
+            "properties": {
+              "lowStockThreshold": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          }
+        }
       }
     },
     "responses": {
       "Unauthenticated": {
         "description": "未登录 / token 失效 / 账号已封禁",
-        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } } }
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorEnvelope"
+            }
+          }
+        }
       },
       "Forbidden": {
         "description": "无权限（如普通用户访问 admin 端点）",
-        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } } }
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorEnvelope"
+            }
+          }
+        }
       },
       "ValidationError": {
         "description": "参数校验失败",
-        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } } }
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorEnvelope"
+            }
+          }
+        }
       },
       "Conflict": {
         "description": "资源冲突",
-        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } } }
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorEnvelope"
+            }
+          }
+        }
       },
       "NotFound": {
         "description": "资源不存在",
-        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } } }
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorEnvelope"
+            }
+          }
+        }
       },
       "RateLimited": {
         "description": "请求频次超限",
-        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } } }
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorEnvelope"
+            }
+          }
+        }
       }
     }
   },
   "paths": {
     "/api/health": {
       "get": {
-        "tags": ["Health"],
+        "tags": [
+          "Health"
+        ],
         "summary": "[Deprecated] 健康检查（兼容老路由）",
         "description": "**M4 起 deprecated**。请改用 `/api/health/live`（liveness）或 `/api/health/ready`（readiness）。本路由保留为 `/api/health/live` 的别名，让 M4 之前的监控 / 负载均衡探针继续工作，直到外部探针迁移完成。永远 200，不查 DB。",
         "deprecated": true,
         "responses": {
           "200": {
             "description": "Liveness 负载（`/api/health/live` 的别名）",
-            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/HealthLive" } } }
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthLive"
+                }
+              }
+            }
           }
         }
       }
     },
     "/api/health/live": {
       "get": {
-        "tags": ["Health"],
+        "tags": [
+          "Health"
+        ],
         "summary": "Liveness 探针",
         "description": "进程存活检查。只要 Node 进程在响应请求就返回 200，不查 DB、不查外部依赖。适合 k8s `livenessProbe` —— 用来判断 \"要不要重启这个容器\"。",
         "responses": {
           "200": {
             "description": "进程存活",
-            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/HealthLive" } } }
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthLive"
+                }
+              }
+            }
           }
         }
       }
     },
     "/api/health/ready": {
       "get": {
-        "tags": ["Health"],
+        "tags": [
+          "Health"
+        ],
         "summary": "Readiness 探针",
         "description": "服务就绪检查。同步 ping 数据库（2s 超时）+ 校验必需配置；通过返回 200，否则 503。适合 k8s `readinessProbe` 或负载均衡探针 —— 用来判断 \"要不要把流量打到这个实例\"。DB 慢 / 不可达时 readiness 失败但 liveness 不会失败，避免雪崩重启。",
         "responses": {
           "200": {
             "description": "可承接流量",
-            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/HealthReady" } } }
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthReady"
+                }
+              }
+            }
           },
           "503": {
             "description": "不可承接流量（数据库不通或配置缺失）",
-            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/HealthReady" } } }
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthReady"
+                }
+              }
+            }
           }
         }
       }
     },
     "/api/metrics": {
       "get": {
-        "tags": ["Observability"],
+        "tags": [
+          "Observability"
+        ],
         "summary": "Prometheus 指标端点",
         "description": "返回 Node.js 进程指标（CPU / 内存 / event loop lag / GC / FD 数等）加上自定义 HTTP 层指标：`monexus_http_requests_total`（counter，标签 `method` / `route` / `status_code`）和 `monexus_http_request_duration_seconds`（histogram，固定 bucket）。`route` 标签使用 Express 匹配后的路由模板（例如 `/api/products/:id`）而非原始路径，控制 cardinality。可选 `METRICS_TOKEN` 环境变量保护 —— 设置后需要 `Authorization: Bearer <token>` 头；未设置时端点对所有人开放（仅适合内网 / 防火墙后部署）。",
         "security": [
           {},
-          { "bearerAuth": [] }
+          {
+            "bearerAuth": []
+          }
         ],
         "responses": {
           "200": {
@@ -762,215 +2521,436 @@
     },
     "/api/auth/register": {
       "post": {
-        "tags": ["Auth"],
+        "tags": [
+          "Auth"
+        ],
         "summary": "用户注册",
         "description": "成功后写 `PointLog`（注册奖励积分）；如果带 `inviteCode` 且邀请人有效，会创建 `InviteRelation`。response body 不含 refresh token，refresh token 通过 HttpOnly Cookie 下发。",
         "requestBody": {
           "required": true,
-          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RegisterRequest" } } }
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterRequest"
+              }
+            }
+          }
         },
         "responses": {
           "201": {
             "description": "注册成功",
-            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AuthSession" } } }
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthSession"
+                }
+              }
+            }
           },
-          "400": { "$ref": "#/components/responses/ValidationError" },
-          "409": { "$ref": "#/components/responses/Conflict" },
-          "429": { "$ref": "#/components/responses/RateLimited" }
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
         }
       }
     },
     "/api/auth/login": {
       "post": {
-        "tags": ["Auth"],
+        "tags": [
+          "Auth"
+        ],
         "summary": "用户登录",
         "description": "已封禁用户（`status = 已封禁`）登录被拒绝。",
         "requestBody": {
           "required": true,
-          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/LoginRequest" } } }
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          }
         },
         "responses": {
           "200": {
             "description": "登录成功",
-            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AuthSession" } } }
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthSession"
+                }
+              }
+            }
           },
-          "400": { "$ref": "#/components/responses/ValidationError" },
-          "401": { "$ref": "#/components/responses/Unauthenticated" },
-          "429": { "$ref": "#/components/responses/RateLimited" }
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
         }
       }
     },
     "/api/auth/refresh": {
       "post": {
-        "tags": ["Auth"],
+        "tags": [
+          "Auth"
+        ],
         "summary": "刷新 access token（带轮换）",
         "description": "通过 HttpOnly Cookie 提交 refresh token；服务端验证哈希、轮换出一份新的 refresh token 并下发新 Cookie。已封禁用户、密码已修改 / 重置后的旧 refresh token 全部失效。",
         "responses": {
           "200": {
             "description": "新的 access token",
-            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RefreshResponse" } } }
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RefreshResponse"
+                }
+              }
+            }
           },
-          "401": { "$ref": "#/components/responses/Unauthenticated" }
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          }
         }
       }
     },
     "/api/auth/logout": {
       "post": {
-        "tags": ["Auth"],
+        "tags": [
+          "Auth"
+        ],
         "summary": "登出",
         "description": "如果 Cookie 中存在 refresh token，将其撤销并清除 Cookie。",
         "responses": {
           "200": {
             "description": "登出成功",
-            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/OkResponse" } } }
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkResponse"
+                }
+              }
+            }
           }
         }
       }
     },
     "/api/auth/me": {
       "get": {
-        "tags": ["Auth"],
+        "tags": [
+          "Auth"
+        ],
         "summary": "当前用户与商家上下文",
         "description": "前端判断角色、商家状态与入口展示的唯一入口。审核通过或停用后旧 access token 可能包含旧 role，前端需 refresh 后再调用本接口。",
-        "security": [{ "bearerAuth": [] }],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
         "responses": {
           "200": {
             "description": "当前用户",
-            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AuthUser" } } }
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthUser"
+                }
+              }
+            }
           },
-          "401": { "$ref": "#/components/responses/Unauthenticated" }
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          }
         }
       }
     },
     "/api/auth/password-change": {
       "post": {
-        "tags": ["Auth"],
+        "tags": [
+          "Auth"
+        ],
         "summary": "已登录用户修改密码",
         "description": "需要 bearer + 同时校验 `currentPassword`。**修改成功后撤销该用户所有 refresh token**——所有设备需重新登录。",
-        "security": [{ "bearerAuth": [] }],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
         "requestBody": {
           "required": true,
-          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PasswordChangeRequest" } } }
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordChangeRequest"
+              }
+            }
+          }
         },
         "responses": {
           "200": {
             "description": "修改成功",
-            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MessageResponse" } } }
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageResponse"
+                }
+              }
+            }
           },
-          "400": { "$ref": "#/components/responses/ValidationError" },
-          "401": { "$ref": "#/components/responses/Unauthenticated" },
-          "429": { "$ref": "#/components/responses/RateLimited" }
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
         }
       }
     },
     "/api/auth/forgot-password": {
       "post": {
-        "tags": ["Auth"],
+        "tags": [
+          "Auth"
+        ],
         "summary": "请求重置密码邮件",
         "description": "**始终返回 200**，无论邮箱是否存在——防止账号枚举。",
         "requestBody": {
           "required": true,
-          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ForgotPasswordRequest" } } }
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ForgotPasswordRequest"
+              }
+            }
+          }
         },
         "responses": {
           "200": {
             "description": "如邮箱存在则发送链接",
-            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MessageResponse" } } }
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageResponse"
+                }
+              }
+            }
           },
-          "429": { "$ref": "#/components/responses/RateLimited" }
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
         }
       }
     },
     "/api/auth/reset-password": {
       "post": {
-        "tags": ["Auth"],
+        "tags": [
+          "Auth"
+        ],
         "summary": "用邮件中的 token 重置密码",
         "description": "成功后撤销该用户所有 refresh token。",
         "requestBody": {
           "required": true,
-          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ResetPasswordRequest" } } }
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResetPasswordRequest"
+              }
+            }
+          }
         },
         "responses": {
           "200": {
             "description": "重置成功",
-            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/OkResponse" } } }
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkResponse"
+                }
+              }
+            }
           },
-          "400": { "$ref": "#/components/responses/ValidationError" }
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          }
         }
       }
     },
     "/api/auth/send-verification": {
       "post": {
-        "tags": ["Auth"],
+        "tags": [
+          "Auth"
+        ],
         "summary": "向当前已登录用户发送邮箱验证链接",
-        "security": [{ "bearerAuth": [] }],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
         "responses": {
           "200": {
             "description": "已发送",
-            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/OkResponse" } } }
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkResponse"
+                }
+              }
+            }
           },
-          "401": { "$ref": "#/components/responses/Unauthenticated" },
-          "429": { "$ref": "#/components/responses/RateLimited" }
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
         }
       }
     },
     "/api/auth/verify-email": {
       "get": {
-        "tags": ["Auth"],
+        "tags": [
+          "Auth"
+        ],
         "summary": "通过邮件 token 验证邮箱",
         "parameters": [
-          { "name": "token", "in": "query", "required": true, "schema": { "type": "string" } }
+          {
+            "name": "token",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
         ],
         "responses": {
           "200": {
             "description": "验证成功",
-            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/OkResponse" } } }
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkResponse"
+                }
+              }
+            }
           },
-          "400": { "$ref": "#/components/responses/ValidationError" }
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          }
         }
       }
     },
     "/api/products": {
       "get": {
-        "tags": ["Products"],
+        "tags": [
+          "Products"
+        ],
         "summary": "商品列表，商品可包含商家摘要",
         "parameters": [
-          { "name": "category", "in": "query", "schema": { "type": "string" } },
-          { "name": "q", "in": "query", "schema": { "type": "string" } }
+          {
+            "name": "category",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
         ],
         "responses": {
           "200": {
             "description": "商品列表",
-            "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/MerchantProduct" } } } }
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MerchantProduct"
+                  }
+                }
+              }
+            }
           }
         }
       }
     },
     "/api/products/{id}": {
       "get": {
-        "tags": ["Products"],
+        "tags": [
+          "Products"
+        ],
         "summary": "商品详情，商品可包含商家摘要",
         "parameters": [
-          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
         ],
         "responses": {
           "200": {
             "description": "商品详情",
-            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MerchantProduct" } } }
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MerchantProduct"
+                }
+              }
+            }
           },
-          "404": { "$ref": "#/components/responses/NotFound" }
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
         }
       }
     },
     "/api/orders": {
       "post": {
-        "tags": ["Orders"],
+        "tags": [
+          "Orders"
+        ],
         "summary": "兑换商品；商家商品会同步生成结算记录",
         "description": "事务内执行：锁定一条 `available` 库存 → 扣积分 + 写 `PointLog` → 创建 `Order` + `Delivery` → 商家商品则同步创建 `Settlement(pending)`。库存为零或积分不足时整事务回滚。",
-        "security": [{ "bearerAuth": [] }],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
         "requestBody": {
           "required": true,
-          "content": { "application/json": { "schema": { "type": "object", "required": ["productId"], "properties": { "productId": { "type": "integer" } } } } }
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "productId"
+                ],
+                "properties": {
+                  "productId": {
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          }
         },
         "responses": {
           "201": {
@@ -978,557 +2958,2076 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "orderId": { "type": "integer" },
-                    "productName": { "type": "string" },
-                    "price": { "type": "integer" },
-                    "deliveryContent": { "type": "string" },
-                    "balanceAfter": { "type": "integer" },
-                    "merchantId": { "type": "integer", "nullable": true },
-                    "merchantName": { "type": "string", "nullable": true }
+                  "$ref": "#/components/schemas/CreateOrderResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Orders"
+        ],
+        "summary": "我的订单列表（用户视角，剥离 delivery.content）",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/FulfillmentOrderStatus"
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "completed"
+                  ],
+                  "description": "历史值，等价于 `delivered`。"
+                }
+              ]
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 1,
+              "minimum": 1
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "minimum": 1,
+              "maximum": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "我的订单",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/UserOrderListItem"
                   }
                 }
               }
             }
           },
-          "400": { "$ref": "#/components/responses/ValidationError" },
-          "401": { "$ref": "#/components/responses/Unauthenticated" }
-        }
-      },
-      "get": {
-        "tags": ["Orders"],
-        "summary": "我的订单列表",
-        "security": [{ "bearerAuth": [] }],
-        "parameters": [
-          { "name": "status", "in": "query", "schema": { "type": "string" } },
-          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
-          { "name": "pageSize", "in": "query", "schema": { "type": "integer", "default": 20, "maximum": 100 } }
-        ],
-        "responses": {
-          "200": {
-            "description": "我的订单",
-            "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/MerchantOrder" } } } }
-          },
-          "401": { "$ref": "#/components/responses/Unauthenticated" }
-        }
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          }
+        },
+        "description": "用户视角列表，`delivery.content` 已剥离；`status` 接受 v1.4 五态机，旧值 `completed` 会被规范化为 `delivered` 并匹配新旧两种存储值。"
       }
     },
     "/api/orders/{id}": {
       "get": {
-        "tags": ["Orders"],
-        "summary": "订单详情（仅本人可读）",
-        "description": "他人订单返回 404（不暴露存在性）。",
-        "security": [{ "bearerAuth": [] }],
+        "tags": [
+          "Orders"
+        ],
+        "summary": "订单详情（用户视角，仅订单所有者可读）",
+        "description": "他人订单返回 404（不暴露存在性）。响应包含 `delivery.content`（订单所有者本人有权查看自己的交付内容）和 `timeline`（状态事件；旧订单合成兜底）。",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
         "parameters": [
-          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
         ],
         "responses": {
           "200": {
             "description": "订单详情",
-            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MerchantOrder" } } }
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserOrderDetail"
+                }
+              }
+            }
           },
-          "401": { "$ref": "#/components/responses/Unauthenticated" },
-          "404": { "$ref": "#/components/responses/NotFound" }
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
         }
       }
     },
     "/api/admin/stats": {
       "get": {
-        "tags": ["Admin Audit"],
+        "tags": [
+          "Admin Audit"
+        ],
         "summary": "首页概览数字",
-        "security": [{ "bearerAuth": [] }],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
         "responses": {
-          "200": { "description": "概览", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AdminStats" } } } },
-          "401": { "$ref": "#/components/responses/Unauthenticated" },
-          "403": { "$ref": "#/components/responses/Forbidden" }
+          "200": {
+            "description": "概览",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminStats"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
         }
       }
     },
     "/api/admin/users": {
       "get": {
-        "tags": ["Admin Users"],
+        "tags": [
+          "Admin Users"
+        ],
         "summary": "用户列表（支持邮箱模糊搜索）",
-        "security": [{ "bearerAuth": [] }],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
         "parameters": [
-          { "name": "q", "in": "query", "schema": { "type": "string" }, "description": "邮箱模糊匹配" },
-          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
-          { "name": "pageSize", "in": "query", "schema": { "type": "integer", "default": 20, "maximum": 100 } }
+          {
+            "name": "q",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "邮箱模糊匹配"
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 1
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "maximum": 100
+            }
+          }
         ],
         "responses": {
-          "200": { "description": "用户数组", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/AdminUserRow" } } } } },
-          "401": { "$ref": "#/components/responses/Unauthenticated" },
-          "403": { "$ref": "#/components/responses/Forbidden" }
+          "200": {
+            "description": "用户数组",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AdminUserRow"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
         }
       }
     },
     "/api/admin/users/{id}/adjust": {
       "post": {
-        "tags": ["Admin Users"],
+        "tags": [
+          "Admin Users"
+        ],
         "summary": "调整用户积分（增 / 扣）",
         "description": "事务内：更新余额 → 写 `PointLog` → 写 `AdminLog`。扣除时余额不足返回 400。",
-        "security": [{ "bearerAuth": [] }],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
         "parameters": [
-          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
         ],
         "requestBody": {
           "required": true,
-          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AdjustPointsRequest" } } }
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdjustPointsRequest"
+              }
+            }
+          }
         },
         "responses": {
-          "200": { "description": "调整后的余额", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AdjustPointsResponse" } } } },
-          "400": { "$ref": "#/components/responses/ValidationError" },
-          "401": { "$ref": "#/components/responses/Unauthenticated" },
-          "403": { "$ref": "#/components/responses/Forbidden" },
-          "404": { "$ref": "#/components/responses/NotFound" }
+          "200": {
+            "description": "调整后的余额",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdjustPointsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
         }
       }
     },
     "/api/admin/users/{id}/ban": {
       "put": {
-        "tags": ["Admin Users"],
+        "tags": [
+          "Admin Users"
+        ],
         "summary": "封禁用户",
         "description": "事务内：将 `status` 置为 `已封禁` → **撤销该用户所有 refresh token** → 写 `AdminLog`。不能封禁自己，不能封禁其他管理员。被封禁用户的 access token 在过期前仍有效，但 refresh / login 都会失败。",
-        "security": [{ "bearerAuth": [] }],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
         "parameters": [
-          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
         ],
         "requestBody": {
           "required": true,
-          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/BanUserRequest" } } }
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BanUserRequest"
+              }
+            }
+          }
         },
         "responses": {
-          "200": { "description": "封禁后的用户", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AdminUserMutation" } } } },
-          "400": { "description": "不能封禁自己或管理员", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } } } },
-          "401": { "$ref": "#/components/responses/Unauthenticated" },
-          "403": { "$ref": "#/components/responses/Forbidden" },
-          "404": { "$ref": "#/components/responses/NotFound" }
+          "200": {
+            "description": "封禁后的用户",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminUserMutation"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "不能封禁自己或管理员",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
         }
       }
     },
     "/api/admin/users/{id}/unban": {
       "put": {
-        "tags": ["Admin Users"],
+        "tags": [
+          "Admin Users"
+        ],
         "summary": "解封用户",
         "description": "将 `status` 置回 `正常` 并写 `AdminLog`。用户需重新登录以获取新会话。",
-        "security": [{ "bearerAuth": [] }],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
         "parameters": [
-          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
         ],
         "responses": {
-          "200": { "description": "解封后的用户", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AdminUserMutation" } } } },
-          "401": { "$ref": "#/components/responses/Unauthenticated" },
-          "403": { "$ref": "#/components/responses/Forbidden" },
-          "404": { "$ref": "#/components/responses/NotFound" }
+          "200": {
+            "description": "解封后的用户",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminUserMutation"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
         }
       }
     },
     "/api/admin/config": {
       "get": {
-        "tags": ["Admin Config"],
+        "tags": [
+          "Admin Config"
+        ],
         "summary": "列出全部已知系统配置（含未持久化项的默认值）",
         "description": "返回 4 个内置 key 的当前值：`registerReward` / `checkinReward` / `inviteReward` / `refreshTokenMaxAgeDays`。未在 `SystemConfig` 表中持久化的项回落到环境变量或代码默认值。",
-        "security": [{ "bearerAuth": [] }],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
         "responses": {
           "200": {
             "description": "配置列表",
-            "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/SystemConfigEntry" } } } }
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SystemConfigEntry"
+                  }
+                }
+              }
+            }
           },
-          "401": { "$ref": "#/components/responses/Unauthenticated" },
-          "403": { "$ref": "#/components/responses/Forbidden" }
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
         }
       }
     },
     "/api/admin/config/{key}": {
       "put": {
-        "tags": ["Admin Config"],
+        "tags": [
+          "Admin Config"
+        ],
         "summary": "更新单个系统配置项",
         "description": "key 必须是已知配置项之一；value 为非负整数。事务内 upsert `SystemConfig` 行并写 `AdminLog`。新值在下一次读取（`getSystemConfigValue`）时立即生效。\n\nM3 备注：`refreshTokenMaxAgeDays` 现已真正生效——下一次签发 refresh token（登录 / refresh / 注册 / 邮箱验证后自动登录等路径）时会读取最新值，落到 DB `expiresAt` 和 Set-Cookie `Max-Age`。但**已签发**仍在有效期内的 token 保留原始过期时间，不会被回溯缩短；如需即刻强制下线，请使用 ban / unban，或让用户改密（这两条路径都会显式撤销该用户的全部 refresh token）。",
-        "security": [{ "bearerAuth": [] }],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
         "parameters": [
-          { "name": "key", "in": "path", "required": true, "schema": { "$ref": "#/components/schemas/SystemConfigKey" } }
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/SystemConfigKey"
+            }
+          }
         ],
         "requestBody": {
           "required": true,
-          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UpdateSystemConfigRequest" } } }
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateSystemConfigRequest"
+              }
+            }
+          }
         },
         "responses": {
-          "200": { "description": "更新后的配置项", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SystemConfigEntry" } } } },
-          "400": { "description": "未知 key 或值不是非负整数", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } } } },
-          "401": { "$ref": "#/components/responses/Unauthenticated" },
-          "403": { "$ref": "#/components/responses/Forbidden" }
+          "200": {
+            "description": "更新后的配置项",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemConfigEntry"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "未知 key 或值不是非负整数",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
         }
       }
     },
     "/api/admin/products": {
       "get": {
-        "tags": ["Admin Products"],
+        "tags": [
+          "Admin Products"
+        ],
         "summary": "全平台商品列表（含 inactive）",
-        "security": [{ "bearerAuth": [] }],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
         "responses": {
-          "200": { "description": "商品数组", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/AdminProduct" } } } } }
+          "200": {
+            "description": "商品数组",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AdminProduct"
+                  }
+                }
+              }
+            }
+          }
         }
       },
       "post": {
-        "tags": ["Admin Products"],
+        "tags": [
+          "Admin Products"
+        ],
         "summary": "管理员上架商品（平台自营）",
-        "security": [{ "bearerAuth": [] }],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
         "requestBody": {
           "required": true,
-          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateAdminProductRequest" } } }
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAdminProductRequest"
+              }
+            }
+          }
         },
         "responses": {
-          "201": { "description": "创建后的商品", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AdminProduct" } } } },
-          "400": { "$ref": "#/components/responses/ValidationError" }
+          "201": {
+            "description": "创建后的商品",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminProduct"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          }
         }
       }
     },
     "/api/admin/products/{id}": {
       "put": {
-        "tags": ["Admin Products"],
+        "tags": [
+          "Admin Products"
+        ],
         "summary": "更新平台商品",
-        "security": [{ "bearerAuth": [] }],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
         "parameters": [
-          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
         ],
         "requestBody": {
           "required": true,
-          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UpdateAdminProductRequest" } } }
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateAdminProductRequest"
+              }
+            }
+          }
         },
         "responses": {
-          "200": { "description": "更新后的商品", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AdminProduct" } } } },
-          "404": { "$ref": "#/components/responses/NotFound" }
+          "200": {
+            "description": "更新后的商品",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminProduct"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
         }
       }
     },
     "/api/admin/products/{id}/inventory": {
       "post": {
-        "tags": ["Admin Products"],
+        "tags": [
+          "Admin Products"
+        ],
         "summary": "为平台商品导入库存",
         "description": "事务内：批量插入 `InventoryItem` → `product.stock` 累加 → 写 `AdminLog`。",
-        "security": [{ "bearerAuth": [] }],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
         "parameters": [
-          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
         ],
         "requestBody": {
           "required": true,
-          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ImportInventoryRequest" } } }
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImportInventoryRequest"
+              }
+            }
+          }
         },
         "responses": {
-          "200": { "description": "导入结果", "content": { "application/json": { "schema": { "type": "object", "properties": { "imported": { "type": "integer" } } } } } },
-          "404": { "$ref": "#/components/responses/NotFound" }
+          "200": {
+            "description": "导入结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "imported": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
         }
       }
     },
     "/api/admin/orders": {
       "get": {
-        "tags": ["Admin Orders"],
+        "tags": [
+          "Admin Orders"
+        ],
         "summary": "全平台订单列表",
-        "security": [{ "bearerAuth": [] }],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
         "parameters": [
-          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
-          { "name": "pageSize", "in": "query", "schema": { "type": "integer", "default": 20 } }
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 1
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 20
+            }
+          }
         ],
         "responses": {
-          "200": { "description": "订单数组", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/AdminOrderRow" } } } } }
+          "200": {
+            "description": "订单数组",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AdminOrderRow"
+                  }
+                }
+              }
+            }
+          }
         }
       }
     },
     "/api/admin/orders/{id}": {
       "get": {
-        "tags": ["Admin Orders"],
+        "tags": [
+          "Admin Orders"
+        ],
         "summary": "订单详情（含 delivery）",
-        "security": [{ "bearerAuth": [] }],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
         "parameters": [
-          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
         ],
         "responses": {
-          "200": { "description": "订单详情", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AdminOrderDetail" } } } },
-          "404": { "$ref": "#/components/responses/NotFound" }
+          "200": {
+            "description": "订单详情",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminOrderDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
         }
       }
     },
     "/api/admin/audit": {
       "get": {
-        "tags": ["Admin Audit"],
+        "tags": [
+          "Admin Audit"
+        ],
         "summary": "操作员审计日志列表（AdminLog，分页 + 过滤）",
         "description": "返回 `AdminLog` —— 所有管理员写操作（封禁/解封、积分调整、系统配置变更、商家审核/停用/佣金、批量结算等）的持久化记录，按时间倒序、可分页、可按 adminId / action / 日期区间过滤。M3 新增，填补 M2 已知 doc gap：之前 `AdminLog` 仅写不读。\n\n查询 schema 为 `.strict()`：未知 query 参数会触发 400。`fromDate` / `toDate` 为 `YYYY-MM-DD`，服务端把 `toDate` 解释成「当日 23:59:59.999」以保证闭区间含当日记录。`metadata` 字段反映原 `AdminLog.detail`，结构按 action 而异，详见 `AdminLogEntry`。",
-        "security": [{ "bearerAuth": [] }],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
         "parameters": [
-          { "name": "page", "in": "query", "schema": { "type": "integer", "minimum": 1, "default": 1 } },
-          { "name": "pageSize", "in": "query", "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 20 } },
-          { "name": "adminId", "in": "query", "schema": { "type": "integer", "minimum": 1 }, "description": "精确过滤指定管理员 User.id 的操作记录" },
-          { "name": "action", "in": "query", "schema": { "type": "string", "minLength": 1 }, "description": "对 `AdminLog.action` 做精确匹配（不是模糊匹配），例如 `ban` / `config_update`" },
-          { "name": "fromDate", "in": "query", "schema": { "type": "string", "format": "date" }, "description": "起始日期（含），格式 `YYYY-MM-DD`" },
-          { "name": "toDate", "in": "query", "schema": { "type": "string", "format": "date" }, "description": "结束日期（含），格式 `YYYY-MM-DD`" }
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          },
+          {
+            "name": "adminId",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "精确过滤指定管理员 User.id 的操作记录"
+          },
+          {
+            "name": "action",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "对 `AdminLog.action` 做精确匹配（不是模糊匹配），例如 `ban` / `config_update`"
+          },
+          {
+            "name": "fromDate",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "description": "起始日期（含），格式 `YYYY-MM-DD`"
+          },
+          {
+            "name": "toDate",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "description": "结束日期（含），格式 `YYYY-MM-DD`"
+          }
         ],
         "responses": {
           "200": {
             "description": "命中条目分页结果",
-            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AdminLogList" } } }
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminLogList"
+                }
+              }
+            }
           },
-          "400": { "$ref": "#/components/responses/ValidationError" },
-          "401": { "$ref": "#/components/responses/Unauthenticated" },
-          "403": { "$ref": "#/components/responses/Forbidden" }
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
         }
       }
     },
     "/api/admin/logs": {
       "get": {
-        "tags": ["Admin Audit"],
+        "tags": [
+          "Admin Audit"
+        ],
         "summary": "最近积分变动（PointLog，按时间倒序取 100 条）",
         "description": "返回 `PointLog`（用户积分变动流水），**不是** `AdminLog`。前端在 M3 中已重命名展示为「积分流水」。如需读取管理员写操作审计，使用 `GET /api/admin/audit`（M3 新增，分页 + 过滤）。",
-        "security": [{ "bearerAuth": [] }],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
         "responses": {
-          "200": { "description": "PointLog 数组（最近 100 条）", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/PointLogEntry" } } } } }
+          "200": {
+            "description": "PointLog 数组（最近 100 条）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PointLogEntry"
+                  }
+                }
+              }
+            }
+          }
         }
       }
     },
     "/api/merchant/register": {
       "post": {
-        "tags": ["Merchant"],
+        "tags": [
+          "Merchant"
+        ],
         "summary": "提交商家入驻申请",
-        "security": [{ "bearerAuth": [] }],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
         "requestBody": {
           "required": true,
-          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ApplyMerchantRequest" } } }
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplyMerchantRequest"
+              }
+            }
+          }
         },
         "responses": {
           "201": {
             "description": "申请已提交",
-            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Merchant" } } }
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Merchant"
+                }
+              }
+            }
           },
-          "401": { "$ref": "#/components/responses/Unauthenticated" },
-          "409": { "$ref": "#/components/responses/Conflict" }
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
         }
       }
     },
     "/api/merchant/me": {
       "get": {
-        "tags": ["Merchant"],
+        "tags": [
+          "Merchant"
+        ],
         "summary": "商家资料",
-        "security": [{ "bearerAuth": [] }],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
         "responses": {
-          "200": { "description": "商家资料", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Merchant" } } } },
-          "401": { "$ref": "#/components/responses/Unauthenticated" },
-          "403": { "$ref": "#/components/responses/Forbidden" }
+          "200": {
+            "description": "商家资料",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Merchant"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
         }
       },
       "put": {
-        "tags": ["Merchant"],
+        "tags": [
+          "Merchant"
+        ],
         "summary": "更新商家资料",
-        "security": [{ "bearerAuth": [] }],
-        "requestBody": { "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UpdateMerchantRequest" } } } },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateMerchantRequest"
+              }
+            }
+          }
+        },
         "responses": {
-          "200": { "description": "更新后的商家资料", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Merchant" } } } },
-          "400": { "$ref": "#/components/responses/ValidationError" },
-          "401": { "$ref": "#/components/responses/Unauthenticated" },
-          "403": { "$ref": "#/components/responses/Forbidden" }
+          "200": {
+            "description": "更新后的商家资料",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Merchant"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
         }
       }
     },
     "/api/merchant/stats": {
       "get": {
-        "tags": ["Merchant"],
+        "tags": [
+          "Merchant"
+        ],
         "summary": "商家概览",
-        "security": [{ "bearerAuth": [] }],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
         "responses": {
-          "200": { "description": "商家概览", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MerchantStats" } } } },
-          "403": { "$ref": "#/components/responses/Forbidden" }
+          "200": {
+            "description": "商家概览",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MerchantStats"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
         }
       }
     },
     "/api/merchant/products": {
       "get": {
-        "tags": ["Merchant"],
-        "summary": "商家自有商品列表",
-        "security": [{ "bearerAuth": [] }],
-        "parameters": [
-          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
-          { "name": "pageSize", "in": "query", "schema": { "type": "integer", "default": 20, "maximum": 100 } },
-          { "name": "status", "in": "query", "schema": { "$ref": "#/components/schemas/ProductStatus" } }
+        "tags": [
+          "Merchant"
         ],
-        "responses": { "200": { "description": "商品数组", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/MerchantProduct" } } } } } }
+        "summary": "商家自有商品列表（分页 envelope + 筛选）",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 1,
+              "minimum": 1
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/ProductStatus"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "description": "模糊匹配 `name` / `description` / `type`。"
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "必须为 `ConfigRegistry.productTypes[].value` 之一。"
+          },
+          {
+            "name": "deliveryMode",
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/FulfillmentMode"
+            }
+          },
+          {
+            "name": "lowStock",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            },
+            "description": "过滤低库存（`true`）或非低库存（`false`）；仅对 `instant_inventory` 商品有意义。"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "商品数组",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MerchantProductListEnvelope"
+                }
+              }
+            }
+          }
+        }
       },
       "post": {
-        "tags": ["Merchant"],
+        "tags": [
+          "Merchant"
+        ],
         "summary": "创建商家商品",
-        "security": [{ "bearerAuth": [] }],
-        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateMerchantProductRequest" } } } },
-        "responses": { "201": { "description": "创建后的商品", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MerchantProduct" } } } } }
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateMerchantProductRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "创建后的商品",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MerchantProduct"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/merchant/products/{id}": {
       "put": {
-        "tags": ["Merchant"],
-        "summary": "更新商家自有商品",
-        "security": [{ "bearerAuth": [] }],
-        "parameters": [
-          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        "tags": [
+          "Merchant"
         ],
-        "requestBody": { "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UpdateMerchantProductRequest" } } } },
+        "summary": "更新商家自有商品",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateMerchantProductRequest"
+              }
+            }
+          }
+        },
         "responses": {
-          "200": { "description": "更新后的商品", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MerchantProduct" } } } },
-          "403": { "$ref": "#/components/responses/Forbidden" },
-          "404": { "description": "商品不存在或不属于当前商家（不区分以防探测）" }
+          "200": {
+            "description": "更新后的商品",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MerchantProduct"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "description": "商品不存在或不属于当前商家（不区分以防探测）"
+          }
         }
       }
     },
     "/api/merchant/products/{id}/inventory": {
       "post": {
-        "tags": ["Merchant"],
-        "summary": "导入商家自有商品库存",
-        "security": [{ "bearerAuth": [] }],
-        "parameters": [
-          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        "tags": [
+          "Merchant"
         ],
-        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ImportInventoryRequest" } } } },
+        "summary": "商家库存导入（事务，写入 InventoryItem 并累加 product.stock）",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InventoryPayloadRequest"
+              }
+            }
+          }
+        },
         "responses": {
-          "200": { "description": "导入结果", "content": { "application/json": { "schema": { "type": "object", "properties": { "imported": { "type": "integer" } } } } } },
-          "404": { "description": "商品不存在或不属于当前商家" }
-        }
+          "200": {
+            "description": "导入结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MerchantInventoryImportResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "包含重复或既存重复时整体回滚",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "商品不存在或不属于当前商家"
+          }
+        },
+        "description": "事务内：解析行 → trim → 去空 → 去重 → 与既有 `InventoryItem.content` 比对 → 全部唯一才写入并 `product.stock += imported`；存在请求内重复或既存重复时整事务回滚并返回 `400`。"
       }
     },
     "/api/merchant/orders": {
       "get": {
-        "tags": ["Merchant"],
-        "summary": "商家订单列表",
-        "security": [{ "bearerAuth": [] }],
-        "parameters": [
-          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
-          { "name": "pageSize", "in": "query", "schema": { "type": "integer", "default": 20, "maximum": 100 } }
+        "tags": [
+          "Merchant"
         ],
-        "responses": { "200": { "description": "商家订单数组", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/MerchantOrder" } } } } } }
+        "summary": "商家订单列表（分页 envelope + 筛选）",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/FulfillmentOrderStatus"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "模糊匹配 `product.name` 或 `user.email`。"
+          },
+          {
+            "name": "productId",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "dateFrom",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+            },
+            "description": "ISO 日期，按 UTC 起点过滤 `createdAt`。"
+          },
+          {
+            "name": "dateTo",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+            },
+            "description": "ISO 日期，按 UTC 次日零点为开区间右端。"
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 1,
+              "minimum": 1
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "minimum": 1,
+              "maximum": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "商家订单数组",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MerchantOrderListEnvelope"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/merchant/orders/{id}": {
       "get": {
-        "tags": ["Merchant"],
-        "summary": "商家订单详情",
-        "security": [{ "bearerAuth": [] }],
+        "tags": [
+          "Merchant"
+        ],
+        "summary": "商家订单详情（含 statusEvents 时间线）",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
         "parameters": [
-          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
         ],
         "responses": {
-          "200": { "description": "商家订单详情", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MerchantOrder" } } } },
-          "404": { "description": "订单不存在或不属于当前商家" }
+          "200": {
+            "description": "商家订单详情",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MerchantOrderDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "订单不存在或不属于当前商家"
+          }
         }
       }
     },
     "/api/merchant/settlements": {
       "get": {
-        "tags": ["Merchant"],
-        "summary": "商家结算列表",
-        "security": [{ "bearerAuth": [] }],
-        "parameters": [
-          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
-          { "name": "pageSize", "in": "query", "schema": { "type": "integer", "default": 20, "maximum": 100 } },
-          { "name": "status", "in": "query", "schema": { "$ref": "#/components/schemas/SettlementStatus" } }
+        "tags": [
+          "Merchant"
         ],
-        "responses": { "200": { "description": "商家结算数组", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Settlement" } } } } } }
+        "summary": "商家结算列表（含 payable / blockReason 履约门禁）",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 1,
+              "minimum": 1
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "minimum": 1,
+              "maximum": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "商家结算数组",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MerchantSettlement"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "description": "响应在 `Settlement` 基础上扩展 `payable`、`blockReason`。`disputed` 或未履约订单 `payable=false` 并附阻断原因。当前实现按 merchantId 全量分页查询，`status` query 暂未消费（保留作为 future query）。"
       }
     },
     "/api/admin/merchants": {
       "get": {
-        "tags": ["Admin Merchants"],
+        "tags": [
+          "Admin Merchants"
+        ],
         "summary": "平台商家列表",
-        "security": [{ "bearerAuth": [] }],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
         "parameters": [
-          { "name": "status", "in": "query", "schema": { "$ref": "#/components/schemas/MerchantStatus" } },
-          { "name": "q", "in": "query", "schema": { "type": "string" } },
-          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
-          { "name": "pageSize", "in": "query", "schema": { "type": "integer", "default": 20, "maximum": 100 } }
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/MerchantStatus"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 1
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "maximum": 100
+            }
+          }
         ],
         "responses": {
-          "200": { "description": "商家数组", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Merchant" } } } } },
-          "403": { "$ref": "#/components/responses/Forbidden" }
+          "200": {
+            "description": "商家数组",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Merchant"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
         }
       }
     },
     "/api/admin/merchants/{id}": {
       "get": {
-        "tags": ["Admin Merchants"],
-        "summary": "平台商家详情",
-        "security": [{ "bearerAuth": [] }],
-        "parameters": [
-          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        "tags": [
+          "Admin Merchants"
         ],
-        "responses": { "200": { "description": "商家详情", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MerchantDetail" } } } } }
+        "summary": "平台商家详情",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "商家详情",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MerchantDetail"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/admin/merchants/{id}/approve": {
       "put": {
-        "tags": ["Admin Merchants"],
-        "summary": "审核通过商家",
-        "security": [{ "bearerAuth": [] }],
-        "parameters": [
-          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        "tags": [
+          "Admin Merchants"
         ],
-        "responses": { "200": { "description": "审核后的商家", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Merchant" } } } } }
+        "summary": "审核通过商家",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "审核后的商家",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Merchant"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/admin/merchants/{id}/reject": {
       "put": {
-        "tags": ["Admin Merchants"],
-        "summary": "拒绝商家入驻",
-        "security": [{ "bearerAuth": [] }],
-        "parameters": [
-          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        "tags": [
+          "Admin Merchants"
         ],
-        "requestBody": { "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RejectMerchantRequest" } } } },
-        "responses": { "200": { "description": "拒绝后的商家", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Merchant" } } } } }
+        "summary": "拒绝商家入驻",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RejectMerchantRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "拒绝后的商家",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Merchant"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/admin/merchants/{id}/suspend": {
       "put": {
-        "tags": ["Admin Merchants"],
-        "summary": "停用商家",
-        "security": [{ "bearerAuth": [] }],
-        "parameters": [
-          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        "tags": [
+          "Admin Merchants"
         ],
-        "responses": { "200": { "description": "停用后的商家", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Merchant" } } } } }
+        "summary": "停用商家",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "停用后的商家",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Merchant"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/admin/merchants/{id}/commission": {
       "put": {
-        "tags": ["Admin Merchants"],
-        "summary": "调整商家抽成比例",
-        "security": [{ "bearerAuth": [] }],
-        "parameters": [
-          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        "tags": [
+          "Admin Merchants"
         ],
-        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UpdateCommissionRequest" } } } },
+        "summary": "调整商家抽成比例",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateCommissionRequest"
+              }
+            }
+          }
+        },
         "responses": {
-          "200": { "description": "更新后的商家", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Merchant" } } } },
-          "400": { "$ref": "#/components/responses/ValidationError" }
+          "200": {
+            "description": "更新后的商家",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Merchant"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          }
         }
       }
     },
     "/api/admin/settlements": {
       "get": {
-        "tags": ["Admin Settlements"],
-        "summary": "平台结算列表",
-        "security": [{ "bearerAuth": [] }],
-        "parameters": [
-          { "name": "status", "in": "query", "schema": { "$ref": "#/components/schemas/SettlementStatus" } },
-          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
-          { "name": "pageSize", "in": "query", "schema": { "type": "integer", "default": 20, "maximum": 100 } }
+        "tags": [
+          "Admin Settlements"
         ],
-        "responses": { "200": { "description": "结算数组", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Settlement" } } } } } }
+        "summary": "平台结算列表",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/SettlementStatus"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 1
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "maximum": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "结算数组",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Settlement"
+                  }
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/admin/settlements/batch-settle": {
       "post": {
-        "tags": ["Admin Settlements"],
+        "tags": [
+          "Admin Settlements"
+        ],
         "summary": "批量结算 pending 记录",
-        "description": "只允许 pending 记录；任一记录不是 pending 时整体返回 400 BAD_REQUEST。",
-        "security": [{ "bearerAuth": [] }],
-        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/BatchSettleRequest" } } } },
+        "description": "只允许 pending 记录；同时校验关联订单 `payable=true`（即 `delivered` 或 `closed`）。存在任意 pending 但 `payable=false`，或非 pending 状态时整体返回 400 BAD_REQUEST。",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchSettleRequest"
+              }
+            }
+          }
+        },
         "responses": {
-          "200": { "description": "批量结算结果", "content": { "application/json": { "schema": { "type": "object", "properties": { "settled": { "type": "integer" } } } } } },
-          "400": { "$ref": "#/components/responses/ValidationError" },
-          "403": { "$ref": "#/components/responses/Forbidden" }
+          "200": {
+            "description": "批量结算结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "settled": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/orders/{id}/dispute": {
+      "post": {
+        "tags": [
+          "Orders"
+        ],
+        "summary": "用户对自己的订单发起争议",
+        "description": "将自己拥有的订单从 `delivered` 流转到 `disputed`。非本人订单 404；非法状态迁移 400。",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "争议后的订单详情",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserOrderDetail"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/orders/{id}/close": {
+      "post": {
+        "tags": [
+          "Orders"
+        ],
+        "summary": "用户关闭自己的订单",
+        "description": "从 `delivered` 或 `disputed` 流转到 `closed`。非本人订单 404；非法状态迁移 400。",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "关闭后的订单详情",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserOrderDetail"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/merchant/products/{id}/inventory/preview": {
+      "post": {
+        "tags": [
+          "Merchant"
+        ],
+        "summary": "商家库存导入预览（不落库）",
+        "description": "只读分析：行总数 / 有效行数 / 空行 / 请求内重复 / 既存重复，并给出 `canImport`。",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InventoryPayloadRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "预览结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InventoryPreviewResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/merchant/orders/{id}/fulfillment/start": {
+      "post": {
+        "tags": [
+          "Merchant"
+        ],
+        "summary": "商家开始履约（pending → processing）",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartFulfillmentRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "更新后的商家订单详情",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MerchantOrderDetail"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/merchant/orders/{id}/fulfillment/deliver": {
+      "post": {
+        "tags": [
+          "Merchant"
+        ],
+        "summary": "商家完成人工履约交付（processing → delivered，仅 manual_service）",
+        "description": "仅 `deliveryMode=manual_service` 的订单可由商家此动作交付；`instant_inventory` 商品下单时已在事务内完成发货，不会经过该端点。",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeliverFulfillmentRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "更新后的商家订单详情",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MerchantOrderDetail"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/merchant/orders/{id}/fulfillment/respond-dispute": {
+      "post": {
+        "tags": [
+          "Merchant"
+        ],
+        "summary": "商家响应争议（resume 回 processing 或 close 关单）",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RespondDisputeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "更新后的商家订单详情",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MerchantOrderDetail"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/config/registry": {
+      "get": {
+        "tags": [
+          "Config"
+        ],
+        "summary": "业务 registry（标签 / tone / 分页默认值 / 低库存阈值）",
+        "description": "公开只读元数据。前端用来渲染商品类型选项、履约模式选项、订单 / 结算状态标签 + tone、分页默认 / 上限、低库存阈值。`businessRegistry` 提供枚举值 + 标签 + tone，`SystemConfig` 提供运营可调整的分页与低库存阈值（缺省回落 `pagination.defaultPageSize=20`、`maxPageSize=100`、`inventory.lowStockThreshold=5`）。",
+        "responses": {
+          "200": {
+            "description": "Registry payload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigRegistry"
+                }
+              }
+            }
+          }
         }
       }
     }
