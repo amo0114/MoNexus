@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { useEffect } from 'react'
 import { useAuthStore } from './stores/authStore'
+import { useAppStore } from './stores/appStore'
 import { fetchMeWithRoleHealing } from './api/auth'
 import Layout from './components/Layout'
 import Toast from './components/Toast'
@@ -40,6 +41,12 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 }
 
 export default function App() {
+  const loadRegistry = useAppStore((state) => state.loadRegistry)
+
+  useEffect(() => {
+    loadRegistry()
+  }, [loadRegistry])
+
   return (
     <BrowserRouter>
       <ScrollToTop />

@@ -1,5 +1,13 @@
+import type { Prisma } from '@prisma/client'
 import { prisma } from '../../lib/prisma.js'
 import { badRequest, notFound } from '../../lib/httpError.js'
+import {
+  createOrderStatusEvent,
+  getProductFulfillmentMode,
+  normalizeOrderStatus,
+  transitionOrderStatus,
+} from './fulfillment.js'
+import { serializeUserOrderDetail, serializeUserOrderList } from './serializers.js'
 
 export async function createOrder(userId: number, productId: number) {
   return prisma.$transaction(async tx => {
@@ -9,14 +17,19 @@ export async function createOrder(userId: number, productId: number) {
     const product = await tx.product.findUnique({ where: { id: productId } })
     if (!product) throw notFound('商品不存在')
     if (product.status !== 'active') throw badRequest('商品已下架')
+    const deliveryMode = getProductFulfillmentMode(product.deliveryMode)
 
     if (account.balance < product.price) throw badRequest('积分不足')
 
-    const item = await tx.inventoryItem.findFirst({
-      where: { productId, status: 'available' },
-      orderBy: { id: 'asc' },
-    })
-    if (!item) throw badRequest('库存不足，请稍后再试')
+    const item = deliveryMode === 'instant_inventory'
+      ? await tx.inventoryItem.findFirst({
+          where: { productId, status: 'available' },
+          orderBy: { id: 'asc' },
+        })
+      : null
+    if (deliveryMode === 'instant_inventory' && !item) {
+      throw badRequest('库存不足，请稍后再试')
+    }
 
     let merchantId: number | null = null
     let merchantName: string | null = null
@@ -45,33 +58,51 @@ export async function createOrder(userId: number, productId: number) {
         userId,
         productId,
         price: product.price,
-        status: 'completed',
+        status: deliveryMode === 'instant_inventory' ? 'delivered' : 'pending',
         merchantId,
         commissionRate,
         commissionAmount,
       },
     })
 
-    const reservedItem = await tx.inventoryItem.updateMany({
-      where: { id: item.id, status: 'available' },
-      data: {
-        status: 'sold',
-        orderId: order.id,
-        soldToUserId: userId,
-        soldAt: new Date(),
-      },
+    await createOrderStatusEvent(tx, {
+      orderId: order.id,
+      actorUserId: userId,
+      actorRole: 'user',
+      fromStatus: null,
+      toStatus: order.status,
+      action: `order.created.${deliveryMode}`,
     })
-    if (reservedItem.count !== 1) throw badRequest('库存不足，请稍后再试')
 
-    await tx.deliveryRecord.create({
-      data: {
-        orderId: order.id,
-        userId,
-        productId,
-        content: item.content,
-        status: 'delivered',
-      },
-    })
+    let deliveryContent: string | undefined
+
+    if (deliveryMode === 'instant_inventory') {
+      if (!item) throw badRequest('库存不足，请稍后再试')
+
+      const reservedItem = await tx.inventoryItem.updateMany({
+        where: { id: item.id, status: 'available' },
+        data: {
+          status: 'sold',
+          orderId: order.id,
+          soldToUserId: userId,
+          soldAt: new Date(),
+        },
+      })
+      if (reservedItem.count !== 1) throw badRequest('库存不足，请稍后再试')
+
+      deliveryContent = item.content
+
+      await tx.deliveryRecord.create({
+        data: {
+          orderId: order.id,
+          userId,
+          productId,
+          content: item.content,
+          status: 'delivered',
+          deliveredAt: new Date(),
+        },
+      })
+    }
 
     await tx.pointLog.create({
       data: {
@@ -100,14 +131,18 @@ export async function createOrder(userId: number, productId: number) {
 
     await tx.product.update({
       where: { id: productId },
-      data: { stock: { decrement: 1 }, sales: { increment: 1 } },
+      data: deliveryMode === 'instant_inventory'
+        ? { stock: { decrement: 1 }, sales: { increment: 1 } }
+        : { sales: { increment: 1 } },
     })
 
     return {
       orderId: order.id,
       productName: product.name,
       price: product.price,
-      deliveryContent: item.content,
+      status: normalizeOrderStatus(order.status),
+      deliveryMode,
+      deliveryContent,
       balanceAfter: newBalance,
       merchantId,
       merchantName,
@@ -120,24 +155,85 @@ export async function getOrderDetail(orderId: number, userId: number) {
     where: { id: orderId, userId },
     include: {
       merchant: { select: { id: true, name: true } },
-      product: { select: { id: true, name: true, icon: true, type: true, imageUrl: true } },
-      delivery: { select: { status: true, content: true } },
+      product: { select: { id: true, name: true, icon: true, type: true, imageUrl: true, deliveryMode: true } },
+      delivery: { select: { status: true, content: true, publicNote: true, deliveredAt: true } },
+      statusEvents: {
+        select: {
+          id: true,
+          actorRole: true,
+          fromStatus: true,
+          toStatus: true,
+          action: true,
+          publicNote: true,
+          createdAt: true,
+        },
+        orderBy: { createdAt: 'asc' },
+      },
     },
   })
   if (!order) throw notFound('订单不存在')
-  return order
+  return serializeUserOrderDetail(order)
 }
 
-export async function getUserOrders(userId: number, page = 1, pageSize = 20) {
-  return prisma.order.findMany({
-    where: { userId },
+function buildUserOrderWhere(userId: number, status?: string): Prisma.OrderWhereInput {
+  const where: Prisma.OrderWhereInput = { userId }
+  if (!status) return where
+
+  const normalizedStatus = normalizeOrderStatus(status)
+  where.status = normalizedStatus === 'delivered'
+    ? { in: ['delivered', 'completed'] }
+    : normalizedStatus
+
+  return where
+}
+
+export async function getUserOrders(userId: number, page = 1, pageSize = 20, status?: string) {
+  const orders = await prisma.order.findMany({
+    where: buildUserOrderWhere(userId, status),
     include: {
       merchant: { select: { id: true, name: true } },
-      product: { select: { id: true, name: true, icon: true, type: true, imageUrl: true } },
+      product: { select: { id: true, name: true, icon: true, type: true, imageUrl: true, deliveryMode: true } },
       delivery: { select: { status: true } },
     },
     orderBy: { createdAt: 'desc' },
     skip: (page - 1) * pageSize,
     take: pageSize,
   })
+  return orders.map(serializeUserOrderList)
+}
+
+async function assertUserOwnsOrder(orderId: number, userId: number) {
+  const order = await prisma.order.findFirst({
+    where: { id: orderId, userId },
+    select: { id: true },
+  })
+  if (!order) throw notFound('订单不存在')
+}
+
+export async function disputeOrder(orderId: number, userId: number) {
+  await assertUserOwnsOrder(orderId, userId)
+  await transitionOrderStatus({
+    orderId,
+    toStatus: 'disputed',
+    actorRole: 'user',
+    actorUserId: userId,
+    action: 'user.dispute',
+    publicNote: '用户发起争议',
+  })
+
+  return getOrderDetail(orderId, userId)
+}
+
+export async function closeOrder(orderId: number, userId: number) {
+  await assertUserOwnsOrder(orderId, userId)
+  await transitionOrderStatus({
+    orderId,
+    toStatus: 'closed',
+    actorRole: 'user',
+    actorUserId: userId,
+    action: 'user.close',
+    publicNote: '用户确认关闭',
+  })
+
+  return getOrderDetail(orderId, userId)
 }

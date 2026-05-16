@@ -7,6 +7,9 @@ const defaultConfig = {
   checkinReward: 50,
   inviteReward: 200,
   refreshTokenMaxAgeDays: 7,
+  defaultPageSize: 20,
+  maxPageSize: 100,
+  lowStockThreshold: 5,
 } as const
 
 async function clearSystemConfig() {
@@ -50,7 +53,7 @@ describe('Admin system config', () => {
       .set(authHeader(accessToken))
       .expect(200)
 
-    expect(res.body).toHaveLength(4)
+    expect(res.body).toHaveLength(7)
     expect(res.body.map((item: any) => item.key)).toEqual(Object.keys(defaultConfig))
 
     for (const [key, defaultValue] of Object.entries(defaultConfig)) {
@@ -176,5 +179,25 @@ describe('Admin system config', () => {
     expect(log.action).toContain('配置')
     expect(log.detail).toContain('checkinReward')
     expect(log.detail).toContain('88')
+  })
+
+  it('should allow an admin to update business registry config keys', async () => {
+    const { user: admin, accessToken } = await loginAdmin()
+
+    const res = await updateConfig(accessToken, 'lowStockThreshold', 3).expect(200)
+
+    expect(res.body).toMatchObject({
+      key: 'lowStockThreshold',
+      value: 3,
+      defaultValue: defaultConfig.lowStockThreshold,
+      updatedBy: admin.id,
+    })
+
+    const log = await prisma.adminLog.findFirstOrThrow({
+      where: { adminUserId: admin.id, targetType: 'systemConfig' },
+      orderBy: { id: 'desc' },
+    })
+    expect(log.detail).toContain('lowStockThreshold')
+    expect(log.detail).toContain('3')
   })
 })

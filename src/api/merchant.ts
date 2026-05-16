@@ -9,7 +9,8 @@ import {
   UpdateMerchantProductRequest,
   ImportInventoryRequest,
   MerchantOrder,
-  Settlement
+  Settlement,
+  ListEnvelope
 } from '../types/merchant'
 
 export async function applyMerchant(payload: ApplyMerchantRequest): Promise<Merchant> {
@@ -32,8 +33,8 @@ export async function getMerchantStats(): Promise<MerchantStats> {
   return data
 }
 
-export async function getMerchantProducts(params?: { page?: number; pageSize?: number; status?: string }): Promise<MerchantProduct[]> {
-  const { data } = await api.get<MerchantProduct[]>('/merchant/products', { params })
+export async function getMerchantProducts(params?: { page?: number; pageSize?: number; status?: string; q?: string; type?: string; deliveryMode?: string; lowStock?: boolean }): Promise<ListEnvelope<MerchantProduct>> {
+  const { data } = await api.get<ListEnvelope<MerchantProduct>>('/merchant/products', { params })
   return data
 }
 
@@ -47,19 +48,36 @@ export async function updateMerchantProduct(id: number, payload: UpdateMerchantP
   return data
 }
 
+export async function previewMerchantInventory(id: number, payload: ImportInventoryRequest): Promise<any> {
+  const { data } = await api.post<any>(`/merchant/products/${id}/inventory/preview`, payload)
+  return data
+}
+
 export async function importMerchantInventory(id: number, payload: ImportInventoryRequest): Promise<{ imported: number }> {
   const { data } = await api.post<{ imported: number }>(`/merchant/products/${id}/inventory`, payload)
   return data
 }
 
-export async function getMerchantOrders(params?: { page?: number; pageSize?: number }): Promise<MerchantOrder[]> {
-  const { data } = await api.get<MerchantOrder[]>('/merchant/orders', { params })
+export async function getMerchantOrders(params?: { page?: number; pageSize?: number; status?: string; q?: string; productId?: number; dateFrom?: string; dateTo?: string }): Promise<ListEnvelope<MerchantOrder>> {
+  const { data } = await api.get<ListEnvelope<MerchantOrder>>('/merchant/orders', { params })
   return data
 }
 
 export async function getMerchantOrderDetail(id: number): Promise<MerchantOrder> {
   const { data } = await api.get<MerchantOrder>(`/merchant/orders/${id}`)
   return data
+}
+
+export async function startFulfillment(id: number, payload?: { publicNote?: string }): Promise<void> {
+  await api.post(`/merchant/orders/${id}/fulfillment/start`, payload)
+}
+
+export async function deliverOrder(id: number, payload: { deliveryContent: string; publicNote?: string }): Promise<void> {
+  await api.post(`/merchant/orders/${id}/fulfillment/deliver`, payload)
+}
+
+export async function respondDispute(id: number, payload: { resolution: 'resume' | 'close'; publicNote?: string }): Promise<void> {
+  await api.post(`/merchant/orders/${id}/fulfillment/respond-dispute`, payload)
 }
 
 export async function getMerchantSettlements(params?: { page?: number; pageSize?: number; status?: string }): Promise<Settlement[]> {

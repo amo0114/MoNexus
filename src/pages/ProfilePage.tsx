@@ -11,6 +11,7 @@ import { UserOrderListItem, UserOrderDetail } from '../types/order'
 import OrderDetailModal from '../components/OrderDetailModal'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/ui/Tabs'
 import CoinIcon from '../components/ui/CoinIcon'
+import RegistryPill from '../components/ui/RegistryPill'
 
 function PasswordChangeCard() {
   const navigate = useNavigate()
@@ -303,15 +304,7 @@ export default function ProfilePage() {
                     <div className="flex-1">
                       <div className="flex items-center justify-between mb-2">
                         <div className="flex items-center gap-2">
-                          {order.delivery?.status === 'delivered' ? (
-                            <span className="px-1.5 py-0.5 bg-[var(--color-cta)]/10 text-[var(--color-cta)] border border-[var(--color-cta)]/25 text-[10px] font-bold rounded">
-                              发货成功
-                            </span>
-                          ) : (
-                            <span className="px-1.5 py-0.5 bg-[var(--color-warning)]/10 text-[var(--color-warning)] border border-[var(--color-warning)]/25 text-[10px] font-bold rounded">
-                              待发货
-                            </span>
-                          )}
+                          <RegistryPill value={order.status} category="orderStatuses" />
                           <span className="text-[11px] text-[var(--color-text-muted)]">
                             {new Date(order.createdAt).toLocaleString()}
                           </span>
@@ -326,9 +319,8 @@ export default function ProfilePage() {
                       </h4>
 
                       <div className="flex items-center gap-2 mt-2 flex-wrap">
-                        <span className="text-[10px] bg-[var(--color-surface)] px-1.5 py-0.5 rounded border border-[var(--color-border)] text-[var(--color-text-muted)] font-medium">
-                          {order.product?.type}
-                        </span>
+                        <RegistryPill value={order.product?.type} category="productTypes" />
+                        {order.deliveryMode && <RegistryPill value={order.deliveryMode} category="deliveryModes" />}
                         <span className="text-[10px] font-medium text-[var(--color-primary)] bg-[var(--color-primary)]/10 px-1.5 py-0.5 rounded border border-[var(--color-primary)]/20 inline-flex items-center gap-1">
                           <Store className="w-3 h-3" />
                           {order.merchant?.name || '平台自营'}

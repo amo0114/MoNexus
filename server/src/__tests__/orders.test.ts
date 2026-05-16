@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { api, createTestUser, createTestMerchant, createTestProduct, loginAs, authHeader } from './helpers.js'
+import { prisma } from '../lib/prisma.js'
+import { transitionOrderStatus } from '../modules/orders/fulfillment.js'
 
 describe('POST /api/orders (exchange)', () => {
   it('should create order and return delivery content', async () => {
@@ -16,8 +18,23 @@ describe('POST /api/orders (exchange)', () => {
     expect(res.body.orderId).toBeDefined()
     expect(res.body.productName).toBe('VPN订阅')
     expect(res.body.price).toBe(500)
+    expect(res.body.status).toBe('delivered')
+    expect(res.body.deliveryMode).toBe('instant_inventory')
     expect(res.body.deliveryContent).toBeDefined()
     expect(res.body.balanceAfter).toBe(500)
+
+    const order = await prisma.order.findUniqueOrThrow({
+      where: { id: res.body.orderId },
+      include: { statusEvents: true },
+    })
+    expect(order.status).toBe('delivered')
+    expect(order.statusEvents).toHaveLength(1)
+    expect(order.statusEvents[0]).toMatchObject({
+      actorRole: 'user',
+      fromStatus: null,
+      toStatus: 'delivered',
+      action: 'order.created.instant_inventory',
+    })
   })
 
   it('should fail when points are insufficient', async () => {
@@ -83,6 +100,153 @@ describe('POST /api/orders (exchange)', () => {
     expect(orders.body[0].commissionAmount).toBe(100)
   })
 
+  it('should create manual service order as pending without consuming inventory', async () => {
+    const { user } = await createTestUser('manual@test.local', 'pass123', 'user', 1000)
+    const product = await createTestProduct('人工履约服务', 300, 0, [])
+    await prisma.product.update({
+      where: { id: product.id },
+      data: { deliveryMode: 'manual_service', stock: 0 },
+    })
+    const { accessToken } = await loginAs('manual@test.local', 'pass123')
+
+    const res = await api
+      .post('/api/orders')
+      .set(authHeader(accessToken))
+      .send({ productId: product.id })
+      .expect(201)
+
+    expect(res.body.status).toBe('pending')
+    expect(res.body.deliveryMode).toBe('manual_service')
+    expect(res.body.deliveryContent).toBeUndefined()
+    expect(res.body.balanceAfter).toBe(700)
+
+    const order = await prisma.order.findUniqueOrThrow({
+      where: { id: res.body.orderId },
+      include: { delivery: true, statusEvents: true },
+    })
+    expect(order.userId).toBe(user.id)
+    expect(order.status).toBe('pending')
+    expect(order.delivery).toBeNull()
+    expect(order.statusEvents).toHaveLength(1)
+    expect(order.statusEvents[0]).toMatchObject({
+      actorRole: 'user',
+      fromStatus: null,
+      toStatus: 'pending',
+      action: 'order.created.manual_service',
+    })
+    await expect(prisma.inventoryItem.count({ where: { productId: product.id } })).resolves.toBe(0)
+  })
+})
+
+describe('fulfillment state machine', () => {
+  it('should reject illegal transitions', async () => {
+    await createTestUser('illegal-transition@test.local', 'pass123', 'user', 1000)
+    const product = await createTestProduct('非法流转服务', 200, 0, [])
+    await prisma.product.update({
+      where: { id: product.id },
+      data: { deliveryMode: 'manual_service' },
+    })
+    const { accessToken } = await loginAs('illegal-transition@test.local', 'pass123')
+    const created = await api
+      .post('/api/orders')
+      .set(authHeader(accessToken))
+      .send({ productId: product.id })
+      .expect(201)
+
+    await expect(
+      transitionOrderStatus({
+        orderId: created.body.orderId,
+        toStatus: 'closed',
+        actorRole: 'merchant',
+        action: 'merchant.close',
+      })
+    ).rejects.toMatchObject({
+      status: 400,
+      code: 'BAD_REQUEST',
+    })
+
+    const order = await prisma.order.findUniqueOrThrow({ where: { id: created.body.orderId } })
+    expect(order.status).toBe('pending')
+  })
+
+  it('should write an event for legal transitions', async () => {
+    const { user } = await createTestUser('legal-transition@test.local', 'pass123', 'user', 1000)
+    const product = await createTestProduct('合法流转服务', 200, 0, [])
+    await prisma.product.update({
+      where: { id: product.id },
+      data: { deliveryMode: 'manual_service' },
+    })
+    const { accessToken } = await loginAs('legal-transition@test.local', 'pass123')
+    const created = await api
+      .post('/api/orders')
+      .set(authHeader(accessToken))
+      .send({ productId: product.id })
+      .expect(201)
+
+    const updated = await transitionOrderStatus({
+      orderId: created.body.orderId,
+      toStatus: 'processing',
+      actorRole: 'merchant',
+      actorUserId: user.id,
+      action: 'merchant.start_processing',
+      publicNote: '已开始处理',
+    })
+
+    expect(updated.status).toBe('processing')
+    const events = await prisma.orderStatusEvent.findMany({
+      where: { orderId: created.body.orderId },
+      orderBy: { id: 'asc' },
+    })
+    expect(events).toHaveLength(2)
+    expect(events[1]).toMatchObject({
+      actorUserId: user.id,
+      actorRole: 'merchant',
+      fromStatus: 'pending',
+      toStatus: 'processing',
+      action: 'merchant.start_processing',
+      publicNote: '已开始处理',
+    })
+  })
+
+  it('should normalize legacy completed orders in user detail', async () => {
+    const { user } = await createTestUser('legacy-completed@test.local', 'pass123', 'user', 1000)
+    const product = await createTestProduct('历史订单商品', 100, 1, ['legacy-content'])
+    const order = await prisma.order.create({
+      data: {
+        userId: user.id,
+        productId: product.id,
+        price: 100,
+        status: 'completed',
+      },
+    })
+    await prisma.deliveryRecord.create({
+      data: {
+        orderId: order.id,
+        userId: user.id,
+        productId: product.id,
+        content: 'legacy-content',
+        status: 'delivered',
+      },
+    })
+    const { accessToken } = await loginAs('legacy-completed@test.local', 'pass123')
+
+    const res = await api
+      .get(`/api/orders/${order.id}`)
+      .set(authHeader(accessToken))
+      .expect(200)
+
+    expect(res.body.status).toBe('delivered')
+    expect(res.body.delivery.content).toBe('legacy-content')
+    expect(res.body.deliveryMode).toBe('instant_inventory')
+    expect(res.body.timeline).toEqual([
+      expect.objectContaining({
+        actorRole: 'system',
+        fromStatus: null,
+        toStatus: 'delivered',
+        action: 'order.legacy.completed',
+      }),
+    ])
+  })
 })
 
 describe('GET /api/orders', () => {
@@ -110,6 +274,44 @@ describe('GET /api/orders', () => {
     expect(res.body[0].product.imageUrl).toBeNull()
     expect(res.body[0].delivery.status).toBe('delivered')
     expect(res.body[0].delivery.content).toBeUndefined()
+    expect(res.body[0].deliveryMode).toBe('instant_inventory')
+  })
+
+  it('should filter delivered orders across legacy completed and new delivered statuses', async () => {
+    const { user } = await createTestUser('order-filter@test.local', 'pass123', 'user', 5000)
+    const product = await createTestProduct('筛选商品', 100, 2, ['filter-1', 'filter-2'])
+    const { accessToken } = await loginAs('order-filter@test.local', 'pass123')
+
+    await api
+      .post('/api/orders')
+      .set(authHeader(accessToken))
+      .send({ productId: product.id })
+      .expect(201)
+
+    await prisma.order.create({
+      data: {
+        userId: user.id,
+        productId: product.id,
+        price: 100,
+        status: 'completed',
+      },
+    })
+    await prisma.order.create({
+      data: {
+        userId: user.id,
+        productId: product.id,
+        price: 100,
+        status: 'pending',
+      },
+    })
+
+    const res = await api
+      .get('/api/orders?status=delivered')
+      .set(authHeader(accessToken))
+      .expect(200)
+
+    expect(res.body).toHaveLength(2)
+    expect(res.body.map((order: { status: string }) => order.status)).toEqual(['delivered', 'delivered'])
   })
 })
 
@@ -134,8 +336,17 @@ describe('GET /api/orders/:id', () => {
     expect(res.body.product.name).toBe('详细商品')
     expect(res.body.product.imageUrl).toBeNull()
     expect(res.body.delivery.status).toBe('delivered')
-    expect(res.body.delivery.content).toBeDefined()
+    expect(res.body.delivery.content).toBe('det-1')
     expect(res.body.merchant).toBeNull()
+    expect(res.body.deliveryMode).toBe('instant_inventory')
+    expect(res.body.timeline).toEqual([
+      expect.objectContaining({
+        actorRole: 'user',
+        fromStatus: null,
+        toStatus: 'delivered',
+        action: 'order.created.instant_inventory',
+      }),
+    ])
   })
 
   it('should include merchant commission detail for merchant order', async () => {
@@ -198,6 +409,78 @@ describe('GET /api/orders/:id', () => {
     await api
       .get(`/api/orders/${created.body.orderId}`)
       .set(authHeader(b.accessToken))
+      .expect(404)
+  })
+})
+
+describe('POST /api/orders/:id fulfillment actions', () => {
+  it('should allow user to dispute and close own delivered orders with events', async () => {
+    await createTestUser('order-action@test.local', 'pass123', 'user', 5000)
+    await createTestProduct('操作商品', 100, 2, ['action-1', 'action-2'])
+    const { accessToken } = await loginAs('order-action@test.local', 'pass123')
+
+    const disputedOrder = await api
+      .post('/api/orders')
+      .set(authHeader(accessToken))
+      .send({ productId: 1 })
+      .expect(201)
+
+    const disputed = await api
+      .post(`/api/orders/${disputedOrder.body.orderId}/dispute`)
+      .set(authHeader(accessToken))
+      .expect(200)
+
+    expect(disputed.body.status).toBe('disputed')
+    expect(disputed.body.timeline.at(-1)).toMatchObject({
+      actorRole: 'user',
+      fromStatus: 'delivered',
+      toStatus: 'disputed',
+      action: 'user.dispute',
+    })
+
+    const closedOrder = await api
+      .post('/api/orders')
+      .set(authHeader(accessToken))
+      .send({ productId: 1 })
+      .expect(201)
+
+    const closed = await api
+      .post(`/api/orders/${closedOrder.body.orderId}/close`)
+      .set(authHeader(accessToken))
+      .expect(200)
+
+    expect(closed.body.status).toBe('closed')
+    expect(closed.body.timeline.at(-1)).toMatchObject({
+      actorRole: 'user',
+      fromStatus: 'delivered',
+      toStatus: 'closed',
+      action: 'user.close',
+    })
+
+    const events = await prisma.orderStatusEvent.findMany({
+      where: { orderId: { in: [disputedOrder.body.orderId, closedOrder.body.orderId] } },
+      orderBy: { id: 'asc' },
+    })
+    expect(events.filter(event => event.action === 'user.dispute')).toHaveLength(1)
+    expect(events.filter(event => event.action === 'user.close')).toHaveLength(1)
+  })
+
+  it('should return 404 when user disputes another user order', async () => {
+    await createTestUser('order-action-owner@test.local', 'pass123', 'user', 5000)
+    await createTestProduct('隔离操作商品', 100, 1, ['isolated-action'])
+    const owner = await loginAs('order-action-owner@test.local', 'pass123')
+    const created = await api
+      .post('/api/orders')
+      .set(authHeader(owner.accessToken))
+      .send({ productId: 1 })
+      .expect(201)
+
+    await createTestUser('order-action-foreign@test.local', 'pass123', 'user', 5000)
+    const foreign = await loginAs('order-action-foreign@test.local', 'pass123')
+
+    await api
+      .post(`/api/orders/${created.body.orderId}/dispute`)
+      .set(authHeader(foreign.accessToken))
       .expect(404)
   })
 })

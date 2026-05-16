@@ -1052,3 +1052,357 @@ A7 owns the final OpenAPI decision note. If `docs/operations/openapi-m5-note.md`
 Expected M5 decision: no OpenAPI bump. M5 adds GitHub Actions workflows and operations documents, but no public `/api/*` endpoint, request schema, response schema, auth behavior, or error contract. Keep `docs/superpowers/specs/monexus-api-openapi.json` at `v1.3.0` unless A7 finds a real contract change.
 
 Bump to `v1.4.0` only when a future change adds or changes a public HTTP endpoint or externally visible API behavior.
+
+## 35. M6 Fulfillment Domain Overview
+
+M6 is a domain refactor, not a UI patch. It introduces a fulfillment state machine, splits order DTOs by role, gates settlement on fulfillment status, and exposes a public `registry` so the frontend stops hardcoding labels. The corresponding API contract is captured in `docs/operations/openapi-m6-note.md` (OpenAPI bumped to `v1.4.0`); the corresponding UI contract is in `docs/operations/m6-gemini-ui-contract.md`.
+
+### 35.1 Fulfillment modes
+
+Each product carries a `deliveryMode` flag that decides how an order moves from `pending` to `delivered`:
+
+| Mode | Inventory required | Who delivers | Path |
+| --- | --- | --- | --- |
+| `instant_inventory` | yes — preloaded `InventoryItem` rows | the system, inside the redeem transaction | order is created already `delivered`, `DeliveryRecord` holds the claimed credential, `stock--`, `sales++`. |
+| `manual_service` | no | the merchant, asynchronously | order is created `pending`; merchant calls `start_fulfillment` → `processing` → `deliver` → `delivered`. |
+
+The mode lives on `Product.deliveryMode` and is mirrored on every order response so the user / merchant UI can branch without looking up the product separately. New products default to `instant_inventory` (matches the M5 catalogue).
+
+### 35.2 Order state machine
+
+`server/src/modules/orders/fulfillment.ts` is the single source of truth. Legal transitions only:
+
+```text
+pending      → processing
+processing   → delivered
+delivered    → disputed   | closed
+disputed     → processing | closed
+closed       → (terminal)
+```
+
+Anything outside this graph throws `400 BAD_REQUEST` (`非法订单状态流转: <from> -> <to>`). The legacy value `completed` is normalized to `delivered` both when filtering (`?status=completed` is accepted as an alias) and when serializing (a row stored as `completed` is returned as `delivered`). Do **not** introduce other historical aliases without updating `normalizeOrderStatus`.
+
+Every transition writes an `OrderStatusEvent` row capturing actor user, actor role (`user` / `merchant` / `admin` / `system`), `fromStatus`, `toStatus`, an action key (e.g. `order.created.instant_inventory`, `merchant.fulfillment.start`, `user.dispute`), and optional public / internal notes. The user-detail response surfaces these as `timeline`; merchant / admin detail surface them as `statusEvents`. Orders that predate M2 (no events recorded) synthesize a single-element fallback so the UI never sees an empty array.
+
+### 35.3 Delivery content visibility
+
+`DeliveryRecord.content` holds the user-facing credential (card secret / activation code / node info). M6 narrows where it leaks:
+
+| Endpoint | Role | `delivery.content` visible? |
+| --- | --- | --- |
+| `GET /api/orders` | user (self) | no |
+| `GET /api/orders/{id}` | user (owner only; non-owner gets 404) | yes — the buyer is allowed to read what they bought |
+| `GET /api/merchant/orders` | merchant | no |
+| `GET /api/merchant/orders/{id}` | merchant (own orders only; 404 otherwise) | no — merchants must never see platform-stocked credentials |
+| `GET /api/admin/orders` | admin | no |
+| `GET /api/admin/orders/{id}` | admin | yes — kept for forensic / customer-support work |
+
+Serializer enforcement lives in `server/src/modules/orders/serializers.ts` (`serializeUserOrderList` / `serializeUserOrderDetail` / `serializeMerchantOrder` / `serializeAdminOrderList` / `serializeAdminOrderDetail`). If you add a new order-returning route, route it through one of these — do not write a fresh inline serializer.
+
+When a merchant performs manual fulfillment, the `deliveryContent` they supply in the request body is written into `DeliveryRecord.content`. That is sensitive on the request side; do not log it in plaintext and do not echo it back in any merchant list response.
+
+### 35.4 Merchant fulfillment actions
+
+After A1-A6 the merchant surface has three explicit action endpoints. Each is gated by the state machine in §35.2.
+
+| Action | Endpoint | Allowed `from` | New status | Notes |
+| --- | --- | --- | --- | --- |
+| Start fulfillment | `POST /api/merchant/orders/{id}/fulfillment/start` | `pending` | `processing` | Available for both `instant_inventory` and `manual_service` orders that ended up stuck in `pending` (e.g. instant-inventory legacy backfill). |
+| Deliver | `POST /api/merchant/orders/{id}/fulfillment/deliver` | `processing` | `delivered` | **Only valid when `product.deliveryMode = manual_service`.** Hitting it on an `instant_inventory` order returns `400 BAD_REQUEST` (`只有人工服务订单可由商家履约交付`). |
+| Respond to dispute | `POST /api/merchant/orders/{id}/fulfillment/respond-dispute` | `disputed` | `processing` (`resolution=resume`) or `closed` (`resolution=close`) | The `resolution` field is required; anything other than `resume` / `close` is rejected by the Zod schema. |
+
+The merchant order detail / list response carries `availableActions: string[]` derived from the current status + delivery mode (`getAvailableActions` in `server/src/modules/merchant/service.ts`). The UI must drive button enabled/disabled state from this array — never compute it client-side from the status string. Possible values: `start_fulfillment`, `deliver`, `respond_dispute`. An empty array means the order has no pending merchant action (already delivered, closed, or instant-inventory order).
+
+The corresponding user-side actions live on `POST /api/orders/{id}/dispute` (only valid from `delivered`) and `POST /api/orders/{id}/close` (valid from `delivered` or `disputed`). The non-owner case returns `404`, not `403`, to preserve the existing "do not leak resource existence" invariant.
+
+### 35.5 Settlement gating
+
+Merchant settlements are no longer payable purely because they sit in `pending`. `getSettlementEligibility(orderStatus)` (`server/src/modules/merchant/service.ts`) gates payability on the linked order's fulfillment status:
+
+| Order status | `payable` | `blockReason` |
+| --- | --- | --- |
+| `delivered` | `true` | `null` |
+| `closed` | `true` | `null` |
+| `pending` | `false` | `订单待处理，暂不可结算` |
+| `processing` | `false` | `订单履约中，暂不可结算` |
+| `disputed` | `false` | `订单争议中，暂不可结算` |
+| (anything else) | `false` | `订单状态不可结算` (defensive fallback) |
+
+`GET /api/merchant/settlements` now returns `Settlement` enriched with `{payable, blockReason}` on every row. `POST /api/admin/settlements/batch-settle` enforces the same gate server-side: any selected settlement whose linked order is not payable (or whose own status is not `pending`) causes the whole batch to fail `400 BAD_REQUEST` (`存在不可结算的记录`). Do not loosen this — disputed and unfulfilled orders never pay out.
+
+### 35.6 Registry + system config
+
+Two complementary layers feed runtime registries:
+
+- **Code-level enum + labels + tones** — `server/src/lib/businessRegistry.ts`. Holds the canonical `productTypes`, `deliveryModes`, `orderStatuses`, `settlementStatuses` arrays with `{value, label, tone}` shape. Any new state / mode / product type starts here.
+- **Operator-tunable values** — `server/src/lib/systemConfig.ts` + `SystemConfig` table. Holds `defaultPageSize`, `maxPageSize`, `lowStockThreshold` (plus the existing M3 auth knobs). Admins edit these through `PUT /api/admin/config/{key}`; defaults fall back to the registry constants when the row is absent or zero.
+
+The frontend reads both from `GET /api/config/registry` (no auth — public read-only). Response shape (`ConfigRegistry` in OpenAPI):
+
+```json
+{
+  "productTypes":      [{ "value": "邀请码", "label": "邀请码", "deliveryModes": ["instant_inventory", "manual_service"] }, ...],
+  "deliveryModes":     [{ "value": "instant_inventory", "label": "即时库存发货", "tone": "success" }, ...],
+  "orderStatuses":     [{ "value": "pending", "label": "待处理", "tone": "warning" }, ...],
+  "settlementStatuses":[{ "value": "pending", "label": "待结算", "tone": "warning" }, ...],
+  "pagination":        { "defaultPageSize": 20, "maxPageSize": 100 },
+  "inventory":         { "lowStockThreshold": 5 }
+}
+```
+
+The UI contract (`docs/operations/m6-gemini-ui-contract.md`) requires every status label and tone to be read from this payload — no hardcoded "已交付" / "待处理" / "争议中" strings in `src/pages/*` or `src/components/*`.
+
+Inspection cheatsheet:
+
+```bash
+# Live registry
+curl -fsS http://localhost:3000/api/config/registry | jq .
+
+# Operator-tunable values (auth required)
+curl -fsS http://localhost:3000/api/admin/config -H "Authorization: Bearer $ADMIN_TOKEN" | jq .
+
+# Update a value, e.g. raise the low-stock threshold to 10
+curl -fsS -X PUT http://localhost:3000/api/admin/config/lowStockThreshold \
+  -H "Authorization: Bearer $ADMIN_TOKEN" -H 'Content-Type: application/json' \
+  -d '{"value": 10}'
+```
+
+## 36. M6 Smoke Checklist
+
+Run before A0 opens the PR from `integration/m6-rc` to `master`, and after every promote / rollback that touches the M6 surface. Tick items in order — the later checks assume earlier ones passed.
+
+### 36.1 Build + tests
+
+```bash
+cd "$REPO_ROOT"
+npm run build                                                 # frontend tsc + vite
+cd server && npm run build && cd ..                           # backend tsc
+cd server && TEST_DATABASE_URL='postgresql://monexus:<dev-password>@localhost:5432/monexus_test' npm test && cd ..
+```
+
+All three must be green. The server test suite includes the fulfillment state machine, delivery privacy, merchant ops, and registry coverage.
+
+### 36.2 Delivery privacy boundary
+
+```bash
+USER_TOKEN='<bearer-of-buyer>'
+MERCHANT_TOKEN='<bearer-of-merchant-who-owns-the-product>'
+ADMIN_TOKEN='<bearer-of-admin>'
+BASE=http://localhost:3000
+ORDER_ID=<order-id-with-delivered-content>
+
+# User list: no content
+curl -fsS "$BASE/api/orders" -H "Authorization: Bearer $USER_TOKEN" | jq '.[0].delivery'
+
+# User detail: content present
+curl -fsS "$BASE/api/orders/$ORDER_ID" -H "Authorization: Bearer $USER_TOKEN" | jq '.delivery'
+
+# Merchant list + detail: no content in either
+curl -fsS "$BASE/api/merchant/orders"             -H "Authorization: Bearer $MERCHANT_TOKEN" | jq '.items[0].delivery'
+curl -fsS "$BASE/api/merchant/orders/$ORDER_ID"  -H "Authorization: Bearer $MERCHANT_TOKEN" | jq '.delivery'
+
+# Admin list: no content; admin detail: content present
+curl -fsS "$BASE/api/admin/orders"             -H "Authorization: Bearer $ADMIN_TOKEN" | jq '.[0].delivery'
+curl -fsS "$BASE/api/admin/orders/$ORDER_ID"  -H "Authorization: Bearer $ADMIN_TOKEN" | jq '.delivery'
+```
+
+Pass: only user-detail and admin-detail responses include `delivery.content`. Fail: stop and re-test — this is the A1 invariant.
+
+### 36.3 Instant inventory still works
+
+Pick an active `instant_inventory` product with `availableStock > 0`, redeem it as a normal user:
+
+```bash
+curl -fsS -X POST "$BASE/api/orders" \
+  -H "Authorization: Bearer $USER_TOKEN" -H 'Content-Type: application/json' \
+  -d '{"productId": <id>}' | jq .
+```
+
+Pass criteria: response `status="delivered"`, `deliveryMode="instant_inventory"`, `deliveryContent` populated, `balanceAfter` decreased by `price`. DB side: a fresh `PointLog`, a `Settlement(pending)` if the product has a merchant, `stock` decremented, an `InventoryItem` flipped to `sold`.
+
+### 36.4 Manual service full lifecycle
+
+Pick or create a `manual_service` product, then walk the state machine end-to-end:
+
+```bash
+# 1) User redeem → pending
+ORDER_ID=$(curl -fsS -X POST "$BASE/api/orders" \
+  -H "Authorization: Bearer $USER_TOKEN" -H 'Content-Type: application/json' \
+  -d '{"productId": <manual-id>}' | jq -r .orderId)
+
+# 2) Merchant start → processing
+curl -fsS -X POST "$BASE/api/merchant/orders/$ORDER_ID/fulfillment/start" \
+  -H "Authorization: Bearer $MERCHANT_TOKEN" -H 'Content-Type: application/json' \
+  -d '{"publicNote":"handling now"}'
+
+# 3) Merchant deliver → delivered
+curl -fsS -X POST "$BASE/api/merchant/orders/$ORDER_ID/fulfillment/deliver" \
+  -H "Authorization: Bearer $MERCHANT_TOKEN" -H 'Content-Type: application/json' \
+  -d '{"deliveryContent":"<credential>","publicNote":"done"}'
+
+# 4) User dispute → disputed (optional)
+curl -fsS -X POST "$BASE/api/orders/$ORDER_ID/dispute" -H "Authorization: Bearer $USER_TOKEN"
+
+# 5) Merchant respond → resume back to processing OR close
+curl -fsS -X POST "$BASE/api/merchant/orders/$ORDER_ID/fulfillment/respond-dispute" \
+  -H "Authorization: Bearer $MERCHANT_TOKEN" -H 'Content-Type: application/json' \
+  -d '{"resolution":"close","publicNote":"refunded out of band"}'
+
+# 6) User close (from delivered or disputed)
+curl -fsS -X POST "$BASE/api/orders/$ORDER_ID/close" -H "Authorization: Bearer $USER_TOKEN"
+```
+
+Pass: each response carries the new status and an updated `availableActions`. The user detail's `timeline` has one event per transition. The merchant detail's `statusEvents` mirrors the same events with `actorRole` set correctly.
+
+### 36.5 Settlement gating
+
+```bash
+curl -fsS "$BASE/api/merchant/settlements" -H "Authorization: Bearer $MERCHANT_TOKEN" | jq '.[0:3]'
+```
+
+Pass: every row carries `payable` (boolean) and `blockReason` (string or null). Rows linked to `disputed` / `pending` / `processing` orders must have `payable=false` and a non-null reason. Rows linked to `delivered` / `closed` orders must have `payable=true` and `blockReason=null`.
+
+Then try to batch-settle a `disputed` row:
+
+```bash
+curl -fsS -X POST "$BASE/api/admin/settlements/batch-settle" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" -H 'Content-Type: application/json' \
+  -d '{"settlementIds":[<id-of-disputed-row>]}'
+```
+
+Pass: `400 BAD_REQUEST` with body `存在不可结算的记录`. The settlement must remain `pending` in the DB.
+
+### 36.6 Merchant product list — filters + low stock
+
+```bash
+curl -fsS "$BASE/api/merchant/products?page=1&pageSize=20&q=节点&deliveryMode=instant_inventory&lowStock=true" \
+  -H "Authorization: Bearer $MERCHANT_TOKEN" | jq '.items[:3], .total, .page, .pageSize'
+```
+
+Pass: response is an envelope (`{items,total,page,pageSize}`), each item carries `availableStock`, `lowStock`, `deliveryMode`. With `lowStock=true`, only rows where `deliveryMode=instant_inventory` and `availableStock <= lowStockThreshold` come back.
+
+### 36.7 Inventory import — preview then commit
+
+```bash
+# Preview: identifies empty lines, in-request dupes, existing dupes
+curl -fsS -X POST "$BASE/api/merchant/products/<id>/inventory/preview" \
+  -H "Authorization: Bearer $MERCHANT_TOKEN" -H 'Content-Type: application/json' \
+  -d '{"text":"abc\n\nabc\ndef"}' | jq .
+
+# Commit: rejects entire batch if dupes remain
+curl -fsS -X POST "$BASE/api/merchant/products/<id>/inventory" \
+  -H "Authorization: Bearer $MERCHANT_TOKEN" -H 'Content-Type: application/json' \
+  -d '{"text":"abc\n\nabc\ndef"}'
+```
+
+Pass: preview returns `emptyRows=1`, `duplicateRows=1`, `validRows=2`, `canImport=false`. Commit returns `400 VALIDATION_ERROR` with `duplicateRows=...` / `existingDuplicateRows=...` rows under `details`. After cleaning the input (`{"text":"def"}` only), commit returns `imported=1` and `product.stock` increments by 1.
+
+### 36.8 Registry consumption
+
+```bash
+curl -fsS "$BASE/api/config/registry" | jq 'keys'
+```
+
+Pass: keys include `productTypes`, `deliveryModes`, `orderStatuses`, `settlementStatuses`, `pagination`, `inventory`. Then load the merchant order list page in a browser and verify every status pill renders with its registry-driven `tone` (e.g. `disputed` → danger, `delivered` → success). No raw Chinese label is hardcoded in `src/components/*` — `rg -n '已交付|待处理|争议中|已关闭' src` should return nothing.
+
+## 37. M6 Failure Handling
+
+### 37.1 Invalid state transition
+
+Symptom: client gets `400 BAD_REQUEST` with body `非法订单状态流转: <from> -> <to>`.
+
+Diagnosis:
+
+1. Check the current `Order.status` directly in the DB.
+2. Cross-check against `legalTransitions` in `server/src/modules/orders/fulfillment.ts`.
+3. If the UI offered the action, the merchant detail's `availableActions` was either ignored or stale — `availableActions` is the authoritative button-enable signal. File a frontend bug, not a backend one.
+
+Recovery: no action needed on the order. The state is unchanged because the transition is wrapped in a Prisma transaction and aborted before any side effect.
+
+### 37.2 Stuck `pending` / `processing`
+
+Symptom: a `manual_service` order has been `pending` or `processing` for longer than the merchant SLA, no merchant action.
+
+Diagnosis:
+
+```bash
+psql "$DATABASE_URL" -c "
+  SELECT o.id, o.status, o.\"createdAt\", o.\"merchantId\", m.name AS merchant_name
+  FROM \"Order\" o
+  LEFT JOIN \"Merchant\" m ON m.id = o.\"merchantId\"
+  WHERE o.status IN ('pending','processing')
+    AND o.\"createdAt\" < NOW() - INTERVAL '24 hours'
+  ORDER BY o.\"createdAt\" ASC LIMIT 50;
+"
+```
+
+Recovery (operator path):
+
+1. Reach out to the merchant (audit + ban or DM via your operator channel — not in scope of this runbook).
+2. If the merchant is unreachable, an admin can step in via DB direct transition. The admin path **must** also write an `OrderStatusEvent` so the timeline stays consistent. Until a dedicated admin route exists, do this through a manual `psql` transaction:
+
+   ```sql
+   BEGIN;
+   UPDATE "Order" SET status='closed' WHERE id=<orderId>;
+   INSERT INTO "OrderStatusEvent" ("orderId","actorRole","fromStatus","toStatus","action","publicNote","createdAt")
+     VALUES (<orderId>, 'admin', '<from>', 'closed', 'admin.manual.close', '<reason>', NOW());
+   COMMIT;
+   ```
+
+3. Reverse any settlement state if needed (e.g. refund points to user via `POST /api/admin/users/<userId>/adjust`). Refunds inside an admin-driven close are a manual decision — there is no automatic credit reversal in M6.
+
+### 37.3 Disputed order resolution
+
+Symptom: `disputed` order with both parties refusing to act.
+
+Decision tree:
+
+- Buyer was wrong → merchant calls `respond-dispute` with `resolution=close`. Settlement stays payable (because `closed` is payable).
+- Merchant was wrong → admin issues a `POST /api/admin/users/<userId>/adjust` refund and merchant calls `respond-dispute` with `resolution=close`. The settlement remains payable on the merchant's side; the admin refund is a separate `PointLog` entry against the user.
+- Need a third-party hold → leave the order in `disputed`. Settlements linked to it remain `payable=false` until resolved. Do not force-close just to unblock a payout.
+
+### 37.4 Blocked settlement
+
+Symptom: `POST /api/admin/settlements/batch-settle` returns `400` `存在不可结算的记录`.
+
+Diagnosis:
+
+```bash
+curl -fsS "$BASE/api/admin/settlements?status=pending" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" | jq '.[] | select(.id == <id>)'
+```
+
+If `status != pending`, the row already settled — drop it from the batch. Otherwise inspect the linked order:
+
+```bash
+psql "$DATABASE_URL" -c "SELECT id, status FROM \"Order\" WHERE id=<orderId>;"
+```
+
+If the order is `pending` / `processing` / `disputed`, the gate is correct — wait for fulfillment to finish or for the dispute to resolve. Do not bypass the gate with raw SQL; settlement reconciliation depends on the order-state invariant.
+
+### 37.5 Bad registry / system config value
+
+Symptom: frontend cannot load `/api/config/registry`, or pagination / low-stock behavior looks wrong.
+
+Diagnosis ladder:
+
+1. `curl -fsS http://localhost:3000/api/config/registry` — if 5xx, the backend cannot reach the `SystemConfig` table; jump to §10 (Postgres connection).
+2. `curl -fsS "$BASE/api/admin/config" -H "Authorization: Bearer $ADMIN_TOKEN" | jq .` — confirm `defaultPageSize`, `maxPageSize`, `lowStockThreshold` are sane positive integers.
+3. Repair via the admin API rather than DB direct:
+
+   ```bash
+   curl -fsS -X PUT "$BASE/api/admin/config/defaultPageSize" \
+     -H "Authorization: Bearer $ADMIN_TOKEN" -H 'Content-Type: application/json' \
+     -d '{"value": 20}'
+   ```
+
+   `getSystemConfigValue` falls back to the `businessRegistry` defaults when a config row is absent or zero (20 / 100 / 5), so the system continues to work even if a row is deleted.
+
+If the issue is a missing `productTypes` / `orderStatuses` entry (e.g. a product carries a type that isn't in the registry), fix the registry in code — do not insert ad-hoc rows in `SystemConfig`. The labels / tones layer is intentionally code-only so that PR review catches drift.
+
+### 37.6 Where this links
+
+- API contract: `docs/operations/openapi-m6-note.md` (OpenAPI `v1.4.0`).
+- UI contract for Gemini: `docs/operations/m6-gemini-ui-contract.md`.
+- Privacy boundary rationale: §35.3 above + the A1 commit message on `integration/m6-rc`.
+- M5 deployment / rollback / smoke continues to apply unchanged (§§27-33). M6 does not require a separate rollback flow — a code revert + the M5 rollback workflow is sufficient because no destructive schema change was introduced (additive only: new tables for `OrderStatusEvent`, new columns on `Product` / `Order`).

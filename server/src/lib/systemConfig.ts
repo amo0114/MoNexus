@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client'
 import { config } from '../config/index.js'
+import { businessRegistry } from './businessRegistry.js'
 import { badRequest } from './httpError.js'
 import { prisma } from './prisma.js'
 
@@ -8,6 +9,9 @@ export const systemConfigKeys = [
   'checkinReward',
   'inviteReward',
   'refreshTokenMaxAgeDays',
+  'defaultPageSize',
+  'maxPageSize',
+  'lowStockThreshold',
 ] as const
 
 export type SystemConfigKey = typeof systemConfigKeys[number]
@@ -19,6 +23,9 @@ export const systemConfigDefaults: Record<SystemConfigKey, number> = {
   checkinReward: config.checkinReward,
   inviteReward: config.inviteReward,
   refreshTokenMaxAgeDays: Math.floor(config.refreshTokenMaxAgeMs / oneDayMs),
+  defaultPageSize: businessRegistry.pagination.defaultPageSize,
+  maxPageSize: businessRegistry.pagination.maxPageSize,
+  lowStockThreshold: businessRegistry.inventory.lowStockThreshold,
 }
 
 const descriptions: Record<SystemConfigKey, string> = {
@@ -26,6 +33,9 @@ const descriptions: Record<SystemConfigKey, string> = {
   checkinReward: '每日签到奖励积分',
   inviteReward: '邀请新用户奖励积分',
   refreshTokenMaxAgeDays: 'Refresh Token 有效天数',
+  defaultPageSize: '列表默认分页大小',
+  maxPageSize: '列表最大分页大小',
+  lowStockThreshold: '低库存提醒阈值',
 }
 
 type ConfigClient = typeof prisma | Prisma.TransactionClient

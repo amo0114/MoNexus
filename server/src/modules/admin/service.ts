@@ -7,6 +7,8 @@ import {
 } from '../../lib/systemConfig.js'
 import { invalidate as invalidateUserStatusCache } from '../../lib/userStatusCache.js'
 import { revokeAllUserRefreshTokens } from '../auth/service.js'
+import { serializeAdminOrderDetail, serializeAdminOrderList } from '../orders/serializers.js'
+import { getSettlementEligibility } from '../merchant/service.js'
 import type { ListAdminAuditQuery } from './schema.js'
 
 function getShanghaiDayRange() {
@@ -225,17 +227,18 @@ export async function importInventory(productId: number, items: string[], adminU
 }
 
 export async function listAllOrders(page = 1, pageSize = 20) {
-  return prisma.order.findMany({
+  const orders = await prisma.order.findMany({
     include: {
       user: { select: { id: true, email: true } },
       merchant: { select: { id: true, name: true } },
       product: { select: { name: true } },
-      delivery: { select: { content: true } },
+      delivery: { select: { status: true } },
     },
     orderBy: { createdAt: 'desc' },
     skip: (page - 1) * pageSize,
     take: pageSize,
   })
+  return orders.map(serializeAdminOrderList)
 }
 
 export async function listLogs() {
@@ -307,7 +310,7 @@ export async function getOrderDetail(orderId: number) {
     },
   })
   if (!order) throw notFound('订单不存在')
-  return order
+  return serializeAdminOrderDetail(order)
 }
 
 // ---- Merchant Management ----
@@ -470,12 +473,15 @@ export async function batchSettle(adminUserId: number, settlementIds: number[]) 
   return prisma.$transaction(async tx => {
     const settlements = await tx.settlement.findMany({
       where: { id: { in: settlementIds } },
-      select: { id: true, status: true },
+      select: { id: true, status: true, order: { select: { status: true } } },
     })
 
     if (
       settlements.length !== settlementIds.length ||
-      settlements.some(settlement => settlement.status !== 'pending')
+      settlements.some(settlement => (
+        settlement.status !== 'pending' ||
+        !getSettlementEligibility(settlement.order.status).payable
+      ))
     ) {
       throw badRequest('存在不可结算的记录')
     }

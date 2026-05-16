@@ -1,20 +1,45 @@
-import { X, Copy, Package, Store, Clock, Coins, Info } from 'lucide-react'
+import { useState } from 'react'
+import { X, Copy, Package, Store, Clock, Coins, Info, Loader2 } from 'lucide-react'
 import { UserOrderDetail } from '../types/order'
 import { useAppStore } from '../stores/appStore'
+import { disputeOrder, closeOrder } from '../api/orders'
+import RegistryPill from './ui/RegistryPill'
 
 interface OrderDetailModalProps {
   order: UserOrderDetail
   onClose: () => void
 }
 
-export default function OrderDetailModal({ order, onClose }: OrderDetailModalProps) {
+export default function OrderDetailModal({ order: initialOrder, onClose }: OrderDetailModalProps) {
   const showToast = useAppStore((s) => s.showToast)
+  const [order, setOrder] = useState(initialOrder)
+  const [loadingAction, setLoadingAction] = useState<string | null>(null)
 
   function copyContent() {
     if (!order.delivery?.content) return
     navigator.clipboard.writeText(order.delivery.content).catch(() => {})
     showToast('发货信息已复制')
   }
+
+  async function handleAction(action: 'dispute' | 'close') {
+    if (action === 'dispute' && !window.confirm('确认要发起争议吗？这会暂停该订单的结算。')) return
+    if (action === 'close' && !window.confirm('确认结束订单吗？之后不可再发起争议。')) return
+
+    setLoadingAction(action)
+    try {
+      if (action === 'dispute') await disputeOrder(order.id)
+      if (action === 'close') await closeOrder(order.id)
+      showToast('操作成功')
+      onClose() // the parent will need to reload
+    } catch (e: any) {
+      showToast(e.response?.data?.error?.message || '操作失败', 'error')
+    } finally {
+      setLoadingAction(null)
+    }
+  }
+
+  const canDispute = order.status === 'delivered'
+  const canClose = order.status === 'delivered' || order.status === 'disputed'
 
   return (
     <div className="fixed inset-0 z-[110] flex items-center justify-center fade-in">
@@ -25,6 +50,7 @@ export default function OrderDetailModal({ order, onClose }: OrderDetailModalPro
           <h2 className="font-heading text-xl font-bold text-[var(--color-text)] flex items-center gap-2">
             <Info className="w-5 h-5 text-[var(--color-primary)]" />
             订单详情
+            <RegistryPill value={order.status} category="orderStatuses" />
           </h2>
           <button
             onClick={onClose}
@@ -52,45 +78,13 @@ export default function OrderDetailModal({ order, onClose }: OrderDetailModalPro
               <div className="flex flex-col gap-1">
                 <span className="font-bold text-[var(--color-text)] text-sm">{order.product.name}</span>
                 <div className="flex items-center gap-2 mt-1 flex-wrap">
-                  <span className="text-[10px] bg-[var(--color-surface)] px-2 py-0.5 rounded border border-[var(--color-border)] text-[var(--color-text-muted)] font-medium">
-                    {order.product.type}
-                  </span>
+                  <RegistryPill value={order.product.type} category="productTypes" />
+                  {order.deliveryMode && <RegistryPill value={order.deliveryMode} category="deliveryModes" />}
                   <span className="text-[10px] text-[var(--color-primary)] bg-[var(--color-primary)]/10 px-2 py-0.5 rounded border border-[var(--color-primary)]/20 font-medium inline-flex items-center gap-1">
                     <Store className="w-3 h-3" />
                     {order.merchant?.name || '平台自营'}
                   </span>
                 </div>
-              </div>
-            </div>
-          </div>
-
-          {/* 订单信息 */}
-          <div className="bg-[var(--color-background)] rounded-lg p-5 border border-[var(--color-border)]">
-            <h3 className="font-heading text-sm font-bold text-[var(--color-text)] mb-3 flex items-center gap-2">
-              <Clock className="w-4 h-4 text-[var(--color-text-muted)]" /> 订单信息
-            </h3>
-            <div className="space-y-2 text-xs">
-              <div className="flex justify-between">
-                <span className="text-[var(--color-text-muted)]">订单编号</span>
-                <span className="font-mono text-[var(--color-text)]">ORD-{order.id}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-[var(--color-text-muted)]">兑换时间</span>
-                <span className="text-[var(--color-text)]">{new Date(order.createdAt).toLocaleString()}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-[var(--color-text-muted)]">扣除积分</span>
-                <span className="font-bold text-[var(--color-cta)] flex items-center gap-1">
-                  <Coins className="w-3 h-3" /> {order.price}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-[var(--color-text-muted)]">发货状态</span>
-                {order.delivery?.status === 'delivered' ? (
-                  <span className="text-[var(--color-cta)] font-bold">发货成功</span>
-                ) : (
-                  <span className="text-[var(--color-warning)] font-bold">待发货</span>
-                )}
               </div>
             </div>
           </div>
@@ -104,15 +98,49 @@ export default function OrderDetailModal({ order, onClose }: OrderDetailModalPro
               <div className="bg-[var(--color-surface)] p-3 rounded border border-[var(--color-border)] font-mono text-xs text-[var(--color-text)] leading-relaxed break-all whitespace-pre-wrap select-all max-h-48 overflow-y-auto">
                 {order.delivery.content}
               </div>
+            ) : order.deliveryMode === 'manual_service' ? (
+              <div className="bg-[var(--color-surface)] p-4 rounded border border-dashed border-[var(--color-border)] text-center text-xs text-[var(--color-text-muted)]">
+                履约中 / 待商家发货
+              </div>
             ) : (
               <div className="bg-[var(--color-surface)] p-4 rounded border border-dashed border-[var(--color-border)] text-center text-xs text-[var(--color-text-muted)]">
                 暂无发货内容，请联系平台处理
               </div>
             )}
+            {order.delivery?.publicNote && (
+              <div className="mt-2 text-xs text-[var(--color-text-muted)]">
+                <span className="font-bold">附言：</span>{order.delivery.publicNote}
+              </div>
+            )}
+          </div>
+
+          {/* 订单时间线 */}
+          <div className="bg-[var(--color-background)] rounded-lg p-5 border border-[var(--color-border)]">
+            <h3 className="font-heading text-sm font-bold text-[var(--color-text)] mb-3 flex items-center gap-2">
+              <Clock className="w-4 h-4 text-[var(--color-text-muted)]" /> 订单动态
+            </h3>
+            <div className="space-y-4">
+              {order.timeline?.map((event, idx) => (
+                <div key={idx} className="relative pl-4 border-l-2 border-[var(--color-border)]">
+                  <div className="absolute -left-1.5 top-0.5 w-2.5 h-2.5 rounded-full bg-[var(--color-border)] ring-4 ring-[var(--color-background)]" />
+                  <div className="text-xs font-bold text-[var(--color-text)] mb-0.5">
+                    {event.actorRole === 'user' ? '用户' : event.actorRole === 'merchant' ? '商家' : event.actorRole === 'admin' ? '管理员' : '系统'}
+                    {' - '}
+                    <RegistryPill value={event.toStatus} category="orderStatuses" />
+                  </div>
+                  <div className="text-[10px] text-[var(--color-text-muted)]">{event.createdAt ? new Date(event.createdAt).toLocaleString() : ''}</div>
+                  {event.publicNote && (
+                    <div className="mt-1 text-xs text-[var(--color-text)] bg-[var(--color-surface)] p-2 rounded border border-[var(--color-border)]">
+                      {event.publicNote}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
         </div>
 
-        <div className="pt-6 mt-2 border-t border-[var(--color-border)] flex gap-3">
+        <div className="pt-6 mt-2 border-t border-[var(--color-border)] flex flex-wrap gap-3">
           <button onClick={onClose} className="btn-secondary flex-1 !px-0">
             关闭
           </button>
@@ -122,8 +150,26 @@ export default function OrderDetailModal({ order, onClose }: OrderDetailModalPro
             className="btn-primary flex-1 !px-0"
           >
             <Copy className="w-4 h-4" />
-            复制发货信息
+            复制内容
           </button>
+          {canDispute && (
+            <button
+              onClick={() => handleAction('dispute')}
+              disabled={loadingAction === 'dispute'}
+              className="btn-secondary !px-4 !border-[var(--color-warning)] !text-[var(--color-warning)]"
+            >
+              {loadingAction === 'dispute' ? <Loader2 className="w-4 h-4 animate-spin" /> : '发起争议'}
+            </button>
+          )}
+          {canClose && (
+            <button
+              onClick={() => handleAction('close')}
+              disabled={loadingAction === 'close'}
+              className="btn-secondary !px-4 !border-[var(--color-cta)] !text-[var(--color-cta)]"
+            >
+              {loadingAction === 'close' ? <Loader2 className="w-4 h-4 animate-spin" /> : '结束订单'}
+            </button>
+          )}
         </div>
       </div>
     </div>

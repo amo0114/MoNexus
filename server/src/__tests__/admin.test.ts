@@ -222,8 +222,18 @@ describe('POST /api/admin/products/:id/inventory', () => {
 })
 
 describe('GET /api/admin/orders', () => {
-  it('should list all orders', async () => {
+  it('should list all orders without raw delivery content', async () => {
     await createTestUser('boss6@test.local', 'admin222', 'admin')
+    await createTestUser('admin-order-buyer@test.local', 'buyerpass', 'user', 5000)
+    await createTestProduct('后台列表商品', 300, 1, ['admin-list-secret'])
+
+    const buyer = await loginAs('admin-order-buyer@test.local', 'buyerpass')
+    await api
+      .post('/api/orders')
+      .set(authHeader(buyer.accessToken))
+      .send({ productId: 1 })
+      .expect(201)
+
     const { accessToken } = await loginAs('boss6@test.local', 'admin222')
 
     const res = await api
@@ -232,6 +242,9 @@ describe('GET /api/admin/orders', () => {
       .expect(200)
 
     expect(Array.isArray(res.body)).toBe(true)
+    expect(res.body).toHaveLength(1)
+    expect(res.body[0].delivery.status).toBe('delivered')
+    expect(res.body[0].delivery.content).toBeUndefined()
   })
 })
 
@@ -256,7 +269,8 @@ describe('GET /api/admin/orders/:id', () => {
 
     expect(res.body.user.email).toBe('buyer@test.local')
     expect(res.body.product.name).toBe('管理查看商品')
-    expect(res.body.delivery.content).toBeDefined()
+    expect(res.body.delivery.status).toBe('delivered')
+    expect(res.body.delivery.content).toBe('mgmt-1')
   })
 })
 
@@ -347,6 +361,42 @@ describe('POST /api/admin/settlements/batch-settle', () => {
       .expect(400)
 
     const unchanged = await prisma.settlement.findUniqueOrThrow({ where: { id: settlements[0].id } })
+    expect(unchanged.status).toBe('pending')
+    expect(unchanged.settledAt).toBeNull()
+  })
+
+  it('should reject pending settlements whose orders are not payable', async () => {
+    await createTestUser('settle-admin-gate@test.local', 'admin123', 'admin')
+    const { merchant } = await createTestMerchant('settle-merchant-gate@test.local', 'merchant123', {
+      role: 'merchant',
+      status: 'active',
+      name: '结算门禁商家',
+    })
+    await createTestUser('settle-buyer-gate@test.local', 'buyerpass', 'user', 5000)
+    const product = await createTestProduct('待履约结算商品', 200, 0, [], merchant.id)
+    await prisma.product.update({
+      where: { id: product.id },
+      data: { deliveryMode: 'manual_service', stock: 0 },
+    })
+    const buyer = await loginAs('settle-buyer-gate@test.local', 'buyerpass')
+    const created = await api
+      .post('/api/orders')
+      .set(authHeader(buyer.accessToken))
+      .send({ productId: product.id })
+      .expect(201)
+
+    const settlement = await prisma.settlement.findUniqueOrThrow({
+      where: { orderId: created.body.orderId },
+    })
+    const admin = await loginAs('settle-admin-gate@test.local', 'admin123')
+
+    await api
+      .post('/api/admin/settlements/batch-settle')
+      .set(authHeader(admin.accessToken))
+      .send({ settlementIds: [settlement.id] })
+      .expect(400)
+
+    const unchanged = await prisma.settlement.findUniqueOrThrow({ where: { id: settlement.id } })
     expect(unchanged.status).toBe('pending')
     expect(unchanged.settledAt).toBeNull()
   })

@@ -17,6 +17,7 @@ import { orderRoutes } from './modules/orders/routes.js'
 import { adminRoutes } from './modules/admin/routes.js'
 import { merchantRoutes } from './modules/merchant/routes.js'
 import { uploadsRoutes } from './modules/uploads/routes.js'
+import { configRoutes } from './modules/config/routes.js'
 
 const app = express()
 initErrorReporter()
@@ -73,6 +74,7 @@ app.use('/api/orders', orderRoutes)
 app.use('/api/admin', adminRoutes)
 app.use('/api/merchant', merchantRoutes)
 app.use('/api/uploads', uploadsRoutes)
+app.use('/api/config', configRoutes)
 
 app.use(errorHandler)
 
