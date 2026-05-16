@@ -8,7 +8,10 @@ import {
   createMerchantProduct,
   updateMerchantProduct,
   importMerchantInventory,
-  updateMerchantMe
+  updateMerchantMe,
+  startFulfillment,
+  deliverOrder,
+  respondDispute
 } from '../api/merchant'
 import {
   MerchantStats,
@@ -17,10 +20,11 @@ import {
   Settlement,
   Merchant
 } from '../types/merchant'
-import { Store, Package, ShoppingBag, DollarSign, Settings, Plus } from 'lucide-react'
+import { Store, Package, ShoppingBag, DollarSign, Settings, Plus, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react'
 import { useAppStore } from '../stores/appStore'
 import MerchantProductFormModal from '../components/merchant/MerchantProductFormModal'
 import MerchantInventoryImportModal from '../components/merchant/MerchantInventoryImportModal'
+import RegistryPill from '../components/ui/RegistryPill'
 
 type TabKey = 'dashboard' | 'products' | 'orders' | 'settlements' | 'profile'
 
@@ -36,14 +40,21 @@ export default function MerchantDashboardPage() {
   const showToast = useAppStore((s) => s.showToast)
   const [activeTab, setActiveTab] = useState<TabKey>('dashboard')
   const [stats, setStats] = useState<MerchantStats | null>(null)
+  
   const [products, setProducts] = useState<MerchantProduct[]>([])
+  const [productPage, setProductPage] = useState(1)
+  const [productTotal, setProductTotal] = useState(0)
+
   const [orders, setOrders] = useState<MerchantOrder[]>([])
+  const [orderPage, setOrderPage] = useState(1)
+  const [orderTotal, setOrderTotal] = useState(0)
+
   const [settlements, setSettlements] = useState<Settlement[]>([])
   const [merchant, setMerchant] = useState<Merchant | null>(null)
 
   useEffect(() => {
     loadData()
-  }, [activeTab])
+  }, [activeTab, productPage, orderPage])
 
   async function loadData() {
     try {
@@ -51,11 +62,13 @@ export default function MerchantDashboardPage() {
         const data = await getMerchantStats()
         setStats(data)
       } else if (activeTab === 'products') {
-        const data = await getMerchantProducts()
-        setProducts(data)
+        const data = await getMerchantProducts({ page: productPage, pageSize: 20 })
+        setProducts(data.items)
+        setProductTotal(data.total)
       } else if (activeTab === 'orders') {
-        const data = await getMerchantOrders()
-        setOrders(data)
+        const data = await getMerchantOrders({ page: orderPage, pageSize: 20 })
+        setOrders(data.items)
+        setOrderTotal(data.total)
       } else if (activeTab === 'settlements') {
         const data = await getMerchantSettlements()
         setSettlements(data)
@@ -121,7 +134,33 @@ export default function MerchantDashboardPage() {
     const nextStatus = product.status === 'active' ? 'inactive' : 'active'
     try {
       await updateMerchantProduct(product.id, { status: nextStatus })
-      showToast(`商品已${nextStatus === 'active' ? '上架' : '下架'}`)
+      showToast(`商品已${nextStatus === 'active' ? '下架' : '上架'}`)
+      loadData()
+    } catch (e: any) {
+      showToast(e.response?.data?.error?.message || '操作失败', 'error')
+    }
+  }
+
+  async function handleOrderAction(action: 'start_fulfillment' | 'deliver' | 'respond_dispute', order: MerchantOrder) {
+    try {
+      if (action === 'start_fulfillment') {
+        await startFulfillment(order.id)
+        showToast('已开始履约')
+      } else if (action === 'deliver') {
+        const content = window.prompt('请输入发货内容（卡密/账号等）：')
+        if (content === null) return
+        if (!content.trim()) {
+          showToast('发货内容不能为空', 'error')
+          return
+        }
+        await deliverOrder(order.id, { deliveryContent: content })
+        showToast('发货成功')
+      } else if (action === 'respond_dispute') {
+        const confirmClose = window.confirm('确认退款（Close）吗？点击取消则驳回争议并继续履约（Resume）。')
+        const resolution = confirmClose ? 'close' : 'resume'
+        await respondDispute(order.id, { resolution })
+        showToast('争议处理成功')
+      }
       loadData()
     } catch (e: any) {
       showToast(e.response?.data?.error?.message || '操作失败', 'error')
@@ -238,34 +277,58 @@ export default function MerchantDashboardPage() {
                       <Th>金额/抽成</Th>
                       <Th>结算金额</Th>
                       <Th>状态</Th>
+                      <Th align="right">操作</Th>
                     </tr>
                   </thead>
                   <tbody>
                     {orders.length === 0 ? (
                       <tr>
-                        <td colSpan={6} className="py-8 text-center text-[var(--color-text-muted)] text-sm">
-                          暂无订单
+                        <td colSpan={7} className="py-8 text-center text-[var(--color-text-muted)] text-sm">
+                          你还没有订单
                         </td>
                       </tr>
                     ) : (
                       orders.map((o) => (
                         <tr key={o.id} className="border-b border-[var(--color-border)] hover:bg-[var(--color-background)] transition-colors">
                           <td className="py-3 px-2 text-sm text-[var(--color-text-muted)]">{o.id}</td>
-                          <td className="py-3 px-2 text-sm font-medium text-[var(--color-text)]">{o.product?.name}</td>
+                          <td className="py-3 px-2 text-sm font-medium text-[var(--color-text)]">
+                            <div>{o.product?.name}</div>
+                            {o.product?.deliveryMode && <div className="mt-1"><RegistryPill value={o.product.deliveryMode} category="deliveryModes" /></div>}
+                          </td>
                           <td className="py-3 px-2 text-sm text-[var(--color-text-muted)]">{o.user?.email}</td>
                           <td className="py-3 px-2 text-sm text-[var(--color-text)]">
-                            {o.price} <span className="text-[var(--color-text-muted)]">(抽成 {(Number(o.commissionRate) * 100).toFixed(0)}%)</span>
+                            {o.price}积分 <span className="text-[var(--color-text-muted)]">(抽成 {(Number(o.commissionRate) * 100).toFixed(0)}%)</span>
                           </td>
                           <td className="py-3 px-2 text-sm font-bold text-[var(--color-cta)]">
-                            {o.settlementAmount}
+                            {o.settlementAmount}积分
                           </td>
-                          <td className="py-3 px-2 text-sm text-[var(--color-text-muted)]">{o.status}</td>
+                          <td className="py-3 px-2 text-sm">
+                            <RegistryPill value={o.status} category="orderStatuses" />
+                          </td>
+                          <td className="py-3 px-2 text-right whitespace-nowrap">
+                            {o.availableActions?.includes('start_fulfillment') && (
+                              <button onClick={() => handleOrderAction('start_fulfillment', o)} className="btn-secondary !px-2 !py-1 !text-xs mr-2">
+                                开始履约
+                              </button>
+                            )}
+                            {o.availableActions?.includes('deliver') && (
+                              <button onClick={() => handleOrderAction('deliver', o)} className="btn-primary !px-2 !py-1 !text-xs mr-2">
+                                发货
+                              </button>
+                            )}
+                            {o.availableActions?.includes('respond_dispute') && (
+                              <button onClick={() => handleOrderAction('respond_dispute', o)} className="btn-secondary !px-2 !py-1 !text-xs mr-2">
+                                处理争议
+                              </button>
+                            )}
+                          </td>
                         </tr>
                       ))
                     )}
                   </tbody>
                 </table>
               </div>
+              <PaginationControls page={orderPage} total={orderTotal} setPage={setOrderPage} />
             </div>
           )}
 
@@ -297,10 +360,13 @@ export default function MerchantDashboardPage() {
                           <td className="py-3 px-2 text-sm text-[var(--color-text-muted)]">{s.id}</td>
                           <td className="py-3 px-2 text-sm text-[var(--color-text)]">{s.orderId}</td>
                           <td className="py-3 px-2 text-sm text-[var(--color-text)]">{s.orderAmount}</td>
-                          <td className="py-3 px-2 text-sm text-[var(--color-text-muted)]">{s.commissionAmount} ({(Number(s.commissionRate) * 100).toFixed(0)}%)</td>
-                          <td className="py-3 px-2 text-sm font-bold text-[var(--color-cta)]">{s.settlementAmount}</td>
+                          <td className="py-3 px-2 text-sm text-[var(--color-text-muted)]">{s.commissionAmount}积分 ({(Number(s.commissionRate) * 100).toFixed(0)}%)</td>
+                          <td className="py-3 px-2 text-sm font-bold text-[var(--color-cta)]">{s.settlementAmount}积分</td>
                           <td className="py-3 px-2 text-sm">
-                            <StatusPill kind={s.status === 'settled' ? 'settled' : 'pending'} />
+                            <RegistryPill value={s.status} category="settlementStatuses" />
+                            {!s.payable && s.blockReason && (
+                              <div className="text-[10px] text-[var(--color-danger)] mt-1">{s.blockReason}</div>
+                            )}
                           </td>
                         </tr>
                       ))
@@ -372,6 +438,7 @@ export default function MerchantDashboardPage() {
         onClose={() => setIsInventoryModalOpen(false)}
         onSubmit={handleInventorySubmit}
         productName={importingProduct?.name || ''}
+        productId={importingProduct?.id}
       />
     </div>
   )
@@ -428,3 +495,33 @@ function LinkAction({ children, onClick }: { children: React.ReactNode; onClick:
     </button>
   )
 }
+
+function PaginationControls({ page, total, setPage }: { page: number; total: number; setPage: (p: number) => void }) {
+  const pageSize = 20
+  const totalPages = Math.ceil(total / pageSize) || 1
+  
+  return (
+    <div className="flex items-center justify-between mt-4 px-2 pb-2 border-t border-[var(--color-border)] pt-4">
+      <div className="text-sm text-[var(--color-text-muted)]">
+        共 {total} 条记录，第 {page} / {totalPages} 页
+      </div>
+      <div className="flex items-center gap-2">
+        <button 
+          onClick={() => setPage(Math.max(1, page - 1))}
+          disabled={page <= 1}
+          className="btn-secondary !px-2 !py-1 !text-xs disabled:opacity-50 flex items-center cursor-pointer"
+        >
+          <ChevronLeft className="w-4 h-4" />
+        </button>
+        <button 
+          onClick={() => setPage(Math.min(totalPages, page + 1))}
+          disabled={page >= totalPages}
+          className="btn-secondary !px-2 !py-1 !text-xs disabled:opacity-50 flex items-center cursor-pointer"
+        >
+          <ChevronRight className="w-4 h-4" />
+        </button>
+      </div>
+    </div>
+  )
+}
+

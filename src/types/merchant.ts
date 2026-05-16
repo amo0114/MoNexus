@@ -3,6 +3,13 @@ export type MerchantStatus = 'pending' | 'active' | 'suspended' | 'rejected'
 export type SettlementStatus = 'pending' | 'settled'
 export type ProductStatus = 'active' | 'inactive'
 
+export interface ListEnvelope<T> {
+  items: T[]
+  total: number
+  page: number
+  pageSize: number
+}
+
 export interface Merchant {
   id: number
   userId: number
@@ -53,6 +60,9 @@ export interface MerchantProduct {
   createdAt: string
   merchant?: { id: number; name: string } | null
   _count?: { inventory: number }
+  deliveryMode?: string
+  availableStock?: number
+  lowStock?: boolean
 }
 
 export interface MerchantOrder {
@@ -67,9 +77,11 @@ export interface MerchantOrder {
   status: string
   createdAt: string
   user?: { id: number; email: string }
-  product?: { id: number; name: string; icon: string; type: string }
-  delivery?: { content: string; status: string } | null
+  product?: { id: number; name: string; icon: string; type: string; price?: number; deliveryMode?: string }
+  delivery?: { status: string; publicNote?: string | null; deliveredAt?: string | null } | null
   settlement?: Settlement | null
+  availableActions?: string[]
+  statusEvents?: any[]
 }
 
 export interface Settlement {
@@ -85,6 +97,8 @@ export interface Settlement {
   createdAt: string
   merchant?: { id: number; name: string }
   order?: { id: number; price: number; createdAt: string }
+  payable?: boolean
+  blockReason?: string | null
 }
 
 export interface MerchantStats {
@@ -118,6 +132,7 @@ export interface CreateMerchantProductRequest {
   price: number
   originalPrice?: number
   isHot?: boolean
+  deliveryMode?: string
 }
 
 export interface UpdateMerchantProductRequest extends Partial<CreateMerchantProductRequest> {
@@ -125,7 +140,8 @@ export interface UpdateMerchantProductRequest extends Partial<CreateMerchantProd
 }
 
 export interface ImportInventoryRequest {
-  items: string[]
+  text?: string
+  items?: string[]
 }
 
 export interface RejectMerchantRequest {

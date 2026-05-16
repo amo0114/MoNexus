@@ -1,18 +1,32 @@
 import { useState, useMemo } from 'react'
-import { X, DatabaseZap, FileText, AlertCircle } from 'lucide-react'
+import { X, DatabaseZap, FileText, AlertCircle, Loader2 } from 'lucide-react'
 import { useAppStore } from '../../stores/appStore'
+import { previewMerchantInventory } from '../../api/merchant'
 
 interface Props {
   isOpen: boolean
   onClose: () => void
   onSubmit: (items: string[]) => Promise<void>
   productName: string
+  productId?: number
 }
 
-export default function MerchantInventoryImportModal({ isOpen, onClose, onSubmit, productName }: Props) {
+interface PreviewStats {
+  totalRows: number
+  validRows: number
+  emptyRows: number
+  duplicateRows: number
+  existingDuplicateRows: number
+  canImport: boolean
+  details?: any[]
+}
+
+export default function MerchantInventoryImportModal({ isOpen, onClose, onSubmit, productName, productId }: Props) {
   const showToast = useAppStore((s) => s.showToast)
   const [loading, setLoading] = useState(false)
+  const [previewing, setPreviewing] = useState(false)
   const [inventoryText, setInventoryText] = useState('')
+  const [stats, setStats] = useState<PreviewStats | null>(null)
 
   const lineCount = useMemo(() => {
     if (!inventoryText) return 0
@@ -21,8 +35,47 @@ export default function MerchantInventoryImportModal({ isOpen, onClose, onSubmit
 
   if (!isOpen) return null
 
+  const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setInventoryText(e.target.value)
+    if (stats) setStats(null)
+  }
+
+  async function handlePreview() {
+    if (!productId) return
+    const text = inventoryText.trim()
+    if (!text) {
+      showToast('请输入有效库存', 'error')
+      return
+    }
+    setPreviewing(true)
+    try {
+      const data = await previewMerchantInventory(productId, { text })
+      setStats(data)
+    } catch (e: any) {
+      const errData = e.response?.data?.error
+      if (errData?.details) {
+        setStats({
+          canImport: false,
+          totalRows: lineCount,
+          validRows: 0,
+          emptyRows: 0,
+          duplicateRows: errData.details.find((d: any) => d.duplicateRows)?.duplicateRows || 0,
+          existingDuplicateRows: errData.details.find((d: any) => d.existingDuplicateRows)?.existingDuplicateRows || 0,
+          details: errData.details
+        })
+      }
+      showToast(errData?.message || '预览失败', 'error')
+    } finally {
+      setPreviewing(false)
+    }
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+
+    if (!stats?.canImport) {
+      return
+    }
 
     const items = inventoryText
       .split('\n')
@@ -38,6 +91,7 @@ export default function MerchantInventoryImportModal({ isOpen, onClose, onSubmit
     try {
       await onSubmit(items)
       setInventoryText('')
+      setStats(null)
       onClose()
     } catch (e: any) {
       showToast(e.response?.data?.error?.message || '导入失败', 'error')
@@ -108,32 +162,75 @@ export default function MerchantInventoryImportModal({ isOpen, onClose, onSubmit
                 className="input min-h-[220px] font-mono text-sm leading-relaxed resize-y"
                 placeholder="例如:&#10;ABCD-1234-EFGH-5678&#10;WXYZ-9876-UVST-4321&#10;账号: xxx 密码: yyy"
                 value={inventoryText}
-                onChange={(e) => setInventoryText(e.target.value)}
+                onChange={handleTextChange}
                 required
                 spellCheck="false"
               />
             </div>
+
+            {stats && (
+              <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg p-4">
+                <h4 className="text-sm font-bold text-[var(--color-text)] mb-3">预览结果</h4>
+                <div className="space-y-2 text-xs">
+                  <div className="flex justify-between">
+                    <span className="text-[var(--color-text-muted)]">共解析</span>
+                    <span className="font-bold text-[var(--color-text)]">{stats.totalRows} 行</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[var(--color-text-muted)]">有效记录</span>
+                    <span className="font-bold text-[var(--color-cta)]">{stats.validRows} 行</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[var(--color-text-muted)]">空行</span>
+                    <span className="font-bold text-[var(--color-text-muted)]">{stats.emptyRows} 行</span>
+                  </div>
+                  {stats.duplicateRows > 0 && (
+                    <div className="flex justify-between">
+                      <span className="text-[var(--color-warning)]">请求内重复</span>
+                      <span className="font-bold text-[var(--color-warning)]">{stats.duplicateRows} 行</span>
+                    </div>
+                  )}
+                  {stats.existingDuplicateRows > 0 && (
+                    <div className="flex justify-between">
+                      <span className="text-[var(--color-danger)]">与既有库存重复</span>
+                      <span className="font-bold text-[var(--color-danger)]">{stats.existingDuplicateRows} 行</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </form>
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-5 border-t border-[var(--color-border)] flex justify-end gap-3">
+        <div className="px-6 py-5 border-t border-[var(--color-border)] flex justify-end gap-3 flex-wrap">
           <button
             type="button"
             onClick={onClose}
             className="btn-secondary !px-6 !py-2.5"
-            disabled={loading}
+            disabled={loading || previewing}
           >
             取消
           </button>
-          <button
-            type="submit"
-            form="inventoryForm"
-            disabled={loading || lineCount === 0}
-            className="btn-primary min-w-[140px]"
-          >
-            {loading ? '解析导入中...' : `确认导入 ${lineCount > 0 ? lineCount : ''} 条`}
-          </button>
+          {!stats ? (
+            <button
+              type="button"
+              onClick={handlePreview}
+              disabled={previewing || lineCount === 0}
+              className="btn-primary min-w-[140px]"
+            >
+              {previewing ? <Loader2 className="w-4 h-4 animate-spin inline" /> : '预览'}
+            </button>
+          ) : (
+            <button
+              type="submit"
+              form="inventoryForm"
+              disabled={loading || !stats.canImport}
+              className="btn-primary min-w-[140px]"
+            >
+              {loading ? <Loader2 className="w-4 h-4 animate-spin inline" /> : `确认导入`}
+            </button>
+          )}
         </div>
       </div>
     </div>
