@@ -8,7 +8,7 @@ interface Props {
 
 export default function RegistryPill({ value, category }: Props) {
   const registry = useAppStore(s => s.registry)
-  
+
   if (!registry) return <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold border bg-gray-100 text-gray-500 border-gray-200">...</span>
 
   const items = registry[category] || []

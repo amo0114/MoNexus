@@ -40,7 +40,7 @@ export default function MerchantDashboardPage() {
   const showToast = useAppStore((s) => s.showToast)
   const [activeTab, setActiveTab] = useState<TabKey>('dashboard')
   const [stats, setStats] = useState<MerchantStats | null>(null)
-  
+
   const [products, setProducts] = useState<MerchantProduct[]>([])
   const [productPage, setProductPage] = useState(1)
   const [productTotal, setProductTotal] = useState(0)
@@ -134,7 +134,7 @@ export default function MerchantDashboardPage() {
     const nextStatus = product.status === 'active' ? 'inactive' : 'active'
     try {
       await updateMerchantProduct(product.id, { status: nextStatus })
-      showToast(`商品已${nextStatus === 'active' ? '下架' : '上架'}`)
+      showToast(`商品已${nextStatus === 'active' ? '上架' : '下架'}`)
       loadData()
     } catch (e: any) {
       showToast(e.response?.data?.error?.message || '操作失败', 'error')
@@ -156,7 +156,7 @@ export default function MerchantDashboardPage() {
         await deliverOrder(order.id, { deliveryContent: content })
         showToast('发货成功')
       } else if (action === 'respond_dispute') {
-        const confirmClose = window.confirm('确认退款（Close）吗？点击取消则驳回争议并继续履约（Resume）。')
+        const confirmClose = window.confirm('确认关闭争议订单吗？点击取消则恢复履约处理。')
         const resolution = confirmClose ? 'close' : 'resume'
         await respondDispute(order.id, { resolution })
         showToast('争议处理成功')
@@ -199,7 +199,7 @@ export default function MerchantDashboardPage() {
                 <StatCard label="商品数" value={stats?.productCount ?? '--'} />
                 <StatCard label="订单数" value={stats?.orderCount ?? '--'} />
                 <StatCard label="累计收益" value={stats?.totalRevenue ?? '--'} tone="cta" />
-                <StatCard label="待结算" value={stats?.pendingSettlement ?? '--'} tone="warning" />
+                <StatCard label="待划拨" value={stats?.pendingSettlement ?? '--'} tone="warning" />
               </div>
             </div>
           )}
@@ -469,12 +469,10 @@ function Th({ children, align }: { children: React.ReactNode; align?: 'left' | '
   )
 }
 
-function StatusPill({ kind }: { kind: 'active' | 'inactive' | 'settled' | 'pending' }) {
+function StatusPill({ kind }: { kind: 'active' | 'inactive' }) {
   const styles: Record<typeof kind, { bg: string; text: string; border: string; label: string }> = {
     active:   { bg: 'bg-[var(--color-cta)]/10',          text: 'text-[var(--color-cta)]',          border: 'border-[var(--color-cta)]/25',          label: '上架中' },
-    inactive: { bg: 'bg-[var(--color-text-muted)]/10',   text: 'text-[var(--color-text-muted)]',   border: 'border-[var(--color-text-muted)]/25',   label: '已下架' },
-    settled:  { bg: 'bg-[var(--color-cta)]/10',          text: 'text-[var(--color-cta)]',          border: 'border-[var(--color-cta)]/25',          label: '已结算' },
-    pending:  { bg: 'bg-[var(--color-warning)]/10',                  text: 'text-[var(--color-warning)]',                  border: 'border-[var(--color-warning)]/25',                  label: '待结算' },
+    inactive: { bg: 'bg-[var(--color-text-muted)]/10',   text: 'text-[var(--color-text-muted)]',   border: 'border-[var(--color-text-muted)]/25',   label: '未上架' },
   }
   const s = styles[kind]
   return (
@@ -499,21 +497,21 @@ function LinkAction({ children, onClick }: { children: React.ReactNode; onClick:
 function PaginationControls({ page, total, setPage }: { page: number; total: number; setPage: (p: number) => void }) {
   const pageSize = 20
   const totalPages = Math.ceil(total / pageSize) || 1
-  
+
   return (
     <div className="flex items-center justify-between mt-4 px-2 pb-2 border-t border-[var(--color-border)] pt-4">
       <div className="text-sm text-[var(--color-text-muted)]">
         共 {total} 条记录，第 {page} / {totalPages} 页
       </div>
       <div className="flex items-center gap-2">
-        <button 
+        <button
           onClick={() => setPage(Math.max(1, page - 1))}
           disabled={page <= 1}
           className="btn-secondary !px-2 !py-1 !text-xs disabled:opacity-50 flex items-center cursor-pointer"
         >
           <ChevronLeft className="w-4 h-4" />
         </button>
-        <button 
+        <button
           onClick={() => setPage(Math.min(totalPages, page + 1))}
           disabled={page >= totalPages}
           className="btn-secondary !px-2 !py-1 !text-xs disabled:opacity-50 flex items-center cursor-pointer"
@@ -524,4 +522,3 @@ function PaginationControls({ page, total, setPage }: { page: number; total: num
     </div>
   )
 }
-

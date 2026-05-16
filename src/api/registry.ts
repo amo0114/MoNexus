@@ -11,7 +11,7 @@ export async function getConfigRegistry(): Promise<ConfigRegistry> {
   if (registryPromise) {
     return registryPromise
   }
-  
+
   registryPromise = api.get<ConfigRegistry>('/config/registry')
     .then(res => {
       registryCache = res.data

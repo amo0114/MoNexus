@@ -217,7 +217,7 @@ export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, pr
                       onChange={(e) => setForm({ ...form, status: e.target.value as 'active' | 'inactive' })}
                     >
                       <option value="active">当前上架中</option>
-                      <option value="inactive">已下架隐藏</option>
+                      <option value="inactive">未上架隐藏</option>
                     </select>
                   </div>
                 )}

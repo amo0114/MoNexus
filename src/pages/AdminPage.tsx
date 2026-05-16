@@ -17,6 +17,7 @@ import {
 import { Merchant, Settlement } from '../types/merchant'
 import { getAdminConfig, updateAdminConfig, AdminSystemConfig } from '../api/adminConfig'
 import { banUser, unbanUser } from '../api/admin'
+import RegistryPill from '../components/ui/RegistryPill'
 
 type AdminTab = 'dashboard' | 'users' | 'products' | 'orders' | 'logs' | 'audit' | 'merchants' | 'settlements' | 'config'
 
@@ -296,7 +297,7 @@ export default function AdminPage() {
   // Settlement actions
   async function handleBatchSettle() {
     if (selectedSettlements.length === 0) {
-      showToast('请选择待结算记录', 'error')
+      showToast('请选择要结算的记录', 'error')
       return
     }
     try {
@@ -1027,16 +1028,7 @@ function MerchantStatusPill({ status }: { status: string }) {
 }
 
 function SettlementStatusPill({ status }: { status: string }) {
-  const isSettled = status === 'settled'
-  return (
-    <span className={`inline-flex items-center px-2 py-1 text-[11px] rounded font-bold border ${
-      isSettled
-        ? 'bg-[var(--color-cta)]/10 text-[var(--color-cta)] border-[var(--color-cta)]/25'
-        : 'bg-orange-500/10 text-orange-500 border-orange-500/25'
-    }`}>
-      {isSettled ? '已结算' : '待结算'}
-    </span>
-  )
+  return <RegistryPill value={status} category="settlementStatuses" />
 }
 
 function ActionLink({

@@ -24,7 +24,7 @@ export default function OrderDetailModal({ order: initialOrder, onClose }: Order
   async function handleAction(action: 'dispute' | 'close') {
     if (action === 'dispute' && !window.confirm('确认要发起争议吗？这会暂停该订单的结算。')) return
     if (action === 'close' && !window.confirm('确认结束订单吗？之后不可再发起争议。')) return
-    
+
     setLoadingAction(action)
     try {
       if (action === 'dispute') await disputeOrder(order.id)

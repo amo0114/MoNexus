@@ -19,10 +19,9 @@ interface Product {
   merchant?: { id: number; name: string } | null
 }
 
-const CATEGORIES = ['全部', '网络节点', '共享账号', '充值卡密', '邀请码']
-
 export default function StorePage() {
   const showToast = useAppStore((s) => s.showToast)
+  const registry = useAppStore((s) => s.registry)
   const navigate = useNavigate()
 
   const [products, setProducts] = useState<Product[]>([])
@@ -54,6 +53,13 @@ export default function StorePage() {
     navigate(`/product/${product.id}`)
   }
 
+  const categories = ['全部', ...(registry?.productTypes.map(type => type.value) ?? [])]
+
+  function getCategoryLabel(value: string) {
+    if (value === '全部') return value
+    return registry?.productTypes.find(type => type.value === value)?.label ?? value
+  }
+
   return (
     <div className="fade-in space-y-8 max-w-6xl mx-auto" style={{ animationDelay: '0.1s' }}>
       {/* Header */}
@@ -80,7 +86,7 @@ export default function StorePage() {
         </div>
 
         <div className="flex gap-2.5 overflow-x-auto hide-scrollbar px-1 py-1">
-          {CATEGORIES.map((cat) => (
+          {categories.map((cat) => (
             <button
               key={cat}
               onClick={() => setCategory(cat)}
@@ -90,7 +96,7 @@ export default function StorePage() {
                   : 'bg-transparent text-[var(--color-text-muted)] border-[var(--color-border)] hover:bg-[var(--color-primary)]/8 hover:text-[var(--color-text)] hover:border-[var(--color-primary)]'
               }`}
             >
-              {cat}
+              {getCategoryLabel(cat)}
             </button>
           ))}
         </div>
