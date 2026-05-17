@@ -18,6 +18,7 @@ import { Merchant, Settlement } from '../types/merchant'
 import { getAdminConfig, updateAdminConfig, AdminSystemConfig } from '../api/adminConfig'
 import { banUser, unbanUser } from '../api/admin'
 import RegistryPill from '../components/ui/RegistryPill'
+import { MemberTierConfigPanel } from '../components/admin/MemberTierConfigPanel'
 
 type AdminTab = 'dashboard' | 'users' | 'products' | 'orders' | 'logs' | 'audit' | 'merchants' | 'settlements' | 'config'
 
@@ -784,7 +785,8 @@ export default function AdminPage() {
           {/* Configs */}
           {activeTab === 'config' && (
             <div className="space-y-4">
-              <h2 className="font-heading text-xl font-bold mb-4 text-[var(--color-text)]">系统配置</h2>
+              <section>
+                <h2 className="font-heading text-xl font-bold mb-4 text-[var(--color-text)]">系统配置</h2>
               <div className="overflow-x-auto">
                 <table className="admin-table">
                   <thead>
@@ -824,6 +826,13 @@ export default function AdminPage() {
                   </tbody>
                 </table>
               </div>
+              </section>
+
+              <section className="pt-6 border-t border-[var(--color-border)]">
+                <h2 className="font-heading text-xl font-bold mb-2 text-[var(--color-text)]">会员等级配置</h2>
+                <p className="text-sm text-[var(--color-text-muted)] mb-4">配置全局等级阈值和加成倍率。修改后立即对未来的签到与邀请奖励生效。仅支持全局配置，无法对单人进行特殊覆盖。</p>
+                <MemberTierConfigPanel />
+              </section>
             </div>
           )}
         </div>
