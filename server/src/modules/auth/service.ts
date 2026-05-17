@@ -7,6 +7,7 @@ import { prisma } from '../../lib/prisma.js'
 import { badRequest, conflict, notFound, unauthenticated } from '../../lib/httpError.js'
 import { getMailer } from '../../lib/mailer/index.js'
 import { getRefreshTokenMaxAgeMs, getSystemConfigValue } from '../../lib/systemConfig.js'
+import { applyTierBonus, getCurrentTierConfig, resolveTier } from '../../lib/memberTier.js'
 
 function generateAccessToken(userId: number, role: string) {
   return jwt.sign({ userId, role }, config.jwtSecret, { expiresIn: config.jwtExpiresIn })
@@ -83,7 +84,15 @@ export async function registerUser(email: string, password: string, inviteCode?:
 
         const inviterAccount = await tx.pointAccount.findUnique({ where: { userId: inviter.id } })
         if (inviterAccount) {
-          const newBalance = inviterAccount.balance + inviteReward
+          const inviterLifetimeResult = await tx.pointLog.aggregate({
+            where: { userId: inviter.id, type: 'in' },
+            _sum: { amount: true },
+          })
+          const inviterLifetimeBefore = inviterLifetimeResult._sum.amount ?? 0
+          const tierConfig = await getCurrentTierConfig()
+          const inviterTier = resolveTier(inviterLifetimeBefore, tierConfig.thresholds)
+          const { bonus, total } = applyTierBonus(inviteReward, inviterTier, tierConfig.bonusBps)
+          const newBalance = inviterAccount.balance + total
           await tx.pointAccount.update({
             where: { userId: inviter.id },
             data: { balance: newBalance },
@@ -92,9 +101,11 @@ export async function registerUser(email: string, password: string, inviteCode?:
             data: {
               userId: inviter.id,
               type: 'in',
-              amount: inviteReward,
+              amount: total,
               balanceAfter: newBalance,
-              reason: `邀请新用户 ${email} 注册奖励`,
+              reason: bonus > 0
+                ? `邀请新用户 ${email} 注册奖励 (tier:${inviterTier} +${bonus})`
+                : `邀请新用户 ${email} 注册奖励`,
             },
           })
         }

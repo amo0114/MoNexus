@@ -1,6 +1,7 @@
 import { prisma } from '../../lib/prisma.js'
 import { badRequest, notFound } from '../../lib/httpError.js'
 import { getSystemConfigValue } from '../../lib/systemConfig.js'
+import { applyTierBonus } from '../../lib/memberTier.js'
 
 function getShanghaiDateString() {
   const now = new Date()
@@ -14,7 +15,7 @@ export async function checkin(userId: number) {
   const dateStr = getShanghaiDateString()
 
   return prisma.$transaction(async tx => {
-    const checkinReward = await getSystemConfigValue('checkinReward', tx)
+    const baseReward = await getSystemConfigValue('checkinReward', tx)
     const existing = await tx.checkinRecord.findUnique({
       where: { userId_date: { userId, date: dateStr } },
     })
@@ -23,7 +24,16 @@ export async function checkin(userId: number) {
     const account = await tx.pointAccount.findUnique({ where: { userId } })
     if (!account) throw notFound('积分账户不存在')
 
-    const newBalance = account.balance + checkinReward
+    const lifetimeResult = await tx.pointLog.aggregate({
+      where: { userId, type: 'in' },
+      _sum: { amount: true },
+    })
+    const lifetimeBefore = lifetimeResult._sum.amount ?? 0
+    const tierConfig = await getCurrentTierConfig()
+    const tier = resolveTier(lifetimeBefore, tierConfig.thresholds)
+    const { base, bonus, total } = applyTierBonus(baseReward, tier, tierConfig.bonusBps)
+
+    const newBalance = account.balance + total
 
     await tx.pointAccount.update({
       where: { userId },
@@ -38,13 +48,19 @@ export async function checkin(userId: number) {
       data: {
         userId,
         type: 'in',
-        amount: checkinReward,
+        amount: total,
         balanceAfter: newBalance,
-        reason: '每日打卡签到',
+        reason: bonus > 0 ? `每日打卡签到 (tier:${tier} +${bonus})` : '每日打卡签到',
       },
     })
 
-    return { reward: checkinReward, balanceAfter: newBalance }
+    return {
+      baseReward: base,
+      bonusReward: bonus,
+      totalReward: total,
+      tier,
+      balanceAfter: newBalance,
+    }
   })
 }
 
