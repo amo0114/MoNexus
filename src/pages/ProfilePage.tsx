@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Coins, Wallet, Users, CalendarCheck, LogOut, ArrowDownLeft, ArrowUpRight, Store, Eye, Loader2, Shield } from 'lucide-react'
+import { Coins, Wallet, Users, CalendarCheck, LogOut, ArrowDownLeft, ArrowUpRight, Store, Eye, Loader2, Shield, Trophy } from 'lucide-react'
 import { useAuthStore } from '../stores/authStore'
 import { useAppStore } from '../stores/appStore'
 import api from '../api/client'
@@ -12,6 +12,9 @@ import OrderDetailModal from '../components/OrderDetailModal'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/ui/Tabs'
 import CoinIcon from '../components/ui/CoinIcon'
 import RegistryPill from '../components/ui/RegistryPill'
+import { getMemberTier, TierResponse } from '../api/points'
+import { getConfigRegistry } from '../api/registry'
+import { MemberTierBadge } from '../components/MemberTierBadge'
 
 function PasswordChangeCard() {
   const navigate = useNavigate()
@@ -114,7 +117,114 @@ function PasswordChangeCard() {
   )
 }
 
+
+function MemberTierCard() {
+  const [tierData, setTierData] = useState<TierResponse | null>(null)
+  const [registry, setRegistry] = useState<any>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(false)
+
+  useEffect(() => {
+    Promise.all([getMemberTier(), getConfigRegistry()])
+      .then(([tierRes, regRes]) => {
+        setTierData(tierRes)
+        setRegistry(regRes)
+      })
+      .catch(() => setError(true))
+      .finally(() => setLoading(false))
+  }, [])
+
+  if (loading) {
+    return (
+      <div className="card flex items-center justify-center py-6 text-[var(--color-text-muted)] text-sm">
+        <Loader2 className="w-4 h-4 animate-spin mr-2" /> 正在加载会员等级...
+      </div>
+    )
+  }
+
+  if (error || !tierData) {
+    return (
+      <div className="card flex items-center justify-center py-4">
+        <p className="text-sm text-[var(--color-text-muted)]">暂时无法获取会员等级</p>
+      </div>
+    )
+  }
+
+  const { tier, label, tone, lifetimeEarnedPoints, bonusBps, thresholds, nextTier, pointsToNextTier } = tierData
+
+  let progress = 0
+  let currentThresh = 0
+  let nextThresh = 0
+
+  if (tier === 'silver') currentThresh = thresholds.silver
+  else if (tier === 'gold') currentThresh = thresholds.gold
+  else if (tier === 'platinum') currentThresh = thresholds.platinum
+
+  if (nextTier) {
+    if (nextTier === 'silver') nextThresh = thresholds.silver
+    else if (nextTier === 'gold') nextThresh = thresholds.gold
+    else if (nextTier === 'platinum') nextThresh = thresholds.platinum
+
+    if (nextThresh > currentThresh) {
+      progress = Math.max(0, Math.min(100, ((lifetimeEarnedPoints - currentThresh) / (nextThresh - currentThresh)) * 100))
+    }
+  }
+
+  let nextTierLabel = nextTier
+  if (nextTier && registry?.memberTiers) {
+    const found = registry.memberTiers.find((t: any) => t.value === nextTier)
+    if (found) nextTierLabel = found.label
+  }
+
+  return (
+    <div className="card flex flex-col gap-4">
+      <div className="flex items-start sm:items-center gap-4">
+        <div className="w-12 h-12 bg-[var(--color-primary)]/10 text-[var(--color-primary)] rounded-full flex items-center justify-center shrink-0">
+          <Trophy className="w-6 h-6" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 mb-2">
+            <h4 className="font-heading font-bold text-[var(--color-text)] flex items-center gap-2">
+              会员等级
+              <MemberTierBadge tier={tier} label={label} tone={tone} />
+            </h4>
+            <span className="text-sm font-medium text-[var(--color-text)] shrink-0">累计获得积分 {lifetimeEarnedPoints}</span>
+          </div>
+
+          {nextTier ? (
+            <div className="mt-2">
+              <div className="w-full bg-[var(--color-border)] rounded-full h-2">
+                <div className="bg-[var(--color-primary)] h-2 rounded-full transition-all duration-500" style={{ width: `${progress}%` }}></div>
+              </div>
+              <p className="text-xs text-[var(--color-text-muted)] mt-1.5">
+                距离下一等级（{nextTierLabel}）还差 {pointsToNextTier} 积分
+              </p>
+            </div>
+          ) : (
+            <div className="mt-2">
+              <div className="w-full bg-[var(--color-border)] rounded-full h-2">
+                <div className="bg-[var(--color-primary)] h-2 rounded-full" style={{ width: '100%' }}></div>
+              </div>
+              <p className="text-xs text-[var(--color-text-muted)] mt-1.5">已达最高等级 {label}</p>
+            </div>
+          )}
+
+          <div className="mt-3 pt-3 border-t border-[var(--color-border)]">
+            <p className="text-xs text-[var(--color-text-muted)]">
+              {bonusBps === 0
+                ? '当前签到/邀请奖励无等级加成。'
+                : `当前签到/邀请奖励加成 ${(bonusBps / 100).toFixed(1).replace(/\.0$/, '')}%`
+              }
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function ProfilePage() {
+
   const navigate = useNavigate()
   const user = useAuthStore((s) => s.user)
   const logout = useAuthStore((s) => s.logout)
@@ -247,6 +357,9 @@ export default function ProfilePage() {
           </div>
         </div>
       </div>
+
+      {/* Member Tier Card */}
+      <MemberTierCard />
 
       {/* Merchant Entry Card */}
       {user?.role === 'user' && user.merchant?.status !== 'active' && (

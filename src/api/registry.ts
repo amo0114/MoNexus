@@ -1,10 +1,22 @@
 import api from './client'
 import { ConfigRegistry } from '../types/config'
 
-let registryCache: ConfigRegistry | null = null
-let registryPromise: Promise<ConfigRegistry> | null = null
+export interface MemberTierMeta {
+  value: 'bronze' | 'silver' | 'gold' | 'platinum'
+  label: string
+  tone: 'neutral' | 'info' | 'warning' | 'success'
+}
 
-export async function getConfigRegistry(): Promise<ConfigRegistry> {
+export interface RegistryResponse extends ConfigRegistry {
+  memberTiers: MemberTierMeta[]
+  memberTierThresholds: { silver: number; gold: number; platinum: number }
+  memberTierBonusBps: { bronze: 0; silver: number; gold: number; platinum: number }
+}
+
+let registryCache: RegistryResponse | null = null
+let registryPromise: Promise<RegistryResponse> | null = null
+
+export async function getConfigRegistry(): Promise<RegistryResponse> {
   if (registryCache) {
     return registryCache
   }
@@ -12,7 +24,7 @@ export async function getConfigRegistry(): Promise<ConfigRegistry> {
     return registryPromise
   }
 
-  registryPromise = api.get<ConfigRegistry>('/config/registry')
+  registryPromise = api.get<RegistryResponse>('/config/registry')
     .then(res => {
       registryCache = res.data
       registryPromise = null
