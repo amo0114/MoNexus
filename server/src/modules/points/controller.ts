@@ -27,3 +27,12 @@ export async function checkinStatus(req: Request, res: Response, next: NextFunct
     next(err)
   }
 }
+
+export async function tier(req: Request, res: Response, next: NextFunction) {
+  try {
+    const result = await pointService.getTier(req.user!.userId)
+    res.json(result)
+  } catch (err) {
+    next(err)
+  }
+}
