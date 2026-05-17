@@ -12,11 +12,33 @@ export const systemConfigKeys = [
   'defaultPageSize',
   'maxPageSize',
   'lowStockThreshold',
+  'memberTierSilverThreshold',
+  'memberTierGoldThreshold',
+  'memberTierPlatinumThreshold',
+  'memberTierSilverBonusBps',
+  'memberTierGoldBonusBps',
+  'memberTierPlatinumBonusBps',
 ] as const
 
 export type SystemConfigKey = typeof systemConfigKeys[number]
 
 const oneDayMs = 24 * 60 * 60 * 1000
+
+const TIER_THRESHOLD_KEYS = [
+  'memberTierSilverThreshold',
+  'memberTierGoldThreshold',
+  'memberTierPlatinumThreshold',
+] as const
+
+const TIER_BONUS_KEYS = [
+  'memberTierSilverBonusBps',
+  'memberTierGoldBonusBps',
+  'memberTierPlatinumBonusBps',
+] as const
+
+const TIER_KEYS = [...TIER_THRESHOLD_KEYS, ...TIER_BONUS_KEYS] as const
+
+type TierKey = typeof TIER_KEYS[number]
 
 export const systemConfigDefaults: Record<SystemConfigKey, number> = {
   registerReward: config.registerReward,
@@ -26,6 +48,12 @@ export const systemConfigDefaults: Record<SystemConfigKey, number> = {
   defaultPageSize: businessRegistry.pagination.defaultPageSize,
   maxPageSize: businessRegistry.pagination.maxPageSize,
   lowStockThreshold: businessRegistry.inventory.lowStockThreshold,
+  memberTierSilverThreshold: 1000,
+  memberTierGoldThreshold: 5000,
+  memberTierPlatinumThreshold: 20000,
+  memberTierSilverBonusBps: 500,
+  memberTierGoldBonusBps: 1000,
+  memberTierPlatinumBonusBps: 2000,
 }
 
 const descriptions: Record<SystemConfigKey, string> = {
@@ -36,6 +64,12 @@ const descriptions: Record<SystemConfigKey, string> = {
   defaultPageSize: '列表默认分页大小',
   maxPageSize: '列表最大分页大小',
   lowStockThreshold: '低库存提醒阈值',
+  memberTierSilverThreshold: '银卡会员累计积分门槛',
+  memberTierGoldThreshold: '金卡会员累计积分门槛',
+  memberTierPlatinumThreshold: '铂金会员累计积分门槛',
+  memberTierSilverBonusBps: '银卡签到/邀请奖励加成基点（万分之）',
+  memberTierGoldBonusBps: '金卡签到/邀请奖励加成基点（万分之）',
+  memberTierPlatinumBonusBps: '铂金签到/邀请奖励加成基点（万分之）',
 }
 
 type ConfigClient = typeof prisma | Prisma.TransactionClient
@@ -59,6 +93,58 @@ export function assertSystemConfigKey(key: string): asserts key is SystemConfigK
 export function assertSystemConfigValue(value: number) {
   if (!Number.isInteger(value) || value < 0) {
     throw badRequest('配置值必须是非负整数')
+  }
+}
+
+function isTierKey(key: SystemConfigKey): key is TierKey {
+  return (TIER_KEYS as readonly string[]).includes(key)
+}
+
+interface EffectiveTierConfig {
+  silver: number
+  gold: number
+  platinum: number
+  silverBps: number
+  goldBps: number
+  platinumBps: number
+}
+
+async function loadEffectiveTierConfig(
+  tx: Prisma.TransactionClient,
+  override?: { key: TierKey; value: number }
+): Promise<EffectiveTierConfig> {
+  const rows = await tx.systemConfig.findMany({
+    where: { key: { in: [...TIER_KEYS] } },
+    select: { key: true, value: true },
+  })
+  const byKey = new Map(rows.map(row => [row.key, row.value]))
+  const get = (k: TierKey): number =>
+    override && override.key === k
+      ? override.value
+      : byKey.get(k) ?? systemConfigDefaults[k]
+  return {
+    silver: get('memberTierSilverThreshold'),
+    gold: get('memberTierGoldThreshold'),
+    platinum: get('memberTierPlatinumThreshold'),
+    silverBps: get('memberTierSilverBonusBps'),
+    goldBps: get('memberTierGoldBonusBps'),
+    platinumBps: get('memberTierPlatinumBonusBps'),
+  }
+}
+
+function assertTierConfigValid(effective: EffectiveTierConfig) {
+  if (!(effective.silver < effective.gold && effective.gold < effective.platinum)) {
+    throw badRequest('会员等级阈值必须满足 银卡 < 金卡 < 铂金')
+  }
+  const bpsEntries: Array<[string, number]> = [
+    ['银卡加成', effective.silverBps],
+    ['金卡加成', effective.goldBps],
+    ['铂金加成', effective.platinumBps],
+  ]
+  for (const [name, value] of bpsEntries) {
+    if (!Number.isInteger(value) || value < 0 || value > 10000) {
+      throw badRequest(`${name}基点必须是 0..10000 之间的整数`)
+    }
   }
 }
 
@@ -112,6 +198,11 @@ export async function updateSystemConfig(
   assertSystemConfigValue(value)
 
   return prisma.$transaction(async tx => {
+    if (isTierKey(key)) {
+      const effective = await loadEffectiveTierConfig(tx, { key, value })
+      assertTierConfigValid(effective)
+    }
+
     const existing = await tx.systemConfig.findUnique({
       where: { key },
       select: { value: true },
