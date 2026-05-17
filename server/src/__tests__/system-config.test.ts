@@ -124,15 +124,19 @@ describe('Admin system config', () => {
       .set(authHeader(userLogin.accessToken))
       .expect(200)
 
-    expect(res.body.reward).toBe(77)
+    expect(res.body.baseReward).toBe(77)
+    expect(res.body.bonusReward).toBe(0)
+    expect(res.body.totalReward).toBe(77)
+    expect(res.body.tier).toBe('bronze')
     expect(res.body.balanceAfter).toBe(77)
 
     const pointLog = await prisma.pointLog.findFirstOrThrow({
-      where: { userId: user.id, reason: '每日打卡签到' },
+      where: { userId: user.id, reason: { startsWith: '每日打卡签到' } },
       orderBy: { id: 'desc' },
     })
     expect(pointLog.amount).toBe(77)
     expect(pointLog.balanceAfter).toBe(77)
+    expect(pointLog.reason?.startsWith('每日打卡签到')).toBe(true)
   })
 
   it('should use updated registerReward for future registrations', async () => {
