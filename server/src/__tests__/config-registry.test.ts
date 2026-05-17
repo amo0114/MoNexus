@@ -97,3 +97,92 @@ describe('GET /api/config/registry', () => {
     })
   })
 })
+
+describe('GET /api/config/registry — M7 member tiers', () => {
+  beforeEach(async () => {
+    await clearSystemConfig()
+  })
+
+  afterEach(async () => {
+    await clearSystemConfig()
+  })
+
+  it('exposes memberTiers with the 4 expected entries (label + tone)', async () => {
+    const res = await api.get('/api/config/registry').expect(200)
+
+    expect(res.body.memberTiers).toHaveLength(4)
+    expect(res.body.memberTiers).toEqual([
+      { value: 'bronze', label: '普通会员', tone: 'neutral' },
+      { value: 'silver', label: '银卡', tone: 'info' },
+      { value: 'gold', label: '金卡', tone: 'warning' },
+      { value: 'platinum', label: '铂金', tone: 'success' },
+    ])
+  })
+
+  it('exposes memberTierThresholds with default silver/gold/platinum values', async () => {
+    const res = await api.get('/api/config/registry').expect(200)
+
+    expect(res.body.memberTierThresholds).toEqual({
+      silver: 1000,
+      gold: 5000,
+      platinum: 20000,
+    })
+  })
+
+  it('exposes memberTierBonusBps with bronze:0 plus default silver/gold/platinum values', async () => {
+    const res = await api.get('/api/config/registry').expect(200)
+
+    expect(res.body.memberTierBonusBps).toEqual({
+      bronze: 0,
+      silver: 500,
+      gold: 1000,
+      platinum: 2000,
+    })
+  })
+
+  it('reflects updated tier thresholds and bps after admin writes', async () => {
+    const { accessToken } = await loginAdmin()
+
+    await api
+      .put('/api/admin/config/memberTierSilverThreshold')
+      .set(authHeader(accessToken))
+      .send({ value: 800 })
+      .expect(200)
+    await api
+      .put('/api/admin/config/memberTierGoldThreshold')
+      .set(authHeader(accessToken))
+      .send({ value: 4000 })
+      .expect(200)
+    await api
+      .put('/api/admin/config/memberTierPlatinumThreshold')
+      .set(authHeader(accessToken))
+      .send({ value: 18000 })
+      .expect(200)
+    await api
+      .put('/api/admin/config/memberTierSilverBonusBps')
+      .set(authHeader(accessToken))
+      .send({ value: 600 })
+      .expect(200)
+
+    const res = await api.get('/api/config/registry').expect(200)
+
+    expect(res.body.memberTierThresholds).toEqual({
+      silver: 800,
+      gold: 4000,
+      platinum: 18000,
+    })
+    expect(res.body.memberTierBonusBps).toEqual({
+      bronze: 0,
+      silver: 600,
+      gold: 1000,
+      platinum: 2000,
+    })
+  })
+
+  it('remains public-read (no auth header required)', async () => {
+    const res = await api.get('/api/config/registry').expect(200)
+    expect(res.body.memberTiers).toBeDefined()
+    expect(res.body.memberTierThresholds).toBeDefined()
+    expect(res.body.memberTierBonusBps).toBeDefined()
+  })
+})

@@ -72,6 +72,12 @@ export const businessRegistry = {
       tone: 'success',
     },
   ],
+  memberTiers: [
+    { value: 'bronze', label: '普通会员', tone: 'neutral' },
+    { value: 'silver', label: '银卡', tone: 'info' },
+    { value: 'gold', label: '金卡', tone: 'warning' },
+    { value: 'platinum', label: '铂金', tone: 'success' },
+  ],
   pagination: {
     defaultPageSize: 20,
     maxPageSize: 100,

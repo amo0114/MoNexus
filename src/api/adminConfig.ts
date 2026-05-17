@@ -5,6 +5,12 @@ export type AdminSystemConfigKey =
   | 'checkinReward'
   | 'inviteReward'
   | 'refreshTokenMaxAgeDays'
+  | 'memberTierSilverThreshold'
+  | 'memberTierGoldThreshold'
+  | 'memberTierPlatinumThreshold'
+  | 'memberTierSilverBonusBps'
+  | 'memberTierGoldBonusBps'
+  | 'memberTierPlatinumBonusBps'
 
 export interface AdminSystemConfig {
   key: AdminSystemConfigKey
