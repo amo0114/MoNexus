@@ -64,3 +64,19 @@ export async function hasCheckedInToday(userId: number) {
   })
   return !!record
 }
+
+import {
+  computeLifetimeEarnedPoints,
+  getCurrentTierConfig,
+  resolveTier,
+  formatTierResponse,
+} from '../../lib/memberTier.js'
+
+export async function getTier(userId: number) {
+  const [lifetime, config] = await Promise.all([
+    computeLifetimeEarnedPoints(userId),
+    getCurrentTierConfig(),
+  ])
+  const tier = resolveTier(lifetime, config.thresholds)
+  return formatTierResponse(userId, lifetime, tier, config)
+}
