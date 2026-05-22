@@ -16,6 +16,7 @@ import ProfilePage from './pages/ProfilePage'
 import AdminPage from './pages/AdminPage'
 import MerchantApplyPage from './pages/MerchantApplyPage'
 import MerchantDashboardPage from './pages/MerchantDashboardPage'
+import Dashboard from './pages/merchant/Dashboard'
 import DesignTokensPage from './pages/_design-tokens'
 import RoleGuard from './components/RoleGuard'
 
@@ -68,22 +69,30 @@ export default function App() {
                   <Route path="/" element={<StorePage />} />
                   <Route path="/product/:id" element={<ProductDetailPage />} />
                   <Route path="/profile" element={<ProfilePage />} />
-                  <Route 
-                    path="/admin" 
+                  <Route
+                    path="/admin"
                     element={
                       <RoleGuard allowedRoles={['admin']}>
                         <AdminPage />
                       </RoleGuard>
-                    } 
+                    }
                   />
                   <Route path="/merchant/apply" element={<MerchantApplyPage />} />
-                  <Route 
-                    path="/merchant/*" 
+                  <Route
+                    path="/merchant/dashboard"
+                    element={
+                      <RoleGuard allowedRoles={['merchant']} requireActiveMerchant>
+                        <Dashboard />
+                      </RoleGuard>
+                    }
+                  />
+                  <Route
+                    path="/merchant/*"
                     element={
                       <RoleGuard allowedRoles={['merchant']} requireActiveMerchant>
                         <MerchantDashboardPage />
                       </RoleGuard>
-                    } 
+                    }
                   />
                 </Routes>
               </Layout>
