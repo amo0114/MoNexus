@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   getMerchantStats,
   getMerchantProducts,
@@ -20,23 +21,25 @@ import {
   Settlement,
   Merchant
 } from '../types/merchant'
-import { Store, Package, ShoppingBag, DollarSign, Settings, Plus, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react'
+import { Store, Package, ShoppingBag, DollarSign, Settings, Plus, ChevronLeft, ChevronRight, Loader2, BarChart3 } from 'lucide-react'
 import { useAppStore } from '../stores/appStore'
 import MerchantProductFormModal from '../components/merchant/MerchantProductFormModal'
 import MerchantInventoryImportModal from '../components/merchant/MerchantInventoryImportModal'
 import RegistryPill from '../components/ui/RegistryPill'
 
-type TabKey = 'dashboard' | 'products' | 'orders' | 'settlements' | 'profile'
+type TabKey = 'dashboard' | 'products' | 'orders' | 'settlements' | 'profile' | 'operations'
 
-const TABS: { key: TabKey; label: string; Icon: typeof Store }[] = [
+const TABS: { key: TabKey; label: string; Icon: typeof Store; path?: string }[] = [
   { key: 'dashboard', label: '概览', Icon: Store },
   { key: 'products', label: '商品管理', Icon: Package },
   { key: 'orders', label: '订单管理', Icon: ShoppingBag },
   { key: 'settlements', label: '结算管理', Icon: DollarSign },
   { key: 'profile', label: '商家资料', Icon: Settings },
+  { key: 'operations', label: '经营数据', Icon: BarChart3, path: '/merchant/dashboard' },
 ]
 
 export default function MerchantDashboardPage() {
+  const navigate = useNavigate()
   const showToast = useAppStore((s) => s.showToast)
   const [activeTab, setActiveTab] = useState<TabKey>('dashboard')
   const [stats, setStats] = useState<MerchantStats | null>(null)
@@ -172,12 +175,12 @@ export default function MerchantDashboardPage() {
       {/* Sidebar */}
       <aside className="w-full md:w-64 flex-shrink-0">
         <nav className="card !p-2 flex flex-col gap-1">
-          {TABS.map(({ key, label, Icon }) => (
+          {TABS.map(({ key, label, Icon, path }) => (
             <button
               key={key}
-              onClick={() => setActiveTab(key)}
+              onClick={() => { if (path) { navigate(path) } else { setActiveTab(key) } }}
               className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors cursor-pointer text-sm ${
-                activeTab === key
+                (activeTab === key && !path)
                   ? 'bg-[var(--color-primary)] text-white font-semibold shadow-sm'
                   : 'text-[var(--color-text-muted)] hover:bg-[var(--color-primary)]/8 hover:text-[var(--color-text)] font-medium'
               }`}
