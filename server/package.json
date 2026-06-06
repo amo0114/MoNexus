@@ -3,9 +3,17 @@
   "version": "1.0.0",
   "type": "module",
   "private": true,
+  "engines": {
+    "node": ">=20 <21",
+    "npm": ">=10 <11"
+  },
   "scripts": {
+    "check:runtime": "node ../scripts/check-runtime.mjs",
+    "predev": "npm run check:runtime",
     "dev": "tsx watch src/main.ts",
+    "prebuild": "npm run check:runtime",
     "build": "tsc",
+    "prestart": "npm run check:runtime",
     "start": "node dist/main.js",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",

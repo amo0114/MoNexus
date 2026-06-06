@@ -180,13 +180,10 @@ Never restore over production as the first step. Rehearse in staging:
 RESTORE_TARGET_URL='<staging-restore-url>'
 BACKUP=monexus-backup-YYYYMMDDTHHMMSSZ.sql.gz
 
-psql "$RESTORE_TARGET_URL" -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;'
-gunzip -c "$BACKUP" | psql "$RESTORE_TARGET_URL"
-psql "$RESTORE_TARGET_URL" -c 'SELECT COUNT(*) FROM "User";'
-psql "$RESTORE_TARGET_URL" -c 'SELECT COUNT(*) FROM "PointLog";'
+MIN_USER_ROWS=1 MIN_POINT_LOG_ROWS=1 npm run backup:restore-check
 ```
 
-After restore, point a staging backend at `RESTORE_TARGET_URL`, run health checks, and smoke login, redeem, merchant order handling, and admin views before considering any production database recovery.
+`scripts/restore-check.sh` drops and recreates the target `public` schema, restores the backup, and checks `User` plus `PointLog` row counts. After restore, point a staging backend at `RESTORE_TARGET_URL`, run health checks, and smoke login, redeem, merchant order handling, and admin views before considering any production database recovery.
 
 ## Forward Fix Policy
 

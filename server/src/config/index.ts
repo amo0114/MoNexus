@@ -13,6 +13,16 @@ const optionalUrlEnvSchema = z.preprocess(value => {
   return value
 }, z.string().url().optional())
 
+const optionalStringEnvSchema = z.preprocess(value => {
+  if (value === undefined || value === '') return undefined
+  return value
+}, z.string().min(1).optional())
+
+const optionalEmailEnvSchema = z.preprocess(value => {
+  if (value === undefined || value === '') return undefined
+  return value
+}, z.string().email().optional())
+
 const logLevelEnvSchema = z.preprocess(value => {
   if (value === undefined || value === '') return undefined
   return value
@@ -40,24 +50,24 @@ const envSchema = z.object({
   STORAGE_PUBLIC_URL_BASE: z.string().url().optional(),
   STORAGE_FORCE_PATH_STYLE: booleanEnvSchema.default(true),
 
-  // --- SMTP for transactional email (P0-D). Optional in dev/test
-  // (server falls back to a console-logging mailer); required in
-  // production so password resets actually leave the box.
-  SMTP_HOST: z.string().min(1).optional(),
+  // --- SMTP for transactional email (P0-D). Optional at boot: when
+  // unset, the server falls back to a console-logging mailer. Production
+  // deployments should configure SMTP so password resets actually arrive.
+  SMTP_HOST: optionalStringEnvSchema,
   SMTP_PORT: z.coerce.number().int().positive().default(587),
   SMTP_SECURE: booleanEnvSchema.default(false),
-  SMTP_USER: z.string().optional(),
-  SMTP_PASS: z.string().optional(),
-  SMTP_FROM: z.string().email().optional(),
+  SMTP_USER: optionalStringEnvSchema,
+  SMTP_PASS: optionalStringEnvSchema,
+  SMTP_FROM: optionalEmailEnvSchema,
 
   // --- Public app URL used to build links inside transactional emails.
   // Defaults to FRONTEND_ORIGIN if not set explicitly.
-  APP_BASE_URL: z.string().url().optional(),
+  APP_BASE_URL: optionalUrlEnvSchema,
 
   // --- Observability. SENTRY_DSN is optional so local/dev/test runs stay quiet.
   SENTRY_DSN: optionalUrlEnvSchema,
   LOG_LEVEL: logLevelEnvSchema,
-  METRICS_TOKEN: z.string().optional(),
+  METRICS_TOKEN: optionalStringEnvSchema,
 })
 
 const parsed = envSchema.safeParse(process.env)
