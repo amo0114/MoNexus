@@ -4,16 +4,33 @@ import { UserOrderDetail } from '../types/order'
 import { useAppStore } from '../stores/appStore'
 import { disputeOrder, closeOrder } from '../api/orders'
 import RegistryPill from './ui/RegistryPill'
+import { Dialog, DialogContent, DialogTitle, DialogDescription } from './ui/Dialog'
 
 interface OrderDetailModalProps {
   order: UserOrderDetail
   onClose: () => void
 }
 
+type OrderAction = 'dispute' | 'close'
+
+const ACTION_COPY: Record<OrderAction, { title: string; description: string; confirmLabel: string }> = {
+  dispute: {
+    title: '发起争议',
+    description: '确认要发起争议吗？这会暂停该订单的结算，平台与商家将介入处理。',
+    confirmLabel: '确认发起争议',
+  },
+  close: {
+    title: '结束订单',
+    description: '确认结束订单吗？之后不可再发起争议。',
+    confirmLabel: '确认结束订单',
+  },
+}
+
 export default function OrderDetailModal({ order: initialOrder, onClose }: OrderDetailModalProps) {
   const showToast = useAppStore((s) => s.showToast)
-  const [order, setOrder] = useState(initialOrder)
-  const [loadingAction, setLoadingAction] = useState<string | null>(null)
+  const [order] = useState(initialOrder)
+  const [loadingAction, setLoadingAction] = useState<OrderAction | null>(null)
+  const [confirmAction, setConfirmAction] = useState<OrderAction | null>(null)
 
   function copyContent() {
     if (!order.delivery?.content) return
@@ -21,10 +38,8 @@ export default function OrderDetailModal({ order: initialOrder, onClose }: Order
     showToast('发货信息已复制')
   }
 
-  async function handleAction(action: 'dispute' | 'close') {
-    if (action === 'dispute' && !window.confirm('确认要发起争议吗？这会暂停该订单的结算。')) return
-    if (action === 'close' && !window.confirm('确认结束订单吗？之后不可再发起争议。')) return
-
+  async function executeAction(action: OrderAction) {
+    setConfirmAction(null)
     setLoadingAction(action)
     try {
       if (action === 'dispute') await disputeOrder(order.id)
@@ -154,8 +169,9 @@ export default function OrderDetailModal({ order: initialOrder, onClose }: Order
           </button>
           {canDispute && (
             <button
-              onClick={() => handleAction('dispute')}
+              onClick={() => setConfirmAction('dispute')}
               disabled={loadingAction === 'dispute'}
+              data-testid="order-dispute-button"
               className="btn-secondary !px-4 !border-[var(--color-warning)] !text-[var(--color-warning)]"
             >
               {loadingAction === 'dispute' ? <Loader2 className="w-4 h-4 animate-spin" /> : '发起争议'}
@@ -163,8 +179,9 @@ export default function OrderDetailModal({ order: initialOrder, onClose }: Order
           )}
           {canClose && (
             <button
-              onClick={() => handleAction('close')}
+              onClick={() => setConfirmAction('close')}
               disabled={loadingAction === 'close'}
+              data-testid="order-close-button"
               className="btn-secondary !px-4 !border-[var(--color-cta)] !text-[var(--color-cta)]"
             >
               {loadingAction === 'close' ? <Loader2 className="w-4 h-4 animate-spin" /> : '结束订单'}
@@ -172,6 +189,39 @@ export default function OrderDetailModal({ order: initialOrder, onClose }: Order
           )}
         </div>
       </div>
+
+      <Dialog open={confirmAction !== null} onOpenChange={(open) => { if (!open) setConfirmAction(null) }}>
+        <DialogContent
+          className="!z-[120]"
+          data-testid={confirmAction === 'close' ? 'close-order-dialog' : 'dispute-dialog'}
+        >
+          <DialogTitle>{confirmAction ? ACTION_COPY[confirmAction].title : ''}</DialogTitle>
+          <DialogDescription>
+            {confirmAction ? ACTION_COPY[confirmAction].description : ''}
+          </DialogDescription>
+          <div className="mt-5 flex justify-end gap-3">
+            <button
+              type="button"
+              onClick={() => setConfirmAction(null)}
+              className="btn-secondary !px-5 !py-2 !text-sm"
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              onClick={() => confirmAction && executeAction(confirmAction)}
+              data-testid={confirmAction === 'close' ? 'close-order-dialog-confirm' : 'dispute-dialog-confirm'}
+              className={
+                confirmAction === 'dispute'
+                  ? 'btn-secondary !px-5 !py-2 !text-sm !border-[var(--color-warning)] !text-[var(--color-warning)]'
+                  : 'btn-primary !px-5 !py-2 !text-sm'
+              }
+            >
+              {confirmAction ? ACTION_COPY[confirmAction].confirmLabel : ''}
+            </button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

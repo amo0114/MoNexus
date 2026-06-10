@@ -1,5 +1,7 @@
 import { z } from 'zod'
 import { systemConfigKeys } from '../../lib/systemConfig.js'
+import { businessRegistry } from '../../lib/businessRegistry.js'
+import { ORDER_STATUSES } from '../orders/fulfillment.js'
 
 export const adjustPointsSchema = z.object({
   type: z.enum(['add', 'deduct']),
@@ -49,10 +51,25 @@ export const importInventorySchema = z.object({
 })
 
 export const listUsersQuerySchema = z.object({
-  q: z.string().optional(),
-  page: z.coerce.number().int().positive().default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(20),
-})
+  q: z.string().trim().min(1).max(100).optional(),
+  page: z.coerce.number().int().positive('page 必须是正整数').optional(),
+  pageSize: z.coerce.number().int().positive('pageSize 必须是正整数')
+    .max(businessRegistry.pagination.maxPageSize, 'pageSize 超出最大分页限制')
+    .optional(),
+}).strict()
+
+export type ListUsersQuery = z.infer<typeof listUsersQuerySchema>
+
+export const listOrdersQuerySchema = z.object({
+  status: z.enum(ORDER_STATUSES).optional(),
+  q: z.string().trim().min(1).max(100).optional(),
+  page: z.coerce.number().int().positive('page 必须是正整数').optional(),
+  pageSize: z.coerce.number().int().positive('pageSize 必须是正整数')
+    .max(businessRegistry.pagination.maxPageSize, 'pageSize 超出最大分页限制')
+    .optional(),
+}).strict()
+
+export type ListOrdersQuery = z.infer<typeof listOrdersQuerySchema>
 
 export const listAdminAuditQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1),

@@ -16,8 +16,11 @@ interface Product {
   stock: number
   sales: number
   isHot: boolean
+  images?: string[]
   merchant?: { id: number; name: string } | null
 }
+
+const PAGE_SIZE = 20
 
 export default function StorePage() {
   const showToast = useAppStore((s) => s.showToast)
@@ -28,26 +31,39 @@ export default function StorePage() {
   const [category, setCategory] = useState('全部')
   const [searchQuery, setSearchQuery] = useState('')
   const [loading, setLoading] = useState(true)
+  const [page, setPage] = useState(1)
+  const [hasMore, setHasMore] = useState(false)
+  const [loadingMore, setLoadingMore] = useState(false)
 
-  const fetchProducts = useCallback(async () => {
+  const fetchProducts = useCallback(async (pageToLoad: number, append: boolean) => {
     try {
-      const params: any = {}
+      const params: any = { page: pageToLoad, pageSize: PAGE_SIZE }
       if (searchQuery) params.q = searchQuery
       if (category !== '全部') params.category = category
       const { data } = await api.get('/products', { params })
-      setProducts(data)
+      setProducts((prev) => (append ? [...prev, ...data] : data))
+      setPage(pageToLoad)
+      setHasMore(data.length === PAGE_SIZE)
     } catch {
       showToast('商品加载失败', 'error')
     } finally {
       setLoading(false)
+      setLoadingMore(false)
     }
   }, [searchQuery, category])
 
   useEffect(() => {
+    // 搜索词 / 分类变化时重置为第 1 页（替换模式）
     setLoading(true)
-    const timer = setTimeout(fetchProducts, 300)
+    const timer = setTimeout(() => fetchProducts(1, false), 300)
     return () => clearTimeout(timer)
   }, [fetchProducts])
+
+  function loadMore() {
+    if (loadingMore || loading) return
+    setLoadingMore(true)
+    fetchProducts(page + 1, true)
+  }
 
   function openDetail(product: Product) {
     navigate(`/product/${product.id}`)
@@ -114,7 +130,8 @@ export default function StorePage() {
           <p className="text-sm">请尝试更换搜索词，或者看下其他分类</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pt-2">
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pt-2">
           {products.map((product, i) => (
             <div
               key={product.id}
@@ -124,12 +141,12 @@ export default function StorePage() {
                 shadow-md hover:shadow-lg hover:border-[var(--color-primary)]/35
                 hover:-translate-y-0.5 transition-all duration-200
                 ${product.stock === 0 ? 'opacity-60 grayscale' : ''}`}
-              style={{ animationDelay: `${i * 0.06}s` }}
+              style={{ animationDelay: `${(i % PAGE_SIZE) * 0.06}s` }}
             >
               {/* Image */}
               <div className="relative h-40 w-full bg-[var(--color-image-placeholder)] overflow-hidden border-b border-[var(--color-border)] shrink-0">
                 <img
-                  src={product.imageUrl}
+                  src={product.images?.[0] || product.imageUrl}
                   alt={product.name}
                   className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
                   loading="lazy"
@@ -195,7 +212,21 @@ export default function StorePage() {
               </div>
             </div>
           ))}
-        </div>
+          </div>
+
+          {hasMore && (
+            <div className="flex justify-center pt-4">
+              <button
+                onClick={loadMore}
+                disabled={loadingMore}
+                data-testid="store-load-more"
+                className="btn-secondary !px-10 !py-3"
+              >
+                {loadingMore ? '加载中...' : '加载更多'}
+              </button>
+            </div>
+          )}
+        </>
       )}
     </div>
   )

@@ -21,10 +21,13 @@ import {
   Settlement,
   Merchant
 } from '../types/merchant'
-import { Store, Package, ShoppingBag, DollarSign, Settings, Plus, ChevronLeft, ChevronRight, Loader2, BarChart3 } from 'lucide-react'
+import { Store, Package, ShoppingBag, DollarSign, Settings, Plus, ChevronLeft, ChevronRight, Loader2, BarChart3, Search, AlertTriangle } from 'lucide-react'
 import { useAppStore } from '../stores/appStore'
 import MerchantProductFormModal from '../components/merchant/MerchantProductFormModal'
 import MerchantInventoryImportModal from '../components/merchant/MerchantInventoryImportModal'
+import MerchantInventoryLogModal from '../components/merchant/MerchantInventoryLogModal'
+import MerchantDeliverDialog from '../components/merchant/MerchantDeliverDialog'
+import MerchantDisputeDialog from '../components/merchant/MerchantDisputeDialog'
 import RegistryPill from '../components/ui/RegistryPill'
 
 type TabKey = 'dashboard' | 'products' | 'orders' | 'settlements' | 'profile' | 'operations'
@@ -41,12 +44,30 @@ const TABS: { key: TabKey; label: string; Icon: typeof Store; path?: string }[] 
 export default function MerchantDashboardPage() {
   const navigate = useNavigate()
   const showToast = useAppStore((s) => s.showToast)
+  const registry = useAppStore((s) => s.registry)
   const [activeTab, setActiveTab] = useState<TabKey>('dashboard')
   const [stats, setStats] = useState<MerchantStats | null>(null)
 
   const [products, setProducts] = useState<MerchantProduct[]>([])
   const [productPage, setProductPage] = useState(1)
   const [productTotal, setProductTotal] = useState(0)
+
+  // --- 商品列表筛选（任一筛选变化时重置页码到 1）---
+  const [productSearch, setProductSearch] = useState('')
+  const [productSearchDebounced, setProductSearchDebounced] = useState('')
+  const [productStatusFilter, setProductStatusFilter] = useState('')
+  const [productTypeFilter, setProductTypeFilter] = useState('')
+  const [productModeFilter, setProductModeFilter] = useState('')
+  const [productLowStockOnly, setProductLowStockOnly] = useState(false)
+
+  // 搜索 300ms 防抖
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setProductSearchDebounced(productSearch.trim())
+      setProductPage(1)
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [productSearch])
 
   const [orders, setOrders] = useState<MerchantOrder[]>([])
   const [orderPage, setOrderPage] = useState(1)
@@ -57,7 +78,7 @@ export default function MerchantDashboardPage() {
 
   useEffect(() => {
     loadData()
-  }, [activeTab, productPage, orderPage])
+  }, [activeTab, productPage, orderPage, productSearchDebounced, productStatusFilter, productTypeFilter, productModeFilter, productLowStockOnly])
 
   async function loadData() {
     try {
@@ -65,7 +86,15 @@ export default function MerchantDashboardPage() {
         const data = await getMerchantStats()
         setStats(data)
       } else if (activeTab === 'products') {
-        const data = await getMerchantProducts({ page: productPage, pageSize: 20 })
+        const data = await getMerchantProducts({
+          page: productPage,
+          pageSize: 20,
+          q: productSearchDebounced || undefined,
+          status: productStatusFilter || undefined,
+          type: productTypeFilter || undefined,
+          deliveryMode: productModeFilter || undefined,
+          lowStock: productLowStockOnly ? true : undefined,
+        })
         setProducts(data.items)
         setProductTotal(data.total)
       } else if (activeTab === 'orders') {
@@ -115,6 +144,13 @@ export default function MerchantDashboardPage() {
   const [isInventoryModalOpen, setIsInventoryModalOpen] = useState(false)
   const [importingProduct, setImportingProduct] = useState<{ id: number, name: string } | null>(null)
 
+  const [isInventoryLogOpen, setIsInventoryLogOpen] = useState(false)
+  const [logProduct, setLogProduct] = useState<{ id: number, name: string } | null>(null)
+
+  // --- Order Dialogs State ---
+  const [deliveringOrder, setDeliveringOrder] = useState<MerchantOrder | null>(null)
+  const [disputeOrder, setDisputeOrder] = useState<MerchantOrder | null>(null)
+
   async function handleProductSubmit(payload: any) {
     if (editingProduct) {
       await updateMerchantProduct(editingProduct.id, payload)
@@ -145,29 +181,35 @@ export default function MerchantDashboardPage() {
   }
 
   async function handleOrderAction(action: 'start_fulfillment' | 'deliver' | 'respond_dispute', order: MerchantOrder) {
+    if (action === 'deliver') {
+      setDeliveringOrder(order)
+      return
+    }
+    if (action === 'respond_dispute') {
+      setDisputeOrder(order)
+      return
+    }
     try {
-      if (action === 'start_fulfillment') {
-        await startFulfillment(order.id)
-        showToast('已开始履约')
-      } else if (action === 'deliver') {
-        const content = window.prompt('请输入发货内容（卡密/账号等）：')
-        if (content === null) return
-        if (!content.trim()) {
-          showToast('发货内容不能为空', 'error')
-          return
-        }
-        await deliverOrder(order.id, { deliveryContent: content })
-        showToast('发货成功')
-      } else if (action === 'respond_dispute') {
-        const confirmClose = window.confirm('确认关闭争议订单吗？点击取消则恢复履约处理。')
-        const resolution = confirmClose ? 'close' : 'resume'
-        await respondDispute(order.id, { resolution })
-        showToast('争议处理成功')
-      }
+      await startFulfillment(order.id)
+      showToast('已开始履约')
       loadData()
     } catch (e: any) {
       showToast(e.response?.data?.error?.message || '操作失败', 'error')
     }
+  }
+
+  async function handleDeliverSubmit(deliveryContent: string) {
+    if (!deliveringOrder) return
+    await deliverOrder(deliveringOrder.id, { deliveryContent })
+    showToast('发货成功')
+    loadData()
+  }
+
+  async function handleDisputeSubmit(resolution: 'resume' | 'close') {
+    if (!disputeOrder) return
+    await respondDispute(disputeOrder.id, { resolution })
+    showToast('争议处理成功')
+    loadData()
   }
 
   return (
@@ -209,7 +251,7 @@ export default function MerchantDashboardPage() {
 
           {activeTab === 'products' && (
             <div className="fade-in">
-              <div className="flex justify-between items-center mb-6">
+              <div className="flex justify-between items-center mb-4">
                 <h2 className="font-heading text-xl font-bold text-[var(--color-text)]">商品管理</h2>
                 <button
                   className="btn-primary !px-3 !py-1.5 !text-sm"
@@ -217,6 +259,66 @@ export default function MerchantDashboardPage() {
                 >
                   <Plus className="w-4 h-4" /> 新建商品
                 </button>
+              </div>
+
+              {/* 筛选栏 */}
+              <div className="flex flex-wrap items-center gap-3 mb-5" data-testid="merchant-product-filters">
+                <div className="relative flex-1 min-w-[200px]">
+                  <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)] pointer-events-none" />
+                  <input
+                    type="text"
+                    placeholder="搜索商品名称..."
+                    className="input !pl-9 !py-2 !text-sm"
+                    value={productSearch}
+                    onChange={(e) => setProductSearch(e.target.value)}
+                    data-testid="merchant-product-search"
+                  />
+                </div>
+                <select
+                  className="input !py-2 !text-sm !w-auto appearance-none cursor-pointer"
+                  value={productStatusFilter}
+                  onChange={(e) => { setProductStatusFilter(e.target.value); setProductPage(1); }}
+                  aria-label="按状态筛选"
+                  data-testid="merchant-product-status-filter"
+                >
+                  <option value="">全部状态</option>
+                  <option value="active">上架中</option>
+                  <option value="inactive">未上架</option>
+                </select>
+                <select
+                  className="input !py-2 !text-sm !w-auto appearance-none cursor-pointer"
+                  value={productTypeFilter}
+                  onChange={(e) => { setProductTypeFilter(e.target.value); setProductPage(1); }}
+                  aria-label="按类型筛选"
+                  data-testid="merchant-product-type-filter"
+                >
+                  <option value="">全部类型</option>
+                  {registry?.productTypes?.map((pt) => (
+                    <option key={pt.value} value={pt.value}>{pt.label}</option>
+                  ))}
+                </select>
+                <select
+                  className="input !py-2 !text-sm !w-auto appearance-none cursor-pointer"
+                  value={productModeFilter}
+                  onChange={(e) => { setProductModeFilter(e.target.value); setProductPage(1); }}
+                  aria-label="按发货模式筛选"
+                  data-testid="merchant-product-mode-filter"
+                >
+                  <option value="">全部发货模式</option>
+                  {registry?.deliveryModes?.map((m) => (
+                    <option key={m.value} value={m.value}>{m.label}</option>
+                  ))}
+                </select>
+                <label className="flex items-center gap-2 text-sm text-[var(--color-text)] cursor-pointer select-none whitespace-nowrap">
+                  <input
+                    type="checkbox"
+                    checked={productLowStockOnly}
+                    onChange={(e) => { setProductLowStockOnly(e.target.checked); setProductPage(1); }}
+                    className="w-4 h-4 cursor-pointer accent-[var(--color-primary)]"
+                    data-testid="merchant-product-lowstock-toggle"
+                  />
+                  仅看低库存
+                </label>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse">
@@ -238,32 +340,55 @@ export default function MerchantDashboardPage() {
                         </td>
                       </tr>
                     ) : (
-                      products.map((p) => (
-                        <tr key={p.id} className="border-b border-[var(--color-border)] hover:bg-[var(--color-background)] transition-colors">
-                          <td className="py-3 px-2 text-sm text-[var(--color-text-muted)]">{p.id}</td>
-                          <td className="py-3 px-2 text-sm font-medium text-[var(--color-text)]">{p.name}</td>
-                          <td className="py-3 px-2 text-sm text-[var(--color-text)]">{p.price}</td>
-                          <td className="py-3 px-2 text-sm text-[var(--color-text-muted)]">{p._count?.inventory ?? p.stock} / {p.sales}</td>
-                          <td className="py-3 px-2 text-sm">
-                            <StatusPill kind={p.status === 'active' ? 'active' : 'inactive'} />
-                          </td>
-                          <td className="py-3 px-2 text-right whitespace-nowrap">
-                            <LinkAction onClick={() => { setImportingProduct({ id: p.id, name: p.name }); setIsInventoryModalOpen(true); }}>
-                              导入库存
-                            </LinkAction>
-                            <LinkAction onClick={() => { setEditingProduct(p); setIsProductFormOpen(true); }}>
-                              编辑
-                            </LinkAction>
-                            <LinkAction onClick={() => handleToggleProductStatus(p)}>
-                              {p.status === 'active' ? '下架' : '上架'}
-                            </LinkAction>
-                          </td>
-                        </tr>
-                      ))
+                      products.map((p) => {
+                        const stockCount = p.availableStock ?? p._count?.inventory ?? p.stock
+                        const threshold = registry?.inventory?.lowStockThreshold
+                        const isLowStock = p.lowStock ?? (
+                          p.deliveryMode === 'instant_inventory' &&
+                          typeof threshold === 'number' &&
+                          stockCount <= threshold
+                        )
+                        return (
+                          <tr key={p.id} className="border-b border-[var(--color-border)] hover:bg-[var(--color-background)] transition-colors">
+                            <td className="py-3 px-2 text-sm text-[var(--color-text-muted)]">{p.id}</td>
+                            <td className="py-3 px-2 text-sm font-medium text-[var(--color-text)]">{p.name}</td>
+                            <td className="py-3 px-2 text-sm text-[var(--color-text)]">{p.price}</td>
+                            <td className="py-3 px-2 text-sm text-[var(--color-text-muted)]">
+                              <span className="whitespace-nowrap">{stockCount} / {p.sales}</span>
+                              {isLowStock && (
+                                <span
+                                  className="inline-flex items-center gap-1 ml-2 px-2 py-0.5 rounded text-[10px] font-bold border bg-[var(--color-danger)]/10 text-[var(--color-danger)] border-[var(--color-danger)]/25"
+                                  data-testid={`low-stock-badge-${p.id}`}
+                                >
+                                  <AlertTriangle className="w-3 h-3" /> 低库存
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-3 px-2 text-sm">
+                              <StatusPill kind={p.status === 'active' ? 'active' : 'inactive'} />
+                            </td>
+                            <td className="py-3 px-2 text-right whitespace-nowrap">
+                              <LinkAction onClick={() => { setImportingProduct({ id: p.id, name: p.name }); setIsInventoryModalOpen(true); }}>
+                                导入库存
+                              </LinkAction>
+                              <LinkAction onClick={() => { setLogProduct({ id: p.id, name: p.name }); setIsInventoryLogOpen(true); }}>
+                                流水
+                              </LinkAction>
+                              <LinkAction onClick={() => { setEditingProduct(p); setIsProductFormOpen(true); }}>
+                                编辑
+                              </LinkAction>
+                              <LinkAction onClick={() => handleToggleProductStatus(p)}>
+                                {p.status === 'active' ? '下架' : '上架'}
+                              </LinkAction>
+                            </td>
+                          </tr>
+                        )
+                      })
                     )}
                   </tbody>
                 </table>
               </div>
+              <PaginationControls page={productPage} total={productTotal} setPage={setProductPage} testId="merchant-product-pagination" />
             </div>
           )}
 
@@ -443,6 +568,27 @@ export default function MerchantDashboardPage() {
         productName={importingProduct?.name || ''}
         productId={importingProduct?.id}
       />
+
+      <MerchantInventoryLogModal
+        isOpen={isInventoryLogOpen}
+        onClose={() => setIsInventoryLogOpen(false)}
+        product={logProduct}
+        onVoided={loadData}
+      />
+
+      <MerchantDeliverDialog
+        isOpen={deliveringOrder !== null}
+        onClose={() => setDeliveringOrder(null)}
+        order={deliveringOrder}
+        onSubmit={handleDeliverSubmit}
+      />
+
+      <MerchantDisputeDialog
+        isOpen={disputeOrder !== null}
+        onClose={() => setDisputeOrder(null)}
+        order={disputeOrder}
+        onSubmit={handleDisputeSubmit}
+      />
     </div>
   )
 }
@@ -497,12 +643,12 @@ function LinkAction({ children, onClick }: { children: React.ReactNode; onClick:
   )
 }
 
-function PaginationControls({ page, total, setPage }: { page: number; total: number; setPage: (p: number) => void }) {
+function PaginationControls({ page, total, setPage, testId }: { page: number; total: number; setPage: (p: number) => void; testId?: string }) {
   const pageSize = 20
   const totalPages = Math.ceil(total / pageSize) || 1
 
   return (
-    <div className="flex items-center justify-between mt-4 px-2 pb-2 border-t border-[var(--color-border)] pt-4">
+    <div className="flex items-center justify-between mt-4 px-2 pb-2 border-t border-[var(--color-border)] pt-4" data-testid={testId}>
       <div className="text-sm text-[var(--color-text-muted)]">
         共 {total} 条记录，第 {page} / {totalPages} 页
       </div>

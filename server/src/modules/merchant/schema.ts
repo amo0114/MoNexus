@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { businessRegistry } from '../../lib/businessRegistry.js'
 import { ORDER_STATUSES } from '../orders/fulfillment.js'
+import { productImagesSchema } from '../products/schema.js'
 
 const productTypeValues = businessRegistry.productTypes.map(type => type.value)
 const deliveryModeValues = businessRegistry.deliveryModes.map(mode => mode.value)
@@ -43,6 +44,7 @@ export const createMerchantProductSchema = z.object({
   type: productTypeSchema,
   icon: z.string().default('package'),
   imageUrl: z.string().optional(),
+  images: productImagesSchema.optional(),
   price: z.number().int().positive(),
   originalPrice: z.number().int().positive().optional(),
   isHot: z.boolean().default(false),
@@ -64,6 +66,16 @@ const inventoryPayloadSchema = z.object({
 export const previewMerchantInventorySchema = inventoryPayloadSchema
 
 export const importMerchantInventorySchema = inventoryPayloadSchema
+
+export const voidMerchantInventorySchema = z.object({
+  count: z.number().int('作废数量必须是整数').positive('作废数量必须大于 0'),
+  reason: z.string().trim().max(500).optional(),
+}).strict()
+
+export const merchantInventoryLogQuerySchema = z.object({
+  page: z.coerce.number().int().positive().optional(),
+  pageSize: z.coerce.number().int().positive().optional(),
+}).strict()
 
 export const merchantProductListQuerySchema = z.object({
   page: z.coerce.number().int().positive().optional(),

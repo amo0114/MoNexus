@@ -56,7 +56,7 @@ export const systemConfigDefaults: Record<SystemConfigKey, number> = {
   memberTierPlatinumBonusBps: 2000,
 }
 
-const descriptions: Record<SystemConfigKey, string> = {
+export const systemConfigDescriptions: Record<SystemConfigKey, string> = {
   registerReward: '新用户注册奖励积分',
   checkinReward: '每日签到奖励积分',
   inviteReward: '邀请新用户奖励积分',
@@ -70,6 +70,56 @@ const descriptions: Record<SystemConfigKey, string> = {
   memberTierSilverBonusBps: '银卡签到/邀请奖励加成基点（万分之）',
   memberTierGoldBonusBps: '金卡签到/邀请奖励加成基点（万分之）',
   memberTierPlatinumBonusBps: '铂金签到/邀请奖励加成基点（万分之）',
+}
+
+/** 管理端配置项分组（中文），供配置页按组渲染。 */
+export const systemConfigGroups: Record<SystemConfigKey, string> = {
+  registerReward: '奖励发放',
+  checkinReward: '奖励发放',
+  inviteReward: '奖励发放',
+  refreshTokenMaxAgeDays: '安全',
+  defaultPageSize: '分页限制',
+  maxPageSize: '分页限制',
+  lowStockThreshold: '库存',
+  memberTierSilverThreshold: '会员等级',
+  memberTierGoldThreshold: '会员等级',
+  memberTierPlatinumThreshold: '会员等级',
+  memberTierSilverBonusBps: '会员等级',
+  memberTierGoldBonusBps: '会员等级',
+  memberTierPlatinumBonusBps: '会员等级',
+}
+
+/** 可选单位标注。 */
+export const systemConfigUnits: Partial<Record<SystemConfigKey, string>> = {
+  registerReward: '积分',
+  checkinReward: '积分',
+  inviteReward: '积分',
+  refreshTokenMaxAgeDays: '天',
+  defaultPageSize: '条/页',
+  maxPageSize: '条/页',
+  lowStockThreshold: '件',
+  memberTierSilverThreshold: '积分',
+  memberTierGoldThreshold: '积分',
+  memberTierPlatinumThreshold: '积分',
+  memberTierSilverBonusBps: 'bps',
+  memberTierGoldBonusBps: 'bps',
+  memberTierPlatinumBonusBps: 'bps',
+}
+
+const BONUS_BPS_HINT = '万分比，10000=100%；例如 500 表示额外 +5%'
+
+/** 可选填写提示，配置页用于校验说明。 */
+export const systemConfigHints: Partial<Record<SystemConfigKey, string>> = {
+  refreshTokenMaxAgeDays: '修改后对新签发的 Refresh Token 生效',
+  defaultPageSize: '列表接口未显式传 pageSize 时使用，需 ≤ 最大分页大小',
+  maxPageSize: '请求 pageSize 超过该值会被拒绝或截断',
+  lowStockThreshold: '即时库存商品可用库存 ≤ 该值时触发低库存预警',
+  memberTierSilverThreshold: '需满足 银卡 < 金卡 < 铂金',
+  memberTierGoldThreshold: '需满足 银卡 < 金卡 < 铂金',
+  memberTierPlatinumThreshold: '需满足 银卡 < 金卡 < 铂金',
+  memberTierSilverBonusBps: BONUS_BPS_HINT,
+  memberTierGoldBonusBps: BONUS_BPS_HINT,
+  memberTierPlatinumBonusBps: BONUS_BPS_HINT,
 }
 
 type ConfigClient = typeof prisma | Prisma.TransactionClient
@@ -153,6 +203,10 @@ function formatSystemConfig(key: SystemConfigKey, row?: SystemConfigRow | null) 
     key,
     value: row?.value ?? systemConfigDefaults[key],
     defaultValue: systemConfigDefaults[key],
+    description: systemConfigDescriptions[key],
+    group: systemConfigGroups[key],
+    unit: systemConfigUnits[key] ?? null,
+    hint: systemConfigHints[key] ?? null,
     updatedAt: row?.updatedAt ?? null,
     updatedBy: row?.updatedBy ?? null,
   }
@@ -213,12 +267,12 @@ export async function updateSystemConfig(
       create: {
         key,
         value,
-        description: descriptions[key],
+        description: systemConfigDescriptions[key],
         updatedBy: adminUserId,
       },
       update: {
         value,
-        description: descriptions[key],
+        description: systemConfigDescriptions[key],
         updatedBy: adminUserId,
       },
       select: {

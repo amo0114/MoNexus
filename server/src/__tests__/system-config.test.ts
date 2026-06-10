@@ -62,14 +62,17 @@ describe('Admin system config', () => {
     expect(res.body).toHaveLength(13)
     expect(res.body.map((item: any) => item.key)).toEqual(Object.keys(defaultConfig))
 
+    const byKey = new Map<string, any>(res.body.map((item: any) => [item.key, item]))
     for (const [key, defaultValue] of Object.entries(defaultConfig)) {
-      expect(res.body).toContainEqual({
+      expect(byKey.get(key)).toMatchObject({
         key,
         value: defaultValue,
         defaultValue,
         updatedAt: null,
         updatedBy: null,
       })
+      expect(typeof byKey.get(key).description).toBe('string')
+      expect(typeof byKey.get(key).group).toBe('string')
     }
   })
 

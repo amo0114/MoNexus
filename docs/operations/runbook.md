@@ -30,14 +30,18 @@ docker start monexus-db
 
 ## 2. Health Check
 
-The backend exposes `GET /api/health` and returns `{ status, db, time }`.
+The backend exposes separate liveness and readiness probes. Use liveness to
+check whether the Node process is answering, and readiness before routing live
+traffic because it verifies PostgreSQL connectivity.
 
 ```bash
-curl -fsS http://localhost:3000/api/health
-# expected: {"status":"ok","db":"ok","time":"2026-05-12T..."}
+curl -fsS http://localhost:3000/api/health/live
+curl -fsS http://localhost:3000/api/health/ready
 ```
 
-If `db` is not `ok`, jump to section 10 (PostgreSQL connection failure).
+`GET /api/health` is kept as a legacy liveness alias. If `/ready` returns 503
+or reports an unhealthy database, jump to section 10 (PostgreSQL connection
+failure).
 
 ## 3. Manual Backup
 
@@ -71,21 +75,15 @@ gunzip -t /var/backups/monexus/monexus-YYYYMMDDTHHMMSSZ.sql.gz && echo "gzip OK"
 Never restore over production. Use a staging DB.
 
 ```bash
-STAGING_URL='postgres://monexus:<password>@staging-db.internal:5432/monexus_restore'
+RESTORE_TARGET_URL='postgres://monexus:<password>@staging-db.internal:5432/monexus_restore'
 BACKUP=/var/backups/monexus/monexus-YYYYMMDDTHHMMSSZ.sql.gz
 
-# Recreate the target DB (drops existing data).
-psql "$STAGING_URL" -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;'
-
-# Stream the dump back.
-gunzip -c "$BACKUP" | psql "$STAGING_URL"
-
-# Sanity: row counts on a couple of large tables.
-psql "$STAGING_URL" -c 'SELECT COUNT(*) FROM "User";'
-psql "$STAGING_URL" -c 'SELECT COUNT(*) FROM "PointLog";'
+npm run backup:restore-check
 ```
 
-After verification, point a throwaway backend instance at `$STAGING_URL` and smoke key flows (login, redeem, settle).
+`scripts/restore-check.sh` drops and recreates the target `public` schema, restores the gzipped SQL dump, and checks `User` plus `PointLog` row counts. Set `MIN_USER_ROWS` and `MIN_POINT_LOG_ROWS` higher when validating a non-empty production backup.
+
+After verification, point a throwaway backend instance at `$RESTORE_TARGET_URL` and smoke key flows (login, redeem, settle).
 
 ## 5. Daily Cron Example
 
@@ -616,23 +614,21 @@ We use Playwright (chromium-only) for end-to-end coverage of the 3 highest-value
 ### Run locally
 
 ```bash
-# In one shell: backend
-cd server && npm run dev   # :3000
+# Full local gate: starts PostgreSQL, prepares monexus_test, builds, tests, seeds, then runs E2E.
+npm run verify:local
 
-# In another: frontend
-npm run dev                # :5173
+# Faster gate when you do not need browser coverage.
+npm run verify:local:no-e2e
 
-# In a third: tests (one-time browser install)
+# E2E only, after the test database has been migrated and seeded.
 npx playwright install --with-deps chromium
-
-# Headless
 npm run e2e
 
 # Interactive dev mode
 npm run e2e:ui
 ```
 
-The Playwright config lives at `playwright.config.ts`; specs live at `e2e/*.spec.ts`. The runner expects both 3000 and 5173 to already be up — it does **not** start them itself.
+The Playwright config lives at `playwright.config.ts`; specs live at `e2e/*.spec.ts`. Outside CI, Playwright starts the backend on `:3000` and frontend on `:5173` through its `webServer` config. CI starts services explicitly in the workflow.
 
 ### Read CI failures
 
@@ -659,10 +655,9 @@ Build runs for ~3-5 minutes. Two artifacts are produced and retained 30 days:
 
 Settings → Secrets and variables → Actions → **Variables** tab:
 
-- `VITE_API_URL` — production API origin (e.g., `https://api.monexus.example.com`).
 - `VITE_SENTRY_DSN` — frontend Sentry DSN (public; same one used in dev `.env.local`).
 
-These are **vars** (not secrets) because the frontend bundle embeds them — they are visible to anyone with the bundle anyway. Marking them as secrets would just make CI logs noisier without adding any real protection.
+The current frontend uses same-origin `/api` and the nginx container proxies `/api` to the backend, so `VITE_API_URL` is not consumed by the application. Frontend Vite values are **vars** (not secrets) because the frontend bundle embeds them — they are visible to anyone with the bundle anyway. Marking them as secrets would just make CI logs noisier without adding any real protection.
 
 ### M5 roadmap
 
@@ -742,10 +737,9 @@ GitHub → Actions → **"Database Backup"** → Run workflow. Useful before any
 unzip db-backup-20260513T021700Z.zip   # produces monexus-backup-20260513T021700Z.sql.gz
 
 # 2. Restore into a target database (e.g., a fresh staging DB)
-gunzip -c monexus-backup-*.sql.gz | psql "$RESTORE_TARGET_URL"
-
-# 3. Verify
-psql "$RESTORE_TARGET_URL" -c "SELECT count(*) FROM \"User\";"
+BACKUP=monexus-backup-20260513T021700Z.sql.gz
+RESTORE_TARGET_URL='postgresql://monexus_restore:<password>@staging-db.example.com:5432/monexus_restore?sslmode=require'
+MIN_USER_ROWS=1 MIN_POINT_LOG_ROWS=1 npm run backup:restore-check
 ```
 
 The `--clean --if-exists` flags on `pg_dump` mean the dump can be replayed against a database that already has the schema — useful for refreshing staging from prod.
@@ -866,6 +860,23 @@ Required production host checks before the first live deploy:
 - A non-root deploy user can write `/opt/monexus/releases` and restart only `monexus-api`.
 - TLS and DNS are already configured for frontend and API origins.
 
+Local compose rehearsal gate before the first live deploy:
+
+```bash
+npm run prod:env:staging-template
+npm run prod:config
+
+# After filling real staging values. Do not use .env.example for up/build/smoke.
+npm run prod:env:staging
+ENV_FILE=.env.staging.local COMPOSE_PROFILES=selfhost-storage,staging-mail npm run prod:config
+ENV_FILE=.env.staging.local COMPOSE_PROFILES=selfhost-storage,staging-mail npm run prod:build
+ENV_FILE=.env.staging.local COMPOSE_PROFILES=selfhost-storage,staging-mail npm run prod:up
+ENV_FILE=.env.staging.local COMPOSE_PROFILES=selfhost-storage,staging-mail npm run prod:ps
+ENV_FILE=.env.staging.local REQUIRE_METRICS_TOKEN=true npm run prod:smoke
+```
+
+For production compose rehearsals, fill `.env` from `.env.example` and run `npm run prod:gate`. The gate starts with strict env validation, so placeholders, insecure frontend origin, missing SMTP/storage/Sentry/metrics, or missing backup values fail before Docker can start a partial stack. The compose helpers default to `COMPOSE_PROJECT_NAME=monexus-prod`, keeping production-like rehearsals separate from the dev compose project.
+
 The deploy workflow builds frontend and backend, generates Prisma client with the server package, packages artifacts, prepares a release directory, runs `prisma migrate deploy` during `deploy_candidate` only, and updates `candidate`.
 
 ## 28. M5 Production Secrets
@@ -877,7 +888,7 @@ Minimum operator setup:
 1. GitHub -> Settings -> Environments -> create `staging` and `production`.
 2. Protect `production` with at least one required reviewer and restrict it to `master` and release tags.
 3. Put credentials in environment secrets, not environment variables.
-4. Put public build-time values such as `VITE_API_URL` and `VITE_SENTRY_DSN` in environment variables because Vite embeds them into the frontend bundle.
+4. Put public build-time values such as `VITE_SENTRY_DSN` in environment variables because Vite embeds them into the frontend bundle.
 5. Never paste secret values into docs, PR comments, issue comments, screenshots, or workflow logs.
 
 Key groups to verify before production:
@@ -891,6 +902,15 @@ Key groups to verify before production:
 | Alert routing | `ALERT_SLACK_WEBHOOK_URL`, `ALERT_EMAIL_TO`, `ALERT_EMAIL_FROM` | Alert Routing Test and incident procedure |
 
 Rotate secrets by changing GitHub environment values or host runtime env, restarting only the consuming component, and recording secret version identifiers rather than values.
+
+Host env file preflight:
+
+```bash
+npm run prod:env -- --mode production --env-file .env
+npm run prod:env -- --mode staging --env-file .env.staging.local
+```
+
+The preflight requires HTTPS `FRONTEND_ORIGIN`, `COOKIE_SECURE=true`, strong `JWT_SECRET`, configured S3-compatible storage, SMTP, Sentry/GlitchTip, `METRICS_TOKEN`, `BACKUP_DATABASE_URL`, and `RESTORE_TARGET_URL`.
 
 ## 29. M5 Sentry Alert Rules
 
@@ -999,6 +1019,30 @@ Then verify the operator-facing signals:
 
 If `/api/health/live` fails, inspect the process supervisor and recent backend logs. If `/api/health/ready` fails, treat database/config readiness as degraded and do not restart-loop the API while the dependency is down.
 
+### Card-shop gray-launch operational rehearsal
+
+Run this in staging after the compose smoke passes and before inviting gray-launch users. Use real UI/API paths only; do not repair the flow by direct database edits.
+
+| Step | Operator action | Expected evidence |
+| --- | --- | --- |
+| 1 | Create or seed one buyer, one merchant applicant, and one admin | Accounts can log in; admin can see users |
+| 2 | Merchant submits an application | Application enters pending review |
+| 3 | Admin approves the merchant | Merchant status changes; `AdminLog` records the approval |
+| 4 | Merchant creates a product | Product appears in admin/merchant product views |
+| 5 | Merchant imports instant-delivery inventory | Stock count increases; inventory rows are not exposed in list views |
+| 6 | Buyer redeems the product with points | Order is created; points are deducted; `PointLog` records the debit |
+| 7 | Buyer opens order detail and copies delivery content | Delivery content is visible only in order detail |
+| 8 | Buyer or merchant opens a dispute | Order state and audit trail reflect the dispute |
+| 9 | Merchant closes or resolves the order | Settlement gating follows the fulfillment/dispute status |
+| 10 | Admin runs batch settlement | Merchant balance changes; `PointLog` and `AdminLog` evidence exists |
+
+Exit criteria:
+
+- No direct database edit was needed to complete the loop.
+- Every privileged operation has an `AdminLog`.
+- Every balance-changing operation has a `PointLog`.
+- Email delivery, Sentry issue capture, metrics scrape, and object storage URLs are verified during the same rehearsal window.
+
 ## 33. M5 Rollback / Migration Fallback
 
 Use `docs/operations/rollback-runbook.md` for the full decision tree. This runbook keeps only the operator entry points.
@@ -1040,9 +1084,7 @@ Backup restore rehearsal stays in staging first:
 ```bash
 RESTORE_TARGET_URL='<staging-restore-url>'
 BACKUP=monexus-backup-YYYYMMDDTHHMMSSZ.sql.gz
-
-psql "$RESTORE_TARGET_URL" -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;'
-gunzip -c "$BACKUP" | psql "$RESTORE_TARGET_URL"
+MIN_USER_ROWS=1 MIN_POINT_LOG_ROWS=1 npm run backup:restore-check
 ```
 
 ## 34. M5 OpenAPI Decision

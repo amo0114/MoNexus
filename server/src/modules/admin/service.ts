@@ -1,15 +1,34 @@
 import { Prisma } from '@prisma/client'
 import { prisma } from '../../lib/prisma.js'
 import { badRequest, notFound } from '../../lib/httpError.js'
+import { businessRegistry } from '../../lib/businessRegistry.js'
 import {
+  getSystemConfigValue,
   listSystemConfigs,
   updateSystemConfig as saveSystemConfig,
 } from '../../lib/systemConfig.js'
+import { logInventoryChange } from '../../lib/inventoryLog.js'
 import { invalidate as invalidateUserStatusCache } from '../../lib/userStatusCache.js'
 import { revokeAllUserRefreshTokens } from '../auth/service.js'
 import { serializeAdminOrderDetail, serializeAdminOrderList } from '../orders/serializers.js'
 import { getSettlementEligibility } from '../merchant/service.js'
-import type { ListAdminAuditQuery } from './schema.js'
+import type { ListAdminAuditQuery, ListOrdersQuery, ListUsersQuery } from './schema.js'
+
+async function resolvePagination(page?: number, pageSize?: number) {
+  const [defaultPageSize, maxPageSize] = await Promise.all([
+    getSystemConfigValue('defaultPageSize'),
+    getSystemConfigValue('maxPageSize'),
+  ])
+  const safeDefaultPageSize = defaultPageSize > 0 ? defaultPageSize : businessRegistry.pagination.defaultPageSize
+  const safeMaxPageSize = maxPageSize > 0 ? maxPageSize : businessRegistry.pagination.maxPageSize
+  const resolvedPage = page && page > 0 ? page : 1
+  const requestedPageSize = pageSize && pageSize > 0 ? pageSize : safeDefaultPageSize
+
+  return {
+    page: resolvedPage,
+    pageSize: Math.min(requestedPageSize, safeMaxPageSize),
+  }
+}
 
 function getShanghaiDayRange() {
   const now = new Date()
@@ -44,27 +63,36 @@ export async function getStats() {
   }
 }
 
-export async function listUsers(query?: string, page = 1, pageSize = 20) {
+export async function listUsers(query: ListUsersQuery = {}) {
+  const { page, pageSize } = await resolvePagination(query.page, query.pageSize)
   const where: Prisma.UserWhereInput = {}
-  if (query) {
-    where.email = { contains: query, mode: 'insensitive' }
+  if (query.q) {
+    where.OR = [
+      { email: { contains: query.q, mode: 'insensitive' } },
+      { merchant: { name: { contains: query.q, mode: 'insensitive' } } },
+    ]
   }
 
-  return prisma.user.findMany({
-    where,
-    select: {
-      id: true,
-      email: true,
-      role: true,
-      status: true,
-      inviteCode: true,
-      createdAt: true,
-      pointAccount: { select: { balance: true } },
-    },
-    orderBy: { createdAt: 'desc' },
-    skip: (page - 1) * pageSize,
-    take: pageSize,
-  })
+  const [total, items] = await prisma.$transaction([
+    prisma.user.count({ where }),
+    prisma.user.findMany({
+      where,
+      select: {
+        id: true,
+        email: true,
+        role: true,
+        status: true,
+        inviteCode: true,
+        createdAt: true,
+        pointAccount: { select: { balance: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+    }),
+  ])
+
+  return { items, total, page, pageSize }
 }
 
 export async function adjustUserPoints(
@@ -212,6 +240,14 @@ export async function importInventory(productId: number, items: string[], adminU
       data: { stock: { increment: items.length } },
     })
 
+    await logInventoryChange(tx, {
+      productId,
+      merchantId: product.merchantId,
+      actorUserId: adminUserId,
+      action: 'import',
+      delta: items.length,
+    })
+
     await tx.adminLog.create({
       data: {
         adminUserId,
@@ -226,19 +262,49 @@ export async function importInventory(productId: number, items: string[], adminU
   })
 }
 
-export async function listAllOrders(page = 1, pageSize = 20) {
-  const orders = await prisma.order.findMany({
-    include: {
-      user: { select: { id: true, email: true } },
-      merchant: { select: { id: true, name: true } },
-      product: { select: { name: true } },
-      delivery: { select: { status: true } },
-    },
-    orderBy: { createdAt: 'desc' },
-    skip: (page - 1) * pageSize,
-    take: pageSize,
-  })
-  return orders.map(serializeAdminOrderList)
+function buildAdminOrderWhere(query: ListOrdersQuery): Prisma.OrderWhereInput {
+  const where: Prisma.OrderWhereInput = {}
+
+  if (query.status) {
+    // 历史数据存在 legacy 'completed'，与 delivered 等价
+    where.status = query.status === 'delivered' ? { in: ['delivered', 'completed'] } : query.status
+  }
+
+  if (query.q) {
+    const conditions: Prisma.OrderWhereInput[] = [
+      { user: { email: { contains: query.q, mode: 'insensitive' } } },
+    ]
+    const numeric = Number(query.q)
+    if (/^\d+$/.test(query.q) && Number.isSafeInteger(numeric) && numeric > 0) {
+      conditions.push({ id: numeric })
+    }
+    where.OR = conditions
+  }
+
+  return where
+}
+
+export async function listAllOrders(query: ListOrdersQuery = {}) {
+  const { page, pageSize } = await resolvePagination(query.page, query.pageSize)
+  const where = buildAdminOrderWhere(query)
+
+  const [total, orders] = await prisma.$transaction([
+    prisma.order.count({ where }),
+    prisma.order.findMany({
+      where,
+      include: {
+        user: { select: { id: true, email: true } },
+        merchant: { select: { id: true, name: true } },
+        product: { select: { name: true } },
+        delivery: { select: { status: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+    }),
+  ])
+
+  return { items: orders.map(serializeAdminOrderList), total, page, pageSize }
 }
 
 export async function listLogs() {

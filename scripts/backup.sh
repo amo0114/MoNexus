@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ -z "${DATABASE_URL:-}" ]]; then
-  echo "[ERROR] DATABASE_URL is required (e.g. postgres://user:pass@host:5432/dbname)" >&2
+DATABASE_URL="${DATABASE_URL:-${BACKUP_DATABASE_URL:-}}"
+
+if [[ -z "$DATABASE_URL" ]]; then
+  echo "[ERROR] DATABASE_URL or BACKUP_DATABASE_URL is required (e.g. postgres://user:pass@host:5432/dbname)" >&2
   exit 1
 fi
 

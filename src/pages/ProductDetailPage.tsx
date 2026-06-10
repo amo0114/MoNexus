@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Coins, FileText, MessageSquare, Store, ShieldCheck, Info } from 'lucide-react'
+import { ArrowLeft, Coins, FileText, Store, ShieldCheck, Info } from 'lucide-react'
 import DOMPurify from 'dompurify'
 import api from '../api/client'
 import { getApiErrorMessage } from '../api/error'
@@ -8,14 +8,6 @@ import { useAppStore } from '../stores/appStore'
 import { useAuthStore } from '../stores/authStore'
 import PurchaseModal from '../components/PurchaseModal'
 import SuccessModal from '../components/SuccessModal'
-
-interface Review {
-  id: number
-  userName: string
-  rating: number
-  comment: string
-  createdAt: string
-}
 
 interface Product {
   id: number
@@ -25,11 +17,11 @@ interface Product {
   type: string
   icon: string
   imageUrl: string
+  images?: string[]
   price: number
   originalPrice?: number
   stock: number
   sales: number
-  reviews: Review[]
   merchant?: { id: number; name: string } | null
 }
 
@@ -46,6 +38,7 @@ export default function ProductDetailPage() {
   const [showSuccess, setShowSuccess] = useState(false)
   const [deliveryContent, setDeliveryContent] = useState('')
   const [merchantName, setMerchantName] = useState('')
+  const [activeImage, setActiveImage] = useState(0)
 
   useEffect(() => {
     async function load() {
@@ -53,6 +46,7 @@ export default function ProductDetailPage() {
       try {
         const { data } = await api.get(`/products/${id}`)
         setProduct(data)
+        setActiveImage(0)
       } catch (err) {
         showToast('获取商品详情失败', 'error')
         navigate('/')
@@ -80,10 +74,10 @@ export default function ProductDetailPage() {
     }
   }
 
-  const averageRating = useMemo(() => {
-    if (!product || !product.reviews || product.reviews.length === 0) return '0.0'
-    const total = product.reviews.reduce((acc, r) => acc + r.rating, 0)
-    return (total / product.reviews.length).toFixed(1)
+  const galleryImages = useMemo(() => {
+    if (!product) return []
+    if (product.images && product.images.length > 0) return product.images
+    return product.imageUrl ? [product.imageUrl] : []
   }, [product])
 
   const safeRichDescription = useMemo(() => {
@@ -127,24 +121,59 @@ export default function ProductDetailPage() {
       </button>
 
       <div className="rounded-xl overflow-hidden bg-[var(--color-surface)] border border-[var(--color-border)] shadow-md mb-8">
-        <div className="w-full h-64 sm:h-80 md:h-96 bg-[var(--color-image-placeholder)] relative shrink-0">
-          <img src={product.imageUrl} className="w-full h-full object-cover" alt={product.name} />
-          <div className="absolute inset-0 bg-gradient-to-t from-black/45 via-black/10 to-transparent" />
+        <div data-testid="product-gallery">
+          <div className="w-full h-64 sm:h-80 md:h-96 bg-[var(--color-image-placeholder)] relative shrink-0">
+            {galleryImages.length > 0 && (
+              <img
+                src={galleryImages[activeImage] ?? galleryImages[0]}
+                className="w-full h-full object-cover"
+                alt={product.name}
+                data-testid="product-gallery-main"
+              />
+            )}
+            <div className="absolute inset-0 bg-gradient-to-t from-black/45 via-black/10 to-transparent" />
 
-          <div className="absolute bottom-6 left-6 right-6 flex flex-col gap-4 z-10">
-            <div className="flex gap-2 flex-wrap">
-              <span className="text-xs font-bold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5 bg-black/25 backdrop-blur-md border border-white/20">
-                {product.type}
-              </span>
-              <span className="text-xs font-bold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5 bg-black/25 backdrop-blur-md border border-white/20">
-                <Store className="w-3 h-3" />
-                {product.merchant?.name || '平台自营'}
-              </span>
+            <div className="absolute bottom-6 left-6 right-6 flex flex-col gap-4 z-10">
+              <div className="flex gap-2 flex-wrap">
+                <span className="text-xs font-bold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5 bg-black/25 backdrop-blur-md border border-white/20">
+                  {product.type}
+                </span>
+                <span className="text-xs font-bold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5 bg-black/25 backdrop-blur-md border border-white/20">
+                  <Store className="w-3 h-3" />
+                  {product.merchant?.name || '平台自营'}
+                </span>
+              </div>
+              <h1 className="font-heading text-3xl md:text-4xl font-bold text-white leading-snug drop-shadow-md tracking-tight">
+                {product.name}
+              </h1>
             </div>
-            <h1 className="font-heading text-3xl md:text-4xl font-bold text-white leading-snug drop-shadow-md tracking-tight">
-              {product.name}
-            </h1>
           </div>
+
+          {galleryImages.length > 1 && (
+            <div className="flex gap-2.5 px-4 py-3 overflow-x-auto hide-scrollbar bg-[var(--color-background)] border-b border-[var(--color-border)]">
+              {galleryImages.map((img, i) => (
+                <button
+                  key={`${img}-${i}`}
+                  type="button"
+                  onClick={() => setActiveImage(i)}
+                  data-testid={`product-gallery-thumb-${i}`}
+                  aria-label={`查看第 ${i + 1} 张图片`}
+                  className={`w-16 h-16 rounded-lg overflow-hidden shrink-0 cursor-pointer border-2 transition-colors ${
+                    i === activeImage
+                      ? 'border-[var(--color-primary)]'
+                      : 'border-transparent opacity-70 hover:opacity-100'
+                  }`}
+                >
+                  <img
+                    src={img}
+                    alt={`${product.name} 图 ${i + 1}`}
+                    className="w-full h-full object-cover"
+                    loading="lazy"
+                  />
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="p-6 md:p-8">
@@ -223,60 +252,6 @@ export default function ProductDetailPage() {
                   className="text-[var(--color-text)] leading-loose space-y-4 text-sm md:text-base bg-[var(--color-background)] p-6 md:p-8 rounded-xl border border-[var(--color-border)] prose prose-neutral dark:prose-invert max-w-none"
                   dangerouslySetInnerHTML={{ __html: safeRichDescription }}
                 />
-              </div>
-
-              {/* Reviews */}
-              <div>
-                <div className="flex items-center justify-between mb-5">
-                  <h3 className="font-heading text-lg font-bold flex items-center gap-2 text-[var(--color-text)] uppercase tracking-wider">
-                    <MessageSquare className="w-5 h-5 text-[var(--color-primary)]" /> 买家评价
-                  </h3>
-                  <div className="flex items-center gap-3">
-                    <div className="font-heading text-2xl font-black text-[var(--color-primary)]">{averageRating}</div>
-                    <div className="flex flex-col items-start">
-                      <div className="flex gap-0.5">
-                        {Array(5).fill(0).map((_, i) => (
-                          <svg key={i} className={`w-3 h-3 ${i < Math.round(Number(averageRating)) ? 'star-filled' : 'star-empty'}`} viewBox="0 0 24 24">
-                            <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
-                          </svg>
-                        ))}
-                      </div>
-                      <span className="text-[10px] text-[var(--color-text-muted)] font-medium mt-0.5">共 {product.reviews?.length || 0} 条评价</span>
-                    </div>
-                  </div>
-                </div>
-
-                {product.reviews?.length > 0 ? (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {product.reviews.map((r) => (
-                      <div key={r.id} className="bg-[var(--color-surface)] p-5 rounded-xl border border-[var(--color-border)] shadow-sm flex flex-col gap-3 transition-all hover:border-[var(--color-primary)]/35 hover:shadow-md">
-                        <div className="flex justify-between items-start">
-                          <div className="flex items-center gap-3">
-                            <div className="w-9 h-9 rounded-full bg-[var(--color-background)] border border-[var(--color-border)] flex items-center justify-center text-[var(--color-text)] font-bold text-sm">
-                              {r.userName.charAt(0).toUpperCase()}
-                            </div>
-                            <div>
-                              <div className="font-bold text-xs text-[var(--color-text)]">{r.userName}</div>
-                              <div className="flex gap-0.5 mt-0.5">
-                                {Array(5).fill(0).map((_, i) => (
-                                  <svg key={i} className={`w-3 h-3 ${i < r.rating ? 'star-filled' : 'star-empty'}`} viewBox="0 0 24 24">
-                                    <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
-                                  </svg>
-                                ))}
-                              </div>
-                            </div>
-                          </div>
-                          <span className="text-[10px] text-[var(--color-text-muted)] font-medium mt-1">{new Date(r.createdAt).toLocaleDateString()}</span>
-                        </div>
-                        <p className="text-[var(--color-text-muted)] text-sm leading-relaxed mt-1">{r.comment}</p>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="bg-[var(--color-background)] p-8 rounded-xl border border-dashed border-[var(--color-border)] text-center">
-                    <p className="text-sm text-[var(--color-text-muted)] font-medium">暂无买家评价，期待您的体验</p>
-                  </div>
-                )}
               </div>
             </div>
 

@@ -15,6 +15,7 @@ beforeEach(async () => {
     "Settlement",
     "DeliveryRecord",
     "Order",
+    "InventoryLog",
     "InventoryItem",
     "PointLog",
     "CheckinRecord",
