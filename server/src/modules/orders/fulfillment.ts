@@ -19,7 +19,9 @@ const legalTransitions: Record<FulfillmentOrderStatus, FulfillmentOrderStatus[]>
   pending: ['processing'],
   processing: ['delivered'],
   delivered: ['disputed', 'closed'],
-  disputed: ['processing', 'closed'],
+  // disputed → delivered：即时库存单货已交付，商家驳回争议时直接恢复为已交付，
+  // 否则会卡死在 processing（即时单没有商家 deliver 出口）
+  disputed: ['processing', 'delivered', 'closed'],
   closed: [],
 }
 

@@ -614,10 +614,13 @@ export async function respondToOrderDispute(
   input: { resolution: 'resume' | 'close'; publicNote?: string; internalNote?: string }
 ) {
   await prisma.$transaction(async tx => {
-    await assertMerchantOrder(merchantId, orderId, tx)
+    const order = await assertMerchantOrder(merchantId, orderId, tx)
+    // 即时库存单卡密已交付，恢复履约直接回到 delivered；人工服务单回 processing 由商家重新交付
+    const resumeTarget: FulfillmentOrderStatus =
+      order.product.deliveryMode === 'instant_inventory' ? 'delivered' : 'processing'
     await transitionOrderStatus({
       orderId,
-      toStatus: input.resolution === 'resume' ? 'processing' : 'closed',
+      toStatus: input.resolution === 'resume' ? resumeTarget : 'closed',
       actorRole: 'merchant',
       actorUserId,
       action: `merchant.dispute.${input.resolution}`,
