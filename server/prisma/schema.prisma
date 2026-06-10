@@ -120,6 +120,7 @@ model Product {
   type            String // 网络节点 / 共享账号 / 充值卡密 / 邀请码
   icon            String   @default("package")
   imageUrl        String?
+  images          String[] @default([])
   price           Int
   originalPrice   Int?
   stock           Int      @default(0)
@@ -130,10 +131,26 @@ model Product {
   merchantId      Int?
   createdAt       DateTime @default(now())
 
-  merchant  Merchant?       @relation(fields: [merchantId], references: [id])
-  reviews   Review[]
-  orders    Order[]
-  inventory InventoryItem[]
+  merchant      Merchant?       @relation(fields: [merchantId], references: [id])
+  reviews       Review[]
+  orders        Order[]
+  inventory     InventoryItem[]
+  inventoryLogs InventoryLog[]
+}
+
+model InventoryLog {
+  id          Int      @id @default(autoincrement())
+  productId   Int
+  merchantId  Int?
+  actorUserId Int
+  action      String // import | void
+  delta       Int // 导入为正、作废为负
+  reason      String?
+  createdAt   DateTime @default(now())
+
+  product Product @relation(fields: [productId], references: [id])
+
+  @@index([productId, createdAt])
 }
 
 model Review {

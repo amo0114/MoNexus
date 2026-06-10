@@ -56,7 +56,24 @@ export async function importInventory(req: Request, res: Response, next: NextFun
   try {
     const merchant = await merchantService.getMyMerchant(req.user!.userId)
     const productId = req.params.id as unknown as number
-    res.json(await merchantService.importMyInventory(merchant.id, productId, req.body))
+    res.json(await merchantService.importMyInventory(merchant.id, req.user!.userId, productId, req.body))
+  } catch (err) { next(err) }
+}
+
+export async function voidInventory(req: Request, res: Response, next: NextFunction) {
+  try {
+    const merchant = await merchantService.getMyMerchant(req.user!.userId)
+    const productId = req.params.id as unknown as number
+    res.json(await merchantService.voidMyInventory(merchant.id, req.user!.userId, productId, req.body))
+  } catch (err) { next(err) }
+}
+
+export async function listInventoryLogs(req: Request, res: Response, next: NextFunction) {
+  try {
+    const merchant = await merchantService.getMyMerchant(req.user!.userId)
+    const productId = req.params.id as unknown as number
+    const { page, pageSize } = req.query as unknown as { page?: number; pageSize?: number }
+    res.json(await merchantService.listMyInventoryLogs(merchant.id, productId, { page, pageSize }))
   } catch (err) { next(err) }
 }
 

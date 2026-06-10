@@ -3,6 +3,7 @@ import { prisma } from '../../lib/prisma.js'
 import { businessRegistry } from '../../lib/businessRegistry.js'
 import { badRequest, notFound, conflict } from '../../lib/httpError.js'
 import { getSystemConfigValue } from '../../lib/systemConfig.js'
+import { logInventoryChange } from '../../lib/inventoryLog.js'
 import {
   normalizeOrderStatus,
   transitionOrderStatus,
@@ -135,6 +136,7 @@ function serializeMerchantProduct(product: ProductWithAvailableStock, lowStockTh
     type: product.type,
     icon: product.icon,
     imageUrl: product.imageUrl,
+    images: product.images,
     price: product.price,
     originalPrice: product.originalPrice,
     stock: product.stock,
@@ -274,7 +276,7 @@ export async function createMyProduct(
   merchantId: number,
   data: {
     name: string; description?: string; richDescription?: string;
-    type: string; icon?: string; imageUrl?: string;
+    type: string; icon?: string; imageUrl?: string; images?: string[];
     price: number; originalPrice?: number; isHot?: boolean; deliveryMode?: string
   }
 ) {
@@ -291,6 +293,7 @@ export async function updateMyProduct(merchantId: number, productId: number, dat
 
 export async function importMyInventory(
   merchantId: number,
+  actorUserId: number,
   productId: number,
   payload: InventoryImportPayload
 ) {
@@ -313,6 +316,13 @@ export async function importMyInventory(
       where: { id: productId },
       data: { stock: { increment: analysis.itemsToImport.length } },
     })
+    await logInventoryChange(tx, {
+      productId,
+      merchantId,
+      actorUserId,
+      action: 'import',
+      delta: analysis.itemsToImport.length,
+    })
     return {
       imported: analysis.itemsToImport.length,
       totalRows: analysis.totalRows,
@@ -322,6 +332,91 @@ export async function importMyInventory(
       existingDuplicateRows: analysis.existingDuplicateRows,
     }
   })
+}
+
+export async function voidMyInventory(
+  merchantId: number,
+  actorUserId: number,
+  productId: number,
+  input: { count: number; reason?: string }
+) {
+  const product = await prisma.product.findFirst({ where: { id: productId, merchantId }, select: { id: true } })
+  if (!product) throw notFound('商品不存在')
+
+  // 单事务完成：InventoryItem 置 void + Product.stock 扣减 + InventoryLog 落账。
+  // 只允许作废 available 项；updateMany 二次过滤 status 防与下单占用并发竞态。
+  return prisma.$transaction(async tx => {
+    const candidates = await tx.inventoryItem.findMany({
+      where: { productId, status: 'available' },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+      take: input.count,
+      select: { id: true },
+    })
+    if (candidates.length < input.count) {
+      throw badRequest('可作废库存不足')
+    }
+
+    const voided = await tx.inventoryItem.updateMany({
+      where: { id: { in: candidates.map(item => item.id) }, status: 'available' },
+      data: { status: 'void' },
+    })
+    if (voided.count !== input.count) {
+      throw badRequest('可作废库存不足')
+    }
+
+    const updated = await tx.product.update({
+      where: { id: productId },
+      data: { stock: { decrement: input.count } },
+      select: { stock: true },
+    })
+    if (updated.stock < 0) {
+      throw badRequest('库存数量异常，作废已取消')
+    }
+
+    await logInventoryChange(tx, {
+      productId,
+      merchantId,
+      actorUserId,
+      action: 'void',
+      delta: -input.count,
+      reason: input.reason,
+    })
+
+    return { voided: voided.count, stock: updated.stock }
+  })
+}
+
+export async function listMyInventoryLogs(
+  merchantId: number,
+  productId: number,
+  filters: { page?: number; pageSize?: number } = {}
+) {
+  const product = await prisma.product.findFirst({ where: { id: productId, merchantId }, select: { id: true } })
+  if (!product) throw notFound('商品不存在')
+
+  const { page, pageSize } = await resolvePagination(filters.page, filters.pageSize)
+  const where = { productId }
+  const [total, logs] = await prisma.$transaction([
+    prisma.inventoryLog.count({ where }),
+    prisma.inventoryLog.findMany({
+      where,
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+      select: {
+        id: true,
+        productId: true,
+        merchantId: true,
+        actorUserId: true,
+        action: true,
+        delta: true,
+        reason: true,
+        createdAt: true,
+      },
+    }),
+  ])
+
+  return { items: logs, total, page, pageSize }
 }
 
 // ---- Orders ----
