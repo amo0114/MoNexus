@@ -33,18 +33,55 @@ export async function getMerchantStats(): Promise<MerchantStats> {
   return data
 }
 
-export async function getMerchantProducts(params?: { page?: number; pageSize?: number; status?: string; q?: string; type?: string; deliveryMode?: string; lowStock?: boolean }): Promise<ListEnvelope<MerchantProduct>> {
-  const { data } = await api.get<ListEnvelope<MerchantProduct>>('/merchant/products', { params })
+// M9: 商品响应新增 images（types/merchant.ts 归属其他模块，这里做本地扩展）
+export type MerchantProductWithImages = MerchantProduct & { images?: string[] }
+
+export type CreateMerchantProductPayload = CreateMerchantProductRequest & { images?: string[] }
+export type UpdateMerchantProductPayload = UpdateMerchantProductRequest & { images?: string[] }
+
+export interface MerchantProductListParams {
+  page?: number
+  pageSize?: number
+  status?: string
+  q?: string
+  type?: string
+  deliveryMode?: string
+  lowStock?: boolean
+}
+
+export interface InventoryLog {
+  id: number
+  productId: number
+  merchantId: number
+  actorUserId: number
+  action: 'import' | 'void'
+  delta: number
+  reason: string | null
+  createdAt: string
+}
+
+export async function getMerchantProducts(params?: MerchantProductListParams): Promise<ListEnvelope<MerchantProductWithImages>> {
+  const { data } = await api.get<ListEnvelope<MerchantProductWithImages>>('/merchant/products', { params })
   return data
 }
 
-export async function createMerchantProduct(payload: CreateMerchantProductRequest): Promise<MerchantProduct> {
+export async function createMerchantProduct(payload: CreateMerchantProductPayload): Promise<MerchantProduct> {
   const { data } = await api.post<MerchantProduct>('/merchant/products', payload)
   return data
 }
 
-export async function updateMerchantProduct(id: number, payload: UpdateMerchantProductRequest): Promise<MerchantProduct> {
+export async function updateMerchantProduct(id: number, payload: UpdateMerchantProductPayload): Promise<MerchantProduct> {
   const { data } = await api.put<MerchantProduct>(`/merchant/products/${id}`, payload)
+  return data
+}
+
+export async function voidMerchantInventory(id: number, payload: { count: number; reason?: string }): Promise<{ voided: number; stock: number }> {
+  const { data } = await api.post<{ voided: number; stock: number }>(`/merchant/products/${id}/inventory/void`, payload)
+  return data
+}
+
+export async function getMerchantInventoryLogs(id: number, params?: { page?: number; pageSize?: number }): Promise<ListEnvelope<InventoryLog>> {
+  const { data } = await api.get<ListEnvelope<InventoryLog>>(`/merchant/products/${id}/inventory/logs`, { params })
   return data
 }
 

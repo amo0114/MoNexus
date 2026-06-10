@@ -1,8 +1,11 @@
-import { useState, useEffect, useRef } from 'react'
-import { X, Package, Tag, DollarSign, Image as ImageIcon, FileText, Upload, Loader2 } from 'lucide-react'
+import { useState, useEffect, useRef, useMemo } from 'react'
+import { X, Package, Tag, DollarSign, Image as ImageIcon, FileText, Upload, Loader2, Star, Trash2 } from 'lucide-react'
+import DOMPurify from 'dompurify'
 import { MerchantProduct } from '../../types/merchant'
 import { useAppStore } from '../../stores/appStore'
 import { uploadImage, UploadError } from '../../api/uploads'
+
+const MAX_IMAGES = 6
 
 interface Props {
   isOpen: boolean
@@ -17,6 +20,9 @@ export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, pr
   const [loading, setLoading] = useState(false)
   const [uploadingImage, setUploadingImage] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const [images, setImages] = useState<string[]>([])
+  const [imageUrlInput, setImageUrlInput] = useState('')
+  const [descMode, setDescMode] = useState<'edit' | 'preview'>('edit')
   const [form, setForm] = useState({
     name: '',
     type: '网络节点',
@@ -33,7 +39,13 @@ export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, pr
 
   useEffect(() => {
     if (isOpen) {
+      setDescMode('edit')
+      setImageUrlInput('')
       if (product) {
+        const existingImages = Array.isArray((product as MerchantProduct & { images?: string[] }).images)
+          ? ((product as MerchantProduct & { images?: string[] }).images as string[])
+          : []
+        setImages(existingImages.length > 0 ? existingImages.slice(0, MAX_IMAGES) : (product.imageUrl ? [product.imageUrl] : []))
         setForm({
           name: product.name,
           type: product.type,
@@ -50,6 +62,7 @@ export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, pr
       } else {
         const defaultType = registry?.productTypes?.[0]?.value || '网络节点'
         const defaultMode = registry?.productTypes?.find(t => t.value === defaultType)?.deliveryModes?.[0] || 'instant_inventory'
+        setImages([])
         setForm({
           name: '',
           type: defaultType,
@@ -67,7 +80,74 @@ export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, pr
     }
   }, [isOpen, product, registry])
 
+  // 与 ProductDetailPage 同一净化管线：DOMPurify HTML profile 后再注入
+  const safePreviewHtml = useMemo(
+    () => DOMPurify.sanitize(form.richDescription || '', { USE_PROFILES: { html: true } }),
+    [form.richDescription]
+  )
+
   if (!isOpen) return null
+
+  function addImageUrl() {
+    const url = imageUrlInput.trim()
+    if (!url) return
+    if (!/^https?:\/\//.test(url) && !url.startsWith('/')) {
+      showToast('图片地址必须是 http(s) 绝对 URL 或以 / 开头的路径', 'error')
+      return
+    }
+    if (images.length >= MAX_IMAGES) {
+      showToast(`最多上传 ${MAX_IMAGES} 张图片`, 'error')
+      return
+    }
+    setImages((prev) => [...prev, url])
+    setImageUrlInput('')
+  }
+
+  function removeImage(index: number) {
+    setImages((prev) => prev.filter((_, i) => i !== index))
+  }
+
+  function setAsCover(index: number) {
+    if (index === 0) return
+    setImages((prev) => {
+      const next = [...prev]
+      const [picked] = next.splice(index, 1)
+      next.unshift(picked)
+      return next
+    })
+  }
+
+  async function handleFilesSelected(files: FileList | null) {
+    if (!files || files.length === 0) return
+    const remaining = MAX_IMAGES - images.length
+    if (remaining <= 0) {
+      showToast(`最多上传 ${MAX_IMAGES} 张图片`, 'error')
+      return
+    }
+    const selected = Array.from(files).slice(0, remaining)
+    if (selected.length < files.length) {
+      showToast(`最多上传 ${MAX_IMAGES} 张图片，已忽略多余文件`, 'error')
+    }
+    setUploadingImage(true)
+    try {
+      // 串行上传，避免并发压力
+      for (const file of selected) {
+        const result = await uploadImage(file)
+        setImages((prev) => (prev.length >= MAX_IMAGES ? prev : [...prev, result.url]))
+      }
+      showToast('图片上传成功')
+    } catch (err) {
+      if (err instanceof UploadError) {
+        showToast(err.message, 'error')
+      } else {
+        const msg = (err as any)?.response?.data?.error?.message || '图片上传失败'
+        showToast(msg, 'error')
+      }
+    } finally {
+      setUploadingImage(false)
+      if (fileInputRef.current) fileInputRef.current.value = ''
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -99,7 +179,9 @@ export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, pr
       description: form.description.trim() || undefined,
       richDescription: form.richDescription.trim() || undefined,
       icon: form.icon.trim() || undefined,
-      imageUrl: form.imageUrl.trim() || undefined,
+      // 封面写 imageUrl（取第一张），全列表写 images
+      imageUrl: images[0] || undefined,
+      images,
       isHot: form.isHot,
       deliveryMode: form.deliveryMode
     }
@@ -268,22 +350,39 @@ export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, pr
                       onChange={(e) => setForm({ ...form, icon: e.target.value })}
                     />
                   </div>
-                  <div>
-                    <FieldLabel>封面大图</FieldLabel>
+                  <div data-testid="product-images-uploader">
+                    <FieldLabel>商品图片（最多 {MAX_IMAGES} 张，第一张为封面）</FieldLabel>
                     <div className="flex gap-2">
                       <input
-                        type="url"
-                        placeholder="粘贴图片 URL，或点右侧上传"
+                        type="text"
+                        placeholder="粘贴图片 URL 后点添加，或点右侧上传"
                         className="input flex-1"
-                        value={form.imageUrl}
-                        onChange={(e) => setForm({ ...form, imageUrl: e.target.value })}
+                        value={imageUrlInput}
+                        onChange={(e) => setImageUrlInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault()
+                            addImageUrl()
+                          }
+                        }}
+                        data-testid="product-image-url-input"
                       />
                       <button
                         type="button"
+                        onClick={addImageUrl}
+                        disabled={uploadingImage || images.length >= MAX_IMAGES}
+                        className="btn-secondary !px-3 !py-2 !text-sm whitespace-nowrap"
+                        data-testid="product-image-url-add"
+                      >
+                        添加
+                      </button>
+                      <button
+                        type="button"
                         onClick={() => fileInputRef.current?.click()}
-                        disabled={uploadingImage}
+                        disabled={uploadingImage || images.length >= MAX_IMAGES}
                         className="btn-secondary !px-4 !py-2 !text-sm whitespace-nowrap"
                         title="上传本地图片"
+                        data-testid="product-image-upload-button"
                       >
                         {uploadingImage ? (
                           <>
@@ -300,47 +399,56 @@ export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, pr
                       <input
                         ref={fileInputRef}
                         type="file"
+                        multiple
                         accept="image/png,image/jpeg,image/webp,image/gif"
                         className="hidden"
-                        onChange={async (e) => {
-                          const file = e.target.files?.[0]
-                          if (!file) return
-                          setUploadingImage(true)
-                          try {
-                            const result = await uploadImage(file)
-                            setForm((prev) => ({ ...prev, imageUrl: result.url }))
-                            showToast('图片上传成功')
-                          } catch (err) {
-                            if (err instanceof UploadError) {
-                              showToast(err.message, 'error')
-                            } else {
-                              const msg = (err as any)?.response?.data?.error?.message || '图片上传失败'
-                              showToast(msg, 'error')
-                            }
-                          } finally {
-                            setUploadingImage(false)
-                            if (fileInputRef.current) fileInputRef.current.value = ''
-                          }
-                        }}
+                        onChange={(e) => handleFilesSelected(e.target.files)}
                       />
                     </div>
-                    {form.imageUrl && (
-                      <div className="mt-2 flex items-center gap-2">
-                        <img
-                          src={form.imageUrl}
-                          alt="预览"
-                          className="w-16 h-16 rounded-lg object-cover border border-[var(--color-border)]"
-                          onError={(e) => {
-                            ;(e.target as HTMLImageElement).style.display = 'none'
-                          }}
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setForm({ ...form, imageUrl: '' })}
-                          className="text-xs text-[var(--color-text-muted)] hover:text-[var(--color-danger)] transition-colors cursor-pointer"
-                        >
-                          移除
-                        </button>
+                    {images.length > 0 && (
+                      <div className="mt-3 grid grid-cols-3 gap-3" data-testid="product-images-list">
+                        {images.map((url, index) => (
+                          <div
+                            key={`${url}-${index}`}
+                            className="relative group rounded-lg border border-[var(--color-border)] overflow-hidden"
+                          >
+                            <img
+                              src={url}
+                              alt={`商品图 ${index + 1}`}
+                              className="w-full h-20 object-cover"
+                              onError={(e) => {
+                                ;(e.target as HTMLImageElement).style.opacity = '0.3'
+                              }}
+                            />
+                            {index === 0 && (
+                              <span className="absolute top-1 left-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-[var(--color-cta)] text-white">
+                                封面
+                              </span>
+                            )}
+                            <div className="absolute inset-x-0 bottom-0 flex justify-end gap-1 p-1 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity">
+                              {index !== 0 && (
+                                <button
+                                  type="button"
+                                  onClick={() => setAsCover(index)}
+                                  className="p-1 rounded bg-white/90 text-[var(--color-text)] hover:bg-white cursor-pointer"
+                                  title="设为封面"
+                                  aria-label={`将第 ${index + 1} 张设为封面`}
+                                >
+                                  <Star className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => removeImage(index)}
+                                className="p-1 rounded bg-white/90 text-[var(--color-danger)] hover:bg-white cursor-pointer"
+                                title="删除"
+                                aria-label={`删除第 ${index + 1} 张图片`}
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     )}
                   </div>
@@ -380,13 +488,54 @@ export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, pr
                   />
                 </div>
                 <div>
-                  <FieldLabel>完整图文详情 (支持 Markdown)</FieldLabel>
-                  <textarea
-                    placeholder="在这里详细描述您的商品特性、使用教程、售后承诺等..."
-                    className="input min-h-[160px] resize-y font-mono text-xs leading-relaxed"
-                    value={form.richDescription}
-                    onChange={(e) => setForm({ ...form, richDescription: e.target.value })}
-                  />
+                  <div className="flex items-center justify-between mb-1.5">
+                    <FieldLabel>完整图文详情 (支持 Markdown / HTML)</FieldLabel>
+                    <div className="flex gap-1 mb-1.5" role="tablist" aria-label="详情编辑模式">
+                      <button
+                        type="button"
+                        role="tab"
+                        aria-selected={descMode === 'edit'}
+                        onClick={() => setDescMode('edit')}
+                        className={`px-3 py-1 rounded text-xs font-bold cursor-pointer transition-colors ${
+                          descMode === 'edit'
+                            ? 'bg-[var(--color-primary)] text-white'
+                            : 'bg-[var(--color-background)] text-[var(--color-text-muted)] hover:text-[var(--color-text)]'
+                        }`}
+                        data-testid="product-desc-tab-edit"
+                      >
+                        编辑
+                      </button>
+                      <button
+                        type="button"
+                        role="tab"
+                        aria-selected={descMode === 'preview'}
+                        onClick={() => setDescMode('preview')}
+                        className={`px-3 py-1 rounded text-xs font-bold cursor-pointer transition-colors ${
+                          descMode === 'preview'
+                            ? 'bg-[var(--color-primary)] text-white'
+                            : 'bg-[var(--color-background)] text-[var(--color-text-muted)] hover:text-[var(--color-text)]'
+                        }`}
+                        data-testid="product-desc-tab-preview"
+                      >
+                        预览
+                      </button>
+                    </div>
+                  </div>
+                  {descMode === 'edit' ? (
+                    <textarea
+                      placeholder="在这里详细描述您的商品特性、使用教程、售后承诺等..."
+                      className="input min-h-[160px] resize-y font-mono text-xs leading-relaxed"
+                      value={form.richDescription}
+                      onChange={(e) => setForm({ ...form, richDescription: e.target.value })}
+                    />
+                  ) : (
+                    <div
+                      className="min-h-[160px] text-[var(--color-text)] leading-loose space-y-4 text-sm bg-[var(--color-background)] p-4 rounded-lg border border-[var(--color-border)] prose prose-neutral dark:prose-invert max-w-none"
+                      data-testid="product-desc-preview"
+                      // 已通过 DOMPurify（USE_PROFILES: html）净化，与详情页同一管线
+                      dangerouslySetInnerHTML={{ __html: safePreviewHtml }}
+                    />
+                  )}
                 </div>
               </div>
             </FormSection>
