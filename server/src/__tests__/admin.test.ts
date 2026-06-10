@@ -50,8 +50,9 @@ describe('GET /api/admin/users', () => {
       .set(authHeader(accessToken))
       .expect(200)
 
-    expect(Array.isArray(res.body)).toBe(true)
-    for (const u of res.body) {
+    expect(Array.isArray(res.body.items)).toBe(true)
+    expect(res.body.total).toBe(2)
+    for (const u of res.body.items) {
       expect(u.password).toBeUndefined()
       expect(u.email).toBeDefined()
       expect(u.role).toBeDefined()
@@ -241,10 +242,11 @@ describe('GET /api/admin/orders', () => {
       .set(authHeader(accessToken))
       .expect(200)
 
-    expect(Array.isArray(res.body)).toBe(true)
-    expect(res.body).toHaveLength(1)
-    expect(res.body[0].delivery.status).toBe('delivered')
-    expect(res.body[0].delivery.content).toBeUndefined()
+    expect(Array.isArray(res.body.items)).toBe(true)
+    expect(res.body.total).toBe(1)
+    expect(res.body.items).toHaveLength(1)
+    expect(res.body.items[0].delivery.status).toBe('delivered')
+    expect(res.body.items[0].delivery.content).toBeUndefined()
   })
 })
 

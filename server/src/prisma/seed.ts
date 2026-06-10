@@ -252,21 +252,6 @@ async function main() {
     })
   }
 
-  // 创建评价
-  const reviewData = [
-    { productId: 1, userName: '匿名用户', rating: 5, comment: '性价比很高，下载能跑到 50M/s，非常给力！' },
-    { productId: 1, userName: '飞***猪', rating: 5, comment: '买了好几次了，老板发货很快，很靠谱。' },
-    { productId: 2, userName: '学***渣', rating: 5, comment: '写作业全靠它了，虽然是共享的但很少被顶号。' },
-    { productId: 2, userName: 'Q***Q', rating: 4, comment: '挺划算的，一个人买太贵，合租刚刚好。' },
-    { productId: 3, userName: '追剧达人', rating: 5, comment: '画质真的没得说，看剧贼爽。' },
-    { productId: 4, userName: 'A***', rating: 5, comment: '自动发卡，马上就收到了，照着教程改了密码，美滋滋。' },
-  ]
-
-  const existingReviews = await prisma.review.count()
-  if (existingReviews === 0) {
-    await prisma.review.createMany({ data: reviewData })
-  }
-
   // 写初始积分流水
   const existingLogs = await prisma.pointLog.count()
   if (existingLogs === 0) {

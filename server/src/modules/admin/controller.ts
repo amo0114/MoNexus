@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express'
 import * as adminService from './service.js'
-import type { ListAdminAuditQuery } from './schema.js'
+import type { ListAdminAuditQuery, ListOrdersQuery, ListUsersQuery } from './schema.js'
 
 export async function stats(_req: Request, res: Response, next: NextFunction) {
   try { res.json(await adminService.getStats()) } catch (err) { next(err) }
@@ -8,8 +8,7 @@ export async function stats(_req: Request, res: Response, next: NextFunction) {
 
 export async function users(req: Request, res: Response, next: NextFunction) {
   try {
-    const { q, page, pageSize } = req.query as Record<string, string>
-    res.json(await adminService.listUsers(q, Number(page) || 1, Number(pageSize) || 20))
+    res.json(await adminService.listUsers(req.query as unknown as ListUsersQuery))
   } catch (err) { next(err) }
 }
 
@@ -69,8 +68,7 @@ export async function importInventory(req: Request, res: Response, next: NextFun
 
 export async function orders(req: Request, res: Response, next: NextFunction) {
   try {
-    const { page, pageSize } = req.query as Record<string, string>
-    res.json(await adminService.listAllOrders(Number(page) || 1, Number(pageSize) || 20))
+    res.json(await adminService.listAllOrders(req.query as unknown as ListOrdersQuery))
   } catch (err) { next(err) }
 }
 

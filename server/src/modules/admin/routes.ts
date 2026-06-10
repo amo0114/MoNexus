@@ -3,7 +3,7 @@ import { authenticate, requireActiveUser, requireAdmin } from '../../middlewares
 import { validate, idParamSchema } from '../../middlewares/validate.js'
 import {
   adjustPointsSchema, banUserSchema, createProductSchema, updateProductSchema,
-  importInventorySchema, listUsersQuerySchema,
+  importInventorySchema, listUsersQuerySchema, listOrdersQuerySchema,
   listAdminAuditQuerySchema,
   listMerchantsQuerySchema, reviewMerchantSchema, updateCommissionSchema,
   listSettlementsQuerySchema, batchSettleSchema,
@@ -27,7 +27,7 @@ router.get('/products', controller.products)
 router.post('/products', validate(createProductSchema), controller.createProduct)
 router.put('/products/:id', validate({ params: idParamSchema, body: updateProductSchema }), controller.updateProduct)
 router.post('/products/:id/inventory', validate({ params: idParamSchema, body: importInventorySchema }), controller.importInventory)
-router.get('/orders', controller.orders)
+router.get('/orders', validate({ query: listOrdersQuerySchema }), controller.orders)
 router.get('/orders/:id', validate({ params: idParamSchema }), controller.orderDetail)
 router.get('/logs', controller.logs)
 
