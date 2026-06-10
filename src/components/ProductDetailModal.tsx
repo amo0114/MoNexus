@@ -1,12 +1,6 @@
-import { X, Coins, FileText, MessageSquare, Store } from 'lucide-react'
-
-interface Review {
-  id: number
-  userName: string
-  rating: number
-  comment: string
-  createdAt: string
-}
+import { useMemo } from 'react'
+import { X, Coins, FileText, Store } from 'lucide-react'
+import DOMPurify from 'dompurify'
 
 interface Product {
   id: number
@@ -16,11 +10,11 @@ interface Product {
   type: string
   icon: string
   imageUrl: string
+  images?: string[]
   price: number
   originalPrice?: number
   stock: number
   sales: number
-  reviews: Review[]
   merchant?: { id: number; name: string } | null
 }
 
@@ -33,6 +27,11 @@ export default function ProductDetailModal({
   onClose: () => void
   onBuy: () => void
 }) {
+  const safeRichDescription = useMemo(() => {
+    const rawHTML = product.richDescription || product.description || ''
+    return DOMPurify.sanitize(rawHTML, { USE_PROFILES: { html: true } })
+  }, [product])
+
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-6">
       <div className="modal-overlay" onClick={onClose} />
@@ -48,7 +47,7 @@ export default function ProductDetailModal({
           </button>
 
           <div className="w-full h-56 sm:h-64 bg-[var(--color-image-placeholder)] relative">
-            <img src={product.imageUrl} className="w-full h-full object-cover" alt={product.name} />
+            <img src={product.images?.[0] || product.imageUrl} className="w-full h-full object-cover" alt={product.name} />
             <div className="absolute bottom-4 left-4 flex gap-2 flex-wrap">
               <span
                 className="text-xs font-bold px-3 py-1.5 rounded-lg text-[var(--color-text)] shadow-sm flex items-center gap-1.5"
@@ -96,42 +95,14 @@ export default function ProductDetailModal({
               </div>
             </div>
 
-            <div className="mb-8">
+            <div>
               <h3 className="font-heading text-base font-bold mb-3 flex items-center gap-2 text-[var(--color-text)]">
                 <FileText className="w-4 h-4 text-[var(--color-primary)]" /> 图文介绍
               </h3>
               <div
                 className="text-[var(--color-text)] leading-relaxed space-y-3 text-sm bg-[var(--color-background)] p-5 rounded-lg border border-[var(--color-border)] prose prose-neutral dark:prose-invert max-w-none"
-                dangerouslySetInnerHTML={{ __html: product.richDescription || product.description || '' }}
+                dangerouslySetInnerHTML={{ __html: safeRichDescription }}
               />
-            </div>
-
-            <div>
-              <h3 className="font-heading text-base font-bold mb-3 flex items-center gap-2 text-[var(--color-text)]">
-                <MessageSquare className="w-4 h-4 text-[var(--color-primary)]" /> 买家评价
-              </h3>
-              {product.reviews?.length > 0 ? (
-                <div className="space-y-3">
-                  {product.reviews.map((r) => (
-                    <div key={r.id} className="bg-[var(--color-background)] p-4 rounded-lg border border-[var(--color-border)]">
-                      <div className="flex justify-between items-center mb-1.5">
-                        <span className="font-bold text-sm text-[var(--color-text)]">{r.userName}</span>
-                        <span className="text-[10px] text-[var(--color-text-muted)]">{new Date(r.createdAt).toLocaleDateString()}</span>
-                      </div>
-                      <div className="flex gap-0.5 mb-2">
-                        {Array(5).fill(0).map((_, i) => (
-                          <svg key={i} className={`w-3.5 h-3.5 ${i < r.rating ? 'star-filled' : 'star-empty'}`} viewBox="0 0 24 24">
-                            <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
-                          </svg>
-                        ))}
-                      </div>
-                      <p className="text-[var(--color-text-muted)] text-xs leading-relaxed">{r.comment}</p>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-xs text-[var(--color-text-muted)] italic">暂无买家评价</p>
-              )}
             </div>
           </div>
         </div>
