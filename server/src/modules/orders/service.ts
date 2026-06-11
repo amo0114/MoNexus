@@ -4,6 +4,7 @@ import { badRequest, notFound } from '../../lib/httpError.js'
 import {
   createOrderStatusEvent,
   getProductFulfillmentMode,
+  isInstantMode,
   normalizeOrderStatus,
   transitionOrderStatus,
 } from './fulfillment.js'
@@ -18,6 +19,13 @@ export async function createOrder(userId: number, productId: number) {
     if (!product) throw notFound('商品不存在')
     if (product.status !== 'active') throw badRequest('商品已下架')
     const deliveryMode = getProductFulfillmentMode(product.deliveryMode)
+
+    if (deliveryMode === 'instant_fixed' && !product.fixedContent) {
+      throw badRequest('商品暂不可购买，请联系商家')
+    }
+    if (deliveryMode !== 'instant_inventory' && product.stockMode === 'limited' && product.stock <= 0) {
+      throw badRequest('库存不足，请稍后再试')
+    }
 
     if (account.balance < product.price) throw badRequest('积分不足')
 
@@ -58,7 +66,7 @@ export async function createOrder(userId: number, productId: number) {
         userId,
         productId,
         price: product.price,
-        status: deliveryMode === 'instant_inventory' ? 'delivered' : 'pending',
+        status: isInstantMode(deliveryMode) ? 'delivered' : 'pending',
         merchantId,
         commissionRate,
         commissionAmount,
@@ -75,6 +83,7 @@ export async function createOrder(userId: number, productId: number) {
     })
 
     let deliveryContent: string | undefined
+    let deliveryContentType: string | undefined
 
     if (deliveryMode === 'instant_inventory') {
       if (!item) throw badRequest('库存不足，请稍后再试')
@@ -91,6 +100,7 @@ export async function createOrder(userId: number, productId: number) {
       if (reservedItem.count !== 1) throw badRequest('库存不足，请稍后再试')
 
       deliveryContent = item.content
+      deliveryContentType = 'text'
 
       await tx.deliveryRecord.create({
         data: {
@@ -98,6 +108,21 @@ export async function createOrder(userId: number, productId: number) {
           userId,
           productId,
           content: item.content,
+          status: 'delivered',
+          deliveredAt: new Date(),
+        },
+      })
+    } else if (deliveryMode === 'instant_fixed') {
+      deliveryContent = product.fixedContent!
+      deliveryContentType = product.fixedContentType
+
+      await tx.deliveryRecord.create({
+        data: {
+          orderId: order.id,
+          userId,
+          productId,
+          content: product.fixedContent,
+          contentType: product.fixedContentType,
           status: 'delivered',
           deliveredAt: new Date(),
         },
@@ -129,12 +154,24 @@ export async function createOrder(userId: number, productId: number) {
       })
     }
 
-    await tx.product.update({
-      where: { id: productId },
-      data: deliveryMode === 'instant_inventory'
-        ? { stock: { decrement: 1 }, sales: { increment: 1 } }
-        : { sales: { increment: 1 } },
-    })
+    if (deliveryMode === 'instant_inventory') {
+      await tx.product.update({
+        where: { id: productId },
+        data: { stock: { decrement: 1 }, sales: { increment: 1 } },
+      })
+    } else if (product.stockMode === 'limited') {
+      // 条件更新防并发超卖：stock>0 才扣减，失败即售罄
+      const updated = await tx.product.updateMany({
+        where: { id: productId, stock: { gt: 0 } },
+        data: { stock: { decrement: 1 }, sales: { increment: 1 } },
+      })
+      if (updated.count !== 1) throw badRequest('库存不足，请稍后再试')
+    } else {
+      await tx.product.update({
+        where: { id: productId },
+        data: { sales: { increment: 1 } },
+      })
+    }
 
     return {
       orderId: order.id,
@@ -143,6 +180,7 @@ export async function createOrder(userId: number, productId: number) {
       status: normalizeOrderStatus(order.status),
       deliveryMode,
       deliveryContent,
+      deliveryContentType,
       balanceAfter: newBalance,
       merchantId,
       merchantName,

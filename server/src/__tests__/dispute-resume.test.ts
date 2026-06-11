@@ -59,7 +59,7 @@ describe('merchant dispute resume by delivery mode', () => {
     const product = await createTestProduct('人工争议服务', 200, 0, [], merchant.id)
     await prisma.product.update({
       where: { id: product.id },
-      data: { deliveryMode: 'manual_service', stock: 0 },
+      data: { deliveryMode: 'manual_service', stock: 0, stockMode: 'unlimited' },
     })
 
     const buyer = await loginAs('dispute-manual-buyer@test.local', 'buyer123')

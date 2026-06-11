@@ -105,7 +105,7 @@ describe('POST /api/orders (exchange)', () => {
     const product = await createTestProduct('人工履约服务', 300, 0, [])
     await prisma.product.update({
       where: { id: product.id },
-      data: { deliveryMode: 'manual_service', stock: 0 },
+      data: { deliveryMode: 'manual_service', stock: 0, stockMode: 'unlimited' },
     })
     const { accessToken } = await loginAs('manual@test.local', 'pass123')
 
@@ -144,7 +144,7 @@ describe('fulfillment state machine', () => {
     const product = await createTestProduct('非法流转服务', 200, 0, [])
     await prisma.product.update({
       where: { id: product.id },
-      data: { deliveryMode: 'manual_service' },
+      data: { deliveryMode: 'manual_service', stockMode: 'unlimited' },
     })
     const { accessToken } = await loginAs('illegal-transition@test.local', 'pass123')
     const created = await api
@@ -174,7 +174,7 @@ describe('fulfillment state machine', () => {
     const product = await createTestProduct('合法流转服务', 200, 0, [])
     await prisma.product.update({
       where: { id: product.id },
-      data: { deliveryMode: 'manual_service' },
+      data: { deliveryMode: 'manual_service', stockMode: 'unlimited' },
     })
     const { accessToken } = await loginAs('legal-transition@test.local', 'pass123')
     const created = await api
