@@ -283,6 +283,9 @@ function assertDeliveryConfig(config: {
   fixedContent?: string | null
   fixedContentType: string
 }) {
+  if (config.deliveryMode !== 'instant_fixed' && config.fixedContent != null) {
+    throw badRequest('仅固定内容交付支持 fixedContent')
+  }
   if (config.deliveryMode === 'instant_inventory') {
     if (config.stockMode !== 'limited') throw badRequest('即时库存发货必须为限量库存')
     if (typeof config.incomingStock === 'number') throw badRequest('即时库存发货的库存请通过库存导入管理')
@@ -294,8 +297,6 @@ function assertDeliveryConfig(config: {
     if (config.fixedContentType === 'url' && (content.length > 2048 || !HTTP_URL_PATTERN.test(content))) {
       throw badRequest('链接必须以 http(s):// 开头且不超过 2048 字符')
     }
-  } else if (config.fixedContent != null) {
-    throw badRequest('仅固定内容交付支持 fixedContent')
   }
   if (config.stockMode === 'limited' && typeof config.effectiveStock !== 'number') {
     throw badRequest('限量库存必须填写库存数量')

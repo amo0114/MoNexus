@@ -53,6 +53,13 @@ describe('merchant instant_fixed product validation', () => {
       .send({ ...baseBody, stockMode: 'limited' }).expect(400)
   })
 
+  it('rejects fixedContent for instant_inventory products', async () => {
+    const token = await merchantToken('if-inv-fc@test.local')
+    await api.post('/api/merchant/products').set(authHeader(token))
+      .send({ name: '卡密带内容', type: '充值卡密', price: 10, deliveryMode: 'instant_inventory', fixedContent: '不该有' })
+      .expect(400)
+  })
+
   it('rejects unlimited stockMode for instant_inventory', async () => {
     const token = await merchantToken('if-inv@test.local')
     await api.post('/api/merchant/products').set(authHeader(token))
