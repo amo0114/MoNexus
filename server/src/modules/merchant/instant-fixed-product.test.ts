@@ -67,3 +67,50 @@ describe('merchant instant_fixed product validation', () => {
       .expect(400)
   })
 })
+
+describe('merchant instant_fixed product update', () => {
+  async function createInstantFixedProduct(token: string) {
+    const res = await api.post('/api/merchant/products').set(authHeader(token))
+      .send(baseBody).expect(201)
+    return res.body.id as number
+  }
+
+  it('updates price only without touching delivery fields', async () => {
+    const token = await merchantToken('if-up-price@test.local')
+    const productId = await createInstantFixedProduct(token)
+    await api.put(`/api/merchant/products/${productId}`).set(authHeader(token))
+      .send({ price: 99 }).expect(200)
+    const product = await prisma.product.findUnique({ where: { id: productId } })
+    expect(product?.price).toBe(99)
+    expect(product?.deliveryMode).toBe('instant_fixed')
+    expect(product?.fixedContent).toBe('https://example.com/group-invite')
+  })
+
+  it('switches instant_fixed to manual_service with fixedContent null', async () => {
+    const token = await merchantToken('if-up-switch@test.local')
+    const productId = await createInstantFixedProduct(token)
+    await api.put(`/api/merchant/products/${productId}`).set(authHeader(token))
+      .send({ deliveryMode: 'manual_service', fixedContent: null }).expect(200)
+    const product = await prisma.product.findUnique({ where: { id: productId } })
+    expect(product?.deliveryMode).toBe('manual_service')
+    expect(product?.fixedContent).toBeNull()
+    expect(product?.stockMode).toBe('unlimited')
+  })
+
+  it('rejects mode switch without clearing fixedContent with guiding message', async () => {
+    const token = await merchantToken('if-up-noclear@test.local')
+    const productId = await createInstantFixedProduct(token)
+    const res = await api.put(`/api/merchant/products/${productId}`).set(authHeader(token))
+      .send({ deliveryMode: 'manual_service' }).expect(400)
+    expect(res.body.error?.message).toContain('切换交付模式')
+  })
+
+  it('rejects direct stock update for instant_inventory products', async () => {
+    const token = await merchantToken('if-up-stock@test.local')
+    const res = await api.post('/api/merchant/products').set(authHeader(token))
+      .send({ name: '卡密更新', type: '充值卡密', price: 10, deliveryMode: 'instant_inventory' })
+      .expect(201)
+    await api.put(`/api/merchant/products/${res.body.id}`).set(authHeader(token))
+      .send({ stock: 100 }).expect(400)
+  })
+})

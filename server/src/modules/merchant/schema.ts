@@ -60,6 +60,8 @@ export const createMerchantProductSchema = z.object({
 
 export const updateMerchantProductSchema = createMerchantProductSchema.partial().extend({
   status: productStatusSchema.optional(),
+  // update 允许显式传 null 清空固定内容（如从 instant_fixed 切到其他交付模式）；create 保持非 null
+  fixedContent: z.string().trim().min(1).max(5000).nullable().optional(),
 })
 
 const inventoryPayloadSchema = z.object({

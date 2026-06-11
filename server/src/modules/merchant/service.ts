@@ -348,6 +348,11 @@ export async function updateMyProduct(merchantId: number, productId: number, dat
       : product.stockMode)
   const incomingStock = typeof data.stock === 'number' ? data.stock : undefined
 
+  // 商家切换交付模式但未显式清空旧 fixedContent 时给出引导性报错，避免「仅固定内容交付支持 fixedContent」造成困惑
+  if (!('fixedContent' in data) && product.fixedContent != null && deliveryMode !== 'instant_fixed') {
+    throw badRequest('切换交付模式请同时将 fixedContent 置空（传 null）')
+  }
+
   assertDeliveryConfig({
     deliveryMode,
     stockMode,
@@ -359,7 +364,15 @@ export async function updateMyProduct(merchantId: number, productId: number, dat
 
   return prisma.product.update({
     where: { id: productId },
-    data: { ...data, deliveryMode, stockMode },
+    data: {
+      ...data,
+      deliveryMode,
+      stockMode,
+      // 切换到即时库存发货时归零 stock（与 createMyProduct 一致），库存以导入为准
+      ...(deliveryMode === 'instant_inventory' && product.deliveryMode !== 'instant_inventory'
+        ? { stock: 0 }
+        : {}),
+    },
   })
 }
 
