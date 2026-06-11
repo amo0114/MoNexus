@@ -3,28 +3,33 @@ export const businessRegistry = {
     {
       value: '网络节点',
       label: '网络节点',
-      deliveryModes: ['instant_inventory', 'manual_service'],
+      deliveryModes: ['instant_inventory', 'instant_fixed', 'manual_service'],
     },
     {
       value: '共享账号',
       label: '共享账号',
-      deliveryModes: ['instant_inventory', 'manual_service'],
+      deliveryModes: ['instant_inventory', 'instant_fixed', 'manual_service'],
     },
     {
       value: '充值卡密',
       label: '充值卡密',
-      deliveryModes: ['instant_inventory', 'manual_service'],
+      deliveryModes: ['instant_inventory', 'instant_fixed', 'manual_service'],
     },
     {
       value: '邀请码',
       label: '邀请码',
-      deliveryModes: ['instant_inventory', 'manual_service'],
+      deliveryModes: ['instant_inventory', 'instant_fixed', 'manual_service'],
     },
   ],
   deliveryModes: [
     {
       value: 'instant_inventory',
       label: '即时库存发货',
+      tone: 'success',
+    },
+    {
+      value: 'instant_fixed',
+      label: '固定内容直发',
       tone: 'success',
     },
     {
