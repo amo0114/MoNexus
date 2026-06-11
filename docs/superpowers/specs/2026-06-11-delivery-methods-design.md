@@ -19,7 +19,7 @@
 | `instant_inventory`（现有） | 一行一条，消耗型 InventoryItem | 即时 | — |
 | `instant_fixed`（新增） | 固定内容（文本/链接），无限或限量 | 即时 | Phase 1 |
 | `file_download`（新增） | 商家上传文件，无限或限量 | 即时 | Phase 2 |
-| `manual_service`（现有） | 无库存，订单驱动 | 商家处理 | — |
+| `manual_service`（现有） | 接单容量（limited=可接单数 / unlimited=不限接单） | 商家处理 | — |
 
 ### 范围外（明确暂缓）
 
@@ -46,6 +46,7 @@ fileSize    Int?                              // Phase 2：交付时快照
 model ProductFile {
   id         Int      @id @default(autoincrement())
   productId  Int      @unique                 // 一商品一文件，1:1
+  product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
   storageKey String
   fileName   String
   mimeType   String
@@ -102,9 +103,9 @@ model ProductFile {
 
 预留语义按库存类型划分，**不能简化为"只有 instant_inventory 需要预留"**：
 
-- `stockMode=unlimited`（instant_fixed / file_download）：无需预留。
+- `stockMode=unlimited`（所有模式）：无需预留。
 - `instant_inventory`：预留具体 InventoryItem（reservation type = `inventory_item`）。
-- `instant_fixed` / `file_download` 的 `stockMode=limited`：仍有超卖风险。
+- `instant_fixed` / `file_download` / `manual_service` 的 `stockMode=limited`：仍有超卖/超接单风险。
   积分即时兑换阶段由下单事务内原子扣 `Product.stock` 保证；
   现金支付阶段（存在 unpaid→paid 时间窗）必须有数量级预留——
   `InventoryReservation` 设计时需同时支持 `inventory_item` 与 `product_quantity` 两种预留类型，
@@ -151,7 +152,7 @@ model ProductFile {
 - `instant_fixed` limited 并发下单：`updateMany` 条件更新防超卖，失败返回"库存不足"。
 - 商家修改已售商品的模式/内容：已购订单不受影响（DeliveryRecord 快照）。
 - unlimited 商品的 `stock` 字段忽略、不清零；切回 limited 时沿用原值，商家可编辑。
-- `manual_service` 维持现状：stock 表示可接单数量，下单照常扣减；也可选 unlimited（不限接单），但不参与低库存提醒。
+- `manual_service` 统一语义：`stockMode=limited` 时 stock 表示可接单容量（下单照常扣减），unlimited 表示不限接单；不参与低库存提醒；现金支付阶段有限容量同样走 `product_quantity` 预留（见 §3）。
 - 商家替换文件：旧对象保留（被订单引用），新订单交付新文件。
 
 ## 7. 测试
