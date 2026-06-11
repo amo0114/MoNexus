@@ -136,6 +136,8 @@ model Product {
   orders        Order[]
   inventory     InventoryItem[]
   inventoryLogs InventoryLog[]
+
+  @@index([status, isHot, sales, id])
 }
 
 model InventoryLog {

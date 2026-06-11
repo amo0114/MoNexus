@@ -3,13 +3,14 @@ import * as productService from './service.js'
 
 export async function list(req: Request, res: Response, next: NextFunction) {
   try {
-    const { q, category, page, pageSize } = req.query as Record<string, string>
-    const products = await productService.listProducts(
-      q,
-      category,
-      Number(page) || 1,
-      Number(pageSize) || 20
-    )
+    const { q, category, cursor, page, pageSize } = req.query as unknown as {
+      q?: string
+      category?: string
+      cursor?: string
+      page?: number
+      pageSize?: number
+    }
+    const products = await productService.listProducts({ query: q, category, cursor, page, pageSize })
     res.json(products)
   } catch (err) {
     next(err)
