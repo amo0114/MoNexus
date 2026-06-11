@@ -75,7 +75,8 @@ describe('createOrder for instant_fixed products', () => {
     const product = await createFixedProduct(merchant.id, { fixedContent: null })
 
     const buyer = await loginAs('fixed-b3@test.local', 'buyer123')
-    await api.post('/api/orders').set(authHeader(buyer.accessToken))
+    const res = await api.post('/api/orders').set(authHeader(buyer.accessToken))
       .send({ productId: product.id }).expect(400)
+    expect(res.body.error.message).toContain('暂不可购买')
   })
 })

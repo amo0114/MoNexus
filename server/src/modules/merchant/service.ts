@@ -5,6 +5,7 @@ import { badRequest, notFound, conflict } from '../../lib/httpError.js'
 import { getSystemConfigValue } from '../../lib/systemConfig.js'
 import { logInventoryChange } from '../../lib/inventoryLog.js'
 import {
+  isInstantMode,
   normalizeOrderStatus,
   transitionOrderStatus,
   type FulfillmentOrderStatus,
@@ -615,9 +616,9 @@ export async function respondToOrderDispute(
 ) {
   await prisma.$transaction(async tx => {
     const order = await assertMerchantOrder(merchantId, orderId, tx)
-    // 即时库存单卡密已交付，恢复履约直接回到 delivered；人工服务单回 processing 由商家重新交付
+    // 即时模式（instant_*）内容已交付，恢复履约直接回到 delivered；人工服务单回 processing 由商家重新交付
     const resumeTarget: FulfillmentOrderStatus =
-      order.product.deliveryMode === 'instant_inventory' ? 'delivered' : 'processing'
+      isInstantMode(order.product.deliveryMode) ? 'delivered' : 'processing'
     await transitionOrderStatus({
       orderId,
       toStatus: input.resolution === 'resume' ? resumeTarget : 'closed',

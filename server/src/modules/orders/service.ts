@@ -108,6 +108,7 @@ export async function createOrder(userId: number, productId: number) {
           userId,
           productId,
           content: item.content,
+          contentType: 'text',
           status: 'delivered',
           deliveredAt: new Date(),
         },
