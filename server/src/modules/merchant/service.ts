@@ -273,23 +273,93 @@ export async function previewMyInventoryImport(
   }
 }
 
+const HTTP_URL_PATTERN = /^https?:\/\/\S+$/i
+
+function assertDeliveryConfig(config: {
+  deliveryMode: string
+  stockMode: string
+  incomingStock?: number
+  effectiveStock?: number
+  fixedContent?: string | null
+  fixedContentType: string
+}) {
+  if (config.deliveryMode === 'instant_inventory') {
+    if (config.stockMode !== 'limited') throw badRequest('即时库存发货必须为限量库存')
+    if (typeof config.incomingStock === 'number') throw badRequest('即时库存发货的库存请通过库存导入管理')
+    return
+  }
+  if (config.deliveryMode === 'instant_fixed') {
+    const content = config.fixedContent?.trim()
+    if (!content) throw badRequest('固定内容交付必须填写交付内容')
+    if (config.fixedContentType === 'url' && (content.length > 2048 || !HTTP_URL_PATTERN.test(content))) {
+      throw badRequest('链接必须以 http(s):// 开头且不超过 2048 字符')
+    }
+  } else if (config.fixedContent != null) {
+    throw badRequest('仅固定内容交付支持 fixedContent')
+  }
+  if (config.stockMode === 'limited' && typeof config.effectiveStock !== 'number') {
+    throw badRequest('限量库存必须填写库存数量')
+  }
+}
+
 export async function createMyProduct(
   merchantId: number,
   data: {
     name: string; description?: string; richDescription?: string;
     type: string; icon?: string; imageUrl?: string; images?: string[];
-    price: number; originalPrice?: number; isHot?: boolean; deliveryMode?: string
+    price: number; originalPrice?: number; isHot?: boolean; deliveryMode?: string;
+    stockMode?: string; stock?: number; fixedContent?: string; fixedContentType?: string
   }
 ) {
+  const deliveryMode = data.deliveryMode ?? 'instant_inventory'
+  const stockMode = data.stockMode ?? (deliveryMode === 'instant_inventory' ? 'limited' : 'unlimited')
+  const fixedContentType = data.fixedContentType ?? 'text'
+
+  assertDeliveryConfig({
+    deliveryMode,
+    stockMode,
+    incomingStock: data.stock,
+    effectiveStock: data.stock,
+    fixedContent: data.fixedContent,
+    fixedContentType,
+  })
+
   return prisma.product.create({
-    data: { ...data, merchantId },
+    data: {
+      ...data,
+      deliveryMode,
+      stockMode,
+      fixedContentType,
+      stock: deliveryMode === 'instant_inventory' ? 0 : (data.stock ?? 0),
+      merchantId,
+    },
   })
 }
 
 export async function updateMyProduct(merchantId: number, productId: number, data: Record<string, unknown>) {
   const product = await prisma.product.findFirst({ where: { id: productId, merchantId } })
   if (!product) throw notFound('商品不存在')
-  return prisma.product.update({ where: { id: productId }, data })
+
+  const deliveryMode = (data.deliveryMode as string | undefined) ?? product.deliveryMode
+  const stockMode = (data.stockMode as string | undefined)
+    ?? (data.deliveryMode && deliveryMode !== product.deliveryMode
+      ? (deliveryMode === 'instant_inventory' ? 'limited' : 'unlimited')
+      : product.stockMode)
+  const incomingStock = typeof data.stock === 'number' ? data.stock : undefined
+
+  assertDeliveryConfig({
+    deliveryMode,
+    stockMode,
+    incomingStock,
+    effectiveStock: incomingStock ?? product.stock,
+    fixedContent: 'fixedContent' in data ? (data.fixedContent as string | null) : product.fixedContent,
+    fixedContentType: (data.fixedContentType as string | undefined) ?? product.fixedContentType,
+  })
+
+  return prisma.product.update({
+    where: { id: productId },
+    data: { ...data, deliveryMode, stockMode },
+  })
 }
 
 export async function importMyInventory(

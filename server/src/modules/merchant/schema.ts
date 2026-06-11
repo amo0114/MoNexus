@@ -18,6 +18,9 @@ const deliveryModeSchema = z.string().trim().refine(
 
 const productStatusSchema = z.enum(['active', 'inactive'])
 
+const stockModeSchema = z.enum(['limited', 'unlimited'])
+const fixedContentTypeSchema = z.enum(['text', 'url'])
+
 const queryBooleanSchema = z.union([
   z.boolean(),
   z.enum(['true', 'false', '1', '0']),
@@ -49,6 +52,10 @@ export const createMerchantProductSchema = z.object({
   originalPrice: z.number().int().positive().optional(),
   isHot: z.boolean().default(false),
   deliveryMode: deliveryModeSchema.default('instant_inventory'),
+  stockMode: stockModeSchema.optional(),
+  stock: z.number().int().min(0).max(1_000_000).optional(),
+  fixedContent: z.string().trim().min(1).max(5000).optional(),
+  fixedContentType: fixedContentTypeSchema.optional(),
 })
 
 export const updateMerchantProductSchema = createMerchantProductSchema.partial().extend({
