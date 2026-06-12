@@ -1,12 +1,12 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Coins, Wallet, Users, CalendarCheck, LogOut, ArrowDownLeft, ArrowUpRight, Store, Eye, Loader2, Shield, Trophy } from 'lucide-react'
+import { Coins, Wallet, Users, CalendarCheck, LogOut, ArrowDownLeft, ArrowUpRight, Store, Eye, Loader2, Shield, Trophy, UserRound } from 'lucide-react'
 import { useAuthStore } from '../stores/authStore'
 import { useAppStore } from '../stores/appStore'
 import api from '../api/client'
 import { getApiErrorMessage } from '../api/error'
 import { getOrders, getOrderDetail } from '../api/orders'
-import { changePassword } from '../api/auth'
+import { changePassword, updateMe } from '../api/auth'
 import { UserOrderListItem, UserOrderDetail } from '../types/order'
 import OrderDetailModal from '../components/OrderDetailModal'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/ui/Tabs'
@@ -15,6 +15,94 @@ import RegistryPill from '../components/ui/RegistryPill'
 import { getMemberTier, TierResponse } from '../api/points'
 import { getConfigRegistry } from '../api/registry'
 import { MemberTierBadge } from '../components/MemberTierBadge'
+
+function NicknameCard() {
+  const user = useAuthStore((s) => s.user)
+  const setUser = useAuthStore((s) => s.setUser)
+  const showToast = useAppStore((s) => s.showToast)
+
+  const [editing, setEditing] = useState(false)
+  const [nickname, setNickname] = useState(user?.nickname ?? '')
+  const [saving, setSaving] = useState(false)
+
+  async function handleSave() {
+    const value = nickname.trim()
+    if (!value || value.length > 20) {
+      showToast('昵称需为 1-20 个字符', 'error')
+      return
+    }
+    setSaving(true)
+    try {
+      const me = await updateMe({ nickname: value })
+      setUser(me)
+      showToast('昵称已更新')
+      setEditing(false)
+    } catch (err: any) {
+      showToast(getApiErrorMessage(err, '保存失败'), 'error')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="card flex flex-col gap-4" data-testid="nickname-card">
+      <div className="flex items-center gap-4">
+        <div className="w-12 h-12 bg-[var(--color-primary)]/10 text-[var(--color-primary)] rounded-full flex items-center justify-center">
+          <UserRound className="w-6 h-6" />
+        </div>
+        <div>
+          <h4 className="font-heading font-bold text-[var(--color-text)] mb-1">昵称（用于评价展示）</h4>
+          <p className="text-sm text-[var(--color-text-muted)]">设置后您的评价将显示昵称，未设置时显示打码邮箱。</p>
+        </div>
+      </div>
+      <div className="mt-2 border-t border-[var(--color-border)] pt-4">
+        {editing ? (
+          <div className="flex gap-2">
+            <input
+              className="input flex-1 !py-2 text-sm"
+              maxLength={20}
+              value={nickname}
+              onChange={(e) => setNickname(e.target.value)}
+              disabled={saving}
+              data-testid="nickname-input"
+            />
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={saving}
+              className="btn-primary !px-4 !py-2 !text-sm"
+              data-testid="nickname-save"
+            >
+              {saving ? '保存中...' : '保存'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setEditing(false)}
+              disabled={saving}
+              className="btn-secondary !px-4 !py-2 !text-sm"
+            >
+              取消
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-[var(--color-text)]">
+              {user?.nickname || '未设置（评价将显示打码邮箱）'}
+            </span>
+            <button
+              type="button"
+              onClick={() => { setNickname(user?.nickname ?? ''); setEditing(true) }}
+              className="btn-secondary !px-4 !py-1.5 !text-xs"
+              data-testid="nickname-edit"
+            >
+              编辑
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
 
 function PasswordChangeCard() {
   const navigate = useNavigate()
@@ -389,6 +477,9 @@ export default function ProfilePage() {
           </button>
         </div>
       )}
+
+      {/* Nickname Card */}
+      <NicknameCard />
 
       {/* Password Change Card */}
       <PasswordChangeCard />
