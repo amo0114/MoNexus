@@ -252,6 +252,29 @@ describe('admin review moderation', () => {
   })
 })
 
+describe('nickname', () => {
+  it('PATCH /api/auth/me sets nickname, GET /me returns it, review displayName prefers it', async () => {
+    const { token, productId, orderId } = await buyerWithDeliveredOrder('rv-nick@test.local')
+
+    await api.patch('/api/auth/me').set(authHeader(token))
+      .send({ nickname: '匿名小熊' }).expect(200)
+
+    const me = await api.get('/api/auth/me').set(authHeader(token)).expect(200)
+    expect(me.body.nickname).toBe('匿名小熊')
+
+    await api.post(`/api/orders/${orderId}/review`).set(authHeader(token))
+      .send({ rating: 5 }).expect(201)
+    const list = await api.get(`/api/products/${productId}/reviews`).expect(200)
+    expect(list.body.items[0].displayName).toBe('匿名小熊')
+  })
+
+  it('validates nickname length', async () => {
+    const { token } = await buyerWithDeliveredOrder('rv-nick2@test.local')
+    await api.patch('/api/auth/me').set(authHeader(token)).send({ nickname: '' }).expect(400)
+    await api.patch('/api/auth/me').set(authHeader(token)).send({ nickname: 'x'.repeat(21) }).expect(400)
+  })
+})
+
 describe('maskEmail', () => {
   it('masks local part keeping 2 chars, 1 char when local <= 2', async () => {
     const { maskEmail } = await import('./service.js')

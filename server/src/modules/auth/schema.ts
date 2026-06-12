@@ -25,6 +25,10 @@ export const passwordChangeSchema = z.object({
   newPassword: z.string().min(6, '密码至少 6 位'),
 })
 
+export const updateMeSchema = z.object({
+  nickname: z.string().trim().min(1, '昵称不能为空').max(20, '昵称最多 20 字'),
+}).strict()
+
 export const verifyEmailQuerySchema = z.object({
   token: z.string().min(1, '令牌不能为空'),
 })

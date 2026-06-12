@@ -70,6 +70,15 @@ export async function me(req: Request, res: Response, next: NextFunction) {
   }
 }
 
+export async function updateMe(req: Request, res: Response, next: NextFunction) {
+  try {
+    const profile = await authService.updateUserProfile(req.user!.userId, req.body)
+    res.json(profile)
+  } catch (err) {
+    next(err)
+  }
+}
+
 // Always returns 200 with the same payload, whether or not the email
 // exists. Hiding the result prevents account enumeration via this
 // endpoint while still letting real users get a reset link.
