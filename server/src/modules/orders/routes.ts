@@ -14,6 +14,7 @@ router.get('/', validate({ query: listOrdersQuerySchema }), controller.list)
 router.post('/:id/dispute', validate({ params: idParamSchema }), controller.dispute)
 router.post('/:id/close', validate({ params: idParamSchema }), controller.close)
 router.post('/:id/review', validate({ params: idParamSchema, body: reviewBodySchema }), reviewsController.createForOrder)
+router.put('/:id/review', validate({ params: idParamSchema, body: reviewBodySchema }), reviewsController.updateForOrder)
 router.get('/:id', validate({ params: idParamSchema }), controller.detail)
 
 export { router as orderRoutes }

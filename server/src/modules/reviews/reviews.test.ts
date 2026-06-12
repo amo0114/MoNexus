@@ -88,3 +88,55 @@ describe('POST /api/orders/:id/review', () => {
     expect(Number(after?.ratingAvg)).toBe(3) // (5+4+3+2+1)/5
   })
 })
+
+describe('PUT /api/orders/:id/review', () => {
+  it('allows exactly one edit inside the window and recalcs aggregates', async () => {
+    const { token, productId, orderId } = await buyerWithDeliveredOrder('rv-edit@test.local')
+    await api.post(`/api/orders/${orderId}/review`).set(authHeader(token))
+      .send({ rating: 2 }).expect(201)
+
+    const res = await api.put(`/api/orders/${orderId}/review`).set(authHeader(token))
+      .send({ rating: 5, comment: '复购后改观' }).expect(200)
+    expect(res.body.rating).toBe(5)
+    expect(res.body.editedAt).toBeTruthy()
+
+    const product = await prisma.product.findUnique({ where: { id: productId } })
+    expect(Number(product?.ratingAvg)).toBe(5)
+
+    await api.put(`/api/orders/${orderId}/review`).set(authHeader(token))
+      .send({ rating: 1 }).expect(400) // 第二次修改被拒
+  })
+
+  it('rejects edits after the window expires', async () => {
+    const { token, orderId } = await buyerWithDeliveredOrder('rv-expire@test.local')
+    await api.post(`/api/orders/${orderId}/review`).set(authHeader(token))
+      .send({ rating: 3 }).expect(201)
+    await prisma.review.update({
+      where: { orderId },
+      data: { editableUntil: new Date(Date.now() - 1000) },
+    })
+    await api.put(`/api/orders/${orderId}/review`).set(authHeader(token))
+      .send({ rating: 5 }).expect(400)
+  })
+
+  it('lets only one of two concurrent edits win', async () => {
+    const { token, orderId } = await buyerWithDeliveredOrder('rv-race@test.local')
+    await api.post(`/api/orders/${orderId}/review`).set(authHeader(token))
+      .send({ rating: 3 }).expect(201)
+
+    const [a, b] = await Promise.all([
+      api.put(`/api/orders/${orderId}/review`).set(authHeader(token)).send({ rating: 5 }),
+      api.put(`/api/orders/${orderId}/review`).set(authHeader(token)).send({ rating: 1 }),
+    ])
+    const statuses = [a.status, b.status].sort()
+    expect(statuses).toEqual([200, 400])
+  })
+
+  it('404s for foreign or missing reviews', async () => {
+    const { orderId } = await buyerWithDeliveredOrder('rv-edit-owner@test.local')
+    await createTestUser('rv-edit-other@test.local', 'pass123', 'user', 5000)
+    const other = await loginAs('rv-edit-other@test.local', 'pass123')
+    await api.put(`/api/orders/${orderId}/review`).set(authHeader(other.accessToken))
+      .send({ rating: 5 }).expect(404)
+  })
+})

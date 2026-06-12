@@ -10,3 +10,13 @@ export async function createForOrder(req: Request, res: Response, next: NextFunc
     next(err)
   }
 }
+
+export async function updateForOrder(req: Request, res: Response, next: NextFunction) {
+  try {
+    const orderId = req.params.id as unknown as number
+    const review = await reviewService.updateOrderReview(req.user!.userId, orderId, req.body)
+    res.json(review)
+  } catch (err) {
+    next(err)
+  }
+}

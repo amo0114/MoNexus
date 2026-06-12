@@ -74,3 +74,42 @@ export async function createOrderReview(
     return review
   })
 }
+
+export async function updateOrderReview(
+  userId: number,
+  orderId: number,
+  input: { rating: number; comment?: string }
+) {
+  return prisma.$transaction(async tx => {
+    const review = await tx.review.findUnique({
+      where: { orderId },
+      select: { id: true, userId: true, productId: true, status: true },
+    })
+    if (!review || review.userId !== userId) throw notFound('评价不存在')
+    if (review.status !== 'visible') throw badRequest('评价已被移除，不可修改')
+
+    // 本函数对 Review 是 UPDATE 而非 INSERT，外键不会重新校验（无 KEY SHARE 死锁风险），
+    // 但聚合重算仍需持 Product 行锁，且必须在 updateMany 之前取锁以保持全局锁序一致。
+    await lockProductRow(tx, review.productId)
+
+    // 禁止 read-then-update：条件 updateMany + 断言行数，保证「只能改一次」在并发下原子成立。
+    const updated = await tx.review.updateMany({
+      where: {
+        orderId,
+        userId,
+        status: 'visible',
+        editedAt: null,
+        editableUntil: { gt: new Date() },
+      },
+      data: {
+        rating: input.rating,
+        comment: input.comment?.trim() || null,
+        editedAt: new Date(),
+      },
+    })
+    if (updated.count !== 1) throw badRequest('评价修改窗口已过或已修改过')
+
+    await recalcProductRating(tx, review.productId)
+    return tx.review.findUnique({ where: { orderId } })
+  })
+}
