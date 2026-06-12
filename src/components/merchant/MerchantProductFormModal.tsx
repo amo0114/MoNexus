@@ -195,7 +195,7 @@ export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, pr
     let stockNum: number | undefined
     if (form.deliveryMode !== 'instant_inventory' && form.stockMode === 'limited') {
       stockNum = Number(form.stock)
-      if (!Number.isInteger(stockNum) || stockNum < 0) {
+      if (form.stock.trim() === '' || !Number.isInteger(stockNum) || stockNum < 0) {
         showToast('限量库存必须填写有效数量', 'error')
         return
       }
