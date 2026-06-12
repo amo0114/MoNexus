@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { prisma } from '../../lib/prisma.js'
-import { api, createTestMerchant, loginAsMerchant, authHeader } from '../../__tests__/helpers.js'
+import { api, createTestMerchant, createTestUser, loginAs, loginAsMerchant, authHeader } from '../../__tests__/helpers.js'
 
 async function merchantToken(email: string) {
   await createTestMerchant(email, 'pass123', { role: 'merchant', status: 'active', name: `商家-${email}` })
@@ -112,5 +112,32 @@ describe('merchant instant_fixed product update', () => {
       .expect(201)
     await api.put(`/api/merchant/products/${res.body.id}`).set(authHeader(token))
       .send({ stock: 100 }).expect(400)
+  })
+})
+
+describe('inventory operations restricted to instant_inventory', () => {
+  it('rejects inventory import for instant_fixed products', async () => {
+    const token = await merchantToken('if-noimport@test.local')
+    const created = await api.post('/api/merchant/products').set(authHeader(token))
+      .send(baseBody).expect(201)
+
+    await api.post(`/api/merchant/products/${created.body.id}/inventory/preview`)
+      .set(authHeader(token)).send({ text: 'CARD-001' }).expect(400)
+    await api.post(`/api/merchant/products/${created.body.id}/inventory`)
+      .set(authHeader(token)).send({ text: 'CARD-001' }).expect(400)
+    await api.post(`/api/merchant/products/${created.body.id}/inventory/void`)
+      .set(authHeader(token)).send({ count: 1 }).expect(400)
+  })
+
+  it('rejects admin inventory import for instant_fixed products', async () => {
+    const merchantTokenValue = await merchantToken('if-admin-noimport@test.local')
+    const created = await api.post('/api/merchant/products').set(authHeader(merchantTokenValue))
+      .send(baseBody).expect(201)
+
+    const { user, password } = await createTestUser('if-admin@test.local', 'admin123', 'admin')
+    const { accessToken } = await loginAs(user.email, password)
+
+    await api.post(`/api/admin/products/${created.body.id}/inventory`)
+      .set(authHeader(accessToken)).send({ items: ['CARD-001'] }).expect(400)
   })
 })

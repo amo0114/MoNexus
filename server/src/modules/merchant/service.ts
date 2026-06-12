@@ -259,8 +259,11 @@ export async function previewMyInventoryImport(
   productId: number,
   payload: InventoryImportPayload
 ) {
-  const product = await prisma.product.findFirst({ where: { id: productId, merchantId }, select: { id: true } })
+  const product = await prisma.product.findFirst({ where: { id: productId, merchantId }, select: { id: true, deliveryMode: true } })
   if (!product) throw notFound('商品不存在')
+  if (product.deliveryMode !== 'instant_inventory') {
+    throw badRequest('仅即时库存发货商品支持库存管理')
+  }
 
   const analysis = await analyzeInventoryPayload(productId, payload)
   return {
@@ -382,8 +385,11 @@ export async function importMyInventory(
   productId: number,
   payload: InventoryImportPayload
 ) {
-  const product = await prisma.product.findFirst({ where: { id: productId, merchantId }, select: { id: true } })
+  const product = await prisma.product.findFirst({ where: { id: productId, merchantId }, select: { id: true, deliveryMode: true } })
   if (!product) throw notFound('商品不存在')
+  if (product.deliveryMode !== 'instant_inventory') {
+    throw badRequest('仅即时库存发货商品支持库存管理')
+  }
 
   return prisma.$transaction(async tx => {
     const analysis = await analyzeInventoryPayload(productId, payload, tx)
@@ -425,8 +431,11 @@ export async function voidMyInventory(
   productId: number,
   input: { count: number; reason?: string }
 ) {
-  const product = await prisma.product.findFirst({ where: { id: productId, merchantId }, select: { id: true } })
+  const product = await prisma.product.findFirst({ where: { id: productId, merchantId }, select: { id: true, deliveryMode: true } })
   if (!product) throw notFound('商品不存在')
+  if (product.deliveryMode !== 'instant_inventory') {
+    throw badRequest('仅即时库存发货商品支持库存管理')
+  }
 
   // 单事务完成：InventoryItem 置 void + Product.stock 扣减 + InventoryLog 落账。
   // 只允许作废 available 项；updateMany 二次过滤 status 防与下单占用并发竞态。

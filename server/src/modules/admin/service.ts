@@ -229,6 +229,9 @@ export async function updateProduct(id: number, data: Prisma.ProductUpdateInput)
 export async function importInventory(productId: number, items: string[], adminUserId: number) {
   const product = await prisma.product.findUnique({ where: { id: productId } })
   if (!product) throw notFound('商品不存在')
+  if (product.deliveryMode !== 'instant_inventory') {
+    throw badRequest('仅即时库存发货商品支持库存管理')
+  }
 
   return prisma.$transaction(async tx => {
     for (const content of items) {
