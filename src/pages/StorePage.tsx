@@ -14,6 +14,7 @@ interface Product {
   price: number
   originalPrice?: number
   stock: number
+  stockMode?: string
   sales: number
   isHot: boolean
   images?: string[]
@@ -60,6 +61,7 @@ function ProductCard({
   product: Product
   onOpen: (product: Product) => void
 }) {
+  const isSoldOut = product.stockMode !== 'unlimited' && product.stock === 0
   return (
     <div
       key={product.id}
@@ -68,7 +70,7 @@ function ProductCard({
         rounded-xl bg-[var(--color-surface)] border border-[var(--color-border)]
         shadow-md hover:shadow-lg hover:border-[var(--color-primary)]/35
         hover:-translate-y-0.5 transition-all duration-200
-        ${product.stock === 0 ? 'opacity-60 grayscale' : ''}`}
+        ${isSoldOut ? 'opacity-60 grayscale' : ''}`}
     >
       <div className="relative h-40 w-full bg-[var(--color-image-placeholder)] overflow-hidden border-b border-[var(--color-border)] shrink-0">
         <img
@@ -133,7 +135,7 @@ function ProductCard({
           </div>
           <div className="flex flex-col items-end gap-1 text-[10px] text-[var(--color-text-muted)] shrink-0">
             <span>已售 {product.sales}</span>
-            <span>库存 {product.stock}</span>
+            <span>库存 {product.stockMode === 'unlimited' ? '不限' : product.stock}</span>
           </div>
         </div>
       </div>
