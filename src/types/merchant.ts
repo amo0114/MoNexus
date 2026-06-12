@@ -28,6 +28,7 @@ export interface Merchant {
 export interface AuthUser {
   id: number
   email: string
+  nickname?: string | null
   role: UserRole
   status: string
   inviteCode: string

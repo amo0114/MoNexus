@@ -35,4 +35,13 @@ export interface UserOrderDetail extends Omit<UserOrderListItem, 'delivery'> {
     deliveredAt?: string | null
   }
   timeline: OrderStatusEvent[]
+  review?: null | {
+    rating: number
+    comment: string | null
+    status: string
+    editableUntil: string
+    editedAt: string | null
+    createdAt: string
+  }
+  canReview?: boolean
 }
