@@ -25,7 +25,7 @@ initErrorReporter()
 
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  limit: 300,
+  limit: config.apiRateLimitMax,
   standardHeaders: true,
   legacyHeaders: false,
   message: {

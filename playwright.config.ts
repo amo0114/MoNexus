@@ -22,6 +22,9 @@ export default defineConfig({
           url: 'http://localhost:3000/api/health',
           timeout: 60_000,
           reuseExistingServer: true,
+          // 全量 e2e 共享一个 IP，整轮 /api 请求量已超默认 300/15min，
+          // 提高 e2e 栈的限流上限避免套件尾部随机 429。
+          env: { API_RATE_LIMIT_MAX: '3000' },
         },
         {
           command: 'npm run dev',
