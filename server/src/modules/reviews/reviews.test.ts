@@ -177,6 +177,39 @@ describe('GET /api/products/:id/reviews (public)', () => {
   })
 })
 
+describe('order detail review/canReview', () => {
+  it('reports canReview=true for delivered unreviewed order, then embeds own review', async () => {
+    const { token, orderId } = await buyerWithDeliveredOrder('rv-detail@test.local')
+
+    const before = await api.get(`/api/orders/${orderId}`).set(authHeader(token)).expect(200)
+    expect(before.body.canReview).toBe(true)
+    expect(before.body.review).toBeNull()
+
+    await api.post(`/api/orders/${orderId}/review`).set(authHeader(token))
+      .send({ rating: 4, comment: '详情可见' }).expect(201)
+
+    const after = await api.get(`/api/orders/${orderId}`).set(authHeader(token)).expect(200)
+    expect(after.body.canReview).toBe(false)
+    expect(after.body.review.rating).toBe(4)
+    expect(after.body.review.editableUntil).toBeTruthy()
+  })
+
+  it('reports canReview=false for pending manual_service order', async () => {
+    await createTestUser('rv-pending@test.local', 'pass123', 'user', 5000)
+    const product = await createTestProduct('人工服务评测', 100, 0, [])
+    await prisma.product.update({
+      where: { id: product.id },
+      data: { deliveryMode: 'manual_service', stockMode: 'unlimited' },
+    })
+    const login = await loginAs('rv-pending@test.local', 'pass123')
+    const order = await api.post('/api/orders').set(authHeader(login.accessToken))
+      .send({ productId: product.id }).expect(201)
+
+    const detail = await api.get(`/api/orders/${order.body.orderId}`).set(authHeader(login.accessToken)).expect(200)
+    expect(detail.body.canReview).toBe(false)
+  })
+})
+
 describe('maskEmail', () => {
   it('masks local part keeping 2 chars, 1 char when local <= 2', async () => {
     const { maskEmail } = await import('./service.js')
