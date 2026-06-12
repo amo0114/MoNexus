@@ -210,6 +210,48 @@ describe('order detail review/canReview', () => {
   })
 })
 
+describe('admin review moderation', () => {
+  it('soft-removes a review, recalcs aggregates, writes AdminLog, blocks re-review and edit', async () => {
+    const { token, productId, orderId } = await buyerWithDeliveredOrder('rv-admin@test.local')
+    const created = await api.post(`/api/orders/${orderId}/review`).set(authHeader(token))
+      .send({ rating: 1, comment: '违规内容' }).expect(201)
+
+    await createTestUser('rv-admin-op@test.local', 'pass123', 'admin', 0)
+    const admin = await loginAs('rv-admin-op@test.local', 'pass123')
+
+    const listed = await api.get(`/api/admin/reviews?productId=${productId}`)
+      .set(authHeader(admin.accessToken)).expect(200)
+    expect(listed.body.items[0].id).toBe(created.body.id)
+
+    await api.delete(`/api/admin/reviews/${created.body.id}`)
+      .set(authHeader(admin.accessToken)).expect(200)
+
+    const product = await prisma.product.findUnique({ where: { id: productId } })
+    expect(product?.ratingCount).toBe(0)
+    expect(Number(product?.ratingAvg)).toBe(0)
+
+    const publicList = await api.get(`/api/products/${productId}/reviews`).expect(200)
+    expect(publicList.body.total).toBe(0)
+
+    const log = await prisma.adminLog.findFirst({
+      where: { targetType: 'review', targetId: created.body.id },
+    })
+    expect(log?.action).toBe('移除评价')
+
+    // 不可重评（orderId unique 仍占用）、不可修改
+    await api.post(`/api/orders/${orderId}/review`).set(authHeader(token))
+      .send({ rating: 5 }).expect(409)
+    await api.put(`/api/orders/${orderId}/review`).set(authHeader(token))
+      .send({ rating: 5 }).expect(400)
+
+    // 重复删除 400；普通用户 403
+    await api.delete(`/api/admin/reviews/${created.body.id}`)
+      .set(authHeader(admin.accessToken)).expect(400)
+    await api.delete(`/api/admin/reviews/${created.body.id}`)
+      .set(authHeader(token)).expect(403)
+  })
+})
+
 describe('maskEmail', () => {
   it('masks local part keeping 2 chars, 1 char when local <= 2', async () => {
     const { maskEmail } = await import('./service.js')

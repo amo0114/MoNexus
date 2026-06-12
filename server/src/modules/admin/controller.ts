@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express'
 import * as adminService from './service.js'
+import * as reviewService from '../reviews/service.js'
 import type { ListAdminAuditQuery, ListOrdersQuery, ListUsersQuery } from './schema.js'
 
 export async function stats(_req: Request, res: Response, next: NextFunction) {
@@ -129,6 +130,22 @@ export async function suspendMerchant(req: Request, res: Response, next: NextFun
 export async function updateCommission(req: Request, res: Response, next: NextFunction) {
   try {
     res.json(await adminService.updateCommission(req.user!.userId, req.params.id as unknown as number, req.body.commissionRate))
+  } catch (err) { next(err) }
+}
+
+// ---- Reviews ----
+
+export async function listReviews(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { productId, page, pageSize } = req.query as unknown as { productId?: number; page: number; pageSize: number }
+    res.json(await reviewService.listReviewsForAdmin({ productId, page, pageSize }))
+  } catch (err) { next(err) }
+}
+
+export async function removeReview(req: Request, res: Response, next: NextFunction) {
+  try {
+    const reviewId = req.params.id as unknown as number
+    res.json(await reviewService.removeReviewByAdmin(req.user!.userId, reviewId))
   } catch (err) { next(err) }
 }
 

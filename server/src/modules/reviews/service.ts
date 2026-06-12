@@ -115,6 +115,64 @@ export async function createOrderReview(
   })
 }
 
+// 管理端列表：admin 是可信面，允许返回 email/orderId 等公开接口禁止的字段；含 removed 行供运营审计。
+export async function listReviewsForAdmin(filters: { productId?: number; page: number; pageSize: number }) {
+  const where = filters.productId ? { productId: filters.productId } : {}
+  const [total, items] = await prisma.$transaction([
+    prisma.review.count({ where }),
+    prisma.review.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      skip: (filters.page - 1) * filters.pageSize,
+      take: filters.pageSize,
+      select: {
+        id: true,
+        productId: true,
+        orderId: true,
+        rating: true,
+        comment: true,
+        status: true,
+        createdAt: true,
+        user: { select: { id: true, email: true } },
+      },
+    }),
+  ])
+  return { items, total, page: filters.page, pageSize: filters.pageSize }
+}
+
+// 软删：status=removed，行保留（审计 + orderId unique 继续占用，删的是违规内容不是重评机会）。
+export async function removeReviewByAdmin(adminUserId: number, reviewId: number) {
+  return prisma.$transaction(async tx => {
+    const review = await tx.review.findUnique({
+      where: { id: reviewId },
+      select: { id: true, productId: true, status: true },
+    })
+    if (!review) throw notFound('评价不存在')
+    if (review.status === 'removed') throw badRequest('评价已被移除')
+
+    // 与 create/update 保持同一锁序：先持 Product 行锁再写 Review 再重算聚合。
+    await lockProductRow(tx, review.productId)
+
+    const updated = await tx.review.updateMany({
+      where: { id: reviewId, status: 'visible' },
+      data: { status: 'removed' },
+    })
+    if (updated.count !== 1) throw badRequest('评价已被移除')
+
+    await recalcProductRating(tx, review.productId)
+    await tx.adminLog.create({
+      data: {
+        adminUserId,
+        action: '移除评价',
+        targetType: 'review',
+        targetId: review.id,
+        detail: `评价 #${review.id}（商品 #${review.productId}）已移除`,
+      },
+    })
+    return { id: review.id, status: 'removed' }
+  })
+}
+
 export async function updateOrderReview(
   userId: number,
   orderId: number,
