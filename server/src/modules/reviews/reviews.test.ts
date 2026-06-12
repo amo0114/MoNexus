@@ -140,3 +140,48 @@ describe('PUT /api/orders/:id/review', () => {
       .send({ rating: 5 }).expect(404)
   })
 })
+
+describe('GET /api/products/:id/reviews (public)', () => {
+  it('lists visible reviews with displayName and never leaks email/userId/orderId', async () => {
+    const { token, productId, orderId } = await buyerWithDeliveredOrder('rv-public@test.local')
+    await api.post(`/api/orders/${orderId}/review`).set(authHeader(token))
+      .send({ rating: 4, comment: '公开可见的评价' }).expect(201)
+
+    const res = await api.get(`/api/products/${productId}/reviews`).expect(200) // 无需登录
+    expect(res.body.total).toBe(1)
+    const item = res.body.items[0]
+    expect(item.rating).toBe(4)
+    expect(item.comment).toBe('公开可见的评价')
+    expect(item.displayName).toBe('rv***@test.local') // 无昵称时邮箱打码
+
+    const raw = JSON.stringify(res.body)
+    expect(raw).not.toContain('rv-public@test.local')
+    expect(raw).not.toContain('userId')
+    expect(raw).not.toContain('orderId')
+  })
+
+  it('exposes ratingAvg/ratingCount as numbers in product list and detail, without legacy reviews include', async () => {
+    const { token, productId, orderId } = await buyerWithDeliveredOrder('rv-agg@test.local')
+    await api.post(`/api/orders/${orderId}/review`).set(authHeader(token))
+      .send({ rating: 5 }).expect(201)
+
+    const detail = await api.get(`/api/products/${productId}`).expect(200)
+    expect(detail.body.ratingAvg).toBe(5)
+    expect(detail.body.ratingCount).toBe(1)
+    expect(detail.body.reviews).toBeUndefined() // 遗留 include 已移除
+
+    const list = await api.get('/api/products').expect(200)
+    const found = list.body.items.find((p: { id: number }) => p.id === productId)
+    expect(found.ratingAvg).toBe(5)
+    expect(found.ratingCount).toBe(1)
+  })
+})
+
+describe('maskEmail', () => {
+  it('masks local part keeping 2 chars, 1 char when local <= 2', async () => {
+    const { maskEmail } = await import('./service.js')
+    expect(maskEmail('test@moyuan.net')).toBe('te***@moyuan.net')
+    expect(maskEmail('ab@x.com')).toBe('a***@x.com')
+    expect(maskEmail('a@x.com')).toBe('a***@x.com')
+  })
+})

@@ -11,6 +11,46 @@ export function maskEmail(email: string) {
   return `${local.slice(0, keep)}***@${domain}`
 }
 
+function displayNameFor(user: { nickname: string | null; email: string }) {
+  return user.nickname?.trim() || maskEmail(user.email)
+}
+
+// 安全红线：公开接口响应字段白名单，绝不含 email 原文 / userId / orderId。
+export async function listProductReviews(productId: number, page = 1, pageSize = 10) {
+  const where = { productId, status: 'visible' }
+  const [total, rows] = await prisma.$transaction([
+    prisma.review.count({ where }),
+    prisma.review.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+      select: {
+        id: true,
+        rating: true,
+        comment: true,
+        editedAt: true,
+        createdAt: true,
+        user: { select: { nickname: true, email: true } },
+      },
+    }),
+  ])
+
+  return {
+    items: rows.map(row => ({
+      id: row.id,
+      rating: row.rating,
+      comment: row.comment,
+      editedAt: row.editedAt,
+      createdAt: row.createdAt,
+      displayName: displayNameFor(row.user),
+    })),
+    total,
+    page,
+    pageSize,
+  }
+}
+
 // 必须先锁 Product 行再重算：Read Committed 下不锁行的并发评价会各自读旧明细互相覆盖聚合。
 // 调用方必须在 INSERT Review 之前就持有该锁（见 lockProductRow）：Review→Product 外键校验会对
 // Product 行加 FOR KEY SHARE，若先 INSERT 再 FOR UPDATE，两个并发事务会互等对方的 KEY SHARE 而死锁。

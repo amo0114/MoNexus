@@ -20,3 +20,13 @@ export async function updateForOrder(req: Request, res: Response, next: NextFunc
     next(err)
   }
 }
+
+export async function listForProduct(req: Request, res: Response, next: NextFunction) {
+  try {
+    const productId = req.params.id as unknown as number
+    const { page, pageSize } = req.query as unknown as { page: number; pageSize: number }
+    res.json(await reviewService.listProductReviews(productId, page, pageSize))
+  } catch (err) {
+    next(err)
+  }
+}
