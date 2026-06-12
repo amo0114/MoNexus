@@ -56,23 +56,25 @@ ratingCount Int     @default(0)
 ```
 
 - 展示名查询时实时派生：`nickname ?? maskEmail(email)`（如 `te***@moyuan.net`）。Review 不存展示名——改昵称历史评价自动跟随，零迁移。
-- 聚合重算：评价创建/修改/管理员删除的同一事务内，对该商品 `AVG(rating)`/`COUNT(*)`（仅 status=visible）重算并写回 Product。失败整体回滚，评分与明细不会不一致。
+- **反向关系补全**：`User.reviews Review[]`、`Order.review Review?` 需同步加入对应模型（Product 已有 `reviews Review[]`），否则迁移不可实现。
+- 聚合重算：评价创建/修改/管理员删除的同一事务内，对该商品 `AVG(rating)`/`COUNT(*)`（仅 status=visible）重算并写回 Product。
+- **聚合并发约束**：同事务不足以防并发丢失更新（默认 Read Committed 下两个事务可各自读旧明细后互相覆盖聚合）。要求**按商品行串行化**：事务内先 `SELECT ... FOR UPDATE` 锁定 Product 行（Prisma 用 `tx.$queryRaw` 或先对 Product 做一次条件 update 取行锁），再做 AVG/COUNT 重算写回。测试必须包含同商品并发评价场景（见 §6）。
 
 ## 3. API
 
 ### 用户侧
 
 - `POST /api/orders/:id/review`，body `{ rating: 1..5 int, comment?: ≤500 字 }`
-  资格校验：订单属当前用户（404 否则）；`status ∈ {delivered, closed}`（400 否则）；未评价过（409，orderId unique 兜底并发）。事务内创建 Review + 重算聚合。
+  资格校验：订单属当前用户（404 否则）；状态经 `normalizeOrderStatus` 归一后 `∈ {delivered, closed}`（400 否则）——**存量 legacy `completed` 订单等价于 delivered，必须可评**（参照 fulfillment.ts 既有归一化与 orders/service.ts 的双值过滤惯例）；未评价过（409，orderId unique 兜底并发）。事务内创建 Review + 锁行重算聚合。
 - `PUT /api/orders/:id/review`，body 同上
-  仅 `now < editableUntil && editedAt == null`（400 否则）。改后写 `editedAt = now`，重算聚合。
+  仅 `now < editableUntil && editedAt == null`（400 否则）。**原子性要求**：不得 read-then-update——必须用条件更新（`updateMany({ where: { orderId, editedAt: null, editableUntil: { gt: now } } })`）并断言影响行数 === 1，否则两个并发 PUT 会同时通过检查各改一次。改后写 `editedAt = now`，锁行重算聚合。
 - 用户订单详情响应透出：`review`（自己的评价：rating/comment/editableUntil/editedAt/status）+ `canReview: boolean`。
 - `PATCH /api/users/me`，body `{ nickname: 1-20 字 trim }`（不要求唯一）。若现无 users/me 更新端点则新建，路径以实际用户模块为准。
 
 ### 公开侧
 
 - `GET /api/products/:id/reviews?page=&pageSize=`：仅 visible，createdAt desc，返回 `{ id, rating, comment, displayName, editedAt, createdAt }`。**绝不返回 email 原文、userId、orderId**。
-- 商品 list/detail 既有响应自然带 `ratingAvg`/`ratingCount`。
+- 商品 list/detail 透出 `ratingAvg`/`ratingCount`：**公开列表用的是显式 select 白名单（products/service.ts `productListSelect`），必须显式加入这两个字段**，否则 StorePage 拿不到；前端 Product 类型（StorePage/ProductDetailPage 本地接口与相关 types）同步补充。
 - `getProductDetail` 移除遗留 `reviews` include（消费方仅此一处且前端未渲染，改用上述分页端点）。
 
 ### 管理侧
@@ -99,9 +101,9 @@ ratingCount Int     @default(0)
 
 后端（vitest + TEST_DATABASE_URL）：
 
-- 资格矩阵：非本人 404；pending/processing/disputed 400；delivered/closed 201；重复评价 409。
-- 修改：窗口内首次 200；二次 400；过期 400（用 prisma 直接改 editableUntil 模拟过期）。
-- 聚合：创建/修改/删除后 ratingAvg/ratingCount 正确（含多用户多订单场景、四舍五入到一位小数）。
+- 资格矩阵：非本人 404；pending/processing/disputed 400；delivered/closed 201；**legacy `completed` 状态订单 201**；重复评价 409。
+- 修改：窗口内首次 200；二次 400；过期 400（用 prisma 直接改 editableUntil 模拟过期）；**并发双 PUT 仅一个成功**（条件更新原子性）。
+- 聚合：创建/修改/删除后 ratingAvg/ratingCount 正确（含多用户多订单场景、四舍五入到一位小数）；**同商品并发创建评价后聚合等于全量重算结果**（行锁串行化验证，Promise.all 并发提交后断言）。
 - 泄漏防护：公开列表响应不含 email/userId/orderId/removed 评价。
 - 昵称：设置成功、长度校验、评价展示名 nickname 优先、未设置回退打码。
 - AdminLog：删评落审计行。
