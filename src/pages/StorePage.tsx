@@ -1,6 +1,6 @@
 import { useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Search, SearchX, Coins, Flame, Store } from 'lucide-react'
+import { Search, SearchX, Coins, Flame, Store, Star } from 'lucide-react'
 import api from '../api/client'
 import { useAppStore } from '../stores/appStore'
 
@@ -16,6 +16,8 @@ interface Product {
   stock: number
   stockMode?: string
   sales: number
+  ratingAvg?: number
+  ratingCount?: number
   isHot: boolean
   images?: string[]
   merchant?: { id: number; name: string } | null
@@ -133,7 +135,15 @@ function ProductCard({
               {product.price}
             </div>
           </div>
-          <div className="flex flex-col items-end gap-1 text-[10px] text-[var(--color-text-muted)] shrink-0">
+          <div className="flex flex-col items-end gap-0.5 text-[10px] text-[var(--color-text-muted)] shrink-0">
+            {product.ratingCount && product.ratingCount > 0 ? (
+              <span className="flex items-center gap-1">
+                <Star className="w-3 h-3 star-filled" />
+                {(product.ratingAvg ?? 0).toFixed(1)}（{product.ratingCount}）
+              </span>
+            ) : (
+              <span>暂无评分</span>
+            )}
             <span>已售 {product.sales}</span>
             <span>库存 {product.stockMode === 'unlimited' ? '不限' : product.stock}</span>
           </div>
