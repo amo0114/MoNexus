@@ -59,7 +59,7 @@ describe('merchant dispute resume by delivery mode', () => {
     const product = await createTestProduct('人工争议服务', 200, 0, [], merchant.id)
     await prisma.product.update({
       where: { id: product.id },
-      data: { deliveryMode: 'manual_service', stock: 0 },
+      data: { deliveryMode: 'manual_service', stock: 0, stockMode: 'unlimited' },
     })
 
     const buyer = await loginAs('dispute-manual-buyer@test.local', 'buyer123')
@@ -94,5 +94,39 @@ describe('merchant dispute resume by delivery mode', () => {
 
     const order = await prisma.order.findUnique({ where: { id: orderId }, select: { status: true } })
     expect(order?.status).toBe('processing')
+  })
+
+  it('resumes an instant_fixed disputed order back to delivered with content intact', async () => {
+    const { merchant } = await createTestMerchant('dispute-fixed@test.local', 'pass123', {
+      role: 'merchant', status: 'active', name: '固定内容争议商家',
+    })
+    await createTestUser('dispute-fixed-buyer@test.local', 'buyer123', 'user', 5000)
+    const product = await prisma.product.create({
+      data: {
+        name: '固定内容争议商品', type: '邀请码', price: 100, stock: 0, status: 'active',
+        deliveryMode: 'instant_fixed', stockMode: 'unlimited',
+        fixedContent: 'FIXED-CONTENT-001', fixedContentType: 'text', merchantId: merchant.id,
+      },
+    })
+
+    const buyer = await loginAs('dispute-fixed-buyer@test.local', 'buyer123')
+    const created = await api.post('/api/orders').set(authHeader(buyer.accessToken))
+      .send({ productId: product.id }).expect(201)
+    const orderId = created.body.orderId
+
+    await api.post(`/api/orders/${orderId}/dispute`).set(authHeader(buyer.accessToken)).expect(200)
+
+    const merchantLogin = await loginAsMerchant('dispute-fixed@test.local', 'pass123')
+    await api.post(`/api/merchant/orders/${orderId}/fulfillment/respond-dispute`)
+      .set(authHeader(merchantLogin.accessToken))
+      .send({ resolution: 'resume' }).expect(200)
+
+    const order = await prisma.order.findUnique({
+      where: { id: orderId },
+      select: { status: true, delivery: { select: { content: true, contentType: true } } },
+    })
+    expect(order?.status).toBe('delivered')
+    expect(order?.delivery?.content).toBe('FIXED-CONTENT-001')
+    expect(order?.delivery?.contentType).toBe('text')
   })
 })

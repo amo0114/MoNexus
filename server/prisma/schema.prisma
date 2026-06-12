@@ -113,29 +113,34 @@ model PointLog {
 }
 
 model Product {
-  id              Int      @id @default(autoincrement())
-  name            String
-  description     String?
-  richDescription String?
-  type            String // 网络节点 / 共享账号 / 充值卡密 / 邀请码
-  icon            String   @default("package")
-  imageUrl        String?
-  images          String[] @default([])
-  price           Int
-  originalPrice   Int?
-  stock           Int      @default(0)
-  sales           Int      @default(0)
-  isHot           Boolean  @default(false)
-  status          String   @default("active") // active | inactive
-  deliveryMode    String   @default("instant_inventory") // instant_inventory | manual_service
-  merchantId      Int?
-  createdAt       DateTime @default(now())
+  id               Int      @id @default(autoincrement())
+  name             String
+  description      String?
+  richDescription  String?
+  type             String // 网络节点 / 共享账号 / 充值卡密 / 邀请码
+  icon             String   @default("package")
+  imageUrl         String?
+  images           String[] @default([])
+  price            Int
+  originalPrice    Int?
+  stock            Int      @default(0)
+  sales            Int      @default(0)
+  isHot            Boolean  @default(false)
+  status           String   @default("active") // active | inactive
+  deliveryMode     String   @default("instant_inventory") // instant_inventory | instant_fixed | manual_service
+  stockMode        String   @default("limited") // limited | unlimited（instant_inventory 强制 limited）
+  fixedContent     String? // instant_fixed 专用：固定交付内容（付费内容，禁止公开序列化）
+  fixedContentType String   @default("text") // text | url
+  merchantId       Int?
+  createdAt        DateTime @default(now())
 
   merchant      Merchant?       @relation(fields: [merchantId], references: [id])
   reviews       Review[]
   orders        Order[]
   inventory     InventoryItem[]
   inventoryLogs InventoryLog[]
+
+  @@index([status, isHot, sales, id])
 }
 
 model InventoryLog {
@@ -203,6 +208,7 @@ model DeliveryRecord {
   userId      Int
   productId   Int
   content     String?
+  contentType String    @default("text") // text | url | file
   status      String    @default("delivered")
   publicNote  String?
   deliveredAt DateTime?

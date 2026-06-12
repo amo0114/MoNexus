@@ -21,6 +21,7 @@ interface Product {
   price: number
   originalPrice?: number
   stock: number
+  stockMode?: string
   sales: number
   merchant?: { id: number; name: string } | null
 }
@@ -37,6 +38,7 @@ export default function ProductDetailPage() {
   const [showPurchase, setShowPurchase] = useState(false)
   const [showSuccess, setShowSuccess] = useState(false)
   const [deliveryContent, setDeliveryContent] = useState('')
+  const [deliveryContentType, setDeliveryContentType] = useState<string | undefined>(undefined)
   const [merchantName, setMerchantName] = useState('')
   const [activeImage, setActiveImage] = useState(0)
 
@@ -63,6 +65,7 @@ export default function ProductDetailPage() {
       const { data } = await api.post('/orders', { productId: product.id })
       useAuthStore.getState().updatePoints(data.balanceAfter)
       setDeliveryContent(data.deliveryContent)
+      setDeliveryContentType(data.deliveryContentType)
       setMerchantName(data.merchantName || '')
       setShowPurchase(false)
       setShowSuccess(true)
@@ -109,7 +112,7 @@ export default function ProductDetailPage() {
   if (!product) return null
 
   const isInsufficient = userPoints < product.price
-  const isSoldOut = product.stock === 0
+  const isSoldOut = product.stockMode !== 'unlimited' && product.stock === 0
 
   return (
     <div className="max-w-5xl mx-auto pb-8 fade-in relative">
@@ -205,7 +208,7 @@ export default function ProductDetailPage() {
                   已售: <span className="text-[var(--color-text)] font-bold">{product.sales}</span>
                 </span>
                 <span className="text-[var(--color-text-muted)] font-medium">
-                  库存: <span className="text-[var(--color-text)] font-bold">{product.stock}</span>
+                  库存: <span className="text-[var(--color-text)] font-bold">{product.stockMode === 'unlimited' ? '不限' : product.stock}</span>
                 </span>
               </div>
               <div className="flex items-center gap-3 text-xs p-2.5 bg-[var(--color-surface)] rounded-lg border border-[var(--color-border)] w-fit">
@@ -340,6 +343,7 @@ export default function ProductDetailPage() {
       {showSuccess && (
         <SuccessModal
           deliveryContent={deliveryContent}
+          deliveryContentType={deliveryContentType}
           merchantName={merchantName}
           onClose={() => setShowSuccess(false)}
           onViewOrders={() => {

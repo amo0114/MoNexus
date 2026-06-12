@@ -378,7 +378,7 @@ describe('POST /api/admin/settlements/batch-settle', () => {
     const product = await createTestProduct('待履约结算商品', 200, 0, [], merchant.id)
     await prisma.product.update({
       where: { id: product.id },
-      data: { deliveryMode: 'manual_service', stock: 0 },
+      data: { deliveryMode: 'manual_service', stock: 0, stockMode: 'unlimited' },
     })
     const buyer = await loginAs('settle-buyer-gate@test.local', 'buyerpass')
     const created = await api

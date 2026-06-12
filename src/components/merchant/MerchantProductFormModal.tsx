@@ -34,7 +34,11 @@ export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, pr
     imageUrl: '',
     isHot: false,
     status: 'active',
-    deliveryMode: 'instant_inventory'
+    deliveryMode: 'instant_inventory',
+    stockMode: 'unlimited',
+    stock: '',
+    fixedContent: '',
+    fixedContentType: 'text'
   })
 
   useEffect(() => {
@@ -57,7 +61,11 @@ export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, pr
           imageUrl: product.imageUrl || '',
           isHot: product.isHot || false,
           status: product.status || 'active',
-          deliveryMode: product.deliveryMode || 'instant_inventory'
+          deliveryMode: product.deliveryMode || 'instant_inventory',
+          stockMode: product.stockMode || (product.deliveryMode === 'instant_inventory' ? 'limited' : 'unlimited'),
+          stock: typeof product.stock === 'number' ? product.stock.toString() : '',
+          fixedContent: product.fixedContent || '',
+          fixedContentType: product.fixedContentType || 'text'
         })
       } else {
         const defaultType = registry?.productTypes?.[0]?.value || '网络节点'
@@ -74,7 +82,11 @@ export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, pr
           imageUrl: '',
           isHot: false,
           status: 'active',
-          deliveryMode: defaultMode
+          deliveryMode: defaultMode,
+          stockMode: 'unlimited',
+          stock: '',
+          fixedContent: '',
+          fixedContentType: 'text'
         })
       }
     }
@@ -172,6 +184,23 @@ export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, pr
       }
     }
 
+    if (form.deliveryMode === 'instant_fixed' && !form.fixedContent.trim()) {
+      showToast('固定内容交付必须填写交付内容', 'error')
+      return
+    }
+    if (form.deliveryMode === 'instant_fixed' && form.fixedContentType === 'url' && !/^https?:\/\//i.test(form.fixedContent.trim())) {
+      showToast('链接必须以 http(s):// 开头', 'error')
+      return
+    }
+    let stockNum: number | undefined
+    if (form.deliveryMode !== 'instant_inventory' && form.stockMode === 'limited') {
+      stockNum = Number(form.stock)
+      if (form.stock.trim() === '' || !Number.isInteger(stockNum) || stockNum < 0) {
+        showToast('限量库存必须填写有效数量', 'error')
+        return
+      }
+    }
+
     const payload: any = {
       name: form.name.trim(),
       type: form.type,
@@ -184,6 +213,18 @@ export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, pr
       images,
       isHot: form.isHot,
       deliveryMode: form.deliveryMode
+    }
+
+    if (payload.deliveryMode !== 'instant_inventory') {
+      payload.stockMode = form.stockMode
+      if (stockNum !== undefined) payload.stock = stockNum
+    }
+    if (payload.deliveryMode === 'instant_fixed') {
+      payload.fixedContent = form.fixedContent.trim()
+      payload.fixedContentType = form.fixedContentType
+    }
+    if (product && product.deliveryMode === 'instant_fixed' && payload.deliveryMode !== 'instant_fixed') {
+      payload.fixedContent = null
     }
 
     if (originalPriceNum !== undefined) {
@@ -281,7 +322,11 @@ export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, pr
                             name="deliveryMode"
                             value={modeValue}
                             checked={form.deliveryMode === modeValue}
-                            onChange={(e) => setForm({ ...form, deliveryMode: e.target.value })}
+                            onChange={(e) => setForm({
+                              ...form,
+                              deliveryMode: e.target.value,
+                              stockMode: e.target.value === 'instant_inventory' ? 'limited' : form.stockMode,
+                            })}
                             className="w-4 h-4 text-[var(--color-primary)] border-[var(--color-border)] focus:ring-[var(--color-primary)]"
                           />
                           {modeLabel}
@@ -290,6 +335,79 @@ export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, pr
                     })}
                   </div>
                 </div>
+                {form.deliveryMode === 'instant_fixed' && (
+                  <div className="md:col-span-2 space-y-4 border-t border-[var(--color-border)] pt-4">
+                    <div>
+                      <FieldLabel required>交付内容类型</FieldLabel>
+                      <div className="flex gap-4 items-center">
+                        {([['text', '固定文本'], ['url', '外部链接']] as const).map(([value, label]) => (
+                          <label key={value} className="flex items-center gap-2 cursor-pointer text-sm">
+                            <input
+                              type="radio"
+                              name="fixedContentType"
+                              value={value}
+                              checked={form.fixedContentType === value}
+                              onChange={(e) => setForm({ ...form, fixedContentType: e.target.value })}
+                              className="w-4 h-4 text-[var(--color-primary)] border-[var(--color-border)] focus:ring-[var(--color-primary)]"
+                            />
+                            {label}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <FieldLabel required>交付内容（每位买家收到同一份）</FieldLabel>
+                      {form.fixedContentType === 'url' ? (
+                        <input
+                          type="url"
+                          placeholder="https://example.com/invite"
+                          className="input font-mono text-xs"
+                          value={form.fixedContent}
+                          onChange={(e) => setForm({ ...form, fixedContent: e.target.value })}
+                          data-testid="fixed-content-input"
+                        />
+                      ) : (
+                        <textarea
+                          placeholder="买家付款后立即收到的内容，如群邀请说明、会员权益说明..."
+                          className="input min-h-[80px] resize-y font-mono text-xs"
+                          value={form.fixedContent}
+                          onChange={(e) => setForm({ ...form, fixedContent: e.target.value })}
+                          data-testid="fixed-content-input"
+                        />
+                      )}
+                    </div>
+                  </div>
+                )}
+                {form.deliveryMode !== 'instant_inventory' && (
+                  <div className="md:col-span-2 grid grid-cols-2 gap-5">
+                    <div>
+                      <FieldLabel required>库存模式</FieldLabel>
+                      <select
+                        className="input appearance-none cursor-pointer"
+                        value={form.stockMode}
+                        onChange={(e) => setForm({ ...form, stockMode: e.target.value })}
+                        data-testid="stock-mode-select"
+                      >
+                        <option value="unlimited">不限库存</option>
+                        <option value="limited">限量</option>
+                      </select>
+                    </div>
+                    {form.stockMode === 'limited' && (
+                      <div>
+                        <FieldLabel required>库存数量</FieldLabel>
+                        <input
+                          type="number"
+                          step="1"
+                          min="0"
+                          className="input font-mono"
+                          value={form.stock}
+                          onChange={(e) => setForm({ ...form, stock: e.target.value })}
+                          data-testid="stock-input"
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
                 {product && (
                   <div>
                     <FieldLabel>上架状态</FieldLabel>

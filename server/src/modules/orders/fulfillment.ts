@@ -2,8 +2,15 @@ import type { Order, Prisma } from '@prisma/client'
 import { badRequest, notFound } from '../../lib/httpError.js'
 import { prisma } from '../../lib/prisma.js'
 
-export const FULFILLMENT_MODES = ['instant_inventory', 'manual_service'] as const
+export const FULFILLMENT_MODES = ['instant_inventory', 'instant_fixed', 'manual_service'] as const
 export type FulfillmentMode = (typeof FULFILLMENT_MODES)[number]
+
+export const INSTANT_FULFILLMENT_MODES = ['instant_inventory', 'instant_fixed'] as const
+const instantModeSet = new Set<string>(INSTANT_FULFILLMENT_MODES)
+
+export function isInstantMode(mode: string): boolean {
+  return instantModeSet.has(mode)
+}
 
 export const ORDER_STATUSES = ['pending', 'processing', 'delivered', 'disputed', 'closed'] as const
 export type FulfillmentOrderStatus = (typeof ORDER_STATUSES)[number]
@@ -19,7 +26,7 @@ const legalTransitions: Record<FulfillmentOrderStatus, FulfillmentOrderStatus[]>
   pending: ['processing'],
   processing: ['delivered'],
   delivered: ['disputed', 'closed'],
-  // disputed → delivered：即时库存单货已交付，商家驳回争议时直接恢复为已交付，
+  // disputed → delivered：即时模式（instant_*）货已交付，商家驳回争议时直接恢复为已交付，
   // 否则会卡死在 processing（即时单没有商家 deliver 出口）
   disputed: ['processing', 'delivered', 'closed'],
   closed: [],

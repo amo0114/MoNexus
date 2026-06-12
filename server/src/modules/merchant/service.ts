@@ -5,6 +5,7 @@ import { badRequest, notFound, conflict } from '../../lib/httpError.js'
 import { getSystemConfigValue } from '../../lib/systemConfig.js'
 import { logInventoryChange } from '../../lib/inventoryLog.js'
 import {
+  isInstantMode,
   normalizeOrderStatus,
   transitionOrderStatus,
   type FulfillmentOrderStatus,
@@ -122,8 +123,10 @@ function buildProductWhere(merchantId: number, filters: MerchantProductListFilte
 }
 
 function isLowStockProduct(product: ProductWithAvailableStock, threshold: number) {
-  const availableStock = product._count.inventory
-  return product.deliveryMode === 'instant_inventory' && availableStock <= threshold
+  if (product.stockMode !== 'limited') return false
+  if (product.deliveryMode === 'instant_inventory') return product._count.inventory <= threshold
+  if (product.deliveryMode === 'instant_fixed') return product.stock <= threshold
+  return false // manual_service 不参与低库存提醒
 }
 
 function serializeMerchantProduct(product: ProductWithAvailableStock, lowStockThreshold: number) {
@@ -145,6 +148,9 @@ function serializeMerchantProduct(product: ProductWithAvailableStock, lowStockTh
     isHot: product.isHot,
     status: product.status,
     deliveryMode: product.deliveryMode,
+    stockMode: product.stockMode,
+    fixedContent: product.fixedContent,
+    fixedContentType: product.fixedContentType,
     merchantId: product.merchantId,
     createdAt: product.createdAt,
     lowStock: isLowStockProduct(product, lowStockThreshold),
@@ -258,8 +264,11 @@ export async function previewMyInventoryImport(
   productId: number,
   payload: InventoryImportPayload
 ) {
-  const product = await prisma.product.findFirst({ where: { id: productId, merchantId }, select: { id: true } })
+  const product = await prisma.product.findFirst({ where: { id: productId, merchantId }, select: { id: true, deliveryMode: true } })
   if (!product) throw notFound('商品不存在')
+  if (product.deliveryMode !== 'instant_inventory') {
+    throw badRequest('仅即时库存发货商品支持库存管理')
+  }
 
   const analysis = await analyzeInventoryPayload(productId, payload)
   return {
@@ -272,23 +281,107 @@ export async function previewMyInventoryImport(
   }
 }
 
+const HTTP_URL_PATTERN = /^https?:\/\/\S+$/i
+
+function assertDeliveryConfig(config: {
+  deliveryMode: string
+  stockMode: string
+  incomingStock?: number
+  effectiveStock?: number
+  fixedContent?: string | null
+  fixedContentType: string
+}) {
+  if (config.deliveryMode !== 'instant_fixed' && config.fixedContent != null) {
+    throw badRequest('仅固定内容交付支持 fixedContent')
+  }
+  if (config.deliveryMode === 'instant_inventory') {
+    if (config.stockMode !== 'limited') throw badRequest('即时库存发货必须为限量库存')
+    if (typeof config.incomingStock === 'number') throw badRequest('即时库存发货的库存请通过库存导入管理')
+    return
+  }
+  if (config.deliveryMode === 'instant_fixed') {
+    const content = config.fixedContent?.trim()
+    if (!content) throw badRequest('固定内容交付必须填写交付内容')
+    if (config.fixedContentType === 'url' && (content.length > 2048 || !HTTP_URL_PATTERN.test(content))) {
+      throw badRequest('链接必须以 http(s):// 开头且不超过 2048 字符')
+    }
+  }
+  if (config.stockMode === 'limited' && typeof config.effectiveStock !== 'number') {
+    throw badRequest('限量库存必须填写库存数量')
+  }
+}
+
 export async function createMyProduct(
   merchantId: number,
   data: {
     name: string; description?: string; richDescription?: string;
     type: string; icon?: string; imageUrl?: string; images?: string[];
-    price: number; originalPrice?: number; isHot?: boolean; deliveryMode?: string
+    price: number; originalPrice?: number; isHot?: boolean; deliveryMode?: string;
+    stockMode?: string; stock?: number; fixedContent?: string; fixedContentType?: string
   }
 ) {
+  const deliveryMode = data.deliveryMode ?? 'instant_inventory'
+  const stockMode = data.stockMode ?? (deliveryMode === 'instant_inventory' ? 'limited' : 'unlimited')
+  const fixedContentType = data.fixedContentType ?? 'text'
+
+  assertDeliveryConfig({
+    deliveryMode,
+    stockMode,
+    incomingStock: data.stock,
+    effectiveStock: data.stock,
+    fixedContent: data.fixedContent,
+    fixedContentType,
+  })
+
   return prisma.product.create({
-    data: { ...data, merchantId },
+    data: {
+      ...data,
+      deliveryMode,
+      stockMode,
+      fixedContentType,
+      stock: deliveryMode === 'instant_inventory' ? 0 : (data.stock ?? 0),
+      merchantId,
+    },
   })
 }
 
 export async function updateMyProduct(merchantId: number, productId: number, data: Record<string, unknown>) {
   const product = await prisma.product.findFirst({ where: { id: productId, merchantId } })
   if (!product) throw notFound('商品不存在')
-  return prisma.product.update({ where: { id: productId }, data })
+
+  const deliveryMode = (data.deliveryMode as string | undefined) ?? product.deliveryMode
+  const stockMode = (data.stockMode as string | undefined)
+    ?? (data.deliveryMode && deliveryMode !== product.deliveryMode
+      ? (deliveryMode === 'instant_inventory' ? 'limited' : 'unlimited')
+      : product.stockMode)
+  const incomingStock = typeof data.stock === 'number' ? data.stock : undefined
+
+  // 商家切换交付模式但未显式清空旧 fixedContent 时给出引导性报错，避免「仅固定内容交付支持 fixedContent」造成困惑
+  if (!('fixedContent' in data) && product.fixedContent != null && deliveryMode !== 'instant_fixed') {
+    throw badRequest('切换交付模式请同时将 fixedContent 置空（传 null）')
+  }
+
+  assertDeliveryConfig({
+    deliveryMode,
+    stockMode,
+    incomingStock,
+    effectiveStock: incomingStock ?? product.stock,
+    fixedContent: 'fixedContent' in data ? (data.fixedContent as string | null) : product.fixedContent,
+    fixedContentType: (data.fixedContentType as string | undefined) ?? product.fixedContentType,
+  })
+
+  return prisma.product.update({
+    where: { id: productId },
+    data: {
+      ...data,
+      deliveryMode,
+      stockMode,
+      // 切换到即时库存发货时归零 stock（与 createMyProduct 一致），库存以导入为准
+      ...(deliveryMode === 'instant_inventory' && product.deliveryMode !== 'instant_inventory'
+        ? { stock: 0 }
+        : {}),
+    },
+  })
 }
 
 export async function importMyInventory(
@@ -297,8 +390,11 @@ export async function importMyInventory(
   productId: number,
   payload: InventoryImportPayload
 ) {
-  const product = await prisma.product.findFirst({ where: { id: productId, merchantId }, select: { id: true } })
+  const product = await prisma.product.findFirst({ where: { id: productId, merchantId }, select: { id: true, deliveryMode: true } })
   if (!product) throw notFound('商品不存在')
+  if (product.deliveryMode !== 'instant_inventory') {
+    throw badRequest('仅即时库存发货商品支持库存管理')
+  }
 
   return prisma.$transaction(async tx => {
     const analysis = await analyzeInventoryPayload(productId, payload, tx)
@@ -340,8 +436,11 @@ export async function voidMyInventory(
   productId: number,
   input: { count: number; reason?: string }
 ) {
-  const product = await prisma.product.findFirst({ where: { id: productId, merchantId }, select: { id: true } })
+  const product = await prisma.product.findFirst({ where: { id: productId, merchantId }, select: { id: true, deliveryMode: true } })
   if (!product) throw notFound('商品不存在')
+  if (product.deliveryMode !== 'instant_inventory') {
+    throw badRequest('仅即时库存发货商品支持库存管理')
+  }
 
   // 单事务完成：InventoryItem 置 void + Product.stock 扣减 + InventoryLog 落账。
   // 只允许作废 available 项；updateMany 二次过滤 status 防与下单占用并发竞态。
@@ -615,9 +714,9 @@ export async function respondToOrderDispute(
 ) {
   await prisma.$transaction(async tx => {
     const order = await assertMerchantOrder(merchantId, orderId, tx)
-    // 即时库存单卡密已交付，恢复履约直接回到 delivered；人工服务单回 processing 由商家重新交付
+    // 即时模式（instant_*）内容已交付，恢复履约直接回到 delivered；人工服务单回 processing 由商家重新交付
     const resumeTarget: FulfillmentOrderStatus =
-      order.product.deliveryMode === 'instant_inventory' ? 'delivered' : 'processing'
+      isInstantMode(order.product.deliveryMode) ? 'delivered' : 'processing'
     await transitionOrderStatus({
       orderId,
       toStatus: input.resolution === 'resume' ? resumeTarget : 'closed',

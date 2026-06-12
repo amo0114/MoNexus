@@ -110,9 +110,23 @@ export default function OrderDetailModal({ order: initialOrder, onClose }: Order
               <Info className="w-4 h-4 text-[var(--color-text-muted)]" /> 发货内容
             </h3>
             {order.delivery?.content ? (
-              <div className="bg-[var(--color-surface)] p-3 rounded border border-[var(--color-border)] font-mono text-xs text-[var(--color-text)] leading-relaxed break-all whitespace-pre-wrap select-all max-h-48 overflow-y-auto">
-                {order.delivery.content}
-              </div>
+              order.delivery.contentType === 'url' ? (
+                <div className="bg-[var(--color-surface)] p-3 rounded border border-[var(--color-border)] text-xs leading-relaxed break-all">
+                  <a
+                    href={order.delivery.content}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[var(--color-primary)] underline font-mono"
+                    data-testid="delivery-link"
+                  >
+                    {order.delivery.content}
+                  </a>
+                </div>
+              ) : (
+                <div className="bg-[var(--color-surface)] p-3 rounded border border-[var(--color-border)] font-mono text-xs text-[var(--color-text)] leading-relaxed break-all whitespace-pre-wrap select-all max-h-48 overflow-y-auto">
+                  {order.delivery.content}
+                </div>
+              )
             ) : order.deliveryMode === 'manual_service' ? (
               <div className="bg-[var(--color-surface)] p-4 rounded border border-dashed border-[var(--color-border)] text-center text-xs text-[var(--color-text-muted)]">
                 履约中 / 待商家发货

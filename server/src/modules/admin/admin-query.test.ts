@@ -167,7 +167,7 @@ describe('GET /api/admin/orders filter & pagination', () => {
     const manualProduct = await createTestProduct('人工商品', 200, 0, [])
     await prisma.product.update({
       where: { id: manualProduct.id },
-      data: { deliveryMode: 'manual_service' },
+      data: { deliveryMode: 'manual_service', stockMode: 'unlimited' },
     })
 
     const buyer = await loginAs('order-buyer@test.local', 'buyerpass')

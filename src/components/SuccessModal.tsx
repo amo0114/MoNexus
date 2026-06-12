@@ -3,11 +3,13 @@ import { useAppStore } from '../stores/appStore'
 
 export default function SuccessModal({
   deliveryContent,
+  deliveryContentType,
   merchantName,
   onClose,
   onViewOrders
 }: {
   deliveryContent: string
+  deliveryContentType?: string
   merchantName?: string
   onClose: () => void
   onViewOrders?: () => void
@@ -37,9 +39,21 @@ export default function SuccessModal({
 
         <div className="bg-[var(--color-background)] rounded-lg p-4 mb-6 border border-[var(--color-border)] text-left flex-1 max-h-48 overflow-y-auto">
           <p className="text-[10px] text-[var(--color-text-muted)] mb-2 font-bold uppercase tracking-wider">提卡内容区</p>
-          <div className="font-mono text-sm break-all text-[var(--color-text)] select-all bg-[var(--color-surface)] p-3 rounded border border-[var(--color-border)] leading-relaxed whitespace-pre-wrap">
-            {deliveryContent}
-          </div>
+          {deliveryContentType === 'url' ? (
+            <a
+              href={deliveryContent}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-mono text-sm break-all text-[var(--color-primary)] underline block bg-[var(--color-surface)] p-3 rounded border border-[var(--color-border)] leading-relaxed"
+              data-testid="success-delivery-link"
+            >
+              {deliveryContent}
+            </a>
+          ) : (
+            <div className="font-mono text-sm break-all text-[var(--color-text)] select-all bg-[var(--color-surface)] p-3 rounded border border-[var(--color-border)] leading-relaxed whitespace-pre-wrap">
+              {deliveryContent}
+            </div>
+          )}
         </div>
 
         <div className="flex flex-col gap-3">
