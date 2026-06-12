@@ -10,14 +10,27 @@ export default function StarRating({ value, onChange, size = 'sm' }: Props) {
   const cls = size === 'sm' ? 'w-3.5 h-3.5' : 'w-6 h-6'
   return (
     <div className="flex items-center gap-0.5" role={onChange ? 'radiogroup' : undefined} aria-label={`评分 ${value} / 5`}>
-      {[1, 2, 3, 4, 5].map(star => (
-        <Star
-          key={star}
-          className={`${cls} ${star <= Math.round(value) ? 'star-filled' : 'star-empty'} ${onChange ? 'cursor-pointer' : ''}`}
-          onClick={onChange ? () => onChange(star) : undefined}
-          data-testid={onChange ? `star-input-${star}` : undefined}
-        />
-      ))}
+      {[1, 2, 3, 4, 5].map(star => {
+        const icon = (
+          <Star className={`${cls} ${star <= Math.round(value) ? 'star-filled' : 'star-empty'}`} />
+        )
+        return onChange ? (
+          <button
+            key={star}
+            type="button"
+            role="radio"
+            aria-checked={star === value}
+            aria-label={`${star} 星`}
+            onClick={() => onChange(star)}
+            className="cursor-pointer p-0.5"
+            data-testid={`star-input-${star}`}
+          >
+            {icon}
+          </button>
+        ) : (
+          <span key={star}>{icon}</span>
+        )
+      })}
     </div>
   )
 }

@@ -3,7 +3,10 @@ import { X, Copy, Package, Store, Clock, Coins, Info, Loader2 } from 'lucide-rea
 import { UserOrderDetail } from '../types/order'
 import { useAppStore } from '../stores/appStore'
 import { disputeOrder, closeOrder } from '../api/orders'
+import { OwnReview } from '../api/reviews'
 import RegistryPill from './ui/RegistryPill'
+import StarRating from './ui/StarRating'
+import ReviewDialog from './ReviewDialog'
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from './ui/Dialog'
 
 interface OrderDetailModalProps {
@@ -31,6 +34,8 @@ export default function OrderDetailModal({ order: initialOrder, onClose }: Order
   const [order] = useState(initialOrder)
   const [loadingAction, setLoadingAction] = useState<OrderAction | null>(null)
   const [confirmAction, setConfirmAction] = useState<OrderAction | null>(null)
+  const [reviewOpen, setReviewOpen] = useState(false)
+  const [review, setReview] = useState<OwnReview | null>(initialOrder.review ?? null)
 
   function copyContent() {
     if (!order.delivery?.content) return
@@ -55,6 +60,7 @@ export default function OrderDetailModal({ order: initialOrder, onClose }: Order
 
   const canDispute = order.status === 'delivered'
   const canClose = order.status === 'delivered' || order.status === 'disputed'
+  const canReview = !!order.canReview && !review
 
   return (
     <div className="fixed inset-0 z-[110] flex items-center justify-center fade-in">
@@ -143,6 +149,31 @@ export default function OrderDetailModal({ order: initialOrder, onClose }: Order
             )}
           </div>
 
+          {/* 我的评价 */}
+          {review && (
+            <div className="bg-[var(--color-background)] rounded-lg p-5 border border-[var(--color-border)]" data-testid="own-review">
+              <h3 className="font-heading text-sm font-bold text-[var(--color-text)] mb-3">我的评价</h3>
+              {review.status === 'removed' ? (
+                <p className="text-xs text-[var(--color-text-muted)]">评价已被移除</p>
+              ) : (
+                <>
+                  <StarRating value={review.rating} />
+                  {review.comment && <p className="mt-2 text-xs text-[var(--color-text)] whitespace-pre-wrap">{review.comment}</p>}
+                  {!review.editedAt && new Date(review.editableUntil) > new Date() && (
+                    <button
+                      type="button"
+                      onClick={() => setReviewOpen(true)}
+                      className="mt-3 text-xs text-[var(--color-primary)] underline cursor-pointer"
+                      data-testid="review-edit-button"
+                    >
+                      修改评价（可修改至 {new Date(review.editableUntil).toLocaleDateString()}）
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+
           {/* 订单时间线 */}
           <div className="bg-[var(--color-background)] rounded-lg p-5 border border-[var(--color-border)]">
             <h3 className="font-heading text-sm font-bold text-[var(--color-text)] mb-3 flex items-center gap-2">
@@ -201,6 +232,15 @@ export default function OrderDetailModal({ order: initialOrder, onClose }: Order
               {loadingAction === 'close' ? <Loader2 className="w-4 h-4 animate-spin" /> : '结束订单'}
             </button>
           )}
+          {canReview && (
+            <button
+              onClick={() => setReviewOpen(true)}
+              data-testid="review-create-button"
+              className="btn-secondary !px-4 !border-[var(--color-primary)] !text-[var(--color-primary)]"
+            >
+              评价商品
+            </button>
+          )}
         </div>
       </div>
 
@@ -236,6 +276,17 @@ export default function OrderDetailModal({ order: initialOrder, onClose }: Order
           </div>
         </DialogContent>
       </Dialog>
+
+      {reviewOpen && (
+        <ReviewDialog
+          open={reviewOpen}
+          orderId={order.id}
+          mode={review ? 'edit' : 'create'}
+          initial={review ? { rating: review.rating, comment: review.comment } : undefined}
+          onClose={() => setReviewOpen(false)}
+          onSaved={(saved) => { setReview(saved); setReviewOpen(false) }}
+        />
+      )}
     </div>
   )
 }
