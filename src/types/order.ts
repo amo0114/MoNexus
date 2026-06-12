@@ -30,6 +30,7 @@ export interface UserOrderDetail extends Omit<UserOrderListItem, 'delivery'> {
   delivery: null | {
     status: string
     content: string
+    contentType?: string
     publicNote?: string | null
     deliveredAt?: string | null
   }

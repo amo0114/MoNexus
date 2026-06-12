@@ -61,6 +61,9 @@ export interface MerchantProduct {
   merchant?: { id: number; name: string } | null
   _count?: { inventory: number }
   deliveryMode?: string
+  stockMode: string
+  fixedContent?: string | null
+  fixedContentType?: string
   availableStock?: number
   lowStock?: boolean
 }
