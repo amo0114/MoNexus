@@ -60,6 +60,18 @@ describe('merchant instant_fixed product validation', () => {
       .expect(400)
   })
 
+  it('flags limited instant_fixed products as lowStock by Product.stock', async () => {
+    const token = await merchantToken('if-lowstock@test.local')
+    await api.post('/api/merchant/products').set(authHeader(token))
+      .send({ ...baseBody, name: '低库存固定商品', stockMode: 'limited', stock: 2 }).expect(201)
+
+    const list = await api.get('/api/merchant/products?lowStock=true').set(authHeader(token)).expect(200)
+    const found = list.body.items.find((p: { name: string }) => p.name === '低库存固定商品')
+    expect(found).toBeTruthy()
+    expect(found.lowStock).toBe(true)
+    expect(found.stockMode).toBe('limited')
+  })
+
   it('rejects unlimited stockMode for instant_inventory', async () => {
     const token = await merchantToken('if-inv@test.local')
     await api.post('/api/merchant/products').set(authHeader(token))

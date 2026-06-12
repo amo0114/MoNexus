@@ -123,8 +123,10 @@ function buildProductWhere(merchantId: number, filters: MerchantProductListFilte
 }
 
 function isLowStockProduct(product: ProductWithAvailableStock, threshold: number) {
-  const availableStock = product._count.inventory
-  return product.deliveryMode === 'instant_inventory' && availableStock <= threshold
+  if (product.stockMode !== 'limited') return false
+  if (product.deliveryMode === 'instant_inventory') return product._count.inventory <= threshold
+  if (product.deliveryMode === 'instant_fixed') return product.stock <= threshold
+  return false // manual_service 不参与低库存提醒
 }
 
 function serializeMerchantProduct(product: ProductWithAvailableStock, lowStockThreshold: number) {
@@ -146,6 +148,9 @@ function serializeMerchantProduct(product: ProductWithAvailableStock, lowStockTh
     isHot: product.isHot,
     status: product.status,
     deliveryMode: product.deliveryMode,
+    stockMode: product.stockMode,
+    fixedContent: product.fixedContent,
+    fixedContentType: product.fixedContentType,
     merchantId: product.merchantId,
     createdAt: product.createdAt,
     lowStock: isLowStockProduct(product, lowStockThreshold),

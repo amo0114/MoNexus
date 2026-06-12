@@ -31,6 +31,8 @@ const productListSelect = {
   sales: true,
   isHot: true,
   status: true,
+  deliveryMode: true,
+  stockMode: true,
   merchant: { select: { id: true, name: true } },
 } satisfies Prisma.ProductSelect
 
@@ -135,5 +137,7 @@ export async function getProductDetail(id: number) {
   })
   if (!product) throw notFound('商品不存在')
   if (product.status !== 'active') throw badRequest('商品已下架')
-  return product
+  // 安全红线：fixedContent 是付费内容，绝不能出现在公开详情中
+  const { fixedContent: _fixedContent, ...publicProduct } = product
+  return publicProduct
 }

@@ -195,7 +195,7 @@ export async function getOrderDetail(orderId: number, userId: number) {
     include: {
       merchant: { select: { id: true, name: true } },
       product: { select: { id: true, name: true, icon: true, type: true, imageUrl: true, deliveryMode: true } },
-      delivery: { select: { status: true, content: true, publicNote: true, deliveredAt: true } },
+      delivery: { select: { status: true, content: true, contentType: true, publicNote: true, deliveredAt: true } },
       statusEvents: {
         select: {
           id: true,
