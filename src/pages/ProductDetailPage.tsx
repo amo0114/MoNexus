@@ -50,14 +50,24 @@ export default function ProductDetailPage() {
   const [reviewTotal, setReviewTotal] = useState(0)
   const [reviewPage, setReviewPage] = useState(1)
 
+  // id 变化时重置评价分页状态（路由同参切换不重挂载组件）
+  useEffect(() => {
+    setReviews([])
+    setReviewTotal(0)
+    setReviewPage(1)
+  }, [id])
+
   useEffect(() => {
     if (!id) return
+    let cancelled = false
     getProductReviews(Number(id), reviewPage)
       .then((data) => {
+        if (cancelled) return
         setReviewTotal(data.total)
         setReviews((prev) => reviewPage === 1 ? data.items : [...prev, ...data.items])
       })
       .catch(() => {})
+    return () => { cancelled = true }
   }, [id, reviewPage])
 
   useEffect(() => {
