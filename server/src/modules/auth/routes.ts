@@ -10,6 +10,7 @@ import {
   resetPasswordSchema,
   passwordChangeSchema,
   verifyEmailQuerySchema,
+  updateMeSchema,
 } from './schema.js'
 import * as controller from './controller.js'
 
@@ -54,6 +55,7 @@ router.post('/login', authLimiter, validate(loginSchema), controller.login)
 router.post('/refresh', authLimiter, controller.refresh)
 router.post('/logout', controller.logout)
 router.get('/me', authenticate, requireActiveUser, controller.me)
+router.patch('/me', authenticate, requireActiveUser, validate(updateMeSchema), controller.updateMe)
 router.post('/password-change', authLimiter, authenticate, requireActiveUser, validate(passwordChangeSchema), controller.changePassword)
 
 router.post('/forgot-password', mailLimiter, validate(forgotPasswordSchema), controller.forgotPassword)

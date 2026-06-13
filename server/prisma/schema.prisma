@@ -15,6 +15,7 @@ model User {
   role          String    @default("user") // user | admin | merchant
   status        String    @default("正常")
   inviteCode    String    @unique @default(uuid())
+  nickname      String? // 1-20 字，个人中心可设；评价展示名回退邮箱打码
   emailVerified DateTime?
   createdAt     DateTime  @default(now())
 
@@ -32,6 +33,7 @@ model User {
   merchant                Merchant?
   passwordResetTokens     PasswordResetToken[]
   emailVerificationTokens EmailVerificationToken[]
+  reviews                 Review[]
 }
 
 model PasswordResetToken {
@@ -125,6 +127,8 @@ model Product {
   originalPrice    Int?
   stock            Int      @default(0)
   sales            Int      @default(0)
+  ratingAvg        Decimal  @default(0) @db.Decimal(2, 1) // ratingCount=0 时无意义，前端显示「暂无评分」
+  ratingCount      Int      @default(0)
   isHot            Boolean  @default(false)
   status           String   @default("active") // active | inactive
   deliveryMode     String   @default("instant_inventory") // instant_inventory | instant_fixed | manual_service
@@ -159,14 +163,22 @@ model InventoryLog {
 }
 
 model Review {
-  id        Int      @id @default(autoincrement())
-  productId Int
-  userName  String
-  rating    Int
-  comment   String?
-  createdAt DateTime @default(now())
+  id            Int       @id @default(autoincrement())
+  productId     Int
+  userId        Int
+  orderId       Int       @unique // 一订单一评的数据库级保证
+  rating        Int // 1-5 整数星
+  comment       String? // ≤500 字纯文本
+  status        String    @default("visible") // visible | removed
+  editableUntil DateTime // 创建时快照 createdAt + 7 天
+  editedAt      DateTime? // 非空 = 已用掉唯一一次修改机会
+  createdAt     DateTime  @default(now())
 
   product Product @relation(fields: [productId], references: [id])
+  user    User    @relation(fields: [userId], references: [id])
+  order   Order   @relation(fields: [orderId], references: [id])
+
+  @@index([productId, status, createdAt])
 }
 
 model InventoryItem {
@@ -197,6 +209,7 @@ model Order {
   product      Product            @relation(fields: [productId], references: [id])
   merchant     Merchant?          @relation(fields: [merchantId], references: [id])
   delivery     DeliveryRecord?
+  review       Review?
   settlement   Settlement?
   pointLogs    PointLog[]
   statusEvents OrderStatusEvent[]

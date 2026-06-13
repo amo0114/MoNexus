@@ -21,13 +21,14 @@ function hashRefreshToken(refreshToken: string) {
   return crypto.createHash('sha256').update(refreshToken).digest('hex')
 }
 
-function buildAuthUser(user: { id: number; email: string; role: string; inviteCode: string; status: string }, points = 0) {
+function buildAuthUser(user: { id: number; email: string; role: string; inviteCode: string; status: string; nickname: string | null }, points = 0) {
   return {
     id: user.id,
     email: user.email,
     role: user.role,
     status: user.status,
     inviteCode: user.inviteCode,
+    nickname: user.nickname,
     points,
   }
 }
@@ -215,6 +216,7 @@ export async function getUserProfile(userId: number) {
     role: user.role,
     status: user.status,
     inviteCode: user.inviteCode,
+    nickname: user.nickname,
     points: user.pointAccount?.balance ?? 0,
     emailVerified: user.emailVerified,
     createdAt: user.createdAt,
@@ -227,6 +229,11 @@ export async function getUserProfile(userId: number) {
         }
       : null,
   }
+}
+
+export async function updateUserProfile(userId: number, data: { nickname: string }) {
+  await prisma.user.update({ where: { id: userId }, data: { nickname: data.nickname } })
+  return getUserProfile(userId)
 }
 
 // ============================================================

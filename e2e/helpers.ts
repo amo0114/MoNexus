@@ -16,6 +16,12 @@ export async function loginAs(page: Page, account: { email: string; password: st
   })
   await page.getByPlaceholder('邮箱地址').fill(account.email)
   await page.getByPlaceholder('密码（至少 6 位）').fill(account.password)
+  const loginResponse = page.waitForResponse((response) =>
+    response.url().includes('/api/auth/login') && response.request().method() === 'POST'
+  )
   await page.getByRole('button', { name: '登录' }).click()
+  const loginResult = await loginResponse
+  const loginBody = loginResult.ok() ? '' : `: ${(await loginResult.text()).slice(0, 500)}`
+  await expect(loginResult.status(), `login response status${loginBody}`).toBe(200)
   await expect(page).toHaveURL(/\/$/, { timeout: 10_000 })
 }

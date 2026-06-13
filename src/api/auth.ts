@@ -8,6 +8,11 @@ export async function getMe(): Promise<AuthUser> {
   return data
 }
 
+export async function updateMe(body: { nickname: string }): Promise<AuthUser> {
+  const { data } = await api.patch<AuthUser>('/auth/me', body)
+  return data
+}
+
 export async function refreshAccessToken(): Promise<string> {
   const { data } = await axios.post<{ accessToken: string }>(
     '/api/auth/refresh',

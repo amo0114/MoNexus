@@ -196,6 +196,9 @@ export async function getOrderDetail(orderId: number, userId: number) {
       merchant: { select: { id: true, name: true } },
       product: { select: { id: true, name: true, icon: true, type: true, imageUrl: true, deliveryMode: true } },
       delivery: { select: { status: true, content: true, contentType: true, publicNote: true, deliveredAt: true } },
+      review: {
+        select: { rating: true, comment: true, status: true, editableUntil: true, editedAt: true, createdAt: true },
+      },
       statusEvents: {
         select: {
           id: true,
@@ -211,7 +214,12 @@ export async function getOrderDetail(orderId: number, userId: number) {
     },
   })
   if (!order) throw notFound('订单不存在')
-  return serializeUserOrderDetail(order)
+  const normalized = normalizeOrderStatus(order.status)
+  return {
+    ...serializeUserOrderDetail(order),
+    review: order.review ?? null,
+    canReview: !order.review && (normalized === 'delivered' || normalized === 'closed'),
+  }
 }
 
 function buildUserOrderWhere(userId: number, status?: string): Prisma.OrderWhereInput {

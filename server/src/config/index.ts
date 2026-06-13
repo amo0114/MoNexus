@@ -39,6 +39,11 @@ const envSchema = z.object({
   COOKIE_SECURE: booleanEnvSchema.default(false),
   USER_STATUS_CACHE_TTL_SEC: z.coerce.number().int().min(0).default(60),
 
+  // --- Global /api rate limit (requests per 15 min window per IP).
+  // Default stays at 300; e2e runs override it so a full Playwright
+  // suite (which shares one IP) doesn't trip the limiter mid-run.
+  API_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(300),
+
   // --- Object storage (P0-C). All optional: when any are missing the
   // server falls back to an in-memory adapter that's only safe for dev
   // and tests. Production validation below enforces all-or-nothing.
@@ -123,6 +128,7 @@ export const config = {
   frontendOrigin: env.FRONTEND_ORIGIN,
   cookieSecure: env.COOKIE_SECURE,
   userStatusCacheTtlSec: env.USER_STATUS_CACHE_TTL_SEC,
+  apiRateLimitMax: env.API_RATE_LIMIT_MAX,
   jwtExpiresIn: '15m' as const,
   refreshTokenMaxAgeMs: 7 * 24 * 60 * 60 * 1000,
   checkinReward: 50,

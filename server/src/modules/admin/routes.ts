@@ -9,6 +9,7 @@ import {
   listSettlementsQuerySchema, batchSettleSchema,
   systemConfigKeyParamSchema, updateSystemConfigSchema,
 } from './schema.js'
+import { adminReviewsQuerySchema } from '../reviews/schema.js'
 import * as controller from './controller.js'
 
 const router = Router()
@@ -30,6 +31,10 @@ router.post('/products/:id/inventory', validate({ params: idParamSchema, body: i
 router.get('/orders', validate({ query: listOrdersQuerySchema }), controller.orders)
 router.get('/orders/:id', validate({ params: idParamSchema }), controller.orderDetail)
 router.get('/logs', controller.logs)
+
+// Review moderation
+router.get('/reviews', validate({ query: adminReviewsQuerySchema }), controller.listReviews)
+router.delete('/reviews/:id', validate({ params: idParamSchema }), controller.removeReview)
 
 // Merchant management
 router.get('/merchants', validate({ query: listMerchantsQuerySchema }), controller.listMerchants)

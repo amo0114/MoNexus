@@ -164,8 +164,10 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       {/* Email verification nudge — silent when verified or dismissed */}
       <EmailVerificationBanner />
 
-      {/* Content */}
-      <main className="flex-grow max-w-7xl mx-auto w-full px-4 sm:px-6 py-6 sm:py-8 z-0 relative">
+      {/* Content. 注意不要给 main 加 z-index：z-0 会创建 stacking context，
+          把页面内 fixed 弹窗（z-50）整体压到 footer（z-10）之下，导致长页面
+          滚动到底部时 footer 截获弹窗底部按钮的点击。 */}
+      <main className="flex-grow max-w-7xl mx-auto w-full px-4 sm:px-6 py-6 sm:py-8 relative">
         {children}
       </main>
 

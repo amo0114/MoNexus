@@ -33,6 +33,8 @@ const productListSelect = {
   status: true,
   deliveryMode: true,
   stockMode: true,
+  ratingAvg: true,
+  ratingCount: true,
   merchant: { select: { id: true, name: true } },
 } satisfies Prisma.ProductSelect
 
@@ -121,7 +123,8 @@ export async function listProducts(params: ProductListParams = {}) {
   const lastItem = items.at(-1)
 
   return {
-    items,
+    // Prisma Decimal JSON 序列化为字符串，统一转 number（切片/游标计算之后再 map）
+    items: items.map(p => ({ ...p, ratingAvg: Number(p.ratingAvg) })),
     nextCursor: hasMore && lastItem ? encodeProductCursor(lastItem) : null,
     hasMore,
   }
@@ -132,12 +135,11 @@ export async function getProductDetail(id: number) {
     where: { id },
     include: {
       merchant: { select: { id: true, name: true } },
-      reviews: { orderBy: { createdAt: 'desc' }, take: 10 },
     },
   })
   if (!product) throw notFound('商品不存在')
   if (product.status !== 'active') throw badRequest('商品已下架')
   // 安全红线：fixedContent 是付费内容，绝不能出现在公开详情中
   const { fixedContent: _fixedContent, ...publicProduct } = product
-  return publicProduct
+  return { ...publicProduct, ratingAvg: Number(product.ratingAvg) }
 }

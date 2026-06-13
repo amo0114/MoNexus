@@ -8,6 +8,8 @@ import { useAppStore } from '../stores/appStore'
 import { useAuthStore } from '../stores/authStore'
 import PurchaseModal from '../components/PurchaseModal'
 import SuccessModal from '../components/SuccessModal'
+import { getProductReviews, type ReviewItem } from '../api/reviews'
+import StarRating from '../components/ui/StarRating'
 
 interface Product {
   id: number
@@ -23,6 +25,8 @@ interface Product {
   stock: number
   stockMode?: string
   sales: number
+  ratingAvg?: number
+  ratingCount?: number
   merchant?: { id: number; name: string } | null
 }
 
@@ -41,6 +45,30 @@ export default function ProductDetailPage() {
   const [deliveryContentType, setDeliveryContentType] = useState<string | undefined>(undefined)
   const [merchantName, setMerchantName] = useState('')
   const [activeImage, setActiveImage] = useState(0)
+
+  const [reviews, setReviews] = useState<ReviewItem[]>([])
+  const [reviewTotal, setReviewTotal] = useState(0)
+  const [reviewPage, setReviewPage] = useState(1)
+
+  // id 变化时重置评价分页状态（路由同参切换不重挂载组件）
+  useEffect(() => {
+    setReviews([])
+    setReviewTotal(0)
+    setReviewPage(1)
+  }, [id])
+
+  useEffect(() => {
+    if (!id) return
+    let cancelled = false
+    getProductReviews(Number(id), reviewPage)
+      .then((data) => {
+        if (cancelled) return
+        setReviewTotal(data.total)
+        setReviews((prev) => reviewPage === 1 ? data.items : [...prev, ...data.items])
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [id, reviewPage])
 
   useEffect(() => {
     async function load() {
@@ -210,6 +238,15 @@ export default function ProductDetailPage() {
                 <span className="text-[var(--color-text-muted)] font-medium">
                   库存: <span className="text-[var(--color-text)] font-bold">{product.stockMode === 'unlimited' ? '不限' : product.stock}</span>
                 </span>
+                {product.ratingCount && product.ratingCount > 0 ? (
+                  <span className="text-[var(--color-text-muted)] font-medium flex items-center gap-1" data-testid="rating-summary">
+                    <StarRating value={product.ratingAvg ?? 0} />
+                    <span className="font-bold text-[var(--color-text)]">{(product.ratingAvg ?? 0).toFixed(1)}</span>
+                    （{product.ratingCount} 条评价）
+                  </span>
+                ) : (
+                  <span className="text-[var(--color-text-muted)] font-medium" data-testid="rating-summary">暂无评分</span>
+                )}
               </div>
               <div className="flex items-center gap-3 text-xs p-2.5 bg-[var(--color-surface)] rounded-lg border border-[var(--color-border)] w-fit">
                 <span className="text-[var(--color-text-muted)] flex items-center gap-1.5">
@@ -255,6 +292,34 @@ export default function ProductDetailPage() {
                   className="text-[var(--color-text)] leading-loose space-y-4 text-sm md:text-base bg-[var(--color-background)] p-6 md:p-8 rounded-xl border border-[var(--color-border)] prose prose-neutral dark:prose-invert max-w-none"
                   dangerouslySetInnerHTML={{ __html: safeRichDescription }}
                 />
+              </div>
+
+              {/* Reviews */}
+              <div className="mt-8" data-testid="review-list">
+                <h2 className="font-heading text-lg font-bold text-[var(--color-text)] mb-4">用户评价（{reviewTotal}）</h2>
+                {reviews.length === 0 ? (
+                  <p className="text-sm text-[var(--color-text-muted)]">暂无评价</p>
+                ) : (
+                  <div className="space-y-4">
+                    {reviews.map((r) => (
+                      <div key={r.id} className="bg-[var(--color-background)] rounded-lg p-4 border border-[var(--color-border)]">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-[var(--color-text)]">{r.displayName}</span>
+                          <StarRating value={r.rating} />
+                        </div>
+                        {r.comment && <p className="mt-2 text-xs text-[var(--color-text)] whitespace-pre-wrap">{r.comment}</p>}
+                        <div className="mt-2 text-[10px] text-[var(--color-text-muted)]">
+                          {new Date(r.createdAt).toLocaleDateString()}{r.editedAt ? '（已修改）' : ''}
+                        </div>
+                      </div>
+                    ))}
+                    {reviews.length < reviewTotal && (
+                      <button type="button" onClick={() => setReviewPage((p) => p + 1)} className="btn-secondary w-full !py-2 !text-sm">
+                        加载更多
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
 
