@@ -4,6 +4,7 @@
 .geminiignore
 .worktrees/
 worktrees
+.playwright-mcp/
 
 # IDE / Editor local config
 .cursor/
