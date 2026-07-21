@@ -33,6 +33,8 @@ export const createProductSchema = z.object({
   isHot: z.boolean().default(false),
 })
 
+export type CreateProductInput = z.infer<typeof createProductSchema>
+
 export const updateProductSchema = z.object({
   name: z.string().min(1).optional(),
   description: z.string().optional(),
@@ -45,6 +47,8 @@ export const updateProductSchema = z.object({
   isHot: z.boolean().optional(),
   status: z.enum(['active', 'inactive']).optional(),
 })
+
+export type UpdateProductInput = z.infer<typeof updateProductSchema>
 
 export const importInventorySchema = z.object({
   items: z.array(z.string().min(1)).min(1, '至少提供一条库存'),

@@ -10,9 +10,16 @@ import {
 import { logInventoryChange } from '../../lib/inventoryLog.js'
 import { invalidate as invalidateUserStatusCache } from '../../lib/userStatusCache.js'
 import { revokeAllUserRefreshTokens } from '../auth/service.js'
+import { invalidateProductPublicCache } from '../products/cache.js'
 import { serializeAdminOrderDetail, serializeAdminOrderList } from '../orders/serializers.js'
 import { getSettlementEligibility } from '../merchant/service.js'
-import type { ListAdminAuditQuery, ListOrdersQuery, ListUsersQuery } from './schema.js'
+import type {
+  CreateProductInput,
+  ListAdminAuditQuery,
+  ListOrdersQuery,
+  ListUsersQuery,
+  UpdateProductInput,
+} from './schema.js'
 
 async function resolvePagination(page?: number, pageSize?: number) {
   const [defaultPageSize, maxPageSize] = await Promise.all([
@@ -215,15 +222,19 @@ export async function updateSystemConfig(adminUserId: number, key: string, value
   return saveSystemConfig(adminUserId, key, value)
 }
 
-export async function createProduct(data: Prisma.ProductCreateInput) {
-  return prisma.product.create({ data })
+export async function createProduct(data: CreateProductInput) {
+  const product = await prisma.product.create({ data })
+  await invalidateProductPublicCache(product.id, { list: true })
+  return product
 }
 
-export async function updateProduct(id: number, data: Prisma.ProductUpdateInput) {
+export async function updateProduct(id: number, data: UpdateProductInput) {
   const product = await prisma.product.findUnique({ where: { id } })
   if (!product) throw notFound('商品不存在')
 
-  return prisma.product.update({ where: { id }, data })
+  const updated = await prisma.product.update({ where: { id }, data })
+  await invalidateProductPublicCache(updated.id, { detail: true, list: true })
+  return updated
 }
 
 export async function importInventory(productId: number, items: string[], adminUserId: number) {
@@ -233,7 +244,7 @@ export async function importInventory(productId: number, items: string[], adminU
     throw badRequest('仅即时库存发货商品支持库存管理')
   }
 
-  return prisma.$transaction(async tx => {
+  const result = await prisma.$transaction(async tx => {
     for (const content of items) {
       await tx.inventoryItem.create({ data: { productId, content } })
     }
@@ -263,6 +274,9 @@ export async function importInventory(productId: number, items: string[], adminU
 
     return { imported: items.length }
   })
+
+  await invalidateProductPublicCache(productId, { detail: true, list: 'coalesced' })
+  return result
 }
 
 function buildAdminOrderWhere(query: ListOrdersQuery): Prisma.OrderWhereInput {

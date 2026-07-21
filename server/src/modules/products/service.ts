@@ -1,7 +1,12 @@
 import { Buffer } from 'node:buffer'
 import { Prisma } from '@prisma/client'
 import { prisma } from '../../lib/prisma.js'
-import { badRequest, notFound } from '../../lib/httpError.js'
+import { wrapCache } from '../../lib/cache.js'
+import { badRequest, HttpError, notFound } from '../../lib/httpError.js'
+import {
+  buildProductDetailCacheKey,
+  buildProductListCacheKey,
+} from './cache.js'
 
 interface ProductListParams {
   query?: string
@@ -37,6 +42,39 @@ const productListSelect = {
   ratingCount: true,
   merchant: { select: { id: true, name: true } },
 } satisfies Prisma.ProductSelect
+
+const productDetailSelect = {
+  id: true,
+  name: true,
+  description: true,
+  richDescription: true,
+  type: true,
+  icon: true,
+  imageUrl: true,
+  images: true,
+  price: true,
+  originalPrice: true,
+  stock: true,
+  sales: true,
+  isHot: true,
+  status: true,
+  deliveryMode: true,
+  stockMode: true,
+  ratingAvg: true,
+  ratingCount: true,
+  merchant: { select: { id: true, name: true } },
+} satisfies Prisma.ProductSelect
+
+type ProductListItem = Prisma.ProductGetPayload<{ select: typeof productListSelect }>
+type ProductDetail = Prisma.ProductGetPayload<{ select: typeof productDetailSelect }>
+
+function serializePublicProductListItem(product: ProductListItem) {
+  return { ...product, ratingAvg: Number(product.ratingAvg) }
+}
+
+function serializePublicProductDetail(product: ProductDetail) {
+  return { ...product, ratingAvg: Number(product.ratingAvg) }
+}
 
 function encodeProductCursor(product: ProductCursor) {
   return Buffer
@@ -90,7 +128,17 @@ function buildCursorWhere(cursor: ProductCursor): Prisma.ProductWhereInput {
 }
 
 export async function listProducts(params: ProductListParams = {}) {
-  const { query, category, cursor, page = 1, pageSize = 20 } = params
+  const cacheKey = await buildProductListCacheKey(params)
+  if (!cacheKey) return listProductsFromDb(params)
+
+  const ttlSec = params.query ? 10 : params.cursor ? 20 : 30
+  return wrapCache('product-list', cacheKey, ttlSec, () => listProductsFromDb(params))
+}
+
+async function listProductsFromDb(params: ProductListParams = {}) {
+  const query = params.query?.trim()
+  const category = params.category?.trim()
+  const { cursor, page = 1, pageSize = 20 } = params
   const baseWhere: Prisma.ProductWhereInput = { status: 'active' }
 
   if (category && category !== '全部') {
@@ -123,23 +171,28 @@ export async function listProducts(params: ProductListParams = {}) {
   const lastItem = items.at(-1)
 
   return {
-    // Prisma Decimal JSON 序列化为字符串，统一转 number（切片/游标计算之后再 map）
-    items: items.map(p => ({ ...p, ratingAvg: Number(p.ratingAvg) })),
+    items: items.map(serializePublicProductListItem),
     nextCursor: hasMore && lastItem ? encodeProductCursor(lastItem) : null,
     hasMore,
   }
 }
 
 export async function getProductDetail(id: number) {
+  const cacheKey = await buildProductDetailCacheKey(id)
+  if (!cacheKey) return getProductDetailFromDb(id)
+
+  return wrapCache('product-detail', cacheKey, 60, () => getProductDetailFromDb(id), {
+    negativeTtlSec: 20,
+    negativeErrorPredicate: err => err instanceof HttpError && err.status === 404,
+  })
+}
+
+async function getProductDetailFromDb(id: number) {
   const product = await prisma.product.findUnique({
     where: { id },
-    include: {
-      merchant: { select: { id: true, name: true } },
-    },
+    select: productDetailSelect,
   })
   if (!product) throw notFound('商品不存在')
   if (product.status !== 'active') throw badRequest('商品已下架')
-  // 安全红线：fixedContent 是付费内容，绝不能出现在公开详情中
-  const { fixedContent: _fixedContent, ...publicProduct } = product
-  return { ...publicProduct, ratingAvg: Number(product.ratingAvg) }
+  return serializePublicProductDetail(product)
 }

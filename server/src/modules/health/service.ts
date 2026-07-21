@@ -1,5 +1,6 @@
 import { config } from '../../config/index.js'
 import { prisma } from '../../lib/prisma.js'
+import { pingRedis, type RedisHealthStatus } from '../../lib/redis.js'
 
 const DB_PING_TIMEOUT_MS = 2_000
 
@@ -14,6 +15,7 @@ export type ReadinessResult = {
   checks: {
     database: 'ok' | 'fail'
     config: 'ok' | 'fail'
+    redis: RedisHealthStatus
   }
   timestamp: string
   error?: string
@@ -45,7 +47,7 @@ async function pingDatabase() {
 }
 
 export async function checkReadiness(): Promise<ReadinessResult> {
-  const checks: ReadinessResult['checks'] = { database: 'fail', config: 'fail' }
+  const checks: ReadinessResult['checks'] = { database: 'fail', config: 'fail', redis: 'disabled' }
   let error: string | undefined
 
   try {
@@ -63,7 +65,16 @@ export async function checkReadiness(): Promise<ReadinessResult> {
     error = `${error ? `${error}; ` : ''}database: ${(e as Error).message}`
   }
 
-  const allOk = checks.database === 'ok' && checks.config === 'ok'
+  checks.redis = await pingRedis()
+  if (checks.redis === 'degraded' && config.redisRequired) {
+    error = `${error ? `${error}; ` : ''}redis: degraded`
+  }
+
+  const allOk =
+    checks.database === 'ok' &&
+    checks.config === 'ok' &&
+    (!config.redisRequired || checks.redis === 'ok')
+
   return {
     status: allOk ? 'ready' : 'unready',
     checks,
