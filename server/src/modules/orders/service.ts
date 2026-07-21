@@ -9,9 +9,10 @@ import {
   transitionOrderStatus,
 } from './fulfillment.js'
 import { serializeUserOrderDetail, serializeUserOrderList } from './serializers.js'
+import { invalidateProductPublicCache } from '../products/cache.js'
 
 export async function createOrder(userId: number, productId: number) {
-  return prisma.$transaction(async tx => {
+  const result = await prisma.$transaction(async tx => {
     const account = await tx.pointAccount.findUnique({ where: { userId } })
     if (!account) throw notFound('积分账户不存在')
 
@@ -187,6 +188,9 @@ export async function createOrder(userId: number, productId: number) {
       merchantName,
     }
   })
+
+  await invalidateProductPublicCache(productId, { detail: true, list: 'coalesced' })
+  return result
 }
 
 export async function getOrderDetail(orderId: number, userId: number) {

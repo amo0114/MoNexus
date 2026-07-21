@@ -1,4 +1,5 @@
 import { beforeAll, afterAll, beforeEach } from 'vitest'
+import { __resetCacheForTests } from '../lib/cache.js'
 import { prisma } from '../lib/prisma.js'
 
 beforeAll(async () => {
@@ -10,6 +11,7 @@ afterAll(async () => {
 })
 
 beforeEach(async () => {
+  await __resetCacheForTests()
   await prisma.$executeRawUnsafe(`TRUNCATE TABLE
     "AdminLog",
     "Settlement",

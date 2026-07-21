@@ -18,6 +18,11 @@ const optionalStringEnvSchema = z.preprocess(value => {
   return value
 }, z.string().min(1).optional())
 
+const redisUrlEnvSchema = z.preprocess(value => {
+  if (value === undefined || value === '') return undefined
+  return value
+}, z.string().url().default('redis://localhost:6379'))
+
 const optionalEmailEnvSchema = z.preprocess(value => {
   if (value === undefined || value === '') return undefined
   return value
@@ -73,6 +78,24 @@ const envSchema = z.object({
   SENTRY_DSN: optionalUrlEnvSchema,
   LOG_LEVEL: logLevelEnvSchema,
   METRICS_TOKEN: optionalStringEnvSchema,
+
+  // --- Redis public read cache. Disabled by default so local/test runs do
+  // not need Redis unless explicitly enabled.
+  REDIS_ENABLED: booleanEnvSchema.default(false),
+  REDIS_URL: redisUrlEnvSchema,
+  REDIS_PASSWORD: optionalStringEnvSchema,
+  REDIS_TLS: booleanEnvSchema.default(false),
+  REDIS_REQUIRED: booleanEnvSchema.default(false),
+  REDIS_CONNECT_TIMEOUT_MS: z.coerce.number().int().positive().default(100),
+  REDIS_COMMAND_TIMEOUT_MS: z.coerce.number().int().positive().default(80),
+  REDIS_CIRCUIT_ERROR_THRESHOLD: z.coerce.number().int().positive().default(5),
+  REDIS_CIRCUIT_OPEN_MS: z.coerce.number().int().positive().default(30_000),
+  CACHE_KEY_PREFIX: z.string().min(1).default('monexus:local'),
+  CACHE_PRODUCT_LIST: booleanEnvSchema.default(true),
+  CACHE_PRODUCT_DETAIL: booleanEnvSchema.default(true),
+  CACHE_PRODUCT_REVIEWS: booleanEnvSchema.default(true),
+  CACHE_PRODUCT_LIST_VERSION_COALESCE_MS: z.coerce.number().int().min(0).default(10_000),
+  CACHE_MAX_VALUE_BYTES: z.coerce.number().int().positive().default(524_288),
 })
 
 const parsed = envSchema.safeParse(process.env)
@@ -161,6 +184,21 @@ export const config = {
   sentryDsn: env.SENTRY_DSN,
   logLevel: env.LOG_LEVEL,
   metricsToken: env.METRICS_TOKEN,
+  redisEnabled: env.REDIS_ENABLED,
+  redisUrl: env.REDIS_URL,
+  redisPassword: env.REDIS_PASSWORD,
+  redisTls: env.REDIS_TLS,
+  redisRequired: env.REDIS_REQUIRED,
+  redisConnectTimeoutMs: env.REDIS_CONNECT_TIMEOUT_MS,
+  redisCommandTimeoutMs: env.REDIS_COMMAND_TIMEOUT_MS,
+  redisCircuitErrorThreshold: env.REDIS_CIRCUIT_ERROR_THRESHOLD,
+  redisCircuitOpenMs: env.REDIS_CIRCUIT_OPEN_MS,
+  cacheKeyPrefix: env.CACHE_KEY_PREFIX,
+  cacheProductList: env.CACHE_PRODUCT_LIST,
+  cacheProductDetail: env.CACHE_PRODUCT_DETAIL,
+  cacheProductReviews: env.CACHE_PRODUCT_REVIEWS,
+  cacheProductListVersionCoalesceMs: env.CACHE_PRODUCT_LIST_VERSION_COALESCE_MS,
+  cacheMaxValueBytes: env.CACHE_MAX_VALUE_BYTES,
   passwordResetTokenMaxAgeMs: 30 * 60 * 1000, // 30 min
   emailVerificationTokenMaxAgeMs: 24 * 60 * 60 * 1000, // 24h
 }

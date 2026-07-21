@@ -4,6 +4,7 @@ import { businessRegistry } from '../../lib/businessRegistry.js'
 import { badRequest, notFound, conflict } from '../../lib/httpError.js'
 import { getSystemConfigValue } from '../../lib/systemConfig.js'
 import { logInventoryChange } from '../../lib/inventoryLog.js'
+import { invalidateProductPublicCache } from '../products/cache.js'
 import {
   isInstantMode,
   normalizeOrderStatus,
@@ -333,7 +334,7 @@ export async function createMyProduct(
     fixedContentType,
   })
 
-  return prisma.product.create({
+  const product = await prisma.product.create({
     data: {
       ...data,
       deliveryMode,
@@ -343,6 +344,9 @@ export async function createMyProduct(
       merchantId,
     },
   })
+
+  await invalidateProductPublicCache(product.id, { list: true })
+  return product
 }
 
 export async function updateMyProduct(merchantId: number, productId: number, data: Record<string, unknown>) {
@@ -370,7 +374,7 @@ export async function updateMyProduct(merchantId: number, productId: number, dat
     fixedContentType: (data.fixedContentType as string | undefined) ?? product.fixedContentType,
   })
 
-  return prisma.product.update({
+  const updated = await prisma.product.update({
     where: { id: productId },
     data: {
       ...data,
@@ -382,6 +386,9 @@ export async function updateMyProduct(merchantId: number, productId: number, dat
         : {}),
     },
   })
+
+  await invalidateProductPublicCache(productId, { detail: true, list: true })
+  return updated
 }
 
 export async function importMyInventory(
@@ -396,7 +403,7 @@ export async function importMyInventory(
     throw badRequest('仅即时库存发货商品支持库存管理')
   }
 
-  return prisma.$transaction(async tx => {
+  const result = await prisma.$transaction(async tx => {
     const analysis = await analyzeInventoryPayload(productId, payload, tx)
     if (analysis.duplicateRows > 0 || analysis.existingDuplicateRows > 0) {
       throw badRequest('库存导入包含重复项', duplicateImportDetails(analysis))
@@ -428,6 +435,9 @@ export async function importMyInventory(
       existingDuplicateRows: analysis.existingDuplicateRows,
     }
   })
+
+  await invalidateProductPublicCache(productId, { detail: true, list: 'coalesced' })
+  return result
 }
 
 export async function voidMyInventory(
@@ -444,7 +454,7 @@ export async function voidMyInventory(
 
   // 单事务完成：InventoryItem 置 void + Product.stock 扣减 + InventoryLog 落账。
   // 只允许作废 available 项；updateMany 二次过滤 status 防与下单占用并发竞态。
-  return prisma.$transaction(async tx => {
+  const result = await prisma.$transaction(async tx => {
     const candidates = await tx.inventoryItem.findMany({
       where: { productId, status: 'available' },
       orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
@@ -483,6 +493,9 @@ export async function voidMyInventory(
 
     return { voided: voided.count, stock: updated.stock }
   })
+
+  await invalidateProductPublicCache(productId, { detail: true, list: 'coalesced' })
+  return result
 }
 
 export async function listMyInventoryLogs(

@@ -19,6 +19,11 @@ export function isErrorReporterEnabled() {
   return initialized
 }
 
+export function addBreadcrumb(breadcrumb: Sentry.Breadcrumb) {
+  if (!initialized) return
+  Sentry.addBreadcrumb(breadcrumb)
+}
+
 export function captureException(err: unknown, req?: Request) {
   if (!initialized) return
 

@@ -5,7 +5,7 @@
 
 ## 1. Service Start and Stop
 
-Dev stack (PostgreSQL container + backend + frontend) via helper script:
+Dev stack (PostgreSQL container + Redis container + backend + frontend) via helper script:
 
 ```bash
 cd "$REPO_ROOT"
@@ -17,9 +17,9 @@ Stop everything:
 
 ```bash
 # Ctrl-C the dev-up.sh foreground (kills backend + frontend).
-docker stop monexus-db            # stop PostgreSQL container
+docker stop monexus-db monexus-redis
 # Full teardown (removes container, keeps the named volume):
-docker rm monexus-db
+docker rm monexus-db monexus-redis
 ```
 
 Restart the DB container without touching data:

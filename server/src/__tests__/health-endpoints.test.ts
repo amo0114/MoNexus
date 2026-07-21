@@ -37,6 +37,7 @@ describe('Health endpoints', () => {
         checks: {
           database: 'ok',
           config: 'ok',
+          redis: 'disabled',
         },
         timestamp: expect.any(String),
       })
@@ -54,10 +55,11 @@ describe('Health endpoints', () => {
         expect(res.body).toEqual({
           status: 'unready',
           checks: {
-            database: 'fail',
-            config: 'ok',
-          },
-          timestamp: expect.any(String),
+          database: 'fail',
+          config: 'ok',
+          redis: 'disabled',
+        },
+        timestamp: expect.any(String),
           error: expect.stringMatching(/database/),
         })
         expect(Date.parse(res.body.timestamp)).not.toBeNaN()

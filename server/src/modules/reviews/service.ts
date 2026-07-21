@@ -1,6 +1,11 @@
 import { Prisma } from '@prisma/client'
 import { prisma } from '../../lib/prisma.js'
+import { wrapCache } from '../../lib/cache.js'
 import { badRequest, notFound, conflict } from '../../lib/httpError.js'
+import {
+  buildProductReviewsCacheKey,
+  invalidateProductPublicCache,
+} from '../products/cache.js'
 import { normalizeOrderStatus } from '../orders/fulfillment.js'
 
 const EDIT_WINDOW_MS = 7 * 24 * 60 * 60 * 1000
@@ -17,6 +22,18 @@ function displayNameFor(user: { nickname: string | null; email: string }) {
 
 // 安全红线：公开接口响应字段白名单，绝不含 email 原文 / userId / orderId。
 export async function listProductReviews(productId: number, page = 1, pageSize = 10) {
+  const cacheKey = await buildProductReviewsCacheKey(productId, page, pageSize)
+  if (!cacheKey) return listProductReviewsFromDb(productId, page, pageSize)
+
+  return wrapCache(
+    'product-reviews',
+    cacheKey,
+    page === 1 ? 30 : 20,
+    () => listProductReviewsFromDb(productId, page, pageSize)
+  )
+}
+
+async function listProductReviewsFromDb(productId: number, page = 1, pageSize = 10) {
   const where = { productId, status: 'visible' }
   const [total, rows] = await prisma.$transaction([
     prisma.review.count({ where }),
@@ -41,8 +58,8 @@ export async function listProductReviews(productId: number, page = 1, pageSize =
       id: row.id,
       rating: row.rating,
       comment: row.comment,
-      editedAt: row.editedAt,
-      createdAt: row.createdAt,
+      editedAt: row.editedAt?.toISOString() ?? null,
+      createdAt: row.createdAt.toISOString(),
       displayName: displayNameFor(row.user),
     })),
     total,
@@ -79,7 +96,7 @@ export async function createOrderReview(
   orderId: number,
   input: { rating: number; comment?: string }
 ) {
-  return prisma.$transaction(async tx => {
+  const review = await prisma.$transaction(async tx => {
     const order = await tx.order.findFirst({
       where: { id: orderId, userId },
       select: { id: true, productId: true, status: true },
@@ -113,6 +130,9 @@ export async function createOrderReview(
     await recalcProductRating(tx, order.productId)
     return review
   })
+
+  await invalidateProductPublicCache(review.productId, { detail: true, reviews: true, list: true })
+  return review
 }
 
 // 管理端列表：admin 是可信面，允许返回 email/orderId 等公开接口禁止的字段；含 removed 行供运营审计。
@@ -142,7 +162,7 @@ export async function listReviewsForAdmin(filters: { productId?: number; page: n
 
 // 软删：status=removed，行保留（审计 + orderId unique 继续占用，删的是违规内容不是重评机会）。
 export async function removeReviewByAdmin(adminUserId: number, reviewId: number) {
-  return prisma.$transaction(async tx => {
+  const result = await prisma.$transaction(async tx => {
     const review = await tx.review.findUnique({
       where: { id: reviewId },
       select: { id: true, productId: true, status: true },
@@ -169,8 +189,11 @@ export async function removeReviewByAdmin(adminUserId: number, reviewId: number)
         detail: `评价 #${review.id}（商品 #${review.productId}）已移除`,
       },
     })
-    return { id: review.id, status: 'removed' }
+    return { id: review.id, productId: review.productId, status: 'removed' }
   })
+
+  await invalidateProductPublicCache(result.productId, { detail: true, reviews: true, list: true })
+  return { id: result.id, status: result.status }
 }
 
 export async function updateOrderReview(
@@ -178,7 +201,7 @@ export async function updateOrderReview(
   orderId: number,
   input: { rating: number; comment?: string }
 ) {
-  return prisma.$transaction(async tx => {
+  const updatedReview = await prisma.$transaction(async tx => {
     const review = await tx.review.findUnique({
       where: { orderId },
       select: { id: true, userId: true, productId: true, status: true },
@@ -210,4 +233,9 @@ export async function updateOrderReview(
     await recalcProductRating(tx, review.productId)
     return tx.review.findUnique({ where: { orderId } })
   })
+
+  if (updatedReview) {
+    await invalidateProductPublicCache(updatedReview.productId, { detail: true, reviews: true, list: true })
+  }
+  return updatedReview
 }
