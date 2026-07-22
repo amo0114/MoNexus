@@ -1,0 +1,175 @@
+# Build and publish Docker images to GHCR.
+#
+# Produces two images per build:
+#   ghcr.io/amo0114/monexus-server  (backend API, from server/Dockerfile)
+#   ghcr.io/amo0114/monexus-web     (nginx SPA,  from root Dockerfile)
+#
+# Triggers:
+#   - push to master              → :master, :sha-<short>, :latest
+#   - tag v1.2.3                  → :1.2.3, :1.2, :latest
+#   - pull_request                → build only, push disabled (smoke)
+#   - workflow_dispatch (ref=...) → same tags as master push
+#
+# Permissions: uses the built-in GITHUB_TOKEN. No PAT needed. The
+# workflow also keeps the package visibility and team access governed
+# by repo settings; first push creates the package under the user/org
+# namespace listed below.
+
+name: Publish Docker images
+
+on:
+  push:
+    branches:
+      - master
+    tags:
+      - 'v*'
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Branch, tag, or SHA to build'
+        required: false
+        default: 'master'
+
+concurrency:
+  group: docker-publish-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-server:
+    name: Build and push server image
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.ref || github.ref }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/amo0114/monexus-server
+          tags: |
+            type=ref,event=branch
+            type=ref,event=tag
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,format=short,prefix=sha-
+            type=raw,value=latest,enable={{is_default_branch}}
+          labels: |
+            org.opencontainers.image.title=MoNexus Server
+            org.opencontainers.image.description=Backend API for MoNexus
+            org.opencontainers.image.source=https://github.com/amo0114/MoNexus
+
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: ./server
+          file: ./server/Dockerfile
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=server
+          cache-to: type=gha,mode=max,scope=server
+          load: ${{ github.event_name == 'pull_request' }}
+          provenance: false
+
+      - name: Image digest
+        if: github.event_name != 'pull_request'
+        run: echo "server_image_digest=${{ steps.build.outputs.digest }}" >> "$GITHUB_ENV"
+
+  build-web:
+    name: Build and push web image
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.ref || github.ref }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/amo0114/monexus-web
+          tags: |
+            type=ref,event=branch
+            type=ref,event=tag
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,format=short,prefix=sha-
+            type=raw,value=latest,enable={{is_default_branch}}
+          labels: |
+            org.opencontainers.image.title=MoNexus Web
+            org.opencontainers.image.description=nginx SPA frontend for MoNexus
+            org.opencontainers.image.source=https://github.com/amo0114/MoNexus
+
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,mode=max,scope=web
+          load: ${{ github.event_name == 'pull_request' }}
+          provenance: false
+          build-args: |
+            VITE_SENTRY_DSN=${{ vars.VITE_SENTRY_DSN || '' }}
+
+      - name: Image digest
+        if: github.event_name != 'pull_request'
+        run: echo "web_image_digest=${{ steps.build.outputs.digest }}" >> "$GITHUB_ENV"
+
+  summary:
+    name: Publish summary
+    needs: [build-server, build-web]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Summarise
+        run: |
+          echo "### Docker publish result" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| image | status |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---|" >> "$GITHUB_STEP_SUMMARY"
+          server_status="${{ needs.build-server.result }}"
+          web_status="${{ needs.build-web.result }}"
+          echo "| ghcr.io/amo0114/monexus-server | ${server_status} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| ghcr.io/amo0114/monexus-web | ${web_status} |" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$server_status" != "success" ] || [ "$web_status" != "success" ]; then
+            exit 1
+          fi

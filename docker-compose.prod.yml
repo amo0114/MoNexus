@@ -26,9 +26,11 @@ services:
       - monexus
 
   server:
+    image: ghcr.io/amo0114/monexus-server:${MONEXUS_IMAGE_TAG:-latest}
     build:
       context: ./server
       target: runtime
+    pull_policy: ${MONEXUS_PULL_POLICY:-missing}
     container_name: monexus-server-prod
     restart: unless-stopped
     environment:
@@ -157,11 +159,13 @@ services:
       - monexus
 
   web:
+    image: ghcr.io/amo0114/monexus-web:${MONEXUS_IMAGE_TAG:-latest}
     build:
       context: .
       target: runtime
       args:
         VITE_SENTRY_DSN: ${VITE_SENTRY_DSN:-}
+    pull_policy: ${MONEXUS_PULL_POLICY:-missing}
     container_name: monexus-web-prod
     restart: unless-stopped
     depends_on:
