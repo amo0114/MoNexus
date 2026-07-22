@@ -9,7 +9,7 @@
 
 这意味着：
 
-- 主工作区里的 `docs/superpowers/plans/2026-04-27-postgresql-auth-security.md` 主要记录了前端与联调勾选状态。
+- 主工作区里的 `docs/archive/plans/2026-04-27-postgresql-auth-security.md`（原 `docs/superpowers/plans/`）主要记录了前端与联调勾选状态。
 - backend worktree 里的同名计划书主要记录了后端勾选状态。
 - 两边的代码目前还没有合并到同一份工作树，所以“计划书全部完成”不等于“当前根目录已经是完整可交付态”。
 

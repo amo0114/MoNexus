@@ -40,3 +40,16 @@ playwright/.cache/
 
 # One-off / throwaway patch scripts
 patch*.py
+
+# Local DB artifacts (never commit — product uses PostgreSQL migrations)
+*.db
+*.sqlite
+*.sqlite3
+server/prisma/*.db
+
+# Agent / one-off workspaces (not product source)
+skill-fallback/
+/UI-REDESIGN-PROGRESS.md
+
+# Coverage
+coverage/

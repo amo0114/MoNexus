@@ -634,7 +634,7 @@ refactor(orders): extract settlement creation
 | `server/**` | 后端 | 前端禁止修改 |
 | `src/**` | 前端 | 后端禁止修改 |
 | `docs/superpowers/specs/**` | 集成人员 + 双方确认 | 契约变更先改这里 |
-| `docs/superpowers/plans/**` | 集成人员 | 任务计划 |
+| `docs/archive/plans/**`（原 `docs/superpowers/plans/**`） | 集成人员 | 任务计划（已归档，只读） |
 | 根 `package.json` / `vite.config.ts` | 前端 | |
 | `docker-compose.yml` | 后端 | |
 | `scripts/dev-up.*` | 集成人员 | 双方协商 |
