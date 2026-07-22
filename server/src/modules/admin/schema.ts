@@ -110,3 +110,10 @@ export const listSettlementsQuerySchema = z.object({
 export const batchSettleSchema = z.object({
   settlementIds: z.array(z.number().int().positive()).min(1, '至少选择一条结算记录'),
 })
+
+export const resolveOrderSchema = z.object({
+  result: z.enum(['refund', 'close']),
+  note: z.string().trim().max(1000).optional(),
+}).strict()
+
+export type ResolveOrderInput = z.infer<typeof resolveOrderSchema>

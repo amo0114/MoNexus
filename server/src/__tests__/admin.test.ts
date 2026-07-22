@@ -399,7 +399,7 @@ describe('POST /api/admin/settlements/batch-settle', () => {
       .expect(400)
 
     const unchanged = await prisma.settlement.findUniqueOrThrow({ where: { id: settlement.id } })
-    expect(unchanged.status).toBe('pending')
+    expect(unchanged.status).toBe('holding')
     expect(unchanged.settledAt).toBeNull()
   })
 })

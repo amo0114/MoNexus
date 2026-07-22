@@ -195,15 +195,18 @@ model InventoryItem {
 }
 
 model Order {
-  id               Int      @id @default(autoincrement())
-  userId           Int
-  productId        Int
-  price            Int
-  status           String   @default("pending")
-  merchantId       Int?
-  commissionRate   Decimal? @db.Decimal(5, 4)
-  commissionAmount Int      @default(0)
-  createdAt        DateTime @default(now())
+  id                 Int       @id @default(autoincrement())
+  userId             Int
+  productId          Int
+  price              Int
+  status             String    @default("pending") // pending | processing | delivered | closed | disputed | refunded
+  merchantId         Int?
+  commissionRate      Decimal?  @db.Decimal(5, 4)
+  commissionAmount   Int       @default(0)
+  holdingPoints      Int? // 虚拟服务订单冻结的积分；instant 模式为 null
+  fulfillmentDeadline DateTime? // manual_service 商家履约截止时间
+  confirmedAt        DateTime? // 用户确认关闭订单的时间
+  createdAt          DateTime  @default(now())
 
   user         User               @relation(fields: [userId], references: [id])
   product      Product            @relation(fields: [productId], references: [id])
@@ -257,7 +260,7 @@ model Settlement {
   commissionRate   Decimal   @db.Decimal(5, 4)
   commissionAmount Int
   settlementAmount Int
-  status           String    @default("pending") // pending | settled
+  status           String    @default("pending") // pending | settled | holding | voided
   settledAt        DateTime?
   createdAt        DateTime  @default(now())
 

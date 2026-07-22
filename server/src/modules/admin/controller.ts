@@ -163,3 +163,12 @@ export async function batchSettle(req: Request, res: Response, next: NextFunctio
     res.json(await adminService.batchSettle(req.user!.userId, req.body.settlementIds))
   } catch (err) { next(err) }
 }
+
+// ---- Order Arbitration ----
+
+export async function resolveOrder(req: Request, res: Response, next: NextFunction) {
+  try {
+    const orderId = req.params.id as unknown as number
+    res.json(await adminService.resolveOrder(req.user!.userId, orderId, req.body))
+  } catch (err) { next(err) }
+}

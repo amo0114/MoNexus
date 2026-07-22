@@ -574,7 +574,9 @@ function getAvailableActions(order: { status: string; product?: { deliveryMode?:
   const status = normalizeOrderStatus(order.status)
   const deliveryMode = order.product?.deliveryMode
 
-  if (status === 'pending') return ['start_fulfillment']
+  // pending 状态下商家可接单（start_fulfillment）或拒单（reject）；
+  // 拒单只对 manual_service 有意义，但即时模式创建即 delivered 不会进入 pending
+  if (status === 'pending') return ['start_fulfillment', 'reject']
   if (status === 'processing' && deliveryMode === 'manual_service') return ['deliver']
   if (status === 'disputed') return ['respond_dispute']
   return []
@@ -591,6 +593,7 @@ export function getSettlementEligibility(orderStatus: string) {
     pending: '订单待处理，暂不可结算',
     processing: '订单履约中，暂不可结算',
     disputed: '订单争议中，暂不可结算',
+    refunded: '订单已退款，不可结算',
   }
 
   return {
@@ -739,6 +742,73 @@ export async function respondToOrderDispute(
       publicNote: input.publicNote,
       internalNote: input.internalNote,
     }, tx)
+  })
+
+  return getMyOrderDetail(merchantId, orderId)
+}
+
+export async function rejectOrder(
+  merchantId: number,
+  actorUserId: number,
+  orderId: number,
+  input: { publicNote?: string; internalNote?: string }
+) {
+  // 商家拒单（pending → refunded）：仅 manual_service 走 pending；即时模式创建即 delivered 不会进入 pending。
+  // 拒单后立即退还冻结积分（holdingPoints），Settlement holding → voided。
+  await prisma.$transaction(async tx => {
+    const order = await tx.order.findFirst({
+      where: { id: orderId, merchantId },
+      select: {
+        id: true,
+        status: true,
+        userId: true,
+        holdingPoints: true,
+        product: { select: { deliveryMode: true } },
+      },
+    })
+    if (!order) throw notFound('订单不存在')
+
+    if (order.product.deliveryMode !== 'manual_service') {
+      throw badRequest('仅人工服务订单可拒单')
+    }
+
+    // 状态流转：pending → refunded（由 transitionOrderStatus 校验合法性）
+    await transitionOrderStatus({
+      orderId,
+      toStatus: 'refunded',
+      actorRole: 'merchant',
+      actorUserId,
+      action: 'merchant.fulfillment.reject',
+      publicNote: input.publicNote ?? '商家拒绝接单，积分已退还',
+      internalNote: input.internalNote,
+    }, tx)
+
+    // 退还冻结积分：manual_service 创建时仅冻结（未扣余额），
+    // 退款无需回滚余额，仅记录 PointLog 'in' 审计、清空 holdingPoints
+    if (order.holdingPoints != null && order.holdingPoints > 0) {
+      const account = await tx.pointAccount.findUnique({ where: { userId: order.userId } })
+      if (!account) throw notFound('积分账户不存在')
+      await tx.pointLog.create({
+        data: {
+          userId: order.userId,
+          type: 'in',
+          amount: order.holdingPoints,
+          balanceAfter: account.balance,
+          reason: `商家拒单退款: #${order.id}`,
+          orderId: order.id,
+        },
+      })
+      await tx.order.update({
+        where: { id: orderId },
+        data: { holdingPoints: null },
+      })
+    }
+
+    // Settlement 从 holding 转为 voided，不进入结算
+    await tx.settlement.updateMany({
+      where: { orderId: order.id, status: 'holding' },
+      data: { status: 'voided' },
+    })
   })
 
   return getMyOrderDetail(merchantId, orderId)

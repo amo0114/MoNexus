@@ -12,7 +12,7 @@ export function isInstantMode(mode: string): boolean {
   return instantModeSet.has(mode)
 }
 
-export const ORDER_STATUSES = ['pending', 'processing', 'delivered', 'disputed', 'closed'] as const
+export const ORDER_STATUSES = ['pending', 'processing', 'delivered', 'disputed', 'closed', 'refunded'] as const
 export type FulfillmentOrderStatus = (typeof ORDER_STATUSES)[number]
 
 export const ORDER_STATUS_ACTOR_ROLES = ['user', 'merchant', 'admin', 'system'] as const
@@ -23,13 +23,17 @@ const orderStatusSet = new Set<string>(ORDER_STATUSES)
 const actorRoleSet = new Set<string>(ORDER_STATUS_ACTOR_ROLES)
 
 const legalTransitions: Record<FulfillmentOrderStatus, FulfillmentOrderStatus[]> = {
-  pending: ['processing'],
+  // pending → refunded：商家拒绝接单（manual_service），冻结积分立即退还
+  pending: ['processing', 'refunded'],
   processing: ['delivered'],
   delivered: ['disputed', 'closed'],
   // disputed → delivered：即时模式（instant_*）货已交付，商家驳回争议时直接恢复为已交付，
   // 否则会卡死在 processing（即时单没有商家 deliver 出口）
-  disputed: ['processing', 'delivered', 'closed'],
+  // disputed → refunded：管理员仲裁支持用户，退还冻结积分
+  // disputed → closed：管理员仲裁支持商家，扣减冻结积分
+  disputed: ['processing', 'delivered', 'closed', 'refunded'],
   closed: [],
+  refunded: [],
 }
 
 type OrderStatusEventWriter = Pick<Prisma.TransactionClient, 'orderStatusEvent'>
