@@ -432,6 +432,14 @@ export default function MerchantDashboardPage() {
                           </td>
                           <td className="py-3 px-2 text-sm">
                             <RegistryPill value={o.status} category="orderStatuses" />
+                            {o.slaExceeded && (
+                              <span
+                                className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded text-[10px] font-bold border bg-[var(--color-danger)]/10 text-[var(--color-danger)] border-[var(--color-danger)]/25"
+                                data-testid={`sla-exceeded-badge-${o.id}`}
+                              >
+                                <AlertTriangle className="w-3 h-3" /> SLA 超时
+                              </span>
+                            )}
                           </td>
                           <td className="py-3 px-2 text-right whitespace-nowrap">
                             {o.availableActions?.includes('start_fulfillment') && (

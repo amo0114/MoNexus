@@ -86,6 +86,9 @@ export interface MerchantOrder {
   settlement?: Settlement | null
   availableActions?: string[]
   statusEvents?: any[]
+  holdingPoints?: number | null
+  fulfillmentDeadline?: string | null
+  slaExceeded?: boolean
 }
 
 export interface Settlement {

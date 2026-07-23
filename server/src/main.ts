@@ -4,9 +4,11 @@ import { clearCacheProcessState } from './lib/cache.js'
 import { logger } from './lib/logger.js'
 import { prisma } from './lib/prisma.js'
 import { quitRedis } from './lib/redis.js'
+import { startOrderCron, stopOrderCron } from './modules/orders/cron.js'
 
 const server = app.listen(config.port, () => {
   logger.info(`MoNexus API running at http://localhost:${config.port}`)
+  startOrderCron()
 })
 
 let shuttingDown = false
@@ -28,6 +30,7 @@ async function shutdown(signal: NodeJS.Signals) {
     try {
       await quitRedis()
       clearCacheProcessState()
+      stopOrderCron()
       await prisma.$disconnect()
       clearTimeout(forceExit)
       logger.info({ signal }, 'shutdown completed')

@@ -582,6 +582,16 @@ function getAvailableActions(order: { status: string; product?: { deliveryMode?:
   return []
 }
 
+function computeSlaExceeded(order: {
+  status?: string
+  fulfillmentDeadline?: Date | null
+}): boolean {
+  if (!order.fulfillmentDeadline) return false
+  const status = order.status ? normalizeOrderStatus(order.status) : null
+  if (status !== 'pending' && status !== 'processing') return false
+  return order.fulfillmentDeadline.getTime() < Date.now()
+}
+
 export function getSettlementEligibility(orderStatus: string) {
   const status = normalizeOrderStatus(orderStatus)
 
@@ -623,6 +633,9 @@ export async function listMyOrders(merchantId: number, query: MerchantOrderListQ
   return {
     items: items.map(order => ({
       ...serializeMerchantOrder(order),
+      holdingPoints: order.holdingPoints,
+      fulfillmentDeadline: order.fulfillmentDeadline,
+      slaExceeded: computeSlaExceeded(order),
       availableActions: getAvailableActions(order),
     })),
     total,
@@ -656,6 +669,9 @@ export async function getMyOrderDetail(merchantId: number, orderId: number) {
   if (!order) throw notFound('订单不存在')
   return {
     ...serializeMerchantOrder(order),
+    holdingPoints: order.holdingPoints,
+    fulfillmentDeadline: order.fulfillmentDeadline,
+    slaExceeded: computeSlaExceeded(order),
     availableActions: getAvailableActions(order),
   }
 }
