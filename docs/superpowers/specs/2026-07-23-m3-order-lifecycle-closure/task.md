@@ -37,18 +37,18 @@
 
 | ID | 状态 | 负责人 | 备注 |
 | --- | --- | --- | --- |
-| T-00 | Todo | | |
-| T-BE-01 | Todo | | |
-| T-BE-02 | Todo | | |
-| T-BE-03 | Todo | | |
-| T-FE-U01 | Todo | | |
-| T-FE-M01 | Todo | | |
-| T-FE-M02 | Todo | | |
-| T-FE-A01 | Todo | | |
-| T-FE-A02 | Todo | | |
-| T-QA-01 | Todo | | |
-| T-QA-02 | Todo | | |
-| T-DOC-01 | Todo | | |
+| T-00 | Done | amo0114 | 基线核对完成，master 73bac9c |
+| T-BE-01 | Done | amo0114 | PR #20 合入（含 PR #22 前端补齐） |
+| T-BE-02 | Done | amo0114 | PR #20 合入 |
+| T-BE-03 | Done | amo0114 | PR #20 合入 |
+| T-FE-U01 | Done | amo0114 | PR #22 合入 |
+| T-FE-M01 | Done | amo0114 | PR #22 合入 |
+| T-FE-M02 | Done | amo0114 | PR #22 合入 |
+| T-FE-A01 | Done | amo0114 | PR #22 合入 |
+| T-FE-A02 | Done | amo0114 | PR #22 合入 |
+| T-QA-01 | Done | amo0114 | vitest 5 文件 65 测试全 PASS 2026-07-23 |
+| T-QA-02 | Done | amo0114 | e2e/order-lifecycle.spec.ts 已存在（本地未跑，CI 已绿） |
+| T-DOC-01 | Done | amo0114 | PRD §0.1 同步至 master@73bac9c，v1.2 |
 
 状态枚举：`Todo` | `In Progress` | `Blocked` | `Done` | `Cancelled`
 
