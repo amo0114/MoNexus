@@ -276,6 +276,53 @@ describe('GET /api/admin/orders/:id', () => {
   })
 })
 
+describe('GET /api/admin/settlements', () => {
+  it('should filter settlements by holding and voided status', async () => {
+    await createTestUser('settle-list-admin@test.local', 'admin123', 'admin')
+    const { merchant } = await createTestMerchant('settle-list-merchant@test.local', 'merchant123', {
+      role: 'merchant',
+      status: 'active',
+      name: '结算列表商家',
+    })
+    await createTestUser('settle-list-buyer@test.local', 'buyerpass', 'user', 5000)
+    const product = await createTestProduct('结算列表人工服务', 100, 0, [], merchant.id)
+    await prisma.product.update({
+      where: { id: product.id },
+      data: { deliveryMode: 'manual_service', stock: 0, stockMode: 'unlimited' },
+    })
+    const buyer = await loginAs('settle-list-buyer@test.local', 'buyerpass')
+    const merchantLogin = await loginAs('settle-list-merchant@test.local', 'merchant123')
+    const admin = await loginAs('settle-list-admin@test.local', 'admin123')
+
+    const createRes = await api
+      .post('/api/orders')
+      .set(authHeader(buyer.accessToken))
+      .send({ productId: product.id })
+      .expect(201)
+    const orderId = createRes.body.orderId as number
+
+    const holdingList = await api
+      .get('/api/admin/settlements')
+      .query({ status: 'holding' })
+      .set(authHeader(admin.accessToken))
+      .expect(200)
+    expect(holdingList.body.some((s: { orderId: number }) => s.orderId === orderId)).toBe(true)
+
+    await api
+      .post(`/api/merchant/orders/${orderId}/fulfillment/reject`)
+      .set(authHeader(merchantLogin.accessToken))
+      .send({ publicNote: '库存不足拒单' })
+      .expect(200)
+
+    const voidedList = await api
+      .get('/api/admin/settlements')
+      .query({ status: 'voided' })
+      .set(authHeader(admin.accessToken))
+      .expect(200)
+    expect(voidedList.body.some((s: { orderId: number; status: string }) => s.orderId === orderId && s.status === 'voided')).toBe(true)
+  })
+})
+
 describe('POST /api/admin/settlements/batch-settle', () => {
   it('should settle pending records in a batch', async () => {
     await createTestUser('settle-admin-ok@test.local', 'admin123', 'admin')

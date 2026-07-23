@@ -117,6 +117,13 @@ export async function respondDispute(id: number, payload: { resolution: 'resume'
   await api.post(`/merchant/orders/${id}/fulfillment/respond-dispute`, payload)
 }
 
+export async function rejectOrder(
+  id: number,
+  payload?: { publicNote?: string; internalNote?: string },
+): Promise<void> {
+  await api.post(`/merchant/orders/${id}/fulfillment/reject`, payload ?? {})
+}
+
 export async function getMerchantSettlements(params?: { page?: number; pageSize?: number; status?: string }): Promise<Settlement[]> {
   const { data } = await api.get<Settlement[]>('/merchant/settlements', { params })
   return data

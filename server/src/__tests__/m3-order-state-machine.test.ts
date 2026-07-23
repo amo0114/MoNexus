@@ -71,6 +71,7 @@ describe('M3-S1: manual_service order points freezing', () => {
       .set(authHeader(accessToken))
       .expect(200)
     expect(res.body.balanceAfter).toBeUndefined()
+    expect(res.body.holdingPoints).toBe(300)
   })
 
   it('deducts frozen points when user closes a delivered manual_service order', async () => {

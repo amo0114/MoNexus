@@ -64,8 +64,18 @@ export const businessRegistry = {
       label: '已关闭',
       tone: 'neutral',
     },
+    {
+      value: 'refunded',
+      label: '已退款',
+      tone: 'danger',
+    },
   ],
   settlementStatuses: [
+    {
+      value: 'holding',
+      label: '冻结中',
+      tone: 'info',
+    },
     {
       value: 'pending',
       label: '待结算',
@@ -75,6 +85,11 @@ export const businessRegistry = {
       value: 'settled',
       label: '已结算',
       tone: 'success',
+    },
+    {
+      value: 'voided',
+      label: '已作废',
+      tone: 'neutral',
     },
   ],
   memberTiers: [

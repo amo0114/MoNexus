@@ -14,6 +14,7 @@ export interface UserOrderListItem {
   status: string
   deliveryMode: string
   createdAt: string
+  holdingPoints?: number | null
   merchant: null | { id: number; name: string }
   product: {
     id: number
@@ -35,6 +36,8 @@ export interface UserOrderDetail extends Omit<UserOrderListItem, 'delivery'> {
     deliveredAt?: string | null
   }
   timeline: OrderStatusEvent[]
+  holdingPoints?: number | null
+  fulfillmentDeadline?: string | null
   review?: null | {
     rating: number
     comment: string | null
