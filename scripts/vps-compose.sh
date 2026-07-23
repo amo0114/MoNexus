@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Run the self-hosted, single-domain production stack. This wrapper always
-# includes the Caddy VPS overlay and bundled MinIO profile so callers cannot
-# accidentally expose the application's nginx container directly on :80.
+# Run the self-hosted, single-domain production stack. This wrapper includes
+# the VPS overlay and bundled MinIO profile so the application's nginx
+# container remains bound to loopback; the host reverse proxy owns :80/:443.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"

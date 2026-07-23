@@ -294,6 +294,9 @@ CI 工作流 [`.github/workflows/docker-publish.yml`](./.github/workflows/docker
 | 后端 API | `ghcr.io/amo0114/monexus-server` | `server/Dockerfile` |
 | 前端（nginx SPA） | `ghcr.io/amo0114/monexus-web` | 根目录 `Dockerfile` |
 
+正式发布的 tag 同时包含 `linux/amd64` 与 `linux/arm64`，普通 VPS 和 ARM VPS
+都可拉取同一个 tag。
+
 **Tag 策略**（`docker/metadata-action`）：
 
 | 触发 | 标签 |

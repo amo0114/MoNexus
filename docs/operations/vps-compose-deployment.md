@@ -7,7 +7,7 @@ GitHub Pages, Render, Neon, R2, API subdomain, or Cloudflare Tunnel is needed.
 ```text
 https://monexus.oai-o.com
   -> Cloudflare DNS / proxy
-  -> Caddy (:443 on VPS)
+  -> host Caddy (:443 on VPS)
   -> web (Nginx + React)
      -> /api      -> server (Express + Prisma)
      -> /uploads  -> MinIO (private Compose network)
@@ -17,9 +17,11 @@ https://monexus.oai-o.com
 ## 1. Prepare the VPS
 
 Use a current Debian or Ubuntu host with at least 2 vCPU, 4 GB RAM, and 40 GB
-of SSD. Install Docker Engine and Docker Compose v2.24.4 or later. The VPS
-must allow inbound TCP 80 and 443; do not expose PostgreSQL, Redis, MinIO, or
-the application web container directly.
+of SSD. Both x86_64 and ARM64 VPSes are supported: the GHCR release images are
+published as a multi-platform manifest. Install Docker Engine and Docker
+Compose v2.24.4 or later, plus Caddy on the **host**. The VPS must allow
+inbound TCP 80 and 443; do not expose PostgreSQL, Redis, MinIO, or the
+application web container directly.
 
 Clone the repository into a durable path such as `/opt/monexus`.
 
@@ -57,10 +59,9 @@ APP_BASE_URL=https://monexus.oai-o.com
 COOKIE_SECURE=true
 TRUST_PROXY=1
 
-# docker-compose.vps.yml binds this to loopback. Caddy owns public :80/:443.
-WEB_PORT=8080
-CADDY_DOMAIN=monexus.oai-o.com
-CADDY_EMAIL=<operator-email>
+# docker-compose.vps.yml binds this only to loopback. Host Caddy owns :80/:443.
+# Change this if the host already uses 18089, and update the Caddy upstream too.
+WEB_PORT=18089
 
 # Keep all object storage inside this Compose project.
 STORAGE_ENDPOINT=http://minio:9000
@@ -92,7 +93,31 @@ openssl rand -base64 48
 The production server validates object storage, so do not remove the MinIO
 variables even if product-image uploads are not immediately used.
 
-## 4. Start and verify
+## 4. Configure Caddy on the host
+
+Caddy is deliberately not a Compose service: one host-level Caddy instance
+can serve this app and any other sites, while it is the sole owner of public
+ports 80 and 443. Add the site block from
+[`deploy/vps/Caddyfile`](../../deploy/vps/Caddyfile) to the host's
+`/etc/caddy/Caddyfile`. Its upstream must match `WEB_PORT` in `.env`:
+
+```caddy
+monexus.oai-o.com {
+  encode zstd gzip
+  reverse_proxy 127.0.0.1:18089
+}
+```
+
+Validate and reload after adding the block (do not overwrite other sites in
+an existing Caddyfile):
+
+```bash
+sudo caddy fmt --overwrite /etc/caddy/Caddyfile
+sudo caddy validate --config /etc/caddy/Caddyfile
+sudo systemctl reload caddy
+```
+
+## 5. Start and verify
 
 If the GHCR packages are private, log in once with a GitHub token that has
 `read:packages` access:

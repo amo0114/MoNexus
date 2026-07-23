@@ -1,11 +1,10 @@
-{
-  email {$CADDY_EMAIL}
-}
-
-{$CADDY_DOMAIN} {
+# Host-level Caddy site for the Compose stack. Add this site block to the
+# host's /etc/caddy/Caddyfile (do not add a second global-options block).
+# Change the hostname and loopback port together with DNS and WEB_PORT.
+monexus.oai-o.com {
   encode zstd gzip
 
   # The bundled Nginx image serves the SPA, proxies /api to Express, and
   # proxies /uploads to private MinIO storage.
-  reverse_proxy web:80
+  reverse_proxy 127.0.0.1:18089
 }
