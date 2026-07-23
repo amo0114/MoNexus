@@ -3,11 +3,11 @@ import { Megaphone, X } from 'lucide-react'
 import api from '../api/client'
 import { PublicAnnouncement } from '../types/admin'
 
-// Dismissal persists across sessions — announcements rarely change daily and
-// re-showing the same one tomorrow would be noise. Re-show happens when admin
-// updates the announcement (id stays the same but content/title may change),
-// which is acceptable since the admin should bump priority instead.
-const dismissKey = (id: number) => `announcement-dismissed:${id}`
+// Dismissal persists across sessions for a specific announcement revision.
+// Updating an announcement changes updatedAt, so a materially revised notice
+// is shown again even to people who dismissed an earlier revision.
+const dismissKey = (announcement: PublicAnnouncement) =>
+  `announcement-dismissed:${announcement.id}:${announcement.updatedAt}`
 
 export default function AnnouncementBanner() {
   const [items, setItems] = useState<PublicAnnouncement[]>([])
@@ -27,12 +27,12 @@ export default function AnnouncementBanner() {
     }
   }, [])
 
-  function dismiss(id: number) {
-    localStorage.setItem(dismissKey(id), '1')
-    setItems((prev) => prev.filter((a) => a.id !== id))
+  function dismiss(announcement: PublicAnnouncement) {
+    localStorage.setItem(dismissKey(announcement), '1')
+    setItems((prev) => prev.filter((a) => a.id !== announcement.id))
   }
 
-  const visible = items.filter((a) => localStorage.getItem(dismissKey(a.id)) !== '1')
+  const visible = items.filter((a) => localStorage.getItem(dismissKey(a)) !== '1')
   if (visible.length === 0) return null
 
   const top = visible[0]
@@ -47,7 +47,7 @@ export default function AnnouncementBanner() {
         </div>
         <button
           type="button"
-          onClick={() => dismiss(top.id)}
+          onClick={() => dismiss(top)}
           className="p-1 rounded hover:bg-[var(--color-primary)]/15 transition-colors focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)]"
           aria-label="关闭公告"
         >

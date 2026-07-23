@@ -137,11 +137,12 @@ export default function AnnouncementsAdmin() {
       showToast('优先级需为 -1000 到 1000 之间的整数', 'error')
       return
     }
-    const startsAt = new Date(editor.startsAt).toISOString()
-    if (Number.isNaN(new Date(startsAt).getTime())) {
+    const start = new Date(editor.startsAt)
+    if (Number.isNaN(start.getTime())) {
       showToast('开始时间无效', 'error')
       return
     }
+    const startsAt = start.toISOString()
     let endsAt: string | null = null
     if (editor.hasEndsAt) {
       if (!editor.endsAt) {
@@ -153,7 +154,7 @@ export default function AnnouncementsAdmin() {
         showToast('结束时间无效', 'error')
         return
       }
-      if (end.getTime() < new Date(editor.startsAt).getTime()) {
+      if (end.getTime() < start.getTime()) {
         showToast('结束时间必须晚于开始时间', 'error')
         return
       }

@@ -12,6 +12,7 @@ export interface PublicAnnouncement {
   priority: number
   startsAt: string
   endsAt: string | null
+  updatedAt: string
 }
 
 /** GET /api/admin/announcements 返回的完整形状 */

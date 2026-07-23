@@ -95,6 +95,34 @@ describe('Announcements admin CRUD (M3-S3)', () => {
     expect(gone).toBeNull()
   })
 
+  it('rejects partial updates that would invert the time window', async () => {
+    const { accessToken } = await loginAdmin()
+    const startsAt = pastDate(1)
+    const endsAt = futureDate(1)
+    const created = await createAnnouncement(accessToken, {
+      title: '时间窗口公告',
+      content: '公告内容',
+      startsAt: startsAt.toISOString(),
+      endsAt: endsAt.toISOString(),
+    }).expect(201)
+
+    await api
+      .put(`/api/admin/announcements/${created.body.id}`)
+      .set(authHeader(accessToken))
+      .send({ endsAt: pastDate(2).toISOString() })
+      .expect(400)
+
+    await api
+      .put(`/api/admin/announcements/${created.body.id}`)
+      .set(authHeader(accessToken))
+      .send({ startsAt: futureDate(2).toISOString() })
+      .expect(400)
+
+    const unchanged = await prisma.announcement.findUniqueOrThrow({ where: { id: created.body.id } })
+    expect(unchanged.startsAt).toEqual(startsAt)
+    expect(unchanged.endsAt).toEqual(endsAt)
+  })
+
   it('admin can filter list by status and audience', async () => {
     const { accessToken } = await loginAdmin()
 
@@ -217,7 +245,7 @@ describe('GET /api/announcements public query (M3-S3)', () => {
     expect(res.body[0].title).toBe('全员公告')
   })
 
-  it('audience=merchant returns all + merchant', async () => {
+  it('derives targeted announcements from the authenticated role and rejects caller-selected audiences', async () => {
     await prisma.announcement.create({
       data: {
         title: '全员', content: 'x', audience: 'all', priority: 1,
@@ -237,14 +265,42 @@ describe('GET /api/announcements public query (M3-S3)', () => {
       },
     })
 
-    const res = await api
+    await prisma.announcement.create({
+      data: {
+        title: '管理员', content: 'a', audience: 'admin', priority: 4,
+        startsAt: pastDate(1), endsAt: null, status: 'published',
+      },
+    })
+    const { user: normalUser, password: normalPassword } = await createTestUser('ann-user@test.local', 'pass123', 'user')
+    const { user: merchantUser, password: merchantPassword } = await createTestUser('ann-merchant@test.local', 'pass123', 'merchant')
+    const { user: adminUser, password: adminPassword } = await createTestUser('ann-role-admin@test.local', 'admin123', 'admin')
+    const normalLogin = await loginAs(normalUser.email, normalPassword)
+    const merchantLogin = await loginAs(merchantUser.email, merchantPassword)
+    const adminLogin = await loginAs(adminUser.email, adminPassword)
+
+    const normal = await api
       .get('/api/announcements')
-      .query({ audience: 'merchant' })
+      .set(authHeader(normalLogin.accessToken))
       .expect(200)
-    expect(res.body).toHaveLength(2)
-    // sort() 按码点排序：'全'(U+5168) < '商'(U+5546)，故 '全员' 在前
-    const titles = res.body.map((a: { title: string }) => a.title).sort()
-    expect(titles).toEqual(['全员', '商家'])
+    expect(normal.body.map((a: { title: string }) => a.title).sort()).toEqual(['全员', '用户'])
+
+    const merchant = await api
+      .get('/api/announcements')
+      .set(authHeader(merchantLogin.accessToken))
+      .expect(200)
+    expect(merchant.body.map((a: { title: string }) => a.title).sort()).toEqual(['全员', '商家'])
+
+    const admin = await api
+      .get('/api/announcements')
+      .set(authHeader(adminLogin.accessToken))
+      .expect(200)
+    expect(admin.body.map((a: { title: string }) => a.title).sort()).toEqual(['全员', '管理员'])
+
+    await api
+      .get('/api/announcements')
+      .query({ audience: 'admin' })
+      .set(authHeader(normalLogin.accessToken))
+      .expect(400)
   })
 
   it('rejects invalid audience with 400', async () => {

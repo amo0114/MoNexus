@@ -789,6 +789,12 @@ export async function updateAnnouncement(adminUserId: number, id: number, input:
     const existing = await tx.announcement.findUnique({ where: { id } })
     if (!existing) throw notFound('公告不存在')
 
+    const startsAt = input.startsAt ?? existing.startsAt
+    const endsAt = input.endsAt === undefined ? existing.endsAt : input.endsAt
+    if (endsAt && endsAt < startsAt) {
+      throw badRequest('结束时间必须晚于开始时间')
+    }
+
     const data: Prisma.AnnouncementUpdateInput = {}
     if (input.title !== undefined) data.title = input.title
     if (input.content !== undefined) data.content = input.content

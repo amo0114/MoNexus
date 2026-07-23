@@ -11,6 +11,7 @@ function serializePublicAnnouncement(a: {
   priority: number
   startsAt: Date
   endsAt: Date | null
+  updatedAt: Date
 }) {
   return {
     id: a.id,
@@ -20,11 +21,12 @@ function serializePublicAnnouncement(a: {
     priority: a.priority,
     startsAt: a.startsAt.toISOString(),
     endsAt: a.endsAt ? a.endsAt.toISOString() : null,
+    updatedAt: a.updatedAt.toISOString(),
   }
 }
 
 // PRD §4.3.4：公开查询仅返回 published 且在时间窗口内（startsAt<=now 且 endsAt 为空或 >=now）的公告。
-// 未认证或未指定 audience 时仅返回 audience='all'；指定 audience 时返回 'all' + 该受众。
+// 访客仅返回 audience='all'；已认证调用方的 audience 由其 Token 角色派生。
 export async function listPublicAnnouncements(audience?: AnnouncementAudience) {
   const now = new Date()
   const timeFilter: Prisma.AnnouncementWhereInput = {

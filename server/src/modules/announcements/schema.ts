@@ -1,8 +1,8 @@
 import { z } from 'zod'
-import { ANNOUNCEMENT_AUDIENCES } from '../admin/schema.js'
 
-export const listPublicAnnouncementsQuerySchema = z.object({
-  audience: z.enum(ANNOUNCEMENT_AUDIENCES).optional(),
-}).strict()
+// Audience is derived from the authenticated caller's role, never from a
+// client-controlled query parameter. Keeping this strict also rejects stale
+// callers attempting to select another audience explicitly.
+export const listPublicAnnouncementsQuerySchema = z.object({}).strict()
 
 export type ListPublicAnnouncementsQuery = z.infer<typeof listPublicAnnouncementsQuerySchema>
