@@ -13,11 +13,13 @@ import { revokeAllUserRefreshTokens } from '../auth/service.js'
 import { invalidateProductPublicCache } from '../products/cache.js'
 import { serializeAdminOrderDetail, serializeAdminOrderList } from '../orders/serializers.js'
 import { getSettlementEligibility } from '../merchant/service.js'
+import { transitionOrderStatus } from '../orders/fulfillment.js'
 import type {
   CreateProductInput,
   ListAdminAuditQuery,
   ListOrdersQuery,
   ListUsersQuery,
+  ResolveOrderInput,
   UpdateProductInput,
 } from './schema.js'
 
@@ -394,6 +396,124 @@ export async function getOrderDetail(orderId: number) {
   })
   if (!order) throw notFound('订单不存在')
   return serializeAdminOrderDetail(order)
+}
+
+// ---- Order Arbitration ----
+//
+// PRD §4.3.1：disputed 订单由管理员仲裁，结果为 refunded 时回滚冻结积分到用户余额，
+// Settlement 设为 voided；结果为 close 时扣减冻结积分，Settlement 从 holding 转为 pending。
+export async function resolveOrder(
+  adminUserId: number,
+  orderId: number,
+  input: ResolveOrderInput
+) {
+  await prisma.$transaction(async tx => {
+    const order = await tx.order.findUnique({
+      where: { id: orderId },
+      select: {
+        id: true,
+        status: true,
+        userId: true,
+        holdingPoints: true,
+        product: { select: { deliveryMode: true } },
+      },
+    })
+    if (!order) throw notFound('订单不存在')
+    if (order.status !== 'disputed') throw badRequest('仅争议中的订单可仲裁')
+
+    const toStatus = input.result === 'refund' ? 'refunded' : 'closed'
+    const action = input.result === 'refund' ? 'admin.resolve.refund' : 'admin.resolve.close'
+    const publicNote = input.result === 'refund'
+      ? '管理员仲裁：退款，积分已退还'
+      : '管理员仲裁：关闭，积分已扣减'
+
+    await transitionOrderStatus(
+      {
+        orderId,
+        toStatus,
+        actorRole: 'admin',
+        actorUserId: adminUserId,
+        action,
+        publicNote: input.note ? `${publicNote}（${input.note}）` : publicNote,
+        internalNote: input.note,
+      },
+      tx
+    )
+
+    const hasFrozenPoints = order.holdingPoints != null && order.holdingPoints > 0
+
+    if (input.result === 'refund') {
+      // 退款：manual_service 创建时仅冻结（未扣余额），退款无需回滚余额，
+      // 仅记录 PointLog 'in' 审计、清空 holdingPoints、Settlement holding → voided
+      if (hasFrozenPoints) {
+        const account = await tx.pointAccount.findUnique({ where: { userId: order.userId } })
+        if (!account) throw notFound('积分账户不存在')
+        await tx.pointLog.create({
+          data: {
+            userId: order.userId,
+            type: 'in',
+            amount: order.holdingPoints as number,
+            balanceAfter: account.balance,
+            reason: `管理员仲裁退款: #${order.id}`,
+            orderId: order.id,
+          },
+        })
+        await tx.order.update({
+          where: { id: orderId },
+          data: { holdingPoints: null },
+        })
+      }
+      await tx.settlement.updateMany({
+        where: { orderId: order.id, status: 'holding' },
+        data: { status: 'voided' },
+      })
+    } else {
+      // 关闭：扣减冻结积分，PointLog 'out'，Settlement holding → pending
+      if (hasFrozenPoints) {
+        const account = await tx.pointAccount.findUnique({ where: { userId: order.userId } })
+        if (!account) throw notFound('积分账户不存在')
+        const newBalance = account.balance - (order.holdingPoints as number)
+        await tx.pointAccount.update({
+          where: { userId: order.userId },
+          data: { balance: newBalance },
+        })
+        await tx.pointLog.create({
+          data: {
+            userId: order.userId,
+            type: 'out',
+            amount: order.holdingPoints as number,
+            balanceAfter: newBalance,
+            reason: `管理员仲裁扣款: #${order.id}`,
+            orderId: order.id,
+          },
+        })
+        await tx.order.update({
+          where: { id: orderId },
+          data: { holdingPoints: null },
+        })
+      }
+      await tx.settlement.updateMany({
+        where: { orderId: order.id, status: 'holding' },
+        data: { status: 'pending' },
+      })
+      await tx.order.update({
+        where: { id: orderId },
+        data: { confirmedAt: new Date() },
+      })
+    }
+
+    await tx.adminLog.create({
+      data: {
+        adminUserId,
+        action: input.result === 'refund' ? '仲裁退款' : '仲裁关闭',
+        targetType: 'order',
+        targetId: orderId,
+        detail: input.note ? `仲裁结果: ${input.result}，备注: ${input.note}` : `仲裁结果: ${input.result}`,
+      },
+    })
+  })
+
+  return getOrderDetail(orderId)
 }
 
 // ---- Merchant Management ----

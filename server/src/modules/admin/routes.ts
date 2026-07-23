@@ -6,7 +6,7 @@ import {
   importInventorySchema, listUsersQuerySchema, listOrdersQuerySchema,
   listAdminAuditQuerySchema,
   listMerchantsQuerySchema, reviewMerchantSchema, updateCommissionSchema,
-  listSettlementsQuerySchema, batchSettleSchema,
+  listSettlementsQuerySchema, batchSettleSchema, resolveOrderSchema,
   systemConfigKeyParamSchema, updateSystemConfigSchema,
 } from './schema.js'
 import { adminReviewsQuerySchema } from '../reviews/schema.js'
@@ -30,6 +30,7 @@ router.put('/products/:id', validate({ params: idParamSchema, body: updateProduc
 router.post('/products/:id/inventory', validate({ params: idParamSchema, body: importInventorySchema }), controller.importInventory)
 router.get('/orders', validate({ query: listOrdersQuerySchema }), controller.orders)
 router.get('/orders/:id', validate({ params: idParamSchema }), controller.orderDetail)
+router.post('/orders/:id/resolve', validate({ params: idParamSchema, body: resolveOrderSchema }), controller.resolveOrder)
 router.get('/logs', controller.logs)
 
 // Review moderation

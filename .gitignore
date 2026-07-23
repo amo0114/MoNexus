@@ -26,6 +26,8 @@ tsconfig.tsbuildinfo
 .env
 .env.local
 .env.*.local
+.env.rehearsal
+.env.*.rehearsal
 server/.env
 server/.env.test
 

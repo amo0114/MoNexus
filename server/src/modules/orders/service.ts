@@ -11,6 +11,9 @@ import {
 import { serializeUserOrderDetail, serializeUserOrderList } from './serializers.js'
 import { invalidateProductPublicCache } from '../products/cache.js'
 
+// manual_service 商家履约 SLA：创建订单后 7 天内需交付，M3-S2 工作台高亮超时
+const FULFILLMENT_SLA_MS = 7 * 24 * 60 * 60 * 1000
+
 export async function createOrder(userId: number, productId: number) {
   const result = await prisma.$transaction(async tx => {
     const account = await tx.pointAccount.findUnique({ where: { userId } })
@@ -55,12 +58,30 @@ export async function createOrder(userId: number, productId: number) {
       commissionAmount = Math.floor(product.price * commissionRate)
     }
 
-    const newBalance = account.balance - product.price
+    const isManual = deliveryMode === 'manual_service'
 
-    await tx.pointAccount.update({
-      where: { userId },
-      data: { balance: newBalance },
-    })
+    // 积分流转规则（PRD §4.3.1）：
+    // - instant_* 模式：即时扣减，PointLog 'out'，Settlement 'pending'
+    // - manual_service：冻结积分（holdingPoints），不扣余额，Settlement 'holding'
+    let orderHoldingPoints: number | null = null
+    let orderFulfillmentDeadline: Date | null = null
+    let newBalance = account.balance
+    let settledSettlementStatus: 'pending' | 'holding' = 'pending'
+
+    if (isManual) {
+      // 虚拟服务订单：积分冻结，不扣减，仅记录 holdingPoints
+      orderHoldingPoints = product.price
+      orderFulfillmentDeadline = new Date(Date.now() + FULFILLMENT_SLA_MS)
+      settledSettlementStatus = 'holding'
+      // balance 不变，PointLog 留空（不写 'out'，因为积分未实际支出）
+    } else {
+      // 即时模式：立即扣减
+      newBalance = account.balance - product.price
+      await tx.pointAccount.update({
+        where: { userId },
+        data: { balance: newBalance },
+      })
+    }
 
     const order = await tx.order.create({
       data: {
@@ -71,6 +92,8 @@ export async function createOrder(userId: number, productId: number) {
         merchantId,
         commissionRate,
         commissionAmount,
+        holdingPoints: orderHoldingPoints,
+        fulfillmentDeadline: orderFulfillmentDeadline,
       },
     })
 
@@ -131,16 +154,19 @@ export async function createOrder(userId: number, productId: number) {
       })
     }
 
-    await tx.pointLog.create({
-      data: {
-        userId,
-        type: 'out',
-        amount: product.price,
-        balanceAfter: newBalance,
-        reason: `兑换商品: ${product.name}`,
-        orderId: order.id,
-      },
-    })
+    // PointLog 仅在即时模式写入；manual_service 冻结阶段不产生支出日志
+    if (!isManual) {
+      await tx.pointLog.create({
+        data: {
+          userId,
+          type: 'out',
+          amount: product.price,
+          balanceAfter: newBalance,
+          reason: `兑换商品: ${product.name}`,
+          orderId: order.id,
+        },
+      })
+    }
 
     if (merchantId != null) {
       await tx.settlement.create({
@@ -151,7 +177,7 @@ export async function createOrder(userId: number, productId: number) {
           commissionRate,
           commissionAmount,
           settlementAmount: product.price - commissionAmount,
-          status: 'pending',
+          status: settledSettlementStatus,
         },
       })
     }
@@ -276,15 +302,63 @@ export async function disputeOrder(orderId: number, userId: number) {
 }
 
 export async function closeOrder(orderId: number, userId: number) {
+  // 用户确认关闭：积分正式扣减（若为 manual_service 冻结单）
+  // PRD §4.3.1：delivered > 7 天自动 closed，积分正式扣减并触发 Settlement
   await assertUserOwnsOrder(orderId, userId)
-  await transitionOrderStatus({
-    orderId,
-    toStatus: 'closed',
-    actorRole: 'user',
-    actorUserId: userId,
-    action: 'user.close',
-    publicNote: '用户确认关闭',
+  const result = await prisma.$transaction(async tx => {
+    const order = await tx.order.findUnique({
+      where: { id: orderId },
+      select: { id: true, userId: true, holdingPoints: true, status: true, productId: true },
+    })
+    if (!order) throw notFound('订单不存在')
+
+    // 状态流转：delivered → closed
+    const updated = await transitionOrderStatus(
+      {
+        orderId,
+        toStatus: 'closed',
+        actorRole: 'user',
+        actorUserId: userId,
+        action: 'user.close',
+        publicNote: '用户确认关闭',
+      },
+      tx
+    )
+
+    // 若为冻结单（manual_service），扣减冻结积分并触发 Settlement 生效
+    if (order.holdingPoints != null && order.holdingPoints > 0) {
+      const account = await tx.pointAccount.findUnique({ where: { userId: order.userId } })
+      if (!account) throw notFound('积分账户不存在')
+      const newBalance = account.balance - order.holdingPoints
+      await tx.pointAccount.update({
+        where: { userId: order.userId },
+        data: { balance: newBalance },
+      })
+      await tx.pointLog.create({
+        data: {
+          userId: order.userId,
+          type: 'out',
+          amount: order.holdingPoints,
+          balanceAfter: newBalance,
+          reason: `订单关闭扣款: #${order.id}`,
+          orderId: order.id,
+        },
+      })
+      // Settlement 从 holding 转为 pending，可被批量结算
+      await tx.settlement.updateMany({
+        where: { orderId: order.id, status: 'holding' },
+        data: { status: 'pending' },
+      })
+    }
+
+    await tx.order.update({
+      where: { id: orderId },
+      data: { confirmedAt: new Date() },
+    })
+
+    return updated
   })
 
+  await invalidateProductPublicCache(result.productId, { list: 'coalesced' })
   return getOrderDetail(orderId, userId)
 }

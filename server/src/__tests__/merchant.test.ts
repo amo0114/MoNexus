@@ -417,7 +417,7 @@ describe('Merchant product and order flows', () => {
       .expect(200)
 
     expect(detail.body.status).toBe('pending')
-    expect(detail.body.availableActions).toEqual(['start_fulfillment'])
+    expect(detail.body.availableActions).toEqual(['start_fulfillment', 'reject'])
     expect(detail.body.delivery).toBeNull()
 
     const started = await api

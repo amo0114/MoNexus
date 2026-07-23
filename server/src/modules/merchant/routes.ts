@@ -6,7 +6,7 @@ import {
   createMerchantProductSchema, updateMerchantProductSchema,
   importMerchantInventorySchema, merchantListQuerySchema,
   merchantOrderListQuerySchema, startFulfillmentSchema,
-  deliverFulfillmentSchema, respondDisputeSchema,
+  deliverFulfillmentSchema, respondDisputeSchema, rejectOrderSchema,
   merchantProductListQuerySchema, previewMerchantInventorySchema,
   voidMerchantInventorySchema, merchantInventoryLogQuerySchema,
 } from './schema.js'
@@ -36,6 +36,7 @@ router.get('/orders/:id', validate({ params: idParamSchema }), controller.orderD
 router.post('/orders/:id/fulfillment/start', validate({ params: idParamSchema, body: startFulfillmentSchema }), controller.startFulfillment)
 router.post('/orders/:id/fulfillment/deliver', validate({ params: idParamSchema, body: deliverFulfillmentSchema }), controller.deliverFulfillment)
 router.post('/orders/:id/fulfillment/respond-dispute', validate({ params: idParamSchema, body: respondDisputeSchema }), controller.respondDispute)
+router.post('/orders/:id/fulfillment/reject', validate({ params: idParamSchema, body: rejectOrderSchema }), controller.rejectOrder)
 
 router.get('/settlements', validate({ query: merchantListQuerySchema }), controller.listSettlements)
 router.get('/stats', controller.stats)

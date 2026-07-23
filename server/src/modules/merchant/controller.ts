@@ -152,6 +152,19 @@ export async function respondDispute(req: Request, res: Response, next: NextFunc
   } catch (err) { next(err) }
 }
 
+export async function rejectOrder(req: Request, res: Response, next: NextFunction) {
+  try {
+    const merchant = await merchantService.getMyMerchant(req.user!.userId)
+    const order = await merchantService.rejectOrder(
+      merchant.id,
+      req.user!.userId,
+      req.params.id as unknown as number,
+      req.body
+    )
+    res.json(flattenSettlement(order))
+  } catch (err) { next(err) }
+}
+
 // ---- Settlements ----
 
 export async function listSettlements(req: Request, res: Response, next: NextFunction) {

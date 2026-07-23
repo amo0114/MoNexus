@@ -130,3 +130,8 @@ export const respondDisputeSchema = z.object({
   publicNote: z.string().trim().max(1000).optional(),
   internalNote: z.string().trim().max(2000).optional(),
 }).strict()
+
+export const rejectOrderSchema = z.object({
+  publicNote: z.string().trim().max(1000).optional(),
+  internalNote: z.string().trim().max(2000).optional(),
+}).strict()
