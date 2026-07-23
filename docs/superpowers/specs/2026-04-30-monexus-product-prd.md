@@ -2,13 +2,14 @@
 
 | 字段 | 值 |
 | --- | --- |
-| 版本 | v1.1 |
-| 日期 | 2026-07-22 |
+| 版本 | v1.2 |
+| 日期 | 2026-07-23 |
 | 文档状态 | Living — 实施进度快照已纳入 |
 | 文档定位 | 项目主蓝图：合并现有 Demo/MVP 与生产化路线 |
 | 取代关系 | 不取代既有契约文档；与 `2026-04-28-monexus-demo-to-mvp-prd.md`、`2026-04-29-monexus-merchant-settlement-contract.md` 并行生效，本文档作为最高层次规划 |
 | 主分支 | `master` |
-| 当前稳定基线 | `master@a20ca5c`（已合入 PR #1–#19） |
+| 当前稳定基线 | `master@73bac9c`（已合入 PR #1–#22） |
+| v1.2 变更要点 | 同步 PR #20 `feat/order-state-machine` 与 PR #22 `feat(m3): order lifecycle closure UI + settlement filters` 合入后 M3 进度：`refunded` 状态、积分冻结（`holdingPoints`/`fulfillmentDeadline`）、Settlement 四态（`pending`/`settled`/`holding`/`voided`）、管理员仲裁 `POST /api/admin/orders/:id/resolve`、自动关闭 cron、商家 SLA 超时高亮与 todo 计数全部落地 |
 | v1.1 变更要点 | 新增 §0.1 实施进度快照；标注 M2 ✅ 已交付、M3 🚧 部分交付、M4 🔲 整体未启动；同步 M5–M9 合并的增量能力（商品评论、Redis 缓存、`instant_fixed`、`stockMode`、`InventoryLog`、`Product.images`、用户昵称、Concentric 多主题品牌系统） |
 
 ---
@@ -37,20 +38,20 @@ MoNexus 是一个**纯内部福利/积分激励平台**：用户以站内虚拟�
 
 > M5–M9 期间合入的增量能力已超出 v1.0 原始范围，仍归入 M3/M4 范畴：M5 = 前后端联调 + 健康/可观测拆分；M6 = `instant_fixed` + 履约状态机；M7 = UI 多主题 + 品牌系统；M8 = 备份 / CD / E2E / metrics；M9 = Redis 公共读缓存 + 商品评论 + 库存指纹日志。本节保留原里程碑结构，进度快照见 §0.1。
 
-### 0.1 实施进度快照（2026-07-22，对照 `master@a20ca5c`）
+### 0.1 实施进度快照（2026-07-23，对照 `master@73bac9c`）
 
 | 里程碑 | 状态 | 证据 | 说明 |
 | --- | --- | --- | --- |
 | M1 MVP 收尾 | ✅ 已交付 | PR #1 `chore/p0-prod-ready` 合入 `master` | 原始 P0 sweep + UI 重设计（PR #2 `feat/ui-redesign`）全部上线 |
 | M2 灰度上线 | ✅ 已交付 | `feat(ops)`、`feat(health)`、`docs(m4): runbook` 等 | 备份 workflow、`/api/health/live`+`/ready` 拆分、Prometheus `/metrics`、Sentry 接入、E2E 框架、CD workflow、runbook 全部落地 |
-| M3 生产化 | 🚧 部分交付 | M5/M6 合入 | 订单状态机已上线但 `refunded` 缺位、积分未冻结、Settlement 仍只有 `pending`/`settled`、管理员仲裁接口未建、MFA 未建、商家工作台增强未启动 |
+| M3 生产化 | 🚧 大部分交付 | PR #20、#22 合入 | 订单状态机全量上线（`refunded` 已补齐）、积分冻结（`holdingPoints`/`fulfillmentDeadline`）已落地、Settlement 四态（`pending`/`settled`/`holding`/`voided`）已落地、管理员仲裁 `POST /api/admin/orders/:id/resolve` 已落地、自动关闭 cron（`delivered` 超 7 天 → `closed`）已落地、商家工作台 SLA 超时高亮 + todo 计数已落地；M3-S3 安全加固（MFA / 会话设备 / 风控 / 日志脱敏 / GDPR）与 M3-S3 运营自助（公告 / 用户标签 / 商家评分 / 库存指纹 / 数据看板）仍未启动 |
 | M4 业务演进 | 🔲 未启动 | — | 订阅续费、营销活动、邀请 v2、数据看板均未落地 |
 
 #### M3 已落地项（对照 §4.3）
 
 | § | 项目 | 状态 | 证据 |
 | --- | --- | --- | --- |
-| 4.3.1 | 订单状态枚举 `pending/processing/delivered/disputed/closed` | ✅ | `server/src/modules/orders/fulfillment.ts:15` |
+| 4.3.1 | 订单状态枚举 `pending/processing/delivered/disputed/closed/refunded` | ✅ | `server/src/modules/orders/fulfillment.ts:15`，`refunded` 由 PR #20 补齐 |
 | 4.3.1 | `OrderStatusEvent` 表 + `transitionOrderStatus` + `legalTransitions` | ✅ | `server/prisma/schema.prisma:233`、`fulfillment.ts:113` |
 | 4.3.1 | `Product.deliveryMode = instant_inventory \| instant_fixed \| manual_service` | ✅ | `server/prisma/schema.prisma:134`、迁移 `20260611111839_instant_fixed_delivery` |
 | 4.3.1 | 商家接单 `pending → processing` | ✅ | `server/src/modules/merchant/service.ts` `startOrderFulfillment` |
@@ -58,20 +59,23 @@ MoNexus 是一个**纯内部福利/积分激励平台**：用户以站内虚拟�
 | 4.3.1 | 用户争议 `delivered → disputed` | ✅ | `server/src/modules/orders/service.ts:264` `disputeOrder` |
 | 4.3.1 | 用户确认 `delivered → closed` | ✅（复用 `/orders/:id/close`） | `closeOrder`，PRD 命名 `/confirm` 待对齐 |
 | 4.3.1 | 商家对争议响应 `disputed → processing/delivered/closed` | ✅ | `respondToOrderDispute` |
+| 4.3.1 | 商家拒单 `pending → refunded`（仅 `manual_service`） | ✅ | `server/src/modules/merchant/service.ts` `rejectOrder`，PR #20 |
+| 4.3.1 | 管理员仲裁 `disputed → refunded \| closed` | ✅ | `POST /api/admin/orders/:id/resolve`，`server/src/modules/admin/`，PR #20 |
+| 4.3.1 | `Order.holdingPoints` / `fulfillmentDeadline` / `confirmedAt` schema 演进 | ✅ | PR #20 迁移补齐；`createOrder` 写入 `holdingPoints`，`closeOrder` 扣减，`rejectOrder`/`resolveAdminOrder` 回滚 |
+| 4.3.1 | 积分冻结模型：manual_service 创建时冻结，closed 扣减，refunded 回滚 | ✅ | `server/src/modules/orders/service.ts:65-95`、`closeOrder`，PR #20 |
+| 4.3.1 | 自动关闭 cron：`delivered` 超 7 天自动 `closed` | ✅ | `server/src/__tests__/orders-cron.test.ts`，PR #20 |
 | 4.3.1 | `normalizeOrderStatus('completed')` → `'delivered'` 兼容路径 | ✅ | `fulfillment.ts:50` |
-| 4.3.2 | Settlement 仅 `pending` / `settled` | ✅ 原始范围 | `schema.prisma:260`，`holding` / `voided` 仍未引入 |
+| 4.3.2 | Settlement 四态 `pending` / `settled` / `holding` / `voided` | ✅ | `server/src/modules/admin/schema.ts:104-108` `listSettlementsQuerySchema`，PR #20/#22 |
+| 4.3.3 | 商家工作台：todo 计数、SLA 超时高亮、拒单流程 | ✅ | `server/src/modules/merchant/service.ts:858-890` stats 返回 `todo.{pending,processing,slaExceeded}`，PR #20/#22 |
+| 4.3.3 | 商家工作台：通知偏好 | 🔲 | M3-S2 未启动 |
+| 4.3.4 | 平台运营自助：公告、用户标签、商家评分、库存指纹校验、数据看板 | 🔲 | M3-S3 未启动 |
+| 4.3.5 | MFA（TOTP）、会话设备管理、风控规则、日志脱敏、GDPR 数据导出/注销 | 🔲 | M3-S3 未启动（trust proxy 已由 PR #21 合入） |
 
-#### M3 仍缺项（§4.3.1–4.3.5 待落地）
+#### M3 仍缺项（仅剩 M3-S3 安全加固 + 运营自助）
 
 | § | 缺项 | 影响 | 实施顺序 |
 | --- | --- | --- | --- |
-| 4.3.1 | `refunded` 状态 + `legalTransitions.disputed → refunded` + `pending → refunded`（拒单） | 争议仲裁与商家拒单无终态 | M3-S1 |
-| 4.3.1 | `Order.holdingPoints` / `fulfillmentDeadline` / `confirmedAt` schema 演进 | 虚拟服务积分仍在下单瞬间扣减，无法冻结/回滚 | M3-S1 |
-| 4.3.1 | 积分冻结模型：创建虚拟服务订单时写 `holdingPoints`，`closed` 时正式扣减，`refunded` 时回滚 | 与 §1.4 不变量"兑换流程在单事务内完成"冲突，需重新定义 | M3-S1 |
-| 4.3.1 | `POST /api/admin/orders/:id/resolve` 管理员仲裁接口 | 争议无人仲裁，状态卡 `disputed` | M3-S1 |
-| 4.3.1 | 自动关闭 cron：`delivered` 超 7 天自动 `closed` | 用户长期不确认则 Settlement 永久 pending | M3-S2 |
-| 4.3.2 | `Settlement.status = holding`（订单未完结前）+ `voided`（退款后） | 批量结算无法识别可结算与不可结算 | M3-S1 |
-| 4.3.3 | 商家工作台：待办中心、SLA 超时高亮、拒单流程、通知偏好 | 商家无法快速定位待处理订单 | M3-S2 |
+| 4.3.3 | 商家通知偏好（站内信 / 邮件 / 短信开关） | 商家无法定制告警渠道 | M3-S2 增量 |
 | 4.3.4 | 平台运营自助：公告、用户标签、商家评分、库存指纹校验、数据看板 | 运营手段仍依赖 SQL 临时介入 | M3-S3 |
 | 4.3.5 | MFA（TOTP）、会话设备管理、风控规则、日志脱敏、GDPR 数据导出/注销 | 安全加固未启动 | M3-S3 |
 
