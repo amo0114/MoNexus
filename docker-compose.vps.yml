@@ -1,7 +1,8 @@
-# VPS edge overlay for docker-compose.prod.yml.
+# VPS host-proxy overlay for docker-compose.prod.yml.
 #
-# It keeps the application web container private to the host and exposes only
-# Caddy on :80/:443. Run it together with the base compose file:
+# It keeps the application web container private to the host. Caddy (or an
+# existing host reverse proxy) owns public :80/:443 outside this Compose
+# project and proxies to the loopback port below. Run it with the base file:
 #   docker compose -f docker-compose.prod.yml -f docker-compose.vps.yml ...
 #
 # Docker Compose v2.24.4+ is required for the !override tag below.
@@ -9,29 +10,4 @@
 services:
   web:
     ports: !override
-      - "127.0.0.1:${WEB_PORT:-8080}:80"
-
-  caddy:
-    image: caddy:2.8-alpine
-    container_name: monexus-caddy-prod
-    restart: unless-stopped
-    depends_on:
-      web:
-        condition: service_healthy
-    environment:
-      CADDY_DOMAIN: ${CADDY_DOMAIN:?CADDY_DOMAIN is required}
-      CADDY_EMAIL: ${CADDY_EMAIL:?CADDY_EMAIL is required}
-    ports:
-      - "80:80"
-      - "443:443"
-      - "443:443/udp"
-    volumes:
-      - ./deploy/vps/Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddydata-prod:/data
-      - caddyconfig-prod:/config
-    networks:
-      - monexus
-
-volumes:
-  caddydata-prod:
-  caddyconfig-prod:
+      - "127.0.0.1:${WEB_PORT:-18089}:80"

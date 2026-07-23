@@ -294,6 +294,9 @@ CI workflow [`.github/workflows/docker-publish.yml`](./.github/workflows/docker-
 | Server API | `ghcr.io/amo0114/monexus-server` | `server/Dockerfile` |
 | Web (nginx SPA) | `ghcr.io/amo0114/monexus-web` | root `Dockerfile` |
 
+Release tags are multi-architecture (`linux/amd64` and `linux/arm64`), so the
+same tag works on standard and ARM VPS hosts.
+
 **Tag strategy** (via `docker/metadata-action`):
 
 | Trigger | Tags |
