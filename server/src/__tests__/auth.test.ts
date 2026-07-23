@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { api, createTestUser, createTestMerchant, loginAs } from './helpers.js'
+import { loginUser, refreshAccessToken } from '../modules/auth/service.js'
+import { prisma } from '../lib/prisma.js'
 
 describe('POST /api/auth/register', () => {
   it('should register a new user and return access token + user', async () => {
@@ -89,6 +91,24 @@ describe('POST /api/auth/refresh', () => {
       .expect(401)
 
     expect(res.body.error.code).toBe('UNAUTHENTICATED')
+  })
+
+  it('allows only one concurrent rotation and treats the other use as replay', async () => {
+    const { user, password } = await createTestUser('refresh-concurrent@test.local', 'pass123')
+    const session = await loginUser(user.email, password)
+
+    const attempts = await Promise.allSettled([
+      refreshAccessToken(session.refreshToken),
+      refreshAccessToken(session.refreshToken),
+    ])
+
+    expect(attempts.filter(result => result.status === 'fulfilled')).toHaveLength(1)
+    expect(attempts.filter(result => result.status === 'rejected')).toHaveLength(1)
+
+    // The replay policy revokes the whole family, including the one successor
+    // that may have been returned to the winning parallel request.
+    expect(await prisma.refreshToken.count({ where: { userId: user.id } })).toBe(2)
+    expect(await prisma.refreshToken.count({ where: { userId: user.id, revoked: false } })).toBe(0)
   })
 })
 

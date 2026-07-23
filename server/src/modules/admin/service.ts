@@ -14,6 +14,13 @@ import { invalidateProductPublicCache } from '../products/cache.js'
 import { serializeAdminOrderDetail, serializeAdminOrderList } from '../orders/serializers.js'
 import { getSettlementEligibility } from '../merchant/service.js'
 import { transitionOrderStatus } from '../orders/fulfillment.js'
+import {
+  creditAvailablePoints,
+  refundPaidOrder,
+  releaseHeldOrder,
+  settleHeldOrder,
+  voidRefundableSettlement,
+} from '../orders/accounting.js'
 import type {
   CreateProductInput,
   ListAdminAuditQuery,
@@ -118,16 +125,19 @@ export async function adjustUserPoints(
     const account = await tx.pointAccount.findUnique({ where: { userId: targetUserId } })
     if (!account) throw notFound('目标用户积分账户不存在')
 
-    if (type === 'deduct' && account.balance < amount) {
-      throw badRequest('扣除数量不能大于用户当前余额')
+    let newBalance: number
+    if (type === 'add') {
+      newBalance = await creditAvailablePoints(tx, targetUserId, amount)
+    } else {
+      const debited = await tx.pointAccount.updateMany({
+        where: { userId: targetUserId, balance: { gte: amount } },
+        data: { balance: { decrement: amount } },
+      })
+      if (debited.count !== 1) {
+        throw badRequest('扣除数量不能大于用户当前余额')
+      }
+      newBalance = (await tx.pointAccount.findUniqueOrThrow({ where: { userId: targetUserId } })).balance
     }
-
-    const newBalance = type === 'add' ? account.balance + amount : account.balance - amount
-
-    await tx.pointAccount.update({
-      where: { userId: targetUserId },
-      data: { balance: newBalance },
-    })
 
     await tx.pointLog.create({
       data: {
@@ -417,8 +427,9 @@ export async function resolveOrder(
         id: true,
         status: true,
         userId: true,
+        price: true,
         holdingPoints: true,
-        product: { select: { deliveryMode: true } },
+        fundsHeld: true,
       },
     })
     if (!order) throw notFound('订单不存在')
@@ -429,6 +440,12 @@ export async function resolveOrder(
     const publicNote = input.result === 'refund'
       ? '管理员仲裁：退款，积分已退还'
       : '管理员仲裁：关闭，积分已扣减'
+
+    // Claim any unsettled merchant amount before changing the order state.  A
+    // pending settlement cannot race ahead and be paid after a refund.
+    if (input.result === 'refund') {
+      await voidRefundableSettlement(tx, order.id)
+    }
 
     await transitionOrderStatus(
       {
@@ -443,62 +460,14 @@ export async function resolveOrder(
       tx
     )
 
-    const hasFrozenPoints = order.holdingPoints != null && order.holdingPoints > 0
-
     if (input.result === 'refund') {
-      // 退款：manual_service 创建时仅冻结（未扣余额），退款无需回滚余额，
-      // 仅记录 PointLog 'in' 审计、清空 holdingPoints、Settlement holding → voided
-      if (hasFrozenPoints) {
-        const account = await tx.pointAccount.findUnique({ where: { userId: order.userId } })
-        if (!account) throw notFound('积分账户不存在')
-        await tx.pointLog.create({
-          data: {
-            userId: order.userId,
-            type: 'in',
-            amount: order.holdingPoints as number,
-            balanceAfter: account.balance,
-            reason: `管理员仲裁退款: #${order.id}`,
-            orderId: order.id,
-          },
-        })
-        await tx.order.update({
-          where: { id: orderId },
-          data: { holdingPoints: null },
-        })
+      if (order.holdingPoints != null && order.holdingPoints > 0) {
+        await releaseHeldOrder(tx, order, `管理员仲裁释放冻结积分: #${order.id}`)
+      } else {
+        await refundPaidOrder(tx, order, `管理员仲裁退款: #${order.id}`)
       }
-      await tx.settlement.updateMany({
-        where: { orderId: order.id, status: 'holding' },
-        data: { status: 'voided' },
-      })
     } else {
-      // 关闭：扣减冻结积分，PointLog 'out'，Settlement holding → pending
-      if (hasFrozenPoints) {
-        const account = await tx.pointAccount.findUnique({ where: { userId: order.userId } })
-        if (!account) throw notFound('积分账户不存在')
-        const newBalance = account.balance - (order.holdingPoints as number)
-        await tx.pointAccount.update({
-          where: { userId: order.userId },
-          data: { balance: newBalance },
-        })
-        await tx.pointLog.create({
-          data: {
-            userId: order.userId,
-            type: 'out',
-            amount: order.holdingPoints as number,
-            balanceAfter: newBalance,
-            reason: `管理员仲裁扣款: #${order.id}`,
-            orderId: order.id,
-          },
-        })
-        await tx.order.update({
-          where: { id: orderId },
-          data: { holdingPoints: null },
-        })
-      }
-      await tx.settlement.updateMany({
-        where: { orderId: order.id, status: 'holding' },
-        data: { status: 'pending' },
-      })
+      await settleHeldOrder(tx, order, `管理员仲裁扣款: #${order.id}`)
       await tx.order.update({
         where: { id: orderId },
         data: { confirmedAt: new Date() },

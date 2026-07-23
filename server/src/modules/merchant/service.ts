@@ -11,6 +11,7 @@ import {
   transitionOrderStatus,
   type FulfillmentOrderStatus,
 } from '../orders/fulfillment.js'
+import { releaseHeldOrder, settleHeldOrder } from '../orders/accounting.js'
 import { serializeMerchantOrder } from '../orders/serializers.js'
 import type { MerchantOrderListQuery } from './schema.js'
 
@@ -403,41 +404,60 @@ export async function importMyInventory(
     throw badRequest('仅即时库存发货商品支持库存管理')
   }
 
-  const result = await prisma.$transaction(async tx => {
-    const analysis = await analyzeInventoryPayload(productId, payload, tx)
-    if (analysis.duplicateRows > 0 || analysis.existingDuplicateRows > 0) {
-      throw badRequest('库存导入包含重复项', duplicateImportDetails(analysis))
-    }
-    if (analysis.validRows === 0) {
-      throw badRequest('至少提供一条有效库存')
-    }
+  try {
+    const result = await prisma.$transaction(async tx => {
+      const analysis = await analyzeInventoryPayload(productId, payload, tx)
+      if (analysis.duplicateRows > 0 || analysis.existingDuplicateRows > 0) {
+        throw badRequest('库存导入包含重复项', duplicateImportDetails(analysis))
+      }
+      if (analysis.validRows === 0) {
+        throw badRequest('至少提供一条有效库存')
+      }
 
-    for (const content of analysis.itemsToImport) {
-      await tx.inventoryItem.create({ data: { productId, content } })
-    }
-    await tx.product.update({
-      where: { id: productId },
-      data: { stock: { increment: analysis.itemsToImport.length } },
+      for (const content of analysis.itemsToImport) {
+        await tx.inventoryItem.create({ data: { productId, content } })
+      }
+      await tx.product.update({
+        where: { id: productId },
+        data: { stock: { increment: analysis.itemsToImport.length } },
+      })
+      await logInventoryChange(tx, {
+        productId,
+        merchantId,
+        actorUserId,
+        action: 'import',
+        delta: analysis.itemsToImport.length,
+      })
+      return {
+        imported: analysis.itemsToImport.length,
+        totalRows: analysis.totalRows,
+        validRows: analysis.validRows,
+        skippedEmptyRows: analysis.emptyRows,
+        duplicateRows: analysis.duplicateRows,
+        existingDuplicateRows: analysis.existingDuplicateRows,
+      }
     })
-    await logInventoryChange(tx, {
-      productId,
-      merchantId,
-      actorUserId,
-      action: 'import',
-      delta: analysis.itemsToImport.length,
-    })
-    return {
-      imported: analysis.itemsToImport.length,
-      totalRows: analysis.totalRows,
-      validRows: analysis.validRows,
-      skippedEmptyRows: analysis.emptyRows,
-      duplicateRows: analysis.duplicateRows,
-      existingDuplicateRows: analysis.existingDuplicateRows,
-    }
-  })
 
-  await invalidateProductPublicCache(productId, { detail: true, list: 'coalesced' })
-  return result
+    await invalidateProductPublicCache(productId, { detail: true, list: 'coalesced' })
+    return result
+  } catch (error) {
+    // 预检与写入之间可能有另一笔导入提交。唯一索引是最终裁决，事务会完整回滚，
+    // 再把该并发冲突转换成与普通重复输入一致的业务错误。
+    if (isInventoryContentUniqueViolation(error)) {
+      throw badRequest('库存导入包含重复项', [
+        { field: 'items', message: 'existingDuplicateRows=concurrent' },
+      ])
+    }
+    throw error
+  }
+}
+
+function isInventoryContentUniqueViolation(error: unknown) {
+  if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== 'P2002') return false
+
+  const target = error.meta?.target
+  const targetColumns = Array.isArray(target) ? target.map(String) : [String(target ?? '')]
+  return targetColumns.includes('productId') && targetColumns.includes('content')
 }
 
 export async function voidMyInventory(
@@ -570,9 +590,21 @@ function buildOrderWhere(merchantId: number, query: MerchantOrderListQuery): Pri
   }
 }
 
-function getAvailableActions(order: { status: string; product?: { deliveryMode?: string } | null }) {
+function getOrderDeliveryMode(order: {
+  deliveryModeSnapshot?: string | null
+  product?: { deliveryMode?: string | null } | null
+}) {
+  // 迁移前的历史订单在快照字段为空时仍按原商品模式工作；新订单始终使用快照。
+  return order.deliveryModeSnapshot ?? order.product?.deliveryMode
+}
+
+function getAvailableActions(order: {
+  status: string
+  deliveryModeSnapshot?: string | null
+  product?: { deliveryMode?: string | null } | null
+}) {
   const status = normalizeOrderStatus(order.status)
-  const deliveryMode = order.product?.deliveryMode
+  const deliveryMode = getOrderDeliveryMode(order)
 
   // pending 状态下商家可接单（start_fulfillment）或拒单（reject）；
   // 拒单只对 manual_service 有意义，但即时模式创建即 delivered 不会进入 pending
@@ -682,6 +714,10 @@ async function assertMerchantOrder(merchantId: number, orderId: number, tx: Pris
     select: {
       id: true,
       status: true,
+      userId: true,
+      holdingPoints: true,
+      fundsHeld: true,
+      deliveryModeSnapshot: true,
       product: { select: { deliveryMode: true } },
     },
   })
@@ -719,7 +755,7 @@ export async function deliverOrderFulfillment(
 ) {
   await prisma.$transaction(async tx => {
     const order = await assertMerchantOrder(merchantId, orderId, tx)
-    if (order.product.deliveryMode !== 'manual_service') {
+    if (getOrderDeliveryMode(order) !== 'manual_service') {
       throw badRequest('只有人工服务订单可由商家履约交付')
     }
 
@@ -733,6 +769,7 @@ export async function deliverOrderFulfillment(
       publicNote: input.publicNote,
       internalNote: input.internalNote,
     }, tx)
+
   })
 
   return getMyOrderDetail(merchantId, orderId)
@@ -748,7 +785,7 @@ export async function respondToOrderDispute(
     const order = await assertMerchantOrder(merchantId, orderId, tx)
     // 即时模式（instant_*）内容已交付，恢复履约直接回到 delivered；人工服务单回 processing 由商家重新交付
     const resumeTarget: FulfillmentOrderStatus =
-      isInstantMode(order.product.deliveryMode) ? 'delivered' : 'processing'
+      isInstantMode(getOrderDeliveryMode(order) ?? '') ? 'delivered' : 'processing'
     await transitionOrderStatus({
       orderId,
       toStatus: input.resolution === 'resume' ? resumeTarget : 'closed',
@@ -758,6 +795,16 @@ export async function respondToOrderDispute(
       publicNote: input.publicNote,
       internalNote: input.internalNote,
     }, tx)
+
+    // 商家对人工服务争议选择关闭时，和用户确认关闭、管理员裁决关闭
+    // 使用同一资金结算路径。此前这里只改订单状态，会遗留冻结积分和 holding Settlement。
+    if (input.resolution === 'close') {
+      await settleHeldOrder(tx, order, `商家争议关闭扣款: #${order.id}`)
+      await tx.order.update({
+        where: { id: order.id },
+        data: { confirmedAt: new Date() },
+      })
+    }
   })
 
   return getMyOrderDetail(merchantId, orderId)
@@ -779,12 +826,14 @@ export async function rejectOrder(
         status: true,
         userId: true,
         holdingPoints: true,
+        fundsHeld: true,
+        deliveryModeSnapshot: true,
         product: { select: { deliveryMode: true } },
       },
     })
     if (!order) throw notFound('订单不存在')
 
-    if (order.product.deliveryMode !== 'manual_service') {
+    if (getOrderDeliveryMode(order) !== 'manual_service') {
       throw badRequest('仅人工服务订单可拒单')
     }
 
@@ -799,32 +848,7 @@ export async function rejectOrder(
       internalNote: input.internalNote,
     }, tx)
 
-    // 退还冻结积分：manual_service 创建时仅冻结（未扣余额），
-    // 退款无需回滚余额，仅记录 PointLog 'in' 审计、清空 holdingPoints
-    if (order.holdingPoints != null && order.holdingPoints > 0) {
-      const account = await tx.pointAccount.findUnique({ where: { userId: order.userId } })
-      if (!account) throw notFound('积分账户不存在')
-      await tx.pointLog.create({
-        data: {
-          userId: order.userId,
-          type: 'in',
-          amount: order.holdingPoints,
-          balanceAfter: account.balance,
-          reason: `商家拒单退款: #${order.id}`,
-          orderId: order.id,
-        },
-      })
-      await tx.order.update({
-        where: { id: orderId },
-        data: { holdingPoints: null },
-      })
-    }
-
-    // Settlement 从 holding 转为 voided，不进入结算
-    await tx.settlement.updateMany({
-      where: { orderId: order.id, status: 'holding' },
-      data: { status: 'voided' },
-    })
+    await releaseHeldOrder(tx, order, `商家拒单释放冻结积分: #${order.id}`)
   })
 
   return getMyOrderDetail(merchantId, orderId)

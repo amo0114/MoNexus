@@ -3,6 +3,7 @@ import { normalizeOrderStatus } from './fulfillment.js'
 type OrderWithDelivery = {
   delivery?: ({ content?: unknown } & Record<string, unknown>) | null
   product?: ({ deliveryMode?: string | null } & Record<string, unknown>) | null
+  deliveryModeSnapshot?: string | null
   status?: string
   createdAt?: unknown
   statusEvents?: Array<{
@@ -57,7 +58,12 @@ function withUserOrderContract<T extends OrderWithDelivery>(order: T, includeTim
   const normalized = normalizeFulfillmentFields(order)
   return {
     ...normalized,
-    ...(normalized.product?.deliveryMode ? { deliveryMode: normalized.product.deliveryMode } : {}),
+    // A product can be reconfigured after purchase. Expose the order's
+    // immutable fulfillment mode so the UI describes the delivery contract
+    // that was actually purchased, not today's product configuration.
+    ...((normalized.deliveryModeSnapshot ?? normalized.product?.deliveryMode)
+      ? { deliveryMode: normalized.deliveryModeSnapshot ?? normalized.product?.deliveryMode }
+      : {}),
     ...(includeTimeline ? { timeline: synthesizeTimeline(order) } : {}),
   }
 }

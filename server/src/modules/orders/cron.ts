@@ -1,9 +1,9 @@
 import { config } from '../../config/index.js'
-import { notFound } from '../../lib/httpError.js'
 import { logger } from '../../lib/logger.js'
 import { prisma } from '../../lib/prisma.js'
 import { invalidateProductPublicCache } from '../products/cache.js'
 import { transitionOrderStatus } from './fulfillment.js'
+import { settleHeldOrder } from './accounting.js'
 
 // PRD §4.3.1：delivered 超 7 天自动 closed，积分正式扣减并触发 Settlement
 const AUTO_CLOSE_SLA_MS = 7 * 24 * 60 * 60 * 1000
@@ -17,6 +17,7 @@ type AutoCloseCandidate = {
   userId: number
   productId: number
   holdingPoints: number | null
+  fundsHeld: boolean
 }
 
 async function findAutoCloseCandidates(): Promise<AutoCloseCandidate[]> {
@@ -34,6 +35,7 @@ async function findAutoCloseCandidates(): Promise<AutoCloseCandidate[]> {
       userId: true,
       productId: true,
       holdingPoints: true,
+      fundsHeld: true,
     },
   })
 }
@@ -52,29 +54,7 @@ async function autoCloseOrder(order: AutoCloseCandidate): Promise<void> {
         tx
       )
 
-      if (order.holdingPoints != null && order.holdingPoints > 0) {
-        const account = await tx.pointAccount.findUnique({ where: { userId: order.userId } })
-        if (!account) throw notFound('积分账户不存在')
-        const newBalance = account.balance - order.holdingPoints
-        await tx.pointAccount.update({
-          where: { userId: order.userId },
-          data: { balance: newBalance },
-        })
-        await tx.pointLog.create({
-          data: {
-            userId: order.userId,
-            type: 'out',
-            amount: order.holdingPoints,
-            balanceAfter: newBalance,
-            reason: `系统自动关闭扣款: #${order.id}`,
-            orderId: order.id,
-          },
-        })
-        await tx.settlement.updateMany({
-          where: { orderId: order.id, status: 'holding' },
-          data: { status: 'pending' },
-        })
-      }
+      await settleHeldOrder(tx, order, `系统自动关闭扣款: #${order.id}`)
 
       await tx.order.update({
         where: { id: order.id },

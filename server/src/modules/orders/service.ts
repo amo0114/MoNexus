@@ -8,6 +8,7 @@ import {
   normalizeOrderStatus,
   transitionOrderStatus,
 } from './fulfillment.js'
+import { debitAvailablePoints, holdAvailablePoints, settleHeldOrder } from './accounting.js'
 import { serializeUserOrderDetail, serializeUserOrderList } from './serializers.js'
 import { invalidateProductPublicCache } from '../products/cache.js'
 
@@ -30,8 +31,6 @@ export async function createOrder(userId: number, productId: number) {
     if (deliveryMode !== 'instant_inventory' && product.stockMode === 'limited' && product.stock <= 0) {
       throw badRequest('库存不足，请稍后再试')
     }
-
-    if (account.balance < product.price) throw badRequest('积分不足')
 
     const item = deliveryMode === 'instant_inventory'
       ? await tx.inventoryItem.findFirst({
@@ -62,25 +61,23 @@ export async function createOrder(userId: number, productId: number) {
 
     // 积分流转规则（PRD §4.3.1）：
     // - instant_* 模式：即时扣减，PointLog 'out'，Settlement 'pending'
-    // - manual_service：冻结积分（holdingPoints），不扣余额，Settlement 'holding'
+    // - manual_service：原子地从可用积分转入冻结余额，Settlement 'holding'
     let orderHoldingPoints: number | null = null
     let orderFulfillmentDeadline: Date | null = null
-    let newBalance = account.balance
+    let balanceAfter = account.balance
     let settledSettlementStatus: 'pending' | 'holding' = 'pending'
+    let fundsHeld = false
 
     if (isManual) {
-      // 虚拟服务订单：积分冻结，不扣减，仅记录 holdingPoints
+      // 虚拟服务订单：冻结真实占用可用积分，避免同一余额被多笔订单重复使用。
       orderHoldingPoints = product.price
       orderFulfillmentDeadline = new Date(Date.now() + FULFILLMENT_SLA_MS)
       settledSettlementStatus = 'holding'
-      // balance 不变，PointLog 留空（不写 'out'，因为积分未实际支出）
+      balanceAfter = await holdAvailablePoints(tx, userId, product.price)
+      fundsHeld = true
     } else {
-      // 即时模式：立即扣减
-      newBalance = account.balance - product.price
-      await tx.pointAccount.update({
-        where: { userId },
-        data: { balance: newBalance },
-      })
+      // 即时模式：带余额条件的原子扣减，禁止并发下单透支。
+      balanceAfter = await debitAvailablePoints(tx, userId, product.price)
     }
 
     const order = await tx.order.create({
@@ -92,7 +89,9 @@ export async function createOrder(userId: number, productId: number) {
         merchantId,
         commissionRate,
         commissionAmount,
+        deliveryModeSnapshot: deliveryMode,
         holdingPoints: orderHoldingPoints,
+        fundsHeld,
         fulfillmentDeadline: orderFulfillmentDeadline,
       },
     })
@@ -154,19 +153,16 @@ export async function createOrder(userId: number, productId: number) {
       })
     }
 
-    // PointLog 仅在即时模式写入；manual_service 冻结阶段不产生支出日志
-    if (!isManual) {
-      await tx.pointLog.create({
-        data: {
-          userId,
-          type: 'out',
-          amount: product.price,
-          balanceAfter: newBalance,
-          reason: `兑换商品: ${product.name}`,
-          orderId: order.id,
-        },
-      })
-    }
+    await tx.pointLog.create({
+      data: {
+        userId,
+        type: isManual ? 'hold' : 'out',
+        amount: product.price,
+        balanceAfter,
+        reason: isManual ? `订单冻结积分: #${order.id}` : `兑换商品: ${product.name}`,
+        orderId: order.id,
+      },
+    })
 
     if (merchantId != null) {
       await tx.settlement.create({
@@ -209,7 +205,7 @@ export async function createOrder(userId: number, productId: number) {
       deliveryMode,
       deliveryContent,
       deliveryContentType,
-      balanceAfter: newBalance,
+      balanceAfter,
       merchantId,
       merchantName,
     }
@@ -313,7 +309,7 @@ export async function closeOrder(orderId: number, userId: number) {
   const result = await prisma.$transaction(async tx => {
     const order = await tx.order.findUnique({
       where: { id: orderId },
-      select: { id: true, userId: true, holdingPoints: true, status: true, productId: true },
+      select: { id: true, userId: true, holdingPoints: true, fundsHeld: true, status: true, productId: true },
     })
     if (!order) throw notFound('订单不存在')
 
@@ -330,31 +326,8 @@ export async function closeOrder(orderId: number, userId: number) {
       tx
     )
 
-    // 若为冻结单（manual_service），扣减冻结积分并触发 Settlement 生效
-    if (order.holdingPoints != null && order.holdingPoints > 0) {
-      const account = await tx.pointAccount.findUnique({ where: { userId: order.userId } })
-      if (!account) throw notFound('积分账户不存在')
-      const newBalance = account.balance - order.holdingPoints
-      await tx.pointAccount.update({
-        where: { userId: order.userId },
-        data: { balance: newBalance },
-      })
-      await tx.pointLog.create({
-        data: {
-          userId: order.userId,
-          type: 'out',
-          amount: order.holdingPoints,
-          balanceAfter: newBalance,
-          reason: `订单关闭扣款: #${order.id}`,
-          orderId: order.id,
-        },
-      })
-      // Settlement 从 holding 转为 pending，可被批量结算
-      await tx.settlement.updateMany({
-        where: { orderId: order.id, status: 'holding' },
-        data: { status: 'pending' },
-      })
-    }
+    // 若为冻结单，正式消耗冻结积分并允许商家结算。
+    await settleHeldOrder(tx, order, `订单关闭扣款: #${order.id}`)
 
     await tx.order.update({
       where: { id: orderId },

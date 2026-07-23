@@ -202,6 +202,31 @@ describe('POST /api/merchant/products/:id/inventory (import log)', () => {
     const logCount = await prisma.inventoryLog.count({ where: { productId: product.id } })
     expect(logCount).toBe(0)
   })
+
+  it('uses the database uniqueness guard when two imports race with the same content', async () => {
+    const { accessToken, product } = await setupMerchantWithProduct('import-race@test.local')
+    const url = `/api/merchant/products/${product.id}/inventory`
+
+    const results = await Promise.all([
+      api.post(url).set(authHeader(accessToken)).send({ items: ['RACE-UNIQUE-CARD'] }),
+      api.post(url).set(authHeader(accessToken)).send({ items: ['RACE-UNIQUE-CARD'] }),
+    ])
+
+    expect(results.map(result => result.status).sort()).toEqual([200, 400])
+    const rejected = results.find(result => result.status === 400)
+    expect(rejected?.body.error.message).toBe('库存导入包含重复项')
+
+    const [items, productAfter, logs] = await Promise.all([
+      prisma.inventoryItem.findMany({ where: { productId: product.id } }),
+      prisma.product.findUniqueOrThrow({ where: { id: product.id } }),
+      prisma.inventoryLog.findMany({ where: { productId: product.id } }),
+    ])
+    expect(items).toHaveLength(1)
+    expect(items[0]).toMatchObject({ content: 'RACE-UNIQUE-CARD', status: 'available' })
+    expect(productAfter.stock).toBe(1)
+    expect(logs).toHaveLength(1)
+    expect(logs[0]).toMatchObject({ action: 'import', delta: 1 })
+  })
 })
 
 describe('GET /api/merchant/products/:id/inventory/logs', () => {
