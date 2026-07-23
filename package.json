@@ -21,6 +21,7 @@
     "prod:smoke": "bash scripts/prod-smoke.sh",
     "prod:gate": "npm run prod:env && npm run prod:config && npm run prod:build && npm run prod:up && npm run prod:ps && REQUIRE_METRICS_TOKEN=true npm run prod:smoke",
     "backup:restore-check": "bash scripts/restore-check.sh",
+    "backup:restore-objects-check": "bash scripts/restore-objects-check.sh",
     "predev": "npm run check:runtime",
     "dev": "vite",
     "prebuild": "npm run check:runtime",

@@ -16,11 +16,12 @@ jobs:
     timeout-minutes: 30
     env:
       BACKUP_DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+      BACKUP_AGE_RECIPIENT: ${{ secrets.BACKUP_AGE_RECIPIENT }}
     steps:
       - name: Check secret is configured
         run: |
-          if [ -z "$BACKUP_DATABASE_URL" ]; then
-            echo "::error::BACKUP_DATABASE_URL secret is not configured. See docs/operations/runbook.md Database Backup section."
+          if [ -z "$BACKUP_DATABASE_URL" ] || [ -z "$BACKUP_AGE_RECIPIENT" ]; then
+            echo "::error::BACKUP_DATABASE_URL and BACKUP_AGE_RECIPIENT secrets are required. See docs/operations/runbook.md Database Backup section."
             exit 1
           fi
 
@@ -37,26 +38,29 @@ jobs:
             https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | \
             sudo tee /etc/apt/sources.list.d/pgdg.list > /dev/null
           sudo apt-get update
-          sudo apt-get install -y postgresql-client-16
+          sudo apt-get install -y postgresql-client-16 age
           pg_dump --version
+          age --version
 
       - name: Run pg_dump
         id: dump
         run: |
           set -euo pipefail
           STAMP=$(date -u +%Y%m%dT%H%M%SZ)
-          OUT="monexus-backup-${STAMP}.sql.gz"
+          OUT="monexus-backup-${STAMP}.sql.gz.age"
           DUMP_DATABASE_URL="${BACKUP_DATABASE_URL%%\?*}"
           # --no-owner --no-privileges -> portable across roles
           # --clean --if-exists -> restore script can be re-run safely
-          # Compressed inline to save artifact storage
+          # Compress then encrypt before the file ever reaches the runner
+          # workspace or GitHub artifact store. The private age identity is
+          # intentionally not available to this workflow.
           pg_dump \
             --no-owner \
             --no-privileges \
             --clean \
             --if-exists \
             --format=plain \
-            "$DUMP_DATABASE_URL" | gzip -9 > "$OUT"
+            "$DUMP_DATABASE_URL" | gzip -9 | age -r "$BACKUP_AGE_RECIPIENT" > "$OUT"
           ls -lah "$OUT"
           echo "filename=$OUT" >> "$GITHUB_OUTPUT"
           echo "stamp=$STAMP" >> "$GITHUB_OUTPUT"
@@ -90,5 +94,5 @@ jobs:
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "To restore locally: download artifact, then:" >> "$GITHUB_STEP_SUMMARY"
           echo "\`\`\`bash" >> "$GITHUB_STEP_SUMMARY"
-          echo "gunzip -c ${{ steps.dump.outputs.filename }} | psql \"\$RESTORE_TARGET_URL\"" >> "$GITHUB_STEP_SUMMARY"
+          echo "BACKUP=${{ steps.dump.outputs.filename }} BACKUP_AGE_IDENTITY_FILE=/secure/monexus-backup.agekey npm run backup:restore-check" >> "$GITHUB_STEP_SUMMARY"
           echo "\`\`\`" >> "$GITHUB_STEP_SUMMARY"

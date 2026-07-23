@@ -178,7 +178,8 @@ Never restore over production as the first step. Rehearse in staging:
 
 ```bash
 RESTORE_TARGET_URL='<staging-restore-url>'
-BACKUP=monexus-backup-YYYYMMDDTHHMMSSZ.sql.gz
+BACKUP=monexus-backup-YYYYMMDDTHHMMSSZ.sql.gz.age
+BACKUP_AGE_IDENTITY_FILE=/secure/recovery/monexus-backup.agekey
 
 MIN_USER_ROWS=1 MIN_POINT_LOG_ROWS=1 npm run backup:restore-check
 ```

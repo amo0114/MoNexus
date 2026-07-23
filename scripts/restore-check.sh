@@ -6,14 +6,17 @@ RESTORE_TARGET_URL="${RESTORE_TARGET_URL:-}"
 PSQL_COMMAND="${PSQL_COMMAND:-psql}"
 MIN_USER_ROWS="${MIN_USER_ROWS:-1}"
 MIN_POINT_LOG_ROWS="${MIN_POINT_LOG_ROWS:-1}"
+BACKUP_AGE_IDENTITY_FILE="${BACKUP_AGE_IDENTITY_FILE:-}"
 
 usage() {
   cat <<'EOF'
 Usage:
-  RESTORE_TARGET_URL='<staging-db-url>' BACKUP='monexus-backup.sql.gz' scripts/restore-check.sh
+  RESTORE_TARGET_URL='<staging-db-url>' BACKUP='monexus-backup.sql.gz.age' \
+    BACKUP_AGE_IDENTITY_FILE='/secure/monexus-backup.agekey' scripts/restore-check.sh
 
-Restores a gzipped SQL backup into a staging database and checks basic row counts.
-Never point RESTORE_TARGET_URL at production.
+Restores a SQL backup into a staging database and checks basic row counts.
+Never point RESTORE_TARGET_URL at production. Legacy .sql.gz backups remain
+readable; .age backups require BACKUP_AGE_IDENTITY_FILE.
 
 Optional:
   PSQL_COMMAND='docker compose exec -T postgres psql'
@@ -45,7 +48,7 @@ if [[ -z "$RESTORE_TARGET_URL" ]]; then
 fi
 
 if [[ -z "$BACKUP" || ! -f "$BACKUP" ]]; then
-  echo "[ERROR] BACKUP must point at an existing .sql.gz file" >&2
+  echo "[ERROR] BACKUP must point at an existing .sql.gz or .sql.gz.age file" >&2
   exit 1
 fi
 
@@ -56,8 +59,21 @@ if [[ "$RESTORE_TARGET_URL" != *"staging"* && "$RESTORE_TARGET_URL" != *"restore
   exit 1
 fi
 
-echo "[INFO] Verifying backup gzip integrity"
-gunzip -t "$BACKUP"
+decrypt_backup() {
+  if [[ "$BACKUP" == *.age ]]; then
+    if [[ -z "$BACKUP_AGE_IDENTITY_FILE" || ! -f "$BACKUP_AGE_IDENTITY_FILE" ]]; then
+      echo "[ERROR] BACKUP_AGE_IDENTITY_FILE is required for encrypted backups" >&2
+      return 1
+    fi
+    require_cmd age
+    age -d -i "$BACKUP_AGE_IDENTITY_FILE" "$BACKUP"
+  else
+    cat "$BACKUP"
+  fi
+}
+
+echo "[INFO] Verifying backup integrity"
+decrypt_backup | gunzip -t
 
 psql_exec() {
   "${psql_parts[@]}" "$RESTORE_TARGET_URL" -v ON_ERROR_STOP=1 "$@"
@@ -71,7 +87,7 @@ echo "[INFO] Resetting target schema"
 psql_exec -c 'DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;'
 
 echo "[INFO] Restoring backup into target"
-gunzip -c "$BACKUP" | psql_restore
+decrypt_backup | gunzip -c | psql_restore
 
 query_count() {
   local table="$1"

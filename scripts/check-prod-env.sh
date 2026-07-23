@@ -284,7 +284,32 @@ if [[ -n "$web_port" && ! "$web_port" =~ ^[0-9]+$ ]]; then
 fi
 
 if [[ "$STRICT_BACKUP" == "true" ]]; then
-  require_url BACKUP_DATABASE_URL
+  backup_source="$(get BACKUP_SOURCE)"
+  # Older env files omitted BACKUP_SOURCE and used a reachable database URL.
+  # Keep that behavior, while allowing the VPS stack to back up its private
+  # Postgres through Docker Compose instead.
+  if [[ -z "$backup_source" ]]; then
+    backup_source="url"
+  fi
+  case "$backup_source" in
+    url)
+      require_url BACKUP_DATABASE_URL
+      ;;
+    docker-compose)
+      ;;
+    *)
+      fail "BACKUP_SOURCE must be url or docker-compose"
+      ;;
+  esac
+  require_value BACKUP_AGE_RECIPIENT
+  backup_age_recipient="$(get BACKUP_AGE_RECIPIENT)"
+  if [[ -n "$backup_age_recipient" && ! "$backup_age_recipient" =~ ^age1 ]]; then
+    if [[ "$ALLOW_PLACEHOLDERS" == "true" ]] && is_placeholder_literal "$backup_age_recipient"; then
+      :
+    else
+      fail "BACKUP_AGE_RECIPIENT must be an age public recipient beginning with age1"
+    fi
+  fi
   require_url RESTORE_TARGET_URL
 fi
 
