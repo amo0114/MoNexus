@@ -3,6 +3,7 @@ import { useAuthStore } from '../stores/authStore'
 import { Moon, Sun, Coins, User, ShieldCheck, Store, Clock, XCircle, AlertTriangle, Plus } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import EmailVerificationBanner from './EmailVerificationBanner'
+import AnnouncementBanner from './AnnouncementBanner'
 import Logo from './ui/Logo'
 import ThemeToggle from './ThemeToggle'
 
@@ -163,6 +164,9 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
       {/* Email verification nudge — silent when verified or dismissed */}
       <EmailVerificationBanner />
+
+      {/* Platform announcement — fetched from /api/announcements */}
+      <AnnouncementBanner />
 
       {/* Content. 注意不要给 main 加 z-index：z-0 会创建 stacking context，
           把页面内 fixed 弹窗（z-50）整体压到 footer（z-10）之下，导致长页面

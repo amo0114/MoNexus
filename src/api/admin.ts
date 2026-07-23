@@ -1,4 +1,10 @@
 import api from './client'
+import {
+  AdminAnnouncement,
+  AdminAnnouncementListQuery,
+  CreateAnnouncementRequest,
+  UpdateAnnouncementRequest,
+} from '../types/admin'
 
 export interface PaginatedResult<T> {
   items: T[]
@@ -76,4 +82,33 @@ export async function banUser(userId: number, reason: string): Promise<void> {
 
 export async function unbanUser(userId: number): Promise<void> {
   await api.put(`/admin/users/${userId}/unban`)
+}
+
+export async function getAnnouncements(
+  params?: AdminAnnouncementListQuery,
+): Promise<PaginatedResult<AdminAnnouncement>> {
+  const { data } = await api.get<PaginatedResult<AdminAnnouncement>>(
+    '/admin/announcements',
+    { params },
+  )
+  return data
+}
+
+export async function createAnnouncement(
+  payload: CreateAnnouncementRequest,
+): Promise<AdminAnnouncement> {
+  const { data } = await api.post<AdminAnnouncement>('/admin/announcements', payload)
+  return data
+}
+
+export async function updateAnnouncement(
+  id: number,
+  payload: UpdateAnnouncementRequest,
+): Promise<AdminAnnouncement> {
+  const { data } = await api.put<AdminAnnouncement>(`/admin/announcements/${id}`, payload)
+  return data
+}
+
+export async function deleteAnnouncement(id: number): Promise<void> {
+  await api.delete(`/admin/announcements/${id}`)
 }

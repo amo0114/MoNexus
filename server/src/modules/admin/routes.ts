@@ -8,6 +8,7 @@ import {
   listMerchantsQuerySchema, reviewMerchantSchema, updateCommissionSchema,
   listSettlementsQuerySchema, batchSettleSchema, resolveOrderSchema,
   systemConfigKeyParamSchema, updateSystemConfigSchema,
+  createAnnouncementSchema, updateAnnouncementSchema, listAnnouncementsQuerySchema,
 } from './schema.js'
 import { adminReviewsQuerySchema } from '../reviews/schema.js'
 import * as controller from './controller.js'
@@ -48,5 +49,11 @@ router.put('/merchants/:id/commission', validate({ params: idParamSchema, body: 
 // Settlements
 router.get('/settlements', validate({ query: listSettlementsQuerySchema }), controller.listSettlements)
 router.post('/settlements/batch-settle', validate(batchSettleSchema), controller.batchSettle)
+
+// Announcements
+router.get('/announcements', validate({ query: listAnnouncementsQuerySchema }), controller.listAnnouncementsRoute)
+router.post('/announcements', validate(createAnnouncementSchema), controller.createAnnouncementRoute)
+router.put('/announcements/:id', validate({ params: idParamSchema, body: updateAnnouncementSchema }), controller.updateAnnouncementRoute)
+router.delete('/announcements/:id', validate({ params: idParamSchema }), controller.deleteAnnouncementRoute)
 
 export { router as adminRoutes }

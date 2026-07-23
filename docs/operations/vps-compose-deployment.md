@@ -1,0 +1,146 @@
+# Single-domain VPS Docker deployment
+
+This is the recommended deployment path when an operator has a public Linux
+VPS. It uses the repository's existing Docker images and Compose stack; no
+GitHub Pages, Render, Neon, R2, API subdomain, or Cloudflare Tunnel is needed.
+
+```text
+https://monexus.oai-o.com
+  -> Cloudflare DNS / proxy
+  -> Caddy (:443 on VPS)
+  -> web (Nginx + React)
+     -> /api      -> server (Express + Prisma)
+     -> /uploads  -> MinIO (private Compose network)
+  -> Postgres + Redis + MinIO persistent volumes
+```
+
+## 1. Prepare the VPS
+
+Use a current Debian or Ubuntu host with at least 2 vCPU, 4 GB RAM, and 40 GB
+of SSD. Install Docker Engine and Docker Compose v2.24.4 or later. The VPS
+must allow inbound TCP 80 and 443; do not expose PostgreSQL, Redis, MinIO, or
+the application web container directly.
+
+Clone the repository into a durable path such as `/opt/monexus`.
+
+## 2. Create the DNS record
+
+In Cloudflare, add only this record; it does not touch the existing apex,
+`app`, or `api` records:
+
+```text
+Type: A
+Name: monexus
+Target: <VPS public IPv4>
+Proxy: DNS only (initially)
+```
+
+Keep it DNS-only until Caddy acquires its Let's Encrypt certificate. Afterwards
+enable Cloudflare proxying and set Cloudflare SSL/TLS mode to **Full (strict)**.
+Never use Flexible mode.
+
+## 3. Configure production environment
+
+Copy the existing template and edit it only on the VPS:
+
+```bash
+cd /opt/monexus
+cp .env.example .env
+chmod 600 .env
+```
+
+At minimum replace all placeholders and set these values:
+
+```dotenv
+FRONTEND_ORIGIN=https://monexus.oai-o.com
+APP_BASE_URL=https://monexus.oai-o.com
+COOKIE_SECURE=true
+TRUST_PROXY=1
+
+# docker-compose.vps.yml binds this to loopback. Caddy owns public :80/:443.
+WEB_PORT=8080
+CADDY_DOMAIN=monexus.oai-o.com
+CADDY_EMAIL=<operator-email>
+
+# Keep all object storage inside this Compose project.
+STORAGE_ENDPOINT=http://minio:9000
+STORAGE_REGION=us-east-1
+STORAGE_BUCKET=monexus-uploads
+STORAGE_ACCESS_KEY=<strong-minio-user>
+STORAGE_SECRET_KEY=<strong-minio-password>
+STORAGE_PUBLIC_URL_BASE=https://monexus.oai-o.com/uploads
+STORAGE_FORCE_PATH_STYLE=true
+
+POSTGRES_USER=monexus
+POSTGRES_PASSWORD=<strong-unique-password>
+POSTGRES_DB=monexus
+JWT_SECRET=<at-least-32-character-random-secret>
+REDIS_PASSWORD=<strong-unique-password>
+REDIS_ENABLED=false
+
+# Pin releases in production. `latest` is acceptable only for a disposable demo.
+MONEXUS_IMAGE_TAG=latest
+MONEXUS_PULL_POLICY=always
+```
+
+Generate secrets locally on the VPS, for example:
+
+```bash
+openssl rand -base64 48
+```
+
+The production server validates object storage, so do not remove the MinIO
+variables even if product-image uploads are not immediately used.
+
+## 4. Start and verify
+
+If the GHCR packages are private, log in once with a GitHub token that has
+`read:packages` access:
+
+```bash
+echo "$GITHUB_TOKEN" | docker login ghcr.io -u <github-user> --password-stdin
+```
+
+Validate the final Compose configuration, then pull and start the stack:
+
+```bash
+bash scripts/vps-compose.sh config
+bash scripts/vps-compose.sh up
+curl -fsS https://monexus.oai-o.com/api/health/live
+curl -fsS https://monexus.oai-o.com/api/health/ready
+```
+
+The first server boot runs `prisma migrate deploy`. Seed only the isolated
+demo database if public demo accounts are desired:
+
+```bash
+docker compose --env-file .env -f docker-compose.prod.yml -f docker-compose.vps.yml \
+  --profile selfhost-storage exec server npm run db:seed
+```
+
+## Releases and rollback
+
+Pushing to `master` publishes `ghcr.io/amo0114/monexus-web` and
+`ghcr.io/amo0114/monexus-server`. To update the VPS after that workflow
+finishes:
+
+```bash
+cd /opt/monexus
+bash scripts/vps-compose.sh up
+```
+
+Prefer an immutable `MONEXUS_IMAGE_TAG=sha-<commit>` for a real release. To
+roll back, set the last known-good tag in `.env` and run the same command.
+
+## Backups
+
+PostgreSQL and MinIO are persistent Docker volumes, not backups. At minimum,
+schedule a daily `pg_dump` and archive `miniodata-prod` to a second VPS. Test
+restores into a separate database before relying on a backup.
+
+```bash
+docker compose --env-file .env -f docker-compose.prod.yml -f docker-compose.vps.yml \
+  exec -T postgres pg_dump -U monexus monexus | gzip > /srv/backups/monexus-$(date +%F).sql.gz
+```
+
+Do not commit `.env`, backups, passwords, GitHub tokens, or private keys.

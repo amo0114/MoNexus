@@ -35,6 +35,19 @@ export function authenticate(req: Request, _res: Response, next: NextFunction) {
   }
 }
 
+/**
+ * Populate req.user when a bearer token is supplied, while keeping endpoints
+ * accessible to visitors without one. A malformed or expired supplied token
+ * still receives the normal 401 response so the client can refresh it.
+ */
+export function authenticateIfPresent(req: Request, res: Response, next: NextFunction) {
+  if (!req.headers.authorization) {
+    next()
+    return
+  }
+  authenticate(req, res, next)
+}
+
 export function requireAdmin(req: Request, _res: Response, next: NextFunction) {
   if (!req.user || req.user.role !== 'admin') {
     next(forbidden('需要管理员权限'))

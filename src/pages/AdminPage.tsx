@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { LayoutDashboard, UsersRound, Package, ShoppingCart, Activity, Users, ShoppingBag, Coins, X, Store, DollarSign, Settings, ClipboardList } from 'lucide-react'
+import { LayoutDashboard, UsersRound, Package, ShoppingCart, Activity, Users, ShoppingBag, Coins, X, Store, DollarSign, Settings, ClipboardList, Megaphone } from 'lucide-react'
 import api from '../api/client'
 import { getApiErrorMessage } from '../api/error'
 import { useAppStore } from '../stores/appStore'
@@ -18,9 +18,10 @@ import { MemberTierConfigPanel } from '../components/admin/MemberTierConfigPanel
 import AdminConfigPanel from '../components/admin/AdminConfigPanel'
 import AdminUserTable from '../components/admin/AdminUserTable'
 import AdminOrderTable from '../components/admin/AdminOrderTable'
+import AnnouncementsAdmin from '../components/admin/AnnouncementsAdmin'
 import CommissionDialog from '../components/admin/CommissionDialog'
 
-type AdminTab = 'dashboard' | 'users' | 'products' | 'orders' | 'logs' | 'audit' | 'merchants' | 'settlements' | 'config'
+type AdminTab = 'dashboard' | 'users' | 'products' | 'orders' | 'logs' | 'audit' | 'merchants' | 'settlements' | 'announcements' | 'config'
 
 const NAV_ITEMS: { id: AdminTab; label: string; icon: any }[] = [
   { id: 'dashboard', label: '数据仪表盘', icon: LayoutDashboard },
@@ -31,6 +32,7 @@ const NAV_ITEMS: { id: AdminTab; label: string; icon: any }[] = [
   { id: 'orders', label: '订单记录', icon: ShoppingCart },
   { id: 'logs', label: '积分流水', icon: Activity },
   { id: 'audit', label: '操作审计', icon: ClipboardList },
+  { id: 'announcements', label: '公告管理', icon: Megaphone },
   { id: 'config', label: '系统配置', icon: Settings },
 ]
 
@@ -396,6 +398,9 @@ export default function AdminPage() {
 
           {/* Users */}
           {activeTab === 'users' && <AdminUserTable />}
+
+          {/* Announcements */}
+          {activeTab === 'announcements' && <AnnouncementsAdmin />}
 
           {/* Products */}
           {activeTab === 'products' && (

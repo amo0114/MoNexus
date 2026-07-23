@@ -18,7 +18,10 @@ RUN npm run build
 # server container over the compose network.
 FROM nginx:1.27-alpine AS runtime
 RUN apk add --no-cache wget
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+# The official nginx entrypoint expands STORAGE_BUCKET in this template at
+# startup. Other $variables remain nginx runtime variables.
+ENV STORAGE_BUCKET=monexus-uploads
+COPY nginx.conf /etc/nginx/templates/default.conf.template
 COPY --from=builder /app/dist /usr/share/nginx/html
 
 EXPOSE 80

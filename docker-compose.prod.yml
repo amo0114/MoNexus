@@ -172,6 +172,9 @@ services:
     pull_policy: ${MONEXUS_PULL_POLICY:-missing}
     container_name: monexus-web-prod
     restart: unless-stopped
+    environment:
+      # Used by nginx's /uploads/ proxy template when bundled MinIO is enabled.
+      STORAGE_BUCKET: ${STORAGE_BUCKET:-monexus-uploads}
     depends_on:
       server:
         condition: service_healthy
