@@ -44,7 +44,7 @@ MoNexus 是一个**纯内部福利/积分激励平台**：用户以站内虚拟�
 | --- | --- | --- | --- |
 | M1 MVP 收尾 | ✅ 已交付 | PR #1 `chore/p0-prod-ready` 合入 `master` | 原始 P0 sweep + UI 重设计（PR #2 `feat/ui-redesign`）全部上线 |
 | M2 灰度上线 | ✅ 已交付 | `feat(ops)`、`feat(health)`、`docs(m4): runbook` 等 | 备份 workflow、`/api/health/live`+`/ready` 拆分、Prometheus `/metrics`、Sentry 接入、E2E 框架、CD workflow、runbook 全部落地 |
-| M3 生产化 | 🚧 大部分交付 | PR #20、#22 合入 | 订单状态机全量上线（`refunded` 已补齐）、积分冻结（`holdingPoints`/`fulfillmentDeadline`）已落地、Settlement 四态（`pending`/`settled`/`holding`/`voided`）已落地、管理员仲裁 `POST /api/admin/orders/:id/resolve` 已落地、自动关闭 cron（`delivered` 超 7 天 → `closed`）已落地、商家工作台 SLA 超时高亮 + todo 计数已落地；M3-S3 安全加固（MFA / 会话设备 / 风控 / 日志脱敏 / GDPR）与 M3-S3 运营自助（公告 / 用户标签 / 商家评分 / 库存指纹 / 数据看板）仍未启动 |
+| M3 生产化 | 🚧 大部分交付 | PR #20、#22 合入；`feat/m3-announcements` 公告子项已交付 | 订单状态机全量上线（`refunded` 已补齐）、积分冻结（`holdingPoints`/`fulfillmentDeadline`）已落地、Settlement 四态（`pending`/`settled`/`holding`/`voided`）已落地、管理员仲裁 `POST /api/admin/orders/:id/resolve` 已落地、自动关闭 cron（`delivered` 超 7 天 → `closed`）已落地、商家工作台 SLA 超时高亮 + todo 计数已落地；§4.3.4 公告子项已落地（`Announcement` 模型 + admin CRUD + 公开 `/api/announcements` + `AnnouncementBanner` 横幅 + `AnnouncementsAdmin` 管理页）；M3-S3 其余项（用户标签 / 商家评分 / 库存指纹 / 数据看板）与 M3-S3 安全加固（MFA / 会话设备 / 风控 / 日志脱敏 / GDPR）仍未启动 |
 | M4 业务演进 | 🔲 未启动 | — | 订阅续费、营销活动、邀请 v2、数据看板均未落地 |
 
 #### M3 已落地项（对照 §4.3）
@@ -68,7 +68,7 @@ MoNexus 是一个**纯内部福利/积分激励平台**：用户以站内虚拟�
 | 4.3.2 | Settlement 四态 `pending` / `settled` / `holding` / `voided` | ✅ | `server/src/modules/admin/schema.ts:104-108` `listSettlementsQuerySchema`，PR #20/#22 |
 | 4.3.3 | 商家工作台：todo 计数、SLA 超时高亮、拒单流程 | ✅ | `server/src/modules/merchant/service.ts:858-890` stats 返回 `todo.{pending,processing,slaExceeded}`，PR #20/#22 |
 | 4.3.3 | 商家工作台：通知偏好 | 🔲 | M3-S2 未启动 |
-| 4.3.4 | 平台运营自助：公告、用户标签、商家评分、库存指纹校验、数据看板 | 🔲 | M3-S3 未启动 |
+| 4.3.4 | 平台运营自助：公告、用户标签、商家评分、库存指纹校验、数据看板 | 🚧 公告子项已交付 | `server/src/modules/announcements/` + `src/components/AnnouncementBanner.tsx` + `src/components/admin/AnnouncementsAdmin.tsx`，分支 `feat/m3-announcements` |
 | 4.3.5 | MFA（TOTP）、会话设备管理、风控规则、日志脱敏、GDPR 数据导出/注销 | 🔲 | M3-S3 未启动（trust proxy 已由 PR #21 合入） |
 
 #### M3 仍缺项（仅剩 M3-S3 安全加固 + 运营自助）
@@ -76,7 +76,7 @@ MoNexus 是一个**纯内部福利/积分激励平台**：用户以站内虚拟�
 | § | 缺项 | 影响 | 实施顺序 |
 | --- | --- | --- | --- |
 | 4.3.3 | 商家通知偏好（站内信 / 邮件 / 短信开关） | 商家无法定制告警渠道 | M3-S2 增量 |
-| 4.3.4 | 平台运营自助：公告、用户标签、商家评分、库存指纹校验、数据看板 | 运营手段仍依赖 SQL 临时介入 | M3-S3 |
+| 4.3.4 | 平台运营自助：公告、用户标签、商家评分、库存指纹校验、数据看板 | 公告子项已落地（`server/src/modules/announcements/`、`AnnouncementBanner`、`AnnouncementsAdmin`）；其余仍依赖 SQL 临时介入 | M3-S3 |
 | 4.3.5 | MFA（TOTP）、会话设备管理、风控规则、日志脱敏、GDPR 数据导出/注销 | 安全加固未启动 | M3-S3 |
 
 #### M4 仍缺项（§4.4 整体未启动）

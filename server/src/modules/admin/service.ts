@@ -17,10 +17,13 @@ import { transitionOrderStatus } from '../orders/fulfillment.js'
 import type {
   CreateProductInput,
   ListAdminAuditQuery,
+  ListAnnouncementsQuery,
   ListOrdersQuery,
   ListUsersQuery,
   ResolveOrderInput,
   UpdateProductInput,
+  CreateAnnouncementInput,
+  UpdateAnnouncementInput,
 } from './schema.js'
 
 async function resolvePagination(page?: number, pageSize?: number) {
@@ -721,4 +724,123 @@ export async function listAdminProducts() {
     },
     orderBy: { createdAt: 'desc' },
   })
+}
+
+// ---- Announcements ----
+//
+// PRD §4.3.4：运营自助。公告支持 audience 分发（all/user/merchant/admin）、
+// priority 倒序、时间窗口（startsAt/endsAt）、状态（draft/published/archived）。
+
+function serializeAnnouncement(a: {
+  id: number
+  title: string
+  content: string
+  audience: string
+  priority: number
+  startsAt: Date
+  endsAt: Date | null
+  status: string
+  createdBy: number | null
+  createdAt: Date
+  updatedAt: Date
+}) {
+  return {
+    id: a.id,
+    title: a.title,
+    content: a.content,
+    audience: a.audience,
+    priority: a.priority,
+    startsAt: a.startsAt.toISOString(),
+    endsAt: a.endsAt ? a.endsAt.toISOString() : null,
+    status: a.status,
+    createdBy: a.createdBy,
+    createdAt: a.createdAt.toISOString(),
+    updatedAt: a.updatedAt.toISOString(),
+  }
+}
+
+export async function createAnnouncement(adminUserId: number, input: CreateAnnouncementInput) {
+  const created = await prisma.announcement.create({
+    data: {
+      title: input.title,
+      content: input.content,
+      audience: input.audience,
+      priority: input.priority,
+      startsAt: input.startsAt,
+      endsAt: input.endsAt ?? null,
+      status: input.status,
+      createdBy: adminUserId,
+    },
+  })
+  await prisma.adminLog.create({
+    data: {
+      adminUserId,
+      action: '创建公告',
+      targetType: 'announcement',
+      targetId: created.id,
+      detail: `标题: ${input.title}，受众: ${input.audience}，状态: ${input.status}`,
+    },
+  })
+  return serializeAnnouncement(created)
+}
+
+export async function updateAnnouncement(adminUserId: number, id: number, input: UpdateAnnouncementInput) {
+  return prisma.$transaction(async tx => {
+    const existing = await tx.announcement.findUnique({ where: { id } })
+    if (!existing) throw notFound('公告不存在')
+
+    const data: Prisma.AnnouncementUpdateInput = {}
+    if (input.title !== undefined) data.title = input.title
+    if (input.content !== undefined) data.content = input.content
+    if (input.audience !== undefined) data.audience = input.audience
+    if (input.priority !== undefined) data.priority = input.priority
+    if (input.startsAt !== undefined) data.startsAt = input.startsAt
+    if (input.endsAt !== undefined) data.endsAt = input.endsAt === null ? null : input.endsAt
+    if (input.status !== undefined) data.status = input.status
+
+    const updated = await tx.announcement.update({ where: { id }, data })
+    await tx.adminLog.create({
+      data: {
+        adminUserId,
+        action: '更新公告',
+        targetType: 'announcement',
+        targetId: id,
+        detail: `字段: ${Object.keys(input).join(',')}`,
+      },
+    })
+    return serializeAnnouncement(updated)
+  })
+}
+
+export async function listAnnouncements(query: ListAnnouncementsQuery = { page: 1, pageSize: 20 }) {
+  const where: Prisma.AnnouncementWhereInput = {}
+  if (query.status) where.status = query.status
+  if (query.audience) where.audience = query.audience
+
+  const [total, items] = await prisma.$transaction([
+    prisma.announcement.count({ where }),
+    prisma.announcement.findMany({
+      where,
+      orderBy: [{ priority: 'desc' }, { startsAt: 'desc' }, { id: 'desc' }],
+      skip: (query.page - 1) * query.pageSize,
+      take: query.pageSize,
+    }),
+  ])
+  return { items: items.map(serializeAnnouncement), total, page: query.page, pageSize: query.pageSize }
+}
+
+export async function deleteAnnouncement(adminUserId: number, id: number) {
+  const existing = await prisma.announcement.findUnique({ where: { id } })
+  if (!existing) throw notFound('公告不存在')
+  await prisma.announcement.delete({ where: { id } })
+  await prisma.adminLog.create({
+    data: {
+      adminUserId,
+      action: '删除公告',
+      targetType: 'announcement',
+      targetId: id,
+      detail: `标题: ${existing.title}`,
+    },
+  })
+  return { deleted: id }
 }

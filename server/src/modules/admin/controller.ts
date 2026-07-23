@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express'
 import * as adminService from './service.js'
 import * as reviewService from '../reviews/service.js'
-import type { ListAdminAuditQuery, ListOrdersQuery, ListUsersQuery } from './schema.js'
+import type { ListAdminAuditQuery, ListAnnouncementsQuery, ListOrdersQuery, ListUsersQuery } from './schema.js'
 
 export async function stats(_req: Request, res: Response, next: NextFunction) {
   try { res.json(await adminService.getStats()) } catch (err) { next(err) }
@@ -170,5 +170,33 @@ export async function resolveOrder(req: Request, res: Response, next: NextFuncti
   try {
     const orderId = req.params.id as unknown as number
     res.json(await adminService.resolveOrder(req.user!.userId, orderId, req.body))
+  } catch (err) { next(err) }
+}
+
+// ---- Announcements ----
+
+export async function listAnnouncementsRoute(req: Request, res: Response, next: NextFunction) {
+  try {
+    res.json(await adminService.listAnnouncements(req.query as unknown as ListAnnouncementsQuery))
+  } catch (err) { next(err) }
+}
+
+export async function createAnnouncementRoute(req: Request, res: Response, next: NextFunction) {
+  try {
+    res.status(201).json(await adminService.createAnnouncement(req.user!.userId, req.body))
+  } catch (err) { next(err) }
+}
+
+export async function updateAnnouncementRoute(req: Request, res: Response, next: NextFunction) {
+  try {
+    const id = req.params.id as unknown as number
+    res.json(await adminService.updateAnnouncement(req.user!.userId, id, req.body))
+  } catch (err) { next(err) }
+}
+
+export async function deleteAnnouncementRoute(req: Request, res: Response, next: NextFunction) {
+  try {
+    const id = req.params.id as unknown as number
+    res.json(await adminService.deleteAnnouncement(req.user!.userId, id))
   } catch (err) { next(err) }
 }

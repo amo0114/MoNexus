@@ -34,6 +34,26 @@ model User {
   passwordResetTokens     PasswordResetToken[]
   emailVerificationTokens EmailVerificationToken[]
   reviews                 Review[]
+  announcementsCreated    Announcement[] @relation("AnnouncementCreatedBy")
+}
+
+model Announcement {
+  id        Int      @id @default(autoincrement())
+  title      String
+  content    String
+  audience   String   @default("all") // all | user | merchant | admin
+  priority   Int      @default(0) // 数字越大越靠前
+  startsAt   DateTime
+  endsAt     DateTime? // null 表示长期
+  status     String   @default("draft") // draft | published | archived
+  createdBy  Int?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  createdByUser User? @relation("AnnouncementCreatedBy", fields: [createdBy], references: [id])
+
+  @@index([status, startsAt, endsAt])
+  @@index([audience, status])
 }
 
 model PasswordResetToken {
