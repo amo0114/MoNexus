@@ -4,6 +4,10 @@ This is the recommended deployment path when an operator has a public Linux
 VPS. It uses the repository's existing Docker images and Compose stack; no
 GitHub Pages, Render, Neon, R2, API subdomain, or Cloudflare Tunnel is needed.
 
+For a VPS whose public web server is managed by **1Panel OpenResty**, follow
+[the dedicated 1Panel deployment runbook](./vps-1panel-openresty-deployment.md).
+Do not add Caddy to that host: OpenResty already owns ports 80 and 443.
+
 ```text
 https://monexus.oai-o.com
   -> Cloudflare DNS / proxy
@@ -135,8 +139,9 @@ curl -fsS https://monexus.oai-o.com/api/health/live
 curl -fsS https://monexus.oai-o.com/api/health/ready
 ```
 
-The first server boot runs `prisma migrate deploy`. Seed only the isolated
-demo database if public demo accounts are desired:
+The first server boot runs `prisma migrate deploy`. Do **not** seed a public
+database: the bundled seed contains publicly known demo credentials. It is
+only appropriate for an isolated, disposable local demo database:
 
 ```bash
 docker compose --env-file .env -f docker-compose.prod.yml -f docker-compose.vps.yml \
