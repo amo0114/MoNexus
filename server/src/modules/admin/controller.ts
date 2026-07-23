@@ -49,13 +49,13 @@ export async function updateConfig(req: Request, res: Response, next: NextFuncti
 }
 
 export async function createProduct(req: Request, res: Response, next: NextFunction) {
-  try { res.status(201).json(await adminService.createProduct(req.body)) } catch (err) { next(err) }
+  try { res.status(201).json(await adminService.createProduct(req.user!.userId, req.body)) } catch (err) { next(err) }
 }
 
 export async function updateProduct(req: Request, res: Response, next: NextFunction) {
   try {
     const id = req.params.id as unknown as number
-    res.json(await adminService.updateProduct(id, req.body))
+    res.json(await adminService.updateProduct(req.user!.userId, id, req.body))
   } catch (err) { next(err) }
 }
 

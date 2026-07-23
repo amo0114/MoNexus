@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { api, authHeader, createTestUser, loginAs } from './helpers.js'
+import { api, authHeader, createTestMerchant, createTestUser, loginAs } from './helpers.js'
 import { prisma } from '../lib/prisma.js'
 
 async function loginAdmin(email = 'ann-admin@test.local') {
@@ -272,7 +272,9 @@ describe('GET /api/announcements public query (M3-S3)', () => {
       },
     })
     const { user: normalUser, password: normalPassword } = await createTestUser('ann-user@test.local', 'pass123', 'user')
-    const { user: merchantUser, password: merchantPassword } = await createTestUser('ann-merchant@test.local', 'pass123', 'merchant')
+    const { user: merchantUser, password: merchantPassword } = await createTestMerchant('ann-merchant@test.local', 'pass123', {
+      role: 'merchant', status: 'active', name: '公告测试商家',
+    })
     const { user: adminUser, password: adminPassword } = await createTestUser('ann-role-admin@test.local', 'admin123', 'admin')
     const normalLogin = await loginAs(normalUser.email, normalPassword)
     const merchantLogin = await loginAs(merchantUser.email, merchantPassword)
@@ -301,6 +303,39 @@ describe('GET /api/announcements public query (M3-S3)', () => {
       .query({ audience: 'admin' })
       .set(authHeader(normalLogin.accessToken))
       .expect(400)
+  })
+
+  it('treats banned users and inactive merchants as visitors even with a still-valid JWT', async () => {
+    await prisma.announcement.createMany({
+      data: [
+        { title: '全员', content: 'x', audience: 'all', priority: 1, startsAt: pastDate(1), status: 'published' },
+        { title: '用户', content: 'x', audience: 'user', priority: 2, startsAt: pastDate(1), status: 'published' },
+        { title: '商家', content: 'x', audience: 'merchant', priority: 3, startsAt: pastDate(1), status: 'published' },
+        { title: '管理员', content: 'x', audience: 'admin', priority: 4, startsAt: pastDate(1), status: 'published' },
+      ],
+    })
+    const { user: bannedUser, password: bannedPassword } = await createTestUser('ann-banned@test.local', 'pass123', 'user')
+    const { user: merchantUser, password: merchantPassword } = await createTestUser('ann-suspended@test.local', 'pass123', 'merchant')
+    const { user: bannedAdmin, password: bannedAdminPassword } = await createTestUser('ann-banned-admin@test.local', 'admin123', 'admin')
+    await prisma.merchant.create({
+      data: { userId: merchantUser.id, name: '已停用公告商家', status: 'active' },
+    })
+
+    const [bannedLogin, merchantLogin, adminLogin] = await Promise.all([
+      loginAs(bannedUser.email, bannedPassword),
+      loginAs(merchantUser.email, merchantPassword),
+      loginAs(bannedAdmin.email, bannedAdminPassword),
+    ])
+    await prisma.user.updateMany({
+      where: { id: { in: [bannedUser.id, bannedAdmin.id] } },
+      data: { status: '已封禁' },
+    })
+    await prisma.merchant.update({ where: { userId: merchantUser.id }, data: { status: 'suspended' } })
+
+    for (const accessToken of [bannedLogin.accessToken, merchantLogin.accessToken, adminLogin.accessToken]) {
+      const res = await api.get('/api/announcements').set(authHeader(accessToken)).expect(200)
+      expect(res.body.map((announcement: { title: string }) => announcement.title)).toEqual(['全员'])
+    }
   })
 
   it('rejects invalid audience with 400', async () => {

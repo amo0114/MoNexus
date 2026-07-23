@@ -681,7 +681,7 @@ Set `METRICS_TOKEN` in the server environment:
 METRICS_TOKEN=$(openssl rand -hex 32)
 ```
 
-When set, `/api/metrics` requires `Authorization: Bearer <token>`. When unset, the endpoint is open to anyone who can reach the port — acceptable for dev / private network behind a firewall, **NOT** for production exposure.
+`/api/metrics` requires `Authorization: Bearer <token>` whenever the token is set. In `NODE_ENV=production` the token is mandatory: the server refuses to start without it. Leaving it unset is only acceptable for local development or isolated test runs.
 
 ### Prometheus scrape config
 
