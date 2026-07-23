@@ -605,6 +605,10 @@ export default function ProfilePage() {
         <OrderDetailModal
           order={selectedOrder}
           onClose={() => setSelectedOrder(null)}
+          onUpdated={() => {
+            getOrders().then(setOrders).catch(() => {})
+            api.get('/points/history').then(({ data }) => setHistory(data)).catch(() => {})
+          }}
         />
       )}
     </div>

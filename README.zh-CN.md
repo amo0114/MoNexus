@@ -277,18 +277,87 @@ CI 工作流见 [`.github/workflows/`](./.github/workflows/)（`ci.yml`、`cd.ym
 
 ## 生产部署
 
-概要步骤（完整流程见运维文档）：
+生产侧支持 **三条路径**。在 GitHub Actions 能向 GHCR 推送镜像时，优先用 **路径 A**。完整流程见下方运维文档链接。
 
-1. 将 `.env.example` 复制为 `.env`，填入真实密钥（JWT ≥ 32 字符、Postgres、SMTP、对象存储、指标令牌等）。
+### 通用前置
+
+1. 将 [`.env.example`](./.env.example) 复制为 `.env`，填入真实密钥（JWT ≥ 32 字符、Postgres、SMTP、对象存储、指标令牌等）。
 2. 校验：`npm run prod:env`
-3. 构建并启动：`npm run prod:up`（或全量门禁 `npm run prod:gate`）
-4. 冒烟：`npm run prod:smoke`
-5. 每日备份：设置 `DATABASE_URL` 后执行 `bash scripts/backup.sh`
+3. 可选每日备份：设置 `DATABASE_URL` 后执行 `bash scripts/backup.sh`
 
-推荐部署形态：**自建 nginx + systemd**（或 PM2），发布目录建议 `/opt/monexus/`。详见：
+### 镜像（GHCR）
 
-- [`docs/operations/runbook.md`](./docs/operations/runbook.md)
-- [`docs/operations/deployment-target.md`](./docs/operations/deployment-target.md)
+CI 工作流 [`.github/workflows/docker-publish.yml`](./.github/workflows/docker-publish.yml) 会构建，并在非 PR 事件下推送：
+
+| 镜像 | 仓库路径 | Dockerfile |
+| --- | --- | --- |
+| 后端 API | `ghcr.io/amo0114/monexus-server` | `server/Dockerfile` |
+| 前端（nginx SPA） | `ghcr.io/amo0114/monexus-web` | 根目录 `Dockerfile` |
+
+**Tag 策略**（`docker/metadata-action`）：
+
+| 触发 | 标签 |
+| --- | --- |
+| 推送到 `master` | `:master`、`:sha-<short>`、`:latest` |
+| Git 标签 `v1.2.3` | `:1.2.3`、`:1.2`、`:latest` |
+| Pull Request | 仅构建不推送（冒烟验证） |
+
+`docker-compose.prod.yml` 通过环境变量选镜像：
+
+| 变量 | 默认 | 含义 |
+| --- | --- | --- |
+| `MONEXUS_IMAGE_TAG` | `latest` | server / web 共用 tag |
+| `MONEXUS_PULL_POLICY` | `missing` | `missing` \| `always` \| `never` |
+
+正式发布建议用不可变 tag（如 `sha-abc1234` 或 `1.2.3`）。若跟踪 `latest`，请设 `MONEXUS_PULL_POLICY=always`，避免主机一直用本地旧层。
+
+### 路径 A — 从 GHCR 拉取预构建镜像（推荐）
+
+```bash
+# 一次性：登录 GHCR（需对 package 有读权限）
+echo "$GITHUB_TOKEN" | docker login ghcr.io -u USERNAME --password-stdin
+
+cp .env.example .env   # 填密钥；设置 MONEXUS_IMAGE_TAG / MONEXUS_PULL_POLICY
+npm run prod:env
+
+export MONEXUS_IMAGE_TAG=sha-<short>   # 或 latest / 1.2.3
+export MONEXUS_PULL_POLICY=always      # 使用 :latest 时建议 always
+npm run prod:up                        # 按需 pull 镜像
+npm run prod:ps
+npm run prod:smoke
+```
+
+主机上**无需**编译前后端源码，只需 Docker Compose、Postgres 数据卷和合法 `.env`。
+
+### 路径 B — 在主机本地构建镜像
+
+GHCR 不可用或离线预演时使用：
+
+```bash
+npm run prod:env
+npm run prod:build    # docker compose -f docker-compose.prod.yml build
+npm run prod:up
+npm run prod:smoke
+
+# 或全量门禁（环境 + config + build + up + smoke）：
+npm run prod:gate
+```
+
+Compose 中仍保留 `server` / `web` 的 `build:` 上下文，可与 `image:` 并存。
+
+### 路径 C — 非 Docker 产物部署（兜底）
+
+GitHub Actions 仍可打 tar 包，经 SSH 部署到 **nginx + systemd**（或 PM2）主机，发布目录建议 `/opt/monexus/`：
+
+- 构建产物：[`.github/workflows/cd.yml`](./.github/workflows/cd.yml)
+- SSH 部署：[`.github/workflows/deploy.yml`](./.github/workflows/deploy.yml)
+
+详见：[`docs/operations/deployment-target.md`](./docs/operations/deployment-target.md)。
+
+### 运维文档
+
+- [`docs/operations/runbook.md`](./docs/operations/runbook.md) — 启停、健康检查、备份、预发 compose
+- [`docs/operations/deployment-target.md`](./docs/operations/deployment-target.md) — 主机形态选型
 - [`docs/operations/rollback-runbook.md`](./docs/operations/rollback-runbook.md)
 - [`docs/operations/secrets-management.md`](./docs/operations/secrets-management.md)
 

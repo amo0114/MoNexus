@@ -277,18 +277,87 @@ CI lives under [`.github/workflows/`](./.github/workflows/) (`ci.yml`, `cd.yml`,
 
 ## Production
 
-High-level path (see operations docs for the full runbook):
+There are **three** supported ways to run production-like stacks. Prefer **Path A** when GitHub Actions can publish images to GHCR. Full procedures live in the operations docs (linked below).
 
-1. Copy `.env.example` → `.env` and fill real secrets (JWT ≥ 32 chars, Postgres, SMTP, storage, metrics token).
+### Prerequisites (all paths)
+
+1. Copy [`.env.example`](./.env.example) → `.env` and fill real secrets (JWT ≥ 32 chars, Postgres, SMTP, object storage, metrics token, etc.).
 2. Validate: `npm run prod:env`
-3. Build & start: `npm run prod:up` (or `npm run prod:gate` for the full gate)
-4. Smoke: `npm run prod:smoke`
-5. Daily backup: `bash scripts/backup.sh` with `DATABASE_URL` set
+3. Optional daily backup: set `DATABASE_URL` and run `bash scripts/backup.sh`
 
-Recommended host model: **self-hosted nginx + systemd** (or PM2), with release directories under `/opt/monexus/`. See:
+### Images (GHCR)
 
-- [`docs/operations/runbook.md`](./docs/operations/runbook.md)
-- [`docs/operations/deployment-target.md`](./docs/operations/deployment-target.md)
+CI workflow [`.github/workflows/docker-publish.yml`](./.github/workflows/docker-publish.yml) builds and (on non-PR events) pushes:
+
+| Image | Registry path | Dockerfile |
+| --- | --- | --- |
+| Server API | `ghcr.io/amo0114/monexus-server` | `server/Dockerfile` |
+| Web (nginx SPA) | `ghcr.io/amo0114/monexus-web` | root `Dockerfile` |
+
+**Tag strategy** (via `docker/metadata-action`):
+
+| Trigger | Tags |
+| --- | --- |
+| Push to `master` | `:master`, `:sha-<short>`, `:latest` |
+| Git tag `v1.2.3` | `:1.2.3`, `:1.2`, `:latest` |
+| Pull request | build only (no push), smoke validation |
+
+`docker-compose.prod.yml` selects images with:
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `MONEXUS_IMAGE_TAG` | `latest` | Tag for both server and web |
+| `MONEXUS_PULL_POLICY` | `missing` | `missing` \| `always` \| `never` |
+
+Use an immutable tag in real deploys (e.g. `sha-abc1234` or `1.2.3`). If you track `latest`, set `MONEXUS_PULL_POLICY=always` so hosts do not reuse a stale local layer.
+
+### Path A — Pull pre-built images from GHCR (recommended)
+
+```bash
+# One-time: authenticate to GHCR (needs read access to the packages)
+echo "$GITHUB_TOKEN" | docker login ghcr.io -u USERNAME --password-stdin
+
+cp .env.example .env   # fill secrets; set MONEXUS_IMAGE_TAG / MONEXUS_PULL_POLICY
+npm run prod:env
+
+export MONEXUS_IMAGE_TAG=sha-<short>   # or latest / 1.2.3
+export MONEXUS_PULL_POLICY=always      # recommended when using :latest
+npm run prod:up                        # compose pulls images when needed
+npm run prod:ps
+npm run prod:smoke
+```
+
+No local application build is required on the host; only Docker Compose, Postgres data volumes, and a valid `.env`.
+
+### Path B — Build images on the host
+
+Use when GHCR is unavailable or you are rehearsing offline:
+
+```bash
+npm run prod:env
+npm run prod:build    # docker compose -f docker-compose.prod.yml build
+npm run prod:up
+npm run prod:smoke
+
+# Or full gate (env + config + build + up + smoke):
+npm run prod:gate
+```
+
+Compose still defines `build:` contexts for `server` and `web`, so local builds work alongside `image:` references.
+
+### Path C — Non-Docker artifact deploy (fallback)
+
+GitHub Actions can still produce tar artifacts and deploy over SSH to a host running **nginx + systemd** (or PM2), with release trees under `/opt/monexus/`:
+
+- Build artifacts: [`.github/workflows/cd.yml`](./.github/workflows/cd.yml)
+- SSH deploy: [`.github/workflows/deploy.yml`](./.github/workflows/deploy.yml)
+
+Details: [`docs/operations/deployment-target.md`](./docs/operations/deployment-target.md).
+
+### Ops references
+
+- [`docs/operations/runbook.md`](./docs/operations/runbook.md) — start/stop, health, backup, staging compose
+- [`docs/operations/deployment-target.md`](./docs/operations/deployment-target.md) — host model choices
 - [`docs/operations/rollback-runbook.md`](./docs/operations/rollback-runbook.md)
 - [`docs/operations/secrets-management.md`](./docs/operations/secrets-management.md)
 

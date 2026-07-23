@@ -102,7 +102,7 @@ export const updateCommissionSchema = z.object({
 })
 
 export const listSettlementsQuerySchema = z.object({
-  status: z.enum(['pending', 'settled']).optional(),
+  status: z.enum(['pending', 'settled', 'holding', 'voided']).optional(),
   page: z.coerce.number().int().positive().default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
 })

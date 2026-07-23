@@ -62,10 +62,11 @@ export default function AdminPage() {
 
   // Settle multiselect
   const [selectedSettlements, setSelectedSettlements] = useState<number[]>([])
+  const [settlementStatusFilter, setSettlementStatusFilter] = useState('')
 
   useEffect(() => {
     loadTabData(activeTab)
-  }, [activeTab])
+  }, [activeTab, settlementStatusFilter])
 
   useEffect(() => {
     if (activeTab === 'audit') {
@@ -129,7 +130,9 @@ export default function AdminPage() {
         const data = await getAdminMerchants()
         setMerchants(data)
       } else if (tab === 'settlements') {
-        const data = await getAdminSettlements()
+        const data = await getAdminSettlements({
+          status: settlementStatusFilter || undefined,
+        })
         setSettlements(data)
         setSelectedSettlements([])
       }
@@ -189,12 +192,15 @@ export default function AdminPage() {
 
   // Settlement actions
   async function handleBatchSettle() {
-    if (selectedSettlements.length === 0) {
-      showToast('请选择要结算的记录', 'error')
+    const pendingOnly = selectedSettlements.filter((id) =>
+      settlements.some((s) => s.id === id && s.status === 'pending'),
+    )
+    if (pendingOnly.length === 0) {
+      showToast('请选择待结算（pending）记录', 'error')
       return
     }
     try {
-      const { settled } = await batchSettle({ settlementIds: selectedSettlements })
+      const { settled } = await batchSettle({ settlementIds: pendingOnly })
       showToast(`成功结算 ${settled} 笔订单`)
       loadTabData('settlements')
     } catch (err: any) {
@@ -294,15 +300,30 @@ export default function AdminPage() {
           {/* Settlements */}
           {activeTab === 'settlements' && (
             <div className="space-y-4">
-              <div className="flex justify-between items-center mb-4">
+              <div className="flex flex-wrap justify-between items-center gap-3 mb-4">
                 <h2 className="font-heading text-xl font-bold text-[var(--color-text)]">结算管理</h2>
-                <button
-                  onClick={handleBatchSettle}
-                  disabled={selectedSettlements.length === 0}
-                  className="btn-cta !px-4 !py-2 !text-sm"
-                >
-                  批量结算 ({selectedSettlements.length})
-                </button>
+                <div className="flex items-center gap-3">
+                  <select
+                    value={settlementStatusFilter}
+                    onChange={(e) => setSettlementStatusFilter(e.target.value)}
+                    className="input !py-1.5 !text-sm w-36"
+                    data-testid="admin-settlement-status-filter"
+                  >
+                    <option value="">全部状态</option>
+                    <option value="holding">冻结中</option>
+                    <option value="pending">待结算</option>
+                    <option value="settled">已结算</option>
+                    <option value="voided">已作废</option>
+                  </select>
+                  <button
+                    onClick={handleBatchSettle}
+                    disabled={selectedSettlements.length === 0}
+                    className="btn-cta !px-4 !py-2 !text-sm"
+                    data-testid="admin-batch-settle"
+                  >
+                    批量结算 ({selectedSettlements.length})
+                  </button>
+                </div>
               </div>
               <div className="overflow-x-auto">
                 <table className="admin-table">

@@ -1,6 +1,6 @@
 export type UserRole = 'user' | 'admin' | 'merchant'
 export type MerchantStatus = 'pending' | 'active' | 'suspended' | 'rejected'
-export type SettlementStatus = 'pending' | 'settled'
+export type SettlementStatus = 'pending' | 'settled' | 'holding' | 'voided'
 export type ProductStatus = 'active' | 'inactive'
 
 export interface ListEnvelope<T> {
@@ -113,6 +113,11 @@ export interface MerchantStats {
   orderCount: number
   totalRevenue: number
   pendingSettlement: number
+  todo?: {
+    pending: number
+    processing: number
+    slaExceeded: number
+  }
 }
 
 export interface ApplyMerchantRequest {

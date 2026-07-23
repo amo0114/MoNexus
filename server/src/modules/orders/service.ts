@@ -247,6 +247,8 @@ export async function getOrderDetail(orderId: number, userId: number) {
   const normalized = normalizeOrderStatus(order.status)
   return {
     ...serializeUserOrderDetail(order),
+    holdingPoints: order.holdingPoints ?? null,
+    fulfillmentDeadline: order.fulfillmentDeadline ?? null,
     review: order.review ?? null,
     canReview: !order.review && (normalized === 'delivered' || normalized === 'closed'),
   }
@@ -276,7 +278,10 @@ export async function getUserOrders(userId: number, page = 1, pageSize = 20, sta
     skip: (page - 1) * pageSize,
     take: pageSize,
   })
-  return orders.map(serializeUserOrderList)
+  return orders.map(order => ({
+    ...serializeUserOrderList(order),
+    holdingPoints: order.holdingPoints ?? null,
+  }))
 }
 
 async function assertUserOwnsOrder(orderId: number, userId: number) {

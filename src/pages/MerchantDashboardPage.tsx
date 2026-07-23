@@ -12,7 +12,8 @@ import {
   updateMerchantMe,
   startFulfillment,
   deliverOrder,
-  respondDispute
+  respondDispute,
+  rejectOrder,
 } from '../api/merchant'
 import {
   MerchantStats,
@@ -72,20 +73,22 @@ export default function MerchantDashboardPage() {
   const [orders, setOrders] = useState<MerchantOrder[]>([])
   const [orderPage, setOrderPage] = useState(1)
   const [orderTotal, setOrderTotal] = useState(0)
+  const [orderStatusFilter, setOrderStatusFilter] = useState('')
 
   const [settlements, setSettlements] = useState<Settlement[]>([])
   const [merchant, setMerchant] = useState<Merchant | null>(null)
 
   useEffect(() => {
     loadData()
-  }, [activeTab, productPage, orderPage, productSearchDebounced, productStatusFilter, productTypeFilter, productModeFilter, productLowStockOnly])
+  }, [activeTab, productPage, orderPage, orderStatusFilter, productSearchDebounced, productStatusFilter, productTypeFilter, productModeFilter, productLowStockOnly])
 
   async function loadData() {
     try {
-      if (activeTab === 'dashboard') {
+      if (activeTab === 'dashboard' || activeTab === 'orders') {
         const data = await getMerchantStats()
         setStats(data)
-      } else if (activeTab === 'products') {
+      }
+      if (activeTab === 'products') {
         const data = await getMerchantProducts({
           page: productPage,
           pageSize: 20,
@@ -98,7 +101,11 @@ export default function MerchantDashboardPage() {
         setProducts(data.items)
         setProductTotal(data.total)
       } else if (activeTab === 'orders') {
-        const data = await getMerchantOrders({ page: orderPage, pageSize: 20 })
+        const data = await getMerchantOrders({
+          page: orderPage,
+          pageSize: 20,
+          status: orderStatusFilter || undefined,
+        })
         setOrders(data.items)
         setOrderTotal(data.total)
       } else if (activeTab === 'settlements') {
@@ -150,6 +157,9 @@ export default function MerchantDashboardPage() {
   // --- Order Dialogs State ---
   const [deliveringOrder, setDeliveringOrder] = useState<MerchantOrder | null>(null)
   const [disputeOrder, setDisputeOrder] = useState<MerchantOrder | null>(null)
+  const [rejectingOrder, setRejectingOrder] = useState<MerchantOrder | null>(null)
+  const [rejectNote, setRejectNote] = useState('')
+  const [rejecting, setRejecting] = useState(false)
 
   async function handleProductSubmit(payload: any) {
     if (editingProduct) {
@@ -180,7 +190,10 @@ export default function MerchantDashboardPage() {
     }
   }
 
-  async function handleOrderAction(action: 'start_fulfillment' | 'deliver' | 'respond_dispute', order: MerchantOrder) {
+  async function handleOrderAction(
+    action: 'start_fulfillment' | 'deliver' | 'respond_dispute' | 'reject',
+    order: MerchantOrder,
+  ) {
     if (action === 'deliver') {
       setDeliveringOrder(order)
       return
@@ -189,12 +202,35 @@ export default function MerchantDashboardPage() {
       setDisputeOrder(order)
       return
     }
+    if (action === 'reject') {
+      setRejectingOrder(order)
+      setRejectNote('')
+      return
+    }
     try {
       await startFulfillment(order.id)
       showToast('已开始履约')
       loadData()
     } catch (e: any) {
       showToast(e.response?.data?.error?.message || '操作失败', 'error')
+    }
+  }
+
+  async function handleRejectConfirm() {
+    if (!rejectingOrder) return
+    setRejecting(true)
+    try {
+      await rejectOrder(rejectingOrder.id, {
+        publicNote: rejectNote.trim() || undefined,
+      })
+      showToast('已拒单，积分将退还用户')
+      setRejectingOrder(null)
+      setRejectNote('')
+      loadData()
+    } catch (e: any) {
+      showToast(e.response?.data?.error?.message || '拒单失败', 'error')
+    } finally {
+      setRejecting(false)
     }
   }
 
@@ -394,7 +430,50 @@ export default function MerchantDashboardPage() {
 
           {activeTab === 'orders' && (
             <div className="fade-in">
-              <h2 className="font-heading text-xl font-bold mb-6 text-[var(--color-text)]">订单管理</h2>
+              <h2 className="font-heading text-xl font-bold mb-4 text-[var(--color-text)]">订单管理</h2>
+
+              <div className="grid grid-cols-3 gap-3 mb-4" data-testid="merchant-order-todo">
+                <button
+                  type="button"
+                  onClick={() => { setOrderStatusFilter('pending'); setOrderPage(1) }}
+                  className={`card !p-3 text-left cursor-pointer border ${orderStatusFilter === 'pending' ? 'border-[var(--color-primary)]' : 'border-transparent'}`}
+                >
+                  <div className="text-[10px] text-[var(--color-text-muted)] uppercase font-bold">待处理</div>
+                  <div className="text-xl font-bold text-[var(--color-warning)]">{stats?.todo?.pending ?? '—'}</div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setOrderStatusFilter('processing'); setOrderPage(1) }}
+                  className={`card !p-3 text-left cursor-pointer border ${orderStatusFilter === 'processing' ? 'border-[var(--color-primary)]' : 'border-transparent'}`}
+                >
+                  <div className="text-[10px] text-[var(--color-text-muted)] uppercase font-bold">履约中</div>
+                  <div className="text-xl font-bold text-[var(--color-primary)]">{stats?.todo?.processing ?? '—'}</div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setOrderStatusFilter(''); setOrderPage(1) }}
+                  className="card !p-3 text-left cursor-pointer border border-transparent"
+                  data-testid="merchant-sla-todo"
+                >
+                  <div className="text-[10px] text-[var(--color-text-muted)] uppercase font-bold">SLA 超时</div>
+                  <div className="text-xl font-bold text-[var(--color-danger)]">{stats?.todo?.slaExceeded ?? '—'}</div>
+                </button>
+              </div>
+
+              <div className="flex flex-wrap gap-2 mb-4">
+                <select
+                  value={orderStatusFilter}
+                  onChange={(e) => { setOrderStatusFilter(e.target.value); setOrderPage(1) }}
+                  className="input !py-1.5 !text-sm w-40"
+                  data-testid="merchant-order-status-filter"
+                >
+                  <option value="">全部状态</option>
+                  {(registry?.orderStatuses ?? []).map((s) => (
+                    <option key={s.value} value={s.value}>{s.label}</option>
+                  ))}
+                </select>
+              </div>
+
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse">
                   <thead>
@@ -418,7 +497,12 @@ export default function MerchantDashboardPage() {
                     ) : (
                       orders.map((o) => (
                         <tr key={o.id} className="border-b border-[var(--color-border)] hover:bg-[var(--color-background)] transition-colors">
-                          <td className="py-3 px-2 text-sm text-[var(--color-text-muted)]">{o.id}</td>
+                          <td className="py-3 px-2 text-sm text-[var(--color-text-muted)]">
+                            <div>{o.id}</div>
+                            {typeof o.holdingPoints === 'number' && o.holdingPoints > 0 && (
+                              <div className="text-[10px] text-[var(--color-text-muted)] mt-0.5">冻结 {o.holdingPoints}</div>
+                            )}
+                          </td>
                           <td className="py-3 px-2 text-sm font-medium text-[var(--color-text)]">
                             <div>{o.product?.name}</div>
                             {o.product?.deliveryMode && <div className="mt-1"><RegistryPill value={o.product.deliveryMode} category="deliveryModes" /></div>}
@@ -440,11 +524,25 @@ export default function MerchantDashboardPage() {
                                 <AlertTriangle className="w-3 h-3" /> SLA 超时
                               </span>
                             )}
+                            {o.fulfillmentDeadline && (
+                              <div className="text-[10px] text-[var(--color-text-muted)] mt-1">
+                                截止 {new Date(o.fulfillmentDeadline).toLocaleString()}
+                              </div>
+                            )}
                           </td>
                           <td className="py-3 px-2 text-right whitespace-nowrap">
                             {o.availableActions?.includes('start_fulfillment') && (
                               <button onClick={() => handleOrderAction('start_fulfillment', o)} className="btn-secondary !px-2 !py-1 !text-xs mr-2">
                                 开始履约
+                              </button>
+                            )}
+                            {o.availableActions?.includes('reject') && (
+                              <button
+                                onClick={() => handleOrderAction('reject', o)}
+                                className="btn-secondary !px-2 !py-1 !text-xs mr-2 !border-[var(--color-danger)] !text-[var(--color-danger)]"
+                                data-testid={`merchant-reject-order-${o.id}`}
+                              >
+                                拒单
                               </button>
                             )}
                             {o.availableActions?.includes('deliver') && (
@@ -597,6 +695,41 @@ export default function MerchantDashboardPage() {
         order={disputeOrder}
         onSubmit={handleDisputeSubmit}
       />
+
+      {rejectingOrder && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center fade-in" data-testid="merchant-reject-dialog">
+          <div className="modal-overlay" onClick={() => !rejecting && setRejectingOrder(null)} />
+          <div className="modal relative z-10 !max-w-md">
+            <h3 className="font-heading text-lg font-bold text-[var(--color-text)] mb-2">确认拒单</h3>
+            <p className="text-sm text-[var(--color-text-muted)] mb-4">
+              拒单后订单将标记为已退款，冻结积分退还用户，结算作废。订单 #{rejectingOrder.id}（{rejectingOrder.product?.name}）
+            </p>
+            <label className="block text-xs font-medium text-[var(--color-text)] mb-1">公开备注（可选）</label>
+            <textarea
+              className="input min-h-[80px] resize-y mb-4"
+              value={rejectNote}
+              onChange={(e) => setRejectNote(e.target.value)}
+              maxLength={1000}
+              placeholder="例如：暂无服务档期"
+              data-testid="merchant-reject-note"
+            />
+            <div className="flex justify-end gap-3">
+              <button type="button" className="btn-secondary !px-4 !py-2 !text-sm" disabled={rejecting} onClick={() => setRejectingOrder(null)}>
+                取消
+              </button>
+              <button
+                type="button"
+                className="btn-secondary !px-4 !py-2 !text-sm !border-[var(--color-danger)] !text-[var(--color-danger)]"
+                disabled={rejecting}
+                onClick={handleRejectConfirm}
+                data-testid="merchant-reject-confirm"
+              >
+                {rejecting ? <Loader2 className="w-4 h-4 animate-spin" /> : '确认拒单'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

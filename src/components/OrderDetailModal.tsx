@@ -12,6 +12,8 @@ import { Dialog, DialogContent, DialogTitle, DialogDescription } from './ui/Dial
 interface OrderDetailModalProps {
   order: UserOrderDetail
   onClose: () => void
+  /** Called after a successful dispute/close so the parent can reload lists. */
+  onUpdated?: () => void
 }
 
 type OrderAction = 'dispute' | 'close'
@@ -29,7 +31,7 @@ const ACTION_COPY: Record<OrderAction, { title: string; description: string; con
   },
 }
 
-export default function OrderDetailModal({ order: initialOrder, onClose }: OrderDetailModalProps) {
+export default function OrderDetailModal({ order: initialOrder, onClose, onUpdated }: OrderDetailModalProps) {
   const showToast = useAppStore((s) => s.showToast)
   const [order] = useState(initialOrder)
   const [loadingAction, setLoadingAction] = useState<OrderAction | null>(null)
@@ -50,7 +52,8 @@ export default function OrderDetailModal({ order: initialOrder, onClose }: Order
       if (action === 'dispute') await disputeOrder(order.id)
       if (action === 'close') await closeOrder(order.id)
       showToast('操作成功')
-      onClose() // the parent will need to reload
+      onUpdated?.()
+      onClose()
     } catch (e: any) {
       showToast(e.response?.data?.error?.message || '操作失败', 'error')
     } finally {
@@ -61,6 +64,11 @@ export default function OrderDetailModal({ order: initialOrder, onClose }: Order
   const canDispute = order.status === 'delivered'
   const canClose = order.status === 'delivered' || order.status === 'disputed'
   const canReview = !!order.canReview && !review
+  const isRefunded = order.status === 'refunded'
+  const showHolding =
+    typeof order.holdingPoints === 'number' &&
+    order.holdingPoints > 0 &&
+    (order.status === 'pending' || order.status === 'processing' || order.status === 'disputed' || order.status === 'delivered')
 
   return (
     <div className="fixed inset-0 z-[110] flex items-center justify-center fade-in">
@@ -109,6 +117,27 @@ export default function OrderDetailModal({ order: initialOrder, onClose }: Order
               </div>
             </div>
           </div>
+
+          {(showHolding || isRefunded) && (
+            <div
+              className="bg-[var(--color-background)] rounded-lg p-5 border border-[var(--color-border)]"
+              data-testid="order-holding-points"
+            >
+              <h3 className="font-heading text-sm font-bold text-[var(--color-text)] mb-2 flex items-center gap-2">
+                <Coins className="w-4 h-4 text-[var(--color-text-muted)]" /> 积分说明
+              </h3>
+              {isRefunded ? (
+                <p className="text-xs text-[var(--color-text-muted)] leading-relaxed">
+                  订单已退款结束。冻结积分已按规则退还（账户余额以个人中心积分流水为准）。
+                </p>
+              ) : (
+                <p className="text-xs text-[var(--color-text-muted)] leading-relaxed">
+                  本单冻结积分 <span className="font-bold text-[var(--color-cta)]">{order.holdingPoints}</span>
+                  。人工服务订单在创建时冻结积分，确认完成或超时自动关闭后正式扣除；拒单或仲裁退款时退还。
+                </p>
+              )}
+            </div>
+          )}
 
           {/* 发货内容 */}
           <div className="bg-[var(--color-background)] rounded-lg p-5 border border-[var(--color-border)]">

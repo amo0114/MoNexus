@@ -55,6 +55,14 @@ export async function getAdminOrders(
   return data
 }
 
+export async function resolveAdminOrder(
+  id: number,
+  payload: { result: 'refund' | 'close'; note?: string },
+): Promise<unknown> {
+  const { data } = await api.post(`/admin/orders/${id}/resolve`, payload)
+  return data
+}
+
 export async function adjustUserPoints(
   userId: number,
   payload: { type: 'add' | 'deduct'; amount: number; reason: string },
