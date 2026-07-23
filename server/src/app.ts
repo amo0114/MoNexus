@@ -21,6 +21,13 @@ import { uploadsRoutes } from './modules/uploads/routes.js'
 import { configRoutes } from './modules/config/routes.js'
 
 const app = express()
+
+// Behind nginx in production, express-rate-limit needs the real client IP
+// from X-Forwarded-For. Setting trust proxy here makes req.ip reflect the
+// client IP (not nginx's internal IP), so per-IP rate limiting actually works.
+// `false` disables the behavior (direct connections, e.g. dev/test).
+app.set('trust proxy', config.trustProxy)
+
 initErrorReporter()
 
 const apiLimiter = rateLimit({

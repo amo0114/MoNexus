@@ -49,6 +49,21 @@ const envSchema = z.object({
   // suite (which shares one IP) doesn't trip the limiter mid-run.
   API_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(300),
 
+  // --- Trust proxy hop count. In production behind nginx the server sees
+  // requests from the proxy's internal IP; setting this to the number of
+  // trusted hops lets Express parse X-Forwarded-For (set by nginx) so
+  // express-rate-limit keys on the real client IP instead of treating
+  // every request as coming from nginx. Accepts a non-negative integer
+  // (e.g. 1 for a single nginx hop) or false to disable.
+  TRUST_PROXY: z
+    .preprocess(value => {
+      if (value === undefined || value === '') return undefined
+      if (value === 'true') return true
+      if (value === 'false') return false
+      return value
+    }, z.union([z.coerce.number().int().min(0), z.boolean()]))
+    .default(false),
+
   // --- Object storage (P0-C). All optional: when any are missing the
   // server falls back to an in-memory adapter that's only safe for dev
   // and tests. Production validation below enforces all-or-nothing.
@@ -152,6 +167,7 @@ export const config = {
   cookieSecure: env.COOKIE_SECURE,
   userStatusCacheTtlSec: env.USER_STATUS_CACHE_TTL_SEC,
   apiRateLimitMax: env.API_RATE_LIMIT_MAX,
+  trustProxy: env.TRUST_PROXY,
   jwtExpiresIn: '15m' as const,
   refreshTokenMaxAgeMs: 7 * 24 * 60 * 60 * 1000,
   checkinReward: 50,
