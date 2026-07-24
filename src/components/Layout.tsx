@@ -6,6 +6,7 @@ import EmailVerificationBanner from './EmailVerificationBanner'
 import AnnouncementBanner from './AnnouncementBanner'
 import Logo from './ui/Logo'
 import ThemeToggle from './ThemeToggle'
+import MobileNavDrawer from './MobileNavDrawer'
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate()
@@ -141,6 +142,9 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                 <User className="w-5 h-5" />
               </div>
             </button>
+
+            {/* Mobile hamburger — drawer carries the entries hidden below md */}
+            <MobileNavDrawer />
           </div>
         </div>
       </nav>
