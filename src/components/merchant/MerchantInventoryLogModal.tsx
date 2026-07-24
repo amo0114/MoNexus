@@ -96,7 +96,7 @@ export default function MerchantInventoryLogModal({ isOpen, onClose, product, on
 
         {/* 流水列表 */}
         <div className="mt-4 overflow-x-auto">
-          <table className="w-full text-left border-collapse" data-testid="inventory-log-table">
+          <table className="table-cards w-full text-left border-collapse" data-testid="inventory-log-table">
             <thead>
               <tr className="border-b border-[var(--color-border)]">
                 <th className="py-2 px-2 font-medium text-[var(--color-text-muted)] text-xs uppercase tracking-wider">时间</th>
@@ -122,10 +122,10 @@ export default function MerchantInventoryLogModal({ isOpen, onClose, product, on
               ) : (
                 logs.map((log) => (
                   <tr key={log.id} className="border-b border-[var(--color-border)]">
-                    <td className="py-2.5 px-2 text-xs text-[var(--color-text-muted)] whitespace-nowrap">
+                    <td className="py-2.5 px-2 text-xs text-[var(--color-text-muted)] whitespace-nowrap" data-label="时间">
                       {new Date(log.createdAt).toLocaleString('zh-CN', { hour12: false })}
                     </td>
-                    <td className="py-2.5 px-2 text-sm">
+                    <td className="py-2.5 px-2 text-sm" data-label="动作">
                       {log.action === 'import' ? (
                         <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold border bg-[var(--color-cta)]/10 text-[var(--color-cta)] border-[var(--color-cta)]/25">
                           导入
@@ -144,11 +144,11 @@ export default function MerchantInventoryLogModal({ isOpen, onClose, product, on
                         </span>
                       )}
                     </td>
-                    <td className={`py-2.5 px-2 text-sm text-right font-mono font-bold ${log.delta >= 0 ? 'text-[var(--color-cta)]' : 'text-[var(--color-danger)]'}`}>
+                    <td className={`py-2.5 px-2 text-sm text-right font-mono font-bold ${log.delta >= 0 ? 'text-[var(--color-cta)]' : 'text-[var(--color-danger)]'}`} data-label="数量">
                       {log.delta >= 0 ? `+${log.delta}` : log.delta}
                     </td>
-                    <td className="py-2.5 px-2 text-sm text-[var(--color-text-muted)]">#{log.actorUserId}</td>
-                    <td className="py-2.5 px-2 text-xs text-[var(--color-text-muted)] max-w-[180px] truncate" title={log.reason || (log.orderId ? `订单 #${log.orderId}` : '')}>
+                    <td className="py-2.5 px-2 text-sm text-[var(--color-text-muted)]" data-label="操作人">#{log.actorUserId}</td>
+                    <td className="py-2.5 px-2 text-xs text-[var(--color-text-muted)] max-w-[180px] truncate" title={log.reason || (log.orderId ? `订单 #${log.orderId}` : '')} data-label="备注">
                       {log.reason || (log.orderId ? `订单 #${log.orderId}` : log.batchId ? `导入批次 ${log.batchId.slice(0, 8)}` : '-')}
                     </td>
                   </tr>

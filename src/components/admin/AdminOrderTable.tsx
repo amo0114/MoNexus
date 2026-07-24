@@ -109,7 +109,7 @@ export default function AdminOrderTable() {
       </div>
 
       <div className="overflow-x-auto">
-        <table className="admin-table">
+        <table className="admin-table table-cards">
           <thead>
             <tr>
               <th>订单号 / 时间</th>
@@ -123,20 +123,20 @@ export default function AdminOrderTable() {
           <tbody>
             {orders.map((o) => (
               <tr key={o.id}>
-                <td>
+                <td data-label="订单号 / 时间">
                   <div className="font-mono text-xs text-[var(--color-text-muted)]">ORD-{o.id}</div>
                   <div className="text-xs text-[var(--color-text-muted)] mt-1">{new Date(o.createdAt).toLocaleString()}</div>
                 </td>
-                <td className="text-sm">
+                <td className="text-sm" data-label="买家">
                   <div className="font-bold text-[var(--color-text)]">U{o.user?.id}</div>
                   <div className="text-xs text-[var(--color-text-muted)]">{o.user?.email}</div>
                 </td>
-                <td className="text-[var(--color-text-muted)] text-sm">{o.product?.name}</td>
-                <td className="text-[var(--color-cta)] font-bold">{o.price}</td>
-                <td>
+                <td className="text-[var(--color-text-muted)] text-sm" data-label="商品信息">{o.product?.name}</td>
+                <td className="text-[var(--color-cta)] font-bold" data-label="扣除积分">{o.price}</td>
+                <td data-label="状态">
                   <RegistryPill value={o.status} category="orderStatuses" />
                 </td>
-                <td>
+                <td data-label="操作">
                   {o.status === 'disputed' && (
                     <button
                       type="button"

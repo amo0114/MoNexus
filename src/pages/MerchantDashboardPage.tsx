@@ -374,7 +374,7 @@ export default function MerchantDashboardPage() {
                 </label>
               </div>
               <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
+                <table className="table-cards w-full text-left border-collapse">
                   <thead>
                     <tr className="border-b border-[var(--color-border)]">
                       <Th>ID</Th>
@@ -407,10 +407,10 @@ export default function MerchantDashboardPage() {
                         )
                         return (
                           <tr key={p.id} className="border-b border-[var(--color-border)] hover:bg-[var(--color-background)] transition-colors">
-                            <td className="py-3 px-2 text-sm text-[var(--color-text-muted)]">{p.id}</td>
-                            <td className="py-3 px-2 text-sm font-medium text-[var(--color-text)]">{p.name}</td>
-                            <td className="py-3 px-2 text-sm text-[var(--color-text)]">{p.price}</td>
-                            <td className="py-3 px-2 text-sm text-[var(--color-text-muted)]">
+                            <td className="py-3 px-2 text-sm text-[var(--color-text-muted)]" data-label="ID">{p.id}</td>
+                            <td className="py-3 px-2 text-sm font-medium text-[var(--color-text)]" data-label="名称">{p.name}</td>
+                            <td className="py-3 px-2 text-sm text-[var(--color-text)]" data-label="价格">{p.price}</td>
+                            <td className="py-3 px-2 text-sm text-[var(--color-text-muted)]" data-label="可售资源/销量">
                               <span className="whitespace-nowrap">
                                 {getAvailabilityLabel(p)}{' '}
                                 {p.stockMode !== 'unlimited' && (
@@ -427,10 +427,10 @@ export default function MerchantDashboardPage() {
                                 </span>
                               )}
                             </td>
-                            <td className="py-3 px-2 text-sm">
+                            <td className="py-3 px-2 text-sm" data-label="状态">
                               <StatusPill kind={p.status === 'active' ? 'active' : 'inactive'} />
                             </td>
-                            <td className="py-3 px-2 text-right whitespace-nowrap">
+                            <td className="py-3 px-2 text-right whitespace-nowrap" data-label="操作">
                               {inventoryManaged && (
                                 <>
                                   <LinkAction onClick={() => { setImportingProduct({ id: p.id, name: p.name }); setIsInventoryModalOpen(true); }}>
@@ -516,7 +516,7 @@ export default function MerchantDashboardPage() {
               </div>
 
               <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
+                <table className="table-cards w-full text-left border-collapse">
                   <thead>
                     <tr className="border-b border-[var(--color-border)]">
                       <Th>订单号</Th>
@@ -538,24 +538,24 @@ export default function MerchantDashboardPage() {
                     ) : (
                       orders.map((o) => (
                         <tr key={o.id} className="border-b border-[var(--color-border)] hover:bg-[var(--color-background)] transition-colors">
-                          <td className="py-3 px-2 text-sm text-[var(--color-text-muted)]">
+                          <td className="py-3 px-2 text-sm text-[var(--color-text-muted)]" data-label="订单号">
                             <div>{o.id}</div>
                             {typeof o.holdingPoints === 'number' && o.holdingPoints > 0 && (
                               <div className="text-xs text-[var(--color-text-muted)] mt-0.5">冻结 {o.holdingPoints}</div>
                             )}
                           </td>
-                          <td className="py-3 px-2 text-sm font-medium text-[var(--color-text)]">
+                          <td className="py-3 px-2 text-sm font-medium text-[var(--color-text)]" data-label="商品">
                             <div>{o.product?.name}</div>
                             {o.product?.deliveryMode && <div className="mt-1"><RegistryPill value={o.product.deliveryMode} category="deliveryModes" /></div>}
                           </td>
-                          <td className="py-3 px-2 text-sm text-[var(--color-text-muted)]">{o.user?.email}</td>
-                          <td className="py-3 px-2 text-sm text-[var(--color-text)]">
+                          <td className="py-3 px-2 text-sm text-[var(--color-text-muted)]" data-label="用户">{o.user?.email}</td>
+                          <td className="py-3 px-2 text-sm text-[var(--color-text)]" data-label="金额/抽成">
                             {o.price}积分 <span className="text-[var(--color-text-muted)]">(抽成 {(Number(o.commissionRate) * 100).toFixed(0)}%)</span>
                           </td>
-                          <td className="py-3 px-2 text-sm font-bold text-[var(--color-cta)]">
+                          <td className="py-3 px-2 text-sm font-bold text-[var(--color-cta)]" data-label="结算金额">
                             {o.settlementAmount}积分
                           </td>
-                          <td className="py-3 px-2 text-sm">
+                          <td className="py-3 px-2 text-sm" data-label="状态">
                             <RegistryPill value={o.status} category="orderStatuses" />
                             {o.slaExceeded && (
                               <span
@@ -571,7 +571,7 @@ export default function MerchantDashboardPage() {
                               </div>
                             )}
                           </td>
-                          <td className="py-3 px-2 text-right whitespace-nowrap">
+                          <td className="py-3 px-2 text-right whitespace-nowrap" data-label="操作">
                             {o.availableActions?.includes('start_fulfillment') && (
                               <button onClick={() => handleOrderAction('start_fulfillment', o)} className="btn-secondary px-2 py-1 text-xs mr-2">
                                 开始履约
@@ -611,7 +611,7 @@ export default function MerchantDashboardPage() {
             <div className="fade-in">
               <h2 className="font-heading text-xl font-bold mb-6 text-[var(--color-text)]">结算管理</h2>
               <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
+                <table className="table-cards w-full text-left border-collapse">
                   <thead>
                     <tr className="border-b border-[var(--color-border)]">
                       <Th>ID</Th>
@@ -632,12 +632,12 @@ export default function MerchantDashboardPage() {
                     ) : (
                       settlements.map((s) => (
                         <tr key={s.id} className="border-b border-[var(--color-border)] hover:bg-[var(--color-background)] transition-colors">
-                          <td className="py-3 px-2 text-sm text-[var(--color-text-muted)]">{s.id}</td>
-                          <td className="py-3 px-2 text-sm text-[var(--color-text)]">{s.orderId}</td>
-                          <td className="py-3 px-2 text-sm text-[var(--color-text)]">{s.orderAmount}</td>
-                          <td className="py-3 px-2 text-sm text-[var(--color-text-muted)]">{s.commissionAmount}积分 ({(Number(s.commissionRate) * 100).toFixed(0)}%)</td>
-                          <td className="py-3 px-2 text-sm font-bold text-[var(--color-cta)]">{s.settlementAmount}积分</td>
-                          <td className="py-3 px-2 text-sm">
+                          <td className="py-3 px-2 text-sm text-[var(--color-text-muted)]" data-label="ID">{s.id}</td>
+                          <td className="py-3 px-2 text-sm text-[var(--color-text)]" data-label="订单号">{s.orderId}</td>
+                          <td className="py-3 px-2 text-sm text-[var(--color-text)]" data-label="订单金额">{s.orderAmount}</td>
+                          <td className="py-3 px-2 text-sm text-[var(--color-text-muted)]" data-label="平台抽成">{s.commissionAmount}积分 ({(Number(s.commissionRate) * 100).toFixed(0)}%)</td>
+                          <td className="py-3 px-2 text-sm font-bold text-[var(--color-cta)]" data-label="结算金额">{s.settlementAmount}积分</td>
+                          <td className="py-3 px-2 text-sm" data-label="状态">
                             <RegistryPill value={s.status} category="settlementStatuses" />
                             {!s.payable && s.blockReason && (
                               <div className="text-xs text-[var(--color-danger)] mt-1">{s.blockReason}</div>

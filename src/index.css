@@ -321,6 +321,52 @@ h1, h2, h3, h4 {
 }
 
 /* =========================================================
+   Responsive tables — card layout below the md breakpoint.
+   Add .table-cards to any <table>; give each body td a
+   data-label="列名" (colspan cells are excluded automatically).
+   ========================================================= */
+@media (max-width: 767px) {
+  .table-cards { display: block; width: 100%; }
+  .table-cards thead { display: none; }
+  .table-cards tbody { display: block; width: 100%; }
+  .table-cards tbody tr {
+    display: block;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+    padding: var(--space-xs) var(--space-md);
+    margin-bottom: var(--space-md);
+  }
+  .table-cards tbody td {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--space-sm) var(--space-md);
+    padding: var(--space-sm) 0;
+    border-bottom: 1px solid var(--color-border);
+    text-align: right;
+  }
+  .table-cards tbody tr td:last-child { border-bottom: none; }
+  .table-cards tbody td::before {
+    content: attr(data-label);
+    flex-shrink: 0;
+    color: var(--color-text-muted);
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-align: left;
+  }
+  .table-cards tbody td:not([data-label])::before { content: none; }
+  /* Full-width cells: empty states / skeleton rows */
+  .table-cards tbody td[colspan] {
+    display: block;
+    text-align: center;
+  }
+  .table-cards tbody td[colspan]::before { content: none; }
+}
+
+/* =========================================================
    Soft theme — warm yellow palette, rounded shapes, soft shadows
    Inspired by warm-curative aesthetics (no IP likeness).
    ========================================================= */
