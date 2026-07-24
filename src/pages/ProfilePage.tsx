@@ -329,8 +329,8 @@ export default function ProfilePage() {
 
   useEffect(() => {
     getOrders().then(setOrders).catch(() => {})
-    api.get('/points/history').then(({ data }) => setHistory(data))
-    api.get('/points/checkin/status').then(({ data }) => setHasCheckedIn(data.hasCheckedIn))
+    api.get('/points/history').then(({ data }) => setHistory(data)).catch(() => {})
+    api.get('/points/checkin/status').then(({ data }) => setHasCheckedIn(data.hasCheckedIn)).catch(() => {})
   }, [])
 
   async function handleCheckin() {

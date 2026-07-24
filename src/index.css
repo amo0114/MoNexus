@@ -69,6 +69,7 @@
   --font-weight-bold: 700;
 
   /* --- Semantic state colors (multi-theme prep) --- */
+  --color-info: #2563EB;             /* blue-600 — info badges / hints (≥4.5:1 on surface) */
   --color-warning: #F59E0B;
   --color-success: #22C55E;
   --color-danger: #EF4444;
@@ -104,6 +105,7 @@
   --shadow-xl: 0 20px 25px rgba(0, 0, 0, 0.5);
   --shadow-focus: 0 0 0 3px rgba(129, 140, 248, 0.4);
 
+  --color-info: #60A5FA;
   --color-warning: #FBBF24;
   --color-success: #4ADE80;
   --color-danger: #F87171;
@@ -145,12 +147,6 @@ h1, h2, h3, h4 {
   border-bottom: 1px solid var(--color-glass-border);
 }
 
-.glass-bottom {
-  background: var(--color-glass-bg);
-  backdrop-filter: blur(16px) saturate(180%);
-  border-top: 1px solid var(--color-glass-border);
-}
-
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(15px); }
   to { opacity: 1; transform: translateY(0); }
@@ -175,7 +171,7 @@ h1, h2, h3, h4 {
    - .btn-primary  : filled indigo, main interaction (login, submit, save)
    - .btn-cta      : filled green, conversion CTA (buy, claim, redeem)
    - .btn-secondary: outlined indigo, secondary actions (cancel, back)
-   - .card / .card-interactive
+   - .card
    - .input
    - .modal-overlay / .modal
    All hovers respect "no layout shift" (translateY only).
@@ -243,16 +239,6 @@ h1, h2, h3, h4 {
   padding: var(--space-lg);
   box-shadow: var(--shadow-md);
   transition: border-color 200ms ease, box-shadow 200ms ease, transform 200ms ease;
-}
-
-.card-interactive {
-  cursor: pointer;
-}
-
-.card-interactive:hover {
-  border-color: rgba(99, 102, 241, 0.35);
-  box-shadow: var(--shadow-lg);
-  transform: translateY(-2px);
 }
 
 .input {
@@ -345,6 +331,7 @@ h1, h2, h3, h4 {
   --color-glass-bg: rgba(255, 248, 236, 0.85);
   --color-glass-border: rgba(255, 140, 66, 0.18);
 
+  --color-info: #2563EB;
   --color-warning: #F5A340;
   --color-success: #6BBE6B;
   --color-danger: #FF7B6B;
