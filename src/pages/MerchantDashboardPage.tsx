@@ -325,7 +325,7 @@ export default function MerchantDashboardPage() {
               <div className="flex justify-between items-center mb-4">
                 <h2 className="font-heading text-xl font-bold text-[var(--color-text)]">商品管理</h2>
                 <button
-                  className="btn-primary px-3 py-1.5 text-sm"
+                  className="btn-primary px-3 py-1.5 text-sm btn-sm"
                   onClick={() => { setEditingProduct(null); setIsProductFormOpen(true); }}
                 >
                   <Plus className="w-4 h-4" /> 新建商品
@@ -852,7 +852,7 @@ function LinkAction({ children, onClick }: { children: React.ReactNode; onClick:
     <button
       type="button"
       onClick={onClick}
-      className="text-[var(--color-primary)] hover:underline text-sm mr-3 last:mr-0 cursor-pointer"
+      className="text-[var(--color-primary)] hover:underline text-sm mr-3 last:mr-0 cursor-pointer btn-sm"
     >
       {children}
     </button>

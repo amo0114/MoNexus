@@ -799,7 +799,7 @@ function ActionLink({
     <button
       type="button"
       onClick={onClick}
-      className={`${colors[tone]} hover:underline text-xs font-semibold cursor-pointer`}
+      className={`${colors[tone]} hover:underline text-xs font-semibold cursor-pointer btn-sm`}
     >
       {children}
     </button>

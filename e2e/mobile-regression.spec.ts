@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Locator, type Page } from '@playwright/test'
 import { loginAs, SEED_ACCOUNTS } from './helpers'
 
 /**
@@ -48,10 +48,21 @@ async function mockDashboardApi(page: Page) {
   )
 }
 
-/** 页面级运行时检查：所有可见 button 高度 ≥40px；纯图标按钮宽度也 ≥40px。 */
-async function expectTouchTargets(page: Page, path: string) {
+/**
+ * 页面级运行时检查：所有可见 button 高度 ≥40px；纯图标按钮宽度也 ≥40px。
+ * - ready：显式就绪断言（替代固定等待），确保数据/骨架稳定后再量测
+ * - tab：可选，先进入指定子 tab（后台页默认 tab 之外的区域才覆盖得到）
+ */
+async function expectTouchTargets(
+  page: Page,
+  path: string,
+  opts: { ready: Locator; tab?: string },
+) {
   await page.goto(path)
-  await page.waitForTimeout(600) // 等骨架屏/首帧稳定
+  if (opts.tab) {
+    await page.getByRole('button', { name: opts.tab, exact: true }).click()
+  }
+  await expect(opts.ready).toBeVisible({ timeout: 10_000 })
   const buttons = page.locator('button:visible')
   const count = await buttons.count()
   const violations: string[] = []
@@ -61,14 +72,17 @@ async function expectTouchTargets(page: Page, path: string) {
     if (!box || box.width === 0 || box.height === 0) continue
     const text = (await b.innerText().catch(() => '')).trim()
     const iconOnly = text.length === 0
-    const heightBad = box.height < 40
-    const widthBad = iconOnly && box.width < 40
+    // 39.5px 阈值：容忍亚像素渲染（min-40px 可能量出 39.9x），
+    // 仍能稳定拦截 38/36/32/28/20px 的真实违规
+    const heightBad = box.height < 39.5
+    const widthBad = iconOnly && box.width < 39.5
     if (heightBad || widthBad) {
       const label = text.slice(0, 24) || (await b.getAttribute('aria-label')) || '(no-label)'
       violations.push(`  #${i} "${label}" ${Math.round(box.width)}x${Math.round(box.height)}`)
     }
   }
-  expect(violations, `touch targets < 40px on ${path}:\n${violations.join('\n')}`).toEqual([])
+  const scope = opts.tab ? `${path} [tab=${opts.tab}]` : path
+  expect(violations, `touch targets < 40px on ${scope}:\n${violations.join('\n')}`).toEqual([])
 }
 
 test.describe('mobile 320px', () => {
@@ -145,9 +159,18 @@ test.describe('mobile 320px', () => {
     await mockDashboardApi(page)
     await loginAs(page, SEED_ACCOUNTS.merchant)
 
-    await expectTouchTargets(page, '/')
-    await expectTouchTargets(page, '/merchant')
-    await expectTouchTargets(page, '/merchant/dashboard')
-    await expectTouchTargets(page, '/profile')
+    await expectTouchTargets(page, '/', { ready: page.getByPlaceholder('搜账号、卡密、教程...') })
+    // 商家后台：默认 dashboard tab + 商品/订单两个含行内操作的子 tab
+    await expectTouchTargets(page, '/merchant', { ready: page.getByText('数据概览') })
+    await expectTouchTargets(page, '/merchant', {
+      tab: '商品管理',
+      ready: page.getByTestId('merchant-product-filters'),
+    })
+    await expectTouchTargets(page, '/merchant', {
+      tab: '订单管理',
+      ready: page.getByTestId('merchant-order-todo'),
+    })
+    await expectTouchTargets(page, '/merchant/dashboard', { ready: page.getByTestId('merchant-trend-chart') })
+    await expectTouchTargets(page, '/profile', { ready: page.getByTestId('nickname-edit') })
   })
 })
