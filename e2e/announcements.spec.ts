@@ -2,11 +2,12 @@ import { expect, test } from '@playwright/test'
 import { API_BASE, SEED_ACCOUNTS, loginAs } from './helpers'
 
 /**
- * M3-S3 announcements: public banner + admin CRUD.
+ * Announcement center: admin CRUD plus user-facing delivery states.
  * Fixtures created via admin API; assertion via UI.
  */
 
 const STRONG_TITLE = `E2E公告-${Date.now()}`
+const IMPORTANT_TITLE = `E2E重要公告-${Date.now()}`
 
 test.describe('M3-S3 announcements', () => {
   test('admin can create, publish, see banner, then delete', async ({ page, request }) => {
@@ -36,9 +37,9 @@ test.describe('M3-S3 announcements', () => {
     await page.getByRole('button', { name: '公告管理' }).click()
     await expect(page.getByTestId('admin-announcement-create')).toBeVisible({ timeout: 10_000 })
 
-    // Clear any dismissed banner state from prior runs
+    // Clear any normal-notice display state from a prior run.
     await page.evaluate(() => {
-      const keys = Object.keys(localStorage).filter((k) => k.startsWith('announcement-dismissed:'))
+      const keys = Object.keys(localStorage).filter((k) => k.startsWith('monexus:announcement:notice:'))
       keys.forEach((k) => localStorage.removeItem(k))
     })
 
@@ -80,6 +81,58 @@ test.describe('M3-S3 announcements', () => {
         headers: { Authorization: `Bearer ${token}` },
       })
       expect(del.ok()).toBeTruthy()
+    }
+  })
+
+  test('mobile announcement entry has a red dot and important notices persist as read after opening details', async ({ page, request }) => {
+    await page.setViewportSize({ width: 320, height: 700 })
+    await loginAs(page, SEED_ACCOUNTS.user)
+
+    const adminLogin = await request.post(`${API_BASE}/api/auth/login`, {
+      data: { email: SEED_ACCOUNTS.admin.email, password: SEED_ACCOUNTS.admin.password },
+    })
+    expect(adminLogin.ok()).toBeTruthy()
+    const adminToken = (await adminLogin.json()).accessToken as string
+
+    const created = await request.post(`${API_BASE}/api/admin/announcements`, {
+      headers: { Authorization: `Bearer ${adminToken}` },
+      data: {
+        title: IMPORTANT_TITLE,
+        content: '这是一段足够长的移动端公告正文。用户应在公告中心完整阅读，横幅只承担紧凑提醒职责。',
+        audience: 'user',
+        priority: 900,
+        presentation: 'important',
+        startsAt: new Date(Date.now() - 60_000).toISOString(),
+        status: 'published',
+      },
+    })
+    expect(created.ok()).toBeTruthy()
+    const createdAnnouncement = await created.json() as { id: number }
+
+    try {
+      await page.reload()
+      await expect(page.getByTestId('announcement-banner')).toContainText(IMPORTANT_TITLE, { timeout: 10_000 })
+
+      const mobileTrigger = page.getByTestId('announcement-center-mobile-trigger')
+      await expect(mobileTrigger).toBeVisible()
+      await expect(mobileTrigger).toHaveAttribute('aria-label', /1 条未读/)
+      const box = await mobileTrigger.boundingBox()
+      expect(box?.width).toBeGreaterThanOrEqual(40)
+      expect(box?.height).toBeGreaterThanOrEqual(40)
+
+      await page.getByTestId('announcement-banner-open').click()
+      await expect(page.getByTestId('announcement-center')).toBeVisible()
+      await expect(page.getByTestId(`announcement-item-${createdAnnouncement.id}`)).toContainText('移动端公告正文')
+      await expect(page.getByTestId(`announcement-item-${createdAnnouncement.id}`)).toContainText('已读')
+
+      await page.getByRole('button', { name: '关闭' }).click()
+      await expect(page.getByTestId('announcement-banner')).toBeHidden()
+      await mobileTrigger.click()
+      await expect(page.getByTestId(`announcement-item-${createdAnnouncement.id}`)).toContainText('已读')
+    } finally {
+      await request.delete(`${API_BASE}/api/admin/announcements/${createdAnnouncement.id}`, {
+        headers: { Authorization: `Bearer ${adminToken}` },
+      })
     }
   })
 })

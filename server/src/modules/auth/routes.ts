@@ -1,8 +1,10 @@
 import { Router } from 'express'
-import rateLimit from 'express-rate-limit'
+import crypto from 'crypto'
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit'
 import { validate } from '../../middlewares/validate.js'
 import { authenticate, requireActiveUser } from '../../middlewares/auth.js'
 import { config } from '../../config/index.js'
+import { refreshTokenCookieName } from '../../lib/cookies.js'
 import {
   registerSchema,
   loginSchema,
@@ -34,6 +36,31 @@ const authLimiter = rateLimit({
   },
 })
 
+// A valid refresh cookie is a per-session credential, not a password-guessing
+// attempt. Key it by a one-way hash of that cookie so users behind the same
+// office NAT / reverse proxy never consume one another's refresh allowance.
+// Requests without a cookie still use the IPv6-safe client IP key.
+const refreshLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: skipInTests,
+  keyGenerator: (req) => {
+    const refreshToken = req.cookies?.[refreshTokenCookieName]
+    if (typeof refreshToken === 'string' && refreshToken.length > 0) {
+      return `refresh:${crypto.createHash('sha256').update(refreshToken).digest('hex')}`
+    }
+    return `ip:${ipKeyGenerator(req.ip ?? 'unknown')}`
+  },
+  message: {
+    error: {
+      code: 'RATE_LIMITED',
+      message: '刷新请求过于频繁，请稍后再试',
+    },
+  },
+})
+
 // Tighter limit on the email-sending endpoints to make
 // enumeration / spam attacks more expensive.
 const mailLimiter = rateLimit({
@@ -52,7 +79,7 @@ const mailLimiter = rateLimit({
 
 router.post('/register', authLimiter, validate(registerSchema), controller.register)
 router.post('/login', authLimiter, validate(loginSchema), controller.login)
-router.post('/refresh', authLimiter, controller.refresh)
+router.post('/refresh', refreshLimiter, controller.refresh)
 router.post('/logout', controller.logout)
 router.get('/me', authenticate, requireActiveUser, controller.me)
 router.patch('/me', authenticate, requireActiveUser, validate(updateMeSchema), controller.updateMe)

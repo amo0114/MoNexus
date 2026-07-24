@@ -2,6 +2,7 @@
 
 export type AnnouncementAudience = 'all' | 'user' | 'merchant' | 'admin'
 export type AnnouncementStatus = 'draft' | 'published' | 'archived'
+export type AnnouncementPresentation = 'notice' | 'important' | 'acknowledgement_required'
 
 /** GET /api/announcements 公开查询返回的精简形状 */
 export interface PublicAnnouncement {
@@ -10,9 +11,14 @@ export interface PublicAnnouncement {
   content: string
   audience: AnnouncementAudience
   priority: number
+  presentation: AnnouncementPresentation
+  maxImpressions: number
+  version: number
   startsAt: string
   endsAt: string | null
   updatedAt: string
+  readAt: string | null
+  acknowledgedAt: string | null
 }
 
 /** GET /api/admin/announcements 返回的完整形状 */
@@ -22,6 +28,9 @@ export interface AdminAnnouncement {
   content: string
   audience: AnnouncementAudience
   priority: number
+  presentation: AnnouncementPresentation
+  maxImpressions: number
+  version: number
   startsAt: string
   endsAt: string | null
   status: AnnouncementStatus
@@ -42,6 +51,8 @@ export interface CreateAnnouncementRequest {
   content: string
   audience?: AnnouncementAudience
   priority?: number
+  presentation?: AnnouncementPresentation
+  maxImpressions?: number
   startsAt: string
   endsAt?: string | null
   status?: AnnouncementStatus

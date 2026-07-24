@@ -1,5 +1,6 @@
 import axios from 'axios'
 import { useAuthStore } from '../stores/authStore'
+import { refreshAccessToken } from './authRefresh'
 
 const api = axios.create({
   baseURL: '/api',
@@ -25,12 +26,21 @@ api.interceptors.response.use(
       originalRequest._retry = true
 
       try {
-        const { data } = await axios.post('/api/auth/refresh', undefined, { withCredentials: true })
-        useAuthStore.getState().setAccessToken(data.accessToken)
-        originalRequest.headers.Authorization = `Bearer ${data.accessToken}`
+        // Compare against the token this request actually carried. A delayed
+        // 401 may arrive after another request has already refreshed the
+        // store; passing the current token in that case would rotate again.
+        const authorization = originalRequest.headers?.Authorization
+        const staleToken = typeof authorization === 'string' && authorization.startsWith('Bearer ')
+          ? authorization.slice('Bearer '.length)
+          : useAuthStore.getState().accessToken
+        const accessToken = await refreshAccessToken(staleToken)
+        originalRequest.headers.Authorization = `Bearer ${accessToken}`
         return api(originalRequest)
-      } catch {
-        useAuthStore.getState().logout()
+      } catch (refreshError) {
+        // Do not turn a transient refresh failure (429, timeout, 5xx) into a
+        // client-side logout. Returning that actual failure lets callers show
+        // a retryable error while the valid refresh cookie remains available.
+        return Promise.reject(refreshError)
       }
     }
     return Promise.reject(error)

@@ -142,6 +142,10 @@ jobs:
       - name: Start backend
         run: npm --prefix server run dev &
         env:
+          # E2E reuses fixed seed accounts across the full suite. Keep the
+          # server in its explicit test mode so auth's password-guessing
+          # limiter cannot turn the final test into a shared-IP false 429.
+          NODE_ENV: test
           DATABASE_URL: postgresql://monexus:monexus_dev_2026@localhost:5432/monexus_test?schema=public
           JWT_SECRET: ci-jwt-secret-at-least-32-characters-long-xx
           FRONTEND_ORIGIN: http://localhost:5173

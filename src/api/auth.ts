@@ -1,7 +1,9 @@
-import axios from 'axios'
 import api from './client'
 import { useAuthStore } from '../stores/authStore'
 import { AuthUser, UserRole } from '../types/merchant'
+import { refreshAccessToken } from './authRefresh'
+
+export { refreshAccessToken }
 
 export async function getMe(): Promise<AuthUser> {
   const { data } = await api.get<AuthUser>('/auth/me')
@@ -11,16 +13,6 @@ export async function getMe(): Promise<AuthUser> {
 export async function updateMe(body: { nickname: string }): Promise<AuthUser> {
   const { data } = await api.patch<AuthUser>('/auth/me', body)
   return data
-}
-
-export async function refreshAccessToken(): Promise<string> {
-  const { data } = await axios.post<{ accessToken: string }>(
-    '/api/auth/refresh',
-    undefined,
-    { withCredentials: true }
-  )
-  useAuthStore.getState().setAccessToken(data.accessToken)
-  return data.accessToken
 }
 
 export async function changePassword(payload: {

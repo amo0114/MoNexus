@@ -23,8 +23,10 @@ export default defineConfig({
           timeout: 60_000,
           reuseExistingServer: true,
           // 全量 e2e 共享一个 IP，整轮 /api 请求量已超默认 300/15min，
-          // 提高 e2e 栈的限流上限避免套件尾部随机 429。
-          env: { API_RATE_LIMIT_MAX: '3000' },
+          // 提高 e2e 栈的限流上限避免套件尾部随机 429。认证模块也在
+          // NODE_ENV=test 下跳过密码猜测限流；E2E 使用的是固定 seed 账号，
+          // 不应被整套测试累计的登录次数误伤。
+          env: { NODE_ENV: 'test', API_RATE_LIMIT_MAX: '3000' },
         },
         {
           command: 'npm run dev',

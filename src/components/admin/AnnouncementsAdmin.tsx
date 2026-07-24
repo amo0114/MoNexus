@@ -9,6 +9,7 @@ import {
 import {
   AdminAnnouncement,
   AnnouncementAudience,
+  AnnouncementPresentation,
   AnnouncementStatus,
   CreateAnnouncementRequest,
 } from '../../types/admin'
@@ -41,6 +42,18 @@ const STATUS_PILL: Record<AnnouncementStatus, string> = {
   archived: 'bg-[var(--color-text-muted)]/10 text-[var(--color-text-muted)] border-[var(--color-border)]',
 }
 
+const PRESENTATION_LABEL: Record<AnnouncementPresentation, string> = {
+  notice: '普通通知',
+  important: '重要通知',
+  acknowledgement_required: '必须确认',
+}
+
+const PRESENTATION_PILL: Record<AnnouncementPresentation, string> = {
+  notice: 'bg-[var(--color-primary)]/8 text-[var(--color-primary)] border-[var(--color-primary)]/20',
+  important: 'bg-[var(--color-cta)]/10 text-[var(--color-cta)] border-[var(--color-cta)]/25',
+  acknowledgement_required: 'bg-[var(--color-danger)]/10 text-[var(--color-danger)] border-[var(--color-danger)]/25',
+}
+
 function toDateTimeLocalValue(iso: string): string {
   const d = new Date(iso)
   const pad = (n: number) => String(n).padStart(2, '0')
@@ -60,6 +73,8 @@ interface EditorState {
   content: string
   audience: AnnouncementAudience
   priority: string
+  presentation: AnnouncementPresentation
+  maxImpressions: string
   startsAt: string
   endsAt: string
   hasEndsAt: boolean
@@ -73,6 +88,8 @@ const emptyEditor: EditorState = {
   content: '',
   audience: 'all',
   priority: '0',
+  presentation: 'notice',
+  maxImpressions: '3',
   startsAt: toDateTimeLocalValue(new Date().toISOString()),
   endsAt: '',
   hasEndsAt: false,
@@ -126,6 +143,8 @@ export default function AnnouncementsAdmin() {
       content: a.content,
       audience: a.audience,
       priority: String(a.priority),
+      presentation: a.presentation,
+      maxImpressions: String(a.maxImpressions),
       startsAt: toDateTimeLocalValue(a.startsAt),
       endsAt: a.endsAt ? toDateTimeLocalValue(a.endsAt) : '',
       hasEndsAt: a.endsAt !== null,
@@ -142,6 +161,11 @@ export default function AnnouncementsAdmin() {
     const priority = parseInt(editor.priority, 10)
     if (Number.isNaN(priority) || priority < -1000 || priority > 1000) {
       showToast('优先级需为 -1000 到 1000 之间的整数', 'error')
+      return
+    }
+    const maxImpressions = parseInt(editor.maxImpressions, 10)
+    if (Number.isNaN(maxImpressions) || maxImpressions < 1 || maxImpressions > 3) {
+      showToast('普通通知展示次数需为 1 到 3 次', 'error')
       return
     }
     const start = new Date(editor.startsAt)
@@ -173,6 +197,8 @@ export default function AnnouncementsAdmin() {
       content: editor.content.trim(),
       audience: editor.audience,
       priority,
+      presentation: editor.presentation,
+      maxImpressions,
       startsAt,
       endsAt,
       status: editor.status,
@@ -270,6 +296,7 @@ export default function AnnouncementsAdmin() {
             <tr>
               <th>标题 / 内容</th>
               <th>受众</th>
+              <th>展示策略</th>
               <th>优先级</th>
               <th>状态</th>
               <th>时间窗口</th>
@@ -289,6 +316,14 @@ export default function AnnouncementsAdmin() {
                   <span className="text-xs font-bold px-2 py-1 rounded border border-[var(--color-border)] bg-[var(--color-background)] text-[var(--color-text-muted)]">
                     {AUDIENCE_LABEL[a.audience]}
                   </span>
+                </td>
+                <td data-label="展示策略">
+                  <div className="flex flex-col items-start gap-1">
+                    <span className={`inline-flex items-center px-2.5 py-1 text-xs rounded font-bold border ${PRESENTATION_PILL[a.presentation]}`}>
+                      {PRESENTATION_LABEL[a.presentation]}
+                    </span>
+                    <span className="text-[11px] text-[var(--color-text-muted)]">v{a.version}{a.presentation === 'notice' ? ` · ${a.maxImpressions} 次` : ''}</span>
+                  </div>
                 </td>
                 <td className="font-mono font-bold text-[var(--color-text)]" data-label="优先级">{a.priority}</td>
                 <td data-label="状态">
@@ -323,7 +358,7 @@ export default function AnnouncementsAdmin() {
             ))}
             {!loading && items.length === 0 && (
               <tr>
-                <td colSpan={6}>
+                <td colSpan={7}>
                   <EmptyState compact icon={Megaphone} title="暂无公告" description="点击右上角按钮创建第一条公告" />
                 </td>
               </tr>
@@ -344,7 +379,7 @@ export default function AnnouncementsAdmin() {
         <DialogContent className="!z-[120] max-w-lg" data-testid="admin-announcement-editor-dialog">
           <DialogTitle>{editor?.mode === 'edit' ? '编辑公告' : '新建公告'}</DialogTitle>
           <DialogDescription>
-            公告按优先级倒序展示；仅已发布且在时间窗口内的条目对用户可见。
+            普通通知按设备展示 1–3 次；重要通知在用户打开详情后消失；必须确认仅在明确确认后消失。
           </DialogDescription>
           {editor && (
             <div className="mt-4 space-y-3">
@@ -397,6 +432,40 @@ export default function AnnouncementsAdmin() {
                   />
                 </div>
               </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium mb-1">展示策略</label>
+                  <select
+                    className="input"
+                    value={editor.presentation}
+                    onChange={(e) => setEditor({ ...editor, presentation: e.target.value as AnnouncementPresentation })}
+                    data-testid="admin-announcement-presentation"
+                  >
+                    <option value="notice">普通通知</option>
+                    <option value="important">重要通知（查看即已读）</option>
+                    <option value="acknowledgement_required">必须确认（明确确认后消失）</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium mb-1">普通通知展示次数</label>
+                  <select
+                    className="input disabled:opacity-50"
+                    value={editor.maxImpressions}
+                    disabled={editor.presentation !== 'notice'}
+                    onChange={(e) => setEditor({ ...editor, maxImpressions: e.target.value })}
+                    data-testid="admin-announcement-max-impressions"
+                  >
+                    <option value="1">1 次</option>
+                    <option value="2">2 次</option>
+                    <option value="3">3 次</option>
+                  </select>
+                </div>
+              </div>
+              {editor.presentation === 'acknowledgement_required' && (
+                <p className="rounded-lg border border-[var(--color-danger)]/25 bg-[var(--color-danger)]/8 px-3 py-2 text-xs leading-relaxed text-[var(--color-danger)]">
+                  仅用于必须被用户明确知悉的事项。用户可在公告中心查看全文，点击“我已阅读并确认”后才会停止提示。
+                </p>
+              )}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-medium mb-1">开始时间</label>
