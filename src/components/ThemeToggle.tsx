@@ -1,21 +1,61 @@
-import { Sun, Sparkles } from 'lucide-react'
-import { useTheme } from '../lib/ThemeProvider'
+import { useRef } from 'react'
+import { Moon, Sparkles, Sun } from 'lucide-react'
+import { useTheme, type Theme } from '../lib/ThemeProvider'
+
+const OPTIONS: { value: Theme; label: string; icon: typeof Sun }[] = [
+  { value: 'light', label: '浅色主题', icon: Sun },
+  { value: 'dark', label: '深色主题', icon: Moon },
+  { value: 'soft', label: '软萌主题', icon: Sparkles },
+]
 
 export default function ThemeToggle() {
-  const { theme, toggle } = useTheme()
-  const isSoft = theme === 'soft'
+  const { theme, setTheme } = useTheme()
+  const groupRef = useRef<HTMLDivElement>(null)
+
+  function onKeyDown(e: React.KeyboardEvent) {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
+    e.preventDefault()
+    const idx = OPTIONS.findIndex((o) => o.value === theme)
+    const next =
+      e.key === 'ArrowRight'
+        ? (idx + 1) % OPTIONS.length
+        : (idx - 1 + OPTIONS.length) % OPTIONS.length
+    setTheme(OPTIONS[next].value)
+    groupRef.current
+      ?.querySelectorAll<HTMLButtonElement>('[role="radio"]')
+      [next]?.focus()
+  }
 
   return (
-    <button
-      type="button"
-      onClick={toggle}
-      aria-label={isSoft ? '切换到经典主题' : '切换到软萌主题'}
-      title={isSoft ? '经典主题' : '软萌主题'}
-      className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-[var(--color-surface)] border border-[var(--color-border)] hover:bg-[var(--color-primary)]/10 hover:border-[var(--color-primary)] transition-all duration-200 focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)]"
+    <div
+      ref={groupRef}
+      role="radiogroup"
+      aria-label="主题切换"
+      onKeyDown={onKeyDown}
+      className="inline-flex items-center gap-1 p-1 rounded-full border border-[var(--color-border)] bg-[var(--color-background)]"
     >
-      {isSoft
-        ? <Sparkles size={18} className="text-[var(--color-primary)]" />
-        : <Sun size={18} className="text-[var(--color-text-muted)]" />}
-    </button>
+      {OPTIONS.map(({ value, label, icon: Icon }) => {
+        const active = theme === value
+        return (
+          <button
+            key={value}
+            type="button"
+            role="radio"
+            aria-checked={active}
+            tabIndex={active ? 0 : -1}
+            title={label}
+            aria-label={label}
+            onClick={() => setTheme(value)}
+            className={`inline-flex items-center justify-center w-8 h-8 rounded-full transition-all duration-200 focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)] ${
+              active
+                ? 'bg-[var(--color-surface)] text-[var(--color-primary)] shadow-sm'
+                : 'text-[var(--color-text-muted)] hover:text-[var(--color-primary)]'
+            }`}
+          >
+            <Icon size={16} />
+          </button>
+        )
+      })}
+    </div>
   )
 }

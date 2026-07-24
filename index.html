@@ -13,19 +13,20 @@
       rel="stylesheet"
     />
     <script>
-      if (localStorage.getItem('theme') === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
-        document.documentElement.classList.add('dark');
-      }
-    </script>
-    <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <script>
-      (function() {
+      // Theme boot: apply stored theme before first paint to avoid FOUC.
+      // 'soft' and 'dark' are mutually exclusive; legacy 'default' resolves to light.
+      (function () {
         try {
           var t = localStorage.getItem('theme');
-          if (t === 'soft') document.documentElement.setAttribute('data-theme', 'soft');
+          if (t === 'soft') {
+            document.documentElement.setAttribute('data-theme', 'soft');
+          } else if (t === 'dark' || (t === null && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+            document.documentElement.classList.add('dark');
+          }
         } catch (e) {}
       })();
     </script>
+    <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   </head>
   <body>
     <div id="root"></div>
