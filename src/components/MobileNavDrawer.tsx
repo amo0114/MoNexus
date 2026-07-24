@@ -59,7 +59,7 @@ export default function MobileNavDrawer() {
               菜单
             </DialogPrimitive.Title>
             <DialogPrimitive.Close
-              className="inline-flex items-center justify-center w-9 h-9 rounded-full text-[var(--color-text-muted)] hover:bg-[var(--color-border)] hover:text-[var(--color-text)] transition-colors cursor-pointer focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)]"
+              className="inline-flex items-center justify-center w-10 h-10 rounded-full text-[var(--color-text-muted)] hover:bg-[var(--color-border)] hover:text-[var(--color-text)] transition-colors cursor-pointer focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)]"
               aria-label="关闭菜单"
             >
               <X className="w-5 h-5" />

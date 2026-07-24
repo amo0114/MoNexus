@@ -287,6 +287,16 @@ h1, h2, h3, h4 {
     padding-top: 9px;
     padding-bottom: 9px;
   }
+
+  /* Icon-only buttons: expand to the ≥40px touch target on touch
+     devices / small viewports. */
+  .icon-btn {
+    min-width: 40px;
+    min-height: 40px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
 }
 
 .btn-secondary:hover:not(:disabled) {

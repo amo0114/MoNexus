@@ -505,7 +505,7 @@ export default function AdminPage() {
                                   setInventoryText('')
                                   setShowInventory(true)
                                 }}
-                                className="text-[var(--color-cta)] hover:bg-[var(--color-cta)]/10 font-semibold text-xs px-3 py-1.5 rounded-lg transition-colors border border-[var(--color-cta)]/25 cursor-pointer"
+                                className="text-[var(--color-cta)] hover:bg-[var(--color-cta)]/10 font-semibold text-xs px-3 py-1.5 btn-sm rounded-lg transition-colors border border-[var(--color-cta)]/25 cursor-pointer"
                               >
                                 导入交付库存
                               </button>

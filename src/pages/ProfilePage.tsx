@@ -444,7 +444,7 @@ export default function ProfilePage() {
             </span>
             <button
               onClick={copyInvite}
-              className="cursor-pointer text-white bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] px-3 py-1.5 rounded-lg shadow-sm font-medium text-xs transition-colors"
+              className="cursor-pointer text-white bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] px-3 py-1.5 rounded-lg shadow-sm font-medium text-xs transition-colors btn-sm"
             >
               复制分享
             </button>
@@ -558,7 +558,7 @@ export default function ProfilePage() {
                         disabled={loadingOrderId === order.id}
                         className="inline-flex items-center justify-center gap-1.5 cursor-pointer
                           bg-[var(--color-primary)] text-white text-xs font-semibold
-                          px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap
+                          px-3 py-1.5 btn-sm rounded-lg transition-colors whitespace-nowrap
                           hover:bg-[var(--color-primary-hover)]
                           focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)]
                           disabled:opacity-50 disabled:cursor-not-allowed

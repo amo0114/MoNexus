@@ -196,7 +196,7 @@ export default function AdminUserTable() {
                         setBanReason('')
                         setShowBan(true)
                       }}
-                      className="text-[var(--color-danger)] hover:bg-[var(--color-danger)]/10 font-semibold text-xs px-3 py-1.5 rounded-lg transition-colors border border-[var(--color-danger)]/25 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="text-[var(--color-danger)] hover:bg-[var(--color-danger)]/10 font-semibold text-xs px-3 py-1.5 btn-sm rounded-lg transition-colors border border-[var(--color-danger)]/25 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       封禁
                     </button>
@@ -204,7 +204,7 @@ export default function AdminUserTable() {
                   {u.status === '已封禁' && u.role !== 'admin' && (
                     <button
                       onClick={() => setUnbanTarget(u.id)}
-                      className="text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 font-semibold text-xs px-3 py-1.5 rounded-lg transition-colors border border-[var(--color-primary)]/25 cursor-pointer"
+                      className="text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 font-semibold text-xs px-3 py-1.5 btn-sm rounded-lg transition-colors border border-[var(--color-primary)]/25 cursor-pointer"
                     >
                       解封
                     </button>
@@ -217,7 +217,7 @@ export default function AdminUserTable() {
                       setAdjustReason('')
                       setShowAdjust(true)
                     }}
-                    className="text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 font-semibold text-xs px-3 py-1.5 rounded-lg transition-colors border border-[var(--color-primary)]/25 cursor-pointer"
+                    className="text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 font-semibold text-xs px-3 py-1.5 btn-sm rounded-lg transition-colors border border-[var(--color-primary)]/25 cursor-pointer"
                   >
                     调整积分
                   </button>

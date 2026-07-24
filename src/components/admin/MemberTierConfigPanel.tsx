@@ -191,7 +191,7 @@ export function MemberTierConfigPanel() {
                         <button
                           onClick={() => t.thresholdKey && handleSave(t.thresholdKey, t.thresholdValue)}
                           disabled={savingKey === t.thresholdKey || savingKey !== null}
-                          className="text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 font-semibold text-xs px-3 py-1.5 rounded-lg transition-colors border border-[var(--color-primary)]/25 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                          className="text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 font-semibold text-xs px-3 py-1.5 btn-sm rounded-lg transition-colors border border-[var(--color-primary)]/25 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
                         >
                           {savingKey === t.thresholdKey ? '保存中...' : '保存'}
                         </button>
@@ -228,7 +228,7 @@ export function MemberTierConfigPanel() {
                         <button
                           onClick={() => t.bonusBpsKey && handleSave(t.bonusBpsKey, t.bonusBpsValue)}
                           disabled={savingKey === t.bonusBpsKey || savingKey !== null}
-                          className="text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 font-semibold text-xs px-3 py-1.5 rounded-lg transition-colors border border-[var(--color-primary)]/25 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                          className="text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 font-semibold text-xs px-3 py-1.5 btn-sm rounded-lg transition-colors border border-[var(--color-primary)]/25 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
                         >
                           {savingKey === t.bonusBpsKey ? '保存中...' : '保存'}
                         </button>
