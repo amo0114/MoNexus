@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { X, Package, Tag, DollarSign, Image as ImageIcon, FileText, Upload, Loader2, Star, Trash2 } from 'lucide-react'
+import * as DialogPrimitive from '@radix-ui/react-dialog'
 import DOMPurify from 'dompurify'
 import { MerchantProduct } from '../../types/merchant'
 import { useAppStore } from '../../stores/appStore'
@@ -270,9 +271,10 @@ export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, pr
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 fade-in overflow-hidden">
-      <div className="modal-overlay" onClick={onClose} />
-      <div className="relative z-10 w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl shadow-xl">
+    <DialogPrimitive.Root open onOpenChange={(o) => { if (!o) onClose() }}>
+      <DialogPrimitive.Portal>
+        <DialogPrimitive.Overlay className="modal-overlay" />
+        <DialogPrimitive.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-[calc(100%-2rem)] max-w-2xl max-h-[90vh] flex flex-col overflow-hidden bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl shadow-xl focus-visible:outline-none">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-5 border-b border-[var(--color-border)]">
           <div className="flex items-center gap-4">
@@ -280,21 +282,20 @@ export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, pr
               <Package className="w-6 h-6" />
             </div>
             <div>
-              <h2 className="font-heading text-xl font-bold text-[var(--color-text)]">
+              <DialogPrimitive.Title className="font-heading text-xl font-bold text-[var(--color-text)]">
                 {product ? '编辑商品' : '发布新商品'}
-              </h2>
+              </DialogPrimitive.Title>
               <p className="text-xs text-[var(--color-text-muted)] mt-0.5 font-medium">
                 {product ? '更新商品的属性、定价和详情' : '填写基础信息上架到商店'}
               </p>
             </div>
           </div>
-          <button
-            onClick={onClose}
+          <DialogPrimitive.Close
             className="p-2.5 rounded-full hover:bg-[var(--color-background)] transition-colors text-[var(--color-text-muted)] hover:text-[var(--color-text)] cursor-pointer"
             aria-label="关闭"
           >
             <X className="w-5 h-5" />
-          </button>
+          </DialogPrimitive.Close>
         </div>
 
         {/* Body */}
@@ -708,8 +709,9 @@ export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, pr
             {loading ? '处理中...' : '确认保存'}
           </button>
         </div>
-      </div>
-    </div>
+        </DialogPrimitive.Content>
+      </DialogPrimitive.Portal>
+    </DialogPrimitive.Root>
   )
 }
 

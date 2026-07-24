@@ -31,6 +31,7 @@ import MerchantCapacityAdjustModal from '../components/merchant/MerchantCapacity
 import MerchantDeliverDialog from '../components/merchant/MerchantDeliverDialog'
 import MerchantDisputeDialog from '../components/merchant/MerchantDisputeDialog'
 import RegistryPill from '../components/ui/RegistryPill'
+import { Dialog, DialogContent, DialogTitle } from '../components/ui/Dialog'
 
 type TabKey = 'dashboard' | 'products' | 'orders' | 'settlements' | 'profile' | 'operations'
 
@@ -744,40 +745,37 @@ export default function MerchantDashboardPage() {
         onSubmit={handleDisputeSubmit}
       />
 
-      {rejectingOrder && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center fade-in" data-testid="merchant-reject-dialog">
-          <div className="modal-overlay" onClick={() => !rejecting && setRejectingOrder(null)} />
-          <div className="modal relative z-10 max-w-md">
-            <h3 className="font-heading text-lg font-bold text-[var(--color-text)] mb-2">确认拒单</h3>
-            <p className="text-sm text-[var(--color-text-muted)] mb-4">
-              拒单后订单将标记为已退款，冻结积分退还用户，结算作废。订单 #{rejectingOrder.id}（{rejectingOrder.product?.name}）
-            </p>
-            <label className="block text-xs font-medium text-[var(--color-text)] mb-1">公开备注（可选）</label>
-            <textarea
-              className="input min-h-[80px] resize-y mb-4"
-              value={rejectNote}
-              onChange={(e) => setRejectNote(e.target.value)}
-              maxLength={1000}
-              placeholder="例如：暂无服务档期"
-              data-testid="merchant-reject-note"
-            />
-            <div className="flex justify-end gap-3">
-              <button type="button" className="btn-secondary px-4 py-2 text-sm" disabled={rejecting} onClick={() => setRejectingOrder(null)}>
-                取消
-              </button>
-              <button
-                type="button"
-                className="btn-secondary px-4 py-2 text-sm border-[var(--color-danger)] text-[var(--color-danger)]"
-                disabled={rejecting}
-                onClick={handleRejectConfirm}
-                data-testid="merchant-reject-confirm"
-              >
-                {rejecting ? <Loader2 className="w-4 h-4 animate-spin" /> : '确认拒单'}
-              </button>
-            </div>
+      <Dialog open={!!rejectingOrder} onOpenChange={(o) => { if (!o && !rejecting) setRejectingOrder(null) }}>
+        <DialogContent className="max-w-md" data-testid="merchant-reject-dialog">
+          <DialogTitle className="mb-2">确认拒单</DialogTitle>
+          <p className="text-sm text-[var(--color-text-muted)] mb-4">
+            拒单后订单将标记为已退款，冻结积分退还用户，结算作废。订单 #{rejectingOrder?.id}（{rejectingOrder?.product?.name}）
+          </p>
+          <label className="block text-xs font-medium text-[var(--color-text)] mb-1">公开备注（可选）</label>
+          <textarea
+            className="input min-h-[80px] resize-y mb-4"
+            value={rejectNote}
+            onChange={(e) => setRejectNote(e.target.value)}
+            maxLength={1000}
+            placeholder="例如：暂无服务档期"
+            data-testid="merchant-reject-note"
+          />
+          <div className="flex justify-end gap-3">
+            <button type="button" className="btn-secondary px-4 py-2 text-sm" disabled={rejecting} onClick={() => setRejectingOrder(null)}>
+              取消
+            </button>
+            <button
+              type="button"
+              className="btn-secondary px-4 py-2 text-sm border-[var(--color-danger)] text-[var(--color-danger)]"
+              disabled={rejecting}
+              onClick={handleRejectConfirm}
+              data-testid="merchant-reject-confirm"
+            >
+              {rejecting ? <Loader2 className="w-4 h-4 animate-spin" /> : '确认拒单'}
+            </button>
           </div>
-        </div>
-      )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

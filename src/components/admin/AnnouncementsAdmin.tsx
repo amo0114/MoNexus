@@ -16,6 +16,7 @@ import { getApiErrorMessage } from '../../api/error'
 import { useAppStore } from '../../stores/appStore'
 import AdminPagination from './AdminPagination'
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '../ui/Dialog'
+import ConfirmDialog from '../ui/ConfirmDialog'
 
 const PAGE_SIZE = 20
 
@@ -189,14 +190,22 @@ export default function AnnouncementsAdmin() {
     }
   }
 
-  async function handleDelete(a: AdminAnnouncement) {
-    if (!confirm(`确定要删除公告「${a.title}」吗？此操作不可恢复。`)) return
+  // Delete confirm dialog
+  const [deleteTarget, setDeleteTarget] = useState<AdminAnnouncement | null>(null)
+  const [deleting, setDeleting] = useState(false)
+
+  async function confirmDelete() {
+    if (!deleteTarget) return
+    setDeleting(true)
     try {
-      await deleteAnnouncement(a.id)
+      await deleteAnnouncement(deleteTarget.id)
       showToast('已删除公告')
+      setDeleteTarget(null)
       fetchList()
     } catch (err: any) {
       showToast(getApiErrorMessage(err, '删除失败'), 'error')
+    } finally {
+      setDeleting(false)
     }
   }
 
@@ -295,7 +304,7 @@ export default function AnnouncementsAdmin() {
                     type="button"
                     className="text-[var(--color-danger)] hover:bg-[var(--color-danger)]/10 font-semibold text-xs px-3 py-1.5 rounded-lg transition-colors border border-[var(--color-danger)]/25 cursor-pointer inline-flex items-center gap-1"
                     data-testid={`admin-announcement-delete-${a.id}`}
-                    onClick={() => handleDelete(a)}
+                    onClick={() => setDeleteTarget(a)}
                   >
                     <Trash2 className="w-3 h-3" />
                     删除
@@ -446,6 +455,18 @@ export default function AnnouncementsAdmin() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Delete confirm — replaces window.confirm */}
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        onOpenChange={(o) => { if (!o) setDeleteTarget(null) }}
+        title="删除公告"
+        description={`确定要删除公告「${deleteTarget?.title}」吗？此操作不可恢复。`}
+        confirmLabel="删除"
+        tone="danger"
+        loading={deleting}
+        onConfirm={confirmDelete}
+      />
     </div>
   )
 }

@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react'
 import { X, DatabaseZap, FileText, AlertCircle, Loader2 } from 'lucide-react'
+import * as DialogPrimitive from '@radix-ui/react-dialog'
 import { useAppStore } from '../../stores/appStore'
 import { previewMerchantInventory } from '../../api/merchant'
 
@@ -101,9 +102,10 @@ export default function MerchantInventoryImportModal({ isOpen, onClose, onSubmit
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 fade-in overflow-hidden">
-      <div className="modal-overlay" onClick={onClose} />
-      <div className="relative z-10 w-full max-w-lg flex flex-col overflow-hidden bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl shadow-xl">
+    <DialogPrimitive.Root open onOpenChange={(o) => { if (!o) onClose() }}>
+      <DialogPrimitive.Portal>
+        <DialogPrimitive.Overlay className="modal-overlay" />
+        <DialogPrimitive.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-[calc(100%-2rem)] max-w-lg flex flex-col overflow-hidden bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl shadow-xl focus-visible:outline-none">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-5 border-b border-[var(--color-border)]">
           <div className="flex items-center gap-4">
@@ -111,21 +113,20 @@ export default function MerchantInventoryImportModal({ isOpen, onClose, onSubmit
               <DatabaseZap className="w-6 h-6" />
             </div>
             <div>
-              <h2 className="font-heading text-xl font-bold text-[var(--color-text)]">
+              <DialogPrimitive.Title className="font-heading text-xl font-bold text-[var(--color-text)]">
                 导入交付单元
-              </h2>
+              </DialogPrimitive.Title>
               <p className="text-xs text-[var(--color-text-muted)] mt-0.5 font-medium truncate max-w-[200px]" title={productName}>
                 目标商品: {productName}
               </p>
             </div>
           </div>
-          <button
-            onClick={onClose}
+          <DialogPrimitive.Close
             className="p-2.5 rounded-full hover:bg-[var(--color-background)] transition-colors text-[var(--color-text-muted)] hover:text-[var(--color-text)] cursor-pointer"
             aria-label="关闭"
           >
             <X className="w-5 h-5" />
-          </button>
+          </DialogPrimitive.Close>
         </div>
 
         {/* Body */}
@@ -238,7 +239,8 @@ export default function MerchantInventoryImportModal({ isOpen, onClose, onSubmit
             </button>
           )}
         </div>
-      </div>
-    </div>
+        </DialogPrimitive.Content>
+      </DialogPrimitive.Portal>
+    </DialogPrimitive.Root>
   )
 }

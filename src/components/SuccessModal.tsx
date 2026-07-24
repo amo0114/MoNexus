@@ -1,5 +1,6 @@
 import { Check, Copy, ExternalLink } from 'lucide-react'
 import { useAppStore } from '../stores/appStore'
+import { Dialog, DialogContent, DialogTitle } from './ui/Dialog'
 
 export default function SuccessModal({
   deliveryContent,
@@ -22,13 +23,12 @@ export default function SuccessModal({
   }
 
   return (
-    <div className="fixed inset-0 z-[110] flex items-center justify-center">
-      <div className="modal-overlay" onClick={onClose} />
-      <div className="modal relative z-10 fade-in max-w-sm text-center flex flex-col">
+    <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
+      <DialogContent className="max-w-sm text-center flex flex-col">
         <div className="w-16 h-16 bg-[var(--color-cta)]/10 border-2 border-[var(--color-cta)] text-[var(--color-cta)] rounded-full flex items-center justify-center mx-auto mb-5">
           <Check className="w-8 h-8" />
         </div>
-        <h3 className="font-heading text-2xl font-bold mb-2 text-[var(--color-text)]">兑换成功</h3>
+        <DialogTitle className="text-2xl mb-2">兑换成功</DialogTitle>
         <p className="text-[var(--color-text-muted)] mb-6 text-sm">商品已下发，请查收下方信息</p>
 
         {merchantName && (
@@ -76,7 +76,7 @@ export default function SuccessModal({
             </button>
           )}
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   )
 }
