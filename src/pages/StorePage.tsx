@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom'
 import { Search, SearchX, Coins, Flame, Store, Star } from 'lucide-react'
 import api from '../api/client'
 import { useAppStore } from '../stores/appStore'
+import { Skeleton } from '../components/ui/Skeleton'
+import EmptyState from '../components/ui/EmptyState'
 
 interface Product {
   id: number
@@ -435,15 +437,24 @@ export default function StorePage() {
 
       {/* Product Grid */}
       {loading ? (
-        <div className="text-center py-20 text-[var(--color-text-muted)]">加载中...</div>
-      ) : products.length === 0 ? (
-        <div className="col-span-full text-center py-20 text-[var(--color-text-muted)] flex flex-col items-center fade-in">
-          <div className="w-16 h-16 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-full flex items-center justify-center mb-4 shadow-sm">
-            <SearchX className="w-6 h-6 text-[var(--color-primary)]" />
-          </div>
-          <p className="font-heading text-lg font-bold text-[var(--color-text)] mb-1">未找到相关好物</p>
-          <p className="text-sm">请尝试更换搜索词，或者看下其他分类</p>
+        <div className="grid gap-6" style={{ gridTemplateColumns: `repeat(${columnCount}, minmax(0, 1fr))` }} role="status" aria-label="加载中">
+          {Array.from({ length: columnCount * 2 }).map((_, i) => (
+            <div key={i} className="card p-0 overflow-hidden">
+              <Skeleton className="h-40 w-full rounded-none" />
+              <div className="p-4 space-y-3">
+                <Skeleton className="h-4 w-3/4" />
+                <Skeleton className="h-3 w-1/2" />
+                <Skeleton className="h-6 w-1/3" />
+              </div>
+            </div>
+          ))}
         </div>
+      ) : products.length === 0 ? (
+        <EmptyState
+          icon={SearchX}
+          title="未找到相关好物"
+          description="请尝试更换搜索词，或者看下其他分类"
+        />
       ) : (
         <>
           <div className="pt-2">

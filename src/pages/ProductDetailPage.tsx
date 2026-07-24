@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Coins, FileText, Store, ShieldCheck, Info } from 'lucide-react'
+import { ArrowLeft, Coins, FileText, Store, ShieldCheck, Info, Star } from 'lucide-react'
 import DOMPurify from 'dompurify'
 import api from '../api/client'
 import { getApiErrorMessage } from '../api/error'
@@ -8,6 +8,7 @@ import { useAppStore } from '../stores/appStore'
 import { useAuthStore } from '../stores/authStore'
 import PurchaseModal from '../components/PurchaseModal'
 import SuccessModal from '../components/SuccessModal'
+import EmptyState from '../components/ui/EmptyState'
 import { getProductReviews, type ReviewItem } from '../api/reviews'
 import StarRating from '../components/ui/StarRating'
 
@@ -302,7 +303,7 @@ export default function ProductDetailPage() {
               <div className="mt-8" data-testid="review-list">
                 <h2 className="font-heading text-lg font-bold text-[var(--color-text)] mb-4">用户评价（{reviewTotal}）</h2>
                 {reviews.length === 0 ? (
-                  <p className="text-sm text-[var(--color-text-muted)]">暂无评价</p>
+                  <EmptyState compact icon={Star} title="暂无评价" description="兑换后即可发表第一条评价" />
                 ) : (
                   <div className="space-y-4">
                     {reviews.map((r) => (

@@ -32,6 +32,8 @@ import MerchantDeliverDialog from '../components/merchant/MerchantDeliverDialog'
 import MerchantDisputeDialog from '../components/merchant/MerchantDisputeDialog'
 import RegistryPill from '../components/ui/RegistryPill'
 import { Dialog, DialogContent, DialogTitle } from '../components/ui/Dialog'
+import { TableSkeleton, StatCardSkeleton } from '../components/ui/Skeleton'
+import EmptyState from '../components/ui/EmptyState'
 
 type TabKey = 'dashboard' | 'products' | 'orders' | 'settlements' | 'profile' | 'operations'
 
@@ -63,6 +65,7 @@ export default function MerchantDashboardPage() {
   const registry = useAppStore((s) => s.registry)
   const [activeTab, setActiveTab] = useState<TabKey>('dashboard')
   const [stats, setStats] = useState<MerchantStats | null>(null)
+  const [loading, setLoading] = useState(true)
 
   const [products, setProducts] = useState<MerchantProduct[]>([])
   const [productPage, setProductPage] = useState(1)
@@ -98,6 +101,7 @@ export default function MerchantDashboardPage() {
   }, [activeTab, productPage, orderPage, orderStatusFilter, productSearchDebounced, productStatusFilter, productTypeFilter, productModeFilter, productLowStockOnly])
 
   async function loadData() {
+    setLoading(true)
     try {
       if (activeTab === 'dashboard' || activeTab === 'orders') {
         const data = await getMerchantStats()
@@ -132,6 +136,8 @@ export default function MerchantDashboardPage() {
       }
     } catch (e: any) {
       showToast(e.response?.data?.error?.message || '加载失败', 'error')
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -295,10 +301,21 @@ export default function MerchantDashboardPage() {
             <div className="fade-in">
               <h2 className="font-heading text-xl font-bold mb-6 text-[var(--color-text)]">数据概览</h2>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <StatCard label="商品数" value={stats?.productCount ?? '--'} />
-                <StatCard label="订单数" value={stats?.orderCount ?? '--'} />
-                <StatCard label="累计收益" value={stats?.totalRevenue ?? '--'} tone="cta" />
-                <StatCard label="待划拨" value={stats?.pendingSettlement ?? '--'} tone="warning" />
+                {!stats ? (
+                  <>
+                    <StatCardSkeleton />
+                    <StatCardSkeleton />
+                    <StatCardSkeleton />
+                    <StatCardSkeleton />
+                  </>
+                ) : (
+                  <>
+                    <StatCard label="商品数" value={stats.productCount} />
+                    <StatCard label="订单数" value={stats.orderCount} />
+                    <StatCard label="累计收益" value={stats.totalRevenue} tone="cta" />
+                    <StatCard label="待划拨" value={stats.pendingSettlement} tone="warning" />
+                  </>
+                )}
               </div>
             </div>
           )}
@@ -375,6 +392,9 @@ export default function MerchantDashboardPage() {
                 </label>
               </div>
               <div className="overflow-x-auto">
+                {loading && products.length === 0 ? (
+                  <TableSkeleton />
+                ) : (
                 <table className="table-cards w-full text-left border-collapse">
                   <thead>
                     <tr className="border-b border-[var(--color-border)]">
@@ -387,10 +407,10 @@ export default function MerchantDashboardPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {products.length === 0 ? (
+                    {!loading && products.length === 0 ? (
                       <tr>
-                        <td colSpan={6} className="py-8 text-center text-[var(--color-text-muted)] text-sm">
-                          暂无商品
+                        <td colSpan={6}>
+                          <EmptyState compact icon={Package} title="暂无商品" description="点击右上角「新建商品」上架第一个商品" />
                         </td>
                       </tr>
                     ) : (
@@ -465,6 +485,7 @@ export default function MerchantDashboardPage() {
                     )}
                   </tbody>
                 </table>
+                )}
               </div>
               <PaginationControls page={productPage} total={productTotal} setPage={setProductPage} testId="merchant-product-pagination" />
             </div>
@@ -517,6 +538,9 @@ export default function MerchantDashboardPage() {
               </div>
 
               <div className="overflow-x-auto">
+                {loading && orders.length === 0 ? (
+                  <TableSkeleton />
+                ) : (
                 <table className="table-cards w-full text-left border-collapse">
                   <thead>
                     <tr className="border-b border-[var(--color-border)]">
@@ -530,10 +554,10 @@ export default function MerchantDashboardPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {orders.length === 0 ? (
+                    {!loading && orders.length === 0 ? (
                       <tr>
-                        <td colSpan={7} className="py-8 text-center text-[var(--color-text-muted)] text-sm">
-                          你还没有订单
+                        <td colSpan={7}>
+                          <EmptyState compact icon={ShoppingBag} title="你还没有订单" description="订单产生后将显示在这里" />
                         </td>
                       </tr>
                     ) : (
@@ -603,6 +627,7 @@ export default function MerchantDashboardPage() {
                     )}
                   </tbody>
                 </table>
+                )}
               </div>
               <PaginationControls page={orderPage} total={orderTotal} setPage={setOrderPage} />
             </div>
@@ -612,6 +637,9 @@ export default function MerchantDashboardPage() {
             <div className="fade-in">
               <h2 className="font-heading text-xl font-bold mb-6 text-[var(--color-text)]">结算管理</h2>
               <div className="overflow-x-auto">
+                {loading && settlements.length === 0 ? (
+                  <TableSkeleton />
+                ) : (
                 <table className="table-cards w-full text-left border-collapse">
                   <thead>
                     <tr className="border-b border-[var(--color-border)]">
@@ -624,10 +652,10 @@ export default function MerchantDashboardPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {settlements.length === 0 ? (
+                    {!loading && settlements.length === 0 ? (
                       <tr>
-                        <td colSpan={6} className="py-8 text-center text-[var(--color-text-muted)] text-sm">
-                          暂无结算记录
+                        <td colSpan={6}>
+                          <EmptyState compact icon={DollarSign} title="暂无结算记录" description="订单完成后将生成待结算记录" />
                         </td>
                       </tr>
                     ) : (
@@ -649,6 +677,7 @@ export default function MerchantDashboardPage() {
                     )}
                   </tbody>
                 </table>
+                )}
               </div>
             </div>
           )}
