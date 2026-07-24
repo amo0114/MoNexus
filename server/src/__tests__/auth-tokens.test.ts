@@ -44,6 +44,33 @@ describe('Auth token flows (P0-D)', () => {
       // since it's only ever held in plaintext on the request path.
       expect(mail!.text).toMatch(/\/reset-password\/[a-f0-9]+/)
     })
+
+    it('invalidates an earlier unused reset link when a new one is requested', async () => {
+      const { user } = await createTestUser('reset-reissue@test.local')
+
+      await api.post('/api/auth/forgot-password').send({ email: user.email }).expect(200)
+      const firstRawToken = mailer.lastTo(user.email)!.text.match(/reset-password\/([a-f0-9]+)/)![1]
+
+      await api.post('/api/auth/forgot-password').send({ email: user.email }).expect(200)
+      const secondRawToken = mailer.lastTo(user.email)!.text.match(/reset-password\/([a-f0-9]+)/)![1]
+
+      expect(firstRawToken).not.toBe(secondRawToken)
+      const tokens = await prisma.passwordResetToken.findMany({
+        where: { userId: user.id },
+        orderBy: { id: 'asc' },
+      })
+      expect(tokens).toHaveLength(2)
+      expect(tokens.map(token => token.used)).toEqual([true, false])
+
+      await api
+        .post('/api/auth/reset-password')
+        .send({ token: firstRawToken, password: 'old-link-password' })
+        .expect(400)
+      await api
+        .post('/api/auth/reset-password')
+        .send({ token: secondRawToken, password: 'new-link-password' })
+        .expect(200)
+    })
   })
 
   describe('POST /api/auth/reset-password', () => {
@@ -131,6 +158,24 @@ describe('Auth token flows (P0-D)', () => {
         .expect(400)
       expect(res.body.error.message).toMatch(/已被使用/)
     })
+
+    it('consumes a reset link exactly once under concurrent requests', async () => {
+      const { user } = await createTestUser('reset-concurrent@test.local')
+      await api.post('/api/auth/forgot-password').send({ email: user.email }).expect(200)
+      const rawToken = mailer.lastTo(user.email)!.text.match(/reset-password\/([a-f0-9]+)/)![1]
+
+      const attempts = await Promise.all([
+        api.post('/api/auth/reset-password').send({ token: rawToken, password: 'parallel-password-a' }),
+        api.post('/api/auth/reset-password').send({ token: rawToken, password: 'parallel-password-b' }),
+      ])
+      expect(attempts.map(attempt => attempt.status).sort()).toEqual([200, 400])
+
+      const updated = await prisma.user.findUniqueOrThrow({ where: { id: user.id } })
+      const firstWon = await bcrypt.compare('parallel-password-a', updated.password)
+      const secondWon = await bcrypt.compare('parallel-password-b', updated.password)
+      expect(Number(firstWon) + Number(secondWon)).toBe(1)
+      expect(await prisma.passwordResetToken.count({ where: { userId: user.id, used: false } })).toBe(0)
+    })
   })
 
   describe('POST /api/auth/password-change', () => {
@@ -195,6 +240,25 @@ describe('Auth token flows (P0-D)', () => {
         .post('/api/auth/login')
         .send({ email: user.email, password: 'new-password' })
         .expect(401)
+    })
+
+    it('invalidates outstanding reset links after a password change', async () => {
+      const { user, password } = await createTestUser('change-invalidates-reset@test.local', 'current-password')
+      const login = await loginAs(user.email, password)
+      await api.post('/api/auth/forgot-password').send({ email: user.email }).expect(200)
+      const rawToken = mailer.lastTo(user.email)!.text.match(/reset-password\/([a-f0-9]+)/)![1]
+
+      await api
+        .post('/api/auth/password-change')
+        .set(authHeader(login.accessToken))
+        .send({ currentPassword: password, newPassword: 'changed-password' })
+        .expect(200)
+
+      expect(await prisma.passwordResetToken.count({ where: { userId: user.id, used: false } })).toBe(0)
+      await api
+        .post('/api/auth/reset-password')
+        .send({ token: rawToken, password: 'should-not-work' })
+        .expect(400)
     })
   })
 

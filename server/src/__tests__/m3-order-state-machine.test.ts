@@ -34,7 +34,7 @@ async function createManualOrder(email: string, password: string, productId: num
 }
 
 describe('M3-S1: manual_service order points freezing', () => {
-  it('freezes points on creation without deducting balance and marks settlement holding', async () => {
+  it('moves points out of the spendable balance into the frozen balance and marks settlement holding', async () => {
     const { merchant } = await createTestMerchant('m3-freeze-merchant@test.local', 'pass123', {
       role: 'merchant',
       status: 'active',
@@ -52,16 +52,24 @@ describe('M3-S1: manual_service order points freezing', () => {
     expect(order.status).toBe('pending')
     expect(order.userId).toBe(user.id)
     expect(order.holdingPoints).toBe(300)
+    expect(order.fundsHeld).toBe(true)
     expect(order.fulfillmentDeadline).not.toBeNull()
     expect(order.confirmedAt).toBeNull()
 
     const account = await prisma.pointAccount.findUniqueOrThrow({ where: { userId: user.id } })
-    expect(account.balance).toBe(1000)
+    expect(account.balance).toBe(700)
+    expect(account.frozenBalance).toBe(300)
 
     const outLogs = await prisma.pointLog.findMany({
       where: { userId: user.id, type: 'out', orderId: orderId },
     })
     expect(outLogs).toHaveLength(0)
+
+    const holdLogs = await prisma.pointLog.findMany({
+      where: { userId: user.id, type: 'hold', orderId },
+    })
+    expect(holdLogs).toHaveLength(1)
+    expect(holdLogs[0].balanceAfter).toBe(700)
 
     expect(order.settlement).not.toBeNull()
     expect(order.settlement!.status).toBe('holding')
@@ -111,6 +119,7 @@ describe('M3-S1: manual_service order points freezing', () => {
 
     const account = await prisma.pointAccount.findUniqueOrThrow({ where: { userId: user.id } })
     expect(account.balance).toBe(700)
+    expect(account.frozenBalance).toBe(0)
 
     const outLogs = await prisma.pointLog.findMany({
       where: { userId: user.id, type: 'out', orderId },
@@ -151,12 +160,13 @@ describe('M3-S1: merchant reject order', () => {
     const account = await prisma.pointAccount.findUniqueOrThrow({ where: { userId: user.id } })
     expect(account.balance).toBe(1000)
 
-    const inLogs = await prisma.pointLog.findMany({
-      where: { userId: user.id, type: 'in', orderId },
+    const releaseLogs = await prisma.pointLog.findMany({
+      where: { userId: user.id, type: 'release', orderId },
     })
-    expect(inLogs).toHaveLength(1)
-    expect(inLogs[0].amount).toBe(300)
-    expect(inLogs[0].balanceAfter).toBe(1000)
+    expect(releaseLogs).toHaveLength(1)
+    expect(releaseLogs[0].amount).toBe(300)
+    expect(releaseLogs[0].balanceAfter).toBe(1000)
+    expect(account.frozenBalance).toBe(0)
 
     const settlement = await prisma.settlement.findUniqueOrThrow({ where: { orderId } })
     expect(settlement.status).toBe('voided')
@@ -245,12 +255,13 @@ describe('M3-S1: admin arbitration resolveOrder', () => {
     const account = await prisma.pointAccount.findUniqueOrThrow({ where: { userId: user.id } })
     expect(account.balance).toBe(1000)
 
-    const inLogs = await prisma.pointLog.findMany({
-      where: { userId: user.id, type: 'in', orderId },
+    const releaseLogs = await prisma.pointLog.findMany({
+      where: { userId: user.id, type: 'release', orderId },
     })
-    expect(inLogs).toHaveLength(1)
-    expect(inLogs[0].amount).toBe(400)
-    expect(inLogs[0].balanceAfter).toBe(1000)
+    expect(releaseLogs).toHaveLength(1)
+    expect(releaseLogs[0].amount).toBe(400)
+    expect(releaseLogs[0].balanceAfter).toBe(1000)
+    expect(account.frozenBalance).toBe(0)
 
     const settlement = await prisma.settlement.findUniqueOrThrow({ where: { orderId } })
     expect(settlement.status).toBe('voided')
@@ -281,6 +292,7 @@ describe('M3-S1: admin arbitration resolveOrder', () => {
 
     const account = await prisma.pointAccount.findUniqueOrThrow({ where: { userId: user.id } })
     expect(account.balance).toBe(600)
+    expect(account.frozenBalance).toBe(0)
 
     const outLogs = await prisma.pointLog.findMany({
       where: { userId: user.id, type: 'out', orderId },

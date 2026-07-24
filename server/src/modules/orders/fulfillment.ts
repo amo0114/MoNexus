@@ -140,10 +140,19 @@ export async function transitionOrderStatus(
 
   const { from, to } = assertLegalStatusTransition(order.status, input.toStatus)
 
-  const updated = await client.order.update({
-    where: { id: order.id },
+  // The state that was read above is part of the write predicate.  Without
+  // this compare-and-set, two concurrent close/refund requests could both pass
+  // validation and each write an event / settle points.
+  const transitioned = await client.order.updateMany({
+    where: { id: order.id, status: order.status },
     data: { status: to },
   })
+  if (transitioned.count !== 1) {
+    throw badRequest('订单状态已变化，请刷新后重试')
+  }
+
+  const updated = await client.order.findUnique({ where: { id: order.id } })
+  if (!updated) throw notFound('订单不存在')
 
   if (to === 'delivered') {
     await client.deliveryRecord.upsert({

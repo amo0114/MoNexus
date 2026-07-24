@@ -360,6 +360,8 @@ Details: [`docs/operations/deployment-target.md`](./docs/operations/deployment-t
 ### Ops references
 
 - [`docs/operations/runbook.md`](./docs/operations/runbook.md) — start/stop, health, backup, staging compose
+- [`docs/operations/vps-1panel-openresty-deployment.md`](./docs/operations/vps-1panel-openresty-deployment.md) — detailed Docker deployment on a 1Panel/OpenResty VPS, including ARM64 and troubleshooting
+- [`docs/operations/vps-compose-deployment.md`](./docs/operations/vps-compose-deployment.md) — standalone host Caddy deployment
 - [`docs/operations/deployment-target.md`](./docs/operations/deployment-target.md) — host model choices
 - [`docs/operations/rollback-runbook.md`](./docs/operations/rollback-runbook.md)
 - [`docs/operations/secrets-management.md`](./docs/operations/secrets-management.md)

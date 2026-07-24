@@ -360,7 +360,8 @@ GitHub Actions 仍可打 tar 包，经 SSH 部署到 **nginx + systemd**（或 P
 ### 运维文档
 
 - [`docs/operations/runbook.md`](./docs/operations/runbook.md) — 启停、健康检查、备份、预发 compose
-- [`docs/operations/vps-compose-deployment.md`](./docs/operations/vps-compose-deployment.md) — 单域名 VPS Docker + Caddy + MinIO 部署
+- [`docs/operations/vps-1panel-openresty-deployment.md`](./docs/operations/vps-1panel-openresty-deployment.md) — 1Panel/OpenResty VPS 的完整 Docker 部署、ARM64 与排障手册
+- [`docs/operations/vps-compose-deployment.md`](./docs/operations/vps-compose-deployment.md) — 独立宿主机 Caddy + Docker + MinIO 部署
 - [`docs/operations/deployment-target.md`](./docs/operations/deployment-target.md) — 主机形态选型
 - [`docs/operations/rollback-runbook.md`](./docs/operations/rollback-runbook.md)
 - [`docs/operations/secrets-management.md`](./docs/operations/secrets-management.md)

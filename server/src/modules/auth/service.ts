@@ -33,10 +33,17 @@ function buildAuthUser(user: { id: number; email: string; role: string; inviteCo
   }
 }
 
-async function createStoredRefreshToken(userId: number, ip?: string, userAgent?: string) {
+async function createStoredRefreshToken(
+  userId: number,
+  ip?: string,
+  userAgent?: string,
+  tx?: Prisma.TransactionClient,
+  configuredMaxAgeMs?: number,
+) {
   const refreshToken = generateRefreshToken()
-  const maxAgeMs = await getRefreshTokenMaxAgeMs()
-  await prisma.refreshToken.create({
+  const maxAgeMs = configuredMaxAgeMs ?? await getRefreshTokenMaxAgeMs()
+  const client = tx ?? prisma
+  await client.refreshToken.create({
     data: {
       userId,
       tokenHash: hashRefreshToken(refreshToken),
@@ -93,17 +100,19 @@ export async function registerUser(email: string, password: string, inviteCode?:
           const tierConfig = await getCurrentTierConfig()
           const inviterTier = resolveTier(inviterLifetimeBefore, tierConfig.thresholds)
           const { bonus, total } = applyTierBonus(inviteReward, inviterTier, tierConfig.bonusBps)
-          const newBalance = inviterAccount.balance + total
-          await tx.pointAccount.update({
+          // Do not derive the next balance from a stale read. Multiple people
+          // can register through the same invite code concurrently; an atomic
+          // increment preserves every invite reward.
+          const updatedAccount = await tx.pointAccount.update({
             where: { userId: inviter.id },
-            data: { balance: newBalance },
+            data: { balance: { increment: total } },
           })
           await tx.pointLog.create({
             data: {
               userId: inviter.id,
               type: 'in',
               amount: total,
-              balanceAfter: newBalance,
+              balanceAfter: updatedAccount.balance,
               reason: bonus > 0
                 ? `邀请新用户 ${email} 注册奖励 (tier:${inviterTier} +${bonus})`
                 : `邀请新用户 ${email} 注册奖励`,
@@ -151,37 +160,82 @@ export async function loginUser(email: string, password: string, ip?: string, us
 
 export async function refreshAccessToken(rawRefreshToken: string, ip?: string, userAgent?: string) {
   const tokenHash = hashRefreshToken(rawRefreshToken)
+  const now = new Date()
+  // Read the runtime setting once, then use the same duration for the DB row
+  // and cookie returned by the winning rotation.
+  const maxAgeMs = await getRefreshTokenMaxAgeMs()
 
-  // Look up token regardless of revoked status for reuse detection
-  const storedToken = await prisma.refreshToken.findFirst({
-    where: { tokenHash },
-    include: { user: true },
-  })
+  const result = await prisma.$transaction(async tx => {
+    // We intentionally look up revoked rows too: presenting one is a refresh
+    // token replay and must revoke the rest of the user's session family.
+    const storedToken = await tx.refreshToken.findFirst({
+      where: { tokenHash },
+      include: { user: true },
+    })
 
-  if (!storedToken) throw unauthenticated('Refresh Token 无效')
+    if (!storedToken) return { kind: 'invalid' as const }
 
-  // Reuse detection: if token is already revoked, an attacker may have stolen it.
-  // Revoke the entire token family for this user to force re-login.
-  if (storedToken.revoked) {
-    await prisma.refreshToken.updateMany({
-      where: { userId: storedToken.userId, revoked: false },
+    if (storedToken.revoked) {
+      await revokeAllUserRefreshTokens(storedToken.userId, tx)
+      return { kind: 'reused' as const }
+    }
+
+    if (storedToken.expiresAt < now) {
+      await tx.refreshToken.updateMany({
+        where: { id: storedToken.id, revoked: false },
+        data: { revoked: true },
+      })
+      return { kind: 'expired' as const }
+    }
+
+    if (storedToken.user.status === '已封禁') return { kind: 'banned' as const }
+
+    // Compare-and-set is the critical part of rotation. A plain read followed
+    // by update lets two concurrent requests both mint successor tokens.
+    const revoked = await tx.refreshToken.updateMany({
+      where: {
+        id: storedToken.id,
+        tokenHash,
+        revoked: false,
+        expiresAt: { gte: now },
+      },
       data: { revoked: true },
     })
-    throw unauthenticated('Refresh Token 已被使用，请重新登录')
+
+    if (revoked.count !== 1) {
+      // A concurrent request has consumed this token. Treat it exactly as a
+      // replay, including revoking the just-issued successor if one exists.
+      // Keeping this inside the same transaction prevents a race that could
+      // otherwise leave a successor active after reuse was detected.
+      await revokeAllUserRefreshTokens(storedToken.userId, tx)
+      return { kind: 'reused' as const }
+    }
+
+    const next = await createStoredRefreshToken(
+      storedToken.userId,
+      ip,
+      userAgent,
+      tx,
+      maxAgeMs,
+    )
+    return {
+      kind: 'rotated' as const,
+      userId: storedToken.userId,
+      role: storedToken.user.role,
+      refreshToken: next.refreshToken,
+    }
+  })
+
+  if (result.kind === 'invalid') throw unauthenticated('Refresh Token 无效')
+  if (result.kind === 'reused') throw unauthenticated('Refresh Token 已被使用，请重新登录')
+  if (result.kind === 'expired') throw unauthenticated('Refresh Token 已过期')
+  if (result.kind === 'banned') throw badRequest('账号已被封禁')
+
+  return {
+    accessToken: generateAccessToken(result.userId, result.role),
+    refreshToken: result.refreshToken,
+    refreshTokenMaxAgeMs: maxAgeMs,
   }
-
-  if (storedToken.expiresAt < new Date()) {
-    await prisma.refreshToken.update({ where: { id: storedToken.id }, data: { revoked: true } })
-    throw unauthenticated('Refresh Token 已过期')
-  }
-  if (storedToken.user.status === '已封禁') throw badRequest('账号已被封禁')
-
-  // Rotate: revoke the old token, issue a new one
-  await prisma.refreshToken.update({ where: { id: storedToken.id }, data: { revoked: true } })
-  const { refreshToken, maxAgeMs } = await createStoredRefreshToken(storedToken.userId, ip, userAgent)
-  const accessToken = generateAccessToken(storedToken.userId, storedToken.user.role)
-
-  return { accessToken, refreshToken, refreshTokenMaxAgeMs: maxAgeMs }
 }
 
 export async function revokeRefreshToken(rawRefreshToken: string) {
@@ -256,12 +310,20 @@ export async function requestPasswordReset(email: string) {
   if (user.status === '已封禁') return
 
   const rawToken = generateAuthToken()
-  await prisma.passwordResetToken.create({
-    data: {
-      userId: user.id,
-      tokenHash: hashAuthToken(rawToken),
-      expiresAt: new Date(Date.now() + config.passwordResetTokenMaxAgeMs),
-    },
+  await prisma.$transaction(async tx => {
+    // A reset link is a single active credential. Issuing a new one invalidates
+    // every earlier unused link for the account.
+    await tx.passwordResetToken.updateMany({
+      where: { userId: user.id, used: false },
+      data: { used: true },
+    })
+    await tx.passwordResetToken.create({
+      data: {
+        userId: user.id,
+        tokenHash: hashAuthToken(rawToken),
+        expiresAt: new Date(Date.now() + config.passwordResetTokenMaxAgeMs),
+      },
+    })
   })
 
   const mailer = await getMailer()
@@ -284,13 +346,35 @@ export async function resetPasswordWithToken(rawToken: string, newPassword: stri
   if (stored.expiresAt < new Date()) throw badRequest('重置链接已过期', 'BAD_REQUEST')
 
   const hashed = await bcrypt.hash(newPassword, 10)
-  await prisma.$transaction(async tx => {
+  const consumed = await prisma.$transaction(async tx => {
+    // Claim the credential atomically. The initial checks above are only used
+    // to return helpful errors; this condition is what prevents two parallel
+    // requests from both changing the password.
+    const claim = await tx.passwordResetToken.updateMany({
+      where: {
+        id: stored.id,
+        tokenHash,
+        used: false,
+        expiresAt: { gt: new Date() },
+      },
+      data: { used: true },
+    })
+    if (claim.count !== 1) return false
+
     await tx.user.update({ where: { id: stored.userId }, data: { password: hashed } })
-    await tx.passwordResetToken.update({ where: { id: stored.id }, data: { used: true } })
+    // A successful reset must invalidate any other link that was issued at
+    // roughly the same time.
+    await tx.passwordResetToken.updateMany({
+      where: { userId: stored.userId, id: { not: stored.id }, used: false },
+      data: { used: true },
+    })
     // Revoke every refresh token outstanding for this user — if the
     // password is being reset, assume the prior session is compromised.
     await revokeAllUserRefreshTokens(stored.userId, tx)
+    return true
   })
+
+  if (!consumed) throw badRequest('重置链接已被使用或已过期', 'BAD_REQUEST')
 }
 
 export async function changePassword(userId: number, currentPassword: string, newPassword: string) {
@@ -306,6 +390,10 @@ export async function changePassword(userId: number, currentPassword: string, ne
     await tx.user.update({
       where: { id: userId },
       data: { password: hashed },
+    })
+    await tx.passwordResetToken.updateMany({
+      where: { userId, used: false },
+      data: { used: true },
     })
     await revokeAllUserRefreshTokens(userId, tx)
   })

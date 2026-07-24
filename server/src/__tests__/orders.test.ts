@@ -118,7 +118,7 @@ describe('POST /api/orders (exchange)', () => {
     expect(res.body.status).toBe('pending')
     expect(res.body.deliveryMode).toBe('manual_service')
     expect(res.body.deliveryContent).toBeUndefined()
-    expect(res.body.balanceAfter).toBe(1000)
+    expect(res.body.balanceAfter).toBe(700)
 
     const order = await prisma.order.findUniqueOrThrow({
       where: { id: res.body.orderId },
@@ -127,6 +127,7 @@ describe('POST /api/orders (exchange)', () => {
     expect(order.userId).toBe(user.id)
     expect(order.status).toBe('pending')
     expect(order.holdingPoints).toBe(300)
+    expect(order.fundsHeld).toBe(true)
     expect(order.fulfillmentDeadline).not.toBeNull()
     expect(order.delivery).toBeNull()
     expect(order.statusEvents).toHaveLength(1)

@@ -339,7 +339,7 @@ export default function ProfilePage() {
       const { data } = await api.post('/points/checkin')
       useAuthStore.getState().updatePoints(data.balanceAfter)
       setHasCheckedIn(true)
-      showToast(`打卡成功！积分 +${data.reward}`)
+      showToast(`打卡成功！积分 +${data.totalReward}`)
       api.get('/points/history').then(({ data: h }) => setHistory(h))
     } catch (err: any) {
       showToast(getApiErrorMessage(err, '签到失败'), 'error')

@@ -129,7 +129,7 @@ export default function LoginPage() {
         )}
 
         {/* Dev-only quick login — email values are seed accounts; do not rename without syncing server seed. */}
-        {!isRegister && (
+        {!isRegister && import.meta.env.DEV && (
           <div className="mt-6 border-t border-[var(--color-border)] pt-6">
             <p className="flex items-center justify-center gap-1.5 text-xs text-[var(--color-text-muted)] mb-3 font-medium uppercase tracking-wider">
               <Wrench className="w-3.5 h-3.5" />
