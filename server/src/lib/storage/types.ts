@@ -10,9 +10,17 @@ export interface PutResult {
   url: string
 }
 
+export interface StoredObject {
+  key: string
+  size: number
+}
+
 export interface StorageAdapter {
   put(buffer: Buffer, opts: PutOptions): Promise<PutResult>
   get(key: string): Promise<{ buffer: Buffer; mimeType: string } | null>
+  list(): Promise<StoredObject[]>
+  putAtKey(key: string, buffer: Buffer, mimeType: string): Promise<PutResult>
+  deleteAtKey(key: string): Promise<void>
 }
 
 export function hashKey(buffer: Buffer, ext: string): string {

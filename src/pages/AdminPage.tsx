@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { LayoutDashboard, UsersRound, Package, ShoppingCart, Activity, Users, ShoppingBag, Coins, X, Store, DollarSign, Settings, ClipboardList, Megaphone } from 'lucide-react'
+import { LayoutDashboard, UsersRound, Package, ShoppingCart, Activity, Users, ShoppingBag, Coins, X, Store, DollarSign, Settings, ClipboardList, Megaphone, DatabaseBackup } from 'lucide-react'
 import api from '../api/client'
 import { getApiErrorMessage } from '../api/error'
 import { useAppStore } from '../stores/appStore'
@@ -20,8 +20,9 @@ import AdminUserTable from '../components/admin/AdminUserTable'
 import AdminOrderTable from '../components/admin/AdminOrderTable'
 import AnnouncementsAdmin from '../components/admin/AnnouncementsAdmin'
 import CommissionDialog from '../components/admin/CommissionDialog'
+import PortableBackupPanel from '../components/admin/PortableBackupPanel'
 
-type AdminTab = 'dashboard' | 'users' | 'products' | 'orders' | 'logs' | 'audit' | 'merchants' | 'settlements' | 'announcements' | 'config'
+type AdminTab = 'dashboard' | 'users' | 'products' | 'orders' | 'logs' | 'audit' | 'merchants' | 'settlements' | 'announcements' | 'config' | 'backup'
 
 const NAV_ITEMS: { id: AdminTab; label: string; icon: any }[] = [
   { id: 'dashboard', label: '数据仪表盘', icon: LayoutDashboard },
@@ -34,6 +35,7 @@ const NAV_ITEMS: { id: AdminTab; label: string; icon: any }[] = [
   { id: 'audit', label: '操作审计', icon: ClipboardList },
   { id: 'announcements', label: '公告管理', icon: Megaphone },
   { id: 'config', label: '系统配置', icon: Settings },
+  { id: 'backup', label: '数据备份与恢复', icon: DatabaseBackup },
 ]
 
 export default function AdminPage() {
@@ -244,6 +246,8 @@ export default function AdminPage() {
               </div>
             </div>
           )}
+
+          {activeTab === 'backup' && <PortableBackupPanel />}
 
           {/* Merchants */}
           {activeTab === 'merchants' && (

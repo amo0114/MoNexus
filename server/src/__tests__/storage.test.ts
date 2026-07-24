@@ -32,7 +32,23 @@ vi.mock('@aws-sdk/client-s3', () => {
     }
   }
 
-  return { S3Client, PutObjectCommand, GetObjectCommand }
+  class ListObjectsV2Command {
+    readonly input: unknown
+
+    constructor(input: unknown) {
+      this.input = input
+    }
+  }
+
+  class DeleteObjectCommand {
+    readonly input: unknown
+
+    constructor(input: unknown) {
+      this.input = input
+    }
+  }
+
+  return { S3Client, PutObjectCommand, GetObjectCommand, ListObjectsV2Command, DeleteObjectCommand }
 })
 
 const storageEnvKeys = [
@@ -154,5 +170,38 @@ describe('storage adapter factory', () => {
     const storage = await getStorage()
 
     await expect(storage.get('missing.png')).resolves.toBeNull()
+  })
+
+  it('lists objects and restores bytes to an explicit key', async () => {
+    stubS3Env()
+    aws.send
+      .mockResolvedValueOnce({
+        Contents: [{ Key: 'one.png', Size: 2 }, { Key: 'two.webp', Size: 3 }],
+        IsTruncated: false,
+      })
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({})
+    const { getStorage } = await loadStorage()
+    const storage = await getStorage()
+
+    await expect(storage.list()).resolves.toEqual([
+      { key: 'one.png', size: 2 },
+      { key: 'two.webp', size: 3 },
+    ])
+    await storage.putAtKey('one.png', Buffer.from([1, 2]), 'image/png')
+
+    expect(aws.send.mock.calls[1]?.[0]).toMatchObject({
+      input: {
+        Bucket: 'test-bucket',
+        Key: 'one.png',
+        Body: Buffer.from([1, 2]),
+        ContentType: 'image/png',
+      },
+    })
+
+    await storage.deleteAtKey('one.png')
+    expect(aws.send.mock.calls[2]?.[0]).toMatchObject({
+      input: { Bucket: 'test-bucket', Key: 'one.png' },
+    })
   })
 })

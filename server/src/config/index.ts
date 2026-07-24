@@ -111,6 +111,12 @@ const envSchema = z.object({
   CACHE_PRODUCT_REVIEWS: booleanEnvSchema.default(true),
   CACHE_PRODUCT_LIST_VERSION_COALESCE_MS: z.coerce.number().int().min(0).default(10_000),
   CACHE_MAX_VALUE_BYTES: z.coerce.number().int().positive().default(524_288),
+
+  // --- Portable, application-level backup/import. Files live only while an
+  // administrator explicitly exports or imports a bundle.
+  PORTABLE_BACKUP_WORK_DIR: z.string().min(1).default('/tmp/monexus-portable-backups'),
+  PORTABLE_BACKUP_MAX_BYTES: z.coerce.number().int().positive().default(2 * 1024 * 1024 * 1024),
+  PORTABLE_RESTORE_BOOTSTRAP_TOKEN: optionalStringEnvSchema,
 })
 
 const parsed = envSchema.safeParse(process.env)
@@ -224,6 +230,9 @@ export const config = {
   cacheProductReviews: env.CACHE_PRODUCT_REVIEWS,
   cacheProductListVersionCoalesceMs: env.CACHE_PRODUCT_LIST_VERSION_COALESCE_MS,
   cacheMaxValueBytes: env.CACHE_MAX_VALUE_BYTES,
+  portableBackupWorkDir: env.PORTABLE_BACKUP_WORK_DIR,
+  portableBackupMaxBytes: env.PORTABLE_BACKUP_MAX_BYTES,
+  portableRestoreBootstrapToken: env.PORTABLE_RESTORE_BOOTSTRAP_TOKEN,
   passwordResetTokenMaxAgeMs: 30 * 60 * 1000, // 30 min
   emailVerificationTokenMaxAgeMs: 24 * 60 * 60 * 1000, // 24h
 }
