@@ -157,13 +157,24 @@ h1, h2, h3, h4 {
   opacity: 0;
 }
 
+/* NOTE: X-centering is the container's job (-translate-x-1/2); item
+   keyframes must stay translateY-only or toasts land off-center. */
 @keyframes slideUp {
-  from { transform: translate(-50%, 100%); opacity: 0; }
-  to { transform: translate(-50%, 0); opacity: 1; }
+  from { transform: translateY(100%); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
 }
 
 .toast-enter {
   animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes toastOut {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(8px); }
+}
+
+.toast-exit {
+  animation: toastOut 0.2s ease-in forwards;
 }
 
 @keyframes slideInRight {
