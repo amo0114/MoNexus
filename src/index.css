@@ -166,6 +166,15 @@ h1, h2, h3, h4 {
   animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
+@keyframes slideInRight {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
+.drawer-enter {
+  animation: slideInRight 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
 /* =========================================================
    Component classes
    - .btn-primary  : filled indigo, main interaction (login, submit, save)
