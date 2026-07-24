@@ -88,7 +88,7 @@ export default function MerchantInventoryLogModal({ isOpen, onClose, product, on
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose() }}>
-      <DialogContent className="!max-w-2xl max-h-[85vh] overflow-y-auto" data-testid="inventory-log-modal">
+      <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto" data-testid="inventory-log-modal">
         <DialogTitle>{resourceLabel}记录</DialogTitle>
         <DialogDescription>
           商品：{product?.name ?? ''}（仅保留数量、订单与操作原因，不展示交付内容）
@@ -127,19 +127,19 @@ export default function MerchantInventoryLogModal({ isOpen, onClose, product, on
                     </td>
                     <td className="py-2.5 px-2 text-sm">
                       {log.action === 'import' ? (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold border bg-[var(--color-cta)]/10 text-[var(--color-cta)] border-[var(--color-cta)]/25">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold border bg-[var(--color-cta)]/10 text-[var(--color-cta)] border-[var(--color-cta)]/25">
                           导入
                         </span>
                       ) : log.action === 'sale' ? (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold border bg-blue-500/10 text-blue-600 border-blue-500/25">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold border bg-blue-500/10 text-blue-600 border-blue-500/25">
                           售出
                         </span>
                       ) : log.action === 'capacity_adjust' ? (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold border bg-amber-500/10 text-amber-700 border-amber-500/25">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold border bg-amber-500/10 text-amber-700 border-amber-500/25">
                           名额调整
                         </span>
                       ) : (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold border bg-[var(--color-danger)]/10 text-[var(--color-danger)] border-[var(--color-danger)]/25">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold border bg-[var(--color-danger)]/10 text-[var(--color-danger)] border-[var(--color-danger)]/25">
                           作废
                         </span>
                       )}
@@ -168,7 +168,7 @@ export default function MerchantInventoryLogModal({ isOpen, onClose, product, on
               type="button"
               onClick={() => changePage(Math.max(1, page - 1))}
               disabled={page <= 1 || loading}
-              className="btn-secondary !px-2 !py-1 !text-xs disabled:opacity-50 flex items-center cursor-pointer"
+              className="btn-secondary px-2 py-1 text-xs disabled:opacity-50 flex items-center cursor-pointer"
               aria-label="上一页"
             >
               <ChevronLeft className="w-4 h-4" />
@@ -177,7 +177,7 @@ export default function MerchantInventoryLogModal({ isOpen, onClose, product, on
               type="button"
               onClick={() => changePage(Math.min(totalPages, page + 1))}
               disabled={page >= totalPages || loading}
-              className="btn-secondary !px-2 !py-1 !text-xs disabled:opacity-50 flex items-center cursor-pointer"
+              className="btn-secondary px-2 py-1 text-xs disabled:opacity-50 flex items-center cursor-pointer"
               aria-label="下一页"
             >
               <ChevronRight className="w-4 h-4" />
@@ -231,7 +231,7 @@ export default function MerchantInventoryLogModal({ isOpen, onClose, product, on
             <button
               type="submit"
               disabled={voiding}
-              className="btn-primary !px-5 !py-2 !text-sm min-w-[120px]"
+              className="btn-primary px-5 py-2 text-sm min-w-[120px]"
               data-testid="inventory-void-submit"
             >
               {voiding ? <Loader2 className="w-4 h-4 animate-spin inline" /> : '确认作废'}

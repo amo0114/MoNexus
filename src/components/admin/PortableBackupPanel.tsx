@@ -132,7 +132,7 @@ export default function PortableBackupPanel() {
           <button
             type="submit"
             disabled={creating || job?.state === 'running'}
-            className="btn-cta !px-4 !py-2.5 disabled:opacity-50"
+            className="btn-cta px-4 py-2.5 disabled:opacity-50"
           >
             {creating || job?.state === 'running' ? <LoaderCircle className="w-4 h-4 animate-spin" /> : <FileArchive className="w-4 h-4" />}
             {creating || job?.state === 'running' ? '创建中' : '创建备份'}
@@ -143,7 +143,7 @@ export default function PortableBackupPanel() {
           {taskDescription}
         </div>
         {job?.state === 'ready' && (
-          <button onClick={handleDownload} disabled={downloading} className="btn-primary !px-4 !py-2 text-sm disabled:opacity-50">
+          <button onClick={handleDownload} disabled={downloading} className="btn-primary px-4 py-2 text-sm disabled:opacity-50">
             {downloading ? <LoaderCircle className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
             下载 {job.fileName}
           </button>
@@ -183,7 +183,7 @@ export default function PortableBackupPanel() {
               className="input mt-1 w-full"
             />
           </label>
-          <button type="submit" disabled={importing} className="btn-danger !px-4 !py-2 text-sm disabled:opacity-50">
+          <button type="submit" disabled={importing} className="btn-danger px-4 py-2 text-sm disabled:opacity-50">
             {importing ? <LoaderCircle className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
             {importing ? '正在校验并导入' : '导入备份'}
           </button>

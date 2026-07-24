@@ -121,7 +121,7 @@ export default function AdminUserTable() {
             onChange={(e) => setSearch(e.target.value)}
             placeholder="搜索邮箱 / 商家名称"
             data-testid="admin-user-search"
-            className="input !py-1.5 !text-sm !pl-8 w-64"
+            className="input py-1.5 pl-8 w-64"
           />
         </div>
       </div>
@@ -144,7 +144,7 @@ export default function AdminUserTable() {
                   <div className="font-bold text-[var(--color-text)] flex items-center gap-1.5">
                     U{u.id}
                     {u.role === 'admin' && (
-                      <span className="text-[10px] bg-[var(--color-primary)]/12 text-[var(--color-primary)] border border-[var(--color-primary)]/25 px-1.5 py-0.5 rounded font-medium">管理员</span>
+                      <span className="text-xs bg-[var(--color-primary)]/12 text-[var(--color-primary)] border border-[var(--color-primary)]/25 px-1.5 py-0.5 rounded font-medium">管理员</span>
                     )}
                   </div>
                   <div className="text-xs text-[var(--color-text-muted)] mt-1">{u.email}</div>
@@ -152,7 +152,7 @@ export default function AdminUserTable() {
                 <td className="text-[var(--color-text-muted)] text-sm">{new Date(u.createdAt).toLocaleDateString()}</td>
                 <td className="font-bold text-[var(--color-cta)]">{u.pointAccount?.balance ?? 0}</td>
                 <td>
-                  <span className={`inline-flex items-center px-2.5 py-1 text-[11px] rounded font-bold border ${
+                  <span className={`inline-flex items-center px-2.5 py-1 text-xs rounded font-bold border ${
                     u.status === '正常'
                       ? 'bg-[var(--color-cta)]/10 text-[var(--color-cta)] border-[var(--color-cta)]/25'
                       : 'bg-red-500/10 text-red-500 border-red-500/25'
@@ -214,7 +214,7 @@ export default function AdminUserTable() {
       {showBan && banTarget && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center">
           <div className="modal-overlay" onClick={() => setShowBan(false)} />
-          <div className="modal relative z-10 fade-in !max-w-sm">
+          <div className="modal relative z-10 fade-in max-w-sm">
             <div className="flex justify-between items-center mb-5">
               <h3 className="font-heading text-xl font-bold text-[var(--color-text)]">封禁用户</h3>
               <button
@@ -232,7 +232,7 @@ export default function AdminUserTable() {
                   type="text"
                   disabled
                   value={`U${banTarget.id} (${banTarget.email})`}
-                  className="input !text-sm !bg-[var(--color-background)] !text-[var(--color-text-muted)] cursor-not-allowed"
+                  className="input bg-[var(--color-background)] text-[var(--color-text-muted)] cursor-not-allowed"
                 />
               </div>
               <div>
@@ -257,7 +257,7 @@ export default function AdminUserTable() {
       {showAdjust && adjustTarget && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center">
           <div className="modal-overlay" onClick={() => setShowAdjust(false)} />
-          <div className="modal relative z-10 fade-in !max-w-sm">
+          <div className="modal relative z-10 fade-in max-w-sm">
             <div className="flex justify-between items-center mb-5">
               <h3 className="font-heading text-xl font-bold text-[var(--color-text)]">调整用户积分</h3>
               <button
@@ -275,7 +275,7 @@ export default function AdminUserTable() {
                   type="text"
                   disabled
                   value={`U${adjustTarget.id} (${adjustTarget.email}) - 当前: ${adjustTarget.pointAccount?.balance ?? 0}`}
-                  className="input !text-sm !bg-[var(--color-background)] !text-[var(--color-text-muted)] cursor-not-allowed"
+                  className="input bg-[var(--color-background)] text-[var(--color-text-muted)] cursor-not-allowed"
                 />
               </div>
               <div className="grid grid-cols-2 gap-3">

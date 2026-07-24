@@ -37,7 +37,7 @@ export default function ResetPasswordPage() {
       <div className="absolute top-[-20%] left-[-10%] w-[600px] h-[600px] rounded-full bg-[var(--color-primary)]/10 blur-[120px] pointer-events-none" />
       <div className="absolute bottom-[-10%] right-[-5%] w-[500px] h-[500px] rounded-full bg-[var(--color-primary)]/8 blur-[100px] pointer-events-none" />
 
-      <div className="card w-full max-w-md p-10 mx-4 relative overflow-hidden z-10 bg-[var(--color-surface)]/95 backdrop-blur-xl">
+      <div className="card w-full max-w-md mx-4 relative overflow-hidden z-10 backdrop-blur-xl">
         <Link
           to="/login"
           className="inline-flex items-center gap-1 text-sm text-[var(--color-text-muted)] hover:text-[var(--color-text)] mb-4 transition-colors"

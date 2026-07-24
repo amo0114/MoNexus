@@ -135,12 +135,12 @@ export function MemberTierConfigPanel() {
 
   return (
     <div className="overflow-x-auto bg-[var(--color-background)] rounded-lg border border-[var(--color-border)]">
-      <table className="admin-table !border-0">
+      <table className="admin-table border-0">
         <thead>
           <tr>
-            <th className="!border-b !border-[var(--color-border)]">等级名称</th>
-            <th className="!border-b !border-[var(--color-border)]">升级阈值 (累计积分)</th>
-            <th className="!border-b !border-[var(--color-border)] w-1/3">加成倍率 (基点)</th>
+            <th className="border-b border-[var(--color-border)]">等级名称</th>
+            <th className="border-b border-[var(--color-border)]">升级阈值 (累计积分)</th>
+            <th className="border-b border-[var(--color-border)] w-1/3">加成倍率 (基点)</th>
           </tr>
         </thead>
         <tbody>
@@ -167,7 +167,7 @@ export function MemberTierConfigPanel() {
             return (
               <tr key={t.value} className={isBronze ? 'opacity-60 bg-[var(--color-text-muted)]/5' : ''}>
                 <td>
-                  <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold border ${badgeStyles}`}>
+                  <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-bold border ${badgeStyles}`}>
                     {t.label}
                   </span>
                 </td>
@@ -186,7 +186,7 @@ export function MemberTierConfigPanel() {
                           value={t.thresholdValue}
                           onChange={(e) => handleInput(t.value, 'thresholdValue', e.target.value)}
                           disabled={savingKey === t.thresholdKey}
-                          className="input !text-sm !py-1.5 !px-2 w-28"
+                          className="input py-1.5 px-2 w-28"
                         />
                         <button
                           onClick={() => t.thresholdKey && handleSave(t.thresholdKey, t.thresholdValue)}
@@ -223,7 +223,7 @@ export function MemberTierConfigPanel() {
                           value={t.bonusBpsValue}
                           onChange={(e) => handleInput(t.value, 'bonusBpsValue', e.target.value)}
                           disabled={savingKey === t.bonusBpsKey}
-                          className="input !text-sm !py-1.5 !px-2 w-28"
+                          className="input py-1.5 px-2 w-28"
                         />
                         <button
                           onClick={() => t.bonusBpsKey && handleSave(t.bonusBpsKey, t.bonusBpsValue)}

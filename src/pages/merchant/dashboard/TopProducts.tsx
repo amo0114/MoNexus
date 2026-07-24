@@ -3,7 +3,7 @@ import { DashboardTopProduct } from '../../../api/merchant/dashboard'
 
 export default function TopProducts({ data, loading }: { data: DashboardTopProduct[], loading: boolean }) {
   return (
-    <div className="card p-6 rounded-lg border border-[var(--color-border)] bg-[var(--color-background)]">
+    <div className="card rounded-lg border border-[var(--color-border)]">
       <h3 className="font-heading text-lg font-bold text-[var(--color-text)] mb-4">销量 TOP10</h3>
       <div className="overflow-x-auto">
         <table className="w-full text-left border-collapse">

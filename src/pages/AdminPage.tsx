@@ -236,7 +236,7 @@ export default function AdminPage() {
         </aside>
 
         {/* Main Content */}
-        <div className="flex-grow card !p-6 sm:!p-8 min-h-[600px] overflow-x-auto">
+        <div className="flex-grow card p-6 sm:p-8 min-h-[600px] overflow-x-auto">
           {/* Dashboard */}
           {activeTab === 'dashboard' && stats && (
             <div className="space-y-6">
@@ -314,7 +314,7 @@ export default function AdminPage() {
                   <select
                     value={settlementStatusFilter}
                     onChange={(e) => setSettlementStatusFilter(e.target.value)}
-                    className="input !py-1.5 !text-sm w-36"
+                    className="input py-1.5 w-36"
                     data-testid="admin-settlement-status-filter"
                   >
                     <option value="">全部状态</option>
@@ -326,7 +326,7 @@ export default function AdminPage() {
                   <button
                     onClick={handleBatchSettle}
                     disabled={selectedSettlements.length === 0}
-                    className="btn-cta !px-4 !py-2 !text-sm"
+                    className="btn-cta px-4 py-2 text-sm"
                     data-testid="admin-batch-settle"
                   >
                     批量结算 ({selectedSettlements.length})
@@ -379,7 +379,7 @@ export default function AdminPage() {
                         </td>
                         <td>
                           <div className="font-mono text-xs text-[var(--color-text-muted)]">ORD-{s.orderId}</div>
-                          <div className="text-[10px] text-[var(--color-text-muted)] mt-1">{new Date(s.createdAt).toLocaleString()}</div>
+                          <div className="text-xs text-[var(--color-text-muted)] mt-1">{new Date(s.createdAt).toLocaleString()}</div>
                         </td>
                         <td className="font-bold text-sm text-[var(--color-text)]">
                           {s.merchant?.name || s.merchantId}
@@ -502,7 +502,7 @@ export default function AdminPage() {
                   <tbody>
                     {logs.map((l: any) => (
                       <tr key={l.id}>
-                        <td className="text-[var(--color-text-muted)] text-[11px]">{new Date(l.createdAt).toLocaleString()}</td>
+                        <td className="text-[var(--color-text-muted)] text-xs">{new Date(l.createdAt).toLocaleString()}</td>
                         <td className="font-bold text-[var(--color-text)] text-sm">U{l.user?.id}</td>
                         <td className="text-sm text-[var(--color-text-muted)]">{l.reason}</td>
                         <td className={`text-right font-bold text-base ${l.type === 'in' ? 'text-[var(--color-cta)]' : 'text-[var(--color-text)]'}`}>
@@ -526,29 +526,29 @@ export default function AdminPage() {
                   placeholder="管理员ID"
                   value={auditFilterAdminId}
                   onChange={(e) => setAuditFilterAdminId(e.target.value)}
-                  className="input !py-1.5 !text-sm w-32"
+                  className="input py-1.5 w-32"
                 />
                 <input
                   type="text"
                   placeholder="操作动作 (如: ban)"
                   value={auditFilterAction}
                   onChange={(e) => setAuditFilterAction(e.target.value)}
-                  className="input !py-1.5 !text-sm w-40"
+                  className="input py-1.5 w-40"
                 />
                 <input
                   type="date"
                   value={auditFilterFrom}
                   onChange={(e) => setAuditFilterFrom(e.target.value)}
-                  className="input !py-1.5 !text-sm w-36"
+                  className="input py-1.5 w-36"
                 />
                 <input
                   type="date"
                   value={auditFilterTo}
                   onChange={(e) => setAuditFilterTo(e.target.value)}
-                  className="input !py-1.5 !text-sm w-36"
+                  className="input py-1.5 w-36"
                 />
-                <button onClick={handleAuditSearch} className="btn-primary !py-1.5 !text-sm">查询</button>
-                <button onClick={handleAuditReset} className="btn-secondary !py-1.5 !text-sm">重置</button>
+                <button onClick={handleAuditSearch} className="btn-primary py-1.5 text-sm">查询</button>
+                <button onClick={handleAuditReset} className="btn-secondary py-1.5 text-sm">重置</button>
               </div>
               <div className="overflow-x-auto">
                 <table className="admin-table">
@@ -564,7 +564,7 @@ export default function AdminPage() {
                   <tbody>
                     {auditLogs.map((l) => (
                       <tr key={l.id}>
-                        <td className="text-[var(--color-text-muted)] text-[11px] whitespace-nowrap">{new Date(l.createdAt).toLocaleString()}</td>
+                        <td className="text-[var(--color-text-muted)] text-xs whitespace-nowrap">{new Date(l.createdAt).toLocaleString()}</td>
                         <td className="font-bold text-[var(--color-text)] text-sm">
                           U{l.adminId} <span className="text-xs font-normal text-[var(--color-text-muted)]">({l.adminEmail})</span>
                         </td>
@@ -665,7 +665,7 @@ export default function AdminPage() {
               onChange={(e) => setInventoryText(e.target.value)}
               rows={8}
               placeholder="XXXX-XXXX-XXXX-XXXX&#10;YYYY-YYYY-YYYY-YYYY"
-              className="input font-mono resize-none mb-4 !text-sm"
+              className="input font-mono resize-none mb-4"
             />
             <button onClick={confirmImportInventory} className="btn-primary w-full">
               确认导入
@@ -718,7 +718,7 @@ function MerchantStatusPill({ status }: { status: string }) {
   }
   const s = styles[status] || { bg: 'bg-[var(--color-text-muted)]/10', text: 'text-[var(--color-text-muted)]', border: 'border-[var(--color-text-muted)]/25', label: status }
   return (
-    <span className={`inline-flex items-center px-2.5 py-1 text-[11px] rounded font-bold border ${s.bg} ${s.text} ${s.border}`}>
+    <span className={`inline-flex items-center px-2.5 py-1 text-xs rounded font-bold border ${s.bg} ${s.text} ${s.border}`}>
       {s.label}
     </span>
   )

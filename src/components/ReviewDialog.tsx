@@ -46,7 +46,7 @@ export default function ReviewDialog({ open, orderId, mode, initial, onClose, on
         <div className="mt-4 space-y-4">
           <StarRating value={rating} onChange={setRating} size="md" />
           <textarea
-            className="input min-h-[80px] resize-y text-sm w-full"
+            className="input min-h-[80px] resize-y w-full"
             placeholder="说说你的使用体验（可选）..."
             maxLength={500}
             value={comment}
@@ -55,12 +55,12 @@ export default function ReviewDialog({ open, orderId, mode, initial, onClose, on
           />
         </div>
         <div className="mt-5 flex justify-end gap-3">
-          <button type="button" onClick={onClose} className="btn-secondary !px-5 !py-2 !text-sm">取消</button>
+          <button type="button" onClick={onClose} className="btn-secondary px-5 py-2 text-sm">取消</button>
           <button
             type="button"
             onClick={handleSubmit}
             disabled={saving}
-            className="btn-primary !px-5 !py-2 !text-sm"
+            className="btn-primary px-5 py-2 text-sm"
             data-testid="review-submit"
           >
             {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : '提交'}

@@ -269,7 +269,7 @@ export default function MerchantDashboardPage() {
     <div className="max-w-6xl mx-auto flex flex-col md:flex-row gap-6 mt-4">
       {/* Sidebar */}
       <aside className="w-full md:w-64 flex-shrink-0">
-        <nav className="card !p-2 flex flex-col gap-1">
+        <nav className="card p-2 flex flex-col gap-1">
           {TABS.map(({ key, label, Icon, path }) => (
             <button
               key={key}
@@ -307,7 +307,7 @@ export default function MerchantDashboardPage() {
               <div className="flex justify-between items-center mb-4">
                 <h2 className="font-heading text-xl font-bold text-[var(--color-text)]">商品管理</h2>
                 <button
-                  className="btn-primary !px-3 !py-1.5 !text-sm"
+                  className="btn-primary px-3 py-1.5 text-sm"
                   onClick={() => { setEditingProduct(null); setIsProductFormOpen(true); }}
                 >
                   <Plus className="w-4 h-4" /> 新建商品
@@ -321,14 +321,14 @@ export default function MerchantDashboardPage() {
                   <input
                     type="text"
                     placeholder="搜索商品名称..."
-                    className="input !pl-9 !py-2 !text-sm"
+                    className="input pl-9 py-2"
                     value={productSearch}
                     onChange={(e) => setProductSearch(e.target.value)}
                     data-testid="merchant-product-search"
                   />
                 </div>
                 <select
-                  className="input !py-2 !text-sm !w-auto appearance-none cursor-pointer"
+                  className="input py-2 w-auto appearance-none cursor-pointer"
                   value={productStatusFilter}
                   onChange={(e) => { setProductStatusFilter(e.target.value); setProductPage(1); }}
                   aria-label="按状态筛选"
@@ -339,7 +339,7 @@ export default function MerchantDashboardPage() {
                   <option value="inactive">未上架</option>
                 </select>
                 <select
-                  className="input !py-2 !text-sm !w-auto appearance-none cursor-pointer"
+                  className="input py-2 w-auto appearance-none cursor-pointer"
                   value={productTypeFilter}
                   onChange={(e) => { setProductTypeFilter(e.target.value); setProductPage(1); }}
                   aria-label="按类型筛选"
@@ -351,7 +351,7 @@ export default function MerchantDashboardPage() {
                   ))}
                 </select>
                 <select
-                  className="input !py-2 !text-sm !w-auto appearance-none cursor-pointer"
+                  className="input py-2 w-auto appearance-none cursor-pointer"
                   value={productModeFilter}
                   onChange={(e) => { setProductModeFilter(e.target.value); setProductPage(1); }}
                   aria-label="按发货模式筛选"
@@ -420,7 +420,7 @@ export default function MerchantDashboardPage() {
                               </span>
                               {isLowStock && (
                                 <span
-                                  className="inline-flex items-center gap-1 ml-2 px-2 py-0.5 rounded text-[10px] font-bold border bg-[var(--color-danger)]/10 text-[var(--color-danger)] border-[var(--color-danger)]/25"
+                                  className="inline-flex items-center gap-1 ml-2 px-2 py-0.5 rounded text-xs font-bold border bg-[var(--color-danger)]/10 text-[var(--color-danger)] border-[var(--color-danger)]/25"
                                   data-testid={`low-stock-badge-${p.id}`}
                                 >
                                   <AlertTriangle className="w-3 h-3" /> 低库存
@@ -477,26 +477,26 @@ export default function MerchantDashboardPage() {
                 <button
                   type="button"
                   onClick={() => { setOrderStatusFilter('pending'); setOrderPage(1) }}
-                  className={`card !p-3 text-left cursor-pointer border ${orderStatusFilter === 'pending' ? 'border-[var(--color-primary)]' : 'border-transparent'}`}
+                  className={`card p-3 text-left cursor-pointer border ${orderStatusFilter === 'pending' ? 'border-[var(--color-primary)]' : 'border-transparent'}`}
                 >
-                  <div className="text-[10px] text-[var(--color-text-muted)] uppercase font-bold">待处理</div>
+                  <div className="text-xs text-[var(--color-text-muted)] uppercase font-bold">待处理</div>
                   <div className="text-xl font-bold text-[var(--color-warning)]">{stats?.todo?.pending ?? '—'}</div>
                 </button>
                 <button
                   type="button"
                   onClick={() => { setOrderStatusFilter('processing'); setOrderPage(1) }}
-                  className={`card !p-3 text-left cursor-pointer border ${orderStatusFilter === 'processing' ? 'border-[var(--color-primary)]' : 'border-transparent'}`}
+                  className={`card p-3 text-left cursor-pointer border ${orderStatusFilter === 'processing' ? 'border-[var(--color-primary)]' : 'border-transparent'}`}
                 >
-                  <div className="text-[10px] text-[var(--color-text-muted)] uppercase font-bold">履约中</div>
+                  <div className="text-xs text-[var(--color-text-muted)] uppercase font-bold">履约中</div>
                   <div className="text-xl font-bold text-[var(--color-primary)]">{stats?.todo?.processing ?? '—'}</div>
                 </button>
                 <button
                   type="button"
                   onClick={() => { setOrderStatusFilter(''); setOrderPage(1) }}
-                  className="card !p-3 text-left cursor-pointer border border-transparent"
+                  className="card p-3 text-left cursor-pointer border border-transparent"
                   data-testid="merchant-sla-todo"
                 >
-                  <div className="text-[10px] text-[var(--color-text-muted)] uppercase font-bold">SLA 超时</div>
+                  <div className="text-xs text-[var(--color-text-muted)] uppercase font-bold">SLA 超时</div>
                   <div className="text-xl font-bold text-[var(--color-danger)]">{stats?.todo?.slaExceeded ?? '—'}</div>
                 </button>
               </div>
@@ -505,7 +505,7 @@ export default function MerchantDashboardPage() {
                 <select
                   value={orderStatusFilter}
                   onChange={(e) => { setOrderStatusFilter(e.target.value); setOrderPage(1) }}
-                  className="input !py-1.5 !text-sm w-40"
+                  className="input py-1.5 w-40"
                   data-testid="merchant-order-status-filter"
                 >
                   <option value="">全部状态</option>
@@ -541,7 +541,7 @@ export default function MerchantDashboardPage() {
                           <td className="py-3 px-2 text-sm text-[var(--color-text-muted)]">
                             <div>{o.id}</div>
                             {typeof o.holdingPoints === 'number' && o.holdingPoints > 0 && (
-                              <div className="text-[10px] text-[var(--color-text-muted)] mt-0.5">冻结 {o.holdingPoints}</div>
+                              <div className="text-xs text-[var(--color-text-muted)] mt-0.5">冻结 {o.holdingPoints}</div>
                             )}
                           </td>
                           <td className="py-3 px-2 text-sm font-medium text-[var(--color-text)]">
@@ -559,40 +559,40 @@ export default function MerchantDashboardPage() {
                             <RegistryPill value={o.status} category="orderStatuses" />
                             {o.slaExceeded && (
                               <span
-                                className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded text-[10px] font-bold border bg-[var(--color-danger)]/10 text-[var(--color-danger)] border-[var(--color-danger)]/25"
+                                className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded text-xs font-bold border bg-[var(--color-danger)]/10 text-[var(--color-danger)] border-[var(--color-danger)]/25"
                                 data-testid={`sla-exceeded-badge-${o.id}`}
                               >
                                 <AlertTriangle className="w-3 h-3" /> SLA 超时
                               </span>
                             )}
                             {o.fulfillmentDeadline && (
-                              <div className="text-[10px] text-[var(--color-text-muted)] mt-1">
+                              <div className="text-xs text-[var(--color-text-muted)] mt-1">
                                 截止 {new Date(o.fulfillmentDeadline).toLocaleString()}
                               </div>
                             )}
                           </td>
                           <td className="py-3 px-2 text-right whitespace-nowrap">
                             {o.availableActions?.includes('start_fulfillment') && (
-                              <button onClick={() => handleOrderAction('start_fulfillment', o)} className="btn-secondary !px-2 !py-1 !text-xs mr-2">
+                              <button onClick={() => handleOrderAction('start_fulfillment', o)} className="btn-secondary px-2 py-1 text-xs mr-2">
                                 开始履约
                               </button>
                             )}
                             {o.availableActions?.includes('reject') && (
                               <button
                                 onClick={() => handleOrderAction('reject', o)}
-                                className="btn-secondary !px-2 !py-1 !text-xs mr-2 !border-[var(--color-danger)] !text-[var(--color-danger)]"
+                                className="btn-secondary px-2 py-1 text-xs mr-2 border-[var(--color-danger)] text-[var(--color-danger)]"
                                 data-testid={`merchant-reject-order-${o.id}`}
                               >
                                 拒单
                               </button>
                             )}
                             {o.availableActions?.includes('deliver') && (
-                              <button onClick={() => handleOrderAction('deliver', o)} className="btn-primary !px-2 !py-1 !text-xs mr-2">
+                              <button onClick={() => handleOrderAction('deliver', o)} className="btn-primary px-2 py-1 text-xs mr-2">
                                 发货
                               </button>
                             )}
                             {o.availableActions?.includes('respond_dispute') && (
-                              <button onClick={() => handleOrderAction('respond_dispute', o)} className="btn-secondary !px-2 !py-1 !text-xs mr-2">
+                              <button onClick={() => handleOrderAction('respond_dispute', o)} className="btn-secondary px-2 py-1 text-xs mr-2">
                                 处理争议
                               </button>
                             )}
@@ -640,7 +640,7 @@ export default function MerchantDashboardPage() {
                           <td className="py-3 px-2 text-sm">
                             <RegistryPill value={s.status} category="settlementStatuses" />
                             {!s.payable && s.blockReason && (
-                              <div className="text-[10px] text-[var(--color-danger)] mt-1">{s.blockReason}</div>
+                              <div className="text-xs text-[var(--color-danger)] mt-1">{s.blockReason}</div>
                             )}
                           </td>
                         </tr>
@@ -747,7 +747,7 @@ export default function MerchantDashboardPage() {
       {rejectingOrder && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center fade-in" data-testid="merchant-reject-dialog">
           <div className="modal-overlay" onClick={() => !rejecting && setRejectingOrder(null)} />
-          <div className="modal relative z-10 !max-w-md">
+          <div className="modal relative z-10 max-w-md">
             <h3 className="font-heading text-lg font-bold text-[var(--color-text)] mb-2">确认拒单</h3>
             <p className="text-sm text-[var(--color-text-muted)] mb-4">
               拒单后订单将标记为已退款，冻结积分退还用户，结算作废。订单 #{rejectingOrder.id}（{rejectingOrder.product?.name}）
@@ -762,12 +762,12 @@ export default function MerchantDashboardPage() {
               data-testid="merchant-reject-note"
             />
             <div className="flex justify-end gap-3">
-              <button type="button" className="btn-secondary !px-4 !py-2 !text-sm" disabled={rejecting} onClick={() => setRejectingOrder(null)}>
+              <button type="button" className="btn-secondary px-4 py-2 text-sm" disabled={rejecting} onClick={() => setRejectingOrder(null)}>
                 取消
               </button>
               <button
                 type="button"
-                className="btn-secondary !px-4 !py-2 !text-sm !border-[var(--color-danger)] !text-[var(--color-danger)]"
+                className="btn-secondary px-4 py-2 text-sm border-[var(--color-danger)] text-[var(--color-danger)]"
                 disabled={rejecting}
                 onClick={handleRejectConfirm}
                 data-testid="merchant-reject-confirm"
@@ -814,7 +814,7 @@ function StatusPill({ kind }: { kind: 'active' | 'inactive' }) {
   }
   const s = styles[kind]
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold border ${s.bg} ${s.text} ${s.border}`}>
+    <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-bold border ${s.bg} ${s.text} ${s.border}`}>
       {s.label}
     </span>
   )
@@ -845,14 +845,14 @@ function PaginationControls({ page, total, setPage, testId }: { page: number; to
         <button
           onClick={() => setPage(Math.max(1, page - 1))}
           disabled={page <= 1}
-          className="btn-secondary !px-2 !py-1 !text-xs disabled:opacity-50 flex items-center cursor-pointer"
+          className="btn-secondary px-2 py-1 text-xs disabled:opacity-50 flex items-center cursor-pointer"
         >
           <ChevronLeft className="w-4 h-4" />
         </button>
         <button
           onClick={() => setPage(Math.min(totalPages, page + 1))}
           disabled={page >= totalPages}
-          className="btn-secondary !px-2 !py-1 !text-xs disabled:opacity-50 flex items-center cursor-pointer"
+          className="btn-secondary px-2 py-1 text-xs disabled:opacity-50 flex items-center cursor-pointer"
         >
           <ChevronRight className="w-4 h-4" />
         </button>

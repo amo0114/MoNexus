@@ -212,7 +212,7 @@ export default function AnnouncementsAdmin() {
             setPage(1)
           }}
           data-testid="admin-announcement-status-filter"
-          className="input !py-1.5 !text-sm w-36"
+          className="input py-1.5 w-36"
         >
           <option value="">全部状态</option>
           <option value="draft">草稿</option>
@@ -226,7 +226,7 @@ export default function AnnouncementsAdmin() {
             setPage(1)
           }}
           data-testid="admin-announcement-audience-filter"
-          className="input !py-1.5 !text-sm w-36"
+          className="input py-1.5 w-36"
         >
           <option value="">全部受众</option>
           <option value="all">全员</option>
@@ -237,7 +237,7 @@ export default function AnnouncementsAdmin() {
         <div className="flex-1" />
         <button
           type="button"
-          className="btn-primary !px-4 !py-2 !text-sm flex items-center gap-1.5 cursor-pointer"
+          className="btn-primary px-4 py-2 text-sm flex items-center gap-1.5 cursor-pointer"
           data-testid="admin-announcement-create"
           onClick={openCreate}
         >
@@ -274,7 +274,7 @@ export default function AnnouncementsAdmin() {
                 </td>
                 <td className="font-mono font-bold text-[var(--color-text)]">{a.priority}</td>
                 <td>
-                  <span className={`inline-flex items-center px-2.5 py-1 text-[11px] rounded font-bold border ${STATUS_PILL[a.status]}`}>
+                  <span className={`inline-flex items-center px-2.5 py-1 text-xs rounded font-bold border ${STATUS_PILL[a.status]}`}>
                     {STATUS_LABEL[a.status]}
                   </span>
                 </td>
@@ -322,7 +322,7 @@ export default function AnnouncementsAdmin() {
           if (!open && !submitting) setEditor(null)
         }}
       >
-        <DialogContent className="!z-[120] !max-w-lg" data-testid="admin-announcement-editor-dialog">
+        <DialogContent className="!z-[120] max-w-lg" data-testid="admin-announcement-editor-dialog">
           <DialogTitle>{editor?.mode === 'edit' ? '编辑公告' : '新建公告'}</DialogTitle>
           <DialogDescription>
             公告按优先级倒序展示；仅已发布且在时间窗口内的条目对用户可见。
@@ -333,7 +333,7 @@ export default function AnnouncementsAdmin() {
                 <label className="block text-xs font-medium mb-1">标题</label>
                 <input
                   type="text"
-                  className="input text-sm"
+                  className="input"
                   value={editor.title}
                   onChange={(e) => setEditor({ ...editor, title: e.target.value })}
                   maxLength={200}
@@ -343,7 +343,7 @@ export default function AnnouncementsAdmin() {
               <div>
                 <label className="block text-xs font-medium mb-1">内容</label>
                 <textarea
-                  className="input min-h-[96px] resize-y text-sm"
+                  className="input min-h-[96px] resize-y"
                   value={editor.content}
                   onChange={(e) => setEditor({ ...editor, content: e.target.value })}
                   maxLength={5000}
@@ -354,7 +354,7 @@ export default function AnnouncementsAdmin() {
                 <div>
                   <label className="block text-xs font-medium mb-1">受众</label>
                   <select
-                    className="input text-sm"
+                    className="input"
                     value={editor.audience}
                     onChange={(e) => setEditor({ ...editor, audience: e.target.value as AnnouncementAudience })}
                     data-testid="admin-announcement-audience"
@@ -369,7 +369,7 @@ export default function AnnouncementsAdmin() {
                   <label className="block text-xs font-medium mb-1">优先级 (-1000 ~ 1000)</label>
                   <input
                     type="number"
-                    className="input text-sm"
+                    className="input"
                     value={editor.priority}
                     onChange={(e) => setEditor({ ...editor, priority: e.target.value })}
                     min={-1000}
@@ -383,7 +383,7 @@ export default function AnnouncementsAdmin() {
                   <label className="block text-xs font-medium mb-1">开始时间</label>
                   <input
                     type="datetime-local"
-                    className="input text-sm"
+                    className="input"
                     value={editor.startsAt}
                     onChange={(e) => setEditor({ ...editor, startsAt: e.target.value })}
                     data-testid="admin-announcement-starts-at"
@@ -392,7 +392,7 @@ export default function AnnouncementsAdmin() {
                 <div>
                   <label className="block text-xs font-medium mb-1">状态</label>
                   <select
-                    className="input text-sm"
+                    className="input"
                     value={editor.status}
                     onChange={(e) => setEditor({ ...editor, status: e.target.value as AnnouncementStatus })}
                     data-testid="admin-announcement-status"
@@ -416,7 +416,7 @@ export default function AnnouncementsAdmin() {
                 {editor.hasEndsAt && (
                   <input
                     type="datetime-local"
-                    className="input text-sm mt-2"
+                    className="input mt-2"
                     value={editor.endsAt}
                     onChange={(e) => setEditor({ ...editor, endsAt: e.target.value })}
                     data-testid="admin-announcement-ends-at"
@@ -428,7 +428,7 @@ export default function AnnouncementsAdmin() {
           <div className="mt-5 flex justify-end gap-3">
             <button
               type="button"
-              className="btn-secondary !px-4 !py-2 !text-sm"
+              className="btn-secondary px-4 py-2 text-sm"
               disabled={submitting}
               onClick={() => setEditor(null)}
             >
@@ -436,7 +436,7 @@ export default function AnnouncementsAdmin() {
             </button>
             <button
               type="button"
-              className="btn-primary !px-4 !py-2 !text-sm"
+              className="btn-primary px-4 py-2 text-sm"
               disabled={submitting}
               onClick={handleSubmit}
               data-testid="admin-announcement-submit"

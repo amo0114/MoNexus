@@ -27,19 +27,19 @@ export default function TrendChart({ data, loading }: { data: DashboardSeriesPoi
   }, [data, metric])
 
   if (loading) {
-    return <div className="card h-[300px] flex items-center justify-center animate-pulse bg-[var(--color-background)] rounded-lg border border-[var(--color-border)] mb-6"><div className="w-1/2 h-4 bg-[var(--color-border)] rounded"></div></div>
+    return <div className="card h-[300px] flex items-center justify-center animate-pulse rounded-lg border border-[var(--color-border)] mb-6"><div className="w-1/2 h-4 bg-[var(--color-border)] rounded"></div></div>
   }
 
   if (!data || data.length === 0) {
     return (
-      <div className="card h-[300px] flex items-center justify-center rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] mb-6">
+      <div className="card h-[300px] flex items-center justify-center rounded-lg border border-[var(--color-border)] mb-6">
         <span className="text-[var(--color-text-muted)] text-sm">暂无数据</span>
       </div>
     )
   }
 
   return (
-    <div className="card p-6 rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] mb-6">
+    <div className="card rounded-lg border border-[var(--color-border)] mb-6">
       <div className="flex justify-between items-center mb-6">
         <h3 className="font-heading text-lg font-bold text-[var(--color-text)]">趋势分析</h3>
         <select

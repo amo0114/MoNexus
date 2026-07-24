@@ -24,7 +24,7 @@ export default function AdminPagination({ page, total, pageSize = 20, onPageChan
         <button
           onClick={() => onPageChange(Math.max(1, page - 1))}
           disabled={page <= 1}
-          className="btn-secondary !px-2 !py-1 !text-xs disabled:opacity-50 flex items-center cursor-pointer"
+          className="btn-secondary px-2 py-1 text-xs disabled:opacity-50 flex items-center cursor-pointer"
           aria-label="上一页"
         >
           <ChevronLeft className="w-4 h-4" />
@@ -32,7 +32,7 @@ export default function AdminPagination({ page, total, pageSize = 20, onPageChan
         <button
           onClick={() => onPageChange(Math.min(totalPages, page + 1))}
           disabled={page >= totalPages}
-          className="btn-secondary !px-2 !py-1 !text-xs disabled:opacity-50 flex items-center cursor-pointer"
+          className="btn-secondary px-2 py-1 text-xs disabled:opacity-50 flex items-center cursor-pointer"
           aria-label="下一页"
         >
           <ChevronRight className="w-4 h-4" />

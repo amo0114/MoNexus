@@ -58,7 +58,7 @@ export default function CommissionDialog({ merchant, onClose, onSuccess }: Props
 
   return (
     <Dialog open={!!merchant} onOpenChange={(open) => { if (!open) onClose() }}>
-      <DialogContent data-testid="commission-dialog" className="!max-w-sm">
+      <DialogContent data-testid="commission-dialog" className="max-w-sm">
         <DialogTitle>调整平台抽成</DialogTitle>
         <DialogDescription>
           商家「{merchant?.name}」当前抽成 {(Number(merchant?.commissionRate ?? 0) * 100).toFixed(2)}%
@@ -81,7 +81,7 @@ export default function CommissionDialog({ merchant, onClose, onSuccess }: Props
                 }}
                 placeholder="如 10 或 12.5"
                 data-testid="commission-rate-input"
-                className="input !text-sm"
+                className="input"
               />
               <span className="text-sm text-[var(--color-text-muted)]">%</span>
             </div>

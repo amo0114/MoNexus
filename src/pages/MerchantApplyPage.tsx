@@ -39,7 +39,7 @@ export default function MerchantApplyPage() {
 
   if (isPending) {
     return (
-      <div className="card max-w-xl mx-auto mt-10 text-center p-8">
+      <div className="card max-w-xl mx-auto mt-10 text-center">
         <h2 className="font-heading text-2xl font-bold mb-4 text-[var(--color-text)]">商家申请审核中</h2>
         <p className="text-[var(--color-text-muted)]">您的入驻申请已提交，请耐心等待平台审核。</p>
       </div>
@@ -48,7 +48,7 @@ export default function MerchantApplyPage() {
 
   if (isSuspended) {
     return (
-      <div className="card max-w-xl mx-auto mt-10 text-center p-8">
+      <div className="card max-w-xl mx-auto mt-10 text-center">
         <h2 className="font-heading text-2xl font-bold mb-4 text-[var(--color-text)]">账号已停用</h2>
         <p className="text-[var(--color-text-muted)]">您的商家账号已被停用，请联系平台管理员。</p>
       </div>

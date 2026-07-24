@@ -107,7 +107,7 @@ export default function AdminConfigPanel() {
                 <div key={c.key} className="px-4 py-3 flex flex-col sm:flex-row sm:items-start gap-3">
                   <div className="flex-grow min-w-0">
                     <div className="font-bold text-sm text-[var(--color-text)]">{c.description}</div>
-                    <div className="text-[11px] text-[var(--color-text-muted)] font-mono mt-0.5">{c.key}</div>
+                    <div className="text-xs text-[var(--color-text-muted)] font-mono mt-0.5">{c.key}</div>
                     {c.hint && (
                       <div className="text-xs text-[var(--color-text-muted)] mt-1 bg-[var(--color-info)]/8 border border-[var(--color-info)]/20 rounded px-2 py-1 inline-block">
                         {c.hint}
@@ -124,8 +124,8 @@ export default function AdminConfigPanel() {
                         onChange={(e) => handleChange(c.key, e.target.value)}
                         disabled={savingKey === c.key}
                         data-testid={`admin-config-input-${c.key}`}
-                        className={`input !text-sm !py-1.5 !px-2 w-28 ${
-                          errors[c.key] ? '!border-[var(--color-danger)]' : ''
+                        className={`input text-sm py-1.5 px-2 w-28 ${
+                          errors[c.key] ? 'border-[var(--color-danger)]' : ''
                         }`}
                       />
                       {c.unit && (
@@ -140,7 +140,7 @@ export default function AdminConfigPanel() {
                         {savingKey === c.key ? '保存中...' : '保存'}
                       </button>
                     </div>
-                    <div className="text-[11px] text-[var(--color-text-muted)] mt-1">默认值：{c.defaultValue}</div>
+                    <div className="text-xs text-[var(--color-text-muted)] mt-1">默认值：{c.defaultValue}</div>
                     {errors[c.key] && (
                       <div className="text-xs text-[var(--color-danger)] bg-[var(--color-danger)]/10 px-2 py-1 rounded border border-[var(--color-danger)]/20 mt-1">
                         {errors[c.key]}

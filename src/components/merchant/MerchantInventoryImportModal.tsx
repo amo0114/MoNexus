@@ -160,7 +160,7 @@ export default function MerchantInventoryImportModal({ isOpen, onClose, onSubmit
                 </span>
               </div>
               <textarea
-                className="input min-h-[220px] font-mono text-sm leading-relaxed resize-y"
+                className="input min-h-[220px] font-mono leading-relaxed resize-y"
                 placeholder="例如：&#10;卡密：ABCD-1234-EFGH-5678&#10;账号：user@example.com | 密码：example-password&#10;节点：sg-01.example.com:443 | UUID：xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx&#10;邀请码：INVITE-2026-ABC"
                 value={inventoryText}
                 onChange={handleTextChange}
@@ -213,7 +213,7 @@ export default function MerchantInventoryImportModal({ isOpen, onClose, onSubmit
           <button
             type="button"
             onClick={onClose}
-            className="btn-secondary !px-6 !py-2.5"
+            className="btn-secondary px-6 py-2.5"
             disabled={loading || previewing}
           >
             取消

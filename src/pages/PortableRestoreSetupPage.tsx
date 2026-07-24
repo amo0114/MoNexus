@@ -43,7 +43,7 @@ export default function PortableRestoreSetupPage() {
 
   return (
     <div className="fixed inset-0 bg-[var(--color-background)] z-[60] flex items-center justify-center fade-in overflow-y-auto py-8">
-      <form onSubmit={handleSubmit} className="card w-full max-w-md p-8 mx-4 space-y-5">
+      <form onSubmit={handleSubmit} className="card w-full max-w-md mx-4 space-y-5">
         <div className="text-center">
           <ShieldCheck className="w-9 h-9 text-[var(--color-primary)] mx-auto mb-3" />
           <h1 className="font-heading text-2xl font-bold text-[var(--color-text)]">恢复引导</h1>

@@ -4,7 +4,7 @@ import { DashboardStatusBreakdown } from '../../../api/merchant/dashboard'
 export default function StatusBreakdown({ data, loading }: { data?: DashboardStatusBreakdown, loading: boolean }) {
   if (loading) {
     return (
-      <div className="card p-6 rounded-lg border border-[var(--color-border)] bg-[var(--color-background)]">
+      <div className="card rounded-lg border border-[var(--color-border)]">
         <h3 className="font-heading text-lg font-bold text-[var(--color-text)] mb-4">订单状态分布</h3>
         <div className="animate-pulse space-y-4">
           <div className="h-10 bg-[var(--color-border)] rounded"></div>
@@ -24,7 +24,7 @@ export default function StatusBreakdown({ data, loading }: { data?: DashboardSta
   const total = Math.max(items.reduce((sum, item) => sum + item.value, 0), 1)
 
   return (
-    <div className="card p-6 rounded-lg border border-[var(--color-border)] bg-[var(--color-background)]">
+    <div className="card rounded-lg border border-[var(--color-border)]">
       <h3 className="font-heading text-lg font-bold text-[var(--color-text)] mb-4">订单状态分布</h3>
       <div className="flex flex-col gap-4">
         {items.map((item) => (

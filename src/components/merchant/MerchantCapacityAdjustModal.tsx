@@ -70,7 +70,7 @@ export default function MerchantCapacityAdjustModal({ isOpen, onClose, product, 
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => { if (!open && !submitting) onClose() }}>
-      <DialogContent className="!max-w-lg" data-testid="merchant-capacity-adjust-modal">
+      <DialogContent className="max-w-lg" data-testid="merchant-capacity-adjust-modal">
         <DialogTitle>调整{capacityLabel}</DialogTitle>
         <DialogDescription>
           商品：{product?.name ?? ''}。正数补充名额，负数减少名额；本次调整会留下操作原因。
@@ -105,7 +105,7 @@ export default function MerchantCapacityAdjustModal({ isOpen, onClose, product, 
                 type="number"
                 step="1"
                 required
-                className="input !pl-9 font-mono"
+                className="input pl-9 font-mono"
                 placeholder="例如：10 或 -2"
                 value={deltaText}
                 onChange={(event) => setDeltaText(event.target.value)}
@@ -139,12 +139,12 @@ export default function MerchantCapacityAdjustModal({ isOpen, onClose, product, 
           </div>
 
           <div className="flex justify-end gap-3 pt-1">
-            <button type="button" className="btn-secondary !px-5 !py-2" onClick={onClose} disabled={submitting}>
+            <button type="button" className="btn-secondary px-5 py-2" onClick={onClose} disabled={submitting}>
               取消
             </button>
             <button
               type="submit"
-              className="btn-primary !px-5 !py-2 min-w-[150px]"
+              className="btn-primary px-5 py-2 min-w-[150px]"
               disabled={submitting || !isValidDelta || wouldBecomeNegative || !reason.trim()}
               data-testid="merchant-capacity-adjust-submit"
             >

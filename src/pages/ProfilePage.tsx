@@ -59,7 +59,7 @@ function NicknameCard() {
         {editing ? (
           <div className="flex gap-2">
             <input
-              className="input flex-1 !py-2 text-sm"
+              className="input flex-1 py-2"
               maxLength={20}
               value={nickname}
               onChange={(e) => setNickname(e.target.value)}
@@ -70,7 +70,7 @@ function NicknameCard() {
               type="button"
               onClick={handleSave}
               disabled={saving}
-              className="btn-primary !px-4 !py-2 !text-sm"
+              className="btn-primary px-4 py-2 text-sm"
               data-testid="nickname-save"
             >
               {saving ? '保存中...' : '保存'}
@@ -79,7 +79,7 @@ function NicknameCard() {
               type="button"
               onClick={() => setEditing(false)}
               disabled={saving}
-              className="btn-secondary !px-4 !py-2 !text-sm"
+              className="btn-secondary px-4 py-2 text-sm"
             >
               取消
             </button>
@@ -92,7 +92,7 @@ function NicknameCard() {
             <button
               type="button"
               onClick={() => { setNickname(user?.nickname ?? ''); setEditing(true) }}
-              className="btn-secondary !px-4 !py-1.5 !text-xs"
+              className="btn-secondary px-4 py-1.5 text-xs"
               data-testid="nickname-edit"
             >
               编辑
@@ -485,7 +485,7 @@ export default function ProfilePage() {
       <PasswordChangeCard />
 
       {/* Tabs: Orders / History */}
-      <div className="card !p-4 sm:!p-6">
+      <div className="card p-4 sm:p-6">
         <Tabs
           value={activeTab}
           onValueChange={(v: string) => setActiveTab(v as 'orders' | 'history')}
@@ -509,7 +509,7 @@ export default function ProfilePage() {
                       <div className="flex items-center justify-between mb-2">
                         <div className="flex items-center gap-2">
                           <RegistryPill value={order.status} category="orderStatuses" />
-                          <span className="text-[11px] text-[var(--color-text-muted)]">
+                          <span className="text-xs text-[var(--color-text-muted)]">
                             {new Date(order.createdAt).toLocaleString()}
                           </span>
                         </div>
@@ -525,7 +525,7 @@ export default function ProfilePage() {
                       <div className="flex items-center gap-2 mt-2 flex-wrap">
                         <RegistryPill value={order.product?.type} category="productTypes" />
                         {order.deliveryMode && <RegistryPill value={order.deliveryMode} category="deliveryModes" />}
-                        <span className="text-[10px] font-medium text-[var(--color-primary)] bg-[var(--color-primary)]/10 px-1.5 py-0.5 rounded border border-[var(--color-primary)]/20 inline-flex items-center gap-1">
+                        <span className="text-xs font-medium text-[var(--color-primary)] bg-[var(--color-primary)]/10 px-1.5 py-0.5 rounded border border-[var(--color-primary)]/20 inline-flex items-center gap-1">
                           <Store className="w-3 h-3" />
                           {order.merchant?.name || '平台自营'}
                         </span>
@@ -575,7 +575,7 @@ export default function ProfilePage() {
                     </div>
                     <div>
                       <p className="font-bold text-xs text-[var(--color-text)]">{item.reason}</p>
-                      <p className="text-[10px] text-[var(--color-text-muted)] mt-0.5">
+                      <p className="text-xs text-[var(--color-text-muted)] mt-0.5">
                         {new Date(item.createdAt).toLocaleString()}
                       </p>
                     </div>

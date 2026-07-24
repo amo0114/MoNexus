@@ -24,7 +24,7 @@ export default function SuccessModal({
   return (
     <div className="fixed inset-0 z-[110] flex items-center justify-center">
       <div className="modal-overlay" onClick={onClose} />
-      <div className="modal relative z-10 fade-in !max-w-sm text-center flex flex-col">
+      <div className="modal relative z-10 fade-in max-w-sm text-center flex flex-col">
         <div className="w-16 h-16 bg-[var(--color-cta)]/10 border-2 border-[var(--color-cta)] text-[var(--color-cta)] rounded-full flex items-center justify-center mx-auto mb-5">
           <Check className="w-8 h-8" />
         </div>
@@ -38,7 +38,7 @@ export default function SuccessModal({
         )}
 
         <div className="bg-[var(--color-background)] rounded-lg p-4 mb-6 border border-[var(--color-border)] text-left flex-1 max-h-48 overflow-y-auto">
-          <p className="text-[10px] text-[var(--color-text-muted)] mb-2 font-bold uppercase tracking-wider">提卡内容区</p>
+          <p className="text-xs text-[var(--color-text-muted)] mb-2 font-bold uppercase tracking-wider">提卡内容区</p>
           {deliveryContentType === 'url' ? (
             <a
               href={deliveryContent}
@@ -63,14 +63,14 @@ export default function SuccessModal({
           {onViewOrders ? (
             <button
               onClick={onViewOrders}
-              className="btn-secondary w-full !px-0"
+              className="btn-secondary w-full px-0"
             >
               <ExternalLink className="w-4 h-4" /> 去个人中心查看订单
             </button>
           ) : (
             <button
               onClick={onClose}
-              className="btn-secondary w-full !px-0"
+              className="btn-secondary w-full px-0"
             >
               关闭
             </button>

@@ -384,7 +384,7 @@ export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, pr
                         <input
                           type="url"
                           placeholder="https://example.com/invite"
-                          className="input font-mono text-xs"
+                          className="input font-mono"
                           value={form.fixedContent}
                           onChange={(e) => setForm({ ...form, fixedContent: e.target.value })}
                           data-testid="fixed-content-input"
@@ -392,7 +392,7 @@ export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, pr
                       ) : (
                         <textarea
                           placeholder="买家付款后立即收到的内容，如群邀请说明、会员权益说明..."
-                          className="input min-h-[80px] resize-y font-mono text-xs"
+                          className="input min-h-[80px] resize-y font-mono"
                           value={form.fixedContent}
                           onChange={(e) => setForm({ ...form, fixedContent: e.target.value })}
                           data-testid="fixed-content-input"
@@ -518,7 +518,7 @@ export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, pr
                         type="button"
                         onClick={addImageUrl}
                         disabled={uploadingImage || images.length >= MAX_IMAGES}
-                        className="btn-secondary !px-3 !py-2 !text-sm whitespace-nowrap"
+                        className="btn-secondary px-3 py-2 text-sm whitespace-nowrap"
                         data-testid="product-image-url-add"
                       >
                         添加
@@ -527,7 +527,7 @@ export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, pr
                         type="button"
                         onClick={() => fileInputRef.current?.click()}
                         disabled={uploadingImage || images.length >= MAX_IMAGES}
-                        className="btn-secondary !px-4 !py-2 !text-sm whitespace-nowrap"
+                        className="btn-secondary px-4 py-2 text-sm whitespace-nowrap"
                         title="上传本地图片"
                         data-testid="product-image-upload-button"
                       >
@@ -568,7 +568,7 @@ export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, pr
                               }}
                             />
                             {index === 0 && (
-                              <span className="absolute top-1 left-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-[var(--color-cta)] text-white">
+                              <span className="absolute top-1 left-1 px-1.5 py-0.5 rounded text-xs font-bold bg-[var(--color-cta)] text-white">
                                 封面
                               </span>
                             )}
@@ -671,7 +671,7 @@ export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, pr
                   {descMode === 'edit' ? (
                     <textarea
                       placeholder="在这里详细描述您的商品特性、使用教程、售后承诺等..."
-                      className="input min-h-[160px] resize-y font-mono text-xs leading-relaxed"
+                      className="input min-h-[160px] resize-y font-mono leading-relaxed"
                       value={form.richDescription}
                       onChange={(e) => setForm({ ...form, richDescription: e.target.value })}
                     />
@@ -694,7 +694,7 @@ export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, pr
           <button
             type="button"
             onClick={onClose}
-            className="btn-secondary !px-6 !py-2.5"
+            className="btn-secondary px-6 py-2.5"
             disabled={loading}
           >
             取消
