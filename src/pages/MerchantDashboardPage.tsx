@@ -48,12 +48,12 @@ function isInstantInventoryProduct(product: MerchantProduct) {
   return (product.deliveryMode ?? 'instant_inventory') === 'instant_inventory'
 }
 
-function getAvailabilityLabel(product: MerchantProduct, availableStock: number) {
-  if (isInstantInventoryProduct(product)) return `交付库存 ${availableStock}`
+function getAvailabilityLabel(product: MerchantProduct) {
+  if (isInstantInventoryProduct(product)) return '交付库存'
   if (product.stockMode === 'unlimited') return '不限量'
   return product.deliveryMode === 'manual_service'
-    ? `服务名额 ${product.stock}`
-    : `可售名额 ${product.stock}`
+    ? '服务名额'
+    : '可售名额'
 }
 
 export default function MerchantDashboardPage() {
@@ -411,7 +411,13 @@ export default function MerchantDashboardPage() {
                             <td className="py-3 px-2 text-sm font-medium text-[var(--color-text)]">{p.name}</td>
                             <td className="py-3 px-2 text-sm text-[var(--color-text)]">{p.price}</td>
                             <td className="py-3 px-2 text-sm text-[var(--color-text-muted)]">
-                              <span className="whitespace-nowrap">{getAvailabilityLabel(p, stockCount)} / 已售 {p.sales}</span>
+                              <span className="whitespace-nowrap">
+                                {getAvailabilityLabel(p)}{' '}
+                                {p.stockMode !== 'unlimited' && (
+                                  <span data-testid={`merchant-product-availability-${p.id}`}>{stockCount}</span>
+                                )}
+                                {' / 已售 '}{p.sales}
+                              </span>
                               {isLowStock && (
                                 <span
                                   className="inline-flex items-center gap-1 ml-2 px-2 py-0.5 rounded text-[10px] font-bold border bg-[var(--color-danger)]/10 text-[var(--color-danger)] border-[var(--color-danger)]/25"

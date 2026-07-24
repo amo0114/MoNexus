@@ -37,35 +37,35 @@ test('merchant filters products, imports then voids inventory with log entry', a
   await page.getByTestId('merchant-product-lowstock-toggle').uncheck()
   await expect(row).toBeVisible({ timeout: 10_000 })
 
-  // 读取当前库存（单元格形如 "3 / 0"）
-  const stockCell = row.locator('td').nth(3)
-  const stockBefore = parseInt((await stockCell.innerText()).trim(), 10)
+  // 库存数值有稳定测试标识；展示文案可随履约模式变化（如「交付库存 3 / 已售 0」）。
+  const availability = page.getByTestId(`merchant-product-availability-${productId}`)
+  const stockBefore = Number(await availability.innerText())
   expect(Number.isInteger(stockBefore)).toBe(true)
 
-  // 导入 1 条唯一库存，库存 +1
+  // 导入 1 个唯一交付单元，库存 +1
   const uniqueItem = `E2E-VOID-${Date.now()}`
-  await row.getByText('导入库存').click()
+  await row.getByText('管理交付库存').click()
   await page.locator('textarea').fill(uniqueItem)
   await page.getByRole('button', { name: '预览' }).click()
   await expect(page.getByText('预览结果')).toBeVisible({ timeout: 10_000 })
   await page.getByRole('button', { name: '确认导入' }).click()
-  await expect(page.getByText('成功导入 1 条库存')).toBeVisible({ timeout: 10_000 })
-  await expect(stockCell).toContainText(`${stockBefore + 1} / `, { timeout: 10_000 })
+  await expect(page.getByText('成功导入 1 个交付单元')).toBeVisible({ timeout: 10_000 })
+  await expect(availability).toHaveText(String(stockBefore + 1), { timeout: 10_000 })
 
-  // 打开库存流水：应已有导入记录
-  await row.getByText('流水').click()
+  // 打开交付库存记录：应已有导入记录
+  await row.getByText('交付库存记录').click()
   const logModal = page.getByTestId('inventory-log-modal')
   await expect(logModal).toBeVisible({ timeout: 10_000 })
   const logTable = page.getByTestId('inventory-log-table')
   await expect(logTable.getByText('导入').first()).toBeVisible({ timeout: 10_000 })
 
-  // 作废 1 条，断言流水新增 void 记录、库存数 -1
+  // 作废 1 个交付单元，断言流水新增 void 记录、库存数 -1
   const voidReason = `E2E 自动化作废 ${Date.now()}`
   await page.getByTestId('inventory-void-count').fill('1')
   await page.getByTestId('inventory-void-reason').fill(voidReason)
   await page.getByTestId('inventory-void-submit').click()
 
-  await expect(page.getByText(/已作废 1 条库存/)).toBeVisible({ timeout: 10_000 })
+  await expect(page.getByText(/已作废 1 个交付单元/)).toBeVisible({ timeout: 10_000 })
   // 流水第一行应是刚产生的作废记录（-1 + 原因）
   const firstLogRow = logTable.locator('tbody tr').first()
   await expect(firstLogRow.getByText('作废', { exact: true })).toBeVisible({ timeout: 10_000 })
@@ -75,5 +75,5 @@ test('merchant filters products, imports then voids inventory with log entry', a
   // 关闭弹窗，商品行库存恢复为导入前数值（净变化 0，可重复执行）
   await logModal.getByRole('button', { name: '关闭' }).click()
   await expect(logModal).toBeHidden({ timeout: 10_000 })
-  await expect(stockCell).toContainText(`${stockBefore} / `, { timeout: 10_000 })
+  await expect(availability).toHaveText(String(stockBefore), { timeout: 10_000 })
 })
