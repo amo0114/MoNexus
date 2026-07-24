@@ -175,7 +175,13 @@ h1, h2, h3, h4 {
    - .input
    - .modal-overlay / .modal
    All hovers respect "no layout shift" (translateY only).
+
+   NOTE: these classes live in @layer components so that plain Tailwind
+   utilities (utilities layer) override them — size/variant tweaks like
+   `btn-secondary px-2 py-1 text-xs` need NO !important.
    ========================================================= */
+
+@layer components {
 
 .btn-primary {
   @apply inline-flex items-center justify-center gap-2 cursor-pointer
@@ -290,6 +296,8 @@ h1, h2, h3, h4 {
   width: calc(100% - 2rem);
 }
 
+} /* @layer components */
+
 /* Scrollbar */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
@@ -303,12 +311,14 @@ h1, h2, h3, h4 {
 .star-empty { color: var(--color-image-placeholder); fill: var(--color-image-placeholder); }
 
 /* Admin table */
+@layer components {
 .admin-table { width: 100%; border-collapse: separate; border-spacing: 0; }
 .admin-table th { text-align: left; padding: 1rem; color: var(--color-text-muted); font-weight: bold; font-size: 0.875rem; border-bottom: 1px solid var(--color-border); }
 .admin-table td { padding: 1rem; border-bottom: 1px solid var(--color-border); vertical-align: middle; color: var(--color-text); }
 .admin-table tr:last-child td { border-bottom: none; }
 .admin-table tr:hover td { background-color: rgba(99, 102, 241, 0.06); }
 .dark .admin-table tr:hover td { background-color: rgba(129, 140, 248, 0.08); }
+}
 
 /* =========================================================
    Soft theme — warm yellow palette, rounded shapes, soft shadows

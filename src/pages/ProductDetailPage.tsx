@@ -277,8 +277,8 @@ export default function ProductDetailPage() {
                 isSoldOut
                   ? 'inline-flex items-center justify-center gap-2 px-10 py-4 md:py-5 rounded-lg text-lg font-bold whitespace-nowrap w-full lg:w-auto opacity-60 cursor-not-allowed bg-[var(--color-border)] text-[var(--color-text-muted)]'
                   : isInsufficient
-                  ? 'btn-secondary !px-10 !py-4 md:!py-5 !text-lg w-full lg:w-auto whitespace-nowrap'
-                  : 'btn-cta !px-10 !py-4 md:!py-5 !text-lg w-full lg:w-auto whitespace-nowrap !shadow-lg hover:!shadow-xl hover:-translate-y-0.5'
+                  ? 'btn-secondary px-10 py-4 md:py-5 text-lg w-full lg:w-auto whitespace-nowrap'
+                  : 'btn-cta px-10 py-4 md:py-5 text-lg w-full lg:w-auto whitespace-nowrap shadow-lg hover:shadow-xl hover:-translate-y-0.5'
               }
             >
               {isSoldOut ? '已被抢光' : isInsufficient ? '余额不足，去赚积分' : '立即兑换'}
@@ -312,13 +312,13 @@ export default function ProductDetailPage() {
                           <StarRating value={r.rating} />
                         </div>
                         {r.comment && <p className="mt-2 text-xs text-[var(--color-text)] whitespace-pre-wrap">{r.comment}</p>}
-                        <div className="mt-2 text-[10px] text-[var(--color-text-muted)]">
+                        <div className="mt-2 text-xs text-[var(--color-text-muted)]">
                           {new Date(r.createdAt).toLocaleDateString()}{r.editedAt ? '（已修改）' : ''}
                         </div>
                       </div>
                     ))}
                     {reviews.length < reviewTotal && (
-                      <button type="button" onClick={() => setReviewPage((p) => p + 1)} className="btn-secondary w-full !py-2 !text-sm">
+                      <button type="button" onClick={() => setReviewPage((p) => p + 1)} className="btn-secondary w-full py-2 text-sm">
                         加载更多
                       </button>
                     )}
@@ -350,7 +350,7 @@ export default function ProductDetailPage() {
                         </div>
                         <div>
                           <div className="font-bold text-[var(--color-text)] text-base">{product.merchant.name}</div>
-                          <div className="text-[10px] text-[var(--color-primary)] bg-[var(--color-primary)]/10 px-2 py-0.5 rounded inline-flex items-center gap-1 mt-1 border border-[var(--color-primary)]/25 font-medium">
+                          <div className="text-xs text-[var(--color-primary)] bg-[var(--color-primary)]/10 px-2 py-0.5 rounded inline-flex items-center gap-1 mt-1 border border-[var(--color-primary)]/25 font-medium">
                             <ShieldCheck className="w-3 h-3" /> 平台认证商家
                           </div>
                         </div>
@@ -375,7 +375,7 @@ export default function ProductDetailPage() {
                       </div>
                       <div>
                         <div className="font-bold text-[var(--color-text)] text-base">MoNexus 自营</div>
-                        <div className="text-[10px] text-[var(--color-primary)] bg-[var(--color-primary)]/10 px-2 py-0.5 rounded inline-flex items-center gap-1 mt-1 border border-[var(--color-primary)]/25 font-medium">
+                        <div className="text-xs text-[var(--color-primary)] bg-[var(--color-primary)]/10 px-2 py-0.5 rounded inline-flex items-center gap-1 mt-1 border border-[var(--color-primary)]/25 font-medium">
                           <ShieldCheck className="w-3 h-3" /> 官方直营保障
                         </div>
                       </div>

@@ -52,7 +52,7 @@ export default function MerchantDeliverDialog({ isOpen, onClose, order, onSubmit
             </label>
             <textarea
               required
-              className="input min-h-[140px] font-mono text-sm leading-relaxed resize-y"
+              className="input min-h-[140px] font-mono leading-relaxed resize-y"
               placeholder={'例如:\nABCD-1234-EFGH-5678\n账号: xxx 密码: yyy'}
               value={content}
               onChange={(e) => setContent(e.target.value)}
@@ -61,13 +61,13 @@ export default function MerchantDeliverDialog({ isOpen, onClose, order, onSubmit
             />
           </div>
           <div className="flex justify-end gap-3">
-            <button type="button" onClick={onClose} className="btn-secondary !px-5 !py-2 !text-sm" disabled={loading}>
+            <button type="button" onClick={onClose} className="btn-secondary px-5 py-2 text-sm" disabled={loading}>
               取消
             </button>
             <button
               type="submit"
               disabled={loading}
-              className="btn-primary !px-5 !py-2 !text-sm min-w-[110px]"
+              className="btn-primary px-5 py-2 text-sm min-w-[110px]"
               data-testid="merchant-deliver-submit"
             >
               {loading ? <Loader2 className="w-4 h-4 animate-spin inline" /> : '确认发货'}

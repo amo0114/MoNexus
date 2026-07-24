@@ -38,7 +38,7 @@ export default function MerchantDisputeDialog({ isOpen, onClose, order, onSubmit
           <button
             type="button"
             onClick={onClose}
-            className="btn-secondary !px-5 !py-2 !text-sm"
+            className="btn-secondary px-5 py-2 text-sm"
             disabled={submitting !== null}
           >
             取消
@@ -46,7 +46,7 @@ export default function MerchantDisputeDialog({ isOpen, onClose, order, onSubmit
           <button
             type="button"
             onClick={() => handleResolve('resume')}
-            className="btn-secondary !px-5 !py-2 !text-sm min-w-[110px]"
+            className="btn-secondary px-5 py-2 text-sm min-w-[110px]"
             disabled={submitting !== null}
             data-testid="merchant-dispute-resume"
           >
@@ -55,7 +55,7 @@ export default function MerchantDisputeDialog({ isOpen, onClose, order, onSubmit
           <button
             type="button"
             onClick={() => handleResolve('close')}
-            className="btn-primary !px-5 !py-2 !text-sm min-w-[110px]"
+            className="btn-primary px-5 py-2 text-sm min-w-[110px]"
             disabled={submitting !== null}
             data-testid="merchant-dispute-close"
           >

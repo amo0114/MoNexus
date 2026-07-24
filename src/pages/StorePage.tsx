@@ -86,14 +86,14 @@ function ProductCard({
         <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
 
         {product.isHot && (
-          <div className="absolute top-0 right-0 bg-[#E85D04] text-white text-[10px] font-bold px-2.5 py-1 rounded-bl-xl z-10 shadow-sm flex items-center gap-1">
+          <div className="absolute top-0 right-0 bg-[#E85D04] text-white text-xs font-bold px-2.5 py-1 rounded-bl-xl z-10 shadow-sm flex items-center gap-1">
             <Flame className="w-3 h-3" /> 热卖推荐
           </div>
         )}
 
         <div className="absolute bottom-2.5 left-2.5 right-2.5 z-10 flex gap-2 min-w-0">
           <span
-            className="text-[11px] font-bold px-2.5 py-1 rounded-lg text-[var(--color-text)] shadow-sm flex items-center gap-1.5 max-w-[48%] truncate"
+            className="text-xs font-bold px-2.5 py-1 rounded-lg text-[var(--color-text)] shadow-sm flex items-center gap-1.5 max-w-[48%] truncate"
             style={{
               background: 'var(--color-glass-bg)',
               border: '1px solid var(--color-glass-border)',
@@ -103,7 +103,7 @@ function ProductCard({
             {product.type}
           </span>
           <span
-            className="text-[11px] font-bold px-2.5 py-1 rounded-lg text-[var(--color-primary)] shadow-sm flex items-center gap-1.5 max-w-[48%] truncate"
+            className="text-xs font-bold px-2.5 py-1 rounded-lg text-[var(--color-primary)] shadow-sm flex items-center gap-1.5 max-w-[48%] truncate"
             style={{
               background: 'var(--color-glass-bg)',
               border: '1px solid var(--color-glass-border)',
@@ -135,7 +135,7 @@ function ProductCard({
               {product.price}
             </div>
           </div>
-          <div className="flex flex-col items-end gap-0.5 text-[10px] text-[var(--color-text-muted)] shrink-0">
+          <div className="flex flex-col items-end gap-0.5 text-xs text-[var(--color-text-muted)] shrink-0">
             {product.ratingCount && product.ratingCount > 0 ? (
               <span className="flex items-center gap-1">
                 <Star className="w-3 h-3 star-filled" />
@@ -477,7 +477,7 @@ export default function StorePage() {
                 onClick={loadMore}
                 disabled={loadingMore}
                 data-testid="store-load-more"
-                className="btn-secondary !px-10 !py-3"
+                className="btn-secondary px-10 py-3"
               >
                 {loadingMore ? '加载中...' : '加载更多'}
               </button>

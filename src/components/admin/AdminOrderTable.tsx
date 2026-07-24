@@ -87,7 +87,7 @@ export default function AdminOrderTable() {
             onChange={(e) => setSearch(e.target.value)}
             placeholder="搜索买家邮箱 / 订单号"
             data-testid="admin-order-search"
-            className="input !py-1.5 !text-sm !pl-8 w-64"
+            className="input py-1.5 pl-8 w-64"
           />
         </div>
         <select
@@ -97,7 +97,7 @@ export default function AdminOrderTable() {
             setPage(1)
           }}
           data-testid="admin-order-status-filter"
-          className="input !py-1.5 !text-sm w-36"
+          className="input py-1.5 w-36"
         >
           <option value="">全部状态</option>
           {statusOptions.map((s) => (
@@ -125,7 +125,7 @@ export default function AdminOrderTable() {
               <tr key={o.id}>
                 <td>
                   <div className="font-mono text-xs text-[var(--color-text-muted)]">ORD-{o.id}</div>
-                  <div className="text-[10px] text-[var(--color-text-muted)] mt-1">{new Date(o.createdAt).toLocaleString()}</div>
+                  <div className="text-xs text-[var(--color-text-muted)] mt-1">{new Date(o.createdAt).toLocaleString()}</div>
                 </td>
                 <td className="text-sm">
                   <div className="font-bold text-[var(--color-text)]">U{o.user?.id}</div>
@@ -140,7 +140,7 @@ export default function AdminOrderTable() {
                   {o.status === 'disputed' && (
                     <button
                       type="button"
-                      className="btn-secondary !px-2 !py-1 !text-xs"
+                      className="btn-secondary px-2 py-1 text-xs"
                       data-testid={`admin-resolve-order-${o.id}`}
                       onClick={() => {
                         setResolveTarget(o)
@@ -195,7 +195,7 @@ export default function AdminOrderTable() {
             <div>
               <label className="block text-xs font-medium mb-1">备注（可选）</label>
               <textarea
-                className="input min-h-[72px] resize-y text-sm"
+                className="input min-h-[72px] resize-y"
                 value={resolveNote}
                 onChange={(e) => setResolveNote(e.target.value)}
                 maxLength={1000}
@@ -204,12 +204,12 @@ export default function AdminOrderTable() {
             </div>
           </div>
           <div className="mt-5 flex justify-end gap-3">
-            <button type="button" className="btn-secondary !px-4 !py-2 !text-sm" disabled={resolving} onClick={() => setResolveTarget(null)}>
+            <button type="button" className="btn-secondary px-4 py-2 text-sm" disabled={resolving} onClick={() => setResolveTarget(null)}>
               取消
             </button>
             <button
               type="button"
-              className="btn-primary !px-4 !py-2 !text-sm"
+              className="btn-primary px-4 py-2 text-sm"
               disabled={resolving}
               onClick={handleResolveSubmit}
               data-testid="admin-resolve-confirm"

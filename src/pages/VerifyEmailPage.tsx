@@ -32,7 +32,7 @@ export default function VerifyEmailPage() {
 
   return (
     <div className="fixed inset-0 bg-[var(--color-background)] z-[60] flex items-center justify-center fade-in">
-      <div className="card w-full max-w-md p-10 mx-4 text-center bg-[var(--color-surface)]/95 backdrop-blur-xl">
+      <div className="card w-full max-w-md mx-4 text-center backdrop-blur-xl">
         {status === 'pending' && (
           <>
             <div className="w-16 h-16 rounded-full bg-[var(--color-primary)]/10 flex items-center justify-center mx-auto mb-4">

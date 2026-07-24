@@ -73,7 +73,7 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
   return (
     <div className="fixed inset-0 z-[110] flex items-center justify-center fade-in">
       <div className="modal-overlay" onClick={onClose} />
-      <div className="modal relative z-10 !max-w-lg flex flex-col max-h-[90vh] overflow-hidden">
+      <div className="modal relative z-10 max-w-lg flex flex-col max-h-[90vh] overflow-hidden">
 
         <div className="flex justify-between items-center mb-6">
           <h2 className="font-heading text-xl font-bold text-[var(--color-text)] flex items-center gap-2">
@@ -109,7 +109,7 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
                 <div className="flex items-center gap-2 mt-1 flex-wrap">
                   <RegistryPill value={order.product.type} category="productTypes" />
                   {order.deliveryMode && <RegistryPill value={order.deliveryMode} category="deliveryModes" />}
-                  <span className="text-[10px] text-[var(--color-primary)] bg-[var(--color-primary)]/10 px-2 py-0.5 rounded border border-[var(--color-primary)]/20 font-medium inline-flex items-center gap-1">
+                  <span className="text-xs text-[var(--color-primary)] bg-[var(--color-primary)]/10 px-2 py-0.5 rounded border border-[var(--color-primary)]/20 font-medium inline-flex items-center gap-1">
                     <Store className="w-3 h-3" />
                     {order.merchant?.name || '平台自营'}
                   </span>
@@ -217,7 +217,7 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
                     {' - '}
                     <RegistryPill value={event.toStatus} category="orderStatuses" />
                   </div>
-                  <div className="text-[10px] text-[var(--color-text-muted)]">{event.createdAt ? new Date(event.createdAt).toLocaleString() : ''}</div>
+                  <div className="text-xs text-[var(--color-text-muted)]">{event.createdAt ? new Date(event.createdAt).toLocaleString() : ''}</div>
                   {event.publicNote && (
                     <div className="mt-1 text-xs text-[var(--color-text)] bg-[var(--color-surface)] p-2 rounded border border-[var(--color-border)]">
                       {event.publicNote}
@@ -230,13 +230,13 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
         </div>
 
         <div className="pt-6 mt-2 border-t border-[var(--color-border)] flex flex-wrap gap-3">
-          <button onClick={onClose} className="btn-secondary flex-1 !px-0">
+          <button onClick={onClose} className="btn-secondary flex-1 px-0">
             关闭
           </button>
           <button
             onClick={copyContent}
             disabled={!order.delivery?.content}
-            className="btn-primary flex-1 !px-0"
+            className="btn-primary flex-1 px-0"
           >
             <Copy className="w-4 h-4" />
             复制内容
@@ -246,7 +246,7 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
               onClick={() => setConfirmAction('dispute')}
               disabled={loadingAction === 'dispute'}
               data-testid="order-dispute-button"
-              className="btn-secondary !px-4 !border-[var(--color-warning)] !text-[var(--color-warning)]"
+              className="btn-secondary px-4 border-[var(--color-warning)] text-[var(--color-warning)]"
             >
               {loadingAction === 'dispute' ? <Loader2 className="w-4 h-4 animate-spin" /> : '发起争议'}
             </button>
@@ -256,7 +256,7 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
               onClick={() => setConfirmAction('close')}
               disabled={loadingAction === 'close'}
               data-testid="order-close-button"
-              className="btn-secondary !px-4 !border-[var(--color-cta)] !text-[var(--color-cta)]"
+              className="btn-secondary px-4 border-[var(--color-cta)] text-[var(--color-cta)]"
             >
               {loadingAction === 'close' ? <Loader2 className="w-4 h-4 animate-spin" /> : '结束订单'}
             </button>
@@ -265,7 +265,7 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
             <button
               onClick={() => setReviewOpen(true)}
               data-testid="review-create-button"
-              className="btn-secondary !px-4 !border-[var(--color-primary)] !text-[var(--color-primary)]"
+              className="btn-secondary px-4 border-[var(--color-primary)] text-[var(--color-primary)]"
             >
               评价商品
             </button>
@@ -286,7 +286,7 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
             <button
               type="button"
               onClick={() => setConfirmAction(null)}
-              className="btn-secondary !px-5 !py-2 !text-sm"
+              className="btn-secondary px-5 py-2 text-sm"
             >
               取消
             </button>
@@ -296,8 +296,8 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
               data-testid={confirmAction === 'close' ? 'close-order-dialog-confirm' : 'dispute-dialog-confirm'}
               className={
                 confirmAction === 'dispute'
-                  ? 'btn-secondary !px-5 !py-2 !text-sm !border-[var(--color-warning)] !text-[var(--color-warning)]'
-                  : 'btn-primary !px-5 !py-2 !text-sm'
+                  ? 'btn-secondary px-5 py-2 text-sm border-[var(--color-warning)] text-[var(--color-warning)]'
+                  : 'btn-primary px-5 py-2 text-sm'
               }
             >
               {confirmAction ? ACTION_COPY[confirmAction].confirmLabel : ''}

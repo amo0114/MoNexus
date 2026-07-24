@@ -51,7 +51,7 @@ export default function LoginPage() {
 
       <form
         onSubmit={handleSubmit}
-        className="card w-full max-w-md p-10 text-center mx-4 relative overflow-hidden z-10 bg-[var(--color-surface)]/95 backdrop-blur-xl"
+        className="card w-full max-w-md text-center mx-4 relative overflow-hidden z-10 backdrop-blur-xl"
       >
         {/* Wordmark — Orbitron, replaces previous soft SVG logo */}
         <div className="mx-auto mb-6">
@@ -59,7 +59,7 @@ export default function LoginPage() {
             MONEXUS
           </h1>
           <div className="mx-auto mt-2 h-0.5 w-12 bg-[var(--color-primary)]" />
-          <p className="mt-3 text-[10px] uppercase tracking-[0.35em] text-[var(--color-text-muted)]">
+          <p className="mt-3 text-xs uppercase tracking-[0.35em] text-[var(--color-text-muted)]">
             Digital · Marketplace
           </p>
         </div>

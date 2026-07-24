@@ -14,7 +14,7 @@ export default function PurchaseModal({
   return (
     <div className="fixed inset-0 z-[110] flex items-center justify-center">
       <div className="modal-overlay" onClick={submitting ? undefined : onClose} />
-      <div className="modal relative z-10 fade-in !max-w-sm">
+      <div className="modal relative z-10 fade-in max-w-sm">
         <h3 className="font-heading text-xl font-bold mb-2 text-[var(--color-text)]">确认兑换</h3>
         <p className="text-[var(--color-text-muted)] mb-6 text-sm">您即将消耗积分兑换以下商品：</p>
 
@@ -34,14 +34,14 @@ export default function PurchaseModal({
           <button
             onClick={onClose}
             disabled={submitting}
-            className="btn-secondary flex-1 !px-0"
+            className="btn-secondary flex-1 px-0"
           >
             再想想
           </button>
           <button
             onClick={onConfirm}
             disabled={submitting}
-            className="btn-cta flex-1 !px-0"
+            className="btn-cta flex-1 px-0"
           >
             {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
             {submitting ? '支付中…' : '确认支付'}
