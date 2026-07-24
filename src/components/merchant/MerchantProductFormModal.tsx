@@ -642,7 +642,7 @@ export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, pr
                         role="tab"
                         aria-selected={descMode === 'edit'}
                         onClick={() => setDescMode('edit')}
-                        className={`px-3 py-1 rounded text-xs font-bold cursor-pointer transition-colors ${
+                        className={`px-3 py-1 btn-sm rounded text-xs font-bold cursor-pointer transition-colors ${
                           descMode === 'edit'
                             ? 'bg-[var(--color-primary)] text-white'
                             : 'bg-[var(--color-background)] text-[var(--color-text-muted)] hover:text-[var(--color-text)]'
@@ -656,7 +656,7 @@ export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, pr
                         role="tab"
                         aria-selected={descMode === 'preview'}
                         onClick={() => setDescMode('preview')}
-                        className={`px-3 py-1 rounded text-xs font-bold cursor-pointer transition-colors ${
+                        className={`px-3 py-1 btn-sm rounded text-xs font-bold cursor-pointer transition-colors ${
                           descMode === 'preview'
                             ? 'bg-[var(--color-primary)] text-white'
                             : 'bg-[var(--color-background)] text-[var(--color-text-muted)] hover:text-[var(--color-text)]'

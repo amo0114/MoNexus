@@ -55,7 +55,7 @@ function ToastCard({ toast }: { toast: ToastItem }) {
         type="button"
         onClick={() => setLeaving(true)}
         aria-label="关闭提示"
-        className="ml-1 -mr-1 p-1 rounded-md opacity-70 hover:opacity-100 hover:bg-white/15 transition-opacity cursor-pointer shrink-0"
+        className="icon-btn ml-1 -mr-1 p-1 rounded-md opacity-70 hover:opacity-100 hover:bg-white/15 transition-opacity cursor-pointer shrink-0"
       >
         <X className="w-3.5 h-3.5" />
       </button>

@@ -88,7 +88,7 @@ export default function TrendChart({ data, loading }: { data: DashboardSeriesPoi
         </select>
       </div>
 
-      <div ref={containerRef} className="relative w-full h-[200px]">
+      <div ref={containerRef} className="relative w-full h-[200px]" data-testid="merchant-trend-chart">
         <svg viewBox={`0 0 ${width} ${CHART_HEIGHT}`} className="w-full h-full overflow-visible" onClick={() => setHoveredIndex(null)}>
           <line x1="0" y1="0" x2={width} y2="0" stroke="var(--color-border)" strokeWidth="1" strokeDasharray="4 4" />
           <line x1="0" y1="100" x2={width} y2="100" stroke="var(--color-border)" strokeWidth="1" strokeDasharray="4 4" />

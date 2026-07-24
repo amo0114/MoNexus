@@ -95,7 +95,7 @@ function NicknameCard() {
             <button
               type="button"
               onClick={() => { setNickname(user?.nickname ?? ''); setEditing(true) }}
-              className="btn-secondary px-4 py-1.5 text-xs"
+              className="btn-secondary px-4 py-1.5 text-xs btn-sm"
               data-testid="nickname-edit"
             >
               编辑
@@ -618,7 +618,7 @@ export default function ProfilePage() {
       <div className="pt-2 flex justify-center">
         <button
           onClick={handleLogout}
-          className="cursor-pointer text-[var(--color-text-muted)] font-medium hover:text-[var(--color-danger)] flex items-center gap-1.5 px-4 py-2 rounded-lg hover:bg-[var(--color-danger)]/10 transition-colors text-sm"
+          className="cursor-pointer text-[var(--color-text-muted)] font-medium hover:text-[var(--color-danger)] flex items-center gap-1.5 px-4 py-2 btn-sm rounded-lg hover:bg-[var(--color-danger)]/10 transition-colors text-sm"
         >
           <LogOut className="w-4 h-4" /> 退出当前账号
         </button>

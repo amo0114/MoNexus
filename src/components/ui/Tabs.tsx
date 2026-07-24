@@ -17,7 +17,7 @@ type TriggerProps = React.ComponentPropsWithoutRef<typeof TabsPrimitive.Trigger>
 export const TabsTrigger = forwardRef<HTMLButtonElement, TriggerProps>(({ className = '', ...props }, ref) => (
   <TabsPrimitive.Trigger
     ref={ref}
-    className={`inline-flex items-center justify-center cursor-pointer whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium transition-colors
+    className={`inline-flex items-center justify-center cursor-pointer whitespace-nowrap rounded-md px-3 py-1.5 btn-sm text-sm font-medium transition-colors
       text-[var(--color-text-muted)]
       hover:text-[var(--color-text)]
       data-[state=active]:bg-[var(--color-surface)]
