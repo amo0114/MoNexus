@@ -111,7 +111,12 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               </div>
             )}
 
-            <ThemeToggle />
+            {/* Theme switcher lives in the drawer on small screens:
+                brand + toggle + avatar + hamburger overflow 320-375px
+                viewports and push the drawer trigger off-screen. */}
+            <div className="hidden md:block">
+              <ThemeToggle />
+            </div>
 
             {/* Points Badge — Coins icon in CTA green to match the buy-currency story */}
             <div

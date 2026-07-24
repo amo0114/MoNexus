@@ -52,14 +52,14 @@ export default function EmailVerificationBanner() {
           type="button"
           onClick={handleSend}
           disabled={sending}
-          className="px-3 py-1.5 rounded-lg text-xs font-bold bg-[var(--color-warning-accent)] hover:bg-[var(--color-warning-accent-hover)] text-white disabled:opacity-60 transition-colors whitespace-nowrap focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)]"
+          className="px-3 py-1.5 btn-sm rounded-lg text-xs font-bold bg-[var(--color-warning-accent)] hover:bg-[var(--color-warning-accent-hover)] text-white disabled:opacity-60 transition-colors whitespace-nowrap focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)]"
         >
           {sending ? '发送中…' : '发送验证邮件'}
         </button>
         <button
           type="button"
           onClick={handleDismiss}
-          className="p-1 rounded hover:bg-[var(--color-warning-border)] transition-colors focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)]"
+          className="icon-btn p-1 rounded hover:bg-[var(--color-warning-border)] transition-colors focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)]"
           aria-label="关闭"
         >
           <X className="w-4 h-4" />

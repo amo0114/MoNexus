@@ -149,7 +149,7 @@ export default function AdminOrderTable() {
                   {o.status === 'disputed' && (
                     <button
                       type="button"
-                      className="btn-secondary px-2 py-1 text-xs"
+                      className="btn-secondary btn-sm"
                       data-testid={`admin-resolve-order-${o.id}`}
                       onClick={() => {
                         setResolveTarget(o)

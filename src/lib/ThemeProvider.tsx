@@ -14,9 +14,14 @@ const ThemeContext = createContext<ThemeContextValue>({
   setTheme: () => {},
 })
 
-// Legacy stored values: 'default' (old light) and anything unknown fall back to light.
+// Legacy stored values: 'default' was the old system's explicit light
+// choice, so it maps to light (NOT to system preference) — this keeps it
+// consistent with the index.html boot script, which treats any stored
+// non-dark/non-soft value as light. Unknown values fall back to null
+// (caller then follows the OS).
 function normalizeTheme(raw: string | null): Theme | null {
-  if (raw === 'light' || raw === 'dark' || raw === 'soft') return raw
+  if (raw === 'dark' || raw === 'soft') return raw
+  if (raw === 'light' || raw === 'default') return 'light'
   return null
 }
 
@@ -43,6 +48,22 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     applyTheme(theme)
   }, [theme])
+
+  // Follow live OS theme changes only while the user has not made an
+  // explicit choice (nothing stored). Once setTheme persists a value,
+  // the stored choice wins and OS changes are ignored.
+  useEffect(() => {
+    const mq = window.matchMedia('(prefers-color-scheme: dark)')
+    const onChange = () => {
+      try {
+        if (!localStorage.getItem(STORAGE_KEY)) {
+          setThemeState(systemPreference())
+        }
+      } catch {}
+    }
+    mq.addEventListener('change', onChange)
+    return () => mq.removeEventListener('change', onChange)
+  }, [])
 
   // Only persist explicit user choices; OS-derived defaults stay unpersisted
   // so the app keeps following the OS until the user picks a theme.

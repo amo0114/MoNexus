@@ -227,7 +227,7 @@ h1, h2, h3, h4 {
 
    NOTE: these classes live in @layer components so that plain Tailwind
    utilities (utilities layer) override them — size/variant tweaks like
-   `btn-secondary px-2 py-1 text-xs` need NO !important.
+   `btn-secondary px-4 py-2 text-sm` need NO !important.
    ========================================================= */
 
 @layer components {
@@ -271,6 +271,32 @@ h1, h2, h3, h4 {
 
 .btn-secondary:active:not(:disabled) {
   transform: scale(0.98);
+}
+
+/* Small button size for dense rows (table actions, pagination).
+   Stays compact on precision pointers; expands to the ≥40px touch
+   target on touch devices / small viewports (findings #3). */
+.btn-sm {
+  padding: 6px 12px;
+  font-size: 0.75rem;
+}
+
+@media (hover: none), (max-width: 767px) {
+  .btn-sm {
+    min-height: 40px;
+    padding-top: 9px;
+    padding-bottom: 9px;
+  }
+
+  /* Icon-only buttons: expand to the ≥40px touch target on touch
+     devices / small viewports. */
+  .icon-btn {
+    min-width: 40px;
+    min-height: 40px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
 }
 
 .btn-secondary:hover:not(:disabled) {

@@ -425,7 +425,7 @@ export default function StorePage() {
             <button
               key={cat}
               onClick={() => setCategory(cat)}
-              className={`px-5 py-2 rounded-full text-sm font-medium cursor-pointer transition-colors whitespace-nowrap border ${
+              className={`px-5 py-2 btn-sm rounded-full text-sm font-medium cursor-pointer transition-colors whitespace-nowrap border ${
                 category === cat
                   ? 'bg-[var(--color-text)] text-[var(--color-background)] border-transparent shadow-sm'
                   : 'bg-transparent text-[var(--color-text-muted)] border-[var(--color-border)] hover:bg-[var(--color-primary)]/8 hover:text-[var(--color-text)] hover:border-[var(--color-primary)]'

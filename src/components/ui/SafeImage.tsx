@@ -4,7 +4,11 @@ import { ImageOff } from 'lucide-react'
 /**
  * <img> with an onError fallback: broken/missing src renders the design
  * system's image placeholder instead of the browser's broken-image icon.
- * Passes through standard img attributes (loading, decoding, sizes...).
+ *
+ * The failure is tracked per-src (`failedSrc`): when the parent swaps in
+ * a different src the component retries instead of staying on the
+ * fallback forever. Extra attributes (data-testid, loading, sizes...)
+ * are forwarded to the fallback so selectors keep working either way.
  */
 export default function SafeImage({
   src,
@@ -12,7 +16,8 @@ export default function SafeImage({
   className = '',
   ...rest
 }: React.ImgHTMLAttributes<HTMLImageElement>) {
-  const [error, setError] = useState(false)
+  const [failedSrc, setFailedSrc] = useState<string | null>(null)
+  const error = src != null && failedSrc === src
 
   if (!src || error) {
     return (
@@ -20,6 +25,7 @@ export default function SafeImage({
         className={`bg-[var(--color-image-placeholder)] flex items-center justify-center ${className}`}
         role="img"
         aria-label={alt}
+        {...(rest as React.HTMLAttributes<HTMLDivElement>)}
       >
         <ImageOff className="w-6 h-6 text-[var(--color-text-muted)]" />
       </div>
@@ -31,7 +37,7 @@ export default function SafeImage({
       src={src}
       alt={alt}
       className={className}
-      onError={() => setError(true)}
+      onError={() => setFailedSrc(src)}
       {...rest}
     />
   )

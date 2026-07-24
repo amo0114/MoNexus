@@ -302,7 +302,7 @@ export default function AnnouncementsAdmin() {
                 <td className="text-right space-x-2 whitespace-nowrap" data-label="操作">
                   <button
                     type="button"
-                    className="text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 font-semibold text-xs px-3 py-1.5 rounded-lg transition-colors border border-[var(--color-primary)]/25 cursor-pointer inline-flex items-center gap-1"
+                    className="text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 font-semibold text-xs px-3 py-1.5 btn-sm rounded-lg transition-colors border border-[var(--color-primary)]/25 cursor-pointer inline-flex items-center gap-1"
                     data-testid={`admin-announcement-edit-${a.id}`}
                     onClick={() => openEdit(a)}
                   >
@@ -311,7 +311,7 @@ export default function AnnouncementsAdmin() {
                   </button>
                   <button
                     type="button"
-                    className="text-[var(--color-danger)] hover:bg-[var(--color-danger)]/10 font-semibold text-xs px-3 py-1.5 rounded-lg transition-colors border border-[var(--color-danger)]/25 cursor-pointer inline-flex items-center gap-1"
+                    className="text-[var(--color-danger)] hover:bg-[var(--color-danger)]/10 font-semibold text-xs px-3 py-1.5 btn-sm rounded-lg transition-colors border border-[var(--color-danger)]/25 cursor-pointer inline-flex items-center gap-1"
                     data-testid={`admin-announcement-delete-${a.id}`}
                     onClick={() => setDeleteTarget(a)}
                   >

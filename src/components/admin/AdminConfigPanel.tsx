@@ -135,7 +135,7 @@ export default function AdminConfigPanel() {
                         disabled={savingKey !== null || !!errors[c.key]}
                         onClick={() => handleSave(c)}
                         data-testid={`admin-config-save-${c.key}`}
-                        className="text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 font-semibold text-xs px-3 py-1.5 rounded-lg transition-colors border border-[var(--color-primary)]/25 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                        className="text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 font-semibold text-xs px-3 py-1.5 btn-sm rounded-lg transition-colors border border-[var(--color-primary)]/25 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
                       >
                         {savingKey === c.key ? '保存中...' : '保存'}
                       </button>

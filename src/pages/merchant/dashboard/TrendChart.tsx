@@ -27,6 +27,13 @@ export default function TrendChart({ data, loading }: { data: DashboardSeriesPoi
     return () => ro.disconnect()
   }, [])
 
+  // Reset the selection whenever the dataset changes (e.g. switching
+  // from a 30-day range to 7 days) — a stale hoveredIndex would point
+  // past the end of the shorter series and crash the tooltip render.
+  useEffect(() => {
+    setHoveredIndex(null)
+  }, [data])
+
   const { pathD, points } = useMemo(() => {
     if (!data || data.length === 0) return { pathD: '', points: [] }
 
@@ -60,9 +67,11 @@ export default function TrendChart({ data, loading }: { data: DashboardSeriesPoi
     )
   }
 
-  // Tap toggles a locked tooltip (touch); hover still works for mouse.
-  const togglePoint = (index: number) =>
-    setHoveredIndex((prev) => (prev === index ? null : index))
+  // Selection model: click SETS the active point (tap on touch also fires
+  // a synthesized mouseenter first — a toggle would cancel it out, which
+  // is why the first tap appeared to do nothing). Tapping the chart
+  // background clears. Mouse hover is untouched.
+  const selectPoint = (index: number) => setHoveredIndex(index)
 
   return (
     <div className="card p-6 rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] mb-6">
@@ -79,8 +88,8 @@ export default function TrendChart({ data, loading }: { data: DashboardSeriesPoi
         </select>
       </div>
 
-      <div ref={containerRef} className="relative w-full h-[200px]">
-        <svg viewBox={`0 0 ${width} ${CHART_HEIGHT}`} className="w-full h-full overflow-visible">
+      <div ref={containerRef} className="relative w-full h-[200px]" data-testid="merchant-trend-chart">
+        <svg viewBox={`0 0 ${width} ${CHART_HEIGHT}`} className="w-full h-full overflow-visible" onClick={() => setHoveredIndex(null)}>
           <line x1="0" y1="0" x2={width} y2="0" stroke="var(--color-border)" strokeWidth="1" strokeDasharray="4 4" />
           <line x1="0" y1="100" x2={width} y2="100" stroke="var(--color-border)" strokeWidth="1" strokeDasharray="4 4" />
           <line x1="0" y1="200" x2={width} y2="200" stroke="var(--color-border)" strokeWidth="1" strokeDasharray="4 4" />
@@ -91,7 +100,7 @@ export default function TrendChart({ data, loading }: { data: DashboardSeriesPoi
             <g key={p.index}
                onMouseEnter={() => setHoveredIndex(p.index)}
                onMouseLeave={() => setHoveredIndex(null)}
-               onClick={() => togglePoint(p.index)}
+               onClick={(e) => { e.stopPropagation(); selectPoint(p.index) }}
                className="cursor-pointer">
               <circle cx={p.x} cy={p.y} r="4" fill="var(--color-background)" stroke="var(--color-primary)" strokeWidth="2" />
               <circle cx={p.x} cy={p.y} r="15" fill="transparent" />
@@ -102,7 +111,7 @@ export default function TrendChart({ data, loading }: { data: DashboardSeriesPoi
           ))}
         </svg>
 
-        {hoveredIndex !== null && (
+        {hoveredIndex !== null && points[hoveredIndex] && (
           <div
             className="absolute z-10 bg-[var(--color-surface)] border border-[var(--color-border)] shadow-lg rounded p-3 pointer-events-none transform -translate-x-1/2 -translate-y-[120%]"
             style={{

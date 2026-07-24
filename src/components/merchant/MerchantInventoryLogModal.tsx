@@ -169,7 +169,7 @@ export default function MerchantInventoryLogModal({ isOpen, onClose, product, on
               type="button"
               onClick={() => changePage(Math.max(1, page - 1))}
               disabled={page <= 1 || loading}
-              className="btn-secondary px-2 py-1 text-xs disabled:opacity-50 flex items-center cursor-pointer"
+              className="btn-secondary btn-sm disabled:opacity-50 flex items-center cursor-pointer"
               aria-label="上一页"
             >
               <ChevronLeft className="w-4 h-4" />
@@ -178,7 +178,7 @@ export default function MerchantInventoryLogModal({ isOpen, onClose, product, on
               type="button"
               onClick={() => changePage(Math.min(totalPages, page + 1))}
               disabled={page >= totalPages || loading}
-              className="btn-secondary px-2 py-1 text-xs disabled:opacity-50 flex items-center cursor-pointer"
+              className="btn-secondary btn-sm disabled:opacity-50 flex items-center cursor-pointer"
               aria-label="下一页"
             >
               <ChevronRight className="w-4 h-4" />

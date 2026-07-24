@@ -95,7 +95,7 @@ function NicknameCard() {
             <button
               type="button"
               onClick={() => { setNickname(user?.nickname ?? ''); setEditing(true) }}
-              className="btn-secondary px-4 py-1.5 text-xs"
+              className="btn-secondary px-4 py-1.5 text-xs btn-sm"
               data-testid="nickname-edit"
             >
               编辑
@@ -346,7 +346,7 @@ export default function ProfilePage() {
       useAuthStore.getState().updatePoints(data.balanceAfter)
       setHasCheckedIn(true)
       showToast(`打卡成功！积分 +${data.totalReward}`)
-      api.get('/points/history').then(({ data: h }) => setHistory(h))
+      api.get('/points/history').then(({ data: h }) => setHistory(h)).catch(() => {})
     } catch (err: any) {
       showToast(getApiErrorMessage(err, '签到失败'), 'error')
     } finally {
@@ -444,7 +444,7 @@ export default function ProfilePage() {
             </span>
             <button
               onClick={copyInvite}
-              className="cursor-pointer text-white bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] px-3 py-1.5 rounded-lg shadow-sm font-medium text-xs transition-colors"
+              className="cursor-pointer text-white bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] px-3 py-1.5 rounded-lg shadow-sm font-medium text-xs transition-colors btn-sm"
             >
               复制分享
             </button>
@@ -558,7 +558,7 @@ export default function ProfilePage() {
                         disabled={loadingOrderId === order.id}
                         className="inline-flex items-center justify-center gap-1.5 cursor-pointer
                           bg-[var(--color-primary)] text-white text-xs font-semibold
-                          px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap
+                          px-3 py-1.5 btn-sm rounded-lg transition-colors whitespace-nowrap
                           hover:bg-[var(--color-primary-hover)]
                           focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)]
                           disabled:opacity-50 disabled:cursor-not-allowed
@@ -618,7 +618,7 @@ export default function ProfilePage() {
       <div className="pt-2 flex justify-center">
         <button
           onClick={handleLogout}
-          className="cursor-pointer text-[var(--color-text-muted)] font-medium hover:text-[var(--color-danger)] flex items-center gap-1.5 px-4 py-2 rounded-lg hover:bg-[var(--color-danger)]/10 transition-colors text-sm"
+          className="cursor-pointer text-[var(--color-text-muted)] font-medium hover:text-[var(--color-danger)] flex items-center gap-1.5 px-4 py-2 btn-sm rounded-lg hover:bg-[var(--color-danger)]/10 transition-colors text-sm"
         >
           <LogOut className="w-4 h-4" /> 退出当前账号
         </button>

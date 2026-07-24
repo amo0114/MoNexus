@@ -48,7 +48,7 @@ export default function AnnouncementBanner() {
         <button
           type="button"
           onClick={() => dismiss(top)}
-          className="p-1 rounded hover:bg-[var(--color-primary)]/15 transition-colors focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)]"
+          className="icon-btn p-1 rounded hover:bg-[var(--color-primary)]/15 transition-colors focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)]"
           aria-label="关闭公告"
         >
           <X className="w-4 h-4" />

@@ -57,7 +57,8 @@ export default function Dashboard() {
       <div className="flex items-center gap-4 mb-6">
         <button
           onClick={() => navigate('/merchant')}
-          className="p-2 hover:bg-[var(--color-surface)] rounded-full text-[var(--color-text-muted)] hover:text-[var(--color-text)] transition-colors"
+          aria-label="返回商家后台"
+          className="icon-btn p-2 hover:bg-[var(--color-surface)] rounded-full text-[var(--color-text-muted)] hover:text-[var(--color-text)] transition-colors"
         >
           <ArrowLeft className="w-5 h-5" />
         </button>
