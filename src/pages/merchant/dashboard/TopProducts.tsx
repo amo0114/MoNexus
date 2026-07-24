@@ -1,5 +1,7 @@
 import React from 'react'
+import { BarChart3 } from 'lucide-react'
 import { DashboardTopProduct } from '../../../api/merchant/dashboard'
+import EmptyState from '../../../components/ui/EmptyState'
 
 export default function TopProducts({ data, loading }: { data: DashboardTopProduct[], loading: boolean }) {
   return (
@@ -24,7 +26,9 @@ export default function TopProducts({ data, loading }: { data: DashboardTopProdu
               ))
             ) : data.length === 0 ? (
               <tr>
-                <td colSpan={4} className="py-8 text-center text-[var(--color-text-muted)] text-sm">暂无数据</td>
+                <td colSpan={4}>
+                  <EmptyState compact icon={BarChart3} title="暂无数据" description="产生销量后将展示 TOP10 榜单" />
+                </td>
               </tr>
             ) : (
               data.map((item, i) => (

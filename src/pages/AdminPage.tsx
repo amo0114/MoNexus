@@ -22,6 +22,8 @@ import AnnouncementsAdmin from '../components/admin/AnnouncementsAdmin'
 import CommissionDialog from '../components/admin/CommissionDialog'
 import PortableBackupPanel from '../components/admin/PortableBackupPanel'
 import { Dialog, DialogContent, DialogTitle } from '../components/ui/Dialog'
+import { TableSkeleton, StatCardSkeleton } from '../components/ui/Skeleton'
+import EmptyState from '../components/ui/EmptyState'
 
 type AdminTab = 'dashboard' | 'users' | 'products' | 'orders' | 'logs' | 'audit' | 'merchants' | 'settlements' | 'announcements' | 'config' | 'backup'
 
@@ -47,6 +49,7 @@ export default function AdminPage() {
   const [logs, setLogs] = useState<any[]>([])
   const [merchants, setMerchants] = useState<Merchant[]>([])
   const [settlements, setSettlements] = useState<Settlement[]>([])
+  const [tabLoading, setTabLoading] = useState(false)
 
   // Audit state
   const [auditLogs, setAuditLogs] = useState<AdminLogEntry[]>([])
@@ -120,6 +123,7 @@ export default function AdminPage() {
   }
 
   async function loadTabData(tab: AdminTab) {
+    setTabLoading(true)
     try {
       if (tab === 'dashboard') {
         const { data } = await api.get('/admin/stats')
@@ -131,7 +135,7 @@ export default function AdminPage() {
         const { data } = await api.get('/admin/logs')
         setLogs(data)
       } else if (tab === 'audit') {
-        fetchAudit()
+        await fetchAudit()
       } else if (tab === 'merchants') {
         const data = await getAdminMerchants()
         setMerchants(data)
@@ -145,6 +149,8 @@ export default function AdminPage() {
       // users / orders / config Tab 由各自子组件自行拉取数据
     } catch (err: any) {
       showToast(getApiErrorMessage(err, '加载失败'), 'error')
+    } finally {
+      setTabLoading(false)
     }
   }
 
@@ -239,6 +245,16 @@ export default function AdminPage() {
         {/* Main Content */}
         <div className="flex-grow card p-6 sm:p-8 min-h-[600px] overflow-x-auto">
           {/* Dashboard */}
+          {activeTab === 'dashboard' && !stats && (
+            <div className="space-y-6">
+              <h2 className="font-heading text-xl font-bold mb-4 text-[var(--color-text)]">数据仪表盘</h2>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <StatCardSkeleton />
+                <StatCardSkeleton />
+                <StatCardSkeleton />
+              </div>
+            </div>
+          )}
           {activeTab === 'dashboard' && stats && (
             <div className="space-y-6">
               <h2 className="font-heading text-xl font-bold mb-4 text-[var(--color-text)]">数据仪表盘</h2>
@@ -257,6 +273,9 @@ export default function AdminPage() {
             <div className="space-y-4">
               <h2 className="font-heading text-xl font-bold mb-4 text-[var(--color-text)]">商家管理</h2>
               <div className="overflow-x-auto">
+                {tabLoading && merchants.length === 0 ? (
+                  <TableSkeleton />
+                ) : (
                 <table className="admin-table table-cards">
                   <thead>
                     <tr>
@@ -300,8 +319,16 @@ export default function AdminPage() {
                         </td>
                       </tr>
                     ))}
+                    {!tabLoading && merchants.length === 0 && (
+                      <tr>
+                        <td colSpan={5}>
+                          <EmptyState compact icon={Store} title="暂无商家" description="新的商家入驻申请将出现在这里" />
+                        </td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
+                )}
               </div>
             </div>
           )}
@@ -335,6 +362,9 @@ export default function AdminPage() {
                 </div>
               </div>
               <div className="overflow-x-auto">
+                {tabLoading && settlements.length === 0 ? (
+                  <TableSkeleton />
+                ) : (
                 <table className="admin-table table-cards">
                   <thead>
                     <tr>
@@ -397,8 +427,16 @@ export default function AdminPage() {
                         </td>
                       </tr>
                     ))}
+                    {!tabLoading && settlements.length === 0 && (
+                      <tr>
+                        <td colSpan={6}>
+                          <EmptyState compact icon={DollarSign} title="暂无结算记录" description="订单完成后将生成待结算记录" />
+                        </td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
+                )}
               </div>
             </div>
           )}
@@ -416,6 +454,9 @@ export default function AdminPage() {
                 <h2 className="font-heading text-xl font-bold text-[var(--color-text)]">商品与库存</h2>
               </div>
               <div className="overflow-x-auto">
+                {tabLoading && products.length === 0 ? (
+                  <TableSkeleton />
+                ) : (
                 <table className="admin-table table-cards">
                   <thead>
                     <tr>
@@ -477,8 +518,16 @@ export default function AdminPage() {
                         </tr>
                       )
                     })}
+                    {!tabLoading && products.length === 0 && (
+                      <tr>
+                        <td colSpan={5}>
+                          <EmptyState compact icon={Package} title="暂无商品" description="商品创建后将显示在这里" />
+                        </td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
+                )}
               </div>
             </div>
           )}
@@ -491,6 +540,9 @@ export default function AdminPage() {
             <div className="space-y-4">
               <h2 className="font-heading text-xl font-bold mb-4 text-[var(--color-text)]">积分流水</h2>
               <div className="overflow-x-auto">
+                {tabLoading && logs.length === 0 ? (
+                  <TableSkeleton />
+                ) : (
                 <table className="admin-table table-cards">
                   <thead>
                     <tr>
@@ -511,8 +563,16 @@ export default function AdminPage() {
                         </td>
                       </tr>
                     ))}
+                    {!tabLoading && logs.length === 0 && (
+                      <tr>
+                        <td colSpan={4}>
+                          <EmptyState compact icon={Activity} title="暂无积分流水" />
+                        </td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
+                )}
               </div>
             </div>
           )}
@@ -552,6 +612,9 @@ export default function AdminPage() {
                 <button onClick={handleAuditReset} className="btn-secondary py-1.5 text-sm">重置</button>
               </div>
               <div className="overflow-x-auto">
+                {tabLoading && auditLogs.length === 0 ? (
+                  <TableSkeleton />
+                ) : (
                 <table className="admin-table table-cards">
                   <thead>
                     <tr>
@@ -580,15 +643,16 @@ export default function AdminPage() {
                         </td>
                       </tr>
                     ))}
-                    {auditLogs.length === 0 && (
+                    {!tabLoading && auditLogs.length === 0 && (
                       <tr>
-                        <td colSpan={5} className="text-center py-8 text-[var(--color-text-muted)]">
-                          暂无数据
+                        <td colSpan={5}>
+                          <EmptyState compact icon={ClipboardList} title="暂无审计记录" description="调整筛选条件或等待新的管理操作" />
                         </td>
                       </tr>
                     )}
                   </tbody>
                 </table>
+                )}
               </div>
               {auditTotal > 20 && (
                 <div className="flex justify-between items-center mt-4 text-sm">

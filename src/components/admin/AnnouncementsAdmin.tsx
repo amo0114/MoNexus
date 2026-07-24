@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Plus, Pencil, Trash2 } from 'lucide-react'
+import { Plus, Pencil, Trash2, Megaphone } from 'lucide-react'
 import {
   getAnnouncements,
   createAnnouncement,
@@ -17,6 +17,8 @@ import { useAppStore } from '../../stores/appStore'
 import AdminPagination from './AdminPagination'
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '../ui/Dialog'
 import ConfirmDialog from '../ui/ConfirmDialog'
+import { TableSkeleton } from '../ui/Skeleton'
+import EmptyState from '../ui/EmptyState'
 
 const PAGE_SIZE = 20
 
@@ -88,12 +90,14 @@ export default function AnnouncementsAdmin() {
 
   const [editor, setEditor] = useState<EditorState | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     fetchList()
   }, [page, statusFilter, audienceFilter])
 
   async function fetchList() {
+    setLoading(true)
     try {
       const data = await getAnnouncements({
         page,
@@ -105,6 +109,8 @@ export default function AnnouncementsAdmin() {
       setTotal(data.total)
     } catch (err: any) {
       showToast(getApiErrorMessage(err, '加载公告列表失败'), 'error')
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -256,6 +262,9 @@ export default function AnnouncementsAdmin() {
       </div>
 
       <div className="overflow-x-auto">
+        {loading && items.length === 0 ? (
+          <TableSkeleton />
+        ) : (
         <table className="admin-table table-cards">
           <thead>
             <tr>
@@ -312,15 +321,16 @@ export default function AnnouncementsAdmin() {
                 </td>
               </tr>
             ))}
-            {items.length === 0 && (
+            {!loading && items.length === 0 && (
               <tr>
-                <td colSpan={6} className="text-center py-8 text-[var(--color-text-muted)]">
-                  暂无公告
+                <td colSpan={6}>
+                  <EmptyState compact icon={Megaphone} title="暂无公告" description="点击右上角按钮创建第一条公告" />
                 </td>
               </tr>
             )}
           </tbody>
         </table>
+        )}
       </div>
 
       <AdminPagination page={page} total={total} pageSize={PAGE_SIZE} onPageChange={setPage} testId="admin-announcement-pagination" />

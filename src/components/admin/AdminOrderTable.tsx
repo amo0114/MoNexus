@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react'
-import { Search } from 'lucide-react'
+import { Search, ShoppingCart } from 'lucide-react'
 import { getAdminOrders, resolveAdminOrder, AdminOrderItem } from '../../api/admin'
 import { getApiErrorMessage } from '../../api/error'
 import { useAppStore } from '../../stores/appStore'
 import RegistryPill from '../ui/RegistryPill'
 import AdminPagination from './AdminPagination'
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '../ui/Dialog'
+import { TableSkeleton } from '../ui/Skeleton'
+import EmptyState from '../ui/EmptyState'
 
 const PAGE_SIZE = 20
 
@@ -24,6 +26,7 @@ export default function AdminOrderTable() {
   const [resolveResult, setResolveResult] = useState<'refund' | 'close'>('refund')
   const [resolveNote, setResolveNote] = useState('')
   const [resolving, setResolving] = useState(false)
+  const [loading, setLoading] = useState(true)
 
   // 搜索 300ms 防抖，筛选变化时重置页码到 1
   useEffect(() => {
@@ -39,6 +42,7 @@ export default function AdminOrderTable() {
   }, [page, statusFilter, searchDebounced])
 
   async function fetchOrders() {
+    setLoading(true)
     try {
       const data = await getAdminOrders({
         page,
@@ -50,6 +54,8 @@ export default function AdminOrderTable() {
       setTotal(data.total)
     } catch (err: any) {
       showToast(getApiErrorMessage(err, '加载订单列表失败'), 'error')
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -109,6 +115,9 @@ export default function AdminOrderTable() {
       </div>
 
       <div className="overflow-x-auto">
+        {loading && orders.length === 0 ? (
+          <TableSkeleton />
+        ) : (
         <table className="admin-table table-cards">
           <thead>
             <tr>
@@ -154,15 +163,16 @@ export default function AdminOrderTable() {
                 </td>
               </tr>
             ))}
-            {orders.length === 0 && (
+            {!loading && orders.length === 0 && (
               <tr>
-                <td colSpan={6} className="text-center py-8 text-[var(--color-text-muted)]">
-                  暂无数据
+                <td colSpan={6}>
+                  <EmptyState compact icon={ShoppingCart} title="暂无订单" description="调整筛选或搜索条件试试" />
                 </td>
               </tr>
             )}
           </tbody>
         </table>
+        )}
       </div>
 
       <Dialog open={resolveTarget !== null} onOpenChange={(open) => { if (!open && !resolving) setResolveTarget(null) }}>
