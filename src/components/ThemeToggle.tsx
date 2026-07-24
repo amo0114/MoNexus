@@ -46,7 +46,7 @@ export default function ThemeToggle() {
             title={label}
             aria-label={label}
             onClick={() => setTheme(value)}
-            className={`inline-flex items-center justify-center w-8 h-8 rounded-full transition-all duration-200 focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)] ${
+            className={`inline-flex items-center justify-center w-10 h-10 rounded-full transition-all duration-200 focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)] ${
               active
                 ? 'bg-[var(--color-surface)] text-[var(--color-primary)] shadow-sm'
                 : 'text-[var(--color-text-muted)] hover:text-[var(--color-primary)]'

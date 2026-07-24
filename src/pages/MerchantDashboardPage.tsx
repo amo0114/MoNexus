@@ -598,26 +598,26 @@ export default function MerchantDashboardPage() {
                           </td>
                           <td className="py-3 px-2 text-right whitespace-nowrap" data-label="操作">
                             {o.availableActions?.includes('start_fulfillment') && (
-                              <button onClick={() => handleOrderAction('start_fulfillment', o)} className="btn-secondary px-2 py-1 text-xs mr-2">
+                              <button onClick={() => handleOrderAction('start_fulfillment', o)} className="btn-secondary btn-sm mr-2">
                                 开始履约
                               </button>
                             )}
                             {o.availableActions?.includes('reject') && (
                               <button
                                 onClick={() => handleOrderAction('reject', o)}
-                                className="btn-secondary px-2 py-1 text-xs mr-2 border-[var(--color-danger)] text-[var(--color-danger)]"
+                                className="btn-secondary btn-sm mr-2 border-[var(--color-danger)] text-[var(--color-danger)]"
                                 data-testid={`merchant-reject-order-${o.id}`}
                               >
                                 拒单
                               </button>
                             )}
                             {o.availableActions?.includes('deliver') && (
-                              <button onClick={() => handleOrderAction('deliver', o)} className="btn-primary px-2 py-1 text-xs mr-2">
+                              <button onClick={() => handleOrderAction('deliver', o)} className="btn-primary btn-sm mr-2">
                                 发货
                               </button>
                             )}
                             {o.availableActions?.includes('respond_dispute') && (
-                              <button onClick={() => handleOrderAction('respond_dispute', o)} className="btn-secondary px-2 py-1 text-xs mr-2">
+                              <button onClick={() => handleOrderAction('respond_dispute', o)} className="btn-secondary btn-sm mr-2">
                                 处理争议
                               </button>
                             )}
@@ -872,14 +872,14 @@ function PaginationControls({ page, total, setPage, testId }: { page: number; to
         <button
           onClick={() => setPage(Math.max(1, page - 1))}
           disabled={page <= 1}
-          className="btn-secondary px-2 py-1 text-xs disabled:opacity-50 flex items-center cursor-pointer"
+          className="btn-secondary btn-sm disabled:opacity-50 flex items-center cursor-pointer"
         >
           <ChevronLeft className="w-4 h-4" />
         </button>
         <button
           onClick={() => setPage(Math.min(totalPages, page + 1))}
           disabled={page >= totalPages}
-          className="btn-secondary px-2 py-1 text-xs disabled:opacity-50 flex items-center cursor-pointer"
+          className="btn-secondary btn-sm disabled:opacity-50 flex items-center cursor-pointer"
         >
           <ChevronRight className="w-4 h-4" />
         </button>

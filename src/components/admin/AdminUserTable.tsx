@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Search, UsersRound } from 'lucide-react'
+import { Search, UsersRound, Loader2 } from 'lucide-react'
 import {
   getAdminUsers,
   banUser,
@@ -64,13 +64,15 @@ export default function AdminUserTable() {
   const [showBan, setShowBan] = useState(false)
   const [banTarget, setBanTarget] = useState<AdminUserItem | null>(null)
   const [banReason, setBanReason] = useState('')
+  const [banning, setBanning] = useState(false)
 
   async function confirmBan() {
-    if (!banTarget) return
+    if (!banTarget || banning) return
     if (!banReason.trim()) {
       showToast('请输入封禁原因', 'error')
       return
     }
+    setBanning(true)
     try {
       await banUser(banTarget.id, banReason)
       showToast('已成功封禁该用户')
@@ -78,6 +80,8 @@ export default function AdminUserTable() {
       fetchUsers()
     } catch (err: any) {
       showToast(getApiErrorMessage(err, '封禁失败'), 'error')
+    } finally {
+      setBanning(false)
     }
   }
 
@@ -106,14 +110,16 @@ export default function AdminUserTable() {
   const [adjustType, setAdjustType] = useState<'add' | 'deduct'>('add')
   const [adjustAmount, setAdjustAmount] = useState('')
   const [adjustReason, setAdjustReason] = useState('')
+  const [adjusting, setAdjusting] = useState(false)
 
   async function confirmAdjust() {
-    if (!adjustTarget) return
+    if (!adjustTarget || adjusting) return
     const amount = parseInt(adjustAmount)
     if (!amount || amount <= 0 || !adjustReason) {
       showToast('请填写有效的数量和原因', 'error')
       return
     }
+    setAdjusting(true)
     try {
       await adjustUserPoints(adjustTarget.id, { type: adjustType, amount, reason: adjustReason })
       showToast(`已成功${adjustType === 'add' ? '发放' : '扣除'} ${amount} 积分`)
@@ -121,6 +127,8 @@ export default function AdminUserTable() {
       fetchUsers()
     } catch (err: any) {
       showToast(getApiErrorMessage(err, '操作失败'), 'error')
+    } finally {
+      setAdjusting(false)
     }
   }
 
@@ -254,8 +262,13 @@ export default function AdminUserTable() {
                 className="input"
               />
             </div>
-            <button onClick={confirmBan} className="btn-primary w-full mt-2 bg-[var(--color-danger)] hover:opacity-90 border-[var(--color-danger)] text-white shadow-md">
-              确认封禁
+            <button
+              onClick={confirmBan}
+              disabled={banning}
+              className="btn-primary w-full mt-2 bg-[var(--color-danger)] hover:opacity-90 border-[var(--color-danger)] text-white shadow-md"
+            >
+              {banning ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+              {banning ? '执行中…' : '确认封禁'}
             </button>
           </div>
         </DialogContent>
@@ -317,8 +330,9 @@ export default function AdminUserTable() {
                   className="input"
                 />
               </div>
-              <button onClick={confirmAdjust} className="btn-primary w-full mt-2">
-                确认执行
+              <button onClick={confirmAdjust} disabled={adjusting} className="btn-primary w-full mt-2">
+                {adjusting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                {adjusting ? '执行中…' : '确认执行'}
               </button>
           </div>
         </DialogContent>

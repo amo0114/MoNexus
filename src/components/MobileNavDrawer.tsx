@@ -6,6 +6,7 @@ import {
   AlertTriangle, Plus, Home,
 } from 'lucide-react'
 import { useAuthStore } from '../stores/authStore'
+import ThemeToggle from './ThemeToggle'
 
 const ROW =
   'w-full flex items-center gap-3 px-3 min-h-[44px] rounded-lg text-sm font-medium transition-colors cursor-pointer text-left'
@@ -118,6 +119,14 @@ export default function MobileNavDrawer() {
               个人中心
             </button>
           </nav>
+
+          {/* Theme switcher — moved out of the cramped mobile navbar */}
+          <div className="px-3 mt-3 shrink-0">
+            <div className="flex items-center justify-between px-3 min-h-[44px] rounded-lg border border-[var(--color-border)] bg-[var(--color-background)]">
+              <span className="text-sm font-medium text-[var(--color-text)]">主题</span>
+              <ThemeToggle />
+            </div>
+          </div>
 
           {/* Portal entries — mirrors the desktop navbar pills (role × merchant.status) */}
           {(user?.role === 'user' ||

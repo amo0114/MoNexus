@@ -2,21 +2,24 @@ import { useEffect, useState } from 'react'
 import { CheckCircle2, XCircle, Info, AlertTriangle, X } from 'lucide-react'
 import { useAppStore, type Toast as ToastItem } from '../stores/appStore'
 
+// Solid deep-tone bars with white text — every pair meets WCAG 4.5:1+
+// for 14px body text in all three themes (the previous token-based
+// pairs measured 1.5–4.2:1 in the review).
 const TONE: Record<ToastItem['type'], { bar: string; icon: typeof CheckCircle2 }> = {
   success: {
-    bar: 'bg-[var(--color-text)] text-[var(--color-background)] border-[var(--color-border)]',
+    bar: 'bg-[#15803D] text-white border-[#15803D]', // green-800, white ≈ 5.5:1
     icon: CheckCircle2,
   },
   error: {
-    bar: 'bg-[var(--color-danger)] text-white border-[var(--color-danger)]',
+    bar: 'bg-[#B91C1C] text-white border-[#B91C1C]', // red-700, white ≈ 5.9:1
     icon: XCircle,
   },
   info: {
-    bar: 'bg-[var(--color-info)] text-white border-[var(--color-info)]',
+    bar: 'bg-[#1D4ED8] text-white border-[#1D4ED8]', // blue-700, white ≈ 6.4:1
     icon: Info,
   },
   warning: {
-    bar: 'bg-[var(--color-warning)] text-[var(--color-warning-text)] border-[var(--color-warning)]',
+    bar: 'bg-[#B45309] text-white border-[#B45309]', // amber-700, white ≈ 5.8:1
     icon: AlertTriangle,
   },
 }
