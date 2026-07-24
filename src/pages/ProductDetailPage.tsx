@@ -40,6 +40,7 @@ export default function ProductDetailPage() {
   const [loading, setLoading] = useState(true)
 
   const [showPurchase, setShowPurchase] = useState(false)
+  const [purchasing, setPurchasing] = useState(false)
   const [showSuccess, setShowSuccess] = useState(false)
   const [deliveryContent, setDeliveryContent] = useState('')
   const [deliveryContentType, setDeliveryContentType] = useState<string | undefined>(undefined)
@@ -88,7 +89,8 @@ export default function ProductDetailPage() {
   }, [id, navigate, showToast])
 
   async function handlePurchase() {
-    if (!product) return
+    if (!product || purchasing) return
+    setPurchasing(true)
     try {
       const { data } = await api.post('/orders', { productId: product.id })
       useAuthStore.getState().updatePoints(data.balanceAfter)
@@ -102,6 +104,8 @@ export default function ProductDetailPage() {
     } catch (err: any) {
       showToast(getApiErrorMessage(err, '兑换失败'), 'error')
       setShowPurchase(false)
+    } finally {
+      setPurchasing(false)
     }
   }
 
@@ -400,6 +404,7 @@ export default function ProductDetailPage() {
       {showPurchase && (
         <PurchaseModal
           product={product}
+          submitting={purchasing}
           onClose={() => setShowPurchase(false)}
           onConfirm={handlePurchase}
         />

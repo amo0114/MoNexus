@@ -1,17 +1,19 @@
-import { Coins } from 'lucide-react'
+import { Coins, Loader2 } from 'lucide-react'
 
 export default function PurchaseModal({
   product,
+  submitting = false,
   onClose,
   onConfirm,
 }: {
   product: { name: string; price: number }
+  submitting?: boolean
   onClose: () => void
   onConfirm: () => void
 }) {
   return (
     <div className="fixed inset-0 z-[110] flex items-center justify-center">
-      <div className="modal-overlay" onClick={onClose} />
+      <div className="modal-overlay" onClick={submitting ? undefined : onClose} />
       <div className="modal relative z-10 fade-in !max-w-sm">
         <h3 className="font-heading text-xl font-bold mb-2 text-[var(--color-text)]">确认兑换</h3>
         <p className="text-[var(--color-text-muted)] mb-6 text-sm">您即将消耗积分兑换以下商品：</p>
@@ -31,15 +33,18 @@ export default function PurchaseModal({
         <div className="flex gap-3">
           <button
             onClick={onClose}
+            disabled={submitting}
             className="btn-secondary flex-1 !px-0"
           >
             再想想
           </button>
           <button
             onClick={onConfirm}
+            disabled={submitting}
             className="btn-cta flex-1 !px-0"
           >
-            确认支付
+            {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
+            {submitting ? '支付中…' : '确认支付'}
           </button>
         </div>
       </div>

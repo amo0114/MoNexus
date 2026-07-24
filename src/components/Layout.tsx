@@ -46,8 +46,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       <nav className="glass sticky top-0 z-40 w-full px-4 sm:px-6 py-4 border-b border-[var(--color-border)]">
         <div className="max-w-7xl mx-auto flex justify-between items-center relative">
 
-          {/* Brand mark + Orbitron wordmark. Active mark variant lives in
-              the logoStore; switch via /_dev/tokens. See LOGO-BRIEF.md. */}
+          {/* Brand mark + Orbitron wordmark. See design-system/monexus/LOGO-BRIEF.md. */}
           <div
             className="flex items-center gap-2.5 cursor-pointer group"
             onClick={() => navigate('/')}
