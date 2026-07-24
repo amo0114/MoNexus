@@ -12,6 +12,7 @@ import OrderDetailModal from '../components/OrderDetailModal'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/ui/Tabs'
 import { TableSkeleton } from '../components/ui/Skeleton'
 import EmptyState from '../components/ui/EmptyState'
+import Reveal from '../components/ui/Reveal'
 import CoinIcon from '../components/ui/CoinIcon'
 import RegistryPill from '../components/ui/RegistryPill'
 import { getMemberTier, TierResponse } from '../api/points'
@@ -518,8 +519,9 @@ export default function ProfilePage() {
               />
             ) : (
               <div className="space-y-3">
-                {orders.map((order) => (
-                  <div key={order.id} className="bg-[var(--color-background)] rounded-lg p-4 border border-[var(--color-border)] flex flex-col sm:flex-row justify-between gap-4 shadow-sm hover:shadow-md transition-shadow">
+                {orders.map((order, i) => (
+                  <Reveal key={order.id} delay={Math.min(i, 8) * 50}>
+                  <div className="bg-[var(--color-background)] rounded-lg p-4 border border-[var(--color-border)] flex flex-col sm:flex-row justify-between gap-4 shadow-sm hover:shadow-md transition-shadow">
                     <div className="flex-1">
                       <div className="flex items-center justify-between mb-2">
                         <div className="flex items-center gap-2">
@@ -571,6 +573,7 @@ export default function ProfilePage() {
                       </button>
                     </div>
                   </div>
+                  </Reveal>
                 ))}
               </div>
             )}

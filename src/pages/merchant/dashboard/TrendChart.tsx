@@ -1,18 +1,38 @@
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useEffect, useRef } from 'react'
 import { LineChart } from 'lucide-react'
 import { DashboardSeriesPoint } from '../../../api/merchant/dashboard'
 import EmptyState from '../../../components/ui/EmptyState'
+
+const CHART_HEIGHT = 200
 
 export default function TrendChart({ data, loading }: { data: DashboardSeriesPoint[], loading: boolean }) {
   const [metric, setMetric] = useState<'pointsRevenue' | 'orderCount'>('pointsRevenue')
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null)
 
-  const { pathD, points, maxVal } = useMemo(() => {
-    if (!data || data.length === 0) return { pathD: '', points: [], maxVal: 0 }
+  // Measure the container so the viewBox matches the rendered aspect ratio
+  // 1:1 — circles stay round and stroke widths uniform at any width
+  // (the previous hardcoded 1000×200 + preserveAspectRatio="none" squashed
+  // points into ellipses on phones).
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [width, setWidth] = useState(600)
+
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    const ro = new ResizeObserver((entries) => {
+      const w = Math.round(entries[0].contentRect.width)
+      if (w > 0) setWidth(w)
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+
+  const { pathD, points } = useMemo(() => {
+    if (!data || data.length === 0) return { pathD: '', points: [] }
 
     const max = Math.max(...data.map(d => d[metric]), 1)
-    const w = 1000
-    const h = 200
+    const w = width
+    const h = CHART_HEIGHT
     const step = w / Math.max(data.length - 1, 1)
 
     const pts = data.map((d, i) => {
@@ -25,11 +45,11 @@ export default function TrendChart({ data, loading }: { data: DashboardSeriesPoi
       ? `M ${pts[0].x} ${pts[0].y} ` + pts.slice(1).map(p => `L ${p.x} ${p.y}`).join(' ')
       : ''
 
-    return { pathD: d, points: pts, maxVal: max }
-  }, [data, metric])
+    return { pathD: d, points: pts }
+  }, [data, metric, width])
 
   if (loading) {
-    return <div className="card h-[300px] flex items-center justify-center animate-pulse rounded-lg border border-[var(--color-border)] mb-6"><div className="w-1/2 h-4 bg-[var(--color-border)] rounded"></div></div>
+    return <div className="card h-[300px] flex items-center justify-center animate-pulse bg-[var(--color-background)] rounded-lg border border-[var(--color-border)] mb-6"><div className="w-1/2 h-4 bg-[var(--color-border)] rounded"></div></div>
   }
 
   if (!data || data.length === 0) {
@@ -40,25 +60,30 @@ export default function TrendChart({ data, loading }: { data: DashboardSeriesPoi
     )
   }
 
+  // Tap toggles a locked tooltip (touch); hover still works for mouse.
+  const togglePoint = (index: number) =>
+    setHoveredIndex((prev) => (prev === index ? null : index))
+
   return (
-    <div className="card rounded-lg border border-[var(--color-border)] mb-6">
+    <div className="card p-6 rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] mb-6">
       <div className="flex justify-between items-center mb-6">
         <h3 className="font-heading text-lg font-bold text-[var(--color-text)]">趋势分析</h3>
         <select
           className="bg-[var(--color-surface)] border border-[var(--color-border)] text-sm rounded-md px-3 py-1.5 text-[var(--color-text)] cursor-pointer"
           value={metric}
           onChange={(e) => setMetric(e.target.value as any)}
+          aria-label="选择趋势指标"
         >
           <option value="pointsRevenue">积分流水</option>
           <option value="orderCount">订单数</option>
         </select>
       </div>
 
-      <div className="relative w-full h-[200px]">
-        <svg viewBox="0 0 1000 200" preserveAspectRatio="none" className="w-full h-full overflow-visible">
-          <line x1="0" y1="0" x2="1000" y2="0" stroke="var(--color-border)" strokeWidth="1" strokeDasharray="4 4" />
-          <line x1="0" y1="100" x2="1000" y2="100" stroke="var(--color-border)" strokeWidth="1" strokeDasharray="4 4" />
-          <line x1="0" y1="200" x2="1000" y2="200" stroke="var(--color-border)" strokeWidth="1" strokeDasharray="4 4" />
+      <div ref={containerRef} className="relative w-full h-[200px]">
+        <svg viewBox={`0 0 ${width} ${CHART_HEIGHT}`} className="w-full h-full overflow-visible">
+          <line x1="0" y1="0" x2={width} y2="0" stroke="var(--color-border)" strokeWidth="1" strokeDasharray="4 4" />
+          <line x1="0" y1="100" x2={width} y2="100" stroke="var(--color-border)" strokeWidth="1" strokeDasharray="4 4" />
+          <line x1="0" y1="200" x2={width} y2="200" stroke="var(--color-border)" strokeWidth="1" strokeDasharray="4 4" />
 
           <path d={pathD} fill="none" stroke="var(--color-primary)" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
 
@@ -66,6 +91,7 @@ export default function TrendChart({ data, loading }: { data: DashboardSeriesPoi
             <g key={p.index}
                onMouseEnter={() => setHoveredIndex(p.index)}
                onMouseLeave={() => setHoveredIndex(null)}
+               onClick={() => togglePoint(p.index)}
                className="cursor-pointer">
               <circle cx={p.x} cy={p.y} r="4" fill="var(--color-background)" stroke="var(--color-primary)" strokeWidth="2" />
               <circle cx={p.x} cy={p.y} r="15" fill="transparent" />
@@ -80,8 +106,8 @@ export default function TrendChart({ data, loading }: { data: DashboardSeriesPoi
           <div
             className="absolute z-10 bg-[var(--color-surface)] border border-[var(--color-border)] shadow-lg rounded p-3 pointer-events-none transform -translate-x-1/2 -translate-y-[120%]"
             style={{
-              left: `${(points[hoveredIndex].x / 1000) * 100}%`,
-              top: `${(points[hoveredIndex].y / 200) * 100}%`
+              left: `${(points[hoveredIndex].x / width) * 100}%`,
+              top: `${(points[hoveredIndex].y / CHART_HEIGHT) * 100}%`
             }}
           >
             <div className="text-xs text-[var(--color-text-muted)] mb-1">{points[hoveredIndex].data.date}</div>

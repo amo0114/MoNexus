@@ -9,6 +9,7 @@ import { useAuthStore } from '../stores/authStore'
 import PurchaseModal from '../components/PurchaseModal'
 import SuccessModal from '../components/SuccessModal'
 import EmptyState from '../components/ui/EmptyState'
+import SafeImage from '../components/ui/SafeImage'
 import { getProductReviews, type ReviewItem } from '../api/reviews'
 import StarRating from '../components/ui/StarRating'
 
@@ -160,7 +161,7 @@ export default function ProductDetailPage() {
         <div data-testid="product-gallery">
           <div className="w-full h-64 sm:h-80 md:h-96 bg-[var(--color-image-placeholder)] relative shrink-0">
             {galleryImages.length > 0 && (
-              <img
+              <SafeImage
                 src={galleryImages[activeImage] ?? galleryImages[0]}
                 className="w-full h-full object-cover"
                 alt={product.name}
@@ -200,7 +201,7 @@ export default function ProductDetailPage() {
                       : 'border-transparent opacity-70 hover:opacity-100'
                   }`}
                 >
-                  <img
+                  <SafeImage
                     src={img}
                     alt={`${product.name} 图 ${i + 1}`}
                     className="w-full h-full object-cover"
