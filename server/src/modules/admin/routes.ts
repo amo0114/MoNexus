@@ -12,10 +12,13 @@ import {
 } from './schema.js'
 import { adminReviewsQuerySchema } from '../reviews/schema.js'
 import * as controller from './controller.js'
+import { portableBackupRoutes } from '../portable-backups/routes.js'
 
 const router = Router()
 
 router.use(authenticate, requireActiveUser, requireAdmin)
+
+router.use('/portable-backups', portableBackupRoutes)
 
 router.get('/stats', controller.stats)
 router.get('/config', controller.listConfig)

@@ -20,6 +20,7 @@ import { dashboardRoutes } from './modules/dashboard/routes.js'
 import { uploadsRoutes } from './modules/uploads/routes.js'
 import { configRoutes } from './modules/config/routes.js'
 import { announcementRoutes } from './modules/announcements/routes.js'
+import { portableRestoreBootstrapRoutes } from './modules/portable-backups/bootstrap-routes.js'
 
 const app = express()
 
@@ -86,6 +87,7 @@ app.use('/api/merchant', merchantRoutes)
 app.use('/api/uploads', uploadsRoutes)
 app.use('/api/config', configRoutes)
 app.use('/api/announcements', announcementRoutes)
+app.use('/api/portable-restore/bootstrap', portableRestoreBootstrapRoutes)
 
 app.use(errorHandler)
 

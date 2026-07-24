@@ -18,7 +18,9 @@ RUN npx tsc
 # Stage 2 — runtime: minimal image carrying built artifacts + the Prisma
 # client that was generated against this image's native binary target.
 FROM node:20-alpine AS runtime
-RUN apk add --no-cache openssl tini wget && \
+# pg_dump / pg_restore talk to PostgreSQL over the normal network protocol.
+# This keeps portable backups independent from Docker sockets and host volumes.
+RUN apk add --no-cache openssl tini wget tar gzip postgresql16-client && \
     addgroup -S app && adduser -S app -G app
 WORKDIR /app
 ENV NODE_ENV=production \

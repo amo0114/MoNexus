@@ -18,6 +18,7 @@ import MerchantApplyPage from './pages/MerchantApplyPage'
 import MerchantDashboardPage from './pages/MerchantDashboardPage'
 import Dashboard from './pages/merchant/Dashboard'
 import DesignTokensPage from './pages/_design-tokens'
+import PortableRestoreSetupPage from './pages/PortableRestoreSetupPage'
 import RoleGuard from './components/RoleGuard'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -56,6 +57,7 @@ export default function App() {
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
         <Route path="/reset-password/:token" element={<ResetPasswordPage />} />
         <Route path="/verify-email" element={<VerifyEmailPage />} />
+        <Route path="/restore-setup" element={<PortableRestoreSetupPage />} />
         {/* Design-token preview — dev only; never registered in production builds. */}
         {import.meta.env.DEV && (
           <Route path="/_dev/tokens" element={<DesignTokensPage />} />
@@ -104,4 +106,3 @@ export default function App() {
     </BrowserRouter>
   )
 }
-
