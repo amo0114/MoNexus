@@ -1,5 +1,7 @@
 import React, { useState, useMemo } from 'react'
+import { LineChart } from 'lucide-react'
 import { DashboardSeriesPoint } from '../../../api/merchant/dashboard'
+import EmptyState from '../../../components/ui/EmptyState'
 
 export default function TrendChart({ data, loading }: { data: DashboardSeriesPoint[], loading: boolean }) {
   const [metric, setMetric] = useState<'pointsRevenue' | 'orderCount'>('pointsRevenue')
@@ -32,8 +34,8 @@ export default function TrendChart({ data, loading }: { data: DashboardSeriesPoi
 
   if (!data || data.length === 0) {
     return (
-      <div className="card h-[300px] flex items-center justify-center rounded-lg border border-[var(--color-border)] mb-6">
-        <span className="text-[var(--color-text-muted)] text-sm">暂无数据</span>
+      <div className="card h-[300px] flex items-center justify-center rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] mb-6">
+        <EmptyState compact icon={LineChart} title="暂无数据" description="所选时间范围内还没有经营数据" />
       </div>
     )
   }

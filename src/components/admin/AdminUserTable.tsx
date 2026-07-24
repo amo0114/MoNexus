@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Search } from 'lucide-react'
+import { Search, UsersRound } from 'lucide-react'
 import {
   getAdminUsers,
   banUser,
@@ -13,6 +13,8 @@ import { useAuthStore } from '../../stores/authStore'
 import AdminPagination from './AdminPagination'
 import { Dialog, DialogContent, DialogTitle } from '../ui/Dialog'
 import ConfirmDialog from '../ui/ConfirmDialog'
+import { TableSkeleton } from '../ui/Skeleton'
+import EmptyState from '../ui/EmptyState'
 
 const PAGE_SIZE = 20
 
@@ -24,6 +26,7 @@ export default function AdminUserTable() {
   const [users, setUsers] = useState<AdminUserItem[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
+  const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [searchDebounced, setSearchDebounced] = useState('')
 
@@ -41,6 +44,7 @@ export default function AdminUserTable() {
   }, [page, searchDebounced])
 
   async function fetchUsers() {
+    setLoading(true)
     try {
       const data = await getAdminUsers({
         page,
@@ -51,6 +55,8 @@ export default function AdminUserTable() {
       setTotal(data.total)
     } catch (err: any) {
       showToast(getApiErrorMessage(err, '加载用户列表失败'), 'error')
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -137,6 +143,9 @@ export default function AdminUserTable() {
       </div>
 
       <div className="overflow-x-auto">
+        {loading && users.length === 0 ? (
+          <TableSkeleton />
+        ) : (
         <table className="admin-table table-cards">
           <thead>
             <tr>
@@ -207,15 +216,16 @@ export default function AdminUserTable() {
                 </td>
               </tr>
             ))}
-            {users.length === 0 && (
+            {!loading && users.length === 0 && (
               <tr>
-                <td colSpan={5} className="text-center py-8 text-[var(--color-text-muted)]">
-                  暂无数据
+                <td colSpan={5}>
+                  <EmptyState compact icon={UsersRound} title="暂无用户" description="调整搜索条件试试" />
                 </td>
               </tr>
             )}
           </tbody>
         </table>
+        )}
       </div>
 
       <AdminPagination page={page} total={total} pageSize={PAGE_SIZE} onPageChange={setPage} testId="admin-user-pagination" />

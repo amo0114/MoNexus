@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Coins, Wallet, Users, CalendarCheck, LogOut, ArrowDownLeft, ArrowUpRight, Store, Eye, Loader2, Shield, Trophy, UserRound } from 'lucide-react'
+import { Coins, Wallet, Users, CalendarCheck, LogOut, ArrowDownLeft, ArrowUpRight, Store, Eye, Loader2, Shield, Trophy, UserRound, ShoppingBag } from 'lucide-react'
 import { useAuthStore } from '../stores/authStore'
 import { useAppStore } from '../stores/appStore'
 import api from '../api/client'
@@ -10,6 +10,8 @@ import { changePassword, updateMe } from '../api/auth'
 import { UserOrderListItem, UserOrderDetail } from '../types/order'
 import OrderDetailModal from '../components/OrderDetailModal'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/ui/Tabs'
+import { TableSkeleton } from '../components/ui/Skeleton'
+import EmptyState from '../components/ui/EmptyState'
 import CoinIcon from '../components/ui/CoinIcon'
 import RegistryPill from '../components/ui/RegistryPill'
 import { getMemberTier, TierResponse } from '../api/points'
@@ -326,11 +328,14 @@ export default function ProfilePage() {
 
   const [selectedOrder, setSelectedOrder] = useState<UserOrderDetail | null>(null)
   const [loadingOrderId, setLoadingOrderId] = useState<number | null>(null)
+  const [listsLoading, setListsLoading] = useState(true)
 
   useEffect(() => {
-    getOrders().then(setOrders).catch(() => {})
-    api.get('/points/history').then(({ data }) => setHistory(data)).catch(() => {})
-    api.get('/points/checkin/status').then(({ data }) => setHasCheckedIn(data.hasCheckedIn)).catch(() => {})
+    Promise.allSettled([
+      getOrders().then(setOrders),
+      api.get('/points/history').then(({ data }) => setHistory(data)),
+      api.get('/points/checkin/status').then(({ data }) => setHasCheckedIn(data.hasCheckedIn)),
+    ]).finally(() => setListsLoading(false))
   }, [])
 
   async function handleCheckin() {
@@ -497,10 +502,20 @@ export default function ProfilePage() {
           </TabsList>
 
           <TabsContent value="orders">
-            {orders.length === 0 ? (
-              <div className="text-center py-8 text-[var(--color-text-muted)] bg-[var(--color-background)] rounded-lg border border-dashed border-[var(--color-border)]">
-                <p className="text-xs">还没兑换过商品，快去大厅逛逛吧</p>
-              </div>
+            {listsLoading ? (
+              <TableSkeleton rows={4} />
+            ) : orders.length === 0 ? (
+              <EmptyState
+                compact
+                icon={ShoppingBag}
+                title="还没兑换过商品"
+                description="快去大厅逛逛吧"
+                action={
+                  <button onClick={() => navigate('/')} className="btn-secondary px-4 py-2 text-sm">
+                    前往商城
+                  </button>
+                }
+              />
             ) : (
               <div className="space-y-3">
                 {orders.map((order) => (
@@ -562,6 +577,11 @@ export default function ProfilePage() {
           </TabsContent>
 
           <TabsContent value="history">
+            {listsLoading ? (
+              <TableSkeleton rows={4} />
+            ) : history.length === 0 ? (
+              <EmptyState compact icon={Coins} title="暂无积分变动" description="每日签到即可获得第一笔积分" />
+            ) : (
             <div className="space-y-2">
               {history.map((item: any) => (
                 <div key={item.id} className="flex items-center justify-between p-3 border-b border-[var(--color-border)] last:border-0 hover:bg-[var(--color-background)] rounded-lg transition-colors">
@@ -586,6 +606,7 @@ export default function ProfilePage() {
                 </div>
               ))}
             </div>
+            )}
           </TabsContent>
         </Tabs>
       </div>

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
-import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Loader2, History } from 'lucide-react'
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '../ui/Dialog'
+import EmptyState from '../ui/EmptyState'
 import { useAppStore } from '../../stores/appStore'
 import { getMerchantInventoryLogs, voidMerchantInventory, InventoryLog } from '../../api/merchant'
 
@@ -115,8 +116,8 @@ export default function MerchantInventoryLogModal({ isOpen, onClose, product, on
                 </tr>
               ) : logs.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="py-8 text-center text-[var(--color-text-muted)] text-sm">
-                    暂无流水记录
+                  <td colSpan={5}>
+                    <EmptyState compact icon={History} title="暂无流水记录" />
                   </td>
                 </tr>
               ) : (
