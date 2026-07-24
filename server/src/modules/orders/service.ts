@@ -1,4 +1,4 @@
-import type { Prisma } from '@prisma/client'
+import { Prisma } from '@prisma/client'
 import { prisma } from '../../lib/prisma.js'
 import { badRequest, notFound } from '../../lib/httpError.js'
 import {
@@ -29,16 +29,6 @@ export async function createOrder(userId: number, productId: number) {
       throw badRequest('商品暂不可购买，请联系商家')
     }
     if (deliveryMode !== 'instant_inventory' && product.stockMode === 'limited' && product.stock <= 0) {
-      throw badRequest('库存不足，请稍后再试')
-    }
-
-    const item = deliveryMode === 'instant_inventory'
-      ? await tx.inventoryItem.findFirst({
-          where: { productId, status: 'available' },
-          orderBy: { id: 'asc' },
-        })
-      : null
-    if (deliveryMode === 'instant_inventory' && !item) {
       throw badRequest('库存不足，请稍后再试')
     }
 
@@ -109,18 +99,29 @@ export async function createOrder(userId: number, productId: number) {
     let deliveryContentType: string | undefined
 
     if (deliveryMode === 'instant_inventory') {
+      // Claim one row in the database instead of first reading a candidate
+      // and then conditionally updating it. SKIP LOCKED lets simultaneous
+      // buyers move on to the next available secret rather than all racing
+      // for the first row and unnecessarily rejecting valid purchases.
+      const reservedItems = await tx.$queryRaw<Array<{ id: number; content: string }>>(Prisma.sql`
+        UPDATE "InventoryItem"
+        SET "status" = 'sold',
+            "orderId" = ${order.id},
+            "soldToUserId" = ${userId},
+            "soldAt" = NOW()
+        WHERE "id" = (
+          SELECT "id"
+          FROM "InventoryItem"
+          WHERE "productId" = ${productId}
+            AND "status" = 'available'
+          ORDER BY "id" ASC
+          FOR UPDATE SKIP LOCKED
+          LIMIT 1
+        )
+        RETURNING "id", "content"
+      `)
+      const item = reservedItems[0]
       if (!item) throw badRequest('库存不足，请稍后再试')
-
-      const reservedItem = await tx.inventoryItem.updateMany({
-        where: { id: item.id, status: 'available' },
-        data: {
-          status: 'sold',
-          orderId: order.id,
-          soldToUserId: userId,
-          soldAt: new Date(),
-        },
-      })
-      if (reservedItem.count !== 1) throw badRequest('库存不足，请稍后再试')
 
       deliveryContent = item.content
       deliveryContentType = 'text'

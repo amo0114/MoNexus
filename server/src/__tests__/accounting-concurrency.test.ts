@@ -56,6 +56,45 @@ describe('accounting concurrency and terminal settlement', () => {
     expect(await prisma.pointLog.count({ where: { userId: user.id, type: 'out' } })).toBe(1)
   })
 
+  it('assigns distinct available inventory to concurrent buyers instead of racing for the first item', async () => {
+    const product = await prisma.product.create({
+      data: {
+        name: '并发库存领取商品',
+        type: '邀请码',
+        price: 100,
+        status: 'active',
+        deliveryMode: 'instant_inventory',
+        stockMode: 'limited',
+        stock: 4,
+      },
+    })
+    await prisma.inventoryItem.createMany({
+      data: ['CONCURRENT-ITEM-1', 'CONCURRENT-ITEM-2', 'CONCURRENT-ITEM-3', 'CONCURRENT-ITEM-4']
+        .map(content => ({ productId: product.id, content })),
+    })
+    const buyers = await Promise.all(
+      ['a', 'b', 'c', 'd'].map(suffix =>
+        createTestUser(`concurrent-inventory-${suffix}@test.local`, 'pass123', 'user', 500)
+      )
+    )
+
+    const attempts = await Promise.allSettled(buyers.map(({ user }) => createOrder(user.id, product.id)))
+    expect(attempts.every(attempt => attempt.status === 'fulfilled')).toBe(true)
+
+    const deliveries = attempts.map(attempt => {
+      if (attempt.status !== 'fulfilled') throw attempt.reason
+      return attempt.value.deliveryContent
+    })
+    expect(new Set(deliveries)).toEqual(new Set([
+      'CONCURRENT-ITEM-1', 'CONCURRENT-ITEM-2', 'CONCURRENT-ITEM-3', 'CONCURRENT-ITEM-4',
+    ]))
+    expect(await prisma.product.findUniqueOrThrow({ where: { id: product.id } })).toMatchObject({
+      stock: 0,
+      sales: 4,
+    })
+    expect(await prisma.inventoryItem.count({ where: { productId: product.id, status: 'sold' } })).toBe(4)
+  })
+
   it('reserves manual-service funds once and prevents a second order from reusing them', async () => {
     const { user } = await createTestUser('concurrent-manual@test.local', 'pass123', 'user', 1000)
     const product = await createManualProduct(800)
