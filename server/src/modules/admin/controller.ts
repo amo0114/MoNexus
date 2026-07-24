@@ -62,7 +62,7 @@ export async function updateProduct(req: Request, res: Response, next: NextFunct
 export async function importInventory(req: Request, res: Response, next: NextFunction) {
   try {
     const productId = req.params.id as unknown as number
-    const result = await adminService.importInventory(productId, req.body.items, req.user!.userId)
+    const result = await adminService.importInventory(productId, req.body, req.user!.userId)
     res.json(result)
   } catch (err) { next(err) }
 }

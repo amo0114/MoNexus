@@ -4,6 +4,8 @@ import {
   api,
   createTestMerchant,
   createTestProduct,
+  createTestUser,
+  loginAs,
   loginAsMerchant,
   authHeader,
 } from '../../__tests__/helpers.js'
@@ -34,12 +36,13 @@ async function createTimedInventory(productId: number, contents: string[]) {
 }
 
 describe('POST /api/merchant/products/:id/inventory/void', () => {
-  it('voids earliest available items, decrements stock and writes a void log', async () => {
+  it('voids earliest available items, derives remaining stock from items and writes a void log', async () => {
     const { merchant, user, accessToken, product } = await setupMerchantWithProduct(
       'void-success@test.local'
     )
     await createTimedInventory(product.id, ['code-0', 'code-1', 'code-2'])
-    await prisma.product.update({ where: { id: product.id }, data: { stock: 3 } })
+    // 模拟历史投影漂移：即时库存的真实值只能来自可用 InventoryItem。
+    await prisma.product.update({ where: { id: product.id }, data: { stock: 99 } })
 
     const res = await api
       .post(`/api/merchant/products/${product.id}/inventory/void`)
@@ -56,7 +59,7 @@ describe('POST /api/merchant/products/:id/inventory/void', () => {
     expect(items.map(item => item.status)).toEqual(['void', 'void', 'available'])
 
     const updatedProduct = await prisma.product.findUnique({ where: { id: product.id } })
-    expect(updatedProduct?.stock).toBe(1)
+    expect(updatedProduct?.stock).toBe(99)
 
     const logs = await prisma.inventoryLog.findMany({ where: { productId: product.id } })
     expect(logs).toHaveLength(1)
@@ -187,7 +190,9 @@ describe('POST /api/merchant/products/:id/inventory (import log)', () => {
       actorUserId: user.id,
       action: 'import',
       delta: 3,
+      orderId: null,
     })
+    expect(logs[0].batchId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)
   })
 
   it('does not write logs when import is rejected', async () => {
@@ -223,13 +228,68 @@ describe('POST /api/merchant/products/:id/inventory (import log)', () => {
     ])
     expect(items).toHaveLength(1)
     expect(items[0]).toMatchObject({ content: 'RACE-UNIQUE-CARD', status: 'available' })
-    expect(productAfter.stock).toBe(1)
+    expect(productAfter.stock).toBe(0)
     expect(logs).toHaveLength(1)
     expect(logs[0]).toMatchObject({ action: 'import', delta: 1 })
+  })
+
+  it('rejects imports beyond the bounded row limit before writing anything', async () => {
+    const { accessToken, product } = await setupMerchantWithProduct('import-size-limit@test.local')
+    const items = Array.from({ length: 1_001 }, (_, index) => `LIMIT-${index}`)
+
+    await api
+      .post(`/api/merchant/products/${product.id}/inventory`)
+      .set(authHeader(accessToken))
+      .send({ items })
+      .expect(400)
+
+    expect(await prisma.inventoryItem.count({ where: { productId: product.id } })).toBe(0)
+    expect(await prisma.inventoryLog.count({ where: { productId: product.id } })).toBe(0)
+  })
+
+  it('rejects a single inventory item that exceeds the content limit', async () => {
+    const { accessToken, product } = await setupMerchantWithProduct('import-item-length-limit@test.local')
+
+    await api
+      .post(`/api/merchant/products/${product.id}/inventory`)
+      .set(authHeader(accessToken))
+      .send({ items: ['x'.repeat(5_001)] })
+      .expect(400)
+
+    expect(await prisma.inventoryItem.count({ where: { productId: product.id } })).toBe(0)
   })
 })
 
 describe('GET /api/merchant/products/:id/inventory/logs', () => {
+  it('includes a sale and its order reference without ever returning the delivery content', async () => {
+    const { merchant, accessToken, product } = await setupMerchantWithProduct(
+      'logs-sale-owner@test.local',
+      ['merchant-sale-secret']
+    )
+    await createTestUser('logs-sale-buyer@test.local', 'pass123', 'user', 1000)
+    const buyer = await loginAs('logs-sale-buyer@test.local', 'pass123')
+    const order = await api
+      .post('/api/orders')
+      .set(authHeader(buyer.accessToken))
+      .send({ productId: product.id })
+      .expect(201)
+
+    const res = await api
+      .get(`/api/merchant/products/${product.id}/inventory/logs`)
+      .set(authHeader(accessToken))
+      .expect(200)
+
+    expect(res.body).toMatchObject({ total: 1, page: 1 })
+    expect(res.body.items[0]).toMatchObject({
+      action: 'sale',
+      delta: -1,
+      orderId: order.body.orderId,
+      merchantId: merchant.id,
+    })
+    expect(res.body.items[0].batchId).toBeNull()
+    expect(JSON.stringify(res.body)).not.toContain('merchant-sale-secret')
+  })
+
   it('returns paginated logs in reverse chronological order without inventory content', async () => {
     const { accessToken, product } = await setupMerchantWithProduct('logs-list@test.local')
 

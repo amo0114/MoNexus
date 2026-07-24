@@ -144,18 +144,20 @@ model Product {
   icon             String   @default("package")
   imageUrl         String?
   images           String[] @default([])
-  price            Int
-  originalPrice    Int?
-  stock            Int      @default(0)
-  sales            Int      @default(0)
+  // PostgreSQL CHECK constraints (20260724120000) keep commercial values valid
+  // even when data is changed outside the API.
+  price            Int // > 0
+  originalPrice    Int? // null or >= price
+  stock            Int      @default(0) // >= 0; instant_inventory availability comes from InventoryItem
+  sales            Int      @default(0) // >= 0; 历史成功下单/交付计数，退款不回退，不能用作净成交额
   ratingAvg        Decimal  @default(0) @db.Decimal(2, 1) // ratingCount=0 时无意义，前端显示「暂无评分」
   ratingCount      Int      @default(0)
   isHot            Boolean  @default(false)
-  status           String   @default("active") // active | inactive
-  deliveryMode     String   @default("instant_inventory") // instant_inventory | instant_fixed | manual_service
-  stockMode        String   @default("limited") // limited | unlimited（instant_inventory 强制 limited）
+  status           String   @default("active") // active | inactive; PostgreSQL CHECK constrained
+  deliveryMode     String   @default("instant_inventory") // instant_inventory | instant_fixed | manual_service; PostgreSQL CHECK constrained
+  stockMode        String   @default("limited") // limited | unlimited（instant_inventory 强制 limited）；PostgreSQL CHECK constrained
   fixedContent     String? // instant_fixed 专用：固定交付内容（付费内容，禁止公开序列化）
-  fixedContentType String   @default("text") // text | url
+  fixedContentType String   @default("text") // text | url; PostgreSQL CHECK constrained
   merchantId       Int?
   createdAt        DateTime @default(now())
 
@@ -173,12 +175,18 @@ model InventoryLog {
   productId   Int
   merchantId  Int?
   actorUserId Int
-  action      String // import | void
-  delta       Int // 导入为正、作废为负
+  action      String // import | void | sale | capacity_adjust
+  delta       Int // import > 0; void/sale < 0; capacity_adjust != 0
   reason      String?
+  // sale is linked to exactly one order. Import operations receive one UUID
+  // batch identifier so that a replenishment can be audited without ever
+  // placing delivery content in an API response.
+  orderId     Int?     @unique
+  batchId     String?  @unique @db.Uuid
   createdAt   DateTime @default(now())
 
   product Product @relation(fields: [productId], references: [id])
+  order   Order?   @relation(fields: [orderId], references: [id])
 
   @@index([productId, createdAt])
 }
@@ -206,7 +214,7 @@ model InventoryItem {
   id           Int       @id @default(autoincrement())
   productId    Int
   content      String
-  status       String    @default("available") // available | sold | void
+  status       String    @default("available") // available | sold | void; PostgreSQL CHECK constrained
   orderId      Int?      @unique
   soldToUserId Int?
   soldAt       DateTime?
@@ -228,6 +236,12 @@ model Order {
   commissionRate      Decimal?  @db.Decimal(5, 4)
   commissionAmount   Int       @default(0)
   deliveryModeSnapshot String  @default("instant_inventory") // 下单时的履约模式快照；服务层保留对迁移前空值的兼容回退
+  // 商品可在下单后改名、换图或调整分类；以下字段固定保存当时的展示合同。
+  // 允许 null 是为了兼容迁移前订单，读取时回退到关联 Product。
+  productNameSnapshot     String?
+  productTypeSnapshot     String?
+  productIconSnapshot     String?
+  productImageUrlSnapshot String?
   holdingPoints      Int? // 虚拟服务订单冻结的积分；instant 模式为 null
   fundsHeld          Boolean   @default(false) // 仅新模型订单为 true；兼容迁移前未实际扣减的历史订单
   fulfillmentDeadline DateTime? // manual_service 商家履约截止时间
@@ -242,6 +256,7 @@ model Order {
   settlement   Settlement?
   pointLogs    PointLog[]
   statusEvents OrderStatusEvent[]
+  inventoryLogs InventoryLog[]
 }
 
 model DeliveryRecord {

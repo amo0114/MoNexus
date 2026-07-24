@@ -1,4 +1,5 @@
 import { Prisma } from '@prisma/client'
+import { randomUUID } from 'node:crypto'
 import { prisma } from '../../lib/prisma.js'
 import { badRequest, notFound } from '../../lib/httpError.js'
 import { businessRegistry } from '../../lib/businessRegistry.js'
@@ -8,6 +9,16 @@ import {
   updateSystemConfig as saveSystemConfig,
 } from '../../lib/systemConfig.js'
 import { logInventoryChange } from '../../lib/inventoryLog.js'
+import {
+  assertProductDeliveryConfiguration,
+  normalizeProductImageFields,
+} from '../../lib/productCommercial.js'
+import {
+  analyzeInventoryImport,
+  duplicateInventoryImportDetails,
+  isInventoryContentUniqueViolation,
+  type InventoryImportPayload,
+} from '../../lib/inventoryImport.js'
 import { invalidate as invalidateUserStatusCache } from '../../lib/userStatusCache.js'
 import { revokeAllUserRefreshTokens } from '../auth/service.js'
 import { invalidateProductPublicCache } from '../products/cache.js'
@@ -241,10 +252,16 @@ function productAuditSnapshot(product: {
   name: string
   type: string
   icon: string
+  imageUrl: string | null
+  images: string[]
   price: number
   originalPrice: number | null
+  stock: number
   isHot: boolean
   status: string
+  deliveryMode: string
+  stockMode: string
+  fixedContentType: string
 }) {
   // Descriptions and image URLs are deliberately omitted. Audit needs to
   // explain commercial changes without copying arbitrary rich content.
@@ -252,16 +269,50 @@ function productAuditSnapshot(product: {
     name: product.name,
     type: product.type,
     icon: product.icon,
+    imageCount: product.images.length,
     price: product.price,
     originalPrice: product.originalPrice,
+    stock: product.stock,
     isHot: product.isHot,
     status: product.status,
+    deliveryMode: product.deliveryMode,
+    stockMode: product.stockMode,
+    fixedContentType: product.fixedContentType,
+  }
+}
+
+function assertOriginalPriceAtLeastSale(price: number, originalPrice: number | null | undefined) {
+  if (originalPrice != null && originalPrice < price) {
+    throw badRequest('原价不能低于售价')
   }
 }
 
 export async function createProduct(adminUserId: number, data: CreateProductInput) {
+  assertOriginalPriceAtLeastSale(data.price, data.originalPrice)
+  const normalizedProductData = normalizeProductImageFields(data)
+  const deliveryMode = data.deliveryMode ?? 'instant_inventory'
+  const stockMode = data.stockMode ?? (deliveryMode === 'instant_inventory' ? 'limited' : 'unlimited')
+  const fixedContentType = data.fixedContentType ?? 'text'
+
+  assertProductDeliveryConfiguration({
+    deliveryMode,
+    stockMode,
+    incomingStock: data.stock,
+    effectiveStock: data.stock,
+    fixedContent: data.fixedContent,
+    fixedContentType,
+  })
+
   const product = await prisma.$transaction(async tx => {
-    const created = await tx.product.create({ data })
+    const created = await tx.product.create({
+      data: {
+        ...normalizedProductData,
+        deliveryMode,
+        stockMode,
+        fixedContentType,
+        stock: deliveryMode === 'instant_inventory' ? 0 : (data.stock ?? 0),
+      },
+    })
     await tx.adminLog.create({
       data: {
         adminUserId,
@@ -282,7 +333,55 @@ export async function updateProduct(adminUserId: number, id: number, data: Updat
     const product = await tx.product.findUnique({ where: { id } })
     if (!product) throw notFound('商品不存在')
 
-    const next = await tx.product.update({ where: { id }, data })
+    assertOriginalPriceAtLeastSale(
+      data.price ?? product.price,
+      data.originalPrice === undefined ? product.originalPrice : data.originalPrice
+    )
+
+    const normalizedProductData = normalizeProductImageFields(data, product.images)
+    const deliveryMode = normalizedProductData.deliveryMode ?? product.deliveryMode
+    if (deliveryMode !== product.deliveryMode) {
+      const [inventoryCount, orderCount] = await Promise.all([
+        tx.inventoryItem.count({ where: { productId: id } }),
+        tx.order.count({ where: { productId: id } }),
+      ])
+      if (inventoryCount > 0 || orderCount > 0) {
+        throw badRequest('商品已有库存记录或订单，不能修改履约模式')
+      }
+    }
+
+    const stockMode = normalizedProductData.stockMode
+      ?? (normalizedProductData.deliveryMode && deliveryMode !== product.deliveryMode
+        ? (deliveryMode === 'instant_inventory' ? 'limited' : 'unlimited')
+        : product.stockMode)
+    const incomingStock = typeof normalizedProductData.stock === 'number' ? normalizedProductData.stock : undefined
+
+    if (!('fixedContent' in normalizedProductData) && product.fixedContent != null && deliveryMode !== 'instant_fixed') {
+      throw badRequest('切换交付模式请同时将 fixedContent 置空（传 null）')
+    }
+
+    assertProductDeliveryConfiguration({
+      deliveryMode,
+      stockMode,
+      incomingStock,
+      effectiveStock: incomingStock ?? product.stock,
+      fixedContent: 'fixedContent' in normalizedProductData
+        ? normalizedProductData.fixedContent
+        : product.fixedContent,
+      fixedContentType: normalizedProductData.fixedContentType ?? product.fixedContentType,
+    })
+
+    const next = await tx.product.update({
+      where: { id },
+      data: {
+        ...normalizedProductData,
+        deliveryMode,
+        stockMode,
+        ...(deliveryMode === 'instant_inventory' && product.deliveryMode !== 'instant_inventory'
+          ? { stock: 0 }
+          : {}),
+      },
+    })
     await tx.adminLog.create({
       data: {
         adminUserId,
@@ -302,46 +401,68 @@ export async function updateProduct(adminUserId: number, id: number, data: Updat
   return updated
 }
 
-export async function importInventory(productId: number, items: string[], adminUserId: number) {
+export async function importInventory(productId: number, payload: InventoryImportPayload, adminUserId: number) {
   const product = await prisma.product.findUnique({ where: { id: productId } })
   if (!product) throw notFound('商品不存在')
   if (product.deliveryMode !== 'instant_inventory') {
     throw badRequest('仅即时库存发货商品支持库存管理')
   }
 
-  const result = await prisma.$transaction(async tx => {
-    for (const content of items) {
-      await tx.inventoryItem.create({ data: { productId, content } })
+  try {
+    const result = await prisma.$transaction(async tx => {
+      const analysis = await analyzeInventoryImport(productId, payload, tx)
+      if (analysis.duplicateRows > 0 || analysis.existingDuplicateRows > 0) {
+        throw badRequest('库存导入包含重复项', duplicateInventoryImportDetails(analysis))
+      }
+      if (analysis.validRows === 0) {
+        throw badRequest('至少提供一条有效库存')
+      }
+
+      await tx.inventoryItem.createMany({
+        data: analysis.itemsToImport.map(content => ({ productId, content })),
+      })
+
+      await logInventoryChange(tx, {
+        productId,
+        merchantId: product.merchantId,
+        actorUserId: adminUserId,
+        action: 'import',
+        delta: analysis.itemsToImport.length,
+        batchId: randomUUID(),
+      })
+
+      await tx.adminLog.create({
+        data: {
+          adminUserId,
+          action: '导入库存',
+          targetType: 'product',
+          targetId: productId,
+          detail: `导入 ${analysis.itemsToImport.length} 条库存`,
+        },
+      })
+
+      return {
+        imported: analysis.itemsToImport.length,
+        totalRows: analysis.totalRows,
+        validRows: analysis.validRows,
+        skippedEmptyRows: analysis.emptyRows,
+        duplicateRows: analysis.duplicateRows,
+        existingDuplicateRows: analysis.existingDuplicateRows,
+      }
+    })
+
+    await invalidateProductPublicCache(productId, { detail: true, list: 'coalesced' })
+    return result
+  } catch (error) {
+    // 与商家导入一样，数据库唯一索引是并发导入时的最终裁决；任何冲突
+    // 都会使本事务完整回滚，并返回稳定的业务错误。
+    if (isInventoryContentUniqueViolation(error)) {
+      throw badRequest('库存导入包含重复项', [
+        { field: 'items', message: 'existingDuplicateRows=concurrent' },
+      ])
     }
-
-    await tx.product.update({
-      where: { id: productId },
-      data: { stock: { increment: items.length } },
-    })
-
-    await logInventoryChange(tx, {
-      productId,
-      merchantId: product.merchantId,
-      actorUserId: adminUserId,
-      action: 'import',
-      delta: items.length,
-    })
-
-    await tx.adminLog.create({
-      data: {
-        adminUserId,
-        action: '导入库存',
-        targetType: 'product',
-        targetId: productId,
-        detail: `导入 ${items.length} 条库存`,
-      },
-    })
-
-    return { imported: items.length }
-  })
-
-  await invalidateProductPublicCache(productId, { detail: true, list: 'coalesced' })
-  return result
+    throw error
+  }
 }
 
 function buildAdminOrderWhere(query: ListOrdersQuery): Prisma.OrderWhereInput {
@@ -377,7 +498,7 @@ export async function listAllOrders(query: ListOrdersQuery = {}) {
       include: {
         user: { select: { id: true, email: true } },
         merchant: { select: { id: true, name: true } },
-        product: { select: { name: true } },
+        product: { select: { id: true, name: true, icon: true, type: true, imageUrl: true, price: true } },
         delivery: { select: { status: true } },
       },
       orderBy: { createdAt: 'desc' },
@@ -452,7 +573,7 @@ export async function getOrderDetail(orderId: number) {
       user: { select: { id: true, email: true } },
       merchant: { select: { id: true, name: true } },
       product: {
-        select: { id: true, name: true, icon: true, type: true, price: true },
+        select: { id: true, name: true, icon: true, type: true, imageUrl: true, price: true },
       },
       delivery: { select: { content: true, status: true } },
     },

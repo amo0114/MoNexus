@@ -107,7 +107,8 @@ describe('Merchant product and order flows', () => {
         name: 'Alpha Low Node',
         type: '网络节点',
         price: 100,
-        stock: 1,
+        // 模拟旧 Product.stock 投影不一致；商家列表必须返回实际可用条目数。
+        stock: 99,
         deliveryMode: 'instant_inventory',
       },
     })
@@ -154,6 +155,7 @@ describe('Merchant product and order flows', () => {
     expect(res.body.items).toHaveLength(1)
     expect(res.body.items[0]).toMatchObject({
       id: lowStockProduct.id,
+      stock: 1,
       availableStock: 1,
       sales: 0,
       lowStock: true,

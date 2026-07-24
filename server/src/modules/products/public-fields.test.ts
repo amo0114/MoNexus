@@ -20,4 +20,27 @@ describe('public product endpoints with instant_fixed', () => {
     const list = await api.get('/api/products').expect(200)
     expect(JSON.stringify(list.body)).not.toContain('SECRET-PAID-CONTENT')
   })
+
+  it('derives instant inventory stock from available InventoryItem rows, not Product.stock', async () => {
+    const product = await prisma.product.create({
+      data: {
+        name: '库存真相商品', type: '充值卡密', price: 100, stock: 99, status: 'active',
+        deliveryMode: 'instant_inventory', stockMode: 'limited',
+      },
+    })
+    await prisma.inventoryItem.createMany({
+      data: [
+        { productId: product.id, content: 'AVAILABLE-1', status: 'available' },
+        { productId: product.id, content: 'AVAILABLE-2', status: 'available' },
+        { productId: product.id, content: 'VOID-1', status: 'void' },
+      ],
+    })
+
+    const detail = await api.get(`/api/products/${product.id}`).expect(200)
+    expect(detail.body.stock).toBe(2)
+
+    const list = await api.get('/api/products').expect(200)
+    const listed = list.body.items.find((item: { id: number }) => item.id === product.id)
+    expect(listed?.stock).toBe(2)
+  })
 })

@@ -11,6 +11,7 @@ import {
 import { debitAvailablePoints, holdAvailablePoints, settleHeldOrder } from './accounting.js'
 import { serializeUserOrderDetail, serializeUserOrderList } from './serializers.js'
 import { invalidateProductPublicCache } from '../products/cache.js'
+import { logInventoryChange } from '../../lib/inventoryLog.js'
 
 // manual_service 商家履约 SLA：创建订单后 7 天内需交付，M3-S2 工作台高亮超时
 const FULFILLMENT_SLA_MS = 7 * 24 * 60 * 60 * 1000
@@ -80,6 +81,10 @@ export async function createOrder(userId: number, productId: number) {
         commissionRate,
         commissionAmount,
         deliveryModeSnapshot: deliveryMode,
+        productNameSnapshot: product.name,
+        productTypeSnapshot: product.type,
+        productIconSnapshot: product.icon,
+        productImageUrlSnapshot: product.imageUrl,
         holdingPoints: orderHoldingPoints,
         fundsHeld,
         fulfillmentDeadline: orderFulfillmentDeadline,
@@ -137,6 +142,7 @@ export async function createOrder(userId: number, productId: number) {
           deliveredAt: new Date(),
         },
       })
+
     } else if (deliveryMode === 'instant_fixed') {
       deliveryContent = product.fixedContent!
       deliveryContentType = product.fixedContentType
@@ -182,7 +188,9 @@ export async function createOrder(userId: number, productId: number) {
     if (deliveryMode === 'instant_inventory') {
       await tx.product.update({
         where: { id: productId },
-        data: { stock: { decrement: 1 }, sales: { increment: 1 } },
+        // 即时库存已经通过上面的 InventoryItem 原子领取变为 sold；
+        // Product.stock 不再是该模式的库存来源或缓存投影。
+        data: { sales: { increment: 1 } },
       })
     } else if (product.stockMode === 'limited') {
       // 条件更新防并发超卖：stock>0 才扣减，失败即售罄
@@ -195,6 +203,21 @@ export async function createOrder(userId: number, productId: number) {
       await tx.product.update({
         where: { id: productId },
         data: { sales: { increment: 1 } },
+      })
+    }
+
+    if (deliveryMode === 'instant_inventory' || product.stockMode === 'limited') {
+      // Every finite sellable resource is consumed exactly once. This entry
+      // is written in the same transaction as either the InventoryItem claim
+      // or the numeric capacity decrement, while retaining only the order
+      // reference—not any delivery secret.
+      await logInventoryChange(tx, {
+        productId,
+        merchantId: product.merchantId,
+        actorUserId: userId,
+        action: 'sale',
+        delta: -1,
+        orderId: order.id,
       })
     }
 

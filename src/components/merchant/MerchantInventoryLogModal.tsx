@@ -9,8 +9,8 @@ const PAGE_SIZE = 10
 interface Props {
   isOpen: boolean
   onClose: () => void
-  product: { id: number; name: string } | null
-  /** 作废成功后通知父级刷新商品列表（库存数变化） */
+  product: { id: number; name: string; deliveryMode?: 'instant_inventory' | 'instant_fixed' | 'manual_service' } | null
+  /** 作废成功后通知父级刷新商品列表（库存数变化）。名额记录页不显示作废操作。 */
   onVoided: () => void
 }
 
@@ -26,6 +26,8 @@ export default function MerchantInventoryLogModal({ isOpen, onClose, product, on
   const [voiding, setVoiding] = useState(false)
 
   const productId = product?.id
+  const inventoryManaged = (product?.deliveryMode ?? 'instant_inventory') === 'instant_inventory'
+  const resourceLabel = inventoryManaged ? '交付库存' : product?.deliveryMode === 'manual_service' ? '服务名额' : '可售名额'
 
   const loadLogs = useCallback(async (targetPage: number) => {
     if (!productId) return
@@ -35,7 +37,7 @@ export default function MerchantInventoryLogModal({ isOpen, onClose, product, on
       setLogs(data.items)
       setTotal(data.total)
     } catch (e: any) {
-      showToast(e.response?.data?.error?.message || '库存流水加载失败', 'error')
+      showToast(e.response?.data?.error?.message || `${resourceLabel}记录加载失败`, 'error')
     } finally {
       setLoading(false)
     }
@@ -69,7 +71,7 @@ export default function MerchantInventoryLogModal({ isOpen, onClose, product, on
         count,
         reason: voidReason.trim() || undefined,
       })
-      showToast(`已作废 ${result.voided} 条库存，剩余库存 ${result.stock}`)
+      showToast(`已作废 ${result.voided} 个交付单元，剩余 ${result.stock} 个`)
       setVoidCount('')
       setVoidReason('')
       setPage(1)
@@ -87,9 +89,9 @@ export default function MerchantInventoryLogModal({ isOpen, onClose, product, on
   return (
     <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose() }}>
       <DialogContent className="!max-w-2xl max-h-[85vh] overflow-y-auto" data-testid="inventory-log-modal">
-        <DialogTitle>库存流水</DialogTitle>
+        <DialogTitle>{resourceLabel}记录</DialogTitle>
         <DialogDescription>
-          商品：{product?.name ?? ''}（仅记录导入与作废操作）
+          商品：{product?.name ?? ''}（仅保留数量、订单与操作原因，不展示交付内容）
         </DialogDescription>
 
         {/* 流水列表 */}
@@ -128,6 +130,14 @@ export default function MerchantInventoryLogModal({ isOpen, onClose, product, on
                         <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold border bg-[var(--color-cta)]/10 text-[var(--color-cta)] border-[var(--color-cta)]/25">
                           导入
                         </span>
+                      ) : log.action === 'sale' ? (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold border bg-blue-500/10 text-blue-600 border-blue-500/25">
+                          售出
+                        </span>
+                      ) : log.action === 'capacity_adjust' ? (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold border bg-amber-500/10 text-amber-700 border-amber-500/25">
+                          名额调整
+                        </span>
                       ) : (
                         <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold border bg-[var(--color-danger)]/10 text-[var(--color-danger)] border-[var(--color-danger)]/25">
                           作废
@@ -138,8 +148,8 @@ export default function MerchantInventoryLogModal({ isOpen, onClose, product, on
                       {log.delta >= 0 ? `+${log.delta}` : log.delta}
                     </td>
                     <td className="py-2.5 px-2 text-sm text-[var(--color-text-muted)]">#{log.actorUserId}</td>
-                    <td className="py-2.5 px-2 text-xs text-[var(--color-text-muted)] max-w-[180px] truncate" title={log.reason || ''}>
-                      {log.reason || '-'}
+                    <td className="py-2.5 px-2 text-xs text-[var(--color-text-muted)] max-w-[180px] truncate" title={log.reason || (log.orderId ? `订单 #${log.orderId}` : '')}>
+                      {log.reason || (log.orderId ? `订单 #${log.orderId}` : log.batchId ? `导入批次 ${log.batchId.slice(0, 8)}` : '-')}
                     </td>
                   </tr>
                 ))
@@ -176,14 +186,14 @@ export default function MerchantInventoryLogModal({ isOpen, onClose, product, on
         </div>
 
         {/* 作废库存表单 */}
-        <form
+        {inventoryManaged && <form
           onSubmit={handleVoidSubmit}
           className="mt-5 pt-4 border-t border-[var(--color-border)] space-y-3"
           data-testid="inventory-void-form"
         >
-          <h4 className="text-sm font-bold text-[var(--color-text)]">作废库存</h4>
+          <h4 className="text-sm font-bold text-[var(--color-text)]">作废交付单元</h4>
           <p className="text-xs text-[var(--color-text-muted)]">
-            按入库时间从早到晚作废可用库存，作废后不可恢复。
+            按导入时间从早到晚作废可用交付单元，作废后不可恢复。
           </p>
           <div className="flex flex-col sm:flex-row gap-3">
             <div className="sm:w-40">
@@ -209,7 +219,7 @@ export default function MerchantInventoryLogModal({ isOpen, onClose, product, on
               <input
                 type="text"
                 maxLength={500}
-                placeholder="例如：卡密失效、上游退货"
+                placeholder="例如：交付内容失效、上游撤回"
                 className="input"
                 value={voidReason}
                 onChange={(e) => setVoidReason(e.target.value)}
@@ -227,7 +237,7 @@ export default function MerchantInventoryLogModal({ isOpen, onClose, product, on
               {voiding ? <Loader2 className="w-4 h-4 animate-spin inline" /> : '确认作废'}
             </button>
           </div>
-        </form>
+        </form>}
       </DialogContent>
     </Dialog>
   )

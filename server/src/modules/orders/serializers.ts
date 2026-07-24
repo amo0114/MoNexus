@@ -4,6 +4,10 @@ type OrderWithDelivery = {
   delivery?: ({ content?: unknown } & Record<string, unknown>) | null
   product?: ({ deliveryMode?: string | null } & Record<string, unknown>) | null
   deliveryModeSnapshot?: string | null
+  productNameSnapshot?: string | null
+  productTypeSnapshot?: string | null
+  productIconSnapshot?: string | null
+  productImageUrlSnapshot?: string | null
   status?: string
   createdAt?: unknown
   statusEvents?: Array<{
@@ -35,6 +39,32 @@ function normalizeFulfillmentFields<T extends OrderWithDelivery>(order: T) {
   }
 }
 
+function withProductDisplaySnapshot<T extends OrderWithDelivery>(order: T) {
+  const {
+    productNameSnapshot,
+    productTypeSnapshot,
+    productIconSnapshot,
+    productImageUrlSnapshot,
+    ...rest
+  } = order
+
+  if (!order.product) return rest
+
+  // New orders retain the commercial display contract at checkout. Old rows
+  // predate the migration and deliberately fall back field-by-field to the
+  // currently linked Product instead of failing to render.
+  return {
+    ...rest,
+    product: {
+      ...order.product,
+      ...(productNameSnapshot != null ? { name: productNameSnapshot } : {}),
+      ...(productTypeSnapshot != null ? { type: productTypeSnapshot } : {}),
+      ...(productIconSnapshot != null ? { icon: productIconSnapshot } : {}),
+      ...(productImageUrlSnapshot != null ? { imageUrl: productImageUrlSnapshot } : {}),
+    },
+  }
+}
+
 function synthesizeTimeline(order: OrderWithDelivery) {
   if (Array.isArray(order.statusEvents) && order.statusEvents.length > 0) {
     return order.statusEvents.map(normalizeStatusEvent)
@@ -55,7 +85,7 @@ function synthesizeTimeline(order: OrderWithDelivery) {
 }
 
 function withUserOrderContract<T extends OrderWithDelivery>(order: T, includeTimeline: boolean) {
-  const normalized = normalizeFulfillmentFields(order)
+  const normalized = withProductDisplaySnapshot(normalizeFulfillmentFields(order))
   return {
     ...normalized,
     // A product can be reconfigured after purchase. Expose the order's
@@ -87,13 +117,13 @@ export function serializeUserOrderDetail<T extends OrderWithDelivery>(order: T) 
 }
 
 export function serializeMerchantOrder<T extends OrderWithDelivery>(order: T) {
-  return omitDeliveryContent(normalizeFulfillmentFields(order))
+  return omitDeliveryContent(withProductDisplaySnapshot(normalizeFulfillmentFields(order)))
 }
 
 export function serializeAdminOrderList<T extends OrderWithDelivery>(order: T) {
-  return omitDeliveryContent(normalizeFulfillmentFields(order))
+  return omitDeliveryContent(withProductDisplaySnapshot(normalizeFulfillmentFields(order)))
 }
 
 export function serializeAdminOrderDetail<T extends OrderWithDelivery>(order: T) {
-  return normalizeFulfillmentFields(order)
+  return withProductDisplaySnapshot(normalizeFulfillmentFields(order))
 }

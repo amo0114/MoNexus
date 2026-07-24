@@ -2,6 +2,21 @@ import { z } from 'zod'
 import { systemConfigKeys } from '../../lib/systemConfig.js'
 import { businessRegistry } from '../../lib/businessRegistry.js'
 import { ORDER_STATUSES } from '../orders/fulfillment.js'
+import { inventoryImportPayloadSchema } from '../../lib/inventoryImport.js'
+import {
+  productDescriptionSchema,
+  productDeliveryModeSchema,
+  productFixedContentTypeSchema,
+  productIconSchema,
+  productImageItemSchema,
+  productImagesSchema,
+  productNameSchema,
+  productPriceSchema,
+  productRichDescriptionSchema,
+  productStockModeSchema,
+  productTypeSchema,
+  validateProductCommercialFields,
+} from '../products/schema.js'
 
 export const adjustPointsSchema = z.object({
   type: z.enum(['add', 'deduct']),
@@ -21,38 +36,40 @@ export const updateSystemConfigSchema = z.object({
   value: z.number().int('配置值必须是整数').min(0, '配置值必须是非负整数'),
 })
 
-export const createProductSchema = z.object({
-  name: z.string().min(1),
-  description: z.string().optional(),
-  richDescription: z.string().optional(),
-  type: z.string().min(1),
-  icon: z.string().default('package'),
-  imageUrl: z.string().optional(),
-  price: z.number().int().positive(),
-  originalPrice: z.number().int().positive().optional(),
+const adminProductFieldsSchema = z.object({
+  name: productNameSchema,
+  description: productDescriptionSchema.optional(),
+  richDescription: productRichDescriptionSchema.optional(),
+  type: productTypeSchema,
+  icon: productIconSchema.default('package'),
+  imageUrl: productImageItemSchema.optional(),
+  images: productImagesSchema.optional(),
+  price: productPriceSchema,
+  originalPrice: productPriceSchema.optional(),
   isHot: z.boolean().default(false),
+  deliveryMode: productDeliveryModeSchema.default('instant_inventory'),
+  stockMode: productStockModeSchema.optional(),
+  stock: z.number().int().min(0).max(1_000_000).optional(),
+  fixedContent: z.string().trim().min(1).max(5000).optional(),
+  fixedContentType: productFixedContentTypeSchema.optional(),
 })
+
+export const createProductSchema = adminProductFieldsSchema.superRefine(validateProductCommercialFields)
 
 export type CreateProductInput = z.infer<typeof createProductSchema>
 
-export const updateProductSchema = z.object({
-  name: z.string().min(1).optional(),
-  description: z.string().optional(),
-  richDescription: z.string().optional(),
-  type: z.string().optional(),
-  icon: z.string().optional(),
-  imageUrl: z.string().optional(),
-  price: z.number().int().positive().optional(),
-  originalPrice: z.number().int().positive().optional(),
-  isHot: z.boolean().optional(),
+export const updateProductSchema = adminProductFieldsSchema.partial().extend({
+  // update permits explicit clearing before changing away from instant_fixed.
+  fixedContent: z.string().trim().min(1).max(5000).nullable().optional(),
+  // `null` is an intentional request to remove the strikethrough price.
+  originalPrice: productPriceSchema.nullable().optional(),
+  imageUrl: productImageItemSchema.nullable().optional(),
   status: z.enum(['active', 'inactive']).optional(),
-})
+}).superRefine(validateProductCommercialFields)
 
 export type UpdateProductInput = z.infer<typeof updateProductSchema>
 
-export const importInventorySchema = z.object({
-  items: z.array(z.string().min(1)).min(1, '至少提供一条库存'),
-})
+export const importInventorySchema = inventoryImportPayloadSchema
 
 export const listUsersQuerySchema = z.object({
   q: z.string().trim().min(1).max(100).optional(),

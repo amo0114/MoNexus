@@ -44,6 +44,14 @@ export async function updateProduct(req: Request, res: Response, next: NextFunct
   } catch (err) { next(err) }
 }
 
+export async function adjustProductCapacity(req: Request, res: Response, next: NextFunction) {
+  try {
+    const merchant = await merchantService.getMyMerchant(req.user!.userId)
+    const productId = req.params.id as unknown as number
+    res.json(await merchantService.adjustMyProductCapacity(merchant.id, req.user!.userId, productId, req.body))
+  } catch (err) { next(err) }
+}
+
 export async function previewInventory(req: Request, res: Response, next: NextFunction) {
   try {
     const merchant = await merchantService.getMyMerchant(req.user!.userId)
