@@ -877,6 +877,9 @@ function serializeAnnouncement(a: {
   content: string
   audience: string
   priority: number
+  presentation: string
+  maxImpressions: number
+  version: number
   startsAt: Date
   endsAt: Date | null
   status: string
@@ -890,6 +893,9 @@ function serializeAnnouncement(a: {
     content: a.content,
     audience: a.audience,
     priority: a.priority,
+    presentation: a.presentation,
+    maxImpressions: a.maxImpressions,
+    version: a.version,
     startsAt: a.startsAt.toISOString(),
     endsAt: a.endsAt ? a.endsAt.toISOString() : null,
     status: a.status,
@@ -906,6 +912,8 @@ export async function createAnnouncement(adminUserId: number, input: CreateAnnou
       content: input.content,
       audience: input.audience,
       priority: input.priority,
+      presentation: input.presentation,
+      maxImpressions: input.maxImpressions,
       startsAt: input.startsAt,
       endsAt: input.endsAt ?? null,
       status: input.status,
@@ -918,7 +926,7 @@ export async function createAnnouncement(adminUserId: number, input: CreateAnnou
       action: '创建公告',
       targetType: 'announcement',
       targetId: created.id,
-      detail: `标题: ${input.title}，受众: ${input.audience}，状态: ${input.status}`,
+      detail: `标题: ${input.title}，受众: ${input.audience}，展示: ${input.presentation}，状态: ${input.status}`,
     },
   })
   return serializeAnnouncement(created)
@@ -940,9 +948,26 @@ export async function updateAnnouncement(adminUserId: number, id: number, input:
     if (input.content !== undefined) data.content = input.content
     if (input.audience !== undefined) data.audience = input.audience
     if (input.priority !== undefined) data.priority = input.priority
+    if (input.presentation !== undefined) data.presentation = input.presentation
+    if (input.maxImpressions !== undefined) data.maxImpressions = input.maxImpressions
     if (input.startsAt !== undefined) data.startsAt = input.startsAt
     if (input.endsAt !== undefined) data.endsAt = input.endsAt === null ? null : input.endsAt
     if (input.status !== undefined) data.status = input.status
+
+    // A version is a user-facing contract: when the message or its delivery
+    // policy changes, previously read/confirmed receipts must not suppress the
+    // revised announcement. No-op saves deliberately keep the current version.
+    const hasMeaningfulChange =
+      (input.title !== undefined && input.title !== existing.title) ||
+      (input.content !== undefined && input.content !== existing.content) ||
+      (input.audience !== undefined && input.audience !== existing.audience) ||
+      (input.priority !== undefined && input.priority !== existing.priority) ||
+      (input.presentation !== undefined && input.presentation !== existing.presentation) ||
+      (input.maxImpressions !== undefined && input.maxImpressions !== existing.maxImpressions) ||
+      (input.status !== undefined && input.status !== existing.status) ||
+      (input.startsAt !== undefined && input.startsAt.getTime() !== existing.startsAt.getTime()) ||
+      (input.endsAt !== undefined && (input.endsAt?.getTime() ?? null) !== (existing.endsAt?.getTime() ?? null))
+    if (hasMeaningfulChange) data.version = { increment: 1 }
 
     const updated = await tx.announcement.update({ where: { id }, data })
     await tx.adminLog.create({

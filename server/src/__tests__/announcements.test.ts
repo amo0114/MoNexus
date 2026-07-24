@@ -345,3 +345,112 @@ describe('GET /api/announcements public query (M3-S3)', () => {
       .expect(400)
   })
 })
+
+describe('Announcement read and acknowledgement receipts', () => {
+  beforeEach(async () => {
+    await prisma.announcement.deleteMany({})
+  })
+
+  it('persists an important announcement read per user and never exposes another user receipt', async () => {
+    const announcement = await prisma.announcement.create({
+      data: {
+        title: '重要服务调整', content: '阅读后不再显示横幅', audience: 'all', priority: 10,
+        presentation: 'important', startsAt: pastDate(1), status: 'published',
+      },
+    })
+    const { user: firstUser, password: firstPassword } = await createTestUser('ann-receipt-a@test.local', 'pass123', 'user')
+    const { user: secondUser, password: secondPassword } = await createTestUser('ann-receipt-b@test.local', 'pass123', 'user')
+    const [firstLogin, secondLogin] = await Promise.all([
+      loginAs(firstUser.email, firstPassword),
+      loginAs(secondUser.email, secondPassword),
+    ])
+
+    const before = await api.get('/api/announcements').set(authHeader(firstLogin.accessToken)).expect(200)
+    expect(before.body[0]).toMatchObject({ id: announcement.id, version: 1, readAt: null, acknowledgedAt: null })
+
+    const read = await api
+      .post(`/api/announcements/${announcement.id}/read`)
+      .set(authHeader(firstLogin.accessToken))
+      .expect(200)
+    expect(read.body.readAt).toEqual(expect.any(String))
+
+    const [firstAfter, secondAfter] = await Promise.all([
+      api.get('/api/announcements').set(authHeader(firstLogin.accessToken)).expect(200),
+      api.get('/api/announcements').set(authHeader(secondLogin.accessToken)).expect(200),
+    ])
+    expect(firstAfter.body[0].readAt).toEqual(expect.any(String))
+    expect(secondAfter.body[0].readAt).toBeNull()
+  })
+
+  it('only allows acknowledgement for a visible required announcement and stores it durably', async () => {
+    const required = await prisma.announcement.create({
+      data: {
+        title: '服务条款确认', content: '请阅读并确认', audience: 'user', priority: 10,
+        presentation: 'acknowledgement_required', startsAt: pastDate(1), status: 'published',
+      },
+    })
+    const ordinary = await prisma.announcement.create({
+      data: {
+        title: '普通通知', content: '无需确认', audience: 'all', startsAt: pastDate(1), status: 'published',
+      },
+    })
+    const { user, password } = await createTestUser('ann-ack@test.local', 'pass123', 'user')
+    const { accessToken } = await loginAs(user.email, password)
+
+    await api
+      .post(`/api/announcements/${ordinary.id}/acknowledge`)
+      .set(authHeader(accessToken))
+      .expect(400)
+
+    const acknowledged = await api
+      .post(`/api/announcements/${required.id}/acknowledge`)
+      .set(authHeader(accessToken))
+      .expect(200)
+    expect(acknowledged.body).toMatchObject({ id: required.id, version: 1 })
+    expect(acknowledged.body.acknowledgedAt).toEqual(expect.any(String))
+
+    const list = await api.get('/api/announcements').set(authHeader(accessToken)).expect(200)
+    const result = list.body.find((item: { id: number }) => item.id === required.id)
+    expect(result).toMatchObject({ readAt: expect.any(String), acknowledgedAt: expect.any(String) })
+
+    const receipt = await prisma.announcementReceipt.findUnique({
+      where: { announcementId_userId_version: { announcementId: required.id, userId: user.id, version: 1 } },
+    })
+    expect(receipt?.acknowledgedAt).toBeTruthy()
+  })
+
+  it('rejects receipts outside the current audience and makes a revised announcement unread again', async () => {
+    const { accessToken: adminToken } = await loginAdmin('ann-version-admin@test.local')
+    const created = await createAnnouncement(adminToken, {
+      title: '初始重要公告', content: '版本一', audience: 'user', priority: 10,
+      presentation: 'important', startsAt: pastDate(1).toISOString(), status: 'published',
+    }).expect(201)
+    const { user, password } = await createTestUser('ann-version-user@test.local', 'pass123', 'user')
+    const { user: merchant, password: merchantPassword } = await createTestMerchant('ann-version-merchant@test.local', 'pass123', {
+      role: 'merchant', status: 'active', name: '版本隔离商家',
+    })
+    const [userLogin, merchantLogin] = await Promise.all([
+      loginAs(user.email, password),
+      loginAs(merchant.email, merchantPassword),
+    ])
+
+    await api
+      .post(`/api/announcements/${created.body.id}/read`)
+      .set(authHeader(merchantLogin.accessToken))
+      .expect(404)
+    await api
+      .post(`/api/announcements/${created.body.id}/read`)
+      .set(authHeader(userLogin.accessToken))
+      .expect(200)
+
+    const updated = await api
+      .put(`/api/admin/announcements/${created.body.id}`)
+      .set(authHeader(adminToken))
+      .send({ content: '版本二，内容已调整' })
+      .expect(200)
+    expect(updated.body.version).toBe(2)
+
+    const afterRevision = await api.get('/api/announcements').set(authHeader(userLogin.accessToken)).expect(200)
+    expect(afterRevision.body[0]).toMatchObject({ id: created.body.id, version: 2, readAt: null, acknowledgedAt: null })
+  })
+})

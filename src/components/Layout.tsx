@@ -1,17 +1,26 @@
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuthStore } from '../stores/authStore'
 import { Coins, User, ShieldCheck, Store, Clock, XCircle, AlertTriangle, Plus } from 'lucide-react'
-import { useEffect } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import EmailVerificationBanner from './EmailVerificationBanner'
 import AnnouncementBanner from './AnnouncementBanner'
+import AnnouncementCenter, { AnnouncementBellButton, MobileAnnouncementFab } from './AnnouncementCenter'
 import Logo from './ui/Logo'
 import ThemeToggle from './ThemeToggle'
 import MobileNavDrawer from './MobileNavDrawer'
+import { useAnnouncements } from '../hooks/useAnnouncements'
+import { useAppStore } from '../stores/appStore'
+import { getApiErrorMessage } from '../api/error'
+import type { PublicAnnouncement } from '../types/admin'
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate()
   const location = useLocation()
   const user = useAuthStore((s) => s.user)
+  const showToast = useAppStore((s) => s.showToast)
+  const announcements = useAnnouncements()
+  const [announcementCenterOpen, setAnnouncementCenterOpen] = useState(false)
+  const surfacedRequiredAnnouncements = useRef(new Set<string>())
 
   // Refresh user data on mount
   useEffect(() => {
@@ -25,6 +34,28 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         })
     })
   }, [location.pathname])
+
+  // Required acknowledgements are surfaced proactively once per active page
+  // session. Closing the dialog never acknowledges it; the banner and red dot
+  // remain until the explicit confirmation is stored server-side.
+  useEffect(() => {
+    const pending = announcements.items.find(
+      (announcement) => announcement.presentation === 'acknowledgement_required' && !announcement.acknowledgedAt,
+    )
+    if (!pending) return
+    const key = `${pending.id}:${pending.version}`
+    if (surfacedRequiredAnnouncements.current.has(key)) return
+    surfacedRequiredAnnouncements.current.add(key)
+    setAnnouncementCenterOpen(true)
+  }, [announcements.items])
+
+  const openAnnouncement = useCallback((announcement: PublicAnnouncement) => {
+    setAnnouncementCenterOpen(true)
+    if (announcement.presentation === 'acknowledgement_required' || announcement.readAt) return
+    void announcements.markRead(announcement).catch((err) => {
+      showToast(getApiErrorMessage(err, '打开公告失败，请稍后重试'), 'error')
+    })
+  }, [announcements, showToast])
 
   return (
     <div className="bg-grid-pattern relative min-h-[100dvh] w-full flex flex-col" style={{ backgroundColor: 'var(--color-background)' }}>
@@ -111,6 +142,11 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               </div>
             )}
 
+            <AnnouncementBellButton
+              unreadCount={announcements.unreadCount}
+              onClick={() => setAnnouncementCenterOpen(true)}
+            />
+
             {/* Theme switcher lives in the drawer on small screens:
                 brand + toggle + avatar + hamburger overflow 320-375px
                 viewports and push the drawer trigger off-screen. */}
@@ -158,7 +194,26 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       <EmailVerificationBanner />
 
       {/* Platform announcement — fetched from /api/announcements */}
-      <AnnouncementBanner />
+      <AnnouncementBanner
+        items={announcements.items}
+        shouldShowNotice={announcements.shouldShowNotice}
+        recordNoticeImpression={announcements.recordNoticeImpression}
+        dismissNotice={announcements.dismissNotice}
+        onOpen={openAnnouncement}
+      />
+
+      <MobileAnnouncementFab
+        unreadCount={announcements.unreadCount}
+        onClick={() => setAnnouncementCenterOpen(true)}
+      />
+      <AnnouncementCenter
+        open={announcementCenterOpen}
+        onOpenChange={setAnnouncementCenterOpen}
+        items={announcements.items}
+        unreadCount={announcements.unreadCount}
+        onMarkRead={announcements.markRead}
+        onAcknowledge={announcements.acknowledge}
+      />
 
       {/* Content. 注意不要给 main 加 z-index：z-0 会创建 stacking context，
           把页面内 fixed 弹窗（z-50）整体压到 footer（z-10）之下，导致长页面

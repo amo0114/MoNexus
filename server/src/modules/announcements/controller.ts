@@ -33,7 +33,30 @@ async function resolveCurrentAudience(userId?: number): Promise<AnnouncementAudi
 export async function listPublic(req: Request, res: Response, next: NextFunction) {
   try {
     const audience = await resolveCurrentAudience(req.user?.userId)
-    res.json(await announcementService.listPublicAnnouncements(audience))
+    // Keep the documented visitor fallback complete: an invalid, banned or
+    // suspended current account may see only public/all notices, but must not
+    // receive user-specific receipt state from an otherwise stale JWT.
+    res.json(await announcementService.listPublicAnnouncements(audience, audience ? req.user?.userId : undefined))
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function markRead(req: Request, res: Response, next: NextFunction) {
+  try {
+    const audience = await resolveCurrentAudience(req.user!.userId)
+    const id = req.params.id as unknown as number
+    res.json(await announcementService.markAnnouncementRead(id, req.user!.userId, audience))
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function acknowledge(req: Request, res: Response, next: NextFunction) {
+  try {
+    const audience = await resolveCurrentAudience(req.user!.userId)
+    const id = req.params.id as unknown as number
+    res.json(await announcementService.acknowledgeAnnouncement(id, req.user!.userId, audience))
   } catch (err) {
     next(err)
   }
