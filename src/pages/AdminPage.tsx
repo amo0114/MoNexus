@@ -256,7 +256,7 @@ export default function AdminPage() {
             <div className="space-y-4">
               <h2 className="font-heading text-xl font-bold mb-4 text-[var(--color-text)]">商家管理</h2>
               <div className="overflow-x-auto">
-                <table className="admin-table">
+                <table className="admin-table table-cards">
                   <thead>
                     <tr>
                       <th>商家名称</th>
@@ -269,21 +269,21 @@ export default function AdminPage() {
                   <tbody>
                     {merchants.map((m) => (
                       <tr key={m.id}>
-                        <td>
+                        <td data-label="商家名称">
                           <div className="font-bold text-[var(--color-text)]">{m.name}</div>
                           <div className="text-xs text-[var(--color-text-muted)] mt-1">{m.description?.slice(0, 20)}</div>
                         </td>
-                        <td className="text-sm">
+                        <td className="text-sm" data-label="联系人">
                           <div className="text-[var(--color-text)]">{m.contactEmail || '-'}</div>
                           <div className="text-xs text-[var(--color-text-muted)]">{m.contactPhone || '-'}</div>
                         </td>
-                        <td className="text-[var(--color-primary)] font-bold">
+                        <td className="text-[var(--color-primary)] font-bold" data-label="抽成比例">
                           {(Number(m.commissionRate) * 100).toFixed(0)}%
                         </td>
-                        <td>
+                        <td data-label="状态">
                           <MerchantStatusPill status={m.status} />
                         </td>
-                        <td className="text-right space-x-3 whitespace-nowrap">
+                        <td className="text-right space-x-3 whitespace-nowrap" data-label="操作">
                           {m.status === 'pending' && (
                             <>
                               <ActionLink tone="cta" onClick={() => handleApproveMerchant(m.id)}>通过</ActionLink>
@@ -334,7 +334,7 @@ export default function AdminPage() {
                 </div>
               </div>
               <div className="overflow-x-auto">
-                <table className="admin-table">
+                <table className="admin-table table-cards">
                   <thead>
                     <tr>
                       <th className="w-10">
@@ -361,7 +361,7 @@ export default function AdminPage() {
                   <tbody>
                     {settlements.map((s) => (
                       <tr key={s.id}>
-                        <td>
+                        <td data-label="选择">
                           {s.status === 'pending' && (
                             <input
                               type="checkbox"
@@ -377,21 +377,21 @@ export default function AdminPage() {
                             />
                           )}
                         </td>
-                        <td>
+                        <td data-label="订单信息">
                           <div className="font-mono text-xs text-[var(--color-text-muted)]">ORD-{s.orderId}</div>
                           <div className="text-xs text-[var(--color-text-muted)] mt-1">{new Date(s.createdAt).toLocaleString()}</div>
                         </td>
-                        <td className="font-bold text-sm text-[var(--color-text)]">
+                        <td className="font-bold text-sm text-[var(--color-text)]" data-label="商家">
                           {s.merchant?.name || s.merchantId}
                         </td>
-                        <td className="text-sm">
+                        <td className="text-sm" data-label="抽成/订单金额">
                           <div className="text-[var(--color-text)]">平台抽: <span className="text-[var(--color-text-muted)]">{s.commissionAmount}</span> ({(Number(s.commissionRate) * 100).toFixed(0)}%)</div>
                           <div className="text-[var(--color-text)]">单总额: <span className="text-[var(--color-text)]">{s.orderAmount}</span></div>
                         </td>
-                        <td className="font-bold text-[var(--color-cta)]">
+                        <td className="font-bold text-[var(--color-cta)]" data-label="结算金额">
                           {s.settlementAmount}
                         </td>
-                        <td>
+                        <td data-label="状态">
                           <SettlementStatusPill status={s.status} />
                         </td>
                       </tr>
@@ -415,7 +415,7 @@ export default function AdminPage() {
                 <h2 className="font-heading text-xl font-bold text-[var(--color-text)]">商品与库存</h2>
               </div>
               <div className="overflow-x-auto">
-                <table className="admin-table">
+                <table className="admin-table table-cards">
                   <thead>
                     <tr>
                       <th>商品名称</th>
@@ -440,21 +440,21 @@ export default function AdminPage() {
 
                       return (
                         <tr key={p.id}>
-                          <td>
+                          <td data-label="商品名称">
                             <div className="font-bold text-[var(--color-text)]">{p.name}</div>
                           </td>
-                          <td>
+                          <td data-label="类型">
                             <span className="bg-[var(--color-background)] border border-[var(--color-border)] text-[var(--color-text-muted)] px-2 py-1 rounded text-xs font-bold">
                               {p.type}
                             </span>
                           </td>
-                          <td className="font-bold text-[var(--color-text)]">{p.price}</td>
-                          <td>
+                          <td className="font-bold text-[var(--color-text)]" data-label="售价 (积分)">{p.price}</td>
+                          <td data-label="可售资源">
                             <span className={`font-bold ${isInstantInventory && available === 0 ? 'text-red-500' : 'text-[var(--color-text-muted)]'}`}>
                               {stockLabel}
                             </span>
                           </td>
-                          <td className="text-right">
+                          <td className="text-right" data-label="操作">
                             {isInstantInventory ? (
                               <button
                                 onClick={() => {
@@ -490,7 +490,7 @@ export default function AdminPage() {
             <div className="space-y-4">
               <h2 className="font-heading text-xl font-bold mb-4 text-[var(--color-text)]">积分流水</h2>
               <div className="overflow-x-auto">
-                <table className="admin-table">
+                <table className="admin-table table-cards">
                   <thead>
                     <tr>
                       <th>时间</th>
@@ -502,10 +502,10 @@ export default function AdminPage() {
                   <tbody>
                     {logs.map((l: any) => (
                       <tr key={l.id}>
-                        <td className="text-[var(--color-text-muted)] text-xs">{new Date(l.createdAt).toLocaleString()}</td>
-                        <td className="font-bold text-[var(--color-text)] text-sm">U{l.user?.id}</td>
-                        <td className="text-sm text-[var(--color-text-muted)]">{l.reason}</td>
-                        <td className={`text-right font-bold text-base ${l.type === 'in' ? 'text-[var(--color-cta)]' : 'text-[var(--color-text)]'}`}>
+                        <td className="text-[var(--color-text-muted)] text-xs" data-label="时间">{new Date(l.createdAt).toLocaleString()}</td>
+                        <td className="font-bold text-[var(--color-text)] text-sm" data-label="关联用户">U{l.user?.id}</td>
+                        <td className="text-sm text-[var(--color-text-muted)]" data-label="事件描述">{l.reason}</td>
+                        <td className={`text-right font-bold text-base ${l.type === 'in' ? 'text-[var(--color-cta)]' : 'text-[var(--color-text)]'}`} data-label="积分变动">
                           {l.type === 'in' ? '+' : '-'}{l.amount}
                         </td>
                       </tr>
@@ -551,7 +551,7 @@ export default function AdminPage() {
                 <button onClick={handleAuditReset} className="btn-secondary py-1.5 text-sm">重置</button>
               </div>
               <div className="overflow-x-auto">
-                <table className="admin-table">
+                <table className="admin-table table-cards">
                   <thead>
                     <tr>
                       <th>时间</th>
@@ -564,15 +564,15 @@ export default function AdminPage() {
                   <tbody>
                     {auditLogs.map((l) => (
                       <tr key={l.id}>
-                        <td className="text-[var(--color-text-muted)] text-xs whitespace-nowrap">{new Date(l.createdAt).toLocaleString()}</td>
-                        <td className="font-bold text-[var(--color-text)] text-sm">
+                        <td className="text-[var(--color-text-muted)] text-xs whitespace-nowrap" data-label="时间">{new Date(l.createdAt).toLocaleString()}</td>
+                        <td className="font-bold text-[var(--color-text)] text-sm" data-label="操作员">
                           U{l.adminId} <span className="text-xs font-normal text-[var(--color-text-muted)]">({l.adminEmail})</span>
                         </td>
-                        <td className="text-sm font-mono text-[var(--color-primary)]">{l.action}</td>
-                        <td className="text-sm text-[var(--color-text)]">
+                        <td className="text-sm font-mono text-[var(--color-primary)]" data-label="动作">{l.action}</td>
+                        <td className="text-sm text-[var(--color-text)]" data-label="目标">
                           {l.targetType} {l.targetId ? `#${l.targetId}` : ''}
                         </td>
-                        <td className="text-xs text-[var(--color-text-muted)]">
+                        <td className="text-xs text-[var(--color-text-muted)]" data-label="元数据">
                           {l.metadata ? (
                             <pre className="max-w-[200px] overflow-hidden text-ellipsis m-0">{JSON.stringify(l.metadata)}</pre>
                           ) : '-'}

@@ -247,7 +247,7 @@ export default function AnnouncementsAdmin() {
       </div>
 
       <div className="overflow-x-auto">
-        <table className="admin-table">
+        <table className="admin-table table-cards">
           <thead>
             <tr>
               <th>标题 / 内容</th>
@@ -261,27 +261,27 @@ export default function AnnouncementsAdmin() {
           <tbody>
             {items.map((a) => (
               <tr key={a.id}>
-                <td>
+                <td data-label="标题 / 内容">
                   <div className="font-bold text-[var(--color-text)]">{a.title}</div>
                   <div className="text-xs text-[var(--color-text-muted)] mt-1 line-clamp-1 max-w-md">
                     {a.content}
                   </div>
                 </td>
-                <td>
+                <td data-label="受众">
                   <span className="text-xs font-bold px-2 py-1 rounded border border-[var(--color-border)] bg-[var(--color-background)] text-[var(--color-text-muted)]">
                     {AUDIENCE_LABEL[a.audience]}
                   </span>
                 </td>
-                <td className="font-mono font-bold text-[var(--color-text)]">{a.priority}</td>
-                <td>
+                <td className="font-mono font-bold text-[var(--color-text)]" data-label="优先级">{a.priority}</td>
+                <td data-label="状态">
                   <span className={`inline-flex items-center px-2.5 py-1 text-xs rounded font-bold border ${STATUS_PILL[a.status]}`}>
                     {STATUS_LABEL[a.status]}
                   </span>
                 </td>
-                <td className="text-xs text-[var(--color-text-muted)] whitespace-nowrap">
+                <td className="text-xs text-[var(--color-text-muted)] whitespace-nowrap" data-label="时间窗口">
                   {formatTimeWindow(a)}
                 </td>
-                <td className="text-right space-x-2 whitespace-nowrap">
+                <td className="text-right space-x-2 whitespace-nowrap" data-label="操作">
                   <button
                     type="button"
                     className="text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 font-semibold text-xs px-3 py-1.5 rounded-lg transition-colors border border-[var(--color-primary)]/25 cursor-pointer inline-flex items-center gap-1"

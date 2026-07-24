@@ -127,7 +127,7 @@ export default function AdminUserTable() {
       </div>
 
       <div className="overflow-x-auto">
-        <table className="admin-table">
+        <table className="admin-table table-cards">
           <thead>
             <tr>
               <th>UID / 邮箱</th>
@@ -140,7 +140,7 @@ export default function AdminUserTable() {
           <tbody>
             {users.map((u) => (
               <tr key={u.id}>
-                <td>
+                <td data-label="UID / 邮箱">
                   <div className="font-bold text-[var(--color-text)] flex items-center gap-1.5">
                     U{u.id}
                     {u.role === 'admin' && (
@@ -149,9 +149,9 @@ export default function AdminUserTable() {
                   </div>
                   <div className="text-xs text-[var(--color-text-muted)] mt-1">{u.email}</div>
                 </td>
-                <td className="text-[var(--color-text-muted)] text-sm">{new Date(u.createdAt).toLocaleDateString()}</td>
-                <td className="font-bold text-[var(--color-cta)]">{u.pointAccount?.balance ?? 0}</td>
-                <td>
+                <td className="text-[var(--color-text-muted)] text-sm" data-label="注册时间">{new Date(u.createdAt).toLocaleDateString()}</td>
+                <td className="font-bold text-[var(--color-cta)]" data-label="当前积分">{u.pointAccount?.balance ?? 0}</td>
+                <td data-label="状态">
                   <span className={`inline-flex items-center px-2.5 py-1 text-xs rounded font-bold border ${
                     u.status === '正常'
                       ? 'bg-[var(--color-cta)]/10 text-[var(--color-cta)] border-[var(--color-cta)]/25'
@@ -160,7 +160,7 @@ export default function AdminUserTable() {
                     {u.status}
                   </span>
                 </td>
-                <td className="text-right space-x-2 whitespace-nowrap">
+                <td className="text-right space-x-2 whitespace-nowrap" data-label="操作">
                   {u.status === '正常' && u.role !== 'admin' && (
                     <button
                       disabled={u.id === currentUser?.id}

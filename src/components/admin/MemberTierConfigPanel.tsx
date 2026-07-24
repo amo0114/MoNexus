@@ -135,7 +135,7 @@ export function MemberTierConfigPanel() {
 
   return (
     <div className="overflow-x-auto bg-[var(--color-background)] rounded-lg border border-[var(--color-border)]">
-      <table className="admin-table border-0">
+      <table className="admin-table table-cards border-0">
         <thead>
           <tr>
             <th className="border-b border-[var(--color-border)]">等级名称</th>
@@ -166,14 +166,14 @@ export function MemberTierConfigPanel() {
 
             return (
               <tr key={t.value} className={isBronze ? 'opacity-60 bg-[var(--color-text-muted)]/5' : ''}>
-                <td>
+                <td data-label="等级名称">
                   <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-bold border ${badgeStyles}`}>
                     {t.label}
                   </span>
                 </td>
-                
+
                 {/* Threshold Cell */}
-                <td>
+                <td data-label="升级阈值 (累计积分)">
                   {isBronze ? (
                     <div className="text-sm text-[var(--color-text-muted)] px-2">0 (不可修改)</div>
                   ) : (
@@ -209,7 +209,7 @@ export function MemberTierConfigPanel() {
                 </td>
                 
                 {/* Bonus Bps Cell */}
-                <td>
+                <td data-label="加成倍率 (基点)">
                   {isBronze ? (
                     <div className="text-sm text-[var(--color-text-muted)] px-2">0 (不可修改)</div>
                   ) : (
