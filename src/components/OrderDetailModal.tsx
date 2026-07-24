@@ -5,6 +5,7 @@ import { useAppStore } from '../stores/appStore'
 import { disputeOrder, closeOrder } from '../api/orders'
 import { OwnReview } from '../api/reviews'
 import RegistryPill from './ui/RegistryPill'
+import SafeImage from './ui/SafeImage'
 import StarRating from './ui/StarRating'
 import ReviewDialog from './ReviewDialog'
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from './ui/Dialog'
@@ -90,7 +91,7 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
             </h3>
             <div className="flex items-start gap-4">
               {order.product.imageUrl ? (
-                <img src={order.product.imageUrl} alt={order.product.name} className="w-16 h-16 rounded-lg object-cover shrink-0 border border-[var(--color-border)]" />
+                <SafeImage src={order.product.imageUrl} alt={order.product.name} className="w-16 h-16 rounded-lg object-cover shrink-0 border border-[var(--color-border)]" loading="lazy" />
               ) : (
                 <div className="w-16 h-16 rounded-lg bg-[var(--color-image-placeholder)] border border-[var(--color-border)] flex items-center justify-center shrink-0">
                   <Package className="w-6 h-6 text-[var(--color-text-muted)]" />

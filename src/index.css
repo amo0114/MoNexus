@@ -187,6 +187,35 @@ h1, h2, h3, h4 {
 }
 
 /* =========================================================
+   Scroll reveal (ui/Reveal) + reduced-motion floor
+   ========================================================= */
+
+.reveal {
+  opacity: 0;
+  transform: translateY(12px);
+  transition: opacity 0.45s cubic-bezier(0.16, 1, 0.3, 1), transform 0.45s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.reveal-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Vestibular safety: users who prefer reduced motion get near-instant
+   transitions/animations everywhere (MASTER.md pre-delivery checklist). */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+  .reveal {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* =========================================================
    Component classes
    - .btn-primary  : filled indigo, main interaction (login, submit, save)
    - .btn-cta      : filled green, conversion CTA (buy, claim, redeem)
@@ -209,7 +238,7 @@ h1, h2, h3, h4 {
          px-6 py-3 rounded-lg shadow-md transition-all duration-200
          hover:bg-[var(--color-primary-hover)] hover:-translate-y-px hover:shadow-lg
          focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)]
-         active:translate-y-0 active:shadow-sm
+         active:translate-y-0 active:scale-[0.98] active:shadow-sm
          disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:shadow-md;
 }
 
@@ -219,7 +248,7 @@ h1, h2, h3, h4 {
          px-6 py-3 rounded-lg shadow-md transition-all duration-200
          hover:bg-[var(--color-cta-hover)] hover:-translate-y-px hover:shadow-lg
          focus-visible:outline-none focus-visible:[box-shadow:0_0_0_3px_rgba(34,197,94,0.25)]
-         active:translate-y-0 active:shadow-sm
+         active:translate-y-0 active:scale-[0.98] active:shadow-sm
          disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:shadow-md;
 }
 
@@ -236,8 +265,12 @@ h1, h2, h3, h4 {
   font-size: 0.875rem;
   padding: 12px 24px;
   border-radius: var(--radius-md);
-  transition: background-color 200ms ease, box-shadow 200ms ease;
+  transition: background-color 200ms ease, box-shadow 200ms ease, transform 150ms ease;
   font-family: inherit;
+}
+
+.btn-secondary:active:not(:disabled) {
+  transform: scale(0.98);
 }
 
 .btn-secondary:hover:not(:disabled) {

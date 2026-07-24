@@ -5,6 +5,8 @@ import api from '../api/client'
 import { useAppStore } from '../stores/appStore'
 import { Skeleton } from '../components/ui/Skeleton'
 import EmptyState from '../components/ui/EmptyState'
+import Reveal from '../components/ui/Reveal'
+import SafeImage from '../components/ui/SafeImage'
 
 interface Product {
   id: number
@@ -77,7 +79,7 @@ function ProductCard({
         ${isSoldOut ? 'opacity-60 grayscale' : ''}`}
     >
       <div className="relative h-40 w-full bg-[var(--color-image-placeholder)] overflow-hidden border-b border-[var(--color-border)] shrink-0">
-        <img
+        <SafeImage
           src={product.images?.[0] || product.imageUrl}
           alt={product.name}
           className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
@@ -472,11 +474,12 @@ export default function StorePage() {
                 }}
               >
                 {visibleProducts.map((product, i) => (
-                  <ProductCard
-                    key={product.id}
-                    product={product}
-                    onOpen={openDetail}
-                  />
+                  <Reveal key={product.id} delay={(i % columnCount) * 60}>
+                    <ProductCard
+                      product={product}
+                      onOpen={openDetail}
+                    />
+                  </Reveal>
                 ))}
               </div>
             </div>

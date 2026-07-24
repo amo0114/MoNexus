@@ -5,6 +5,7 @@ import DOMPurify from 'dompurify'
 import { MerchantProduct } from '../../types/merchant'
 import { useAppStore } from '../../stores/appStore'
 import { uploadImage, UploadError } from '../../api/uploads'
+import SafeImage from '../ui/SafeImage'
 
 const MAX_IMAGES = 6
 
@@ -560,13 +561,10 @@ export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, pr
                             key={`${url}-${index}`}
                             className="relative group rounded-lg border border-[var(--color-border)] overflow-hidden"
                           >
-                            <img
+                            <SafeImage
                               src={url}
                               alt={`商品图 ${index + 1}`}
                               className="w-full h-20 object-cover"
-                              onError={(e) => {
-                                ;(e.target as HTMLImageElement).style.opacity = '0.3'
-                              }}
                             />
                             {index === 0 && (
                               <span className="absolute top-1 left-1 px-1.5 py-0.5 rounded text-xs font-bold bg-[var(--color-cta)] text-white">
