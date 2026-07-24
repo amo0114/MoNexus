@@ -164,13 +164,20 @@ roll back, set the last known-good tag in `.env` and run the same command.
 
 ## Backups
 
-PostgreSQL and MinIO are persistent Docker volumes, not backups. At minimum,
-schedule a daily `pg_dump` and archive `miniodata-prod` to a second VPS. Test
-restores into a separate database before relying on a backup.
+PostgreSQL and MinIO are persistent Docker volumes, not backups. Schedule the
+repository backup script daily. It creates an age-encrypted PostgreSQL dump
+and, with `BACKUP_OBJECT_MODE=compose-minio`, an age-encrypted MinIO snapshot
+through the private Compose network. Keep the age private identity off this
+VPS, and configure `RCLONE_REMOTE` as an offsite `rclone crypt` remote.
 
 ```bash
-docker compose --env-file .env -f docker-compose.prod.yml -f docker-compose.vps.yml \
-  exec -T postgres pg_dump -U monexus monexus | gzip > /srv/backups/monexus-$(date +%F).sql.gz
+cd /opt/monexus
+set -a; . /etc/monexus/backup.env; set +a
+bash scripts/backup.sh
 ```
+
+Follow [the backup and restore rehearsal](./runbook.md#3-encrypted-database-and-object-backup)
+before relying on the first artifact. Test database *and object* restoration in
+an isolated environment; do not treat the local named volumes as recovery media.
 
 Do not commit `.env`, backups, passwords, GitHub tokens, or private keys.

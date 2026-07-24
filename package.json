@@ -9,6 +9,7 @@
   },
   "scripts": {
     "check:runtime": "node scripts/check-runtime.mjs",
+    "check:nginx": "bash scripts/check-nginx-config.sh",
     "verify:local": "bash scripts/verify-local.sh",
     "verify:local:no-e2e": "RUN_E2E=false bash scripts/verify-local.sh",
     "prod:env": "bash scripts/check-prod-env.sh",
@@ -21,6 +22,7 @@
     "prod:smoke": "bash scripts/prod-smoke.sh",
     "prod:gate": "npm run prod:env && npm run prod:config && npm run prod:build && npm run prod:up && npm run prod:ps && REQUIRE_METRICS_TOKEN=true npm run prod:smoke",
     "backup:restore-check": "bash scripts/restore-check.sh",
+    "backup:restore-objects-check": "bash scripts/restore-objects-check.sh",
     "predev": "npm run check:runtime",
     "dev": "vite",
     "prebuild": "npm run check:runtime",

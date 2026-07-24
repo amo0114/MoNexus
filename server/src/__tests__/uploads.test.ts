@@ -56,6 +56,34 @@ describe('POST /api/uploads/image', () => {
     expect(res.body.error.code).toBe('UNSUPPORTED_MEDIA_TYPE')
   })
 
+  it('should reject arbitrary bytes that claim to be a PNG', async () => {
+    await createTestUser('upload-spoofed-png@test.local')
+    const { accessToken } = await loginAs('upload-spoofed-png@test.local', 'testpass123')
+
+    const res = await api
+      .post('/api/uploads/image')
+      .set(authHeader(accessToken))
+      .attach('file', Buffer.from('<script>alert(1)</script>'), {
+        filename: 'spoofed.png', contentType: 'image/png',
+      })
+      .expect(400)
+
+    expect(res.body.error.code).toBe('UNSUPPORTED_MEDIA_TYPE')
+  })
+
+  it('should reject a real image whose declared MIME type does not match', async () => {
+    await createTestUser('upload-mime-mismatch@test.local')
+    const { accessToken } = await loginAs('upload-mime-mismatch@test.local', 'testpass123')
+
+    const res = await api
+      .post('/api/uploads/image')
+      .set(authHeader(accessToken))
+      .attach('file', TINY_PNG, { filename: 'tiny.jpeg', contentType: 'image/jpeg' })
+      .expect(400)
+
+    expect(res.body.error.code).toBe('UNSUPPORTED_MEDIA_TYPE')
+  })
+
   it('should return 200 with an http(s) URL and key on a valid PNG upload', async () => {
     await createTestUser('upload-ok@test.local')
     const { accessToken } = await loginAs('upload-ok@test.local', 'testpass123')
@@ -87,6 +115,7 @@ describe('POST /api/uploads/image', () => {
       .expect(200)
 
     expect(fetched.headers['content-type']).toMatch(/^image\/png/)
+    expect(fetched.headers['x-content-type-options']).toBe('nosniff')
     expect(fetched.body).toEqual(TINY_PNG)
   })
 })

@@ -329,18 +329,32 @@ schema 回滚；新迁移已应用时，要先评估其向后兼容性。
 
 ### 备份
 
-Docker volume 只代表持久化，不代表备份。至少每天导出 PostgreSQL，并将 MinIO
-volume 归档到另一台主机或对象存储：
+Docker volume 只代表持久化，不代表备份。使用仓库脚本创建 age 加密的 PostgreSQL
+备份，并同时快照 MinIO 上传对象；私钥（age identity）不能留在此 VPS，只保存公开
+recipient。把加密产物复制到另一台主机时，配置 `rclone crypt` 远端。
 
 ~~~bash
-install -d -m 700 /srv/backups/monexus
-docker compose --env-file .env \
-  -f docker-compose.prod.yml -f docker-compose.vps.yml \
-  exec -T postgres pg_dump -U monexus monexus \
-  | gzip > /srv/backups/monexus/monexus-$(date +%F).sql.gz
+sudo apt-get update && sudo apt-get install -y age rclone
+sudo install -d -m 700 /etc/monexus /var/backups/monexus
+sudoedit /etc/monexus/backup.env
+
+# /etc/monexus/backup.env 至少包含：
+# BACKUP_SOURCE=docker-compose
+# BACKUP_COMPOSE_ENV_FILE=/opt/monexus/.env
+# BACKUP_COMPOSE_PROJECT_NAME=monexus-prod
+# BACKUP_AGE_RECIPIENT=age1<仅公钥>
+# BACKUP_OBJECT_MODE=compose-minio
+# RCLONE_REMOTE=offsite-crypt:monexus   # 可选但生产建议配置
+
+cd /opt/monexus
+set -a; . /etc/monexus/backup.env; set +a
+bash scripts/backup.sh
 ~~~
 
-应定期在独立数据库中演练恢复。
+对每一份备份，必须在独立 staging/restore 数据库中运行
+`BACKUP=<...sql.gz.age> BACKUP_AGE_IDENTITY_FILE=<离线私钥路径> npm run backup:restore-check`，
+再通过 `npm run backup:restore-objects-check` 将对应 MinIO 对象快照恢复到独立
+`monexus-restore` Compose 项目并验证图片 URL；两项均成功后才视为有效备份。
 
 ## 9. 本次部署踩坑与诊断
 

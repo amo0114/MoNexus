@@ -130,6 +130,15 @@ if (env.NODE_ENV === 'production' && !env.COOKIE_SECURE) {
   process.exit(1)
 }
 
+// /api/metrics is mounted before the general API rate limiter so a missing
+// token would otherwise make operational details publicly scrapeable. The
+// deployment preflight checks this too, but startup validation keeps manual
+// compose runs and environment drift from bypassing that safeguard.
+if (env.NODE_ENV === 'production' && !env.METRICS_TOKEN) {
+  console.error('[Config] METRICS_TOKEN is required in production')
+  process.exit(1)
+}
+
 // Storage env vars are optional in dev/test (we fall back to in-memory
 // storage) but in production all four core values must be present so we
 // never silently lose user uploads to a process-local Map.

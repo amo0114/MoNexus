@@ -237,17 +237,67 @@ export async function updateSystemConfig(adminUserId: number, key: string, value
   return saveSystemConfig(adminUserId, key, value)
 }
 
-export async function createProduct(data: CreateProductInput) {
-  const product = await prisma.product.create({ data })
+function productAuditSnapshot(product: {
+  name: string
+  type: string
+  icon: string
+  price: number
+  originalPrice: number | null
+  isHot: boolean
+  status: string
+}) {
+  // Descriptions and image URLs are deliberately omitted. Audit needs to
+  // explain commercial changes without copying arbitrary rich content.
+  return {
+    name: product.name,
+    type: product.type,
+    icon: product.icon,
+    price: product.price,
+    originalPrice: product.originalPrice,
+    isHot: product.isHot,
+    status: product.status,
+  }
+}
+
+export async function createProduct(adminUserId: number, data: CreateProductInput) {
+  const product = await prisma.$transaction(async tx => {
+    const created = await tx.product.create({ data })
+    await tx.adminLog.create({
+      data: {
+        adminUserId,
+        action: '创建商品',
+        targetType: 'product',
+        targetId: created.id,
+        detail: JSON.stringify({ after: productAuditSnapshot(created) }),
+      },
+    })
+    return created
+  })
   await invalidateProductPublicCache(product.id, { list: true })
   return product
 }
 
-export async function updateProduct(id: number, data: UpdateProductInput) {
-  const product = await prisma.product.findUnique({ where: { id } })
-  if (!product) throw notFound('商品不存在')
+export async function updateProduct(adminUserId: number, id: number, data: UpdateProductInput) {
+  const updated = await prisma.$transaction(async tx => {
+    const product = await tx.product.findUnique({ where: { id } })
+    if (!product) throw notFound('商品不存在')
 
-  const updated = await prisma.product.update({ where: { id }, data })
+    const next = await tx.product.update({ where: { id }, data })
+    await tx.adminLog.create({
+      data: {
+        adminUserId,
+        action: '更新商品',
+        targetType: 'product',
+        targetId: id,
+        detail: JSON.stringify({
+          changedFields: Object.keys(data),
+          before: productAuditSnapshot(product),
+          after: productAuditSnapshot(next),
+        }),
+      },
+    })
+    return next
+  })
   await invalidateProductPublicCache(updated.id, { detail: true, list: true })
   return updated
 }

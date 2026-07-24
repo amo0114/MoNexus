@@ -43,32 +43,72 @@ curl -fsS http://localhost:3000/api/health/ready
 or reports an unhealthy database, jump to section 10 (PostgreSQL connection
 failure).
 
-## 3. Manual Backup
+## 3. Encrypted database and object backup
 
-The backup script lives at `scripts/backup.sh` and uses `pg_dump`. Required and optional env:
+The backup script writes `pg_dump | gzip | age`; it refuses plaintext output
+unless `ALLOW_PLAINTEXT_BACKUP=true` is explicitly set for a disposable local
+drill. Store only `BACKUP_AGE_RECIPIENT` (the public `age1...` recipient) on
+the VPS. The matching identity must live in a separate recovery location, not
+in the repository, Compose `.env`, backup directory, or GitHub Actions.
 
 | Var | Required | Default | Purpose |
 | --- | --- | --- | --- |
-| `DATABASE_URL` | yes | — | Postgres URL, e.g. `postgres://user:pass@host:5432/monexus` |
-| `BACKUP_DIR` | no | `/var/backups/monexus` | Target directory |
-| `RETENTION_DAYS` | no | `30` | Prune dumps older than N days |
-| `RCLONE_REMOTE` | no | — | If set, `rclone copy` the new dump there |
+| `BACKUP_SOURCE` | no | `url` | `url` for a reachable database; `docker-compose` for the bundled private Postgres |
+| `DATABASE_URL` / `BACKUP_DATABASE_URL` | for `url` | — | Read-only PostgreSQL connection source |
+| `BACKUP_AGE_RECIPIENT` | yes | — | Public `age` recipient used to encrypt every production artifact |
+| `BACKUP_OBJECT_MODE` | no | `none` | `compose-minio` mirrors the bundled MinIO bucket before archiving it |
+| `BACKUP_COMPOSE_ENV_FILE` | for Compose modes | `<repo>/.env` | Production Compose env file, normally `/opt/monexus/.env` |
+| `BACKUP_COMPOSE_PROJECT_NAME` | for Compose modes | `monexus-prod` | Must match the project name used by `scripts/vps-compose.sh` |
+| `BACKUP_DIR` | no | `/var/backups/monexus` | Local encrypted-artifact directory |
+| `RETENTION_DAYS` | no | `30` | Prune local artifacts older than N days |
+| `RCLONE_REMOTE` | no | — | Offsite `rclone` destination; configure it as an `rclone crypt` remote |
 
-Run:
+Generate and keep the recovery identity off the production host, then copy
+only its public recipient into `/etc/monexus/backup.env`:
 
 ```bash
-export DATABASE_URL='postgres://monexus:<password>@db.internal:5432/monexus'
-export BACKUP_DIR=/var/backups/monexus
+# Run on a protected admin/recovery machine, not the production VPS.
+age-keygen -o monexus-backup.agekey
+age-keygen -y monexus-backup.agekey
+```
+
+For the self-hosted VPS stack, install `age` and use the Compose source so
+PostgreSQL and MinIO remain private:
+
+```bash
+sudo apt-get update && sudo apt-get install -y age rclone
+sudo install -d -m 700 /var/backups/monexus /etc/monexus
+sudoedit /etc/monexus/backup.env
+```
+
+```dotenv
+BACKUP_SOURCE=docker-compose
+BACKUP_COMPOSE_ENV_FILE=/opt/monexus/.env
+BACKUP_COMPOSE_PROJECT_NAME=monexus-prod
+BACKUP_AGE_RECIPIENT=age1<public-recipient-from-recovery-machine>
+BACKUP_OBJECT_MODE=compose-minio
+BACKUP_DIR=/var/backups/monexus
+RETENTION_DAYS=30
+# Configure this destination with rclone crypt before enabling it:
+# RCLONE_REMOTE=offsite-crypt:monexus
+```
+
+Run it as the same account that can execute Docker Compose:
+
+```bash
+cd /opt/monexus
+set -a; . /etc/monexus/backup.env; set +a
 bash scripts/backup.sh
-# stdout: /var/backups/monexus/monexus-YYYYMMDDTHHMMSSZ.sql.gz
+# stdout: .../monexus-YYYYMMDDTHHMMSSZ.sql.gz.age
+#         .../monexus-objects-YYYYMMDDTHHMMSSZ.tar.gz.age  (when enabled)
 ```
 
-The script prints the final path on success. Verify size and integrity:
-
-```bash
-ls -lh "$BACKUP_DIR" | tail
-gunzip -t /var/backups/monexus/monexus-YYYYMMDDTHHMMSSZ.sql.gz && echo "gzip OK"
-```
+`compose-minio` uses a short-lived MinIO client on the private Compose
+network, not a public port or a raw Docker-volume copy. It is safe to rerun
+because it only writes a fresh local snapshot directory. The application uses
+content-addressed, append-only upload keys; retain remote snapshots and enable
+versioning/lifecycle policies on the offsite store rather than using a
+destructive sync.
 
 ## 4. Backup Restore Into Staging
 
@@ -76,24 +116,64 @@ Never restore over production. Use a staging DB.
 
 ```bash
 RESTORE_TARGET_URL='postgres://monexus:<password>@staging-db.internal:5432/monexus_restore'
-BACKUP=/var/backups/monexus/monexus-YYYYMMDDTHHMMSSZ.sql.gz
+BACKUP=/var/backups/monexus/monexus-YYYYMMDDTHHMMSSZ.sql.gz.age
+BACKUP_AGE_IDENTITY_FILE=/secure/recovery/monexus-backup.agekey
 
 npm run backup:restore-check
 ```
 
-`scripts/restore-check.sh` drops and recreates the target `public` schema, restores the gzipped SQL dump, and checks `User` plus `PointLog` row counts. Set `MIN_USER_ROWS` and `MIN_POINT_LOG_ROWS` higher when validating a non-empty production backup.
+`scripts/restore-check.sh` decrypts, drops and recreates the target `public`
+schema, restores the gzipped SQL dump, and checks `User` plus `PointLog` row
+counts. It still accepts historical `.sql.gz` backups; `.age` files require
+`BACKUP_AGE_IDENTITY_FILE`. Set `MIN_USER_ROWS` and `MIN_POINT_LOG_ROWS` higher
+when validating a non-empty production backup.
 
 After verification, point a throwaway backend instance at `$RESTORE_TARGET_URL` and smoke key flows (login, redeem, settle).
+
+### Restore the matching MinIO snapshot into the same isolated rehearsal
+
+Start a separate Compose project with an env file and project name that both
+contain `restore` or `staging`, use a distinct `WEB_PORT` if starting the full
+stack on the same host, and start its MinIO service first:
+
+```bash
+cd /opt/monexus
+docker compose --project-name monexus-restore --env-file .env.restore \
+  -f docker-compose.prod.yml -f docker-compose.vps.yml \
+  --profile selfhost-storage up -d minio
+```
+
+The command below refuses an ordinary production-looking target, requires an
+explicit confirmation string, and mirrors the decrypted snapshot only into the
+isolated bucket.
+
+```bash
+BACKUP_OBJECT=/srv/restore/monexus-objects-YYYYMMDDTHHMMSSZ.tar.gz.age
+BACKUP_AGE_IDENTITY_FILE=/secure/recovery/monexus-backup.agekey
+RESTORE_COMPOSE_ENV_FILE=/opt/monexus/.env.restore
+RESTORE_COMPOSE_PROJECT_NAME=monexus-restore
+CONFIRM_OBJECT_RESTORE=RESTORE_OBJECTS
+
+npm run backup:restore-objects-check
+```
+
+Then verify at least one product image URL referenced by the restored database
+returns its expected image, in addition to the database health and business
+flow smoke tests. Do not set `ALLOW_PRODUCTION_OBJECT_RESTORE=true` except in a
+documented incident recovery after an approved change window.
 
 ## 5. Daily Cron Example
 
 Place env in a private file (e.g. `/etc/monexus/backup.env`, mode `0600`, owned by the cron user):
 
 ```env
-DATABASE_URL=postgres://monexus:<password>@db.internal:5432/monexus
+BACKUP_SOURCE=docker-compose
+BACKUP_COMPOSE_ENV_FILE=/opt/monexus/.env
+BACKUP_AGE_RECIPIENT=age1<public-recipient>
+BACKUP_OBJECT_MODE=compose-minio
 BACKUP_DIR=/var/backups/monexus
 RETENTION_DAYS=30
-# RCLONE_REMOTE=s3-prod:monexus-backups/db
+# RCLONE_REMOTE=offsite-crypt:monexus
 ```
 
 Cron entry (runs at 02:17 UTC daily, log to file):
@@ -230,7 +310,7 @@ Mitigations (least destructive first):
    ```
 2. Manually delete the oldest dumps:
    ```bash
-   ls -t /var/backups/monexus/monexus-*.sql.gz | tail -n +15 | xargs -r rm -v
+   ls -t /var/backups/monexus/monexus-*.sql.gz.age | tail -n +15 | xargs -r rm -v
    ```
 3. Rotate or truncate large log files (do not delete an in-use file — truncate it):
    ```bash
@@ -681,7 +761,7 @@ Set `METRICS_TOKEN` in the server environment:
 METRICS_TOKEN=$(openssl rand -hex 32)
 ```
 
-When set, `/api/metrics` requires `Authorization: Bearer <token>`. When unset, the endpoint is open to anyone who can reach the port — acceptable for dev / private network behind a firewall, **NOT** for production exposure.
+`/api/metrics` requires `Authorization: Bearer <token>` whenever the token is set. In `NODE_ENV=production` the token is mandatory: the server refuses to start without it. Leaving it unset is only acceptable for local development or isolated test runs.
 
 ### Prometheus scrape config
 
@@ -723,8 +803,11 @@ GitHub Actions runs `pg_dump` against production daily at **02:17 UTC** and uplo
 2. GitHub → Settings → Secrets and variables → Actions → **New repository secret**:
    - Name: `BACKUP_DATABASE_URL`
    - Value: `postgresql://monexus_backup:<password>@<host>:5432/monexus?sslmode=require`
+   - Name: `BACKUP_AGE_RECIPIENT`
+   - Value: the public `age1...` recipient generated on the recovery machine.
 
-The workflow refuses to run if this secret is missing — it fails fast rather than silently producing an empty dump.
+The workflow refuses to run if either secret is missing. It uploads only a
+`.sql.gz.age` artifact; the matching private identity is never sent to GitHub.
 
 ### Trigger a manual backup
 
@@ -734,19 +817,23 @@ GitHub → Actions → **"Database Backup"** → Run workflow. Useful before any
 
 ```bash
 # 1. Download the artifact from the run's summary page
-unzip db-backup-20260513T021700Z.zip   # produces monexus-backup-20260513T021700Z.sql.gz
+unzip db-backup-20260513T021700Z.zip   # produces monexus-backup-20260513T021700Z.sql.gz.age
 
 # 2. Restore into a target database (e.g., a fresh staging DB)
-BACKUP=monexus-backup-20260513T021700Z.sql.gz
+BACKUP=monexus-backup-20260513T021700Z.sql.gz.age
+BACKUP_AGE_IDENTITY_FILE=/secure/recovery/monexus-backup.agekey
 RESTORE_TARGET_URL='postgresql://monexus_restore:<password>@staging-db.example.com:5432/monexus_restore?sslmode=require'
 MIN_USER_ROWS=1 MIN_POINT_LOG_ROWS=1 npm run backup:restore-check
 ```
 
 The `--clean --if-exists` flags on `pg_dump` mean the dump can be replayed against a database that already has the schema — useful for refreshing staging from prod.
 
-### Retention & M5 roadmap
+### Retention and recovery cadence
 
-7 days is the M4 floor — set deliberately low while we settle on encryption and storage location. M5 will add: longer retention via off-region object storage, encryption at rest (`age` or `gpg`), and a quarterly automated restore-to-scratch-DB verification job.
+GitHub artifacts retain encrypted database backups for 7 days. The VPS backup
+script defaults to 30 local days; configure an offsite `rclone crypt` remote
+with a retention/versioning policy suitable for your recovery objective. Run a
+database and MinIO-object restore rehearsal at least quarterly.
 
 ## 25. Web Vitals (M4)
 
@@ -898,7 +985,7 @@ Key groups to verify before production:
 | Deploy | `DEPLOY_SSH_HOST`, `DEPLOY_SSH_USER`, `DEPLOY_SSH_PRIVATE_KEY` | Production Deploy workflow |
 | Backend runtime | `DATABASE_URL`, `JWT_SECRET`, `SENTRY_DSN`, SMTP/storage values | deploy host env and backend process |
 | Metrics | `METRICS_TOKEN` | backend runtime and scrape target |
-| Backup | `BACKUP_DATABASE_URL`, `RESTORE_TARGET_URL` | backup workflow and restore rehearsal |
+| Backup | `BACKUP_AGE_RECIPIENT`, `BACKUP_DATABASE_URL` (url source only), `RESTORE_TARGET_URL` | encrypted backup workflow and restore rehearsal |
 | Alert routing | `ALERT_SLACK_WEBHOOK_URL`, `ALERT_EMAIL_TO`, `ALERT_EMAIL_FROM` | Alert Routing Test and incident procedure |
 
 Rotate secrets by changing GitHub environment values or host runtime env, restarting only the consuming component, and recording secret version identifiers rather than values.
@@ -910,7 +997,7 @@ npm run prod:env -- --mode production --env-file .env
 npm run prod:env -- --mode staging --env-file .env.staging.local
 ```
 
-The preflight requires HTTPS `FRONTEND_ORIGIN`, `COOKIE_SECURE=true`, strong `JWT_SECRET`, configured S3-compatible storage, SMTP, Sentry/GlitchTip, `METRICS_TOKEN`, `BACKUP_DATABASE_URL`, and `RESTORE_TARGET_URL`.
+The preflight requires HTTPS `FRONTEND_ORIGIN`, `COOKIE_SECURE=true`, strong `JWT_SECRET`, configured S3-compatible storage, SMTP, Sentry/GlitchTip, `METRICS_TOKEN`, `BACKUP_AGE_RECIPIENT`, and `RESTORE_TARGET_URL`. It requires `BACKUP_DATABASE_URL` only when `BACKUP_SOURCE=url`; the self-hosted Compose route uses `BACKUP_SOURCE=docker-compose` instead.
 
 ## 29. M5 Sentry Alert Rules
 
@@ -1083,7 +1170,8 @@ Backup restore rehearsal stays in staging first:
 
 ```bash
 RESTORE_TARGET_URL='<staging-restore-url>'
-BACKUP=monexus-backup-YYYYMMDDTHHMMSSZ.sql.gz
+BACKUP=monexus-backup-YYYYMMDDTHHMMSSZ.sql.gz.age
+BACKUP_AGE_IDENTITY_FILE=/secure/recovery/monexus-backup.agekey
 MIN_USER_ROWS=1 MIN_POINT_LOG_ROWS=1 npm run backup:restore-check
 ```
 

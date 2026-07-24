@@ -51,7 +51,8 @@ Use **environment secrets** for credential material and **environment variables*
 | `STORAGE_PUBLIC_URL_BASE` | Environment variable | `staging`, `production` | Storage/Ops | Public CDN or bucket URL prefix rendered to clients | Environment variables | backend runtime |
 | `STORAGE_FORCE_PATH_STYLE` | Environment variable | `staging`, `production` | Storage/Ops | S3 client path-style setting | Environment variables | backend runtime |
 | `METRICS_TOKEN` | Secret | `staging`, `production` | Observability | Bearer token for `/api/metrics` | Environment secrets | backend runtime; Prometheus scrape config |
-| `BACKUP_DATABASE_URL` | Secret | `production` | DBA/Ops | Read-only database URL for scheduled `pg_dump` | Repository secret today; move to `production` environment when `.github/workflows/backup.yml` is assigned for modification | `.github/workflows/backup.yml` |
+| `BACKUP_DATABASE_URL` | Secret | `production` | DBA/Ops | Read-only database URL for scheduled `pg_dump` when using the GitHub/url backup source | Repository secret | `.github/workflows/backup.yml` |
+| `BACKUP_AGE_RECIPIENT` | Environment variable / repository secret | `production` | DBA/Ops | Public `age1...` recipient used to encrypt database backup artifacts | Host backup env; GitHub Actions secret | `scripts/backup.sh`; `.github/workflows/backup.yml` |
 | `RESTORE_TARGET_URL` | Secret | `staging` | DBA/Ops | Staging-only restore target for backup restore rehearsals | Environment secrets | manual restore commands / future rollback workflow |
 | `DEPLOY_SSH_HOST` | Secret | `staging`, `production` | Ops | Target host for self-hosted deploy | Environment secrets | A1/A5 deploy workflow |
 | `DEPLOY_SSH_USER` | Secret | `staging`, `production` | Ops | Non-root deploy user | Environment secrets | A1/A5 deploy workflow |
@@ -73,7 +74,7 @@ Use **environment secrets** for credential material and **environment variables*
    - `production`: require at least one reviewer, restrict deployments to `master` and release tags, and disable admin bypass when the GitHub plan supports it.
 3. Add environment variables first. These values are visible to workflow logs when printed, so never put credentials in variables.
 4. Add environment secrets second. GitHub masks secret values in logs, but workflow authors must still avoid printing or passing them through command-line arguments.
-5. Keep `BACKUP_DATABASE_URL` as a repository secret until the backup workflow is assigned for environment scoping. A2 does not modify `.github/workflows/backup.yml`.
+5. Keep `BACKUP_DATABASE_URL` and `BACKUP_AGE_RECIPIENT` as repository secrets for the scheduled backup workflow. The recipient is public-key material, but treating it as workflow configuration avoids accidental mismatch with the recovery identity. Never store the corresponding age identity in GitHub or on the production VPS.
 6. Ask A1/A5 to consume the deploy names in this document. If `.github/workflows/deploy.yml` is absent on a Wave 1 branch, do not create it from A2.
 
 ## Rotation Rules
