@@ -10,6 +10,7 @@ import {
 } from '../../api/portableBackups'
 import { useAppStore } from '../../stores/appStore'
 import { useAuthStore } from '../../stores/authStore'
+import ConfirmDialog from '../ui/ConfirmDialog'
 
 function formatBytes(bytes?: number) {
   if (bytes === undefined) return '-'
@@ -26,6 +27,7 @@ export default function PortableBackupPanel() {
   const [importFile, setImportFile] = useState<File | null>(null)
   const [importPassphrase, setImportPassphrase] = useState('')
   const [importing, setImporting] = useState(false)
+  const [confirmingRestore, setConfirmingRestore] = useState(false)
 
   useEffect(() => {
     if (!job || job.state !== 'running') return
@@ -71,7 +73,7 @@ export default function PortableBackupPanel() {
     }
   }
 
-  async function handleRestore(event: FormEvent) {
+  function handleRestore(event: FormEvent) {
     event.preventDefault()
     if (!importFile) {
       showToast('请选择 .monexus-backup 文件', 'error')
@@ -81,8 +83,11 @@ export default function PortableBackupPanel() {
       showToast('备份口令至少 12 个字符', 'error')
       return
     }
-    if (!window.confirm('导入会替换当前空实例的业务数据并使当前会话失效，确定继续吗？')) return
+    setConfirmingRestore(true)
+  }
 
+  async function doRestore() {
+    if (!importFile) return
     setImporting(true)
     try {
       const result = await restorePortableBackup(importFile, importPassphrase)
@@ -93,6 +98,7 @@ export default function PortableBackupPanel() {
     } finally {
       setImporting(false)
       setImportPassphrase('')
+      setConfirmingRestore(false)
     }
   }
 
@@ -183,12 +189,24 @@ export default function PortableBackupPanel() {
               className="input mt-1 w-full"
             />
           </label>
-          <button type="submit" disabled={importing} className="btn-danger px-4 py-2 text-sm disabled:opacity-50">
+          <button type="submit" disabled={importing} className="btn-secondary px-4 py-2 text-sm border-[var(--color-danger)] text-[var(--color-danger)] disabled:opacity-50">
             {importing ? <LoaderCircle className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
             {importing ? '正在校验并导入' : '导入备份'}
           </button>
         </form>
       </section>
+
+      {/* Restore confirm — replaces window.confirm */}
+      <ConfirmDialog
+        open={confirmingRestore}
+        onOpenChange={setConfirmingRestore}
+        title="导入备份"
+        description="导入会替换当前空实例的业务数据并使当前会话失效，确定继续吗？"
+        confirmLabel="继续导入"
+        tone="danger"
+        loading={importing}
+        onConfirm={doRestore}
+      />
     </div>
   )
 }

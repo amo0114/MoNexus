@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { LayoutDashboard, UsersRound, Package, ShoppingCart, Activity, Users, ShoppingBag, Coins, X, Store, DollarSign, Settings, ClipboardList, Megaphone, DatabaseBackup } from 'lucide-react'
+import { LayoutDashboard, UsersRound, Package, ShoppingCart, Activity, Users, ShoppingBag, Coins, Store, DollarSign, Settings, ClipboardList, Megaphone, DatabaseBackup } from 'lucide-react'
 import api from '../api/client'
 import { getApiErrorMessage } from '../api/error'
 import { useAppStore } from '../stores/appStore'
@@ -21,6 +21,7 @@ import AdminOrderTable from '../components/admin/AdminOrderTable'
 import AnnouncementsAdmin from '../components/admin/AnnouncementsAdmin'
 import CommissionDialog from '../components/admin/CommissionDialog'
 import PortableBackupPanel from '../components/admin/PortableBackupPanel'
+import { Dialog, DialogContent, DialogTitle } from '../components/ui/Dialog'
 
 type AdminTab = 'dashboard' | 'users' | 'products' | 'orders' | 'logs' | 'audit' | 'merchants' | 'settlements' | 'announcements' | 'config' | 'backup'
 
@@ -642,37 +643,25 @@ export default function AdminPage() {
         }}
       />
 
-      {/* Import Inventory Modal — kept inline; will migrate to <Dialog/> in the modal batch */}
-      {showInventory && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center">
-          <div className="modal-overlay" onClick={() => setShowInventory(false)} />
-          <div className="modal relative z-10 fade-in">
-            <div className="flex justify-between items-center mb-5">
-              <h3 className="font-heading text-xl font-bold text-[var(--color-text)]">导入交付库存</h3>
-              <button
-                onClick={() => setShowInventory(false)}
-                className="text-[var(--color-text-muted)] hover:text-[var(--color-text)] cursor-pointer"
-                aria-label="关闭"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <p className="text-xs text-[var(--color-text-muted)] mb-3">
-              {inventoryProductName ? `商品：${inventoryProductName}。` : ''}仅适用于即时库存发货；每行是一份可独立交付给一位买家的内容（卡密/账号/链接）。
-            </p>
-            <textarea
-              value={inventoryText}
-              onChange={(e) => setInventoryText(e.target.value)}
-              rows={8}
-              placeholder="XXXX-XXXX-XXXX-XXXX&#10;YYYY-YYYY-YYYY-YYYY"
-              className="input font-mono resize-none mb-4"
-            />
-            <button onClick={confirmImportInventory} className="btn-primary w-full">
-              确认导入
-            </button>
-          </div>
-        </div>
-      )}
+      {/* Import Inventory Modal */}
+      <Dialog open={showInventory} onOpenChange={(o) => { if (!o) setShowInventory(false) }}>
+        <DialogContent>
+          <DialogTitle className="text-xl mb-5">导入交付库存</DialogTitle>
+          <p className="text-xs text-[var(--color-text-muted)] mb-3">
+            {inventoryProductName ? `商品：${inventoryProductName}。` : ''}仅适用于即时库存发货；每行是一份可独立交付给一位买家的内容（卡密/账号/链接）。
+          </p>
+          <textarea
+            value={inventoryText}
+            onChange={(e) => setInventoryText(e.target.value)}
+            rows={8}
+            placeholder="XXXX-XXXX-XXXX-XXXX&#10;YYYY-YYYY-YYYY-YYYY"
+            className="input font-mono resize-none mb-4"
+          />
+          <button onClick={confirmImportInventory} className="btn-primary w-full">
+            确认导入
+          </button>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

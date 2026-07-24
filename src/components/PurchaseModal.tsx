@@ -1,4 +1,5 @@
 import { Coins, Loader2 } from 'lucide-react'
+import { Dialog, DialogContent, DialogTitle } from './ui/Dialog'
 
 export default function PurchaseModal({
   product,
@@ -12,10 +13,9 @@ export default function PurchaseModal({
   onConfirm: () => void
 }) {
   return (
-    <div className="fixed inset-0 z-[110] flex items-center justify-center">
-      <div className="modal-overlay" onClick={submitting ? undefined : onClose} />
-      <div className="modal relative z-10 fade-in max-w-sm">
-        <h3 className="font-heading text-xl font-bold mb-2 text-[var(--color-text)]">确认兑换</h3>
+    <Dialog open onOpenChange={(o) => { if (!o && !submitting) onClose() }}>
+      <DialogContent className="max-w-sm">
+        <DialogTitle className="text-xl mb-2">确认兑换</DialogTitle>
         <p className="text-[var(--color-text-muted)] mb-6 text-sm">您即将消耗积分兑换以下商品：</p>
 
         <div className="bg-[var(--color-background)] rounded-lg p-4 mb-6 border border-[var(--color-border)]">
@@ -47,7 +47,7 @@ export default function PurchaseModal({
             {submitting ? '支付中…' : '确认支付'}
           </button>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   )
 }

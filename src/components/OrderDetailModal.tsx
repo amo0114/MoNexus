@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { X, Copy, Package, Store, Clock, Coins, Info, Loader2 } from 'lucide-react'
+import { Copy, Package, Store, Clock, Coins, Info, Loader2 } from 'lucide-react'
 import { UserOrderDetail } from '../types/order'
 import { useAppStore } from '../stores/appStore'
 import { disputeOrder, closeOrder } from '../api/orders'
@@ -71,23 +71,15 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
     (order.status === 'pending' || order.status === 'processing' || order.status === 'disputed' || order.status === 'delivered')
 
   return (
-    <div className="fixed inset-0 z-[110] flex items-center justify-center fade-in">
-      <div className="modal-overlay" onClick={onClose} />
-      <div className="modal relative z-10 max-w-lg flex flex-col max-h-[90vh] overflow-hidden">
+    <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
+      <DialogContent className="max-w-lg flex flex-col max-h-[90vh] overflow-hidden">
 
-        <div className="flex justify-between items-center mb-6">
-          <h2 className="font-heading text-xl font-bold text-[var(--color-text)] flex items-center gap-2">
+        <div className="flex justify-between items-center mb-6 pr-8">
+          <DialogTitle className="text-xl flex items-center gap-2">
             <Info className="w-5 h-5 text-[var(--color-primary)]" />
             订单详情
             <RegistryPill value={order.status} category="orderStatuses" />
-          </h2>
-          <button
-            onClick={onClose}
-            className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-[var(--color-border)] transition-colors text-[var(--color-text-muted)] hover:text-[var(--color-text)] cursor-pointer"
-            aria-label="关闭"
-          >
-            <X className="w-4 h-4" />
-          </button>
+          </DialogTitle>
         </div>
 
         <div className="flex-1 overflow-y-auto hide-scrollbar space-y-4">
@@ -271,7 +263,7 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
             </button>
           )}
         </div>
-      </div>
+      </DialogContent>
 
       <Dialog open={confirmAction !== null} onOpenChange={(open) => { if (!open) setConfirmAction(null) }}>
         <DialogContent
@@ -316,6 +308,6 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
           onSaved={(saved) => { setReview(saved); setReviewOpen(false) }}
         />
       )}
-    </div>
+    </Dialog>
   )
 }

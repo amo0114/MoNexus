@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Search, X } from 'lucide-react'
+import { Search } from 'lucide-react'
 import {
   getAdminUsers,
   banUser,
@@ -11,6 +11,8 @@ import { getApiErrorMessage } from '../../api/error'
 import { useAppStore } from '../../stores/appStore'
 import { useAuthStore } from '../../stores/authStore'
 import AdminPagination from './AdminPagination'
+import { Dialog, DialogContent, DialogTitle } from '../ui/Dialog'
+import ConfirmDialog from '../ui/ConfirmDialog'
 
 const PAGE_SIZE = 20
 
@@ -73,14 +75,22 @@ export default function AdminUserTable() {
     }
   }
 
-  async function handleUnban(userId: number) {
-    if (!confirm('确定要解封该用户吗？')) return
+  // Unban confirm dialog
+  const [unbanTarget, setUnbanTarget] = useState<number | null>(null)
+  const [unbanning, setUnbanning] = useState(false)
+
+  async function confirmUnban() {
+    if (unbanTarget === null) return
+    setUnbanning(true)
     try {
-      await unbanUser(userId)
+      await unbanUser(unbanTarget)
       showToast('已成功解封该用户')
+      setUnbanTarget(null)
       fetchUsers()
     } catch (err: any) {
       showToast(getApiErrorMessage(err, '解封失败'), 'error')
+    } finally {
+      setUnbanning(false)
     }
   }
 
@@ -176,7 +186,7 @@ export default function AdminUserTable() {
                   )}
                   {u.status === '已封禁' && u.role !== 'admin' && (
                     <button
-                      onClick={() => handleUnban(u.id)}
+                      onClick={() => setUnbanTarget(u.id)}
                       className="text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 font-semibold text-xs px-3 py-1.5 rounded-lg transition-colors border border-[var(--color-primary)]/25 cursor-pointer"
                     >
                       解封
@@ -211,70 +221,47 @@ export default function AdminUserTable() {
       <AdminPagination page={page} total={total} pageSize={PAGE_SIZE} onPageChange={setPage} testId="admin-user-pagination" />
 
       {/* Ban User Modal */}
-      {showBan && banTarget && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center">
-          <div className="modal-overlay" onClick={() => setShowBan(false)} />
-          <div className="modal relative z-10 fade-in max-w-sm">
-            <div className="flex justify-between items-center mb-5">
-              <h3 className="font-heading text-xl font-bold text-[var(--color-text)]">封禁用户</h3>
-              <button
-                onClick={() => setShowBan(false)}
-                className="text-[var(--color-text-muted)] hover:text-[var(--color-text)] cursor-pointer"
-                aria-label="关闭"
-              >
-                <X className="w-5 h-5" />
-              </button>
+      <Dialog open={showBan && !!banTarget} onOpenChange={(o) => { if (!o) setShowBan(false) }}>
+        <DialogContent className="max-w-sm">
+          <DialogTitle className="text-xl mb-5">封禁用户</DialogTitle>
+          <div className="space-y-4">
+            <div>
+              <label className="block text-xs font-bold text-[var(--color-text-muted)] mb-1.5 uppercase tracking-wider">目标用户</label>
+              <input
+                type="text"
+                disabled
+                value={banTarget ? `U${banTarget.id} (${banTarget.email})` : ''}
+                className="input bg-[var(--color-background)] text-[var(--color-text-muted)] cursor-not-allowed"
+              />
             </div>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-[var(--color-text-muted)] mb-1.5 uppercase tracking-wider">目标用户</label>
-                <input
-                  type="text"
-                  disabled
-                  value={`U${banTarget.id} (${banTarget.email})`}
-                  className="input bg-[var(--color-background)] text-[var(--color-text-muted)] cursor-not-allowed"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-[var(--color-text-muted)] mb-1.5 uppercase tracking-wider">封禁原因</label>
-                <input
-                  type="text"
-                  value={banReason}
-                  onChange={(e) => setBanReason(e.target.value)}
-                  placeholder="请输入封禁原因"
-                  className="input"
-                />
-              </div>
-              <button onClick={confirmBan} className="btn-primary w-full mt-2 bg-[var(--color-danger)] hover:opacity-90 border-[var(--color-danger)] text-white shadow-md">
-                确认封禁
-              </button>
+            <div>
+              <label className="block text-xs font-bold text-[var(--color-text-muted)] mb-1.5 uppercase tracking-wider">封禁原因</label>
+              <input
+                type="text"
+                value={banReason}
+                onChange={(e) => setBanReason(e.target.value)}
+                placeholder="请输入封禁原因"
+                className="input"
+              />
             </div>
+            <button onClick={confirmBan} className="btn-primary w-full mt-2 bg-[var(--color-danger)] hover:opacity-90 border-[var(--color-danger)] text-white shadow-md">
+              确认封禁
+            </button>
           </div>
-        </div>
-      )}
+        </DialogContent>
+      </Dialog>
 
       {/* Adjust Points Modal */}
-      {showAdjust && adjustTarget && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center">
-          <div className="modal-overlay" onClick={() => setShowAdjust(false)} />
-          <div className="modal relative z-10 fade-in max-w-sm">
-            <div className="flex justify-between items-center mb-5">
-              <h3 className="font-heading text-xl font-bold text-[var(--color-text)]">调整用户积分</h3>
-              <button
-                onClick={() => setShowAdjust(false)}
-                className="text-[var(--color-text-muted)] hover:text-[var(--color-text)] cursor-pointer"
-                aria-label="关闭"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="space-y-4">
+      <Dialog open={showAdjust && !!adjustTarget} onOpenChange={(o) => { if (!o) setShowAdjust(false) }}>
+        <DialogContent className="max-w-sm">
+          <DialogTitle className="text-xl mb-5">调整用户积分</DialogTitle>
+          <div className="space-y-4">
               <div>
                 <label className="block text-xs font-bold text-[var(--color-text-muted)] mb-1.5 uppercase tracking-wider">目标用户</label>
                 <input
                   type="text"
                   disabled
-                  value={`U${adjustTarget.id} (${adjustTarget.email}) - 当前: ${adjustTarget.pointAccount?.balance ?? 0}`}
+                  value={adjustTarget ? `U${adjustTarget.id} (${adjustTarget.email}) - 当前: ${adjustTarget.pointAccount?.balance ?? 0}` : ''}
                   className="input bg-[var(--color-background)] text-[var(--color-text-muted)] cursor-not-allowed"
                 />
               </div>
@@ -323,10 +310,21 @@ export default function AdminUserTable() {
               <button onClick={confirmAdjust} className="btn-primary w-full mt-2">
                 确认执行
               </button>
-            </div>
           </div>
-        </div>
-      )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Unban confirm — replaces window.confirm */}
+      <ConfirmDialog
+        open={unbanTarget !== null}
+        onOpenChange={(o) => { if (!o) setUnbanTarget(null) }}
+        title="解封用户"
+        description="确定要解封该用户吗？解封后其将恢复正常访问。"
+        confirmLabel="解封"
+        tone="primary"
+        loading={unbanning}
+        onConfirm={confirmUnban}
+      />
     </div>
   )
 }
