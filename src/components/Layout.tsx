@@ -1,7 +1,7 @@
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuthStore } from '../stores/authStore'
-import { Moon, Sun, Coins, User, ShieldCheck, Store, Clock, XCircle, AlertTriangle, Plus } from 'lucide-react'
-import { useState, useEffect } from 'react'
+import { Coins, User, ShieldCheck, Store, Clock, XCircle, AlertTriangle, Plus } from 'lucide-react'
+import { useEffect } from 'react'
 import EmailVerificationBanner from './EmailVerificationBanner'
 import AnnouncementBanner from './AnnouncementBanner'
 import Logo from './ui/Logo'
@@ -11,14 +11,6 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate()
   const location = useLocation()
   const user = useAuthStore((s) => s.user)
-  const [isDark, setIsDark] = useState(document.documentElement.classList.contains('dark'))
-
-  function toggleTheme() {
-    const next = !isDark
-    setIsDark(next)
-    document.documentElement.classList.toggle('dark', next)
-    localStorage.setItem('theme', next ? 'dark' : 'light')
-  }
 
   // Refresh user data on mount
   useEffect(() => {
@@ -119,14 +111,6 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             )}
 
             <ThemeToggle />
-            {/* Theme Toggle */}
-            <button
-              onClick={toggleTheme}
-              className="w-10 h-10 rounded-full flex items-center justify-center cursor-pointer text-[var(--color-text)] hover:bg-[var(--color-primary)]/10 transition-colors border border-transparent hover:border-[var(--color-primary)]/25"
-              aria-label={isDark ? '切换到浅色模式' : '切换到深色模式'}
-            >
-              {isDark ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
-            </button>
 
             {/* Points Badge — Coins icon in CTA green to match the buy-currency story */}
             <div
