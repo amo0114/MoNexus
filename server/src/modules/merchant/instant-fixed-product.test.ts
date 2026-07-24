@@ -109,6 +109,34 @@ describe('merchant instant_fixed product update', () => {
     expect(product?.stockMode).toBe('unlimited')
   })
 
+  it('blocks a delivery mode switch after inventory exists but still permits ordinary edits', async () => {
+    const token = await merchantToken('if-up-inventory-history@test.local')
+    const created = await api.post('/api/merchant/products').set(authHeader(token))
+      .send({ name: '有库存记录商品', type: '充值卡密', price: 10, deliveryMode: 'instant_inventory' })
+      .expect(201)
+    await api.post(`/api/merchant/products/${created.body.id}/inventory`).set(authHeader(token))
+      .send({ items: ['CARD-HISTORY-001'] }).expect(200)
+
+    const blocked = await api.put(`/api/merchant/products/${created.body.id}`).set(authHeader(token))
+      .send({ deliveryMode: 'manual_service' }).expect(400)
+    expect(blocked.body.error.message).toContain('已有库存记录或订单')
+
+    await api.put(`/api/merchant/products/${created.body.id}`).set(authHeader(token))
+      .send({ name: '有库存记录商品（已改名）' }).expect(200)
+  })
+
+  it('blocks a delivery mode switch after an order exists', async () => {
+    const merchantAccessToken = await merchantToken('if-up-order-history@test.local')
+    const productId = await createInstantFixedProduct(merchantAccessToken)
+    const { user, password } = await createTestUser('if-up-order-buyer@test.local', 'buyer123', 'user', 100)
+    const buyer = await loginAs(user.email, password)
+    await api.post('/api/orders').set(authHeader(buyer.accessToken)).send({ productId }).expect(201)
+
+    const blocked = await api.put(`/api/merchant/products/${productId}`).set(authHeader(merchantAccessToken))
+      .send({ deliveryMode: 'manual_service', fixedContent: null }).expect(400)
+    expect(blocked.body.error.message).toContain('已有库存记录或订单')
+  })
+
   it('rejects mode switch without clearing fixedContent with guiding message', async () => {
     const token = await merchantToken('if-up-noclear@test.local')
     const productId = await createInstantFixedProduct(token)

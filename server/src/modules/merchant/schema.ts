@@ -1,25 +1,22 @@
 import { z } from 'zod'
-import { businessRegistry } from '../../lib/businessRegistry.js'
 import { ORDER_STATUSES } from '../orders/fulfillment.js'
-import { productImagesSchema } from '../products/schema.js'
-
-const productTypeValues = businessRegistry.productTypes.map(type => type.value)
-const deliveryModeValues = businessRegistry.deliveryModes.map(mode => mode.value)
-
-const productTypeSchema = z.string().trim().min(1).refine(
-  value => productTypeValues.includes(value as typeof productTypeValues[number]),
-  '商品类型不在可用范围内'
-)
-
-const deliveryModeSchema = z.string().trim().refine(
-  value => deliveryModeValues.includes(value as typeof deliveryModeValues[number]),
-  '履约模式不在可用范围内'
-)
+import {
+  productDescriptionSchema,
+  productIconSchema,
+  productDeliveryModeSchema,
+  productFixedContentTypeSchema,
+  productImageItemSchema,
+  productImagesSchema,
+  productNameSchema,
+  productPriceSchema,
+  productRichDescriptionSchema,
+  productStockModeSchema,
+  productTypeSchema,
+  validateProductCommercialFields,
+} from '../products/schema.js'
+import { inventoryImportPayloadSchema } from '../../lib/inventoryImport.js'
 
 const productStatusSchema = z.enum(['active', 'inactive'])
-
-const stockModeSchema = z.enum(['limited', 'unlimited'])
-const fixedContentTypeSchema = z.enum(['text', 'url'])
 
 const queryBooleanSchema = z.union([
   z.boolean(),
@@ -40,45 +37,52 @@ export const updateMerchantSchema = z.object({
   contactPhone: z.string().optional(),
 })
 
-export const createMerchantProductSchema = z.object({
-  name: z.string().min(1),
-  description: z.string().optional(),
-  richDescription: z.string().optional(),
+const merchantProductFieldsSchema = z.object({
+  name: productNameSchema,
+  description: productDescriptionSchema.optional(),
+  richDescription: productRichDescriptionSchema.optional(),
   type: productTypeSchema,
-  icon: z.string().default('package'),
-  imageUrl: z.string().optional(),
+  icon: productIconSchema.default('package'),
+  imageUrl: productImageItemSchema.optional(),
   images: productImagesSchema.optional(),
-  price: z.number().int().positive(),
-  originalPrice: z.number().int().positive().optional(),
+  price: productPriceSchema,
+  originalPrice: productPriceSchema.optional(),
   isHot: z.boolean().default(false),
-  deliveryMode: deliveryModeSchema.default('instant_inventory'),
-  stockMode: stockModeSchema.optional(),
+  deliveryMode: productDeliveryModeSchema.default('instant_inventory'),
+  stockMode: productStockModeSchema.optional(),
   stock: z.number().int().min(0).max(1_000_000).optional(),
   fixedContent: z.string().trim().min(1).max(5000).optional(),
-  fixedContentType: fixedContentTypeSchema.optional(),
+  fixedContentType: productFixedContentTypeSchema.optional(),
 })
 
-export const updateMerchantProductSchema = createMerchantProductSchema.partial().extend({
+export const createMerchantProductSchema = merchantProductFieldsSchema.superRefine(validateProductCommercialFields)
+
+export const updateMerchantProductSchema = merchantProductFieldsSchema.partial().extend({
   status: productStatusSchema.optional(),
   // update 允许显式传 null 清空固定内容（如从 instant_fixed 切到其他交付模式）；create 保持非 null
   fixedContent: z.string().trim().min(1).max(5000).nullable().optional(),
-})
+  // `null` is the explicit API contract for clearing these optional fields.
+  originalPrice: productPriceSchema.nullable().optional(),
+  imageUrl: productImageItemSchema.nullable().optional(),
+}).superRefine(validateProductCommercialFields)
 
-const inventoryPayloadSchema = z.object({
-  text: z.string().optional(),
-  items: z.array(z.string()).optional(),
-}).refine(
-  data => typeof data.text === 'string' || Array.isArray(data.items),
-  '请提供库存文本或库存数组'
-)
+export const previewMerchantInventorySchema = inventoryImportPayloadSchema
 
-export const previewMerchantInventorySchema = inventoryPayloadSchema
-
-export const importMerchantInventorySchema = inventoryPayloadSchema
+export const importMerchantInventorySchema = inventoryImportPayloadSchema
 
 export const voidMerchantInventorySchema = z.object({
   count: z.number().int('作废数量必须是整数').positive('作废数量必须大于 0'),
   reason: z.string().trim().max(500).optional(),
+}).strict()
+
+/**
+ * 仅限非即时库存的限量商品：正数补充可售/服务名额，负数减少名额。
+ * 即时库存必须通过逐条交付单元导入/作废，不能走这一数字调整入口。
+ */
+export const adjustMerchantProductCapacitySchema = z.object({
+  delta: z.number().int('调整数量必须是整数').min(-1_000_000).max(1_000_000)
+    .refine(value => value !== 0, '调整数量不能为 0'),
+  reason: z.string().trim().min(1, '请填写调整原因').max(500),
 }).strict()
 
 export const merchantInventoryLogQuerySchema = z.object({
@@ -92,7 +96,7 @@ export const merchantProductListQuerySchema = z.object({
   status: productStatusSchema.optional(),
   q: z.string().trim().min(1).max(100).optional(),
   type: productTypeSchema.optional(),
-  deliveryMode: deliveryModeSchema.optional(),
+  deliveryMode: productDeliveryModeSchema.optional(),
   lowStock: queryBooleanSchema.optional(),
 })
 

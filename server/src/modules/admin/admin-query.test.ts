@@ -351,7 +351,8 @@ describe('POST /api/admin/products/:id/inventory writes InventoryLog', () => {
     expect(adminLog.action).toContain('导入库存')
 
     const updated = await prisma.product.findUniqueOrThrow({ where: { id: product.id } })
-    expect(updated.stock).toBe(3)
+    // 即时库存由 InventoryItem 驱动，旧 Product.stock 不再随导入更新。
+    expect(updated.stock).toBe(0)
   })
 
   it('should log merchantId as null for platform-owned products', async () => {

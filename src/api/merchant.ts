@@ -33,12 +33,6 @@ export async function getMerchantStats(): Promise<MerchantStats> {
   return data
 }
 
-// M9: 商品响应新增 images（types/merchant.ts 归属其他模块，这里做本地扩展）
-export type MerchantProductWithImages = MerchantProduct & { images?: string[] }
-
-export type CreateMerchantProductPayload = CreateMerchantProductRequest & { images?: string[] }
-export type UpdateMerchantProductPayload = UpdateMerchantProductRequest & { images?: string[] }
-
 export interface MerchantProductListParams {
   page?: number
   pageSize?: number
@@ -52,25 +46,27 @@ export interface MerchantProductListParams {
 export interface InventoryLog {
   id: number
   productId: number
-  merchantId: number
+  merchantId: number | null
   actorUserId: number
-  action: 'import' | 'void'
+  action: 'import' | 'void' | 'sale' | 'capacity_adjust'
   delta: number
   reason: string | null
+  orderId: number | null
+  batchId: string | null
   createdAt: string
 }
 
-export async function getMerchantProducts(params?: MerchantProductListParams): Promise<ListEnvelope<MerchantProductWithImages>> {
-  const { data } = await api.get<ListEnvelope<MerchantProductWithImages>>('/merchant/products', { params })
+export async function getMerchantProducts(params?: MerchantProductListParams): Promise<ListEnvelope<MerchantProduct>> {
+  const { data } = await api.get<ListEnvelope<MerchantProduct>>('/merchant/products', { params })
   return data
 }
 
-export async function createMerchantProduct(payload: CreateMerchantProductPayload): Promise<MerchantProduct> {
+export async function createMerchantProduct(payload: CreateMerchantProductRequest): Promise<MerchantProduct> {
   const { data } = await api.post<MerchantProduct>('/merchant/products', payload)
   return data
 }
 
-export async function updateMerchantProduct(id: number, payload: UpdateMerchantProductPayload): Promise<MerchantProduct> {
+export async function updateMerchantProduct(id: number, payload: UpdateMerchantProductRequest): Promise<MerchantProduct> {
   const { data } = await api.put<MerchantProduct>(`/merchant/products/${id}`, payload)
   return data
 }
@@ -93,6 +89,14 @@ export async function previewMerchantInventory(id: number, payload: ImportInvent
 export async function importMerchantInventory(id: number, payload: ImportInventoryRequest): Promise<{ imported: number }> {
   const { data } = await api.post<{ imported: number }>(`/merchant/products/${id}/inventory`, payload)
   return data
+}
+
+/**
+ * 调整非即时库存商品的剩余名额。delta 为正时补充、为负时减少。
+ * 即时库存商品必须通过交付库存导入/作废接口管理。
+ */
+export async function adjustMerchantProductCapacity(id: number, payload: { delta: number; reason: string }): Promise<void> {
+  await api.post(`/merchant/products/${id}/capacity/adjust`, payload)
 }
 
 export async function getMerchantOrders(params?: { page?: number; pageSize?: number; status?: string; q?: string; productId?: number; dateFrom?: string; dateTo?: string }): Promise<ListEnvelope<MerchantOrder>> {

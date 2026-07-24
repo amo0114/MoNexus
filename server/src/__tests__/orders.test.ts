@@ -100,6 +100,86 @@ describe('POST /api/orders (exchange)', () => {
     expect(orders.body[0].commissionAmount).toBe(100)
   })
 
+  it('records an immediate inventory sale with its order reference but never the delivery content', async () => {
+    const { user } = await createTestUser('inventory-sale-log@test.local', 'pass123', 'user', 1000)
+    const product = await createTestProduct('可审计卡密', 100, 1, ['never-in-the-log'])
+    const { accessToken } = await loginAs('inventory-sale-log@test.local', 'pass123')
+
+    const created = await api
+      .post('/api/orders')
+      .set(authHeader(accessToken))
+      .send({ productId: product.id })
+      .expect(201)
+
+    const saleLog = await prisma.inventoryLog.findFirstOrThrow({
+      where: { productId: product.id, action: 'sale' },
+    })
+    expect(saleLog).toMatchObject({
+      productId: product.id,
+      merchantId: null,
+      actorUserId: user.id,
+      action: 'sale',
+      delta: -1,
+      orderId: created.body.orderId,
+      batchId: null,
+    })
+    expect(JSON.stringify(saleLog)).not.toContain('never-in-the-log')
+  })
+
+  it('preserves product display snapshots when the product is edited after purchase', async () => {
+    await createTestUser('order-display-snapshot@test.local', 'pass123', 'user', 1000)
+    const product = await createTestProduct('购买时商品名', 100, 1, ['snapshot-delivery'])
+    await prisma.product.update({
+      where: { id: product.id },
+      data: {
+        type: '邀请码',
+        icon: 'key-round',
+        imageUrl: 'https://cdn.test.local/purchased-cover.png',
+      },
+    })
+    const { accessToken } = await loginAs('order-display-snapshot@test.local', 'pass123')
+
+    const created = await api
+      .post('/api/orders')
+      .set(authHeader(accessToken))
+      .send({ productId: product.id })
+      .expect(201)
+
+    const stored = await prisma.order.findUniqueOrThrow({ where: { id: created.body.orderId } })
+    expect(stored).toMatchObject({
+      productNameSnapshot: '购买时商品名',
+      productTypeSnapshot: '邀请码',
+      productIconSnapshot: 'key-round',
+      productImageUrlSnapshot: 'https://cdn.test.local/purchased-cover.png',
+    })
+
+    await prisma.product.update({
+      where: { id: product.id },
+      data: {
+        name: '后来改名商品',
+        type: '网络节点',
+        icon: 'server',
+        imageUrl: 'https://cdn.test.local/current-cover.png',
+      },
+    })
+
+    const [list, detail] = await Promise.all([
+      api.get('/api/orders').set(authHeader(accessToken)).expect(200),
+      api.get(`/api/orders/${created.body.orderId}`).set(authHeader(accessToken)).expect(200),
+    ])
+
+    for (const body of [list.body[0], detail.body]) {
+      expect(body.product).toMatchObject({
+        name: '购买时商品名',
+        type: '邀请码',
+        icon: 'key-round',
+        imageUrl: 'https://cdn.test.local/purchased-cover.png',
+      })
+      expect(body).not.toHaveProperty('productNameSnapshot')
+      expect(body).not.toHaveProperty('productImageUrlSnapshot')
+    }
+  })
+
   it('should create manual service order as pending without consuming inventory', async () => {
     const { user } = await createTestUser('manual@test.local', 'pass123', 'user', 1000)
     const product = await createTestProduct('人工履约服务', 300, 0, [])

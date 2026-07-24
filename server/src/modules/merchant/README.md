@@ -13,7 +13,9 @@ Self-service surface for approved merchants: profile, products, inventory, order
 | GET | `/api/merchant/products?status=&page=&pageSize=` | Merchant | The merchant's own products. |
 | POST | `/api/merchant/products` | Merchant | Create a merchant-owned product. |
 | PUT | `/api/merchant/products/:id` | Merchant | Update — **only own products**; foreign products return 404 (not 403). |
-| POST | `/api/merchant/products/:id/inventory` | Merchant | Bulk insert `InventoryItem` rows; bumps `stock`. |
+| POST | `/api/merchant/products/:id/inventory` | Merchant | Bulk insert distinct per-buyer delivery units; availability is derived from `InventoryItem(status=available)`, not `Product.stock`. |
+| POST | `/api/merchant/products/:id/capacity/adjust` | Merchant | Adjust remaining capacity for limited fixed-content / manual-service products with a mandatory reason. |
+| GET | `/api/merchant/products/:id/inventory/logs` | Merchant | Quantity-only audit trail for import / sale / void / capacity adjustment. Never returns delivery content. |
 | GET | `/api/merchant/orders` | Merchant | Orders whose `product.merchantId = me`. |
 | GET | `/api/merchant/orders/:id` | Merchant | Order detail. `delivery.content` is **not** exposed (see orders module). |
 | GET | `/api/merchant/settlements?status=` | Merchant | Settlements where `merchantId = me`. |
@@ -44,6 +46,7 @@ Approval / rejection / suspension all flow through `../admin/README.md` (admin e
 Semantics:
 
 - Each string becomes one `InventoryItem` row with `status = 'available'`.
+- Each successful import gets a UUID batch ID in the audit log; it is safe to show because it contains no card/account/link content.
 - `Product.stock` is incremented by `items.length` in the same transaction.
 - No deduplication: identical strings produce separate rows. The caller is responsible for uniqueness.
 - An `AdminLog`-style audit row is **not** written here — this is merchant action, not admin. The merchant's own `Merchant.updatedAt` change is the audit trail.

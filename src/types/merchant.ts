@@ -2,6 +2,8 @@ export type UserRole = 'user' | 'admin' | 'merchant'
 export type MerchantStatus = 'pending' | 'active' | 'suspended' | 'rejected'
 export type SettlementStatus = 'pending' | 'settled' | 'holding' | 'voided'
 export type ProductStatus = 'active' | 'inactive'
+export type DeliveryMode = 'instant_inventory' | 'instant_fixed' | 'manual_service'
+export type StockMode = 'limited' | 'unlimited'
 
 export interface ListEnvelope<T> {
   items: T[]
@@ -52,6 +54,8 @@ export interface MerchantProduct {
   type: string
   icon: string
   imageUrl: string | null
+  /** 商品图片列表；首张为封面，与 imageUrl 保持一致。 */
+  images?: string[]
   price: number
   originalPrice: number | null
   stock: number
@@ -61,8 +65,8 @@ export interface MerchantProduct {
   createdAt: string
   merchant?: { id: number; name: string } | null
   _count?: { inventory: number }
-  deliveryMode?: string
-  stockMode: string
+  deliveryMode?: DeliveryMode
+  stockMode: StockMode
   fixedContent?: string | null
   fixedContentType?: string
   availableStock?: number
@@ -141,14 +145,22 @@ export interface CreateMerchantProductRequest {
   type: string
   icon?: string
   imageUrl?: string
+  images?: string[]
   price: number
   originalPrice?: number
   isHot?: boolean
-  deliveryMode?: string
+  deliveryMode?: DeliveryMode
+  stockMode?: StockMode
+  /** 非即时库存商品的可售/服务名额。即时库存请使用交付库存管理。 */
+  stock?: number
+  fixedContent?: string
+  fixedContentType?: 'text' | 'url'
 }
 
-export interface UpdateMerchantProductRequest extends Partial<CreateMerchantProductRequest> {
+export interface UpdateMerchantProductRequest extends Omit<Partial<CreateMerchantProductRequest>, 'fixedContent'> {
   status?: ProductStatus
+  /** 从固定内容交付切换到其他模式时，可显式清空。 */
+  fixedContent?: string | null
 }
 
 export interface ImportInventoryRequest {

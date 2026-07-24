@@ -44,7 +44,7 @@ export default function MerchantInventoryImportModal({ isOpen, onClose, onSubmit
     if (!productId) return
     const text = inventoryText.trim()
     if (!text) {
-      showToast('请输入有效库存', 'error')
+      showToast('请输入至少一个交付单元', 'error')
       return
     }
     setPreviewing(true)
@@ -83,7 +83,7 @@ export default function MerchantInventoryImportModal({ isOpen, onClose, onSubmit
       .filter(Boolean)
 
     if (items.length === 0) {
-      showToast('请至少输入一行有效库存', 'error')
+      showToast('请至少输入一行有效交付单元', 'error')
       return
     }
 
@@ -112,7 +112,7 @@ export default function MerchantInventoryImportModal({ isOpen, onClose, onSubmit
             </div>
             <div>
               <h2 className="font-heading text-xl font-bold text-[var(--color-text)]">
-                导入批量库存
+                导入交付单元
               </h2>
               <p className="text-xs text-[var(--color-text-muted)] mt-0.5 font-medium truncate max-w-[200px]" title={productName}>
                 目标商品: {productName}
@@ -137,8 +137,9 @@ export default function MerchantInventoryImportModal({ isOpen, onClose, onSubmit
               <div>
                 <h4 className="text-sm font-bold text-[var(--color-primary)] mb-1">导入须知</h4>
                 <ul className="text-xs text-[var(--color-text-muted)] space-y-1 list-disc ml-3">
-                  <li>请将库存内容直接粘贴至下方文本框中。</li>
-                  <li><strong className="text-[var(--color-text)]">每行代表一条独立库存记录</strong>，购买后系统将自动按行提取发货。</li>
+                  <li>仅适用于“即时库存发货”商品，请将可独立交付给一位买家的内容粘贴到下方。</li>
+                  <li><strong className="text-[var(--color-text)]">每行代表一个交付单元</strong>，购买后系统将自动抽取其中一行发货。</li>
+                  <li>交付单元可以是账号、卡密、节点配置、邀请码等；同一买家应收到的完整内容请写在同一行。</li>
                   <li>空行会被自动忽略。</li>
                 </ul>
               </div>
@@ -148,24 +149,29 @@ export default function MerchantInventoryImportModal({ isOpen, onClose, onSubmit
               <div className="flex items-center justify-between mb-2">
                 <label className="flex items-center gap-2 text-sm font-bold text-[var(--color-text)]">
                   <FileText className="w-4 h-4 text-[var(--color-text-muted)]" />
-                  库存内容数据
+                  交付单元内容
                 </label>
                 <span className={`text-xs font-mono font-bold px-2 py-0.5 rounded-full border ${
                   lineCount > 0
                     ? 'bg-[var(--color-cta)]/10 text-[var(--color-cta)] border-[var(--color-cta)]/25'
                     : 'bg-[var(--color-background)] text-[var(--color-text-muted)] border-[var(--color-border)]'
                 }`}>
-                  已解析: {lineCount} 条记录
+                  已解析: {lineCount} 个交付单元
                 </span>
               </div>
               <textarea
                 className="input min-h-[220px] font-mono text-sm leading-relaxed resize-y"
-                placeholder="例如:&#10;ABCD-1234-EFGH-5678&#10;WXYZ-9876-UVST-4321&#10;账号: xxx 密码: yyy"
+                placeholder="例如：&#10;卡密：ABCD-1234-EFGH-5678&#10;账号：user@example.com | 密码：example-password&#10;节点：sg-01.example.com:443 | UUID：xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx&#10;邀请码：INVITE-2026-ABC"
                 value={inventoryText}
                 onChange={handleTextChange}
                 required
                 spellCheck="false"
               />
+              {lineCount >= 500 && (
+                <p className="mt-2 text-xs text-[var(--color-warning)]">
+                  当前为较大批量导入。请先预览；如需定位重复项或修正内容，建议拆分为更小批次后再导入。
+                </p>
+              )}
             </div>
 
             {stats && (
@@ -177,8 +183,8 @@ export default function MerchantInventoryImportModal({ isOpen, onClose, onSubmit
                     <span className="font-bold text-[var(--color-text)]">{stats.totalRows} 行</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-[var(--color-text-muted)]">有效记录</span>
-                    <span className="font-bold text-[var(--color-cta)]">{stats.validRows} 行</span>
+                    <span className="text-[var(--color-text-muted)]">有效交付单元</span>
+                    <span className="font-bold text-[var(--color-cta)]">{stats.validRows} 个</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-[var(--color-text-muted)]">空行</span>
@@ -219,7 +225,7 @@ export default function MerchantInventoryImportModal({ isOpen, onClose, onSubmit
               disabled={previewing || lineCount === 0}
               className="btn-primary min-w-[140px]"
             >
-              {previewing ? <Loader2 className="w-4 h-4 animate-spin inline" /> : '预览'}
+              {previewing ? <Loader2 className="w-4 h-4 animate-spin inline" /> : '预览导入内容'}
             </button>
           ) : (
             <button
@@ -228,7 +234,7 @@ export default function MerchantInventoryImportModal({ isOpen, onClose, onSubmit
               disabled={loading || !stats.canImport}
               className="btn-primary min-w-[140px]"
             >
-              {loading ? <Loader2 className="w-4 h-4 animate-spin inline" /> : `确认导入`}
+              {loading ? <Loader2 className="w-4 h-4 animate-spin inline" /> : `确认导入 ${stats.validRows} 个`}
             </button>
           )}
         </div>

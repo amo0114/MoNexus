@@ -46,9 +46,7 @@ export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, pr
       setDescMode('edit')
       setImageUrlInput('')
       if (product) {
-        const existingImages = Array.isArray((product as MerchantProduct & { images?: string[] }).images)
-          ? ((product as MerchantProduct & { images?: string[] }).images as string[])
-          : []
+        const existingImages = Array.isArray(product.images) ? product.images : []
         setImages(existingImages.length > 0 ? existingImages.slice(0, MAX_IMAGES) : (product.imageUrl ? [product.imageUrl] : []))
         setForm({
           name: product.name,
@@ -99,6 +97,23 @@ export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, pr
   )
 
   if (!isOpen) return null
+
+  const isInstantInventory = form.deliveryMode === 'instant_inventory'
+  const availabilityLabels = form.deliveryMode === 'manual_service'
+    ? {
+        mode: '服务名额模式',
+        unlimited: '不限服务名额',
+        limited: '限量服务名额',
+        quantity: '服务名额数量',
+        hint: '每笔订单会占用一个可接单名额；请按你的履约能力设置。',
+      }
+    : {
+        mode: '可售名额模式',
+        unlimited: '不限可售名额',
+        limited: '限量可售名额',
+        quantity: '可售名额数量',
+        hint: '每笔订单会占用一个可售名额；同一交付内容会发送给每位买家。',
+      }
 
   function addImageUrl() {
     const url = imageUrlInput.trim()
@@ -182,6 +197,10 @@ export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, pr
         showToast('原价必须是大于0的数字', 'error')
         return
       }
+      if (originalPriceNum < priceNum) {
+        showToast('原价不能低于售价', 'error')
+        return
+      }
     }
 
     if (form.deliveryMode === 'instant_fixed' && !form.fixedContent.trim()) {
@@ -227,7 +246,11 @@ export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, pr
       payload.fixedContent = null
     }
 
-    if (originalPriceNum !== undefined) {
+    if (product) {
+      // `null` is the explicit update contract for removing a former
+      // strikethrough price; omitting it would leave the old value in place.
+      payload.originalPrice = originalPriceNum ?? null
+    } else if (originalPriceNum !== undefined) {
       payload.originalPrice = originalPriceNum
     }
 
@@ -378,23 +401,29 @@ export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, pr
                     </div>
                   </div>
                 )}
-                {form.deliveryMode !== 'instant_inventory' && (
+                {isInstantInventory && (
+                  <div className="md:col-span-2 rounded-lg border border-[var(--color-primary)]/20 bg-[var(--color-primary)]/8 px-4 py-3 text-xs text-[var(--color-text-muted)]">
+                    即时库存商品按“一个交付单元对应一位买家”管理。保存商品后，请在商品列表中使用“管理交付库存”导入账号、卡密、邀请码或其他独立交付内容。
+                  </div>
+                )}
+                {!isInstantInventory && (
                   <div className="md:col-span-2 grid grid-cols-2 gap-5">
                     <div>
-                      <FieldLabel required>库存模式</FieldLabel>
+                      <FieldLabel required>{availabilityLabels.mode}</FieldLabel>
                       <select
                         className="input appearance-none cursor-pointer"
                         value={form.stockMode}
                         onChange={(e) => setForm({ ...form, stockMode: e.target.value })}
                         data-testid="stock-mode-select"
                       >
-                        <option value="unlimited">不限库存</option>
-                        <option value="limited">限量</option>
+                        <option value="unlimited">{availabilityLabels.unlimited}</option>
+                        <option value="limited">{availabilityLabels.limited}</option>
                       </select>
+                      <p className="mt-1.5 text-xs text-[var(--color-text-muted)]">{availabilityLabels.hint}</p>
                     </div>
                     {form.stockMode === 'limited' && (
                       <div>
-                        <FieldLabel required>库存数量</FieldLabel>
+                        <FieldLabel required>{availabilityLabels.quantity}</FieldLabel>
                         <input
                           type="number"
                           step="1"

@@ -62,6 +62,7 @@ export default function AdminPage() {
   // Inventory import modal
   const [showInventory, setShowInventory] = useState(false)
   const [inventoryProductId, setInventoryProductId] = useState(0)
+  const [inventoryProductName, setInventoryProductName] = useState('')
   const [inventoryText, setInventoryText] = useState('')
 
   // Settle multiselect
@@ -154,8 +155,9 @@ export default function AdminPage() {
     }
     try {
       const { data } = await api.post(`/admin/products/${inventoryProductId}/inventory`, { items })
-      showToast(`成功导入 ${data.imported} 条库存`)
+      showToast(`成功导入 ${data.imported} 个交付单元`)
       setShowInventory(false)
+      setInventoryProductName('')
       setInventoryText('')
       loadTabData('products')
     } catch (err: any) {
@@ -419,41 +421,61 @@ export default function AdminPage() {
                       <th>商品名称</th>
                       <th>类型</th>
                       <th>售价 (积分)</th>
-                      <th>真实库存</th>
+                      <th>可售资源</th>
                       <th className="text-right">操作</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {products.map((p: any) => (
-                      <tr key={p.id}>
-                        <td>
-                          <div className="font-bold text-[var(--color-text)]">{p.name}</div>
-                        </td>
-                        <td>
-                          <span className="bg-[var(--color-background)] border border-[var(--color-border)] text-[var(--color-text-muted)] px-2 py-1 rounded text-xs font-bold">
-                            {p.type}
-                          </span>
-                        </td>
-                        <td className="font-bold text-[var(--color-text)]">{p.price}</td>
-                        <td>
-                          <span className={`font-bold ${p._count?.inventory === 0 ? 'text-red-500' : 'text-[var(--color-text-muted)]'}`}>
-                            {p._count?.inventory ?? p.stock}
-                          </span>
-                        </td>
-                        <td className="text-right">
-                          <button
-                            onClick={() => {
-                              setInventoryProductId(p.id)
-                              setInventoryText('')
-                              setShowInventory(true)
-                            }}
-                            className="text-[var(--color-cta)] hover:bg-[var(--color-cta)]/10 font-semibold text-xs px-3 py-1.5 rounded-lg transition-colors border border-[var(--color-cta)]/25 cursor-pointer"
-                          >
-                            补货
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
+                    {products.map((p: any) => {
+                      const deliveryMode = p.deliveryMode ?? 'instant_inventory'
+                      const isInstantInventory = deliveryMode === 'instant_inventory'
+                      const available = isInstantInventory ? (p._count?.inventory ?? p.stock) : p.stock
+                      const stockLabel = isInstantInventory
+                        ? `${available} 个交付单元`
+                        : p.stockMode === 'unlimited'
+                          ? '不限量'
+                          : deliveryMode === 'manual_service'
+                            ? `${available} 个服务名额`
+                            : `${available} 个可售名额`
+
+                      return (
+                        <tr key={p.id}>
+                          <td>
+                            <div className="font-bold text-[var(--color-text)]">{p.name}</div>
+                          </td>
+                          <td>
+                            <span className="bg-[var(--color-background)] border border-[var(--color-border)] text-[var(--color-text-muted)] px-2 py-1 rounded text-xs font-bold">
+                              {p.type}
+                            </span>
+                          </td>
+                          <td className="font-bold text-[var(--color-text)]">{p.price}</td>
+                          <td>
+                            <span className={`font-bold ${isInstantInventory && available === 0 ? 'text-red-500' : 'text-[var(--color-text-muted)]'}`}>
+                              {stockLabel}
+                            </span>
+                          </td>
+                          <td className="text-right">
+                            {isInstantInventory ? (
+                              <button
+                                onClick={() => {
+                                  setInventoryProductId(p.id)
+                                  setInventoryProductName(p.name)
+                                  setInventoryText('')
+                                  setShowInventory(true)
+                                }}
+                                className="text-[var(--color-cta)] hover:bg-[var(--color-cta)]/10 font-semibold text-xs px-3 py-1.5 rounded-lg transition-colors border border-[var(--color-cta)]/25 cursor-pointer"
+                              >
+                                导入交付库存
+                              </button>
+                            ) : (
+                              <span className="text-xs text-[var(--color-text-muted)]">
+                                {p.merchantId ? '由商家调整名额' : '名额由商品配置管理'}
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      )
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -626,7 +648,7 @@ export default function AdminPage() {
           <div className="modal-overlay" onClick={() => setShowInventory(false)} />
           <div className="modal relative z-10 fade-in">
             <div className="flex justify-between items-center mb-5">
-              <h3 className="font-heading text-xl font-bold text-[var(--color-text)]">导入库存</h3>
+              <h3 className="font-heading text-xl font-bold text-[var(--color-text)]">导入交付库存</h3>
               <button
                 onClick={() => setShowInventory(false)}
                 className="text-[var(--color-text-muted)] hover:text-[var(--color-text)] cursor-pointer"
@@ -635,7 +657,9 @@ export default function AdminPage() {
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <p className="text-xs text-[var(--color-text-muted)] mb-3">每行一条库存内容（卡密/账号/链接）：</p>
+            <p className="text-xs text-[var(--color-text-muted)] mb-3">
+              {inventoryProductName ? `商品：${inventoryProductName}。` : ''}仅适用于即时库存发货；每行是一份可独立交付给一位买家的内容（卡密/账号/链接）。
+            </p>
             <textarea
               value={inventoryText}
               onChange={(e) => setInventoryText(e.target.value)}

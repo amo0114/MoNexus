@@ -220,6 +220,43 @@ describe('POST /api/admin/products/:id/inventory', () => {
 
     expect(res.body.imported).toBe(3)
   })
+
+  it('normalizes blank lines, rejects duplicate or existing items, and never partially writes', async () => {
+    await createTestUser('boss-inventory-normalize@test.local', 'admin111', 'admin')
+    const product = await createTestProduct('管理员规范补库存商品', 200, 0, [])
+    await prisma.inventoryItem.create({ data: { productId: product.id, content: 'existing-code' } })
+    const { accessToken } = await loginAs('boss-inventory-normalize@test.local', 'admin111')
+
+    const normalized = await api
+      .post(`/api/admin/products/${product.id}/inventory`)
+      .set(authHeader(accessToken))
+      .send({ items: ['  ', ' normalized-code '] })
+      .expect(200)
+    expect(normalized.body).toMatchObject({ imported: 1, skippedEmptyRows: 1 })
+
+    const repeated = await api
+      .post(`/api/admin/products/${product.id}/inventory`)
+      .set(authHeader(accessToken))
+      .send({ items: ['  ', 'new-code', ' new-code '] })
+      .expect(400)
+    expect(repeated.body.error.message).toBe('库存导入包含重复项')
+
+    const existing = await api
+      .post(`/api/admin/products/${product.id}/inventory`)
+      .set(authHeader(accessToken))
+      .send({ items: ['another-new-code', ' existing-code '] })
+      .expect(400)
+    expect(existing.body.error.message).toBe('库存导入包含重复项')
+
+    const inventory = await prisma.inventoryItem.findMany({
+      where: { productId: product.id },
+      select: { content: true },
+      orderBy: { content: 'asc' },
+    })
+    expect(inventory).toEqual([{ content: 'existing-code' }, { content: 'normalized-code' }])
+    expect(await prisma.inventoryLog.count({ where: { productId: product.id } })).toBe(1)
+    expect(await prisma.adminLog.count({ where: { targetType: 'product', targetId: product.id } })).toBe(1)
+  })
 })
 
 describe('GET /api/admin/orders', () => {

@@ -89,7 +89,8 @@ describe('accounting concurrency and terminal settlement', () => {
       'CONCURRENT-ITEM-1', 'CONCURRENT-ITEM-2', 'CONCURRENT-ITEM-3', 'CONCURRENT-ITEM-4',
     ]))
     expect(await prisma.product.findUniqueOrThrow({ where: { id: product.id } })).toMatchObject({
-      stock: 0,
+      // 即时库存扣减发生在 InventoryItem，Product.stock 不再是可售库存投影。
+      stock: 4,
       sales: 4,
     })
     expect(await prisma.inventoryItem.count({ where: { productId: product.id, status: 'sold' } })).toBe(4)

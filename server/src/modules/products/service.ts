@@ -40,6 +40,7 @@ const productListSelect = {
   stockMode: true,
   ratingAvg: true,
   ratingCount: true,
+  _count: { select: { inventory: { where: { status: 'available' } } } },
   merchant: { select: { id: true, name: true } },
 } satisfies Prisma.ProductSelect
 
@@ -62,6 +63,7 @@ const productDetailSelect = {
   stockMode: true,
   ratingAvg: true,
   ratingCount: true,
+  _count: { select: { inventory: { where: { status: 'available' } } } },
   merchant: { select: { id: true, name: true } },
 } satisfies Prisma.ProductSelect
 
@@ -69,11 +71,22 @@ type ProductListItem = Prisma.ProductGetPayload<{ select: typeof productListSele
 type ProductDetail = Prisma.ProductGetPayload<{ select: typeof productDetailSelect }>
 
 function serializePublicProductListItem(product: ProductListItem) {
-  return { ...product, ratingAvg: Number(product.ratingAvg) }
+  const { _count, ...publicProduct } = product
+  return {
+    ...publicProduct,
+    // 即时库存以实际可用条目计数为准，不能读取可能过期的 Product.stock 投影。
+    stock: product.deliveryMode === 'instant_inventory' ? _count.inventory : product.stock,
+    ratingAvg: Number(product.ratingAvg),
+  }
 }
 
 function serializePublicProductDetail(product: ProductDetail) {
-  return { ...product, ratingAvg: Number(product.ratingAvg) }
+  const { _count, ...publicProduct } = product
+  return {
+    ...publicProduct,
+    stock: product.deliveryMode === 'instant_inventory' ? _count.inventory : product.stock,
+    ratingAvg: Number(product.ratingAvg),
+  }
 }
 
 function encodeProductCursor(product: ProductCursor) {

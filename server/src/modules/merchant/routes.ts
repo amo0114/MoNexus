@@ -9,6 +9,7 @@ import {
   deliverFulfillmentSchema, respondDisputeSchema, rejectOrderSchema,
   merchantProductListQuerySchema, previewMerchantInventorySchema,
   voidMerchantInventorySchema, merchantInventoryLogQuerySchema,
+  adjustMerchantProductCapacitySchema,
 } from './schema.js'
 import * as controller from './controller.js'
 
@@ -26,6 +27,7 @@ router.put('/me', validate(updateMerchantSchema), controller.updateMe)
 router.get('/products', validate({ query: merchantProductListQuerySchema }), controller.listProducts)
 router.post('/products', validate(createMerchantProductSchema), controller.createProduct)
 router.put('/products/:id', validate({ params: idParamSchema, body: updateMerchantProductSchema }), controller.updateProduct)
+router.post('/products/:id/capacity/adjust', validate({ params: idParamSchema, body: adjustMerchantProductCapacitySchema }), controller.adjustProductCapacity)
 router.post('/products/:id/inventory/preview', validate({ params: idParamSchema, body: previewMerchantInventorySchema }), controller.previewInventory)
 router.post('/products/:id/inventory', validate({ params: idParamSchema, body: importMerchantInventorySchema }), controller.importInventory)
 router.post('/products/:id/inventory/void', validate({ params: idParamSchema, body: voidMerchantInventorySchema }), controller.voidInventory)

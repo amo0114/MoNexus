@@ -27,6 +27,7 @@ import { useAppStore } from '../stores/appStore'
 import MerchantProductFormModal from '../components/merchant/MerchantProductFormModal'
 import MerchantInventoryImportModal from '../components/merchant/MerchantInventoryImportModal'
 import MerchantInventoryLogModal from '../components/merchant/MerchantInventoryLogModal'
+import MerchantCapacityAdjustModal from '../components/merchant/MerchantCapacityAdjustModal'
 import MerchantDeliverDialog from '../components/merchant/MerchantDeliverDialog'
 import MerchantDisputeDialog from '../components/merchant/MerchantDisputeDialog'
 import RegistryPill from '../components/ui/RegistryPill'
@@ -41,6 +42,19 @@ const TABS: { key: TabKey; label: string; Icon: typeof Store; path?: string }[] 
   { key: 'profile', label: '商家资料', Icon: Settings },
   { key: 'operations', label: '经营数据', Icon: BarChart3, path: '/merchant/dashboard' },
 ]
+
+function isInstantInventoryProduct(product: MerchantProduct) {
+  // 兼容早期商品：服务端在未返回 deliveryMode 时默认按即时库存处理。
+  return (product.deliveryMode ?? 'instant_inventory') === 'instant_inventory'
+}
+
+function getAvailabilityLabel(product: MerchantProduct, availableStock: number) {
+  if (isInstantInventoryProduct(product)) return `交付库存 ${availableStock}`
+  if (product.stockMode === 'unlimited') return '不限量'
+  return product.deliveryMode === 'manual_service'
+    ? `服务名额 ${product.stock}`
+    : `可售名额 ${product.stock}`
+}
 
 export default function MerchantDashboardPage() {
   const navigate = useNavigate()
@@ -152,7 +166,10 @@ export default function MerchantDashboardPage() {
   const [importingProduct, setImportingProduct] = useState<{ id: number, name: string } | null>(null)
 
   const [isInventoryLogOpen, setIsInventoryLogOpen] = useState(false)
-  const [logProduct, setLogProduct] = useState<{ id: number, name: string } | null>(null)
+  const [logProduct, setLogProduct] = useState<{ id: number, name: string, deliveryMode?: MerchantProduct['deliveryMode'] } | null>(null)
+
+  const [isCapacityAdjustOpen, setIsCapacityAdjustOpen] = useState(false)
+  const [capacityProduct, setCapacityProduct] = useState<MerchantProduct | null>(null)
 
   // --- Order Dialogs State ---
   const [deliveringOrder, setDeliveringOrder] = useState<MerchantOrder | null>(null)
@@ -175,7 +192,7 @@ export default function MerchantDashboardPage() {
   async function handleInventorySubmit(items: string[]) {
     if (!importingProduct) return
     await importMerchantInventory(importingProduct.id, { items })
-    showToast(`成功导入 ${items.length} 条库存`)
+    showToast(`成功导入 ${items.length} 个交付单元`)
     loadData()
   }
 
@@ -223,7 +240,7 @@ export default function MerchantDashboardPage() {
       await rejectOrder(rejectingOrder.id, {
         publicNote: rejectNote.trim() || undefined,
       })
-      showToast('已拒单，积分将退还用户')
+      showToast('已拒单，积分将退还用户；如实际履约能力已释放，请手动补回服务名额')
       setRejectingOrder(null)
       setRejectNote('')
       loadData()
@@ -363,7 +380,7 @@ export default function MerchantDashboardPage() {
                       <Th>ID</Th>
                       <Th>名称</Th>
                       <Th>价格</Th>
-                      <Th>库存/销量</Th>
+                      <Th>可售资源/销量</Th>
                       <Th>状态</Th>
                       <Th align="right">操作</Th>
                     </tr>
@@ -377,10 +394,14 @@ export default function MerchantDashboardPage() {
                       </tr>
                     ) : (
                       products.map((p) => {
-                        const stockCount = p.availableStock ?? p._count?.inventory ?? p.stock
+                        const inventoryManaged = isInstantInventoryProduct(p)
+                        const capacityManaged = !inventoryManaged && p.stockMode === 'limited'
+                        const stockCount = inventoryManaged
+                          ? (p.availableStock ?? p._count?.inventory ?? p.stock)
+                          : p.stock
                         const threshold = registry?.inventory?.lowStockThreshold
                         const isLowStock = p.lowStock ?? (
-                          p.deliveryMode === 'instant_inventory' &&
+                          inventoryManaged &&
                           typeof threshold === 'number' &&
                           stockCount <= threshold
                         )
@@ -390,7 +411,7 @@ export default function MerchantDashboardPage() {
                             <td className="py-3 px-2 text-sm font-medium text-[var(--color-text)]">{p.name}</td>
                             <td className="py-3 px-2 text-sm text-[var(--color-text)]">{p.price}</td>
                             <td className="py-3 px-2 text-sm text-[var(--color-text-muted)]">
-                              <span className="whitespace-nowrap">{stockCount} / {p.sales}</span>
+                              <span className="whitespace-nowrap">{getAvailabilityLabel(p, stockCount)} / 已售 {p.sales}</span>
                               {isLowStock && (
                                 <span
                                   className="inline-flex items-center gap-1 ml-2 px-2 py-0.5 rounded text-[10px] font-bold border bg-[var(--color-danger)]/10 text-[var(--color-danger)] border-[var(--color-danger)]/25"
@@ -404,12 +425,26 @@ export default function MerchantDashboardPage() {
                               <StatusPill kind={p.status === 'active' ? 'active' : 'inactive'} />
                             </td>
                             <td className="py-3 px-2 text-right whitespace-nowrap">
-                              <LinkAction onClick={() => { setImportingProduct({ id: p.id, name: p.name }); setIsInventoryModalOpen(true); }}>
-                                导入库存
-                              </LinkAction>
-                              <LinkAction onClick={() => { setLogProduct({ id: p.id, name: p.name }); setIsInventoryLogOpen(true); }}>
-                                流水
-                              </LinkAction>
+                              {inventoryManaged && (
+                                <>
+                                  <LinkAction onClick={() => { setImportingProduct({ id: p.id, name: p.name }); setIsInventoryModalOpen(true); }}>
+                                    管理交付库存
+                                  </LinkAction>
+                                  <LinkAction onClick={() => { setLogProduct({ id: p.id, name: p.name, deliveryMode: p.deliveryMode }); setIsInventoryLogOpen(true); }}>
+                                    交付库存记录
+                                  </LinkAction>
+                                </>
+                              )}
+                              {capacityManaged && (
+                                <>
+                                  <LinkAction onClick={() => { setCapacityProduct(p); setIsCapacityAdjustOpen(true); }}>
+                                    {p.deliveryMode === 'manual_service' ? '调整服务名额' : '调整可售名额'}
+                                  </LinkAction>
+                                  <LinkAction onClick={() => { setLogProduct({ id: p.id, name: p.name, deliveryMode: p.deliveryMode }); setIsInventoryLogOpen(true); }}>
+                                    名额记录
+                                  </LinkAction>
+                                </>
+                              )}
                               <LinkAction onClick={() => { setEditingProduct(p); setIsProductFormOpen(true); }}>
                                 编辑
                               </LinkAction>
@@ -680,6 +715,13 @@ export default function MerchantDashboardPage() {
         onClose={() => setIsInventoryLogOpen(false)}
         product={logProduct}
         onVoided={loadData}
+      />
+
+      <MerchantCapacityAdjustModal
+        isOpen={isCapacityAdjustOpen}
+        onClose={() => setIsCapacityAdjustOpen(false)}
+        product={capacityProduct}
+        onAdjusted={loadData}
       />
 
       <MerchantDeliverDialog

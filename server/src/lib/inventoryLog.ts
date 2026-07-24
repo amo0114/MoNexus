@@ -1,6 +1,10 @@
 import type { Prisma } from '@prisma/client'
 
-export type InventoryLogAction = 'import' | 'void'
+// `InventoryLog` is shared by per-recipient delivery inventory and the
+// manually managed quantity used by limited fixed/manual products.  A
+// capacity adjustment never touches an InventoryItem, but it must still be
+// attributable to an operator and a stated reason.
+export type InventoryLogAction = 'import' | 'void' | 'sale' | 'capacity_adjust'
 
 export interface InventoryLogInput {
   productId: number
@@ -9,14 +13,16 @@ export interface InventoryLogInput {
   action: InventoryLogAction
   delta: number
   reason?: string | null
+  orderId?: number | null
+  batchId?: string | null
 }
 
 /**
  * 在调用方的事务内写入一条库存流水。
  *
- * 约定：delta 为整数，导入为正、作废为负；必须与库存变更
- * （InventoryItem 状态翻转 + Product.stock 增减）处于同一事务，
- * 保证流水与库存永远一致。merchant 导入/作废与 admin 补货共用。
+ * 约定：delta 为整数且非零。即时库存的 import/void 与 InventoryItem
+ * 状态变更处于同一事务；限量固定内容/人工服务的 capacity_adjust 与
+ * Product.stock（可售/服务名额）变更处于同一事务。
  */
 export async function logInventoryChange(
   tx: Prisma.TransactionClient,
@@ -24,6 +30,18 @@ export async function logInventoryChange(
 ) {
   if (!Number.isInteger(input.delta) || input.delta === 0) {
     throw new Error('InventoryLog delta 必须是非零整数')
+  }
+  if (input.action === 'sale' && (input.delta !== -1 || !input.orderId)) {
+    throw new Error('sale 库存流水必须关联订单且数量为 -1')
+  }
+  if (input.action !== 'sale' && input.orderId != null) {
+    throw new Error('只有 sale 库存流水可以关联订单')
+  }
+  if (input.action === 'import' && !input.batchId) {
+    throw new Error('import 库存流水必须关联导入批次')
+  }
+  if (input.action !== 'import' && input.batchId != null) {
+    throw new Error('只有 import 库存流水可以关联导入批次')
   }
 
   return tx.inventoryLog.create({
@@ -34,6 +52,8 @@ export async function logInventoryChange(
       action: input.action,
       delta: input.delta,
       reason: input.reason ?? null,
+      orderId: input.orderId ?? null,
+      batchId: input.batchId ?? null,
     },
   })
 }
