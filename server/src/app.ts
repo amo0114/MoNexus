@@ -14,6 +14,7 @@ import { authRoutes } from './modules/auth/routes.js'
 import { productRoutes } from './modules/products/routes.js'
 import { pointRoutes } from './modules/points/routes.js'
 import { orderRoutes } from './modules/orders/routes.js'
+import { checkoutRoutes } from './modules/checkout/routes.js'
 import { adminRoutes } from './modules/admin/routes.js'
 import { merchantRoutes } from './modules/merchant/routes.js'
 import { dashboardRoutes } from './modules/dashboard/routes.js'
@@ -81,6 +82,7 @@ app.use('/api/auth', authRoutes)
 app.use('/api/products', productRoutes)
 app.use('/api/points', pointRoutes)
 app.use('/api/orders', orderRoutes)
+app.use('/api/checkout', checkoutRoutes)
 app.use('/api/admin', adminRoutes)
 app.use('/api/merchant/dashboard', dashboardRoutes)
 app.use('/api/merchant', merchantRoutes)

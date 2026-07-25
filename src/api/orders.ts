@@ -1,6 +1,50 @@
 import api from './client'
 import { UserOrderListItem, UserOrderDetail } from '../types/order'
 
+export interface CheckoutPreview {
+  productId: number
+  productName: string
+  price: number
+  deliveryMode: string
+  chargeType: 'debit' | 'hold'
+  balanceBefore: number
+  balanceAfter: number
+  sufficient: boolean
+  purchasable: boolean
+  unpurchasableReason?: string
+}
+
+export async function getCheckoutPreview(productId: number): Promise<CheckoutPreview> {
+  const { data } = await api.get('/checkout/preview', { params: { productId } })
+  return data
+}
+
+export interface CreateOrderResult {
+  orderId: number
+  productName: string
+  price: number
+  status: string
+  deliveryMode: string
+  deliveryContent?: string
+  deliveryContentType?: string
+  balanceAfter: number
+  merchantId: number | null
+  merchantName: string | null
+  idempotentReplay?: boolean
+}
+
+export async function createOrder(
+  productId: number,
+  options: { expectedPrice: number; idempotencyKey: string }
+): Promise<CreateOrderResult> {
+  const { data } = await api.post(
+    '/orders',
+    { productId, expectedPrice: options.expectedPrice },
+    { headers: { 'Idempotency-Key': options.idempotencyKey } }
+  )
+  return data
+}
+
 export async function getOrders(params?: { page?: number; pageSize?: number; status?: string }): Promise<UserOrderListItem[]> {
   const { data } = await api.get('/orders', { params })
   return data

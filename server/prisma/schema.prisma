@@ -36,6 +36,7 @@ model User {
   reviews                 Review[]
   announcementsCreated    Announcement[] @relation("AnnouncementCreatedBy")
   announcementReceipts    AnnouncementReceipt[]
+  idempotencyRecords      IdempotencyRecord[]
 }
 
 model Announcement {
@@ -137,6 +138,31 @@ model RefreshToken {
   user User @relation(fields: [userId], references: [id])
 }
 
+model IdempotencyRecord {
+  id         Int      @id @default(autoincrement())
+  userId     Int
+  key        String   @db.Uuid
+  status     String   @default("processing") // processing | completed
+  // 持有者租约令牌：每次 claim / 孤儿接管都换新值。complete 与 release
+  // 必须同时匹配 token，防止被接管的旧持有者完成订单或删除新持有者的占用。
+  claimToken String   @db.Uuid
+  // 请求指纹：同一 key 携带不同商品必须 409，而不是静默重放另一件商品的订单。
+  productId  Int
+  // 指向该结算意图最终产生的唯一订单；processing 阶段为 null。
+  orderId    Int?     @unique
+  createdAt  DateTime @default(now())
+  // processing 记录超过 expiresAt 视为孤儿（进程崩溃残留），可被同 key 重试接管；
+  // completed 记录永久保留重放语义，仅由 cron 按保留期清理。
+  expiresAt  DateTime
+
+  user User @relation(fields: [userId], references: [id])
+
+  // 同一用户的同一结算意图只允许一条记录；数据库唯一约束是并发兜底，
+  // 应用层的冲突处理只负责区分"重放已完成订单"与"仍在处理中"。
+  @@unique([userId, key])
+  @@index([expiresAt])
+}
+
 model PointAccount {
   id            Int @id @default(autoincrement())
   userId        Int @unique
@@ -211,9 +237,13 @@ model InventoryLog {
   createdAt   DateTime @default(now())
 
   product Product @relation(fields: [productId], references: [id])
-  order   Order?   @relation(fields: [orderId], references: [id])
+  // onDelete: Restrict 与 20260724123000 手写迁移保持一致：库存审计行
+  // 禁止随订单删除而悄悄断链（Prisma 对可空关系默认 SetNull，会被当作漂移改掉）。
+  order   Order?   @relation(fields: [orderId], references: [id], onDelete: Restrict)
 
   @@index([productId, createdAt])
+  // 与 batchId 唯一索引并存的普通索引，同样来自 20260724123000 手写迁移。
+  @@index([batchId])
 }
 
 model Review {

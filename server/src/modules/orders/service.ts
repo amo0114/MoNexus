@@ -1,6 +1,6 @@
 import { Prisma } from '@prisma/client'
 import { prisma } from '../../lib/prisma.js'
-import { badRequest, notFound } from '../../lib/httpError.js'
+import { badRequest, notFound, HttpError } from '../../lib/httpError.js'
 import {
   createOrderStatusEvent,
   getProductFulfillmentMode,
@@ -9,6 +9,11 @@ import {
   transitionOrderStatus,
 } from './fulfillment.js'
 import { debitAvailablePoints, holdAvailablePoints, settleHeldOrder } from './accounting.js'
+import {
+  claimIdempotencyKey,
+  completeIdempotencyClaim,
+  releaseIdempotencyClaim,
+} from './idempotency.js'
 import { serializeUserOrderDetail, serializeUserOrderList } from './serializers.js'
 import { invalidateProductPublicCache } from '../products/cache.js'
 import { logInventoryChange } from '../../lib/inventoryLog.js'
@@ -16,7 +21,78 @@ import { logInventoryChange } from '../../lib/inventoryLog.js'
 // manual_service 商家履约 SLA：创建订单后 7 天内需交付，M3-S2 工作台高亮超时
 const FULFILLMENT_SLA_MS = 7 * 24 * 60 * 60 * 1000
 
-export async function createOrder(userId: number, productId: number) {
+export type CreateOrderOptions = {
+  // 服务端最终价确认：与商品当前价不一致时拒单（409 PRICE_CHANGED），
+  // 用户必须针对新价格重新确认，而不是静默按新价格成交。
+  expectedPrice?: number
+  // 同一结算意图（双击/超时重试/网络重放)只允许产生一笔订单。
+  idempotencyKey?: string
+}
+
+export async function createOrder(
+  userId: number,
+  productId: number,
+  options: CreateOrderOptions = {}
+) {
+  const { expectedPrice, idempotencyKey } = options
+
+  let claimToken: string | undefined
+  if (idempotencyKey) {
+    const claim = await claimIdempotencyKey(userId, idempotencyKey, productId)
+    if (claim.kind === 'replay') return buildReplayResponse(claim.orderId, userId)
+    claimToken = claim.claimToken
+  }
+
+  try {
+    return await createOrderOnce(userId, productId, { expectedPrice, idempotencyKey, claimToken })
+  } catch (err) {
+    // 事务已回滚，释放幂等占用让用户可以用同一 key 重试同一意图。
+    // 释放按租约 token 定向：若占用已被其他请求接管，这里不会误删。
+    if (idempotencyKey && claimToken) {
+      await releaseIdempotencyClaim(userId, idempotencyKey, claimToken)
+    }
+    throw err
+  }
+}
+
+/** Rebuild the createOrder response shape for an idempotent replay. */
+async function buildReplayResponse(orderId: number, userId: number) {
+  const order = await prisma.order.findFirst({
+    where: { id: orderId, userId },
+    include: {
+      product: { select: { name: true } },
+      merchant: { select: { id: true, name: true } },
+      delivery: { select: { content: true, contentType: true } },
+    },
+  })
+  // 幂等记录指向的订单只可能因数据被外部改动而缺失。
+  if (!order) throw notFound('订单不存在')
+
+  const account = await prisma.pointAccount.findUnique({ where: { userId } })
+  return {
+    orderId: order.id,
+    productName: order.productNameSnapshot ?? order.product.name,
+    price: order.price,
+    status: normalizeOrderStatus(order.status),
+    deliveryMode: getProductFulfillmentMode(order.deliveryModeSnapshot),
+    deliveryContent: order.delivery?.content ?? undefined,
+    deliveryContentType: order.delivery?.contentType ?? undefined,
+    balanceAfter: account?.balance ?? 0,
+    merchantId: order.merchantId,
+    merchantName: order.merchant?.name ?? null,
+    idempotentReplay: true,
+  }
+}
+
+async function createOrderOnce(
+  userId: number,
+  productId: number,
+  {
+    expectedPrice,
+    idempotencyKey,
+    claimToken,
+  }: CreateOrderOptions & { claimToken?: string }
+) {
   const result = await prisma.$transaction(async tx => {
     const account = await tx.pointAccount.findUnique({ where: { userId } })
     if (!account) throw notFound('积分账户不存在')
@@ -24,6 +100,9 @@ export async function createOrder(userId: number, productId: number) {
     const product = await tx.product.findUnique({ where: { id: productId } })
     if (!product) throw notFound('商品不存在')
     if (product.status !== 'active') throw badRequest('商品已下架')
+    if (expectedPrice != null && expectedPrice !== product.price) {
+      throw new HttpError(409, 'PRICE_CHANGED', '商品信息已变化，请重新确认')
+    }
     const deliveryMode = getProductFulfillmentMode(product.deliveryMode)
 
     if (deliveryMode === 'instant_fixed' && !product.fixedContent) {
@@ -219,6 +298,12 @@ export async function createOrder(userId: number, productId: number) {
         delta: -1,
         orderId: order.id,
       })
+    }
+
+    if (idempotencyKey && claimToken) {
+      // 与订单创建同事务提交："订单存在"与"key 可重放"必须原子生效。
+      // 租约 token 不匹配（占用已被接管）时抛错回滚，避免同 key 双单。
+      await completeIdempotencyClaim(tx, userId, idempotencyKey, claimToken, order.id)
     }
 
     return {

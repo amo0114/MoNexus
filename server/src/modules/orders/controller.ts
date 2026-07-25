@@ -1,9 +1,22 @@
 import { Request, Response, NextFunction } from 'express'
 import * as orderService from './service.js'
+import { idempotencyKeySchema } from './schema.js'
+import { badRequest } from '../../lib/httpError.js'
 
 export async function create(req: Request, res: Response, next: NextFunction) {
   try {
-    const result = await orderService.createOrder(req.user!.userId, req.body.productId)
+    let idempotencyKey: string | undefined
+    const rawKey = req.header('Idempotency-Key')
+    if (rawKey != null) {
+      const parsed = idempotencyKeySchema.safeParse(rawKey)
+      if (!parsed.success) throw badRequest('Idempotency-Key 必须是 UUID')
+      idempotencyKey = parsed.data
+    }
+
+    const result = await orderService.createOrder(req.user!.userId, req.body.productId, {
+      expectedPrice: req.body.expectedPrice,
+      idempotencyKey,
+    })
     res.status(201).json(result)
   } catch (err) {
     next(err)
