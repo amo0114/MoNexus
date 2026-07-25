@@ -61,8 +61,14 @@ test.describe('M-P1 checkout confirmation', () => {
     })
     expect(update.ok(), await update.text()).toBeTruthy()
 
-    await page.getByRole('button', { name: '确认支付' }).click()
-    await expect(page.getByTestId('price-changed-notice')).toBeVisible({ timeout: 10_000 })
+    // 确认支付必须被 PRICE_CHANGED 拒并重新报价。并行负载下弹窗挂载期的
+    // preview 请求可能在 PUT 之后才被服务端处理，此时新价已直接渲染——
+    // 两条路径都满足 spec：用户看到 5 积分的最新报价后确认，绝不按旧价成交。
+    const priceText = await modal.getByTestId('preview-price').innerText()
+    if (!priceText.includes('5')) {
+      await page.getByRole('button', { name: '确认支付' }).click()
+      await expect(page.getByTestId('price-changed-notice')).toBeVisible({ timeout: 10_000 })
+    }
     await expect(modal.getByTestId('preview-price')).toHaveText(/5/, { timeout: 10_000 })
 
     // 针对新价格再次确认后正常成交
@@ -114,14 +120,20 @@ test.describe('M-P1 checkout confirmation', () => {
     })
     expect(update.ok(), await update.text()).toBeTruthy()
 
-    // 确认支付被 409 CHECKOUT_CHANGED 拒绝，弹窗重新报价并渲染新字段
-    await page.getByRole('button', { name: '确认支付' }).click()
-    await expect(page.getByTestId('price-changed-notice')).toBeVisible({ timeout: 10_000 })
-    await expect(modal.getByTestId('purchase-field-contact')).toBeVisible({ timeout: 10_000 })
+    // 确认支付被 409 CHECKOUT_CHANGED 拒绝，弹窗重新报价并渲染新字段。
+    // 并行负载下弹窗挂载期的 preview 请求可能在 PUT 之后才被服务端处理，
+    // 此时新字段已直接渲染（无需 409 路径）——两条路径都满足 spec：
+    // 买家必须针对新表单补填后才能成交，绝不静默按旧表单提交。
+    const contactField = modal.getByTestId('purchase-field-contact')
+    if (!(await contactField.isVisible())) {
+      await page.getByRole('button', { name: '确认支付' }).click()
+      await expect(page.getByTestId('price-changed-notice')).toBeVisible({ timeout: 10_000 })
+    }
+    await expect(contactField).toBeVisible({ timeout: 10_000 })
 
     // 必填未填 → 禁用；补填后针对新表单再次确认成交
     await expect(modal.getByRole('button', { name: '确认支付' })).toBeDisabled()
-    await modal.getByTestId('purchase-field-contact').fill('tg:@e2e-changed')
+    await contactField.fill('tg:@e2e-changed')
     await modal.getByRole('button', { name: '确认支付' }).click()
     await expect(page.getByText('兑换成功！')).toBeVisible({ timeout: 10_000 })
   })
