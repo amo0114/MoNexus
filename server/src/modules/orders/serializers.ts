@@ -108,8 +108,18 @@ function omitDeliveryContent<T extends OrderWithDelivery>(order: T) {
   }
 }
 
+/**
+ * 购买前表单答案与 DeliveryRecord.content 同一敏感级别：只允许出现在
+ * 买家/商家/管理员的订单详情里。列表接口一律剥离（定义快照一并剥离，
+ * 列表不需要渲染表单）。
+ */
+function omitPurchaseForm<T extends Record<string, unknown>>(order: T) {
+  const { purchaseFormSnapshot: _s, purchaseFormAnswers: _a, ...rest } = order
+  return rest
+}
+
 export function serializeUserOrderList<T extends OrderWithDelivery>(order: T) {
-  return omitDeliveryContent(withUserOrderContract(order, false))
+  return omitPurchaseForm(omitDeliveryContent(withUserOrderContract(order, false)))
 }
 
 export function serializeUserOrderDetail<T extends OrderWithDelivery>(order: T) {
@@ -117,11 +127,12 @@ export function serializeUserOrderDetail<T extends OrderWithDelivery>(order: T) 
 }
 
 export function serializeMerchantOrder<T extends OrderWithDelivery>(order: T) {
-  return omitDeliveryContent(withProductDisplaySnapshot(normalizeFulfillmentFields(order)))
+  // 列表与详情共用：默认剥离表单，详情在调用侧显式回填（履约依据）。
+  return omitPurchaseForm(omitDeliveryContent(withProductDisplaySnapshot(normalizeFulfillmentFields(order))))
 }
 
 export function serializeAdminOrderList<T extends OrderWithDelivery>(order: T) {
-  return omitDeliveryContent(withProductDisplaySnapshot(normalizeFulfillmentFields(order)))
+  return omitPurchaseForm(omitDeliveryContent(withProductDisplaySnapshot(normalizeFulfillmentFields(order))))
 }
 
 export function serializeAdminOrderDetail<T extends OrderWithDelivery>(order: T) {

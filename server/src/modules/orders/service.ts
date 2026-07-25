@@ -17,6 +17,7 @@ import {
 import { serializeUserOrderDetail, serializeUserOrderList } from './serializers.js'
 import { invalidateProductPublicCache } from '../products/cache.js'
 import { logInventoryChange } from '../../lib/inventoryLog.js'
+import { parseStoredPurchaseForm, validatePurchaseFormAnswers, computePurchaseFormVersion } from '../../lib/purchaseForm.js'
 
 // manual_service 商家履约 SLA：创建订单后 7 天内需交付，M3-S2 工作台高亮超时
 const FULFILLMENT_SLA_MS = 7 * 24 * 60 * 60 * 1000
@@ -27,6 +28,10 @@ export type CreateOrderOptions = {
   expectedPrice?: number
   // 同一结算意图（双击/超时重试/网络重放)只允许产生一笔订单。
   idempotencyKey?: string
+  // 购买前表单答案：按商品当前定义校验后与定义一并快照进订单。
+  formAnswers?: Record<string, string>
+  // 结算预览返回的表单版本：商家在预览后改动表单时拒单（409 CHECKOUT_CHANGED）。
+  expectedPurchaseFormVersion?: string
 }
 
 export async function createOrder(
@@ -34,17 +39,28 @@ export async function createOrder(
   productId: number,
   options: CreateOrderOptions = {}
 ) {
-  const { expectedPrice, idempotencyKey } = options
+  const { expectedPrice, idempotencyKey, formAnswers, expectedPurchaseFormVersion } = options
 
   let claimToken: string | undefined
   if (idempotencyKey) {
-    const claim = await claimIdempotencyKey(userId, idempotencyKey, productId)
+    const claim = await claimIdempotencyKey(userId, idempotencyKey, {
+      productId,
+      expectedPrice,
+      purchaseFormVersion: expectedPurchaseFormVersion,
+      formAnswers,
+    })
     if (claim.kind === 'replay') return buildReplayResponse(claim.orderId, userId)
     claimToken = claim.claimToken
   }
 
   try {
-    return await createOrderOnce(userId, productId, { expectedPrice, idempotencyKey, claimToken })
+    return await createOrderOnce(userId, productId, {
+      expectedPrice,
+      idempotencyKey,
+      formAnswers,
+      expectedPurchaseFormVersion,
+      claimToken,
+    })
   } catch (err) {
     // 事务已回滚，释放幂等占用让用户可以用同一 key 重试同一意图。
     // 释放按租约 token 定向：若占用已被其他请求接管，这里不会误删。
@@ -90,6 +106,8 @@ async function createOrderOnce(
   {
     expectedPrice,
     idempotencyKey,
+    formAnswers,
+    expectedPurchaseFormVersion,
     claimToken,
   }: CreateOrderOptions & { claimToken?: string }
 ) {
@@ -103,6 +121,16 @@ async function createOrderOnce(
     if (expectedPrice != null && expectedPrice !== product.price) {
       throw new HttpError(409, 'PRICE_CHANGED', '商品信息已变化，请重新确认')
     }
+    // 购买前表单：先做版本比对——商家在买家打开弹窗后改动表单（新增必填、
+    // 删选项等）时，买家看到的还是旧表单，必须重新报价确认而不是校验失败 400。
+    const purchaseFormFields = parseStoredPurchaseForm(product.purchaseForm)
+    if (
+      expectedPurchaseFormVersion != null &&
+      expectedPurchaseFormVersion !== computePurchaseFormVersion(purchaseFormFields)
+    ) {
+      throw new HttpError(409, 'CHECKOUT_CHANGED', '商品信息已变化，请重新确认')
+    }
+    const purchaseFormAnswers = validatePurchaseFormAnswers(purchaseFormFields, formAnswers)
     const deliveryMode = getProductFulfillmentMode(product.deliveryMode)
 
     if (deliveryMode === 'instant_fixed' && !product.fixedContent) {
@@ -167,6 +195,9 @@ async function createOrderOnce(
         holdingPoints: orderHoldingPoints,
         fundsHeld,
         fulfillmentDeadline: orderFulfillmentDeadline,
+        // 定义与答案一并快照：商家之后改表单不影响本单的展示与履约依据。
+        ...(purchaseFormFields.length > 0 ? { purchaseFormSnapshot: purchaseFormFields } : {}),
+        ...(purchaseFormAnswers ? { purchaseFormAnswers } : {}),
       },
     })
 

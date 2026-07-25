@@ -1,6 +1,7 @@
 import { prisma } from '../../lib/prisma.js'
 import { notFound, badRequest } from '../../lib/httpError.js'
 import { getProductFulfillmentMode } from '../orders/fulfillment.js'
+import { parseStoredPurchaseForm, computePurchaseFormVersion, type PurchaseFormField } from '../../lib/purchaseForm.js'
 
 export type CheckoutPreview = {
   productId: number
@@ -16,6 +17,11 @@ export type CheckoutPreview = {
   // 在预览阶段就暴露出来，避免用户看到"可支付"后才在确认时失败。
   purchasable: boolean
   unpurchasableReason?: string
+  // 购买前表单定义：确认弹窗据此渲染，答案随下单请求提交。
+  purchaseForm: PurchaseFormField[]
+  // 表单定义版本摘要：下单携带 expectedPurchaseFormVersion 比对，
+  // 商家在预览后改动表单时强制重新确认。
+  purchaseFormVersion: string
 }
 
 /**
@@ -36,6 +42,7 @@ export async function getCheckoutPreview(userId: number, productId: number): Pro
       stockMode: true,
       stock: true,
       fixedContent: true,
+      purchaseForm: true,
       merchant: { select: { status: true } },
     },
   })
@@ -62,6 +69,8 @@ export async function getCheckoutPreview(userId: number, productId: number): Pro
     unpurchasableReason = '库存不足，请稍后再试'
   }
 
+  const purchaseForm = parseStoredPurchaseForm(product.purchaseForm)
+
   return {
     productId: product.id,
     productName: product.name,
@@ -74,5 +83,7 @@ export async function getCheckoutPreview(userId: number, productId: number): Pro
     sufficient: account.balance >= product.price,
     purchasable: unpurchasableReason == null,
     unpurchasableReason,
+    purchaseForm,
+    purchaseFormVersion: computePurchaseFormVersion(purchaseForm),
   }
 }

@@ -93,7 +93,8 @@ export default function ProductDetailPage() {
 
   async function handlePurchase(
     preview: CheckoutPreview,
-    idempotencyKey: string
+    idempotencyKey: string,
+    formAnswers: Record<string, string>
   ): Promise<ConfirmOutcome> {
     if (!product || purchasing) return 'failed'
     setPurchasing(true)
@@ -101,6 +102,8 @@ export default function ProductDetailPage() {
       const data = await createOrder(product.id, {
         expectedPrice: preview.price,
         idempotencyKey,
+        formAnswers,
+        expectedPurchaseFormVersion: preview.purchaseFormVersion,
       })
       useAuthStore.getState().updatePoints(data.balanceAfter)
       setDeliveryContent(data.deliveryContent ?? '')
@@ -112,8 +115,9 @@ export default function ProductDetailPage() {
       showToast('兑换成功！')
       return 'success'
     } catch (err: any) {
-      if (getApiErrorCode(err) === 'PRICE_CHANGED') {
-        // 弹窗保持打开，由 PurchaseModal 重新报价并让用户再次确认。
+      const code = getApiErrorCode(err)
+      if (code === 'PRICE_CHANGED' || code === 'CHECKOUT_CHANGED') {
+        // 弹窗保持打开，由 PurchaseModal 重新报价（含新表单）并让用户再次确认。
         showToast('商品信息已变化，请重新确认', 'error')
         return 'price_changed'
       }

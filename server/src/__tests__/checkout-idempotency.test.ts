@@ -142,8 +142,55 @@ describe('POST /api/orders idempotency', () => {
       .set('Idempotency-Key', key)
       .send({ productId: 2 })
       .expect(409)
-    expect(res.body.error.message).toContain('其他商品')
+    expect(res.body.error.message).toContain('内容不同')
     expect(await prisma.order.count()).toBe(1)
+  })
+
+  it('replays a P1 legacy record (empty requestDigest) for the same product', async () => {
+    // 迁移为既有 P1 记录回填 requestDigest = ''。部署后 24h 重放窗口内，
+    // 同商品同 key 重试必须仍能重放原订单，而不是因空摘要误判"内容不同"。
+    const { user } = await createTestUser('idem-legacy@test.local', 'pass123', 'user', 1000)
+    await createTestProduct('遗留商品', 100, 1, ['lg-1'])
+    const { accessToken } = await loginAs('idem-legacy@test.local', 'pass123')
+    const key = randomUUID()
+
+    // 预置一条 P1 语义的已完成记录:有 productId,requestDigest 为空。
+    const order = await prisma.order.create({
+      data: { userId: user.id, productId: 1, price: 100 },
+    })
+    await prisma.idempotencyRecord.create({
+      data: {
+        userId: user.id,
+        key,
+        productId: 1,
+        requestDigest: '',
+        claimToken: randomUUID(),
+        status: 'completed',
+        orderId: order.id,
+        expiresAt: new Date(Date.now() + 60_000),
+      },
+    })
+
+    // 同商品同 key → 按 P1 语义重放原订单,不新建、不冲突。
+    const replay = await api
+      .post('/api/orders')
+      .set(authHeader(accessToken))
+      .set('Idempotency-Key', key)
+      .send({ productId: 1 })
+      .expect(201)
+    expect(replay.body.orderId).toBe(order.id)
+    expect(replay.body.idempotentReplay).toBe(true)
+    expect(await prisma.order.count()).toBe(1)
+
+    // 但空摘要旧记录换成别的商品仍应冲突(P1 已按 productId 校验)。
+    await createTestProduct('遗留商品B', 100, 1, ['lg-2'])
+    const conflict = await api
+      .post('/api/orders')
+      .set(authHeader(accessToken))
+      .set('Idempotency-Key', key)
+      .send({ productId: 2 })
+      .expect(409)
+    expect(conflict.body.error.message).toContain('内容不同')
   })
 
   it('a stalled holder loses its lease after takeover: it can neither complete nor release', async () => {
@@ -154,7 +201,7 @@ describe('POST /api/orders idempotency', () => {
     const key = randomUUID()
 
     // 持有者 A 占用后"卡住"超过 TTL（直接把 expiresAt 拨到过去模拟）。
-    const claimA = await claimIdempotencyKey(user.id, key, 1)
+    const claimA = await claimIdempotencyKey(user.id, key, { productId: 1 })
     if (claimA.kind !== 'claimed') throw new Error('expected fresh claim')
     await prisma.idempotencyRecord.updateMany({
       where: { userId: user.id, key },
@@ -162,7 +209,7 @@ describe('POST /api/orders idempotency', () => {
     })
 
     // 持有者 B 接管，租约 token 被更换。
-    const claimB = await claimIdempotencyKey(user.id, key, 1)
+    const claimB = await claimIdempotencyKey(user.id, key, { productId: 1 })
     if (claimB.kind !== 'claimed') throw new Error('expected takeover claim')
     expect(claimB.claimToken).not.toBe(claimA.claimToken)
 

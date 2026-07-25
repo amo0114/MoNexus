@@ -25,6 +25,7 @@ import {
 import { releaseHeldOrder, settleHeldOrder } from '../orders/accounting.js'
 import { serializeMerchantOrder } from '../orders/serializers.js'
 import type { MerchantOrderListQuery } from './schema.js'
+import type { PurchaseFormField } from '../../lib/purchaseForm.js'
 
 // ---- Application ----
 
@@ -149,6 +150,7 @@ function serializeMerchantProduct(product: ProductWithAvailableStock, lowStockTh
     stockMode: product.stockMode,
     fixedContent: product.fixedContent,
     fixedContentType: product.fixedContentType,
+    purchaseForm: product.purchaseForm ?? [],
     merchantId: product.merchantId,
     createdAt: product.createdAt,
     lowStock: isLowStockProduct(product, lowStockThreshold),
@@ -232,7 +234,8 @@ export async function createMyProduct(
     name: string; description?: string; richDescription?: string;
     type: string; icon?: string; imageUrl?: string | null; images?: string[];
     price: number; originalPrice?: number; isHot?: boolean; deliveryMode?: string;
-    stockMode?: string; stock?: number; fixedContent?: string; fixedContentType?: string
+    stockMode?: string; stock?: number; fixedContent?: string; fixedContentType?: string;
+    purchaseForm?: PurchaseFormField[]
   }
 ) {
   assertOriginalPriceAtLeastSale(data.price, data.originalPrice)
@@ -694,6 +697,9 @@ export async function getMyOrderDetail(merchantId: number, orderId: number) {
     fulfillmentDeadline: order.fulfillmentDeadline,
     slaExceeded: computeSlaExceeded(order),
     availableActions: getAvailableActions(order),
+    // 详情显式回填：买家购买前填写的信息是商家的履约依据。
+    purchaseFormSnapshot: order.purchaseFormSnapshot ?? null,
+    purchaseFormAnswers: order.purchaseFormAnswers ?? null,
   }
 }
 

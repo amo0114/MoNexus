@@ -7,6 +7,9 @@ export type ErrorCode =
   // 下单价格确认失败：前端携带的 expectedPrice 与服务端当前价不一致，
   // 前端应重新拉取结算预览并让用户再次确认，禁止静默按新价格成交。
   | 'PRICE_CHANGED'
+  // 结算内容（购买前表单定义）在预览后被商家改动：前端需重新拉取预览、
+  // 换新幂等键并让用户针对新表单再次确认。
+  | 'CHECKOUT_CHANGED'
   | 'BAD_REQUEST'
   | 'INTERNAL_SERVER_ERROR'
   | 'RATE_LIMITED'

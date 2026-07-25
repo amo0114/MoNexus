@@ -15,6 +15,7 @@ import {
   validateProductCommercialFields,
 } from '../products/schema.js'
 import { inventoryImportPayloadSchema } from '../../lib/inventoryImport.js'
+import { purchaseFormSchema } from '../../lib/purchaseForm.js'
 
 const productStatusSchema = z.enum(['active', 'inactive'])
 
@@ -53,6 +54,8 @@ const merchantProductFieldsSchema = z.object({
   stock: z.number().int().min(0).max(1_000_000).optional(),
   fixedContent: z.string().trim().min(1).max(5000).optional(),
   fixedContentType: productFixedContentTypeSchema.optional(),
+  // 购买前信息收集字段定义；空数组 = 无表单（清空也传 []，避免 Json null 语义）。
+  purchaseForm: purchaseFormSchema.optional(),
 })
 
 export const createMerchantProductSchema = merchantProductFieldsSchema.superRefine(validateProductCommercialFields)

@@ -1,7 +1,8 @@
-import { randomUUID } from 'node:crypto'
+import { createHmac, randomUUID } from 'node:crypto'
 import { Prisma } from '@prisma/client'
 import { prisma } from '../../lib/prisma.js'
 import { HttpError } from '../../lib/httpError.js'
+import { config } from '../../config/index.js'
 
 // processing 记录的孤儿窗口：正常请求几秒内终态化（completed 或删除），
 // 超过该窗口仍是 processing 的只可能是进程崩溃残留，允许同 key 重试接管。
@@ -18,11 +19,43 @@ function isUniqueViolation(err: unknown): boolean {
 }
 
 function keyMismatch(): HttpError {
-  return new HttpError(409, 'CONFLICT', '该幂等键已用于其他商品的兑换请求，请刷新后重试')
+  return new HttpError(
+    409,
+    'CONFLICT',
+    '该幂等键已用于内容不同的兑换请求，请先在订单中心确认结果后重试'
+  )
 }
 
 function inFlight(): HttpError {
   return new HttpError(409, 'CONFLICT', '相同的兑换请求正在处理中，请稍后查看订单')
+}
+
+export type IdempotencyFingerprint = {
+  productId: number
+  expectedPrice?: number
+  purchaseFormVersion?: string
+  formAnswers?: Record<string, string>
+}
+
+/**
+ * 请求指纹：同一 key 只能对应一份提交内容。答案 A 超时后改成答案 B 重试，
+ * 必须 409 提示检查订单，而不是静默重放 A 的订单（人工履约场景下
+ * "买家以为提交了 B、商家收到 A"比重复扣款更危险）。
+ * 用 HMAC 而非明文/裸哈希存储，低熵答案无法通过本表被枚举还原。
+ */
+export function computeRequestDigest(fingerprint: IdempotencyFingerprint): string {
+  const answers = fingerprint.formAnswers ?? {}
+  const canonicalAnswers = Object.keys(answers)
+    .sort()
+    .map(key => [key, (answers[key] ?? '').trim()])
+    .filter(([, value]) => value !== '')
+  const canonical = JSON.stringify({
+    productId: fingerprint.productId,
+    expectedPrice: fingerprint.expectedPrice ?? null,
+    purchaseFormVersion: fingerprint.purchaseFormVersion ?? null,
+    answers: canonicalAnswers,
+  })
+  return createHmac('sha256', config.jwtSecret).update(canonical).digest('hex')
 }
 
 /**
@@ -39,23 +72,25 @@ function inFlight(): HttpError {
  * stalled past the TTL and lost its lease can neither finish its order nor
  * delete the record of the request that took over.
  *
- * The claim also pins the request fingerprint (productId): the same key
- * arriving with a different product is rejected instead of silently replaying
- * an unrelated order.
+ * The claim also pins the full request fingerprint (see computeRequestDigest):
+ * the same key arriving with a different product, price, form version or
+ * answers is rejected instead of silently replaying an unrelated submission.
  */
 export async function claimIdempotencyKey(
   userId: number,
   key: string,
-  productId: number
+  fingerprint: IdempotencyFingerprint
 ): Promise<IdempotencyClaim> {
   const now = new Date()
   const claimToken = randomUUID()
+  const requestDigest = computeRequestDigest(fingerprint)
   try {
     await prisma.idempotencyRecord.create({
       data: {
         userId,
         key,
-        productId,
+        productId: fingerprint.productId,
+        requestDigest,
         claimToken,
         status: 'processing',
         expiresAt: new Date(now.getTime() + PROCESSING_TTL_MS),
@@ -71,9 +106,17 @@ export async function claimIdempotencyKey(
   })
   // The record was deleted between the failed insert and this read (the
   // competing request failed and released its claim). Retrying is safe.
-  if (!existing) return claimIdempotencyKey(userId, key, productId)
+  if (!existing) return claimIdempotencyKey(userId, key, fingerprint)
 
-  if (existing.productId !== productId) throw keyMismatch()
+  // P1 遗留记录（迁移为既有行回填 requestDigest = ''）没有 HMAC 指纹，
+  // 直接比较摘要会让部署后仍在重放窗口内的旧 key 误判为"内容不同"。
+  // 空摘要即哨兵：退回 P1 语义，仅按 productId 校验——商品不同则冲突，
+  // 商品相同则照常重放/继续。新记录始终写入非空摘要，不会命中此分支。
+  if (existing.requestDigest === '') {
+    if (existing.productId !== fingerprint.productId) throw keyMismatch()
+  } else if (existing.requestDigest !== requestDigest) {
+    throw keyMismatch()
+  }
 
   if (existing.status === 'completed' && existing.orderId != null) {
     return { kind: 'replay', orderId: existing.orderId }
