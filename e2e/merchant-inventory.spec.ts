@@ -25,8 +25,11 @@ test('merchant filters products, imports then voids inventory with log entry', a
   await page.getByTestId('merchant-product-search').fill('绝不存在的商品xyz')
   await expect(page.getByText('暂无商品')).toBeVisible({ timeout: 10_000 })
 
-  // 清空搜索恢复列表
+  // 清空搜索恢复列表。累积的 e2e 商品可能把 seed 商品挤出第一页，
+  // 这里只验证列表非空恢复；后续步骤重新搜索定位，保证行可见。
   await page.getByTestId('merchant-product-search').fill('')
+  await expect(page.locator('tbody tr').first()).toBeVisible({ timeout: 10_000 })
+  await page.getByTestId('merchant-product-search').fill('自营高速')
   await expect(row).toBeVisible({ timeout: 10_000 })
 
   // 低库存开关：seed 商品库存 3 ≤ 阈值（默认 5），开启后仍可见且带低库存徽标

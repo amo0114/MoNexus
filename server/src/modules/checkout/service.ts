@@ -2,6 +2,7 @@ import { prisma } from '../../lib/prisma.js'
 import { notFound, badRequest } from '../../lib/httpError.js'
 import { getProductFulfillmentMode } from '../orders/fulfillment.js'
 import { parseStoredPurchaseForm, computePurchaseFormVersion, type PurchaseFormField } from '../../lib/purchaseForm.js'
+import { resolveVerificationRequirement } from './verification.js'
 
 export type CheckoutPreview = {
   productId: number
@@ -22,6 +23,9 @@ export type CheckoutPreview = {
   // 表单定义版本摘要：下单携带 expectedPurchaseFormVersion 比对，
   // 商家在预览后改动表单时强制重新确认。
   purchaseFormVersion: string
+  // 高风险二次验证：true 时前端预渲染登录密码输入框。仅供展示——
+  // 下单时服务端会重新计算触发条件，不信任该声明。
+  requiresVerification: boolean
 }
 
 /**
@@ -85,5 +89,6 @@ export async function getCheckoutPreview(userId: number, productId: number): Pro
     unpurchasableReason,
     purchaseForm,
     purchaseFormVersion: computePurchaseFormVersion(purchaseForm),
+    requiresVerification: await resolveVerificationRequirement(userId, product.price),
   }
 }

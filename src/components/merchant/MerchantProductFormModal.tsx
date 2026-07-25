@@ -1,11 +1,14 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
-import { X, Package, Tag, DollarSign, Image as ImageIcon, FileText, Upload, Loader2, Star, Trash2 } from 'lucide-react'
+import { X, Package, Tag, DollarSign, Image as ImageIcon, FileText, Upload, Loader2, Star, Trash2, ClipboardList } from 'lucide-react'
 import * as DialogPrimitive from '@radix-ui/react-dialog'
 import DOMPurify from 'dompurify'
-import { MerchantProduct } from '../../types/merchant'
+import { MerchantProduct, PurchaseFormField } from '../../types/merchant'
 import { useAppStore } from '../../stores/appStore'
 import { uploadImage, UploadError } from '../../api/uploads'
 import SafeImage from '../ui/SafeImage'
+import PurchaseFormFieldsEditor, {
+  serializePurchaseFormFields, validatePurchaseFormFields,
+} from './PurchaseFormFieldsEditor'
 
 const MAX_IMAGES = 6
 
@@ -25,6 +28,7 @@ export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, pr
   const [images, setImages] = useState<string[]>([])
   const [imageUrlInput, setImageUrlInput] = useState('')
   const [descMode, setDescMode] = useState<'edit' | 'preview'>('edit')
+  const [purchaseForm, setPurchaseForm] = useState<PurchaseFormField[]>([])
   const [form, setForm] = useState({
     name: '',
     type: '网络节点',
@@ -50,6 +54,8 @@ export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, pr
       if (product) {
         const existingImages = Array.isArray(product.images) ? product.images : []
         setImages(existingImages.length > 0 ? existingImages.slice(0, MAX_IMAGES) : (product.imageUrl ? [product.imageUrl] : []))
+        // 深拷贝：编辑中途取消不能污染列表里的商品对象
+        setPurchaseForm((product.purchaseForm ?? []).map(f => ({ ...f, options: f.options ? [...f.options] : undefined })))
         setForm({
           name: product.name,
           type: product.type,
@@ -71,6 +77,7 @@ export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, pr
         const defaultType = registry?.productTypes?.[0]?.value || '网络节点'
         const defaultMode = registry?.productTypes?.find(t => t.value === defaultType)?.deliveryModes?.[0] || 'instant_inventory'
         setImages([])
+        setPurchaseForm([])
         setForm({
           name: '',
           type: defaultType,
@@ -222,6 +229,12 @@ export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, pr
       }
     }
 
+    const purchaseFormError = validatePurchaseFormFields(purchaseForm)
+    if (purchaseFormError) {
+      showToast(purchaseFormError, 'error')
+      return
+    }
+
     const payload: any = {
       name: form.name.trim(),
       type: form.type,
@@ -233,7 +246,9 @@ export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, pr
       imageUrl: images[0] || undefined,
       images,
       isHot: form.isHot,
-      deliveryMode: form.deliveryMode
+      deliveryMode: form.deliveryMode,
+      // 空数组即清空表单（后端契约用 [] 而非 null，避免 Prisma Json null 语义）
+      purchaseForm: serializePurchaseFormFields(purchaseForm),
     }
 
     if (payload.deliveryMode !== 'instant_inventory') {
@@ -683,6 +698,16 @@ export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, pr
                     />
                   )}
                 </div>
+              </div>
+            </FormSection>
+
+            {/* Section: 购买前信息 */}
+            <FormSection title="购买前信息收集" icon={ClipboardList}>
+              <div data-testid="edit-purchase-form-section">
+                <PurchaseFormFieldsEditor fields={purchaseForm} onChange={setPurchaseForm} />
+                <p className="mt-3 text-xs text-[var(--color-text-muted)]">
+                  修改后仅影响之后的订单；已有订单保留买家下单时的表单快照。买家弹窗打开期间的改动会要求其重新确认。
+                </p>
               </div>
             </FormSection>
           </form>

@@ -22,6 +22,12 @@ api.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config
+    // 业务型 401（结算二次验证）不是登录态失效：不触发续签、更不能自动重放
+    // 原请求——重放会把同一个错误密码再提交一次，导致防爆破计数翻倍。
+    const errorCode = error.response?.data?.error?.code
+    if (errorCode === 'VERIFICATION_REQUIRED' || errorCode === 'VERIFICATION_FAILED') {
+      return Promise.reject(error)
+    }
     if (error.response?.status === 401 && !originalRequest._retry) {
       originalRequest._retry = true
 

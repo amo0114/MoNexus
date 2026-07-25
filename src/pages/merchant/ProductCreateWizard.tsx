@@ -2,17 +2,19 @@ import { useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, ArrowRight, Check, CreditCard, FileText, Globe, KeyRound, Loader2,
-  Package, Plus, Sparkles, Trash2, Upload, UserRound, Wrench, Coins, Star,
+  Package, Sparkles, Trash2, Upload, UserRound, Wrench, Coins, Star,
 } from 'lucide-react'
 import DOMPurify from 'dompurify'
 import { useAppStore } from '../../stores/appStore'
 import { createMerchantProduct } from '../../api/merchant'
 import { uploadImage, UploadError } from '../../api/uploads'
 import SafeImage from '../../components/ui/SafeImage'
+import PurchaseFormFieldsEditor, {
+  serializePurchaseFormFields, validatePurchaseFormFields,
+} from '../../components/merchant/PurchaseFormFieldsEditor'
 import type { PurchaseFormField } from '../../types/merchant'
 
 const MAX_IMAGES = 6
-const MAX_FORM_FIELDS = 6
 
 /**
  * 商品模板：只负责引导与默认值，不锁死任何选项（spec：模板机制取代
@@ -161,12 +163,7 @@ export default function ProductCreateWizard() {
       }
     }
     if (current === 4) {
-      for (const field of form.purchaseForm) {
-        if (!field.label.trim()) return '购买前信息字段名称不能为空'
-        if (field.type === 'select' && (!field.options || field.options.length === 0)) {
-          return `「${field.label || '未命名字段'}」是下拉字段，请填写至少一个选项`
-        }
-      }
+      return validatePurchaseFormFields(form.purchaseForm)
     }
     return null
   }
@@ -218,31 +215,6 @@ export default function ProductCreateWizard() {
     }
   }
 
-  function addFormField() {
-    if (form.purchaseForm.length >= MAX_FORM_FIELDS) {
-      showToast(`最多 ${MAX_FORM_FIELDS} 个字段`, 'error')
-      return
-    }
-    // key 是稳定标识符，不暴露给商家编辑；按序号生成并避开已占用值。
-    let index = form.purchaseForm.length + 1
-    while (form.purchaseForm.some(f => f.key === `field_${index}`)) index += 1
-    setForm(prev => ({
-      ...prev,
-      purchaseForm: [...prev.purchaseForm, { key: `field_${index}`, label: '', type: 'text', required: false }],
-    }))
-  }
-
-  function updateFormField(index: number, patch: Partial<PurchaseFormField>) {
-    setForm(prev => ({
-      ...prev,
-      purchaseForm: prev.purchaseForm.map((f, i) => (i === index ? { ...f, ...patch } : f)),
-    }))
-  }
-
-  function removeFormField(index: number) {
-    setForm(prev => ({ ...prev, purchaseForm: prev.purchaseForm.filter((_, i) => i !== index) }))
-  }
-
   async function handlePublish() {
     const error = validateStep(4)
     if (error) {
@@ -260,14 +232,7 @@ export default function ProductCreateWizard() {
       images,
       isHot: form.isHot,
       deliveryMode: form.deliveryMode,
-      purchaseForm: form.purchaseForm.map(f => ({
-        key: f.key,
-        label: f.label.trim(),
-        type: f.type,
-        required: f.required,
-        ...(f.placeholder?.trim() ? { placeholder: f.placeholder.trim() } : {}),
-        ...(f.type === 'select' ? { options: f.options } : {}),
-      })),
+      purchaseForm: serializePurchaseFormFields(form.purchaseForm),
     }
     if (form.originalPrice.trim() !== '') payload.originalPrice = Number(form.originalPrice)
     if (form.deliveryMode !== 'instant_inventory') {
@@ -544,61 +509,11 @@ export default function ProductCreateWizard() {
         {step === 4 && (
           <div className="space-y-8">
             <div>
-              <div className="flex items-center justify-between mb-1">
-                <h2 className="font-heading text-lg font-bold text-[var(--color-text)]">购买前需要买家填写什么？</h2>
-                <button type="button" onClick={addFormField} className="btn-secondary px-3 py-1.5 text-sm"
-                  disabled={form.purchaseForm.length >= MAX_FORM_FIELDS} data-testid="add-form-field">
-                  <Plus className="w-4 h-4" /> 添加字段
-                </button>
-              </div>
-              <p className="text-sm text-[var(--color-text-muted)] mb-4">
-                可选。买家在确认兑换时填写；答案仅你、买家和管理员可见。
-              </p>
-              {form.purchaseForm.length === 0 ? (
-                <div className="rounded-lg border border-dashed border-[var(--color-border)] p-6 text-center text-sm text-[var(--color-text-muted)]">
-                  未配置——买家无需填写任何信息即可兑换
-                </div>
-              ) : (
-                <div className="space-y-3" data-testid="form-field-list">
-                  {form.purchaseForm.map((field, index) => (
-                    <div key={field.key} className="rounded-lg border border-[var(--color-border)] p-4 space-y-3">
-                      <div className="flex items-center gap-3">
-                        <input type="text" className="input flex-1" placeholder="字段名称，如：联系方式"
-                          value={field.label} onChange={(e) => updateFormField(index, { label: e.target.value })}
-                          data-testid={`form-field-label-${index}`} />
-                        <select className="input w-28 appearance-none cursor-pointer" value={field.type}
-                          onChange={(e) => updateFormField(index, {
-                            type: e.target.value as 'text' | 'select',
-                            options: e.target.value === 'select' ? (field.options ?? []) : undefined,
-                          })}>
-                          <option value="text">文本</option>
-                          <option value="select">下拉</option>
-                        </select>
-                        <label className="flex items-center gap-1.5 text-sm whitespace-nowrap cursor-pointer">
-                          <input type="checkbox" checked={field.required}
-                            onChange={(e) => updateFormField(index, { required: e.target.checked })} className="w-4 h-4" />
-                          必填
-                        </label>
-                        <button type="button" onClick={() => removeFormField(index)} aria-label="删除字段"
-                          className="p-2 rounded text-[var(--color-danger)] hover:bg-[var(--color-background)] cursor-pointer">
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                      {field.type === 'text' ? (
-                        <input type="text" className="input" placeholder="占位提示（可选），如：TG / 邮箱"
-                          value={field.placeholder ?? ''} onChange={(e) => updateFormField(index, { placeholder: e.target.value })} />
-                      ) : (
-                        <textarea className="input min-h-[60px] resize-y" placeholder="下拉选项，每行一个"
-                          value={(field.options ?? []).join('\n')}
-                          onChange={(e) => updateFormField(index, {
-                            options: e.target.value.split('\n').map(s => s.trim()).filter(Boolean),
-                          })}
-                          data-testid={`form-field-options-${index}`} />
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
+              <h2 className="font-heading text-lg font-bold text-[var(--color-text)] mb-1">购买前需要买家填写什么？</h2>
+              <PurchaseFormFieldsEditor
+                fields={form.purchaseForm}
+                onChange={(purchaseForm) => setForm(prev => ({ ...prev, purchaseForm }))}
+              />
             </div>
 
             {/* 买家侧预览 */}

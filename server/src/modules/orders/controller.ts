@@ -17,6 +17,7 @@ export async function create(req: Request, res: Response, next: NextFunction) {
       expectedPrice: req.body.expectedPrice,
       formAnswers: req.body.formAnswers,
       expectedPurchaseFormVersion: req.body.expectedPurchaseFormVersion,
+      verificationPassword: req.body.verificationPassword,
       idempotencyKey,
     })
     res.status(201).json(result)

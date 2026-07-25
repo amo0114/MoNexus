@@ -16,6 +16,8 @@ const defaultConfig = {
   memberTierSilverBonusBps: 500,
   memberTierGoldBonusBps: 1000,
   memberTierPlatinumBonusBps: 2000,
+  checkoutVerifyAmountThreshold: 0,
+  checkoutVerifyDailyThreshold: 0,
 } as const
 
 async function clearSystemConfig() {
@@ -59,7 +61,7 @@ describe('Admin system config', () => {
       .set(authHeader(accessToken))
       .expect(200)
 
-    expect(res.body).toHaveLength(13)
+    expect(res.body).toHaveLength(Object.keys(defaultConfig).length)
     expect(res.body.map((item: any) => item.key)).toEqual(Object.keys(defaultConfig))
 
     const byKey = new Map<string, any>(res.body.map((item: any) => [item.key, item]))

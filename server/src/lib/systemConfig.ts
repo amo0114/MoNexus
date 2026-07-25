@@ -18,6 +18,9 @@ export const systemConfigKeys = [
   'memberTierSilverBonusBps',
   'memberTierGoldBonusBps',
   'memberTierPlatinumBonusBps',
+  // 结算高风险二次验证阈值（0 = 关闭该维度）
+  'checkoutVerifyAmountThreshold',
+  'checkoutVerifyDailyThreshold',
 ] as const
 
 export type SystemConfigKey = typeof systemConfigKeys[number]
@@ -54,6 +57,8 @@ export const systemConfigDefaults: Record<SystemConfigKey, number> = {
   memberTierSilverBonusBps: 500,
   memberTierGoldBonusBps: 1000,
   memberTierPlatinumBonusBps: 2000,
+  checkoutVerifyAmountThreshold: 0,
+  checkoutVerifyDailyThreshold: 0,
 }
 
 export const systemConfigDescriptions: Record<SystemConfigKey, string> = {
@@ -70,6 +75,8 @@ export const systemConfigDescriptions: Record<SystemConfigKey, string> = {
   memberTierSilverBonusBps: '银卡签到/邀请奖励加成基点（万分之）',
   memberTierGoldBonusBps: '金卡签到/邀请奖励加成基点（万分之）',
   memberTierPlatinumBonusBps: '铂金签到/邀请奖励加成基点（万分之）',
+  checkoutVerifyAmountThreshold: '单笔兑换需密码确认的金额阈值',
+  checkoutVerifyDailyThreshold: '当日累计兑换需密码确认的金额阈值',
 }
 
 /** 管理端配置项分组（中文），供配置页按组渲染。 */
@@ -87,6 +94,8 @@ export const systemConfigGroups: Record<SystemConfigKey, string> = {
   memberTierSilverBonusBps: '会员等级',
   memberTierGoldBonusBps: '会员等级',
   memberTierPlatinumBonusBps: '会员等级',
+  checkoutVerifyAmountThreshold: '安全',
+  checkoutVerifyDailyThreshold: '安全',
 }
 
 /** 可选单位标注。 */
@@ -104,6 +113,8 @@ export const systemConfigUnits: Partial<Record<SystemConfigKey, string>> = {
   memberTierSilverBonusBps: 'bps',
   memberTierGoldBonusBps: 'bps',
   memberTierPlatinumBonusBps: 'bps',
+  checkoutVerifyAmountThreshold: '积分',
+  checkoutVerifyDailyThreshold: '积分',
 }
 
 const BONUS_BPS_HINT = '万分比，10000=100%；例如 500 表示额外 +5%'
@@ -120,6 +131,8 @@ export const systemConfigHints: Partial<Record<SystemConfigKey, string>> = {
   memberTierSilverBonusBps: BONUS_BPS_HINT,
   memberTierGoldBonusBps: BONUS_BPS_HINT,
   memberTierPlatinumBonusBps: BONUS_BPS_HINT,
+  checkoutVerifyAmountThreshold: '单笔兑换金额 ≥ 该值时要求输入登录密码确认；0 表示关闭',
+  checkoutVerifyDailyThreshold: '当日已成交累计 + 本单 ≥ 该值时要求输入登录密码确认；0 表示关闭',
 }
 
 type ConfigClient = typeof prisma | Prisma.TransactionClient

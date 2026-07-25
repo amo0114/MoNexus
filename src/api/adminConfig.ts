@@ -14,6 +14,8 @@ export type AdminSystemConfigKey =
   | 'memberTierSilverBonusBps'
   | 'memberTierGoldBonusBps'
   | 'memberTierPlatinumBonusBps'
+  | 'checkoutVerifyAmountThreshold'
+  | 'checkoutVerifyDailyThreshold'
 
 export interface AdminSystemConfig {
   key: AdminSystemConfigKey

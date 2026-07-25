@@ -109,6 +109,42 @@ test.describe.serial('M-P2 product wizard + purchase form', () => {
   })
 })
 
+test.describe('M-P2.1 edit modal purchase form', () => {
+  test('merchant adds a required field to an existing product via the edit modal', async ({ page, request }) => {
+    const name = `E2E编辑表单-${Date.now()}`
+    const login = await request.post(`${API_BASE}/api/auth/login`, { data: SEED_ACCOUNTS.merchant })
+    const token = (await login.json()).accessToken as string
+    const created = await request.post(`${API_BASE}/api/merchant/products`, {
+      headers: { Authorization: `Bearer ${token}` },
+      data: { name, type: '共享账号', price: 2, deliveryMode: 'manual_service', stockMode: 'unlimited' },
+    })
+    expect(created.ok(), await created.text()).toBeTruthy()
+    const productId = ((await created.json()) as { id: number }).id
+
+    await loginAs(page, SEED_ACCOUNTS.merchant)
+    await page.goto('/merchant')
+    await page.getByRole('button', { name: '商品管理' }).click()
+    const row = page.locator('tbody tr').filter({ hasText: name }).first()
+    await expect(row).toBeVisible({ timeout: 15_000 })
+    await row.getByRole('button', { name: '编辑' }).click()
+
+    // 编辑弹窗现在带购买前表单配置区
+    const section = page.getByTestId('edit-purchase-form-section')
+    await expect(section).toBeVisible({ timeout: 10_000 })
+    await section.getByTestId('add-form-field').click()
+    await section.getByTestId('form-field-label-0').fill('联系方式')
+    await section.getByTestId('form-field-list').locator('input[type=checkbox]').first().check()
+    await page.getByRole('button', { name: '确认保存' }).click()
+    await expect(page.getByTestId('edit-purchase-form-section')).toBeHidden({ timeout: 10_000 })
+
+    // 公开商品详情返回更新后的定义
+    const detail = await request.get(`${API_BASE}/api/products/${productId}`)
+    const body = (await detail.json()) as { purchaseForm: Array<{ label: string; required: boolean }> }
+    expect(body.purchaseForm).toHaveLength(1)
+    expect(body.purchaseForm[0]).toMatchObject({ label: '联系方式', required: true })
+  })
+})
+
 test.describe('M-P2 wizard mobile smoke', () => {
   test.use({ viewport: { width: 320, height: 660 }, hasTouch: true })
 
