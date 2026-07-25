@@ -132,6 +132,26 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
             </div>
           )}
 
+          {/* 购买前填写信息 */}
+          {order.purchaseFormAnswers && Object.keys(order.purchaseFormAnswers).length > 0 && (
+            <div className="bg-[var(--color-background)] rounded-lg p-5 border border-[var(--color-border)]" data-testid="order-purchase-form">
+              <h3 className="font-heading text-sm font-bold text-[var(--color-text)] mb-3 flex items-center gap-2">
+                <Info className="w-4 h-4 text-[var(--color-text-muted)]" /> 购买时填写的信息
+              </h3>
+              <dl className="space-y-1.5 text-xs">
+                {Object.entries(order.purchaseFormAnswers).map(([key, value]) => {
+                  const label = order.purchaseFormSnapshot?.find(f => f.key === key)?.label ?? key
+                  return (
+                    <div key={key} className="flex gap-2">
+                      <dt className="text-[var(--color-text-muted)] shrink-0">{label}：</dt>
+                      <dd className="text-[var(--color-text)] break-all">{value}</dd>
+                    </div>
+                  )
+                })}
+              </dl>
+            </div>
+          )}
+
           {/* 发货内容 */}
           <div className="bg-[var(--color-background)] rounded-lg p-5 border border-[var(--color-border)]">
             <h3 className="font-heading text-sm font-bold text-[var(--color-text)] mb-3 flex items-center gap-2">

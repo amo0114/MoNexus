@@ -47,4 +47,7 @@ export interface UserOrderDetail extends Omit<UserOrderListItem, 'delivery'> {
     createdAt: string
   }
   canReview?: boolean
+  /** 购买前填写信息：下单时的字段定义与答案快照（仅本人订单详情可见）。 */
+  purchaseFormSnapshot?: Array<{ key: string; label: string; type: string }> | null
+  purchaseFormAnswers?: Record<string, string> | null
 }

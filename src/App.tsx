@@ -17,6 +17,7 @@ import AdminPage from './pages/AdminPage'
 import MerchantApplyPage from './pages/MerchantApplyPage'
 import MerchantDashboardPage from './pages/MerchantDashboardPage'
 import Dashboard from './pages/merchant/Dashboard'
+import ProductCreateWizard from './pages/merchant/ProductCreateWizard'
 import PortableRestoreSetupPage from './pages/PortableRestoreSetupPage'
 import RoleGuard from './components/RoleGuard'
 
@@ -75,6 +76,14 @@ export default function App() {
                     }
                   />
                   <Route path="/merchant/apply" element={<MerchantApplyPage />} />
+                  <Route
+                    path="/merchant/products/new"
+                    element={
+                      <RoleGuard allowedRoles={['merchant']} requireActiveMerchant>
+                        <ProductCreateWizard />
+                      </RoleGuard>
+                    }
+                  />
                   <Route
                     path="/merchant/dashboard"
                     element={

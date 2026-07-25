@@ -25,3 +25,33 @@ export async function loginAs(page: Page, account: { email: string; password: st
   await expect(loginResult.status(), `login response status${loginBody}`).toBe(200)
   await expect(page).toHaveURL(/\/$/, { timeout: 10_000 })
 }
+
+/**
+ * 走分步创建页发布一个「固定内容直发 · 外部链接」商品。
+ * P2 起商品创建不再走弹窗，统一使用 /merchant/products/new 向导。
+ */
+export async function createInstantFixedProductViaWizard(
+  page: Page,
+  options: { name: string; url: string; price?: string; type?: string }
+) {
+  await page.goto('/merchant/products/new')
+  await expect(page.getByTestId('product-create-wizard')).toBeVisible({ timeout: 10_000 })
+
+  await page.getByTestId('template-digital_content').click()
+  await page.getByTestId('wizard-next').click()
+
+  await page.getByTestId('wizard-name').fill(options.name)
+  await page.getByTestId('wizard-type').selectOption(options.type ?? '邀请码')
+  await page.getByTestId('wizard-next').click()
+
+  await page.getByTestId('wizard-price').fill(options.price ?? '1')
+  await page.getByTestId('wizard-next').click()
+
+  await page.getByRole('radio', { name: '外部链接' }).check()
+  await page.getByTestId('fixed-content-input').fill(options.url)
+  await expect(page.getByTestId('stock-mode-select')).toHaveValue('unlimited')
+  await page.getByTestId('wizard-next').click()
+
+  await page.getByTestId('wizard-publish').click()
+  await expect(page.getByText('商品创建成功')).toBeVisible({ timeout: 10_000 })
+}

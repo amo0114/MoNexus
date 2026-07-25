@@ -89,4 +89,40 @@ test.describe('M-P1 checkout confirmation', () => {
     await expect(modal.getByText('本次冻结')).toBeVisible({ timeout: 10_000 })
     await expect(modal.getByTestId('hold-explain')).toContainText('拒单或退款时返还')
   })
+
+  test('adding a required form field after preview forces re-confirmation with the new field', async ({ page, request }) => {
+    const token = await merchantToken(request)
+    const name = `E2E表单变更-${Date.now()}`
+    const product = await createProduct(request, token, {
+      name,
+      type: '共享账号',
+      price: 2,
+      deliveryMode: 'manual_service',
+      stockMode: 'unlimited',
+    })
+
+    await loginAs(page, SEED_ACCOUNTS.user)
+    await page.goto(`/product/${product.id}`)
+    await page.getByRole('button', { name: '立即兑换' }).click()
+    const modal = page.getByTestId('purchase-modal')
+    await expect(modal.getByText('本次冻结')).toBeVisible({ timeout: 10_000 })
+
+    // 弹窗打开期间，商家给商品新增一个必填的购买前字段
+    const update = await request.put(`${API_BASE}/api/merchant/products/${product.id}`, {
+      headers: { Authorization: `Bearer ${token}` },
+      data: { purchaseForm: [{ key: 'contact', label: '联系方式', type: 'text', required: true }] },
+    })
+    expect(update.ok(), await update.text()).toBeTruthy()
+
+    // 确认支付被 409 CHECKOUT_CHANGED 拒绝，弹窗重新报价并渲染新字段
+    await page.getByRole('button', { name: '确认支付' }).click()
+    await expect(page.getByTestId('price-changed-notice')).toBeVisible({ timeout: 10_000 })
+    await expect(modal.getByTestId('purchase-field-contact')).toBeVisible({ timeout: 10_000 })
+
+    // 必填未填 → 禁用；补填后针对新表单再次确认成交
+    await expect(modal.getByRole('button', { name: '确认支付' })).toBeDisabled()
+    await modal.getByTestId('purchase-field-contact').fill('tg:@e2e-changed')
+    await modal.getByRole('button', { name: '确认支付' }).click()
+    await expect(page.getByText('兑换成功！')).toBeVisible({ timeout: 10_000 })
+  })
 })

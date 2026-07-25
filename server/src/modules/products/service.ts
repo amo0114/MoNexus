@@ -61,6 +61,8 @@ const productDetailSelect = {
   status: true,
   deliveryMode: true,
   stockMode: true,
+  // 购买前表单定义：买家需在详情/结算时看到并填写，属公开数据（答案才是敏感的）。
+  purchaseForm: true,
   ratingAvg: true,
   ratingCount: true,
   _count: { select: { inventory: { where: { status: 'available' } } } },

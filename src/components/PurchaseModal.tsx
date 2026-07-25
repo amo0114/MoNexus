@@ -20,12 +20,17 @@ export default function PurchaseModal({
   productId: number
   submitting?: boolean
   onClose: () => void
-  onConfirm: (preview: CheckoutPreview, idempotencyKey: string) => Promise<ConfirmOutcome>
+  onConfirm: (
+    preview: CheckoutPreview,
+    idempotencyKey: string,
+    formAnswers: Record<string, string>
+  ) => Promise<ConfirmOutcome>
 }) {
   const [preview, setPreview] = useState<CheckoutPreview | null>(null)
   const [loadError, setLoadError] = useState('')
   const [priceChanged, setPriceChanged] = useState(false)
   const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID())
+  const [answers, setAnswers] = useState<Record<string, string>>({})
 
   const loadPreview = useCallback(async () => {
     setLoadError('')
@@ -43,7 +48,7 @@ export default function PurchaseModal({
 
   async function handleConfirm() {
     if (!preview || submitting) return
-    const outcome = await onConfirm(preview, idempotencyKey)
+    const outcome = await onConfirm(preview, idempotencyKey, answers)
     if (outcome === 'price_changed') {
       // 服务端价格已变：换新的结算意图（新幂等键）并重新报价，由用户再次确认。
       setPriceChanged(true)
@@ -54,6 +59,8 @@ export default function PurchaseModal({
   }
 
   const isHold = preview?.chargeType === 'hold'
+  const missingRequired =
+    preview?.purchaseForm?.some(f => f.required && !(answers[f.key] ?? '').trim()) ?? false
 
   return (
     <Dialog open onOpenChange={(o) => { if (!o && !submitting) onClose() }}>
@@ -67,7 +74,7 @@ export default function PurchaseModal({
             data-testid="price-changed-notice"
           >
             <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0 text-amber-500" />
-            <span>商品信息已变化，请核对最新价格后重新确认。</span>
+            <span>商品信息已变化，请核对最新内容后重新确认。</span>
           </div>
         )}
 
@@ -121,6 +128,42 @@ export default function PurchaseModal({
           </div>
         )}
 
+        {preview && preview.purchaseForm.length > 0 && (
+          <div className="mb-6 space-y-3" data-testid="purchase-form-fields">
+            {preview.purchaseForm.map(field => (
+              <div key={field.key}>
+                <label className="block text-xs font-bold text-[var(--color-text-muted)] mb-1.5">
+                  {field.label}
+                  {field.required && <span className="text-red-500 ml-0.5">*</span>}
+                </label>
+                {field.type === 'text' ? (
+                  <input
+                    type="text"
+                    className="input"
+                    placeholder={field.placeholder ?? ''}
+                    maxLength={500}
+                    value={answers[field.key] ?? ''}
+                    onChange={(e) => setAnswers(prev => ({ ...prev, [field.key]: e.target.value }))}
+                    data-testid={`purchase-field-${field.key}`}
+                  />
+                ) : (
+                  <select
+                    className="input appearance-none cursor-pointer"
+                    value={answers[field.key] ?? ''}
+                    onChange={(e) => setAnswers(prev => ({ ...prev, [field.key]: e.target.value }))}
+                    data-testid={`purchase-field-${field.key}`}
+                  >
+                    <option value="">请选择</option>
+                    {field.options?.map(option => (
+                      <option key={option} value={option}>{option}</option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
         <div className="flex gap-3">
           <button
             onClick={onClose}
@@ -131,7 +174,7 @@ export default function PurchaseModal({
           </button>
           <button
             onClick={handleConfirm}
-            disabled={submitting || !preview || !preview.sufficient || !preview.purchasable}
+            disabled={submitting || !preview || !preview.sufficient || !preview.purchasable || missingRequired}
             className="btn-cta flex-1 px-0"
           >
             {submitting && <Loader2 className="w-4 h-4 animate-spin" />}

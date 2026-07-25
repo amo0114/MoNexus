@@ -1,5 +1,6 @@
 import api from './client'
 import { UserOrderListItem, UserOrderDetail } from '../types/order'
+import type { PurchaseFormField } from '../types/merchant'
 
 export interface CheckoutPreview {
   productId: number
@@ -12,6 +13,8 @@ export interface CheckoutPreview {
   sufficient: boolean
   purchasable: boolean
   unpurchasableReason?: string
+  purchaseForm: PurchaseFormField[]
+  purchaseFormVersion: string
 }
 
 export async function getCheckoutPreview(productId: number): Promise<CheckoutPreview> {
@@ -35,11 +38,25 @@ export interface CreateOrderResult {
 
 export async function createOrder(
   productId: number,
-  options: { expectedPrice: number; idempotencyKey: string }
+  options: {
+    expectedPrice: number
+    idempotencyKey: string
+    formAnswers?: Record<string, string>
+    expectedPurchaseFormVersion?: string
+  }
 ): Promise<CreateOrderResult> {
   const { data } = await api.post(
     '/orders',
-    { productId, expectedPrice: options.expectedPrice },
+    {
+      productId,
+      expectedPrice: options.expectedPrice,
+      ...(options.expectedPurchaseFormVersion
+        ? { expectedPurchaseFormVersion: options.expectedPurchaseFormVersion }
+        : {}),
+      ...(options.formAnswers && Object.keys(options.formAnswers).length > 0
+        ? { formAnswers: options.formAnswers }
+        : {}),
+    },
     { headers: { 'Idempotency-Key': options.idempotencyKey } }
   )
   return data

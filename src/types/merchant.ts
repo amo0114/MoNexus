@@ -71,6 +71,17 @@ export interface MerchantProduct {
   fixedContentType?: string
   availableStock?: number
   lowStock?: boolean
+  purchaseForm?: PurchaseFormField[]
+}
+
+/** 购买前信息收集字段定义；与后端 server/src/lib/purchaseForm.ts 契约一致。 */
+export interface PurchaseFormField {
+  key: string
+  label: string
+  type: 'text' | 'select'
+  required: boolean
+  placeholder?: string
+  options?: string[]
 }
 
 export interface MerchantOrder {
@@ -93,6 +104,9 @@ export interface MerchantOrder {
   holdingPoints?: number | null
   fulfillmentDeadline?: string | null
   slaExceeded?: boolean
+  /** 仅订单详情接口返回；列表按敏感边界剥离。 */
+  purchaseFormSnapshot?: Array<{ key: string; label: string; type: string }> | null
+  purchaseFormAnswers?: Record<string, string> | null
 }
 
 export interface Settlement {

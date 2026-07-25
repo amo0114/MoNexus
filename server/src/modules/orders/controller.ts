@@ -15,6 +15,8 @@ export async function create(req: Request, res: Response, next: NextFunction) {
 
     const result = await orderService.createOrder(req.user!.userId, req.body.productId, {
       expectedPrice: req.body.expectedPrice,
+      formAnswers: req.body.formAnswers,
+      expectedPurchaseFormVersion: req.body.expectedPurchaseFormVersion,
       idempotencyKey,
     })
     res.status(201).json(result)

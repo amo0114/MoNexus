@@ -14,16 +14,22 @@ The read-only checkout quote lives in its own module: `GET /api/checkout/preview
 
 Admin counterparts (`/api/admin/orders/*`) are documented in `../admin/README.md`.
 
-## Price confirmation (`expectedPrice`)
+## Price confirmation (`expectedPrice`) and checkout version (`expectedPurchaseFormVersion`)
 
-If the request body carries `expectedPrice` and it differs from the product's current price, the order is rejected with `409 PRICE_CHANGED` and no side effects. The client must re-fetch the preview and get an explicit re-confirmation from the user — silently charging the new price is forbidden. The field is optional for backward compatibility; the shipped frontend always sends it.
+If the request body carries `expectedPrice` and it differs from the product's current price, the order is rejected with `409 PRICE_CHANGED` and no side effects. Likewise, `expectedPurchaseFormVersion` (the digest of the normalized purchase-form definitions, returned by `GET /api/checkout/preview` as `purchaseFormVersion`) is compared against the product's current form: a mismatch — the merchant added a required field, removed an option, etc. while the buyer had the dialog open — is rejected with `409 CHECKOUT_CHANGED` instead of failing the buyer's stale answers with an unexplained 400. In both cases the client must re-fetch the preview, rotate the idempotency key and get an explicit re-confirmation from the user — silently charging under changed terms is forbidden. Both fields are optional for backward compatibility; the shipped frontend always sends them.
+
+## Purchase form (`formAnswers`)
+
+Products may define pre-purchase fields (`Product.purchaseForm`, contract in `server/src/lib/purchaseForm.ts` — text/select, ≤6 fields). At order time `formAnswers` is validated against the product's **current** definitions (required, select-option membership, ≤500 chars; unknown keys dropped), then both the definitions and answers are snapshotted onto the order (`purchaseFormSnapshot` / `purchaseFormAnswers`) so later form edits never affect existing orders.
+
+Answers share the `DeliveryRecord.content` exposure boundary: buyer order detail, merchant order detail (explicitly re-added after the shared serializer strips them), and admin order detail only. Order **list** endpoints and public product APIs never contain them. The field **definitions** are public (buyers must see them to fill them in) and are returned by the public product detail and `GET /api/checkout/preview`.
 
 ## Idempotency (`Idempotency-Key` header)
 
 One checkout intent (double click, timeout retry, network replay) must map to at most one order and one debit. Clients send a UUID `Idempotency-Key` header; the frontend generates one per opened purchase dialog and reuses it across retries.
 
-- Claim before the order transaction: an `IdempotencyRecord (userId, key)` row is inserted; the DB unique constraint is the concurrency backstop (`idempotency.ts`). Each claim carries a random `claimToken` lease and pins the request fingerprint (`productId`).
-- Same key with a **different productId** → `409 CONFLICT` (fingerprint mismatch); a key never silently replays an unrelated product's order.
+- Claim before the order transaction: an `IdempotencyRecord (userId, key)` row is inserted; the DB unique constraint is the concurrency backstop (`idempotency.ts`). Each claim carries a random `claimToken` lease and pins the full request fingerprint: an HMAC digest of `productId + expectedPrice + purchaseFormVersion + normalized formAnswers` (`requestDigest`; HMAC so low-entropy answers cannot be enumerated from the table).
+- Same key with a **different request body** — different product, price, form version or answers — → `409 CONFLICT` telling the user to check their orders first. A key never silently replays a submission with different content (answers matter: for manual fulfillment, "buyer thinks they sent B, merchant received A" is worse than a double charge).
 - `completed` record → the original order is returned again (`201`, response carries `idempotentReplay: true`).
 - Live `processing` record → `409 CONFLICT` (a concurrent submit of the same intent is in flight).
 - The claim is marked `completed` **inside** the order transaction, so "order exists" and "key is replayable" commit atomically. The completion is token-scoped (`updateMany` must affect exactly 1 row) — a holder that stalled past the TTL and was taken over cannot finish its order; its transaction rolls back.

@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { loginAs, SEED_ACCOUNTS } from './helpers'
+import { loginAs, SEED_ACCOUNTS, createInstantFixedProductViaWizard } from './helpers'
 
 const PRODUCT_NAME = `E2E固定内容商品-${Date.now()}`
 const FIXED_URL = 'https://example.com/e2e-invite'
@@ -16,27 +16,12 @@ test.describe.serial('instant_fixed delivery flow', () => {
   test('merchant publishes an instant_fixed product with url content', async ({ page }) => {
     await loginAs(page, SEED_ACCOUNTS.merchant)
 
-    await page.goto('/merchant')
+    // P2：商品创建统一走分步创建页
+    await createInstantFixedProductViaWizard(page, { name: PRODUCT_NAME, url: FIXED_URL })
+
+    // 发布后回到商家中心，列表搜索能命中新商品
     await page.getByRole('button', { name: '商品管理' }).click()
     await expect(page.getByTestId('merchant-product-filters')).toBeVisible({ timeout: 10_000 })
-
-    await page.getByRole('button', { name: '新建商品' }).click()
-    await expect(page.getByText('发布新商品')).toBeVisible({ timeout: 10_000 })
-
-    await page.getByPlaceholder('输入吸引人的商品名称').fill(PRODUCT_NAME)
-    await page.locator('#productForm select').first().selectOption('邀请码')
-    await page.getByRole('radio', { name: '固定内容直发' }).check()
-    await page.getByRole('radio', { name: '外部链接' }).check()
-    await page.getByTestId('fixed-content-input').fill(FIXED_URL)
-    // 库存模式保持默认「不限库存」
-    await expect(page.getByTestId('stock-mode-select')).toHaveValue('unlimited')
-    // 价格设为 1 积分，保证 seed 用户余额充足
-    await page.locator('#productForm input[type="number"][required]').fill('1')
-
-    await page.getByRole('button', { name: '确认保存' }).click()
-    await expect(page.getByText('商品创建成功')).toBeVisible({ timeout: 10_000 })
-
-    // 列表搜索能命中新商品
     await page.getByTestId('merchant-product-search').fill(PRODUCT_NAME)
     await expect(page.locator('tbody tr').filter({ hasText: PRODUCT_NAME })).toBeVisible({ timeout: 10_000 })
   })
