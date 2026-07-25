@@ -15,6 +15,8 @@ export interface CheckoutPreview {
   unpurchasableReason?: string
   purchaseForm: PurchaseFormField[]
   purchaseFormVersion: string
+  // 高风险二次验证：true 时弹窗渲染登录密码输入框（服务端下单时重新裁决）
+  requiresVerification: boolean
 }
 
 export async function getCheckoutPreview(productId: number): Promise<CheckoutPreview> {
@@ -43,6 +45,7 @@ export async function createOrder(
     idempotencyKey: string
     formAnswers?: Record<string, string>
     expectedPurchaseFormVersion?: string
+    verificationPassword?: string
   }
 ): Promise<CreateOrderResult> {
   const { data } = await api.post(
@@ -56,6 +59,7 @@ export async function createOrder(
       ...(options.formAnswers && Object.keys(options.formAnswers).length > 0
         ? { formAnswers: options.formAnswers }
         : {}),
+      ...(options.verificationPassword ? { verificationPassword: options.verificationPassword } : {}),
     },
     { headers: { 'Idempotency-Key': options.idempotencyKey } }
   )

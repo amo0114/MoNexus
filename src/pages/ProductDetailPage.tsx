@@ -94,7 +94,8 @@ export default function ProductDetailPage() {
   async function handlePurchase(
     preview: CheckoutPreview,
     idempotencyKey: string,
-    formAnswers: Record<string, string>
+    formAnswers: Record<string, string>,
+    verificationPassword: string
   ): Promise<ConfirmOutcome> {
     if (!product || purchasing) return 'failed'
     setPurchasing(true)
@@ -104,6 +105,7 @@ export default function ProductDetailPage() {
         idempotencyKey,
         formAnswers,
         expectedPurchaseFormVersion: preview.purchaseFormVersion,
+        verificationPassword: verificationPassword || undefined,
       })
       useAuthStore.getState().updatePoints(data.balanceAfter)
       setDeliveryContent(data.deliveryContent ?? '')
@@ -121,8 +123,19 @@ export default function ProductDetailPage() {
         showToast('商品信息已变化，请重新确认', 'error')
         return 'price_changed'
       }
-      // 其他失败（含网络错误）也保持弹窗打开：用户重试会复用同一幂等键，
-      // 服务端保证同一结算意图只产生一笔订单。
+      if (code === 'VERIFICATION_REQUIRED') {
+        // 预览后风控条件变化（阈值调整/改价跨过阈值）：弹窗重新报价并渲染
+        // 密码框。请求无副作用，幂等键不轮换。
+        showToast('本单需输入登录密码确认', 'error')
+        return 'verification_required'
+      }
+      if (code === 'VERIFICATION_FAILED') {
+        // 密码错误：同一结算意图，幂等键不轮换；弹窗清空密码让用户重输。
+        showToast(getApiErrorMessage(err, '密码错误，请重新输入'), 'error')
+        return 'verification_failed'
+      }
+      // 其他失败（含网络错误、验证限流 429）也保持弹窗打开：用户重试会复用
+      // 同一幂等键，服务端保证同一结算意图只产生一笔订单。
       showToast(getApiErrorMessage(err, '兑换失败'), 'error')
       return 'failed'
     } finally {

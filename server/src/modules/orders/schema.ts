@@ -19,6 +19,9 @@ export const createOrderSchema = z.object({
   formAnswers: z.record(z.string(), z.string().max(500)).optional(),
   // 结算预览返回的表单版本摘要；不一致返回 409 CHECKOUT_CHANGED。
   expectedPurchaseFormVersion: z.string().max(32).optional(),
+  // 高风险二次验证：触发阈值时必须携带登录密码。凭证不是订单内容——
+  // 不进幂等指纹，禁止出现在任何日志/审计/序列化输出（logger 已 redact）。
+  verificationPassword: z.string().min(1).max(128).optional(),
 })
 
 // Idempotency-Key 请求头：限定 UUID，避免任意字符串占用唯一索引空间。

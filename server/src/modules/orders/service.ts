@@ -18,6 +18,7 @@ import { serializeUserOrderDetail, serializeUserOrderList } from './serializers.
 import { invalidateProductPublicCache } from '../products/cache.js'
 import { logInventoryChange } from '../../lib/inventoryLog.js'
 import { parseStoredPurchaseForm, validatePurchaseFormAnswers, computePurchaseFormVersion } from '../../lib/purchaseForm.js'
+import { assertCheckoutVerification } from '../checkout/verification.js'
 
 // manual_service 商家履约 SLA：创建订单后 7 天内需交付，M3-S2 工作台高亮超时
 const FULFILLMENT_SLA_MS = 7 * 24 * 60 * 60 * 1000
@@ -32,6 +33,8 @@ export type CreateOrderOptions = {
   formAnswers?: Record<string, string>
   // 结算预览返回的表单版本：商家在预览后改动表单时拒单（409 CHECKOUT_CHANGED）。
   expectedPurchaseFormVersion?: string
+  // 高风险二次验证：触发阈值时必须携带的登录密码（checkout/verification.ts）。
+  verificationPassword?: string
 }
 
 export async function createOrder(
@@ -39,7 +42,7 @@ export async function createOrder(
   productId: number,
   options: CreateOrderOptions = {}
 ) {
-  const { expectedPrice, idempotencyKey, formAnswers, expectedPurchaseFormVersion } = options
+  const { expectedPrice, idempotencyKey, formAnswers, expectedPurchaseFormVersion, verificationPassword } = options
 
   let claimToken: string | undefined
   if (idempotencyKey) {
@@ -54,6 +57,29 @@ export async function createOrder(
   }
 
   try {
+    // 高风险二次验证：幂等 claim 之后、订单事务之前（bcrypt 慢操作不进事务）。
+    // 验证前先做轻量的价格/表单版本预检——商家改价（或改表单）恰好把订单推过
+    // 验证阈值时，必须优先返回 409 让前端重新报价（新 preview 会带上密码框），
+    // 而不是先返回 VERIFICATION_REQUIRED 把用户卡在没有密码框的旧弹窗里。
+    // 这里只是预检，事务内仍保留最终一致性校验；商品缺失由事务内统一 404。
+    const current = await prisma.product.findUnique({
+      where: { id: productId },
+      select: { price: true, purchaseForm: true },
+    })
+    if (current) {
+      if (expectedPrice != null && expectedPrice !== current.price) {
+        throw new HttpError(409, 'PRICE_CHANGED', '商品信息已变化，请重新确认')
+      }
+      if (
+        expectedPurchaseFormVersion != null &&
+        expectedPurchaseFormVersion !== computePurchaseFormVersion(parseStoredPurchaseForm(current.purchaseForm))
+      ) {
+        throw new HttpError(409, 'CHECKOUT_CHANGED', '商品信息已变化，请重新确认')
+      }
+      // 服务端按当前价重算触发条件，不信任 preview 的 requiresVerification 声明。
+      // 失败抛错走下面的 release 路径，同 key 可换密码重试同一意图。
+      await assertCheckoutVerification(userId, current.price, verificationPassword)
+    }
     return await createOrderOnce(userId, productId, {
       expectedPrice,
       idempotencyKey,

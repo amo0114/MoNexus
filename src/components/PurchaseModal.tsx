@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
-import { AlertTriangle, Coins, Loader2 } from 'lucide-react'
+import { AlertTriangle, Coins, Loader2, ShieldCheck } from 'lucide-react'
 import { Dialog, DialogContent, DialogTitle } from './ui/Dialog'
 import { getCheckoutPreview, type CheckoutPreview } from '../api/orders'
 import { getApiErrorMessage } from '../api/error'
 
-export type ConfirmOutcome = 'success' | 'price_changed' | 'failed'
+export type ConfirmOutcome = 'success' | 'price_changed' | 'verification_required' | 'verification_failed' | 'failed'
 
 /**
  * 结算确认弹窗。打开时向服务端拉取结算预览（余额前后值、扣除/冻结类型），
@@ -23,7 +23,8 @@ export default function PurchaseModal({
   onConfirm: (
     preview: CheckoutPreview,
     idempotencyKey: string,
-    formAnswers: Record<string, string>
+    formAnswers: Record<string, string>,
+    verificationPassword: string
   ) => Promise<ConfirmOutcome>
 }) {
   const [preview, setPreview] = useState<CheckoutPreview | null>(null)
@@ -31,6 +32,7 @@ export default function PurchaseModal({
   const [priceChanged, setPriceChanged] = useState(false)
   const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID())
   const [answers, setAnswers] = useState<Record<string, string>>({})
+  const [verifyPassword, setVerifyPassword] = useState('')
 
   const loadPreview = useCallback(async () => {
     setLoadError('')
@@ -48,19 +50,29 @@ export default function PurchaseModal({
 
   async function handleConfirm() {
     if (!preview || submitting) return
-    const outcome = await onConfirm(preview, idempotencyKey, answers)
+    const outcome = await onConfirm(preview, idempotencyKey, answers, verifyPassword)
     if (outcome === 'price_changed') {
       // 服务端价格已变：换新的结算意图（新幂等键）并重新报价，由用户再次确认。
       setPriceChanged(true)
       setIdempotencyKey(crypto.randomUUID())
       setPreview(null)
       loadPreview()
+    } else if (outcome === 'verification_required') {
+      // 预览后风控条件变化（阈值调整/多标签页累计跨过阈值）：重新报价，
+      // 新 preview 会带 requiresVerification 使密码框出现。同一结算意图
+      // 且请求无副作用，幂等键不轮换，已填答案保留。
+      setPreview(null)
+      loadPreview()
+    } else if (outcome === 'verification_failed') {
+      // 密码错误：同一结算意图（幂等键不轮换），清空密码让用户重输。
+      setVerifyPassword('')
     }
   }
 
   const isHold = preview?.chargeType === 'hold'
   const missingRequired =
     preview?.purchaseForm?.some(f => f.required && !(answers[f.key] ?? '').trim()) ?? false
+  const missingVerification = (preview?.requiresVerification ?? false) && verifyPassword === ''
 
   return (
     <Dialog open onOpenChange={(o) => { if (!o && !submitting) onClose() }}>
@@ -164,6 +176,26 @@ export default function PurchaseModal({
           </div>
         )}
 
+        {preview?.requiresVerification && (
+          <div className="mb-6" data-testid="purchase-verify-section">
+            <label className="flex items-center gap-1.5 text-xs font-bold text-[var(--color-text-muted)] mb-1.5">
+              <ShieldCheck className="w-3.5 h-3.5 text-[var(--color-primary)]" />
+              本单金额较大，请输入登录密码确认
+              <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="password"
+              className="input"
+              placeholder="登录密码"
+              autoComplete="current-password"
+              maxLength={128}
+              value={verifyPassword}
+              onChange={(e) => setVerifyPassword(e.target.value)}
+              data-testid="purchase-verify-password"
+            />
+          </div>
+        )}
+
         <div className="flex gap-3">
           <button
             onClick={onClose}
@@ -174,7 +206,7 @@ export default function PurchaseModal({
           </button>
           <button
             onClick={handleConfirm}
-            disabled={submitting || !preview || !preview.sufficient || !preview.purchasable || missingRequired}
+            disabled={submitting || !preview || !preview.sufficient || !preview.purchasable || missingRequired || missingVerification}
             className="btn-cta flex-1 px-0"
           >
             {submitting && <Loader2 className="w-4 h-4 animate-spin" />}

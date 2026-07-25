@@ -24,6 +24,19 @@ Products may define pre-purchase fields (`Product.purchaseForm`, contract in `se
 
 Answers share the `DeliveryRecord.content` exposure boundary: buyer order detail, merchant order detail (explicitly re-added after the shared serializer strips them), and admin order detail only. Order **list** endpoints and public product APIs never contain them. The field **definitions** are public (buyers must see them to fill them in) and are returned by the public product detail and `GET /api/checkout/preview`.
 
+## High-risk verification (`verificationPassword`)
+
+Orders above configurable thresholds require the buyer's **login password** as a second confirmation (`../checkout/verification.ts`; spec P3 — deliberately no separate payment-password system). Two `SystemConfig` thresholds, both admin-editable and `0 = off` (the default): `checkoutVerifyAmountThreshold` (single order price) and `checkoutVerifyDailyThreshold` (today's non-refunded order total + this order, server-local day boundary).
+
+- `GET /api/checkout/preview` returns `requiresVerification` so the dialog can pre-render the password field — display only. The order endpoint **recomputes the trigger server-side** and never trusts the client's claim.
+- A lightweight `expectedPrice` / form-version pre-check runs **before** the password check: when a merchant price change pushes the order across the threshold, the client gets the familiar `409 PRICE_CHANGED` / `409 CHECKOUT_CHANGED` (fresh preview → password field appears) instead of a `VERIFICATION_REQUIRED` it cannot act on with the stale dialog. The transaction still holds the authoritative checks.
+- Triggered order without a password → `401 VERIFICATION_REQUIRED` (client silently re-fetches the preview so the password field appears); wrong password → `401 VERIFICATION_FAILED` (client keeps the preview, clears the password input). Both are side-effect free (no order, no debit, idempotency claim released) — the dialog stays open and **reuses the same idempotency key**, because the password is a credential, not order content, and is deliberately excluded from `requestDigest`. The Axios auto-refresh interceptor explicitly skips these business 401s: replaying would re-submit the same wrong password and double-count the brute-force counter.
+- Brute-force guard: 5 failed verifications per user per 15 minutes → `429 TOO_MANY_ATTEMPTS`; a successful verification resets the counter. Error messages never disclose remaining attempts. The counter is in-memory (single-instance deployment); move it to Redis before scaling out.
+- The bcrypt comparison runs after the idempotency claim and **before** the order transaction — slow hashing must not extend DB transaction time.
+- `verificationPassword` never appears in logs (pino redact), audit entries, or any serialized output.
+
+Daily-cumulative is a soft risk control, not an accounting invariant: two concurrent orders may both pass the "cumulative below threshold" check. No locking is added for it.
+
 ## Idempotency (`Idempotency-Key` header)
 
 One checkout intent (double click, timeout retry, network replay) must map to at most one order and one debit. Clients send a UUID `Idempotency-Key` header; the frontend generates one per opened purchase dialog and reuses it across retries.

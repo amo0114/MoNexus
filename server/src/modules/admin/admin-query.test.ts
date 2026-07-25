@@ -274,7 +274,7 @@ describe('GET /api/admin/orders filter & pagination', () => {
 describe('GET /api/admin/config metadata', () => {
   const expectedGroups = ['奖励发放', '分页限制', '库存', '会员等级', '安全']
 
-  it('should attach Chinese description and group to all 13 keys', async () => {
+  it('should attach Chinese description and group to all known keys', async () => {
     const { accessToken } = await loginAdmin('aq-config-admin@test.local')
 
     const res = await api
@@ -282,7 +282,8 @@ describe('GET /api/admin/config metadata', () => {
       .set(authHeader(accessToken))
       .expect(200)
 
-    expect(res.body).toHaveLength(13)
+    const { systemConfigKeys } = await import('../../lib/systemConfig.js')
+    expect(res.body).toHaveLength(systemConfigKeys.length)
     for (const item of res.body) {
       expect(typeof item.description).toBe('string')
       expect(item.description.length).toBeGreaterThan(0)

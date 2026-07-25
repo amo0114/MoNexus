@@ -13,6 +13,11 @@ export type ErrorCode =
   | 'BAD_REQUEST'
   | 'INTERNAL_SERVER_ERROR'
   | 'RATE_LIMITED'
+  // 高风险订单二次验证（P3）：触发阈值但请求缺少登录密码 / 密码错误 /
+  // 验证失败次数过多。前端保持弹窗打开、聚焦密码框，幂等键不轮换。
+  | 'VERIFICATION_REQUIRED'
+  | 'VERIFICATION_FAILED'
+  | 'TOO_MANY_ATTEMPTS'
   // Upload-specific (P0-C) — let the frontend distinguish failure modes
   // for a precise error toast instead of a generic "bad request".
   | 'NO_FILE'
