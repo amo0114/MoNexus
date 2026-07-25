@@ -68,6 +68,27 @@ test.describe('M3-S3 announcements', () => {
     await page.goto('/')
     await expect(page.getByText(STRONG_TITLE, { exact: false })).toBeVisible({ timeout: 10_000 })
 
+    // A Dialog backdrop is a global visual layer, not just main-content dimming:
+    // it must sit above the sticky nav/footer chrome and below dialog content.
+    await page.getByTestId('announcement-banner-open').click()
+    await expect(page.getByTestId('announcement-center')).toBeVisible()
+    const layers = await page.evaluate(() => {
+      const zIndex = (selector: string) => {
+        const element = document.querySelector(selector)
+        if (!element) throw new Error(`missing layer: ${selector}`)
+        return Number.parseInt(getComputedStyle(element).zIndex, 10)
+      }
+      return {
+        footer: zIndex('footer'),
+        nav: zIndex('nav'),
+        overlay: zIndex('.modal-overlay'),
+        dialog: zIndex('[data-testid="announcement-center"]'),
+      }
+    })
+    expect(layers.overlay).toBeGreaterThan(layers.nav)
+    expect(layers.overlay).toBeGreaterThan(layers.footer)
+    expect(layers.dialog).toBeGreaterThan(layers.overlay)
+
     // Cleanup via admin API (faster than UI delete, avoids flake on confirm dialog)
     const listAfter = await request.get(`${API_BASE}/api/admin/announcements?pageSize=100`, {
       headers: { Authorization: `Bearer ${token}` },
