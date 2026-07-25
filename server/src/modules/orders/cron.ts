@@ -4,6 +4,7 @@ import { prisma } from '../../lib/prisma.js'
 import { invalidateProductPublicCache } from '../products/cache.js'
 import { transitionOrderStatus } from './fulfillment.js'
 import { settleHeldOrder } from './accounting.js'
+import { cleanupExpiredIdempotencyRecords } from './idempotency.js'
 
 // PRD §4.3.1：delivered 超 7 天自动 closed，积分正式扣减并触发 Settlement
 const AUTO_CLOSE_SLA_MS = 7 * 24 * 60 * 60 * 1000
@@ -75,6 +76,9 @@ async function runAutoCloseBatch() {
   if (running) return
   running = true
   try {
+    const cleaned = await cleanupExpiredIdempotencyRecords()
+    if (cleaned > 0) logger.info({ count: cleaned }, 'expired idempotency records cleaned')
+
     const candidates = await findAutoCloseCandidates()
     if (candidates.length === 0) return
     logger.info({ count: candidates.length }, 'auto-close cron starting batch')

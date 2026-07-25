@@ -2,6 +2,7 @@ type ApiErrorPayload =
   | string
   | {
       message?: unknown
+      code?: unknown
     }
 
 type ApiErrorLike = {
@@ -10,6 +11,14 @@ type ApiErrorLike = {
       error?: ApiErrorPayload
     }
   }
+}
+
+export function getApiErrorCode(error: unknown): string | undefined {
+  const apiError = (error as ApiErrorLike | undefined)?.response?.data?.error
+  if (typeof apiError === 'object' && apiError !== null && typeof apiError.code === 'string') {
+    return apiError.code
+  }
+  return undefined
 }
 
 export function getApiErrorMessage(error: unknown, fallback: string) {

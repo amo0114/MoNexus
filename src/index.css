@@ -356,12 +356,14 @@ h1, h2, h3, h4 {
 .modal-overlay {
   position: fixed;
   inset: 0;
+  /* Layering contract: the backdrop must dim every piece of application
+     chrome (footer z-10, FAB z-30, navbar z-40), while .modal / drawers
+     remain above it at z-50. Without this explicit middle layer, translucent
+     chrome looks as though it is floating outside the active modal. */
+  z-index: 45;
   background: rgba(0, 0, 0, 0.55);
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
-  /* No z-index here: the overlay must NOT layer above its sibling .modal
-     content inside the parent stacking context. DOM order (overlay first,
-     content second) plus modal's own z-index handles stacking correctly. */
 }
 
 .modal {

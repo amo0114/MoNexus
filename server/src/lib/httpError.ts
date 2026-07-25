@@ -4,6 +4,9 @@ export type ErrorCode =
   | 'FORBIDDEN'
   | 'NOT_FOUND'
   | 'CONFLICT'
+  // 下单价格确认失败：前端携带的 expectedPrice 与服务端当前价不一致，
+  // 前端应重新拉取结算预览并让用户再次确认，禁止静默按新价格成交。
+  | 'PRICE_CHANGED'
   | 'BAD_REQUEST'
   | 'INTERNAL_SERVER_ERROR'
   | 'RATE_LIMITED'

@@ -6,11 +6,31 @@ Powers point-based redemption: a user spends points to claim one unit of invento
 
 | Method | Path | Auth | Notes |
 | --- | --- | :---: | --- |
-| POST | `/api/orders` | Bearer | Redeem one unit of `productId`. |
+| POST | `/api/orders` | Bearer | Redeem one unit of `productId`. Optional body `expectedPrice` and optional `Idempotency-Key` header, see below. |
 | GET | `/api/orders?status=&page=&pageSize=` | Bearer | The caller's own orders, latest first. |
 | GET | `/api/orders/:id` | Bearer | Caller's order detail. **Other users' orders return 404, not 403** — do not leak resource existence. |
 
+The read-only checkout quote lives in its own module: `GET /api/checkout/preview?productId=` (`../checkout/`) returns the server-side price, `chargeType` (`debit` / `hold`), and `balanceBefore` / `balanceAfter` so the confirmation dialog never shows stale client-side numbers. It creates nothing and locks nothing.
+
 Admin counterparts (`/api/admin/orders/*`) are documented in `../admin/README.md`.
+
+## Price confirmation (`expectedPrice`)
+
+If the request body carries `expectedPrice` and it differs from the product's current price, the order is rejected with `409 PRICE_CHANGED` and no side effects. The client must re-fetch the preview and get an explicit re-confirmation from the user — silently charging the new price is forbidden. The field is optional for backward compatibility; the shipped frontend always sends it.
+
+## Idempotency (`Idempotency-Key` header)
+
+One checkout intent (double click, timeout retry, network replay) must map to at most one order and one debit. Clients send a UUID `Idempotency-Key` header; the frontend generates one per opened purchase dialog and reuses it across retries.
+
+- Claim before the order transaction: an `IdempotencyRecord (userId, key)` row is inserted; the DB unique constraint is the concurrency backstop (`idempotency.ts`). Each claim carries a random `claimToken` lease and pins the request fingerprint (`productId`).
+- Same key with a **different productId** → `409 CONFLICT` (fingerprint mismatch); a key never silently replays an unrelated product's order.
+- `completed` record → the original order is returned again (`201`, response carries `idempotentReplay: true`).
+- Live `processing` record → `409 CONFLICT` (a concurrent submit of the same intent is in flight).
+- The claim is marked `completed` **inside** the order transaction, so "order exists" and "key is replayable" commit atomically. The completion is token-scoped (`updateMany` must affect exactly 1 row) — a holder that stalled past the TTL and was taken over cannot finish its order; its transaction rolls back.
+- If the order transaction rolls back, the claim is released (also token-scoped, so a revoked holder cannot delete the takeover's record) and the same intent can retry with the same key. Orphaned `processing` rows (process crash) are reclaimed after a 15-minute TTL; the takeover swaps the lease token.
+- `completed` records are replayable for 24 h, then removed by the order cron.
+
+Requests without the header behave as before (no idempotency) — compatibility for older clients only.
 
 ## Transaction boundary (redeem)
 

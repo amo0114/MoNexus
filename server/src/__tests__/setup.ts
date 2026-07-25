@@ -17,6 +17,7 @@ beforeEach(async () => {
     "AnnouncementReceipt",
     "Announcement",
     "Settlement",
+    "IdempotencyRecord",
     "DeliveryRecord",
     "Order",
     "InventoryLog",

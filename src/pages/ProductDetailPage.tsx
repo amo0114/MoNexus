@@ -3,10 +3,11 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { ArrowLeft, Coins, FileText, Store, ShieldCheck, Info, Star } from 'lucide-react'
 import DOMPurify from 'dompurify'
 import api from '../api/client'
-import { getApiErrorMessage } from '../api/error'
+import { getApiErrorMessage, getApiErrorCode } from '../api/error'
+import { createOrder, type CheckoutPreview } from '../api/orders'
 import { useAppStore } from '../stores/appStore'
 import { useAuthStore } from '../stores/authStore'
-import PurchaseModal from '../components/PurchaseModal'
+import PurchaseModal, { type ConfirmOutcome } from '../components/PurchaseModal'
 import SuccessModal from '../components/SuccessModal'
 import EmptyState from '../components/ui/EmptyState'
 import SafeImage from '../components/ui/SafeImage'
@@ -90,22 +91,36 @@ export default function ProductDetailPage() {
     load()
   }, [id, navigate, showToast])
 
-  async function handlePurchase() {
-    if (!product || purchasing) return
+  async function handlePurchase(
+    preview: CheckoutPreview,
+    idempotencyKey: string
+  ): Promise<ConfirmOutcome> {
+    if (!product || purchasing) return 'failed'
     setPurchasing(true)
     try {
-      const { data } = await api.post('/orders', { productId: product.id })
+      const data = await createOrder(product.id, {
+        expectedPrice: preview.price,
+        idempotencyKey,
+      })
       useAuthStore.getState().updatePoints(data.balanceAfter)
-      setDeliveryContent(data.deliveryContent)
-      setDeliveryContentType(data.deliveryContentType)
+      setDeliveryContent(data.deliveryContent ?? '')
+      setDeliveryContentType(data.deliveryContentType ?? '')
       setMerchantName(data.merchantName || '')
       setShowPurchase(false)
       setShowSuccess(true)
       setProduct({ ...product, stock: product.stock - 1, sales: product.sales + 1 })
       showToast('兑换成功！')
+      return 'success'
     } catch (err: any) {
+      if (getApiErrorCode(err) === 'PRICE_CHANGED') {
+        // 弹窗保持打开，由 PurchaseModal 重新报价并让用户再次确认。
+        showToast('商品信息已变化，请重新确认', 'error')
+        return 'price_changed'
+      }
+      // 其他失败（含网络错误）也保持弹窗打开：用户重试会复用同一幂等键，
+      // 服务端保证同一结算意图只产生一笔订单。
       showToast(getApiErrorMessage(err, '兑换失败'), 'error')
-      setShowPurchase(false)
+      return 'failed'
     } finally {
       setPurchasing(false)
     }
@@ -405,7 +420,7 @@ export default function ProductDetailPage() {
 
       {showPurchase && (
         <PurchaseModal
-          product={product}
+          productId={product.id}
           submitting={purchasing}
           onClose={() => setShowPurchase(false)}
           onConfirm={handlePurchase}
