@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | PLAN-M3-ISH-001 |
-| 版本 | 1.2.0 |
+| 版本 | 1.3.0 |
 | 日期 | 2026-07-27 |
 | 状态 | Frozen for Implementation |
 | 规格 | [spec.md](./spec.md)（SPEC-M3-ISH-001） |
@@ -114,9 +114,9 @@ Profile security card ── GET /auth/sessions ── revoke one / other / all
 
 1. 仓库负责人已授权 M3-ISH 在独立 worktree 并行编辑自身的 schema/migration；不得读取或修改 P6a 未提交文件。P6a 合入后、M3-ISH 开 PR 前必须 rebase，并人工核对 P6a 与 M3-ISH 的 migration 顺序、`User` / `RefreshToken` 块；有语义冲突则先修订本计划再继续。
 2. 所有 Prisma 写操作显式携带专用连接，例如 `DATABASE_URL="$M3_ISH_DATABASE_URL" npx prisma migrate dev --name identity_security_hardening`；`M3_ISH_DATABASE_URL` 只能指向 `monexus_m3_ish_test`。不得依赖 `.env` 默认值，不得使用 `monexus_test`、开发库、staging 或生产库。
-3. 先用 Prisma 生成 Migration A：以 nullable 字段扩展 `RefreshToken`，不为 `sessionId` 加全局 UNIQUE。Prisma shadow database 必须由同一隔离凭据创建；若环境需要显式 shadow URL，只能使用另一个专用 `monexus_m3_ish_*` 数据库，绝不能指向共享库。
-4. Migration A 后、Migration B 前，排空旧 API，并运行受版本控制的应用回填命令：每条 legacy RefreshToken 得到一个独立 `sessionId`，`sessionStartedAt`/`lastUsedAt` 从 `createdAt` 初始化，legacy admin refresh session 全部吊销。该命令必须幂等、分批、可测试，且只在隔离库验证后才可进入部署 runbook。
-5. 在隔离库断言无 null、每个 legacy token 的初始 family ID 互异、refresh rotation 又会共享 family ID 后，再用 Prisma 生成 Migration B 把三项 session 字段收紧为 non-null。不得手改生成的 SQL，也不得假定 `uuid()` default 会替已有行安全回填。
+3. 使用一个 Prisma 生成 migration：`sessionId` 在 schema 中以 `@default(dbgenerated("gen_random_uuid()"))` 取得 PostgreSQL database-generated UUID，session 时间以数据库 timestamp default 取得值，不为 `sessionId` 加全局 UNIQUE。Prisma shadow database 必须由同一隔离凭据创建；若环境需要显式 shadow URL，只能使用另一个专用 `monexus_m3_ish_*` 数据库，绝不能指向共享库。
+4. 生成 migration 后，先在独立 `monexus_m3_ish_migration_test` 的 pre-migration legacy fixture 上应用它，断言每条既有 RefreshToken 获得不同、非空的 UUID 和非空 session 时间；验证 SQL 确实含 database default，不能把 Prisma client-side `uuid()` 误当成数据回填。
+5. migration 应用后、启动新 API 前运行受版本控制的 legacy-admin revoke 命令，吊销所有旧 admin RefreshToken；命令必须幂等、分批、可测试，且只在隔离库验证后才可进入部署 runbook。
 6. session family 的唯一性不是 token 行唯一性：`RefreshToken.sessionId` 可在同一轮换族的多行重复；用 user/session/active/expiry 索引支持查询，不能加全局 unique。
 7. 所有秘密字段使用 select 白名单；User profile、AdminLog、SecurityEvent serializer 永远不读取/返回 mfaSecretEncrypted。
 
@@ -220,7 +220,7 @@ runbook 至少包含：
 
 | 交付 | 对应 |
 | --- | --- |
-| 两阶段 Prisma schema/migration、sessionId 回填与收紧验证 | REQ-F-020 |
+| 单一 database-default Prisma migration、legacy fixture 与管理员吊销验证 | REQ-F-020 |
 | config production guard、AES-GCM/TOTP/recovery/challenge primitive | REQ-F-010–013, NF-01–03 |
 | logger redact 和 SecurityEvent 基础 | REQ-F-030–031 |
 | 迁移/加密/日志单元测试 | NF-08 |
@@ -329,8 +329,8 @@ Phase A ──► Phase B ──► Phase C ──► Phase D ──► Phase E
 
 ### 7.2 发布顺序
 
-1. 暂停/排空旧 API 实例，避免旧代码继续接受无 MFA admin token，先应用 Migration A。
-2. 在受控发布环境运行版本化 session-family 回填，验证无 null、legacy admin session 已吊销；再应用 Migration B。任何一步失败都不启动新 API，也不回滚到无 MFA 后台。
+1. 暂停/排空旧 API 实例，避免旧代码继续接受无 MFA admin token，应用已验证的 database-default migration。
+2. 在受控发布环境运行版本化 legacy-admin revoke 命令，验证所有旧 admin refresh session 已吊销。任何一步失败都不启动新 API，也不回滚到无 MFA 后台。
 3. 启动包含 MFA config guard 的新 API；所有实例使用相同密钥。
 4. 验证 health/readiness、production env guard、普通用户登录。
 5. 使用指定管理员走首次绑定、访问 admin stats、查看 session、在另一浏览器撤销会话。
@@ -383,3 +383,4 @@ Phase A ──► Phase B ──► Phase C ──► Phase D ──► Phase E
 | 1.0.0 | 2026-07-27 | 初版，聚焦管理员 MFA、设备会话与 bcrypt 收口 |
 | 1.1.0 | 2026-07-27 | 明确 P6a rebase gate、两阶段生成 migration/回填策略与零干扰验证入口 |
 | 1.2.0 | 2026-07-27 | 记录仓库负责人对隔离并行实现的授权；保留 P6a 合入后的 PR 前 rebase/迁移复核 |
+| 1.3.0 | 2026-07-27 | 采用已验证的 `gen_random_uuid()` database default，实现可原子部署的单 migration；回填改为 legacy admin 吊销命令 |

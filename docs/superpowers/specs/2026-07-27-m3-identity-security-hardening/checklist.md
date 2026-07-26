@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | CHK-M3-ISH-001 |
-| 版本 | 1.2.0 |
+| 版本 | 1.3.0 |
 | 日期 | 2026-07-27 |
 | 规格 | [spec.md](./spec.md) |
 | 计划 | [plan.md](./plan.md) |
@@ -50,7 +50,7 @@
 - [ ] **CHK-DATA-03** AuthChallenge 是随机 UUID、5 分钟、单次、最多 5 次失败；过期/超限/成功后不可复用。
 - [ ] **CHK-DATA-04** RefreshToken 有稳定 sessionId；同一 refresh rotation 的新旧 token 继承同一 sessionId 和 sessionStartedAt；sessionId 是 family ID，不能建 token 行全局 unique。
 - [ ] **CHK-DATA-05** SecurityEvent 只存安全事件 type、不可逆 IP 关联/安全 device hint 和安全摘要；不存秘密或原始 IP。
-- [ ] **CHK-DATA-06** 两阶段生成 migration 在隔离 PostgreSQL 成功应用：Migration A nullable 扩展 → 版本化 backfill（每条 legacy token 初始 family ID 互异、legacy admin 全吊销）→ Migration B non-null 收紧；不得手改 SQL 或假定 uuid default 自动回填。
+- [ ] **CHK-DATA-06** 单一 Prisma-generated migration 在隔离 PostgreSQL 成功应用：`sessionId` SQL default 为 `gen_random_uuid()`，pre-migration legacy token 均取得非空且彼此不同的 family ID / session 时间；部署前 legacy admin refresh session 全吊销；不得手改 SQL 或把 Prisma client-side uuid 当回填。
 - [ ] **CHK-DATA-07** 新增索引支持按 userId、sessionId、活动/过期状态列会话；会话列表不做全表扫描。
 - [ ] **CHK-DATA-08** MFA_ENCRYPTION_KEY 是 base64 32-byte 值；production 缺失/非法时服务拒绝启动；无默认生产 key。
 - [ ] **CHK-DATA-09** AES-256-GCM 对 seed 的 IV/tag/tamper failure 均正确处理；解密错误不返回内部详情。
@@ -257,3 +257,4 @@ P0 豁免默认不允许。唯一例外是仓库负责人明确书面批准的�
 | 1.0.0 | 2026-07-27 | 初版安全验收清单 |
 | 1.1.0 | 2026-07-27 | 收口 session family/两阶段迁移、P1 标签与专用验证门禁 |
 | 1.2.0 | 2026-07-27 | 将 P6a rebase 明确为 PR 前门禁；并行实现仍须保持 worktree/runtime 隔离 |
+| 1.3.0 | 2026-07-27 | 将 migration 验收改为 database-generated UUID legacy-fixture 证明，并保留 legacy admin 吊销门禁 |

@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | IMPL-M3-ISH-001 |
-| 版本 | 1.2.0 |
+| 版本 | 1.3.0 |
 | 日期 | 2026-07-27 |
 | 状态 | I-00 Done；I-01 In Progress（P6a rebase 为 PR 前闸门） |
 | 输入 | [spec.md](./spec.md) · [plan.md](./plan.md) · [task.md](./task.md) · [checklist.md](./checklist.md) |
@@ -90,7 +90,7 @@ schema.prisma 是唯一共同文件。安全任务不得重排、格式化或编
 | Implement ID | 对应 Tasks | 状态 | 输入 / Owned files | 完成与提交门槛 |
 | --- | --- | --- | --- | --- |
 | I-00 | T-00 | Done | 本包、AGENTS.md、auth 基线 | 记录基线、隔离资源、决策确认；不改业务代码 |
-| I-01 | T-BE-01 | In Progress | schema、config、env example、两阶段专用 migration / backfill | 仅在安全 worktree/专用库实施；PR 前满足 §2.4 四项 rebase 条件；两份 migration 均 Prisma 生成 |
+| I-01 | T-BE-01 | In Progress | schema、config、env example、database-default migration / legacy-admin revoke | 仅在安全 worktree/专用库实施；PR 前满足 §2.4 四项 rebase 条件；migration 必须由 Prisma 生成并经 legacy fixture 验证 |
 | I-02 | T-BE-02 | Todo | auth/mfa、security event、logger、原语测试 | 密钥/OTP/challenge/recovery/redact 单测通过；无真实 secret |
 | I-03 | T-BE-03 + T-BE-05 | Todo | auth service/controller/schema/routes、auth middleware、admin route、auth tests | admin MFA flow、guard、bcrypt 通过；不改 P6a 文件 |
 | I-04 | T-BE-04 | Todo | auth session service/routes/serializer/tests | session family/revoke/replay 通过；owner 404 与脱敏锁定 |
@@ -143,7 +143,7 @@ schema.prisma 是唯一共同文件。安全任务不得重排、格式化或编
 | 时间 | I-* | 状态 | HEAD / 证据 | 备注 |
 | --- | --- | --- | --- | --- |
 | 2026-07-27 | I-00 | Done | branch `feat/m3-identity-security-hardening` from `bf25d01`；独立 worktree；Prisma 6.19.3；专用库 `monexus_m3_ish_test`（31 migrations up to date） | `auth/auth-tokens/refresh-token-wiring/auth-active-user` 4 files、36 tests PASS；frontend build 与 server build PASS；未修改业务代码 |
-| 2026-07-27 | I-01 | In Progress | 仓库负责人已明确授权在独立 worktree 并行开始；P6a 尚未合入 `develop`，预期 migration 为 `20260727090000_p6a_subscription_foundation` | 1.2 将 P6a rebase 改为 PR 前强制闸门；仍禁止改 P6a worktree/共享运行时，先实施 schema/config/backfill 基础 |
+| 2026-07-27 | I-01 | In Progress | 仓库负责人已明确授权在独立 worktree 并行开始；P6a 尚未合入 `develop`，预期 migration 为 `20260727090000_p6a_subscription_foundation` | 1.3 基于专用 PostgreSQL 14 的 `gen_random_uuid()` 验证，采用单一 database-default migration；仍禁止改 P6a worktree/共享运行时 |
 
 ---
 

@@ -119,9 +119,9 @@ TEST_DATABASE_URL='postgresql://monexus:monexus_dev_2026@localhost:5432/monexus_
 - server/src/config/index.ts
 - server/.env.example
 - .env.example
-- server/src/scripts/backfillRefreshTokenSessionFamilies.ts（新，受版本控制、只由部署 runbook 调用）
+- server/src/scripts/revokeLegacyAdminRefreshSessions.ts（新，受版本控制、只由部署 runbook 调用）
 - server/vitest.config.ts、server/src/__tests__/config-production-guards.test.ts、server/src/__tests__/setup.ts
-- 迁移 / backfill 专用测试
+- 迁移 legacy-fixture / legacy-admin revoke 专用测试
 
 **步骤：**
 
@@ -129,12 +129,13 @@ TEST_DATABASE_URL='postgresql://monexus:monexus_dev_2026@localhost:5432/monexus_
 - [ ] 向 User、RefreshToken 添加 spec §5.1 所需字段、关系与会话查询索引；`sessionId` 是 family 标识，**不得**建全局 unique。
 - [ ] 新增 MfaRecoveryCode、AuthChallenge、SecurityEvent 模型；recovery/challenge 可随 User 清理，SecurityEvent 必须保留审计（`userId` 可 SetNull），并在 test setup 显式清理全部三个新模型。
 - [ ] 为 MFA_ENCRYPTION_KEY 建立严格规范 base64 32-byte env parser；production 缺失/格式错误启动失败，vitest 只注入格式正确的测试值，不在 `.env` 提供默认 key。
-- [ ] 在专用库生成 Migration A（nullable 扩展；目录时间戳必须排序在 P6a migration 之后）：`DATABASE_URL="$M3_ISH_DATABASE_URL" npx prisma migrate dev --name identity_security_hardening_expand`。`M3_ISH_DATABASE_URL` 必须显式指向 `monexus_m3_ish_test`；shadow database 也必须是隔离资源。
-- [ ] 写并测试幂等、分批的 session-family backfill：每条 legacy RefreshToken 初始获得不同 UUID、时间取 `createdAt`、legacy admin token 被吊销；不写/不回显 tokenHash 或其他秘密。
-- [ ] 只在专用库断言回填无 null 后，生成 Migration B 收紧 session 字段：`DATABASE_URL="$M3_ISH_DATABASE_URL" npx prisma migrate dev --name identity_security_hardening_session_required`；两份 migration 均由 Prisma 生成，绝不手改 SQL。
-- [ ] 运行 `DATABASE_URL="$M3_ISH_DATABASE_URL" npx prisma migrate status` 与 drift 检查；增加 migration/config/backfill guard 测试。
+- [ ] 将 `sessionId` 声明为 `@default(dbgenerated("gen_random_uuid()")) @db.Uuid`，session 时间声明为数据库 timestamp default；生成的 SQL 必须含 PostgreSQL default，不能使用 client-side `uuid()` 误充历史数据回填。
+- [ ] 在专用库生成一个 migration（目录时间戳必须排序在 P6a migration 之后）：`DATABASE_URL="$M3_ISH_DATABASE_URL" npx prisma migrate dev --name identity_security_hardening`。`M3_ISH_DATABASE_URL` 必须显式指向 `monexus_m3_ish_test`；shadow database 也必须是隔离资源。
+- [ ] 在独立 `monexus_m3_ish_migration_test` 先创建 legacy User/RefreshToken fixture，再应用 migration；断言既有行 `sessionId` 非空且彼此不同、session 时间非空，并检查生成 SQL 的 database default。
+- [ ] 写并测试幂等、分批的 legacy-admin revoke 命令：仅吊销 migration 前的 admin refresh token，写受控 revoke reason，不写/不回显 tokenHash 或其他秘密。
+- [ ] 运行 `DATABASE_URL="$M3_ISH_DATABASE_URL" npx prisma migrate status` 与 drift 检查；增加 migration/config/revoke guard 测试。
 
-**DoD：** 两阶段生成 migration、专用库 backfill/收紧、migrate status/drift、config production guard 通过；无 secret default、无共享库/共享 shadow DB 访问。
+**DoD：** 单一 Prisma-generated database-default migration、legacy fixture、legacy-admin revoke、migrate status/drift、config production guard 通过；无 secret default、无共享库/共享 shadow DB 访问。
 
 ---
 
@@ -356,7 +357,7 @@ TEST_DATABASE_URL='postgresql://monexus:monexus_dev_2026@localhost:5432/monexus_
 - [ ] 并发测试：同一个 challenge 的两个 confirm / verify 仅一个成功；同 recovery code 两次仅一次成功。
 - [ ] 轮换和 replay 测试：sessionId 保持，重放仍全吊销。
 - [ ] serializer test：session、安全事件、错误和 logger 均不含秘密/raw IP/完整 UA。
-- [ ] migration invariant：两阶段 backfill 后每条 legacy RefreshToken 都有初始独立 family ID，rotation 保持 family ID，新增索引/非空约束可用。
+- [ ] migration invariant：database-default migration 后每条 legacy RefreshToken 都有初始独立 family ID，rotation 保持 family ID，新增索引/非空约束可用。
 - [ ] 运行完整 server test。
 
 **DoD：** 全量 vitest 绿，无通过删除或弱化现有 auth assertion 获得的绿。
@@ -407,7 +408,7 @@ TEST_DATABASE_URL='postgresql://monexus:monexus_dev_2026@localhost:5432/monexus_
 
 - [ ] OpenAPI 写明 login 的 200/202 union、新 MFA 与 session 端点、401/403 错误码。
 - [ ] auth README 描述 MFA/session invariants、rotation、普通 access token 与 admin immediate revoke 的差异。
-- [ ] runbook 添加 key 配置、两阶段 migration/backfill/收紧顺序、管理员首次绑定、双人 break-glass 与事件审查；不写真实 secret、recovery code 或 token。
+- [ ] runbook 添加 key 配置、database-default migration/legacy-admin revoke 顺序、管理员首次绑定、双人 break-glass 与事件审查；不写真实 secret、recovery code 或 token。
 - [ ] secrets inventory 增加 MFA_ENCRYPTION_KEY 的 owner、储存位置、轮换前提与恢复依赖。
 - [ ] PR 描述链接本 spec，列 AC 结果和已知普通用户 access token 最长 15 分钟失效语义。
 
@@ -469,3 +470,4 @@ T-00 → T-BE-01 → T-BE-02 → T-BE-03 + T-BE-04 → T-BE-05 → T-FE-01 + T-F
 | 1.0.0 | 2026-07-27 | 初版 WBS，基于当前 auth / RefreshToken 实现 |
 | 1.1.0 | 2026-07-27 | 增加 P6a rebase/两阶段迁移/专用验证门槛；将 F-015、F-016、F-024 收口为独立 P1 任务 |
 | 1.2.0 | 2026-07-27 | 记录负责人授权的隔离并行实现；P6a rebase 保留为 PR 前强制步骤 |
+| 1.3.0 | 2026-07-27 | 将无法原子部署的 two-phase backfill 改为已验证 PostgreSQL database default + legacy-admin revoke 命令 |
