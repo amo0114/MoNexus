@@ -37,6 +37,7 @@ model User {
   announcementsCreated    Announcement[] @relation("AnnouncementCreatedBy")
   announcementReceipts    AnnouncementReceipt[]
   idempotencyRecords      IdempotencyRecord[]
+  fileGrants              FileGrantLog[]
 }
 
 model Announcement {
@@ -243,8 +244,13 @@ model Offer {
   deliveryMode     String   @default("instant_inventory") // instant_inventory | instant_fixed | manual_service
   stockMode        String   @default("limited") // limited | unlimited（instant_inventory 强制 limited）
   stock            Int      @default(0) // >= 0
-  fixedContent     String? // instant_fixed 专用；禁止公开序列化
-  fixedContentType String   @default("text") // text | url
+  fixedContent     String? // instant_fixed 专用（text/url 形态）；禁止公开序列化
+  fixedContentType String   @default("text") // text | url | file
+  // P5：fixedContentType='file' 时的"当前在售文件"。CHECK（20260726180000）：
+  // file 形态要求 instant_fixed + fixedFileId 非空 + fixedContent 为空；
+  // 非 file 形态禁止 fixedFileId。只影响新订单——下单事务把它冻结进
+  // DeliveryRecord.fileId，旧订单下载永远读快照，绝不回查这里。
+  fixedFileId      Int?
   // P4b：交付字段模板 [{ key, label, sensitive, placeholder? }]。null/空 = 纯文本
   // 交付（存量形态，行为不变）。模板本身公开（买家购前可见将获得哪些字段）；
   // 字段"值"的访问边界同 DeliveryRecord.content。instant_fixed 不支持模板。
@@ -266,6 +272,8 @@ model Offer {
   product   Product         @relation(fields: [productId], references: [id])
   inventory InventoryItem[]
   orders    Order[]
+  // Restrict：被在售规格引用的文件行不可删（生命周期只走 status 标记）。
+  fixedFile DeliveryFile?   @relation("OfferFixedFile", fields: [fixedFileId], references: [id], onDelete: Restrict)
 
   @@index([productId, status, sortOrder])
 }
@@ -387,6 +395,7 @@ model Order {
   pointLogs    PointLog[]
   statusEvents OrderStatusEvent[]
   inventoryLogs InventoryLog[]
+  fileGrants   FileGrantLog[]
 }
 
 model DeliveryRecord {
@@ -403,8 +412,13 @@ model DeliveryRecord {
   publicNote  String?
   deliveredAt DateTime?
   createdAt   DateTime  @default(now())
+  // P5：本单交付的文件（下单冻结的固定文件 / 交付时的人工附件）。
+  // 下载授权只认这里；买家窗口从本记录的 deliveredAt 起算。
+  fileId      Int?
 
-  order Order @relation(fields: [orderId], references: [id])
+  order Order         @relation(fields: [orderId], references: [id])
+  // Restrict：交付快照引用的文件行不可删——审计链完整性优先于删除便利。
+  file  DeliveryFile? @relation("DeliveryRecordFile", fields: [fileId], references: [id], onDelete: Restrict)
 }
 
 model OrderStatusEvent {
@@ -502,8 +516,34 @@ model DeliveryFile {
   createdAt  DateTime  @default(now())
   deletedAt  DateTime?
 
-  merchant Merchant @relation(fields: [merchantId], references: [id])
+  merchant        Merchant         @relation(fields: [merchantId], references: [id])
+  offers          Offer[]          @relation("OfferFixedFile")
+  deliveryRecords DeliveryRecord[] @relation("DeliveryRecordFile")
+  grants          FileGrantLog[]
 
   @@index([merchantId, status])
   @@index([key])
+}
+
+// P5：签名发放审计——granted 与 denied 全记，行永不删除。隐私边界：
+// ipHash = HMAC(jwtSecret, ip)（同源可关联、不可还原），不存原始 IP；
+// UA 截断 ≤256。发放 ≠ 完成下载（字节级事实需 S3 access log，v1 不做）。
+model FileGrantLog {
+  id        Int       @id @default(autoincrement())
+  fileId    Int
+  orderId   Int
+  userId    Int
+  role      String // buyer | merchant | admin
+  outcome   String // granted | denied_state | denied_window | denied_revoked
+  ipHash    String?
+  userAgent String?
+  expiresAt DateTime?
+  createdAt DateTime  @default(now())
+
+  file  DeliveryFile @relation(fields: [fileId], references: [id])
+  order Order        @relation(fields: [orderId], references: [id])
+  user  User         @relation(fields: [userId], references: [id])
+
+  @@index([fileId, createdAt])
+  @@index([orderId])
 }

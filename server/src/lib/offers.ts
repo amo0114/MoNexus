@@ -143,6 +143,9 @@ export function computeOfferCheckoutVersion(offer: Offer): string {
     fixedContent: offer.fixedContent ?? null,
     fixedContentType: offer.fixedContentType,
     deliveryFields: parseStoredDeliveryFields(offer.deliveryFields),
+    // P5：换固定文件 = 买家确认的内容变化。null 不进 canonical——非 file
+    // 形态的存量摘要字节不变（与 P4a offerId 的幂等兼容手法一致）。
+    ...(offer.fixedFileId != null ? { fixedFileId: offer.fixedFileId } : {}),
   }
   return createHmac('sha256', config.jwtSecret).update(JSON.stringify(canonical)).digest('hex').slice(0, 16)
 }

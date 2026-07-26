@@ -58,3 +58,111 @@ describe('Product and InventoryItem database constraints', () => {
     })).rejects.toThrow()
   })
 })
+
+// P5 T2：file 形态与签名发放审计的数据库约束。
+describe('P5 file-delivery database constraints', () => {
+  async function makeFile(merchantId: number, marker: string) {
+    return prisma.deliveryFile.create({
+      data: {
+        key: `${marker.repeat(8).slice(0, 32)}.bin`,
+        fileName: 'paid.bin',
+        size: 10,
+        mimeType: 'application/octet-stream',
+        sha256: marker.repeat(16).slice(0, 64),
+        merchantId,
+      },
+    })
+  }
+
+  async function makeMerchantWithProduct(suffix: string) {
+    const user = await prisma.user.create({
+      data: { email: `file-cons-${suffix}@test.local`, password: 'x', role: 'merchant', inviteCode: `FC-${suffix}` },
+    })
+    const merchant = await prisma.merchant.create({
+      data: { userId: user.id, name: `文件约束商家${suffix}`, status: 'active' },
+    })
+    const product = await prisma.product.create({
+      data: { name: `文件约束商品${suffix}`, type: '充值卡密', price: 100, merchantId: merchant.id },
+    })
+    return { merchant, product }
+  }
+
+  it('enforces the file-form invariants on Offer', async () => {
+    const { merchant, product } = await makeMerchantWithProduct('a')
+    const file = await makeFile(merchant.id, 'a1')
+
+    // file 形态缺 fixedFileId → 拒绝。
+    await expect(prisma.offer.create({
+      data: {
+        productId: product.id, name: '坏文件规格1', price: 100,
+        deliveryMode: 'instant_fixed', stockMode: 'unlimited', fixedContentType: 'file',
+      },
+    })).rejects.toThrow()
+
+    // file 形态还塞 fixedContent → 拒绝（文件真相源是 fixedFileId）。
+    await expect(prisma.offer.create({
+      data: {
+        productId: product.id, name: '坏文件规格2', price: 100,
+        deliveryMode: 'instant_fixed', stockMode: 'unlimited', fixedContentType: 'file',
+        fixedFileId: file.id, fixedContent: 'https://leak.example',
+      },
+    })).rejects.toThrow()
+
+    // 非 instant_fixed 不能挂 file 形态。
+    await expect(prisma.offer.create({
+      data: {
+        productId: product.id, name: '坏文件规格3', price: 100,
+        deliveryMode: 'manual_service', stockMode: 'unlimited', fixedContentType: 'file',
+        fixedFileId: file.id,
+      },
+    })).rejects.toThrow()
+
+    // 非 file 形态不能挂 fixedFileId。
+    await expect(prisma.offer.create({
+      data: {
+        productId: product.id, name: '坏文件规格4', price: 100,
+        deliveryMode: 'instant_fixed', stockMode: 'unlimited',
+        fixedContent: '固定文本', fixedFileId: file.id,
+      },
+    })).rejects.toThrow()
+
+    // 合法 file 形态：instant_fixed + fixedFileId + 空 fixedContent。
+    const ok = await prisma.offer.create({
+      data: {
+        productId: product.id, name: '文件规格', price: 100,
+        deliveryMode: 'instant_fixed', stockMode: 'unlimited',
+        fixedContentType: 'file', fixedFileId: file.id,
+      },
+    })
+    expect(ok.fixedFileId).toBe(file.id)
+
+    // 被在售规格引用的文件不可删（RESTRICT）。
+    await expect(prisma.deliveryFile.delete({ where: { id: file.id } })).rejects.toThrow()
+  })
+
+  it('restricts FileGrantLog role/outcome vocabularies', async () => {
+    const { merchant, product } = await makeMerchantWithProduct('b')
+    const file = await makeFile(merchant.id, 'b2')
+    const buyer = await prisma.user.create({
+      data: { email: 'file-cons-buyer@test.local', password: 'x', inviteCode: 'FC-buyer' },
+    })
+    const order = await prisma.order.create({
+      data: { userId: buyer.id, productId: product.id, price: 100 },
+    })
+
+    await expect(prisma.fileGrantLog.create({
+      data: { fileId: file.id, orderId: order.id, userId: buyer.id, role: 'stranger', outcome: 'granted' },
+    })).rejects.toThrow()
+    await expect(prisma.fileGrantLog.create({
+      data: { fileId: file.id, orderId: order.id, userId: buyer.id, role: 'buyer', outcome: 'maybe' },
+    })).rejects.toThrow()
+
+    const ok = await prisma.fileGrantLog.create({
+      data: {
+        fileId: file.id, orderId: order.id, userId: buyer.id,
+        role: 'buyer', outcome: 'granted', expiresAt: new Date(Date.now() + 300_000),
+      },
+    })
+    expect(ok.id).toBeGreaterThan(0)
+  })
+})

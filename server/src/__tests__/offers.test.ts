@@ -570,3 +570,24 @@ describe('P4a F3 — atomic wizard publish (product + offers in one transaction)
     expect(await prisma.offer.count({ where: { productId: { in: products.map(p => p.id) } } })).toBe(0)
   })
 })
+
+describe('P5 T2 — checkoutVersion covers fixedFileId', () => {
+  it('changes the version when the fixed file changes and stays byte-stable for non-file offers', async () => {
+    const { computeOfferCheckoutVersion } = await import('../lib/offers.js')
+    const base = {
+      id: 1, productId: 1, name: '文件规格', price: 100, originalPrice: null,
+      status: 'active', deliveryMode: 'instant_fixed', stockMode: 'unlimited',
+      stock: 0, fixedContent: null, fixedContentType: 'file', deliveryFields: null,
+      sales: 0, sortOrder: 0, isDefault: false, createdAt: new Date(0),
+    }
+    const v1 = computeOfferCheckoutVersion({ ...base, fixedFileId: 11 } as any)
+    const v2 = computeOfferCheckoutVersion({ ...base, fixedFileId: 12 } as any)
+    const vNull = computeOfferCheckoutVersion({ ...base, fixedFileId: null } as any)
+    expect(v1).not.toBe(v2)          // 换文件 → 版本变 → 下单 409 重新确认
+    expect(v1).not.toBe(vNull)
+
+    // 幂等兼容：null 不进 canonical——与"字段不存在的旧对象"逐字节同摘要。
+    const legacy = computeOfferCheckoutVersion(base as any)
+    expect(vNull).toBe(legacy)
+  })
+})
