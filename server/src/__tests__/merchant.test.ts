@@ -5,6 +5,7 @@ import {
   createTestUser,
   createTestMerchant,
   createTestProduct,
+  makeManualService,
   loginAs,
   loginAsMerchant,
   authHeader,
@@ -112,8 +113,16 @@ describe('Merchant product and order flows', () => {
         deliveryMode: 'instant_inventory',
       },
     })
+    const lowStockOffer = await prisma.offer.create({
+      data: { productId: lowStockProduct.id, name: '默认规格', price: 100, stock: 1 },
+    })
     await prisma.inventoryItem.create({
-      data: { productId: lowStockProduct.id, content: 'alpha-low-1', status: 'available' },
+      data: {
+        productId: lowStockProduct.id,
+        offerId: lowStockOffer.id,
+        content: 'alpha-low-1',
+        status: 'available',
+      },
     })
     await prisma.product.create({
       data: {
@@ -400,10 +409,7 @@ describe('Merchant product and order flows', () => {
     })
     await createTestUser('manual-buyer@test.local', 'buyer123', 'user', 5000)
     const product = await createTestProduct('人工服务商品', 500, 0, [], merchant.id)
-    await prisma.product.update({
-      where: { id: product.id },
-      data: { deliveryMode: 'manual_service', stock: 0, stockMode: 'unlimited' },
-    })
+    await makeManualService(product.id)
 
     const buyer = await loginAs('manual-buyer@test.local', 'buyer123')
     const created = await api
@@ -476,10 +482,7 @@ describe('Merchant product and order flows', () => {
     })
     await createTestUser('manual-foreign-buyer@test.local', 'buyer123', 'user', 5000)
     const product = await createTestProduct('人工隔离商品', 500, 0, [], ownerMerchant.id)
-    await prisma.product.update({
-      where: { id: product.id },
-      data: { deliveryMode: 'manual_service', stock: 0, stockMode: 'unlimited' },
-    })
+    await makeManualService(product.id)
     const buyer = await loginAs('manual-foreign-buyer@test.local', 'buyer123')
     const created = await api
       .post('/api/orders')
@@ -504,10 +507,7 @@ describe('Merchant product and order flows', () => {
     })
     await createTestUser('manual-invalid-buyer@test.local', 'buyer123', 'user', 5000)
     const product = await createTestProduct('人工非法流转商品', 500, 0, [], merchant.id)
-    await prisma.product.update({
-      where: { id: product.id },
-      data: { deliveryMode: 'manual_service', stock: 0, stockMode: 'unlimited' },
-    })
+    await makeManualService(product.id)
     const buyer = await loginAs('manual-invalid-buyer@test.local', 'buyer123')
     const created = await api
       .post('/api/orders')
@@ -533,10 +533,7 @@ describe('Merchant product and order flows', () => {
     })
     await createTestUser('settlement-gate-buyer@test.local', 'buyer123', 'user', 5000)
     const product = await createTestProduct('结算门禁人工服务', 300, 0, [], merchant.id)
-    await prisma.product.update({
-      where: { id: product.id },
-      data: { deliveryMode: 'manual_service', stock: 0, stockMode: 'unlimited' },
-    })
+    await makeManualService(product.id)
     const buyer = await loginAs('settlement-gate-buyer@test.local', 'buyer123')
 
     const pending = await api

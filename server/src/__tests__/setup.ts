@@ -30,6 +30,7 @@ beforeEach(async () => {
     "PasswordResetToken",
     "EmailVerificationToken",
     "Product",
+    "Offer",
     "Merchant",
     "PointAccount",
     "User"

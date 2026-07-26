@@ -19,11 +19,14 @@ import { invalidateProductPublicCache } from '../products/cache.js'
 import { logInventoryChange } from '../../lib/inventoryLog.js'
 import { parseStoredPurchaseForm, validatePurchaseFormAnswers, computePurchaseFormVersion } from '../../lib/purchaseForm.js'
 import { assertCheckoutVerification } from '../checkout/verification.js'
+import { resolvePurchaseOffer } from '../../lib/offers.js'
 
 // manual_service 商家履约 SLA：创建订单后 7 天内需交付，M3-S2 工作台高亮超时
 const FULFILLMENT_SLA_MS = 7 * 24 * 60 * 60 * 1000
 
 export type CreateOrderOptions = {
+  // 购买的规格（P4a）。可选：单 SKU 商品由服务端解析为唯一 active Offer。
+  offerId?: number
   // 服务端最终价确认：与商品当前价不一致时拒单（409 PRICE_CHANGED），
   // 用户必须针对新价格重新确认，而不是静默按新价格成交。
   expectedPrice?: number
@@ -42,12 +45,13 @@ export async function createOrder(
   productId: number,
   options: CreateOrderOptions = {}
 ) {
-  const { expectedPrice, idempotencyKey, formAnswers, expectedPurchaseFormVersion, verificationPassword } = options
+  const { offerId, expectedPrice, idempotencyKey, formAnswers, expectedPurchaseFormVersion, verificationPassword } = options
 
   let claimToken: string | undefined
   if (idempotencyKey) {
     const claim = await claimIdempotencyKey(userId, idempotencyKey, {
       productId,
+      offerId,
       expectedPrice,
       purchaseFormVersion: expectedPurchaseFormVersion,
       formAnswers,
@@ -64,10 +68,11 @@ export async function createOrder(
     // 这里只是预检，事务内仍保留最终一致性校验；商品缺失由事务内统一 404。
     const current = await prisma.product.findUnique({
       where: { id: productId },
-      select: { price: true, purchaseForm: true },
+      select: { purchaseForm: true },
     })
     if (current) {
-      if (expectedPrice != null && expectedPrice !== current.price) {
+      const offer = await resolvePurchaseOffer(prisma, productId, offerId)
+      if (expectedPrice != null && expectedPrice !== offer.price) {
         throw new HttpError(409, 'PRICE_CHANGED', '商品信息已变化，请重新确认')
       }
       if (
@@ -78,9 +83,10 @@ export async function createOrder(
       }
       // 服务端按当前价重算触发条件，不信任 preview 的 requiresVerification 声明。
       // 失败抛错走下面的 release 路径，同 key 可换密码重试同一意图。
-      await assertCheckoutVerification(userId, current.price, verificationPassword)
+      await assertCheckoutVerification(userId, offer.price, verificationPassword)
     }
     return await createOrderOnce(userId, productId, {
+      offerId,
       expectedPrice,
       idempotencyKey,
       formAnswers,
@@ -130,6 +136,7 @@ async function createOrderOnce(
   userId: number,
   productId: number,
   {
+    offerId,
     expectedPrice,
     idempotencyKey,
     formAnswers,
@@ -144,7 +151,9 @@ async function createOrderOnce(
     const product = await tx.product.findUnique({ where: { id: productId } })
     if (!product) throw notFound('商品不存在')
     if (product.status !== 'active') throw badRequest('商品已下架')
-    if (expectedPrice != null && expectedPrice !== product.price) {
+    // P4a：价格与履约配置以所选 Offer 为准（单 SKU 未传 offerId 时解析默认）。
+    const offer = await resolvePurchaseOffer(tx, productId, offerId)
+    if (expectedPrice != null && expectedPrice !== offer.price) {
       throw new HttpError(409, 'PRICE_CHANGED', '商品信息已变化，请重新确认')
     }
     // 购买前表单：先做版本比对——商家在买家打开弹窗后改动表单（新增必填、
@@ -157,12 +166,12 @@ async function createOrderOnce(
       throw new HttpError(409, 'CHECKOUT_CHANGED', '商品信息已变化，请重新确认')
     }
     const purchaseFormAnswers = validatePurchaseFormAnswers(purchaseFormFields, formAnswers)
-    const deliveryMode = getProductFulfillmentMode(product.deliveryMode)
+    const deliveryMode = getProductFulfillmentMode(offer.deliveryMode)
 
-    if (deliveryMode === 'instant_fixed' && !product.fixedContent) {
+    if (deliveryMode === 'instant_fixed' && !offer.fixedContent) {
       throw badRequest('商品暂不可购买，请联系商家')
     }
-    if (deliveryMode !== 'instant_inventory' && product.stockMode === 'limited' && product.stock <= 0) {
+    if (deliveryMode !== 'instant_inventory' && offer.stockMode === 'limited' && offer.stock <= 0) {
       throw badRequest('库存不足，请稍后再试')
     }
 
@@ -178,7 +187,7 @@ async function createOrderOnce(
       merchantId = merchant.id
       merchantName = merchant.name
       commissionRate = Number(merchant.commissionRate)
-      commissionAmount = Math.floor(product.price * commissionRate)
+      commissionAmount = Math.floor(offer.price * commissionRate)
     }
 
     const isManual = deliveryMode === 'manual_service'
@@ -194,21 +203,23 @@ async function createOrderOnce(
 
     if (isManual) {
       // 虚拟服务订单：冻结真实占用可用积分，避免同一余额被多笔订单重复使用。
-      orderHoldingPoints = product.price
+      orderHoldingPoints = offer.price
       orderFulfillmentDeadline = new Date(Date.now() + FULFILLMENT_SLA_MS)
       settledSettlementStatus = 'holding'
-      balanceAfter = await holdAvailablePoints(tx, userId, product.price)
+      balanceAfter = await holdAvailablePoints(tx, userId, offer.price)
       fundsHeld = true
     } else {
       // 即时模式：带余额条件的原子扣减，禁止并发下单透支。
-      balanceAfter = await debitAvailablePoints(tx, userId, product.price)
+      balanceAfter = await debitAvailablePoints(tx, userId, offer.price)
     }
 
     const order = await tx.order.create({
       data: {
         userId,
         productId,
-        price: product.price,
+        offerId: offer.id,
+        offerNameSnapshot: offer.name,
+        price: offer.price,
         status: isInstantMode(deliveryMode) ? 'delivered' : 'pending',
         merchantId,
         commissionRate,
@@ -253,7 +264,7 @@ async function createOrderOnce(
         WHERE "id" = (
           SELECT "id"
           FROM "InventoryItem"
-          WHERE "productId" = ${productId}
+          WHERE "offerId" = ${offer.id}
             AND "status" = 'available'
           ORDER BY "id" ASC
           FOR UPDATE SKIP LOCKED
@@ -280,16 +291,16 @@ async function createOrderOnce(
       })
 
     } else if (deliveryMode === 'instant_fixed') {
-      deliveryContent = product.fixedContent!
-      deliveryContentType = product.fixedContentType
+      deliveryContent = offer.fixedContent!
+      deliveryContentType = offer.fixedContentType
 
       await tx.deliveryRecord.create({
         data: {
           orderId: order.id,
           userId,
           productId,
-          content: product.fixedContent,
-          contentType: product.fixedContentType,
+          content: offer.fixedContent,
+          contentType: offer.fixedContentType,
           status: 'delivered',
           deliveredAt: new Date(),
         },
@@ -300,7 +311,7 @@ async function createOrderOnce(
       data: {
         userId,
         type: isManual ? 'hold' : 'out',
-        amount: product.price,
+        amount: offer.price,
         balanceAfter,
         reason: isManual ? `订单冻结积分: #${order.id}` : `兑换商品: ${product.name}`,
         orderId: order.id,
@@ -312,43 +323,52 @@ async function createOrderOnce(
         data: {
           merchantId,
           orderId: order.id,
-          orderAmount: product.price,
+          orderAmount: offer.price,
           commissionRate,
           commissionAmount,
-          settlementAmount: product.price - commissionAmount,
+          settlementAmount: offer.price - commissionAmount,
           status: settledSettlementStatus,
         },
       })
     }
 
+    // 库存/销量：Offer 是真相源；Product 同名列是投影，同事务增量镜像维护
+    //（避免全量重算的额外查询）。
     if (deliveryMode === 'instant_inventory') {
+      await tx.offer.update({ where: { id: offer.id }, data: { sales: { increment: 1 } } })
       await tx.product.update({
         where: { id: productId },
         // 即时库存已经通过上面的 InventoryItem 原子领取变为 sold；
         // Product.stock 不再是该模式的库存来源或缓存投影。
         data: { sales: { increment: 1 } },
       })
-    } else if (product.stockMode === 'limited') {
+    } else if (offer.stockMode === 'limited') {
       // 条件更新防并发超卖：stock>0 才扣减，失败即售罄
-      const updated = await tx.product.updateMany({
-        where: { id: productId, stock: { gt: 0 } },
+      const updated = await tx.offer.updateMany({
+        where: { id: offer.id, stock: { gt: 0 } },
         data: { stock: { decrement: 1 }, sales: { increment: 1 } },
       })
       if (updated.count !== 1) throw badRequest('库存不足，请稍后再试')
+      await tx.product.updateMany({
+        where: { id: productId, stock: { gt: 0 } },
+        data: { stock: { decrement: 1 }, sales: { increment: 1 } },
+      })
     } else {
+      await tx.offer.update({ where: { id: offer.id }, data: { sales: { increment: 1 } } })
       await tx.product.update({
         where: { id: productId },
         data: { sales: { increment: 1 } },
       })
     }
 
-    if (deliveryMode === 'instant_inventory' || product.stockMode === 'limited') {
+    if (deliveryMode === 'instant_inventory' || offer.stockMode === 'limited') {
       // Every finite sellable resource is consumed exactly once. This entry
       // is written in the same transaction as either the InventoryItem claim
       // or the numeric capacity decrement, while retaining only the order
       // reference—not any delivery secret.
       await logInventoryChange(tx, {
         productId,
+        offerId: offer.id,
         merchantId: product.merchantId,
         actorUserId: userId,
         action: 'sale',
@@ -366,7 +386,7 @@ async function createOrderOnce(
     return {
       orderId: order.id,
       productName: product.name,
-      price: product.price,
+      price: offer.price,
       status: normalizeOrderStatus(order.status),
       deliveryMode,
       deliveryContent,

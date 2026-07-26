@@ -5,10 +5,10 @@ import { resolveOrder } from '../modules/admin/service.js'
 import { respondToOrderDispute } from '../modules/merchant/service.js'
 import { closeOrder, createOrder, disputeOrder } from '../modules/orders/service.js'
 import { checkin } from '../modules/points/service.js'
-import { createTestMerchant, createTestUser } from './helpers.js'
+import { createProductWithOffer, createTestMerchant, createTestUser } from './helpers.js'
 
 async function createFixedProduct(price: number, merchantId?: number) {
-  return prisma.product.create({
+  return createProductWithOffer({
     data: {
       name: `并发固定商品-${price}`,
       type: '邀请码',
@@ -23,7 +23,7 @@ async function createFixedProduct(price: number, merchantId?: number) {
 }
 
 async function createManualProduct(price: number, merchantId?: number) {
-  return prisma.product.create({
+  return createProductWithOffer({
     data: {
       name: `并发人工服务-${price}`,
       type: '网络节点',
@@ -68,9 +68,12 @@ describe('accounting concurrency and terminal settlement', () => {
         stock: 4,
       },
     })
+    const offer = await prisma.offer.create({
+      data: { productId: product.id, name: '默认规格', price: 100, stock: 4 },
+    })
     await prisma.inventoryItem.createMany({
       data: ['CONCURRENT-ITEM-1', 'CONCURRENT-ITEM-2', 'CONCURRENT-ITEM-3', 'CONCURRENT-ITEM-4']
-        .map(content => ({ productId: product.id, content })),
+        .map(content => ({ productId: product.id, offerId: offer.id, content })),
     })
     const buyers = await Promise.all(
       ['a', 'b', 'c', 'd'].map(suffix =>

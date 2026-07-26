@@ -540,6 +540,11 @@ export default function ProfilePage() {
                       </h4>
 
                       <div className="flex items-center gap-2 mt-2 flex-wrap">
+                        {order.offerNameSnapshot && order.offerNameSnapshot !== '默认规格' && (
+                          <span className="text-xs font-bold text-[var(--color-text)] bg-[var(--color-background)] px-1.5 py-0.5 rounded border border-[var(--color-border)]">
+                            {order.offerNameSnapshot}
+                          </span>
+                        )}
                         <RegistryPill value={order.product?.type} category="productTypes" />
                         {order.deliveryMode && <RegistryPill value={order.deliveryMode} category="deliveryModes" />}
                         <span className="text-xs font-medium text-[var(--color-primary)] bg-[var(--color-primary)]/10 px-1.5 py-0.5 rounded border border-[var(--color-primary)]/20 inline-flex items-center gap-1">

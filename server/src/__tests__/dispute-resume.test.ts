@@ -5,6 +5,8 @@ import {
   createTestUser,
   createTestMerchant,
   createTestProduct,
+  createProductWithOffer,
+  makeManualService,
   loginAs,
   loginAsMerchant,
   authHeader,
@@ -57,10 +59,7 @@ describe('merchant dispute resume by delivery mode', () => {
     })
     await createTestUser('dispute-manual-buyer@test.local', 'buyer123', 'user', 5000)
     const product = await createTestProduct('人工争议服务', 200, 0, [], merchant.id)
-    await prisma.product.update({
-      where: { id: product.id },
-      data: { deliveryMode: 'manual_service', stock: 0, stockMode: 'unlimited' },
-    })
+    await makeManualService(product.id)
 
     const buyer = await loginAs('dispute-manual-buyer@test.local', 'buyer123')
     const created = await api
@@ -101,7 +100,7 @@ describe('merchant dispute resume by delivery mode', () => {
       role: 'merchant', status: 'active', name: '固定内容争议商家',
     })
     await createTestUser('dispute-fixed-buyer@test.local', 'buyer123', 'user', 5000)
-    const product = await prisma.product.create({
+    const product = await createProductWithOffer({
       data: {
         name: '固定内容争议商品', type: '邀请码', price: 100, stock: 0, status: 'active',
         deliveryMode: 'instant_fixed', stockMode: 'unlimited',

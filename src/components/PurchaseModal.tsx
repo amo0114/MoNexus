@@ -13,11 +13,14 @@ export type ConfirmOutcome = 'success' | 'price_changed' | 'verification_require
  */
 export default function PurchaseModal({
   productId,
+  offerId,
   submitting = false,
   onClose,
   onConfirm,
 }: {
   productId: number
+  /** 选中的规格(P4a);单 SKU 商品省略,服务端解析默认 Offer。 */
+  offerId?: number
   submitting?: boolean
   onClose: () => void
   onConfirm: (
@@ -37,12 +40,12 @@ export default function PurchaseModal({
   const loadPreview = useCallback(async () => {
     setLoadError('')
     try {
-      setPreview(await getCheckoutPreview(productId))
+      setPreview(await getCheckoutPreview(productId, offerId))
     } catch (err) {
       setPreview(null)
       setLoadError(getApiErrorMessage(err, '获取结算信息失败，请重试'))
     }
-  }, [productId])
+  }, [productId, offerId])
 
   useEffect(() => {
     loadPreview()
@@ -106,6 +109,14 @@ export default function PurchaseModal({
             <div className="font-bold text-base mb-1 text-[var(--color-text)] line-clamp-1">
               {preview.productName}
             </div>
+            {preview.offerName && preview.offerName !== '默认规格' && (
+              <div
+                className="inline-flex items-center text-xs font-bold text-[var(--color-primary)] bg-[var(--color-primary)]/10 border border-[var(--color-primary)]/25 rounded px-2 py-0.5 mb-1"
+                data-testid="preview-offer-name"
+              >
+                {preview.offerName}
+              </div>
+            )}
             <div className="flex justify-between items-center text-sm mt-3 pt-3 border-t border-[var(--color-border)] border-dashed">
               <span className="text-[var(--color-text-muted)]">{isHold ? '本次冻结' : '本次扣除'}</span>
               <span className="font-heading font-bold text-[var(--color-cta)] flex items-center gap-1 text-lg" data-testid="preview-price">

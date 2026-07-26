@@ -1,0 +1,365 @@
+import { useCallback, useEffect, useState } from 'react'
+import { Loader2, Plus, Pencil, Trash2, ArrowLeft } from 'lucide-react'
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../ui/Dialog'
+import ConfirmDialog from '../ui/ConfirmDialog'
+import {
+  getMerchantOffers,
+  createMerchantOffer,
+  updateMerchantOffer,
+  deleteMerchantOffer,
+} from '../../api/merchant'
+import type { MerchantProduct, Offer, OfferWriteRequest, DeliveryMode, StockMode } from '../../types/merchant'
+import { useAppStore } from '../../stores/appStore'
+
+interface Props {
+  isOpen: boolean
+  onClose: () => void
+  product: MerchantProduct | null
+  /** 任一增删改成功后回调，父级据此刷新商品列表投影（价格/库存）。 */
+  onChanged: () => Promise<void> | void
+}
+
+const DELIVERY_LABEL: Record<string, string> = {
+  instant_inventory: '交付库存',
+  instant_fixed: '固定内容',
+  manual_service: '人工服务',
+}
+
+type EditorForm = {
+  name: string
+  price: string
+  originalPrice: string
+  status: 'active' | 'inactive'
+  deliveryMode: DeliveryMode
+  stockMode: StockMode
+  stock: string
+  fixedContent: string
+  fixedContentType: 'text' | 'url'
+}
+
+const EMPTY_FORM: EditorForm = {
+  name: '',
+  price: '',
+  originalPrice: '',
+  status: 'active',
+  deliveryMode: 'instant_inventory',
+  stockMode: 'limited',
+  stock: '',
+  fixedContent: '',
+  fixedContentType: 'text',
+}
+
+function offerToForm(offer: Offer): EditorForm {
+  return {
+    name: offer.name,
+    price: String(offer.price),
+    originalPrice: offer.originalPrice != null ? String(offer.originalPrice) : '',
+    status: offer.status === 'inactive' ? 'inactive' : 'active',
+    deliveryMode: offer.deliveryMode,
+    stockMode: offer.stockMode,
+    stock: String(offer.stock ?? 0),
+    fixedContent: offer.fixedContent ?? '',
+    fixedContentType: (offer.fixedContentType as 'text' | 'url') ?? 'text',
+  }
+}
+
+export default function MerchantOfferManagerModal({ isOpen, onClose, product, onChanged }: Props) {
+  const showToast = useAppStore((s) => s.showToast)
+  const [offers, setOffers] = useState<Offer[]>([])
+  const [loading, setLoading] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  // null = 列表视图；'new' = 新建；数字 = 编辑对应 offer id。
+  const [editing, setEditing] = useState<'new' | number | null>(null)
+  const [form, setForm] = useState<EditorForm>(EMPTY_FORM)
+  const [deletingOffer, setDeletingOffer] = useState<Offer | null>(null)
+
+  const load = useCallback(async () => {
+    if (!product) return
+    setLoading(true)
+    try {
+      setOffers(await getMerchantOffers(product.id))
+    } catch (err: any) {
+      showToast(err.response?.data?.error?.message || '获取规格失败', 'error')
+    } finally {
+      setLoading(false)
+    }
+  }, [product, showToast])
+
+  useEffect(() => {
+    if (isOpen) {
+      setEditing(null)
+      load()
+    }
+  }, [isOpen, load])
+
+  function startCreate() {
+    setForm(EMPTY_FORM)
+    setEditing('new')
+  }
+
+  function startEdit(offer: Offer) {
+    setForm(offerToForm(offer))
+    setEditing(offer.id)
+  }
+
+  const isInstantInventory = form.deliveryMode === 'instant_inventory'
+  const isFixed = form.deliveryMode === 'instant_fixed'
+
+  function validate(): string | null {
+    if (!form.name.trim()) return '规格名称不能为空'
+    const price = Number(form.price)
+    if (!Number.isInteger(price) || price <= 0) return '价格必须是大于 0 的整数'
+    if (form.originalPrice.trim() !== '') {
+      const original = Number(form.originalPrice)
+      if (!Number.isInteger(original) || original < price) return '原价不能低于售价'
+    }
+    if (isFixed && !form.fixedContent.trim()) return '固定内容交付必须填写交付内容'
+    if (isFixed && form.fixedContentType === 'url' && !/^https?:\/\//i.test(form.fixedContent.trim())) {
+      return '链接必须以 http(s):// 开头'
+    }
+    if (!isInstantInventory && form.stockMode === 'limited' && editing === 'new') {
+      const stock = Number(form.stock)
+      if (!Number.isInteger(stock) || stock < 0) return '限量库存必须填写非负整数'
+    }
+    return null
+  }
+
+  async function handleSave() {
+    if (!product) return
+    const error = validate()
+    if (error) {
+      showToast(error, 'error')
+      return
+    }
+    // 即时库存规格的库存由交付库存导入管理，创建/编辑不携带 stock。
+    const payload: OfferWriteRequest = {
+      name: form.name.trim(),
+      price: Number(form.price),
+      originalPrice: form.originalPrice.trim() === '' ? null : Number(form.originalPrice),
+      status: form.status,
+      deliveryMode: form.deliveryMode,
+      stockMode: isInstantInventory ? 'limited' : form.stockMode,
+      fixedContent: isFixed ? form.fixedContent.trim() : null,
+      fixedContentType: form.fixedContentType,
+    }
+    if (!isInstantInventory && form.stockMode === 'limited' && form.stock.trim() !== '') {
+      payload.stock = Number(form.stock)
+    }
+
+    setSubmitting(true)
+    try {
+      if (editing === 'new') {
+        await createMerchantOffer(product.id, { ...payload, name: payload.name!, price: payload.price! })
+        showToast('规格已创建')
+      } else if (typeof editing === 'number') {
+        await updateMerchantOffer(product.id, editing, payload)
+        showToast('规格已更新')
+      }
+      await load()
+      await onChanged()
+      setEditing(null)
+    } catch (err: any) {
+      showToast(err.response?.data?.error?.message || '保存失败', 'error')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  async function handleDelete(offer: Offer) {
+    if (!product) return
+    setSubmitting(true)
+    try {
+      await deleteMerchantOffer(product.id, offer.id)
+      showToast('规格已删除')
+      await load()
+      await onChanged()
+      setDeletingOffer(null)
+    } catch (err: any) {
+      showToast(err.response?.data?.error?.message || '删除失败', 'error')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  async function toggleStatus(offer: Offer) {
+    if (!product) return
+    setSubmitting(true)
+    try {
+      await updateMerchantOffer(product.id, offer.id, { status: offer.status === 'active' ? 'inactive' : 'active' })
+      await load()
+      await onChanged()
+    } catch (err: any) {
+      showToast(err.response?.data?.error?.message || '操作失败', 'error')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const inEditor = editing !== null
+
+  return (
+    <Dialog open={isOpen} onOpenChange={(open) => { if (!open && !submitting) onClose() }}>
+      <DialogContent className="max-w-2xl" data-testid="merchant-offer-manager-modal">
+        <DialogTitle className="flex items-center gap-2">
+          {inEditor && (
+            <button type="button" onClick={() => setEditing(null)} className="text-[var(--color-text-muted)] hover:text-[var(--color-text)]" aria-label="返回">
+              <ArrowLeft className="w-4 h-4" />
+            </button>
+          )}
+          {inEditor ? (editing === 'new' ? '新增规格' : '编辑规格') : '规格管理'}
+        </DialogTitle>
+        <DialogDescription>
+          {product?.name ?? ''}。规格（SKU）是价格与交付方式的真相源；每个商品至少保留一个规格。
+        </DialogDescription>
+
+        {!inEditor ? (
+          <div className="mt-4 space-y-3">
+            {loading ? (
+              <div className="py-8 text-center text-[var(--color-text-muted)]"><Loader2 className="w-5 h-5 animate-spin inline" /></div>
+            ) : (
+              <>
+                <div className="space-y-2 max-h-[50vh] overflow-y-auto" data-testid="offer-list">
+                  {offers.map((offer) => (
+                    <div
+                      key={offer.id}
+                      className="flex items-center justify-between gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] px-4 py-3"
+                      data-testid={`offer-row-${offer.id}`}
+                    >
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-bold text-sm text-[var(--color-text)]">{offer.name}</span>
+                          <span className="text-xs px-1.5 py-0.5 rounded border border-[var(--color-border)] text-[var(--color-text-muted)]">
+                            {DELIVERY_LABEL[offer.deliveryMode] ?? offer.deliveryMode}
+                          </span>
+                          {offer.status === 'inactive' && (
+                            <span className="text-xs px-1.5 py-0.5 rounded bg-[var(--color-border)] text-[var(--color-text-muted)] font-medium">已下架</span>
+                          )}
+                        </div>
+                        <div className="text-xs text-[var(--color-text-muted)] mt-1">
+                          {offer.price} 积分
+                          {offer.originalPrice && offer.originalPrice > offer.price ? <span className="line-through ml-1">{offer.originalPrice}</span> : null}
+                          <span className="mx-2">·</span>
+                          {offer.deliveryMode === 'instant_inventory'
+                            ? '库存由交付库存导入管理'
+                            : offer.stockMode === 'unlimited' ? '不限量' : `名额 ${offer.stock}`}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button type="button" onClick={() => toggleStatus(offer)} disabled={submitting} className="btn-sm text-xs text-[var(--color-text-muted)] hover:text-[var(--color-text)] cursor-pointer" data-testid={`offer-toggle-${offer.id}`}>
+                          {offer.status === 'active' ? '下架' : '上架'}
+                        </button>
+                        <button type="button" onClick={() => startEdit(offer)} disabled={submitting} className="icon-btn p-1.5 text-[var(--color-text-muted)] hover:text-[var(--color-primary)] cursor-pointer" aria-label="编辑" data-testid={`offer-edit-${offer.id}`}>
+                          <Pencil className="w-4 h-4" />
+                        </button>
+                        <button type="button" onClick={() => setDeletingOffer(offer)} disabled={submitting} className="icon-btn p-1.5 text-[var(--color-text-muted)] hover:text-[var(--color-danger)] cursor-pointer" aria-label="删除" data-testid={`offer-delete-${offer.id}`}>
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <button type="button" onClick={startCreate} className="btn-secondary w-full py-2 flex items-center justify-center gap-1.5" data-testid="offer-add">
+                  <Plus className="w-4 h-4" /> 新增规格
+                </button>
+              </>
+            )}
+            <div className="flex justify-end pt-2">
+              <button type="button" className="btn-primary px-5 py-2" onClick={onClose} disabled={submitting}>完成</button>
+            </div>
+          </div>
+        ) : (
+          <form className="mt-4 space-y-4" onSubmit={(e) => { e.preventDefault(); handleSave() }}>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="sm:col-span-2">
+                <label className="block text-sm font-bold text-[var(--color-text)] mb-1.5">规格名称 <span className="text-red-500">*</span></label>
+                <input className="input" maxLength={50} placeholder="如：月卡 / 128G / 美区" value={form.name} onChange={(e) => setForm(f => ({ ...f, name: e.target.value }))} disabled={submitting} data-testid="offer-form-name" />
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-[var(--color-text)] mb-1.5">售价（积分）<span className="text-red-500">*</span></label>
+                <input className="input font-mono" type="number" min={1} step={1} value={form.price} onChange={(e) => setForm(f => ({ ...f, price: e.target.value }))} disabled={submitting} data-testid="offer-form-price" />
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-[var(--color-text)] mb-1.5">原价（可选）</label>
+                <input className="input font-mono" type="number" min={0} step={1} placeholder="划线价" value={form.originalPrice} onChange={(e) => setForm(f => ({ ...f, originalPrice: e.target.value }))} disabled={submitting} data-testid="offer-form-original-price" />
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-[var(--color-text)] mb-1.5">交付方式</label>
+                <select className="input appearance-none cursor-pointer" value={form.deliveryMode} onChange={(e) => {
+                  const deliveryMode = e.target.value as DeliveryMode
+                  setForm(f => ({ ...f, deliveryMode, stockMode: deliveryMode === 'instant_inventory' ? 'limited' : f.stockMode }))
+                }} disabled={submitting} data-testid="offer-form-delivery-mode">
+                  <option value="instant_inventory">交付库存（卡密池）</option>
+                  <option value="instant_fixed">固定内容（同一份）</option>
+                  <option value="manual_service">人工服务</option>
+                </select>
+              </div>
+              {!isInstantInventory && (
+                <div>
+                  <label className="block text-sm font-bold text-[var(--color-text)] mb-1.5">库存模式</label>
+                  <select className="input appearance-none cursor-pointer" value={form.stockMode} onChange={(e) => setForm(f => ({ ...f, stockMode: e.target.value as StockMode }))} disabled={submitting} data-testid="offer-form-stock-mode">
+                    <option value="unlimited">不限量</option>
+                    <option value="limited">限量</option>
+                  </select>
+                </div>
+              )}
+              {!isInstantInventory && form.stockMode === 'limited' && (
+                <div>
+                  <label className="block text-sm font-bold text-[var(--color-text)] mb-1.5">
+                    {editing === 'new' ? '初始名额' : '名额（改动请用调整名额）'}
+                  </label>
+                  <input className="input font-mono" type="number" min={0} step={1} value={form.stock} onChange={(e) => setForm(f => ({ ...f, stock: e.target.value }))} disabled={submitting || editing !== 'new'} data-testid="offer-form-stock" />
+                </div>
+              )}
+              {isFixed && (
+                <>
+                  <div>
+                    <label className="block text-sm font-bold text-[var(--color-text)] mb-1.5">内容类型</label>
+                    <select className="input appearance-none cursor-pointer" value={form.fixedContentType} onChange={(e) => setForm(f => ({ ...f, fixedContentType: e.target.value as 'text' | 'url' }))} disabled={submitting}>
+                      <option value="text">文本</option>
+                      <option value="url">链接</option>
+                    </select>
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="block text-sm font-bold text-[var(--color-text)] mb-1.5">固定交付内容 <span className="text-red-500">*</span></label>
+                    <textarea className="input min-h-[80px] resize-y" maxLength={5000} value={form.fixedContent} onChange={(e) => setForm(f => ({ ...f, fixedContent: e.target.value }))} disabled={submitting} data-testid="offer-form-fixed-content" />
+                  </div>
+                </>
+              )}
+              {isInstantInventory && (
+                <p className="sm:col-span-2 text-xs text-[var(--color-text-muted)] bg-[var(--color-background)] border border-[var(--color-border)] rounded px-3 py-2">
+                  交付库存规格的库存通过「管理交付库存」按规格导入卡密；这里不直接设置库存数量。
+                </p>
+              )}
+              {editing !== 'new' && (
+                <div className="sm:col-span-2">
+                  <label className="block text-sm font-bold text-[var(--color-text)] mb-1.5">上架状态</label>
+                  <select className="input appearance-none cursor-pointer" value={form.status} onChange={(e) => setForm(f => ({ ...f, status: e.target.value as 'active' | 'inactive' }))} disabled={submitting}>
+                    <option value="active">上架</option>
+                    <option value="inactive">下架</option>
+                  </select>
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end gap-3 pt-1">
+              <button type="button" className="btn-secondary px-5 py-2" onClick={() => setEditing(null)} disabled={submitting}>取消</button>
+              <button type="submit" className="btn-primary px-5 py-2 min-w-[120px]" disabled={submitting} data-testid="offer-form-submit">
+                {submitting ? <Loader2 className="w-4 h-4 animate-spin inline" /> : '保存'}
+              </button>
+            </div>
+          </form>
+        )}
+
+        <ConfirmDialog
+          open={deletingOffer !== null}
+          onOpenChange={(open) => { if (!open) setDeletingOffer(null) }}
+          title="删除规格"
+          description={`确认删除规格「${deletingOffer?.name ?? ''}」？有库存记录或订单的规格只能下架，不能删除。`}
+          confirmLabel="确认删除"
+          loading={submitting}
+          onConfirm={() => { if (deletingOffer) handleDelete(deletingOffer) }}
+        />
+      </DialogContent>
+    </Dialog>
+  )
+}

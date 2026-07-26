@@ -10,8 +10,15 @@ import {
   merchantProductListQuerySchema, previewMerchantInventorySchema,
   voidMerchantInventorySchema, merchantInventoryLogQuerySchema,
   adjustMerchantProductCapacitySchema,
+  createMerchantOfferSchema, updateMerchantOfferSchema,
 } from './schema.js'
 import * as controller from './controller.js'
+import { z } from 'zod'
+
+const offerParamSchema = z.object({
+  id: z.coerce.number().int().positive('必须是正整数'),
+  offerId: z.coerce.number().int().positive('必须是正整数'),
+})
 
 const router = Router()
 
@@ -32,6 +39,12 @@ router.post('/products/:id/inventory/preview', validate({ params: idParamSchema,
 router.post('/products/:id/inventory', validate({ params: idParamSchema, body: importMerchantInventorySchema }), controller.importInventory)
 router.post('/products/:id/inventory/void', validate({ params: idParamSchema, body: voidMerchantInventorySchema }), controller.voidInventory)
 router.get('/products/:id/inventory/logs', validate({ params: idParamSchema, query: merchantInventoryLogQuerySchema }), controller.listInventoryLogs)
+
+// P4a：SKU/规格管理
+router.get('/products/:id/offers', validate({ params: idParamSchema }), controller.listOffers)
+router.post('/products/:id/offers', validate({ params: idParamSchema, body: createMerchantOfferSchema }), controller.createOffer)
+router.put('/products/:id/offers/:offerId', validate({ params: offerParamSchema, body: updateMerchantOfferSchema }), controller.updateOffer)
+router.delete('/products/:id/offers/:offerId', validate({ params: offerParamSchema }), controller.deleteOffer)
 
 router.get('/orders', validate({ query: merchantOrderListQuerySchema }), controller.listOrders)
 router.get('/orders/:id', validate({ params: idParamSchema }), controller.orderDetail)

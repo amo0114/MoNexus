@@ -5,6 +5,8 @@ import {
   authHeader,
   createTestMerchant,
   createTestProduct,
+  configureDefaultOffer,
+  makeManualService,
   createTestUser,
   loginAs,
   loginAsMerchant,
@@ -17,10 +19,7 @@ describe('order delivery-mode snapshot', () => {
     })
     await createTestUser('mode-snapshot-buyer@test.local', 'pass123', 'user', 1_000)
     const product = await createTestProduct('快照人工服务', 200, 0, [], merchant.id)
-    await prisma.product.update({
-      where: { id: product.id },
-      data: { deliveryMode: 'manual_service', stockMode: 'unlimited', stock: 0 },
-    })
+    await makeManualService(product.id)
 
     const buyer = await loginAs('mode-snapshot-buyer@test.local', 'pass123')
     const created = await api.post('/api/orders').set(authHeader(buyer.accessToken))
@@ -31,14 +30,11 @@ describe('order delivery-mode snapshot', () => {
     expect(storedOrder.deliveryModeSnapshot).toBe('manual_service')
 
     // 商品配置仅影响后续下单；不能改变这笔已建立人工服务订单的履约规则。
-    await prisma.product.update({
-      where: { id: product.id },
-      data: {
-        deliveryMode: 'instant_fixed',
-        stockMode: 'unlimited',
-        fixedContent: 'NEW-PRODUCT-FIXED-CONTENT',
-        fixedContentType: 'text',
-      },
+    await configureDefaultOffer(product.id, {
+      deliveryMode: 'instant_fixed',
+      stockMode: 'unlimited',
+      fixedContent: 'NEW-PRODUCT-FIXED-CONTENT',
+      fixedContentType: 'text',
     })
 
     const buyerDetail = await api.get(`/api/orders/${orderId}`)

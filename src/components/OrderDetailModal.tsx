@@ -100,6 +100,14 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
               <div className="flex flex-col gap-1">
                 <span className="font-bold text-[var(--color-text)] text-sm">{order.product.name}</span>
                 <div className="flex items-center gap-2 mt-1 flex-wrap">
+                  {order.offerNameSnapshot && order.offerNameSnapshot !== '默认规格' && (
+                    <span
+                      className="text-xs text-[var(--color-text)] bg-[var(--color-background)] px-2 py-0.5 rounded border border-[var(--color-border)] font-bold"
+                      data-testid="order-offer-name"
+                    >
+                      {order.offerNameSnapshot}
+                    </span>
+                  )}
                   <RegistryPill value={order.product.type} category="productTypes" />
                   {order.deliveryMode && <RegistryPill value={order.deliveryMode} category="deliveryModes" />}
                   <span className="text-xs text-[var(--color-primary)] bg-[var(--color-primary)]/10 px-2 py-0.5 rounded border border-[var(--color-primary)]/20 font-medium inline-flex items-center gap-1">

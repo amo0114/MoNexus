@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { randomUUID } from 'node:crypto'
-import { api, createTestUser, createTestProduct, loginAs, authHeader } from './helpers.js'
+import { api, createTestUser, createTestProduct, configureDefaultOffer, loginAs, authHeader } from './helpers.js'
 import { prisma } from '../lib/prisma.js'
 import { resetVerificationAttempts } from '../modules/checkout/verification.js'
 
@@ -167,7 +167,7 @@ describe('checkout verification (P3 high-risk 2FA)', () => {
 
     // 买家预览时 100 积分未达阈值（无密码框）；随后商家改价 600 跨过阈值。
     await setThresholds(300, 0)
-    await prisma.product.update({ where: { id: 1 }, data: { price: 600 } })
+    await configureDefaultOffer(1, { price: 600 })
 
     // 必须先 409 PRICE_CHANGED 让前端重新报价（新 preview 带密码框），
     // 而不是 401 VERIFICATION_REQUIRED 把用户卡在没有密码框的旧弹窗里。

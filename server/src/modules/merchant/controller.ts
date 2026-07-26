@@ -191,3 +191,42 @@ export async function stats(req: Request, res: Response, next: NextFunction) {
     res.json(await merchantService.getMyStats(merchant.id))
   } catch (err) { next(err) }
 }
+
+// ---- Offers (P4a) ----
+
+export async function listOffers(req: Request, res: Response, next: NextFunction) {
+  try {
+    const merchant = await merchantService.getMyMerchant(req.user!.userId)
+    res.json(await merchantService.listMyOffers(merchant.id, req.params.id as unknown as number))
+  } catch (err) { next(err) }
+}
+
+export async function createOffer(req: Request, res: Response, next: NextFunction) {
+  try {
+    const merchant = await merchantService.getMyMerchant(req.user!.userId)
+    res.status(201).json(await merchantService.createMyOffer(merchant.id, req.params.id as unknown as number, req.body))
+  } catch (err) { next(err) }
+}
+
+export async function updateOffer(req: Request, res: Response, next: NextFunction) {
+  try {
+    const merchant = await merchantService.getMyMerchant(req.user!.userId)
+    res.json(await merchantService.updateMyOffer(
+      merchant.id,
+      req.params.id as unknown as number,
+      req.params.offerId as unknown as number,
+      req.body
+    ))
+  } catch (err) { next(err) }
+}
+
+export async function deleteOffer(req: Request, res: Response, next: NextFunction) {
+  try {
+    const merchant = await merchantService.getMyMerchant(req.user!.userId)
+    res.json(await merchantService.deleteMyOffer(
+      merchant.id,
+      req.params.id as unknown as number,
+      req.params.offerId as unknown as number
+    ))
+  } catch (err) { next(err) }
+}

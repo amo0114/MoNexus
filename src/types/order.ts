@@ -15,6 +15,9 @@ export interface UserOrderListItem {
   deliveryMode: string
   createdAt: string
   holdingPoints?: number | null
+  /** 购买的规格快照(P4a);单 SKU 商品为「默认规格」。 */
+  offerId?: number | null
+  offerNameSnapshot?: string | null
   merchant: null | { id: number; name: string }
   product: {
     id: number

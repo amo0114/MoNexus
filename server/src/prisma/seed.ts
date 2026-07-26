@@ -182,12 +182,30 @@ async function main() {
       },
     })
 
+    // P4a：确保默认 Offer 存在（价格/履约配置真相源）
+    let offer = await prisma.offer.findFirst({ where: { productId: product.id }, orderBy: { id: 'asc' } })
+    if (!offer) {
+      offer = await prisma.offer.create({
+        data: {
+          productId: product.id,
+          name: '默认规格',
+          price: product.price,
+          originalPrice: product.originalPrice,
+          deliveryMode: product.deliveryMode,
+          stockMode: product.stockMode,
+          stock: product.stock,
+          sales: product.sales,
+        },
+      })
+    }
+
     // 插入库存
     const existingCount = await prisma.inventoryItem.count({ where: { productId: product.id } })
     if (existingCount === 0) {
       await prisma.inventoryItem.createMany({
         data: inventoryItems.map(content => ({
           productId: product.id,
+          offerId: offer.id,
           content,
           status: 'available',
         })),
@@ -237,17 +255,38 @@ async function main() {
         },
       })
 
+  let merchantOffer = await prisma.offer.findFirst({ where: { productId: merchantProduct.id }, orderBy: { id: 'asc' } })
+  if (!merchantOffer) {
+    merchantOffer = await prisma.offer.create({
+      data: {
+        productId: merchantProduct.id,
+        name: '默认规格',
+        price: merchantProduct.price,
+        originalPrice: merchantProduct.originalPrice,
+        deliveryMode: merchantProduct.deliveryMode,
+        stockMode: merchantProduct.stockMode,
+        stock: merchantProduct.stock,
+        sales: merchantProduct.sales,
+      },
+    })
+  }
+
   const existingMerchantInventory = await prisma.inventoryItem.count({ where: { productId: merchantProduct.id } })
   if (existingMerchantInventory === 0) {
     await prisma.inventoryItem.createMany({
       data: merchantInventoryItems.map(content => ({
         productId: merchantProduct.id,
+        offerId: merchantOffer.id,
         content,
         status: 'available',
       })),
     })
     await prisma.product.update({
       where: { id: merchantProduct.id },
+      data: { stock: merchantInventoryItems.length },
+    })
+    await prisma.offer.update({
+      where: { id: merchantOffer.id },
       data: { stock: merchantInventoryItems.length },
     })
   }

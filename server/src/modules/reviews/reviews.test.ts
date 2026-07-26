@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { prisma } from '../../lib/prisma.js'
-import { api, createTestUser, createTestProduct, loginAs, authHeader } from '../../__tests__/helpers.js'
+import { api, createTestUser, createTestProduct, makeManualService, loginAs, authHeader } from '../../__tests__/helpers.js'
 
 async function buyerWithDeliveredOrder(email: string, productOverrides: { name?: string } = {}) {
   await createTestUser(email, 'pass123', 'user', 5000)
@@ -197,10 +197,7 @@ describe('order detail review/canReview', () => {
   it('reports canReview=false for pending manual_service order', async () => {
     await createTestUser('rv-pending@test.local', 'pass123', 'user', 5000)
     const product = await createTestProduct('人工服务评测', 100, 0, [])
-    await prisma.product.update({
-      where: { id: product.id },
-      data: { deliveryMode: 'manual_service', stockMode: 'unlimited' },
-    })
+    await makeManualService(product.id)
     const login = await loginAs('rv-pending@test.local', 'pass123')
     const order = await api.post('/api/orders').set(authHeader(login.accessToken))
       .send({ productId: product.id }).expect(201)

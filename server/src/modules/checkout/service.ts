@@ -3,10 +3,14 @@ import { notFound, badRequest } from '../../lib/httpError.js'
 import { getProductFulfillmentMode } from '../orders/fulfillment.js'
 import { parseStoredPurchaseForm, computePurchaseFormVersion, type PurchaseFormField } from '../../lib/purchaseForm.js'
 import { resolveVerificationRequirement } from './verification.js'
+import { resolvePurchaseOffer } from '../../lib/offers.js'
 
 export type CheckoutPreview = {
   productId: number
   productName: string
+  // 本次报价对应的规格（P4a）；单 SKU 商品为默认 Offer。
+  offerId: number
+  offerName: string
   price: number
   deliveryMode: string
   // debit = 即时扣除；hold = 冻结，商家履约后扣除，拒单/退款返还
@@ -34,18 +38,17 @@ export type CheckoutPreview = {
  * time. Balance figures use the same "available balance" ledger the debit /
  * hold paths operate on (PointAccount.balance excludes frozenBalance).
  */
-export async function getCheckoutPreview(userId: number, productId: number): Promise<CheckoutPreview> {
+export async function getCheckoutPreview(
+  userId: number,
+  productId: number,
+  offerId?: number
+): Promise<CheckoutPreview> {
   const product = await prisma.product.findUnique({
     where: { id: productId },
     select: {
       id: true,
       name: true,
-      price: true,
       status: true,
-      deliveryMode: true,
-      stockMode: true,
-      stock: true,
-      fixedContent: true,
       purchaseForm: true,
       merchant: { select: { status: true } },
     },
@@ -53,23 +56,26 @@ export async function getCheckoutPreview(userId: number, productId: number): Pro
   if (!product) throw notFound('商品不存在')
   if (product.status !== 'active') throw badRequest('商品已下架')
 
+  // P4a：报价以所选 Offer 为准（单 SKU 未传 offerId 时解析默认）。
+  const offer = await resolvePurchaseOffer(prisma, productId, offerId)
+
   const account = await prisma.pointAccount.findUnique({ where: { userId } })
   if (!account) throw notFound('积分账户不存在')
 
-  const deliveryMode = getProductFulfillmentMode(product.deliveryMode)
+  const deliveryMode = getProductFulfillmentMode(offer.deliveryMode)
 
   // 与 createOrder 事务内前置校验一致的顺序与文案（只读版本，无锁）。
   let unpurchasableReason: string | undefined
   if (product.merchant && product.merchant.status !== 'active') {
     unpurchasableReason = '商家暂不可用'
-  } else if (deliveryMode === 'instant_fixed' && !product.fixedContent) {
+  } else if (deliveryMode === 'instant_fixed' && !offer.fixedContent) {
     unpurchasableReason = '商品暂不可购买，请联系商家'
   } else if (deliveryMode === 'instant_inventory') {
     const available = await prisma.inventoryItem.count({
-      where: { productId: product.id, status: 'available' },
+      where: { offerId: offer.id, status: 'available' },
     })
     if (available <= 0) unpurchasableReason = '库存不足，请稍后再试'
-  } else if (product.stockMode === 'limited' && product.stock <= 0) {
+  } else if (offer.stockMode === 'limited' && offer.stock <= 0) {
     unpurchasableReason = '库存不足，请稍后再试'
   }
 
@@ -78,17 +84,19 @@ export async function getCheckoutPreview(userId: number, productId: number): Pro
   return {
     productId: product.id,
     productName: product.name,
-    price: product.price,
+    offerId: offer.id,
+    offerName: offer.name,
+    price: offer.price,
     deliveryMode,
     chargeType: deliveryMode === 'manual_service' ? 'hold' : 'debit',
     balanceBefore: account.balance,
     // 余额不足时仍返回预览（差额为负），前端据此禁用按钮并提示缺口。
-    balanceAfter: account.balance - product.price,
-    sufficient: account.balance >= product.price,
+    balanceAfter: account.balance - offer.price,
+    sufficient: account.balance >= offer.price,
     purchasable: unpurchasableReason == null,
     unpurchasableReason,
     purchaseForm,
     purchaseFormVersion: computePurchaseFormVersion(purchaseForm),
-    requiresVerification: await resolveVerificationRequirement(userId, product.price),
+    requiresVerification: await resolveVerificationRequirement(userId, offer.price),
   }
 }

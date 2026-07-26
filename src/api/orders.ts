@@ -5,6 +5,9 @@ import type { PurchaseFormField } from '../types/merchant'
 export interface CheckoutPreview {
   productId: number
   productName: string
+  /** 本次报价对应的规格(P4a);单 SKU 为默认 Offer。 */
+  offerId: number
+  offerName: string
   price: number
   deliveryMode: string
   chargeType: 'debit' | 'hold'
@@ -19,8 +22,10 @@ export interface CheckoutPreview {
   requiresVerification: boolean
 }
 
-export async function getCheckoutPreview(productId: number): Promise<CheckoutPreview> {
-  const { data } = await api.get('/checkout/preview', { params: { productId } })
+export async function getCheckoutPreview(productId: number, offerId?: number): Promise<CheckoutPreview> {
+  const { data } = await api.get('/checkout/preview', {
+    params: { productId, ...(offerId != null ? { offerId } : {}) },
+  })
   return data
 }
 
@@ -43,6 +48,7 @@ export async function createOrder(
   options: {
     expectedPrice: number
     idempotencyKey: string
+    offerId?: number
     formAnswers?: Record<string, string>
     expectedPurchaseFormVersion?: string
     verificationPassword?: string
@@ -52,6 +58,7 @@ export async function createOrder(
     '/orders',
     {
       productId,
+      ...(options.offerId != null ? { offerId: options.offerId } : {}),
       expectedPrice: options.expectedPrice,
       ...(options.expectedPurchaseFormVersion
         ? { expectedPurchaseFormVersion: options.expectedPurchaseFormVersion }

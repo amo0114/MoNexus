@@ -1,15 +1,18 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { X, DatabaseZap, FileText, AlertCircle, Loader2 } from 'lucide-react'
 import * as DialogPrimitive from '@radix-ui/react-dialog'
 import { useAppStore } from '../../stores/appStore'
 import { previewMerchantInventory } from '../../api/merchant'
+import type { Offer } from '../../types/merchant'
 
 interface Props {
   isOpen: boolean
   onClose: () => void
-  onSubmit: (items: string[]) => Promise<void>
+  onSubmit: (items: string[], offerId?: number) => Promise<void>
   productName: string
   productId?: number
+  /** 目标商品的即时库存 active 规格；>1 时渲染规格选择器（P4a）。 */
+  offers?: Offer[]
 }
 
 interface PreviewStats {
@@ -22,17 +25,31 @@ interface PreviewStats {
   details?: any[]
 }
 
-export default function MerchantInventoryImportModal({ isOpen, onClose, onSubmit, productName, productId }: Props) {
+export default function MerchantInventoryImportModal({ isOpen, onClose, onSubmit, productName, productId, offers }: Props) {
   const showToast = useAppStore((s) => s.showToast)
   const [loading, setLoading] = useState(false)
   const [previewing, setPreviewing] = useState(false)
   const [inventoryText, setInventoryText] = useState('')
   const [stats, setStats] = useState<PreviewStats | null>(null)
+  // 多规格时渲染选择器让商家指定卡密归属；单规格不渲染但仍显式提交它的
+  // offerId（默认 Offer 未必是即时库存那条）。offers 为空才回落到服务端默认。
+  const multiOffer = (offers?.length ?? 0) > 1
+  const [selectedOfferId, setSelectedOfferId] = useState<number | undefined>(offers?.[0]?.id)
 
   const lineCount = useMemo(() => {
     if (!inventoryText) return 0
     return inventoryText.split('\n').map(s => s.trim()).filter(Boolean).length
   }, [inventoryText])
+
+  // 打开或切换商品时，把选中规格重置为该商品的第一条即时库存规格。
+  useEffect(() => {
+    if (isOpen) {
+      setSelectedOfferId(offers?.[0]?.id)
+      setInventoryText('')
+      setStats(null)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, productId])
 
   if (!isOpen) return null
 
@@ -90,7 +107,9 @@ export default function MerchantInventoryImportModal({ isOpen, onClose, onSubmit
 
     setLoading(true)
     try {
-      await onSubmit(items)
+      // 只要已知目标规格就显式携带：product 的默认 Offer 未必是即时库存规格，
+      // 省略 offerId 会让服务端落到默认 Offer 而报"仅即时库存支持库存管理"。
+      await onSubmit(items, selectedOfferId)
       setInventoryText('')
       setStats(null)
       onClose()
@@ -132,6 +151,25 @@ export default function MerchantInventoryImportModal({ isOpen, onClose, onSubmit
         {/* Body */}
         <div className="px-6 py-6 overflow-y-auto flex-1 bg-[var(--color-background)]">
           <form id="inventoryForm" onSubmit={handleSubmit} className="space-y-5">
+            {/* 多规格：选择卡密归属的规格（P4a） */}
+            {multiOffer && (
+              <div>
+                <label className="block text-sm font-bold text-[var(--color-text)] mb-1.5">导入到规格</label>
+                <select
+                  className="input appearance-none cursor-pointer"
+                  value={selectedOfferId ?? ''}
+                  onChange={(e) => setSelectedOfferId(Number(e.target.value))}
+                  data-testid="import-offer-select"
+                >
+                  {offers!.map(o => (
+                    <option key={o.id} value={o.id}>
+                      {o.name}（{o.price} 积分{o.status === 'inactive' ? ' · 已下架' : ''}）
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-1.5 text-xs text-[var(--color-text-muted)]">卡密将归属到所选规格；不同规格的库存相互独立。</p>
+              </div>
+            )}
             {/* Guidelines */}
             <div className="bg-[var(--color-primary)]/8 border border-[var(--color-primary)]/20 rounded-lg p-4 flex items-start gap-3">
               <AlertCircle className="w-5 h-5 text-[var(--color-primary)] flex-shrink-0 mt-0.5" />

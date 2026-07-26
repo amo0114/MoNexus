@@ -6,6 +6,7 @@ import {
   authHeader,
   createTestMerchant,
   createTestProduct,
+  makeManualService,
   createTestUser,
   loginAs,
 } from '../../__tests__/helpers.js'
@@ -165,10 +166,7 @@ describe('GET /api/admin/orders filter & pagination', () => {
 
     const instantProduct = await createTestProduct('即时商品', 300, 1, ['instant-secret'])
     const manualProduct = await createTestProduct('人工商品', 200, 0, [])
-    await prisma.product.update({
-      where: { id: manualProduct.id },
-      data: { deliveryMode: 'manual_service', stockMode: 'unlimited' },
-    })
+    await makeManualService(manualProduct.id)
 
     const buyer = await loginAs('order-buyer@test.local', 'buyerpass')
     const instantOrder = await api

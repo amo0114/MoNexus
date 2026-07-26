@@ -12,6 +12,8 @@ export const orderStatusActorRoleSchema = z.enum(ORDER_STATUS_ACTOR_ROLES)
 
 export const createOrderSchema = z.object({
   productId: z.number().int().positive(),
+  // 购买的规格（P4a）。可选：单 SKU 商品由服务端解析为唯一 active Offer。
+  offerId: z.number().int().positive().optional(),
   // 结算确认：客户端从结算预览拿到的价格。与服务端当前价不一致时返回
   // 409 PRICE_CHANGED。可选是为兼容旧客户端，前端更新后始终携带。
   expectedPrice: z.number().int().positive().optional(),

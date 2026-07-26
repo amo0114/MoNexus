@@ -71,11 +71,15 @@ export const updateMerchantProductSchema = merchantProductFieldsSchema.partial()
 
 export const previewMerchantInventorySchema = inventoryImportPayloadSchema
 
-export const importMerchantInventorySchema = inventoryImportPayloadSchema
+// P4a：库存/名额操作可指定规格；缺省落到默认 Offer（单 SKU 商家无感）。
+const offerScopeSchema = z.object({ offerId: z.number().int().positive().optional() })
+
+export const importMerchantInventorySchema = z.intersection(inventoryImportPayloadSchema, offerScopeSchema)
 
 export const voidMerchantInventorySchema = z.object({
   count: z.number().int('作废数量必须是整数').positive('作废数量必须大于 0'),
   reason: z.string().trim().max(500).optional(),
+  offerId: z.number().int().positive().optional(),
 }).strict()
 
 /**
@@ -86,7 +90,26 @@ export const adjustMerchantProductCapacitySchema = z.object({
   delta: z.number().int('调整数量必须是整数').min(-1_000_000).max(1_000_000)
     .refine(value => value !== 0, '调整数量不能为 0'),
   reason: z.string().trim().min(1, '请填写调整原因').max(500),
+  offerId: z.number().int().positive().optional(),
 }).strict()
+
+// ---- Offers (P4a) ----
+
+const merchantOfferFieldsSchema = z.object({
+  name: z.string().trim().min(1, '规格名称不能为空').max(50),
+  price: productPriceSchema,
+  originalPrice: productPriceSchema.nullable().optional(),
+  status: productStatusSchema.optional(),
+  deliveryMode: productDeliveryModeSchema.optional(),
+  stockMode: productStockModeSchema.optional(),
+  stock: z.number().int().min(0).max(1_000_000).optional(),
+  fixedContent: z.string().trim().min(1).max(5000).nullable().optional(),
+  fixedContentType: productFixedContentTypeSchema.optional(),
+  sortOrder: z.number().int().min(0).max(10_000).optional(),
+}).strict()
+
+export const createMerchantOfferSchema = merchantOfferFieldsSchema
+export const updateMerchantOfferSchema = merchantOfferFieldsSchema.partial()
 
 export const merchantInventoryLogQuerySchema = z.object({
   page: z.coerce.number().int().positive().optional(),

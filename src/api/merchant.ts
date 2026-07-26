@@ -9,6 +9,8 @@ import {
   UpdateMerchantProductRequest,
   ImportInventoryRequest,
   MerchantOrder,
+  Offer,
+  OfferWriteRequest,
   Settlement,
   ListEnvelope
 } from '../types/merchant'
@@ -71,7 +73,7 @@ export async function updateMerchantProduct(id: number, payload: UpdateMerchantP
   return data
 }
 
-export async function voidMerchantInventory(id: number, payload: { count: number; reason?: string }): Promise<{ voided: number; stock: number }> {
+export async function voidMerchantInventory(id: number, payload: { count: number; reason?: string; offerId?: number }): Promise<{ voided: number; stock: number }> {
   const { data } = await api.post<{ voided: number; stock: number }>(`/merchant/products/${id}/inventory/void`, payload)
   return data
 }
@@ -95,7 +97,7 @@ export async function importMerchantInventory(id: number, payload: ImportInvento
  * 调整非即时库存商品的剩余名额。delta 为正时补充、为负时减少。
  * 即时库存商品必须通过交付库存导入/作废接口管理。
  */
-export async function adjustMerchantProductCapacity(id: number, payload: { delta: number; reason: string }): Promise<void> {
+export async function adjustMerchantProductCapacity(id: number, payload: { delta: number; reason: string; offerId?: number }): Promise<void> {
   await api.post(`/merchant/products/${id}/capacity/adjust`, payload)
 }
 
@@ -130,5 +132,34 @@ export async function rejectOrder(
 
 export async function getMerchantSettlements(params?: { page?: number; pageSize?: number; status?: string }): Promise<Settlement[]> {
   const { data } = await api.get<Settlement[]>('/merchant/settlements', { params })
+  return data
+}
+
+// ---- Offers (P4a: SKU 管理) ----
+
+export async function getMerchantOffers(productId: number): Promise<Offer[]> {
+  const { data } = await api.get<Offer[]>(`/merchant/products/${productId}/offers`)
+  return data
+}
+
+export async function createMerchantOffer(
+  productId: number,
+  payload: OfferWriteRequest & { name: string; price: number },
+): Promise<Offer> {
+  const { data } = await api.post<Offer>(`/merchant/products/${productId}/offers`, payload)
+  return data
+}
+
+export async function updateMerchantOffer(
+  productId: number,
+  offerId: number,
+  payload: OfferWriteRequest,
+): Promise<Offer> {
+  const { data } = await api.put<Offer>(`/merchant/products/${productId}/offers/${offerId}`, payload)
+  return data
+}
+
+export async function deleteMerchantOffer(productId: number, offerId: number): Promise<{ deleted: boolean }> {
+  const { data } = await api.delete<{ deleted: boolean }>(`/merchant/products/${productId}/offers/${offerId}`)
   return data
 }
