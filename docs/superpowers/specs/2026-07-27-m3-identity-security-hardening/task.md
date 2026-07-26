@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | TASK-M3-ISH-001 |
-| 版本 | 1.9.0 |
+| 版本 | 1.10.0 |
 | 日期 | 2026-07-27 |
 | 规格 | [spec.md](./spec.md) |
 | 计划 | [plan.md](./plan.md) |
@@ -37,9 +37,9 @@
 | --- | --- | --- | --- |
 | T-00 | Done | Codex | 基线与决策确认（证据见 implement.md §7） |
 | T-BE-01 | Done | Codex | 本地交付 `2f212e8`；G-PR-01（P6a→develop rebase/复核）仍 pending，故不可开 PR |
-| T-BE-02 | In Progress | Codex | MFA crypto、challenge、redact、安全事件；只拥有自身模块文件 |
+| T-BE-02 | Done | Codex | 本地交付 `2483b0f`；12 条原语/日志测试与 server build PASS |
 | T-BE-03 | Todo | | MFA 登录/绑定 API |
-| T-BE-04 | Todo | | RefreshToken session family 与会话 API |
+| T-BE-04 | In Progress | Codex | I-03：RefreshToken session family 与会话 API；不触碰 P6a 文件 |
 | T-BE-05 | Todo | | admin guard、bcrypt 升级、回归集成 |
 | T-BE-06 | Todo | | P1：MFA 安全区与 revoke-all API |
 | T-FE-01 | Todo | | LoginPage MFA 流 |
@@ -161,15 +161,17 @@ TEST_DATABASE_URL='postgresql://monexus:monexus_dev_2026@localhost:5432/monexus_
 
 **步骤：**
 
-- [ ] 安装最小 TOTP 依赖；不引入认证框架或远程 MFA 服务。
-- [ ] 实现 CSPRNG seed、AES-256-GCM encrypt/decrypt、provisioning URI、固定时间可注入 TOTP verify。
-- [ ] 实现 recovery code 生成、hash、原子一次性 claim；生成数量固定为 10。
-- [ ] 实现 AuthChallenge 创建、读取、失败计数、原子 consume；TTL=5min、max attempts=5。
-- [ ] 实现 SecurityEvent 的受控 type/detailSafe serializer 和 IP HMAC / device hint。
-- [ ] 将 mfaCode、recoveryCode、recoveryCodes、challengeId、manualKey、provisioningUri、mfaSecret、MFA_ENCRYPTION_KEY 添加到 Pino redact；不要用过宽泛路径掩盖无关业务审计。
-- [ ] 写测试：正确/错误 key、tamper tag、相邻 TOTP window、过期/超限 challenge、恢复码重放、logger 无明文。
+- [x] 安装最小 TOTP 依赖；不引入认证框架或远程 MFA 服务。
+- [x] 实现 CSPRNG seed、AES-256-GCM encrypt/decrypt、provisioning URI、固定时间可注入 TOTP verify。
+- [x] 实现 recovery code 生成、hash、原子一次性 claim；生成数量固定为 10。
+- [x] 实现 AuthChallenge 创建、读取、失败计数、原子 consume；TTL=5min、max attempts=5；pending seed 只由 MFA 模块加密后写入。
+- [x] 实现 SecurityEvent 的受控 type/detailSafe serializer 和 IP HMAC / device hint。
+- [x] 将 mfaCode、recoveryCode、recoveryCodes、challengeId、manualKey、provisioningUri、mfaSecret、MFA_ENCRYPTION_KEY 及 MFA API body 的 `code` 添加到 Pino redact；根业务 error `code` 保持可观测。
+- [x] 写测试：正确/错误 key、tamper tag、相邻 TOTP window、过期/超限 challenge、恢复码重放、logger 无明文。
 
 **DoD：** 所有 crypto/secret 测试绿；测试输出本身也不回显秘密。
+
+**本地证据（2026-07-27；仍不可开 PR）：** `2483b0f`；`otpauth@9.4.1`；`auth-mfa-crypto` 与 `auth-security-events` 共 12 tests PASS，`npm run build` PASS。只使用 `monexus_m3_ish_test`；独立只读安全复审发现的 MFA API `code` 日志泄露风险已由 request/error body 精确脱敏与回归测试关闭。测试失败只报告安全字段名或布尔结果，不回显 seed、TOTP 或 recovery code。
 
 ---
 
@@ -484,3 +486,4 @@ T-00 → T-BE-01 → T-BE-02 → T-BE-03 + T-BE-04 → T-BE-05 → T-FE-01 + T-F
 | 1.7.0 | 2026-07-27 | 记录 T-BE-01 的 migration hash、legacy fixture/replay、status/drift 与定向验证证据；保留 P6a rebase 为未完成闸门 |
 | 1.8.0 | 2026-07-27 | 补记 I-01 全量隔离后端回归：62 files、497 tests PASS；不改变 P6a rebase 闸门 |
 | 1.9.0 | 2026-07-27 | 将本地任务完成与 PR 级 G-PR-01 闸门分离，T-BE-02 依此开始实施 |
+| 1.10.0 | 2026-07-27 | 标记 T-BE-02 本地完成、启动 T-BE-04；记录 MFA 原语和日志安全复审/验证证据 |

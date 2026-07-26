@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | CHK-M3-ISH-001 |
-| 版本 | 1.9.0 |
+| 版本 | 1.10.0 |
 | 日期 | 2026-07-27 |
 | 规格 | [spec.md](./spec.md) |
 | 计划 | [plan.md](./plan.md) |
@@ -47,16 +47,16 @@
 
 - [ ] **CHK-DATA-01** User 有 mfaEnabled、加密 seed、mfaVersion 等必要字段；任何 public/profile/admin serializer 都没有选择 seed 字段。
 - [x] **CHK-DATA-02** MfaRecoveryCode 只存 hash，有 user 归属、usedAt 和唯一性约束；无明文列。
-- [ ] **CHK-DATA-03** AuthChallenge 是随机 UUID、5 分钟、单次、最多 5 次失败；过期/超限/成功后不可复用。
+- [x] **CHK-DATA-03** AuthChallenge 是随机 UUID、5 分钟、单次、最多 5 次失败；过期/超限/成功后不可复用。
 - [ ] **CHK-DATA-04** RefreshToken 有稳定 sessionId；同一 refresh rotation 的新旧 token 继承同一 sessionId 和 sessionStartedAt；sessionId 是 family ID，不能建 token 行全局 unique。
-- [ ] **CHK-DATA-05** SecurityEvent 只存安全事件 type、不可逆 IP 关联/安全 device hint 和安全摘要；不存秘密或原始 IP。
+- [x] **CHK-DATA-05** SecurityEvent 只存安全事件 type、不可逆 IP 关联/安全 device hint 和安全摘要；不存秘密或原始 IP。
 - [ ] **CHK-DATA-06** 单一 Prisma-generated migration 在隔离 PostgreSQL 成功应用：`sessionId` SQL default 为 `gen_random_uuid()`，pre-migration legacy token 均取得非空且彼此不同的 family ID / session 时间；部署前 legacy admin refresh session 全吊销；不得手改 SQL 或把 Prisma client-side uuid 当回填。
 - [x] **CHK-DATA-07** 新增索引支持按 userId、sessionId、活动/过期状态列会话；会话列表不做全表扫描。
 - [x] **CHK-DATA-08** MFA_ENCRYPTION_KEY 是 base64 32-byte 值；production 缺失/非法时服务拒绝启动；无默认生产 key。
-- [ ] **CHK-DATA-09** AES-256-GCM 对 seed 的 IV/tag/tamper failure 均正确处理；解密错误不返回内部详情。
+- [x] **CHK-DATA-09** AES-256-GCM 对 seed 的 IV/tag/tamper failure 均正确处理；解密错误不返回内部详情。
 - [x] **CHK-DATA-10** 所有 migrate/status/drift 命令显式传专用 `monexus_m3_ish_test` URL；shadow database 也是隔离资源，未调用默认 `monexus_test` / compose；若 Prisma UTC migration 目录需纠正，M3-only rename 的 SQL hash 与专用库 replay 证据齐全。
 
-**I-01 pre-rebase 证据：** `20260727110000_identity_security_hardening`；SHA-256 `d7674f9747f7fdfd32e7272d678f45ce3b9e96d35fd59cbcbfab3c5ec441e55a`；同一 `monexus_m3_ish_test` legacy fixture → generated migration → reset/replay；`prisma migrate status` 为 32 migrations / up to date；`migrate diff --from-url "$M3_ISH_DATABASE_URL" --to-schema-datamodel prisma/schema.prisma --exit-code` 为 No difference detected；config / foundation / revoke 14 tests PASS；隔离全量后端回归为 62 files / 497 tests PASS（712.46s）。P6a rebase 后必须重新核验，故 CHK-DATA-01/03–06/09 仍待后续实现或发布动作。
+**I-01 pre-rebase 证据：** `20260727110000_identity_security_hardening`；SHA-256 `d7674f9747f7fdfd32e7272d678f45ce3b9e96d35fd59cbcbfab3c5ec441e55a`；同一 `monexus_m3_ish_test` legacy fixture → generated migration → reset/replay；`prisma migrate status` 为 32 migrations / up to date；`migrate diff --from-url "$M3_ISH_DATABASE_URL" --to-schema-datamodel prisma/schema.prisma --exit-code` 为 No difference detected；config / foundation / revoke 14 tests PASS；隔离全量后端回归为 62 files / 497 tests PASS（712.46s）。P6a rebase 后必须重新核验；CHK-DATA-01、04、06 仍待后续 API/session 集成或发布动作。
 
 ---
 
@@ -73,7 +73,7 @@
 - [ ] **CHK-MFA-09** **[P1]** 管理员重生 recovery code 要求当前密码 + 当前 MFA 因子，旧码在同一事务作废。
 - [ ] **CHK-MFA-10** **[P1]** 管理员换机/重绑定要求当前密码 + 因子；成功 bump mfaVersion、吊销其他会话、发新恢复码。
 - [ ] **CHK-MFA-11** 没有 HTTP “关闭 MFA”或任意管理员重置他人 MFA 的后门。
-- [ ] **CHK-MFA-12** TOTP 固定为 6 digits / 30 sec / window≤1；测试不依赖真实等待。
+- [x] **CHK-MFA-12** TOTP 固定为 6 digits / 30 sec / window≤1；测试不依赖真实等待。
 
 **证据：** auth-mfa tests / staging admin：________________
 
@@ -136,14 +136,14 @@
 
 ## 7. 秘密、日志与审计（P0）
 
-- [ ] **CHK-SEC-01** Pino redact 覆盖 password、verificationPassword、mfaCode、recoveryCode(s)、challengeId、manualKey、provisioningUri、mfaSecret、MFA_ENCRYPTION_KEY。
+- [x] **CHK-SEC-01** Pino redact 覆盖 password、verificationPassword、mfaCode、recoveryCode(s)、challengeId、manualKey、provisioningUri、mfaSecret、MFA_ENCRYPTION_KEY。
 - [ ] **CHK-SEC-02** 单测直接检查 logger / error / audit / API 序列化输出，不出现上述秘密原文。
 - [ ] **CHK-SEC-03** SecurityEvent 至少覆盖 enrollment、MFA 登录成功/失败、recovery 使用、session revoke、refresh replay、break-glass reset。
 - [ ] **CHK-SEC-04** AdminLog 的既有业务审计不被删除或弱化；新增关联摘要不含 token/seed/recovery code。
 - [ ] **CHK-SEC-05** 错误消息不区分 recovery code 是否存在/已用，也不泄露内部加密、challenge 或数据库错误。
 - [ ] **CHK-SEC-06** Sentry / request logger 不附带 MFA request body；异常中没有 secrets。
 
-**证据：** redaction/security event tests：________________
+**证据：** `2483b0f` 的 `auth-security-events` 覆盖闭合 SecurityEvent serializer、IP HMAC、固定 UA hint、MFA request/error body 脱敏（含 API `code` 但不脱敏根业务 error code）与无秘密输出；`auth-mfa-crypto` 覆盖 AES-GCM、TOTP、recovery code 与 challenge 原语。专用库定向 12/12 PASS；后续 API 集成仍须完成 CHK-SEC-02..06。
 
 ---
 
@@ -264,3 +264,4 @@ P0 豁免默认不允许。唯一例外是仓库负责人明确书面批准的�
 | 1.7.0 | 2026-07-27 | 记录 I-01 pre-rebase migration/config 证据并仅勾选已可本地验证的数据项 |
 | 1.8.0 | 2026-07-27 | 补记 62 files / 497 tests 的隔离全量后端回归结果 |
 | 1.9.0 | 2026-07-27 | 任务本地完成与 P6a→develop 的 PR 集成闸门分离；所有最终 P0 项仍需 rebase 后复核 |
+| 1.10.0 | 2026-07-27 | 勾选已由 I-02 原语测试覆盖的数据/加密/TOTP/日志项，并记录 focused commit 与验证证据 |

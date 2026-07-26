@@ -3,9 +3,9 @@
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | IMPL-M3-ISH-001 |
-| 版本 | 1.9.0 |
+| 版本 | 1.10.0 |
 | 日期 | 2026-07-27 |
-| 状态 | I-00 Done；I-01 In Progress（P6a rebase 为 PR 前闸门） |
+| 状态 | I-00、I-01、I-02 Done (local)；I-03 In Progress（P6a rebase 为 PR 前闸门） |
 | 输入 | [spec.md](./spec.md) · [plan.md](./plan.md) · [task.md](./task.md) · [checklist.md](./checklist.md) |
 | 方法依据 | [JavaGuide Spec Coding：Specify → Plan → Tasks → Implement](https://javaguide.cn/ai-coding/practices/spec-coding.html) |
 
@@ -91,8 +91,8 @@ schema.prisma 是唯一共同文件。安全任务不得重排、格式化或编
 | --- | --- | --- | --- | --- |
 | I-00 | T-00 | Done | 本包、AGENTS.md、auth 基线 | 记录基线、隔离资源、决策确认；不改业务代码 |
 | I-01 | T-BE-01 | Done (local) | schema、config、env example、database-default migration / legacy-admin revoke | `2f212e8`；PR 前仍须满足 G-PR-01 的四项 rebase 条件，任务完成不等于可开 PR |
-| I-02 | T-BE-02 | In Progress | auth/mfa、security event、logger、原语测试 | 密钥/OTP/challenge/recovery/redact 单测通过；无真实 secret |
-| I-03 | T-BE-04 | Todo | auth session service、auth refresh/session boundary、routes/serializer/tests | 先冻结 `sid`、session family/revoke/replay；owner 404、current logout boundary与脱敏锁定 |
+| I-02 | T-BE-02 | Done (local) | auth/mfa、security event、logger、原语测试 | `2483b0f`；密钥/OTP/challenge/recovery/redact 12 条定向单测与 server build 通过；无真实 secret |
+| I-03 | T-BE-04 | In Progress | auth session service、auth refresh/session boundary、routes/serializer/tests | 先冻结 `sid`、session family/revoke/replay；owner 404、current logout boundary与脱敏锁定 |
 | I-04 | T-BE-03 + T-BE-05 | Todo | auth service/controller/schema/routes、auth middleware、admin route、auth tests | 只在 I-03 后集成 admin MFA flow、guard、bcrypt；不改 P6a 文件 |
 | I-05 | T-FE-01 + T-FE-02 | Blocked by P6a UI ownership | LoginPage、新 auth security components、auth API；P6a 合入/rebase 后才可改 ProfilePage 挂载点 | UI 不持久化秘密；独立端口 smoke / E2E 通过 |
 | I-06 | T-QA-01 + T-QA-02 + T-DOC-01 | Todo | tests、OpenAPI、auth README、runbook、checklist | 完整验证、rebase 后 drift、所有 P0 勾选、PR 准备完成 |
@@ -147,6 +147,8 @@ schema.prisma 是唯一共同文件。安全任务不得重排、格式化或编
 | 2026-07-27 | I-00 | Done | branch `feat/m3-identity-security-hardening` from `bf25d01`；独立 worktree；Prisma 6.19.3；专用库 `monexus_m3_ish_test`（31 migrations up to date） | `auth/auth-tokens/refresh-token-wiring/auth-active-user` 4 files、36 tests PASS；frontend build 与 server build PASS；未修改业务代码 |
 | 2026-07-27 | I-01 | Done (local) | `2f212e8`；`20260727110000_identity_security_hardening`，SQL SHA-256 `d7674f9747f7fdfd32e7272d678f45ce3b9e96d35fd59cbcbfab3c5ec441e55a`；同一专用库 legacy fixture → migration → reset/replay；status 32 up to date / drift no diff；14 targeted tests、server build、62 files / 497 tests（712.46s）PASS | G-PR-01 pending：P6a 尚未进入 `origin/develop`，未 rebase/人工复核，故不可开 PR |
 | 2026-07-27 | I-02 | In Progress | HEAD `2f212e8`；T-BE-02 owned files 仅限 auth MFA primitives、security events、logger/redact、原语测试 | 不修改 auth service/controller/routes/middleware、ProfilePage 或 P6a worktree |
+| 2026-07-27 | I-02 | Done (local) | `2483b0f`；`otpauth@9.4.1`；专用库 `auth-mfa-crypto` + `auth-security-events`：12/12 PASS；`npm run build` PASS | 只读安全复审已关闭 MFA request-body `code`、pending seed 与测试输出泄露风险；未触碰 auth service/controller/routes/middleware、ProfilePage 或 P6a worktree |
+| 2026-07-27 | I-03 | In Progress | HEAD `2483b0f`；仅开始 T-BE-04 的 session service / refresh boundary 只读影响分析 | 仍不得编辑 P6a 文件或启动共享 runtime；G-PR-01 继续阻止 PR |
 
 ---
 
@@ -158,6 +160,7 @@ schema.prisma 是唯一共同文件。安全任务不得重排、格式化或编
 | 1.7.0 | 2026-07-27 | 写入 I-01 可复核 migration/fixture/status/drift/targeted-test 证据；明确本地完成不替代 P6a rebase 闸门 |
 | 1.8.0 | 2026-07-27 | 记录完整隔离后端回归 62 files / 497 tests PASS（712.46s） |
 | 1.9.0 | 2026-07-27 | 将 I-01 标记为本地完成、以 G-PR-01 保留 PR 闸门，并启动唯一 In Progress 的 I-02 |
+| 1.10.0 | 2026-07-27 | 标记 I-02 本地完成并启动唯一 In Progress 的 I-03；记录原语、日志脱敏与安全复审证据 |
 
 ---
 

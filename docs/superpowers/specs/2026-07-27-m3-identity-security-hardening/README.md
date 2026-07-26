@@ -15,6 +15,6 @@
 | 规格 ID | SPEC-M3-ISH-001 |
 | 建议分支 | feat/m3-identity-security-hardening（从 develop 创建，PR → develop） |
 | 日期 | 2026-07-27 |
-| 状态 | Specify / Plan / Tasks：已冻结；Implement：I-00 Done，I-01 并行实施中；P6a rebase 是 PR 前闸门 |
+| 状态 | Specify / Plan / Tasks：已冻结；Implement：I-00、I-01、I-02 本地完成，I-03（稳定会话族）实施中；P6a rebase 是 PR 前闸门 |
 
 本包只收口“管理员身份安全 + 全角色设备会话管理 + 密码哈希升级”这一条主线。它刻意不混入 OAuth、Passkey、通用风控引擎、隐私导出/注销、业务订阅或通知队列。
