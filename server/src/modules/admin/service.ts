@@ -372,6 +372,17 @@ export async function updateProduct(adminUserId: number, id: number, data: Updat
       throw badRequest('切换交付模式请同时将 fixedContent 置空（传 null）')
     }
 
+    // P5：与商家路径同规则——file 形态的交付配置只能走规格管理。
+    const isFileFormProjection = product.fixedContentType === 'file'
+    if (isFileFormProjection && (
+      normalizedProductData.deliveryMode != null
+      || 'fixedContent' in normalizedProductData
+      || normalizedProductData.fixedContentType != null
+    )) {
+      throw badRequest('文件交付规格的交付配置请在「规格管理」中修改')
+    }
+    const fileFormDefaultOffer = isFileFormProjection ? await getDefaultOffer(tx, id) : null
+
     assertProductDeliveryConfiguration({
       deliveryMode,
       stockMode,
@@ -381,6 +392,8 @@ export async function updateProduct(adminUserId: number, id: number, data: Updat
         ? normalizedProductData.fixedContent
         : product.fixedContent,
       fixedContentType: normalizedProductData.fixedContentType ?? product.fixedContentType,
+      fixedFileId: fileFormDefaultOffer?.fixedFileId ?? null,
+      allowFileForm: isFileFormProjection,
     })
 
     const next = await tx.product.update({

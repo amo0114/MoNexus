@@ -73,7 +73,12 @@ const productDetailSelect = {
   ratingAvg: true,
   ratingCount: true,
   // P4a：公开 SKU 列表（仅 active）；序列化经 serializePublicOffer 剥离 fixedContent。
-  offers: { where: { status: 'active' }, orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }] },
+  // P5：file 形态附带文件大小（「文件交付 · 约 X MB」展示用），仅 size 一个数字。
+  offers: {
+    where: { status: 'active' },
+    orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
+    include: { fixedFile: { select: { size: true } } },
+  },
   _count: { select: { inventory: { where: { status: 'available' } } } },
   merchant: { select: { id: true, name: true } },
 } satisfies Prisma.ProductSelect

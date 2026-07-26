@@ -132,7 +132,14 @@ async function buildReplayResponse(orderId: number, userId: number) {
     include: {
       product: { select: { name: true } },
       merchant: { select: { id: true, name: true } },
-      delivery: { select: { content: true, contentType: true, structuredContent: true } },
+      delivery: {
+        select: {
+          content: true,
+          contentType: true,
+          structuredContent: true,
+          file: { select: { fileName: true, size: true } },
+        },
+      },
     },
   })
   // 幂等记录指向的订单只可能因数据被外部改动而缺失。
@@ -148,6 +155,7 @@ async function buildReplayResponse(orderId: number, userId: number) {
     deliveryContent: order.delivery?.content ?? undefined,
     deliveryContentType: order.delivery?.contentType ?? undefined,
     deliveryStructuredContent: parseStoredStructuredContent(order.delivery?.structuredContent) ?? undefined,
+    deliveryFile: order.delivery?.file ?? undefined,
     balanceAfter: account?.balance ?? 0,
     merchantId: order.merchantId,
     merchantName: order.merchant?.name ?? null,
@@ -196,8 +204,24 @@ async function createOrderOnce(
     // 模板不影响已购未发货订单（快照惯例同 deliveryModeSnapshot）。
     const deliveryFieldsSnapshot = parseStoredDeliveryFields(offer.deliveryFields)
 
-    if (deliveryMode === 'instant_fixed' && !offer.fixedContent) {
-      throw badRequest('商品暂不可购买，请联系商家')
+    // P5：file 形态的"内容"是 fixedFileId 指向的文件；text/url 形态仍看 fixedContent。
+    // 文件被吊销/清理即停售——新订单在这里被挡下，已成交订单不受影响（读快照）。
+    let purchasedFile: { id: number; fileName: string; size: number } | null = null
+    if (deliveryMode === 'instant_fixed') {
+      if (offer.fixedContentType === 'file') {
+        const file = offer.fixedFileId == null
+          ? null
+          : await tx.deliveryFile.findUnique({
+              where: { id: offer.fixedFileId },
+              select: { id: true, fileName: true, size: true, status: true },
+            })
+        if (!file || file.status !== 'active') {
+          throw badRequest('商品暂不可购买，请联系商家')
+        }
+        purchasedFile = { id: file.id, fileName: file.fileName, size: file.size }
+      } else if (!offer.fixedContent) {
+        throw badRequest('商品暂不可购买，请联系商家')
+      }
     }
     if (deliveryMode !== 'instant_inventory' && offer.stockMode === 'limited' && offer.stock <= 0) {
       throw badRequest('库存不足，请稍后再试')
@@ -329,20 +353,38 @@ async function createOrderOnce(
       })
 
     } else if (deliveryMode === 'instant_fixed') {
-      deliveryContent = offer.fixedContent!
-      deliveryContentType = offer.fixedContentType
+      if (purchasedFile) {
+        // P5：下单事务冻结文件引用——商家换文件只影响后续订单，
+        // 本单下载永远按这份快照授权，绝不回查当前 Offer。
+        deliveryContentType = 'file'
+        await tx.deliveryRecord.create({
+          data: {
+            orderId: order.id,
+            userId,
+            productId,
+            content: null,
+            contentType: 'file',
+            fileId: purchasedFile.id,
+            status: 'delivered',
+            deliveredAt: new Date(),
+          },
+        })
+      } else {
+        deliveryContent = offer.fixedContent!
+        deliveryContentType = offer.fixedContentType
 
-      await tx.deliveryRecord.create({
-        data: {
-          orderId: order.id,
-          userId,
-          productId,
-          content: offer.fixedContent,
-          contentType: offer.fixedContentType,
-          status: 'delivered',
-          deliveredAt: new Date(),
-        },
-      })
+        await tx.deliveryRecord.create({
+          data: {
+            orderId: order.id,
+            userId,
+            productId,
+            content: offer.fixedContent,
+            contentType: offer.fixedContentType,
+            status: 'delivered',
+            deliveredAt: new Date(),
+          },
+        })
+      }
     }
 
     await tx.pointLog.create({
@@ -430,6 +472,11 @@ async function createOrderOnce(
       deliveryContent,
       deliveryContentType,
       deliveryStructuredContent: deliveryStructuredContent ?? undefined,
+      // P5：文件交付只回元数据（名称/大小）；下载走独立发放端点，
+      // 响应里永远没有对象键或可直取的链接。
+      deliveryFile: purchasedFile
+        ? { fileName: purchasedFile.fileName, size: purchasedFile.size }
+        : undefined,
       balanceAfter,
       merchantId,
       merchantName,
@@ -446,7 +493,14 @@ export async function getOrderDetail(orderId: number, userId: number) {
     include: {
       merchant: { select: { id: true, name: true } },
       product: { select: { id: true, name: true, icon: true, type: true, imageUrl: true, deliveryMode: true } },
-      delivery: { select: { status: true, content: true, contentType: true, structuredContent: true, publicNote: true, deliveredAt: true } },
+      delivery: {
+        select: {
+          status: true, content: true, contentType: true, structuredContent: true,
+          publicNote: true, deliveredAt: true,
+          // P5：文件交付元数据（仅详情；列表 select 不含 delivery 内容照旧）。
+          file: { select: { fileName: true, size: true, status: true } },
+        },
+      },
       review: {
         select: { rating: true, comment: true, status: true, editableUntil: true, editedAt: true, createdAt: true },
       },

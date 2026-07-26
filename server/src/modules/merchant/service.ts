@@ -324,7 +324,7 @@ export async function createMyProduct(
     }, data.primaryOfferName)
     // F3：额外规格同事务创建，任一条校验失败 → 整体回滚（无孤儿商品）。
     for (const offerInput of data.offers ?? []) {
-      await insertOffer(tx, created.id, offerInput)
+      await insertOffer(tx, merchantId, created.id, offerInput)
     }
     if (data.offers?.length) {
       await syncProductProjection(tx, created.id)
@@ -373,6 +373,19 @@ export async function updateMyProduct(merchantId: number, productId: number, dat
     throw badRequest('切换交付模式请同时将 fixedContent 置空（传 null）')
   }
 
+  // P5：file 形态的交付配置只能走规格管理——商品级 API 面上没有 fixedFileId，
+  // 商品级改交付模式/固定内容会把默认规格推向违反 file 不变量的状态。
+  // 名称/价格/图片/名额等其余编辑不受影响。
+  const isFileFormProjection = product.fixedContentType === 'file'
+  if (isFileFormProjection && (
+    normalizedProductData.deliveryMode != null
+    || 'fixedContent' in normalizedProductData
+    || normalizedProductData.fixedContentType != null
+  )) {
+    throw badRequest('文件交付规格的交付配置请在「规格管理」中修改')
+  }
+  const fileFormDefaultOffer = isFileFormProjection ? await getDefaultOffer(prisma, productId) : null
+
   assertProductDeliveryConfiguration({
     deliveryMode,
     stockMode,
@@ -382,6 +395,8 @@ export async function updateMyProduct(merchantId: number, productId: number, dat
       ? (normalizedProductData.fixedContent as string | null)
       : product.fixedContent,
     fixedContentType: (normalizedProductData.fixedContentType as string | undefined) ?? product.fixedContentType,
+    fixedFileId: fileFormDefaultOffer?.fixedFileId ?? null,
+    allowFileForm: isFileFormProjection,
   })
 
   // P4a：商品级编辑作用于默认 Offer（真相源），Product 商业列由投影同步对齐。
@@ -1087,6 +1102,8 @@ type OfferWriteInput = {
   stock?: number
   fixedContent?: string | null
   fixedContentType?: string
+  // P5：file 形态挂载的交付文件；null 清空（配合切回 text/url）。
+  fixedFileId?: number | null
   sortOrder?: number
   // P4b：交付字段模板；null 清空回纯文本。已过 zod（deliveryFieldsSchema）。
   deliveryFields?: DeliveryField[] | null
@@ -1119,6 +1136,7 @@ function assertOfferCommercialInput(input: {
   effectiveStock?: number
   fixedContent?: string | null
   fixedContentType: string
+  fixedFileId?: number | null
 }) {
   assertOriginalPriceAtLeastSale(input.price, input.originalPrice ?? null)
   assertProductDeliveryConfiguration({
@@ -1128,7 +1146,23 @@ function assertOfferCommercialInput(input: {
     effectiveStock: input.effectiveStock,
     fixedContent: input.fixedContent ?? undefined,
     fixedContentType: input.fixedContentType,
+    fixedFileId: input.fixedFileId ?? null,
+    // 规格是 file 形态的唯一入口；商品级写路径保持 text/url。
+    allowFileForm: true,
   })
+}
+
+/**
+ * P5：校验规格挂载的交付文件可用。归属别家 → 404（防枚举，与"文件不存在"
+ * 不可区分）；revoked/deleted → 400（吊销即停售）。
+ */
+async function assertMyDeliveryFile(tx: Prisma.TransactionClient | typeof prisma, merchantId: number, fileId: number) {
+  const file = await tx.deliveryFile.findFirst({
+    where: { id: fileId, merchantId },
+    select: { status: true },
+  })
+  if (!file) throw notFound('交付文件不存在')
+  if (file.status !== 'active') throw badRequest('交付文件已不可用，请重新上传')
 }
 
 export async function listMyOffers(merchantId: number, productId: number) {
@@ -1136,6 +1170,8 @@ export async function listMyOffers(merchantId: number, productId: number) {
   return prisma.offer.findMany({
     where: { productId },
     orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
+    // P5：管理 UI 需要展示已挂载文件的名称/大小/可用状态。
+    include: { fixedFile: { select: { fileName: true, size: true, status: true } } },
   })
 }
 
@@ -1145,12 +1181,14 @@ export async function listMyOffers(merchantId: number, productId: number) {
  */
 async function insertOffer(
   tx: Prisma.TransactionClient,
+  merchantId: number,
   productId: number,
   input: OfferWriteInput & { name: string; price: number }
 ) {
   const deliveryMode = input.deliveryMode ?? 'instant_inventory'
   const stockMode = input.stockMode ?? (deliveryMode === 'instant_inventory' ? 'limited' : 'unlimited')
   const fixedContentType = input.fixedContentType ?? 'text'
+  const fixedFileId = input.fixedFileId ?? null
   assertOfferCommercialInput({
     price: input.price,
     originalPrice: input.originalPrice ?? null,
@@ -1160,8 +1198,12 @@ async function insertOffer(
     effectiveStock: input.stock,
     fixedContent: input.fixedContent,
     fixedContentType,
+    fixedFileId,
   })
   assertDeliveryFieldsAllowed(deliveryMode, input.deliveryFields)
+  if (fixedFileId != null) {
+    await assertMyDeliveryFile(tx, merchantId, fixedFileId)
+  }
 
   return tx.offer.create({
     data: {
@@ -1175,6 +1217,7 @@ async function insertOffer(
       stock: deliveryMode === 'instant_inventory' ? 0 : (input.stock ?? 0),
       fixedContent: input.fixedContent ?? null,
       fixedContentType,
+      fixedFileId,
       sortOrder: input.sortOrder ?? 0,
       deliveryFields: input.deliveryFields ?? undefined,
     },
@@ -1188,7 +1231,7 @@ export async function createMyOffer(
 ) {
   await assertMyProduct(merchantId, productId)
   const offer = await prisma.$transaction(async tx => {
-    const created = await insertOffer(tx, productId, input)
+    const created = await insertOffer(tx, merchantId, productId, input)
     await syncProductProjection(tx, productId)
     return created
   })
@@ -1226,6 +1269,8 @@ export async function updateMyOffer(
         : offer.stockMode)
     const fixedContentType = input.fixedContentType ?? offer.fixedContentType
     const nextFixedContent = 'fixedContent' in input ? (input.fixedContent ?? null) : offer.fixedContent
+    // P5：合并后的文件挂载必须满足 file 形态不变量（含"切回 text/url 但留文件"）。
+    const nextFixedFileId = 'fixedFileId' in input ? (input.fixedFileId ?? null) : offer.fixedFileId
     // P4b：合并后的模板不得出现在 instant_fixed 规格上（含"改模式但留模板"）。
     const nextDeliveryFields = 'deliveryFields' in input
       ? input.deliveryFields ?? null
@@ -1242,7 +1287,11 @@ export async function updateMyOffer(
       effectiveStock: input.stock ?? offer.stock,
       fixedContent: deliveryMode === 'instant_fixed' ? nextFixedContent : undefined,
       fixedContentType,
+      fixedFileId: nextFixedFileId,
     })
+    if (nextFixedFileId != null && nextFixedFileId !== offer.fixedFileId) {
+      await assertMyDeliveryFile(tx, merchantId, nextFixedFileId)
+    }
 
     // 设为默认：先清旧默认再随本次更新立新默认（同事务；部分唯一索引兜底并发）。
     // 取消默认只能通过在另一条上设默认完成，保证"每商品恰有一条默认"不变量。
@@ -1265,6 +1314,7 @@ export async function updateMyOffer(
         ...(input.stock != null ? { stock: input.stock } : {}),
         ...('fixedContent' in input ? { fixedContent: input.fixedContent ?? null } : {}),
         fixedContentType,
+        ...('fixedFileId' in input ? { fixedFileId: input.fixedFileId ?? null } : {}),
         ...(input.sortOrder != null ? { sortOrder: input.sortOrder } : {}),
         // 改模板仅影响后续导入/交付；已导入条目携带自包含快照，不回填。
         ...('deliveryFields' in input

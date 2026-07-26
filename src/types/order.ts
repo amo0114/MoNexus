@@ -37,6 +37,8 @@ export interface UserOrderDetail extends Omit<UserOrderListItem, 'delivery'> {
     contentType?: string
     /** P4b：结构化交付快照(fields + values);null/缺省 = 纯文本交付。 */
     structuredContent?: import('./merchant').StructuredDeliveryContent | null
+    /** P5：文件交付元数据(contentType='file' 时);下载走发放端点。 */
+    file?: { fileName: string; size: number; status: string } | null
     publicNote?: string | null
     deliveredAt?: string | null
   }

@@ -17,6 +17,10 @@ export interface ProductDeliveryConfiguration {
   effectiveStock?: number
   fixedContent?: string | null
   fixedContentType: string
+  /** P5：file 形态（仅规格级 instant_fixed）的当前在售文件；text/url 形态必须为空。 */
+  fixedFileId?: number | null
+  /** 是否允许 file 形态。商品级写路径不收文件（file 规格只能经规格管理创建）。 */
+  allowFileForm?: boolean
 }
 
 const HTTP_URL_PATTERN = /^https?:\/\/\S+$/i
@@ -28,12 +32,29 @@ export function assertProductDeliveryConfiguration(config: ProductDeliveryConfig
   if (!['limited', 'unlimited'].includes(config.stockMode)) {
     throw badRequest('库存模式不在可用范围内')
   }
-  if (!['text', 'url'].includes(config.fixedContentType)) {
+  const allowedTypes = config.allowFileForm ? ['text', 'url', 'file'] : ['text', 'url']
+  if (!allowedTypes.includes(config.fixedContentType)) {
     throw badRequest('固定内容类型不在可用范围内')
   }
 
   if (config.deliveryMode !== 'instant_fixed' && config.fixedContent != null) {
     throw badRequest('仅固定内容交付支持 fixedContent')
+  }
+
+  // P5 file 形态不变量（与 DB CHECK Offer_fixed_file_form_check 同规则）：
+  // 文件真相源是 fixedFileId，fixedContent 保持 text/url 语义不得混用。
+  if (config.fixedContentType === 'file') {
+    if (config.deliveryMode !== 'instant_fixed') {
+      throw badRequest('文件交付只支持固定内容交付模式')
+    }
+    if (config.fixedFileId == null) {
+      throw badRequest('文件交付必须选择已上传的交付文件')
+    }
+    if (config.fixedContent != null) {
+      throw badRequest('文件交付不能同时填写文本内容')
+    }
+  } else if (config.fixedFileId != null) {
+    throw badRequest('仅文件交付支持挂载交付文件')
   }
 
   if (config.deliveryMode === 'instant_inventory') {
@@ -48,7 +69,7 @@ export function assertProductDeliveryConfiguration(config: ProductDeliveryConfig
     return
   }
 
-  if (config.deliveryMode === 'instant_fixed') {
+  if (config.deliveryMode === 'instant_fixed' && config.fixedContentType !== 'file') {
     const content = config.fixedContent?.trim()
     if (!content) {
       throw badRequest('固定内容交付必须填写交付内容')

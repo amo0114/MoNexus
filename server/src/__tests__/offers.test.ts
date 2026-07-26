@@ -84,7 +84,9 @@ describe('P4a Offers — default offer & product projection', () => {
     expect(detail.body.offers.length).toBe(2)
     const serialized = JSON.stringify(detail.body.offers)
     expect(serialized).not.toContain('SECRET-FIXED-CONTENT')
-    expect(serialized).not.toContain('fixedContent')
+    // 精确匹配键名：公开序列化出 fixedContentType（形态元数据），
+    // 但绝不能出现 fixedContent 本体键。
+    expect(serialized).not.toContain('"fixedContent":')
     // 即时库存规格的公开 stock = 实际可用条目数。
     const inventoryOffer = detail.body.offers.find((o: { deliveryMode: string }) => o.deliveryMode === 'instant_inventory')
     expect(inventoryOffer.stock).toBe(2)

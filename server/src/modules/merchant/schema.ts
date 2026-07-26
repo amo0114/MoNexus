@@ -70,7 +70,10 @@ const merchantOfferFieldsSchema = z.object({
   stockMode: productStockModeSchema.optional(),
   stock: z.number().int().min(0).max(1_000_000).optional(),
   fixedContent: z.string().trim().min(1).max(5000).nullable().optional(),
-  fixedContentType: productFixedContentTypeSchema.optional(),
+  // P5：规格级固定内容支持 file 形态（商品级写路径仍只收 text/url）。
+  fixedContentType: z.union([productFixedContentTypeSchema, z.literal('file')]).optional(),
+  // file 形态挂载的交付文件；null 清空（配合切回 text/url）。
+  fixedFileId: z.number().int().positive().nullable().optional(),
   sortOrder: z.number().int().min(0).max(10_000).optional(),
   // P4b：交付字段模板；null 清空回纯文本交付。
   deliveryFields: deliveryFieldsSchema.nullable().optional(),

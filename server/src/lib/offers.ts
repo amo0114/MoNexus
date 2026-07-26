@@ -192,8 +192,12 @@ export async function resolvePurchaseOfferChecked(
   return actives[0]
 }
 
-/** 公开序列化：绝不包含 fixedContent（付费内容）。交付字段模板是公开元数据。 */
-export function serializePublicOffer(offer: Offer) {
+/**
+ * 公开序列化：绝不包含 fixedContent（付费内容）。交付字段模板是公开元数据。
+ * P5 file 形态只出 fixedContentType + 文件大小（「文件交付 · 约 X MB」），
+ * 文件名/对象键都不出——购前元数据止步于此。
+ */
+export function serializePublicOffer(offer: Offer & { fixedFile?: { size: number } | null }) {
   return {
     id: offer.id,
     name: offer.name,
@@ -205,7 +209,11 @@ export function serializePublicOffer(offer: Offer) {
     stock: offer.stock,
     sales: offer.sales,
     sortOrder: offer.sortOrder,
+    fixedContentType: offer.fixedContentType,
     // P4b：买家购前可见将获得哪些字段；敏感的是字段"值"，不在此处。
     deliveryFields: parseStoredDeliveryFields(offer.deliveryFields),
+    ...(offer.fixedContentType === 'file'
+      ? { deliveryFileSize: offer.fixedFile?.size ?? null }
+      : {}),
   }
 }
