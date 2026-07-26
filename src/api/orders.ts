@@ -41,6 +41,8 @@ export interface CreateOrderResult {
   deliveryContentType?: string
   /** P4b：结构化交付快照;成功弹窗据此字段化展示。 */
   deliveryStructuredContent?: import('../types/merchant').StructuredDeliveryContent
+  /** P5：文件交付元数据;下载走 issueOrderFileDownloadUrl,响应里没有直链。 */
+  deliveryFile?: { fileName: string; size: number }
   balanceAfter: number
   merchantId: number | null
   merchantName: string | null
@@ -89,6 +91,19 @@ export async function getOrders(params?: { page?: number; pageSize?: number; sta
 
 export async function getOrderDetail(id: number): Promise<UserOrderDetail> {
   const { data } = await api.get(`/orders/${id}`)
+  return data
+}
+
+/** P5：受控文件下载发放。每次点击都重新请求;签名 URL 不落地任何状态。 */
+export interface FileDownloadGrant {
+  url: string
+  expiresAt: string
+  fileName: string
+  size: number
+}
+
+export async function issueOrderFileDownloadUrl(orderId: number): Promise<FileDownloadGrant> {
+  const { data } = await api.post(`/orders/${orderId}/files/download-url`)
   return data
 }
 

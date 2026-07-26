@@ -15,6 +15,8 @@ router.post('/:id/dispute', validate({ params: idParamSchema }), controller.disp
 router.post('/:id/close', validate({ params: idParamSchema }), controller.close)
 router.post('/:id/review', validate({ params: idParamSchema, body: reviewBodySchema }), reviewsController.createForOrder)
 router.put('/:id/review', validate({ params: idParamSchema, body: reviewBodySchema }), reviewsController.updateForOrder)
+// P5：受控文件下载的唯一发放入口（买家/商家/管理员，语义见 fileAccess.ts）。
+router.post('/:id/files/download-url', validate({ params: idParamSchema }), controller.issueFileDownloadUrl)
 router.get('/:id', validate({ params: idParamSchema }), controller.detail)
 
 export { router as orderRoutes }

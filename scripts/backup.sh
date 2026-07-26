@@ -185,7 +185,11 @@ case "$BACKUP_OBJECT_MODE" in
     object_tmp_dir="$(mktemp -d "$BACKUP_DIR/.monexus-objects-${timestamp}.XXXXXX")"
     object_file="$BACKUP_DIR/monexus-objects-${timestamp}.tar.gz.age"
     temp_object_file="$(mktemp "$BACKUP_DIR/.monexus-objects-${timestamp}.XXXXXX")"
-    echo "[INFO] Mirroring bundled MinIO bucket through the private Compose network"
+    # P5: the snapshot covers BOTH buckets — the public upload bucket and the
+    # private delivery bucket (paid files). Layout: /uploads + /delivery
+    # subdirectories; restore-objects-check.sh understands both this layout
+    # and the legacy flat (uploads-only) archives.
+    echo "[INFO] Mirroring bundled MinIO buckets (uploads + delivery) through the private Compose network"
     docker compose \
       --project-name "$BACKUP_COMPOSE_PROJECT_NAME" \
       --env-file "$BACKUP_COMPOSE_ENV_FILE" \
@@ -196,7 +200,9 @@ case "$BACKUP_OBJECT_MODE" in
       -v "$object_tmp_dir:/backup" minio-init \
       -c 'set -eu
           mc alias set backup-source http://minio:9000 "$STORAGE_ACCESS_KEY" "$STORAGE_SECRET_KEY"
-          mc mirror --quiet backup-source/"$STORAGE_BUCKET" /backup'
+          mkdir -p /backup/uploads /backup/delivery
+          mc mirror --quiet backup-source/"$STORAGE_BUCKET" /backup/uploads
+          mc mirror --quiet backup-source/"${DELIVERY_STORAGE_BUCKET:-monexus-files}" /backup/delivery'
 
     tar -C "$object_tmp_dir" -czf - . | age -r "$BACKUP_AGE_RECIPIENT" > "$temp_object_file"
     mv -f -- "$temp_object_file" "$object_file"

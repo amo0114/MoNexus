@@ -26,11 +26,15 @@ export interface PortableObjectManifest {
 }
 
 export interface PortableBackupManifest {
-  formatVersion: 1
+  // v1：仅公开图片桶。v2：新增 deliveryObjects（P5 私有交付桶）。
+  // 旧服务器导入 v2 包会在版本校验处**响亮失败**（而不是静默丢交付文件）。
+  formatVersion: 1 | 2
   createdAt: string
   applicationVersion: string
   database: { archivePath: 'database.dump'; size: number; sha256: string }
   objects: PortableObjectManifest[]
+  /** P5：私有交付桶对象（v2 起）；恢复进 DELIVERY_STORAGE_BUCKET。 */
+  deliveryObjects?: PortableObjectManifest[]
 }
 
 export async function createTarGz(sourceDirectory: string, destination: string) {
@@ -54,11 +58,13 @@ export async function extractTarGz(source: string, destination: string) {
 
   for (const entry of entries) {
     const normalized = entry.replace(/^\.\//, '').replace(/\/$/, '')
-    if (!normalized || normalized === 'objects') continue
+    if (!normalized || normalized === 'objects' || normalized === 'delivery-objects') continue
     if (
       normalized !== 'manifest.json' &&
       normalized !== 'database.dump' &&
-      !/^objects\/[a-f0-9]{64}$/.test(normalized)
+      !/^objects\/[a-f0-9]{64}$/.test(normalized) &&
+      // P5 v2：私有交付桶对象目录（与 manifest.deliveryObjects 对应）。
+      !/^delivery-objects\/[a-f0-9]{64}$/.test(normalized)
     ) {
       throw new Error('备份包包含不允许的文件路径')
     }

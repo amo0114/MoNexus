@@ -9,6 +9,7 @@ import { useAppStore } from '../stores/appStore'
 import { useAuthStore } from '../stores/authStore'
 import PurchaseModal, { type ConfirmOutcome } from '../components/PurchaseModal'
 import SuccessModal from '../components/SuccessModal'
+import { formatFileSize } from '../utils/formatFileSize'
 import EmptyState from '../components/ui/EmptyState'
 import SafeImage from '../components/ui/SafeImage'
 import { getProductReviews, type ReviewItem } from '../api/reviews'
@@ -53,6 +54,9 @@ export default function ProductDetailPage() {
   const [deliveryContent, setDeliveryContent] = useState('')
   const [deliveryContentType, setDeliveryContentType] = useState<string | undefined>(undefined)
   const [deliveryStructured, setDeliveryStructured] = useState<import('../types/merchant').StructuredDeliveryContent | null>(null)
+  // P5：文件交付元数据 + 订单号(下载卡片经发放端点取短时签名链接)。
+  const [deliveryFile, setDeliveryFile] = useState<{ fileName: string; size: number } | null>(null)
+  const [successOrderId, setSuccessOrderId] = useState<number | null>(null)
   const [merchantName, setMerchantName] = useState('')
   const [activeImage, setActiveImage] = useState(0)
 
@@ -128,6 +132,8 @@ export default function ProductDetailPage() {
       setDeliveryContent(data.deliveryContent ?? '')
       setDeliveryContentType(data.deliveryContentType ?? '')
       setDeliveryStructured(data.deliveryStructuredContent ?? null)
+      setDeliveryFile(data.deliveryFile ?? null)
+      setSuccessOrderId(data.orderId)
       setMerchantName(data.merchantName || '')
       setShowPurchase(false)
       setShowSuccess(true)
@@ -217,6 +223,9 @@ export default function ProductDetailPage() {
   const isSoldOut = displayStockMode !== 'unlimited' && displayStock === 0
   // P4b：购前可见将获得的交付字段（模板公开，字段"值"购买后才可见）
   const deliveryTemplate = (selectedOffer ?? offers[0])?.deliveryFields ?? []
+  // P5：file 形态规格的购前提示——只展示形态与大小,文件名/链接购前不可见。
+  const activeOffer = selectedOffer ?? offers[0]
+  const fileDeliverySize = activeOffer?.fixedContentType === 'file' ? activeOffer?.deliveryFileSize ?? null : undefined
 
   return (
     <div className="max-w-5xl mx-auto pb-8 fade-in relative">
@@ -324,6 +333,15 @@ export default function ProductDetailPage() {
           )}
 
           {/* P4b：交付字段预告（选中规格的模板；纯文本交付不渲染） */}
+          {fileDeliverySize !== undefined && (
+            <div className="mb-8 flex flex-wrap items-center gap-2 text-xs" data-testid="file-delivery-preview">
+              <span className="text-[var(--color-text-muted)] font-bold">购买后您将获得：</span>
+              <span className="px-2 py-0.5 rounded border border-[var(--color-border)] bg-[var(--color-background)] text-[var(--color-text)] font-medium">
+                文件交付{fileDeliverySize != null ? ` · 约 ${formatFileSize(fileDeliverySize)}` : ''}
+              </span>
+              <span className="text-[var(--color-text-muted)]">支付后通过短时签名链接下载</span>
+            </div>
+          )}
           {deliveryTemplate.length > 0 && (
             <div className="mb-8 flex flex-wrap items-center gap-2 text-xs" data-testid="delivery-template-preview">
               <span className="text-[var(--color-text-muted)] font-bold">购买后您将获得：</span>
@@ -542,6 +560,8 @@ export default function ProductDetailPage() {
           structuredContent={deliveryStructured}
           deliveryContent={deliveryContent}
           deliveryContentType={deliveryContentType}
+          deliveryFile={deliveryFile}
+          orderId={successOrderId ?? undefined}
           merchantName={merchantName}
           onClose={() => setShowSuccess(false)}
           onViewOrders={() => {

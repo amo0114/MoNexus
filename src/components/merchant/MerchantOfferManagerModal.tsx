@@ -7,9 +7,11 @@ import {
   createMerchantOffer,
   updateMerchantOffer,
   deleteMerchantOffer,
+  uploadDeliveryFile,
 } from '../../api/merchant'
 import type { MerchantProduct, Offer, OfferWriteRequest, DeliveryMode, StockMode, DeliveryField } from '../../types/merchant'
 import { useAppStore } from '../../stores/appStore'
+import { formatFileSize } from '../../utils/formatFileSize'
 
 interface Props {
   isOpen: boolean
@@ -34,7 +36,11 @@ type EditorForm = {
   stockMode: StockMode
   stock: string
   fixedContent: string
-  fixedContentType: 'text' | 'url'
+  fixedContentType: 'text' | 'url' | 'file'
+  /** P5：file 形态挂载的交付文件（上传后得到）。 */
+  fixedFileId: number | null
+  fixedFileName: string
+  fixedFileSize: number | null
   /** P4b：交付字段模板;空数组 = 纯文本交付。 */
   deliveryFields: DeliveryField[]
 }
@@ -49,6 +55,9 @@ const EMPTY_FORM: EditorForm = {
   stock: '',
   fixedContent: '',
   fixedContentType: 'text',
+  fixedFileId: null,
+  fixedFileName: '',
+  fixedFileSize: null,
   deliveryFields: [],
 }
 
@@ -62,7 +71,10 @@ function offerToForm(offer: Offer): EditorForm {
     stockMode: offer.stockMode,
     stock: String(offer.stock ?? 0),
     fixedContent: offer.fixedContent ?? '',
-    fixedContentType: (offer.fixedContentType as 'text' | 'url') ?? 'text',
+    fixedContentType: (offer.fixedContentType as 'text' | 'url' | 'file') ?? 'text',
+    fixedFileId: offer.fixedFileId ?? null,
+    fixedFileName: offer.fixedFile?.fileName ?? '',
+    fixedFileSize: offer.fixedFile?.size ?? null,
     // 深拷贝：编辑不能改到列表里的对象
     deliveryFields: (offer.deliveryFields ?? []).map(f => ({ ...f })),
   }
@@ -112,6 +124,7 @@ export default function MerchantOfferManagerModal({ isOpen, onClose, product, on
 
   const isInstantInventory = form.deliveryMode === 'instant_inventory'
   const isFixed = form.deliveryMode === 'instant_fixed'
+  const isFileForm = isFixed && form.fixedContentType === 'file'
 
   function validate(): string | null {
     if (!form.name.trim()) return '规格名称不能为空'
@@ -121,7 +134,8 @@ export default function MerchantOfferManagerModal({ isOpen, onClose, product, on
       const original = Number(form.originalPrice)
       if (!Number.isInteger(original) || original < price) return '原价不能低于售价'
     }
-    if (isFixed && !form.fixedContent.trim()) return '固定内容交付必须填写交付内容'
+    if (isFileForm && !form.fixedFileId) return '文件交付必须先上传交付文件'
+    if (isFixed && !isFileForm && !form.fixedContent.trim()) return '固定内容交付必须填写交付内容'
     if (isFixed && form.fixedContentType === 'url' && !/^https?:\/\//i.test(form.fixedContent.trim())) {
       return '链接必须以 http(s):// 开头'
     }
@@ -144,6 +158,22 @@ export default function MerchantOfferManagerModal({ isOpen, onClose, product, on
     return null
   }
 
+  const [uploadingFile, setUploadingFile] = useState(false)
+
+  async function handleDeliveryFileUpload(file: File | undefined) {
+    if (!file) return
+    setUploadingFile(true)
+    try {
+      const uploaded = await uploadDeliveryFile(file)
+      setForm(f => ({ ...f, fixedFileId: uploaded.id, fixedFileName: uploaded.fileName, fixedFileSize: uploaded.size }))
+      showToast('文件已上传')
+    } catch (err: any) {
+      showToast(err.response?.data?.error?.message || '文件上传失败', 'error')
+    } finally {
+      setUploadingFile(false)
+    }
+  }
+
   async function handleSave() {
     if (!product) return
     const error = validate()
@@ -159,8 +189,10 @@ export default function MerchantOfferManagerModal({ isOpen, onClose, product, on
       status: form.status,
       deliveryMode: form.deliveryMode,
       stockMode: isInstantInventory ? 'limited' : form.stockMode,
-      fixedContent: isFixed ? form.fixedContent.trim() : null,
+      fixedContent: isFixed && !isFileForm ? form.fixedContent.trim() : null,
       fixedContentType: form.fixedContentType,
+      // P5：file 形态以 fixedFileId 为真相源；非 file 显式清空。
+      fixedFileId: isFileForm ? form.fixedFileId : null,
       // 空模板显式传 null 清空（回纯文本交付）
       deliveryFields: form.deliveryFields.length > 0
         ? form.deliveryFields.map(f => ({
@@ -367,15 +399,45 @@ export default function MerchantOfferManagerModal({ isOpen, onClose, product, on
                 <>
                   <div>
                     <label className="block text-sm font-bold text-[var(--color-text)] mb-1.5">内容类型</label>
-                    <select className="input appearance-none cursor-pointer" value={form.fixedContentType} onChange={(e) => setForm(f => ({ ...f, fixedContentType: e.target.value as 'text' | 'url' }))} disabled={submitting}>
+                    <select className="input appearance-none cursor-pointer" value={form.fixedContentType} onChange={(e) => setForm(f => ({ ...f, fixedContentType: e.target.value as 'text' | 'url' | 'file' }))} disabled={submitting} data-testid="offer-form-fixed-content-type">
                       <option value="text">文本</option>
                       <option value="url">链接</option>
+                      <option value="file">文件（受控下载）</option>
                     </select>
                   </div>
-                  <div className="sm:col-span-2">
-                    <label className="block text-sm font-bold text-[var(--color-text)] mb-1.5">固定交付内容 <span className="text-red-500">*</span></label>
-                    <textarea className="input min-h-[80px] resize-y" maxLength={5000} value={form.fixedContent} onChange={(e) => setForm(f => ({ ...f, fixedContent: e.target.value }))} disabled={submitting} data-testid="offer-form-fixed-content" />
-                  </div>
+                  {form.fixedContentType !== 'file' ? (
+                    <div className="sm:col-span-2">
+                      <label className="block text-sm font-bold text-[var(--color-text)] mb-1.5">固定交付内容 <span className="text-red-500">*</span></label>
+                      <textarea className="input min-h-[80px] resize-y" maxLength={5000} value={form.fixedContent} onChange={(e) => setForm(f => ({ ...f, fixedContent: e.target.value }))} disabled={submitting} data-testid="offer-form-fixed-content" />
+                    </div>
+                  ) : (
+                    <div className="sm:col-span-2" data-testid="offer-form-file-zone">
+                      <label className="block text-sm font-bold text-[var(--color-text)] mb-1.5">交付文件 <span className="text-red-500">*</span></label>
+                      <p className="text-xs text-[var(--color-text-muted)] mb-2">
+                        文件存入平台私有存储，买家通过短时签名链接下载（支付后可见）。替换文件只影响之后的订单，已成交订单仍按购买时的文件下载。
+                      </p>
+                      <div className="flex items-center gap-3 flex-wrap">
+                        {form.fixedFileId ? (
+                          <span className="text-sm text-[var(--color-text)] font-mono break-all">
+                            {form.fixedFileName || `文件 #${form.fixedFileId}`}
+                            {form.fixedFileSize != null ? <span className="text-[var(--color-text-muted)] ml-1">（约 {formatFileSize(form.fixedFileSize)}）</span> : null}
+                          </span>
+                        ) : (
+                          <span className="text-sm text-[var(--color-text-muted)]">尚未上传</span>
+                        )}
+                        <label className="btn-secondary px-3 py-1.5 text-xs cursor-pointer">
+                          {uploadingFile ? <Loader2 className="w-3.5 h-3.5 animate-spin inline" /> : (form.fixedFileId ? '替换文件' : '上传文件')}
+                          <input
+                            type="file"
+                            className="hidden"
+                            disabled={submitting || uploadingFile}
+                            onChange={(e) => handleDeliveryFileUpload(e.target.files?.[0])}
+                            data-testid="offer-form-file-input"
+                          />
+                        </label>
+                      </div>
+                    </div>
+                  )}
                 </>
               )}
               {isInstantInventory && (

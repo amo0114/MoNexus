@@ -21,6 +21,10 @@ export const systemConfigKeys = [
   // 结算高风险二次验证阈值（0 = 关闭该维度）
   'checkoutVerifyAmountThreshold',
   'checkoutVerifyDailyThreshold',
+  // P5 受控文件交付
+  'fileUrlTtlSeconds',
+  'fileAccessWindowDays',
+  'deliveryFileMaxMb',
 ] as const
 
 export type SystemConfigKey = typeof systemConfigKeys[number]
@@ -59,6 +63,9 @@ export const systemConfigDefaults: Record<SystemConfigKey, number> = {
   memberTierPlatinumBonusBps: 2000,
   checkoutVerifyAmountThreshold: 0,
   checkoutVerifyDailyThreshold: 0,
+  fileUrlTtlSeconds: 300,
+  fileAccessWindowDays: 30,
+  deliveryFileMaxMb: 100,
 }
 
 export const systemConfigDescriptions: Record<SystemConfigKey, string> = {
@@ -77,6 +84,9 @@ export const systemConfigDescriptions: Record<SystemConfigKey, string> = {
   memberTierPlatinumBonusBps: '铂金签到/邀请奖励加成基点（万分之）',
   checkoutVerifyAmountThreshold: '单笔兑换需密码确认的金额阈值',
   checkoutVerifyDailyThreshold: '当日累计兑换需密码确认的金额阈值',
+  fileUrlTtlSeconds: '文件下载签名链接有效期',
+  fileAccessWindowDays: '买家交付后下载窗口天数',
+  deliveryFileMaxMb: '交付文件大小上限',
 }
 
 /** 管理端配置项分组（中文），供配置页按组渲染。 */
@@ -96,6 +106,9 @@ export const systemConfigGroups: Record<SystemConfigKey, string> = {
   memberTierPlatinumBonusBps: '会员等级',
   checkoutVerifyAmountThreshold: '安全',
   checkoutVerifyDailyThreshold: '安全',
+  fileUrlTtlSeconds: '文件交付',
+  fileAccessWindowDays: '文件交付',
+  deliveryFileMaxMb: '文件交付',
 }
 
 /** 可选单位标注。 */
@@ -115,6 +128,9 @@ export const systemConfigUnits: Partial<Record<SystemConfigKey, string>> = {
   memberTierPlatinumBonusBps: 'bps',
   checkoutVerifyAmountThreshold: '积分',
   checkoutVerifyDailyThreshold: '积分',
+  fileUrlTtlSeconds: '秒',
+  fileAccessWindowDays: '天',
+  deliveryFileMaxMb: 'MB',
 }
 
 const BONUS_BPS_HINT = '万分比，10000=100%；例如 500 表示额外 +5%'
@@ -133,6 +149,9 @@ export const systemConfigHints: Partial<Record<SystemConfigKey, string>> = {
   memberTierPlatinumBonusBps: BONUS_BPS_HINT,
   checkoutVerifyAmountThreshold: '单笔兑换金额 ≥ 该值时要求输入登录密码确认；0 表示关闭',
   checkoutVerifyDailyThreshold: '当日已成交累计 + 本单 ≥ 该值时要求输入登录密码确认；0 表示关闭',
+  fileUrlTtlSeconds: '签名一经签出在有效期内无法撤销，建议保持短时；上限 3600',
+  fileAccessWindowDays: '从交付时刻起算；0 表示不限窗口',
+  deliveryFileMaxMb: '上限 100（与 Nginx 上传路由的 100MB 限制一致，提额需同步修改 Nginx）',
 }
 
 type ConfigClient = typeof prisma | Prisma.TransactionClient
@@ -263,6 +282,18 @@ export async function updateSystemConfig(
 ) {
   assertSystemConfigKey(key)
   assertSystemConfigValue(value)
+
+  // P5：签名有效期设上限——presigned URL 一经签出无法撤销，长 TTL 直接
+  // 放大"链接被转发"的暴露窗口；0/负值也无意义。
+  if (key === 'fileUrlTtlSeconds' && (value < 30 || value > 3600)) {
+    throw badRequest('签名链接有效期必须在 30–3600 秒之间')
+  }
+  // 上限锁死 100：Nginx 对上传路由的 client_max_body_size 固定 100m，
+  // 后台放开更大值只会让请求在反代处 413（评审 P1）。要提额必须同时改
+  // Nginx 与此处（见 nginx.conf 上传 location 的注释）。
+  if (key === 'deliveryFileMaxMb' && (value < 1 || value > 100)) {
+    throw badRequest('交付文件大小上限必须在 1–100 MB 之间（Nginx 上传路由限制为 100MB）')
+  }
 
   return prisma.$transaction(async tx => {
     if (isTierKey(key)) {

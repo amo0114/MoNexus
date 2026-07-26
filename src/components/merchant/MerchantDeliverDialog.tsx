@@ -2,14 +2,15 @@ import { useState, useEffect } from 'react'
 import { Loader2 } from 'lucide-react'
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '../ui/Dialog'
 import { useAppStore } from '../../stores/appStore'
-import { getMerchantOrderDetail } from '../../api/merchant'
+import { getMerchantOrderDetail, uploadDeliveryFile } from '../../api/merchant'
+import { formatFileSize } from '../../utils/formatFileSize'
 import { MerchantOrder } from '../../types/merchant'
 
 interface Props {
   isOpen: boolean
   onClose: () => void
   order: MerchantOrder | null
-  onSubmit: (payload: { deliveryContent?: string; structuredValues?: Record<string, string> }) => Promise<void>
+  onSubmit: (payload: { deliveryContent?: string; structuredValues?: Record<string, string>; attachmentFileId?: number }) => Promise<void>
 }
 
 export default function MerchantDeliverDialog({ isOpen, onClose, order, onSubmit }: Props) {
@@ -18,6 +19,9 @@ export default function MerchantDeliverDialog({ isOpen, onClose, order, onSubmit
   const [structuredValues, setStructuredValues] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(false)
   const [detail, setDetail] = useState<MerchantOrder | null>(null)
+  // P5：交付附件（可与文本/结构化并存；纯文本订单允许仅附件交付）。
+  const [attachment, setAttachment] = useState<{ id: number; fileName: string; size: number } | null>(null)
+  const [uploadingAttachment, setUploadingAttachment] = useState(false)
 
   // P4b：按订单的模板快照渲染（下单时冻结——商家改规格模板不影响本单契约）；
   // 无快照保持单文本框（纯文本交付，旧行为）。
@@ -28,6 +32,7 @@ export default function MerchantDeliverDialog({ isOpen, onClose, order, onSubmit
     if (!isOpen) return
     setContent('')
     setStructuredValues({})
+    setAttachment(null)
     setDetail(null)
     if (order?.id == null) return
     // 买家购买前填写的信息只在订单详情接口返回（列表按敏感边界剥离），
@@ -50,17 +55,18 @@ export default function MerchantDeliverDialog({ isOpen, onClose, order, onSubmit
         showToast(`交付字段「${missing.label}」不能为空`, 'error')
         return
       }
-    } else if (!content.trim()) {
-      showToast('发货内容不能为空', 'error')
+    } else if (!content.trim() && !attachment) {
+      showToast('发货内容与附件至少提供一项', 'error')
       return
     }
     setLoading(true)
     try {
-      await onSubmit(
-        isStructured
+      await onSubmit({
+        ...(isStructured
           ? { structuredValues: Object.fromEntries(template.map(f => [f.key, structuredValues[f.key].trim()])) }
-          : { deliveryContent: content.trim() }
-      )
+          : content.trim() ? { deliveryContent: content.trim() } : {}),
+        ...(attachment ? { attachmentFileId: attachment.id } : {}),
+      })
       onClose()
     } catch (e: any) {
       showToast(e.response?.data?.error?.message || '发货失败', 'error')
@@ -121,7 +127,6 @@ export default function MerchantDeliverDialog({ isOpen, onClose, order, onSubmit
                 发货内容（卡密 / 账号等） <span className="text-red-500 normal-case">*</span>
               </label>
               <textarea
-                required
                 className="input min-h-[140px] font-mono leading-relaxed resize-y"
                 placeholder={'例如:\nABCD-1234-EFGH-5678\n账号: xxx 密码: yyy'}
                 value={content}
@@ -131,6 +136,50 @@ export default function MerchantDeliverDialog({ isOpen, onClose, order, onSubmit
               />
             </div>
           )}
+          {/* P5：交付附件（受控下载，可选） */}
+          <div data-testid="merchant-deliver-attachment">
+            <label className="block text-xs font-bold text-[var(--color-text-muted)] mb-1.5 uppercase tracking-wider">
+              交付附件（可选，受控下载）
+            </label>
+            <div className="flex items-center gap-3 flex-wrap">
+              {attachment ? (
+                <span className="text-sm text-[var(--color-text)] font-mono break-all">
+                  {attachment.fileName}
+                  <span className="text-[var(--color-text-muted)] ml-1">（约 {formatFileSize(attachment.size)}）</span>
+                </span>
+              ) : (
+                <span className="text-xs text-[var(--color-text-muted)]">买家将通过短时签名链接下载</span>
+              )}
+              <label className="btn-secondary px-3 py-1.5 text-xs cursor-pointer">
+                {uploadingAttachment ? <Loader2 className="w-3.5 h-3.5 animate-spin inline" /> : (attachment ? '替换附件' : '上传附件')}
+                <input
+                  type="file"
+                  className="hidden"
+                  disabled={loading || uploadingAttachment}
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0]
+                    if (!file) return
+                    setUploadingAttachment(true)
+                    try {
+                      const uploaded = await uploadDeliveryFile(file)
+                      setAttachment({ id: uploaded.id, fileName: uploaded.fileName, size: uploaded.size })
+                      showToast('附件已上传')
+                    } catch (err: any) {
+                      showToast(err.response?.data?.error?.message || '附件上传失败', 'error')
+                    } finally {
+                      setUploadingAttachment(false)
+                    }
+                  }}
+                  data-testid="merchant-deliver-attachment-input"
+                />
+              </label>
+              {attachment && (
+                <button type="button" className="text-xs text-[var(--color-text-muted)] hover:text-[var(--color-danger)] cursor-pointer" onClick={() => setAttachment(null)}>
+                  移除
+                </button>
+              )}
+            </div>
+          </div>
           <div className="flex justify-end gap-3">
             <button type="button" onClick={onClose} className="btn-secondary px-5 py-2 text-sm" disabled={loading}>
               取消

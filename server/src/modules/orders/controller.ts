@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express'
 import * as orderService from './service.js'
+import { issueOrderFileDownloadUrl } from './fileAccess.js'
 import { idempotencyKeySchema } from './schema.js'
 import { badRequest } from '../../lib/httpError.js'
 
@@ -74,6 +75,22 @@ export async function detail(req: Request, res: Response, next: NextFunction) {
       req.user!.userId,
     )
     res.json(order)
+  } catch (err) {
+    next(err)
+  }
+}
+
+// P5：受控文件下载发放。响应 no-store——签名 URL 不允许进任何缓存层。
+export async function issueFileDownloadUrl(req: Request, res: Response, next: NextFunction) {
+  try {
+    const result = await issueOrderFileDownloadUrl(req.params.id as unknown as number, {
+      userId: req.user!.userId,
+      userRole: req.user!.role,
+      ip: req.ip,
+      userAgent: req.headers['user-agent'],
+    })
+    res.setHeader('Cache-Control', 'no-store')
+    res.json(result)
   } catch (err) {
     next(err)
   }

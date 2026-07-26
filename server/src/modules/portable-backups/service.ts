@@ -6,6 +6,7 @@ import { config } from '../../config/index.js'
 import { badRequest, conflict, HttpError, notFound } from '../../lib/httpError.js'
 import { prisma } from '../../lib/prisma.js'
 import { getStorage } from '../../lib/storage/index.js'
+import { getDeliveryStorage } from '../../lib/storage/delivery.js'
 import { invalidateProductPublicCache } from '../products/cache.js'
 import {
   createTarGz,
@@ -30,6 +31,8 @@ const RESTORABLE_OBJECT_MIME_TYPES = new Set([
 // portable bundles to this namespace prevents an administrator from
 // accidentally exporting every unrelated object from a shared S3 bucket.
 const PORTABLE_OBJECT_KEY = /^[a-f0-9]{32}\.(?:png|jpeg|webp|gif)$/
+// P5：交付文件对象键 = 全量 sha256 + 短扩展名（tmp/ 临时对象不进备份）。
+const DELIVERY_OBJECT_KEY = /^[a-f0-9]{64}\.[a-z0-9]{1,10}$/
 
 type JobState = 'running' | 'ready' | 'failed'
 
@@ -106,7 +109,9 @@ export async function importPortableBackup(
   acquireOperation()
   let workDirectory: string | undefined
   let storage: Awaited<ReturnType<typeof getStorage>> | undefined
+  let deliveryStorage: Awaited<ReturnType<typeof getDeliveryStorage>> | undefined
   const restoredObjectKeys: string[] = []
+  const restoredDeliveryKeys: string[] = []
   const restoredObjectUrls = new Map<string, string>()
   // pg_restore is executed in one PostgreSQL transaction. Keep this separate
   // from "started": when it fails, the database is still the untouched empty
@@ -146,7 +151,12 @@ export async function importPortableBackup(
     await decryptArchive(filePath, decrypted, passphrase)
     await extractTarGz(decrypted, extracted)
     const manifest = await readAndValidateManifest(extracted)
-    await assertTargetIsFresh(operator.id, manifest.objects.map(object => object.key))
+    const deliveryObjects = manifest.deliveryObjects ?? []
+    await assertTargetIsFresh(
+      operator.id,
+      manifest.objects.map(object => object.key),
+      deliveryObjects.map(object => object.key),
+    )
 
     // Restore blobs before DB references become visible. If an object cannot
     // be restored, the target DB remains untouched and the import can be
@@ -163,6 +173,18 @@ export async function importPortableBackup(
       restoredObjectKeys.push(object.key)
       const restored = await storage.putAtKey(object.key, content, object.mimeType)
       restoredObjectUrls.set(object.key, restored.url)
+    }
+
+    // P5：交付文件对象恢复进私有桶（DB 里 DeliveryFile.key 即引用，无 URL 改写）。
+    deliveryStorage = await getDeliveryStorage()
+    for (const object of deliveryObjects) {
+      const source = path.join(extracted, object.archivePath)
+      const content = await fsp.readFile(source)
+      if (content.length !== object.size || sha256Buffer(content) !== object.sha256) {
+        throw new Error('备份对象校验失败')
+      }
+      restoredDeliveryKeys.push(object.key)
+      await deliveryStorage.putObjectAt(object.key, content)
     }
 
     const databaseDump = path.join(extracted, manifest.database.archivePath)
@@ -206,7 +228,7 @@ export async function importPortableBackup(
           adminUserId: restoredOperator.id,
           action: '导入可移植备份',
           targetType: 'portable_backup',
-          detail: `已恢复 ${manifest.objects.length} 个对象、改写 ${rewrittenProductImages} 个商品图片地址；所有旧会话已撤销`,
+          detail: `已恢复 ${manifest.objects.length} 个公开对象、${(manifest.deliveryObjects ?? []).length} 个交付文件对象、改写 ${rewrittenProductImages} 个商品图片地址；所有旧会话已撤销`,
         },
       }),
     ])
@@ -220,6 +242,9 @@ export async function importPortableBackup(
   } catch (err) {
     if (!databaseRestoreCommitted && storage && restoredObjectKeys.length > 0) {
       await Promise.allSettled(restoredObjectKeys.map(key => storage!.deleteAtKey(key)))
+    }
+    if (!databaseRestoreCommitted && deliveryStorage && restoredDeliveryKeys.length > 0) {
+      await Promise.allSettled(restoredDeliveryKeys.map(key => deliveryStorage!.delete(key)))
     }
     if (err instanceof HttpError) throw err
     throw badRequest('导入失败：备份文件、口令或目标实例状态无效')
@@ -258,9 +283,31 @@ async function runExport(job: PortableBackupJob, passphrase: string) {
       })
     }
 
+    // P5：私有交付桶纳入备份——否则受控文件是灾备盲区。
+    const deliveryStorage = await getDeliveryStorage()
+    const deliveryObjectDirectory = path.join(staging, 'delivery-objects')
+    await fsp.mkdir(deliveryObjectDirectory, { recursive: true, mode: 0o700 })
+    const deliveryObjectManifest: PortableObjectManifest[] = []
+    const listedDeliveryObjects = (await deliveryStorage.list())
+      .filter(object => DELIVERY_OBJECT_KEY.test(object.key))
+    for (const listed of listedDeliveryObjects) {
+      const buffer = await deliveryStorage.getObject(listed.key)
+      if (!buffer) throw new Error('对象存储在备份期间发生变化，请重新创建备份')
+      const objectName = crypto.createHash('sha256').update(listed.key).digest('hex')
+      const archivePath = `delivery-objects/${objectName}`
+      await fsp.writeFile(path.join(staging, archivePath), buffer, { flag: 'wx', mode: 0o600 })
+      deliveryObjectManifest.push({
+        key: listed.key,
+        archivePath,
+        mimeType: 'application/octet-stream',
+        size: buffer.length,
+        sha256: sha256Buffer(buffer),
+      })
+    }
+
     const databaseStat = await fsp.stat(databaseDump)
     const manifest: PortableBackupManifest = {
-      formatVersion: 1,
+      formatVersion: 2,
       createdAt: job.createdAt.toISOString(),
       applicationVersion: process.env.npm_package_version ?? '1.0.0',
       database: {
@@ -269,6 +316,7 @@ async function runExport(job: PortableBackupJob, passphrase: string) {
         sha256: await sha256File(databaseDump),
       },
       objects: objectManifest,
+      deliveryObjects: deliveryObjectManifest,
     }
     await fsp.writeFile(path.join(staging, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`, {
       mode: 0o600,
@@ -288,13 +336,13 @@ async function runExport(job: PortableBackupJob, passphrase: string) {
     job.filePath = bundle
     job.fileName = fileName
     job.byteSize = bundleStat.size
-    job.objectCount = objectManifest.length
+    job.objectCount = objectManifest.length + deliveryObjectManifest.length
     await prisma.adminLog.create({
       data: {
         adminUserId: job.adminUserId,
         action: '创建可移植备份',
         targetType: 'portable_backup',
-        detail: `包含数据库和 ${objectManifest.length} 个对象；不含环境密钥`,
+        detail: `包含数据库、${objectManifest.length} 个公开对象与 ${deliveryObjectManifest.length} 个交付文件对象；不含环境密钥`,
       },
     })
     scheduleJobCleanup(job)
@@ -355,7 +403,7 @@ async function readAndValidateManifest(extractedDirectory: string) {
   if (!parsed || typeof parsed !== 'object') throw new Error('备份清单无效')
   const manifest = parsed as PortableBackupManifest
   if (
-    manifest.formatVersion !== 1 ||
+    (manifest.formatVersion !== 1 && manifest.formatVersion !== 2) ||
     !manifest.database ||
     manifest.database.archivePath !== 'database.dump' ||
     !isSha256(manifest.database.sha256) ||
@@ -382,11 +430,37 @@ async function readAndValidateManifest(extractedDirectory: string) {
     seenKeys.add(object.key)
     seenPaths.add(object.archivePath)
   }
+
+  // P5（v2）：交付文件对象清单。v1 包没有该字段（旧备份，兼容导入）。
+  if (manifest.deliveryObjects !== undefined) {
+    if (manifest.formatVersion < 2 || !Array.isArray(manifest.deliveryObjects)) {
+      throw new Error('备份格式不受支持')
+    }
+    for (const object of manifest.deliveryObjects) {
+      if (
+        !object || typeof object !== 'object' ||
+        typeof object.key !== 'string' || !DELIVERY_OBJECT_KEY.test(object.key) ||
+        object.mimeType !== 'application/octet-stream' ||
+        !/^delivery-objects\/[a-f0-9]{64}$/.test(object.archivePath) ||
+        !Number.isSafeInteger(object.size) || object.size < 0 ||
+        !isSha256(object.sha256) ||
+        seenKeys.has(object.key) || seenPaths.has(object.archivePath)
+      ) {
+        throw new Error('备份对象清单无效')
+      }
+      seenKeys.add(object.key)
+      seenPaths.add(object.archivePath)
+    }
+  }
   return manifest
 }
 
-async function assertTargetIsFresh(operatorId: number, incomingObjectKeys: string[]) {
-  const [otherUsers, products, merchants, orders, inventory, inventoryLogs, pointLogs, checkins, invites, reviews, settlements, deliveries, events, announcements] = await Promise.all([
+async function assertTargetIsFresh(
+  operatorId: number,
+  incomingObjectKeys: string[],
+  incomingDeliveryKeys: string[] = []
+) {
+  const [otherUsers, products, merchants, orders, inventory, inventoryLogs, pointLogs, checkins, invites, reviews, settlements, deliveries, events, announcements, deliveryFiles, fileGrants] = await Promise.all([
     prisma.user.count({ where: { id: { not: operatorId } } }),
     prisma.product.count(),
     prisma.merchant.count(),
@@ -401,8 +475,10 @@ async function assertTargetIsFresh(operatorId: number, incomingObjectKeys: strin
     prisma.deliveryRecord.count(),
     prisma.orderStatusEvent.count(),
     prisma.announcement.count(),
+    prisma.deliveryFile.count(),
+    prisma.fileGrantLog.count(),
   ])
-  if ([otherUsers, products, merchants, orders, inventory, inventoryLogs, pointLogs, checkins, invites, reviews, settlements, deliveries, events, announcements].some(count => count > 0)) {
+  if ([otherUsers, products, merchants, orders, inventory, inventoryLogs, pointLogs, checkins, invites, reviews, settlements, deliveries, events, announcements, deliveryFiles, fileGrants].some(count => count > 0)) {
     throw conflict('仅允许向空实例导入备份')
   }
 
@@ -410,6 +486,13 @@ async function assertTargetIsFresh(operatorId: number, incomingObjectKeys: strin
   const existingKeys = new Set((await storage.list()).map(object => object.key))
   if (incomingObjectKeys.some(key => existingKeys.has(key))) {
     throw conflict('目标对象存储已存在同名 MoNexus 文件，拒绝覆盖或合并')
+  }
+  if (incomingDeliveryKeys.length > 0) {
+    const deliveryStorage = await getDeliveryStorage()
+    const existingDeliveryKeys = new Set((await deliveryStorage.list()).map(object => object.key))
+    if (incomingDeliveryKeys.some(key => existingDeliveryKeys.has(key))) {
+      throw conflict('目标交付文件存储已存在同名对象，拒绝覆盖或合并')
+    }
   }
 }
 

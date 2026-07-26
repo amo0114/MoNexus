@@ -372,6 +372,17 @@ export async function updateProduct(adminUserId: number, id: number, data: Updat
       throw badRequest('切换交付模式请同时将 fixedContent 置空（传 null）')
     }
 
+    // P5：与商家路径同规则——file 形态的交付配置只能走规格管理。
+    const isFileFormProjection = product.fixedContentType === 'file'
+    if (isFileFormProjection && (
+      normalizedProductData.deliveryMode != null
+      || 'fixedContent' in normalizedProductData
+      || normalizedProductData.fixedContentType != null
+    )) {
+      throw badRequest('文件交付规格的交付配置请在「规格管理」中修改')
+    }
+    const fileFormDefaultOffer = isFileFormProjection ? await getDefaultOffer(tx, id) : null
+
     assertProductDeliveryConfiguration({
       deliveryMode,
       stockMode,
@@ -381,6 +392,8 @@ export async function updateProduct(adminUserId: number, id: number, data: Updat
         ? normalizedProductData.fixedContent
         : product.fixedContent,
       fixedContentType: normalizedProductData.fixedContentType ?? product.fixedContentType,
+      fixedFileId: fileFormDefaultOffer?.fixedFileId ?? null,
+      allowFileForm: isFileFormProjection,
     })
 
     const next = await tx.product.update({
@@ -1100,4 +1113,35 @@ export async function deleteAnnouncement(adminUserId: number, id: number) {
     },
   })
   return { deleted: id }
+}
+
+// ---- P5：交付文件治理 ----
+
+/**
+ * 吊销交付文件（违法/恶意内容）：买家与商家全部拒绝新签发（仅管理员可
+ * 取证下载），挂载它的规格立即停售（下单事务检查 file.status）。行与对象
+ * 都保留——退款与清理走各自流程，吊销本身不删任何东西。
+ */
+export async function revokeDeliveryFile(adminUserId: number, fileId: number, reason?: string) {
+  const file = await prisma.deliveryFile.findUnique({
+    where: { id: fileId },
+    select: { id: true, status: true },
+  })
+  if (!file) throw notFound('文件不存在')
+  if (file.status === 'deleted') throw badRequest('文件已清理，无法吊销')
+  if (file.status === 'revoked') return { revoked: true }
+
+  await prisma.$transaction(async tx => {
+    await tx.deliveryFile.update({ where: { id: fileId }, data: { status: 'revoked' } })
+    await tx.adminLog.create({
+      data: {
+        adminUserId,
+        action: '吊销交付文件',
+        targetType: 'deliveryFile',
+        targetId: fileId,
+        detail: reason ?? '违规内容吊销',
+      },
+    })
+  })
+  return { revoked: true }
 }

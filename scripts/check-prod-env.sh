@@ -236,6 +236,18 @@ elif [[ "$storage_public_url" != https://* ]]; then
   fail "STORAGE_PUBLIC_URL_BASE must use https:// when set for $MODE"
 fi
 
+# P5 controlled file delivery: the private bucket is mandatory in production —
+# the fallback is process-memory storage and paid files vanish on restart.
+require_value DELIVERY_STORAGE_BUCKET
+require_url DELIVERY_STORAGE_PUBLIC_ENDPOINT
+if [[ "$(get DELIVERY_STORAGE_BUCKET)" == "$(get STORAGE_BUCKET)" ]]; then
+  fail "DELIVERY_STORAGE_BUCKET must differ from STORAGE_BUCKET: the public bucket carries an anonymous-download policy that would expose paid files"
+fi
+delivery_public_endpoint="$(get DELIVERY_STORAGE_PUBLIC_ENDPOINT)"
+if [[ "$MODE" == "production" && -n "$delivery_public_endpoint" && "$delivery_public_endpoint" != https://* ]]; then
+  fail "DELIVERY_STORAGE_PUBLIC_ENDPOINT must use https:// in production (SigV4 signs the exact origin browsers use)"
+fi
+
 require_value SMTP_HOST
 require_int SMTP_PORT
 require_value SMTP_FROM

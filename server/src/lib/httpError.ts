@@ -23,6 +23,11 @@ export type ErrorCode =
   | 'NO_FILE'
   | 'FILE_TOO_LARGE'
   | 'UNSUPPORTED_MEDIA_TYPE'
+  // P5 受控文件交付：403 细分——争议暂停 / 退款或吊销 / 窗口过期。
+  // 404（订单不存在/越权/无文件交付）沿用 NOT_FOUND 防枚举。
+  | 'FILE_ACCESS_SUSPENDED'
+  | 'FILE_ACCESS_REVOKED'
+  | 'FILE_WINDOW_EXPIRED'
 
 export interface ErrorDetail {
   field: string

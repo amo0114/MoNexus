@@ -125,6 +125,8 @@ export async function transitionOrderStatus(
     publicNote?: string | null
     internalNote?: string | null
     deliveryContent?: string | null
+    /** P5：人工交付附件（DeliveryFile id）；随交付写入快照。 */
+    deliveryFileId?: number | null
     // P4b：结构化交付快照 { fields, values }；null/缺省 = 纯文本交付。
     deliveryStructuredContent?: StructuredDeliveryContent | null
   },
@@ -168,12 +170,15 @@ export async function transitionOrderStatus(
         structuredContent: input.deliveryStructuredContent
           ? structuredContentToJson(input.deliveryStructuredContent)
           : undefined,
+        fileId: input.deliveryFileId ?? null,
         status: 'delivered',
         publicNote: input.publicNote ?? null,
         deliveredAt: new Date(),
       },
       update: {
         content: input.deliveryContent ?? undefined,
+        // 重新交付携带新附件则覆盖；未携带保持原值（争议恢复等路径）。
+        ...(input.deliveryFileId !== undefined ? { fileId: input.deliveryFileId } : {}),
         // 重新交付时携带新快照则覆盖；未携带保持原值（争议恢复等路径）。
         structuredContent: input.deliveryStructuredContent
           ? structuredContentToJson(input.deliveryStructuredContent)

@@ -23,6 +23,12 @@ export interface Offer {
   /** 仅商家端可见;公开商品详情剥离。 */
   fixedContent?: string | null
   fixedContentType?: string
+  /** P5：file 形态挂载的交付文件 id(商家端);公开接口只出 deliveryFileSize。 */
+  fixedFileId?: number | null
+  /** P5：商家端文件元数据(listMyOffers 附带)。 */
+  fixedFile?: { fileName: string; size: number; status: string } | null
+  /** P5：公开接口上 file 形态的文件大小(字节)。 */
+  deliveryFileSize?: number | null
   sales?: number
   sortOrder?: number
   /** 每商品恰有一条默认规格;商品级兼容路径(旧编辑/未指定规格的库存操作)落到它。 */
@@ -56,7 +62,9 @@ export interface OfferWriteRequest {
   stockMode?: StockMode
   stock?: number
   fixedContent?: string | null
-  fixedContentType?: 'text' | 'url'
+  fixedContentType?: 'text' | 'url' | 'file'
+  /** P5：file 形态挂载的交付文件;null 清空(配合切回 text/url)。 */
+  fixedFileId?: number | null
   sortOrder?: number
   /** P4b：交付字段模板;null 清空回纯文本交付。 */
   deliveryFields?: DeliveryField[] | null
@@ -163,7 +171,13 @@ export interface MerchantOrder {
   deliveryFieldsSnapshot?: DeliveryField[] | null
   user?: { id: number; email: string }
   product?: { id: number; name: string; icon: string; type: string; price?: number; deliveryMode?: string }
-  delivery?: { status: string; publicNote?: string | null; deliveredAt?: string | null } | null
+  delivery?: {
+    status: string
+    publicNote?: string | null
+    deliveredAt?: string | null
+    /** P5：已交付附件元数据(商家订单详情)。 */
+    file?: { fileName: string; size: number; status: string } | null
+  } | null
   settlement?: Settlement | null
   availableActions?: string[]
   statusEvents?: any[]

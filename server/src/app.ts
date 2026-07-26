@@ -19,6 +19,7 @@ import { adminRoutes } from './modules/admin/routes.js'
 import { merchantRoutes } from './modules/merchant/routes.js'
 import { dashboardRoutes } from './modules/dashboard/routes.js'
 import { uploadsRoutes } from './modules/uploads/routes.js'
+import { deliveryFileRoutes } from './modules/uploads/deliveryFileRoutes.js'
 import { configRoutes } from './modules/config/routes.js'
 import { announcementRoutes } from './modules/announcements/routes.js'
 import { portableRestoreBootstrapRoutes } from './modules/portable-backups/bootstrap-routes.js'
@@ -86,6 +87,9 @@ app.use('/api/checkout', checkoutRoutes)
 app.use('/api/admin', adminRoutes)
 app.use('/api/merchant/dashboard', dashboardRoutes)
 app.use('/api/merchant', merchantRoutes)
+// P5：交付文件路由先挂——uploads 里的 GET /:key 是贪婪参数路由，后挂会吞掉
+// /delivery-signed/:token。
+app.use('/api/uploads', deliveryFileRoutes)
 app.use('/api/uploads', uploadsRoutes)
 app.use('/api/config', configRoutes)
 app.use('/api/announcements', announcementRoutes)

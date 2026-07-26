@@ -121,6 +121,8 @@ export async function deliverOrder(
     deliveryContent?: string
     /** P4b：按规格交付字段模板提交的字段值(与 deliveryContent 二选一)。 */
     structuredValues?: Record<string, string>
+    /** P5：交付附件(先经 uploadDeliveryFile 获得);可与文本/结构化并存。 */
+    attachmentFileId?: number
     publicNote?: string
   },
 ): Promise<void> {
@@ -144,6 +146,19 @@ export async function getMerchantSettlements(params?: { page?: number; pageSize?
 }
 
 // ---- Offers (P4a: SKU 管理) ----
+
+/**
+ * P5：交付文件上传（私有桶，流式）。返回 fileId 供规格挂载/交付附件；
+ * 响应不含对象键。
+ */
+export async function uploadDeliveryFile(file: File): Promise<{ id: number; fileName: string; size: number }> {
+  const form = new FormData()
+  form.append('file', file)
+  const { data } = await api.post('/uploads/delivery-file', form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })
+  return data
+}
 
 export async function getMerchantOffers(productId: number): Promise<Offer[]> {
   const { data } = await api.get<Offer[]>(`/merchant/products/${productId}/offers`)

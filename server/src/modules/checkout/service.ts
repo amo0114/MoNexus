@@ -71,6 +71,17 @@ export async function getCheckoutPreview(
   let unpurchasableReason: string | undefined
   if (product.merchant && product.merchant.status !== 'active') {
     unpurchasableReason = '商家暂不可用'
+  } else if (deliveryMode === 'instant_fixed' && offer.fixedContentType === 'file') {
+    // P5：file 形态的"内容"是挂载文件；吊销/清理即停售（与下单事务同判定）。
+    const file = offer.fixedFileId == null
+      ? null
+      : await prisma.deliveryFile.findUnique({
+          where: { id: offer.fixedFileId },
+          select: { status: true },
+        })
+    if (!file || file.status !== 'active') {
+      unpurchasableReason = '商品暂不可购买，请联系商家'
+    }
   } else if (deliveryMode === 'instant_fixed' && !offer.fixedContent) {
     unpurchasableReason = '商品暂不可购买，请联系商家'
   } else if (deliveryMode === 'instant_inventory') {

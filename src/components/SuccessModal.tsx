@@ -2,12 +2,15 @@ import { Check, Copy, ExternalLink } from 'lucide-react'
 import { useAppStore } from '../stores/appStore'
 import { Dialog, DialogContent, DialogTitle } from './ui/Dialog'
 import StructuredDeliveryView from './StructuredDeliveryView'
+import FileDeliveryCard from './FileDeliveryCard'
 import type { StructuredDeliveryContent } from '../types/merchant'
 
 export default function SuccessModal({
   deliveryContent,
   deliveryContentType,
   structuredContent,
+  deliveryFile,
+  orderId,
   merchantName,
   onClose,
   onViewOrders
@@ -16,6 +19,9 @@ export default function SuccessModal({
   deliveryContentType?: string
   /** P4b：结构化交付快照;有值时字段化展示替代整段文本。 */
   structuredContent?: StructuredDeliveryContent | null
+  /** P5：文件交付元数据;有值时渲染下载卡片替代文本区。 */
+  deliveryFile?: { fileName: string; size: number } | null
+  orderId?: number
   merchantName?: string
   onClose: () => void
   onViewOrders?: () => void
@@ -44,7 +50,9 @@ export default function SuccessModal({
 
         <div className="bg-[var(--color-background)] rounded-lg p-4 mb-6 border border-[var(--color-border)] text-left flex-1 max-h-48 overflow-y-auto">
           <p className="text-xs text-[var(--color-text-muted)] mb-2 font-bold uppercase tracking-wider">提卡内容区</p>
-          {structuredContent && structuredContent.fields.length > 0 ? (
+          {deliveryFile && orderId != null ? (
+            <FileDeliveryCard orderId={orderId} fileName={deliveryFile.fileName} size={deliveryFile.size} />
+          ) : structuredContent && structuredContent.fields.length > 0 ? (
             <StructuredDeliveryView content={structuredContent} />
           ) : deliveryContentType === 'url' ? (
             <a
@@ -64,9 +72,11 @@ export default function SuccessModal({
         </div>
 
         <div className="flex flex-col gap-3">
-          <button onClick={copyContent} className="btn-primary w-full">
-            <Copy className="w-4 h-4" /> 复制发货信息
-          </button>
+          {!deliveryFile && (
+            <button onClick={copyContent} className="btn-primary w-full">
+              <Copy className="w-4 h-4" /> 复制发货信息
+            </button>
+          )}
           {onViewOrders ? (
             <button
               onClick={onViewOrders}

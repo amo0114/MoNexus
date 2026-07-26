@@ -4,6 +4,7 @@ import { validate, idParamSchema } from '../../middlewares/validate.js'
 import {
   adjustPointsSchema, banUserSchema, createProductSchema, updateProductSchema,
   importInventorySchema, listUsersQuerySchema, listOrdersQuerySchema,
+  revokeDeliveryFileSchema,
   listAdminAuditQuerySchema,
   listMerchantsQuerySchema, reviewMerchantSchema, updateCommissionSchema,
   listSettlementsQuerySchema, batchSettleSchema, resolveOrderSchema,
@@ -32,6 +33,8 @@ router.get('/products', controller.products)
 router.post('/products', validate(createProductSchema), controller.createProduct)
 router.put('/products/:id', validate({ params: idParamSchema, body: updateProductSchema }), controller.updateProduct)
 router.post('/products/:id/inventory', validate({ params: idParamSchema, body: importInventorySchema }), controller.importInventory)
+// P5：吊销交付文件（违法/恶意内容治理）。
+router.post('/delivery-files/:id/revoke', validate({ params: idParamSchema, body: revokeDeliveryFileSchema }), controller.revokeDeliveryFile)
 router.get('/orders', validate({ query: listOrdersQuerySchema }), controller.orders)
 router.get('/orders/:id', validate({ params: idParamSchema }), controller.orderDetail)
 router.post('/orders/:id/resolve', validate({ params: idParamSchema, body: resolveOrderSchema }), controller.resolveOrder)

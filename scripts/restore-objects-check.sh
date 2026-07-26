@@ -103,6 +103,18 @@ docker compose \
   -c 'set -eu
       mc alias set restore-target http://minio:9000 "$STORAGE_ACCESS_KEY" "$STORAGE_SECRET_KEY"
       mc mb --ignore-existing restore-target/"$STORAGE_BUCKET"
-      mc mirror --quiet --overwrite /restore restore-target/"$STORAGE_BUCKET"'
+      mc mb --ignore-existing restore-target/"${DELIVERY_STORAGE_BUCKET:-monexus-files}"
+      if [ -d /restore/uploads ] || [ -d /restore/delivery ]; then
+        # P5 layout: uploads + delivery subdirectories (both buckets).
+        if [ -d /restore/uploads ]; then
+          mc mirror --quiet --overwrite /restore/uploads restore-target/"$STORAGE_BUCKET"
+        fi
+        if [ -d /restore/delivery ]; then
+          mc mirror --quiet --overwrite /restore/delivery restore-target/"${DELIVERY_STORAGE_BUCKET:-monexus-files}"
+        fi
+      else
+        # Legacy flat archive (uploads only, pre-P5).
+        mc mirror --quiet --overwrite /restore restore-target/"$STORAGE_BUCKET"
+      fi'
 
 echo "[PASS] Object snapshot restored into isolated bucket"
