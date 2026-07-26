@@ -167,10 +167,13 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
             <h3 className="font-heading text-sm font-bold text-[var(--color-text)] mb-3 flex items-center gap-2">
               <Info className="w-4 h-4 text-[var(--color-text-muted)]" /> 发货内容
             </h3>
-            {order.delivery?.file ? (
-              /* P5：文件交付——每次点击经发放端点取短时签名链接 */
-              <FileDeliveryCard orderId={order.id} fileName={order.delivery.file.fileName} size={order.delivery.file.size} />
-            ) : order.delivery?.structuredContent && order.delivery.structuredContent.fields.length > 0 ? (
+            {order.delivery?.file && (
+              /* P5：文件交付/交付附件——每次点击经发放端点取短时签名链接 */
+              <div className={order.delivery.content || order.delivery.structuredContent ? 'mb-3' : ''}>
+                <FileDeliveryCard orderId={order.id} fileName={order.delivery.file.fileName} size={order.delivery.file.size} />
+              </div>
+            )}
+            {order.delivery?.structuredContent && order.delivery.structuredContent.fields.length > 0 ? (
               /* P4b：结构化交付按字段展示（逐字段复制、敏感默认遮蔽） */
               <StructuredDeliveryView content={order.delivery.structuredContent} />
             ) : order.delivery?.content ? (
@@ -191,7 +194,7 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
                   {order.delivery.content}
                 </div>
               )
-            ) : order.deliveryMode === 'manual_service' ? (
+            ) : order.delivery?.file ? null : order.deliveryMode === 'manual_service' ? (
               <div className="bg-[var(--color-surface)] p-4 rounded border border-dashed border-[var(--color-border)] text-center text-xs text-[var(--color-text-muted)]">
                 履约中 / 待商家发货
               </div>

@@ -282,3 +282,122 @@ describe('P5 T5 — download-url issuance: authz matrix, anti-enumeration, audit
     expect(limited.body.error.code).toBe('RATE_LIMITED')
   })
 })
+
+describe('P5 T4 — manual delivery attachments', () => {
+  async function setupManualOrder(tag: string, options?: { deliveryFields?: unknown }) {
+    const seller = await setupMerchantWithFile(`t4-${tag}-m@test.local`)
+    const created = await api
+      .post('/api/merchant/products')
+      .set(authHeader(seller.accessToken))
+      .send({ name: `T4商品${tag}`, type: '共享账号', price: 80, deliveryMode: 'manual_service', stockMode: 'unlimited' })
+      .expect(201)
+    const productId = created.body.id as number
+    if (options?.deliveryFields) {
+      const offers = await api
+        .get(`/api/merchant/products/${productId}/offers`)
+        .set(authHeader(seller.accessToken))
+        .expect(200)
+      await api
+        .put(`/api/merchant/products/${productId}/offers/${offers.body[0].id}`)
+        .set(authHeader(seller.accessToken))
+        .send({ deliveryFields: options.deliveryFields })
+        .expect(200)
+    }
+    await createTestUser(`t4-${tag}-b@test.local`, 'pass123', 'user', 1000)
+    const buyer = await loginAs(`t4-${tag}-b@test.local`, 'pass123')
+    const order = await api
+      .post('/api/orders')
+      .set(authHeader(buyer.accessToken))
+      .send({ productId, expectedPrice: 80 })
+      .expect(201)
+    await api
+      .post(`/api/merchant/orders/${order.body.orderId}/fulfillment/start`)
+      .set(authHeader(seller.accessToken))
+      .send({})
+      .expect(200)
+    return { seller, buyer, orderId: order.body.orderId as number }
+  }
+
+  it('delivers attachment-only on a plain order and the buyer can download it', async () => {
+    const { seller, buyer, orderId } = await setupManualOrder('attach')
+
+    const delivered = await api
+      .post(`/api/merchant/orders/${orderId}/fulfillment/deliver`)
+      .set(authHeader(seller.accessToken))
+      .send({ attachmentFileId: seller.fileId })
+      .expect(200)
+    expect(delivered.body.delivery.file).toMatchObject({ fileName: '交付包.zip' })
+
+    const record = await prisma.deliveryRecord.findUniqueOrThrow({ where: { orderId } })
+    expect(record.fileId).toBe(seller.fileId)
+    expect(record.content).toBeNull()
+
+    const grant = await api
+      .post(`/api/orders/${orderId}/files/download-url`)
+      .set(authHeader(buyer.accessToken))
+      .expect(200)
+    await api.get(grant.body.url).expect(200)
+  })
+
+  it('keeps text + attachment together, rejects foreign or revoked attachments, and empty deliveries', async () => {
+    const { seller, orderId } = await setupManualOrder('mixed')
+
+    // 空交付仍被拒（附件与文本都缺）。
+    await api
+      .post(`/api/merchant/orders/${orderId}/fulfillment/deliver`)
+      .set(authHeader(seller.accessToken))
+      .send({})
+      .expect(400)
+
+    // 别家文件 404（防枚举）。
+    const other = await setupMerchantWithFile('t4-mixed-other@test.local')
+    await api
+      .post(`/api/merchant/orders/${orderId}/fulfillment/deliver`)
+      .set(authHeader(seller.accessToken))
+      .send({ deliveryContent: '账号 xxx', attachmentFileId: other.fileId })
+      .expect(404)
+
+    // 吊销文件 400。
+    const revoked = await api
+      .post('/api/uploads/delivery-file')
+      .set(authHeader(seller.accessToken))
+      .attach('file', Buffer.from('revoked bytes'), { filename: 'r.bin' })
+      .expect(201)
+    await prisma.deliveryFile.update({ where: { id: revoked.body.id }, data: { status: 'revoked' } })
+    await api
+      .post(`/api/merchant/orders/${orderId}/fulfillment/deliver`)
+      .set(authHeader(seller.accessToken))
+      .send({ deliveryContent: '账号 xxx', attachmentFileId: revoked.body.id })
+      .expect(400)
+
+    // 文本 + 附件并存成功。
+    const ok = await api
+      .post(`/api/merchant/orders/${orderId}/fulfillment/deliver`)
+      .set(authHeader(seller.accessToken))
+      .send({ deliveryContent: '账号 xxx / 密码 yyy', attachmentFileId: seller.fileId })
+      .expect(200)
+    expect(ok.body.delivery.file).toMatchObject({ fileName: '交付包.zip' })
+    const record = await prisma.deliveryRecord.findUniqueOrThrow({ where: { orderId } })
+    expect(record.content).toBe('账号 xxx / 密码 yyy')
+    expect(record.fileId).toBe(seller.fileId)
+  })
+
+  it('an attachment does not bypass the structured template contract', async () => {
+    const { seller, orderId } = await setupManualOrder('tmpl', {
+      deliveryFields: [{ key: 'account', label: '账号', sensitive: false }],
+    })
+    // 模板订单：只给附件不给字段值 → 仍拒。
+    await api
+      .post(`/api/merchant/orders/${orderId}/fulfillment/deliver`)
+      .set(authHeader(seller.accessToken))
+      .send({ attachmentFileId: seller.fileId })
+      .expect(400)
+    // 字段值 + 附件 → 通过。
+    const ok = await api
+      .post(`/api/merchant/orders/${orderId}/fulfillment/deliver`)
+      .set(authHeader(seller.accessToken))
+      .send({ structuredValues: { account: 'acc-1' }, attachmentFileId: seller.fileId })
+      .expect(200)
+    expect(ok.body.delivery.file).toMatchObject({ fileName: '交付包.zip' })
+  })
+})

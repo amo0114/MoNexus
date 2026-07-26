@@ -121,6 +121,8 @@ export async function deliverOrder(
     deliveryContent?: string
     /** P4b：按规格交付字段模板提交的字段值(与 deliveryContent 二选一)。 */
     structuredValues?: Record<string, string>
+    /** P5：交付附件(先经 uploadDeliveryFile 获得);可与文本/结构化并存。 */
+    attachmentFileId?: number
     publicNote?: string
   },
 ): Promise<void> {

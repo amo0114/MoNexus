@@ -822,7 +822,13 @@ export async function getMyOrderDetail(merchantId: number, orderId: number) {
     include: {
       user: { select: { id: true, email: true } },
       product: { select: { id: true, name: true, icon: true, type: true, imageUrl: true, price: true, deliveryMode: true } },
-      delivery: { select: { status: true, publicNote: true, deliveredAt: true } },
+      delivery: {
+        select: {
+          status: true, publicNote: true, deliveredAt: true,
+          // P5：附件元数据（商家核对已交付文件）；content 本体照旧不进商家详情。
+          file: { select: { fileName: true, size: true, status: true } },
+        },
+      },
       settlement: { select: { settlementAmount: true, status: true, settledAt: true } },
       statusEvents: {
         select: {
@@ -900,6 +906,8 @@ export async function deliverOrderFulfillment(
     deliveryContent?: string
     /** P4b：按规格模板交付的字段值；与 deliveryContent 二选一。 */
     structuredValues?: Record<string, string>
+    /** P5：交付附件（先经交付文件上传获得）；可与文本/结构化并存。 */
+    attachmentFileId?: number
     publicNote?: string
     internalNote?: string
   }
@@ -908,6 +916,10 @@ export async function deliverOrderFulfillment(
     const order = await assertMerchantOrder(merchantId, orderId, tx)
     if (getOrderDeliveryMode(order) !== 'manual_service') {
       throw badRequest('只有人工服务订单可由商家履约交付')
+    }
+    // P5：附件必须是本商家上传且可用的文件（别家 404 防枚举，吊销 400）。
+    if (input.attachmentFileId != null) {
+      await assertMyDeliveryFile(tx, merchantId, input.attachmentFileId)
     }
 
     // P4b：按订单的模板快照（下单时冻结，商家改模板不影响本单契约）强制分支：
@@ -930,7 +942,8 @@ export async function deliverOrderFulfillment(
       deliveryStructuredContent = { fields, values }
     } else {
       if (hasStructured) throw badRequest('该订单为纯文本交付，请提交发货内容')
-      if (!hasText) throw badRequest('发货内容不能为空')
+      // P5：附件本身就是合法交付物——纯文本内容与附件至少其一。
+      if (!hasText && input.attachmentFileId == null) throw badRequest('发货内容不能为空')
     }
 
     await transitionOrderStatus({
@@ -941,6 +954,7 @@ export async function deliverOrderFulfillment(
       action: 'merchant.fulfillment.deliver',
       deliveryContent,
       deliveryStructuredContent,
+      deliveryFileId: input.attachmentFileId ?? null,
       publicNote: input.publicNote,
       internalNote: input.internalNote,
     }, tx)

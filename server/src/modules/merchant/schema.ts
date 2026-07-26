@@ -172,6 +172,8 @@ export const deliverFulfillmentSchema = z.object({
   // P4b：按规格交付字段模板提交的字段值（与 deliveryContent 二选一；
   // 逐字段的必填/限长由服务层按模板校验）。
   structuredValues: z.record(z.string().max(2000)).optional(),
+  // P5：交付附件（可与文本/结构化并存；纯文本订单允许仅附件交付）。
+  attachmentFileId: z.number().int().positive().optional(),
   publicNote: z.string().trim().max(1000).optional(),
   internalNote: z.string().trim().max(2000).optional(),
 }).strict()

@@ -171,7 +171,13 @@ export interface MerchantOrder {
   deliveryFieldsSnapshot?: DeliveryField[] | null
   user?: { id: number; email: string }
   product?: { id: number; name: string; icon: string; type: string; price?: number; deliveryMode?: string }
-  delivery?: { status: string; publicNote?: string | null; deliveredAt?: string | null } | null
+  delivery?: {
+    status: string
+    publicNote?: string | null
+    deliveredAt?: string | null
+    /** P5：已交付附件元数据(商家订单详情)。 */
+    file?: { fileName: string; size: number; status: string } | null
+  } | null
   settlement?: Settlement | null
   availableActions?: string[]
   statusEvents?: any[]
