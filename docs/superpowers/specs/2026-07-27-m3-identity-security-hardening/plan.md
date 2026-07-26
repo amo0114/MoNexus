@@ -5,7 +5,7 @@
 | 文档 ID | PLAN-M3-ISH-001 |
 | 版本 | 1.0.0 |
 | 日期 | 2026-07-27 |
-| 状态 | Draft for Review |
+| 状态 | Frozen for Implementation |
 | 规格 | [spec.md](./spec.md)（SPEC-M3-ISH-001） |
 | 任务分解 | [task.md](./task.md) |
 | 验收清单 | [checklist.md](./checklist.md) |

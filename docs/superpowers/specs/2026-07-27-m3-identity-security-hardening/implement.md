@@ -5,7 +5,7 @@
 | 文档 ID | IMPL-M3-ISH-001 |
 | 版本 | 1.0.0 |
 | 日期 | 2026-07-27 |
-| 状态 | Not Started |
+| 状态 | I-00 Done；I-01 Blocked by P6a rebase gate |
 | 输入 | [spec.md](./spec.md) · [plan.md](./plan.md) · [task.md](./task.md) · [checklist.md](./checklist.md) |
 | 方法依据 | [JavaGuide Spec Coding：Specify → Plan → Tasks → Implement](https://javaguide.cn/ai-coding/practices/spec-coding.html) |
 
@@ -89,8 +89,8 @@ schema.prisma 是唯一共同文件。安全任务不得重排、格式化或编
 
 | Implement ID | 对应 Tasks | 状态 | 输入 / Owned files | 完成与提交门槛 |
 | --- | --- | --- | --- | --- |
-| I-00 | T-00 | Todo | 本包、AGENTS.md、auth 基线 | 记录基线、隔离资源、决策确认；不改业务代码 |
-| I-01 | T-BE-01 | Todo | schema、config、env example、专用 migration | schema/migration/config guard 测试通过；commit 只含身份基础 |
+| I-00 | T-00 | Done | 本包、AGENTS.md、auth 基线 | 记录基线、隔离资源、决策确认；不改业务代码 |
+| I-01 | T-BE-01 | Blocked by P6a rebase gate | schema、config、env example、专用 migration | P6a 合入 develop 后先 rebase 并复核共享 schema/migration；随后才可开始身份基础改动 |
 | I-02 | T-BE-02 | Todo | auth/mfa、security event、logger、原语测试 | 密钥/OTP/challenge/recovery/redact 单测通过；无真实 secret |
 | I-03 | T-BE-03 + T-BE-05 | Todo | auth service/controller/schema/routes、auth middleware、admin route、auth tests | admin MFA flow、guard、bcrypt 通过；不改 P6a 文件 |
 | I-04 | T-BE-04 | Todo | auth session service/routes/serializer/tests | session family/revoke/replay 通过；owner 404 与脱敏锁定 |
@@ -141,7 +141,8 @@ schema.prisma 是唯一共同文件。安全任务不得重排、格式化或编
 
 | 时间 | I-* | 状态 | HEAD / 证据 | 备注 |
 | --- | --- | --- | --- | --- |
-| 2026-07-27 | I-00 | In Progress | branch feat/m3-identity-security-hardening from bf25d01；独立 worktree 已建 | 尚未修改业务代码；等待文档复审与专用测试资源检查 |
+| 2026-07-27 | I-00 | Done | branch `feat/m3-identity-security-hardening` from `bf25d01`；独立 worktree；Prisma 6.19.3；专用库 `monexus_m3_ish_test`（31 migrations up to date） | `auth/auth-tokens/refresh-token-wiring/auth-active-user` 4 files、36 tests PASS；frontend build 与 server build PASS；未修改业务代码 |
+| 2026-07-27 | I-01 | Blocked | P6a 尚未合入 `develop`，且其拥有 migration `20260727090000_p6a_subscription_foundation` 与共享 schema 区域 | 按 §2.4 先 rebase 再生成晚于 P6a 的 Prisma migration；不以抢写 schema 绕过隔离契约 |
 
 ---
 

@@ -5,7 +5,7 @@
 | 文档 ID | SPEC-M3-ISH-001 |
 | 版本 | 1.0.0 |
 | 日期 | 2026-07-27 |
-| 状态 | Draft for Review |
+| 状态 | Frozen for Implementation |
 | 产品 | MoNexus |
 | 关联 PRD | docs/superpowers/specs/2026-04-30-monexus-product-prd.md §4.3.5、§8 |
 | 配套文档 | [plan.md](./plan.md) · [task.md](./task.md) · [checklist.md](./checklist.md) |

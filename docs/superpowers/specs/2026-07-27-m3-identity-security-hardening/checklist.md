@@ -39,7 +39,7 @@
 - [ ] **CHK-PROC-06** diff 不含 .env、真实密钥、TOTP seed、recovery code、cookie、access/refresh token、数据库 dump。
 - [ ] **CHK-PROC-07** 未通过测试后门、NODE_ENV 特判、sleep 重试或弱化旧断言获得绿灯。
 
-**证据：** PR / branch / baseline：________________
+**证据：** 2026-07-27 基线：`feat/m3-identity-security-hardening` 自 `origin/develop@bf25d01` 创建，独立 worktree；仅使用 `monexus_m3_ish_test`（Prisma 6.19.3，31 migrations up to date）。`auth/auth-tokens/refresh-token-wiring/auth-active-user`：4 files、36 tests PASS；frontend build 与 server build PASS。P6a 合入后必须 rebase 并重跑最终门禁。
 
 ---
 

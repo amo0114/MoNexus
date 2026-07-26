@@ -35,8 +35,8 @@
 
 | ID | 状态 | 负责人 | 备注 |
 | --- | --- | --- | --- |
-| T-00 | Todo | | 基线与决策确认 |
-| T-BE-01 | Todo | | schema / migration / config |
+| T-00 | Done | Codex | 基线与决策确认（证据见 implement.md §7） |
+| T-BE-01 | Blocked | Codex | 等待 P6a 合入 develop 后 rebase；避免共享 schema/migration 冲突 |
 | T-BE-02 | Todo | | MFA crypto、challenge、redact、安全事件 |
 | T-BE-03 | Todo | | MFA 登录/绑定 API |
 | T-BE-04 | Todo | | RefreshToken session family 与会话 API |
@@ -87,18 +87,18 @@
 
 **步骤：**
 
-- [ ] 记录 D-01 至 D-06 已确认；若不同意 D-03，不开工并先修订 spec。
-- [ ] 确认 secrets 管理能提供 32-byte base64 MFA_ENCRYPTION_KEY，且每个 API 实例使用同一值。
-- [ ] 启动隔离 PostgreSQL：docker compose up -d postgres。
-- [ ] 运行 auth 基线：
+- [x] 记录 D-01 至 D-06 已冻结；D-03 仅实施“登录 MFA + admin 活动会话校验”，不在本波加入逐操作 step-up。
+- [x] 记录部署前提：secrets owner 必须在发布前为所有 API 实例配置同一枚 32-byte base64 `MFA_ENCRYPTION_KEY`；不读取或创建真实值，实际配置保留为 `CHK-REL-01` 发布门禁。
+- [x] 确认隔离 PostgreSQL 已可用：只使用 `monexus_m3_ish_test`；不启动、停止或重启 P6a 的 compose 服务。
+- [x] 运行 auth 基线（4 files、36 tests PASS）：
 
 ~~~text
 cd server
-TEST_DATABASE_URL='postgresql://monexus:monexus_dev_2026@localhost:5432/monexus_test?schema=public' npx vitest run auth auth-tokens refresh-token-wiring auth-active-user
+TEST_DATABASE_URL='postgresql://monexus:monexus_dev_2026@localhost:5432/monexus_m3_ish_test?schema=public' npx vitest run auth auth-tokens refresh-token-wiring auth-active-user
 ~~~
 
-- [ ] 运行 npm --prefix server run build 与 npm run build。
-- [ ] 写 PR / handoff 基线结果，不复制 token、cookie 或环境值。
+- [x] 运行 `npm --prefix server run build` 与 `npm run build`（均 PASS）。
+- [x] 写入本任务的 implement/checklist 基线证据，不复制 token、cookie 或环境值。
 
 **DoD：** 决策无歧义，四个 auth 测试集和双端 build 绿。
 
