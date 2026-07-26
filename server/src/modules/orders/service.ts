@@ -8,7 +8,7 @@ import {
   isInstantMode,
   normalizeOrderStatus,
   transitionOrderStatus,
-  computeSubscriptionExpiresAt,
+  resolveSubscriptionExpiresAt,
 } from './fulfillment.js'
 import { debitAvailablePoints, holdAvailablePoints, settleHeldOrder } from './accounting.js'
 import {
@@ -50,6 +50,9 @@ export type CreateOrderOptions = {
   expectedCheckoutVersion?: string
   // 高风险二次验证：触发阈值时必须携带的登录密码（checkout/verification.ts）。
   verificationPassword?: string
+  // P6a：手动续费——指向被续费的原订单。事务内校验同买家/同规格/订阅交付，
+  // 交付时若原单未过期则到期时刻自原到期顺延（resolveSubscriptionExpiresAt）。
+  renewalOfOrderId?: number
 }
 
 export async function createOrder(
@@ -65,6 +68,7 @@ export async function createOrder(
     expectedPurchaseFormVersion,
     expectedCheckoutVersion,
     verificationPassword,
+    renewalOfOrderId,
   } = options
 
   let claimToken: string | undefined
@@ -76,6 +80,7 @@ export async function createOrder(
       purchaseFormVersion: expectedPurchaseFormVersion,
       checkoutVersion: expectedCheckoutVersion,
       formAnswers,
+      renewalOfOrderId,
     })
     if (claim.kind === 'replay') return buildReplayResponse(claim.orderId, userId)
     claimToken = claim.claimToken
@@ -115,6 +120,7 @@ export async function createOrder(
       formAnswers,
       expectedPurchaseFormVersion,
       expectedCheckoutVersion,
+      renewalOfOrderId,
       claimToken,
     })
   } catch (err) {
@@ -175,6 +181,7 @@ async function createOrderOnce(
     formAnswers,
     expectedPurchaseFormVersion,
     expectedCheckoutVersion,
+    renewalOfOrderId,
     claimToken,
   }: CreateOrderOptions & { claimToken?: string }
 ) {
@@ -227,6 +234,19 @@ async function createOrderOnce(
     }
     if (deliveryMode !== 'instant_inventory' && offer.stockMode === 'limited' && offer.stock <= 0) {
       throw badRequest('库存不足，请稍后再试')
+    }
+
+    // P6a T3：续费关联校验（事务内终检，预检 /renew 只是引导）——原单必须
+    // 存在、属于同一买家（查询条件即防枚举，失败不区分"不存在/他人"）、
+    // 与本次购买同一规格、且是订阅交付（有到期时刻）。
+    if (renewalOfOrderId != null) {
+      const original = await tx.order.findFirst({
+        where: { id: renewalOfOrderId, userId },
+        select: { offerId: true, delivery: { select: { expiresAt: true } } },
+      })
+      if (!original || original.offerId !== offer.id || original.delivery?.expiresAt == null) {
+        throw new HttpError(400, 'RENEW_INVALID', '续费关联订单无效，请从订单详情重新发起续费')
+      }
     }
 
     let merchantId: number | null = null
@@ -292,6 +312,8 @@ async function createOrderOnce(
         fulfillmentDeadline: orderFulfillmentDeadline,
         // P6a：订阅时长快照——商家改 Offer.validityDays 不影响本单。
         validityDaysSnapshot: offer.validityDays ?? null,
+        // P6a：续费链落库（Restrict 外键，原单行不可删）。
+        renewalOfOrderId: renewalOfOrderId ?? null,
         // 定义与答案一并快照：商家之后改表单不影响本单的展示与履约依据。
         ...(purchaseFormFields.length > 0 ? { purchaseFormSnapshot: purchaseFormFields } : {}),
         ...(purchaseFormAnswers ? { purchaseFormAnswers } : {}),
@@ -310,6 +332,12 @@ async function createOrderOnce(
     let deliveryContent: string | undefined
     let deliveryContentType: string | undefined
     let deliveryStructuredContent: StructuredDeliveryContent | null = null
+
+    // P6a：即时交付的订阅到期时刻（null = 永久）。续费单且原单未过期时
+    // 自原到期顺延——与人工交付路径共用同一解析逻辑（fulfillment.ts）。
+    const subscriptionExpiresAt = isInstantMode(deliveryMode)
+      ? await resolveSubscriptionExpiresAt(tx, order, order.validityDaysSnapshot, new Date())
+      : null
 
     if (deliveryMode === 'instant_inventory') {
       // Claim one row in the database instead of first reading a candidate
@@ -354,8 +382,7 @@ async function createOrderOnce(
             : undefined,
           status: 'delivered',
           deliveredAt: new Date(),
-          // P6a：即时交付的订阅到期时刻（null = 永久）。
-          expiresAt: computeSubscriptionExpiresAt(offer.validityDays, new Date()),
+          expiresAt: subscriptionExpiresAt,
         },
       })
 
@@ -374,7 +401,7 @@ async function createOrderOnce(
             fileId: purchasedFile.id,
             status: 'delivered',
             deliveredAt: new Date(),
-            expiresAt: computeSubscriptionExpiresAt(offer.validityDays, new Date()),
+            expiresAt: subscriptionExpiresAt,
           },
         })
       } else {
@@ -390,7 +417,7 @@ async function createOrderOnce(
             contentType: offer.fixedContentType,
             status: 'delivered',
             deliveredAt: new Date(),
-            expiresAt: computeSubscriptionExpiresAt(offer.validityDays, new Date()),
+            expiresAt: subscriptionExpiresAt,
           },
         })
       }
@@ -506,6 +533,8 @@ export async function getOrderDetail(orderId: number, userId: number) {
         select: {
           status: true, content: true, contentType: true, structuredContent: true,
           publicNote: true, deliveredAt: true,
+          // P6a：订阅到期时刻；序列化层据此补 expired 并做买家到期遮蔽。
+          expiresAt: true,
           // P5：文件交付元数据（仅详情；列表 select 不含 delivery 内容照旧）。
           file: { select: { fileName: true, size: true, status: true } },
         },
@@ -556,7 +585,8 @@ export async function getUserOrders(userId: number, page = 1, pageSize = 20, sta
     include: {
       merchant: { select: { id: true, name: true } },
       product: { select: { id: true, name: true, icon: true, type: true, imageUrl: true, deliveryMode: true } },
-      delivery: { select: { status: true } },
+      // P6a：列表带 expiresAt 供「已过期」徽标（内容字段照旧不进列表查询）。
+      delivery: { select: { status: true, expiresAt: true } },
     },
     orderBy: { createdAt: 'desc' },
     skip: (page - 1) * pageSize,
@@ -627,4 +657,72 @@ export async function closeOrder(orderId: number, userId: number) {
 
   await invalidateProductPublicCache(result.productId, { list: 'coalesced' })
   return getOrderDetail(orderId, userId)
+}
+
+/**
+ * P6a T3：手动续费预检——只读、无副作用。返回原规格的"当前"商业值
+ * （名称/价格/时长），买家经标准结算再次确认价格；实际续费走
+ * POST /orders 携带 renewalOfOrderId，事务内另做终检。
+ */
+export async function renewOrderPrecheck(orderId: number, userId: number) {
+  const order = await prisma.order.findFirst({
+    // 归属放进查询条件：他人订单与不存在订单统一 404，防枚举。
+    where: { id: orderId, userId },
+    select: {
+      id: true,
+      productId: true,
+      offerId: true,
+      delivery: { select: { expiresAt: true } },
+    },
+  })
+  if (!order) throw notFound('订单不存在')
+
+  // 没有到期时刻 = 非订阅交付（永久或尚未交付），无从续费。
+  if (order.delivery?.expiresAt == null) {
+    throw new HttpError(400, 'RENEW_NOT_SUBSCRIPTION', '该订单不是订阅类订单，无需续费')
+  }
+
+  const unavailable = () =>
+    new HttpError(400, 'RENEW_OFFER_UNAVAILABLE', '原规格已下架或暂不可购买，无法续费')
+
+  // 原规格必须仍在售：规格/商品任一下架即不可续费（offerId 为空的迁移前
+  // 订单同样视为不可续费——无法保证"续的是同一规格"）。
+  const offer = order.offerId == null
+    ? null
+    : await prisma.offer.findUnique({ where: { id: order.offerId } })
+  if (!offer || offer.status !== 'active') throw unavailable()
+  const product = await prisma.product.findUnique({
+    where: { id: order.productId },
+    select: { status: true },
+  })
+  if (!product || product.status !== 'active') throw unavailable()
+
+  // 可购买性预检（与 createOrder 的挡单条件对齐，避免引导买家进入必败结算）：
+  // instant_fixed 的固定内容/文件必须可用；限量规格必须仍有库存。
+  const deliveryMode = getProductFulfillmentMode(offer.deliveryMode)
+  if (deliveryMode === 'instant_fixed') {
+    if (offer.fixedContentType === 'file') {
+      const file = offer.fixedFileId == null
+        ? null
+        : await prisma.deliveryFile.findUnique({
+            where: { id: offer.fixedFileId },
+            select: { status: true },
+          })
+      if (!file || file.status !== 'active') throw unavailable()
+    } else if (!offer.fixedContent) {
+      throw unavailable()
+    }
+  }
+  if (deliveryMode !== 'instant_inventory' && offer.stockMode === 'limited' && offer.stock <= 0) {
+    throw unavailable()
+  }
+
+  return {
+    productId: order.productId,
+    offerId: offer.id,
+    offerName: offer.name,
+    price: offer.price,
+    validityDays: offer.validityDays ?? null,
+    currentExpiresAt: order.delivery.expiresAt,
+  }
 }

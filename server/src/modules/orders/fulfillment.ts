@@ -160,9 +160,12 @@ export async function transitionOrderStatus(
   if (!updated) throw notFound('订单不存在')
 
   if (to === 'delivered') {
-    // P6a：人工/恢复交付按订单快照计算到期时刻；争议恢复重交付时已有
-    // 记录仅在原 expiresAt 为空时补算（不因重交付顺延订阅）。
-    const subscriptionExpiresAt = computeSubscriptionExpiresAt(
+    // P6a：人工/恢复交付按订单快照计算到期时刻（续费单顺延语义见
+    // resolveSubscriptionExpiresAt）；争议恢复重交付时已有记录仅在原
+    // expiresAt 为空时补算（不因重交付顺延订阅）。
+    const subscriptionExpiresAt = await resolveSubscriptionExpiresAt(
+      client,
+      updated,
       updated.validityDaysSnapshot,
       new Date()
     )
@@ -229,4 +232,31 @@ export function computeSubscriptionExpiresAt(
 ): Date | null {
   if (validityDays == null || validityDays <= 0) return null
   return new Date(deliveredAt.getTime() + validityDays * 24 * 60 * 60 * 1000)
+}
+
+/**
+ * P6a T3：交付时解析订阅到期时刻的单点实现（即时下单事务与人工交付共用，
+ * 两条路径的顺延语义必须一致）：
+ * - 非续费单，或原单到期时刻在交付时已过 → 自交付时刻起算（重算）；
+ * - 续费单且原单 expiresAt 仍在未来 → 在原到期时刻上顺延 validityDays 天，
+ *   买家提前续费不损失剩余时长。
+ * 原单读取走同一事务客户端——续费校验与顺延基准必须看到同一份数据。
+ */
+export async function resolveSubscriptionExpiresAt(
+  client: Pick<Prisma.TransactionClient, 'deliveryRecord'>,
+  order: { renewalOfOrderId: number | null },
+  validityDays: number | null | undefined,
+  deliveredAt: Date
+): Promise<Date | null> {
+  if (validityDays == null || validityDays <= 0) return null
+  if (order.renewalOfOrderId != null) {
+    const original = await client.deliveryRecord.findUnique({
+      where: { orderId: order.renewalOfOrderId },
+      select: { expiresAt: true },
+    })
+    if (original?.expiresAt && original.expiresAt.getTime() > deliveredAt.getTime()) {
+      return new Date(original.expiresAt.getTime() + validityDays * 24 * 60 * 60 * 1000)
+    }
+  }
+  return computeSubscriptionExpiresAt(validityDays, deliveredAt)
 }

@@ -98,6 +98,46 @@ function withUserOrderContract<T extends OrderWithDelivery>(order: T, includeTim
   }
 }
 
+/** P6a：到期判定单点——expiresAt 非空且不晚于当前时刻即过期。 */
+function isSubscriptionExpired(expiresAt: unknown): boolean {
+  if (expiresAt == null) return false
+  const time = new Date(expiresAt as string | Date).getTime()
+  return Number.isFinite(time) && time <= Date.now()
+}
+
+/**
+ * P6a：查询选了 expiresAt 的交付对象补上 expired 布尔——前端徽标不必
+ * 自行比对时钟（客户端时钟不可信）。未选 expiresAt 的旧查询原样透传。
+ */
+function withDeliveryExpiry<T extends OrderWithDelivery>(order: T) {
+  if (!order.delivery || !('expiresAt' in order.delivery)) return order
+  return {
+    ...order,
+    delivery: {
+      ...order.delivery,
+      expired: isSubscriptionExpired(order.delivery.expiresAt),
+    },
+  }
+}
+
+/**
+ * P6a：买家视角的到期遮蔽。内容已交付即已泄露——遮蔽是提示性而非安全
+ * 边界（如实承诺，见设计 §2）；文件元数据保留展示，下载在发放端点单独
+ * 拦截。商家/管理员是履约凭据视角，禁止走本函数。
+ */
+function maskExpiredDeliveryForBuyer<T extends OrderWithDelivery>(order: T) {
+  if (!order.delivery || !isSubscriptionExpired(order.delivery.expiresAt)) return order
+  return {
+    ...order,
+    delivery: {
+      ...order.delivery,
+      content: null,
+      structuredContent: null,
+      contentMasked: true,
+    },
+  }
+}
+
 function omitDeliveryContent<T extends OrderWithDelivery>(order: T) {
   if (!order.delivery) return order
 
@@ -120,11 +160,13 @@ function omitPurchaseForm<T extends Record<string, unknown>>(order: T) {
 }
 
 export function serializeUserOrderList<T extends OrderWithDelivery>(order: T) {
-  return omitPurchaseForm(omitDeliveryContent(withUserOrderContract(order, false)))
+  // P6a：列表行透出 expiresAt/expired 供「已过期」徽标；内容照旧剥离。
+  return omitPurchaseForm(omitDeliveryContent(withDeliveryExpiry(withUserOrderContract(order, false))))
 }
 
 export function serializeUserOrderDetail<T extends OrderWithDelivery>(order: T) {
-  return withUserOrderContract(order, true)
+  // P6a：买家详情到期遮蔽（仅买家视角；商家/管理员序列化不做遮蔽）。
+  return maskExpiredDeliveryForBuyer(withDeliveryExpiry(withUserOrderContract(order, true)))
 }
 
 export function serializeMerchantOrder<T extends OrderWithDelivery>(order: T) {

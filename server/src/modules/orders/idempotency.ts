@@ -40,6 +40,9 @@ export type IdempotencyFingerprint = {
   // Offer 结算版本（P4b）。与 offerId 同一兼容策略：未传不写入 canonical。
   checkoutVersion?: string
   formAnswers?: Record<string, string>
+  // P6a：续费关联（同兼容策略：未传不写入 canonical，存量摘要不变）。
+  // 同 key 换续费目标（或续费↔普通购买互换）视为不同意图，必须 409。
+  renewalOfOrderId?: number
 }
 
 /**
@@ -62,6 +65,8 @@ export function computeRequestDigest(fingerprint: IdempotencyFingerprint): strin
     purchaseFormVersion: fingerprint.purchaseFormVersion ?? null,
     // 同兼容策略：旧客户端不传 → digest 不变；新客户端换版本重试 → 409。
     ...(fingerprint.checkoutVersion != null ? { checkoutVersion: fingerprint.checkoutVersion } : {}),
+    // P6a：续费单与普通购买是不同意图，同 key 互换必须 409。
+    ...(fingerprint.renewalOfOrderId != null ? { renewalOfOrderId: fingerprint.renewalOfOrderId } : {}),
     answers: canonicalAnswers,
   })
   return createHmac('sha256', config.jwtSecret).update(canonical).digest('hex')

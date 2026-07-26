@@ -28,6 +28,15 @@ export type ErrorCode =
   | 'FILE_ACCESS_SUSPENDED'
   | 'FILE_ACCESS_REVOKED'
   | 'FILE_WINDOW_EXPIRED'
+  // P6a 订阅到期：买家订阅已过期时文件发放拒绝（与下载窗口取较严者）。
+  | 'FILE_SUBSCRIPTION_EXPIRED'
+  // P6a 手动续费预检/下单校验：
+  // - RENEW_NOT_SUBSCRIPTION：订单没有到期时刻（非订阅交付），无从续费；
+  // - RENEW_OFFER_UNAVAILABLE：原规格已下架/商品下架/不再可购买；
+  // - RENEW_INVALID：下单携带的 renewalOfOrderId 关联校验失败。
+  | 'RENEW_NOT_SUBSCRIPTION'
+  | 'RENEW_OFFER_UNAVAILABLE'
+  | 'RENEW_INVALID'
 
 export interface ErrorDetail {
   field: string

@@ -826,6 +826,8 @@ export async function getMyOrderDetail(merchantId: number, orderId: number) {
       delivery: {
         select: {
           status: true, publicNote: true, deliveredAt: true,
+          // P6a：订阅到期时刻。商家视角只展示、永不遮蔽（履约凭据）。
+          expiresAt: true,
           // P5：附件元数据（商家核对已交付文件）；content 本体照旧不进商家详情。
           file: { select: { fileName: true, size: true, status: true } },
         },

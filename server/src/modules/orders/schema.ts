@@ -26,6 +26,9 @@ export const createOrderSchema = z.object({
   // 高风险二次验证：触发阈值时必须携带登录密码。凭证不是订单内容——
   // 不进幂等指纹，禁止出现在任何日志/审计/序列化输出（logger 已 redact）。
   verificationPassword: z.string().min(1).max(128).optional(),
+  // P6a：手动续费——被续费的原订单 id。事务内校验同买家/同规格/订阅交付，
+  // 失败返回 400 RENEW_INVALID。
+  renewalOfOrderId: z.number().int().positive().optional(),
 })
 
 // Idempotency-Key 请求头：限定 UUID，避免任意字符串占用唯一索引空间。

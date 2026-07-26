@@ -59,6 +59,8 @@ export async function issueOrderFileDownloadUrl(orderId: number, requester: Requ
         select: {
           fileId: true,
           deliveredAt: true,
+          // P6a：订阅到期时刻——买家发放与下载窗口取较严者。
+          expiresAt: true,
           file: { select: { id: true, key: true, fileName: true, size: true, status: true } },
         },
       },
@@ -147,6 +149,14 @@ export async function issueOrderFileDownloadUrl(orderId: number, requester: Requ
         if (Date.now() > expiry) {
           throw new FileAccessDenied('FILE_WINDOW_EXPIRED', '下载窗口已过期，请联系商家', 'denied_window')
         }
+      }
+      // P6a：订阅到期与下载窗口取较严者——任一已过即拒新签发（商家/管理员
+      // 不受限：履约凭据/仲裁取证）。审计 outcome 复用 denied_window：
+      // FileGrantLog 的 CHECK（迁移 20260726180000）只允许 granted/denied_state/
+      // denied_window/denied_revoked，新值需迁移扩表；订阅到期与窗口同属
+      // "时间界限已过"语义，HTTP code 已细分，审计侧不再扩值。
+      if (order.delivery?.expiresAt && Date.now() > order.delivery.expiresAt.getTime()) {
+        throw new FileAccessDenied('FILE_SUBSCRIPTION_EXPIRED', '订阅已过期，续费后可恢复下载', 'denied_window')
       }
     }
 
