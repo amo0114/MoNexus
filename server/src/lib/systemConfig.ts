@@ -151,7 +151,7 @@ export const systemConfigHints: Partial<Record<SystemConfigKey, string>> = {
   checkoutVerifyDailyThreshold: '当日已成交累计 + 本单 ≥ 该值时要求输入登录密码确认；0 表示关闭',
   fileUrlTtlSeconds: '签名一经签出在有效期内无法撤销，建议保持短时；上限 3600',
   fileAccessWindowDays: '从交付时刻起算；0 表示不限窗口',
-  deliveryFileMaxMb: '流式上传的硬上限；Nginx 对上传路由的 body 限制需同步调整',
+  deliveryFileMaxMb: '上限 100（与 Nginx 上传路由的 100MB 限制一致，提额需同步修改 Nginx）',
 }
 
 type ConfigClient = typeof prisma | Prisma.TransactionClient
@@ -288,8 +288,11 @@ export async function updateSystemConfig(
   if (key === 'fileUrlTtlSeconds' && (value < 30 || value > 3600)) {
     throw badRequest('签名链接有效期必须在 30–3600 秒之间')
   }
-  if (key === 'deliveryFileMaxMb' && (value < 1 || value > 1024)) {
-    throw badRequest('交付文件大小上限必须在 1–1024 MB 之间')
+  // 上限锁死 100：Nginx 对上传路由的 client_max_body_size 固定 100m，
+  // 后台放开更大值只会让请求在反代处 413（评审 P1）。要提额必须同时改
+  // Nginx 与此处（见 nginx.conf 上传 location 的注释）。
+  if (key === 'deliveryFileMaxMb' && (value < 1 || value > 100)) {
+    throw badRequest('交付文件大小上限必须在 1–100 MB 之间（Nginx 上传路由限制为 100MB）')
   }
 
   return prisma.$transaction(async tx => {

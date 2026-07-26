@@ -82,6 +82,8 @@ async function main() {
   check('presigned GET succeeds', signed.status === 200, `status=${signed.status}`)
   check('response forces attachment', disposition.startsWith('attachment'), disposition)
   check('response content-type is octet-stream', contentType === 'application/octet-stream', contentType)
+  const cacheControl = signed.headers.get('cache-control') ?? ''
+  check('response cache-control is no-store', cacheControl.includes('no-store'), cacheControl)
   check('body round-trips', Buffer.from(await signed.arrayBuffer()).equals(body))
 
   // 3. 篡改签名 → 403。

@@ -58,11 +58,13 @@ export async function extractTarGz(source: string, destination: string) {
 
   for (const entry of entries) {
     const normalized = entry.replace(/^\.\//, '').replace(/\/$/, '')
-    if (!normalized || normalized === 'objects') continue
+    if (!normalized || normalized === 'objects' || normalized === 'delivery-objects') continue
     if (
       normalized !== 'manifest.json' &&
       normalized !== 'database.dump' &&
-      !/^objects\/[a-f0-9]{64}$/.test(normalized)
+      !/^objects\/[a-f0-9]{64}$/.test(normalized) &&
+      // P5 v2：私有交付桶对象目录（与 manifest.deliveryObjects 对应）。
+      !/^delivery-objects\/[a-f0-9]{64}$/.test(normalized)
     ) {
       throw new Error('备份包包含不允许的文件路径')
     }

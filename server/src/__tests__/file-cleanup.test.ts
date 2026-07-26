@@ -119,8 +119,16 @@ describe('cleanupStaleTmpObjects', () => {
 })
 
 describe('cleanupRefundedFiles', () => {
-  async function seedOrderWithFile(merchantId: number, marker: string, orderStatus: string, deliveredAgoMs: number) {
-    const file = await seedFile(merchantId, marker, new Date(Date.now() - 100 * DAY))
+  async function seedOrderWithFile(
+    merchantId: number,
+    marker: string,
+    orderStatus: string,
+    options: { deliveredAgoMs: number; refundedAgoMs?: number; fileStatus?: string }
+  ) {
+    const file = await seedFile(merchantId, marker, new Date(Date.now() - 200 * DAY))
+    if (options.fileStatus) {
+      await prisma.deliveryFile.update({ where: { id: file.id }, data: { status: options.fileStatus } })
+    }
     const buyer = await prisma.user.create({
       data: { email: `gc-refund-${marker}@test.local`, password: 'x', inviteCode: `GCR-${marker}` },
     })
@@ -132,27 +140,45 @@ describe('cleanupRefundedFiles', () => {
       data: {
         orderId: order.id, userId: buyer.id, productId: product.id,
         contentType: 'file', fileId: file.id, status: 'delivered',
-        deliveredAt: new Date(Date.now() - deliveredAgoMs),
+        deliveredAt: new Date(Date.now() - options.deliveredAgoMs),
       },
     })
+    // 保留期锚点 = 退款事件时间（评审 P1）；status 直改而无事件 = 保守不清。
+    if (options.refundedAgoMs != null) {
+      await prisma.orderStatusEvent.create({
+        data: {
+          orderId: order.id, actorRole: 'admin', fromStatus: 'disputed', toStatus: 'refunded',
+          action: 'admin.resolve.refund', createdAt: new Date(Date.now() - options.refundedAgoMs),
+        },
+      })
+    }
     return file
   }
 
-  it('cleans files whose orders are all refunded past retention, keeps recent refunds and live orders', async () => {
+  it('anchors retention on the refund event: old-delivery-fresh-refund stays, 91-day refunds clean', async () => {
     const merchant = await makeMerchant('gc-refund@test.local')
     const storage = (await getDeliveryStorage()) as DeliveryMemoryStorage
 
-    const oldRefund = await seedOrderWithFile(merchant.id, 'e', 'refunded', 91 * DAY)
-    const recentRefund = await seedOrderWithFile(merchant.id, 'f', 'refunded', 10 * DAY)
-    const liveOrder = await seedOrderWithFile(merchant.id, '0', 'delivered', 91 * DAY)
+    // 91 天前退款 → 清理（交付更早无关紧要）。
+    const oldRefund = await seedOrderWithFile(merchant.id, 'e', 'refunded', { deliveredAgoMs: 100 * DAY, refundedAgoMs: 91 * DAY })
+    // 100 天前交付、今天刚退款 → 必须保留（评审 P1 的核心场景）。
+    const freshRefund = await seedOrderWithFile(merchant.id, 'f', 'refunded', { deliveredAgoMs: 100 * DAY, refundedAgoMs: 1 * DAY })
+    // 存活订单（delivered）→ 永不清理。
+    const liveOrder = await seedOrderWithFile(merchant.id, '0', 'delivered', { deliveredAgoMs: 100 * DAY })
+    // 退款但没有状态事件（绕过状态机直改）→ 保守不清理。
+    const noEvent = await seedOrderWithFile(merchant.id, '2', 'refunded', { deliveredAgoMs: 100 * DAY })
+    // revoked 文件同样走保留期后清理（评审 P1：吊销不能永久滞留）。
+    const revokedOld = await seedOrderWithFile(merchant.id, '3', 'refunded', { deliveredAgoMs: 100 * DAY, refundedAgoMs: 95 * DAY, fileStatus: 'revoked' })
 
     const cleaned = await cleanupRefundedFiles()
-    expect(cleaned).toBe(1)
+    expect(cleaned).toBe(2)
 
     expect((await prisma.deliveryFile.findUniqueOrThrow({ where: { id: oldRefund.id } })).status).toBe('deleted')
     expect(storage.getBlob(oldRefund.key)).toBeNull()
-    expect((await prisma.deliveryFile.findUniqueOrThrow({ where: { id: recentRefund.id } })).status).toBe('active')
+    expect((await prisma.deliveryFile.findUniqueOrThrow({ where: { id: revokedOld.id } })).status).toBe('deleted')
+    expect((await prisma.deliveryFile.findUniqueOrThrow({ where: { id: freshRefund.id } })).status).toBe('active')
     expect((await prisma.deliveryFile.findUniqueOrThrow({ where: { id: liveOrder.id } })).status).toBe('active')
+    expect((await prisma.deliveryFile.findUniqueOrThrow({ where: { id: noEvent.id } })).status).toBe('active')
   })
 })
 

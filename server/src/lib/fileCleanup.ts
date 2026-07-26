@@ -51,7 +51,9 @@ export async function cleanupOrphanFiles(now = new Date()): Promise<number> {
   const cutoff = new Date(now.getTime() - ORPHAN_GRACE_MS)
   const orphans = await prisma.deliveryFile.findMany({
     where: {
-      status: 'active',
+      // revoked 同样参与清理——状态机是 active → revoked → deleted，
+      // 已吊销且无引用的对象不能永久留在私有桶（评审 P1）。
+      status: { in: ['active', 'revoked'] },
       createdAt: { lt: cutoff },
       offers: { none: {} },
       deliveryRecords: { none: {} },
@@ -88,12 +90,16 @@ export async function cleanupStaleTmpObjects(now = new Date()): Promise<number> 
  * 且**所有**引用它的订单都已退款超过保留期的文件。任一订单非退款（含
  * delivered/closed——商家可复用文件）都不清理；窗口过期只断买家访问，
  * 不删文件。
+ *
+ * 保留期锚点 = **退款事件时间**（OrderStatusEvent toStatus='refunded' 的
+ * 最近一条），不是交付时间——"100 天前交付、今天退款"必须再保留 90 天
+ * （评审 P1）。查不到退款事件（绕过状态机的直改数据）→ 保守不清理。
  */
 export async function cleanupRefundedFiles(now = new Date()): Promise<number> {
   const cutoff = new Date(now.getTime() - REFUND_RETENTION_MS)
   const candidates = await prisma.deliveryFile.findMany({
     where: {
-      status: 'active',
+      status: { in: ['active', 'revoked'] },
       offers: { none: {} },
       deliveryRecords: { some: {} },
     },
@@ -101,7 +107,19 @@ export async function cleanupRefundedFiles(now = new Date()): Promise<number> {
       id: true,
       key: true,
       deliveryRecords: {
-        select: { order: { select: { status: true, createdAt: true } }, deliveredAt: true },
+        select: {
+          order: {
+            select: {
+              status: true,
+              statusEvents: {
+                where: { toStatus: 'refunded' },
+                orderBy: { createdAt: 'desc' },
+                take: 1,
+                select: { createdAt: true },
+              },
+            },
+          },
+        },
       },
     },
     take: 200,
@@ -111,8 +129,9 @@ export async function cleanupRefundedFiles(now = new Date()): Promise<number> {
   for (const file of candidates) {
     const allRefundedPastRetention = file.deliveryRecords.every(record => {
       if (record.order.status !== 'refunded') return false
-      const anchor = record.deliveredAt ?? record.order.createdAt
-      return anchor.getTime() < cutoff.getTime()
+      const refundedAt = record.order.statusEvents[0]?.createdAt
+      if (!refundedAt) return false
+      return refundedAt.getTime() < cutoff.getTime()
     })
     if (!allRefundedPastRetention) continue
     try {

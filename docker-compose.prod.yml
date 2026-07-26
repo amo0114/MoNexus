@@ -61,8 +61,8 @@ services:
       # STORAGE_BUCKET — startup refuses same name) + the browser-reachable
       # origin used ONLY for presigning download URLs. SigV4 signs the Host,
       # so this must be the exact public site origin nginx serves.
-      DELIVERY_STORAGE_BUCKET: ${DELIVERY_STORAGE_BUCKET:-}
-      DELIVERY_STORAGE_PUBLIC_ENDPOINT: ${DELIVERY_STORAGE_PUBLIC_ENDPOINT:-}
+      DELIVERY_STORAGE_BUCKET: ${DELIVERY_STORAGE_BUCKET:?DELIVERY_STORAGE_BUCKET is required (private delivery bucket; must differ from STORAGE_BUCKET)}
+      DELIVERY_STORAGE_PUBLIC_ENDPOINT: ${DELIVERY_STORAGE_PUBLIC_ENDPOINT:?DELIVERY_STORAGE_PUBLIC_ENDPOINT is required (public https origin used to presign download URLs)}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_SECURE: ${SMTP_SECURE:-false}

@@ -74,18 +74,30 @@ router.post('/delivery-file', authenticate, requireActiveUser, requireMerchant, 
           await storage.promote(tmpKey, finalKey)
 
           const fileName = sanitizeFileName(info.filename ?? '')
-          const file = await prisma.deliveryFile.create({
-            data: {
-              key: finalKey,
-              fileName,
-              size,
-              // busboy 报告的 MIME 来自客户端，仅记录不信任。
-              mimeType: info.mimeType || 'application/octet-stream',
-              sha256,
-              merchantId,
-            },
-            select: { id: true, fileName: true, size: true, createdAt: true },
-          })
+          let file: { id: number; fileName: string; size: number; createdAt: Date }
+          try {
+            file = await prisma.deliveryFile.create({
+              data: {
+                key: finalKey,
+                fileName,
+                size,
+                // busboy 报告的 MIME 来自客户端，仅记录不信任。
+                mimeType: info.mimeType || 'application/octet-stream',
+                sha256,
+                merchantId,
+              },
+              select: { id: true, fileName: true, size: true, createdAt: true },
+            })
+          } catch (createErr) {
+            // 晋升成功但建行失败：最终键既不在 tmp/ 也没有行，GC 扫不到——
+            // 若无其他行引用同 key（内容寻址去重命中场景）则当场删对象。
+            const sibling = await prisma.deliveryFile.findFirst({
+              where: { key: finalKey, status: { not: 'deleted' } },
+              select: { id: true },
+            }).catch(() => null)
+            if (!sibling) await storage.delete(finalKey).catch(() => {})
+            throw createErr
+          }
           if (!settled) {
             settled = true
             res.status(201).json(file)

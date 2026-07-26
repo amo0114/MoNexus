@@ -401,3 +401,66 @@ describe('P5 T4 — manual delivery attachments', () => {
     expect(ok.body.delivery.file).toMatchObject({ fileName: '交付包.zip' })
   })
 })
+
+describe('P5 复审回归 — manual attachment across dispute resume', () => {
+  it('delivered → disputed → processing: buyer 403, merchant/admin keep access; re-delivered restores buyer', async () => {
+    const seller = await setupMerchantWithFile('rr-manual-m@test.local')
+    const created = await api
+      .post('/api/merchant/products')
+      .set(authHeader(seller.accessToken))
+      .send({ name: '复审人工商品', type: '共享账号', price: 60, deliveryMode: 'manual_service', stockMode: 'unlimited' })
+      .expect(201)
+    await createTestUser('rr-manual-b@test.local', 'pass123', 'user', 1000)
+    const buyer = await loginAs('rr-manual-b@test.local', 'pass123')
+    const order = await api
+      .post('/api/orders')
+      .set(authHeader(buyer.accessToken))
+      .send({ productId: created.body.id, expectedPrice: 60 })
+      .expect(201)
+    const orderId = order.body.orderId as number
+
+    // pending：人工订单尚未交付，买家（即使有附件也）不可下——此时无 fileId → 404 防枚举。
+    await api.post(`/api/orders/${orderId}/files/download-url`).set(authHeader(buyer.accessToken)).expect(404)
+
+    await api
+      .post(`/api/merchant/orders/${orderId}/fulfillment/start`)
+      .set(authHeader(seller.accessToken))
+      .send({})
+      .expect(200)
+    await api
+      .post(`/api/merchant/orders/${orderId}/fulfillment/deliver`)
+      .set(authHeader(seller.accessToken))
+      .send({ attachmentFileId: seller.fileId })
+      .expect(200)
+
+    // delivered：买家可下。
+    await api.post(`/api/orders/${orderId}/files/download-url`).set(authHeader(buyer.accessToken)).expect(200)
+
+    // disputed → 商家恢复到 processing（将重新交付）。
+    await api.post(`/api/orders/${orderId}/dispute`).set(authHeader(buyer.accessToken)).expect(200)
+    await api
+      .post(`/api/merchant/orders/${orderId}/fulfillment/respond-dispute`)
+      .set(authHeader(seller.accessToken))
+      .send({ resolution: 'resume' })
+      .expect(200)
+
+    // processing：买家不能继续下旧附件（评审 P1）；商家/管理员保留。
+    const denied = await api
+      .post(`/api/orders/${orderId}/files/download-url`)
+      .set(authHeader(buyer.accessToken))
+      .expect(403)
+    expect(denied.body.error.code).toBe('FILE_ACCESS_SUSPENDED')
+    await api.post(`/api/orders/${orderId}/files/download-url`).set(authHeader(seller.accessToken)).expect(200)
+    await createTestUser('rr-manual-admin@test.local', 'admin111', 'admin')
+    const admin = await loginAs('rr-manual-admin@test.local', 'admin111')
+    await api.post(`/api/orders/${orderId}/files/download-url`).set(authHeader(admin.accessToken)).expect(200)
+
+    // 重新交付 → 买家恢复。
+    await api
+      .post(`/api/merchant/orders/${orderId}/fulfillment/deliver`)
+      .set(authHeader(seller.accessToken))
+      .send({ deliveryContent: '重交付内容', attachmentFileId: seller.fileId })
+      .expect(200)
+    await api.post(`/api/orders/${orderId}/files/download-url`).set(authHeader(buyer.accessToken)).expect(200)
+  })
+})

@@ -176,14 +176,18 @@ if (env.DELIVERY_STORAGE_BUCKET && env.DELIVERY_STORAGE_BUCKET === env.STORAGE_B
   )
   process.exit(1)
 }
-// 配了私有桶就必须配齐：生产缺公网签名域名会签出浏览器不可达的内网 URL。
-if (env.NODE_ENV === 'production' && env.DELIVERY_STORAGE_BUCKET) {
-  if (!hasAllStorageVars) {
-    console.error('[Config] DELIVERY_STORAGE_BUCKET requires the STORAGE_* S3 variables in production')
+// 生产必须显式配置私有交付桶：缺配置时的回退是**进程内存**——上传"成功"
+// 的付费交付文件会在重启后蒸发。旧 .env 直接部署必须在启动时被挡下，
+// 而不是静默降级（评审 P0-1）。
+if (env.NODE_ENV === 'production') {
+  if (!env.DELIVERY_STORAGE_BUCKET || !env.DELIVERY_STORAGE_PUBLIC_ENDPOINT) {
+    console.error(
+      '[Config] DELIVERY_STORAGE_BUCKET and DELIVERY_STORAGE_PUBLIC_ENDPOINT are required in production: without them delivery files fall back to in-memory storage and are lost on restart'
+    )
     process.exit(1)
   }
-  if (!env.DELIVERY_STORAGE_PUBLIC_ENDPOINT) {
-    console.error('[Config] DELIVERY_STORAGE_PUBLIC_ENDPOINT is required when DELIVERY_STORAGE_BUCKET is set in production')
+  if (!hasAllStorageVars) {
+    console.error('[Config] DELIVERY_STORAGE_BUCKET requires the STORAGE_* S3 variables in production')
     process.exit(1)
   }
 }

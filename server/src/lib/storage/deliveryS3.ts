@@ -133,6 +133,9 @@ export class DeliveryS3Storage implements DeliveryStorage {
         // 文件在站点域上内联 = 存储型 XSS）。
         ResponseContentDisposition: `attachment; filename*=UTF-8''${encodeURIComponent(safeName)}`,
         ResponseContentType: 'application/octet-stream',
+        // 文件响应本身也 no-store：付费内容不允许进浏览器/中间层缓存
+        //（发放端点的 JSON 响应另有各自的 no-store）。
+        ResponseCacheControl: 'no-store, private',
       }),
       { expiresIn: ttlSeconds }
     )

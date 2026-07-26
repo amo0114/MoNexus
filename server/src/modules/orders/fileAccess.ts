@@ -4,7 +4,7 @@ import { config } from '../../config/index.js'
 import { notFound, HttpError, type ErrorCode } from '../../lib/httpError.js'
 import { getSystemConfigValue } from '../../lib/systemConfig.js'
 import { getDeliveryStorage } from '../../lib/storage/delivery.js'
-import { normalizeOrderStatus } from './fulfillment.js'
+import { getProductFulfillmentMode, normalizeOrderStatus } from './fulfillment.js'
 
 /**
  * P5 T5：受控文件下载的唯一发放入口。
@@ -14,7 +14,11 @@ import { normalizeOrderStatus } from './fulfillment.js'
  *   与"订单不存在"不可区分。只有确认归属后被状态规则拒绝才 403。
  * - 授权矩阵：买家受状态与窗口约束；商家对自己订单任何状态可下（举证）；
  *   管理员任何状态可下（仲裁）。revoked 文件仅管理员可下（取证）。
- * - 审计：granted/denied 全部落 FileGrantLog；IP 只存 HMAC，UA 截断。
+ * - 审计边界（如实声明）：FileGrantLog 覆盖"已解析到订单文件"的授权决策
+ *   （granted 与 denied_state/window/revoked）。防枚举 404（无可挂接的
+ *   文件外键）与 429 限流（防审计表被刷爆）不落审计。限流的 count→create
+ *   非原子，并发下可能少量超发——它是反噪音手段，不是安全边界；IP 只存
+ *   HMAC，UA 截断 256。
  * - 固有限制：presigned URL 一经签出，TTL 内无法撤销——所有拒绝只作用于
  *   "新签发"。
  */
@@ -50,6 +54,7 @@ export async function issueOrderFileDownloadUrl(orderId: number, requester: Requ
       userId: true,
       status: true,
       merchantId: true,
+      deliveryModeSnapshot: true,
       delivery: {
         select: {
           fileId: true,
@@ -125,6 +130,16 @@ export async function issueOrderFileDownloadUrl(orderId: number, requester: Requ
       }
       if (status === 'refunded') {
         throw new FileAccessDenied('FILE_ACCESS_REVOKED', '订单已退款，文件不再可下载', 'denied_state')
+      }
+      // 人工服务订单：附件只有交付完成才对买家生效。争议解回 processing
+      // （商家将重新交付）时，旧附件不能继续下载——否则"发起争议→商家收回
+      // 重做"的语义被旧文件绕过（评审 P1）。固定文件订单不受此限（付款即
+      // 视为可交付，pending/processing 仅是结算中间态）。
+      if (
+        getProductFulfillmentMode(order.deliveryModeSnapshot) === 'manual_service'
+        && status !== 'delivered' && status !== 'closed'
+      ) {
+        throw new FileAccessDenied('FILE_ACCESS_SUSPENDED', '订单尚未交付完成，文件暂不可下载', 'denied_state')
       }
       const windowDays = await getSystemConfigValue('fileAccessWindowDays')
       if (windowDays > 0 && order.delivery?.deliveredAt) {

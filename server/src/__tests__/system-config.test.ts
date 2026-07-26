@@ -347,3 +347,25 @@ describe('M7 member tier config', () => {
     expect(row.value).toBe(1000)
   })
 })
+
+// P5 复审回归：上限与 Nginx 的 100MB 锁定一致——101 必须 400。
+describe('deliveryFileMaxMb is capped at the nginx limit', () => {
+  it('rejects 101 and accepts 100', async () => {
+    const { api, createTestUser, loginAs, authHeader } = await import('./helpers.js')
+    await createTestUser('cfg-filemax@test.local', 'admin111', 'admin')
+    const { accessToken } = await loginAs('cfg-filemax@test.local', 'admin111')
+
+    const rejected = await api
+      .put('/api/admin/config/deliveryFileMaxMb')
+      .set(authHeader(accessToken))
+      .send({ value: 101 })
+      .expect(400)
+    expect(rejected.body.error.message).toContain('100')
+
+    await api
+      .put('/api/admin/config/deliveryFileMaxMb')
+      .set(authHeader(accessToken))
+      .send({ value: 100 })
+      .expect(200)
+  })
+})
