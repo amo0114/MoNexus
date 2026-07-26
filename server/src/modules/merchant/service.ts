@@ -798,7 +798,11 @@ export async function listMyOrders(merchantId: number, query: MerchantOrderListQ
         delivery: { select: { status: true, publicNote: true, deliveredAt: true } },
         settlement: { select: { settlementAmount: true, status: true, settledAt: true } },
       },
-      orderBy: { createdAt: 'desc' },
+      // P6c：sort=booking 时预约日期升序（最近的预约最先处理），无预约单
+      // （bookingDate=null）排后并沿用默认时间倒序；命中 (merchantId, bookingDate) 索引。
+      orderBy: query.sort === 'booking'
+        ? [{ bookingDate: { sort: 'asc', nulls: 'last' } as const }, { createdAt: 'desc' as const }]
+        : { createdAt: 'desc' },
       skip: (query.page - 1) * query.pageSize,
       take: query.pageSize,
     }),
@@ -810,6 +814,8 @@ export async function listMyOrders(merchantId: number, query: MerchantOrderListQ
       ...serializeMerchantOrder(order),
       holdingPoints: order.holdingPoints,
       fulfillmentDeadline: order.fulfillmentDeadline,
+      // P6c：预约日期（null = 非预约单）；列表/详情均透出供商家排期。
+      bookingDate: order.bookingDate,
       slaExceeded: computeSlaExceeded(order),
       availableActions: getAvailableActions(order),
     })),
@@ -854,6 +860,8 @@ export async function getMyOrderDetail(merchantId: number, orderId: number) {
     ...serializeMerchantOrder(order),
     holdingPoints: order.holdingPoints,
     fulfillmentDeadline: order.fulfillmentDeadline,
+    // P6c：预约日期（null = 非预约单）。
+    bookingDate: order.bookingDate,
     slaExceeded: computeSlaExceeded(order),
     availableActions: getAvailableActions(order),
     // 详情显式回填：买家购买前填写的信息是商家的履约依据。

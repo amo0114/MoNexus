@@ -569,6 +569,8 @@ export async function getOrderDetail(orderId: number, userId: number) {
     ...serializeUserOrderDetail(order),
     holdingPoints: order.holdingPoints ?? null,
     fulfillmentDeadline: order.fulfillmentDeadline ?? null,
+    // P6c：预约日期（null = 非预约单）。
+    bookingDate: order.bookingDate ?? null,
     review: order.review ?? null,
     canReview: !order.review && (normalized === 'delivered' || normalized === 'closed'),
   }
@@ -602,6 +604,8 @@ export async function getUserOrders(userId: number, page = 1, pageSize = 20, sta
   return orders.map(order => ({
     ...serializeUserOrderList(order),
     holdingPoints: order.holdingPoints ?? null,
+    // P6c：列表行透出预约日期供「预约单」标识（null = 非预约单）。
+    bookingDate: order.bookingDate ?? null,
   }))
 }
 

@@ -158,6 +158,9 @@ export const merchantOrderListQuerySchema = z.object({
   productId: z.coerce.number().int().positive().optional(),
   dateFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, '必须是 ISO 日期').optional(),
   dateTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, '必须是 ISO 日期').optional(),
+  // P6c：sort=booking——预约日期升序（最近的预约排最前），无预约单排后；
+  // 不传则维持默认时间倒序。
+  sort: z.enum(['booking']).optional(),
   page: z.coerce.number().int().positive().default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
 }).strict()
