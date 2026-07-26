@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | PLAN-M3-ISH-001 |
-| 版本 | 1.5.0 |
+| 版本 | 1.8.0 |
 | 日期 | 2026-07-27 |
 | 状态 | Frozen for Implementation |
 | 规格 | [spec.md](./spec.md)（SPEC-M3-ISH-001） |
@@ -137,7 +137,7 @@ Profile security card ── GET /auth/sessions ── revoke one / other / all
 
 ### 3.3 Auth service 变化
 
-1. 将 generateAccessToken 改为接收 sessionId、mfaVerified 与 mfaVersion，并把它们写入 JWT claims。
+1. 将 generateAccessToken 改为接收 sessionId、mfaVerified 与 mfaVersion，并将 sessionId 仅写成 JWT `sid` claim。
 2. 将 createStoredRefreshToken 返回该行的 sessionId；首次登录创建 UUID，轮换时传入前一行 sessionId 和 sessionStartedAt。
 3. loginUser 在密码验证成功后：
    - 非 admin：可按需 rehash，然后照旧创建 session；
@@ -145,15 +145,15 @@ Profile security card ── GET /auth/sessions ── revoke one / other / all
    - admin 已绑定：创建 login challenge，返回 challenge 结果。
 4. MFA confirm/verify 在同一事务中 claim challenge、校验 code、写安全事件、创建 session；成功后才由 controller 设置 cookie。
 5. refreshAccessToken 继承 sessionId；读取 user 后若是 admin，额外确认 mfaEnabled，旧/异常 session 不得续签。
-6. revoke 一个会话使用 sessionId 更新该族所有未撤销 RefreshToken；现有 logout 可复用当前 cookie 的 sessionId，但不改变 cookie 清除行为。
-7. bcrypt 工具统一为常量 PASSWORD_BCRYPT_ROUNDS=12；register、change password、reset password 使用它，login 成功时检测 getRounds 后做 compare-and-set 式按需升级。
+6. revoke 一个会话使用 sessionId 更新该族所有未撤销 RefreshToken；DELETE session 只接受非当前族，当前族始终使用既有 logout 并清 cookie。
+7. bcrypt 工具统一为常量 PASSWORD_BCRYPT_ROUNDS=12；register、change password、reset password 使用它。只有成功完成正常会话创建的非 admin 登录，才检测 getRounds 后做 compare-and-set 式按需升级；admin MFA pre-auth 不保存密码且不重哈希。
 
 ### 3.4 中间件与安全事件
 
 扩展 AuthPayload：
 
 ~~~text
-userId, role, sessionId?, mfaVerified?, mfaVersion?
+userId, role, sid?, mfaVerified?, mfaVersion?
 ~~~
 
 新增 requireAdminMfa：
@@ -175,7 +175,7 @@ Pino redact 追加 MFA request fields、challengeId、provisioningUri、manualKe
 | 函数 | 责任 |
 | --- | --- |
 | listActiveSessions(userId, currentSessionId) | active/未过期 session summary，device/IP 脱敏，排序 current → lastUsedAt |
-| revokeSession(userId, sessionId, reason) | owner-scoped 更新，非属主按 404 处理 |
+| revokeSession(userId, sessionId, reason) | owner-scoped 更新；非属主按 404 处理，current session 返回 CURRENT_SESSION_REQUIRES_LOGOUT |
 | revokeOtherSessions(userId, currentSessionId) | 保留当前族、吊销其余族 |
 | revokeAllSessions(userId, reason) | 吊销所有族；当前请求返回后前端清理状态 |
 
@@ -227,27 +227,26 @@ runbook 至少包含：
 
 出口：migration 在隔离 PostgreSQL 应用、drift clean；任何秘密都没有落在测试日志。
 
-### Phase B — 后端 MFA 登录和 admin guard（L）
+### Phase B — 稳定会话族与会话管理（M）
+
+| 交付 | 对应 |
+| --- | --- |
+| session family 创建/refresh rotation 继承、会话列表、单个/其他吊销服务与 API（P0） | REQ-F-020–023 |
+| owner 404、current DELETE 拒绝、脱敏 serializer、安全事件 | REQ-F-021, F-030 |
+| refresh replay 回归与 JWT `sid` contract | REQ-F-020, DR-09 |
+
+出口：AC-05 的后端测试全绿；session service 成为 MFA session creation / guard 的唯一族语义来源。
+
+### Phase C — 后端 MFA 登录、admin guard 与 bcrypt（L）
 
 | 交付 | 对应 |
 | --- | --- |
 | login 202 union 与 MFA enroll/verify controller、schema、routes | REQ-F-010–014 |
-| JWT claims、refresh rotation 继承 sessionId | REQ-F-013, F-020 |
-| requireAdminMfa 挂到 admin router | REQ-F-014, F-025 |
-| bcrypt 12 / opportunistic rehash | REQ-F-032 |
+| JWT `sid` / MFA claims 与 requireAdminMfa | REQ-F-013–014, F-025 |
+| bcrypt 12 / restricted opportunistic rehash | REQ-F-032 |
+| admin immediate invalidation 与 portable-backups guard 回归 | REQ-F-025, DR-09 |
 
-出口：AC-01、AC-02、AC-03、AC-04、AC-06 的后端测试全绿。
-
-### Phase C — 会话管理（M）
-
-| 交付 | 对应 |
-| --- | --- |
-| 会话列表、单个/其他吊销服务与 API（P0） | REQ-F-021–023 |
-| revoke-all 与管理员恢复码重生/换机（P1） | REQ-F-015–016, F-024 |
-| owner 404、脱敏 serializer、security events | REQ-F-021, F-030 |
-| refresh replay 与 admin immediate invalidation 回归 | REQ-F-025, DR-09 |
-
-出口：两用户/两 session 的集成测试覆盖所有吊销分支。
+出口：AC-01、AC-02、AC-03、AC-04、AC-06、AC-07 的后端测试全绿。
 
 ### Phase D — 前端体验（M）
 
@@ -290,7 +289,8 @@ Phase A ──► Phase B ──► Phase C ──► Phase D ──► Phase E
 | 轨道 | 可拥有文件 | 注意 |
 | --- | --- | --- |
 | BE foundation | schema、config、mfa primitive、logger | 必须先于 auth service |
-| BE auth | auth service/controller/schema/routes、auth middleware | 与 session service 在 service 导出边界后串行 |
+| BE session | sessionService、auth service 的 refresh/session 边界、session tests | 必须先冻结 `sid` / rotation / revoke 语义，才允许 MFA 集成 |
+| BE auth | auth service/controller/schema/routes、auth middleware | 在 BE session 完成后串行集成 MFA login、guard 与 bcrypt |
 | FE | LoginPage、Profile security 子组件、auth client | 只能在 API contract 定稿后开始 |
 | QA/docs | 新测试、OpenAPI、runbook | 依赖真实 route/错误码，不可提前臆造 |
 
@@ -386,3 +386,6 @@ Phase A ──► Phase B ──► Phase C ──► Phase D ──► Phase E
 | 1.3.0 | 2026-07-27 | 采用已验证的 `gen_random_uuid()` database default，实现可原子部署的单 migration；回填改为 legacy admin 吊销命令 |
 | 1.4.0 | 2026-07-27 | 固化 M3-only migration timestamp 纠正流程，防止 Prisma UTC 命名排在已知 P6a migration 之前 |
 | 1.5.0 | 2026-07-27 | 将 legacy fixture/replay 明确为同一可丢弃专用库的连续验证，不创建第二数据库 |
+| 1.6.0 | 2026-07-27 | 依据 auth/session impact review 将稳定会话族前置于 MFA 集成，并冻结 `sid`、current logout 与 bcrypt pre-auth 边界 |
+| 1.7.0 | 2026-07-27 | 同步 I-01 专用库 migration/status/drift 证据；不改变后续实施顺序 |
+| 1.8.0 | 2026-07-27 | 同步 I-01 全量隔离后端回归证据；不改变后续实施顺序 |

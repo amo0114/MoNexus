@@ -20,6 +20,7 @@
     "db:migrate:deploy": "prisma migrate deploy",
     "db:seed": "tsx src/prisma/seed.ts",
     "db:seed:force": "tsx src/prisma/seed.ts --force-reset",
+    "auth:revoke-legacy-admin-sessions": "tsx src/scripts/revokeLegacyAdminRefreshSessions.ts",
     "db:studio": "prisma studio",
     "test": "vitest run",
     "test:watch": "vitest"

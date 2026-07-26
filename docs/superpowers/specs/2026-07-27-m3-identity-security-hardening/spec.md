@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | SPEC-M3-ISH-001 |
-| 版本 | 1.5.0 |
+| 版本 | 1.8.0 |
 | 日期 | 2026-07-27 |
 | 状态 | Frozen for Implementation |
 | 产品 | MoNexus |
@@ -89,8 +89,8 @@ MoNexus 已拥有积分调整、封禁、商家审核与停用、佣金修改、
 | D-02 | 密钥存储 | TOTP seed 采用 AES-256-GCM 加密落库；恢复码只存不可逆高熵 hash；不得只做 base64 或明文存储 |
 | D-03 | 高危操作 step-up | v1 以“管理员登录时 MFA + admin API 实时活动会话校验”为 P0；不在本 PR 对每个业务写操作增加短时二次 TOTP 弹窗。后续若启用，应单列 SPEC 并覆盖积分调整、配置、商家状态/佣金、仲裁、结算、文件吊销 |
 | D-04 | 丢失第二因子 | 无 HTTP 后门、无管理员自助关闭 MFA。恢复码可登录；恢复码也丢失时只走双人审批的离线 break-glass SOP，清空 MFA、递增版本、吊销全部会话后强制重新绑定 |
-| D-05 | 设备会话语义 | 一个 sessionId 代表一个浏览器/设备登录族；refresh rotation 继承 sessionId。吊销立即拒绝该族 refresh；admin API 同时校验 sessionId，故立即拒绝已吊销管理员 token |
-| D-06 | bcrypt 升级 | 目标 rounds=12；不做一次性全表重算，成功校验旧密码后按需重哈希，避免离线批处理与用户强制改密 |
+| D-05 | 设备会话语义 | 一个 sessionId 代表一个浏览器/设备登录族；refresh rotation 继承 sessionId。数据库和 API 使用 `sessionId`，JWT claim 固定为短名 `sid`。吊销立即拒绝该族 refresh；admin API 同时校验 `sid` 对应的活动族，故立即拒绝已吊销管理员 token |
+| D-06 | bcrypt 升级 | 目标 rounds=12；不做一次性全表重算。完成正常会话创建的非 admin 成功登录可按需重哈希；管理员处于短期 MFA pre-auth challenge 时绝不保存、跨请求携带或据此重放密码，因此未完成 MFA 前不改 hash，管理员在后续改密/重置时升级为 12 |
 
 ---
 
@@ -131,7 +131,7 @@ GET sessions → 仅见自己的脱敏设备会话
 | ID | 规则 |
 | --- | --- |
 | DR-01 | admin 身份的密码正确不等于已登录；未完成 MFA 的响应绝不含 accessToken，也不设置 refreshToken Cookie |
-| DR-02 | admin API 必须同时满足 role=admin、user.status 非封禁、token.mfaVerified=true、token.mfaVersion 与 User 当前版本相等、token.sessionId 对应活动会话 |
+| DR-02 | admin API 必须同时满足 role=admin、user.status 非封禁、token.mfaVerified=true、token.mfaVersion 与 User 当前版本相等、token.sid 对应活动会话 |
 | DR-03 | 任何 MFA 重新绑定、离线重置、密码重置导致的安全边界变化都必须递增 mfaVersion（适用时）并吊销相关 refresh token；旧 admin access token 因版本/会话检查失效 |
 | DR-04 | TOTP 使用 6 位、30 秒周期、SHA-1 兼容 RFC 6238；校验窗口最多相邻 1 个周期，不能扩大为任意时间漂移 |
 | DR-05 | 预认证 challenge 是短期、单次、限尝试的凭证：TTL 5 分钟、最多 5 次失败；成功/超限/过期后不可复用 |
@@ -141,7 +141,7 @@ GET sessions → 仅见自己的脱敏设备会话
 | DR-09 | refresh token replay 沿用现有强制失效策略：发现已撤销 token 被使用时，仍吊销该用户全部 refresh sessions，记录 security event，不能因本波变弱 |
 | DR-10 | 密码、TOTP、恢复码、challengeId、provisioningUri、手动密钥、MFA_ENCRYPTION_KEY 不得写日志、AdminLog.detail、SecurityEvent.detail、错误消息或前端持久化状态 |
 | DR-11 | 非 admin 不可调用管理员 MFA 绑定/验证入口；所有登录用户只能读取和修改自己的 sessionId |
-| DR-12 | 成功密码验证但 bcrypt rounds < 12 时才重哈希；密码错误、被封禁、未完成 MFA 均不得触发重哈希 |
+| DR-12 | bcrypt rounds < 12 的旧 hash 仅在成功、非 admin 的正常登录后按需重哈希；密码错误、被封禁、管理员 MFA pre-auth challenge 未完成均不得触发重哈希，也不得把密码或等效材料存入 challenge |
 
 ### 5.1 拟议数据模型
 
@@ -185,7 +185,7 @@ GET sessions → 仅见自己的脱敏设备会话
 | --- | --- | --- | --- |
 | REQ-F-020 | P0 | 每次注册/登录创建一个稳定 sessionId；每次 refresh rotation 继承该 id 并更新 lastUsedAt | 两次轮换 sessionId 不变 |
 | REQ-F-021 | P0 | 所有登录用户可列出自己的活跃会话 | 仅 active、未过期项；有 current 标记；数据脱敏 |
-| REQ-F-022 | P0 | 用户可吊销指定非当前 session | 只能影响自己的 session；被吊销 refresh 返回 401 |
+| REQ-F-022 | P0 | 用户可吊销指定非当前 session | 只能影响自己的 session；被吊销 refresh 返回 401；当前 session 一律沿用既有 `/auth/logout`，不经 DELETE session endpoint |
 | REQ-F-023 | P0 | 用户可吊销其他全部 session；已有 logout 保留为吊销当前 session | 当前 session 不会被“其他全部”误伤 |
 | REQ-F-024 | P1 | 用户可选择吊销全部会话（含当前），响应清理当前 cookie 并前端退出 | 后续 refresh 均失败 |
 | REQ-F-025 | P0 | 已吊销 session 的 admin access token 立即不能访问 admin API | 证明 requireAdminMfa 查询/验证活动 session |
@@ -196,7 +196,7 @@ GET sessions → 仅见自己的脱敏设备会话
 | --- | --- | --- | --- |
 | REQ-F-030 | P0 | 记录 mfa_enrolled、mfa_login_succeeded、mfa_login_failed、mfa_recovery_used、session_revoked、session_replay_detected、mfa_break_glass_reset 等安全事件 | 事件不含秘密，可按 userId / sessionId 追溯 |
 | REQ-F-031 | P0 | Pino redact 覆盖 MFA 请求字段和新环境变量；测试锁定 | 日志序列化中不出现明文 |
-| REQ-F-032 | P0 | 新密码操作 bcrypt rounds=12；成功验证旧 hash 时 opportunistic rehash | 成功/失败分支均有测试 |
+| REQ-F-032 | P0 | 注册、改密、重置的新密码 hash 使用 bcrypt rounds=12；非 admin 成功登录可 opportunistic rehash 旧 hash | 成功/失败分支均有测试；管理员 MFA pre-auth 不保存密码且不 rehash |
 | REQ-F-033 | P1 | AdminLog 对关键业务写操作保留原语义，并可在 detailSafe 中关联 sessionId 的短安全摘要（不得把 token 放入 detail） | 审计可关联，不泄露凭证 |
 
 ---
@@ -204,6 +204,8 @@ GET sessions → 仅见自己的脱敏设备会话
 ## 7. API 契约
 
 所有路径位于 /api；错误沿用现有 error envelope。challengeId 是敏感短期凭证，客户端只能保存在 React 内存状态，不能写 Zustand persist、URL、localStorage 或日志。
+
+术语固定：数据库列和 API summary 使用 `sessionId`；access token 只使用 JWT claim `sid`，服务端从 `sid` 推导 current session。
 
 ### 7.1 登录状态机
 
@@ -234,7 +236,7 @@ POST /auth/mfa/verify
 | POST | /auth/mfa/enrollment/confirm | preauth challenge | challengeId, code | user, accessToken, recoveryCodes | 401 MFA_VERIFICATION_FAILED；429 MFA_TOO_MANY_ATTEMPTS |
 | POST | /auth/mfa/verify | preauth challenge | challengeId, method=totp/recovery, code | user, accessToken | 同上 |
 | GET | /auth/sessions | authenticated | — | items: active session summaries | 401 |
-| DELETE | /auth/sessions/:sessionId | authenticated | — | 204 | 404（不属于自己或不存在） |
+| DELETE | /auth/sessions/:sessionId | authenticated | — | 204（仅非当前族） | 404（不属于自己或不存在）；400 CURRENT_SESSION_REQUIRES_LOGOUT |
 | POST | /auth/sessions/revoke-others | authenticated | — | { revokedCount } | 401 |
 | POST | /auth/sessions/revoke-all | authenticated | — | { revokedCount } + clear cookie | 401 |
 | POST | /auth/mfa/recovery-codes/regenerate | admin + MFA | currentPassword, method, code | recoveryCodes | 401 / 429 |
@@ -294,7 +296,7 @@ requireAdminMfa 的拒绝码应可供前端正确退出或提示重新登录：
 ### 8.2 设备会话
 
 1. ProfilePage 的账号安全区对所有角色展示“登录设备”卡片。
-2. 当前设备显式标注；非当前设备有“退出此设备”二次确认；“退出其他设备”也需确认。
+2. 当前设备显式标注，当前族只通过既有 logout 退出；非当前设备有“退出此设备”二次确认；“退出其他设备”也需确认。
 3. 显示友好设备标签、脱敏 IP 与最近活跃时间；无法解析 UA 时回退为“浏览器会话”，不展示完整 UA。
 4. 吊销当前/全部会话后调用现有前端 logout，跳转登录页；吊销其他会话后刷新列表并 Toast。
 5. 控件提供可访问名称和稳定 data-testid；移动宽度下会话卡不依赖横向表格。
@@ -357,9 +359,9 @@ Then 使用该 access token 请求 admin API 立即得到 SESSION_REVOKED。
 
 ### AC-07 密码升级与秘密不泄露
 
-Given bcrypt 10 的旧 hash  
-When 正确密码登录  
-Then hash 升级为 rounds 12；错误密码不改变 hash；日志、DB 安全事件与 API 不含明文 MFA 秘密。
+Given bcrypt 10 的旧 hash<br>
+When 非 admin 正确密码登录<br>
+Then hash 升级为 rounds 12；错误密码、封禁和管理员 MFA pre-auth 都不改变 hash；管理员的新密码操作使用 12；日志、DB 安全事件与 API 不含明文 MFA 秘密。
 
 ### AC-08 回归
 
@@ -418,6 +420,9 @@ Then vitest、相关 Playwright、双端 build、Prisma drift 检查以及 produ
 | 1.3.0 | 2026-07-27 | 以已验证的 PostgreSQL database-generated UUID 默认值替代无法原子部署的两阶段 backfill；保留部署前 legacy admin session 吊销 |
 | 1.4.0 | 2026-07-27 | 记录 Prisma UTC migration 命名与已知 P6a 时间戳的受控冲突处理：仅重命名未提交的本任务目录，SQL 不变且专用库重放验证 |
 | 1.5.0 | 2026-07-27 | 澄清 legacy migration fixture 与 replay 只使用同一可丢弃的 `monexus_m3_ish_test`，不引入未验证的第二数据库 |
+| 1.6.0 | 2026-07-27 | 冻结 JWT `sid` / API `sessionId` 边界、非当前会话 DELETE 语义与不跨 MFA pre-auth 保存密码的 bcrypt 升级策略 |
+| 1.7.0 | 2026-07-27 | 同步 I-01 的可复核迁移验证证据；无产品行为或安全决策变更 |
+| 1.8.0 | 2026-07-27 | 同步 I-01 的全量隔离回归证据；无产品行为或安全决策变更 |
 
 ---
 

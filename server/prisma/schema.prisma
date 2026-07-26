@@ -18,6 +18,12 @@ model User {
   nickname      String? // 1-20 字，个人中心可设；评价展示名回退邮箱打码
   emailVerified DateTime?
   createdAt     DateTime  @default(now())
+  // MFA seed is AES-256-GCM ciphertext. It must never be selected by public
+  // serializers; only the auth MFA service reads it explicitly.
+  mfaEnabled         Boolean   @default(false)
+  mfaSecretEncrypted String?
+  mfaVerifiedAt      DateTime?
+  mfaVersion         Int       @default(0)
 
   pointAccount            PointAccount?
   orders                  Order[]
@@ -38,6 +44,9 @@ model User {
   announcementReceipts    AnnouncementReceipt[]
   idempotencyRecords      IdempotencyRecord[]
   fileGrants              FileGrantLog[]
+  mfaRecoveryCodes        MfaRecoveryCode[]
+  authChallenges          AuthChallenge[]
+  securityEvents          SecurityEvent[]
 }
 
 model Announcement {
@@ -128,16 +137,74 @@ model Merchant {
 }
 
 model RefreshToken {
-  id        Int      @id @default(autoincrement())
-  userId    Int
-  tokenHash String   @unique
-  revoked   Boolean  @default(false)
-  expiresAt DateTime
-  userAgent String?
-  ip        String?
-  createdAt DateTime @default(now())
+  id                Int      @id @default(autoincrement())
+  userId            Int
+  tokenHash         String   @unique
+  revoked           Boolean  @default(false)
+  revokedAt         DateTime?
+  revokeReason      String?
+  expiresAt         DateTime
+  userAgent         String?
+  ip                String?
+  // PostgreSQL default (rather than Prisma's client-side uuid()) is required
+  // to assign a distinct family ID to refresh-token rows that predate M3.
+  sessionId         String   @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sessionStartedAt  DateTime @default(now())
+  lastUsedAt        DateTime @default(now())
+  createdAt         DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id])
+
+  @@index([userId, sessionId])
+  @@index([userId, revoked, expiresAt])
+}
+
+model MfaRecoveryCode {
+  id        Int       @id @default(autoincrement())
+  userId    Int
+  codeHash  String
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, codeHash])
+  @@index([userId, usedAt])
+}
+
+model AuthChallenge {
+  id              String    @id @default(uuid()) @db.Uuid
+  userId          Int
+  purpose         String
+  secretEncrypted String?
+  expiresAt       DateTime
+  consumedAt      DateTime?
+  failedAttempts  Int       @default(0)
+  createdAt       DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, purpose, expiresAt])
+  @@index([expiresAt])
+}
+
+model SecurityEvent {
+  id         Int       @id @default(autoincrement())
+  userId     Int?
+  sessionId  String?   @db.Uuid
+  type       String
+  ipHash     String?
+  deviceHint String?
+  detailSafe Json?
+  createdAt  DateTime  @default(now())
+
+  // Security evidence survives a future User deletion. sessionId is a
+  // family identifier rather than an FK to a single rotated token row.
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([sessionId, createdAt])
+  @@index([type, createdAt])
 }
 
 model IdempotencyRecord {

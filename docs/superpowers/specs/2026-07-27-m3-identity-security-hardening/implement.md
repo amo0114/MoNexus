@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | IMPL-M3-ISH-001 |
-| 版本 | 1.5.0 |
+| 版本 | 1.8.0 |
 | 日期 | 2026-07-27 |
 | 状态 | I-00 Done；I-01 In Progress（P6a rebase 为 PR 前闸门） |
 | 输入 | [spec.md](./spec.md) · [plan.md](./plan.md) · [task.md](./task.md) · [checklist.md](./checklist.md) |
@@ -92,8 +92,8 @@ schema.prisma 是唯一共同文件。安全任务不得重排、格式化或编
 | I-00 | T-00 | Done | 本包、AGENTS.md、auth 基线 | 记录基线、隔离资源、决策确认；不改业务代码 |
 | I-01 | T-BE-01 | In Progress | schema、config、env example、database-default migration / legacy-admin revoke | 仅在安全 worktree/专用库实施；PR 前满足 §2.4 四项 rebase 条件；migration 必须由 Prisma 生成并经 legacy fixture 验证 |
 | I-02 | T-BE-02 | Todo | auth/mfa、security event、logger、原语测试 | 密钥/OTP/challenge/recovery/redact 单测通过；无真实 secret |
-| I-03 | T-BE-03 + T-BE-05 | Todo | auth service/controller/schema/routes、auth middleware、admin route、auth tests | admin MFA flow、guard、bcrypt 通过；不改 P6a 文件 |
-| I-04 | T-BE-04 | Todo | auth session service/routes/serializer/tests | session family/revoke/replay 通过；owner 404 与脱敏锁定 |
+| I-03 | T-BE-04 | Todo | auth session service、auth refresh/session boundary、routes/serializer/tests | 先冻结 `sid`、session family/revoke/replay；owner 404、current logout boundary与脱敏锁定 |
+| I-04 | T-BE-03 + T-BE-05 | Todo | auth service/controller/schema/routes、auth middleware、admin route、auth tests | 只在 I-03 后集成 admin MFA flow、guard、bcrypt；不改 P6a 文件 |
 | I-05 | T-FE-01 + T-FE-02 | Blocked by P6a UI ownership | LoginPage、新 auth security components、auth API；P6a 合入/rebase 后才可改 ProfilePage 挂载点 | UI 不持久化秘密；独立端口 smoke / E2E 通过 |
 | I-06 | T-QA-01 + T-QA-02 + T-DOC-01 | Todo | tests、OpenAPI、auth README、runbook、checklist | 完整验证、rebase 后 drift、所有 P0 勾选、PR 准备完成 |
 | I-07 | T-BE-06 + T-FE-03 | Todo (P1) | MFA security settings、revoke-all API/UI | 不削弱 P0 guard；若纳入 PR 则 P1 checklist 全部有证据，若拆后续则在 PR 明确链接 follow-up |
@@ -143,7 +143,17 @@ schema.prisma 是唯一共同文件。安全任务不得重排、格式化或编
 | 时间 | I-* | 状态 | HEAD / 证据 | 备注 |
 | --- | --- | --- | --- | --- |
 | 2026-07-27 | I-00 | Done | branch `feat/m3-identity-security-hardening` from `bf25d01`；独立 worktree；Prisma 6.19.3；专用库 `monexus_m3_ish_test`（31 migrations up to date） | `auth/auth-tokens/refresh-token-wiring/auth-active-user` 4 files、36 tests PASS；frontend build 与 server build PASS；未修改业务代码 |
-| 2026-07-27 | I-01 | In Progress | 仓库负责人已明确授权在独立 worktree 并行开始；P6a 尚未合入 `develop`，预期 migration 为 `20260727090000_p6a_subscription_foundation` | 1.5 已在同一可丢弃 `monexus_m3_ish_test` 完成 legacy fixture → generated migration → reset/replay；Prisma UTC 命名仅对未提交 M3 migration 作 hash-preserving rename，仍禁止改 P6a worktree/共享运行时 |
+| 2026-07-27 | I-01 | In Progress | `20260727110000_identity_security_hardening`，SQL SHA-256 `d7674f9747f7fdfd32e7272d678f45ce3b9e96d35fd59cbcbfab3c5ec441e55a`；同一专用库 legacy fixture → migration → reset/replay；status 32 up to date / drift no diff；14 targeted tests、server build、62 files / 497 tests（712.46s）PASS | 基础代码和本地验证完成，但 P6a 尚未进入 `origin/develop`；未 rebase、未人工复核两套 schema/migration，故 I-01 继续 In Progress，不可开 PR |
+
+---
+
+## 9. 修订记录
+
+| 版本 | 日期 | 说明 |
+| --- | --- | --- |
+| 1.6.0 | 2026-07-27 | 只读 auth/session impact review 后，将 session core 调整为 I-03、MFA/guard/bcrypt 调整为 I-04；冻结 `sid`、current logout 和 bcrypt pre-auth 边界 |
+| 1.7.0 | 2026-07-27 | 写入 I-01 可复核 migration/fixture/status/drift/targeted-test 证据；明确本地完成不替代 P6a rebase 闸门 |
+| 1.8.0 | 2026-07-27 | 记录完整隔离后端回归 62 files / 497 tests PASS（712.46s） |
 
 ---
 

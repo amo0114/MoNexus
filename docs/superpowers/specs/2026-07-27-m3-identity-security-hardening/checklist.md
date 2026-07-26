@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | CHK-M3-ISH-001 |
-| 版本 | 1.5.0 |
+| 版本 | 1.8.0 |
 | 日期 | 2026-07-27 |
 | 规格 | [spec.md](./spec.md) |
 | 计划 | [plan.md](./plan.md) |
@@ -46,17 +46,17 @@
 ## 2. 数据模型、密钥与迁移（P0）
 
 - [ ] **CHK-DATA-01** User 有 mfaEnabled、加密 seed、mfaVersion 等必要字段；任何 public/profile/admin serializer 都没有选择 seed 字段。
-- [ ] **CHK-DATA-02** MfaRecoveryCode 只存 hash，有 user 归属、usedAt 和唯一性约束；无明文列。
+- [x] **CHK-DATA-02** MfaRecoveryCode 只存 hash，有 user 归属、usedAt 和唯一性约束；无明文列。
 - [ ] **CHK-DATA-03** AuthChallenge 是随机 UUID、5 分钟、单次、最多 5 次失败；过期/超限/成功后不可复用。
 - [ ] **CHK-DATA-04** RefreshToken 有稳定 sessionId；同一 refresh rotation 的新旧 token 继承同一 sessionId 和 sessionStartedAt；sessionId 是 family ID，不能建 token 行全局 unique。
 - [ ] **CHK-DATA-05** SecurityEvent 只存安全事件 type、不可逆 IP 关联/安全 device hint 和安全摘要；不存秘密或原始 IP。
 - [ ] **CHK-DATA-06** 单一 Prisma-generated migration 在隔离 PostgreSQL 成功应用：`sessionId` SQL default 为 `gen_random_uuid()`，pre-migration legacy token 均取得非空且彼此不同的 family ID / session 时间；部署前 legacy admin refresh session 全吊销；不得手改 SQL 或把 Prisma client-side uuid 当回填。
-- [ ] **CHK-DATA-07** 新增索引支持按 userId、sessionId、活动/过期状态列会话；会话列表不做全表扫描。
-- [ ] **CHK-DATA-08** MFA_ENCRYPTION_KEY 是 base64 32-byte 值；production 缺失/非法时服务拒绝启动；无默认生产 key。
+- [x] **CHK-DATA-07** 新增索引支持按 userId、sessionId、活动/过期状态列会话；会话列表不做全表扫描。
+- [x] **CHK-DATA-08** MFA_ENCRYPTION_KEY 是 base64 32-byte 值；production 缺失/非法时服务拒绝启动；无默认生产 key。
 - [ ] **CHK-DATA-09** AES-256-GCM 对 seed 的 IV/tag/tamper failure 均正确处理；解密错误不返回内部详情。
-- [ ] **CHK-DATA-10** 所有 migrate/status/drift 命令显式传专用 `monexus_m3_ish_test` URL；shadow database 也是隔离资源，未调用默认 `monexus_test` / compose；若 Prisma UTC migration 目录需纠正，M3-only rename 的 SQL hash 与专用库 replay 证据齐全。
+- [x] **CHK-DATA-10** 所有 migrate/status/drift 命令显式传专用 `monexus_m3_ish_test` URL；shadow database 也是隔离资源，未调用默认 `monexus_test` / compose；若 Prisma UTC migration 目录需纠正，M3-only rename 的 SQL hash 与专用库 replay 证据齐全。
 
-**证据：** migration 名称 / prisma status / config tests：________________
+**I-01 pre-rebase 证据：** `20260727110000_identity_security_hardening`；SHA-256 `d7674f9747f7fdfd32e7272d678f45ce3b9e96d35fd59cbcbfab3c5ec441e55a`；同一 `monexus_m3_ish_test` legacy fixture → generated migration → reset/replay；`prisma migrate status` 为 32 migrations / up to date；`migrate diff --from-url "$M3_ISH_DATABASE_URL" --to-schema-datamodel prisma/schema.prisma --exit-code` 为 No difference detected；config / foundation / revoke 14 tests PASS；隔离全量后端回归为 62 files / 497 tests PASS（712.46s）。P6a rebase 后必须重新核验，故 CHK-DATA-01/03–06/09 仍待后续实现或发布动作。
 
 ---
 
@@ -89,7 +89,7 @@
 - [ ] **CHK-AUTH-06** admin session 吊销后，同一已签发 access token 访问 admin API 立即返回 SESSION_REVOKED。
 - [ ] **CHK-AUTH-07** refresh token replay 保持现有 revoke-all-user 强语义，并写 session_replay_detected 事件。
 - [ ] **CHK-AUTH-08** 注册、改密、重置密码新 hash 均是 bcrypt rounds=12。
-- [ ] **CHK-AUTH-09** bcrypt 10 旧 hash 在正确登录后升级为 12；错误密码、封禁、MFA challenge 未完成不写 hash。
+- [ ] **CHK-AUTH-09** bcrypt 10 旧 hash 仅在非 admin 正确完成正常登录后升级为 12；错误密码、封禁、admin MFA pre-auth challenge 未完成均不写 hash，也不保存可跨请求使用的密码材料。
 
 **证据：** guard / refresh / bcrypt tests：________________
 
@@ -100,7 +100,7 @@
 - [ ] **CHK-SES-01** GET /auth/sessions 仅返回请求用户的 active、未过期 session，current 标记与 JWT sid 一致。
 - [ ] **CHK-SES-02** session summary 只含 sessionId、deviceLabel、ipHint、sessionStartedAt、lastUsedAt、current；不含 raw IP、完整 UA、tokenHash 或 revoked token。
 - [ ] **CHK-SES-03** refresh rotation 后 sessionId 保持不变，lastUsedAt 更新；会话列表不会把一次刷新显示成新设备。
-- [ ] **CHK-SES-04** DELETE /auth/sessions/:id 只能吊销自己的目标会话；他人/猜测 UUID 返回 404。
+- [ ] **CHK-SES-04** DELETE /auth/sessions/:id 只能吊销自己的**非当前**目标会话；他人/猜测 UUID 返回 404，current session 返回 `CURRENT_SESSION_REQUIRES_LOGOUT` 并只能走既有 logout。
 - [ ] **CHK-SES-05** 被单独吊销的会话 refresh 失败；其他 session 正常工作。
 - [ ] **CHK-SES-06** revoke-others 只吊销非当前 session；current 不被误伤。
 - [ ] **CHK-SES-07** **[P1]** revoke-all 吊销所有 session、清当前 refresh cookie，客户端退出登录。
@@ -260,3 +260,6 @@ P0 豁免默认不允许。唯一例外是仓库负责人明确书面批准的�
 | 1.3.0 | 2026-07-27 | 将 migration 验收改为 database-generated UUID legacy-fixture 证明，并保留 legacy admin 吊销门禁 |
 | 1.4.0 | 2026-07-27 | 增加 M3-only migration timestamp 纠正的 SQL hash / 专用库 replay 证据门槛 |
 | 1.5.0 | 2026-07-27 | 明确 fixture/replay 证据只能来自同一可丢弃专用数据库 |
+| 1.6.0 | 2026-07-27 | 与冻结实现顺序同步：明确非 current DELETE 和管理员 MFA pre-auth 不做 bcrypt rehash |
+| 1.7.0 | 2026-07-27 | 记录 I-01 pre-rebase migration/config 证据并仅勾选已可本地验证的数据项 |
+| 1.8.0 | 2026-07-27 | 补记 62 files / 497 tests 的隔离全量后端回归结果 |

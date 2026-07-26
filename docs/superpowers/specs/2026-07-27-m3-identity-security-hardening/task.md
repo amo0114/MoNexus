@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | TASK-M3-ISH-001 |
-| 版本 | 1.5.0 |
+| 版本 | 1.8.0 |
 | 日期 | 2026-07-27 |
 | 规格 | [spec.md](./spec.md) |
 | 计划 | [plan.md](./plan.md) |
@@ -36,7 +36,7 @@
 | ID | 状态 | 负责人 | 备注 |
 | --- | --- | --- | --- |
 | T-00 | Done | Codex | 基线与决策确认（证据见 implement.md §7） |
-| T-BE-01 | In Progress | Codex | 经负责人授权在隔离 worktree 并行实现；P6a 合入后、PR 前必须 rebase/复核 |
+| T-BE-01 | In Progress | Codex | 基础实现与本地专用库验证已完成；P6a 合入后、PR 前必须 rebase/复核，完成前不可标 Done 或开 PR |
 | T-BE-02 | Todo | | MFA crypto、challenge、redact、安全事件 |
 | T-BE-03 | Todo | | MFA 登录/绑定 API |
 | T-BE-04 | Todo | | RefreshToken session family 与会话 API |
@@ -60,8 +60,8 @@
 | T-00 | 确认安全决策并跑基线 | P0 | S | — | 0 | D-01..D-06 |
 | T-BE-01 | 演进身份与 session 数据模型 | P0 | M | T-00 | A | F-020, NF-01 |
 | T-BE-02 | 建立 TOTP、加密、challenge、redact 与安全事件原语 | P0 | L | T-BE-01 | A | F-010–013, F-030–031 |
-| T-BE-03 | 实现管理员 MFA 登录与首次绑定 API | P0 | L | T-BE-02 | B | F-010–014 |
-| T-BE-04 | 实现稳定会话族与会话管理 API | P0 | L | T-BE-01 | C | F-020–023 |
+| T-BE-03 | 实现管理员 MFA 登录与首次绑定 API | P0 | L | T-BE-02, T-BE-04 | C | F-010–014 |
+| T-BE-04 | 实现稳定会话族与会话管理 API | P0 | L | T-BE-01 | B | F-020–023 |
 | T-BE-05 | 挂载 MFA 守卫并完成 bcrypt 收口 | P0 | M | T-BE-03, T-BE-04 | B/C | F-014, F-025, F-032 |
 | T-BE-06 | MFA 安全区与 revoke-all API | P1 | M | T-BE-03, T-BE-04, T-BE-05 | C/D | F-015, F-016, F-024 |
 | T-FE-01 | 实现登录 MFA challenge / 绑定 UX | P0 | L | T-BE-03 | D | F-010–013 |
@@ -126,16 +126,23 @@ TEST_DATABASE_URL='postgresql://monexus:monexus_dev_2026@localhost:5432/monexus_
 **步骤：**
 
 - [x] 仓库负责人已授权在隔离 worktree 并行开始；记录基线 `bf25d01` 与 P6a 预期 migration `20260727090000_p6a_subscription_foundation`。P6a 合入后、开 PR 前必须 rebase、人工确认 schema/migration 均保留并记录新的 HEAD。
-- [ ] 向 User、RefreshToken 添加 spec §5.1 所需字段、关系与会话查询索引；`sessionId` 是 family 标识，**不得**建全局 unique。
-- [ ] 新增 MfaRecoveryCode、AuthChallenge、SecurityEvent 模型；recovery/challenge 可随 User 清理，SecurityEvent 必须保留审计（`userId` 可 SetNull），并在 test setup 显式清理全部三个新模型。
-- [ ] 为 MFA_ENCRYPTION_KEY 建立严格规范 base64 32-byte env parser；production 缺失/格式错误启动失败，vitest 只注入格式正确的测试值，不在 `.env` 提供默认 key。
-- [ ] 将 `sessionId` 声明为 `@default(dbgenerated("gen_random_uuid()")) @db.Uuid`，session 时间声明为数据库 timestamp default；生成的 SQL 必须含 PostgreSQL default，不能使用 client-side `uuid()` 误充历史数据回填。
-- [ ] 在专用库生成一个 migration（目录时间戳必须排序在 P6a migration 之后）：`DATABASE_URL="$M3_ISH_DATABASE_URL" npx prisma migrate dev --name identity_security_hardening`。`M3_ISH_DATABASE_URL` 必须显式指向 `monexus_m3_ish_test`；shadow database 也必须是隔离资源。若 Prisma UTC timestamp 仍较早，只可重命名未提交的 M3-only 目录，校验 migration.sql hash 不变后 reset/replay 专用库；绝不动 P6a 目录。
-- [ ] 在同一可丢弃专用 `monexus_m3_ish_test` 先创建 legacy User/RefreshToken fixture，再应用 migration；断言既有行 `sessionId` 非空且彼此不同、session 时间非空，并检查生成 SQL 的 database default；之后 reset/replay 此同一专用库。不得创建或连接额外的非专用数据库。
-- [ ] 写并测试幂等、分批的 legacy-admin revoke 命令：仅吊销 migration 前的 admin refresh token，写受控 revoke reason，不写/不回显 tokenHash 或其他秘密。
-- [ ] 运行 `DATABASE_URL="$M3_ISH_DATABASE_URL" npx prisma migrate status` 与 drift 检查；增加 migration/config/revoke guard 测试。
+- [x] 向 User、RefreshToken 添加 spec §5.1 所需字段、关系与会话查询索引；`sessionId` 是 family 标识，**不得**建全局 unique。
+- [x] 新增 MfaRecoveryCode、AuthChallenge、SecurityEvent 模型；recovery/challenge 可随 User 清理，SecurityEvent 必须保留审计（`userId` 可 SetNull），并在 test setup 显式清理全部三个新模型。
+- [x] 为 MFA_ENCRYPTION_KEY 建立严格规范 base64 32-byte env parser；production 缺失/格式错误启动失败，vitest 只注入格式正确的测试值，不在 `.env` 提供默认 key。
+- [x] 将 `sessionId` 声明为 `@default(dbgenerated("gen_random_uuid()")) @db.Uuid`，session 时间声明为数据库 timestamp default；生成的 SQL 必须含 PostgreSQL default，不能使用 client-side `uuid()` 误充历史数据回填。
+- [x] 在专用库生成一个 migration（目录时间戳必须排序在 P6a migration 之后）：`DATABASE_URL="$M3_ISH_DATABASE_URL" npx prisma migrate dev --name identity_security_hardening`。`M3_ISH_DATABASE_URL` 必须显式指向 `monexus_m3_ish_test`；shadow database 也必须是隔离资源。若 Prisma UTC timestamp 仍较早，只可重命名未提交的 M3-only 目录，校验 migration.sql hash 不变后 reset/replay 专用库；绝不动 P6a 目录。
+- [x] 在同一可丢弃专用 `monexus_m3_ish_test` 先创建 legacy User/RefreshToken fixture，再应用 migration；断言既有行 `sessionId` 非空且彼此不同、session 时间非空，并检查生成 SQL 的 database default；之后 reset/replay 此同一专用库。不得创建或连接额外的非专用数据库。
+- [x] 写并测试幂等、分批的 legacy-admin revoke 命令：仅吊销 migration 前的 admin refresh token，写受控 revoke reason，不写/不回显 tokenHash 或其他秘密。
+- [x] 运行 `DATABASE_URL="$M3_ISH_DATABASE_URL" npx prisma migrate status` 与 drift 检查；增加 migration/config/revoke guard 测试。
 
-**DoD：** 单一 Prisma-generated database-default migration、legacy fixture、legacy-admin revoke、migrate status/drift、config production guard 通过；无 secret default、无共享库/共享 shadow DB 访问。
+**DoD：** 单一 Prisma-generated database-default migration、legacy fixture、legacy-admin revoke、migrate status/drift、config production guard 通过；无 secret default、无共享库/共享 shadow DB 访问。**该本地 DoD 不解除 P6a 合入后的 rebase/人工复核/复验闸门。**
+
+**本地证据（2026-07-27；仍不可开 PR）：**
+
+- M3-only migration：`20260727110000_identity_security_hardening`；`migration.sql` SHA-256 为 `d7674f9747f7fdfd32e7272d678f45ce3b9e96d35fd59cbcbfab3c5ec441e55a`。Prisma UTC 生成的未提交 M3-only 目录曾早于已知 P6a timestamp，重命名后 SQL hash 不变。
+- 同一可丢弃 `monexus_m3_ish_test`：pre-migration legacy RefreshToken fixture → generated migration，既有行获得非空且彼此不同的 UUID、非空 session 时间；随后 reset/replay 同一专用库。
+- `DATABASE_URL="$M3_ISH_DATABASE_URL" npx prisma migrate status`：32 migrations、schema up to date；`prisma migrate diff --from-url "$M3_ISH_DATABASE_URL" --to-schema-datamodel prisma/schema.prisma --exit-code`：No difference detected。
+- 定向验证：`config-production-guards`、`auth-identity-foundation`、`legacy-admin-session-revocation` 共 14 tests PASS；`npm --prefix server run build` PASS。全量后端回归：`TEST_DATABASE_URL="$M3_ISH_DATABASE_URL" npm --prefix server test`，62 files / 497 tests PASS（712.46s）。上述命令只指向专用库，未调用 compose/共享端口。
 
 ---
 
@@ -169,7 +176,7 @@ TEST_DATABASE_URL='postgresql://monexus:monexus_dev_2026@localhost:5432/monexus_
 ### T-BE-03 — 实现管理员 MFA 登录与首次绑定 API
 
 **类型：** backend  
-**依赖：** T-BE-02  
+**依赖：** T-BE-02、T-BE-04
 **需求：** REQ-F-010–014
 **建议 Owns：**
 
@@ -211,7 +218,7 @@ TEST_DATABASE_URL='postgresql://monexus:monexus_dev_2026@localhost:5432/monexus_
 
 - [ ] 首次 login/register token 行创建 sessionId；rotation 继承 sessionId/sessionStartedAt 并刷新 lastUsedAt。
 - [ ] list API 只查询 owner 的 active、未过期 session；输出脱敏 summary，current 来自 JWT sid。
-- [ ] DELETE sessionId 使用 owner-scoped update；非 owner、随机 UUID 都返回 404。
+- [ ] DELETE sessionId 使用 owner-scoped update，但只允许非 current family；非 owner、随机 UUID 都返回 404，current family 返回 `CURRENT_SESSION_REQUIRES_LOGOUT`，只能经既有 `/auth/logout` 吊销。
 - [ ] revoke-others 排除 current sessionId；当前 logout 继续只吊销当前族。revoke-all 留给 P1 的 T-BE-06。
 - [ ] 所有吊销写 session_revoked SecurityEvent，reason 采用受控枚举。
 - [ ] 保持 refresh replay 的 revoke-all-user 语义，并记录 session_replay_detected。
@@ -240,7 +247,7 @@ TEST_DATABASE_URL='postgresql://monexus:monexus_dev_2026@localhost:5432/monexus_
 - [ ] 实现 requireAdminMfa：验证 claims、User MFA 版本/状态与活动 RefreshToken session。
 - [ ] 在 admin 路由组 requireAdmin 后挂载；不得漏掉 portable-backups 等子路由。
 - [ ] 发布兼容：缺 sid / 无 MFA claim 的旧 admin token 一律拒绝；旧 admin refresh token 不能续签。
-- [ ] 将 bcrypt rounds 固定为 12；注册/改密/重置直接使用 12；正确旧 hash 登录时重哈希，错误密码不写。
+- [ ] 将 bcrypt rounds 固定为 12；注册/改密/重置直接使用 12；仅非 admin 成功完成正常登录时对正确旧 hash 重哈希。错误密码、封禁和 admin MFA pre-auth 均不写 hash，也不把密码/等效材料存进 challenge。
 - [ ] 覆盖：旧 admin token、被吊销 admin session、被封禁 admin、无 MFA cookie、普通 user admin API、rehash 成功/失败。
 
 **DoD：** AC-04、AC-06、AC-07 通过；无 admin endpoint 绕过。
@@ -310,8 +317,8 @@ TEST_DATABASE_URL='postgresql://monexus:monexus_dev_2026@localhost:5432/monexus_
 
 - [ ] 给所有登录用户呈现活跃设备卡；加载失败不影响订单/积分页面。
 - [ ] 在 P6a 合入/rebase 前，不得修改 ProfilePage；此时只允许实现独立组件和 API client。
-- [ ] 当前设备不可误显示为“其他”；单吊销/其他吊销均有确认与 loading 防重。
-- [ ] 删除当前成功后调用 logout 并导航；删除其他成功后 re-fetch。
+- [ ] 当前设备不可误显示为“其他”；current family 不提供 DELETE，退出当前设备只走既有 logout；单吊销/其他吊销均有确认与 loading 防重。
+- [ ] 删除其他成功后 re-fetch；logout 成功后由既有流程导航。
 - [ ] 使用 API 返回的 deviceLabel/ipHint，前端不自行保存或猜测原始 UA/IP。
 
 **DoD：** AC-05 手工通过，移动端无严重溢出，所有危险按钮二次确认。
@@ -421,12 +428,12 @@ TEST_DATABASE_URL='postgresql://monexus:monexus_dev_2026@localhost:5432/monexus_
 ~~~text
 T-00
  └─ T-BE-01
-     ├─ T-BE-02 ── T-BE-03 ──┐
-     └─ T-BE-04 ─────────────┼─ T-BE-05 ──┬─ T-QA-01 ── T-QA-02
-                             │             ├─ T-FE-01 ────┘
-                             │             ├─ T-FE-02 ────┘
-                             │             └─ T-DOC-01
-                             └─────────────────────────────
+     ├─ T-BE-02 ─────────────┐
+     └─ T-BE-04 ─────────────┼─ T-BE-03 ── T-BE-05 ──┬─ T-QA-01 ── T-QA-02
+                              │                         ├─ T-FE-01 ────┘
+                              │                         ├─ T-FE-02 ────┘
+                              │                         └─ T-DOC-01
+                              └─────────────────────────────────────────
 
 P1 supplements after the P0 guard/session path:
 T-BE-03 + T-BE-04 + T-BE-05 ──► T-BE-06 ──► T-FE-03
@@ -473,3 +480,6 @@ T-00 → T-BE-01 → T-BE-02 → T-BE-03 + T-BE-04 → T-BE-05 → T-FE-01 + T-F
 | 1.3.0 | 2026-07-27 | 将无法原子部署的 two-phase backfill 改为已验证 PostgreSQL database default + legacy-admin revoke 命令 |
 | 1.4.0 | 2026-07-27 | 记录 Prisma UTC timestamp 早于已知 P6a 时的 M3-only 无 SQL 改动重命名/replay 步骤 |
 | 1.5.0 | 2026-07-27 | legacy fixture/replay 收口到同一可丢弃专用库，避免产生未验证的第二数据库依赖 |
+| 1.6.0 | 2026-07-27 | 将 T-BE-04 前置为 MFA 集成前置条件；固定 JWT `sid`、非 current DELETE 与不跨 pre-auth 保存密码的 bcrypt 策略 |
+| 1.7.0 | 2026-07-27 | 记录 T-BE-01 的 migration hash、legacy fixture/replay、status/drift 与定向验证证据；保留 P6a rebase 为未完成闸门 |
+| 1.8.0 | 2026-07-27 | 补记 I-01 全量隔离后端回归：62 files、497 tests PASS；不改变 P6a rebase 闸门 |
