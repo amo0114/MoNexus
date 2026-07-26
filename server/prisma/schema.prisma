@@ -267,6 +267,10 @@ model Offer {
   // 注意：本仓库只用 migrate 工作流；`prisma db push` 不重放迁移，会得到
   // 没有该索引的库，勿在本项目使用 db push。
   isDefault        Boolean  @default(false)
+  // P6a：订阅有效期天数。null = 永久（存量语义）。下单快照进
+  // Order.validityDaysSnapshot——商家改时长不影响已购订单；进入
+  // checkoutVersion canonical（null 不进，存量摘要不变）。
+  validityDays     Int?
   createdAt        DateTime @default(now())
 
   product   Product         @relation(fields: [productId], references: [id])
@@ -402,6 +406,11 @@ model Order {
   fundsHeld          Boolean   @default(false) // 仅新模型订单为 true；兼容迁移前未实际扣减的历史订单
   fulfillmentDeadline DateTime? // manual_service 商家履约截止时间
   confirmedAt        DateTime? // 用户确认关闭订单的时间
+  // P6a：下单时的订阅有效期快照（null = 永久）；到期时刻在 DeliveryRecord.expiresAt。
+  validityDaysSnapshot Int?
+  // P6a：续费单指向被续费的原订单（同买家同 offer）。Restrict：续费链是
+  // 审计链的一部分，原订单行不可删。
+  renewalOfOrderId   Int?
   createdAt          DateTime  @default(now())
 
   user         User               @relation(fields: [userId], references: [id])
@@ -416,9 +425,13 @@ model Order {
   inventoryLogs InventoryLog[]
   fileGrants   FileGrantLog[]
 
+  renewalOf Order?  @relation("OrderRenewal", fields: [renewalOfOrderId], references: [id], onDelete: Restrict)
+  renewals  Order[] @relation("OrderRenewal")
+
   // P5.5：SKU 报表/全平台报表按时间范围聚合的支撑索引（评审修订）。
   @@index([merchantId, createdAt])
   @@index([createdAt])
+  @@index([renewalOfOrderId])
 }
 
 model DeliveryRecord {
@@ -438,6 +451,10 @@ model DeliveryRecord {
   // P5：本单交付的文件（下单冻结的固定文件 / 交付时的人工附件）。
   // 下载授权只认这里；买家窗口从本记录的 deliveredAt 起算。
   fileId      Int?
+  // P6a：订阅到期时刻 = 交付时按 Order.validityDaysSnapshot 计算；续费单
+  // 且原单未过期时自原到期顺延。null = 永久。到期只作用于内容访问与 UI，
+  // 不引入订单状态。
+  expiresAt   DateTime?
 
   order Order         @relation(fields: [orderId], references: [id])
   // Restrict：交付快照引用的文件行不可删——审计链完整性优先于删除便利。

@@ -146,6 +146,8 @@ export function computeOfferCheckoutVersion(offer: Offer): string {
     // P5：换固定文件 = 买家确认的内容变化。null 不进 canonical——非 file
     // 形态的存量摘要字节不变（与 P4a offerId 的幂等兼容手法一致）。
     ...(offer.fixedFileId != null ? { fixedFileId: offer.fixedFileId } : {}),
+    // P6a：改订阅时长 = 买家确认的商品变化。同一 null 不进 canonical 手法。
+    ...(offer.validityDays != null ? { validityDays: offer.validityDays } : {}),
   }
   return createHmac('sha256', config.jwtSecret).update(JSON.stringify(canonical)).digest('hex').slice(0, 16)
 }
@@ -210,6 +212,8 @@ export function serializePublicOffer(offer: Offer & { fixedFile?: { size: number
     sales: offer.sales,
     sortOrder: offer.sortOrder,
     fixedContentType: offer.fixedContentType,
+    // P6a：购前可见的订阅时长（null = 永久，前端不渲染徽标）。
+    validityDays: offer.validityDays,
     // P4b：买家购前可见将获得哪些字段；敏感的是字段"值"，不在此处。
     deliveryFields: parseStoredDeliveryFields(offer.deliveryFields),
     ...(offer.fixedContentType === 'file'

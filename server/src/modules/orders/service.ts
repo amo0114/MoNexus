@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client'
 import { prisma } from '../../lib/prisma.js'
+import { getSystemConfigValue } from '../../lib/systemConfig.js'
 import { badRequest, notFound, HttpError } from '../../lib/httpError.js'
 import {
   createOrderStatusEvent,
@@ -7,6 +8,7 @@ import {
   isInstantMode,
   normalizeOrderStatus,
   transitionOrderStatus,
+  computeSubscriptionExpiresAt,
 } from './fulfillment.js'
 import { debitAvailablePoints, holdAvailablePoints, settleHeldOrder } from './accounting.js'
 import {
@@ -28,7 +30,7 @@ import {
 } from '../../lib/deliveryFields.js'
 
 // manual_service 商家履约 SLA：创建订单后 7 天内需交付，M3-S2 工作台高亮超时
-const FULFILLMENT_SLA_MS = 7 * 24 * 60 * 60 * 1000
+// P6a：履约 SLA 天数迁入 SystemConfig（fulfillmentSlaDays），下单事务内读取。
 
 export type CreateOrderOptions = {
   // 购买的规格（P4a）。可选：单 SKU 商品由服务端解析为唯一 active Offer。
@@ -256,7 +258,8 @@ async function createOrderOnce(
     if (isManual) {
       // 虚拟服务订单：冻结真实占用可用积分，避免同一余额被多笔订单重复使用。
       orderHoldingPoints = offer.price
-      orderFulfillmentDeadline = new Date(Date.now() + FULFILLMENT_SLA_MS)
+      const slaDays = await getSystemConfigValue('fulfillmentSlaDays', tx)
+      orderFulfillmentDeadline = new Date(Date.now() + slaDays * 24 * 60 * 60 * 1000)
       settledSettlementStatus = 'holding'
       balanceAfter = await holdAvailablePoints(tx, userId, offer.price)
       fundsHeld = true
@@ -287,6 +290,8 @@ async function createOrderOnce(
         holdingPoints: orderHoldingPoints,
         fundsHeld,
         fulfillmentDeadline: orderFulfillmentDeadline,
+        // P6a：订阅时长快照——商家改 Offer.validityDays 不影响本单。
+        validityDaysSnapshot: offer.validityDays ?? null,
         // 定义与答案一并快照：商家之后改表单不影响本单的展示与履约依据。
         ...(purchaseFormFields.length > 0 ? { purchaseFormSnapshot: purchaseFormFields } : {}),
         ...(purchaseFormAnswers ? { purchaseFormAnswers } : {}),
@@ -349,6 +354,8 @@ async function createOrderOnce(
             : undefined,
           status: 'delivered',
           deliveredAt: new Date(),
+          // P6a：即时交付的订阅到期时刻（null = 永久）。
+          expiresAt: computeSubscriptionExpiresAt(offer.validityDays, new Date()),
         },
       })
 
@@ -367,6 +374,7 @@ async function createOrderOnce(
             fileId: purchasedFile.id,
             status: 'delivered',
             deliveredAt: new Date(),
+            expiresAt: computeSubscriptionExpiresAt(offer.validityDays, new Date()),
           },
         })
       } else {
@@ -382,6 +390,7 @@ async function createOrderOnce(
             contentType: offer.fixedContentType,
             status: 'delivered',
             deliveredAt: new Date(),
+            expiresAt: computeSubscriptionExpiresAt(offer.validityDays, new Date()),
           },
         })
       }

@@ -75,6 +75,8 @@ const merchantOfferFieldsSchema = z.object({
   // file 形态挂载的交付文件；null 清空（配合切回 text/url）。
   fixedFileId: z.number().int().positive().nullable().optional(),
   sortOrder: z.number().int().min(0).max(10_000).optional(),
+  // P6a：订阅有效期天数；null = 永久。上限 10 年防手滑。
+  validityDays: z.number().int().min(1).max(3650).nullable().optional(),
   // P4b：交付字段模板；null 清空回纯文本交付。
   deliveryFields: deliveryFieldsSchema.nullable().optional(),
 }).strict()

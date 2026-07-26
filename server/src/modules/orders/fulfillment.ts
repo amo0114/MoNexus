@@ -160,6 +160,12 @@ export async function transitionOrderStatus(
   if (!updated) throw notFound('订单不存在')
 
   if (to === 'delivered') {
+    // P6a：人工/恢复交付按订单快照计算到期时刻；争议恢复重交付时已有
+    // 记录仅在原 expiresAt 为空时补算（不因重交付顺延订阅）。
+    const subscriptionExpiresAt = computeSubscriptionExpiresAt(
+      updated.validityDaysSnapshot,
+      new Date()
+    )
     await client.deliveryRecord.upsert({
       where: { orderId: order.id },
       create: {
@@ -174,6 +180,7 @@ export async function transitionOrderStatus(
         status: 'delivered',
         publicNote: input.publicNote ?? null,
         deliveredAt: new Date(),
+        expiresAt: subscriptionExpiresAt,
       },
       update: {
         content: input.deliveryContent ?? undefined,
@@ -187,6 +194,11 @@ export async function transitionOrderStatus(
         publicNote: input.publicNote ?? undefined,
         deliveredAt: new Date(),
       },
+    })
+    // 首次交付后 expiresAt 只写不改：重交付不得顺延到期（续费才顺延，T3）。
+    await client.deliveryRecord.updateMany({
+      where: { orderId: order.id, expiresAt: null },
+      data: { expiresAt: subscriptionExpiresAt },
     })
   }
 
@@ -205,4 +217,16 @@ export async function transitionOrderStatus(
     ...updated,
     status: normalizeOrderStatus(updated.status),
   }
+}
+
+/**
+ * P6a：按订阅时长快照计算到期时刻。null = 永久（返回 null）。
+ * 续费顺延（原单未过期时自原到期起算）由续费链路另行处理（T3）。
+ */
+export function computeSubscriptionExpiresAt(
+  validityDays: number | null | undefined,
+  deliveredAt: Date
+): Date | null {
+  if (validityDays == null || validityDays <= 0) return null
+  return new Date(deliveredAt.getTime() + validityDays * 24 * 60 * 60 * 1000)
 }

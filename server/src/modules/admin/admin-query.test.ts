@@ -270,7 +270,7 @@ describe('GET /api/admin/orders filter & pagination', () => {
 })
 
 describe('GET /api/admin/config metadata', () => {
-  const expectedGroups = ['奖励发放', '分页限制', '库存', '会员等级', '安全', '文件交付']
+  const expectedGroups = ['奖励发放', '分页限制', '库存', '会员等级', '安全', '文件交付', '订单']
 
   it('should attach Chinese description and group to all known keys', async () => {
     const { accessToken } = await loginAdmin('aq-config-admin@test.local')

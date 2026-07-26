@@ -24,6 +24,9 @@ const defaultConfig = {
   deliveryFileMaxMb: 100,
   // P5.5 低库存告警
   lowStockNotifyCooldownHours: 24,
+  // P6a 订单计时
+  autoCloseDays: 7,
+  fulfillmentSlaDays: 7,
 } as const
 
 async function clearSystemConfig() {

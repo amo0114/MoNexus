@@ -1131,6 +1131,8 @@ type OfferWriteInput = {
   // P5：file 形态挂载的交付文件；null 清空（配合切回 text/url）。
   fixedFileId?: number | null
   sortOrder?: number
+  // P6a：订阅有效期天数；null = 永久。
+  validityDays?: number | null
   // P4b：交付字段模板；null 清空回纯文本。已过 zod（deliveryFieldsSchema）。
   deliveryFields?: DeliveryField[] | null
   // 设为默认规格（仅接受 true，事务内从原默认转移；不接受 false——
@@ -1245,6 +1247,8 @@ async function insertOffer(
       fixedContentType,
       fixedFileId,
       sortOrder: input.sortOrder ?? 0,
+      // P6a：订阅有效期；null = 永久。
+      validityDays: input.validityDays ?? null,
       deliveryFields: input.deliveryFields ?? undefined,
     },
   })
@@ -1341,6 +1345,8 @@ export async function updateMyOffer(
         ...('fixedContent' in input ? { fixedContent: input.fixedContent ?? null } : {}),
         fixedContentType,
         ...('fixedFileId' in input ? { fixedFileId: input.fixedFileId ?? null } : {}),
+        // P6a：改时长只影响新订单（快照冻结）；null = 改回永久。
+        ...('validityDays' in input ? { validityDays: input.validityDays ?? null } : {}),
         ...(input.sortOrder != null ? { sortOrder: input.sortOrder } : {}),
         // 改模板仅影响后续导入/交付；已导入条目携带自包含快照，不回填。
         ...('deliveryFields' in input
