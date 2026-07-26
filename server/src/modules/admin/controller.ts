@@ -200,3 +200,14 @@ export async function deleteAnnouncementRoute(req: Request, res: Response, next:
     res.json(await adminService.deleteAnnouncement(req.user!.userId, id))
   } catch (err) { next(err) }
 }
+
+// P5：吊销交付文件。
+export async function revokeDeliveryFile(req: Request, res: Response, next: NextFunction) {
+  try {
+    res.json(await adminService.revokeDeliveryFile(
+      req.user!.userId,
+      req.params.id as unknown as number,
+      (req.body as { reason?: string }).reason,
+    ))
+  } catch (err) { next(err) }
+}

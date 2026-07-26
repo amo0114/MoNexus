@@ -76,6 +76,11 @@ export const importInventorySchema = z.intersection(
   z.object({ offerId: z.number().int().positive().optional() })
 )
 
+// P5：吊销交付文件。
+export const revokeDeliveryFileSchema = z.object({
+  reason: z.string().trim().max(500).optional(),
+}).strict()
+
 export const listUsersQuerySchema = z.object({
   q: z.string().trim().min(1).max(100).optional(),
   page: z.coerce.number().int().positive('page 必须是正整数').optional(),

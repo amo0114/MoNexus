@@ -26,11 +26,15 @@ export interface PortableObjectManifest {
 }
 
 export interface PortableBackupManifest {
-  formatVersion: 1
+  // v1：仅公开图片桶。v2：新增 deliveryObjects（P5 私有交付桶）。
+  // 旧服务器导入 v2 包会在版本校验处**响亮失败**（而不是静默丢交付文件）。
+  formatVersion: 1 | 2
   createdAt: string
   applicationVersion: string
   database: { archivePath: 'database.dump'; size: number; sha256: string }
   objects: PortableObjectManifest[]
+  /** P5：私有交付桶对象（v2 起）；恢复进 DELIVERY_STORAGE_BUCKET。 */
+  deliveryObjects?: PortableObjectManifest[]
 }
 
 export async function createTarGz(sourceDirectory: string, destination: string) {

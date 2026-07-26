@@ -7,6 +7,7 @@ import {
   GetObjectCommand,
   HeadObjectCommand,
   ListObjectsV2Command,
+  PutObjectCommand,
 } from '@aws-sdk/client-s3'
 import { Upload } from '@aws-sdk/lib-storage'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
@@ -153,6 +154,43 @@ export class DeliveryS3Storage implements DeliveryStorage {
       continuationToken = res.IsTruncated ? res.NextContinuationToken : undefined
     } while (continuationToken)
     return keys
+  }
+
+  async list(): Promise<Array<{ key: string; size: number }>> {
+    const objects: Array<{ key: string; size: number }> = []
+    let continuationToken: string | undefined
+    do {
+      const res = await this.ops.send(new ListObjectsV2Command({
+        Bucket: this.cfg.bucket,
+        ContinuationToken: continuationToken,
+      }))
+      for (const obj of res.Contents ?? []) {
+        if (obj.Key) objects.push({ key: obj.Key, size: obj.Size ?? 0 })
+      }
+      continuationToken = res.IsTruncated ? res.NextContinuationToken : undefined
+    } while (continuationToken)
+    return objects
+  }
+
+  async getObject(key: string): Promise<Buffer | null> {
+    try {
+      const res = await this.ops.send(new GetObjectCommand({ Bucket: this.cfg.bucket, Key: key }))
+      if (!res.Body) return null
+      return Buffer.from(await res.Body.transformToByteArray())
+    } catch (err: unknown) {
+      const e = err as { name?: string; $metadata?: { httpStatusCode?: number } }
+      if (e?.name === 'NoSuchKey' || e?.$metadata?.httpStatusCode === 404) return null
+      throw err
+    }
+  }
+
+  async putObjectAt(key: string, buffer: Buffer): Promise<void> {
+    await this.ops.send(new PutObjectCommand({
+      Bucket: this.cfg.bucket,
+      Key: key,
+      Body: buffer,
+      ContentType: 'application/octet-stream',
+    }))
   }
 
   private async exists(key: string): Promise<boolean> {

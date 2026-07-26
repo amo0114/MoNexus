@@ -63,6 +63,18 @@ export class DeliveryMemoryStorage implements DeliveryStorage {
       .map(([key]) => key)
   }
 
+  async list(): Promise<Array<{ key: string; size: number }>> {
+    return [...this.blobs.entries()].map(([key, blob]) => ({ key, size: blob.buffer.length }))
+  }
+
+  async getObject(key: string): Promise<Buffer | null> {
+    return this.blobs.get(key)?.buffer ?? null
+  }
+
+  async putObjectAt(key: string, buffer: Buffer): Promise<void> {
+    this.blobs.set(key, { buffer, createdAt: new Date() })
+  }
+
   /** 签名透传路由用：token 校验通过后取出字节。 */
   getBlob(key: string): Buffer | null {
     return this.blobs.get(key)?.buffer ?? null
