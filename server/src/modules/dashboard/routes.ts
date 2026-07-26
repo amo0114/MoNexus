@@ -36,5 +36,6 @@ router.use(authenticate, requireActiveUser, requireMerchant, attachMerchantId)
 
 router.get('/summary', controller.summary)
 router.get('/timeseries', controller.timeseries)
+router.get('/offers', controller.offers)
 
 export { router as dashboardRoutes }

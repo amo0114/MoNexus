@@ -20,6 +20,21 @@ export interface DashboardTopProduct {
   pointsRevenue: number
 }
 
+// P5.5 T2：SKU 报表行。offerId 为 null 表示「未指定规格」桶（迁移前
+// 历史单，或规格被删后 FK SET NULL 的存量单）。
+export interface DashboardTopOffer {
+  offerId: number | null
+  offerName: string
+  productId: number
+  productName: string
+  soldCount: number
+  pointsRevenue: number
+}
+
+export interface DashboardTopOffers {
+  items: DashboardTopOffer[]
+}
+
 export interface DashboardStatusBreakdown {
   paid: number
   fulfilled: number
