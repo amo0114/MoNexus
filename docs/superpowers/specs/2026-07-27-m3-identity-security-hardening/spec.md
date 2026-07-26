@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | SPEC-M3-ISH-001 |
-| 版本 | 1.1.0 |
+| 版本 | 1.2.0 |
 | 日期 | 2026-07-27 |
 | 状态 | Frozen for Implementation |
 | 产品 | MoNexus |
@@ -157,7 +157,7 @@ GET sessions → 仅见自己的脱敏设备会话
 
 迁移要求：
 
-1. 仅在 P6a 已合入 `develop`、安全分支 rebase 且人工确认两套 schema/migration 都保留后，使用 `prisma migrate dev` 生成 migration；命令必须显式指向专用 `monexus_m3_ish_test`，不手写或事后修改 migration SQL。
+1. 经仓库负责人授权，M3-ISH 可在独立 worktree 并行生成 schema/migration；但 P6a 合入后、M3-ISH 开 PR 前必须 rebase 并人工确认两套 schema/migration 都保留。命令始终显式指向专用 `monexus_m3_ish_test`，不手写或事后修改 migration SQL。
 2. 采用两阶段、可部署的生成迁移：Migration A 先把历史 `RefreshToken` 的 session 字段以 nullable 形式扩展；旧 API 实例排空后，受版本控制的应用回填命令为**每条**历史 token 行分配不同的随机 UUID，并以 `createdAt` 初始化会话时间；只在隔离库证明无 null 后，再由 Migration B 收紧为 non-null。不得假定 Prisma `uuid()` 默认值会安全回填既有行。
 3. `sessionId` 的唯一性属于会话族：每个历史 token 行初始获得一个不同的 family ID；refresh rotation 的新旧 token 必须共享该 ID，因此数据库不得对 `RefreshToken.sessionId` 建全局 UNIQUE 约束。
 4. 回填/切换中必须吊销全部 legacy admin refresh token，避免旧无 MFA claim 的会话继续使用；不回填 MFA，`mfaEnabled` 默认 false，旧管理员下一次密码登录必须走首次绑定。
@@ -414,6 +414,7 @@ Then vitest、相关 Playwright、双端 build、Prisma drift 检查以及 produ
 | --- | --- | --- |
 | 1.0.0 | 2026-07-27 | 初版安全规格 |
 | 1.1.0 | 2026-07-27 | 收口 session family 唯一性、两阶段生成迁移与独立验证约束；使 P1 追溯与任务优先级一致 |
+| 1.2.0 | 2026-07-27 | 仓库负责人授权在隔离 worktree 并行实现；P6a rebase 从编码前闸门改为 PR 前强制闸门 |
 
 ---
 

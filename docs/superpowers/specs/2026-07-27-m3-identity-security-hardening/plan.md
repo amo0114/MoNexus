@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | PLAN-M3-ISH-001 |
-| 版本 | 1.1.0 |
+| 版本 | 1.2.0 |
 | 日期 | 2026-07-27 |
 | 状态 | Frozen for Implementation |
 | 规格 | [spec.md](./spec.md)（SPEC-M3-ISH-001） |
@@ -112,7 +112,7 @@ Profile security card ── GET /auth/sessions ── revoke one / other / all
 
 实施要点：
 
-1. P6a 进入 `origin/develop` 前不得编辑共享 schema 或生成本波 migration；rebase 后先人工核对 P6a 与 M3-ISH 的 migration 顺序、`User` / `RefreshToken` 块，再开始 I-01。
+1. 仓库负责人已授权 M3-ISH 在独立 worktree 并行编辑自身的 schema/migration；不得读取或修改 P6a 未提交文件。P6a 合入后、M3-ISH 开 PR 前必须 rebase，并人工核对 P6a 与 M3-ISH 的 migration 顺序、`User` / `RefreshToken` 块；有语义冲突则先修订本计划再继续。
 2. 所有 Prisma 写操作显式携带专用连接，例如 `DATABASE_URL="$M3_ISH_DATABASE_URL" npx prisma migrate dev --name identity_security_hardening`；`M3_ISH_DATABASE_URL` 只能指向 `monexus_m3_ish_test`。不得依赖 `.env` 默认值，不得使用 `monexus_test`、开发库、staging 或生产库。
 3. 先用 Prisma 生成 Migration A：以 nullable 字段扩展 `RefreshToken`，不为 `sessionId` 加全局 UNIQUE。Prisma shadow database 必须由同一隔离凭据创建；若环境需要显式 shadow URL，只能使用另一个专用 `monexus_m3_ish_*` 数据库，绝不能指向共享库。
 4. Migration A 后、Migration B 前，排空旧 API，并运行受版本控制的应用回填命令：每条 legacy RefreshToken 得到一个独立 `sessionId`，`sessionStartedAt`/`lastUsedAt` 从 `createdAt` 初始化，legacy admin refresh session 全部吊销。该命令必须幂等、分批、可测试，且只在隔离库验证后才可进入部署 runbook。
@@ -382,3 +382,4 @@ Phase A ──► Phase B ──► Phase C ──► Phase D ──► Phase E
 | --- | --- | --- |
 | 1.0.0 | 2026-07-27 | 初版，聚焦管理员 MFA、设备会话与 bcrypt 收口 |
 | 1.1.0 | 2026-07-27 | 明确 P6a rebase gate、两阶段生成 migration/回填策略与零干扰验证入口 |
+| 1.2.0 | 2026-07-27 | 记录仓库负责人对隔离并行实现的授权；保留 P6a 合入后的 PR 前 rebase/迁移复核 |

@@ -36,7 +36,7 @@
 | ID | 状态 | 负责人 | 备注 |
 | --- | --- | --- | --- |
 | T-00 | Done | Codex | 基线与决策确认（证据见 implement.md §7） |
-| T-BE-01 | Blocked | Codex | 等待 P6a 合入 develop 后 rebase；避免共享 schema/migration 冲突 |
+| T-BE-01 | In Progress | Codex | 经负责人授权在隔离 worktree 并行实现；P6a 合入后、PR 前必须 rebase/复核 |
 | T-BE-02 | Todo | | MFA crypto、challenge、redact、安全事件 |
 | T-BE-03 | Todo | | MFA 登录/绑定 API |
 | T-BE-04 | Todo | | RefreshToken session family 与会话 API |
@@ -125,7 +125,7 @@ TEST_DATABASE_URL='postgresql://monexus:monexus_dev_2026@localhost:5432/monexus_
 
 **步骤：**
 
-- [ ] 先满足解除条件：P6a 已进入 `origin/develop` → 安全分支 rebase 成功 → 人工确认 P6a/M3 schema 与 migration 均保留 → 记录新的 HEAD；未满足时保持 Blocked。
+- [x] 仓库负责人已授权在隔离 worktree 并行开始；记录基线 `bf25d01` 与 P6a 预期 migration `20260727090000_p6a_subscription_foundation`。P6a 合入后、开 PR 前必须 rebase、人工确认 schema/migration 均保留并记录新的 HEAD。
 - [ ] 向 User、RefreshToken 添加 spec §5.1 所需字段、关系与会话查询索引；`sessionId` 是 family 标识，**不得**建全局 unique。
 - [ ] 新增 MfaRecoveryCode、AuthChallenge、SecurityEvent 模型；recovery/challenge 可随 User 清理，SecurityEvent 必须保留审计（`userId` 可 SetNull），并在 test setup 显式清理全部三个新模型。
 - [ ] 为 MFA_ENCRYPTION_KEY 建立严格规范 base64 32-byte env parser；production 缺失/格式错误启动失败，vitest 只注入格式正确的测试值，不在 `.env` 提供默认 key。
@@ -468,3 +468,4 @@ T-00 → T-BE-01 → T-BE-02 → T-BE-03 + T-BE-04 → T-BE-05 → T-FE-01 + T-F
 | --- | --- | --- |
 | 1.0.0 | 2026-07-27 | 初版 WBS，基于当前 auth / RefreshToken 实现 |
 | 1.1.0 | 2026-07-27 | 增加 P6a rebase/两阶段迁移/专用验证门槛；将 F-015、F-016、F-024 收口为独立 P1 任务 |
+| 1.2.0 | 2026-07-27 | 记录负责人授权的隔离并行实现；P6a rebase 保留为 PR 前强制步骤 |
