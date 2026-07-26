@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Loader2, Plus, Pencil, Trash2, ArrowLeft } from 'lucide-react'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../ui/Dialog'
+import ConfirmDialog from '../ui/ConfirmDialog'
 import {
   getMerchantOffers,
   createMerchantOffer,
@@ -70,6 +71,7 @@ export default function MerchantOfferManagerModal({ isOpen, onClose, product, on
   // null = 列表视图；'new' = 新建；数字 = 编辑对应 offer id。
   const [editing, setEditing] = useState<'new' | number | null>(null)
   const [form, setForm] = useState<EditorForm>(EMPTY_FORM)
+  const [deletingOffer, setDeletingOffer] = useState<Offer | null>(null)
 
   const load = useCallback(async () => {
     if (!product) return
@@ -165,13 +167,13 @@ export default function MerchantOfferManagerModal({ isOpen, onClose, product, on
 
   async function handleDelete(offer: Offer) {
     if (!product) return
-    if (!window.confirm(`确认删除规格「${offer.name}」？有库存或订单的规格只能下架。`)) return
     setSubmitting(true)
     try {
       await deleteMerchantOffer(product.id, offer.id)
       showToast('规格已删除')
       await load()
       await onChanged()
+      setDeletingOffer(null)
     } catch (err: any) {
       showToast(err.response?.data?.error?.message || '删除失败', 'error')
     } finally {
@@ -243,13 +245,13 @@ export default function MerchantOfferManagerModal({ isOpen, onClose, product, on
                         </div>
                       </div>
                       <div className="flex items-center gap-1 shrink-0">
-                        <button type="button" onClick={() => toggleStatus(offer)} disabled={submitting} className="text-xs text-[var(--color-text-muted)] hover:text-[var(--color-text)] px-2 py-1" data-testid={`offer-toggle-${offer.id}`}>
+                        <button type="button" onClick={() => toggleStatus(offer)} disabled={submitting} className="btn-sm text-xs text-[var(--color-text-muted)] hover:text-[var(--color-text)] cursor-pointer" data-testid={`offer-toggle-${offer.id}`}>
                           {offer.status === 'active' ? '下架' : '上架'}
                         </button>
-                        <button type="button" onClick={() => startEdit(offer)} disabled={submitting} className="p-1.5 text-[var(--color-text-muted)] hover:text-[var(--color-primary)]" aria-label="编辑" data-testid={`offer-edit-${offer.id}`}>
+                        <button type="button" onClick={() => startEdit(offer)} disabled={submitting} className="icon-btn p-1.5 text-[var(--color-text-muted)] hover:text-[var(--color-primary)] cursor-pointer" aria-label="编辑" data-testid={`offer-edit-${offer.id}`}>
                           <Pencil className="w-4 h-4" />
                         </button>
-                        <button type="button" onClick={() => handleDelete(offer)} disabled={submitting} className="p-1.5 text-[var(--color-text-muted)] hover:text-[var(--color-danger)]" aria-label="删除" data-testid={`offer-delete-${offer.id}`}>
+                        <button type="button" onClick={() => setDeletingOffer(offer)} disabled={submitting} className="icon-btn p-1.5 text-[var(--color-text-muted)] hover:text-[var(--color-danger)] cursor-pointer" aria-label="删除" data-testid={`offer-delete-${offer.id}`}>
                           <Trash2 className="w-4 h-4" />
                         </button>
                       </div>
@@ -347,6 +349,16 @@ export default function MerchantOfferManagerModal({ isOpen, onClose, product, on
             </div>
           </form>
         )}
+
+        <ConfirmDialog
+          open={deletingOffer !== null}
+          onOpenChange={(open) => { if (!open) setDeletingOffer(null) }}
+          title="删除规格"
+          description={`确认删除规格「${deletingOffer?.name ?? ''}」？有库存记录或订单的规格只能下架，不能删除。`}
+          confirmLabel="确认删除"
+          loading={submitting}
+          onConfirm={() => { if (deletingOffer) handleDelete(deletingOffer) }}
+        />
       </DialogContent>
     </Dialog>
   )

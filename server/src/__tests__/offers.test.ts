@@ -115,6 +115,60 @@ describe('P4a Offers — default offer & product projection', () => {
   })
 })
 
+describe('P4a Offers — public availability from active offers (not the projection)', () => {
+  it('a mixed-mode product with an unlimited offer never reads as sold out, even when the default offer is out of stock', async () => {
+    const { merchant, accessToken } = await setupMerchant('avail-mixed@test.local')
+    // 默认规格：即时库存，0 条可用 → 投影 stockMode='limited'、库存 0
+    const product = await createTestProduct('混合可售商品', 100, 0, [], merchant.id)
+    await api
+      .post(`/api/merchant/products/${product.id}/offers`)
+      .set(authHeader(accessToken))
+      .send({ name: '不限量人工档', price: 200, deliveryMode: 'manual_service', stockMode: 'unlimited' })
+      .expect(201)
+
+    // 列表与详情都不能把它当售罄（前端契约：stockMode !== 'unlimited' && stock === 0）
+    const list = await api.get('/api/products').expect(200)
+    const listItem = list.body.items.find((item: { id: number }) => item.id === product.id)
+    expect(listItem.stockMode).toBe('unlimited')
+
+    const detail = await api.get(`/api/products/${product.id}`).expect(200)
+    expect(detail.body.stockMode).toBe('unlimited')
+  })
+
+  it('an inactive default offer no longer dictates availability; remaining instant offer uses its real item count', async () => {
+    const { merchant, accessToken } = await setupMerchant('avail-inactive@test.local')
+    // 默认规格：不限量人工服务（随后下架）；第二规格：即时库存 2 条
+    const product = await createTestProduct('下架默认档商品', 100, 0, [], merchant.id)
+    const defaultOfferId = await getDefaultOfferId(product.id)
+    await api
+      .put(`/api/merchant/products/${product.id}/offers/${defaultOfferId}`)
+      .set(authHeader(accessToken))
+      .send({ deliveryMode: 'manual_service', stockMode: 'unlimited' })
+      .expect(200)
+    const inv = await api
+      .post(`/api/merchant/products/${product.id}/offers`)
+      .set(authHeader(accessToken))
+      .send({ name: '卡密档', price: 150, deliveryMode: 'instant_inventory' })
+      .expect(201)
+    await seedInventory(product.id, inv.body.id, ['AV-1', 'AV-2'])
+    await api
+      .put(`/api/merchant/products/${product.id}/offers/${defaultOfferId}`)
+      .set(authHeader(accessToken))
+      .send({ status: 'inactive' })
+      .expect(200)
+
+    // 投影 stockMode 仍是已下架默认档的 'unlimited'；公开可售状态必须无视它
+    const detail = await api.get(`/api/products/${product.id}`).expect(200)
+    expect(detail.body.stockMode).toBe('limited')
+    expect(detail.body.stock).toBe(2)
+
+    const list = await api.get('/api/products').expect(200)
+    const listItem = list.body.items.find((item: { id: number }) => item.id === product.id)
+    expect(listItem.stockMode).toBe('limited')
+    expect(listItem.stock).toBe(2)
+  })
+})
+
 describe('P4a Offers — single-SKU transparency', () => {
   it('orders a single-SKU product without an offerId and snapshots the resolved offer', async () => {
     await createTestUser('single-buyer@test.local', 'pass123', 'user', 1000)
