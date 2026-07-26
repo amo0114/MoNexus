@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { api, createTestUser, createTestProduct, createTestMerchant, loginAs, authHeader } from './helpers.js'
+import { api, createTestUser, createTestProduct, createTestMerchant, getDefaultOfferId, makeManualService, loginAs, authHeader } from './helpers.js'
 import { prisma } from '../lib/prisma.js'
 
 describe('Admin access control', () => {
@@ -224,7 +224,9 @@ describe('POST /api/admin/products/:id/inventory', () => {
   it('normalizes blank lines, rejects duplicate or existing items, and never partially writes', async () => {
     await createTestUser('boss-inventory-normalize@test.local', 'admin111', 'admin')
     const product = await createTestProduct('管理员规范补库存商品', 200, 0, [])
-    await prisma.inventoryItem.create({ data: { productId: product.id, content: 'existing-code' } })
+    await prisma.inventoryItem.create({
+      data: { productId: product.id, offerId: await getDefaultOfferId(product.id), content: 'existing-code' },
+    })
     const { accessToken } = await loginAs('boss-inventory-normalize@test.local', 'admin111')
 
     const normalized = await api
@@ -323,10 +325,7 @@ describe('GET /api/admin/settlements', () => {
     })
     await createTestUser('settle-list-buyer@test.local', 'buyerpass', 'user', 5000)
     const product = await createTestProduct('结算列表人工服务', 100, 0, [], merchant.id)
-    await prisma.product.update({
-      where: { id: product.id },
-      data: { deliveryMode: 'manual_service', stock: 0, stockMode: 'unlimited' },
-    })
+    await makeManualService(product.id)
     const buyer = await loginAs('settle-list-buyer@test.local', 'buyerpass')
     const merchantLogin = await loginAs('settle-list-merchant@test.local', 'merchant123')
     const admin = await loginAs('settle-list-admin@test.local', 'admin123')
@@ -460,10 +459,7 @@ describe('POST /api/admin/settlements/batch-settle', () => {
     })
     await createTestUser('settle-buyer-gate@test.local', 'buyerpass', 'user', 5000)
     const product = await createTestProduct('待履约结算商品', 200, 0, [], merchant.id)
-    await prisma.product.update({
-      where: { id: product.id },
-      data: { deliveryMode: 'manual_service', stock: 0, stockMode: 'unlimited' },
-    })
+    await makeManualService(product.id)
     const buyer = await loginAs('settle-buyer-gate@test.local', 'buyerpass')
     const created = await api
       .post('/api/orders')

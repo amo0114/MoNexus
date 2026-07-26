@@ -1,0 +1,134 @@
+import { Prisma, Offer } from '@prisma/client'
+import { prisma } from './prisma.js'
+import { badRequest, notFound } from './httpError.js'
+
+type Client = typeof prisma | Prisma.TransactionClient
+
+/** Offer 上与商品投影相关的商业/履约字段（创建默认 Offer 时从入参复制）。 */
+export type OfferCommercialFields = {
+  price: number
+  originalPrice?: number | null
+  deliveryMode: string
+  stockMode: string
+  stock?: number
+  fixedContent?: string | null
+  fixedContentType?: string
+}
+
+export const DEFAULT_OFFER_NAME = '默认规格'
+
+/**
+ * 商品创建路径调用：与商品同事务生成默认 Offer（P4a 起 Offer 是价格与
+ * 履约配置的唯一真相源，Product 上的同名列只是投影）。
+ */
+export async function createDefaultOffer(
+  tx: Client,
+  productId: number,
+  fields: OfferCommercialFields
+): Promise<Offer> {
+  return tx.offer.create({
+    data: {
+      productId,
+      name: DEFAULT_OFFER_NAME,
+      price: fields.price,
+      originalPrice: fields.originalPrice ?? null,
+      deliveryMode: fields.deliveryMode,
+      stockMode: fields.stockMode,
+      stock: fields.stock ?? 0,
+      fixedContent: fields.fixedContent ?? null,
+      fixedContentType: fields.fixedContentType ?? 'text',
+    },
+  })
+}
+
+/**
+ * 解析商品的"默认 Offer"：最早创建的一条（回填迁移保证每个商品至少一条）。
+ * 商品级写入（旧编辑路径）与未指定 offerId 的库存操作都落到它。
+ */
+export async function getDefaultOffer(tx: Client, productId: number): Promise<Offer> {
+  const offer = await tx.offer.findFirst({
+    where: { productId },
+    orderBy: { id: 'asc' },
+  })
+  // 回填迁移后不应出现；只可能是绕过 API 的数据操作造成。
+  if (!offer) throw notFound('商品缺少规格数据')
+  return offer
+}
+
+/**
+ * 购买路径的 Offer 解析：显式 offerId 必须属于该商品且 active；未指定时
+ * 解析为唯一 active Offer（单 SKU 透明），多个 active 时要求前端明确选择。
+ */
+export async function resolvePurchaseOffer(
+  tx: Client,
+  productId: number,
+  offerId?: number
+): Promise<Offer> {
+  if (offerId != null) {
+    const offer = await tx.offer.findFirst({ where: { id: offerId, productId } })
+    if (!offer) throw notFound('规格不存在')
+    if (offer.status !== 'active') throw badRequest('该规格已下架，请重新选择')
+    return offer
+  }
+  const actives = await tx.offer.findMany({
+    where: { productId, status: 'active' },
+    orderBy: { id: 'asc' },
+    take: 2,
+  })
+  if (actives.length === 0) throw badRequest('商品暂不可购买，请联系商家')
+  if (actives.length > 1) throw badRequest('请选择商品规格')
+  return actives[0]
+}
+
+/**
+ * 把 Product 的商业投影列与 Offer 真相源对齐。写路径单点调用（Offer CRUD、
+ * 订单事务里已用增量方式维护的除外）。
+ * 投影语义：
+ * - price/originalPrice：active Offer 中的最低价（列表"X 起"展示）；
+ *   无 active Offer 时保留默认 Offer 价（商品此时不可购买，价格仅展示）。
+ * - deliveryMode/stockMode/fixedContent*：默认 Offer 的配置（单 SKU 商品即
+ *   其唯一配置；多 SKU 商品该列仅作列表过滤展示用途）。
+ * - stock：active Offer 库存之和；sales：全部 Offer 销量之和。
+ */
+export async function syncProductProjection(tx: Client, productId: number) {
+  const offers = await tx.offer.findMany({
+    where: { productId },
+    orderBy: { id: 'asc' },
+  })
+  if (offers.length === 0) return
+
+  const actives = offers.filter(o => o.status === 'active')
+  const defaultOffer = offers[0]
+  const cheapest = (actives.length > 0 ? actives : offers)
+    .reduce((min, o) => (o.price < min.price ? o : min))
+
+  await tx.product.update({
+    where: { id: productId },
+    data: {
+      price: cheapest.price,
+      originalPrice: cheapest.originalPrice,
+      deliveryMode: defaultOffer.deliveryMode,
+      stockMode: defaultOffer.stockMode,
+      fixedContent: defaultOffer.fixedContent,
+      fixedContentType: defaultOffer.fixedContentType,
+      stock: actives.reduce((sum, o) => sum + o.stock, 0),
+      sales: offers.reduce((sum, o) => sum + o.sales, 0),
+    },
+  })
+}
+
+/** 公开序列化：绝不包含 fixedContent（付费内容）。 */
+export function serializePublicOffer(offer: Offer) {
+  return {
+    id: offer.id,
+    name: offer.name,
+    price: offer.price,
+    originalPrice: offer.originalPrice,
+    status: offer.status,
+    deliveryMode: offer.deliveryMode,
+    stockMode: offer.stockMode,
+    stock: offer.stock,
+    sales: offer.sales,
+    sortOrder: offer.sortOrder,
+  }
+}

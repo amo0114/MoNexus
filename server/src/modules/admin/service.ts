@@ -9,6 +9,7 @@ import {
   updateSystemConfig as saveSystemConfig,
 } from '../../lib/systemConfig.js'
 import { logInventoryChange } from '../../lib/inventoryLog.js'
+import { createDefaultOffer, getDefaultOffer, syncProductProjection } from '../../lib/offers.js'
 import {
   assertProductDeliveryConfiguration,
   normalizeProductImageFields,
@@ -313,6 +314,16 @@ export async function createProduct(adminUserId: number, data: CreateProductInpu
         stock: deliveryMode === 'instant_inventory' ? 0 : (data.stock ?? 0),
       },
     })
+    // P4a：Offer 是价格/履约配置真相源，商品创建时同事务生成默认 Offer。
+    await createDefaultOffer(tx, created.id, {
+      price: data.price,
+      originalPrice: data.originalPrice ?? null,
+      deliveryMode,
+      stockMode,
+      stock: deliveryMode === 'instant_inventory' ? 0 : (data.stock ?? 0),
+      fixedContent: data.fixedContent ?? null,
+      fixedContentType,
+    })
     await tx.adminLog.create({
       data: {
         adminUserId,
@@ -382,6 +393,28 @@ export async function updateProduct(adminUserId: number, id: number, data: Updat
           : {}),
       },
     })
+    // P4a：商品级编辑写透到默认 Offer（真相源），随后投影同步对齐商业列。
+    const defaultOffer = await getDefaultOffer(tx, id)
+    await tx.offer.update({
+      where: { id: defaultOffer.id },
+      data: {
+        ...(typeof data.price === 'number' ? { price: data.price } : {}),
+        ...(data.originalPrice !== undefined ? { originalPrice: data.originalPrice } : {}),
+        deliveryMode,
+        stockMode,
+        ...('fixedContent' in normalizedProductData
+          ? { fixedContent: normalizedProductData.fixedContent as string | null }
+          : {}),
+        ...(normalizedProductData.fixedContentType != null
+          ? { fixedContentType: normalizedProductData.fixedContentType as string }
+          : {}),
+        ...(incomingStock !== undefined ? { stock: incomingStock } : {}),
+        ...(deliveryMode === 'instant_inventory' && product.deliveryMode !== 'instant_inventory'
+          ? { stock: 0 }
+          : {}),
+      },
+    })
+    await syncProductProjection(tx, id)
     await tx.adminLog.create({
       data: {
         adminUserId,
@@ -410,6 +443,11 @@ export async function importInventory(productId: number, payload: InventoryImpor
 
   try {
     const result = await prisma.$transaction(async tx => {
+      // P4a：库存归属默认 Offer（管理端导入不指定规格）。
+      const offer = await getDefaultOffer(tx, productId)
+      if (offer.deliveryMode !== 'instant_inventory') {
+        throw badRequest('仅即时库存发货商品支持库存管理')
+      }
       const analysis = await analyzeInventoryImport(productId, payload, tx)
       if (analysis.duplicateRows > 0 || analysis.existingDuplicateRows > 0) {
         throw badRequest('库存导入包含重复项', duplicateInventoryImportDetails(analysis))
@@ -419,11 +457,12 @@ export async function importInventory(productId: number, payload: InventoryImpor
       }
 
       await tx.inventoryItem.createMany({
-        data: analysis.itemsToImport.map(content => ({ productId, content })),
+        data: analysis.itemsToImport.map(content => ({ productId, offerId: offer.id, content })),
       })
 
       await logInventoryChange(tx, {
         productId,
+        offerId: offer.id,
         merchantId: product.merchantId,
         actorUserId: adminUserId,
         action: 'import',

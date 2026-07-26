@@ -3,6 +3,7 @@ import { prisma } from '../../lib/prisma.js'
 import {
   api,
   createTestMerchant,
+  createProductWithOffer,
   loginAsMerchant,
   authHeader,
 } from '../../__tests__/helpers.js'
@@ -64,7 +65,7 @@ describe('Merchant product images', () => {
 
   it('updates product images', async () => {
     const { merchant, accessToken } = await setupMerchant('images-update@test.local')
-    const product = await prisma.product.create({
+    const product = await createProductWithOffer({
       data: {
         merchantId: merchant.id,
         name: '待更新商品',

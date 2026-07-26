@@ -8,6 +8,7 @@ import {
   loginAs,
   loginAsMerchant,
   authHeader,
+  getDefaultOfferId,
 } from '../../__tests__/helpers.js'
 
 async function setupMerchantWithProduct(email: string, items: string[] = []) {
@@ -22,11 +23,13 @@ async function setupMerchantWithProduct(email: string, items: string[] = []) {
 }
 
 async function createTimedInventory(productId: number, contents: string[]) {
+  const offerId = await getDefaultOfferId(productId)
   const base = Date.now() - contents.length * 60_000
   for (let i = 0; i < contents.length; i++) {
     await prisma.inventoryItem.create({
       data: {
         productId,
+        offerId,
         content: contents[i],
         status: 'available',
         createdAt: new Date(base + i * 60_000),
@@ -103,6 +106,7 @@ describe('POST /api/merchant/products/:id/inventory/void', () => {
     await prisma.inventoryItem.create({
       data: {
         productId: product.id,
+        offerId: await getDefaultOfferId(product.id),
         content: 'sold-secret',
         status: 'sold',
         createdAt: new Date(Date.now() - 3600_000),

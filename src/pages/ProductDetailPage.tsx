@@ -13,6 +13,7 @@ import EmptyState from '../components/ui/EmptyState'
 import SafeImage from '../components/ui/SafeImage'
 import { getProductReviews, type ReviewItem } from '../api/reviews'
 import StarRating from '../components/ui/StarRating'
+import type { Offer } from '../types/merchant'
 
 interface Product {
   id: number
@@ -31,6 +32,8 @@ interface Product {
   ratingAvg?: number
   ratingCount?: number
   merchant?: { id: number; name: string } | null
+  /** SKU 列表(P4a);仅含 active 规格,已剥离 fixedContent。 */
+  offers?: Offer[]
 }
 
 export default function ProductDetailPage() {
@@ -41,6 +44,8 @@ export default function ProductDetailPage() {
 
   const [product, setProduct] = useState<Product | null>(null)
   const [loading, setLoading] = useState(true)
+  // 选中的 SKU(P4a)。单 SKU 商品保持 null → 购买链路不传 offerId(透明兼容)。
+  const [selectedOfferId, setSelectedOfferId] = useState<number | null>(null)
 
   const [showPurchase, setShowPurchase] = useState(false)
   const [purchasing, setPurchasing] = useState(false)
@@ -81,6 +86,15 @@ export default function ProductDetailPage() {
         const { data } = await api.get(`/products/${id}`)
         setProduct(data)
         setActiveImage(0)
+        // 多 SKU：默认选中第一条可购买的规格（后端按 sortOrder→id 排序）；
+        // 全部售罄时回退到第一条，让页面照常展示价格与"已被抢光"。
+        const offers: Offer[] = data.offers ?? []
+        if (offers.length > 1) {
+          const firstAvailable = offers.find(o => o.stockMode === 'unlimited' || o.stock > 0)
+          setSelectedOfferId((firstAvailable ?? offers[0]).id)
+        } else {
+          setSelectedOfferId(null)
+        }
       } catch (err) {
         showToast('获取商品详情失败', 'error')
         navigate('/')
@@ -103,6 +117,7 @@ export default function ProductDetailPage() {
       const data = await createOrder(product.id, {
         expectedPrice: preview.price,
         idempotencyKey,
+        offerId: selectedOfferId ?? undefined,
         formAnswers,
         expectedPurchaseFormVersion: preview.purchaseFormVersion,
         verificationPassword: verificationPassword || undefined,
@@ -113,7 +128,14 @@ export default function ProductDetailPage() {
       setMerchantName(data.merchantName || '')
       setShowPurchase(false)
       setShowSuccess(true)
-      setProduct({ ...product, stock: product.stock - 1, sales: product.sales + 1 })
+      // 本地乐观更新：库存与销量按选中 SKU 递减(单 SKU 落到商品级投影)。
+      setProduct(prev => {
+        if (!prev) return prev
+        const nextOffers = prev.offers?.map(o =>
+          o.id === selectedOfferId ? { ...o, stock: Math.max(0, o.stock - 1), sales: (o.sales ?? 0) + 1 } : o
+        )
+        return { ...prev, stock: Math.max(0, prev.stock - 1), sales: prev.sales + 1, offers: nextOffers }
+      })
       showToast('兑换成功！')
       return 'success'
     } catch (err: any) {
@@ -177,8 +199,19 @@ export default function ProductDetailPage() {
 
   if (!product) return null
 
-  const isInsufficient = userPoints < product.price
-  const isSoldOut = product.stockMode !== 'unlimited' && product.stock === 0
+  // P4a：多 SKU 时价格/库存以选中规格为准;单 SKU 回退到商品级投影(透明)。
+  const offers = product.offers ?? []
+  const isMultiSku = offers.length > 1
+  const selectedOffer = isMultiSku
+    ? offers.find(o => o.id === selectedOfferId) ?? offers[0]
+    : undefined
+  const displayPrice = selectedOffer?.price ?? product.price
+  const displayOriginalPrice = selectedOffer ? selectedOffer.originalPrice ?? undefined : product.originalPrice
+  const displayStockMode = selectedOffer?.stockMode ?? product.stockMode
+  const displayStock = selectedOffer?.stock ?? product.stock
+
+  const isInsufficient = userPoints < displayPrice
+  const isSoldOut = displayStockMode !== 'unlimited' && displayStock === 0
 
   return (
     <div className="max-w-5xl mx-auto pb-8 fade-in relative">
@@ -246,17 +279,56 @@ export default function ProductDetailPage() {
         </div>
 
         <div className="p-6 md:p-8">
+          {/* SKU 选择器（P4a）：仅多规格时渲染，单 SKU 完全透明 */}
+          {isMultiSku && (
+            <div className="mb-8" data-testid="sku-selector">
+              <span className="text-xs text-[var(--color-text-muted)] font-bold uppercase tracking-wider mb-3 block">选择规格</span>
+              <div className="flex flex-wrap gap-3">
+                {offers.map(offer => {
+                  const offerSoldOut = offer.stockMode !== 'unlimited' && offer.stock === 0
+                  const active = offer.id === (selectedOffer?.id ?? selectedOfferId)
+                  return (
+                    <button
+                      key={offer.id}
+                      type="button"
+                      onClick={() => setSelectedOfferId(offer.id)}
+                      disabled={offerSoldOut}
+                      data-testid={`sku-option-${offer.id}`}
+                      aria-pressed={active}
+                      className={`flex flex-col items-start gap-1 px-4 py-3 rounded-xl border-2 transition-all text-left min-w-[8rem] ${
+                        offerSoldOut
+                          ? 'opacity-50 cursor-not-allowed border-[var(--color-border)] bg-[var(--color-background)]'
+                          : active
+                          ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 shadow-sm cursor-pointer'
+                          : 'border-[var(--color-border)] bg-[var(--color-background)] hover:border-[var(--color-primary)]/50 cursor-pointer'
+                      }`}
+                    >
+                      <span className="font-bold text-sm text-[var(--color-text)] line-clamp-1">{offer.name}</span>
+                      <span className="font-heading font-bold text-[var(--color-cta)] flex items-center gap-1">
+                        <Coins className="w-3.5 h-3.5" />{offer.price}
+                        {offer.originalPrice && offer.originalPrice > offer.price && (
+                          <span className="text-xs text-[var(--color-text-muted)] line-through font-normal">{offer.originalPrice}</span>
+                        )}
+                      </span>
+                      {offerSoldOut && <span className="text-[10px] text-[var(--color-danger)] font-bold">已售罄</span>}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Price / action bar */}
           <div className="bg-[var(--color-background)] rounded-xl p-6 md:p-8 mb-8 flex flex-col lg:flex-row justify-between items-start lg:items-center border border-[var(--color-border)] gap-6">
             <div className="flex flex-col min-w-max">
               <span className="text-xs text-[var(--color-text-muted)] font-bold uppercase tracking-wider mb-2">兑换需要</span>
               <div className="flex items-end gap-2">
                 <span className="font-heading text-4xl md:text-5xl font-bold text-[var(--color-cta)] flex items-center gap-2">
-                  <Coins className="w-8 h-8 md:w-10 md:h-10" />{product.price}
+                  <Coins className="w-8 h-8 md:w-10 md:h-10" />{displayPrice}
                 </span>
-                {product.originalPrice && product.originalPrice > product.price && (
+                {displayOriginalPrice && displayOriginalPrice > displayPrice && (
                   <span className="text-base text-[var(--color-text-muted)] line-through mb-1.5 md:mb-2">
-                    {product.originalPrice}
+                    {displayOriginalPrice}
                   </span>
                 )}
               </div>
@@ -274,7 +346,7 @@ export default function ProductDetailPage() {
                   已售: <span className="text-[var(--color-text)] font-bold">{product.sales}</span>
                 </span>
                 <span className="text-[var(--color-text-muted)] font-medium">
-                  库存: <span className="text-[var(--color-text)] font-bold">{product.stockMode === 'unlimited' ? '不限' : product.stock}</span>
+                  库存: <span className="text-[var(--color-text)] font-bold">{displayStockMode === 'unlimited' ? '不限' : displayStock}</span>
                 </span>
                 {product.ratingCount && product.ratingCount > 0 ? (
                   <span className="text-[var(--color-text-muted)] font-medium flex items-center gap-1" data-testid="rating-summary">
@@ -438,6 +510,7 @@ export default function ProductDetailPage() {
       {showPurchase && (
         <PurchaseModal
           productId={product.id}
+          offerId={selectedOfferId ?? undefined}
           submitting={purchasing}
           onClose={() => setShowPurchase(false)}
           onConfirm={handlePurchase}

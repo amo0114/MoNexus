@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { api, createTestUser, createTestMerchant, createTestProduct, loginAs, authHeader } from './helpers.js'
+import { api, createTestUser, createTestMerchant, createTestProduct, makeManualService, loginAs, authHeader } from './helpers.js'
 import { prisma } from '../lib/prisma.js'
 import { transitionOrderStatus } from '../modules/orders/fulfillment.js'
 
@@ -183,10 +183,7 @@ describe('POST /api/orders (exchange)', () => {
   it('should create manual service order as pending without consuming inventory', async () => {
     const { user } = await createTestUser('manual@test.local', 'pass123', 'user', 1000)
     const product = await createTestProduct('人工履约服务', 300, 0, [])
-    await prisma.product.update({
-      where: { id: product.id },
-      data: { deliveryMode: 'manual_service', stock: 0, stockMode: 'unlimited' },
-    })
+    await makeManualService(product.id)
     const { accessToken } = await loginAs('manual@test.local', 'pass123')
 
     const res = await api
@@ -225,10 +222,7 @@ describe('fulfillment state machine', () => {
   it('should reject illegal transitions', async () => {
     await createTestUser('illegal-transition@test.local', 'pass123', 'user', 1000)
     const product = await createTestProduct('非法流转服务', 200, 0, [])
-    await prisma.product.update({
-      where: { id: product.id },
-      data: { deliveryMode: 'manual_service', stockMode: 'unlimited' },
-    })
+    await makeManualService(product.id)
     const { accessToken } = await loginAs('illegal-transition@test.local', 'pass123')
     const created = await api
       .post('/api/orders')
@@ -255,10 +249,7 @@ describe('fulfillment state machine', () => {
   it('should write an event for legal transitions', async () => {
     const { user } = await createTestUser('legal-transition@test.local', 'pass123', 'user', 1000)
     const product = await createTestProduct('合法流转服务', 200, 0, [])
-    await prisma.product.update({
-      where: { id: product.id },
-      data: { deliveryMode: 'manual_service', stockMode: 'unlimited' },
-    })
+    await makeManualService(product.id)
     const { accessToken } = await loginAs('legal-transition@test.local', 'pass123')
     const created = await api
       .post('/api/orders')

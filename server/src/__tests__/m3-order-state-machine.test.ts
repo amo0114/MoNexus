@@ -5,6 +5,7 @@ import {
   createTestUser,
   createTestMerchant,
   createTestProduct,
+  makeManualService,
   loginAs,
   loginAsMerchant,
   authHeader,
@@ -16,10 +17,7 @@ async function createManualServiceProduct(
   merchantId?: number
 ) {
   const product = await createTestProduct(name, price, 0, [], merchantId)
-  await prisma.product.update({
-    where: { id: product.id },
-    data: { deliveryMode: 'manual_service', stock: 0, stockMode: 'unlimited' },
-  })
+  await makeManualService(product.id)
   return product
 }
 

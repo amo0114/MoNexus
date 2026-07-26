@@ -223,13 +223,44 @@ model Product {
   orders        Order[]
   inventory     InventoryItem[]
   inventoryLogs InventoryLog[]
+  offers        Offer[]
 
   @@index([status, isHot, sales, id])
+}
+
+// SKU/套餐（P4a）：价格、库存与履约配置的真相源（spec §2：Fulfillment 绑定
+// SKU 而非商品）。每个商品至少有一条回填的默认 Offer；Product 上的
+// price/stock/deliveryMode 等列降级为投影，由服务层在 Offer 写路径同步。
+model Offer {
+  id               Int      @id @default(autoincrement())
+  productId        Int
+  name             String // 月卡 / 季卡 / 美区 …；回填默认 Offer 为「默认规格」
+  // CHECK constraints (20260725200000) mirror the Product commercial rules.
+  price            Int // > 0
+  originalPrice    Int? // null or >= price
+  status           String   @default("active") // active | inactive
+  deliveryMode     String   @default("instant_inventory") // instant_inventory | instant_fixed | manual_service
+  stockMode        String   @default("limited") // limited | unlimited（instant_inventory 强制 limited）
+  stock            Int      @default(0) // >= 0
+  fixedContent     String? // instant_fixed 专用；禁止公开序列化
+  fixedContentType String   @default("text") // text | url
+  sales            Int      @default(0)
+  sortOrder        Int      @default(0)
+  createdAt        DateTime @default(now())
+
+  product   Product         @relation(fields: [productId], references: [id])
+  inventory InventoryItem[]
+  orders    Order[]
+
+  @@index([productId, status, sortOrder])
 }
 
 model InventoryLog {
   id          Int      @id @default(autoincrement())
   productId   Int
+  // 审计维度补充（P4a）：变更发生在哪个 SKU。可空兼容迁移前行；无外键关系，
+  // 审计行不因 Offer 生命周期变化而受约束牵连。
+  offerId     Int?
   merchantId  Int?
   actorUserId Int
   action      String // import | void | sale | capacity_adjust
@@ -274,6 +305,9 @@ model Review {
 model InventoryItem {
   id           Int       @id @default(autoincrement())
   productId    Int
+  // 库存归属的 SKU；回填后由迁移 20260725202000 收紧为 NOT NULL。
+  // 唯一约束保持商品级（同一商品下卡密不允许重复，与 SKU 无关）。
+  offerId      Int
   content      String
   status       String    @default("available") // available | sold | void; PostgreSQL CHECK constrained
   orderId      Int?      @unique
@@ -282,15 +316,21 @@ model InventoryItem {
   createdAt    DateTime  @default(now())
 
   product Product @relation(fields: [productId], references: [id])
+  offer   Offer   @relation(fields: [offerId], references: [id])
 
   // 同一商品的交付内容只能入库一次；应用层预检仅用于友好提示，数据库约束负责并发兜底。
   @@unique([productId, content])
+  @@index([offerId, status])
 }
 
 model Order {
   id                 Int       @id @default(autoincrement())
   userId             Int
   productId          Int
+  // 下单时选择的 SKU；可空以兼容迁移前订单（回填为默认 Offer，服务层读取
+  // 时对 null 回退到商品级快照，惯例同 productNameSnapshot）。
+  offerId            Int?
+  offerNameSnapshot  String?
   price              Int
   status             String    @default("pending") // pending | processing | delivered | closed | disputed | refunded
   merchantId         Int?
@@ -316,6 +356,7 @@ model Order {
 
   user         User               @relation(fields: [userId], references: [id])
   product      Product            @relation(fields: [productId], references: [id])
+  offer        Offer?             @relation(fields: [offerId], references: [id])
   merchant     Merchant?          @relation(fields: [merchantId], references: [id])
   delivery     DeliveryRecord?
   review       Review?

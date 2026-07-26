@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client'
 import { prisma } from '../../lib/prisma.js'
 import { wrapCache } from '../../lib/cache.js'
 import { badRequest, HttpError, notFound } from '../../lib/httpError.js'
+import { serializePublicOffer } from '../../lib/offers.js'
 import {
   buildProductDetailCacheKey,
   buildProductListCacheKey,
@@ -65,6 +66,8 @@ const productDetailSelect = {
   purchaseForm: true,
   ratingAvg: true,
   ratingCount: true,
+  // P4a：公开 SKU 列表（仅 active）；序列化经 serializePublicOffer 剥离 fixedContent。
+  offers: { where: { status: 'active' }, orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }] },
   _count: { select: { inventory: { where: { status: 'available' } } } },
   merchant: { select: { id: true, name: true } },
 } satisfies Prisma.ProductSelect
@@ -82,12 +85,22 @@ function serializePublicProductListItem(product: ProductListItem) {
   }
 }
 
-function serializePublicProductDetail(product: ProductDetail) {
-  const { _count, ...publicProduct } = product
+function serializePublicProductDetail(
+  product: ProductDetail,
+  offerAvailableCounts: Map<number, number>
+) {
+  const { _count, offers, ...publicProduct } = product
   return {
     ...publicProduct,
     stock: product.deliveryMode === 'instant_inventory' ? _count.inventory : product.stock,
     ratingAvg: Number(product.ratingAvg),
+    // 公开 Offer 剥离 fixedContent；即时库存规格的 stock 用实际可用条目数。
+    offers: offers.map(offer => {
+      const serialized = serializePublicOffer(offer)
+      return offer.deliveryMode === 'instant_inventory'
+        ? { ...serialized, stock: offerAvailableCounts.get(offer.id) ?? 0 }
+        : serialized
+    }),
   }
 }
 
@@ -209,5 +222,18 @@ async function getProductDetailFromDb(id: number) {
   })
   if (!product) throw notFound('商品不存在')
   if (product.status !== 'active') throw badRequest('商品已下架')
-  return serializePublicProductDetail(product)
+
+  const instantOfferIds = product.offers
+    .filter(offer => offer.deliveryMode === 'instant_inventory')
+    .map(offer => offer.id)
+  const offerAvailableCounts = new Map<number, number>()
+  if (instantOfferIds.length > 0) {
+    const grouped = await prisma.inventoryItem.groupBy({
+      by: ['offerId'],
+      where: { offerId: { in: instantOfferIds }, status: 'available' },
+      _count: { _all: true },
+    })
+    for (const row of grouped) offerAvailableCounts.set(row.offerId, row._count._all)
+  }
+  return serializePublicProductDetail(product, offerAvailableCounts)
 }

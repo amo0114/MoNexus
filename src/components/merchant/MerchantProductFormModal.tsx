@@ -474,6 +474,15 @@ export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, pr
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
               <FormSection title="定价策略" icon={DollarSign}>
                 <div className="space-y-4">
+                  {(product?.offers?.length ?? 0) > 1 && (
+                    <p
+                      className="rounded-md border border-amber-500/25 bg-amber-500/8 px-3 py-2 text-xs text-[var(--color-text-muted)]"
+                      data-testid="product-form-multi-sku-notice"
+                    >
+                      该商品有 {product!.offers!.length} 个规格。这里的价格与交付设置只作用于<strong className="text-[var(--color-text)]">主规格</strong>；
+                      其余规格请在列表页的「规格管理」中修改。
+                    </p>
+                  )}
                   <div>
                     <FieldLabel required>销售价格 (积分)</FieldLabel>
                     <input

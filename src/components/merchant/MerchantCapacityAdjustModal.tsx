@@ -18,18 +18,34 @@ export default function MerchantCapacityAdjustModal({ isOpen, onClose, product, 
   const [reason, setReason] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
+  // P4a：名额挂在 Offer 上，只有非即时库存的规格支持名额调整。含已下架规格：
+  // 商家常在重新上架前先备好名额，过滤掉会让入口可点但无规格可选。
+  // 只列服务端允许调整的规格（非即时库存 + 限量），与列表页入口门禁一致；
+  // 不限量规格服务端会拒绝，不该出现在可选项里。
+  const capacityOffers = (product?.offers ?? []).filter(
+    (offer) => offer.deliveryMode !== 'instant_inventory' && offer.stockMode === 'limited'
+  )
+  const multiOffer = capacityOffers.length > 1
+  const [selectedOfferId, setSelectedOfferId] = useState<number | undefined>(undefined)
+
   useEffect(() => {
     if (isOpen) {
       setDeltaText('')
       setReason('')
+      setSelectedOfferId(capacityOffers[0]?.id)
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, product?.id])
+
+  const selectedOffer = multiOffer
+    ? capacityOffers.find((offer) => offer.id === selectedOfferId)
+    : capacityOffers[0]
 
   const delta = Number(deltaText)
   const isValidDelta = deltaText.trim() !== '' && Number.isInteger(delta) && delta !== 0
-  const isManualService = product?.deliveryMode === 'manual_service'
+  const isManualService = (selectedOffer?.deliveryMode ?? product?.deliveryMode) === 'manual_service'
   const capacityLabel = isManualService ? '服务名额' : '可售名额'
-  const currentStock = product?.stock ?? 0
+  const currentStock = selectedOffer?.stock ?? product?.stock ?? 0
   const nextStock = isValidDelta ? currentStock + delta : null
   const wouldBecomeNegative = nextStock !== null && nextStock < 0
 
@@ -57,7 +73,12 @@ export default function MerchantCapacityAdjustModal({ isOpen, onClose, product, 
 
     setSubmitting(true)
     try {
-      await adjustMerchantProductCapacity(product.id, { delta, reason: trimmedReason })
+      await adjustMerchantProductCapacity(product.id, {
+        delta,
+        reason: trimmedReason,
+        // 已解析出目标规格就显式携带：默认 Offer 未必是可调名额的那条规格。
+        ...(selectedOfferId != null ? { offerId: selectedOfferId } : {}),
+      })
       await onAdjusted()
       showToast(`${capacityLabel}调整成功，列表已刷新`)
       onClose()
@@ -83,6 +104,30 @@ export default function MerchantCapacityAdjustModal({ isOpen, onClose, product, 
         </p>
 
         <form className="mt-5 space-y-4" onSubmit={handleSubmit}>
+          {multiOffer && (
+            <div>
+              <label className="block text-sm font-bold text-[var(--color-text)] mb-1.5" htmlFor="merchant-capacity-offer">
+                目标规格 <span className="text-red-500">*</span>
+              </label>
+              <select
+                id="merchant-capacity-offer"
+                className="input appearance-none cursor-pointer"
+                value={selectedOfferId ?? ''}
+                onChange={(event) => setSelectedOfferId(Number(event.target.value))}
+                disabled={submitting}
+                data-testid="merchant-capacity-offer"
+              >
+                {capacityOffers.map((offer) => (
+                  <option key={offer.id} value={offer.id}>
+                    {offer.name}（{offer.stockMode === 'unlimited' ? '不限量' : `剩余 ${offer.stock}`}
+                    {offer.status === 'inactive' ? ' · 已下架' : ''}）
+                  </option>
+                ))}
+              </select>
+              <p className="mt-1.5 text-xs text-[var(--color-text-muted)]">各规格名额相互独立，调整只影响所选规格。</p>
+            </div>
+          )}
+
           <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] px-4 py-3">
             <div className="text-xs font-medium text-[var(--color-text-muted)]">当前剩余{capacityLabel}</div>
             <div className="mt-1 font-mono text-2xl font-bold text-[var(--color-text)]" data-testid="merchant-capacity-current-stock">

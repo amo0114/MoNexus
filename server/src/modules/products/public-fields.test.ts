@@ -28,11 +28,14 @@ describe('public product endpoints with instant_fixed', () => {
         deliveryMode: 'instant_inventory', stockMode: 'limited',
       },
     })
+    const offer = await prisma.offer.create({
+      data: { productId: product.id, name: '默认规格', price: 100, stock: 99 },
+    })
     await prisma.inventoryItem.createMany({
       data: [
-        { productId: product.id, content: 'AVAILABLE-1', status: 'available' },
-        { productId: product.id, content: 'AVAILABLE-2', status: 'available' },
-        { productId: product.id, content: 'VOID-1', status: 'void' },
+        { productId: product.id, offerId: offer.id, content: 'AVAILABLE-1', status: 'available' },
+        { productId: product.id, offerId: offer.id, content: 'AVAILABLE-2', status: 'available' },
+        { productId: product.id, offerId: offer.id, content: 'VOID-1', status: 'void' },
       ],
     })
 

@@ -8,6 +8,8 @@ export type InventoryLogAction = 'import' | 'void' | 'sale' | 'capacity_adjust'
 
 export interface InventoryLogInput {
   productId: number
+  // 变更发生在哪个 SKU（P4a 审计维度；可空兼容迁移前调用方）。
+  offerId?: number | null
   merchantId?: number | null
   actorUserId: number
   action: InventoryLogAction
@@ -47,6 +49,7 @@ export async function logInventoryChange(
   return tx.inventoryLog.create({
     data: {
       productId: input.productId,
+      offerId: input.offerId ?? null,
       merchantId: input.merchantId ?? null,
       actorUserId: input.actorUserId,
       action: input.action,

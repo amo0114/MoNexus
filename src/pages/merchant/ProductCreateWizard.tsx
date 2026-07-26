@@ -6,15 +6,38 @@ import {
 } from 'lucide-react'
 import DOMPurify from 'dompurify'
 import { useAppStore } from '../../stores/appStore'
-import { createMerchantProduct } from '../../api/merchant'
+import { createMerchantProduct, createMerchantOffer, getMerchantOffers, updateMerchantOffer } from '../../api/merchant'
 import { uploadImage, UploadError } from '../../api/uploads'
 import SafeImage from '../../components/ui/SafeImage'
 import PurchaseFormFieldsEditor, {
   serializePurchaseFormFields, validatePurchaseFormFields,
 } from '../../components/merchant/PurchaseFormFieldsEditor'
-import type { PurchaseFormField } from '../../types/merchant'
+import type { PurchaseFormField, DeliveryMode, StockMode } from '../../types/merchant'
 
 const MAX_IMAGES = 6
+
+/** 主规格默认名（与服务端 lib/offers.ts 的 DEFAULT_OFFER_NAME 一致）。 */
+const DEFAULT_OFFER_NAME = '默认规格'
+
+/**
+ * 附加规格（P4a）：主规格由「定价」+「交付方式」两步的商品级字段构成，
+ * 这里是在其之上追加的其他 SKU。发布时先建商品（含主规格），再逐条建附加规格。
+ */
+interface ExtraOffer {
+  name: string
+  price: string
+  originalPrice: string
+  deliveryMode: DeliveryMode
+  stockMode: StockMode
+  stock: string
+  fixedContent: string
+  fixedContentType: 'text' | 'url'
+}
+
+const EMPTY_EXTRA_OFFER: ExtraOffer = {
+  name: '', price: '', originalPrice: '', deliveryMode: 'instant_inventory',
+  stockMode: 'limited', stock: '', fixedContent: '', fixedContentType: 'text',
+}
 
 /**
  * 商品模板：只负责引导与默认值，不锁死任何选项（spec：模板机制取代
@@ -116,6 +139,9 @@ export default function ProductCreateWizard() {
     stockMode: 'unlimited', stock: '', fixedContent: '', fixedContentType: 'text',
     purchaseForm: [],
   })
+  // P4a：主规格名 + 附加规格列表。单 SKU 商品保持两者为默认值/空，行为不变。
+  const [primaryOfferName, setPrimaryOfferName] = useState(DEFAULT_OFFER_NAME)
+  const [extraOffers, setExtraOffers] = useState<ExtraOffer[]>([])
 
   const safePreviewHtml = useMemo(
     () => DOMPurify.sanitize(form.richDescription || form.description || '', { USE_PROFILES: { html: true } }),
@@ -148,6 +174,33 @@ export default function ProductCreateWizard() {
         const original = Number(form.originalPrice)
         if (!Number.isInteger(original) || original <= 0) return '原价必须是大于 0 的整数'
         if (original < price) return '原价不能低于售价'
+      }
+      if (!primaryOfferName.trim()) return '主规格名称不能为空'
+      // 附加规格自带完整的价格与交付配置，在本步一次校验完。
+      const names = new Set<string>([primaryOfferName.trim()])
+      for (const [i, offer] of extraOffers.entries()) {
+        const label = `第 ${i + 1} 个附加规格`
+        if (!offer.name.trim()) return `${label}：名称不能为空`
+        if (names.has(offer.name.trim())) return `${label}：名称与其他规格重复`
+        names.add(offer.name.trim())
+        const offerPrice = Number(offer.price)
+        if (!Number.isInteger(offerPrice) || offerPrice <= 0) return `${label}：价格必须是大于 0 的整数`
+        if (offer.originalPrice.trim() !== '') {
+          const original = Number(offer.originalPrice)
+          if (!Number.isInteger(original) || original < offerPrice) return `${label}：原价不能低于售价`
+        }
+        if (offer.deliveryMode === 'instant_fixed') {
+          if (!offer.fixedContent.trim()) return `${label}：固定内容交付必须填写交付内容`
+          if (offer.fixedContentType === 'url' && !/^https?:\/\//i.test(offer.fixedContent.trim())) {
+            return `${label}：链接必须以 http(s):// 开头`
+          }
+        }
+        if (offer.deliveryMode !== 'instant_inventory' && offer.stockMode === 'limited') {
+          const stock = Number(offer.stock)
+          if (offer.stock.trim() === '' || !Number.isInteger(stock) || stock < 0) {
+            return `${label}：限量名额必须填写有效数量`
+          }
+        }
       }
     }
     if (current === 3) {
@@ -246,7 +299,39 @@ export default function ProductCreateWizard() {
 
     setSubmitting(true)
     try {
-      await createMerchantProduct(payload)
+      const product = await createMerchantProduct(payload)
+      // 商品创建时服务端已生成主规格（默认 Offer）；下面只做改名与追加规格。
+      // 商品本体已落库，附加步骤失败不回滚——提示用户去「规格管理」补齐，
+      // 避免把已成功的创建也一并丢掉。
+      try {
+        const trimmedPrimaryName = primaryOfferName.trim()
+        if (trimmedPrimaryName && trimmedPrimaryName !== DEFAULT_OFFER_NAME) {
+          const offers = await getMerchantOffers(product.id)
+          if (offers[0]) await updateMerchantOffer(product.id, offers[0].id, { name: trimmedPrimaryName })
+        }
+        for (const offer of extraOffers) {
+          await createMerchantOffer(product.id, {
+            name: offer.name.trim(),
+            price: Number(offer.price),
+            originalPrice: offer.originalPrice.trim() === '' ? null : Number(offer.originalPrice),
+            deliveryMode: offer.deliveryMode,
+            stockMode: offer.deliveryMode === 'instant_inventory' ? 'limited' : offer.stockMode,
+            ...(offer.deliveryMode !== 'instant_inventory' && offer.stockMode === 'limited'
+              ? { stock: Number(offer.stock) }
+              : {}),
+            ...(offer.deliveryMode === 'instant_fixed'
+              ? { fixedContent: offer.fixedContent.trim(), fixedContentType: offer.fixedContentType }
+              : {}),
+          })
+        }
+      } catch (offerErr: any) {
+        showToast(
+          offerErr.response?.data?.error?.message || '商品已创建，但部分规格未保存，请在「规格管理」中补齐',
+          'error',
+        )
+        navigate('/merchant')
+        return
+      }
       showToast('商品创建成功')
       navigate('/merchant')
     } catch (err: any) {
@@ -401,22 +486,139 @@ export default function ProductCreateWizard() {
         )}
 
         {step === 2 && (
-          <div className="space-y-5 max-w-sm">
-            <div>
-              <FieldLabel required>销售价格（积分）</FieldLabel>
-              <input type="number" step="1" min="1" className="input font-mono text-lg" placeholder="0"
-                value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} data-testid="wizard-price" />
+          <div className="space-y-6">
+            <div className="space-y-5 max-w-sm">
+              <div>
+                <FieldLabel required>主规格名称</FieldLabel>
+                <input type="text" maxLength={50} className="input" placeholder={DEFAULT_OFFER_NAME}
+                  value={primaryOfferName} onChange={(e) => setPrimaryOfferName(e.target.value)} data-testid="wizard-primary-offer-name" />
+                <p className="mt-1.5 text-xs text-[var(--color-text-muted)]">
+                  单规格商品保持「{DEFAULT_OFFER_NAME}」即可，买家端不会显示规格选择器。
+                </p>
+              </div>
+              <div>
+                <FieldLabel required>销售价格（积分）</FieldLabel>
+                <input type="number" step="1" min="1" className="input font-mono text-lg" placeholder="0"
+                  value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} data-testid="wizard-price" />
+              </div>
+              <div>
+                <FieldLabel>划线原价 - 可选</FieldLabel>
+                <input type="number" step="1" min="1" className="input font-mono" placeholder="0"
+                  value={form.originalPrice} onChange={(e) => setForm({ ...form, originalPrice: e.target.value })} />
+              </div>
+              <label className="flex items-center gap-2 text-sm cursor-pointer pt-2">
+                <input type="checkbox" checked={form.isHot} onChange={(e) => setForm({ ...form, isHot: e.target.checked })}
+                  className="w-4 h-4" />
+                <Sparkles className="w-4 h-4 text-[var(--color-cta)]" /> 设为热门推荐
+              </label>
             </div>
-            <div>
-              <FieldLabel>划线原价 - 可选</FieldLabel>
-              <input type="number" step="1" min="1" className="input font-mono" placeholder="0"
-                value={form.originalPrice} onChange={(e) => setForm({ ...form, originalPrice: e.target.value })} />
+
+            {/* 附加规格（P4a）：可选，用于月卡/季卡、容量、地区等多 SKU 商品 */}
+            <div className="pt-2 border-t border-[var(--color-border)]" data-testid="wizard-extra-offers">
+              <div className="flex items-center justify-between mb-1">
+                <FieldLabel>附加规格 - 可选</FieldLabel>
+                <span className="text-xs text-[var(--color-text-muted)]">共 {extraOffers.length + 1} 个规格</span>
+              </div>
+              <p className="text-xs text-[var(--color-text-muted)] mb-4">
+                需要「月卡／季卡」「128G／256G」这类多规格时在此追加；每个规格有独立的价格、库存与交付方式。
+              </p>
+
+              <div className="space-y-4">
+                {extraOffers.map((offer, index) => {
+                  const update = (patch: Partial<ExtraOffer>) =>
+                    setExtraOffers(prev => prev.map((o, i) => (i === index ? { ...o, ...patch } : o)))
+                  const isInventory = offer.deliveryMode === 'instant_inventory'
+                  const isFixed = offer.deliveryMode === 'instant_fixed'
+                  return (
+                    <div key={index} className="rounded-xl border border-[var(--color-border)] bg-[var(--color-background)] p-4"
+                      data-testid={`wizard-extra-offer-${index}`}>
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="text-sm font-bold text-[var(--color-text)]">附加规格 {index + 1}</span>
+                        <button type="button" aria-label="删除该规格"
+                          onClick={() => setExtraOffers(prev => prev.filter((_, i) => i !== index))}
+                          className="p-1.5 text-[var(--color-text-muted)] hover:text-[var(--color-danger)] cursor-pointer"
+                          data-testid={`wizard-extra-offer-remove-${index}`}>
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div className="sm:col-span-2">
+                          <FieldLabel required>规格名称</FieldLabel>
+                          <input type="text" maxLength={50} className="input" placeholder="如：季卡 / 256G / 美区"
+                            value={offer.name} onChange={(e) => update({ name: e.target.value })} />
+                        </div>
+                        <div>
+                          <FieldLabel required>售价（积分）</FieldLabel>
+                          <input type="number" step="1" min="1" className="input font-mono" placeholder="0"
+                            value={offer.price} onChange={(e) => update({ price: e.target.value })} />
+                        </div>
+                        <div>
+                          <FieldLabel>划线原价 - 可选</FieldLabel>
+                          <input type="number" step="1" min="1" className="input font-mono" placeholder="0"
+                            value={offer.originalPrice} onChange={(e) => update({ originalPrice: e.target.value })} />
+                        </div>
+                        <div>
+                          <FieldLabel required>交付方式</FieldLabel>
+                          <select className="input appearance-none cursor-pointer" value={offer.deliveryMode}
+                            onChange={(e) => {
+                              const deliveryMode = e.target.value as DeliveryMode
+                              update({ deliveryMode, stockMode: deliveryMode === 'instant_inventory' ? 'limited' : offer.stockMode })
+                            }}>
+                            <option value="instant_inventory">交付库存（卡密池）</option>
+                            <option value="instant_fixed">固定内容（同一份）</option>
+                            <option value="manual_service">人工服务</option>
+                          </select>
+                        </div>
+                        {!isInventory && (
+                          <div>
+                            <FieldLabel required>名额模式</FieldLabel>
+                            <select className="input appearance-none cursor-pointer" value={offer.stockMode}
+                              onChange={(e) => update({ stockMode: e.target.value as StockMode })}>
+                              <option value="unlimited">不限量</option>
+                              <option value="limited">限量</option>
+                            </select>
+                          </div>
+                        )}
+                        {!isInventory && offer.stockMode === 'limited' && (
+                          <div>
+                            <FieldLabel required>初始名额</FieldLabel>
+                            <input type="number" step="1" min="0" className="input font-mono" placeholder="0"
+                              value={offer.stock} onChange={(e) => update({ stock: e.target.value })} />
+                          </div>
+                        )}
+                        {isFixed && (
+                          <>
+                            <div>
+                              <FieldLabel required>内容类型</FieldLabel>
+                              <select className="input appearance-none cursor-pointer" value={offer.fixedContentType}
+                                onChange={(e) => update({ fixedContentType: e.target.value as 'text' | 'url' })}>
+                                <option value="text">文本</option>
+                                <option value="url">链接</option>
+                              </select>
+                            </div>
+                            <div className="sm:col-span-2">
+                              <FieldLabel required>固定交付内容</FieldLabel>
+                              <textarea className="input min-h-[72px] resize-y" maxLength={5000}
+                                value={offer.fixedContent} onChange={(e) => update({ fixedContent: e.target.value })} />
+                            </div>
+                          </>
+                        )}
+                        {isInventory && (
+                          <p className="sm:col-span-2 text-xs text-[var(--color-text-muted)]">
+                            该规格的卡密在商品创建后通过「管理交付库存」按规格导入。
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+
+              <button type="button" onClick={() => setExtraOffers(prev => [...prev, { ...EMPTY_EXTRA_OFFER }])}
+                className="btn-secondary w-full py-2 mt-4 text-sm" data-testid="wizard-extra-offer-add">
+                + 添加规格
+              </button>
             </div>
-            <label className="flex items-center gap-2 text-sm cursor-pointer pt-2">
-              <input type="checkbox" checked={form.isHot} onChange={(e) => setForm({ ...form, isHot: e.target.checked })}
-                className="w-4 h-4" />
-              <Sparkles className="w-4 h-4 text-[var(--color-cta)]" /> 设为热门推荐
-            </label>
           </div>
         )}
 

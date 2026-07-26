@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest'
 import { prisma } from '../lib/prisma.js'
-import { api, createTestUser, createTestMerchant, loginAs, authHeader } from './helpers.js'
+import { api, createTestUser, createTestMerchant, createProductWithOffer, loginAs, authHeader } from './helpers.js'
 
 async function createFixedProduct(merchantId: number, overrides: Record<string, unknown> = {}) {
-  return prisma.product.create({
+  return createProductWithOffer({
     data: {
       name: '固定内容商品',
       type: '邀请码',

@@ -28,6 +28,7 @@ import MerchantProductFormModal from '../components/merchant/MerchantProductForm
 import MerchantInventoryImportModal from '../components/merchant/MerchantInventoryImportModal'
 import MerchantInventoryLogModal from '../components/merchant/MerchantInventoryLogModal'
 import MerchantCapacityAdjustModal from '../components/merchant/MerchantCapacityAdjustModal'
+import MerchantOfferManagerModal from '../components/merchant/MerchantOfferManagerModal'
 import MerchantDeliverDialog from '../components/merchant/MerchantDeliverDialog'
 import MerchantDisputeDialog from '../components/merchant/MerchantDisputeDialog'
 import RegistryPill from '../components/ui/RegistryPill'
@@ -170,13 +171,16 @@ export default function MerchantDashboardPage() {
   const [editingProduct, setEditingProduct] = useState<MerchantProduct | null>(null)
 
   const [isInventoryModalOpen, setIsInventoryModalOpen] = useState(false)
-  const [importingProduct, setImportingProduct] = useState<{ id: number, name: string } | null>(null)
+  const [importingProduct, setImportingProduct] = useState<{ id: number, name: string, offers?: MerchantProduct['offers'] } | null>(null)
 
   const [isInventoryLogOpen, setIsInventoryLogOpen] = useState(false)
   const [logProduct, setLogProduct] = useState<{ id: number, name: string, deliveryMode?: MerchantProduct['deliveryMode'] } | null>(null)
 
   const [isCapacityAdjustOpen, setIsCapacityAdjustOpen] = useState(false)
   const [capacityProduct, setCapacityProduct] = useState<MerchantProduct | null>(null)
+
+  const [isOfferManagerOpen, setIsOfferManagerOpen] = useState(false)
+  const [offerProduct, setOfferProduct] = useState<MerchantProduct | null>(null)
 
   // --- Order Dialogs State ---
   const [deliveringOrder, setDeliveringOrder] = useState<MerchantOrder | null>(null)
@@ -196,9 +200,9 @@ export default function MerchantDashboardPage() {
     loadData()
   }
 
-  async function handleInventorySubmit(items: string[]) {
+  async function handleInventorySubmit(items: string[], offerId?: number) {
     if (!importingProduct) return
-    await importMerchantInventory(importingProduct.id, { items })
+    await importMerchantInventory(importingProduct.id, { items, ...(offerId != null ? { offerId } : {}) })
     showToast(`成功导入 ${items.length} 个交付单元`)
     loadData()
   }
@@ -415,8 +419,17 @@ export default function MerchantDashboardPage() {
                       </tr>
                     ) : (
                       products.map((p) => {
-                        const inventoryManaged = isInstantInventoryProduct(p)
-                        const capacityManaged = !inventoryManaged && p.stockMode === 'limited'
+                        // P4a：按「该商品是否存在对应类型的规格」判定入口——每个规格
+                        // 有独立 deliveryMode，混合规格商品可能同时需要交付库存导入与
+                        // 名额调整。只看商品级投影（= 默认规格的模式）会让另一半规格
+                        // 永远无法管理。offers 缺失时回落到商品级投影（旧行为）。
+                        const rowOffers = p.offers ?? []
+                        const inventoryManaged = rowOffers.length > 0
+                          ? rowOffers.some(o => o.deliveryMode === 'instant_inventory')
+                          : isInstantInventoryProduct(p)
+                        const capacityManaged = rowOffers.length > 0
+                          ? rowOffers.some(o => o.deliveryMode !== 'instant_inventory' && o.stockMode === 'limited')
+                          : (!isInstantInventoryProduct(p) && p.stockMode === 'limited')
                         const stockCount = inventoryManaged
                           ? (p.availableStock ?? p._count?.inventory ?? p.stock)
                           : p.stock
@@ -454,7 +467,7 @@ export default function MerchantDashboardPage() {
                             <td className="py-3 px-2 text-right whitespace-nowrap" data-label="操作">
                               {inventoryManaged && (
                                 <>
-                                  <LinkAction onClick={() => { setImportingProduct({ id: p.id, name: p.name }); setIsInventoryModalOpen(true); }}>
+                                  <LinkAction onClick={() => { setImportingProduct({ id: p.id, name: p.name, offers: p.offers }); setIsInventoryModalOpen(true); }}>
                                     管理交付库存
                                   </LinkAction>
                                   <LinkAction onClick={() => { setLogProduct({ id: p.id, name: p.name, deliveryMode: p.deliveryMode }); setIsInventoryLogOpen(true); }}>
@@ -474,6 +487,9 @@ export default function MerchantDashboardPage() {
                               )}
                               <LinkAction onClick={() => { setEditingProduct(p); setIsProductFormOpen(true); }}>
                                 编辑
+                              </LinkAction>
+                              <LinkAction onClick={() => { setOfferProduct(p); setIsOfferManagerOpen(true); }}>
+                                规格管理
                               </LinkAction>
                               <LinkAction onClick={() => handleToggleProductStatus(p)}>
                                 {p.status === 'active' ? '下架' : '上架'}
@@ -571,6 +587,9 @@ export default function MerchantDashboardPage() {
                           </td>
                           <td className="py-3 px-2 text-sm font-medium text-[var(--color-text)]" data-label="商品">
                             <div>{o.product?.name}</div>
+                            {o.offerNameSnapshot && o.offerNameSnapshot !== '默认规格' && (
+                              <div className="mt-0.5 text-xs font-bold text-[var(--color-text-muted)]">规格：{o.offerNameSnapshot}</div>
+                            )}
                             {o.product?.deliveryMode && <div className="mt-1"><RegistryPill value={o.product.deliveryMode} category="deliveryModes" /></div>}
                           </td>
                           <td className="py-3 px-2 text-sm text-[var(--color-text-muted)]" data-label="用户">{o.user?.email}</td>
@@ -744,6 +763,8 @@ export default function MerchantDashboardPage() {
         onSubmit={handleInventorySubmit}
         productName={importingProduct?.name || ''}
         productId={importingProduct?.id}
+        // 含已下架规格：商家常在重新上架前先备货，过滤掉会让入口可点但无处可导。
+        offers={(importingProduct?.offers ?? []).filter(o => o.deliveryMode === 'instant_inventory')}
       />
 
       <MerchantInventoryLogModal
@@ -758,6 +779,13 @@ export default function MerchantDashboardPage() {
         onClose={() => setIsCapacityAdjustOpen(false)}
         product={capacityProduct}
         onAdjusted={loadData}
+      />
+
+      <MerchantOfferManagerModal
+        isOpen={isOfferManagerOpen}
+        onClose={() => setIsOfferManagerOpen(false)}
+        product={offerProduct}
+        onChanged={loadData}
       />
 
       <MerchantDeliverDialog

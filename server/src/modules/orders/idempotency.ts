@@ -32,6 +32,9 @@ function inFlight(): HttpError {
 
 export type IdempotencyFingerprint = {
   productId: number
+  // 购买的规格（P4a）。null/未传（单 SKU 默认路径）不写入 canonical，
+  // 保证升级前签发的 digest 在重放窗口内完全不变（零兼容成本）。
+  offerId?: number
   expectedPrice?: number
   purchaseFormVersion?: string
   formAnswers?: Record<string, string>
@@ -51,6 +54,8 @@ export function computeRequestDigest(fingerprint: IdempotencyFingerprint): strin
     .filter(([, value]) => value !== '')
   const canonical = JSON.stringify({
     productId: fingerprint.productId,
+    // 仅显式选择规格时进入指纹：同 key 换 SKU 与换商品同理必须 409。
+    ...(fingerprint.offerId != null ? { offerId: fingerprint.offerId } : {}),
     expectedPrice: fingerprint.expectedPrice ?? null,
     purchaseFormVersion: fingerprint.purchaseFormVersion ?? null,
     answers: canonicalAnswers,

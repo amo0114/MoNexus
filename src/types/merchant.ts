@@ -5,6 +5,43 @@ export type ProductStatus = 'active' | 'inactive'
 export type DeliveryMode = 'instant_inventory' | 'instant_fixed' | 'manual_service'
 export type StockMode = 'limited' | 'unlimited'
 
+/**
+ * SKU/套餐(P4a)。Offer 是价格与履约配置的真相源;单 SKU 商品只有一条
+ * "默认规格"。商家端返回完整字段(含 fixedContent),公开接口经
+ * serializePublicOffer 剥离 fixedContent。
+ */
+export interface Offer {
+  id: number
+  productId?: number
+  name: string
+  price: number
+  originalPrice: number | null
+  status: ProductStatus
+  deliveryMode: DeliveryMode
+  stockMode: StockMode
+  stock: number
+  /** 仅商家端可见;公开商品详情剥离。 */
+  fixedContent?: string | null
+  fixedContentType?: string
+  sales?: number
+  sortOrder?: number
+  createdAt?: string
+}
+
+/** 创建/更新规格的请求体(部分字段)。 */
+export interface OfferWriteRequest {
+  name?: string
+  price?: number
+  originalPrice?: number | null
+  status?: ProductStatus
+  deliveryMode?: DeliveryMode
+  stockMode?: StockMode
+  stock?: number
+  fixedContent?: string | null
+  fixedContentType?: 'text' | 'url'
+  sortOrder?: number
+}
+
 export interface ListEnvelope<T> {
   items: T[]
   total: number
@@ -72,6 +109,8 @@ export interface MerchantProduct {
   availableStock?: number
   lowStock?: boolean
   purchaseForm?: PurchaseFormField[]
+  /** SKU 列表(P4a);商家端含完整字段。单 SKU 商品为一条默认规格。 */
+  offers?: Offer[]
 }
 
 /** 购买前信息收集字段定义；与后端 server/src/lib/purchaseForm.ts 契约一致。 */
@@ -95,6 +134,9 @@ export interface MerchantOrder {
   settlementAmount: number
   status: string
   createdAt: string
+  /** 购买的规格快照(P4a)。 */
+  offerId?: number | null
+  offerNameSnapshot?: string | null
   user?: { id: number; email: string }
   product?: { id: number; name: string; icon: string; type: string; price?: number; deliveryMode?: string }
   delivery?: { status: string; publicNote?: string | null; deliveredAt?: string | null } | null
@@ -180,6 +222,8 @@ export interface UpdateMerchantProductRequest extends Omit<Partial<CreateMerchan
 export interface ImportInventoryRequest {
   text?: string
   items?: string[]
+  /** 目标规格(P4a);缺省落到默认 Offer(单 SKU 无感)。 */
+  offerId?: number
 }
 
 export interface RejectMerchantRequest {

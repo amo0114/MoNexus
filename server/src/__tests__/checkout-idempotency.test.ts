@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { randomUUID } from 'node:crypto'
-import { api, createTestUser, createTestProduct, loginAs, authHeader } from './helpers.js'
+import { api, createTestUser, createTestProduct, getDefaultOfferId, configureDefaultOffer, loginAs, authHeader } from './helpers.js'
 import { prisma } from '../lib/prisma.js'
 
 describe('POST /api/orders idempotency', () => {
@@ -99,7 +99,9 @@ describe('POST /api/orders idempotency', () => {
 
     expect(await prisma.idempotencyRecord.count()).toBe(0)
 
-    await prisma.inventoryItem.create({ data: { productId: 1, content: 'restock-1' } })
+    await prisma.inventoryItem.create({
+      data: { productId: 1, offerId: await getDefaultOfferId(1), content: 'restock-1' },
+    })
     await api
       .post('/api/orders')
       .set(authHeader(accessToken))
@@ -243,7 +245,7 @@ describe('POST /api/orders expectedPrice confirmation', () => {
     await createTestProduct('调价商品', 300, 2, ['p-1', 'p-2'])
     const { accessToken } = await loginAs('price-changed@test.local', 'pass123')
 
-    await prisma.product.update({ where: { id: 1 }, data: { price: 400 } })
+    await configureDefaultOffer(1, { price: 400 })
 
     const res = await api
       .post('/api/orders')
@@ -305,10 +307,7 @@ describe('GET /api/checkout/preview', () => {
   it('returns hold preview for manual_service products', async () => {
     await createTestUser('preview-hold@test.local', 'pass123', 'user', 500)
     await createTestProduct('人工服务', 200, 3, [])
-    await prisma.product.update({
-      where: { id: 1 },
-      data: { deliveryMode: 'manual_service' },
-    })
+    await configureDefaultOffer(1, { deliveryMode: 'manual_service' })
     const { accessToken } = await loginAs('preview-hold@test.local', 'pass123')
 
     const preview = await api

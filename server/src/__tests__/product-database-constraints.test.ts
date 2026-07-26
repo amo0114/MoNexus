@@ -27,9 +27,12 @@ describe('Product and InventoryItem database constraints', () => {
     const product = await prisma.product.create({
       data: { name: '库存状态约束商品', type: '充值卡密', price: 100 },
     })
+    const offer = await prisma.offer.create({
+      data: { productId: product.id, name: '默认规格', price: 100 },
+    })
 
     await expect(prisma.inventoryItem.create({
-      data: { productId: product.id, content: 'INVALID-STATUS-CARD', status: 'reserved' },
+      data: { productId: product.id, offerId: offer.id, content: 'INVALID-STATUS-CARD', status: 'reserved' },
     })).rejects.toThrow()
   })
 
