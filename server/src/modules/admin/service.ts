@@ -587,7 +587,8 @@ export async function listAllOrders(query: ListOrdersQuery = {}) {
         user: { select: { id: true, email: true } },
         merchant: { select: { id: true, name: true } },
         product: { select: { id: true, name: true, icon: true, type: true, imageUrl: true, price: true } },
-        delivery: { select: { status: true } },
+        // P6：仲裁需要订阅到期视角——只选 expiresAt（序列化补 expired），内容仍不出列表。
+        delivery: { select: { status: true, expiresAt: true } },
       },
       orderBy: { createdAt: 'desc' },
       skip: (page - 1) * pageSize,
@@ -663,7 +664,8 @@ export async function getOrderDetail(orderId: number) {
       product: {
         select: { id: true, name: true, icon: true, type: true, imageUrl: true, price: true },
       },
-      delivery: { select: { content: true, status: true } },
+      // P6：详情补订阅到期时刻，供仲裁判断交付是否仍在有效期内。
+      delivery: { select: { content: true, status: true, expiresAt: true } },
     },
   })
   if (!order) throw notFound('订单不存在')

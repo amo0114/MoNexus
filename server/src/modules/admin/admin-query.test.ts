@@ -267,6 +267,48 @@ describe('GET /api/admin/orders filter & pagination', () => {
       if (order.delivery) expect(order.delivery.content).toBeUndefined()
     }
   })
+
+  it('should expose booking / subscription expiry / renewal lineage for arbitration', async () => {
+    const { accessToken, instantOrderId, manualOrderId } = await seedOrders()
+
+    // P6 字段没有管理端写入口，直接落库模拟：预约单 + 已过期订阅 + 续费链。
+    const bookingDate = new Date('2026-08-01T00:00:00.000Z')
+    const expiresAt = new Date('2026-01-01T00:00:00.000Z')
+    await prisma.order.update({
+      where: { id: instantOrderId },
+      data: { bookingDate, renewalOfOrderId: manualOrderId },
+    })
+    await prisma.deliveryRecord.updateMany({
+      where: { orderId: instantOrderId },
+      data: { expiresAt },
+    })
+
+    const list = await api
+      .get('/api/admin/orders')
+      .set(authHeader(accessToken))
+      .expect(200)
+
+    const row = list.body.items.find((o: any) => o.id === instantOrderId)
+    expect(row).toBeDefined()
+    expect(new Date(row.bookingDate).toISOString()).toBe(bookingDate.toISOString())
+    expect(row.renewalOfOrderId).toBe(manualOrderId)
+    expect(new Date(row.delivery.expiresAt).toISOString()).toBe(expiresAt.toISOString())
+    // 到期裁决在服务端：过期布尔随 expiresAt 一并透出
+    expect(row.delivery.expired).toBe(true)
+    // 列表行仍不得携带交付内容
+    expect(row.delivery.content).toBeUndefined()
+    expect(row.delivery.structuredContent).toBeUndefined()
+
+    const detail = await api
+      .get(`/api/admin/orders/${instantOrderId}`)
+      .set(authHeader(accessToken))
+      .expect(200)
+
+    expect(new Date(detail.body.bookingDate).toISOString()).toBe(bookingDate.toISOString())
+    expect(detail.body.renewalOfOrderId).toBe(manualOrderId)
+    expect(new Date(detail.body.delivery.expiresAt).toISOString()).toBe(expiresAt.toISOString())
+    expect(detail.body.delivery.expired).toBe(true)
+  })
 })
 
 describe('GET /api/admin/config metadata', () => {

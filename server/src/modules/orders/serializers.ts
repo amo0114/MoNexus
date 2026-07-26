@@ -194,9 +194,10 @@ export function serializeMerchantOrder<T extends OrderWithDelivery>(order: T) {
 }
 
 export function serializeAdminOrderList<T extends OrderWithDelivery>(order: T) {
-  return omitPurchaseForm(omitDeliveryContent(withProductDisplaySnapshot(normalizeFulfillmentFields(order))))
+  // P6：仲裁上下文透出 expiresAt/expired（到期裁决在服务端）；内容照旧剥离。
+  return omitPurchaseForm(omitDeliveryContent(withDeliveryExpiry(withProductDisplaySnapshot(normalizeFulfillmentFields(order)))))
 }
 
 export function serializeAdminOrderDetail<T extends OrderWithDelivery>(order: T) {
-  return withProductDisplaySnapshot(normalizeFulfillmentFields(order))
+  return withDeliveryExpiry(withProductDisplaySnapshot(normalizeFulfillmentFields(order)))
 }

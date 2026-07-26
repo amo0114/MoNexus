@@ -34,10 +34,15 @@ export interface AdminOrderItem {
   status: string
   price: number
   createdAt: string
+  // P6c：预约日期（本地零点时刻的 ISO 串）
+  bookingDate?: string | null
+  // P6a：续费单指向的原订单号
+  renewalOfOrderId?: number | null
   user?: { id: number; email: string } | null
   merchant?: { id: number; name: string } | null
   product?: { name: string } | null
-  delivery?: { status: string } | null
+  // P6a：expired 以服务端裁决为准，前端不自行比对时钟
+  delivery?: { status: string; expiresAt?: string | null; expired?: boolean } | null
 }
 
 export interface AdminOrderListQuery {
