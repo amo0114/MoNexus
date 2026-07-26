@@ -1,6 +1,9 @@
+import { createHmac } from 'node:crypto'
 import { Prisma, Offer } from '@prisma/client'
 import { prisma } from './prisma.js'
-import { badRequest, notFound } from './httpError.js'
+import { config } from '../config/index.js'
+import { badRequest, notFound, HttpError } from './httpError.js'
+import { parseStoredDeliveryFields } from './deliveryFields.js'
 
 type Client = typeof prisma | Prisma.TransactionClient
 
@@ -117,7 +120,74 @@ export async function syncProductProjection(tx: Client, productId: number) {
   })
 }
 
-/** 公开序列化：绝不包含 fixedContent（付费内容）。 */
+/**
+ * Offer 结算版本：对买家确认时应当稳定的全部规格配置做摘要——价格、状态、
+ * 履约方式、库存模式、固定内容、交付字段模板。预览返回该值，下单携带
+ * expectedCheckoutVersion 比对：商家在买家打开弹窗后改动任一项（含改模板、
+ * 换交付方式、改固定内容）→ 409 CHECKOUT_CHANGED 要求重新确认，与
+ * expectedPrice / purchaseFormVersion 同一套语义。
+ * 不含 stock/sales（每笔成交都在变，与"买家确认的内容"无关）。
+ *
+ * 必须用服务端密钥 HMAC 而非裸 SHA-256：canonical 含 fixedContent（付费内容），
+ * 版本值会在付款前返回给买家——低熵卡密/常见链接可被离线枚举候选值比对裸摘要
+ * 猜出。密钥沿用幂等指纹同一 jwtSecret，买家不可自行计算。
+ */
+export function computeOfferCheckoutVersion(offer: Offer): string {
+  const canonical = {
+    price: offer.price,
+    status: offer.status,
+    deliveryMode: offer.deliveryMode,
+    stockMode: offer.stockMode,
+    fixedContent: offer.fixedContent ?? null,
+    fixedContentType: offer.fixedContentType,
+    deliveryFields: parseStoredDeliveryFields(offer.deliveryFields),
+  }
+  return createHmac('sha256', config.jwtSecret).update(JSON.stringify(canonical)).digest('hex').slice(0, 16)
+}
+
+function checkoutChanged(): HttpError {
+  return new HttpError(409, 'CHECKOUT_CHANGED', '商品信息已变化，请重新确认')
+}
+
+/**
+ * 带结算版本守卫的购买路径 Offer 解析。版本判定先于"下架/不可购买"判定：
+ * 预览后规格被下架同样属于"买家确认的内容已变化"，必须 409 让前端重新报价
+ * 刷新状态，而不是把买家留在旧结算弹窗里收 400。
+ * 未携带版本（旧客户端）时与 resolvePurchaseOffer 行为完全一致。
+ */
+export async function resolvePurchaseOfferChecked(
+  tx: Client,
+  productId: number,
+  offerId: number | undefined,
+  expectedCheckoutVersion: string | undefined
+): Promise<Offer> {
+  if (expectedCheckoutVersion == null) {
+    return resolvePurchaseOffer(tx, productId, offerId)
+  }
+
+  if (offerId != null) {
+    // 允许 inactive：先比版本（status 在 canonical 内，下架必然版本不一致）。
+    const offer = await tx.offer.findFirst({ where: { id: offerId, productId } })
+    if (!offer) throw notFound('规格不存在')
+    if (expectedCheckoutVersion !== computeOfferCheckoutVersion(offer)) throw checkoutChanged()
+    // 版本匹配 ⇒ status 与预览时一致（预览只对 active 成功）；防御性保留。
+    if (offer.status !== 'active') throw badRequest('该规格已下架，请重新选择')
+    return offer
+  }
+
+  // 未指定规格：预览只可能在"恰好一个 active 规格"时成功。现在不是恰好一个
+  //（被下架 / 新上架了第二个），都属于预览后变化 → 409 重新报价。
+  const actives = await tx.offer.findMany({
+    where: { productId, status: 'active' },
+    orderBy: { id: 'asc' },
+    take: 2,
+  })
+  if (actives.length !== 1) throw checkoutChanged()
+  if (expectedCheckoutVersion !== computeOfferCheckoutVersion(actives[0])) throw checkoutChanged()
+  return actives[0]
+}
+
+/** 公开序列化：绝不包含 fixedContent（付费内容）。交付字段模板是公开元数据。 */
 export function serializePublicOffer(offer: Offer) {
   return {
     id: offer.id,
@@ -130,5 +200,7 @@ export function serializePublicOffer(offer: Offer) {
     stock: offer.stock,
     sales: offer.sales,
     sortOrder: offer.sortOrder,
+    // P4b：买家购前可见将获得哪些字段；敏感的是字段"值"，不在此处。
+    deliveryFields: parseStoredDeliveryFields(offer.deliveryFields),
   }
 }

@@ -26,6 +26,22 @@ export interface Offer {
   sales?: number
   sortOrder?: number
   createdAt?: string
+  /** P4b：交付字段模板;空数组/缺省 = 纯文本交付。 */
+  deliveryFields?: DeliveryField[] | null
+}
+
+/** P4b：交付字段模板项。模板公开(买家购前可见字段名),字段"值"是敏感数据。 */
+export interface DeliveryField {
+  key: string
+  label: string
+  sensitive: boolean
+  placeholder?: string
+}
+
+/** P4b：结构化交付内容快照(交付时的模板 + 值)。 */
+export interface StructuredDeliveryContent {
+  fields: DeliveryField[]
+  values: Record<string, string>
 }
 
 /** 创建/更新规格的请求体(部分字段)。 */
@@ -40,6 +56,8 @@ export interface OfferWriteRequest {
   fixedContent?: string | null
   fixedContentType?: 'text' | 'url'
   sortOrder?: number
+  /** P4b：交付字段模板;null 清空回纯文本交付。 */
+  deliveryFields?: DeliveryField[] | null
 }
 
 export interface ListEnvelope<T> {
@@ -137,6 +155,8 @@ export interface MerchantOrder {
   /** 购买的规格快照(P4a)。 */
   offerId?: number | null
   offerNameSnapshot?: string | null
+  /** P4b：下单时冻结的交付字段模板快照;发货按它渲染与校验(商家改模板不影响本单)。 */
+  deliveryFieldsSnapshot?: DeliveryField[] | null
   user?: { id: number; email: string }
   product?: { id: number; name: string; icon: string; type: string; price?: number; deliveryMode?: string }
   delivery?: { status: string; publicNote?: string | null; deliveredAt?: string | null } | null

@@ -23,6 +23,10 @@ interface PreviewStats {
   existingDuplicateRows: number
   canImport: boolean
   details?: any[]
+  /** P4b：模板行级错误（1 起行号）。 */
+  rowErrors?: Array<{ row: number; message: string }>
+  /** P4b：结构化解析预览（模板 + 前 N 行值）。 */
+  structured?: { fields: Array<{ key: string; label: string; sensitive: boolean }>; rows: Array<Record<string, string>> }
 }
 
 export default function MerchantInventoryImportModal({ isOpen, onClose, onSubmit, productName, productId, offers }: Props) {
@@ -35,6 +39,8 @@ export default function MerchantInventoryImportModal({ isOpen, onClose, onSubmit
   // offerId（默认 Offer 未必是即时库存那条）。offers 为空才回落到服务端默认。
   const multiOffer = (offers?.length ?? 0) > 1
   const [selectedOfferId, setSelectedOfferId] = useState<number | undefined>(offers?.[0]?.id)
+  // P4b：选中规格的交付字段模板；非空时导入按 | 分隔映射字段。
+  const template = offers?.find(o => o.id === selectedOfferId)?.deliveryFields ?? []
 
   const lineCount = useMemo(() => {
     if (!inventoryText) return 0
@@ -67,7 +73,11 @@ export default function MerchantInventoryImportModal({ isOpen, onClose, onSubmit
     }
     setPreviewing(true)
     try {
-      const data = await previewMerchantInventory(productId, { text })
+      // P4b：模板挂在规格上，预览带上目标规格才能按模板解析。
+      const data = await previewMerchantInventory(productId, {
+        text,
+        ...(selectedOfferId != null ? { offerId: selectedOfferId } : {}),
+      })
       setStats(data)
     } catch (e: any) {
       const errData = e.response?.data?.error
@@ -158,7 +168,7 @@ export default function MerchantInventoryImportModal({ isOpen, onClose, onSubmit
                 <select
                   className="input appearance-none cursor-pointer"
                   value={selectedOfferId ?? ''}
-                  onChange={(e) => setSelectedOfferId(Number(e.target.value))}
+                  onChange={(e) => { setSelectedOfferId(Number(e.target.value)); setStats(null) }}
                   data-testid="import-offer-select"
                 >
                   {offers!.map(o => (
@@ -183,6 +193,17 @@ export default function MerchantInventoryImportModal({ isOpen, onClose, onSubmit
                 </ul>
               </div>
             </div>
+
+            {/* P4b：模板化导入格式提示 */}
+            {template.length > 0 && (
+              <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg p-3 text-xs" data-testid="import-template-hint">
+                <div className="font-bold text-[var(--color-text)] mb-1.5">该规格已配置交付字段模板，每行按以下顺序用 <code className="font-mono">|</code> 分隔：</div>
+                <code className="font-mono text-[var(--color-primary)]">
+                  {template.map(f => f.label).join(' | ')}
+                </code>
+                <p className="mt-1.5 text-[var(--color-text-muted)]">内容里的竖线写作 <code className="font-mono">\|</code>；每个字段都不能为空。</p>
+              </div>
+            )}
 
             <div className="relative">
               <div className="flex items-center justify-between mb-2">
@@ -242,6 +263,45 @@ export default function MerchantInventoryImportModal({ isOpen, onClose, onSubmit
                     </div>
                   )}
                 </div>
+
+                {/* P4b：模板行级错误 */}
+                {(stats.rowErrors?.length ?? 0) > 0 && (
+                  <div className="mt-3 pt-3 border-t border-[var(--color-border)]" data-testid="import-row-errors">
+                    <div className="text-xs font-bold text-[var(--color-danger)] mb-1.5">以下行不符合模板，修正后重新预览：</div>
+                    <ul className="text-xs text-[var(--color-danger)] space-y-0.5 max-h-32 overflow-y-auto">
+                      {stats.rowErrors!.map(err => (
+                        <li key={err.row}>第 {err.row} 行：{err.message}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* P4b：结构化解析预览表 */}
+                {stats.structured && stats.structured.rows.length > 0 && (
+                  <div className="mt-3 pt-3 border-t border-[var(--color-border)] overflow-x-auto" data-testid="import-structured-preview">
+                    <div className="text-xs font-bold text-[var(--color-text)] mb-1.5">解析预览（前 {stats.structured.rows.length} 条）</div>
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="text-left text-[var(--color-text-muted)]">
+                          {stats.structured.fields.map(f => (
+                            <th key={f.key} className="py-1 pr-3 font-medium whitespace-nowrap">{f.label}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {stats.structured.rows.map((row, i) => (
+                          <tr key={i} className="border-t border-[var(--color-border)]">
+                            {stats.structured!.fields.map(f => (
+                              <td key={f.key} className="py-1 pr-3 font-mono max-w-[10rem] truncate" title={f.sensitive ? undefined : row[f.key]}>
+                                {f.sensitive ? '••••••' : row[f.key]}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
             )}
           </form>

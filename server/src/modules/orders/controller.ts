@@ -16,6 +16,7 @@ export async function create(req: Request, res: Response, next: NextFunction) {
     const result = await orderService.createOrder(req.user!.userId, req.body.productId, {
       offerId: req.body.offerId,
       expectedPrice: req.body.expectedPrice,
+      expectedCheckoutVersion: req.body.expectedCheckoutVersion,
       formAnswers: req.body.formAnswers,
       expectedPurchaseFormVersion: req.body.expectedPurchaseFormVersion,
       verificationPassword: req.body.verificationPassword,

@@ -35,6 +35,8 @@ export interface UserOrderDetail extends Omit<UserOrderListItem, 'delivery'> {
     status: string
     content: string
     contentType?: string
+    /** P4b：结构化交付快照(fields + values);null/缺省 = 纯文本交付。 */
+    structuredContent?: import('./merchant').StructuredDeliveryContent | null
     publicNote?: string | null
     deliveredAt?: string | null
   }

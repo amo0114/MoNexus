@@ -8,7 +8,7 @@ import {
   updateMerchantOffer,
   deleteMerchantOffer,
 } from '../../api/merchant'
-import type { MerchantProduct, Offer, OfferWriteRequest, DeliveryMode, StockMode } from '../../types/merchant'
+import type { MerchantProduct, Offer, OfferWriteRequest, DeliveryMode, StockMode, DeliveryField } from '../../types/merchant'
 import { useAppStore } from '../../stores/appStore'
 
 interface Props {
@@ -35,6 +35,8 @@ type EditorForm = {
   stock: string
   fixedContent: string
   fixedContentType: 'text' | 'url'
+  /** P4b：交付字段模板;空数组 = 纯文本交付。 */
+  deliveryFields: DeliveryField[]
 }
 
 const EMPTY_FORM: EditorForm = {
@@ -47,6 +49,7 @@ const EMPTY_FORM: EditorForm = {
   stock: '',
   fixedContent: '',
   fixedContentType: 'text',
+  deliveryFields: [],
 }
 
 function offerToForm(offer: Offer): EditorForm {
@@ -60,8 +63,13 @@ function offerToForm(offer: Offer): EditorForm {
     stock: String(offer.stock ?? 0),
     fixedContent: offer.fixedContent ?? '',
     fixedContentType: (offer.fixedContentType as 'text' | 'url') ?? 'text',
+    // 深拷贝：编辑不能改到列表里的对象
+    deliveryFields: (offer.deliveryFields ?? []).map(f => ({ ...f })),
   }
 }
+
+const DELIVERY_FIELDS_MAX = 8
+const FIELD_KEY_PATTERN = /^[a-zA-Z][a-zA-Z0-9_]{0,31}$/
 
 export default function MerchantOfferManagerModal({ isOpen, onClose, product, onChanged }: Props) {
   const showToast = useAppStore((s) => s.showToast)
@@ -121,6 +129,18 @@ export default function MerchantOfferManagerModal({ isOpen, onClose, product, on
       const stock = Number(form.stock)
       if (!Number.isInteger(stock) || stock < 0) return '限量库存必须填写非负整数'
     }
+    // P4b：交付字段模板校验（与服务端 deliveryFieldsSchema 同规则）
+    if (form.deliveryFields.length > 0) {
+      if (isFixed) return '固定内容交付不支持交付字段模板'
+      const keys = new Set<string>()
+      for (const [i, field] of form.deliveryFields.entries()) {
+        const label = `第 ${i + 1} 个交付字段`
+        if (!FIELD_KEY_PATTERN.test(field.key)) return `${label}：key 必须是字母开头的标识符（≤32 字符）`
+        if (keys.has(field.key)) return `${label}：key 与其他字段重复`
+        keys.add(field.key)
+        if (!field.label.trim()) return `${label}：名称不能为空`
+      }
+    }
     return null
   }
 
@@ -141,6 +161,15 @@ export default function MerchantOfferManagerModal({ isOpen, onClose, product, on
       stockMode: isInstantInventory ? 'limited' : form.stockMode,
       fixedContent: isFixed ? form.fixedContent.trim() : null,
       fixedContentType: form.fixedContentType,
+      // 空模板显式传 null 清空（回纯文本交付）
+      deliveryFields: form.deliveryFields.length > 0
+        ? form.deliveryFields.map(f => ({
+            key: f.key,
+            label: f.label.trim(),
+            sensitive: f.sensitive,
+            ...(f.placeholder?.trim() ? { placeholder: f.placeholder.trim() } : {}),
+          }))
+        : null,
     }
     if (!isInstantInventory && form.stockMode === 'limited' && form.stock.trim() !== '') {
       payload.stock = Number(form.stock)
@@ -329,6 +358,84 @@ export default function MerchantOfferManagerModal({ isOpen, onClose, product, on
                 <p className="sm:col-span-2 text-xs text-[var(--color-text-muted)] bg-[var(--color-background)] border border-[var(--color-border)] rounded px-3 py-2">
                   交付库存规格的库存通过「管理交付库存」按规格导入卡密；这里不直接设置库存数量。
                 </p>
+              )}
+
+              {/* P4b：交付字段模板（instant_fixed 不支持——固定内容天然单值） */}
+              {!isFixed && (
+                <div className="sm:col-span-2 pt-2 border-t border-[var(--color-border)]" data-testid="offer-delivery-fields">
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-sm font-bold text-[var(--color-text)]">交付字段模板 - 可选</label>
+                    <span className="text-xs text-[var(--color-text-muted)]">{form.deliveryFields.length}/{DELIVERY_FIELDS_MAX}</span>
+                  </div>
+                  <p className="text-xs text-[var(--color-text-muted)] mb-3">
+                    「账号 / 密码 / 地区」这类多字段交付在此定义；买家购前可见字段名，购后按字段查看复制。
+                    留空 = 纯文本交付。改模板仅影响之后的导入与交付，已有库存/订单不受影响。
+                  </p>
+                  <div className="space-y-2">
+                    {form.deliveryFields.map((field, index) => (
+                      <div key={index} className="flex flex-wrap items-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-2"
+                        data-testid={`delivery-field-row-${index}`}>
+                        <input
+                          className="input flex-1 min-w-[7rem] py-1.5 text-sm font-mono"
+                          placeholder="key（如 account）"
+                          maxLength={32}
+                          value={field.key}
+                          onChange={(e) => setForm(f => ({
+                            ...f,
+                            deliveryFields: f.deliveryFields.map((x, i) => i === index ? { ...x, key: e.target.value } : x),
+                          }))}
+                          disabled={submitting}
+                          data-testid={`delivery-field-key-${index}`}
+                        />
+                        <input
+                          className="input flex-1 min-w-[7rem] py-1.5 text-sm"
+                          placeholder="显示名称（如 账号）"
+                          maxLength={30}
+                          value={field.label}
+                          onChange={(e) => setForm(f => ({
+                            ...f,
+                            deliveryFields: f.deliveryFields.map((x, i) => i === index ? { ...x, label: e.target.value } : x),
+                          }))}
+                          disabled={submitting}
+                          data-testid={`delivery-field-label-${index}`}
+                        />
+                        <label className="flex items-center gap-1.5 text-xs text-[var(--color-text-muted)] cursor-pointer whitespace-nowrap">
+                          <input
+                            type="checkbox"
+                            checked={field.sensitive}
+                            onChange={(e) => setForm(f => ({
+                              ...f,
+                              deliveryFields: f.deliveryFields.map((x, i) => i === index ? { ...x, sensitive: e.target.checked } : x),
+                            }))}
+                            disabled={submitting}
+                            data-testid={`delivery-field-sensitive-${index}`}
+                          />
+                          敏感（默认遮蔽）
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => setForm(f => ({ ...f, deliveryFields: f.deliveryFields.filter((_, i) => i !== index) }))}
+                          disabled={submitting}
+                          className="icon-btn p-1.5 text-[var(--color-text-muted)] hover:text-[var(--color-danger)] cursor-pointer"
+                          aria-label="删除字段"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                  {form.deliveryFields.length < DELIVERY_FIELDS_MAX && (
+                    <button
+                      type="button"
+                      onClick={() => setForm(f => ({ ...f, deliveryFields: [...f.deliveryFields, { key: '', label: '', sensitive: false }] }))}
+                      disabled={submitting}
+                      className="btn-secondary w-full py-1.5 mt-2 text-xs"
+                      data-testid="delivery-field-add"
+                    >
+                      + 添加交付字段
+                    </button>
+                  )}
+                </div>
               )}
               {editing !== 'new' && (
                 <div className="sm:col-span-2">

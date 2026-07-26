@@ -1,6 +1,7 @@
 import type { Order, Prisma } from '@prisma/client'
 import { badRequest, notFound } from '../../lib/httpError.js'
 import { prisma } from '../../lib/prisma.js'
+import { structuredContentToJson, type StructuredDeliveryContent } from '../../lib/deliveryFields.js'
 
 export const FULFILLMENT_MODES = ['instant_inventory', 'instant_fixed', 'manual_service'] as const
 export type FulfillmentMode = (typeof FULFILLMENT_MODES)[number]
@@ -124,6 +125,8 @@ export async function transitionOrderStatus(
     publicNote?: string | null
     internalNote?: string | null
     deliveryContent?: string | null
+    // P4b：结构化交付快照 { fields, values }；null/缺省 = 纯文本交付。
+    deliveryStructuredContent?: StructuredDeliveryContent | null
   },
   client?: OrderStatusTransitionClient
 ): Promise<Order> {
@@ -162,12 +165,19 @@ export async function transitionOrderStatus(
         userId: order.userId,
         productId: order.productId,
         content: input.deliveryContent ?? null,
+        structuredContent: input.deliveryStructuredContent
+          ? structuredContentToJson(input.deliveryStructuredContent)
+          : undefined,
         status: 'delivered',
         publicNote: input.publicNote ?? null,
         deliveredAt: new Date(),
       },
       update: {
         content: input.deliveryContent ?? undefined,
+        // 重新交付时携带新快照则覆盖；未携带保持原值（争议恢复等路径）。
+        structuredContent: input.deliveryStructuredContent
+          ? structuredContentToJson(input.deliveryStructuredContent)
+          : undefined,
         status: 'delivered',
         publicNote: input.publicNote ?? undefined,
         deliveredAt: new Date(),

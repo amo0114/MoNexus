@@ -115,7 +115,15 @@ export async function startFulfillment(id: number, payload?: { publicNote?: stri
   await api.post(`/merchant/orders/${id}/fulfillment/start`, payload)
 }
 
-export async function deliverOrder(id: number, payload: { deliveryContent: string; publicNote?: string }): Promise<void> {
+export async function deliverOrder(
+  id: number,
+  payload: {
+    deliveryContent?: string
+    /** P4b：按规格交付字段模板提交的字段值(与 deliveryContent 二选一)。 */
+    structuredValues?: Record<string, string>
+    publicNote?: string
+  },
+): Promise<void> {
   await api.post(`/merchant/orders/${id}/fulfillment/deliver`, payload)
 }
 

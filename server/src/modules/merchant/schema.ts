@@ -16,6 +16,7 @@ import {
 } from '../products/schema.js'
 import { inventoryImportPayloadSchema } from '../../lib/inventoryImport.js'
 import { purchaseFormSchema } from '../../lib/purchaseForm.js'
+import { deliveryFieldsSchema } from '../../lib/deliveryFields.js'
 
 const productStatusSchema = z.enum(['active', 'inactive'])
 
@@ -69,7 +70,11 @@ export const updateMerchantProductSchema = merchantProductFieldsSchema.partial()
   imageUrl: productImageItemSchema.nullable().optional(),
 }).superRefine(validateProductCommercialFields)
 
-export const previewMerchantInventorySchema = inventoryImportPayloadSchema
+// P4b：预览也接受 offerId——模板挂在规格上，预览必须知道解析目标。
+export const previewMerchantInventorySchema = z.intersection(
+  inventoryImportPayloadSchema,
+  z.object({ offerId: z.number().int().positive().optional() })
+)
 
 // P4a：库存/名额操作可指定规格；缺省落到默认 Offer（单 SKU 商家无感）。
 const offerScopeSchema = z.object({ offerId: z.number().int().positive().optional() })
@@ -106,6 +111,8 @@ const merchantOfferFieldsSchema = z.object({
   fixedContent: z.string().trim().min(1).max(5000).nullable().optional(),
   fixedContentType: productFixedContentTypeSchema.optional(),
   sortOrder: z.number().int().min(0).max(10_000).optional(),
+  // P4b：交付字段模板；null 清空回纯文本交付。
+  deliveryFields: deliveryFieldsSchema.nullable().optional(),
 }).strict()
 
 export const createMerchantOfferSchema = merchantOfferFieldsSchema
@@ -151,6 +158,9 @@ export const startFulfillmentSchema = z.object({
 
 export const deliverFulfillmentSchema = z.object({
   deliveryContent: z.string().trim().max(5000).optional(),
+  // P4b：按规格交付字段模板提交的字段值（与 deliveryContent 二选一；
+  // 逐字段的必填/限长由服务层按模板校验）。
+  structuredValues: z.record(z.string().max(2000)).optional(),
   publicNote: z.string().trim().max(1000).optional(),
   internalNote: z.string().trim().max(2000).optional(),
 }).strict()

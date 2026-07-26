@@ -244,6 +244,10 @@ model Offer {
   stock            Int      @default(0) // >= 0
   fixedContent     String? // instant_fixed 专用；禁止公开序列化
   fixedContentType String   @default("text") // text | url
+  // P4b：交付字段模板 [{ key, label, sensitive, placeholder? }]。null/空 = 纯文本
+  // 交付（存量形态，行为不变）。模板本身公开（买家购前可见将获得哪些字段）；
+  // 字段"值"的访问边界同 DeliveryRecord.content。instant_fixed 不支持模板。
+  deliveryFields   Json?
   sales            Int      @default(0)
   sortOrder        Int      @default(0)
   createdAt        DateTime @default(now())
@@ -309,6 +313,10 @@ model InventoryItem {
   // 唯一约束保持商品级（同一商品下卡密不允许重复，与 SKU 无关）。
   offerId      Int
   content      String
+  // P4b：结构化交付内容 { fields, values }（自包含模板快照，商家改模板不影响
+  // 已导入条目）。content 保持权威——由结构化值生成规范化文本，唯一约束、
+  // 领取 SQL、审计路径零改动；structuredContent 仅是展示层增强。
+  structuredContent Json?
   status       String    @default("available") // available | sold | void; PostgreSQL CHECK constrained
   orderId      Int?      @unique
   soldToUserId Int?
@@ -331,6 +339,10 @@ model Order {
   // 时对 null 回退到商品级快照，惯例同 productNameSnapshot）。
   offerId            Int?
   offerNameSnapshot  String?
+  // P4b：下单时的交付字段模板快照。人工服务发货按它强制校验——商家改模板
+  // 不改变已购未发货订单的履约契约（快照惯例同 deliveryModeSnapshot）。
+  // null = 纯文本交付契约。
+  deliveryFieldsSnapshot Json?
   price              Int
   status             String    @default("pending") // pending | processing | delivered | closed | disputed | refunded
   merchantId         Int?
@@ -373,6 +385,9 @@ model DeliveryRecord {
   productId   Int
   content     String?
   contentType String    @default("text") // text | url | file
+  // P4b：交付时的结构化内容快照 { fields, values }；值与 content 同一访问
+  // 边界（仅订单详情，列表剥离）。null = 纯文本交付。
+  structuredContent Json?
   status      String    @default("delivered")
   publicNote  String?
   deliveredAt DateTime?
