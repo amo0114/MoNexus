@@ -7,7 +7,9 @@
 # Triggers:
 #   - push to master              → :master, :sha-<short>, :latest
 #   - tag v1.2.3                  → :1.2.3, :1.2, :latest
-#   - pull_request                → build only, push disabled (smoke)
+#   - pull_request -> master      → build only, push disabled (smoke) — and
+#     only when docker build inputs changed; regular feat/fix PRs into
+#     develop never build images (CI already validates both app builds)
 #   - workflow_dispatch (ref=...) → same tags as master push
 #
 # Permissions: uses the built-in GITHUB_TOKEN. No PAT needed. The
@@ -24,6 +26,15 @@ on:
     tags:
       - 'v*'
   pull_request:
+    branches:
+      - master
+    paths:
+      - 'Dockerfile'
+      - 'server/Dockerfile'
+      - 'nginx.conf'
+      - '.dockerignore'
+      - 'server/.dockerignore'
+      - '.github/workflows/docker-publish.yml'
   workflow_dispatch:
     inputs:
       ref:
@@ -78,7 +89,9 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=sha,format=short,prefix=sha-
-            type=raw,value=latest,enable={{is_default_branch}}
+            # master 是生产分支但不再是默认分支（develop 是），latest 必须
+            # 显式钉在 master/tag 上，不能用 {{is_default_branch}}。
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v') }}
           labels: |
             org.opencontainers.image.title=MoNexus Server
             org.opencontainers.image.description=Backend API for MoNexus
@@ -141,7 +154,9 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=sha,format=short,prefix=sha-
-            type=raw,value=latest,enable={{is_default_branch}}
+            # master 是生产分支但不再是默认分支（develop 是），latest 必须
+            # 显式钉在 master/tag 上，不能用 {{is_default_branch}}。
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v') }}
           labels: |
             org.opencontainers.image.title=MoNexus Web
             org.opencontainers.image.description=nginx SPA frontend for MoNexus
