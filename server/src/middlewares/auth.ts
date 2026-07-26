@@ -8,6 +8,8 @@ import { getCached, setCached } from '../lib/userStatusCache.js'
 export interface AuthPayload {
   userId: number
   role: string
+  /** Stable refresh-token family ID for newly issued access tokens. */
+  sid?: string
 }
 
 declare global {

@@ -29,6 +29,10 @@ export const updateMeSchema = z.object({
   nickname: z.string().trim().min(1, '昵称不能为空').max(20, '昵称最多 20 字'),
 }).strict()
 
+export const sessionIdParamSchema = z.object({
+  sessionId: z.string().uuid('会话标识无效'),
+})
+
 export const verifyEmailQuerySchema = z.object({
   token: z.string().min(1, '令牌不能为空'),
 })

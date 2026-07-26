@@ -45,6 +45,9 @@ export type ErrorCode =
   // 语义同 RATE_LIMITED，细分 code 便于前端提示"进度发太频繁"）。
   | 'PROGRESS_RATE_LIMITED'
   | 'IDEMPOTENCY_KEY_EXPIRED'
+  // A session-management caller tried to delete its own active family. The
+  // existing logout endpoint is the only current-session revocation path.
+  | 'CURRENT_SESSION_REQUIRES_LOGOUT'
 
 export interface ErrorDetail {
   field: string

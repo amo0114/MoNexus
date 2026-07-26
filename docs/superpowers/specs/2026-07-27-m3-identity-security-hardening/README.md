@@ -15,6 +15,8 @@
 | 规格 ID | SPEC-M3-ISH-001 |
 | 建议分支 | feat/m3-identity-security-hardening（从 develop 创建，PR → develop） |
 | 日期 | 2026-07-27 |
-| 状态 | Specify / Plan / Tasks：已冻结；Implement：I-00、I-01、I-02 本地完成，I-03（稳定会话族）实施中；P6a rebase 是 PR 前闸门 |
+| 状态 | Specify / Plan / Tasks：已冻结；Implement：I-00、I-01、I-02、I-03 本地完成；I-03 的 P1 `User`/session 锁序已复审验证；当前 P6c rebase 是 PR 前闸门 |
 
 本包只收口“管理员身份安全 + 全角色设备会话管理 + 密码哈希升级”这一条主线。它刻意不混入 OAuth、Passkey、通用风控引擎、隐私导出/注销、业务订阅或通知队列。
+
+I-03 采用 D-07：显式设备吊销与 refresh rotation replay 以**同一用户事务锁 + 锁后重读 + family 终结标记**区分；同一事务若还写 `User`，固定为 **advisory lock → User 写锁**。这同时确保“退出其他设备”不会反向退出当前设备、rotation 不会在吊销返回后留下 successor，且管理员封禁/角色变化不会与改密形成死锁。

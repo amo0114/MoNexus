@@ -3,14 +3,14 @@
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | PLAN-M3-ISH-001 |
-| 版本 | 1.10.0 |
+| 版本 | 1.15.0 |
 | 日期 | 2026-07-27 |
 | 状态 | Frozen for Implementation |
 | 规格 | [spec.md](./spec.md)（SPEC-M3-ISH-001） |
 | 任务分解 | [task.md](./task.md) |
 | 验收清单 | [checklist.md](./checklist.md) |
 
-> 实施前必须先确认 spec 的 D-01 至 D-06。所有工作从最新 develop 建 feature 分支并通过 PR 合回 develop。后端行为先写测试；不使用 git add -A；不以关闭 MFA 或测试后门换取绿灯。
+> 实施前必须先确认 spec 的 D-01 至 D-07。所有工作从最新 develop 建 feature 分支并通过 PR 合回 develop。后端行为先写测试；不使用 git add -A；不以关闭 MFA 或测试后门换取绿灯。
 
 ---
 
@@ -92,7 +92,7 @@ Profile security card ── GET /auth/sessions ── revoke one / other / all
 | refresh rotation | 新 token 行继承 sessionId、sessionStartedAt；lastUsedAt 更新 |
 | admin API | 每次经过 requireAdminMfa 查询/验证 User MFA 版本与该 session 活跃状态 |
 | 非 admin 业务 API | 不新增每请求 session DB 查询；吊销在 refresh 被拒后生效，最长沿用 15 分钟 access token TTL |
-| refresh replay | 保留“全用户 refresh token 全部吊销”的现有更强策略，并写 security event |
+| refresh replay | rotation 消费 token 与无原因 legacy revoked token 保留“全用户 refresh token 全部吊销”并写 security event；logout/单设备/其他设备等明确 revoke reason 只拒绝该终结会话，不能误伤当前活动族 |
 
 ---
 
@@ -144,9 +144,28 @@ Profile security card ── GET /auth/sessions ── revoke one / other / all
    - admin 未绑定：创建 enrollment challenge，返回 challenge 结果；
    - admin 已绑定：创建 login challenge，返回 challenge 结果。
 4. MFA confirm/verify 在同一事务中 claim challenge、校验 code、写安全事件、创建 session；成功后才由 controller 设置 cookie。
-5. refreshAccessToken 继承 sessionId；读取 user 后若是 admin，额外确认 mfaEnabled，旧/异常 session 不得续签。
+5. refreshAccessToken 继承 sessionId；读取 user 后若是 admin，额外确认 mfaEnabled，旧/异常 session 不得续签。所有创建、rotation 和显式 session mutation 通过同一用户的 PostgreSQL transaction-scoped advisory lock 串行；raw token 的首读只解析 userId，取得锁后必须重新读取 token/family，再作 CAS、replay 或终结判断。rotation 消费 token 与无原因 legacy revoked token 的 replay 沿用全用户强制失效策略；`logout`、`single_session`、`revoke_others`、`revoke_all`、MFA reset/migration 等服务端明确终结 reason 只返回 session 已失效，不能让被吊销设备反向踢出当前活动族。判断旧 predecessor 时查询整个 family 的显式终结 marker，不能只看该 predecessor 仍保留的 `refresh_rotation`；logout 即使带来已经 rotation 的旧 cookie，仍吊销同一 family 的活动 successor。
 6. revoke 一个会话使用 sessionId 更新该族所有未撤销 RefreshToken；DELETE session 只接受非当前族，当前族始终使用既有 logout 并清 cookie。
 7. bcrypt 工具统一为常量 PASSWORD_BCRYPT_ROUNDS=12；register、change password、reset password 使用它。只有成功完成正常会话创建的非 admin 登录，才检测 getRounds 后做 compare-and-set 式按需升级；admin MFA pre-auth 不保存密码且不重哈希。
+
+#### 3.3.1 Refresh mutation 的事务锁与调用顺序（D-07）
+
+采用 repository 已验证的 `pg_advisory_xact_lock(classid, userId)` 模式，新增独立 classid 的窄 helper；不新增 Prisma model 或 migration。锁必须在 caller 的现有 transaction connection 上取得，不能在 callback 中回退到全局 `prisma`。
+
+| 调用者 | 固定顺序 |
+| --- | --- |
+| `loginUser` / register 的初始 session | 只读定位 user → transaction → user lock → 重读 status（login 同时重验 password）→ `RefreshToken.create` → commit |
+| `refreshAccessToken` | tokenHash 首读只取 userId → transaction → user lock → token/User/family 重读 → expiry/status/CAS/replay 判定 → successor create 或 revoke → commit |
+| cookie logout | tokenHash 首读定位 user/family（包含已 rotation 行）→ transaction → user lock → family 重读 → 终结所有 active token → commit |
+| DELETE session / revoke-others | transaction → user lock → current/target families 重读 → owner/current 判断及 revoke/event → commit |
+| password reset/change | transaction → user lock → claim/reset artifact、`User` password 写入 → `revokeAllUserRefreshTokens`（同 tx 重入锁）→ audit → commit |
+| admin ban / approve merchant / suspend merchant | transaction → 只读校验 → user lock → 任意 `User` status/role 写入 → `revokeAllUserRefreshTokens`（同 tx 重入锁）→ admin/security audit → commit |
+| `revokeAllUserRefreshTokens`（独立调用或 replay） | 使用传入 tx 或自建 tx → user lock → 查询 active families → `revoke_all`/明确 reason 的 update + `session_revoked` audit → commit |
+| 后续 MFA session issuance | 必须复用 initial-session helper，在同一 user lock 内创建；不能直接写 `RefreshToken` |
+
+`refresh_replay` 仍是安全事件后的强制全用户失效，不属于 D-07 的 explicit terminal marker。`expired` 及未知的非 null/non-rotation reason 只拒绝本 token；只有 null/`refresh_rotation` 会继续 family-marker/replay 分支。
+
+**锁序约束：**同一事务需要同时修改 `User` 和 refresh session 时，advisory lock 一律先于 `User` 行写锁。不得将 `tx.user.update` 放在会取得该 advisory lock 的 revoke helper 之前，否则与 password reset/change 的“advisory → User”路径会形成数据库死锁。回归使用真实 PostgreSQL 事务、deferred Promise gate 与 `pg_locks` 的实际排队状态；不使用 mock、sleep 或人为放宽超时。
 
 ### 3.4 中间件与安全事件
 
@@ -178,6 +197,8 @@ Pino redact 追加 MFA request fields、challengeId、provisioningUri、manualKe
 | revokeSession(userId, sessionId, reason) | owner-scoped 更新；非属主按 404 处理，current session 返回 CURRENT_SESSION_REQUIRES_LOGOUT |
 | revokeOtherSessions(userId, currentSessionId) | 保留当前族、吊销其余族 |
 | revokeAllSessions(userId, reason) | 吊销所有族；当前请求返回后前端清理状态 |
+
+设备会话 API 必须有 JWT `sid` 才能判定 current；发布前签发、缺少 `sid` 的普通 access token 保持既有业务 API 的最长 15 分钟兼容，但访问 `/auth/sessions*` 时返回 401 并要求 refresh/login。
 
 前端只扩展：
 
@@ -211,7 +232,7 @@ runbook 至少包含：
 
 | 活动 | 出口 |
 | --- | --- |
-| 阅读 spec / task，记录 D-01..D-06 已确认 | 无开放范围歧义 |
+| 阅读 spec / task，记录 D-01..D-07 已确认 | 无开放范围歧义 |
 | 在最新 develop 建 feat/m3-identity-security-hardening | worktree 干净 |
 | 跑现有 auth、refresh、active-user 测试与双端 build | 基线绿 |
 | 确认生产 secrets 管理可提供 MFA_ENCRYPTION_KEY | 不在代码中回退到默认密钥 |
@@ -231,9 +252,9 @@ runbook 至少包含：
 
 | 交付 | 对应 |
 | --- | --- |
-| session family 创建/refresh rotation 继承、会话列表、单个/其他吊销服务与 API（P0） | REQ-F-020–023 |
+| session family 创建/refresh rotation 继承、用户级 transaction lock、会话列表、单个/其他吊销服务与 API（P0） | REQ-F-020–023 |
 | owner 404、current DELETE 拒绝、脱敏 serializer、安全事件 | REQ-F-021, F-030 |
-| refresh replay 回归与 JWT `sid` contract | REQ-F-020, DR-09 |
+| refresh replay / stale predecessor / rotation-revoke ordering 回归与 JWT `sid` contract | REQ-F-020, DR-09 |
 
 出口：AC-05 的后端测试全绿；session service 成为 MFA session creation / guard 的唯一族语义来源。
 
@@ -303,7 +324,7 @@ Phase A ──► Phase B ──► Phase C ──► Phase D ──► Phase E
 | 层级 | 覆盖 |
 | --- | --- |
 | Unit | AES-GCM round trip / 错 key、TOTP 时间窗口、恢复码 hash/一次性 claim、device/IP 脱敏、bcrypt rehash 判定 |
-| Integration | admin login 202 → enroll → verify → admin guard；challenge 超时/超限；recovery code；session list/revoke；refresh rotation/replay |
+| Integration | admin login 202 → enroll → verify → admin guard；challenge 超时/超限；recovery code；session list/revoke；refresh rotation/replay；rotation 后 stale predecessor 的 explicit revoke 与 family-marker 判定；真实 transaction lock 的无 sleep 排队/connection-affinity 证明 |
 | Security regression | no cookie before MFA、旧 token 拒绝、owner 404、raw secret/log redaction、admin revoked token 立即拒绝 |
 | E2E | admin 首次绑定与后续登录；两个 browser context 的 session revoke；非 admin 登录回归 |
 | Build / deploy | frontend build、server build、Prisma migration status/drift、production env guard |
@@ -391,3 +412,8 @@ Phase A ──► Phase B ──► Phase C ──► Phase D ──► Phase E
 | 1.8.0 | 2026-07-27 | 同步 I-01 全量隔离后端回归证据；不改变后续实施顺序 |
 | 1.9.0 | 2026-07-27 | 同步 I-01 本地完成 / G-PR-01 PR 闸门分离；不改变后续实施顺序 |
 | 1.10.0 | 2026-07-27 | 同步 I-02 安全原语、受控审计与日志脱敏的本地验证证据；不改变后续实施顺序 |
+| 1.11.0 | 2026-07-27 | 冻结显式 session revoke 与 rotation replay 的区分，保证 AC-05 当前设备不被已吊销其他设备的 cookie 重放误伤 |
+| 1.12.0 | 2026-07-27 | 将 D-07 落为可执行并发方案：同用户 advisory xact lock、锁后重读、family marker 优先与 stale-cookie logout；新增并发排序验收 |
+| 1.13.0 | 2026-07-27 | 补齐 D-07 锁协议的精确调用图、登录锁后凭据复核、closed revoke reason/audit 与“无需 migration”边界 |
+| 1.14.0 | 2026-07-27 | P1 并发复审将管理员封禁/商家角色变化纳入固定锁序：先 user advisory lock，再写 `User`，并以真实 PostgreSQL 事务验证无锁顺序反转 |
+| 1.15.0 | 2026-07-27 | I-03 本地交付并验证该锁序：三条管理员路径与 password-style 写入真实并发通过；全量后端 65 files / 520 tests、server/root build 均通过 |

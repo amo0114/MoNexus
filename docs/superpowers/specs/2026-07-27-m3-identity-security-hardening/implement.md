@@ -3,9 +3,9 @@
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | IMPL-M3-ISH-001 |
-| 版本 | 1.10.0 |
+| 版本 | 1.15.0 |
 | 日期 | 2026-07-27 |
-| 状态 | I-00、I-01、I-02 Done (local)；I-03 In Progress（P6a rebase 为 PR 前闸门） |
+| 状态 | I-00、I-01、I-02、I-03 Done (local)；当前 P6c rebase 为 PR 前闸门 |
 | 输入 | [spec.md](./spec.md) · [plan.md](./plan.md) · [task.md](./task.md) · [checklist.md](./checklist.md) |
 | 方法依据 | [JavaGuide Spec Coding：Specify → Plan → Tasks → Implement](https://javaguide.cn/ai-coding/practices/spec-coding.html) |
 
@@ -15,7 +15,7 @@
 
 Implement 不是“文档写完就直接编码”。每个任务开始前，执行者必须确认：
 
-- [ ] Specify 已冻结：spec.md 的 D-01 至 D-06 无未决产品/安全决策。
+- [ ] Specify 已冻结：spec.md 的 D-01 至 D-07 无未决产品/安全决策。
 - [ ] Plan 已冻结：plan.md 的架构、API、数据模型、发布/回滚路径可执行。
 - [ ] Tasks 已冻结：只执行 task.md 中当前任务卡，验收条件可测试。
 - [ ] 当前工作在独立 worktree 和 feature branch；不是 P6a 的工作树或分支。
@@ -32,7 +32,7 @@ Implement 不是“文档写完就直接编码”。每个任务开始前，执�
 
 | 角色 | worktree | branch | 规则 |
 | --- | --- | --- | --- |
-| P6a 并行开发 | /root/projects/MoNexus-new | feat/p6a-subscription | 本任务绝不在此目录执行 git switch、git add、编辑、format、test 或 migration |
+| P6 并行开发（当前 P6c） | /root/projects/MoNexus-new | feat/p6c-booking | 本任务绝不在此目录执行 git switch、git add、编辑、format、test 或 migration |
 | M3-ISH 安全任务 | /root/projects/monexus-m3-identity-security-hardening | feat/m3-identity-security-hardening | 本任务唯一可写目录 |
 
 当前安全分支从 origin/develop 的 bf25d01 创建，未跟踪远端，避免自动推送或与 P6a 混合。
@@ -63,6 +63,8 @@ Implement 不是“文档写完就直接编码”。每个任务开始前，执�
 
 schema.prisma 是唯一共同文件。安全任务不得重排、格式化或编辑 P6a 相关字段；最终合并前由安全分支 rebase 最新 develop 并人工复核这一文件。ProfilePage 也已成为 P6a 的当前工作文件：M3-ISH 在 P6a 合入前只能新增独立安全组件和 API，不得改挂载点。
 
+**P1 安全例外（I-03）：**当前 P6c 的 `server/src/modules/admin/service.ts` 与 M3 的三处安全边界调用不存在行级重叠；但该文件仍是潜在集成面。仅在 M3 独立 worktree 修改 `banUser`、`approveMerchant`、`suspendMerchant` 的 lock-before-`User`-write 调用及所需 import，不重排 P6 代码、不运行 formatter。P6c 合入 develop 后必须 rebase 并逐段复核此最小 diff；此例外不授权改其他 admin 逻辑。
+
 ### 2.4 Migration 协议
 
 1. P6a 已使用 20260727090000_p6a_subscription_foundation。
@@ -78,7 +80,7 @@ schema.prisma 是唯一共同文件。安全任务不得重排、格式化或编
 | 等级 | 行为 |
 | --- | --- |
 | ✅ Always | 在安全 worktree 修改当前任务 Owned files；新增针对性测试；运行专用库测试、typecheck、diff/check；更新当前 spec 包的任务状态与证据 |
-| ⚠️ Ask first | 改已有 API URL/成功响应语义；更改 P6a 所拥有文件；迁移出现跨域字段/索引依赖；需要共享端口/数据库；发现 D-01..D-06 必须改变；rebase 有语义冲突 |
+| ⚠️ Ask first | 改已有 API URL/成功响应语义；更改 P6a 所拥有文件；迁移出现跨域字段/索引依赖；需要共享端口/数据库；发现 D-01..D-07 必须改变；rebase 有语义冲突 |
 | 🚫 Never | 修改 P6a worktree/branch/未提交文件；运行 git reset --hard、git clean、docker compose down；访问/输出生产数据或密钥；写 HTTP MFA bypass；将 secret、TOTP、recovery code、challengeId 写入日志、fixture 或 commit；修改/删除 P6a migration |
 
 ---
@@ -92,7 +94,7 @@ schema.prisma 是唯一共同文件。安全任务不得重排、格式化或编
 | I-00 | T-00 | Done | 本包、AGENTS.md、auth 基线 | 记录基线、隔离资源、决策确认；不改业务代码 |
 | I-01 | T-BE-01 | Done (local) | schema、config、env example、database-default migration / legacy-admin revoke | `2f212e8`；PR 前仍须满足 G-PR-01 的四项 rebase 条件，任务完成不等于可开 PR |
 | I-02 | T-BE-02 | Done (local) | auth/mfa、security event、logger、原语测试 | `2483b0f`；密钥/OTP/challenge/recovery/redact 12 条定向单测与 server build 通过；无真实 secret |
-| I-03 | T-BE-04 | In Progress | auth session service、auth refresh/session boundary、routes/serializer/tests | 先冻结 `sid`、session family/revoke/replay；owner 404、current logout boundary与脱敏锁定 |
+| I-03 | T-BE-04 | Done (local) | auth session service、auth refresh/session boundary、全用户 revoke audit、routes/serializer/tests；P1 仅限 admin service 三处 lock 调用 | `auth-sessions` 11/11、全量后端 65 files / 520 tests（575.53s）、server/root build 均 PASS；二次安全复审无 P0/P1。P6c→develop rebase 仍是 PR 前闸门 |
 | I-04 | T-BE-03 + T-BE-05 | Todo | auth service/controller/schema/routes、auth middleware、admin route、auth tests | 只在 I-03 后集成 admin MFA flow、guard、bcrypt；不改 P6a 文件 |
 | I-05 | T-FE-01 + T-FE-02 | Blocked by P6a UI ownership | LoginPage、新 auth security components、auth API；P6a 合入/rebase 后才可改 ProfilePage 挂载点 | UI 不持久化秘密；独立端口 smoke / E2E 通过 |
 | I-06 | T-QA-01 + T-QA-02 + T-DOC-01 | Todo | tests、OpenAPI、auth README、runbook、checklist | 完整验证、rebase 后 drift、所有 P0 勾选、PR 准备完成 |
@@ -149,6 +151,11 @@ schema.prisma 是唯一共同文件。安全任务不得重排、格式化或编
 | 2026-07-27 | I-02 | In Progress | HEAD `2f212e8`；T-BE-02 owned files 仅限 auth MFA primitives、security events、logger/redact、原语测试 | 不修改 auth service/controller/routes/middleware、ProfilePage 或 P6a worktree |
 | 2026-07-27 | I-02 | Done (local) | `2483b0f`；`otpauth@9.4.1`；专用库 `auth-mfa-crypto` + `auth-security-events`：12/12 PASS；`npm run build` PASS | 只读安全复审已关闭 MFA request-body `code`、pending seed 与测试输出泄露风险；未触碰 auth service/controller/routes/middleware、ProfilePage 或 P6a worktree |
 | 2026-07-27 | I-03 | In Progress | HEAD `2483b0f`；仅开始 T-BE-04 的 session service / refresh boundary 只读影响分析 | 仍不得编辑 P6a 文件或启动共享 runtime；G-PR-01 继续阻止 PR |
+| 2026-07-27 | I-03 | In Progress | 先新增 `auth-sessions` 红测：sid/rotation、owner/current boundary、revoke-others、replay audit | 红测暴露 explicit session revoke 后旧 cookie 被旧 replay 逻辑全用户吊销；已先同步 D-07/plan/task/checklist 再继续编码 |
+| 2026-07-27 | I-03 | In Progress | 只读安全复审发现 token-row reason 无法覆盖 rotation predecessor，且 rotation/revoke 可在 statement snapshot 间漏掉 successor | 已先将文档包升至 1.12.0：以同用户 transaction advisory lock、锁后重读、family terminal marker 优先为唯一实现方案；下一步先写失败测试，未修改 P6a 或启动 runtime |
+| 2026-07-27 | I-03 | In Progress | P0 复审进一步确认 global revoke、login/create 与 reset/change 的同一 user ordering 也必须纳入 | 文档包升至 1.13.0：锁协议列出每个 caller、默认 `revoke_all`+audit、登录锁后复核；不新增 migration，不修改 P6 未提交的 `admin/service.ts` |
+| 2026-07-27 | I-03 | In Progress | 二次独立复审确认管理员 ban / merchant role 事务仍是“`User` 写锁 → advisory lock”，可与 reset/change 反向死锁 | 在编码前将文档包升至 1.14.0：仅授权独立 worktree 内的三处 admin 调用改为 advisory→`User`；新增真实 PostgreSQL 并发回归，P6c 主工作树、运行时与默认测试库不触碰 |
+| 2026-07-27 | I-03 | Done (local) | `auth-sessions` 11/11（含 ban/approve/suspend 的真实 PG lock-order）；`npm test` 65 files / 520 tests PASS（575.53s）；server/root build PASS | 二次独立安全复审无 P0/P1；仅 M3 worktree 与 `monexus_m3_ish_test` 被使用。Focused commit 后保持 G-PR-01 pending，不推送、不建 PR |
 
 ---
 
@@ -161,6 +168,11 @@ schema.prisma 是唯一共同文件。安全任务不得重排、格式化或编
 | 1.8.0 | 2026-07-27 | 记录完整隔离后端回归 62 files / 497 tests PASS（712.46s） |
 | 1.9.0 | 2026-07-27 | 将 I-01 标记为本地完成、以 G-PR-01 保留 PR 闸门，并启动唯一 In Progress 的 I-02 |
 | 1.10.0 | 2026-07-27 | 标记 I-02 本地完成并启动唯一 In Progress 的 I-03；记录原语、日志脱敏与安全复审证据 |
+| 1.11.0 | 2026-07-27 | I-03 红测驱动的 D-07 同步：明确 explicit revoke 与 rotation replay 的实现边界 |
+| 1.12.0 | 2026-07-27 | P0 安全复审后，先规范化 I-03 的并发串行化与 family-marker 判定，再进入实现 |
+| 1.13.0 | 2026-07-27 | 明确所有 RefreshToken mutation 都受同 user lock 约束，并记录无 migration / 不触碰 P6 admin service 的实施边界 |
+| 1.14.0 | 2026-07-27 | P1 并发复审收紧 `User`/session 的全路径锁序；记录 P6c worktree 隔离与仅三处 admin security-call 的最小例外 |
+| 1.15.0 | 2026-07-27 | I-03 本地完成：三路径锁序、D-07 session 语义与全量隔离验证已回填；不解除 P6c rebase / PR 闸门 |
 
 ---
 

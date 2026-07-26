@@ -11,6 +11,7 @@ import {
   forgotPasswordSchema,
   resetPasswordSchema,
   passwordChangeSchema,
+  sessionIdParamSchema,
   verifyEmailQuerySchema,
   updateMeSchema,
 } from './schema.js'
@@ -83,6 +84,9 @@ router.post('/refresh', refreshLimiter, controller.refresh)
 router.post('/logout', controller.logout)
 router.get('/me', authenticate, requireActiveUser, controller.me)
 router.patch('/me', authenticate, requireActiveUser, validate(updateMeSchema), controller.updateMe)
+router.get('/sessions', authenticate, requireActiveUser, controller.sessions)
+router.delete('/sessions/:sessionId', authenticate, requireActiveUser, validate({ params: sessionIdParamSchema }), controller.revokeSession)
+router.post('/sessions/revoke-others', authenticate, requireActiveUser, controller.revokeOtherSessions)
 router.post('/password-change', authLimiter, authenticate, requireActiveUser, validate(passwordChangeSchema), controller.changePassword)
 
 router.post('/forgot-password', mailLimiter, validate(forgotPasswordSchema), controller.forgotPassword)

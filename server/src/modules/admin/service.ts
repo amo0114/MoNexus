@@ -23,6 +23,7 @@ import {
 } from '../../lib/inventoryImport.js'
 import { invalidate as invalidateUserStatusCache } from '../../lib/userStatusCache.js'
 import { revokeAllUserRefreshTokens } from '../auth/service.js'
+import { lockUserRefreshSessionMutations } from '../auth/sessionService.js'
 import { invalidateProductPublicCache } from '../products/cache.js'
 import { serializeAdminOrderDetail, serializeAdminOrderList } from '../orders/serializers.js'
 import { getSettlementEligibility } from '../merchant/service.js'
@@ -188,6 +189,8 @@ export async function banUser(adminUserId: number, targetUserId: number, reason:
     if (!target) throw notFound('用户不存在')
     if (target.id === adminUserId) throw badRequest('不能封禁自己的账号')
     if (target.role === 'admin') throw badRequest('不能封禁管理员账号')
+
+    await lockUserRefreshSessionMutations(tx, target.id)
 
     const updated = await tx.user.update({
       where: { id: target.id },
@@ -801,6 +804,8 @@ export async function approveMerchant(adminUserId: number, merchantId: number) {
     if (!merchant) throw notFound('商家不存在')
     if (merchant.status !== 'pending') throw badRequest('只能审核待审核的商家')
 
+    await lockUserRefreshSessionMutations(tx, merchant.userId)
+
     const updated = await tx.merchant.update({
       where: { id: merchantId },
       data: { status: 'active', approvedAt: new Date(), approvedBy: adminUserId },
@@ -856,6 +861,8 @@ export async function suspendMerchant(adminUserId: number, merchantId: number) {
   if (merchant.status !== 'active') throw badRequest('只能停用已激活的商家')
 
   return prisma.$transaction(async tx => {
+    await lockUserRefreshSessionMutations(tx, merchant.userId)
+
     const updated = await tx.merchant.update({
       where: { id: merchantId },
       data: { status: 'suspended' },

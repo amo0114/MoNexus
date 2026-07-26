@@ -8,9 +8,17 @@ import { badRequest, conflict, notFound, unauthenticated } from '../../lib/httpE
 import { getMailer } from '../../lib/mailer/index.js'
 import { getRefreshTokenMaxAgeMs, getSystemConfigValue } from '../../lib/systemConfig.js'
 import { applyTierBonus, getCurrentTierConfig, resolveTier } from '../../lib/memberTier.js'
+import {
+  createRefreshTokenRecord,
+  hasExplicitRefreshSessionTermination,
+  lockUserRefreshSessionMutations,
+  revokeRefreshSessionByTokenHash,
+  type SessionRequestMetadata,
+} from './sessionService.js'
+import { recordSecurityEvent, type SessionRevocationReason } from './securityEvents.js'
 
-function generateAccessToken(userId: number, role: string) {
-  return jwt.sign({ userId, role }, config.jwtSecret, { expiresIn: config.jwtExpiresIn })
+function generateAccessToken(userId: number, role: string, sessionId: string) {
+  return jwt.sign({ userId, role, sid: sessionId }, config.jwtSecret, { expiresIn: config.jwtExpiresIn })
 }
 
 function generateRefreshToken() {
@@ -35,24 +43,29 @@ function buildAuthUser(user: { id: number; email: string; role: string; inviteCo
 
 async function createStoredRefreshToken(
   userId: number,
-  ip?: string,
-  userAgent?: string,
-  tx?: Prisma.TransactionClient,
-  configuredMaxAgeMs?: number,
+  ip: string | undefined,
+  userAgent: string | undefined,
+  tx: Prisma.TransactionClient,
+  configuredMaxAgeMs: number,
+  existingSession?: { sessionId: string; sessionStartedAt: Date },
 ) {
   const refreshToken = generateRefreshToken()
-  const maxAgeMs = configuredMaxAgeMs ?? await getRefreshTokenMaxAgeMs()
-  const client = tx ?? prisma
-  await client.refreshToken.create({
-    data: {
-      userId,
-      tokenHash: hashRefreshToken(refreshToken),
-      expiresAt: new Date(Date.now() + maxAgeMs),
-      ip,
-      userAgent,
-    },
-  })
-  return { refreshToken, maxAgeMs }
+  const now = new Date()
+  const stored = await createRefreshTokenRecord({
+    userId,
+    tokenHash: hashRefreshToken(refreshToken),
+    expiresAt: new Date(now.getTime() + configuredMaxAgeMs),
+    ip,
+    userAgent,
+    ...(existingSession === undefined
+      ? {}
+      : {
+          sessionId: existingSession.sessionId,
+          sessionStartedAt: existingSession.sessionStartedAt,
+          lastUsedAt: now,
+        }),
+  }, tx)
+  return { refreshToken, maxAgeMs: configuredMaxAgeMs, sessionId: stored.sessionId }
 }
 
 export async function registerUser(email: string, password: string, inviteCode?: string, ip?: string, userAgent?: string) {
@@ -125,73 +138,132 @@ export async function registerUser(email: string, password: string, inviteCode?:
     return { user: newUser, registerReward }
   })
 
-  const { refreshToken, maxAgeMs } = await createStoredRefreshToken(result.user.id, ip, userAgent)
-  const accessToken = generateAccessToken(result.user.id, result.user.role)
+  // Read the runtime setting before taking the per-user lock. No global Prisma
+  // call is allowed while the transaction owns that lock.
+  const maxAgeMs = await getRefreshTokenMaxAgeMs()
+  const issued = await prisma.$transaction(async tx => {
+    await lockUserRefreshSessionMutations(tx, result.user.id)
+    const currentUser = await tx.user.findUnique({ where: { id: result.user.id } })
+    if (!currentUser) throw notFound('用户不存在')
+    if (currentUser.status === '已封禁') throw badRequest('账号已被封禁')
+
+    const session = await createStoredRefreshToken(currentUser.id, ip, userAgent, tx, maxAgeMs)
+    return { user: currentUser, session }
+  })
+  const accessToken = generateAccessToken(issued.user.id, issued.user.role, issued.session.sessionId)
 
   return {
     accessToken,
-    refreshToken,
-    refreshTokenMaxAgeMs: maxAgeMs,
-    user: buildAuthUser(result.user, result.registerReward),
+    refreshToken: issued.session.refreshToken,
+    refreshTokenMaxAgeMs: issued.session.maxAgeMs,
+    user: buildAuthUser(issued.user, result.registerReward),
   }
 }
 
 export async function loginUser(email: string, password: string, ip?: string, userAgent?: string) {
-  const user = await prisma.user.findUnique({
-    where: { email },
-    include: { pointAccount: true },
+  // This non-decision lookup identifies the advisory-lock key only. The
+  // password, status, role, and points are all re-read after taking the lock.
+  const candidate = await prisma.user.findUnique({ where: { email }, select: { id: true } })
+  if (!candidate) throw unauthenticated('邮箱或密码错误')
+
+  const maxAgeMs = await getRefreshTokenMaxAgeMs()
+  const issued = await prisma.$transaction(async tx => {
+    await lockUserRefreshSessionMutations(tx, candidate.id)
+    const user = await tx.user.findUnique({
+      where: { id: candidate.id },
+      include: { pointAccount: true },
+    })
+    if (!user) throw unauthenticated('邮箱或密码错误')
+    if (user.status === '已封禁') throw badRequest('账号已被封禁')
+
+    const valid = await bcrypt.compare(password, user.password)
+    if (!valid) throw unauthenticated('邮箱或密码错误')
+
+    const session = await createStoredRefreshToken(user.id, ip, userAgent, tx, maxAgeMs)
+    return { user, session }
   })
-  if (!user) throw unauthenticated('邮箱或密码错误')
-  if (user.status === '已封禁') throw badRequest('账号已被封禁')
-
-  const valid = await bcrypt.compare(password, user.password)
-  if (!valid) throw unauthenticated('邮箱或密码错误')
-
-  const { refreshToken, maxAgeMs } = await createStoredRefreshToken(user.id, ip, userAgent)
-  const accessToken = generateAccessToken(user.id, user.role)
+  const accessToken = generateAccessToken(issued.user.id, issued.user.role, issued.session.sessionId)
 
   return {
     accessToken,
-    refreshToken,
-    refreshTokenMaxAgeMs: maxAgeMs,
-    user: buildAuthUser(user, user.pointAccount?.balance ?? 0),
+    refreshToken: issued.session.refreshToken,
+    refreshTokenMaxAgeMs: issued.session.maxAgeMs,
+    user: buildAuthUser(issued.user, issued.user.pointAccount?.balance ?? 0),
   }
+}
+
+async function shouldTreatRevokedRefreshTokenAsReplay(
+  tx: Prisma.TransactionClient,
+  token: { userId: number; sessionId: string; revokeReason: string | null },
+) {
+  // An explicit reason on the presented row is terminal. For a historical
+  // rotation/null row, inspect the whole family because its active successor
+  // may have been explicitly revoked after the rotation.
+  if (token.revokeReason !== null && token.revokeReason !== 'refresh_rotation') return false
+  return !(await hasExplicitRefreshSessionTermination(tx, token.userId, token.sessionId))
+}
+
+async function handleRefreshReplay(
+  tx: Prisma.TransactionClient,
+  token: { userId: number; sessionId: string },
+  metadata: SessionRequestMetadata,
+) {
+  const revokedCount = await revokeAllUserRefreshTokens(token.userId, tx, 'refresh_replay', metadata)
+  await recordSecurityEvent({
+    type: 'session_replay_detected',
+    userId: token.userId,
+    sessionId: token.sessionId,
+    ip: metadata.ip,
+    userAgent: metadata.userAgent,
+    detail: { action: 'revoke_all_user_sessions', revokedCount },
+  }, tx)
+  return { kind: 'reused' as const }
 }
 
 export async function refreshAccessToken(rawRefreshToken: string, ip?: string, userAgent?: string) {
   const tokenHash = hashRefreshToken(rawRefreshToken)
-  const now = new Date()
-  // Read the runtime setting once, then use the same duration for the DB row
-  // and cookie returned by the winning rotation.
+  // This lookup discovers the only safe advisory-lock key. It does not decide
+  // whether the token is active, replayed, expired, or allowed to rotate.
+  const pointer = await prisma.refreshToken.findUnique({ where: { tokenHash }, select: { userId: true } })
+  if (!pointer) throw unauthenticated('Refresh Token 无效')
+
+  // Read once before taking the session lock so the winning DB row and cookie
+  // share one runtime setting without doing a global Prisma read under lock.
   const maxAgeMs = await getRefreshTokenMaxAgeMs()
+  const metadata: SessionRequestMetadata = { ip, userAgent }
 
   const result = await prisma.$transaction(async tx => {
-    // We intentionally look up revoked rows too: presenting one is a refresh
-    // token replay and must revoke the rest of the user's session family.
-    const storedToken = await tx.refreshToken.findFirst({
+    await lockUserRefreshSessionMutations(tx, pointer.userId)
+
+    // Mandatory post-lock re-read closes both the explicit-revoke and
+    // competing-rotation windows.
+    const storedToken = await tx.refreshToken.findUnique({
       where: { tokenHash },
       include: { user: true },
     })
-
     if (!storedToken) return { kind: 'invalid' as const }
 
     if (storedToken.revoked) {
-      await revokeAllUserRefreshTokens(storedToken.userId, tx)
-      return { kind: 'reused' as const }
+      if (!(await shouldTreatRevokedRefreshTokenAsReplay(tx, storedToken))) {
+        return { kind: 'revoked' as const }
+      }
+      return handleRefreshReplay(tx, storedToken, metadata)
     }
 
+    const now = new Date()
     if (storedToken.expiresAt < now) {
       await tx.refreshToken.updateMany({
         where: { id: storedToken.id, revoked: false },
-        data: { revoked: true },
+        data: { revoked: true, revokedAt: now, revokeReason: 'expired' },
       })
       return { kind: 'expired' as const }
     }
 
     if (storedToken.user.status === '已封禁') return { kind: 'banned' as const }
 
-    // Compare-and-set is the critical part of rotation. A plain read followed
-    // by update lets two concurrent requests both mint successor tokens.
+    // CAS remains a defense against direct/out-of-band writers. Normal API
+    // paths are already serialized by the user lock, but a failed CAS must
+    // still classify the post-write state instead of assuming replay.
     const revoked = await tx.refreshToken.updateMany({
       where: {
         id: storedToken.id,
@@ -199,16 +271,26 @@ export async function refreshAccessToken(rawRefreshToken: string, ip?: string, u
         revoked: false,
         expiresAt: { gte: now },
       },
-      data: { revoked: true },
+      data: { revoked: true, revokedAt: now, revokeReason: 'refresh_rotation' },
     })
 
     if (revoked.count !== 1) {
-      // A concurrent request has consumed this token. Treat it exactly as a
-      // replay, including revoking the just-issued successor if one exists.
-      // Keeping this inside the same transaction prevents a race that could
-      // otherwise leave a successor active after reuse was detected.
-      await revokeAllUserRefreshTokens(storedToken.userId, tx)
-      return { kind: 'reused' as const }
+      const afterCas = await tx.refreshToken.findUnique({ where: { id: storedToken.id } })
+      if (!afterCas) return { kind: 'invalid' as const }
+      if (afterCas.revoked) {
+        if (!(await shouldTreatRevokedRefreshTokenAsReplay(tx, afterCas))) {
+          return { kind: 'revoked' as const }
+        }
+        return handleRefreshReplay(tx, afterCas, metadata)
+      }
+      if (afterCas.expiresAt < new Date()) {
+        await tx.refreshToken.updateMany({
+          where: { id: afterCas.id, revoked: false, expiresAt: { lt: new Date() } },
+          data: { revoked: true, revokedAt: new Date(), revokeReason: 'expired' },
+        })
+        return { kind: 'expired' as const }
+      }
+      return { kind: 'invalid' as const }
     }
 
     const next = await createStoredRefreshToken(
@@ -217,44 +299,69 @@ export async function refreshAccessToken(rawRefreshToken: string, ip?: string, u
       userAgent,
       tx,
       maxAgeMs,
+      {
+        sessionId: storedToken.sessionId,
+        sessionStartedAt: storedToken.sessionStartedAt,
+      },
     )
     return {
       kind: 'rotated' as const,
       userId: storedToken.userId,
       role: storedToken.user.role,
       refreshToken: next.refreshToken,
+      sessionId: next.sessionId,
     }
   })
 
   if (result.kind === 'invalid') throw unauthenticated('Refresh Token 无效')
   if (result.kind === 'reused') throw unauthenticated('Refresh Token 已被使用，请重新登录')
+  if (result.kind === 'revoked') throw unauthenticated('Refresh Token 已失效，请重新登录')
   if (result.kind === 'expired') throw unauthenticated('Refresh Token 已过期')
   if (result.kind === 'banned') throw badRequest('账号已被封禁')
 
   return {
-    accessToken: generateAccessToken(result.userId, result.role),
+    accessToken: generateAccessToken(result.userId, result.role, result.sessionId),
     refreshToken: result.refreshToken,
     refreshTokenMaxAgeMs: maxAgeMs,
   }
 }
 
-export async function revokeRefreshToken(rawRefreshToken: string) {
+export async function revokeRefreshToken(rawRefreshToken: string, ip?: string, userAgent?: string) {
   const tokenHash = hashRefreshToken(rawRefreshToken)
-  await prisma.refreshToken.updateMany({
-    where: { tokenHash, revoked: false },
-    data: { revoked: true },
-  })
+  await revokeRefreshSessionByTokenHash({ tokenHash, metadata: { ip, userAgent } })
 }
 
 export async function revokeAllUserRefreshTokens(
   userId: number,
-  tx?: Prisma.TransactionClient
+  tx?: Prisma.TransactionClient,
+  revokeReason: SessionRevocationReason = 'revoke_all',
+  metadata: SessionRequestMetadata = {},
 ) {
-  const client = tx ?? prisma
-  await client.refreshToken.updateMany({
-    where: { userId, revoked: false },
-    data: { revoked: true },
-  })
+  const revokeInTransaction = async (transaction: Prisma.TransactionClient) => {
+    await lockUserRefreshSessionMutations(transaction, userId)
+    const activeFamilies = await transaction.refreshToken.findMany({
+      where: { userId, revoked: false },
+      distinct: ['sessionId'],
+      select: { sessionId: true },
+    })
+    const result = await transaction.refreshToken.updateMany({
+      where: { userId, revoked: false },
+      data: { revoked: true, revokedAt: new Date(), revokeReason },
+    })
+    if (result.count > 0) {
+      await recordSecurityEvent({
+        type: 'session_revoked',
+        userId,
+        ip: metadata.ip,
+        userAgent: metadata.userAgent,
+        detail: { reason: revokeReason, revokedCount: activeFamilies.length },
+      }, transaction)
+    }
+    return result.count
+  }
+
+  if (tx) return revokeInTransaction(tx)
+  return prisma.$transaction(revokeInTransaction)
 }
 
 export async function getUserProfile(userId: number) {
@@ -347,6 +454,7 @@ export async function resetPasswordWithToken(rawToken: string, newPassword: stri
 
   const hashed = await bcrypt.hash(newPassword, 10)
   const consumed = await prisma.$transaction(async tx => {
+    await lockUserRefreshSessionMutations(tx, stored.userId)
     // Claim the credential atomically. The initial checks above are only used
     // to return helpful errors; this condition is what prevents two parallel
     // requests from both changing the password.
@@ -378,15 +486,16 @@ export async function resetPasswordWithToken(rawToken: string, newPassword: stri
 }
 
 export async function changePassword(userId: number, currentPassword: string, newPassword: string) {
-  const user = await prisma.user.findUnique({ where: { id: userId } })
-  if (!user) throw notFound('用户不存在')
-  if (user.status === '已封禁') throw badRequest('账号已被封禁')
-
-  const valid = await bcrypt.compare(currentPassword, user.password)
-  if (!valid) throw unauthenticated('当前密码错误')
-
   const hashed = await bcrypt.hash(newPassword, 10)
   await prisma.$transaction(async tx => {
+    await lockUserRefreshSessionMutations(tx, userId)
+    const user = await tx.user.findUnique({ where: { id: userId } })
+    if (!user) throw notFound('用户不存在')
+    if (user.status === '已封禁') throw badRequest('账号已被封禁')
+
+    const valid = await bcrypt.compare(currentPassword, user.password)
+    if (!valid) throw unauthenticated('当前密码错误')
+
     await tx.user.update({
       where: { id: userId },
       data: { password: hashed },

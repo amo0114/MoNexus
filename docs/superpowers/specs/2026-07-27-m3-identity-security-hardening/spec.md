@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | SPEC-M3-ISH-001 |
-| 版本 | 1.10.0 |
+| 版本 | 1.15.0 |
 | 日期 | 2026-07-27 |
 | 状态 | Frozen for Implementation |
 | 产品 | MoNexus |
@@ -91,6 +91,7 @@ MoNexus 已拥有积分调整、封禁、商家审核与停用、佣金修改、
 | D-04 | 丢失第二因子 | 无 HTTP 后门、无管理员自助关闭 MFA。恢复码可登录；恢复码也丢失时只走双人审批的离线 break-glass SOP，清空 MFA、递增版本、吊销全部会话后强制重新绑定 |
 | D-05 | 设备会话语义 | 一个 sessionId 代表一个浏览器/设备登录族；refresh rotation 继承 sessionId。数据库和 API 使用 `sessionId`，JWT claim 固定为短名 `sid`。吊销立即拒绝该族 refresh；admin API 同时校验 `sid` 对应的活动族，故立即拒绝已吊销管理员 token |
 | D-06 | bcrypt 升级 | 目标 rounds=12；不做一次性全表重算。完成正常会话创建的非 admin 成功登录可按需重哈希；管理员处于短期 MFA pre-auth challenge 时绝不保存、跨请求携带或据此重放密码，因此未完成 MFA 前不改 hash，管理员在后续改密/重置时升级为 12 |
+| D-07 | 显式设备吊销与 refresh replay | rotation 消费的旧 token（`revokeReason=refresh_rotation`）及无原因 legacy revoked token 仍视为凭证重放，触发全用户 refresh session 吊销；服务端明确标记为 logout、single_session、revoke_others、revoke_all、MFA reset/migration 的终结家族只返回 401，不得反向吊销仍活动的其他设备。**不能只看被提交行的 reason：**显式吊销可能只写到当时活动的 successor，而历史 predecessor 仍是 `refresh_rotation`；锁后必须按同一 `userId + sessionId` 查找任一显式终结 reason，终结标记优先于 predecessor 的 rotation reason。所有会创建、rotation、单族/其他/全用户吊销 refresh session 的事务，均先获取同一用户的 PostgreSQL transaction-scoped advisory lock，随后重新读取并作状态判断/写入；初始 raw-token 查询只可用于定位 userId，不能据此决定行为。任何同一事务既修改 `User` 又改变 refresh session 的路径（包括改密/重置、管理员封禁和商家角色变化）都必须**先**取得该用户 advisory lock，才取得 `User` 写锁；不得先 `tx.user.update` 再等待 session lock。这样显式吊销成功返回后，不能再有已并发 rotation 的 successor 留存，也不会与密码路径形成锁顺序反转。`revokeReason` 只由服务端写入；全用户服务端吊销默认写 `revoke_all`，历史无 reason 行仍按 legacy replay 处理。 |
 
 ---
 
@@ -138,7 +139,7 @@ GET sessions → 仅见自己的脱敏设备会话
 | DR-06 | 恢复码高熵生成、单次使用；每次重新生成都原子作废旧码。响应仅在生成当次返回明文，之后查询接口只返回“剩余数量” |
 | DR-07 | sessionId 是随机 UUID，会在 refresh rotation 中保持不变；tokenHash 仍只以 hash 形式保存，永不经 API 返回 |
 | DR-08 | 设备列表只返回服务端生成的 deviceLabel、脱敏 ipHint、sessionStartedAt、lastUsedAt、current；不返回原始 IP、完整 UA、token hash、MFA 字段 |
-| DR-09 | refresh token replay 沿用现有强制失效策略：发现已撤销 token 被使用时，仍吊销该用户全部 refresh sessions，记录 security event，不能因本波变弱 |
+| DR-09 | rotation 消费 token 与无原因 legacy revoked token 被使用时，仍吊销该用户全部 refresh sessions 并记录 security event；服务端明确的设备/安全边界吊销（D-07）只拒绝该 token，以保证吊销其他设备不会反向使当前设备失效。若旧 predecessor 的本行仍是 `refresh_rotation`，同家族任一显式终结 reason 仍必须优先拒绝；logout 收到已 rotation 的旧 cookie 也必须在用户锁内吊销该 cookie 所属的整个活动家族。 |
 | DR-10 | 密码、TOTP、恢复码、challengeId、provisioningUri、手动密钥、MFA_ENCRYPTION_KEY 不得写日志、AdminLog.detail、SecurityEvent.detail、错误消息或前端持久化状态 |
 | DR-11 | 非 admin 不可调用管理员 MFA 绑定/验证入口；所有登录用户只能读取和修改自己的 sessionId |
 | DR-12 | bcrypt rounds < 12 的旧 hash 仅在成功、非 admin 的正常登录后按需重哈希；密码错误、被封禁、管理员 MFA pre-auth challenge 未完成均不得触发重哈希，也不得把密码或等效材料存入 challenge |
@@ -162,6 +163,18 @@ GET sessions → 仅见自己的脱敏设备会话
 3. `sessionId` 的唯一性属于会话族：每个历史 token 行初始获得一个不同的 family ID；refresh rotation 的新旧 token 必须共享该 ID，因此数据库不得对 `RefreshToken.sessionId` 建全局 UNIQUE 约束。
 4. migration 应用后、启动新 API 前，受版本控制的部署命令必须吊销全部 legacy admin refresh token；同时 admin guard/refresh path 拒绝旧无 MFA claim 的会话，形成双层保障。不回填 MFA，`mfaEnabled` 默认 false，旧管理员下一次密码登录必须走首次绑定。
 5. `SecurityEvent.userId` 使用保留审计的删除语义；challenge/recovery artifact 才可随 User 清理。所有迁移、legacy-fixture 验证、管理员吊销命令与 drift 检查都只在专用隔离库运行。
+
+### 5.2 Refresh session mutation 锁协议（D-07）
+
+这不是新增产品 API 或数据模型：复用 PostgreSQL transaction-scoped advisory lock，以 `userId` 为互斥粒度；不新增 migration、session family 表或测试专用旁路。
+
+1. `RefreshToken` 的 create、rotation CAS/successor create、family revoke、revoke-others 与全用户 revoke 必须共用同一用户锁，并且全部数据库访问经持锁的 `tx` 完成。
+2. raw refresh/logout cookie 的首读只可解析 `userId`（及 logout 所需的 family 指针）；进入 transaction、取得锁后必须重新读取 token、User 与 family 才能分类、签发或吊销。
+3. 普通登录在锁内复核当前 `status` 与 password hash 后才创建 initial session，避免 reset/ban/role 安全边界正提交时基于旧读取签发新 token。注册的首次 session 也在锁内复核可登录状态。
+4. 密码 reset/change 和已有 admin ban/role 变化都通过同一事务中的全用户 revoke helper 取得该锁；helper 的 reason 是闭合内部枚举且默认 `revoke_all`，写 `session_revoked` 安全事件（family count），不得留下 null reason 的新行。历史 null 仅按 legacy replay 解释。
+5. 锁后若旧 predecessor 的本行仍为 `refresh_rotation` 或 null，查同 family 任一显式 terminal reason；存在则只 401。CAS 失败同样重读/分类，不能无条件当作 replay。没有 terminal marker 的 rotation/null 才按 replay 全用户吊销。
+6. 锁内不进行 mail、HTTP、sleep 或读取全局 Prisma；提交/回滚自动释放锁。这样全用户操作无需获取多个 family 锁，避免死锁；新 login 与 global revoke 的先后由同一 user 锁形成单一顺序。
+7. 若同一事务还会更新 `User`，固定锁序为“user advisory lock → `User` 写锁 → RefreshToken / audit 写入”。管理员封禁、审核通过/停用商家和密码重置/改密均适用；禁止先写 `User` 再调用会取得 advisory lock 的 helper。此项必须由真实 PostgreSQL 的并发事务回归证明，而非 mock、sleep 或测试旁路。
 
 ---
 
@@ -349,7 +362,7 @@ Then 返回 MFA_REQUIRED 或 SESSION_REVOKED，不能读取或写入后台数据
 
 Given 同一用户有两个 sessionId  
 When 当前设备吊销另一个 sessionId  
-Then 被吊销设备 refresh 失败、当前设备继续可用，且列表不泄露其他用户的数据。
+Then 被吊销设备 refresh 失败、当前设备继续可用，且列表不泄露其他用户的数据；若该设备正并发 refresh，吊销成功返回后该家族不存在可用 successor。
 
 ### AC-06 管理员即时会话失效
 
@@ -403,7 +416,7 @@ Then vitest、相关 Playwright、双端 build、Prisma drift 检查以及 produ
 
 ## 13. 变更控制
 
-1. D-01 至 D-06 任一项变更必须更新本 spec、plan、task、checklist 后再编码。
+1. D-01 至 D-07 任一项变更必须更新本 spec、plan、task、checklist 后再编码。
 2. 不得将“临时跳过 MFA”“测试环境 HTTP 后门”或明文恢复码导出作为实现捷径。
 3. 任何新增 auth API 必须同步 docs/superpowers/specs/monexus-api-openapi.json，或在 PR 中明确说明 OpenAPI follow-up 与阻塞原因。
 4. 本文档版本按语义化递增；扩大 MFA 覆盖角色或加入 step-up 为 minor 级范围变更。
@@ -425,6 +438,11 @@ Then vitest、相关 Playwright、双端 build、Prisma drift 检查以及 produ
 | 1.8.0 | 2026-07-27 | 同步 I-01 的全量隔离回归证据；无产品行为或安全决策变更 |
 | 1.9.0 | 2026-07-27 | 明确本地任务完成不解除 P6a→develop 的 PR 集成闸门；无产品行为变更 |
 | 1.10.0 | 2026-07-27 | 同步 I-02 加密/MFA 原语的本地实现与验证证据；无产品行为或安全决策变更 |
+| 1.11.0 | 2026-07-27 | 解决 AC-05 与旧 refresh replay 语义的冲突：冻结 server-initiated session revoke 与 rotation replay 的受控区分（D-07） |
+| 1.12.0 | 2026-07-27 | 安全复审发现 predecessor reason 与 rotation/revoke 并发窗口；D-07 收紧为用户级事务 advisory lock、锁后重读与 family 终结标记优先，未扩大产品范围 |
+| 1.13.0 | 2026-07-27 | 补齐 D-07 锁协议的精确调用边界、登录锁后凭据复核、closed revoke reason/audit 与“无需 migration”约束 |
+| 1.14.0 | 2026-07-27 | P1 并发复审发现管理员事务的 `User` 写锁与会话 advisory lock 顺序相反；冻结“advisory lock → User 写锁”的全路径锁序与真实事务回归要求 |
+| 1.15.0 | 2026-07-27 | I-03 本地实现证实 D-07 的三条管理员路径均遵守固定锁序；65 files / 520 tests、双端构建与独立安全复审通过，PR 前 rebase 闸门不变 |
 
 ---
 

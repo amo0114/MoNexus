@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | TASK-M3-ISH-001 |
-| 版本 | 1.10.0 |
+| 版本 | 1.15.0 |
 | 日期 | 2026-07-27 |
 | 规格 | [spec.md](./spec.md) |
 | 计划 | [plan.md](./plan.md) |
@@ -25,7 +25,7 @@
 
 ### 1.2 执行规则
 
-1. 先完成 T-00 并在 PR 写明 D-01 至 D-06 的确认结论。
+1. 先完成 T-00 并在 PR 写明 D-01 至 D-07 的确认结论。
 2. 后端行为先写失败测试；安全代码不得靠测试专用 bypass 或睡眠等待。
 3. 迁移只通过 prisma migrate dev 生成；绝不把 MFA secret、recovery code、challengeId 或真实 key 放进 fixture、snapshot 或 commit。
 4. 共享文件 service.ts、routes.ts、auth middleware、LoginPage、ProfilePage 一次只能有一个集成负责人修改，避免“各自正确、合并失效”。
@@ -39,7 +39,7 @@
 | T-BE-01 | Done | Codex | 本地交付 `2f212e8`；G-PR-01（P6a→develop rebase/复核）仍 pending，故不可开 PR |
 | T-BE-02 | Done | Codex | 本地交付 `2483b0f`；12 条原语/日志测试与 server build PASS |
 | T-BE-03 | Todo | | MFA 登录/绑定 API |
-| T-BE-04 | In Progress | Codex | I-03：RefreshToken session family 与会话 API；不触碰 P6a 文件 |
+| T-BE-04 | Done | Codex | I-03 本地完成：会话 API、D-07 锁协议与三条管理员锁序回归均通过；P6c→develop rebase 仍阻止 PR |
 | T-BE-05 | Todo | | admin guard、bcrypt 升级、回归集成 |
 | T-BE-06 | Todo | | P1：MFA 安全区与 revoke-all API |
 | T-FE-01 | Todo | | LoginPage MFA 流 |
@@ -57,7 +57,7 @@
 
 | ID | 标题 | Pri | 估算 | 依赖 | Phase | 需求 |
 | --- | --- | --- | --- | --- | --- | --- |
-| T-00 | 确认安全决策并跑基线 | P0 | S | — | 0 | D-01..D-06 |
+| T-00 | 确认安全决策并跑基线 | P0 | S | — | 0 | D-01..D-07 |
 | T-BE-01 | 演进身份与 session 数据模型 | P0 | M | T-00 | A | F-020, NF-01 |
 | T-BE-02 | 建立 TOTP、加密、challenge、redact 与安全事件原语 | P0 | L | T-BE-01 | A | F-010–013, F-030–031 |
 | T-BE-03 | 实现管理员 MFA 登录与首次绑定 API | P0 | L | T-BE-02, T-BE-04 | C | F-010–014 |
@@ -91,7 +91,7 @@
 
 **步骤：**
 
-- [x] 记录 D-01 至 D-06 已冻结；D-03 仅实施“登录 MFA + admin 活动会话校验”，不在本波加入逐操作 step-up。
+- [x] 记录 D-01 至 D-07 已冻结；D-03 仅实施“登录 MFA + admin 活动会话校验”，不在本波加入逐操作 step-up；D-07 规定 explicit revoke 不扩大为全用户 replay。
 - [x] 记录部署前提：secrets owner 必须在发布前为所有 API 实例配置同一枚 32-byte base64 `MFA_ENCRYPTION_KEY`；不读取或创建真实值，实际配置保留为 `CHK-REL-01` 发布门禁。
 - [x] 确认隔离 PostgreSQL 已可用：只使用 `monexus_m3_ish_test`；不启动、停止或重启 P6a 的 compose 服务。
 - [x] 运行 auth 基线（4 files、36 tests PASS）：
@@ -215,18 +215,24 @@ TEST_DATABASE_URL='postgresql://monexus:monexus_dev_2026@localhost:5432/monexus_
 - server/src/modules/auth/schema.ts
 - server/src/modules/auth/routes.ts
 - server/src/__tests__/auth-sessions.test.ts（新）
+- server/src/modules/admin/service.ts（仅 P1 死锁修复：import 与 ban / approve / suspend 三个事务中的 lock 调用；不得重排或触碰 P6 业务逻辑）
+
+**D-07 追加边界（不新增 migration）：** 本任务可在上述 auth/session owned files 内新增 user-scoped transaction lock 与全用户 revoke audit。P1 并发复审推翻了“完全不改 admin service”的旧边界：`banUser`、`approveMerchant`、`suspendMerchant` 均在同一事务内先写 `User`、后调用会取得 session lock 的 helper，和改密/重置形成锁顺序反转。仅在本隔离 worktree 对这三处增加 lock-before-write；不改 P6 业务分支、SQL 或格式。任何直接新写 `RefreshToken` 的后续 MFA 代码必须复用本任务创建的 locked helper。
 
 **步骤：**
 
-- [ ] 首次 login/register token 行创建 sessionId；rotation 继承 sessionId/sessionStartedAt 并刷新 lastUsedAt。
-- [ ] list API 只查询 owner 的 active、未过期 session；输出脱敏 summary，current 来自 JWT sid。
-- [ ] DELETE sessionId 使用 owner-scoped update，但只允许非 current family；非 owner、随机 UUID 都返回 404，current family 返回 `CURRENT_SESSION_REQUIRES_LOGOUT`，只能经既有 `/auth/logout` 吊销。
-- [ ] revoke-others 排除 current sessionId；当前 logout 继续只吊销当前族。revoke-all 留给 P1 的 T-BE-06。
-- [ ] 所有吊销写 session_revoked SecurityEvent，reason 采用受控枚举。
-- [ ] 保持 refresh replay 的 revoke-all-user 语义，并记录 session_replay_detected。
-- [ ] 写两 session、两用户、轮换继承、单吊销、其他吊销、replay 回归测试。
+- [x] 首次 login/register token 行创建 sessionId；login 在锁内重读 status/password 后才创建 initial token，注册在锁内重读可登录状态；rotation 继承 sessionId/sessionStartedAt 并刷新 lastUsedAt；所有创建、rotation、单族/其他/全用户吊销先获取同一 user 的 PostgreSQL transaction advisory lock，锁后重新读取状态；缺 `sid` 的 legacy access token 保持普通业务 API 兼容，但 session management 以 401 要求 refresh/login。
+- [x] list API 只查询 owner 的 active、未过期 session；输出脱敏 summary，current 来自 JWT sid。
+- [x] DELETE sessionId 使用 owner-scoped update，但只允许非 current family；非 owner、随机 UUID 都返回 404，current family 返回 `CURRENT_SESSION_REQUIRES_LOGOUT`，只能经既有 `/auth/logout` 吊销。
+- [x] revoke-others 排除 current sessionId；当前 logout 继续只吊销当前族，即使其 raw cookie 已被 concurrent rotation 消费也要终结所属活动族。revoke-all 留给 P1 的 T-BE-06。
+- [x] 所有吊销写 session_revoked SecurityEvent，reason 采用受控枚举。
+- [x] 全用户 revoke 的新写入默认 reason=`revoke_all`，并在同一 tx 写受控 `session_revoked`（按 family 计数）；null reason 仅保留给历史行。密码 reset/change 与现有 ban/role 调用必须经该 helper，不直接 update RefreshToken。若同一 tx 会写 `User`，先取得 user advisory lock、再 `tx.user.update`，helper 的同 tx 重入锁保持安全；封禁、审核通过与停用商家三处全部遵守。
+- [x] rotation 消费 token 与无原因 legacy revoked token 保持 revoke-all-user + session_replay_detected；服务端明确的 logout/single_session/revoke_others/revoke_all 等终结 reason 只拒绝该会话，不能误伤当前族。旧 rotation predecessor 必须检查同 family 的终结 marker，不能仅按本行 reason 判定。
+- [x] 写两 session、两用户、轮换继承、单吊销、其他吊销、replay、rotation→explicit revoke→旧 predecessor refresh、rotation→stale-cookie logout、全用户 revoke 默认 reason/audit 回归测试；以真实 Prisma transaction 的 Promise gate / connection-affinity 证明同 user 锁排队，不用 sleep 或测试后门证明锁后排序。另以实际 `banUser`、`approveMerchant`、`suspendMerchant` 分别与持有同一 advisory lock 后写 `User` 的真实 PostgreSQL transaction 证明管理员路径先排队、password-style 路径可完成、双方不形成 advisory↔User 行锁反转。
 
-**DoD：** AC-05 通过；任何 API 响应不含 raw IP、完整 UA、tokenHash。
+**DoD：** AC-05 通过；显式吊销成功返回后不存在同家族 active successor；同一用户的 admin status/role 变化与 password-session mutation 不会形成 advisory↔`User` 行锁反转；任何 API 响应不含 raw IP、完整 UA、tokenHash。
+
+**本地证据（2026-07-27；仍不可开 PR）：** `auth-sessions` 11/11 PASS（含三条真实管理员路径的 PostgreSQL lock-order 回归）；完整后端 `npm test` 为 65 files / 520 tests PASS（575.53s）；`npm --prefix server run build` 与根 `npm run build` PASS。二次独立安全复审无 P0/P1 阻断。所有测试只使用 `monexus_m3_ish_test`，未启动共享 runtime；P6c 未进入 develop 前 G-PR-01 继续阻止 PR。
 
 ---
 
@@ -487,3 +493,8 @@ T-00 → T-BE-01 → T-BE-02 → T-BE-03 + T-BE-04 → T-BE-05 → T-FE-01 + T-F
 | 1.8.0 | 2026-07-27 | 补记 I-01 全量隔离后端回归：62 files、497 tests PASS；不改变 P6a rebase 闸门 |
 | 1.9.0 | 2026-07-27 | 将本地任务完成与 PR 级 G-PR-01 闸门分离，T-BE-02 依此开始实施 |
 | 1.10.0 | 2026-07-27 | 标记 T-BE-02 本地完成、启动 T-BE-04；记录 MFA 原语和日志安全复审/验证证据 |
+| 1.11.0 | 2026-07-27 | 在 I-03 红测中解决 AC-05 与旧 replay 语义冲突，冻结 explicit revoke / rotation replay 分类 |
+| 1.12.0 | 2026-07-27 | 基于 I-03 安全复审补充用户级事务锁、family marker 与 stale-cookie logout 的具体任务/DoD；无新增产品端点 |
+| 1.13.0 | 2026-07-27 | 将 D-07 精确化为全 RefreshToken mutation 的 user lock 契约，列出 login/reset/change/global revoke/MFA 的接入点与无 migration 范围 |
+| 1.14.0 | 2026-07-27 | P1 复审新增管理员三条 `User` 变更路径的锁序修复与真实 PostgreSQL 并发回归；以最小安全例外修改 shared admin service，仍不触碰 P6 业务逻辑 |
+| 1.15.0 | 2026-07-27 | 标记 T-BE-04 / I-03 本地完成，回填三路径 lock-order、全量后端和双端构建证据；P6c rebase 闸门保持 pending |

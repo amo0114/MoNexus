@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | CHK-M3-ISH-001 |
-| 版本 | 1.10.0 |
+| 版本 | 1.15.0 |
 | 日期 | 2026-07-27 |
 | 规格 | [spec.md](./spec.md) |
 | 计划 | [plan.md](./plan.md) |
@@ -32,7 +32,7 @@
 ## 1. 范围与过程门禁（P0）
 
 - [ ] **CHK-PROC-01** PR 基于最新 develop，目标分支为 develop；未直接写 develop/master。
-- [ ] **CHK-PROC-02** D-01 至 D-06 已确认；PR 链接本 spec 并明确 D-03 未实现 admin per-action step-up。
+- [ ] **CHK-PROC-02** D-01 至 D-07 已确认；PR 链接本 spec 并明确 D-03 未实现 admin per-action step-up。
 - [ ] **CHK-PROC-03** 范围只含管理员 MFA、设备会话、bcrypt、相关审计/文档；未混入 OAuth、Passkey、短信、通用风控、GDPR、订阅或支付。
 - [ ] **CHK-PROC-04** 所有 P0 任务在 task.md 看板为 Done。
 - [ ] **CHK-PROC-05** migration 由 prisma migrate dev 生成；没有手写 SQL migration 或绕过 migration 的 schema 变更。
@@ -48,7 +48,7 @@
 - [ ] **CHK-DATA-01** User 有 mfaEnabled、加密 seed、mfaVersion 等必要字段；任何 public/profile/admin serializer 都没有选择 seed 字段。
 - [x] **CHK-DATA-02** MfaRecoveryCode 只存 hash，有 user 归属、usedAt 和唯一性约束；无明文列。
 - [x] **CHK-DATA-03** AuthChallenge 是随机 UUID、5 分钟、单次、最多 5 次失败；过期/超限/成功后不可复用。
-- [ ] **CHK-DATA-04** RefreshToken 有稳定 sessionId；同一 refresh rotation 的新旧 token 继承同一 sessionId 和 sessionStartedAt；sessionId 是 family ID，不能建 token 行全局 unique。
+- [x] **CHK-DATA-04** RefreshToken 有稳定 sessionId；同一 refresh rotation 的新旧 token 继承同一 sessionId 和 sessionStartedAt；sessionId 是 family ID，不能建 token 行全局 unique。
 - [x] **CHK-DATA-05** SecurityEvent 只存安全事件 type、不可逆 IP 关联/安全 device hint 和安全摘要；不存秘密或原始 IP。
 - [ ] **CHK-DATA-06** 单一 Prisma-generated migration 在隔离 PostgreSQL 成功应用：`sessionId` SQL default 为 `gen_random_uuid()`，pre-migration legacy token 均取得非空且彼此不同的 family ID / session 时间；部署前 legacy admin refresh session 全吊销；不得手改 SQL 或把 Prisma client-side uuid 当回填。
 - [x] **CHK-DATA-07** 新增索引支持按 userId、sessionId、活动/过期状态列会话；会话列表不做全表扫描。
@@ -87,27 +87,28 @@
 - [ ] **CHK-AUTH-04** 旧 admin token、缺 sid token、mfaVersion 不匹配、mfaEnabled=false、过期/吊销 session 全部无法访问 admin API。
 - [ ] **CHK-AUTH-05** 被封禁 admin 仍在角色/MFA guard 前被拒绝；普通 user/merchant 仍不能访问 admin API。
 - [ ] **CHK-AUTH-06** admin session 吊销后，同一已签发 access token 访问 admin API 立即返回 SESSION_REVOKED。
-- [ ] **CHK-AUTH-07** refresh token replay 保持现有 revoke-all-user 强语义，并写 session_replay_detected 事件。
+- [x] **CHK-AUTH-07** rotation 消费 token 与无原因 legacy revoked token 的 replay 保持 revoke-all-user 强语义并写 session_replay_detected；服务端明确 revoke reason 的 token 只被拒绝，不能误伤其他活动 session。每个 RefreshToken create/rotation/family/global revoke 在同 user transaction advisory lock 内锁后重读；旧 rotation predecessor 必须识别同 family 的 explicit terminal marker，CAS=0 也须重读分类。任何同 tx 的 `User` 状态/角色/密码写入一律采用 advisory→`User` 锁序，不能先写 `User` 再进入 revoke helper。
 - [ ] **CHK-AUTH-08** 注册、改密、重置密码新 hash 均是 bcrypt rounds=12。
 - [ ] **CHK-AUTH-09** bcrypt 10 旧 hash 仅在非 admin 正确完成正常登录后升级为 12；错误密码、封禁、admin MFA pre-auth challenge 未完成均不写 hash，也不保存可跨请求使用的密码材料。
+- [x] **CHK-AUTH-10** login 在锁内重验 status/password 后才签发 initial session；reset/change/ban/approve/suspend 的全用户 revoke 以闭合 reason（默认 `revoke_all`）与 `session_revoked` audit 收口，不能新写 null reason。三条管理员 `User` 变更路径都在其首个 `User` write 前取得同 user advisory lock。
 
-**证据：** guard / refresh / bcrypt tests：________________
+**I-03 本地证据：** `auth-sessions` 11/11 PASS，覆盖 rotation/family、owner/current、single/revoke-others、explicit-terminal/replay、stale logout、global revoke audit、真实 advisory queue，以及 ban/approve/suspend 对 password-style `User` write 的三路径 lock-order。二次独立安全复审无 P0/P1。
 
 ---
 
 ## 5. 设备会话（P0；显式标记 [P1] 的项不阻塞 P0 PR）
 
-- [ ] **CHK-SES-01** GET /auth/sessions 仅返回请求用户的 active、未过期 session，current 标记与 JWT sid 一致。
-- [ ] **CHK-SES-02** session summary 只含 sessionId、deviceLabel、ipHint、sessionStartedAt、lastUsedAt、current；不含 raw IP、完整 UA、tokenHash 或 revoked token。
-- [ ] **CHK-SES-03** refresh rotation 后 sessionId 保持不变，lastUsedAt 更新；会话列表不会把一次刷新显示成新设备。
-- [ ] **CHK-SES-04** DELETE /auth/sessions/:id 只能吊销自己的**非当前**目标会话；他人/猜测 UUID 返回 404，current session 返回 `CURRENT_SESSION_REQUIRES_LOGOUT` 并只能走既有 logout。
-- [ ] **CHK-SES-05** 被单独吊销的会话 refresh 失败；其他 session 正常工作。
-- [ ] **CHK-SES-06** revoke-others 只吊销非当前 session；current 不被误伤。
+- [x] **CHK-SES-01** GET /auth/sessions 仅返回请求用户的 active、未过期 session，current 标记与 JWT sid 一致。
+- [x] **CHK-SES-02** session summary 只含 sessionId、deviceLabel、ipHint、sessionStartedAt、lastUsedAt、current；不含 raw IP、完整 UA、tokenHash 或 revoked token。
+- [x] **CHK-SES-03** refresh rotation 后 sessionId 保持不变，lastUsedAt 更新；会话列表不会把一次刷新显示成新设备。
+- [x] **CHK-SES-04** DELETE /auth/sessions/:id 只能吊销自己的**非当前**目标会话；他人/猜测 UUID 返回 404，current session 返回 `CURRENT_SESSION_REQUIRES_LOGOUT` 并只能走既有 logout。
+- [x] **CHK-SES-05** 被单独吊销的会话 refresh 失败；其他 session 正常工作（明确吊销不触发全用户 replay）；rotation replay 仍按 CHK-AUTH-07 全用户吊销。覆盖 rotation→explicit revoke→旧 predecessor refresh 和 rotation→stale-cookie logout，证明显式吊销返回后无 active successor。
+- [x] **CHK-SES-06** revoke-others 只吊销非当前 session；current 不被误伤。
 - [ ] **CHK-SES-07** **[P1]** revoke-all 吊销所有 session、清当前 refresh cookie，客户端退出登录。
-- [ ] **CHK-SES-08** 所有 revoke/replay 有 SecurityEvent，reason/type 受控且不含 token。
+- [x] **CHK-SES-08** 所有 revoke/replay 有 SecurityEvent，reason/type 受控且不含 token。
 - [ ] **CHK-SES-09** 普通业务 access token 的“至迟当前 15 分钟 TTL / refresh 失效”语义在 UI/文档说明；不声称不真实的全局即时失效。
 
-**证据：** two-user / two-session tests：________________
+**I-03 本地证据：** `auth-sessions` 11/11 PASS；完整后端回归 65 files / 520 tests PASS（575.53s）。
 
 ---
 
@@ -166,11 +167,11 @@
 
 ## 9. 自动化与构建门禁（P0）
 
-- [ ] **CHK-QA-01** auth、auth-tokens、refresh-token-wiring、auth-active-user 与新增 MFA/session tests 全部 PASS。
-- [ ] **CHK-QA-02** 包含并发 challenge / 恢复码 claim、refresh rotation/replay、admin session revoked 的回归测试。
-- [ ] **CHK-QA-03** server 全量 npm test PASS。
-- [ ] **CHK-QA-04** npm --prefix server run build PASS。
-- [ ] **CHK-QA-05** npm run build PASS。
+- [x] **CHK-QA-01** auth、auth-tokens、refresh-token-wiring、auth-active-user 与新增 MFA/session tests 全部 PASS。
+- [ ] **CHK-QA-02** 包含并发 challenge / 恢复码 claim、refresh rotation/replay、admin session revoked 的回归测试；以真实 PostgreSQL transactions、Promise gate 和 `pg_locks` 排队观测覆盖 ban、approve、suspend 分别与 password-style `User` write 并发时的 advisory→`User` 无反转锁序。
+- [x] **CHK-QA-03** server 全量 npm test PASS。
+- [x] **CHK-QA-04** npm --prefix server run build PASS。
+- [x] **CHK-QA-05** npm run build PASS。
 - [ ] **CHK-QA-06** `npm run verify:m3-identity-security-hardening` PASS：脚本只使用显式专用库，不调用 compose、不触碰默认 `monexus_test`。
 - [ ] **CHK-QA-07** Prisma migrate status/drift 检查 PASS，且命令显式使用 `M3_ISH_DATABASE_URL`。
 - [ ] **CHK-QA-08** admin MFA 和 session revoke Playwright tests 在 M3-ISH 专用 config（3103/5178、`reuseExistingServer=false`）PASS。
@@ -180,9 +181,9 @@
 **证据：**
 
 ~~~text
-vitest:
-server build:
-frontend build:
+vitest: TEST_DATABASE_URL=monexus_m3_ish_test npm --prefix server test → 65 files / 520 tests PASS (575.53s)
+server build: npm --prefix server run build → PASS
+frontend build: npm run build → PASS
 isolated verify:
 prisma:
 playwright:
@@ -265,3 +266,8 @@ P0 豁免默认不允许。唯一例外是仓库负责人明确书面批准的�
 | 1.8.0 | 2026-07-27 | 补记 62 files / 497 tests 的隔离全量后端回归结果 |
 | 1.9.0 | 2026-07-27 | 任务本地完成与 P6a→develop 的 PR 集成闸门分离；所有最终 P0 项仍需 rebase 后复核 |
 | 1.10.0 | 2026-07-27 | 勾选已由 I-02 原语测试覆盖的数据/加密/TOTP/日志项，并记录 focused commit 与验证证据 |
+| 1.11.0 | 2026-07-27 | 与 D-07 同步 explicit revoke / rotation replay 的独立验收语义 |
+| 1.12.0 | 2026-07-27 | 加入 I-03 P0 并发门禁：用户级 transaction lock、锁后重读、family marker 和 stale-cookie logout 验收 |
+| 1.13.0 | 2026-07-27 | 增加全 RefreshToken mutation、locked login 重验、global revoke reason/audit 与无需 migration 的 P0 验收 |
+| 1.14.0 | 2026-07-27 | 加入 `User`/session 固定锁序及 ban、approve、suspend 三路径真实 PostgreSQL 无反转回归门禁 |
+| 1.15.0 | 2026-07-27 | 回填 I-03 已覆盖的 stable family、D-07、session 与构建门禁证据；其余 MFA/guard/UI/rebase 发布门禁仍未完成 |

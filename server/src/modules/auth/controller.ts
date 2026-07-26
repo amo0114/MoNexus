@@ -2,6 +2,12 @@ import { Request, Response, NextFunction } from 'express'
 import { refreshTokenCookieName, setRefreshTokenCookie, clearRefreshTokenCookie } from '../../lib/cookies.js'
 import { unauthenticated } from '../../lib/httpError.js'
 import * as authService from './service.js'
+import * as sessionService from './sessionService.js'
+
+function currentSessionId(req: Request) {
+  if (typeof req.user?.sid !== 'string') throw unauthenticated('登录会话已失效，请重新登录')
+  return req.user.sid
+}
 
 export async function register(req: Request, res: Response, next: NextFunction) {
   try {
@@ -52,7 +58,7 @@ export async function logout(req: Request, res: Response, next: NextFunction) {
   try {
     const refreshToken = req.cookies?.[refreshTokenCookieName]
     if (refreshToken) {
-      await authService.revokeRefreshToken(refreshToken)
+      await authService.revokeRefreshToken(refreshToken, req.ip, req.headers['user-agent'])
     }
     clearRefreshTokenCookie(res)
     res.json({ ok: true })
@@ -74,6 +80,42 @@ export async function updateMe(req: Request, res: Response, next: NextFunction) 
   try {
     const profile = await authService.updateUserProfile(req.user!.userId, req.body)
     res.json(profile)
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function sessions(req: Request, res: Response, next: NextFunction) {
+  try {
+    const items = await sessionService.listActiveSessions(req.user!.userId, currentSessionId(req))
+    res.json({ items })
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function revokeSession(req: Request, res: Response, next: NextFunction) {
+  try {
+    await sessionService.revokeOwnedNonCurrentSession({
+      userId: req.user!.userId,
+      currentSessionId: currentSessionId(req),
+      targetSessionId: String(req.params.sessionId),
+      metadata: { ip: req.ip, userAgent: req.headers['user-agent'] },
+    })
+    res.status(204).send()
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function revokeOtherSessions(req: Request, res: Response, next: NextFunction) {
+  try {
+    const result = await sessionService.revokeOtherSessions({
+      userId: req.user!.userId,
+      currentSessionId: currentSessionId(req),
+      metadata: { ip: req.ip, userAgent: req.headers['user-agent'] },
+    })
+    res.json(result)
   } catch (err) {
     next(err)
   }
