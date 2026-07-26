@@ -28,7 +28,7 @@ chore/xxx ┘                                        ▲
 | push → master | ✅ | ✅ | ✅ |
 
 - **`CI OK`** 聚合 job 是唯一需要设为 required 的状态检查：上游 job 被路径过滤跳过时它仍成功，只有真实失败/取消才红。
-- **跳过整个 CI**：提交信息带 `[skip ci]`（GitHub 原生支持），适用于纯文档/注释类提交。
+- **不要在 PR 分支上用 `[skip ci]`**：它会抑制整个 workflow，required 的 `CI OK` 将永远 Pending，受保护分支的 PR 无法合并；纯文档 PR 靠路径过滤即可快速出绿，无需手动跳过。
 - **强制跑 e2e**：给 PR 打 `run-e2e` 标签。
 - 文档类路径（`docs/**`、`*.md`、`.claude/**` 等未列入过滤器的路径）的 PR 三个重活全跳过，约 1 分钟出绿。
 

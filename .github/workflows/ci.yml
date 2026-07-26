@@ -11,8 +11,9 @@
 #
 # Docs-only changes skip every heavy job; the aggregate "CI OK" job still
 # reports success so it can be the single required status check on both
-# protected branches. Commits with [skip ci] in the message skip the whole
-# workflow (native GitHub behaviour).
+# protected branches. Do NOT use [skip ci] on PR branches: it suppresses the
+# whole workflow, so the required "CI OK" check stays Pending forever and the
+# PR cannot merge — path filtering already makes docs-only PRs finish fast.
 
 name: CI
 
