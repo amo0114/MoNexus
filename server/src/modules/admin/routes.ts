@@ -5,6 +5,7 @@ import {
   adjustPointsSchema, banUserSchema, createProductSchema, updateProductSchema,
   importInventorySchema, listUsersQuerySchema, listOrdersQuerySchema,
   revokeDeliveryFileSchema,
+  listDeliveryFilesQuerySchema, listFileGrantsQuerySchema, offerReportQuerySchema,
   listAdminAuditQuerySchema,
   listMerchantsQuerySchema, reviewMerchantSchema, updateCommissionSchema,
   listSettlementsQuerySchema, batchSettleSchema, resolveOrderSchema,
@@ -35,6 +36,11 @@ router.put('/products/:id', validate({ params: idParamSchema, body: updateProduc
 router.post('/products/:id/inventory', validate({ params: idParamSchema, body: importInventorySchema }), controller.importInventory)
 // P5：吊销交付文件（违法/恶意内容治理）。
 router.post('/delivery-files/:id/revoke', validate({ params: idParamSchema, body: revokeDeliveryFileSchema }), controller.revokeDeliveryFile)
+// P5.5 T1：文件治理——分页列表 + 单文件签名发放流水（审计）。
+router.get('/delivery-files', validate({ query: listDeliveryFilesQuerySchema }), controller.listDeliveryFiles)
+router.get('/delivery-files/:id/grants', validate({ params: idParamSchema, query: listFileGrantsQuerySchema }), controller.deliveryFileGrants)
+// P5.5 T2：全平台热销规格报表（净成交口径）。
+router.get('/reports/offers', validate({ query: offerReportQuerySchema }), controller.offerReport)
 router.get('/orders', validate({ query: listOrdersQuerySchema }), controller.orders)
 router.get('/orders/:id', validate({ params: idParamSchema }), controller.orderDetail)
 router.post('/orders/:id/resolve', validate({ params: idParamSchema, body: resolveOrderSchema }), controller.resolveOrder)
