@@ -5,6 +5,8 @@ import type {
   DashboardStatusBreakdown,
   DashboardSummary,
   DashboardTimeseries,
+  DashboardTopOffer,
+  DashboardTopOffers,
   DashboardTopProduct,
   DashboardSeriesPoint,
   Range,
@@ -28,6 +30,15 @@ interface SeriesRow {
 interface TopProductRow {
   productId: number
   name: string
+  soldCount: number | bigint
+  pointsRevenue: number | bigint | null
+}
+
+interface TopOfferRow {
+  offerId: number | null
+  offerName: string
+  productId: number
+  productName: string
   soldCount: number | bigint
   pointsRevenue: number | bigint | null
 }
@@ -57,7 +68,7 @@ function toNumber(value: number | bigint | null | undefined) {
   return Number(value ?? 0)
 }
 
-function logDuration(op: 'dashboard.summary' | 'dashboard.timeseries', merchantId: number, startedAt: number) {
+function logDuration(op: 'dashboard.summary' | 'dashboard.timeseries' | 'dashboard.topOffers', merchantId: number, startedAt: number) {
   logger.info({
     op,
     merchantId,
@@ -136,6 +147,56 @@ async function getTopProducts(merchantId: number, start: Date, end: Date): Promi
     soldCount: toNumber(row.soldCount),
     pointsRevenue: toNumber(row.pointsRevenue),
   }))
+}
+
+/**
+ * P5.5 T2：商家侧 SKU 报表（top-10）。口径 = 净成交（排除 refunded，与
+ * getTopProducts 一致，禁称"毛销量"）；按积分收入降序取前 10。
+ * 规格名解析链：在世 Offer 用当前名（改名即时生效）；规格被删（FK SET
+ * NULL 后 offerId 为空但下单快照仍在）回退组内最近一次快照；迁移前无
+ * 快照的历史单落「未指定规格」桶。分组含 productId——同名快照跨商品
+ * 不得合并。时间聚合走 Order(merchantId, createdAt) 索引（T0）。
+ */
+export async function getTopOffers(merchantId: number, range: Range): Promise<DashboardTopOffers> {
+  const startedAt = performance.now()
+  const { start, end } = getRangeWindow(range)
+
+  const rows = await prisma.$queryRaw<TopOfferRow[]>`
+    SELECT
+      o."offerId" AS "offerId",
+      COALESCE(
+        ofr."name",
+        (ARRAY_AGG(o."offerNameSnapshot" ORDER BY o."createdAt" DESC)
+          FILTER (WHERE o."offerNameSnapshot" IS NOT NULL))[1],
+        '未指定规格'
+      ) AS "offerName",
+      o."productId" AS "productId",
+      p."name" AS "productName",
+      COUNT(*)::int AS "soldCount",
+      COALESCE(SUM(o."price"), 0)::int AS "pointsRevenue"
+    FROM "Order" o
+    INNER JOIN "Product" p ON p."id" = o."productId" AND p."merchantId" = ${merchantId}
+    LEFT JOIN "Offer" ofr ON ofr."id" = o."offerId"
+    WHERE o."merchantId" = ${merchantId}
+      AND o."createdAt" >= ${start}
+      AND o."createdAt" < ${end}
+      AND o."status" <> 'refunded'
+    GROUP BY o."offerId", ofr."name", o."productId", p."name"
+    ORDER BY COALESCE(SUM(o."price"), 0) DESC, COUNT(*) DESC, o."productId" ASC, o."offerId" ASC NULLS LAST
+    LIMIT 10
+  `
+
+  const items: DashboardTopOffer[] = rows.map(row => ({
+    offerId: row.offerId,
+    offerName: row.offerName,
+    productId: row.productId,
+    productName: row.productName,
+    soldCount: toNumber(row.soldCount),
+    pointsRevenue: toNumber(row.pointsRevenue),
+  }))
+
+  logDuration('dashboard.topOffers', merchantId, startedAt)
+  return { items }
 }
 
 async function getStatusBreakdown(merchantId: number, start: Date, end: Date): Promise<DashboardStatusBreakdown> {

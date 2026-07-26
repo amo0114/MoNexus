@@ -34,10 +34,13 @@ import {
   settleHeldOrder,
   voidRefundableSettlement,
 } from '../orders/accounting.js'
+import { applyRefundInventoryPolicy } from '../orders/refundInventory.js'
 import type {
   CreateProductInput,
   ListAdminAuditQuery,
   ListAnnouncementsQuery,
+  ListDeliveryFilesQuery,
+  ListFileGrantsQuery,
   ListOrdersQuery,
   ListUsersQuery,
   ResolveOrderInput,
@@ -686,6 +689,11 @@ export async function resolveOrder(
         price: true,
         holdingPoints: true,
         fundsHeld: true,
+        // P5.5 T4：退款回补策略需要的履约快照与归属字段。
+        productId: true,
+        offerId: true,
+        merchantId: true,
+        deliveryModeSnapshot: true,
       },
     })
     if (!order) throw notFound('订单不存在')
@@ -701,6 +709,12 @@ export async function resolveOrder(
     // pending settlement cannot race ahead and be paid after a refund.
     if (input.result === 'refund') {
       await voidRefundableSettlement(tx, order.id)
+      // P5.5 T4：仲裁退款的库存侧效果与积分退还/结算作废同事务——已交付
+      // （disputed 只能来自 delivered）：卡密报废、销量净减、不回补容量。
+      await applyRefundInventoryPolicy(tx, order, {
+        fromStatus: 'disputed',
+        actorUserId: adminUserId,
+      })
     }
 
     await transitionOrderStatus(
@@ -1144,4 +1158,155 @@ export async function revokeDeliveryFile(adminUserId: number, fileId: number, re
     })
   })
   return { revoked: true }
+}
+
+// ---- P5.5 T1：交付文件治理（列表 + 发放流水） ----
+
+/**
+ * 分页列出交付文件。P5 不变量：普通 API（管理端也算）永不返回对象 key/bucket，
+ * 对账凭 sha256 已足够——select 白名单显式排除 key。引用计数（在售规格 /
+ * 交付记录）用于评估吊销影响面。
+ */
+export async function listDeliveryFiles(query: ListDeliveryFilesQuery) {
+  const where: Prisma.DeliveryFileWhereInput = {}
+  if (query.merchantId) where.merchantId = query.merchantId
+  if (query.status) where.status = query.status
+  if (query.fileName) where.fileName = { contains: query.fileName, mode: 'insensitive' }
+
+  const [items, total] = await prisma.$transaction([
+    prisma.deliveryFile.findMany({
+      where,
+      select: {
+        id: true,
+        fileName: true,
+        size: true,
+        sha256: true,
+        mimeType: true,
+        status: true,
+        createdAt: true,
+        merchant: { select: { id: true, name: true } },
+        _count: { select: { offers: true, deliveryRecords: true } },
+      },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      skip: (query.page - 1) * query.pageSize,
+      take: query.pageSize,
+    }),
+    prisma.deliveryFile.count({ where }),
+  ])
+
+  return {
+    items: items.map(file => ({
+      id: file.id,
+      fileName: file.fileName,
+      size: file.size,
+      sha256: file.sha256,
+      mimeType: file.mimeType,
+      status: file.status,
+      createdAt: file.createdAt,
+      merchant: file.merchant,
+      refCounts: { offers: file._count.offers, deliveryRecords: file._count.deliveryRecords },
+    })),
+    total,
+    page: query.page,
+    pageSize: query.pageSize,
+  }
+}
+
+/**
+ * 某文件的签名发放流水（FileGrantLog，granted 与 denied 全记）。任意状态的
+ * 文件都可查——deleted 文件的历史发放仍是审计事实。倒序走 [fileId, createdAt]
+ * 索引。ipHash 是 HMAC 摘要（不可还原），可直接出给管理员做同源关联。
+ */
+export async function listDeliveryFileGrants(fileId: number, query: ListFileGrantsQuery) {
+  const file = await prisma.deliveryFile.findUnique({ where: { id: fileId }, select: { id: true } })
+  if (!file) throw notFound('文件不存在')
+
+  const [items, total] = await prisma.$transaction([
+    prisma.fileGrantLog.findMany({
+      where: { fileId },
+      select: {
+        id: true,
+        orderId: true,
+        userId: true,
+        role: true,
+        outcome: true,
+        ipHash: true,
+        userAgent: true,
+        expiresAt: true,
+        createdAt: true,
+      },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      skip: (query.page - 1) * query.pageSize,
+      take: query.pageSize,
+    }),
+    prisma.fileGrantLog.count({ where: { fileId } }),
+  ])
+
+  return { items, total, page: query.page, pageSize: query.pageSize }
+}
+
+// ---- P5.5 T2：全平台热销规格报表 ----
+
+const OFFER_REPORT_RANGE_DAYS = { '7d': 7, '30d': 30, '90d': 90 } as const
+
+interface AdminOfferReportRow {
+  offerId: number | null
+  productId: number
+  merchantId: number | null
+  offerName: string
+  productName: string
+  merchantName: string | null
+  soldCount: number | bigint
+  pointsRevenue: number | bigint | null
+}
+
+/**
+ * 全平台热销规格 top-20。口径 = 净成交（排除 refunded）——`Offer.sales` 是
+ * 只增计数器，不作报表数据源。按 (offerId, productId, merchantId) 分组：
+ * 非空 offerId 本就唯一确定商品与商家，等价于按 offerId 分组；offerId IS NULL
+ * 的历史单则按商品拆桶，保证 productId 列有确定含义。规格名优先取当前
+ * Offer.name（改名即时生效），规格行缺失时回退最近一笔订单的 offerNameSnapshot，
+ * NULL 桶固定为「未指定规格」。
+ */
+export async function getOfferReport(range: keyof typeof OFFER_REPORT_RANGE_DAYS) {
+  const start = new Date(Date.now() - OFFER_REPORT_RANGE_DAYS[range] * 24 * 60 * 60 * 1000)
+
+  const rows = await prisma.$queryRaw<AdminOfferReportRow[]>`
+    SELECT
+      o."offerId" AS "offerId",
+      o."productId" AS "productId",
+      o."merchantId" AS "merchantId",
+      COALESCE(
+        MAX(ofr."name"),
+        (array_agg(o."offerNameSnapshot" ORDER BY o."createdAt" DESC, o."id" DESC)
+          FILTER (WHERE o."offerNameSnapshot" IS NOT NULL))[1],
+        '未指定规格'
+      ) AS "offerName",
+      MAX(p."name") AS "productName",
+      MAX(m."name") AS "merchantName",
+      COUNT(*)::int AS "soldCount",
+      COALESCE(SUM(o."price"), 0)::int AS "pointsRevenue"
+    FROM "Order" o
+    INNER JOIN "Product" p ON p."id" = o."productId"
+    LEFT JOIN "Offer" ofr ON ofr."id" = o."offerId"
+    LEFT JOIN "Merchant" m ON m."id" = o."merchantId"
+    WHERE o."createdAt" >= ${start}
+      AND o."status" <> 'refunded'
+    GROUP BY o."offerId", o."productId", o."merchantId"
+    ORDER BY COALESCE(SUM(o."price"), 0) DESC, COUNT(*) DESC, o."productId" ASC, o."offerId" ASC NULLS LAST
+    LIMIT 20
+  `
+
+  return {
+    items: rows.map(row => ({
+      offerId: row.offerId,
+      offerName: row.offerName,
+      productId: row.productId,
+      productName: row.productName,
+      merchantId: row.merchantId,
+      merchantName: row.merchantName,
+      soldCount: Number(row.soldCount ?? 0),
+      pointsRevenue: Number(row.pointsRevenue ?? 0),
+    })),
+  }
 }

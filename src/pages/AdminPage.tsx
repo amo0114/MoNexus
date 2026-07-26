@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { LayoutDashboard, UsersRound, Package, ShoppingCart, Activity, Users, ShoppingBag, Coins, Store, DollarSign, Settings, ClipboardList, Megaphone, DatabaseBackup } from 'lucide-react'
+import { LayoutDashboard, UsersRound, Package, ShoppingCart, Activity, Users, ShoppingBag, Coins, Store, DollarSign, Settings, ClipboardList, Megaphone, DatabaseBackup, FolderLock } from 'lucide-react'
 import api from '../api/client'
 import { getApiErrorMessage } from '../api/error'
 import { useAppStore } from '../stores/appStore'
@@ -20,12 +20,14 @@ import AdminUserTable from '../components/admin/AdminUserTable'
 import AdminOrderTable from '../components/admin/AdminOrderTable'
 import AnnouncementsAdmin from '../components/admin/AnnouncementsAdmin'
 import CommissionDialog from '../components/admin/CommissionDialog'
+import AdminFileGovernance from '../components/admin/AdminFileGovernance'
+import AdminOfferReport from '../components/admin/AdminOfferReport'
 import PortableBackupPanel from '../components/admin/PortableBackupPanel'
 import { Dialog, DialogContent, DialogTitle } from '../components/ui/Dialog'
 import { TableSkeleton, StatCardSkeleton } from '../components/ui/Skeleton'
 import EmptyState from '../components/ui/EmptyState'
 
-type AdminTab = 'dashboard' | 'users' | 'products' | 'orders' | 'logs' | 'audit' | 'merchants' | 'settlements' | 'announcements' | 'config' | 'backup'
+type AdminTab = 'dashboard' | 'users' | 'products' | 'orders' | 'logs' | 'audit' | 'files' | 'merchants' | 'settlements' | 'announcements' | 'config' | 'backup'
 
 const NAV_ITEMS: { id: AdminTab; label: string; icon: any }[] = [
   { id: 'dashboard', label: '数据仪表盘', icon: LayoutDashboard },
@@ -36,6 +38,7 @@ const NAV_ITEMS: { id: AdminTab; label: string; icon: any }[] = [
   { id: 'orders', label: '订单记录', icon: ShoppingCart },
   { id: 'logs', label: '积分流水', icon: Activity },
   { id: 'audit', label: '操作审计', icon: ClipboardList },
+  { id: 'files', label: '文件治理', icon: FolderLock },
   { id: 'announcements', label: '公告管理', icon: Megaphone },
   { id: 'config', label: '系统配置', icon: Settings },
   { id: 'backup', label: '数据备份与恢复', icon: DatabaseBackup },
@@ -150,7 +153,7 @@ export default function AdminPage() {
         setSettlements(data)
         setSelectedSettlements([])
       }
-      // users / orders / config Tab 由各自子组件自行拉取数据
+      // users / orders / config / files Tab 由各自子组件自行拉取数据
     } catch (err: any) {
       showToast(getApiErrorMessage(err, '加载失败'), 'error')
     } finally {
@@ -274,6 +277,7 @@ export default function AdminPage() {
                 <DashStat icon={ShoppingBag} label="累计完成订单" value={stats.orders} />
                 <DashStat icon={Coins} label="流通积分总额" value={stats.totalPoints} tone="cta" />
               </div>
+              <AdminOfferReport />
             </div>
           )}
 
@@ -700,6 +704,9 @@ export default function AdminPage() {
               )}
             </div>
           )}
+
+          {/* Files（P5.5 T1：文件治理，子组件自行拉取数据） */}
+          {activeTab === 'files' && <AdminFileGovernance />}
 
           {/* Configs */}
           {activeTab === 'config' && (

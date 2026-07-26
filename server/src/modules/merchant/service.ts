@@ -24,6 +24,7 @@ import {
   type FulfillmentOrderStatus,
 } from '../orders/fulfillment.js'
 import { releaseHeldOrder, settleHeldOrder } from '../orders/accounting.js'
+import { applyRefundInventoryPolicy } from '../orders/refundInventory.js'
 import { serializeMerchantOrder } from '../orders/serializers.js'
 import type { MerchantOrderListQuery } from './schema.js'
 import type { PurchaseFormField } from '../../lib/purchaseForm.js'
@@ -1017,6 +1018,10 @@ export async function rejectOrder(
         holdingPoints: true,
         fundsHeld: true,
         deliveryModeSnapshot: true,
+        // P5.5 T4：退款回补策略需要的归属字段。
+        productId: true,
+        offerId: true,
+        merchantId: true,
         product: { select: { deliveryMode: true } },
       },
     })
@@ -1038,6 +1043,13 @@ export async function rejectOrder(
     }, tx)
 
     await releaseHeldOrder(tx, order, `商家拒单释放冻结积分: #${order.id}`)
+
+    // P5.5 T4：拒单退款的库存侧效果与积分退还同事务——未交付（pending），
+    // 限量规格回补服务名额，销量净减。
+    await applyRefundInventoryPolicy(tx, order, {
+      fromStatus: 'pending',
+      actorUserId,
+    })
   })
 
   return getMyOrderDetail(merchantId, orderId)

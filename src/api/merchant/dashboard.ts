@@ -28,3 +28,18 @@ export async function fetchTimeseries(range: Range): Promise<DashboardTimeseries
   const { data } = await client.get('/merchant/dashboard/timeseries', { params: { range } })
   return data
 }
+
+/** P5.5 T2：按规格聚合的热销榜（净成交口径，已排除退款订单）。offerId 为 null 表示历史未指定规格订单。 */
+export interface DashboardTopOffer {
+  offerId: number | null
+  offerName: string
+  productId: number
+  productName: string
+  soldCount: number
+  pointsRevenue: number
+}
+
+export async function fetchTopOffers(range: Range): Promise<{ items: DashboardTopOffer[] }> {
+  const { data } = await client.get('/merchant/dashboard/offers', { params: { range } })
+  return data
+}

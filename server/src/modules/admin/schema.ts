@@ -198,3 +198,35 @@ export const listAnnouncementsQuerySchema = z.object({
 }).strict()
 
 export type ListAnnouncementsQuery = z.infer<typeof listAnnouncementsQuerySchema>
+
+// ---- P5.5 T1：交付文件治理 ----
+
+export const listDeliveryFilesQuerySchema = z.object({
+  page: z.coerce.number().int().positive().default(1),
+  pageSize: z.coerce.number().int().min(1)
+    .max(businessRegistry.pagination.maxPageSize, 'pageSize 超出最大分页限制')
+    .default(businessRegistry.pagination.defaultPageSize),
+  merchantId: z.coerce.number().int().positive().optional(),
+  status: z.enum(['active', 'revoked', 'deleted']).optional(),
+  // 模糊匹配（不区分大小写）；上限对齐上传时的文件名长度约束。
+  fileName: z.string().trim().min(1).max(200).optional(),
+}).strict()
+
+export type ListDeliveryFilesQuery = z.infer<typeof listDeliveryFilesQuerySchema>
+
+export const listFileGrantsQuerySchema = z.object({
+  page: z.coerce.number().int().positive().default(1),
+  pageSize: z.coerce.number().int().min(1)
+    .max(businessRegistry.pagination.maxPageSize, 'pageSize 超出最大分页限制')
+    .default(businessRegistry.pagination.defaultPageSize),
+}).strict()
+
+export type ListFileGrantsQuery = z.infer<typeof listFileGrantsQuerySchema>
+
+// ---- P5.5 T2：全平台热销规格报表 ----
+
+export const offerReportQuerySchema = z.object({
+  range: z.enum(['7d', '30d', '90d']).default('30d'),
+}).strict()
+
+export type OfferReportQuery = z.infer<typeof offerReportQuerySchema>

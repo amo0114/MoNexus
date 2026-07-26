@@ -1,7 +1,10 @@
 import { Request, Response, NextFunction } from 'express'
 import * as adminService from './service.js'
 import * as reviewService from '../reviews/service.js'
-import type { ListAdminAuditQuery, ListAnnouncementsQuery, ListOrdersQuery, ListUsersQuery } from './schema.js'
+import type {
+  ListAdminAuditQuery, ListAnnouncementsQuery, ListOrdersQuery, ListUsersQuery,
+  ListDeliveryFilesQuery, ListFileGrantsQuery, OfferReportQuery,
+} from './schema.js'
 
 export async function stats(_req: Request, res: Response, next: NextFunction) {
   try { res.json(await adminService.getStats()) } catch (err) { next(err) }
@@ -209,5 +212,27 @@ export async function revokeDeliveryFile(req: Request, res: Response, next: Next
       req.params.id as unknown as number,
       (req.body as { reason?: string }).reason,
     ))
+  } catch (err) { next(err) }
+}
+
+// ---- P5.5：文件治理与规格报表 ----
+
+export async function listDeliveryFiles(req: Request, res: Response, next: NextFunction) {
+  try {
+    res.json(await adminService.listDeliveryFiles(req.query as unknown as ListDeliveryFilesQuery))
+  } catch (err) { next(err) }
+}
+
+export async function deliveryFileGrants(req: Request, res: Response, next: NextFunction) {
+  try {
+    const fileId = req.params.id as unknown as number
+    res.json(await adminService.listDeliveryFileGrants(fileId, req.query as unknown as ListFileGrantsQuery))
+  } catch (err) { next(err) }
+}
+
+export async function offerReport(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { range } = req.query as unknown as OfferReportQuery
+    res.json(await adminService.getOfferReport(range))
   } catch (err) { next(err) }
 }
