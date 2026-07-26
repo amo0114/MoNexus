@@ -250,6 +250,10 @@ model Offer {
   deliveryFields   Json?
   sales            Int      @default(0)
   sortOrder        Int      @default(0)
+  // 默认规格：只服务兼容路径（商品级编辑、未指定 offerId 的库存操作）。
+  // 展示顺序由 sortOrder，列表价取最低 active 价——三个概念显式分离。
+  // 每商品至多一条：部分唯一索引 Offer_one_default_per_product（迁移内建）。
+  isDefault        Boolean  @default(false)
   createdAt        DateTime @default(now())
 
   product   Product         @relation(fields: [productId], references: [id])

@@ -27,12 +27,14 @@ export const DEFAULT_OFFER_NAME = '默认规格'
 export async function createDefaultOffer(
   tx: Client,
   productId: number,
-  fields: OfferCommercialFields
+  fields: OfferCommercialFields,
+  name: string = DEFAULT_OFFER_NAME
 ): Promise<Offer> {
   return tx.offer.create({
     data: {
       productId,
-      name: DEFAULT_OFFER_NAME,
+      name,
+      isDefault: true,
       price: fields.price,
       originalPrice: fields.originalPrice ?? null,
       deliveryMode: fields.deliveryMode,
@@ -45,15 +47,15 @@ export async function createDefaultOffer(
 }
 
 /**
- * 解析商品的"默认 Offer"：最早创建的一条（回填迁移保证每个商品至少一条）。
- * 商品级写入（旧编辑路径）与未指定 offerId 的库存操作都落到它。
+ * 解析商品的"默认 Offer"（isDefault 显式标记；迁移 20260726150000 回填 +
+ * 每商品唯一部分索引保证至多一条）。商品级写入（旧编辑路径）与未指定
+ * offerId 的库存操作都落到它。绕过 API 的数据操作可能丢标记——回退最早
+ * 一条，与迁移前语义一致。
  */
 export async function getDefaultOffer(tx: Client, productId: number): Promise<Offer> {
-  const offer = await tx.offer.findFirst({
-    where: { productId },
-    orderBy: { id: 'asc' },
-  })
-  // 回填迁移后不应出现；只可能是绕过 API 的数据操作造成。
+  const offer =
+    (await tx.offer.findFirst({ where: { productId, isDefault: true } })) ??
+    (await tx.offer.findFirst({ where: { productId }, orderBy: { id: 'asc' } }))
   if (!offer) throw notFound('商品缺少规格数据')
   return offer
 }
@@ -101,7 +103,7 @@ export async function syncProductProjection(tx: Client, productId: number) {
   if (offers.length === 0) return
 
   const actives = offers.filter(o => o.status === 'active')
-  const defaultOffer = offers[0]
+  const defaultOffer = offers.find(o => o.isDefault) ?? offers[0]
   const cheapest = (actives.length > 0 ? actives : offers)
     .reduce((min, o) => (o.price < min.price ? o : min))
 

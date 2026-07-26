@@ -361,3 +361,82 @@ describe('GET /api/merchant/products/:id/inventory/logs', () => {
       .expect(404)
   })
 })
+
+// P4a F4：库存作废与名额调整的显式 offerId 定向回归——多规格商品上
+// 必须只动指定规格，绝不波及默认规格。
+describe('explicit offerId targeting for void & capacity adjust', () => {
+  it('voids only the selected offer inventory, leaving the default offer pool intact', async () => {
+    const { accessToken, product } = await setupMerchantWithProduct('void-offer-scope@test.local', ['DEF-1', 'DEF-2'])
+    const defaultOfferId = await getDefaultOfferId(product.id)
+    const extra = await prisma.offer.create({
+      data: { productId: product.id, name: '高级卡密档', price: 300 },
+    })
+    await prisma.inventoryItem.createMany({
+      data: ['EX-1', 'EX-2', 'EX-3'].map(content => ({
+        productId: product.id, offerId: extra.id, content, status: 'available',
+      })),
+    })
+
+    const res = await api
+      .post(`/api/merchant/products/${product.id}/inventory/void`)
+      .set(authHeader(accessToken))
+      .send({ count: 2, reason: '规格定向作废', offerId: extra.id })
+      .expect(200)
+    expect(res.body.voided).toBe(2)
+
+    expect(await prisma.inventoryItem.count({ where: { offerId: extra.id, status: 'available' } })).toBe(1)
+    expect(await prisma.inventoryItem.count({ where: { offerId: defaultOfferId, status: 'available' } })).toBe(2)
+    // 作废流水挂在被定向的规格上。
+    const log = await prisma.inventoryLog.findFirstOrThrow({
+      where: { productId: product.id, action: 'void' },
+    })
+    expect(log.offerId).toBe(extra.id)
+  })
+
+  it('adjusts capacity only on the selected limited offer', async () => {
+    const { accessToken, product } = await setupMerchantWithProduct('capacity-offer-scope@test.local')
+    const defaultOfferId = await getDefaultOfferId(product.id)
+    const limited = await prisma.offer.create({
+      data: {
+        productId: product.id, name: '限量服务档', price: 500,
+        deliveryMode: 'manual_service', stockMode: 'limited', stock: 5,
+      },
+    })
+
+    const res = await api
+      .post(`/api/merchant/products/${product.id}/capacity/adjust`)
+      .set(authHeader(accessToken))
+      .send({ delta: 3, reason: '追加名额', offerId: limited.id })
+      .expect(200)
+    expect(res.body.stock).toBe(8)
+
+    expect((await prisma.offer.findUniqueOrThrow({ where: { id: limited.id } })).stock).toBe(8)
+    // 默认规格（即时库存档）不受影响。
+    expect((await prisma.offer.findUniqueOrThrow({ where: { id: defaultOfferId } })).stock).toBe(0)
+
+    // 即时库存规格不能走名额调整（必须逐条导入/作废）。
+    const rejected = await api
+      .post(`/api/merchant/products/${product.id}/capacity/adjust`)
+      .set(authHeader(accessToken))
+      .send({ delta: 3, reason: '误操作', offerId: defaultOfferId })
+      .expect(400)
+    expect(rejected.body.error.message).toBeTruthy()
+  })
+
+  it('returns 404 for an offerId that belongs to another product on both endpoints', async () => {
+    const { accessToken, product } = await setupMerchantWithProduct('offer-scope-foreign@test.local', ['F-1'])
+    const otherProduct = await createTestProduct('别家规格商品', 100, 1, ['O-1'])
+    const foreignOfferId = await getDefaultOfferId(otherProduct.id)
+
+    await api
+      .post(`/api/merchant/products/${product.id}/inventory/void`)
+      .set(authHeader(accessToken))
+      .send({ count: 1, offerId: foreignOfferId })
+      .expect(404)
+    await api
+      .post(`/api/merchant/products/${product.id}/capacity/adjust`)
+      .set(authHeader(accessToken))
+      .send({ delta: 1, reason: '越界', offerId: foreignOfferId })
+      .expect(404)
+  })
+})

@@ -25,6 +25,8 @@ export interface Offer {
   fixedContentType?: string
   sales?: number
   sortOrder?: number
+  /** 每商品恰有一条默认规格;商品级兼容路径(旧编辑/未指定规格的库存操作)落到它。 */
+  isDefault?: boolean
   createdAt?: string
   /** P4b：交付字段模板;空数组/缺省 = 纯文本交付。 */
   deliveryFields?: DeliveryField[] | null
@@ -58,6 +60,8 @@ export interface OfferWriteRequest {
   sortOrder?: number
   /** P4b：交付字段模板;null 清空回纯文本交付。 */
   deliveryFields?: DeliveryField[] | null
+  /** 仅更新时接受;true = 把默认转移到本规格(不能传 false 取消默认)。 */
+  isDefault?: boolean
 }
 
 export interface ListEnvelope<T> {
@@ -231,9 +235,13 @@ export interface CreateMerchantProductRequest {
   stock?: number
   fixedContent?: string
   fixedContentType?: 'text' | 'url'
+  /** F3：默认规格名称（缺省「默认规格」）；与商品同事务落库。 */
+  primaryOfferName?: string
+  /** F3：附加规格；任一条无效则整个创建回滚。 */
+  offers?: (OfferWriteRequest & { name: string; price: number })[]
 }
 
-export interface UpdateMerchantProductRequest extends Omit<Partial<CreateMerchantProductRequest>, 'fixedContent'> {
+export interface UpdateMerchantProductRequest extends Omit<Partial<CreateMerchantProductRequest>, 'fixedContent' | 'primaryOfferName' | 'offers'> {
   status?: ProductStatus
   /** 从固定内容交付切换到其他模式时，可显式清空。 */
   fixedContent?: string | null

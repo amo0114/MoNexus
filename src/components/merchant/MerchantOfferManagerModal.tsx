@@ -210,6 +210,22 @@ export default function MerchantOfferManagerModal({ isOpen, onClose, product, on
     }
   }
 
+  /** 把默认规格转移到本条（服务端同事务清旧默认；删除默认时自动继任）。 */
+  async function setDefault(offer: Offer) {
+    if (!product) return
+    setSubmitting(true)
+    try {
+      await updateMerchantOffer(product.id, offer.id, { isDefault: true })
+      showToast('已设为默认规格')
+      await load()
+      await onChanged()
+    } catch (err: any) {
+      showToast(err.response?.data?.error?.message || '操作失败', 'error')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
   async function toggleStatus(offer: Offer) {
     if (!product) return
     setSubmitting(true)
@@ -260,6 +276,9 @@ export default function MerchantOfferManagerModal({ isOpen, onClose, product, on
                           <span className="text-xs px-1.5 py-0.5 rounded border border-[var(--color-border)] text-[var(--color-text-muted)]">
                             {DELIVERY_LABEL[offer.deliveryMode] ?? offer.deliveryMode}
                           </span>
+                          {offer.isDefault && (
+                            <span className="text-xs px-1.5 py-0.5 rounded bg-[var(--color-primary)]/10 text-[var(--color-primary)] font-medium" data-testid={`offer-default-badge-${offer.id}`}>默认</span>
+                          )}
                           {offer.status === 'inactive' && (
                             <span className="text-xs px-1.5 py-0.5 rounded bg-[var(--color-border)] text-[var(--color-text-muted)] font-medium">已下架</span>
                           )}
@@ -274,6 +293,11 @@ export default function MerchantOfferManagerModal({ isOpen, onClose, product, on
                         </div>
                       </div>
                       <div className="flex items-center gap-1 shrink-0">
+                        {!offer.isDefault && (
+                          <button type="button" onClick={() => setDefault(offer)} disabled={submitting} className="btn-sm text-xs text-[var(--color-text-muted)] hover:text-[var(--color-primary)] cursor-pointer" data-testid={`offer-set-default-${offer.id}`}>
+                            设为默认
+                          </button>
+                        )}
                         <button type="button" onClick={() => toggleStatus(offer)} disabled={submitting} className="btn-sm text-xs text-[var(--color-text-muted)] hover:text-[var(--color-text)] cursor-pointer" data-testid={`offer-toggle-${offer.id}`}>
                           {offer.status === 'active' ? '下架' : '上架'}
                         </button>

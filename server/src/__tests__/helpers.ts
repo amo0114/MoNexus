@@ -87,6 +87,7 @@ export async function createTestProduct(
     data: {
       productId: product.id,
       name: '默认规格',
+      isDefault: true,
       price,
       stock: items.length || stock,
     },
@@ -130,11 +131,16 @@ export function authHeader(token: string) {
 
 /** P4a：取商品默认 Offer id（测试里手工造库存条目时挂载用）。 */
 export async function getDefaultOfferId(productId: number): Promise<number> {
-  const offer = await prisma.offer.findFirstOrThrow({
-    where: { productId },
-    orderBy: { id: 'asc' },
-    select: { id: true },
-  })
+  const offer =
+    (await prisma.offer.findFirst({
+      where: { productId, isDefault: true },
+      select: { id: true },
+    })) ??
+    (await prisma.offer.findFirstOrThrow({
+      where: { productId },
+      orderBy: { id: 'asc' },
+      select: { id: true },
+    }))
   return offer.id
 }
 
@@ -177,6 +183,7 @@ export async function createProductWithOffer(args: { data: any }) {
     data: {
       productId: product.id,
       name: '默认规格',
+      isDefault: true,
       price: product.price,
       originalPrice: product.originalPrice,
       deliveryMode: product.deliveryMode,

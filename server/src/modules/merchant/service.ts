@@ -278,11 +278,16 @@ export async function createMyProduct(
     type: string; icon?: string; imageUrl?: string | null; images?: string[];
     price: number; originalPrice?: number; isHot?: boolean; deliveryMode?: string;
     stockMode?: string; stock?: number; fixedContent?: string; fixedContentType?: string;
-    purchaseForm?: PurchaseFormField[]
+    purchaseForm?: PurchaseFormField[];
+    // P4a F3：向导原子发布——默认规格名 + 额外规格与商品同事务落库。
+    primaryOfferName?: string;
+    offers?: (OfferWriteInput & { name: string; price: number })[]
   }
 ) {
   assertOriginalPriceAtLeastSale(data.price, data.originalPrice)
-  const normalizedProductData = normalizeProductImageFields(data)
+  // primaryOfferName/offers 只进 Offer 表，不进 Product 列。
+  const { primaryOfferName: _primaryOfferName, offers: _offers, ...productFields } = data
+  const normalizedProductData = normalizeProductImageFields(productFields)
   const deliveryMode = data.deliveryMode ?? 'instant_inventory'
   const stockMode = data.stockMode ?? (deliveryMode === 'instant_inventory' ? 'limited' : 'unlimited')
   const fixedContentType = data.fixedContentType ?? 'text'
@@ -316,7 +321,16 @@ export async function createMyProduct(
       stock: deliveryMode === 'instant_inventory' ? 0 : (data.stock ?? 0),
       fixedContent: data.fixedContent ?? null,
       fixedContentType,
-    })
+    }, data.primaryOfferName)
+    // F3：额外规格同事务创建，任一条校验失败 → 整体回滚（无孤儿商品）。
+    for (const offerInput of data.offers ?? []) {
+      await insertOffer(tx, created.id, offerInput)
+    }
+    if (data.offers?.length) {
+      await syncProductProjection(tx, created.id)
+      // 投影（最低价/库存合计）可能已被额外规格改写，返回同步后的行。
+      return tx.product.findUniqueOrThrow({ where: { id: created.id } })
+    }
     return created
   })
 
@@ -1076,6 +1090,9 @@ type OfferWriteInput = {
   sortOrder?: number
   // P4b：交付字段模板；null 清空回纯文本。已过 zod（deliveryFieldsSchema）。
   deliveryFields?: DeliveryField[] | null
+  // 设为默认规格（仅接受 true，事务内从原默认转移；不接受 false——
+  // 取消默认必须通过在另一条上设默认完成，保证不变量恒成立）。
+  isDefault?: boolean
 }
 
 /** instant_fixed 固定内容天然单值，不支持交付字段模板（P4b 决策点 2）。 */
@@ -1122,12 +1139,15 @@ export async function listMyOffers(merchantId: number, productId: number) {
   })
 }
 
-export async function createMyOffer(
-  merchantId: number,
+/**
+ * 校验并写入一条规格（不同步投影，调用方负责在同事务里收尾）。
+ * createMyOffer 与向导原子发布（createMyProduct 的 offers）共用。
+ */
+async function insertOffer(
+  tx: Prisma.TransactionClient,
   productId: number,
   input: OfferWriteInput & { name: string; price: number }
 ) {
-  await assertMyProduct(merchantId, productId)
   const deliveryMode = input.deliveryMode ?? 'instant_inventory'
   const stockMode = input.stockMode ?? (deliveryMode === 'instant_inventory' ? 'limited' : 'unlimited')
   const fixedContentType = input.fixedContentType ?? 'text'
@@ -1141,25 +1161,34 @@ export async function createMyOffer(
     fixedContent: input.fixedContent,
     fixedContentType,
   })
-
   assertDeliveryFieldsAllowed(deliveryMode, input.deliveryFields)
+
+  return tx.offer.create({
+    data: {
+      productId,
+      name: input.name,
+      price: input.price,
+      originalPrice: input.originalPrice ?? null,
+      status: input.status ?? 'active',
+      deliveryMode,
+      stockMode,
+      stock: deliveryMode === 'instant_inventory' ? 0 : (input.stock ?? 0),
+      fixedContent: input.fixedContent ?? null,
+      fixedContentType,
+      sortOrder: input.sortOrder ?? 0,
+      deliveryFields: input.deliveryFields ?? undefined,
+    },
+  })
+}
+
+export async function createMyOffer(
+  merchantId: number,
+  productId: number,
+  input: OfferWriteInput & { name: string; price: number }
+) {
+  await assertMyProduct(merchantId, productId)
   const offer = await prisma.$transaction(async tx => {
-    const created = await tx.offer.create({
-      data: {
-        productId,
-        name: input.name,
-        price: input.price,
-        originalPrice: input.originalPrice ?? null,
-        status: input.status ?? 'active',
-        deliveryMode,
-        stockMode,
-        stock: deliveryMode === 'instant_inventory' ? 0 : (input.stock ?? 0),
-        fixedContent: input.fixedContent ?? null,
-        fixedContentType,
-        sortOrder: input.sortOrder ?? 0,
-        deliveryFields: input.deliveryFields ?? undefined,
-      },
-    })
+    const created = await insertOffer(tx, productId, input)
     await syncProductProjection(tx, productId)
     return created
   })
@@ -1215,9 +1244,18 @@ export async function updateMyOffer(
       fixedContentType,
     })
 
+    // 设为默认：先清旧默认再随本次更新立新默认（同事务；部分唯一索引兜底并发）。
+    // 取消默认只能通过在另一条上设默认完成，保证"每商品恰有一条默认"不变量。
+    if (input.isDefault === true && !offer.isDefault) {
+      await tx.offer.updateMany({ where: { productId, isDefault: true }, data: { isDefault: false } })
+    } else if (input.isDefault === false && offer.isDefault) {
+      throw badRequest('不能直接取消默认规格，请在其他规格上设为默认')
+    }
+
     const next = await tx.offer.update({
       where: { id: offer.id },
       data: {
+        ...(input.isDefault === true ? { isDefault: true } : {}),
         ...(input.name != null ? { name: input.name } : {}),
         ...(input.price != null ? { price: input.price } : {}),
         ...('originalPrice' in input ? { originalPrice: input.originalPrice ?? null } : {}),
@@ -1265,6 +1303,15 @@ export async function deleteMyOffer(merchantId: number, productId: number, offer
     }
 
     await tx.offer.delete({ where: { id: offer.id } })
+    // 删除的是默认规格 → 自动把剩余规格里 sortOrder 最靠前的提为默认，
+    // 保持"每商品恰有一条默认"的兼容路径不变量（无需商家额外操作）。
+    if (offer.isDefault) {
+      const next = await tx.offer.findFirst({
+        where: { productId },
+        orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
+      })
+      if (next) await tx.offer.update({ where: { id: next.id }, data: { isDefault: true } })
+    }
     await syncProductProjection(tx, productId)
   })
 

@@ -6,7 +6,7 @@ import {
 } from 'lucide-react'
 import DOMPurify from 'dompurify'
 import { useAppStore } from '../../stores/appStore'
-import { createMerchantProduct, createMerchantOffer, getMerchantOffers, updateMerchantOffer } from '../../api/merchant'
+import { createMerchantProduct } from '../../api/merchant'
 import { uploadImage, UploadError } from '../../api/uploads'
 import SafeImage from '../../components/ui/SafeImage'
 import PurchaseFormFieldsEditor, {
@@ -296,42 +296,31 @@ export default function ProductCreateWizard() {
       payload.fixedContent = form.fixedContent.trim()
       payload.fixedContentType = form.fixedContentType
     }
+    // F3：主规格名 + 附加规格随创建请求一次事务落库；任一规格无效则整体失败，
+    // 不再出现"商品建了、规格没建全"的中间态。
+    const trimmedPrimaryName = primaryOfferName.trim()
+    if (trimmedPrimaryName && trimmedPrimaryName !== DEFAULT_OFFER_NAME) {
+      payload.primaryOfferName = trimmedPrimaryName
+    }
+    if (extraOffers.length > 0) {
+      payload.offers = extraOffers.map(offer => ({
+        name: offer.name.trim(),
+        price: Number(offer.price),
+        originalPrice: offer.originalPrice.trim() === '' ? null : Number(offer.originalPrice),
+        deliveryMode: offer.deliveryMode,
+        stockMode: offer.deliveryMode === 'instant_inventory' ? 'limited' : offer.stockMode,
+        ...(offer.deliveryMode !== 'instant_inventory' && offer.stockMode === 'limited'
+          ? { stock: Number(offer.stock) }
+          : {}),
+        ...(offer.deliveryMode === 'instant_fixed'
+          ? { fixedContent: offer.fixedContent.trim(), fixedContentType: offer.fixedContentType }
+          : {}),
+      }))
+    }
 
     setSubmitting(true)
     try {
-      const product = await createMerchantProduct(payload)
-      // 商品创建时服务端已生成主规格（默认 Offer）；下面只做改名与追加规格。
-      // 商品本体已落库，附加步骤失败不回滚——提示用户去「规格管理」补齐，
-      // 避免把已成功的创建也一并丢掉。
-      try {
-        const trimmedPrimaryName = primaryOfferName.trim()
-        if (trimmedPrimaryName && trimmedPrimaryName !== DEFAULT_OFFER_NAME) {
-          const offers = await getMerchantOffers(product.id)
-          if (offers[0]) await updateMerchantOffer(product.id, offers[0].id, { name: trimmedPrimaryName })
-        }
-        for (const offer of extraOffers) {
-          await createMerchantOffer(product.id, {
-            name: offer.name.trim(),
-            price: Number(offer.price),
-            originalPrice: offer.originalPrice.trim() === '' ? null : Number(offer.originalPrice),
-            deliveryMode: offer.deliveryMode,
-            stockMode: offer.deliveryMode === 'instant_inventory' ? 'limited' : offer.stockMode,
-            ...(offer.deliveryMode !== 'instant_inventory' && offer.stockMode === 'limited'
-              ? { stock: Number(offer.stock) }
-              : {}),
-            ...(offer.deliveryMode === 'instant_fixed'
-              ? { fixedContent: offer.fixedContent.trim(), fixedContentType: offer.fixedContentType }
-              : {}),
-          })
-        }
-      } catch (offerErr: any) {
-        showToast(
-          offerErr.response?.data?.error?.message || '商品已创建，但部分规格未保存，请在「规格管理」中补齐',
-          'error',
-        )
-        navigate('/merchant')
-        return
-      }
+      await createMerchantProduct(payload)
       showToast('商品创建成功')
       navigate('/merchant')
     } catch (err: any) {

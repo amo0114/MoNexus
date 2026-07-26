@@ -59,7 +59,35 @@ const merchantProductFieldsSchema = z.object({
   purchaseForm: purchaseFormSchema.optional(),
 })
 
-export const createMerchantProductSchema = merchantProductFieldsSchema.superRefine(validateProductCommercialFields)
+// ---- Offers (P4a) ----
+
+const merchantOfferFieldsSchema = z.object({
+  name: z.string().trim().min(1, '规格名称不能为空').max(50),
+  price: productPriceSchema,
+  originalPrice: productPriceSchema.nullable().optional(),
+  status: productStatusSchema.optional(),
+  deliveryMode: productDeliveryModeSchema.optional(),
+  stockMode: productStockModeSchema.optional(),
+  stock: z.number().int().min(0).max(1_000_000).optional(),
+  fixedContent: z.string().trim().min(1).max(5000).nullable().optional(),
+  fixedContentType: productFixedContentTypeSchema.optional(),
+  sortOrder: z.number().int().min(0).max(10_000).optional(),
+  // P4b：交付字段模板；null 清空回纯文本交付。
+  deliveryFields: deliveryFieldsSchema.nullable().optional(),
+}).strict()
+
+export const createMerchantOfferSchema = merchantOfferFieldsSchema
+// isDefault 仅在更新时接受（true = 把默认转移到本规格）；新建规格不能直接抢默认。
+export const updateMerchantOfferSchema = merchantOfferFieldsSchema.partial().extend({
+  isDefault: z.boolean().optional(),
+})
+
+// P4a F3：向导原子发布——商品 + 默认规格名 + 额外规格一次事务落库，
+// 任一规格校验失败则整体回滚（不再有"商品建了、规格没建全"的中间态）。
+export const createMerchantProductSchema = merchantProductFieldsSchema.extend({
+  primaryOfferName: z.string().trim().min(1, '默认规格名称不能为空').max(50).optional(),
+  offers: z.array(merchantOfferFieldsSchema).max(20, '规格数量超出上限').optional(),
+}).superRefine(validateProductCommercialFields)
 
 export const updateMerchantProductSchema = merchantProductFieldsSchema.partial().extend({
   status: productStatusSchema.optional(),
@@ -97,26 +125,6 @@ export const adjustMerchantProductCapacitySchema = z.object({
   reason: z.string().trim().min(1, '请填写调整原因').max(500),
   offerId: z.number().int().positive().optional(),
 }).strict()
-
-// ---- Offers (P4a) ----
-
-const merchantOfferFieldsSchema = z.object({
-  name: z.string().trim().min(1, '规格名称不能为空').max(50),
-  price: productPriceSchema,
-  originalPrice: productPriceSchema.nullable().optional(),
-  status: productStatusSchema.optional(),
-  deliveryMode: productDeliveryModeSchema.optional(),
-  stockMode: productStockModeSchema.optional(),
-  stock: z.number().int().min(0).max(1_000_000).optional(),
-  fixedContent: z.string().trim().min(1).max(5000).nullable().optional(),
-  fixedContentType: productFixedContentTypeSchema.optional(),
-  sortOrder: z.number().int().min(0).max(10_000).optional(),
-  // P4b：交付字段模板；null 清空回纯文本交付。
-  deliveryFields: deliveryFieldsSchema.nullable().optional(),
-}).strict()
-
-export const createMerchantOfferSchema = merchantOfferFieldsSchema
-export const updateMerchantOfferSchema = merchantOfferFieldsSchema.partial()
 
 export const merchantInventoryLogQuerySchema = z.object({
   page: z.coerce.number().int().positive().optional(),
