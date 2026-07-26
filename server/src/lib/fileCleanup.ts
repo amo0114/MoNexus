@@ -2,6 +2,7 @@ import { config } from '../config/index.js'
 import { logger } from './logger.js'
 import { prisma } from './prisma.js'
 import { getDeliveryStorage } from './storage/delivery.js'
+import { withDeliveryKeyLock } from './deliveryKeyLock.js'
 
 /**
  * P5 T6：交付文件生命周期清理（设计 §8）。
@@ -150,9 +151,13 @@ export async function cleanupRefundedFiles(now = new Date()): Promise<number> {
 
 /**
  * 场景 4：无 DeliveryFile 行引用的最终对象（晋升成功、建行失败）。
- * 只看超过宽限期的对象：新上传"先有对象、毫秒后建行"，宽限期把这个窗口
- * 以及并发同内容上传全部盖住。判据必须是"确认无任何非 deleted 行"——
- * DB 查询失败时宁可留到下一轮，也绝不删。
+ * 只看超过宽限期的对象；判据必须是"确认无任何非 deleted 行"——DB 查询
+ * 失败时宁可留到下一轮，也绝不删。
+ *
+ * 批量引用查询只是廉价初筛；真正的删除在**该 key 的 advisory lock 内**
+ * 二次确认后执行——同内容重新上传从 promote 前持锁到建行完成，没有互斥
+ * 时 GC 可能恰在"对象已存在故仅删 tmp、行未建成"的窗口删掉对象，让
+ * 新行指向不存在的对象（评审 P0 竞态）。
  */
 export async function cleanupUnreferencedObjects(now = new Date()): Promise<number> {
   const storage = await getDeliveryStorage()
@@ -175,9 +180,19 @@ export async function cleanupUnreferencedObjects(now = new Date()): Promise<numb
     for (const key of chunk) {
       if (referenced.has(key)) continue
       try {
-        await storage.delete(key)
-        cleaned++
+        const deleted = await withDeliveryKeyLock(key, async () => {
+          // 持锁二次确认：等到锁时并发上传可能已建行。
+          const row = await prisma.deliveryFile.findFirst({
+            where: { key, status: { not: 'deleted' } },
+            select: { id: true },
+          })
+          if (row) return false
+          await storage.delete(key)
+          return true
+        })
+        if (deleted) cleaned++
       } catch (err) {
+        // 锁超时/查询失败/删除失败一律保留到下一轮。
         logger.warn({ err, key }, 'unreferenced delivery object cleanup failed')
       }
     }

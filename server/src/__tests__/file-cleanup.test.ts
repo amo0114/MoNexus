@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { createHash } from 'node:crypto'
 import { Readable } from 'node:stream'
 import { prisma } from '../lib/prisma.js'
 import { api, createTestMerchant, createTestUser, loginAs, authHeader } from './helpers.js'
@@ -162,6 +163,53 @@ describe('cleanupUnreferencedObjects', () => {
     // DB 恢复后下一轮照常清理。
     expect(await cleanupUnreferencedObjects(new Date(Date.now() + 25 * HOUR))).toBe(1)
     expect(storage.getBlob(orphanKey)).toBeNull()
+  })
+
+  it('blocks behind an in-flight same-content re-upload and spares the object (P0 race)', async () => {
+    // 评审 P0 竞态：超期无行对象 K 被 GC 列为候选的同时，商家重新上传同
+    // 内容——promote 去重命中仅删 tmp，行尚未建成。上传从 promote 前持有
+    // K 的 advisory lock 到建行完成，GC 必须在锁后二次确认到新行而放弃删除。
+    await makeMerchant('gc-race@test.local')
+    const { accessToken } = await loginAs('gc-race@test.local', 'pass123')
+    const storage = (await getDeliveryStorage()) as DeliveryMemoryStorage
+
+    const body = Buffer.from('re-upload race bytes')
+    const finalKey = `${createHash('sha256').update(body).digest('hex')}.bin`
+    // 预置：建行失败残留的无行对象（按超期宽限处理）。
+    await storage.putObjectAt(finalKey, body)
+
+    // 把重新上传暂停在 promote 之后、create 之前（锁已持有）。
+    const originalCreate = prisma.deliveryFile.create.bind(prisma.deliveryFile)
+    let reachCreate!: () => void
+    const reachedCreate = new Promise<void>(resolve => { reachCreate = resolve })
+    let releaseCreate!: () => void
+    const createGate = new Promise<void>(resolve => { releaseCreate = resolve })
+    vi.spyOn(prisma.deliveryFile, 'create').mockImplementationOnce((async (args: unknown) => {
+      reachCreate()
+      await createGate
+      return originalCreate(args as never)
+    }) as never)
+
+    const uploadPromise = api
+      .post('/api/uploads/delivery-file')
+      .set(authHeader(accessToken))
+      .attach('file', body, { filename: 'race.bin' })
+      .then(res => res)
+
+    await reachedCreate
+    const gcPromise = cleanupUnreferencedObjects(new Date(Date.now() + 25 * HOUR))
+    // 给 GC 时间走到锁上排队；持锁窗口内对象必须原封不动。
+    await new Promise(resolve => setTimeout(resolve, 300))
+    expect(storage.getBlob(finalKey)).not.toBeNull()
+
+    releaseCreate()
+    const [uploadRes, cleaned] = await Promise.all([uploadPromise, gcPromise])
+    expect(uploadRes.status).toBe(201)
+    expect(cleaned).toBe(0)
+    expect(storage.getBlob(finalKey)?.equals(body)).toBe(true)
+    const row = await prisma.deliveryFile.findUniqueOrThrow({ where: { id: uploadRes.body.id } })
+    expect(row.key).toBe(finalKey)
+    expect(row.status).toBe('active')
   })
 })
 
