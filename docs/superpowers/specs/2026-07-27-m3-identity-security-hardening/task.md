@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | TASK-M3-ISH-001 |
-| 版本 | 1.0.0 |
+| 版本 | 1.5.0 |
 | 日期 | 2026-07-27 |
 | 规格 | [spec.md](./spec.md) |
 | 计划 | [plan.md](./plan.md) |
@@ -130,8 +130,8 @@ TEST_DATABASE_URL='postgresql://monexus:monexus_dev_2026@localhost:5432/monexus_
 - [ ] 新增 MfaRecoveryCode、AuthChallenge、SecurityEvent 模型；recovery/challenge 可随 User 清理，SecurityEvent 必须保留审计（`userId` 可 SetNull），并在 test setup 显式清理全部三个新模型。
 - [ ] 为 MFA_ENCRYPTION_KEY 建立严格规范 base64 32-byte env parser；production 缺失/格式错误启动失败，vitest 只注入格式正确的测试值，不在 `.env` 提供默认 key。
 - [ ] 将 `sessionId` 声明为 `@default(dbgenerated("gen_random_uuid()")) @db.Uuid`，session 时间声明为数据库 timestamp default；生成的 SQL 必须含 PostgreSQL default，不能使用 client-side `uuid()` 误充历史数据回填。
-- [ ] 在专用库生成一个 migration（目录时间戳必须排序在 P6a migration 之后）：`DATABASE_URL="$M3_ISH_DATABASE_URL" npx prisma migrate dev --name identity_security_hardening`。`M3_ISH_DATABASE_URL` 必须显式指向 `monexus_m3_ish_test`；shadow database 也必须是隔离资源。
-- [ ] 在独立 `monexus_m3_ish_migration_test` 先创建 legacy User/RefreshToken fixture，再应用 migration；断言既有行 `sessionId` 非空且彼此不同、session 时间非空，并检查生成 SQL 的 database default。
+- [ ] 在专用库生成一个 migration（目录时间戳必须排序在 P6a migration 之后）：`DATABASE_URL="$M3_ISH_DATABASE_URL" npx prisma migrate dev --name identity_security_hardening`。`M3_ISH_DATABASE_URL` 必须显式指向 `monexus_m3_ish_test`；shadow database 也必须是隔离资源。若 Prisma UTC timestamp 仍较早，只可重命名未提交的 M3-only 目录，校验 migration.sql hash 不变后 reset/replay 专用库；绝不动 P6a 目录。
+- [ ] 在同一可丢弃专用 `monexus_m3_ish_test` 先创建 legacy User/RefreshToken fixture，再应用 migration；断言既有行 `sessionId` 非空且彼此不同、session 时间非空，并检查生成 SQL 的 database default；之后 reset/replay 此同一专用库。不得创建或连接额外的非专用数据库。
 - [ ] 写并测试幂等、分批的 legacy-admin revoke 命令：仅吊销 migration 前的 admin refresh token，写受控 revoke reason，不写/不回显 tokenHash 或其他秘密。
 - [ ] 运行 `DATABASE_URL="$M3_ISH_DATABASE_URL" npx prisma migrate status` 与 drift 检查；增加 migration/config/revoke guard 测试。
 
@@ -471,3 +471,5 @@ T-00 → T-BE-01 → T-BE-02 → T-BE-03 + T-BE-04 → T-BE-05 → T-FE-01 + T-F
 | 1.1.0 | 2026-07-27 | 增加 P6a rebase/两阶段迁移/专用验证门槛；将 F-015、F-016、F-024 收口为独立 P1 任务 |
 | 1.2.0 | 2026-07-27 | 记录负责人授权的隔离并行实现；P6a rebase 保留为 PR 前强制步骤 |
 | 1.3.0 | 2026-07-27 | 将无法原子部署的 two-phase backfill 改为已验证 PostgreSQL database default + legacy-admin revoke 命令 |
+| 1.4.0 | 2026-07-27 | 记录 Prisma UTC timestamp 早于已知 P6a 时的 M3-only 无 SQL 改动重命名/replay 步骤 |
+| 1.5.0 | 2026-07-27 | legacy fixture/replay 收口到同一可丢弃专用库，避免产生未验证的第二数据库依赖 |

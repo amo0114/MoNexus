@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | IMPL-M3-ISH-001 |
-| 版本 | 1.3.0 |
+| 版本 | 1.5.0 |
 | 日期 | 2026-07-27 |
 | 状态 | I-00 Done；I-01 In Progress（P6a rebase 为 PR 前闸门） |
 | 输入 | [spec.md](./spec.md) · [plan.md](./plan.md) · [task.md](./task.md) · [checklist.md](./checklist.md) |
@@ -66,7 +66,7 @@ schema.prisma 是唯一共同文件。安全任务不得重排、格式化或编
 ### 2.4 Migration 协议
 
 1. P6a 已使用 20260727090000_p6a_subscription_foundation。
-2. 安全任务可先在隔离分支生成更晚且唯一的目录；生成后其时间戳必须字典序排在已知 P6a migration 之后。若本机时钟早于其时间戳，可仅为 `prisma migrate dev` 使用受控时区生成名称，并在实施日志记录；不手改 SQL、不重命名 P6a migration。
+2. 安全任务可先在隔离分支生成更晚且唯一的目录；生成后其时间戳必须字典序排在已知 P6a migration 之后。Prisma CLI 若以 UTC 忽略受控时区而生成过早目录，只可重命名未提交的 M3-only 目录，逐字保留 migration.sql、记录 hash，并 reset/replay 专用测试库；不手改 SQL、不重命名 P6a migration。
 3. 永不修改、重命名、删除或重新生成 P6a migration。
 4. I-01 可由仓库负责人授权在独立 worktree 开始；但 PR 前解除条件固定为：P6a 已进入 `origin/develop` → M3-ISH rebase 成功 → 人工确认两套 migration 与 `User` / `RefreshToken` 块均保留 → 专用库跑 migration/status/drift；四项均有证据后才可开 PR。
 5. 如果 P6a 在合并前新增触及 User / RefreshToken 的字段，停止该任务，先更新 Specify/Plan/Tasks 的影响分析。
@@ -143,7 +143,7 @@ schema.prisma 是唯一共同文件。安全任务不得重排、格式化或编
 | 时间 | I-* | 状态 | HEAD / 证据 | 备注 |
 | --- | --- | --- | --- | --- |
 | 2026-07-27 | I-00 | Done | branch `feat/m3-identity-security-hardening` from `bf25d01`；独立 worktree；Prisma 6.19.3；专用库 `monexus_m3_ish_test`（31 migrations up to date） | `auth/auth-tokens/refresh-token-wiring/auth-active-user` 4 files、36 tests PASS；frontend build 与 server build PASS；未修改业务代码 |
-| 2026-07-27 | I-01 | In Progress | 仓库负责人已明确授权在独立 worktree 并行开始；P6a 尚未合入 `develop`，预期 migration 为 `20260727090000_p6a_subscription_foundation` | 1.3 基于专用 PostgreSQL 14 的 `gen_random_uuid()` 验证，采用单一 database-default migration；仍禁止改 P6a worktree/共享运行时 |
+| 2026-07-27 | I-01 | In Progress | 仓库负责人已明确授权在独立 worktree 并行开始；P6a 尚未合入 `develop`，预期 migration 为 `20260727090000_p6a_subscription_foundation` | 1.5 已在同一可丢弃 `monexus_m3_ish_test` 完成 legacy fixture → generated migration → reset/replay；Prisma UTC 命名仅对未提交 M3 migration 作 hash-preserving rename，仍禁止改 P6a worktree/共享运行时 |
 
 ---
 

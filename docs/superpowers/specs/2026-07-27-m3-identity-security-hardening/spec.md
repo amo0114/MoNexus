@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | SPEC-M3-ISH-001 |
-| 版本 | 1.3.0 |
+| 版本 | 1.5.0 |
 | 日期 | 2026-07-27 |
 | 状态 | Frozen for Implementation |
 | 产品 | MoNexus |
@@ -157,7 +157,7 @@ GET sessions → 仅见自己的脱敏设备会话
 
 迁移要求：
 
-1. 经仓库负责人授权，M3-ISH 可在独立 worktree 并行生成 schema/migration；但 P6a 合入后、M3-ISH 开 PR 前必须 rebase 并人工确认两套 schema/migration 都保留。命令始终显式指向专用 `monexus_m3_ish_test`，不手写或事后修改 migration SQL。
+1. 经仓库负责人授权，M3-ISH 可在独立 worktree 并行生成 schema/migration；但 P6a 合入后、M3-ISH 开 PR 前必须 rebase 并人工确认两套 schema/migration 都保留。命令始终显式指向专用 `monexus_m3_ish_test`，不手写或事后修改 migration SQL。若 Prisma CLI 的 UTC 命名早于已知 P6a migration，只可重命名**未提交、仅属于 M3-ISH**的目录到唯一较晚时间戳，migration.sql 内容必须逐字不变，并在专用库 reset/replay 验证；绝不改 P6a migration。
 2. 使用**单个** Prisma 生成 migration，且 `sessionId` 必须采用 PostgreSQL 数据库默认值 `gen_random_uuid()`（schema 以 `dbgenerated("gen_random_uuid()")` 表达，而非 Prisma client-side `uuid()`）；`sessionStartedAt` / `lastUsedAt` 使用数据库 `CURRENT_TIMESTAMP` 默认值。生成后须在隔离 PostgreSQL 对 migration 前已有的 RefreshToken 行验证：每行均获得非空 UUID、彼此不同、无 null。项目运行环境为 PostgreSQL 14+/Compose PostgreSQL 16，已验证该函数可用；不得手写 SQL。
 3. `sessionId` 的唯一性属于会话族：每个历史 token 行初始获得一个不同的 family ID；refresh rotation 的新旧 token 必须共享该 ID，因此数据库不得对 `RefreshToken.sessionId` 建全局 UNIQUE 约束。
 4. migration 应用后、启动新 API 前，受版本控制的部署命令必须吊销全部 legacy admin refresh token；同时 admin guard/refresh path 拒绝旧无 MFA claim 的会话，形成双层保障。不回填 MFA，`mfaEnabled` 默认 false，旧管理员下一次密码登录必须走首次绑定。
@@ -416,6 +416,8 @@ Then vitest、相关 Playwright、双端 build、Prisma drift 检查以及 produ
 | 1.1.0 | 2026-07-27 | 收口 session family 唯一性、两阶段生成迁移与独立验证约束；使 P1 追溯与任务优先级一致 |
 | 1.2.0 | 2026-07-27 | 仓库负责人授权在隔离 worktree 并行实现；P6a rebase 从编码前闸门改为 PR 前强制闸门 |
 | 1.3.0 | 2026-07-27 | 以已验证的 PostgreSQL database-generated UUID 默认值替代无法原子部署的两阶段 backfill；保留部署前 legacy admin session 吊销 |
+| 1.4.0 | 2026-07-27 | 记录 Prisma UTC migration 命名与已知 P6a 时间戳的受控冲突处理：仅重命名未提交的本任务目录，SQL 不变且专用库重放验证 |
+| 1.5.0 | 2026-07-27 | 澄清 legacy migration fixture 与 replay 只使用同一可丢弃的 `monexus_m3_ish_test`，不引入未验证的第二数据库 |
 
 ---
 

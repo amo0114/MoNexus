@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | CHK-M3-ISH-001 |
-| 版本 | 1.3.0 |
+| 版本 | 1.5.0 |
 | 日期 | 2026-07-27 |
 | 规格 | [spec.md](./spec.md) |
 | 计划 | [plan.md](./plan.md) |
@@ -54,7 +54,7 @@
 - [ ] **CHK-DATA-07** 新增索引支持按 userId、sessionId、活动/过期状态列会话；会话列表不做全表扫描。
 - [ ] **CHK-DATA-08** MFA_ENCRYPTION_KEY 是 base64 32-byte 值；production 缺失/非法时服务拒绝启动；无默认生产 key。
 - [ ] **CHK-DATA-09** AES-256-GCM 对 seed 的 IV/tag/tamper failure 均正确处理；解密错误不返回内部详情。
-- [ ] **CHK-DATA-10** 所有 migrate/status/drift 命令显式传专用 `monexus_m3_ish_test` URL；shadow database 也是隔离资源，未调用默认 `monexus_test` / compose。
+- [ ] **CHK-DATA-10** 所有 migrate/status/drift 命令显式传专用 `monexus_m3_ish_test` URL；shadow database 也是隔离资源，未调用默认 `monexus_test` / compose；若 Prisma UTC migration 目录需纠正，M3-only rename 的 SQL hash 与专用库 replay 证据齐全。
 
 **证据：** migration 名称 / prisma status / config tests：________________
 
@@ -258,3 +258,5 @@ P0 豁免默认不允许。唯一例外是仓库负责人明确书面批准的�
 | 1.1.0 | 2026-07-27 | 收口 session family/两阶段迁移、P1 标签与专用验证门禁 |
 | 1.2.0 | 2026-07-27 | 将 P6a rebase 明确为 PR 前门禁；并行实现仍须保持 worktree/runtime 隔离 |
 | 1.3.0 | 2026-07-27 | 将 migration 验收改为 database-generated UUID legacy-fixture 证明，并保留 legacy admin 吊销门禁 |
+| 1.4.0 | 2026-07-27 | 增加 M3-only migration timestamp 纠正的 SQL hash / 专用库 replay 证据门槛 |
+| 1.5.0 | 2026-07-27 | 明确 fixture/replay 证据只能来自同一可丢弃专用数据库 |

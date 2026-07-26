@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | PLAN-M3-ISH-001 |
-| 版本 | 1.3.0 |
+| 版本 | 1.5.0 |
 | 日期 | 2026-07-27 |
 | 状态 | Frozen for Implementation |
 | 规格 | [spec.md](./spec.md)（SPEC-M3-ISH-001） |
@@ -113,9 +113,9 @@ Profile security card ── GET /auth/sessions ── revoke one / other / all
 实施要点：
 
 1. 仓库负责人已授权 M3-ISH 在独立 worktree 并行编辑自身的 schema/migration；不得读取或修改 P6a 未提交文件。P6a 合入后、M3-ISH 开 PR 前必须 rebase，并人工核对 P6a 与 M3-ISH 的 migration 顺序、`User` / `RefreshToken` 块；有语义冲突则先修订本计划再继续。
-2. 所有 Prisma 写操作显式携带专用连接，例如 `DATABASE_URL="$M3_ISH_DATABASE_URL" npx prisma migrate dev --name identity_security_hardening`；`M3_ISH_DATABASE_URL` 只能指向 `monexus_m3_ish_test`。不得依赖 `.env` 默认值，不得使用 `monexus_test`、开发库、staging 或生产库。
+2. 所有 Prisma 写操作显式携带专用连接，例如 `DATABASE_URL="$M3_ISH_DATABASE_URL" npx prisma migrate dev --name identity_security_hardening`；`M3_ISH_DATABASE_URL` 只能指向 `monexus_m3_ish_test`。不得依赖 `.env` 默认值，不得使用 `monexus_test`、开发库、staging 或生产库。若 Prisma CLI 以 UTC 生成的目录早于已知 P6a timestamp，只可在提交前重命名本任务目录、保持 generated SQL 的 hash 不变、reset/replay 专用库；不得改 P6a 文件。
 3. 使用一个 Prisma 生成 migration：`sessionId` 在 schema 中以 `@default(dbgenerated("gen_random_uuid()"))` 取得 PostgreSQL database-generated UUID，session 时间以数据库 timestamp default 取得值，不为 `sessionId` 加全局 UNIQUE。Prisma shadow database 必须由同一隔离凭据创建；若环境需要显式 shadow URL，只能使用另一个专用 `monexus_m3_ish_*` 数据库，绝不能指向共享库。
-4. 生成 migration 后，先在独立 `monexus_m3_ish_migration_test` 的 pre-migration legacy fixture 上应用它，断言每条既有 RefreshToken 获得不同、非空的 UUID 和非空 session 时间；验证 SQL 确实含 database default，不能把 Prisma client-side `uuid()` 误当成数据回填。
+4. 生成 migration 后，在同一专用 `monexus_m3_ish_test` 中先插入 pre-migration legacy fixture、再应用 migration，断言每条既有 RefreshToken 获得不同、非空的 UUID 和非空 session 时间；随后 reset/replay 该**同一可丢弃专用库**，再继续测试。验证 SQL 确实含 database default，不能把 Prisma client-side `uuid()` 误当成数据回填。不得创建、连接或暗示另一个未实际隔离验证的数据库。
 5. migration 应用后、启动新 API 前运行受版本控制的 legacy-admin revoke 命令，吊销所有旧 admin RefreshToken；命令必须幂等、分批、可测试，且只在隔离库验证后才可进入部署 runbook。
 6. session family 的唯一性不是 token 行唯一性：`RefreshToken.sessionId` 可在同一轮换族的多行重复；用 user/session/active/expiry 索引支持查询，不能加全局 unique。
 7. 所有秘密字段使用 select 白名单；User profile、AdminLog、SecurityEvent serializer 永远不读取/返回 mfaSecretEncrypted。
@@ -384,3 +384,5 @@ Phase A ──► Phase B ──► Phase C ──► Phase D ──► Phase E
 | 1.1.0 | 2026-07-27 | 明确 P6a rebase gate、两阶段生成 migration/回填策略与零干扰验证入口 |
 | 1.2.0 | 2026-07-27 | 记录仓库负责人对隔离并行实现的授权；保留 P6a 合入后的 PR 前 rebase/迁移复核 |
 | 1.3.0 | 2026-07-27 | 采用已验证的 `gen_random_uuid()` database default，实现可原子部署的单 migration；回填改为 legacy admin 吊销命令 |
+| 1.4.0 | 2026-07-27 | 固化 M3-only migration timestamp 纠正流程，防止 Prisma UTC 命名排在已知 P6a migration 之前 |
+| 1.5.0 | 2026-07-27 | 将 legacy fixture/replay 明确为同一可丢弃专用库的连续验证，不创建第二数据库 |
