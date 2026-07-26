@@ -17,6 +17,8 @@ export const createOrderSchema = z.object({
   // 结算确认：客户端从结算预览拿到的价格。与服务端当前价不一致时返回
   // 409 PRICE_CHANGED。可选是为兼容旧客户端，前端更新后始终携带。
   expectedPrice: z.number().int().positive().optional(),
+  // P4b：结算预览返回的 Offer 结算版本；配置变化 → 409 CHECKOUT_CHANGED。
+  expectedCheckoutVersion: z.string().min(1).max(64).optional(),
   // 购买前表单答案：具体校验（必填/选项合法/长度）在事务内按商品当前定义执行。
   formAnswers: z.record(z.string(), z.string().max(500)).optional(),
   // 结算预览返回的表单版本摘要；不一致返回 409 CHECKOUT_CHANGED。

@@ -11,6 +11,7 @@ import {
 } from '../../lib/productCommercial.js'
 import {
   analyzeInventoryImport,
+  analyzeStructuredInventoryImport,
   duplicateInventoryImportDetails,
   isInventoryContentUniqueViolation,
   type InventoryImportPayload,
@@ -26,6 +27,14 @@ import { releaseHeldOrder, settleHeldOrder } from '../orders/accounting.js'
 import { serializeMerchantOrder } from '../orders/serializers.js'
 import type { MerchantOrderListQuery } from './schema.js'
 import type { PurchaseFormField } from '../../lib/purchaseForm.js'
+import {
+  canonicalDeliveryText,
+  parseStoredDeliveryFields,
+  structuredContentToJson,
+  validateDeliveryValues,
+  type DeliveryField,
+  type StructuredDeliveryContent,
+} from '../../lib/deliveryFields.js'
 import {
   createDefaultOffer,
   getDefaultOffer,
@@ -213,12 +222,36 @@ export async function listMyProducts(merchantId: number, filters: MerchantProduc
 export async function previewMyInventoryImport(
   merchantId: number,
   productId: number,
-  payload: InventoryImportPayload
+  payload: InventoryImportPayload & { offerId?: number }
 ) {
-  const product = await prisma.product.findFirst({ where: { id: productId, merchantId }, select: { id: true, deliveryMode: true } })
+  const product = await prisma.product.findFirst({ where: { id: productId, merchantId }, select: { id: true } })
   if (!product) throw notFound('商品不存在')
-  if (product.deliveryMode !== 'instant_inventory') {
+  // P4a/P4b：门禁与模板都在 Offer 上；未指定 offerId 落到默认 Offer（单 SKU 无感）。
+  const offer = payload.offerId != null
+    ? await prisma.offer.findFirst({ where: { id: payload.offerId, productId } })
+    : await getDefaultOffer(prisma, productId)
+  if (!offer) throw notFound('规格不存在')
+  if (offer.deliveryMode !== 'instant_inventory') {
     throw badRequest('仅即时库存发货商品支持库存管理')
+  }
+
+  const deliveryFields = parseStoredDeliveryFields(offer.deliveryFields)
+  if (deliveryFields.length > 0) {
+    const analysis = await analyzeStructuredInventoryImport(productId, payload, deliveryFields)
+    return {
+      totalRows: analysis.totalRows,
+      validRows: analysis.validRows,
+      emptyRows: analysis.emptyRows,
+      duplicateRows: analysis.duplicateRows,
+      existingDuplicateRows: analysis.existingDuplicateRows,
+      rowErrors: analysis.rowErrors,
+      canImport: analysis.canImport,
+      // 预览表格：模板 + 前 20 行解析结果（值不落库前仅回显给上传者本人）。
+      structured: {
+        fields: deliveryFields,
+        rows: analysis.itemsToImport.slice(0, 20).map(item => item.structuredContent.values),
+      },
+    }
   }
 
   const analysis = await analyzeInventoryImport(productId, payload)
@@ -473,7 +506,18 @@ export async function importMyInventory(
         throw badRequest('仅即时库存发货商品支持库存管理')
       }
 
-      const analysis = await analyzeInventoryImport(productId, payload, tx)
+      // P4b：规格带交付字段模板时走结构化导入——行按 | 分隔映射字段，
+      // 规范化文本写入 content（唯一约束与领取 SQL 的权威形态不变）。
+      const deliveryFields = parseStoredDeliveryFields(offer.deliveryFields)
+      const analysis = deliveryFields.length > 0
+        ? await analyzeStructuredInventoryImport(productId, payload, deliveryFields, tx)
+        : await analyzeInventoryImport(productId, payload, tx)
+      if ('rowErrors' in analysis && analysis.rowErrors.length > 0) {
+        throw badRequest(
+          '部分行不符合交付字段模板，请先预览修正',
+          analysis.rowErrors.map(err => ({ field: 'items', message: `第 ${err.row} 行：${err.message}` }))
+        )
+      }
       if (analysis.duplicateRows > 0 || analysis.existingDuplicateRows > 0) {
         throw badRequest('库存导入包含重复项', duplicateInventoryImportDetails(analysis))
       }
@@ -482,7 +526,16 @@ export async function importMyInventory(
       }
 
       await tx.inventoryItem.createMany({
-        data: analysis.itemsToImport.map(content => ({ productId, offerId: offer.id, content })),
+        data: analysis.itemsToImport.map(item =>
+          typeof item === 'string'
+            ? { productId, offerId: offer.id, content: item }
+            : {
+                productId,
+                offerId: offer.id,
+                content: item.content,
+                structuredContent: structuredContentToJson(item.structuredContent),
+              }
+        ),
       })
       await logInventoryChange(tx, {
         productId,
@@ -779,6 +832,8 @@ async function assertMerchantOrder(merchantId: number, orderId: number, tx: Pris
       holdingPoints: true,
       fundsHeld: true,
       deliveryModeSnapshot: true,
+      offerId: true,
+      deliveryFieldsSnapshot: true,
       product: { select: { deliveryMode: true } },
     },
   })
@@ -812,12 +867,41 @@ export async function deliverOrderFulfillment(
   merchantId: number,
   actorUserId: number,
   orderId: number,
-  input: { deliveryContent?: string; publicNote?: string; internalNote?: string }
+  input: {
+    deliveryContent?: string
+    /** P4b：按规格模板交付的字段值；与 deliveryContent 二选一。 */
+    structuredValues?: Record<string, string>
+    publicNote?: string
+    internalNote?: string
+  }
 ) {
   await prisma.$transaction(async tx => {
     const order = await assertMerchantOrder(merchantId, orderId, tx)
     if (getOrderDeliveryMode(order) !== 'manual_service') {
       throw badRequest('只有人工服务订单可由商家履约交付')
+    }
+
+    // P4b：按订单的模板快照（下单时冻结，商家改模板不影响本单契约）强制分支：
+    // - 有模板：必须提交完整 structuredValues，拒绝纯文本与空对象——否则商家
+    //   可绕过 API 把必填模板订单标记为已发货且交付内容为空；
+    // - 无模板：必须提交非空 deliveryContent，拒绝结构化字段；
+    // - 二者同时提交拒绝（意图不明确，宁可让调用方改正）。
+    const fields = parseStoredDeliveryFields(order.deliveryFieldsSnapshot)
+    const hasStructured = input.structuredValues != null && Object.keys(input.structuredValues).length > 0
+    const hasText = (input.deliveryContent ?? '').trim().length > 0
+    if (hasStructured && hasText) {
+      throw badRequest('结构化字段与纯文本发货内容只能提交其一')
+    }
+    let deliveryContent = input.deliveryContent
+    let deliveryStructuredContent: StructuredDeliveryContent | null = null
+    if (fields.length > 0) {
+      if (!hasStructured) throw badRequest('该订单需按交付字段模板逐项发货')
+      const values = validateDeliveryValues(fields, input.structuredValues)
+      deliveryContent = canonicalDeliveryText(fields, values)
+      deliveryStructuredContent = { fields, values }
+    } else {
+      if (hasStructured) throw badRequest('该订单为纯文本交付，请提交发货内容')
+      if (!hasText) throw badRequest('发货内容不能为空')
     }
 
     await transitionOrderStatus({
@@ -826,7 +910,8 @@ export async function deliverOrderFulfillment(
       actorRole: 'merchant',
       actorUserId,
       action: 'merchant.fulfillment.deliver',
-      deliveryContent: input.deliveryContent,
+      deliveryContent,
+      deliveryStructuredContent,
       publicNote: input.publicNote,
       internalNote: input.internalNote,
     }, tx)
@@ -989,6 +1074,15 @@ type OfferWriteInput = {
   fixedContent?: string | null
   fixedContentType?: string
   sortOrder?: number
+  // P4b：交付字段模板；null 清空回纯文本。已过 zod（deliveryFieldsSchema）。
+  deliveryFields?: DeliveryField[] | null
+}
+
+/** instant_fixed 固定内容天然单值，不支持交付字段模板（P4b 决策点 2）。 */
+function assertDeliveryFieldsAllowed(deliveryMode: string, deliveryFields: DeliveryField[] | null | undefined) {
+  if (deliveryFields && deliveryFields.length > 0 && deliveryMode === 'instant_fixed') {
+    throw badRequest('固定内容交付不支持交付字段模板')
+  }
 }
 
 async function assertMyProduct(merchantId: number, productId: number) {
@@ -1048,6 +1142,7 @@ export async function createMyOffer(
     fixedContentType,
   })
 
+  assertDeliveryFieldsAllowed(deliveryMode, input.deliveryFields)
   const offer = await prisma.$transaction(async tx => {
     const created = await tx.offer.create({
       data: {
@@ -1062,6 +1157,7 @@ export async function createMyOffer(
         fixedContent: input.fixedContent ?? null,
         fixedContentType,
         sortOrder: input.sortOrder ?? 0,
+        deliveryFields: input.deliveryFields ?? undefined,
       },
     })
     await syncProductProjection(tx, productId)
@@ -1101,6 +1197,11 @@ export async function updateMyOffer(
         : offer.stockMode)
     const fixedContentType = input.fixedContentType ?? offer.fixedContentType
     const nextFixedContent = 'fixedContent' in input ? (input.fixedContent ?? null) : offer.fixedContent
+    // P4b：合并后的模板不得出现在 instant_fixed 规格上（含"改模式但留模板"）。
+    const nextDeliveryFields = 'deliveryFields' in input
+      ? input.deliveryFields ?? null
+      : parseStoredDeliveryFields(offer.deliveryFields)
+    assertDeliveryFieldsAllowed(deliveryMode, nextDeliveryFields)
     assertOfferCommercialInput({
       price: input.price ?? offer.price,
       originalPrice: 'originalPrice' in input ? (input.originalPrice ?? null) : offer.originalPrice,
@@ -1127,6 +1228,10 @@ export async function updateMyOffer(
         ...('fixedContent' in input ? { fixedContent: input.fixedContent ?? null } : {}),
         fixedContentType,
         ...(input.sortOrder != null ? { sortOrder: input.sortOrder } : {}),
+        // 改模板仅影响后续导入/交付；已导入条目携带自包含快照，不回填。
+        ...('deliveryFields' in input
+          ? { deliveryFields: input.deliveryFields === null ? Prisma.DbNull : input.deliveryFields }
+          : {}),
         ...(deliveryMode === 'instant_inventory' && offer.deliveryMode !== 'instant_inventory'
           ? { stock: 0 }
           : {}),

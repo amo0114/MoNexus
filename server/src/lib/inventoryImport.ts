@@ -2,6 +2,12 @@ import { Prisma } from '@prisma/client'
 import { z } from 'zod'
 import { prisma } from './prisma.js'
 import { badRequest } from './httpError.js'
+import {
+  canonicalDeliveryText,
+  parseStructuredImportRow,
+  type DeliveryField,
+  type StructuredDeliveryContent,
+} from './deliveryFields.js'
 
 /**
  * 卡密/账号类库存的导入边界。
@@ -103,7 +109,93 @@ export async function analyzeInventoryImport(
   }
 }
 
-export function duplicateInventoryImportDetails(analysis: InventoryImportAnalysis) {
+// ---- P4b：结构化导入（规格带交付字段模板时） ----
+
+export type StructuredImportItem = {
+  /** 规范化纯文本（权威形态；唯一约束与领取 SQL 作用于它）。 */
+  content: string
+  structuredContent: StructuredDeliveryContent
+}
+
+export type StructuredInventoryImportAnalysis = {
+  totalRows: number
+  validRows: number
+  emptyRows: number
+  duplicateRows: number
+  existingDuplicateRows: number
+  /** 行级解析错误（row 为 1 起的原始行号，含空行计数）。 */
+  rowErrors: Array<{ row: number; message: string }>
+  canImport: boolean
+  itemsToImport: StructuredImportItem[]
+}
+
+/**
+ * 模板化导入分析：每行按 `|` 分隔映射模板字段（\| 转义字面竖线）。
+ * 去重仍作用于规范化文本——与纯文本导入共用同一唯一性语义。
+ */
+export async function analyzeStructuredInventoryImport(
+  productId: number,
+  payload: InventoryImportPayload,
+  fields: DeliveryField[],
+  client: InventoryClient = prisma
+): Promise<StructuredInventoryImportAnalysis> {
+  validateInventoryImportLimits(payload)
+
+  const rows = inventoryRowsFromPayload(payload)
+  const seen = new Set<string>()
+  const parsed: StructuredImportItem[] = []
+  const rowErrors: Array<{ row: number; message: string }> = []
+  let emptyRows = 0
+  let duplicateRows = 0
+
+  for (const [index, row] of rows.entries()) {
+    if (!row.trim()) {
+      emptyRows += 1
+      continue
+    }
+    const result = parseStructuredImportRow(fields, row)
+    if ('error' in result) {
+      rowErrors.push({ row: index + 1, message: result.error })
+      continue
+    }
+    const content = canonicalDeliveryText(fields, result.values)
+    if (seen.has(content)) {
+      duplicateRows += 1
+      continue
+    }
+    seen.add(content)
+    parsed.push({ content, structuredContent: { fields, values: result.values } })
+  }
+
+  const contents = parsed.map(item => item.content)
+  const existingRows = contents.length > 0
+    ? await client.inventoryItem.findMany({
+        where: { productId, content: { in: contents } },
+        select: { content: true },
+      })
+    : []
+  const existingContents = new Set(existingRows.map(row => row.content))
+  const itemsToImport = parsed.filter(item => !existingContents.has(item.content))
+
+  return {
+    totalRows: rows.length,
+    validRows: itemsToImport.length,
+    emptyRows,
+    duplicateRows,
+    existingDuplicateRows: existingContents.size,
+    rowErrors,
+    canImport:
+      itemsToImport.length > 0 &&
+      duplicateRows === 0 &&
+      existingContents.size === 0 &&
+      rowErrors.length === 0,
+    itemsToImport,
+  }
+}
+
+export function duplicateInventoryImportDetails(
+  analysis: Pick<InventoryImportAnalysis, 'duplicateRows' | 'existingDuplicateRows'>
+) {
   return [
     { field: 'items', message: `duplicateRows=${analysis.duplicateRows}` },
     { field: 'items', message: `existingDuplicateRows=${analysis.existingDuplicateRows}` },

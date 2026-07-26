@@ -37,6 +37,8 @@ export type IdempotencyFingerprint = {
   offerId?: number
   expectedPrice?: number
   purchaseFormVersion?: string
+  // Offer 结算版本（P4b）。与 offerId 同一兼容策略：未传不写入 canonical。
+  checkoutVersion?: string
   formAnswers?: Record<string, string>
 }
 
@@ -58,6 +60,8 @@ export function computeRequestDigest(fingerprint: IdempotencyFingerprint): strin
     ...(fingerprint.offerId != null ? { offerId: fingerprint.offerId } : {}),
     expectedPrice: fingerprint.expectedPrice ?? null,
     purchaseFormVersion: fingerprint.purchaseFormVersion ?? null,
+    // 同兼容策略：旧客户端不传 → digest 不变；新客户端换版本重试 → 409。
+    ...(fingerprint.checkoutVersion != null ? { checkoutVersion: fingerprint.checkoutVersion } : {}),
     answers: canonicalAnswers,
   })
   return createHmac('sha256', config.jwtSecret).update(canonical).digest('hex')

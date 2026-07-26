@@ -101,7 +101,8 @@ function withUserOrderContract<T extends OrderWithDelivery>(order: T, includeTim
 function omitDeliveryContent<T extends OrderWithDelivery>(order: T) {
   if (!order.delivery) return order
 
-  const { content: _content, ...delivery } = order.delivery
+  // P4b：structuredContent 的值与 content 同一敏感级别，列表一并剥离。
+  const { content: _content, structuredContent: _structured, ...delivery } = order.delivery
   return {
     ...order,
     delivery,

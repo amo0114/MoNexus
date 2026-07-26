@@ -1,16 +1,21 @@
 import { Check, Copy, ExternalLink } from 'lucide-react'
 import { useAppStore } from '../stores/appStore'
 import { Dialog, DialogContent, DialogTitle } from './ui/Dialog'
+import StructuredDeliveryView from './StructuredDeliveryView'
+import type { StructuredDeliveryContent } from '../types/merchant'
 
 export default function SuccessModal({
   deliveryContent,
   deliveryContentType,
+  structuredContent,
   merchantName,
   onClose,
   onViewOrders
 }: {
   deliveryContent: string
   deliveryContentType?: string
+  /** P4b：结构化交付快照;有值时字段化展示替代整段文本。 */
+  structuredContent?: StructuredDeliveryContent | null
   merchantName?: string
   onClose: () => void
   onViewOrders?: () => void
@@ -39,7 +44,9 @@ export default function SuccessModal({
 
         <div className="bg-[var(--color-background)] rounded-lg p-4 mb-6 border border-[var(--color-border)] text-left flex-1 max-h-48 overflow-y-auto">
           <p className="text-xs text-[var(--color-text-muted)] mb-2 font-bold uppercase tracking-wider">提卡内容区</p>
-          {deliveryContentType === 'url' ? (
+          {structuredContent && structuredContent.fields.length > 0 ? (
+            <StructuredDeliveryView content={structuredContent} />
+          ) : deliveryContentType === 'url' ? (
             <a
               href={deliveryContent}
               target="_blank"

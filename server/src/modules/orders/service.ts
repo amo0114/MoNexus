@@ -19,7 +19,13 @@ import { invalidateProductPublicCache } from '../products/cache.js'
 import { logInventoryChange } from '../../lib/inventoryLog.js'
 import { parseStoredPurchaseForm, validatePurchaseFormAnswers, computePurchaseFormVersion } from '../../lib/purchaseForm.js'
 import { assertCheckoutVerification } from '../checkout/verification.js'
-import { resolvePurchaseOffer } from '../../lib/offers.js'
+import { resolvePurchaseOfferChecked } from '../../lib/offers.js'
+import {
+  parseStoredDeliveryFields,
+  parseStoredStructuredContent,
+  structuredContentToJson,
+  type StructuredDeliveryContent,
+} from '../../lib/deliveryFields.js'
 
 // manual_service 商家履约 SLA：创建订单后 7 天内需交付，M3-S2 工作台高亮超时
 const FULFILLMENT_SLA_MS = 7 * 24 * 60 * 60 * 1000
@@ -36,6 +42,10 @@ export type CreateOrderOptions = {
   formAnswers?: Record<string, string>
   // 结算预览返回的表单版本：商家在预览后改动表单时拒单（409 CHECKOUT_CHANGED）。
   expectedPurchaseFormVersion?: string
+  // 结算预览返回的 Offer 结算版本（价格/状态/履约方式/库存模式/固定内容/交付
+  // 模板摘要）：商家在预览后改动任一项时拒单（409 CHECKOUT_CHANGED）——买家
+  // 确认的是"将获得什么"，不只是价格。可选以兼容旧客户端。
+  expectedCheckoutVersion?: string
   // 高风险二次验证：触发阈值时必须携带的登录密码（checkout/verification.ts）。
   verificationPassword?: string
 }
@@ -45,7 +55,15 @@ export async function createOrder(
   productId: number,
   options: CreateOrderOptions = {}
 ) {
-  const { offerId, expectedPrice, idempotencyKey, formAnswers, expectedPurchaseFormVersion, verificationPassword } = options
+  const {
+    offerId,
+    expectedPrice,
+    idempotencyKey,
+    formAnswers,
+    expectedPurchaseFormVersion,
+    expectedCheckoutVersion,
+    verificationPassword,
+  } = options
 
   let claimToken: string | undefined
   if (idempotencyKey) {
@@ -54,6 +72,7 @@ export async function createOrder(
       offerId,
       expectedPrice,
       purchaseFormVersion: expectedPurchaseFormVersion,
+      checkoutVersion: expectedCheckoutVersion,
       formAnswers,
     })
     if (claim.kind === 'replay') return buildReplayResponse(claim.orderId, userId)
@@ -71,7 +90,9 @@ export async function createOrder(
       select: { purchaseForm: true },
     })
     if (current) {
-      const offer = await resolvePurchaseOffer(prisma, productId, offerId)
+      // P4b：带结算版本守卫的解析（风控前预检）。版本先于"下架/不可购买"
+      // 判定——预览后规格被下架/改配置统一 409 让前端重新报价，事务内保留终检。
+      const offer = await resolvePurchaseOfferChecked(prisma, productId, offerId, expectedCheckoutVersion)
       if (expectedPrice != null && expectedPrice !== offer.price) {
         throw new HttpError(409, 'PRICE_CHANGED', '商品信息已变化，请重新确认')
       }
@@ -91,6 +112,7 @@ export async function createOrder(
       idempotencyKey,
       formAnswers,
       expectedPurchaseFormVersion,
+      expectedCheckoutVersion,
       claimToken,
     })
   } catch (err) {
@@ -110,7 +132,7 @@ async function buildReplayResponse(orderId: number, userId: number) {
     include: {
       product: { select: { name: true } },
       merchant: { select: { id: true, name: true } },
-      delivery: { select: { content: true, contentType: true } },
+      delivery: { select: { content: true, contentType: true, structuredContent: true } },
     },
   })
   // 幂等记录指向的订单只可能因数据被外部改动而缺失。
@@ -125,6 +147,7 @@ async function buildReplayResponse(orderId: number, userId: number) {
     deliveryMode: getProductFulfillmentMode(order.deliveryModeSnapshot),
     deliveryContent: order.delivery?.content ?? undefined,
     deliveryContentType: order.delivery?.contentType ?? undefined,
+    deliveryStructuredContent: parseStoredStructuredContent(order.delivery?.structuredContent) ?? undefined,
     balanceAfter: account?.balance ?? 0,
     merchantId: order.merchantId,
     merchantName: order.merchant?.name ?? null,
@@ -141,6 +164,7 @@ async function createOrderOnce(
     idempotencyKey,
     formAnswers,
     expectedPurchaseFormVersion,
+    expectedCheckoutVersion,
     claimToken,
   }: CreateOrderOptions & { claimToken?: string }
 ) {
@@ -152,7 +176,8 @@ async function createOrderOnce(
     if (!product) throw notFound('商品不存在')
     if (product.status !== 'active') throw badRequest('商品已下架')
     // P4a：价格与履约配置以所选 Offer 为准（单 SKU 未传 offerId 时解析默认）。
-    const offer = await resolvePurchaseOffer(tx, productId, offerId)
+    // P4b：结算版本终检在解析内完成（与预检同序：版本先于下架判定）。
+    const offer = await resolvePurchaseOfferChecked(tx, productId, offerId, expectedCheckoutVersion)
     if (expectedPrice != null && expectedPrice !== offer.price) {
       throw new HttpError(409, 'PRICE_CHANGED', '商品信息已变化，请重新确认')
     }
@@ -167,6 +192,9 @@ async function createOrderOnce(
     }
     const purchaseFormAnswers = validatePurchaseFormAnswers(purchaseFormFields, formAnswers)
     const deliveryMode = getProductFulfillmentMode(offer.deliveryMode)
+    // P4b：下单即冻结交付字段模板——人工服务发货按此快照强制校验，商家改
+    // 模板不影响已购未发货订单（快照惯例同 deliveryModeSnapshot）。
+    const deliveryFieldsSnapshot = parseStoredDeliveryFields(offer.deliveryFields)
 
     if (deliveryMode === 'instant_fixed' && !offer.fixedContent) {
       throw badRequest('商品暂不可购买，请联系商家')
@@ -219,6 +247,9 @@ async function createOrderOnce(
         productId,
         offerId: offer.id,
         offerNameSnapshot: offer.name,
+        ...(deliveryFieldsSnapshot.length > 0
+          ? { deliveryFieldsSnapshot: deliveryFieldsSnapshot as unknown as Prisma.InputJsonValue }
+          : {}),
         price: offer.price,
         status: isInstantMode(deliveryMode) ? 'delivered' : 'pending',
         merchantId,
@@ -249,13 +280,14 @@ async function createOrderOnce(
 
     let deliveryContent: string | undefined
     let deliveryContentType: string | undefined
+    let deliveryStructuredContent: StructuredDeliveryContent | null = null
 
     if (deliveryMode === 'instant_inventory') {
       // Claim one row in the database instead of first reading a candidate
       // and then conditionally updating it. SKIP LOCKED lets simultaneous
       // buyers move on to the next available secret rather than all racing
       // for the first row and unnecessarily rejecting valid purchases.
-      const reservedItems = await tx.$queryRaw<Array<{ id: number; content: string }>>(Prisma.sql`
+      const reservedItems = await tx.$queryRaw<Array<{ id: number; content: string; structuredContent: unknown }>>(Prisma.sql`
         UPDATE "InventoryItem"
         SET "status" = 'sold',
             "orderId" = ${order.id},
@@ -270,13 +302,16 @@ async function createOrderOnce(
           FOR UPDATE SKIP LOCKED
           LIMIT 1
         )
-        RETURNING "id", "content"
+        RETURNING "id", "content", "structuredContent"
       `)
       const item = reservedItems[0]
       if (!item) throw badRequest('库存不足，请稍后再试')
 
       deliveryContent = item.content
       deliveryContentType = 'text'
+      // P4b：条目携带的自包含快照 { fields, values } 原样落进交付记录——
+      // 商家后续改模板不影响这笔订单的字段化展示；非法形态按纯文本兜底。
+      deliveryStructuredContent = parseStoredStructuredContent(item.structuredContent)
 
       await tx.deliveryRecord.create({
         data: {
@@ -285,6 +320,9 @@ async function createOrderOnce(
           productId,
           content: item.content,
           contentType: 'text',
+          structuredContent: deliveryStructuredContent
+            ? structuredContentToJson(deliveryStructuredContent)
+            : undefined,
           status: 'delivered',
           deliveredAt: new Date(),
         },
@@ -391,6 +429,7 @@ async function createOrderOnce(
       deliveryMode,
       deliveryContent,
       deliveryContentType,
+      deliveryStructuredContent: deliveryStructuredContent ?? undefined,
       balanceAfter,
       merchantId,
       merchantName,
@@ -407,7 +446,7 @@ export async function getOrderDetail(orderId: number, userId: number) {
     include: {
       merchant: { select: { id: true, name: true } },
       product: { select: { id: true, name: true, icon: true, type: true, imageUrl: true, deliveryMode: true } },
-      delivery: { select: { status: true, content: true, contentType: true, publicNote: true, deliveredAt: true } },
+      delivery: { select: { status: true, content: true, contentType: true, structuredContent: true, publicNote: true, deliveredAt: true } },
       review: {
         select: { rating: true, comment: true, status: true, editableUntil: true, editedAt: true, createdAt: true },
       },

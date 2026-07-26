@@ -262,9 +262,9 @@ export default function MerchantDashboardPage() {
     }
   }
 
-  async function handleDeliverSubmit(deliveryContent: string) {
+  async function handleDeliverSubmit(payload: { deliveryContent?: string; structuredValues?: Record<string, string> }) {
     if (!deliveringOrder) return
-    await deliverOrder(deliveringOrder.id, { deliveryContent })
+    await deliverOrder(deliveringOrder.id, payload)
     showToast('发货成功')
     loadData()
   }

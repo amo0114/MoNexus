@@ -5,6 +5,7 @@ import { useAppStore } from '../stores/appStore'
 import { disputeOrder, closeOrder } from '../api/orders'
 import { OwnReview } from '../api/reviews'
 import RegistryPill from './ui/RegistryPill'
+import StructuredDeliveryView from './StructuredDeliveryView'
 import SafeImage from './ui/SafeImage'
 import StarRating from './ui/StarRating'
 import ReviewDialog from './ReviewDialog'
@@ -165,7 +166,10 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
             <h3 className="font-heading text-sm font-bold text-[var(--color-text)] mb-3 flex items-center gap-2">
               <Info className="w-4 h-4 text-[var(--color-text-muted)]" /> 发货内容
             </h3>
-            {order.delivery?.content ? (
+            {order.delivery?.structuredContent && order.delivery.structuredContent.fields.length > 0 ? (
+              /* P4b：结构化交付按字段展示（逐字段复制、敏感默认遮蔽） */
+              <StructuredDeliveryView content={order.delivery.structuredContent} />
+            ) : order.delivery?.content ? (
               order.delivery.contentType === 'url' ? (
                 <div className="bg-[var(--color-surface)] p-3 rounded border border-[var(--color-border)] text-xs leading-relaxed break-all">
                   <a

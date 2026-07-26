@@ -52,6 +52,7 @@ export default function ProductDetailPage() {
   const [showSuccess, setShowSuccess] = useState(false)
   const [deliveryContent, setDeliveryContent] = useState('')
   const [deliveryContentType, setDeliveryContentType] = useState<string | undefined>(undefined)
+  const [deliveryStructured, setDeliveryStructured] = useState<import('../types/merchant').StructuredDeliveryContent | null>(null)
   const [merchantName, setMerchantName] = useState('')
   const [activeImage, setActiveImage] = useState(0)
 
@@ -120,11 +121,13 @@ export default function ProductDetailPage() {
         offerId: selectedOfferId ?? undefined,
         formAnswers,
         expectedPurchaseFormVersion: preview.purchaseFormVersion,
+        expectedCheckoutVersion: preview.checkoutVersion,
         verificationPassword: verificationPassword || undefined,
       })
       useAuthStore.getState().updatePoints(data.balanceAfter)
       setDeliveryContent(data.deliveryContent ?? '')
       setDeliveryContentType(data.deliveryContentType ?? '')
+      setDeliveryStructured(data.deliveryStructuredContent ?? null)
       setMerchantName(data.merchantName || '')
       setShowPurchase(false)
       setShowSuccess(true)
@@ -212,6 +215,8 @@ export default function ProductDetailPage() {
 
   const isInsufficient = userPoints < displayPrice
   const isSoldOut = displayStockMode !== 'unlimited' && displayStock === 0
+  // P4b：购前可见将获得的交付字段（模板公开，字段"值"购买后才可见）
+  const deliveryTemplate = (selectedOffer ?? offers[0])?.deliveryFields ?? []
 
   return (
     <div className="max-w-5xl mx-auto pb-8 fade-in relative">
@@ -315,6 +320,21 @@ export default function ProductDetailPage() {
                   )
                 })}
               </div>
+            </div>
+          )}
+
+          {/* P4b：交付字段预告（选中规格的模板；纯文本交付不渲染） */}
+          {deliveryTemplate.length > 0 && (
+            <div className="mb-8 flex flex-wrap items-center gap-2 text-xs" data-testid="delivery-template-preview">
+              <span className="text-[var(--color-text-muted)] font-bold">购买后您将获得：</span>
+              {deliveryTemplate.map(field => (
+                <span
+                  key={field.key}
+                  className="px-2 py-0.5 rounded border border-[var(--color-border)] bg-[var(--color-background)] text-[var(--color-text)] font-medium"
+                >
+                  {field.label}
+                </span>
+              ))}
             </div>
           )}
 
@@ -519,6 +539,7 @@ export default function ProductDetailPage() {
 
       {showSuccess && (
         <SuccessModal
+          structuredContent={deliveryStructured}
           deliveryContent={deliveryContent}
           deliveryContentType={deliveryContentType}
           merchantName={merchantName}
