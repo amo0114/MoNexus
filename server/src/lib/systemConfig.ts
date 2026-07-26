@@ -30,6 +30,8 @@ export const systemConfigKeys = [
   // P6a 订单计时配置化（原硬编码 7 天）
   'autoCloseDays',
   'fulfillmentSlaDays',
+  // P6a 订阅到期前提醒提前天数（0 = 关闭到期前提醒，仅到期时提醒）
+  'subscriptionRemindDays',
 ] as const
 
 export type SystemConfigKey = typeof systemConfigKeys[number]
@@ -74,6 +76,7 @@ export const systemConfigDefaults: Record<SystemConfigKey, number> = {
   lowStockNotifyCooldownHours: 24,
   autoCloseDays: 7,
   fulfillmentSlaDays: 7,
+  subscriptionRemindDays: 3,
 }
 
 export const systemConfigDescriptions: Record<SystemConfigKey, string> = {
@@ -98,6 +101,7 @@ export const systemConfigDescriptions: Record<SystemConfigKey, string> = {
   lowStockNotifyCooldownHours: '低库存邮件重发冷却时长',
   autoCloseDays: '已交付订单自动确认关闭天数',
   fulfillmentSlaDays: '人工服务履约时限天数',
+  subscriptionRemindDays: '订阅到期前提醒提前天数',
 }
 
 /** 管理端配置项分组（中文），供配置页按组渲染。 */
@@ -123,6 +127,7 @@ export const systemConfigGroups: Record<SystemConfigKey, string> = {
   lowStockNotifyCooldownHours: '库存',
   autoCloseDays: '订单',
   fulfillmentSlaDays: '订单',
+  subscriptionRemindDays: '订单',
 }
 
 /** 可选单位标注。 */
@@ -148,6 +153,7 @@ export const systemConfigUnits: Partial<Record<SystemConfigKey, string>> = {
   lowStockNotifyCooldownHours: '小时',
   autoCloseDays: '天',
   fulfillmentSlaDays: '天',
+  subscriptionRemindDays: '天',
 }
 
 const BONUS_BPS_HINT = '万分比，10000=100%；例如 500 表示额外 +5%'
@@ -172,6 +178,7 @@ export const systemConfigHints: Partial<Record<SystemConfigKey, string>> = {
   lowStockNotifyCooldownHours: '规格持续低库存时的邮件重发间隔；0 表示进入低位只发一次；上限 720',
   autoCloseDays: '买家未确认时交付后自动关闭并结算的天数；1–90，对新一轮巡检生效',
   fulfillmentSlaDays: '下单后商家须完成人工履约的天数；1–90，仅影响新订单',
+  subscriptionRemindDays: '到期前 N 天邮件提醒买家；0 = 关闭到期前提醒；上限 30',
 }
 
 type ConfigClient = typeof prisma | Prisma.TransactionClient
@@ -321,6 +328,9 @@ export async function updateSystemConfig(
   // P6a：0/负值会立即关单或立即超时，超长等于关闭机制——都拒绝。
   if ((key === 'autoCloseDays' || key === 'fulfillmentSlaDays') && (value < 1 || value > 90)) {
     throw badRequest('订单计时配置必须在 1–90 天之间')
+  }
+  if (key === 'subscriptionRemindDays' && value > 30) {
+    throw badRequest('订阅到期提醒提前天数必须在 0–30 之间（0 = 关闭到期前提醒）')
   }
 
   return prisma.$transaction(async tx => {

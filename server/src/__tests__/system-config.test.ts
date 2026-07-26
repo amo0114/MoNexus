@@ -27,6 +27,7 @@ const defaultConfig = {
   // P6a 订单计时
   autoCloseDays: 7,
   fulfillmentSlaDays: 7,
+  subscriptionRemindDays: 3,
 } as const
 
 async function clearSystemConfig() {

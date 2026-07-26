@@ -329,6 +329,18 @@ model LowStockNotice {
   offer Offer @relation(fields: [offerId], references: [id], onDelete: Cascade)
 }
 
+// P6a：订阅到期提醒去重状态（沿 LowStockNotice 语义：发送成功才落 stage，
+// 失败保持原值下轮重试）。纯运营状态，随订单不可删（订单本就 Restrict 保护）。
+model SubscriptionReminder {
+  id         Int      @id @default(autoincrement())
+  orderId    Int      @unique
+  lastStage  String // pre | expired
+  lastSentAt DateTime
+  updatedAt  DateTime @updatedAt
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+}
+
 model Review {
   id            Int       @id @default(autoincrement())
   productId     Int
@@ -427,6 +439,7 @@ model Order {
 
   renewalOf Order?  @relation("OrderRenewal", fields: [renewalOfOrderId], references: [id], onDelete: Restrict)
   renewals  Order[] @relation("OrderRenewal")
+  subscriptionReminder SubscriptionReminder?
 
   // P5.5：SKU 报表/全平台报表按时间范围聚合的支撑索引（评审修订）。
   @@index([merchantId, createdAt])
