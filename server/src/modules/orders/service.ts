@@ -145,6 +145,7 @@ async function buildReplayResponse(orderId: number, userId: number) {
           content: true,
           contentType: true,
           structuredContent: true,
+          expiresAt: true,
           file: { select: { fileName: true, size: true } },
         },
       },
@@ -154,15 +155,20 @@ async function buildReplayResponse(orderId: number, userId: number) {
   if (!order) throw notFound('订单不存在')
 
   const account = await prisma.pointAccount.findUnique({ where: { userId } })
+  const replayExpired = order.delivery?.expiresAt != null && order.delivery.expiresAt.getTime() <= Date.now()
   return {
     orderId: order.id,
     productName: order.productNameSnapshot ?? order.product.name,
     price: order.price,
     status: normalizeOrderStatus(order.status),
     deliveryMode: getProductFulfillmentMode(order.deliveryModeSnapshot),
-    deliveryContent: order.delivery?.content ?? undefined,
+    // 复审 P2-2：重放是唯一绕过遮蔽序列化器的买家可达投影——订阅到期后
+    // 重放同样不回明文（重放窗口内的短订阅可能已过期）。
+    deliveryContent: replayExpired ? undefined : order.delivery?.content ?? undefined,
     deliveryContentType: order.delivery?.contentType ?? undefined,
-    deliveryStructuredContent: parseStoredStructuredContent(order.delivery?.structuredContent) ?? undefined,
+    deliveryStructuredContent: replayExpired
+      ? undefined
+      : parseStoredStructuredContent(order.delivery?.structuredContent) ?? undefined,
     deliveryFile: order.delivery?.file ?? undefined,
     balanceAfter: account?.balance ?? 0,
     merchantId: order.merchantId,
@@ -247,10 +253,24 @@ async function createOrderOnce(
     if (renewalOfOrderId != null) {
       const original = await tx.order.findFirst({
         where: { id: renewalOfOrderId, userId },
-        select: { offerId: true, delivery: { select: { expiresAt: true } } },
+        select: {
+          offerId: true,
+          status: true,
+          delivery: { select: { expiresAt: true } },
+          renewals: { where: { status: { not: 'refunded' } }, select: { id: true }, take: 1 },
+        },
       })
       if (!original || original.offerId !== offer.id || original.delivery?.expiresAt == null) {
         throw new HttpError(400, 'RENEW_INVALID', '续费关联订单无效，请从订单详情重新发起续费')
+      }
+      // 退款保留 expiresAt 仅作审计——已退款原单的剩余时长不可被续费免费继承。
+      if (original.status === 'refunded') {
+        throw new HttpError(400, 'RENEW_INVALID', '订单已退款，无法续费')
+      }
+      // 续费链终检：原单已有未退款续费单时必须在链尾（最新订单）续费，
+      // 否则两次续费都自原到期顺延——买家花两份钱只延一份时长。
+      if (original.renewals.length > 0) {
+        throw new HttpError(400, 'RENEW_ALREADY_RENEWED', '该订单已续费，请在最新的续费订单上操作')
       }
     }
 
@@ -548,6 +568,9 @@ export async function getOrderDetail(orderId: number, userId: number) {
       review: {
         select: { rating: true, comment: true, status: true, editableUntil: true, editedAt: true, createdAt: true },
       },
+      // 是否存在未退款的续费单（仅详情；只取存在性，不透出续费单行）——
+      // 买家端据此隐藏「续费」入口，指引到链尾（最新订单）操作。
+      renewals: { where: { status: { not: 'refunded' } }, select: { id: true }, take: 1 },
       // P6b：买家时间线固定契约——仅 action/fromStatus/toStatus/publicNote/
       // createdAt/actorRole 六字段，不透出事件行 id 与操作人用户 id。
       statusEvents: {
@@ -564,15 +587,19 @@ export async function getOrderDetail(orderId: number, userId: number) {
     },
   })
   if (!order) throw notFound('订单不存在')
+  // 续费单行不进响应，只折叠为存在性布尔。
+  const { renewals, ...orderRest } = order
   const normalized = normalizeOrderStatus(order.status)
   return {
-    ...serializeUserOrderDetail(order),
+    ...serializeUserOrderDetail(orderRest),
     holdingPoints: order.holdingPoints ?? null,
     fulfillmentDeadline: order.fulfillmentDeadline ?? null,
     // P6c：预约日期（null = 非预约单）。
     bookingDate: order.bookingDate ?? null,
     review: order.review ?? null,
     canReview: !order.review && (normalized === 'delivered' || normalized === 'closed'),
+    // 已有未退款续费单——前端隐藏「续费」按钮（仅详情，列表行不带）。
+    hasActiveRenewal: renewals.length > 0,
   }
 }
 
@@ -683,7 +710,9 @@ export async function renewOrderPrecheck(orderId: number, userId: number) {
       id: true,
       productId: true,
       offerId: true,
+      status: true,
       delivery: { select: { expiresAt: true } },
+      renewals: { where: { status: { not: 'refunded' } }, select: { id: true }, take: 1 },
     },
   })
   if (!order) throw notFound('订单不存在')
@@ -691,6 +720,17 @@ export async function renewOrderPrecheck(orderId: number, userId: number) {
   // 没有到期时刻 = 非订阅交付（永久或尚未交付），无从续费。
   if (order.delivery?.expiresAt == null) {
     throw new HttpError(400, 'RENEW_NOT_SUBSCRIPTION', '该订单不是订阅类订单，无需续费')
+  }
+
+  // 退款保留 expiresAt 仅作审计——已退款原单的剩余时长不可被续费免费继承。
+  if (order.status === 'refunded') {
+    throw new HttpError(400, 'RENEW_INVALID', '订单已退款，无法续费')
+  }
+
+  // 续费链约束：已有未退款续费单的订单不可再续（否则两次续费自同一到期
+  // 顺延，买家花两份钱只延一份时长），引导买家到链尾（最新订单）操作。
+  if (order.renewals.length > 0) {
+    throw new HttpError(400, 'RENEW_ALREADY_RENEWED', '该订单已续费，请在最新的续费订单上操作')
   }
 
   const unavailable = () =>

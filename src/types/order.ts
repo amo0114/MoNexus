@@ -50,7 +50,7 @@ export interface UserOrderDetail extends Omit<UserOrderListItem, 'delivery'> {
     expiresAt?: string | null
     /** P6a：已过期(服务端裁决,前端不自行推算)。 */
     expired?: boolean
-    /** P6a：true = 文本/结构化内容已遮蔽,续费后恢复展示。 */
+    /** P6a：true = 文本/结构化内容已遮蔽(续费生成新订单,本单遮蔽不恢复)。 */
     contentMasked?: boolean
     /** P4b：结构化交付快照(fields + values);null/缺省 = 纯文本交付。 */
     structuredContent?: import('./merchant').StructuredDeliveryContent | null
@@ -71,6 +71,8 @@ export interface UserOrderDetail extends Omit<UserOrderListItem, 'delivery'> {
     createdAt: string
   }
   canReview?: boolean
+  /** 已有未退款的续费单——续费入口应隐藏，指引买家到最新订单操作。 */
+  hasActiveRenewal?: boolean
   /** 购买前填写信息：下单时的字段定义与答案快照（仅本人订单详情可见）。 */
   purchaseFormSnapshot?: Array<{ key: string; label: string; type: string }> | null
   purchaseFormAnswers?: Record<string, string> | null

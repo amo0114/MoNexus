@@ -175,6 +175,9 @@ export async function runSubscriptionRemindBatch(now = new Date()) {
         order: {
           // 已退款订阅不提醒；closed 等其余状态照常（订阅生命周期独立于关单）。
           status: { notIn: ['refunded'] },
+          // 已有未退款续费单的订单不再提醒——续费必须在链尾发起，对已续费
+          // 的原单催续费会诱导重复付费；续费单被退款后原单恢复提醒。
+          renewals: { none: { status: { not: 'refunded' } } },
           OR: [
             { subscriptionReminder: null },
             { subscriptionReminder: { lastStage: { not: 'expired' } } },

@@ -41,6 +41,25 @@ function dayString(offsetDays: number) {
   return `${y}-${m}-${day}`
 }
 
+/**
+ * 距今 1~4 个月内首个不足 31 天的月份的「31 日」——真实日历不存在、
+ * V8 解析会滚动到下月 1 日的日期（滚动结果仍落在宽窗口内，若不做
+ * 往返校验就会以滚动后的日期建单）。
+ */
+function rolledDayString() {
+  const d = new Date()
+  d.setHours(0, 0, 0, 0)
+  d.setDate(1)
+  for (let i = 1; i <= 4; i++) {
+    d.setMonth(d.getMonth() + 1)
+    const daysInMonth = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()
+    if (daysInMonth < 31) {
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-31`
+    }
+  }
+  throw new Error('unreachable: 连续 4 个月不可能都是 31 天')
+}
+
 const DATE_FORM = [
   { key: 'serviceDate', label: '期望服务日期', type: 'date', required: true },
 ]
@@ -135,6 +154,37 @@ describe('booking date columnization at purchase', () => {
       .expect(201)
     const order = await prisma.order.findUniqueOrThrow({ where: { id: ok.body.orderId } })
     expect(order.bookingDate!.getTime()).toBe(localMidnight(3).getTime())
+  })
+
+  it('rejects rolled calendar dates (02-31 style) with 400 and no side effects', async () => {
+    await createTestUser('bk-rolled@test.local', 'pass123', 'user', 1000)
+    const product = await createTestProduct('滚动日期商品', 100, 2, ['r-1', 'r-2'])
+    // 宽窗口：滚动后的日期（下月 1 日）本身在窗口内——没有往返校验时
+    // 会以滚动结果建单（bookingDate 与答案 JSON 显示不一致，复审 P3）。
+    await setPurchaseForm(product.id, [
+      { key: 'serviceDate', label: '期望服务日期', type: 'date', required: true, minDaysAhead: 1, maxDaysAhead: 180 },
+    ])
+    const { accessToken } = await loginAs('bk-rolled@test.local', 'pass123')
+
+    // 动态构造的滚动日期（窗口内的月份 + 不存在的 31 日）→ 400。
+    const rolled = await api
+      .post('/api/orders')
+      .set(authHeader(accessToken))
+      .send({ productId: product.id, formAnswers: { serviceDate: rolledDayString() } })
+      .expect(400)
+    expect(rolled.body.error.message).toContain('不是有效日期')
+
+    // 字面用例 2026-02-31：往返校验先于窗口校验，拒因必须是"无效日期"
+    // 而非窗口越界（校验顺序与日历无关，用例不随时间失效）。
+    const feb31 = await api
+      .post('/api/orders')
+      .set(authHeader(accessToken))
+      .send({ productId: product.id, formAnswers: { serviceDate: '2026-02-31' } })
+      .expect(400)
+    expect(feb31.body.error.message).toContain('不是有效日期')
+
+    // 拒单必须无副作用：无订单行（bookingDate 是 Order 列，一并不存在）。
+    expect(await prisma.order.count()).toBe(0)
   })
 })
 

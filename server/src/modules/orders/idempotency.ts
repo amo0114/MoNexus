@@ -133,6 +133,12 @@ export async function claimIdempotencyKey(
   }
 
   if (existing.status === 'completed' && existing.orderId != null) {
+    // 复审 P2-2：重放窗口以记录 expiresAt 为准（清理 cron 是 24h 粒度的
+    // 兜底，不是边界）。过期的 completed 记录绝不落入下方"接管租约重新
+    // 执行"分支——那会对同一 key 重复下单；直接拒绝并指引查订单列表。
+    if (existing.expiresAt <= now) {
+      throw new HttpError(409, 'IDEMPOTENCY_KEY_EXPIRED', '幂等键已过期，请在订单列表确认结果后重新发起')
+    }
     return { kind: 'replay', orderId: existing.orderId }
   }
 

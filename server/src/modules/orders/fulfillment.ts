@@ -203,6 +203,18 @@ export async function transitionOrderStatus(
       where: { orderId: order.id, expiresAt: null },
       data: { expiresAt: subscriptionExpiresAt },
     })
+    // 复审 P1-2：争议重交付携带**新交付内容**且原订阅已过期时，按新交付
+    // 时刻重算——否则争议补救内容落地即被遮蔽/拒下载，买家须付费续费才
+    // 看得到补救。仅限"商家主动携带新内容 + 已过期"：resume-instant 不带
+    // 内容不重算；未过期的重交付不顺延（防中途重交付白嫖延长）。
+    const carriesNewPayload =
+      input.deliveryContent != null || input.deliveryStructuredContent != null || input.deliveryFileId != null
+    if (carriesNewPayload && subscriptionExpiresAt != null) {
+      await client.deliveryRecord.updateMany({
+        where: { orderId: order.id, expiresAt: { lt: new Date() } },
+        data: { expiresAt: subscriptionExpiresAt },
+      })
+    }
   }
 
   await createOrderStatusEvent(client, {

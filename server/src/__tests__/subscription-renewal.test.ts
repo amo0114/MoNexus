@@ -150,6 +150,104 @@ describe('POST /api/orders — renewalOfOrderId validation', () => {
   })
 })
 
+describe('renewal chain awareness', () => {
+  it('rejects a second renewal of the same original; the chain tip stays renewable and extends from its own expiry', async () => {
+    const { buyer, productId, orderId } = await buySubscription('chain')
+    const originalExpiry = new Date(Date.now() + 5 * DAY_MS)
+    await prisma.deliveryRecord.update({ where: { orderId }, data: { expiresAt: originalExpiry } })
+
+    const first = await api
+      .post('/api/orders')
+      .set(authHeader(buyer.accessToken))
+      .send({ productId, expectedPrice: 100, renewalOfOrderId: orderId })
+      .expect(201)
+    const tipId = first.body.orderId as number
+
+    // 原单已有未退款续费单：预检与直下单同判 RENEW_ALREADY_RENEWED——
+    // 否则两次续费都自原到期顺延，买家花两份钱只延一份时长。
+    const precheck = await api.post(`/api/orders/${orderId}/renew`).set(authHeader(buyer.accessToken)).expect(400)
+    expect(precheck.body.error.code).toBe('RENEW_ALREADY_RENEWED')
+    const direct = await api
+      .post('/api/orders')
+      .set(authHeader(buyer.accessToken))
+      .send({ productId, expectedPrice: 100, renewalOfOrderId: orderId })
+      .expect(400)
+    expect(direct.body.error.code).toBe('RENEW_ALREADY_RENEWED')
+    expect(await prisma.order.count()).toBe(2)
+
+    // 链尾照常可续：自链尾（首次续费单）的到期时刻顺延。
+    await api.post(`/api/orders/${tipId}/renew`).set(authHeader(buyer.accessToken)).expect(200)
+    const second = await api
+      .post('/api/orders')
+      .set(authHeader(buyer.accessToken))
+      .send({ productId, expectedPrice: 100, renewalOfOrderId: tipId })
+      .expect(201)
+    const secondDelivery = await prisma.deliveryRecord.findUniqueOrThrow({
+      where: { orderId: second.body.orderId },
+    })
+    expect(secondDelivery.expiresAt!.getTime()).toBe(originalExpiry.getTime() + 2 * VALIDITY_DAYS * DAY_MS)
+  })
+
+  it('a refunded renewal makes the original renewable again', async () => {
+    const { buyer, productId, orderId } = await buySubscription('unblock')
+    const renewal = await api
+      .post('/api/orders')
+      .set(authHeader(buyer.accessToken))
+      .send({ productId, expectedPrice: 100, renewalOfOrderId: orderId })
+      .expect(201)
+
+    const blocked = await api.post(`/api/orders/${orderId}/renew`).set(authHeader(buyer.accessToken)).expect(400)
+    expect(blocked.body.error.code).toBe('RENEW_ALREADY_RENEWED')
+
+    // 续费单被退款 = 链上没有生效的续费，原单恢复可续。
+    await prisma.order.update({ where: { id: renewal.body.orderId }, data: { status: 'refunded' } })
+    await api.post(`/api/orders/${orderId}/renew`).set(authHeader(buyer.accessToken)).expect(200)
+    await api
+      .post('/api/orders')
+      .set(authHeader(buyer.accessToken))
+      .send({ productId, expectedPrice: 100, renewalOfOrderId: orderId })
+      .expect(201)
+  })
+
+  it('rejects renewing a refunded original with 400 RENEW_INVALID (precheck and createOrder)', async () => {
+    const { buyer, productId, orderId } = await buySubscription('refunded-orig')
+    // 退款保留 delivery.expiresAt 仅作审计——剩余时长不可被续费免费继承。
+    await prisma.order.update({ where: { id: orderId }, data: { status: 'refunded' } })
+
+    const precheck = await api.post(`/api/orders/${orderId}/renew`).set(authHeader(buyer.accessToken)).expect(400)
+    expect(precheck.body.error.code).toBe('RENEW_INVALID')
+    const direct = await api
+      .post('/api/orders')
+      .set(authHeader(buyer.accessToken))
+      .send({ productId, expectedPrice: 100, renewalOfOrderId: orderId })
+      .expect(400)
+    expect(direct.body.error.code).toBe('RENEW_INVALID')
+    expect(await prisma.order.count()).toBe(1)
+  })
+
+  it('buyer detail exposes hasActiveRenewal reflecting non-refunded renewals', async () => {
+    const { buyer, productId, orderId } = await buySubscription('detail-flag')
+    let detail = await api.get(`/api/orders/${orderId}`).set(authHeader(buyer.accessToken)).expect(200)
+    expect(detail.body.hasActiveRenewal).toBe(false)
+
+    const renewal = await api
+      .post('/api/orders')
+      .set(authHeader(buyer.accessToken))
+      .send({ productId, expectedPrice: 100, renewalOfOrderId: orderId })
+      .expect(201)
+    detail = await api.get(`/api/orders/${orderId}`).set(authHeader(buyer.accessToken)).expect(200)
+    expect(detail.body.hasActiveRenewal).toBe(true)
+    // 续费单自身没有后续续费单。
+    const tipDetail = await api.get(`/api/orders/${renewal.body.orderId}`).set(authHeader(buyer.accessToken)).expect(200)
+    expect(tipDetail.body.hasActiveRenewal).toBe(false)
+
+    // 续费单退款后原单回到可续状态，标志同步复位。
+    await prisma.order.update({ where: { id: renewal.body.orderId }, data: { status: 'refunded' } })
+    detail = await api.get(`/api/orders/${orderId}`).set(authHeader(buyer.accessToken)).expect(200)
+    expect(detail.body.hasActiveRenewal).toBe(false)
+  })
+})
+
 describe('expiry extension math', () => {
   it('renewing before expiry extends from the original expiry (顺延, exact ms)', async () => {
     const { buyer, productId, orderId } = await buySubscription('extend')

@@ -33,13 +33,17 @@ export type ErrorCode =
   // P6a 手动续费预检/下单校验：
   // - RENEW_NOT_SUBSCRIPTION：订单没有到期时刻（非订阅交付），无从续费；
   // - RENEW_OFFER_UNAVAILABLE：原规格已下架/商品下架/不再可购买；
-  // - RENEW_INVALID：下单携带的 renewalOfOrderId 关联校验失败。
+  // - RENEW_INVALID：下单携带的 renewalOfOrderId 关联校验失败；
+  // - RENEW_ALREADY_RENEWED：原单已有未退款的续费单——续费必须在链尾
+  //   （最新订单）发起，否则两次续费自同一到期顺延 = 花两份钱只延一份时长。
   | 'RENEW_NOT_SUBSCRIPTION'
   | 'RENEW_OFFER_UNAVAILABLE'
   | 'RENEW_INVALID'
+  | 'RENEW_ALREADY_RENEWED'
   // P6b 履约进度更新：单订单每小时进度条数超限（审计表即计数器，
   // 语义同 RATE_LIMITED，细分 code 便于前端提示"进度发太频繁"）。
   | 'PROGRESS_RATE_LIMITED'
+  | 'IDEMPOTENCY_KEY_EXPIRED'
 
 export interface ErrorDetail {
   field: string

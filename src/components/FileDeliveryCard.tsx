@@ -29,7 +29,7 @@ export default function FileDeliveryCard({ orderId, fileName, size }: Props) {
     } catch (err: any) {
       // P6a：订阅过期的发放拒绝给出续费指引；其余沿用服务端文案。
       if (getApiErrorCode(err) === 'FILE_SUBSCRIPTION_EXPIRED') {
-        showToast('订阅已过期，续费后可恢复下载', 'error')
+        showToast('订阅已过期，续费后可在新订单中下载', 'error')
       } else {
         showToast(getApiErrorMessage(err, '下载链接获取失败'), 'error')
       }

@@ -38,13 +38,10 @@ export const purchaseFormFieldSchema = z
     if (field.type !== 'date' && (field.minDaysAhead != null || field.maxDaysAhead != null)) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, message: '可约窗口仅日期字段可配置' })
     }
-    if (
-      field.type === 'date' &&
-      field.minDaysAhead != null &&
-      field.maxDaysAhead != null &&
-      field.maxDaysAhead < field.minDaysAhead
-    ) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: '最晚可约天数不能早于最早可约天数' })
+    // 复审 P2-3：按生效默认值（min=1/max=30）交叉校验——只传 maxDaysAhead:0
+    // 会得到永不可满足的窗口，必须在定义期拒绝而不是让每次下单都失败。
+    if (field.type === 'date' && (field.maxDaysAhead ?? 30) < (field.minDaysAhead ?? 1)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: '最晚可约天数不能早于最早可约天数（含默认值 最早 1 天/最晚 30 天）' })
     }
   })
 
@@ -147,6 +144,12 @@ export function assertBookingDateInWindow(
   if (Number.isNaN(picked.getTime())) {
     throw badRequest(`「${field.label}」不是有效日期`)
   }
+  // 复审 P3：V8 会把 02-31 之类滚动到下月（仅极端值才 Invalid），滚动后
+  // 列化的 bookingDate 会与答案 JSON 显示不一致——往返校验拒绝滚动日期。
+  const [y, m, d] = value.split('-').map(Number)
+  if (picked.getFullYear() !== y || picked.getMonth() + 1 !== m || picked.getDate() !== d) {
+    throw badRequest(`「${field.label}」不是有效日期`)
+  }
   const today = new Date()
   today.setHours(0, 0, 0, 0)
   const dayMs = 24 * 60 * 60 * 1000
@@ -155,9 +158,13 @@ export function assertBookingDateInWindow(
   const earliest = new Date(today.getTime() + minDays * dayMs)
   const latest = new Date(today.getTime() + maxDays * dayMs)
   if (picked < earliest || picked > latest) {
-    throw badRequest(
-      `「${field.label}」需在 ${earliest.toISOString().slice(0, 10)} 至 ${latest.toISOString().slice(0, 10)} 之间`
-    )
+    // 复审 P2-2：边界是本地零点，toISOString 在 UTC+8 会显示成前一天，
+    // 买家按提示填边界日反而被拒——必须用本地日历日格式化。
+    const fmt = (d: Date) => {
+      const pad = (n: number) => String(n).padStart(2, '0')
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+    }
+    throw badRequest(`「${field.label}」需在 ${fmt(earliest)} 至 ${fmt(latest)} 之间`)
   }
   return picked
 }

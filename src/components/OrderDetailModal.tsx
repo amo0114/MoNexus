@@ -107,6 +107,9 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
       const code = getApiErrorCode(e)
       if (code === 'RENEW_OFFER_UNAVAILABLE') {
         showToast('该规格已下架，无法续费', 'error')
+      } else if (code === 'RENEW_ALREADY_RENEWED') {
+        // 陈旧详情兜底：本单已续费，续费须在最新订单上发起。
+        showToast('该订单已续费，请在最新的续费订单上操作', 'error')
       } else {
         showToast(getApiErrorMessage(e, '暂无法续费，请稍后再试'), 'error')
       }
@@ -161,6 +164,12 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
       }
       if (code === 'RENEW_OFFER_UNAVAILABLE') {
         showToast('该规格已下架，无法续费', 'error')
+        setRenewInfo(null)
+        return 'failed'
+      }
+      if (code === 'RENEW_ALREADY_RENEWED') {
+        // 结算期间他处已完成续费（多标签页等）：关弹窗并指引到最新订单。
+        showToast('该订单已续费，请在最新的续费订单上操作', 'error')
         setRenewInfo(null)
         return 'failed'
       }
@@ -327,12 +336,12 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
               </div>
             )}
             {contentMasked ? (
-              /* P6a：过期遮蔽——文本/结构化内容不再回显，续费后恢复；文件卡片保留（下载由服务端拒绝） */
+              /* P6a：过期遮蔽——文本/结构化内容不再回显；续费生成新订单，本单遮蔽不恢复；文件卡片保留（下载由服务端拒绝） */
               <div
                 className="bg-[var(--color-surface)] p-4 rounded border border-dashed border-[var(--color-border)] text-center text-xs text-[var(--color-text-muted)]"
                 data-testid="delivery-masked"
               >
-                订阅已过期，续费后恢复展示
+                订阅已过期。续费将生成新订单，内容在新订单中查看
               </div>
             ) : order.delivery?.structuredContent && order.delivery.structuredContent.fields.length > 0 ? (
               /* P4b：结构化交付按字段展示（逐字段复制、敏感默认遮蔽） */
@@ -487,17 +496,27 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
               评价商品
             </button>
           )}
-          {/* P6a：订阅单到期前后均可手动续费（走标准结算，新订单关联本单） */}
+          {/* P6a：订阅单到期前后均可手动续费（走标准结算，新订单关联本单）；
+              已有未退款续费单时隐藏入口——续费须在链尾（最新订单）发起。 */}
           {subscriptionExpiresAt && (
-            <button
-              onClick={startRenew}
-              disabled={renewLoading}
-              data-testid="order-renew-button"
-              className="btn-primary px-4"
-            >
-              {renewLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-              续费
-            </button>
+            order.hasActiveRenewal ? (
+              <span
+                className="text-xs text-[var(--color-text-muted)] self-center"
+                data-testid="order-renewed-hint"
+              >
+                已续费，请在新订单中查看
+              </span>
+            ) : (
+              <button
+                onClick={startRenew}
+                disabled={renewLoading}
+                data-testid="order-renew-button"
+                className="btn-primary px-4"
+              >
+                {renewLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                续费
+              </button>
+            )
           )}
         </div>
       </DialogContent>

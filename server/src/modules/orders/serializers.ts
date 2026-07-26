@@ -86,8 +86,14 @@ function synthesizeTimeline(order: OrderWithDelivery) {
 
 function withUserOrderContract<T extends OrderWithDelivery>(order: T, includeTimeline: boolean) {
   const normalized = withProductDisplaySnapshot(normalizeFulfillmentFields(order))
+  // 复审补丁：买家契约只有 timeline——原始 statusEvents 必须剥离，否则
+  // 到期遮蔽只盖 timeline 一份，交付附言仍从 statusEvents 泄漏（回归测试
+  // 实测抓出）。商家/管理员序列化不走本函数，不受影响。
+  const { statusEvents: _rawEvents, ...buyerSafe } = normalized as typeof normalized & {
+    statusEvents?: unknown
+  }
   return {
-    ...normalized,
+    ...buyerSafe,
     // A product can be reconfigured after purchase. Expose the order's
     // immutable fulfillment mode so the UI describes the delivery contract
     // that was actually purchased, not today's product configuration.
@@ -125,7 +131,7 @@ function withDeliveryExpiry<T extends OrderWithDelivery>(order: T) {
  * 边界（如实承诺，见设计 §2）；文件元数据保留展示，下载在发放端点单独
  * 拦截。商家/管理员是履约凭据视角，禁止走本函数。
  */
-function maskExpiredDeliveryForBuyer<T extends OrderWithDelivery>(order: T) {
+function maskExpiredDeliveryForBuyer<T extends OrderWithDelivery & { timeline?: Array<Record<string, unknown>> }>(order: T) {
   if (!order.delivery || !isSubscriptionExpired(order.delivery.expiresAt)) return order
   return {
     ...order,
@@ -133,8 +139,21 @@ function maskExpiredDeliveryForBuyer<T extends OrderWithDelivery>(order: T) {
       ...order.delivery,
       content: null,
       structuredContent: null,
+      // 交付附言常被商家用来放账号/说明——与 content 同级遮蔽（复审 P2-1）。
+      publicNote: null,
       contentMasked: true,
     },
+    // 交付事件的 publicNote 与交付附言同源同值（fulfillment 同时写两处），
+    // 只遮一处等于没遮：到期后交付类事件的附言一并置空，进度类事件保留。
+    ...(Array.isArray(order.timeline)
+      ? {
+          timeline: order.timeline.map(event =>
+            (event as { toStatus?: string }).toStatus === 'delivered'
+              ? { ...event, publicNote: null }
+              : event
+          ),
+        }
+      : {}),
   }
 }
 

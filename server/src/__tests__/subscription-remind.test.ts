@@ -229,6 +229,51 @@ describe('runSubscriptionRemindBatch', () => {
     expect(await getReminder(order.id)).toBeNull()
   })
 
+  it('orders with an active renewal get no reminders (both stages); reminders resume after the renewal is refunded', async () => {
+    const now = new Date()
+    // 到期前窗口内 + 已到期各一单，各自挂一张未退款续费单。
+    const pre = await seedSubscriptionOrder({
+      email: 'sub-renewed-pre@test.local',
+      expiresAt: new Date(now.getTime() + 2 * DAY_MS),
+    })
+    const post = await seedSubscriptionOrder({
+      email: 'sub-renewed-post@test.local',
+      expiresAt: new Date(now.getTime() - HOUR_MS),
+    })
+    async function seedRenewal(of: Awaited<ReturnType<typeof seedSubscriptionOrder>>) {
+      return prisma.order.create({
+        data: {
+          userId: of.user.id,
+          productId: of.product.id,
+          offerId: of.offer.id,
+          merchantId: of.product.merchantId,
+          price: 100,
+          status: 'closed',
+          deliveryModeSnapshot: 'instant_inventory',
+          validityDaysSnapshot: 30,
+          renewalOfOrderId: of.order.id,
+        },
+      })
+    }
+    await seedRenewal(pre)
+    const postRenewal = await seedRenewal(post)
+
+    // 已续费的原单两段都不催——催续费会诱导买家重复付费。
+    await runSubscriptionRemindBatch(now)
+    expect(mailer.sent).toHaveLength(0)
+    expect(await getReminder(pre.order.id)).toBeNull()
+    expect(await getReminder(post.order.id)).toBeNull()
+
+    // 续费单被退款：原单恢复提醒（另一单的续费仍生效，继续静默）。
+    await prisma.order.update({ where: { id: postRenewal.id }, data: { status: 'refunded' } })
+    await runSubscriptionRemindBatch(now)
+    expect(mailer.sent).toHaveLength(1)
+    expect(mailer.sent[0].subject).toContain('已到期')
+    expect(mailer.lastTo('sub-renewed-post@test.local')).toBeDefined()
+    expect(await getReminder(post.order.id)).toMatchObject({ lastStage: 'expired' })
+    expect(await getReminder(pre.order.id)).toBeNull()
+  })
+
   it('backlog guard: expiresAt 8 days ago gets no mail but lastStage is recorded as expired', async () => {
     const now = new Date()
     const { order } = await seedSubscriptionOrder({
