@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { formatLocalDate } from '../utils/formatLocalDate'
 import { useNavigate } from 'react-router-dom'
 import {
   getMerchantStats,
@@ -23,7 +24,7 @@ import {
   Settlement,
   Merchant
 } from '../types/merchant'
-import { Store, Package, ShoppingBag, DollarSign, Settings, Plus, ChevronLeft, ChevronRight, Loader2, BarChart3, Search, AlertTriangle } from 'lucide-react'
+import { Store, Package, ShoppingBag, DollarSign, Settings, Plus, ChevronLeft, ChevronRight, Loader2, BarChart3, Search, AlertTriangle, CalendarDays } from 'lucide-react'
 import { useAppStore } from '../stores/appStore'
 import MerchantProductFormModal from '../components/merchant/MerchantProductFormModal'
 import MerchantInventoryImportModal from '../components/merchant/MerchantInventoryImportModal'
@@ -95,13 +96,15 @@ export default function MerchantDashboardPage() {
   const [orderPage, setOrderPage] = useState(1)
   const [orderTotal, setOrderTotal] = useState(0)
   const [orderStatusFilter, setOrderStatusFilter] = useState('')
+  // P6c：按预约日期排序（bookingDate 升序，无预约的排最后）。
+  const [orderSortBooking, setOrderSortBooking] = useState(false)
 
   const [settlements, setSettlements] = useState<Settlement[]>([])
   const [merchant, setMerchant] = useState<Merchant | null>(null)
 
   useEffect(() => {
     loadData()
-  }, [activeTab, productPage, orderPage, orderStatusFilter, productSearchDebounced, productStatusFilter, productTypeFilter, productModeFilter, productLowStockOnly])
+  }, [activeTab, productPage, orderPage, orderStatusFilter, orderSortBooking, productSearchDebounced, productStatusFilter, productTypeFilter, productModeFilter, productLowStockOnly])
 
   async function loadData() {
     setLoading(true)
@@ -127,6 +130,7 @@ export default function MerchantDashboardPage() {
           page: orderPage,
           pageSize: 20,
           status: orderStatusFilter || undefined,
+          sort: orderSortBooking ? 'booking' : undefined,
         })
         setOrders(data.items)
         setOrderTotal(data.total)
@@ -566,6 +570,17 @@ export default function MerchantDashboardPage() {
                     <option key={s.value} value={s.value}>{s.label}</option>
                   ))}
                 </select>
+                <button
+                  type="button"
+                  onClick={() => { setOrderSortBooking(v => !v); setOrderPage(1) }}
+                  aria-pressed={orderSortBooking}
+                  className={`btn-secondary btn-sm ${
+                    orderSortBooking ? 'border-[var(--color-primary)] text-[var(--color-primary)] bg-[var(--color-primary)]/10' : ''
+                  }`}
+                  data-testid="merchant-orders-sort-booking"
+                >
+                  <CalendarDays className="w-4 h-4" /> 按预约日期
+                </button>
               </div>
 
               <div className="overflow-x-auto">
@@ -604,6 +619,14 @@ export default function MerchantDashboardPage() {
                             <div>{o.product?.name}</div>
                             {o.offerNameSnapshot && o.offerNameSnapshot !== '默认规格' && (
                               <div className="mt-0.5 text-xs font-bold text-[var(--color-text-muted)]">规格：{o.offerNameSnapshot}</div>
+                            )}
+                            {o.bookingDate && (
+                              <div
+                                className="mt-0.5 text-xs font-bold text-[var(--color-primary)]"
+                                data-testid={`merchant-order-booking-${o.id}`}
+                              >
+                                预约日期 {formatLocalDate(o.bookingDate)}
+                              </div>
                             )}
                             {o.product?.deliveryMode && <div className="mt-1"><RegistryPill value={o.product.deliveryMode} category="deliveryModes" /></div>}
                           </td>

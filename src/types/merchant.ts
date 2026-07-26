@@ -151,10 +151,14 @@ export interface MerchantProduct {
 export interface PurchaseFormField {
   key: string
   label: string
-  type: 'text' | 'select'
+  type: 'text' | 'select' | 'date'
   required: boolean
   placeholder?: string
   options?: string[]
+  /** P6c：date 字段专属——最早可约（今天 + N 天，默认 1）。 */
+  minDaysAhead?: number
+  /** P6c：date 字段专属——最晚可约（今天 + N 天，默认 30）。 */
+  maxDaysAhead?: number
 }
 
 export interface MerchantOrder {
@@ -188,6 +192,8 @@ export interface MerchantOrder {
   holdingPoints?: number | null
   fulfillmentDeadline?: string | null
   slaExceeded?: boolean
+  /** P6c：预约日期（YYYY-MM-DD，来自 date 表单答案的投影）；null = 非预约单。 */
+  bookingDate?: string | null
   /** 仅订单详情接口返回；列表按敏感边界剥离。 */
   purchaseFormSnapshot?: Array<{ key: string; label: string; type: string }> | null
   purchaseFormAnswers?: Record<string, string> | null

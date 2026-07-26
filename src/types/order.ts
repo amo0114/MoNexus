@@ -36,6 +36,8 @@ export interface UserOrderListItem {
   }
   /** P6a：列表行的订阅到期时刻投影;null/缺省 = 永久。 */
   expiresAt?: string | null
+  /** P6c：预约日期（YYYY-MM-DD，来自 date 表单答案的投影）;null/缺省 = 非预约单。 */
+  bookingDate?: string | null
 }
 
 export interface UserOrderDetail extends Omit<UserOrderListItem, 'delivery'> {

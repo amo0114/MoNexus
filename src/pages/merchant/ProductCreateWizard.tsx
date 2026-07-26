@@ -747,6 +747,8 @@ export default function ProductCreateWizard() {
                         </div>
                         {field.type === 'text' ? (
                           <input type="text" className="input" placeholder={field.placeholder || ''} disabled />
+                        ) : field.type === 'date' ? (
+                          <input type="date" className="input" disabled />
                         ) : (
                           <select className="input" disabled>
                             <option>{field.options?.[0] ?? '请选择'}</option>

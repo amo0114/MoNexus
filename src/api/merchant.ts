@@ -101,7 +101,7 @@ export async function adjustMerchantProductCapacity(id: number, payload: { delta
   await api.post(`/merchant/products/${id}/capacity/adjust`, payload)
 }
 
-export async function getMerchantOrders(params?: { page?: number; pageSize?: number; status?: string; q?: string; productId?: number; dateFrom?: string; dateTo?: string }): Promise<ListEnvelope<MerchantOrder>> {
+export async function getMerchantOrders(params?: { page?: number; pageSize?: number; status?: string; q?: string; productId?: number; dateFrom?: string; dateTo?: string; sort?: 'booking' }): Promise<ListEnvelope<MerchantOrder>> {
   const { data } = await api.get<ListEnvelope<MerchantOrder>>('/merchant/orders', { params })
   return data
 }

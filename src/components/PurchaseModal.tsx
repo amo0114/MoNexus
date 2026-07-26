@@ -6,6 +6,14 @@ import { getApiErrorMessage } from '../api/error'
 
 export type ConfirmOutcome = 'success' | 'price_changed' | 'verification_required' | 'verification_failed' | 'failed'
 
+/** P6c：今天 + N 天的本地日期，格式 YYYY-MM-DD（date 输入的 min/max 提示；服务端强校验）。 */
+function localDatePlusDays(days: number): string {
+  const d = new Date()
+  d.setDate(d.getDate() + days)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
 /**
  * 结算确认弹窗。打开时向服务端拉取结算预览（余额前后值、扣除/冻结类型），
  * 并为本次结算意图生成一个幂等键：双击、超时重试都复用同一个键，
@@ -181,6 +189,17 @@ export default function PurchaseModal({
                     value={answers[field.key] ?? ''}
                     onChange={(e) => setAnswers(prev => ({ ...prev, [field.key]: e.target.value }))}
                     data-testid={`purchase-field-${field.key}`}
+                  />
+                ) : field.type === 'date' ? (
+                  /* P6c：预约日期——min/max 仅为客户端提示，服务端按可约窗口强校验 */
+                  <input
+                    type="date"
+                    className="input"
+                    min={localDatePlusDays(field.minDaysAhead ?? 1)}
+                    max={localDatePlusDays(field.maxDaysAhead ?? 30)}
+                    value={answers[field.key] ?? ''}
+                    onChange={(e) => setAnswers(prev => ({ ...prev, [field.key]: e.target.value }))}
+                    data-testid={`purchase-form-date-${field.key}`}
                   />
                 ) : (
                   <select
