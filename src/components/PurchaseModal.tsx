@@ -14,6 +14,7 @@ export type ConfirmOutcome = 'success' | 'price_changed' | 'verification_require
 export default function PurchaseModal({
   productId,
   offerId,
+  validityDays = null,
   submitting = false,
   onClose,
   onConfirm,
@@ -21,6 +22,8 @@ export default function PurchaseModal({
   productId: number
   /** 选中的规格(P4a);单 SKU 商品省略,服务端解析默认 Offer。 */
   offerId?: number
+  /** P6a：选中规格的订阅有效期(天);null = 永久,不渲染徽标。 */
+  validityDays?: number | null
   submitting?: boolean
   onClose: () => void
   onConfirm: (
@@ -115,6 +118,16 @@ export default function PurchaseModal({
                 data-testid="preview-offer-name"
               >
                 {preview.offerName}
+              </div>
+            )}
+            {validityDays != null && (
+              <div
+                className={`inline-flex items-center text-xs font-medium text-[var(--color-text)] bg-[var(--color-background)] border border-[var(--color-border)] rounded px-2 py-0.5 mb-1 ${
+                  preview.offerName && preview.offerName !== '默认规格' ? 'ml-1' : ''
+                }`}
+                data-testid="preview-validity-days"
+              >
+                有效期 {validityDays} 天
               </div>
             )}
             <div className="flex justify-between items-center text-sm mt-3 pt-3 border-t border-[var(--color-border)] border-dashed">

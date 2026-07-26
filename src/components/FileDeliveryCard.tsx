@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Download, Loader2, FileArchive } from 'lucide-react'
 import { issueOrderFileDownloadUrl } from '../api/orders'
+import { getApiErrorCode, getApiErrorMessage } from '../api/error'
 import { useAppStore } from '../stores/appStore'
 import { formatFileSize } from '../utils/formatFileSize'
 
@@ -26,7 +27,12 @@ export default function FileDeliveryCard({ orderId, fileName, size }: Props) {
       // 直接导航触发下载(签名头强制 attachment,不会离开页面)。
       window.location.assign(grant.url)
     } catch (err: any) {
-      showToast(err.response?.data?.error?.message || '下载链接获取失败', 'error')
+      // P6a：订阅过期的发放拒绝给出续费指引；其余沿用服务端文案。
+      if (getApiErrorCode(err) === 'FILE_SUBSCRIPTION_EXPIRED') {
+        showToast('订阅已过期，续费后可恢复下载', 'error')
+      } else {
+        showToast(getApiErrorMessage(err, '下载链接获取失败'), 'error')
+      }
     } finally {
       setDownloading(false)
     }

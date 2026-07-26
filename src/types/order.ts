@@ -27,14 +27,29 @@ export interface UserOrderListItem {
     imageUrl: string | null
     deliveryMode: string
   }
-  delivery: null | { status: string; publicNote?: string | null; deliveredAt?: string | null }
+  delivery: null | {
+    status: string
+    publicNote?: string | null
+    deliveredAt?: string | null
+    /** P6a：订阅到期时刻;null/缺省 = 永久。 */
+    expiresAt?: string | null
+  }
+  /** P6a：列表行的订阅到期时刻投影;null/缺省 = 永久。 */
+  expiresAt?: string | null
 }
 
 export interface UserOrderDetail extends Omit<UserOrderListItem, 'delivery'> {
   delivery: null | {
     status: string
-    content: string
+    /** P6a：订阅过期后遮蔽,返回 null。 */
+    content: string | null
     contentType?: string
+    /** P6a：订阅到期时刻;null/缺省 = 永久。 */
+    expiresAt?: string | null
+    /** P6a：已过期(服务端裁决,前端不自行推算)。 */
+    expired?: boolean
+    /** P6a：true = 文本/结构化内容已遮蔽,续费后恢复展示。 */
+    contentMasked?: boolean
     /** P4b：结构化交付快照(fields + values);null/缺省 = 纯文本交付。 */
     structuredContent?: import('./merchant').StructuredDeliveryContent | null
     /** P5：文件交付元数据(contentType='file' 时);下载走发放端点。 */

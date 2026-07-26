@@ -32,11 +32,14 @@ interface ExtraOffer {
   stock: string
   fixedContent: string
   fixedContentType: 'text' | 'url'
+  /** P6a：订阅有效期(天),空字符串 = 永久。 */
+  validityDays: string
 }
 
 const EMPTY_EXTRA_OFFER: ExtraOffer = {
   name: '', price: '', originalPrice: '', deliveryMode: 'instant_inventory',
   stockMode: 'limited', stock: '', fixedContent: '', fixedContentType: 'text',
+  validityDays: '',
 }
 
 /**
@@ -189,6 +192,10 @@ export default function ProductCreateWizard() {
           const original = Number(offer.originalPrice)
           if (!Number.isInteger(original) || original < offerPrice) return `${label}：原价不能低于售价`
         }
+        if (offer.validityDays.trim() !== '') {
+          const days = Number(offer.validityDays)
+          if (!Number.isInteger(days) || days < 1 || days > 3650) return `${label}：有效期必须是 1-3650 的整数天数，留空为永久`
+        }
         if (offer.deliveryMode === 'instant_fixed') {
           if (!offer.fixedContent.trim()) return `${label}：固定内容交付必须填写交付内容`
           if (offer.fixedContentType === 'url' && !/^https?:\/\//i.test(offer.fixedContent.trim())) {
@@ -309,6 +316,8 @@ export default function ProductCreateWizard() {
         originalPrice: offer.originalPrice.trim() === '' ? null : Number(offer.originalPrice),
         deliveryMode: offer.deliveryMode,
         stockMode: offer.deliveryMode === 'instant_inventory' ? 'limited' : offer.stockMode,
+        // P6a：填写才携带；缺省即永久有效
+        ...(offer.validityDays.trim() !== '' ? { validityDays: Number(offer.validityDays) } : {}),
         ...(offer.deliveryMode !== 'instant_inventory' && offer.stockMode === 'limited'
           ? { stock: Number(offer.stock) }
           : {}),
@@ -545,6 +554,12 @@ export default function ProductCreateWizard() {
                           <FieldLabel>划线原价 - 可选</FieldLabel>
                           <input type="number" step="1" min="1" className="input font-mono" placeholder="0"
                             value={offer.originalPrice} onChange={(e) => update({ originalPrice: e.target.value })} />
+                        </div>
+                        <div>
+                          <FieldLabel>有效期（天）- 可选</FieldLabel>
+                          <input type="number" step="1" min="1" max="3650" className="input font-mono" placeholder="留空为永久"
+                            value={offer.validityDays} onChange={(e) => update({ validityDays: e.target.value })} />
+                          <p className="mt-1.5 text-xs text-[var(--color-text-muted)]">留空为永久有效；改动仅影响新订单</p>
                         </div>
                         <div>
                           <FieldLabel required>交付方式</FieldLabel>

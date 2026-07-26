@@ -526,6 +526,18 @@ export default function ProfilePage() {
                       <div className="flex items-center justify-between mb-2">
                         <div className="flex items-center gap-2">
                           <RegistryPill value={order.status} category="orderStatuses" />
+                          {(() => {
+                            // P6a：订阅单到期后打「已过期」小标（列表投影，详情内可续费）
+                            const expiresAt = order.expiresAt ?? order.delivery?.expiresAt
+                            return expiresAt && new Date(expiresAt).getTime() <= Date.now() ? (
+                              <span
+                                className="text-xs font-bold text-[var(--color-danger)] bg-[var(--color-danger)]/10 px-1.5 py-0.5 rounded border border-[var(--color-danger)]/30"
+                                data-testid={`order-expired-tag-${order.id}`}
+                              >
+                                已过期
+                              </span>
+                            ) : null
+                          })()}
                           <span className="text-xs text-[var(--color-text-muted)]">
                             {new Date(order.createdAt).toLocaleString()}
                           </span>
