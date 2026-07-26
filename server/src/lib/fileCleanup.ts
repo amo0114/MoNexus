@@ -180,9 +180,9 @@ export async function cleanupUnreferencedObjects(now = new Date()): Promise<numb
     for (const key of chunk) {
       if (referenced.has(key)) continue
       try {
-        const deleted = await withDeliveryKeyLock(key, async () => {
-          // 持锁二次确认：等到锁时并发上传可能已建行。
-          const row = await prisma.deliveryFile.findFirst({
+        const deleted = await withDeliveryKeyLock(key, async tx => {
+          // 持锁二次确认（走锁事务连接，不额外占池）：等到锁时并发上传可能已建行。
+          const row = await tx.deliveryFile.findFirst({
             where: { key, status: { not: 'deleted' } },
             select: { id: true },
           })

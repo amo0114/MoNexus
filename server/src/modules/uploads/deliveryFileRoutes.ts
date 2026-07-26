@@ -80,9 +80,11 @@ router.post('/delivery-file', authenticate, requireActiveUser, requireMerchant, 
           // promote → create 全程持有该 key 的 advisory lock：否则孤儿 GC
           // 可能在"promote 去重命中、行尚未建成"的窗口删掉对象，让新行
           // 指向不存在的对象（评审 P0 竞态）。
-          const file = await withDeliveryKeyLock(finalKey, async () => {
+          // 建行走锁事务自己的连接（tx）：走全局 prisma 会让每个持锁请求
+          // 再等第二条连接，并发上传耗尽连接池（评审 P1）。
+          const file = await withDeliveryKeyLock(finalKey, async tx => {
             await storage.promote(tmpKey, finalKey)
-            return prisma.deliveryFile.create({
+            return tx.deliveryFile.create({
               data: {
                 key: finalKey,
                 fileName,

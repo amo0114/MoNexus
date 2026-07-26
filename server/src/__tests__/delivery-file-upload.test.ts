@@ -5,6 +5,7 @@ import { api, createTestMerchant, createTestUser, loginAs } from './helpers.js'
 import { getDeliveryStorage, __setDeliveryStorageForTesting } from '../lib/storage/delivery.js'
 import { DeliveryMemoryStorage, signDeliveryToken, verifyDeliveryToken } from '../lib/storage/deliveryMemory.js'
 import { FileTooLargeError, TMP_KEY_PREFIX, sanitizeFileName } from '../lib/storage/deliveryTypes.js'
+import { withDeliveryKeyLock } from '../lib/deliveryKeyLock.js'
 
 /**
  * P5 T1：私有交付存储与流式上传。memory 适配器与 S3 版同契约：
@@ -164,6 +165,35 @@ describe('POST /api/uploads/delivery-file', () => {
   })
 })
 
+/**
+ * 建行走锁事务的 tx 连接（评审 P1），模拟"建行失败"要在下一次
+ * $transaction 里把 tx.deliveryFile.create 换成拒绝——mock 全局
+ * prisma.deliveryFile.create 已拦不到。
+ */
+function failNextLockedCreate() {
+  const originalTx = prisma.$transaction.bind(prisma)
+  vi.spyOn(prisma, '$transaction').mockImplementationOnce(((arg: unknown, opts?: unknown) => {
+    if (typeof arg !== 'function') return originalTx(arg as never)
+    const run = arg as (tx: unknown) => Promise<unknown>
+    return originalTx(async (tx: object) => {
+      const wrapped = new Proxy(tx, {
+        get(target, prop) {
+          const value = Reflect.get(target, prop)
+          if (prop !== 'deliveryFile') return typeof value === 'function' ? value.bind(target) : value
+          return new Proxy(value as object, {
+            get(delegate, method) {
+              if (method === 'create') return () => Promise.reject(new Error('db unreachable'))
+              const fn = Reflect.get(delegate, method)
+              return typeof fn === 'function' ? fn.bind(delegate) : fn
+            },
+          })
+        },
+      })
+      return run(wrapped)
+    }, opts as never)
+  }) as never)
+}
+
 describe('create-failure keeps the final object (P0 regression)', () => {
   // 评审 P0：建行失败（多与 DB 故障相关）时绝不在请求路径删最终对象——
   // 误删会波及历史订单正引用的同 hash 文件。兜底由宽限期 GC 负责。
@@ -184,7 +214,7 @@ describe('create-failure keeps the final object (P0 regression)', () => {
     await createTestMerchant('p0-keep@test.local', 'pass123', { role: 'merchant', status: 'active' })
     const { accessToken } = await loginAs('p0-keep@test.local', 'pass123')
 
-    vi.spyOn(prisma.deliveryFile, 'create').mockRejectedValueOnce(new Error('db unreachable'))
+    failNextLockedCreate()
     await uploadAs(accessToken).expect(500)
 
     // 失败默认保留：任何 DB 查询在此刻都不可信，对象必须原地不动。
@@ -202,7 +232,7 @@ describe('create-failure keeps the final object (P0 regression)', () => {
     const ok = await uploadAs(first.accessToken).expect(201)
 
     // 第二个商家上传同内容，建行失败——既有行引用的对象必须存活。
-    vi.spyOn(prisma.deliveryFile, 'create').mockRejectedValueOnce(new Error('db unreachable'))
+    failNextLockedCreate()
     await uploadAs(second.accessToken).expect(500)
 
     const row = await prisma.deliveryFile.findUniqueOrThrow({ where: { id: ok.body.id } })
@@ -218,7 +248,7 @@ describe('create-failure keeps the final object (P0 regression)', () => {
     const b = await loginAs('p0-race-2@test.local', 'pass123')
 
     // 并发两路：其中一路建行被拒（哪一路先到不确定，与真实竞态一致）。
-    vi.spyOn(prisma.deliveryFile, 'create').mockRejectedValueOnce(new Error('db unreachable'))
+    failNextLockedCreate()
     const [r1, r2] = await Promise.all([uploadAs(a.accessToken), uploadAs(b.accessToken)])
     expect([r1.status, r2.status].sort()).toEqual([201, 500])
 
@@ -227,5 +257,34 @@ describe('create-failure keeps the final object (P0 regression)', () => {
     const row = await prisma.deliveryFile.findUniqueOrThrow({ where: { id: winner.body.id } })
     const storage = (await getDeliveryStorage()) as DeliveryMemoryStorage
     expect(storage.getBlob(row.key)?.equals(body)).toBe(true)
+  })
+})
+
+describe('withDeliveryKeyLock connection affinity (P1 regression)', () => {
+  // 评审 P1：锁回调若走全局 prisma，每个持锁请求会占住事务连接再等第二条
+  // 连接，并发多 key 上传耗尽连接池形成等待链。回调必须共用锁的事务连接。
+  it('runs the callback on the same connection that holds the advisory lock', async () => {
+    await withDeliveryKeyLock('conn-affinity-check', async tx => {
+      const [{ pid }] = await tx.$queryRaw<Array<{ pid: number }>>`SELECT pg_backend_pid() AS pid`
+      const holders = await tx.$queryRaw<Array<{ pid: number }>>`
+        SELECT pid FROM pg_locks WHERE locktype = 'advisory' AND classid = 20260726 AND granted`
+      expect(holders.map(h => h.pid)).toContain(pid)
+    })
+  })
+
+  it('handles concurrent uploads of distinct contents without pool starvation', async () => {
+    await createTestMerchant('p1-pool@test.local', 'pass123', { role: 'merchant', status: 'active' })
+    const { accessToken } = await loginAs('p1-pool@test.local', 'pass123')
+
+    const results = await Promise.all(
+      Array.from({ length: 6 }, (_, i) =>
+        api
+          .post('/api/uploads/delivery-file')
+          .set('Authorization', `Bearer ${accessToken}`)
+          .attach('file', Buffer.from(`distinct-content-${i}`), { filename: `pool-${i}.bin` })
+          .then(res => res)
+      )
+    )
+    expect(results.map(res => res.status)).toEqual(Array.from({ length: 6 }, () => 201))
   })
 })

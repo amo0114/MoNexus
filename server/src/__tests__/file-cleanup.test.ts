@@ -178,17 +178,18 @@ describe('cleanupUnreferencedObjects', () => {
     // 预置：建行失败残留的无行对象（按超期宽限处理）。
     await storage.putObjectAt(finalKey, body)
 
-    // 把重新上传暂停在 promote 之后、create 之前（锁已持有）。
-    const originalCreate = prisma.deliveryFile.create.bind(prisma.deliveryFile)
+    // 把重新上传暂停在 promote 之后、create 之前（锁已持有）。建行走锁
+    // 事务的 tx 连接，全局 create 的 mock 拦不到——改在 promote 完成处设闸。
+    const originalPromote = storage.promote.bind(storage)
     let reachCreate!: () => void
     const reachedCreate = new Promise<void>(resolve => { reachCreate = resolve })
     let releaseCreate!: () => void
     const createGate = new Promise<void>(resolve => { releaseCreate = resolve })
-    vi.spyOn(prisma.deliveryFile, 'create').mockImplementationOnce((async (args: unknown) => {
+    vi.spyOn(storage, 'promote').mockImplementationOnce(async (tmpKey, target) => {
+      await originalPromote(tmpKey, target)
       reachCreate()
       await createGate
-      return originalCreate(args as never)
-    }) as never)
+    })
 
     const uploadPromise = api
       .post('/api/uploads/delivery-file')
