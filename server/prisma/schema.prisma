@@ -341,6 +341,16 @@ model SubscriptionReminder {
   order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
 }
 
+// P6b：人工履约 SLA 超时提醒去重（每单最多一封邮件；设计决策 ③——超时
+// 仅升级提醒，不自动退款/降级，买家侧本就可争议）。
+model SlaReminder {
+  id      Int      @id @default(autoincrement())
+  orderId Int      @unique
+  sentAt  DateTime
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+}
+
 model Review {
   id            Int       @id @default(autoincrement())
   productId     Int
@@ -440,6 +450,7 @@ model Order {
   renewalOf Order?  @relation("OrderRenewal", fields: [renewalOfOrderId], references: [id], onDelete: Restrict)
   renewals  Order[] @relation("OrderRenewal")
   subscriptionReminder SubscriptionReminder?
+  slaReminder          SlaReminder?
 
   // P5.5：SKU 报表/全平台报表按时间范围聚合的支撑索引（评审修订）。
   @@index([merchantId, createdAt])
