@@ -19,7 +19,7 @@ import {
 import { serializeUserOrderDetail, serializeUserOrderList } from './serializers.js'
 import { invalidateProductPublicCache } from '../products/cache.js'
 import { logInventoryChange } from '../../lib/inventoryLog.js'
-import { parseStoredPurchaseForm, validatePurchaseFormAnswers, computePurchaseFormVersion } from '../../lib/purchaseForm.js'
+import { parseStoredPurchaseForm, validatePurchaseFormAnswers, computePurchaseFormVersion, findBookingDateField } from '../../lib/purchaseForm.js'
 import { assertCheckoutVerification } from '../checkout/verification.js'
 import { resolvePurchaseOfferChecked } from '../../lib/offers.js'
 import {
@@ -208,6 +208,11 @@ async function createOrderOnce(
       throw new HttpError(409, 'CHECKOUT_CHANGED', '商品信息已变化，请重新确认')
     }
     const purchaseFormAnswers = validatePurchaseFormAnswers(purchaseFormFields, formAnswers)
+    // P6c：预约日期列化——取首个 date 字段的已校验答案（YYYY-MM-DD），
+    // 商家排序与提醒 cron 免查答案 JSON。无日期字段/未填（非必填）= null。
+    const bookingDateField = findBookingDateField(purchaseFormFields)
+    const bookingDateAnswer = bookingDateField ? purchaseFormAnswers?.[bookingDateField.key] : undefined
+    const orderBookingDate = bookingDateAnswer ? new Date(`${bookingDateAnswer}T00:00:00`) : null
     const deliveryMode = getProductFulfillmentMode(offer.deliveryMode)
     // P4b：下单即冻结交付字段模板——人工服务发货按此快照强制校验，商家改
     // 模板不影响已购未发货订单（快照惯例同 deliveryModeSnapshot）。
@@ -312,6 +317,7 @@ async function createOrderOnce(
         fulfillmentDeadline: orderFulfillmentDeadline,
         // P6a：订阅时长快照——商家改 Offer.validityDays 不影响本单。
         validityDaysSnapshot: offer.validityDays ?? null,
+        bookingDate: orderBookingDate,
         // P6a：续费链落库（Restrict 外键，原单行不可删）。
         renewalOfOrderId: renewalOfOrderId ?? null,
         // 定义与答案一并快照：商家之后改表单不影响本单的展示与履约依据。

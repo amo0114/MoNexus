@@ -341,6 +341,15 @@ model SubscriptionReminder {
   order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
 }
 
+// P6c：预约日前提醒去重（双方各一封，同一行标记；发送成功才落行）。
+model BookingReminder {
+  id      Int      @id @default(autoincrement())
+  orderId Int      @unique
+  sentAt  DateTime
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+}
+
 // P6b：人工履约 SLA 超时提醒去重（每单最多一封邮件；设计决策 ③——超时
 // 仅升级提醒，不自动退款/降级，买家侧本就可争议）。
 model SlaReminder {
@@ -428,6 +437,9 @@ model Order {
   fundsHeld          Boolean   @default(false) // 仅新模型订单为 true；兼容迁移前未实际扣减的历史订单
   fulfillmentDeadline DateTime? // manual_service 商家履约截止时间
   confirmedAt        DateTime? // 用户确认关闭订单的时间
+  // P6c：预约日期（购买前表单首个 date 字段的答案，下单校验后列化——
+  // 商家排序/提醒 cron 免查 JSON）。null = 非预约单。
+  bookingDate        DateTime?
   // P6a：下单时的订阅有效期快照（null = 永久）；到期时刻在 DeliveryRecord.expiresAt。
   validityDaysSnapshot Int?
   // P6a：续费单指向被续费的原订单（同买家同 offer）。Restrict：续费链是
@@ -451,11 +463,13 @@ model Order {
   renewals  Order[] @relation("OrderRenewal")
   subscriptionReminder SubscriptionReminder?
   slaReminder          SlaReminder?
+  bookingReminder      BookingReminder?
 
   // P5.5：SKU 报表/全平台报表按时间范围聚合的支撑索引（评审修订）。
   @@index([merchantId, createdAt])
   @@index([createdAt])
   @@index([renewalOfOrderId])
+  @@index([merchantId, bookingDate])
 }
 
 model DeliveryRecord {

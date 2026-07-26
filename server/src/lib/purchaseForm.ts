@@ -18,10 +18,14 @@ export const purchaseFormFieldSchema = z
     // key 是答案对象的属性名，限定标识符字符，避免任意字符串进入 JSON 键空间。
     key: z.string().regex(/^[a-zA-Z][a-zA-Z0-9_]{0,31}$/, '字段 key 必须是字母开头的标识符（≤32 字符）'),
     label: z.string().trim().min(1, '字段名称不能为空').max(30),
-    type: z.enum(['text', 'select']),
+    // P6c：date = 预约日期字段（轻量档期——范围校验而非 slot 库存，设计决策 ④）。
+    type: z.enum(['text', 'select', 'date']),
     required: z.boolean().default(false),
     placeholder: z.string().trim().max(100).optional(),
     options: z.array(z.string().trim().min(1).max(50)).min(1).max(PURCHASE_FORM_MAX_OPTIONS).optional(),
+    // 仅 date 类型：可约窗口 [今天+minDaysAhead, 今天+maxDaysAhead]。
+    minDaysAhead: z.number().int().min(0).max(365).optional(),
+    maxDaysAhead: z.number().int().min(0).max(365).optional(),
   })
   .superRefine((field, ctx) => {
     if (field.type === 'select') {
@@ -30,6 +34,17 @@ export const purchaseFormFieldSchema = z
       } else if (new Set(field.options).size !== field.options.length) {
         ctx.addIssue({ code: z.ZodIssueCode.custom, message: '下拉选项不能重复' })
       }
+    }
+    if (field.type !== 'date' && (field.minDaysAhead != null || field.maxDaysAhead != null)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: '可约窗口仅日期字段可配置' })
+    }
+    if (
+      field.type === 'date' &&
+      field.minDaysAhead != null &&
+      field.maxDaysAhead != null &&
+      field.maxDaysAhead < field.minDaysAhead
+    ) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: '最晚可约天数不能早于最早可约天数' })
     }
   })
 
@@ -69,6 +84,10 @@ export function computePurchaseFormVersion(fields: PurchaseFormField[]): string 
     required: f.required,
     placeholder: f.placeholder ?? null,
     options: f.options ?? null,
+    // P6c：可约窗口进版本摘要（商家改窗口 = 买家须重新确认）。null 不进
+    // canonical——存量 text/select 表单摘要字节不变（惯例同 checkoutVersion）。
+    ...(f.minDaysAhead != null ? { minDaysAhead: f.minDaysAhead } : {}),
+    ...(f.maxDaysAhead != null ? { maxDaysAhead: f.maxDaysAhead } : {}),
   }))
   return createHash('sha256').update(JSON.stringify(canonical)).digest('hex').slice(0, 16)
 }
@@ -104,7 +123,46 @@ export function validatePurchaseFormAnswers(
     if (field.type === 'select' && !field.options?.includes(value)) {
       throw badRequest(`「${field.label}」的选择无效，请重新选择`)
     }
+    if (field.type === 'date') {
+      assertBookingDateInWindow(field, value)
+    }
     cleaned[field.key] = value
   }
   return Object.keys(cleaned).length > 0 ? cleaned : null
+}
+
+/**
+ * P6c：预约日期答案校验。格式 YYYY-MM-DD；窗口 [今天+min, 今天+max]
+ * （默认 min=1、max=30；按服务器本地日历日比较——预约语义是"哪一天"，
+ * 不含时刻，跨时区细化留待真实需求）。
+ */
+export function assertBookingDateInWindow(
+  field: Pick<PurchaseFormField, 'label' | 'minDaysAhead' | 'maxDaysAhead'>,
+  value: string
+): Date {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    throw badRequest(`「${field.label}」格式应为 YYYY-MM-DD`)
+  }
+  const picked = new Date(`${value}T00:00:00`)
+  if (Number.isNaN(picked.getTime())) {
+    throw badRequest(`「${field.label}」不是有效日期`)
+  }
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const dayMs = 24 * 60 * 60 * 1000
+  const minDays = field.minDaysAhead ?? 1
+  const maxDays = field.maxDaysAhead ?? 30
+  const earliest = new Date(today.getTime() + minDays * dayMs)
+  const latest = new Date(today.getTime() + maxDays * dayMs)
+  if (picked < earliest || picked > latest) {
+    throw badRequest(
+      `「${field.label}」需在 ${earliest.toISOString().slice(0, 10)} 至 ${latest.toISOString().slice(0, 10)} 之间`
+    )
+  }
+  return picked
+}
+
+/** 表单定义里的首个日期字段（预约字段；v1 至多按第一个处理）。 */
+export function findBookingDateField(fields: PurchaseFormField[]): PurchaseFormField | null {
+  return fields.find(f => f.type === 'date') ?? null
 }
