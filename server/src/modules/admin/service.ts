@@ -933,6 +933,20 @@ export async function listAdminProducts() {
       _count: {
         select: { inventory: { where: { status: 'available' } } },
       },
+      // P4a F2：导入弹窗需要知道每个商品有哪些即时库存规格（含已下架——
+      // 重新上架前备货是合理操作）；deliveryFields 用于前端提示模板规格
+      // 不能走管理端纯文本导入。管理端上下文，不含 fixedContent。
+      offers: {
+        select: {
+          id: true,
+          name: true,
+          deliveryMode: true,
+          status: true,
+          isDefault: true,
+          deliveryFields: true,
+        },
+        orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
+      },
     },
     orderBy: { createdAt: 'desc' },
   })

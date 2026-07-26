@@ -68,6 +68,10 @@ export default function AdminPage() {
   const [inventoryProductId, setInventoryProductId] = useState(0)
   const [inventoryProductName, setInventoryProductName] = useState('')
   const [inventoryText, setInventoryText] = useState('')
+  // P4a F2：可导入的即时库存规格（不含交付字段模板规格——那些必须走商家端
+  // 结构化导入）。单个自动选中；多个要求管理员显式选择。
+  const [inventoryOffers, setInventoryOffers] = useState<{ id: number; name: string; status: string; isDefault?: boolean }[]>([])
+  const [inventoryOfferId, setInventoryOfferId] = useState(0)
 
   // Settle multiselect
   const [selectedSettlements, setSelectedSettlements] = useState<number[]>([])
@@ -160,8 +164,15 @@ export default function AdminPage() {
       showToast('请输入至少一条库存', 'error')
       return
     }
+    if (inventoryOffers.length > 1 && !inventoryOfferId) {
+      showToast('请选择目标规格', 'error')
+      return
+    }
     try {
-      const { data } = await api.post(`/admin/products/${inventoryProductId}/inventory`, { items })
+      const { data } = await api.post(`/admin/products/${inventoryProductId}/inventory`, {
+        items,
+        ...(inventoryOfferId ? { offerId: inventoryOfferId } : {}),
+      })
       showToast(`成功导入 ${data.imported} 个交付单元`)
       setShowInventory(false)
       setInventoryProductName('')
@@ -471,6 +482,14 @@ export default function AdminPage() {
                     {products.map((p: any) => {
                       const deliveryMode = p.deliveryMode ?? 'instant_inventory'
                       const isInstantInventory = deliveryMode === 'instant_inventory'
+                      // P4a F2：导入入口按"是否存在可导入规格"判定，而非商品级投影
+                      //（默认规格是人工服务、另有卡密规格时投影会误隐藏入口）。
+                      // 带交付字段模板的规格必须走商家端结构化导入，不可作目标。
+                      const importableOffers = (p.offers ?? [])
+                        .filter((o: any) => o.deliveryMode === 'instant_inventory'
+                          && !(Array.isArray(o.deliveryFields) && o.deliveryFields.length > 0))
+                      // offers 缺失（旧接口）时回落到投影判定，行为与改造前一致。
+                      const canImport = p.offers ? importableOffers.length > 0 : isInstantInventory
                       const available = isInstantInventory ? (p._count?.inventory ?? p.stock) : p.stock
                       const stockLabel = isInstantInventory
                         ? `${available} 个交付单元`
@@ -497,14 +516,18 @@ export default function AdminPage() {
                             </span>
                           </td>
                           <td className="text-right" data-label="操作">
-                            {isInstantInventory ? (
+                            {canImport ? (
                               <button
                                 onClick={() => {
                                   setInventoryProductId(p.id)
                                   setInventoryProductName(p.name)
                                   setInventoryText('')
+                                  setInventoryOffers(importableOffers)
+                                  // 单个可导入规格自动选中；多个要求显式选择。
+                                  setInventoryOfferId(importableOffers.length === 1 ? importableOffers[0].id : 0)
                                   setShowInventory(true)
                                 }}
+                                data-testid={`admin-import-inventory-${p.id}`}
                                 className="text-[var(--color-cta)] hover:bg-[var(--color-cta)]/10 font-semibold text-xs px-3 py-1.5 btn-sm rounded-lg transition-colors border border-[var(--color-cta)]/25 cursor-pointer"
                               >
                                 导入交付库存
@@ -714,14 +737,38 @@ export default function AdminPage() {
           <p className="text-xs text-[var(--color-text-muted)] mb-3">
             {inventoryProductName ? `商品：${inventoryProductName}。` : ''}仅适用于即时库存发货；每行是一份可独立交付给一位买家的内容（卡密/账号/链接）。
           </p>
+          {inventoryOffers.length > 1 ? (
+            <div className="mb-3">
+              <label className="block text-sm font-bold text-[var(--color-text)] mb-1.5">目标规格 <span className="text-red-500">*</span></label>
+              <select
+                className="input appearance-none cursor-pointer"
+                value={inventoryOfferId || ''}
+                onChange={(e) => setInventoryOfferId(Number(e.target.value) || 0)}
+                data-testid="admin-import-offer-select"
+              >
+                <option value="">请选择规格</option>
+                {inventoryOffers.map(o => (
+                  <option key={o.id} value={o.id}>
+                    {o.name}{o.isDefault ? '（默认）' : ''}{o.status === 'inactive' ? '（已下架）' : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : inventoryOffers.length === 1 ? (
+            <p className="text-xs text-[var(--color-text-muted)] mb-3">
+              目标规格：<span className="font-bold text-[var(--color-text)]">{inventoryOffers[0].name}</span>
+              {inventoryOffers[0].status === 'inactive' ? '（已下架）' : ''}
+            </p>
+          ) : null}
           <textarea
             value={inventoryText}
             onChange={(e) => setInventoryText(e.target.value)}
             rows={8}
             placeholder="XXXX-XXXX-XXXX-XXXX&#10;YYYY-YYYY-YYYY-YYYY"
             className="input font-mono resize-none mb-4"
+            data-testid="admin-import-inventory-text"
           />
-          <button onClick={confirmImportInventory} className="btn-primary w-full">
+          <button onClick={confirmImportInventory} className="btn-primary w-full" data-testid="admin-import-inventory-confirm">
             确认导入
           </button>
         </DialogContent>
