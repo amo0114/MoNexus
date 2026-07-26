@@ -73,8 +73,8 @@ function synthesizeTimeline(order: OrderWithDelivery) {
   if (typeof order.status !== 'string') return []
 
   const status = normalizeOrderStatus(order.status)
+  // P6b：合成事件与真实事件同一契约（六字段，无 id / 无操作人用户 id）。
   return [{
-    id: null,
     actorRole: 'system',
     fromStatus: null,
     toStatus: status,

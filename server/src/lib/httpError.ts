@@ -37,6 +37,9 @@ export type ErrorCode =
   | 'RENEW_NOT_SUBSCRIPTION'
   | 'RENEW_OFFER_UNAVAILABLE'
   | 'RENEW_INVALID'
+  // P6b 履约进度更新：单订单每小时进度条数超限（审计表即计数器，
+  // 语义同 RATE_LIMITED，细分 code 便于前端提示"进度发太频繁"）。
+  | 'PROGRESS_RATE_LIMITED'
 
 export interface ErrorDetail {
   field: string

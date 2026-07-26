@@ -542,9 +542,10 @@ export async function getOrderDetail(orderId: number, userId: number) {
       review: {
         select: { rating: true, comment: true, status: true, editableUntil: true, editedAt: true, createdAt: true },
       },
+      // P6b：买家时间线固定契约——仅 action/fromStatus/toStatus/publicNote/
+      // createdAt/actorRole 六字段，不透出事件行 id 与操作人用户 id。
       statusEvents: {
         select: {
-          id: true,
           actorRole: true,
           fromStatus: true,
           toStatus: true,

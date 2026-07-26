@@ -2,7 +2,7 @@ import { Prisma } from '@prisma/client'
 import { randomUUID } from 'node:crypto'
 import { prisma } from '../../lib/prisma.js'
 import { businessRegistry } from '../../lib/businessRegistry.js'
-import { badRequest, notFound, conflict } from '../../lib/httpError.js'
+import { badRequest, notFound, conflict, HttpError } from '../../lib/httpError.js'
 import { getSystemConfigValue } from '../../lib/systemConfig.js'
 import { logInventoryChange } from '../../lib/inventoryLog.js'
 import {
@@ -18,6 +18,7 @@ import {
 } from '../../lib/inventoryImport.js'
 import { invalidateProductPublicCache } from '../products/cache.js'
 import {
+  createOrderStatusEvent,
   isInstantMode,
   normalizeOrderStatus,
   transitionOrderStatus,
@@ -750,7 +751,8 @@ function getAvailableActions(order: {
   // pending 状态下商家可接单（start_fulfillment）或拒单（reject）；
   // 拒单只对 manual_service 有意义，但即时模式创建即 delivered 不会进入 pending
   if (status === 'pending') return ['start_fulfillment', 'reject']
-  if (status === 'processing' && deliveryMode === 'manual_service') return ['deliver']
+  // P6b：履约中的人工服务单可交付，也可发进度更新（post_progress 不改状态）
+  if (status === 'processing' && deliveryMode === 'manual_service') return ['deliver', 'post_progress']
   if (status === 'disputed') return ['respond_dispute']
   return []
 }
@@ -965,6 +967,57 @@ export async function deliverOrderFulfillment(
   })
 
   return getMyOrderDetail(merchantId, orderId)
+}
+
+// P6b：单订单每小时最多 6 条进度更新（审计表即计数器，fileAccess 同款先例：
+// count→create 非原子，并发下可能少量超发——反噪音手段，不是安全边界）。
+const PROGRESS_RATE_LIMIT = 6
+const PROGRESS_RATE_WINDOW_MS = 60 * 60 * 1000
+
+/**
+ * P6b：商家发布履约进度。仅写 OrderStatusEvent（fromStatus=toStatus='processing'），
+ * 不改 order.status——决策 ③：进度不引入新订单状态。note 即买家时间线上的
+ * publicNote。
+ */
+export async function postOrderProgress(
+  merchantId: number,
+  actorUserId: number,
+  orderId: number,
+  input: { note: string }
+) {
+  await prisma.$transaction(async tx => {
+    // 归属校验沿用统一入口：他人/不存在的订单一律 404 防枚举。
+    const order = await assertMerchantOrder(merchantId, orderId, tx)
+    if (
+      normalizeOrderStatus(order.status) !== 'processing'
+      || getOrderDeliveryMode(order) !== 'manual_service'
+    ) {
+      throw badRequest('仅履约中的人工服务订单可更新进度')
+    }
+
+    const recent = await tx.orderStatusEvent.count({
+      where: {
+        orderId: order.id,
+        action: 'merchant.progress',
+        createdAt: { gte: new Date(Date.now() - PROGRESS_RATE_WINDOW_MS) },
+      },
+    })
+    if (recent >= PROGRESS_RATE_LIMIT) {
+      throw new HttpError(429, 'PROGRESS_RATE_LIMITED', '进度更新过于频繁，请稍后再试')
+    }
+
+    await createOrderStatusEvent(tx, {
+      orderId: order.id,
+      actorUserId,
+      actorRole: 'merchant',
+      fromStatus: 'processing',
+      toStatus: 'processing',
+      action: 'merchant.progress',
+      publicNote: input.note,
+    })
+  })
+
+  return { ok: true }
 }
 
 export async function respondToOrderDispute(

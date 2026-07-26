@@ -180,6 +180,11 @@ export const deliverFulfillmentSchema = z.object({
   internalNote: z.string().trim().max(2000).optional(),
 }).strict()
 
+// P6b：履约进度更新——note 是买家可见的 publicNote（时间线渲染），必填。
+export const orderProgressSchema = z.object({
+  note: z.string().trim().min(1, '进度说明不能为空').max(500, '进度说明不能超过 500 字'),
+}).strict()
+
 export const respondDisputeSchema = z.object({
   resolution: z.enum(['resume', 'close']),
   publicNote: z.string().trim().max(1000).optional(),
