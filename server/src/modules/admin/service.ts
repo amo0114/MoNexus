@@ -10,6 +10,7 @@ import {
 } from '../../lib/systemConfig.js'
 import { logInventoryChange } from '../../lib/inventoryLog.js'
 import { createDefaultOffer, getDefaultOffer, syncProductProjection } from '../../lib/offers.js'
+import { parseStoredDeliveryFields } from '../../lib/deliveryFields.js'
 import {
   assertProductDeliveryConfiguration,
   normalizeProductImageFields,
@@ -434,19 +435,51 @@ export async function updateProduct(adminUserId: number, id: number, data: Updat
   return updated
 }
 
-export async function importInventory(productId: number, payload: InventoryImportPayload, adminUserId: number) {
+/**
+ * P4a F2：管理端导入的规格解析。显式 offerId 必须属于该商品且是即时库存
+ * 规格；缺省先落默认 Offer，默认非即时库存时回退到唯一的即时库存规格
+ * （零个 → 商品不支持库存导入；多个 → 无法猜测意图，要求显式指定）。
+ */
+async function resolveAdminImportOffer(
+  tx: Prisma.TransactionClient,
+  productId: number,
+  offerId: number | undefined
+) {
+  if (offerId != null) {
+    const offer = await tx.offer.findFirst({ where: { id: offerId, productId } })
+    if (!offer) throw notFound('规格不存在')
+    if (offer.deliveryMode !== 'instant_inventory') {
+      throw badRequest('仅即时库存发货规格支持库存导入')
+    }
+    return offer
+  }
+  const defaultOffer = await getDefaultOffer(tx, productId)
+  if (defaultOffer.deliveryMode === 'instant_inventory') return defaultOffer
+  const instantOffers = await tx.offer.findMany({
+    where: { productId, deliveryMode: 'instant_inventory' },
+    orderBy: { id: 'asc' },
+    take: 2,
+  })
+  if (instantOffers.length === 0) throw badRequest('仅即时库存发货商品支持库存管理')
+  if (instantOffers.length > 1) throw badRequest('该商品有多个即时库存规格，请指定 offerId')
+  return instantOffers[0]
+}
+
+export async function importInventory(
+  productId: number,
+  payload: InventoryImportPayload & { offerId?: number },
+  adminUserId: number
+) {
   const product = await prisma.product.findUnique({ where: { id: productId } })
   if (!product) throw notFound('商品不存在')
-  if (product.deliveryMode !== 'instant_inventory') {
-    throw badRequest('仅即时库存发货商品支持库存管理')
-  }
 
   try {
     const result = await prisma.$transaction(async tx => {
-      // P4a：库存归属默认 Offer（管理端导入不指定规格）。
-      const offer = await getDefaultOffer(tx, productId)
-      if (offer.deliveryMode !== 'instant_inventory') {
-        throw badRequest('仅即时库存发货商品支持库存管理')
+      const offer = await resolveAdminImportOffer(tx, productId, payload.offerId)
+      // P4b：带交付字段模板的规格必须走商家端结构化导入（逐字段校验 + 快照）；
+      // 管理端纯文本导入会破坏"模板规格库存必有 structuredContent"的契约。
+      if (parseStoredDeliveryFields(offer.deliveryFields).length > 0) {
+        throw badRequest('该规格配置了交付字段模板，请使用商家端按模板导入')
       }
       const analysis = await analyzeInventoryImport(productId, payload, tx)
       if (analysis.duplicateRows > 0 || analysis.existingDuplicateRows > 0) {
@@ -899,6 +932,20 @@ export async function listAdminProducts() {
     include: {
       _count: {
         select: { inventory: { where: { status: 'available' } } },
+      },
+      // P4a F2：导入弹窗需要知道每个商品有哪些即时库存规格（含已下架——
+      // 重新上架前备货是合理操作）；deliveryFields 用于前端提示模板规格
+      // 不能走管理端纯文本导入。管理端上下文，不含 fixedContent。
+      offers: {
+        select: {
+          id: true,
+          name: true,
+          deliveryMode: true,
+          status: true,
+          isDefault: true,
+          deliveryFields: true,
+        },
+        orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
       },
     },
     orderBy: { createdAt: 'desc' },

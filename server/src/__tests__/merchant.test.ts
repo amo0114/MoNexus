@@ -114,7 +114,7 @@ describe('Merchant product and order flows', () => {
       },
     })
     const lowStockOffer = await prisma.offer.create({
-      data: { productId: lowStockProduct.id, name: '默认规格', price: 100, stock: 1 },
+      data: { productId: lowStockProduct.id, name: '默认规格', isDefault: true, price: 100, stock: 1 },
     })
     await prisma.inventoryItem.create({
       data: {

@@ -250,6 +250,16 @@ model Offer {
   deliveryFields   Json?
   sales            Int      @default(0)
   sortOrder        Int      @default(0)
+  // 默认规格：只服务兼容路径（商品级编辑、未指定 offerId 的库存操作）。
+  // 展示顺序由 sortOrder，列表价取最低 active 价——三个概念显式分离。
+  // 每商品至多一条：部分唯一索引 Offer_one_default_per_product（仅存在于
+  // 迁移 20260726150000，Prisma schema 无法表达 WHERE 部分索引）。
+  // 漂移已探测排除（2026-07-26，全新库 migrate dev 生成空迁移 + migrate diff
+  // 空脚本 + 二次 dev "Already in sync"）：带 WHERE 的部分索引对 Prisma diff
+  // 引擎不可见，既不会被 DROP 也不会触发 reset；迁移重放保证各环境拥有它。
+  // 注意：本仓库只用 migrate 工作流；`prisma db push` 不重放迁移，会得到
+  // 没有该索引的库，勿在本项目使用 db push。
+  isDefault        Boolean  @default(false)
   createdAt        DateTime @default(now())
 
   product   Product         @relation(fields: [productId], references: [id])

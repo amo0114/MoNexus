@@ -189,6 +189,7 @@ async function main() {
         data: {
           productId: product.id,
           name: '默认规格',
+          isDefault: true,
           price: product.price,
           originalPrice: product.originalPrice,
           deliveryMode: product.deliveryMode,
@@ -261,6 +262,7 @@ async function main() {
       data: {
         productId: merchantProduct.id,
         name: '默认规格',
+        isDefault: true,
         price: merchantProduct.price,
         originalPrice: merchantProduct.originalPrice,
         deliveryMode: merchantProduct.deliveryMode,

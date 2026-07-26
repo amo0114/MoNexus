@@ -69,7 +69,12 @@ export const updateProductSchema = adminProductFieldsSchema.partial().extend({
 
 export type UpdateProductInput = z.infer<typeof updateProductSchema>
 
-export const importInventorySchema = inventoryImportPayloadSchema
+// P4a F2：管理端导入可指定规格；缺省落到默认 Offer，默认非即时库存时
+// 回退到唯一的即时库存规格（多个则要求显式指定）。
+export const importInventorySchema = z.intersection(
+  inventoryImportPayloadSchema,
+  z.object({ offerId: z.number().int().positive().optional() })
+)
 
 export const listUsersQuerySchema = z.object({
   q: z.string().trim().min(1).max(100).optional(),

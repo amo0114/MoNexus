@@ -29,7 +29,7 @@ describe('public product endpoints with instant_fixed', () => {
       },
     })
     const offer = await prisma.offer.create({
-      data: { productId: product.id, name: '默认规格', price: 100, stock: 99 },
+      data: { productId: product.id, name: '默认规格', isDefault: true, price: 100, stock: 99 },
     })
     await prisma.inventoryItem.createMany({
       data: [

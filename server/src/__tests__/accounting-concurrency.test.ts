@@ -69,7 +69,7 @@ describe('accounting concurrency and terminal settlement', () => {
       },
     })
     const offer = await prisma.offer.create({
-      data: { productId: product.id, name: '默认规格', price: 100, stock: 4 },
+      data: { productId: product.id, name: '默认规格', isDefault: true, price: 100, stock: 4 },
     })
     await prisma.inventoryItem.createMany({
       data: ['CONCURRENT-ITEM-1', 'CONCURRENT-ITEM-2', 'CONCURRENT-ITEM-3', 'CONCURRENT-ITEM-4']

@@ -259,6 +259,109 @@ describe('POST /api/admin/products/:id/inventory', () => {
     expect(await prisma.inventoryLog.count({ where: { productId: product.id } })).toBe(1)
     expect(await prisma.adminLog.count({ where: { targetType: 'product', targetId: product.id } })).toBe(1)
   })
+
+  // P4a F2：管理端导入支持指定规格；缺省时默认规格非即时库存则回退唯一即时库存规格。
+  it('imports into an explicitly selected offer, leaving the default offer untouched', async () => {
+    await createTestUser('boss-offer-import@test.local', 'admin111', 'admin')
+    const product = await createTestProduct('多规格库存商品', 200, 0, [])
+    const defaultOfferId = await getDefaultOfferId(product.id)
+    const extra = await prisma.offer.create({
+      data: { productId: product.id, name: '高级规格', price: 300 },
+    })
+    const { accessToken } = await loginAs('boss-offer-import@test.local', 'admin111')
+
+    const res = await api
+      .post(`/api/admin/products/${product.id}/inventory`)
+      .set(authHeader(accessToken))
+      .send({ items: ['offer-scoped-1', 'offer-scoped-2'], offerId: extra.id })
+      .expect(200)
+    expect(res.body.imported).toBe(2)
+
+    expect(await prisma.inventoryItem.count({ where: { offerId: extra.id } })).toBe(2)
+    expect(await prisma.inventoryItem.count({ where: { offerId: defaultOfferId } })).toBe(0)
+  })
+
+  it('falls back to the sole instant_inventory offer when the default offer is manual_service', async () => {
+    await createTestUser('boss-fallback-import@test.local', 'admin111', 'admin')
+    const product = await createTestProduct('混合模式商品', 200, 0, [])
+    // 默认规格切成人工服务；仅剩的即时库存规格是导入的唯一合理目标。
+    await makeManualService(product.id)
+    const instantOffer = await prisma.offer.create({
+      data: { productId: product.id, name: '卡密规格', price: 200 },
+    })
+    const { accessToken } = await loginAs('boss-fallback-import@test.local', 'admin111')
+
+    const res = await api
+      .post(`/api/admin/products/${product.id}/inventory`)
+      .set(authHeader(accessToken))
+      .send({ items: ['fallback-1'] })
+      .expect(200)
+    expect(res.body.imported).toBe(1)
+    expect(await prisma.inventoryItem.count({ where: { offerId: instantOffer.id } })).toBe(1)
+
+    // 出现第二个即时库存规格后无法猜测意图 → 要求显式指定。
+    await prisma.offer.create({
+      data: { productId: product.id, name: '第二卡密规格', price: 260 },
+    })
+    const ambiguous = await api
+      .post(`/api/admin/products/${product.id}/inventory`)
+      .set(authHeader(accessToken))
+      .send({ items: ['fallback-2'] })
+      .expect(400)
+    expect(ambiguous.body.error.message).toContain('请指定 offerId')
+  })
+
+  it('rejects non-instant offers, foreign offers, templated offers, and products without instant offers', async () => {
+    await createTestUser('boss-import-guards@test.local', 'admin111', 'admin')
+    const product = await createTestProduct('导入守卫商品', 200, 0, [])
+    const otherProduct = await createTestProduct('别家商品', 100, 0, [])
+    const foreignOfferId = await getDefaultOfferId(otherProduct.id)
+    const { accessToken } = await loginAs('boss-import-guards@test.local', 'admin111')
+
+    // 人工服务规格不能收库存。
+    const manualOffer = await prisma.offer.create({
+      data: { productId: product.id, name: '服务规格', price: 500, deliveryMode: 'manual_service', stockMode: 'unlimited' },
+    })
+    const nonInstant = await api
+      .post(`/api/admin/products/${product.id}/inventory`)
+      .set(authHeader(accessToken))
+      .send({ items: ['guard-1'], offerId: manualOffer.id })
+      .expect(400)
+    expect(nonInstant.body.error.message).toContain('仅即时库存发货规格')
+
+    // 其他商品的规格 → 404。
+    await api
+      .post(`/api/admin/products/${product.id}/inventory`)
+      .set(authHeader(accessToken))
+      .send({ items: ['guard-2'], offerId: foreignOfferId })
+      .expect(404)
+
+    // P4b：带交付字段模板的规格必须走商家端结构化导入。
+    const templated = await prisma.offer.create({
+      data: {
+        productId: product.id,
+        name: '模板规格',
+        price: 300,
+        deliveryFields: [{ key: 'account', label: '账号', sensitive: false }],
+      },
+    })
+    const structuredOnly = await api
+      .post(`/api/admin/products/${product.id}/inventory`)
+      .set(authHeader(accessToken))
+      .send({ items: ['guard-3'], offerId: templated.id })
+      .expect(400)
+    expect(structuredOnly.body.error.message).toContain('交付字段模板')
+
+    // 全商品无即时库存规格 → 维持旧错误语义。
+    const serviceProduct = await createTestProduct('纯服务商品', 100, 0, [])
+    await makeManualService(serviceProduct.id)
+    const noInstant = await api
+      .post(`/api/admin/products/${serviceProduct.id}/inventory`)
+      .set(authHeader(accessToken))
+      .send({ items: ['guard-4'] })
+      .expect(400)
+    expect(noInstant.body.error.message).toContain('仅即时库存发货商品')
+  })
 })
 
 describe('GET /api/admin/orders', () => {

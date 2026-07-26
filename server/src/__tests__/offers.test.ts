@@ -426,3 +426,147 @@ describe('P4a Offers — merchant CRUD guards', () => {
     expect(res.body.error.message).toContain('只能下架不能删除')
   })
 })
+
+describe('P4a F1 — explicit default offer (isDefault)', () => {
+  it('transfers the default via isDefault:true and keeps exactly one default per product', async () => {
+    const { merchant, accessToken } = await setupMerchant('default-transfer@test.local')
+    const product = await createTestProduct('默认转移商品', 100, 1, ['DT-1'], merchant.id)
+    const original = await getDefaultOfferId(product.id)
+
+    const extra = await api
+      .post(`/api/merchant/products/${product.id}/offers`)
+      .set(authHeader(accessToken))
+      .send({ name: '高级规格', price: 200, deliveryMode: 'manual_service', stockMode: 'unlimited' })
+      .expect(201)
+    // 新建规格不抢默认。
+    expect(extra.body.isDefault).toBe(false)
+
+    await api
+      .put(`/api/merchant/products/${product.id}/offers/${extra.body.id}`)
+      .set(authHeader(accessToken))
+      .send({ isDefault: true })
+      .expect(200)
+
+    const offers = await prisma.offer.findMany({ where: { productId: product.id } })
+    expect(offers.filter(o => o.isDefault).map(o => o.id)).toEqual([extra.body.id])
+    expect(offers.find(o => o.id === original)?.isDefault).toBe(false)
+    // 投影列跟随新默认（deliveryMode 取默认 Offer 的配置）。
+    const projected = await prisma.product.findUniqueOrThrow({ where: { id: product.id } })
+    expect(projected.deliveryMode).toBe('manual_service')
+  })
+
+  it('rejects directly unsetting the default (isDefault:false) with 400', async () => {
+    const { merchant, accessToken } = await setupMerchant('default-unset@test.local')
+    const product = await createTestProduct('默认取消商品', 100, 1, ['DU-1'], merchant.id)
+    const defaultOfferId = await getDefaultOfferId(product.id)
+
+    const res = await api
+      .put(`/api/merchant/products/${product.id}/offers/${defaultOfferId}`)
+      .set(authHeader(accessToken))
+      .send({ isDefault: false })
+      .expect(400)
+    expect(res.body.error.message).toContain('不能直接取消默认规格')
+
+    // 非默认规格传 false 是幂等空操作。
+    const extra = await api
+      .post(`/api/merchant/products/${product.id}/offers`)
+      .set(authHeader(accessToken))
+      .send({ name: '次要规格', price: 300, deliveryMode: 'manual_service', stockMode: 'unlimited' })
+      .expect(201)
+    await api
+      .put(`/api/merchant/products/${product.id}/offers/${extra.body.id}`)
+      .set(authHeader(accessToken))
+      .send({ isDefault: false })
+      .expect(200)
+    expect(await prisma.offer.count({ where: { productId: product.id, isDefault: true } })).toBe(1)
+  })
+
+  it('auto-promotes the lowest-sortOrder survivor when the default offer is deleted', async () => {
+    const { merchant, accessToken } = await setupMerchant('default-promote@test.local')
+    // manual_service 默认规格：无库存条目，允许删除。
+    const created = await api
+      .post('/api/merchant/products')
+      .set(authHeader(accessToken))
+      .send({ name: '默认删除商品', type: '共享账号', price: 100, deliveryMode: 'manual_service', stockMode: 'unlimited' })
+      .expect(201)
+    const productId = created.body.id
+    const defaultOfferId = await getDefaultOfferId(productId)
+
+    const late = await api
+      .post(`/api/merchant/products/${productId}/offers`)
+      .set(authHeader(accessToken))
+      .send({ name: '排序靠后', price: 200, deliveryMode: 'manual_service', stockMode: 'unlimited', sortOrder: 20 })
+      .expect(201)
+    const early = await api
+      .post(`/api/merchant/products/${productId}/offers`)
+      .set(authHeader(accessToken))
+      .send({ name: '排序靠前', price: 300, deliveryMode: 'manual_service', stockMode: 'unlimited', sortOrder: 5 })
+      .expect(201)
+
+    await api
+      .delete(`/api/merchant/products/${productId}/offers/${defaultOfferId}`)
+      .set(authHeader(accessToken))
+      .expect(200)
+
+    const offers = await prisma.offer.findMany({ where: { productId } })
+    expect(offers.filter(o => o.isDefault).map(o => o.id)).toEqual([early.body.id])
+    expect(offers.find(o => o.id === late.body.id)?.isDefault).toBe(false)
+  })
+})
+
+describe('P4a F3 — atomic wizard publish (product + offers in one transaction)', () => {
+  it('creates the product, renamed primary offer, and extra offers in one call', async () => {
+    const { accessToken } = await setupMerchant('atomic-publish@test.local')
+
+    const created = await api
+      .post('/api/merchant/products')
+      .set(authHeader(accessToken))
+      .send({
+        name: '原子发布商品',
+        type: '共享账号',
+        price: 100,
+        deliveryMode: 'instant_inventory',
+        primaryOfferName: '月卡',
+        offers: [
+          { name: '季卡', price: 270, deliveryMode: 'instant_inventory' },
+          { name: '年卡', price: 900, deliveryMode: 'manual_service', stockMode: 'unlimited', sortOrder: 10 },
+        ],
+      })
+      .expect(201)
+
+    const offers = await prisma.offer.findMany({
+      where: { productId: created.body.id },
+      orderBy: { id: 'asc' },
+    })
+    expect(offers.map(o => o.name)).toEqual(['月卡', '季卡', '年卡'])
+    // 主规格是默认规格；附加规格不抢默认。
+    expect(offers.filter(o => o.isDefault).map(o => o.name)).toEqual(['月卡'])
+    // 返回的投影已按全部规格同步（最低价 = 月卡 100）。
+    expect(created.body.price).toBe(100)
+  })
+
+  it('rolls back the whole creation when any extra offer is invalid', async () => {
+    const { merchant, accessToken } = await setupMerchant('atomic-rollback@test.local')
+
+    const res = await api
+      .post('/api/merchant/products')
+      .set(authHeader(accessToken))
+      .send({
+        name: '回滚商品',
+        type: '共享账号',
+        price: 100,
+        deliveryMode: 'instant_inventory',
+        offers: [
+          // instant_fixed 必须携带 fixedContent —— 服务层校验失败。
+          { name: '坏规格', price: 200, deliveryMode: 'instant_fixed' },
+        ],
+      })
+      .expect(400)
+    expect(res.body.error.message).toBeTruthy()
+
+    // 无孤儿商品、无孤儿规格。
+    expect(await prisma.product.count({ where: { merchantId: merchant.id } })).toBe(0)
+    const products = await prisma.product.findMany({ where: { merchantId: merchant.id }, select: { id: true } })
+    expect(await prisma.offer.count({ where: { productId: { in: products.map(p => p.id) } } })).toBe(0)
+  })
+})
