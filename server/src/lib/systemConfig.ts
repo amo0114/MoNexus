@@ -25,6 +25,8 @@ export const systemConfigKeys = [
   'fileUrlTtlSeconds',
   'fileAccessWindowDays',
   'deliveryFileMaxMb',
+  // P5.5 低库存邮件告警重发冷却（0 = 进入低位只发一次，不重发）
+  'lowStockNotifyCooldownHours',
 ] as const
 
 export type SystemConfigKey = typeof systemConfigKeys[number]
@@ -66,6 +68,7 @@ export const systemConfigDefaults: Record<SystemConfigKey, number> = {
   fileUrlTtlSeconds: 300,
   fileAccessWindowDays: 30,
   deliveryFileMaxMb: 100,
+  lowStockNotifyCooldownHours: 24,
 }
 
 export const systemConfigDescriptions: Record<SystemConfigKey, string> = {
@@ -87,6 +90,7 @@ export const systemConfigDescriptions: Record<SystemConfigKey, string> = {
   fileUrlTtlSeconds: '文件下载签名链接有效期',
   fileAccessWindowDays: '买家交付后下载窗口天数',
   deliveryFileMaxMb: '交付文件大小上限',
+  lowStockNotifyCooldownHours: '低库存邮件重发冷却时长',
 }
 
 /** 管理端配置项分组（中文），供配置页按组渲染。 */
@@ -109,6 +113,7 @@ export const systemConfigGroups: Record<SystemConfigKey, string> = {
   fileUrlTtlSeconds: '文件交付',
   fileAccessWindowDays: '文件交付',
   deliveryFileMaxMb: '文件交付',
+  lowStockNotifyCooldownHours: '库存',
 }
 
 /** 可选单位标注。 */
@@ -131,6 +136,7 @@ export const systemConfigUnits: Partial<Record<SystemConfigKey, string>> = {
   fileUrlTtlSeconds: '秒',
   fileAccessWindowDays: '天',
   deliveryFileMaxMb: 'MB',
+  lowStockNotifyCooldownHours: '小时',
 }
 
 const BONUS_BPS_HINT = '万分比，10000=100%；例如 500 表示额外 +5%'
@@ -152,6 +158,7 @@ export const systemConfigHints: Partial<Record<SystemConfigKey, string>> = {
   fileUrlTtlSeconds: '签名一经签出在有效期内无法撤销，建议保持短时；上限 3600',
   fileAccessWindowDays: '从交付时刻起算；0 表示不限窗口',
   deliveryFileMaxMb: '上限 100（与 Nginx 上传路由的 100MB 限制一致，提额需同步修改 Nginx）',
+  lowStockNotifyCooldownHours: '规格持续低库存时的邮件重发间隔；0 表示进入低位只发一次；上限 720',
 }
 
 type ConfigClient = typeof prisma | Prisma.TransactionClient
@@ -293,6 +300,10 @@ export async function updateSystemConfig(
   // Nginx 与此处（见 nginx.conf 上传 location 的注释）。
   if (key === 'deliveryFileMaxMb' && (value < 1 || value > 100)) {
     throw badRequest('交付文件大小上限必须在 1–100 MB 之间（Nginx 上传路由限制为 100MB）')
+  }
+  // P5.5：冷却上限 30 天——更长等于事实上关闭重发，直接填 0 表达该意图。
+  if (key === 'lowStockNotifyCooldownHours' && value > 720) {
+    throw badRequest('低库存邮件重发冷却必须在 0–720 小时之间（0 = 不重发）')
   }
 
   return prisma.$transaction(async tx => {

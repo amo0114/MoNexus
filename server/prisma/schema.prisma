@@ -272,6 +272,7 @@ model Offer {
   product   Product         @relation(fields: [productId], references: [id])
   inventory InventoryItem[]
   orders    Order[]
+  lowStockNotice LowStockNotice?
   // Restrict：被在售规格引用的文件行不可删（生命周期只走 status 标记）。
   fixedFile DeliveryFile?   @relation("OfferFixedFile", fields: [fixedFileId], references: [id], onDelete: Restrict)
 
@@ -286,13 +287,14 @@ model InventoryLog {
   offerId     Int?
   merchantId  Int?
   actorUserId Int
-  action      String // import | void | sale | capacity_adjust
-  delta       Int // import > 0; void/sale < 0; capacity_adjust != 0
+  action      String // import | void | sale | capacity_adjust | refund_void | refund_restock
+  delta       Int // import > 0; void/sale < 0; capacity_adjust != 0; refund_void = 0; refund_restock = +1
   reason      String?
-  // sale is linked to exactly one order. Import operations receive one UUID
-  // batch identifier so that a replenishment can be audited without ever
-  // placing delivery content in an API response.
-  orderId     Int?     @unique
+  // sale/refund_void/refund_restock link to an order；P5.5 起同一订单可并存
+  // sale 与退款流水两行，orderId 从唯一降级为普通索引。Import operations
+  // receive one UUID batch identifier so that a replenishment can be audited
+  // without ever placing delivery content in an API response.
+  orderId     Int?
   batchId     String?  @unique @db.Uuid
   createdAt   DateTime @default(now())
 
@@ -304,6 +306,23 @@ model InventoryLog {
   @@index([productId, createdAt])
   // 与 batchId 唯一索引并存的普通索引，同样来自 20260724123000 手写迁移。
   @@index([batchId])
+  @@index([orderId])
+}
+
+// P5.5：SKU 级低库存告警状态（去重/冷却）。纯运营状态，随 Offer 级联删除。
+// 评审修订：PG 的含空列唯一约束无法限制多行 NULL——一律按非空 offerId 去重，
+// 所有有限库存规格（即时库存数 available 项；limited 容量看 Offer.stock）
+// 都以 Offer 为告警粒度。
+model LowStockNotice {
+  id             Int       @id @default(autoincrement())
+  offerId        Int       @unique
+  isLow          Boolean   @default(false)
+  lastAvailable  Int
+  // 邮件发送成功后才更新；发送失败保持原值，下轮 cron 重试。
+  lastNotifiedAt DateTime?
+  updatedAt      DateTime  @updatedAt
+
+  offer Offer @relation(fields: [offerId], references: [id], onDelete: Cascade)
 }
 
 model Review {
@@ -396,6 +415,10 @@ model Order {
   statusEvents OrderStatusEvent[]
   inventoryLogs InventoryLog[]
   fileGrants   FileGrantLog[]
+
+  // P5.5：SKU 报表/全平台报表按时间范围聚合的支撑索引（评审修订）。
+  @@index([merchantId, createdAt])
+  @@index([createdAt])
 }
 
 model DeliveryRecord {
