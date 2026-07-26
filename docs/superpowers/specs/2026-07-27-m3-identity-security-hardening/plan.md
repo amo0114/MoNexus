@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | PLAN-M3-ISH-001 |
-| 版本 | 1.8.0 |
+| 版本 | 1.9.0 |
 | 日期 | 2026-07-27 |
 | 状态 | Frozen for Implementation |
 | 规格 | [spec.md](./spec.md)（SPEC-M3-ISH-001） |
@@ -389,3 +389,4 @@ Phase A ──► Phase B ──► Phase C ──► Phase D ──► Phase E
 | 1.6.0 | 2026-07-27 | 依据 auth/session impact review 将稳定会话族前置于 MFA 集成，并冻结 `sid`、current logout 与 bcrypt pre-auth 边界 |
 | 1.7.0 | 2026-07-27 | 同步 I-01 专用库 migration/status/drift 证据；不改变后续实施顺序 |
 | 1.8.0 | 2026-07-27 | 同步 I-01 全量隔离后端回归证据；不改变后续实施顺序 |
+| 1.9.0 | 2026-07-27 | 同步 I-01 本地完成 / G-PR-01 PR 闸门分离；不改变后续实施顺序 |

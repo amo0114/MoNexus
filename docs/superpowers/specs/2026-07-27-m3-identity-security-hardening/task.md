@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | TASK-M3-ISH-001 |
-| 版本 | 1.8.0 |
+| 版本 | 1.9.0 |
 | 日期 | 2026-07-27 |
 | 规格 | [spec.md](./spec.md) |
 | 计划 | [plan.md](./plan.md) |
@@ -36,8 +36,8 @@
 | ID | 状态 | 负责人 | 备注 |
 | --- | --- | --- | --- |
 | T-00 | Done | Codex | 基线与决策确认（证据见 implement.md §7） |
-| T-BE-01 | In Progress | Codex | 基础实现与本地专用库验证已完成；P6a 合入后、PR 前必须 rebase/复核，完成前不可标 Done 或开 PR |
-| T-BE-02 | Todo | | MFA crypto、challenge、redact、安全事件 |
+| T-BE-01 | Done | Codex | 本地交付 `2f212e8`；G-PR-01（P6a→develop rebase/复核）仍 pending，故不可开 PR |
+| T-BE-02 | In Progress | Codex | MFA crypto、challenge、redact、安全事件；只拥有自身模块文件 |
 | T-BE-03 | Todo | | MFA 登录/绑定 API |
 | T-BE-04 | Todo | | RefreshToken session family 与会话 API |
 | T-BE-05 | Todo | | admin guard、bcrypt 升级、回归集成 |
@@ -483,3 +483,4 @@ T-00 → T-BE-01 → T-BE-02 → T-BE-03 + T-BE-04 → T-BE-05 → T-FE-01 + T-F
 | 1.6.0 | 2026-07-27 | 将 T-BE-04 前置为 MFA 集成前置条件；固定 JWT `sid`、非 current DELETE 与不跨 pre-auth 保存密码的 bcrypt 策略 |
 | 1.7.0 | 2026-07-27 | 记录 T-BE-01 的 migration hash、legacy fixture/replay、status/drift 与定向验证证据；保留 P6a rebase 为未完成闸门 |
 | 1.8.0 | 2026-07-27 | 补记 I-01 全量隔离后端回归：62 files、497 tests PASS；不改变 P6a rebase 闸门 |
+| 1.9.0 | 2026-07-27 | 将本地任务完成与 PR 级 G-PR-01 闸门分离，T-BE-02 依此开始实施 |

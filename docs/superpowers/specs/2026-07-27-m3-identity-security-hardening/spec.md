@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | SPEC-M3-ISH-001 |
-| 版本 | 1.8.0 |
+| 版本 | 1.9.0 |
 | 日期 | 2026-07-27 |
 | 状态 | Frozen for Implementation |
 | 产品 | MoNexus |
@@ -423,6 +423,7 @@ Then vitest、相关 Playwright、双端 build、Prisma drift 检查以及 produ
 | 1.6.0 | 2026-07-27 | 冻结 JWT `sid` / API `sessionId` 边界、非当前会话 DELETE 语义与不跨 MFA pre-auth 保存密码的 bcrypt 升级策略 |
 | 1.7.0 | 2026-07-27 | 同步 I-01 的可复核迁移验证证据；无产品行为或安全决策变更 |
 | 1.8.0 | 2026-07-27 | 同步 I-01 的全量隔离回归证据；无产品行为或安全决策变更 |
+| 1.9.0 | 2026-07-27 | 明确本地任务完成不解除 P6a→develop 的 PR 集成闸门；无产品行为变更 |
 
 ---
 
