@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { Readable } from 'node:stream'
 import { prisma } from '../lib/prisma.js'
 import { api, createTestMerchant, createTestUser, loginAs } from './helpers.js'
@@ -161,5 +161,71 @@ describe('POST /api/uploads/delivery-file', () => {
     await api.get(`${url}x`).expect(403)
     const expired = signDeliveryToken(row.key, row.fileName, new Date(Date.now() - 1000))
     await api.get(`/api/uploads/delivery-signed/${expired}`).expect(403)
+  })
+})
+
+describe('create-failure keeps the final object (P0 regression)', () => {
+  // 评审 P0：建行失败（多与 DB 故障相关）时绝不在请求路径删最终对象——
+  // 误删会波及历史订单正引用的同 hash 文件。兜底由宽限期 GC 负责。
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  const body = Buffer.from('shared paid bytes')
+
+  function uploadAs(token: string) {
+    return api
+      .post('/api/uploads/delivery-file')
+      .set('Authorization', `Bearer ${token}`)
+      .attach('file', body, { filename: 'shared.bin' })
+  }
+
+  it('keeps the object when DeliveryFile.create fails (simulated DB outage)', async () => {
+    await createTestMerchant('p0-keep@test.local', 'pass123', { role: 'merchant', status: 'active' })
+    const { accessToken } = await loginAs('p0-keep@test.local', 'pass123')
+
+    vi.spyOn(prisma.deliveryFile, 'create').mockRejectedValueOnce(new Error('db unreachable'))
+    await uploadAs(accessToken).expect(500)
+
+    // 失败默认保留：任何 DB 查询在此刻都不可信，对象必须原地不动。
+    const storage = (await getDeliveryStorage()) as DeliveryMemoryStorage
+    const sha256 = (await import('node:crypto')).createHash('sha256').update(body).digest('hex')
+    expect(storage.getBlob(`${sha256}.bin`)).not.toBeNull()
+  })
+
+  it('never deletes an object an existing row references when a later upload fails', async () => {
+    await createTestMerchant('p0-sib-1@test.local', 'pass123', { role: 'merchant', status: 'active' })
+    await createTestMerchant('p0-sib-2@test.local', 'pass123', { role: 'merchant', status: 'active' })
+    const first = await loginAs('p0-sib-1@test.local', 'pass123')
+    const second = await loginAs('p0-sib-2@test.local', 'pass123')
+
+    const ok = await uploadAs(first.accessToken).expect(201)
+
+    // 第二个商家上传同内容，建行失败——既有行引用的对象必须存活。
+    vi.spyOn(prisma.deliveryFile, 'create').mockRejectedValueOnce(new Error('db unreachable'))
+    await uploadAs(second.accessToken).expect(500)
+
+    const row = await prisma.deliveryFile.findUniqueOrThrow({ where: { id: ok.body.id } })
+    expect(row.status).toBe('active')
+    const storage = (await getDeliveryStorage()) as DeliveryMemoryStorage
+    expect(storage.getBlob(row.key)?.equals(body)).toBe(true)
+  })
+
+  it('concurrent same-content uploads: one fails, one succeeds, the object survives', async () => {
+    await createTestMerchant('p0-race-1@test.local', 'pass123', { role: 'merchant', status: 'active' })
+    await createTestMerchant('p0-race-2@test.local', 'pass123', { role: 'merchant', status: 'active' })
+    const a = await loginAs('p0-race-1@test.local', 'pass123')
+    const b = await loginAs('p0-race-2@test.local', 'pass123')
+
+    // 并发两路：其中一路建行被拒（哪一路先到不确定，与真实竞态一致）。
+    vi.spyOn(prisma.deliveryFile, 'create').mockRejectedValueOnce(new Error('db unreachable'))
+    const [r1, r2] = await Promise.all([uploadAs(a.accessToken), uploadAs(b.accessToken)])
+    expect([r1.status, r2.status].sort()).toEqual([201, 500])
+
+    // 成功那一路的行必须仍能取到对象。
+    const winner = r1.status === 201 ? r1 : r2
+    const row = await prisma.deliveryFile.findUniqueOrThrow({ where: { id: winner.body.id } })
+    const storage = (await getDeliveryStorage()) as DeliveryMemoryStorage
+    expect(storage.getBlob(row.key)?.equals(body)).toBe(true)
   })
 })

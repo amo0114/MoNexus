@@ -63,6 +63,12 @@ export class DeliveryMemoryStorage implements DeliveryStorage {
       .map(([key]) => key)
   }
 
+  async listFinalKeysOlderThan(before: Date): Promise<string[]> {
+    return [...this.blobs.entries()]
+      .filter(([key, blob]) => !key.startsWith(TMP_KEY_PREFIX) && blob.createdAt < before)
+      .map(([key]) => key)
+  }
+
   async list(): Promise<Array<{ key: string; size: number }>> {
     return [...this.blobs.entries()].map(([key, blob]) => ({ key, size: blob.buffer.length }))
   }

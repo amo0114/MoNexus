@@ -43,6 +43,11 @@ export interface DeliveryStorage {
   presignDownload(key: string, fileName: string, ttlSeconds: number): Promise<PresignedDownload>
   /** tmp/ 前缀里早于 before 的遗留对象（上传失败未清干净时由 GC 兜底）。 */
   listTmpKeysOlderThan(before: Date): Promise<string[]>
+  /**
+   * 非 tmp/ 的最终对象里早于 before 的键（"晋升成功但建行失败"的无行对象
+   * 由 GC 对照 DeliveryFile 行清理；上传路径失败时绝不即时删对象）。
+   */
+  listFinalKeysOlderThan(before: Date): Promise<string[]>
   // ---- 备份/恢复用（portable-backups；不进任何请求路径）----
   /** 列出全部对象（含 tmp/，调用方自行过滤）。 */
   list(): Promise<Array<{ key: string; size: number }>>

@@ -1,11 +1,16 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { Readable } from 'node:stream'
 import { prisma } from '../lib/prisma.js'
 import { api, createTestMerchant, createTestUser, loginAs, authHeader } from './helpers.js'
 import { __setDeliveryStorageForTesting, getDeliveryStorage } from '../lib/storage/delivery.js'
 import { DeliveryMemoryStorage } from '../lib/storage/deliveryMemory.js'
 import { TMP_KEY_PREFIX } from '../lib/storage/deliveryTypes.js'
-import { cleanupOrphanFiles, cleanupRefundedFiles, cleanupStaleTmpObjects } from '../lib/fileCleanup.js'
+import {
+  cleanupOrphanFiles,
+  cleanupRefundedFiles,
+  cleanupStaleTmpObjects,
+  cleanupUnreferencedObjects,
+} from '../lib/fileCleanup.js'
 
 /**
  * P5 T6：生命周期清理与吊销。硬规则回归：
@@ -115,6 +120,48 @@ describe('cleanupStaleTmpObjects', () => {
     expect(await cleanupStaleTmpObjects()).toBe(0)
     expect(await cleanupStaleTmpObjects(new Date(Date.now() + 25 * HOUR))).toBe(1)
     expect(storage.getBlob(`${TMP_KEY_PREFIX}leftover`)).toBeNull()
+  })
+})
+
+describe('cleanupUnreferencedObjects', () => {
+  // 评审 P0 兜底：上传"晋升成功但建行失败"留下的无行对象由本 GC 清理，
+  // 请求失败路径绝不即时删（失败默认保留）。
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('removes stale row-less final objects, sparing referenced and fresh ones', async () => {
+    const merchant = await makeMerchant('gc-unref@test.local')
+    const storage = (await getDeliveryStorage()) as DeliveryMemoryStorage
+
+    // 无行对象（建行失败场景）与有行对象各一。
+    const orphanKey = `${'9'.repeat(64)}.bin`
+    await storage.putObjectAt(orphanKey, Buffer.from('row-less'))
+    const referenced = await seedFile(merchant.id, '8', new Date())
+
+    // 未过宽限期：一律不动。
+    expect(await cleanupUnreferencedObjects()).toBe(0)
+    expect(storage.getBlob(orphanKey)).not.toBeNull()
+
+    // 拨到 25 小时后：无行对象删除，有行对象保留。
+    const later = new Date(Date.now() + 25 * HOUR)
+    expect(await cleanupUnreferencedObjects(later)).toBe(1)
+    expect(storage.getBlob(orphanKey)).toBeNull()
+    expect(storage.getBlob(referenced.key)).not.toBeNull()
+  })
+
+  it('keeps every object when the reference query fails (never delete on DB errors)', async () => {
+    const storage = (await getDeliveryStorage()) as DeliveryMemoryStorage
+    const orphanKey = `${'7'.repeat(64)}.bin`
+    await storage.putObjectAt(orphanKey, Buffer.from('row-less'))
+
+    vi.spyOn(prisma.deliveryFile, 'findMany').mockRejectedValueOnce(new Error('db unreachable'))
+    expect(await cleanupUnreferencedObjects(new Date(Date.now() + 25 * HOUR))).toBe(0)
+    expect(storage.getBlob(orphanKey)).not.toBeNull()
+
+    // DB 恢复后下一轮照常清理。
+    expect(await cleanupUnreferencedObjects(new Date(Date.now() + 25 * HOUR))).toBe(1)
+    expect(storage.getBlob(orphanKey)).toBeNull()
   })
 })
 

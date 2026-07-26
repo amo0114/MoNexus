@@ -19,6 +19,10 @@ import { getDeliveryStorage } from './storage/delivery.js'
  * 2. tmp/ 遗留：流式上传中断残留的临时对象（无行，纯对象清理），超 24h 删。
  * 3. 退款保留期：被订单引用但所有相关订单都已退款超过 90 天，且无在售
  *    规格引用 → 标记 deleted + 条件删对象（固定文件与人工附件一视同仁）。
+ * 4. 无行最终对象：晋升成功但 DeliveryFile 建行失败留下的对象。上传请求的
+ *    失败路径**绝不**即时删最终对象（建行失败多与 DB 故障相关，此刻的
+ *    引用查询不可信，误删会波及历史订单共享的同 hash 文件——评审 P0）；
+ *    改由本场景按宽限期对照 DB 行兜底清理。
  */
 
 const ORPHAN_GRACE_MS = 24 * 60 * 60 * 1000
@@ -144,6 +148,43 @@ export async function cleanupRefundedFiles(now = new Date()): Promise<number> {
   return cleaned
 }
 
+/**
+ * 场景 4：无 DeliveryFile 行引用的最终对象（晋升成功、建行失败）。
+ * 只看超过宽限期的对象：新上传"先有对象、毫秒后建行"，宽限期把这个窗口
+ * 以及并发同内容上传全部盖住。判据必须是"确认无任何非 deleted 行"——
+ * DB 查询失败时宁可留到下一轮，也绝不删。
+ */
+export async function cleanupUnreferencedObjects(now = new Date()): Promise<number> {
+  const storage = await getDeliveryStorage()
+  const staleKeys = await storage.listFinalKeysOlderThan(new Date(now.getTime() - ORPHAN_GRACE_MS))
+  let cleaned = 0
+  for (let i = 0; i < staleKeys.length; i += 100) {
+    const chunk = staleKeys.slice(i, i + 100)
+    let referenced: Set<string>
+    try {
+      const rows = await prisma.deliveryFile.findMany({
+        where: { key: { in: chunk }, status: { not: 'deleted' } },
+        select: { key: true },
+      })
+      referenced = new Set(rows.map(row => row.key))
+    } catch (err) {
+      // 查询失败 → 本批全部保留（失败默认保留，评审 P0）。
+      logger.warn({ err }, 'unreferenced object scan query failed; keeping batch')
+      continue
+    }
+    for (const key of chunk) {
+      if (referenced.has(key)) continue
+      try {
+        await storage.delete(key)
+        cleaned++
+      } catch (err) {
+        logger.warn({ err, key }, 'unreferenced delivery object cleanup failed')
+      }
+    }
+  }
+  return cleaned
+}
+
 let timer: NodeJS.Timeout | null = null
 let running = false
 
@@ -154,8 +195,9 @@ export async function runFileCleanupBatch() {
     const orphans = await cleanupOrphanFiles()
     const tmp = await cleanupStaleTmpObjects()
     const refunded = await cleanupRefundedFiles()
-    if (orphans + tmp + refunded > 0) {
-      logger.info({ orphans, tmp, refunded }, 'delivery file cleanup batch done')
+    const unreferenced = await cleanupUnreferencedObjects()
+    if (orphans + tmp + refunded + unreferenced > 0) {
+      logger.info({ orphans, tmp, refunded, unreferenced }, 'delivery file cleanup batch done')
     }
   } catch (err) {
     logger.error({ err }, 'delivery file cleanup batch failed')

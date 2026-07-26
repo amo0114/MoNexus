@@ -159,6 +159,24 @@ export class DeliveryS3Storage implements DeliveryStorage {
     return keys
   }
 
+  async listFinalKeysOlderThan(before: Date): Promise<string[]> {
+    const keys: string[] = []
+    let continuationToken: string | undefined
+    do {
+      const res = await this.ops.send(new ListObjectsV2Command({
+        Bucket: this.cfg.bucket,
+        ContinuationToken: continuationToken,
+      }))
+      for (const obj of res.Contents ?? []) {
+        if (obj.Key && !obj.Key.startsWith(TMP_KEY_PREFIX) && obj.LastModified && obj.LastModified < before) {
+          keys.push(obj.Key)
+        }
+      }
+      continuationToken = res.IsTruncated ? res.NextContinuationToken : undefined
+    } while (continuationToken)
+    return keys
+  }
+
   async list(): Promise<Array<{ key: string; size: number }>> {
     const objects: Array<{ key: string; size: number }> = []
     let continuationToken: string | undefined

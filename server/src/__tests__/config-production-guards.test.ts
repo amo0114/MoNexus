@@ -56,6 +56,14 @@ describe('production config guards for the private delivery bucket', () => {
     expect(result.stderr + result.stdout).toContain('DELIVERY_STORAGE')
   })
 
+  it('refuses an http DELIVERY_STORAGE_PUBLIC_ENDPOINT in production (P1 regression)', () => {
+    // presign URL 直接暴露给买家浏览器；check-prod-env.sh 只覆盖 compose
+    // 预检，直接启动会绕过——https 必须在配置层强制。
+    const result = loadConfigWith({ DELIVERY_STORAGE_PUBLIC_ENDPOINT: 'http://shop.example.com' })
+    expect(result.status).toBe(1)
+    expect(result.stderr + result.stdout).toContain('https')
+  })
+
   it('refuses a delivery bucket named like the public bucket (any environment)', () => {
     const result = loadConfigWith({ DELIVERY_STORAGE_BUCKET: 'monexus-uploads' })
     expect(result.status).toBe(1)

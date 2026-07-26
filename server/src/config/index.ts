@@ -190,6 +190,15 @@ if (env.NODE_ENV === 'production') {
     console.error('[Config] DELIVERY_STORAGE_BUCKET requires the STORAGE_* S3 variables in production')
     process.exit(1)
   }
+  // presign URL 直接暴露给买家浏览器，http 意味着签名与文件内容明文可嗅探。
+  // check-prod-env.sh 只覆盖 compose 预检，直接启动会绕过——必须在配置层
+  // 强制（评审 P1）。
+  if (new URL(env.DELIVERY_STORAGE_PUBLIC_ENDPOINT).protocol !== 'https:') {
+    console.error(
+      '[Config] DELIVERY_STORAGE_PUBLIC_ENDPOINT must use https in production: presigned download URLs are handed to buyer browsers'
+    )
+    process.exit(1)
+  }
 }
 
 // Mailer: SMTP_HOST opts into real delivery. Without it, dev/test and
