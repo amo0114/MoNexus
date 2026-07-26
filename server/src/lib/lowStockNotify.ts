@@ -13,8 +13,9 @@ import { getSystemConfigValue } from './systemConfig.js'
  *   在售商品（Product.status='active'）的启用规格（Offer.status='active'）
  *   且商品归属商家（merchantId 非空——平台自营无收件人）告警。
  * - 去重状态在 LowStockNotice（offerId 唯一，随 Offer 级联删除）。
- *   `lastNotifiedAt` 只在邮件**发送成功后**写入；发送失败保持原值
- *   （新行为 null），下轮 cron 以"null = 待发送"语义重试。
+ *   `lastNotifiedAt` 只在邮件**发送成功后**写入；发送失败**显式清为
+ *   null**（不能保留旧值——回升复位会留下上一轮成功的时间戳，沿用它
+ *   会让重试被冷却期误挡），下轮 cron 以"null = 待发送"语义重试。
  * - 状态迁移：跨入低位（无行或 isLow=false）→ 发信；持续低位仅当
  *   上次发送失败（lastNotifiedAt 为 null）或冷却期
  *   （lowStockNotifyCooldownHours > 0）已满时重发；0 = 持续低位期间
@@ -109,20 +110,22 @@ async function processOffer(offer: CandidateOffer, threshold: number, cooldownHo
     logger.warn({ err, offerId: offer.id, recipient }, 'low stock notify mail send failed')
   }
 
-  // 发送失败也要落 isLow=true（避免下轮误判为"跨入"），但绝不写
-  // lastNotifiedAt——null/旧值即"待重试"信号。
+  // 发送失败也要落 isLow=true（避免下轮误判为"跨入"），且必须把
+  // lastNotifiedAt **显式清为 null**——回升复位保留着上一轮成功的时间戳，
+  // "再次跌破 + 发送失败"若沿用旧值，下轮会被冷却期挡住而不重试
+  // （cooldown=0 时更是永不重试），违背"失败下轮重试"（复审阻断项）。
   await prisma.lowStockNotice.upsert({
     where: { offerId: offer.id },
     create: {
       offerId: offer.id,
       isLow: true,
       lastAvailable: available,
-      ...(sent ? { lastNotifiedAt: now } : {}),
+      lastNotifiedAt: sent ? now : null,
     },
     update: {
       isLow: true,
       lastAvailable: available,
-      ...(sent ? { lastNotifiedAt: now } : {}),
+      lastNotifiedAt: sent ? now : null,
     },
   })
 }

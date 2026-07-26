@@ -263,6 +263,52 @@ describe('runLowStockNotifyBatch', () => {
     }
   })
 
+  it('re-alert failure after a recovery clears the stale lastNotifiedAt so the next run retries (review blocker)', async () => {
+    // 复审阻断项时序：成功告警 → 回升复位（保留旧 lastNotifiedAt）→
+    // 再次跌破且发送失败。若失败路径沿用旧时间戳，下轮会被冷却期误挡
+    // （cooldown=0 时永不重试）——失败必须显式清 lastNotifiedAt 为 null。
+    const now = new Date()
+    const { product, offer } = await createInstantInventoryOffer({
+      email: 'low-stock-fail-recover@test.local',
+      offerName: '规格丙',
+      availableItems: 1,
+    })
+
+    await runLowStockNotifyBatch(now)
+    expect(mailer.sent).toHaveLength(1)
+
+    // 回升复位：isLow=false，lastNotifiedAt 留着上一轮成功的时间戳。
+    for (let i = 0; i < 4; i++) {
+      await prisma.inventoryItem.create({
+        data: { productId: product.id, offerId: offer.id, content: `fail-recover-extra-${i}`, status: 'available' },
+      })
+    }
+    await runLowStockNotifyBatch(new Date(now.getTime() + HOUR_MS))
+    expect((await getNotice(offer.id))!.isLow).toBe(false)
+    expect((await getNotice(offer.id))!.lastNotifiedAt).not.toBeNull()
+
+    // 再次跌破 + 发送失败 → lastNotifiedAt 必须被清空。
+    await prisma.inventoryItem.updateMany({
+      where: { offerId: offer.id, content: { startsWith: 'fail-recover-extra-' } },
+      data: { status: 'sold' },
+    })
+    const failingMailer: Mailer = {
+      async send() {
+        throw new Error('smtp down')
+      },
+    }
+    __setMailerForTesting(failingMailer)
+    await runLowStockNotifyBatch(new Date(now.getTime() + 2 * HOUR_MS))
+    expect(await getNotice(offer.id)).toMatchObject({ isLow: true, lastNotifiedAt: null })
+
+    // 一小时后（远未满 24h 冷却）邮箱恢复：null = 待发送，立即重试成功。
+    __setMailerForTesting(mailer)
+    const retryAt = new Date(now.getTime() + 3 * HOUR_MS)
+    await runLowStockNotifyBatch(retryAt)
+    expect(mailer.sent).toHaveLength(2)
+    expect((await getNotice(offer.id))!.lastNotifiedAt?.getTime()).toBe(retryAt.getTime())
+  })
+
   it('cooldown=0 means no re-send while continuously low', async () => {
     await setConfig('lowStockNotifyCooldownHours', 0)
     const now = new Date()
