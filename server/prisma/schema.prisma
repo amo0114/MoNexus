@@ -123,6 +123,7 @@ model Merchant {
   products       Product[]
   orders         Order[]
   settlements    Settlement[]
+  deliveryFiles  DeliveryFile[]
 }
 
 model RefreshToken {
@@ -482,4 +483,27 @@ model SystemConfig {
   updatedBy   Int?
 
   updatedByUser User? @relation("SystemConfigUpdatedBy", fields: [updatedBy], references: [id])
+}
+
+// P5：受控文件交付的文件登记。对象本体在私有交付桶（DELIVERY_STORAGE_BUCKET，
+// 键 = 内容寻址 sha256.ext），本表是引用与生命周期的真相源。
+// 行永不物理删除：status 走 active → revoked（管理员吊销，仅管理员可取证下载）
+// → deleted（对象已清理，行保留供审计外键）；对象仅在无任何 active/revoked 行
+// 引用同 key 时才可删（内容寻址键可能被多商家共享）。
+model DeliveryFile {
+  id         Int       @id @default(autoincrement())
+  key        String
+  fileName   String
+  size       Int
+  mimeType   String
+  sha256     String
+  merchantId Int
+  status     String    @default("active")
+  createdAt  DateTime  @default(now())
+  deletedAt  DateTime?
+
+  merchant Merchant @relation(fields: [merchantId], references: [id])
+
+  @@index([merchantId, status])
+  @@index([key])
 }

@@ -75,6 +75,13 @@ const envSchema = z.object({
   STORAGE_PUBLIC_URL_BASE: z.string().url().optional(),
   STORAGE_FORCE_PATH_STYLE: booleanEnvSchema.default(true),
 
+  // --- P5 受控文件交付的私有桶。与公开图片桶（STORAGE_BUCKET，anonymous
+  // download）物理隔离；上传/删除走内网 STORAGE_ENDPOINT，签发下载 URL 用
+  // DELIVERY_STORAGE_PUBLIC_ENDPOINT（浏览器可达域名，SigV4 把 Host 算进
+  // 签名，两者必须一致）。未配置时回落 memory 适配器（仅 dev/test 安全）。
+  DELIVERY_STORAGE_BUCKET: z.string().min(1).optional(),
+  DELIVERY_STORAGE_PUBLIC_ENDPOINT: z.string().url().optional(),
+
   // --- SMTP for transactional email (P0-D). Optional at boot: when
   // unset, the server falls back to a console-logging mailer. Production
   // deployments should configure SMTP so password resets actually arrive.
@@ -161,6 +168,26 @@ if (env.NODE_ENV === 'production' && !hasAllStorageVars) {
   process.exit(1)
 }
 
+// P5 私有交付桶守卫。同名意味着公开图片桶的 anonymous download 策略会波及
+// 付费文件——任何环境都直接拒绝启动，而不是等到文件裸奔才发现。
+if (env.DELIVERY_STORAGE_BUCKET && env.DELIVERY_STORAGE_BUCKET === env.STORAGE_BUCKET) {
+  console.error(
+    '[Config] DELIVERY_STORAGE_BUCKET must differ from STORAGE_BUCKET: the public bucket has an anonymous-download policy that would expose paid files'
+  )
+  process.exit(1)
+}
+// 配了私有桶就必须配齐：生产缺公网签名域名会签出浏览器不可达的内网 URL。
+if (env.NODE_ENV === 'production' && env.DELIVERY_STORAGE_BUCKET) {
+  if (!hasAllStorageVars) {
+    console.error('[Config] DELIVERY_STORAGE_BUCKET requires the STORAGE_* S3 variables in production')
+    process.exit(1)
+  }
+  if (!env.DELIVERY_STORAGE_PUBLIC_ENDPOINT) {
+    console.error('[Config] DELIVERY_STORAGE_PUBLIC_ENDPOINT is required when DELIVERY_STORAGE_BUCKET is set in production')
+    process.exit(1)
+  }
+}
+
 // Mailer: SMTP_HOST opts into real delivery. Without it, dev/test and
 // intentionally-unconfigured environments use the console fallback.
 const hasSmtp = !!env.SMTP_HOST
@@ -197,6 +224,19 @@ export const config = {
         accessKey: env.STORAGE_ACCESS_KEY!,
         secretKey: env.STORAGE_SECRET_KEY!,
         publicUrlBase: env.STORAGE_PUBLIC_URL_BASE,
+        forcePathStyle: env.STORAGE_FORCE_PATH_STYLE,
+      }
+    : ({ kind: 'memory' as const }),
+  deliveryStorage: hasAllStorageVars && env.DELIVERY_STORAGE_BUCKET
+    ? {
+        kind: 's3' as const,
+        endpoint: env.STORAGE_ENDPOINT!,
+        region: env.STORAGE_REGION ?? 'us-east-1',
+        bucket: env.DELIVERY_STORAGE_BUCKET,
+        accessKey: env.STORAGE_ACCESS_KEY!,
+        secretKey: env.STORAGE_SECRET_KEY!,
+        // 浏览器可达域名；缺省回落内网 endpoint（仅本机直连 MinIO 的场景可用）。
+        publicEndpoint: env.DELIVERY_STORAGE_PUBLIC_ENDPOINT ?? env.STORAGE_ENDPOINT!,
         forcePathStyle: env.STORAGE_FORCE_PATH_STYLE,
       }
     : ({ kind: 'memory' as const }),

@@ -56,6 +56,8 @@ services:
   # One-shot init container: creates the upload bucket on first run
   # and opens it for anonymous downloads so browsers can fetch the URLs
   # the upload API returns without signing each request.
+  # P5: monexus-files is the PRIVATE delivery bucket — created only, never
+  # `anonymous set download`. Downloads go through short-lived presigned URLs.
   minio-init:
     image: minio/mc:latest
     container_name: monexus-minio-init
@@ -68,7 +70,8 @@ services:
       mc alias set local http://minio:9000 minio minio_dev_password &&
       mc mb --ignore-existing local/monexus-uploads &&
       mc anonymous set download local/monexus-uploads &&
-      echo 'bucket monexus-uploads ready'
+      mc mb --ignore-existing local/monexus-files &&
+      echo 'buckets monexus-uploads (public) and monexus-files (private) ready'
       "
 
 volumes:

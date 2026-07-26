@@ -18,6 +18,10 @@ const defaultConfig = {
   memberTierPlatinumBonusBps: 2000,
   checkoutVerifyAmountThreshold: 0,
   checkoutVerifyDailyThreshold: 0,
+  // P5 受控文件交付
+  fileUrlTtlSeconds: 300,
+  fileAccessWindowDays: 30,
+  deliveryFileMaxMb: 100,
 } as const
 
 async function clearSystemConfig() {
