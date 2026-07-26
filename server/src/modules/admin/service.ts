@@ -34,6 +34,7 @@ import {
   settleHeldOrder,
   voidRefundableSettlement,
 } from '../orders/accounting.js'
+import { applyRefundInventoryPolicy } from '../orders/refundInventory.js'
 import type {
   CreateProductInput,
   ListAdminAuditQuery,
@@ -686,6 +687,11 @@ export async function resolveOrder(
         price: true,
         holdingPoints: true,
         fundsHeld: true,
+        // P5.5 T4：退款回补策略需要的履约快照与归属字段。
+        productId: true,
+        offerId: true,
+        merchantId: true,
+        deliveryModeSnapshot: true,
       },
     })
     if (!order) throw notFound('订单不存在')
@@ -701,6 +707,12 @@ export async function resolveOrder(
     // pending settlement cannot race ahead and be paid after a refund.
     if (input.result === 'refund') {
       await voidRefundableSettlement(tx, order.id)
+      // P5.5 T4：仲裁退款的库存侧效果与积分退还/结算作废同事务——已交付
+      // （disputed 只能来自 delivered）：卡密报废、销量净减、不回补容量。
+      await applyRefundInventoryPolicy(tx, order, {
+        fromStatus: 'disputed',
+        actorUserId: adminUserId,
+      })
     }
 
     await transitionOrderStatus(
