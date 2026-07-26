@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | SPEC-M3-ISH-001 |
-| 版本 | 1.0.0 |
+| 版本 | 1.1.0 |
 | 日期 | 2026-07-27 |
 | 状态 | Frozen for Implementation |
 | 产品 | MoNexus |
@@ -152,15 +152,16 @@ GET sessions → 仅见自己的脱敏设备会话
 | User | mfaEnabled、mfaSecretEncrypted、mfaVerifiedAt、mfaVersion | 管理员 MFA 状态；seed 只存加密密文 |
 | MfaRecoveryCode | userId、codeHash、usedAt、createdAt；unique(userId, codeHash) | 一次性恢复码；无明文列 |
 | AuthChallenge | UUID id、userId、purpose、secretEncrypted nullable、expiresAt、consumedAt、failedAttempts、createdAt | 登录 / 首次绑定的短期单次预认证状态；绑定前 seed 也只存加密值 |
-| RefreshToken | sessionId UUID、sessionStartedAt、lastUsedAt、revokedAt、revokeReason；保留 tokenHash / expiresAt / revoked | 将轮换 token 行归属为稳定设备会话族 |
+| RefreshToken | sessionId UUID（会话族标识，不是 token 行全局唯一值）、sessionStartedAt、lastUsedAt、revokedAt、revokeReason；保留 tokenHash / expiresAt / revoked | 将轮换 token 行归属为稳定设备会话族 |
 | SecurityEvent | userId nullable、sessionId nullable、type、ipHash nullable、deviceHint nullable、detailSafe nullable、createdAt | 只记录可审计、非秘密的身份安全事实 |
 
 迁移要求：
 
-1. 使用 prisma migrate dev 生成 migration，不手写 schema migration。
-2. 新增 sessionId 必须为所有旧 RefreshToken 生成独立 UUID；发布前在隔离库验证非空、唯一与 refresh rotation 继承。
-3. 旧管理员全部 refresh token 在发布切换时吊销，避免旧无 MFA claim 的会话继续使用。
-4. 不回填 MFA；mfaEnabled 默认 false，旧管理员下一次密码登录必须走首次绑定。
+1. 仅在 P6a 已合入 `develop`、安全分支 rebase 且人工确认两套 schema/migration 都保留后，使用 `prisma migrate dev` 生成 migration；命令必须显式指向专用 `monexus_m3_ish_test`，不手写或事后修改 migration SQL。
+2. 采用两阶段、可部署的生成迁移：Migration A 先把历史 `RefreshToken` 的 session 字段以 nullable 形式扩展；旧 API 实例排空后，受版本控制的应用回填命令为**每条**历史 token 行分配不同的随机 UUID，并以 `createdAt` 初始化会话时间；只在隔离库证明无 null 后，再由 Migration B 收紧为 non-null。不得假定 Prisma `uuid()` 默认值会安全回填既有行。
+3. `sessionId` 的唯一性属于会话族：每个历史 token 行初始获得一个不同的 family ID；refresh rotation 的新旧 token 必须共享该 ID，因此数据库不得对 `RefreshToken.sessionId` 建全局 UNIQUE 约束。
+4. 回填/切换中必须吊销全部 legacy admin refresh token，避免旧无 MFA claim 的会话继续使用；不回填 MFA，`mfaEnabled` 默认 false，旧管理员下一次密码登录必须走首次绑定。
+5. `SecurityEvent.userId` 使用保留审计的删除语义；challenge/recovery artifact 才可随 User 清理。所有迁移、回填与 drift 验证都只在专用隔离库运行。
 
 ---
 
@@ -378,6 +379,7 @@ Then vitest、相关 Playwright、双端 build、Prisma drift 检查以及 produ
 | R-04 | LoginPage / auth refresh 有状态变化，易引入自动刷新误判 | 202 challenge 不是 401；前端 Axios 只对会话型 401 走 refresh，MFA 业务错误不得自动重放 |
 | R-05 | TOTP 测试依赖时间与随机数 | 提供 clock/OTP adapter；禁止 sleep 式测试 |
 | R-06 | 过早把 step-up 覆盖所有 admin 写操作会放大 UI 冲突和运营摩擦 | 按 D-03 先不做；本规格要求保留高危路由矩阵，后续专规覆盖 |
+| R-07 | 通用本地验证脚本会启动共享 compose、使用默认测试库并占用 3000/5173 | 本波只使用专用数据库、3103/5178 与 `reuseExistingServer=false` 的 M3-ISH 专用验证入口；不得借跑 `verify:local` 或默认 e2e |
 | OQ-01 | 是否将登录密码最小长度从 6 提升至 10/12 并接入泄露密码库 | 推荐另开 auth password policy 小规格，避免和 MFA/session migration 混合 |
 | OQ-02 | 是否给普通用户/商家也开放 TOTP | 等管理员强制 MFA 稳定并观察真实需求后决定 |
 
@@ -387,11 +389,13 @@ Then vitest、相关 Playwright、双端 build、Prisma drift 检查以及 produ
 
 | 需求 | plan 阶段 | task | checklist |
 | --- | --- | --- | --- |
-| REQ-F-010–016 | Phase A / B / D | T-MFA-01..05 | CHK-MFA-* |
-| REQ-F-020–025 | Phase A / C / D | T-SES-01..04 | CHK-SES-* |
-| REQ-F-030–033 | Phase A / E | T-SEC-01..03 | CHK-SEC-* |
-| REQ-NF-01–09 | 全程 | T-00, T-QA-* | CHK-NF-* |
-| AC-01–08 | Phase E | T-QA-01..03 | §6, §7 |
+| REQ-F-010–014 | Phase A / B / D | T-BE-01、T-BE-02、T-BE-03、T-BE-05、T-FE-01、T-QA-01 | CHK-MFA-01..08、11..12、CHK-AUTH-* |
+| REQ-F-015–016 | Phase D（P1） | T-BE-06、T-FE-03 | CHK-MFA-09..10、CHK-FE-08..09 |
+| REQ-F-020–023 | Phase A / C / D | T-BE-01、T-BE-04、T-FE-02、T-QA-01 | CHK-DATA-04、CHK-SES-01..06、08..09、CHK-FE-05..07 |
+| REQ-F-024 | Phase C / D（P1） | T-BE-06、T-FE-03 | CHK-SES-07、CHK-FE-05 |
+| REQ-F-025、REQ-F-032 | Phase B / C | T-BE-05、T-QA-01 | CHK-AUTH-01..09 |
+| REQ-F-030–033 | Phase A / E | T-BE-02、T-BE-05、T-DOC-01 | CHK-SEC-* |
+| REQ-NF-01–09、AC-01–08 | 全程 / Phase E | T-00、T-QA-01、T-QA-02 | CHK-PROC-*、CHK-QA-*、验收场景 |
 
 ---
 
@@ -404,7 +408,16 @@ Then vitest、相关 Playwright、双端 build、Prisma drift 检查以及 produ
 
 ---
 
-## 14. 批准
+## 14. 修订记录
+
+| 版本 | 日期 | 说明 |
+| --- | --- | --- |
+| 1.0.0 | 2026-07-27 | 初版安全规格 |
+| 1.1.0 | 2026-07-27 | 收口 session family 唯一性、两阶段生成迁移与独立验证约束；使 P1 追溯与任务优先级一致 |
+
+---
+
+## 15. 批准
 
 | 角色 | 姓名 | 日期 | 结论 |
 | --- | --- | --- | --- |

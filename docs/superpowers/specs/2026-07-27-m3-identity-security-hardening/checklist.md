@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | CHK-M3-ISH-001 |
-| 版本 | 1.0.0 |
+| 版本 | 1.1.0 |
 | 日期 | 2026-07-27 |
 | 规格 | [spec.md](./spec.md) |
 | 计划 | [plan.md](./plan.md) |
@@ -48,18 +48,19 @@
 - [ ] **CHK-DATA-01** User 有 mfaEnabled、加密 seed、mfaVersion 等必要字段；任何 public/profile/admin serializer 都没有选择 seed 字段。
 - [ ] **CHK-DATA-02** MfaRecoveryCode 只存 hash，有 user 归属、usedAt 和唯一性约束；无明文列。
 - [ ] **CHK-DATA-03** AuthChallenge 是随机 UUID、5 分钟、单次、最多 5 次失败；过期/超限/成功后不可复用。
-- [ ] **CHK-DATA-04** RefreshToken 有稳定 sessionId；同一 refresh rotation 的新旧 token 继承同一 sessionId 和 sessionStartedAt。
+- [ ] **CHK-DATA-04** RefreshToken 有稳定 sessionId；同一 refresh rotation 的新旧 token 继承同一 sessionId 和 sessionStartedAt；sessionId 是 family ID，不能建 token 行全局 unique。
 - [ ] **CHK-DATA-05** SecurityEvent 只存安全事件 type、不可逆 IP 关联/安全 device hint 和安全摘要；不存秘密或原始 IP。
-- [ ] **CHK-DATA-06** migration 在隔离 PostgreSQL 成功应用，历史 RefreshToken 的 sessionId 非空且唯一；若使用两步迁移，第二步收紧已有明确日期/任务。
+- [ ] **CHK-DATA-06** 两阶段生成 migration 在隔离 PostgreSQL 成功应用：Migration A nullable 扩展 → 版本化 backfill（每条 legacy token 初始 family ID 互异、legacy admin 全吊销）→ Migration B non-null 收紧；不得手改 SQL 或假定 uuid default 自动回填。
 - [ ] **CHK-DATA-07** 新增索引支持按 userId、sessionId、活动/过期状态列会话；会话列表不做全表扫描。
 - [ ] **CHK-DATA-08** MFA_ENCRYPTION_KEY 是 base64 32-byte 值；production 缺失/非法时服务拒绝启动；无默认生产 key。
 - [ ] **CHK-DATA-09** AES-256-GCM 对 seed 的 IV/tag/tamper failure 均正确处理；解密错误不返回内部详情。
+- [ ] **CHK-DATA-10** 所有 migrate/status/drift 命令显式传专用 `monexus_m3_ish_test` URL；shadow database 也是隔离资源，未调用默认 `monexus_test` / compose。
 
 **证据：** migration 名称 / prisma status / config tests：________________
 
 ---
 
-## 3. 管理员 MFA（P0）
+## 3. 管理员 MFA（P0；显式标记 [P1] 的项不阻塞 P0 PR）
 
 - [ ] **CHK-MFA-01** admin 密码正确且 mfaEnabled=false 时仅返回 202 mfa_enrollment_required；没有 accessToken、refresh cookie 或后台数据。
 - [ ] **CHK-MFA-02** enrollment start 返回 QR provisioning URI 与手动密钥，但数据库只保留加密 pending seed。
@@ -69,8 +70,8 @@
 - [ ] **CHK-MFA-06** 错误 TOTP、错误/已用 recovery code、过期/已消费/超限 challenge 都不创建 RefreshToken 或 access token。
 - [ ] **CHK-MFA-07** challenge 并发 confirm / verify 只有一个成功，另一个得到安全错误。
 - [ ] **CHK-MFA-08** 恢复码一次登录后立即标记 used；重复使用被拒并保留正确审计。
-- [ ] **CHK-MFA-09** 管理员重生 recovery code 要求当前密码 + 当前 MFA 因子，旧码在同一事务作废。
-- [ ] **CHK-MFA-10** 管理员换机/重绑定要求当前密码 + 因子；成功 bump mfaVersion、吊销其他会话、发新恢复码。
+- [ ] **CHK-MFA-09** **[P1]** 管理员重生 recovery code 要求当前密码 + 当前 MFA 因子，旧码在同一事务作废。
+- [ ] **CHK-MFA-10** **[P1]** 管理员换机/重绑定要求当前密码 + 因子；成功 bump mfaVersion、吊销其他会话、发新恢复码。
 - [ ] **CHK-MFA-11** 没有 HTTP “关闭 MFA”或任意管理员重置他人 MFA 的后门。
 - [ ] **CHK-MFA-12** TOTP 固定为 6 digits / 30 sec / window≤1；测试不依赖真实等待。
 
@@ -94,7 +95,7 @@
 
 ---
 
-## 5. 设备会话（P0）
+## 5. 设备会话（P0；显式标记 [P1] 的项不阻塞 P0 PR）
 
 - [ ] **CHK-SES-01** GET /auth/sessions 仅返回请求用户的 active、未过期 session，current 标记与 JWT sid 一致。
 - [ ] **CHK-SES-02** session summary 只含 sessionId、deviceLabel、ipHint、sessionStartedAt、lastUsedAt、current；不含 raw IP、完整 UA、tokenHash 或 revoked token。
@@ -102,7 +103,7 @@
 - [ ] **CHK-SES-04** DELETE /auth/sessions/:id 只能吊销自己的目标会话；他人/猜测 UUID 返回 404。
 - [ ] **CHK-SES-05** 被单独吊销的会话 refresh 失败；其他 session 正常工作。
 - [ ] **CHK-SES-06** revoke-others 只吊销非当前 session；current 不被误伤。
-- [ ] **CHK-SES-07** revoke-all 吊销所有 session、清当前 refresh cookie，客户端退出登录。
+- [ ] **CHK-SES-07** **[P1]** revoke-all 吊销所有 session、清当前 refresh cookie，客户端退出登录。
 - [ ] **CHK-SES-08** 所有 revoke/replay 有 SecurityEvent，reason/type 受控且不含 token。
 - [ ] **CHK-SES-09** 普通业务 access token 的“至迟当前 15 分钟 TTL / refresh 失效”语义在 UI/文档说明；不声称不真实的全局即时失效。
 
@@ -118,7 +119,7 @@
 - [ ] **CHK-FE-02** 初次绑定页在未签发会话前不渲染 Layout/admin 内容。
 - [ ] **CHK-FE-03** QR、手动密钥、TOTP 输入、恢复码切换、错误/超限提示均可用；成功或取消后秘密 state 被清空。
 - [ ] **CHK-FE-04** 恢复码只展示一次，需用户确认已保存才能继续；不写 localStorage、Zustand persist、URL、console。
-- [ ] **CHK-FE-05** 账户安全区显示设备会话；单个/其他/全部吊销都有确认、loading 防重与正确 logout。
+- [ ] **CHK-FE-05** 账户安全区显示设备会话；单个/其他吊销都有确认、loading 防重与正确 logout。
 - [ ] **CHK-FE-06** 页面只显示 API 的脱敏 deviceLabel/ipHint，不暴露/重组 raw IP、完整 UA 或秘密。
 - [ ] **CHK-FE-07** 关键操作有可访问名称与稳定 data-testid；320px/375px 下无阻断布局。
 
@@ -127,6 +128,7 @@
 - [ ] **CHK-FE-08** 管理员安全区显示 MFA 已启用和恢复码剩余数。
 - [ ] **CHK-FE-09** 恢复码重生、换机流程有明确“会使其他会话失效”的文案和确认。
 - [ ] **CHK-FE-10** 会话列表加载/空状态/错误状态不会影响 ProfilePage 其他功能。
+- [ ] **CHK-FE-11** **[P1]** revoke-all 有明确确认、清当前 auth state、跳转登录；不复用默认服务或保存秘密。
 
 **证据：** 截图 / Playwright testid：________________
 
@@ -169,10 +171,10 @@
 - [ ] **CHK-QA-03** server 全量 npm test PASS。
 - [ ] **CHK-QA-04** npm --prefix server run build PASS。
 - [ ] **CHK-QA-05** npm run build PASS。
-- [ ] **CHK-QA-06** npm run verify:local:no-e2e PASS。
-- [ ] **CHK-QA-07** Prisma migrate status/drift 检查 PASS。
-- [ ] **CHK-QA-08** admin MFA 和 session revoke Playwright tests PASS。
-- [ ] **CHK-QA-09** 全量 npm run e2e PASS，或既有 flaky 有独立 issue、重试记录，且本波测试不依赖它。
+- [ ] **CHK-QA-06** `npm run verify:m3-identity-security-hardening` PASS：脚本只使用显式专用库，不调用 compose、不触碰默认 `monexus_test`。
+- [ ] **CHK-QA-07** Prisma migrate status/drift 检查 PASS，且命令显式使用 `M3_ISH_DATABASE_URL`。
+- [ ] **CHK-QA-08** admin MFA 和 session revoke Playwright tests 在 M3-ISH 专用 config（3103/5178、`reuseExistingServer=false`）PASS。
+- [ ] **CHK-QA-09** 不运行默认 `npm run e2e`；本波专用 Playwright suite PASS，CI 中的全量 E2E/CI OK 另由隔离 runner 验证。
 - [ ] **CHK-QA-10** CI 的 CI OK 聚合检查绿。
 
 **证据：**
@@ -181,7 +183,7 @@
 vitest:
 server build:
 frontend build:
-verify local:
+isolated verify:
 prisma:
 playwright:
 CI:
@@ -253,3 +255,4 @@ P0 豁免默认不允许。唯一例外是仓库负责人明确书面批准的�
 | 版本 | 日期 | 说明 |
 | --- | --- | --- |
 | 1.0.0 | 2026-07-27 | 初版安全验收清单 |
+| 1.1.0 | 2026-07-27 | 收口 session family/两阶段迁移、P1 标签与专用验证门禁 |

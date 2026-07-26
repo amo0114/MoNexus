@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | IMPL-M3-ISH-001 |
-| 版本 | 1.0.0 |
+| 版本 | 1.1.0 |
 | 日期 | 2026-07-27 |
 | 状态 | I-00 Done；I-01 Blocked by P6a rebase gate |
 | 输入 | [spec.md](./spec.md) · [plan.md](./plan.md) · [task.md](./task.md) · [checklist.md](./checklist.md) |
@@ -43,10 +43,10 @@ Implement 不是“文档写完就直接编码”。每个任务开始前，执�
 | --- | --- |
 | Docker / compose | 不在 P6a 目录运行 docker compose up/down/restart；不停止共享容器 |
 | 单元/集成数据库 | 仅使用专用 TEST_DATABASE_URL，数据库名为 monexus_m3_ish_test；绝不使用 P6a 或默认 monexus_test |
-| 迁移 | 仅对专用测试库执行；不得对共享开发库、staging、production 执行 migrate dev/deploy |
+| 迁移 | 每条 migrate/status/drift 命令都显式传 `DATABASE_URL=$M3_ISH_DATABASE_URL`，且该变量只能指向 `monexus_m3_ish_test`；shadow database 也必须隔离；不得对共享开发库、staging、production 执行 migrate dev/deploy |
 | 后端服务 | 若必须手动/E2E 启动，使用独立 PORT=3103 和独立日志；不得占用 3000 |
 | 前端服务 | 若必须手动/E2E 启动，使用独立端口 5178；不得占用 5173 |
-| E2E | 只在独立 server、独立数据库和独立 browser context 上运行；P6a 正在做端到端测试时不并发抢用共享服务 |
+| E2E | 只在独立 server、独立数据库和独立 browser context 上运行；固定 3103/5178、`reuseExistingServer=false`；禁止 `npm run verify:local(:no-e2e)` 和默认 `npm run e2e`，P6a 正在做端到端测试时不并发抢用共享服务 |
 
 若专用测试数据库或独立端口不可用，先只运行静态/typecheck 单元，不以共享资源为代价抢跑完整验证。
 
@@ -66,9 +66,9 @@ schema.prisma 是唯一共同文件。安全任务不得重排、格式化或编
 ### 2.4 Migration 协议
 
 1. P6a 已使用 20260727090000_p6a_subscription_foundation。
-2. 安全任务只能创建更晚且唯一的目录，例如 20260727110000_m3_identity_security_hardening。
+2. 安全任务只能在 rebase 后生成更晚且唯一的目录；生成后其时间戳必须字典序排在 P6a migration 之后，不能预先假定本机时钟满足该条件。
 3. 永不修改、重命名、删除或重新生成 P6a migration。
-4. 合并顺序固定为 P6a 先进入 develop；M3-ISH 随后 rebase develop，确认两套 migration 均保留，再跑专用库 migration / drift。
+4. I-01 的解除条件固定为：P6a 已进入 `origin/develop` → M3-ISH rebase 成功 → 人工确认两套 migration 与 `User` / `RefreshToken` 块均保留 → 专用库跑 migration/status/drift；四项均有证据后才将 I-01 改为 In Progress。
 5. 如果 P6a 在合并前新增触及 User / RefreshToken 的字段，停止该任务，先更新 Specify/Plan/Tasks 的影响分析。
 
 ---
@@ -90,12 +90,13 @@ schema.prisma 是唯一共同文件。安全任务不得重排、格式化或编
 | Implement ID | 对应 Tasks | 状态 | 输入 / Owned files | 完成与提交门槛 |
 | --- | --- | --- | --- | --- |
 | I-00 | T-00 | Done | 本包、AGENTS.md、auth 基线 | 记录基线、隔离资源、决策确认；不改业务代码 |
-| I-01 | T-BE-01 | Blocked by P6a rebase gate | schema、config、env example、专用 migration | P6a 合入 develop 后先 rebase 并复核共享 schema/migration；随后才可开始身份基础改动 |
+| I-01 | T-BE-01 | Blocked by P6a rebase gate | schema、config、env example、两阶段专用 migration / backfill | 满足 §2.4 四项解除条件；两份 migration 均 Prisma 生成，backfill 只跑专用库 |
 | I-02 | T-BE-02 | Todo | auth/mfa、security event、logger、原语测试 | 密钥/OTP/challenge/recovery/redact 单测通过；无真实 secret |
 | I-03 | T-BE-03 + T-BE-05 | Todo | auth service/controller/schema/routes、auth middleware、admin route、auth tests | admin MFA flow、guard、bcrypt 通过；不改 P6a 文件 |
 | I-04 | T-BE-04 | Todo | auth session service/routes/serializer/tests | session family/revoke/replay 通过；owner 404 与脱敏锁定 |
 | I-05 | T-FE-01 + T-FE-02 | Blocked by P6a UI ownership | LoginPage、新 auth security components、auth API；P6a 合入/rebase 后才可改 ProfilePage 挂载点 | UI 不持久化秘密；独立端口 smoke / E2E 通过 |
 | I-06 | T-QA-01 + T-QA-02 + T-DOC-01 | Todo | tests、OpenAPI、auth README、runbook、checklist | 完整验证、rebase 后 drift、所有 P0 勾选、PR 准备完成 |
+| I-07 | T-BE-06 + T-FE-03 | Todo (P1) | MFA security settings、revoke-all API/UI | 不削弱 P0 guard；若纳入 PR 则 P1 checklist 全部有证据，若拆后续则在 PR 明确链接 follow-up |
 
 ### 当前任务的标准循环
 
@@ -117,7 +118,7 @@ schema.prisma 是唯一共同文件。安全任务不得重排、格式化或编
 | Auth | MFA/challenge/recovery/session 定向 vitest | server npm test |
 | Guard | admin 旧 token、吊销 session、普通 user/merchant 拒绝 | auth + admin 回归 |
 | Frontend | npm run build、秘密不入 persisted store、关键 testid | MFA / sessions Playwright |
-| Integration | 独立 PORT/DB smoke | npm run verify:local:no-e2e 与独立 e2e |
+| Integration | 专用库、3103/5178、`reuseExistingServer=false` 的 smoke | `npm run verify:m3-identity-security-hardening` 与独立 M3-ISH e2e |
 | Documentation | OpenAPI、README、runbook、checklist 证据 | P0 全部勾选 |
 
 验证失败只能修当前任务、修 spec，或明确报告 Blocked；不得删除/放松测试、跳过 migration 或在 P6a 环境中“借跑”。
@@ -128,7 +129,7 @@ schema.prisma 是唯一共同文件。安全任务不得重排、格式化或编
 
 | 事件 | 必须动作 |
 | --- | --- |
-| P6a 合入 develop | 在安全 worktree fetch，rebase origin/develop；检查 schema/migrations/config；跑专用 migration 和 auth 定向测试 |
+| P6a 合入 develop | 在安全 worktree 只读确认远端状态后 rebase；检查 schema/migrations/config；显式使用专用库跑 migration/status/drift 与 auth 定向测试；未全部通过则 I-01 保持 Blocked |
 | P6a 新增 User/RefreshToken 改动 | 停止 I-01/I-03/I-04；更新 spec 影响分析，确认 ownership 后再继续 |
 | P6a 修改 LoginPage/ProfilePage | 不改该页面；仅新增无挂载副作用的 auth 组件/API，待其合入后 rebase 再集成 |
 | 安全 spec 决策变更 | 先更新 spec → plan → task → implement → checklist，再修改代码 |
@@ -142,7 +143,7 @@ schema.prisma 是唯一共同文件。安全任务不得重排、格式化或编
 | 时间 | I-* | 状态 | HEAD / 证据 | 备注 |
 | --- | --- | --- | --- | --- |
 | 2026-07-27 | I-00 | Done | branch `feat/m3-identity-security-hardening` from `bf25d01`；独立 worktree；Prisma 6.19.3；专用库 `monexus_m3_ish_test`（31 migrations up to date） | `auth/auth-tokens/refresh-token-wiring/auth-active-user` 4 files、36 tests PASS；frontend build 与 server build PASS；未修改业务代码 |
-| 2026-07-27 | I-01 | Blocked | P6a 尚未合入 `develop`，且其拥有 migration `20260727090000_p6a_subscription_foundation` 与共享 schema 区域 | 按 §2.4 先 rebase 再生成晚于 P6a 的 Prisma migration；不以抢写 schema 绕过隔离契约 |
+| 2026-07-27 | I-01 | Blocked | P6a 尚未合入 `develop`，且其拥有 migration `20260727090000_p6a_subscription_foundation` 与共享 schema 区域 | 1.1 审核已补两阶段 migration/backfill、session family 非全局唯一和专用验证约束；按 §2.4 四项解除条件后才开始 |
 
 ---
 
