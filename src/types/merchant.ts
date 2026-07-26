@@ -184,7 +184,7 @@ export interface MerchantOrder {
   } | null
   settlement?: Settlement | null
   availableActions?: string[]
-  statusEvents?: any[]
+  statusEvents?: import('./order').OrderStatusEvent[]
   holdingPoints?: number | null
   fulfillmentDeadline?: string | null
   slaExceeded?: boolean

@@ -14,6 +14,7 @@ import {
   deliverOrder,
   respondDispute,
   rejectOrder,
+  postOrderProgress,
 } from '../api/merchant'
 import {
   MerchantStats,
@@ -31,6 +32,7 @@ import MerchantCapacityAdjustModal from '../components/merchant/MerchantCapacity
 import MerchantOfferManagerModal from '../components/merchant/MerchantOfferManagerModal'
 import MerchantDeliverDialog from '../components/merchant/MerchantDeliverDialog'
 import MerchantDisputeDialog from '../components/merchant/MerchantDisputeDialog'
+import MerchantProgressDialog from '../components/merchant/MerchantProgressDialog'
 import RegistryPill from '../components/ui/RegistryPill'
 import { Dialog, DialogContent, DialogTitle } from '../components/ui/Dialog'
 import { TableSkeleton, StatCardSkeleton } from '../components/ui/Skeleton'
@@ -185,6 +187,8 @@ export default function MerchantDashboardPage() {
   // --- Order Dialogs State ---
   const [deliveringOrder, setDeliveringOrder] = useState<MerchantOrder | null>(null)
   const [disputeOrder, setDisputeOrder] = useState<MerchantOrder | null>(null)
+  // P6b：进度更新对话框（processing 人工服务订单）。
+  const [progressOrder, setProgressOrder] = useState<MerchantOrder | null>(null)
   const [rejectingOrder, setRejectingOrder] = useState<MerchantOrder | null>(null)
   const [rejectNote, setRejectNote] = useState('')
   const [rejecting, setRejecting] = useState(false)
@@ -219,7 +223,7 @@ export default function MerchantDashboardPage() {
   }
 
   async function handleOrderAction(
-    action: 'start_fulfillment' | 'deliver' | 'respond_dispute' | 'reject',
+    action: 'start_fulfillment' | 'deliver' | 'respond_dispute' | 'reject' | 'post_progress',
     order: MerchantOrder,
   ) {
     if (action === 'deliver') {
@@ -228,6 +232,10 @@ export default function MerchantDashboardPage() {
     }
     if (action === 'respond_dispute') {
       setDisputeOrder(order)
+      return
+    }
+    if (action === 'post_progress') {
+      setProgressOrder(order)
       return
     }
     if (action === 'reject') {
@@ -262,10 +270,17 @@ export default function MerchantDashboardPage() {
     }
   }
 
-  async function handleDeliverSubmit(payload: { deliveryContent?: string; structuredValues?: Record<string, string> }) {
+  async function handleDeliverSubmit(payload: { deliveryContent?: string; structuredValues?: Record<string, string>; attachmentFileId?: number; publicNote?: string }) {
     if (!deliveringOrder) return
     await deliverOrder(deliveringOrder.id, payload)
     showToast('发货成功')
+    loadData()
+  }
+
+  async function handleProgressSubmit(note: string) {
+    if (!progressOrder) return
+    await postOrderProgress(progressOrder.id, note)
+    showToast('进度已更新')
     loadData()
   }
 
@@ -630,6 +645,15 @@ export default function MerchantDashboardPage() {
                                 拒单
                               </button>
                             )}
+                            {o.availableActions?.includes('post_progress') && (
+                              <button
+                                onClick={() => handleOrderAction('post_progress', o)}
+                                className="btn-secondary btn-sm mr-2"
+                                data-testid={`merchant-post-progress-${o.id}`}
+                              >
+                                进度更新
+                              </button>
+                            )}
                             {o.availableActions?.includes('deliver') && (
                               <button onClick={() => handleOrderAction('deliver', o)} className="btn-primary btn-sm mr-2">
                                 发货
@@ -800,6 +824,13 @@ export default function MerchantDashboardPage() {
         onClose={() => setDisputeOrder(null)}
         order={disputeOrder}
         onSubmit={handleDisputeSubmit}
+      />
+
+      <MerchantProgressDialog
+        isOpen={progressOrder !== null}
+        onClose={() => setProgressOrder(null)}
+        order={progressOrder}
+        onSubmit={handleProgressSubmit}
       />
 
       <Dialog open={!!rejectingOrder} onOpenChange={(o) => { if (!o && !rejecting) setRejectingOrder(null) }}>

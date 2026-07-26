@@ -38,6 +38,23 @@ const ACTION_COPY: Record<OrderAction, { title: string; description: string; con
   },
 }
 
+/**
+ * P6b：人工服务订单在 delivered 时复用 close/dispute 语义作显式验收，
+ * 仅措辞不同（决策 ③）——close = 验收通过，dispute = 验收异议。
+ */
+const ACCEPTANCE_ACTION_COPY: Record<OrderAction, { title: string; description: string; confirmLabel: string }> = {
+  dispute: {
+    title: '验收异议',
+    description: '确认对履约结果提出异议吗？这会暂停该订单的结算，平台与商家将介入处理。',
+    confirmLabel: '确认提出异议',
+  },
+  close: {
+    title: '验收通过',
+    description: '确认验收通过？确认后订单关闭并结算给商家。',
+    confirmLabel: '确认验收通过',
+  },
+}
+
 /** P6a：到期时刻按「YYYY-MM-DD HH:mm」展示。 */
 function formatExpiry(iso: string) {
   const d = new Date(iso)
@@ -155,6 +172,12 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
 
   const canDispute = order.status === 'delivered'
   const canClose = order.status === 'delivered' || order.status === 'disputed'
+  // P6b：人工服务订单 delivered 阶段以「验收」措辞呈现关闭/争议（disputed 阶段保持原措辞）。
+  const isAcceptance = order.deliveryMode === 'manual_service' && order.status === 'delivered'
+  const actionCopy = isAcceptance ? ACCEPTANCE_ACTION_COPY : ACTION_COPY
+  // P6b：履约进度（merchant.progress 同态事件）单独倒序展示，避免与状态时间线混排重复。
+  const progressEvents = (order.timeline ?? []).filter((e) => e.action === 'merchant.progress')
+  const statusTimeline = (order.timeline ?? []).filter((e) => e.action !== 'merchant.progress')
   const canReview = !!order.canReview && !review
   const isRefunded = order.status === 'refunded'
   // P6a：订阅到期投影。expired 以服务端裁决为准，前端不自行推算。
@@ -366,13 +389,37 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
             </div>
           )}
 
+          {/* P6b：履约动态——商家发布的进度说明，倒序（最新在前） */}
+          {progressEvents.length > 0 && (
+            <div className="bg-[var(--color-background)] rounded-lg p-5 border border-[var(--color-border)]">
+              <h3 className="font-heading text-sm font-bold text-[var(--color-text)] mb-3 flex items-center gap-2">
+                <Clock className="w-4 h-4 text-[var(--color-text-muted)]" /> 履约动态
+              </h3>
+              <div className="space-y-4" data-testid="order-progress-timeline">
+                {[...progressEvents].reverse().map((event, idx) => (
+                  <div key={event.id ?? idx} className="relative pl-4 border-l-2 border-[var(--color-border)]">
+                    <div className="absolute -left-1.5 top-0.5 w-2.5 h-2.5 rounded-full bg-[var(--color-primary)] ring-4 ring-[var(--color-background)]" />
+                    <div className="text-xs text-[var(--color-text-muted)]">
+                      {event.createdAt ? new Date(event.createdAt).toLocaleString() : ''}
+                    </div>
+                    {event.publicNote && (
+                      <div className="mt-1 text-xs text-[var(--color-text)] bg-[var(--color-surface)] p-2 rounded border border-[var(--color-border)]">
+                        {event.publicNote}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* 订单时间线 */}
           <div className="bg-[var(--color-background)] rounded-lg p-5 border border-[var(--color-border)]">
             <h3 className="font-heading text-sm font-bold text-[var(--color-text)] mb-3 flex items-center gap-2">
               <Clock className="w-4 h-4 text-[var(--color-text-muted)]" /> 订单动态
             </h3>
             <div className="space-y-4">
-              {order.timeline?.map((event, idx) => (
+              {statusTimeline.map((event, idx) => (
                 <div key={idx} className="relative pl-4 border-l-2 border-[var(--color-border)]">
                   <div className="absolute -left-1.5 top-0.5 w-2.5 h-2.5 rounded-full bg-[var(--color-border)] ring-4 ring-[var(--color-background)]" />
                   <div className="text-xs font-bold text-[var(--color-text)] mb-0.5">
@@ -411,7 +458,7 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
               data-testid="order-dispute-button"
               className="btn-secondary px-4 border-[var(--color-warning)] text-[var(--color-warning)]"
             >
-              {loadingAction === 'dispute' ? <Loader2 className="w-4 h-4 animate-spin" /> : '发起争议'}
+              {loadingAction === 'dispute' ? <Loader2 className="w-4 h-4 animate-spin" /> : isAcceptance ? '验收异议' : '发起争议'}
             </button>
           )}
           {canClose && (
@@ -421,7 +468,7 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
               data-testid="order-close-button"
               className="btn-secondary px-4 border-[var(--color-cta)] text-[var(--color-cta)]"
             >
-              {loadingAction === 'close' ? <Loader2 className="w-4 h-4 animate-spin" /> : '结束订单'}
+              {loadingAction === 'close' ? <Loader2 className="w-4 h-4 animate-spin" /> : isAcceptance ? '验收通过' : '结束订单'}
             </button>
           )}
           {canReview && (
@@ -453,9 +500,9 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
           className="!z-[120]"
           data-testid={confirmAction === 'close' ? 'close-order-dialog' : 'dispute-dialog'}
         >
-          <DialogTitle>{confirmAction ? ACTION_COPY[confirmAction].title : ''}</DialogTitle>
+          <DialogTitle>{confirmAction ? actionCopy[confirmAction].title : ''}</DialogTitle>
           <DialogDescription>
-            {confirmAction ? ACTION_COPY[confirmAction].description : ''}
+            {confirmAction ? actionCopy[confirmAction].description : ''}
           </DialogDescription>
           <div className="mt-5 flex justify-end gap-3">
             <button
@@ -475,7 +522,7 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
                   : 'btn-primary px-5 py-2 text-sm'
               }
             >
-              {confirmAction ? ACTION_COPY[confirmAction].confirmLabel : ''}
+              {confirmAction ? actionCopy[confirmAction].confirmLabel : ''}
             </button>
           </div>
         </DialogContent>
