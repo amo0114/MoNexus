@@ -445,13 +445,13 @@ export default function ProductCreateWizard() {
                         {index !== 0 && (
                           <button type="button" title="设为封面" aria-label={`将第 ${index + 1} 张设为封面`}
                             onClick={() => setImages(prev => { const next = [...prev]; const [p] = next.splice(index, 1); next.unshift(p); return next })}
-                            className="p-1 rounded bg-white/90 text-[var(--color-text)] hover:bg-white cursor-pointer">
+                            className="icon-btn p-1 rounded bg-white/90 text-[var(--color-text)] hover:bg-white cursor-pointer">
                             <Star className="w-3.5 h-3.5" />
                           </button>
                         )}
                         <button type="button" title="删除" aria-label={`删除第 ${index + 1} 张图片`}
                           onClick={() => setImages(prev => prev.filter((_, i) => i !== index))}
-                          className="p-1 rounded bg-white/90 text-[var(--color-danger)] hover:bg-white cursor-pointer">
+                          className="icon-btn p-1 rounded bg-white/90 text-[var(--color-danger)] hover:bg-white cursor-pointer">
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
                       </div>
@@ -525,7 +525,7 @@ export default function ProductCreateWizard() {
                         <span className="text-sm font-bold text-[var(--color-text)]">附加规格 {index + 1}</span>
                         <button type="button" aria-label="删除该规格"
                           onClick={() => setExtraOffers(prev => prev.filter((_, i) => i !== index))}
-                          className="p-1.5 text-[var(--color-text-muted)] hover:text-[var(--color-danger)] cursor-pointer"
+                          className="icon-btn p-1.5 text-[var(--color-text-muted)] hover:text-[var(--color-danger)] cursor-pointer"
                           data-testid={`wizard-extra-offer-remove-${index}`}>
                           <Trash2 className="w-4 h-4" />
                         </button>
