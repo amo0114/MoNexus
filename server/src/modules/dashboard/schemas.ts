@@ -6,6 +6,12 @@ export const TimeseriesQuerySchema = z.object({
   range: RangeSchema,
 })
 
+// P5.5 T2：/offers 缺省 30d（月视图）；显式传入仍必须是合法枚举，
+// 非法值与 /timeseries 同文案 400。
+export const OffersQuerySchema = z.object({
+  range: RangeSchema.default('30d'),
+})
+
 export const DashboardSummarySchema = z.object({
   monthOrderCount: z.number().int().nonnegative(),
   monthPointsRevenue: z.number().int().nonnegative(),
@@ -24,6 +30,19 @@ export const DashboardTopProductSchema = z.object({
   name: z.string(),
   soldCount: z.number().int().nonnegative(),
   pointsRevenue: z.number().int().nonnegative(),
+})
+
+export const DashboardTopOfferSchema = z.object({
+  offerId: z.number().int().positive().nullable(),
+  offerName: z.string(),
+  productId: z.number().int().positive(),
+  productName: z.string(),
+  soldCount: z.number().int().nonnegative(),
+  pointsRevenue: z.number().int().nonnegative(),
+})
+
+export const DashboardTopOffersSchema = z.object({
+  items: z.array(DashboardTopOfferSchema),
 })
 
 export const DashboardStatusBreakdownSchema = z.object({
