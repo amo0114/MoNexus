@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { prisma } from '../lib/prisma.js'
 import { transitionOrderStatus } from '../modules/orders/fulfillment.js'
 import { postOrderProgress } from '../modules/merchant/service.js'
+import { resolveOrder } from '../modules/admin/service.js'
 import {
   api,
   authHeader,
@@ -19,7 +20,9 @@ import {
  * - P1-2：原单退款后，待交付的人工续费单不得继承已退款原单的剩余有效期；
  * - P2-1：过期订阅争议重交付重置 expiresAt 后，SubscriptionReminder 复位；
  * - P2-2：商品创建 API 可直接给默认规格设 validityDays；
- * - P2-4：进度发布与交付并发时，交付后不得再写 processing→processing 事件。
+ * - P2-4：进度发布与交付并发时，交付后不得再写 processing→processing 事件；
+ * - 复审二 P1：续费（Order→Offer）与仲裁退款（此前 Offer→Order）锁序反转
+ *   死锁——仲裁事务起点先锁订单行后，两条路径在原单行上串行化。
  */
 
 const DAY_MS = 24 * 60 * 60 * 1000
@@ -48,29 +51,83 @@ async function buySubscription(tag: string) {
   return { merchant, buyer, productId: product.id, offerId, orderId: order.body.orderId as number }
 }
 
+/**
+ * 显式 barrier：轮询 pg_stat_activity 直到有会话在行锁上排队。并发测试
+ * 不允许"Promise.all + 固定 sleep 撞时序"——必须确证竞争方真的在等锁，
+ * 否则两个请求可能实际串行执行，测试假绿（复审二 P2）。
+ */
+async function waitForRowLockWaiter(): Promise<string[]> {
+  for (let i = 0; i < 250; i++) {
+    const rows = await prisma.$queryRaw<{ query: string }[]>`
+      SELECT query FROM pg_stat_activity
+      WHERE datname = current_database() AND state = 'active' AND wait_event_type = 'Lock'`
+    if (rows.length > 0) return rows.map(r => r.query)
+    await new Promise(r => setTimeout(r, 20))
+  }
+  throw new Error('barrier: 没有观察到在行锁上排队的会话')
+}
+
 describe('P1-1: concurrent renewals of the same original are serialized', () => {
-  it('exactly one of two concurrent renewal orders succeeds; the loser gets RENEW_ALREADY_RENEWED', async () => {
-    const { buyer, productId, orderId } = await buySubscription('race')
+  it('a renewal queued behind the original-order lock re-checks and gets RENEW_ALREADY_RENEWED', async () => {
+    const { buyer, productId, offerId, orderId } = await buySubscription('race')
     const originalExpiry = new Date(Date.now() + 5 * DAY_MS)
     await prisma.deliveryRecord.update({ where: { orderId }, data: { expiresAt: originalExpiry } })
+    const buyerUser = await prisma.user.findUniqueOrThrow({ where: { email: 'rvw-race-b@test.local' } })
 
-    // 两个独立结算意图（不同幂等键路径：都不带 idempotencyKey，各自成单意图）。
-    const [a, b] = await Promise.all([
-      api.post('/api/orders').set(authHeader(buyer.accessToken))
-        .send({ productId, expectedPrice: 100, renewalOfOrderId: orderId }),
-      api.post('/api/orders').set(authHeader(buyer.accessToken))
-        .send({ productId, expectedPrice: 100, renewalOfOrderId: orderId }),
+    // 受控交错：事务 A 模拟"第一笔续费"的临界区——持原单行锁期间落下
+    // 续费单，行锁未释放前不提交。
+    let releaseA!: () => void
+    const gate = new Promise<void>(resolve => { releaseA = resolve })
+    let lockHeld!: () => void
+    const held = new Promise<void>(resolve => { lockHeld = resolve })
+    let firstRenewalId = 0
+    const txA = prisma.$transaction(async tx => {
+      await tx.$queryRaw`SELECT "id" FROM "Order" WHERE "id" = ${orderId} FOR UPDATE`
+      const first = await tx.order.create({
+        data: {
+          userId: buyerUser.id,
+          productId,
+          offerId,
+          price: 100,
+          status: 'delivered',
+          deliveryModeSnapshot: 'instant_inventory',
+          validityDaysSnapshot: VALIDITY_DAYS,
+          renewalOfOrderId: orderId,
+        },
+      })
+      firstRenewalId = first.id
+      await tx.deliveryRecord.create({
+        data: {
+          orderId: first.id,
+          userId: buyerUser.id,
+          productId,
+          content: 'rv-race',
+          status: 'delivered',
+          deliveredAt: new Date(),
+          expiresAt: new Date(originalExpiry.getTime() + VALIDITY_DAYS * DAY_MS),
+        },
+      })
+      lockHeld()
+      await gate
+    })
+    await held
+
+    // 第二笔续费走真实 API：必须在原单行锁上排队（barrier 确证），
+    // 锁释放后重查续费链 → RENEW_ALREADY_RENEWED，绝不能重复成单。
+    const second = api.post('/api/orders').set(authHeader(buyer.accessToken))
+      .send({ productId, expectedPrice: 100, renewalOfOrderId: orderId })
+    const [secondRes] = await Promise.all([
+      second,
+      (async () => { await waitForRowLockWaiter(); releaseA(); await txA })(),
     ])
 
-    const statuses = [a.status, b.status].sort()
-    expect(statuses).toEqual([201, 400])
-    const loser = a.status === 400 ? a : b
-    expect(loser.body.error.code).toBe('RENEW_ALREADY_RENEWED')
+    expect(secondRes.status).toBe(400)
+    expect(secondRes.body.error.code).toBe('RENEW_ALREADY_RENEWED')
 
-    // 只有一张续费单；其到期 = 原到期 + 30 天（没有第二张"再顺延一份"）。
+    // 只有事务 A 的一张续费单；到期只顺延一份。
     const renewals = await prisma.order.findMany({ where: { renewalOfOrderId: orderId } })
-    expect(renewals).toHaveLength(1)
-    const delivery = await prisma.deliveryRecord.findUniqueOrThrow({ where: { orderId: renewals[0].id } })
+    expect(renewals.map(r => r.id)).toEqual([firstRenewalId])
+    const delivery = await prisma.deliveryRecord.findUniqueOrThrow({ where: { orderId: firstRenewalId } })
     expect(delivery.expiresAt!.getTime()).toBe(originalExpiry.getTime() + VALIDITY_DAYS * DAY_MS)
   })
 })
@@ -218,11 +275,14 @@ describe('P2-4: progress posting is serialized against delivery', () => {
     await api.post(`/api/merchant/orders/${orderId}/fulfillment/start`)
       .set(authHeader(seller.accessToken)).send({}).expect(200)
 
-    // 受控交错：交付事务先持有订单行锁但不提交 → 进度请求在行锁上排队 →
-    // 交付提交后进度重读状态必须拒绝（旧实现会在旧快照上写入
-    // processing→processing 事件，出现在交付之后）。
+    // 受控交错：交付事务先持有订单行锁（transitionOrderStatus 的行更新即
+    // 取锁）但不提交 → 进度请求在行锁上排队（barrier 确证）→ 交付提交后
+    // 进度重读状态必须拒绝（旧实现会在旧快照上写入 processing→processing
+    // 事件，出现在交付之后）。
     let releaseDelivery!: () => void
     const gate = new Promise<void>(resolve => { releaseDelivery = resolve })
+    let lockHeld!: () => void
+    const held = new Promise<void>(resolve => { lockHeld = resolve })
     const deliveryTx = prisma.$transaction(async tx => {
       await transitionOrderStatus({
         orderId,
@@ -232,13 +292,13 @@ describe('P2-4: progress posting is serialized against delivery', () => {
         action: 'merchant.fulfillment.deliver',
         deliveryContent: '并发交付',
       }, tx)
+      lockHeld()
       await gate
     })
+    await held
 
-    // 等交付事务真正拿到行锁后再发进度请求。
-    await new Promise(r => setTimeout(r, 200))
     const progress = postOrderProgress(merchant.id, merchantUser.id, orderId, { note: '进行中' })
-    await new Promise(r => setTimeout(r, 200))
+    await waitForRowLockWaiter()
     releaseDelivery()
     await deliveryTx
 
@@ -247,5 +307,54 @@ describe('P2-4: progress posting is serialized against delivery', () => {
     expect(await prisma.orderStatusEvent.count({
       where: { orderId, action: 'merchant.progress' },
     })).toBe(0)
+  })
+})
+
+describe('复审二 P1: renewal × admin arbitration refund lock ordering', () => {
+  it('arbitration queues on the order lock (never Offer-before-Order) while a renewal holds Order→Offer', async () => {
+    const { buyer, productId, offerId, orderId } = await buySubscription('arb')
+    await prisma.deliveryRecord.update({
+      where: { orderId },
+      data: { expiresAt: new Date(Date.now() + 5 * DAY_MS) },
+    })
+    // disputed 的订阅原单仍可续费——这是两条路径能同时碰同一 Order/Offer 的前提。
+    await api.post(`/api/orders/${orderId}/dispute`).set(authHeader(buyer.accessToken)).expect(200)
+    const { user: admin } = await createTestUser('rvw-arb-admin@test.local', 'pass123', 'admin')
+
+    // 受控交错：事务 A 复现续费的加锁序（先锁原单行，再写同一 Offer 行）
+    // 并持锁不提交。修复后的仲裁退款必须在事务起点的 Order FOR UPDATE 上
+    // 排队（barrier 确证），而不是先抢 Offer 行造成 Order↔Offer 循环等待
+    // ——旧实现在这里会死锁，其中一方被 Postgres 强杀报 500。
+    let releaseA!: () => void
+    const gate = new Promise<void>(resolve => { releaseA = resolve })
+    let locksHeld!: () => void
+    const held = new Promise<void>(resolve => { locksHeld = resolve })
+    const renewalCriticalSection = prisma.$transaction(async tx => {
+      await tx.$queryRaw`SELECT "id" FROM "Order" WHERE "id" = ${orderId} FOR UPDATE`
+      await tx.offer.update({ where: { id: offerId }, data: { sales: { increment: 0 } } })
+      locksHeld()
+      await gate
+    })
+    await held
+
+    const arbitration = resolveOrder(admin.id, orderId, { result: 'refund' })
+    const waitingQueries = await waitForRowLockWaiter()
+    // 锁序断言：仲裁必须阻塞在事务起点的 Order FOR UPDATE 上。旧实现的
+    // 首个阻塞点是回补策略的 UPDATE "Offer"——此断言在旧代码下失败。
+    expect(waitingQueries.some(q => q.includes('"Order"') && q.includes('FOR UPDATE'))).toBe(true)
+    expect(waitingQueries.some(q => q.includes('UPDATE') && q.includes('"Offer"'))).toBe(false)
+    releaseA()
+    await renewalCriticalSection
+    // 无死锁：仲裁在锁释放后正常完成，订单退款落地。
+    await arbitration
+    const order = await prisma.order.findUniqueOrThrow({ where: { id: orderId } })
+    expect(order.status).toBe('refunded')
+
+    // 原单已退款后再续费：终检拒绝，不产生新单。
+    const late = await api.post('/api/orders').set(authHeader(buyer.accessToken))
+      .send({ productId, expectedPrice: 100, renewalOfOrderId: orderId })
+      .expect(400)
+    expect(late.body.error.code).toBe('RENEW_INVALID')
+    expect(await prisma.order.count({ where: { renewalOfOrderId: orderId } })).toBe(0)
   })
 })

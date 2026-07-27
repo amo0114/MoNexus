@@ -682,6 +682,12 @@ export async function resolveOrder(
   input: ResolveOrderInput
 ) {
   await prisma.$transaction(async tx => {
+    // 复审二 P1：事务起点先锁订单行，再读取校验。仲裁退款此前的写序是
+    // Offer/Product（回补策略）→ Order（状态迁移），而续费下单是 Order
+    // （原单 FOR UPDATE）→ Offer/Product（销量/库存）——disputed 的订阅
+    // 原单仍可续费，两条路径并发即 Order↔Offer 循环等待死锁。统一为
+    // "先锁 Order 再碰 Offer/Product"后，续费与仲裁在原单行上串行化。
+    await tx.$queryRaw`SELECT "id" FROM "Order" WHERE "id" = ${orderId} FOR UPDATE`
     const order = await tx.order.findUnique({
       where: { id: orderId },
       select: {

@@ -59,7 +59,7 @@ export async function issueOrderFileDownloadUrl(orderId: number, requester: Requ
         select: {
           fileId: true,
           deliveredAt: true,
-          // P6a：订阅到期时刻——买家发放与下载窗口取较严者。
+          // P6a：订阅到期时刻——订阅交付豁免平台下载窗口，只受它约束。
           expiresAt: true,
           file: { select: { id: true, key: true, fileName: true, size: true, status: true } },
         },

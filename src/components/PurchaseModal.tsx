@@ -12,15 +12,15 @@ export type ConfirmOutcome = 'success' | 'price_changed' | 'verification_require
  * 否则海外浏览器或跨日凌晨时，前端允许的边界日会被服务端 400。
  */
 function localDatePlusDays(days: number): string {
-  // en-CA 的日期格式恰好是 YYYY-MM-DD。
-  const today = new Intl.DateTimeFormat('en-CA', {
+  // formatToParts 显式取字段——不依赖 locale 的完整 format() 输出格式。
+  const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Shanghai',
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
-  }).format(new Date())
-  const [y, m, d] = today.split('-').map(Number)
-  const shifted = new Date(Date.UTC(y, m - 1, d + days))
+  }).formatToParts(new Date())
+  const get = (type: string) => Number(parts.find(p => p.type === type)!.value)
+  const shifted = new Date(Date.UTC(get('year'), get('month') - 1, get('day') + days))
   const pad = (n: number) => String(n).padStart(2, '0')
   return `${shifted.getUTCFullYear()}-${pad(shifted.getUTCMonth() + 1)}-${pad(shifted.getUTCDate())}`
 }

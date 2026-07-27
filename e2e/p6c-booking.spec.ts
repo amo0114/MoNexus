@@ -13,11 +13,11 @@ const DAY_MS = 24 * 60 * 60 * 1000
 
 /** 业务日历（Asia/Shanghai）今天 + N 天，YYYY-MM-DD——与前端提示/服务端校验同口径。 */
 function businessDatePlus(days: number): string {
-  const today = new Intl.DateTimeFormat('en-CA', {
+  const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit',
-  }).format(new Date())
-  const [y, m, d] = today.split('-').map(Number)
-  const shifted = new Date(Date.UTC(y, m - 1, d) + days * DAY_MS)
+  }).formatToParts(new Date())
+  const get = (type: string) => Number(parts.find(p => p.type === type)!.value)
+  const shifted = new Date(Date.UTC(get('year'), get('month') - 1, get('day')) + days * DAY_MS)
   const pad = (n: number) => String(n).padStart(2, '0')
   return `${shifted.getUTCFullYear()}-${pad(shifted.getUTCMonth() + 1)}-${pad(shifted.getUTCDate())}`
 }

@@ -16,7 +16,8 @@ export const BUSINESS_TIME_ZONE = 'Asia/Shanghai'
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
-// en-CA 的日期格式恰好是 YYYY-MM-DD；formatter 可复用（Intl 构造开销大）。
+// 复审二 P2：不依赖 en-CA locale 的完整 format() 输出恰为 YYYY-MM-DD——
+// 用 formatToParts 显式取字段自行拼接，locale 数据差异不再影响存储值。
 const businessDayFormatter = new Intl.DateTimeFormat('en-CA', {
   timeZone: BUSINESS_TIME_ZONE,
   year: 'numeric',
@@ -26,7 +27,9 @@ const businessDayFormatter = new Intl.DateTimeFormat('en-CA', {
 
 /** 某一时刻在业务时区的日历日，格式 YYYY-MM-DD。 */
 export function businessDateString(instant: Date = new Date()): string {
-  return businessDayFormatter.format(instant)
+  const parts = businessDayFormatter.formatToParts(instant)
+  const get = (type: Intl.DateTimeFormatPartTypes) => parts.find(p => p.type === type)!.value
+  return `${get('year')}-${get('month').padStart(2, '0')}-${get('day').padStart(2, '0')}`
 }
 
 /**
