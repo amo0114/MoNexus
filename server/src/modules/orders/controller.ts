@@ -21,6 +21,7 @@ export async function create(req: Request, res: Response, next: NextFunction) {
       formAnswers: req.body.formAnswers,
       expectedPurchaseFormVersion: req.body.expectedPurchaseFormVersion,
       verificationPassword: req.body.verificationPassword,
+      renewalOfOrderId: req.body.renewalOfOrderId,
       idempotencyKey,
     })
     res.status(201).json(result)
@@ -63,6 +64,19 @@ export async function close(req: Request, res: Response, next: NextFunction) {
       req.user!.userId,
     )
     res.json(order)
+  } catch (err) {
+    next(err)
+  }
+}
+
+// P6a：手动续费预检——只读无副作用；实际续费走标准下单携带 renewalOfOrderId。
+export async function renewPrecheck(req: Request, res: Response, next: NextFunction) {
+  try {
+    const result = await orderService.renewOrderPrecheck(
+      req.params.id as unknown as number,
+      req.user!.userId,
+    )
+    res.json(result)
   } catch (err) {
     next(err)
   }

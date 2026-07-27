@@ -29,6 +29,8 @@ export interface Offer {
   fixedFile?: { fileName: string; size: number; status: string } | null
   /** P5：公开接口上 file 形态的文件大小(字节)。 */
   deliveryFileSize?: number | null
+  /** P6a：订阅有效期(天),null/缺省 = 永久;下单快照冻结,改动仅影响新订单。 */
+  validityDays?: number | null
   sales?: number
   sortOrder?: number
   /** 每商品恰有一条默认规格;商品级兼容路径(旧编辑/未指定规格的库存操作)落到它。 */
@@ -66,6 +68,8 @@ export interface OfferWriteRequest {
   /** P5：file 形态挂载的交付文件;null 清空(配合切回 text/url)。 */
   fixedFileId?: number | null
   sortOrder?: number
+  /** P6a：订阅有效期(1-3650 天);null = 永久。 */
+  validityDays?: number | null
   /** P4b：交付字段模板;null 清空回纯文本交付。 */
   deliveryFields?: DeliveryField[] | null
   /** 仅更新时接受;true = 把默认转移到本规格(不能传 false 取消默认)。 */
@@ -147,10 +151,14 @@ export interface MerchantProduct {
 export interface PurchaseFormField {
   key: string
   label: string
-  type: 'text' | 'select'
+  type: 'text' | 'select' | 'date'
   required: boolean
   placeholder?: string
   options?: string[]
+  /** P6c：date 字段专属——最早可约（今天 + N 天，默认 1）。 */
+  minDaysAhead?: number
+  /** P6c：date 字段专属——最晚可约（今天 + N 天，默认 30）。 */
+  maxDaysAhead?: number
 }
 
 export interface MerchantOrder {
@@ -180,10 +188,12 @@ export interface MerchantOrder {
   } | null
   settlement?: Settlement | null
   availableActions?: string[]
-  statusEvents?: any[]
+  statusEvents?: import('./order').OrderStatusEvent[]
   holdingPoints?: number | null
   fulfillmentDeadline?: string | null
   slaExceeded?: boolean
+  /** P6c：预约日期（YYYY-MM-DD，来自 date 表单答案的投影）；null = 非预约单。 */
+  bookingDate?: string | null
   /** 仅订单详情接口返回；列表按敏感边界剥离。 */
   purchaseFormSnapshot?: Array<{ key: string; label: string; type: string }> | null
   purchaseFormAnswers?: Record<string, string> | null

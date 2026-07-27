@@ -3,6 +3,7 @@ import { Search, ShoppingCart } from 'lucide-react'
 import { getAdminOrders, resolveAdminOrder, AdminOrderItem } from '../../api/admin'
 import { getApiErrorMessage } from '../../api/error'
 import { useAppStore } from '../../stores/appStore'
+import { formatBookingDay, formatLocalDate } from '../../utils/formatLocalDate'
 import RegistryPill from '../ui/RegistryPill'
 import AdminPagination from './AdminPagination'
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '../ui/Dialog'
@@ -140,7 +141,42 @@ export default function AdminOrderTable() {
                   <div className="font-bold text-[var(--color-text)]">U{o.user?.id}</div>
                   <div className="text-xs text-[var(--color-text-muted)]">{o.user?.email}</div>
                 </td>
-                <td className="text-[var(--color-text-muted)] text-sm" data-label="商品信息">{o.product?.name}</td>
+                <td className="text-[var(--color-text-muted)] text-sm" data-label="商品信息">
+                  <div>{o.product?.name}</div>
+                  {/* P6：仲裁上下文小标——预约日期 / 订阅到期 / 续费来源 */}
+                  {(o.bookingDate || o.delivery?.expiresAt || o.renewalOfOrderId != null) && (
+                    <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                      {o.bookingDate && (
+                        <span
+                          className="text-xs font-bold text-[var(--color-primary)] bg-[var(--color-primary)]/10 px-1.5 py-0.5 rounded border border-[var(--color-primary)]/20"
+                          data-testid={`admin-order-booking-${o.id}`}
+                        >
+                          预约 {formatBookingDay(o.bookingDate)}
+                        </span>
+                      )}
+                      {o.delivery?.expiresAt && (
+                        <span
+                          className={
+                            o.delivery.expired
+                              ? 'text-xs font-bold text-[var(--color-danger)] bg-[var(--color-danger)]/10 px-1.5 py-0.5 rounded border border-[var(--color-danger)]/30'
+                              : 'text-xs font-medium text-[var(--color-text-muted)] bg-[var(--color-background)] px-1.5 py-0.5 rounded border border-[var(--color-border)]'
+                          }
+                          data-testid={`admin-order-expiry-${o.id}`}
+                        >
+                          订阅至 {formatLocalDate(o.delivery.expiresAt)}{o.delivery.expired ? ' 已过期' : ''}
+                        </span>
+                      )}
+                      {o.renewalOfOrderId != null && (
+                        <span
+                          className="text-xs font-medium text-[var(--color-text-muted)] bg-[var(--color-background)] px-1.5 py-0.5 rounded border border-[var(--color-border)]"
+                          data-testid={`admin-order-renewal-${o.id}`}
+                        >
+                          续费自 #{o.renewalOfOrderId}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </td>
                 <td className="text-[var(--color-cta)] font-bold" data-label="扣除积分">{o.price}</td>
                 <td data-label="状态">
                   <RegistryPill value={o.status} category="orderStatuses" />

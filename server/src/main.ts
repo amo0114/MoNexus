@@ -7,12 +7,18 @@ import { quitRedis } from './lib/redis.js'
 import { startOrderCron, stopOrderCron } from './modules/orders/cron.js'
 import { startFileCleanupCron, stopFileCleanupCron } from './lib/fileCleanup.js'
 import { startLowStockNotifyCron, stopLowStockNotifyCron } from './lib/lowStockNotify.js'
+import { startSubscriptionRemindCron, stopSubscriptionRemindCron } from './lib/subscriptionRemind.js'
+import { startSlaRemindCron, stopSlaRemindCron } from './lib/slaRemind.js'
+import { startBookingRemindCron, stopBookingRemindCron } from './lib/bookingRemind.js'
 
 const server = app.listen(config.port, () => {
   logger.info(`MoNexus API running at http://localhost:${config.port}`)
   startOrderCron()
   startFileCleanupCron()
   startLowStockNotifyCron()
+  startSubscriptionRemindCron()
+  startSlaRemindCron()
+  startBookingRemindCron()
 })
 
 let shuttingDown = false
@@ -37,6 +43,9 @@ async function shutdown(signal: NodeJS.Signals) {
       stopOrderCron()
   stopFileCleanupCron()
   stopLowStockNotifyCron()
+  stopSubscriptionRemindCron()
+  stopSlaRemindCron()
+  stopBookingRemindCron()
       await prisma.$disconnect()
       clearTimeout(forceExit)
       logger.info({ signal }, 'shutdown completed')

@@ -1,8 +1,11 @@
 import { useState } from 'react'
-import { Copy, Package, Store, Clock, Coins, Info, Loader2 } from 'lucide-react'
+import { formatBookingDay } from '../utils/formatLocalDate'
+import { Copy, Package, Store, Clock, Coins, Info, Loader2, RefreshCw } from 'lucide-react'
 import { UserOrderDetail } from '../types/order'
 import { useAppStore } from '../stores/appStore'
-import { disputeOrder, closeOrder } from '../api/orders'
+import { useAuthStore } from '../stores/authStore'
+import { disputeOrder, closeOrder, createOrder, renewOrder, type RenewPrecheck } from '../api/orders'
+import { getApiErrorCode, getApiErrorMessage } from '../api/error'
 import { OwnReview } from '../api/reviews'
 import RegistryPill from './ui/RegistryPill'
 import StructuredDeliveryView from './StructuredDeliveryView'
@@ -10,6 +13,8 @@ import FileDeliveryCard from './FileDeliveryCard'
 import SafeImage from './ui/SafeImage'
 import StarRating from './ui/StarRating'
 import ReviewDialog from './ReviewDialog'
+import PurchaseModal, { type ConfirmOutcome } from './PurchaseModal'
+import type { CheckoutPreview } from '../api/orders'
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from './ui/Dialog'
 
 interface OrderDetailModalProps {
@@ -34,6 +39,30 @@ const ACTION_COPY: Record<OrderAction, { title: string; description: string; con
   },
 }
 
+/**
+ * P6b：人工服务订单在 delivered 时复用 close/dispute 语义作显式验收，
+ * 仅措辞不同（决策 ③）——close = 验收通过，dispute = 验收异议。
+ */
+const ACCEPTANCE_ACTION_COPY: Record<OrderAction, { title: string; description: string; confirmLabel: string }> = {
+  dispute: {
+    title: '验收异议',
+    description: '确认对履约结果提出异议吗？这会暂停该订单的结算，平台与商家将介入处理。',
+    confirmLabel: '确认提出异议',
+  },
+  close: {
+    title: '验收通过',
+    description: '确认验收通过？确认后订单关闭并结算给商家。',
+    confirmLabel: '确认验收通过',
+  },
+}
+
+/** P6a：到期时刻按「YYYY-MM-DD HH:mm」展示。 */
+function formatExpiry(iso: string) {
+  const d = new Date(iso)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
 export default function OrderDetailModal({ order: initialOrder, onClose, onUpdated }: OrderDetailModalProps) {
   const showToast = useAppStore((s) => s.showToast)
   const [order] = useState(initialOrder)
@@ -41,6 +70,10 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
   const [confirmAction, setConfirmAction] = useState<OrderAction | null>(null)
   const [reviewOpen, setReviewOpen] = useState(false)
   const [review, setReview] = useState<OwnReview | null>(initialOrder.review ?? null)
+  // P6a：续费预检结果；非 null 时打开标准结算弹窗（新订单带 renewalOfOrderId）。
+  const [renewInfo, setRenewInfo] = useState<RenewPrecheck | null>(null)
+  const [renewLoading, setRenewLoading] = useState(false)
+  const [renewSubmitting, setRenewSubmitting] = useState(false)
 
   function copyContent() {
     if (!order.delivery?.content) return
@@ -64,10 +97,106 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
     }
   }
 
+  /** P6a：续费预检；规格已下架等 400 直接以文案提示，通过后进入结算弹窗。 */
+  async function startRenew() {
+    if (renewLoading) return
+    setRenewLoading(true)
+    try {
+      setRenewInfo(await renewOrder(order.id))
+    } catch (e: any) {
+      const code = getApiErrorCode(e)
+      if (code === 'RENEW_OFFER_UNAVAILABLE') {
+        showToast('该规格已下架，无法续费', 'error')
+      } else if (code === 'RENEW_ALREADY_RENEWED') {
+        // 陈旧详情兜底：本单已续费，续费须在最新订单上发起。
+        showToast('该订单已续费，请在最新的续费订单上操作', 'error')
+      } else {
+        showToast(getApiErrorMessage(e, '暂无法续费，请稍后再试'), 'error')
+      }
+    } finally {
+      setRenewLoading(false)
+    }
+  }
+
+  /**
+   * P6a：续费下单。复用标准结算契约（expectedPrice / checkoutVersion /
+   * purchaseFormVersion / 幂等键），仅额外携带 renewalOfOrderId 关联原订单；
+   * 交付时服务端按原到期时间顺延或自交付起算。结果码处理与商品页购买一致。
+   */
+  async function handleRenewConfirm(
+    preview: CheckoutPreview,
+    idempotencyKey: string,
+    formAnswers: Record<string, string>,
+    verificationPassword: string
+  ): Promise<ConfirmOutcome> {
+    if (!renewInfo || renewSubmitting) return 'failed'
+    setRenewSubmitting(true)
+    try {
+      const data = await createOrder(renewInfo.productId, {
+        expectedPrice: preview.price,
+        idempotencyKey,
+        offerId: renewInfo.offerId,
+        formAnswers,
+        expectedPurchaseFormVersion: preview.purchaseFormVersion,
+        expectedCheckoutVersion: preview.checkoutVersion,
+        verificationPassword: verificationPassword || undefined,
+        renewalOfOrderId: order.id,
+      })
+      useAuthStore.getState().updatePoints(data.balanceAfter)
+      showToast('续费成功，已生成新的订单')
+      setRenewInfo(null)
+      onUpdated?.()
+      onClose()
+      return 'success'
+    } catch (err: any) {
+      const code = getApiErrorCode(err)
+      if (code === 'PRICE_CHANGED' || code === 'CHECKOUT_CHANGED') {
+        showToast('商品信息已变化，请重新确认', 'error')
+        return 'price_changed'
+      }
+      if (code === 'VERIFICATION_REQUIRED') {
+        showToast('本单需输入登录密码确认', 'error')
+        return 'verification_required'
+      }
+      if (code === 'VERIFICATION_FAILED') {
+        showToast(getApiErrorMessage(err, '密码错误，请重新输入'), 'error')
+        return 'verification_failed'
+      }
+      if (code === 'RENEW_OFFER_UNAVAILABLE') {
+        showToast('该规格已下架，无法续费', 'error')
+        setRenewInfo(null)
+        return 'failed'
+      }
+      if (code === 'RENEW_ALREADY_RENEWED') {
+        // 结算期间他处已完成续费（多标签页等）：关弹窗并指引到最新订单。
+        showToast('该订单已续费，请在最新的续费订单上操作', 'error')
+        setRenewInfo(null)
+        return 'failed'
+      }
+      showToast(getApiErrorMessage(err, '续费失败'), 'error')
+      return 'failed'
+    } finally {
+      setRenewSubmitting(false)
+    }
+  }
+
   const canDispute = order.status === 'delivered'
   const canClose = order.status === 'delivered' || order.status === 'disputed'
+  // P6b：人工服务订单 delivered 阶段以「验收」措辞呈现关闭/争议（disputed 阶段保持原措辞）。
+  const isAcceptance = order.deliveryMode === 'manual_service' && order.status === 'delivered'
+  const actionCopy = isAcceptance ? ACCEPTANCE_ACTION_COPY : ACTION_COPY
+  // P6b：履约进度（merchant.progress 同态事件）单独倒序展示，避免与状态时间线混排重复。
+  const progressEvents = (order.timeline ?? []).filter((e) => e.action === 'merchant.progress')
+  const statusTimeline = (order.timeline ?? []).filter((e) => e.action !== 'merchant.progress')
   const canReview = !!order.canReview && !review
   const isRefunded = order.status === 'refunded'
+  // P6a：订阅到期投影。expired 以服务端裁决为准，前端不自行推算。
+  const subscriptionExpiresAt = order.delivery?.expiresAt ?? null
+  const subscriptionExpired = order.delivery?.expired === true
+  const contentMasked = order.delivery?.contentMasked === true
+  const remainingDays = subscriptionExpiresAt
+    ? Math.max(0, Math.ceil((new Date(subscriptionExpiresAt).getTime() - Date.now()) / 86400000))
+    : 0
   const showHolding =
     typeof order.holdingPoints === 'number' &&
     order.holdingPoints > 0 &&
@@ -82,6 +211,14 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
             <Info className="w-5 h-5 text-[var(--color-primary)]" />
             订单详情
             <RegistryPill value={order.status} category="orderStatuses" />
+            {subscriptionExpired && (
+              <span
+                className="text-xs font-bold text-[var(--color-danger)] bg-[var(--color-danger)]/10 px-2 py-0.5 rounded border border-[var(--color-danger)]/30"
+                data-testid="order-expired-badge"
+              >
+                已过期
+              </span>
+            )}
           </DialogTitle>
         </div>
 
@@ -101,6 +238,12 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
               )}
               <div className="flex flex-col gap-1">
                 <span className="font-bold text-[var(--color-text)] text-sm">{order.product.name}</span>
+                {/* P6c：预约单展示预约日期（date 表单答案的服务端投影） */}
+                {order.bookingDate && (
+                  <span className="text-xs text-[var(--color-primary)] font-medium" data-testid="order-booking-date">
+                    预约日期 {formatBookingDay(order.bookingDate)}
+                  </span>
+                )}
                 <div className="flex items-center gap-2 mt-1 flex-wrap">
                   {order.offerNameSnapshot && order.offerNameSnapshot !== '默认规格' && (
                     <span
@@ -167,13 +310,40 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
             <h3 className="font-heading text-sm font-bold text-[var(--color-text)] mb-3 flex items-center gap-2">
               <Info className="w-4 h-4 text-[var(--color-text-muted)]" /> 发货内容
             </h3>
+            {/* P6a：订阅有效期展示（到期时刻/剩余天数；过期显示徽标） */}
+            {subscriptionExpiresAt && (
+              <div className="mb-3 text-xs flex items-center gap-2 flex-wrap" data-testid="subscription-expiry">
+                {subscriptionExpired ? (
+                  <>
+                    <span className="text-xs font-bold text-[var(--color-danger)] bg-[var(--color-danger)]/10 px-2 py-0.5 rounded border border-[var(--color-danger)]/30">
+                      已过期
+                    </span>
+                    <span className="text-[var(--color-text-muted)]">
+                      订阅已于 {formatExpiry(subscriptionExpiresAt)} 到期
+                    </span>
+                  </>
+                ) : (
+                  <span className="text-[var(--color-text-muted)]">
+                    订阅有效期至 {formatExpiry(subscriptionExpiresAt)}（剩余 {remainingDays} 天）
+                  </span>
+                )}
+              </div>
+            )}
             {order.delivery?.file && (
               /* P5：文件交付/交付附件——每次点击经发放端点取短时签名链接 */
               <div className={order.delivery.content || order.delivery.structuredContent ? 'mb-3' : ''}>
                 <FileDeliveryCard orderId={order.id} fileName={order.delivery.file.fileName} size={order.delivery.file.size} />
               </div>
             )}
-            {order.delivery?.structuredContent && order.delivery.structuredContent.fields.length > 0 ? (
+            {contentMasked ? (
+              /* P6a：过期遮蔽——文本/结构化内容不再回显；续费生成新订单，本单遮蔽不恢复；文件卡片保留（下载由服务端拒绝） */
+              <div
+                className="bg-[var(--color-surface)] p-4 rounded border border-dashed border-[var(--color-border)] text-center text-xs text-[var(--color-text-muted)]"
+                data-testid="delivery-masked"
+              >
+                订阅已过期。续费将生成新订单，内容在新订单中查看
+              </div>
+            ) : order.delivery?.structuredContent && order.delivery.structuredContent.fields.length > 0 ? (
               /* P4b：结构化交付按字段展示（逐字段复制、敏感默认遮蔽） */
               <StructuredDeliveryView content={order.delivery.structuredContent} />
             ) : order.delivery?.content ? (
@@ -235,13 +405,37 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
             </div>
           )}
 
+          {/* P6b：履约动态——商家发布的进度说明，倒序（最新在前） */}
+          {progressEvents.length > 0 && (
+            <div className="bg-[var(--color-background)] rounded-lg p-5 border border-[var(--color-border)]">
+              <h3 className="font-heading text-sm font-bold text-[var(--color-text)] mb-3 flex items-center gap-2">
+                <Clock className="w-4 h-4 text-[var(--color-text-muted)]" /> 履约动态
+              </h3>
+              <div className="space-y-4" data-testid="order-progress-timeline">
+                {[...progressEvents].reverse().map((event, idx) => (
+                  <div key={event.id ?? idx} className="relative pl-4 border-l-2 border-[var(--color-border)]">
+                    <div className="absolute -left-1.5 top-0.5 w-2.5 h-2.5 rounded-full bg-[var(--color-primary)] ring-4 ring-[var(--color-background)]" />
+                    <div className="text-xs text-[var(--color-text-muted)]">
+                      {event.createdAt ? new Date(event.createdAt).toLocaleString() : ''}
+                    </div>
+                    {event.publicNote && (
+                      <div className="mt-1 text-xs text-[var(--color-text)] bg-[var(--color-surface)] p-2 rounded border border-[var(--color-border)]">
+                        {event.publicNote}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* 订单时间线 */}
           <div className="bg-[var(--color-background)] rounded-lg p-5 border border-[var(--color-border)]">
             <h3 className="font-heading text-sm font-bold text-[var(--color-text)] mb-3 flex items-center gap-2">
               <Clock className="w-4 h-4 text-[var(--color-text-muted)]" /> 订单动态
             </h3>
             <div className="space-y-4">
-              {order.timeline?.map((event, idx) => (
+              {statusTimeline.map((event, idx) => (
                 <div key={idx} className="relative pl-4 border-l-2 border-[var(--color-border)]">
                   <div className="absolute -left-1.5 top-0.5 w-2.5 h-2.5 rounded-full bg-[var(--color-border)] ring-4 ring-[var(--color-background)]" />
                   <div className="text-xs font-bold text-[var(--color-text)] mb-0.5">
@@ -280,7 +474,7 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
               data-testid="order-dispute-button"
               className="btn-secondary px-4 border-[var(--color-warning)] text-[var(--color-warning)]"
             >
-              {loadingAction === 'dispute' ? <Loader2 className="w-4 h-4 animate-spin" /> : '发起争议'}
+              {loadingAction === 'dispute' ? <Loader2 className="w-4 h-4 animate-spin" /> : isAcceptance ? '验收异议' : '发起争议'}
             </button>
           )}
           {canClose && (
@@ -290,7 +484,7 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
               data-testid="order-close-button"
               className="btn-secondary px-4 border-[var(--color-cta)] text-[var(--color-cta)]"
             >
-              {loadingAction === 'close' ? <Loader2 className="w-4 h-4 animate-spin" /> : '结束订单'}
+              {loadingAction === 'close' ? <Loader2 className="w-4 h-4 animate-spin" /> : isAcceptance ? '验收通过' : '结束订单'}
             </button>
           )}
           {canReview && (
@@ -302,6 +496,28 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
               评价商品
             </button>
           )}
+          {/* P6a：订阅单到期前后均可手动续费（走标准结算，新订单关联本单）；
+              已有未退款续费单时隐藏入口——续费须在链尾（最新订单）发起。 */}
+          {subscriptionExpiresAt && (
+            order.hasActiveRenewal ? (
+              <span
+                className="text-xs text-[var(--color-text-muted)] self-center"
+                data-testid="order-renewed-hint"
+              >
+                已续费，请在新订单中查看
+              </span>
+            ) : (
+              <button
+                onClick={startRenew}
+                disabled={renewLoading}
+                data-testid="order-renew-button"
+                className="btn-primary px-4"
+              >
+                {renewLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                续费
+              </button>
+            )
+          )}
         </div>
       </DialogContent>
 
@@ -310,9 +526,9 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
           className="!z-[120]"
           data-testid={confirmAction === 'close' ? 'close-order-dialog' : 'dispute-dialog'}
         >
-          <DialogTitle>{confirmAction ? ACTION_COPY[confirmAction].title : ''}</DialogTitle>
+          <DialogTitle>{confirmAction ? actionCopy[confirmAction].title : ''}</DialogTitle>
           <DialogDescription>
-            {confirmAction ? ACTION_COPY[confirmAction].description : ''}
+            {confirmAction ? actionCopy[confirmAction].description : ''}
           </DialogDescription>
           <div className="mt-5 flex justify-end gap-3">
             <button
@@ -332,11 +548,22 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
                   : 'btn-primary px-5 py-2 text-sm'
               }
             >
-              {confirmAction ? ACTION_COPY[confirmAction].confirmLabel : ''}
+              {confirmAction ? actionCopy[confirmAction].confirmLabel : ''}
             </button>
           </div>
         </DialogContent>
       </Dialog>
+
+      {renewInfo && (
+        <PurchaseModal
+          productId={renewInfo.productId}
+          offerId={renewInfo.offerId}
+          validityDays={renewInfo.validityDays}
+          submitting={renewSubmitting}
+          onClose={() => { if (!renewSubmitting) setRenewInfo(null) }}
+          onConfirm={handleRenewConfirm}
+        />
+      )}
 
       {reviewOpen && (
         <ReviewDialog

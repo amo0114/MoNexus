@@ -7,6 +7,25 @@ import { getApiErrorMessage } from '../api/error'
 export type ConfirmOutcome = 'success' | 'price_changed' | 'verification_required' | 'verification_failed' | 'failed'
 
 /**
+ * P6c：今天 + N 天的日期，格式 YYYY-MM-DD（date 输入的 min/max 提示；服务端
+ * 强校验）。复审 P1-3：按 Asia/Shanghai 业务日历计算，与服务端判定一致——
+ * 否则海外浏览器或跨日凌晨时，前端允许的边界日会被服务端 400。
+ */
+function localDatePlusDays(days: number): string {
+  // formatToParts 显式取字段——不依赖 locale 的完整 format() 输出格式。
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date())
+  const get = (type: string) => Number(parts.find(p => p.type === type)!.value)
+  const shifted = new Date(Date.UTC(get('year'), get('month') - 1, get('day') + days))
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${shifted.getUTCFullYear()}-${pad(shifted.getUTCMonth() + 1)}-${pad(shifted.getUTCDate())}`
+}
+
+/**
  * 结算确认弹窗。打开时向服务端拉取结算预览（余额前后值、扣除/冻结类型），
  * 并为本次结算意图生成一个幂等键：双击、超时重试都复用同一个键，
  * 重新打开弹窗或价格变化后才更换新键。
@@ -14,6 +33,7 @@ export type ConfirmOutcome = 'success' | 'price_changed' | 'verification_require
 export default function PurchaseModal({
   productId,
   offerId,
+  validityDays = null,
   submitting = false,
   onClose,
   onConfirm,
@@ -21,6 +41,8 @@ export default function PurchaseModal({
   productId: number
   /** 选中的规格(P4a);单 SKU 商品省略,服务端解析默认 Offer。 */
   offerId?: number
+  /** P6a：选中规格的订阅有效期(天);null = 永久,不渲染徽标。 */
+  validityDays?: number | null
   submitting?: boolean
   onClose: () => void
   onConfirm: (
@@ -117,6 +139,16 @@ export default function PurchaseModal({
                 {preview.offerName}
               </div>
             )}
+            {validityDays != null && (
+              <div
+                className={`inline-flex items-center text-xs font-medium text-[var(--color-text)] bg-[var(--color-background)] border border-[var(--color-border)] rounded px-2 py-0.5 mb-1 ${
+                  preview.offerName && preview.offerName !== '默认规格' ? 'ml-1' : ''
+                }`}
+                data-testid="preview-validity-days"
+              >
+                有效期 {validityDays} 天
+              </div>
+            )}
             <div className="flex justify-between items-center text-sm mt-3 pt-3 border-t border-[var(--color-border)] border-dashed">
               <span className="text-[var(--color-text-muted)]">{isHold ? '本次冻结' : '本次扣除'}</span>
               <span className="font-heading font-bold text-[var(--color-cta)] flex items-center gap-1 text-lg" data-testid="preview-price">
@@ -168,6 +200,17 @@ export default function PurchaseModal({
                     value={answers[field.key] ?? ''}
                     onChange={(e) => setAnswers(prev => ({ ...prev, [field.key]: e.target.value }))}
                     data-testid={`purchase-field-${field.key}`}
+                  />
+                ) : field.type === 'date' ? (
+                  /* P6c：预约日期——min/max 仅为客户端提示，服务端按可约窗口强校验 */
+                  <input
+                    type="date"
+                    className="input"
+                    min={localDatePlusDays(field.minDaysAhead ?? 1)}
+                    max={localDatePlusDays(field.maxDaysAhead ?? 30)}
+                    value={answers[field.key] ?? ''}
+                    onChange={(e) => setAnswers(prev => ({ ...prev, [field.key]: e.target.value }))}
+                    data-testid={`purchase-form-date-${field.key}`}
                   />
                 ) : (
                   <select

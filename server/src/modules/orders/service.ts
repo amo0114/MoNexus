@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client'
 import { prisma } from '../../lib/prisma.js'
+import { getSystemConfigValue } from '../../lib/systemConfig.js'
 import { badRequest, notFound, HttpError } from '../../lib/httpError.js'
 import {
   createOrderStatusEvent,
@@ -7,6 +8,7 @@ import {
   isInstantMode,
   normalizeOrderStatus,
   transitionOrderStatus,
+  resolveSubscriptionExpiresAt,
 } from './fulfillment.js'
 import { debitAvailablePoints, holdAvailablePoints, settleHeldOrder } from './accounting.js'
 import {
@@ -17,7 +19,8 @@ import {
 import { serializeUserOrderDetail, serializeUserOrderList } from './serializers.js'
 import { invalidateProductPublicCache } from '../products/cache.js'
 import { logInventoryChange } from '../../lib/inventoryLog.js'
-import { parseStoredPurchaseForm, validatePurchaseFormAnswers, computePurchaseFormVersion } from '../../lib/purchaseForm.js'
+import { parseStoredPurchaseForm, validatePurchaseFormAnswers, computePurchaseFormVersion, findBookingDateField } from '../../lib/purchaseForm.js'
+import { calendarDayToUtc } from '../../lib/businessTime.js'
 import { assertCheckoutVerification } from '../checkout/verification.js'
 import { resolvePurchaseOfferChecked } from '../../lib/offers.js'
 import {
@@ -28,7 +31,7 @@ import {
 } from '../../lib/deliveryFields.js'
 
 // manual_service 商家履约 SLA：创建订单后 7 天内需交付，M3-S2 工作台高亮超时
-const FULFILLMENT_SLA_MS = 7 * 24 * 60 * 60 * 1000
+// P6a：履约 SLA 天数迁入 SystemConfig（fulfillmentSlaDays），下单事务内读取。
 
 export type CreateOrderOptions = {
   // 购买的规格（P4a）。可选：单 SKU 商品由服务端解析为唯一 active Offer。
@@ -48,6 +51,9 @@ export type CreateOrderOptions = {
   expectedCheckoutVersion?: string
   // 高风险二次验证：触发阈值时必须携带的登录密码（checkout/verification.ts）。
   verificationPassword?: string
+  // P6a：手动续费——指向被续费的原订单。事务内校验同买家/同规格/订阅交付，
+  // 交付时若原单未过期则到期时刻自原到期顺延（resolveSubscriptionExpiresAt）。
+  renewalOfOrderId?: number
 }
 
 export async function createOrder(
@@ -63,6 +69,7 @@ export async function createOrder(
     expectedPurchaseFormVersion,
     expectedCheckoutVersion,
     verificationPassword,
+    renewalOfOrderId,
   } = options
 
   let claimToken: string | undefined
@@ -74,6 +81,7 @@ export async function createOrder(
       purchaseFormVersion: expectedPurchaseFormVersion,
       checkoutVersion: expectedCheckoutVersion,
       formAnswers,
+      renewalOfOrderId,
     })
     if (claim.kind === 'replay') return buildReplayResponse(claim.orderId, userId)
     claimToken = claim.claimToken
@@ -113,6 +121,7 @@ export async function createOrder(
       formAnswers,
       expectedPurchaseFormVersion,
       expectedCheckoutVersion,
+      renewalOfOrderId,
       claimToken,
     })
   } catch (err) {
@@ -137,6 +146,7 @@ async function buildReplayResponse(orderId: number, userId: number) {
           content: true,
           contentType: true,
           structuredContent: true,
+          expiresAt: true,
           file: { select: { fileName: true, size: true } },
         },
       },
@@ -146,15 +156,20 @@ async function buildReplayResponse(orderId: number, userId: number) {
   if (!order) throw notFound('订单不存在')
 
   const account = await prisma.pointAccount.findUnique({ where: { userId } })
+  const replayExpired = order.delivery?.expiresAt != null && order.delivery.expiresAt.getTime() <= Date.now()
   return {
     orderId: order.id,
     productName: order.productNameSnapshot ?? order.product.name,
     price: order.price,
     status: normalizeOrderStatus(order.status),
     deliveryMode: getProductFulfillmentMode(order.deliveryModeSnapshot),
-    deliveryContent: order.delivery?.content ?? undefined,
+    // 复审 P2-2：重放是唯一绕过遮蔽序列化器的买家可达投影——订阅到期后
+    // 重放同样不回明文（重放窗口内的短订阅可能已过期）。
+    deliveryContent: replayExpired ? undefined : order.delivery?.content ?? undefined,
     deliveryContentType: order.delivery?.contentType ?? undefined,
-    deliveryStructuredContent: parseStoredStructuredContent(order.delivery?.structuredContent) ?? undefined,
+    deliveryStructuredContent: replayExpired
+      ? undefined
+      : parseStoredStructuredContent(order.delivery?.structuredContent) ?? undefined,
     deliveryFile: order.delivery?.file ?? undefined,
     balanceAfter: account?.balance ?? 0,
     merchantId: order.merchantId,
@@ -173,6 +188,7 @@ async function createOrderOnce(
     formAnswers,
     expectedPurchaseFormVersion,
     expectedCheckoutVersion,
+    renewalOfOrderId,
     claimToken,
   }: CreateOrderOptions & { claimToken?: string }
 ) {
@@ -199,6 +215,12 @@ async function createOrderOnce(
       throw new HttpError(409, 'CHECKOUT_CHANGED', '商品信息已变化，请重新确认')
     }
     const purchaseFormAnswers = validatePurchaseFormAnswers(purchaseFormFields, formAnswers)
+    // P6c：预约日期列化——取 date 字段（schema 限定至多一个）的已校验答案
+    // （YYYY-MM-DD），商家排序与提醒 cron 免查答案 JSON。存储为该日历日的
+    // UTC 零点（复审 P1-3：与运行时区无关）。无日期字段/未填（非必填）= null。
+    const bookingDateField = findBookingDateField(purchaseFormFields)
+    const bookingDateAnswer = bookingDateField ? purchaseFormAnswers?.[bookingDateField.key] : undefined
+    const orderBookingDate = bookingDateAnswer ? calendarDayToUtc(bookingDateAnswer) : null
     const deliveryMode = getProductFulfillmentMode(offer.deliveryMode)
     // P4b：下单即冻结交付字段模板——人工服务发货按此快照强制校验，商家改
     // 模板不影响已购未发货订单（快照惯例同 deliveryModeSnapshot）。
@@ -225,6 +247,40 @@ async function createOrderOnce(
     }
     if (deliveryMode !== 'instant_inventory' && offer.stockMode === 'limited' && offer.stock <= 0) {
       throw badRequest('库存不足，请稍后再试')
+    }
+
+    // P6a T3：续费关联校验（事务内终检，预检 /renew 只是引导）——原单必须
+    // 存在、属于同一买家（查询条件即防枚举，失败不区分"不存在/他人"）、
+    // 与本次购买同一规格、且是订阅交付（有到期时刻）。
+    if (renewalOfOrderId != null) {
+      // 复审 P1-1：先锁原单行再查续费链。两个不同幂等键并发续同一原单时，
+      // 都会在"查到无续费子单"后创建成功——两张新单都自原到期顺延，买家
+      // 重复扣款只延一份时长。FOR UPDATE 串行化后，后到者在锁释放后重查
+      // 必然看到先到者的续费单 → RENEW_ALREADY_RENEWED。退款走
+      // transitionOrderStatus 的行更新，同样被此锁序：要么先退款（下方
+      // status 终检拒单），要么先续费（退款后的交付继承由 P1-2 收口）。
+      await tx.$queryRaw`SELECT "id" FROM "Order" WHERE "id" = ${renewalOfOrderId} FOR UPDATE`
+      const original = await tx.order.findFirst({
+        where: { id: renewalOfOrderId, userId },
+        select: {
+          offerId: true,
+          status: true,
+          delivery: { select: { expiresAt: true } },
+          renewals: { where: { status: { not: 'refunded' } }, select: { id: true }, take: 1 },
+        },
+      })
+      if (!original || original.offerId !== offer.id || original.delivery?.expiresAt == null) {
+        throw new HttpError(400, 'RENEW_INVALID', '续费关联订单无效，请从订单详情重新发起续费')
+      }
+      // 退款保留 expiresAt 仅作审计——已退款原单的剩余时长不可被续费免费继承。
+      if (original.status === 'refunded') {
+        throw new HttpError(400, 'RENEW_INVALID', '订单已退款，无法续费')
+      }
+      // 续费链终检：原单已有未退款续费单时必须在链尾（最新订单）续费，
+      // 否则两次续费都自原到期顺延——买家花两份钱只延一份时长。
+      if (original.renewals.length > 0) {
+        throw new HttpError(400, 'RENEW_ALREADY_RENEWED', '该订单已续费，请在最新的续费订单上操作')
+      }
     }
 
     let merchantId: number | null = null
@@ -256,7 +312,8 @@ async function createOrderOnce(
     if (isManual) {
       // 虚拟服务订单：冻结真实占用可用积分，避免同一余额被多笔订单重复使用。
       orderHoldingPoints = offer.price
-      orderFulfillmentDeadline = new Date(Date.now() + FULFILLMENT_SLA_MS)
+      const slaDays = await getSystemConfigValue('fulfillmentSlaDays', tx)
+      orderFulfillmentDeadline = new Date(Date.now() + slaDays * 24 * 60 * 60 * 1000)
       settledSettlementStatus = 'holding'
       balanceAfter = await holdAvailablePoints(tx, userId, offer.price)
       fundsHeld = true
@@ -287,6 +344,11 @@ async function createOrderOnce(
         holdingPoints: orderHoldingPoints,
         fundsHeld,
         fulfillmentDeadline: orderFulfillmentDeadline,
+        // P6a：订阅时长快照——商家改 Offer.validityDays 不影响本单。
+        validityDaysSnapshot: offer.validityDays ?? null,
+        bookingDate: orderBookingDate,
+        // P6a：续费链落库（Restrict 外键，原单行不可删）。
+        renewalOfOrderId: renewalOfOrderId ?? null,
         // 定义与答案一并快照：商家之后改表单不影响本单的展示与履约依据。
         ...(purchaseFormFields.length > 0 ? { purchaseFormSnapshot: purchaseFormFields } : {}),
         ...(purchaseFormAnswers ? { purchaseFormAnswers } : {}),
@@ -305,6 +367,12 @@ async function createOrderOnce(
     let deliveryContent: string | undefined
     let deliveryContentType: string | undefined
     let deliveryStructuredContent: StructuredDeliveryContent | null = null
+
+    // P6a：即时交付的订阅到期时刻（null = 永久）。续费单且原单未过期时
+    // 自原到期顺延——与人工交付路径共用同一解析逻辑（fulfillment.ts）。
+    const subscriptionExpiresAt = isInstantMode(deliveryMode)
+      ? await resolveSubscriptionExpiresAt(tx, order, order.validityDaysSnapshot, new Date())
+      : null
 
     if (deliveryMode === 'instant_inventory') {
       // Claim one row in the database instead of first reading a candidate
@@ -349,6 +417,7 @@ async function createOrderOnce(
             : undefined,
           status: 'delivered',
           deliveredAt: new Date(),
+          expiresAt: subscriptionExpiresAt,
         },
       })
 
@@ -367,6 +436,7 @@ async function createOrderOnce(
             fileId: purchasedFile.id,
             status: 'delivered',
             deliveredAt: new Date(),
+            expiresAt: subscriptionExpiresAt,
           },
         })
       } else {
@@ -382,6 +452,7 @@ async function createOrderOnce(
             contentType: offer.fixedContentType,
             status: 'delivered',
             deliveredAt: new Date(),
+            expiresAt: subscriptionExpiresAt,
           },
         })
       }
@@ -497,6 +568,8 @@ export async function getOrderDetail(orderId: number, userId: number) {
         select: {
           status: true, content: true, contentType: true, structuredContent: true,
           publicNote: true, deliveredAt: true,
+          // P6a：订阅到期时刻；序列化层据此补 expired 并做买家到期遮蔽。
+          expiresAt: true,
           // P5：文件交付元数据（仅详情；列表 select 不含 delivery 内容照旧）。
           file: { select: { fileName: true, size: true, status: true } },
         },
@@ -504,9 +577,13 @@ export async function getOrderDetail(orderId: number, userId: number) {
       review: {
         select: { rating: true, comment: true, status: true, editableUntil: true, editedAt: true, createdAt: true },
       },
+      // 是否存在未退款的续费单（仅详情；只取存在性，不透出续费单行）——
+      // 买家端据此隐藏「续费」入口，指引到链尾（最新订单）操作。
+      renewals: { where: { status: { not: 'refunded' } }, select: { id: true }, take: 1 },
+      // P6b：买家时间线固定契约——仅 action/fromStatus/toStatus/publicNote/
+      // createdAt/actorRole 六字段，不透出事件行 id 与操作人用户 id。
       statusEvents: {
         select: {
-          id: true,
           actorRole: true,
           fromStatus: true,
           toStatus: true,
@@ -519,13 +596,19 @@ export async function getOrderDetail(orderId: number, userId: number) {
     },
   })
   if (!order) throw notFound('订单不存在')
+  // 续费单行不进响应，只折叠为存在性布尔。
+  const { renewals, ...orderRest } = order
   const normalized = normalizeOrderStatus(order.status)
   return {
-    ...serializeUserOrderDetail(order),
+    ...serializeUserOrderDetail(orderRest),
     holdingPoints: order.holdingPoints ?? null,
     fulfillmentDeadline: order.fulfillmentDeadline ?? null,
+    // P6c：预约日期（null = 非预约单）。
+    bookingDate: order.bookingDate ?? null,
     review: order.review ?? null,
     canReview: !order.review && (normalized === 'delivered' || normalized === 'closed'),
+    // 已有未退款续费单——前端隐藏「续费」按钮（仅详情，列表行不带）。
+    hasActiveRenewal: renewals.length > 0,
   }
 }
 
@@ -547,7 +630,8 @@ export async function getUserOrders(userId: number, page = 1, pageSize = 20, sta
     include: {
       merchant: { select: { id: true, name: true } },
       product: { select: { id: true, name: true, icon: true, type: true, imageUrl: true, deliveryMode: true } },
-      delivery: { select: { status: true } },
+      // P6a：列表带 expiresAt 供「已过期」徽标（内容字段照旧不进列表查询）。
+      delivery: { select: { status: true, expiresAt: true } },
     },
     orderBy: { createdAt: 'desc' },
     skip: (page - 1) * pageSize,
@@ -556,6 +640,8 @@ export async function getUserOrders(userId: number, page = 1, pageSize = 20, sta
   return orders.map(order => ({
     ...serializeUserOrderList(order),
     holdingPoints: order.holdingPoints ?? null,
+    // P6c：列表行透出预约日期供「预约单」标识（null = 非预约单）。
+    bookingDate: order.bookingDate ?? null,
   }))
 }
 
@@ -618,4 +704,85 @@ export async function closeOrder(orderId: number, userId: number) {
 
   await invalidateProductPublicCache(result.productId, { list: 'coalesced' })
   return getOrderDetail(orderId, userId)
+}
+
+/**
+ * P6a T3：手动续费预检——只读、无副作用。返回原规格的"当前"商业值
+ * （名称/价格/时长），买家经标准结算再次确认价格；实际续费走
+ * POST /orders 携带 renewalOfOrderId，事务内另做终检。
+ */
+export async function renewOrderPrecheck(orderId: number, userId: number) {
+  const order = await prisma.order.findFirst({
+    // 归属放进查询条件：他人订单与不存在订单统一 404，防枚举。
+    where: { id: orderId, userId },
+    select: {
+      id: true,
+      productId: true,
+      offerId: true,
+      status: true,
+      delivery: { select: { expiresAt: true } },
+      renewals: { where: { status: { not: 'refunded' } }, select: { id: true }, take: 1 },
+    },
+  })
+  if (!order) throw notFound('订单不存在')
+
+  // 没有到期时刻 = 非订阅交付（永久或尚未交付），无从续费。
+  if (order.delivery?.expiresAt == null) {
+    throw new HttpError(400, 'RENEW_NOT_SUBSCRIPTION', '该订单不是订阅类订单，无需续费')
+  }
+
+  // 退款保留 expiresAt 仅作审计——已退款原单的剩余时长不可被续费免费继承。
+  if (order.status === 'refunded') {
+    throw new HttpError(400, 'RENEW_INVALID', '订单已退款，无法续费')
+  }
+
+  // 续费链约束：已有未退款续费单的订单不可再续（否则两次续费自同一到期
+  // 顺延，买家花两份钱只延一份时长），引导买家到链尾（最新订单）操作。
+  if (order.renewals.length > 0) {
+    throw new HttpError(400, 'RENEW_ALREADY_RENEWED', '该订单已续费，请在最新的续费订单上操作')
+  }
+
+  const unavailable = () =>
+    new HttpError(400, 'RENEW_OFFER_UNAVAILABLE', '原规格已下架或暂不可购买，无法续费')
+
+  // 原规格必须仍在售：规格/商品任一下架即不可续费（offerId 为空的迁移前
+  // 订单同样视为不可续费——无法保证"续的是同一规格"）。
+  const offer = order.offerId == null
+    ? null
+    : await prisma.offer.findUnique({ where: { id: order.offerId } })
+  if (!offer || offer.status !== 'active') throw unavailable()
+  const product = await prisma.product.findUnique({
+    where: { id: order.productId },
+    select: { status: true },
+  })
+  if (!product || product.status !== 'active') throw unavailable()
+
+  // 可购买性预检（与 createOrder 的挡单条件对齐，避免引导买家进入必败结算）：
+  // instant_fixed 的固定内容/文件必须可用；限量规格必须仍有库存。
+  const deliveryMode = getProductFulfillmentMode(offer.deliveryMode)
+  if (deliveryMode === 'instant_fixed') {
+    if (offer.fixedContentType === 'file') {
+      const file = offer.fixedFileId == null
+        ? null
+        : await prisma.deliveryFile.findUnique({
+            where: { id: offer.fixedFileId },
+            select: { status: true },
+          })
+      if (!file || file.status !== 'active') throw unavailable()
+    } else if (!offer.fixedContent) {
+      throw unavailable()
+    }
+  }
+  if (deliveryMode !== 'instant_inventory' && offer.stockMode === 'limited' && offer.stock <= 0) {
+    throw unavailable()
+  }
+
+  return {
+    productId: order.productId,
+    offerId: offer.id,
+    offerName: offer.name,
+    price: offer.price,
+    validityDays: offer.validityDays ?? null,
+    currentExpiresAt: order.delivery.expiresAt,
+  }
 }

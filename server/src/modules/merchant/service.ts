@@ -2,7 +2,7 @@ import { Prisma } from '@prisma/client'
 import { randomUUID } from 'node:crypto'
 import { prisma } from '../../lib/prisma.js'
 import { businessRegistry } from '../../lib/businessRegistry.js'
-import { badRequest, notFound, conflict } from '../../lib/httpError.js'
+import { badRequest, notFound, conflict, HttpError } from '../../lib/httpError.js'
 import { getSystemConfigValue } from '../../lib/systemConfig.js'
 import { logInventoryChange } from '../../lib/inventoryLog.js'
 import {
@@ -18,6 +18,7 @@ import {
 } from '../../lib/inventoryImport.js'
 import { invalidateProductPublicCache } from '../products/cache.js'
 import {
+  createOrderStatusEvent,
   isInstantMode,
   normalizeOrderStatus,
   transitionOrderStatus,
@@ -282,12 +283,14 @@ export async function createMyProduct(
     purchaseForm?: PurchaseFormField[];
     // P4a F3：向导原子发布——默认规格名 + 额外规格与商品同事务落库。
     primaryOfferName?: string;
+    // 复审 P2-2：默认规格的订阅有效期（落 Offer，不进 Product 列）。
+    validityDays?: number | null;
     offers?: (OfferWriteInput & { name: string; price: number })[]
   }
 ) {
   assertOriginalPriceAtLeastSale(data.price, data.originalPrice)
-  // primaryOfferName/offers 只进 Offer 表，不进 Product 列。
-  const { primaryOfferName: _primaryOfferName, offers: _offers, ...productFields } = data
+  // primaryOfferName/validityDays/offers 只进 Offer 表，不进 Product 列。
+  const { primaryOfferName: _primaryOfferName, validityDays: _validityDays, offers: _offers, ...productFields } = data
   const normalizedProductData = normalizeProductImageFields(productFields)
   const deliveryMode = data.deliveryMode ?? 'instant_inventory'
   const stockMode = data.stockMode ?? (deliveryMode === 'instant_inventory' ? 'limited' : 'unlimited')
@@ -322,6 +325,7 @@ export async function createMyProduct(
       stock: deliveryMode === 'instant_inventory' ? 0 : (data.stock ?? 0),
       fixedContent: data.fixedContent ?? null,
       fixedContentType,
+      validityDays: data.validityDays ?? null,
     }, data.primaryOfferName)
     // F3：额外规格同事务创建，任一条校验失败 → 整体回滚（无孤儿商品）。
     for (const offerInput of data.offers ?? []) {
@@ -750,7 +754,8 @@ function getAvailableActions(order: {
   // pending 状态下商家可接单（start_fulfillment）或拒单（reject）；
   // 拒单只对 manual_service 有意义，但即时模式创建即 delivered 不会进入 pending
   if (status === 'pending') return ['start_fulfillment', 'reject']
-  if (status === 'processing' && deliveryMode === 'manual_service') return ['deliver']
+  // P6b：履约中的人工服务单可交付，也可发进度更新（post_progress 不改状态）
+  if (status === 'processing' && deliveryMode === 'manual_service') return ['deliver', 'post_progress']
   if (status === 'disputed') return ['respond_dispute']
   return []
 }
@@ -796,7 +801,11 @@ export async function listMyOrders(merchantId: number, query: MerchantOrderListQ
         delivery: { select: { status: true, publicNote: true, deliveredAt: true } },
         settlement: { select: { settlementAmount: true, status: true, settledAt: true } },
       },
-      orderBy: { createdAt: 'desc' },
+      // P6c：sort=booking 时预约日期升序（最近的预约最先处理），无预约单
+      // （bookingDate=null）排后并沿用默认时间倒序；命中 (merchantId, bookingDate) 索引。
+      orderBy: query.sort === 'booking'
+        ? [{ bookingDate: { sort: 'asc', nulls: 'last' } as const }, { createdAt: 'desc' as const }]
+        : { createdAt: 'desc' },
       skip: (query.page - 1) * query.pageSize,
       take: query.pageSize,
     }),
@@ -808,6 +817,8 @@ export async function listMyOrders(merchantId: number, query: MerchantOrderListQ
       ...serializeMerchantOrder(order),
       holdingPoints: order.holdingPoints,
       fulfillmentDeadline: order.fulfillmentDeadline,
+      // P6c：预约日期（null = 非预约单）；列表/详情均透出供商家排期。
+      bookingDate: order.bookingDate,
       slaExceeded: computeSlaExceeded(order),
       availableActions: getAvailableActions(order),
     })),
@@ -826,6 +837,8 @@ export async function getMyOrderDetail(merchantId: number, orderId: number) {
       delivery: {
         select: {
           status: true, publicNote: true, deliveredAt: true,
+          // P6a：订阅到期时刻。商家视角只展示、永不遮蔽（履约凭据）。
+          expiresAt: true,
           // P5：附件元数据（商家核对已交付文件）；content 本体照旧不进商家详情。
           file: { select: { fileName: true, size: true, status: true } },
         },
@@ -850,6 +863,8 @@ export async function getMyOrderDetail(merchantId: number, orderId: number) {
     ...serializeMerchantOrder(order),
     holdingPoints: order.holdingPoints,
     fulfillmentDeadline: order.fulfillmentDeadline,
+    // P6c：预约日期（null = 非预约单）。
+    bookingDate: order.bookingDate,
     slaExceeded: computeSlaExceeded(order),
     availableActions: getAvailableActions(order),
     // 详情显式回填：买家购买前填写的信息是商家的履约依据。
@@ -963,6 +978,67 @@ export async function deliverOrderFulfillment(
   })
 
   return getMyOrderDetail(merchantId, orderId)
+}
+
+// P6b：单订单每小时最多 6 条进度更新（审计表即计数器，fileAccess 同款先例：
+// count→create 非原子，并发下可能少量超发——反噪音手段，不是安全边界）。
+const PROGRESS_RATE_LIMIT = 6
+const PROGRESS_RATE_WINDOW_MS = 60 * 60 * 1000
+
+/**
+ * P6b：商家发布履约进度。仅写 OrderStatusEvent（fromStatus=toStatus='processing'），
+ * 不改 order.status——决策 ③：进度不引入新订单状态。note 即买家时间线上的
+ * publicNote。
+ */
+export async function postOrderProgress(
+  merchantId: number,
+  actorUserId: number,
+  orderId: number,
+  input: { note: string }
+) {
+  await prisma.$transaction(async tx => {
+    // 归属校验沿用统一入口：他人/不存在的订单一律 404 防枚举。
+    const order = await assertMerchantOrder(merchantId, orderId, tx)
+    // 复审 P2-4：先锁订单行再终检状态。进度写入与交付并发时，进度事务在
+    // 旧快照上看到 processing、提交时订单已 delivered——买家时间线会出现
+    // 交付之后的 processing→processing 事件。FOR UPDATE 与
+    // transitionOrderStatus 的行更新互斥：交付先提交则此处重读拒绝，
+    // 进度先拿锁则交付排队在其后，事件序保持正确。
+    await tx.$queryRaw`SELECT "id" FROM "Order" WHERE "id" = ${order.id} FOR UPDATE`
+    const fresh = await tx.order.findUniqueOrThrow({
+      where: { id: order.id },
+      select: { status: true },
+    })
+    if (
+      normalizeOrderStatus(fresh.status) !== 'processing'
+      || getOrderDeliveryMode(order) !== 'manual_service'
+    ) {
+      throw badRequest('仅履约中的人工服务订单可更新进度')
+    }
+
+    const recent = await tx.orderStatusEvent.count({
+      where: {
+        orderId: order.id,
+        action: 'merchant.progress',
+        createdAt: { gte: new Date(Date.now() - PROGRESS_RATE_WINDOW_MS) },
+      },
+    })
+    if (recent >= PROGRESS_RATE_LIMIT) {
+      throw new HttpError(429, 'PROGRESS_RATE_LIMITED', '进度更新过于频繁，请稍后再试')
+    }
+
+    await createOrderStatusEvent(tx, {
+      orderId: order.id,
+      actorUserId,
+      actorRole: 'merchant',
+      fromStatus: 'processing',
+      toStatus: 'processing',
+      action: 'merchant.progress',
+      publicNote: input.note,
+    })
+  })
+
+  return { ok: true }
 }
 
 export async function respondToOrderDispute(
@@ -1131,6 +1207,8 @@ type OfferWriteInput = {
   // P5：file 形态挂载的交付文件；null 清空（配合切回 text/url）。
   fixedFileId?: number | null
   sortOrder?: number
+  // P6a：订阅有效期天数；null = 永久。
+  validityDays?: number | null
   // P4b：交付字段模板；null 清空回纯文本。已过 zod（deliveryFieldsSchema）。
   deliveryFields?: DeliveryField[] | null
   // 设为默认规格（仅接受 true，事务内从原默认转移；不接受 false——
@@ -1245,6 +1323,8 @@ async function insertOffer(
       fixedContentType,
       fixedFileId,
       sortOrder: input.sortOrder ?? 0,
+      // P6a：订阅有效期；null = 永久。
+      validityDays: input.validityDays ?? null,
       deliveryFields: input.deliveryFields ?? undefined,
     },
   })
@@ -1341,6 +1421,8 @@ export async function updateMyOffer(
         ...('fixedContent' in input ? { fixedContent: input.fixedContent ?? null } : {}),
         fixedContentType,
         ...('fixedFileId' in input ? { fixedFileId: input.fixedFileId ?? null } : {}),
+        // P6a：改时长只影响新订单（快照冻结）；null = 改回永久。
+        ...('validityDays' in input ? { validityDays: input.validityDays ?? null } : {}),
         ...(input.sortOrder != null ? { sortOrder: input.sortOrder } : {}),
         // 改模板仅影响后续导入/交付；已导入条目携带自包含快照，不回填。
         ...('deliveryFields' in input

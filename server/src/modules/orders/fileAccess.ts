@@ -59,6 +59,8 @@ export async function issueOrderFileDownloadUrl(orderId: number, requester: Requ
         select: {
           fileId: true,
           deliveredAt: true,
+          // P6a：订阅到期时刻——订阅交付豁免平台下载窗口，只受它约束。
+          expiresAt: true,
           file: { select: { id: true, key: true, fileName: true, size: true, status: true } },
         },
       },
@@ -142,11 +144,19 @@ export async function issueOrderFileDownloadUrl(orderId: number, requester: Requ
         throw new FileAccessDenied('FILE_ACCESS_SUSPENDED', '订单尚未交付完成，文件暂不可下载', 'denied_state')
       }
       const windowDays = await getSystemConfigValue('fileAccessWindowDays')
-      if (windowDays > 0 && order.delivery?.deliveredAt) {
+      // 复审 P2-3：订阅交付（expiresAt 非空）只受自身有效期约束——平台默认
+      // 30 天窗口不得覆盖商家售出的更长订阅承诺（如 365 天）。
+      if (windowDays > 0 && order.delivery?.deliveredAt && order.delivery.expiresAt == null) {
         const expiry = order.delivery.deliveredAt.getTime() + windowDays * 24 * 60 * 60 * 1000
         if (Date.now() > expiry) {
           throw new FileAccessDenied('FILE_WINDOW_EXPIRED', '下载窗口已过期，请联系商家', 'denied_window')
         }
+      }
+      // P6a：订阅交付按自身有效期拒新签发（商家/管理员不受限：履约凭据/
+      // 仲裁取证）。审计 outcome 细分 denied_subscription（复审 P2-4：窗口
+      // 规则与订阅规则的拒绝在仲裁时必须可区分，CHECK 词表已扩迁移）。
+      if (order.delivery?.expiresAt && Date.now() > order.delivery.expiresAt.getTime()) {
+        throw new FileAccessDenied('FILE_SUBSCRIPTION_EXPIRED', '订阅已过期，续费后可恢复下载', 'denied_subscription')
       }
     }
 

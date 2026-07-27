@@ -60,6 +60,8 @@ export async function createOrder(
     /** P4b：预览返回的 Offer 结算版本;配置变化 → 409 CHECKOUT_CHANGED。 */
     expectedCheckoutVersion?: string
     verificationPassword?: string
+    /** P6a：续费下单时关联的原订单;服务端校验合法性并顺延到期时间。 */
+    renewalOfOrderId?: number
   }
 ): Promise<CreateOrderResult> {
   const { data } = await api.post(
@@ -78,6 +80,7 @@ export async function createOrder(
         ? { formAnswers: options.formAnswers }
         : {}),
       ...(options.verificationPassword ? { verificationPassword: options.verificationPassword } : {}),
+      ...(options.renewalOfOrderId != null ? { renewalOfOrderId: options.renewalOfOrderId } : {}),
     },
     { headers: { 'Idempotency-Key': options.idempotencyKey } }
   )
@@ -104,6 +107,26 @@ export interface FileDownloadGrant {
 
 export async function issueOrderFileDownloadUrl(orderId: number): Promise<FileDownloadGrant> {
   const { data } = await api.post(`/orders/${orderId}/files/download-url`)
+  return data
+}
+
+/** P6a：续费预检返回(同买家/订阅单/offer 仍在售时 200)。 */
+export interface RenewPrecheck {
+  productId: number
+  offerId: number
+  offerName: string
+  price: number
+  validityDays: number | null
+  currentExpiresAt: string | null
+}
+
+/**
+ * P6a：续费预检。400 code RENEW_NOT_SUBSCRIPTION（非订阅单）/
+ * RENEW_OFFER_UNAVAILABLE（规格已下架）。通过后前端走标准结算并携带
+ * renewalOfOrderId 下新单。
+ */
+export async function renewOrder(id: number): Promise<RenewPrecheck> {
+  const { data } = await api.post(`/orders/${id}/renew`)
   return data
 }
 

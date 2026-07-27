@@ -147,6 +147,18 @@ export async function deliverFulfillment(req: Request, res: Response, next: Next
   } catch (err) { next(err) }
 }
 
+export async function postProgress(req: Request, res: Response, next: NextFunction) {
+  try {
+    const merchant = await merchantService.getMyMerchant(req.user!.userId)
+    res.json(await merchantService.postOrderProgress(
+      merchant.id,
+      req.user!.userId,
+      req.params.id as unknown as number,
+      req.body
+    ))
+  } catch (err) { next(err) }
+}
+
 export async function respondDispute(req: Request, res: Response, next: NextFunction) {
   try {
     const merchant = await merchantService.getMyMerchant(req.user!.userId)

@@ -587,7 +587,8 @@ export async function listAllOrders(query: ListOrdersQuery = {}) {
         user: { select: { id: true, email: true } },
         merchant: { select: { id: true, name: true } },
         product: { select: { id: true, name: true, icon: true, type: true, imageUrl: true, price: true } },
-        delivery: { select: { status: true } },
+        // P6：仲裁需要订阅到期视角——只选 expiresAt（序列化补 expired），内容仍不出列表。
+        delivery: { select: { status: true, expiresAt: true } },
       },
       orderBy: { createdAt: 'desc' },
       skip: (page - 1) * pageSize,
@@ -663,7 +664,8 @@ export async function getOrderDetail(orderId: number) {
       product: {
         select: { id: true, name: true, icon: true, type: true, imageUrl: true, price: true },
       },
-      delivery: { select: { content: true, status: true } },
+      // P6：详情补订阅到期时刻，供仲裁判断交付是否仍在有效期内。
+      delivery: { select: { content: true, status: true, expiresAt: true } },
     },
   })
   if (!order) throw notFound('订单不存在')
@@ -680,6 +682,12 @@ export async function resolveOrder(
   input: ResolveOrderInput
 ) {
   await prisma.$transaction(async tx => {
+    // 复审二 P1：事务起点先锁订单行，再读取校验。仲裁退款此前的写序是
+    // Offer/Product（回补策略）→ Order（状态迁移），而续费下单是 Order
+    // （原单 FOR UPDATE）→ Offer/Product（销量/库存）——disputed 的订阅
+    // 原单仍可续费，两条路径并发即 Order↔Offer 循环等待死锁。统一为
+    // "先锁 Order 再碰 Offer/Product"后，续费与仲裁在原单行上串行化。
+    await tx.$queryRaw`SELECT "id" FROM "Order" WHERE "id" = ${orderId} FOR UPDATE`
     const order = await tx.order.findUnique({
       where: { id: orderId },
       select: {

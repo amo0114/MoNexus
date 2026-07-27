@@ -324,11 +324,27 @@ export default function ProductDetailPage() {
                           <span className="text-xs text-[var(--color-text-muted)] line-through font-normal">{offer.originalPrice}</span>
                         )}
                       </span>
+                      {offer.validityDays != null && (
+                        <span className="text-[10px] text-[var(--color-text-muted)] font-medium" data-testid={`sku-validity-${offer.id}`}>
+                          有效期 {offer.validityDays} 天
+                        </span>
+                      )}
                       {offerSoldOut && <span className="text-[10px] text-[var(--color-danger)] font-bold">已售罄</span>}
                     </button>
                   )
                 })}
               </div>
+            </div>
+          )}
+
+          {/* P6a：订阅时长预告（选中规格 validityDays != null 时渲染；永久不渲染） */}
+          {activeOffer?.validityDays != null && (
+            <div className="mb-8 flex flex-wrap items-center gap-2 text-xs" data-testid="validity-days-preview">
+              <span className="text-[var(--color-text-muted)] font-bold">订阅时长：</span>
+              <span className="px-2 py-0.5 rounded border border-[var(--color-border)] bg-[var(--color-background)] text-[var(--color-text)] font-medium">
+                有效期 {activeOffer.validityDays} 天
+              </span>
+              <span className="text-[var(--color-text-muted)]">自交付起计算，到期前后均可续费</span>
             </div>
           )}
 
@@ -549,6 +565,7 @@ export default function ProductDetailPage() {
         <PurchaseModal
           productId={product.id}
           offerId={selectedOfferId ?? undefined}
+          validityDays={activeOffer?.validityDays ?? null}
           submitting={purchasing}
           onClose={() => setShowPurchase(false)}
           onConfirm={handlePurchase}

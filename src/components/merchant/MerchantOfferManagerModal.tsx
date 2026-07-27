@@ -41,6 +41,8 @@ type EditorForm = {
   fixedFileId: number | null
   fixedFileName: string
   fixedFileSize: number | null
+  /** P6a：订阅有效期(天),空字符串 = 永久。 */
+  validityDays: string
   /** P4b：交付字段模板;空数组 = 纯文本交付。 */
   deliveryFields: DeliveryField[]
 }
@@ -58,6 +60,7 @@ const EMPTY_FORM: EditorForm = {
   fixedFileId: null,
   fixedFileName: '',
   fixedFileSize: null,
+  validityDays: '',
   deliveryFields: [],
 }
 
@@ -75,6 +78,7 @@ function offerToForm(offer: Offer): EditorForm {
     fixedFileId: offer.fixedFileId ?? null,
     fixedFileName: offer.fixedFile?.fileName ?? '',
     fixedFileSize: offer.fixedFile?.size ?? null,
+    validityDays: offer.validityDays != null ? String(offer.validityDays) : '',
     // 深拷贝：编辑不能改到列表里的对象
     deliveryFields: (offer.deliveryFields ?? []).map(f => ({ ...f })),
   }
@@ -134,6 +138,10 @@ export default function MerchantOfferManagerModal({ isOpen, onClose, product, on
       const original = Number(form.originalPrice)
       if (!Number.isInteger(original) || original < price) return '原价不能低于售价'
     }
+    if (form.validityDays.trim() !== '') {
+      const days = Number(form.validityDays)
+      if (!Number.isInteger(days) || days < 1 || days > 3650) return '有效期必须是 1-3650 的整数天数，留空为永久'
+    }
     if (isFileForm && !form.fixedFileId) return '文件交付必须先上传交付文件'
     if (isFixed && !isFileForm && !form.fixedContent.trim()) return '固定内容交付必须填写交付内容'
     if (isFixed && form.fixedContentType === 'url' && !/^https?:\/\//i.test(form.fixedContent.trim())) {
@@ -189,6 +197,8 @@ export default function MerchantOfferManagerModal({ isOpen, onClose, product, on
       status: form.status,
       deliveryMode: form.deliveryMode,
       stockMode: isInstantInventory ? 'limited' : form.stockMode,
+      // P6a：空 = 永久（显式 null 支持从有期限改回永久）
+      validityDays: form.validityDays.trim() === '' ? null : Number(form.validityDays),
       fixedContent: isFixed && !isFileForm ? form.fixedContent.trim() : null,
       fixedContentType: form.fixedContentType,
       // P5：file 形态以 fixedFileId 为真相源；非 file 显式清空。
@@ -322,6 +332,12 @@ export default function MerchantOfferManagerModal({ isOpen, onClose, product, on
                           {offer.deliveryMode === 'instant_inventory'
                             ? '库存由交付库存导入管理'
                             : offer.stockMode === 'unlimited' ? '不限量' : `名额 ${offer.stock}`}
+                          {offer.validityDays != null && (
+                            <>
+                              <span className="mx-2">·</span>
+                              有效期 {offer.validityDays} 天
+                            </>
+                          )}
                         </div>
                       </div>
                       <div className="flex items-center gap-1 shrink-0">
@@ -366,6 +382,11 @@ export default function MerchantOfferManagerModal({ isOpen, onClose, product, on
               <div>
                 <label className="block text-sm font-bold text-[var(--color-text)] mb-1.5">原价（可选）</label>
                 <input className="input font-mono" type="number" min={0} step={1} placeholder="划线价" value={form.originalPrice} onChange={(e) => setForm(f => ({ ...f, originalPrice: e.target.value }))} disabled={submitting} data-testid="offer-form-original-price" />
+              </div>
+              <div className="sm:col-span-2">
+                <label className="block text-sm font-bold text-[var(--color-text)] mb-1.5">有效期（天）</label>
+                <input className="input font-mono" type="number" min={1} max={3650} step={1} placeholder="留空为永久" value={form.validityDays} onChange={(e) => setForm(f => ({ ...f, validityDays: e.target.value }))} disabled={submitting} data-testid="offer-form-validity-days" />
+                <p className="mt-1.5 text-xs text-[var(--color-text-muted)]">留空为永久有效；改动仅影响新订单</p>
               </div>
               <div>
                 <label className="block text-sm font-bold text-[var(--color-text)] mb-1.5">交付方式</label>

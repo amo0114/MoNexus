@@ -40,6 +40,9 @@ export type IdempotencyFingerprint = {
   // Offer 结算版本（P4b）。与 offerId 同一兼容策略：未传不写入 canonical。
   checkoutVersion?: string
   formAnswers?: Record<string, string>
+  // P6a：续费关联（同兼容策略：未传不写入 canonical，存量摘要不变）。
+  // 同 key 换续费目标（或续费↔普通购买互换）视为不同意图，必须 409。
+  renewalOfOrderId?: number
 }
 
 /**
@@ -62,6 +65,8 @@ export function computeRequestDigest(fingerprint: IdempotencyFingerprint): strin
     purchaseFormVersion: fingerprint.purchaseFormVersion ?? null,
     // 同兼容策略：旧客户端不传 → digest 不变；新客户端换版本重试 → 409。
     ...(fingerprint.checkoutVersion != null ? { checkoutVersion: fingerprint.checkoutVersion } : {}),
+    // P6a：续费单与普通购买是不同意图，同 key 互换必须 409。
+    ...(fingerprint.renewalOfOrderId != null ? { renewalOfOrderId: fingerprint.renewalOfOrderId } : {}),
     answers: canonicalAnswers,
   })
   return createHmac('sha256', config.jwtSecret).update(canonical).digest('hex')
@@ -128,6 +133,12 @@ export async function claimIdempotencyKey(
   }
 
   if (existing.status === 'completed' && existing.orderId != null) {
+    // 复审 P2-2：重放窗口以记录 expiresAt 为准（清理 cron 是 24h 粒度的
+    // 兜底，不是边界）。过期的 completed 记录绝不落入下方"接管租约重新
+    // 执行"分支——那会对同一 key 重复下单；直接拒绝并指引查订单列表。
+    if (existing.expiresAt <= now) {
+      throw new HttpError(409, 'IDEMPOTENCY_KEY_EXPIRED', '幂等键已过期，请在订单列表确认结果后重新发起')
+    }
     return { kind: 'replay', orderId: existing.orderId }
   }
 

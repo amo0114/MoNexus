@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { formatBookingDay } from '../utils/formatLocalDate'
 import { useNavigate } from 'react-router-dom'
 import {
   getMerchantStats,
@@ -14,6 +15,7 @@ import {
   deliverOrder,
   respondDispute,
   rejectOrder,
+  postOrderProgress,
 } from '../api/merchant'
 import {
   MerchantStats,
@@ -22,7 +24,7 @@ import {
   Settlement,
   Merchant
 } from '../types/merchant'
-import { Store, Package, ShoppingBag, DollarSign, Settings, Plus, ChevronLeft, ChevronRight, Loader2, BarChart3, Search, AlertTriangle } from 'lucide-react'
+import { Store, Package, ShoppingBag, DollarSign, Settings, Plus, ChevronLeft, ChevronRight, Loader2, BarChart3, Search, AlertTriangle, CalendarDays } from 'lucide-react'
 import { useAppStore } from '../stores/appStore'
 import MerchantProductFormModal from '../components/merchant/MerchantProductFormModal'
 import MerchantInventoryImportModal from '../components/merchant/MerchantInventoryImportModal'
@@ -31,6 +33,7 @@ import MerchantCapacityAdjustModal from '../components/merchant/MerchantCapacity
 import MerchantOfferManagerModal from '../components/merchant/MerchantOfferManagerModal'
 import MerchantDeliverDialog from '../components/merchant/MerchantDeliverDialog'
 import MerchantDisputeDialog from '../components/merchant/MerchantDisputeDialog'
+import MerchantProgressDialog from '../components/merchant/MerchantProgressDialog'
 import RegistryPill from '../components/ui/RegistryPill'
 import { Dialog, DialogContent, DialogTitle } from '../components/ui/Dialog'
 import { TableSkeleton, StatCardSkeleton } from '../components/ui/Skeleton'
@@ -93,13 +96,15 @@ export default function MerchantDashboardPage() {
   const [orderPage, setOrderPage] = useState(1)
   const [orderTotal, setOrderTotal] = useState(0)
   const [orderStatusFilter, setOrderStatusFilter] = useState('')
+  // P6c：按预约日期排序（bookingDate 升序，无预约的排最后）。
+  const [orderSortBooking, setOrderSortBooking] = useState(false)
 
   const [settlements, setSettlements] = useState<Settlement[]>([])
   const [merchant, setMerchant] = useState<Merchant | null>(null)
 
   useEffect(() => {
     loadData()
-  }, [activeTab, productPage, orderPage, orderStatusFilter, productSearchDebounced, productStatusFilter, productTypeFilter, productModeFilter, productLowStockOnly])
+  }, [activeTab, productPage, orderPage, orderStatusFilter, orderSortBooking, productSearchDebounced, productStatusFilter, productTypeFilter, productModeFilter, productLowStockOnly])
 
   async function loadData() {
     setLoading(true)
@@ -125,6 +130,7 @@ export default function MerchantDashboardPage() {
           page: orderPage,
           pageSize: 20,
           status: orderStatusFilter || undefined,
+          sort: orderSortBooking ? 'booking' : undefined,
         })
         setOrders(data.items)
         setOrderTotal(data.total)
@@ -185,6 +191,8 @@ export default function MerchantDashboardPage() {
   // --- Order Dialogs State ---
   const [deliveringOrder, setDeliveringOrder] = useState<MerchantOrder | null>(null)
   const [disputeOrder, setDisputeOrder] = useState<MerchantOrder | null>(null)
+  // P6b：进度更新对话框（processing 人工服务订单）。
+  const [progressOrder, setProgressOrder] = useState<MerchantOrder | null>(null)
   const [rejectingOrder, setRejectingOrder] = useState<MerchantOrder | null>(null)
   const [rejectNote, setRejectNote] = useState('')
   const [rejecting, setRejecting] = useState(false)
@@ -219,7 +227,7 @@ export default function MerchantDashboardPage() {
   }
 
   async function handleOrderAction(
-    action: 'start_fulfillment' | 'deliver' | 'respond_dispute' | 'reject',
+    action: 'start_fulfillment' | 'deliver' | 'respond_dispute' | 'reject' | 'post_progress',
     order: MerchantOrder,
   ) {
     if (action === 'deliver') {
@@ -228,6 +236,10 @@ export default function MerchantDashboardPage() {
     }
     if (action === 'respond_dispute') {
       setDisputeOrder(order)
+      return
+    }
+    if (action === 'post_progress') {
+      setProgressOrder(order)
       return
     }
     if (action === 'reject') {
@@ -262,10 +274,17 @@ export default function MerchantDashboardPage() {
     }
   }
 
-  async function handleDeliverSubmit(payload: { deliveryContent?: string; structuredValues?: Record<string, string> }) {
+  async function handleDeliverSubmit(payload: { deliveryContent?: string; structuredValues?: Record<string, string>; attachmentFileId?: number; publicNote?: string }) {
     if (!deliveringOrder) return
     await deliverOrder(deliveringOrder.id, payload)
     showToast('发货成功')
+    loadData()
+  }
+
+  async function handleProgressSubmit(note: string) {
+    if (!progressOrder) return
+    await postOrderProgress(progressOrder.id, note)
+    showToast('进度已更新')
     loadData()
   }
 
@@ -551,6 +570,17 @@ export default function MerchantDashboardPage() {
                     <option key={s.value} value={s.value}>{s.label}</option>
                   ))}
                 </select>
+                <button
+                  type="button"
+                  onClick={() => { setOrderSortBooking(v => !v); setOrderPage(1) }}
+                  aria-pressed={orderSortBooking}
+                  className={`btn-secondary btn-sm ${
+                    orderSortBooking ? 'border-[var(--color-primary)] text-[var(--color-primary)] bg-[var(--color-primary)]/10' : ''
+                  }`}
+                  data-testid="merchant-orders-sort-booking"
+                >
+                  <CalendarDays className="w-4 h-4" /> 按预约日期
+                </button>
               </div>
 
               <div className="overflow-x-auto">
@@ -590,6 +620,14 @@ export default function MerchantDashboardPage() {
                             {o.offerNameSnapshot && o.offerNameSnapshot !== '默认规格' && (
                               <div className="mt-0.5 text-xs font-bold text-[var(--color-text-muted)]">规格：{o.offerNameSnapshot}</div>
                             )}
+                            {o.bookingDate && (
+                              <div
+                                className="mt-0.5 text-xs font-bold text-[var(--color-primary)]"
+                                data-testid={`merchant-order-booking-${o.id}`}
+                              >
+                                预约日期 {formatBookingDay(o.bookingDate)}
+                              </div>
+                            )}
                             {o.product?.deliveryMode && <div className="mt-1"><RegistryPill value={o.product.deliveryMode} category="deliveryModes" /></div>}
                           </td>
                           <td className="py-3 px-2 text-sm text-[var(--color-text-muted)]" data-label="用户">{o.user?.email}</td>
@@ -628,6 +666,15 @@ export default function MerchantDashboardPage() {
                                 data-testid={`merchant-reject-order-${o.id}`}
                               >
                                 拒单
+                              </button>
+                            )}
+                            {o.availableActions?.includes('post_progress') && (
+                              <button
+                                onClick={() => handleOrderAction('post_progress', o)}
+                                className="btn-secondary btn-sm mr-2"
+                                data-testid={`merchant-post-progress-${o.id}`}
+                              >
+                                进度更新
                               </button>
                             )}
                             {o.availableActions?.includes('deliver') && (
@@ -800,6 +847,13 @@ export default function MerchantDashboardPage() {
         onClose={() => setDisputeOrder(null)}
         order={disputeOrder}
         onSubmit={handleDisputeSubmit}
+      />
+
+      <MerchantProgressDialog
+        isOpen={progressOrder !== null}
+        onClose={() => setProgressOrder(null)}
+        order={progressOrder}
+        onSubmit={handleProgressSubmit}
       />
 
       <Dialog open={!!rejectingOrder} onOpenChange={(o) => { if (!o && !rejecting) setRejectingOrder(null) }}>

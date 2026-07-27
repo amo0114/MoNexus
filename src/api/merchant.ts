@@ -101,7 +101,7 @@ export async function adjustMerchantProductCapacity(id: number, payload: { delta
   await api.post(`/merchant/products/${id}/capacity/adjust`, payload)
 }
 
-export async function getMerchantOrders(params?: { page?: number; pageSize?: number; status?: string; q?: string; productId?: number; dateFrom?: string; dateTo?: string }): Promise<ListEnvelope<MerchantOrder>> {
+export async function getMerchantOrders(params?: { page?: number; pageSize?: number; status?: string; q?: string; productId?: number; dateFrom?: string; dateTo?: string; sort?: 'booking' }): Promise<ListEnvelope<MerchantOrder>> {
   const { data } = await api.get<ListEnvelope<MerchantOrder>>('/merchant/orders', { params })
   return data
 }
@@ -127,6 +127,12 @@ export async function deliverOrder(
   },
 ): Promise<void> {
   await api.post(`/merchant/orders/${id}/fulfillment/deliver`, payload)
+}
+
+/** P6b：商家发布履约进度（仅 processing 人工服务订单；服务端按单频控）。 */
+export async function postOrderProgress(id: number, note: string): Promise<{ ok: true }> {
+  const { data } = await api.post<{ ok: true }>(`/merchant/orders/${id}/progress`, { note })
+  return data
 }
 
 export async function respondDispute(id: number, payload: { resolution: 'resume' | 'close'; publicNote?: string }): Promise<void> {
