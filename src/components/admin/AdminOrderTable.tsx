@@ -3,7 +3,7 @@ import { Search, ShoppingCart } from 'lucide-react'
 import { getAdminOrders, resolveAdminOrder, AdminOrderItem } from '../../api/admin'
 import { getApiErrorMessage } from '../../api/error'
 import { useAppStore } from '../../stores/appStore'
-import { formatLocalDate } from '../../utils/formatLocalDate'
+import { formatBookingDay, formatLocalDate } from '../../utils/formatLocalDate'
 import RegistryPill from '../ui/RegistryPill'
 import AdminPagination from './AdminPagination'
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '../ui/Dialog'
@@ -151,7 +151,7 @@ export default function AdminOrderTable() {
                           className="text-xs font-bold text-[var(--color-primary)] bg-[var(--color-primary)]/10 px-1.5 py-0.5 rounded border border-[var(--color-primary)]/20"
                           data-testid={`admin-order-booking-${o.id}`}
                         >
-                          预约 {formatLocalDate(o.bookingDate)}
+                          预约 {formatBookingDay(o.bookingDate)}
                         </span>
                       )}
                       {o.delivery?.expiresAt && (

@@ -20,6 +20,7 @@ import { serializeUserOrderDetail, serializeUserOrderList } from './serializers.
 import { invalidateProductPublicCache } from '../products/cache.js'
 import { logInventoryChange } from '../../lib/inventoryLog.js'
 import { parseStoredPurchaseForm, validatePurchaseFormAnswers, computePurchaseFormVersion, findBookingDateField } from '../../lib/purchaseForm.js'
+import { calendarDayToUtc } from '../../lib/businessTime.js'
 import { assertCheckoutVerification } from '../checkout/verification.js'
 import { resolvePurchaseOfferChecked } from '../../lib/offers.js'
 import {
@@ -214,11 +215,12 @@ async function createOrderOnce(
       throw new HttpError(409, 'CHECKOUT_CHANGED', '商品信息已变化，请重新确认')
     }
     const purchaseFormAnswers = validatePurchaseFormAnswers(purchaseFormFields, formAnswers)
-    // P6c：预约日期列化——取首个 date 字段的已校验答案（YYYY-MM-DD），
-    // 商家排序与提醒 cron 免查答案 JSON。无日期字段/未填（非必填）= null。
+    // P6c：预约日期列化——取 date 字段（schema 限定至多一个）的已校验答案
+    // （YYYY-MM-DD），商家排序与提醒 cron 免查答案 JSON。存储为该日历日的
+    // UTC 零点（复审 P1-3：与运行时区无关）。无日期字段/未填（非必填）= null。
     const bookingDateField = findBookingDateField(purchaseFormFields)
     const bookingDateAnswer = bookingDateField ? purchaseFormAnswers?.[bookingDateField.key] : undefined
-    const orderBookingDate = bookingDateAnswer ? new Date(`${bookingDateAnswer}T00:00:00`) : null
+    const orderBookingDate = bookingDateAnswer ? calendarDayToUtc(bookingDateAnswer) : null
     const deliveryMode = getProductFulfillmentMode(offer.deliveryMode)
     // P4b：下单即冻结交付字段模板——人工服务发货按此快照强制校验，商家改
     // 模板不影响已购未发货订单（快照惯例同 deliveryModeSnapshot）。
@@ -251,6 +253,13 @@ async function createOrderOnce(
     // 存在、属于同一买家（查询条件即防枚举，失败不区分"不存在/他人"）、
     // 与本次购买同一规格、且是订阅交付（有到期时刻）。
     if (renewalOfOrderId != null) {
+      // 复审 P1-1：先锁原单行再查续费链。两个不同幂等键并发续同一原单时，
+      // 都会在"查到无续费子单"后创建成功——两张新单都自原到期顺延，买家
+      // 重复扣款只延一份时长。FOR UPDATE 串行化后，后到者在锁释放后重查
+      // 必然看到先到者的续费单 → RENEW_ALREADY_RENEWED。退款走
+      // transitionOrderStatus 的行更新，同样被此锁序：要么先退款（下方
+      // status 终检拒单），要么先续费（退款后的交付继承由 P1-2 收口）。
+      await tx.$queryRaw`SELECT "id" FROM "Order" WHERE "id" = ${renewalOfOrderId} FOR UPDATE`
       const original = await tx.order.findFirst({
         where: { id: renewalOfOrderId, userId },
         select: {

@@ -11,14 +11,17 @@ const STAMP = Date.now()
 const PRODUCT_NAME = `E2E预约-${STAMP}`
 const DAY_MS = 24 * 60 * 60 * 1000
 
-function toLocalDate(d: Date): string {
+/** 业务日历（Asia/Shanghai）今天 + N 天，YYYY-MM-DD——与前端提示/服务端校验同口径。 */
+function businessDatePlus(days: number): string {
+  const today = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(new Date())
+  const [y, m, d] = today.split('-').map(Number)
+  const shifted = new Date(Date.UTC(y, m - 1, d) + days * DAY_MS)
   const pad = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+  return `${shifted.getUTCFullYear()}-${pad(shifted.getUTCMonth() + 1)}-${pad(shifted.getUTCDate())}`
 }
-function localDatePlus(days: number): string {
-  return toLocalDate(new Date(Date.now() + days * DAY_MS))
-}
-const BOOKING_DATE = localDatePlus(3)
+const BOOKING_DATE = businessDatePlus(3)
 
 const state = { productId: 0, orderId: 0 }
 
@@ -67,8 +70,8 @@ test.describe.serial('P6c booking', () => {
       .find(o => o.product?.id === state.productId)!
     state.orderId = order.id
     expect(order.bookingDate).toBeTruthy()
-    // ISO 串是 UTC；列化值为本地零点——按本地日历日比较。
-    expect(toLocalDate(new Date(order.bookingDate as string))).toBe(BOOKING_DATE)
+    // 列化值 = 日历日的 UTC 零点（复审 P1-3）——ISO 串前 10 位即日历日。
+    expect((order.bookingDate as string).slice(0, 10)).toBe(BOOKING_DATE)
   })
 
   test('both sides see the booking date; merchant sorts by it', async ({ page, request }) => {

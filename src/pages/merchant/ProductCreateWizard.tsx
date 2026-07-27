@@ -122,6 +122,8 @@ type WizardForm = {
   stock: string
   fixedContent: string
   fixedContentType: string
+  /** 复审 P2-2：默认规格的订阅有效期(天),空字符串 = 永久。 */
+  validityDays: string
   purchaseForm: PurchaseFormField[]
 }
 
@@ -140,6 +142,7 @@ export default function ProductCreateWizard() {
     name: '', type: '网络节点', icon: 'package', description: '', richDescription: '',
     isHot: false, price: '', originalPrice: '', deliveryMode: 'instant_inventory',
     stockMode: 'unlimited', stock: '', fixedContent: '', fixedContentType: 'text',
+    validityDays: '',
     purchaseForm: [],
   })
   // P4a：主规格名 + 附加规格列表。单 SKU 商品保持两者为默认值/空，行为不变。
@@ -179,6 +182,10 @@ export default function ProductCreateWizard() {
         if (original < price) return '原价不能低于售价'
       }
       if (!primaryOfferName.trim()) return '主规格名称不能为空'
+      if (form.validityDays.trim() !== '') {
+        const days = Number(form.validityDays)
+        if (!Number.isInteger(days) || days < 1 || days > 3650) return '有效期必须是 1-3650 的整数天数，留空为永久'
+      }
       // 附加规格自带完整的价格与交付配置，在本步一次校验完。
       const names = new Set<string>([primaryOfferName.trim()])
       for (const [i, offer] of extraOffers.entries()) {
@@ -295,6 +302,8 @@ export default function ProductCreateWizard() {
       purchaseForm: serializePurchaseFormFields(form.purchaseForm),
     }
     if (form.originalPrice.trim() !== '') payload.originalPrice = Number(form.originalPrice)
+    // 复审 P2-2：默认规格的订阅有效期随创建请求落 Offer；缺省即永久有效。
+    if (form.validityDays.trim() !== '') payload.validityDays = Number(form.validityDays)
     if (form.deliveryMode !== 'instant_inventory') {
       payload.stockMode = form.stockMode
       if (form.stockMode === 'limited') payload.stock = Number(form.stock)
@@ -503,6 +512,13 @@ export default function ProductCreateWizard() {
                 <FieldLabel>划线原价 - 可选</FieldLabel>
                 <input type="number" step="1" min="1" className="input font-mono" placeholder="0"
                   value={form.originalPrice} onChange={(e) => setForm({ ...form, originalPrice: e.target.value })} />
+              </div>
+              <div>
+                <FieldLabel>有效期（天）- 可选</FieldLabel>
+                <input type="number" step="1" min="1" max="3650" className="input font-mono" placeholder="留空为永久"
+                  value={form.validityDays} onChange={(e) => setForm({ ...form, validityDays: e.target.value })}
+                  data-testid="wizard-validity-days" />
+                <p className="mt-1.5 text-xs text-[var(--color-text-muted)]">留空为永久有效；改动仅影响新订单</p>
               </div>
               <label className="flex items-center gap-2 text-sm cursor-pointer pt-2">
                 <input type="checkbox" checked={form.isHot} onChange={(e) => setForm({ ...form, isHot: e.target.checked })}

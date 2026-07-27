@@ -6,12 +6,23 @@ import { getApiErrorMessage } from '../api/error'
 
 export type ConfirmOutcome = 'success' | 'price_changed' | 'verification_required' | 'verification_failed' | 'failed'
 
-/** P6c：今天 + N 天的本地日期，格式 YYYY-MM-DD（date 输入的 min/max 提示；服务端强校验）。 */
+/**
+ * P6c：今天 + N 天的日期，格式 YYYY-MM-DD（date 输入的 min/max 提示；服务端
+ * 强校验）。复审 P1-3：按 Asia/Shanghai 业务日历计算，与服务端判定一致——
+ * 否则海外浏览器或跨日凌晨时，前端允许的边界日会被服务端 400。
+ */
 function localDatePlusDays(days: number): string {
-  const d = new Date()
-  d.setDate(d.getDate() + days)
+  // en-CA 的日期格式恰好是 YYYY-MM-DD。
+  const today = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date())
+  const [y, m, d] = today.split('-').map(Number)
+  const shifted = new Date(Date.UTC(y, m - 1, d + days))
   const pad = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+  return `${shifted.getUTCFullYear()}-${pad(shifted.getUTCMonth() + 1)}-${pad(shifted.getUTCDate())}`
 }
 
 /**

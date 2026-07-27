@@ -283,12 +283,14 @@ export async function createMyProduct(
     purchaseForm?: PurchaseFormField[];
     // P4a F3：向导原子发布——默认规格名 + 额外规格与商品同事务落库。
     primaryOfferName?: string;
+    // 复审 P2-2：默认规格的订阅有效期（落 Offer，不进 Product 列）。
+    validityDays?: number | null;
     offers?: (OfferWriteInput & { name: string; price: number })[]
   }
 ) {
   assertOriginalPriceAtLeastSale(data.price, data.originalPrice)
-  // primaryOfferName/offers 只进 Offer 表，不进 Product 列。
-  const { primaryOfferName: _primaryOfferName, offers: _offers, ...productFields } = data
+  // primaryOfferName/validityDays/offers 只进 Offer 表，不进 Product 列。
+  const { primaryOfferName: _primaryOfferName, validityDays: _validityDays, offers: _offers, ...productFields } = data
   const normalizedProductData = normalizeProductImageFields(productFields)
   const deliveryMode = data.deliveryMode ?? 'instant_inventory'
   const stockMode = data.stockMode ?? (deliveryMode === 'instant_inventory' ? 'limited' : 'unlimited')
@@ -323,6 +325,7 @@ export async function createMyProduct(
       stock: deliveryMode === 'instant_inventory' ? 0 : (data.stock ?? 0),
       fixedContent: data.fixedContent ?? null,
       fixedContentType,
+      validityDays: data.validityDays ?? null,
     }, data.primaryOfferName)
     // F3：额外规格同事务创建，任一条校验失败 → 整体回滚（无孤儿商品）。
     for (const offerInput of data.offers ?? []) {
@@ -996,8 +999,18 @@ export async function postOrderProgress(
   await prisma.$transaction(async tx => {
     // 归属校验沿用统一入口：他人/不存在的订单一律 404 防枚举。
     const order = await assertMerchantOrder(merchantId, orderId, tx)
+    // 复审 P2-4：先锁订单行再终检状态。进度写入与交付并发时，进度事务在
+    // 旧快照上看到 processing、提交时订单已 delivered——买家时间线会出现
+    // 交付之后的 processing→processing 事件。FOR UPDATE 与
+    // transitionOrderStatus 的行更新互斥：交付先提交则此处重读拒绝，
+    // 进度先拿锁则交付排队在其后，事件序保持正确。
+    await tx.$queryRaw`SELECT "id" FROM "Order" WHERE "id" = ${order.id} FOR UPDATE`
+    const fresh = await tx.order.findUniqueOrThrow({
+      where: { id: order.id },
+      select: { status: true },
+    })
     if (
-      normalizeOrderStatus(order.status) !== 'processing'
+      normalizeOrderStatus(fresh.status) !== 'processing'
       || getOrderDeliveryMode(order) !== 'manual_service'
     ) {
       throw badRequest('仅履约中的人工服务订单可更新进度')

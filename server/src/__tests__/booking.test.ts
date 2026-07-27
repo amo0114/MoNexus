@@ -4,6 +4,7 @@ import { CaptureMailer } from '../lib/mailer/capture.js'
 import { __setMailerForTesting } from '../lib/mailer/index.js'
 import type { Mailer } from '../lib/mailer/types.js'
 import { runBookingRemindBatch } from '../lib/bookingRemind.js'
+import { addCalendarDays, businessDateString, calendarDayToUtc } from '../lib/businessTime.js'
 import {
   api,
   authHeader,
@@ -16,29 +17,22 @@ import {
 
 /**
  * P6c：预约服务 v1（设计 §4 决策 ④，轻量形态——无 slot 日历）。
- * - 下单：date 字段答案列化进 Order.bookingDate（本地零点）+ 可约窗口校验；
+ * - 下单：date 字段答案列化进 Order.bookingDate（复审 P1-3：Asia/Shanghai
+ *   业务日历日的 UTC 零点，与运行时区无关）+ 可约窗口校验；
  * - 展示：买家/商家列表与详情透出 bookingDate；商家列表 sort=booking 排期视图；
- * - 提醒：预约日前 1 天 cron 双方各一封（runBookingRemindBatch）。
+ * - 提醒：预约日为业务时区"明天"时 cron 双方各一封（runBookingRemindBatch）。
  */
 
-const DAY_MS = 24 * 60 * 60 * 1000
 const HOUR_MS = 60 * 60 * 1000
 
-/** 今天本地零点偏移 N 天的 Date（与下单列化 `${v}T00:00:00` 同一语义）。 */
-function localMidnight(offsetDays: number) {
-  const d = new Date()
-  d.setHours(0, 0, 0, 0)
-  d.setDate(d.getDate() + offsetDays)
-  return d
+/** 业务日历日（今天 + N 天）的 YYYY-MM-DD 字符串（买家表单答案格式）。 */
+function dayString(offsetDays: number) {
+  return addCalendarDays(businessDateString(), offsetDays)
 }
 
-/** 本地日历日的 YYYY-MM-DD 字符串（买家表单答案格式）。 */
-function dayString(offsetDays: number) {
-  const d = localMidnight(offsetDays)
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${y}-${m}-${day}`
+/** 业务日历日（今天 + N 天）的规范存储值：该日 UTC 零点。 */
+function storedDay(offsetDays: number) {
+  return calendarDayToUtc(dayString(offsetDays))
 }
 
 /**
@@ -47,14 +41,13 @@ function dayString(offsetDays: number) {
  * 往返校验就会以滚动后的日期建单）。
  */
 function rolledDayString() {
-  const d = new Date()
-  d.setHours(0, 0, 0, 0)
-  d.setDate(1)
+  const [y0, m0] = businessDateString().split('-').map(Number)
   for (let i = 1; i <= 4; i++) {
-    d.setMonth(d.getMonth() + 1)
-    const daysInMonth = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()
+    const y = y0 + Math.floor((m0 - 1 + i) / 12)
+    const m = ((m0 - 1 + i) % 12) + 1
+    const daysInMonth = new Date(Date.UTC(y, m, 0)).getUTCDate()
     if (daysInMonth < 31) {
-      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-31`
+      return `${y}-${String(m).padStart(2, '0')}-31`
     }
   }
   throw new Error('unreachable: 连续 4 个月不可能都是 31 天')
@@ -69,7 +62,7 @@ async function setPurchaseForm(productId: number, form: unknown) {
 }
 
 describe('booking date columnization at purchase', () => {
-  it('stores the date answer as local midnight in Order.bookingDate and exposes it to the buyer', async () => {
+  it('stores the date answer as the calendar day\'s UTC midnight in Order.bookingDate and exposes it to the buyer', async () => {
     await createTestUser('bk-buyer@test.local', 'pass123', 'user', 1000)
     const product = await createTestProduct('预约商品', 100, 3, ['bk-1', 'bk-2', 'bk-3'])
     await setPurchaseForm(product.id, DATE_FORM)
@@ -84,8 +77,8 @@ describe('booking date columnization at purchase', () => {
 
     const order = await prisma.order.findUniqueOrThrow({ where: { id: res.body.orderId } })
     expect(order.bookingDate).not.toBeNull()
-    // 列化值 = 答案当天的本地零点
-    expect(order.bookingDate!.getTime()).toBe(localMidnight(3).getTime())
+    // 列化值 = 答案日历日的 UTC 零点（与运行时区无关）
+    expect(order.bookingDate!.getTime()).toBe(storedDay(3).getTime())
 
     // 买家详情与列表行均透出 bookingDate
     const detail = await api
@@ -153,7 +146,7 @@ describe('booking date columnization at purchase', () => {
       .send({ productId: product.id, formAnswers: { serviceDate: dayString(3) } })
       .expect(201)
     const order = await prisma.order.findUniqueOrThrow({ where: { id: ok.body.orderId } })
-    expect(order.bookingDate!.getTime()).toBe(localMidnight(3).getTime())
+    expect(order.bookingDate!.getTime()).toBe(storedDay(3).getTime())
   })
 
   it('rejects rolled calendar dates (02-31 style) with 400 and no side effects', async () => {
@@ -208,10 +201,10 @@ describe('merchant order list sort=booking', () => {
     const now = Date.now()
     // A：预约后天，下单最早；B：预约明天，下单居中；C：无预约，下单最晚
     const orderA = await prisma.order.create({
-      data: { ...base, bookingDate: localMidnight(2), createdAt: new Date(now - 3 * HOUR_MS) },
+      data: { ...base, bookingDate: storedDay(2), createdAt: new Date(now - 3 * HOUR_MS) },
     })
     const orderB = await prisma.order.create({
-      data: { ...base, bookingDate: localMidnight(1), createdAt: new Date(now - 2 * HOUR_MS) },
+      data: { ...base, bookingDate: storedDay(1), createdAt: new Date(now - 2 * HOUR_MS) },
     })
     const orderC = await prisma.order.create({
       data: { ...base, bookingDate: null, createdAt: new Date(now - 1 * HOUR_MS) },
@@ -230,8 +223,8 @@ describe('merchant order list sort=booking', () => {
       .expect(200)
 
     expect(res.body.items.map((o: { id: number }) => o.id)).toEqual([orderB.id, orderA.id, orderC.id])
-    expect(res.body.items[0].bookingDate).toBe(localMidnight(1).toISOString())
-    expect(res.body.items[1].bookingDate).toBe(localMidnight(2).toISOString())
+    expect(res.body.items[0].bookingDate).toBe(storedDay(1).toISOString())
+    expect(res.body.items[1].bookingDate).toBe(storedDay(2).toISOString())
     expect(res.body.items[2].bookingDate).toBeNull()
 
     // 商家详情同样透出
@@ -239,7 +232,7 @@ describe('merchant order list sort=booking', () => {
       .get(`/api/merchant/orders/${orderB.id}`)
       .set(authHeader(accessToken))
       .expect(200)
-    expect(detail.body.bookingDate).toBe(localMidnight(1).toISOString())
+    expect(detail.body.bookingDate).toBe(storedDay(1).toISOString())
   })
 
   it('without sort param the default createdAt-desc ordering is unchanged', async () => {
@@ -336,7 +329,7 @@ describe('runBookingRemindBatch', () => {
     const { order } = await seedBookingOrder({
       email: 'bk-remind@test.local',
       status: 'pending',
-      bookingDate: localMidnight(1),
+      bookingDate: storedDay(1),
     })
 
     await runBookingRemindBatch(now)
@@ -362,30 +355,30 @@ describe('runBookingRemindBatch', () => {
     expect(mailer.sent).toHaveLength(2)
   })
 
-  it('excludes bookings outside the 24h window and delivered/refunded orders', async () => {
+  it('excludes bookings not on business-calendar tomorrow and delivered/refunded orders', async () => {
     const now = new Date()
-    // 超过 24 小时后的预约
+    // 后天的预约（业务日历"明天"才提醒）
     await seedBookingOrder({
       email: 'bk-far@test.local',
       status: 'pending',
-      bookingDate: localMidnight(2),
+      bookingDate: storedDay(2),
     })
     // 已过期的预约（提醒无意义）
     await seedBookingOrder({
       email: 'bk-past@test.local',
       status: 'processing',
-      bookingDate: localMidnight(-1),
+      bookingDate: storedDay(-1),
     })
     // 终态订单不提醒
     await seedBookingOrder({
       email: 'bk-delivered@test.local',
       status: 'delivered',
-      bookingDate: localMidnight(1),
+      bookingDate: storedDay(1),
     })
     await seedBookingOrder({
       email: 'bk-refunded@test.local',
       status: 'refunded',
-      bookingDate: localMidnight(1),
+      bookingDate: storedDay(1),
     })
     // 无预约日期
     await seedBookingOrder({
@@ -405,7 +398,7 @@ describe('runBookingRemindBatch', () => {
     const { order } = await seedBookingOrder({
       email: 'bk-retry@test.local',
       status: 'pending',
-      bookingDate: localMidnight(1),
+      bookingDate: storedDay(1),
     })
 
     // 商家侧失败、买家侧成功 → 不落行（无行 = 待发送，下轮整体重试）

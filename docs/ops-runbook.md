@@ -59,6 +59,6 @@
 |---|---|
 | 签名下载 403 SignatureDoesNotMatch | Nginx 是否 `$http_host` 透传；`DELIVERY_STORAGE_PUBLIC_ENDPOINT` 与浏览器访问域是否逐字节一致 |
 | 商家收不到告警邮件 | SMTP 配置（console 兜底会打日志）；`merchant.contactEmail`；对应状态表的 lastNotifiedAt/sentAt |
-| 订阅未到期但买家 403 下载 | `fileAccessWindowDays` 与订阅到期取较严者（code 区分 FILE_WINDOW_EXPIRED / FILE_SUBSCRIPTION_EXPIRED） |
+| 订阅未到期但买家 403 下载 | 订阅交付（expiresAt 非空）**豁免**平台 `fileAccessWindowDays` 窗口、只受自身有效期约束（FILE_SUBSCRIPTION_EXPIRED）；非订阅交付才受窗口约束（FILE_WINDOW_EXPIRED）——先看订单是否真有 expiresAt |
 | 提醒重复发送 | 预约提醒双封语义（部分失败整体重试）；其余通道检查状态表是否被误删 |
 | 全量 e2e 本机随机白屏 | WSL2 swap 压力（见 `.claude` 记忆）；`--workers=1 --retries=2` |

@@ -91,6 +91,9 @@ export const updateMerchantOfferSchema = merchantOfferFieldsSchema.partial().ext
 // 任一规格校验失败则整体回滚（不再有"商品建了、规格没建全"的中间态）。
 export const createMerchantProductSchema = merchantProductFieldsSchema.extend({
   primaryOfferName: z.string().trim().min(1, '默认规格名称不能为空').max(50).optional(),
+  // 复审 P2-2：默认规格的订阅有效期（落 Offer，不进 Product 列）；此前只有
+  // 附加规格能设，单 SKU 订阅商品被迫绕路"建附加规格再下架默认规格"。
+  validityDays: z.number().int().min(1).max(3650).nullable().optional(),
   offers: z.array(merchantOfferFieldsSchema).max(20, '规格数量超出上限').optional(),
 }).superRefine(validateProductCommercialFields)
 

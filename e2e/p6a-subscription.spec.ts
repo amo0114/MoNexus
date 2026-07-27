@@ -25,38 +25,32 @@ async function tokenOf(request: APIRequestContext, account: { email: string; pas
 test.describe.serial('P6a subscription', () => {
   test('merchant publishes a 30-day subscription offer', async ({ request }) => {
     const token = await tokenOf(request, SEED_ACCOUNTS.merchant)
+    // 复审 P2-2：创建 API 直接给默认规格设 validityDays——不再绕路
+    // "建附加规格再下架默认规格"。
     const created = await request.post(`${API_BASE}/api/merchant/products`, {
       headers: { Authorization: `Bearer ${token}` },
-      data: { name: PRODUCT_NAME, type: '网络节点', price: 2, deliveryMode: 'manual_service', stockMode: 'unlimited' },
-    })
-    expect(created.ok(), await created.text()).toBeTruthy()
-    state.productId = (await created.json()).id
-
-    const offer = await request.post(`${API_BASE}/api/merchant/products/${state.productId}/offers`, {
-      headers: { Authorization: `Bearer ${token}` },
       data: {
-        name: OFFER_NAME,
+        name: PRODUCT_NAME,
+        type: '网络节点',
         price: 2,
         deliveryMode: 'instant_fixed',
         stockMode: 'unlimited',
         fixedContentType: 'text',
         fixedContent: `NODE-${STAMP}`,
+        primaryOfferName: OFFER_NAME,
         validityDays: VALIDITY_DAYS,
       },
     })
-    expect(offer.ok(), await offer.text()).toBeTruthy()
-    state.offerId = (await offer.json()).id
+    expect(created.ok(), await created.text()).toBeTruthy()
+    state.productId = (await created.json()).id
 
-    // 下架默认人工档 → 唯一 active 规格，买家免选规格。
     const offers = await request.get(`${API_BASE}/api/merchant/products/${state.productId}/offers`, {
       headers: { Authorization: `Bearer ${token}` },
     })
-    const defaultOffer = ((await offers.json()) as { id: number; isDefault: boolean }[]).find(o => o.isDefault)!
-    const deactivate = await request.put(
-      `${API_BASE}/api/merchant/products/${state.productId}/offers/${defaultOffer.id}`,
-      { headers: { Authorization: `Bearer ${token}` }, data: { status: 'inactive' } },
-    )
-    expect(deactivate.ok(), await deactivate.text()).toBeTruthy()
+    const defaultOffer = ((await offers.json()) as { id: number; isDefault: boolean; validityDays: number | null }[])
+      .find(o => o.isDefault)!
+    expect(defaultOffer.validityDays).toBe(VALIDITY_DAYS)
+    state.offerId = defaultOffer.id
   })
 
   test('buyer sees the validity badge and purchases; detail shows the expiry line', async ({ page, request }) => {

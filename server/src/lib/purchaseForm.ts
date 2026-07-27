@@ -1,6 +1,12 @@
 import { createHash } from 'node:crypto'
 import { z } from 'zod'
 import { badRequest } from './httpError.js'
+import {
+  addCalendarDays,
+  businessDateString,
+  calendarDayToUtc,
+  diffCalendarDays,
+} from './businessTime.js'
 
 /**
  * 购买前信息收集的字段契约。
@@ -52,6 +58,11 @@ export const purchaseFormSchema = z
     if (new Set(fields.map(f => f.key)).size !== fields.length) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, message: '字段 key 不能重复' })
     }
+    // 复审 P2-3：date 字段至多一个——订单只列化一个 bookingDate，允许配
+    // 多个会让第 2 个起的日期只进答案 JSON、不进排序/提醒，商家侧静默失联。
+    if (fields.filter(f => f.type === 'date').length > 1) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: '预约日期字段至多一个' })
+    }
   })
 
 export type PurchaseFormField = z.infer<typeof purchaseFormFieldSchema>
@@ -96,7 +107,8 @@ export function computePurchaseFormVersion(fields: PurchaseFormField[]): string 
  */
 export function validatePurchaseFormAnswers(
   fields: PurchaseFormField[],
-  rawAnswers: unknown
+  rawAnswers: unknown,
+  now: Date = new Date()
 ): Record<string, string> | null {
   if (fields.length === 0) return null
 
@@ -121,7 +133,7 @@ export function validatePurchaseFormAnswers(
       throw badRequest(`「${field.label}」的选择无效，请重新选择`)
     }
     if (field.type === 'date') {
-      assertBookingDateInWindow(field, value)
+      assertBookingDateInWindow(field, value, now)
     }
     cleaned[field.key] = value
   }
@@ -130,46 +142,41 @@ export function validatePurchaseFormAnswers(
 
 /**
  * P6c：预约日期答案校验。格式 YYYY-MM-DD；窗口 [今天+min, 今天+max]
- * （默认 min=1、max=30；按服务器本地日历日比较——预约语义是"哪一天"，
- * 不含时刻，跨时区细化留待真实需求）。
+ * （默认 min=1、max=30）。复审 P1-3："今天"按 **Asia/Shanghai 业务日历**
+ * 判定（businessTime.ts），与运行时区无关——生产镜像跑 UTC 时中国凌晨
+ * 买家按前端日历选的边界日不再被 400。返回该日历日的规范存储值（UTC 零点）。
  */
 export function assertBookingDateInWindow(
   field: Pick<PurchaseFormField, 'label' | 'minDaysAhead' | 'maxDaysAhead'>,
-  value: string
+  value: string,
+  now: Date = new Date()
 ): Date {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
     throw badRequest(`「${field.label}」格式应为 YYYY-MM-DD`)
   }
-  const picked = new Date(`${value}T00:00:00`)
-  if (Number.isNaN(picked.getTime())) {
-    throw badRequest(`「${field.label}」不是有效日期`)
-  }
   // 复审 P3：V8 会把 02-31 之类滚动到下月（仅极端值才 Invalid），滚动后
   // 列化的 bookingDate 会与答案 JSON 显示不一致——往返校验拒绝滚动日期。
   const [y, m, d] = value.split('-').map(Number)
-  if (picked.getFullYear() !== y || picked.getMonth() + 1 !== m || picked.getDate() !== d) {
+  const picked = calendarDayToUtc(value)
+  if (
+    Number.isNaN(picked.getTime())
+    || picked.getUTCFullYear() !== y || picked.getUTCMonth() + 1 !== m || picked.getUTCDate() !== d
+  ) {
     throw badRequest(`「${field.label}」不是有效日期`)
   }
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  const dayMs = 24 * 60 * 60 * 1000
+  const today = businessDateString(now)
   const minDays = field.minDaysAhead ?? 1
   const maxDays = field.maxDaysAhead ?? 30
-  const earliest = new Date(today.getTime() + minDays * dayMs)
-  const latest = new Date(today.getTime() + maxDays * dayMs)
-  if (picked < earliest || picked > latest) {
-    // 复审 P2-2：边界是本地零点，toISOString 在 UTC+8 会显示成前一天，
-    // 买家按提示填边界日反而被拒——必须用本地日历日格式化。
-    const fmt = (d: Date) => {
-      const pad = (n: number) => String(n).padStart(2, '0')
-      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
-    }
-    throw badRequest(`「${field.label}」需在 ${fmt(earliest)} 至 ${fmt(latest)} 之间`)
+  const ahead = diffCalendarDays(value, today)
+  if (ahead < minDays || ahead > maxDays) {
+    throw badRequest(
+      `「${field.label}」需在 ${addCalendarDays(today, minDays)} 至 ${addCalendarDays(today, maxDays)} 之间`
+    )
   }
   return picked
 }
 
-/** 表单定义里的首个日期字段（预约字段；v1 至多按第一个处理）。 */
+/** 表单定义里的日期字段（预约字段；schema 限定至多一个）。 */
 export function findBookingDateField(fields: PurchaseFormField[]): PurchaseFormField | null {
   return fields.find(f => f.type === 'date') ?? null
 }

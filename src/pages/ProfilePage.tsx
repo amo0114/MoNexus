@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { formatLocalDate } from '../utils/formatLocalDate'
+import { formatBookingDay } from '../utils/formatLocalDate'
 import { useNavigate } from 'react-router-dom'
 import { Coins, Wallet, Users, CalendarCheck, LogOut, ArrowDownLeft, ArrowUpRight, Store, Eye, Loader2, Shield, Trophy, UserRound, ShoppingBag } from 'lucide-react'
 import { useAuthStore } from '../stores/authStore'
@@ -564,7 +564,7 @@ export default function ProfilePage() {
                             className="text-xs font-bold text-[var(--color-primary)] bg-[var(--color-primary)]/10 px-1.5 py-0.5 rounded border border-[var(--color-primary)]/20"
                             data-testid={`order-booking-tag-${order.id}`}
                           >
-                            预约 {formatLocalDate(order.bookingDate)}
+                            预约 {formatBookingDay(order.bookingDate)}
                           </span>
                         )}
                         <RegistryPill value={order.product?.type} category="productTypes" />

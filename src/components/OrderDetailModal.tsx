@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { formatLocalDate } from '../utils/formatLocalDate'
+import { formatBookingDay } from '../utils/formatLocalDate'
 import { Copy, Package, Store, Clock, Coins, Info, Loader2, RefreshCw } from 'lucide-react'
 import { UserOrderDetail } from '../types/order'
 import { useAppStore } from '../stores/appStore'
@@ -241,7 +241,7 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
                 {/* P6c：预约单展示预约日期（date 表单答案的服务端投影） */}
                 {order.bookingDate && (
                   <span className="text-xs text-[var(--color-primary)] font-medium" data-testid="order-booking-date">
-                    预约日期 {formatLocalDate(order.bookingDate)}
+                    预约日期 {formatBookingDay(order.bookingDate)}
                   </span>
                 )}
                 <div className="flex items-center gap-2 mt-1 flex-wrap">

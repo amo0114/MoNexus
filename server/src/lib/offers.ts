@@ -16,6 +16,8 @@ export type OfferCommercialFields = {
   stock?: number
   fixedContent?: string | null
   fixedContentType?: string
+  // 复审 P2-2：创建路径也能给默认规格设订阅有效期（此前只有附加规格有入口）。
+  validityDays?: number | null
 }
 
 export const DEFAULT_OFFER_NAME = '默认规格'
@@ -42,6 +44,7 @@ export async function createDefaultOffer(
       stock: fields.stock ?? 0,
       fixedContent: fields.fixedContent ?? null,
       fixedContentType: fields.fixedContentType ?? 'text',
+      validityDays: fields.validityDays ?? null,
     },
   })
 }

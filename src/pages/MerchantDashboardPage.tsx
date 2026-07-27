@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { formatLocalDate } from '../utils/formatLocalDate'
+import { formatBookingDay } from '../utils/formatLocalDate'
 import { useNavigate } from 'react-router-dom'
 import {
   getMerchantStats,
@@ -625,7 +625,7 @@ export default function MerchantDashboardPage() {
                                 className="mt-0.5 text-xs font-bold text-[var(--color-primary)]"
                                 data-testid={`merchant-order-booking-${o.id}`}
                               >
-                                预约日期 {formatLocalDate(o.bookingDate)}
+                                预约日期 {formatBookingDay(o.bookingDate)}
                               </div>
                             )}
                             {o.product?.deliveryMode && <div className="mt-1"><RegistryPill value={o.product.deliveryMode} category="deliveryModes" /></div>}

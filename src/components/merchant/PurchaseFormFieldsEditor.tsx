@@ -9,6 +9,10 @@ export const MAX_FORM_FIELDS = 6
  * 与后端 zod 契约（server/src/lib/purchaseForm.ts)对齐的前置提示。
  */
 export function validatePurchaseFormFields(fields: PurchaseFormField[]): string | null {
+  // 复审 P2-3：date 字段至多一个（与后端契约一致——订单只列化一个预约日期）。
+  if (fields.filter(f => f.type === 'date').length > 1) {
+    return '预约日期字段至多一个'
+  }
   for (const field of fields) {
     if (!field.label.trim()) return '购买前信息字段名称不能为空'
     if (field.type === 'select' && (!field.options || field.options.length === 0)) {

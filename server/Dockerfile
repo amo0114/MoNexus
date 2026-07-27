@@ -23,8 +23,11 @@ FROM node:20-alpine AS runtime
 RUN apk add --no-cache openssl tini wget tar gzip postgresql16-client && \
     addgroup -S app && adduser -S app -G app
 WORKDIR /app
+# 业务日历判定已在代码层显式使用 Asia/Shanghai（lib/businessTime.ts）；
+# TZ 仅兜底日志与未显式指定时区的展示，不承载业务语义。
 ENV NODE_ENV=production \
-    PORT=3000
+    PORT=3000 \
+    TZ=Asia/Shanghai
 
 # Carrying full node_modules (including prisma CLI) keeps the image
 # ~80MB larger than --omit=dev but avoids reinstalling at startup just

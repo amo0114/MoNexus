@@ -40,7 +40,7 @@ const legalTransitions: Record<FulfillmentOrderStatus, FulfillmentOrderStatus[]>
 type OrderStatusEventWriter = Pick<Prisma.TransactionClient, 'orderStatusEvent'>
 type OrderStatusTransitionClient = Pick<
   Prisma.TransactionClient,
-  'order' | 'orderStatusEvent' | 'deliveryRecord'
+  'order' | 'orderStatusEvent' | 'deliveryRecord' | 'subscriptionReminder' | '$queryRaw'
 >
 
 export function isFulfillmentMode(mode: string): mode is FulfillmentMode {
@@ -210,10 +210,16 @@ export async function transitionOrderStatus(
     const carriesNewPayload =
       input.deliveryContent != null || input.deliveryStructuredContent != null || input.deliveryFileId != null
     if (carriesNewPayload && subscriptionExpiresAt != null) {
-      await client.deliveryRecord.updateMany({
+      const extended = await client.deliveryRecord.updateMany({
         where: { orderId: order.id, expiresAt: { lt: new Date() } },
         data: { expiresAt: subscriptionExpiresAt },
       })
+      // 复审 P2-1：重算出新周期后必须复位提醒状态——lastStage='expired' 是
+      // 终态，留着它新周期的到期前/到期提醒永远不再发。删行即回到
+      // "无行 = 待发送"语义，新周期由 cron 照常两段式提醒。
+      if (extended.count > 0) {
+        await client.subscriptionReminder.deleteMany({ where: { orderId: order.id } })
+      }
     }
   }
 
@@ -252,22 +258,31 @@ export function computeSubscriptionExpiresAt(
  * - 非续费单，或原单到期时刻在交付时已过 → 自交付时刻起算（重算）；
  * - 续费单且原单 expiresAt 仍在未来 → 在原到期时刻上顺延 validityDays 天，
  *   买家提前续费不损失剩余时长。
- * 原单读取走同一事务客户端——续费校验与顺延基准必须看到同一份数据。
+ * 复审 P1-2：顺延前先锁原单行并终检其状态——人工续费单在"待交付"期间
+ * 原单被退款的，交付时不得继承已退款原单的剩余有效期（自交付时刻重算）。
+ * FOR UPDATE 与退款路径的行更新互斥，避免"读到未退款、写后才退款"的窗口；
+ * 也与下单侧续费终检（P1-1）用同一把锁。
  */
 export async function resolveSubscriptionExpiresAt(
-  client: Pick<Prisma.TransactionClient, 'deliveryRecord'>,
+  client: Pick<Prisma.TransactionClient, 'order' | 'deliveryRecord' | '$queryRaw'>,
   order: { renewalOfOrderId: number | null },
   validityDays: number | null | undefined,
   deliveredAt: Date
 ): Promise<Date | null> {
   if (validityDays == null || validityDays <= 0) return null
   if (order.renewalOfOrderId != null) {
-    const original = await client.deliveryRecord.findUnique({
-      where: { orderId: order.renewalOfOrderId },
-      select: { expiresAt: true },
+    await client.$queryRaw`SELECT "id" FROM "Order" WHERE "id" = ${order.renewalOfOrderId} FOR UPDATE`
+    const original = await client.order.findUnique({
+      where: { id: order.renewalOfOrderId },
+      select: { status: true, delivery: { select: { expiresAt: true } } },
     })
-    if (original?.expiresAt && original.expiresAt.getTime() > deliveredAt.getTime()) {
-      return new Date(original.expiresAt.getTime() + validityDays * 24 * 60 * 60 * 1000)
+    if (
+      original
+      && original.status !== 'refunded'
+      && original.delivery?.expiresAt
+      && original.delivery.expiresAt.getTime() > deliveredAt.getTime()
+    ) {
+      return new Date(original.delivery.expiresAt.getTime() + validityDays * 24 * 60 * 60 * 1000)
     }
   }
   return computeSubscriptionExpiresAt(validityDays, deliveredAt)

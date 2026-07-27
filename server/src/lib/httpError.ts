@@ -28,7 +28,8 @@ export type ErrorCode =
   | 'FILE_ACCESS_SUSPENDED'
   | 'FILE_ACCESS_REVOKED'
   | 'FILE_WINDOW_EXPIRED'
-  // P6a 订阅到期：买家订阅已过期时文件发放拒绝（与下载窗口取较严者）。
+  // P6a 订阅到期：买家订阅已过期时文件发放拒绝（订阅交付豁免平台下载
+  // 窗口，只受自身有效期约束——见 fileAccess.ts）。
   | 'FILE_SUBSCRIPTION_EXPIRED'
   // P6a 手动续费预检/下单校验：
   // - RENEW_NOT_SUBSCRIPTION：订单没有到期时刻（非订阅交付），无从续费；
