@@ -360,6 +360,17 @@ model SlaReminder {
   order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
 }
 
+// P7a：cron 舰队租约——多实例部署下同名 job 的运行期互斥（心跳续租维持）
+// 与窗口节流（舰队级至多每 TTL 窗口启动一次）。时间判定全部用 DB now()，
+// 不信任实例时钟；实例崩溃后租约自然过期（≤ TTL）。见 lib/cronLease.ts。
+model CronLease {
+  name        String   @id
+  holder      String
+  leaseToken  String
+  lockedUntil DateTime
+  updatedAt   DateTime @updatedAt
+}
+
 model Review {
   id            Int       @id @default(autoincrement())
   productId     Int

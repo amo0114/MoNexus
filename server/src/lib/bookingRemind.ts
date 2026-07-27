@@ -3,6 +3,7 @@ import { logger } from './logger.js'
 import { prisma } from './prisma.js'
 import { getMailer } from './mailer/index.js'
 import { addCalendarDays, businessDateString, calendarDayToUtc, formatCalendarDay } from './businessTime.js'
+import { acquireCronLeaseWithHeartbeat, type CronLeaseHandle } from './cronLease.js'
 
 /**
  * P6c：预约日前 1 天提醒 cron（设计 §4 决策 ④，slaRemind 范式）。
@@ -103,7 +104,11 @@ let running = false
 export async function runBookingRemindBatch(now = new Date()) {
   if (running) return
   running = true
+  let lease: CronLeaseHandle | null = null
   try {
+    // P7a：舰队租约——领不到说明本窗口已有实例执行，跳过本 tick（test 直通）。
+    lease = await acquireCronLeaseWithHeartbeat('bookingRemind', REMIND_INTERVAL_MS)
+    if (!lease) return
     const orders = await prisma.order.findMany({
       where: {
         status: { in: ['pending', 'processing'] },
@@ -148,6 +153,7 @@ export async function runBookingRemindBatch(now = new Date()) {
   } catch (err) {
     logger.error({ err }, 'booking remind batch failed')
   } finally {
+    lease?.stopHeartbeat()
     running = false
   }
 }

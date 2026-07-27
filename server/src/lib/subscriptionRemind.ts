@@ -3,6 +3,7 @@ import { logger } from './logger.js'
 import { prisma } from './prisma.js'
 import { getMailer } from './mailer/index.js'
 import { getSystemConfigValue } from './systemConfig.js'
+import { acquireCronLeaseWithHeartbeat, type CronLeaseHandle } from './cronLease.js'
 
 /**
  * P6a T4：订阅到期提醒邮件 cron（设计 §2/§7，lowStockNotify 范式）。
@@ -163,7 +164,11 @@ let running = false
 export async function runSubscriptionRemindBatch(now = new Date()) {
   if (running) return
   running = true
+  let lease: CronLeaseHandle | null = null
   try {
+    // P7a：舰队租约——领不到说明本窗口已有实例执行，跳过本 tick（test 直通）。
+    lease = await acquireCronLeaseWithHeartbeat('subscriptionRemind', REMIND_INTERVAL_MS)
+    if (!lease) return
     const remindDays = await getSystemConfigValue('subscriptionRemindDays')
 
     // 候选上界 = now + N 天：remindDays=0 时只剩已到期记录。已落 expired
@@ -213,6 +218,7 @@ export async function runSubscriptionRemindBatch(now = new Date()) {
   } catch (err) {
     logger.error({ err }, 'subscription remind batch failed')
   } finally {
+    lease?.stopHeartbeat()
     running = false
   }
 }

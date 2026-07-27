@@ -2,6 +2,7 @@ import { config } from '../config/index.js'
 import { logger } from './logger.js'
 import { prisma } from './prisma.js'
 import { getMailer } from './mailer/index.js'
+import { acquireCronLeaseWithHeartbeat, type CronLeaseHandle } from './cronLease.js'
 
 /**
  * P6b：人工履约 SLA 超时提醒 cron（设计 §3 决策 ③，lowStockNotify 范式）。
@@ -109,7 +110,11 @@ let running = false
 export async function runSlaRemindBatch(now = new Date()) {
   if (running) return
   running = true
+  let lease: CronLeaseHandle | null = null
   try {
+    // P7a：舰队租约——领不到说明本窗口已有实例执行，跳过本 tick（test 直通）。
+    lease = await acquireCronLeaseWithHeartbeat('slaRemind', REMIND_INTERVAL_MS)
+    if (!lease) return
     const orders = await prisma.order.findMany({
       where: {
         status: { in: ['pending', 'processing'] },
@@ -150,6 +155,7 @@ export async function runSlaRemindBatch(now = new Date()) {
   } catch (err) {
     logger.error({ err }, 'sla remind batch failed')
   } finally {
+    lease?.stopHeartbeat()
     running = false
   }
 }

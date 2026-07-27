@@ -1,4 +1,5 @@
 import { createHmac } from 'node:crypto'
+import type { Prisma } from '@prisma/client'
 import { prisma } from '../../lib/prisma.js'
 import { config } from '../../config/index.js'
 import { notFound, HttpError, type ErrorCode } from '../../lib/httpError.js'
@@ -15,16 +16,24 @@ import { getProductFulfillmentMode, normalizeOrderStatus } from './fulfillment.j
  * - 授权矩阵：买家受状态与窗口约束；商家对自己订单任何状态可下（举证）；
  *   管理员任何状态可下（仲裁）。revoked 文件仅管理员可下（取证）。
  * - 审计边界（如实声明）：FileGrantLog 覆盖"已解析到订单文件"的授权决策
- *   （granted 与 denied_state/window/revoked）。防枚举 404（无可挂接的
- *   文件外键）与 429 限流（防审计表被刷爆）不落审计。限流的 count→create
- *   非原子，并发下可能少量超发——它是反噪音手段，不是安全边界；IP 只存
+ *   （granted 与 denied_state/window/revoked/subscription）。防枚举 404
+ *   （无可挂接的文件外键）与 429 限流（防审计表被刷爆）不落审计。IP 只存
  *   HMAC，UA 截断 256。
+ * - P7a：整个发放流程处于「请求者 × 订单」advisory xact lock 内——count→
+ *   audit 串行化，限流计数不再可超发（DB 锁，跨实例成立）。锁后全部 DB
+ *   调用走同一 tx 连接（含 getSystemConfigValue），deliveryKeyLock 同款
+ *   纪律。拒绝也要落审计行，而事务内抛错会回滚——临界区返回结果对象，
+ *   事务提交后再抛 HTTP 错误，denied 落行语义与 P5 逐字一致。
  * - 固有限制：presigned URL 一经签出，TTL 内无法撤销——所有拒绝只作用于
  *   "新签发"。
  */
 
 const GRANT_RATE_LIMIT = 10
 const GRANT_RATE_WINDOW_MS = 60_000
+
+// P7a：发放临界区的 advisory lock 命名空间（classid），与 deliveryKeyLock
+// 的 20260726 区分。hashtext 撞号只造成不同键对偶发的无谓串行，无害。
+const FILE_GRANT_LOCK_CLASS = 20260727
 
 export type FileAccessRole = 'buyer' | 'merchant' | 'admin'
 
@@ -46,8 +55,31 @@ class FileAccessDenied extends HttpError {
   }
 }
 
+interface GrantOutcome {
+  error?: HttpError
+  payload?: { url: string; expiresAt: Date; fileName: string; size: number }
+}
+
 export async function issueOrderFileDownloadUrl(orderId: number, requester: RequesterContext) {
-  const order = await prisma.order.findUnique({
+  const result = await prisma.$transaction(
+    async tx => {
+      // 锁键 = 限流维度（orderId × userId）。presign 是本地签名计算，
+      // 临界区毫秒级；maxWait 覆盖同键排队等锁前拿连接的上限。
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(${FILE_GRANT_LOCK_CLASS}::int4, hashtext(${`${orderId}:${requester.userId}`}))`
+      return resolveGrant(tx, orderId, requester)
+    },
+    { maxWait: 10_000, timeout: 15_000 }
+  )
+  if (result.error) throw result.error
+  return result.payload!
+}
+
+async function resolveGrant(
+  tx: Prisma.TransactionClient,
+  orderId: number,
+  requester: RequesterContext
+): Promise<GrantOutcome> {
+  const order = await tx.order.findUnique({
     where: { id: orderId },
     select: {
       id: true,
@@ -75,7 +107,7 @@ export async function issueOrderFileDownloadUrl(orderId: number, requester: Requ
     } else if (requester.userRole === 'admin') {
       role = 'admin'
     } else if (requester.userRole === 'merchant' && order.merchantId != null) {
-      const merchant = await prisma.merchant.findUnique({
+      const merchant = await tx.merchant.findUnique({
         where: { userId: requester.userId },
         select: { id: true },
       })
@@ -85,12 +117,13 @@ export async function issueOrderFileDownloadUrl(orderId: number, requester: Requ
 
   const file = order?.delivery?.file ?? null
   if (!order || !role || !file) {
-    throw notFound('订单不存在')
+    return { error: notFound('订单不存在') }
   }
 
   // 专用限流：按"请求者 × 订单"维度，audit 表就是计数器（多实例一致，
-  // 且刷限流的行为本身留痕）。超限请求不再写审计行。
-  const recentGrants = await prisma.fileGrantLog.count({
+  // 且刷限流的行为本身留痕）。超限请求不再写审计行。count→create 在本
+  // 事务的 advisory lock 内串行（P7a），并发不会超发。
+  const recentGrants = await tx.fileGrantLog.count({
     where: {
       orderId: order.id,
       userId: requester.userId,
@@ -98,11 +131,11 @@ export async function issueOrderFileDownloadUrl(orderId: number, requester: Requ
     },
   })
   if (recentGrants >= GRANT_RATE_LIMIT) {
-    throw new HttpError(429, 'RATE_LIMITED', '请求过于频繁，请稍后再试')
+    return { error: new HttpError(429, 'RATE_LIMITED', '请求过于频繁，请稍后再试') }
   }
 
   const audit = async (outcome: string, expiresAt?: Date) => {
-    await prisma.fileGrantLog.create({
+    await tx.fileGrantLog.create({
       data: {
         fileId: file.id,
         orderId: order.id,
@@ -143,7 +176,7 @@ export async function issueOrderFileDownloadUrl(orderId: number, requester: Requ
       ) {
         throw new FileAccessDenied('FILE_ACCESS_SUSPENDED', '订单尚未交付完成，文件暂不可下载', 'denied_state')
       }
-      const windowDays = await getSystemConfigValue('fileAccessWindowDays')
+      const windowDays = await getSystemConfigValue('fileAccessWindowDays', tx)
       // 复审 P2-3：订阅交付（expiresAt 非空）只受自身有效期约束——平台默认
       // 30 天窗口不得覆盖商家售出的更长订阅承诺（如 365 天）。
       if (windowDays > 0 && order.delivery?.deliveredAt && order.delivery.expiresAt == null) {
@@ -160,17 +193,19 @@ export async function issueOrderFileDownloadUrl(orderId: number, requester: Requ
       }
     }
 
-    const ttlRaw = await getSystemConfigValue('fileUrlTtlSeconds')
+    const ttlRaw = await getSystemConfigValue('fileUrlTtlSeconds', tx)
     const ttlSeconds = Math.min(Math.max(ttlRaw, 30), 3600)
     const storage = await getDeliveryStorage()
     const { url, expiresAt } = await storage.presignDownload(file.key, file.fileName, ttlSeconds)
 
     await audit('granted', expiresAt)
-    return { url, expiresAt, fileName: file.fileName, size: file.size }
+    return { payload: { url, expiresAt, fileName: file.fileName, size: file.size } }
   } catch (err) {
     if (err instanceof FileAccessDenied) {
       await audit(err.outcome)
+      return { error: err }
     }
+    // 非业务异常（DB/存储故障）照常抛出——回滚整个事务，不留半途审计。
     throw err
   }
 }

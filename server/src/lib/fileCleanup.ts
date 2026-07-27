@@ -3,6 +3,7 @@ import { logger } from './logger.js'
 import { prisma } from './prisma.js'
 import { getDeliveryStorage } from './storage/delivery.js'
 import { withDeliveryKeyLock } from './deliveryKeyLock.js'
+import { acquireCronLeaseWithHeartbeat, type CronLeaseHandle } from './cronLease.js'
 
 /**
  * P5 T6：交付文件生命周期清理（设计 §8）。
@@ -206,7 +207,11 @@ let running = false
 export async function runFileCleanupBatch() {
   if (running) return
   running = true
+  let lease: CronLeaseHandle | null = null
   try {
+    // P7a：舰队租约——领不到说明本窗口已有实例执行，跳过本 tick（test 直通）。
+    lease = await acquireCronLeaseWithHeartbeat('fileCleanup', CLEANUP_INTERVAL_MS)
+    if (!lease) return
     const orphans = await cleanupOrphanFiles()
     const tmp = await cleanupStaleTmpObjects()
     const refunded = await cleanupRefundedFiles()
@@ -217,6 +222,7 @@ export async function runFileCleanupBatch() {
   } catch (err) {
     logger.error({ err }, 'delivery file cleanup batch failed')
   } finally {
+    lease?.stopHeartbeat()
     running = false
   }
 }

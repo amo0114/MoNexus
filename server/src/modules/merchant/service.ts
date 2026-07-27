@@ -980,8 +980,11 @@ export async function deliverOrderFulfillment(
   return getMyOrderDetail(merchantId, orderId)
 }
 
-// P6b：单订单每小时最多 6 条进度更新（审计表即计数器，fileAccess 同款先例：
-// count→create 非原子，并发下可能少量超发——反噪音手段，不是安全边界）。
+// P6b：单订单每小时最多 6 条进度更新（审计表即计数器）。
+// P7a 复核：复审 P2-4 的订单行 FOR UPDATE（下方）已把 count→create 整体
+// 串行化——READ COMMITTED 下取到锁后的语句可见先行事务提交的事件，计数
+// 不会超发，且这是 DB 行锁，跨实例同样成立。并发回归见
+// __tests__/p7a-multi-instance.test.ts。
 const PROGRESS_RATE_LIMIT = 6
 const PROGRESS_RATE_WINDOW_MS = 60 * 60 * 1000
 

@@ -2,6 +2,7 @@ import { config } from '../../config/index.js'
 import { logger } from '../../lib/logger.js'
 import { prisma } from '../../lib/prisma.js'
 import { getSystemConfigValue } from '../../lib/systemConfig.js'
+import { acquireCronLeaseWithHeartbeat, type CronLeaseHandle } from '../../lib/cronLease.js'
 import { invalidateProductPublicCache } from '../products/cache.js'
 import { transitionOrderStatus } from './fulfillment.js'
 import { settleHeldOrder } from './accounting.js'
@@ -77,7 +78,11 @@ async function autoCloseOrder(order: AutoCloseCandidate): Promise<void> {
 async function runAutoCloseBatch() {
   if (running) return
   running = true
+  let lease: CronLeaseHandle | null = null
   try {
+    // P7a：舰队租约——领不到说明本窗口已有实例执行，跳过本 tick（test 直通）。
+    lease = await acquireCronLeaseWithHeartbeat('orderAutoClose', AUTO_CLOSE_INTERVAL_MS)
+    if (!lease) return
     const cleaned = await cleanupExpiredIdempotencyRecords()
     if (cleaned > 0) logger.info({ count: cleaned }, 'expired idempotency records cleaned')
 
@@ -90,6 +95,7 @@ async function runAutoCloseBatch() {
   } catch (err) {
     logger.error({ err }, 'auto-close cron batch failed')
   } finally {
+    lease?.stopHeartbeat()
     running = false
   }
 }
