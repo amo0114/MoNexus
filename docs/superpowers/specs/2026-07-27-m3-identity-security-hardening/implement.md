@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | IMPL-M3-ISH-001 |
-| 版本 | 1.27.0 |
+| 版本 | 1.29.0 |
 | 日期 | 2026-07-27 |
 | 状态 | I-00 至 I-05 Done (local)；I-06 In Progress（PR #53 CI 收集边界修复），PR / CI / release 仍受最终门禁约束 |
 | 输入 | [spec.md](./spec.md) · [plan.md](./plan.md) · [task.md](./task.md) · [checklist.md](./checklist.md) |
@@ -15,7 +15,7 @@
 
 Implement 不是“文档写完就直接编码”。每个任务开始前，执行者必须确认：
 
-- [ ] Specify 已冻结：spec.md 的 D-01 至 D-07 无未决产品/安全决策。
+- [ ] Specify 已冻结：spec.md 的 D-01 至 D-08 无未决产品/安全决策。
 - [ ] Plan 已冻结：plan.md 的架构、API、数据模型、发布/回滚路径可执行。
 - [ ] Tasks 已冻结：只执行 task.md 中当前任务卡，验收条件可测试。
 - [ ] 当前工作在独立 worktree 和 feature branch；不是 P6a 的工作树或分支。
@@ -80,7 +80,7 @@ schema.prisma 是唯一共同文件。安全任务不得重排、格式化或编
 | 等级 | 行为 |
 | --- | --- |
 | ✅ Always | 在安全 worktree 修改当前任务 Owned files；新增针对性测试；运行专用库测试、typecheck、diff/check；更新当前 spec 包的任务状态与证据 |
-| ⚠️ Ask first | 改已有 API URL/成功响应语义；更改 P6a 所拥有文件；迁移出现跨域字段/索引依赖；需要共享端口/数据库；发现 D-01..D-07 必须改变；rebase 有语义冲突 |
+| ⚠️ Ask first | 改已有 API URL/成功响应语义；更改 P6a 所拥有文件；迁移出现跨域字段/索引依赖；需要共享端口/数据库；发现 D-01..D-08 必须改变；rebase 有语义冲突 |
 | 🚫 Never | 修改 P6a worktree/branch/未提交文件；运行 git reset --hard、git clean、docker compose down；访问/输出生产数据或密钥；写 HTTP MFA bypass；将 secret、TOTP、recovery code、challengeId 写入日志、fixture 或 commit；修改/删除 P6a migration |
 
 ---
@@ -97,8 +97,17 @@ schema.prisma 是唯一共同文件。安全任务不得重排、格式化或编
 | I-03 | T-BE-04 | Done (local) | auth session service、auth refresh/session boundary、全用户 revoke audit、routes/serializer/tests；P1 仅限 admin service 三处 lock 调用 | `auth-sessions` 11/11、全量后端 65 files / 520 tests（575.53s）、server/root build 均 PASS；二次安全复审无 P0/P1。P6c→develop rebase 仍是 PR 前闸门 |
 | I-04 | T-BE-03 + T-BE-05 | Done (local) | auth service/controller/schema/routes、auth middleware、admin route、orders route、announcements controller、auth tests | 已 rebase `origin/develop@4568ee4`；MFA flow、guard、bcrypt、密码变更 challenge 作废、D-04 无 HTTP break-glass、文件取证/公告旁路均完成。75 files / 611 tests、server/root build、38-migration status/drift 通过；I-05 前端 202 流未完成，故不可 PR/合并 |
 | I-05 | T-FE-01 + T-FE-02 | Done (local) | LoginPage、ProfilePage、独立 auth security components、auth API、M3 专用 Playwright config | 登录 200/202 union、二维码本地渲染、恢复码确认前不写 store、MFA 失败不 refresh/replay、设备确认吊销；3103/5178 的 UI suite 6/6、双端 build 与 diff check PASS。真实整栈 QA/文档仍归 I-06 |
-| I-06 | T-QA-01 + T-QA-02 + T-DOC-01 | In Progress | `playwright.config.ts`、M3 config/real fixture、spec bundle；不得碰 P7b worktree/runtime | PR #53 初次 CI 的默认 E2E 加载了隔离 real fixture、缺少 `M3_ISH_DATABASE_URL`。先将默认 config ignore real spec 的边界写入规格，再补最小 config 修复并重新验证 CI；专用 verifier 既有 76/618 与 10/10 证据保持有效。 |
+| I-06 | T-QA-01 + T-QA-02 + T-DOC-01 | In Progress | `playwright.config.ts`、M3 config/real fixture、`e2e/helpers.ts`、既有 admin API fixture、`SessionManager`、`server/src/prisma/seed.ts`、CI workflow、spec bundle；不得碰 P7b worktree/runtime | PR #53 初次 CI 的 real fixture 收集问题已由 root ignore 收口；第二轮默认 E2E 证明旧 admin 200 假设与 32px 单吊销控件仍阻断。按 D-08 仅以 CI 临时、test-DB-only factor seed 和真实 verify 建测试会话；静态发现与专用 verifier 验证，不启动共享 runtime。 |
 | I-07 | T-BE-06 + T-FE-03 | Todo (P1) | MFA security settings、revoke-all API/UI | 不削弱 P0 guard；若纳入 PR 则 P1 checklist 全部有证据，若拆后续则在 PR 明确链接 follow-up |
+
+### I-06 / D-08 执行卡（本轮 CI 修复）
+
+1. 先以 CI failed log 确认失败确为共享默认 E2E 的 admin `202` 与 32px 触控目标；不将其误归为 M3 real fixture 或 P7b。
+2. 先静态/定向验证红因：默认 config list 排除 `.real.spec.ts`，但页面 helper 与 direct admin fixture 仍只接受 200；mobile regression 明确列出 `session-revoke-device` 的 `204x32`。
+3. 只在 `server/src/prisma/seed.ts` 添加 test-only factor 分支：严格 `NODE_ENV=test`、精确 database pathname、32-char base32 factor 和可用 MFA key。任何 guard 外的调用不得读取/写入 factor；CI 使用不回显的临时值。禁止 runtime enrollment、direct DB fixture、HTTP bypass 和 production config 扩张。
+4. 在 `e2e/helpers.ts` 集中实现 verify-only MFA flow。factor/access token 都不得出现在 assertion message、console、测试名、fixture、documented evidence 或 Playwright DOM；helper 只以短、固定错误说明失败。页面 helper 仅用 `page.request` 的相对 URL、当前 context cookie jar、`GET /auth/me` 与一次性 `page.evaluate` persist 写入；不得使用 `API_BASE`、`addInitScript`、伪造 JWT 或直改数据库。
+5. 将 announcement / checkout threshold / pagination 的 direct admin login 改为统一 helper；不修改 user/merchant 认证，也不顺手改业务测试。给单设备吊销按钮最小 40px 高度；不得把 mobile regression 阈值降到 32px，也不通过隐藏/禁用控件逃避检查。
+6. 本 worktree 只运行 TypeScript/build、Playwright `--list`、M3 专用 verifier 与 CI；禁止启动或运行默认 `npm run e2e`、共享 `monexus_test`、3000/5173 或任何 P7b runtime。提交前执行 `git diff --check`，只暂存本任务文件。
 
 ### 当前任务的标准循环
 
@@ -168,6 +177,8 @@ schema.prisma 是唯一共同文件。安全任务不得重排、格式化或编
 | 2026-07-28 | I-06 | In Progress | real-E2E 只读复审发现 baseURL/启动前 DB 校验、recovery 一次性、失败产物与单设备 revoke 证据不足 | 已先将文档包升至 1.25.0：冻结精确的 config/context/secret、窗口外 TOTP、recovery、`session-revoke-device`、admin stats 规则；旧版 verifier 已停止，待测试修复后重新全量验证。 |
 | 2026-07-28 | I-06 | Done (local) | 单一隔离 verifier exit 0：status/diff、76 files / 618 tests（754.49s）、server/frontend build、staging template preflight、Playwright 10/10（49.4s） | 复审发现均由真实 E2E/config 回归覆盖；错误 DB 启动前拒绝与 break-glass CLI 7/7 已另行定向验证。没有触碰 P7b worktree/runtime；未推送、未开 PR。 |
 | 2026-07-28 | I-06 | In Progress | PR #53 CI 默认 Playwright 在收集阶段加载 `m3-identity-security-hardening.real.spec.ts`，因没有 M3 专用 URL 而失败 | 先同步 Specify → Plan → Tasks → Implement → Checklist 到 1.27.0：根 config 仅 ignore real suite，专用 config 继续覆盖 mock + real；随后最小修复、静态发现列表与 CI 重跑。 |
+| 2026-07-28 | I-06 | In Progress | #53 第二轮 CI 已证明 real-suite ignore 生效，但默认共享 E2E 仍把 admin password response 当 200，mobile regression 实测单设备退出为 204x32 | 先同步文档包至 1.28.0：D-08 要求真实 API MFA helper、无秘密 DOM/artifact、统一 API fixture 与 40px CSS 触控；只在 M3 worktree 做静态/专用验证，不启动 P7b 或共享 runtime。 |
+| 2026-07-28 | I-06 | In Progress | D-08 只读安全复核发现 v1.28 运行时 enrollment 无法跨 retry/worker 保持 factor，且默认 trace 对 manual key 风险过高 | 先修订文档包至 1.29.0：CI 临时 factor 仅在 `test + monexus_test` seed 写入，helper 只 verify；页面改用 relative context jar、`/auth/me` 和一次性 persist，不启动共享 runtime。 |
 
 ---
 
@@ -197,6 +208,8 @@ schema.prisma 是唯一共同文件。安全任务不得重排、格式化或编
 | 1.25.0 | 2026-07-28 | I-06 real-E2E 复审后先冻结早期 DB 防护、显式 context baseURL、无秘密失败产物、确定性 TOTP/recovery、精确单设备 revoke 与真实 admin API 断言，再进入测试修复。 |
 | 1.26.0 | 2026-07-28 | I-06 本地交付完成并回填单一专用 verifier 证据；保留 PR/CI/release 门槛，未将本地绿误记为上线批准。 |
 | 1.27.0 | 2026-07-28 | PR #53 CI 发现默认 E2E 与隔离 real fixture 边界缺口；I-06 恢复为 In Progress，先冻结根 config ignore 规则再修复与重跑。 |
+| 1.28.0 | 2026-07-28 | I-06 第二轮 CI 修复先完成 D-08 implement contract：默认 E2E 以真实 MFA API 签发会话、API/page helper 收口、秘密不入 DOM/artifact，以及 SessionManager 40px 触控回归；随后才允许改代码。 |
+| 1.29.0 | 2026-07-28 | I-06 安全复核修订 D-08 implement contract：禁止默认 suite runtime enrollment；CI 临时 factor 受 test/DB guard 限制，helpers 只走 real verify，并以 cookie jar / `/auth/me` / 一次性 persist 避开跨 host、复活 session 与秘密产物风险。 |
 
 ---
 

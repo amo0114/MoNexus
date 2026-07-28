@@ -1,4 +1,5 @@
-import { expect, Page } from '@playwright/test'
+import { expect, type APIRequestContext, type Page } from '@playwright/test'
+import { createRequire } from 'node:module'
 
 export const SEED_ACCOUNTS = {
   admin: { email: 'admin@moyuan.net', password: 'admin123' },
@@ -8,8 +9,133 @@ export const SEED_ACCOUNTS = {
 
 export const API_BASE = process.env.E2E_API_URL || 'http://localhost:3000'
 
+type SeedAccount = { email: string; password: string }
+
+type AuthenticatedSession = {
+  user: Record<string, unknown>
+  accessToken: string
+}
+
+type MfaLoginChallenge = {
+  status: 'mfa_enrollment_required' | 'mfa_required'
+  challengeId: string
+}
+
+const serverRequire = createRequire(new URL('../server/package.json', import.meta.url))
+const { TOTP } = serverRequire('otpauth') as {
+  TOTP: new (options: Record<string, unknown>) => { generate: (options: { timestamp: number }) => string }
+}
+
+const TEST_TOTP_FACTOR = /^[A-Z2-7]{32}$/
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
+function authUrl(base: string, path: string) {
+  return base ? `${base}/api/auth${path}` : `/api/auth${path}`
+}
+
+function seededAdminTotpFactor() {
+  const factor = process.env.E2E_ADMIN_MFA_TOTP_SECRET
+  if (!factor || !TEST_TOTP_FACTOR.test(factor)) {
+    throw new Error('Default E2E administrator MFA factor is not configured')
+  }
+  return factor
+}
+
+function currentTotp(factor: string) {
+  return new TOTP({
+    issuer: 'MoNexus',
+    label: 'administrator',
+    algorithm: 'SHA1',
+    digits: 6,
+    period: 30,
+    secret: factor,
+  }).generate({ timestamp: Date.now() })
+}
+
+function authenticatedSession(body: unknown): AuthenticatedSession {
+  if (!isRecord(body) || !isRecord(body.user) || typeof body.accessToken !== 'string' || body.accessToken.length === 0) {
+    throw new Error('Authentication response did not create a usable session')
+  }
+  return { user: body.user, accessToken: body.accessToken }
+}
+
+function mfaChallenge(body: unknown): MfaLoginChallenge {
+  if (
+    !isRecord(body)
+    || (body.status !== 'mfa_enrollment_required' && body.status !== 'mfa_required')
+    || typeof body.challengeId !== 'string'
+    || body.challengeId.length === 0
+  ) {
+    throw new Error('Administrator MFA challenge response is invalid')
+  }
+  return { status: body.status, challengeId: body.challengeId }
+}
+
+async function verifySeededAdminMfa(request: APIRequestContext, account: SeedAccount, apiBase: string): Promise<AuthenticatedSession> {
+  const login = await request.post(authUrl(apiBase, '/login'), { data: account })
+  await expect(login.status(), 'administrator password login response status').toBe(202)
+  const challenge = mfaChallenge(await login.json())
+  if (challenge.status !== 'mfa_required') {
+    throw new Error('Default E2E seed administrator is not MFA-enrolled')
+  }
+  const verification = await request.post(authUrl(apiBase, '/mfa/verify'), {
+    data: { challengeId: challenge.challengeId, method: 'totp', code: currentTotp(seededAdminTotpFactor()) },
+  })
+  await expect(verification.status(), 'administrator MFA verification response status').toBe(200)
+  const issued = authenticatedSession(await verification.json())
+  const profile = await request.get(authUrl(apiBase, '/me'), {
+    headers: { Authorization: `Bearer ${issued.accessToken}` },
+  })
+  await expect(profile.status(), 'administrator MFA profile response status').toBe(200)
+  const user = await profile.json()
+  if (!isRecord(user)) throw new Error('Administrator MFA profile response is invalid')
+  return { accessToken: issued.accessToken, user }
+}
+
+/**
+ * Creates a normal server-issued E2E session. The CI-only seed pre-enrolls
+ * the administrator, so it follows the public MFA verify state machine while
+ * non-admin accounts retain the existing 200 path.
+ */
+export async function loginAsApi(request: APIRequestContext, account: SeedAccount): Promise<AuthenticatedSession> {
+  if (account.email === SEED_ACCOUNTS.admin.email) {
+    return verifySeededAdminMfa(request, account, API_BASE)
+  }
+
+  const login = await request.post(authUrl(API_BASE, '/login'), { data: account })
+  await expect(login.status(), 'login response status').toBe(200)
+  return authenticatedSession(await login.json())
+}
+
+async function loginAdminPage(page: Page, account: SeedAccount) {
+  // page.request shares the BrowserContext cookie jar. Open the same origin
+  // first, then use its relative Vite-proxied API path rather than API_BASE.
+  await page.goto('/login')
+  const session = await verifySeededAdminMfa(page.request, account, '')
+  await page.evaluate((authenticated: AuthenticatedSession) => {
+    localStorage.setItem('monexus-auth', JSON.stringify({
+      state: {
+        user: authenticated.user,
+        accessToken: authenticated.accessToken,
+        isLoggedIn: true,
+      },
+      version: 0,
+    }))
+  }, session)
+  await page.goto('/')
+  await expect(page).toHaveURL(/\/$/, { timeout: 10_000 })
+}
+
 /** 用 seed 账号通过登录页登录，登录成功后停在商城首页（/）。 */
-export async function loginAs(page: Page, account: { email: string; password: string }) {
+export async function loginAs(page: Page, account: SeedAccount) {
+  if (account.email === SEED_ACCOUNTS.admin.email) {
+    await loginAdminPage(page, account)
+    return
+  }
+
   await page.goto('/login')
   await page.addStyleTag({
     content: '*, *::before, *::after { animation: none !important; transition: none !important; }',

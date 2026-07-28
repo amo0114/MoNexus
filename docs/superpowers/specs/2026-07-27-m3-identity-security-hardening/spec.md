@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | SPEC-M3-ISH-001 |
-| 版本 | 1.27.0 |
+| 版本 | 1.29.0 |
 | 日期 | 2026-07-27 |
 | 状态 | Frozen for Implementation |
 | 产品 | MoNexus |
@@ -92,6 +92,7 @@ MoNexus 已拥有积分调整、封禁、商家审核与停用、佣金修改、
 | D-05 | 设备会话语义 | 一个 sessionId 代表一个浏览器/设备登录族；refresh rotation 继承 sessionId。数据库和 API 使用 `sessionId`，JWT claim 固定为短名 `sid`。吊销立即拒绝该族 refresh；admin API 同时校验 `sid` 对应的活动族，故立即拒绝已吊销管理员 token |
 | D-06 | bcrypt 升级 | 目标 rounds=12；不做一次性全表重算。完成正常会话创建的非 admin 成功登录可按需重哈希；管理员处于短期 MFA pre-auth challenge 时绝不保存、跨请求携带或据此重放密码，因此未完成 MFA 前不改 hash，管理员在后续改密/重置时升级为 12 |
 | D-07 | 显式设备吊销与 refresh replay | rotation 消费的旧 token（`revokeReason=refresh_rotation`）及无原因 legacy revoked token 仍视为凭证重放，触发全用户 refresh session 吊销；服务端明确标记为 logout、single_session、revoke_others、revoke_all、MFA reset/migration 的终结家族只返回 401，不得反向吊销仍活动的其他设备。**不能只看被提交行的 reason：**显式吊销可能只写到当时活动的 successor，而历史 predecessor 仍是 `refresh_rotation`；锁后必须按同一 `userId + sessionId` 查找任一显式终结 reason，终结标记优先于 predecessor 的 rotation reason。所有会创建、rotation、单族/其他/全用户吊销 refresh session 的事务，均先获取同一用户的 PostgreSQL transaction-scoped advisory lock，随后重新读取并作状态判断/写入；初始 raw-token 查询只可用于定位 userId，不能据此决定行为。任何同一事务既修改 `User` 又改变 refresh session 的路径（包括改密/重置、管理员封禁和商家角色变化）都必须**先**取得该用户 advisory lock，才取得 `User` 写锁；不得先 `tx.user.update` 再等待 session lock。这样显式吊销成功返回后，不能再有已并发 rotation 的 successor 留存，也不会与密码路径形成锁顺序反转。`revokeReason` 只由服务端写入；全用户服务端吊销默认写 `revoke_all`，历史无 reason 行仍按 legacy replay 处理。 |
+| D-08 | 默认 E2E 的管理员认证 | 共享 `monexus_test` 的既有 E2E 不得再把管理员密码成功断言为 `200`，也不得在运行中为 seed admin 做一次性 enrollment。仅当 `NODE_ENV=test`、数据库名精确为 `monexus_test` 且 CI 临时提供格式正确的 `E2E_ADMIN_MFA_TOTP_SECRET` / `MFA_ENCRYPTION_KEY` 时，`db:seed:force` 才给 seed admin 写入加密 TOTP factor、`mfaEnabled=true`；生产/开发 seed、其他数据库或缺少因子一律不写。默认 helper 只走真实 `202 mfa_required → verify`，直接 API fixture 与页面 fixture 共用该 TOTP；出现 enrollment challenge 视为 seed 失配而稳定失败。因子由 CI 不回显地生成，只驻留进程/CI 临时环境，不入 repo、`.env`、日志、错误、trace、screenshot、fixture、storageState 或提交。页面通过当前 BrowserContext 的相对 `/api` 和 cookie jar 建会话，再以 `/auth/me` 的正常 profile 初始化 persist；不得直写 User/MFA/RefreshToken、伪造 JWT 或加 HTTP bypass。非 admin 仍保持原 200 登录契约。设备会话的每个可点击吊销控件最小触控尺寸为 40 CSS px。 |
 
 ---
 
@@ -316,7 +317,7 @@ requireAdminMfa 的拒绝码应可供前端正确退出或提示重新登录：
 2. 当前设备显式标注，当前族只通过既有 logout 退出；非当前设备有“退出此设备”二次确认；“退出其他设备”也需确认。
 3. 显示友好设备标签、脱敏 IP 与最近活跃时间；无法解析 UA 时回退为“浏览器会话”，不展示完整 UA。
 4. 吊销当前/全部会话后调用现有前端 logout，跳转登录页；吊销其他会话后刷新列表并 Toast。
-5. 控件提供可访问名称和稳定 data-testid；移动宽度下会话卡不依赖横向表格。
+5. 控件提供可访问名称和稳定 data-testid；移动宽度下会话卡不依赖横向表格。每个可点击的单设备/其他设备吊销控件最小触控尺寸为 40 CSS px。
 
 ---
 
@@ -400,6 +401,12 @@ Then vitest、相关 Playwright、双端 build、Prisma drift 检查以及 produ
 
 专用验证入口只接受显式 `M3_ISH_DATABASE_URL` / `TEST_DATABASE_URL` 且数据库名严格等于 `monexus_m3_ish_test`；Playwright config 自身必须在启动 webServer 前解析并拒绝任何其他 pathname，不能仅依赖 fixture 的晚期校验。固定 backend `3103`、frontend `5178`、`reuseExistingServer=false`。每个 `browser.newContext()` 显式传入 `test.info().project.use.baseURL`；M3 config 固定 `trace: 'off'`、`screenshot: 'off'` 且不启用 video，防止失败产物泄露 MFA 秘密。仓库默认 `playwright.config.ts` / `npm run e2e` 必须显式忽略 `m3-identity-security-hardening.real.spec.ts`，使共享 CI 不会加载其隔离 fixture；该 real suite 只能由 M3 专用 config 运行。mock UI suite 可继续走默认 E2E，但不能替代 AC-08 的真实证据。端口或数据库不可用即失败，绝不借用其他 worktree 的服务。
 
+### AC-08.2 默认 E2E 与 MFA 的兼容证据（I-06 补充）
+
+Given CI 的共享 `monexus_test` 由受限 test seed 创建，管理员已配置临时 MFA factor
+When 默认 `npm run e2e` 的页面场景或 API fixture 需要管理员权限
+Then seed 阶段仅在 test + 精确 `monexus_test` guard 下使用 CI 临时因子配置已绑定 admin；页面与 API fixture 都走真实 `mfa_required → verify`，任何 enrollment response 都稳定失败。任何非 admin fixture 仍以原 200 契约登录。不得为了测试新增服务端认证策略、数据库运行时直写、测试端点或 JWT；至少一个默认 E2E 静态发现检查必须证明 real suite 仍被排除，且移动回归检查须通过单设备吊销按钮的 40px 触控门槛。
+
 ---
 
 ## 11. 风险与开放问题
@@ -434,7 +441,7 @@ Then vitest、相关 Playwright、双端 build、Prisma drift 检查以及 produ
 
 ## 13. 变更控制
 
-1. D-01 至 D-07 任一项变更必须更新本 spec、plan、task、checklist 后再编码。
+1. D-01 至 D-08 任一项变更必须更新本 spec、plan、task、checklist 后再编码。
 2. 不得将“临时跳过 MFA”“测试环境 HTTP 后门”或明文恢复码导出作为实现捷径。
 3. 任何新增 auth API 必须同步 docs/superpowers/specs/monexus-api-openapi.json，或在 PR 中明确说明 OpenAPI follow-up 与阻塞原因。
 4. 本文档版本按语义化递增；扩大 MFA 覆盖角色或加入 step-up 为 minor 级范围变更。
@@ -473,6 +480,8 @@ Then vitest、相关 Playwright、双端 build、Prisma drift 检查以及 produ
 | 1.25.0 | 2026-07-28 | I-06 复审将 real-E2E 证据收紧为启动前专用 DB 校验、显式 context baseURL、无秘密失败产物、窗口外错误 TOTP、真实 recovery 一次性登录及精确单设备吊销/admin API 断言；不改变产品或认证决策。 |
 | 1.26.0 | 2026-07-28 | I-06 按 1.25.0 的冻结证据协议完成本地验证：专用 verifier 退出 0、76 files / 618 tests、双端 build、漂移检查及 10 条 M3 Playwright 通过；产品决策不变，PR/CI/发布门槛仍独立。 |
 | 1.27.0 | 2026-07-28 | PR #53 CI 发现默认 E2E 错误收集隔离 real suite、未提供专用数据库；冻结默认 config 显式 ignore real spec、仅由 M3 专用 config 执行的边界，不改变产品或认证决策。 |
+| 1.28.0 | 2026-07-28 | PR #53 第二轮 CI 证明默认 E2E 的历史 admin fixture 仍假设密码登录为 200；冻结 D-08：以真实 MFA API、worker 内存 TOTP helper 兼容页面/API fixture，禁止 bypass/秘密外泄，并将 session 单设备吊销控件的 40px 触控回归纳入 AC-08。 |
+| 1.29.0 | 2026-07-28 | D-08 只读安全复核否决运行时 enrollment：retry/worker 会遗失随机 seed，默认 trace 也不适合承载 manual key。改为严格 test-DB-only 的 CI 临时 factor seed，默认 helper 只走真实 verify，页面使用 context cookie jar + `/auth/me`，同时保留无 bypass / 无秘密产物与 40px 要求。 |
 
 ---
 

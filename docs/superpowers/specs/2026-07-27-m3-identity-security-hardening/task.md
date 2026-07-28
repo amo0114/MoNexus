@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | TASK-M3-ISH-001 |
-| 版本 | 1.27.0 |
+| 版本 | 1.29.0 |
 | 日期 | 2026-07-27 |
 | 规格 | [spec.md](./spec.md) |
 | 计划 | [plan.md](./plan.md) |
@@ -46,7 +46,7 @@
 | T-FE-02 | Done | Codex | I-05：Profile 会话列表、单个/其他设备确认吊销；M3 专用 UI suite 覆盖 |
 | T-FE-03 | Todo | | P1：恢复码重生、换机与全会话退出 UI |
 | T-QA-01 | Done | Codex | I-06：专用库全量 76 files / 618 tests、migration status/drift PASS |
-| T-QA-02 | In Progress | Codex | PR #53 CI：默认 E2E 错收集隔离 real spec；补 config ignore 后重跑 CI |
+| T-QA-02 | In Progress | Codex | PR #53 CI：real suite 收集已隔离；默认 E2E 再暴露 admin 202 假设与单设备 32px 触控回归，按 D-08 的 test-only factor seed + verify 修复后重跑 |
 | T-DOC-01 | Done (local) | Codex | I-06：OpenAPI、README、runbook、secrets、env/preflight 已收口；PR 描述留待 G-PR 阶段 |
 
 状态枚举：Todo | In Progress | Blocked | Done | Cancelled。
@@ -57,7 +57,7 @@
 
 | ID | 标题 | Pri | 估算 | 依赖 | Phase | 需求 |
 | --- | --- | --- | --- | --- | --- | --- |
-| T-00 | 确认安全决策并跑基线 | P0 | S | — | 0 | D-01..D-07 |
+| T-00 | 确认安全决策并跑基线 | P0 | S | — | 0 | D-01..D-08 |
 | T-BE-01 | 演进身份与 session 数据模型 | P0 | M | T-00 | A | F-020, NF-01 |
 | T-BE-02 | 建立 TOTP、加密、challenge、redact 与安全事件原语 | P0 | L | T-BE-01 | A | F-010–013, F-030–031 |
 | T-BE-03 | 实现管理员 MFA 登录与首次绑定 API | P0 | L | T-BE-02, T-BE-04 | C | F-010–014 |
@@ -91,7 +91,7 @@
 
 **步骤：**
 
-- [x] 记录 D-01 至 D-07 已冻结；D-03 仅实施“登录 MFA + admin 活动会话校验”，不在本波加入逐操作 step-up；D-07 规定 explicit revoke 不扩大为全用户 replay。
+- [x] 记录 D-01 至 D-08 已冻结；D-03 仅实施“登录 MFA + admin 活动会话校验”，不在本波加入逐操作 step-up；D-07 规定 explicit revoke 不扩大为全用户 replay；D-08 要求默认 E2E 通过真实 MFA API 建管理员会话而非保留密码 200 假设。
 - [x] 记录部署前提：secrets owner 必须在发布前为所有 API 实例配置同一枚 32-byte base64 `MFA_ENCRYPTION_KEY`；不读取或创建真实值，实际配置保留为 `CHK-REL-01` 发布门禁。
 - [x] 确认隔离 PostgreSQL 已可用：只使用 `monexus_m3_ish_test`；不启动、停止或重启 P6a 的 compose 服务。
 - [x] 运行 auth 基线（4 files、36 tests PASS）：
@@ -404,6 +404,9 @@ TEST_DATABASE_URL='postgresql://monexus:monexus_dev_2026@localhost:5432/monexus_
 - e2e/admin-mfa.spec.ts（新）
 - e2e/session-management.spec.ts（新）
 - e2e helpers（确有需要时）
+- e2e/announcements.spec.ts、checkout-verification.spec.ts、store-pagination.spec.ts（仅收口 admin API fixture）
+- src/components/auth/SessionManager.tsx（仅 40px 单设备触控修复）
+- server/src/prisma/seed.ts、.github/workflows/ci.yml（仅 test-DB-only factor seed 与 CI 临时环境）
 - playwright.m3-identity-security-hardening.config.ts（新）
 - scripts/verify-m3-identity-security-hardening.sh（新）与根 package.json 的专用 script
 
@@ -417,10 +420,14 @@ TEST_DATABASE_URL='postgresql://monexus:monexus_dev_2026@localhost:5432/monexus_
 - [x] 专用验证脚本必须拒绝非 `monexus_m3_ish_test` 目标、绝不调用 docker compose、绝不 reset/创建默认 `monexus_test`；只接受显式 `M3_ISH_DATABASE_URL` / `TEST_DATABASE_URL`。
 - [x] 专用 Playwright config 在启动 webServer 前解析数据库 URL 并只接受 pathname `monexus_m3_ish_test`；固定后端 3103、前端 5178、独立 browser context、`reuseExistingServer=false`，并同时匹配 UI-contract / real-E2E M3 spec；每个额外 context 显式传 `test.info().project.use.baseURL`，`trace: 'off'`、`screenshot: 'off'` 且不启用 video。服务端 env 明确传入专用数据库、前端源、测试 JWT/MFA key。端口占用即失败，不复用 P6a / 默认服务。
 - [ ] 根 `playwright.config.ts` 必须 ignore `m3-identity-security-hardening.real.spec.ts`：默认 CI 的 `npm run e2e` 不得加载隔离 fixture；M3 专用 config 仍必须匹配 mock + real 两类 suite。
+- [ ] CI E2E job 必须不回显地生成临时 `MFA_ENCRYPTION_KEY` 与 32-char base32 `E2E_ADMIN_MFA_TOTP_SECRET`；seed 只在 `NODE_ENV=test` 且 `DATABASE_URL` 精确指向 `monexus_test` 时才使用两者加密设置 seed admin MFA。任何缺失/非法/env 或 DB guard 不满足时必须不写 factor 并以不泄露值的错误失败；不得把 test factor 放进 repo、`.env` 或 production/development seed。
+- [ ] 默认 E2E 的 admin helper 只接受 `202 mfa_required` 并走真实 verify API；`mfa_enrollment_required` 是 seed 失配而非临时重新绑定机会。页面场景必须使用 `page.request` 的相对 API / 当前 cookie jar、verify 后通过 bearer `/auth/me` 得到 profile，再在已打开同源页面一次性写正常 `monexus-auth` persist；不得 `addInitScript` 持续复写 session、不得直写 User/MFA/RefreshToken、伪造 JWT、HTTP bypass 或失败输出。
+- [ ] 所有已有 admin API fixture 复用该 helper，普通 user/merchant 的 200 login 不改；默认 config 与 M3 config 的 `playwright --list` 分别证明 real suite 被排除及仍被专用入口收集。本 worktree 不运行默认 `npm run e2e`。
+- [ ] `session-revoke-device` 的实际可点击盒子高度至少 40px，并由既有 mobile regression 断言覆盖；不改 session API、文案、data-testid 或 P7b worktree。
 - [x] 运行专用验证入口、`npm --prefix server run build`、`npm run build`；不得运行 `npm run verify:local(:no-e2e)` 或默认 `npm run e2e`。
 - [x] 显式运行 `DATABASE_URL="$M3_ISH_DATABASE_URL" npx prisma migrate status` 和 drift 检查；记录命令和结果。
 
-**DoD：** AC-08 通过；若 e2e 有既有 flaky retry，必须记录且不能掩盖本波失败。
+**DoD：** AC-08 通过；默认 CI 不加载隔离 real fixture、也不再把管理员密码登录误判为 200；test factor 不越过 `test + monexus_test` 边界，任何 worker/retry 都独立完成真实 verify；若 e2e 有既有 flaky retry，必须记录且不能掩盖本波失败。
 
 ---
 
@@ -529,3 +536,5 @@ T-00 → T-BE-01 → T-BE-02 → T-BE-03 + T-BE-04 → T-BE-05 → T-FE-01 + T-F
 | 1.25.0 | 2026-07-28 | I-06 复审补入 config 早期 DB 拒绝、context baseURL/无失败产物、确定性窗口外 TOTP、真实 recovery 复用拒绝、单设备 UI 吊销与 `/api/admin/stats` 真实 guard 证据；先同步任务再修测试。 |
 | 1.26.0 | 2026-07-28 | I-06 本地完成：专用 verifier exit 0，38 migrations status/drift clean、76 files / 618 tests、双端 build、模板 preflight、M3 Playwright 10/10 PASS；PR 描述/CI/发布项仍留给 G-PR。 |
 | 1.27.0 | 2026-07-28 | PR #53 默认 E2E 失败后重开 T-QA-02：补根 config 对隔离 real spec 的 ignore，避免 CI 使用 `monexus_test` 时加载 M3 fixture。 |
+| 1.28.0 | 2026-07-28 | PR #53 第二轮 CI 已证明 root config ignore 生效，但共享 E2E 的 admin helper/API fixture 仍旧断言 200，且 session 单吊销按钮只有 32px；T-QA-02 按 D-08 加入真实 MFA helper、fixture 收口、静态收集与触控验收任务。 |
+| 1.29.0 | 2026-07-28 | D-08 复核否决运行时 enrollment：增加 test-only / exact-DB seed factor、CI 临时环境、verify-only helper、同源 cookie jar 与 `/auth/me` 初始化任务，避免 retry/trace/跨 host 风险。 |

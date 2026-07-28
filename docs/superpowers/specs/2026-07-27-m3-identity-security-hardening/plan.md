@@ -3,14 +3,14 @@
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | PLAN-M3-ISH-001 |
-| 版本 | 1.27.0 |
+| 版本 | 1.29.0 |
 | 日期 | 2026-07-27 |
 | 状态 | Frozen for Implementation |
 | 规格 | [spec.md](./spec.md)（SPEC-M3-ISH-001） |
 | 任务分解 | [task.md](./task.md) |
 | 验收清单 | [checklist.md](./checklist.md) |
 
-> 实施前必须先确认 spec 的 D-01 至 D-07。所有工作从最新 develop 建 feature 分支并通过 PR 合回 develop。后端行为先写测试；不使用 git add -A；不以关闭 MFA 或测试后门换取绿灯。
+> 实施前必须先确认 spec 的 D-01 至 D-08。所有工作从最新 develop 建 feature 分支并通过 PR 合回 develop。后端行为先写测试；不使用 git add -A；不以关闭 MFA 或测试后门换取绿灯。
 
 ---
 
@@ -237,7 +237,7 @@ runbook 至少包含：
 
 | 活动 | 出口 |
 | --- | --- |
-| 阅读 spec / task，记录 D-01..D-07 已确认 | 无开放范围歧义 |
+| 阅读 spec / task，记录 D-01..D-08 已确认 | 无开放范围歧义 |
 | 在最新 develop 建 feat/m3-identity-security-hardening | worktree 干净 |
 | 跑现有 auth、refresh、active-user 测试与双端 build | 基线绿 |
 | 确认生产 secrets 管理可提供 MFA_ENCRYPTION_KEY | 不在代码中回退到默认密钥 |
@@ -280,7 +280,7 @@ runbook 至少包含：
 | 交付 | 对应 |
 | --- | --- |
 | LoginPage MFA challenge、QR、恢复码一次展示 | REQ-F-010–013 |
-| Profile account security / sessions：列表、单个/其他吊销（P0） | REQ-F-021–023 |
+| Profile account security / sessions：列表、单个/其他吊销（P0），每个吊销按钮至少 40 CSS px | REQ-F-021–023, D-08 |
 | 管理员恢复码重生/换机与 revoke-all（P1） | REQ-F-015–016, F-024 |
 | loading、错误、a11y、testid 和非持久化检查 | REQ-NF-05, NF-08 |
 
@@ -332,7 +332,7 @@ Phase A ──► Phase B ──► Phase C ──► Phase D ──► Phase E
 | Unit | AES-GCM round trip / 错 key、TOTP 时间窗口、恢复码 hash/一次性 claim、device/IP 脱敏、bcrypt rehash 判定 |
 | Integration | admin login 202 → enroll → verify → admin guard；challenge 超时/超限；recovery code；session list/revoke；refresh rotation/replay；rotation 后 stale predecessor 的 explicit revoke 与 family-marker 判定；真实 transaction lock 的无 sleep 排队/connection-affinity 证明 |
 | Security regression | no cookie before MFA、旧 token 拒绝、owner 404、raw secret/log redaction、admin revoked token 立即拒绝 |
-| E2E | admin 首次绑定、窗口外错误 TOTP、真实 recovery code 一次性登录；两个 browser context 的精确单设备 revoke；非 admin 登录回归 |
+| E2E | admin 首次绑定、窗口外错误 TOTP、真实 recovery code 一次性登录；两个 browser context 的精确单设备 revoke；非 admin 登录回归；默认 suite 的 admin MFA helper 与 40px 触控回归 |
 | Build / deploy | frontend build、server build、Prisma migration status/drift、production env guard |
 
 测试实现要求：
@@ -355,6 +355,16 @@ Phase A ──► Phase B ──► Phase C ──► Phase D ──► Phase E
 | runner | `scripts/verify-m3-identity-security-hardening.sh` + 根 `verify:m3-identity-security-hardening` script | config 在 webServer 前严格解析 DB pathname；只跑 status/diff、全量 server vitest、双端 build、production env template guard 和专用 Playwright；默认 config 必须 ignore real spec；禁止 compose、`migrate reset`、默认 E2E |
 
 新 Playwright config 继续固定 `3103/5178`、单 worker 和 `reuseExistingServer=false`，并匹配 mock 与 real 两类 M3 文件。验证脚本若同时收到 `M3_ISH_DATABASE_URL` 与 `TEST_DATABASE_URL`，两者必须相同；任何一个指向非专用库即拒绝执行。config 还必须在 webServer 创建前用 URL pathname 精确拒绝非 `monexus_m3_ish_test` 的目标；所有额外 `browser.newContext()` 显式继承 `test.info().project.use.baseURL`，`trace: 'off'`、`screenshot: 'off'`、不启用 video。`openAdmin()` 必须等待精确 `GET /api/admin/stats` 的 200，而不是只验证静态 dashboard 文本。根 `playwright.config.ts` 必须以 `testIgnore` 排除 `.real.spec.ts`，否则默认 CI 会在加载 fixture 时因缺少 `M3_ISH_DATABASE_URL` 失败；该排除不影响 M3 专用 config 的两类测试匹配。
+
+### 6.1.1 默认 E2E 的管理员 MFA 兼容（D-08）
+
+默认 suite 使用共享 `monexus_test`，故不运行 M3 real fixture，也不得保留“admin password login 必为 200”的旧假设。运行时 enrollment 也被禁止：Playwright retry/worker 无法安全继承随机 seed，且默认 trace 配置不应承载 manual key。改用严格 test-only seed 与 verify helper：
+
+1. `.github/workflows/ci.yml` 在 E2E job 内不回显地产生 32-byte base64 `MFA_ENCRYPTION_KEY` 和 RFC4648 base32 `E2E_ADMIN_MFA_TOTP_SECRET`，写入该 job 的临时环境；`server/src/prisma/seed.ts` 只在 `NODE_ENV=test`、`DATABASE_URL` pathname 为 `monexus_test`、两变量均合法时加密写入 seed admin 的 TOTP factor / `mfaEnabled=true`。任一 guard 不满足时绝不写 factor；production/development seed 不读取该变量。
+2. `e2e/helpers.ts` 的唯一 admin session helper 只接受真实 `/auth/login` 的 `202 mfa_required`，并以临时 test factor 调真实 `/auth/mfa/verify`；`mfa_enrollment_required`、缺变量或不合规值都是不泄露值的稳定失败。因子不进 repo、`.env`、日志、异常、fixture、trace、screenshot、storageState 或 git。
+3. 页面 admin helper 通过 `page.request` 的相对 `/api` 走当前 BrowserContext / Vite proxy cookie jar；verify 后以 bearer `GET /auth/me` 得到完整 profile，再在已打开的同源页面一次性写入正常 `monexus-auth` persist 形状。不得用 `API_BASE` 打共享 3000、不得 `addInitScript` 持续复写已退出的 session、不得直写 User/MFA/RefreshToken、伪造 JWT 或提供 HTTP bypass。M3 专用 mock/real suite 继续独立覆盖完整 LoginPage MFA UI；普通 user/merchant 保留现有登录页 200 路径。
+4. 现有 admin API fixture（配置、公告、分页、checkout threshold）全部改用该 helper，避免各文件自行解读 202 response。静态 `playwright --list` 必须同时证明默认 config 排除 real suite、M3 config 仍发现 mock + real 两类测试。默认 `npm run e2e` 只由 CI 运行；本 worktree 不启动共享数据库或 3000/5173 runtime。
+5. `SessionManager` 的单设备吊销控件加最小 40px 高度，维持现有可访问名称和 test id，不更改会话 API 或布局语义。
 
 ### 6.2 Break-glass 离线入口与 production preflight
 
@@ -454,3 +464,5 @@ Phase A ──► Phase B ──► Phase C ──► Phase D ──► Phase E
 | 1.25.0 | 2026-07-28 | I-06 复审收紧 real-E2E 证据：DB 必须在 config 启动前拒绝错误目标，context 显式 baseURL、失败产物关闭；新增确定性错 TOTP、真实 recovery 单次性、精确单设备吊销与 admin stats 断言。 |
 | 1.26.0 | 2026-07-28 | I-06 以单一隔离 verifier 完成本地执行：38 migrations status/drift clean、76 files / 618 tests、双端 build、staging template guard 与 10/10 M3 Playwright PASS；PR/CI/发布门槛未因本地证据自动解除。 |
 | 1.27.0 | 2026-07-28 | PR #53 CI 复审将默认/隔离 Playwright 的收集边界补为可执行规则：默认 E2E ignore real spec，M3 config 独占 real fixture 与数据库。 |
+| 1.28.0 | 2026-07-28 | 默认 CI 已进入共享 E2E 执行后暴露 admin 202 契约漂移与 32px 单设备吊销控件；冻结 D-08 的无 bypass helper、页面状态初始化、API fixture 收口、静态发现和 40px 回归方案。 |
+| 1.29.0 | 2026-07-28 | D-08 安全复核发现随机 enrollment factor 无法跨 retry/worker 且会进入默认 trace 风险面；计划收敛为 CI 临时、test-DB-only 加密 seed + 真正 verify，页面 context jar / `/auth/me` 初始化和禁止 persistent init script。 |

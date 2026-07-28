@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | CHK-M3-ISH-001 |
-| 版本 | 1.27.0 |
+| 版本 | 1.29.0 |
 | 日期 | 2026-07-27 |
 | 规格 | [spec.md](./spec.md) |
 | 计划 | [plan.md](./plan.md) |
@@ -32,7 +32,7 @@
 ## 1. 范围与过程门禁（P0）
 
 - [ ] **CHK-PROC-01** PR 基于最新 develop，目标分支为 develop；未直接写 develop/master。
-- [ ] **CHK-PROC-02** D-01 至 D-07 已确认；PR 链接本 spec 并明确 D-03 未实现 admin per-action step-up。
+- [ ] **CHK-PROC-02** D-01 至 D-08 已确认；PR 链接本 spec 并明确 D-03 未实现 admin per-action step-up。
 - [ ] **CHK-PROC-03** 范围只含管理员 MFA、设备会话、bcrypt、相关审计/文档；未混入 OAuth、Passkey、短信、通用风控、GDPR、订阅或支付。
 - [ ] **CHK-PROC-04** 所有 P0 任务在 task.md 看板为 Done。
 - [ ] **CHK-PROC-05** migration 由 prisma migrate dev 生成；没有手写 SQL migration 或绕过 migration 的 schema 变更。
@@ -126,7 +126,7 @@
 - [x] **CHK-FE-04** 恢复码只展示一次，需用户确认已保存才能继续；不写 localStorage、Zustand persist、URL、console。
 - [x] **CHK-FE-05** 账户安全区显示设备会话；单个/其他吊销都有确认、loading 防重与正确 logout。
 - [x] **CHK-FE-06** 页面只显示 API 的脱敏 deviceLabel/ipHint，不暴露/重组 raw IP、完整 UA 或秘密。
-- [x] **CHK-FE-07** 关键操作有可访问名称与稳定 data-testid；320px/375px 下无阻断布局。
+- [ ] **CHK-FE-07** 关键操作有可访问名称与稳定 data-testid；320px/375px 下无阻断布局，且 `session-revoke-device` 的实际可点击高度不少于 40 CSS px。
 
 ### 6.2 P1
 
@@ -163,7 +163,7 @@
 | AC-05 | 会话隔离与单会话吊销 | ☑ |
 | AC-06 | 管理员被吊销会话即时失效 | ☑ |
 | AC-07 | bcrypt 升级与秘密不泄露 | ☑ |
-| AC-08 | 全量回归（本地 verifier 通过；PR CI 修复中） | ☐ |
+| AC-08 | 全量回归（本地 verifier 通过；默认 E2E D-08 修复与 PR CI 中） | ☐ |
 
 详细 Given/When/Then 见 spec.md §10。
 
@@ -183,6 +183,7 @@
 - [x] **CHK-QA-08** admin MFA 和 session revoke Playwright tests 在 M3-ISH 专用 config（3103/5178、`reuseExistingServer=false`）PASS：config 在 webServer 前严格拒绝非专用 DB，context 显式 baseURL，`openAdmin()` 以 `GET /api/admin/stats` 200 证明真实 guard；错误 TOTP 避开允许窗口，recovery code 成功一次/复用失败无 session，`session-revoke-device` 精确吊销另一 context。
 - [ ] **CHK-QA-09** 根 `playwright.config.ts` 忽略 `m3-identity-security-hardening.real.spec.ts`，默认 CI 的 `npm run e2e` 不加载隔离 fixture；M3 专用 config 的 mock + real suite PASS，`trace: 'off'`、`screenshot: 'off'`、video 未启用。
 - [ ] **CHK-QA-10** CI 的 CI OK 聚合检查绿。
+- [ ] **CHK-QA-11** 默认 E2E 的 seed admin MFA factor 仅由 CI 临时环境在 `NODE_ENV=test + monexus_test` guard 内加密写入；页面/API fixture 都只走真实 `mfa_required → verify`，enrollment response 必须失败。无 direct DB runtime fixture、HTTP bypass、手动 key/recovery code/因子失败输出或 trace/screenshot/storageState 泄露；普通 user/merchant 登录路径不回归。默认/M3 config 的静态收集分别证明 real suite 被排除及仍由专用入口执行。
 
 **证据：**
 
@@ -196,6 +197,7 @@ staging template guard: npm run prod:env:staging-template → PASS (expected pla
 playwright: M3 UI + real suite → 10/10 PASS (49.4s); no trace/screenshot/video artifacts
 targeted safeguards: wrong DB config rejected before webServer; auth-break-glass CLI 7/7 PASS; OpenAPI JSON parse and bash -n PASS
 PR #53 initial CI: default E2E incorrectly loaded the isolated real suite without M3_ISH_DATABASE_URL; CHK-QA-09 / AC-08 reopened pending config-ignore fix and CI rerun.
+PR #53 second CI: root ignore is effective, but default E2E still assumes admin password login is 200 and mobile regression reports `session-revoke-device` as 204x32. D-08 safety review superseded runtime enrollment with CI-temporary test-DB-only factor + verify; CHK-FE-07 / CHK-QA-11 / AC-08 remain open pending implementation and CI.
 CI:
 ~~~
 
@@ -242,7 +244,7 @@ CI:
 - [ ] Frontend P0 (CHK-FE-01..07)
 - [ ] Secret / audit (CHK-SEC-*)
 - [ ] AC-01 .. AC-08
-- [ ] QA (CHK-QA-01..10)
+- [ ] QA (CHK-QA-01..11)
 - [ ] Release (CHK-REL-01..08)
 ~~~
 
@@ -292,3 +294,5 @@ P0 豁免默认不允许。唯一例外是仓库负责人明确书面批准的�
 | 1.25.0 | 2026-07-28 | I-06 复审将 real-E2E 的启动前 DB 拒绝、baseURL/无失败产物、窗口外错误 TOTP、recovery 单次性、精确单设备 revoke 与真实 admin API 验证列为未勾选的 P0 QA 证据。 |
 | 1.26.0 | 2026-07-28 | I-06 本地 verifier 退出 0 后勾选 AC-08（local）及 QA/DOC 已验证项；76 files / 618 tests、10/10 Playwright 与静态门禁已记录，PR/CI/release 项保持未勾选。 |
 | 1.27.0 | 2026-07-28 | PR #53 CI 证明默认 E2E 未排除隔离 real suite；AC-08/CHK-QA-09 重新打开，待根 config ignore 修复和 CI OK 后再勾选。 |
+| 1.28.0 | 2026-07-28 | #53 第二轮默认 E2E 已排除 real suite，但 admin 202 契约与 32px 设备吊销控件仍失败；重开 CHK-FE-07，新增 D-08 的 CHK-QA-11，并将 AC-08 保持为待 CI 证据。 |
+| 1.29.0 | 2026-07-28 | D-08 安全复核将 CHK-QA-11 从 runtime enrollment 改为 CI 临时、`test + monexus_test` 受限 factor seed 与 verify-only 证据；加入相对 context cookie jar、无 secret artifact 和 enrollment 必须失败的检查。 |

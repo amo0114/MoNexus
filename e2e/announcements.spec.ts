@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { API_BASE, SEED_ACCOUNTS, loginAs } from './helpers'
+import { API_BASE, SEED_ACCOUNTS, loginAs, loginAsApi } from './helpers'
 
 /**
  * Announcement center: admin CRUD plus user-facing delivery states.
@@ -12,11 +12,7 @@ const IMPORTANT_TITLE = `E2E重要公告-${Date.now()}`
 test.describe('M3-S3 announcements', () => {
   test('admin can create, publish, see banner, then delete', async ({ page, request }) => {
     await loginAs(page, SEED_ACCOUNTS.admin)
-    const adminLogin = await request.post(`${API_BASE}/api/auth/login`, {
-      data: { email: SEED_ACCOUNTS.admin.email, password: SEED_ACCOUNTS.admin.password },
-    })
-    expect(adminLogin.ok()).toBeTruthy()
-    const token = (await adminLogin.json()).accessToken as string
+    const { accessToken: token } = await loginAsApi(request, SEED_ACCOUNTS.admin)
 
     // Clean any stale row with same title from prior runs
     const listBefore = await request.get(`${API_BASE}/api/admin/announcements?pageSize=100`, {
@@ -109,11 +105,7 @@ test.describe('M3-S3 announcements', () => {
     await page.setViewportSize({ width: 320, height: 700 })
     await loginAs(page, SEED_ACCOUNTS.user)
 
-    const adminLogin = await request.post(`${API_BASE}/api/auth/login`, {
-      data: { email: SEED_ACCOUNTS.admin.email, password: SEED_ACCOUNTS.admin.password },
-    })
-    expect(adminLogin.ok()).toBeTruthy()
-    const adminToken = (await adminLogin.json()).accessToken as string
+    const { accessToken: adminToken } = await loginAsApi(request, SEED_ACCOUNTS.admin)
 
     const created = await request.post(`${API_BASE}/api/admin/announcements`, {
       headers: { Authorization: `Bearer ${adminToken}` },

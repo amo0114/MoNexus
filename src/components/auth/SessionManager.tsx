@@ -141,7 +141,7 @@ export default function SessionManager() {
                 ) : (
                   <button
                     type="button"
-                    className="btn-secondary inline-flex shrink-0 items-center justify-center gap-1.5 border-[var(--color-danger)]/40 px-3 py-1.5 text-xs text-[var(--color-danger)]"
+                    className="btn-secondary inline-flex min-h-10 shrink-0 items-center justify-center gap-1.5 border-[var(--color-danger)]/40 px-3 py-1.5 text-xs text-[var(--color-danger)]"
                     onClick={() => setPendingAction({ kind: 'single', session })}
                     disabled={submitting}
                     data-testid="session-revoke-device"
