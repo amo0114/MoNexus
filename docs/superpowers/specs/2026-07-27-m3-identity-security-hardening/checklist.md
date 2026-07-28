@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | CHK-M3-ISH-001 |
-| 版本 | 1.26.0 |
+| 版本 | 1.27.0 |
 | 日期 | 2026-07-27 |
 | 规格 | [spec.md](./spec.md) |
 | 计划 | [plan.md](./plan.md) |
@@ -163,7 +163,7 @@
 | AC-05 | 会话隔离与单会话吊销 | ☑ |
 | AC-06 | 管理员被吊销会话即时失效 | ☑ |
 | AC-07 | bcrypt 升级与秘密不泄露 | ☑ |
-| AC-08 | 全量回归（本地专用 verifier） | ☑ |
+| AC-08 | 全量回归（本地 verifier 通过；PR CI 修复中） | ☐ |
 
 详细 Given/When/Then 见 spec.md §10。
 
@@ -181,7 +181,7 @@
 - [x] **CHK-QA-06** `npm run verify:m3-identity-security-hardening` PASS：脚本只使用显式专用库，不调用 compose、不触碰默认 `monexus_test`。
 - [x] **CHK-QA-07** Prisma migrate status/drift 检查 PASS，且命令显式使用 `M3_ISH_DATABASE_URL`。
 - [x] **CHK-QA-08** admin MFA 和 session revoke Playwright tests 在 M3-ISH 专用 config（3103/5178、`reuseExistingServer=false`）PASS：config 在 webServer 前严格拒绝非专用 DB，context 显式 baseURL，`openAdmin()` 以 `GET /api/admin/stats` 200 证明真实 guard；错误 TOTP 避开允许窗口，recovery code 成功一次/复用失败无 session，`session-revoke-device` 精确吊销另一 context。
-- [x] **CHK-QA-09** 不运行默认 `npm run e2e`；本波专用 Playwright suite PASS，`trace: 'off'`、`screenshot: 'off'`、video 未启用，CI 中的全量 E2E/CI OK 另由隔离 runner 验证。
+- [ ] **CHK-QA-09** 根 `playwright.config.ts` 忽略 `m3-identity-security-hardening.real.spec.ts`，默认 CI 的 `npm run e2e` 不加载隔离 fixture；M3 专用 config 的 mock + real suite PASS，`trace: 'off'`、`screenshot: 'off'`、video 未启用。
 - [ ] **CHK-QA-10** CI 的 CI OK 聚合检查绿。
 
 **证据：**
@@ -195,6 +195,7 @@ frontend build: npm run build → PASS
 staging template guard: npm run prod:env:staging-template → PASS (expected placeholder warnings only)
 playwright: M3 UI + real suite → 10/10 PASS (49.4s); no trace/screenshot/video artifacts
 targeted safeguards: wrong DB config rejected before webServer; auth-break-glass CLI 7/7 PASS; OpenAPI JSON parse and bash -n PASS
+PR #53 initial CI: default E2E incorrectly loaded the isolated real suite without M3_ISH_DATABASE_URL; CHK-QA-09 / AC-08 reopened pending config-ignore fix and CI rerun.
 CI:
 ~~~
 
@@ -290,3 +291,4 @@ P0 豁免默认不允许。唯一例外是仓库负责人明确书面批准的�
 | 1.24.0 | 2026-07-28 | 记录 I-06 运维收口：MFA key 的 production preflight 与 server guard 必须一致；break-glass 仅走受限离线 CLI / 双人 SOP，未提前勾选文档门禁。 |
 | 1.25.0 | 2026-07-28 | I-06 复审将 real-E2E 的启动前 DB 拒绝、baseURL/无失败产物、窗口外错误 TOTP、recovery 单次性、精确单设备 revoke 与真实 admin API 验证列为未勾选的 P0 QA 证据。 |
 | 1.26.0 | 2026-07-28 | I-06 本地 verifier 退出 0 后勾选 AC-08（local）及 QA/DOC 已验证项；76 files / 618 tests、10/10 Playwright 与静态门禁已记录，PR/CI/release 项保持未勾选。 |
+| 1.27.0 | 2026-07-28 | PR #53 CI 证明默认 E2E 未排除隔离 real suite；AC-08/CHK-QA-09 重新打开，待根 config ignore 修复和 CI OK 后再勾选。 |

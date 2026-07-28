@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | TASK-M3-ISH-001 |
-| 版本 | 1.26.0 |
+| 版本 | 1.27.0 |
 | 日期 | 2026-07-27 |
 | 规格 | [spec.md](./spec.md) |
 | 计划 | [plan.md](./plan.md) |
@@ -46,7 +46,7 @@
 | T-FE-02 | Done | Codex | I-05：Profile 会话列表、单个/其他设备确认吊销；M3 专用 UI suite 覆盖 |
 | T-FE-03 | Todo | | P1：恢复码重生、换机与全会话退出 UI |
 | T-QA-01 | Done | Codex | I-06：专用库全量 76 files / 618 tests、migration status/drift PASS |
-| T-QA-02 | Done | Codex | I-06：真实 MFA/session/recovery E2E + mock UI 共 10/10，专用 verifier exit 0 |
+| T-QA-02 | In Progress | Codex | PR #53 CI：默认 E2E 错收集隔离 real spec；补 config ignore 后重跑 CI |
 | T-DOC-01 | Done (local) | Codex | I-06：OpenAPI、README、runbook、secrets、env/preflight 已收口；PR 描述留待 G-PR 阶段 |
 
 状态枚举：Todo | In Progress | Blocked | Done | Cancelled。
@@ -416,6 +416,7 @@ TEST_DATABASE_URL='postgresql://monexus:monexus_dev_2026@localhost:5432/monexus_
 - [x] fixture setup/cleanup 只作用于 `m3-ish-e2e-*@test.invalid`：每场景清理 SecurityEvent、AuthChallenge、MfaRecoveryCode、RefreshToken、User；不得删除整库或用 direct DB 伪造吊销结果。
 - [x] 专用验证脚本必须拒绝非 `monexus_m3_ish_test` 目标、绝不调用 docker compose、绝不 reset/创建默认 `monexus_test`；只接受显式 `M3_ISH_DATABASE_URL` / `TEST_DATABASE_URL`。
 - [x] 专用 Playwright config 在启动 webServer 前解析数据库 URL 并只接受 pathname `monexus_m3_ish_test`；固定后端 3103、前端 5178、独立 browser context、`reuseExistingServer=false`，并同时匹配 UI-contract / real-E2E M3 spec；每个额外 context 显式传 `test.info().project.use.baseURL`，`trace: 'off'`、`screenshot: 'off'` 且不启用 video。服务端 env 明确传入专用数据库、前端源、测试 JWT/MFA key。端口占用即失败，不复用 P6a / 默认服务。
+- [ ] 根 `playwright.config.ts` 必须 ignore `m3-identity-security-hardening.real.spec.ts`：默认 CI 的 `npm run e2e` 不得加载隔离 fixture；M3 专用 config 仍必须匹配 mock + real 两类 suite。
 - [x] 运行专用验证入口、`npm --prefix server run build`、`npm run build`；不得运行 `npm run verify:local(:no-e2e)` 或默认 `npm run e2e`。
 - [x] 显式运行 `DATABASE_URL="$M3_ISH_DATABASE_URL" npx prisma migrate status` 和 drift 检查；记录命令和结果。
 
@@ -527,3 +528,4 @@ T-00 → T-BE-01 → T-BE-02 → T-BE-03 + T-BE-04 → T-BE-05 → T-FE-01 + T-F
 | 1.24.0 | 2026-07-28 | I-06 运维审计将 break-glass 收口为受控离线 CLI，并要求 production preflight 校验 MFA key 的 canonical 32-byte 形式；先同步任务/DoD 再编码。 |
 | 1.25.0 | 2026-07-28 | I-06 复审补入 config 早期 DB 拒绝、context baseURL/无失败产物、确定性窗口外 TOTP、真实 recovery 复用拒绝、单设备 UI 吊销与 `/api/admin/stats` 真实 guard 证据；先同步任务再修测试。 |
 | 1.26.0 | 2026-07-28 | I-06 本地完成：专用 verifier exit 0，38 migrations status/drift clean、76 files / 618 tests、双端 build、模板 preflight、M3 Playwright 10/10 PASS；PR 描述/CI/发布项仍留给 G-PR。 |
+| 1.27.0 | 2026-07-28 | PR #53 默认 E2E 失败后重开 T-QA-02：补根 config 对隔离 real spec 的 ignore，避免 CI 使用 `monexus_test` 时加载 M3 fixture。 |

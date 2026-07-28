@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | SPEC-M3-ISH-001 |
-| 版本 | 1.26.0 |
+| 版本 | 1.27.0 |
 | 日期 | 2026-07-27 |
 | 状态 | Frozen for Implementation |
 | 产品 | MoNexus |
@@ -398,7 +398,7 @@ Then vitest、相关 Playwright、双端 build、Prisma drift 检查以及 produ
 6. `openAdmin()` 不能只断言静态页面文本：点击 dashboard 前必须等待精确的 `GET /api/admin/stats` 响应并断言 200，作为真实 admin guard 成功证据。
 7. 每个 fixture 在 `afterEach` 精确清除其自身的 `SecurityEvent`、`AuthChallenge`、`MfaRecoveryCode`、`RefreshToken` 与 User 行；运行开始也只回收同一固定命名空间的遗留 fixture。不得使用 `migrate reset`、删库、默认 `monexus_test` 或共享开发库。
 
-专用验证入口只接受显式 `M3_ISH_DATABASE_URL` / `TEST_DATABASE_URL` 且数据库名严格等于 `monexus_m3_ish_test`；Playwright config 自身必须在启动 webServer 前解析并拒绝任何其他 pathname，不能仅依赖 fixture 的晚期校验。固定 backend `3103`、frontend `5178`、`reuseExistingServer=false`。每个 `browser.newContext()` 显式传入 `test.info().project.use.baseURL`；M3 config 固定 `trace: 'off'`、`screenshot: 'off'` 且不启用 video，防止失败产物泄露 MFA 秘密。端口或数据库不可用即失败，绝不借用其他 worktree 的服务。
+专用验证入口只接受显式 `M3_ISH_DATABASE_URL` / `TEST_DATABASE_URL` 且数据库名严格等于 `monexus_m3_ish_test`；Playwright config 自身必须在启动 webServer 前解析并拒绝任何其他 pathname，不能仅依赖 fixture 的晚期校验。固定 backend `3103`、frontend `5178`、`reuseExistingServer=false`。每个 `browser.newContext()` 显式传入 `test.info().project.use.baseURL`；M3 config 固定 `trace: 'off'`、`screenshot: 'off'` 且不启用 video，防止失败产物泄露 MFA 秘密。仓库默认 `playwright.config.ts` / `npm run e2e` 必须显式忽略 `m3-identity-security-hardening.real.spec.ts`，使共享 CI 不会加载其隔离 fixture；该 real suite 只能由 M3 专用 config 运行。mock UI suite 可继续走默认 E2E，但不能替代 AC-08 的真实证据。端口或数据库不可用即失败，绝不借用其他 worktree 的服务。
 
 ---
 
@@ -472,6 +472,7 @@ Then vitest、相关 Playwright、双端 build、Prisma drift 检查以及 produ
 | 1.24.0 | 2026-07-28 | I-06 只读运维审计发现已有 break-glass 原子服务缺少可审计离线调用入口；D-04 收敛为受 `--user-id`/`--case-ref` 约束的无 HTTP CLI 与双人 SOP，不改变凭证作废语义。 |
 | 1.25.0 | 2026-07-28 | I-06 复审将 real-E2E 证据收紧为启动前专用 DB 校验、显式 context baseURL、无秘密失败产物、窗口外错误 TOTP、真实 recovery 一次性登录及精确单设备吊销/admin API 断言；不改变产品或认证决策。 |
 | 1.26.0 | 2026-07-28 | I-06 按 1.25.0 的冻结证据协议完成本地验证：专用 verifier 退出 0、76 files / 618 tests、双端 build、漂移检查及 10 条 M3 Playwright 通过；产品决策不变，PR/CI/发布门槛仍独立。 |
+| 1.27.0 | 2026-07-28 | PR #53 CI 发现默认 E2E 错误收集隔离 real suite、未提供专用数据库；冻结默认 config 显式 ignore real spec、仅由 M3 专用 config 执行的边界，不改变产品或认证决策。 |
 
 ---
 

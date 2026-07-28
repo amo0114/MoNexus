@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | PLAN-M3-ISH-001 |
-| 版本 | 1.26.0 |
+| 版本 | 1.27.0 |
 | 日期 | 2026-07-27 |
 | 状态 | Frozen for Implementation |
 | 规格 | [spec.md](./spec.md)（SPEC-M3-ISH-001） |
@@ -352,9 +352,9 @@ Phase A ──► Phase B ──► Phase C ──► Phase D ──► Phase E
 | fixture | 测试进程以显式 `M3_ISH_DATABASE_URL` 的 Prisma client 建随机 namespaced admin，密码仅存测试进程内存 | 只允许数据库名 `monexus_m3_ish_test`；`enrollAdministrator` 只在测试闭包内返回 UI 获得的 manual key/recovery codes，绝不写 artifact、日志或异常；每场景 afterEach 精确删除 fixture 的 auth/security 子记录和 User，启动时仅回收同前缀遗留项 |
 | TOTP / recovery | 从真实 enrollment UI 读取 manual key，在 Playwright 进程生成当前码；新 context 用一枚 recovery code 真正登录并验证复用失败 | 错 TOTP 必须显式避开允许的前/当前/后 30 秒窗口；不从 DB 读取 seed，不等待时间窗口，不记录 manual key / code，不让失败再建 session |
 | session E2E | A/B 两个独立 browser context；A 经 Profile 的 `session-revoke-device` 确认 UI 精确吊销 B | A 的真实 `/api/admin/stats` 仍为 200；B refresh 为 401、B admin API 为 401 / `SESSION_REVOKED`；不直写 token revoke 状态，不复用 cookie/context |
-| runner | `scripts/verify-m3-identity-security-hardening.sh` + 根 `verify:m3-identity-security-hardening` script | config 在 webServer 前严格解析 DB pathname；只跑 status/diff、全量 server vitest、双端 build、production env template guard 和专用 Playwright；禁止 compose、`migrate reset`、默认 E2E |
+| runner | `scripts/verify-m3-identity-security-hardening.sh` + 根 `verify:m3-identity-security-hardening` script | config 在 webServer 前严格解析 DB pathname；只跑 status/diff、全量 server vitest、双端 build、production env template guard 和专用 Playwright；默认 config 必须 ignore real spec；禁止 compose、`migrate reset`、默认 E2E |
 
-新 Playwright config 继续固定 `3103/5178`、单 worker 和 `reuseExistingServer=false`，并匹配 mock 与 real 两类 M3 文件。验证脚本若同时收到 `M3_ISH_DATABASE_URL` 与 `TEST_DATABASE_URL`，两者必须相同；任何一个指向非专用库即拒绝执行。config 还必须在 webServer 创建前用 URL pathname 精确拒绝非 `monexus_m3_ish_test` 的目标；所有额外 `browser.newContext()` 显式继承 `test.info().project.use.baseURL`，`trace: 'off'`、`screenshot: 'off'`、不启用 video。`openAdmin()` 必须等待精确 `GET /api/admin/stats` 的 200，而不是只验证静态 dashboard 文本。
+新 Playwright config 继续固定 `3103/5178`、单 worker 和 `reuseExistingServer=false`，并匹配 mock 与 real 两类 M3 文件。验证脚本若同时收到 `M3_ISH_DATABASE_URL` 与 `TEST_DATABASE_URL`，两者必须相同；任何一个指向非专用库即拒绝执行。config 还必须在 webServer 创建前用 URL pathname 精确拒绝非 `monexus_m3_ish_test` 的目标；所有额外 `browser.newContext()` 显式继承 `test.info().project.use.baseURL`，`trace: 'off'`、`screenshot: 'off'`、不启用 video。`openAdmin()` 必须等待精确 `GET /api/admin/stats` 的 200，而不是只验证静态 dashboard 文本。根 `playwright.config.ts` 必须以 `testIgnore` 排除 `.real.spec.ts`，否则默认 CI 会在加载 fixture 时因缺少 `M3_ISH_DATABASE_URL` 失败；该排除不影响 M3 专用 config 的两类测试匹配。
 
 ### 6.2 Break-glass 离线入口与 production preflight
 
@@ -453,3 +453,4 @@ Phase A ──► Phase B ──► Phase C ──► Phase D ──► Phase E
 | 1.24.0 | 2026-07-28 | Phase E 运维实现细化：break-glass 只经受限离线 CLI 触达原子服务，production preflight 同步验证 canonical 32-byte MFA key。 |
 | 1.25.0 | 2026-07-28 | I-06 复审收紧 real-E2E 证据：DB 必须在 config 启动前拒绝错误目标，context 显式 baseURL、失败产物关闭；新增确定性错 TOTP、真实 recovery 单次性、精确单设备吊销与 admin stats 断言。 |
 | 1.26.0 | 2026-07-28 | I-06 以单一隔离 verifier 完成本地执行：38 migrations status/drift clean、76 files / 618 tests、双端 build、staging template guard 与 10/10 M3 Playwright PASS；PR/CI/发布门槛未因本地证据自动解除。 |
+| 1.27.0 | 2026-07-28 | PR #53 CI 复审将默认/隔离 Playwright 的收集边界补为可执行规则：默认 E2E ignore real spec，M3 config 独占 real fixture 与数据库。 |
