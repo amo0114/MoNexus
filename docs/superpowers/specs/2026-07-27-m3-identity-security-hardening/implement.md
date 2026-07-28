@@ -3,9 +3,9 @@
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | IMPL-M3-ISH-001 |
-| 版本 | 1.20.0 |
+| 版本 | 1.22.0 |
 | 日期 | 2026-07-27 |
-| 状态 | I-00、I-01、I-02、I-03 Done (local)；当前 P6c rebase 为 PR 前闸门 |
+| 状态 | I-00 至 I-05 Done (local)；全波 PR 仍受 I-06 / 最终门禁约束 |
 | 输入 | [spec.md](./spec.md) · [plan.md](./plan.md) · [task.md](./task.md) · [checklist.md](./checklist.md) |
 | 方法依据 | [JavaGuide Spec Coding：Specify → Plan → Tasks → Implement](https://javaguide.cn/ai-coding/practices/spec-coding.html) |
 
@@ -32,7 +32,7 @@ Implement 不是“文档写完就直接编码”。每个任务开始前，执�
 
 | 角色 | worktree | branch | 规则 |
 | --- | --- | --- | --- |
-| P6 并行开发（当前 P6c） | /root/projects/MoNexus-new | feat/p6c-booking | 本任务绝不在此目录执行 git switch、git add、编辑、format、test 或 migration |
+| P7b 并行开发 | /root/projects/MoNexus-new | feat/p7b-auto-provision | 本任务绝不在此目录执行 git switch、git add、编辑、format、test 或 migration |
 | M3-ISH 安全任务 | /root/projects/monexus-m3-identity-security-hardening | feat/m3-identity-security-hardening | 本任务唯一可写目录 |
 
 当前安全分支从 origin/develop 的 bf25d01 创建，未跟踪远端，避免自动推送或与 P6a 混合。
@@ -57,7 +57,7 @@ Implement 不是“文档写完就直接编码”。每个任务开始前，执�
 | server/src/modules/auth/** | server/src/modules/orders/** |
 | server/src/middlewares/auth.ts | server/src/modules/merchant/** |
 | server/src/lib/logger.ts、server/src/config/index.ts | server/src/lib/systemConfig.ts |
-| LoginPage、新建 auth 安全子组件、src/api/auth.ts | P6a 当前正在修改的 src/pages/ProfilePage.tsx 及订阅前端/业务 UI |
+| LoginPage、ProfilePage（仅 I-05 挂载）、新建 auth 安全子组件、src/api/auth.ts | P7b worktree / branch / 未提交文件，以及其运行时和数据库资源 |
 | 本规格目录、auth README、OpenAPI、auth 运维文档 | P6a migration 与 P6 设计文件 |
 | schema.prisma 中 User / RefreshToken / 新 MFA 模型的最小块 | schema.prisma 中 Order / Offer / Subscription 的 P6a 块 |
 
@@ -96,7 +96,7 @@ schema.prisma 是唯一共同文件。安全任务不得重排、格式化或编
 | I-02 | T-BE-02 | Done (local) | auth/mfa、security event、logger、原语测试 | `2483b0f`；密钥/OTP/challenge/recovery/redact 12 条定向单测与 server build 通过；无真实 secret |
 | I-03 | T-BE-04 | Done (local) | auth session service、auth refresh/session boundary、全用户 revoke audit、routes/serializer/tests；P1 仅限 admin service 三处 lock 调用 | `auth-sessions` 11/11、全量后端 65 files / 520 tests（575.53s）、server/root build 均 PASS；二次安全复审无 P0/P1。P6c→develop rebase 仍是 PR 前闸门 |
 | I-04 | T-BE-03 + T-BE-05 | Done (local) | auth service/controller/schema/routes、auth middleware、admin route、orders route、announcements controller、auth tests | 已 rebase `origin/develop@4568ee4`；MFA flow、guard、bcrypt、密码变更 challenge 作废、D-04 无 HTTP break-glass、文件取证/公告旁路均完成。75 files / 611 tests、server/root build、38-migration status/drift 通过；I-05 前端 202 流未完成，故不可 PR/合并 |
-| I-05 | T-FE-01 + T-FE-02 | Blocked by P6a UI ownership | LoginPage、新 auth security components、auth API；P6a 合入/rebase 后才可改 ProfilePage 挂载点 | UI 不持久化秘密；独立端口 smoke / E2E 通过 |
+| I-05 | T-FE-01 + T-FE-02 | Done (local) | LoginPage、ProfilePage、独立 auth security components、auth API、M3 专用 Playwright config | 登录 200/202 union、二维码本地渲染、恢复码确认前不写 store、MFA 失败不 refresh/replay、设备确认吊销；3103/5178 的 UI suite 6/6、双端 build 与 diff check PASS。真实整栈 QA/文档仍归 I-06 |
 | I-06 | T-QA-01 + T-QA-02 + T-DOC-01 | Todo | tests、OpenAPI、auth README、runbook、checklist | 完整验证、rebase 后 drift、所有 P0 勾选、PR 准备完成 |
 | I-07 | T-BE-06 + T-FE-03 | Todo (P1) | MFA security settings、revoke-all API/UI | 不削弱 P0 guard；若纳入 PR 则 P1 checklist 全部有证据，若拆后续则在 PR 明确链接 follow-up |
 
@@ -161,6 +161,8 @@ schema.prisma 是唯一共同文件。安全任务不得重排、格式化或编
 | 2026-07-28 | I-04 | In Progress | D-04 break-glass implementation gap | 已先同步 Specify → Plan → Tasks → Implement → Checklist：只导出离线原子服务，不新增 HTTP route；清空 seed、作废 recovery/challenge、bump version、revoke session、写受控 caseRef 审计；随后以红测实现 |
 | 2026-07-28 | I-04 | In Progress | break-glass seed-residue review | 在最终回归前发现已消费 challenge 的密文不再可用但仍残留；先将规格收紧为同事务置空，再补断言/实现 |
 | 2026-07-28 | I-04 | Done (local) | `auth-mfa` 14/14；全量 server 75 files / 611 tests PASS（915.71s）；server/root build PASS；38 migrations status/drift clean | D-04 break-glass、密码变更 pre-auth 失效与非 admin-router MFA 旁路均有回归；未改并行 worktree/runtime。I-05 前端 MFA 流、I-06 docs/QA 尚未完成，故不推送/不开 PR |
+| 2026-07-28 | I-05 | In Progress | HEAD `097b4c9`；T-FE-01 + T-FE-02 | P6 已入 develop 且 M3 已 rebase `4568ee4`，故仅在本 worktree 开始 LoginPage / ProfilePage 集成；P7b worktree、branch、未提交文件与运行时资源零触碰。 |
+| 2026-07-28 | I-05 | Done (local) | `MfaEnrollment` / `MfaVerification` / `RecoveryCodeConfirmation` / `SessionManager`；M3 独立 Playwright 6/6（3103/5178、专用库）；frontend/server build 与 `git diff --check` PASS | 精确 API-path 测试夹具防止误拦 Vite 模块；验证 recovery/access token 不在确认前持久化、失败因子不 refresh/replay、单/其他会话确认吊销及 320/375px 无横向溢出。仅 M3 worktree/runtime 被使用；I-06 仍阻止 PR。 |
 
 ---
 
@@ -183,6 +185,8 @@ schema.prisma 是唯一共同文件。安全任务不得重排、格式化或编
 | 1.18.0 | 2026-07-28 | I-04 实现复核发现密码变更后的 pre-auth challenge 仍可完成 MFA；已先明确同事务 challenge consume、管理员 `mfaVersion` bump 与回归门槛，再继续编码 |
 | 1.19.0 | 2026-07-28 | I-04 复核发现 break-glass 仅有安全事件类型但缺服务实现；已先冻结无 HTTP 路由的原子操作与完整凭证作废边界，再继续编码 |
 | 1.20.0 | 2026-07-28 | break-glass 残留审计将 pending challenge 密文纳入清空范围；完成前必须由回归验证 |
+| 1.21.0 | 2026-07-28 | P6→develop rebase 已满足，解除 I-05 的旧 ProfilePage ownership 阻塞并启动唯一 In Progress 的 I-05；记录 P7b 的 worktree/runtime 零干扰边界。 |
+| 1.22.0 | 2026-07-28 | I-05 本地完成并回填行为、隔离 UI suite、双端构建与 diff-check 证据；不把 mock-based UI suite 误记为 I-06 的真实整栈 AC-08。 |
 
 ---
 

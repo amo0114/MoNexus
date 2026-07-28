@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | CHK-M3-ISH-001 |
-| 版本 | 1.20.0 |
+| 版本 | 1.22.0 |
 | 日期 | 2026-07-27 |
 | 规格 | [spec.md](./spec.md) |
 | 计划 | [plan.md](./plan.md) |
@@ -120,13 +120,13 @@
 
 ### 6.1 P0
 
-- [ ] **CHK-FE-01** LoginPage 将 202 MFA challenge 作为登录流程状态，不触发自动 refresh 或错误重放。
-- [ ] **CHK-FE-02** 初次绑定页在未签发会话前不渲染 Layout/admin 内容。
-- [ ] **CHK-FE-03** QR、手动密钥、TOTP 输入、恢复码切换、错误/超限提示均可用；成功或取消后秘密 state 被清空。
-- [ ] **CHK-FE-04** 恢复码只展示一次，需用户确认已保存才能继续；不写 localStorage、Zustand persist、URL、console。
-- [ ] **CHK-FE-05** 账户安全区显示设备会话；单个/其他吊销都有确认、loading 防重与正确 logout。
-- [ ] **CHK-FE-06** 页面只显示 API 的脱敏 deviceLabel/ipHint，不暴露/重组 raw IP、完整 UA 或秘密。
-- [ ] **CHK-FE-07** 关键操作有可访问名称与稳定 data-testid；320px/375px 下无阻断布局。
+- [x] **CHK-FE-01** LoginPage 将 202 MFA challenge 作为登录流程状态，不触发自动 refresh 或错误重放。
+- [x] **CHK-FE-02** 初次绑定页在未签发会话前不渲染 Layout/admin 内容。
+- [x] **CHK-FE-03** QR、手动密钥、TOTP 输入、恢复码切换、错误/超限提示均可用；成功或取消后秘密 state 被清空。
+- [x] **CHK-FE-04** 恢复码只展示一次，需用户确认已保存才能继续；不写 localStorage、Zustand persist、URL、console。
+- [x] **CHK-FE-05** 账户安全区显示设备会话；单个/其他吊销都有确认、loading 防重与正确 logout。
+- [x] **CHK-FE-06** 页面只显示 API 的脱敏 deviceLabel/ipHint，不暴露/重组 raw IP、完整 UA 或秘密。
+- [x] **CHK-FE-07** 关键操作有可访问名称与稳定 data-testid；320px/375px 下无阻断布局。
 
 ### 6.2 P1
 
@@ -135,7 +135,7 @@
 - [ ] **CHK-FE-10** 会话列表加载/空状态/错误状态不会影响 ProfilePage 其他功能。
 - [ ] **CHK-FE-11** **[P1]** revoke-all 有明确确认、清当前 auth state、跳转登录；不复用默认服务或保存秘密。
 
-**证据：** 截图 / Playwright testid：________________
+**证据：** `e2e/m3-identity-security-hardening.spec.ts` 的 M3 专用 UI suite：202 enrollment / 已绑定 recovery 登录、失败因子 `refreshRequests=0`、无 Layout、恢复码确认前 access token 与所有 recovery code 不在 `monexus-auth`、current/other 设备确认吊销、320px/375px 无横向溢出；6/6 PASS（3103/5178，`reuseExistingServer=false`）。
 
 ---
 
@@ -191,6 +191,7 @@ frontend build: npm run build → PASS
 isolated verify:
 prisma: 38 migrations up to date; migrate diff → No difference detected
 playwright:
+M3 UI suite: M3_ISH_DATABASE_URL=<isolated monexus_m3_ish_test> npx playwright test --config=playwright.m3-identity-security-hardening.config.ts → 6/6 PASS (24.5s)
 CI:
 ~~~
 
@@ -280,3 +281,5 @@ P0 豁免默认不允许。唯一例外是仓库负责人明确书面批准的�
 | 1.18.0 | 2026-07-28 | 增加 CHK-AUTH-11：管理员成功密码变更必须消费 pre-auth challenge、递增 MFA version、吊销 session，并有成功/失败路径回归 |
 | 1.19.0 | 2026-07-28 | 增加 CHK-MFA-13：D-04 break-glass 服务级原子 reset、无 HTTP route 与全量凭证作废/审计回归门禁 |
 | 1.20.0 | 2026-07-28 | CHK-MFA-13 收紧为 pending challenge 密文也必须清空，防止 break-glass 留下无用敏感材料 |
+| 1.21.0 | 2026-07-28 | I-05 在 P6→develop rebase 后开始执行；CHK-FE-01..07 保持未勾选，直至前端实现、独立验证与证据回填完成。 |
+| 1.22.0 | 2026-07-28 | I-05 完成并勾选 CHK-FE-01..07；记录专用 UI suite 6/6、双端 build 与 diff-check。CHK-QA-08/09 和 AC-08 仍留给 I-06 的真实整栈验证。 |

@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | TASK-M3-ISH-001 |
-| 版本 | 1.20.0 |
+| 版本 | 1.22.0 |
 | 日期 | 2026-07-27 |
 | 规格 | [spec.md](./spec.md) |
 | 计划 | [plan.md](./plan.md) |
@@ -36,14 +36,14 @@
 | ID | 状态 | 负责人 | 备注 |
 | --- | --- | --- | --- |
 | T-00 | Done | Codex | 基线与决策确认（证据见 implement.md §7） |
-| T-BE-01 | Done | Codex | 本地交付 `2f212e8`；G-PR-01（P6a→develop rebase/复核）仍 pending，故不可开 PR |
+| T-BE-01 | Done | Codex | 本地交付 `2f212e8`；P6→develop rebase/复核已在 `4568ee4` 完成，PR 仍受 I-06 最终门禁约束 |
 | T-BE-02 | Done | Codex | 本地交付 `2483b0f`；12 条原语/日志测试与 server build PASS |
 | T-BE-03 | Done | Codex | I-04 本地完成：MFA 登录/绑定、离线 break-glass 原子服务与 14 条定向回归通过；仍不可开 PR |
-| T-BE-04 | Done | Codex | I-03 本地完成：会话 API、D-07 锁协议与三条管理员锁序回归均通过；P6c→develop rebase 仍阻止 PR |
-| T-BE-05 | Done | Codex | I-04 本地完成：admin MFA guard、bcrypt 收口、非 admin-router 旁路收口与全量回归通过；仍不可开 PR |
+| T-BE-04 | Done | Codex | I-03 本地完成：会话 API、D-07 锁协议与三条管理员锁序回归均通过；rebase 已完成，PR 仍受 I-06 最终门禁约束 |
+| T-BE-05 | Done | Codex | I-04 本地完成：admin MFA guard、bcrypt 收口、非 admin-router 旁路收口与全量回归通过；PR 仍受 I-06 最终门禁约束 |
 | T-BE-06 | Todo | | P1：MFA 安全区与 revoke-all API |
-| T-FE-01 | Todo | | LoginPage MFA 流 |
-| T-FE-02 | Todo | | 账户安全与设备会话 UI |
+| T-FE-01 | Done | Codex | I-05：Login 200/202 MFA 状态机、QR/手动密钥、恢复码一次确认；M3 专用 UI suite 覆盖 |
+| T-FE-02 | Done | Codex | I-05：Profile 会话列表、单个/其他设备确认吊销；M3 专用 UI suite 覆盖 |
 | T-FE-03 | Todo | | P1：恢复码重生、换机与全会话退出 UI |
 | T-QA-01 | Todo | | 后端安全/并发/迁移测试 |
 | T-QA-02 | Todo | | Playwright 与全量验证 |
@@ -65,7 +65,7 @@
 | T-BE-05 | 挂载 MFA 守卫并完成 bcrypt 收口 | P0 | M | T-BE-03, T-BE-04 | B/C | F-014, F-025, F-032 |
 | T-BE-06 | MFA 安全区与 revoke-all API | P1 | M | T-BE-03, T-BE-04, T-BE-05 | C/D | F-015, F-016, F-024 |
 | T-FE-01 | 实现登录 MFA challenge / 绑定 UX | P0 | L | T-BE-03 | D | F-010–013 |
-| T-FE-02 | 实现账户安全与设备会话 UX | P0 | M | T-BE-04, P6a→develop 后 rebase | D | F-021–023 |
+| T-FE-02 | 实现账户安全与设备会话 UX | P0 | M | T-BE-04, P6a→develop rebase complete (`4568ee4`) | D | F-021–023 |
 | T-FE-03 | MFA 安全区与全会话退出 UX | P1 | M | T-BE-06, P6a→develop 后 rebase | D | F-015, F-016, F-024 |
 | T-QA-01 | 补后端行为、秘密与迁移回归测试 | P0 | L | T-BE-05 | E | AC-01–07 |
 | T-QA-02 | 补 E2E 并运行全量门禁 | P0 | M | T-FE-01, T-FE-02, T-QA-01 | E | AC-08 |
@@ -309,14 +309,16 @@ TEST_DATABASE_URL='postgresql://monexus:monexus_dev_2026@localhost:5432/monexus_
 
 **步骤：**
 
-- [ ] 将 login API 返回建模为 discriminated union；202 不触发 toast error 或 refresh。
-- [ ] challengeId、manualKey、provisioningUri 仅放组件 state；unmount、取消、成功后主动清空。
-- [ ] 首次绑定页显示二维码、手动 key、6 位输入；成功后显示 recovery codes 与“已保存”确认。
-- [ ] 已绑定路径提供 TOTP / recovery code 切换，失败后保留正确阶段但清空 code。
-- [ ] 不把 recovery codes 或 MFA seed 写入 useAuthStore、URL、console、analytics。
-- [ ] 添加可访问 label、键盘焦点、data-testid；320px 宽度手工检查。
+- [x] 将 login API 返回建模为 discriminated union；202 不触发 toast error 或 refresh。
+- [x] challengeId、manualKey、provisioningUri 仅放组件 state；unmount、取消、成功后主动清空。
+- [x] 首次绑定页显示二维码、手动 key、6 位输入；成功后显示 recovery codes 与“已保存”确认。
+- [x] 已绑定路径提供 TOTP / recovery code 切换，失败后保留正确阶段但清空 code。
+- [x] 不把 recovery codes 或 MFA seed 写入 useAuthStore、URL、console、analytics。
+- [x] 添加可访问 label、键盘焦点、data-testid；320px 宽度自动化检查。
 
 **DoD：** AC-01/02/03 的前端路径可用；普通登录不回归。
+
+**I-05 证据：** M3 专用 Playwright（3103/5178、专用库、`reuseExistingServer=false`）覆盖 enrollment / recovery 登录、错误因子无 refresh 或重放、恢复码确认前 access token 不持久化及 320px 布局；6/6 PASS。T-QA-02 的真实整栈 E2E 与 AC-08 仍未结项。
 
 ---
 
@@ -333,13 +335,15 @@ TEST_DATABASE_URL='postgresql://monexus:monexus_dev_2026@localhost:5432/monexus_
 
 **步骤：**
 
-- [ ] 给所有登录用户呈现活跃设备卡；加载失败不影响订单/积分页面。
-- [ ] 在 P6a 合入/rebase 前，不得修改 ProfilePage；此时只允许实现独立组件和 API client。
-- [ ] 当前设备不可误显示为“其他”；current family 不提供 DELETE，退出当前设备只走既有 logout；单吊销/其他吊销均有确认与 loading 防重。
-- [ ] 删除其他成功后 re-fetch；logout 成功后由既有流程导航。
-- [ ] 使用 API 返回的 deviceLabel/ipHint，前端不自行保存或猜测原始 UA/IP。
+- [x] 给所有登录用户呈现活跃设备卡；加载失败不影响订单/积分页面。
+- [x] 在 P6a 合入/rebase 前，不得修改 ProfilePage；此时只允许实现独立组件和 API client。
+- [x] 当前设备不可误显示为“其他”；current family 不提供 DELETE，退出当前设备只走既有 logout；单吊销/其他吊销均有确认与 loading 防重。
+- [x] 删除其他成功后 re-fetch；logout 成功后由既有流程导航。
+- [x] 使用 API 返回的 deviceLabel/ipHint，前端不自行保存或猜测原始 UA/IP。
 
 **DoD：** AC-05 手工通过，移动端无严重溢出，所有危险按钮二次确认。
+
+**I-05 证据：** 专用 Playwright 覆盖 current 标记、非当前设备确认吊销/重取列表、退出其他设备确认与 375px 无横向溢出；6/6 PASS。后端 owner/current 授权与真实 session 语义仍由 I-03 回归负责。
 
 ---
 
@@ -513,3 +517,5 @@ T-00 → T-BE-01 → T-BE-02 → T-BE-03 + T-BE-04 → T-BE-05 → T-FE-01 + T-F
 | 1.18.0 | 2026-07-28 | I-04 实现复核发现管理员密码变更会话吊销尚未作废已发出的 pre-auth challenge；先同步为同事务 challenge consume + `mfaVersion` bump，再补回归实现 |
 | 1.19.0 | 2026-07-28 | I-04 复核发现 D-04 的 break-glass 原子服务仅有事件/枚举预置、尚无实现；先冻结其无 HTTP 路由、同事务全凭证作废与 caseRef 审计边界，再补实现/回归 |
 | 1.20.0 | 2026-07-28 | break-glass 实现前残留审计收紧清理范围：pending enrollment/reconfigure challenge 的加密 seed 也必须置空，并由回归锁定 |
+| 1.21.0 | 2026-07-28 | 在 P6→develop rebase (`4568ee4`) 后启动 I-05；T-FE-01/T-FE-02 由同一 M3-ISH 实施者顺序集成，P7b worktree/runtime 不在任务范围。 |
+| 1.22.0 | 2026-07-28 | T-FE-01/T-FE-02 本地完成：MFA 内存状态、恢复码确认、受控设备会话与 320/375px UI 回归已回填；T-QA-02/AC-08、文档和发布门槛仍待 I-06。 |

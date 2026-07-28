@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | PLAN-M3-ISH-001 |
-| 版本 | 1.20.0 |
+| 版本 | 1.22.0 |
 | 日期 | 2026-07-27 |
 | 状态 | Frozen for Implementation |
 | 规格 | [spec.md](./spec.md)（SPEC-M3-ISH-001） |
@@ -286,7 +286,7 @@ runbook 至少包含：
 
 出口：首次绑定、后续 TOTP 登录、恢复码登录和退出其他设备可手工走通。
 
-> **并行 gate：** 当前 P6a 正在修改 ProfilePage。安全分支可先新增独立 auth 组件与 API client，但不得编辑该挂载页；等 P6a 合入 develop 后先 rebase，再进行 Profile 会话管理集成。
+> **并行 gate（已解除）：** P6 已进入 `develop`，M3-ISH 已在 `4568ee4` 完成 rebase。I-05 可在**自己的 M3-ISH worktree** 修改 LoginPage、ProfilePage 和独立 auth 组件；不得读取、编辑、格式化、测试、切换或迁移 P7b worktree / branch，也不得占用其运行时资源。
 
 ### Phase E — QA、文档与发布演练（M）
 
@@ -428,3 +428,5 @@ Phase A ──► Phase B ──► Phase C ──► Phase D ──► Phase E
 | 1.18.0 | 2026-07-28 | 密码安全边界细化：管理员成功改密/重置在同一锁定事务消费所有 pre-auth challenge、递增 MFA version、再吊销 session |
 | 1.19.0 | 2026-07-28 | 补齐 D-04 已冻结的离线 break-glass：明确服务级原子操作、无 controller/route、恢复码/challenge/seed/session 全量作废与 caseRef 审计 |
 | 1.20.0 | 2026-07-28 | break-glass 最小暴露审计：已消费的 pending challenge 同时清空加密 seed，不留无用的密文材料 |
+| 1.21.0 | 2026-07-28 | P6→develop rebase 已完成，Phase D 的 ProfilePage ownership gate 解除；I-05 仍受独立 worktree/runtime 与前端秘密不持久化约束。 |
+| 1.22.0 | 2026-07-28 | Phase D 的 P0 前端路径已在 M3 专用 worktree 完成并以独立 UI suite 验证；Phase E 的真实整栈 E2E、文档与发布门槛仍保持未完成。 |

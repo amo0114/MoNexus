@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | SPEC-M3-ISH-001 |
-| 版本 | 1.20.0 |
+| 版本 | 1.22.0 |
 | 日期 | 2026-07-27 |
 | 状态 | Frozen for Implementation |
 | 产品 | MoNexus |
@@ -452,6 +452,8 @@ Then vitest、相关 Playwright、双端 build、Prisma drift 检查以及 produ
 | 1.18.0 | 2026-07-28 | 明确管理员成功改密/重置密码必须在同一锁定事务消费所有未消费 pre-auth challenge 并递增 `mfaVersion`，防止旧密码预认证跨越安全边界 |
 | 1.19.0 | 2026-07-28 | 补齐 D-04 已批准的离线 break-glass 服务契约：无 HTTP 路由；同一 user lock 事务清空 seed、作废 recovery/challenge、bump version、revoke session、写受控 caseRef 审计 |
 | 1.20.0 | 2026-07-28 | break-glass 残留审计收紧“清空 seed”：除 User 列外，已消费的 pending challenge 也必须置空其加密 seed |
+| 1.21.0 | 2026-07-28 | P6 已进入 develop，M3-ISH 已在 `4568ee4` 完成 rebase；I-05 前端实施获准启动。仅解除既有 ProfilePage ownership 闸门，不改变 MFA、session 或秘密不持久化决策。 |
+| 1.22.0 | 2026-07-28 | I-05 的前端实现与隔离 UI 验证完成；仅回填实施证据，不改变任何已冻结需求或安全决策。 |
 
 ---
 
