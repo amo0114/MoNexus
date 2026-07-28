@@ -3,6 +3,7 @@ import { logger } from './logger.js'
 import { prisma } from './prisma.js'
 import { getMailer } from './mailer/index.js'
 import { getSystemConfigValue } from './systemConfig.js'
+import { acquireCronLeaseWithHeartbeat, type CronLeaseHandle } from './cronLease.js'
 
 /**
  * P5.5 T3：SKU 级低库存邮件告警（设计 §3，评审修订后口径）。
@@ -136,7 +137,11 @@ let running = false
 export async function runLowStockNotifyBatch(now = new Date()) {
   if (running) return
   running = true
+  let lease: CronLeaseHandle | null = null
   try {
+    // P7a：舰队租约——领不到说明本窗口已有实例执行，跳过本 tick（test 直通）。
+    lease = await acquireCronLeaseWithHeartbeat('lowStockNotify', NOTIFY_INTERVAL_MS)
+    if (!lease) return
     const [threshold, cooldownHours] = await Promise.all([
       getSystemConfigValue('lowStockThreshold'),
       getSystemConfigValue('lowStockNotifyCooldownHours'),
@@ -183,6 +188,7 @@ export async function runLowStockNotifyBatch(now = new Date()) {
   } catch (err) {
     logger.error({ err }, 'low stock notify batch failed')
   } finally {
+    lease?.release()
     running = false
   }
 }
