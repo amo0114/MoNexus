@@ -30,8 +30,70 @@ export async function login(req: Request, res: Response, next: NextFunction) {
       email, password,
       req.ip, req.headers['user-agent']
     )
+    if (result.kind === 'mfa_challenge') {
+      // A password-authenticated administrator remains pre-authenticated
+      // until MFA succeeds. In particular, never set the refresh cookie here.
+      res.status(202).json({
+        status: result.status,
+        challengeId: result.challengeId,
+        expiresAt: result.expiresAt.toISOString(),
+      })
+      return
+    }
     setRefreshTokenCookie(res, result.refreshToken, result.refreshTokenMaxAgeMs)
     res.json({ user: result.user, accessToken: result.accessToken })
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function startMfaEnrollment(req: Request, res: Response, next: NextFunction) {
+  try {
+    const result = await authService.startAdminMfaEnrollment(req.body.challengeId)
+    res.json({
+      provisioningUri: result.provisioningUri,
+      manualKey: result.manualKey,
+      expiresAt: result.expiresAt.toISOString(),
+    })
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function confirmMfaEnrollment(req: Request, res: Response, next: NextFunction) {
+  try {
+    const result = await authService.confirmAdminMfaEnrollment({
+      challengeId: req.body.challengeId,
+      code: req.body.code,
+      ip: req.ip,
+      userAgent: req.headers['user-agent'],
+    })
+    setRefreshTokenCookie(res, result.refreshToken, result.refreshTokenMaxAgeMs)
+    res.status(201).json({
+      user: result.user,
+      accessToken: result.accessToken,
+      recoveryCodes: result.recoveryCodes,
+    })
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function verifyMfa(req: Request, res: Response, next: NextFunction) {
+  try {
+    const result = await authService.verifyAdminMfaLogin({
+      challengeId: req.body.challengeId,
+      method: req.body.method,
+      code: req.body.code,
+      ip: req.ip,
+      userAgent: req.headers['user-agent'],
+    })
+    setRefreshTokenCookie(res, result.refreshToken, result.refreshTokenMaxAgeMs)
+    res.json({
+      user: result.user,
+      accessToken: result.accessToken,
+      ...(result.recoveryCodeRemaining === undefined ? {} : { recoveryCodeRemaining: result.recoveryCodeRemaining }),
+    })
   } catch (err) {
     next(err)
   }

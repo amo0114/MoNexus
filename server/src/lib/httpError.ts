@@ -45,6 +45,13 @@ export type ErrorCode =
   // 语义同 RATE_LIMITED，细分 code 便于前端提示"进度发太频繁"）。
   | 'PROGRESS_RATE_LIMITED'
   | 'IDEMPOTENCY_KEY_EXPIRED'
+  // M3 identity security: an MFA pre-authentication challenge is invalid,
+  // its factor did not verify, or it exhausted its fixed attempt budget.
+  | 'MFA_CHALLENGE_INVALID'
+  | 'MFA_VERIFICATION_FAILED'
+  | 'MFA_TOO_MANY_ATTEMPTS'
+  | 'MFA_REQUIRED'
+  | 'SESSION_REVOKED'
   // A session-management caller tried to delete its own active family. The
   // existing logout endpoint is the only current-session revocation path.
   | 'CURRENT_SESSION_REQUIRES_LOGOUT'
@@ -89,4 +96,24 @@ export function notFound(message = '资源不存在') {
 
 export function conflict(message: string) {
   return new HttpError(409, 'CONFLICT', message)
+}
+
+export function mfaChallengeInvalid(message = 'MFA 验证请求无效或已过期') {
+  return new HttpError(400, 'MFA_CHALLENGE_INVALID', message)
+}
+
+export function mfaVerificationFailed(message = 'MFA 验证失败') {
+  return new HttpError(401, 'MFA_VERIFICATION_FAILED', message)
+}
+
+export function mfaTooManyAttempts(message = 'MFA 验证次数过多，请重新登录') {
+  return new HttpError(429, 'MFA_TOO_MANY_ATTEMPTS', message)
+}
+
+export function mfaRequired(message = '管理员需要完成多因素验证') {
+  return new HttpError(403, 'MFA_REQUIRED', message)
+}
+
+export function sessionRevoked(message = '登录会话已失效，请重新登录') {
+  return new HttpError(401, 'SESSION_REVOKED', message)
 }

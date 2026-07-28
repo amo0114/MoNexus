@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | IMPL-M3-ISH-001 |
-| 版本 | 1.15.0 |
+| 版本 | 1.20.0 |
 | 日期 | 2026-07-27 |
 | 状态 | I-00、I-01、I-02、I-03 Done (local)；当前 P6c rebase 为 PR 前闸门 |
 | 输入 | [spec.md](./spec.md) · [plan.md](./plan.md) · [task.md](./task.md) · [checklist.md](./checklist.md) |
@@ -95,7 +95,7 @@ schema.prisma 是唯一共同文件。安全任务不得重排、格式化或编
 | I-01 | T-BE-01 | Done (local) | schema、config、env example、database-default migration / legacy-admin revoke | `2f212e8`；PR 前仍须满足 G-PR-01 的四项 rebase 条件，任务完成不等于可开 PR |
 | I-02 | T-BE-02 | Done (local) | auth/mfa、security event、logger、原语测试 | `2483b0f`；密钥/OTP/challenge/recovery/redact 12 条定向单测与 server build 通过；无真实 secret |
 | I-03 | T-BE-04 | Done (local) | auth session service、auth refresh/session boundary、全用户 revoke audit、routes/serializer/tests；P1 仅限 admin service 三处 lock 调用 | `auth-sessions` 11/11、全量后端 65 files / 520 tests（575.53s）、server/root build 均 PASS；二次安全复审无 P0/P1。P6c→develop rebase 仍是 PR 前闸门 |
-| I-04 | T-BE-03 + T-BE-05 | Todo | auth service/controller/schema/routes、auth middleware、admin route、auth tests | 只在 I-03 后集成 admin MFA flow、guard、bcrypt；不改 P6a 文件 |
+| I-04 | T-BE-03 + T-BE-05 | Done (local) | auth service/controller/schema/routes、auth middleware、admin route、orders route、announcements controller、auth tests | 已 rebase `origin/develop@4568ee4`；MFA flow、guard、bcrypt、密码变更 challenge 作废、D-04 无 HTTP break-glass、文件取证/公告旁路均完成。75 files / 611 tests、server/root build、38-migration status/drift 通过；I-05 前端 202 流未完成，故不可 PR/合并 |
 | I-05 | T-FE-01 + T-FE-02 | Blocked by P6a UI ownership | LoginPage、新 auth security components、auth API；P6a 合入/rebase 后才可改 ProfilePage 挂载点 | UI 不持久化秘密；独立端口 smoke / E2E 通过 |
 | I-06 | T-QA-01 + T-QA-02 + T-DOC-01 | Todo | tests、OpenAPI、auth README、runbook、checklist | 完整验证、rebase 后 drift、所有 P0 勾选、PR 准备完成 |
 | I-07 | T-BE-06 + T-FE-03 | Todo (P1) | MFA security settings、revoke-all API/UI | 不削弱 P0 guard；若纳入 PR 则 P1 checklist 全部有证据，若拆后续则在 PR 明确链接 follow-up |
@@ -156,6 +156,11 @@ schema.prisma 是唯一共同文件。安全任务不得重排、格式化或编
 | 2026-07-27 | I-03 | In Progress | P0 复审进一步确认 global revoke、login/create 与 reset/change 的同一 user ordering 也必须纳入 | 文档包升至 1.13.0：锁协议列出每个 caller、默认 `revoke_all`+audit、登录锁后复核；不新增 migration，不修改 P6 未提交的 `admin/service.ts` |
 | 2026-07-27 | I-03 | In Progress | 二次独立复审确认管理员 ban / merchant role 事务仍是“`User` 写锁 → advisory lock”，可与 reset/change 反向死锁 | 在编码前将文档包升至 1.14.0：仅授权独立 worktree 内的三处 admin 调用改为 advisory→`User`；新增真实 PostgreSQL 并发回归，P6c 主工作树、运行时与默认测试库不触碰 |
 | 2026-07-27 | I-03 | Done (local) | `auth-sessions` 11/11（含 ban/approve/suspend 的真实 PG lock-order）；`npm test` 65 files / 520 tests PASS（575.53s）；server/root build PASS | 二次独立安全复审无 P0/P1；仅 M3 worktree 与 `monexus_m3_ish_test` 被使用。Focused commit 后保持 G-PR-01 pending，不推送、不建 PR |
+| 2026-07-28 | I-04 | In Progress | `d905033`（已 rebase `origin/develop@4568ee4`）；T-BE-03 + T-BE-05 | 仅 M3 独立 worktree 与专用 `monexus_m3_ish_test`；不触碰 P7 或其他 agent 的 worktree/runtime |
+| 2026-07-28 | I-04 | In Progress | 密码变更跨越 pre-auth 的安全复核 | 先更新 Specify → Plan → Tasks → Implement → Checklist：管理员成功改密/重置必须在同一锁定事务消费未消费 challenge、递增 `mfaVersion`、再吊销 session；随后以红测实现 |
+| 2026-07-28 | I-04 | In Progress | D-04 break-glass implementation gap | 已先同步 Specify → Plan → Tasks → Implement → Checklist：只导出离线原子服务，不新增 HTTP route；清空 seed、作废 recovery/challenge、bump version、revoke session、写受控 caseRef 审计；随后以红测实现 |
+| 2026-07-28 | I-04 | In Progress | break-glass seed-residue review | 在最终回归前发现已消费 challenge 的密文不再可用但仍残留；先将规格收紧为同事务置空，再补断言/实现 |
+| 2026-07-28 | I-04 | Done (local) | `auth-mfa` 14/14；全量 server 75 files / 611 tests PASS（915.71s）；server/root build PASS；38 migrations status/drift clean | D-04 break-glass、密码变更 pre-auth 失效与非 admin-router MFA 旁路均有回归；未改并行 worktree/runtime。I-05 前端 MFA 流、I-06 docs/QA 尚未完成，故不推送/不开 PR |
 
 ---
 
@@ -173,6 +178,11 @@ schema.prisma 是唯一共同文件。安全任务不得重排、格式化或编
 | 1.13.0 | 2026-07-27 | 明确所有 RefreshToken mutation 都受同 user lock 约束，并记录无 migration / 不触碰 P6 admin service 的实施边界 |
 | 1.14.0 | 2026-07-27 | P1 并发复审收紧 `User`/session 的全路径锁序；记录 P6c worktree 隔离与仅三处 admin security-call 的最小例外 |
 | 1.15.0 | 2026-07-27 | I-03 本地完成：三路径锁序、D-07 session 语义与全量隔离验证已回填；不解除 P6c rebase / PR 闸门 |
+| 1.16.0 | 2026-07-28 | P6/P7 已进入 develop 后完成 M3 独立 rebase，启动唯一 In Progress 的 I-04；范围保持为 MFA API、admin guard、bcrypt 与定向测试 |
+| 1.17.0 | 2026-07-28 | I-04 编码前的只读安全审计将 orders 文件仲裁取证和 public announcement 的 admin audience 列为非 admin-router 的 admin 专属能力；先同步 spec/plan/task，再以条件 MFA middleware、visitor 降级及无 URL/无 audit 回归收口 |
+| 1.18.0 | 2026-07-28 | I-04 实现复核发现密码变更后的 pre-auth challenge 仍可完成 MFA；已先明确同事务 challenge consume、管理员 `mfaVersion` bump 与回归门槛，再继续编码 |
+| 1.19.0 | 2026-07-28 | I-04 复核发现 break-glass 仅有安全事件类型但缺服务实现；已先冻结无 HTTP 路由的原子操作与完整凭证作废边界，再继续编码 |
+| 1.20.0 | 2026-07-28 | break-glass 残留审计将 pending challenge 密文纳入清空范围；完成前必须由回归验证 |
 
 ---
 

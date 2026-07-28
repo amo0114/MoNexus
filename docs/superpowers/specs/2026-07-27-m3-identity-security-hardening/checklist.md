@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | CHK-M3-ISH-001 |
-| 版本 | 1.15.0 |
+| 版本 | 1.20.0 |
 | 日期 | 2026-07-27 |
 | 规格 | [spec.md](./spec.md) |
 | 计划 | [plan.md](./plan.md) |
@@ -62,37 +62,41 @@
 
 ## 3. 管理员 MFA（P0；显式标记 [P1] 的项不阻塞 P0 PR）
 
-- [ ] **CHK-MFA-01** admin 密码正确且 mfaEnabled=false 时仅返回 202 mfa_enrollment_required；没有 accessToken、refresh cookie 或后台数据。
-- [ ] **CHK-MFA-02** enrollment start 返回 QR provisioning URI 与手动密钥，但数据库只保留加密 pending seed。
-- [ ] **CHK-MFA-03** 正确 6 位 TOTP confirm 原子地开启 MFA、生成 10 枚 recovery code hash、写安全事件、建立新会话。
-- [ ] **CHK-MFA-04** recovery code 明文只在生成响应一次出现；之后 API 仅可见剩余数量，不能再次取回。
-- [ ] **CHK-MFA-05** mfaEnabled=true 的 admin 正确密码只返回 202 mfa_required；正确 TOTP 才有 cookie/token。
-- [ ] **CHK-MFA-06** 错误 TOTP、错误/已用 recovery code、过期/已消费/超限 challenge 都不创建 RefreshToken 或 access token。
-- [ ] **CHK-MFA-07** challenge 并发 confirm / verify 只有一个成功，另一个得到安全错误。
-- [ ] **CHK-MFA-08** 恢复码一次登录后立即标记 used；重复使用被拒并保留正确审计。
+- [x] **CHK-MFA-01** admin 密码正确且 mfaEnabled=false 时仅返回 202 mfa_enrollment_required；没有 accessToken、refresh cookie 或后台数据。
+- [x] **CHK-MFA-02** enrollment start 返回 QR provisioning URI 与手动密钥，但数据库只保留加密 pending seed。
+- [x] **CHK-MFA-03** 正确 6 位 TOTP confirm 原子地开启 MFA、生成 10 枚 recovery code hash、写安全事件、建立新会话。
+- [x] **CHK-MFA-04** recovery code 明文只在生成响应一次出现；之后 API 仅可见剩余数量，不能再次取回。
+- [x] **CHK-MFA-05** mfaEnabled=true 的 admin 正确密码只返回 202 mfa_required；正确 TOTP 才有 cookie/token。
+- [x] **CHK-MFA-06** 错误 TOTP、错误/已用 recovery code、过期/已消费/超限 challenge 都不创建 RefreshToken 或 access token。
+- [x] **CHK-MFA-07** challenge 并发 confirm / verify 只有一个成功，另一个得到安全错误。
+- [x] **CHK-MFA-08** 恢复码一次登录后立即标记 used；重复使用被拒并保留正确审计。
 - [ ] **CHK-MFA-09** **[P1]** 管理员重生 recovery code 要求当前密码 + 当前 MFA 因子，旧码在同一事务作废。
 - [ ] **CHK-MFA-10** **[P1]** 管理员换机/重绑定要求当前密码 + 因子；成功 bump mfaVersion、吊销其他会话、发新恢复码。
-- [ ] **CHK-MFA-11** 没有 HTTP “关闭 MFA”或任意管理员重置他人 MFA 的后门。
+- [x] **CHK-MFA-11** 没有 HTTP “关闭 MFA”或任意管理员重置他人 MFA 的后门。
 - [x] **CHK-MFA-12** TOTP 固定为 6 digits / 30 sec / window≤1；测试不依赖真实等待。
+- [x] **CHK-MFA-13** 离线 `resetAdminMfaForBreakGlass` 仅为非路由服务：同一 user-lock transaction 清空 User 与 pending challenge 的 seed/verified 状态、作废 recovery/challenge、bump version、吊销 session 并写受控 caseRef；任一步失败整体回滚。
 
-**证据：** auth-mfa tests / staging admin：________________
+**I-04 证据：** `auth-mfa` 14/14 PASS：首次绑定、TOTP/recovery、并发单胜者、挑战超限、break-glass 成功/审计失败 rollback/非 admin 拒绝与 `/auth/mfa/break-glass` 404；全量 server 75 files / 611 tests PASS（915.71s）。
 
 ---
 
 ## 4. Token、管理员守卫与密码（P0）
 
-- [ ] **CHK-AUTH-01** 完成 MFA 的 admin access token 仅包含必要 userId、role、sid、mfaVerified、mfaVersion claims；不含 TOTP/recovery secret。
-- [ ] **CHK-AUTH-02** 非 admin 的登录、刷新、登出成功契约仍可用，未被 202 MFA 流破坏。
-- [ ] **CHK-AUTH-03** requireAdminMfa 位于所有 admin routes（含 portable-backups 子路由）之前。
-- [ ] **CHK-AUTH-04** 旧 admin token、缺 sid token、mfaVersion 不匹配、mfaEnabled=false、过期/吊销 session 全部无法访问 admin API。
-- [ ] **CHK-AUTH-05** 被封禁 admin 仍在角色/MFA guard 前被拒绝；普通 user/merchant 仍不能访问 admin API。
-- [ ] **CHK-AUTH-06** admin session 吊销后，同一已签发 access token 访问 admin API 立即返回 SESSION_REVOKED。
+- [x] **CHK-AUTH-01** 完成 MFA 的 admin access token 仅包含必要 userId、role、sid、mfaVerified、mfaVersion claims；不含 TOTP/recovery secret。
+- [x] **CHK-AUTH-02** 非 admin 的登录、刷新、登出成功契约仍可用，未被 202 MFA 流破坏。
+- [x] **CHK-AUTH-03** requireAdminMfa 位于所有 admin routes（含 portable-backups 子路由）之前；订单文件仲裁取证路径仅当 role=admin 时也委托同一 guard，买家/商家不受影响。
+- [x] **CHK-AUTH-04** 旧 admin token、缺 sid token、mfaVersion 不匹配、mfaEnabled=false、过期/吊销 session 全部无法访问 admin API 或其他 admin 专属高权限能力；文件仲裁取证拒绝时不返回 URL、也不写 FileGrantLog；public announcements 对这类 token 降级 visitor，不能返回 admin audience 或写其回执。
+- [x] **CHK-AUTH-05** 被封禁 admin 仍在角色/MFA guard 前被拒绝；普通 user/merchant 仍不能访问 admin API。
+- [x] **CHK-AUTH-06** admin session 吊销后，同一已签发 access token 访问 admin API 立即返回 SESSION_REVOKED。
 - [x] **CHK-AUTH-07** rotation 消费 token 与无原因 legacy revoked token 的 replay 保持 revoke-all-user 强语义并写 session_replay_detected；服务端明确 revoke reason 的 token 只被拒绝，不能误伤其他活动 session。每个 RefreshToken create/rotation/family/global revoke 在同 user transaction advisory lock 内锁后重读；旧 rotation predecessor 必须识别同 family 的 explicit terminal marker，CAS=0 也须重读分类。任何同 tx 的 `User` 状态/角色/密码写入一律采用 advisory→`User` 锁序，不能先写 `User` 再进入 revoke helper。
-- [ ] **CHK-AUTH-08** 注册、改密、重置密码新 hash 均是 bcrypt rounds=12。
-- [ ] **CHK-AUTH-09** bcrypt 10 旧 hash 仅在非 admin 正确完成正常登录后升级为 12；错误密码、封禁、admin MFA pre-auth challenge 未完成均不写 hash，也不保存可跨请求使用的密码材料。
+- [x] **CHK-AUTH-08** 注册、改密、重置密码新 hash 均是 bcrypt rounds=12。
+- [x] **CHK-AUTH-09** bcrypt 10 旧 hash 仅在非 admin 正确完成正常登录后升级为 12；错误密码、封禁、admin MFA pre-auth challenge 未完成均不写 hash，也不保存可跨请求使用的密码材料。
 - [x] **CHK-AUTH-10** login 在锁内重验 status/password 后才签发 initial session；reset/change/ban/approve/suspend 的全用户 revoke 以闭合 reason（默认 `revoke_all`）与 `session_revoked` audit 收口，不能新写 null reason。三条管理员 `User` 变更路径都在其首个 `User` write 前取得同 user advisory lock。
+- [x] **CHK-AUTH-11** 管理员成功改密或重置密码在同一 user-lock 事务中消费其全部未消费 MFA pre-auth challenge、递增 `mfaVersion` 并吊销 session；旧 challenge 无法完成 MFA，失败密码变更不触碰 challenge/version。
 
 **I-03 本地证据：** `auth-sessions` 11/11 PASS，覆盖 rotation/family、owner/current、single/revoke-others、explicit-terminal/replay、stale logout、global revoke audit、真实 advisory queue，以及 ban/approve/suspend 对 password-style `User` write 的三路径 lock-order。二次独立安全复审无 P0/P1。
+
+**I-04 追加证据：** `auth-mfa` 14/14；`announcements` 14/14；文件交付 admin 取证关键分支 2/2；portable-backups routes 2/2；全量 server 75 files / 611 tests PASS。旧 admin refresh 不轮换、无 sid / 无 MFA / 版本失配 / session revoke、文件无 URL/无 FileGrantLog、公告 visitor 降级及密码变更 challenge 作废均有回归。
 
 ---
 
@@ -138,13 +142,13 @@
 ## 7. 秘密、日志与审计（P0）
 
 - [x] **CHK-SEC-01** Pino redact 覆盖 password、verificationPassword、mfaCode、recoveryCode(s)、challengeId、manualKey、provisioningUri、mfaSecret、MFA_ENCRYPTION_KEY。
-- [ ] **CHK-SEC-02** 单测直接检查 logger / error / audit / API 序列化输出，不出现上述秘密原文。
-- [ ] **CHK-SEC-03** SecurityEvent 至少覆盖 enrollment、MFA 登录成功/失败、recovery 使用、session revoke、refresh replay、break-glass reset。
+- [x] **CHK-SEC-02** 单测直接检查 logger / error / audit / API 序列化输出，不出现上述秘密原文。
+- [x] **CHK-SEC-03** SecurityEvent 至少覆盖 enrollment、MFA 登录成功/失败、recovery 使用、session revoke、refresh replay、break-glass reset。
 - [ ] **CHK-SEC-04** AdminLog 的既有业务审计不被删除或弱化；新增关联摘要不含 token/seed/recovery code。
-- [ ] **CHK-SEC-05** 错误消息不区分 recovery code 是否存在/已用，也不泄露内部加密、challenge 或数据库错误。
-- [ ] **CHK-SEC-06** Sentry / request logger 不附带 MFA request body；异常中没有 secrets。
+- [x] **CHK-SEC-05** 错误消息不区分 recovery code 是否存在/已用，也不泄露内部加密、challenge 或数据库错误。
+- [x] **CHK-SEC-06** Sentry / request logger 不附带 MFA request body；异常中没有 secrets。
 
-**证据：** `2483b0f` 的 `auth-security-events` 覆盖闭合 SecurityEvent serializer、IP HMAC、固定 UA hint、MFA request/error body 脱敏（含 API `code` 但不脱敏根业务 error code）与无秘密输出；`auth-mfa-crypto` 覆盖 AES-GCM、TOTP、recovery code 与 challenge 原语。专用库定向 12/12 PASS；后续 API 集成仍须完成 CHK-SEC-02..06。
+**证据：** `2483b0f` 的 `auth-security-events` 覆盖闭合 SecurityEvent serializer、IP HMAC、固定 UA hint、MFA request/error body 脱敏（含 API `code` 但不脱敏根业务 error code）与无秘密输出；`auth-mfa-crypto` 覆盖 AES-GCM、TOTP、recovery code 与 challenge 原语；I-04 `auth-mfa` 覆盖 MFA API、generic factor errors 与 break-glass `caseRef` 审计。全量 server 75 files / 611 tests PASS；CHK-SEC-04 的业务 AdminLog 文档审计留给 I-06。
 
 ---
 
@@ -152,13 +156,13 @@
 
 | AC | 描述 | 通过 |
 | --- | --- | --- |
-| AC-01 | 管理员首次绑定 | ☐ |
-| AC-02 | 已绑定管理员 TOTP 登录 | ☐ |
-| AC-03 | 恢复码一次性 | ☐ |
-| AC-04 | 管理后台强制 MFA | ☐ |
-| AC-05 | 会话隔离与单会话吊销 | ☐ |
-| AC-06 | 管理员被吊销会话即时失效 | ☐ |
-| AC-07 | bcrypt 升级与秘密不泄露 | ☐ |
+| AC-01 | 管理员首次绑定 | ☑ |
+| AC-02 | 已绑定管理员 TOTP 登录 | ☑ |
+| AC-03 | 恢复码一次性 | ☑ |
+| AC-04 | 管理后台强制 MFA | ☑ |
+| AC-05 | 会话隔离与单会话吊销 | ☑ |
+| AC-06 | 管理员被吊销会话即时失效 | ☑ |
+| AC-07 | bcrypt 升级与秘密不泄露 | ☑ |
 | AC-08 | 全量回归 | ☐ |
 
 详细 Given/When/Then 见 spec.md §10。
@@ -168,12 +172,12 @@
 ## 9. 自动化与构建门禁（P0）
 
 - [x] **CHK-QA-01** auth、auth-tokens、refresh-token-wiring、auth-active-user 与新增 MFA/session tests 全部 PASS。
-- [ ] **CHK-QA-02** 包含并发 challenge / 恢复码 claim、refresh rotation/replay、admin session revoked 的回归测试；以真实 PostgreSQL transactions、Promise gate 和 `pg_locks` 排队观测覆盖 ban、approve、suspend 分别与 password-style `User` write 并发时的 advisory→`User` 无反转锁序。
+- [x] **CHK-QA-02** 包含并发 challenge / 恢复码 claim、refresh rotation/replay、admin session revoked 的回归测试；以真实 PostgreSQL transactions、Promise gate 和 `pg_locks` 排队观测覆盖 ban、approve、suspend 分别与 password-style `User` write 并发时的 advisory→`User` 无反转锁序。
 - [x] **CHK-QA-03** server 全量 npm test PASS。
 - [x] **CHK-QA-04** npm --prefix server run build PASS。
 - [x] **CHK-QA-05** npm run build PASS。
 - [ ] **CHK-QA-06** `npm run verify:m3-identity-security-hardening` PASS：脚本只使用显式专用库，不调用 compose、不触碰默认 `monexus_test`。
-- [ ] **CHK-QA-07** Prisma migrate status/drift 检查 PASS，且命令显式使用 `M3_ISH_DATABASE_URL`。
+- [x] **CHK-QA-07** Prisma migrate status/drift 检查 PASS，且命令显式使用 `M3_ISH_DATABASE_URL`。
 - [ ] **CHK-QA-08** admin MFA 和 session revoke Playwright tests 在 M3-ISH 专用 config（3103/5178、`reuseExistingServer=false`）PASS。
 - [ ] **CHK-QA-09** 不运行默认 `npm run e2e`；本波专用 Playwright suite PASS，CI 中的全量 E2E/CI OK 另由隔离 runner 验证。
 - [ ] **CHK-QA-10** CI 的 CI OK 聚合检查绿。
@@ -181,11 +185,11 @@
 **证据：**
 
 ~~~text
-vitest: TEST_DATABASE_URL=monexus_m3_ish_test npm --prefix server test → 65 files / 520 tests PASS (575.53s)
+vitest: TEST_DATABASE_URL=monexus_m3_ish_test npm --prefix server test → 75 files / 611 tests PASS (915.71s)
 server build: npm --prefix server run build → PASS
 frontend build: npm run build → PASS
 isolated verify:
-prisma:
+prisma: 38 migrations up to date; migrate diff → No difference detected
 playwright:
 CI:
 ~~~
@@ -271,3 +275,8 @@ P0 豁免默认不允许。唯一例外是仓库负责人明确书面批准的�
 | 1.13.0 | 2026-07-27 | 增加全 RefreshToken mutation、locked login 重验、global revoke reason/audit 与无需 migration 的 P0 验收 |
 | 1.14.0 | 2026-07-27 | 加入 `User`/session 固定锁序及 ban、approve、suspend 三路径真实 PostgreSQL 无反转回归门禁 |
 | 1.15.0 | 2026-07-27 | 回填 I-03 已覆盖的 stable family、D-07、session 与构建门禁证据；其余 MFA/guard/UI/rebase 发布门禁仍未完成 |
+| 1.16.0 | 2026-07-28 | I-04 编码前安全复核将 orders 文件仲裁取证纳入 admin 专属能力门禁；要求条件 MFA guard、无 URL/无 FileGrantLog 回归，并同步 enrollment 单胜者约束 |
+| 1.17.0 | 2026-07-28 | 同步 I-04 的 public announcement admin audience visitor 降级门禁与 rebase 后独立实现状态 |
+| 1.18.0 | 2026-07-28 | 增加 CHK-AUTH-11：管理员成功密码变更必须消费 pre-auth challenge、递增 MFA version、吊销 session，并有成功/失败路径回归 |
+| 1.19.0 | 2026-07-28 | 增加 CHK-MFA-13：D-04 break-glass 服务级原子 reset、无 HTTP route 与全量凭证作废/审计回归门禁 |
+| 1.20.0 | 2026-07-28 | CHK-MFA-13 收紧为 pending challenge 密文也必须清空，防止 break-glass 留下无用敏感材料 |

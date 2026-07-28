@@ -11,6 +11,26 @@ export const loginSchema = z.object({
   password: z.string().min(1, '请输入密码'),
 })
 
+const mfaChallengeIdSchema = z.string().uuid('MFA 验证请求无效')
+
+// Keep the factor payload broadly shaped enough for a wrong TOTP/recovery
+// code to receive the deliberately generic MFA verification error rather
+// than turning format differences into an oracle.
+export const mfaEnrollmentStartSchema = z.object({
+  challengeId: mfaChallengeIdSchema,
+}).strict()
+
+export const mfaEnrollmentConfirmSchema = z.object({
+  challengeId: mfaChallengeIdSchema,
+  code: z.string().min(1).max(128),
+}).strict()
+
+export const mfaVerifySchema = z.object({
+  challengeId: mfaChallengeIdSchema,
+  method: z.enum(['totp', 'recovery']),
+  code: z.string().min(1).max(128),
+}).strict()
+
 export const forgotPasswordSchema = z.object({
   email: z.string().email('请输入有效的邮箱地址'),
 })

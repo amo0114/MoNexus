@@ -8,6 +8,9 @@ import { refreshTokenCookieName } from '../../lib/cookies.js'
 import {
   registerSchema,
   loginSchema,
+  mfaEnrollmentStartSchema,
+  mfaEnrollmentConfirmSchema,
+  mfaVerifySchema,
   forgotPasswordSchema,
   resetPasswordSchema,
   passwordChangeSchema,
@@ -80,6 +83,9 @@ const mailLimiter = rateLimit({
 
 router.post('/register', authLimiter, validate(registerSchema), controller.register)
 router.post('/login', authLimiter, validate(loginSchema), controller.login)
+router.post('/mfa/enrollment/start', authLimiter, validate(mfaEnrollmentStartSchema), controller.startMfaEnrollment)
+router.post('/mfa/enrollment/confirm', authLimiter, validate(mfaEnrollmentConfirmSchema), controller.confirmMfaEnrollment)
+router.post('/mfa/verify', authLimiter, validate(mfaVerifySchema), controller.verifyMfa)
 router.post('/refresh', refreshLimiter, controller.refresh)
 router.post('/logout', controller.logout)
 router.get('/me', authenticate, requireActiveUser, controller.me)

@@ -411,6 +411,7 @@ describe('device session families', () => {
   it('keeps the existing refresh replay revoke-all policy and records a safe replay event', async () => {
     const { user, password } = await createTestUser('session-replay@test.local', 'session-password')
     const session = await loginUser(user.email, password)
+    if (session.kind !== 'authenticated') throw new Error('Expected non-admin login session')
     const original = await prisma.refreshToken.findFirstOrThrow({
       where: { userId: user.id },
       orderBy: { id: 'desc' },

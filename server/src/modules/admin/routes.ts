@@ -1,5 +1,5 @@
 import { Router } from 'express'
-import { authenticate, requireActiveUser, requireAdmin } from '../../middlewares/auth.js'
+import { authenticate, requireActiveUser, requireAdmin, requireAdminMfa } from '../../middlewares/auth.js'
 import { validate, idParamSchema } from '../../middlewares/validate.js'
 import {
   adjustPointsSchema, banUserSchema, createProductSchema, updateProductSchema,
@@ -18,7 +18,7 @@ import { portableBackupRoutes } from '../portable-backups/routes.js'
 
 const router = Router()
 
-router.use(authenticate, requireActiveUser, requireAdmin)
+router.use(authenticate, requireActiveUser, requireAdmin, requireAdminMfa)
 
 router.use('/portable-backups', portableBackupRoutes)
 

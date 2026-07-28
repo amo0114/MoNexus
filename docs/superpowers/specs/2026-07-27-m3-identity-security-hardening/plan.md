@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | PLAN-M3-ISH-001 |
-| 版本 | 1.15.0 |
+| 版本 | 1.20.0 |
 | 日期 | 2026-07-27 |
 | 状态 | Frozen for Implementation |
 | 规格 | [spec.md](./spec.md)（SPEC-M3-ISH-001） |
@@ -146,7 +146,8 @@ Profile security card ── GET /auth/sessions ── revoke one / other / all
 4. MFA confirm/verify 在同一事务中 claim challenge、校验 code、写安全事件、创建 session；成功后才由 controller 设置 cookie。
 5. refreshAccessToken 继承 sessionId；读取 user 后若是 admin，额外确认 mfaEnabled，旧/异常 session 不得续签。所有创建、rotation 和显式 session mutation 通过同一用户的 PostgreSQL transaction-scoped advisory lock 串行；raw token 的首读只解析 userId，取得锁后必须重新读取 token/family，再作 CAS、replay 或终结判断。rotation 消费 token 与无原因 legacy revoked token 的 replay 沿用全用户强制失效策略；`logout`、`single_session`、`revoke_others`、`revoke_all`、MFA reset/migration 等服务端明确终结 reason 只返回 session 已失效，不能让被吊销设备反向踢出当前活动族。判断旧 predecessor 时查询整个 family 的显式终结 marker，不能只看该 predecessor 仍保留的 `refresh_rotation`；logout 即使带来已经 rotation 的旧 cookie，仍吊销同一 family 的活动 successor。
 6. revoke 一个会话使用 sessionId 更新该族所有未撤销 RefreshToken；DELETE session 只接受非当前族，当前族始终使用既有 logout 并清 cookie。
-7. bcrypt 工具统一为常量 PASSWORD_BCRYPT_ROUNDS=12；register、change password、reset password 使用它。只有成功完成正常会话创建的非 admin 登录，才检测 getRounds 后做 compare-and-set 式按需升级；admin MFA pre-auth 不保存密码且不重哈希。
+7. bcrypt 工具统一为常量 PASSWORD_BCRYPT_ROUNDS=12；register、change password、reset password 使用它。只有成功完成正常会话创建的非 admin 登录，才检测 getRounds 后做 compare-and-set 式按需升级；admin MFA pre-auth 不保存密码且不重哈希。管理员成功改密或重置时，在同一 user advisory lock 事务内消费全部未消费 `AuthChallenge`、递增 `mfaVersion`，再吊销 session；这样旧密码得到的五分钟 pre-auth 不能跨越密码安全边界。
+8. 导出仅供离线 runbook/script 调用的 `resetAdminMfaForBreakGlass({ userId, caseRef })`；不得由 controller 或 route 引用。它在同一 user advisory lock transaction 内重读 admin、清空 User 与 pending challenge 的 MFA seed/verified 状态、作废未使用 recovery code 与未消费 challenge、递增 `mfaVersion`、以 `mfa_break_glass_reset` 吊销所有 refresh session，并写同类型的受控 SecurityEvent。任一步失败必须整体回滚。
 
 #### 3.3.1 Refresh mutation 的事务锁与调用顺序（D-07）
 
@@ -158,7 +159,7 @@ Profile security card ── GET /auth/sessions ── revoke one / other / all
 | `refreshAccessToken` | tokenHash 首读只取 userId → transaction → user lock → token/User/family 重读 → expiry/status/CAS/replay 判定 → successor create 或 revoke → commit |
 | cookie logout | tokenHash 首读定位 user/family（包含已 rotation 行）→ transaction → user lock → family 重读 → 终结所有 active token → commit |
 | DELETE session / revoke-others | transaction → user lock → current/target families 重读 → owner/current 判断及 revoke/event → commit |
-| password reset/change | transaction → user lock → claim/reset artifact、`User` password 写入 → `revokeAllUserRefreshTokens`（同 tx 重入锁）→ audit → commit |
+| password reset/change | transaction → user lock → claim/reset artifact、`User` password 写入（admin 同时 `mfaVersion + 1`）→ consume all pending `AuthChallenge` → `revokeAllUserRefreshTokens`（同 tx 重入锁）→ audit → commit |
 | admin ban / approve merchant / suspend merchant | transaction → 只读校验 → user lock → 任意 `User` status/role 写入 → `revokeAllUserRefreshTokens`（同 tx 重入锁）→ admin/security audit → commit |
 | `revokeAllUserRefreshTokens`（独立调用或 replay） | 使用传入 tx 或自建 tx → user lock → 查询 active families → `revoke_all`/明确 reason 的 update + `session_revoked` audit → commit |
 | 后续 MFA session issuance | 必须复用 initial-session helper，在同一 user lock 内创建；不能直接写 `RefreshToken` |
@@ -182,6 +183,10 @@ userId, role, sid?, mfaVerified?, mfaVersion?
 3. 按 sessionId 查询未撤销、未过期 RefreshToken；
 4. 任一不符合时返回契约化 MFA_REQUIRED 或 SESSION_REVOKED；
 5. 绝不把 tokenHash、IP、TOTP 或 seed 写入错误。
+
+`/api/orders/:id/files/download-url` 保留买家/商家交付语义，但其中 admin 具有仲裁取证、读取已吊销文件的专属能力；在该单一路由使用条件 middleware：role 非 admin 时直接 next，role=admin 时委托同一 `requireAdminMfa`。该 middleware 必须位于 fileAccess/controller 之前，因此旧 token 不会得到 presigned URL 或新增 FileGrantLog。
+
+公告 public endpoint 不改为受保护资源；其 audience resolver 对数据库当前 role=admin 的用户委托相同 MFA/session 校验，失败时只降级为访客 `all` audience。这样不会把公共公告请求变成 401/403，同时不会让旧 admin token 读取 admin-only 内容或创建该内容回执。
 
 安全事件采用专用函数，例如 recordSecurityEvent。事件 detailSafe 只允许受控枚举和数值/安全摘要；IP 用 HMAC(jwtSecret, ip) 或独立密钥形成不可逆关联 hash；UA 只保存解析后的短 deviceHint。
 
@@ -264,7 +269,8 @@ runbook 至少包含：
 | --- | --- |
 | login 202 union 与 MFA enroll/verify controller、schema、routes | REQ-F-010–014 |
 | JWT `sid` / MFA claims 与 requireAdminMfa | REQ-F-013–014, F-025 |
-| bcrypt 12 / restricted opportunistic rehash | REQ-F-032 |
+| bcrypt 12 / restricted opportunistic rehash；管理员密码变更作废 pre-auth challenge / bump MFA version | REQ-F-032, DR-03 |
+| 无 HTTP route 的离线 break-glass 原子 reset 与工单审计 | D-04, REQ-F-030 |
 | admin immediate invalidation 与 portable-backups guard 回归 | REQ-F-025, DR-09 |
 
 出口：AC-01、AC-02、AC-03、AC-04、AC-06、AC-07 的后端测试全绿。
@@ -417,3 +423,8 @@ Phase A ──► Phase B ──► Phase C ──► Phase D ──► Phase E
 | 1.13.0 | 2026-07-27 | 补齐 D-07 锁协议的精确调用图、登录锁后凭据复核、closed revoke reason/audit 与“无需 migration”边界 |
 | 1.14.0 | 2026-07-27 | P1 并发复审将管理员封禁/商家角色变化纳入固定锁序：先 user advisory lock，再写 `User`，并以真实 PostgreSQL 事务验证无锁顺序反转 |
 | 1.15.0 | 2026-07-27 | I-03 本地交付并验证该锁序：三条管理员路径与 password-style 写入真实并发通过；全量后端 65 files / 520 tests、server/root build 均通过 |
+| 1.16.0 | 2026-07-28 | P6/P7 已进入 develop 后完成 M3 独立 rebase，启动 I-04；保持独立 worktree/runtime 边界 |
+| 1.17.0 | 2026-07-28 | I-04 将订单文件仲裁取证与 public announcement 的 admin audience 接入统一 MFA/session 校验 |
+| 1.18.0 | 2026-07-28 | 密码安全边界细化：管理员成功改密/重置在同一锁定事务消费所有 pre-auth challenge、递增 MFA version、再吊销 session |
+| 1.19.0 | 2026-07-28 | 补齐 D-04 已冻结的离线 break-glass：明确服务级原子操作、无 controller/route、恢复码/challenge/seed/session 全量作废与 caseRef 审计 |
+| 1.20.0 | 2026-07-28 | break-glass 最小暴露审计：已消费的 pending challenge 同时清空加密 seed，不留无用的密文材料 |

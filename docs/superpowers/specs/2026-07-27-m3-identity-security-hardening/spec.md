@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | SPEC-M3-ISH-001 |
-| 版本 | 1.15.0 |
+| 版本 | 1.20.0 |
 | 日期 | 2026-07-27 |
 | 状态 | Frozen for Implementation |
 | 产品 | MoNexus |
@@ -88,7 +88,7 @@ MoNexus 已拥有积分调整、封禁、商家审核与停用、佣金修改、
 | D-01 | MFA 覆盖范围 | v1 仅管理员强制 TOTP；数据字段不限制未来为 merchant/user 扩展 |
 | D-02 | 密钥存储 | TOTP seed 采用 AES-256-GCM 加密落库；恢复码只存不可逆高熵 hash；不得只做 base64 或明文存储 |
 | D-03 | 高危操作 step-up | v1 以“管理员登录时 MFA + admin API 实时活动会话校验”为 P0；不在本 PR 对每个业务写操作增加短时二次 TOTP 弹窗。后续若启用，应单列 SPEC 并覆盖积分调整、配置、商家状态/佣金、仲裁、结算、文件吊销 |
-| D-04 | 丢失第二因子 | 无 HTTP 后门、无管理员自助关闭 MFA。恢复码可登录；恢复码也丢失时只走双人审批的离线 break-glass SOP，清空 MFA、递增版本、吊销全部会话后强制重新绑定 |
+| D-04 | 丢失第二因子 | 无 HTTP 后门、无管理员自助关闭 MFA。恢复码可登录；恢复码也丢失时只走双人审批的离线 break-glass SOP。代码只导出非路由的原子服务：在同一用户锁事务中清空 User 与 pending challenge 内的加密 seed、作废恢复码与未消费 challenge、递增版本、吊销全部会话并写受控工单号的安全事件；之后强制重新绑定 |
 | D-05 | 设备会话语义 | 一个 sessionId 代表一个浏览器/设备登录族；refresh rotation 继承 sessionId。数据库和 API 使用 `sessionId`，JWT claim 固定为短名 `sid`。吊销立即拒绝该族 refresh；admin API 同时校验 `sid` 对应的活动族，故立即拒绝已吊销管理员 token |
 | D-06 | bcrypt 升级 | 目标 rounds=12；不做一次性全表重算。完成正常会话创建的非 admin 成功登录可按需重哈希；管理员处于短期 MFA pre-auth challenge 时绝不保存、跨请求携带或据此重放密码，因此未完成 MFA 前不改 hash，管理员在后续改密/重置时升级为 12 |
 | D-07 | 显式设备吊销与 refresh replay | rotation 消费的旧 token（`revokeReason=refresh_rotation`）及无原因 legacy revoked token 仍视为凭证重放，触发全用户 refresh session 吊销；服务端明确标记为 logout、single_session、revoke_others、revoke_all、MFA reset/migration 的终结家族只返回 401，不得反向吊销仍活动的其他设备。**不能只看被提交行的 reason：**显式吊销可能只写到当时活动的 successor，而历史 predecessor 仍是 `refresh_rotation`；锁后必须按同一 `userId + sessionId` 查找任一显式终结 reason，终结标记优先于 predecessor 的 rotation reason。所有会创建、rotation、单族/其他/全用户吊销 refresh session 的事务，均先获取同一用户的 PostgreSQL transaction-scoped advisory lock，随后重新读取并作状态判断/写入；初始 raw-token 查询只可用于定位 userId，不能据此决定行为。任何同一事务既修改 `User` 又改变 refresh session 的路径（包括改密/重置、管理员封禁和商家角色变化）都必须**先**取得该用户 advisory lock，才取得 `User` 写锁；不得先 `tx.user.update` 再等待 session lock。这样显式吊销成功返回后，不能再有已并发 rotation 的 successor 留存，也不会与密码路径形成锁顺序反转。`revokeReason` 只由服务端写入；全用户服务端吊销默认写 `revoke_all`，历史无 reason 行仍按 legacy replay 处理。 |
@@ -132,10 +132,10 @@ GET sessions → 仅见自己的脱敏设备会话
 | ID | 规则 |
 | --- | --- |
 | DR-01 | admin 身份的密码正确不等于已登录；未完成 MFA 的响应绝不含 accessToken，也不设置 refreshToken Cookie |
-| DR-02 | admin API 必须同时满足 role=admin、user.status 非封禁、token.mfaVerified=true、token.mfaVersion 与 User 当前版本相等、token.sid 对应活动会话 |
-| DR-03 | 任何 MFA 重新绑定、离线重置、密码重置导致的安全边界变化都必须递增 mfaVersion（适用时）并吊销相关 refresh token；旧 admin access token 因版本/会话检查失效 |
+| DR-02 | admin API，及任何在非 `/api/admin` 路由上赋予管理员专属高权限能力的入口，必须同时满足 role=admin、user.status 非封禁、token.mfaVerified=true、token.mfaVersion 与 User 当前版本相等、token.sid 对应活动会话 |
+| DR-03 | 任何 MFA 重新绑定、离线 reset、管理员密码变更（重置或改密）导致的安全边界变化都必须递增 mfaVersion 并吊销相关 refresh token；成功密码变更还必须在同一事务消费该用户全部未消费 MFA pre-auth challenge，离线 reset 还须作废恢复码、清空 User 与 pending challenge 的加密 seed，避免旧凭证跨越变更后签发会话；旧 admin access token 因版本/会话检查失效 |
 | DR-04 | TOTP 使用 6 位、30 秒周期、SHA-1 兼容 RFC 6238；校验窗口最多相邻 1 个周期，不能扩大为任意时间漂移 |
-| DR-05 | 预认证 challenge 是短期、单次、限尝试的凭证：TTL 5 分钟、最多 5 次失败；成功/超限/过期后不可复用 |
+| DR-05 | 预认证 challenge 是短期、单次、限尝试的凭证：TTL 5 分钟、最多 5 次失败；成功/超限/过期后不可复用。首次绑定 confirm 在同一用户锁内以 `mfaEnabled=false` 作条件提交，并消费同用户其余未消费 enrollment challenge，防止并发或旧 challenge 覆盖已启用 seed / recovery code。 |
 | DR-06 | 恢复码高熵生成、单次使用；每次重新生成都原子作废旧码。响应仅在生成当次返回明文，之后查询接口只返回“剩余数量” |
 | DR-07 | sessionId 是随机 UUID，会在 refresh rotation 中保持不变；tokenHash 仍只以 hash 形式保存，永不经 API 返回 |
 | DR-08 | 设备列表只返回服务端生成的 deviceLabel、脱敏 ipHint、sessionStartedAt、lastUsedAt、current；不返回原始 IP、完整 UA、token hash、MFA 字段 |
@@ -171,7 +171,7 @@ GET sessions → 仅见自己的脱敏设备会话
 1. `RefreshToken` 的 create、rotation CAS/successor create、family revoke、revoke-others 与全用户 revoke 必须共用同一用户锁，并且全部数据库访问经持锁的 `tx` 完成。
 2. raw refresh/logout cookie 的首读只可解析 `userId`（及 logout 所需的 family 指针）；进入 transaction、取得锁后必须重新读取 token、User 与 family 才能分类、签发或吊销。
 3. 普通登录在锁内复核当前 `status` 与 password hash 后才创建 initial session，避免 reset/ban/role 安全边界正提交时基于旧读取签发新 token。注册的首次 session 也在锁内复核可登录状态。
-4. 密码 reset/change 和已有 admin ban/role 变化都通过同一事务中的全用户 revoke helper 取得该锁；helper 的 reason 是闭合内部枚举且默认 `revoke_all`，写 `session_revoked` 安全事件（family count），不得留下 null reason 的新行。历史 null 仅按 legacy replay 解释。
+4. 密码 reset/change 和已有 admin ban/role 变化都通过同一事务中的全用户 revoke helper 取得该锁；成功密码变更在锁内先写密码、消费该用户所有未消费 `AuthChallenge`，并在管理员时递增 `mfaVersion`，再执行 session revoke。helper 的 reason 是闭合内部枚举且默认 `revoke_all`，写 `session_revoked` 安全事件（family count），不得留下 null reason 的新行。历史 null 仅按 legacy replay 解释。
 5. 锁后若旧 predecessor 的本行仍为 `refresh_rotation` 或 null，查同 family 任一显式 terminal reason；存在则只 401。CAS 失败同样重读/分类，不能无条件当作 replay。没有 terminal marker 的 rotation/null 才按 replay 全用户吊销。
 6. 锁内不进行 mail、HTTP、sleep 或读取全局 Prisma；提交/回滚自动释放锁。这样全用户操作无需获取多个 family 锁，避免死锁；新 login 与 global revoke 的先后由同一 user 锁形成单一顺序。
 7. 若同一事务还会更新 `User`，固定锁序为“user advisory lock → `User` 写锁 → RefreshToken / audit 写入”。管理员封禁、审核通过/停用商家和密码重置/改密均适用；禁止先写 `User` 再调用会取得 advisory lock 的 helper。此项必须由真实 PostgreSQL 的并发事务回归证明，而非 mock、sleep 或测试旁路。
@@ -209,7 +209,7 @@ GET sessions → 仅见自己的脱敏设备会话
 | --- | --- | --- | --- |
 | REQ-F-030 | P0 | 记录 mfa_enrolled、mfa_login_succeeded、mfa_login_failed、mfa_recovery_used、session_revoked、session_replay_detected、mfa_break_glass_reset 等安全事件 | 事件不含秘密，可按 userId / sessionId 追溯 |
 | REQ-F-031 | P0 | Pino redact 覆盖 MFA 请求字段和新环境变量；测试锁定 | 日志序列化中不出现明文 |
-| REQ-F-032 | P0 | 注册、改密、重置的新密码 hash 使用 bcrypt rounds=12；非 admin 成功登录可 opportunistic rehash 旧 hash | 成功/失败分支均有测试；管理员 MFA pre-auth 不保存密码且不 rehash |
+| REQ-F-032 | P0 | 注册、改密、重置的新密码 hash 使用 bcrypt rounds=12；非 admin 成功登录可 opportunistic rehash 旧 hash | 成功/失败分支均有测试；管理员 MFA pre-auth 不保存密码且不 rehash；管理员成功改密/重置会作废既有 pre-auth challenge 并递增 MFA 版本 |
 | REQ-F-033 | P1 | AdminLog 对关键业务写操作保留原语义，并可在 detailSafe 中关联 sessionId 的短安全摘要（不得把 token 放入 detail） | 审计可关联，不泄露凭证 |
 
 ---
@@ -284,6 +284,10 @@ authenticate
 → requireAdminMfa
 → admin routes
 ~~~
+
+管理员专属能力若因业务语义位于其他路由组，不能因路径不同绕过 DR-02。当前唯一最小例外是 `POST /orders/:id/files/download-url`：买家和商家照旧直通，只有请求者 role=admin 时执行 `requireAdminMfa`，再进入文件仲裁取证逻辑；无 MFA/旧 session 时不得签发 URL 或写 FileGrantLog。
+
+公开公告列表仍允许访客读取 `audience=all`，但 `audience=admin` 不是公开内容：仅当当前 admin token 通过同一 MFA/session 校验才将其解析为 admin audience；旧、无 MFA、已吊销或角色已变的 token 一律按访客降级，不能借公开路由读取 admin 定向公告或写其回执。
 
 requireAdminMfa 的拒绝码应可供前端正确退出或提示重新登录：
 
@@ -443,6 +447,11 @@ Then vitest、相关 Playwright、双端 build、Prisma drift 检查以及 produ
 | 1.13.0 | 2026-07-27 | 补齐 D-07 锁协议的精确调用边界、登录锁后凭据复核、closed revoke reason/audit 与“无需 migration”约束 |
 | 1.14.0 | 2026-07-27 | P1 并发复审发现管理员事务的 `User` 写锁与会话 advisory lock 顺序相反；冻结“advisory lock → User 写锁”的全路径锁序与真实事务回归要求 |
 | 1.15.0 | 2026-07-27 | I-03 本地实现证实 D-07 的三条管理员路径均遵守固定锁序；65 files / 520 tests、双端构建与独立安全复审通过，PR 前 rebase 闸门不变 |
+| 1.16.0 | 2026-07-28 | P6/P7 已进入 develop 后完成 M3 独立 rebase，启动 I-04；不改变已冻结的产品决策 |
+| 1.17.0 | 2026-07-28 | I-04 只读安全审计将订单文件仲裁取证与 public announcement 的 admin audience 纳入同一 MFA/session 边界 |
+| 1.18.0 | 2026-07-28 | 明确管理员成功改密/重置密码必须在同一锁定事务消费所有未消费 pre-auth challenge 并递增 `mfaVersion`，防止旧密码预认证跨越安全边界 |
+| 1.19.0 | 2026-07-28 | 补齐 D-04 已批准的离线 break-glass 服务契约：无 HTTP 路由；同一 user lock 事务清空 seed、作废 recovery/challenge、bump version、revoke session、写受控 caseRef 审计 |
+| 1.20.0 | 2026-07-28 | break-glass 残留审计收紧“清空 seed”：除 User 列外，已消费的 pending challenge 也必须置空其加密 seed |
 
 ---
 

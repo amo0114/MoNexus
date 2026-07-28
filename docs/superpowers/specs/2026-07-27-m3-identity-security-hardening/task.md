@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | TASK-M3-ISH-001 |
-| 版本 | 1.15.0 |
+| 版本 | 1.20.0 |
 | 日期 | 2026-07-27 |
 | 规格 | [spec.md](./spec.md) |
 | 计划 | [plan.md](./plan.md) |
@@ -38,9 +38,9 @@
 | T-00 | Done | Codex | 基线与决策确认（证据见 implement.md §7） |
 | T-BE-01 | Done | Codex | 本地交付 `2f212e8`；G-PR-01（P6a→develop rebase/复核）仍 pending，故不可开 PR |
 | T-BE-02 | Done | Codex | 本地交付 `2483b0f`；12 条原语/日志测试与 server build PASS |
-| T-BE-03 | Todo | | MFA 登录/绑定 API |
+| T-BE-03 | Done | Codex | I-04 本地完成：MFA 登录/绑定、离线 break-glass 原子服务与 14 条定向回归通过；仍不可开 PR |
 | T-BE-04 | Done | Codex | I-03 本地完成：会话 API、D-07 锁协议与三条管理员锁序回归均通过；P6c→develop rebase 仍阻止 PR |
-| T-BE-05 | Todo | | admin guard、bcrypt 升级、回归集成 |
+| T-BE-05 | Done | Codex | I-04 本地完成：admin MFA guard、bcrypt 收口、非 admin-router 旁路收口与全量回归通过；仍不可开 PR |
 | T-BE-06 | Todo | | P1：MFA 安全区与 revoke-all API |
 | T-FE-01 | Todo | | LoginPage MFA 流 |
 | T-FE-02 | Todo | | 账户安全与设备会话 UI |
@@ -186,19 +186,24 @@ TEST_DATABASE_URL='postgresql://monexus:monexus_dev_2026@localhost:5432/monexus_
 - server/src/modules/auth/controller.ts
 - server/src/modules/auth/schema.ts
 - server/src/modules/auth/routes.ts
+- server/src/modules/orders/routes.ts（仅 admin 文件仲裁取证路径的条件 MFA guard；不改 buyer/merchant 语义或 fileAccess）
+- server/src/modules/announcements/controller.ts（仅 admin audience 解析复用 MFA/session 校验；失败降级 visitor，不改公共 all 公告）
 - server/src/lib/cookies.ts（只有确有 cookie 契约改动才触碰）
 - server/src/__tests__/auth-mfa.test.ts（新）
 
 **步骤：**
 
-- [ ] 将 login 返回类型建成明确 union：非 admin 正常登录；admin 返回 enrollment 或 login challenge。
-- [ ] 断言 challenge 响应绝不设置 refresh cookie 或 access token。
-- [ ] 添加 enrollment start / confirm 与 MFA verify 的 schema 和 route；恢复码只作为首次绑定/登录因子，不在本 P0 任务加入重生或换机 endpoint。
-- [ ] confirm / verify 使用事务完成 challenge claim、MFA state、recovery hash、安全事件、refresh session 创建；中间任一步失败都不能半写。
-- [ ] 已绑定 admin 只能经 method=totp 或 method=recovery 登录；错码、超限、已用 code 均无会话副作用。
-- [ ] 实现离线 break-glass 所需的可复用服务级原子操作，但不暴露 HTTP route；是否由 runbook / script 调用由 T-DOC-01 约束。
+- [x] 将 login 返回类型建成明确 union：非 admin 正常登录；admin 返回 enrollment 或 login challenge。
+- [x] 断言 challenge 响应绝不设置 refresh cookie 或 access token。
+- [x] 添加 enrollment start / confirm 与 MFA verify 的 schema 和 route；恢复码只作为首次绑定/登录因子，不在本 P0 任务加入重生或换机 endpoint。
+- [x] confirm / verify 使用事务完成 challenge claim、MFA state、recovery hash、安全事件、refresh session 创建；中间任一步失败都不能半写。
+- [x] enrollment confirm 在同一用户 advisory lock 内二次确认 `mfaEnabled=false`，并消费其余未消费 enrollment challenge；同一或旧 challenge 不能覆盖已启用的 seed / recovery code。
+- [x] 已绑定 admin 只能经 method=totp 或 method=recovery 登录；错码、超限、已用 code 均无会话副作用。
+- [x] 实现离线 break-glass 所需的可复用服务级原子操作 `resetAdminMfaForBreakGlass({ userId, caseRef })`，但不暴露 HTTP route；在同一 user advisory lock transaction 内清空 User 与 pending challenge 的 MFA seed/verified 状态、作废未用 recovery code/未消费 challenge、bump mfaVersion、以 `mfa_break_glass_reset` 吊销全部 session 并写受控 caseRef SecurityEvent。是否由 runbook / script 调用由 T-DOC-01 约束。
 
 **DoD：** AC-01 至 AC-03 后端通过；普通用户/商家 login 契约未变化。
+
+**本地证据（2026-07-28；仍不可开 PR）：** `auth-mfa` 14/14 PASS，覆盖首次绑定、TOTP/recovery、并发 enrollment 单胜者、挑战超限、离线 break-glass 成功/审计回滚/非 admin 拒绝与无 HTTP route；全量 server 为 75 files / 611 tests PASS（915.71s），只使用 `monexus_m3_ish_test`。
 
 ---
 
@@ -251,14 +256,19 @@ TEST_DATABASE_URL='postgresql://monexus:monexus_dev_2026@localhost:5432/monexus_
 
 **步骤：**
 
-- [ ] AuthPayload 增加 sid、mfaVerified、mfaVersion；所有完成 MFA 的 admin token 填充正确 claims。
-- [ ] 实现 requireAdminMfa：验证 claims、User MFA 版本/状态与活动 RefreshToken session。
-- [ ] 在 admin 路由组 requireAdmin 后挂载；不得漏掉 portable-backups 等子路由。
-- [ ] 发布兼容：缺 sid / 无 MFA claim 的旧 admin token 一律拒绝；旧 admin refresh token 不能续签。
-- [ ] 将 bcrypt rounds 固定为 12；注册/改密/重置直接使用 12；仅非 admin 成功完成正常登录时对正确旧 hash 重哈希。错误密码、封禁和 admin MFA pre-auth 均不写 hash，也不把密码/等效材料存进 challenge。
-- [ ] 覆盖：旧 admin token、被吊销 admin session、被封禁 admin、无 MFA cookie、普通 user admin API、rehash 成功/失败。
+- [x] AuthPayload 增加 sid、mfaVerified、mfaVersion；所有完成 MFA 的 admin token 填充正确 claims。
+- [x] 实现 requireAdminMfa：验证 claims、User MFA 版本/状态与活动 RefreshToken session。
+- [x] 在 admin 路由组 requireAdmin 后挂载；不得漏掉 portable-backups 等子路由。
+- [x] 对 `/orders/:id/files/download-url` 增加仅 role=admin 才触发的同一 MFA guard；无 MFA / old session 不返回 URL、不写 FileGrantLog，买家/商家现有语义不变。
+- [x] 公告 public audience resolver 不得只信任 admin role：admin 定向公告及其回执需要同一 MFA/session 校验；不满足时保持 visitor fallback，不泄露 admin audience。
+- [x] 发布兼容：缺 sid / 无 MFA claim 的旧 admin token 一律拒绝；旧 admin refresh token 不能续签。
+- [x] 将 bcrypt rounds 固定为 12；注册/改密/重置直接使用 12；仅非 admin 成功完成正常登录时对正确旧 hash 重哈希。错误密码、封禁和 admin MFA pre-auth 均不写 hash，也不把密码/等效材料存进 challenge。
+- [x] 管理员成功改密或重置密码时，在既有 user advisory lock 事务内消费全部未消费 MFA pre-auth challenge、递增 mfaVersion、再吊销 refresh session；失败路径不得消费 challenge 或改变版本。
+- [x] 覆盖：旧 admin token、被吊销 admin session、被封禁 admin、无 MFA cookie、普通 user admin API、旧 admin refresh 不轮换、rehash 成功/失败，以及密码变更前 challenge 在变更后不可完成 MFA 登录。
 
 **DoD：** AC-04、AC-06、AC-07 通过；无 admin endpoint 绕过。
+
+**本地证据（2026-07-28；仍不可开 PR）：** `auth-mfa` 14/14 PASS；`announcements` 14/14、文件交付 admin 取证关键分支 2/2、portable-backups routes 2/2 PASS；server build、root build、38 migrations status 与 drift 均 PASS / clean；全量 server 为 75 files / 611 tests PASS（915.71s）。
 
 ---
 
@@ -498,3 +508,8 @@ T-00 → T-BE-01 → T-BE-02 → T-BE-03 + T-BE-04 → T-BE-05 → T-FE-01 + T-F
 | 1.13.0 | 2026-07-27 | 将 D-07 精确化为全 RefreshToken mutation 的 user lock 契约，列出 login/reset/change/global revoke/MFA 的接入点与无 migration 范围 |
 | 1.14.0 | 2026-07-27 | P1 复审新增管理员三条 `User` 变更路径的锁序修复与真实 PostgreSQL 并发回归；以最小安全例外修改 shared admin service，仍不触碰 P6 业务逻辑 |
 | 1.15.0 | 2026-07-27 | 标记 T-BE-04 / I-03 本地完成，回填三路径 lock-order、全量后端和双端构建证据；P6c rebase 闸门保持 pending |
+| 1.16.0 | 2026-07-28 | 在 P6/P7 已进入 develop 后完成 M3 独立 worktree rebase，启动 I-04（T-BE-03 + T-BE-05）；仍不修改并行 worktree 或共享运行时 |
+| 1.17.0 | 2026-07-28 | I-04 编码前只读安全复核发现 orders 文件仲裁取证及 public 公告中的 admin audience 不在 admin router；规范化为最小条件 MFA guard / visitor 降级，并收紧 enrollment sibling-challenge 单胜者约束 |
+| 1.18.0 | 2026-07-28 | I-04 实现复核发现管理员密码变更会话吊销尚未作废已发出的 pre-auth challenge；先同步为同事务 challenge consume + `mfaVersion` bump，再补回归实现 |
+| 1.19.0 | 2026-07-28 | I-04 复核发现 D-04 的 break-glass 原子服务仅有事件/枚举预置、尚无实现；先冻结其无 HTTP 路由、同事务全凭证作废与 caseRef 审计边界，再补实现/回归 |
+| 1.20.0 | 2026-07-28 | break-glass 实现前残留审计收紧清理范围：pending enrollment/reconfigure challenge 的加密 seed 也必须置空，并由回归锁定 |
