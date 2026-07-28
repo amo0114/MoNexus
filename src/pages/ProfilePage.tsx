@@ -19,6 +19,7 @@ import RegistryPill from '../components/ui/RegistryPill'
 import { getMemberTier, TierResponse } from '../api/points'
 import { getConfigRegistry } from '../api/registry'
 import { MemberTierBadge } from '../components/MemberTierBadge'
+import SessionManager from '../components/auth/SessionManager'
 
 function NicknameCard() {
   const user = useAuthStore((s) => s.user)
@@ -490,6 +491,9 @@ export default function ProfilePage() {
 
       {/* Password Change Card */}
       <PasswordChangeCard />
+
+      {/* Active device sessions stay isolated from the profile's orders/points loading. */}
+      <SessionManager />
 
       {/* Tabs: Orders / History */}
       <div className="card p-4 sm:p-6">

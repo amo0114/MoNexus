@@ -21,6 +21,8 @@ export default defineConfig({
       PORT: '3099',
       DATABASE_URL: testDatabaseUrl,
       JWT_SECRET: 'test-secret-key-at-least-32-characters-long!!',
+      // Fixed test-only material. Production never receives a fallback key.
+      MFA_ENCRYPTION_KEY: 'BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=',
       FRONTEND_ORIGIN: 'http://localhost:5173',
       COOKIE_SECURE: 'false',
     },

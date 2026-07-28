@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { expect, test, type APIRequestContext } from '@playwright/test'
-import { API_BASE, SEED_ACCOUNTS, loginAs } from './helpers'
+import { API_BASE, SEED_ACCOUNTS, loginAs, loginAsApi } from './helpers'
 
 /**
  * P5.5 运维收尾冒烟：
@@ -16,9 +16,7 @@ const OFFER_NAME = `报表规格-${STAMP}`
 const state = { fileId: 0, productId: 0, offerId: 0 }
 
 async function tokenOf(request: APIRequestContext, account: { email: string; password: string }) {
-  const login = await request.post(`${API_BASE}/api/auth/login`, { data: account })
-  expect(login.ok(), await login.text()).toBeTruthy()
-  return (await login.json()).accessToken as string
+  return (await loginAsApi(request, account)).accessToken
 }
 
 test.describe.serial('P5.5 ops smoke', () => {

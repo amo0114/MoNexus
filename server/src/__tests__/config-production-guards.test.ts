@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest'
 import { spawnSync } from 'node:child_process'
 import path from 'node:path'
 
+const VALID_MFA_ENCRYPTION_KEY = Buffer.alloc(32, 7).toString('base64')
+
 /**
  * P5 复审 P0 回归：生产缺私有交付桶配置必须**拒绝启动**——回退是进程内存
  * 存储，上传"成功"的付费文件会在重启后蒸发。config 模块在 import 时校验并
@@ -23,6 +25,7 @@ const PROD_BASE_ENV: Record<string, string> = {
   STORAGE_SECRET_KEY: 'sk',
   DELIVERY_STORAGE_BUCKET: 'monexus-files',
   DELIVERY_STORAGE_PUBLIC_ENDPOINT: 'https://shop.example.com',
+  MFA_ENCRYPTION_KEY: VALID_MFA_ENCRYPTION_KEY,
 }
 
 function loadConfigWith(overrides: Record<string, string | undefined>) {
@@ -68,6 +71,26 @@ describe('production config guards for the private delivery bucket', () => {
     const result = loadConfigWith({ DELIVERY_STORAGE_BUCKET: 'monexus-uploads' })
     expect(result.status).toBe(1)
     expect(result.stderr + result.stdout).toContain('must differ')
+  })
+})
+
+describe('production config guard for the MFA encryption key', () => {
+  it('refuses to start when MFA_ENCRYPTION_KEY is missing', () => {
+    const result = loadConfigWith({ MFA_ENCRYPTION_KEY: undefined })
+    expect(result.status).toBe(1)
+    expect(result.stderr + result.stdout).toContain('MFA_ENCRYPTION_KEY')
+  })
+
+  it('refuses a non-canonical base64 MFA_ENCRYPTION_KEY', () => {
+    const result = loadConfigWith({ MFA_ENCRYPTION_KEY: 'not base64!' })
+    expect(result.status).toBe(1)
+    expect(result.stderr + result.stdout).toContain('MFA_ENCRYPTION_KEY')
+  })
+
+  it('refuses an MFA_ENCRYPTION_KEY that does not decode to 32 bytes', () => {
+    const result = loadConfigWith({ MFA_ENCRYPTION_KEY: Buffer.alloc(31, 7).toString('base64') })
+    expect(result.status).toBe(1)
+    expect(result.stderr + result.stdout).toContain('32 bytes')
   })
 })
 

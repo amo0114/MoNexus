@@ -1,59 +1,113 @@
 # Auth Module
 
-Handles registration, login, refresh-token rotation, password reset, password change, email verification, and `/me`.
+Handles registration, password login, administrator TOTP MFA, refresh-token
+rotation, device-session management, password reset/change, email verification,
+and `/me`.
 
-All token-issuing endpoints below set the refresh token as an HttpOnly Cookie; access tokens are returned in the JSON body.
-
-## Endpoints
+## Endpoint Contract
 
 | Method | Path | Auth | Notes |
 | --- | --- | :---: | --- |
-| POST | `/api/auth/register` | — | Creates user + `PointAccount` + `PointLog` (注册奖励) inside one transaction. Optional `inviteCode` writes `InviteRelation`. |
-| POST | `/api/auth/login` | — | Rejects banned users (`status = 已封禁`). |
-| POST | `/api/auth/refresh` | Cookie | Rotates refresh token; old hash is invalidated. |
-| POST | `/api/auth/logout` | Cookie | Revokes the cookie's refresh token and clears the cookie. |
-| GET | `/api/auth/me` | Bearer | Returns the user + nested merchant context. The single source of truth used by the frontend role guard. |
-| POST | `/api/auth/password-change` | Bearer | Requires current password. **Revokes all refresh tokens on success.** |
-| POST | `/api/auth/forgot-password` | — | Always 200. Sends a reset link only if the email exists — prevents account enumeration. |
-| POST | `/api/auth/reset-password` | — | Verifies the email token; **revokes all refresh tokens** on success. |
-| POST | `/api/auth/send-verification` | Bearer | Sends an email verification link to the current user. |
-| GET | `/api/auth/verify-email?token=…` | — | Marks `emailVerified = true`. |
+| POST | `/api/auth/register` | — | Creates User + PointAccount + PointLog in one transaction; returns AuthSession and sets a refresh Cookie. |
+| POST | `/api/auth/login` | — | User/merchant succeeds with `200 AuthSession` + Cookie. Correct admin password returns only `202 MfaLoginChallenge`; it has no access token and never sets a refresh Cookie. |
+| POST | `/api/auth/mfa/enrollment/start` | Pre-auth challenge | Starts first admin TOTP enrollment and returns a provisioning URI/manual key for that active challenge only. These values are secrets and must stay in component memory. |
+| POST | `/api/auth/mfa/enrollment/confirm` | Pre-auth challenge | Correct factor atomically enables MFA, creates the first MFA session, and returns the one-time recovery-code display with `201`. |
+| POST | `/api/auth/mfa/verify` | Pre-auth challenge | Existing admin completes a TOTP or recovery-code login. Only success returns AuthSession + Cookie. |
+| POST | `/api/auth/refresh` | Cookie | Rotates a refresh token inside its existing `sessionId` family. |
+| POST | `/api/auth/logout` | Cookie | Revokes the cookie's current refresh family and clears the cookie. |
+| GET / PATCH | `/api/auth/me` | Bearer | Returns current user/merchant context; PATCH updates the current user's nickname. |
+| GET | `/api/auth/sessions` | Bearer | Lists only the caller's active session-family summaries. |
+| DELETE | `/api/auth/sessions/:sessionId` | Bearer | Revokes an owned, non-current family. Current session must use `/logout`; absent/non-owned IDs return 404. |
+| POST | `/api/auth/sessions/revoke-others` | Bearer | Revokes every other active family while retaining current. |
+| POST | `/api/auth/password-change` | Bearer | Requires current password and revokes all refresh sessions on success. |
+| POST | `/api/auth/forgot-password` | — | Always 200 to prevent enumeration. |
+| POST | `/api/auth/reset-password` | — | Uses email token and revokes all refresh sessions on success. |
+| POST | `/api/auth/send-verification` | Bearer | Sends verification email. |
+| GET | `/api/auth/verify-email?token=…` | — | Marks `emailVerified`. |
 
-## Token Model
+There is intentionally no HTTP endpoint to disable MFA, reset another user's
+MFA, regenerate recovery codes, reconfigure MFA, or revoke all sessions. Those
+P1 capabilities need their own reviewed contract.
 
-- **Access token**: JWT, short-lived (`config.jwtExpiresIn`). Sent in `Authorization: Bearer …`. Stateless — its `role` claim may go stale after admin actions; clients should call `/api/auth/me` after a `refresh` to re-derive their role.
-- **Refresh token**: 40-byte hex, stored only as a SHA-256 hash (`RefreshToken.tokenHash`). Issued and rotated via HttpOnly + Secure-in-prod Cookie. Default lifetime sourced from `SystemConfig.refreshTokenMaxAgeDays`.
+## MFA and Session Invariants
 
-## Token Revocation Invariants
+- An administrator's password is only pre-authentication. Before MFA succeeds,
+  no access token, refresh cookie, browser persistent state, or admin data may
+  be issued.
+- `MfaEnrollmentStart` exposes a TOTP provisioning URI/manual key only for the
+  live enrollment challenge. The database retains only encrypted seed material;
+  recovery codes are stored only as one-way hashes.
+- The ten plaintext recovery codes appear only once in a successful enrollment
+  response. A recovery code is single-use; failures use generic errors and do
+  not create a session.
+- MFA challenges expire after five minutes and have a fixed five-failure
+  budget. Concurrent claimers have one winner.
+- `sessionId` identifies a browser/device family, not a RefreshToken row.
+  Refresh rotation creates a new row in the same family, so a refresh never
+  appears as a new device.
+- Session summaries contain exactly `sessionId`, `deviceLabel`, `ipHint`,
+  `sessionStartedAt`, `lastUsedAt`, and `current`. Never expose raw IP,
+  complete User-Agent, token, token hash, MFA seed, or recovery code.
+- `revokeOtherSessions` retains the caller's family. Explicitly terminated
+  families only reject later stale cookies; a rotation predecessor replay still
+  keeps its stronger revoke-all security behavior.
 
-The following actions **must** call `revokeAllUserRefreshTokens(userId, tx)` inside the same transaction as the state change:
+## Token and Revocation Model
 
-1. **Password change** (`/auth/password-change`) — invalidates all sessions on all devices.
-2. **Password reset via email** (`/auth/reset-password`) — same as above.
-3. **User ban** (admin) — see `../admin/README.md`.
+- **Access token**: short-lived JWT (`config.jwtExpiresIn`) sent in
+  `Authorization: Bearer …`. Non-admin business routes remain stateless, so a
+  revoked device's already-issued access token can live until the existing
+  15-minute TTL. Admin tokens additionally carry `sid`, MFA verification and
+  MFA version claims; every admin request verifies the active session and
+  current MFA version, so an admin session revoke takes effect immediately.
+- **Refresh token**: 40-byte hex secret, stored only as a SHA-256 hash. It is
+  issued/rotated through HttpOnly + Secure-in-production Cookie. Default
+  lifetime comes from `SystemConfig.refreshTokenMaxAgeDays`.
+- Global revocation marks active `RefreshToken` rows as revoked with a closed
+  reason; it does **not** delete the rows. Historical rows preserve family
+  terminal/replay/audit semantics.
+- Password change, password reset, admin ban, MFA break-glass, and other
+  explicit security boundaries call the shared revoke path in the same
+  user-lock transaction as their state mutation.
 
-A successful `revokeAllUserRefreshTokens` deletes all `RefreshToken` rows for the user. The active access token survives until it expires, but the user cannot refresh.
+## Rate Limits and Errors
 
-## Rate Limits
-
-| Limiter | Window | Limit | Endpoints |
+| Limiter | Window | Limit | Endpoints / key |
 | --- | --- | --- | --- |
-| `authLimiter` | 15 min | 30 req/IP | `/register`, `/login`, `/refresh`, `/reset-password`, `/password-change` |
-| `mailLimiter` | 15 min | 5 req/IP | `/forgot-password`, `/send-verification` |
+| `authLimiter` | 15 min | 30 | `/register`, `/login`, all three MFA routes, `/reset-password`, `/password-change`; IP key |
+| `refreshLimiter` | 15 min | 30 | `/refresh`; one-way refresh-cookie hash, falling back to an IPv6-safe IP key only when no cookie exists |
+| `mailLimiter` | 15 min | 5 | `/forgot-password`, `/send-verification`; IP key |
 
-Limits are bypassed when `NODE_ENV=test` so the suite can flood the endpoints. 429 responses use the standard `ErrorEnvelope` with `code: "RATE_LIMITED"`.
+Limits are bypassed only under `NODE_ENV=test` for the server test suite.
+Errors use `{ "error": { "code", "message" } }`. MFA callers must handle
+`MFA_CHALLENGE_INVALID`, `MFA_VERIFICATION_FAILED`, and
+`MFA_TOO_MANY_ATTEMPTS` as factor/business failures, not as a reason to refresh
+or replay their request. Admin authorization may return `MFA_REQUIRED` (403) or
+`SESSION_REVOKED` (401); a session list/revoke caller without an authenticated
+JWT receives `UNAUTHENTICATED`.
 
-## Error Shape
+## Offline Break-glass
 
-All failures use the standard `ErrorEnvelope`:
+Lost recovery factors are handled only through the two-person operating
+procedure in `docs/operations/runbook.md`. There is no controller or hidden
+route. An approved operator runs:
 
-```json
-{ "error": { "code": "VALIDATION_ERROR", "message": "..." } }
+```bash
+npm --prefix server run auth:break-glass-reset -- \
+  --user-id=<admin-id> --case-ref=<OPS-ticket-number>
 ```
 
-Codes used by this module: `VALIDATION_ERROR`, `UNAUTHENTICATED`, `CONFLICT`, `NOT_FOUND`, `RATE_LIMITED`.
+The command accepts only the positive user ID and controlled ticket-shaped case
+reference. It invokes `resetAdminMfaForBreakGlass` atomically: clear encrypted
+seed/pending seed material, consume recovery/challenges, increment MFA version,
+revoke all sessions, and record `mfa_break_glass_reset`. It never accepts or
+prints seeds, recovery codes, passwords, tokens, cookies, or database URLs.
 
 ## Related
 
-- `server/src/modules/admin/README.md` — admin ban / unban triggers session revocation here.
-- `docs/superpowers/specs/monexus-api-openapi.json` — full request / response schemas.
+- `docs/superpowers/specs/monexus-api-openapi.json` — machine-readable request,
+  response, and error contract.
+- `docs/operations/runbook.md` — release, legacy-admin revocation, first
+  enrollment, session-revoke, and break-glass procedure.
+- `docs/operations/secrets-management.md` — `MFA_ENCRYPTION_KEY` ownership and
+  rotation constraint.

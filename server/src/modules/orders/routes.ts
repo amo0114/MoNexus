@@ -1,5 +1,5 @@
 import { Router } from 'express'
-import { authenticate, requireActiveUser } from '../../middlewares/auth.js'
+import { authenticate, requireActiveUser, requireMfaIfAdmin } from '../../middlewares/auth.js'
 import { validate, idParamSchema } from '../../middlewares/validate.js'
 import { createOrderSchema, listOrdersQuerySchema } from './schema.js'
 import * as controller from './controller.js'
@@ -18,7 +18,7 @@ router.post('/:id/renew', validate({ params: idParamSchema }), controller.renewP
 router.post('/:id/review', validate({ params: idParamSchema, body: reviewBodySchema }), reviewsController.createForOrder)
 router.put('/:id/review', validate({ params: idParamSchema, body: reviewBodySchema }), reviewsController.updateForOrder)
 // P5：受控文件下载的唯一发放入口（买家/商家/管理员，语义见 fileAccess.ts）。
-router.post('/:id/files/download-url', validate({ params: idParamSchema }), controller.issueFileDownloadUrl)
+router.post('/:id/files/download-url', requireMfaIfAdmin, validate({ params: idParamSchema }), controller.issueFileDownloadUrl)
 router.get('/:id', validate({ params: idParamSchema }), controller.detail)
 
 export { router as orderRoutes }

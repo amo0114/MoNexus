@@ -2,8 +2,8 @@
   "openapi": "3.0.3",
   "info": {
     "title": "MoNexus API",
-    "version": "1.4.0",
-    "description": "MoNexus 内部积分制数字商品市场 API。三种角色：user / merchant / admin。无任何法币 / 充值 / 提现。1.1.0 同步 M2 GA：health 含 db 字段、登录密码修改、用户封禁 / 解封、平台系统配置。1.2.0 同步 M3：新增 `GET /api/admin/audit`（操作员可读的 AdminLog 列表，支持分页与过滤），并标注 `refreshTokenMaxAgeDays` 现已对新签发的 refresh token 实际生效。1.3.0 同步 M4：拆分 `/api/health` 为 `/api/health/live`（liveness）和 `/api/health/ready`（readiness），保留老 `/api/health` 作为 `/live` 的兼容别名并标记为 deprecated；新增 `GET /api/metrics`（Prometheus 文本格式，可选 `METRICS_TOKEN` bearer 保护）。 1.4.0 同步 M6 履约域重构 + 商家经营闭环：拆分订单 DTO 为按角色（user / merchant / admin）的边界，商家与平台列表不再返回 `delivery.content`；商品引入 `deliveryMode` 履约模式（`instant_inventory` / `manual_service`）；订单状态机扩展为 `pending → processing → delivered → disputed → closed`，旧值 `completed` 在响应中规范化为 `delivered`；新增 `POST /api/orders/{id}/dispute`、`/close`，新增商家履约动作 `start/deliver/respond-dispute`；商家商品列表、订单列表统一为 `{items,total,page,pageSize}` envelope，并支持搜索 / 筛选 / 低库存等参数；商家库存导入拆分 `preview` 与 `import`，请求体接受 `text` 或 `items`，响应携带空行 / 重复行 / 既存重复行统计；商家结算列表新增 `payable` 与 `blockReason`，与履约状态绑定（`disputed` 或未履约不可结算）；新增 `GET /api/config/registry` 暴露前端可消费的产品类型 / 履约模式 / 订单状态 / 结算状态 / 分页 / 低库存阈值的标签 + tone 注册表。"
+    "version": "1.5.0",
+    "description": "MoNexus 内部积分制数字商品市场 API。三种角色：user / merchant / admin。无任何法币 / 充值 / 提现。1.1.0 同步 M2 GA：health 含 db 字段、登录密码修改、用户封禁 / 解封、平台系统配置。1.2.0 同步 M3：新增 `GET /api/admin/audit`（操作员可读的 AdminLog 列表，支持分页与过滤），并标注 `refreshTokenMaxAgeDays` 现已对新签发的 refresh token 实际生效。1.3.0 同步 M4：拆分 `/api/health` 为 `/api/health/live`（liveness）和 `/api/health/ready`（readiness），保留老 `/api/health` 作为 `/live` 的兼容别名并标记为 deprecated；新增 `GET /api/metrics`（Prometheus 文本格式，可选 `METRICS_TOKEN` bearer 保护）。1.4.0 同步 M6 履约域重构 + 商家经营闭环：拆分订单 DTO 为按角色（user / merchant / admin）的边界，商家与平台列表不再返回 `delivery.content`；商品引入 `deliveryMode` 履约模式（`instant_inventory` / `manual_service`）；订单状态机扩展为 `pending → processing → delivered → disputed → closed`，旧值 `completed` 在响应中规范化为 `delivered`；新增 `POST /api/orders/{id}/dispute`、`/close`，新增商家履约动作 `start/deliver/respond-dispute`；商家商品列表、订单列表统一为 `{items,total,page,pageSize}` envelope，并支持搜索 / 筛选 / 低库存等参数；商家库存导入拆分 `preview` 与 `import`，请求体接受 `text` 或 `items`，响应携带空行 / 重复行 / 既存重复行统计；商家结算列表新增 `payable` 与 `blockReason`，与履约状态绑定（`disputed` 或未履约不可结算）；新增 `GET /api/config/registry` 暴露前端可消费的产品类型 / 履约模式 / 订单状态 / 结算状态 / 分页 / 低库存阈值的标签 + tone 注册表。1.5.0 同步 M3 identity security hardening：管理员登录为 200/202 MFA pre-auth union，新增 TOTP enrollment/verify 与设备会话管理端点；管理员已吊销 session 对 admin API 立即失效，普通业务 access token 仍受既有 15 分钟 TTL 约束。"
   },
   "servers": [
     {
@@ -22,7 +22,7 @@
     },
     {
       "name": "Auth",
-      "description": "注册 / 登录 / 刷新 / 密码 / 邮箱验证"
+      "description": "注册 / 登录 / 管理员 MFA / 设备会话 / 刷新 / 密码 / 邮箱验证"
     },
     {
       "name": "Products"
@@ -85,7 +85,8 @@
             "properties": {
               "code": {
                 "type": "string",
-                "example": "VALIDATION_ERROR"
+                "example": "VALIDATION_ERROR",
+                "description": "稳定业务错误码。认证相关常见值：`UNAUTHENTICATED`、`BAD_REQUEST`、`RATE_LIMITED`；管理员 MFA：`MFA_CHALLENGE_INVALID`、`MFA_VERIFICATION_FAILED`、`MFA_TOO_MANY_ATTEMPTS`、`MFA_REQUIRED`、`SESSION_REVOKED`、`CURRENT_SESSION_REQUIRES_LOGOUT`。端点响应描述会列出其适用子集。"
               },
               "message": {
                 "type": "string",
@@ -360,6 +361,17 @@
             "type": "integer",
             "minimum": 0
           },
+          "nickname": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 20
+          },
+          "emailVerified": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "仅 `/api/auth/me` 返回；登录/注册 session 响应不保证包含该字段。"
+          },
           "createdAt": {
             "type": "string",
             "format": "date-time"
@@ -425,6 +437,237 @@
           "accessToken": {
             "type": "string",
             "description": "JWT access token，前端在 Authorization: Bearer 头中携带"
+          }
+        }
+      },
+      "MfaLoginChallenge": {
+        "type": "object",
+        "required": [
+          "status",
+          "challengeId",
+          "expiresAt"
+        ],
+        "additionalProperties": false,
+        "description": "管理员正确通过密码校验后的 pre-auth 响应。该 202 响应绝不包含 `accessToken`，也绝不下发 refresh Cookie；只有完成 MFA 的后续响应才会建立会话。",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "mfa_enrollment_required",
+              "mfa_required"
+            ]
+          },
+          "challengeId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "MfaEnrollmentStartRequest": {
+        "type": "object",
+        "required": [
+          "challengeId"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "challengeId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "MfaEnrollmentStartResponse": {
+        "type": "object",
+        "required": [
+          "provisioningUri",
+          "manualKey",
+          "expiresAt"
+        ],
+        "additionalProperties": false,
+        "description": "仅当前、未完成的 enrollment pre-auth challenge 可获得的 TOTP 配置材料。调用方不得将 `provisioningUri` 或 `manualKey` 写入持久化 store、日志或 URL。",
+        "properties": {
+          "provisioningUri": {
+            "type": "string",
+            "format": "uri"
+          },
+          "manualKey": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "MfaEnrollmentConfirmRequest": {
+        "type": "object",
+        "required": [
+          "challengeId",
+          "code"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "challengeId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "description": "TOTP factor。格式故意不在 API 层过度细分，避免形成验证 oracle。"
+          }
+        }
+      },
+      "MfaEnrollmentConfirmResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/AuthSession"
+          },
+          {
+            "type": "object",
+            "required": [
+              "recoveryCodes"
+            ],
+            "properties": {
+              "recoveryCodes": {
+                "type": "array",
+                "minItems": 10,
+                "maxItems": 10,
+                "items": {
+                  "type": "string"
+                },
+                "description": "仅此首次绑定响应以明文给出一次；之后 API 只可获得剩余数量，不能再次读取这些代码。"
+              }
+            }
+          }
+        ]
+      },
+      "MfaVerifyRequest": {
+        "type": "object",
+        "required": [
+          "challengeId",
+          "method",
+          "code"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "challengeId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "method": {
+            "type": "string",
+            "enum": [
+              "totp",
+              "recovery"
+            ]
+          },
+          "code": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "description": "TOTP 或一次性恢复码。"
+          }
+        }
+      },
+      "MfaVerifyResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/AuthSession"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "recoveryCodeRemaining": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "仅以 `method=recovery` 成功时出现。"
+              }
+            }
+          }
+        ]
+      },
+      "UpdateMeRequest": {
+        "type": "object",
+        "required": [
+          "nickname"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "nickname": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 20
+          }
+        }
+      },
+      "ActiveSessionSummary": {
+        "type": "object",
+        "required": [
+          "sessionId",
+          "deviceLabel",
+          "ipHint",
+          "sessionStartedAt",
+          "lastUsedAt",
+          "current"
+        ],
+        "additionalProperties": false,
+        "description": "一个活跃 refresh-token family 的脱敏设备摘要；绝不返回原始 IP、完整 User-Agent、refresh token、tokenHash 或已吊销 token。",
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "deviceLabel": {
+            "type": "string"
+          },
+          "ipHint": {
+            "type": "string"
+          },
+          "sessionStartedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "lastUsedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "current": {
+            "type": "boolean"
+          }
+        }
+      },
+      "SessionListResponse": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ActiveSessionSummary"
+            }
+          }
+        }
+      },
+      "RevokeOtherSessionsResponse": {
+        "type": "object",
+        "required": [
+          "revokedCount"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "revokedCount": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "不包含当前 session family。"
           }
         }
       },
@@ -2564,8 +2807,8 @@
         "tags": [
           "Auth"
         ],
-        "summary": "用户登录",
-        "description": "已封禁用户（`status = 已封禁`）登录被拒绝。",
+        "summary": "用户登录（管理员进入 MFA pre-auth）",
+        "description": "非管理员成功时返回 200 并建立会话。管理员正确密码只会得到 202 MFA pre-auth challenge：未完成 MFA 前没有 access token、refresh Cookie 或 admin 数据。已封禁用户（`status = 已封禁`）登录被拒绝。",
         "requestBody": {
           "required": true,
           "content": {
@@ -2578,11 +2821,21 @@
         },
         "responses": {
           "200": {
-            "description": "登录成功",
+            "description": "非管理员登录成功；JSON 为 AuthSession，refresh token 仅通过 HttpOnly Cookie 下发。",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AuthSession"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "管理员密码正确但尚未完成 MFA；不包含 accessToken，且不设置 refresh Cookie。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MfaLoginChallenge"
                 }
               }
             }
@@ -2599,13 +2852,186 @@
         }
       }
     },
+    "/api/auth/mfa/enrollment/start": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "开始管理员首次 TOTP 绑定",
+        "description": "仅接受尚未启用 MFA 的管理员 password-login challenge。返回 provisioning URI 和 manual key，但服务端只保存加密的 pending seed；调用方不得持久化或记录响应中的秘密。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MfaEnrollmentStartRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "当前 enrollment challenge 的 TOTP 配置材料；仍未建立登录会话。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MfaEnrollmentStartResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`error.code` 为 `VALIDATION_ERROR` 或 `MFA_CHALLENGE_INVALID`。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "`error.code=RATE_LIMITED`。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/mfa/enrollment/confirm": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "确认管理员首次 TOTP 绑定",
+        "description": "成功时原子启用 MFA、建立 refresh session、写安全事件并仅一次返回 10 个明文 recovery code。任何失败都不创建会话。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MfaEnrollmentConfirmRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "绑定成功并建立 MFA 已验证会话；refresh token 仅通过 HttpOnly Cookie 下发。recoveryCodes 只在本响应出现一次。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MfaEnrollmentConfirmResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`error.code` 为 `VALIDATION_ERROR` 或 `MFA_CHALLENGE_INVALID`。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`error.code=MFA_VERIFICATION_FAILED`；不创建 access token 或 refresh Cookie。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "`error.code` 为 `MFA_TOO_MANY_ATTEMPTS` 或 `RATE_LIMITED`；不创建会话。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/mfa/verify": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "完成已绑定管理员的 MFA 登录",
+        "description": "使用 `totp` 或一次性 `recovery` factor 完成此前的 admin login challenge。错误或已使用恢复码只得到通用失败响应，不能建立会话。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MfaVerifyRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "MFA 成功并建立会话；refresh token 仅通过 HttpOnly Cookie 下发。使用恢复码时可包含剩余数量。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MfaVerifyResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`error.code` 为 `VALIDATION_ERROR` 或 `MFA_CHALLENGE_INVALID`。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`error.code=MFA_VERIFICATION_FAILED`；不创建 access token 或 refresh Cookie。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "`error.code` 为 `MFA_TOO_MANY_ATTEMPTS` 或 `RATE_LIMITED`；不创建会话。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/auth/refresh": {
       "post": {
         "tags": [
           "Auth"
         ],
         "summary": "刷新 access token（带轮换）",
-        "description": "通过 HttpOnly Cookie 提交 refresh token；服务端验证哈希、轮换出一份新的 refresh token 并下发新 Cookie。已封禁用户、密码已修改 / 重置后的旧 refresh token 全部失效。",
+        "description": "通过 HttpOnly Cookie 提交 refresh token；服务端验证哈希、在同一 `sessionId` family 内轮换出一份新的 refresh token 并下发新 Cookie。已封禁用户、密码已修改 / 重置后的旧 refresh token 全部失效。rotation predecessor 的重放仍按安全语义撤销全部会话；已经由明确 session 吊销终结的 family 只被拒绝，不会反向踢出其他设备。旧/无效 admin session 返回 `SESSION_REVOKED` 或 `UNAUTHENTICATED`，不会轮换为 MFA 会话。",
         "responses": {
           "200": {
             "description": "新的 access token",
@@ -2618,7 +3044,34 @@
             }
           },
           "401": {
-            "$ref": "#/components/responses/Unauthenticated"
+            "description": "`error.code` 为 `UNAUTHENTICATED` 或 `SESSION_REVOKED`。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`error.code=BAD_REQUEST`（例如账号已封禁）。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "`error.code=RATE_LIMITED`；refresh limiter 按 refresh-cookie hash、缺 cookie 时按 IP 限流。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
           }
         }
       }
@@ -2669,6 +3122,177 @@
           },
           "401": {
             "$ref": "#/components/responses/Unauthenticated"
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "更新当前用户昵称",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateMeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "更新后的完整当前用户 profile。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthUser"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          }
+        }
+      }
+    },
+    "/api/auth/sessions": {
+      "get": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "列出当前用户的活跃设备会话",
+        "description": "按 session family 返回当前用户的活跃、未过期会话。列表只含脱敏摘要，不泄露其他用户或 token/raw IP/完整 UA。",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "当前用户的活跃会话摘要。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`error.code=UNAUTHENTICATED`。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/sessions/{sessionId}": {
+      "delete": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "吊销一个非当前设备会话",
+        "description": "只能吊销自己的另一条 active session family。当前 session 必须调用 `/api/auth/logout` 结束；不存在或不属于当前用户的 session 统一返回 404。",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "sessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "指定非当前 session 已吊销；无响应 body。"
+          },
+          "400": {
+            "description": "`error.code` 为 `VALIDATION_ERROR` 或 `CURRENT_SESSION_REQUIRES_LOGOUT`。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`error.code=UNAUTHENTICATED`。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`error.code=NOT_FOUND`；包含非属主 session，防止存在性枚举。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/sessions/revoke-others": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "吊销当前用户的其他设备会话",
+        "description": "保留发起请求的 current session family，吊销其余活跃 family。",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "其他设备会话的吊销数量。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RevokeOtherSessionsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`error.code=UNAUTHENTICATED`。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
           }
         }
       }

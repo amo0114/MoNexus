@@ -33,6 +33,22 @@ const logLevelEnvSchema = z.preprocess(value => {
   return value
 }, z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'))
 
+/**
+ * MFA seeds are encrypted with AES-256-GCM. We deliberately accept only
+ * canonical RFC 4648 base64 so malformed environment values cannot silently
+ * decode to a shorter key via Node's permissive Buffer decoder.
+ */
+function parseMfaEncryptionKey(value: string | undefined): Buffer | undefined {
+  if (!value) return undefined
+
+  const canonicalBase64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/
+  if (!canonicalBase64.test(value)) return undefined
+
+  const key = Buffer.from(value, 'base64')
+  if (key.length !== 32 || key.toString('base64') !== value) return undefined
+  return key
+}
+
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().default(3000),
@@ -42,6 +58,7 @@ const envSchema = z.object({
   JWT_SECRET: z.string().min(32, 'JWT_SECRET must be at least 32 characters'),
   FRONTEND_ORIGIN: z.string().url(),
   COOKIE_SECURE: booleanEnvSchema.default(false),
+  MFA_ENCRYPTION_KEY: optionalStringEnvSchema,
   USER_STATUS_CACHE_TTL_SEC: z.coerce.number().int().min(0).default(60),
 
   // --- Global /api rate limit (requests per 15 min window per IP).
@@ -137,6 +154,17 @@ if (!parsed.success) {
 }
 
 const env = parsed.data
+const mfaEncryptionKey = parseMfaEncryptionKey(env.MFA_ENCRYPTION_KEY)
+
+if (env.MFA_ENCRYPTION_KEY && !mfaEncryptionKey) {
+  console.error('[Config] MFA_ENCRYPTION_KEY must be canonical base64 for exactly 32 bytes')
+  process.exit(1)
+}
+
+if (env.NODE_ENV === 'production' && !mfaEncryptionKey) {
+  console.error('[Config] MFA_ENCRYPTION_KEY is required in production and must be base64 for exactly 32 bytes')
+  process.exit(1)
+}
 
 if (env.NODE_ENV === 'production' && !env.COOKIE_SECURE) {
   console.error('[Config] COOKIE_SECURE must be true in production')
@@ -220,6 +248,7 @@ export const config = {
   jwtSecret: env.JWT_SECRET,
   frontendOrigin: env.FRONTEND_ORIGIN,
   cookieSecure: env.COOKIE_SECURE,
+  mfaEncryptionKey,
   userStatusCacheTtlSec: env.USER_STATUS_CACHE_TTL_SEC,
   apiRateLimitMax: env.API_RATE_LIMIT_MAX,
   trustProxy: env.TRUST_PROXY,

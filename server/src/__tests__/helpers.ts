@@ -2,6 +2,7 @@ import request from 'supertest'
 import bcrypt from 'bcryptjs'
 import { app } from '../app.js'
 import { prisma } from '../lib/prisma.js'
+import { decryptMfaSecret, generateTotp } from '../modules/auth/mfa.js'
 
 export const api = request(app)
 
@@ -109,10 +110,42 @@ export async function loginAs(
   email: string,
   password: string
 ): Promise<AuthCookies> {
-  const res = await api
+  const initial = await api
     .post('/api/auth/login')
     .send({ email, password })
-    .expect(200)
+
+  let res = initial
+  if (initial.status === 202) {
+    const challengeId = initial.body.challengeId
+    if (typeof challengeId !== 'string') throw new Error('Expected an MFA challenge')
+
+    if (initial.body.status === 'mfa_enrollment_required') {
+      const enrollment = await api
+        .post('/api/auth/mfa/enrollment/start')
+        .send({ challengeId })
+        .expect(200)
+      if (typeof enrollment.body.manualKey !== 'string') throw new Error('Expected an MFA enrollment key')
+      res = await api
+        .post('/api/auth/mfa/enrollment/confirm')
+        .send({ challengeId, code: generateTotp(enrollment.body.manualKey) })
+        .expect(201)
+    } else if (initial.body.status === 'mfa_required') {
+      const user = await prisma.user.findUnique({
+        where: { email },
+        select: { mfaSecretEncrypted: true },
+      })
+      if (!user?.mfaSecretEncrypted) throw new Error('Expected an enrolled test administrator')
+      const code = generateTotp(decryptMfaSecret(user.mfaSecretEncrypted))
+      res = await api
+        .post('/api/auth/mfa/verify')
+        .send({ challengeId, method: 'totp', code })
+        .expect(200)
+    } else {
+      throw new Error('Unexpected MFA challenge state')
+    }
+  }
+
+  if (res.status !== 200 && res.status !== 201) throw new Error('Expected a successful login')
 
   const cookies = (res.headers['set-cookie'] as unknown) as string[] | undefined
   return {
