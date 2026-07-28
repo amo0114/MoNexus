@@ -669,6 +669,8 @@ export async function getOrderDetail(orderId: number) {
       },
       // P6：详情补订阅到期时刻，供仲裁判断交付是否仍在有效期内。
       delivery: { select: { content: true, status: true, expiresAt: true } },
+      // P7b：仲裁上下文透出自动开通任务态 + 脱敏诊断码（安全投影）。
+      provisionTask: { select: { status: true, attempts: true, lastError: true, lastHttpStatus: true, nextAttemptAt: true, merchantNotifiedAt: true, updatedAt: true } },
     },
   })
   if (!order) throw notFound('订单不存在')

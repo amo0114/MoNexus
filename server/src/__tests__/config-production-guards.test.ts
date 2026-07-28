@@ -26,6 +26,8 @@ const PROD_BASE_ENV: Record<string, string> = {
   DELIVERY_STORAGE_BUCKET: 'monexus-files',
   DELIVERY_STORAGE_PUBLIC_ENDPOINT: 'https://shop.example.com',
   MFA_ENCRYPTION_KEY: VALID_MFA_ENCRYPTION_KEY,
+  // P7b：商家 webhook 签名密钥的静态加密密钥（生产必配，64 位 hex）。
+  WEBHOOK_SECRET_ENC_KEY: 'a'.repeat(64),
 }
 
 function loadConfigWith(overrides: Record<string, string | undefined>) {
@@ -91,6 +93,26 @@ describe('production config guard for the MFA encryption key', () => {
     const result = loadConfigWith({ MFA_ENCRYPTION_KEY: Buffer.alloc(31, 7).toString('base64') })
     expect(result.status).toBe(1)
     expect(result.stderr + result.stdout).toContain('32 bytes')
+  })
+})
+
+describe('production config guards for auto-provision webhooks (P7b)', () => {
+  it('refuses to start when WEBHOOK_SECRET_ENC_KEY is missing in production', () => {
+    const result = loadConfigWith({ WEBHOOK_SECRET_ENC_KEY: undefined })
+    expect(result.status).toBe(1)
+    expect(result.stderr + result.stdout).toContain('WEBHOOK_SECRET_ENC_KEY')
+  })
+
+  it('refuses a malformed (non-64-hex) WEBHOOK_SECRET_ENC_KEY in any environment', () => {
+    const result = loadConfigWith({ WEBHOOK_SECRET_ENC_KEY: 'too-short' })
+    expect(result.status).toBe(1)
+    expect(result.stderr + result.stdout).toContain('64 hex')
+  })
+
+  it('refuses AUTO_PROVISION_ALLOW_INSECURE_TARGETS in production (SSRF kill-switch)', () => {
+    const result = loadConfigWith({ AUTO_PROVISION_ALLOW_INSECURE_TARGETS: 'true' })
+    expect(result.status).toBe(1)
+    expect(result.stderr + result.stdout).toContain('AUTO_PROVISION_ALLOW_INSECURE_TARGETS')
   })
 })
 

@@ -372,6 +372,17 @@ export default function ProductDetailPage() {
             </div>
           )}
 
+          {/* P7b：自动开通预告（选中规格 autoProvision 时渲染）——购前明示数据外发（硬验收 ⑤） */}
+          {activeOffer?.autoProvision && (
+            <div className="mb-8 flex flex-wrap items-center gap-2 text-xs" data-testid="auto-provision-disclosure">
+              <span className="text-[var(--color-text-muted)] font-bold">交付方式：</span>
+              <span className="px-2 py-0.5 rounded border border-[var(--color-primary)]/30 bg-[var(--color-primary)]/5 text-[var(--color-primary)] font-medium">
+                商家自动开通
+              </span>
+              <span className="text-[var(--color-text-muted)]">下单后订单与你填写的信息将发送至商家的开通服务，失败自动转人工</span>
+            </div>
+          )}
+
           {/* Price / action bar */}
           <div className="bg-[var(--color-background)] rounded-xl p-6 md:p-8 mb-8 flex flex-col lg:flex-row justify-between items-start lg:items-center border border-[var(--color-border)] gap-6">
             <div className="flex flex-col min-w-max">

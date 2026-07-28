@@ -295,6 +295,27 @@ if [[ -z "$(get SMTP_USER)" || -z "$(get SMTP_PASS)" ]]; then
   fi
 fi
 
+# P7b auto-provision: merchant webhook secrets are encrypted at rest (AES-256-GCM).
+# Without the key the server cannot decrypt stored secrets to sign outbound calls;
+# the config layer already refuses to boot in production without it — mirror that here
+# so the failure surfaces before compose start.
+webhook_enc_key="$(get WEBHOOK_SECRET_ENC_KEY)"
+if [[ -n "$webhook_enc_key" ]]; then
+  if [[ ! "$webhook_enc_key" =~ ^[0-9a-fA-F]{64}$ ]]; then
+    fail "WEBHOOK_SECRET_ENC_KEY must be 64 hex characters (32 bytes) — generate with: openssl rand -hex 32"
+  fi
+elif [[ "$MODE" == "production" ]]; then
+  fail "WEBHOOK_SECRET_ENC_KEY is required in production (merchant webhook secrets are encrypted at rest)"
+fi
+
+# AUTO_PROVISION_ALLOW_INSECURE_TARGETS is a dev-only escape hatch that disables the
+# SSRF protections (https-only, IP pinning) on merchant webhook calls. It must never
+# be truthy in production — the config layer refuses to boot; fail loudly here too.
+allow_insecure="$(get AUTO_PROVISION_ALLOW_INSECURE_TARGETS)"
+if [[ "$MODE" == "production" && "$allow_insecure" == "true" ]]; then
+  fail "AUTO_PROVISION_ALLOW_INSECURE_TARGETS must not be true in production: it disables SSRF protections on merchant webhook calls"
+fi
+
 require_https_url SENTRY_DSN
 vite_sentry_dsn="$(get VITE_SENTRY_DSN)"
 if [[ -n "$vite_sentry_dsn" && "$vite_sentry_dsn" != https://* ]]; then

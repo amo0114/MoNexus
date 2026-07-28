@@ -76,4 +76,6 @@ export interface UserOrderDetail extends Omit<UserOrderListItem, 'delivery'> {
   /** 购买前填写信息：下单时的字段定义与答案快照（仅本人订单详情可见）。 */
   purchaseFormSnapshot?: Array<{ key: string; label: string; type: string }> | null
   purchaseFormAnswers?: Record<string, string> | null
+  /** P7b：自动开通处理中(pending 任务折叠为布尔;成功=已交付,降级=普通人工态)。 */
+  provisionPending?: boolean
 }

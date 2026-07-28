@@ -141,6 +141,14 @@ const envSchema = z.object({
   PORTABLE_BACKUP_WORK_DIR: z.string().min(1).default('/tmp/monexus-portable-backups'),
   PORTABLE_BACKUP_MAX_BYTES: z.coerce.number().int().positive().default(2 * 1024 * 1024 * 1024),
   PORTABLE_RESTORE_BOOTSTRAP_TOKEN: optionalStringEnvSchema,
+
+  // --- P7b 自动开通 webhook 外呼。
+  // 商家 webhook 签名密钥的静态加密密钥（AES-256-GCM，64 位 hex = 32 字节）。
+  // 生产必配；dev/test 缺省时由 JWT_SECRET 派生（webhookSecret.ts）。
+  WEBHOOK_SECRET_ENC_KEY: optionalStringEnvSchema,
+  // 测试逃生：放开 http 与私网目标（e2e stub 接收端跑在 127.0.0.1）。
+  // 生产环境为 true 时拒绝启动——这是 SSRF 防线的总开关。
+  AUTO_PROVISION_ALLOW_INSECURE_TARGETS: booleanEnvSchema.default(false),
 })
 
 const parsed = envSchema.safeParse(process.env)
@@ -240,6 +248,23 @@ if (env.NODE_ENV === 'production' && hasSmtp && !smtpFrom) {
   process.exit(1)
 }
 
+// P7b 自动开通外呼守卫。密钥格式任何环境都校验（错格式加密即坏数据）；
+// 生产必配显式密钥（商家签名密钥静态加密不允许隐式派生），逃生开关生产拒启。
+if (env.WEBHOOK_SECRET_ENC_KEY && !/^[0-9a-fA-F]{64}$/.test(env.WEBHOOK_SECRET_ENC_KEY)) {
+  console.error('[Config] WEBHOOK_SECRET_ENC_KEY must be 64 hex characters (32 bytes)')
+  process.exit(1)
+}
+if (env.NODE_ENV === 'production') {
+  if (!env.WEBHOOK_SECRET_ENC_KEY) {
+    console.error('[Config] WEBHOOK_SECRET_ENC_KEY is required in production (merchant webhook secrets are encrypted at rest)')
+    process.exit(1)
+  }
+  if (env.AUTO_PROVISION_ALLOW_INSECURE_TARGETS) {
+    console.error('[Config] AUTO_PROVISION_ALLOW_INSECURE_TARGETS must not be enabled in production: it disables the SSRF protections on merchant webhook calls')
+    process.exit(1)
+  }
+}
+
 export const config = {
   nodeEnv: env.NODE_ENV,
   isProduction: env.NODE_ENV === 'production',
@@ -317,4 +342,7 @@ export const config = {
   portableRestoreBootstrapToken: env.PORTABLE_RESTORE_BOOTSTRAP_TOKEN,
   passwordResetTokenMaxAgeMs: 30 * 60 * 1000, // 30 min
   emailVerificationTokenMaxAgeMs: 24 * 60 * 60 * 1000, // 24h
+  // P7b 自动开通：null = 未显式配置（dev/test 由 JWT_SECRET 派生）。
+  webhookSecretEncKey: env.WEBHOOK_SECRET_ENC_KEY ?? null,
+  autoProvisionAllowInsecureTargets: env.AUTO_PROVISION_ALLOW_INSECURE_TARGETS,
 }

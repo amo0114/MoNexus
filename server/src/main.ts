@@ -10,6 +10,7 @@ import { startLowStockNotifyCron, stopLowStockNotifyCron } from './lib/lowStockN
 import { startSubscriptionRemindCron, stopSubscriptionRemindCron } from './lib/subscriptionRemind.js'
 import { startSlaRemindCron, stopSlaRemindCron } from './lib/slaRemind.js'
 import { startBookingRemindCron, stopBookingRemindCron } from './lib/bookingRemind.js'
+import { startProvisionCron, stopProvisionCron } from './modules/orders/provisionCron.js'
 
 const server = app.listen(config.port, () => {
   logger.info(`MoNexus API running at http://localhost:${config.port}`)
@@ -19,6 +20,7 @@ const server = app.listen(config.port, () => {
   startSubscriptionRemindCron()
   startSlaRemindCron()
   startBookingRemindCron()
+  startProvisionCron()
 })
 
 let shuttingDown = false
@@ -46,6 +48,7 @@ async function shutdown(signal: NodeJS.Signals) {
   stopSubscriptionRemindCron()
   stopSlaRemindCron()
   stopBookingRemindCron()
+  stopProvisionCron()
       await prisma.$disconnect()
       clearTimeout(forceExit)
       logger.info({ signal }, 'shutdown completed')

@@ -28,6 +28,8 @@ import { Store, Package, ShoppingBag, DollarSign, Settings, Plus, ChevronLeft, C
 import { useAppStore } from '../stores/appStore'
 import MerchantProductFormModal from '../components/merchant/MerchantProductFormModal'
 import MerchantInventoryImportModal from '../components/merchant/MerchantInventoryImportModal'
+import MerchantWebhookConfigSection from '../components/merchant/MerchantWebhookConfigSection'
+import ProvisionBadge from '../components/ProvisionBadge'
 import MerchantInventoryLogModal from '../components/merchant/MerchantInventoryLogModal'
 import MerchantCapacityAdjustModal from '../components/merchant/MerchantCapacityAdjustModal'
 import MerchantOfferManagerModal from '../components/merchant/MerchantOfferManagerModal'
@@ -652,6 +654,11 @@ export default function MerchantDashboardPage() {
                                 截止 {new Date(o.fulfillmentDeadline).toLocaleString()}
                               </div>
                             )}
+                            {o.provisionTask && (
+                              <div className="mt-1">
+                                <ProvisionBadge task={o.provisionTask} idSuffix={o.id} />
+                              </div>
+                            )}
                           </td>
                           <td className="py-3 px-2 text-right whitespace-nowrap" data-label="操作">
                             {o.availableActions?.includes('start_fulfillment') && (
@@ -792,6 +799,7 @@ export default function MerchantDashboardPage() {
                   <button type="submit" className="btn-primary">保存修改</button>
                 </div>
               </form>
+              <MerchantWebhookConfigSection />
             </div>
           )}
         </div>

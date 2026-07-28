@@ -1,7 +1,9 @@
 import { Prisma } from '@prisma/client'
+import { config } from '../../config/index.js'
 import { prisma } from '../../lib/prisma.js'
 import { getSystemConfigValue } from '../../lib/systemConfig.js'
 import { badRequest, notFound, HttpError } from '../../lib/httpError.js'
+import { runProvisionBatch } from './provisionCron.js'
 import {
   createOrderStatusEvent,
   getProductFulfillmentMode,
@@ -192,6 +194,8 @@ async function createOrderOnce(
     claimToken,
   }: CreateOrderOptions & { claimToken?: string }
 ) {
+  // P7b：事务外旁路标记——提交成功后尽力即时首呼（正确性由 cron 兜底）。
+  let autoProvisionTaskCreated = false
   const result = await prisma.$transaction(async tx => {
     const account = await tx.pointAccount.findUnique({ where: { userId } })
     if (!account) throw notFound('积分账户不存在')
@@ -363,6 +367,26 @@ async function createOrderOnce(
       toStatus: order.status,
       action: `order.created.${deliveryMode}`,
     })
+
+    // P7b：自动开通任务（transactional outbox）——下单事务内冻结商家当前
+    // active webhook 配置进任务行，商家事后轮换/撤销配置不影响本单已冻结
+    // 的引用。此刻已无 active 配置（买家预览后商家撤销了配置）→ 整单安全
+    // 失败让买家重新确认，绝不静默转普通人工单（硬验收 ⑤）。
+    if (offer.autoProvision) {
+      const webhookConfig = merchantId == null
+        ? null
+        : await tx.merchantWebhookConfig.findFirst({
+            where: { merchantId, status: 'active' },
+            select: { id: true },
+          })
+      if (!webhookConfig) {
+        throw new HttpError(409, 'AUTO_PROVISION_UNAVAILABLE', '商品信息已变化，请重新确认')
+      }
+      await tx.provisionTask.create({
+        data: { orderId: order.id, webhookConfigId: webhookConfig.id },
+      })
+      autoProvisionTaskCreated = true
+    }
 
     let deliveryContent: string | undefined
     let deliveryContentType: string | undefined
@@ -555,6 +579,14 @@ async function createOrderOnce(
   })
 
   await invalidateProductPublicCache(productId, { detail: true, list: 'coalesced' })
+  if (autoProvisionTaskCreated && config.nodeEnv !== 'test') {
+    // 尽力而为的即时首呼：让买家秒级拿到开通结果；失败/崩溃由 provision
+    // cron 的 60s 轮询兜底,绝不影响下单结果。测试环境不即时触发,由用例
+    // 显式驱动 runProvisionBatch,避免与用例改 maxAttempts 的时序竞态。
+    setImmediate(() => {
+      void runProvisionBatch().catch(() => {})
+    })
+  }
   return result
 }
 
@@ -580,6 +612,9 @@ export async function getOrderDetail(orderId: number, userId: number) {
       // 是否存在未退款的续费单（仅详情；只取存在性，不透出续费单行）——
       // 买家端据此隐藏「续费」入口，指引到链尾（最新订单）操作。
       renewals: { where: { status: { not: 'refunded' } }, select: { id: true }, take: 1 },
+      // P7b：pending 任务 → 买家详情「自动开通中」提示态（序列化层折叠为
+      // provisionPending 布尔，只取 status，绝不透传任务内部字段）。
+      provisionTask: { select: { status: true } },
       // P6b：买家时间线固定契约——仅 action/fromStatus/toStatus/publicNote/
       // createdAt/actorRole 六字段，不透出事件行 id 与操作人用户 id。
       statusEvents: {

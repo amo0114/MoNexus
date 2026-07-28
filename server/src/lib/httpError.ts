@@ -55,6 +55,10 @@ export type ErrorCode =
   // A session-management caller tried to delete its own active family. The
   // existing logout endpoint is the only current-session revocation path.
   | 'CURRENT_SESSION_REQUIRES_LOGOUT'
+  // P7b 自动开通：下单事务内冻结商家 webhook 配置失败（规格开着
+  // autoProvision 但商家已无 active 配置）。语义同 CHECKOUT_CHANGED——
+  // 整单安全失败让买家重新确认，绝不静默转普通人工单（硬验收 ⑤）。
+  | 'AUTO_PROVISION_UNAVAILABLE'
 
 export interface ErrorDetail {
   field: string

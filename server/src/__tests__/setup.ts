@@ -22,6 +22,7 @@ beforeEach(async () => {
     "Settlement",
     "IdempotencyRecord",
     "DeliveryRecord",
+    "ProvisionTask",
     "Order",
     "InventoryLog",
     "InventoryItem",
@@ -34,6 +35,7 @@ beforeEach(async () => {
     "EmailVerificationToken",
     "Product",
     "Offer",
+    "MerchantWebhookConfig",
     "Merchant",
     "PointAccount",
     "User"
