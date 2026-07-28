@@ -153,7 +153,7 @@ export async function runBookingRemindBatch(now = new Date()) {
   } catch (err) {
     logger.error({ err }, 'booking remind batch failed')
   } finally {
-    lease?.stopHeartbeat()
+    lease?.release()
     running = false
   }
 }

@@ -95,7 +95,7 @@ async function runAutoCloseBatch() {
   } catch (err) {
     logger.error({ err }, 'auto-close cron batch failed')
   } finally {
-    lease?.stopHeartbeat()
+    lease?.release()
     running = false
   }
 }

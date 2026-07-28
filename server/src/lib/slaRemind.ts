@@ -155,7 +155,7 @@ export async function runSlaRemindBatch(now = new Date()) {
   } catch (err) {
     logger.error({ err }, 'sla remind batch failed')
   } finally {
-    lease?.stopHeartbeat()
+    lease?.release()
     running = false
   }
 }

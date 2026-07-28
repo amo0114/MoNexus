@@ -5,89 +5,121 @@ import { logger } from './logger.js'
 import { prisma } from './prisma.js'
 
 /**
- * P7a：cron 舰队租约（设计 §2.1）。多实例部署下，同名 job 在任一时刻至多
- * 一个实例执行（运行期互斥），且舰队级至多每 TTL 窗口启动一次（窗口节流）。
+ * P7a：cron 舰队租约（设计 §2.1；PR #52 复审 P1 修订：调度周期与租约解耦）。
  *
- * 硬规则：
+ * 两个正交机制（P1 教训：单一 lockedUntil = now()+周期 且不释放，会与
+ * 「立即首跑 + setInterval(周期)」的节拍差出 ε 毫秒——下一 tick 比过期
+ * 早到而被跳过，实际退化为每两周期执行一次）：
+ *
+ * - **运行互斥**（lockedUntil）：固定短 TTL（90s，与周期无关）+ 心跳
+ *   （30s，三拍全丢才失去互斥）维持；批次结束在 finally 里**立即释放**
+ *   （lockedUntil = now()）；实例崩溃后 ≤ 90s 自然过期。
+ * - **窗口节流**（lastStartedAt）：距上次启动不足 window 的领取一律拒绝；
+ *   window = 周期 − margin（margin = clamp(周期/20, 5s, 60s)）**严格短于
+ *   调度周期**——正常短批次在下一个 tick 必然重新可领，按配置周期运行；
+ *   margin 吸收「timer 创建 → 首跑领取」的 ε 延迟与时钟毫厘。窗口锚定
+ *   批次**开始**时刻，中等长度批次不推迟下一周期。
+ *
+ * 其余硬规则不变：
  * - 时间判定全部用 DB now()——实例时钟漂移不参与任何比较。
- * - 领取是单条原子 upsert：ON CONFLICT 分支在行锁下按最新行版本重评 WHERE，
- *   并发领取者恰有一个拿到 RETURNING 行。
- * - 运行期互斥由**心跳续租**维持（每 TTL/4 把 lockedUntil 推至 now()+TTL，
- *   仅当 leaseToken 仍是自己的）：批次超过 TTL 时互斥仍成立。无续租的
- *   "TTL = 周期"只能称尽力去重，不能称 at-most-once（P7 评审点 5）。
- * - 批次结束**不主动释放**：释放会让同窗口的另一实例立即重跑，违背节流
- *   意图。租约存续至最后一次续期 + TTL；实例崩溃后自然过期（≤ TTL），
- *   同名 job 最大空窗 < 2×周期。
- * - 续租失败（租约被抢——仅在心跳整段丢失后可能）只告警不中断：全部
- *   cron 已有状态表去重/CAS，重复执行是噪音不是数据损坏，中途放弃反而
- *   留下半途状态。
+ * - 领取是单条原子 upsert：ON CONFLICT 分支在行锁下按最新行版本重评
+ *   WHERE，并发领取者恰有一个拿到 RETURNING 行。
+ * - 续租/释放都要 leaseToken 匹配，过期持有者动不到新租约。
+ * - 互斥丢失只告警不中断：全部 cron 已有状态表去重/CAS，重复执行是噪音
+ *   不是数据损坏，中途放弃反而留下半途状态。
  * - test 环境 acquireCronLeaseWithHeartbeat 直通（不触表），既有直调
  *   runXxxBatch 的测试不受影响；租约自身的测试用 force 走真实路径。
+ *
+ * 崩溃空窗上界：互斥 ≤ 90s 过期，窗口按 lastStartedAt 节流到窗口末端，
+ * 接管发生在其后第一个 tick——同名 job 最大空窗仍 < 2×周期。
  */
 
 const HOLDER = `${hostname()}:${process.pid}`
 
-/** 领取租约：领到返回本次 leaseToken，他人持有未过期则返回 null。 */
-export async function tryAcquireCronLease(name: string, ttlMs: number): Promise<string | null> {
+// 运行互斥参数与调度周期无关（解耦核心）：90s TTL、30s 心跳。
+const MUTEX_TTL_MS = 90_000
+const HEARTBEAT_INTERVAL_MS = 30_000
+
+/** 节流窗口 = 周期 − margin，**严格短于周期**（P1 修复核心）；margin 夹在 5s–60s。 */
+export function cronLeaseWindowMs(periodMs: number): number {
+  const margin = Math.min(60_000, Math.max(5_000, Math.floor(periodMs / 20)))
+  return Math.max(Math.floor(periodMs / 2), periodMs - margin)
+}
+
+/** 领取租约：领到返回本次 leaseToken；互斥被持有或距上次启动不足窗口则返回 null。 */
+export async function tryAcquireCronLease(name: string, periodMs: number): Promise<string | null> {
   const token = randomUUID()
   const rows = await prisma.$queryRaw<Array<{ name: string }>>`
-    INSERT INTO "CronLease" ("name", "holder", "leaseToken", "lockedUntil", "updatedAt")
-    VALUES (${name}, ${HOLDER}, ${token}, now() + make_interval(secs => ${ttlMs / 1000}), now())
+    INSERT INTO "CronLease" ("name", "holder", "leaseToken", "lockedUntil", "lastStartedAt", "updatedAt")
+    VALUES (${name}, ${HOLDER}, ${token}, now() + make_interval(secs => ${MUTEX_TTL_MS / 1000}), now(), now())
     ON CONFLICT ("name") DO UPDATE
       SET "holder" = EXCLUDED."holder",
           "leaseToken" = EXCLUDED."leaseToken",
           "lockedUntil" = EXCLUDED."lockedUntil",
+          "lastStartedAt" = EXCLUDED."lastStartedAt",
           "updatedAt" = now()
       WHERE "CronLease"."lockedUntil" <= now()
+        AND "CronLease"."lastStartedAt" <= now() - make_interval(secs => ${cronLeaseWindowMs(periodMs) / 1000})
     RETURNING "name"`
   return rows.length > 0 ? token : null
 }
 
-/** 续租：仅当租约仍属于该 token 时把 lockedUntil 推至 now()+TTL。 */
-export async function renewCronLease(name: string, token: string, ttlMs: number): Promise<boolean> {
+/** 续互斥：仅当租约仍属于该 token 时把 lockedUntil 推至 now()+90s。 */
+export async function renewCronLease(name: string, token: string): Promise<boolean> {
   const updated = await prisma.$executeRaw`
     UPDATE "CronLease"
-    SET "lockedUntil" = now() + make_interval(secs => ${ttlMs / 1000}), "updatedAt" = now()
+    SET "lockedUntil" = now() + make_interval(secs => ${MUTEX_TTL_MS / 1000}), "updatedAt" = now()
+    WHERE "name" = ${name} AND "leaseToken" = ${token}`
+  return updated > 0
+}
+
+/** 释放互斥（批次结束）：lockedUntil 即刻归零；lastStartedAt 保留供窗口节流。 */
+export async function releaseCronLease(name: string, token: string): Promise<boolean> {
+  const updated = await prisma.$executeRaw`
+    UPDATE "CronLease"
+    SET "lockedUntil" = now(), "updatedAt" = now()
     WHERE "name" = ${name} AND "leaseToken" = ${token}`
   return updated > 0
 }
 
 export interface CronLeaseHandle {
-  /** 批次结束时停掉心跳（finally 中调用）。不释放租约本身——窗口节流语义。 */
-  stopHeartbeat(): void
+  /** 批次结束时调用（finally）：停心跳并释放互斥。窗口节流不受影响。 */
+  release(): void
 }
 
-const NOOP_HANDLE: CronLeaseHandle = { stopHeartbeat() {} }
+const NOOP_HANDLE: CronLeaseHandle = { release() {} }
 
 /**
- * 领取租约并启动心跳。返回 null = 本窗口已有实例执行，调用方直接跳过本 tick。
- * 心跳周期 = max(TTL/4, 15s)：短批次通常一次都不触发；超长批次靠它维持互斥。
+ * 领取租约并启动心跳。返回 null = 本窗口已有实例启动过（或互斥被持有），
+ * 调用方直接跳过本 tick。
  */
 export async function acquireCronLeaseWithHeartbeat(
   name: string,
-  ttlMs: number,
+  periodMs: number,
   opts?: { force?: boolean }
 ): Promise<CronLeaseHandle | null> {
   if (config.nodeEnv === 'test' && !opts?.force) return NOOP_HANDLE
 
-  const token = await tryAcquireCronLease(name, ttlMs)
+  const token = await tryAcquireCronLease(name, periodMs)
   if (!token) {
-    logger.debug({ name }, 'cron lease held elsewhere, skipping tick')
+    logger.debug({ name }, 'cron lease window/mutex held, skipping tick')
     return null
   }
   const heartbeat = setInterval(() => {
-    renewCronLease(name, token, ttlMs)
+    renewCronLease(name, token)
       .then(renewed => {
         if (!renewed) {
           logger.warn({ name }, 'cron lease lost mid-batch; continuing — state tables keep re-runs safe')
         }
       })
       .catch(err => logger.warn({ err, name }, 'cron lease renew failed'))
-  }, Math.max(Math.floor(ttlMs / 4), 15_000))
+  }, HEARTBEAT_INTERVAL_MS)
   heartbeat.unref?.()
   return {
-    stopHeartbeat() {
+    release() {
       clearInterval(heartbeat)
+      // 尽力释放：失败无碍（互斥 ≤ 90s 自然过期），不阻塞批次收尾。
+      releaseCronLease(name, token).catch(err => logger.warn({ err, name }, 'cron lease release failed'))
     },
   }
 }

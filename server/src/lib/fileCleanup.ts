@@ -222,7 +222,7 @@ export async function runFileCleanupBatch() {
   } catch (err) {
     logger.error({ err }, 'delivery file cleanup batch failed')
   } finally {
-    lease?.stopHeartbeat()
+    lease?.release()
     running = false
   }
 }

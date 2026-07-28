@@ -218,7 +218,7 @@ export async function runSubscriptionRemindBatch(now = new Date()) {
   } catch (err) {
     logger.error({ err }, 'subscription remind batch failed')
   } finally {
-    lease?.stopHeartbeat()
+    lease?.release()
     running = false
   }
 }

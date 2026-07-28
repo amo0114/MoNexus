@@ -4,7 +4,7 @@
 
 ## 1. 后台定时任务（cron）
 
-全部注册于 `server/src/main.ts`，同构范式：`setInterval` + 重入守卫 + `start/stop` 对 + `unref` + **test 环境跳过** + **CronLease 舰队租约**（P7a）。进程即调度器，多实例部署安全：每个 job 每 tick 先领 `CronLease` 租约（单条原子 upsert，时间判定全部用 DB `now()`，不信任实例时钟），领到才执行；运行期**心跳续租**（每 TTL/4）维持互斥，批次结束不释放——同名 job 舰队级至多每 TTL 窗口启动一次。实例崩溃后租约 ≤ TTL 自然过期，最大空窗 < 2×周期；租约丢失只告警不中断（下表「去重/状态」列保证重跑安全）。观测：`SELECT * FROM "CronLease"`（holder = hostname:pid）。
+全部注册于 `server/src/main.ts`，同构范式：`setInterval` + 重入守卫 + `start/stop` 对 + `unref` + **test 环境跳过** + **CronLease 舰队租约**（P7a）。进程即调度器，多实例部署安全：每个 job 每 tick 先领 `CronLease` 租约（单条原子 upsert，时间判定全部用 DB `now()`），领到才执行。租约含两个解耦机制：**运行互斥**（`lockedUntil`，固定 90s TTL + 30s 心跳，批次结束即释放，崩溃后 ≤ 90s 自然过期）与**窗口节流**（`lastStartedAt`，距上次启动不足「周期 − 5–60s margin」的领取被拒；窗口严格短于调度周期，短批次按配置周期正常运行）。租约丢失只告警不中断（下表「去重/状态」列保证重跑安全）；同名 job 崩溃后最大空窗 < 2×周期。观测：`SELECT * FROM "CronLease"`（holder = hostname:pid）。
 
 | 任务 | 模块 | 周期 | 行为 | 去重/状态 |
 |---|---|---|---|---|
@@ -63,5 +63,5 @@
 | 商家收不到告警邮件 | SMTP 配置（console 兜底会打日志）；`merchant.contactEmail`；对应状态表的 lastNotifiedAt/sentAt |
 | 订阅未到期但买家 403 下载 | 订阅交付（expiresAt 非空）**豁免**平台 `fileAccessWindowDays` 窗口、只受自身有效期约束（FILE_SUBSCRIPTION_EXPIRED）；非订阅交付才受窗口约束（FILE_WINDOW_EXPIRED）——先看订单是否真有 expiresAt |
 | 提醒重复发送 | 预约提醒双封语义（部分失败整体重试）；其余通道检查状态表是否被误删 |
-| cron 未按周期执行 | `SELECT * FROM "CronLease"`——多实例下同窗口已有他实例执行（holder 列）属正常；lockedUntil 卡在未来而 holder 已死 = 等待自然过期（≤ 周期），不需手工清 |
+| cron 未按周期执行 | `SELECT * FROM "CronLease"`——多实例下同窗口已有他实例执行（holder 列 + lastStartedAt）属正常；互斥 `lockedUntil` 卡在未来而 holder 已死 = 心跳残留，≤ 90s 自然过期，不需手工清 |
 | 全量 e2e 本机随机白屏 | WSL2 swap 压力（见 `.claude` 记忆）；`--workers=1 --retries=2` |

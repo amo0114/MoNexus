@@ -188,7 +188,7 @@ export async function runLowStockNotifyBatch(now = new Date()) {
   } catch (err) {
     logger.error({ err }, 'low stock notify batch failed')
   } finally {
-    lease?.stopHeartbeat()
+    lease?.release()
     running = false
   }
 }

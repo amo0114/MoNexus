@@ -2,6 +2,8 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { prisma } from '../lib/prisma.js'
 import {
   acquireCronLeaseWithHeartbeat,
+  cronLeaseWindowMs,
+  releaseCronLease,
   renewCronLease,
   tryAcquireCronLease,
 } from '../lib/cronLease.js'
@@ -42,6 +44,8 @@ async function waitForLockWaiters(min: number): Promise<void> {
 }
 
 describe('P7a — CronLease', () => {
+  const HOUR_MS = 60 * 60 * 1000
+
   beforeEach(async () => {
     await prisma.cronLease.deleteMany({ where: { name: { startsWith: 'p7a-' } } })
   })
@@ -50,40 +54,90 @@ describe('P7a — CronLease', () => {
     // 领取是单条原子 upsert：竞争在 PG 行锁内裁决，没有可控的多语句交错
     // ——Promise.all 并发即真实竞争（barrier 惯例针对的是多语句临界区）。
     const tokens = await Promise.all(
-      Array.from({ length: 8 }, () => tryAcquireCronLease('p7a-race', 60_000))
+      Array.from({ length: 8 }, () => tryAcquireCronLease('p7a-race', HOUR_MS))
     )
     expect(tokens.filter(Boolean)).toHaveLength(1)
   })
 
-  it('reclaims an expired lease and blocks an active one', async () => {
-    await prisma.cronLease.create({
-      data: { name: 'p7a-exp', holder: 'dead:1', leaseToken: 'dead', lockedUntil: new Date(Date.now() - 1000) },
-    })
-    const token = await tryAcquireCronLease('p7a-exp', 60_000)
-    expect(token).toBeTruthy()
-    // 活租约挡住后续领取（窗口节流：批次结束也不释放）。
-    expect(await tryAcquireCronLease('p7a-exp', 60_000)).toBeNull()
+  it('throttle window is strictly shorter than the scheduling period (PR #52 review P1)', () => {
+    // P1 根因：窗口 == 周期时，「立即首跑 + setInterval(周期)」的下一 tick
+    // 恒比窗口末端早 ε 毫秒 → 隔周期执行。修复后 margin ≥ 5s，ε（毫秒级）
+    // 被结构性吸收。
+    for (const periodMs of [HOUR_MS, 24 * HOUR_MS]) {
+      expect(cronLeaseWindowMs(periodMs)).toBeLessThan(periodMs)
+      expect(periodMs - cronLeaseWindowMs(periodMs)).toBeGreaterThanOrEqual(5_000)
+    }
   })
 
-  it('renews only with the owning token', async () => {
-    const token = (await tryAcquireCronLease('p7a-renew', 60_000))!
+  it('after an ε-late first acquisition, the next-period tick still executes and the fleet elects exactly one winner', async () => {
+    // 首跑：timer 创建后 ε 才领到（真实调用路径天然引入 ε），短批次正常释放互斥。
+    const first = await tryAcquireCronLease('p7a-cadence', HOUR_MS)
+    expect(first).toBeTruthy()
+    expect(await releaseCronLease('p7a-cadence', first!)).toBe(true)
+
+    // 下一 tick 在 t0+周期 到来：把行整体回拨一个周期模拟时间流逝（可控
+    // 时序，不靠真实等待/sleep 撞点）。旧 P1 行为（lockedUntil = 领取时刻+
+    // 周期且不释放）在该时刻仍差 ε 未过期而跳过；解耦后窗口（周期−margin）
+    // 已过 + 互斥已释放 → 必须可领，且舰队并发领取恰一胜出。
+    await prisma.$executeRaw`
+      UPDATE "CronLease"
+      SET "lastStartedAt" = "lastStartedAt" - make_interval(secs => ${HOUR_MS / 1000}),
+          "lockedUntil" = "lockedUntil" - make_interval(secs => ${HOUR_MS / 1000})
+      WHERE "name" = 'p7a-cadence'`
+    const winners = await Promise.all(
+      Array.from({ length: 8 }, () => tryAcquireCronLease('p7a-cadence', HOUR_MS))
+    )
+    expect(winners.filter(Boolean)).toHaveLength(1)
+  })
+
+  it('throttles a tick that arrives before the window has elapsed, even with the mutex released', async () => {
+    const first = await tryAcquireCronLease('p7a-window', HOUR_MS)
+    expect(first).toBeTruthy()
+    await releaseCronLease('p7a-window', first!)
+    // 互斥已释放——拒绝只能来自窗口节流（lastStartedAt 距今不足窗口）。
+    expect(await tryAcquireCronLease('p7a-window', HOUR_MS)).toBeNull()
+  })
+
+  it('reclaims a lease past both mutex and window; blocks an active one', async () => {
+    await prisma.cronLease.create({
+      data: {
+        name: 'p7a-exp',
+        holder: 'dead:1',
+        leaseToken: 'dead',
+        lockedUntil: new Date(Date.now() - 1000),
+        lastStartedAt: new Date(Date.now() - 25 * HOUR_MS),
+      },
+    })
+    const token = await tryAcquireCronLease('p7a-exp', HOUR_MS)
+    expect(token).toBeTruthy()
+    expect(await tryAcquireCronLease('p7a-exp', HOUR_MS)).toBeNull()
+  })
+
+  it('renews and releases only with the owning token', async () => {
+    const token = (await tryAcquireCronLease('p7a-renew', HOUR_MS))!
+    // 先把互斥回拨 5s，让「续租后必须变大」的断言不受毫秒分辨率影响。
+    await prisma.$executeRaw`
+      UPDATE "CronLease" SET "lockedUntil" = "lockedUntil" - make_interval(secs => 5)
+      WHERE "name" = 'p7a-renew'`
     const before = await prisma.cronLease.findUniqueOrThrow({ where: { name: 'p7a-renew' } })
-    expect(await renewCronLease('p7a-renew', 'wrong-token', 60_000)).toBe(false)
-    expect(await renewCronLease('p7a-renew', token, 120_000)).toBe(true)
+    expect(await renewCronLease('p7a-renew', 'wrong-token')).toBe(false)
+    expect(await renewCronLease('p7a-renew', token)).toBe(true)
     const after = await prisma.cronLease.findUniqueOrThrow({ where: { name: 'p7a-renew' } })
     expect(after.lockedUntil.getTime()).toBeGreaterThan(before.lockedUntil.getTime())
+    expect(await releaseCronLease('p7a-renew', 'wrong-token')).toBe(false)
+    expect(await releaseCronLease('p7a-renew', token)).toBe(true)
   })
 
   it('force runs the real path; test default passes through without touching the table', async () => {
-    const handle = await acquireCronLeaseWithHeartbeat('p7a-hb', 60_000, { force: true })
+    const handle = await acquireCronLeaseWithHeartbeat('p7a-hb', HOUR_MS, { force: true })
     expect(handle).toBeTruthy()
-    expect(await acquireCronLeaseWithHeartbeat('p7a-hb', 60_000, { force: true })).toBeNull()
-    handle!.stopHeartbeat()
+    expect(await acquireCronLeaseWithHeartbeat('p7a-hb', HOUR_MS, { force: true })).toBeNull()
+    handle!.release()
 
     // nodeEnv=test 直通：既有直调 runXxxBatch 的测试不受租约影响。
-    const passthrough = await acquireCronLeaseWithHeartbeat('p7a-passthrough', 60_000)
+    const passthrough = await acquireCronLeaseWithHeartbeat('p7a-passthrough', HOUR_MS)
     expect(passthrough).toBeTruthy()
-    passthrough!.stopHeartbeat()
+    passthrough!.release()
     expect(await prisma.cronLease.findUnique({ where: { name: 'p7a-passthrough' } })).toBeNull()
   })
 })
