@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | TASK-M3-ISH-001 |
-| 版本 | 1.22.0 |
+| 版本 | 1.26.0 |
 | 日期 | 2026-07-27 |
 | 规格 | [spec.md](./spec.md) |
 | 计划 | [plan.md](./plan.md) |
@@ -45,9 +45,9 @@
 | T-FE-01 | Done | Codex | I-05：Login 200/202 MFA 状态机、QR/手动密钥、恢复码一次确认；M3 专用 UI suite 覆盖 |
 | T-FE-02 | Done | Codex | I-05：Profile 会话列表、单个/其他设备确认吊销；M3 专用 UI suite 覆盖 |
 | T-FE-03 | Todo | | P1：恢复码重生、换机与全会话退出 UI |
-| T-QA-01 | Todo | | 后端安全/并发/迁移测试 |
-| T-QA-02 | Todo | | Playwright 与全量验证 |
-| T-DOC-01 | Todo | | OpenAPI、README、runbook、secrets |
+| T-QA-01 | Done | Codex | I-06：专用库全量 76 files / 618 tests、migration status/drift PASS |
+| T-QA-02 | Done | Codex | I-06：真实 MFA/session/recovery E2E + mock UI 共 10/10，专用 verifier exit 0 |
+| T-DOC-01 | Done (local) | Codex | I-06：OpenAPI、README、runbook、secrets、env/preflight 已收口；PR 描述留待 G-PR 阶段 |
 
 状态枚举：Todo | In Progress | Blocked | Done | Cancelled。
 
@@ -382,12 +382,13 @@ TEST_DATABASE_URL='postgresql://monexus:monexus_dev_2026@localhost:5432/monexus_
 
 **步骤：**
 
-- [ ] 执行并补齐 spec 所有 AC 的 Given/When/Then 测试。
-- [ ] 并发测试：同一个 challenge 的两个 confirm / verify 仅一个成功；同 recovery code 两次仅一次成功。
-- [ ] 轮换和 replay 测试：sessionId 保持，重放仍全吊销。
-- [ ] serializer test：session、安全事件、错误和 logger 均不含秘密/raw IP/完整 UA。
-- [ ] migration invariant：database-default migration 后每条 legacy RefreshToken 都有初始独立 family ID，rotation 保持 family ID，新增索引/非空约束可用。
-- [ ] 运行完整 server test。
+- [x] 执行并补齐 spec 所有 AC 的 Given/When/Then 测试。
+- [x] 并发测试：同一个 challenge 的两个 confirm / verify 仅一个成功；同 recovery code 两次仅一次成功。
+- [x] 轮换和 replay 测试：sessionId 保持，重放仍全吊销。
+- [x] serializer test：session、安全事件、错误和 logger 均不含秘密/raw IP/完整 UA。
+- [x] migration invariant：database-default migration 后每条 legacy RefreshToken 都有初始独立 family ID，rotation 保持 family ID，新增索引/非空约束可用。
+- [x] 在专用库全量 vitest 后重跑 migration status / drift；结论必须由 I-06 runner 记录，不能沿用 I-04 的 pre-I-05 数字。
+- [x] 运行完整 server test。
 
 **DoD：** 全量 vitest 绿，无通过删除或弱化现有 auth assertion 获得的绿。
 
@@ -408,13 +409,15 @@ TEST_DATABASE_URL='postgresql://monexus:monexus_dev_2026@localhost:5432/monexus_
 
 **步骤：**
 
-- [ ] E2E 首次 admin：password → QR/manual key → 生成 TOTP → bind → admin 页面。
-- [ ] E2E 后续 admin：password → correct TOTP → admin；错误 TOTP 不进入后台。
-- [ ] 两个 browser context 登录同用户，当前 context 吊销另一 context；验证另一 context refresh/admin API 被拒。
-- [ ] 专用验证脚本必须拒绝非 `monexus_m3_ish_test` 目标、绝不调用 docker compose、绝不 reset/创建默认 `monexus_test`；只接受显式 `M3_ISH_DATABASE_URL` / `TEST_DATABASE_URL`。
-- [ ] 专用 Playwright config 固定后端 3103、前端 5178、独立 browser context、`reuseExistingServer=false`；服务端 env 明确传入专用数据库、前端源、测试 JWT/MFA key。端口占用即失败，不复用 P6a / 默认服务。
-- [ ] 运行专用验证入口、`npm --prefix server run build`、`npm run build`；不得运行 `npm run verify:local(:no-e2e)` 或默认 `npm run e2e`。
-- [ ] 显式运行 `DATABASE_URL="$M3_ISH_DATABASE_URL" npx prisma migrate status` 和 drift 检查；记录命令和结果。
+- [x] 在 `e2e/m3-identity-security-hardening.real.spec.ts` 以 direct-DB namespaced admin fixture 覆盖首次 admin：password → QR/manual key → 测试进程生成 TOTP → bind → admin 页面；不加 HTTP bypass。`enrollAdministrator` 只在当前测试闭包内返回来自真实 UI 的 manual key/recovery codes，不写 DB assertion、日志、失败信息、trace/screenshot/video 或 commit。
+- [x] E2E 后续 admin：以同一时钟计算前/当前/后 30 秒三个允许 TOTP，选择不在集合中的六码，断言仍停在 MFA 页面；再用正确 TOTP 进入 admin。`openAdmin()` 点击 dashboard 前等待精确 `GET /api/admin/stats`，并断言 200。
+- [x] 新 browser context 以一枚内存中的 recovery code 经真实 UI 成功登录；第三个 context 复用同码失败且未创建 session/cookie。不得输出该 code。
+- [x] 两个 browser context 登录同用户，A 在 Profile 的真实 `session-revoke-device` 确认 UI 精确吊销 B（不以 revoke-others 替代）；断言 A 的 `/api/admin/stats` 仍为 200，B 的 `/auth/refresh` 为 401，B 携带既有 token 的 admin API 为 401 / `SESSION_REVOKED`。
+- [x] fixture setup/cleanup 只作用于 `m3-ish-e2e-*@test.invalid`：每场景清理 SecurityEvent、AuthChallenge、MfaRecoveryCode、RefreshToken、User；不得删除整库或用 direct DB 伪造吊销结果。
+- [x] 专用验证脚本必须拒绝非 `monexus_m3_ish_test` 目标、绝不调用 docker compose、绝不 reset/创建默认 `monexus_test`；只接受显式 `M3_ISH_DATABASE_URL` / `TEST_DATABASE_URL`。
+- [x] 专用 Playwright config 在启动 webServer 前解析数据库 URL 并只接受 pathname `monexus_m3_ish_test`；固定后端 3103、前端 5178、独立 browser context、`reuseExistingServer=false`，并同时匹配 UI-contract / real-E2E M3 spec；每个额外 context 显式传 `test.info().project.use.baseURL`，`trace: 'off'`、`screenshot: 'off'` 且不启用 video。服务端 env 明确传入专用数据库、前端源、测试 JWT/MFA key。端口占用即失败，不复用 P6a / 默认服务。
+- [x] 运行专用验证入口、`npm --prefix server run build`、`npm run build`；不得运行 `npm run verify:local(:no-e2e)` 或默认 `npm run e2e`。
+- [x] 显式运行 `DATABASE_URL="$M3_ISH_DATABASE_URL" npx prisma migrate status` 和 drift 检查；记录命令和结果。
 
 **DoD：** AC-08 通过；若 e2e 有既有 flaky retry，必须记录且不能掩盖本波失败。
 
@@ -435,10 +438,11 @@ TEST_DATABASE_URL='postgresql://monexus:monexus_dev_2026@localhost:5432/monexus_
 
 **步骤：**
 
-- [ ] OpenAPI 写明 login 的 200/202 union、新 MFA 与 session 端点、401/403 错误码。
-- [ ] auth README 描述 MFA/session invariants、rotation、普通 access token 与 admin immediate revoke 的差异。
-- [ ] runbook 添加 key 配置、database-default migration/legacy-admin revoke 顺序、管理员首次绑定、双人 break-glass 与事件审查；不写真实 secret、recovery code 或 token。
-- [ ] secrets inventory 增加 MFA_ENCRYPTION_KEY 的 owner、储存位置、轮换前提与恢复依赖。
+- [x] OpenAPI 写明 login 的 200/202 union、新 MFA 与 session 端点、401/403 错误码；同时补齐既有 `/auth/me` 的 PATCH 与 `AuthUser.nickname` / `emailVerified` 契约漂移，或在 PR 明确拆分理由。
+- [x] auth README 描述 MFA/session invariants、rotation、普通 access token 与 admin immediate revoke 的差异；修正“全 token endpoint 都发 cookie”“revokeAll 删除 token 行”“refresh 使用 authLimiter”等既有不准确表述。
+- [x] runbook 添加 key 配置、database-default migration/legacy-admin revoke 顺序、管理员首次绑定、双人 break-glass 与事件审查；不写真实 secret、recovery code 或 token。break-glass 只能经新建的离线 `auth:break-glass-reset -- --user-id=<id> --case-ref=<OPS-123>` 调用原子服务，禁止 HTTP / direct-SQL MFA reset。
+- [x] production env preflight 与服务启动 guard 同时拒绝缺失、非 canonical 或非 32-byte 的 `MFA_ENCRYPTION_KEY`；模板 lint 的 placeholder 豁免不得进入真实 deploy。
+- [x] secrets inventory 增加 MFA_ENCRYPTION_KEY 的 owner、储存位置、轮换前提与恢复依赖。
 - [ ] PR 描述链接本 spec，列 AC 结果和已知普通用户 access token 最长 15 分钟失效语义。
 
 **DoD：** 文档可让无聊天上下文的运维人员安全执行发布与单 admin 恢复。
@@ -519,3 +523,7 @@ T-00 → T-BE-01 → T-BE-02 → T-BE-03 + T-BE-04 → T-BE-05 → T-FE-01 + T-F
 | 1.20.0 | 2026-07-28 | break-glass 实现前残留审计收紧清理范围：pending enrollment/reconfigure challenge 的加密 seed 也必须置空，并由回归锁定 |
 | 1.21.0 | 2026-07-28 | 在 P6→develop rebase (`4568ee4`) 后启动 I-05；T-FE-01/T-FE-02 由同一 M3-ISH 实施者顺序集成，P7b worktree/runtime 不在任务范围。 |
 | 1.22.0 | 2026-07-28 | T-FE-01/T-FE-02 本地完成：MFA 内存状态、恢复码确认、受控设备会话与 320/375px UI 回归已回填；T-QA-02/AC-08、文档和发布门槛仍待 I-06。 |
+| 1.23.0 | 2026-07-28 | I-06 启动前先冻结 T-QA/T-DOC 的真实 E2E fixture、精确 cleanup、runner、OpenAPI drift 和 README 修订范围；三张任务卡进入 In Progress，尚未编码。 |
+| 1.24.0 | 2026-07-28 | I-06 运维审计将 break-glass 收口为受控离线 CLI，并要求 production preflight 校验 MFA key 的 canonical 32-byte 形式；先同步任务/DoD 再编码。 |
+| 1.25.0 | 2026-07-28 | I-06 复审补入 config 早期 DB 拒绝、context baseURL/无失败产物、确定性窗口外 TOTP、真实 recovery 复用拒绝、单设备 UI 吊销与 `/api/admin/stats` 真实 guard 证据；先同步任务再修测试。 |
+| 1.26.0 | 2026-07-28 | I-06 本地完成：专用 verifier exit 0，38 migrations status/drift clean、76 files / 618 tests、双端 build、模板 preflight、M3 Playwright 10/10 PASS；PR 描述/CI/发布项仍留给 G-PR。 |

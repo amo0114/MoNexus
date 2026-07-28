@@ -30,6 +30,7 @@ Use **environment secrets** for credential material and **environment variables*
 | `POSTGRES_PASSWORD` | Secret | `staging`, `production` | DBA/Ops | PostgreSQL app role credential | Environment secrets | `docker-compose.prod.yml`; host provisioning |
 | `POSTGRES_DB` | Environment variable | `staging`, `production` | DBA/Ops | PostgreSQL database name | Environment variables | `docker-compose.prod.yml`; host provisioning |
 | `JWT_SECRET` | Secret | `staging`, `production` | Backend/Ops | Access-token signing material; rotate with forced refresh-token revocation plan | Environment secrets | backend runtime |
+| `MFA_ENCRYPTION_KEY` | Secret | `staging`, `production` | Security/Ops (primary), Backend lead (backup) | Canonical standard-base64 encoding of exactly 32 random bytes; AES-256-GCM key for administrator TOTP seeds | Environment secrets plus an access-controlled recovery escrow; every API instance in one environment receives the same value | backend runtime; `scripts/check-prod-env.sh` preflight |
 | `COOKIE_SECURE` | Environment variable | `staging`, `production` | Backend/Ops | Enables Secure cookie flag in HTTPS environments | Environment variables | backend runtime |
 | `USER_STATUS_CACHE_TTL_SEC` | Environment variable | `staging`, `production` | Backend/Ops | In-memory status-cache TTL | Environment variables | backend runtime |
 | `SENTRY_DSN` | Secret | `staging`, `production` | Observability | Backend Sentry or GlitchTip DSN | Environment secrets | backend runtime |
@@ -76,12 +77,14 @@ Use **environment secrets** for credential material and **environment variables*
 4. Add environment secrets second. GitHub masks secret values in logs, but workflow authors must still avoid printing or passing them through command-line arguments.
 5. Keep `BACKUP_DATABASE_URL` and `BACKUP_AGE_RECIPIENT` as repository secrets for the scheduled backup workflow. The recipient is public-key material, but treating it as workflow configuration avoids accidental mismatch with the recovery identity. Never store the corresponding age identity in GitHub or on the production VPS.
 6. Ask A1/A5 to consume the deploy names in this document. If `.github/workflows/deploy.yml` is absent on a Wave 1 branch, do not create it from A2.
+7. Generate `MFA_ENCRYPTION_KEY` only in an approved secret-management session; it must be a standard-base64 encoding of exactly 32 bytes. Do not paste it into shell history, chat, PRs, or `.env.example`. The deploy preflight and production server startup both reject missing, non-canonical, or wrong-length values.
 
 ## Rotation Rules
 
 | Secret group | Rotation trigger | Rotation steps |
 | --- | --- | --- |
 | `JWT_SECRET` | Suspected signing leak, operator departure, or scheduled security rotation | Add new value to environment, deploy, revoke all refresh tokens, force re-login, retain incident note. |
+| `MFA_ENCRYPTION_KEY` | Suspected key exposure, loss, or planned cryptographic rotation | **Do not overwrite in place.** Existing encrypted TOTP seeds require the old key. First approve a keyring/re-encryption migration design and rehearse it in staging. If the key is unavailable, use the two-person offline break-glass reset for each affected admin, force fresh MFA enrollment, and retain the incident/case references. |
 | PostgreSQL credentials | DBA rotation window or access leak | Create new DB role credential, update GitHub environment and host env, restart backend, then remove old credential. |
 | SMTP credentials | Provider rotation window or mail abuse incident | Rotate provider credential, update environment secret, redeploy/restart backend, send test password-reset email in staging. |
 | Storage credentials | Storage provider rotation window or object access leak | Create least-privilege replacement key, update environment secret, smoke upload/download in staging, revoke old key. |
@@ -105,3 +108,4 @@ Use **environment secrets** for credential material and **environment variables*
 - A4: default to `ALERT_SLACK_WEBHOOK_URL` or email; `PAGERDUTY_ROUTING_KEY` is optional and production-only.
 - A6/A8: link this inventory in rollback/runbook sections and avoid duplicating secret values.
 - Operators: never paste values into docs, PR comments, issue comments, workflow logs, or screenshots.
+- Security/Ops: retain access-controlled recovery escrow for `MFA_ENCRYPTION_KEY`; losing it does not permit seed export or an HTTP bypass, it requires controlled per-admin MFA reset/re-enrollment.

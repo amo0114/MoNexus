@@ -12,6 +12,7 @@
     "check:nginx": "bash scripts/check-nginx-config.sh",
     "verify:local": "bash scripts/verify-local.sh",
     "verify:local:no-e2e": "RUN_E2E=false bash scripts/verify-local.sh",
+    "verify:m3-identity-security-hardening": "bash scripts/verify-m3-identity-security-hardening.sh",
     "prod:env": "bash scripts/check-prod-env.sh",
     "prod:env:staging": "bash scripts/check-prod-env.sh --mode staging --env-file .env.staging.local",
     "prod:env:staging-template": "bash scripts/check-prod-env.sh --mode staging --env-file .env.staging.example --allow-placeholders",

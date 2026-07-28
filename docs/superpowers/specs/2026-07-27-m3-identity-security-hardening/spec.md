@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | SPEC-M3-ISH-001 |
-| 版本 | 1.22.0 |
+| 版本 | 1.26.0 |
 | 日期 | 2026-07-27 |
 | 状态 | Frozen for Implementation |
 | 产品 | MoNexus |
@@ -88,7 +88,7 @@ MoNexus 已拥有积分调整、封禁、商家审核与停用、佣金修改、
 | D-01 | MFA 覆盖范围 | v1 仅管理员强制 TOTP；数据字段不限制未来为 merchant/user 扩展 |
 | D-02 | 密钥存储 | TOTP seed 采用 AES-256-GCM 加密落库；恢复码只存不可逆高熵 hash；不得只做 base64 或明文存储 |
 | D-03 | 高危操作 step-up | v1 以“管理员登录时 MFA + admin API 实时活动会话校验”为 P0；不在本 PR 对每个业务写操作增加短时二次 TOTP 弹窗。后续若启用，应单列 SPEC 并覆盖积分调整、配置、商家状态/佣金、仲裁、结算、文件吊销 |
-| D-04 | 丢失第二因子 | 无 HTTP 后门、无管理员自助关闭 MFA。恢复码可登录；恢复码也丢失时只走双人审批的离线 break-glass SOP。代码只导出非路由的原子服务：在同一用户锁事务中清空 User 与 pending challenge 内的加密 seed、作废恢复码与未消费 challenge、递增版本、吊销全部会话并写受控工单号的安全事件；之后强制重新绑定 |
+| D-04 | 丢失第二因子 | 无 HTTP 后门、无管理员自助关闭 MFA。恢复码可登录；恢复码也丢失时只走双人审批的离线 break-glass SOP。代码只导出非路由的原子服务，并提供一个只接受显式 `--user-id` 与受控 `--case-ref` 的离线 CLI：在同一用户锁事务中清空 User 与 pending challenge 内的加密 seed、作废恢复码与未消费 challenge、递增版本、吊销全部会话并写受控工单号的安全事件；之后强制重新绑定。CLI 不读取/输出 seed、recovery code、token 或密码，且不得由 HTTP controller 调用 |
 | D-05 | 设备会话语义 | 一个 sessionId 代表一个浏览器/设备登录族；refresh rotation 继承 sessionId。数据库和 API 使用 `sessionId`，JWT claim 固定为短名 `sid`。吊销立即拒绝该族 refresh；admin API 同时校验 `sid` 对应的活动族，故立即拒绝已吊销管理员 token |
 | D-06 | bcrypt 升级 | 目标 rounds=12；不做一次性全表重算。完成正常会话创建的非 admin 成功登录可按需重哈希；管理员处于短期 MFA pre-auth challenge 时绝不保存、跨请求携带或据此重放密码，因此未完成 MFA 前不改 hash，管理员在后续改密/重置时升级为 12 |
 | D-07 | 显式设备吊销与 refresh replay | rotation 消费的旧 token（`revokeReason=refresh_rotation`）及无原因 legacy revoked token 仍视为凭证重放，触发全用户 refresh session 吊销；服务端明确标记为 logout、single_session、revoke_others、revoke_all、MFA reset/migration 的终结家族只返回 401，不得反向吊销仍活动的其他设备。**不能只看被提交行的 reason：**显式吊销可能只写到当时活动的 successor，而历史 predecessor 仍是 `refresh_rotation`；锁后必须按同一 `userId + sessionId` 查找任一显式终结 reason，终结标记优先于 predecessor 的 rotation reason。所有会创建、rotation、单族/其他/全用户吊销 refresh session 的事务，均先获取同一用户的 PostgreSQL transaction-scoped advisory lock，随后重新读取并作状态判断/写入；初始 raw-token 查询只可用于定位 userId，不能据此决定行为。任何同一事务既修改 `User` 又改变 refresh session 的路径（包括改密/重置、管理员封禁和商家角色变化）都必须**先**取得该用户 advisory lock，才取得 `User` 写锁；不得先 `tx.user.update` 再等待 session lock。这样显式吊销成功返回后，不能再有已并发 rotation 的 successor 留存，也不会与密码路径形成锁顺序反转。`revokeReason` 只由服务端写入；全用户服务端吊销默认写 `revoke_all`，历史无 reason 行仍按 legacy replay 处理。 |
@@ -386,6 +386,20 @@ Given 全量测试和生产配置检查
 When 本波 PR 合并前执行  
 Then vitest、相关 Playwright、双端 build、Prisma drift 检查以及 production env guard 全部通过。
 
+### AC-08.1 真实整栈证据协议（I-06 冻结）
+
+已有的 `e2e/m3-identity-security-hardening.spec.ts` 是浏览器状态、可访问性与秘密不持久化的 mock contract suite；它不能单独作为 AC-08 的整栈证据。I-06 必须另以真实后端、真实浏览器 cookie jar 和专用 PostgreSQL 完成下列场景：
+
+1. 每个场景由 Playwright 测试进程直接在 `monexus_m3_ish_test` 创建一个带随机 `m3-ish-e2e-` 前缀、`@test.invalid` 后缀的 admin fixture。该 direct-DB seed 只创建测试数据，不添加 HTTP 路由、controller 开关、`NODE_ENV` 行为分支或可在运行时调用的测试后门。
+2. seed 使用进程内生成的测试密码；首次绑定必须经真实 `/auth/login`、`/auth/mfa/enrollment/start`、`/auth/mfa/enrollment/confirm`。`enrollAdministrator` 只能在当前测试闭包内返回从真实 UI 取得的 manual key 与一次性 recovery codes；不得写入 fixture、测试产物、日志、异常消息或数据库。测试不得从数据库读取/写入 MFA seed，也不得通过任何导出接口取得 recovery code。
+3. 已绑定登录场景必须先提交一个明确不在当前允许窗口内的 6 位 TOTP：测试以同一时钟计算 `now - 30s`、`now`、`now + 30s` 三个允许码，再选择不属于该集合的码。断言仍停留在 MFA 页面且不能进入 admin；再提交正确 TOTP，断言可进入 `/admin`。
+4. recovery code 场景必须在新的 browser context 经真实“使用恢复码”登录：一枚内存中的未用码成功建立会话；再在另一新 context 复用同码，断言失败且没有 session/cookie。code 不得出现在 Playwright trace、screenshot、video、日志或失败输出。
+5. 会话场景必须使用两个独立 browser context：A 经 Profile 的真实单设备 `session-revoke-device` 确认 UI 精确吊销 B，而不是以“退出其他设备”替代。确认后 A 的 `GET /api/admin/stats` 仍为 200；B 以自己的 refresh cookie 调用 `/auth/refresh` 得到 401，且以自己已签发 access token 调用 admin API 得到 401 / `SESSION_REVOKED`。不得以直写 `RefreshToken.revoked` 代替 UI 操作。
+6. `openAdmin()` 不能只断言静态页面文本：点击 dashboard 前必须等待精确的 `GET /api/admin/stats` 响应并断言 200，作为真实 admin guard 成功证据。
+7. 每个 fixture 在 `afterEach` 精确清除其自身的 `SecurityEvent`、`AuthChallenge`、`MfaRecoveryCode`、`RefreshToken` 与 User 行；运行开始也只回收同一固定命名空间的遗留 fixture。不得使用 `migrate reset`、删库、默认 `monexus_test` 或共享开发库。
+
+专用验证入口只接受显式 `M3_ISH_DATABASE_URL` / `TEST_DATABASE_URL` 且数据库名严格等于 `monexus_m3_ish_test`；Playwright config 自身必须在启动 webServer 前解析并拒绝任何其他 pathname，不能仅依赖 fixture 的晚期校验。固定 backend `3103`、frontend `5178`、`reuseExistingServer=false`。每个 `browser.newContext()` 显式传入 `test.info().project.use.baseURL`；M3 config 固定 `trace: 'off'`、`screenshot: 'off'` 且不启用 video，防止失败产物泄露 MFA 秘密。端口或数据库不可用即失败，绝不借用其他 worktree 的服务。
+
 ---
 
 ## 11. 风险与开放问题
@@ -454,6 +468,10 @@ Then vitest、相关 Playwright、双端 build、Prisma drift 检查以及 produ
 | 1.20.0 | 2026-07-28 | break-glass 残留审计收紧“清空 seed”：除 User 列外，已消费的 pending challenge 也必须置空其加密 seed |
 | 1.21.0 | 2026-07-28 | P6 已进入 develop，M3-ISH 已在 `4568ee4` 完成 rebase；I-05 前端实施获准启动。仅解除既有 ProfilePage ownership 闸门，不改变 MFA、session 或秘密不持久化决策。 |
 | 1.22.0 | 2026-07-28 | I-05 的前端实现与隔离 UI 验证完成；仅回填实施证据，不改变任何已冻结需求或安全决策。 |
+| 1.23.0 | 2026-07-28 | I-06 编码前冻结 AC-08 的真实整栈证据：专用库 direct-DB fixture 的严格边界、真实 enrollment/TOTP、双 browser-context UI 吊销及精确 cleanup；不改变产品或认证决策。 |
+| 1.24.0 | 2026-07-28 | I-06 只读运维审计发现已有 break-glass 原子服务缺少可审计离线调用入口；D-04 收敛为受 `--user-id`/`--case-ref` 约束的无 HTTP CLI 与双人 SOP，不改变凭证作废语义。 |
+| 1.25.0 | 2026-07-28 | I-06 复审将 real-E2E 证据收紧为启动前专用 DB 校验、显式 context baseURL、无秘密失败产物、窗口外错误 TOTP、真实 recovery 一次性登录及精确单设备吊销/admin API 断言；不改变产品或认证决策。 |
+| 1.26.0 | 2026-07-28 | I-06 按 1.25.0 的冻结证据协议完成本地验证：专用 verifier 退出 0、76 files / 618 tests、双端 build、漂移检查及 10 条 M3 Playwright 通过；产品决策不变，PR/CI/发布门槛仍独立。 |
 
 ---
 

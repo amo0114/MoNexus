@@ -3,9 +3,9 @@
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | IMPL-M3-ISH-001 |
-| 版本 | 1.22.0 |
+| 版本 | 1.26.0 |
 | 日期 | 2026-07-27 |
-| 状态 | I-00 至 I-05 Done (local)；全波 PR 仍受 I-06 / 最终门禁约束 |
+| 状态 | I-00 至 I-06 Done (local)；PR / CI / release 仍受最终门禁约束 |
 | 输入 | [spec.md](./spec.md) · [plan.md](./plan.md) · [task.md](./task.md) · [checklist.md](./checklist.md) |
 | 方法依据 | [JavaGuide Spec Coding：Specify → Plan → Tasks → Implement](https://javaguide.cn/ai-coding/practices/spec-coding.html) |
 
@@ -97,7 +97,7 @@ schema.prisma 是唯一共同文件。安全任务不得重排、格式化或编
 | I-03 | T-BE-04 | Done (local) | auth session service、auth refresh/session boundary、全用户 revoke audit、routes/serializer/tests；P1 仅限 admin service 三处 lock 调用 | `auth-sessions` 11/11、全量后端 65 files / 520 tests（575.53s）、server/root build 均 PASS；二次安全复审无 P0/P1。P6c→develop rebase 仍是 PR 前闸门 |
 | I-04 | T-BE-03 + T-BE-05 | Done (local) | auth service/controller/schema/routes、auth middleware、admin route、orders route、announcements controller、auth tests | 已 rebase `origin/develop@4568ee4`；MFA flow、guard、bcrypt、密码变更 challenge 作废、D-04 无 HTTP break-glass、文件取证/公告旁路均完成。75 files / 611 tests、server/root build、38-migration status/drift 通过；I-05 前端 202 流未完成，故不可 PR/合并 |
 | I-05 | T-FE-01 + T-FE-02 | Done (local) | LoginPage、ProfilePage、独立 auth security components、auth API、M3 专用 Playwright config | 登录 200/202 union、二维码本地渲染、恢复码确认前不写 store、MFA 失败不 refresh/replay、设备确认吊销；3103/5178 的 UI suite 6/6、双端 build 与 diff check PASS。真实整栈 QA/文档仍归 I-06 |
-| I-06 | T-QA-01 + T-QA-02 + T-DOC-01 | Todo | tests、OpenAPI、auth README、runbook、checklist | 完整验证、rebase 后 drift、所有 P0 勾选、PR 准备完成 |
+| I-06 | T-QA-01 + T-QA-02 + T-DOC-01 | Done (local) | `e2e/m3-identity-security-hardening.real.spec.ts`、其最小 DB fixture、M3 config/verify script、受限 break-glass CLI、production env checker、OpenAPI、auth README、runbook、secrets、checklist；不得碰 P7b worktree/runtime | 单一专用 verifier exit 0：38 migrations status/drift clean、76 files / 618 tests、server/frontend build、staging template guard、10/10 M3 Playwright PASS；config/context/secret、recovery、single-device revoke 均有真实证据。PR 描述、CI 和 release 仍待 G-PR。 |
 | I-07 | T-BE-06 + T-FE-03 | Todo (P1) | MFA security settings、revoke-all API/UI | 不削弱 P0 guard；若纳入 PR 则 P1 checklist 全部有证据，若拆后续则在 PR 明确链接 follow-up |
 
 ### 当前任务的标准循环
@@ -120,7 +120,7 @@ schema.prisma 是唯一共同文件。安全任务不得重排、格式化或编
 | Auth | MFA/challenge/recovery/session 定向 vitest | server npm test |
 | Guard | admin 旧 token、吊销 session、普通 user/merchant 拒绝 | auth + admin 回归 |
 | Frontend | npm run build、秘密不入 persisted store、关键 testid | MFA / sessions Playwright |
-| Integration | 专用库、3103/5178、`reuseExistingServer=false` 的 smoke | `npm run verify:m3-identity-security-hardening` 与独立 M3-ISH e2e |
+| Integration | 专用库、3103/5178、`reuseExistingServer=false` 的 smoke；config 启动前 DB pathname 拒绝、MFA 秘密不进入失败产物 | `npm run verify:m3-identity-security-hardening` 与独立 M3-ISH e2e |
 | Documentation | OpenAPI、README、runbook、checklist 证据 | P0 全部勾选 |
 
 验证失败只能修当前任务、修 spec，或明确报告 Blocked；不得删除/放松测试、跳过 migration 或在 P6a 环境中“借跑”。
@@ -163,6 +163,10 @@ schema.prisma 是唯一共同文件。安全任务不得重排、格式化或编
 | 2026-07-28 | I-04 | Done (local) | `auth-mfa` 14/14；全量 server 75 files / 611 tests PASS（915.71s）；server/root build PASS；38 migrations status/drift clean | D-04 break-glass、密码变更 pre-auth 失效与非 admin-router MFA 旁路均有回归；未改并行 worktree/runtime。I-05 前端 MFA 流、I-06 docs/QA 尚未完成，故不推送/不开 PR |
 | 2026-07-28 | I-05 | In Progress | HEAD `097b4c9`；T-FE-01 + T-FE-02 | P6 已入 develop 且 M3 已 rebase `4568ee4`，故仅在本 worktree 开始 LoginPage / ProfilePage 集成；P7b worktree、branch、未提交文件与运行时资源零触碰。 |
 | 2026-07-28 | I-05 | Done (local) | `MfaEnrollment` / `MfaVerification` / `RecoveryCodeConfirmation` / `SessionManager`；M3 独立 Playwright 6/6（3103/5178、专用库）；frontend/server build 与 `git diff --check` PASS | 精确 API-path 测试夹具防止误拦 Vite 模块；验证 recovery/access token 不在确认前持久化、失败因子不 refresh/replay、单/其他会话确认吊销及 320/375px 无横向溢出。仅 M3 worktree/runtime 被使用；I-06 仍阻止 PR。 |
+| 2026-07-28 | I-06 | In Progress | HEAD `237ff25`；已先完成 contract 审计并将真实 E2E/runbook 范围同步至 Specify → Plan → Tasks → Implement → Checklist | 仅此 M3 worktree、`monexus_m3_ish_test`、3103/5178；不读取、编辑、测试、格式化或切换 `/root/projects/MoNexus-new`。先实现 runner/real E2E，再更新外部契约文档与全量证据。 |
+| 2026-07-28 | I-06 | In Progress | 只读运维审计确认 server startup 已校验 MFA key、但 production preflight 未覆盖且 break-glass 没有安全的命令入口 | 已先同步 Spec → Plan → Tasks → Implement → Checklist：新增无 HTTP CLI 和 canonical-base64-32 preflight；不改变原子 service 或 data model。 |
+| 2026-07-28 | I-06 | In Progress | real-E2E 只读复审发现 baseURL/启动前 DB 校验、recovery 一次性、失败产物与单设备 revoke 证据不足 | 已先将文档包升至 1.25.0：冻结精确的 config/context/secret、窗口外 TOTP、recovery、`session-revoke-device`、admin stats 规则；旧版 verifier 已停止，待测试修复后重新全量验证。 |
+| 2026-07-28 | I-06 | Done (local) | 单一隔离 verifier exit 0：status/diff、76 files / 618 tests（754.49s）、server/frontend build、staging template preflight、Playwright 10/10（49.4s） | 复审发现均由真实 E2E/config 回归覆盖；错误 DB 启动前拒绝与 break-glass CLI 7/7 已另行定向验证。没有触碰 P7b worktree/runtime；未推送、未开 PR。 |
 
 ---
 
@@ -187,6 +191,10 @@ schema.prisma 是唯一共同文件。安全任务不得重排、格式化或编
 | 1.20.0 | 2026-07-28 | break-glass 残留审计将 pending challenge 密文纳入清空范围；完成前必须由回归验证 |
 | 1.21.0 | 2026-07-28 | P6→develop rebase 已满足，解除 I-05 的旧 ProfilePage ownership 阻塞并启动唯一 In Progress 的 I-05；记录 P7b 的 worktree/runtime 零干扰边界。 |
 | 1.22.0 | 2026-07-28 | I-05 本地完成并回填行为、隔离 UI suite、双端构建与 diff-check 证据；不把 mock-based UI suite 误记为 I-06 的真实整栈 AC-08。 |
+| 1.23.0 | 2026-07-28 | I-06 在编码前完成 Specify → Plan → Tasks → Implement → Checklist 同步：冻结专用 runner、real E2E fixture/cleanup 和文档契约审计范围。 |
+| 1.24.0 | 2026-07-28 | I-06 运维审计后先冻结离线 break-glass CLI 与 MFA key preflight 的 implementation contract，再进入相应代码编辑。 |
+| 1.25.0 | 2026-07-28 | I-06 real-E2E 复审后先冻结早期 DB 防护、显式 context baseURL、无秘密失败产物、确定性 TOTP/recovery、精确单设备 revoke 与真实 admin API 断言，再进入测试修复。 |
+| 1.26.0 | 2026-07-28 | I-06 本地交付完成并回填单一专用 verifier 证据；保留 PR/CI/release 门槛，未将本地绿误记为上线批准。 |
 
 ---
 

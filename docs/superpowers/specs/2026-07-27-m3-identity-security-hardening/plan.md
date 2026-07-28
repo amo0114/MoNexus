@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | PLAN-M3-ISH-001 |
-| 版本 | 1.22.0 |
+| 版本 | 1.26.0 |
 | 日期 | 2026-07-27 |
 | 状态 | Frozen for Implementation |
 | 规格 | [spec.md](./spec.md)（SPEC-M3-ISH-001） |
@@ -332,16 +332,35 @@ Phase A ──► Phase B ──► Phase C ──► Phase D ──► Phase E
 | Unit | AES-GCM round trip / 错 key、TOTP 时间窗口、恢复码 hash/一次性 claim、device/IP 脱敏、bcrypt rehash 判定 |
 | Integration | admin login 202 → enroll → verify → admin guard；challenge 超时/超限；recovery code；session list/revoke；refresh rotation/replay；rotation 后 stale predecessor 的 explicit revoke 与 family-marker 判定；真实 transaction lock 的无 sleep 排队/connection-affinity 证明 |
 | Security regression | no cookie before MFA、旧 token 拒绝、owner 404、raw secret/log redaction、admin revoked token 立即拒绝 |
-| E2E | admin 首次绑定与后续登录；两个 browser context 的 session revoke；非 admin 登录回归 |
+| E2E | admin 首次绑定、窗口外错误 TOTP、真实 recovery code 一次性登录；两个 browser context 的精确单设备 revoke；非 admin 登录回归 |
 | Build / deploy | frontend build、server build、Prisma migration status/drift、production env guard |
 
 测试实现要求：
 
 - 通过 injectable clock 或 TOTP adapter 固定时钟；禁止等待 30 秒。
-- Playwright 可从首次绑定页面读取手动密钥并在测试进程生成 TOTP，不设后门 API。
+- Playwright 可从首次绑定页面读取手动密钥并在测试进程生成 TOTP，不设后门 API；错误码必须显式避开 `now - 30s` / `now` / `now + 30s` 的允许集合，不能只换一个 secret 侥幸期望失败。
 - 单元/集成/迁移测试一律显式使用 `monexus_m3_ish_test`；不得在生产、共享开发库、P6a 库或默认 `monexus_test` 建测试管理员。
 - 不得运行 `npm run verify:local(:no-e2e)` 或默认 `npm run e2e`：它们会管理共享 compose / 默认数据库 / 3000、5173。T-QA-02 必须新增专用验证入口，固定后端 3103、前端 5178、专用数据库，并设 `reuseExistingServer=false`；端口/数据库不可用即失败，不借用已有服务。
 - 任何 log assertion 都只断言“秘密不存在”，不把秘密原样输出到失败信息。
+
+### 6.1 I-06 真实 E2E 与验证入口设计（编码前冻结）
+
+| 组件 | 方案 | 安全 / 隔离边界 |
+| --- | --- | --- |
+| UI contract | 保留 `e2e/m3-identity-security-hardening.spec.ts` | 仅 mock 浏览器契约，不能勾选 AC-08 |
+| 真实 E2E | 新增 `e2e/m3-identity-security-hardening.real.spec.ts` 与其最小 DB fixture helper | 真实 HTTP、真实 cookie、真实 guard；不增加 test-only HTTP API |
+| fixture | 测试进程以显式 `M3_ISH_DATABASE_URL` 的 Prisma client 建随机 namespaced admin，密码仅存测试进程内存 | 只允许数据库名 `monexus_m3_ish_test`；`enrollAdministrator` 只在测试闭包内返回 UI 获得的 manual key/recovery codes，绝不写 artifact、日志或异常；每场景 afterEach 精确删除 fixture 的 auth/security 子记录和 User，启动时仅回收同前缀遗留项 |
+| TOTP / recovery | 从真实 enrollment UI 读取 manual key，在 Playwright 进程生成当前码；新 context 用一枚 recovery code 真正登录并验证复用失败 | 错 TOTP 必须显式避开允许的前/当前/后 30 秒窗口；不从 DB 读取 seed，不等待时间窗口，不记录 manual key / code，不让失败再建 session |
+| session E2E | A/B 两个独立 browser context；A 经 Profile 的 `session-revoke-device` 确认 UI 精确吊销 B | A 的真实 `/api/admin/stats` 仍为 200；B refresh 为 401、B admin API 为 401 / `SESSION_REVOKED`；不直写 token revoke 状态，不复用 cookie/context |
+| runner | `scripts/verify-m3-identity-security-hardening.sh` + 根 `verify:m3-identity-security-hardening` script | config 在 webServer 前严格解析 DB pathname；只跑 status/diff、全量 server vitest、双端 build、production env template guard 和专用 Playwright；禁止 compose、`migrate reset`、默认 E2E |
+
+新 Playwright config 继续固定 `3103/5178`、单 worker 和 `reuseExistingServer=false`，并匹配 mock 与 real 两类 M3 文件。验证脚本若同时收到 `M3_ISH_DATABASE_URL` 与 `TEST_DATABASE_URL`，两者必须相同；任何一个指向非专用库即拒绝执行。config 还必须在 webServer 创建前用 URL pathname 精确拒绝非 `monexus_m3_ish_test` 的目标；所有额外 `browser.newContext()` 显式继承 `test.info().project.use.baseURL`，`trace: 'off'`、`screenshot: 'off'`、不启用 video。`openAdmin()` 必须等待精确 `GET /api/admin/stats` 的 200，而不是只验证静态 dashboard 文本。
+
+### 6.2 Break-glass 离线入口与 production preflight
+
+- `server/src/scripts/resetAdminMfaForBreakGlass.ts` 只能通过服务端 package 的显式 `auth:break-glass-reset -- --user-id=<positive-int> --case-ref=<OPS-123>` 调用已冻结的原子服务；不得增加 controller、route、测试环境 bypass 或直接 SQL 清 seed/recovery/session。
+- CLI 只输出受控 `userId`、`caseRef`、`revokedCount` 与新 `mfaVersion`，不读取或打印任何 MFA seed、recovery code、token、cookie、密码或数据库 URL；输入不合规则失败且不产生状态变化。
+- `scripts/check-prod-env.sh` 必须和 server 启动 guard 一样校验 `MFA_ENCRYPTION_KEY` 是 canonical standard-base64 的 32-byte 值。`--allow-placeholders` 只允许模板 lint，真实 staging/production deploy 仍拒绝缺失/非法值。
 
 ---
 
@@ -430,3 +449,7 @@ Phase A ──► Phase B ──► Phase C ──► Phase D ──► Phase E
 | 1.20.0 | 2026-07-28 | break-glass 最小暴露审计：已消费的 pending challenge 同时清空加密 seed，不留无用的密文材料 |
 | 1.21.0 | 2026-07-28 | P6→develop rebase 已完成，Phase D 的 ProfilePage ownership gate 解除；I-05 仍受独立 worktree/runtime 与前端秘密不持久化约束。 |
 | 1.22.0 | 2026-07-28 | Phase D 的 P0 前端路径已在 M3 专用 worktree 完成并以独立 UI suite 验证；Phase E 的真实整栈 E2E、文档与发布门槛仍保持未完成。 |
+| 1.23.0 | 2026-07-28 | Phase E 编码前冻结真实 E2E 的 fixture、TOTP、双 context 吊销、严格 cleanup 和专用 runner 方案；mock UI suite 明确不承担 AC-08。 |
+| 1.24.0 | 2026-07-28 | Phase E 运维实现细化：break-glass 只经受限离线 CLI 触达原子服务，production preflight 同步验证 canonical 32-byte MFA key。 |
+| 1.25.0 | 2026-07-28 | I-06 复审收紧 real-E2E 证据：DB 必须在 config 启动前拒绝错误目标，context 显式 baseURL、失败产物关闭；新增确定性错 TOTP、真实 recovery 单次性、精确单设备吊销与 admin stats 断言。 |
+| 1.26.0 | 2026-07-28 | I-06 以单一隔离 verifier 完成本地执行：38 migrations status/drift clean、76 files / 618 tests、双端 build、staging template guard 与 10/10 M3 Playwright PASS；PR/CI/发布门槛未因本地证据自动解除。 |

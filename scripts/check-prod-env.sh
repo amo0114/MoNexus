@@ -193,6 +193,32 @@ require_int() {
   fi
 }
 
+require_canonical_base64_32() {
+  local key="$1"
+  local value
+  value="$(get "$key")"
+  require_value "$key"
+
+  if [[ -z "$value" ]]; then
+    return
+  fi
+  if [[ "$ALLOW_PLACEHOLDERS" == "true" ]] && is_placeholder_literal "$value"; then
+    return
+  fi
+
+  # Pipe the value rather than placing it on a child-process command line.
+  # The check enforces standard, canonical base64 and exactly 32 decoded bytes.
+  if ! printf '%s' "$value" | node -e '
+    const { readFileSync } = require("node:fs")
+    const raw = readFileSync(0, "utf8")
+    const validAlphabet = /^[A-Za-z0-9+/]+={0,2}$/.test(raw)
+    const decoded = validAlphabet ? Buffer.from(raw, "base64") : Buffer.alloc(0)
+    if (!validAlphabet || decoded.length !== 32 || decoded.toString("base64") !== raw) process.exit(1)
+  '; then
+    fail "$key must be canonical standard base64 for exactly 32 bytes"
+  fi
+}
+
 require_value POSTGRES_USER
 require_value POSTGRES_PASSWORD
 require_value POSTGRES_DB
@@ -206,6 +232,8 @@ if [[ ${#jwt_secret} -lt 32 ]]; then
     fail "JWT_SECRET must be at least 32 characters"
   fi
 fi
+
+require_canonical_base64_32 MFA_ENCRYPTION_KEY
 
 require_https_url FRONTEND_ORIGIN
 require_bool_true COOKIE_SECURE

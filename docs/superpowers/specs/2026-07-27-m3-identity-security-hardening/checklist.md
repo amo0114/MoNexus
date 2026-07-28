@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | CHK-M3-ISH-001 |
-| 版本 | 1.22.0 |
+| 版本 | 1.26.0 |
 | 日期 | 2026-07-27 |
 | 规格 | [spec.md](./spec.md) |
 | 计划 | [plan.md](./plan.md) |
@@ -163,9 +163,11 @@
 | AC-05 | 会话隔离与单会话吊销 | ☑ |
 | AC-06 | 管理员被吊销会话即时失效 | ☑ |
 | AC-07 | bcrypt 升级与秘密不泄露 | ☑ |
-| AC-08 | 全量回归 | ☐ |
+| AC-08 | 全量回归（本地专用 verifier） | ☑ |
 
 详细 Given/When/Then 见 spec.md §10。
+
+**I-06 执行约束：** `e2e/m3-identity-security-hardening.spec.ts` 的 mock UI suite 不能勾选 AC-08。只有真实 HTTP / cookie / admin guard 的 M3 real suite 才能勾选：fixture 只能是 `monexus_m3_ish_test` 中 `m3-ish-e2e-*@test.invalid` 的短生命周期 admin；config 必须在 webServer 前拒绝其他 DB pathname；每个额外 context 显式 baseURL，trace/screenshot/video 均不产出 MFA 秘密；TOTP 必须来自真实 UI manual key 且错误码明确避开前/当前/后 30 秒允许窗口；一枚内存 recovery code 必须成功登录且复用失败无会话；A 必须经 Profile 的 `session-revoke-device` UI 精确吊销 B，A 的真实 admin stats 仍为 200，B 的 refresh 与 admin API 必须分别为 401 和 401 / `SESSION_REVOKED`；afterEach 只精确清理 fixture 自身的 auth/security 子记录与 User，不允许 `migrate reset` 或全库删除。
 
 ---
 
@@ -176,22 +178,23 @@
 - [x] **CHK-QA-03** server 全量 npm test PASS。
 - [x] **CHK-QA-04** npm --prefix server run build PASS。
 - [x] **CHK-QA-05** npm run build PASS。
-- [ ] **CHK-QA-06** `npm run verify:m3-identity-security-hardening` PASS：脚本只使用显式专用库，不调用 compose、不触碰默认 `monexus_test`。
+- [x] **CHK-QA-06** `npm run verify:m3-identity-security-hardening` PASS：脚本只使用显式专用库，不调用 compose、不触碰默认 `monexus_test`。
 - [x] **CHK-QA-07** Prisma migrate status/drift 检查 PASS，且命令显式使用 `M3_ISH_DATABASE_URL`。
-- [ ] **CHK-QA-08** admin MFA 和 session revoke Playwright tests 在 M3-ISH 专用 config（3103/5178、`reuseExistingServer=false`）PASS。
-- [ ] **CHK-QA-09** 不运行默认 `npm run e2e`；本波专用 Playwright suite PASS，CI 中的全量 E2E/CI OK 另由隔离 runner 验证。
+- [x] **CHK-QA-08** admin MFA 和 session revoke Playwright tests 在 M3-ISH 专用 config（3103/5178、`reuseExistingServer=false`）PASS：config 在 webServer 前严格拒绝非专用 DB，context 显式 baseURL，`openAdmin()` 以 `GET /api/admin/stats` 200 证明真实 guard；错误 TOTP 避开允许窗口，recovery code 成功一次/复用失败无 session，`session-revoke-device` 精确吊销另一 context。
+- [x] **CHK-QA-09** 不运行默认 `npm run e2e`；本波专用 Playwright suite PASS，`trace: 'off'`、`screenshot: 'off'`、video 未启用，CI 中的全量 E2E/CI OK 另由隔离 runner 验证。
 - [ ] **CHK-QA-10** CI 的 CI OK 聚合检查绿。
 
 **证据：**
 
 ~~~text
-vitest: TEST_DATABASE_URL=monexus_m3_ish_test npm --prefix server test → 75 files / 611 tests PASS (915.71s)
+isolated verifier: M3_ISH_DATABASE_URL=<isolated monexus_m3_ish_test> npm run verify:m3-identity-security-hardening → exit 0
+prisma: 38 migrations up to date; migrate diff → No difference detected
+vitest: 76 files / 618 tests PASS (754.49s)
 server build: npm --prefix server run build → PASS
 frontend build: npm run build → PASS
-isolated verify:
-prisma: 38 migrations up to date; migrate diff → No difference detected
-playwright:
-M3 UI suite: M3_ISH_DATABASE_URL=<isolated monexus_m3_ish_test> npx playwright test --config=playwright.m3-identity-security-hardening.config.ts → 6/6 PASS (24.5s)
+staging template guard: npm run prod:env:staging-template → PASS (expected placeholder warnings only)
+playwright: M3 UI + real suite → 10/10 PASS (49.4s); no trace/screenshot/video artifacts
+targeted safeguards: wrong DB config rejected before webServer; auth-break-glass CLI 7/7 PASS; OpenAPI JSON parse and bash -n PASS
 CI:
 ~~~
 
@@ -199,12 +202,12 @@ CI:
 
 ## 10. 文档与运维（P1；发布前 P0）
 
-- [ ] **CHK-DOC-01** OpenAPI 同步 login 200/202 union、MFA/session endpoints、错误码与 auth scheme。
-- [ ] **CHK-DOC-02** auth module README 写明 session rotation、admin MFA guard、普通与 admin 吊销语义。
-- [ ] **CHK-DOC-03** server/.env.example、根 .env.example、production guard 文档 MFA_ENCRYPTION_KEY，不提供任何默认真实 key。
-- [ ] **CHK-DOC-04** secrets-management 记录 key owner、存放位置、备份/恢复依赖、轮换的“需另行设计”限制。
-- [ ] **CHK-DOC-05** runbook 包含发布前密钥核对、首次绑定、SecurityEvent 审查、两人审批 break-glass、强制重新绑定。
-- [ ] **CHK-DOC-06** runbook 明确禁止 HTTP bypass、直接读取/导出 MFA seed/recovery hash，以及回滚到无 MFA admin API。
+- [x] **CHK-DOC-01** OpenAPI 同步 login 200/202 union、MFA/session endpoints、错误码与 auth scheme。
+- [x] **CHK-DOC-02** auth module README 写明 session rotation、admin MFA guard、普通与 admin 吊销语义。
+- [x] **CHK-DOC-03** server/.env.example、根 .env.example、production guard 文档 MFA_ENCRYPTION_KEY，不提供任何默认真实 key；deploy 前检查与服务启动均拒绝缺失、非 canonical 或非 32-byte base64 值。
+- [x] **CHK-DOC-04** secrets-management 记录 key owner、存放位置、备份/恢复依赖、轮换的“需另行设计”限制。
+- [x] **CHK-DOC-05** runbook 包含发布前密钥核对、首次绑定、SecurityEvent 审查、两人审批 break-glass、强制重新绑定；break-glass 只能经不暴露 HTTP 的受限 CLI 调用原子服务，绝不允许 direct-SQL 清 seed/recovery/session。
+- [x] **CHK-DOC-06** runbook 明确禁止 HTTP bypass、直接读取/导出 MFA seed/recovery hash，以及回滚到无 MFA admin API。
 - [ ] **CHK-DOC-07** PR 描述清楚 D-03 的 step-up 边界、普通 access token 失效最大窗口和回滚策略。
 
 **证据：** 文档链接 / staging 演练记录：________________
@@ -283,3 +286,7 @@ P0 豁免默认不允许。唯一例外是仓库负责人明确书面批准的�
 | 1.20.0 | 2026-07-28 | CHK-MFA-13 收紧为 pending challenge 密文也必须清空，防止 break-glass 留下无用敏感材料 |
 | 1.21.0 | 2026-07-28 | I-05 在 P6→develop rebase 后开始执行；CHK-FE-01..07 保持未勾选，直至前端实现、独立验证与证据回填完成。 |
 | 1.22.0 | 2026-07-28 | I-05 完成并勾选 CHK-FE-01..07；记录专用 UI suite 6/6、双端 build 与 diff-check。CHK-QA-08/09 和 AC-08 仍留给 I-06 的真实整栈验证。 |
+| 1.23.0 | 2026-07-28 | 在 I-06 编码前将 AC-08 的 real-E2E/non-bypass/fixture cleanup 门槛写入 checklist；未提前勾选 QA 或 AC。 |
+| 1.24.0 | 2026-07-28 | 记录 I-06 运维收口：MFA key 的 production preflight 与 server guard 必须一致；break-glass 仅走受限离线 CLI / 双人 SOP，未提前勾选文档门禁。 |
+| 1.25.0 | 2026-07-28 | I-06 复审将 real-E2E 的启动前 DB 拒绝、baseURL/无失败产物、窗口外错误 TOTP、recovery 单次性、精确单设备 revoke 与真实 admin API 验证列为未勾选的 P0 QA 证据。 |
+| 1.26.0 | 2026-07-28 | I-06 本地 verifier 退出 0 后勾选 AC-08（local）及 QA/DOC 已验证项；76 files / 618 tests、10/10 Playwright 与静态门禁已记录，PR/CI/release 项保持未勾选。 |

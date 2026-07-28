@@ -1,22 +1,38 @@
 import { defineConfig, devices } from '@playwright/test'
 
-const databaseUrl = process.env.M3_ISH_DATABASE_URL
+const isolatedDatabaseName = 'monexus_m3_ish_test'
 
-if (!databaseUrl) {
-  throw new Error('M3_ISH_DATABASE_URL is required for the isolated M3-ISH Playwright suite')
+function isolatedDatabaseUrl() {
+  const databaseUrl = process.env.M3_ISH_DATABASE_URL
+  if (!databaseUrl) {
+    throw new Error('M3_ISH_DATABASE_URL is required for the isolated M3-ISH Playwright suite')
+  }
+
+  try {
+    if (new URL(databaseUrl).pathname !== `/${isolatedDatabaseName}`) throw new Error('wrong database')
+    return databaseUrl
+  } catch {
+    throw new Error('M3-ISH Playwright requires the isolated monexus_m3_ish_test database')
+  }
 }
+
+const databaseUrl = isolatedDatabaseUrl()
 
 export default defineConfig({
   testDir: './e2e',
-  testMatch: 'm3-identity-security-hardening.spec.ts',
+  testMatch: [
+    'm3-identity-security-hardening.spec.ts',
+    'm3-identity-security-hardening.real.spec.ts',
+  ],
   timeout: 30_000,
   retries: 0,
   workers: 1,
   reporter: 'list',
   use: {
     baseURL: 'http://127.0.0.1:5178',
-    trace: 'on-first-retry',
-    screenshot: 'only-on-failure',
+    trace: 'off',
+    screenshot: 'off',
+    video: 'off',
   },
   projects: [
     { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
