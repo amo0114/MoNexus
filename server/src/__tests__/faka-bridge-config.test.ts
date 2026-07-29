@@ -19,6 +19,8 @@ const PROD_BASE_ENV: Record<string, string> = {
   DELIVERY_STORAGE_BUCKET: 'monexus-files',
   DELIVERY_STORAGE_PUBLIC_ENDPOINT: 'https://shop.example.com',
   MFA_ENCRYPTION_KEY: VALID_MFA_ENCRYPTION_KEY,
+  // P7b：生产必配；缺省会先于 Faka 守卫 process.exit(1)
+  WEBHOOK_SECRET_ENC_KEY: 'a'.repeat(64),
 }
 
 function loadConfigWith(overrides: Record<string, string | undefined>) {
@@ -39,7 +41,11 @@ function loadConfigWith(overrides: Record<string, string | undefined>) {
 
 describe('FakaBridge production config guards', () => {
   it('boots without FakaBridge env (feature off)', () => {
-    const result = loadConfigWith({})
+    // Clear both so local server/.env cannot re-enable Faka via dotenv.
+    const result = loadConfigWith({
+      FAKA_BRIDGE_URL: '',
+      FAKA_BRIDGE_SECRET: '',
+    })
     expect(result.status).toBe(0)
     expect(result.stdout).toContain('CONFIG_OK')
     expect(result.stdout).toContain('FAKA=false')
@@ -55,9 +61,10 @@ describe('FakaBridge production config guards', () => {
   })
 
   it('refuses partial config (URL without SECRET)', () => {
+    // Empty string (not omit): dotenv/config must not refill SECRET from local .env.
     const result = loadConfigWith({
       FAKA_BRIDGE_URL: 'https://v.uuwu.de/plugin/faka-bridge/order-paid',
-      FAKA_BRIDGE_SECRET: undefined,
+      FAKA_BRIDGE_SECRET: '',
     })
     expect(result.status).toBe(1)
     expect(result.stderr + result.stdout).toContain('FAKA_BRIDGE_URL and FAKA_BRIDGE_SECRET')
@@ -65,7 +72,7 @@ describe('FakaBridge production config guards', () => {
 
   it('refuses partial config (SECRET without URL)', () => {
     const result = loadConfigWith({
-      FAKA_BRIDGE_URL: undefined,
+      FAKA_BRIDGE_URL: '',
       FAKA_BRIDGE_SECRET: 'only-secret-no-url-here-32chars-min!!',
     })
     expect(result.status).toBe(1)
