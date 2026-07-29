@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const nodemailerMock = vi.hoisted(() => ({
   createTransport: vi.fn(),
   sendMail: vi.fn(),
+  close: vi.fn(),
 }))
 
 vi.mock('nodemailer', () => ({
@@ -18,8 +19,10 @@ describe('mailer adapter', () => {
     vi.unstubAllEnvs()
     nodemailerMock.createTransport.mockReset()
     nodemailerMock.sendMail.mockReset()
+    nodemailerMock.close.mockReset()
     nodemailerMock.createTransport.mockReturnValue({
       sendMail: nodemailerMock.sendMail,
+      close: nodemailerMock.close,
     })
     nodemailerMock.sendMail.mockResolvedValue(undefined)
   })
@@ -45,12 +48,14 @@ describe('mailer adapter', () => {
       html: '<p>HTML body</p>',
     })
 
+    // R4:transport 按次创建(socket 一一对应),含 dnsTimeout、分段超时与
+    // getSocket 代理钩子(总 deadline 的真实中断抓手)。
     expect(nodemailerMock.createTransport).toHaveBeenCalledTimes(1)
-    expect(nodemailerMock.createTransport).toHaveBeenCalledWith({
+    expect(nodemailerMock.createTransport).toHaveBeenCalledWith(expect.objectContaining({
       host: 'smtp.monexus.test',
       port: 587,
       secure: false,
-      // R3:SMTP 硬超时(连接/问候/套接字)——总和必须小于通知租约窗口。
+      dnsTimeout: 5_000,
       connectionTimeout: 10_000,
       greetingTimeout: 10_000,
       socketTimeout: 15_000,
@@ -58,7 +63,8 @@ describe('mailer adapter', () => {
         user: 'sender@monexus.test',
         pass: 'super-secret-smtp-pass',
       },
-    })
+      getSocket: expect.any(Function),
+    }))
     expect(nodemailerMock.sendMail).toHaveBeenCalledTimes(1)
     expect(nodemailerMock.sendMail).toHaveBeenCalledWith({
       from: 'sender@monexus.test',

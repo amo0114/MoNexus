@@ -25,10 +25,10 @@ import {
   NOTIFY_LEASE_MS,
 } from '../modules/orders/provisionCron.js'
 import {
-  SMTP_CONNECTION_TIMEOUT_MS,
-  SMTP_GREETING_TIMEOUT_MS,
-  SMTP_SOCKET_TIMEOUT_MS,
+  SmtpMailer,
+  SMTP_TOTAL_DEADLINE_MS,
 } from '../lib/mailer/smtp.js'
+import { createServer as createTcpServer } from 'node:net'
 import * as webhookConfigService from '../modules/merchant/webhookConfig.js'
 import { __setActiveConfigLockHooksForTests } from '../modules/merchant/webhookConfig.js'
 import { CaptureMailer } from '../lib/mailer/capture.js'
@@ -374,22 +374,23 @@ describe('R2-P2 复审回归:并发写侧的商家级稳定锁', () => {
   })
 })
 
-describe('R2-P2 复审回归:降级邮件的多实例认领', () => {
-  async function seedDegradedTask() {
-    const seed = await seedAutoProvision()
-    const res = await api
-      .post('/api/orders')
-      .set(authHeader(seed.buyer.accessToken))
-      .send({ productId: seed.product.id })
-      .expect(201)
-    await flushImmediate()
-    await prisma.provisionTask.update({
-      where: { orderId: res.body.orderId },
-      data: { status: 'degraded', lastError: 'http_502' },
-    })
-    return { seed, orderId: res.body.orderId as number }
-  }
+/** 建一条已降级、未通知的任务(降级邮件类回归共用)。 */
+async function seedDegradedTask() {
+  const seed = await seedAutoProvision()
+  const res = await api
+    .post('/api/orders')
+    .set(authHeader(seed.buyer.accessToken))
+    .send({ productId: seed.product.id })
+    .expect(201)
+  await flushImmediate()
+  await prisma.provisionTask.update({
+    where: { orderId: res.body.orderId },
+    data: { status: 'degraded', lastError: 'http_502' },
+  })
+  return { seed, orderId: res.body.orderId as number }
+}
 
+describe('R2-P2 复审回归:降级邮件的多实例认领', () => {
   it('两个实例并发扫描同一批降级任务:租约 CAS 认领,只发一封', async () => {
     const { orderId } = await seedDegradedTask()
     const sent: MailMessage[] = []
@@ -456,9 +457,103 @@ describe('R2-P2 复审回归:降级邮件的多实例认领', () => {
     expect(task.leaseToken).toBeNull()
   })
 
-  it('R3 约束:通知租约窗口必须大于 SMTP 硬超时之和(在途发送不与重发重叠)', () => {
-    expect(NOTIFY_LEASE_MS).toBeGreaterThan(
-      SMTP_CONNECTION_TIMEOUT_MS + SMTP_GREETING_TIMEOUT_MS + SMTP_SOCKET_TIMEOUT_MS
-    )
+  it('R3 约束:通知租约窗口必须大于 SMTP 总发送 deadline(在途发送不与重发重叠)', () => {
+    // R4 修正:分段超时之和不能作总时限(socketTimeout 是无活动超时、
+    // dnsTimeout 有默认 30s)——约束对象改为真实墙钟总 deadline。
+    expect(NOTIFY_LEASE_MS).toBeGreaterThan(SMTP_TOTAL_DEADLINE_MS)
+  })
+})
+
+/**
+ * 最小慢滴 SMTP 假服务器:正常完成握手/信封/DATA,在收到报文终止符「.」后
+ * 以每 100ms 一个字节"续命"最终响应且永不成行——所有分段超时
+ * (connection/greeting/socket-idle)都不会触发,总 deadline 是唯一防线。
+ */
+function startDripSmtpServer() {
+  const state = { connections: 0, closed: 0 }
+  const server = createTcpServer(sock => {
+    state.connections += 1
+    sock.on('close', () => { state.closed += 1 })
+    sock.on('error', () => {})
+    sock.write('220 drip ESMTP\r\n')
+    let buffer = ''
+    let inData = false
+    sock.on('data', chunk => {
+      buffer += chunk.toString('utf8')
+      let idx: number
+      while ((idx = buffer.indexOf('\r\n')) !== -1) {
+        const line = buffer.slice(0, idx)
+        buffer = buffer.slice(idx + 2)
+        if (inData) {
+          if (line === '.') {
+            const timer = setInterval(() => { if (!sock.destroyed) sock.write('2') }, 100)
+            sock.once('close', () => clearInterval(timer))
+          }
+          continue
+        }
+        const cmd = line.toUpperCase()
+        if (cmd.startsWith('EHLO') || cmd.startsWith('HELO')) sock.write('250-drip\r\n250 SMTPUTF8\r\n')
+        else if (cmd === 'DATA') { inData = true; sock.write('354 go\r\n') }
+        else if (cmd === 'QUIT') { sock.write('221 bye\r\n'); sock.end() }
+        else sock.write('250 OK\r\n')
+      }
+    })
+  })
+  return { server, state }
+}
+
+describe('R4 复审回归:SMTP 真实总时限 × 通知租约不重叠', () => {
+  it('慢滴 SMTP 最终响应被总 deadline 真实切断——服务端观察到连接关闭,而非仅 Promise 落定', async () => {
+    const { server, state } = startDripSmtpServer()
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
+    const port = (server.address() as { port: number }).port
+    try {
+      const mailer = new SmtpMailer({
+        host: '127.0.0.1', port, secure: false, from: 'ops@test.local', totalDeadlineMs: 800,
+      })
+      const t0 = Date.now()
+      await expect(
+        mailer.send({ to: 'merchant@test.local', subject: 'drip', text: 'x' })
+      ).rejects.toThrow(/total deadline/)
+      expect(Date.now() - t0).toBeLessThan(5000)
+      // 真实中断的判据:服务端 socket 关闭(getSocket 持有的 TCP 被 destroy)。
+      await vi.waitFor(() => expect(state.closed).toBe(1))
+    } finally {
+      await new Promise<void>(resolve => server.close(() => resolve()))
+    }
+  })
+
+  it('R4 关键窗口:A 的 SMTP 在途存活期间 B 不进入 send;A 被 deadline 终止释放租约后才可重试', async () => {
+    const { orderId } = await seedDegradedTask()
+    const { server, state } = startDripSmtpServer()
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
+    const port = (server.address() as { port: number }).port
+    try {
+      __setMailerForTesting(new SmtpMailer({
+        host: '127.0.0.1', port, secure: false, from: 'ops@test.local', totalDeadlineMs: 1200,
+      }))
+      const instanceA = notifyDegradedTasks()
+      // barrier:A 已建立 SMTP 连接 = 已持租约进入 send。
+      await vi.waitFor(() => expect(state.connections).toBe(1))
+
+      // B:A 的租约在途 → 认领 CAS 必然 count=0,绝不进入 send(连接数不变)。
+      await notifyDegradedTasks()
+      expect(state.connections).toBe(1)
+
+      // A 被总 deadline 强制终止(服务端观察到断连)→ 失败路径释放租约。
+      await instanceA
+      await vi.waitFor(() => expect(state.closed).toBe(1))
+      const afterA = await prisma.provisionTask.findUniqueOrThrow({ where: { orderId } })
+      expect(afterA.merchantNotifiedAt).toBeNull()
+      expect(afterA.leaseUntil).toBeNull()
+
+      // 此后 B 重试才被允许(至少一次语义)。
+      const sent: MailMessage[] = []
+      __setMailerForTesting({ send: async msg => { sent.push(msg) } })
+      await notifyDegradedTasks()
+      expect(sent).toHaveLength(1)
+    } finally {
+      await new Promise<void>(resolve => server.close(() => resolve()))
+    }
   })
 })
