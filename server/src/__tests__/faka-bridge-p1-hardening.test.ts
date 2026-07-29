@@ -9,12 +9,15 @@ import {
   processFakaBridgeTask,
   onFakaOrderRefundedInTx,
   runFakaReconcileBatch,
+  selectStuckFakaTasksForReconcile,
   isFakaProvisionSuccessStatus,
   classifyFakaRemoteStatus,
   assertOfferProvisionMutex,
   sendProvisionEmailCode,
   confirmProvisionEmailCode,
   readTaskScheduleUtc,
+  fakaRemoteOrderNoMatches,
+  processFakaRevokeTask,
 } from '../lib/fakaBridge/index.js'
 import type { FakaTransport } from '../lib/fakaBridge/types.js'
 import { createTestUser } from './helpers.js'
@@ -824,7 +827,7 @@ describe('P1 hardening', () => {
     }
   })
 
-  it('reconcile candidate SQL: Asia/Shanghai session must not probe future nextAttemptAt', async () => {
+  it('reconcile candidate SQL: SET LOCAL Asia/Shanghai must not select future nextAttemptAt', async () => {
     const { user } = await verifiedBuyer()
     const { product, offer } = await fakaProduct()
     const created = await createOrder(user.id, product.id, {
@@ -834,7 +837,7 @@ describe('P1 hardening', () => {
     })
     const task = await prisma.fakaBridgeTask.findUniqueOrThrow({ where: { orderId: created.orderId } })
 
-    // Park as needs_reconcile, old enough for stuck age, but nextAttemptAt 5 minutes ahead (UTC wall).
+    // Park as needs_reconcile, old enough for stuck age, nextAttemptAt 5 minutes ahead (UTC wall).
     await prisma.$executeRaw`
       UPDATE "FakaBridgeTask"
       SET
@@ -849,46 +852,101 @@ describe('P1 hardening', () => {
       WHERE "id" = ${task.id}
     `
 
-    let statusProbes = 0
-    __setFakaClientOverridesForTests({
-      url: config.fakaBridge.url,
-      secret: config.fakaBridge.secret,
-      transport: (async ({ url }) => {
-        if (String(url).includes('order-status')) {
-          statusProbes += 1
-          return {
-            status: 200,
-            text: JSON.stringify({
-              success: true,
-              order_no: task.requestOrderNo,
-              status: 'failed',
-              trade_no: null,
-            }),
-          }
-        }
-        return { status: 500, text: '{}' }
-      }) as FakaTransport,
-    })
+    // Same transaction + connection: SET LOCAL then candidate helper (no pool race).
+    await prisma.$transaction(async tx => {
+      await tx.$executeRawUnsafe(`SET LOCAL TIME ZONE 'Asia/Shanghai'`)
+      const now = new Date()
+      const future = await selectStuckFakaTasksForReconcile(tx, 50, now)
+      expect(future.some(r => r.id === task.id)).toBe(false)
 
-    // Pool connection under +08 — unsafe Prisma Date filters would wrongly select this row.
-    await prisma.$executeRawUnsafe(`SET TIME ZONE 'Asia/Shanghai'`)
-    try {
-      await runFakaReconcileBatch(20)
-      expect(statusProbes).toBe(0)
-
-      // Make nextAttemptAt due (UTC wall) and re-run — exactly one probe.
-      await prisma.$executeRaw`
+      await tx.$executeRaw`
         UPDATE "FakaBridgeTask"
         SET "nextAttemptAt" = (CURRENT_TIMESTAMP AT TIME ZONE 'UTC') - interval '1 second'
         WHERE "id" = ${task.id}
       `
-      await runFakaReconcileBatch(20)
-      expect(statusProbes).toBe(1)
-      const order = await prisma.order.findUniqueOrThrow({ where: { id: created.orderId } })
-      expect(order.status).toBe('refunded')
-    } finally {
-      await prisma.$executeRawUnsafe(`SET TIME ZONE 'UTC'`)
-    }
+      const due = await selectStuckFakaTasksForReconcile(tx, 50, now)
+      expect(due.some(r => r.id === task.id)).toBe(true)
+    })
+  })
+
+  it('paid response order_no mismatch does not deliver; parks needs_reconcile', async () => {
+    expect(fakaRemoteOrderNoMatches({ order_no: 'MN-1' }, 'MN-1')).toBe(true)
+    expect(fakaRemoteOrderNoMatches({ order_no: 'MN-OTHER' }, 'MN-1')).toBe(false)
+    expect(fakaRemoteOrderNoMatches({ order_no: null }, 'MN-1')).toBe(false)
+    expect(fakaRemoteOrderNoMatches({}, 'MN-1')).toBe(false)
+
+    const { user } = await verifiedBuyer()
+    const { product, offer } = await fakaProduct()
+    const created = await createOrder(user.id, product.id, {
+      offerId: offer.id,
+      expectedPrice: 100,
+      idempotencyKey: randomUUID(),
+    })
+    const task = await prisma.fakaBridgeTask.findUniqueOrThrow({ where: { orderId: created.orderId } })
+
+    __setFakaClientOverridesForTests({
+      url: config.fakaBridge.url,
+      secret: config.fakaBridge.secret,
+      transport: (async () => ({
+        status: 200,
+        text: JSON.stringify({
+          success: true,
+          order_no: 'MN-WRONG-OTHER-ORDER',
+          status: 'completed',
+          trade_no: 'XB-CROSS',
+        }),
+      })) as FakaTransport,
+    })
+
+    const outcome = await processFakaBridgeTask(task.id)
+    expect(outcome).toBe('retry_scheduled')
+    const done = await prisma.fakaBridgeTask.findUniqueOrThrow({ where: { id: task.id } })
+    expect(done.status).toBe('needs_reconcile')
+    const order = await prisma.order.findUniqueOrThrow({ where: { id: created.orderId } })
+    expect(order.status).not.toBe('delivered')
+  })
+
+  it('revoke order_no mismatch keeps revoke pending for retry', async () => {
+    const { user } = await verifiedBuyer()
+    const { product, offer } = await fakaProduct()
+    const created = await createOrder(user.id, product.id, {
+      offerId: offer.id,
+      expectedPrice: 100,
+      idempotencyKey: randomUUID(),
+    })
+    const task = await prisma.fakaBridgeTask.findUniqueOrThrow({ where: { orderId: created.orderId } })
+    await prisma.order.update({ where: { id: created.orderId }, data: { status: 'refunded' } })
+    await prisma.fakaBridgeTask.update({
+      where: { id: task.id },
+      data: {
+        status: 'succeeded',
+        xboardTradeNo: 'XB-1',
+        revokeStatus: 'pending',
+        leaseToken: null,
+        leaseUntil: null,
+      },
+    })
+
+    __setFakaClientOverridesForTests({
+      url: config.fakaBridge.url,
+      secret: config.fakaBridge.secret,
+      transport: (async () => ({
+        status: 200,
+        text: JSON.stringify({
+          success: true,
+          order_no: 'MN-TOTALLY-WRONG',
+          status: 'revoked',
+          trade_no: 'XB-1',
+          expired_user: true,
+        }),
+      })) as FakaTransport,
+    })
+
+    const outcome = await processFakaRevokeTask(task.id)
+    expect(outcome).toBe('failed')
+    const done = await prisma.fakaBridgeTask.findUniqueOrThrow({ where: { id: task.id } })
+    expect(done.revokeStatus).toBe('pending')
+    expect(done.lastRevokeError).toBe('FAKA_ORDER_NO_MISMATCH')
   })
 
   it('OTP concurrent first-send: one mail, peer gets rate limit not 500', async () => {

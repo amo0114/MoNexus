@@ -16,6 +16,7 @@ export {
   isFakaBridgeConfigured,
   buildFakaExternalOrderNo,
   defaultFakaTransport,
+  fakaRemoteOrderNoMatches,
 } from './client.js'
 export type { FakaBridgeClientOptions } from './client.js'
 
@@ -37,8 +38,10 @@ export {
   processFakaRevokeTask,
   runFakaRevokeBatch,
   runFakaReconcileBatch,
+  selectStuckFakaTasksForReconcile,
   __setFakaLifecycleClientOverridesForTests,
 } from './lifecycle.js'
+export type { StuckFakaTaskRow } from './lifecycle.js'
 
 export {
   sendProvisionEmailCode,

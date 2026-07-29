@@ -9,9 +9,15 @@ import {
   fakaRevokePendingGauge,
   fakaTasksGauge,
 } from '../metrics.js'
-import { callFakaOrderPaid, callFakaOrderStatus, isFakaBridgeConfigured } from './client.js'
+import {
+  callFakaOrderPaid,
+  callFakaOrderStatus,
+  fakaRemoteOrderNoMatches,
+  isFakaBridgeConfigured,
+} from './client.js'
 import {
   classifyFakaRemoteStatus,
+  FAKA_ERROR,
   isFakaNonRetryable,
   isFakaProvisionSuccessStatus,
   isFakaUncertainResult,
@@ -301,6 +307,21 @@ export async function processFakaBridgeTask(taskId: number): Promise<ProcessOutc
     isFakaProvisionSuccessStatus(bodyStatus, tradeNo)
 
   if (provisionOk) {
+    // Must bind remote order_no to our requestOrderNo before deliver.
+    // Missing/mismatch → park for status probe on the expected order no (do not deliver).
+    const paidBody =
+      result.body && result.body.success === true
+        ? (result.body as { order_no?: string | null })
+        : null
+    if (!fakaRemoteOrderNoMatches(paidBody, claimed.requestOrderNo)) {
+      await parkNeedsReconcile(
+        claimed,
+        FAKA_ERROR.UNKNOWN,
+        `paid response order_no missing/mismatch (expected ${claimed.requestOrderNo}); reconcile via status`
+      )
+      fakaProvisionTotal.inc({ outcome: 'retry_scheduled' })
+      return 'retry_scheduled'
+    }
     return await finalizeProvisionSuccess(claimed, tradeNo)
   }
 
@@ -335,6 +356,15 @@ export async function processFakaBridgeTask(taskId: number): Promise<ProcessOutc
   if (exhausted && isFakaUncertainResult(code)) {
     const st = await callFakaOrderStatus(claimed.requestOrderNo, clientOverrides())
     if (st.ok && st.body && st.body.success === true) {
+      if (!fakaRemoteOrderNoMatches(st.body, claimed.requestOrderNo)) {
+        await parkNeedsReconcile(
+          claimed,
+          code,
+          `status probe order_no missing/mismatch (expected ${claimed.requestOrderNo})`
+        )
+        fakaProvisionTotal.inc({ outcome: 'retry_scheduled' })
+        return 'retry_scheduled'
+      }
       const xbStatus = String(st.body.status ?? '')
       const xbTrade = st.body.trade_no != null ? String(st.body.trade_no) : null
       const remoteClass = classifyFakaRemoteStatus(xbStatus, xbTrade)

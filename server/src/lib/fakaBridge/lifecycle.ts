@@ -9,6 +9,7 @@ import { logger } from '../logger.js'
 import {
   callFakaOrderRevoke,
   callFakaOrderStatus,
+  fakaRemoteOrderNoMatches,
   isFakaBridgeConfigured,
   type FakaBridgeClientOptions,
 } from './client.js'
@@ -202,6 +203,24 @@ export async function processFakaRevokeTask(taskId: number): Promise<'succeeded'
   )
 
   if (result.ok && result.body && result.body.success === true) {
+    // Must bind revoke response to this task's requestOrderNo — never mark succeeded on mismatch.
+    if (!fakaRemoteOrderNoMatches(result.body, task.requestOrderNo)) {
+      await prisma.fakaBridgeTask.updateMany({
+        where: { id: taskId, leaseToken: claimed.leaseToken, revokeStatus: 'pending' },
+        data: {
+          lastRevokeError: 'FAKA_ORDER_NO_MISMATCH',
+          leaseToken: null,
+          leaseUntil: null,
+          reconcileNote: `revoke response order_no missing/mismatch (expected ${task.requestOrderNo}); keep pending`,
+        },
+      })
+      fakaRevokeTotal.inc({ outcome: 'failed' })
+      logger.warn(
+        { taskId, orderId: task.orderId, expected: task.requestOrderNo },
+        'FakaBridge revoke order_no mismatch; retry later'
+      )
+      return 'failed'
+    }
     await prisma.fakaBridgeTask.updateMany({
       where: { id: taskId, leaseToken: claimed.leaseToken, revokeStatus: 'pending' },
       data: {
@@ -272,6 +291,58 @@ export async function runFakaRevokeBatch(limit = 10): Promise<number> {
   return n
 }
 
+export type StuckFakaTaskRow = {
+  id: number
+  orderId: number
+  status: string
+  requestOrderNo: string
+  emailSnapshot: string
+  xboardTradeNo: string | null
+  attempts: number
+  maxAttempts: number
+}
+
+type Queryable = {
+  $queryRaw: typeof prisma.$queryRaw
+}
+
+/**
+ * UTC-safe candidate selection for pending-order reconcile (same AT TIME ZONE
+ * discipline as runFakaBridgeBatch). Accepts prisma or a TransactionClient so
+ * tests can SET LOCAL TIME ZONE in the same connection/tx.
+ */
+export async function selectStuckFakaTasksForReconcile(
+  db: Queryable,
+  limit = 20,
+  now: Date = new Date(),
+  createdOlderThanMs = 120_000
+): Promise<StuckFakaTaskRow[]> {
+  const createdCutoff = new Date(now.getTime() - createdOlderThanMs)
+  return db.$queryRaw<StuckFakaTaskRow[]>`
+    SELECT
+      t."id",
+      t."orderId",
+      t."status",
+      t."requestOrderNo",
+      t."emailSnapshot",
+      t."xboardTradeNo",
+      t."attempts",
+      t."maxAttempts"
+    FROM "FakaBridgeTask" t
+    INNER JOIN "Order" o ON o."id" = t."orderId"
+    WHERE t."status" IN ('pending', 'succeeded', 'needs_reconcile')
+      AND o."status" = 'pending'
+      AND (t."createdAt" AT TIME ZONE 'UTC') < ${createdCutoff}
+      AND (t."nextAttemptAt" AT TIME ZONE 'UTC') <= ${now}
+      AND (
+        t."leaseUntil" IS NULL
+        OR (t."leaseUntil" AT TIME ZONE 'UTC') <= ${now}
+      )
+    ORDER BY t."nextAttemptAt" ASC
+    LIMIT ${limit}
+  `
+}
+
 /**
  * Reconcile half-success states via order-status (unified classification):
  * - opened → deliver (order pending) or queue revoke (order refunded)
@@ -338,6 +409,20 @@ export async function runFakaReconcileBatch(limit = 20): Promise<number> {
         statusRes.ok && statusRes.body && statusRes.body.success === true
           ? statusRes.body
           : null
+      if (xbBody && !fakaRemoteOrderNoMatches(xbBody, full.requestOrderNo)) {
+        await prisma.fakaBridgeTask.update({
+          where: { id: full.id },
+          data: {
+            status: 'needs_reconcile',
+            cancelRequested: true,
+            nextAttemptAt: new Date(Date.now() + 5 * 60 * 1000),
+            reconcileNote: `reconcile: status order_no mismatch (expected ${full.requestOrderNo})`,
+          },
+        })
+        fakaReconcileTotal.inc({ action: 'refund_status_order_no_mismatch' })
+        actions += 1
+        continue
+      }
       const xbStatus = xbBody ? String(xbBody.status ?? '') : ''
       const xbTrade = xbBody && xbBody.trade_no != null ? String(xbBody.trade_no) : null
 
@@ -432,44 +517,7 @@ export async function runFakaReconcileBatch(limit = 20): Promise<number> {
   }
 
   // Stuck / needs_reconcile while MN order still pending (points held).
-  // TIMESTAMP WITHOUT TIME ZONE: filter with AT TIME ZONE 'UTC' (same as runFakaBridgeBatch).
-  // Prisma Date filters on bare timestamps are unsafe under Asia/Shanghai sessions.
-  const now = new Date()
-  const createdCutoff = new Date(Date.now() - 120_000)
-  const stuck = await prisma.$queryRaw<
-    Array<{
-      id: number
-      orderId: number
-      status: string
-      requestOrderNo: string
-      emailSnapshot: string
-      xboardTradeNo: string | null
-      attempts: number
-      maxAttempts: number
-    }>
-  >`
-    SELECT
-      t."id",
-      t."orderId",
-      t."status",
-      t."requestOrderNo",
-      t."emailSnapshot",
-      t."xboardTradeNo",
-      t."attempts",
-      t."maxAttempts"
-    FROM "FakaBridgeTask" t
-    INNER JOIN "Order" o ON o."id" = t."orderId"
-    WHERE t."status" IN ('pending', 'succeeded', 'needs_reconcile')
-      AND o."status" = 'pending'
-      AND (t."createdAt" AT TIME ZONE 'UTC') < ${createdCutoff}
-      AND (t."nextAttemptAt" AT TIME ZONE 'UTC') <= ${now}
-      AND (
-        t."leaseUntil" IS NULL
-        OR (t."leaseUntil" AT TIME ZONE 'UTC') <= ${now}
-      )
-    ORDER BY t."nextAttemptAt" ASC
-    LIMIT ${limit}
-  `
+  const stuck = await selectStuckFakaTasksForReconcile(prisma, limit)
 
   for (const task of stuck) {
     // Belt-and-suspenders: re-check lease under UTC after selection.
@@ -491,6 +539,10 @@ export async function runFakaReconcileBatch(limit = 20): Promise<number> {
     const statusRes = await callFakaOrderStatus(task.requestOrderNo, clientOverrides())
     const xbBody =
       statusRes.ok && statusRes.body && statusRes.body.success === true ? statusRes.body : null
+    if (xbBody && !fakaRemoteOrderNoMatches(xbBody, task.requestOrderNo)) {
+      fakaReconcileTotal.inc({ action: 'status_order_no_mismatch' })
+      continue
+    }
     const xbStatus = xbBody ? String(xbBody.status ?? '') : ''
     const tradeNo = xbBody && xbBody.trade_no != null ? String(xbBody.trade_no) : null
 

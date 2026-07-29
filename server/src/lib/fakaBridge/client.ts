@@ -103,10 +103,18 @@ function shouldUseProxy(target: URL, proxy: URL | null): proxy is URL {
 function collectResponse(
   res: IncomingMessage,
   resolve: (v: { status: number; text: string }) => void,
-  reject: (err: Error) => void
+  reject: (err: Error) => void,
+  onSettled?: () => void
 ) {
   const chunks: Buffer[] = []
   let total = 0
+  let settled = false
+  const finish = (fn: () => void) => {
+    if (settled) return
+    settled = true
+    onSettled?.()
+    fn()
+  }
   res.on('data', (chunk: Buffer) => {
     total += chunk.length
     if (total > DEFAULT_MAX_RESPONSE_BYTES) {
@@ -116,22 +124,62 @@ function collectResponse(
     chunks.push(chunk)
   })
   res.on('end', () => {
-    resolve({
-      status: res.statusCode ?? 0,
-      text: Buffer.concat(chunks).toString('utf8'),
-    })
+    finish(() =>
+      resolve({
+        status: res.statusCode ?? 0,
+        text: Buffer.concat(chunks).toString('utf8'),
+      })
+    )
   })
-  res.on('error', reject)
+  res.on('error', err => {
+    finish(() => reject(err instanceof Error ? err : new Error(String(err))))
+  })
 }
 
-function attachTimeout(req: ClientRequest, timeoutMs: number, reject: (err: Error) => void) {
+/**
+ * Wall-clock deadline for the entire request (CONNECT + TLS + body + slow drip).
+ * `req.setTimeout` alone only measures socket idle time — a peer that drips
+ * bytes can hold a worker forever while the task lease expires and another
+ * worker re-dispatches.
+ */
+function createWallClockDeadline(
+  timeoutMs: number,
+  destroyables: Array<{ destroy: (err?: Error) => void }>,
+  reject: (err: Error) => void
+): { clear: () => void } {
+  let settled = false
+  const timer = setTimeout(() => {
+    if (settled) return
+    settled = true
+    const err = new Error('FakaBridge request timeout')
+    for (const d of destroyables) {
+      try {
+        d.destroy(err)
+      } catch {
+        /* ignore */
+      }
+    }
+    reject(err)
+  }, Math.max(1, timeoutMs))
+  // Don't keep the process alive solely for this timer.
+  timer.unref?.()
+  return {
+    clear: () => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+    },
+  }
+}
+
+function attachSocketIdleTimeout(req: ClientRequest, timeoutMs: number) {
+  // Keep idle timeout as a secondary guard (resets on activity).
   req.setTimeout(timeoutMs, () => {
     req.destroy(new Error('FakaBridge request timeout'))
   })
   req.on('timeout', () => {
     req.destroy(new Error('FakaBridge request timeout'))
   })
-  req.on('error', reject)
 }
 
 /**
@@ -161,6 +209,9 @@ function requestViaHttpProxy(
     }
     if (proxyAuth) connectHeaders['Proxy-Authorization'] = `Basic ${proxyAuth}`
 
+    const destroyables: Array<{ destroy: (err?: Error) => void }> = []
+    const deadline = createWallClockDeadline(timeoutMs, destroyables, reject)
+
     const connectReq = httpRequest({
       protocol: proxy.protocol,
       hostname: proxy.hostname,
@@ -171,20 +222,29 @@ function requestViaHttpProxy(
       timeout: timeoutMs,
       family: 4,
     })
+    destroyables.push(connectReq)
 
-    const onFail = (err: Error) => {
-      connectReq.destroy()
+    const fail = (err: Error) => {
+      deadline.clear()
+      try {
+        connectReq.destroy(err)
+      } catch {
+        /* ignore */
+      }
       reject(err)
     }
 
-    connectReq.setTimeout(timeoutMs, () => onFail(new Error('FakaBridge request timeout')))
-    connectReq.on('timeout', () => onFail(new Error('FakaBridge request timeout')))
-    connectReq.on('error', onFail)
+    attachSocketIdleTimeout(connectReq, timeoutMs)
+    connectReq.on('error', err => {
+      deadline.clear()
+      reject(err instanceof Error ? err : new Error(String(err)))
+    })
 
     connectReq.on('connect', (res, socket: Socket) => {
+      destroyables.push(socket)
       if (res.statusCode !== 200) {
         socket.destroy()
-        reject(new Error(`FakaBridge proxy CONNECT failed: HTTP ${res.statusCode ?? 0}`))
+        fail(new Error(`FakaBridge proxy CONNECT failed: HTTP ${res.statusCode ?? 0}`))
         return
       }
 
@@ -204,9 +264,26 @@ function requestViaHttpProxy(
           // omits this socket reuse path; createConnection is the public hook).
           createConnection: () => socket,
         },
-        r => collectResponse(r, resolve, reject)
+        r =>
+          collectResponse(
+            r,
+            v => {
+              deadline.clear()
+              resolve(v)
+            },
+            err => {
+              deadline.clear()
+              reject(err)
+            },
+            () => deadline.clear()
+          )
       )
-      attachTimeout(req, timeoutMs, reject)
+      destroyables.push(req)
+      attachSocketIdleTimeout(req, timeoutMs)
+      req.on('error', err => {
+        deadline.clear()
+        reject(err instanceof Error ? err : new Error(String(err)))
+      })
       if (body) req.write(body)
       req.end()
     })
@@ -219,6 +296,7 @@ function requestViaHttpProxy(
  * Minimal HTTP transport (no redirect follow). Prefer https in production;
  * http only when allowInsecureTargets is true (local mock).
  * Honors HTTPS_PROXY/HTTP_PROXY + NO_PROXY when set (curl-compatible).
+ * Enforces a wall-clock deadline covering CONNECT + slow-drip responses.
  */
 export function defaultFakaTransport(allowInsecure: boolean): FakaTransport {
   return ({ method, url, headers, body, timeoutMs }) =>
@@ -246,6 +324,9 @@ export function defaultFakaTransport(allowInsecure: boolean): FakaTransport {
         return
       }
 
+      const destroyables: Array<{ destroy: (err?: Error) => void }> = []
+      const deadline = createWallClockDeadline(timeoutMs, destroyables, reject)
+
       const lib = parsed.protocol === 'https:' ? httpsRequest : httpRequest
       const req = lib(
         {
@@ -259,13 +340,45 @@ export function defaultFakaTransport(allowInsecure: boolean): FakaTransport {
           // Prefer IPv4: some WSL/cloud dual-stack paths hang on AAAA then timeout.
           family: 4,
         },
-        res => collectResponse(res, resolve, reject)
+        res =>
+          collectResponse(
+            res,
+            v => {
+              deadline.clear()
+              resolve(v)
+            },
+            err => {
+              deadline.clear()
+              reject(err)
+            },
+            () => deadline.clear()
+          )
       )
-
-      attachTimeout(req, timeoutMs, reject)
+      destroyables.push(req)
+      attachSocketIdleTimeout(req, timeoutMs)
+      req.on('error', err => {
+        deadline.clear()
+        reject(err instanceof Error ? err : new Error(String(err)))
+      })
       if (body) req.write(body)
       req.end()
     })
+}
+
+/**
+ * True when a successful remote body is bound to the expected MoNexus external order no.
+ * Missing / empty order_no fails the bind (callers must not deliver or mark revoke done).
+ */
+export function fakaRemoteOrderNoMatches(
+  body: { order_no?: string | null } | null | undefined,
+  expectedOrderNo: string
+): boolean {
+  if (!body || typeof body !== 'object') return false
+  if (body.order_no == null) return false
+  const remote = String(body.order_no).trim()
+  const expected = String(expectedOrderNo).trim()
+  if (!remote || !expected) return false
+  return remote === expected
 }
 
 function parseJsonSafe(text: string): unknown | null {

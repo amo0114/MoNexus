@@ -1,8 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
+import http from 'node:http'
+import type { AddressInfo } from 'node:net'
 import {
   buildFakaExternalOrderNo,
   callFakaOrderPaid,
   callFakaOrderStatus,
+  defaultFakaTransport,
+  fakaRemoteOrderNoMatches,
   isFakaBridgeConfigured,
 } from '../lib/fakaBridge/client.js'
 import { signFakaParams } from '../lib/fakaBridge/sign.js'
@@ -135,6 +139,68 @@ describe('callFakaOrderPaid', () => {
     )
     expect(result.ok).toBe(false)
     expect(result.code).toBe(FAKA_ERROR.NOT_CONFIGURED)
+  })
+
+  it('wall-clock deadline aborts slow-drip responses (not only idle socket timeout)', async () => {
+    // Peer keeps the connection active with tiny writes so req.setTimeout would reset;
+    // wall-clock deadline must still fire and destroy the request.
+    let dripTimer: ReturnType<typeof setInterval> | null = null
+    const server = http.createServer((req, res) => {
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.write('{"success":true,"status":"completed","order_no":"MN-1","trade_no":"T"')
+      dripTimer = setInterval(() => {
+        try {
+          res.write(' ')
+        } catch {
+          /* destroyed */
+        }
+      }, 40)
+      req.on('close', () => {
+        if (dripTimer) clearInterval(dripTimer)
+      })
+    })
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
+    const port = (server.address() as AddressInfo).port
+    const started = Date.now()
+    try {
+      const result = await callFakaOrderPaid(
+        {
+          order_no: 'MN-1',
+          email: 'a@b.c',
+          sku: 'aster-basic-monthly',
+          paid_at: 100,
+        },
+        {
+          url: `http://127.0.0.1:${port}/order-paid`,
+          secret: SECRET,
+          timeoutMs: 250,
+          allowInsecureTargets: true,
+          // Force real transport (no mock)
+        }
+      )
+      expect(result.ok).toBe(false)
+      expect(result.code).toBe(FAKA_ERROR.TIMEOUT)
+      expect(Date.now() - started).toBeLessThan(2000)
+    } finally {
+      if (dripTimer) clearInterval(dripTimer)
+      await new Promise<void>((resolve, reject) => {
+        server.close(err => (err ? reject(err) : resolve()))
+      })
+    }
+  })
+
+  it('fakaRemoteOrderNoMatches requires exact non-empty order_no', () => {
+    expect(fakaRemoteOrderNoMatches({ order_no: 'MN-9' }, 'MN-9')).toBe(true)
+    expect(fakaRemoteOrderNoMatches({ order_no: ' MN-9 ' }, 'MN-9')).toBe(true)
+    expect(fakaRemoteOrderNoMatches({ order_no: 'MN-8' }, 'MN-9')).toBe(false)
+    expect(fakaRemoteOrderNoMatches({ order_no: '' }, 'MN-9')).toBe(false)
+    expect(fakaRemoteOrderNoMatches({ order_no: null }, 'MN-9')).toBe(false)
+    expect(fakaRemoteOrderNoMatches(undefined, 'MN-9')).toBe(false)
+  })
+
+  it('defaultFakaTransport is used when no mock transport is provided', () => {
+    // Smoke: factory returns a function (integration covered by slow-drip test).
+    expect(typeof defaultFakaTransport(true)).toBe('function')
   })
 })
 
