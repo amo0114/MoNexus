@@ -48,15 +48,14 @@ describe('mailer adapter', () => {
       html: '<p>HTML body</p>',
     })
 
-    // R4:transport 按次创建(socket 一一对应),含 dnsTimeout、分段超时与
-    // getSocket 代理钩子(总 deadline 的真实中断抓手)。
+    // R4/R5:transport 按次创建(socket 一一对应),getSocket 是总 deadline
+    // 与自实现连接段超时的抓手;dnsTimeout/connectionTimeout 对自备连接
+    // 不生效,不配置(建连段超时在 getSocket 内自实现)。
     expect(nodemailerMock.createTransport).toHaveBeenCalledTimes(1)
     expect(nodemailerMock.createTransport).toHaveBeenCalledWith(expect.objectContaining({
       host: 'smtp.monexus.test',
       port: 587,
       secure: false,
-      dnsTimeout: 5_000,
-      connectionTimeout: 10_000,
       greetingTimeout: 10_000,
       socketTimeout: 15_000,
       auth: {
@@ -65,6 +64,9 @@ describe('mailer adapter', () => {
       },
       getSocket: expect.any(Function),
     }))
+    expect(nodemailerMock.createTransport).not.toHaveBeenCalledWith(
+      expect.objectContaining({ dnsTimeout: expect.anything() })
+    )
     expect(nodemailerMock.sendMail).toHaveBeenCalledTimes(1)
     expect(nodemailerMock.sendMail).toHaveBeenCalledWith({
       from: 'sender@monexus.test',

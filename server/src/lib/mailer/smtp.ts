@@ -13,11 +13,14 @@ export interface SmtpConfig {
   totalDeadlineMs?: number
 }
 
-// 复审 R4:分段超时只是快速失败辅助——connectionTimeout/greetingTimeout 是
-// 阶段定时器,而 socketTimeout 是 **无活动** 超时(慢滴/分段响应可无限续命),
-// dnsTimeout 不配则默认 30s。它们的和 **不能** 当作总时限。
-export const SMTP_DNS_TIMEOUT_MS = 5_000
-export const SMTP_CONNECTION_TIMEOUT_MS = 10_000
+// 复审 R4/R5:分段超时只是快速失败辅助——它们的和 **不能** 当作总时限
+// (socketTimeout 是 **无活动** 超时,慢滴/分段响应可无限续命)。
+// R5 修正:底层 socket 由我们经 getSocket 自建,nodemailer 的 dnsTimeout/
+// connectionTimeout 走它自己的建连流程、对自备连接 **不生效**——DNS+TCP
+// 建连段的超时由下面的 SMTP_CONNECT_TIMEOUT_MS **自行实现**(getSocket 内
+// 定时器,到点 destroy)。greeting/socket-idle 两段作用于已建立的 socket,
+// 对自备连接仍有效,继续交给 nodemailer。
+export const SMTP_CONNECT_TIMEOUT_MS = 10_000
 export const SMTP_GREETING_TIMEOUT_MS = 10_000
 export const SMTP_SOCKET_TIMEOUT_MS = 15_000
 
@@ -55,8 +58,6 @@ export class SmtpMailer implements Mailer {
       host: this.cfg.host,
       port: this.cfg.port,
       secure: this.cfg.secure,
-      dnsTimeout: SMTP_DNS_TIMEOUT_MS,
-      connectionTimeout: SMTP_CONNECTION_TIMEOUT_MS,
       greetingTimeout: SMTP_GREETING_TIMEOUT_MS,
       socketTimeout: SMTP_SOCKET_TIMEOUT_MS,
       ...(this.cfg.user && this.cfg.pass ? { auth: { user: this.cfg.user, pass: this.cfg.pass } } : {}),
@@ -65,12 +66,20 @@ export class SmtpMailer implements Mailer {
         let settled = false
         const s = createConnection({ host: this.cfg.host, port: this.cfg.port })
         socket = s
+        // R5:DNS+TCP 建连段超时自行实现——自备连接不经 nodemailer 的
+        // dnsTimeout/connectionTimeout 流程,不能依赖它们。
+        const connectTimer = setTimeout(() => {
+          s.destroy(new Error(`SMTP connect phase (DNS/TCP) timed out (${SMTP_CONNECT_TIMEOUT_MS}ms)`))
+        }, SMTP_CONNECT_TIMEOUT_MS)
+        connectTimer.unref?.()
         s.once('connect', () => {
+          clearTimeout(connectTimer)
           if (settled) return
           settled = true
           cb(null, { connection: s })
         })
         s.once('error', err => {
+          clearTimeout(connectTimer)
           if (settled) return
           settled = true
           cb(err)

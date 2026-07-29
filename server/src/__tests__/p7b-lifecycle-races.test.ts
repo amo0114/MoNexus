@@ -557,3 +557,52 @@ describe('R4 复审回归:SMTP 真实总时限 × 通知租约不重叠', () => 
     }
   })
 })
+
+describe('R5 复审回归:批内逐条认领的租约新鲜度', () => {
+  it('前序慢邮件消耗墙钟后,后续任务仍带完整租约进入 send(claimNow 紧贴认领 CAS)', async () => {
+    // ≥3 条降级任务,同一批串行处理;每封邮件人为拖慢 400ms。
+    const seed = await seedAutoProvision()
+    const orderIds: number[] = []
+    for (let i = 0; i < 3; i++) {
+      const res = await api
+        .post('/api/orders')
+        .set(authHeader(seed.buyer.accessToken))
+        .send({ productId: seed.product.id })
+        .expect(201)
+      await flushImmediate()
+      orderIds.push(res.body.orderId as number)
+    }
+    await prisma.provisionTask.updateMany({
+      where: { orderId: { in: orderIds } },
+      data: { status: 'degraded', lastError: 'http_502' },
+    })
+
+    const SLOW_MS = 400
+    const margins: number[] = []
+    __setMailerForTesting({
+      send: async () => {
+        // 进入 send 的瞬间读取本条在途租约的剩余窗口(唯一持 token 未通知行)。
+        const claimed = await prisma.provisionTask.findFirstOrThrow({
+          where: { orderId: { in: orderIds }, merchantNotifiedAt: null, leaseToken: { not: null } },
+        })
+        margins.push(claimed.leaseUntil!.getTime() - Date.now())
+        await new Promise(r => setTimeout(r, SLOW_MS))
+      },
+    })
+    await notifyDegradedTasks()
+
+    // 旧缺陷(批次入口一次性取 now):第 n 条进入 send 时剩余窗口
+    // ≈ LEASE - (n-1)×SLOW_MS,第三条已被预扣 ~800ms。修复后每条自
+    // 认领时刻起算,三条剩余窗口都必须接近完整租约。
+    expect(margins).toHaveLength(3)
+    for (const margin of margins) {
+      expect(margin).toBeGreaterThan(NOTIFY_LEASE_MS - SLOW_MS / 2)
+      expect(margin).toBeLessThanOrEqual(NOTIFY_LEASE_MS)
+    }
+    expect(
+      await prisma.provisionTask.count({
+        where: { orderId: { in: orderIds }, merchantNotifiedAt: { not: null } },
+      })
+    ).toBe(3)
+  })
+})

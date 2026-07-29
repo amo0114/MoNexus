@@ -363,9 +363,14 @@ export const NOTIFY_LEASE_MS = 60_000
  * - 语义 = **至少一次邮件**：发送已被服务端接收但 CAS 前进程崩溃 → 租约
  *   到期后重发（商家可能收到重复通知——可接受；绝不漏发）。多实例并发
  *   由认领 CAS 串行化：在途租约未过期时其他实例不重复认领。
+ * - 复审 R5：claimNow 在**每次循环内、紧贴认领 CAS** 取——批次串行处理,
+ *   前序慢邮件会消耗墙钟,若沿用批次入口的旧时刻,后续任务会带着已被
+ *   预扣甚至已过期的租约进入 send,另一实例即可并发重复发送。每条的
+ *   租约都必须完整覆盖「本条认领 → SMTP TCP 级终止」全程
+ *   （NOTIFY_LEASE_MS > SMTP 总 deadline)。
  * （导出供受控并发回归直接驱动。）
  */
-export async function notifyDegradedTasks(now = new Date()): Promise<void> {
+export async function notifyDegradedTasks(): Promise<void> {
   const candidates = await prisma.provisionTask.findMany({
     where: { status: 'degraded', merchantNotifiedAt: null },
     take: 20,
@@ -374,15 +379,17 @@ export async function notifyDegradedTasks(now = new Date()): Promise<void> {
   })
   for (const candidate of candidates) {
     const token = randomUUID()
+    // R5:每条认领各取当下时刻——租约自本条认领起算,不被前序慢发送预扣。
+    const claimNow = new Date()
     // 单语句认领 CAS(Prisma 模型 API:写入与比较同层,无 raw-SQL 时区陷阱)。
     const claimed = await prisma.provisionTask.updateMany({
       where: {
         id: candidate.id,
         status: 'degraded',
         merchantNotifiedAt: null,
-        OR: [{ leaseUntil: null }, { leaseUntil: { lte: now } }],
+        OR: [{ leaseUntil: null }, { leaseUntil: { lte: claimNow } }],
       },
-      data: { leaseToken: token, leaseUntil: new Date(now.getTime() + NOTIFY_LEASE_MS) },
+      data: { leaseToken: token, leaseUntil: new Date(claimNow.getTime() + NOTIFY_LEASE_MS) },
     })
     if (claimed.count !== 1) continue
 
