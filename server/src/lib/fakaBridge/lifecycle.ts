@@ -45,17 +45,25 @@ function hasClientCredentials(): boolean {
 /**
  * Call inside the same transaction that transitions an order to refunded.
  * Caller MUST already hold Order FOR UPDATE (lock order: Order → Task).
- * - pending + idle lease → hard cancel (no HTTP yet / not in flight)
- * - pending + active lease → cancelRequested (worker finishes then revoke if opened)
- * - succeeded / needs_reconcile / failed-with-trade → queue revoke
+ *
+ * Hard-cancel is only safe when the task has never been claimed (attempts === 0)
+ * and has no active lease — lease alone is NOT proof of "never dispatched"
+ * (clearLeaseKeepPending clears lease after intermediate/uncertain HTTP).
+ *
+ * - pending + attempts===0 + idle lease → hard cancel (never dispatched)
+ * - pending + active lease → cancelRequested (HTTP may be in flight)
+ * - pending + attempts>0 (lease idle) → needs_reconcile + cancelRequested
+ * - needs_reconcile / succeeded / failed-with-trade → cancelRequested (+ revoke if opened)
  */
 export async function onFakaOrderRefundedInTx(tx: Tx, orderId: number): Promise<void> {
   const task = await tx.fakaBridgeTask.findUnique({ where: { orderId } })
   if (!task) return
 
-  // Active lease (UTC) = claim/gate held or HTTP in flight — soft cancel only.
   const leaseExpired = await isLeaseExpiredUtc(tx, task.id)
   const inFlight = task.status === 'pending' && !leaseExpired
+  // attempts is incremented at claim; any prior claim means remote may have been called
+  // (even after clearLeaseKeepPending left lease empty).
+  const mayHaveDispatched = task.attempts > 0
 
   if (task.status === 'pending') {
     if (inFlight) {
@@ -65,7 +73,24 @@ export async function onFakaOrderRefundedInTx(tx: Tx, orderId: number): Promise<
           cancelRequested: true,
           lastError: 'ORDER_REFUNDED',
           reconcileNote:
-            'cancel_requested: refund while provision HTTP in flight; worker will revoke if opened',
+            'cancel_requested: refund while provision lease active; worker will revoke if opened',
+        },
+      })
+      return
+    }
+    if (mayHaveDispatched) {
+      // Intermediate/uncertain path cleared lease but HTTP may already have hit Xboard.
+      await tx.fakaBridgeTask.update({
+        where: { id: task.id },
+        data: {
+          status: 'needs_reconcile',
+          cancelRequested: true,
+          lastError: 'ORDER_REFUNDED',
+          leaseToken: null,
+          leaseUntil: null,
+          nextAttemptAt: new Date(),
+          reconcileNote:
+            'cancel_requested: refund after possible dispatch (attempts>0, lease idle); probe before terminal',
         },
       })
       return
@@ -79,7 +104,7 @@ export async function onFakaOrderRefundedInTx(tx: Tx, orderId: number): Promise<
         lastError: 'ORDER_REFUNDED',
         leaseToken: null,
         leaseUntil: null,
-        reconcileNote: 'cancelled: order refunded before provision completed',
+        reconcileNote: 'cancelled: order refunded before any claim/dispatch',
       },
     })
     return
@@ -99,6 +124,7 @@ export async function onFakaOrderRefundedInTx(tx: Tx, orderId: number): Promise<
         data: {
           cancelRequested: true,
           lastError: 'ORDER_REFUNDED',
+          nextAttemptAt: new Date(),
           reconcileNote: 'cancel_requested: refund while needs_reconcile; probe before revoke',
         },
       })
@@ -285,6 +311,13 @@ export async function runFakaReconcileBatch(limit = 20): Promise<number> {
     const leaseExpired = await isLeaseExpiredUtc(prisma, full.id)
     const inFlight = full.status === 'pending' && !leaseExpired
 
+    // Defer status probes until nextAttemptAt (UTC; 5‑minute park after intermediate).
+    // Still process in-flight cancel_requested and pure revoke queue without waiting.
+    if ((full.status === 'pending' || full.status === 'needs_reconcile') && !inFlight) {
+      const sched = await readTaskScheduleUtc(prisma, full.id)
+      if (sched && !sched.nextAttemptDue) continue
+    }
+
     if (full.status === 'pending' && inFlight) {
       await prisma.fakaBridgeTask.update({
         where: { id: full.id },
@@ -398,13 +431,16 @@ export async function runFakaReconcileBatch(limit = 20): Promise<number> {
     }
   }
 
-  // Stuck / needs_reconcile while MN order still pending (points held)
+  // Stuck / needs_reconcile while MN order still pending (points held).
+  // Honour nextAttemptAt so parked 5‑minute rechecks are not polled every cron tick.
+  const nowUtc = new Date()
   const stuck = await prisma.fakaBridgeTask.findMany({
     where: {
       status: { in: ['pending', 'succeeded', 'needs_reconcile'] },
       order: { status: 'pending' },
       // Older than 2 minutes — give first-attempt/worker a chance
       createdAt: { lt: new Date(Date.now() - 120_000) },
+      nextAttemptAt: { lte: nowUtc },
     },
     take: limit,
     select: {

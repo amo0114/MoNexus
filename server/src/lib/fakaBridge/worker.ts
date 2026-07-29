@@ -130,18 +130,34 @@ export async function processFakaBridgeTask(taskId: number): Promise<ProcessOutc
     })
     if (!order) return null
     if (order.status === 'refunded' || order.status === 'closed') {
-      await tx.fakaBridgeTask.update({
-        where: { id: taskId },
-        data: {
-          status: 'cancelled',
-          cancelRequested: true,
-          completedAt: new Date(),
-          lastError: 'ORDER_REFUNDED',
-          leaseToken: null,
-          leaseUntil: null,
-          reconcileNote: 'claim skipped: order already terminal',
-        },
-      })
+      // attempts>0 ⇒ may have dispatched earlier; park for reconcile instead of hard cancel.
+      if (task.attempts > 0) {
+        await tx.fakaBridgeTask.update({
+          where: { id: taskId },
+          data: {
+            status: 'needs_reconcile',
+            cancelRequested: true,
+            lastError: 'ORDER_REFUNDED',
+            leaseToken: null,
+            leaseUntil: null,
+            nextAttemptAt: new Date(),
+            reconcileNote: 'claim skipped: order terminal after prior attempts; probe remote',
+          },
+        })
+      } else {
+        await tx.fakaBridgeTask.update({
+          where: { id: taskId },
+          data: {
+            status: 'cancelled',
+            cancelRequested: true,
+            completedAt: new Date(),
+            lastError: 'ORDER_REFUNDED',
+            leaseToken: null,
+            leaseUntil: null,
+            reconcileNote: 'claim skipped: order already terminal before any attempt',
+          },
+        })
+      }
       return null
     }
 
@@ -179,8 +195,9 @@ export async function processFakaBridgeTask(taskId: number): Promise<ProcessOutc
   }
 
   // Dispatch gate: re-lock Order → Task after claim commit, before any HTTP.
-  // If refund committed first → cancel, zero outbound. If gate commits first →
-  // HTTP is allowed; later success must revoke if cancel/refund lands mid-flight.
+  // - Refund first → block outbound (cancel only if we still own the claim token).
+  // - Must still hold a non-expired lease with our token; then renew lease for full HTTP.
+  // - Stale worker after lease expiry must NOT pass (new worker may have re-claimed).
   const dispatchOk = await prisma.$transaction(async tx => {
     await tx.$queryRaw`SELECT "id" FROM "Order" WHERE "id" = ${claimed.orderId} FOR UPDATE`
     const order = await tx.order.findUnique({
@@ -189,32 +206,66 @@ export async function processFakaBridgeTask(taskId: number): Promise<ProcessOutc
     })
     const task = await tx.fakaBridgeTask.findUnique({ where: { id: claimed.id } })
     if (!order || !task) return false
+
+    const stillOwnsClaim =
+      task.status === 'pending' && task.leaseToken === claimed.leaseToken
+    const sched = stillOwnsClaim ? await readTaskScheduleUtc(tx, claimed.id) : null
+    const leaseStillActive = stillOwnsClaim && sched != null && !sched.leaseExpired
+
     if (
-      task.status !== 'pending' ||
-      task.leaseToken !== claimed.leaseToken ||
+      !stillOwnsClaim ||
+      !leaseStillActive ||
       task.cancelRequested ||
       order.status === 'refunded' ||
       order.status === 'closed'
     ) {
-      await tx.fakaBridgeTask.updateMany({
-        where: {
-          id: claimed.id,
-          status: 'pending',
-          leaseToken: claimed.leaseToken,
-        },
-        data: {
-          status: 'cancelled',
-          cancelRequested: true,
-          completedAt: new Date(),
-          lastError: 'ORDER_REFUNDED',
-          leaseToken: null,
-          leaseUntil: null,
-          reconcileNote: 'dispatch gate blocked: order refunded/cancelled before HTTP',
-        },
-      })
+      // Only mutate if we still hold this claim token (avoid clobbering a new worker).
+      if (stillOwnsClaim && (task.cancelRequested || order.status === 'refunded' || order.status === 'closed')) {
+        // May have been claimed before (attempts already > 0) — park for reconcile if so.
+        const hardCancel = task.attempts <= 0
+        await tx.fakaBridgeTask.updateMany({
+          where: {
+            id: claimed.id,
+            status: 'pending',
+            leaseToken: claimed.leaseToken,
+          },
+          data: hardCancel
+            ? {
+                status: 'cancelled',
+                cancelRequested: true,
+                completedAt: new Date(),
+                lastError: 'ORDER_REFUNDED',
+                leaseToken: null,
+                leaseUntil: null,
+                reconcileNote: 'dispatch gate blocked: order refunded before first dispatch',
+              }
+            : {
+                status: 'needs_reconcile',
+                cancelRequested: true,
+                lastError: 'ORDER_REFUNDED',
+                leaseToken: null,
+                leaseUntil: null,
+                nextAttemptAt: new Date(),
+                reconcileNote:
+                  'dispatch gate blocked after prior attempts; park needs_reconcile for probe',
+              },
+        })
+      }
+      // Stale lease / token mismatch: leave row for the owner; zero outbound for us.
       return false
     }
-    return true
+
+    // Renew lease to cover the entire HTTP round-trip under our claim token.
+    const renewedUntil = new Date(Date.now() + LEASE_MS())
+    const renewed = await tx.fakaBridgeTask.updateMany({
+      where: {
+        id: claimed.id,
+        status: 'pending',
+        leaseToken: claimed.leaseToken,
+      },
+      data: { leaseUntil: renewedUntil },
+    })
+    return renewed.count === 1
   })
 
   if (!dispatchOk) {

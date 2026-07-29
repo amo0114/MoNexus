@@ -432,8 +432,10 @@ describe('P1 hardening', () => {
     expect(outcome).toBe('skipped')
     expect(paidCalls).toBe(0)
     const done = await prisma.fakaBridgeTask.findUniqueOrThrow({ where: { id: task.id } })
-    expect(done.status).toBe('cancelled')
+    // claim already bumped attempts → soft park (not hard cancel), still zero HTTP
     expect(done.cancelRequested).toBe(true)
+    expect(['cancelled', 'needs_reconcile', 'pending']).toContain(done.status)
+    expect(done.status === 'cancelled' || done.status === 'needs_reconcile').toBe(true)
   })
 
   it('remote pending / processing without trade_no after exhaust → needs_reconcile, no refund', async () => {
@@ -579,6 +581,11 @@ describe('P1 hardening', () => {
     let mid = await prisma.fakaBridgeTask.findUniqueOrThrow({ where: { id: task.id } })
     expect(mid.status).toBe('needs_reconcile')
     expect(mid.revokeStatus).not.toBe('pending')
+    // Intermediate park defers via nextAttemptAt — advance due for the second probe.
+    await prisma.fakaBridgeTask.update({
+      where: { id: task.id },
+      data: { nextAttemptAt: new Date(0) },
+    })
 
     // Round 2: remote completed → queue revoke
     __setFakaClientOverridesForTests({
@@ -599,6 +606,181 @@ describe('P1 hardening', () => {
     expect(mid.status).toBe('succeeded')
     expect(mid.revokeStatus).toBe('pending')
     expect(mid.xboardTradeNo).toBe('XB-LATE')
+  })
+
+  it('non-exhausted processing-no-trade → refund → remote completed → revoke pending', async () => {
+    const { user } = await verifiedBuyer()
+    const { product, offer } = await fakaProduct()
+    const created = await createOrder(user.id, product.id, {
+      offerId: offer.id,
+      expectedPrice: 100,
+      idempotencyKey: randomUUID(),
+    })
+    const task = await prisma.fakaBridgeTask.findUniqueOrThrow({ where: { orderId: created.orderId } })
+
+    // First attempt: intermediate remote, not exhausted → pending + empty lease
+    __setFakaClientOverridesForTests({
+      url: config.fakaBridge.url,
+      secret: config.fakaBridge.secret,
+      transport: (async () => ({
+        status: 200,
+        text: JSON.stringify({
+          success: true,
+          order_no: task.requestOrderNo,
+          status: 'processing',
+          trade_no: null,
+        }),
+      })) as FakaTransport,
+    })
+    const first = await processFakaBridgeTask(task.id)
+    expect(first).toBe('retry_scheduled')
+    let mid = await prisma.fakaBridgeTask.findUniqueOrThrow({ where: { id: task.id } })
+    expect(mid.status).toBe('pending')
+    expect(mid.attempts).toBeGreaterThan(0)
+    expect(mid.leaseToken).toBeNull()
+
+    // Refund while lease empty — must NOT hard-cancel (may have dispatched)
+    await prisma.$transaction(async tx => {
+      await tx.$queryRaw`SELECT "id" FROM "Order" WHERE "id" = ${created.orderId} FOR UPDATE`
+      await tx.order.update({ where: { id: created.orderId }, data: { status: 'refunded' } })
+      await onFakaOrderRefundedInTx(tx, created.orderId)
+    })
+    mid = await prisma.fakaBridgeTask.findUniqueOrThrow({ where: { id: task.id } })
+    expect(mid.status).toBe('needs_reconcile')
+    expect(mid.cancelRequested).toBe(true)
+    expect(mid.status).not.toBe('cancelled')
+
+    // Remote later completes → queue revoke
+    __setFakaClientOverridesForTests({
+      url: config.fakaBridge.url,
+      secret: config.fakaBridge.secret,
+      transport: (async () => ({
+        status: 200,
+        text: JSON.stringify({
+          success: true,
+          order_no: task.requestOrderNo,
+          status: 'completed',
+          trade_no: 'XB-AFTER-REFUND',
+        }),
+      })) as FakaTransport,
+    })
+    await runFakaReconcileBatch(20)
+    const done = await prisma.fakaBridgeTask.findUniqueOrThrow({ where: { id: task.id } })
+    expect(done.status).toBe('succeeded')
+    expect(done.revokeStatus).toBe('pending')
+    expect(done.xboardTradeNo).toBe('XB-AFTER-REFUND')
+  })
+
+  it('non-exhausted timeout → refund → remote completed → revoke pending', async () => {
+    const { user } = await verifiedBuyer()
+    const { product, offer } = await fakaProduct()
+    const created = await createOrder(user.id, product.id, {
+      offerId: offer.id,
+      expectedPrice: 100,
+      idempotencyKey: randomUUID(),
+    })
+    const task = await prisma.fakaBridgeTask.findUniqueOrThrow({ where: { orderId: created.orderId } })
+
+    __setFakaClientOverridesForTests({
+      url: config.fakaBridge.url,
+      secret: config.fakaBridge.secret,
+      transport: (async () => ({ status: 0, text: '' })) as FakaTransport,
+    })
+    const first = await processFakaBridgeTask(task.id)
+    expect(first).toBe('retry_scheduled')
+    let mid = await prisma.fakaBridgeTask.findUniqueOrThrow({ where: { id: task.id } })
+    expect(mid.status).toBe('pending')
+    expect(mid.attempts).toBeGreaterThan(0)
+    expect(mid.leaseToken).toBeNull()
+
+    await prisma.$transaction(async tx => {
+      await tx.$queryRaw`SELECT "id" FROM "Order" WHERE "id" = ${created.orderId} FOR UPDATE`
+      await tx.order.update({ where: { id: created.orderId }, data: { status: 'refunded' } })
+      await onFakaOrderRefundedInTx(tx, created.orderId)
+    })
+    mid = await prisma.fakaBridgeTask.findUniqueOrThrow({ where: { id: task.id } })
+    expect(mid.status).toBe('needs_reconcile')
+    expect(mid.cancelRequested).toBe(true)
+
+    __setFakaClientOverridesForTests({
+      url: config.fakaBridge.url,
+      secret: config.fakaBridge.secret,
+      transport: (async () => ({
+        status: 200,
+        text: JSON.stringify({
+          success: true,
+          order_no: task.requestOrderNo,
+          status: 'completed',
+          trade_no: 'XB-TIMEOUT-THEN',
+        }),
+      })) as FakaTransport,
+    })
+    await runFakaReconcileBatch(20)
+    const done = await prisma.fakaBridgeTask.findUniqueOrThrow({ where: { id: task.id } })
+    expect(done.status).toBe('succeeded')
+    expect(done.revokeStatus).toBe('pending')
+    expect(done.xboardTradeNo).toBe('XB-TIMEOUT-THEN')
+  })
+
+  it('stale worker after lease expiry: zero outbound; new claim renews lease for HTTP', async () => {
+    const { user } = await verifiedBuyer()
+    const { product, offer } = await fakaProduct()
+    const created = await createOrder(user.id, product.id, {
+      offerId: offer.id,
+      expectedPrice: 100,
+      idempotencyKey: randomUUID(),
+    })
+    const task = await prisma.fakaBridgeTask.findUniqueOrThrow({ where: { orderId: created.orderId } })
+
+    let paidCalls = 0
+    let leaseUntilDuringPaid: Date | null = null
+    let tokenDuringPaid: string | null = null
+
+    __setFakaClientOverridesForTests({
+      url: config.fakaBridge.url,
+      secret: config.fakaBridge.secret,
+      transport: (async () => {
+        paidCalls += 1
+        const live = await prisma.fakaBridgeTask.findUniqueOrThrow({ where: { id: task.id } })
+        leaseUntilDuringPaid = live.leaseUntil
+        tokenDuringPaid = live.leaseToken
+        return {
+          status: 200,
+          text: JSON.stringify({
+            success: true,
+            order_no: task.requestOrderNo,
+            status: 'completed',
+            trade_no: 'XB-OWNER-B',
+          }),
+        }
+      }) as FakaTransport,
+    })
+
+    __setAfterClaimHookForTests(async () => {
+      // Expire A’s lease + backoff so B can reclaim; clear hook so B does not recurse.
+      await prisma.fakaBridgeTask.update({
+        where: { id: task.id },
+        data: {
+          leaseUntil: new Date(Date.now() - 60_000),
+          nextAttemptAt: new Date(Date.now() - 60_000),
+        },
+      })
+      __setAfterClaimHookForTests(undefined)
+      const b = await processFakaBridgeTask(task.id)
+      expect(b).toBe('succeeded')
+    })
+
+    const a = await processFakaBridgeTask(task.id)
+    expect(a).toBe('skipped') // A must not pass gate after lease loss
+    expect(paidCalls).toBe(1) // only B dispatched
+    expect(tokenDuringPaid).toBeTruthy()
+    expect(leaseUntilDuringPaid).toBeTruthy()
+    // Gate renews lease to cover full HTTP (well beyond "now")
+    expect(leaseUntilDuringPaid!.getTime()).toBeGreaterThan(Date.now() + 1000)
+
+    const done = await prisma.fakaBridgeTask.findUniqueOrThrow({ where: { id: task.id } })
+    expect(done.status).toBe('succeeded')
+    expect(done.xboardTradeNo).toBe('XB-OWNER-B')
   })
 
   it('UTC schedule: lease future is not expired; past is expired (session TZ independent)', async () => {

@@ -122,22 +122,26 @@ export async function sendProvisionEmailCode(userId: number, emailRaw: string) {
   const codeExpiresAt = new Date(now + PROVISION_CODE_TTL_MS)
 
   // Atomic send budget: lock row (or create) then check+increment under transaction.
-  // Concurrent first-create may race on unique(userId,email) → P2002; retry as update.
+  // P2002 on first-create aborts the PG transaction — catch outside and reopen a new tx.
   type SendOutcome =
     | { kind: 'ok' }
     | { kind: 'error'; status: number; message: string }
 
-  const sendOutcome = await prisma.$transaction(async (tx): Promise<SendOutcome> => {
-    let existing = await tx.fakaProvisionEmailProof.findUnique({
-      where: { userId_email: { userId, email } },
-    })
-    if (existing) {
-      await tx.$queryRaw`SELECT "id" FROM "FakaProvisionEmailProof" WHERE "id" = ${existing.id} FOR UPDATE`
-      existing = await tx.fakaProvisionEmailProof.findUnique({ where: { id: existing.id } })
-    }
+  function isUniqueViolation(err: unknown): boolean {
+    return Boolean(
+      err &&
+        typeof err === 'object' &&
+        'code' in err &&
+        String((err as { code?: string }).code) === 'P2002'
+    )
+  }
 
-    if (existing?.lastSentAt) {
-      const since = now - existing.lastSentAt.getTime()
+  function rateLimitOutcome(
+    lastSentAt: Date | null | undefined,
+    sendCountRaw: number
+  ): SendOutcome | null {
+    if (lastSentAt) {
+      const since = now - lastSentAt.getTime()
       if (since < MIN_RESEND_INTERVAL_MS) {
         return {
           kind: 'error',
@@ -146,9 +150,8 @@ export async function sendProvisionEmailCode(userId: number, emailRaw: string) {
         }
       }
     }
-
-    let sendCount = existing?.sendCount ?? 0
-    if (!existing?.lastSentAt || now - existing.lastSentAt.getTime() > 60 * 60 * 1000) {
+    let sendCount = sendCountRaw
+    if (!lastSentAt || now - lastSentAt.getTime() > 60 * 60 * 1000) {
       sendCount = 0
     }
     if (sendCount >= MAX_SENDS_PER_HOUR) {
@@ -158,84 +161,94 @@ export async function sendProvisionEmailCode(userId: number, emailRaw: string) {
         message: '该邮箱验证码发送过于频繁，请一小时后再试',
       }
     }
+    return null
+  }
 
-    if (!existing) {
-      try {
-        await tx.fakaProvisionEmailProof.create({
-          data: {
-            userId,
-            email,
-            codeHash,
-            codeExpiresAt,
-            sendCount: 1,
-            lastSentAt: new Date(now),
-            confirmAttempts: 0,
-            verifiedAt: null,
-            proofExpiresAt: null,
-          },
-        })
-        return { kind: 'ok' }
-      } catch (err) {
-        // Unique race: peer created the row — lock and update under the same tx.
-        const code =
-          err && typeof err === 'object' && 'code' in err
-            ? String((err as { code?: string }).code)
-            : ''
-        if (code !== 'P2002') throw err
-        const raced = await tx.fakaProvisionEmailProof.findUnique({
-          where: { userId_email: { userId, email } },
-        })
-        if (!raced) throw err
-        await tx.$queryRaw`SELECT "id" FROM "FakaProvisionEmailProof" WHERE "id" = ${raced.id} FOR UPDATE`
-        const locked = await tx.fakaProvisionEmailProof.findUnique({ where: { id: raced.id } })
-        if (!locked) throw err
-        if (locked.lastSentAt) {
-          const since = now - locked.lastSentAt.getTime()
-          if (since < MIN_RESEND_INTERVAL_MS) {
-            return {
-              kind: 'error',
-              status: 429,
-              message: `请 ${Math.ceil((MIN_RESEND_INTERVAL_MS - since) / 1000)} 秒后再发送验证码`,
-            }
-          }
-        }
-        let racedCount = locked.sendCount ?? 0
-        if (!locked.lastSentAt || now - locked.lastSentAt.getTime() > 60 * 60 * 1000) {
-          racedCount = 0
-        }
-        if (racedCount >= MAX_SENDS_PER_HOUR) {
-          return {
-            kind: 'error',
-            status: 429,
-            message: '该邮箱验证码发送过于频繁，请一小时后再试',
-          }
+  async function consumeSendBudgetOnExisting(): Promise<SendOutcome> {
+    return prisma.$transaction(async (tx): Promise<SendOutcome> => {
+      const peek = await tx.fakaProvisionEmailProof.findUnique({
+        where: { userId_email: { userId, email } },
+      })
+      if (!peek) {
+        return { kind: 'error', status: 400, message: '请先发送验证码' }
+      }
+      await tx.$queryRaw`SELECT "id" FROM "FakaProvisionEmailProof" WHERE "id" = ${peek.id} FOR UPDATE`
+      const row = await tx.fakaProvisionEmailProof.findUnique({ where: { id: peek.id } })
+      if (!row) {
+        return { kind: 'error', status: 400, message: '请先发送验证码' }
+      }
+      const limited = rateLimitOutcome(row.lastSentAt, row.sendCount ?? 0)
+      if (limited) return limited
+      let sendCount = row.sendCount ?? 0
+      if (!row.lastSentAt || now - row.lastSentAt.getTime() > 60 * 60 * 1000) {
+        sendCount = 0
+      }
+      await tx.fakaProvisionEmailProof.update({
+        where: { id: row.id },
+        data: {
+          codeHash,
+          codeExpiresAt,
+          sendCount: sendCount + 1,
+          lastSentAt: new Date(now),
+          confirmAttempts: 0,
+        },
+      })
+      return { kind: 'ok' }
+    })
+  }
+
+  let sendOutcome: SendOutcome
+  try {
+    sendOutcome = await prisma.$transaction(async (tx): Promise<SendOutcome> => {
+      let existing = await tx.fakaProvisionEmailProof.findUnique({
+        where: { userId_email: { userId, email } },
+      })
+      if (existing) {
+        await tx.$queryRaw`SELECT "id" FROM "FakaProvisionEmailProof" WHERE "id" = ${existing.id} FOR UPDATE`
+        existing = await tx.fakaProvisionEmailProof.findUnique({ where: { id: existing.id } })
+      }
+
+      if (existing) {
+        const limited = rateLimitOutcome(existing.lastSentAt, existing.sendCount ?? 0)
+        if (limited) return limited
+        let sendCount = existing.sendCount ?? 0
+        if (!existing.lastSentAt || now - existing.lastSentAt.getTime() > 60 * 60 * 1000) {
+          sendCount = 0
         }
         await tx.fakaProvisionEmailProof.update({
-          where: { id: locked.id },
+          where: { id: existing.id },
           data: {
             codeHash,
             codeExpiresAt,
-            sendCount: racedCount + 1,
+            sendCount: sendCount + 1,
             lastSentAt: new Date(now),
             confirmAttempts: 0,
           },
         })
         return { kind: 'ok' }
       }
-    }
 
-    await tx.fakaProvisionEmailProof.update({
-      where: { id: existing.id },
-      data: {
-        codeHash,
-        codeExpiresAt,
-        sendCount: sendCount + 1,
-        lastSentAt: new Date(now),
-        confirmAttempts: 0,
-      },
+      // First send — create. Concurrent peer may win unique(userId,email).
+      await tx.fakaProvisionEmailProof.create({
+        data: {
+          userId,
+          email,
+          codeHash,
+          codeExpiresAt,
+          sendCount: 1,
+          lastSentAt: new Date(now),
+          confirmAttempts: 0,
+          verifiedAt: null,
+          proofExpiresAt: null,
+        },
+      })
+      return { kind: 'ok' }
     })
-    return { kind: 'ok' }
-  })
+  } catch (err) {
+    if (!isUniqueViolation(err)) throw err
+    // Aborted create tx cannot continue — reopen and update under lock.
+    sendOutcome = await consumeSendBudgetOnExisting()
+  }
 
   if (sendOutcome.kind === 'error') {
     if (sendOutcome.status === 429) throw tooManyRequests(sendOutcome.message)
