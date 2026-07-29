@@ -50,8 +50,17 @@ export {
   peekProvisionEmailFromAnswers,
 } from './provisionEmailProof.js'
 
-export { FAKA_ERROR, classifyFakaHttpFailure, isFakaNonRetryable, isFakaUncertainResult, isFakaProvisionSuccessStatus } from './errors.js'
-export type { FakaErrorCode } from './errors.js'
+export {
+  FAKA_ERROR,
+  classifyFakaHttpFailure,
+  classifyFakaRemoteStatus,
+  isFakaNonRetryable,
+  isFakaUncertainResult,
+  isFakaProvisionSuccessStatus,
+} from './errors.js'
+export type { FakaErrorCode, FakaRemoteOpenClass } from './errors.js'
+
+export { readTaskScheduleUtc, isLeaseExpiredUtc } from './scheduleUtc.js'
 
 export type {
   FakaOrderPaidRequest,
@@ -94,5 +103,6 @@ export {
   startFakaBridgeCron,
   stopFakaBridgeCron,
   __setFakaClientOverridesForTests,
+  __setAfterClaimHookForTests,
 } from './worker.js'
 export type { ProcessOutcome } from './worker.js'

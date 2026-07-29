@@ -12,9 +12,13 @@ import {
   isFakaBridgeConfigured,
   type FakaBridgeClientOptions,
 } from './client.js'
+import { classifyFakaRemoteStatus } from './errors.js'
 import { fakaReconcileTotal, fakaRevokeTotal } from '../metrics.js'
 import { transitionOrderStatus } from '../../modules/orders/fulfillment.js'
+import { releaseHeldOrder } from '../../modules/orders/accounting.js'
+import { applyRefundInventoryPolicy } from '../../modules/orders/refundInventory.js'
 import { config } from '../../config/index.js'
+import { isLeaseExpiredUtc, readTaskScheduleUtc } from './scheduleUtc.js'
 
 type Tx = Prisma.TransactionClient
 
@@ -49,11 +53,9 @@ export async function onFakaOrderRefundedInTx(tx: Tx, orderId: number): Promise<
   const task = await tx.fakaBridgeTask.findUnique({ where: { orderId } })
   if (!task) return
 
-  const now = Date.now()
-  const inFlight =
-    task.status === 'pending' &&
-    task.leaseUntil != null &&
-    task.leaseUntil.getTime() > now
+  // Active lease (UTC) = claim/gate held or HTTP in flight — soft cancel only.
+  const leaseExpired = await isLeaseExpiredUtc(tx, task.id)
+  const inFlight = task.status === 'pending' && !leaseExpired
 
   if (task.status === 'pending') {
     if (inFlight) {
@@ -89,6 +91,19 @@ export async function onFakaOrderRefundedInTx(tx: Tx, orderId: number): Promise<
     (task.status === 'failed' && task.xboardTradeNo)
   ) {
     if (task.revokeStatus === 'succeeded' || task.revokeStatus === 'skipped') return
+    // needs_reconcile may still be intermediate remotely — mark cancel + keep reconciling;
+    // revoke only once we know remote opened (or already succeeded).
+    if (task.status === 'needs_reconcile' && !task.xboardTradeNo) {
+      await tx.fakaBridgeTask.update({
+        where: { id: task.id },
+        data: {
+          cancelRequested: true,
+          lastError: 'ORDER_REFUNDED',
+          reconcileNote: 'cancel_requested: refund while needs_reconcile; probe before revoke',
+        },
+      })
+      return
+    }
     await tx.fakaBridgeTask.update({
       where: { id: task.id },
       data: {
@@ -120,12 +135,14 @@ export async function processFakaRevokeTask(taskId: number): Promise<'succeeded'
   const claimed = await prisma.$transaction(async tx => {
     const peek = await tx.fakaBridgeTask.findUnique({ where: { id: taskId } })
     if (!peek || peek.revokeStatus !== 'pending') return null
-    if (peek.leaseUntil && peek.leaseUntil.getTime() > now.getTime()) return null
+    const peekSched = await readTaskScheduleUtc(tx, taskId)
+    if (!peekSched?.leaseExpired) return null
     // Order → Task lock order (matches refund path)
     await tx.$queryRaw`SELECT "id" FROM "Order" WHERE "id" = ${peek.orderId} FOR UPDATE`
     const task = await tx.fakaBridgeTask.findUnique({ where: { id: taskId } })
     if (!task || task.revokeStatus !== 'pending') return null
-    if (task.leaseUntil && task.leaseUntil.getTime() > now.getTime()) return null
+    const lockedSched = await readTaskScheduleUtc(tx, taskId)
+    if (!lockedSched?.leaseExpired) return null
     const leaseToken = `revoke-${Date.now()}-${Math.random().toString(16).slice(2)}`
     await tx.fakaBridgeTask.update({
       where: { id: taskId },
@@ -230,11 +247,10 @@ export async function runFakaRevokeBatch(limit = 10): Promise<number> {
 }
 
 /**
- * Reconcile half-success states via order-status:
- * 1) MN pending task but Xboard completed → deliver MN order
- * 2) MN succeeded but order still pending → deliver
- * 3) MN order refunded + task succeeded + no revoke → queue revoke
- * 4) MN order refunded + task still pending → cancel task
+ * Reconcile half-success states via order-status (unified classification):
+ * - opened → deliver (order pending) or queue revoke (order refunded)
+ * - not_opened → cancel task; if order still pending, refund + inventory
+ * - intermediate / unknown → keep needs_reconcile, never hard-cancel
  */
 export async function runFakaReconcileBatch(limit = 20): Promise<number> {
   if (!hasClientCredentials()) return 0
@@ -266,10 +282,9 @@ export async function runFakaReconcileBatch(limit = 20): Promise<number> {
     if (!task) continue
     const full = await prisma.fakaBridgeTask.findUnique({ where: { id: task.id } })
     if (!full) continue
-    const inFlight =
-      full.status === 'pending' &&
-      full.leaseUntil != null &&
-      full.leaseUntil.getTime() > Date.now()
+    const leaseExpired = await isLeaseExpiredUtc(prisma, full.id)
+    const inFlight = full.status === 'pending' && !leaseExpired
+
     if (full.status === 'pending' && inFlight) {
       await prisma.fakaBridgeTask.update({
         where: { id: full.id },
@@ -284,7 +299,7 @@ export async function runFakaReconcileBatch(limit = 20): Promise<number> {
       (full.status === 'pending' || full.status === 'needs_reconcile') &&
       !inFlight
     ) {
-      // Must probe Xboard: remote may have opened while our response was lost.
+      // Probe Xboard — intermediate remote (e.g. pending) must keep reconciling.
       const statusRes = await callFakaOrderStatus(full.requestOrderNo, clientOverrides())
       const xbBody =
         statusRes.ok && statusRes.body && statusRes.body.success === true
@@ -292,12 +307,16 @@ export async function runFakaReconcileBatch(limit = 20): Promise<number> {
           : null
       const xbStatus = xbBody ? String(xbBody.status ?? '') : ''
       const xbTrade = xbBody && xbBody.trade_no != null ? String(xbBody.trade_no) : null
-      const remoteOpened =
-        xbBody != null &&
-        (xbStatus === 'completed' ||
-          (xbStatus === 'processing' && xbTrade != null && xbTrade.trim() !== ''))
 
-      if (remoteOpened) {
+      let remoteClass: ReturnType<typeof classifyFakaRemoteStatus> | 'not_opened' | 'unknown' =
+        'unknown'
+      if (statusRes.httpStatus === 404) {
+        remoteClass = 'not_opened'
+      } else if (xbBody) {
+        remoteClass = classifyFakaRemoteStatus(xbStatus, xbTrade)
+      }
+
+      if (remoteClass === 'opened') {
         await prisma.fakaBridgeTask.update({
           where: { id: full.id },
           data: {
@@ -315,17 +334,11 @@ export async function runFakaReconcileBatch(limit = 20): Promise<number> {
         })
         fakaReconcileTotal.inc({ action: 'queue_revoke_after_remote_open' })
         actions += 1
-      } else if (
-        statusRes.httpStatus === 404 ||
-        xbStatus === 'failed' ||
-        xbStatus === 'revoked' ||
-        (xbBody != null && xbStatus === 'pending')
-      ) {
-        // Safe to cancel locally — remote never completed (or already gone).
+      } else if (remoteClass === 'not_opened') {
         await prisma.fakaBridgeTask.update({
           where: { id: full.id },
           data: {
-            status: xbStatus === 'revoked' ? 'cancelled' : 'cancelled',
+            status: 'cancelled',
             cancelRequested: true,
             completedAt: new Date(),
             lastError: 'ORDER_REFUNDED',
@@ -336,13 +349,15 @@ export async function runFakaReconcileBatch(limit = 20): Promise<number> {
             reconcileNote:
               xbStatus === 'revoked'
                 ? 'reconcile: Xboard already revoked after refund'
-                : 'reconcile: cancelled pending task after refund (remote not opened)',
+                : statusRes.httpStatus === 404
+                  ? 'reconcile: cancelled after refund (remote not found)'
+                  : `reconcile: cancelled after refund (remote ${xbStatus || 'not_opened'})`,
           },
         })
         fakaReconcileTotal.inc({ action: 'cancel_after_refund' })
         actions += 1
       } else {
-        // Probe failed / unknown — park for next tick; do not hard-cancel.
+        // intermediate (pending / processing-no-trade) or probe unknown — keep parking
         await prisma.fakaBridgeTask.update({
           where: { id: full.id },
           data: {
@@ -351,10 +366,16 @@ export async function runFakaReconcileBatch(limit = 20): Promise<number> {
             leaseToken: null,
             leaseUntil: null,
             nextAttemptAt: new Date(Date.now() + 5 * 60 * 1000),
-            reconcileNote: 'reconcile: refunded, remote status unknown; recheck later',
+            reconcileNote:
+              remoteClass === 'intermediate'
+                ? `reconcile: refunded, remote intermediate (${xbStatus || 'empty'}); recheck`
+                : 'reconcile: refunded, remote status unknown; recheck later',
           },
         })
-        fakaReconcileTotal.inc({ action: 'refund_status_unknown' })
+        fakaReconcileTotal.inc({
+          action:
+            remoteClass === 'intermediate' ? 'refund_remote_intermediate' : 'refund_status_unknown',
+        })
         actions += 1
       }
     } else if (
@@ -377,7 +398,7 @@ export async function runFakaReconcileBatch(limit = 20): Promise<number> {
     }
   }
 
-  // Stuck: task succeeded (or Xboard completed) but MN order still pending
+  // Stuck / needs_reconcile while MN order still pending (points held)
   const stuck = await prisma.fakaBridgeTask.findMany({
     where: {
       status: { in: ['pending', 'succeeded', 'needs_reconcile'] },
@@ -393,13 +414,14 @@ export async function runFakaReconcileBatch(limit = 20): Promise<number> {
       requestOrderNo: true,
       emailSnapshot: true,
       xboardTradeNo: true,
-      leaseUntil: true,
+      attempts: true,
+      maxAttempts: true,
     },
   })
 
   for (const task of stuck) {
-    // Don't steal active leases
-    if (task.leaseUntil && task.leaseUntil.getTime() > Date.now()) continue
+    // Don't steal active leases (UTC)
+    if (!(await isLeaseExpiredUtc(prisma, task.id))) continue
 
     if (task.status === 'succeeded') {
       const delivered = await tryDeliverPendingOrder(task.orderId, task.xboardTradeNo, task.emailSnapshot)
@@ -414,23 +436,29 @@ export async function runFakaReconcileBatch(limit = 20): Promise<number> {
       continue
     }
 
-    // pending: ask Xboard
     const statusRes = await callFakaOrderStatus(task.requestOrderNo, clientOverrides())
-    if (!statusRes.ok || !statusRes.body || statusRes.body.success !== true) {
-      if (statusRes.httpStatus === 404) {
-        // No row yet — normal for not-yet-attempted; skip
+    const xbBody =
+      statusRes.ok && statusRes.body && statusRes.body.success === true ? statusRes.body : null
+    const xbStatus = xbBody ? String(xbBody.status ?? '') : ''
+    const tradeNo = xbBody && xbBody.trade_no != null ? String(xbBody.trade_no) : null
+
+    let remoteClass: ReturnType<typeof classifyFakaRemoteStatus> | 'not_opened' | 'unknown' =
+      'unknown'
+    if (statusRes.httpStatus === 404) {
+      // Young pending may not have been attempted; needs_reconcile / exhausted → not_opened
+      if (task.status === 'needs_reconcile' || task.attempts >= task.maxAttempts) {
+        remoteClass = 'not_opened'
+      } else {
         continue
       }
+    } else if (xbBody) {
+      remoteClass = classifyFakaRemoteStatus(xbStatus, tradeNo)
+    } else {
       fakaReconcileTotal.inc({ action: 'status_probe_fail' })
       continue
     }
 
-    const xb = statusRes.body
-    const tradeNo = xb.trade_no != null ? String(xb.trade_no) : null
-    const remoteOk =
-      xb.status === 'completed' ||
-      (xb.status === 'processing' && tradeNo != null && tradeNo.trim() !== '')
-    if (remoteOk) {
+    if (remoteClass === 'opened') {
       const delivered = await tryDeliverPendingOrder(task.orderId, tradeNo, task.emailSnapshot)
       if (delivered) {
         await prisma.fakaBridgeTask.update({
@@ -442,13 +470,12 @@ export async function runFakaReconcileBatch(limit = 20): Promise<number> {
             lastError: null,
             leaseToken: null,
             leaseUntil: null,
-            reconcileNote: `reconcile: Xboard ${xb.status} → MN delivered`,
+            reconcileNote: `reconcile: Xboard ${xbStatus} → MN delivered`,
           },
         })
         fakaReconcileTotal.inc({ action: 'deliver_from_xboard_status' })
         actions += 1
       } else {
-        // Order may already be refunded — mark opened so revoke path can run.
         const order = await prisma.order.findUnique({
           where: { id: task.orderId },
           select: { status: true },
@@ -464,30 +491,108 @@ export async function runFakaReconcileBatch(limit = 20): Promise<number> {
               revokeStatus: 'pending',
               leaseToken: null,
               leaseUntil: null,
-              reconcileNote: `reconcile: Xboard ${xb.status} but order ${order.status}; queued revoke`,
+              reconcileNote: `reconcile: Xboard ${xbStatus} but order ${order.status}; queued revoke`,
             },
           })
           fakaReconcileTotal.inc({ action: 'queue_revoke_from_stuck' })
           actions += 1
         }
       }
-    } else if (xb.status === 'revoked') {
-      // Xboard already revoked; ensure we don't keep opening
+    } else if (remoteClass === 'not_opened') {
+      // Definitive remote failure / absence → refund held points
+      const refunded = await tryRefundPendingOrder(
+        task.id,
+        task.orderId,
+        xbStatus || (statusRes.httpStatus === 404 ? 'not_found' : 'not_opened')
+      )
+      if (refunded) {
+        fakaReconcileTotal.inc({ action: 'refund_from_remote_not_opened' })
+        actions += 1
+      }
+    } else {
+      // intermediate — park / refresh nextAttemptAt
       await prisma.fakaBridgeTask.update({
         where: { id: task.id },
         data: {
-          status: task.status === 'pending' ? 'cancelled' : task.status,
-          revokeStatus: 'succeeded',
-          revokedAt: new Date(),
-          reconcileNote: 'reconcile: Xboard already revoked',
+          status: 'needs_reconcile',
+          leaseToken: null,
+          leaseUntil: null,
+          nextAttemptAt: new Date(Date.now() + 5 * 60 * 1000),
+          reconcileNote: `reconcile: remote intermediate (${xbStatus || 'empty'}); recheck`,
         },
       })
-      fakaReconcileTotal.inc({ action: 'sync_revoked' })
+      fakaReconcileTotal.inc({ action: 'park_intermediate' })
       actions += 1
     }
   }
 
   return actions
+}
+
+/** Refund a still-pending order when remote is definitively not opened. */
+async function tryRefundPendingOrder(
+  taskId: number,
+  orderId: number,
+  reason: string
+): Promise<boolean> {
+  try {
+    return await prisma.$transaction(async tx => {
+      await tx.$queryRaw`SELECT "id" FROM "Order" WHERE "id" = ${orderId} FOR UPDATE`
+      const order = await tx.order.findUnique({
+        where: { id: orderId },
+        select: {
+          id: true,
+          userId: true,
+          status: true,
+          holdingPoints: true,
+          fundsHeld: true,
+          productId: true,
+          offerId: true,
+          merchantId: true,
+          deliveryModeSnapshot: true,
+        },
+      })
+      if (!order || order.status !== 'pending') return false
+
+      await tx.fakaBridgeTask.update({
+        where: { id: taskId },
+        data: {
+          status: 'failed',
+          lastError: `REMOTE_${reason}`.slice(0, 64),
+          completedAt: new Date(),
+          leaseToken: null,
+          leaseUntil: null,
+          cancelRequested: true,
+          reconcileNote: `reconcile: remote ${reason} → refund held points`,
+        },
+      })
+
+      await transitionOrderStatus(
+        {
+          orderId: order.id,
+          toStatus: 'refunded',
+          actorRole: 'system',
+          action: 'system.faka_bridge.reconcile_refund',
+          publicNote: '订阅开通失败，积分已退回',
+          internalNote: `reconcile remote=${reason}`,
+        },
+        tx
+      )
+      await releaseHeldOrder(
+        tx,
+        order,
+        `FakaBridge 对账开通失败退款: #${order.id} (${reason})`
+      )
+      await applyRefundInventoryPolicy(tx, order, {
+        fromStatus: 'pending',
+        actorUserId: order.userId,
+      })
+      return true
+    })
+  } catch (err) {
+    logger.warn({ err, taskId, orderId }, 'FakaBridge reconcile refund failed')
+    return false
+  }
 }
 
 async function tryDeliverPendingOrder(

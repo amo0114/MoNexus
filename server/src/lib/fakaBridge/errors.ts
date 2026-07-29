@@ -64,3 +64,22 @@ export function isFakaProvisionSuccessStatus(
   if (s === 'processing' && tradeNo != null && String(tradeNo).trim() !== '') return true
   return false
 }
+
+/**
+ * Classify Xboard order-status for provision / reconcile convergence.
+ * - opened: safe to deliver (or revoke if already refunded)
+ * - not_opened: definitive absence / failure — may refund locally
+ * - intermediate: pending / processing-without-trade / empty — keep reconciling
+ */
+export type FakaRemoteOpenClass = 'opened' | 'not_opened' | 'intermediate'
+
+export function classifyFakaRemoteStatus(
+  status: string | undefined | null,
+  tradeNo: string | null | undefined
+): FakaRemoteOpenClass {
+  if (isFakaProvisionSuccessStatus(status, tradeNo)) return 'opened'
+  const s = (status ?? '').toLowerCase().trim()
+  if (s === 'failed' || s === 'revoked') return 'not_opened'
+  // pending, processing (no trade_no), empty, unknown → not safe to refund
+  return 'intermediate'
+}

@@ -24,6 +24,7 @@ import {
   scheduleFakaRevokeAttempt,
   processFakaRevokeTask,
   processFakaBridgeTask,
+  isLeaseExpiredUtc,
 } from '../../lib/fakaBridge/index.js'
 import { parseStoredDeliveryFields } from '../../lib/deliveryFields.js'
 import {
@@ -2179,7 +2180,7 @@ export async function retryFakaBridgeTask(adminUserId: number, taskId: number) {
     throw badRequest('订单已退款/关闭，请走撤销而非重试开通')
   }
 
-  if (task.leaseUntil && task.leaseUntil.getTime() > Date.now()) {
+  if (!(await isLeaseExpiredUtc(prisma, taskId))) {
     throw badRequest('任务正在处理中（租约未过期），请稍后再重试')
   }
   if (task.cancelRequested) {
@@ -2235,7 +2236,7 @@ export async function forceFakaBridgeRevoke(adminUserId: number, taskId: number)
   if (task.revokeStatus === 'succeeded') {
     throw badRequest('任务已撤销成功')
   }
-  if (task.leaseUntil && task.leaseUntil.getTime() > Date.now()) {
+  if (!(await isLeaseExpiredUtc(prisma, taskId))) {
     throw badRequest('任务租约未过期，请稍后再强制撤销')
   }
 

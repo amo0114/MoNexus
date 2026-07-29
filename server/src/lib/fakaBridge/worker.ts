@@ -11,6 +11,7 @@ import {
 } from '../metrics.js'
 import { callFakaOrderPaid, callFakaOrderStatus, isFakaBridgeConfigured } from './client.js'
 import {
+  classifyFakaRemoteStatus,
   isFakaNonRetryable,
   isFakaProvisionSuccessStatus,
   isFakaUncertainResult,
@@ -23,6 +24,7 @@ import {
   runFakaRevokeBatch,
   __setFakaLifecycleClientOverridesForTests,
 } from './lifecycle.js'
+import { readTaskScheduleUtc } from './scheduleUtc.js'
 
 /** Lease covers HTTP timeout + result write headroom. */
 const LEASE_MS = () => config.fakaBridge.timeoutMs + 20_000
@@ -39,10 +41,17 @@ function panelUrl(): string {
 /** Test-only client overrides (inject mock transport / secret). */
 let testClientOverrides: FakaBridgeClientOptions | undefined
 
+/** Test-only: run after claim commit, before dispatch gate (simulate concurrent refund). */
+let afterClaimHookForTests: (() => Promise<void>) | undefined
+
 export function __setFakaClientOverridesForTests(overrides?: FakaBridgeClientOptions): void {
   testClientOverrides = overrides
   // Keep lifecycle (revoke/reconcile) on the same mock transport.
   __setFakaLifecycleClientOverridesForTests(overrides)
+}
+
+export function __setAfterClaimHookForTests(hook?: () => Promise<void>): void {
+  afterClaimHookForTests = hook
 }
 
 function clientOverrides(): FakaBridgeClientOptions {
@@ -93,8 +102,6 @@ export async function processFakaBridgeTask(taskId: number): Promise<ProcessOutc
         orderId: true,
         status: true,
         cancelRequested: true,
-        nextAttemptAt: true,
-        leaseUntil: true,
         attempts: true,
         maxAttempts: true,
         requestOrderNo: true,
@@ -105,15 +112,17 @@ export async function processFakaBridgeTask(taskId: number): Promise<ProcessOutc
     })
     if (!peek || peek.status !== 'pending') return null
     if (peek.cancelRequested) return null
-    if (peek.nextAttemptAt.getTime() > now.getTime()) return null
-    if (peek.leaseUntil && peek.leaseUntil.getTime() > now.getTime()) return null
+
+    const peekSched = await readTaskScheduleUtc(tx, taskId)
+    if (!peekSched || !peekSched.nextAttemptDue || !peekSched.leaseExpired) return null
 
     await tx.$queryRaw`SELECT "id" FROM "Order" WHERE "id" = ${peek.orderId} FOR UPDATE`
 
-    // Re-read task under order lock
+    // Re-read task + schedule under order lock (UTC re-check)
     const task = await tx.fakaBridgeTask.findUnique({ where: { id: taskId } })
     if (!task || task.status !== 'pending' || task.cancelRequested) return null
-    if (task.leaseUntil && task.leaseUntil.getTime() > now.getTime()) return null
+    const lockedSched = await readTaskScheduleUtc(tx, taskId)
+    if (!lockedSched || !lockedSched.nextAttemptDue || !lockedSched.leaseExpired) return null
 
     const order = await tx.order.findUnique({
       where: { id: task.orderId },
@@ -165,6 +174,54 @@ export async function processFakaBridgeTask(taskId: number): Promise<ProcessOutc
 
   if (!claimed) return 'skipped'
 
+  if (afterClaimHookForTests) {
+    await afterClaimHookForTests()
+  }
+
+  // Dispatch gate: re-lock Order → Task after claim commit, before any HTTP.
+  // If refund committed first → cancel, zero outbound. If gate commits first →
+  // HTTP is allowed; later success must revoke if cancel/refund lands mid-flight.
+  const dispatchOk = await prisma.$transaction(async tx => {
+    await tx.$queryRaw`SELECT "id" FROM "Order" WHERE "id" = ${claimed.orderId} FOR UPDATE`
+    const order = await tx.order.findUnique({
+      where: { id: claimed.orderId },
+      select: { status: true },
+    })
+    const task = await tx.fakaBridgeTask.findUnique({ where: { id: claimed.id } })
+    if (!order || !task) return false
+    if (
+      task.status !== 'pending' ||
+      task.leaseToken !== claimed.leaseToken ||
+      task.cancelRequested ||
+      order.status === 'refunded' ||
+      order.status === 'closed'
+    ) {
+      await tx.fakaBridgeTask.updateMany({
+        where: {
+          id: claimed.id,
+          status: 'pending',
+          leaseToken: claimed.leaseToken,
+        },
+        data: {
+          status: 'cancelled',
+          cancelRequested: true,
+          completedAt: new Date(),
+          lastError: 'ORDER_REFUNDED',
+          leaseToken: null,
+          leaseUntil: null,
+          reconcileNote: 'dispatch gate blocked: order refunded/cancelled before HTTP',
+        },
+      })
+      return false
+    }
+    return true
+  })
+
+  if (!dispatchOk) {
+    fakaProvisionTotal.inc({ outcome: 'skipped' })
+    return 'skipped'
+  }
+
   const paidAt = Math.floor(Date.now() / 1000)
   const result = await callFakaOrderPaid(
     {
@@ -196,68 +253,80 @@ export async function processFakaBridgeTask(taskId: number): Promise<ProcessOutc
     return await finalizeProvisionSuccess(claimed, tradeNo)
   }
 
-  // Uncertain response: probe order-status before giving up.
+  // Paid returned success body but intermediate remote status (pending /
+  // processing without trade_no) — never treat as definitive failure.
+  if (result.ok && result.body && result.body.success === true) {
+    const remoteClass = classifyFakaRemoteStatus(bodyStatus, tradeNo)
+    if (remoteClass === 'intermediate') {
+      const exhaustedEarly =
+        isFakaNonRetryable(result.code as FakaErrorCode, result.httpStatus) ||
+        claimed.attempts >= claimed.maxAttempts
+      if (exhaustedEarly) {
+        await parkNeedsReconcile(
+          claimed,
+          result.code as FakaErrorCode,
+          `remote intermediate status=${bodyStatus || '(empty)'} after ${claimed.attempts} attempts`
+        )
+        fakaProvisionTotal.inc({ outcome: 'retry_scheduled' })
+        return 'retry_scheduled'
+      }
+      await clearLeaseKeepPending(claimed, result.code as FakaErrorCode)
+      fakaProvisionTotal.inc({ outcome: 'retry_scheduled' })
+      return 'retry_scheduled'
+    }
+  }
+
+  // Uncertain transport/business response: probe order-status before giving up.
   const code = result.code as FakaErrorCode
   const nonRetryable = isFakaNonRetryable(code, result.httpStatus)
-  let exhausted = nonRetryable || claimed.attempts >= claimed.maxAttempts
+  const exhausted = nonRetryable || claimed.attempts >= claimed.maxAttempts
 
   if (exhausted && isFakaUncertainResult(code)) {
     const st = await callFakaOrderStatus(claimed.requestOrderNo, clientOverrides())
     if (st.ok && st.body && st.body.success === true) {
       const xbStatus = String(st.body.status ?? '')
       const xbTrade = st.body.trade_no != null ? String(st.body.trade_no) : null
-      if (isFakaProvisionSuccessStatus(xbStatus, xbTrade)) {
+      const remoteClass = classifyFakaRemoteStatus(xbStatus, xbTrade)
+      if (remoteClass === 'opened') {
         return await finalizeProvisionSuccess(claimed, xbTrade)
       }
-      if (xbStatus === 'failed' || xbStatus === 'revoked') {
+      if (remoteClass === 'not_opened') {
         await markFailedAndRefund(claimed, code)
         fakaProvisionTotal.inc({ outcome: 'failed' })
         return 'failed'
       }
-    } else if (st.httpStatus === 404) {
-      await markFailedAndRefund(claimed, code)
-      fakaProvisionTotal.inc({ outcome: 'failed' })
-      return 'failed'
-    } else {
-      // Still unknown — park for reconcile; do NOT refund yet.
-      await prisma.fakaBridgeTask.updateMany({
-        where: {
-          id: claimed.id,
-          status: 'pending',
-          leaseToken: claimed.leaseToken,
-        },
-        data: {
-          status: 'needs_reconcile',
-          lastError: code,
-          leaseToken: null,
-          leaseUntil: null,
-          nextAttemptAt: new Date(Date.now() + 5 * 60 * 1000),
-          reconcileNote: `uncertain after ${claimed.attempts} attempts (${code}); awaiting status`,
-        },
-      })
+      // intermediate (pending / processing-no-trade) → park, do NOT refund
+      await parkNeedsReconcile(
+        claimed,
+        code,
+        `status probe intermediate (${xbStatus || 'empty'}) after ${claimed.attempts} attempts`
+      )
       fakaProvisionTotal.inc({ outcome: 'retry_scheduled' })
       return 'retry_scheduled'
     }
+    if (st.httpStatus === 404) {
+      await markFailedAndRefund(claimed, code)
+      fakaProvisionTotal.inc({ outcome: 'failed' })
+      return 'failed'
+    }
+    // Probe failed / unknown — park for reconcile; do NOT refund yet.
+    await parkNeedsReconcile(
+      claimed,
+      code,
+      `uncertain after ${claimed.attempts} attempts (${code}); awaiting status`
+    )
+    fakaProvisionTotal.inc({ outcome: 'retry_scheduled' })
+    return 'retry_scheduled'
   }
 
   if (exhausted) {
+    // Definitive non-retryable / business failure only.
     await markFailedAndRefund(claimed, code)
     fakaProvisionTotal.inc({ outcome: 'failed' })
     return 'failed'
   }
 
-  await prisma.fakaBridgeTask.updateMany({
-    where: {
-      id: claimed.id,
-      status: 'pending',
-      leaseToken: claimed.leaseToken,
-    },
-    data: {
-      lastError: code,
-      leaseToken: null,
-      leaseUntil: null,
-    },
-  })
+  await clearLeaseKeepPending(claimed, code)
 
   logger.warn(
     {
@@ -271,6 +340,46 @@ export async function processFakaBridgeTask(taskId: number): Promise<ProcessOutc
   )
   fakaProvisionTotal.inc({ outcome: 'retry_scheduled' })
   return 'retry_scheduled'
+}
+
+async function parkNeedsReconcile(
+  claimed: { id: number; leaseToken: string },
+  code: FakaErrorCode,
+  note: string
+): Promise<void> {
+  await prisma.fakaBridgeTask.updateMany({
+    where: {
+      id: claimed.id,
+      status: 'pending',
+      leaseToken: claimed.leaseToken,
+    },
+    data: {
+      status: 'needs_reconcile',
+      lastError: code,
+      leaseToken: null,
+      leaseUntil: null,
+      nextAttemptAt: new Date(Date.now() + 5 * 60 * 1000),
+      reconcileNote: note,
+    },
+  })
+}
+
+async function clearLeaseKeepPending(
+  claimed: { id: number; leaseToken: string },
+  code: FakaErrorCode
+): Promise<void> {
+  await prisma.fakaBridgeTask.updateMany({
+    where: {
+      id: claimed.id,
+      status: 'pending',
+      leaseToken: claimed.leaseToken,
+    },
+    data: {
+      lastError: code,
+      leaseToken: null,
+      leaseUntil: null,
+    },
+  })
 }
 
 type ClaimedTask = {
