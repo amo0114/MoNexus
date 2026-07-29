@@ -906,7 +906,7 @@ describe('P1 hardening', () => {
     expect(order.status).not.toBe('delivered')
   })
 
-  it('revoke order_no mismatch keeps revoke pending for retry', async () => {
+  it('revoke order_no mismatch schedules backoff; exhausted becomes failed', async () => {
     const { user } = await verifiedBuyer()
     const { product, offer } = await fakaProduct()
     const created = await createOrder(user.id, product.id, {
@@ -922,8 +922,10 @@ describe('P1 hardening', () => {
         status: 'succeeded',
         xboardTradeNo: 'XB-1',
         revokeStatus: 'pending',
+        revokeAttempts: 0,
         leaseToken: null,
         leaseUntil: null,
+        nextAttemptAt: new Date(0),
       },
     })
 
@@ -944,9 +946,85 @@ describe('P1 hardening', () => {
 
     const outcome = await processFakaRevokeTask(task.id)
     expect(outcome).toBe('failed')
-    const done = await prisma.fakaBridgeTask.findUniqueOrThrow({ where: { id: task.id } })
+    let done = await prisma.fakaBridgeTask.findUniqueOrThrow({ where: { id: task.id } })
     expect(done.revokeStatus).toBe('pending')
     expect(done.lastRevokeError).toBe('FAKA_ORDER_NO_MISMATCH')
+    expect(done.nextAttemptAt.getTime()).toBeGreaterThan(Date.now())
+    // Immediate second process must skip (backoff not due)
+    expect(await processFakaRevokeTask(task.id)).toBe('skipped')
+
+    // Exhaust remaining attempts
+    for (let i = 0; i < 10; i++) {
+      await prisma.fakaBridgeTask.update({
+        where: { id: task.id },
+        data: { nextAttemptAt: new Date(0), leaseToken: null, leaseUntil: null },
+      })
+      if ((await prisma.fakaBridgeTask.findUniqueOrThrow({ where: { id: task.id } })).revokeStatus !== 'pending') {
+        break
+      }
+      await processFakaRevokeTask(task.id)
+    }
+    done = await prisma.fakaBridgeTask.findUniqueOrThrow({ where: { id: task.id } })
+    expect(done.revokeStatus).toBe('failed')
+    expect(done.lastRevokeError).toBe('FAKA_ORDER_NO_MISMATCH')
+  })
+
+  it('stuck order_no mismatch parks with cooldown — two reconcile rounds probe once', async () => {
+    const { user } = await verifiedBuyer()
+    const { product, offer } = await fakaProduct()
+    const created = await createOrder(user.id, product.id, {
+      offerId: offer.id,
+      expectedPrice: 100,
+      idempotencyKey: randomUUID(),
+    })
+    const task = await prisma.fakaBridgeTask.findUniqueOrThrow({ where: { orderId: created.orderId } })
+
+    await prisma.$executeRaw`
+      UPDATE "FakaBridgeTask"
+      SET
+        "status" = 'needs_reconcile',
+        "attempts" = 3,
+        "maxAttempts" = 3,
+        "leaseToken" = NULL,
+        "leaseUntil" = NULL,
+        "createdAt" = (CURRENT_TIMESTAMP AT TIME ZONE 'UTC') - interval '10 minutes',
+        "nextAttemptAt" = (CURRENT_TIMESTAMP AT TIME ZONE 'UTC') - interval '1 second',
+        "reconcileNote" = 'due for mismatch probe'
+      WHERE "id" = ${task.id}
+    `
+
+    let statusProbes = 0
+    __setFakaClientOverridesForTests({
+      url: config.fakaBridge.url,
+      secret: config.fakaBridge.secret,
+      transport: (async ({ url }) => {
+        if (String(url).includes('order-status')) {
+          statusProbes += 1
+          return {
+            status: 200,
+            text: JSON.stringify({
+              success: true,
+              order_no: 'MN-SERIAL-CROSS-WIRE',
+              status: 'completed',
+              trade_no: 'XB-X',
+            }),
+          }
+        }
+        return { status: 500, text: '{}' }
+      }) as FakaTransport,
+    })
+
+    await runFakaReconcileBatch(20)
+    expect(statusProbes).toBe(1)
+    const parked = await prisma.fakaBridgeTask.findUniqueOrThrow({ where: { id: task.id } })
+    expect(parked.status).toBe('needs_reconcile')
+    expect(parked.lastError).toBe('FAKA_ORDER_NO_MISMATCH')
+    expect(parked.nextAttemptAt.getTime()).toBeGreaterThan(Date.now() + 60_000)
+    expect(parked.reconcileNote).toMatch(/order_no mismatch|cooldown/i)
+
+    // Second cron tick must not re-probe while cooldown is active
+    await runFakaReconcileBatch(20)
+    expect(statusProbes).toBe(1)
   })
 
   it('OTP concurrent first-send: one mail, peer gets rate limit not 500', async () => {

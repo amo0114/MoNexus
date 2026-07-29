@@ -24,6 +24,15 @@ import { isLeaseExpiredUtc, readTaskScheduleUtc } from './scheduleUtc.js'
 type Tx = Prisma.TransactionClient
 
 const MAX_REVOKE_ATTEMPTS = 5
+/** Cooldown after order_no mismatch / intermediate park (status probes). */
+const RECONCILE_COOLDOWN_MS = 5 * 60 * 1000
+/** Backoff after failed revoke attempt n (1-based attempt already incremented). */
+const REVOKE_BACKOFF_MS = [60_000, 300_000, 900_000, 900_000, 1_800_000]
+
+function revokeBackoffMs(attempts: number): number {
+  const idx = Math.min(Math.max(attempts, 1), REVOKE_BACKOFF_MS.length) - 1
+  return REVOKE_BACKOFF_MS[idx] ?? REVOKE_BACKOFF_MS[REVOKE_BACKOFF_MS.length - 1]
+}
 
 /** Shared with worker tests via __setFakaClientOverridesForTests. */
 let testClientOverrides: FakaBridgeClientOptions | undefined
@@ -163,27 +172,31 @@ export async function processFakaRevokeTask(taskId: number): Promise<'succeeded'
     const peek = await tx.fakaBridgeTask.findUnique({ where: { id: taskId } })
     if (!peek || peek.revokeStatus !== 'pending') return null
     const peekSched = await readTaskScheduleUtc(tx, taskId)
-    if (!peekSched?.leaseExpired) return null
+    // Honour nextAttemptAt backoff (UTC) and lease
+    if (!peekSched?.leaseExpired || !peekSched.nextAttemptDue) return null
     // Order → Task lock order (matches refund path)
     await tx.$queryRaw`SELECT "id" FROM "Order" WHERE "id" = ${peek.orderId} FOR UPDATE`
     const task = await tx.fakaBridgeTask.findUnique({ where: { id: taskId } })
     if (!task || task.revokeStatus !== 'pending') return null
     const lockedSched = await readTaskScheduleUtc(tx, taskId)
-    if (!lockedSched?.leaseExpired) return null
+    if (!lockedSched?.leaseExpired || !lockedSched.nextAttemptDue) return null
     const leaseToken = `revoke-${Date.now()}-${Math.random().toString(16).slice(2)}`
+    const attempts = task.revokeAttempts + 1
     await tx.fakaBridgeTask.update({
       where: { id: taskId },
       data: {
-        revokeAttempts: task.revokeAttempts + 1,
+        revokeAttempts: attempts,
         leaseToken,
         leaseUntil: new Date(now.getTime() + config.fakaBridge.timeoutMs + 20_000),
+        // Pre-write backoff so crash mid-HTTP does not tight-loop
+        nextAttemptAt: new Date(now.getTime() + revokeBackoffMs(attempts)),
       },
     })
     return {
       id: task.id,
       orderId: task.orderId,
       requestOrderNo: task.requestOrderNo,
-      revokeAttempts: task.revokeAttempts + 1,
+      revokeAttempts: attempts,
       leaseToken,
     }
   })
@@ -205,19 +218,31 @@ export async function processFakaRevokeTask(taskId: number): Promise<'succeeded'
   if (result.ok && result.body && result.body.success === true) {
     // Must bind revoke response to this task's requestOrderNo — never mark succeeded on mismatch.
     if (!fakaRemoteOrderNoMatches(result.body, task.requestOrderNo)) {
+      const exhausted = attempts >= MAX_REVOKE_ATTEMPTS
       await prisma.fakaBridgeTask.updateMany({
         where: { id: taskId, leaseToken: claimed.leaseToken, revokeStatus: 'pending' },
-        data: {
-          lastRevokeError: 'FAKA_ORDER_NO_MISMATCH',
-          leaseToken: null,
-          leaseUntil: null,
-          reconcileNote: `revoke response order_no missing/mismatch (expected ${task.requestOrderNo}); keep pending`,
-        },
+        data: exhausted
+          ? {
+              revokeStatus: 'failed',
+              lastRevokeError: 'FAKA_ORDER_NO_MISMATCH',
+              leaseToken: null,
+              leaseUntil: null,
+              reconcileNote: `revoke order_no mismatch after ${attempts} attempts (expected ${task.requestOrderNo}); admin intervention required`,
+            }
+          : {
+              lastRevokeError: 'FAKA_ORDER_NO_MISMATCH',
+              leaseToken: null,
+              leaseUntil: null,
+              nextAttemptAt: new Date(Date.now() + revokeBackoffMs(attempts)),
+              reconcileNote: `revoke order_no mismatch (expected ${task.requestOrderNo}); backoff then retry ${attempts}/${MAX_REVOKE_ATTEMPTS}`,
+            },
       })
       fakaRevokeTotal.inc({ outcome: 'failed' })
       logger.warn(
-        { taskId, orderId: task.orderId, expected: task.requestOrderNo },
-        'FakaBridge revoke order_no mismatch; retry later'
+        { taskId, orderId: task.orderId, expected: task.requestOrderNo, attempts, exhausted },
+        exhausted
+          ? 'FakaBridge revoke order_no mismatch exhausted; marked failed'
+          : 'FakaBridge revoke order_no mismatch; backoff scheduled'
       )
       return 'failed'
     }
@@ -269,7 +294,12 @@ export async function processFakaRevokeTask(taskId: number): Promise<'succeeded'
 
   await prisma.fakaBridgeTask.updateMany({
     where: { id: taskId, leaseToken: claimed.leaseToken, revokeStatus: 'pending' },
-    data: { lastRevokeError: result.code, leaseToken: null, leaseUntil: null },
+    data: {
+      lastRevokeError: result.code,
+      leaseToken: null,
+      leaseUntil: null,
+      nextAttemptAt: new Date(Date.now() + revokeBackoffMs(attempts)),
+    },
   })
   fakaRevokeTotal.inc({ outcome: 'failed' })
   return 'failed'
@@ -277,12 +307,16 @@ export async function processFakaRevokeTask(taskId: number): Promise<'succeeded'
 
 export async function runFakaRevokeBatch(limit = 10): Promise<number> {
   if (!hasClientCredentials()) return 0
-  const due = await prisma.fakaBridgeTask.findMany({
-    where: { revokeStatus: 'pending' },
-    orderBy: { id: 'asc' },
-    take: limit,
-    select: { id: true },
-  })
+  // UTC-safe due selection (nextAttemptAt + lease) — same discipline as provision batch
+  const now = new Date()
+  const due = await prisma.$queryRaw<Array<{ id: number }>>`
+    SELECT "id" FROM "FakaBridgeTask"
+    WHERE "revokeStatus" = 'pending'
+      AND ("nextAttemptAt" AT TIME ZONE 'UTC') <= ${now}
+      AND ("leaseUntil" IS NULL OR ("leaseUntil" AT TIME ZONE 'UTC') <= ${now})
+    ORDER BY "nextAttemptAt" ASC
+    LIMIT ${limit}
+  `
   let n = 0
   for (const row of due) {
     const outcome = await processFakaRevokeTask(row.id)
@@ -415,8 +449,9 @@ export async function runFakaReconcileBatch(limit = 20): Promise<number> {
           data: {
             status: 'needs_reconcile',
             cancelRequested: true,
-            nextAttemptAt: new Date(Date.now() + 5 * 60 * 1000),
-            reconcileNote: `reconcile: status order_no mismatch (expected ${full.requestOrderNo})`,
+            lastError: 'FAKA_ORDER_NO_MISMATCH',
+            nextAttemptAt: new Date(Date.now() + RECONCILE_COOLDOWN_MS),
+            reconcileNote: `reconcile: status order_no mismatch (expected ${full.requestOrderNo}); cooldown ${RECONCILE_COOLDOWN_MS / 1000}s`,
           },
         })
         fakaReconcileTotal.inc({ action: 'refund_status_order_no_mismatch' })
@@ -540,7 +575,21 @@ export async function runFakaReconcileBatch(limit = 20): Promise<number> {
     const xbBody =
       statusRes.ok && statusRes.body && statusRes.body.success === true ? statusRes.body : null
     if (xbBody && !fakaRemoteOrderNoMatches(xbBody, task.requestOrderNo)) {
+      // Persist diagnosis + cooldown so this row does not re-enter every 30s tick
+      // and starve other reconcile candidates under LIMIT.
+      await prisma.fakaBridgeTask.update({
+        where: { id: task.id },
+        data: {
+          status: 'needs_reconcile',
+          lastError: 'FAKA_ORDER_NO_MISMATCH',
+          leaseToken: null,
+          leaseUntil: null,
+          nextAttemptAt: new Date(Date.now() + RECONCILE_COOLDOWN_MS),
+          reconcileNote: `reconcile: status order_no mismatch (expected ${task.requestOrderNo}); cooldown ${RECONCILE_COOLDOWN_MS / 1000}s`,
+        },
+      })
       fakaReconcileTotal.inc({ action: 'status_order_no_mismatch' })
+      actions += 1
       continue
     }
     const xbStatus = xbBody ? String(xbBody.status ?? '') : ''
