@@ -1,6 +1,7 @@
 import { describe, expect, it, beforeEach } from 'vitest'
 import { prisma } from '../lib/prisma.js'
 import {
+  MAX_PROVISION_EMAIL_SENDS_PER_USER_PER_DAY,
   sendProvisionEmailCode,
   confirmProvisionEmailCode,
   isProvisionEmailTrusted,
@@ -8,6 +9,7 @@ import {
 } from '../lib/fakaBridge/provisionEmailProof.js'
 import { __setMailerForTesting } from '../lib/mailer/index.js'
 import type { Mailer } from '../lib/mailer/types.js'
+import { createTestUser } from './helpers.js'
 
 const sent: { to: string; text: string }[] = []
 
@@ -19,6 +21,7 @@ beforeEach(async () => {
     },
   } as Mailer)
   await prisma.fakaProvisionEmailProof.deleteMany({})
+  await prisma.$executeRawUnsafe('DELETE FROM "FakaProvisionEmailSendBudget"')
 })
 
 describe('provision email ownership', () => {
@@ -51,5 +54,80 @@ describe('provision email ownership', () => {
     })
     expect(row?.verifiedAt).toBeTruthy()
     expect(row?.proofExpiresAt).toBeNull()
+  })
+
+  it('serializes the rolling daily quota across distinct target emails', async () => {
+    const { user } = await createTestUser(
+      `faka-otp-budget-${Date.now()}@example.com`,
+      'pass123',
+      'user',
+      100
+    )
+    const targets = Array.from(
+      { length: MAX_PROVISION_EMAIL_SENDS_PER_USER_PER_DAY + 2 },
+      (_, i) => `faka-otp-target-${Date.now()}-${i}@example.com`
+    )
+
+    const outcomes = await Promise.allSettled(
+      targets.map(email => sendProvisionEmailCode(user.id, email))
+    )
+    const fulfilled = outcomes.filter(
+      (
+        outcome
+      ): outcome is PromiseFulfilledResult<Awaited<ReturnType<typeof sendProvisionEmailCode>>> =>
+        outcome.status === 'fulfilled'
+    )
+    const rejected = outcomes.filter(
+      (outcome): outcome is PromiseRejectedResult => outcome.status === 'rejected'
+    )
+
+    expect(fulfilled).toHaveLength(MAX_PROVISION_EMAIL_SENDS_PER_USER_PER_DAY)
+    expect(fulfilled.every(outcome => outcome.value.sent)).toBe(true)
+    expect(rejected).toHaveLength(2)
+    expect(rejected.every(outcome => String(outcome.reason).includes('已达上限'))).toBe(true)
+    expect(sent).toHaveLength(MAX_PROVISION_EMAIL_SENDS_PER_USER_PER_DAY)
+
+    const budget = await prisma.$queryRaw<Array<{ sendCount: number }>>`
+      SELECT "sendCount" FROM "FakaProvisionEmailSendBudget" WHERE "userId" = ${user.id}`
+    expect(budget).toEqual([{ sendCount: MAX_PROVISION_EMAIL_SENDS_PER_USER_PER_DAY }])
+  })
+
+  it('keeps a failed SMTP attempt retryable without releasing its reserved quota', async () => {
+    const { user } = await createTestUser(
+      `faka-otp-retry-${Date.now()}@example.com`,
+      'pass123',
+      'user',
+      100
+    )
+    const target = `faka-otp-failure-${Date.now()}@example.com`
+    __setMailerForTesting({
+      send: async () => {
+        throw new Error('SMTP unavailable')
+      },
+    } as Mailer)
+
+    await expect(sendProvisionEmailCode(user.id, target)).rejects.toThrow('SMTP unavailable')
+    const first = await prisma.fakaProvisionEmailProof.findUniqueOrThrow({
+      where: { userId_email: { userId: user.id, email: target } },
+    })
+    expect(first.sendCount).toBe(1)
+
+    // The original 60s interval remains the retry gate.  Move it past that
+    // interval rather than releasing the committed mail reservation.
+    await prisma.fakaProvisionEmailProof.update({
+      where: { id: first.id },
+      data: { lastSentAt: new Date(Date.now() - 61_000) },
+    })
+    __setMailerForTesting({
+      send: async message => {
+        sent.push({ to: message.to, text: message.text ?? '' })
+      },
+    } as Mailer)
+
+    await expect(sendProvisionEmailCode(user.id, target)).resolves.toMatchObject({ sent: true })
+    const budget = await prisma.$queryRaw<Array<{ sendCount: number }>>`
+      SELECT "sendCount" FROM "FakaProvisionEmailSendBudget" WHERE "userId" = ${user.id}`
+    expect(budget).toEqual([{ sendCount: 2 }])
+    expect(sent).toHaveLength(1)
   })
 })

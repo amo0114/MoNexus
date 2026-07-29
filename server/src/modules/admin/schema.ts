@@ -215,7 +215,7 @@ export const batchSettleSchema = z.object({
 
 export const listFakaTasksQuerySchema = z.object({
   status: z
-    .enum(['pending', 'succeeded', 'failed', 'cancelled'])
+    .enum(['pending', 'succeeded', 'failed', 'cancelled', 'needs_reconcile'])
     .optional(),
   revokeStatus: z
     .enum(['pending', 'succeeded', 'failed', 'skipped'])

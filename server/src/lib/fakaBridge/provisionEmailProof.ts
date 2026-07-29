@@ -13,6 +13,9 @@ export const PROVISION_CODE_TTL_MS = 10 * 60 * 1000
  */
 export const PROVISION_PROOF_TTL_MS = 0
 const MAX_SENDS_PER_HOUR = 5
+/** One MoNexus account may send OTPs to at most ten target addresses/attempts per rolling day. */
+export const MAX_PROVISION_EMAIL_SENDS_PER_USER_PER_DAY = 10
+export const PROVISION_EMAIL_USER_SEND_WINDOW_MS = 24 * 60 * 60 * 1000
 const MAX_CONFIRM_ATTEMPTS = 8
 const MIN_RESEND_INTERVAL_MS = 60 * 1000
 
@@ -121,11 +124,19 @@ export async function sendProvisionEmailCode(userId: number, emailRaw: string) {
   const codeHash = hashCode(userId, email, code)
   const codeExpiresAt = new Date(now + PROVISION_CODE_TTL_MS)
 
-  // Atomic send budget: lock row (or create) then check+increment under transaction.
-  // P2002 on first-create aborts the PG transaction — catch outside and reopen a new tx.
+  // Atomic send budget: a dedicated userId row serializes every target email,
+  // then the per-email proof row applies the short resend/hour limits.  The
+  // lock order is always Budget → Proof, so different-email requests from one
+  // account cannot race past the rolling daily cap.
   type SendOutcome =
     | { kind: 'ok' }
     | { kind: 'error'; status: number; message: string }
+
+  type UserSendBudgetRow = {
+    userId: number
+    windowStartedAt: Date
+    sendCount: number
+  }
 
   function isUniqueViolation(err: unknown): boolean {
     return Boolean(
@@ -164,90 +175,113 @@ export async function sendProvisionEmailCode(userId: number, emailRaw: string) {
     return null
   }
 
-  async function consumeSendBudgetOnExisting(): Promise<SendOutcome> {
+  function userDailyLimitOutcome(
+    windowStartedAt: Date,
+    sendCount: number
+  ): { outcome: SendOutcome | null; windowStartedAt: Date; sendCount: number } {
+    if (now - windowStartedAt.getTime() >= PROVISION_EMAIL_USER_SEND_WINDOW_MS) {
+      return { outcome: null, windowStartedAt: new Date(now), sendCount: 0 }
+    }
+    if (sendCount >= MAX_PROVISION_EMAIL_SENDS_PER_USER_PER_DAY) {
+      const waitMs = Math.max(
+        0,
+        windowStartedAt.getTime() + PROVISION_EMAIL_USER_SEND_WINDOW_MS - now
+      )
+      return {
+        outcome: {
+          kind: 'error',
+          status: 429,
+          message: `该账号今日开通邮箱验证码发送已达上限，请 ${Math.max(1, Math.ceil(waitMs / 60_000))} 分钟后再试`,
+        },
+        windowStartedAt,
+        sendCount,
+      }
+    }
+    return { outcome: null, windowStartedAt, sendCount }
+  }
+
+  async function reserveSendBudget(): Promise<SendOutcome> {
     return prisma.$transaction(async (tx): Promise<SendOutcome> => {
+      const nowDate = new Date(now)
+      // `ON CONFLICT DO NOTHING` handles first-send races without aborting the
+      // transaction.  The following FOR UPDATE is the single per-user mutex.
+      await tx.$executeRaw`
+        INSERT INTO "FakaProvisionEmailSendBudget" ("userId", "windowStartedAt", "sendCount")
+        VALUES (${userId}, ${nowDate}, 0)
+        ON CONFLICT ("userId") DO NOTHING`
+      const budgetRows = await tx.$queryRaw<UserSendBudgetRow[]>`
+        SELECT "userId", "windowStartedAt", "sendCount"
+        FROM "FakaProvisionEmailSendBudget"
+        WHERE "userId" = ${userId}
+        FOR UPDATE`
+      const budget = budgetRows[0]
+      if (!budget) throw new Error('Faka provision email budget row missing after insert')
+
+      const daily = userDailyLimitOutcome(budget.windowStartedAt, budget.sendCount)
+      if (daily.outcome) return daily.outcome
+
       const peek = await tx.fakaProvisionEmailProof.findUnique({
         where: { userId_email: { userId, email } },
       })
-      if (!peek) {
-        return { kind: 'error', status: 400, message: '请先发送验证码' }
-      }
-      await tx.$queryRaw`SELECT "id" FROM "FakaProvisionEmailProof" WHERE "id" = ${peek.id} FOR UPDATE`
-      const row = await tx.fakaProvisionEmailProof.findUnique({ where: { id: peek.id } })
-      if (!row) {
-        return { kind: 'error', status: 400, message: '请先发送验证码' }
-      }
-      const limited = rateLimitOutcome(row.lastSentAt, row.sendCount ?? 0)
-      if (limited) return limited
-      let sendCount = row.sendCount ?? 0
-      if (!row.lastSentAt || now - row.lastSentAt.getTime() > 60 * 60 * 1000) {
-        sendCount = 0
-      }
-      await tx.fakaProvisionEmailProof.update({
-        where: { id: row.id },
-        data: {
-          codeHash,
-          codeExpiresAt,
-          sendCount: sendCount + 1,
-          lastSentAt: new Date(now),
-          confirmAttempts: 0,
-        },
-      })
-      return { kind: 'ok' }
-    })
-  }
 
-  let sendOutcome: SendOutcome
-  try {
-    sendOutcome = await prisma.$transaction(async (tx): Promise<SendOutcome> => {
-      let existing = await tx.fakaProvisionEmailProof.findUnique({
-        where: { userId_email: { userId, email } },
-      })
-      if (existing) {
-        await tx.$queryRaw`SELECT "id" FROM "FakaProvisionEmailProof" WHERE "id" = ${existing.id} FOR UPDATE`
-        existing = await tx.fakaProvisionEmailProof.findUnique({ where: { id: existing.id } })
-      }
-
-      if (existing) {
+      if (peek) {
+        await tx.$queryRaw`SELECT "id" FROM "FakaProvisionEmailProof" WHERE "id" = ${peek.id} FOR UPDATE`
+        const existing = await tx.fakaProvisionEmailProof.findUnique({ where: { id: peek.id } })
+        if (!existing) throw new Error('Faka provision email proof disappeared while locked')
         const limited = rateLimitOutcome(existing.lastSentAt, existing.sendCount ?? 0)
         if (limited) return limited
-        let sendCount = existing.sendCount ?? 0
+        let emailSendCount = existing.sendCount ?? 0
         if (!existing.lastSentAt || now - existing.lastSentAt.getTime() > 60 * 60 * 1000) {
-          sendCount = 0
+          emailSendCount = 0
         }
         await tx.fakaProvisionEmailProof.update({
           where: { id: existing.id },
           data: {
             codeHash,
             codeExpiresAt,
-            sendCount: sendCount + 1,
-            lastSentAt: new Date(now),
+            sendCount: emailSendCount + 1,
+            lastSentAt: nowDate,
             confirmAttempts: 0,
           },
         })
-        return { kind: 'ok' }
+      } else {
+        // The per-user Budget lock serializes modern writers.  Keep the outer
+        // P2002 retry below for a rolling deploy where an older worker may
+        // still create this unique (userId,email) row without that mutex.
+        await tx.fakaProvisionEmailProof.create({
+          data: {
+            userId,
+            email,
+            codeHash,
+            codeExpiresAt,
+            sendCount: 1,
+            lastSentAt: nowDate,
+            confirmAttempts: 0,
+            verifiedAt: null,
+            proofExpiresAt: null,
+          },
+        })
       }
 
-      // First send — create. Concurrent peer may win unique(userId,email).
-      await tx.fakaProvisionEmailProof.create({
-        data: {
-          userId,
-          email,
-          codeHash,
-          codeExpiresAt,
-          sendCount: 1,
-          lastSentAt: new Date(now),
-          confirmAttempts: 0,
-          verifiedAt: null,
-          proofExpiresAt: null,
-        },
-      })
+      await tx.$executeRaw`
+        UPDATE "FakaProvisionEmailSendBudget"
+        SET "windowStartedAt" = ${daily.windowStartedAt},
+            "sendCount" = ${daily.sendCount + 1},
+            "updatedAt" = ${nowDate}
+        WHERE "userId" = ${userId}`
       return { kind: 'ok' }
     })
+  }
+
+  let sendOutcome: SendOutcome
+  try {
+    sendOutcome = await reserveSendBudget()
   } catch (err) {
     if (!isUniqueViolation(err)) throw err
-    // Aborted create tx cannot continue — reopen and update under lock.
-    sendOutcome = await consumeSendBudgetOnExisting()
+    // A concurrent pre-upgrade writer may win Proof's unique constraint.  Its
+    // transaction has aborted; reopen from the Budget mutex and apply both
+    // per-email and per-user limits consistently.
+    sendOutcome = await reserveSendBudget()
   }
 
   if (sendOutcome.kind === 'error') {
@@ -255,6 +289,10 @@ export async function sendProvisionEmailCode(userId: number, emailRaw: string) {
     throw badRequest(sendOutcome.message)
   }
 
+  // The reservation commits before SMTP.  A thrown SMTP call cannot prove the
+  // remote server did not accept the mail, so do not refund either limit: that
+  // would make delivery failures a bypass.  The persisted code still permits
+  // the normal retry after the 60s per-email interval (at-least-once mail).
   const mailer = await getMailer()
   await mailer.send({
     to: email,

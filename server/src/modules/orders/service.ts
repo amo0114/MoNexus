@@ -42,6 +42,23 @@ import {
   scheduleFakaBridgeFirstAttempt,
 } from '../../lib/fakaBridge/index.js'
 
+/**
+ * Deterministic seam for the Faka checkout race regression.  Production never
+ * sets this hook; tests use it to mutate the Offer after checkout resolution
+ * but before the transaction takes its final Offer row lock.
+ */
+type BeforeFakaOfferTaskRecheckHook = (input: {
+  offerId: number
+  externalSku: string
+}) => Promise<void>
+let beforeFakaOfferTaskRecheckHookForTests: BeforeFakaOfferTaskRecheckHook | null = null
+
+export function __setBeforeFakaOfferTaskRecheckHookForTests(
+  hook: BeforeFakaOfferTaskRecheckHook | null
+): void {
+  beforeFakaOfferTaskRecheckHookForTests = hook
+}
+
 // manual_service 商家履约 SLA：创建订单后 7 天内需交付，M3-S2 工作台高亮超时
 // P6a：履约 SLA 天数迁入 SystemConfig（fulfillmentSlaDays），下单事务内读取。
 
@@ -484,6 +501,35 @@ async function createOrderOnce(
       )
     }
     if (fakaBridge && buyerEmail && offer.externalSku) {
+      // FakaBridge 的 preflight（邮箱证明、容量）必须在事务外执行，但其 SKU 是
+      // 不可逆外呼的履约合同。最终在同一订单事务内锁 Offer 并重验，避免管理员
+      // 在 resolvePurchaseOfferChecked() 与 outbox create 之间切换 SKU / 集成，
+      // 让买家按旧快照被开通到错误套餐。
+      if (beforeFakaOfferTaskRecheckHookForTests) {
+        await beforeFakaOfferTaskRecheckHookForTests({
+          offerId: offer.id,
+          externalSku: offer.externalSku,
+        })
+      }
+      const fakaOfferRecheck = await tx.$queryRaw<
+        Array<{
+          externalIntegration: string | null
+          externalSku: string | null
+          autoProvision: boolean
+        }>
+      >`
+        SELECT "externalIntegration", "externalSku", "autoProvision"
+        FROM "Offer"
+        WHERE "id" = ${offer.id}
+        FOR NO KEY UPDATE`
+      if (
+        fakaOfferRecheck.length === 0 ||
+        fakaOfferRecheck[0].externalIntegration !== 'faka_bridge' ||
+        fakaOfferRecheck[0].externalSku !== offer.externalSku ||
+        fakaOfferRecheck[0].autoProvision
+      ) {
+        throw new HttpError(409, 'CHECKOUT_CHANGED', '商品信息已变化，请重新确认')
+      }
       // FakaBridge outbox：与订单同事务提交；外呼在事务外 worker。
       const task = await createFakaBridgeTaskForOrder(tx, {
         orderId: order.id,

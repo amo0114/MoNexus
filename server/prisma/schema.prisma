@@ -48,6 +48,7 @@ model User {
   authChallenges          AuthChallenge[]
   securityEvents          SecurityEvent[]
   fakaProvisionEmailProofs FakaProvisionEmailProof[]
+  fakaProvisionEmailSendBudget FakaProvisionEmailSendBudget?
 }
 
 // FakaBridge 开通邮箱归属证明：防止填写他人 Xboard 邮箱后降配/续费他人套餐。
@@ -73,6 +74,19 @@ model FakaProvisionEmailProof {
 
   @@unique([userId, email])
   @@index([userId, proofExpiresAt])
+}
+
+// Per-account outbound OTP budget across every target email.  A single proof
+// row cannot represent this safely because repeated sends to one address only
+// update that row; this dedicated row serializes all userId mail reservations.
+model FakaProvisionEmailSendBudget {
+  userId          Int      @id
+  windowStartedAt DateTime
+  sendCount       Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model Announcement {

@@ -108,6 +108,7 @@ export default function AdminFakaTasksPanel() {
           <option value="succeeded">succeeded</option>
           <option value="failed">failed</option>
           <option value="cancelled">cancelled</option>
+          <option value="needs_reconcile">needs_reconcile</option>
         </select>
         <select
           className="admin-input text-sm"

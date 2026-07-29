@@ -23,6 +23,7 @@ import type { FakaTransport } from '../lib/fakaBridge/types.js'
 import { createTestUser } from './helpers.js'
 import { __setMailerForTesting } from '../lib/mailer/index.js'
 import { CaptureMailer } from '../lib/mailer/capture.js'
+import { listFakaTasksQuerySchema } from '../modules/admin/schema.js'
 
 const ORIG = { ...config.fakaBridge }
 
@@ -101,6 +102,12 @@ describe('P1 hardening', () => {
     expect(() =>
       assertOfferProvisionMutex({ autoProvision: true, externalIntegration: 'faka_bridge' })
     ).toThrow(/不能同时/)
+  })
+
+  it('admin task status filter accepts needs_reconcile', () => {
+    expect(listFakaTasksQuerySchema.parse({ status: 'needs_reconcile' }).status).toBe(
+      'needs_reconcile'
+    )
   })
 
   it('does not deliver when paid response is success without completed status', async () => {
@@ -325,6 +332,91 @@ describe('P1 hardening', () => {
     expect(done.status).toBe('succeeded')
     expect(done.revokeStatus).toBe('pending')
     expect(done.xboardTradeNo).toBe('XB-RECON-1')
+  })
+
+  it('refunded reconcile status response cannot clear a revoke lease claimed during HTTP', async () => {
+    const { user } = await verifiedBuyer()
+    const { product, offer } = await fakaProduct()
+    const created = await createOrder(user.id, product.id, {
+      offerId: offer.id,
+      expectedPrice: 100,
+      idempotencyKey: randomUUID(),
+    })
+    const task = await prisma.fakaBridgeTask.findUniqueOrThrow({ where: { orderId: created.orderId } })
+
+    await prisma.order.update({ where: { id: created.orderId }, data: { status: 'refunded' } })
+    await prisma.fakaBridgeTask.update({
+      where: { id: task.id },
+      data: {
+        status: 'needs_reconcile',
+        cancelRequested: true,
+        attempts: 1,
+        revokeStatus: 'pending',
+        leaseToken: null,
+        leaseUntil: null,
+        nextAttemptAt: new Date(0),
+      },
+    })
+
+    let markRevokeStarted: (() => void) | undefined
+    let allowRevokeFinish: (() => void) | undefined
+    const revokeStarted = new Promise<void>(resolve => {
+      markRevokeStarted = resolve
+    })
+    const revokeMayFinish = new Promise<void>(resolve => {
+      allowRevokeFinish = resolve
+    })
+    let revokeWorker: ReturnType<typeof processFakaRevokeTask> | undefined
+
+    __setFakaClientOverridesForTests({
+      url: config.fakaBridge.url,
+      secret: config.fakaBridge.secret,
+      transport: (async ({ url }) => {
+        if (String(url).includes('order-status')) {
+          // The reconciler has an idle snapshot.  A revoke worker claims its
+          // own lease before this stale status result is committed.
+          revokeWorker = processFakaRevokeTask(task.id)
+          await revokeStarted
+          return {
+            status: 200,
+            text: JSON.stringify({
+              success: true,
+              order_no: task.requestOrderNo,
+              status: 'completed',
+              trade_no: 'XB-LEASE-RACE',
+            }),
+          }
+        }
+        if (String(url).includes('order-revoke')) {
+          markRevokeStarted?.()
+          await revokeMayFinish
+          return {
+            status: 200,
+            text: JSON.stringify({
+              success: true,
+              order_no: task.requestOrderNo,
+              expired_user: true,
+            }),
+          }
+        }
+        return { status: 500, text: '{}' }
+      }) as FakaTransport,
+    })
+
+    try {
+      await runFakaReconcileBatch(20)
+      const inFlight = await prisma.fakaBridgeTask.findUniqueOrThrow({ where: { id: task.id } })
+      expect(inFlight.status).toBe('needs_reconcile')
+      expect(inFlight.revokeStatus).toBe('pending')
+      expect(inFlight.leaseToken).toMatch(/^revoke-/)
+    } finally {
+      allowRevokeFinish?.()
+    }
+
+    expect(revokeWorker).toBeDefined()
+    expect(await revokeWorker!).toBe('succeeded')
+    const done = await prisma.fakaBridgeTask.findUniqueOrThrow({ where: { id: task.id } })
+    expect(done.revokeStatus).toBe('succeeded')
   })
 
   it('OTP confirm serializes attempts under row lock', async () => {

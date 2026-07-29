@@ -22,6 +22,7 @@ beforeEach(async () => {
     "Settlement",
     "IdempotencyRecord",
     "FakaBridgeTask",
+    "FakaProvisionEmailSendBudget",
     "FakaProvisionEmailProof",
     "DeliveryRecord",
     "ProvisionTask",

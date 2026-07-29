@@ -1,7 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { randomUUID } from 'node:crypto'
 import { config } from '../config/index.js'
-import { createOrder } from '../modules/orders/service.js'
+import {
+  __setBeforeFakaOfferTaskRecheckHookForTests,
+  createOrder,
+} from '../modules/orders/service.js'
 import { prisma } from '../lib/prisma.js'
 import { createTestUser } from './helpers.js'
 
@@ -72,6 +75,7 @@ describe('M3 createOrder FakaBridge outbox', () => {
 
   afterEach(() => {
     restoreFakaBridgeConfig()
+    __setBeforeFakaOfferTaskRecheckHookForTests(null)
   })
 
   it('creates order + FakaBridgeTask and holds points', async () => {
@@ -217,5 +221,38 @@ describe('M3 createOrder FakaBridge outbox', () => {
     expect(replay.orderId).toBe(first.orderId)
     expect(await prisma.order.count()).toBe(1)
     expect(await prisma.fakaBridgeTask.count()).toBe(1)
+  })
+
+  it('rechecks the locked Faka offer before creating its outbox task', async () => {
+    const email = `faka-sku-race-${Date.now()}@example.com`
+    const { user } = await createTestUser(email, 'pass123', 'user', 1000)
+    await prisma.user.update({ where: { id: user.id }, data: { emailVerified: new Date() } })
+    const { product, offer } = await createFakaProduct(100)
+
+    // This runs after the checkout snapshot has been resolved inside the
+    // order transaction, but before the final Offer FOR NO KEY UPDATE recheck.
+    // The old implementation would create a task for aster-basic-monthly.
+    __setBeforeFakaOfferTaskRecheckHookForTests(async () => {
+      await prisma.offer.update({
+        where: { id: offer.id },
+        data: { externalSku: 'aster-pro-monthly' },
+      })
+    })
+
+    await expect(
+      createOrder(user.id, product.id, {
+        offerId: offer.id,
+        expectedPrice: 100,
+        idempotencyKey: randomUUID(),
+      })
+    ).rejects.toMatchObject({ status: 409, code: 'CHECKOUT_CHANGED' })
+
+    // The whole checkout transaction rolls back: no held points/order/task,
+    // and crucially no task carrying the stale SKU can reach the worker.
+    expect(await prisma.order.count()).toBe(0)
+    expect(await prisma.fakaBridgeTask.count()).toBe(0)
+    const account = await prisma.pointAccount.findUniqueOrThrow({ where: { userId: user.id } })
+    expect(account.balance).toBe(1000)
+    expect(account.frozenBalance).toBe(0)
   })
 })
