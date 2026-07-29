@@ -219,6 +219,14 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
                 已过期
               </span>
             )}
+            {order.provisionPending && (
+              <span
+                className="text-xs font-bold text-[var(--color-primary)] bg-[var(--color-primary)]/10 px-2 py-0.5 rounded border border-[var(--color-primary)]/30"
+                data-testid="order-provision-pending-badge"
+              >
+                自动开通中
+              </span>
+            )}
           </DialogTitle>
         </div>
 
@@ -366,7 +374,7 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
               )
             ) : order.delivery?.file ? null : order.deliveryMode === 'manual_service' ? (
               <div className="bg-[var(--color-surface)] p-4 rounded border border-dashed border-[var(--color-border)] text-center text-xs text-[var(--color-text-muted)]">
-                履约中 / 待商家发货
+                {order.provisionPending ? '自动开通中，请稍候…（若开通失败将自动转为人工交付）' : '履约中 / 待商家发货'}
               </div>
             ) : (
               <div className="bg-[var(--color-surface)] p-4 rounded border border-dashed border-[var(--color-border)] text-center text-xs text-[var(--color-text-muted)]">

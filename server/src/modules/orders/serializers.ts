@@ -178,6 +178,46 @@ function omitPurchaseForm<T extends Record<string, unknown>>(order: T) {
   return rest
 }
 
+/**
+ * P7b：自动开通任务的两套投影——绝不整表透传（`leaseToken`/`webhookConfigId`
+ * 是内部租约与配置指针，泄露即破坏至少一次语义的安全边界）。
+ * - 商家/管理员：任务态徽标 + 脱敏诊断码（`lastError` 建表即只存诊断码，非
+ *   远端响应体）+ 尝试次数/下次重试时刻，供人工介入判断。
+ * - 买家:只需"自动开通中"提示态——pending 折叠为一个布尔,不出诊断码/次数。
+ */
+type ProvisionTaskShape = {
+  status?: string | null
+  attempts?: number | null
+  lastError?: string | null
+  lastHttpStatus?: number | null
+  nextAttemptAt?: unknown
+  merchantNotifiedAt?: unknown
+  updatedAt?: unknown
+} & Record<string, unknown>
+
+function withProvisionStatusForStaff<T extends Record<string, unknown>>(order: T) {
+  const { provisionTask, ...rest } = order as T & { provisionTask?: ProvisionTaskShape | null }
+  if (!provisionTask) return rest
+  return {
+    ...rest,
+    provisionTask: {
+      status: provisionTask.status ?? null,
+      attempts: provisionTask.attempts ?? 0,
+      lastError: provisionTask.lastError ?? null,
+      lastHttpStatus: provisionTask.lastHttpStatus ?? null,
+      nextAttemptAt: provisionTask.nextAttemptAt ?? null,
+      merchantNotifiedAt: provisionTask.merchantNotifiedAt ?? null,
+      updatedAt: provisionTask.updatedAt ?? null,
+    },
+  }
+}
+
+function withProvisionStatusForBuyer<T extends Record<string, unknown>>(order: T) {
+  const { provisionTask, ...rest } = order as T & { provisionTask?: ProvisionTaskShape | null }
+  // pending 才透出提示态;成功=已交付走既有交付渲染,降级=普通人工 processing。
+  return { ...rest, provisionPending: provisionTask?.status === 'pending' }
+}
+
 export function serializeUserOrderList<T extends OrderWithDelivery>(order: T) {
   // P6a：列表行透出 expiresAt/expired 供「已过期」徽标；内容照旧剥离。
   return omitPurchaseForm(omitDeliveryContent(withDeliveryExpiry(withUserOrderContract(order, false))))
@@ -185,19 +225,23 @@ export function serializeUserOrderList<T extends OrderWithDelivery>(order: T) {
 
 export function serializeUserOrderDetail<T extends OrderWithDelivery>(order: T) {
   // P6a：买家详情到期遮蔽（仅买家视角；商家/管理员序列化不做遮蔽）。
-  return maskExpiredDeliveryForBuyer(withDeliveryExpiry(withUserOrderContract(order, true)))
+  // P7b：pending 任务折叠为 provisionPending 布尔（原始任务行不透传给买家）。
+  return withProvisionStatusForBuyer(maskExpiredDeliveryForBuyer(withDeliveryExpiry(withUserOrderContract(order, true))))
 }
 
 export function serializeMerchantOrder<T extends OrderWithDelivery>(order: T) {
   // 列表与详情共用：默认剥离表单，详情在调用侧显式回填（履约依据）。
-  return omitPurchaseForm(omitDeliveryContent(withProductDisplaySnapshot(normalizeFulfillmentFields(order))))
+  // P7b：任务行安全投影（徽标 + 脱敏诊断码；leaseToken 等内部字段不透传）。
+  return withProvisionStatusForStaff(omitPurchaseForm(omitDeliveryContent(withProductDisplaySnapshot(normalizeFulfillmentFields(order)))))
 }
 
 export function serializeAdminOrderList<T extends OrderWithDelivery>(order: T) {
   // P6：仲裁上下文透出 expiresAt/expired（到期裁决在服务端）；内容照旧剥离。
-  return omitPurchaseForm(omitDeliveryContent(withDeliveryExpiry(withProductDisplaySnapshot(normalizeFulfillmentFields(order)))))
+  // P7b：列表徽标走同一安全投影（复审 P2：service select + 序列化两侧对齐）。
+  return withProvisionStatusForStaff(omitPurchaseForm(omitDeliveryContent(withDeliveryExpiry(withProductDisplaySnapshot(normalizeFulfillmentFields(order))))))
 }
 
 export function serializeAdminOrderDetail<T extends OrderWithDelivery>(order: T) {
-  return withDeliveryExpiry(withProductDisplaySnapshot(normalizeFulfillmentFields(order)))
+  // P7b：仲裁上下文透出任务态（同商家的安全投影，禁止整表透传）。
+  return withProvisionStatusForStaff(withDeliveryExpiry(withProductDisplaySnapshot(normalizeFulfillmentFields(order))))
 }

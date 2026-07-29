@@ -1,7 +1,10 @@
 import { Prisma } from '@prisma/client'
+import { config } from '../../config/index.js'
 import { prisma } from '../../lib/prisma.js'
 import { getSystemConfigValue } from '../../lib/systemConfig.js'
 import { badRequest, notFound, HttpError } from '../../lib/httpError.js'
+import { runProvisionBatch } from './provisionCron.js'
+import { lockActiveWebhookConfigForShare } from '../merchant/webhookConfig.js'
 import {
   createOrderStatusEvent,
   getProductFulfillmentMode,
@@ -192,6 +195,8 @@ async function createOrderOnce(
     claimToken,
   }: CreateOrderOptions & { claimToken?: string }
 ) {
+  // P7b：事务外旁路标记——提交成功后尽力即时首呼（正确性由 cron 兜底）。
+  let autoProvisionTaskCreated = false
   const result = await prisma.$transaction(async tx => {
     const account = await tx.pointAccount.findUnique({ where: { userId } })
     if (!account) throw notFound('积分账户不存在')
@@ -363,6 +368,36 @@ async function createOrderOnce(
       toStatus: order.status,
       action: `order.created.${deliveryMode}`,
     })
+
+    // P7b：自动开通任务（transactional outbox）——下单事务内冻结商家当前
+    // active webhook 配置进任务行，商家事后轮换/撤销配置不影响本单已冻结
+    // 的引用。冻结用 FOR SHARE 锁 active 行（复审 P1 线性化）：与撤销/轮换
+    // 的 FOR UPDATE 互斥——撤销先提交则此处查无 active 行（含锁等待后的
+    // 谓词重评估），整单 409 安全失败让买家重新确认，绝不静默转普通人工单
+    // （硬验收 ⑤）；本事务先提交则撤销的降级扫描必然覆盖本单新任务。
+    if (offer.autoProvision) {
+      const webhookConfig = merchantId == null
+        ? null
+        : await lockActiveWebhookConfigForShare(tx, merchantId)
+      if (!webhookConfig) {
+        throw new HttpError(409, 'AUTO_PROVISION_UNAVAILABLE', '商品信息已变化，请重新确认')
+      }
+      // 复审 R2-P1：配置临界区内**锁定并重验** Offer 开关。事务开头读到的
+      // offer.autoProvision 是陈旧快照——「撤销（关开关）→ 立即新建配置」
+      // 的窗口里，仅凭上面的 FOR SHARE 会锁到**新**配置并给已关闭自动开通
+      // 的规格建任务外发表单。FOR NO KEY UPDATE（锁序：配置 → Offer，与
+      // 撤销的 config → task → offer 一致）确保重验之后到提交之前开关不再
+      // 变化；重验失败同样 409 让买家按新预览（无自动开通披露）重新确认。
+      const offerRecheck = await tx.$queryRaw<Array<{ autoProvision: boolean }>>`
+        SELECT "autoProvision" FROM "Offer" WHERE "id" = ${offer.id} FOR NO KEY UPDATE`
+      if (offerRecheck.length === 0 || !offerRecheck[0].autoProvision) {
+        throw new HttpError(409, 'AUTO_PROVISION_UNAVAILABLE', '商品信息已变化，请重新确认')
+      }
+      await tx.provisionTask.create({
+        data: { orderId: order.id, webhookConfigId: webhookConfig.id },
+      })
+      autoProvisionTaskCreated = true
+    }
 
     let deliveryContent: string | undefined
     let deliveryContentType: string | undefined
@@ -555,6 +590,14 @@ async function createOrderOnce(
   })
 
   await invalidateProductPublicCache(productId, { detail: true, list: 'coalesced' })
+  if (autoProvisionTaskCreated && config.nodeEnv !== 'test') {
+    // 尽力而为的即时首呼：让买家秒级拿到开通结果；失败/崩溃由 provision
+    // cron 的 60s 轮询兜底,绝不影响下单结果。测试环境不即时触发,由用例
+    // 显式驱动 runProvisionBatch,避免与用例改 maxAttempts 的时序竞态。
+    setImmediate(() => {
+      void runProvisionBatch().catch(() => {})
+    })
+  }
   return result
 }
 
@@ -580,6 +623,9 @@ export async function getOrderDetail(orderId: number, userId: number) {
       // 是否存在未退款的续费单（仅详情；只取存在性，不透出续费单行）——
       // 买家端据此隐藏「续费」入口，指引到链尾（最新订单）操作。
       renewals: { where: { status: { not: 'refunded' } }, select: { id: true }, take: 1 },
+      // P7b：pending 任务 → 买家详情「自动开通中」提示态（序列化层折叠为
+      // provisionPending 布尔，只取 status，绝不透传任务内部字段）。
+      provisionTask: { select: { status: true } },
       // P6b：买家时间线固定契约——仅 action/fromStatus/toStatus/publicNote/
       // createdAt/actorRole 六字段，不透出事件行 id 与操作人用户 id。
       statusEvents: {

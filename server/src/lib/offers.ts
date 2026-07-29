@@ -151,6 +151,10 @@ export function computeOfferCheckoutVersion(offer: Offer): string {
     ...(offer.fixedFileId != null ? { fixedFileId: offer.fixedFileId } : {}),
     // P6a：改订阅时长 = 买家确认的商品变化。同一 null 不进 canonical 手法。
     ...(offer.validityDays != null ? { validityDays: offer.validityDays } : {}),
+    // P7b：自动开通开关 = 买家履约与隐私合同的一部分（表单答案将外发给
+    // 商家 webhook）。true 才进 canonical——存量摘要字节不变；买家预览后
+    // 商家开/关开关都会改变摘要 → 409 强制重新确认（硬验收 ④）。
+    ...(offer.autoProvision ? { autoProvision: true } : {}),
   }
   return createHmac('sha256', config.jwtSecret).update(JSON.stringify(canonical)).digest('hex').slice(0, 16)
 }
@@ -217,6 +221,9 @@ export function serializePublicOffer(offer: Offer & { fixedFile?: { size: number
     fixedContentType: offer.fixedContentType,
     // P6a：购前可见的订阅时长（null = 永久，前端不渲染徽标）。
     validityDays: offer.validityDays,
+    // P7b：购前披露——开启表示"购买前表单答案将发送至商家的自动开通服务"
+    //（隐私合同的一部分，前端据此渲染披露文案，硬验收 ⑤）。
+    autoProvision: offer.autoProvision,
     // P4b：买家购前可见将获得哪些字段；敏感的是字段"值"，不在此处。
     deliveryFields: parseStoredDeliveryFields(offer.deliveryFields),
     ...(offer.fixedContentType === 'file'

@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const nodemailerMock = vi.hoisted(() => ({
   createTransport: vi.fn(),
   sendMail: vi.fn(),
+  close: vi.fn(),
 }))
 
 vi.mock('nodemailer', () => ({
@@ -18,8 +19,10 @@ describe('mailer adapter', () => {
     vi.unstubAllEnvs()
     nodemailerMock.createTransport.mockReset()
     nodemailerMock.sendMail.mockReset()
+    nodemailerMock.close.mockReset()
     nodemailerMock.createTransport.mockReturnValue({
       sendMail: nodemailerMock.sendMail,
+      close: nodemailerMock.close,
     })
     nodemailerMock.sendMail.mockResolvedValue(undefined)
   })
@@ -45,16 +48,25 @@ describe('mailer adapter', () => {
       html: '<p>HTML body</p>',
     })
 
+    // R4/R5:transport 按次创建(socket 一一对应),getSocket 是总 deadline
+    // 与自实现连接段超时的抓手;dnsTimeout/connectionTimeout 对自备连接
+    // 不生效,不配置(建连段超时在 getSocket 内自实现)。
     expect(nodemailerMock.createTransport).toHaveBeenCalledTimes(1)
-    expect(nodemailerMock.createTransport).toHaveBeenCalledWith({
+    expect(nodemailerMock.createTransport).toHaveBeenCalledWith(expect.objectContaining({
       host: 'smtp.monexus.test',
       port: 587,
       secure: false,
+      greetingTimeout: 10_000,
+      socketTimeout: 15_000,
       auth: {
         user: 'sender@monexus.test',
         pass: 'super-secret-smtp-pass',
       },
-    })
+      getSocket: expect.any(Function),
+    }))
+    expect(nodemailerMock.createTransport).not.toHaveBeenCalledWith(
+      expect.objectContaining({ dnsTimeout: expect.anything() })
+    )
     expect(nodemailerMock.sendMail).toHaveBeenCalledTimes(1)
     expect(nodemailerMock.sendMail).toHaveBeenCalledWith({
       from: 'sender@monexus.test',

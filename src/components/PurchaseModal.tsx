@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { AlertTriangle, Coins, Loader2, ShieldCheck } from 'lucide-react'
+import { AlertTriangle, Coins, Loader2, ShieldCheck, Info } from 'lucide-react'
 import { Dialog, DialogContent, DialogTitle } from './ui/Dialog'
 import { getCheckoutPreview, type CheckoutPreview } from '../api/orders'
 import { getApiErrorMessage } from '../api/error'
@@ -180,6 +180,20 @@ export default function PurchaseModal({
                 积分不足，还差 {preview.price - preview.balanceBefore} 积分。
               </p>
             )}
+          </div>
+        )}
+
+        {preview?.autoProvision && (
+          <div
+            className="flex items-start gap-2 text-sm rounded-lg border border-[var(--color-primary)]/40 bg-[var(--color-primary)]/5 text-[var(--color-text)] p-3 mb-6"
+            data-testid="auto-provision-disclosure"
+          >
+            <Info className="w-4 h-4 mt-0.5 shrink-0 text-[var(--color-primary)]" />
+            <span className="leading-relaxed">
+              此规格由<strong>商家的自动开通服务</strong>交付。下单后，你的订单信息
+              {preview.purchaseForm.length > 0 ? '与下方填写的表单答案' : ''}
+              将通过安全通道<strong>发送至该商家的回调服务</strong>以完成自动开通。若自动开通失败，将自动转为人工交付。
+            </span>
           </div>
         )}
 

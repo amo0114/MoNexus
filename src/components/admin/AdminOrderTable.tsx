@@ -5,6 +5,7 @@ import { getApiErrorMessage } from '../../api/error'
 import { useAppStore } from '../../stores/appStore'
 import { formatBookingDay, formatLocalDate } from '../../utils/formatLocalDate'
 import RegistryPill from '../ui/RegistryPill'
+import ProvisionBadge from '../ProvisionBadge'
 import AdminPagination from './AdminPagination'
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '../ui/Dialog'
 import { TableSkeleton } from '../ui/Skeleton'
@@ -143,8 +144,8 @@ export default function AdminOrderTable() {
                 </td>
                 <td className="text-[var(--color-text-muted)] text-sm" data-label="商品信息">
                   <div>{o.product?.name}</div>
-                  {/* P6：仲裁上下文小标——预约日期 / 订阅到期 / 续费来源 */}
-                  {(o.bookingDate || o.delivery?.expiresAt || o.renewalOfOrderId != null) && (
+                  {/* P6：仲裁上下文小标——预约日期 / 订阅到期 / 续费来源 / 自动开通(P7b) */}
+                  {(o.bookingDate || o.delivery?.expiresAt || o.renewalOfOrderId != null || o.provisionTask) && (
                     <div className="flex items-center gap-1.5 mt-1 flex-wrap">
                       {o.bookingDate && (
                         <span
@@ -172,6 +173,11 @@ export default function AdminOrderTable() {
                           data-testid={`admin-order-renewal-${o.id}`}
                         >
                           续费自 #{o.renewalOfOrderId}
+                        </span>
+                      )}
+                      {o.provisionTask && (
+                        <span data-testid={`admin-order-provision-${o.id}`}>
+                          <ProvisionBadge task={o.provisionTask} idSuffix={o.id} />
                         </span>
                       )}
                     </div>

@@ -592,6 +592,8 @@ export async function listAllOrders(query: ListOrdersQuery = {}) {
         product: { select: { id: true, name: true, icon: true, type: true, imageUrl: true, price: true } },
         // P6：仲裁需要订阅到期视角——只选 expiresAt（序列化补 expired），内容仍不出列表。
         delivery: { select: { status: true, expiresAt: true } },
+        // P7b：列表徽标需要任务态安全投影（复审 P2：UI 已渲染，select 必须跟上）。
+        provisionTask: { select: { status: true, attempts: true, lastError: true, lastHttpStatus: true, nextAttemptAt: true, merchantNotifiedAt: true, updatedAt: true } },
       },
       orderBy: { createdAt: 'desc' },
       skip: (page - 1) * pageSize,
@@ -669,6 +671,8 @@ export async function getOrderDetail(orderId: number) {
       },
       // P6：详情补订阅到期时刻，供仲裁判断交付是否仍在有效期内。
       delivery: { select: { content: true, status: true, expiresAt: true } },
+      // P7b：仲裁上下文透出自动开通任务态 + 脱敏诊断码（安全投影）。
+      provisionTask: { select: { status: true, attempts: true, lastError: true, lastHttpStatus: true, nextAttemptAt: true, merchantNotifiedAt: true, updatedAt: true } },
     },
   })
   if (!order) throw notFound('订单不存在')

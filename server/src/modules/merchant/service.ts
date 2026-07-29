@@ -27,6 +27,7 @@ import {
 import { releaseHeldOrder, settleHeldOrder } from '../orders/accounting.js'
 import { applyRefundInventoryPolicy } from '../orders/refundInventory.js'
 import { serializeMerchantOrder } from '../orders/serializers.js'
+import { lockActiveWebhookConfigForShare } from './webhookConfig.js'
 import type { MerchantOrderListQuery } from './schema.js'
 import type { PurchaseFormField } from '../../lib/purchaseForm.js'
 import {
@@ -800,6 +801,8 @@ export async function listMyOrders(merchantId: number, query: MerchantOrderListQ
         product: { select: { id: true, name: true, icon: true, type: true, imageUrl: true, price: true, deliveryMode: true } },
         delivery: { select: { status: true, publicNote: true, deliveredAt: true } },
         settlement: { select: { settlementAmount: true, status: true, settledAt: true } },
+        // P7b：任务态徽标（开通中/已自动交付/已降级人工 + 脱敏诊断码）。
+        provisionTask: { select: { status: true, attempts: true, lastError: true, lastHttpStatus: true, nextAttemptAt: true, merchantNotifiedAt: true, updatedAt: true } },
       },
       // P6c：sort=booking 时预约日期升序（最近的预约最先处理），无预约单
       // （bookingDate=null）排后并沿用默认时间倒序；命中 (merchantId, bookingDate) 索引。
@@ -844,6 +847,8 @@ export async function getMyOrderDetail(merchantId: number, orderId: number) {
         },
       },
       settlement: { select: { settlementAmount: true, status: true, settledAt: true } },
+      // P7b：任务态透出 + 脱敏诊断码，供商家判断是否人工介入。
+      provisionTask: { select: { status: true, attempts: true, lastError: true, lastHttpStatus: true, nextAttemptAt: true, merchantNotifiedAt: true, updatedAt: true } },
       statusEvents: {
         select: {
           id: true,
@@ -1214,9 +1219,40 @@ type OfferWriteInput = {
   validityDays?: number | null
   // P4b：交付字段模板；null 清空回纯文本。已过 zod（deliveryFieldsSchema）。
   deliveryFields?: DeliveryField[] | null
+  // P7b：自动开通开关。仅 manual_service 且无模板且商家已有 active webhook
+  // 配置可为 true（服务端校验 + DB CHECK 兜底，硬验收 ④⑤）。
+  autoProvision?: boolean
   // 设为默认规格（仅接受 true，事务内从原默认转移；不接受 false——
   // 取消默认必须通过在另一条上设默认完成，保证不变量恒成立）。
   isDefault?: boolean
+}
+
+/**
+ * P7b：autoProvision 开启前置校验（硬验收 ④⑤）：人工服务 + 无交付模板 +
+ * 商家已有 active webhook 配置。DB CHECK 兜底前两条；active 配置是业务
+ * 前置（下单事务要冻结它，缺失时买家下单会 409 安全失败）。
+ * FOR SHARE 锁 active 行（复审 P1 线性化）：与撤销的 FOR UPDATE 互斥——
+ * 撤销先提交则此处查无 active 行、开启被拒；本事务先提交则撤销的关开关
+ * 扫描必然覆盖刚开启的规格，不存在「开关开着但配置已撤销」的静默错配。
+ */
+async function assertAutoProvisionAllowed(
+  tx: Prisma.TransactionClient,
+  merchantId: number,
+  autoProvision: boolean,
+  deliveryMode: string,
+  deliveryFields: readonly unknown[] | null | undefined
+) {
+  if (!autoProvision) return
+  if (deliveryMode !== 'manual_service') {
+    throw badRequest('自动开通仅支持人工服务规格')
+  }
+  if ((deliveryFields?.length ?? 0) > 0) {
+    throw badRequest('带交付字段模板的规格暂不支持自动开通')
+  }
+  const active = await lockActiveWebhookConfigForShare(tx, merchantId)
+  if (!active) {
+    throw badRequest('请先在商家设置中配置自动开通 webhook，再开启该开关')
+  }
 }
 
 /** instant_fixed 固定内容天然单值，不支持交付字段模板（P4b 决策点 2）。 */
@@ -1308,6 +1344,7 @@ async function insertOffer(
     fixedFileId,
   })
   assertDeliveryFieldsAllowed(deliveryMode, input.deliveryFields)
+  await assertAutoProvisionAllowed(tx, merchantId, input.autoProvision ?? false, deliveryMode, input.deliveryFields)
   if (fixedFileId != null) {
     await assertMyDeliveryFile(tx, merchantId, fixedFileId)
   }
@@ -1329,6 +1366,8 @@ async function insertOffer(
       // P6a：订阅有效期；null = 永久。
       validityDays: input.validityDays ?? null,
       deliveryFields: input.deliveryFields ?? undefined,
+      // P7b：自动开通开关（上方已过前置校验）。
+      autoProvision: input.autoProvision ?? false,
     },
   })
 }
@@ -1385,6 +1424,9 @@ export async function updateMyOffer(
       ? input.deliveryFields ?? null
       : parseStoredDeliveryFields(offer.deliveryFields)
     assertDeliveryFieldsAllowed(deliveryMode, nextDeliveryFields)
+    // P7b：合并后的开关状态必须整体合法（含"改模式/加模板但留开关"的组合）。
+    const nextAutoProvision = input.autoProvision ?? offer.autoProvision
+    await assertAutoProvisionAllowed(tx, merchantId, nextAutoProvision, deliveryMode, nextDeliveryFields)
     assertOfferCommercialInput({
       price: input.price ?? offer.price,
       originalPrice: 'originalPrice' in input ? (input.originalPrice ?? null) : offer.originalPrice,
@@ -1426,6 +1468,8 @@ export async function updateMyOffer(
         ...('fixedFileId' in input ? { fixedFileId: input.fixedFileId ?? null } : {}),
         // P6a：改时长只影响新订单（快照冻结）；null = 改回永久。
         ...('validityDays' in input ? { validityDays: input.validityDays ?? null } : {}),
+        // P7b：开关改动进 checkoutVersion，买家预览后改动会 409 重新确认。
+        ...(input.autoProvision != null ? { autoProvision: input.autoProvision } : {}),
         ...(input.sortOrder != null ? { sortOrder: input.sortOrder } : {}),
         // 改模板仅影响后续导入/交付；已导入条目携带自包含快照，不回填。
         ...('deliveryFields' in input

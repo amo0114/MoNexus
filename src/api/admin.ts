@@ -43,6 +43,8 @@ export interface AdminOrderItem {
   product?: { name: string } | null
   // P6a：expired 以服务端裁决为准，前端不自行比对时钟
   delivery?: { status: string; expiresAt?: string | null; expired?: boolean } | null
+  // P7b：自动开通任务的安全投影（脱敏诊断码）；null = 非自动开通单。
+  provisionTask?: import('../types/merchant').ProvisionTaskSummary | null
 }
 
 export interface AdminOrderListQuery {

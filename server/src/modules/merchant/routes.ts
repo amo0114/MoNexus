@@ -12,6 +12,7 @@ import {
   voidMerchantInventorySchema, merchantInventoryLogQuerySchema,
   adjustMerchantProductCapacitySchema,
   createMerchantOfferSchema, updateMerchantOfferSchema,
+  merchantWebhookConfigSchema,
 } from './schema.js'
 import * as controller from './controller.js'
 import { z } from 'zod'
@@ -58,5 +59,11 @@ router.post('/orders/:id/fulfillment/reject', validate({ params: idParamSchema, 
 
 router.get('/settlements', validate({ query: merchantListQuerySchema }), controller.listSettlements)
 router.get('/stats', controller.stats)
+
+// P7b：自动开通 webhook 配置（secret 明文仅在 PUT 响应一次性返回）
+router.get('/webhook-config', controller.getWebhookConfig)
+router.put('/webhook-config', validate(merchantWebhookConfigSchema), controller.saveWebhookConfig)
+router.delete('/webhook-config', controller.revokeWebhookConfig)
+router.post('/webhook-config/test', controller.testWebhookConfig)
 
 export { router as merchantRoutes }

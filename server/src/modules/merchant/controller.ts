@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express'
 import * as merchantService from './service.js'
+import * as webhookConfigService from './webhookConfig.js'
 import type { MerchantOrderListQuery } from './schema.js'
 
 // ---- Application ----
@@ -240,5 +241,35 @@ export async function deleteOffer(req: Request, res: Response, next: NextFunctio
       req.params.id as unknown as number,
       req.params.offerId as unknown as number
     ))
+  } catch (err) { next(err) }
+}
+
+// ---- Webhook 配置（P7b 自动开通）----
+
+export async function getWebhookConfig(req: Request, res: Response, next: NextFunction) {
+  try {
+    const merchant = await merchantService.getMyMerchant(req.user!.userId)
+    res.json(await webhookConfigService.getMyWebhookConfig(merchant.id))
+  } catch (err) { next(err) }
+}
+
+export async function saveWebhookConfig(req: Request, res: Response, next: NextFunction) {
+  try {
+    const merchant = await merchantService.getMyMerchant(req.user!.userId)
+    res.json(await webhookConfigService.saveMyWebhookConfig(merchant.id, req.body.url))
+  } catch (err) { next(err) }
+}
+
+export async function revokeWebhookConfig(req: Request, res: Response, next: NextFunction) {
+  try {
+    const merchant = await merchantService.getMyMerchant(req.user!.userId)
+    res.json(await webhookConfigService.revokeMyWebhookConfig(merchant.id))
+  } catch (err) { next(err) }
+}
+
+export async function testWebhookConfig(req: Request, res: Response, next: NextFunction) {
+  try {
+    const merchant = await merchantService.getMyMerchant(req.user!.userId)
+    res.json(await webhookConfigService.sendTestWebhookEvent(merchant.id))
   } catch (err) { next(err) }
 }

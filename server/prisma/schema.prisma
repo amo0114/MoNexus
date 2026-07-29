@@ -134,6 +134,59 @@ model Merchant {
   orders         Order[]
   settlements    Settlement[]
   deliveryFiles  DeliveryFile[]
+  webhookConfigs MerchantWebhookConfig[]
+}
+
+// P7b：商家自动开通 webhook 配置（版本化）。轮换/撤销 = 旧行置 revoked +
+// （轮换时）新建 active 行；每商家至多一条 active（部分唯一索引
+// MerchantWebhookConfig_one_active_per_merchant，仅存在于迁移——Prisma
+// 无法表达 WHERE 部分索引，漂移豁免惯例同 Offer.isDefault）。
+// ProvisionTask 冻结引用创建时的配置行：任务绝不解析到新配置；引用行
+// revoked 后未发出任务安全默认降级人工（硬验收 ⑤）。
+// secretCiphertext = AES-256-GCM 密文（lib/webhookSecret.ts），明文仅在
+// 创建/再生响应一次性返回，常规序列化只回尾 4 位。
+model MerchantWebhookConfig {
+  id               Int       @id @default(autoincrement())
+  merchantId       Int
+  url              String
+  secretCiphertext String
+  status           String    @default("active") // active | revoked; PostgreSQL CHECK constrained
+  createdAt        DateTime  @default(now())
+  revokedAt        DateTime?
+
+  merchant Merchant        @relation(fields: [merchantId], references: [id])
+  tasks    ProvisionTask[]
+
+  @@index([merchantId, status])
+}
+
+// P7b：自动开通任务（transactional outbox）——下单事务内随订单创建，行存在
+// 即下单时刻的意图。协议 = 至少一次外呼（接收端以 taskId 幂等去重）：
+// - 认领（provision cron）：FOR UPDATE SKIP LOCKED + 排除未过期 leaseUntil；
+//   认领即 attempts+1 并预写退避 nextAttemptAt（崩溃自然落入重试）；
+// - 结果落库：id + leaseToken + status='pending' 三条件 CAS——过期 worker
+//   的迟到结果被丢弃（硬验收 ⑨）；
+// - lastError 只存脱敏诊断码（timeout / dns_blocked / http_503 …），绝不存
+//   远端响应体；merchantNotifiedAt 单列管降级邮件（发送成功才落，可重试）。
+model ProvisionTask {
+  id                 Int       @id @default(autoincrement())
+  orderId            Int       @unique
+  webhookConfigId    Int
+  status             String    @default("pending") // pending | succeeded | degraded | cancelled; CHECK constrained
+  attempts           Int       @default(0)
+  nextAttemptAt      DateTime  @default(now())
+  leaseToken         String?
+  leaseUntil         DateTime?
+  lastError          String?
+  lastHttpStatus     Int?
+  merchantNotifiedAt DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  order         Order                 @relation(fields: [orderId], references: [id])
+  webhookConfig MerchantWebhookConfig @relation(fields: [webhookConfigId], references: [id])
+
+  @@index([status, nextAttemptAt])
 }
 
 model RefreshToken {
@@ -338,6 +391,12 @@ model Offer {
   // Order.validityDaysSnapshot——商家改时长不影响已购订单；进入
   // checkoutVersion canonical（null 不进，存量摘要不变）。
   validityDays     Int?
+  // P7b：自动开通——manual_service 的自动化首次交付（不是第四种交付模式）。
+  // CHECK（迁移 20260728100000）：仅 manual_service 且无交付模板可为 true；
+  // 服务端校验为主，数据库兜底。进入 checkoutVersion canonical（true 才进，
+  // 存量摘要不变——买家预览后商家开开关必须 409 重新确认，表单答案外发
+  // 属于买家履约与隐私合同，硬验收 ④）。
+  autoProvision    Boolean  @default(false)
   createdAt        DateTime @default(now())
 
   product   Product         @relation(fields: [productId], references: [id])
@@ -539,6 +598,7 @@ model Order {
   statusEvents OrderStatusEvent[]
   inventoryLogs InventoryLog[]
   fileGrants   FileGrantLog[]
+  provisionTask ProvisionTask?
 
   renewalOf Order?  @relation("OrderRenewal", fields: [renewalOfOrderId], references: [id], onDelete: Restrict)
   renewals  Order[] @relation("OrderRenewal")

@@ -13,6 +13,10 @@ export type CheckoutPreview = {
   offerName: string
   price: number
   deliveryMode: string
+  // P7b：本规格是否走自动开通（买家提交的表单答案会外发到商家的回调
+  // 服务）。前端据此在结算弹窗明示数据外发（硬验收 ⑤）；参与 checkoutVersion，
+  // 商家切换开关会使旧预览 409 重新确认。
+  autoProvision: boolean
   // debit = 即时扣除；hold = 冻结，商家履约后扣除，拒单/退款返还
   chargeType: 'debit' | 'hold'
   balanceBefore: number
@@ -102,6 +106,7 @@ export async function getCheckoutPreview(
     offerName: offer.name,
     price: offer.price,
     deliveryMode,
+    autoProvision: offer.autoProvision === true,
     chargeType: deliveryMode === 'manual_service' ? 'hold' : 'debit',
     balanceBefore: account.balance,
     // 余额不足时仍返回预览（差额为负），前端据此禁用按钮并提示缺口。

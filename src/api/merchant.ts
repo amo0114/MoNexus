@@ -12,7 +12,8 @@ import {
   Offer,
   OfferWriteRequest,
   Settlement,
-  ListEnvelope
+  ListEnvelope,
+  MerchantWebhookConfig
 } from '../types/merchant'
 
 export async function applyMerchant(payload: ApplyMerchantRequest): Promise<Merchant> {
@@ -190,5 +191,34 @@ export async function updateMerchantOffer(
 
 export async function deleteMerchantOffer(productId: number, offerId: number): Promise<{ deleted: boolean }> {
   const { data } = await api.delete<{ deleted: boolean }>(`/merchant/products/${productId}/offers/${offerId}`)
+  return data
+}
+
+// ---- P7b: 自动开通 webhook 配置 ----
+
+/** 读取当前 active 配置;未配置返回 null。仅出 secretLast4,绝不出明文。 */
+export async function getMyWebhookConfig(): Promise<MerchantWebhookConfig | null> {
+  const { data } = await api.get<MerchantWebhookConfig | null>('/merchant/webhook-config')
+  return data
+}
+
+/**
+ * 保存(创建或轮换)。响应里的 `secret` 是明文的**唯一**出口——只在此刻展示一次,
+ * 之后无法再取。轮换会撤销旧配置并把引用它的未发任务降级人工。
+ */
+export async function saveMyWebhookConfig(url: string): Promise<MerchantWebhookConfig & { secret: string }> {
+  const { data } = await api.put<MerchantWebhookConfig & { secret: string }>('/merchant/webhook-config', { url })
+  return data
+}
+
+/** 撤销配置:同时强制关闭该商家全部规格的自动开通开关(需刷新规格列表)。 */
+export async function deleteMyWebhookConfig(): Promise<{ revoked: boolean; disabledOffers: number }> {
+  const { data } = await api.delete<{ revoked: boolean; disabledOffers: number }>('/merchant/webhook-config')
+  return data
+}
+
+/** 发送测试事件(与真实外呼同一安全路径);只回 HTTP 状态与脱敏诊断码。 */
+export async function testMyWebhookConfig(): Promise<{ ok: boolean; httpStatus: number | null; error?: string }> {
+  const { data } = await api.post<{ ok: boolean; httpStatus: number | null; error?: string }>('/merchant/webhook-config/test')
   return data
 }
