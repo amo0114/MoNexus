@@ -145,6 +145,9 @@ export async function onFakaOrderRefundedInTx(tx: Tx, orderId: number): Promise<
       data: {
         revokeStatus: 'pending',
         lastRevokeError: null,
+        // `nextAttemptAt` is shared with provision retries. A newly queued revoke
+        // must be due now instead of inheriting an old provision backoff.
+        nextAttemptAt: new Date(),
         cancelRequested: true,
       },
     })
@@ -329,6 +332,7 @@ export type StuckFakaTaskRow = {
   id: number
   orderId: number
   status: string
+  leaseToken: string | null
   requestOrderNo: string
   emailSnapshot: string
   xboardTradeNo: string | null
@@ -357,6 +361,7 @@ export async function selectStuckFakaTasksForReconcile(
       t."id",
       t."orderId",
       t."status",
+      t."leaseToken",
       t."requestOrderNo",
       t."emailSnapshot",
       t."xboardTradeNo",
@@ -375,6 +380,43 @@ export async function selectStuckFakaTasksForReconcile(
     ORDER BY t."nextAttemptAt" ASC
     LIMIT ${limit}
   `
+}
+
+/**
+ * Park a mismatched status response only if the selected task was not claimed
+ * while the status HTTP call was in flight. The reconciler deliberately keeps
+ * HTTP outside a transaction, so take the shared Order lock before the result
+ * write and re-check the task lease/token under that lock. This preserves the
+ * worker's Order -> Task lock ordering and must not clobber a newer claim.
+ */
+async function parkStuckOrderNoMismatch(task: StuckFakaTaskRow): Promise<boolean> {
+  return prisma.$transaction(async tx => {
+    await tx.$queryRaw`SELECT "id" FROM "Order" WHERE "id" = ${task.orderId} FOR UPDATE`
+
+    const current = await tx.fakaBridgeTask.findUnique({
+      where: { id: task.id },
+      select: { status: true, leaseToken: true },
+    })
+    if (!current || current.status !== task.status || current.leaseToken !== task.leaseToken) {
+      return false
+    }
+
+    const schedule = await readTaskScheduleUtc(tx, task.id)
+    if (!schedule?.leaseExpired || !schedule.nextAttemptDue) return false
+
+    const parked = await tx.fakaBridgeTask.updateMany({
+      where: { id: task.id, status: task.status, leaseToken: task.leaseToken },
+      data: {
+        status: 'needs_reconcile',
+        lastError: 'FAKA_ORDER_NO_MISMATCH',
+        leaseToken: null,
+        leaseUntil: null,
+        nextAttemptAt: new Date(Date.now() + RECONCILE_COOLDOWN_MS),
+        reconcileNote: `reconcile: status order_no mismatch (expected ${task.requestOrderNo}); cooldown ${RECONCILE_COOLDOWN_MS / 1000}s`,
+      },
+    })
+    return parked.count === 1
+  })
 }
 
 /**
@@ -482,6 +524,8 @@ export async function runFakaReconcileBatch(limit = 20): Promise<number> {
             cancelRequested: true,
             revokeStatus: full.revokeStatus === 'succeeded' ? 'succeeded' : 'pending',
             lastRevokeError: null,
+            nextAttemptAt:
+              full.revokeStatus === 'succeeded' ? full.nextAttemptAt : new Date(),
             reconcileNote: `reconcile: refunded but Xboard ${xbStatus}; queued revoke`,
           },
         })
@@ -541,6 +585,7 @@ export async function runFakaReconcileBatch(limit = 20): Promise<number> {
           where: { id: full.id },
           data: {
             revokeStatus: 'pending',
+            nextAttemptAt: new Date(),
             cancelRequested: true,
             reconcileNote: 'reconcile: queue revoke after refund',
           },
@@ -577,19 +622,10 @@ export async function runFakaReconcileBatch(limit = 20): Promise<number> {
     if (xbBody && !fakaRemoteOrderNoMatches(xbBody, task.requestOrderNo)) {
       // Persist diagnosis + cooldown so this row does not re-enter every 30s tick
       // and starve other reconcile candidates under LIMIT.
-      await prisma.fakaBridgeTask.update({
-        where: { id: task.id },
-        data: {
-          status: 'needs_reconcile',
-          lastError: 'FAKA_ORDER_NO_MISMATCH',
-          leaseToken: null,
-          leaseUntil: null,
-          nextAttemptAt: new Date(Date.now() + RECONCILE_COOLDOWN_MS),
-          reconcileNote: `reconcile: status order_no mismatch (expected ${task.requestOrderNo}); cooldown ${RECONCILE_COOLDOWN_MS / 1000}s`,
-        },
-      })
-      fakaReconcileTotal.inc({ action: 'status_order_no_mismatch' })
-      actions += 1
+      if (await parkStuckOrderNoMismatch(task)) {
+        fakaReconcileTotal.inc({ action: 'status_order_no_mismatch' })
+        actions += 1
+      }
       continue
     }
     const xbStatus = xbBody ? String(xbBody.status ?? '') : ''
@@ -644,6 +680,7 @@ export async function runFakaReconcileBatch(limit = 20): Promise<number> {
               revokeStatus: 'pending',
               leaseToken: null,
               leaseUntil: null,
+              nextAttemptAt: new Date(),
               reconcileNote: `reconcile: Xboard ${xbStatus} but order ${order.status}; queued revoke`,
             },
           })

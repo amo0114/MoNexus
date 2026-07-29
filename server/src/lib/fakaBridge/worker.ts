@@ -512,6 +512,8 @@ async function finalizeProvisionSuccess(
             cancelRequested: true,
             revokeStatus: 'pending',
             lastRevokeError: null,
+            // A revoke must not inherit this claim's provision retry backoff.
+            nextAttemptAt: new Date(),
             reconcileNote: `xboard opened after cancel/refund (order=${order.status}); queued revoke`,
           },
         })

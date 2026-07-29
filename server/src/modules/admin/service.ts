@@ -2245,6 +2245,8 @@ export async function forceFakaBridgeRevoke(adminUserId: number, taskId: number)
     data: {
       revokeStatus: 'pending',
       lastRevokeError: null,
+      // Override any provision/revoke cooldown: this endpoint is explicitly a force retry.
+      nextAttemptAt: new Date(),
       cancelRequested: true,
       reconcileNote: `admin force revoke by user ${adminUserId}`,
     },

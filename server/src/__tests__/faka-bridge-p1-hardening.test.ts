@@ -1027,6 +1027,94 @@ describe('P1 hardening', () => {
     expect(statusProbes).toBe(1)
   })
 
+  it('stuck mismatch cannot clobber a newer provision claim', async () => {
+    const { user } = await verifiedBuyer()
+    const { product, offer } = await fakaProduct()
+    const created = await createOrder(user.id, product.id, {
+      offerId: offer.id,
+      expectedPrice: 100,
+      idempotencyKey: randomUUID(),
+    })
+    const task = await prisma.fakaBridgeTask.findUniqueOrThrow({ where: { orderId: created.orderId } })
+
+    await prisma.$executeRaw`
+      UPDATE "FakaBridgeTask"
+      SET
+        "status" = 'pending',
+        "attempts" = 0,
+        "maxAttempts" = 3,
+        "leaseToken" = NULL,
+        "leaseUntil" = NULL,
+        "createdAt" = (CURRENT_TIMESTAMP AT TIME ZONE 'UTC') - interval '10 minutes',
+        "nextAttemptAt" = (CURRENT_TIMESTAMP AT TIME ZONE 'UTC') - interval '1 second'
+      WHERE "id" = ${task.id}
+    `
+
+    let markClaimed!: () => void
+    let releaseWorker!: () => void
+    const workerClaimed = new Promise<void>(resolve => {
+      markClaimed = resolve
+    })
+    const workerMayDispatch = new Promise<void>(resolve => {
+      releaseWorker = resolve
+    })
+    let worker: ReturnType<typeof processFakaBridgeTask> | undefined
+    let paidCalls = 0
+
+    __setAfterClaimHookForTests(async () => {
+      markClaimed()
+      await workerMayDispatch
+    })
+    __setFakaClientOverridesForTests({
+      url: config.fakaBridge.url,
+      secret: config.fakaBridge.secret,
+      transport: (async ({ url }) => {
+        if (String(url).includes('order-status')) {
+          // Reconcile has selected an idle task. Let another instance claim it
+          // before this stale status response is committed.
+          worker = processFakaBridgeTask(task.id)
+          await workerClaimed
+          return {
+            status: 200,
+            text: JSON.stringify({
+              success: true,
+              order_no: 'MN-STALE-STATUS-RESPONSE',
+              status: 'completed',
+              trade_no: 'XB-STALE',
+            }),
+          }
+        }
+        if (String(url).includes('order-paid')) {
+          paidCalls += 1
+          return {
+            status: 200,
+            text: JSON.stringify({
+              success: true,
+              order_no: task.requestOrderNo,
+              status: 'completed',
+              trade_no: 'XB-NEW-CLAIM',
+            }),
+          }
+        }
+        return { status: 500, text: '{}' }
+      }) as FakaTransport,
+    })
+
+    try {
+      await runFakaReconcileBatch(20)
+    } finally {
+      releaseWorker()
+    }
+
+    expect(worker).toBeDefined()
+    expect(await worker!).toBe('succeeded')
+    expect(paidCalls).toBe(1)
+    const done = await prisma.fakaBridgeTask.findUniqueOrThrow({ where: { id: task.id } })
+    expect(done.status).toBe('succeeded')
+    const order = await prisma.order.findUniqueOrThrow({ where: { id: created.orderId } })
+    expect(order.status).toBe('delivered')
+  })
+
   it('OTP concurrent first-send: one mail, peer gets rate limit not 500', async () => {
     const capture = new CaptureMailer()
     __setMailerForTesting(capture)
