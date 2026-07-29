@@ -88,7 +88,7 @@ export default function SuccessModal({
               data-testid="success-provision-pending"
             >
               订阅开通中，通常几十秒内完成。完成后可在「个人中心 → 我的订单」查看面板地址与订单号。
-              开通账号为你登录本站时的邮箱，无需再填。
+              开通邮箱以订单交付信息中的「开通邮箱」为准（可为登录邮箱或你验证过的其他邮箱）。
             </div>
           ) : (
             <div className="font-mono text-sm break-all text-[var(--color-text)] select-all bg-[var(--color-surface)] p-3 rounded border border-[var(--color-border)] leading-relaxed whitespace-pre-wrap">

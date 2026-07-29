@@ -117,56 +117,65 @@ export async function sendProvisionEmailCode(userId: number, emailRaw: string) {
   }
 
   const now = Date.now()
-  const existing = await prisma.fakaProvisionEmailProof.findUnique({
-    where: { userId_email: { userId, email } },
-  })
-
-  if (existing?.lastSentAt) {
-    const since = now - existing.lastSentAt.getTime()
-    if (since < MIN_RESEND_INTERVAL_MS) {
-      throw tooManyRequests(
-        `请 ${Math.ceil((MIN_RESEND_INTERVAL_MS - since) / 1000)} 秒后再发送验证码`
-      )
-    }
-  }
-
-  // Rolling hour window on sendCount
-  let sendCount = existing?.sendCount ?? 0
-  if (
-    !existing?.lastSentAt ||
-    now - existing.lastSentAt.getTime() > 60 * 60 * 1000
-  ) {
-    sendCount = 0
-  }
-  if (sendCount >= MAX_SENDS_PER_HOUR) {
-    throw tooManyRequests('该邮箱验证码发送过于频繁，请一小时后再试')
-  }
-
   const code = generateCode()
   const codeHash = hashCode(userId, email, code)
   const codeExpiresAt = new Date(now + PROVISION_CODE_TTL_MS)
 
-  await prisma.fakaProvisionEmailProof.upsert({
-    where: { userId_email: { userId, email } },
-    create: {
-      userId,
-      email,
-      codeHash,
-      codeExpiresAt,
-      sendCount: 1,
-      lastSentAt: new Date(now),
-      confirmAttempts: 0,
-      verifiedAt: null,
-      proofExpiresAt: null,
-    },
-    update: {
-      codeHash,
-      codeExpiresAt,
-      sendCount: sendCount + 1,
-      lastSentAt: new Date(now),
-      confirmAttempts: 0,
-      // Keep existing proof if still valid; sending a new code does not revoke proof
-    },
+  // Atomic send budget: lock row (or create) then check+increment under transaction.
+  await prisma.$transaction(async tx => {
+    const existing = await tx.fakaProvisionEmailProof.findUnique({
+      where: { userId_email: { userId, email } },
+    })
+    if (existing) {
+      await tx.$queryRaw`SELECT "id" FROM "FakaProvisionEmailProof" WHERE "id" = ${existing.id} FOR UPDATE`
+    }
+    const row = existing
+      ? await tx.fakaProvisionEmailProof.findUnique({ where: { id: existing.id } })
+      : null
+
+    if (row?.lastSentAt) {
+      const since = now - row.lastSentAt.getTime()
+      if (since < MIN_RESEND_INTERVAL_MS) {
+        throw tooManyRequests(
+          `请 ${Math.ceil((MIN_RESEND_INTERVAL_MS - since) / 1000)} 秒后再发送验证码`
+        )
+      }
+    }
+
+    let sendCount = row?.sendCount ?? 0
+    if (!row?.lastSentAt || now - row.lastSentAt.getTime() > 60 * 60 * 1000) {
+      sendCount = 0
+    }
+    if (sendCount >= MAX_SENDS_PER_HOUR) {
+      throw tooManyRequests('该邮箱验证码发送过于频繁，请一小时后再试')
+    }
+
+    if (!row) {
+      await tx.fakaProvisionEmailProof.create({
+        data: {
+          userId,
+          email,
+          codeHash,
+          codeExpiresAt,
+          sendCount: 1,
+          lastSentAt: new Date(now),
+          confirmAttempts: 0,
+          verifiedAt: null,
+          proofExpiresAt: null,
+        },
+      })
+    } else {
+      await tx.fakaProvisionEmailProof.update({
+        where: { id: row.id },
+        data: {
+          codeHash,
+          codeExpiresAt,
+          sendCount: sendCount + 1,
+          lastSentAt: new Date(now),
+          confirmAttempts: 0,
+        },
+      })
+    }
   })
 
   const mailer = await getMailer()
@@ -195,40 +204,62 @@ export async function confirmProvisionEmailCode(
   const code = String(codeRaw ?? '').trim()
   if (!/^\d{6}$/.test(code)) throw badRequest('验证码格式无效')
 
-  const row = await prisma.fakaProvisionEmailProof.findUnique({
-    where: { userId_email: { userId, email } },
-  })
-  if (!row?.codeHash || !row.codeExpiresAt) {
-    throw badRequest('请先发送验证码')
-  }
-  if (row.confirmAttempts >= MAX_CONFIRM_ATTEMPTS) {
-    throw tooManyRequests('验证失败次数过多，请重新发送验证码')
-  }
-  if (row.codeExpiresAt.getTime() < Date.now()) {
-    throw badRequest('验证码已过期，请重新发送')
-  }
-
-  const expected = hashCode(userId, email, code)
-  if (expected !== row.codeHash) {
-    await prisma.fakaProvisionEmailProof.update({
-      where: { id: row.id },
-      data: { confirmAttempts: { increment: 1 } },
-    })
-    throw badRequest('验证码错误')
-  }
-
   const now = new Date()
-  // Permanent account binding: null proofExpiresAt = never re-OTP for this user+email.
-  await prisma.fakaProvisionEmailProof.update({
-    where: { id: row.id },
-    data: {
-      verifiedAt: now,
-      proofExpiresAt: null,
-      codeHash: null,
-      codeExpiresAt: null,
-      confirmAttempts: 0,
-    },
+  // Atomic confirm: lock row, check attempts, consume success/fail under one transaction.
+  // Wrong-code path must COMMIT the attempt increment before throwing — never throw
+  // after increment inside the same transaction (rollback would zero the counter).
+  type ConfirmOutcome =
+    | { kind: 'ok' }
+    | { kind: 'error'; status: number; message: string }
+
+  const outcome = await prisma.$transaction(async (tx): Promise<ConfirmOutcome> => {
+    const peek = await tx.fakaProvisionEmailProof.findUnique({
+      where: { userId_email: { userId, email } },
+    })
+    if (!peek) return { kind: 'error', status: 400, message: '请先发送验证码' }
+    await tx.$queryRaw`SELECT "id" FROM "FakaProvisionEmailProof" WHERE "id" = ${peek.id} FOR UPDATE`
+    const row = await tx.fakaProvisionEmailProof.findUnique({ where: { id: peek.id } })
+    if (!row?.codeHash || !row.codeExpiresAt) {
+      return { kind: 'error', status: 400, message: '请先发送验证码' }
+    }
+    if (row.confirmAttempts >= MAX_CONFIRM_ATTEMPTS) {
+      return {
+        kind: 'error',
+        status: 429,
+        message: '验证失败次数过多，请重新发送验证码',
+      }
+    }
+    if (row.codeExpiresAt.getTime() < Date.now()) {
+      return { kind: 'error', status: 400, message: '验证码已过期，请重新发送' }
+    }
+
+    const expected = hashCode(userId, email, code)
+    if (expected !== row.codeHash) {
+      await tx.fakaProvisionEmailProof.update({
+        where: { id: row.id },
+        data: { confirmAttempts: { increment: 1 } },
+      })
+      return { kind: 'error', status: 400, message: '验证码错误' }
+    }
+
+    // Permanent account binding: null proofExpiresAt = never re-OTP for this user+email.
+    await tx.fakaProvisionEmailProof.update({
+      where: { id: row.id },
+      data: {
+        verifiedAt: now,
+        proofExpiresAt: null,
+        codeHash: null,
+        codeExpiresAt: null,
+        confirmAttempts: 0,
+      },
+    })
+    return { kind: 'ok' }
   })
+
+  if (outcome.kind === 'error') {
+    if (outcome.status === 429) throw tooManyRequests(outcome.message)
+    throw badRequest(outcome.message)
+  }
 
   return {
     email,

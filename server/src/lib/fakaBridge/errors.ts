@@ -38,3 +38,29 @@ export function isFakaNonRetryable(code: FakaErrorCode, httpStatus: number): boo
   if (httpStatus === 400 || httpStatus === 404) return true
   return false
 }
+
+/**
+ * Outcomes where Xboard may already have accepted the order even if our
+ * response was lost (timeout / 5xx / network). Must probe order-status before
+ * permanent fail+refund.
+ */
+export function isFakaUncertainResult(code: FakaErrorCode): boolean {
+  return (
+    code === FAKA_ERROR.TIMEOUT ||
+    code === FAKA_ERROR.NETWORK ||
+    code === FAKA_ERROR.HTTP_5XX ||
+    code === FAKA_ERROR.BAD_JSON ||
+    code === FAKA_ERROR.UNKNOWN
+  )
+}
+
+/** Remote success only: completed, or processing with a bound trade_no. */
+export function isFakaProvisionSuccessStatus(
+  status: string | undefined | null,
+  tradeNo: string | null | undefined
+): boolean {
+  const s = (status ?? '').toLowerCase()
+  if (s === 'completed') return true
+  if (s === 'processing' && tradeNo != null && String(tradeNo).trim() !== '') return true
+  return false
+}

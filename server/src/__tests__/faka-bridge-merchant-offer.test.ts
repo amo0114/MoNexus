@@ -32,7 +32,7 @@ async function setupMerchant(email: string) {
   return { accessToken }
 }
 
-describe('M5 merchant offer FakaBridge fields', () => {
+describe('M5 merchant offer FakaBridge fields (admin-only v1)', () => {
   beforeEach(() => {
     enableFakaBridgeConfig()
   })
@@ -41,7 +41,7 @@ describe('M5 merchant offer FakaBridge fields', () => {
     Object.assign(config.fakaBridge, ORIG_FAKA)
   })
 
-  it('creates an offer with faka_bridge + externalSku', async () => {
+  it('rejects merchant creating offer with faka_bridge (platform credentials)', async () => {
     const { accessToken } = await setupMerchant(`faka-m5-create-${Date.now()}@test.local`)
 
     const product = await api
@@ -56,7 +56,7 @@ describe('M5 merchant offer FakaBridge fields', () => {
       })
       .expect(201)
 
-    const offer = await api
+    const res = await api
       .post(`/api/merchant/products/${product.body.id}/offers`)
       .set(authHeader(accessToken))
       .send({
@@ -68,56 +68,52 @@ describe('M5 merchant offer FakaBridge fields', () => {
         externalSku: 'aster-basic-monthly',
         validityDays: 30,
       })
-      .expect(201)
+      .expect(400)
 
-    expect(offer.body.externalIntegration).toBe('faka_bridge')
-    expect(offer.body.externalSku).toBe('aster-basic-monthly')
-
-    const row = await prisma.offer.findUniqueOrThrow({ where: { id: offer.body.id } })
-    expect(row.externalIntegration).toBe('faka_bridge')
-    expect(row.externalSku).toBe('aster-basic-monthly')
+    expect(JSON.stringify(res.body)).toMatch(/管理员|FakaBridge|平台/)
   })
 
-  it('rejects faka_bridge with non-manual deliveryMode', async () => {
-    const { accessToken } = await setupMerchant(`faka-m5-mode-${Date.now()}@test.local`)
+  it('rejects merchant writing externalSku alone', async () => {
+    const { accessToken } = await setupMerchant(`faka-m5-sku-${Date.now()}@test.local`)
     const product = await api
       .post('/api/merchant/products')
       .set(authHeader(accessToken))
       .send({
-        name: '错模式',
+        name: 'SKU only',
         type: '网络节点',
         price: 100,
-        deliveryMode: 'instant_fixed',
+        deliveryMode: 'manual_service',
         stockMode: 'unlimited',
-        fixedContent: 'x',
+      })
+      .expect(201)
+
+    const offer = await api
+      .post(`/api/merchant/products/${product.body.id}/offers`)
+      .set(authHeader(accessToken))
+      .send({
+        name: '普通规格',
+        price: 100,
+        deliveryMode: 'manual_service',
+        stockMode: 'unlimited',
       })
       .expect(201)
 
     const res = await api
-      .post(`/api/merchant/products/${product.body.id}/offers`)
+      .put(`/api/merchant/products/${product.body.id}/offers/${offer.body.id}`)
       .set(authHeader(accessToken))
-      .send({
-        name: '坏规格',
-        price: 100,
-        deliveryMode: 'instant_fixed',
-        stockMode: 'unlimited',
-        fixedContent: 'secret',
-        externalIntegration: 'faka_bridge',
-        externalSku: 'aster-basic-monthly',
-      })
+      .send({ externalSku: 'aster-basic-monthly' })
       .expect(400)
 
-    expect(JSON.stringify(res.body)).toMatch(/manual_service|FakaBridge|履约/)
+    expect(JSON.stringify(res.body)).toMatch(/管理员|externalSku|FakaBridge/)
   })
 
-  it('rejects when platform FakaBridge env is missing', async () => {
-    Object.assign(config.fakaBridge, ORIG_FAKA) // disabled
-    const { accessToken } = await setupMerchant(`faka-m5-env-${Date.now()}@test.local`)
+  it('allows merchant to create non-faka offers normally', async () => {
+    const { accessToken } = await setupMerchant(`faka-m5-plain-${Date.now()}@test.local`)
     const product = await api
       .post('/api/merchant/products')
       .set(authHeader(accessToken))
       .send({
-        name: '无配置',
+        name: '普通商品',
         type: '网络节点',
         price: 100,
         deliveryMode: 'manual_service',
@@ -125,72 +121,21 @@ describe('M5 merchant offer FakaBridge fields', () => {
       })
       .expect(201)
 
-    await api
+    const offer = await api
       .post(`/api/merchant/products/${product.body.id}/offers`)
       .set(authHeader(accessToken))
       .send({
-        name: '月卡',
+        name: '人工交付',
         price: 100,
         deliveryMode: 'manual_service',
         stockMode: 'unlimited',
-        externalIntegration: 'faka_bridge',
-        externalSku: 'aster-basic-monthly',
-      })
-      .expect(400)
-  })
-
-  it('updates and clears faka fields', async () => {
-    const { accessToken } = await setupMerchant(`faka-m5-upd-${Date.now()}@test.local`)
-    const product = await api
-      .post('/api/merchant/products')
-      .set(authHeader(accessToken))
-      .send({
-        name: '可更新',
-        type: '网络节点',
-        price: 200,
-        deliveryMode: 'manual_service',
-        stockMode: 'unlimited',
       })
       .expect(201)
 
-    const created = await api
-      .post(`/api/merchant/products/${product.body.id}/offers`)
-      .set(authHeader(accessToken))
-      .send({
-        name: '季卡',
-        price: 500,
-        deliveryMode: 'manual_service',
-        stockMode: 'unlimited',
-        externalIntegration: 'faka_bridge',
-        externalSku: 'aster-basic-quarterly',
-      })
-      .expect(201)
-
-    const updated = await api
-      .put(`/api/merchant/products/${product.body.id}/offers/${created.body.id}`)
-      .set(authHeader(accessToken))
-      .send({
-        externalSku: 'aster-pro-monthly',
-      })
-      .expect(200)
-
-    expect(updated.body.externalSku).toBe('aster-pro-monthly')
-    expect(updated.body.externalIntegration).toBe('faka_bridge')
-
-    const cleared = await api
-      .put(`/api/merchant/products/${product.body.id}/offers/${created.body.id}`)
-      .set(authHeader(accessToken))
-      .send({
-        externalIntegration: null,
-        externalSku: null,
-      })
-      .expect(200)
-
-    expect(cleared.body.externalIntegration).toBeNull()
-    expect(cleared.body.externalSku).toBeNull()
+    expect(offer.body.externalIntegration ?? null).toBeNull()
   })
 
-  it('lists offers with faka fields for the merchant', async () => {
+  it('merchant can list admin-provisioned faka offers on their product', async () => {
     const { accessToken } = await setupMerchant(`faka-m5-list-${Date.now()}@test.local`)
     const product = await api
       .post('/api/merchant/products')
@@ -204,25 +149,28 @@ describe('M5 merchant offer FakaBridge fields', () => {
       })
       .expect(201)
 
-    await api
-      .post(`/api/merchant/products/${product.body.id}/offers`)
-      .set(authHeader(accessToken))
-      .send({
+    // Admin path / seed: attach faka via prisma (platform only)
+    await prisma.offer.create({
+      data: {
+        productId: product.body.id,
         name: '年卡',
         price: 900,
         deliveryMode: 'manual_service',
         stockMode: 'unlimited',
+        stock: 0,
         externalIntegration: 'faka_bridge',
         externalSku: 'aster-basic-yearly',
-      })
-      .expect(201)
+      },
+    })
 
     const list = await api
       .get(`/api/merchant/products/${product.body.id}/offers`)
       .set(authHeader(accessToken))
       .expect(200)
 
-    const fakaOffer = list.body.find((o: { externalSku?: string }) => o.externalSku === 'aster-basic-yearly')
+    const fakaOffer = list.body.find(
+      (o: { externalSku?: string }) => o.externalSku === 'aster-basic-yearly'
+    )
     expect(fakaOffer).toBeTruthy()
     expect(fakaOffer.externalIntegration).toBe('faka_bridge')
   })

@@ -44,11 +44,8 @@ export interface Offer {
   provisionsExternal?: 'faka_bridge' | null
   /** FakaBridge：Xboard 订阅人数容量快照（商品详情/结算预检）。 */
   fakaCapacity?: {
-    sku: string
-    planId: number | null
-    capacityLimit: number | null
-    activeUsers: number | null
     remaining: number | null
+    capacityLimit: number | null
     sellable: boolean
     source: 'xboard' | 'unavailable'
     reason?: string

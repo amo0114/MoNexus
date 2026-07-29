@@ -45,8 +45,17 @@ export type CheckoutPreview = {
   requiresVerification: boolean
   /** FakaBridge：需验证开通邮箱归属（OTP 或本站已验证登录邮箱）。升/降级均允许。 */
   requiresProvisionEmailProof: boolean
-  /** Xboard 订阅人数容量快照；null = 非 Faka 商品 */
-  fakaCapacity: FakaCapacitySnapshot | null
+  /**
+   * Xboard 容量公开摘要（不暴露 sku / planId / activeUsers）。
+   * null = 非 Faka 商品。
+   */
+  fakaCapacity: {
+    remaining: number | null
+    capacityLimit: number | null
+    sellable: boolean
+    source: 'xboard' | 'unavailable'
+    reason?: string
+  } | null
 }
 
 /**
@@ -142,6 +151,14 @@ export async function getCheckoutPreview(
     checkoutVersion: computeOfferCheckoutVersion(offer),
     requiresVerification: await resolveVerificationRequirement(userId, offer.price),
     requiresProvisionEmailProof: fakaBridge,
-    fakaCapacity,
+    fakaCapacity: fakaCapacity
+      ? {
+          remaining: fakaCapacity.remaining,
+          capacityLimit: fakaCapacity.capacityLimit,
+          sellable: fakaCapacity.sellable,
+          source: fakaCapacity.source,
+          reason: fakaCapacity.reason,
+        }
+      : null,
   }
 }

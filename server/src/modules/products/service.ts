@@ -170,7 +170,8 @@ function serializePublicProductListItem(
   }
   const fakaAvailability = projectFakaAvailability(fakaCaps)
   // 商品级容量摘要：多周期共用同一 plan 名额，取代表快照（非 null 以便卡片显示「剩余名额」）。
-  const fakaCapacity = pickProductFakaCapacity(fakaCaps)
+  const fakaCapacityRaw = pickProductFakaCapacity(fakaCaps)
+  const fakaCapacity = fakaCapacityRaw ? toPublicFakaCapacity(fakaCapacityRaw) : null
 
   return {
     ...publicProduct,
@@ -296,6 +297,18 @@ function projectFakaAvailability(
   return { stock, stockMode: 'limited' }
 }
 
+
+/** Public product payload must not leak internal SKU / plan / activeUsers. */
+function toPublicFakaCapacity(cap: FakaCapacitySnapshot) {
+  return {
+    remaining: cap.remaining,
+    capacityLimit: cap.capacityLimit,
+    sellable: cap.sellable,
+    source: cap.source,
+    reason: cap.reason,
+  }
+}
+
 /** 列表/详情商品级 fakaCapacity：单 SKU 直接用；多周期同 plan 取首个 xboard 快照。 */
 function pickProductFakaCapacity(caps: FakaCapacitySnapshot[]): FakaCapacitySnapshot | null {
   if (caps.length === 0) return null
@@ -328,7 +341,7 @@ function serializePublicProductDetail(
     // 非 Faka 或 capacity 不可达：保持本地推导。
     ...(fakaAvailability ?? localAvailability),
     // 商品级容量摘要；多周期共用 plan 时取代表快照，规格切换后由 offer.fakaCapacity 覆盖。
-    fakaCapacity: pickProductFakaCapacity(fakaCaps),
+    fakaCapacity: (() => { const c = pickProductFakaCapacity(fakaCaps); return c ? toPublicFakaCapacity(c) : null })(),
     ratingAvg: Number(product.ratingAvg),
     // 公开 Offer 剥离 fixedContent；即时库存规格的 stock 用实际可用条目数。
     offers: offers.map(offer => {
@@ -337,7 +350,7 @@ function serializePublicProductDetail(
       const withFaka = fakaCapacity
         ? {
             ...serialized,
-            fakaCapacity,
+            fakaCapacity: toPublicFakaCapacity(fakaCapacity),
             // 规格级库存展示：Xboard remaining（null = 不限）
             ...(fakaCapacity.source === 'xboard'
               ? fakaCapacity.remaining == null

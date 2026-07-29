@@ -296,16 +296,23 @@ if (env.NODE_ENV === 'production' && env.FAKA_BRIDGE_ALLOW_INSECURE_TARGETS) {
   )
   process.exit(1)
 }
-if (fakaUrl && env.NODE_ENV === 'production') {
-  try {
-    const u = new URL(fakaUrl)
-    if (u.protocol !== 'https:') {
-      console.error('[Config] FAKA_BRIDGE_URL must use https in production')
+if (env.NODE_ENV === 'production') {
+  for (const [label, raw] of [
+    ['FAKA_BRIDGE_URL', fakaUrl],
+    ['FAKA_BRIDGE_STATUS_URL', env.FAKA_BRIDGE_STATUS_URL],
+    ['FAKA_BRIDGE_REVOKE_URL', env.FAKA_BRIDGE_REVOKE_URL],
+  ] as const) {
+    if (!raw) continue
+    try {
+      const u = new URL(raw)
+      if (u.protocol !== 'https:') {
+        console.error(`[Config] ${label} must use https in production`)
+        process.exit(1)
+      }
+    } catch {
+      console.error(`[Config] ${label} is not a valid URL`)
       process.exit(1)
     }
-  } catch {
-    console.error('[Config] FAKA_BRIDGE_URL is not a valid URL')
-    process.exit(1)
   }
 }
 

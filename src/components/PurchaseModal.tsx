@@ -9,6 +9,7 @@ import {
 } from '../api/fakaBridge'
 import { getApiErrorMessage } from '../api/error'
 import { newIdempotencyKey } from '../utils/idempotencyKey'
+import { useAuthStore } from '../stores/authStore'
 
 export type ConfirmOutcome = 'success' | 'price_changed' | 'verification_required' | 'verification_failed' | 'failed'
 
@@ -77,6 +78,7 @@ export default function PurchaseModal({
   const [provisionBusy, setProvisionBusy] = useState(false)
   const [provisionHint, setProvisionHint] = useState('')
   const [provisionError, setProvisionError] = useState('')
+  const accountEmail = useAuthStore(s => s.user?.email?.toLowerCase() ?? '')
 
   const loadPreview = useCallback(async () => {
     setLoadError('')
@@ -92,19 +94,25 @@ export default function PurchaseModal({
     loadPreview()
   }, [loadPreview])
 
+  // Form field for Xboard email if present; otherwise use login email (no synthetic key).
   const provisionEmailKey = useMemo(() => {
     if (!preview?.requiresProvisionEmailProof) return null
     const field = preview.purchaseForm.find(f => isProvisionEmailField(f.key))
-    return field?.key ?? 'xboardEmail'
+    return field?.key ?? null
   }, [preview])
+
+  const usesAccountEmailForFaka =
+    Boolean(preview?.requiresProvisionEmailProof) && provisionEmailKey == null
 
   const provisionEmailValue = provisionEmailKey
     ? (answers[provisionEmailKey] ?? '').trim().toLowerCase()
-    : ''
+    : usesAccountEmailForFaka
+      ? accountEmail
+      : ''
 
   // 邮箱变更时重置信任态；已验证账号邮箱会由 status 接口立刻标 trusted
   useEffect(() => {
-    if (!preview?.requiresProvisionEmailProof || !provisionEmailKey) {
+    if (!preview?.requiresProvisionEmailProof) {
       setProvisionTrusted(true)
       return
     }
@@ -123,7 +131,7 @@ export default function PurchaseModal({
           if (st.trusted) {
             setProvisionHint(
               st.source === 'account'
-                ? '已使用本站已验证登录邮箱（与账号绑定），无需再验证'
+                ? '已使用本站已验证登录邮箱开通（无需再填）'
                 : '该邮箱已绑定到本账号，后续下单无需再验证（支持升/降级）'
             )
           }
@@ -310,6 +318,73 @@ export default function PurchaseModal({
               {preview.purchaseForm.length > 0 ? '与下方填写的表单答案' : ''}
               将通过安全通道<strong>发送至该商家的回调服务</strong>以完成自动开通。若自动开通失败，将自动转为人工交付。
             </span>
+          </div>
+        )}
+
+        {preview?.requiresProvisionEmailProof && usesAccountEmailForFaka && (
+          <div
+            className="mb-6 space-y-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3"
+            data-testid="faka-account-email-provision"
+          >
+            <p className="text-sm text-[var(--color-text)]">
+              开通邮箱：<span className="font-mono">{accountEmail || '（未登录邮箱）'}</span>
+            </p>
+            <p className="text-xs text-[var(--color-text-muted)] leading-relaxed">
+              本商品未配置单独开通邮箱表单，将使用你的本站登录邮箱开通 Xboard。
+              若该邮箱尚未验证，请先完成下方验证或前往个人中心验证登录邮箱。
+            </p>
+            {needsProvisionProof && (
+              <div className="mt-2 space-y-2" data-testid="provision-email-proof">
+                {!provisionTrusted && (
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      className="btn-secondary text-xs px-3 py-1.5"
+                      disabled={provisionBusy || !provisionEmailValue.includes('@')}
+                      onClick={handleSendProvisionCode}
+                      data-testid="provision-send-code"
+                    >
+                      {provisionBusy ? '发送中…' : '发送验证码'}
+                    </button>
+                  </div>
+                )}
+                {!provisionTrusted && (
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      className="input flex-1"
+                      placeholder="6 位验证码"
+                      maxLength={6}
+                      value={provisionCode}
+                      onChange={(e) => setProvisionCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                      data-testid="provision-code-input"
+                    />
+                    <button
+                      type="button"
+                      className="btn-primary text-xs px-3 py-1.5"
+                      disabled={provisionBusy || provisionCode.length !== 6}
+                      onClick={handleConfirmProvisionCode}
+                      data-testid="provision-confirm-code"
+                    >
+                      确认
+                    </button>
+                  </div>
+                )}
+                {provisionTrusted && (
+                  <p className="text-xs text-emerald-600" data-testid="provision-trusted">
+                    开通邮箱已验证
+                  </p>
+                )}
+                {provisionHint && !provisionError && (
+                  <p className="text-xs text-[var(--color-text-muted)]">{provisionHint}</p>
+                )}
+                {provisionError && (
+                  <p className="text-xs text-red-500">{provisionError}</p>
+                )}
+              </div>
+            )}
           </div>
         )}
 

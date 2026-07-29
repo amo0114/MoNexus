@@ -27,7 +27,6 @@ export interface CheckoutPreview {
   /** FakaBridge：需验证开通邮箱归属；验证后允许升/降级。与 autoProvision 互斥。 */
   requiresProvisionEmailProof?: boolean
   fakaCapacity?: {
-    sku: string
     remaining: number | null
     capacityLimit: number | null
     sellable: boolean

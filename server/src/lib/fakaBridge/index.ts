@@ -50,7 +50,7 @@ export {
   peekProvisionEmailFromAnswers,
 } from './provisionEmailProof.js'
 
-export { FAKA_ERROR, classifyFakaHttpFailure, isFakaNonRetryable } from './errors.js'
+export { FAKA_ERROR, classifyFakaHttpFailure, isFakaNonRetryable, isFakaUncertainResult, isFakaProvisionSuccessStatus } from './errors.js'
 export type { FakaErrorCode } from './errors.js'
 
 export type {

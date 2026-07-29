@@ -1361,9 +1361,16 @@ async function insertOffer(
     await assertMyDeliveryFile(tx, merchantId, fixedFileId)
   }
 
+  // v1: platform FakaBridge credentials are global — only admins may attach SKUs.
+  if (input.externalIntegration != null && input.externalIntegration !== '') {
+    throw badRequest('FakaBridge 外部开通仅平台管理员可配置，商家请使用自动开通 webhook 或人工交付')
+  }
+  if (input.externalSku != null && input.externalSku !== '') {
+    throw badRequest('FakaBridge externalSku 仅平台管理员可配置')
+  }
   const faka = normalizeFakaOfferIntegration({
-    externalIntegration: input.externalIntegration,
-    externalSku: input.externalSku,
+    externalIntegration: null,
+    externalSku: null,
     deliveryMode,
   })
   assertOfferProvisionMutex({
@@ -1470,6 +1477,13 @@ export async function updateMyOffer(
 
     // FakaBridge：请求触碰 integration/sku，或规格已启用 faka 时（履约模式变更也要重验）。
     const fakaFieldsTouched = 'externalIntegration' in input || 'externalSku' in input
+    if (fakaFieldsTouched) {
+      const ei = 'externalIntegration' in input ? input.externalIntegration : null
+      const es = 'externalSku' in input ? input.externalSku : null
+      if ((ei != null && ei !== '') || (es != null && es !== '')) {
+        throw badRequest('FakaBridge 外部开通仅平台管理员可配置，商家请使用自动开通 webhook 或人工交付')
+      }
+    }
     const nextExternalIntegration = fakaFieldsTouched
       ? ('externalIntegration' in input ? input.externalIntegration : offer.externalIntegration)
       : offer.externalIntegration

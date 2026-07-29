@@ -22,8 +22,9 @@ describe('buildFakaExternalOrderNo', () => {
 describe('isFakaBridgeConfigured', () => {
   it('is true only when both url and secret are provided via overrides', () => {
     expect(isFakaBridgeConfigured({ url: PAID_URL, secret: SECRET })).toBe(true)
-    expect(isFakaBridgeConfigured({ url: PAID_URL })).toBe(false)
-    expect(isFakaBridgeConfigured({ secret: SECRET })).toBe(false)
+    // Explicit empty clears env-backed config for the override path.
+    expect(isFakaBridgeConfigured({ url: PAID_URL, secret: '' })).toBe(false)
+    expect(isFakaBridgeConfigured({ url: '', secret: SECRET })).toBe(false)
   })
 })
 
@@ -130,7 +131,7 @@ describe('callFakaOrderPaid', () => {
         sku: 'x',
         paid_at: 1,
       },
-      { url: undefined, secret: undefined }
+      { url: '', secret: '' }
     )
     expect(result.ok).toBe(false)
     expect(result.code).toBe(FAKA_ERROR.NOT_CONFIGURED)

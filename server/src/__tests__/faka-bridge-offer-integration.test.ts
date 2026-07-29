@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { config } from '../config/index.js'
 import { HttpError } from '../lib/httpError.js'
 import {
   FAKA_EXTERNAL_INTEGRATION,
@@ -83,14 +84,25 @@ describe('normalizeFakaOfferIntegration', () => {
   })
 
   it('rejects when platform env is not configured (default)', () => {
-    // vitest env has no FAKA_BRIDGE_* → isFakaBridgeConfigured() false
-    expect(() =>
-      normalizeFakaOfferIntegration({
-        externalIntegration: 'faka_bridge',
-        externalSku: 'aster-basic-monthly',
-        deliveryMode: 'manual_service',
-      })
-    ).toThrow(/未配置 FakaBridge/)
+    const orig = { ...config.fakaBridge }
+    Object.assign(config.fakaBridge, {
+      enabled: false,
+      url: '',
+      secret: '',
+      statusUrl: undefined,
+      revokeUrl: undefined,
+    })
+    try {
+      expect(() =>
+        normalizeFakaOfferIntegration({
+          externalIntegration: 'faka_bridge',
+          externalSku: 'aster-basic-monthly',
+          deliveryMode: 'manual_service',
+        })
+      ).toThrow(/未配置 FakaBridge/)
+    } finally {
+      Object.assign(config.fakaBridge, orig)
+    }
   })
 })
 

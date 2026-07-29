@@ -2179,16 +2179,23 @@ export async function retryFakaBridgeTask(adminUserId: number, taskId: number) {
     throw badRequest('订单已退款/关闭，请走撤销而非重试开通')
   }
 
+  if (task.leaseUntil && task.leaseUntil.getTime() > Date.now()) {
+    throw badRequest('任务正在处理中（租约未过期），请稍后再重试')
+  }
+  if (task.cancelRequested) {
+    throw badRequest('任务已标记取消/退款，请走撤销而非重试开通')
+  }
+
   await prisma.fakaBridgeTask.update({
     where: { id: taskId },
     data: {
       status: 'pending',
       attempts: 0,
       nextAttemptAt: new Date(),
-      leaseToken: null,
-      leaseUntil: null,
+      // Do not clear an active lease (already gated above).
       lastError: null,
       completedAt: null,
+      cancelRequested: false,
       reconcileNote: `admin retry by user ${adminUserId}`,
     },
   })
@@ -2217,8 +2224,19 @@ export async function retryFakaBridgeTask(adminUserId: number, taskId: number) {
 export async function forceFakaBridgeRevoke(adminUserId: number, taskId: number) {
   const task = await prisma.fakaBridgeTask.findUnique({ where: { id: taskId } })
   if (!task) throw notFound('FakaBridge 任务不存在')
-  if (task.status !== 'succeeded' && task.status !== 'failed') {
-    // failed may still have partial Xboard state; allow revoke attempt
+  const allowed =
+    task.status === 'succeeded' ||
+    task.status === 'needs_reconcile' ||
+    (task.status === 'failed' && Boolean(task.xboardTradeNo)) ||
+    task.cancelRequested
+  if (!allowed) {
+    throw badRequest('仅已开通/可能已开通的任务可强制撤销（succeeded / needs_reconcile / failed+trade_no）')
+  }
+  if (task.revokeStatus === 'succeeded') {
+    throw badRequest('任务已撤销成功')
+  }
+  if (task.leaseUntil && task.leaseUntil.getTime() > Date.now()) {
+    throw badRequest('任务租约未过期，请稍后再强制撤销')
   }
 
   await prisma.fakaBridgeTask.update({
@@ -2226,6 +2244,7 @@ export async function forceFakaBridgeRevoke(adminUserId: number, taskId: number)
     data: {
       revokeStatus: 'pending',
       lastRevokeError: null,
+      cancelRequested: true,
       reconcileNote: `admin force revoke by user ${adminUserId}`,
     },
   })

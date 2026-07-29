@@ -23,6 +23,19 @@ function restoreFakaBridgeConfig() {
   Object.assign(config.fakaBridge, ORIG_FAKA)
 }
 
+function disableFakaBridgeConfig() {
+  Object.assign(config.fakaBridge, {
+    enabled: false,
+    url: '',
+    statusUrl: undefined,
+    revokeUrl: undefined,
+    secret: '',
+    timeoutMs: 5000,
+    maxAttempts: 3,
+    allowInsecureTargets: false,
+  })
+}
+
 async function createFakaProduct(price = 200) {
   const product = await prisma.product.create({
     data: {
@@ -120,7 +133,7 @@ describe('M3 createOrder FakaBridge outbox', () => {
   })
 
   it('rejects when platform FakaBridge is not configured', async () => {
-    restoreFakaBridgeConfig() // disabled
+    disableFakaBridgeConfig()
     const email = `faka-noconfig-${Date.now()}@example.com`
     const { user } = await createTestUser(email, 'pass123', 'user', 1000)
     await prisma.user.update({

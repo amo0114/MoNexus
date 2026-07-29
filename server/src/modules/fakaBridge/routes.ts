@@ -32,6 +32,20 @@ const mailLimiter = rateLimit({
   },
 })
 
+const confirmLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: skipInTests,
+  message: {
+    error: {
+      code: 'RATE_LIMITED',
+      message: '验证过于频繁，请稍后再试',
+    },
+  },
+})
+
 router.post(
   '/provision-email/send-code',
   mailLimiter,
@@ -42,6 +56,7 @@ router.post(
 )
 router.post(
   '/provision-email/confirm',
+  confirmLimiter,
   authenticate,
   requireActiveUser,
   validate(provisionEmailConfirmSchema),

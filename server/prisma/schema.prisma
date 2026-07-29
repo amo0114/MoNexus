@@ -650,8 +650,10 @@ model Order {
 model FakaBridgeTask {
   id             Int       @id @default(autoincrement())
   orderId        Int       @unique
-  // pending | succeeded | failed | cancelled
+  // pending | succeeded | failed | cancelled | needs_reconcile
   status         String    @default("pending")
+  // Refund requested while claim/HTTP in flight — worker must not deliver; revoke if opened.
+  cancelRequested Boolean  @default(false)
   attempts       Int       @default(0)
   maxAttempts    Int       @default(3)
   nextAttemptAt  DateTime  @default(now())
