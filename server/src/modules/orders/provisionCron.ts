@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { config } from '../../config/index.js'
 import { logger } from '../../lib/logger.js'
 import { prisma } from '../../lib/prisma.js'
+import { HttpError } from '../../lib/httpError.js'
 import { getMailer } from '../../lib/mailer/index.js'
 import { getSystemConfigValue } from '../../lib/systemConfig.js'
 import { decryptWebhookSecret } from '../../lib/webhookSecret.js'
@@ -297,12 +298,31 @@ async function settleSuccess(work: ClaimedWork, content: string, httpStatus: num
       }, tx)
     })
   } catch (err) {
-    // 交付竞争败北（商家已手工交付等）：任务取消，收到的内容弃用——
-    // 绝不重复交付。仍要求租约与 pending 匹配，别的 worker 已落结果则不动。
-    logger.warn({ err, taskId: work.taskId }, 'auto-provision delivery lost the race, cancelling task')
+    // 复审 R2-P1：异常必须分类——只有**业务性拒绝**才允许取消任务。
+    // transitionOrderStatus 的全部业务拒绝（状态 CAS 竞争 / 非法流转 /
+    // 订单不存在）都抛 HttpError；瞬时基础设施故障（连接中断 / 死锁 /
+    // DB 短暂不可用）是 Prisma/底层错误。误把后者标 cancelled 会让订单
+    // 卡死 processing 且不进降级邮件通道，违反「结果落库失败必须至少
+    // 一次重试」的契约。
+    if (err instanceof HttpError) {
+      // 交付竞争败北（商家已手工交付等）：任务取消，收到的内容弃用——
+      // 绝不重复交付。仍要求租约与 pending 匹配，别的 worker 已落结果则不动。
+      logger.warn({ err, taskId: work.taskId }, 'auto-provision delivery lost the race, cancelling task')
+      await prisma.provisionTask.updateMany({
+        where: { id: work.taskId, leaseToken: work.leaseToken, status: 'pending' },
+        data: { status: 'cancelled', leaseUntil: null },
+      })
+      return
+    }
+    // 瞬时故障：保留 pending 并释放租约——nextAttemptAt 已在认领时预写，
+    // 到点即重呼（接收端以 taskId 幂等去重）；重试耗尽走正常降级 + 邮件。
+    // 释放本身失败也无妨：租约到期后自然可被重新认领。
+    logger.warn({ err, taskId: work.taskId }, 'auto-provision result write failed transiently, will retry')
     await prisma.provisionTask.updateMany({
       where: { id: work.taskId, leaseToken: work.leaseToken, status: 'pending' },
-      data: { status: 'cancelled', leaseUntil: null },
+      data: { leaseUntil: null, lastError: 'result_write_failed', lastHttpStatus: httpStatus },
+    }).catch(releaseErr => {
+      logger.warn({ err: releaseErr, taskId: work.taskId }, 'auto-provision lease release failed, lease expiry will recover')
     })
   }
 }
@@ -320,37 +340,53 @@ async function settleFailure(work: ClaimedWork, code: string, httpStatus: number
   })
 }
 
-/** 降级通知：merchantNotifiedAt 单列管重试——发送成功才落（含轮换批量降级）。 */
-async function notifyDegradedTasks(): Promise<void> {
-  const tasks = await prisma.provisionTask.findMany({
+/**
+ * 降级通知：merchantNotifiedAt 单列管重试——发送成功才落（含轮换批量降级）。
+ * 复审 R2-P2：候选行以 `FOR UPDATE SKIP LOCKED` 认领——多实例并发扫描时
+ * 在途的行被跳过、已提交时间戳的行被谓词排除，不重复发送。发送在锁内、
+ * 失败即整体回滚（时间戳不落），保持 P5.5 教训「陈旧状态不得挡重试」。
+ * （导出供受控并发回归直接驱动。）
+ */
+export async function notifyDegradedTasks(): Promise<void> {
+  const candidates = await prisma.provisionTask.findMany({
     where: { status: 'degraded', merchantNotifiedAt: null },
     take: 20,
     orderBy: { id: 'asc' },
-    include: {
-      order: {
-        select: {
-          id: true,
-          productNameSnapshot: true,
-          offerNameSnapshot: true,
-          product: { select: { name: true } },
-          offer: { select: { name: true } },
-          merchant: { select: { contactEmail: true, user: { select: { email: true } } } },
-        },
-      },
-    },
+    select: { id: true },
   })
-  for (const task of tasks) {
-    const recipient = task.order.merchant?.contactEmail ?? task.order.merchant?.user.email
-    if (!recipient) {
-      // 无收件人（不应发生）：落时间戳避免死循环扫描。
-      await prisma.provisionTask.update({ where: { id: task.id }, data: { merchantNotifiedAt: new Date() } })
-      continue
-    }
-    const productName = task.order.productNameSnapshot ?? task.order.product.name
-    const offerName = task.order.offerNameSnapshot ?? task.order.offer?.name ?? null
-    const label = offerName ? `${productName} - ${offerName}` : productName
-    try {
+  for (const candidate of candidates) {
+    await prisma.$transaction(async tx => {
+      const locked = await tx.$queryRaw<Array<{ id: number }>>`
+        SELECT "id" FROM "ProvisionTask"
+        WHERE "id" = ${candidate.id} AND "status" = 'degraded' AND "merchantNotifiedAt" IS NULL
+        FOR UPDATE SKIP LOCKED`
+      if (locked.length === 0) return
+      const task = await tx.provisionTask.findUniqueOrThrow({
+        where: { id: candidate.id },
+        include: {
+          order: {
+            select: {
+              id: true,
+              productNameSnapshot: true,
+              offerNameSnapshot: true,
+              product: { select: { name: true } },
+              offer: { select: { name: true } },
+              merchant: { select: { contactEmail: true, user: { select: { email: true } } } },
+            },
+          },
+        },
+      })
+      const recipient = task.order.merchant?.contactEmail ?? task.order.merchant?.user.email
+      if (!recipient) {
+        // 无收件人（不应发生）：落时间戳避免死循环扫描。
+        await tx.provisionTask.update({ where: { id: task.id }, data: { merchantNotifiedAt: new Date() } })
+        return
+      }
+      const productName = task.order.productNameSnapshot ?? task.order.product.name
+      const offerName = task.order.offerNameSnapshot ?? task.order.offer?.name ?? null
+      const label = offerName ? `${productName} - ${offerName}` : productName
       const mailer = await getMailer()
+      // 发送失败抛错 → 整个事务回滚,merchantNotifiedAt 保持 null,下轮重发。
       await mailer.send({
         to: recipient,
         subject: `【自动开通失败，请人工履约】订单 #${task.order.id}`,
@@ -365,10 +401,10 @@ async function notifyDegradedTasks(): Promise<void> {
           '如需恢复自动开通，请检查回调服务与 webhook 配置。',
         ].join('\n'),
       })
-      await prisma.provisionTask.update({ where: { id: task.id }, data: { merchantNotifiedAt: new Date() } })
-    } catch (err) {
-      logger.warn({ err, taskId: task.id, recipient }, 'auto-provision degrade mail send failed')
-    }
+      await tx.provisionTask.update({ where: { id: task.id }, data: { merchantNotifiedAt: new Date() } })
+    }).catch(err => {
+      logger.warn({ err, taskId: candidate.id }, 'auto-provision degrade mail send failed')
+    })
   }
 }
 

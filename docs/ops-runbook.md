@@ -25,7 +25,7 @@
 
 - **认领谓词**:`status='pending'` + `nextAttemptAt` 到期 + `leaseUntil` 未持有(在途 HTTP 的任务被租约排除,绝不二次外呼)。
 - **退避档**:第 n 次失败后下次尝试 = `[1m, 5m, 15m, 1h, 6h][min(n-1,4)]` 之后。`nextAttemptAt` 在认领时 **预写**,进程崩溃自然落入下轮,无紧循环。
-- **租约**:`leaseUntil = 外呼超时 + 20s`;到期未落结果即可被重新认领。结果落库用 `id + leaseToken + status='pending'` 三条件 CAS——过期 worker 的迟到结果被丢弃。HTTP 调用 **全程在事务外**。
+- **租约**:`leaseUntil = 外呼超时 + 20s`;到期未落结果即可被重新认领。结果落库用 `id + leaseToken + status='pending'` 三条件 CAS——过期 worker 的迟到结果被丢弃。HTTP 调用 **全程在事务外**,且受 **硬性总时限 10s** 约束(墙钟定时器,慢滴响应也会被切断——socket `timeout` 只是空闲超时)。2xx 后结果落库若遇**瞬时故障**(连接/死锁),任务保留 pending 自动重呼(`result_write_failed`,接收端按 taskId 幂等);只有业务性竞争(订单已被手工交付/退款)才置 `cancelled`。降级邮件按 `FOR UPDATE SKIP LOCKED` 认领,多实例不重复发送。
 - **首次认领** 由 system 把订单 `pending → processing`(事件 `system.auto_provision.start`);商家已手动接单则跳过。
 - **降级转人工**:配置被撤销(`config_revoked`)、次数耗尽、或订单已被手工交付/退款 → 任务置 `degraded`/`cancelled`,发商家邮件(收件人 `merchant.contactEmail ?? user.email`,`merchantNotifiedAt` 单列管重试)。**买家的自动开通表单答案会外发到商家配置的回调服务**(产品页/结算页已明示)。
 - **SSRF 防线**:仅 https、禁用户名密码、禁重定向;保存配置时即解析域名并拒绝私网/保留目标;连接期按解析出的公网 IP 钉扎,但 TLS SNI 用 **原始域名**(挡 DNS rebinding)。私网/保留 IP 一律拒绝。
@@ -81,7 +81,7 @@
 | 订阅未到期但买家 403 下载 | 订阅交付（expiresAt 非空）**豁免**平台 `fileAccessWindowDays` 窗口、只受自身有效期约束（FILE_SUBSCRIPTION_EXPIRED）；非订阅交付才受窗口约束（FILE_WINDOW_EXPIRED）——先看订单是否真有 expiresAt |
 | 提醒重复发送 | 预约提醒双封语义（部分失败整体重试）；其余通道检查状态表是否被误删 |
 | 自动开通任务不外呼 | `autoProvisionMaxAttempts` 是否为 0(运维刹车);商家 webhook 配置是否 `active`(撤销/轮换后旧任务会 `degraded` 转人工,`lastError='config_revoked'`);`SELECT * FROM "ProvisionTask" WHERE status='pending'` 看 `nextAttemptAt` 是否在未来(退避中) |
-| 自动开通大面积降级 | `lastError` 诊断码:`dns_blocked`(域名解析到私网/被 SSRF 拦)、`tls_error`、`connect_error`、`http_5xx`/`http_4xx`(商家服务返回非 2xx)、`bad_body`(2xx 但响应非 `{content:非空≤5000}`)、`config_revoked`。**只存脱敏码,排障需商家侧查其回调服务日志**;`lastHttpStatus` 记录末次 HTTP 码 |
+| 自动开通大面积降级 | `lastError` 诊断码:`dns_blocked`(域名解析到私网/被 SSRF 拦)、`tls_error`、`connect_error`、`http_5xx`/`http_4xx`(商家服务返回非 2xx)、`bad_body`(2xx 但响应非 `{content:非空≤5000}`)、`config_revoked`、`result_write_failed`(外呼成功但结果落库瞬时失败——**不是终态**,保留 pending 自动重呼,接收端按 taskId 幂等;反复出现查 DB 健康)。**只存脱敏码,排障需商家侧查其回调服务日志**;`lastHttpStatus` 记录末次 HTTP 码 |
 | 商家收不到降级邮件 | `merchantNotifiedAt` 为空且反复扫描 = 发信持续失败(见 SMTP 排障行);发送成功才落时间戳,失败下轮重发 |
 | cron 未按周期执行 | `SELECT * FROM "CronLease"`——多实例下同窗口已有他实例执行（holder 列 + lastStartedAt）属正常；互斥 `lockedUntil` 卡在未来而 holder 已死 = 心跳残留，≤ 90s 自然过期，不需手工清 |
 | 全量 e2e 本机随机白屏 | WSL2 swap 压力（见 `.claude` 记忆）；`--workers=1 --retries=2` |

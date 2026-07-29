@@ -48,6 +48,7 @@ const ERROR_LABELS: Record<string, string> = {
   url_invalid: '回调地址不合法',
   bad_body: '回调响应格式不符(需 2xx + JSON {content})',
   config_revoked: 'webhook 配置已撤销',
+  result_write_failed: '开通成功但结果落库瞬时失败,将自动重试',
 }
 
 /**

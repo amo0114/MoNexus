@@ -261,11 +261,30 @@ export interface WebhookCallResult {
  * 发起一次外呼。URL 在此再次全量校验（钉扎 lookup 在建连处第三次校验解析
  * 结果）。绝不跟随重定向；HTTP 层失败/超时/超限一律抛 WebhookTargetError
  * 或底层错误——调用方用 classifyWebhookFailure 归类为脱敏诊断码。
+ *
+ * 超时是**硬性总时限**（复审 R2-P2）：node 的 request `timeout` 只是 socket
+ * 空闲超时——持续慢滴的响应永不空闲，会长期占住 worker。这里叠加一只
+ * 墙钟定时器兜底，两者任一触发即以 `timeout` 失败。
  */
-export function callWebhook(rawUrl: string, rawBody: string, signatureHeader: string): Promise<WebhookCallResult> {
+export function callWebhook(
+  rawUrl: string,
+  rawBody: string,
+  signatureHeader: string,
+  opts?: { timeoutMs?: number }
+): Promise<WebhookCallResult> {
+  const timeoutMs = opts?.timeoutMs ?? WEBHOOK_TIMEOUT_MS
   const url = validateWebhookUrl(rawUrl)
   const doRequest = url.protocol === 'https:' ? httpsRequest : httpRequest
   return new Promise<WebhookCallResult>((resolve, reject) => {
+    // settle-first：先落定 Promise 再 destroy——socket 销毁引发的次生
+    // error/aborted 事件不得覆盖我们的诊断码。
+    let done = false
+    const settle = (fn: (v: never) => void, value: unknown) => {
+      if (done) return
+      done = true
+      clearTimeout(deadline)
+      ;(fn as (v: unknown) => void)(value)
+    }
     const req = doRequest(
       url,
       {
@@ -278,7 +297,7 @@ export function callWebhook(rawUrl: string, rawBody: string, signatureHeader: st
           'content-length': Buffer.byteLength(rawBody),
           'x-monexus-signature': signatureHeader,
         },
-        timeout: WEBHOOK_TIMEOUT_MS,
+        timeout: timeoutMs,
       },
       res => {
         // 3xx 一律失败：不跟随重定向（重定向可指向未校验目标）。
@@ -288,19 +307,29 @@ export function callWebhook(rawUrl: string, rawBody: string, signatureHeader: st
         res.on('data', (chunk: Buffer) => {
           received += chunk.length
           if (received > WEBHOOK_MAX_RESPONSE_BYTES) {
-            req.destroy(new WebhookTargetError('body_too_large', 'webhook response exceeds size limit'))
+            const err = new WebhookTargetError('body_too_large', 'webhook response exceeds size limit')
+            settle(reject, err)
+            req.destroy(err)
             return
           }
           chunks.push(chunk)
         })
-        res.on('end', () => resolve({ status, body: Buffer.concat(chunks).toString('utf8') }))
-        res.on('error', reject)
+        res.on('end', () => settle(resolve, { status, body: Buffer.concat(chunks).toString('utf8') }))
+        res.on('error', err => settle(reject, err))
       }
     )
+    const deadline = setTimeout(() => {
+      const err = new WebhookTargetError('timeout', 'webhook call exceeded total deadline')
+      settle(reject, err)
+      req.destroy(err)
+    }, timeoutMs)
+    deadline.unref?.()
     req.on('timeout', () => {
-      req.destroy(new WebhookTargetError('timeout', 'webhook call timed out'))
+      const err = new WebhookTargetError('timeout', 'webhook call timed out')
+      settle(reject, err)
+      req.destroy(err)
     })
-    req.on('error', reject)
+    req.on('error', err => settle(reject, err))
     req.end(rawBody)
   })
 }

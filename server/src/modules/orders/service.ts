@@ -382,6 +382,17 @@ async function createOrderOnce(
       if (!webhookConfig) {
         throw new HttpError(409, 'AUTO_PROVISION_UNAVAILABLE', '商品信息已变化，请重新确认')
       }
+      // 复审 R2-P1：配置临界区内**锁定并重验** Offer 开关。事务开头读到的
+      // offer.autoProvision 是陈旧快照——「撤销（关开关）→ 立即新建配置」
+      // 的窗口里，仅凭上面的 FOR SHARE 会锁到**新**配置并给已关闭自动开通
+      // 的规格建任务外发表单。FOR NO KEY UPDATE（锁序：配置 → Offer，与
+      // 撤销的 config → task → offer 一致）确保重验之后到提交之前开关不再
+      // 变化；重验失败同样 409 让买家按新预览（无自动开通披露）重新确认。
+      const offerRecheck = await tx.$queryRaw<Array<{ autoProvision: boolean }>>`
+        SELECT "autoProvision" FROM "Offer" WHERE "id" = ${offer.id} FOR NO KEY UPDATE`
+      if (offerRecheck.length === 0 || !offerRecheck[0].autoProvision) {
+        throw new HttpError(409, 'AUTO_PROVISION_UNAVAILABLE', '商品信息已变化，请重新确认')
+      }
       await tx.provisionTask.create({
         data: { orderId: order.id, webhookConfigId: webhookConfig.id },
       })

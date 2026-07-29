@@ -96,6 +96,22 @@ async function lockActiveWebhookConfigForUpdate(
   return rows.length > 0 ? { id: rows[0].id } : null
 }
 
+/**
+ * 复审 R2-P2：写侧（save/revoke）彼此之间的互斥不能建立在「当前 active 行」
+ * 上——轮换会撤销旧行并**插入新行**，并发写侧的锁定语句快照看不到未提交/
+ * 刚提交的新行（EvalPlanQual 只重评估既有行版本），会出现双 active 撞部分
+ * 唯一索引（P2002）或误判 404。Merchant 父行是稳定的每商家互斥点：写侧
+ * 先独占它再动配置行。
+ * 锁强度必须是 FOR NO KEY UPDATE 而非 FOR UPDATE：下单事务插入 Order 行时
+ * 经外键在 Merchant 行持有 FOR KEY SHARE——FOR UPDATE 与之冲突，撤销会被
+ * 全部在途下单事务阻塞（受控回归里表现为事务超时）；FOR NO KEY UPDATE
+ * 与 KEY SHARE 兼容、写侧之间仍互斥。读侧（FOR SHARE 配置行）不需要此
+ * 锁——它们与「撤销旧行」的 UPDATE 行锁天然互斥，语义见文件头。
+ */
+async function lockMerchantForConfigWrite(tx: Prisma.TransactionClient, merchantId: number): Promise<void> {
+  await tx.$queryRaw`SELECT "id" FROM "Merchant" WHERE "id" = ${merchantId} FOR NO KEY UPDATE`
+}
+
 export async function getMyWebhookConfig(merchantId: number) {
   const active = await prisma.merchantWebhookConfig.findFirst({
     where: { merchantId, status: 'active' },
@@ -122,6 +138,9 @@ export async function saveMyWebhookConfig(merchantId: number, rawUrl: string) {
 
   const secret = generateWebhookSecret()
   const created = await prisma.$transaction(async tx => {
+    // 每商家写侧互斥（复审 R2-P2）：先独占 Merchant 父行——并发 save/revoke
+    // 在此串行化，杜绝双 active（P2002）与误判 404。
+    await lockMerchantForConfigWrite(tx, merchantId)
     // 线性化点：独占旧 active 行——与在途的下单冻结/开关启用（FOR SHARE）
     // 互斥，等它们提交后本事务的降级扫描必然覆盖其新建任务。
     const previous = await lockActiveWebhookConfigForUpdate(tx, merchantId)
@@ -157,6 +176,8 @@ export async function saveMyWebhookConfig(merchantId: number, rawUrl: string) {
 
 export async function revokeMyWebhookConfig(merchantId: number) {
   const { result, productIds } = await prisma.$transaction(async tx => {
+    // 每商家写侧互斥（复审 R2-P2）：见 lockMerchantForConfigWrite。
+    await lockMerchantForConfigWrite(tx, merchantId)
     // 线性化点：见文件头注释——FOR UPDATE 与全部读侧 FOR SHARE 互斥。
     const active = await lockActiveWebhookConfigForUpdate(tx, merchantId)
     if (!active) throw notFound('尚未配置自动开通 webhook')

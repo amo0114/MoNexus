@@ -18,11 +18,12 @@ import {
   makeManualService,
 } from './helpers.js'
 import * as outbound from '../lib/outboundWebhook.js'
-import { runProvisionBatch, __setPreDispatchHookForTests } from '../modules/orders/provisionCron.js'
+import { runProvisionBatch, __setPreDispatchHookForTests, notifyDegradedTasks } from '../modules/orders/provisionCron.js'
 import * as webhookConfigService from '../modules/merchant/webhookConfig.js'
 import { __setActiveConfigLockHooksForTests } from '../modules/merchant/webhookConfig.js'
 import { CaptureMailer } from '../lib/mailer/capture.js'
 import { __setMailerForTesting } from '../lib/mailer/index.js'
+import type { MailMessage } from '../lib/mailer/types.js'
 
 /**
  * P7b 复审 P1 回归:配置生命周期的**受控并发**验证。
@@ -312,5 +313,105 @@ describe('P2 复审回归:保存时 DNS 校验接线 + 管理端列表投影', (
     expect(row.provisionTask).not.toHaveProperty('leaseToken')
     expect(row.provisionTask).not.toHaveProperty('webhookConfigId')
     expect(JSON.stringify(list.body)).not.toContain('SECRET-LEASE')
+  })
+})
+
+describe('R2-P1 复审回归:撤销 + 立即新建配置 的陈旧 Offer 快照', () => {
+  it('冻结临界区内重验开关:陈旧快照的下单必 409,任务绝不指向新配置', async () => {
+    const seed = await seedAutoProvision()
+    // 时序注入:下单事务已读到 offer.autoProvision=true,行至冻结锁之前——
+    // 撤销(关开关)+ 立即新建配置都已提交。此刻存在 active 配置(新),
+    // 仅凭配置锁挡不住:必须靠临界区内的 Offer 重验拒单。
+    let fired = false
+    __setActiveConfigLockHooksForTests({
+      beforeLock: async () => {
+        if (fired) return
+        fired = true
+        await webhookConfigService.revokeMyWebhookConfig(seed.merchant.id)
+        await webhookConfigService.saveMyWebhookConfig(seed.merchant.id, `https://hook-${seed.tag}-new.example.test/x`)
+      },
+    })
+
+    const res = await api
+      .post('/api/orders')
+      .set(authHeader(seed.buyer.accessToken))
+      .send({ productId: seed.product.id })
+      .expect(409)
+    expect(res.body.error.code).toBe('AUTO_PROVISION_UNAVAILABLE')
+    expect(fired).toBe(true)
+    // 新配置确实存在(active),但任务零条——表单绝不发往已关闭自动开通的规格。
+    expect(await prisma.merchantWebhookConfig.count({ where: { merchantId: seed.merchant.id, status: 'active' } })).toBe(1)
+    expect(await prisma.provisionTask.count()).toBe(0)
+    expect(await prisma.order.count({ where: { productId: seed.product.id } })).toBe(0)
+  })
+})
+
+describe('R2-P2 复审回归:并发写侧的商家级稳定锁', () => {
+  it('并发轮换互相排队:无双 active(P2002)、无误判 404,收敛为恰一条 active', async () => {
+    const seed = await seedAutoProvision({ autoProvision: false })
+    // 旧实现锁「当前 active 行」:并发轮换的锁定语句快照看不到对方插入的
+    // 新行,双双走「无 previous」分支撞部分唯一索引。Merchant 父行锁下,
+    // 六路并发全部成功且串行化。
+    const results = await Promise.all(
+      Array.from({ length: 6 }, (_, i) =>
+        webhookConfigService.saveMyWebhookConfig(seed.merchant.id, `https://hook-${seed.tag}-c${i}.example.test/x`)
+      )
+    )
+    expect(results).toHaveLength(6)
+    expect(await prisma.merchantWebhookConfig.count({ where: { merchantId: seed.merchant.id, status: 'active' } })).toBe(1)
+    // 种子 1 条 + 并发 6 条,其余全部 revoked。
+    expect(await prisma.merchantWebhookConfig.count({ where: { merchantId: seed.merchant.id } })).toBe(7)
+  })
+})
+
+describe('R2-P2 复审回归:降级邮件的多实例认领', () => {
+  async function seedDegradedTask() {
+    const seed = await seedAutoProvision()
+    const res = await api
+      .post('/api/orders')
+      .set(authHeader(seed.buyer.accessToken))
+      .send({ productId: seed.product.id })
+      .expect(201)
+    await flushImmediate()
+    await prisma.provisionTask.update({
+      where: { orderId: res.body.orderId },
+      data: { status: 'degraded', lastError: 'http_502' },
+    })
+    return { seed, orderId: res.body.orderId as number }
+  }
+
+  it('两个实例并发扫描同一批降级任务:SKIP LOCKED 认领,只发一封', async () => {
+    const { orderId } = await seedDegradedTask()
+    const sent: MailMessage[] = []
+    // 慢投递放大窗口:两路并发都进入扫描,第二路要么被行锁跳过、要么被
+    // merchantNotifiedAt 谓词排除。
+    __setMailerForTesting({
+      send: async msg => {
+        await new Promise(r => setTimeout(r, 80))
+        sent.push(msg)
+      },
+    })
+    await Promise.all([notifyDegradedTasks(), notifyDegradedTasks()])
+    expect(sent).toHaveLength(1)
+    expect(sent[0].subject).toContain(`#${orderId}`)
+    const task = await prisma.provisionTask.findUniqueOrThrow({ where: { orderId } })
+    expect(task.merchantNotifiedAt).not.toBeNull()
+  })
+
+  it('发送失败不落 merchantNotifiedAt(整体回滚),下轮重发成功(P5.5 教训)', async () => {
+    const { orderId } = await seedDegradedTask()
+    __setMailerForTesting({
+      send: async () => {
+        throw new Error('smtp temporarily unavailable')
+      },
+    })
+    await notifyDegradedTasks()
+    expect((await prisma.provisionTask.findUniqueOrThrow({ where: { orderId } })).merchantNotifiedAt).toBeNull()
+
+    const sent: MailMessage[] = []
+    __setMailerForTesting({ send: async msg => { sent.push(msg) } })
+    await notifyDegradedTasks()
+    expect(sent).toHaveLength(1)
+    expect((await prisma.provisionTask.findUniqueOrThrow({ where: { orderId } })).merchantNotifiedAt).not.toBeNull()
   })
 })
