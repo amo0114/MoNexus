@@ -18,7 +18,17 @@ import {
   makeManualService,
 } from './helpers.js'
 import * as outbound from '../lib/outboundWebhook.js'
-import { runProvisionBatch, __setPreDispatchHookForTests, notifyDegradedTasks } from '../modules/orders/provisionCron.js'
+import {
+  runProvisionBatch,
+  __setPreDispatchHookForTests,
+  notifyDegradedTasks,
+  NOTIFY_LEASE_MS,
+} from '../modules/orders/provisionCron.js'
+import {
+  SMTP_CONNECTION_TIMEOUT_MS,
+  SMTP_GREETING_TIMEOUT_MS,
+  SMTP_SOCKET_TIMEOUT_MS,
+} from '../lib/mailer/smtp.js'
 import * as webhookConfigService from '../modules/merchant/webhookConfig.js'
 import { __setActiveConfigLockHooksForTests } from '../modules/merchant/webhookConfig.js'
 import { CaptureMailer } from '../lib/mailer/capture.js'
@@ -380,11 +390,10 @@ describe('R2-P2 复审回归:降级邮件的多实例认领', () => {
     return { seed, orderId: res.body.orderId as number }
   }
 
-  it('两个实例并发扫描同一批降级任务:SKIP LOCKED 认领,只发一封', async () => {
+  it('两个实例并发扫描同一批降级任务:租约 CAS 认领,只发一封', async () => {
     const { orderId } = await seedDegradedTask()
     const sent: MailMessage[] = []
-    // 慢投递放大窗口:两路并发都进入扫描,第二路要么被行锁跳过、要么被
-    // merchantNotifiedAt 谓词排除。
+    // 慢投递放大窗口:两路并发都进入扫描,第二路的认领 CAS 必然 count=0。
     __setMailerForTesting({
       send: async msg => {
         await new Promise(r => setTimeout(r, 80))
@@ -396,9 +405,10 @@ describe('R2-P2 复审回归:降级邮件的多实例认领', () => {
     expect(sent[0].subject).toContain(`#${orderId}`)
     const task = await prisma.provisionTask.findUniqueOrThrow({ where: { orderId } })
     expect(task.merchantNotifiedAt).not.toBeNull()
+    expect(task.leaseToken).toBeNull()
   })
 
-  it('发送失败不落 merchantNotifiedAt(整体回滚),下轮重发成功(P5.5 教训)', async () => {
+  it('发送失败不落 merchantNotifiedAt 且定向释放租约,下轮重发成功(P5.5 教训)', async () => {
     const { orderId } = await seedDegradedTask()
     __setMailerForTesting({
       send: async () => {
@@ -406,12 +416,49 @@ describe('R2-P2 复审回归:降级邮件的多实例认领', () => {
       },
     })
     await notifyDegradedTasks()
-    expect((await prisma.provisionTask.findUniqueOrThrow({ where: { orderId } })).merchantNotifiedAt).toBeNull()
+    const failed = await prisma.provisionTask.findUniqueOrThrow({ where: { orderId } })
+    expect(failed.merchantNotifiedAt).toBeNull()
+    // 定向释放:无需等租约到期即可重试。
+    expect(failed.leaseUntil).toBeNull()
 
     const sent: MailMessage[] = []
     __setMailerForTesting({ send: async msg => { sent.push(msg) } })
     await notifyDegradedTasks()
     expect(sent).toHaveLength(1)
     expect((await prisma.provisionTask.findUniqueOrThrow({ where: { orderId } })).merchantNotifiedAt).not.toBeNull()
+  })
+
+  it('R3 关键窗口:邮件已发出但标记前崩溃 → 在途租约挡重复,到期后重发(至少一次语义)', async () => {
+    const { orderId } = await seedDegradedTask()
+    // 模拟崩溃现场:上一个 worker 已认领(租约在途)、邮件可能已被 SMTP
+    // 接收,但 merchantNotifiedAt CAS 未来得及执行。
+    await prisma.provisionTask.update({
+      where: { orderId },
+      data: { leaseToken: 'dead-worker', leaseUntil: new Date(Date.now() + NOTIFY_LEASE_MS) },
+    })
+    const sent: MailMessage[] = []
+    __setMailerForTesting({ send: async msg => { sent.push(msg) } })
+
+    // 租约未到期:其他实例不得重复认领(SMTP 可能仍在途)。
+    await notifyDegradedTasks()
+    expect(sent).toHaveLength(0)
+    expect((await prisma.provisionTask.findUniqueOrThrow({ where: { orderId } })).merchantNotifiedAt).toBeNull()
+
+    // 租约到期(= worker 确认死亡):重发——宁重复不漏发。
+    await prisma.provisionTask.update({
+      where: { orderId },
+      data: { leaseUntil: new Date(Date.now() - 1000) },
+    })
+    await notifyDegradedTasks()
+    expect(sent).toHaveLength(1)
+    const task = await prisma.provisionTask.findUniqueOrThrow({ where: { orderId } })
+    expect(task.merchantNotifiedAt).not.toBeNull()
+    expect(task.leaseToken).toBeNull()
+  })
+
+  it('R3 约束:通知租约窗口必须大于 SMTP 硬超时之和(在途发送不与重发重叠)', () => {
+    expect(NOTIFY_LEASE_MS).toBeGreaterThan(
+      SMTP_CONNECTION_TIMEOUT_MS + SMTP_GREETING_TIMEOUT_MS + SMTP_SOCKET_TIMEOUT_MS
+    )
   })
 })

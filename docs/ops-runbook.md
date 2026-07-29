@@ -25,7 +25,7 @@
 
 - **认领谓词**:`status='pending'` + `nextAttemptAt` 到期 + `leaseUntil` 未持有(在途 HTTP 的任务被租约排除,绝不二次外呼)。
 - **退避档**:第 n 次失败后下次尝试 = `[1m, 5m, 15m, 1h, 6h][min(n-1,4)]` 之后。`nextAttemptAt` 在认领时 **预写**,进程崩溃自然落入下轮,无紧循环。
-- **租约**:`leaseUntil = 外呼超时 + 20s`;到期未落结果即可被重新认领。结果落库用 `id + leaseToken + status='pending'` 三条件 CAS——过期 worker 的迟到结果被丢弃。HTTP 调用 **全程在事务外**,且受 **硬性总时限 10s** 约束(墙钟定时器,慢滴响应也会被切断——socket `timeout` 只是空闲超时)。2xx 后结果落库若遇**瞬时故障**(连接/死锁),任务保留 pending 自动重呼(`result_write_failed`,接收端按 taskId 幂等);只有业务性竞争(订单已被手工交付/退款)才置 `cancelled`。降级邮件按 `FOR UPDATE SKIP LOCKED` 认领,多实例不重复发送。
+- **租约**:`leaseUntil = 外呼超时 + 20s`;到期未落结果即可被重新认领。结果落库用 `id + leaseToken + status='pending'` 三条件 CAS——过期 worker 的迟到结果被丢弃。HTTP 调用 **全程在事务外**,且受 **硬性总时限 10s** 约束(墙钟定时器,慢滴响应也会被切断——socket `timeout` 只是空闲超时)。2xx 后结果落库若遇**瞬时故障**(连接/死锁),任务保留 pending 自动重呼(`result_write_failed`,接收端按 taskId 幂等);只有业务性竞争(订单已被手工交付/退款)才置 `cancelled`。降级邮件 **SMTP 不进事务**:单语句 CAS 租约认领(复用 degraded 下闲置的 lease 列,窗口 60s > SMTP 硬超时之和)→ 事务外发送 → 按 token CAS 落 `merchantNotifiedAt`;语义 = **至少一次邮件**(标记前崩溃 → 租约到期重发,商家可能收到重复通知,绝不漏发)。
 - **首次认领** 由 system 把订单 `pending → processing`(事件 `system.auto_provision.start`);商家已手动接单则跳过。
 - **降级转人工**:配置被撤销(`config_revoked`)、次数耗尽、或订单已被手工交付/退款 → 任务置 `degraded`/`cancelled`,发商家邮件(收件人 `merchant.contactEmail ?? user.email`,`merchantNotifiedAt` 单列管重试)。**买家的自动开通表单答案会外发到商家配置的回调服务**(产品页/结算页已明示)。
 - **SSRF 防线**:仅 https、禁用户名密码、禁重定向;保存配置时即解析域名并拒绝私网/保留目标;连接期按解析出的公网 IP 钉扎,但 TLS SNI 用 **原始域名**(挡 DNS rebinding)。私网/保留 IP 一律拒绝。

@@ -50,6 +50,10 @@ describe('mailer adapter', () => {
       host: 'smtp.monexus.test',
       port: 587,
       secure: false,
+      // R3:SMTP 硬超时(连接/问候/套接字)——总和必须小于通知租约窗口。
+      connectionTimeout: 10_000,
+      greetingTimeout: 10_000,
+      socketTimeout: 15_000,
       auth: {
         user: 'sender@monexus.test',
         pass: 'super-secret-smtp-pass',

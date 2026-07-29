@@ -45,7 +45,10 @@ import { normalizeOrderStatus, transitionOrderStatus } from './fulfillment.js'
  *   成功 = 复用 transitionOrderStatus 的交付写入（DeliveryRecord + 订阅
  *   expiresAt + 事件，结算/验收链路全自动继承）；订单已被手工交付/退款 →
  *   任务置 cancelled，绝不重复交付。
- * - 降级邮件走 merchantNotifiedAt 单列：发送成功才落，失败下轮重发
+ * - 降级邮件（复审 R3）：**SMTP 绝不进事务**——单语句 CAS 租约认领(复用
+ *   degraded 终态下闲置的 leaseToken/leaseUntil 列) → 事务外发送 → 按
+ *   token CAS 落 merchantNotifiedAt。语义 = **至少一次邮件**（发送已被
+ *   接收但标记前崩溃 → 租约到期重发）；失败定向释放租约下轮重试
  *   （P5.5 教训：陈旧状态不得挡重试）。轮换批量降级的任务同样由此通知。
  * - lastError 只存脱敏诊断码，绝不存远端响应体。
  */
@@ -341,13 +344,28 @@ async function settleFailure(work: ClaimedWork, code: string, httpStatus: number
 }
 
 /**
- * 降级通知：merchantNotifiedAt 单列管重试——发送成功才落（含轮换批量降级）。
- * 复审 R2-P2：候选行以 `FOR UPDATE SKIP LOCKED` 认领——多实例并发扫描时
- * 在途的行被跳过、已提交时间戳的行被谓词排除，不重复发送。发送在锁内、
- * 失败即整体回滚（时间戳不落），保持 P5.5 教训「陈旧状态不得挡重试」。
+ * 通知租约窗口:必须 **大于** SMTP 三段硬超时之和(smtp.ts,有静态断言
+ * 回归)——租约未到期时在途发送绝不会与重发重叠。
+ */
+export const NOTIFY_LEASE_MS = 60_000
+
+/**
+ * 降级通知（复审 R3 重构）：**SMTP 绝不进事务**。
+ *
+ * 流程 = 单语句 CAS 租约认领 → 事务外 SMTP → 按 claim token CAS 落
+ * merchantNotifiedAt：
+ * - 认领：`status='degraded' + merchantNotifiedAt IS NULL + 租约空闲` 的
+ *   单语句 updateMany CAS 写入 leaseToken/leaseUntil——degraded 是终态、
+ *   webhook 认领只取 pending，这两列在降级后闲置，复用为通知租约。
+ *   无交互式事务：不占连接、无 5s 事务超时可撞。
+ * - 发送成功 → 按 token 三条件 CAS 落 merchantNotifiedAt 并清租约；发送
+ *   失败 → 定向释放租约（释放失败也无妨,租约到期自然重试）。
+ * - 语义 = **至少一次邮件**：发送已被服务端接收但 CAS 前进程崩溃 → 租约
+ *   到期后重发（商家可能收到重复通知——可接受；绝不漏发）。多实例并发
+ *   由认领 CAS 串行化：在途租约未过期时其他实例不重复认领。
  * （导出供受控并发回归直接驱动。）
  */
-export async function notifyDegradedTasks(): Promise<void> {
+export async function notifyDegradedTasks(now = new Date()): Promise<void> {
   const candidates = await prisma.provisionTask.findMany({
     where: { status: 'degraded', merchantNotifiedAt: null },
     take: 20,
@@ -355,13 +373,21 @@ export async function notifyDegradedTasks(): Promise<void> {
     select: { id: true },
   })
   for (const candidate of candidates) {
-    await prisma.$transaction(async tx => {
-      const locked = await tx.$queryRaw<Array<{ id: number }>>`
-        SELECT "id" FROM "ProvisionTask"
-        WHERE "id" = ${candidate.id} AND "status" = 'degraded' AND "merchantNotifiedAt" IS NULL
-        FOR UPDATE SKIP LOCKED`
-      if (locked.length === 0) return
-      const task = await tx.provisionTask.findUniqueOrThrow({
+    const token = randomUUID()
+    // 单语句认领 CAS(Prisma 模型 API:写入与比较同层,无 raw-SQL 时区陷阱)。
+    const claimed = await prisma.provisionTask.updateMany({
+      where: {
+        id: candidate.id,
+        status: 'degraded',
+        merchantNotifiedAt: null,
+        OR: [{ leaseUntil: null }, { leaseUntil: { lte: now } }],
+      },
+      data: { leaseToken: token, leaseUntil: new Date(now.getTime() + NOTIFY_LEASE_MS) },
+    })
+    if (claimed.count !== 1) continue
+
+    try {
+      const task = await prisma.provisionTask.findUniqueOrThrow({
         where: { id: candidate.id },
         include: {
           order: {
@@ -377,34 +403,43 @@ export async function notifyDegradedTasks(): Promise<void> {
         },
       })
       const recipient = task.order.merchant?.contactEmail ?? task.order.merchant?.user.email
-      if (!recipient) {
-        // 无收件人（不应发生）：落时间戳避免死循环扫描。
-        await tx.provisionTask.update({ where: { id: task.id }, data: { merchantNotifiedAt: new Date() } })
-        return
+      if (recipient) {
+        const productName = task.order.productNameSnapshot ?? task.order.product.name
+        const offerName = task.order.offerNameSnapshot ?? task.order.offer?.name ?? null
+        const label = offerName ? `${productName} - ${offerName}` : productName
+        const mailer = await getMailer()
+        // SMTP 在任何事务之外;失败抛错走 catch 释放租约。
+        await mailer.send({
+          to: recipient,
+          subject: `【自动开通失败，请人工履约】订单 #${task.order.id}`,
+          text: [
+            '您好，以下订单的自动开通未能完成，已转为人工履约：',
+            '',
+            `商品：${label}`,
+            `订单号：#${task.order.id}`,
+            `失败原因代码：${task.lastError ?? 'unknown'}`,
+            '',
+            '请尽快在商家后台手动交付该订单，避免超出履约时限。',
+            '如需恢复自动开通，请检查回调服务与 webhook 配置。',
+          ].join('\n'),
+        })
       }
-      const productName = task.order.productNameSnapshot ?? task.order.product.name
-      const offerName = task.order.offerNameSnapshot ?? task.order.offer?.name ?? null
-      const label = offerName ? `${productName} - ${offerName}` : productName
-      const mailer = await getMailer()
-      // 发送失败抛错 → 整个事务回滚,merchantNotifiedAt 保持 null,下轮重发。
-      await mailer.send({
-        to: recipient,
-        subject: `【自动开通失败，请人工履约】订单 #${task.order.id}`,
-        text: [
-          '您好，以下订单的自动开通未能完成，已转为人工履约：',
-          '',
-          `商品：${label}`,
-          `订单号：#${task.order.id}`,
-          `失败原因代码：${task.lastError ?? 'unknown'}`,
-          '',
-          '请尽快在商家后台手动交付该订单，避免超出履约时限。',
-          '如需恢复自动开通，请检查回调服务与 webhook 配置。',
-        ].join('\n'),
+      // 成功(或无收件人——落时间戳避免死循环扫描):按 token CAS 标记。
+      // 此写失败 → 租约到期重发 = 至少一次语义的重复窗口。
+      await prisma.provisionTask.updateMany({
+        where: { id: candidate.id, leaseToken: token, status: 'degraded', merchantNotifiedAt: null },
+        data: { merchantNotifiedAt: new Date(), leaseToken: null, leaseUntil: null },
       })
-      await tx.provisionTask.update({ where: { id: task.id }, data: { merchantNotifiedAt: new Date() } })
-    }).catch(err => {
+    } catch (err) {
       logger.warn({ err, taskId: candidate.id }, 'auto-provision degrade mail send failed')
-    })
+      // 定向释放本次租约,立即可重试;释放失败也无妨(租约到期自愈)。
+      await prisma.provisionTask.updateMany({
+        where: { id: candidate.id, leaseToken: token, merchantNotifiedAt: null },
+        data: { leaseToken: null, leaseUntil: null },
+      }).catch(releaseErr => {
+        logger.warn({ err: releaseErr, taskId: candidate.id }, 'notify lease release failed, expiry will recover')
+      })
+    }
   }
 }
 
