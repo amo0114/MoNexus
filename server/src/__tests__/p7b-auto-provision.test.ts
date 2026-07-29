@@ -111,12 +111,16 @@ beforeEach(async () => {
   callWebhookMock.mockReset()
   mailer = new CaptureMailer()
   __setMailerForTesting(mailer)
+  // 保存配置的 DNS 解析注入:测试域名(*.example.test)无真实解析,统一
+  // 指向一枚公网 IP,保持 saveMyWebhookConfig 的解析校验分支可控。
+  outbound.__setWebhookDnsResolverForTests(async () => [{ address: '93.184.216.34', family: 4 }])
   // 建单期一律刹车,任务停在 pending;各用例再按需放开并显式跑批。
   await setMaxAttempts(0)
 })
 
 afterEach(() => {
   __setMailerForTesting(null)
+  outbound.__setWebhookDnsResolverForTests(null)
 })
 
 describe('P7b 下单冻结与任务建立', () => {

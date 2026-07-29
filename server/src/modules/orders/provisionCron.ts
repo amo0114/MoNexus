@@ -30,6 +30,14 @@ import { normalizeOrderStatus, transitionOrderStatus } from './fulfillment.js'
  *   不外呼、不转状态（硬验收 ⑧）。
  * - HTTP 调用**全程在事务外**（硬验收 ⑨）；协议 = 至少一次外呼，接收端以
  *   taskId 幂等去重。
+ * - **dispatch 前生命周期 gate（复审 P1）**：外呼前以 `FOR SHARE OF config`
+ *   复查任务仍 pending 且配置仍 active。该锁与轮换/撤销的 FOR UPDATE 互斥，
+ *   构成**不可逆 dispatch 的线性化点**：撤销先于 gate 提交 → gate 必见
+ *   revoked（含锁等待后的重读），任务降级、callWebhook **绝不被调用**——
+ *   买家表单答案不外发；gate 先通过 → 本次外呼不可逆（视为在配置有效期内
+ *   合法发起），其后才提交的撤销只影响交付结果（结果 CAS 丢弃/降级），不
+ *   追回已发出的请求。认领事务里的配置检查只是批量快速路径，安全边界是
+ *   这里的 gate。
  * - 结果落库：任务侧 `id + leaseToken + status='pending'` 三条件 CAS 先行
  *   （同时给结果事务定下「任务行 → 订单行」的锁序，与认领事务一致，
  *   规避两条 provision 路径交叉死锁）；过期 worker 的迟到结果被丢弃。
@@ -54,6 +62,7 @@ const CONTENT_MAX_CHARS = 5000
 interface ClaimedWork {
   taskId: number
   orderId: number
+  webhookConfigId: number
   attempt: number
   maxAttempts: number
   leaseToken: string
@@ -176,6 +185,7 @@ async function claimNextTask(maxAttempts: number, now: Date): Promise<ClaimOutco
       work: {
         taskId: task.id,
         orderId: task.order.id,
+        webhookConfigId: task.webhookConfigId,
         attempt,
         maxAttempts,
         leaseToken,
@@ -202,7 +212,50 @@ function parseSuccessContent(status: number, body: string): string | null {
   }
 }
 
+// ---------- dispatch 前生命周期 gate（复审 P1：不可逆 dispatch 的线性化点） ----------
+
+type PreDispatchHook = (work: ClaimedWork) => Promise<void>
+
+let preDispatchHookForTests: PreDispatchHook | null = null
+
+/** 测试注入缝：在 gate 之前插桩（受控并发测试：在此完成一次撤销）。 */
+export function __setPreDispatchHookForTests(hook: PreDispatchHook | null) {
+  preDispatchHookForTests = hook
+}
+
+/**
+ * 外呼前最后一道复查：`FOR SHARE OF c` 与轮换/撤销的 FOR UPDATE 在配置行上
+ * 串行化——撤销先提交则此处必读到 revoked（或任务已被批量降级），返回
+ * false 且 callWebhook 绝不被调用；本语句先取到锁则外呼视为在配置有效期内
+ * 合法发起（不可逆），其后的撤销只能通过结果 CAS 影响交付。认领与外呼之间
+ * 的窗口由此收敛为「gate 语句锁点之后」，语义见文件头注释。
+ */
+async function passesDispatchGate(work: ClaimedWork): Promise<boolean> {
+  const rows = await prisma.$queryRaw<Array<{ taskStatus: string; configStatus: string }>>`
+    SELECT t."status" AS "taskStatus", c."status" AS "configStatus"
+    FROM "ProvisionTask" t
+    JOIN "MerchantWebhookConfig" c ON c."id" = t."webhookConfigId"
+    WHERE t."id" = ${work.taskId}
+    FOR SHARE OF c`
+  if (rows.length === 0) return false
+  const { taskStatus, configStatus } = rows[0]
+  // 任务已非 pending（撤销批量降级 / 手工交付路径已落定）：弃权，不外呼也
+  // 不改写——落定者已经写下终态。
+  if (taskStatus !== 'pending') return false
+  if (configStatus !== 'active') {
+    // 认领后配置被撤销：降级转人工（CAS 保护，别的路径已落定则不动）。
+    await prisma.provisionTask.updateMany({
+      where: { id: work.taskId, leaseToken: work.leaseToken, status: 'pending' },
+      data: { status: 'degraded', leaseUntil: null, lastError: 'config_revoked' },
+    })
+    return false
+  }
+  return true
+}
+
 async function executeAttempt(work: ClaimedWork): Promise<void> {
+  if (preDispatchHookForTests) await preDispatchHookForTests(work)
+  if (!(await passesDispatchGate(work))) return
   let failureCode: string
   let httpStatus: number | null = null
   try {

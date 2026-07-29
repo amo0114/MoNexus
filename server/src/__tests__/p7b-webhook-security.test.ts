@@ -1,7 +1,9 @@
 import { createHmac } from 'node:crypto'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { config } from '../config/index.js'
 import {
+  __setWebhookDnsResolverForTests,
+  assertResolvedWebhookTarget,
   classifyWebhookFailure,
   callWebhook,
   isPubliclyRoutableIp,
@@ -151,6 +153,48 @@ describe('P7b connect-time pinning (硬验收 ⑦: DNS rebinding blocked at each
     } catch (err) {
       expect(classifyWebhookFailure(err)).toBe('dns_blocked')
     }
+  })
+})
+
+describe('P7b save-time DNS resolution (复审 P2: 保存时 + 连接时双重校验)', () => {
+  afterEach(() => {
+    __setWebhookDnsResolverForTests(null)
+  })
+
+  it('rejects https://localhost at save time — resolves to loopback (real resolver)', async () => {
+    // 复审场景原文:https://localhost 能保存、直到真正外呼才失败。修复后
+    // 保存时即解析并拒绝。localhost 由 /etc/hosts 解析,无外网依赖。
+    await expect(assertResolvedWebhookTarget(new URL('https://localhost/hook')))
+      .rejects.toMatchObject({ code: 'dns_blocked' })
+  })
+
+  it('rejects when ANY resolved address is non-routable (multi-A poisoning)', async () => {
+    __setWebhookDnsResolverForTests(async () => [
+      { address: '93.184.216.34', family: 4 },
+      { address: '10.0.0.5', family: 4 },
+    ])
+    await expect(assertResolvedWebhookTarget(new URL('https://hook.example.com/x')))
+      .rejects.toMatchObject({ code: 'dns_blocked' })
+  })
+
+  it('passes an all-public resolution and skips IP literals (already validated)', async () => {
+    __setWebhookDnsResolverForTests(async () => [{ address: '93.184.216.34', family: 4 }])
+    await expect(assertResolvedWebhookTarget(new URL('https://hook.example.com/x'))).resolves.toBeUndefined()
+    // IP 字面量不走解析器(validateWebhookUrl 已判):resolver 抛错也不影响。
+    __setWebhookDnsResolverForTests(async () => {
+      throw new Error('resolver must not be called for IP literals')
+    })
+    await expect(assertResolvedWebhookTarget(new URL('https://93.184.216.34/x'))).resolves.toBeUndefined()
+  })
+
+  it('maps NXDOMAIN / resolver failure to dns_error (settable at save, not first call)', async () => {
+    __setWebhookDnsResolverForTests(async () => {
+      const e: NodeJS.ErrnoException = new Error('getaddrinfo ENOTFOUND')
+      e.code = 'ENOTFOUND'
+      throw e
+    })
+    await expect(assertResolvedWebhookTarget(new URL('https://no-such-host.example.invalid/x')))
+      .rejects.toMatchObject({ code: 'dns_error' })
   })
 })
 

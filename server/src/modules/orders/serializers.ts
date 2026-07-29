@@ -237,7 +237,8 @@ export function serializeMerchantOrder<T extends OrderWithDelivery>(order: T) {
 
 export function serializeAdminOrderList<T extends OrderWithDelivery>(order: T) {
   // P6：仲裁上下文透出 expiresAt/expired（到期裁决在服务端）；内容照旧剥离。
-  return omitPurchaseForm(omitDeliveryContent(withDeliveryExpiry(withProductDisplaySnapshot(normalizeFulfillmentFields(order)))))
+  // P7b：列表徽标走同一安全投影（复审 P2：service select + 序列化两侧对齐）。
+  return withProvisionStatusForStaff(omitPurchaseForm(omitDeliveryContent(withDeliveryExpiry(withProductDisplaySnapshot(normalizeFulfillmentFields(order))))))
 }
 
 export function serializeAdminOrderDetail<T extends OrderWithDelivery>(order: T) {

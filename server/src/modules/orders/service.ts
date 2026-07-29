@@ -4,6 +4,7 @@ import { prisma } from '../../lib/prisma.js'
 import { getSystemConfigValue } from '../../lib/systemConfig.js'
 import { badRequest, notFound, HttpError } from '../../lib/httpError.js'
 import { runProvisionBatch } from './provisionCron.js'
+import { lockActiveWebhookConfigForShare } from '../merchant/webhookConfig.js'
 import {
   createOrderStatusEvent,
   getProductFulfillmentMode,
@@ -370,15 +371,14 @@ async function createOrderOnce(
 
     // P7b：自动开通任务（transactional outbox）——下单事务内冻结商家当前
     // active webhook 配置进任务行，商家事后轮换/撤销配置不影响本单已冻结
-    // 的引用。此刻已无 active 配置（买家预览后商家撤销了配置）→ 整单安全
-    // 失败让买家重新确认，绝不静默转普通人工单（硬验收 ⑤）。
+    // 的引用。冻结用 FOR SHARE 锁 active 行（复审 P1 线性化）：与撤销/轮换
+    // 的 FOR UPDATE 互斥——撤销先提交则此处查无 active 行（含锁等待后的
+    // 谓词重评估），整单 409 安全失败让买家重新确认，绝不静默转普通人工单
+    // （硬验收 ⑤）；本事务先提交则撤销的降级扫描必然覆盖本单新任务。
     if (offer.autoProvision) {
       const webhookConfig = merchantId == null
         ? null
-        : await tx.merchantWebhookConfig.findFirst({
-            where: { merchantId, status: 'active' },
-            select: { id: true },
-          })
+        : await lockActiveWebhookConfigForShare(tx, merchantId)
       if (!webhookConfig) {
         throw new HttpError(409, 'AUTO_PROVISION_UNAVAILABLE', '商品信息已变化，请重新确认')
       }

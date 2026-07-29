@@ -1,5 +1,6 @@
 import { createHmac, timingSafeEqual } from 'node:crypto'
 import { lookup as dnsLookup } from 'node:dns'
+import { lookup as dnsLookupPromise } from 'node:dns/promises'
 import type { LookupAddress } from 'node:dns'
 import { isIP } from 'node:net'
 import { request as httpsRequest } from 'node:https'
@@ -153,6 +154,44 @@ export function validateWebhookUrl(rawUrl: string): URL {
     throw new WebhookTargetError('dns_blocked', '回调地址指向内网或保留地址')
   }
   return url
+}
+
+// ---------- 保存时 DNS 解析校验（复审 P2：设计要求「保存时 + 连接时」双重） ----------
+
+type WebhookDnsResolver = (hostname: string) => Promise<LookupAddress[]>
+
+let dnsResolverForTests: WebhookDnsResolver | null = null
+
+/** 测试注入缝：替换保存时解析器（单测无真实 DNS 依赖）。传 null 还原。 */
+export function __setWebhookDnsResolverForTests(resolver: WebhookDnsResolver | null) {
+  dnsResolverForTests = resolver
+}
+
+/**
+ * 保存时解析 hostname 并套用与连接期钉扎相同的公网可路由规则——
+ * `https://localhost` 这类域名形态的内网目标在配置保存时即被拒绝，而不是
+ * 等到首次外呼才失败。DNS 之后仍可能变更（rebinding），真正的安全边界始终
+ * 是连接期钉扎；本检查是"保存时 + 连接时"双重校验的前半段（快速失败 UX）。
+ */
+export async function assertResolvedWebhookTarget(url: URL): Promise<void> {
+  const bareHost = url.hostname.replace(/^\[|\]$/g, '')
+  if (isIP(bareHost) !== 0) return // 字面量已在 validateWebhookUrl 判定
+  if (insecureAllowed()) return // e2e 逃生：本地 stub 域名不做解析限制
+  let addresses: LookupAddress[]
+  try {
+    addresses = await (dnsResolverForTests
+      ? dnsResolverForTests(bareHost)
+      : dnsLookupPromise(bareHost, { all: true, verbatim: true }))
+  } catch {
+    throw new WebhookTargetError('dns_error', '回调域名无法解析，请确认域名已生效')
+  }
+  if (addresses.length === 0) {
+    throw new WebhookTargetError('dns_error', '回调域名无法解析，请确认域名已生效')
+  }
+  // 与钉扎同规则：任一解析结果命中保留段即整体拒绝。
+  if (addresses.some(a => !isPubliclyRoutableIp(a.address))) {
+    throw new WebhookTargetError('dns_blocked', '回调地址解析到内网或保留地址')
+  }
 }
 
 // ---------- 连接期钉扎 lookup（每次建连都重新解析并校验） ----------

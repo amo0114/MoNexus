@@ -27,6 +27,7 @@ import {
 import { releaseHeldOrder, settleHeldOrder } from '../orders/accounting.js'
 import { applyRefundInventoryPolicy } from '../orders/refundInventory.js'
 import { serializeMerchantOrder } from '../orders/serializers.js'
+import { lockActiveWebhookConfigForShare } from './webhookConfig.js'
 import type { MerchantOrderListQuery } from './schema.js'
 import type { PurchaseFormField } from '../../lib/purchaseForm.js'
 import {
@@ -1230,6 +1231,9 @@ type OfferWriteInput = {
  * P7b：autoProvision 开启前置校验（硬验收 ④⑤）：人工服务 + 无交付模板 +
  * 商家已有 active webhook 配置。DB CHECK 兜底前两条；active 配置是业务
  * 前置（下单事务要冻结它，缺失时买家下单会 409 安全失败）。
+ * FOR SHARE 锁 active 行（复审 P1 线性化）：与撤销的 FOR UPDATE 互斥——
+ * 撤销先提交则此处查无 active 行、开启被拒；本事务先提交则撤销的关开关
+ * 扫描必然覆盖刚开启的规格，不存在「开关开着但配置已撤销」的静默错配。
  */
 async function assertAutoProvisionAllowed(
   tx: Prisma.TransactionClient,
@@ -1245,10 +1249,7 @@ async function assertAutoProvisionAllowed(
   if ((deliveryFields?.length ?? 0) > 0) {
     throw badRequest('带交付字段模板的规格暂不支持自动开通')
   }
-  const active = await tx.merchantWebhookConfig.findFirst({
-    where: { merchantId, status: 'active' },
-    select: { id: true },
-  })
+  const active = await lockActiveWebhookConfigForShare(tx, merchantId)
   if (!active) {
     throw badRequest('请先在商家设置中配置自动开通 webhook，再开启该开关')
   }

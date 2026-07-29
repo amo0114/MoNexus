@@ -28,7 +28,8 @@
 - **租约**:`leaseUntil = 外呼超时 + 20s`;到期未落结果即可被重新认领。结果落库用 `id + leaseToken + status='pending'` 三条件 CAS——过期 worker 的迟到结果被丢弃。HTTP 调用 **全程在事务外**。
 - **首次认领** 由 system 把订单 `pending → processing`(事件 `system.auto_provision.start`);商家已手动接单则跳过。
 - **降级转人工**:配置被撤销(`config_revoked`)、次数耗尽、或订单已被手工交付/退款 → 任务置 `degraded`/`cancelled`,发商家邮件(收件人 `merchant.contactEmail ?? user.email`,`merchantNotifiedAt` 单列管重试)。**买家的自动开通表单答案会外发到商家配置的回调服务**(产品页/结算页已明示)。
-- **SSRF 防线**:仅 https、禁用户名密码、禁重定向;连接期按解析出的公网 IP 钉扎,但 TLS SNI 用 **原始域名**(挡 DNS rebinding)。私网/保留 IP 一律拒绝。
+- **SSRF 防线**:仅 https、禁用户名密码、禁重定向;保存配置时即解析域名并拒绝私网/保留目标;连接期按解析出的公网 IP 钉扎,但 TLS SNI 用 **原始域名**(挡 DNS rebinding)。私网/保留 IP 一律拒绝。
+- **生命周期线性化**(复审 P1):active 配置行的行锁是唯一线性化点——下单冻结/规格开关启用/**外呼前 gate** 拿 `FOR SHARE`,轮换/撤销拿 `FOR UPDATE`。撤销先提交 → 下单 409、开关启用 422、已认领任务在 gate 处降级且 **绝不外呼**(买家表单答案不外发);gate 先通过 → 本次外呼不可逆,其后的撤销只影响交付结果(结果 CAS 丢弃)。回归:`p7b-lifecycle-races.test.ts`。
 - **时区约定**(P6 时区约定的 raw-SQL 变体):Prisma 模型层写入的 `nextAttemptAt`/`leaseUntil` 是 **UTC 裸值**存入无时区列,认领 SQL 必须用 `列 AT TIME ZONE 'UTC'` 再与绑定的 `${now}` 比较,否则会话时区(+08)会把未来时刻偏移 ~8h 到过去、击穿退避与租约。改这段 SQL 时务必保留 `AT TIME ZONE 'UTC'`。
 
 **观测**:`SELECT status, count(*) FROM "ProvisionTask" GROUP BY status`;卡住的降级任务 `SELECT id, "orderId", attempts, "lastError", "lastHttpStatus", "merchantNotifiedAt" FROM "ProvisionTask" WHERE status='degraded'`。`lastError` 只存脱敏诊断码(见 §6),绝不含远端响应体。

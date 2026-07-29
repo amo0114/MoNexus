@@ -127,7 +127,8 @@ export default function MerchantWebhookConfigSection({ onChanged }: { onChanged?
       </div>
       <p className="text-sm text-[var(--color-text-muted)] mb-5 leading-relaxed">
         配置后，勾选「自动开通」的人工服务规格在买家下单时会把订单与买家填写的表单信息
-        推送到此地址，由你的服务返回开通内容自动交付。仅支持 HTTPS，请求带签名（校验方式见接入文档）。
+        推送到此地址，由你的服务返回开通内容自动交付。仅支持 HTTPS，请求带签名——签名校验、
+        taskId 幂等与重试语义见接入文档 <code className="text-xs bg-[var(--color-background)] border border-[var(--color-border)] rounded px-1 py-0.5">docs/merchant-webhook-protocol.md</code>。
         推送失败会按退避重试，最终失败自动转人工并邮件通知你。
       </p>
 
