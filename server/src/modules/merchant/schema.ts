@@ -80,8 +80,18 @@ const merchantOfferFieldsSchema = z.object({
   // P4b：交付字段模板；null 清空回纯文本交付。
   deliveryFields: deliveryFieldsSchema.nullable().optional(),
   // P7b：自动开通开关（仅 manual_service 且无模板且已有 active webhook 配置，
-  // 服务端校验）。
+  // 服务端校验）。与 FakaBridge 互斥（不可同时 true + faka_bridge）。
   autoProvision: z.boolean().optional(),
+  // FakaBridge：null 关闭外部开通；'faka_bridge' 时 externalSku 必填且须 manual_service。
+  externalIntegration: z.enum(['faka_bridge']).nullable().optional(),
+  externalSku: z
+    .string()
+    .trim()
+    .min(1)
+    .max(64)
+    .regex(/^[a-zA-Z0-9]+(?:[-_][a-zA-Z0-9]+)*$/, 'externalSku 格式无效')
+    .nullable()
+    .optional(),
 }).strict()
 
 export const createMerchantOfferSchema = merchantOfferFieldsSchema

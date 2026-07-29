@@ -1,10 +1,18 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, Coins, Loader2, ShieldCheck, Info } from 'lucide-react'
 import { Dialog, DialogContent, DialogTitle } from './ui/Dialog'
 import { getCheckoutPreview, type CheckoutPreview } from '../api/orders'
+import {
+  confirmProvisionEmailCode,
+  getProvisionEmailStatus,
+  sendProvisionEmailCode,
+} from '../api/fakaBridge'
 import { getApiErrorMessage } from '../api/error'
+import { newIdempotencyKey } from '../utils/idempotencyKey'
 
 export type ConfirmOutcome = 'success' | 'price_changed' | 'verification_required' | 'verification_failed' | 'failed'
+
+const PROVISION_EMAIL_KEYS = new Set(['xboardEmail', 'xboard_email', 'email'])
 
 /**
  * P6c：今天 + N 天的日期，格式 YYYY-MM-DD（date 输入的 min/max 提示；服务端
@@ -23,6 +31,10 @@ function localDatePlusDays(days: number): string {
   const shifted = new Date(Date.UTC(get('year'), get('month') - 1, get('day') + days))
   const pad = (n: number) => String(n).padStart(2, '0')
   return `${shifted.getUTCFullYear()}-${pad(shifted.getUTCMonth() + 1)}-${pad(shifted.getUTCDate())}`
+}
+
+function isProvisionEmailField(key: string): boolean {
+  return PROVISION_EMAIL_KEYS.has(key)
 }
 
 /**
@@ -55,9 +67,16 @@ export default function PurchaseModal({
   const [preview, setPreview] = useState<CheckoutPreview | null>(null)
   const [loadError, setLoadError] = useState('')
   const [priceChanged, setPriceChanged] = useState(false)
-  const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID())
+  const [idempotencyKey, setIdempotencyKey] = useState(() => newIdempotencyKey())
   const [answers, setAnswers] = useState<Record<string, string>>({})
   const [verifyPassword, setVerifyPassword] = useState('')
+
+  // FakaBridge 开通邮箱归属
+  const [provisionTrusted, setProvisionTrusted] = useState(false)
+  const [provisionCode, setProvisionCode] = useState('')
+  const [provisionBusy, setProvisionBusy] = useState(false)
+  const [provisionHint, setProvisionHint] = useState('')
+  const [provisionError, setProvisionError] = useState('')
 
   const loadPreview = useCallback(async () => {
     setLoadError('')
@@ -73,13 +92,96 @@ export default function PurchaseModal({
     loadPreview()
   }, [loadPreview])
 
+  const provisionEmailKey = useMemo(() => {
+    if (!preview?.requiresProvisionEmailProof) return null
+    const field = preview.purchaseForm.find(f => isProvisionEmailField(f.key))
+    return field?.key ?? 'xboardEmail'
+  }, [preview])
+
+  const provisionEmailValue = provisionEmailKey
+    ? (answers[provisionEmailKey] ?? '').trim().toLowerCase()
+    : ''
+
+  // 邮箱变更时重置信任态；已验证账号邮箱会由 status 接口立刻标 trusted
+  useEffect(() => {
+    if (!preview?.requiresProvisionEmailProof || !provisionEmailKey) {
+      setProvisionTrusted(true)
+      return
+    }
+    setProvisionTrusted(false)
+    setProvisionCode('')
+    setProvisionHint('')
+    setProvisionError('')
+    if (!provisionEmailValue || !provisionEmailValue.includes('@')) return
+
+    let cancelled = false
+    const t = setTimeout(() => {
+      getProvisionEmailStatus(provisionEmailValue)
+        .then(st => {
+          if (cancelled) return
+          setProvisionTrusted(st.trusted)
+          if (st.trusted) {
+            setProvisionHint(
+              st.source === 'account'
+                ? '已使用本站已验证登录邮箱（与账号绑定），无需再验证'
+                : '该邮箱已绑定到本账号，后续下单无需再验证（支持升/降级）'
+            )
+          }
+        })
+        .catch(() => {
+          /* ignore status probe errors — confirm will hard-fail */
+        })
+    }, 350)
+    return () => {
+      cancelled = true
+      clearTimeout(t)
+    }
+  }, [preview?.requiresProvisionEmailProof, provisionEmailKey, provisionEmailValue])
+
+  async function handleSendProvisionCode() {
+    if (!provisionEmailValue || provisionBusy) return
+    setProvisionBusy(true)
+    setProvisionError('')
+    setProvisionHint('')
+    try {
+      const res = await sendProvisionEmailCode(provisionEmailValue)
+      if (res.alreadyTrusted) {
+        setProvisionTrusted(true)
+        setProvisionHint('该邮箱已验证，无需验证码')
+      } else {
+        setProvisionHint(`验证码已发送至 ${res.email}，10 分钟内有效`)
+      }
+    } catch (err) {
+      setProvisionError(getApiErrorMessage(err, '发送验证码失败'))
+    } finally {
+      setProvisionBusy(false)
+    }
+  }
+
+  async function handleConfirmProvisionCode() {
+    if (!provisionEmailValue || !provisionCode.trim() || provisionBusy) return
+    setProvisionBusy(true)
+    setProvisionError('')
+    try {
+      await confirmProvisionEmailCode(provisionEmailValue, provisionCode.trim())
+      setProvisionTrusted(true)
+      setProvisionHint('验证成功：已绑定到本账号，以后使用该邮箱开通无需再验证')
+      setProvisionCode('')
+    } catch (err) {
+      setProvisionError(getApiErrorMessage(err, '验证失败'))
+      setProvisionTrusted(false)
+    } finally {
+      setProvisionBusy(false)
+    }
+  }
+
   async function handleConfirm() {
     if (!preview || submitting) return
     const outcome = await onConfirm(preview, idempotencyKey, answers, verifyPassword)
     if (outcome === 'price_changed') {
       // 服务端价格已变：换新的结算意图（新幂等键）并重新报价，由用户再次确认。
       setPriceChanged(true)
-      setIdempotencyKey(crypto.randomUUID())
+      setIdempotencyKey(newIdempotencyKey())
       setPreview(null)
       loadPreview()
     } else if (outcome === 'verification_required') {
@@ -98,6 +200,15 @@ export default function PurchaseModal({
   const missingRequired =
     preview?.purchaseForm?.some(f => f.required && !(answers[f.key] ?? '').trim()) ?? false
   const missingVerification = (preview?.requiresVerification ?? false) && verifyPassword === ''
+  const needsProvisionProof = Boolean(preview?.requiresProvisionEmailProof)
+  const missingProvisionProof = needsProvisionProof && !provisionTrusted
+
+  const capacityHint =
+    preview?.fakaCapacity?.source === 'xboard' && preview.fakaCapacity.remaining != null
+      ? `Xboard 剩余名额：${preview.fakaCapacity.remaining}`
+      : preview?.fakaCapacity?.source === 'xboard' && preview.fakaCapacity.remaining === null
+        ? 'Xboard 套餐人数不限'
+        : null
 
   return (
     <Dialog open onOpenChange={(o) => { if (!o && !submitting) onClose() }}>
@@ -170,6 +281,11 @@ export default function PurchaseModal({
                 冻结积分：商家完成履约后扣除；拒单或退款时返还。
               </p>
             )}
+            {capacityHint && (
+              <p className="text-xs text-[var(--color-text-muted)] mt-2" data-testid="faka-capacity-hint">
+                {capacityHint}
+              </p>
+            )}
             {!preview.purchasable && (
               <p className="text-xs text-red-500 mt-2" data-testid="unpurchasable-notice">
                 {preview.unpurchasableReason ?? '商品暂不可购买'}
@@ -183,7 +299,7 @@ export default function PurchaseModal({
           </div>
         )}
 
-        {preview?.autoProvision && (
+        {preview?.autoProvision && !preview?.requiresProvisionEmailProof && (
           <div
             className="flex items-start gap-2 text-sm rounded-lg border border-[var(--color-primary)]/40 bg-[var(--color-primary)]/5 text-[var(--color-text)] p-3 mb-6"
             data-testid="auto-provision-disclosure"
@@ -239,6 +355,63 @@ export default function PurchaseModal({
                     ))}
                   </select>
                 )}
+
+                {needsProvisionProof && isProvisionEmailField(field.key) && (
+                  <div className="mt-2 space-y-2" data-testid="provision-email-proof">
+                    <p className="text-xs text-[var(--color-text-muted)] leading-relaxed">
+                      首次使用须验证你拥有该邮箱（发码确认），验证后与本站账号永久绑定，之后无需再验证。
+                      可在该面板账号上升/降级套餐。请勿填写他人邮箱。
+                    </p>
+                    {!provisionTrusted && (
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          className="btn-secondary text-xs px-3 py-1.5"
+                          disabled={provisionBusy || !provisionEmailValue.includes('@')}
+                          onClick={handleSendProvisionCode}
+                          data-testid="provision-send-code"
+                        >
+                          {provisionBusy ? '发送中…' : '发送验证码'}
+                        </button>
+                      </div>
+                    )}
+                    {!provisionTrusted && (
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          autoComplete="one-time-code"
+                          className="input flex-1"
+                          placeholder="6 位验证码"
+                          maxLength={6}
+                          value={provisionCode}
+                          onChange={(e) => setProvisionCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                          data-testid="provision-code-input"
+                        />
+                        <button
+                          type="button"
+                          className="btn-primary text-xs px-3 py-1.5 whitespace-nowrap"
+                          disabled={provisionBusy || provisionCode.length !== 6}
+                          onClick={handleConfirmProvisionCode}
+                          data-testid="provision-confirm-code"
+                        >
+                          确认
+                        </button>
+                      </div>
+                    )}
+                    {provisionTrusted && (
+                      <p className="text-xs text-emerald-600" data-testid="provision-trusted">
+                        ✓ 已绑定本账号，无需重复验证
+                      </p>
+                    )}
+                    {provisionHint && !provisionError && (
+                      <p className="text-xs text-[var(--color-text-muted)]">{provisionHint}</p>
+                    )}
+                    {provisionError && (
+                      <p className="text-xs text-red-500" data-testid="provision-error">{provisionError}</p>
+                    )}
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -274,7 +447,16 @@ export default function PurchaseModal({
           </button>
           <button
             onClick={handleConfirm}
-            disabled={submitting || !preview || !preview.sufficient || !preview.purchasable || missingRequired || missingVerification}
+            disabled={
+              submitting ||
+              !preview ||
+              !preview.sufficient ||
+              !preview.purchasable ||
+              missingRequired ||
+              missingVerification ||
+              missingProvisionProof ||
+              provisionBusy
+            }
             className="btn-cta flex-1 px-0"
           >
             {submitting && <Loader2 className="w-4 h-4 animate-spin" />}

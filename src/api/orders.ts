@@ -22,8 +22,18 @@ export interface CheckoutPreview {
   checkoutVersion: string
   // 高风险二次验证：true 时弹窗渲染登录密码输入框（服务端下单时重新裁决）
   requiresVerification: boolean
-  /** P7b：本规格是否走自动开通。true 时结算弹窗明示表单答案将外发到商家的回调服务(硬验收 ⑤);参与 checkoutVersion,商家切换开关会使旧预览失效需重新确认。 */
+  /** P7b：本规格是否走自动开通。true 时结算弹窗明示表单答案将外发到商家 webhook。与 Faka 路径互斥。 */
   autoProvision: boolean
+  /** FakaBridge：需验证开通邮箱归属；验证后允许升/降级。与 autoProvision 互斥。 */
+  requiresProvisionEmailProof?: boolean
+  fakaCapacity?: {
+    sku: string
+    remaining: number | null
+    capacityLimit: number | null
+    sellable: boolean
+    source: 'xboard' | 'unavailable'
+    reason?: string
+  } | null
 }
 
 export async function getCheckoutPreview(productId: number, offerId?: number): Promise<CheckoutPreview> {
@@ -49,6 +59,8 @@ export interface CreateOrderResult {
   merchantId: number | null
   merchantName: string | null
   idempotentReplay?: boolean
+  /** FakaBridge 等外部开通：下单成功但发货异步进行中。 */
+  provisionPending?: boolean
 }
 
 export async function createOrder(

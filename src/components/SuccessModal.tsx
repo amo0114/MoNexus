@@ -12,6 +12,7 @@ export default function SuccessModal({
   deliveryFile,
   orderId,
   merchantName,
+  provisionPending = false,
   onClose,
   onViewOrders
 }: {
@@ -23,12 +24,23 @@ export default function SuccessModal({
   deliveryFile?: { fileName: string; size: number } | null
   orderId?: number
   merchantName?: string
+  /** 外部开通（如 Xboard）异步履约：下单成功但卡密尚未就绪。 */
+  provisionPending?: boolean
   onClose: () => void
   onViewOrders?: () => void
 }) {
   const showToast = useAppStore((s) => s.showToast)
+  const hasPayload =
+    Boolean(deliveryFile) ||
+    Boolean(structuredContent && structuredContent.fields.length > 0) ||
+    Boolean(deliveryContent?.trim())
+  const pending = provisionPending || !hasPayload
 
   function copyContent() {
+    if (!deliveryContent?.trim()) {
+      showToast('发货信息尚未就绪', 'error')
+      return
+    }
     navigator.clipboard.writeText(deliveryContent).catch(() => {})
     showToast('发货信息已复制')
   }
@@ -39,8 +51,12 @@ export default function SuccessModal({
         <div className="w-16 h-16 bg-[var(--color-cta)]/10 border-2 border-[var(--color-cta)] text-[var(--color-cta)] rounded-full flex items-center justify-center mx-auto mb-5">
           <Check className="w-8 h-8" />
         </div>
-        <DialogTitle className="text-2xl mb-2">兑换成功</DialogTitle>
-        <p className="text-[var(--color-text-muted)] mb-6 text-sm">商品已下发，请查收下方信息</p>
+        <DialogTitle className="text-2xl mb-2">{pending ? '下单成功' : '兑换成功'}</DialogTitle>
+        <p className="text-[var(--color-text-muted)] mb-6 text-sm">
+          {pending
+            ? '积分已冻结，系统正在开通订阅，请稍后在个人中心查看发货信息'
+            : '商品已下发，请查收下方信息'}
+        </p>
 
         {merchantName && (
           <div className="text-sm text-[var(--color-text-muted)] mb-4 bg-[var(--color-primary)]/8 p-2 rounded-lg border border-[var(--color-primary)]/20">
@@ -49,12 +65,14 @@ export default function SuccessModal({
         )}
 
         <div className="bg-[var(--color-background)] rounded-lg p-4 mb-6 border border-[var(--color-border)] text-left flex-1 max-h-48 overflow-y-auto">
-          <p className="text-xs text-[var(--color-text-muted)] mb-2 font-bold uppercase tracking-wider">提卡内容区</p>
+          <p className="text-xs text-[var(--color-text-muted)] mb-2 font-bold uppercase tracking-wider">
+            {pending ? '开通状态' : '提卡内容区'}
+          </p>
           {deliveryFile && orderId != null ? (
             <FileDeliveryCard orderId={orderId} fileName={deliveryFile.fileName} size={deliveryFile.size} />
           ) : structuredContent && structuredContent.fields.length > 0 ? (
             <StructuredDeliveryView content={structuredContent} />
-          ) : deliveryContentType === 'url' ? (
+          ) : deliveryContentType === 'url' && deliveryContent ? (
             <a
               href={deliveryContent}
               target="_blank"
@@ -64,6 +82,14 @@ export default function SuccessModal({
             >
               {deliveryContent}
             </a>
+          ) : pending ? (
+            <div
+              className="text-sm text-[var(--color-text-muted)] bg-[var(--color-surface)] p-3 rounded border border-[var(--color-border)] leading-relaxed"
+              data-testid="success-provision-pending"
+            >
+              订阅开通中，通常几十秒内完成。完成后可在「个人中心 → 我的订单」查看面板地址与订单号。
+              开通账号为你登录本站时的邮箱，无需再填。
+            </div>
           ) : (
             <div className="font-mono text-sm break-all text-[var(--color-text)] select-all bg-[var(--color-surface)] p-3 rounded border border-[var(--color-border)] leading-relaxed whitespace-pre-wrap">
               {deliveryContent}
@@ -72,7 +98,7 @@ export default function SuccessModal({
         </div>
 
         <div className="flex flex-col gap-3">
-          {!deliveryFile && (
+          {!deliveryFile && !pending && (
             <button onClick={copyContent} className="btn-primary w-full">
               <Copy className="w-4 h-4" /> 复制发货信息
             </button>
@@ -80,7 +106,7 @@ export default function SuccessModal({
           {onViewOrders ? (
             <button
               onClick={onViewOrders}
-              className="btn-secondary w-full px-0"
+              className={pending ? 'btn-primary w-full px-0' : 'btn-secondary w-full px-0'}
             >
               <ExternalLink className="w-4 h-4" /> 去个人中心查看订单
             </button>
