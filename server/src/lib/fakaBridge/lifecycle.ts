@@ -432,31 +432,47 @@ export async function runFakaReconcileBatch(limit = 20): Promise<number> {
   }
 
   // Stuck / needs_reconcile while MN order still pending (points held).
-  // Honour nextAttemptAt so parked 5‑minute rechecks are not polled every cron tick.
-  const nowUtc = new Date()
-  const stuck = await prisma.fakaBridgeTask.findMany({
-    where: {
-      status: { in: ['pending', 'succeeded', 'needs_reconcile'] },
-      order: { status: 'pending' },
-      // Older than 2 minutes — give first-attempt/worker a chance
-      createdAt: { lt: new Date(Date.now() - 120_000) },
-      nextAttemptAt: { lte: nowUtc },
-    },
-    take: limit,
-    select: {
-      id: true,
-      orderId: true,
-      status: true,
-      requestOrderNo: true,
-      emailSnapshot: true,
-      xboardTradeNo: true,
-      attempts: true,
-      maxAttempts: true,
-    },
-  })
+  // TIMESTAMP WITHOUT TIME ZONE: filter with AT TIME ZONE 'UTC' (same as runFakaBridgeBatch).
+  // Prisma Date filters on bare timestamps are unsafe under Asia/Shanghai sessions.
+  const now = new Date()
+  const createdCutoff = new Date(Date.now() - 120_000)
+  const stuck = await prisma.$queryRaw<
+    Array<{
+      id: number
+      orderId: number
+      status: string
+      requestOrderNo: string
+      emailSnapshot: string
+      xboardTradeNo: string | null
+      attempts: number
+      maxAttempts: number
+    }>
+  >`
+    SELECT
+      t."id",
+      t."orderId",
+      t."status",
+      t."requestOrderNo",
+      t."emailSnapshot",
+      t."xboardTradeNo",
+      t."attempts",
+      t."maxAttempts"
+    FROM "FakaBridgeTask" t
+    INNER JOIN "Order" o ON o."id" = t."orderId"
+    WHERE t."status" IN ('pending', 'succeeded', 'needs_reconcile')
+      AND o."status" = 'pending'
+      AND (t."createdAt" AT TIME ZONE 'UTC') < ${createdCutoff}
+      AND (t."nextAttemptAt" AT TIME ZONE 'UTC') <= ${now}
+      AND (
+        t."leaseUntil" IS NULL
+        OR (t."leaseUntil" AT TIME ZONE 'UTC') <= ${now}
+      )
+    ORDER BY t."nextAttemptAt" ASC
+    LIMIT ${limit}
+  `
 
   for (const task of stuck) {
-    // Don't steal active leases (UTC)
+    // Belt-and-suspenders: re-check lease under UTC after selection.
     if (!(await isLeaseExpiredUtc(prisma, task.id))) continue
 
     if (task.status === 'succeeded') {

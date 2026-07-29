@@ -18,6 +18,8 @@ import {
 } from '../lib/fakaBridge/index.js'
 import type { FakaTransport } from '../lib/fakaBridge/types.js'
 import { createTestUser } from './helpers.js'
+import { __setMailerForTesting } from '../lib/mailer/index.js'
+import { CaptureMailer } from '../lib/mailer/capture.js'
 
 const ORIG = { ...config.fakaBridge }
 
@@ -819,6 +821,110 @@ describe('P1 hardening', () => {
       expect(past?.nextAttemptDue).toBe(true)
     } finally {
       await prisma.$executeRawUnsafe(`SET TIME ZONE 'UTC'`)
+    }
+  })
+
+  it('reconcile candidate SQL: Asia/Shanghai session must not probe future nextAttemptAt', async () => {
+    const { user } = await verifiedBuyer()
+    const { product, offer } = await fakaProduct()
+    const created = await createOrder(user.id, product.id, {
+      offerId: offer.id,
+      expectedPrice: 100,
+      idempotencyKey: randomUUID(),
+    })
+    const task = await prisma.fakaBridgeTask.findUniqueOrThrow({ where: { orderId: created.orderId } })
+
+    // Park as needs_reconcile, old enough for stuck age, but nextAttemptAt 5 minutes ahead (UTC wall).
+    await prisma.$executeRaw`
+      UPDATE "FakaBridgeTask"
+      SET
+        "status" = 'needs_reconcile',
+        "attempts" = 3,
+        "maxAttempts" = 3,
+        "leaseToken" = NULL,
+        "leaseUntil" = NULL,
+        "createdAt" = (CURRENT_TIMESTAMP AT TIME ZONE 'UTC') - interval '10 minutes',
+        "nextAttemptAt" = (CURRENT_TIMESTAMP AT TIME ZONE 'UTC') + interval '5 minutes',
+        "reconcileNote" = 'parked future for tz test'
+      WHERE "id" = ${task.id}
+    `
+
+    let statusProbes = 0
+    __setFakaClientOverridesForTests({
+      url: config.fakaBridge.url,
+      secret: config.fakaBridge.secret,
+      transport: (async ({ url }) => {
+        if (String(url).includes('order-status')) {
+          statusProbes += 1
+          return {
+            status: 200,
+            text: JSON.stringify({
+              success: true,
+              order_no: task.requestOrderNo,
+              status: 'failed',
+              trade_no: null,
+            }),
+          }
+        }
+        return { status: 500, text: '{}' }
+      }) as FakaTransport,
+    })
+
+    // Pool connection under +08 — unsafe Prisma Date filters would wrongly select this row.
+    await prisma.$executeRawUnsafe(`SET TIME ZONE 'Asia/Shanghai'`)
+    try {
+      await runFakaReconcileBatch(20)
+      expect(statusProbes).toBe(0)
+
+      // Make nextAttemptAt due (UTC wall) and re-run — exactly one probe.
+      await prisma.$executeRaw`
+        UPDATE "FakaBridgeTask"
+        SET "nextAttemptAt" = (CURRENT_TIMESTAMP AT TIME ZONE 'UTC') - interval '1 second'
+        WHERE "id" = ${task.id}
+      `
+      await runFakaReconcileBatch(20)
+      expect(statusProbes).toBe(1)
+      const order = await prisma.order.findUniqueOrThrow({ where: { id: created.orderId } })
+      expect(order.status).toBe('refunded')
+    } finally {
+      await prisma.$executeRawUnsafe(`SET TIME ZONE 'UTC'`)
+    }
+  })
+
+  it('OTP concurrent first-send: one mail, peer gets rate limit not 500', async () => {
+    const capture = new CaptureMailer()
+    __setMailerForTesting(capture)
+    try {
+      const { user } = await verifiedBuyer()
+      // Foreign email (not verified account) so both need OTP send.
+      const target = `concurrent-${Date.now()}@example.com`
+
+      const results = await Promise.allSettled([
+        sendProvisionEmailCode(user.id, target),
+        sendProvisionEmailCode(user.id, target),
+      ])
+
+      const fulfilled = results.filter(r => r.status === 'fulfilled') as PromiseFulfilledResult<{
+        sent?: boolean
+        alreadyTrusted?: boolean
+      }>[]
+      const rejected = results.filter(r => r.status === 'rejected') as PromiseRejectedResult[]
+
+      // Exactly one successful send; the other is rate-limited (resend interval), not a system error.
+      expect(fulfilled.length).toBe(1)
+      expect(fulfilled[0].value.sent).toBe(true)
+      expect(rejected.length).toBe(1)
+      const errMsg = String(rejected[0].reason?.message ?? rejected[0].reason ?? '')
+      expect(errMsg).toMatch(/秒后再发送|过于频繁/)
+      expect(errMsg).not.toMatch(/P2002|Unique constraint|500|Internal/i)
+      expect(capture.sent.filter(m => m.to === target.toLowerCase()).length).toBe(1)
+
+      const row = await prisma.fakaProvisionEmailProof.findUniqueOrThrow({
+        where: { userId_email: { userId: user.id, email: target.toLowerCase() } },
+      })
+      expect(row.sendCount).toBe(1)
+    } finally {
+      __setMailerForTesting(null)
     }
   })
 })
