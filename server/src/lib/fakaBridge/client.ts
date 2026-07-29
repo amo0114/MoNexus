@@ -190,19 +190,19 @@ function requestViaHttpProxy(
 
       // After CONNECT, hand the duplex socket to http(s).request.
       // For HTTPS, Node performs TLS on this socket (SNI = public hostname).
-      // (createConnection returning the raw tunnel socket skips TLS and breaks.)
       const lib = target.protocol === 'https:' ? httpsRequest : httpRequest
       const req = lib(
         {
-          // @ts-expect-error Node accepts existing CONNECT socket for tunnel reuse
-          socket,
           servername: target.hostname,
           host: target.hostname,
-          port: targetPort,
+          port: String(targetPort),
           path: `${target.pathname}${target.search}`,
           method,
           headers,
           timeout: timeoutMs,
+          // Reuse the already-open CONNECT tunnel (Node RequestOptions typing
+          // omits this socket reuse path; createConnection is the public hook).
+          createConnection: () => socket,
         },
         r => collectResponse(r, resolve, reject)
       )
@@ -287,6 +287,15 @@ function wrapResult<T>(
   return { ok, httpStatus, code, body, rawText: text.slice(0, 500) }
 }
 
+/** Empty-body failure helper so callers get a typed FakaHttpResult without inferring T=null. */
+function wrapFail<T>(
+  httpStatus: number,
+  text: string,
+  code: FakaErrorCode
+): FakaHttpResult<T> {
+  return wrapResult<T>(httpStatus, text, null, code, false)
+}
+
 /**
  * POST order-paid to Xboard FakaBridge.
  * Always signs the body. Does not throw on 4xx/5xx — returns structured result.
@@ -297,11 +306,11 @@ export async function callFakaOrderPaid(
 ): Promise<FakaHttpResult<FakaOrderPaidResponse>> {
   const { url, secret, timeoutMs, allowInsecure } = resolveConfig(overrides)
   if (!url || !secret) {
-    return wrapResult(0, '', null, FAKA_ERROR.NOT_CONFIGURED, false)
+    return wrapFail(0, '', FAKA_ERROR.NOT_CONFIGURED)
   }
 
   if (!input.order_no || !input.email || !input.sku || !input.paid_at) {
-    return wrapResult(0, '', null, FAKA_ERROR.INVALID_REQUEST, false)
+    return wrapFail(0, '', FAKA_ERROR.INVALID_REQUEST)
   }
 
   const payload = withFakaSignature(
@@ -349,7 +358,7 @@ export async function callFakaOrderPaid(
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     const code = /timeout/i.test(msg) ? FAKA_ERROR.TIMEOUT : FAKA_ERROR.NETWORK
-    return wrapResult(0, msg, null, code, false)
+    return wrapFail(0, msg, code)
   }
 }
 
@@ -362,10 +371,10 @@ export async function callFakaOrderStatus(
 ): Promise<FakaHttpResult<FakaOrderStatusResponse>> {
   const { statusUrl, secret, timeoutMs, allowInsecure } = resolveConfig(overrides)
   if (!statusUrl || !secret) {
-    return wrapResult(0, '', null, FAKA_ERROR.NOT_CONFIGURED, false)
+    return wrapFail(0, '', FAKA_ERROR.NOT_CONFIGURED)
   }
   if (!orderNo) {
-    return wrapResult(0, '', null, FAKA_ERROR.INVALID_REQUEST, false)
+    return wrapFail(0, '', FAKA_ERROR.INVALID_REQUEST)
   }
 
   const signed = withFakaSignature({ order_no: orderNo }, secret)
@@ -399,7 +408,7 @@ export async function callFakaOrderStatus(
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     const code = /timeout/i.test(msg) ? FAKA_ERROR.TIMEOUT : FAKA_ERROR.NETWORK
-    return wrapResult(0, msg, null, code, false)
+    return wrapFail(0, msg, code)
   }
 }
 
@@ -413,10 +422,10 @@ export async function callFakaOrderRevoke(
 ): Promise<FakaHttpResult<FakaOrderRevokeResponse>> {
   const { revokeUrl, secret, timeoutMs, allowInsecure } = resolveConfig(overrides)
   if (!revokeUrl || !secret) {
-    return wrapResult(0, '', null, FAKA_ERROR.NOT_CONFIGURED, false)
+    return wrapFail(0, '', FAKA_ERROR.NOT_CONFIGURED)
   }
   if (!orderNo) {
-    return wrapResult(0, '', null, FAKA_ERROR.INVALID_REQUEST, false)
+    return wrapFail(0, '', FAKA_ERROR.INVALID_REQUEST)
   }
 
   const paidAt = Math.floor(Date.now() / 1000)
@@ -458,7 +467,7 @@ export async function callFakaOrderRevoke(
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     const code = /timeout/i.test(msg) ? FAKA_ERROR.TIMEOUT : FAKA_ERROR.NETWORK
-    return wrapResult(0, msg, null, code, false)
+    return wrapFail(0, msg, code)
   }
 }
 
@@ -472,11 +481,11 @@ export async function callFakaPlanCapacity(
 ): Promise<FakaHttpResult<FakaPlanCapacityResponse>> {
   const { capacityUrl, secret, timeoutMs, allowInsecure } = resolveConfig(overrides)
   if (!capacityUrl || !secret) {
-    return wrapResult(0, '', null, FAKA_ERROR.NOT_CONFIGURED, false)
+    return wrapFail(0, '', FAKA_ERROR.NOT_CONFIGURED)
   }
   const skuNorm = sku.trim().toLowerCase()
   if (!skuNorm) {
-    return wrapResult(0, '', null, FAKA_ERROR.INVALID_REQUEST, false)
+    return wrapFail(0, '', FAKA_ERROR.INVALID_REQUEST)
   }
 
   const paidAt = Math.floor(Date.now() / 1000)
@@ -512,7 +521,7 @@ export async function callFakaPlanCapacity(
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     const code = /timeout/i.test(msg) ? FAKA_ERROR.TIMEOUT : FAKA_ERROR.NETWORK
-    return wrapResult(0, msg, null, code, false)
+    return wrapFail(0, msg, code)
   }
 }
 
@@ -527,11 +536,11 @@ export async function callFakaSetPlanCapacity(
 ): Promise<FakaHttpResult<FakaPlanCapacityResponse>> {
   const { capacityUrl, secret, timeoutMs, allowInsecure } = resolveConfig(overrides)
   if (!capacityUrl || !secret) {
-    return wrapResult(0, '', null, FAKA_ERROR.NOT_CONFIGURED, false)
+    return wrapFail(0, '', FAKA_ERROR.NOT_CONFIGURED)
   }
   const skuNorm = sku.trim().toLowerCase()
   if (!skuNorm) {
-    return wrapResult(0, '', null, FAKA_ERROR.INVALID_REQUEST, false)
+    return wrapFail(0, '', FAKA_ERROR.INVALID_REQUEST)
   }
 
   const paidAt = Math.floor(Date.now() / 1000)
@@ -576,7 +585,7 @@ export async function callFakaSetPlanCapacity(
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     const code = /timeout/i.test(msg) ? FAKA_ERROR.TIMEOUT : FAKA_ERROR.NETWORK
-    return wrapResult(0, msg, null, code, false)
+    return wrapFail(0, msg, code)
   }
 }
 
@@ -588,7 +597,7 @@ export async function callFakaPlanCatalog(
 ): Promise<FakaHttpResult<FakaPlanCatalogResponse>> {
   const { catalogUrl, secret, timeoutMs, allowInsecure } = resolveConfig(overrides)
   if (!catalogUrl || !secret) {
-    return wrapResult(0, '', null, FAKA_ERROR.NOT_CONFIGURED, false)
+    return wrapFail(0, '', FAKA_ERROR.NOT_CONFIGURED)
   }
 
   const paidAt = Math.floor(Date.now() / 1000)
@@ -622,7 +631,7 @@ export async function callFakaPlanCatalog(
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     const code = /timeout/i.test(msg) ? FAKA_ERROR.TIMEOUT : FAKA_ERROR.NETWORK
-    return wrapResult(0, msg, null, code, false)
+    return wrapFail(0, msg, code)
   }
 }
 

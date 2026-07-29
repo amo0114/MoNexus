@@ -2,7 +2,7 @@ import { Prisma } from '@prisma/client'
 import { config } from '../../config/index.js'
 import { prisma } from '../../lib/prisma.js'
 import { getSystemConfigValue } from '../../lib/systemConfig.js'
-import { badRequest, notFound, HttpError } from '../../lib/httpError.js'
+import { badRequest, notFound, HttpError, provisionEmailUnverified } from '../../lib/httpError.js'
 import { runProvisionBatch } from './provisionCron.js'
 import { lockActiveWebhookConfigForShare } from '../merchant/webhookConfig.js'
 import {
@@ -32,7 +32,6 @@ import {
   structuredContentToJson,
   type StructuredDeliveryContent,
 } from '../../lib/deliveryFields.js'
-import { config } from '../../config/index.js'
 import {
   assertProvisionEmailTrusted,
   createFakaBridgeTaskForOrder,

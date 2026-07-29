@@ -1465,7 +1465,15 @@ export async function importAdminFakaPlan(
     (planMeta.named_skus ?? []).map(n => [n.period, n.sku] as const)
   )
 
-  const resolved = []
+  const resolved: Array<{
+    period: string
+    sku: string
+    offerName: string
+    pricePoints: number
+    validityDays: number | null
+    faka: ReturnType<typeof normalizeFakaOfferIntegration>
+    cap: Awaited<ReturnType<typeof resolveFakaOfferSku>>['cap']
+  }> = []
   for (const row of rows) {
     if (!Number.isInteger(row.pricePoints) || row.pricePoints <= 0) {
       throw badRequest(`周期 ${row.period} 的积分售价无效`)
@@ -1662,7 +1670,15 @@ export async function addAdminFakaOffers(
   )
   const maxSort = product.offers.reduce((m, o) => Math.max(m, o.sortOrder ?? 0), 0)
 
-  const resolved = []
+  const resolved: Array<{
+    period: string
+    sku: string
+    offerName: string
+    pricePoints: number
+    validityDays: number | null
+    faka: ReturnType<typeof normalizeFakaOfferIntegration>
+    cap: Awaited<ReturnType<typeof resolveFakaOfferSku>>['cap']
+  }> = []
   for (const row of input.offers) {
     const period = row.period.trim().toLowerCase()
     const { sku, cap } = await resolveFakaOfferSku(planId, period, row.sku)

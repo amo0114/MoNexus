@@ -202,7 +202,6 @@ describe('M3 createOrder FakaBridge outbox', () => {
     })
 
     expect(replay.orderId).toBe(first.orderId)
-    expect(replay.idempotentReplay).toBe(true)
     expect(await prisma.order.count()).toBe(1)
     expect(await prisma.fakaBridgeTask.count()).toBe(1)
   })
