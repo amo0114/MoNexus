@@ -660,7 +660,7 @@ model Order {
 
 // FakaBridge outbox：下单事务内创建，事务外 HTTP 调用 Xboard 插件。
 // 协议与商家 autoProvision 不同（body HMAC + order_no/email/sku），独立表。
-// status: pending | succeeded | failed | cancelled
+// status: pending | succeeded | failed | cancelled | needs_reconcile
 model FakaBridgeTask {
   id             Int       @id @default(autoincrement())
   orderId        Int       @unique

@@ -132,12 +132,6 @@ export async function sendProvisionEmailCode(userId: number, emailRaw: string) {
     | { kind: 'ok' }
     | { kind: 'error'; status: number; message: string }
 
-  type UserSendBudgetRow = {
-    userId: number
-    windowStartedAt: Date
-    sendCount: number
-  }
-
   function isUniqueViolation(err: unknown): boolean {
     return Boolean(
       err &&
@@ -205,16 +199,22 @@ export async function sendProvisionEmailCode(userId: number, emailRaw: string) {
       const nowDate = new Date(now)
       // `ON CONFLICT DO NOTHING` handles first-send races without aborting the
       // transaction.  The following FOR UPDATE is the single per-user mutex.
+      // This column is `timestamp without time zone`: let PostgreSQL create its
+      // initial value in UTC rather than binding a JS Date through the session
+      // timezone.  Read/write it through Prisma below so both conversions use
+      // the same layer.
       await tx.$executeRaw`
         INSERT INTO "FakaProvisionEmailSendBudget" ("userId", "windowStartedAt", "sendCount")
-        VALUES (${userId}, ${nowDate}, 0)
+        VALUES (${userId}, now() AT TIME ZONE 'UTC', 0)
         ON CONFLICT ("userId") DO NOTHING`
-      const budgetRows = await tx.$queryRaw<UserSendBudgetRow[]>`
-        SELECT "userId", "windowStartedAt", "sendCount"
+      await tx.$queryRaw<{ userId: number }[]>`
+        SELECT "userId"
         FROM "FakaProvisionEmailSendBudget"
         WHERE "userId" = ${userId}
         FOR UPDATE`
-      const budget = budgetRows[0]
+      const budget = await tx.fakaProvisionEmailSendBudget.findUnique({
+        where: { userId },
+      })
       if (!budget) throw new Error('Faka provision email budget row missing after insert')
 
       const daily = userDailyLimitOutcome(budget.windowStartedAt, budget.sendCount)
@@ -263,12 +263,13 @@ export async function sendProvisionEmailCode(userId: number, emailRaw: string) {
         })
       }
 
-      await tx.$executeRaw`
-        UPDATE "FakaProvisionEmailSendBudget"
-        SET "windowStartedAt" = ${daily.windowStartedAt},
-            "sendCount" = ${daily.sendCount + 1},
-            "updatedAt" = ${nowDate}
-        WHERE "userId" = ${userId}`
+      await tx.fakaProvisionEmailSendBudget.update({
+        where: { userId },
+        data: {
+          windowStartedAt: daily.windowStartedAt,
+          sendCount: daily.sendCount + 1,
+        },
+      })
       return { kind: 'ok' }
     })
   }
