@@ -38,6 +38,9 @@ services:
       PORT: 3000
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required (>=32 chars)}
+      # M3: the same persistent 32-byte base64 key must reach every server
+      # instance, otherwise enrolled administrator MFA factors cannot decrypt.
+      MFA_ENCRYPTION_KEY: ${MFA_ENCRYPTION_KEY:?MFA_ENCRYPTION_KEY is required (32-byte base64)}
       FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:?FRONTEND_ORIGIN is required}
       COOKIE_SECURE: ${COOKIE_SECURE:-true}
       USER_STATUS_CACHE_TTL_SEC: ${USER_STATUS_CACHE_TTL_SEC:-60}
@@ -91,6 +94,21 @@ services:
       PORTABLE_BACKUP_WORK_DIR: ${PORTABLE_BACKUP_WORK_DIR:-/tmp/monexus-portable-backups}
       PORTABLE_BACKUP_MAX_BYTES: ${PORTABLE_BACKUP_MAX_BYTES:-2147483648}
       PORTABLE_RESTORE_BOOTSTRAP_TOKEN: ${PORTABLE_RESTORE_BOOTSTRAP_TOKEN:-}
+      # P7: merchant webhook secrets are AES-256-GCM encrypted at rest. The
+      # server config also enforces this key in production; list it here so a
+      # value in Compose's .env actually reaches the container.
+      WEBHOOK_SECRET_ENC_KEY: ${WEBHOOK_SECRET_ENC_KEY:?WEBHOOK_SECRET_ENC_KEY is required (64 hex chars)}
+      AUTO_PROVISION_ALLOW_INSECURE_TARGETS: ${AUTO_PROVISION_ALLOW_INSECURE_TARGETS:-false}
+      # Optional platform FakaBridge/Xboard integration. Keep all unset until
+      # it is enabled; URL and secret are validated as an all-or-nothing pair.
+      FAKA_BRIDGE_URL: ${FAKA_BRIDGE_URL:-}
+      FAKA_BRIDGE_STATUS_URL: ${FAKA_BRIDGE_STATUS_URL:-}
+      FAKA_BRIDGE_REVOKE_URL: ${FAKA_BRIDGE_REVOKE_URL:-}
+      FAKA_BRIDGE_SECRET: ${FAKA_BRIDGE_SECRET:-}
+      FAKA_BRIDGE_TIMEOUT_MS: ${FAKA_BRIDGE_TIMEOUT_MS:-5000}
+      FAKA_BRIDGE_MAX_ATTEMPTS: ${FAKA_BRIDGE_MAX_ATTEMPTS:-3}
+      FAKA_BRIDGE_PANEL_URL: ${FAKA_BRIDGE_PANEL_URL:-}
+      FAKA_BRIDGE_ALLOW_INSECURE_TARGETS: ${FAKA_BRIDGE_ALLOW_INSECURE_TARGETS:-false}
     depends_on:
       postgres:
         condition: service_healthy
