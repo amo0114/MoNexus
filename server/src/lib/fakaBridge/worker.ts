@@ -30,6 +30,7 @@ import {
   runFakaRevokeBatch,
   __setFakaLifecycleClientOverridesForTests,
 } from './lifecycle.js'
+import { prewarmFakaCapacityForSkus } from './capacity.js'
 import { readTaskScheduleUtc } from './scheduleUtc.js'
 
 /** Lease covers HTTP timeout + result write headroom. */
@@ -709,11 +710,51 @@ export async function runFakaBridgeBatch(): Promise<number> {
   return processed
 }
 
+/**
+ * Warm every SKU that is actually sellable on the storefront.  Capacity cache
+ * is process-local by design, so each instance performs this lightweight
+ * prewarm; fetchFakaCapacityForSku's TTL/inflight coalescing bounds the calls.
+ */
+export async function runFakaCapacityPrewarm(): Promise<number> {
+  if (!hasClientCredentials()) return 0
+  const offers = await prisma.offer.findMany({
+    where: {
+      status: 'active',
+      externalIntegration: 'faka_bridge',
+      externalSku: { not: null },
+      product: { status: 'active' },
+    },
+    select: { externalSku: true },
+  })
+  return prewarmFakaCapacityForSkus(
+    offers.flatMap(offer => (offer.externalSku ? [offer.externalSku] : []))
+  )
+}
+
 // --- Cron lifecycle ---
 
 const INTERVAL_MS = 30_000
 let timer: NodeJS.Timeout | null = null
 let running = false
+let capacityPrewarmRunning = false
+
+/**
+ * Capacity warming is intentionally outside the fulfillment tick's critical
+ * path: a slow third-party capacity endpoint must not delay retry/revoke work.
+ * Keep at most one local sweep active; the capacity module additionally
+ * coalesces individual SKU probes.
+ */
+function scheduleFakaCapacityPrewarm(): void {
+  if (capacityPrewarmRunning) return
+  capacityPrewarmRunning = true
+  void runFakaCapacityPrewarm()
+    .catch(err => {
+      logger.warn({ err }, 'Faka capacity prewarm failed')
+    })
+    .finally(() => {
+      capacityPrewarmRunning = false
+    })
+}
 
 export function startFakaBridgeCron(): void {
   if (timer) return
@@ -743,6 +784,7 @@ async function tick(): Promise<void> {
     const n = await runFakaBridgeBatch()
     const revoked = await runFakaRevokeBatch()
     const reconciled = await runFakaReconcileBatch()
+    scheduleFakaCapacityPrewarm()
     if (n > 0 || revoked > 0 || reconciled > 0) {
       logger.info(
         { provisioned: n, revoked, reconciled },

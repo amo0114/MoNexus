@@ -15,6 +15,7 @@ import {
   callFakaPlanCatalog,
   callFakaSetPlanCapacity,
   fetchFakaCapacityForSku,
+  getFakaCapacityForPublicRead,
   invalidateFakaCapacityCache,
   invalidateFakaCapacityFailures,
   isFakaBridgeConfigured,
@@ -1106,11 +1107,11 @@ export async function listAdminProducts() {
   ]
   const capBySku = new Map<string, Awaited<ReturnType<typeof fetchFakaCapacityForSku>>>()
   if (isFakaBridgeConfigured() && fakaSkus.length > 0) {
-    await Promise.all(
-      fakaSkus.map(async sku => {
-        capBySku.set(sku, await fetchFakaCapacityForSku(sku))
-      })
-    )
+    // Inventory overview is read-only: return the local capacity projection
+    // immediately and let its shared SWR refresh run in the background.
+    for (const sku of fakaSkus) {
+      capBySku.set(sku, getFakaCapacityForPublicRead(sku))
+    }
   }
 
   return products.map(p => {

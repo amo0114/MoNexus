@@ -91,6 +91,31 @@ describe('cache wrapper', () => {
     expect(fallback).toHaveBeenCalledTimes(1)
   })
 
+  it('does not freeze a transient fallback when cachePredicate rejects it', async () => {
+    const fallback = vi
+      .fn<() => Promise<{ source: string }>>()
+      .mockResolvedValueOnce({ source: 'unavailable' })
+      .mockResolvedValueOnce({ source: 'xboard' })
+
+    await expect(
+      wrapCache('product-detail', 'product:faka-capacity', 60, fallback, {
+        cachePredicate: value => value.source !== 'unavailable',
+      })
+    ).resolves.toEqual({ source: 'unavailable' })
+    await expect(
+      wrapCache('product-detail', 'product:faka-capacity', 60, fallback, {
+        cachePredicate: value => value.source !== 'unavailable',
+      })
+    ).resolves.toEqual({ source: 'xboard' })
+    await expect(
+      wrapCache('product-detail', 'product:faka-capacity', 60, fallback, {
+        cachePredicate: value => value.source !== 'unavailable',
+      })
+    ).resolves.toEqual({ source: 'xboard' })
+
+    expect(fallback).toHaveBeenCalledTimes(2)
+  })
+
   it('negative-caches 404 errors and rethrows equivalent HttpError', async () => {
     const fallback = vi.fn().mockRejectedValue(notFound('商品不存在'))
 

@@ -22,9 +22,10 @@ export type { FakaBridgeClientOptions } from './client.js'
 
 export {
   fetchFakaCapacityForSku,
+  getFakaCapacityForPublicRead,
+  prewarmFakaCapacityForSkus,
   invalidateFakaCapacityCache,
   invalidateFakaCapacityFailures,
-  rememberFakaCapacityPlanSnapshot,
   getCachedFakaCapacityByPlanId,
   __clearFakaCapacityCacheForTests,
 } from './capacity.js'
@@ -103,6 +104,7 @@ export {
 export {
   processFakaBridgeTask,
   runFakaBridgeBatch,
+  runFakaCapacityPrewarm,
   startFakaBridgeCron,
   stopFakaBridgeCron,
   __setFakaClientOverridesForTests,
