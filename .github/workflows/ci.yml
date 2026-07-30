@@ -1,18 +1,100 @@
+# CI matrix under the master/develop branching model:
+#
+#   PR -> develop  (feat/fix/chore)  path-filtered backend & frontend jobs;
+#                                    E2E only when e2e files changed or the
+#                                    PR carries the `run-e2e` label.
+#   push -> develop (post-merge)     full suite incl. E2E — integration gate,
+#                                    which is what makes the PR-level E2E
+#                                    opt-in safe.
+#   PR -> master   (release/hotfix)  full suite incl. E2E — production gate.
+#   push -> master                   full suite (docker-publish runs alongside).
+#
+# Docs-only changes skip every heavy job; the aggregate "CI OK" job still
+# reports success so it can be the single required status check on both
+# protected branches. Do NOT use [skip ci] on PR branches: it suppresses the
+# whole workflow, so the required "CI OK" check stays Pending forever and the
+# PR cannot merge — path filtering already makes docs-only PRs finish fast.
+
 name: CI
 
 on:
   push:
     branches:
       - master
+      - develop
   pull_request:
+    branches:
+      - master
+      - develop
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  build-and-test:
-    name: Build and test
+  changes:
+    name: Detect changed areas
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Pushes to master/develop always run the full suite; path filtering
+    # only trims PR runs.
+    if: github.event_name == 'pull_request'
+    permissions:
+      pull-requests: read
+    outputs:
+      server: ${{ steps.filter.outputs.server }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+      e2e: ${{ steps.filter.outputs.e2e }}
+      code: ${{ steps.filter.outputs.code }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Filter changed paths
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            server:
+              - 'server/**'
+              - '.github/workflows/ci.yml'
+            frontend:
+              - 'src/**'
+              - 'public/**'
+              - 'index.html'
+              - 'package.json'
+              - 'package-lock.json'
+              - 'vite.config.ts'
+              - 'tsconfig.json'
+              - 'tailwind.config.js'
+              - '.github/workflows/ci.yml'
+            e2e:
+              - 'e2e/**'
+              - 'playwright.config.ts'
+            code:
+              - 'server/**'
+              - 'src/**'
+              - 'public/**'
+              - 'index.html'
+              - 'package.json'
+              - 'package-lock.json'
+              - 'vite.config.ts'
+              - 'tsconfig.json'
+              - 'tailwind.config.js'
+              - 'e2e/**'
+              - 'playwright.config.ts'
+              - '.github/workflows/ci.yml'
+
+  backend:
+    name: Backend build and test
+    needs: changes
+    # !failure() && !cancelled(): on push the `changes` job is skipped and a
+    # plain `needs` would propagate that skip.
+    if: >-
+      !failure() && !cancelled() && (
+        github.event_name == 'push' ||
+        needs.changes.outputs.server == 'true'
+      )
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -46,12 +128,7 @@ jobs:
         with:
           node-version: '20'
           cache: npm
-          cache-dependency-path: |
-            package-lock.json
-            server/package-lock.json
-
-      - name: Install frontend dependencies
-        run: npm ci
+          cache-dependency-path: server/package-lock.json
 
       - name: Install backend dependencies
         run: npm --prefix server ci
@@ -61,25 +138,54 @@ jobs:
 
       - name: Apply database migrations
         run: npm --prefix server run db:migrate:deploy
-        env:
-          DATABASE_URL: postgresql://monexus:monexus_dev_2026@localhost:5432/monexus_test?schema=public
 
       - name: Build backend
         run: npm --prefix server run build
 
       - name: Test backend
         run: npm --prefix server test
-        env:
-          TEST_DATABASE_URL: postgresql://monexus:monexus_dev_2026@localhost:5432/monexus_test?schema=public
-          JWT_SECRET: ci-jwt-secret-at-least-32-characters-long-xx
-          FRONTEND_ORIGIN: http://localhost:5173
+
+  frontend:
+    name: Frontend typecheck and build
+    needs: changes
+    if: >-
+      !failure() && !cancelled() && (
+        github.event_name == 'push' ||
+        needs.changes.outputs.frontend == 'true'
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
 
       - name: Build frontend
         run: npm run build
 
   e2e:
     name: Playwright E2E
-    needs: build-and-test
+    needs: [changes, backend, frontend]
+    # Runs on: any push to master/develop; PRs to master that touch code;
+    # PRs to develop only when e2e files changed or the `run-e2e` label is
+    # set (the post-merge push to develop still runs the full suite).
+    if: >-
+      !failure() && !cancelled() && (
+        github.event_name == 'push' ||
+        (github.base_ref == 'master' && needs.changes.outputs.code == 'true') ||
+        needs.changes.outputs.e2e == 'true' ||
+        contains(github.event.pull_request.labels.*.name, 'run-e2e')
+      )
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -99,6 +205,7 @@ jobs:
           --health-retries 10
 
     env:
+      NODE_ENV: test
       DATABASE_URL: postgresql://monexus:monexus_dev_2026@localhost:5432/monexus_test?schema=public
       TEST_DATABASE_URL: postgresql://monexus:monexus_dev_2026@localhost:5432/monexus_test?schema=public
       JWT_SECRET: ci-jwt-secret-at-least-32-characters-long-xx
@@ -129,6 +236,35 @@ jobs:
 
       - name: Apply database migrations
         run: npm --prefix server run db:migrate:deploy
+
+      - name: Generate temporary E2E MFA factor
+        run: |
+          node <<'NODE'
+          const { randomBytes } = require('node:crypto')
+          const { appendFileSync } = require('node:fs')
+
+          const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'
+          const bytes = randomBytes(20)
+          let factor = ''
+          let buffer = 0
+          let bits = 0
+          for (const byte of bytes) {
+            buffer = (buffer << 8) | byte
+            bits += 8
+            while (bits >= 5) {
+              factor += alphabet[(buffer >>> (bits - 5)) & 31]
+              bits -= 5
+            }
+            buffer &= (1 << bits) - 1
+          }
+          if (bits > 0) factor += alphabet[(buffer << (5 - bits)) & 31]
+          if (factor.length !== 32) throw new Error('E2E TOTP factor generation failed')
+
+          appendFileSync(process.env.GITHUB_ENV, [
+            `MFA_ENCRYPTION_KEY=${randomBytes(32).toString('base64')}`,
+            `E2E_ADMIN_MFA_TOTP_SECRET=${factor}`,
+          ].join('\n') + '\n')
+          NODE
 
       - name: Seed E2E fixtures
         run: npm --prefix server run db:seed:force
@@ -183,3 +319,24 @@ jobs:
           name: playwright-report
           path: playwright-report/
           retention-days: 7
+
+  ci-ok:
+    # Single required status check for branch protection: succeeds when no
+    # upstream job failed — skipped jobs (docs-only or unlabeled-E2E PRs)
+    # count as success.
+    name: CI OK
+    needs: [changes, backend, frontend, e2e]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check upstream job results
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          echo "$RESULTS"
+          if echo "$RESULTS" | grep -Eq '"result": *"(failure|cancelled)"'; then
+            echo "::error::At least one upstream job failed or was cancelled"
+            exit 1
+          fi
+          echo "All upstream jobs succeeded or were intentionally skipped"

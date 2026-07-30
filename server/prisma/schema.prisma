@@ -18,6 +18,12 @@ model User {
   nickname      String? // 1-20 字，个人中心可设；评价展示名回退邮箱打码
   emailVerified DateTime?
   createdAt     DateTime  @default(now())
+  // MFA seed is AES-256-GCM ciphertext. It must never be selected by public
+  // serializers; only the auth MFA service reads it explicitly.
+  mfaEnabled         Boolean   @default(false)
+  mfaSecretEncrypted String?
+  mfaVerifiedAt      DateTime?
+  mfaVersion         Int       @default(0)
 
   pointAccount            PointAccount?
   orders                  Order[]
@@ -38,6 +44,49 @@ model User {
   announcementReceipts    AnnouncementReceipt[]
   idempotencyRecords      IdempotencyRecord[]
   fileGrants              FileGrantLog[]
+  mfaRecoveryCodes        MfaRecoveryCode[]
+  authChallenges          AuthChallenge[]
+  securityEvents          SecurityEvent[]
+  fakaProvisionEmailProofs FakaProvisionEmailProof[]
+  fakaProvisionEmailSendBudget FakaProvisionEmailSendBudget?
+}
+
+// FakaBridge 开通邮箱归属证明：防止填写他人 Xboard 邮箱后降配/续费他人套餐。
+// OTP 验证成功后与 MoNexus 账号永久绑定（verifiedAt 有值且 proofExpiresAt=null）；
+// 之后下单免再验证。proofExpiresAt 非空仅兼容旧 24h 窗口数据。
+// 不限制套餐升/降级方向。
+model FakaProvisionEmailProof {
+  id              Int       @id @default(autoincrement())
+  userId          Int
+  email           String // 规范化小写
+  codeHash        String?
+  codeExpiresAt   DateTime?
+  sendCount       Int       @default(0)
+  lastSentAt      DateTime?
+  confirmAttempts Int       @default(0)
+  verifiedAt      DateTime?
+  // null + verifiedAt = 永久绑定；非 null = 遗留限时证明
+  proofExpiresAt  DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, email])
+  @@index([userId, proofExpiresAt])
+}
+
+// Per-account outbound OTP budget across every target email.  A single proof
+// row cannot represent this safely because repeated sends to one address only
+// update that row; this dedicated row serializes all userId mail reservations.
+model FakaProvisionEmailSendBudget {
+  userId          Int      @id
+  windowStartedAt DateTime
+  sendCount       Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model Announcement {
@@ -125,19 +174,130 @@ model Merchant {
   orders         Order[]
   settlements    Settlement[]
   deliveryFiles  DeliveryFile[]
+  webhookConfigs MerchantWebhookConfig[]
+}
+
+// P7b：商家自动开通 webhook 配置（版本化）。轮换/撤销 = 旧行置 revoked +
+// （轮换时）新建 active 行；每商家至多一条 active（部分唯一索引
+// MerchantWebhookConfig_one_active_per_merchant，仅存在于迁移——Prisma
+// 无法表达 WHERE 部分索引，漂移豁免惯例同 Offer.isDefault）。
+// ProvisionTask 冻结引用创建时的配置行：任务绝不解析到新配置；引用行
+// revoked 后未发出任务安全默认降级人工（硬验收 ⑤）。
+// secretCiphertext = AES-256-GCM 密文（lib/webhookSecret.ts），明文仅在
+// 创建/再生响应一次性返回，常规序列化只回尾 4 位。
+model MerchantWebhookConfig {
+  id               Int       @id @default(autoincrement())
+  merchantId       Int
+  url              String
+  secretCiphertext String
+  status           String    @default("active") // active | revoked; PostgreSQL CHECK constrained
+  createdAt        DateTime  @default(now())
+  revokedAt        DateTime?
+
+  merchant Merchant        @relation(fields: [merchantId], references: [id])
+  tasks    ProvisionTask[]
+
+  @@index([merchantId, status])
+}
+
+// P7b：自动开通任务（transactional outbox）——下单事务内随订单创建，行存在
+// 即下单时刻的意图。协议 = 至少一次外呼（接收端以 taskId 幂等去重）：
+// - 认领（provision cron）：FOR UPDATE SKIP LOCKED + 排除未过期 leaseUntil；
+//   认领即 attempts+1 并预写退避 nextAttemptAt（崩溃自然落入重试）；
+// - 结果落库：id + leaseToken + status='pending' 三条件 CAS——过期 worker
+//   的迟到结果被丢弃（硬验收 ⑨）；
+// - lastError 只存脱敏诊断码（timeout / dns_blocked / http_503 …），绝不存
+//   远端响应体；merchantNotifiedAt 单列管降级邮件（发送成功才落，可重试）。
+model ProvisionTask {
+  id                 Int       @id @default(autoincrement())
+  orderId            Int       @unique
+  webhookConfigId    Int
+  status             String    @default("pending") // pending | succeeded | degraded | cancelled; CHECK constrained
+  attempts           Int       @default(0)
+  nextAttemptAt      DateTime  @default(now())
+  leaseToken         String?
+  leaseUntil         DateTime?
+  lastError          String?
+  lastHttpStatus     Int?
+  merchantNotifiedAt DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  order         Order                 @relation(fields: [orderId], references: [id])
+  webhookConfig MerchantWebhookConfig @relation(fields: [webhookConfigId], references: [id])
+
+  @@index([status, nextAttemptAt])
 }
 
 model RefreshToken {
-  id        Int      @id @default(autoincrement())
-  userId    Int
-  tokenHash String   @unique
-  revoked   Boolean  @default(false)
-  expiresAt DateTime
-  userAgent String?
-  ip        String?
-  createdAt DateTime @default(now())
+  id                Int      @id @default(autoincrement())
+  userId            Int
+  tokenHash         String   @unique
+  revoked           Boolean  @default(false)
+  revokedAt         DateTime?
+  revokeReason      String?
+  expiresAt         DateTime
+  userAgent         String?
+  ip                String?
+  // PostgreSQL default (rather than Prisma's client-side uuid()) is required
+  // to assign a distinct family ID to refresh-token rows that predate M3.
+  sessionId         String   @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sessionStartedAt  DateTime @default(now())
+  lastUsedAt        DateTime @default(now())
+  createdAt         DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id])
+
+  @@index([userId, sessionId])
+  @@index([userId, revoked, expiresAt])
+}
+
+model MfaRecoveryCode {
+  id        Int       @id @default(autoincrement())
+  userId    Int
+  codeHash  String
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, codeHash])
+  @@index([userId, usedAt])
+}
+
+model AuthChallenge {
+  id              String    @id @default(uuid()) @db.Uuid
+  userId          Int
+  purpose         String
+  secretEncrypted String?
+  expiresAt       DateTime
+  consumedAt      DateTime?
+  failedAttempts  Int       @default(0)
+  createdAt       DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, purpose, expiresAt])
+  @@index([expiresAt])
+}
+
+model SecurityEvent {
+  id         Int       @id @default(autoincrement())
+  userId     Int?
+  sessionId  String?   @db.Uuid
+  type       String
+  ipHash     String?
+  deviceHint String?
+  detailSafe Json?
+  createdAt  DateTime  @default(now())
+
+  // Security evidence survives a future User deletion. sessionId is a
+  // family identifier rather than an FK to a single rotated token row.
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([sessionId, createdAt])
+  @@index([type, createdAt])
 }
 
 model IdempotencyRecord {
@@ -267,15 +427,30 @@ model Offer {
   // 注意：本仓库只用 migrate 工作流；`prisma db push` 不重放迁移，会得到
   // 没有该索引的库，勿在本项目使用 db push。
   isDefault        Boolean  @default(false)
+  // P6a：订阅有效期天数。null = 永久（存量语义）。下单快照进
+  // Order.validityDaysSnapshot——商家改时长不影响已购订单；进入
+  // checkoutVersion canonical（null 不进，存量摘要不变）。
+  validityDays     Int?
+  // P7b：自动开通——manual_service 的自动化首次交付（不是第四种交付模式）。
+  // CHECK（迁移 20260728100000）：仅 manual_service 且无交付模板可为 true；
+  // 服务端校验为主，数据库兜底。进入 checkoutVersion canonical（true 才进）。
+  autoProvision    Boolean  @default(false)
+  // FakaBridge（Xboard 订阅开通）：null = 无外部集成。
+  // externalIntegration='faka_bridge' 时 externalSku 必填（PG CHECK + 服务端）。
+  // 与 autoProvision 互斥（迁移 CHECK + 服务端拒绝冲突组合）。
+  externalIntegration String? // null | faka_bridge
+  externalSku         String? // e.g. aster-basic-monthly — Xboard plugin SKU_MAPPING
   createdAt        DateTime @default(now())
 
   product   Product         @relation(fields: [productId], references: [id])
   inventory InventoryItem[]
   orders    Order[]
+  lowStockNotice LowStockNotice?
   // Restrict：被在售规格引用的文件行不可删（生命周期只走 status 标记）。
   fixedFile DeliveryFile?   @relation("OfferFixedFile", fields: [fixedFileId], references: [id], onDelete: Restrict)
 
   @@index([productId, status, sortOrder])
+  @@index([externalIntegration, externalSku])
 }
 
 model InventoryLog {
@@ -286,13 +461,14 @@ model InventoryLog {
   offerId     Int?
   merchantId  Int?
   actorUserId Int
-  action      String // import | void | sale | capacity_adjust
-  delta       Int // import > 0; void/sale < 0; capacity_adjust != 0
+  action      String // import | void | sale | capacity_adjust | refund_void | refund_restock
+  delta       Int // import > 0; void/sale < 0; capacity_adjust != 0; refund_void = 0; refund_restock = +1
   reason      String?
-  // sale is linked to exactly one order. Import operations receive one UUID
-  // batch identifier so that a replenishment can be audited without ever
-  // placing delivery content in an API response.
-  orderId     Int?     @unique
+  // sale/refund_void/refund_restock link to an order；P5.5 起同一订单可并存
+  // sale 与退款流水两行，orderId 从唯一降级为普通索引。Import operations
+  // receive one UUID batch identifier so that a replenishment can be audited
+  // without ever placing delivery content in an API response.
+  orderId     Int?
   batchId     String?  @unique @db.Uuid
   createdAt   DateTime @default(now())
 
@@ -304,6 +480,68 @@ model InventoryLog {
   @@index([productId, createdAt])
   // 与 batchId 唯一索引并存的普通索引，同样来自 20260724123000 手写迁移。
   @@index([batchId])
+  @@index([orderId])
+}
+
+// P5.5：SKU 级低库存告警状态（去重/冷却）。纯运营状态，随 Offer 级联删除。
+// 评审修订：PG 的含空列唯一约束无法限制多行 NULL——一律按非空 offerId 去重，
+// 所有有限库存规格（即时库存数 available 项；limited 容量看 Offer.stock）
+// 都以 Offer 为告警粒度。
+model LowStockNotice {
+  id             Int       @id @default(autoincrement())
+  offerId        Int       @unique
+  isLow          Boolean   @default(false)
+  lastAvailable  Int
+  // 邮件发送成功后才更新；发送失败保持原值，下轮 cron 重试。
+  lastNotifiedAt DateTime?
+  updatedAt      DateTime  @updatedAt
+
+  offer Offer @relation(fields: [offerId], references: [id], onDelete: Cascade)
+}
+
+// P6a：订阅到期提醒去重状态（沿 LowStockNotice 语义：发送成功才落 stage，
+// 失败保持原值下轮重试）。纯运营状态，随订单不可删（订单本就 Restrict 保护）。
+model SubscriptionReminder {
+  id         Int      @id @default(autoincrement())
+  orderId    Int      @unique
+  lastStage  String // pre | expired
+  lastSentAt DateTime
+  updatedAt  DateTime @updatedAt
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+}
+
+// P6c：预约日前提醒去重（双方各一封，同一行标记；发送成功才落行）。
+model BookingReminder {
+  id      Int      @id @default(autoincrement())
+  orderId Int      @unique
+  sentAt  DateTime
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+}
+
+// P6b：人工履约 SLA 超时提醒去重（每单最多一封邮件；设计决策 ③——超时
+// 仅升级提醒，不自动退款/降级，买家侧本就可争议）。
+model SlaReminder {
+  id      Int      @id @default(autoincrement())
+  orderId Int      @unique
+  sentAt  DateTime
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+}
+
+// P7a：cron 舰队租约——多实例部署下同名 job 的运行互斥（lockedUntil：
+// 固定 90s TTL + 心跳续租，批次结束即释放）与窗口节流（lastStartedAt：
+// 距上次启动不足「周期 − margin」的领取被拒，窗口严格短于调度周期——
+// PR #52 复审 P1）。时间判定全部用 DB now()，不信任实例时钟；实例崩溃
+// 后互斥 ≤ 90s 自然过期。见 lib/cronLease.ts。
+model CronLease {
+  name          String   @id
+  holder        String
+  leaseToken    String
+  lockedUntil   DateTime
+  lastStartedAt DateTime
+  updatedAt     DateTime @updatedAt
 }
 
 model Review {
@@ -383,6 +621,14 @@ model Order {
   fundsHeld          Boolean   @default(false) // 仅新模型订单为 true；兼容迁移前未实际扣减的历史订单
   fulfillmentDeadline DateTime? // manual_service 商家履约截止时间
   confirmedAt        DateTime? // 用户确认关闭订单的时间
+  // P6c：预约日期（购买前表单首个 date 字段的答案，下单校验后列化——
+  // 商家排序/提醒 cron 免查 JSON）。null = 非预约单。
+  bookingDate        DateTime?
+  // P6a：下单时的订阅有效期快照（null = 永久）；到期时刻在 DeliveryRecord.expiresAt。
+  validityDaysSnapshot Int?
+  // P6a：续费单指向被续费的原订单（同买家同 offer）。Restrict：续费链是
+  // 审计链的一部分，原订单行不可删。
+  renewalOfOrderId   Int?
   createdAt          DateTime  @default(now())
 
   user         User               @relation(fields: [userId], references: [id])
@@ -396,6 +642,63 @@ model Order {
   statusEvents OrderStatusEvent[]
   inventoryLogs InventoryLog[]
   fileGrants   FileGrantLog[]
+  provisionTask  ProvisionTask?
+  fakaBridgeTask FakaBridgeTask?
+
+  renewalOf Order?  @relation("OrderRenewal", fields: [renewalOfOrderId], references: [id], onDelete: Restrict)
+  renewals  Order[] @relation("OrderRenewal")
+  subscriptionReminder SubscriptionReminder?
+  slaReminder          SlaReminder?
+  bookingReminder      BookingReminder?
+
+  // P5.5：SKU 报表/全平台报表按时间范围聚合的支撑索引（评审修订）。
+  @@index([merchantId, createdAt])
+  @@index([createdAt])
+  @@index([renewalOfOrderId])
+  @@index([merchantId, bookingDate])
+}
+
+// FakaBridge outbox：下单事务内创建，事务外 HTTP 调用 Xboard 插件。
+// 协议与商家 autoProvision 不同（body HMAC + order_no/email/sku），独立表。
+// status: pending | succeeded | failed | cancelled | needs_reconcile
+model FakaBridgeTask {
+  id             Int       @id @default(autoincrement())
+  orderId        Int       @unique
+  // pending | succeeded | failed | cancelled | needs_reconcile
+  status         String    @default("pending")
+  // Refund requested while claim/HTTP in flight — worker must not deliver; revoke if opened.
+  cancelRequested Boolean  @default(false)
+  attempts       Int       @default(0)
+  maxAttempts    Int       @default(3)
+  nextAttemptAt  DateTime  @default(now())
+  leaseUntil     DateTime?
+  leaseToken     String?
+  // 脱敏诊断码（FAKA_*），禁止落远端响应体 / PII 以外快照。
+  lastError      String?
+  xboardTradeNo  String?
+  // 幂等键，稳定为 MN-{orderId}；重试不变。
+  requestOrderNo String
+  // 创建时冻结，避免用户改邮箱 / 商家改 SKU 后重试语义漂移。
+  emailSnapshot  String
+  skuSnapshot    String
+  periodSnapshot String    @default("monthly")
+  createdAt      DateTime  @default(now())
+  completedAt    DateTime?
+  // null | pending | succeeded | failed | skipped — 退款后撤 Xboard 订阅
+  revokeStatus   String?
+  revokeAttempts Int       @default(0)
+  revokedAt      DateTime?
+  lastRevokeError String?
+  // 对账备注（半成功收敛 / 人工动作）
+  reconcileNote  String?
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Restrict)
+
+  @@index([status, nextAttemptAt])
+  @@index([requestOrderNo])
+  @@index([xboardTradeNo])
+  @@index([revokeStatus])
+  @@index([status, completedAt])
 }
 
 model DeliveryRecord {
@@ -415,6 +718,10 @@ model DeliveryRecord {
   // P5：本单交付的文件（下单冻结的固定文件 / 交付时的人工附件）。
   // 下载授权只认这里；买家窗口从本记录的 deliveredAt 起算。
   fileId      Int?
+  // P6a：订阅到期时刻 = 交付时按 Order.validityDaysSnapshot 计算；续费单
+  // 且原单未过期时自原到期顺延。null = 永久。到期只作用于内容访问与 UI，
+  // 不引入订单状态。
+  expiresAt   DateTime?
 
   order Order         @relation(fields: [orderId], references: [id])
   // Restrict：交付快照引用的文件行不可删——审计链完整性优先于删除便利。

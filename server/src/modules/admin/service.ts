@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client'
 import { randomUUID } from 'node:crypto'
+import { config } from '../../config/index.js'
 import { prisma } from '../../lib/prisma.js'
 import { badRequest, notFound } from '../../lib/httpError.js'
 import { businessRegistry } from '../../lib/businessRegistry.js'
@@ -10,6 +11,22 @@ import {
 } from '../../lib/systemConfig.js'
 import { logInventoryChange } from '../../lib/inventoryLog.js'
 import { createDefaultOffer, getDefaultOffer, syncProductProjection } from '../../lib/offers.js'
+import {
+  callFakaPlanCatalog,
+  callFakaSetPlanCapacity,
+  fetchFakaCapacityForSku,
+  getFakaCapacityForPublicRead,
+  invalidateFakaCapacityCache,
+  invalidateFakaCapacityFailures,
+  isFakaBridgeConfigured,
+  normalizeFakaOfferIntegration,
+  assertOfferProvisionMutex,
+  onFakaOrderRefundedInTx,
+  scheduleFakaRevokeAttempt,
+  processFakaRevokeTask,
+  processFakaBridgeTask,
+  isLeaseExpiredUtc,
+} from '../../lib/fakaBridge/index.js'
 import { parseStoredDeliveryFields } from '../../lib/deliveryFields.js'
 import {
   assertProductDeliveryConfiguration,
@@ -23,6 +40,7 @@ import {
 } from '../../lib/inventoryImport.js'
 import { invalidate as invalidateUserStatusCache } from '../../lib/userStatusCache.js'
 import { revokeAllUserRefreshTokens } from '../auth/service.js'
+import { lockUserRefreshSessionMutations } from '../auth/sessionService.js'
 import { invalidateProductPublicCache } from '../products/cache.js'
 import { serializeAdminOrderDetail, serializeAdminOrderList } from '../orders/serializers.js'
 import { getSettlementEligibility } from '../merchant/service.js'
@@ -34,10 +52,13 @@ import {
   settleHeldOrder,
   voidRefundableSettlement,
 } from '../orders/accounting.js'
+import { applyRefundInventoryPolicy } from '../orders/refundInventory.js'
 import type {
   CreateProductInput,
   ListAdminAuditQuery,
   ListAnnouncementsQuery,
+  ListDeliveryFilesQuery,
+  ListFileGrantsQuery,
   ListOrdersQuery,
   ListUsersQuery,
   ResolveOrderInput,
@@ -186,6 +207,8 @@ export async function banUser(adminUserId: number, targetUserId: number, reason:
     if (target.id === adminUserId) throw badRequest('不能封禁自己的账号')
     if (target.role === 'admin') throw badRequest('不能封禁管理员账号')
 
+    await lockUserRefreshSessionMutations(tx, target.id)
+
     const updated = await tx.user.update({
       where: { id: target.id },
       data: { status: '已封禁' },
@@ -305,10 +328,30 @@ export async function createProduct(adminUserId: number, data: CreateProductInpu
     fixedContentType,
   })
 
+  const faka = normalizeFakaOfferIntegration({
+    externalIntegration: data.externalIntegration,
+    externalSku: data.externalSku,
+    deliveryMode,
+  })
+  // 平台自营创建：默认 autoProvision=false；仍显式校验与 faka 互斥。
+  assertOfferProvisionMutex({
+    autoProvision: false,
+    externalIntegration: faka.externalIntegration,
+  })
+  // Strip faka fields from product row (they live only on Offer).
+  const {
+    externalIntegration: _ei,
+    externalSku: _es,
+    ...productRowFields
+  } = normalizedProductData as typeof normalizedProductData & {
+    externalIntegration?: string | null
+    externalSku?: string | null
+  }
+
   const product = await prisma.$transaction(async tx => {
     const created = await tx.product.create({
       data: {
-        ...normalizedProductData,
+        ...productRowFields,
         deliveryMode,
         stockMode,
         fixedContentType,
@@ -324,6 +367,8 @@ export async function createProduct(adminUserId: number, data: CreateProductInpu
       stock: deliveryMode === 'instant_inventory' ? 0 : (data.stock ?? 0),
       fixedContent: data.fixedContent ?? null,
       fixedContentType,
+      externalIntegration: faka.externalIntegration,
+      externalSku: faka.externalSku,
     })
     await tx.adminLog.create({
       data: {
@@ -396,10 +441,45 @@ export async function updateProduct(adminUserId: number, id: number, data: Updat
       allowFileForm: isFileFormProjection,
     })
 
+    const {
+      externalIntegration: _updateEi,
+      externalSku: _updateEs,
+      ...productUpdateFields
+    } = normalizedProductData as typeof normalizedProductData & {
+      externalIntegration?: string | null
+      externalSku?: string | null
+    }
+
+    const fakaFieldsTouched = 'externalIntegration' in data || 'externalSku' in data
+    const defaultOfferForFaka = await getDefaultOffer(tx, id)
+    const fakaUpdate = fakaFieldsTouched || defaultOfferForFaka.externalIntegration != null
+      ? normalizeFakaOfferIntegration(
+          {
+            externalIntegration: fakaFieldsTouched
+              ? ('externalIntegration' in data
+                  ? data.externalIntegration
+                  : defaultOfferForFaka.externalIntegration)
+              : defaultOfferForFaka.externalIntegration,
+            externalSku: fakaFieldsTouched
+              ? ('externalSku' in data ? data.externalSku : defaultOfferForFaka.externalSku)
+              : defaultOfferForFaka.externalSku,
+            deliveryMode,
+          },
+          {
+            requireConfigured:
+              (fakaFieldsTouched
+                ? ('externalIntegration' in data
+                    ? data.externalIntegration
+                    : defaultOfferForFaka.externalIntegration)
+                : defaultOfferForFaka.externalIntegration) === 'faka_bridge',
+          }
+        )
+      : null
+
     const next = await tx.product.update({
       where: { id },
       data: {
-        ...normalizedProductData,
+        ...productUpdateFields,
         deliveryMode,
         stockMode,
         ...(deliveryMode === 'instant_inventory' && product.deliveryMode !== 'instant_inventory'
@@ -408,7 +488,7 @@ export async function updateProduct(adminUserId: number, id: number, data: Updat
       },
     })
     // P4a：商品级编辑写透到默认 Offer（真相源），随后投影同步对齐商业列。
-    const defaultOffer = await getDefaultOffer(tx, id)
+    const defaultOffer = defaultOfferForFaka
     await tx.offer.update({
       where: { id: defaultOffer.id },
       data: {
@@ -423,6 +503,12 @@ export async function updateProduct(adminUserId: number, id: number, data: Updat
           ? { fixedContentType: normalizedProductData.fixedContentType as string }
           : {}),
         ...(incomingStock !== undefined ? { stock: incomingStock } : {}),
+        ...(fakaUpdate
+          ? {
+              externalIntegration: fakaUpdate.externalIntegration,
+              externalSku: fakaUpdate.externalSku,
+            }
+          : {}),
         ...(deliveryMode === 'instant_inventory' && product.deliveryMode !== 'instant_inventory'
           ? { stock: 0 }
           : {}),
@@ -584,7 +670,10 @@ export async function listAllOrders(query: ListOrdersQuery = {}) {
         user: { select: { id: true, email: true } },
         merchant: { select: { id: true, name: true } },
         product: { select: { id: true, name: true, icon: true, type: true, imageUrl: true, price: true } },
-        delivery: { select: { status: true } },
+        // P6：仲裁需要订阅到期视角——只选 expiresAt（序列化补 expired），内容仍不出列表。
+        delivery: { select: { status: true, expiresAt: true } },
+        // P7b：列表徽标需要任务态安全投影（复审 P2：UI 已渲染，select 必须跟上）。
+        provisionTask: { select: { status: true, attempts: true, lastError: true, lastHttpStatus: true, nextAttemptAt: true, merchantNotifiedAt: true, updatedAt: true } },
       },
       orderBy: { createdAt: 'desc' },
       skip: (page - 1) * pageSize,
@@ -660,7 +749,10 @@ export async function getOrderDetail(orderId: number) {
       product: {
         select: { id: true, name: true, icon: true, type: true, imageUrl: true, price: true },
       },
-      delivery: { select: { content: true, status: true } },
+      // P6：详情补订阅到期时刻，供仲裁判断交付是否仍在有效期内。
+      delivery: { select: { content: true, status: true, expiresAt: true } },
+      // P7b：仲裁上下文透出自动开通任务态 + 脱敏诊断码（安全投影）。
+      provisionTask: { select: { status: true, attempts: true, lastError: true, lastHttpStatus: true, nextAttemptAt: true, merchantNotifiedAt: true, updatedAt: true } },
     },
   })
   if (!order) throw notFound('订单不存在')
@@ -677,6 +769,12 @@ export async function resolveOrder(
   input: ResolveOrderInput
 ) {
   await prisma.$transaction(async tx => {
+    // 复审二 P1：事务起点先锁订单行，再读取校验。仲裁退款此前的写序是
+    // Offer/Product（回补策略）→ Order（状态迁移），而续费下单是 Order
+    // （原单 FOR UPDATE）→ Offer/Product（销量/库存）——disputed 的订阅
+    // 原单仍可续费，两条路径并发即 Order↔Offer 循环等待死锁。统一为
+    // "先锁 Order 再碰 Offer/Product"后，续费与仲裁在原单行上串行化。
+    await tx.$queryRaw`SELECT "id" FROM "Order" WHERE "id" = ${orderId} FOR UPDATE`
     const order = await tx.order.findUnique({
       where: { id: orderId },
       select: {
@@ -686,6 +784,11 @@ export async function resolveOrder(
         price: true,
         holdingPoints: true,
         fundsHeld: true,
+        // P5.5 T4：退款回补策略需要的履约快照与归属字段。
+        productId: true,
+        offerId: true,
+        merchantId: true,
+        deliveryModeSnapshot: true,
       },
     })
     if (!order) throw notFound('订单不存在')
@@ -701,6 +804,12 @@ export async function resolveOrder(
     // pending settlement cannot race ahead and be paid after a refund.
     if (input.result === 'refund') {
       await voidRefundableSettlement(tx, order.id)
+      // P5.5 T4：仲裁退款的库存侧效果与积分退还/结算作废同事务——已交付
+      // （disputed 只能来自 delivered）：卡密报废、销量净减、不回补容量。
+      await applyRefundInventoryPolicy(tx, order, {
+        fromStatus: 'disputed',
+        actorUserId: adminUserId,
+      })
     }
 
     await transitionOrderStatus(
@@ -722,6 +831,8 @@ export async function resolveOrder(
       } else {
         await refundPaidOrder(tx, order, `管理员仲裁退款: #${order.id}`)
       }
+      // FakaBridge：取消未开通任务 / 排队撤销已开通 Xboard 订阅
+      await onFakaOrderRefundedInTx(tx, orderId)
     } else {
       await settleHeldOrder(tx, order, `管理员仲裁扣款: #${order.id}`)
       await tx.order.update({
@@ -740,6 +851,17 @@ export async function resolveOrder(
       },
     })
   })
+
+  // Kick revoke worker outside the transaction
+  if (input.result === 'refund') {
+    const task = await prisma.fakaBridgeTask.findUnique({
+      where: { orderId },
+      select: { id: true, revokeStatus: true },
+    })
+    if (task?.revokeStatus === 'pending') {
+      scheduleFakaRevokeAttempt(task.id)
+    }
+  }
 
   return getOrderDetail(orderId)
 }
@@ -778,6 +900,8 @@ export async function approveMerchant(adminUserId: number, merchantId: number) {
     const merchant = await tx.merchant.findUnique({ where: { id: merchantId } })
     if (!merchant) throw notFound('商家不存在')
     if (merchant.status !== 'pending') throw badRequest('只能审核待审核的商家')
+
+    await lockUserRefreshSessionMutations(tx, merchant.userId)
 
     const updated = await tx.merchant.update({
       where: { id: merchantId },
@@ -834,6 +958,8 @@ export async function suspendMerchant(adminUserId: number, merchantId: number) {
   if (merchant.status !== 'active') throw badRequest('只能停用已激活的商家')
 
   return prisma.$transaction(async tx => {
+    await lockUserRefreshSessionMutations(tx, merchant.userId)
+
     const updated = await tx.merchant.update({
       where: { id: merchantId },
       data: { status: 'suspended' },
@@ -941,7 +1067,7 @@ export async function batchSettle(adminUserId: number, settlementIds: number[]) 
 }
 
 export async function listAdminProducts() {
-  return prisma.product.findMany({
+  const products = await prisma.product.findMany({
     include: {
       _count: {
         select: { inventory: { where: { status: 'available' } } },
@@ -957,12 +1083,674 @@ export async function listAdminProducts() {
           status: true,
           isDefault: true,
           deliveryFields: true,
+          externalIntegration: true,
+          externalSku: true,
+          stockMode: true,
+          stock: true,
+          price: true,
         },
         orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
       },
     },
     orderBy: { createdAt: 'desc' },
   })
+
+  // Attach Xboard capacity for Faka offers (admin-only read; not for merchants).
+  const fakaSkus = [
+    ...new Set(
+      products.flatMap(p =>
+        p.offers
+          .filter(o => o.externalIntegration === 'faka_bridge' && o.externalSku)
+          .map(o => String(o.externalSku).toLowerCase())
+      )
+    ),
+  ]
+  const capBySku = new Map<string, Awaited<ReturnType<typeof fetchFakaCapacityForSku>>>()
+  if (isFakaBridgeConfigured() && fakaSkus.length > 0) {
+    // Inventory overview is read-only: return the local capacity projection
+    // immediately and let its shared SWR refresh run in the background.
+    for (const sku of fakaSkus) {
+      capBySku.set(sku, getFakaCapacityForPublicRead(sku))
+    }
+  }
+
+  return products.map(p => {
+    const offers = p.offers.map(o => {
+      const sku = o.externalSku?.toLowerCase() ?? null
+      const fakaCapacity =
+        o.externalIntegration === 'faka_bridge' && sku ? capBySku.get(sku) ?? null : null
+      return { ...o, fakaCapacity }
+    })
+    const primaryFaka = offers.find(o => o.fakaCapacity?.source === 'xboard')?.fakaCapacity ?? null
+    return {
+      ...p,
+      offers,
+      fakaBridge: offers.some(o => o.externalIntegration === 'faka_bridge'),
+      fakaCapacity: primaryFaka,
+    }
+  })
+}
+
+/**
+ * Admin-only: set Xboard capacity_limit for a Faka offer (null = unlimited).
+ * Merchants cannot call this route (requireAdmin on admin router).
+ */
+export async function setAdminFakaCapacity(
+  adminUserId: number,
+  productId: number,
+  input: { offerId?: number; capacityLimit: number | null }
+) {
+  if (!isFakaBridgeConfigured()) {
+    throw badRequest('平台未配置 FakaBridge')
+  }
+
+  const product = await prisma.product.findUnique({
+    where: { id: productId },
+    include: {
+      offers: {
+        select: {
+          id: true,
+          name: true,
+          externalIntegration: true,
+          externalSku: true,
+          isDefault: true,
+        },
+      },
+    },
+  })
+  if (!product) throw notFound('商品不存在')
+
+  let offer = input.offerId
+    ? product.offers.find(o => o.id === input.offerId)
+    : product.offers.find(o => o.externalIntegration === 'faka_bridge' && o.isDefault) ??
+      product.offers.find(o => o.externalIntegration === 'faka_bridge')
+
+  if (!offer || offer.externalIntegration !== 'faka_bridge' || !offer.externalSku) {
+    throw badRequest('该商品/规格未接入 FakaBridge')
+  }
+
+  const sku = offer.externalSku.toLowerCase()
+  const res = await callFakaSetPlanCapacity(sku, input.capacityLimit)
+  if (!res.ok || !res.body || res.body.success !== true) {
+    const msg =
+      res.body && typeof res.body === 'object' && 'error' in res.body
+        ? String((res.body as { error?: string }).error)
+        : '同步 Xboard 人数限制失败'
+    throw badRequest(msg)
+  }
+
+  invalidateFakaCapacityCache(sku)
+
+  await prisma.adminLog.create({
+    data: {
+      adminUserId,
+      action: '同步Xboard人数限制',
+      targetType: 'product',
+      targetId: productId,
+      detail: JSON.stringify({
+        offerId: offer.id,
+        sku,
+        capacityLimit: input.capacityLimit,
+        after: res.body,
+      }),
+    },
+  })
+
+  await invalidateProductPublicCache(productId, { list: true, detail: true })
+
+  return fetchFakaCapacityForSku(sku)
+}
+
+/** Admin-only: list Xboard plans for import. */
+/**
+ * Admin delete product:
+ * - No orders → hard delete offers + product
+ * - Has orders → soft delete (status=inactive); historical orders kept
+ */
+export async function deleteAdminProduct(adminUserId: number, productId: number) {
+  const product = await prisma.product.findUnique({
+    where: { id: productId },
+    select: { id: true, name: true, status: true },
+  })
+  if (!product) throw notFound('商品不存在')
+
+  const orderCount = await prisma.order.count({ where: { productId } })
+
+  if (orderCount > 0) {
+    if (product.status === 'inactive') {
+      throw badRequest('商品已下架，且存在历史订单，无法物理删除')
+    }
+    const updated = await prisma.$transaction(async tx => {
+      const row = await tx.product.update({
+        where: { id: productId },
+        data: { status: 'inactive' },
+      })
+      await tx.offer.updateMany({
+        where: { productId },
+        data: { status: 'inactive' },
+      })
+      await tx.adminLog.create({
+        data: {
+          adminUserId,
+          action: '下架商品',
+          targetType: 'product',
+          targetId: productId,
+          detail: JSON.stringify({
+            reason: '存在历史订单，仅下架',
+            orderCount,
+            name: product.name,
+          }),
+        },
+      })
+      return row
+    })
+    await invalidateProductPublicCache(productId, { list: true, detail: true })
+    return { mode: 'soft' as const, productId, orderCount, status: updated.status }
+  }
+
+  // No orders: hard delete. Clear inventory/logs then offers then product.
+  await prisma.$transaction(async tx => {
+    await tx.inventoryItem.deleteMany({ where: { productId } })
+    await tx.inventoryLog.deleteMany({ where: { productId } })
+    await tx.offer.deleteMany({ where: { productId } })
+    await tx.product.delete({ where: { id: productId } })
+    await tx.adminLog.create({
+      data: {
+        adminUserId,
+        action: '删除商品',
+        targetType: 'product',
+        targetId: productId,
+        detail: JSON.stringify({ name: product.name, mode: 'hard' }),
+      },
+    })
+  })
+  await invalidateProductPublicCache(productId, { list: true, detail: true })
+  return { mode: 'hard' as const, productId, orderCount: 0 }
+}
+
+export async function listAdminFakaCatalog() {
+  if (!isFakaBridgeConfigured()) {
+    throw badRequest('平台未配置 FakaBridge')
+  }
+  const res = await callFakaPlanCatalog()
+  if (!res.ok || !res.body || res.body.success !== true) {
+    const msg =
+      res.body && typeof res.body === 'object' && 'error' in res.body
+        ? String((res.body as { error?: string }).error)
+        : '拉取 Xboard 套餐目录失败'
+    throw badRequest(msg)
+  }
+  return { plans: res.body.plans }
+}
+
+const PERIOD_OFFER_LABELS: Record<string, string> = {
+  monthly: '月付',
+  quarterly: '季付',
+  half_yearly: '半年付',
+  yearly: '年付',
+  two_yearly: '两年付',
+  three_yearly: '三年付',
+  // Xboard 后台「流量包」= prices.onetime（文案：一次性流量包，无时间限制）
+  // → buyByOneTime：expired_at=null，写入套餐流量
+  onetime: '流量包',
+  // Xboard 后台「重置包」= prices.reset_traffic（文案：重置流量包，可多次使用）
+  reset_traffic: '重置包',
+}
+
+/** Strip tags for short plain description (product.description). */
+function stripHtmlToPlain(html: string): string {
+  return html
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+/** 规格副标题（写入 Offer 名以外的展示由前端/导入说明承担） */
+export const PERIOD_OFFER_HINTS: Record<string, string> = {
+  monthly: '自交付起约 30 天',
+  quarterly: '自交付起约 90 天',
+  half_yearly: '自交付起约 180 天',
+  yearly: '自交付起约 365 天',
+  two_yearly: '自交付起约 730 天',
+  three_yearly: '自交付起约 1095 天',
+  onetime: '一次性流量包，无时间限制（对应 Xboard 流量包）',
+  reset_traffic: '重置已用流量，可多次购买（对应 Xboard 重置包）',
+}
+
+const PERIOD_VALIDITY_DAYS: Record<string, number | null> = {
+  monthly: 30,
+  quarterly: 90,
+  half_yearly: 180,
+  yearly: 365,
+  two_yearly: 730,
+  three_yearly: 1095,
+  // 永久 / 流量包：不展示「有效期 N 天」，避免与月付混淆
+  onetime: null,
+  reset_traffic: null,
+}
+
+type FakaImportOfferRow = {
+  period: string
+  sku?: string
+  offerName?: string
+  pricePoints: number
+  validityDays?: number | null
+}
+
+function normalizeFakaImportOffers(input: {
+  planId: number
+  offers?: FakaImportOfferRow[]
+  period?: string
+  sku?: string
+  offerName?: string
+  pricePoints?: number
+}): FakaImportOfferRow[] {
+  if (input.offers && input.offers.length > 0) {
+    return input.offers.map(o => ({
+      period: o.period.trim().toLowerCase(),
+      sku: o.sku?.trim().toLowerCase(),
+      offerName: o.offerName?.trim(),
+      pricePoints: o.pricePoints,
+      validityDays: o.validityDays,
+    }))
+  }
+  if (!input.period || input.pricePoints == null) {
+    throw badRequest('请提供 offers 多规格，或 period + pricePoints 单规格')
+  }
+  return [
+    {
+      period: input.period.trim().toLowerCase(),
+      sku: input.sku?.trim().toLowerCase(),
+      offerName: input.offerName?.trim(),
+      pricePoints: input.pricePoints,
+    },
+  ]
+}
+
+/**
+ * Resolve externalSku for a plan period.
+ * Prefer explicit/named SKU; on capacity miss fall back to plan-{id}-{period}.
+ * Does not hard-fail the whole import on a single flaky capacity probe when alias works.
+ */
+async function resolveFakaOfferSku(planId: number, period: string, skuHint?: string) {
+  const candidates = [
+    skuHint?.trim().toLowerCase(),
+    `plan-${planId}-${period}`,
+  ].filter((s, i, arr): s is string => Boolean(s) && arr.indexOf(s) === i)
+
+  let lastReason = '无法确认 Xboard 套餐名额'
+  for (const sku of candidates) {
+    const cap = await fetchFakaCapacityForSku(sku)
+    if (cap.source === 'xboard') {
+      if (cap.planId != null && cap.planId !== planId) {
+        lastReason = `SKU ${sku} 与 planId=${planId} 不匹配（解析到 plan ${cap.planId}）`
+        continue
+      }
+      return { sku, cap }
+    }
+    lastReason = `SKU ${sku}：${cap.reason ?? lastReason}`
+  }
+
+  // Catalog already listed this period — allow import with alias even if capacity
+  // probe is flaky (cached unavailable / network). Order path will re-check.
+  const alias = `plan-${planId}-${period}`
+  return {
+    sku: candidates[0] ?? alias,
+    cap: {
+      sku: candidates[0] ?? alias,
+      planId,
+      capacityLimit: null,
+      activeUsers: null,
+      remaining: null,
+      sellable: true,
+      source: 'unavailable' as const,
+      reason: lastReason,
+    },
+  }
+}
+
+const FAKA_PURCHASE_FORM = [
+  {
+    key: 'xboardEmail',
+    label: 'Xboard 开通邮箱',
+    type: 'text' as const,
+    required: true,
+    placeholder: '已有面板账号填该邮箱；没有则填要注册的邮箱',
+  },
+]
+
+/**
+ * Admin-only: create one product with one-or-more Faka offers (periods).
+ * Same Xboard plan_id → multiple MoNexus offers (月付/年付…), like multi-SKU product page.
+ */
+export async function importAdminFakaPlan(
+  adminUserId: number,
+  input: {
+    planId: number
+    productName?: string
+    type?: string
+    offers?: FakaImportOfferRow[]
+    period?: string
+    sku?: string
+    offerName?: string
+    pricePoints?: number
+  }
+) {
+  if (!isFakaBridgeConfigured()) {
+    throw badRequest('平台未配置 FakaBridge')
+  }
+
+  // Clear transient capacity failures so import is not blocked by a 15s negative cache.
+  invalidateFakaCapacityFailures()
+
+  const rows = normalizeFakaImportOffers(input)
+  const periods = rows.map(r => r.period)
+  if (new Set(periods).size !== periods.length) {
+    throw badRequest('offers 中 period 不能重复')
+  }
+
+  // Prefer catalog as source of truth for "period exists on this plan".
+  // Avoids failing the whole multi-SKU import when one named-SKU capacity probe flakes.
+  const catalog = await listAdminFakaCatalog()
+  const planMeta = catalog.plans.find(p => p.plan_id === input.planId)
+  if (!planMeta) {
+    throw badRequest(`Xboard 不存在 plan_id=${input.planId}`)
+  }
+  const planPeriods = new Set((planMeta.periods ?? []).map(p => p.period))
+  const namedByPeriod = new Map(
+    (planMeta.named_skus ?? []).map(n => [n.period, n.sku] as const)
+  )
+
+  const resolved: Array<{
+    period: string
+    sku: string
+    offerName: string
+    pricePoints: number
+    validityDays: number | null
+    faka: ReturnType<typeof normalizeFakaOfferIntegration>
+    cap: Awaited<ReturnType<typeof resolveFakaOfferSku>>['cap']
+  }> = []
+  for (const row of rows) {
+    if (!Number.isInteger(row.pricePoints) || row.pricePoints <= 0) {
+      throw badRequest(`周期 ${row.period} 的积分售价无效`)
+    }
+    if (planPeriods.size > 0 && !planPeriods.has(row.period)) {
+      throw badRequest(
+        `套餐 #${input.planId} 不支持周期 ${row.period}（可选：${[...planPeriods].join(', ')}）`
+      )
+    }
+    const skuHint = row.sku || namedByPeriod.get(row.period)
+    const { sku, cap } = await resolveFakaOfferSku(input.planId, row.period, skuHint)
+    const faka = normalizeFakaOfferIntegration({
+      externalIntegration: 'faka_bridge',
+      externalSku: sku,
+      deliveryMode: 'manual_service',
+    })
+    const validityDays =
+      row.validityDays !== undefined
+        ? row.validityDays
+        : (PERIOD_VALIDITY_DAYS[row.period] ?? null)
+    resolved.push({
+      period: row.period,
+      sku: faka.externalSku!,
+      offerName: row.offerName || PERIOD_OFFER_LABELS[row.period] || row.period,
+      pricePoints: row.pricePoints,
+      validityDays,
+      cap,
+      faka,
+    })
+  }
+
+  // Default offer = first period (lowest sortOrder); product projection uses its price.
+  const defaultRow = resolved[0]!
+  const productName =
+    input.productName?.trim() || planMeta.name || `Xboard 套餐 #${input.planId}`
+  const productType = input.type?.trim() || '网络节点'
+  // Prefer Xboard plan.content as rich intro; never dump plan_id / period keys to buyers.
+  const planContent =
+    typeof planMeta.content === 'string' && planMeta.content.trim()
+      ? planMeta.content.trim()
+      : null
+  const plainDescription =
+    planContent != null
+      ? stripHtmlToPlain(planContent).slice(0, 500) || `${productName} · Xboard 订阅`
+      : `${productName} · 含 ${resolved.map(r => r.offerName).join(' / ')} 等规格`
+
+  const product = await prisma.$transaction(async tx => {
+    const created = await tx.product.create({
+      data: {
+        name: productName,
+        description: plainDescription,
+        richDescription: planContent,
+        type: productType,
+        icon: 'package',
+        price: defaultRow.pricePoints,
+        deliveryMode: 'manual_service',
+        stockMode: 'unlimited',
+        stock: 0,
+        isHot: false,
+        status: 'active',
+        purchaseForm: FAKA_PURCHASE_FORM,
+      },
+    })
+
+    // First offer is default; remaining are extra SKUs on the same product.
+    await createDefaultOffer(
+      tx,
+      created.id,
+      {
+        price: defaultRow.pricePoints,
+        originalPrice: null,
+        deliveryMode: 'manual_service',
+        stockMode: 'unlimited',
+        stock: 0,
+        fixedContent: null,
+        fixedContentType: 'text',
+        validityDays: defaultRow.validityDays,
+        externalIntegration: defaultRow.faka.externalIntegration,
+        externalSku: defaultRow.faka.externalSku,
+      },
+      defaultRow.offerName
+    )
+
+    for (let i = 1; i < resolved.length; i++) {
+      const row = resolved[i]!
+      await tx.offer.create({
+        data: {
+          productId: created.id,
+          name: row.offerName,
+          isDefault: false,
+          price: row.pricePoints,
+          originalPrice: null,
+          deliveryMode: 'manual_service',
+          stockMode: 'unlimited',
+          stock: 0,
+          fixedContent: null,
+          fixedContentType: 'text',
+          validityDays: row.validityDays,
+          externalIntegration: row.faka.externalIntegration,
+          externalSku: row.faka.externalSku,
+          sortOrder: i,
+          status: 'active',
+        },
+      })
+    }
+
+    await tx.adminLog.create({
+      data: {
+        adminUserId,
+        action: '从Xboard导入商品',
+        targetType: 'product',
+        targetId: created.id,
+        detail: JSON.stringify({
+          planId: input.planId,
+          offers: resolved.map(r => ({
+            period: r.period,
+            sku: r.sku,
+            pricePoints: r.pricePoints,
+            offerName: r.offerName,
+          })),
+        }),
+      },
+    })
+    return created
+  })
+
+  await invalidateProductPublicCache(product.id, { list: true })
+  return {
+    productId: product.id,
+    offerCount: resolved.length,
+    offers: resolved.map(r => ({
+      period: r.period,
+      sku: r.sku,
+      offerName: r.offerName,
+      pricePoints: r.pricePoints,
+    })),
+    fakaCapacity: defaultRow.cap,
+  }
+}
+
+/**
+ * Admin-only: append more period SKUs to an existing Faka product.
+ */
+export async function addAdminFakaOffers(
+  adminUserId: number,
+  productId: number,
+  input: { offers: FakaImportOfferRow[] }
+) {
+  if (!isFakaBridgeConfigured()) {
+    throw badRequest('平台未配置 FakaBridge')
+  }
+  const product = await prisma.product.findUnique({
+    where: { id: productId },
+    include: {
+      offers: {
+        select: {
+          id: true,
+          externalIntegration: true,
+          externalSku: true,
+          sortOrder: true,
+        },
+      },
+    },
+  })
+  if (!product) throw notFound('商品不存在')
+
+  const existingFaka = product.offers.filter(o => o.externalIntegration === 'faka_bridge')
+  if (existingFaka.length === 0) {
+    throw badRequest('该商品尚未接入 FakaBridge，请先导入套餐')
+  }
+
+  // Infer planId from an existing named/plan- sku
+  let planId: number | null = null
+  for (const o of existingFaka) {
+    const m = o.externalSku?.match(/^plan-(\d+)-/)
+    if (m) {
+      planId = Number(m[1])
+      break
+    }
+    if (o.externalSku) {
+      const cap = await fetchFakaCapacityForSku(o.externalSku)
+      if (cap.planId != null) {
+        planId = cap.planId
+        break
+      }
+    }
+  }
+  if (planId == null) {
+    throw badRequest('无法从现有规格推断 Xboard planId')
+  }
+
+  const existingSkus = new Set(
+    existingFaka.map(o => o.externalSku?.toLowerCase()).filter(Boolean) as string[]
+  )
+  const maxSort = product.offers.reduce((m, o) => Math.max(m, o.sortOrder ?? 0), 0)
+
+  const resolved: Array<{
+    period: string
+    sku: string
+    offerName: string
+    pricePoints: number
+    validityDays: number | null
+    faka: ReturnType<typeof normalizeFakaOfferIntegration>
+    cap: Awaited<ReturnType<typeof resolveFakaOfferSku>>['cap']
+  }> = []
+  for (const row of input.offers) {
+    const period = row.period.trim().toLowerCase()
+    const { sku, cap } = await resolveFakaOfferSku(planId, period, row.sku)
+    if (existingSkus.has(sku)) {
+      throw badRequest(`规格 SKU 已存在：${sku}`)
+    }
+    const faka = normalizeFakaOfferIntegration({
+      externalIntegration: 'faka_bridge',
+      externalSku: sku,
+      deliveryMode: 'manual_service',
+    })
+    resolved.push({
+      period,
+      sku: faka.externalSku!,
+      offerName: row.offerName?.trim() || PERIOD_OFFER_LABELS[period] || period,
+      pricePoints: row.pricePoints,
+      validityDays:
+        row.validityDays !== undefined
+          ? row.validityDays
+          : (PERIOD_VALIDITY_DAYS[period] ?? null),
+      faka,
+      cap,
+    })
+    existingSkus.add(sku)
+  }
+
+  await prisma.$transaction(async tx => {
+    for (let i = 0; i < resolved.length; i++) {
+      const row = resolved[i]!
+      await tx.offer.create({
+        data: {
+          productId,
+          name: row.offerName,
+          isDefault: false,
+          price: row.pricePoints,
+          deliveryMode: 'manual_service',
+          stockMode: 'unlimited',
+          stock: 0,
+          validityDays: row.validityDays,
+          externalIntegration: row.faka.externalIntegration,
+          externalSku: row.faka.externalSku,
+          sortOrder: maxSort + 1 + i,
+          status: 'active',
+        },
+      })
+    }
+    await tx.adminLog.create({
+      data: {
+        adminUserId,
+        action: '追加Xboard规格',
+        targetType: 'product',
+        targetId: productId,
+        detail: JSON.stringify({
+          planId,
+          offers: resolved.map(r => ({ period: r.period, sku: r.sku, pricePoints: r.pricePoints })),
+        }),
+      },
+    })
+  })
+
+  await invalidateProductPublicCache(productId, { list: true, detail: true })
+  return {
+    productId,
+    added: resolved.map(r => ({
+      period: r.period,
+      sku: r.sku,
+      offerName: r.offerName,
+      pricePoints: r.pricePoints,
+    })),
+  }
 }
 
 // ---- Announcements ----
@@ -1144,4 +1932,337 @@ export async function revokeDeliveryFile(adminUserId: number, fileId: number, re
     })
   })
   return { revoked: true }
+}
+
+// ---- P5.5 T1：交付文件治理（列表 + 发放流水） ----
+
+/**
+ * 分页列出交付文件。P5 不变量：普通 API（管理端也算）永不返回对象 key/bucket，
+ * 对账凭 sha256 已足够——select 白名单显式排除 key。引用计数（在售规格 /
+ * 交付记录）用于评估吊销影响面。
+ */
+export async function listDeliveryFiles(query: ListDeliveryFilesQuery) {
+  const where: Prisma.DeliveryFileWhereInput = {}
+  if (query.merchantId) where.merchantId = query.merchantId
+  if (query.status) where.status = query.status
+  if (query.fileName) where.fileName = { contains: query.fileName, mode: 'insensitive' }
+
+  const [items, total] = await prisma.$transaction([
+    prisma.deliveryFile.findMany({
+      where,
+      select: {
+        id: true,
+        fileName: true,
+        size: true,
+        sha256: true,
+        mimeType: true,
+        status: true,
+        createdAt: true,
+        merchant: { select: { id: true, name: true } },
+        _count: { select: { offers: true, deliveryRecords: true } },
+      },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      skip: (query.page - 1) * query.pageSize,
+      take: query.pageSize,
+    }),
+    prisma.deliveryFile.count({ where }),
+  ])
+
+  return {
+    items: items.map(file => ({
+      id: file.id,
+      fileName: file.fileName,
+      size: file.size,
+      sha256: file.sha256,
+      mimeType: file.mimeType,
+      status: file.status,
+      createdAt: file.createdAt,
+      merchant: file.merchant,
+      refCounts: { offers: file._count.offers, deliveryRecords: file._count.deliveryRecords },
+    })),
+    total,
+    page: query.page,
+    pageSize: query.pageSize,
+  }
+}
+
+/**
+ * 某文件的签名发放流水（FileGrantLog，granted 与 denied 全记）。任意状态的
+ * 文件都可查——deleted 文件的历史发放仍是审计事实。倒序走 [fileId, createdAt]
+ * 索引。ipHash 是 HMAC 摘要（不可还原），可直接出给管理员做同源关联。
+ */
+export async function listDeliveryFileGrants(fileId: number, query: ListFileGrantsQuery) {
+  const file = await prisma.deliveryFile.findUnique({ where: { id: fileId }, select: { id: true } })
+  if (!file) throw notFound('文件不存在')
+
+  const [items, total] = await prisma.$transaction([
+    prisma.fileGrantLog.findMany({
+      where: { fileId },
+      select: {
+        id: true,
+        orderId: true,
+        userId: true,
+        role: true,
+        outcome: true,
+        ipHash: true,
+        userAgent: true,
+        expiresAt: true,
+        createdAt: true,
+      },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      skip: (query.page - 1) * query.pageSize,
+      take: query.pageSize,
+    }),
+    prisma.fileGrantLog.count({ where: { fileId } }),
+  ])
+
+  return { items, total, page: query.page, pageSize: query.pageSize }
+}
+
+// ---- P5.5 T2：全平台热销规格报表 ----
+
+const OFFER_REPORT_RANGE_DAYS = { '7d': 7, '30d': 30, '90d': 90 } as const
+
+interface AdminOfferReportRow {
+  offerId: number | null
+  productId: number
+  merchantId: number | null
+  offerName: string
+  productName: string
+  merchantName: string | null
+  soldCount: number | bigint
+  pointsRevenue: number | bigint | null
+}
+
+/**
+ * 全平台热销规格 top-20。口径 = 净成交（排除 refunded）——`Offer.sales` 是
+ * 只增计数器，不作报表数据源。按 (offerId, productId, merchantId) 分组：
+ * 非空 offerId 本就唯一确定商品与商家，等价于按 offerId 分组；offerId IS NULL
+ * 的历史单则按商品拆桶，保证 productId 列有确定含义。规格名优先取当前
+ * Offer.name（改名即时生效），规格行缺失时回退最近一笔订单的 offerNameSnapshot，
+ * NULL 桶固定为「未指定规格」。
+ */
+export async function getOfferReport(range: keyof typeof OFFER_REPORT_RANGE_DAYS) {
+  const start = new Date(Date.now() - OFFER_REPORT_RANGE_DAYS[range] * 24 * 60 * 60 * 1000)
+
+  const rows = await prisma.$queryRaw<AdminOfferReportRow[]>`
+    SELECT
+      o."offerId" AS "offerId",
+      o."productId" AS "productId",
+      o."merchantId" AS "merchantId",
+      COALESCE(
+        MAX(ofr."name"),
+        (array_agg(o."offerNameSnapshot" ORDER BY o."createdAt" DESC, o."id" DESC)
+          FILTER (WHERE o."offerNameSnapshot" IS NOT NULL))[1],
+        '未指定规格'
+      ) AS "offerName",
+      MAX(p."name") AS "productName",
+      MAX(m."name") AS "merchantName",
+      COUNT(*)::int AS "soldCount",
+      COALESCE(SUM(o."price"), 0)::int AS "pointsRevenue"
+    FROM "Order" o
+    INNER JOIN "Product" p ON p."id" = o."productId"
+    LEFT JOIN "Offer" ofr ON ofr."id" = o."offerId"
+    LEFT JOIN "Merchant" m ON m."id" = o."merchantId"
+    WHERE o."createdAt" >= ${start}
+      AND o."status" <> 'refunded'
+    GROUP BY o."offerId", o."productId", o."merchantId"
+    ORDER BY COALESCE(SUM(o."price"), 0) DESC, COUNT(*) DESC, o."productId" ASC, o."offerId" ASC NULLS LAST
+    LIMIT 20
+  `
+
+  return {
+    items: rows.map(row => ({
+      offerId: row.offerId,
+      offerName: row.offerName,
+      productId: row.productId,
+      productName: row.productName,
+      merchantId: row.merchantId,
+      merchantName: row.merchantName,
+      soldCount: Number(row.soldCount ?? 0),
+      pointsRevenue: Number(row.pointsRevenue ?? 0),
+    })),
+  }
+}
+
+// ---- FakaBridge task ops (admin MFA) ----
+
+export async function listFakaBridgeTasks(query: {
+  status?: string
+  revokeStatus?: string
+  page?: number
+  pageSize?: number
+}) {
+  const page = query.page ?? 1
+  const pageSize = query.pageSize ?? 20
+  const where: Prisma.FakaBridgeTaskWhereInput = {}
+  if (query.status) where.status = query.status
+  if (query.revokeStatus) where.revokeStatus = query.revokeStatus
+
+  const [total, items] = await Promise.all([
+    prisma.fakaBridgeTask.count({ where }),
+    prisma.fakaBridgeTask.findMany({
+      where,
+      orderBy: { id: 'desc' },
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+      include: {
+        order: {
+          select: {
+            id: true,
+            status: true,
+            price: true,
+            productNameSnapshot: true,
+            user: { select: { id: true, email: true } },
+          },
+        },
+      },
+    }),
+  ])
+
+  return {
+    items: items.map(t => ({
+      id: t.id,
+      orderId: t.orderId,
+      status: t.status,
+      attempts: t.attempts,
+      maxAttempts: t.maxAttempts,
+      lastError: t.lastError,
+      xboardTradeNo: t.xboardTradeNo,
+      requestOrderNo: t.requestOrderNo,
+      emailSnapshot: t.emailSnapshot,
+      skuSnapshot: t.skuSnapshot,
+      periodSnapshot: t.periodSnapshot,
+      revokeStatus: t.revokeStatus,
+      revokeAttempts: t.revokeAttempts,
+      revokedAt: t.revokedAt,
+      lastRevokeError: t.lastRevokeError,
+      reconcileNote: t.reconcileNote,
+      createdAt: t.createdAt,
+      completedAt: t.completedAt,
+      nextAttemptAt: t.nextAttemptAt,
+      order: t.order,
+    })),
+    total,
+    page,
+    pageSize,
+  }
+}
+
+export async function getFakaBridgeTaskStats() {
+  const byStatus = await prisma.fakaBridgeTask.groupBy({
+    by: ['status'],
+    _count: { _all: true },
+  })
+  const byRevoke = await prisma.fakaBridgeTask.groupBy({
+    by: ['revokeStatus'],
+    _count: { _all: true },
+  })
+  return {
+    byStatus: Object.fromEntries(byStatus.map(g => [g.status, g._count._all])),
+    byRevoke: Object.fromEntries(
+      byRevoke.map(g => [g.revokeStatus ?? 'null', g._count._all])
+    ),
+    configured: isFakaBridgeConfigured(),
+  }
+}
+
+/** Admin: re-queue a failed/cancelled provision for another attempt. */
+export async function retryFakaBridgeTask(adminUserId: number, taskId: number) {
+  const task = await prisma.fakaBridgeTask.findUnique({
+    where: { id: taskId },
+    include: { order: { select: { id: true, status: true } } },
+  })
+  if (!task) throw notFound('FakaBridge 任务不存在')
+  if (task.status === 'succeeded' && task.order.status === 'delivered') {
+    throw badRequest('任务已成功开通，无需重试')
+  }
+  if (task.order.status === 'refunded' || task.order.status === 'closed') {
+    throw badRequest('订单已退款/关闭，请走撤销而非重试开通')
+  }
+
+  if (!(await isLeaseExpiredUtc(prisma, taskId))) {
+    throw badRequest('任务正在处理中（租约未过期），请稍后再重试')
+  }
+  if (task.cancelRequested) {
+    throw badRequest('任务已标记取消/退款，请走撤销而非重试开通')
+  }
+
+  await prisma.fakaBridgeTask.update({
+    where: { id: taskId },
+    data: {
+      status: 'pending',
+      attempts: 0,
+      nextAttemptAt: new Date(),
+      // Do not clear an active lease (already gated above).
+      lastError: null,
+      completedAt: null,
+      cancelRequested: false,
+      reconcileNote: `admin retry by user ${adminUserId}`,
+    },
+  })
+
+  await prisma.adminLog.create({
+    data: {
+      adminUserId,
+      action: '重试Faka开通',
+      targetType: 'faka_bridge_task',
+      targetId: taskId,
+      detail: `orderId=${task.orderId}`,
+    },
+  })
+
+  // Fire immediately (outside test skip inside schedule helper — call worker)
+  if (config.nodeEnv !== 'test') {
+    setImmediate(() => {
+      void processFakaBridgeTask(taskId).catch(() => undefined)
+    })
+  }
+
+  return { ok: true, taskId, status: 'pending' }
+}
+
+/** Admin: force queue / re-run Xboard revoke for a succeeded provision. */
+export async function forceFakaBridgeRevoke(adminUserId: number, taskId: number) {
+  const task = await prisma.fakaBridgeTask.findUnique({ where: { id: taskId } })
+  if (!task) throw notFound('FakaBridge 任务不存在')
+  const allowed =
+    task.status === 'succeeded' ||
+    task.status === 'needs_reconcile' ||
+    (task.status === 'failed' && Boolean(task.xboardTradeNo)) ||
+    task.cancelRequested
+  if (!allowed) {
+    throw badRequest('仅已开通/可能已开通的任务可强制撤销（succeeded / needs_reconcile / failed+trade_no）')
+  }
+  if (task.revokeStatus === 'succeeded') {
+    throw badRequest('任务已撤销成功')
+  }
+  if (!(await isLeaseExpiredUtc(prisma, taskId))) {
+    throw badRequest('任务租约未过期，请稍后再强制撤销')
+  }
+
+  await prisma.fakaBridgeTask.update({
+    where: { id: taskId },
+    data: {
+      revokeStatus: 'pending',
+      lastRevokeError: null,
+      // Override any provision/revoke cooldown: this endpoint is explicitly a force retry.
+      nextAttemptAt: new Date(),
+      cancelRequested: true,
+      reconcileNote: `admin force revoke by user ${adminUserId}`,
+    },
+  })
+
+  await prisma.adminLog.create({
+    data: {
+      adminUserId,
+      action: '强制撤销Xboard订阅',
+      targetType: 'faka_bridge_task',
+      targetId: taskId,
+      detail: `orderId=${task.orderId}; requestOrderNo=${task.requestOrderNo}`,
+    },
+  })
+
+  const outcome = await processFakaRevokeTask(taskId)
+  return { ok: true, taskId, outcome }
 }

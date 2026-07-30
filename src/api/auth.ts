@@ -5,6 +5,116 @@ import { refreshAccessToken } from './authRefresh'
 
 export { refreshAccessToken }
 
+export type AuthenticatedAuthResponse = {
+  user: Pick<AuthUser, 'id' | 'email' | 'nickname' | 'role' | 'status' | 'inviteCode' | 'points'>
+  accessToken: string
+}
+
+export type MfaLoginChallenge = {
+  status: 'mfa_enrollment_required' | 'mfa_required'
+  challengeId: string
+  expiresAt: string
+}
+
+export type LoginResponse = AuthenticatedAuthResponse | MfaLoginChallenge
+
+export type MfaEnrollmentStartResponse = {
+  provisioningUri: string
+  manualKey: string
+  expiresAt: string
+}
+
+export type MfaEnrollmentConfirmResponse = AuthenticatedAuthResponse & {
+  recoveryCodes: string[]
+}
+
+export type MfaVerifyResponse = AuthenticatedAuthResponse & {
+  recoveryCodeRemaining?: number
+}
+
+export type ActiveSessionSummary = {
+  sessionId: string
+  deviceLabel: string
+  ipHint: string
+  sessionStartedAt: string
+  lastUsedAt: string
+  current: boolean
+}
+
+function preAuthRequestConfig() {
+  return { skipAuthRefresh: true }
+}
+
+export function isMfaLoginChallenge(response: LoginResponse): response is MfaLoginChallenge {
+  return 'status' in response
+}
+
+export async function loginWithPassword(payload: { email: string; password: string }): Promise<LoginResponse> {
+  const { data } = await api.post<LoginResponse>('/auth/login', payload, preAuthRequestConfig())
+  return data
+}
+
+export async function registerAccount(payload: {
+  email: string
+  password: string
+  inviteCode?: string
+}): Promise<AuthenticatedAuthResponse> {
+  const { data } = await api.post<AuthenticatedAuthResponse>('/auth/register', payload, preAuthRequestConfig())
+  return data
+}
+
+export async function startMfaEnrollment(challengeId: string): Promise<MfaEnrollmentStartResponse> {
+  const { data } = await api.post<MfaEnrollmentStartResponse>(
+    '/auth/mfa/enrollment/start',
+    { challengeId },
+    preAuthRequestConfig(),
+  )
+  return data
+}
+
+export async function confirmMfaEnrollment(payload: {
+  challengeId: string
+  code: string
+}): Promise<MfaEnrollmentConfirmResponse> {
+  const { data } = await api.post<MfaEnrollmentConfirmResponse>(
+    '/auth/mfa/enrollment/confirm',
+    payload,
+    preAuthRequestConfig(),
+  )
+  return data
+}
+
+export async function verifyMfaLogin(payload: {
+  challengeId: string
+  method: 'totp' | 'recovery'
+  code: string
+}): Promise<MfaVerifyResponse> {
+  const { data } = await api.post<MfaVerifyResponse>('/auth/mfa/verify', payload, preAuthRequestConfig())
+  return data
+}
+
+export async function getMeWithAccessToken(accessToken: string): Promise<AuthUser> {
+  const { data } = await api.get<AuthUser>('/auth/me', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    skipAuthRefresh: true,
+  })
+  return data
+}
+
+export async function getActiveSessions(): Promise<ActiveSessionSummary[]> {
+  const { data } = await api.get<{ items: ActiveSessionSummary[] }>('/auth/sessions')
+  return data.items
+}
+
+export async function revokeSession(sessionId: string): Promise<void> {
+  await api.delete(`/auth/sessions/${encodeURIComponent(sessionId)}`)
+}
+
+export async function revokeOtherSessions(): Promise<{ revokedCount: number }> {
+  const { data } = await api.post<{ revokedCount: number }>('/auth/sessions/revoke-others')
+  return data
+}
+
 export async function getMe(): Promise<AuthUser> {
   const { data } = await api.get<AuthUser>('/auth/me')
   return data

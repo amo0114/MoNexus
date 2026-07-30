@@ -7,10 +7,12 @@ import {
   importMerchantInventorySchema, merchantListQuerySchema,
   merchantOrderListQuerySchema, startFulfillmentSchema,
   deliverFulfillmentSchema, respondDisputeSchema, rejectOrderSchema,
+  orderProgressSchema,
   merchantProductListQuerySchema, previewMerchantInventorySchema,
   voidMerchantInventorySchema, merchantInventoryLogQuerySchema,
   adjustMerchantProductCapacitySchema,
   createMerchantOfferSchema, updateMerchantOfferSchema,
+  merchantWebhookConfigSchema,
 } from './schema.js'
 import * as controller from './controller.js'
 import { z } from 'zod'
@@ -50,10 +52,18 @@ router.get('/orders', validate({ query: merchantOrderListQuerySchema }), control
 router.get('/orders/:id', validate({ params: idParamSchema }), controller.orderDetail)
 router.post('/orders/:id/fulfillment/start', validate({ params: idParamSchema, body: startFulfillmentSchema }), controller.startFulfillment)
 router.post('/orders/:id/fulfillment/deliver', validate({ params: idParamSchema, body: deliverFulfillmentSchema }), controller.deliverFulfillment)
+// P6b：履约进度更新（不改订单状态，仅追加买家可见的时间线事件）
+router.post('/orders/:id/progress', validate({ params: idParamSchema, body: orderProgressSchema }), controller.postProgress)
 router.post('/orders/:id/fulfillment/respond-dispute', validate({ params: idParamSchema, body: respondDisputeSchema }), controller.respondDispute)
 router.post('/orders/:id/fulfillment/reject', validate({ params: idParamSchema, body: rejectOrderSchema }), controller.rejectOrder)
 
 router.get('/settlements', validate({ query: merchantListQuerySchema }), controller.listSettlements)
 router.get('/stats', controller.stats)
+
+// P7b：自动开通 webhook 配置（secret 明文仅在 PUT 响应一次性返回）
+router.get('/webhook-config', controller.getWebhookConfig)
+router.put('/webhook-config', validate(merchantWebhookConfigSchema), controller.saveWebhookConfig)
+router.delete('/webhook-config', controller.revokeWebhookConfig)
+router.post('/webhook-config/test', controller.testWebhookConfig)
 
 export { router as merchantRoutes }

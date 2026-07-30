@@ -23,6 +23,7 @@ import { deliveryFileRoutes } from './modules/uploads/deliveryFileRoutes.js'
 import { configRoutes } from './modules/config/routes.js'
 import { announcementRoutes } from './modules/announcements/routes.js'
 import { portableRestoreBootstrapRoutes } from './modules/portable-backups/bootstrap-routes.js'
+import { fakaBridgeRoutes } from './modules/fakaBridge/routes.js'
 
 const app = express()
 
@@ -84,6 +85,7 @@ app.use('/api/products', productRoutes)
 app.use('/api/points', pointRoutes)
 app.use('/api/orders', orderRoutes)
 app.use('/api/checkout', checkoutRoutes)
+app.use('/api/faka-bridge', fakaBridgeRoutes)
 app.use('/api/admin', adminRoutes)
 app.use('/api/merchant/dashboard', dashboardRoutes)
 app.use('/api/merchant', merchantRoutes)

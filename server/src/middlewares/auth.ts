@@ -1,13 +1,19 @@
 import { Request, Response, NextFunction } from 'express'
 import jwt from 'jsonwebtoken'
 import { config } from '../config/index.js'
-import { forbidden, unauthenticated } from '../lib/httpError.js'
+import { forbidden, mfaRequired, sessionRevoked, unauthenticated } from '../lib/httpError.js'
 import { prisma } from '../lib/prisma.js'
 import { getCached, setCached } from '../lib/userStatusCache.js'
 
 export interface AuthPayload {
   userId: number
   role: string
+  /** Stable refresh-token family ID for newly issued access tokens. */
+  sid?: string
+  /** Present only after an administrator completed an MFA factor. */
+  mfaVerified?: boolean
+  /** Invalidates prior administrator access tokens after MFA security changes. */
+  mfaVersion?: number
 }
 
 declare global {
@@ -54,6 +60,82 @@ export function requireAdmin(req: Request, _res: Response, next: NextFunction) {
     return
   }
   next()
+}
+
+export type AdminMfaSessionState = 'allowed' | 'mfa_required' | 'session_revoked' | 'forbidden'
+
+/**
+ * Resolves the complete administrator MFA/session invariant once so routes
+ * outside `/api/admin` can delegate instead of reinventing a weaker check.
+ * It returns a state (rather than throwing) because the public announcements
+ * endpoint must safely downgrade an invalid admin token to visitor audience.
+ */
+export async function getAdminMfaSessionState(payload: AuthPayload): Promise<AdminMfaSessionState> {
+  if (payload.role !== 'admin') return 'forbidden'
+  if (typeof payload.sid !== 'string' || payload.sid.length === 0) return 'session_revoked'
+  const mfaVersion = payload.mfaVersion
+  if (payload.mfaVerified !== true || typeof mfaVersion !== 'number' || !Number.isSafeInteger(mfaVersion) || mfaVersion < 0) {
+    return 'mfa_required'
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { id: payload.userId },
+    select: { role: true, status: true, mfaEnabled: true, mfaVersion: true },
+  })
+  if (!user) return 'session_revoked'
+  if (user.status === '已封禁') return 'forbidden'
+  if (user.role !== 'admin') return 'forbidden'
+  if (!user.mfaEnabled || user.mfaVersion !== mfaVersion) return 'mfa_required'
+
+  const activeSession = await prisma.refreshToken.findFirst({
+    where: {
+      userId: payload.userId,
+      sessionId: payload.sid,
+      revoked: false,
+      expiresAt: { gt: new Date() },
+    },
+    select: { id: true },
+  })
+  return activeSession ? 'allowed' : 'session_revoked'
+}
+
+export async function requireAdminMfa(req: Request, _res: Response, next: NextFunction) {
+  if (!req.user) {
+    next(unauthenticated('未登录'))
+    return
+  }
+
+  try {
+    const state = await getAdminMfaSessionState(req.user)
+    if (state === 'allowed') {
+      next()
+      return
+    }
+    if (state === 'session_revoked') {
+      next(sessionRevoked())
+      return
+    }
+    if (state === 'mfa_required') {
+      next(mfaRequired())
+      return
+    }
+    next(forbidden('需要管理员权限'))
+  } catch (err) {
+    next(err)
+  }
+}
+
+/**
+ * Buyer and merchant file access must retain their current semantics, while
+ * the special administrator evidence path gets the exact same MFA guard as
+ * `/api/admin`. This must be placed before file-access controller work.
+ */
+export function requireMfaIfAdmin(req: Request, res: Response, next: NextFunction) {
+  if (req.user?.role !== 'admin') {
+    next()
+    return
+  }
+  void requireAdminMfa(req, res, next)
 }
 
 export async function requireActiveUser(req: Request, _res: Response, next: NextFunction) {

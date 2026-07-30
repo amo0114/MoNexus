@@ -15,6 +15,7 @@ import SafeImage from '../components/ui/SafeImage'
 import { getProductReviews, type ReviewItem } from '../api/reviews'
 import StarRating from '../components/ui/StarRating'
 import type { Offer } from '../types/merchant'
+import { offerPeriodDetailNote, offerPeriodSubtitle } from '../utils/offerPeriodDisplay'
 
 interface Product {
   id: number
@@ -33,6 +34,8 @@ interface Product {
   ratingAvg?: number
   ratingCount?: number
   merchant?: { id: number; name: string } | null
+  /** 单 Faka SKU 时商品级 Xboard 容量摘要。 */
+  fakaCapacity?: Offer['fakaCapacity']
   /** SKU 列表(P4a);仅含 active 规格,已剥离 fixedContent。 */
   offers?: Offer[]
 }
@@ -58,6 +61,7 @@ export default function ProductDetailPage() {
   const [deliveryFile, setDeliveryFile] = useState<{ fileName: string; size: number } | null>(null)
   const [successOrderId, setSuccessOrderId] = useState<number | null>(null)
   const [merchantName, setMerchantName] = useState('')
+  const [provisionPending, setProvisionPending] = useState(false)
   const [activeImage, setActiveImage] = useState(0)
 
   const [reviews, setReviews] = useState<ReviewItem[]>([])
@@ -135,6 +139,7 @@ export default function ProductDetailPage() {
       setDeliveryFile(data.deliveryFile ?? null)
       setSuccessOrderId(data.orderId)
       setMerchantName(data.merchantName || '')
+      setProvisionPending(Boolean(data.provisionPending))
       setShowPurchase(false)
       setShowSuccess(true)
       // 本地乐观更新：库存与销量按选中 SKU 递减(单 SKU 落到商品级投影)。
@@ -145,7 +150,7 @@ export default function ProductDetailPage() {
         )
         return { ...prev, stock: Math.max(0, prev.stock - 1), sales: prev.sales + 1, offers: nextOffers }
       })
-      showToast('兑换成功！')
+      showToast(data.provisionPending ? '下单成功，订阅开通中…' : '兑换成功！')
       return 'success'
     } catch (err: any) {
       const code = getApiErrorCode(err)
@@ -216,15 +221,32 @@ export default function ProductDetailPage() {
     : undefined
   const displayPrice = selectedOffer?.price ?? product.price
   const displayOriginalPrice = selectedOffer ? selectedOffer.originalPrice ?? undefined : product.originalPrice
-  const displayStockMode = selectedOffer?.stockMode ?? product.stockMode
-  const displayStock = selectedOffer?.stock ?? product.stock
+  const activeOffer = selectedOffer ?? offers[0]
+  const fakaCapacity = activeOffer?.fakaCapacity ?? product.fakaCapacity ?? null
+  const displayStockMode = activeOffer?.stockMode ?? product.stockMode
+  const displayStock = activeOffer?.stock ?? product.stock
+  // Faka：库存展示用 Xboard 剩余名额；普通商品仍用本地 stock。
+  const stockLabel =
+    fakaCapacity?.source === 'xboard'
+      ? fakaCapacity.remaining == null
+        ? '不限'
+        : String(fakaCapacity.remaining)
+      : displayStockMode === 'unlimited'
+        ? '不限'
+        : String(displayStock)
+  const stockTitle =
+    fakaCapacity?.source === 'xboard'
+      ? '剩余名额'
+      : '库存'
 
   const isInsufficient = userPoints < displayPrice
-  const isSoldOut = displayStockMode !== 'unlimited' && displayStock === 0
+  const isSoldOut =
+    fakaCapacity?.source === 'xboard'
+      ? fakaCapacity.sellable === false || (fakaCapacity.remaining != null && fakaCapacity.remaining <= 0)
+      : displayStockMode !== 'unlimited' && displayStock === 0
   // P4b：购前可见将获得的交付字段（模板公开，字段"值"购买后才可见）
-  const deliveryTemplate = (selectedOffer ?? offers[0])?.deliveryFields ?? []
+  const deliveryTemplate = activeOffer?.deliveryFields ?? []
   // P5：file 形态规格的购前提示——只展示形态与大小,文件名/链接购前不可见。
-  const activeOffer = selectedOffer ?? offers[0]
   const fileDeliverySize = activeOffer?.fixedContentType === 'file' ? activeOffer?.deliveryFileSize ?? null : undefined
 
   return (
@@ -324,11 +346,32 @@ export default function ProductDetailPage() {
                           <span className="text-xs text-[var(--color-text-muted)] line-through font-normal">{offer.originalPrice}</span>
                         )}
                       </span>
+                      {offerPeriodSubtitle(offer) && (
+                        <span
+                          className="text-[10px] text-[var(--color-text-muted)] font-medium leading-snug max-w-[11rem]"
+                          data-testid={`sku-validity-${offer.id}`}
+                        >
+                          {offerPeriodSubtitle(offer)}
+                        </span>
+                      )}
                       {offerSoldOut && <span className="text-[10px] text-[var(--color-danger)] font-bold">已售罄</span>}
                     </button>
                   )
                 })}
               </div>
+            </div>
+          )}
+
+          {/* 订阅时长 / 特殊规格说明（一次性 vs 流量重置 vs 按天） */}
+          {activeOffer && offerPeriodDetailNote(activeOffer) && (
+            <div className="mb-8 flex flex-wrap items-center gap-2 text-xs" data-testid="validity-days-preview">
+              <span className="text-[var(--color-text-muted)] font-bold">规格说明：</span>
+              <span className="px-2 py-0.5 rounded border border-[var(--color-border)] bg-[var(--color-background)] text-[var(--color-text)] font-medium">
+                {offerPeriodDetailNote(activeOffer)!.title}
+              </span>
+              <span className="text-[var(--color-text-muted)]">
+                {offerPeriodDetailNote(activeOffer)!.hint}
+              </span>
             </div>
           )}
 
@@ -353,6 +396,17 @@ export default function ProductDetailPage() {
                   {field.label}
                 </span>
               ))}
+            </div>
+          )}
+
+          {/* P7b：自动开通预告（选中规格 autoProvision 时渲染）——购前明示数据外发（硬验收 ⑤） */}
+          {activeOffer?.autoProvision && (
+            <div className="mb-8 flex flex-wrap items-center gap-2 text-xs" data-testid="auto-provision-disclosure">
+              <span className="text-[var(--color-text-muted)] font-bold">交付方式：</span>
+              <span className="px-2 py-0.5 rounded border border-[var(--color-primary)]/30 bg-[var(--color-primary)]/5 text-[var(--color-primary)] font-medium">
+                商家自动开通
+              </span>
+              <span className="text-[var(--color-text-muted)]">下单后订单与你填写的信息将发送至商家的开通服务，失败自动转人工</span>
             </div>
           )}
 
@@ -383,8 +437,14 @@ export default function ProductDetailPage() {
                 <span className="text-[var(--color-text-muted)] font-medium">
                   已售: <span className="text-[var(--color-text)] font-bold">{product.sales}</span>
                 </span>
-                <span className="text-[var(--color-text-muted)] font-medium">
-                  库存: <span className="text-[var(--color-text)] font-bold">{displayStockMode === 'unlimited' ? '不限' : displayStock}</span>
+                <span className="text-[var(--color-text-muted)] font-medium" data-testid="product-stock">
+                  {stockTitle}:{' '}
+                  <span className="text-[var(--color-text)] font-bold">{stockLabel}</span>
+                  {fakaCapacity?.source === 'xboard' && fakaCapacity.capacityLimit != null && (
+                    <span className="text-[var(--color-text-muted)] font-normal">
+                      {' '}/ {fakaCapacity.capacityLimit}
+                    </span>
+                  )}
                 </span>
                 {product.ratingCount && product.ratingCount > 0 ? (
                   <span className="text-[var(--color-text-muted)] font-medium flex items-center gap-1" data-testid="rating-summary">
@@ -549,6 +609,7 @@ export default function ProductDetailPage() {
         <PurchaseModal
           productId={product.id}
           offerId={selectedOfferId ?? undefined}
+          validityDays={activeOffer?.validityDays ?? null}
           submitting={purchasing}
           onClose={() => setShowPurchase(false)}
           onConfirm={handlePurchase}
@@ -563,6 +624,7 @@ export default function ProductDetailPage() {
           deliveryFile={deliveryFile}
           orderId={successOrderId ?? undefined}
           merchantName={merchantName}
+          provisionPending={provisionPending}
           onClose={() => setShowSuccess(false)}
           onViewOrders={() => {
             setShowSuccess(false)

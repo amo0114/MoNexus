@@ -55,3 +55,7 @@ skill-fallback/
 
 # Coverage
 coverage/
+
+# Prisma client generated to a custom path (local worktree only; never commit)
+server/.generated-prisma-client/
+.generated-prisma-client/

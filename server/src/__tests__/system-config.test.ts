@@ -22,6 +22,14 @@ const defaultConfig = {
   fileUrlTtlSeconds: 300,
   fileAccessWindowDays: 30,
   deliveryFileMaxMb: 100,
+  // P5.5 低库存告警
+  lowStockNotifyCooldownHours: 24,
+  // P6a 订单计时
+  autoCloseDays: 7,
+  fulfillmentSlaDays: 7,
+  subscriptionRemindDays: 3,
+  // P7b 自动开通外呼尝试上限（0 = 暂停外呼）
+  autoProvisionMaxAttempts: 5,
 } as const
 
 async function clearSystemConfig() {

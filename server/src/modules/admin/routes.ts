@@ -1,15 +1,18 @@
 import { Router } from 'express'
-import { authenticate, requireActiveUser, requireAdmin } from '../../middlewares/auth.js'
+import { authenticate, requireActiveUser, requireAdmin, requireAdminMfa } from '../../middlewares/auth.js'
 import { validate, idParamSchema } from '../../middlewares/validate.js'
 import {
   adjustPointsSchema, banUserSchema, createProductSchema, updateProductSchema,
   importInventorySchema, listUsersQuerySchema, listOrdersQuerySchema,
   revokeDeliveryFileSchema,
+  listDeliveryFilesQuerySchema, listFileGrantsQuerySchema, offerReportQuerySchema,
   listAdminAuditQuerySchema,
   listMerchantsQuerySchema, reviewMerchantSchema, updateCommissionSchema,
   listSettlementsQuerySchema, batchSettleSchema, resolveOrderSchema,
   systemConfigKeyParamSchema, updateSystemConfigSchema,
   createAnnouncementSchema, updateAnnouncementSchema, listAnnouncementsQuerySchema,
+  setFakaCapacitySchema, importFakaPlanSchema, addFakaOffersSchema,
+  listFakaTasksQuerySchema,
 } from './schema.js'
 import { adminReviewsQuerySchema } from '../reviews/schema.js'
 import * as controller from './controller.js'
@@ -17,7 +20,7 @@ import { portableBackupRoutes } from '../portable-backups/routes.js'
 
 const router = Router()
 
-router.use(authenticate, requireActiveUser, requireAdmin)
+router.use(authenticate, requireActiveUser, requireAdmin, requireAdminMfa)
 
 router.use('/portable-backups', portableBackupRoutes)
 
@@ -32,9 +35,32 @@ router.put('/users/:id/unban', validate({ params: idParamSchema }), controller.u
 router.get('/products', controller.products)
 router.post('/products', validate(createProductSchema), controller.createProduct)
 router.put('/products/:id', validate({ params: idParamSchema, body: updateProductSchema }), controller.updateProduct)
+router.delete('/products/:id', validate({ params: idParamSchema }), controller.deleteProduct)
 router.post('/products/:id/inventory', validate({ params: idParamSchema, body: importInventorySchema }), controller.importInventory)
+// FakaBridge Xboard 管理：仅平台管理员（本路由组已 requireAdmin + MFA）
+router.get('/faka/catalog', controller.fakaCatalog)
+router.post('/faka/import', validate(importFakaPlanSchema), controller.importFakaPlan)
+router.post(
+  '/products/:id/faka-offers',
+  validate({ params: idParamSchema, body: addFakaOffersSchema }),
+  controller.addFakaOffers
+)
+router.put(
+  '/products/:id/faka-capacity',
+  validate({ params: idParamSchema, body: setFakaCapacitySchema }),
+  controller.setFakaCapacity
+)
+router.get('/faka/tasks', validate({ query: listFakaTasksQuerySchema }), controller.listFakaTasks)
+router.get('/faka/tasks/stats', controller.fakaTaskStats)
+router.post('/faka/tasks/:id/retry', validate({ params: idParamSchema }), controller.retryFakaTask)
+router.post('/faka/tasks/:id/revoke', validate({ params: idParamSchema }), controller.forceFakaRevoke)
 // P5：吊销交付文件（违法/恶意内容治理）。
 router.post('/delivery-files/:id/revoke', validate({ params: idParamSchema, body: revokeDeliveryFileSchema }), controller.revokeDeliveryFile)
+// P5.5 T1：文件治理——分页列表 + 单文件签名发放流水（审计）。
+router.get('/delivery-files', validate({ query: listDeliveryFilesQuerySchema }), controller.listDeliveryFiles)
+router.get('/delivery-files/:id/grants', validate({ params: idParamSchema, query: listFileGrantsQuerySchema }), controller.deliveryFileGrants)
+// P5.5 T2：全平台热销规格报表（净成交口径）。
+router.get('/reports/offers', validate({ query: offerReportQuerySchema }), controller.offerReport)
 router.get('/orders', validate({ query: listOrdersQuerySchema }), controller.orders)
 router.get('/orders/:id', validate({ params: idParamSchema }), controller.orderDetail)
 router.post('/orders/:id/resolve', validate({ params: idParamSchema, body: resolveOrderSchema }), controller.resolveOrder)

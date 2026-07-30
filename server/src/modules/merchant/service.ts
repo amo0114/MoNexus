@@ -2,7 +2,7 @@ import { Prisma } from '@prisma/client'
 import { randomUUID } from 'node:crypto'
 import { prisma } from '../../lib/prisma.js'
 import { businessRegistry } from '../../lib/businessRegistry.js'
-import { badRequest, notFound, conflict } from '../../lib/httpError.js'
+import { badRequest, notFound, conflict, HttpError } from '../../lib/httpError.js'
 import { getSystemConfigValue } from '../../lib/systemConfig.js'
 import { logInventoryChange } from '../../lib/inventoryLog.js'
 import {
@@ -18,13 +18,16 @@ import {
 } from '../../lib/inventoryImport.js'
 import { invalidateProductPublicCache } from '../products/cache.js'
 import {
+  createOrderStatusEvent,
   isInstantMode,
   normalizeOrderStatus,
   transitionOrderStatus,
   type FulfillmentOrderStatus,
 } from '../orders/fulfillment.js'
 import { releaseHeldOrder, settleHeldOrder } from '../orders/accounting.js'
+import { applyRefundInventoryPolicy } from '../orders/refundInventory.js'
 import { serializeMerchantOrder } from '../orders/serializers.js'
+import { lockActiveWebhookConfigForShare } from './webhookConfig.js'
 import type { MerchantOrderListQuery } from './schema.js'
 import type { PurchaseFormField } from '../../lib/purchaseForm.js'
 import {
@@ -41,6 +44,11 @@ import {
   syncProductProjection,
   serializePublicOffer,
 } from '../../lib/offers.js'
+import {
+  normalizeFakaOfferIntegration,
+  assertOfferProvisionMutex,
+  onFakaOrderRefundedInTx,
+} from '../../lib/fakaBridge/index.js'
 
 // ---- Application ----
 
@@ -281,12 +289,14 @@ export async function createMyProduct(
     purchaseForm?: PurchaseFormField[];
     // P4a F3：向导原子发布——默认规格名 + 额外规格与商品同事务落库。
     primaryOfferName?: string;
+    // 复审 P2-2：默认规格的订阅有效期（落 Offer，不进 Product 列）。
+    validityDays?: number | null;
     offers?: (OfferWriteInput & { name: string; price: number })[]
   }
 ) {
   assertOriginalPriceAtLeastSale(data.price, data.originalPrice)
-  // primaryOfferName/offers 只进 Offer 表，不进 Product 列。
-  const { primaryOfferName: _primaryOfferName, offers: _offers, ...productFields } = data
+  // primaryOfferName/validityDays/offers 只进 Offer 表，不进 Product 列。
+  const { primaryOfferName: _primaryOfferName, validityDays: _validityDays, offers: _offers, ...productFields } = data
   const normalizedProductData = normalizeProductImageFields(productFields)
   const deliveryMode = data.deliveryMode ?? 'instant_inventory'
   const stockMode = data.stockMode ?? (deliveryMode === 'instant_inventory' ? 'limited' : 'unlimited')
@@ -321,6 +331,7 @@ export async function createMyProduct(
       stock: deliveryMode === 'instant_inventory' ? 0 : (data.stock ?? 0),
       fixedContent: data.fixedContent ?? null,
       fixedContentType,
+      validityDays: data.validityDays ?? null,
     }, data.primaryOfferName)
     // F3：额外规格同事务创建，任一条校验失败 → 整体回滚（无孤儿商品）。
     for (const offerInput of data.offers ?? []) {
@@ -749,7 +760,8 @@ function getAvailableActions(order: {
   // pending 状态下商家可接单（start_fulfillment）或拒单（reject）；
   // 拒单只对 manual_service 有意义，但即时模式创建即 delivered 不会进入 pending
   if (status === 'pending') return ['start_fulfillment', 'reject']
-  if (status === 'processing' && deliveryMode === 'manual_service') return ['deliver']
+  // P6b：履约中的人工服务单可交付，也可发进度更新（post_progress 不改状态）
+  if (status === 'processing' && deliveryMode === 'manual_service') return ['deliver', 'post_progress']
   if (status === 'disputed') return ['respond_dispute']
   return []
 }
@@ -794,8 +806,14 @@ export async function listMyOrders(merchantId: number, query: MerchantOrderListQ
         product: { select: { id: true, name: true, icon: true, type: true, imageUrl: true, price: true, deliveryMode: true } },
         delivery: { select: { status: true, publicNote: true, deliveredAt: true } },
         settlement: { select: { settlementAmount: true, status: true, settledAt: true } },
+        // P7b：任务态徽标（开通中/已自动交付/已降级人工 + 脱敏诊断码）。
+        provisionTask: { select: { status: true, attempts: true, lastError: true, lastHttpStatus: true, nextAttemptAt: true, merchantNotifiedAt: true, updatedAt: true } },
       },
-      orderBy: { createdAt: 'desc' },
+      // P6c：sort=booking 时预约日期升序（最近的预约最先处理），无预约单
+      // （bookingDate=null）排后并沿用默认时间倒序；命中 (merchantId, bookingDate) 索引。
+      orderBy: query.sort === 'booking'
+        ? [{ bookingDate: { sort: 'asc', nulls: 'last' } as const }, { createdAt: 'desc' as const }]
+        : { createdAt: 'desc' },
       skip: (query.page - 1) * query.pageSize,
       take: query.pageSize,
     }),
@@ -807,6 +825,8 @@ export async function listMyOrders(merchantId: number, query: MerchantOrderListQ
       ...serializeMerchantOrder(order),
       holdingPoints: order.holdingPoints,
       fulfillmentDeadline: order.fulfillmentDeadline,
+      // P6c：预约日期（null = 非预约单）；列表/详情均透出供商家排期。
+      bookingDate: order.bookingDate,
       slaExceeded: computeSlaExceeded(order),
       availableActions: getAvailableActions(order),
     })),
@@ -825,11 +845,15 @@ export async function getMyOrderDetail(merchantId: number, orderId: number) {
       delivery: {
         select: {
           status: true, publicNote: true, deliveredAt: true,
+          // P6a：订阅到期时刻。商家视角只展示、永不遮蔽（履约凭据）。
+          expiresAt: true,
           // P5：附件元数据（商家核对已交付文件）；content 本体照旧不进商家详情。
           file: { select: { fileName: true, size: true, status: true } },
         },
       },
       settlement: { select: { settlementAmount: true, status: true, settledAt: true } },
+      // P7b：任务态透出 + 脱敏诊断码，供商家判断是否人工介入。
+      provisionTask: { select: { status: true, attempts: true, lastError: true, lastHttpStatus: true, nextAttemptAt: true, merchantNotifiedAt: true, updatedAt: true } },
       statusEvents: {
         select: {
           id: true,
@@ -849,6 +873,8 @@ export async function getMyOrderDetail(merchantId: number, orderId: number) {
     ...serializeMerchantOrder(order),
     holdingPoints: order.holdingPoints,
     fulfillmentDeadline: order.fulfillmentDeadline,
+    // P6c：预约日期（null = 非预约单）。
+    bookingDate: order.bookingDate,
     slaExceeded: computeSlaExceeded(order),
     availableActions: getAvailableActions(order),
     // 详情显式回填：买家购买前填写的信息是商家的履约依据。
@@ -964,6 +990,70 @@ export async function deliverOrderFulfillment(
   return getMyOrderDetail(merchantId, orderId)
 }
 
+// P6b：单订单每小时最多 6 条进度更新（审计表即计数器）。
+// P7a 复核：复审 P2-4 的订单行 FOR UPDATE（下方）已把 count→create 整体
+// 串行化——READ COMMITTED 下取到锁后的语句可见先行事务提交的事件，计数
+// 不会超发，且这是 DB 行锁，跨实例同样成立。并发回归见
+// __tests__/p7a-multi-instance.test.ts。
+const PROGRESS_RATE_LIMIT = 6
+const PROGRESS_RATE_WINDOW_MS = 60 * 60 * 1000
+
+/**
+ * P6b：商家发布履约进度。仅写 OrderStatusEvent（fromStatus=toStatus='processing'），
+ * 不改 order.status——决策 ③：进度不引入新订单状态。note 即买家时间线上的
+ * publicNote。
+ */
+export async function postOrderProgress(
+  merchantId: number,
+  actorUserId: number,
+  orderId: number,
+  input: { note: string }
+) {
+  await prisma.$transaction(async tx => {
+    // 归属校验沿用统一入口：他人/不存在的订单一律 404 防枚举。
+    const order = await assertMerchantOrder(merchantId, orderId, tx)
+    // 复审 P2-4：先锁订单行再终检状态。进度写入与交付并发时，进度事务在
+    // 旧快照上看到 processing、提交时订单已 delivered——买家时间线会出现
+    // 交付之后的 processing→processing 事件。FOR UPDATE 与
+    // transitionOrderStatus 的行更新互斥：交付先提交则此处重读拒绝，
+    // 进度先拿锁则交付排队在其后，事件序保持正确。
+    await tx.$queryRaw`SELECT "id" FROM "Order" WHERE "id" = ${order.id} FOR UPDATE`
+    const fresh = await tx.order.findUniqueOrThrow({
+      where: { id: order.id },
+      select: { status: true },
+    })
+    if (
+      normalizeOrderStatus(fresh.status) !== 'processing'
+      || getOrderDeliveryMode(order) !== 'manual_service'
+    ) {
+      throw badRequest('仅履约中的人工服务订单可更新进度')
+    }
+
+    const recent = await tx.orderStatusEvent.count({
+      where: {
+        orderId: order.id,
+        action: 'merchant.progress',
+        createdAt: { gte: new Date(Date.now() - PROGRESS_RATE_WINDOW_MS) },
+      },
+    })
+    if (recent >= PROGRESS_RATE_LIMIT) {
+      throw new HttpError(429, 'PROGRESS_RATE_LIMITED', '进度更新过于频繁，请稍后再试')
+    }
+
+    await createOrderStatusEvent(tx, {
+      orderId: order.id,
+      actorUserId,
+      actorRole: 'merchant',
+      fromStatus: 'processing',
+      toStatus: 'processing',
+      action: 'merchant.progress',
+      publicNote: input.note,
+    })
+  })
+
+  return { ok: true }
+}
+
 export async function respondToOrderDispute(
   merchantId: number,
   actorUserId: number,
@@ -1017,6 +1107,10 @@ export async function rejectOrder(
         holdingPoints: true,
         fundsHeld: true,
         deliveryModeSnapshot: true,
+        // P5.5 T4：退款回补策略需要的归属字段。
+        productId: true,
+        offerId: true,
+        merchantId: true,
         product: { select: { deliveryMode: true } },
       },
     })
@@ -1038,6 +1132,16 @@ export async function rejectOrder(
     }, tx)
 
     await releaseHeldOrder(tx, order, `商家拒单释放冻结积分: #${order.id}`)
+
+    // P5.5 T4：拒单退款的库存侧效果与积分退还同事务——未交付（pending），
+    // 限量规格回补服务名额，销量净减。
+    await applyRefundInventoryPolicy(tx, order, {
+      fromStatus: 'pending',
+      actorUserId,
+    })
+
+    // FakaBridge：拒单时取消尚未开通的任务（避免退款后仍外呼开通）
+    await onFakaOrderRefundedInTx(tx, orderId)
   })
 
   return getMyOrderDetail(merchantId, orderId)
@@ -1119,11 +1223,48 @@ type OfferWriteInput = {
   // P5：file 形态挂载的交付文件；null 清空（配合切回 text/url）。
   fixedFileId?: number | null
   sortOrder?: number
+  // P6a：订阅有效期天数；null = 永久。
+  validityDays?: number | null
   // P4b：交付字段模板；null 清空回纯文本。已过 zod（deliveryFieldsSchema）。
   deliveryFields?: DeliveryField[] | null
+  // P7b：自动开通开关。仅 manual_service 且无模板且商家已有 active webhook
+  // 配置可为 true（服务端校验 + DB CHECK 兜底，硬验收 ④⑤）。
+  // 与 FakaBridge externalIntegration 互斥。
+  autoProvision?: boolean
+  // FakaBridge：null 关闭；'faka_bridge' + externalSku 开通 Xboard。
+  externalIntegration?: string | null
+  externalSku?: string | null
   // 设为默认规格（仅接受 true，事务内从原默认转移；不接受 false——
   // 取消默认必须通过在另一条上设默认完成，保证不变量恒成立）。
   isDefault?: boolean
+}
+
+/**
+ * P7b：autoProvision 开启前置校验（硬验收 ④⑤）：人工服务 + 无交付模板 +
+ * 商家已有 active webhook 配置。DB CHECK 兜底前两条；active 配置是业务
+ * 前置（下单事务要冻结它，缺失时买家下单会 409 安全失败）。
+ * FOR SHARE 锁 active 行（复审 P1 线性化）：与撤销的 FOR UPDATE 互斥——
+ * 撤销先提交则此处查无 active 行、开启被拒；本事务先提交则撤销的关开关
+ * 扫描必然覆盖刚开启的规格，不存在「开关开着但配置已撤销」的静默错配。
+ */
+async function assertAutoProvisionAllowed(
+  tx: Prisma.TransactionClient,
+  merchantId: number,
+  autoProvision: boolean,
+  deliveryMode: string,
+  deliveryFields: readonly unknown[] | null | undefined
+) {
+  if (!autoProvision) return
+  if (deliveryMode !== 'manual_service') {
+    throw badRequest('自动开通仅支持人工服务规格')
+  }
+  if ((deliveryFields?.length ?? 0) > 0) {
+    throw badRequest('带交付字段模板的规格暂不支持自动开通')
+  }
+  const active = await lockActiveWebhookConfigForShare(tx, merchantId)
+  if (!active) {
+    throw badRequest('请先在商家设置中配置自动开通 webhook，再开启该开关')
+  }
 }
 
 /** instant_fixed 固定内容天然单值，不支持交付字段模板（P4b 决策点 2）。 */
@@ -1215,9 +1356,27 @@ async function insertOffer(
     fixedFileId,
   })
   assertDeliveryFieldsAllowed(deliveryMode, input.deliveryFields)
+  await assertAutoProvisionAllowed(tx, merchantId, input.autoProvision ?? false, deliveryMode, input.deliveryFields)
   if (fixedFileId != null) {
     await assertMyDeliveryFile(tx, merchantId, fixedFileId)
   }
+
+  // v1: platform FakaBridge credentials are global — only admins may attach SKUs.
+  if (input.externalIntegration != null && input.externalIntegration !== '') {
+    throw badRequest('FakaBridge 外部开通仅平台管理员可配置，商家请使用自动开通 webhook 或人工交付')
+  }
+  if (input.externalSku != null && input.externalSku !== '') {
+    throw badRequest('FakaBridge externalSku 仅平台管理员可配置')
+  }
+  const faka = normalizeFakaOfferIntegration({
+    externalIntegration: null,
+    externalSku: null,
+    deliveryMode,
+  })
+  assertOfferProvisionMutex({
+    autoProvision: input.autoProvision ?? false,
+    externalIntegration: faka.externalIntegration,
+  })
 
   return tx.offer.create({
     data: {
@@ -1233,7 +1392,13 @@ async function insertOffer(
       fixedContentType,
       fixedFileId,
       sortOrder: input.sortOrder ?? 0,
+      // P6a：订阅有效期；null = 永久。
+      validityDays: input.validityDays ?? null,
       deliveryFields: input.deliveryFields ?? undefined,
+      // P7b：自动开通开关（上方已过前置校验 + 与 Faka 互斥）。
+      autoProvision: input.autoProvision ?? false,
+      externalIntegration: faka.externalIntegration,
+      externalSku: faka.externalSku,
     },
   })
 }
@@ -1290,6 +1455,9 @@ export async function updateMyOffer(
       ? input.deliveryFields ?? null
       : parseStoredDeliveryFields(offer.deliveryFields)
     assertDeliveryFieldsAllowed(deliveryMode, nextDeliveryFields)
+    // P7b：合并后的开关状态必须整体合法（含"改模式/加模板但留开关"的组合）。
+    const nextAutoProvision = input.autoProvision ?? offer.autoProvision
+    await assertAutoProvisionAllowed(tx, merchantId, nextAutoProvision, deliveryMode, nextDeliveryFields)
     assertOfferCommercialInput({
       price: input.price ?? offer.price,
       originalPrice: 'originalPrice' in input ? (input.originalPrice ?? null) : offer.originalPrice,
@@ -1306,6 +1474,41 @@ export async function updateMyOffer(
     if (nextFixedFileId != null && nextFixedFileId !== offer.fixedFileId) {
       await assertMyDeliveryFile(tx, merchantId, nextFixedFileId)
     }
+
+    // FakaBridge：请求触碰 integration/sku，或规格已启用 faka 时（履约模式变更也要重验）。
+    const fakaFieldsTouched = 'externalIntegration' in input || 'externalSku' in input
+    if (fakaFieldsTouched) {
+      const ei = 'externalIntegration' in input ? input.externalIntegration : null
+      const es = 'externalSku' in input ? input.externalSku : null
+      if ((ei != null && ei !== '') || (es != null && es !== '')) {
+        throw badRequest('FakaBridge 外部开通仅平台管理员可配置，商家请使用自动开通 webhook 或人工交付')
+      }
+    }
+    const nextExternalIntegration = fakaFieldsTouched
+      ? ('externalIntegration' in input ? input.externalIntegration : offer.externalIntegration)
+      : offer.externalIntegration
+    const nextExternalSku = fakaFieldsTouched
+      ? ('externalSku' in input ? input.externalSku : offer.externalSku)
+      : offer.externalSku
+    const mustValidateFaka =
+      fakaFieldsTouched || offer.externalIntegration != null || nextExternalIntegration != null
+    const fakaUpdate = mustValidateFaka
+      ? normalizeFakaOfferIntegration(
+          {
+            externalIntegration: nextExternalIntegration,
+            externalSku: nextExternalSku,
+            deliveryMode,
+          },
+          { requireConfigured: nextExternalIntegration === 'faka_bridge' }
+        )
+      : null
+
+    const effectiveExternalIntegration =
+      fakaUpdate != null ? fakaUpdate.externalIntegration : offer.externalIntegration
+    assertOfferProvisionMutex({
+      autoProvision: nextAutoProvision,
+      externalIntegration: effectiveExternalIntegration,
+    })
 
     // 设为默认：先清旧默认再随本次更新立新默认（同事务；部分唯一索引兜底并发）。
     // 取消默认只能通过在另一条上设默认完成，保证"每商品恰有一条默认"不变量。
@@ -1329,6 +1532,10 @@ export async function updateMyOffer(
         ...('fixedContent' in input ? { fixedContent: input.fixedContent ?? null } : {}),
         fixedContentType,
         ...('fixedFileId' in input ? { fixedFileId: input.fixedFileId ?? null } : {}),
+        // P6a：改时长只影响新订单（快照冻结）；null = 改回永久。
+        ...('validityDays' in input ? { validityDays: input.validityDays ?? null } : {}),
+        // P7b：开关改动进 checkoutVersion，买家预览后改动会 409 重新确认。
+        ...(input.autoProvision != null ? { autoProvision: input.autoProvision } : {}),
         ...(input.sortOrder != null ? { sortOrder: input.sortOrder } : {}),
         // 改模板仅影响后续导入/交付；已导入条目携带自包含快照，不回填。
         ...('deliveryFields' in input
@@ -1336,6 +1543,12 @@ export async function updateMyOffer(
           : {}),
         ...(deliveryMode === 'instant_inventory' && offer.deliveryMode !== 'instant_inventory'
           ? { stock: 0 }
+          : {}),
+        ...(fakaUpdate
+          ? {
+              externalIntegration: fakaUpdate.externalIntegration,
+              externalSku: fakaUpdate.externalSku,
+            }
           : {}),
       },
     })

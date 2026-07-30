@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { formatBookingDay } from '../utils/formatLocalDate'
 import { useNavigate } from 'react-router-dom'
 import { Coins, Wallet, Users, CalendarCheck, LogOut, ArrowDownLeft, ArrowUpRight, Store, Eye, Loader2, Shield, Trophy, UserRound, ShoppingBag } from 'lucide-react'
 import { useAuthStore } from '../stores/authStore'
@@ -18,6 +19,7 @@ import RegistryPill from '../components/ui/RegistryPill'
 import { getMemberTier, TierResponse } from '../api/points'
 import { getConfigRegistry } from '../api/registry'
 import { MemberTierBadge } from '../components/MemberTierBadge'
+import SessionManager from '../components/auth/SessionManager'
 
 function NicknameCard() {
   const user = useAuthStore((s) => s.user)
@@ -490,6 +492,9 @@ export default function ProfilePage() {
       {/* Password Change Card */}
       <PasswordChangeCard />
 
+      {/* Active device sessions stay isolated from the profile's orders/points loading. */}
+      <SessionManager />
+
       {/* Tabs: Orders / History */}
       <div className="card p-4 sm:p-6">
         <Tabs
@@ -526,6 +531,18 @@ export default function ProfilePage() {
                       <div className="flex items-center justify-between mb-2">
                         <div className="flex items-center gap-2">
                           <RegistryPill value={order.status} category="orderStatuses" />
+                          {(() => {
+                            // P6a：订阅单到期后打「已过期」小标（列表投影，详情内可续费）
+                            const expiresAt = order.expiresAt ?? order.delivery?.expiresAt
+                            return expiresAt && new Date(expiresAt).getTime() <= Date.now() ? (
+                              <span
+                                className="text-xs font-bold text-[var(--color-danger)] bg-[var(--color-danger)]/10 px-1.5 py-0.5 rounded border border-[var(--color-danger)]/30"
+                                data-testid={`order-expired-tag-${order.id}`}
+                              >
+                                已过期
+                              </span>
+                            ) : null
+                          })()}
                           <span className="text-xs text-[var(--color-text-muted)]">
                             {new Date(order.createdAt).toLocaleString()}
                           </span>
@@ -543,6 +560,15 @@ export default function ProfilePage() {
                         {order.offerNameSnapshot && order.offerNameSnapshot !== '默认规格' && (
                           <span className="text-xs font-bold text-[var(--color-text)] bg-[var(--color-background)] px-1.5 py-0.5 rounded border border-[var(--color-border)]">
                             {order.offerNameSnapshot}
+                          </span>
+                        )}
+                        {order.bookingDate && (
+                          // P6c：预约单小标（详情内展示完整预约信息）
+                          <span
+                            className="text-xs font-bold text-[var(--color-primary)] bg-[var(--color-primary)]/10 px-1.5 py-0.5 rounded border border-[var(--color-primary)]/20"
+                            data-testid={`order-booking-tag-${order.id}`}
+                          >
+                            预约 {formatBookingDay(order.bookingDate)}
                           </span>
                         )}
                         <RegistryPill value={order.product?.type} category="productTypes" />

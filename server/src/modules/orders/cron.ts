@@ -1,13 +1,14 @@
 import { config } from '../../config/index.js'
 import { logger } from '../../lib/logger.js'
 import { prisma } from '../../lib/prisma.js'
+import { getSystemConfigValue } from '../../lib/systemConfig.js'
+import { acquireCronLeaseWithHeartbeat, type CronLeaseHandle } from '../../lib/cronLease.js'
 import { invalidateProductPublicCache } from '../products/cache.js'
 import { transitionOrderStatus } from './fulfillment.js'
 import { settleHeldOrder } from './accounting.js'
 import { cleanupExpiredIdempotencyRecords } from './idempotency.js'
 
 // PRD §4.3.1：delivered 超 7 天自动 closed，积分正式扣减并触发 Settlement
-const AUTO_CLOSE_SLA_MS = 7 * 24 * 60 * 60 * 1000
 const AUTO_CLOSE_INTERVAL_MS = 24 * 60 * 60 * 1000
 
 let timer: NodeJS.Timeout | null = null
@@ -22,7 +23,9 @@ type AutoCloseCandidate = {
 }
 
 async function findAutoCloseCandidates(): Promise<AutoCloseCandidate[]> {
-  const cutoff = new Date(Date.now() - AUTO_CLOSE_SLA_MS)
+  // P6a：每轮巡检读取配置（lowStockNotify 范式），管理端改天数即时生效。
+  const autoCloseDays = await getSystemConfigValue('autoCloseDays')
+  const cutoff = new Date(Date.now() - autoCloseDays * 24 * 60 * 60 * 1000)
   return prisma.order.findMany({
     where: {
       status: { in: ['delivered', 'completed'] },
@@ -75,7 +78,11 @@ async function autoCloseOrder(order: AutoCloseCandidate): Promise<void> {
 async function runAutoCloseBatch() {
   if (running) return
   running = true
+  let lease: CronLeaseHandle | null = null
   try {
+    // P7a：舰队租约——领不到说明本窗口已有实例执行，跳过本 tick（test 直通）。
+    lease = await acquireCronLeaseWithHeartbeat('orderAutoClose', AUTO_CLOSE_INTERVAL_MS)
+    if (!lease) return
     const cleaned = await cleanupExpiredIdempotencyRecords()
     if (cleaned > 0) logger.info({ count: cleaned }, 'expired idempotency records cleaned')
 
@@ -88,6 +95,7 @@ async function runAutoCloseBatch() {
   } catch (err) {
     logger.error({ err }, 'auto-close cron batch failed')
   } finally {
+    lease?.release()
     running = false
   }
 }

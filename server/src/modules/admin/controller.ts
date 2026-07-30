@@ -1,7 +1,10 @@
 import { Request, Response, NextFunction } from 'express'
 import * as adminService from './service.js'
 import * as reviewService from '../reviews/service.js'
-import type { ListAdminAuditQuery, ListAnnouncementsQuery, ListOrdersQuery, ListUsersQuery } from './schema.js'
+import type {
+  ListAdminAuditQuery, ListAnnouncementsQuery, ListOrdersQuery, ListUsersQuery,
+  ListDeliveryFilesQuery, ListFileGrantsQuery, OfferReportQuery,
+} from './schema.js'
 
 export async function stats(_req: Request, res: Response, next: NextFunction) {
   try { res.json(await adminService.getStats()) } catch (err) { next(err) }
@@ -92,6 +95,92 @@ export async function audit(req: Request, res: Response, next: NextFunction) {
 
 export async function products(_req: Request, res: Response, next: NextFunction) {
   try { res.json(await adminService.listAdminProducts()) } catch (err) { next(err) }
+}
+
+export async function deleteProduct(req: Request, res: Response, next: NextFunction) {
+  try {
+    const productId = req.params.id as unknown as number
+    res.json(await adminService.deleteAdminProduct(req.user!.userId, productId))
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function setFakaCapacity(req: Request, res: Response, next: NextFunction) {
+  try {
+    const productId = req.params.id as unknown as number
+    res.json(
+      await adminService.setAdminFakaCapacity(req.user!.userId, productId, {
+        offerId: req.body.offerId,
+        capacityLimit: req.body.capacityLimit,
+      })
+    )
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function fakaCatalog(_req: Request, res: Response, next: NextFunction) {
+  try {
+    res.json(await adminService.listAdminFakaCatalog())
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function importFakaPlan(req: Request, res: Response, next: NextFunction) {
+  try {
+    res.status(201).json(await adminService.importAdminFakaPlan(req.user!.userId, req.body))
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function addFakaOffers(req: Request, res: Response, next: NextFunction) {
+  try {
+    const productId = req.params.id as unknown as number
+    res.status(201).json(
+      await adminService.addAdminFakaOffers(req.user!.userId, productId, {
+        offers: req.body.offers,
+      })
+    )
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function listFakaTasks(req: Request, res: Response, next: NextFunction) {
+  try {
+    res.json(await adminService.listFakaBridgeTasks(req.query as any))
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function fakaTaskStats(_req: Request, res: Response, next: NextFunction) {
+  try {
+    res.json(await adminService.getFakaBridgeTaskStats())
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function retryFakaTask(req: Request, res: Response, next: NextFunction) {
+  try {
+    const taskId = req.params.id as unknown as number
+    res.json(await adminService.retryFakaBridgeTask(req.user!.userId, taskId))
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function forceFakaRevoke(req: Request, res: Response, next: NextFunction) {
+  try {
+    const taskId = req.params.id as unknown as number
+    res.json(await adminService.forceFakaBridgeRevoke(req.user!.userId, taskId))
+  } catch (err) {
+    next(err)
+  }
 }
 
 // ---- Merchants ----
@@ -209,5 +298,27 @@ export async function revokeDeliveryFile(req: Request, res: Response, next: Next
       req.params.id as unknown as number,
       (req.body as { reason?: string }).reason,
     ))
+  } catch (err) { next(err) }
+}
+
+// ---- P5.5：文件治理与规格报表 ----
+
+export async function listDeliveryFiles(req: Request, res: Response, next: NextFunction) {
+  try {
+    res.json(await adminService.listDeliveryFiles(req.query as unknown as ListDeliveryFilesQuery))
+  } catch (err) { next(err) }
+}
+
+export async function deliveryFileGrants(req: Request, res: Response, next: NextFunction) {
+  try {
+    const fileId = req.params.id as unknown as number
+    res.json(await adminService.listDeliveryFileGrants(fileId, req.query as unknown as ListFileGrantsQuery))
+  } catch (err) { next(err) }
+}
+
+export async function offerReport(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { range } = req.query as unknown as OfferReportQuery
+    res.json(await adminService.getOfferReport(range))
   } catch (err) { next(err) }
 }

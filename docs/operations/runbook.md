@@ -1536,3 +1536,147 @@ If the issue is a missing `productTypes` / `orderStatuses` entry (e.g. a product
 - UI contract for Gemini: `docs/operations/m6-gemini-ui-contract.md`.
 - Privacy boundary rationale: §35.3 above + the A1 commit message on `integration/m6-rc`.
 - M5 deployment / rollback / smoke continues to apply unchanged (§§27-33). M6 does not require a separate rollback flow — a code revert + the M5 rollback workflow is sufficient because no destructive schema change was introduced (additive only: new tables for `OrderStatusEvent`, new columns on `Product` / `Order`).
+
+## 38. Administrator MFA and Device-session Operations (M3-ISH)
+
+This section applies to the administrator-MFA release. It is deliberately
+separate from ordinary password reset: there is no HTTP MFA reset, no
+administrator self-disable switch, and no procedure that reads or exports a
+TOTP seed or recovery-code hash.
+
+### 38.1 Preflight: encryption key and isolated verification
+
+`MFA_ENCRYPTION_KEY` is a secret-store value, not a frontend setting. It must
+be canonical standard base64 for exactly 32 random bytes. Every API instance in
+the same environment must receive the **same** value; a missing or invalid value
+makes production startup fail. Do not generate it into a terminal transcript or
+commit it to an env file.
+
+Before deployment, have the Security/Ops owner confirm the value exists in the
+environment secret store and recovery escrow, then validate the host env file
+without printing it:
+
+```bash
+cd /opt/monexus
+npm run prod:env -- --mode production --env-file /etc/monexus/backend.env
+```
+
+The preflight rejects a missing, non-canonical, or wrong-length MFA key. The
+committed template may be linted with `--allow-placeholders`; that mode is never
+a deploy approval.
+
+For repository validation, use only the dedicated disposable database and ports;
+never substitute the normal `verify:local` or default E2E command:
+
+```bash
+M3_ISH_DATABASE_URL='postgresql://<test-user>:<test-password>@<test-host>:5432/monexus_m3_ish_test?schema=public' \
+  npm run verify:m3-identity-security-hardening
+```
+
+The verifier refuses every database name except `monexus_m3_ish_test`, does not
+run Docker Compose or `migrate reset`, and uses backend `3103` / frontend `5178`.
+
+### 38.2 Release order and legacy administrator sessions
+
+1. Schedule a short admin maintenance window or use an atomic rollout. Do not
+   leave mixed API instances where only some know the MFA/session guard.
+2. Record a UTC cutover timestamp immediately **before** the first MFA-aware
+   instance may accept traffic. This is the `--before` value below.
+3. With the production host env loaded from the protected file, apply the
+   Prisma-generated migration normally. Do not handwrite SQL or client-side
+   UUID backfills: the migration's PostgreSQL default assigns every legacy
+   `RefreshToken` a family ID.
+4. Start/restart every API instance with the same validated
+   `MFA_ENCRYPTION_KEY`, then verify readiness.
+5. Run the deployment-only legacy-admin session revocation command using the
+   recorded cutover. It only affects active admin refresh rows created before
+   that boundary and reports a count; it never prints a refresh token.
+
+```bash
+cd /opt/monexus
+set -a; . /etc/monexus/backend.env; set +a
+
+npm --prefix server run db:migrate:deploy
+npm --prefix server run auth:revoke-legacy-admin-sessions -- \
+  --before=<UTC-cutover-ISO-8601>
+
+curl -fsS http://127.0.0.1:3000/api/health/ready
+```
+
+Afterward, an old administrator access token/refresh cookie must not regain
+admin access. A password login for an administrator without MFA returns 202
+enrollment pre-auth, never an admin session. Do not compensate for a failed
+rollout by disabling the MFA guard or restoring pre-MFA admin cookies.
+
+### 38.3 First administrator enrollment and device revoke smoke
+
+For each staging administrator (and a controlled production pilot):
+
+1. Sign in with email/password. Confirm the UI asks for MFA binding and that
+   no admin page is visible before a factor succeeds.
+2. Scan the TOTP QR code or enter the manual key into an approved authenticator.
+   The manual key is sensitive: do not place it in tickets, screenshots, logs,
+   password managers shared with others, or browser persistent storage.
+3. Submit the current six-digit code. Save the displayed recovery codes in the
+   administrator's approved recovery location; the display is one-time only.
+4. Sign out, sign in again with a TOTP code, and open the admin page.
+5. From Profile → 登录设备, sign in with a second test browser/device, choose
+   **退出其他设备**, confirm it, and verify the other device must sign in again.
+
+For an audit review, query only safe event metadata. Never select MFA seed,
+recovery-code hash, refresh token hash, raw IP, or raw User-Agent:
+
+```sql
+SELECT "createdAt", type, "sessionId", "detailSafe"
+FROM "SecurityEvent"
+WHERE "userId" = <admin-id>
+  AND type IN ('mfa_enrolled', 'mfa_login_succeeded', 'mfa_recovery_used', 'session_revoked')
+ORDER BY "createdAt" DESC
+LIMIT 50;
+```
+
+### 38.4 Lost authenticator and recovery-code break-glass
+
+This is a two-person, offline procedure. It is for an administrator who cannot
+use both their authenticator and all recovery codes; it is not a convenience
+reset or an alternative login path.
+
+1. Open an incident/change ticket with a controlled reference such as `OPS-123`.
+   The requester and a second Security/Ops approver independently confirm the
+   administrator identity, target user ID, reason, and ticket reference.
+2. On the approved release host, load the protected backend env and have the
+   second operator read back the target ID and case reference before execution.
+3. Run the **offline** command exactly once:
+
+   ```bash
+   cd /opt/monexus
+   set -a; . /etc/monexus/backend.env; set +a
+   npm --prefix server run auth:break-glass-reset -- \
+     --user-id=<admin-id> --case-ref=OPS-123
+   ```
+
+   It accepts only those two inputs. It calls one transaction that clears the
+   encrypted MFA seed and pending challenge seed, consumes recovery codes and
+   unconsumed challenges, increments `mfaVersion`, revokes every session, and
+   records `mfa_break_glass_reset` with the case reference. Its output is only
+   `userId`, `caseRef`, `revokedCount`, and `mfaVersion`.
+4. Confirm the corresponding safe audit record, then require the administrator
+   to complete fresh first-time MFA enrollment before admin access resumes:
+
+   ```sql
+   SELECT "createdAt", type, "detailSafe"
+   FROM "SecurityEvent"
+   WHERE "userId" = <admin-id> AND type = 'mfa_break_glass_reset'
+   ORDER BY "createdAt" DESC LIMIT 1;
+   ```
+
+5. Add the command result and the fresh enrollment confirmation to the incident
+   ticket. If the MFA encryption key itself is lost, do not rotate it in place;
+   follow `docs/operations/secrets-management.md` and perform controlled
+   per-admin recovery or an approved future keyring migration.
+
+Never implement this flow by calling an HTTP endpoint, manually changing MFA
+columns with SQL, deleting recovery-code hashes, copying a seed, exporting a
+token, or changing `MFA_ENCRYPTION_KEY` to a guessed replacement. Any such
+action breaks the atomic audit/revocation invariant and requires a security
+incident review.

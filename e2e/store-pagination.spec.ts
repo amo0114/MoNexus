@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { API_BASE, loginAs, SEED_ACCOUNTS } from './helpers'
+import { API_BASE, loginAs, loginAsApi, SEED_ACCOUNTS } from './helpers'
 
 const PAGE_SIZE = 60
 
@@ -16,11 +16,7 @@ test.beforeAll(async ({ request }) => {
   const missing = PAGE_SIZE + 1 - products.length
   if (missing <= 0) return
 
-  const loginRes = await request.post(`${API_BASE}/api/auth/login`, {
-    data: SEED_ACCOUNTS.admin,
-  })
-  expect(loginRes.ok()).toBe(true)
-  const { accessToken } = await loginRes.json()
+  const { accessToken } = await loginAsApi(request, SEED_ACCOUNTS.admin)
 
   for (let i = 0; i < missing; i++) {
     const createRes = await request.post(`${API_BASE}/api/admin/products`, {

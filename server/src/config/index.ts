@@ -33,6 +33,22 @@ const logLevelEnvSchema = z.preprocess(value => {
   return value
 }, z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'))
 
+/**
+ * MFA seeds are encrypted with AES-256-GCM. We deliberately accept only
+ * canonical RFC 4648 base64 so malformed environment values cannot silently
+ * decode to a shorter key via Node's permissive Buffer decoder.
+ */
+function parseMfaEncryptionKey(value: string | undefined): Buffer | undefined {
+  if (!value) return undefined
+
+  const canonicalBase64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/
+  if (!canonicalBase64.test(value)) return undefined
+
+  const key = Buffer.from(value, 'base64')
+  if (key.length !== 32 || key.toString('base64') !== value) return undefined
+  return key
+}
+
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().default(3000),
@@ -42,6 +58,7 @@ const envSchema = z.object({
   JWT_SECRET: z.string().min(32, 'JWT_SECRET must be at least 32 characters'),
   FRONTEND_ORIGIN: z.string().url(),
   COOKIE_SECURE: booleanEnvSchema.default(false),
+  MFA_ENCRYPTION_KEY: optionalStringEnvSchema,
   USER_STATUS_CACHE_TTL_SEC: z.coerce.number().int().min(0).default(60),
 
   // --- Global /api rate limit (requests per 15 min window per IP).
@@ -124,6 +141,29 @@ const envSchema = z.object({
   PORTABLE_BACKUP_WORK_DIR: z.string().min(1).default('/tmp/monexus-portable-backups'),
   PORTABLE_BACKUP_MAX_BYTES: z.coerce.number().int().positive().default(2 * 1024 * 1024 * 1024),
   PORTABLE_RESTORE_BOOTSTRAP_TOKEN: optionalStringEnvSchema,
+
+  // --- P7b 自动开通 webhook 外呼。
+  // 商家 webhook 签名密钥的静态加密密钥（AES-256-GCM，64 位 hex = 32 字节）。
+  // 生产必配；dev/test 缺省时由 JWT_SECRET 派生（webhookSecret.ts）。
+  WEBHOOK_SECRET_ENC_KEY: optionalStringEnvSchema,
+  // 测试逃生：放开 http 与私网目标（e2e stub 接收端跑在 127.0.0.1）。
+  // 生产环境为 true 时拒绝启动——这是 SSRF 防线的总开关。
+  AUTO_PROVISION_ALLOW_INSECURE_TARGETS: booleanEnvSchema.default(false),
+
+  // --- FakaBridge (Xboard subscription provision). Optional until offers use
+  // externalIntegration=faka_bridge. When any of URL/SECRET is set, both must
+  // be present. Production path has NO /api/v1 prefix.
+  FAKA_BRIDGE_URL: optionalUrlEnvSchema,
+  FAKA_BRIDGE_STATUS_URL: optionalUrlEnvSchema,
+  /** Optional; defaults to order-paid URL with /order-revoke suffix. */
+  FAKA_BRIDGE_REVOKE_URL: optionalUrlEnvSchema,
+  FAKA_BRIDGE_SECRET: optionalStringEnvSchema,
+  FAKA_BRIDGE_TIMEOUT_MS: z.coerce.number().int().positive().default(5_000),
+  FAKA_BRIDGE_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(10).default(3),
+  // User-facing panel URL in delivery content (not the plugin webhook base).
+  FAKA_BRIDGE_PANEL_URL: optionalUrlEnvSchema,
+  // Test-only escape hatch. Production boot refuses true.
+  FAKA_BRIDGE_ALLOW_INSECURE_TARGETS: booleanEnvSchema.default(false),
 })
 
 const parsed = envSchema.safeParse(process.env)
@@ -137,6 +177,17 @@ if (!parsed.success) {
 }
 
 const env = parsed.data
+const mfaEncryptionKey = parseMfaEncryptionKey(env.MFA_ENCRYPTION_KEY)
+
+if (env.MFA_ENCRYPTION_KEY && !mfaEncryptionKey) {
+  console.error('[Config] MFA_ENCRYPTION_KEY must be canonical base64 for exactly 32 bytes')
+  process.exit(1)
+}
+
+if (env.NODE_ENV === 'production' && !mfaEncryptionKey) {
+  console.error('[Config] MFA_ENCRYPTION_KEY is required in production and must be base64 for exactly 32 bytes')
+  process.exit(1)
+}
 
 if (env.NODE_ENV === 'production' && !env.COOKIE_SECURE) {
   console.error('[Config] COOKIE_SECURE must be true in production')
@@ -212,6 +263,61 @@ if (env.NODE_ENV === 'production' && hasSmtp && !smtpFrom) {
   process.exit(1)
 }
 
+// P7b 自动开通外呼守卫。密钥格式任何环境都校验（错格式加密即坏数据）；
+// 生产必配显式密钥（商家签名密钥静态加密不允许隐式派生），逃生开关生产拒启。
+if (env.WEBHOOK_SECRET_ENC_KEY && !/^[0-9a-fA-F]{64}$/.test(env.WEBHOOK_SECRET_ENC_KEY)) {
+  console.error('[Config] WEBHOOK_SECRET_ENC_KEY must be 64 hex characters (32 bytes)')
+  process.exit(1)
+}
+if (env.NODE_ENV === 'production') {
+  if (!env.WEBHOOK_SECRET_ENC_KEY) {
+    console.error('[Config] WEBHOOK_SECRET_ENC_KEY is required in production (merchant webhook secrets are encrypted at rest)')
+    process.exit(1)
+  }
+  if (env.AUTO_PROVISION_ALLOW_INSECURE_TARGETS) {
+    console.error('[Config] AUTO_PROVISION_ALLOW_INSECURE_TARGETS must not be enabled in production: it disables the SSRF protections on merchant webhook calls')
+    process.exit(1)
+  }
+}
+
+// FakaBridge: URL and SECRET are all-or-nothing. Status URL is optional.
+const fakaUrl = env.FAKA_BRIDGE_URL
+const fakaSecret = env.FAKA_BRIDGE_SECRET
+const fakaPartial = Boolean(fakaUrl) !== Boolean(fakaSecret)
+if (fakaPartial) {
+  console.error(
+    '[Config] FAKA_BRIDGE_URL and FAKA_BRIDGE_SECRET must both be set or both be unset'
+  )
+  process.exit(1)
+}
+if (env.NODE_ENV === 'production' && env.FAKA_BRIDGE_ALLOW_INSECURE_TARGETS) {
+  console.error(
+    '[Config] FAKA_BRIDGE_ALLOW_INSECURE_TARGETS must be false in production'
+  )
+  process.exit(1)
+}
+if (env.NODE_ENV === 'production') {
+  for (const [label, raw] of [
+    ['FAKA_BRIDGE_URL', fakaUrl],
+    ['FAKA_BRIDGE_STATUS_URL', env.FAKA_BRIDGE_STATUS_URL],
+    ['FAKA_BRIDGE_REVOKE_URL', env.FAKA_BRIDGE_REVOKE_URL],
+  ] as const) {
+    if (!raw) continue
+    try {
+      const u = new URL(raw)
+      if (u.protocol !== 'https:') {
+        console.error(`[Config] ${label} must use https in production`)
+        process.exit(1)
+      }
+    } catch {
+      console.error(`[Config] ${label} is not a valid URL`)
+      process.exit(1)
+    }
+  }
+}
+
+const fakaBridgeEnabled = Boolean(fakaUrl && fakaSecret)
+
 export const config = {
   nodeEnv: env.NODE_ENV,
   isProduction: env.NODE_ENV === 'production',
@@ -220,6 +326,7 @@ export const config = {
   jwtSecret: env.JWT_SECRET,
   frontendOrigin: env.FRONTEND_ORIGIN,
   cookieSecure: env.COOKIE_SECURE,
+  mfaEncryptionKey,
   userStatusCacheTtlSec: env.USER_STATUS_CACHE_TTL_SEC,
   apiRateLimitMax: env.API_RATE_LIMIT_MAX,
   trustProxy: env.TRUST_PROXY,
@@ -288,4 +395,30 @@ export const config = {
   portableRestoreBootstrapToken: env.PORTABLE_RESTORE_BOOTSTRAP_TOKEN,
   passwordResetTokenMaxAgeMs: 30 * 60 * 1000, // 30 min
   emailVerificationTokenMaxAgeMs: 24 * 60 * 60 * 1000, // 24h
+  // P7b 自动开通：null = 未显式配置（dev/test 由 JWT_SECRET 派生）。
+  webhookSecretEncKey: env.WEBHOOK_SECRET_ENC_KEY ?? null,
+  autoProvisionAllowInsecureTargets: env.AUTO_PROVISION_ALLOW_INSECURE_TARGETS,
+  fakaBridge: fakaBridgeEnabled
+    ? {
+        enabled: true as const,
+        url: fakaUrl!,
+        statusUrl: env.FAKA_BRIDGE_STATUS_URL,
+        revokeUrl: env.FAKA_BRIDGE_REVOKE_URL,
+        secret: fakaSecret!,
+        timeoutMs: env.FAKA_BRIDGE_TIMEOUT_MS,
+        maxAttempts: env.FAKA_BRIDGE_MAX_ATTEMPTS,
+        allowInsecureTargets: env.FAKA_BRIDGE_ALLOW_INSECURE_TARGETS,
+        panelUrl: env.FAKA_BRIDGE_PANEL_URL ?? 'https://v.uuwu.de',
+      }
+    : {
+        enabled: false as const,
+        url: undefined,
+        statusUrl: undefined,
+        revokeUrl: undefined,
+        secret: undefined,
+        timeoutMs: env.FAKA_BRIDGE_TIMEOUT_MS,
+        maxAttempts: env.FAKA_BRIDGE_MAX_ATTEMPTS,
+        allowInsecureTargets: env.FAKA_BRIDGE_ALLOW_INSECURE_TARGETS,
+        panelUrl: env.FAKA_BRIDGE_PANEL_URL ?? 'https://v.uuwu.de',
+      },
 }

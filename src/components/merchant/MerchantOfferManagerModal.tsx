@@ -8,6 +8,7 @@ import {
   updateMerchantOffer,
   deleteMerchantOffer,
   uploadDeliveryFile,
+  getMyWebhookConfig,
 } from '../../api/merchant'
 import type { MerchantProduct, Offer, OfferWriteRequest, DeliveryMode, StockMode, DeliveryField } from '../../types/merchant'
 import { useAppStore } from '../../stores/appStore'
@@ -41,8 +42,12 @@ type EditorForm = {
   fixedFileId: number | null
   fixedFileName: string
   fixedFileSize: number | null
+  /** P6a：订阅有效期(天),空字符串 = 永久。 */
+  validityDays: string
   /** P4b：交付字段模板;空数组 = 纯文本交付。 */
   deliveryFields: DeliveryField[]
+  /** P7b：是否走自动开通(仅 manual_service + 无交付模板 + 商家有 active webhook)。 */
+  autoProvision: boolean
 }
 
 const EMPTY_FORM: EditorForm = {
@@ -58,7 +63,9 @@ const EMPTY_FORM: EditorForm = {
   fixedFileId: null,
   fixedFileName: '',
   fixedFileSize: null,
+  validityDays: '',
   deliveryFields: [],
+  autoProvision: false,
 }
 
 function offerToForm(offer: Offer): EditorForm {
@@ -75,8 +82,10 @@ function offerToForm(offer: Offer): EditorForm {
     fixedFileId: offer.fixedFileId ?? null,
     fixedFileName: offer.fixedFile?.fileName ?? '',
     fixedFileSize: offer.fixedFile?.size ?? null,
+    validityDays: offer.validityDays != null ? String(offer.validityDays) : '',
     // 深拷贝：编辑不能改到列表里的对象
     deliveryFields: (offer.deliveryFields ?? []).map(f => ({ ...f })),
+    autoProvision: offer.autoProvision === true,
   }
 }
 
@@ -92,12 +101,20 @@ export default function MerchantOfferManagerModal({ isOpen, onClose, product, on
   const [editing, setEditing] = useState<'new' | number | null>(null)
   const [form, setForm] = useState<EditorForm>(EMPTY_FORM)
   const [deletingOffer, setDeletingOffer] = useState<Offer | null>(null)
+  // P7b：商家是否已配置 active webhook——决定自动开通开关是否可用。
+  const [hasWebhook, setHasWebhook] = useState(false)
 
   const load = useCallback(async () => {
     if (!product) return
     setLoading(true)
     try {
-      setOffers(await getMerchantOffers(product.id))
+      const [offerList] = await Promise.all([
+        getMerchantOffers(product.id),
+        getMyWebhookConfig()
+          .then((cfg) => setHasWebhook(cfg != null))
+          .catch(() => setHasWebhook(false)),
+      ])
+      setOffers(offerList)
     } catch (err: any) {
       showToast(err.response?.data?.error?.message || '获取规格失败', 'error')
     } finally {
@@ -125,6 +142,9 @@ export default function MerchantOfferManagerModal({ isOpen, onClose, product, on
   const isInstantInventory = form.deliveryMode === 'instant_inventory'
   const isFixed = form.deliveryMode === 'instant_fixed'
   const isFileForm = isFixed && form.fixedContentType === 'file'
+  // P7b：自动开通仅适用于人工服务且未启用交付字段模板的规格(与服务端 assertAutoProvisionAllowed 同规则)。
+  const isManualService = form.deliveryMode === 'manual_service'
+  const autoProvisionEligible = isManualService && form.deliveryFields.length === 0
 
   function validate(): string | null {
     if (!form.name.trim()) return '规格名称不能为空'
@@ -134,10 +154,17 @@ export default function MerchantOfferManagerModal({ isOpen, onClose, product, on
       const original = Number(form.originalPrice)
       if (!Number.isInteger(original) || original < price) return '原价不能低于售价'
     }
+    if (form.validityDays.trim() !== '') {
+      const days = Number(form.validityDays)
+      if (!Number.isInteger(days) || days < 1 || days > 3650) return '有效期必须是 1-3650 的整数天数，留空为永久'
+    }
     if (isFileForm && !form.fixedFileId) return '文件交付必须先上传交付文件'
     if (isFixed && !isFileForm && !form.fixedContent.trim()) return '固定内容交付必须填写交付内容'
     if (isFixed && form.fixedContentType === 'url' && !/^https?:\/\//i.test(form.fixedContent.trim())) {
       return '链接必须以 http(s):// 开头'
+    }
+    if (autoProvisionEligible && form.autoProvision && !hasWebhook) {
+      return '启用自动开通前，请先在「商家资料」页配置 Webhook'
     }
     if (!isInstantInventory && form.stockMode === 'limited' && editing === 'new') {
       const stock = Number(form.stock)
@@ -189,6 +216,8 @@ export default function MerchantOfferManagerModal({ isOpen, onClose, product, on
       status: form.status,
       deliveryMode: form.deliveryMode,
       stockMode: isInstantInventory ? 'limited' : form.stockMode,
+      // P6a：空 = 永久（显式 null 支持从有期限改回永久）
+      validityDays: form.validityDays.trim() === '' ? null : Number(form.validityDays),
       fixedContent: isFixed && !isFileForm ? form.fixedContent.trim() : null,
       fixedContentType: form.fixedContentType,
       // P5：file 形态以 fixedFileId 为真相源；非 file 显式清空。
@@ -202,6 +231,8 @@ export default function MerchantOfferManagerModal({ isOpen, onClose, product, on
             ...(f.placeholder?.trim() ? { placeholder: f.placeholder.trim() } : {}),
           }))
         : null,
+      // P7b：仅人工服务 + 无交付模板时保留开关值；其余形态强制 false。
+      autoProvision: autoProvisionEligible ? form.autoProvision : false,
     }
     if (!isInstantInventory && form.stockMode === 'limited' && form.stock.trim() !== '') {
       payload.stock = Number(form.stock)
@@ -314,6 +345,9 @@ export default function MerchantOfferManagerModal({ isOpen, onClose, product, on
                           {offer.status === 'inactive' && (
                             <span className="text-xs px-1.5 py-0.5 rounded bg-[var(--color-border)] text-[var(--color-text-muted)] font-medium">已下架</span>
                           )}
+                          {offer.autoProvision && (
+                            <span className="text-xs px-1.5 py-0.5 rounded bg-[var(--color-primary)]/10 text-[var(--color-primary)] font-medium" data-testid={`offer-auto-provision-badge-${offer.id}`}>自动开通</span>
+                          )}
                         </div>
                         <div className="text-xs text-[var(--color-text-muted)] mt-1">
                           {offer.price} 积分
@@ -322,6 +356,12 @@ export default function MerchantOfferManagerModal({ isOpen, onClose, product, on
                           {offer.deliveryMode === 'instant_inventory'
                             ? '库存由交付库存导入管理'
                             : offer.stockMode === 'unlimited' ? '不限量' : `名额 ${offer.stock}`}
+                          {offer.validityDays != null && (
+                            <>
+                              <span className="mx-2">·</span>
+                              有效期 {offer.validityDays} 天
+                            </>
+                          )}
                         </div>
                       </div>
                       <div className="flex items-center gap-1 shrink-0">
@@ -366,6 +406,11 @@ export default function MerchantOfferManagerModal({ isOpen, onClose, product, on
               <div>
                 <label className="block text-sm font-bold text-[var(--color-text)] mb-1.5">原价（可选）</label>
                 <input className="input font-mono" type="number" min={0} step={1} placeholder="划线价" value={form.originalPrice} onChange={(e) => setForm(f => ({ ...f, originalPrice: e.target.value }))} disabled={submitting} data-testid="offer-form-original-price" />
+              </div>
+              <div className="sm:col-span-2">
+                <label className="block text-sm font-bold text-[var(--color-text)] mb-1.5">有效期（天）</label>
+                <input className="input font-mono" type="number" min={1} max={3650} step={1} placeholder="留空为永久" value={form.validityDays} onChange={(e) => setForm(f => ({ ...f, validityDays: e.target.value }))} disabled={submitting} data-testid="offer-form-validity-days" />
+                <p className="mt-1.5 text-xs text-[var(--color-text-muted)]">留空为永久有效；改动仅影响新订单</p>
               </div>
               <div>
                 <label className="block text-sm font-bold text-[var(--color-text)] mb-1.5">交付方式</label>
@@ -520,6 +565,38 @@ export default function MerchantOfferManagerModal({ isOpen, onClose, product, on
                     >
                       + 添加交付字段
                     </button>
+                  )}
+                </div>
+              )}
+              {/* P7b：自动开通开关——仅人工服务且未启用交付字段模板时可用。 */}
+              {isManualService && (
+                <div className="sm:col-span-2 pt-2 border-t border-[var(--color-border)]" data-testid="offer-auto-provision">
+                  <label className={`flex items-start gap-2.5 ${autoProvisionEligible && hasWebhook ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'}`}>
+                    <input
+                      type="checkbox"
+                      className="mt-0.5"
+                      checked={form.autoProvision && autoProvisionEligible}
+                      disabled={submitting || !autoProvisionEligible || !hasWebhook}
+                      onChange={(e) => setForm(f => ({ ...f, autoProvision: e.target.checked }))}
+                      data-testid="offer-form-auto-provision"
+                    />
+                    <span className="text-sm">
+                      <span className="font-bold text-[var(--color-text)]">自动开通（Webhook 交付）</span>
+                      <span className="block text-xs text-[var(--color-text-muted)] mt-1 leading-relaxed">
+                        买家下单后，平台把订单与买家填写的表单答案推送到你配置的 Webhook，由你的服务返回内容自动交付。
+                        推送多次失败会自动转为人工交付并邮件通知你。
+                      </span>
+                    </span>
+                  </label>
+                  {!hasWebhook && (
+                    <p className="mt-2 text-xs text-[var(--color-warning)]" data-testid="offer-auto-provision-no-webhook">
+                      需先在「商家资料」页配置自动开通 Webhook 才能启用。
+                    </p>
+                  )}
+                  {hasWebhook && !autoProvisionEligible && (
+                    <p className="mt-2 text-xs text-[var(--color-text-muted)]">
+                      启用了交付字段模板的规格不支持自动开通，请先清空模板。
+                    </p>
                   )}
                 </div>
               )}

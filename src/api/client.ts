@@ -2,6 +2,28 @@ import axios from 'axios'
 import { useAuthStore } from '../stores/authStore'
 import { refreshAccessToken } from './authRefresh'
 
+declare module 'axios' {
+  interface AxiosRequestConfig {
+    /**
+     * Pre-authentication and credential checks must never spend a refresh
+     * cookie or replay themselves after their own business-level 401.
+     */
+    skipAuthRefresh?: boolean
+    _retry?: boolean
+  }
+}
+
+function authorizationHeader(headers: unknown): string | null {
+  if (!headers || typeof headers !== 'object') return null
+
+  const record = headers as { Authorization?: unknown; authorization?: unknown; get?: (name: string) => unknown }
+  const direct = record.Authorization ?? record.authorization
+  if (typeof direct === 'string') return direct
+
+  const fromAxiosHeaders = record.get?.('Authorization')
+  return typeof fromAxiosHeaders === 'string' ? fromAxiosHeaders : null
+}
+
 const api = axios.create({
   baseURL: '/api',
   timeout: 15000,
@@ -11,7 +33,7 @@ const api = axios.create({
 // 请求拦截 - 注入 Access Token
 api.interceptors.request.use((config) => {
   const token = useAuthStore.getState().accessToken
-  if (token) {
+  if (token && !authorizationHeader(config.headers)) {
     config.headers.Authorization = `Bearer ${token}`
   }
   return config
@@ -22,20 +44,31 @@ api.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config
-    // 业务型 401（结算二次验证）不是登录态失效：不触发续签、更不能自动重放
-    // 原请求——重放会把同一个错误密码再提交一次，导致防爆破计数翻倍。
+    // Credential / MFA factor failures are business errors, not expired
+    // sessions. They must not rotate a cookie or replay an attempted factor.
     const errorCode = error.response?.data?.error?.code
-    if (errorCode === 'VERIFICATION_REQUIRED' || errorCode === 'VERIFICATION_FAILED') {
+    if (
+      !originalRequest
+      || originalRequest.skipAuthRefresh
+      || errorCode === 'VERIFICATION_REQUIRED'
+      || errorCode === 'VERIFICATION_FAILED'
+      || errorCode === 'MFA_VERIFICATION_FAILED'
+    ) {
       return Promise.reject(error)
     }
-    if (error.response?.status === 401 && !originalRequest._retry) {
+
+    // Only a request that actually carried an access token is a session 401
+    // candidate. Public login/MFA calls opt out above and can never enter the
+    // refresh/replay path.
+    const authorization = authorizationHeader(originalRequest.headers)
+    const hasBearerAccessToken = typeof authorization === 'string' && authorization.startsWith('Bearer ')
+    if (error.response?.status === 401 && hasBearerAccessToken && !originalRequest._retry) {
       originalRequest._retry = true
 
       try {
         // Compare against the token this request actually carried. A delayed
         // 401 may arrive after another request has already refreshed the
         // store; passing the current token in that case would rotate again.
-        const authorization = originalRequest.headers?.Authorization
         const staleToken = typeof authorization === 'string' && authorization.startsWith('Bearer ')
           ? authorization.slice('Bearer '.length)
           : useAuthStore.getState().accessToken

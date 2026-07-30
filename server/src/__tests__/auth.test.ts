@@ -96,6 +96,7 @@ describe('POST /api/auth/refresh', () => {
   it('allows only one concurrent rotation and treats the other use as replay', async () => {
     const { user, password } = await createTestUser('refresh-concurrent@test.local', 'pass123')
     const session = await loginUser(user.email, password)
+    if (session.kind !== 'authenticated') throw new Error('Expected non-admin login session')
 
     const attempts = await Promise.allSettled([
       refreshAccessToken(session.refreshToken),

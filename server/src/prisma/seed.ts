@@ -1,8 +1,29 @@
 import 'dotenv/config'
 import { prisma } from '../lib/prisma.js'
+import { encryptMfaSecret } from '../modules/auth/mfa.js'
 import bcrypt from 'bcryptjs'
 
 const FORCE_RESET = process.argv.includes('--force-reset')
+const E2E_TOTP_FACTOR = /^[A-Z2-7]{32}$/
+
+function e2eAdminMfaFactor() {
+  const factor = process.env.E2E_ADMIN_MFA_TOTP_SECRET
+  if (!factor) return null
+
+  if (!FORCE_RESET || process.env.NODE_ENV !== 'test') {
+    throw new Error('E2E administrator MFA seed is only allowed in test mode')
+  }
+  let databaseUrl: URL
+  try {
+    databaseUrl = new URL(process.env.DATABASE_URL ?? '')
+  } catch {
+    throw new Error('E2E administrator MFA seed requires the dedicated test database')
+  }
+  if (databaseUrl.pathname !== '/monexus_test' || !E2E_TOTP_FACTOR.test(factor)) {
+    throw new Error('E2E administrator MFA seed configuration is invalid')
+  }
+  return factor
+}
 
 async function upsertUser(opts: {
   email: string
@@ -39,6 +60,8 @@ async function main() {
     console.log('  ⚠ --force-reset 模式：将重置所有用户密码')
   }
 
+  const e2eMfaFactor = e2eAdminMfaFactor()
+
   // 创建管理员
   const admin = await upsertUser({
     email: 'admin@moyuan.net',
@@ -46,6 +69,16 @@ async function main() {
     role: 'admin',
     inviteCode: 'ADMIN-MOYUAN',
   })
+  if (e2eMfaFactor) {
+    await prisma.user.update({
+      where: { id: admin.id },
+      data: {
+        mfaEnabled: true,
+        mfaSecretEncrypted: encryptMfaSecret(e2eMfaFactor),
+        mfaVersion: 0,
+      },
+    })
+  }
   await prisma.pointAccount.upsert({
     where: { userId: admin.id },
     update: { balance: 99999 },

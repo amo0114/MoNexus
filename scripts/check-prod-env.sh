@@ -193,6 +193,32 @@ require_int() {
   fi
 }
 
+require_canonical_base64_32() {
+  local key="$1"
+  local value
+  value="$(get "$key")"
+  require_value "$key"
+
+  if [[ -z "$value" ]]; then
+    return
+  fi
+  if [[ "$ALLOW_PLACEHOLDERS" == "true" ]] && is_placeholder_literal "$value"; then
+    return
+  fi
+
+  # Pipe the value rather than placing it on a child-process command line.
+  # The check enforces standard, canonical base64 and exactly 32 decoded bytes.
+  if ! printf '%s' "$value" | node -e '
+    const { readFileSync } = require("node:fs")
+    const raw = readFileSync(0, "utf8")
+    const validAlphabet = /^[A-Za-z0-9+/]+={0,2}$/.test(raw)
+    const decoded = validAlphabet ? Buffer.from(raw, "base64") : Buffer.alloc(0)
+    if (!validAlphabet || decoded.length !== 32 || decoded.toString("base64") !== raw) process.exit(1)
+  '; then
+    fail "$key must be canonical standard base64 for exactly 32 bytes"
+  fi
+}
+
 require_value POSTGRES_USER
 require_value POSTGRES_PASSWORD
 require_value POSTGRES_DB
@@ -206,6 +232,8 @@ if [[ ${#jwt_secret} -lt 32 ]]; then
     fail "JWT_SECRET must be at least 32 characters"
   fi
 fi
+
+require_canonical_base64_32 MFA_ENCRYPTION_KEY
 
 require_https_url FRONTEND_ORIGIN
 require_bool_true COOKIE_SECURE
@@ -265,6 +293,27 @@ if [[ -z "$(get SMTP_USER)" || -z "$(get SMTP_PASS)" ]]; then
   else
     warn "SMTP_USER or SMTP_PASS is empty; only acceptable for unauthenticated staging SMTP relays"
   fi
+fi
+
+# P7b auto-provision: merchant webhook secrets are encrypted at rest (AES-256-GCM).
+# Without the key the server cannot decrypt stored secrets to sign outbound calls;
+# the config layer already refuses to boot in production without it — mirror that here
+# so the failure surfaces before compose start.
+webhook_enc_key="$(get WEBHOOK_SECRET_ENC_KEY)"
+if [[ -n "$webhook_enc_key" ]]; then
+  if [[ ! "$webhook_enc_key" =~ ^[0-9a-fA-F]{64}$ ]]; then
+    fail "WEBHOOK_SECRET_ENC_KEY must be 64 hex characters (32 bytes) — generate with: openssl rand -hex 32"
+  fi
+elif [[ "$MODE" == "production" ]]; then
+  fail "WEBHOOK_SECRET_ENC_KEY is required in production (merchant webhook secrets are encrypted at rest)"
+fi
+
+# AUTO_PROVISION_ALLOW_INSECURE_TARGETS is a dev-only escape hatch that disables the
+# SSRF protections (https-only, IP pinning) on merchant webhook calls. It must never
+# be truthy in production — the config layer refuses to boot; fail loudly here too.
+allow_insecure="$(get AUTO_PROVISION_ALLOW_INSECURE_TARGETS)"
+if [[ "$MODE" == "production" && "$allow_insecure" == "true" ]]; then
+  fail "AUTO_PROVISION_ALLOW_INSECURE_TARGETS must not be true in production: it disables SSRF protections on merchant webhook calls"
 fi
 
 require_https_url SENTRY_DSN

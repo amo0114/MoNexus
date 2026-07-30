@@ -10,7 +10,7 @@ interface Props {
   isOpen: boolean
   onClose: () => void
   order: MerchantOrder | null
-  onSubmit: (payload: { deliveryContent?: string; structuredValues?: Record<string, string>; attachmentFileId?: number }) => Promise<void>
+  onSubmit: (payload: { deliveryContent?: string; structuredValues?: Record<string, string>; attachmentFileId?: number; publicNote?: string }) => Promise<void>
 }
 
 export default function MerchantDeliverDialog({ isOpen, onClose, order, onSubmit }: Props) {
@@ -22,6 +22,8 @@ export default function MerchantDeliverDialog({ isOpen, onClose, order, onSubmit
   // P5：交付附件（可与文本/结构化并存；纯文本订单允许仅附件交付）。
   const [attachment, setAttachment] = useState<{ id: number; fileName: string; size: number } | null>(null)
   const [uploadingAttachment, setUploadingAttachment] = useState(false)
+  // P6b：验收说明（deliver 的 publicNote，买家在订单详情可见），可选。
+  const [publicNote, setPublicNote] = useState('')
 
   // P4b：按订单的模板快照渲染（下单时冻结——商家改规格模板不影响本单契约）；
   // 无快照保持单文本框（纯文本交付，旧行为）。
@@ -33,6 +35,7 @@ export default function MerchantDeliverDialog({ isOpen, onClose, order, onSubmit
     setContent('')
     setStructuredValues({})
     setAttachment(null)
+    setPublicNote('')
     setDetail(null)
     if (order?.id == null) return
     // 买家购买前填写的信息只在订单详情接口返回（列表按敏感边界剥离），
@@ -66,6 +69,7 @@ export default function MerchantDeliverDialog({ isOpen, onClose, order, onSubmit
           ? { structuredValues: Object.fromEntries(template.map(f => [f.key, structuredValues[f.key].trim()])) }
           : content.trim() ? { deliveryContent: content.trim() } : {}),
         ...(attachment ? { attachmentFileId: attachment.id } : {}),
+        ...(publicNote.trim() ? { publicNote: publicNote.trim() } : {}),
       })
       onClose()
     } catch (e: any) {
@@ -179,6 +183,20 @@ export default function MerchantDeliverDialog({ isOpen, onClose, order, onSubmit
                 </button>
               )}
             </div>
+          </div>
+          {/* P6b：验收说明（可选）——随交付展示给买家，作为验收依据 */}
+          <div>
+            <label className="block text-xs font-bold text-[var(--color-text-muted)] mb-1.5 uppercase tracking-wider">
+              验收说明（买家可见，可选）
+            </label>
+            <textarea
+              className="input min-h-[72px] leading-relaxed resize-y"
+              placeholder="例如：已按需求完成交付，请查收并验收"
+              maxLength={200}
+              value={publicNote}
+              onChange={(e) => setPublicNote(e.target.value)}
+              data-testid="merchant-deliver-public-note"
+            />
           </div>
           <div className="flex justify-end gap-3">
             <button type="button" onClick={onClose} className="btn-secondary px-5 py-2 text-sm" disabled={loading}>

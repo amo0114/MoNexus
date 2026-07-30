@@ -25,6 +25,15 @@ export const systemConfigKeys = [
   'fileUrlTtlSeconds',
   'fileAccessWindowDays',
   'deliveryFileMaxMb',
+  // P5.5 低库存邮件告警重发冷却（0 = 进入低位只发一次，不重发）
+  'lowStockNotifyCooldownHours',
+  // P6a 订单计时配置化（原硬编码 7 天）
+  'autoCloseDays',
+  'fulfillmentSlaDays',
+  // P6a 订阅到期前提醒提前天数（0 = 关闭到期前提醒，仅到期时提醒）
+  'subscriptionRemindDays',
+  // P7b 自动开通外呼最大尝试次数（0 = 运维刹车：只建任务不外呼不转状态）
+  'autoProvisionMaxAttempts',
 ] as const
 
 export type SystemConfigKey = typeof systemConfigKeys[number]
@@ -66,6 +75,11 @@ export const systemConfigDefaults: Record<SystemConfigKey, number> = {
   fileUrlTtlSeconds: 300,
   fileAccessWindowDays: 30,
   deliveryFileMaxMb: 100,
+  lowStockNotifyCooldownHours: 24,
+  autoCloseDays: 7,
+  fulfillmentSlaDays: 7,
+  subscriptionRemindDays: 3,
+  autoProvisionMaxAttempts: 5,
 }
 
 export const systemConfigDescriptions: Record<SystemConfigKey, string> = {
@@ -87,6 +101,11 @@ export const systemConfigDescriptions: Record<SystemConfigKey, string> = {
   fileUrlTtlSeconds: '文件下载签名链接有效期',
   fileAccessWindowDays: '买家交付后下载窗口天数',
   deliveryFileMaxMb: '交付文件大小上限',
+  lowStockNotifyCooldownHours: '低库存邮件重发冷却时长',
+  autoCloseDays: '已交付订单自动确认关闭天数',
+  fulfillmentSlaDays: '人工服务履约时限天数',
+  subscriptionRemindDays: '订阅到期前提醒提前天数',
+  autoProvisionMaxAttempts: '自动开通外呼最大尝试次数',
 }
 
 /** 管理端配置项分组（中文），供配置页按组渲染。 */
@@ -109,6 +128,11 @@ export const systemConfigGroups: Record<SystemConfigKey, string> = {
   fileUrlTtlSeconds: '文件交付',
   fileAccessWindowDays: '文件交付',
   deliveryFileMaxMb: '文件交付',
+  lowStockNotifyCooldownHours: '库存',
+  autoCloseDays: '订单',
+  fulfillmentSlaDays: '订单',
+  subscriptionRemindDays: '订单',
+  autoProvisionMaxAttempts: '订单',
 }
 
 /** 可选单位标注。 */
@@ -131,6 +155,11 @@ export const systemConfigUnits: Partial<Record<SystemConfigKey, string>> = {
   fileUrlTtlSeconds: '秒',
   fileAccessWindowDays: '天',
   deliveryFileMaxMb: 'MB',
+  lowStockNotifyCooldownHours: '小时',
+  autoCloseDays: '天',
+  fulfillmentSlaDays: '天',
+  subscriptionRemindDays: '天',
+  autoProvisionMaxAttempts: '次',
 }
 
 const BONUS_BPS_HINT = '万分比，10000=100%；例如 500 表示额外 +5%'
@@ -152,6 +181,11 @@ export const systemConfigHints: Partial<Record<SystemConfigKey, string>> = {
   fileUrlTtlSeconds: '签名一经签出在有效期内无法撤销，建议保持短时；上限 3600',
   fileAccessWindowDays: '从交付时刻起算；0 表示不限窗口',
   deliveryFileMaxMb: '上限 100（与 Nginx 上传路由的 100MB 限制一致，提额需同步修改 Nginx）',
+  lowStockNotifyCooldownHours: '规格持续低库存时的邮件重发间隔；0 表示进入低位只发一次；上限 720',
+  autoCloseDays: '买家未确认时交付后自动关闭并结算的天数；1–90，对新一轮巡检生效',
+  fulfillmentSlaDays: '下单后商家须完成人工履约的天数；1–90，仅影响新订单',
+  subscriptionRemindDays: '到期前 N 天邮件提醒买家；0 = 关闭到期前提醒；上限 30',
+  autoProvisionMaxAttempts: '固定退避档 1m/5m/15m/1h/6h，上限 5；0 = 暂停外呼（只建任务，不转状态），已有任务恢复后按退避继续',
 }
 
 type ConfigClient = typeof prisma | Prisma.TransactionClient
@@ -293,6 +327,21 @@ export async function updateSystemConfig(
   // Nginx 与此处（见 nginx.conf 上传 location 的注释）。
   if (key === 'deliveryFileMaxMb' && (value < 1 || value > 100)) {
     throw badRequest('交付文件大小上限必须在 1–100 MB 之间（Nginx 上传路由限制为 100MB）')
+  }
+  // P5.5：冷却上限 30 天——更长等于事实上关闭重发，直接填 0 表达该意图。
+  if (key === 'lowStockNotifyCooldownHours' && value > 720) {
+    throw badRequest('低库存邮件重发冷却必须在 0–720 小时之间（0 = 不重发）')
+  }
+  // P6a：0/负值会立即关单或立即超时，超长等于关闭机制——都拒绝。
+  if ((key === 'autoCloseDays' || key === 'fulfillmentSlaDays') && (value < 1 || value > 90)) {
+    throw badRequest('订单计时配置必须在 1–90 天之间')
+  }
+  if (key === 'subscriptionRemindDays' && value > 30) {
+    throw badRequest('订阅到期提醒提前天数必须在 0–30 之间（0 = 关闭到期前提醒）')
+  }
+  // P7b：退避表只有五档，放开更大值只会让任务在最后一档上打转（硬验收 ⑥）。
+  if (key === 'autoProvisionMaxAttempts' && value > 5) {
+    throw badRequest('自动开通尝试次数必须在 0–5 之间（0 = 暂停外呼）')
   }
 
   return prisma.$transaction(async tx => {

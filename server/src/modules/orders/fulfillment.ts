@@ -40,7 +40,7 @@ const legalTransitions: Record<FulfillmentOrderStatus, FulfillmentOrderStatus[]>
 type OrderStatusEventWriter = Pick<Prisma.TransactionClient, 'orderStatusEvent'>
 type OrderStatusTransitionClient = Pick<
   Prisma.TransactionClient,
-  'order' | 'orderStatusEvent' | 'deliveryRecord'
+  'order' | 'orderStatusEvent' | 'deliveryRecord' | 'subscriptionReminder' | '$queryRaw'
 >
 
 export function isFulfillmentMode(mode: string): mode is FulfillmentMode {
@@ -160,6 +160,15 @@ export async function transitionOrderStatus(
   if (!updated) throw notFound('订单不存在')
 
   if (to === 'delivered') {
+    // P6a：人工/恢复交付按订单快照计算到期时刻（续费单顺延语义见
+    // resolveSubscriptionExpiresAt）；争议恢复重交付时已有记录仅在原
+    // expiresAt 为空时补算（不因重交付顺延订阅）。
+    const subscriptionExpiresAt = await resolveSubscriptionExpiresAt(
+      client,
+      updated,
+      updated.validityDaysSnapshot,
+      new Date()
+    )
     await client.deliveryRecord.upsert({
       where: { orderId: order.id },
       create: {
@@ -174,6 +183,7 @@ export async function transitionOrderStatus(
         status: 'delivered',
         publicNote: input.publicNote ?? null,
         deliveredAt: new Date(),
+        expiresAt: subscriptionExpiresAt,
       },
       update: {
         content: input.deliveryContent ?? undefined,
@@ -188,6 +198,29 @@ export async function transitionOrderStatus(
         deliveredAt: new Date(),
       },
     })
+    // 首次交付后 expiresAt 只写不改：重交付不得顺延到期（续费才顺延，T3）。
+    await client.deliveryRecord.updateMany({
+      where: { orderId: order.id, expiresAt: null },
+      data: { expiresAt: subscriptionExpiresAt },
+    })
+    // 复审 P1-2：争议重交付携带**新交付内容**且原订阅已过期时，按新交付
+    // 时刻重算——否则争议补救内容落地即被遮蔽/拒下载，买家须付费续费才
+    // 看得到补救。仅限"商家主动携带新内容 + 已过期"：resume-instant 不带
+    // 内容不重算；未过期的重交付不顺延（防中途重交付白嫖延长）。
+    const carriesNewPayload =
+      input.deliveryContent != null || input.deliveryStructuredContent != null || input.deliveryFileId != null
+    if (carriesNewPayload && subscriptionExpiresAt != null) {
+      const extended = await client.deliveryRecord.updateMany({
+        where: { orderId: order.id, expiresAt: { lt: new Date() } },
+        data: { expiresAt: subscriptionExpiresAt },
+      })
+      // 复审 P2-1：重算出新周期后必须复位提醒状态——lastStage='expired' 是
+      // 终态，留着它新周期的到期前/到期提醒永远不再发。删行即回到
+      // "无行 = 待发送"语义，新周期由 cron 照常两段式提醒。
+      if (extended.count > 0) {
+        await client.subscriptionReminder.deleteMany({ where: { orderId: order.id } })
+      }
+    }
   }
 
   await createOrderStatusEvent(client, {
@@ -205,4 +238,52 @@ export async function transitionOrderStatus(
     ...updated,
     status: normalizeOrderStatus(updated.status),
   }
+}
+
+/**
+ * P6a：按订阅时长快照计算到期时刻。null = 永久（返回 null）。
+ * 续费顺延（原单未过期时自原到期起算）由续费链路另行处理（T3）。
+ */
+export function computeSubscriptionExpiresAt(
+  validityDays: number | null | undefined,
+  deliveredAt: Date
+): Date | null {
+  if (validityDays == null || validityDays <= 0) return null
+  return new Date(deliveredAt.getTime() + validityDays * 24 * 60 * 60 * 1000)
+}
+
+/**
+ * P6a T3：交付时解析订阅到期时刻的单点实现（即时下单事务与人工交付共用，
+ * 两条路径的顺延语义必须一致）：
+ * - 非续费单，或原单到期时刻在交付时已过 → 自交付时刻起算（重算）；
+ * - 续费单且原单 expiresAt 仍在未来 → 在原到期时刻上顺延 validityDays 天，
+ *   买家提前续费不损失剩余时长。
+ * 复审 P1-2：顺延前先锁原单行并终检其状态——人工续费单在"待交付"期间
+ * 原单被退款的，交付时不得继承已退款原单的剩余有效期（自交付时刻重算）。
+ * FOR UPDATE 与退款路径的行更新互斥，避免"读到未退款、写后才退款"的窗口；
+ * 也与下单侧续费终检（P1-1）用同一把锁。
+ */
+export async function resolveSubscriptionExpiresAt(
+  client: Pick<Prisma.TransactionClient, 'order' | 'deliveryRecord' | '$queryRaw'>,
+  order: { renewalOfOrderId: number | null },
+  validityDays: number | null | undefined,
+  deliveredAt: Date
+): Promise<Date | null> {
+  if (validityDays == null || validityDays <= 0) return null
+  if (order.renewalOfOrderId != null) {
+    await client.$queryRaw`SELECT "id" FROM "Order" WHERE "id" = ${order.renewalOfOrderId} FOR UPDATE`
+    const original = await client.order.findUnique({
+      where: { id: order.renewalOfOrderId },
+      select: { status: true, delivery: { select: { expiresAt: true } } },
+    })
+    if (
+      original
+      && original.status !== 'refunded'
+      && original.delivery?.expiresAt
+      && original.delivery.expiresAt.getTime() > deliveredAt.getTime()
+    ) {
+      return new Date(original.delivery.expiresAt.getTime() + validityDays * 24 * 60 * 60 * 1000)
+    }
+  }
+  return computeSubscriptionExpiresAt(validityDays, deliveredAt)
 }

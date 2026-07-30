@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react'
-import { fetchSummary, fetchTimeseries, DashboardSummary, DashboardTimeseries } from '../../api/merchant/dashboard'
+import { fetchSummary, fetchTimeseries, fetchTopOffers, DashboardSummary, DashboardTimeseries, DashboardTopOffer } from '../../api/merchant/dashboard'
 import { useDashboardStore } from '../../stores/dashboard'
 import { useAppStore } from '../../stores/appStore'
 import SummaryCards from './dashboard/SummaryCards'
 import TrendChart from './dashboard/TrendChart'
 import TopProducts from './dashboard/TopProducts'
+import TopOffers from './dashboard/TopOffers'
 import StatusBreakdown from './dashboard/StatusBreakdown'
 import RangeFilter from './dashboard/RangeFilter'
 import { useNavigate } from 'react-router-dom'
@@ -19,6 +20,9 @@ export default function Dashboard() {
 
   const [timeseries, setTimeseries] = useState<DashboardTimeseries>()
   const [timeseriesLoading, setTimeseriesLoading] = useState(true)
+
+  const [topOffers, setTopOffers] = useState<DashboardTopOffer[]>([])
+  const [topOffersLoading, setTopOffersLoading] = useState(true)
 
   useEffect(() => {
     let mounted = true
@@ -52,6 +56,22 @@ export default function Dashboard() {
     return () => { mounted = false }
   }, [range])
 
+  useEffect(() => {
+    let mounted = true
+    setTopOffersLoading(true)
+    fetchTopOffers(range)
+      .then(data => {
+        if (mounted) setTopOffers(data.items)
+      })
+      .catch(e => {
+        useAppStore.getState().showToast('加载失败，请稍后重试', 'error')
+      })
+      .finally(() => {
+        if (mounted) setTopOffersLoading(false)
+      })
+    return () => { mounted = false }
+  }, [range])
+
   return (
     <div className="max-w-6xl mx-auto mt-4">
       <div className="flex items-center gap-4 mb-6">
@@ -75,6 +95,7 @@ export default function Dashboard() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <TopProducts data={timeseries?.top10 || []} loading={timeseriesLoading} />
+        <TopOffers data={topOffers} loading={topOffersLoading} />
         <StatusBreakdown data={timeseries?.statusBreakdown} loading={timeseriesLoading} />
       </div>
     </div>

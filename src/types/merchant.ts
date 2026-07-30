@@ -29,6 +29,8 @@ export interface Offer {
   fixedFile?: { fileName: string; size: number; status: string } | null
   /** P5：公开接口上 file 形态的文件大小(字节)。 */
   deliveryFileSize?: number | null
+  /** P6a：订阅有效期(天),null/缺省 = 永久;下单快照冻结,改动仅影响新订单。 */
+  validityDays?: number | null
   sales?: number
   sortOrder?: number
   /** 每商品恰有一条默认规格;商品级兼容路径(旧编辑/未指定规格的库存操作)落到它。 */
@@ -36,6 +38,18 @@ export interface Offer {
   createdAt?: string
   /** P4b：交付字段模板;空数组/缺省 = 纯文本交付。 */
   deliveryFields?: DeliveryField[] | null
+  /** P7b：本规格是否走自动开通。与 FakaBridge 互斥。 */
+  autoProvision?: boolean
+  /** FakaBridge：是否走外部开通。与 autoProvision 互斥。 */
+  provisionsExternal?: 'faka_bridge' | null
+  /** FakaBridge：Xboard 订阅人数容量快照（商品详情/结算预检）。 */
+  fakaCapacity?: {
+    remaining: number | null
+    capacityLimit: number | null
+    sellable: boolean
+    source: 'xboard' | 'unavailable'
+    reason?: string
+  } | null
 }
 
 /** P4b：交付字段模板项。模板公开(买家购前可见字段名),字段"值"是敏感数据。 */
@@ -66,10 +80,40 @@ export interface OfferWriteRequest {
   /** P5：file 形态挂载的交付文件;null 清空(配合切回 text/url)。 */
   fixedFileId?: number | null
   sortOrder?: number
+  /** P6a：订阅有效期(1-3650 天);null = 永久。 */
+  validityDays?: number | null
   /** P4b：交付字段模板;null 清空回纯文本交付。 */
   deliveryFields?: DeliveryField[] | null
+  /** P7b：是否走自动开通;服务端校验 manual_service + 无模板 + active webhook 配置,否则 422。 */
+  autoProvision?: boolean
   /** 仅更新时接受;true = 把默认转移到本规格(不能传 false 取消默认)。 */
   isDefault?: boolean
+}
+
+/**
+ * P7b：自动开通任务的安全投影(商家/管理端徽标 + 脱敏诊断码)。
+ * 内部字段(leaseToken/webhookConfigId/明文密钥)绝不透传。
+ * 状态:pending 开通中 / succeeded 已自动交付 / degraded 已降级人工 / cancelled 已取消。
+ */
+export interface ProvisionTaskSummary {
+  status: 'pending' | 'succeeded' | 'degraded' | 'cancelled' | null
+  attempts: number
+  /** 脱敏诊断码(dns_blocked / tls_error / http_5xx / config_revoked 等);绝非远端响应体。 */
+  lastError: string | null
+  lastHttpStatus: number | null
+  nextAttemptAt: string | null
+  merchantNotifiedAt: string | null
+  updatedAt: string | null
+}
+
+/**
+ * P7b：商家 webhook 配置。密钥加密存储,明文仅在创建/重置响应里出现一次
+ * (saveMyWebhookConfig 返回 secret),常规读取只出 secretLast4。
+ */
+export interface MerchantWebhookConfig {
+  url: string
+  secretLast4: string
+  createdAt: string
 }
 
 export interface ListEnvelope<T> {
@@ -147,10 +191,14 @@ export interface MerchantProduct {
 export interface PurchaseFormField {
   key: string
   label: string
-  type: 'text' | 'select'
+  type: 'text' | 'select' | 'date'
   required: boolean
   placeholder?: string
   options?: string[]
+  /** P6c：date 字段专属——最早可约（今天 + N 天，默认 1）。 */
+  minDaysAhead?: number
+  /** P6c：date 字段专属——最晚可约（今天 + N 天，默认 30）。 */
+  maxDaysAhead?: number
 }
 
 export interface MerchantOrder {
@@ -180,13 +228,17 @@ export interface MerchantOrder {
   } | null
   settlement?: Settlement | null
   availableActions?: string[]
-  statusEvents?: any[]
+  statusEvents?: import('./order').OrderStatusEvent[]
   holdingPoints?: number | null
   fulfillmentDeadline?: string | null
   slaExceeded?: boolean
+  /** P6c：预约日期（YYYY-MM-DD，来自 date 表单答案的投影）；null = 非预约单。 */
+  bookingDate?: string | null
   /** 仅订单详情接口返回；列表按敏感边界剥离。 */
   purchaseFormSnapshot?: Array<{ key: string; label: string; type: string }> | null
   purchaseFormAnswers?: Record<string, string> | null
+  /** P7b：自动开通任务状态(列表与详情均透出;null = 非自动开通单)。 */
+  provisionTask?: ProvisionTaskSummary | null
 }
 
 export interface Settlement {

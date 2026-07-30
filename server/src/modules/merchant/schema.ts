@@ -75,8 +75,23 @@ const merchantOfferFieldsSchema = z.object({
   // file 形态挂载的交付文件；null 清空（配合切回 text/url）。
   fixedFileId: z.number().int().positive().nullable().optional(),
   sortOrder: z.number().int().min(0).max(10_000).optional(),
+  // P6a：订阅有效期天数；null = 永久。上限 10 年防手滑。
+  validityDays: z.number().int().min(1).max(3650).nullable().optional(),
   // P4b：交付字段模板；null 清空回纯文本交付。
   deliveryFields: deliveryFieldsSchema.nullable().optional(),
+  // P7b：自动开通开关（仅 manual_service 且无模板且已有 active webhook 配置，
+  // 服务端校验）。与 FakaBridge 互斥（不可同时 true + faka_bridge）。
+  autoProvision: z.boolean().optional(),
+  // FakaBridge：null 关闭外部开通；'faka_bridge' 时 externalSku 必填且须 manual_service。
+  externalIntegration: z.enum(['faka_bridge']).nullable().optional(),
+  externalSku: z
+    .string()
+    .trim()
+    .min(1)
+    .max(64)
+    .regex(/^[a-zA-Z0-9]+(?:[-_][a-zA-Z0-9]+)*$/, 'externalSku 格式无效')
+    .nullable()
+    .optional(),
 }).strict()
 
 export const createMerchantOfferSchema = merchantOfferFieldsSchema
@@ -89,6 +104,9 @@ export const updateMerchantOfferSchema = merchantOfferFieldsSchema.partial().ext
 // 任一规格校验失败则整体回滚（不再有"商品建了、规格没建全"的中间态）。
 export const createMerchantProductSchema = merchantProductFieldsSchema.extend({
   primaryOfferName: z.string().trim().min(1, '默认规格名称不能为空').max(50).optional(),
+  // 复审 P2-2：默认规格的订阅有效期（落 Offer，不进 Product 列）；此前只有
+  // 附加规格能设，单 SKU 订阅商品被迫绕路"建附加规格再下架默认规格"。
+  validityDays: z.number().int().min(1).max(3650).nullable().optional(),
   offers: z.array(merchantOfferFieldsSchema).max(20, '规格数量超出上限').optional(),
 }).superRefine(validateProductCommercialFields)
 
@@ -156,6 +174,9 @@ export const merchantOrderListQuerySchema = z.object({
   productId: z.coerce.number().int().positive().optional(),
   dateFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, '必须是 ISO 日期').optional(),
   dateTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, '必须是 ISO 日期').optional(),
+  // P6c：sort=booking——预约日期升序（最近的预约排最前），无预约单排后；
+  // 不传则维持默认时间倒序。
+  sort: z.enum(['booking']).optional(),
   page: z.coerce.number().int().positive().default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
 }).strict()
@@ -176,6 +197,17 @@ export const deliverFulfillmentSchema = z.object({
   attachmentFileId: z.number().int().positive().optional(),
   publicNote: z.string().trim().max(1000).optional(),
   internalNote: z.string().trim().max(2000).optional(),
+}).strict()
+
+// P6b：履约进度更新——note 是买家可见的 publicNote（时间线渲染），必填。
+export const orderProgressSchema = z.object({
+  note: z.string().trim().min(1, '进度说明不能为空').max(500, '进度说明不能超过 500 字'),
+}).strict()
+
+// P7b：商家自动开通 webhook 配置。仅收 url——secret 服务端生成，明文一次性回。
+// URL 的完整 SSRF 校验在服务层 validateWebhookUrl（复用外呼同一校验路径）。
+export const merchantWebhookConfigSchema = z.object({
+  url: z.string().trim().min(1, 'webhook 地址不能为空').max(2048),
 }).strict()
 
 export const respondDisputeSchema = z.object({

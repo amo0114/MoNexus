@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { API_BASE, SEED_ACCOUNTS, loginAs } from './helpers'
+import { API_BASE, SEED_ACCOUNTS, loginAs, loginAsApi } from './helpers'
 
 /**
  * P3 高风险二次验证（spec: docs/specs/product-model-and-checkout.md）：
@@ -11,9 +11,7 @@ test.describe.serial('M-P3 checkout verification', () => {
   const THRESHOLD = 500
 
   async function adminSetThreshold(request: import('@playwright/test').APIRequestContext, value: number) {
-    const login = await request.post(`${API_BASE}/api/auth/login`, { data: SEED_ACCOUNTS.admin })
-    expect(login.ok()).toBeTruthy()
-    const token = (await login.json()).accessToken as string
+    const { accessToken: token } = await loginAsApi(request, SEED_ACCOUNTS.admin)
     const res = await request.put(`${API_BASE}/api/admin/config/checkoutVerifyAmountThreshold`, {
       headers: { Authorization: `Bearer ${token}` },
       data: { value },
