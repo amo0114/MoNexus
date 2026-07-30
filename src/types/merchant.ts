@@ -38,8 +38,18 @@ export interface Offer {
   createdAt?: string
   /** P4b：交付字段模板;空数组/缺省 = 纯文本交付。 */
   deliveryFields?: DeliveryField[] | null
-  /** P7b：本规格是否走自动开通(仅 manual_service + 无交付模板 + 商家有 active webhook 配置)。 */
+  /** P7b：本规格是否走自动开通。与 FakaBridge 互斥。 */
   autoProvision?: boolean
+  /** FakaBridge：是否走外部开通。与 autoProvision 互斥。 */
+  provisionsExternal?: 'faka_bridge' | null
+  /** FakaBridge：Xboard 订阅人数容量快照（商品详情/结算预检）。 */
+  fakaCapacity?: {
+    remaining: number | null
+    capacityLimit: number | null
+    sellable: boolean
+    source: 'xboard' | 'unavailable'
+    reason?: string
+  } | null
 }
 
 /** P4b：交付字段模板项。模板公开(买家购前可见字段名),字段"值"是敏感数据。 */

@@ -12,6 +12,7 @@ import {
   productImagesSchema,
   productNameSchema,
   productPriceSchema,
+  MAX_PRODUCT_PRICE,
   productRichDescriptionSchema,
   productStockModeSchema,
   productTypeSchema,
@@ -52,6 +53,16 @@ const adminProductFieldsSchema = z.object({
   stock: z.number().int().min(0).max(1_000_000).optional(),
   fixedContent: z.string().trim().min(1).max(5000).optional(),
   fixedContentType: productFixedContentTypeSchema.optional(),
+  // FakaBridge on the default Offer (platform self-operated products).
+  externalIntegration: z.enum(['faka_bridge']).nullable().optional(),
+  externalSku: z
+    .string()
+    .trim()
+    .min(1)
+    .max(64)
+    .regex(/^[a-zA-Z0-9]+(?:[-_][a-zA-Z0-9]+)*$/, 'externalSku 格式无效')
+    .nullable()
+    .optional(),
 })
 
 export const createProductSchema = adminProductFieldsSchema.superRefine(validateProductCommercialFields)
@@ -68,6 +79,70 @@ export const updateProductSchema = adminProductFieldsSchema.partial().extend({
 }).superRefine(validateProductCommercialFields)
 
 export type UpdateProductInput = z.infer<typeof updateProductSchema>
+
+// FakaBridge admin (requireAdmin only): set Xboard capacity_limit; null = unlimited.
+export const setFakaCapacitySchema = z.object({
+  offerId: z.number().int().positive().optional(),
+  capacityLimit: z.number().int().min(0).max(1_000_000).nullable(),
+}).strict()
+
+export type SetFakaCapacityInput = z.infer<typeof setFakaCapacitySchema>
+
+/** Align with Xboard period keys (half_yearly) and named SKUs (aster-basic-monthly). */
+const fakaSkuSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(64)
+  .regex(/^[a-zA-Z0-9]+(?:[-_][a-zA-Z0-9]+)*$/, 'externalSku 格式无效')
+
+const fakaPeriodOfferSchema = z.object({
+  period: z.string().trim().min(1).max(32),
+  sku: fakaSkuSchema.optional(),
+  offerName: z.string().trim().min(1).max(50).optional(),
+  // 与 productPriceSchema 对齐：传奇/高价年付可达数千万积分
+  pricePoints: z.number().int().positive().max(MAX_PRODUCT_PRICE),
+  /** 订阅有效期天数；null/省略 = 按 period 默认映射或永久 */
+  validityDays: z.number().int().min(1).max(3650).nullable().optional(),
+}).strict()
+
+/**
+ * 从 Xboard 套餐导入：
+ * - 推荐：`offers` 数组 → 一商品多规格（月/季/年…）
+ * - 兼容：单 period + pricePoints → 一商品一规格
+ */
+export const importFakaPlanSchema = z
+  .object({
+    planId: z.number().int().positive(),
+    productName: z.string().trim().min(1).max(100).optional(),
+    type: z.string().trim().min(1).max(30).optional(),
+    /** 多规格（推荐） */
+    offers: z.array(fakaPeriodOfferSchema).min(1).max(12).optional(),
+    /** 单规格兼容字段 */
+    period: z.string().trim().min(1).max(32).optional(),
+    sku: fakaSkuSchema.optional(),
+    offerName: z.string().trim().min(1).max(50).optional(),
+    pricePoints: z.number().int().positive().max(MAX_PRODUCT_PRICE).optional(),
+  })
+  .strict()
+  .superRefine((val, ctx) => {
+    if (val.offers && val.offers.length > 0) return
+    if (!val.period || val.pricePoints == null) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: '请提供 offers 多规格，或 period + pricePoints 单规格',
+      })
+    }
+  })
+
+export type ImportFakaPlanInput = z.infer<typeof importFakaPlanSchema>
+
+/** 给已有 Faka 商品追加周期规格（仍为一商品多规格） */
+export const addFakaOffersSchema = z.object({
+  offers: z.array(fakaPeriodOfferSchema).min(1).max(12),
+}).strict()
+
+export type AddFakaOffersInput = z.infer<typeof addFakaOffersSchema>
 
 // P4a F2：管理端导入可指定规格；缺省落到默认 Offer，默认非即时库存时
 // 回退到唯一的即时库存规格（多个则要求显式指定）。
@@ -137,6 +212,18 @@ export const listSettlementsQuerySchema = z.object({
 export const batchSettleSchema = z.object({
   settlementIds: z.array(z.number().int().positive()).min(1, '至少选择一条结算记录'),
 })
+
+export const listFakaTasksQuerySchema = z.object({
+  status: z
+    .enum(['pending', 'succeeded', 'failed', 'cancelled', 'needs_reconcile'])
+    .optional(),
+  revokeStatus: z
+    .enum(['pending', 'succeeded', 'failed', 'skipped'])
+    .optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+})
+export type ListFakaTasksQuery = z.infer<typeof listFakaTasksQuerySchema>
 
 export const resolveOrderSchema = z.object({
   result: z.enum(['refund', 'close']),

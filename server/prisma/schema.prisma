@@ -47,6 +47,46 @@ model User {
   mfaRecoveryCodes        MfaRecoveryCode[]
   authChallenges          AuthChallenge[]
   securityEvents          SecurityEvent[]
+  fakaProvisionEmailProofs FakaProvisionEmailProof[]
+  fakaProvisionEmailSendBudget FakaProvisionEmailSendBudget?
+}
+
+// FakaBridge 开通邮箱归属证明：防止填写他人 Xboard 邮箱后降配/续费他人套餐。
+// OTP 验证成功后与 MoNexus 账号永久绑定（verifiedAt 有值且 proofExpiresAt=null）；
+// 之后下单免再验证。proofExpiresAt 非空仅兼容旧 24h 窗口数据。
+// 不限制套餐升/降级方向。
+model FakaProvisionEmailProof {
+  id              Int       @id @default(autoincrement())
+  userId          Int
+  email           String // 规范化小写
+  codeHash        String?
+  codeExpiresAt   DateTime?
+  sendCount       Int       @default(0)
+  lastSentAt      DateTime?
+  confirmAttempts Int       @default(0)
+  verifiedAt      DateTime?
+  // null + verifiedAt = 永久绑定；非 null = 遗留限时证明
+  proofExpiresAt  DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, email])
+  @@index([userId, proofExpiresAt])
+}
+
+// Per-account outbound OTP budget across every target email.  A single proof
+// row cannot represent this safely because repeated sends to one address only
+// update that row; this dedicated row serializes all userId mail reservations.
+model FakaProvisionEmailSendBudget {
+  userId          Int      @id
+  windowStartedAt DateTime
+  sendCount       Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model Announcement {
@@ -393,10 +433,13 @@ model Offer {
   validityDays     Int?
   // P7b：自动开通——manual_service 的自动化首次交付（不是第四种交付模式）。
   // CHECK（迁移 20260728100000）：仅 manual_service 且无交付模板可为 true；
-  // 服务端校验为主，数据库兜底。进入 checkoutVersion canonical（true 才进，
-  // 存量摘要不变——买家预览后商家开开关必须 409 重新确认，表单答案外发
-  // 属于买家履约与隐私合同，硬验收 ④）。
+  // 服务端校验为主，数据库兜底。进入 checkoutVersion canonical（true 才进）。
   autoProvision    Boolean  @default(false)
+  // FakaBridge（Xboard 订阅开通）：null = 无外部集成。
+  // externalIntegration='faka_bridge' 时 externalSku 必填（PG CHECK + 服务端）。
+  // 与 autoProvision 互斥（迁移 CHECK + 服务端拒绝冲突组合）。
+  externalIntegration String? // null | faka_bridge
+  externalSku         String? // e.g. aster-basic-monthly — Xboard plugin SKU_MAPPING
   createdAt        DateTime @default(now())
 
   product   Product         @relation(fields: [productId], references: [id])
@@ -407,6 +450,7 @@ model Offer {
   fixedFile DeliveryFile?   @relation("OfferFixedFile", fields: [fixedFileId], references: [id], onDelete: Restrict)
 
   @@index([productId, status, sortOrder])
+  @@index([externalIntegration, externalSku])
 }
 
 model InventoryLog {
@@ -598,7 +642,8 @@ model Order {
   statusEvents OrderStatusEvent[]
   inventoryLogs InventoryLog[]
   fileGrants   FileGrantLog[]
-  provisionTask ProvisionTask?
+  provisionTask  ProvisionTask?
+  fakaBridgeTask FakaBridgeTask?
 
   renewalOf Order?  @relation("OrderRenewal", fields: [renewalOfOrderId], references: [id], onDelete: Restrict)
   renewals  Order[] @relation("OrderRenewal")
@@ -611,6 +656,49 @@ model Order {
   @@index([createdAt])
   @@index([renewalOfOrderId])
   @@index([merchantId, bookingDate])
+}
+
+// FakaBridge outbox：下单事务内创建，事务外 HTTP 调用 Xboard 插件。
+// 协议与商家 autoProvision 不同（body HMAC + order_no/email/sku），独立表。
+// status: pending | succeeded | failed | cancelled | needs_reconcile
+model FakaBridgeTask {
+  id             Int       @id @default(autoincrement())
+  orderId        Int       @unique
+  // pending | succeeded | failed | cancelled | needs_reconcile
+  status         String    @default("pending")
+  // Refund requested while claim/HTTP in flight — worker must not deliver; revoke if opened.
+  cancelRequested Boolean  @default(false)
+  attempts       Int       @default(0)
+  maxAttempts    Int       @default(3)
+  nextAttemptAt  DateTime  @default(now())
+  leaseUntil     DateTime?
+  leaseToken     String?
+  // 脱敏诊断码（FAKA_*），禁止落远端响应体 / PII 以外快照。
+  lastError      String?
+  xboardTradeNo  String?
+  // 幂等键，稳定为 MN-{orderId}；重试不变。
+  requestOrderNo String
+  // 创建时冻结，避免用户改邮箱 / 商家改 SKU 后重试语义漂移。
+  emailSnapshot  String
+  skuSnapshot    String
+  periodSnapshot String    @default("monthly")
+  createdAt      DateTime  @default(now())
+  completedAt    DateTime?
+  // null | pending | succeeded | failed | skipped — 退款后撤 Xboard 订阅
+  revokeStatus   String?
+  revokeAttempts Int       @default(0)
+  revokedAt      DateTime?
+  lastRevokeError String?
+  // 对账备注（半成功收敛 / 人工动作）
+  reconcileNote  String?
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Restrict)
+
+  @@index([status, nextAttemptAt])
+  @@index([requestOrderNo])
+  @@index([xboardTradeNo])
+  @@index([revokeStatus])
+  @@index([status, completedAt])
 }
 
 model DeliveryRecord {

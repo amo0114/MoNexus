@@ -25,6 +25,13 @@ interface Product {
   isHot: boolean
   images?: string[]
   merchant?: { id: number; name: string } | null
+  /** FakaBridge：Xboard 剩余名额（列表与详情同源）。 */
+  fakaCapacity?: {
+    remaining: number | null
+    capacityLimit: number | null
+    sellable: boolean
+    source: 'xboard' | 'unavailable'
+  } | null
 }
 
 interface ProductListResponse {
@@ -67,7 +74,23 @@ function ProductCard({
   product: Product
   onOpen: (product: Product) => void
 }) {
-  const isSoldOut = product.stockMode !== 'unlimited' && product.stock === 0
+  const faka = product.fakaCapacity
+  const isSoldOut =
+    faka?.source === 'xboard'
+      ? faka.sellable === false || (faka.remaining != null && faka.remaining <= 0)
+      : product.stockMode !== 'unlimited' && product.stock === 0
+  const stockTitle = faka?.source === 'xboard' ? '剩余名额' : '库存'
+  const stockLabel =
+    faka?.source === 'xboard'
+      ? faka.remaining == null
+        ? '不限'
+        : faka.capacityLimit != null
+          ? `${faka.remaining}/${faka.capacityLimit}`
+          : String(faka.remaining)
+      : product.stockMode === 'unlimited'
+        ? '不限'
+        : String(product.stock)
+
   return (
     <div
       key={product.id}
@@ -149,7 +172,9 @@ function ProductCard({
               <span>暂无评分</span>
             )}
             <span>已售 {product.sales}</span>
-            <span>库存 {product.stockMode === 'unlimited' ? '不限' : product.stock}</span>
+            <span data-testid={`store-stock-${product.id}`}>
+              {stockTitle} {stockLabel}
+            </span>
           </div>
         </div>
       </div>

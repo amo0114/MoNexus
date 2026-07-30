@@ -11,6 +11,7 @@ import { startSubscriptionRemindCron, stopSubscriptionRemindCron } from './lib/s
 import { startSlaRemindCron, stopSlaRemindCron } from './lib/slaRemind.js'
 import { startBookingRemindCron, stopBookingRemindCron } from './lib/bookingRemind.js'
 import { startProvisionCron, stopProvisionCron } from './modules/orders/provisionCron.js'
+import { startFakaBridgeCron, stopFakaBridgeCron } from './lib/fakaBridge/index.js'
 
 const server = app.listen(config.port, () => {
   logger.info(`MoNexus API running at http://localhost:${config.port}`)
@@ -21,6 +22,7 @@ const server = app.listen(config.port, () => {
   startSlaRemindCron()
   startBookingRemindCron()
   startProvisionCron()
+  startFakaBridgeCron()
 })
 
 let shuttingDown = false
@@ -43,12 +45,13 @@ async function shutdown(signal: NodeJS.Signals) {
       await quitRedis()
       clearCacheProcessState()
       stopOrderCron()
-  stopFileCleanupCron()
-  stopLowStockNotifyCron()
-  stopSubscriptionRemindCron()
-  stopSlaRemindCron()
-  stopBookingRemindCron()
-  stopProvisionCron()
+      stopFileCleanupCron()
+      stopLowStockNotifyCron()
+      stopSubscriptionRemindCron()
+      stopSlaRemindCron()
+      stopBookingRemindCron()
+      stopProvisionCron()
+      stopFakaBridgeCron()
       await prisma.$disconnect()
       clearTimeout(forceExit)
       logger.info({ signal }, 'shutdown completed')

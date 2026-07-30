@@ -97,6 +97,92 @@ export async function products(_req: Request, res: Response, next: NextFunction)
   try { res.json(await adminService.listAdminProducts()) } catch (err) { next(err) }
 }
 
+export async function deleteProduct(req: Request, res: Response, next: NextFunction) {
+  try {
+    const productId = req.params.id as unknown as number
+    res.json(await adminService.deleteAdminProduct(req.user!.userId, productId))
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function setFakaCapacity(req: Request, res: Response, next: NextFunction) {
+  try {
+    const productId = req.params.id as unknown as number
+    res.json(
+      await adminService.setAdminFakaCapacity(req.user!.userId, productId, {
+        offerId: req.body.offerId,
+        capacityLimit: req.body.capacityLimit,
+      })
+    )
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function fakaCatalog(_req: Request, res: Response, next: NextFunction) {
+  try {
+    res.json(await adminService.listAdminFakaCatalog())
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function importFakaPlan(req: Request, res: Response, next: NextFunction) {
+  try {
+    res.status(201).json(await adminService.importAdminFakaPlan(req.user!.userId, req.body))
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function addFakaOffers(req: Request, res: Response, next: NextFunction) {
+  try {
+    const productId = req.params.id as unknown as number
+    res.status(201).json(
+      await adminService.addAdminFakaOffers(req.user!.userId, productId, {
+        offers: req.body.offers,
+      })
+    )
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function listFakaTasks(req: Request, res: Response, next: NextFunction) {
+  try {
+    res.json(await adminService.listFakaBridgeTasks(req.query as any))
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function fakaTaskStats(_req: Request, res: Response, next: NextFunction) {
+  try {
+    res.json(await adminService.getFakaBridgeTaskStats())
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function retryFakaTask(req: Request, res: Response, next: NextFunction) {
+  try {
+    const taskId = req.params.id as unknown as number
+    res.json(await adminService.retryFakaBridgeTask(req.user!.userId, taskId))
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function forceFakaRevoke(req: Request, res: Response, next: NextFunction) {
+  try {
+    const taskId = req.params.id as unknown as number
+    res.json(await adminService.forceFakaBridgeRevoke(req.user!.userId, taskId))
+  } catch (err) {
+    next(err)
+  }
+}
+
 // ---- Merchants ----
 
 export async function listMerchants(req: Request, res: Response, next: NextFunction) {

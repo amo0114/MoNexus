@@ -59,6 +59,8 @@ export type ErrorCode =
   // autoProvision 但商家已无 active 配置）。语义同 CHECKOUT_CHANGED——
   // 整单安全失败让买家重新确认，绝不静默转普通人工单（硬验收 ⑤）。
   | 'AUTO_PROVISION_UNAVAILABLE'
+  // FakaBridge：开通邮箱未完成归属验证（防冒用他人 Xboard 账号）。
+  | 'PROVISION_EMAIL_UNVERIFIED'
 
 export interface ErrorDetail {
   field: string
@@ -120,4 +122,14 @@ export function mfaRequired(message = '管理员需要完成多因素验证') {
 
 export function sessionRevoked(message = '登录会话已失效，请重新登录') {
   return new HttpError(401, 'SESSION_REVOKED', message)
+}
+
+export function tooManyRequests(message = '请求过于频繁，请稍后再试') {
+  return new HttpError(429, 'RATE_LIMITED', message)
+}
+
+export function provisionEmailUnverified(
+  message = '请先完成 Xboard 开通邮箱验证'
+) {
+  return new HttpError(400, 'PROVISION_EMAIL_UNVERIFIED', message)
 }

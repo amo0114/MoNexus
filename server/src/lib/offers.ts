@@ -18,6 +18,8 @@ export type OfferCommercialFields = {
   fixedContentType?: string
   // 复审 P2-2：创建路径也能给默认规格设订阅有效期（此前只有附加规格有入口）。
   validityDays?: number | null
+  externalIntegration?: string | null
+  externalSku?: string | null
 }
 
 export const DEFAULT_OFFER_NAME = '默认规格'
@@ -45,6 +47,8 @@ export async function createDefaultOffer(
       fixedContent: fields.fixedContent ?? null,
       fixedContentType: fields.fixedContentType ?? 'text',
       validityDays: fields.validityDays ?? null,
+      externalIntegration: fields.externalIntegration ?? null,
+      externalSku: fields.externalSku ?? null,
     },
   })
 }
@@ -155,6 +159,14 @@ export function computeOfferCheckoutVersion(offer: Offer): string {
     // 商家 webhook）。true 才进 canonical——存量摘要字节不变；买家预览后
     // 商家开/关开关都会改变摘要 → 409 强制重新确认（硬验收 ④）。
     ...(offer.autoProvision ? { autoProvision: true } : {}),
+    // FakaBridge：改集成开关或 externalSku = 履约合同变化（会外呼开通订阅）。
+    // null 不进 canonical，存量无集成规格摘要字节不变。
+    ...((offer as { externalIntegration?: string | null }).externalIntegration != null
+      ? {
+          externalIntegration: (offer as { externalIntegration?: string | null }).externalIntegration,
+          externalSku: (offer as { externalSku?: string | null }).externalSku ?? null,
+        }
+      : {}),
   }
   return createHmac('sha256', config.jwtSecret).update(JSON.stringify(canonical)).digest('hex').slice(0, 16)
 }
@@ -221,9 +233,11 @@ export function serializePublicOffer(offer: Offer & { fixedFile?: { size: number
     fixedContentType: offer.fixedContentType,
     // P6a：购前可见的订阅时长（null = 永久，前端不渲染徽标）。
     validityDays: offer.validityDays,
-    // P7b：购前披露——开启表示"购买前表单答案将发送至商家的自动开通服务"
-    //（隐私合同的一部分，前端据此渲染披露文案，硬验收 ⑤）。
+    // P7b：购前披露——开启表示"购买前表单答案将发送至商家的自动开通服务"。
     autoProvision: offer.autoProvision,
+    // FakaBridge：仅暴露是否外部开通（不公开 internal SKU 映射细节）。
+    provisionsExternal:
+      offer.externalIntegration === 'faka_bridge' ? ('faka_bridge' as const) : null,
     // P4b：买家购前可见将获得哪些字段；敏感的是字段"值"，不在此处。
     deliveryFields: parseStoredDeliveryFields(offer.deliveryFields),
     ...(offer.fixedContentType === 'file'

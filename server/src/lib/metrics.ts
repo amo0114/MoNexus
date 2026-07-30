@@ -115,3 +115,46 @@ export const redisStatus = new client.Gauge({
   labelNames: ['status'] as const,
   registers: [registry],
 })
+
+// --- FakaBridge (Xboard provision) ---
+
+export const fakaProvisionTotal = new client.Counter({
+  name: 'monexus_faka_provision_total',
+  help: 'FakaBridge provision outcomes',
+  labelNames: ['outcome'] as const, // succeeded | failed | retry_scheduled | skipped
+  registers: [registry],
+})
+
+export const fakaRevokeTotal = new client.Counter({
+  name: 'monexus_faka_revoke_total',
+  help: 'FakaBridge revoke outcomes after refund',
+  labelNames: ['outcome'] as const, // succeeded | failed | skipped
+  registers: [registry],
+})
+
+export const fakaReconcileTotal = new client.Counter({
+  name: 'monexus_faka_reconcile_total',
+  help: 'FakaBridge reconcile actions',
+  labelNames: ['action'] as const,
+  registers: [registry],
+})
+
+export const fakaCapacityProbeTotal = new client.Counter({
+  name: 'monexus_faka_capacity_probe_total',
+  help: 'Xboard capacity precheck results',
+  labelNames: ['source'] as const, // xboard | unavailable
+  registers: [registry],
+})
+
+export const fakaTasksGauge = new client.Gauge({
+  name: 'monexus_faka_tasks',
+  help: 'Current FakaBridgeTask counts by status (polled by cron)',
+  labelNames: ['status'] as const,
+  registers: [registry],
+})
+
+export const fakaRevokePendingGauge = new client.Gauge({
+  name: 'monexus_faka_revoke_pending',
+  help: 'FakaBridge tasks waiting for Xboard revoke',
+  registers: [registry],
+})

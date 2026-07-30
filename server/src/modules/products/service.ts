@@ -5,6 +5,12 @@ import { wrapCache } from '../../lib/cache.js'
 import { badRequest, HttpError, notFound } from '../../lib/httpError.js'
 import { serializePublicOffer } from '../../lib/offers.js'
 import {
+  fetchFakaCapacityForSku,
+  getCachedFakaCapacityByPlanId,
+  rememberFakaCapacityPlanSnapshot,
+  type FakaCapacitySnapshot,
+} from '../../lib/fakaBridge/index.js'
+import {
   buildProductDetailCacheKey,
   buildProductListCacheKey,
 } from './cache.js'
@@ -45,9 +51,17 @@ const productListSelect = {
   merchant: { select: { id: true, name: true } },
   // P4a：公开可售状态从 active 规格集合推导，不再信任 Product 投影——
   // stockMode 投影取自默认规格（可能已下架），混合规格商品会误报售罄/不限。
+  // Faka：列表页也要 external* 以投影 Xboard 剩余名额。
   offers: {
     where: { status: 'active' },
-    select: { id: true, deliveryMode: true, stockMode: true, stock: true },
+    select: {
+      id: true,
+      deliveryMode: true,
+      stockMode: true,
+      stock: true,
+      externalIntegration: true,
+      externalSku: true,
+    },
   },
 } satisfies Prisma.ProductSelect
 
@@ -139,33 +153,215 @@ async function countAvailableByOffer(offers: AvailabilityOffer[]): Promise<Map<n
 
 function serializePublicProductListItem(
   product: ProductListItem,
-  offerAvailableCounts: Map<number, number>
+  offerAvailableCounts: Map<number, number>,
+  fakaBySku: Map<string, FakaCapacitySnapshot> = new Map()
 ) {
   const { _count, offers, ...publicProduct } = product
+  const localAvailability = computePublicAvailability(product, offers, offerAvailableCounts)
+
+  const fakaCaps: FakaCapacitySnapshot[] = []
+  for (const offer of offers) {
+    const integration = (offer as { externalIntegration?: string | null }).externalIntegration
+    const sku = (offer as { externalSku?: string | null }).externalSku
+    if (integration === 'faka_bridge' && sku) {
+      const cap = fakaBySku.get(sku.trim().toLowerCase())
+      if (cap) fakaCaps.push(cap)
+    }
+  }
+  const fakaAvailability = projectFakaAvailability(fakaCaps)
+  // 商品级容量摘要：多周期共用同一 plan 名额，取代表快照（非 null 以便卡片显示「剩余名额」）。
+  const fakaCapacityRaw = pickProductFakaCapacity(fakaCaps)
+  const fakaCapacity = fakaCapacityRaw ? toPublicFakaCapacity(fakaCapacityRaw) : null
+
   return {
     ...publicProduct,
-    // 可售状态由 active 规格推导；列表载荷保持精简，不携带 offers 数组。
-    ...computePublicAvailability(product, offers, offerAvailableCounts),
+    // 可售状态：Faka 用 Xboard 名额，否则本地规格推导。列表不携带 offers 数组。
+    ...(fakaAvailability ?? localAvailability),
+    fakaCapacity,
     ratingAvg: Number(product.ratingAvg),
   }
 }
 
+/**
+ * 本页去重 SKU 后拉 capacity。
+ * plan-{id}-* 同 plan 只探测一次；命名 SKU 并行探测，成功后写入 plan 缓存。
+ */
+async function loadFakaCapacityBySku(
+  offers: Array<{ externalIntegration?: string | null; externalSku?: string | null }>
+): Promise<Map<string, FakaCapacitySnapshot>> {
+  const skus = [
+    ...new Set(
+      offers
+        .filter(o => o.externalIntegration === 'faka_bridge' && o.externalSku)
+        .map(o => String(o.externalSku).trim().toLowerCase())
+    ),
+  ]
+  const map = new Map<string, FakaCapacitySnapshot>()
+  if (skus.length === 0) return map
+
+  const primary: string[] = []
+  const deferredPlanSkus: string[] = []
+  const seenPlanIds = new Set<number>()
+  for (const sku of skus) {
+    const m = sku.match(/^plan-(\d+)-/)
+    if (m) {
+      const planId = Number(m[1])
+      if (seenPlanIds.has(planId)) {
+        deferredPlanSkus.push(sku)
+        continue
+      }
+      seenPlanIds.add(planId)
+    }
+    primary.push(sku)
+  }
+
+  await Promise.all(
+    primary.map(async sku => {
+      const cap = await fetchFakaCapacityForSku(sku)
+      map.set(sku, cap)
+      if (cap.source === 'xboard' && cap.planId != null) {
+        rememberFakaCapacityPlanSnapshot(cap)
+      }
+    })
+  )
+
+  // Fill plan-* siblings from plan cache (no extra HTTP)
+  for (const sku of deferredPlanSkus) {
+    const m = sku.match(/^plan-(\d+)-/)
+    const planId = m ? Number(m[1]) : null
+    const cached = planId != null ? getCachedFakaCapacityByPlanId(planId) : null
+    if (cached) {
+      map.set(sku, { ...cached, sku })
+    } else {
+      map.set(sku, await fetchFakaCapacityForSku(sku))
+    }
+  }
+
+  // Named SKUs sharing a planId: if one probe failed (unavailable) but a sibling
+  // succeeded for same plan, heal via plan cache.
+  for (const sku of skus) {
+    const cur = map.get(sku)
+    if (!cur || cur.source === 'xboard') continue
+    // Try plan alias form
+    const m = sku.match(/^plan-(\d+)-/)
+    if (m) {
+      const cached = getCachedFakaCapacityByPlanId(Number(m[1]))
+      if (cached) map.set(sku, { ...cached, sku })
+    }
+  }
+
+  // Second pass: if any named SKU got planId, backfill other unavailable named
+  // SKUs that we cannot map — skip (would need static SKU map).
+
+  return map
+}
+
+/**
+ * Xboard capacity_limit 按 plan 共享：月付/季付/…/流量包/重置包是同一 plan 的不同周期，
+ * remaining 相同，绝不能按规格数累加（否则 2 名额 × 8 周期 = 库存 16）。
+ * 多 plan 商品（极少见）再对「去重后的 plan」求和。
+ */
+function dedupeFakaCapsByPlan(caps: FakaCapacitySnapshot[]): FakaCapacitySnapshot[] {
+  const byKey = new Map<string, FakaCapacitySnapshot>()
+  for (const c of caps) {
+    if (c.source !== 'xboard') continue
+    const key = c.planId != null ? `plan:${c.planId}` : `sku:${c.sku}`
+    const prev = byKey.get(key)
+    if (!prev) {
+      byKey.set(key, c)
+      continue
+    }
+    // 同 plan 多 SKU：保留剩余更少的（更保守）；任一为不限则视为不限
+    if (prev.remaining === null || c.remaining === null) {
+      byKey.set(key, prev.remaining === null ? prev : c)
+      continue
+    }
+    if ((c.remaining ?? 0) < (prev.remaining ?? 0)) byKey.set(key, c)
+  }
+  return [...byKey.values()]
+}
+
+function projectFakaAvailability(
+  caps: FakaCapacitySnapshot[]
+): { stock: number; stockMode: string } | null {
+  if (caps.length === 0) return null
+  const unique = dedupeFakaCapsByPlan(caps)
+  if (unique.length === 0) return null
+  // Any unlimited Xboard plan → product shows 不限 (when sellable path works).
+  if (unique.some(c => c.remaining === null)) {
+    return { stock: 0, stockMode: 'unlimited' }
+  }
+  const known = unique.filter(c => c.remaining != null)
+  if (known.length === 0) return null
+  const stock = known.reduce((sum, c) => sum + (c.remaining ?? 0), 0)
+  return { stock, stockMode: 'limited' }
+}
+
+
+/** Public product payload must not leak internal SKU / plan / activeUsers. */
+function toPublicFakaCapacity(cap: FakaCapacitySnapshot) {
+  return {
+    remaining: cap.remaining,
+    capacityLimit: cap.capacityLimit,
+    sellable: cap.sellable,
+    source: cap.source,
+    reason: cap.reason,
+  }
+}
+
+/** 列表/详情商品级 fakaCapacity：单 SKU 直接用；多周期同 plan 取首个 xboard 快照。 */
+function pickProductFakaCapacity(caps: FakaCapacitySnapshot[]): FakaCapacitySnapshot | null {
+  if (caps.length === 0) return null
+  if (caps.length === 1) return caps[0]
+  const unique = dedupeFakaCapsByPlan(caps)
+  if (unique.length === 1) return unique[0]
+  // 多 plan：仍给一个可展示摘要（前端规格级会覆盖）；优先 xboard 且有限名额
+  return (
+    unique.find(c => c.remaining != null) ??
+    unique[0] ??
+    caps.find(c => c.source === 'xboard') ??
+    caps[0] ??
+    null
+  )
+}
+
 function serializePublicProductDetail(
   product: ProductDetail,
-  offerAvailableCounts: Map<number, number>
+  offerAvailableCounts: Map<number, number>,
+  fakaByOfferId: Map<number, FakaCapacitySnapshot> = new Map()
 ) {
   const { _count, offers, ...publicProduct } = product
+  const localAvailability = computePublicAvailability(product, offers, offerAvailableCounts)
+  const fakaCaps = [...fakaByOfferId.values()]
+  const fakaAvailability = projectFakaAvailability(fakaCaps)
+
   return {
     ...publicProduct,
-    // 顶层 stock/stockMode 与列表同一推导（单规格详情页直接用它判断售罄）。
-    ...computePublicAvailability(product, offers, offerAvailableCounts),
+    // Faka 商品：用 Xboard 剩余名额投影到 stock/stockMode，详情页「库存」可见。
+    // 非 Faka 或 capacity 不可达：保持本地推导。
+    ...(fakaAvailability ?? localAvailability),
+    // 商品级容量摘要；多周期共用 plan 时取代表快照，规格切换后由 offer.fakaCapacity 覆盖。
+    fakaCapacity: (() => { const c = pickProductFakaCapacity(fakaCaps); return c ? toPublicFakaCapacity(c) : null })(),
     ratingAvg: Number(product.ratingAvg),
     // 公开 Offer 剥离 fixedContent；即时库存规格的 stock 用实际可用条目数。
     offers: offers.map(offer => {
       const serialized = serializePublicOffer(offer)
-      return offer.deliveryMode === 'instant_inventory'
-        ? { ...serialized, stock: offerAvailableCounts.get(offer.id) ?? 0 }
+      const fakaCapacity = fakaByOfferId.get(offer.id) ?? null
+      const withFaka = fakaCapacity
+        ? {
+            ...serialized,
+            fakaCapacity: toPublicFakaCapacity(fakaCapacity),
+            // 规格级库存展示：Xboard remaining（null = 不限）
+            ...(fakaCapacity.source === 'xboard'
+              ? fakaCapacity.remaining == null
+                ? { stockMode: 'unlimited' as const, stock: 0 }
+                : { stockMode: 'limited' as const, stock: fakaCapacity.remaining }
+              : {}),
+          }
         : serialized
+      return offer.deliveryMode === 'instant_inventory' && !fakaCapacity
+        ? { ...withFaka, stock: offerAvailableCounts.get(offer.id) ?? 0 }
+        : withFaka
     }),
   }
 }
@@ -264,10 +460,14 @@ async function listProductsFromDb(params: ProductListParams = {}) {
   const hasMore = products.length > pageSize
   const lastItem = items.at(-1)
 
-  const offerAvailableCounts = await countAvailableByOffer(items.flatMap(item => item.offers))
+  const allOffers = items.flatMap(item => item.offers)
+  const offerAvailableCounts = await countAvailableByOffer(allOffers)
+  const fakaBySku = await loadFakaCapacityBySku(
+    allOffers as Array<{ externalIntegration?: string | null; externalSku?: string | null }>
+  )
 
   return {
-    items: items.map(item => serializePublicProductListItem(item, offerAvailableCounts)),
+    items: items.map(item => serializePublicProductListItem(item, offerAvailableCounts, fakaBySku)),
     nextCursor: hasMore && lastItem ? encodeProductCursor(lastItem) : null,
     hasMore,
   }
@@ -292,5 +492,17 @@ async function getProductDetailFromDb(id: number) {
   if (product.status !== 'active') throw badRequest('商品已下架')
 
   const offerAvailableCounts = await countAvailableByOffer(product.offers)
-  return serializePublicProductDetail(product, offerAvailableCounts)
+
+  // FakaBridge：详情页展示 Xboard 订阅人数余量（与结算预检同源）。
+  // 串行拉取规格数通常 ≤ 少量 SKU；失败时 fetch 返回 unavailable，前端仍显示本地库存。
+  const fakaByOfferId = new Map<number, FakaCapacitySnapshot>()
+  for (const offer of product.offers) {
+    const integration = (offer as { externalIntegration?: string | null }).externalIntegration
+    const sku = (offer as { externalSku?: string | null }).externalSku
+    if (integration === 'faka_bridge' && sku) {
+      fakaByOfferId.set(offer.id, await fetchFakaCapacityForSku(sku))
+    }
+  }
+
+  return serializePublicProductDetail(product, offerAvailableCounts, fakaByOfferId)
 }

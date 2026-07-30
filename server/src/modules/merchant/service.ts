@@ -44,6 +44,11 @@ import {
   syncProductProjection,
   serializePublicOffer,
 } from '../../lib/offers.js'
+import {
+  normalizeFakaOfferIntegration,
+  assertOfferProvisionMutex,
+  onFakaOrderRefundedInTx,
+} from '../../lib/fakaBridge/index.js'
 
 // ---- Application ----
 
@@ -1134,6 +1139,9 @@ export async function rejectOrder(
       fromStatus: 'pending',
       actorUserId,
     })
+
+    // FakaBridge：拒单时取消尚未开通的任务（避免退款后仍外呼开通）
+    await onFakaOrderRefundedInTx(tx, orderId)
   })
 
   return getMyOrderDetail(merchantId, orderId)
@@ -1221,7 +1229,11 @@ type OfferWriteInput = {
   deliveryFields?: DeliveryField[] | null
   // P7b：自动开通开关。仅 manual_service 且无模板且商家已有 active webhook
   // 配置可为 true（服务端校验 + DB CHECK 兜底，硬验收 ④⑤）。
+  // 与 FakaBridge externalIntegration 互斥。
   autoProvision?: boolean
+  // FakaBridge：null 关闭；'faka_bridge' + externalSku 开通 Xboard。
+  externalIntegration?: string | null
+  externalSku?: string | null
   // 设为默认规格（仅接受 true，事务内从原默认转移；不接受 false——
   // 取消默认必须通过在另一条上设默认完成，保证不变量恒成立）。
   isDefault?: boolean
@@ -1349,6 +1361,23 @@ async function insertOffer(
     await assertMyDeliveryFile(tx, merchantId, fixedFileId)
   }
 
+  // v1: platform FakaBridge credentials are global — only admins may attach SKUs.
+  if (input.externalIntegration != null && input.externalIntegration !== '') {
+    throw badRequest('FakaBridge 外部开通仅平台管理员可配置，商家请使用自动开通 webhook 或人工交付')
+  }
+  if (input.externalSku != null && input.externalSku !== '') {
+    throw badRequest('FakaBridge externalSku 仅平台管理员可配置')
+  }
+  const faka = normalizeFakaOfferIntegration({
+    externalIntegration: null,
+    externalSku: null,
+    deliveryMode,
+  })
+  assertOfferProvisionMutex({
+    autoProvision: input.autoProvision ?? false,
+    externalIntegration: faka.externalIntegration,
+  })
+
   return tx.offer.create({
     data: {
       productId,
@@ -1366,8 +1395,10 @@ async function insertOffer(
       // P6a：订阅有效期；null = 永久。
       validityDays: input.validityDays ?? null,
       deliveryFields: input.deliveryFields ?? undefined,
-      // P7b：自动开通开关（上方已过前置校验）。
+      // P7b：自动开通开关（上方已过前置校验 + 与 Faka 互斥）。
       autoProvision: input.autoProvision ?? false,
+      externalIntegration: faka.externalIntegration,
+      externalSku: faka.externalSku,
     },
   })
 }
@@ -1444,6 +1475,41 @@ export async function updateMyOffer(
       await assertMyDeliveryFile(tx, merchantId, nextFixedFileId)
     }
 
+    // FakaBridge：请求触碰 integration/sku，或规格已启用 faka 时（履约模式变更也要重验）。
+    const fakaFieldsTouched = 'externalIntegration' in input || 'externalSku' in input
+    if (fakaFieldsTouched) {
+      const ei = 'externalIntegration' in input ? input.externalIntegration : null
+      const es = 'externalSku' in input ? input.externalSku : null
+      if ((ei != null && ei !== '') || (es != null && es !== '')) {
+        throw badRequest('FakaBridge 外部开通仅平台管理员可配置，商家请使用自动开通 webhook 或人工交付')
+      }
+    }
+    const nextExternalIntegration = fakaFieldsTouched
+      ? ('externalIntegration' in input ? input.externalIntegration : offer.externalIntegration)
+      : offer.externalIntegration
+    const nextExternalSku = fakaFieldsTouched
+      ? ('externalSku' in input ? input.externalSku : offer.externalSku)
+      : offer.externalSku
+    const mustValidateFaka =
+      fakaFieldsTouched || offer.externalIntegration != null || nextExternalIntegration != null
+    const fakaUpdate = mustValidateFaka
+      ? normalizeFakaOfferIntegration(
+          {
+            externalIntegration: nextExternalIntegration,
+            externalSku: nextExternalSku,
+            deliveryMode,
+          },
+          { requireConfigured: nextExternalIntegration === 'faka_bridge' }
+        )
+      : null
+
+    const effectiveExternalIntegration =
+      fakaUpdate != null ? fakaUpdate.externalIntegration : offer.externalIntegration
+    assertOfferProvisionMutex({
+      autoProvision: nextAutoProvision,
+      externalIntegration: effectiveExternalIntegration,
+    })
+
     // 设为默认：先清旧默认再随本次更新立新默认（同事务；部分唯一索引兜底并发）。
     // 取消默认只能通过在另一条上设默认完成，保证"每商品恰有一条默认"不变量。
     if (input.isDefault === true && !offer.isDefault) {
@@ -1477,6 +1543,12 @@ export async function updateMyOffer(
           : {}),
         ...(deliveryMode === 'instant_inventory' && offer.deliveryMode !== 'instant_inventory'
           ? { stock: 0 }
+          : {}),
+        ...(fakaUpdate
+          ? {
+              externalIntegration: fakaUpdate.externalIntegration,
+              externalSku: fakaUpdate.externalSku,
+            }
           : {}),
       },
     })

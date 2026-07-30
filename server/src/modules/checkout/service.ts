@@ -4,6 +4,12 @@ import { getProductFulfillmentMode } from '../orders/fulfillment.js'
 import { parseStoredPurchaseForm, computePurchaseFormVersion, type PurchaseFormField } from '../../lib/purchaseForm.js'
 import { resolveVerificationRequirement } from './verification.js'
 import { computeOfferCheckoutVersion, resolvePurchaseOffer } from '../../lib/offers.js'
+import {
+  fetchFakaCapacityForSku,
+  isFakaBridgeConfigured,
+  isFakaBridgeOffer,
+  type FakaCapacitySnapshot,
+} from '../../lib/fakaBridge/index.js'
 
 export type CheckoutPreview = {
   productId: number
@@ -34,9 +40,22 @@ export type CheckoutPreview = {
   // Offer 结算版本（价格/状态/履约方式/库存模式/固定内容/交付模板的摘要）；
   // 下单携带 expectedCheckoutVersion，任一项变化 → 409 CHECKOUT_CHANGED。
   checkoutVersion: string
-  // 高风险二次验证：true 时前端预渲染登录密码输入框。仅供展示——
+  // 高价值二次验证：true 时前端预渲染登录密码输入框。仅供展示——
   // 下单时服务端会重新计算触发条件，不信任该声明。
   requiresVerification: boolean
+  /** FakaBridge：需验证开通邮箱归属（OTP 或本站已验证登录邮箱）。升/降级均允许。 */
+  requiresProvisionEmailProof: boolean
+  /**
+   * Xboard 容量公开摘要（不暴露 sku / planId / activeUsers）。
+   * null = 非 Faka 商品。
+   */
+  fakaCapacity: {
+    remaining: number | null
+    capacityLimit: number | null
+    sellable: boolean
+    source: 'xboard' | 'unavailable'
+    reason?: string
+  } | null
 }
 
 /**
@@ -99,6 +118,19 @@ export async function getCheckoutPreview(
 
   const purchaseForm = parseStoredPurchaseForm(product.purchaseForm)
 
+  let fakaCapacity: FakaCapacitySnapshot | null = null
+  const fakaBridge = isFakaBridgeOffer(offer)
+  if (fakaBridge) {
+    if (!isFakaBridgeConfigured()) {
+      unpurchasableReason = unpurchasableReason ?? '平台未配置 FakaBridge，暂时无法购买此商品'
+    } else if (offer.externalSku) {
+      fakaCapacity = await fetchFakaCapacityForSku(offer.externalSku)
+      if (fakaCapacity.source === 'xboard' && !fakaCapacity.sellable) {
+        unpurchasableReason = unpurchasableReason ?? (fakaCapacity.reason ?? 'Xboard 套餐名额已满')
+      }
+    }
+  }
+
   return {
     productId: product.id,
     productName: product.name,
@@ -118,5 +150,15 @@ export async function getCheckoutPreview(
     purchaseFormVersion: computePurchaseFormVersion(purchaseForm),
     checkoutVersion: computeOfferCheckoutVersion(offer),
     requiresVerification: await resolveVerificationRequirement(userId, offer.price),
+    requiresProvisionEmailProof: fakaBridge,
+    fakaCapacity: fakaCapacity
+      ? {
+          remaining: fakaCapacity.remaining,
+          capacityLimit: fakaCapacity.capacityLimit,
+          sellable: fakaCapacity.sellable,
+          source: fakaCapacity.source,
+          reason: fakaCapacity.reason,
+        }
+      : null,
   }
 }

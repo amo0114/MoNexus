@@ -149,6 +149,21 @@ const envSchema = z.object({
   // 测试逃生：放开 http 与私网目标（e2e stub 接收端跑在 127.0.0.1）。
   // 生产环境为 true 时拒绝启动——这是 SSRF 防线的总开关。
   AUTO_PROVISION_ALLOW_INSECURE_TARGETS: booleanEnvSchema.default(false),
+
+  // --- FakaBridge (Xboard subscription provision). Optional until offers use
+  // externalIntegration=faka_bridge. When any of URL/SECRET is set, both must
+  // be present. Production path has NO /api/v1 prefix.
+  FAKA_BRIDGE_URL: optionalUrlEnvSchema,
+  FAKA_BRIDGE_STATUS_URL: optionalUrlEnvSchema,
+  /** Optional; defaults to order-paid URL with /order-revoke suffix. */
+  FAKA_BRIDGE_REVOKE_URL: optionalUrlEnvSchema,
+  FAKA_BRIDGE_SECRET: optionalStringEnvSchema,
+  FAKA_BRIDGE_TIMEOUT_MS: z.coerce.number().int().positive().default(5_000),
+  FAKA_BRIDGE_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(10).default(3),
+  // User-facing panel URL in delivery content (not the plugin webhook base).
+  FAKA_BRIDGE_PANEL_URL: optionalUrlEnvSchema,
+  // Test-only escape hatch. Production boot refuses true.
+  FAKA_BRIDGE_ALLOW_INSECURE_TARGETS: booleanEnvSchema.default(false),
 })
 
 const parsed = envSchema.safeParse(process.env)
@@ -265,6 +280,44 @@ if (env.NODE_ENV === 'production') {
   }
 }
 
+// FakaBridge: URL and SECRET are all-or-nothing. Status URL is optional.
+const fakaUrl = env.FAKA_BRIDGE_URL
+const fakaSecret = env.FAKA_BRIDGE_SECRET
+const fakaPartial = Boolean(fakaUrl) !== Boolean(fakaSecret)
+if (fakaPartial) {
+  console.error(
+    '[Config] FAKA_BRIDGE_URL and FAKA_BRIDGE_SECRET must both be set or both be unset'
+  )
+  process.exit(1)
+}
+if (env.NODE_ENV === 'production' && env.FAKA_BRIDGE_ALLOW_INSECURE_TARGETS) {
+  console.error(
+    '[Config] FAKA_BRIDGE_ALLOW_INSECURE_TARGETS must be false in production'
+  )
+  process.exit(1)
+}
+if (env.NODE_ENV === 'production') {
+  for (const [label, raw] of [
+    ['FAKA_BRIDGE_URL', fakaUrl],
+    ['FAKA_BRIDGE_STATUS_URL', env.FAKA_BRIDGE_STATUS_URL],
+    ['FAKA_BRIDGE_REVOKE_URL', env.FAKA_BRIDGE_REVOKE_URL],
+  ] as const) {
+    if (!raw) continue
+    try {
+      const u = new URL(raw)
+      if (u.protocol !== 'https:') {
+        console.error(`[Config] ${label} must use https in production`)
+        process.exit(1)
+      }
+    } catch {
+      console.error(`[Config] ${label} is not a valid URL`)
+      process.exit(1)
+    }
+  }
+}
+
+const fakaBridgeEnabled = Boolean(fakaUrl && fakaSecret)
+
 export const config = {
   nodeEnv: env.NODE_ENV,
   isProduction: env.NODE_ENV === 'production',
@@ -345,4 +398,27 @@ export const config = {
   // P7b 自动开通：null = 未显式配置（dev/test 由 JWT_SECRET 派生）。
   webhookSecretEncKey: env.WEBHOOK_SECRET_ENC_KEY ?? null,
   autoProvisionAllowInsecureTargets: env.AUTO_PROVISION_ALLOW_INSECURE_TARGETS,
+  fakaBridge: fakaBridgeEnabled
+    ? {
+        enabled: true as const,
+        url: fakaUrl!,
+        statusUrl: env.FAKA_BRIDGE_STATUS_URL,
+        revokeUrl: env.FAKA_BRIDGE_REVOKE_URL,
+        secret: fakaSecret!,
+        timeoutMs: env.FAKA_BRIDGE_TIMEOUT_MS,
+        maxAttempts: env.FAKA_BRIDGE_MAX_ATTEMPTS,
+        allowInsecureTargets: env.FAKA_BRIDGE_ALLOW_INSECURE_TARGETS,
+        panelUrl: env.FAKA_BRIDGE_PANEL_URL ?? 'https://v.uuwu.de',
+      }
+    : {
+        enabled: false as const,
+        url: undefined,
+        statusUrl: undefined,
+        revokeUrl: undefined,
+        secret: undefined,
+        timeoutMs: env.FAKA_BRIDGE_TIMEOUT_MS,
+        maxAttempts: env.FAKA_BRIDGE_MAX_ATTEMPTS,
+        allowInsecureTargets: env.FAKA_BRIDGE_ALLOW_INSECURE_TARGETS,
+        panelUrl: env.FAKA_BRIDGE_PANEL_URL ?? 'https://v.uuwu.de',
+      },
 }
