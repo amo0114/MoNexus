@@ -5,9 +5,8 @@ import { wrapCache } from '../../lib/cache.js'
 import { badRequest, HttpError, notFound } from '../../lib/httpError.js'
 import { serializePublicOffer } from '../../lib/offers.js'
 import {
-  fetchFakaCapacityForSku,
+  getFakaCapacityForPublicRead,
   getCachedFakaCapacityByPlanId,
-  rememberFakaCapacityPlanSnapshot,
   type FakaCapacitySnapshot,
 } from '../../lib/fakaBridge/index.js'
 import {
@@ -183,12 +182,14 @@ function serializePublicProductListItem(
 }
 
 /**
- * 本页去重 SKU 后拉 capacity。
- * plan-{id}-* 同 plan 只探测一次；命名 SKU 并行探测，成功后写入 plan 缓存。
+ * Storefront reads must never await Xboard.  This projects a fresh/stale
+ * in-process snapshot or an unavailable fallback, while the capacity module
+ * coalesces background refreshes.  plan-{id}-* aliases share one primary
+ * refresh per page; named SKUs cannot safely infer shared plan membership.
  */
-async function loadFakaCapacityBySku(
+function loadFakaCapacityBySku(
   offers: Array<{ externalIntegration?: string | null; externalSku?: string | null }>
-): Promise<Map<string, FakaCapacitySnapshot>> {
+): Map<string, FakaCapacitySnapshot> {
   const skus = [
     ...new Set(
       offers
@@ -200,58 +201,43 @@ async function loadFakaCapacityBySku(
   if (skus.length === 0) return map
 
   const primary: string[] = []
-  const deferredPlanSkus: string[] = []
+  const deferredPlanSkus: Array<{ sku: string; planId: number }> = []
+  const primarySkuByPlanId = new Map<number, string>()
   const seenPlanIds = new Set<number>()
   for (const sku of skus) {
     const m = sku.match(/^plan-(\d+)-/)
     if (m) {
       const planId = Number(m[1])
       if (seenPlanIds.has(planId)) {
-        deferredPlanSkus.push(sku)
+        deferredPlanSkus.push({ sku, planId })
         continue
       }
       seenPlanIds.add(planId)
+      primarySkuByPlanId.set(planId, sku)
     }
     primary.push(sku)
   }
 
-  await Promise.all(
-    primary.map(async sku => {
-      const cap = await fetchFakaCapacityForSku(sku)
-      map.set(sku, cap)
-      if (cap.source === 'xboard' && cap.planId != null) {
-        rememberFakaCapacityPlanSnapshot(cap)
-      }
-    })
-  )
+  for (const sku of primary) {
+    map.set(sku, getFakaCapacityForPublicRead(sku))
+  }
 
-  // Fill plan-* siblings from plan cache (no extra HTTP)
-  for (const sku of deferredPlanSkus) {
-    const m = sku.match(/^plan-(\d+)-/)
-    const planId = m ? Number(m[1]) : null
-    const cached = planId != null ? getCachedFakaCapacityByPlanId(planId) : null
+  // Fill plan-* siblings from a warm plan cache or the primary's public
+  // projection.  Either route schedules at most one background probe.
+  for (const { sku, planId } of deferredPlanSkus) {
+    const cached = getCachedFakaCapacityByPlanId(planId)
     if (cached) {
       map.set(sku, { ...cached, sku })
     } else {
-      map.set(sku, await fetchFakaCapacityForSku(sku))
+      const primarySku = primarySkuByPlanId.get(planId)
+      const primaryCapacity = primarySku ? map.get(primarySku) : null
+      if (primaryCapacity) {
+        map.set(sku, { ...primaryCapacity, sku })
+      } else {
+        map.set(sku, getFakaCapacityForPublicRead(sku))
+      }
     }
   }
-
-  // Named SKUs sharing a planId: if one probe failed (unavailable) but a sibling
-  // succeeded for same plan, heal via plan cache.
-  for (const sku of skus) {
-    const cur = map.get(sku)
-    if (!cur || cur.source === 'xboard') continue
-    // Try plan alias form
-    const m = sku.match(/^plan-(\d+)-/)
-    if (m) {
-      const cached = getCachedFakaCapacityByPlanId(Number(m[1]))
-      if (cached) map.set(sku, { ...cached, sku })
-    }
-  }
-
-  // Second pass: if any named SKU got planId, backfill other unavailable named
-  // SKUs that we cannot map — skip (would need static SKU map).
 
   return map
 }
@@ -307,6 +293,15 @@ function toPublicFakaCapacity(cap: FakaCapacitySnapshot) {
     source: cap.source,
     reason: cap.reason,
   }
+}
+
+function isUnavailableFakaCapacity(value: unknown): boolean {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'source' in value &&
+    (value as { source?: unknown }).source === 'unavailable'
+  )
 }
 
 /** 列表/详情商品级 fakaCapacity：单 SKU 直接用；多周期同 plan 取首个 xboard 快照。 */
@@ -422,7 +417,13 @@ export async function listProducts(params: ProductListParams = {}) {
   if (!cacheKey) return listProductsFromDb(params)
 
   const ttlSec = params.query ? 10 : params.cursor ? 20 : 30
-  return wrapCache('product-list', cacheKey, ttlSec, () => listProductsFromDb(params))
+  return wrapCache('product-list', cacheKey, ttlSec, () => listProductsFromDb(params), {
+    // A cold public read intentionally returns an unavailable projection while
+    // its Xboard probe runs in the background.  Do not freeze that transient
+    // fallback in Redis; the next request can use the freshly warmed snapshot.
+    cachePredicate: result =>
+      result.items.every(item => !isUnavailableFakaCapacity(item.fakaCapacity)),
+  })
 }
 
 async function listProductsFromDb(params: ProductListParams = {}) {
@@ -462,7 +463,7 @@ async function listProductsFromDb(params: ProductListParams = {}) {
 
   const allOffers = items.flatMap(item => item.offers)
   const offerAvailableCounts = await countAvailableByOffer(allOffers)
-  const fakaBySku = await loadFakaCapacityBySku(
+  const fakaBySku = loadFakaCapacityBySku(
     allOffers as Array<{ externalIntegration?: string | null; externalSku?: string | null }>
   )
 
@@ -480,6 +481,13 @@ export async function getProductDetail(id: number) {
   return wrapCache('product-detail', cacheKey, 60, () => getProductDetailFromDb(id), {
     negativeTtlSec: 20,
     negativeErrorPredicate: err => err instanceof HttpError && err.status === 404,
+    // Same rule as the list: Redis may cache a known capacity/stale snapshot,
+    // but never the cold-cache unavailable fallback returned by SWR.
+    cachePredicate: result =>
+      !isUnavailableFakaCapacity(result.fakaCapacity) &&
+      result.offers.every(
+        offer => !('fakaCapacity' in offer) || !isUnavailableFakaCapacity(offer.fakaCapacity)
+      ),
   })
 }
 
@@ -493,14 +501,13 @@ async function getProductDetailFromDb(id: number) {
 
   const offerAvailableCounts = await countAvailableByOffer(product.offers)
 
-  // FakaBridge：详情页展示 Xboard 订阅人数余量（与结算预检同源）。
-  // 串行拉取规格数通常 ≤ 少量 SKU；失败时 fetch 返回 unavailable，前端仍显示本地库存。
+  // FakaBridge：详情页只读缓存并后台刷新，绝不在请求内串行外呼 Xboard。
   const fakaByOfferId = new Map<number, FakaCapacitySnapshot>()
   for (const offer of product.offers) {
     const integration = (offer as { externalIntegration?: string | null }).externalIntegration
     const sku = (offer as { externalSku?: string | null }).externalSku
     if (integration === 'faka_bridge' && sku) {
-      fakaByOfferId.set(offer.id, await fetchFakaCapacityForSku(sku))
+      fakaByOfferId.set(offer.id, getFakaCapacityForPublicRead(sku))
     }
   }
 

@@ -5,7 +5,7 @@ import { parseStoredPurchaseForm, computePurchaseFormVersion, type PurchaseFormF
 import { resolveVerificationRequirement } from './verification.js'
 import { computeOfferCheckoutVersion, resolvePurchaseOffer } from '../../lib/offers.js'
 import {
-  fetchFakaCapacityForSku,
+  getFakaCapacityForPublicRead,
   isFakaBridgeConfigured,
   isFakaBridgeOffer,
   type FakaCapacitySnapshot,
@@ -124,7 +124,10 @@ export async function getCheckoutPreview(
     if (!isFakaBridgeConfigured()) {
       unpurchasableReason = unpurchasableReason ?? '平台未配置 FakaBridge，暂时无法购买此商品'
     } else if (offer.externalSku) {
-      fakaCapacity = await fetchFakaCapacityForSku(offer.externalSku)
+      // Preview is informational.  It must not put an Xboard HTTP call on the
+      // buyer request path; order confirmation still does the authoritative
+      // capacity preflight before it creates an outbox task.
+      fakaCapacity = getFakaCapacityForPublicRead(offer.externalSku)
       if (fakaCapacity.source === 'xboard' && !fakaCapacity.sellable) {
         unpurchasableReason = unpurchasableReason ?? (fakaCapacity.reason ?? 'Xboard 套餐名额已满')
       }
