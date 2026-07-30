@@ -50,22 +50,25 @@ permissions:
   contents: read
   packages: write
 
+env:
+  REGISTRY: ghcr.io
+  SERVER_IMAGE: amo0114/monexus-server
+  WEB_IMAGE: amo0114/monexus-web
+
 jobs:
-  build-server:
-    name: Build and push server image
+  # Do not cross-emulate the Node dependency installation.  The previous
+  # linux/arm64 QEMU build hit an Illegal instruction during `npm ci` and then
+  # burned the whole job timeout.  Both architectures build natively and the
+  # two immutable image digests are combined into a manifest below.
+  build-server-amd64:
+    name: Build server image (linux/amd64)
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.inputs.ref || github.ref }}
-
-      # A multi-platform manifest lets both x86_64 and ARM64 VPS hosts pull
-      # the same tag. QEMU is needed because GitHub-hosted runners are amd64.
-      - name: Set up QEMU
-        if: github.event_name != 'pull_request'
-        uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -78,59 +81,147 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract metadata
-        id: meta
-        uses: docker/metadata-action@v5
+      - name: Build PR smoke image
+        if: github.event_name == 'pull_request'
+        uses: docker/build-push-action@v6
         with:
-          images: ghcr.io/amo0114/monexus-server
-          tags: |
-            type=ref,event=branch
-            type=ref,event=tag
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=sha,format=short,prefix=sha-
-            # master 是生产分支但不再是默认分支（develop 是），latest 必须
-            # 显式钉在 master/tag 上，不能用 {{is_default_branch}}。
-            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v') }}
+          context: ./server
+          file: ./server/Dockerfile
+          push: false
+          load: true
           labels: |
             org.opencontainers.image.title=MoNexus Server
             org.opencontainers.image.description=Backend API for MoNexus
             org.opencontainers.image.source=https://github.com/amo0114/MoNexus
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha,scope=server-amd64
+          cache-to: type=gha,mode=max,scope=server-amd64
+          platforms: linux/amd64
+          provenance: false
 
-      - name: Build and push
+      - name: Build and push native digest
+        if: github.event_name != 'pull_request'
         id: build
         uses: docker/build-push-action@v6
         with:
           context: ./server
           file: ./server/Dockerfile
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=server
-          cache-to: type=gha,mode=max,scope=server
-          platforms: ${{ github.event_name == 'pull_request' && 'linux/amd64' || 'linux/amd64,linux/arm64' }}
-          load: ${{ github.event_name == 'pull_request' }}
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ env.SERVER_IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          labels: |
+            org.opencontainers.image.title=MoNexus Server
+            org.opencontainers.image.description=Backend API for MoNexus
+            org.opencontainers.image.source=https://github.com/amo0114/MoNexus
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha,scope=server-amd64
+          cache-to: type=gha,mode=max,scope=server-amd64
+          platforms: linux/amd64
           provenance: false
 
-      - name: Image digest
+      - name: Export digest
         if: github.event_name != 'pull_request'
-        run: echo "server_image_digest=${{ steps.build.outputs.digest }}" >> "$GITHUB_ENV"
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          test -n "$DIGEST"
+          mkdir -p "$RUNNER_TEMP/digests"
+          touch "$RUNNER_TEMP/digests/${DIGEST#sha256:}"
 
-  build-web:
-    name: Build and push web image
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
+      - name: Upload digest
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-digest-amd64
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  build-server-arm64:
+    name: Build server image (linux/arm64)
+    # Native ARM avoids the QEMU/npm Illegal-instruction failure in the former
+    # single Buildx job.  If this label is unavailable to the repository, the
+    # job fails visibly before any release manifest is published.
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.inputs.ref || github.ref }}
 
-      # See build-server: release images are published for both common VPS
-      # architectures; PRs retain a fast, loadable amd64 smoke build.
-      - name: Set up QEMU
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
         if: github.event_name != 'pull_request'
-        uses: docker/setup-qemu-action@v3
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build PR smoke image
+        if: github.event_name == 'pull_request'
+        uses: docker/build-push-action@v6
+        with:
+          context: ./server
+          file: ./server/Dockerfile
+          push: false
+          load: true
+          labels: |
+            org.opencontainers.image.title=MoNexus Server
+            org.opencontainers.image.description=Backend API for MoNexus
+            org.opencontainers.image.source=https://github.com/amo0114/MoNexus
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha,scope=server-arm64
+          cache-to: type=gha,mode=max,scope=server-arm64
+          platforms: linux/arm64
+          provenance: false
+
+      - name: Build and push native digest
+        if: github.event_name != 'pull_request'
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: ./server
+          file: ./server/Dockerfile
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ env.SERVER_IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          labels: |
+            org.opencontainers.image.title=MoNexus Server
+            org.opencontainers.image.description=Backend API for MoNexus
+            org.opencontainers.image.source=https://github.com/amo0114/MoNexus
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha,scope=server-arm64
+          cache-to: type=gha,mode=max,scope=server-arm64
+          platforms: linux/arm64
+          provenance: false
+
+      - name: Export digest
+        if: github.event_name != 'pull_request'
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          test -n "$DIGEST"
+          mkdir -p "$RUNNER_TEMP/digests"
+          touch "$RUNNER_TEMP/digests/${DIGEST#sha256:}"
+
+      - name: Upload digest
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-digest-arm64
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  build-web-amd64:
+    name: Build web image (linux/amd64)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.ref || github.ref }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -143,11 +234,172 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract metadata
+      - name: Build PR smoke image
+        if: github.event_name == 'pull_request'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: false
+          load: true
+          labels: |
+            org.opencontainers.image.title=MoNexus Web
+            org.opencontainers.image.description=nginx SPA frontend for MoNexus
+            org.opencontainers.image.source=https://github.com/amo0114/MoNexus
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha,scope=web-amd64
+          cache-to: type=gha,mode=max,scope=web-amd64
+          platforms: linux/amd64
+          provenance: false
+          build-args: |
+            VITE_SENTRY_DSN=${{ vars.VITE_SENTRY_DSN || '' }}
+
+      - name: Build and push native digest
+        if: github.event_name != 'pull_request'
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ env.WEB_IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          labels: |
+            org.opencontainers.image.title=MoNexus Web
+            org.opencontainers.image.description=nginx SPA frontend for MoNexus
+            org.opencontainers.image.source=https://github.com/amo0114/MoNexus
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha,scope=web-amd64
+          cache-to: type=gha,mode=max,scope=web-amd64
+          platforms: linux/amd64
+          provenance: false
+          build-args: |
+            VITE_SENTRY_DSN=${{ vars.VITE_SENTRY_DSN || '' }}
+
+      - name: Export digest
+        if: github.event_name != 'pull_request'
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          test -n "$DIGEST"
+          mkdir -p "$RUNNER_TEMP/digests"
+          touch "$RUNNER_TEMP/digests/${DIGEST#sha256:}"
+
+      - name: Upload digest
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-digest-amd64
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  build-web-arm64:
+    name: Build web image (linux/arm64)
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.ref || github.ref }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build PR smoke image
+        if: github.event_name == 'pull_request'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: false
+          load: true
+          labels: |
+            org.opencontainers.image.title=MoNexus Web
+            org.opencontainers.image.description=nginx SPA frontend for MoNexus
+            org.opencontainers.image.source=https://github.com/amo0114/MoNexus
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha,scope=web-arm64
+          cache-to: type=gha,mode=max,scope=web-arm64
+          platforms: linux/arm64
+          provenance: false
+          build-args: |
+            VITE_SENTRY_DSN=${{ vars.VITE_SENTRY_DSN || '' }}
+
+      - name: Build and push native digest
+        if: github.event_name != 'pull_request'
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ env.WEB_IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          labels: |
+            org.opencontainers.image.title=MoNexus Web
+            org.opencontainers.image.description=nginx SPA frontend for MoNexus
+            org.opencontainers.image.source=https://github.com/amo0114/MoNexus
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha,scope=web-arm64
+          cache-to: type=gha,mode=max,scope=web-arm64
+          platforms: linux/arm64
+          provenance: false
+          build-args: |
+            VITE_SENTRY_DSN=${{ vars.VITE_SENTRY_DSN || '' }}
+
+      - name: Export digest
+        if: github.event_name != 'pull_request'
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          test -n "$DIGEST"
+          mkdir -p "$RUNNER_TEMP/digests"
+          touch "$RUNNER_TEMP/digests/${DIGEST#sha256:}"
+
+      - name: Upload digest
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-digest-arm64
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  publish-server-manifest:
+    name: Publish server multi-arch manifest
+    needs: [build-server-amd64, build-server-arm64]
+    if: >-
+      github.event_name != 'pull_request' &&
+      needs.build-server-amd64.result == 'success' &&
+      needs.build-server-arm64.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download platform digests
+        uses: actions/download-artifact@v4
+        with:
+          pattern: server-digest-*
+          path: ${{ runner.temp }}/digests
+          merge-multiple: true
+
+      - name: Extract final tags
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/amo0114/monexus-web
+          images: ${{ env.REGISTRY }}/${{ env.SERVER_IMAGE }}
           tags: |
             type=ref,event=branch
             type=ref,event=tag
@@ -157,48 +409,140 @@ jobs:
             # master 是生产分支但不再是默认分支（develop 是），latest 必须
             # 显式钉在 master/tag 上，不能用 {{is_default_branch}}。
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v') }}
-          labels: |
-            org.opencontainers.image.title=MoNexus Web
-            org.opencontainers.image.description=nginx SPA frontend for MoNexus
-            org.opencontainers.image.source=https://github.com/amo0114/MoNexus
 
-      - name: Build and push
-        id: build
-        uses: docker/build-push-action@v6
+      - name: Create and verify manifest
+        env:
+          DIGEST_DIR: ${{ runner.temp }}/digests
+          IMAGE: ${{ env.REGISTRY }}/${{ env.SERVER_IMAGE }}
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          mapfile -t digests < <(find "$DIGEST_DIR" -type f -printf '%f\n' | sort -u)
+          test "${#digests[@]}" -eq 2
+          tag_args=()
+          while IFS= read -r tag; do
+            [ -n "$tag" ] && tag_args+=(-t "$tag")
+          done <<< "$TAGS"
+          test "${#tag_args[@]}" -gt 0
+          refs=()
+          for digest in "${digests[@]}"; do
+            refs+=("${IMAGE}@sha256:${digest}")
+          done
+          docker buildx imagetools create "${tag_args[@]}" "${refs[@]}"
+
+          immutable_tag="$(printf '%s\n' "$TAGS" | grep -E ':sha-[0-9a-f]{7,}$' | head -n 1)"
+          test -n "$immutable_tag"
+          docker buildx imagetools inspect --raw "$immutable_tag" > "$RUNNER_TEMP/manifest.json"
+          jq -e '
+            [.manifests[]?.platform | select(.os == "linux") | .architecture] as $arches |
+            ($arches | index("amd64")) != null and ($arches | index("arm64")) != null
+          ' "$RUNNER_TEMP/manifest.json"
+
+  publish-web-manifest:
+    name: Publish web multi-arch manifest
+    needs: [build-web-amd64, build-web-arm64]
+    if: >-
+      github.event_name != 'pull_request' &&
+      needs.build-web-amd64.result == 'success' &&
+      needs.build-web-arm64.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
         with:
-          context: .
-          file: ./Dockerfile
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=web
-          cache-to: type=gha,mode=max,scope=web
-          platforms: ${{ github.event_name == 'pull_request' && 'linux/amd64' || 'linux/amd64,linux/arm64' }}
-          load: ${{ github.event_name == 'pull_request' }}
-          provenance: false
-          build-args: |
-            VITE_SENTRY_DSN=${{ vars.VITE_SENTRY_DSN || '' }}
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Image digest
-        if: github.event_name != 'pull_request'
-        run: echo "web_image_digest=${{ steps.build.outputs.digest }}" >> "$GITHUB_ENV"
+      - name: Download platform digests
+        uses: actions/download-artifact@v4
+        with:
+          pattern: web-digest-*
+          path: ${{ runner.temp }}/digests
+          merge-multiple: true
+
+      - name: Extract final tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.WEB_IMAGE }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=tag
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,format=short,prefix=sha-
+            # master 是生产分支但不再是默认分支（develop 是），latest 必须
+            # 显式钉在 master/tag 上，不能用 {{is_default_branch}}。
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v') }}
+
+      - name: Create and verify manifest
+        env:
+          DIGEST_DIR: ${{ runner.temp }}/digests
+          IMAGE: ${{ env.REGISTRY }}/${{ env.WEB_IMAGE }}
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          mapfile -t digests < <(find "$DIGEST_DIR" -type f -printf '%f\n' | sort -u)
+          test "${#digests[@]}" -eq 2
+          tag_args=()
+          while IFS= read -r tag; do
+            [ -n "$tag" ] && tag_args+=(-t "$tag")
+          done <<< "$TAGS"
+          test "${#tag_args[@]}" -gt 0
+          refs=()
+          for digest in "${digests[@]}"; do
+            refs+=("${IMAGE}@sha256:${digest}")
+          done
+          docker buildx imagetools create "${tag_args[@]}" "${refs[@]}"
+
+          immutable_tag="$(printf '%s\n' "$TAGS" | grep -E ':sha-[0-9a-f]{7,}$' | head -n 1)"
+          test -n "$immutable_tag"
+          docker buildx imagetools inspect --raw "$immutable_tag" > "$RUNNER_TEMP/manifest.json"
+          jq -e '
+            [.manifests[]?.platform | select(.os == "linux") | .architecture] as $arches |
+            ($arches | index("amd64")) != null and ($arches | index("arm64")) != null
+          ' "$RUNNER_TEMP/manifest.json"
 
   summary:
     name: Publish summary
-    needs: [build-server, build-web]
+    needs:
+      - build-server-amd64
+      - build-server-arm64
+      - build-web-amd64
+      - build-web-arm64
+      - publish-server-manifest
+      - publish-web-manifest
     if: always()
     runs-on: ubuntu-latest
     steps:
       - name: Summarise
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          SERVER_AMD64: ${{ needs.build-server-amd64.result }}
+          SERVER_ARM64: ${{ needs.build-server-arm64.result }}
+          WEB_AMD64: ${{ needs.build-web-amd64.result }}
+          WEB_ARM64: ${{ needs.build-web-arm64.result }}
+          SERVER_MANIFEST: ${{ needs.publish-server-manifest.result }}
+          WEB_MANIFEST: ${{ needs.publish-web-manifest.result }}
         run: |
           echo "### Docker publish result" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "| image | status |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| image / platform | status |" >> "$GITHUB_STEP_SUMMARY"
           echo "|---|---|" >> "$GITHUB_STEP_SUMMARY"
-          server_status="${{ needs.build-server.result }}"
-          web_status="${{ needs.build-web.result }}"
-          echo "| ghcr.io/amo0114/monexus-server | ${server_status} |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| ghcr.io/amo0114/monexus-web | ${web_status} |" >> "$GITHUB_STEP_SUMMARY"
-          if [ "$server_status" != "success" ] || [ "$web_status" != "success" ]; then
-            exit 1
+          echo "| server linux/amd64 | $SERVER_AMD64 |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| server linux/arm64 | $SERVER_ARM64 |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| web linux/amd64 | $WEB_AMD64 |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| web linux/arm64 | $WEB_ARM64 |" >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            server_status="$SERVER_AMD64/$SERVER_ARM64"
+            web_status="$WEB_AMD64/$WEB_ARM64"
+            ok="${SERVER_AMD64}:${SERVER_ARM64}:${WEB_AMD64}:${WEB_ARM64}"
+            [ "$ok" = "success:success:success:success" ]
+          else
+            echo "| server multi-arch manifest | $SERVER_MANIFEST |" >> "$GITHUB_STEP_SUMMARY"
+            echo "| web multi-arch manifest | $WEB_MANIFEST |" >> "$GITHUB_STEP_SUMMARY"
+            server_status="$SERVER_MANIFEST"
+            web_status="$WEB_MANIFEST"
+            [ "$server_status" = "success" ] && [ "$web_status" = "success" ]
           fi
