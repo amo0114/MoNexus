@@ -300,7 +300,9 @@ fi
 # the config layer already refuses to boot in production without it — mirror that here
 # so the failure surfaces before compose start.
 webhook_enc_key="$(get WEBHOOK_SECRET_ENC_KEY)"
-if [[ -n "$webhook_enc_key" ]]; then
+if [[ "$ALLOW_PLACEHOLDERS" == "true" ]] && is_placeholder_literal "$webhook_enc_key"; then
+  warn "WEBHOOK_SECRET_ENC_KEY is still a placeholder; replace it before a real deploy"
+elif [[ -n "$webhook_enc_key" ]]; then
   if [[ ! "$webhook_enc_key" =~ ^[0-9a-fA-F]{64}$ ]]; then
     fail "WEBHOOK_SECRET_ENC_KEY must be 64 hex characters (32 bytes) — generate with: openssl rand -hex 32"
   fi
