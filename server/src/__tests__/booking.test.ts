@@ -26,13 +26,22 @@ import {
 const HOUR_MS = 60 * 60 * 1000
 
 /** 业务日历日（今天 + N 天）的 YYYY-MM-DD 字符串（买家表单答案格式）。 */
-function dayString(offsetDays: number) {
-  return addCalendarDays(businessDateString(), offsetDays)
+function dayString(offsetDays: number, now = new Date()) {
+  return addCalendarDays(businessDateString(now), offsetDays)
 }
 
 /** 业务日历日（今天 + N 天）的规范存储值：该日 UTC 零点。 */
-function storedDay(offsetDays: number) {
-  return calendarDayToUtc(dayString(offsetDays))
+function storedDay(offsetDays: number, now = new Date()) {
+  return calendarDayToUtc(dayString(offsetDays, now))
+}
+
+/**
+ * Reminder assertions must not derive their calendar date from wall clock.
+ * Shanghai noon stays clear of the business-day rollover, while individual
+ * boundary tests pass their own fixed clock explicitly.
+ */
+function fixedReminderNow() {
+  return new Date('2026-07-30T04:00:00.000Z') // 12:00 Asia/Shanghai
 }
 
 /**
@@ -325,11 +334,11 @@ describe('runBookingRemindBatch', () => {
   }
 
   it('sends exactly two mails (buyer + merchant) per order due tomorrow, deduped across runs', async () => {
-    const now = new Date()
+    const now = fixedReminderNow()
     const { order } = await seedBookingOrder({
       email: 'bk-remind@test.local',
       status: 'pending',
-      bookingDate: storedDay(1),
+      bookingDate: storedDay(1, now),
     })
 
     await runBookingRemindBatch(now)
@@ -340,7 +349,7 @@ describe('runBookingRemindBatch', () => {
     expect(buyerMail!.subject).toContain('预约提醒')
     expect(buyerMail!.subject).toContain(`#${order.id}`)
     expect(buyerMail!.text).toContain('预约服务快照 - 标准档快照')
-    expect(buyerMail!.text).toContain(`预约日期：${dayString(1)}`)
+    expect(buyerMail!.text).toContain(`预约日期：${dayString(1, now)}`)
     expect(buyerMail!.text).toContain('请留意履约安排')
 
     // 商家收件人 = contactEmail（helper 回填为登录邮箱）
@@ -356,29 +365,29 @@ describe('runBookingRemindBatch', () => {
   })
 
   it('excludes bookings not on business-calendar tomorrow and delivered/refunded orders', async () => {
-    const now = new Date()
+    const now = fixedReminderNow()
     // 后天的预约（业务日历"明天"才提醒）
     await seedBookingOrder({
       email: 'bk-far@test.local',
       status: 'pending',
-      bookingDate: storedDay(2),
+      bookingDate: storedDay(2, now),
     })
     // 已过期的预约（提醒无意义）
     await seedBookingOrder({
       email: 'bk-past@test.local',
       status: 'processing',
-      bookingDate: storedDay(-1),
+      bookingDate: storedDay(-1, now),
     })
     // 终态订单不提醒
     await seedBookingOrder({
       email: 'bk-delivered@test.local',
       status: 'delivered',
-      bookingDate: storedDay(1),
+      bookingDate: storedDay(1, now),
     })
     await seedBookingOrder({
       email: 'bk-refunded@test.local',
       status: 'refunded',
-      bookingDate: storedDay(1),
+      bookingDate: storedDay(1, now),
     })
     // 无预约日期
     await seedBookingOrder({
@@ -394,11 +403,11 @@ describe('runBookingRemindBatch', () => {
   })
 
   it('merchant-side send failure leaves no row; the next run with a working mailer sends both again', async () => {
-    const now = new Date()
+    const now = fixedReminderNow()
     const { order } = await seedBookingOrder({
       email: 'bk-retry@test.local',
       status: 'pending',
-      bookingDate: storedDay(1),
+      bookingDate: storedDay(1, now),
     })
 
     // 商家侧失败、买家侧成功 → 不落行（无行 = 待发送，下轮整体重试）
@@ -424,5 +433,26 @@ describe('runBookingRemindBatch', () => {
     // 补发成功后不再重复
     await runBookingRemindBatch(new Date(later.getTime() + HOUR_MS))
     expect(mailer.sent).toHaveLength(3)
+  })
+
+  it('uses the supplied clock across the Shanghai near-midnight business-day boundary', async () => {
+    // 23:30 +08: the next business day is already the next UTC calendar day
+    // in this test's fixture.  The passed clock, not Date.now(), must define
+    // both the persisted booking date and the reminder query window.
+    const now = new Date('2026-07-30T15:30:00.000Z')
+    const { order } = await seedBookingOrder({
+      email: 'bk-boundary@test.local',
+      status: 'processing',
+      bookingDate: storedDay(1, now),
+    })
+
+    await runBookingRemindBatch(now)
+
+    expect(mailer.sent).toHaveLength(2)
+    expect(mailer.sent.map(m => m.to).sort()).toEqual([
+      'bk-boundary@test.local',
+      'm-bk-boundary@test.local',
+    ])
+    expect(await getReminder(order.id)).not.toBeNull()
   })
 })
