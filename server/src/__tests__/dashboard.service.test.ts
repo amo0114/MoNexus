@@ -17,6 +17,10 @@ function daysAgo(days: number) {
 
 function lastMonthDate() {
   const date = middayToday()
+  // Set the day before moving the month.  On month-end dates, directly
+  // changing July 31 to June would normalize the nonexistent June 31 back
+  // into July, making this fixture incorrectly count as current-month data.
+  date.setDate(1)
   date.setMonth(date.getMonth() - 1)
   return date
 }
