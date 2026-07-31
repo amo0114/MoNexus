@@ -459,7 +459,8 @@ export default function ProductCreateWizard() {
                       {index === 0 && (
                         <span className="absolute top-1 left-1 px-1.5 py-0.5 rounded text-xs font-bold bg-[var(--color-cta)] text-white">封面</span>
                       )}
-                      <div className="absolute inset-x-0 bottom-0 flex justify-end gap-1 p-1 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity">
+                      {/* 触屏无 hover：移动端常显，仅 ≥md 恢复 hover 揭示 */}
+                      <div className="absolute inset-x-0 bottom-0 flex justify-end gap-1 p-1 bg-black/40 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
                         {index !== 0 && (
                           <button type="button" title="设为封面" aria-label={`将第 ${index + 1} 张设为封面`}
                             onClick={() => setImages(prev => { const next = [...prev]; const [p] = next.splice(index, 1); next.unshift(p); return next })}
@@ -707,7 +708,7 @@ export default function ProductCreateWizard() {
             )}
 
             {form.deliveryMode !== 'instant_inventory' && (
-              <div className="grid grid-cols-2 gap-5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
                 <div>
                   <FieldLabel required>{availabilityLabels.mode}</FieldLabel>
                   <select className="input appearance-none cursor-pointer" value={form.stockMode}

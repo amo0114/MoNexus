@@ -204,7 +204,7 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
 
   return (
     <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
-      <DialogContent className="max-w-lg flex flex-col max-h-[90vh] overflow-hidden">
+      <DialogContent className="max-w-lg flex flex-col max-h-[90dvh] overflow-hidden">
 
         <div className="flex justify-between items-center mb-6 pr-8">
           <DialogTitle className="text-xl flex items-center gap-2">

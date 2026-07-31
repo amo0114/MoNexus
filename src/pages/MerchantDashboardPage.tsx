@@ -299,14 +299,14 @@ export default function MerchantDashboardPage() {
 
   return (
     <div className="max-w-6xl mx-auto flex flex-col md:flex-row gap-6 mt-4">
-      {/* Sidebar */}
-      <aside className="w-full md:w-64 flex-shrink-0">
-        <nav className="card p-2 flex flex-col gap-1">
+      {/* Sidebar — <md: sticky horizontal pill strip (spec M4); ≥md: card rail */}
+      <aside className="w-full md:w-64 flex-shrink-0 max-md:sticky max-md:top-[calc(var(--navbar-h)+var(--safe-top))] max-md:z-20 max-md:-mx-4 max-md:px-4 max-md:py-2 max-md:bg-[var(--color-background)]/95 max-md:backdrop-blur-md">
+        <nav className="md:card p-0 md:p-2 flex md:flex-col gap-1 overflow-x-auto hide-scrollbar">
           {TABS.map(({ key, label, Icon, path }) => (
             <button
               key={key}
               onClick={() => { if (path) { navigate(path) } else { setActiveTab(key) } }}
-              className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors cursor-pointer text-sm ${
+              className={`shrink-0 flex items-center gap-3 px-4 py-3 rounded-lg transition-colors cursor-pointer text-sm whitespace-nowrap ${
                 (activeTab === key && !path)
                   ? 'bg-[var(--color-primary)] text-white font-semibold shadow-sm'
                   : 'text-[var(--color-text-muted)] hover:bg-[var(--color-primary)]/8 hover:text-[var(--color-text)] font-medium'
@@ -321,10 +321,10 @@ export default function MerchantDashboardPage() {
 
       {/* Main Content */}
       <div className="flex-1 min-w-0">
-        <div className="card min-h-[500px]">
+        <div className="card max-md:p-4 max-md:min-h-0 min-h-[500px]">
           {activeTab === 'dashboard' && (
             <div className="fade-in">
-              <h2 className="font-heading text-xl font-bold mb-6 text-[var(--color-text)]">数据概览</h2>
+              <h2 className="font-heading text-xl font-bold max-md:mb-4 mb-6 text-[var(--color-text)]">数据概览</h2>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 {!stats ? (
                   <>
@@ -532,31 +532,31 @@ export default function MerchantDashboardPage() {
             <div className="fade-in">
               <h2 className="font-heading text-xl font-bold mb-4 text-[var(--color-text)]">订单管理</h2>
 
-              <div className="grid grid-cols-3 gap-3 mb-4" data-testid="merchant-order-todo">
+              <div className="grid grid-cols-3 gap-2 md:gap-3 mb-4" data-testid="merchant-order-todo">
                 <button
                   type="button"
                   onClick={() => { setOrderStatusFilter('pending'); setOrderPage(1) }}
-                  className={`card p-3 text-left cursor-pointer border ${orderStatusFilter === 'pending' ? 'border-[var(--color-primary)]' : 'border-transparent'}`}
+                  className={`card p-2 md:p-3 text-left cursor-pointer border ${orderStatusFilter === 'pending' ? 'border-[var(--color-primary)]' : 'border-transparent'}`}
                 >
-                  <div className="text-xs text-[var(--color-text-muted)] uppercase font-bold">待处理</div>
-                  <div className="text-xl font-bold text-[var(--color-warning)]">{stats?.todo?.pending ?? '—'}</div>
+                  <div className="text-[10px] md:text-xs text-[var(--color-text-muted)] uppercase font-bold">待处理</div>
+                  <div className="text-lg md:text-xl font-bold text-[var(--color-warning)]">{stats?.todo?.pending ?? '—'}</div>
                 </button>
                 <button
                   type="button"
                   onClick={() => { setOrderStatusFilter('processing'); setOrderPage(1) }}
-                  className={`card p-3 text-left cursor-pointer border ${orderStatusFilter === 'processing' ? 'border-[var(--color-primary)]' : 'border-transparent'}`}
+                  className={`card p-2 md:p-3 text-left cursor-pointer border ${orderStatusFilter === 'processing' ? 'border-[var(--color-primary)]' : 'border-transparent'}`}
                 >
-                  <div className="text-xs text-[var(--color-text-muted)] uppercase font-bold">履约中</div>
-                  <div className="text-xl font-bold text-[var(--color-primary)]">{stats?.todo?.processing ?? '—'}</div>
+                  <div className="text-[10px] md:text-xs text-[var(--color-text-muted)] uppercase font-bold">履约中</div>
+                  <div className="text-lg md:text-xl font-bold text-[var(--color-primary)]">{stats?.todo?.processing ?? '—'}</div>
                 </button>
                 <button
                   type="button"
                   onClick={() => { setOrderStatusFilter(''); setOrderPage(1) }}
-                  className="card p-3 text-left cursor-pointer border border-transparent"
+                  className="card p-2 md:p-3 text-left cursor-pointer border border-transparent"
                   data-testid="merchant-sla-todo"
                 >
-                  <div className="text-xs text-[var(--color-text-muted)] uppercase font-bold">SLA 超时</div>
-                  <div className="text-xl font-bold text-[var(--color-danger)]">{stats?.todo?.slaExceeded ?? '—'}</div>
+                  <div className="text-[10px] md:text-xs text-[var(--color-text-muted)] uppercase font-bold">SLA 超时</div>
+                  <div className="text-lg md:text-xl font-bold text-[var(--color-danger)]">{stats?.todo?.slaExceeded ?? '—'}</div>
                 </button>
               </div>
 
@@ -909,9 +909,9 @@ function StatCard({ label, value, tone }: { label: string; value: number | strin
       ? 'text-orange-500'
       : 'text-[var(--color-text)]'
   return (
-    <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] p-4">
-      <div className="text-[var(--color-text-muted)] text-sm mb-1">{label}</div>
-      <div className={`font-heading text-2xl font-bold ${valueColor}`}>{value}</div>
+    <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] max-md:p-3 p-4">
+      <div className="text-[var(--color-text-muted)] max-md:text-xs text-sm mb-1">{label}</div>
+      <div className={`font-heading max-md:text-xl text-2xl font-bold ${valueColor}`}>{value}</div>
     </div>
   )
 }

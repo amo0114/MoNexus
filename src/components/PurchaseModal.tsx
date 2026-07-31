@@ -339,7 +339,7 @@ export default function PurchaseModal({
                   <div className="flex gap-2">
                     <button
                       type="button"
-                      className="btn-secondary text-xs px-3 py-1.5"
+                      className="btn-secondary btn-sm text-xs px-3 py-1.5"
                       disabled={provisionBusy || !provisionEmailValue.includes('@')}
                       onClick={handleSendProvisionCode}
                       data-testid="provision-send-code"
@@ -363,7 +363,7 @@ export default function PurchaseModal({
                     />
                     <button
                       type="button"
-                      className="btn-primary text-xs px-3 py-1.5"
+                      className="btn-primary btn-sm text-xs px-3 py-1.5"
                       disabled={provisionBusy || provisionCode.length !== 6}
                       onClick={handleConfirmProvisionCode}
                       data-testid="provision-confirm-code"
@@ -441,7 +441,7 @@ export default function PurchaseModal({
                       <div className="flex gap-2">
                         <button
                           type="button"
-                          className="btn-secondary text-xs px-3 py-1.5"
+                          className="btn-secondary btn-sm text-xs px-3 py-1.5"
                           disabled={provisionBusy || !provisionEmailValue.includes('@')}
                           onClick={handleSendProvisionCode}
                           data-testid="provision-send-code"
@@ -465,7 +465,7 @@ export default function PurchaseModal({
                         />
                         <button
                           type="button"
-                          className="btn-primary text-xs px-3 py-1.5 whitespace-nowrap"
+                          className="btn-primary btn-sm text-xs px-3 py-1.5 whitespace-nowrap"
                           disabled={provisionBusy || provisionCode.length !== 6}
                           onClick={handleConfirmProvisionCode}
                           data-testid="provision-confirm-code"

@@ -326,7 +326,7 @@ export default function MerchantOfferManagerModal({ isOpen, onClose, product, on
               <div className="py-8 text-center text-[var(--color-text-muted)]"><Loader2 className="w-5 h-5 animate-spin inline" /></div>
             ) : (
               <>
-                <div className="space-y-2 max-h-[50vh] overflow-y-auto" data-testid="offer-list">
+                <div className="space-y-2 max-h-[50dvh] overflow-y-auto" data-testid="offer-list">
                   {offers.map((offer) => (
                     <div
                       key={offer.id}
@@ -507,7 +507,7 @@ export default function MerchantOfferManagerModal({ isOpen, onClose, product, on
                       <div key={index} className="flex flex-wrap items-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-2"
                         data-testid={`delivery-field-row-${index}`}>
                         <input
-                          className="input flex-1 min-w-[7rem] py-1.5 text-sm font-mono"
+                          className="input flex-1 min-w-[7rem] py-1.5 font-mono"
                           placeholder="key（如 account）"
                           maxLength={32}
                           value={field.key}
@@ -519,7 +519,7 @@ export default function MerchantOfferManagerModal({ isOpen, onClose, product, on
                           data-testid={`delivery-field-key-${index}`}
                         />
                         <input
-                          className="input flex-1 min-w-[7rem] py-1.5 text-sm"
+                          className="input flex-1 min-w-[7rem] py-1.5"
                           placeholder="显示名称（如 账号）"
                           maxLength={30}
                           value={field.label}
