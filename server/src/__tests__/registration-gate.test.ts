@@ -48,10 +48,19 @@ describe('GET /api/auth/registration-status', () => {
   it('defaults to enabled and never caches when the config row is absent', async () => {
     const res = await api.get('/api/auth/registration-status').expect(200)
 
-    expect(res.body).toEqual({ registrationEnabled: true })
+    expect(res.body).toEqual({
+      registrationEnabled: true,
+      registrationAvailable: true,
+      challenge: null,
+    })
     expect(res.headers['cache-control']).toBe('no-store')
-    // 公开接口只暴露这一个布尔，不得顺带泄漏其他 SystemConfig。
-    expect(Object.keys(res.body)).toEqual(['registrationEnabled'])
+    // 公开接口只暴露兼容布尔和安全的 availability/challenge DTO，不得
+    // 顺带泄漏其他 SystemConfig、Redis、Turnstile secret 或 SMTP 细节。
+    expect(Object.keys(res.body)).toEqual([
+      'registrationEnabled',
+      'registrationAvailable',
+      'challenge',
+    ])
   })
 
   it('reflects the administrator switch without authentication', async () => {
@@ -60,11 +69,15 @@ describe('GET /api/auth/registration-status', () => {
     await putSwitch(accessToken, 0).expect(200)
     expect((await api.get('/api/auth/registration-status').expect(200)).body).toEqual({
       registrationEnabled: false,
+      registrationAvailable: false,
+      challenge: null,
     })
 
     await putSwitch(accessToken, 1).expect(200)
     expect((await api.get('/api/auth/registration-status').expect(200)).body).toEqual({
       registrationEnabled: true,
+      registrationAvailable: true,
+      challenge: null,
     })
   })
 
@@ -75,6 +88,8 @@ describe('GET /api/auth/registration-status', () => {
     expect(await isRegistrationEnabled()).toBe(false)
     expect((await api.get('/api/auth/registration-status').expect(200)).body).toEqual({
       registrationEnabled: false,
+      registrationAvailable: false,
+      challenge: null,
     })
   })
 })
@@ -271,6 +286,8 @@ describe('registration switch round trip (P.3)', () => {
       expect(await getSystemConfigValue(CONFIG_KEY)).toBe(expectedValue)
       expect(listed.value).toBe(expectedValue)
       expect(status.registrationEnabled).toBe(expectedValue === 1)
+      expect(status.registrationAvailable).toBe(expectedValue === 1)
+      expect(status.challenge).toBeNull()
     }
   })
 })

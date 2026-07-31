@@ -5,16 +5,28 @@ import { Prisma } from '@prisma/client'
 import { config } from '../../config/index.js'
 import { prisma } from '../../lib/prisma.js'
 import {
+  abuseProtectionUnavailable,
   badRequest,
   conflict,
+  humanVerificationFailed,
+  humanVerificationRequired,
+  humanVerificationUnavailable,
   mfaChallengeInvalid,
   mfaTooManyAttempts,
   mfaVerificationFailed,
   notFound,
   registrationDisabled,
   sessionRevoked,
+  tooManyRequests,
   unauthenticated,
 } from '../../lib/httpError.js'
+import {
+  consumePasswordReset,
+  consumeRegistrationAttempt,
+  consumeRegistrationProviderPreflight,
+  consumeVerificationEmailSend,
+} from './abusePolicy.js'
+import { getHumanVerifier } from './humanVerification.js'
 import { getMailer } from '../../lib/mailer/index.js'
 import { getRefreshTokenMaxAgeMs, getSystemConfigValue } from '../../lib/systemConfig.js'
 import { applyTierBonus, getCurrentTierConfig, resolveTier } from '../../lib/memberTier.js'
@@ -143,12 +155,124 @@ export async function assertRegistrationEnabled() {
   if (!(await isRegistrationEnabled())) throw registrationDisabled()
 }
 
-export async function registerUser(email: string, password: string, inviteCode?: string, ip?: string, userAgent?: string) {
+function normalizeEmailAddress(email: string) {
+  return email.trim().toLowerCase()
+}
+
+function registrationProtectionIsEnforced() {
+  return config.abuseProtectionMode === 'enforce'
+}
+
+async function consumeAbuseBucket(
+  consume: () => Promise<{ allowed: boolean; retryAfterSeconds: number }>,
+) {
+  let result: { allowed: boolean; retryAfterSeconds: number }
+  try {
+    result = await consume()
+  } catch {
+    // Never let a Redis client/timeout/circuit error reach the generic error
+    // handler with provider/client details. Security callers fail closed.
+    throw abuseProtectionUnavailable()
+  }
+  if (!result.allowed) {
+    // Keep the limiter's safe, rounded delay on the error object. The shared
+    // HTTP error/response layer can expose it as `Retry-After` without making
+    // the hit dimension or any identifier observable.
+    const error = tooManyRequests()
+    Object.assign(error, { retryAfterSeconds: result.retryAfterSeconds })
+    throw error
+  }
+}
+
+async function enforceRegistrationProtection(input: {
+  email: string
+  ip?: string
+  turnstileToken?: string
+}) {
+  if (!registrationProtectionIsEnforced()) return
+
+  // This is deliberately the first side effect after the registration gate:
+  // a provider flood must be stopped before Turnstile or any password/DB work.
+  await consumeAbuseBucket(() => consumeRegistrationProviderPreflight(input.ip ?? ''))
+
+  const token = typeof input.turnstileToken === 'string' ? input.turnstileToken.trim() : ''
+  if (!token) throw humanVerificationRequired()
+  if (token.length > 4_096) throw humanVerificationFailed()
+
+  let verification: Awaited<ReturnType<ReturnType<typeof getHumanVerifier>['verifyRegistration']>>
+  try {
+    verification = await getHumanVerifier().verifyRegistration({ token, ip: input.ip })
+  } catch {
+    throw humanVerificationUnavailable()
+  }
+  if (verification.kind === 'unavailable') throw humanVerificationUnavailable()
+  if (verification.kind === 'rejected') throw humanVerificationFailed()
+
+  // Turnstile has established a human proof; only now consume the expensive
+  // registration attempt buckets, immediately before bcrypt and DB work.
+  await consumeAbuseBucket(() => consumeRegistrationAttempt({
+    ip: input.ip ?? '',
+    email: input.email,
+  }))
+}
+
+/**
+ * Public status intentionally reports only a safe browser challenge
+ * descriptor. Redis health is deliberately not probed here: the actual
+ * registration path remains fail-closed if a runtime command is unavailable.
+ */
+export async function getPublicRegistrationStatus() {
+  const registrationEnabled = await isRegistrationEnabled()
+  if (!registrationEnabled) {
+    return { registrationEnabled, registrationAvailable: false, challenge: null }
+  }
+
+  if (!registrationProtectionIsEnforced()) {
+    return { registrationEnabled, registrationAvailable: true, challenge: null }
+  }
+
+  const configured = Boolean(
+    config.redisEnabled
+    && config.redisRequired
+    && config.abuseHashKey
+    && config.turnstile.siteKey
+    && config.turnstile.secretKey
+    && config.turnstile.allowedHostnames.length > 0,
+  )
+  if (!configured) {
+    return { registrationEnabled, registrationAvailable: false, challenge: null }
+  }
+
+  return {
+    registrationEnabled,
+    registrationAvailable: true,
+    challenge: {
+      provider: 'turnstile' as const,
+      siteKey: config.turnstile.siteKey,
+    },
+  }
+}
+
+export async function registerUser(
+  email: string,
+  password: string,
+  inviteCode?: string,
+  ip?: string,
+  userAgent?: string,
+  turnstileToken?: string,
+) {
   // REG-03：必须是第一步——查重、bcrypt、建号事务都在其后，关闭态下不会
   // 产生任何可观测副作用（连"该邮箱已注册"这种探测口子也不给）。
   await assertRegistrationEnabled()
 
-  const existing = await prisma.user.findUnique({ where: { email } })
+  const normalizedEmail = normalizeEmailAddress(email)
+  await enforceRegistrationProtection({
+    email: normalizedEmail,
+    ip,
+    turnstileToken,
+  })
+
+  const existing = await prisma.user.findUnique({ where: { email: normalizedEmail } })
   if (existing) throw conflict('该邮箱已注册')
 
   const hashedPassword = await bcrypt.hash(password, PASSWORD_BCRYPT_ROUNDS)
@@ -158,7 +282,7 @@ export async function registerUser(email: string, password: string, inviteCode?:
     const inviteReward = await getSystemConfigValue('inviteReward', tx)
 
     const newUser = await tx.user.create({
-      data: { email, password: hashedPassword },
+      data: { email: normalizedEmail, password: hashedPassword },
     })
 
     await tx.pointAccount.create({
@@ -206,8 +330,8 @@ export async function registerUser(email: string, password: string, inviteCode?:
               amount: total,
               balanceAfter: updatedAccount.balance,
               reason: bonus > 0
-                ? `邀请新用户 ${email} 注册奖励 (tier:${inviterTier} +${bonus})`
-                : `邀请新用户 ${email} 注册奖励`,
+                ? `邀请新用户 ${normalizedEmail} 注册奖励 (tier:${inviterTier} +${bonus})`
+                : `邀请新用户 ${normalizedEmail} 注册奖励`,
             },
           })
         }
@@ -969,8 +1093,22 @@ function generateAuthToken() {
   return crypto.randomBytes(32).toString('hex')
 }
 
-export async function requestPasswordReset(email: string) {
-  const user = await prisma.user.findUnique({ where: { email } })
+async function enforcePasswordResetProtection(email: string, ip?: string) {
+  if (!registrationProtectionIsEnforced()) return
+  await consumeAbuseBucket(() => consumePasswordReset({
+    email: normalizeEmailAddress(email),
+    ip: ip ?? '',
+  }))
+}
+
+export async function requestPasswordReset(email: string, ip?: string) {
+  const normalizedEmail = normalizeEmailAddress(email)
+  // The policy is consumed before the account lookup. Unknown addresses pay
+  // the same email/IP cost as known ones, while the controller preserves the
+  // endpoint's generic 200 response for every outcome.
+  await enforcePasswordResetProtection(normalizedEmail, ip)
+
+  const user = await prisma.user.findUnique({ where: { email: normalizedEmail } })
   // Silently no-op for unknown emails so the public endpoint can return
   // the same 200 response regardless of existence (no enumeration).
   if (!user) return
@@ -1096,46 +1234,91 @@ export async function changePassword(userId: number, currentPassword: string, ne
   })
 }
 
-export async function sendEmailVerification(userId: number) {
+export async function sendEmailVerification(userId: number, ip?: string) {
   const user = await prisma.user.findUnique({ where: { id: userId } })
   if (!user) throw notFound('用户不存在')
   if (user.emailVerified) throw badRequest('邮箱已验证')
 
-  const rawToken = generateAuthToken()
-  await prisma.emailVerificationToken.create({
-    data: {
+  if (registrationProtectionIsEnforced()) {
+    await consumeAbuseBucket(() => consumeVerificationEmailSend({
       userId: user.id,
-      tokenHash: hashAuthToken(rawToken),
-      expiresAt: new Date(Date.now() + config.emailVerificationTokenMaxAgeMs),
-    },
+      email: user.email,
+      ip: ip ?? '',
+    }))
+  }
+
+  const rawToken = generateAuthToken()
+  const issued = await prisma.$transaction(async tx => {
+    await lockUserRefreshSessionMutations(tx, userId)
+    const currentUser = await tx.user.findUnique({
+      where: { id: userId },
+      select: { id: true, email: true, emailVerified: true, status: true },
+    })
+    if (!currentUser) throw notFound('用户不存在')
+    if (currentUser.status === '已封禁') throw badRequest('账号已被封禁')
+    if (currentUser.emailVerified) return null
+
+    // One active verification credential per account. The user lock makes
+    // concurrent resend requests serialize before this invalidation/create
+    // pair, so a stale link cannot remain usable after a newer send wins.
+    await tx.emailVerificationToken.updateMany({
+      where: { userId: currentUser.id, used: false },
+      data: { used: true },
+    })
+    await tx.emailVerificationToken.create({
+      data: {
+        userId: currentUser.id,
+        tokenHash: hashAuthToken(rawToken),
+        expiresAt: new Date(Date.now() + config.emailVerificationTokenMaxAgeMs),
+      },
+    })
+    return { email: currentUser.email }
   })
 
+  if (!issued) throw badRequest('邮箱已验证')
+
   const mailer = await getMailer()
-  const link = `${config.appBaseUrl}/verify-email?token=${rawToken}`
+  const link = `${config.appBaseUrl}/verify-email#token=${rawToken}`
   await mailer.send({
-    to: user.email,
+    to: issued.email,
     subject: 'MoNexus 邮箱验证',
     text: `请在 24 小时内点击下面的链接完成邮箱验证：\n${link}\n\n如非本人操作请忽略此邮件。`,
   })
 }
 
-export async function verifyEmailWithToken(rawToken: string) {
+export async function verifyEmailWithToken(userId: number, rawToken: string) {
+  if (typeof rawToken !== 'string' || rawToken.length === 0 || rawToken.length > 4_096) {
+    throw badRequest('验证链接无效或已过期', 'BAD_REQUEST')
+  }
   const tokenHash = hashAuthToken(rawToken)
-  const stored = await prisma.emailVerificationToken.findUnique({
-    where: { tokenHash },
-  })
-  if (!stored) throw badRequest('验证链接无效', 'BAD_REQUEST')
-  if (stored.used) throw badRequest('验证链接已被使用', 'BAD_REQUEST')
-  if (stored.expiresAt < new Date()) throw badRequest('验证链接已过期', 'BAD_REQUEST')
-
-  await prisma.$transaction(async tx => {
-    await tx.user.update({
-      where: { id: stored.userId },
-      data: { emailVerified: new Date() },
+  const claimed = await prisma.$transaction(async tx => {
+    // Serialize verification with resend and other account credential
+    // transitions. The token update itself remains the atomic owner/expiry
+    // claim, so a cross-account or concurrent request changes no state.
+    await lockUserRefreshSessionMutations(tx, userId)
+    const user = await tx.user.findUnique({
+      where: { id: userId },
+      select: { id: true, emailVerified: true, status: true },
     })
-    await tx.emailVerificationToken.update({
-      where: { id: stored.id },
+    if (!user || user.status === '已封禁' || user.emailVerified) return false
+
+    const claim = await tx.emailVerificationToken.updateMany({
+      where: {
+        tokenHash,
+        userId,
+        used: false,
+        expiresAt: { gt: new Date() },
+      },
       data: { used: true },
     })
+    if (claim.count !== 1) return false
+
+    await tx.user.update({
+      where: { id: userId },
+      data: { emailVerified: new Date() },
+    })
+    return true
   })
+
+  if (!claimed) throw badRequest('验证链接无效或已过期', 'BAD_REQUEST')
 }

@@ -1,13 +1,23 @@
 import { z } from 'zod'
 
+const normalizedEmailSchema = z.string()
+  .trim()
+  .toLowerCase()
+  .email('请输入有效的邮箱地址')
+  .max(320, '邮箱地址过长')
+
 export const registerSchema = z.object({
-  email: z.string().email('请输入有效的邮箱地址'),
+  email: normalizedEmailSchema,
   password: z.string().min(6, '密码至少 6 位'),
-  inviteCode: z.string().optional(),
-})
+  inviteCode: z.string().trim().max(128, '邀请码过长').optional(),
+  // The proof stays optional at schema level so an explicit local/test
+  // `ABUSE_PROTECTION_MODE=off` remains usable. Enforce mode maps an omitted
+  // or blank value to HUMAN_VERIFICATION_REQUIRED at the service boundary.
+  turnstileToken: z.string().trim().max(4_096, '安全验证令牌过长').optional(),
+}).strict()
 
 export const loginSchema = z.object({
-  email: z.string().email('请输入有效的邮箱地址'),
+  email: normalizedEmailSchema,
   password: z.string().min(1, '请输入密码'),
 })
 
@@ -32,8 +42,8 @@ export const mfaVerifySchema = z.object({
 }).strict()
 
 export const forgotPasswordSchema = z.object({
-  email: z.string().email('请输入有效的邮箱地址'),
-})
+  email: normalizedEmailSchema,
+}).strict()
 
 export const resetPasswordSchema = z.object({
   token: z.string().min(1, '令牌不能为空'),
@@ -53,6 +63,6 @@ export const sessionIdParamSchema = z.object({
   sessionId: z.string().uuid('会话标识无效'),
 })
 
-export const verifyEmailQuerySchema = z.object({
+export const verifyEmailSchema = z.object({
   token: z.string().min(1, '令牌不能为空'),
-})
+}).strict()
