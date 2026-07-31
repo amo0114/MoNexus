@@ -81,6 +81,46 @@ function nestedSensitivePaths(field: string) {
 }
 
 /**
+ * Registration abuse-protection credentials and proofs. `turnstileToken` is
+ * an ephemeral bearer proof, not an application error code; keep this list
+ * exact so useful fixed `code` fields remain visible in operational logs.
+ */
+const ABUSE_PROTECTION_SENSITIVE_FIELDS = [
+  'turnstileToken',
+  'cf-turnstile-response',
+  'TURNSTILE_SECRET_KEY',
+  'ABUSE_HASH_KEY',
+  'turnstileSecretKey',
+  'abuseHashKey',
+  'emailVerificationToken',
+  'passwordResetToken',
+  'verificationToken',
+  'resetToken',
+] as const
+
+/**
+ * Provider request/response containers may include a Turnstile proof or
+ * provider-specific failure payload. Redact the complete bounded container
+ * rather than trying to maintain a fragile allow-list of provider fields.
+ */
+const TURNSTILE_SITEVERIFY_PATHS = [
+  ...nestedSensitivePaths('siteverify'),
+  ...nestedSensitivePaths('turnstileSiteverify'),
+  'turnstile.secretKey',
+  '*.turnstile.secretKey',
+  '*.context.turnstile.secretKey',
+  '*.cause.turnstile.secretKey',
+  'turnstile.request.body',
+  'turnstile.response.body',
+  '*.turnstile.request.body',
+  '*.turnstile.response.body',
+  '*.context.turnstile.request.body',
+  '*.context.turnstile.response.body',
+  '*.cause.turnstile.request.body',
+  '*.cause.turnstile.response.body',
+] as const
+
+/**
  * SMTP 凭证。刻意逐条列出而不是泛化 `user`/`pass`：`user` 在业务日志里是
  * 高频的非敏感字段（`req.user`、`user.id` 等），整体 redact 会把有用的诊断
  * 信息一起抹掉。这里只覆盖凭证真正出现的三种容器——原始环境变量名、
@@ -132,6 +172,8 @@ export const loggerRedact: pino.redactOptions = {
     ...SMTP_CREDENTIAL_PATHS,
     ...MFA_SENSITIVE_FIELDS.flatMap(nestedSensitivePaths),
     ...MFA_FACTOR_CODE_BODY_PATHS,
+    ...ABUSE_PROTECTION_SENSITIVE_FIELDS.flatMap(nestedSensitivePaths),
+    ...TURNSTILE_SITEVERIFY_PATHS,
   ],
   censor: '[redacted]',
 }

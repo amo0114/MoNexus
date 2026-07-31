@@ -164,6 +164,16 @@ require_url() {
   fi
 }
 
+require_redis_url() {
+  local key="$1"
+  local value
+  value="$(get "$key")"
+  require_value "$key"
+  if [[ -n "$value" && "$value" != redis://* && "$value" != rediss://* ]]; then
+    fail "$key must be a redis:// or rediss:// URL"
+  fi
+}
+
 require_https_url() {
   local key="$1"
   local value
@@ -219,6 +229,49 @@ require_canonical_base64_32() {
   fi
 }
 
+require_turnstile_allowed_hostnames() {
+  local key="TURNSTILE_ALLOWED_HOSTNAMES"
+  local value
+  value="$(get "$key")"
+  require_value "$key"
+
+  if [[ -z "$value" ]]; then
+    return
+  fi
+  if [[ "$ALLOW_PLACEHOLDERS" == "true" ]] && is_placeholder_literal "$value"; then
+    return
+  fi
+
+  # Keep this parser aligned with config/index.ts: exact hostname values only,
+  # without schemes, paths, ports, wildcards, or credential-like URL syntax.
+  if ! printf '%s' "$value" | node -e '
+    const { readFileSync } = require("node:fs")
+    const raw = readFileSync(0, "utf8")
+    const entries = raw.split(",").map(value => value.trim())
+    if (entries.length === 0 || entries.some(value => value.length === 0)) process.exit(1)
+    for (const entry of entries) {
+      const candidate = entry.toLowerCase()
+      if (!candidate || /[/:?#@]/.test(candidate)) process.exit(1)
+      try {
+        const parsed = new URL(`https://${candidate}`)
+        if (
+          parsed.hostname !== candidate
+          || parsed.port
+          || parsed.username
+          || parsed.password
+          || parsed.pathname !== "/"
+          || parsed.search
+          || parsed.hash
+        ) process.exit(1)
+      } catch {
+        process.exit(1)
+      }
+    }
+  '; then
+    fail "$key must be a comma-separated list of exact hostnames without schemes, paths, ports, or wildcards"
+  fi
+}
+
 require_value POSTGRES_USER
 require_value POSTGRES_PASSWORD
 require_value POSTGRES_DB
@@ -234,6 +287,21 @@ if [[ ${#jwt_secret} -lt 32 ]]; then
 fi
 
 require_canonical_base64_32 MFA_ENCRYPTION_KEY
+
+# SPEC-RAP-001: public registration and user-email sending use Redis and
+# Turnstile as fail-closed security dependencies. The server applies the same
+# production rules at boot; surface a bad deploy before compose starts.
+abuse_mode="$(get ABUSE_PROTECTION_MODE)"
+if [[ "$abuse_mode" != "enforce" ]]; then
+  fail "ABUSE_PROTECTION_MODE must be enforce for $MODE"
+fi
+require_canonical_base64_32 ABUSE_HASH_KEY
+require_value TURNSTILE_SITE_KEY
+require_value TURNSTILE_SECRET_KEY
+require_turnstile_allowed_hostnames
+require_bool_true REDIS_ENABLED
+require_bool_true REDIS_REQUIRED
+require_redis_url REDIS_URL
 
 require_https_url FRONTEND_ORIGIN
 require_bool_true COOKIE_SECURE

@@ -3,6 +3,7 @@ import { spawnSync } from 'node:child_process'
 import path from 'node:path'
 
 const VALID_MFA_ENCRYPTION_KEY = Buffer.alloc(32, 7).toString('base64')
+const VALID_ABUSE_HASH_KEY = Buffer.alloc(32, 8).toString('base64')
 
 /**
  * P5 复审 P0 回归：生产缺私有交付桶配置必须**拒绝启动**——回退是进程内存
@@ -26,6 +27,13 @@ const PROD_BASE_ENV: Record<string, string> = {
   DELIVERY_STORAGE_BUCKET: 'monexus-files',
   DELIVERY_STORAGE_PUBLIC_ENDPOINT: 'https://shop.example.com',
   MFA_ENCRYPTION_KEY: VALID_MFA_ENCRYPTION_KEY,
+  ABUSE_PROTECTION_MODE: 'enforce',
+  ABUSE_HASH_KEY: VALID_ABUSE_HASH_KEY,
+  TURNSTILE_SITE_KEY: '1x00000000000000000000AA',
+  TURNSTILE_SECRET_KEY: 'turnstile-secret-for-production-guard-test',
+  TURNSTILE_ALLOWED_HOSTNAMES: 'shop.example.com',
+  REDIS_ENABLED: 'true',
+  REDIS_REQUIRED: 'true',
   // P7b：商家 webhook 签名密钥的静态加密密钥（生产必配，64 位 hex）。
   WEBHOOK_SECRET_ENC_KEY: 'a'.repeat(64),
 }
@@ -93,6 +101,44 @@ describe('production config guard for the MFA encryption key', () => {
     const result = loadConfigWith({ MFA_ENCRYPTION_KEY: Buffer.alloc(31, 7).toString('base64') })
     expect(result.status).toBe(1)
     expect(result.stderr + result.stdout).toContain('32 bytes')
+  })
+})
+
+describe('production config guards for registration abuse protection (SPEC-RAP-001)', () => {
+  it('refuses ABUSE_PROTECTION_MODE=off in production', () => {
+    const result = loadConfigWith({ ABUSE_PROTECTION_MODE: 'off' })
+    expect(result.status).toBe(1)
+    expect(result.stderr + result.stdout).toContain('ABUSE_PROTECTION_MODE')
+  })
+
+  it('requires an independent canonical 32-byte ABUSE_HASH_KEY', () => {
+    const missing = loadConfigWith({ ABUSE_HASH_KEY: undefined })
+    expect(missing.status).toBe(1)
+    expect(missing.stderr + missing.stdout).toContain('ABUSE_HASH_KEY')
+
+    const malformed = loadConfigWith({ ABUSE_HASH_KEY: 'not canonical base64' })
+    expect(malformed.status).toBe(1)
+    expect(malformed.stderr + malformed.stdout).toContain('ABUSE_HASH_KEY')
+  })
+
+  it('requires Turnstile site/secret/hostname configuration and rejects URL-shaped hostnames', () => {
+    const missing = loadConfigWith({ TURNSTILE_SECRET_KEY: undefined })
+    expect(missing.status).toBe(1)
+    expect(missing.stderr + missing.stdout).toContain('TURNSTILE')
+
+    const malformed = loadConfigWith({ TURNSTILE_ALLOWED_HOSTNAMES: 'https://shop.example.com' })
+    expect(malformed.status).toBe(1)
+    expect(malformed.stderr + malformed.stdout).toContain('TURNSTILE_ALLOWED_HOSTNAMES')
+  })
+
+  it('requires a shared enabled and required Redis dependency in production', () => {
+    const disabled = loadConfigWith({ REDIS_ENABLED: 'false' })
+    expect(disabled.status).toBe(1)
+    expect(disabled.stderr + disabled.stdout).toContain('REDIS_ENABLED')
+
+    const optional = loadConfigWith({ REDIS_REQUIRED: 'false' })
+    expect(optional.status).toBe(1)
+    expect(optional.stderr + optional.stdout).toContain('REDIS_REQUIRED')
   })
 })
 

@@ -37,6 +37,13 @@ class FakeRedis {
     return next
   }
 
+  // Cache tests never invoke Lua, but the shared RedisLike contract requires
+  // the atomic primitive so an incomplete fake cannot accidentally model the
+  // security limiter as available.
+  async eval() {
+    throw new Error('FakeRedis.eval is not implemented for cache tests')
+  }
+
   async ping() {
     return 'PONG'
   }
