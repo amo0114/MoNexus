@@ -19,6 +19,7 @@
 | 基线提交 | `test(dashboard): 本月造数显式钉进当月窗口，修复月初 daysAgo 越界 (#66)` |
 | 审计分支 | `audit/monexus-develop-20260801` |
 | 独立 worktree | `/root/projects/worktrees/monexus-develop-audit-20260801` |
+| 本地 `develop` ref | `4568ee4ab5a6f3b2e9ca3c13bb47963555da9932`（落后于 `origin/develop`，不作为审计比较基线） |
 | 创建时状态 | 干净 |
 | 远程写入 | 无 |
 | 历史改写 | 无 |
@@ -103,6 +104,8 @@
 | 密码重置 SMTP 失败复现 | 请求 rejected；旧 token `used=true`；留下 1 个用户未收到的 active token |
 
 本地门禁尝试曾重建 `monexus-db` 容器；没有删除数据卷。随后使用原 `monexus-new_pgdata` 数据卷恢复同名容器，目前容器 healthy 且不发布宿主端口。
+
+结束检查按任务要求执行了 `git diff --stat develop...HEAD` 和 `git log develop..HEAD`。因为本地 `develop` ref 停在 `4568ee4`，该比较会混入基线之后已经合入远端的 202 个文件，不代表本审计分支新增内容；权威比较使用固定 SHA / `origin/develop`，结果只有本报告。`git diff --check develop...HEAD` 同理命中旧区间内既有文档尾随空格；固定基线到 HEAD 的新增报告通过 `git diff --check`。
 
 ## 6. Findings 总表
 
