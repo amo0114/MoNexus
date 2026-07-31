@@ -34,6 +34,8 @@ export const systemConfigKeys = [
   'subscriptionRemindDays',
   // P7b 自动开通外呼最大尝试次数（0 = 运维刹车：只建任务不外呼不转状态）
   'autoProvisionMaxAttempts',
+  // SPEC-OPS-REGMAIL-001 公开注册总开关（1 = 开启，0 = 关闭）
+  'registrationEnabled',
 ] as const
 
 export type SystemConfigKey = typeof systemConfigKeys[number]
@@ -80,6 +82,8 @@ export const systemConfigDefaults: Record<SystemConfigKey, number> = {
   fulfillmentSlaDays: 7,
   subscriptionRemindDays: 3,
   autoProvisionMaxAttempts: 5,
+  // REG-01：缺记录默认开启，保证升级到本版本的站点行为不变。
+  registrationEnabled: 1,
 }
 
 export const systemConfigDescriptions: Record<SystemConfigKey, string> = {
@@ -106,6 +110,7 @@ export const systemConfigDescriptions: Record<SystemConfigKey, string> = {
   fulfillmentSlaDays: '人工服务履约时限天数',
   subscriptionRemindDays: '订阅到期前提醒提前天数',
   autoProvisionMaxAttempts: '自动开通外呼最大尝试次数',
+  registrationEnabled: '允许新用户注册',
 }
 
 /** 管理端配置项分组（中文），供配置页按组渲染。 */
@@ -133,6 +138,7 @@ export const systemConfigGroups: Record<SystemConfigKey, string> = {
   fulfillmentSlaDays: '订单',
   subscriptionRemindDays: '订单',
   autoProvisionMaxAttempts: '订单',
+  registrationEnabled: '账户与注册',
 }
 
 /** 可选单位标注。 */
@@ -186,6 +192,7 @@ export const systemConfigHints: Partial<Record<SystemConfigKey, string>> = {
   fulfillmentSlaDays: '下单后商家须完成人工履约的天数；1–90，仅影响新订单',
   subscriptionRemindDays: '到期前 N 天邮件提醒买家；0 = 关闭到期前提醒；上限 30',
   autoProvisionMaxAttempts: '固定退避档 1m/5m/15m/1h/6h，上限 5；0 = 暂停外呼（只建任务，不转状态），已有任务恢复后按退避继续',
+  registrationEnabled: '关闭后仅阻止新账号自助注册；现有账号仍可登录。',
 }
 
 type ConfigClient = typeof prisma | Prisma.TransactionClient
@@ -206,9 +213,25 @@ export function assertSystemConfigKey(key: string): asserts key is SystemConfigK
   }
 }
 
-export function assertSystemConfigValue(value: number) {
+/**
+ * 布尔语义配置项：值域恰为 {0,1}。
+ *
+ * 单列一张表而不是用"非负整数 + 前端自觉"表达——把 2 写进 registrationEnabled
+ * 会让"开关是否开启"取决于读取方的判定习惯（>0? ===1?），是典型的静默歧义。
+ * 写入侧一律拒绝，读取侧再按 `=== 1` fail-closed（REG-02 / C2）。
+ */
+const BOOLEAN_CONFIG_KEYS = ['registrationEnabled'] as const
+
+function isBooleanConfigKey(key: SystemConfigKey): boolean {
+  return (BOOLEAN_CONFIG_KEYS as readonly string[]).includes(key)
+}
+
+export function assertSystemConfigValue(key: SystemConfigKey, value: number) {
   if (!Number.isInteger(value) || value < 0) {
     throw badRequest('配置值必须是非负整数')
+  }
+  if (isBooleanConfigKey(key) && value > 1) {
+    throw badRequest('该开关只接受 0（关闭）或 1（开启）')
   }
 }
 
@@ -315,7 +338,7 @@ export async function updateSystemConfig(
   value: number
 ) {
   assertSystemConfigKey(key)
-  assertSystemConfigValue(value)
+  assertSystemConfigValue(key, value)
 
   // P5：签名有效期设上限——presigned URL 一经签出无法撤销，长 TTL 直接
   // 放大"链接被转发"的暴露窗口；0/负值也无意义。

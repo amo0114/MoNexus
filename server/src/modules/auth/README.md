@@ -8,7 +8,8 @@ and `/me`.
 
 | Method | Path | Auth | Notes |
 | --- | --- | :---: | --- |
-| POST | `/api/auth/register` | — | Creates User + PointAccount + PointLog in one transaction; returns AuthSession and sets a refresh Cookie. |
+| GET | `/api/auth/registration-status` | — | Public read-only `{ registrationEnabled }`. `Cache-Control: no-store`, no `authLimiter`. Lets the login page hide the signup entry; it is **not** the authorization boundary. |
+| POST | `/api/auth/register` | — | Checks the registration switch first, then creates User + PointAccount + PointLog in one transaction; returns AuthSession and sets a refresh Cookie. Returns `403 REGISTRATION_DISABLED` when the switch is off. |
 | POST | `/api/auth/login` | — | User/merchant succeeds with `200 AuthSession` + Cookie. Correct admin password returns only `202 MfaLoginChallenge`; it has no access token and never sets a refresh Cookie. |
 | POST | `/api/auth/mfa/enrollment/start` | Pre-auth challenge | Starts first admin TOTP enrollment and returns a provisioning URI/manual key for that active challenge only. These values are secrets and must stay in component memory. |
 | POST | `/api/auth/mfa/enrollment/confirm` | Pre-auth challenge | Correct factor atomically enables MFA, creates the first MFA session, and returns the one-time recovery-code display with `201`. |
@@ -28,6 +29,24 @@ and `/me`.
 There is intentionally no HTTP endpoint to disable MFA, reset another user's
 MFA, regenerate recovery codes, reconfigure MFA, or revoke all sessions. Those
 P1 capabilities need their own reviewed contract.
+
+## Public Registration Switch
+
+`SystemConfig.registrationEnabled` (`1` = open, `0` = closed, missing row = open) is the single
+public-registration switch, written through `PUT /api/admin/config/registrationEnabled`.
+
+- `assertRegistrationEnabled()` runs as the **first statement** of `registerUser()` — ahead of
+  the duplicate-email lookup, bcrypt, and every transaction. A blocked attempt therefore leaves
+  no `User` / `PointAccount` / `PointLog` / `InviteRelation` / `RefreshToken` row, issues no
+  access token, and sets no refresh cookie. It also closes the "does this email exist" oracle,
+  because the duplicate lookup never runs.
+- Enforcement lives in the service, not the route, so CLI and in-process callers share the same
+  boundary. Closing registration by deleting the route is forbidden: reopening would need a
+  redeploy and would leave no operational audit trail.
+- The read is fail-closed (`value === 1`) and deliberately uncached: a corrupted value counts as
+  closed, and a switch change is observed by the very next registration attempt.
+- Requests that already passed the check when the switch flips are allowed to complete. The
+  switch never revokes accounts that already exist.
 
 ## MFA and Session Invariants
 
@@ -77,6 +96,10 @@ P1 capabilities need their own reviewed contract.
 | `authLimiter` | 15 min | 30 | `/register`, `/login`, all three MFA routes, `/reset-password`, `/password-change`; IP key |
 | `refreshLimiter` | 15 min | 30 | `/refresh`; one-way refresh-cookie hash, falling back to an IPv6-safe IP key only when no cookie exists |
 | `mailLimiter` | 15 min | 5 | `/forgot-password`, `/send-verification`; IP key |
+
+`/registration-status` intentionally carries no auth limiter — it is a read-only page-load
+probe, and charging it against the authentication budget would let ordinary page views lock
+users out of logging in. It remains covered by the global `/api` limiter.
 
 Limits are bypassed only under `NODE_ENV=test` for the server test suite.
 Errors use `{ "error": { "code", "message" } }`. MFA callers must handle

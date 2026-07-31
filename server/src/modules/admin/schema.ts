@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { systemConfigKeys } from '../../lib/systemConfig.js'
 import { businessRegistry } from '../../lib/businessRegistry.js'
+import { normalizedEmailSchema } from '../../lib/email.js'
 import { ORDER_STATUSES } from '../orders/fulfillment.js'
 import { inventoryImportPayloadSchema } from '../../lib/inventoryImport.js'
 import {
@@ -317,3 +318,13 @@ export const offerReportQuerySchema = z.object({
 }).strict()
 
 export type OfferReportQuery = z.infer<typeof offerReportQuerySchema>
+
+// ---- SPEC-OPS-REGMAIL-001：邮件投递测试 ----
+
+// strict：多余字段一律拒绝，避免调用方以为能通过 body 定制主题/正文——
+// 测试邮件内容是固定的（MAIL-04）。
+export const mailDeliveryTestSchema = z.object({
+  email: normalizedEmailSchema,
+}).strict()
+
+export type MailDeliveryTestInput = z.infer<typeof mailDeliveryTestSchema>

@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client'
 import { prisma } from '../../lib/prisma.js'
 import { wrapCache } from '../../lib/cache.js'
+import { maskEmail } from '../../lib/email.js'
 import { badRequest, notFound, conflict } from '../../lib/httpError.js'
 import {
   buildProductReviewsCacheKey,
@@ -10,11 +11,9 @@ import { normalizeOrderStatus } from '../orders/fulfillment.js'
 
 const EDIT_WINDOW_MS = 7 * 24 * 60 * 60 * 1000
 
-export function maskEmail(email: string) {
-  const [local, domain] = email.split('@')
-  const keep = local.length <= 2 ? 1 : 2
-  return `${local.slice(0, keep)}***@${domain}`
-}
+// 实现已迁到 lib/email.ts（邮件运营面复用同一脱敏形态）；此处 re-export
+// 保持既有引用点不变。
+export { maskEmail }
 
 function displayNameFor(user: { nickname: string | null; email: string }) {
   return user.nickname?.trim() || maskEmail(user.email)
