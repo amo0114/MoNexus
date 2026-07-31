@@ -59,14 +59,14 @@
 
 ### 后端
 
-- [ ] P.1 **边界**：`registrationEnabled` 恰好接受整数 {0,1}；生成越界整数/小数/字符串/布尔/null/数组/对象打 PUT，任何非法值被持久化或合法值被拒即证伪
-- [ ] P.2 **不变量保持**：关闭态下注册对 `User/PointAccount/PointLog/InviteRelation/RefreshToken` 行数零增且无 Set-Cookie/accessToken；生成随机合法注册载荷（含邀请码变体）对比快照
-- [ ] P.3 **往返一致**：删行/PUT 0/PUT 1 任意序列后，DB 行、`getSystemConfigValue`、公开状态、admin 列表四者一致
-- [ ] P.4 **单调性**：disable 提交成功响应之后开始的注册调用不可成功，直至下一次 enable；用事务 barrier 构造交叠验证（提交前已读到 1 的在途请求允许完成，REG-05）
-- [ ] P.5 **白名单投影**：状态 DTO 序列化后键集合恰为 5 个规格字段，仅配 `SMTP_USER` 时呈 `deliveryReady: true, from: null`；注入 host/user/pass/token 金丝雀字符串（含 `SMTP_USER` 值本身），序列化结果含任一即证伪
-- [ ] P.6 **幂等**：email 规范化二次应用不变；CaptureMailer 收到的地址恒为 trim+lowercase 规范形
-- [ ] P.7 **边界**：limiter 每管理员每 10 分钟窗口至多 3 次、跨管理员独立、窗口过期恢复；在 599999/600000/600001ms 边界与多 admin 交错下验证
-- [ ] P.8 **不变量保持**：每个终态（成功/失败/409/429）恰有脱敏 AdminLog；构造含唯一密钥标记的 Mailer 错误，扫描响应与审计字段无任何原始标记/明文地址
+- [x] P.1 **边界**：`registrationEnabled` 恰好接受整数 {0,1}；生成越界整数/小数/字符串/布尔/null/数组/对象打 PUT，任何非法值被持久化或合法值被拒即证伪
+- [x] P.2 **不变量保持**：关闭态下注册对 `User/PointAccount/PointLog/InviteRelation/RefreshToken` 行数零增且无 Set-Cookie/accessToken；生成随机合法注册载荷（含邀请码变体）对比快照
+- [x] P.3 **往返一致**：删行/PUT 0/PUT 1 任意序列后，DB 行、`getSystemConfigValue`、公开状态、admin 列表四者一致
+- [x] P.4 **单调性**：disable 提交成功响应之后开始的注册调用不可成功，直至下一次 enable；用事务 barrier 构造交叠验证（提交前已读到 1 的在途请求允许完成，REG-05）
+- [x] P.5 **白名单投影**：状态 DTO 序列化后键集合恰为 5 个规格字段，仅配 `SMTP_USER` 时呈 `deliveryReady: true, from: null`；注入 host/user/pass/token 金丝雀字符串（含 `SMTP_USER` 值本身），序列化结果含任一即证伪
+- [x] P.6 **幂等**：email 规范化二次应用不变；CaptureMailer 收到的地址恒为 trim+lowercase 规范形
+- [x] P.7 **边界**：limiter 每管理员每 10 分钟窗口至多 3 次、跨管理员独立、窗口过期恢复；在 599999/600000/600001ms 边界与多 admin 交错下验证
+- [x] P.8 **不变量保持**：每个终态（成功/失败/409/429）恰有脱敏 AdminLog；构造含唯一密钥标记的 Mailer 错误，扫描响应与审计字段无任何原始标记/明文地址
 
 ### 前端（Playwright 断言）
 
@@ -96,7 +96,7 @@
 - [x] A.9 新建 `server/src/modules/admin/mailOperations.ts`：`getMailDeliveryStatus()`（基于 `config.mailer` 的 5 字段白名单 DTO：`deliveryReady` 随实际生效 mailer 含兜底，`from` 仅回显显式 `SMTP_FROM` 否则 `null`，无网络探测）；`sendMailDeliveryTest({adminUserId,email})`（仅 console 模式 409；否则 attempt 审计→发送→terminal 审计，固定纯文本内容，失败分类白名单，脱敏收件人 `o***@example.com` 形态）
 - [x] A.10 新建 `server/src/modules/admin/mailTestLimiter.ts`：`createAdminMailTestLimiter({skipInTests})` 工厂（10min/3/`admin:<userId>`，拒绝时写审计并走 `tooManyRequests()`）；导出生产单例
 - [x] A.11 `server/src/modules/admin/controller.ts`+`routes.ts`：挂载 `GET /mail/status`、`POST /mail/test`（既有 MFA 中间件之后；limiter 在 body 校验之前）
-- [ ] A.12 后端测试（新 `registration-gate.test.ts` + `admin-mail-operations.test.ts`）：§7.1 全部 8 项 + C 系列约束 + P.1–P.8（含 default/enabled/disabled、副作用零增、校验矩阵、授权矩阵、DTO 序列化金丝雀、CaptureMailer 固定内容、console 409 且零发送、SMTP 失败分类、审计脱敏断言、`skipInTests:false` 专项 limiter 测试）
+- [x] A.12 后端测试（新 `registration-gate.test.ts` + `admin-mail-operations.test.ts`）：§7.1 全部 8 项 + C 系列约束 + P.1–P.8（含 default/enabled/disabled、副作用零增、校验矩阵、授权矩阵、DTO 序列化金丝雀、CaptureMailer 固定内容、console 409 且零发送、SMTP 失败分类、审计脱敏断言、`skipInTests:false` 专项 limiter 测试）
 - [ ] A.13 文档同步：`docs/superpowers/specs/monexus-api-openapi.json`（两个新路由、错误码、config key 全量纠偏）、`server/src/modules/auth/README.md`、`server/src/modules/admin/README.md`、部署文档 SMTP 变量与重启说明
 - [ ] A.14 验证门槛：`npm --prefix server run build` 零错误；目标套件 + 全量 server 测试（`TEST_DATABASE_URL` + `REDIS_ENABLED=false`）全绿；`git diff --check`；无 `.env`/凭证入库
 
