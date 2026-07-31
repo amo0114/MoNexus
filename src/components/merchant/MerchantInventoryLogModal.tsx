@@ -89,7 +89,7 @@ export default function MerchantInventoryLogModal({ isOpen, onClose, product, on
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose() }}>
-      <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto" data-testid="inventory-log-modal">
+      <DialogContent className="max-w-2xl max-h-[85dvh] overflow-y-auto" data-testid="inventory-log-modal">
         <DialogTitle>{resourceLabel}记录</DialogTitle>
         <DialogDescription>
           商品：{product?.name ?? ''}（仅保留数量、订单与操作原因，不展示交付内容）

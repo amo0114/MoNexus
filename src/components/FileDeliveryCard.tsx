@@ -56,7 +56,7 @@ export default function FileDeliveryCard({ orderId, fileName, size }: Props) {
         type="button"
         onClick={handleDownload}
         disabled={downloading}
-        className="btn-primary px-4 py-2 text-sm shrink-0 flex items-center gap-1.5"
+        className="btn-primary btn-sm px-4 py-2 text-sm shrink-0 flex items-center gap-1.5"
         data-testid="file-delivery-download"
       >
         {downloading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}

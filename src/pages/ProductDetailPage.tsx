@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
+import { createPortal } from 'react-dom'
 import { useParams, useNavigate } from 'react-router-dom'
 import { ArrowLeft, Coins, FileText, Store, ShieldCheck, Info, Star } from 'lucide-react'
 import DOMPurify from 'dompurify'
@@ -14,6 +15,7 @@ import EmptyState from '../components/ui/EmptyState'
 import SafeImage from '../components/ui/SafeImage'
 import { getProductReviews, type ReviewItem } from '../api/reviews'
 import StarRating from '../components/ui/StarRating'
+import { useIsMobileViewport } from '../hooks/useMediaQuery'
 import type { Offer } from '../types/merchant'
 import { offerPeriodDetailNote, offerPeriodSubtitle } from '../utils/offerPeriodDisplay'
 
@@ -45,6 +47,8 @@ export default function ProductDetailPage() {
   const navigate = useNavigate()
   const showToast = useAppStore((s) => s.showToast)
   const userPoints = useAuthStore((s) => s.user?.points ?? 0)
+  // 购买条仅渲染于移动视口（V2-M3）：桌面 DOM 与 develop 完全一致
+  const isMobileViewport = useIsMobileViewport()
 
   const [product, setProduct] = useState<Product | null>(null)
   const [loading, setLoading] = useState(true)
@@ -249,8 +253,17 @@ export default function ProductDetailPage() {
   // P5：file 形态规格的购前提示——只展示形态与大小,文件名/链接购前不可见。
   const fileDeliverySize = activeOffer?.fixedContentType === 'file' ? activeOffer?.deliveryFileSize ?? null : undefined
 
+  // 兑换 CTA 状态机（页内按钮与移动端固定购买条共用，V2-M3 invariant 10）
+  const handleRedeemClick = () => {
+    if (isInsufficient) {
+      navigate('/')
+    } else {
+      setShowPurchase(true)
+    }
+  }
+
   return (
-    <div className="max-w-5xl mx-auto pb-8 fade-in relative">
+    <div className="max-w-5xl mx-auto max-md:pb-[calc(5rem+var(--safe-bottom))] md:pb-8 fade-in relative">
       <button
         onClick={() => navigate(-1)}
         className="mb-4 flex items-center gap-2 text-[var(--color-text-muted)] hover:text-[var(--color-text)] transition-colors font-medium cursor-pointer"
@@ -271,6 +284,9 @@ export default function ProductDetailPage() {
             )}
             <div className="absolute inset-0 bg-gradient-to-t from-black/45 via-black/10 to-transparent" />
 
+            {/* Chips stay overlaid at every size; the title only overlays on
+                md+（P2-4：切换点必须是 md——lg 会把 768–1023px 的桌面布局
+                也改掉，违反「≥768px 桌面不变」约束）；<md 标题在内容流。 */}
             <div className="absolute bottom-6 left-6 right-6 flex flex-col gap-4 z-10">
               <div className="flex gap-2 flex-wrap">
                 <span className="text-xs font-bold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5 bg-black/25 backdrop-blur-md border border-white/20">
@@ -281,7 +297,7 @@ export default function ProductDetailPage() {
                   {product.merchant?.name || '平台自营'}
                 </span>
               </div>
-              <h1 className="font-heading text-3xl md:text-4xl font-bold text-white leading-snug drop-shadow-md tracking-tight">
+              <h1 className="hidden md:block font-heading text-3xl md:text-4xl font-bold text-white leading-snug drop-shadow-md tracking-tight">
                 {product.name}
               </h1>
             </div>
@@ -314,10 +330,15 @@ export default function ProductDetailPage() {
           )}
         </div>
 
-        <div className="p-6 md:p-8">
+        <div className="max-md:p-4 md:p-8">
+          {/* <md title — md+ 的 overlay 副本在主图上（与原桌面布局一致） */}
+          <h1 className="md:hidden font-heading text-xl sm:text-2xl font-bold text-[var(--color-text)] leading-snug mb-6">
+            {product.name}
+          </h1>
+
           {/* SKU 选择器（P4a）：仅多规格时渲染，单 SKU 完全透明 */}
           {isMultiSku && (
-            <div className="mb-8" data-testid="sku-selector">
+            <div className="max-md:mb-6 mb-8" data-testid="sku-selector">
               <span className="text-xs text-[var(--color-text-muted)] font-bold uppercase tracking-wider mb-3 block">选择规格</span>
               <div className="flex flex-wrap gap-3">
                 {offers.map(offer => {
@@ -411,11 +432,11 @@ export default function ProductDetailPage() {
           )}
 
           {/* Price / action bar */}
-          <div className="bg-[var(--color-background)] rounded-xl p-6 md:p-8 mb-8 flex flex-col lg:flex-row justify-between items-start lg:items-center border border-[var(--color-border)] gap-6">
-            <div className="flex flex-col min-w-max">
+          <div className="bg-[var(--color-background)] rounded-xl max-md:p-4 md:p-8 max-md:mb-6 mb-8 flex flex-col lg:flex-row justify-between items-start lg:items-center border border-[var(--color-border)] max-md:gap-4 gap-6">
+            <div className="flex flex-col min-w-0">
               <span className="text-xs text-[var(--color-text-muted)] font-bold uppercase tracking-wider mb-2">兑换需要</span>
-              <div className="flex items-end gap-2">
-                <span className="font-heading text-4xl md:text-5xl font-bold text-[var(--color-cta)] flex items-center gap-2">
+              <div className="flex flex-wrap items-end gap-2">
+                <span className="font-heading text-3xl sm:text-4xl md:text-5xl font-bold text-[var(--color-cta)] flex items-center gap-2">
                   <Coins className="w-8 h-8 md:w-10 md:h-10" />{displayPrice}
                 </span>
                 {displayOriginalPrice && displayOriginalPrice > displayPrice && (
@@ -468,42 +489,37 @@ export default function ProductDetailPage() {
               </div>
             </div>
 
+            {/* 页内 CTA：≥md 显示；<md 由底部固定购买条接管（V2-M3） */}
             <button
-              onClick={() => {
-                if (isInsufficient) {
-                  navigate('/')
-                } else {
-                  setShowPurchase(true)
-                }
-              }}
+              onClick={handleRedeemClick}
               disabled={isSoldOut}
               className={
                 isSoldOut
-                  ? 'inline-flex items-center justify-center gap-2 px-10 py-4 md:py-5 rounded-lg text-lg font-bold whitespace-nowrap w-full lg:w-auto opacity-60 cursor-not-allowed bg-[var(--color-border)] text-[var(--color-text-muted)]'
+                  ? 'max-md:hidden inline-flex items-center justify-center gap-2 px-10 py-4 md:py-5 rounded-lg text-lg font-bold whitespace-nowrap w-full lg:w-auto opacity-60 cursor-not-allowed bg-[var(--color-border)] text-[var(--color-text-muted)]'
                   : isInsufficient
-                  ? 'btn-secondary px-10 py-4 md:py-5 text-lg w-full lg:w-auto whitespace-nowrap'
-                  : 'btn-cta px-10 py-4 md:py-5 text-lg w-full lg:w-auto whitespace-nowrap shadow-lg hover:shadow-xl hover:-translate-y-0.5'
+                  ? 'max-md:hidden btn-secondary px-10 py-4 md:py-5 text-lg w-full lg:w-auto whitespace-nowrap'
+                  : 'max-md:hidden btn-cta px-10 py-4 md:py-5 text-lg w-full lg:w-auto whitespace-nowrap shadow-lg hover:shadow-xl hover:-translate-y-0.5'
               }
             >
               {isSoldOut ? '已被抢光' : isInsufficient ? '余额不足，去赚积分' : '立即兑换'}
             </button>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            <div className="lg:col-span-2 space-y-12">
+          <div className="grid grid-cols-1 lg:grid-cols-3 max-md:gap-6 gap-8">
+            <div className="lg:col-span-2 max-md:space-y-8 space-y-12">
               {/* Rich description */}
               <div>
-                <h3 className="font-heading text-lg font-bold mb-5 flex items-center gap-2 text-[var(--color-text)] uppercase tracking-wider">
+                <h3 className="font-heading text-lg font-bold max-md:mb-3 mb-5 flex items-center gap-2 text-[var(--color-text)] uppercase tracking-wider">
                   <FileText className="w-5 h-5 text-[var(--color-primary)]" /> 图文介绍
                 </h3>
                 <div
-                  className="text-[var(--color-text)] leading-loose space-y-4 text-sm md:text-base bg-[var(--color-background)] p-6 md:p-8 rounded-xl border border-[var(--color-border)] prose prose-neutral dark:prose-invert max-w-none"
+                  className="rich-text text-[var(--color-text)] leading-loose space-y-4 text-sm md:text-base bg-[var(--color-background)] p-4 sm:p-6 md:p-8 rounded-xl border border-[var(--color-border)]"
                   dangerouslySetInnerHTML={{ __html: safeRichDescription }}
                 />
               </div>
 
               {/* Reviews */}
-              <div className="mt-8" data-testid="review-list">
+              <div className="max-md:mt-6 mt-8" data-testid="review-list">
                 <h2 className="font-heading text-lg font-bold text-[var(--color-text)] mb-4">用户评价（{reviewTotal}）</h2>
                 {reviews.length === 0 ? (
                   <EmptyState compact icon={Star} title="暂无评价" description="兑换后即可发表第一条评价" />
@@ -604,6 +620,48 @@ export default function ProductDetailPage() {
           </div>
         </div>
       </div>
+
+      {/* 移动端固定购买条（V2-M3）：价格 + CTA 永不离场；此页 Tab Bar 让位隐藏。
+          高度约 64px + safe-area，页面根部已预留对应 padding-bottom。
+          必须 Portal 到 body：页面根的 .fade-in 动画持有 transform，
+          会把 fixed 后代的包含块改写成自身（fixed 失效）。
+          且仅在移动视口渲染——桌面 DOM 不含此条（零回归面）。 */}
+      {isMobileViewport && createPortal(
+      <div
+        className="md:hidden fixed bottom-0 inset-x-0 z-30 border-t border-[var(--color-border)] bg-[var(--color-surface)]/95 backdrop-blur-md"
+        style={{ paddingBottom: 'var(--safe-bottom)' }}
+        data-testid="mobile-buy-bar"
+      >
+        <div className="flex items-center gap-3 px-4 py-2.5">
+          <div className="flex flex-col min-w-0 shrink-0">
+            <span className="text-[10px] leading-tight text-[var(--color-text-muted)] font-bold uppercase tracking-wider">兑换需要</span>
+            <div className="flex items-baseline gap-1.5">
+              <span className="flex items-center gap-1 text-[var(--color-cta)] font-bold text-xl font-heading tracking-tight">
+                <Coins className="w-4 h-4 shrink-0" />{displayPrice}
+              </span>
+              {displayOriginalPrice && displayOriginalPrice > displayPrice && (
+                <span className="text-xs text-[var(--color-text-muted)] line-through">{displayOriginalPrice}</span>
+              )}
+            </div>
+          </div>
+          <button
+            onClick={handleRedeemClick}
+            disabled={isSoldOut}
+            data-testid="mobile-buy-bar-cta"
+            className={
+              isSoldOut
+                ? 'flex-1 inline-flex items-center justify-center gap-2 py-3 rounded-xl text-base font-bold whitespace-nowrap opacity-60 cursor-not-allowed bg-[var(--color-border)] text-[var(--color-text-muted)]'
+                : isInsufficient
+                ? 'flex-1 btn-secondary py-3 text-base whitespace-nowrap rounded-xl'
+                : 'flex-1 btn-cta py-3 text-base whitespace-nowrap rounded-xl shadow-lg'
+            }
+          >
+            {isSoldOut ? '已被抢光' : isInsufficient ? '余额不足，去赚积分' : '立即兑换'}
+          </button>
+        </div>
+      </div>,
+      document.body,
+      )}
 
       {showPurchase && (
         <PurchaseModal

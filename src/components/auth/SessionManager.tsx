@@ -110,7 +110,7 @@ export default function SessionManager() {
       ) : error ? (
         <div className="rounded-lg border border-[var(--color-danger)]/25 bg-[var(--color-danger)]/10 p-4">
           <p className="text-sm text-[var(--color-danger)]" role="alert">{error}</p>
-          <button type="button" className="btn-secondary mt-3 px-3 py-1.5 text-xs" onClick={() => void loadSessions()}>
+          <button type="button" className="btn-secondary btn-sm mt-3 px-3 py-1.5 text-xs" onClick={() => void loadSessions()}>
             <RefreshCw className="mr-1 inline h-3.5 w-3.5" />重试
           </button>
         </div>

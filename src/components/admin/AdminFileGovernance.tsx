@@ -212,14 +212,14 @@ export default function AdminFileGovernance() {
             <button
               disabled={page === 1}
               onClick={() => setPage(page - 1)}
-              className="px-3 py-1 border border-[var(--color-border)] rounded hover:bg-[var(--color-background)] disabled:opacity-50"
+              className="btn-sm px-3 py-1 border border-[var(--color-border)] rounded hover:bg-[var(--color-background)] disabled:opacity-50 cursor-pointer"
             >
               上一页
             </button>
             <button
               disabled={page * PAGE_SIZE >= total}
               onClick={() => setPage(page + 1)}
-              className="px-3 py-1 border border-[var(--color-border)] rounded hover:bg-[var(--color-background)] disabled:opacity-50"
+              className="btn-sm px-3 py-1 border border-[var(--color-border)] rounded hover:bg-[var(--color-background)] disabled:opacity-50 cursor-pointer"
             >
               下一页
             </button>

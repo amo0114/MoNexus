@@ -34,7 +34,7 @@ export default function MerchantDisputeDialog({ isOpen, onClose, order, onSubmit
         <DialogDescription>
           订单 #{order?.id ?? ''} · {order?.product?.name ?? ''}。选择「关闭争议」将关闭该订单；选择「恢复履约」将回到履约流程继续处理。
         </DialogDescription>
-        <div className="mt-5 flex justify-end gap-3">
+        <div className="mt-5 flex flex-wrap justify-end gap-3">
           <button
             type="button"
             onClick={onClose}

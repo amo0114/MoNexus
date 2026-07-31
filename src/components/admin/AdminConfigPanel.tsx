@@ -124,7 +124,7 @@ export default function AdminConfigPanel() {
                         onChange={(e) => handleChange(c.key, e.target.value)}
                         disabled={savingKey === c.key}
                         data-testid={`admin-config-input-${c.key}`}
-                        className={`input text-sm py-1.5 px-2 w-28 ${
+                        className={`input py-1.5 px-2 w-28 ${
                           errors[c.key] ? 'border-[var(--color-danger)]' : ''
                         }`}
                       />

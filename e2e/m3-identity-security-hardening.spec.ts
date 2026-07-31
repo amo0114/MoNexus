@@ -98,7 +98,14 @@ async function loginThroughPage(page: Page) {
 }
 
 async function goToProfile(page: Page) {
-  await page.getByRole('button', { name: '个人中心' }).click()
+  // feat/mobile-ui-polish：<md 头像入口去重到 Tab Bar「我的」（navbar 头像
+  // 仅 ≥md 渲染）；按可见性选择入口，桌面行为不变。
+  const tabProfile = page.getByRole('button', { name: '我的', exact: true })
+  if (await tabProfile.isVisible().catch(() => false)) {
+    await tabProfile.click()
+  } else {
+    await page.getByRole('button', { name: '个人中心' }).click()
+  }
   await expect(page).toHaveURL(/\/profile$/)
   await expect(page.getByTestId('session-manager')).toBeVisible()
 }

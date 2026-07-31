@@ -73,6 +73,19 @@
   --color-warning: #F59E0B;
   --color-success: #22C55E;
   --color-danger: #EF4444;
+
+  /* --- Mobile chrome metrics (T1) ---
+     --tabbar-h: bottom tab bar height (icon + label row).
+     --navbar-h: top navbar content height（py-4×2 + 44px 行高 + 1px border），
+     不含 safe-top——sticky 偏移一律用 calc(var(--navbar-h) + var(--safe-top))，
+     刘海屏下导航与 sticky 条不重叠（R2-P1）。Safe-area insets default
+     to 0 on non-notch devices so calc() always works. */
+  --tabbar-h: 56px;
+  --navbar-h: 77px;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
 }
 
 .dark {
@@ -230,6 +243,82 @@ h1, h2, h3, h4 {
    `btn-secondary px-4 py-2 text-sm` need NO !important.
    ========================================================= */
 
+/* =========================================================
+   Motion system (V2-M1) — Apple-class easing & durations.
+   All overrides below are scoped to <md; desktop keeps the
+   original parameters (V2 spec invariant 9).
+   ========================================================= */
+:root {
+  --ease-standard: cubic-bezier(0.32, 0.72, 0, 1);   /* iOS standard ease-out */
+  --ease-spring: cubic-bezier(0.34, 1.3, 0.64, 1);   /* subtle spring overshoot */
+  --dur-fast: 150ms;
+  --dur-med: 250ms;
+  --dur-slow: 380ms;
+}
+
+/* Page entrance, mobile variant: faster, shorter travel, iOS curve. */
+@keyframes fadeInMobile {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes overlayIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (max-width: 767px) {
+  .fade-in { animation: fadeInMobile var(--dur-slow) var(--ease-standard) forwards; }
+  .modal-overlay { animation: overlayIn var(--dur-med) ease-out; }
+}
+
+/* 灵动岛搜索面板（V3）：内容淡入微位移 + chips 行真实高度展开。
+   容器几何 morph 由 Layout 胶囊皮肤的 transition-all 承担。 */
+/* 注意：不做 scale——入场动画期间的缩放会改变子元素 boundingBox，
+   触控目标运行时量测（≥40px 契约）会被 0.98 倍率误伤 */
+@keyframes islandPanelIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.island-panel-in {
+  animation: islandPanelIn 0.22s var(--ease-standard) both;
+}
+@keyframes islandRowsIn {
+  from { max-height: 0; opacity: 0; transform: translateY(-6px); }
+  to { max-height: 3.5rem; opacity: 1; transform: translateY(0); }
+}
+.island-rows-in {
+  animation: islandRowsIn 0.3s var(--ease-standard) 0.06s both;
+  overflow: hidden;
+}
+
+/* iOS tap feedback — opt-in via .pressable (scale only, no layout shift). */
+.pressable {
+  transition: transform var(--dur-fast) var(--ease-standard);
+}
+.pressable:active {
+  transform: scale(0.97);
+}
+
+/* Skeleton shimmer: <md replaces the pulse with a light sweep. */
+.skeleton-shimmer { position: relative; overflow: hidden; }
+@media (max-width: 767px) {
+  .skeleton-shimmer::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    transform: translateX(-100%);
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.45), transparent);
+    animation: shimmer 1.4s var(--ease-standard) infinite;
+  }
+  .dark .skeleton-shimmer::after {
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.08), transparent);
+  }
+}
+@keyframes shimmer {
+  100% { transform: translateX(100%); }
+}
+
 @layer components {
 
 .btn-primary {
@@ -375,6 +464,39 @@ h1, h2, h3, h4 {
   box-shadow: var(--shadow-xl);
   max-width: 500px;
   width: calc(100% - 2rem);
+  /* Mobile baseline (spec T1): dialogs taller than the viewport must
+     scroll internally instead of clipping top/bottom. dvh tracks the
+     visible viewport on mobile Safari (dynamic toolbar); vh is the
+     fallback for engines without dvh support. */
+  max-height: calc(100vh - 2rem);
+  max-height: calc(100dvh - 2rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* Safe-area helpers (T1) — notch / home-indicator padding. */
+.pb-safe { padding-bottom: var(--safe-bottom); }
+.pt-safe { padding-top: var(--safe-top); }
+
+/* Navbar 左右 padding + 横屏刘海安全区（P1 修复）。
+   数值精确复刻原 max-md:px-3 / sm:px-6，桌面端零差异（safe-* = 0）。 */
+.nav-safe-x {
+  padding-left: calc(var(--safe-left) + 0.75rem);
+  padding-right: calc(var(--safe-right) + 0.75rem);
+}
+@media (min-width: 768px) {
+  .nav-safe-x {
+    padding-left: calc(var(--safe-left) + 1.5rem);
+    padding-right: calc(var(--safe-right) + 1.5rem);
+  }
+}
+
+/* Bottom-sheet entrance for the mobile dialog form (spec T4)。
+   唯一生效定义——.sheet-enter 仅经 max-md:sheet-enter 使用（DialogContent），
+   曲线与 iOS 标准 ease 一致（--ease-standard，0.34s）。
+   注意：不要在前文 media query 重复定义——同特异性下后写者胜，会静默覆盖。 */
+.sheet-enter {
+  animation: slideUp 0.34s var(--ease-standard, cubic-bezier(0.32, 0.72, 0, 1)) forwards;
 }
 
 } /* @layer components */
@@ -390,6 +512,19 @@ h1, h2, h3, h4 {
 /* Stars (rating system) */
 .star-filled { color: #F59E0B; fill: #F59E0B; }
 .star-empty { color: var(--color-image-placeholder); fill: var(--color-image-placeholder); }
+
+/* =========================================================
+   Rich text (merchant-authored HTML, ProductDetailPage).
+   The typography plugin is not installed; these rules give
+   user content the same mobile-safe guarantees: no horizontal
+   overflow from tables / pre / long URLs.
+   ========================================================= */
+.rich-text { overflow-wrap: break-word; }
+.rich-text :where(img, video) { max-width: 100%; height: auto; }
+.rich-text :where(a) { color: var(--color-primary); overflow-wrap: anywhere; }
+.rich-text :where(pre) { overflow-x: auto; max-width: 100%; }
+.rich-text :where(table) { display: block; overflow-x: auto; max-width: 100%; border-collapse: collapse; }
+.rich-text :where(td, th) { padding: 0.375rem 0.75rem; border: 1px solid var(--color-border); }
 
 /* Admin table */
 @layer components {

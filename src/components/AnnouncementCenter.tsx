@@ -61,21 +61,6 @@ export function AnnouncementBellButton({ unreadCount, onClick }: { unreadCount: 
   )
 }
 
-export function MobileAnnouncementFab({ unreadCount, onClick }: { unreadCount: number, onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="md:hidden fixed bottom-5 right-4 z-30 icon-btn w-12 h-12 rounded-full bg-[var(--color-primary)] text-white shadow-lg shadow-[var(--color-primary)]/30 border border-white/20 hover:bg-[var(--color-primary-hover)] transition-colors focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)] cursor-pointer"
-      aria-label={unreadCount > 0 ? `打开公告中心，有 ${unreadCount} 条未读` : '打开公告中心'}
-      data-testid="announcement-center-mobile-trigger"
-    >
-      <Bell className="w-5 h-5" />
-      {unreadCount > 0 && <span className="absolute right-0.5 top-0.5 min-w-4 h-4 px-1 rounded-full bg-[var(--color-danger)] text-[10px] leading-4 font-bold text-white ring-2 ring-[var(--color-background)]" aria-hidden="true">{unreadCount > 9 ? '9+' : unreadCount}</span>}
-    </button>
-  )
-}
-
 export default function AnnouncementCenter({
   open,
   onOpenChange,
@@ -112,7 +97,7 @@ export default function AnnouncementCenter({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col" data-testid="announcement-center">
+      <DialogContent className="max-w-2xl max-h-[85dvh] flex flex-col" data-testid="announcement-center">
         <DialogTitle className="pr-10 flex items-center gap-2">
           <Bell className="w-5 h-5 text-[var(--color-primary)]" />
           公告中心
@@ -120,7 +105,7 @@ export default function AnnouncementCenter({
         </DialogTitle>
         <DialogDescription>重要公告在阅读后归档；必须确认的公告仅会在确认后停止提示。</DialogDescription>
 
-        <div className="mt-4 -mr-2 pr-2 overflow-y-auto space-y-3" aria-live="polite">
+        <div className="mt-4 -mr-2 pr-2 flex-1 min-h-0 overflow-y-auto space-y-3" aria-live="polite">
           {items.length === 0 && (
             <div className="py-12 text-center text-sm text-[var(--color-text-muted)]">目前没有生效中的公告</div>
           )}

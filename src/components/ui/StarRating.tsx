@@ -22,7 +22,7 @@ export default function StarRating({ value, onChange, size = 'sm' }: Props) {
             aria-checked={star === value}
             aria-label={`${star} 星`}
             onClick={() => onChange(star)}
-            className="cursor-pointer p-0.5"
+            className="cursor-pointer p-2 -m-1"
             data-testid={`star-input-${star}`}
           >
             {icon}
