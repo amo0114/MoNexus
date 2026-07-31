@@ -31,14 +31,15 @@ function putSwitch(accessToken: string, value: unknown) {
 
 /** REG-03 点名的五张表：关闭态下它们必须一行都不增。 */
 async function snapshotRowCounts() {
-  const [users, pointAccounts, pointLogs, inviteRelations, refreshTokens] = await Promise.all([
+  const [users, pointAccounts, pointLogs, inviteRelations, growthRewards, refreshTokens] = await Promise.all([
     prisma.user.count(),
     prisma.pointAccount.count(),
     prisma.pointLog.count(),
     prisma.inviteRelation.count(),
+    prisma.growthReward.count(),
     prisma.refreshToken.count(),
   ])
-  return { users, pointAccounts, pointLogs, inviteRelations, refreshTokens }
+  return { users, pointAccounts, pointLogs, inviteRelations, growthRewards, refreshTokens }
 }
 
 describe('GET /api/auth/registration-status', () => {
@@ -98,7 +99,7 @@ describe('registration gate (REG-03)', () => {
   beforeEach(clearRegistrationSwitch)
   afterEach(clearRegistrationSwitch)
 
-  it('keeps registration working with the default row absent', async () => {
+  it('keeps base registration working with the default row absent and holds its reward', async () => {
     const { user: inviter } = await createTestUser('gate-default-inviter@test.local', 'pass123', 'user', 0)
 
     const res = await api
@@ -110,13 +111,17 @@ describe('registration gate (REG-03)', () => {
       })
       .expect(201)
 
-    expect(res.body.user.points).toBe(config.registerReward)
+    expect(res.body.user.points).toBe(0)
     expect(res.body.accessToken).toBeTruthy()
-    // 邀请语义不变：邀请人拿到奖励，关系落库。
-    const relation = await prisma.inviteRelation.findFirstOrThrow({ where: { inviterId: inviter.id } })
-    expect(relation.inviteeId).toBe(res.body.user.id)
-    const inviterAccount = await prisma.pointAccount.findUniqueOrThrow({ where: { userId: inviter.id } })
-    expect(inviterAccount.balance).toBe(config.inviteReward)
+    const account = await prisma.pointAccount.findUniqueOrThrow({ where: { userId: res.body.user.id } })
+    expect(account.balance).toBe(0)
+    await expect(prisma.pointLog.count({ where: { userId: res.body.user.id } })).resolves.toBe(0)
+    await expect(prisma.growthReward.findFirstOrThrow({
+      where: { recipientUserId: res.body.user.id, kind: 'registration' },
+    })).resolves.toMatchObject({ state: 'pending_verification' })
+    // A fresh, unverified inviter is no longer eligible, but its code must
+    // never block the invitee's own registration reward path.
+    expect(await prisma.inviteRelation.count({ where: { inviterId: inviter.id } })).toBe(0)
   })
 
   it('keeps registration working after the switch is explicitly enabled', async () => {

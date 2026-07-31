@@ -22,6 +22,7 @@ import {
 } from '../../lib/httpError.js'
 import {
   consumePasswordReset,
+  consumePendingReferralRelation,
   consumeRegistrationAttempt,
   consumeRegistrationProviderPreflight,
   consumeVerificationEmailSend,
@@ -29,7 +30,6 @@ import {
 import { getHumanVerifier } from './humanVerification.js'
 import { getMailer } from '../../lib/mailer/index.js'
 import { getRefreshTokenMaxAgeMs, getSystemConfigValue } from '../../lib/systemConfig.js'
-import { applyTierBonus, getCurrentTierConfig, resolveTier } from '../../lib/memberTier.js'
 import {
   createRefreshTokenRecord,
   hasExplicitRefreshSessionTermination,
@@ -38,6 +38,14 @@ import {
   type SessionRequestMetadata,
 } from './sessionService.js'
 import { recordSecurityEvent, type SessionRevocationReason } from './securityEvents.js'
+import { recordAbuseEvent } from './abuseEvents.js'
+import {
+  createPendingReferralGrowthReward,
+  createRegistrationGrowthReward,
+  holdGrowthRewardsAfterEmailVerification,
+  resolveEligibleReferralInviteCandidate,
+  type ReferralInviteCandidate,
+} from './growthRewards.js'
 import {
   claimMfaRecoveryCode,
   consumeAuthChallenge,
@@ -214,6 +222,27 @@ async function enforceRegistrationProtection(input: {
 }
 
 /**
+ * The pending-relation limiter deliberately differs from the registration
+ * limiter: a saturated inviter must not prevent a legitimate person from
+ * creating their own account. Redis outages still fail the whole protected
+ * registration closed, while an ordinary quota denial simply drops the
+ * optional referral candidate.
+ */
+async function reservePendingReferralCandidate(
+  inviteCode: string | undefined,
+): Promise<ReferralInviteCandidate | null> {
+  const candidate = await resolveEligibleReferralInviteCandidate(inviteCode)
+  if (!candidate || !registrationProtectionIsEnforced()) return candidate
+
+  try {
+    const reservation = await consumePendingReferralRelation(candidate.inviterId)
+    return reservation.allowed ? candidate : null
+  } catch {
+    throw abuseProtectionUnavailable()
+  }
+}
+
+/**
  * Public status intentionally reports only a safe browser challenge
  * descriptor. Redis health is deliberately not probed here: the actual
  * registration path remains fail-closed if a runtime command is unavailable.
@@ -272,70 +301,31 @@ export async function registerUser(
   const existing = await prisma.user.findUnique({ where: { email: normalizedEmail } })
   if (existing) throw conflict('该邮箱已注册')
 
+  // Keep the optional invitation reservation outside the database
+  // transaction: it is a Redis network call. The transaction below rechecks
+  // inviter eligibility under a row lock before it ever creates a relation.
+  const referralCandidate = await reservePendingReferralCandidate(inviteCode)
+
   const hashedPassword = await bcrypt.hash(password, PASSWORD_BCRYPT_ROUNDS)
 
   const result = await prisma.$transaction(async tx => {
     const registerReward = await getSystemConfigValue('registerReward', tx)
-    const inviteReward = await getSystemConfigValue('inviteReward', tx)
 
     const newUser = await tx.user.create({
       data: { email: normalizedEmail, password: hashedPassword },
     })
 
     await tx.pointAccount.create({
-      data: { userId: newUser.id, balance: registerReward },
+      data: { userId: newUser.id, balance: 0 },
     })
 
-    await tx.pointLog.create({
-      data: {
-        userId: newUser.id,
-        type: 'in',
-        amount: registerReward,
-        balanceAfter: registerReward,
-        reason: '新用户注册奖励',
-      },
+    await createRegistrationGrowthReward(tx, newUser.id, registerReward)
+    await createPendingReferralGrowthReward(tx, {
+      candidate: referralCandidate,
+      inviteeId: newUser.id,
     })
 
-    if (inviteCode) {
-      const inviter = await tx.user.findUnique({ where: { inviteCode } })
-      if (inviter) {
-        await tx.inviteRelation.create({
-          data: { inviterId: inviter.id, inviteeId: newUser.id },
-        })
-
-        const inviterAccount = await tx.pointAccount.findUnique({ where: { userId: inviter.id } })
-        if (inviterAccount) {
-          const inviterLifetimeResult = await tx.pointLog.aggregate({
-            where: { userId: inviter.id, type: 'in' },
-            _sum: { amount: true },
-          })
-          const inviterLifetimeBefore = inviterLifetimeResult._sum.amount ?? 0
-          const tierConfig = await getCurrentTierConfig()
-          const inviterTier = resolveTier(inviterLifetimeBefore, tierConfig.thresholds)
-          const { bonus, total } = applyTierBonus(inviteReward, inviterTier, tierConfig.bonusBps)
-          // Do not derive the next balance from a stale read. Multiple people
-          // can register through the same invite code concurrently; an atomic
-          // increment preserves every invite reward.
-          const updatedAccount = await tx.pointAccount.update({
-            where: { userId: inviter.id },
-            data: { balance: { increment: total } },
-          })
-          await tx.pointLog.create({
-            data: {
-              userId: inviter.id,
-              type: 'in',
-              amount: total,
-              balanceAfter: updatedAccount.balance,
-              reason: bonus > 0
-                ? `邀请新用户 ${normalizedEmail} 注册奖励 (tier:${inviterTier} +${bonus})`
-                : `邀请新用户 ${normalizedEmail} 注册奖励`,
-            },
-          })
-        }
-      }
-    }
-
-    return { user: newUser, registerReward }
+    return { user: newUser }
   })
 
   // Read the runtime setting before taking the per-user lock. No global Prisma
@@ -356,7 +346,10 @@ export async function registerUser(
     accessToken,
     refreshToken: issued.session.refreshToken,
     refreshTokenMaxAgeMs: issued.session.maxAgeMs,
-    user: buildAuthUser(issued.user, result.registerReward),
+    // Registration awards are only ledger rows at this point. Returning the
+    // configured amount here would make clients advertise spendable points
+    // that do not exist yet.
+    user: buildAuthUser(issued.user, 0),
   }
 }
 
@@ -1310,10 +1303,16 @@ export async function verifyEmailWithToken(userId: number, rawToken: string) {
     })
     if (claim.count !== 1) return false
 
+    const verifiedAt = new Date()
     await tx.user.update({
       where: { id: userId },
-      data: { emailVerified: new Date() },
+      data: { emailVerified: verifiedAt },
     })
+    await holdGrowthRewardsAfterEmailVerification(tx, { userId, verifiedAt })
+    await recordAbuseEvent({
+      type: 'email_verification_succeeded',
+      userId,
+    }, tx)
     return true
   })
 

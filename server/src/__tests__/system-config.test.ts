@@ -164,7 +164,7 @@ describe('Admin system config', () => {
     expect(pointLog.reason?.startsWith('每日打卡签到')).toBe(true)
   })
 
-  it('should use updated registerReward for future registrations', async () => {
+  it('should snapshot an updated registerReward for future registrations without immediate credit', async () => {
     const { accessToken } = await loginAdmin()
 
     await updateConfig(accessToken, 'registerReward', 777).expect(200)
@@ -174,17 +174,27 @@ describe('Admin system config', () => {
       .send({ email: 'register-config@test.local', password: 'pass123' })
       .expect(201)
 
-    expect(res.body.user.points).toBe(777)
+    expect(res.body.user.points).toBe(0)
 
     const account = await prisma.pointAccount.findUniqueOrThrow({
       where: { userId: res.body.user.id },
     })
-    expect(account.balance).toBe(777)
+    expect(account.balance).toBe(0)
+    await expect(prisma.growthReward.findFirstOrThrow({
+      where: { recipientUserId: res.body.user.id, kind: 'registration' },
+    })).resolves.toMatchObject({ amount: 777, state: 'pending_verification' })
   })
 
-  it('should use updated inviteReward for future invited registrations', async () => {
+  it('should snapshot an updated inviteReward for future eligible invited registrations', async () => {
     const { accessToken } = await loginAdmin()
     const { user: inviter } = await createTestUser('inviter-config@test.local', 'pass123', 'user', 0)
+    await prisma.user.update({
+      where: { id: inviter.id },
+      data: {
+        emailVerified: new Date(),
+        createdAt: new Date(Date.now() - 31 * 24 * 60 * 60 * 1_000),
+      },
+    })
 
     await updateConfig(accessToken, 'inviteReward', 333).expect(200)
 
@@ -197,10 +207,11 @@ describe('Admin system config', () => {
       })
       .expect(201)
 
-    const inviterAccount = await prisma.pointAccount.findUniqueOrThrow({
-      where: { userId: inviter.id },
-    })
-    expect(inviterAccount.balance).toBe(333)
+    const inviterAccount = await prisma.pointAccount.findUniqueOrThrow({ where: { userId: inviter.id } })
+    expect(inviterAccount.balance).toBe(0)
+    await expect(prisma.growthReward.findFirstOrThrow({
+      where: { recipientUserId: inviter.id, kind: 'referral' },
+    })).resolves.toMatchObject({ amount: 333, state: 'pending_verification' })
   })
 
   it('should write AdminLog when config is updated', async () => {

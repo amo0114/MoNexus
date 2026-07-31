@@ -185,8 +185,15 @@ describe('accounting concurrency and terminal settlement', () => {
     })
   })
 
-  it('preserves both concurrent invite rewards and returns a business error for the losing check-in', async () => {
+  it('keeps concurrent referral registrations held and returns a business error for the losing check-in', async () => {
     const { user: inviter } = await createTestUser('invite-race-inviter@test.local', 'pass123', 'user', 0)
+    await prisma.user.update({
+      where: { id: inviter.id },
+      data: {
+        emailVerified: new Date(),
+        createdAt: new Date(Date.now() - 31 * 24 * 60 * 60 * 1_000),
+      },
+    })
 
     const registrations = await Promise.allSettled([
       registerUser('invite-race-one@test.local', 'pass123', inviter.inviteCode),
@@ -194,13 +201,12 @@ describe('accounting concurrency and terminal settlement', () => {
     ])
     expect(registrations.filter(result => result.status === 'fulfilled')).toHaveLength(2)
 
-    const inviteLogs = await prisma.pointLog.findMany({
-      where: { userId: inviter.id, reason: { contains: '邀请新用户' } },
-    })
-    const expectedBalance = inviteLogs.reduce((sum, log) => sum + log.amount, 0)
-    expect(inviteLogs).toHaveLength(2)
-    expect((await prisma.pointAccount.findUniqueOrThrow({ where: { userId: inviter.id } })).balance)
-      .toBe(expectedBalance)
+    expect(await prisma.inviteRelation.count({ where: { inviterId: inviter.id, status: 'pending_verification' } })).toBe(2)
+    expect(await prisma.growthReward.count({
+      where: { recipientUserId: inviter.id, kind: 'referral', state: 'pending_verification' },
+    })).toBe(2)
+    expect(await prisma.pointLog.count({ where: { userId: inviter.id, reason: { contains: '邀请新用户' } } })).toBe(0)
+    expect((await prisma.pointAccount.findUniqueOrThrow({ where: { userId: inviter.id } })).balance).toBe(0)
 
     const checkins = await Promise.allSettled([checkin(inviter.id), checkin(inviter.id)])
     expect(checkins.filter(result => result.status === 'fulfilled')).toHaveLength(1)
