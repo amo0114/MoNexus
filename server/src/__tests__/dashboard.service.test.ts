@@ -25,6 +25,15 @@ function lastMonthDate() {
   return date
 }
 
+// getSummary 按服务端本地自然月 [当月1日00:00, 下月1日00:00) 统计（见
+// dashboard/service.ts 的 startOfCurrentMonth）。"本月订单"若用 daysAgo(1)/(2)
+// 造数，每月 1–2 号会落进上月使计数归零；这里显式钉在当月窗口内。
+function thisMonthDate(hoursIntoMonth: number) {
+  const now = new Date()
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+  return new Date(monthStart.getTime() + hoursIntoMonth * 60 * 60 * 1000)
+}
+
 async function createUser(email: string, role: 'user' | 'merchant' = 'user') {
   return prisma.user.create({
     data: {
@@ -125,7 +134,7 @@ describe('dashboard service', () => {
       merchantId: merchant.id,
       productId: activeProduct.id,
       price: 100,
-      createdAt: daysAgo(1),
+      createdAt: thisMonthDate(36),
       settlementStatus: 'pending',
       settlementAmount: 90,
     })
@@ -134,7 +143,7 @@ describe('dashboard service', () => {
       merchantId: merchant.id,
       productId: secondActiveProduct.id,
       price: 200,
-      createdAt: daysAgo(2),
+      createdAt: thisMonthDate(12),
       settlementStatus: 'settled',
       settlementAmount: 180,
     })
@@ -168,7 +177,7 @@ describe('dashboard service', () => {
       merchantId: merchantA.id,
       productId: productA.id,
       price: 100,
-      createdAt: daysAgo(1),
+      createdAt: thisMonthDate(24),
       settlementStatus: 'pending',
       settlementAmount: 90,
     })
@@ -177,7 +186,7 @@ describe('dashboard service', () => {
       merchantId: merchantB.id,
       productId: productB.id,
       price: 999,
-      createdAt: daysAgo(1),
+      createdAt: thisMonthDate(24),
       settlementStatus: 'pending',
       settlementAmount: 900,
     })
