@@ -175,12 +175,9 @@ async function consumeAbuseBucket(
     throw abuseProtectionUnavailable()
   }
   if (!result.allowed) {
-    // Keep the limiter's safe, rounded delay on the error object. The shared
-    // HTTP error/response layer can expose it as `Retry-After` without making
-    // the hit dimension or any identifier observable.
-    const error = tooManyRequests()
-    Object.assign(error, { retryAfterSeconds: result.retryAfterSeconds })
-    throw error
+    // Expose only the safe, rounded delay. The shared error layer emits it as
+    // `Retry-After` without revealing the hit dimension or any identifier.
+    throw tooManyRequests(undefined, result.retryAfterSeconds)
   }
 }
 

@@ -186,6 +186,7 @@ describe('SPEC-RAP-001 auth registration/mail integration', () => {
     }).expect(429)
 
     expect(res.body.error.code).toBe('RATE_LIMITED')
+    expect(res.headers['retry-after']).toBe('600')
     expect(verifierCalls).toBe(0)
     expect(await sideEffectSnapshot()).toEqual(before)
   })
