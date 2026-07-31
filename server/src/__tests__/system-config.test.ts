@@ -32,6 +32,12 @@ const defaultConfig = {
   autoProvisionMaxAttempts: 5,
   // SPEC-OPS-REGMAIL-001 公开注册总开关（1 = 开启）
   registrationEnabled: 1,
+  // SPEC-RAP-001 邮箱资格、奖励冷静期与邀请码额度
+  emailVerificationRequiredForValue: 0,
+  growthRewardHoldDays: 7,
+  referralInviterMinAgeDays: 30,
+  referralDailyQualifiedLimit: 3,
+  referralLifetimeQualifiedLimit: 20,
 } as const
 
 async function clearSystemConfig() {
@@ -377,5 +383,150 @@ describe('deliveryFileMaxMb is capped at the nginx limit', () => {
       .set(authHeader(accessToken))
       .send({ value: 100 })
       .expect(200)
+  })
+})
+
+describe('SPEC-RAP-001 system config registry and validation', () => {
+  beforeEach(async () => {
+    await clearSystemConfig()
+  })
+
+  afterEach(async () => {
+    await clearSystemConfig()
+  })
+
+  it('lists the five registration abuse controls with defaults and admin metadata', async () => {
+    const { accessToken } = await loginAdmin('rap-config-metadata@test.local')
+
+    const res = await api
+      .get('/api/admin/config')
+      .set(authHeader(accessToken))
+      .expect(200)
+
+    const byKey = new Map<string, any>(res.body.map((item: any) => [item.key, item]))
+    const expected = {
+      emailVerificationRequiredForValue: {
+        value: 0,
+        group: '账户与注册',
+        unit: '开关（0/1）',
+      },
+      growthRewardHoldDays: {
+        value: 7,
+        group: '奖励发放',
+        unit: '天',
+      },
+      referralInviterMinAgeDays: {
+        value: 30,
+        group: '账户与注册',
+        unit: '天',
+      },
+      referralDailyQualifiedLimit: {
+        value: 3,
+        group: '账户与注册',
+        unit: '人/日',
+      },
+      referralLifetimeQualifiedLimit: {
+        value: 20,
+        group: '账户与注册',
+        unit: '人',
+      },
+    } as const
+
+    for (const [key, metadata] of Object.entries(expected)) {
+      expect(byKey.get(key)).toMatchObject({
+        key,
+        value: metadata.value,
+        defaultValue: metadata.value,
+        group: metadata.group,
+        unit: metadata.unit,
+        updatedAt: null,
+        updatedBy: null,
+      })
+      expect(byKey.get(key).description).toEqual(expect.any(String))
+      expect(byKey.get(key).description.length).toBeGreaterThan(0)
+      expect(byKey.get(key).hint).toEqual(expect.any(String))
+      expect(byKey.get(key).hint.length).toBeGreaterThan(0)
+    }
+  })
+
+  it('keeps both registration-related flags strictly boolean', async () => {
+    const { accessToken } = await loginAdmin('rap-config-bool@test.local')
+
+    for (const key of ['registrationEnabled', 'emailVerificationRequiredForValue']) {
+      const res = await updateConfig(accessToken, key, 2).expect(400)
+      expect(res.body.error.message).toContain('0（关闭）或 1（开启）')
+      expect(await prisma.systemConfig.findUnique({ where: { key } })).toBeNull()
+    }
+
+    await updateConfig(accessToken, 'emailVerificationRequiredForValue', 1).expect(200)
+    const row = await prisma.systemConfig.findUniqueOrThrow({
+      where: { key: 'emailVerificationRequiredForValue' },
+    })
+    expect(row.value).toBe(1)
+  })
+
+  it('enforces each registration abuse control range, including legal boundaries', async () => {
+    const { accessToken } = await loginAdmin('rap-config-ranges@test.local')
+
+    const invalidValues: Array<[string, number, string]> = [
+      ['growthRewardHoldDays', 31, '0..30'],
+      ['referralInviterMinAgeDays', 366, '0..365'],
+      ['referralDailyQualifiedLimit', 101, '0..100'],
+      ['referralLifetimeQualifiedLimit', 10_001, '0..10000'],
+    ]
+    for (const [key, value, message] of invalidValues) {
+      const res = await updateConfig(accessToken, key, value).expect(400)
+      expect(res.body.error.message).toContain(message)
+      expect(await prisma.systemConfig.findUnique({ where: { key } })).toBeNull()
+    }
+
+    await updateConfig(accessToken, 'growthRewardHoldDays', 0).expect(200)
+    await updateConfig(accessToken, 'growthRewardHoldDays', 30).expect(200)
+    await updateConfig(accessToken, 'referralInviterMinAgeDays', 0).expect(200)
+    await updateConfig(accessToken, 'referralInviterMinAgeDays', 365).expect(200)
+    await updateConfig(accessToken, 'referralLifetimeQualifiedLimit', 10_000).expect(200)
+    await updateConfig(accessToken, 'referralDailyQualifiedLimit', 100).expect(200)
+  })
+
+  it('validates the effective daily/lifetime referral quota in the write transaction', async () => {
+    const { accessToken } = await loginAdmin('rap-config-invariant@test.local')
+
+    await updateConfig(accessToken, 'referralDailyQualifiedLimit', 10).expect(200)
+    await updateConfig(accessToken, 'referralLifetimeQualifiedLimit', 10).expect(200)
+
+    const logCountBeforeInvalidWrites = await prisma.adminLog.count({
+      where: { targetType: 'systemConfig' },
+    })
+    for (const [key, value] of [
+      ['referralDailyQualifiedLimit', 11],
+      ['referralLifetimeQualifiedLimit', 9],
+    ] as const) {
+      const res = await updateConfig(accessToken, key, value).expect(400)
+      expect(res.body.error.message).toContain('不得超过生命周期上限')
+    }
+    expect(
+      await prisma.adminLog.count({ where: { targetType: 'systemConfig' } })
+    ).toBe(logCountBeforeInvalidWrites)
+
+    expect(
+      (await prisma.systemConfig.findUniqueOrThrow({
+        where: { key: 'referralDailyQualifiedLimit' },
+      })).value
+    ).toBe(10)
+    expect(
+      (await prisma.systemConfig.findUniqueOrThrow({
+        where: { key: 'referralLifetimeQualifiedLimit' },
+      })).value
+    ).toBe(10)
+  })
+
+  it('allows a zero daily cap to pause referral qualification even when lifetime is zero', async () => {
+    const { accessToken } = await loginAdmin('rap-config-zero-cap@test.local')
+
+    await updateConfig(accessToken, 'referralDailyQualifiedLimit', 0).expect(200)
+    await updateConfig(accessToken, 'referralLifetimeQualifiedLimit', 0).expect(200)
+
+    const res = await updateConfig(accessToken, 'referralDailyQualifiedLimit', 1).expect(400)
+    expect(res.body.error.message).toContain('不得超过生命周期上限')
   })
 })

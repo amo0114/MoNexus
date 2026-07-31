@@ -36,6 +36,12 @@ export const systemConfigKeys = [
   'autoProvisionMaxAttempts',
   // SPEC-OPS-REGMAIL-001 公开注册总开关（1 = 开启，0 = 关闭）
   'registrationEnabled',
+  // SPEC-RAP-001：邮箱资格、奖励冷静期与邀请码额度。
+  'emailVerificationRequiredForValue',
+  'growthRewardHoldDays',
+  'referralInviterMinAgeDays',
+  'referralDailyQualifiedLimit',
+  'referralLifetimeQualifiedLimit',
 ] as const
 
 export type SystemConfigKey = typeof systemConfigKeys[number]
@@ -84,6 +90,12 @@ export const systemConfigDefaults: Record<SystemConfigKey, number> = {
   autoProvisionMaxAttempts: 5,
   // REG-01：缺记录默认开启，保证升级到本版本的站点行为不变。
   registrationEnabled: 1,
+  // RAP-01：默认先保持未验证账户的既有交易兼容性，运营按发布流程再开启。
+  emailVerificationRequiredForValue: 0,
+  growthRewardHoldDays: 7,
+  referralInviterMinAgeDays: 30,
+  referralDailyQualifiedLimit: 3,
+  referralLifetimeQualifiedLimit: 20,
 }
 
 export const systemConfigDescriptions: Record<SystemConfigKey, string> = {
@@ -111,6 +123,11 @@ export const systemConfigDescriptions: Record<SystemConfigKey, string> = {
   subscriptionRemindDays: '订阅到期前提醒提前天数',
   autoProvisionMaxAttempts: '自动开通外呼最大尝试次数',
   registrationEnabled: '允许新用户注册',
+  emailVerificationRequiredForValue: '未验证邮箱的价值操作门槛',
+  growthRewardHoldDays: '注册与邀请奖励冷静期',
+  referralInviterMinAgeDays: '邀请码邀请人最小账户年龄',
+  referralDailyQualifiedLimit: '邀请码每日合格人数上限',
+  referralLifetimeQualifiedLimit: '邀请码生命周期合格人数上限',
 }
 
 /** 管理端配置项分组（中文），供配置页按组渲染。 */
@@ -139,6 +156,11 @@ export const systemConfigGroups: Record<SystemConfigKey, string> = {
   subscriptionRemindDays: '订单',
   autoProvisionMaxAttempts: '订单',
   registrationEnabled: '账户与注册',
+  emailVerificationRequiredForValue: '账户与注册',
+  growthRewardHoldDays: '奖励发放',
+  referralInviterMinAgeDays: '账户与注册',
+  referralDailyQualifiedLimit: '账户与注册',
+  referralLifetimeQualifiedLimit: '账户与注册',
 }
 
 /** 可选单位标注。 */
@@ -166,6 +188,11 @@ export const systemConfigUnits: Partial<Record<SystemConfigKey, string>> = {
   fulfillmentSlaDays: '天',
   subscriptionRemindDays: '天',
   autoProvisionMaxAttempts: '次',
+  emailVerificationRequiredForValue: '开关（0/1）',
+  growthRewardHoldDays: '天',
+  referralInviterMinAgeDays: '天',
+  referralDailyQualifiedLimit: '人/日',
+  referralLifetimeQualifiedLimit: '人',
 }
 
 const BONUS_BPS_HINT = '万分比，10000=100%；例如 500 表示额外 +5%'
@@ -193,6 +220,11 @@ export const systemConfigHints: Partial<Record<SystemConfigKey, string>> = {
   subscriptionRemindDays: '到期前 N 天邮件提醒买家；0 = 关闭到期前提醒；上限 30',
   autoProvisionMaxAttempts: '固定退避档 1m/5m/15m/1h/6h，上限 5；0 = 暂停外呼（只建任务，不转状态），已有任务恢复后按退避继续',
   registrationEnabled: '关闭后仅阻止新账号自助注册；现有账号仍可登录。',
+  emailVerificationRequiredForValue: '1 = 未验证邮箱不能下单、签到等价值操作；0 = 保持兼容。',
+  growthRewardHoldDays: '邮箱验证后等待 N 天再发放注册和邀请奖励；0 = 即时发放，会提高滥用风险。',
+  referralInviterMinAgeDays: '邀请码仅在邀请人账户年龄达到该值后才能建立新的邀请关系。',
+  referralDailyQualifiedLimit: '每位邀请人每个上海自然日最多合格人数；0 = 暂停后续邀请资格，非 0 时不得超过生命周期上限。',
+  referralLifetimeQualifiedLimit: '每位邀请人生命周期最多合格人数；0 = 暂停后续邀请资格。',
 }
 
 type ConfigClient = typeof prisma | Prisma.TransactionClient
@@ -220,7 +252,29 @@ export function assertSystemConfigKey(key: string): asserts key is SystemConfigK
  * 会让"开关是否开启"取决于读取方的判定习惯（>0? ===1?），是典型的静默歧义。
  * 写入侧一律拒绝，读取侧再按 `=== 1` fail-closed（REG-02 / C2）。
  */
-const BOOLEAN_CONFIG_KEYS = ['registrationEnabled'] as const
+const BOOLEAN_CONFIG_KEYS = [
+  'registrationEnabled',
+  'emailVerificationRequiredForValue',
+] as const
+
+const RANGE_CONFIG_KEYS = {
+  growthRewardHoldDays: {
+    max: 30,
+    message: '奖励冷静期必须在 0..30 天之间',
+  },
+  referralInviterMinAgeDays: {
+    max: 365,
+    message: '邀请码邀请人最小账户年龄必须在 0..365 天之间',
+  },
+  referralDailyQualifiedLimit: {
+    max: 100,
+    message: '邀请码每日合格人数上限必须在 0..100 人之间（0 = 暂停资格）',
+  },
+  referralLifetimeQualifiedLimit: {
+    max: 10_000,
+    message: '邀请码生命周期合格人数上限必须在 0..10000 人之间（0 = 暂停资格）',
+  },
+} as const satisfies Partial<Record<SystemConfigKey, { max: number; message: string }>>
 
 function isBooleanConfigKey(key: SystemConfigKey): boolean {
   return (BOOLEAN_CONFIG_KEYS as readonly string[]).includes(key)
@@ -233,10 +287,25 @@ export function assertSystemConfigValue(key: SystemConfigKey, value: number) {
   if (isBooleanConfigKey(key) && value > 1) {
     throw badRequest('该开关只接受 0（关闭）或 1（开启）')
   }
+  const range = RANGE_CONFIG_KEYS[key as keyof typeof RANGE_CONFIG_KEYS]
+  if (range && value > range.max) {
+    throw badRequest(range.message)
+  }
 }
 
 function isTierKey(key: SystemConfigKey): key is TierKey {
   return (TIER_KEYS as readonly string[]).includes(key)
+}
+
+const REFERRAL_QUOTA_KEYS = [
+  'referralDailyQualifiedLimit',
+  'referralLifetimeQualifiedLimit',
+] as const
+
+type ReferralQuotaKey = typeof REFERRAL_QUOTA_KEYS[number]
+
+function isReferralQuotaKey(key: SystemConfigKey): key is ReferralQuotaKey {
+  return (REFERRAL_QUOTA_KEYS as readonly string[]).includes(key)
 }
 
 interface EffectiveTierConfig {
@@ -284,6 +353,43 @@ function assertTierConfigValid(effective: EffectiveTierConfig) {
     if (!Number.isInteger(value) || value < 0 || value > 10000) {
       throw badRequest(`${name}基点必须是 0..10000 之间的整数`)
     }
+  }
+}
+
+interface EffectiveReferralQuotaConfig {
+  daily: number
+  lifetime: number
+}
+
+/**
+ * Reads both related values through the same transaction that will write the
+ * update. This avoids validating against a stale process-local/default view.
+ */
+async function loadEffectiveReferralQuotaConfig(
+  tx: Prisma.TransactionClient,
+  override?: { key: ReferralQuotaKey; value: number }
+): Promise<EffectiveReferralQuotaConfig> {
+  const rows = await tx.systemConfig.findMany({
+    where: { key: { in: [...REFERRAL_QUOTA_KEYS] } },
+    select: { key: true, value: true },
+  })
+  const byKey = new Map(rows.map(row => [row.key, row.value]))
+  const get = (key: ReferralQuotaKey): number =>
+    override && override.key === key
+      ? override.value
+      : byKey.get(key) ?? systemConfigDefaults[key]
+
+  return {
+    daily: get('referralDailyQualifiedLimit'),
+    lifetime: get('referralLifetimeQualifiedLimit'),
+  }
+}
+
+function assertReferralQuotaConfigValid(effective: EffectiveReferralQuotaConfig) {
+  // daily = 0 is an intentional operational pause and is therefore exempt
+  // from the normal daily <= lifetime relationship.
+  if (effective.daily !== 0 && effective.daily > effective.lifetime) {
+    throw badRequest('邀请码每日合格人数上限不得超过生命周期上限（每日上限为 0 时表示暂停）')
   }
 }
 
@@ -371,6 +477,10 @@ export async function updateSystemConfig(
     if (isTierKey(key)) {
       const effective = await loadEffectiveTierConfig(tx, { key, value })
       assertTierConfigValid(effective)
+    }
+    if (isReferralQuotaKey(key)) {
+      const effective = await loadEffectiveReferralQuotaConfig(tx, { key, value })
+      assertReferralQuotaConfigValid(effective)
     }
 
     const existing = await tx.systemConfig.findUnique({
