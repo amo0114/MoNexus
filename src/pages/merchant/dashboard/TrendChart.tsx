@@ -78,7 +78,7 @@ export default function TrendChart({ data, loading }: { data: DashboardSeriesPoi
       <div className="flex justify-between items-center mb-6">
         <h3 className="font-heading text-lg font-bold text-[var(--color-text)]">趋势分析</h3>
         <select
-          className="bg-[var(--color-surface)] border border-[var(--color-border)] text-sm rounded-md px-3 py-1.5 text-[var(--color-text)] cursor-pointer"
+          className="bg-[var(--color-surface)] border border-[var(--color-border)] text-base rounded-md px-3 py-1.5 text-[var(--color-text)] cursor-pointer"
           value={metric}
           onChange={(e) => setMetric(e.target.value as any)}
           aria-label="选择趋势指标"
@@ -111,19 +111,26 @@ export default function TrendChart({ data, loading }: { data: DashboardSeriesPoi
           ))}
         </svg>
 
-        {hoveredIndex !== null && points[hoveredIndex] && (
+        {hoveredIndex !== null && points[hoveredIndex] && (() => {
+          // 边界钳制：首/末数据点的 tooltip 改左/右对齐，避免在窄屏溢出卡片
+          const TOOLTIP_W = 140
+          const px = points[hoveredIndex].x
+          const translateX = px < TOOLTIP_W / 2 ? '0%' : px > width - TOOLTIP_W / 2 ? '-100%' : '-50%'
+          return (
           <div
-            className="absolute z-10 bg-[var(--color-surface)] border border-[var(--color-border)] shadow-lg rounded p-3 pointer-events-none transform -translate-x-1/2 -translate-y-[120%]"
+            className="absolute z-10 bg-[var(--color-surface)] border border-[var(--color-border)] shadow-lg rounded p-3 pointer-events-none"
             style={{
-              left: `${(points[hoveredIndex].x / width) * 100}%`,
-              top: `${(points[hoveredIndex].y / CHART_HEIGHT) * 100}%`
+              left: `${(px / width) * 100}%`,
+              top: `${(points[hoveredIndex].y / CHART_HEIGHT) * 100}%`,
+              transform: `translate(${translateX}, -120%)`,
             }}
           >
             <div className="text-xs text-[var(--color-text-muted)] mb-1">{points[hoveredIndex].data.date}</div>
             <div className="text-sm font-bold text-[var(--color-cta)]">积分: {points[hoveredIndex].data.pointsRevenue}</div>
             <div className="text-sm font-bold text-[var(--color-text)]">订单: {points[hoveredIndex].data.orderCount}</div>
           </div>
-        )}
+          )
+        })()}
       </div>
       <div className="flex justify-between text-xs text-[var(--color-text-muted)] mt-2">
         <span>{data[0]?.date}</span>
