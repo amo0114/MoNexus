@@ -38,6 +38,43 @@ export const updateSystemConfigSchema = z.object({
   value: z.number().int('配置值必须是整数').min(0, '配置值必须是非负整数'),
 })
 
+// ---- SPEC-RAP-001 abuse operations ----
+
+const abuseCaseRefSchema = z.string()
+  .trim()
+  .regex(/^[A-Z][A-Z0-9_]{1,15}-[0-9]{1,12}$/, 'caseRef 格式无效')
+
+export const abuseOverviewQuerySchema = z.object({
+  window: z.enum(['1h', '24h']).default('24h'),
+}).strict()
+
+export const listAbuseReferralsQuerySchema = z.object({
+  state: z.enum(['legacy', 'pending_verification', 'qualified', 'quota_exhausted', 'voided']).optional(),
+  q: z.string().trim().min(1).max(100).optional(),
+  page: z.coerce.number().int().positive().default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+}).strict()
+
+export const listAbuseRewardsQuerySchema = z.object({
+  state: z.enum(['pending_verification', 'held', 'granted', 'voided']).optional(),
+  userId: z.coerce.number().int().positive().optional(),
+  page: z.coerce.number().int().positive().default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+}).strict()
+
+export const setReferralSuspensionSchema = z.object({
+  suspended: z.boolean(),
+  caseRef: abuseCaseRefSchema,
+}).strict()
+
+export const voidAbuseRewardSchema = z.object({
+  caseRef: abuseCaseRefSchema,
+}).strict()
+
+export type AbuseOverviewQuery = z.infer<typeof abuseOverviewQuerySchema>
+export type ListAbuseReferralsQuery = z.infer<typeof listAbuseReferralsQuerySchema>
+export type ListAbuseRewardsQuery = z.infer<typeof listAbuseRewardsQuerySchema>
+
 const adminProductFieldsSchema = z.object({
   name: productNameSchema,
   description: productDescriptionSchema.optional(),

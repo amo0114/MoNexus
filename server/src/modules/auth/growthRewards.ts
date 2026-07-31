@@ -501,10 +501,22 @@ export async function releaseGrowthRewardInTransaction(
     return { outcome: 'skipped', rewardId }
   }
 
-  // Resource ordering is stable for grant/admin-void paths: GrowthReward row
-  // first, then its recipient/inviter User row. This keeps a racing single
-  // reward void and cron release mutually exclusive.
-  const recipient = await lockUserForGrowthReward(tx, reward.recipientUserId)
+  // The GrowthReward row is the grant/void serialization point. Read the
+  // recipient without taking a User row lock: an admin referral suspension
+  // locks User first so it can also block new registrations/qualifications;
+  // taking locks in the inverse order here would create a cron↔suspension
+  // deadlock. If either mutation wins the reward row race, the other observes
+  // its terminal state and never creates a second PointLog.
+  const recipient = await tx.user.findUnique({
+    where: { id: reward.recipientUserId },
+    select: {
+      id: true,
+      status: true,
+      emailVerified: true,
+      referralSuspended: true,
+      createdAt: true,
+    },
+  })
   if (!recipient || recipient.status !== NORMAL_USER_STATUS) {
     const reason: RewardVoidReason = 'recipient_banned'
     const voided = await voidLockedGrowthReward(tx, reward, { reason, now })

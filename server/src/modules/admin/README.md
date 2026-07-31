@@ -48,6 +48,17 @@ Privileged surface for the platform operator: user / merchant / product / settle
 | --- | --- | --- |
 | GET | `/api/admin/logs` | Recent 100 `PointLog` entries (user balance movements). **Note:** despite the name, this returns `PointLog`, not `AdminLog`. See "Known gaps" below. |
 
+### Registration abuse operations (SPEC-RAP-001)
+| Method | Path | Notes |
+| --- | --- | --- |
+| GET | `/api/admin/abuse/overview?window=1h\|24h` | Low-cardinality aggregate counts for registration, challenge, mail, referral and reward state. |
+| GET | `/api/admin/abuse/referrals?state=&q=&page=&pageSize=` | Paginated invite-relation projection; every email is masked and no raw hashes/tokens are returned. |
+| GET | `/api/admin/abuse/rewards?state=&userId=&page=&pageSize=` | Paginated held-ledger projection; recipient/relation addresses are masked. |
+| PUT | `/api/admin/abuse/users/:id/referral-suspension` | Requires `{ suspended, caseRef }`; stops future qualification and voids only the inviter's pending/held referral rewards. |
+| POST | `/api/admin/abuse/rewards/:id/void` | Requires `{ caseRef }`; voids only `pending_verification` / `held`. A granted reward returns `409` and is never clawed back through this API. |
+
+All five routes are protected by the parent router's current admin MFA session check. Mutations write both `AdminLog` and a closed-vocabulary `AbuseEvent` in the same transaction; `caseRef` is ticket-shaped and no free-form operator note is accepted.
+
 ### System configuration (M2)
 | Method | Path | Notes |
 | --- | --- | --- |
