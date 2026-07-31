@@ -23,6 +23,17 @@ export async function register(req: Request, res: Response, next: NextFunction) 
   }
 }
 
+export async function registrationStatus(_req: Request, res: Response, next: NextFunction) {
+  try {
+    const registrationEnabled = await authService.isRegistrationEnabled()
+    // 开关是运营实时状态：任何中间缓存都会让访客看到已经作废的注册入口。
+    res.set('Cache-Control', 'no-store')
+    res.json({ registrationEnabled })
+  } catch (err) {
+    next(err)
+  }
+}
+
 export async function login(req: Request, res: Response, next: NextFunction) {
   try {
     const { email, password } = req.body

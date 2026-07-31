@@ -11,6 +11,7 @@ import {
   mfaTooManyAttempts,
   mfaVerificationFailed,
   notFound,
+  registrationDisabled,
   sessionRevoked,
   unauthenticated,
 } from '../../lib/httpError.js'
@@ -121,7 +122,32 @@ async function createStoredRefreshToken(
   return { refreshToken, maxAgeMs: configuredMaxAgeMs, sessionId: stored.sessionId }
 }
 
+/**
+ * REG-01 / C2：开关判定的唯一定义。fail-closed——只有恰好为 1 才算开启，
+ * 被手工写坏的值（例如 2）一律按关闭处理；缺记录时 `getSystemConfigValue`
+ * 回落默认 1，保证升级站点默认仍开放注册。
+ *
+ * 刻意不缓存：REG-05 要求"改开关成功之后开始处理的请求必须读到新值"，
+ * 一次主键读换取即时性。
+ */
+export async function isRegistrationEnabled(): Promise<boolean> {
+  return (await getSystemConfigValue('registrationEnabled')) === 1
+}
+
+/**
+ * REG-03/REG-04 的强制边界。放在 service 而不是 controller/路由，是为了让
+ * 未来的 CLI、内部调用共享同一道门；删路由式的"关闭"做不到这点，也留不下
+ * 运营审计记录。
+ */
+export async function assertRegistrationEnabled() {
+  if (!(await isRegistrationEnabled())) throw registrationDisabled()
+}
+
 export async function registerUser(email: string, password: string, inviteCode?: string, ip?: string, userAgent?: string) {
+  // REG-03：必须是第一步——查重、bcrypt、建号事务都在其后，关闭态下不会
+  // 产生任何可观测副作用（连"该邮箱已注册"这种探测口子也不给）。
+  await assertRegistrationEnabled()
+
   const existing = await prisma.user.findUnique({ where: { email } })
   if (existing) throw conflict('该邮箱已注册')
 

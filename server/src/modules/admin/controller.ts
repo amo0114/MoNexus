@@ -1,9 +1,11 @@
 import { Request, Response, NextFunction } from 'express'
 import * as adminService from './service.js'
+import * as mailOperations from './mailOperations.js'
 import * as reviewService from '../reviews/service.js'
 import type {
   ListAdminAuditQuery, ListAnnouncementsQuery, ListOrdersQuery, ListUsersQuery,
   ListDeliveryFilesQuery, ListFileGrantsQuery, OfferReportQuery,
+  MailDeliveryTestInput,
 } from './schema.js'
 
 export async function stats(_req: Request, res: Response, next: NextFunction) {
@@ -320,5 +322,20 @@ export async function offerReport(req: Request, res: Response, next: NextFunctio
   try {
     const { range } = req.query as unknown as OfferReportQuery
     res.json(await adminService.getOfferReport(range))
+  } catch (err) { next(err) }
+}
+
+// ---- SPEC-OPS-REGMAIL-001：邮件投递运营面 ----
+
+export function mailStatus(_req: Request, res: Response, next: NextFunction) {
+  try {
+    res.json(mailOperations.getMailDeliveryStatus())
+  } catch (err) { next(err) }
+}
+
+export async function mailTest(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { email } = req.body as MailDeliveryTestInput
+    res.json(await mailOperations.sendMailDeliveryTest({ adminUserId: req.user!.userId, email }))
   } catch (err) { next(err) }
 }
