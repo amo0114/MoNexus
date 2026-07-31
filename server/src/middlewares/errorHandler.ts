@@ -9,6 +9,9 @@ function requestContext(req: Request) {
 
 export function errorHandler(err: Error, req: Request, res: Response, _next: NextFunction) {
   if (err instanceof HttpError) {
+    if (err.retryAfterSeconds !== undefined) {
+      res.set('Retry-After', String(err.retryAfterSeconds))
+    }
     res.status(err.status).json({
       ...requestContext(req),
       error: {

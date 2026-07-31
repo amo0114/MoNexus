@@ -85,7 +85,9 @@ export class HttpError extends Error {
     public status: number,
     public code: ErrorCode,
     message: string,
-    public details?: ErrorDetail[]
+    public details?: ErrorDetail[],
+    /** Safe, rounded seconds for a caller-facing Retry-After header. */
+    public retryAfterSeconds?: number,
   ) {
     super(message)
   }
@@ -137,8 +139,13 @@ export function sessionRevoked(message = '登录会话已失效，请重新登�
   return new HttpError(401, 'SESSION_REVOKED', message)
 }
 
-export function tooManyRequests(message = '请求过于频繁，请稍后再试') {
-  return new HttpError(429, 'RATE_LIMITED', message)
+export function tooManyRequests(message = '请求过于频繁，请稍后再试', retryAfterSeconds?: number) {
+  const retryAfter = retryAfterSeconds === undefined
+    ? undefined
+    : Number.isSafeInteger(retryAfterSeconds) && retryAfterSeconds > 0
+      ? retryAfterSeconds
+      : undefined
+  return new HttpError(429, 'RATE_LIMITED', message, undefined, retryAfter)
 }
 
 export function provisionEmailUnverified(
