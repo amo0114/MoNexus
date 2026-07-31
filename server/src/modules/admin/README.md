@@ -54,15 +54,50 @@ Privileged surface for the platform operator: user / merchant / product / settle
 | GET | `/api/admin/config` | Lists all known config entries. Entries not yet persisted fall back to env-derived defaults. |
 | PUT | `/api/admin/config/:key` | Upserts one entry; writes `AdminLog`. Takes effect on the next `getSystemConfigValue` call. |
 
-Known keys: `registerReward`, `checkinReward`, `inviteReward`, `refreshTokenMaxAgeDays`. Unknown keys → 400.
+Known keys come from `systemConfigKeys` in `server/src/lib/systemConfig.ts` (the route's key enum
+is derived from it, so adding a key there updates the schema automatically). Unknown keys → 400.
+
+Value validation is **key-aware**. Most keys are non-negative integers with their own bounds
+(`fileUrlTtlSeconds` 30–3600, `deliveryFileMaxMb` 1–100, `autoCloseDays` / `fulfillmentSlaDays`
+1–90, `autoProvisionMaxAttempts` 0–5, tier thresholds must stay 银 < 金 < 铂金, …).
+`registrationEnabled` is the one **boolean-semantics** key: its value range is exactly `{0, 1}`
+and `2` is rejected, so "is registration open" can never depend on the reader's `> 0` vs `=== 1`
+habit. See `server/src/modules/auth/README.md` for the gate it drives.
 
 The `Auth` module reads these values transactionally inside register / check-in / invite flows, so a config update is observed by the very next user action — no app restart required.
+
+### Mail delivery operations (SPEC-OPS-REGMAIL-001)
+| Method | Path | Notes |
+| --- | --- | --- |
+| GET | `/api/admin/mail/status` | Read-only, non-sensitive state of the effective mailer: exactly `mode`, `deliveryReady`, `from`, `authConfigured`, `configuredVia`. No SMTP probe is performed. |
+| POST | `/api/admin/mail/test` | Sends one fixed-content test email. 3 per administrator per 10 minutes; `409 MAILER_NOT_CONFIGURED` under the console fallback. |
+
+SMTP connection parameters are **not** editable here or anywhere else in the product. They come
+from the deployment environment and require a backend restart to change — see
+`docs/operations/runbook.md` §14.
+
+Secret boundary (MAIL-01): the status DTO is built by constructing the five allowed fields, not
+by stripping fields off `config.mailer`. `from` returns only an explicitly configured
+`SMTP_FROM`; the `SMTP_USER` fallback drives real delivery and `deliveryReady` but is never
+echoed, so `deliveryReady: true` with `from: null` is a legal, documented combination.
 
 ## Invariants
 
 ### `AdminLog`
 
 **Every admin write action persists one `AdminLog` row** inside the same transaction as the state change. Required fields: `adminUserId`, `action` (Chinese verb), `targetType`, `targetId` (when applicable), `detail` (free text). Implemented for: point adjustment, ban, unban, merchant approve / reject / suspend / commission update, inventory import, settlement batch, system config update.
+
+**Exception — mail delivery test** (`targetType = mailDelivery`): an SMTP call must never run
+inside a database transaction, so this one action cannot be atomic with its audit. The ordering
+is instead: sanitized `attempt` row → network egress → terminal row (`sent` / `failed` /
+`rejected`), all sharing one correlation id. An `attempt`-write failure aborts before sending; a
+terminal-write failure returns 500 with the mail possibly already delivered. There is no
+automatic retry, so a client retry may deliver a duplicate. Rate-limit rejections write a single
+`rate_limited` row. `detail` is JSON serialized centrally in `mailOperations.ts` and carries only
+the phase, the **masked** recipient (`o***@example.com`, or `[invalid]` when the body was
+rejected before validation), the correlation id, and a whitelisted failure classification
+(`EAUTH` / `ETIMEDOUT` / `ENOTFOUND` / `UNKNOWN`) — never a raw address, credential, provider
+payload, or stack trace.
 
 ### `PointLog`
 

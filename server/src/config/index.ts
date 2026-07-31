@@ -368,7 +368,11 @@ export const config = {
         secure: env.SMTP_SECURE,
         user: env.SMTP_USER,
         pass: env.SMTP_PASS,
+        // 实际生效发件地址：含 SMTP_USER 兜底，驱动真实投递与就绪判定。
         from: smtpFrom,
+        // 可展示发件地址：仅显式 SMTP_FROM。管理端邮件状态只回显这一项，
+        // 绝不把 SMTP_USER 兜底值下发给浏览器（MAIL-01 / SPEC C3）。
+        displayFrom: env.SMTP_FROM,
       }
     : ({ kind: 'console' as const }),
   appBaseUrl: env.APP_BASE_URL ?? env.FRONTEND_ORIGIN,

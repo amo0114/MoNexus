@@ -81,6 +81,11 @@ const mailLimiter = rateLimit({
   },
 })
 
+// 公开只读：访客登录页据此决定是否展示注册入口。刻意不挂 authLimiter——
+// 它是按"认证尝试"标定的额度，页面加载不该消耗；只读且无副作用，全局
+// /api limiter 已足够（C17/F9）。
+router.get('/registration-status', controller.registrationStatus)
+
 router.post('/register', authLimiter, validate(registerSchema), controller.register)
 router.post('/login', authLimiter, validate(loginSchema), controller.login)
 router.post('/mfa/enrollment/start', authLimiter, validate(mfaEnrollmentStartSchema), controller.startMfaEnrollment)

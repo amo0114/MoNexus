@@ -61,6 +61,12 @@ export type ErrorCode =
   | 'AUTO_PROVISION_UNAVAILABLE'
   // FakaBridge：开通邮箱未完成归属验证（防冒用他人 Xboard 账号）。
   | 'PROVISION_EMAIL_UNVERIFIED'
+  // SPEC-OPS-REGMAIL-001：运营开关关闭了公开注册。与 FORBIDDEN 分开是因为
+  // 前端要据此把注册表单切回登录态（而不是当成权限错误提示"需要管理员权限"）。
+  | 'REGISTRATION_DISABLED'
+  // 同上：当前进程只有 console 兜底 mailer，测试发送必须明确拒绝而不是
+  // 假装"已发送"（MAIL-03）。
+  | 'MAILER_NOT_CONFIGURED'
 
 export interface ErrorDetail {
   field: string
@@ -132,4 +138,16 @@ export function provisionEmailUnverified(
   message = '请先完成 Xboard 开通邮箱验证'
 ) {
   return new HttpError(400, 'PROVISION_EMAIL_UNVERIFIED', message)
+}
+
+/** REG-03：注册开关关闭时的统一拒绝，必须在写任何注册数据之前抛出。 */
+export function registrationDisabled(message = '当前已关闭新用户注册') {
+  return new HttpError(403, 'REGISTRATION_DISABLED', message)
+}
+
+/** MAIL-03：console 兜底 mailer 下的测试发送拒绝（不是权限问题，用 409）。 */
+export function mailerNotConfigured(
+  message = '尚未配置真实 SMTP，无法发送测试邮件'
+) {
+  return new HttpError(409, 'MAILER_NOT_CONFIGURED', message)
 }

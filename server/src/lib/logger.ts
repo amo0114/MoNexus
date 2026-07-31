@@ -80,6 +80,33 @@ function nestedSensitivePaths(field: string) {
   ]
 }
 
+/**
+ * SMTP 凭证。刻意逐条列出而不是泛化 `user`/`pass`：`user` 在业务日志里是
+ * 高频的非敏感字段（`req.user`、`user.id` 等），整体 redact 会把有用的诊断
+ * 信息一起抹掉。这里只覆盖凭证真正出现的三种容器——原始环境变量名、
+ * `config.mailer` 结构、以及 nodemailer 的 `auth: { user, pass }`。
+ */
+const SMTP_CREDENTIAL_PATHS = [
+  'SMTP_USER',
+  'SMTP_PASS',
+  '*.SMTP_USER',
+  '*.SMTP_PASS',
+  '*.*.SMTP_USER',
+  '*.*.SMTP_PASS',
+  'mailer.user',
+  'mailer.pass',
+  '*.mailer.user',
+  '*.mailer.pass',
+  '*.*.mailer.user',
+  '*.*.mailer.pass',
+  'auth.user',
+  'auth.pass',
+  '*.auth.user',
+  '*.auth.pass',
+  '*.*.auth.user',
+  '*.*.auth.pass',
+] as const
+
 /** Exported for direct serialization tests; do not derive paths from input. */
 export const loggerRedact: pino.redactOptions = {
   paths: [
@@ -102,6 +129,7 @@ export const loggerRedact: pino.redactOptions = {
     '*.REDIS_URL',
     '*.deliveryCredentials',
     '*.credentials',
+    ...SMTP_CREDENTIAL_PATHS,
     ...MFA_SENSITIVE_FIELDS.flatMap(nestedSensitivePaths),
     ...MFA_FACTOR_CODE_BODY_PATHS,
   ],

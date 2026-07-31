@@ -30,6 +30,8 @@ const defaultConfig = {
   subscriptionRemindDays: 3,
   // P7b 自动开通外呼尝试上限（0 = 暂停外呼）
   autoProvisionMaxAttempts: 5,
+  // SPEC-OPS-REGMAIL-001 公开注册总开关（1 = 开启）
+  registrationEnabled: 1,
 } as const
 
 async function clearSystemConfig() {
