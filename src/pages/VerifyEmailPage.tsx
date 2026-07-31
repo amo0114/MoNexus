@@ -34,6 +34,7 @@ export default function VerifyEmailPage() {
   const verificationPromiseRef = useRef<Promise<{ ok: true }> | null>(null)
   const tokenRef = useRef<string | null>(null)
   const locationHandledRef = useRef(false)
+  const requiresFreshLoginRef = useRef(false)
 
   useEffect(() => {
     if (!locationHandledRef.current) {
@@ -42,13 +43,21 @@ export default function VerifyEmailPage() {
     }
 
     if (!isLoggedIn) {
-      if (!tokenRef.current && !verificationPromiseRef.current) {
-        setStatus('error')
-        return
+      if (tokenRef.current) {
+        // Do not carry a credential through a login transition. The user must
+        // authenticate, then request a fresh verification mail for that account.
+        tokenRef.current = null
+        requiresFreshLoginRef.current = true
       }
-      // Do not carry a credential through a login transition. The user must
-      // authenticate, then request a fresh verification mail for that account.
-      tokenRef.current = null
+      setStatus(requiresFreshLoginRef.current ? 'login_required' : 'error')
+      return
+    }
+
+    if (requiresFreshLoginRef.current) {
+      // React StrictMode deliberately replays effects. Once an anonymous visit
+      // has discarded its fragment token, that replay must keep the login
+      // guidance rather than treating the intentionally cleared ref as an
+      // invalid-link error or attempting a later claim.
       setStatus('login_required')
       return
     }
