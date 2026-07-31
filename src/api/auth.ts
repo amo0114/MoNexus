@@ -6,8 +6,20 @@ import { refreshAccessToken } from './authRefresh'
 export { refreshAccessToken }
 
 export type AuthenticatedAuthResponse = {
-  user: Pick<AuthUser, 'id' | 'email' | 'nickname' | 'role' | 'status' | 'inviteCode' | 'points'>
+  user: Pick<AuthUser, 'id' | 'email' | 'nickname' | 'role' | 'status' | 'inviteCode' | 'points' | 'emailVerified'>
   accessToken: string
+}
+
+/** The only browser-safe portion of the public registration protection state. */
+export type RegistrationChallenge = {
+  provider: 'turnstile'
+  siteKey: string
+}
+
+export type RegistrationStatus = {
+  registrationEnabled: boolean
+  registrationAvailable: boolean
+  challenge: RegistrationChallenge | null
 }
 
 export type MfaLoginChallenge = {
@@ -54,10 +66,16 @@ export async function loginWithPassword(payload: { email: string; password: stri
   return data
 }
 
+export async function getRegistrationStatus(): Promise<RegistrationStatus> {
+  const { data } = await api.get<RegistrationStatus>('/auth/registration-status', preAuthRequestConfig())
+  return data
+}
+
 export async function registerAccount(payload: {
   email: string
   password: string
   inviteCode?: string
+  turnstileToken?: string
 }): Promise<AuthenticatedAuthResponse> {
   const { data } = await api.post<AuthenticatedAuthResponse>('/auth/register', payload, preAuthRequestConfig())
   return data
@@ -178,10 +196,15 @@ export async function resetPassword(token: string, password: string): Promise<vo
   await api.post('/auth/reset-password', { token, password })
 }
 
-export async function sendVerificationEmail(): Promise<void> {
-  await api.post('/auth/send-verification')
+export async function sendVerificationEmail(): Promise<{ ok: true }> {
+  const { data } = await api.post<{ ok: true }>('/auth/send-verification')
+  return data
 }
 
-export async function verifyEmail(token: string): Promise<void> {
-  await api.get('/auth/verify-email', { params: { token } })
+export async function verifyEmail(token: string): Promise<{ ok: true }> {
+  // A verification credential is deliberately not replayed by the generic
+  // refresh interceptor. If the session is no longer valid, the page asks the
+  // user to sign in and request a fresh mail instead of retaining the token.
+  const { data } = await api.post<{ ok: true }>('/auth/verify-email', { token }, preAuthRequestConfig())
+  return data
 }
