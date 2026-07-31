@@ -1762,3 +1762,88 @@ that only zeroes the signup bonus.
   **closed** — the read path is fail-closed on `=== 1`.
 - Release order: deploy the backend gate first, then the frontend, and only then close
   registration. Never ship a frontend that merely hides the entry point.
+
+## 40. Registration Abuse Protection and Delayed Rewards (SPEC-RAP-001)
+
+Production registration protection is deliberately fail-closed. Do not "fix" an
+outage by setting `ABUSE_PROTECTION_MODE=off`: production startup and preflight
+both require `enforce`, a required Redis client, the independent HMAC key, and
+the three Turnstile settings.
+
+### Preflight and rollout order
+
+1. Put values in the deployment secret store / private environment file. Never
+   paste values into a shell command, ticket, browser console, screenshot, or
+   this runbook. The public Turnstile site key is configuration, but the
+   Turnstile secret and `ABUSE_HASH_KEY` remain secrets.
+2. From the release checkout, run the preflight without printing the env file:
+
+   ```bash
+   cd /opt/monexus
+   npm run prod:env
+   ```
+
+   It must confirm production `ABUSE_PROTECTION_MODE=enforce`, canonical
+   32-byte base64 `ABUSE_HASH_KEY`, exact `TURNSTILE_ALLOWED_HOSTNAMES`, and
+   Redis-required settings. Resolve a failure before migration or rollout.
+3. Apply the normal forward-only Prisma migration, deploy the backend, and
+   check readiness. Do not manually edit the reward-ledger migration or delete
+   ledger rows as a rollback shortcut.
+4. From the real staging browser hostname, open the login page and verify:
+
+   - `GET /api/auth/registration-status` returns `registrationEnabled: true`,
+     `registrationAvailable: true`, and only the public Turnstile challenge
+     descriptor;
+   - a valid Turnstile completion can register an isolated test user;
+   - a deliberately invalid challenge is rejected with no user/account/reward
+     rows; and
+   - SMTP catcher receives a fragment-token verification link, while the URL
+     sent to the backend contains no token query parameter.
+5. Keep `emailVerificationRequiredForValue=0` through the initial protection
+   observation window. After at least 24 hours of healthy Redis, Turnstile,
+   mail, and error-rate monitoring, enable it with the MFA-protected system
+   config API/UI. This gate controls value actions only; it must not block
+   login, password recovery, email verification, browsing, or support reads.
+
+### Delayed reward reconciliation
+
+New accounts start at zero balance. Registration and qualified invite rewards
+are represented by `GrowthReward` rows and become `held` only after a valid
+authenticated email claim. The minute cron releases mature rows atomically;
+it is safe to retry and must be allowed to run normally after restart.
+
+For a suspected abusive campaign, use **后台 → 注册与激励风控**, record a
+ticket-shaped case reference such as `RAP-123`, and use one of the two
+operations:
+
+| Operation | Effect | Does not do |
+| --- | --- | --- |
+| Pause referral eligibility | Stops future qualification for the inviter and voids that inviter's pending/held referral rewards | Does not claw back granted points or restore previously voided rows on later resume |
+| Void reward | Voids one pending/held registration or referral reward | Cannot void a granted reward or directly mutate a user's balance |
+
+The screen and API require an active MFA administrator session. A successful
+state-changing operation produces `AdminLog` plus a controlled `AbuseEvent` in
+the same transaction; rejected requests leave the reward ledger unchanged. The
+lists intentionally show masked addresses only. Never work around the workflow
+with direct SQL. If already-granted points require correction, use the normal
+audited point-adjustment process and attach the same incident ticket.
+
+### Incident response and rollback
+
+- **Registration attack / spam spike:** set `registrationEnabled=0` using the
+  MFA-protected configuration panel, preserve logs/events, triage the affected
+  pending rewards, then reopen only after the attack path is understood.
+- **Redis or Turnstile outage:** leave protection in enforce mode and keep
+  registration closed while the dependency is repaired. A 503 with zero
+  registration/mail side effects is the expected safe behaviour.
+- **Mail delivery issue:** use the existing admin mail status/test workflow and
+  SMTP catcher/provider evidence. Do not log, paste, or forward verification
+  fragments or mail tokens.
+- **False-positive value gate:** temporarily set only
+  `emailVerificationRequiredForValue=0`, investigate, and re-enable after a
+  verified smoke test. Do not bulk-set `emailVerified` or delete rewards.
+- **Code rollback:** revert application code only after a fresh backup and
+  staging rehearsal. Keep the migration, `GrowthReward`, `AbuseEvent`, and
+  historical `PointLog` rows intact; the supported operational rollback is via
+  `registrationEnabled` and the verification-value gate, never by turning
+  production abuse protection off.

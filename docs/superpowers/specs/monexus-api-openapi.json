@@ -2,8 +2,8 @@
   "openapi": "3.0.3",
   "info": {
     "title": "MoNexus API",
-    "version": "1.6.0",
-    "description": "MoNexus 内部积分制数字商品市场 API。三种角色：user / merchant / admin。无任何法币 / 充值 / 提现。1.1.0 同步 M2 GA：health 含 db 字段、登录密码修改、用户封禁 / 解封、平台系统配置。1.2.0 同步 M3：新增 `GET /api/admin/audit`（操作员可读的 AdminLog 列表，支持分页与过滤），并标注 `refreshTokenMaxAgeDays` 现已对新签发的 refresh token 实际生效。1.3.0 同步 M4：拆分 `/api/health` 为 `/api/health/live`（liveness）和 `/api/health/ready`（readiness），保留老 `/api/health` 作为 `/live` 的兼容别名并标记为 deprecated；新增 `GET /api/metrics`（Prometheus 文本格式，可选 `METRICS_TOKEN` bearer 保护）。1.4.0 同步 M6 履约域重构 + 商家经营闭环：拆分订单 DTO 为按角色（user / merchant / admin）的边界，商家与平台列表不再返回 `delivery.content`；商品引入 `deliveryMode` 履约模式（`instant_inventory` / `manual_service`）；订单状态机扩展为 `pending → processing → delivered → disputed → closed`，旧值 `completed` 在响应中规范化为 `delivered`；新增 `POST /api/orders/{id}/dispute`、`/close`，新增商家履约动作 `start/deliver/respond-dispute`；商家商品列表、订单列表统一为 `{items,total,page,pageSize}` envelope，并支持搜索 / 筛选 / 低库存等参数；商家库存导入拆分 `preview` 与 `import`，请求体接受 `text` 或 `items`，响应携带空行 / 重复行 / 既存重复行统计；商家结算列表新增 `payable` 与 `blockReason`，与履约状态绑定（`disputed` 或未履约不可结算）；新增 `GET /api/config/registry` 暴露前端可消费的产品类型 / 履约模式 / 订单状态 / 结算状态 / 分页 / 低库存阈值的标签 + tone 注册表。1.5.0 同步 M3 identity security hardening：管理员登录为 200/202 MFA pre-auth union，新增 TOTP enrollment/verify 与设备会话管理端点；管理员已吊销 session 对 admin API 立即失效，普通业务 access token 仍受既有 15 分钟 TTL 约束。1.6.0 同步 SPEC-OPS-REGMAIL-001 注册开关与邮件投递运营面：新增公开只读 `GET /api/auth/registration-status`、管理员 `GET /api/admin/mail/status` 与 `POST /api/admin/mail/test`；`POST /api/auth/register` 新增 403 `REGISTRATION_DISABLED`；`SystemConfigKey` 枚举补齐为注册表全量 24 个 key（此前只列了 4 个），并新增布尔语义开关 `registrationEnabled`（值域 0/1）。SMTP 连接参数仍只在部署环境配置，后台不可编辑。"
+    "version": "1.7.0",
+    "description": "MoNexus 内部积分制数字商品市场 API。三种角色：user / merchant / admin。无任何法币 / 充值 / 提现。1.1.0 同步 M2 GA：health 含 db 字段、登录密码修改、用户封禁 / 解封、平台系统配置。1.2.0 同步 M3：新增 `GET /api/admin/audit`（操作员可读的 AdminLog 列表，支持分页与过滤），并标注 `refreshTokenMaxAgeDays` 现已对新签发的 refresh token 实际生效。1.3.0 同步 M4：拆分 `/api/health` 为 `/api/health/live`（liveness）和 `/api/health/ready`（readiness），保留老 `/api/health` 作为 `/live` 的兼容别名并标记为 deprecated；新增 `GET /api/metrics`（Prometheus 文本格式，可选 `METRICS_TOKEN` bearer 保护）。1.4.0 同步 M6 履约域重构 + 商家经营闭环：拆分订单 DTO 为按角色（user / merchant / admin）的边界，商家与平台列表不再返回 `delivery.content`；商品引入 `deliveryMode` 履约模式（`instant_inventory` / `manual_service`）；订单状态机扩展为 `pending → processing → delivered → disputed → closed`，旧值 `completed` 在响应中规范化为 `delivered`；新增 `POST /api/orders/{id}/dispute`、`/close`，新增商家履约动作 `start/deliver/respond-dispute`；商家商品列表、订单列表统一为 `{items,total,page,pageSize}` envelope，并支持搜索 / 筛选 / 低库存等参数；商家库存导入拆分 `preview` 与 `import`，请求体接受 `text` 或 `items`，响应携带空行 / 重复行 / 既存重复行统计；商家结算列表新增 `payable` 与 `blockReason`，与履约状态绑定（`disputed` 或未履约不可结算）；新增 `GET /api/config/registry` 暴露前端可消费的产品类型 / 履约模式 / 订单状态 / 结算状态 / 分页 / 低库存阈值的标签 + tone 注册表。1.5.0 同步 M3 identity security hardening：管理员登录为 200/202 MFA pre-auth union，新增 TOTP enrollment/verify 与设备会话管理端点；管理员已吊销 session 对 admin API 立即失效，普通业务 access token 仍受既有 15 分钟 TTL 约束。1.6.0 同步 SPEC-OPS-REGMAIL-001 注册开关与邮件投递运营面：新增公开只读 `GET /api/auth/registration-status`、管理员 `GET /api/admin/mail/status` 与 `POST /api/admin/mail/test`；`POST /api/auth/register` 新增 403 `REGISTRATION_DISABLED`；`SystemConfigKey` 枚举补齐为注册表全量 24 个 key（此前只列了 4 个），并新增布尔语义开关 `registrationEnabled`（值域 0/1）。SMTP 连接参数仍只在部署环境配置，后台不可编辑。1.7.0 同步 SPEC-RAP-001：公开注册使用 fail-closed Turnstile + Redis 防护；邮箱验证改为已登录用户的 fragment-token POST claim；注册与邀请奖励进入延迟发放账本；新增 MFA 保护的管理员反滥用运营 API。"
   },
   "servers": [
     {
@@ -63,6 +63,10 @@
     {
       "name": "Admin Mail",
       "description": "邮件投递运营面：非敏感状态只读 + 受限测试发送"
+    },
+    {
+      "name": "Admin Abuse",
+      "description": "注册、邀请与延迟奖励的 MFA 保护风控运营面"
     }
   ],
   "components": {
@@ -90,7 +94,7 @@
               "code": {
                 "type": "string",
                 "example": "VALIDATION_ERROR",
-                "description": "稳定业务错误码。认证相关常见值：`UNAUTHENTICATED`、`BAD_REQUEST`、`RATE_LIMITED`；管理员 MFA：`MFA_CHALLENGE_INVALID`、`MFA_VERIFICATION_FAILED`、`MFA_TOO_MANY_ATTEMPTS`、`MFA_REQUIRED`、`SESSION_REVOKED`、`CURRENT_SESSION_REQUIRES_LOGOUT`。端点响应描述会列出其适用子集。 运营开关与邮件运营面：`REGISTRATION_DISABLED`（403，注册被管理员关闭）、`MAILER_NOT_CONFIGURED`（409，当前只有 console 兜底 mailer）。"
+                "description": "稳定业务错误码。认证相关常见值：`UNAUTHENTICATED`、`BAD_REQUEST`、`RATE_LIMITED`；管理员 MFA：`MFA_CHALLENGE_INVALID`、`MFA_VERIFICATION_FAILED`、`MFA_TOO_MANY_ATTEMPTS`、`MFA_REQUIRED`、`SESSION_REVOKED`、`CURRENT_SESSION_REQUIRES_LOGOUT`。端点响应描述会列出其适用子集。运营开关与邮件运营面：`REGISTRATION_DISABLED`（403，注册被管理员关闭）、`MAILER_NOT_CONFIGURED`（409，当前只有 console 兜底 mailer）。注册防护：`EMAIL_VERIFICATION_REQUIRED`（403）、`HUMAN_VERIFICATION_REQUIRED`（400）、`HUMAN_VERIFICATION_FAILED`（403）、`HUMAN_VERIFICATION_UNAVAILABLE`（503）、`ABUSE_PROTECTION_UNAVAILABLE`（503）。"
               },
               "message": {
                 "type": "string",
@@ -407,8 +411,14 @@
           },
           "inviteCode": {
             "type": "string"
+          },
+          "turnstileToken": {
+            "type": "string",
+            "maxLength": 4096,
+            "description": "仅在 `registration-status.challenge` 可用且保护启用时由 Turnstile managed flow 产生。令牌不得持久化、记录或重用。"
           }
-        }
+        },
+        "additionalProperties": false
       },
       "LoginRequest": {
         "type": "object",
@@ -2634,12 +2644,47 @@
       "RegistrationStatus": {
         "type": "object",
         "required": [
-          "registrationEnabled"
+          "registrationEnabled",
+          "registrationAvailable",
+          "challenge"
         ],
         "properties": {
           "registrationEnabled": {
             "type": "boolean",
             "description": "当前是否允许新用户自助注册。仅当 SystemConfig 值恰为 1 时为 true（缺记录默认 true）。"
+          },
+          "registrationAvailable": {
+            "type": "boolean",
+            "description": "当前进程是否可安全接受注册。关闭开关或 Turnstile/Redis 保护未就绪时为 false；不透露内部依赖或秘密。"
+          },
+          "challenge": {
+            "description": "仅当可用时提供的公开 challenge 描述；site key 可公开，绝不包含 Turnstile secret、hostname、Redis 或 SMTP 细节。",
+            "nullable": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/HumanVerificationChallenge"
+              }
+            ]
+          }
+        }
+      },
+      "HumanVerificationChallenge": {
+        "type": "object",
+        "required": [
+          "provider",
+          "siteKey"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "provider": {
+            "type": "string",
+            "enum": [
+              "turnstile"
+            ]
+          },
+          "siteKey": {
+            "type": "string",
+            "description": "Cloudflare Turnstile public site key。"
           }
         }
       },
@@ -2698,6 +2743,222 @@
             "maxLength": 255,
             "description": "收件地址，trim + lowercase 规范化后投递"
           }
+        }
+      },
+      "VerifyEmailRequest": {
+        "type": "object",
+        "required": [
+          "token"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "token": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512,
+            "description": "邮件链接 fragment 中的单次验证令牌。只在认证用户的请求内短暂使用，不得进入 query、storage、日志或分析系统。"
+          }
+        }
+      },
+      "AdminAbuseParticipant": {
+        "type": "object",
+        "required": [
+          "id",
+          "email"
+        ],
+        "description": "运营列表中的受控身份投影；email 始终是脱敏值，绝不返回完整邮箱。",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "email": {
+            "type": "string",
+            "example": "a***@example.com"
+          }
+        }
+      },
+      "AdminAbuseReward": {
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "amount",
+          "state",
+          "availableAt",
+          "grantedAt",
+          "voidedAt",
+          "voidReason",
+          "createdAt",
+          "recipient",
+          "inviteRelation"
+        ],
+        "properties": {
+          "id": { "type": "integer", "minimum": 1 },
+          "kind": { "type": "string", "enum": ["registration", "referral"] },
+          "amount": { "type": "integer", "minimum": 0 },
+          "state": { "type": "string", "enum": ["pending_verification", "held", "granted", "voided"] },
+          "availableAt": { "type": "string", "format": "date-time", "nullable": true },
+          "grantedAt": { "type": "string", "format": "date-time", "nullable": true },
+          "voidedAt": { "type": "string", "format": "date-time", "nullable": true },
+          "voidReason": { "type": "string", "nullable": true },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "recipient": { "$ref": "#/components/schemas/AdminAbuseParticipant" },
+          "inviteRelation": {
+            "type": "object",
+            "nullable": true,
+            "properties": {
+              "id": { "type": "integer", "minimum": 1 },
+              "status": { "type": "string", "enum": ["legacy", "pending_verification", "qualified", "quota_exhausted", "voided"] },
+              "inviter": {
+                "allOf": [
+                  { "$ref": "#/components/schemas/AdminAbuseParticipant" },
+                  { "type": "object", "required": ["referralSuspended"], "properties": { "referralSuspended": { "type": "boolean" } } }
+                ]
+              },
+              "invitee": { "$ref": "#/components/schemas/AdminAbuseParticipant" }
+            }
+          }
+        }
+      },
+      "AdminAbuseReferralReward": {
+        "type": "object",
+        "required": ["id", "amount", "state", "availableAt", "grantedAt", "voidedAt", "voidReason"],
+        "properties": {
+          "id": { "type": "integer", "minimum": 1 },
+          "amount": { "type": "integer", "minimum": 0 },
+          "state": { "type": "string", "enum": ["pending_verification", "held", "granted", "voided"] },
+          "availableAt": { "type": "string", "format": "date-time", "nullable": true },
+          "grantedAt": { "type": "string", "format": "date-time", "nullable": true },
+          "voidedAt": { "type": "string", "format": "date-time", "nullable": true },
+          "voidReason": { "type": "string", "nullable": true }
+        }
+      },
+      "AdminAbuseReferral": {
+        "type": "object",
+        "required": [
+          "id",
+          "status",
+          "qualifiedAt",
+          "voidedAt",
+          "qualificationDay",
+          "createdAt",
+          "inviter",
+          "invitee",
+          "reward"
+        ],
+        "properties": {
+          "id": { "type": "integer", "minimum": 1 },
+          "status": { "type": "string", "enum": ["legacy", "pending_verification", "qualified", "quota_exhausted", "voided"] },
+          "qualifiedAt": { "type": "string", "format": "date-time", "nullable": true },
+          "voidedAt": { "type": "string", "format": "date-time", "nullable": true },
+          "qualificationDay": { "type": "string", "format": "date", "nullable": true },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "inviter": {
+            "allOf": [
+              { "$ref": "#/components/schemas/AdminAbuseParticipant" },
+              { "type": "object", "required": ["referralSuspended"], "properties": { "referralSuspended": { "type": "boolean" } } }
+            ]
+          },
+          "invitee": {
+            "allOf": [
+              { "$ref": "#/components/schemas/AdminAbuseParticipant" },
+              { "type": "object", "required": ["emailVerified"], "properties": { "emailVerified": { "type": "string", "format": "date-time", "nullable": true } } }
+            ]
+          },
+          "reward": {
+            "nullable": true,
+            "allOf": [
+              { "$ref": "#/components/schemas/AdminAbuseReferralReward" }
+            ]
+          }
+        }
+      },
+      "AdminAbuseOverview": {
+        "type": "object",
+        "required": ["window", "since", "registrations", "challengeFailures", "verificationEmail", "unverifiedUsers", "referrals", "rewards"],
+        "properties": {
+          "window": { "type": "string", "enum": ["1h", "24h"] },
+          "since": { "type": "string", "format": "date-time" },
+          "registrations": {
+            "type": "object",
+            "required": ["attempts", "accepted", "rejected"],
+            "properties": { "attempts": { "type": "integer" }, "accepted": { "type": "integer" }, "rejected": { "type": "integer" } }
+          },
+          "challengeFailures": { "type": "integer" },
+          "verificationEmail": {
+            "type": "object",
+            "required": ["sent", "throttled"],
+            "properties": { "sent": { "type": "integer" }, "throttled": { "type": "integer" } }
+          },
+          "unverifiedUsers": { "type": "integer" },
+          "referrals": {
+            "type": "object",
+            "required": ["pendingVerification", "qualified", "quotaExhausted", "voided"],
+            "properties": { "pendingVerification": { "type": "integer" }, "qualified": { "type": "integer" }, "quotaExhausted": { "type": "integer" }, "voided": { "type": "integer" } }
+          },
+          "rewards": {
+            "type": "object",
+            "required": ["pendingVerification", "held", "granted", "voided"],
+            "properties": { "pendingVerification": { "type": "integer" }, "held": { "type": "integer" }, "granted": { "type": "integer" }, "voided": { "type": "integer" } }
+          }
+        }
+      },
+      "AdminAbuseReferralPage": {
+        "type": "object",
+        "required": ["total", "page", "pageSize", "items"],
+        "properties": {
+          "total": { "type": "integer", "minimum": 0 },
+          "page": { "type": "integer", "minimum": 1 },
+          "pageSize": { "type": "integer", "minimum": 1, "maximum": 100 },
+          "items": { "type": "array", "items": { "$ref": "#/components/schemas/AdminAbuseReferral" } }
+        }
+      },
+      "AdminAbuseRewardPage": {
+        "type": "object",
+        "required": ["total", "page", "pageSize", "items"],
+        "properties": {
+          "total": { "type": "integer", "minimum": 0 },
+          "page": { "type": "integer", "minimum": 1 },
+          "pageSize": { "type": "integer", "minimum": 1, "maximum": 100 },
+          "items": { "type": "array", "items": { "$ref": "#/components/schemas/AdminAbuseReward" } }
+        }
+      },
+      "SetReferralSuspensionRequest": {
+        "type": "object",
+        "required": ["suspended", "caseRef"],
+        "additionalProperties": false,
+        "properties": {
+          "suspended": { "type": "boolean" },
+          "caseRef": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]{1,15}-[0-9]{1,12}$", "example": "RAP-123" }
+        }
+      },
+      "ReferralSuspensionResult": {
+        "type": "object",
+        "required": ["userId", "suspended", "voidedRewards"],
+        "properties": {
+          "userId": { "type": "integer", "minimum": 1 },
+          "suspended": { "type": "boolean" },
+          "voidedRewards": { "type": "integer", "minimum": 0 }
+        }
+      },
+      "VoidAbuseRewardRequest": {
+        "type": "object",
+        "required": ["caseRef"],
+        "additionalProperties": false,
+        "properties": {
+          "caseRef": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]{1,15}-[0-9]{1,12}$", "example": "RAP-123" }
+        }
+      },
+      "VoidedAbuseReward": {
+        "type": "object",
+        "required": ["id", "kind", "amount", "state", "caseRef"],
+        "properties": {
+          "id": { "type": "integer", "minimum": 1 },
+          "kind": { "type": "string", "enum": ["registration", "referral"] },
+          "amount": { "type": "integer", "minimum": 0 },
+          "state": { "type": "string", "enum": ["voided"] },
+          "caseRef": { "type": "string" }
         }
       }
     },
@@ -2876,7 +3137,7 @@
           "Auth"
         ],
         "summary": "用户注册",
-        "description": "成功后写 `PointLog`（注册奖励积分）；如果带 `inviteCode` 且邀请人有效，会创建 `InviteRelation`。response body 不含 refresh token，refresh token 通过 HttpOnly Cookie 下发。\n\nSPEC-OPS-REGMAIL-001：注册开关（`SystemConfig.registrationEnabled`）关闭时，本接口在查重、口令散列与任何事务之前返回 403 `REGISTRATION_DISABLED`。",
+        "description": "成功后创建零余额 `PointAccount`、待邮箱验证的注册奖励账本行；不会立即写注册或邀请 `PointLog`，`user.points` 仍为实际可用余额。合格的邀请码只建立待验证关系，邀请奖励也会延迟发放。response body 不含 refresh token，refresh token 通过 HttpOnly Cookie 下发。\n\n固定安全顺序：注册总开关 → Redis preflight → Turnstile verify → Redis 完整 buckets → bcrypt → 数据库事务。生产保护启用时需提交短生命周期 `turnstileToken`；Redis 或验证服务不可用会 fail closed。",
         "requestBody": {
           "required": true,
           "content": {
@@ -2899,10 +3160,17 @@
             }
           },
           "400": {
-            "$ref": "#/components/responses/ValidationError"
+            "description": "参数无效或 `HUMAN_VERIFICATION_REQUIRED`：启用保护但未提交 challenge proof。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
           },
           "403": {
-            "description": "`REGISTRATION_DISABLED`：管理员已关闭公开注册。不会创建任何用户/积分/邀请数据，也不下发 refresh Cookie 或 access token",
+            "description": "`REGISTRATION_DISABLED`（注册开关关闭）或 `HUMAN_VERIFICATION_FAILED`（proof 无效、过期、action/hostname 不匹配）。两者均不会创建用户、账务、邀请或 session。",
             "content": {
               "application/json": {
                 "schema": {
@@ -2916,6 +3184,16 @@
           },
           "429": {
             "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "description": "`HUMAN_VERIFICATION_UNAVAILABLE` 或 `ABUSE_PROTECTION_UNAVAILABLE`。不会降级到本地/内存 limiter，也不会继续任何注册副作用。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
           }
         }
       }
@@ -3534,6 +3812,7 @@
           "Auth"
         ],
         "summary": "向当前已登录用户发送邮箱验证链接",
+        "description": "在 token 数据库写入和 SMTP 投递前先消耗 HMAC-keyed Redis 额度；新邮件会作废该用户此前未使用 token。邮件链接把 token 放在 URL fragment，浏览器不会把它发送到服务端。Redis 不可用时 fail closed，不创建 token 也不投递邮件。",
         "security": [
           {
             "bearerAuth": []
@@ -3555,29 +3834,45 @@
           },
           "429": {
             "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "description": "`ABUSE_PROTECTION_UNAVAILABLE`；没有 token 或 SMTP 副作用。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
           }
         }
       }
     },
     "/api/auth/verify-email": {
-      "get": {
+      "post": {
         "tags": [
           "Auth"
         ],
-        "summary": "通过邮件 token 验证邮箱",
-        "parameters": [
+        "summary": "认证用户领取邮件验证 token",
+        "description": "唯一会变更验证状态的路径。调用者必须已登录，且只能领取归属自己的未过期 token 一次；成功时将符合条件的奖励转入 held，仍不直接增加积分余额。",
+        "security": [
           {
-            "name": "token",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
+            "bearerAuth": []
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VerifyEmailRequest"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
-            "description": "验证成功",
+            "description": "验证成功，重复安全重试不会重复发放奖励。",
             "content": {
               "application/json": {
                 "schema": {
@@ -3588,6 +3883,32 @@
           },
           "400": {
             "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "旧版 query-token 验证链接的安全终点",
+        "deprecated": true,
+        "description": "兼容旧收件箱但绝不读取或消费 query token。始终返回 token-free 410，引导用户登录后重新发送验证邮件；不会变更 emailVerified、奖励或邮件状态。",
+        "responses": {
+          "410": {
+            "description": "旧匿名验证路径已停用。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
           }
         }
       }
@@ -5779,7 +6100,7 @@
           "Auth"
         ],
         "summary": "公开注册状态",
-        "description": "无需登录的只读接口，供登录页决定是否展示注册入口。响应带 `Cache-Control: no-store`。\n\n不挂认证限流器（`authLimiter`），只受全局 `/api` 限流约束。\n\n**前端展示不是授权边界**：即使旧前端或脚本绕过它直接调用 `POST /api/auth/register`，后端仍会以 403 `REGISTRATION_DISABLED` 拒绝。",
+        "description": "无需登录的只读接口，供登录页决定是否展示注册入口与公开 Turnstile widget。响应带 `Cache-Control: no-store`。`challenge` 只有 `registrationAvailable=true` 时才可能提供，并且只包含公开 site key。\n\n不挂认证限流器（`authLimiter`），只受全局 `/api` 限流约束。\n\n**前端展示不是授权边界**：即使旧前端或脚本绕过它直接调用 `POST /api/auth/register`，后端仍会执行注册开关和反滥用链路。",
         "responses": {
           "200": {
             "description": "当前注册开关状态",
@@ -5802,6 +6123,111 @@
           "429": {
             "$ref": "#/components/responses/RateLimited"
           }
+        }
+      }
+    },
+    "/api/admin/abuse/overview": {
+      "get": {
+        "tags": ["Admin Abuse"],
+        "summary": "注册与奖励风控概览",
+        "description": "需要管理员角色和当前 MFA session。只返回聚合计数与受控时间窗，不返回原始 IP、邮箱、token、hash、provider payload 或凭证。",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "window",
+            "in": "query",
+            "schema": { "type": "string", "enum": ["1h", "24h"], "default": "24h" }
+          }
+        ],
+        "responses": {
+          "200": { "description": "风控聚合计数", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AdminAbuseOverview" } } } },
+          "401": { "$ref": "#/components/responses/Unauthenticated" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/api/admin/abuse/referrals": {
+      "get": {
+        "tags": ["Admin Abuse"],
+        "summary": "分页查询邀请码资格",
+        "description": "需要管理员 MFA。`q` 只用于后端受控搜索；响应 email 始终脱敏。",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "state", "in": "query", "schema": { "type": "string", "enum": ["legacy", "pending_verification", "qualified", "quota_exhausted", "voided"] } },
+          { "name": "q", "in": "query", "schema": { "type": "string", "minLength": 1, "maxLength": 100 } },
+          { "name": "page", "in": "query", "schema": { "type": "integer", "minimum": 1, "default": 1 } },
+          { "name": "pageSize", "in": "query", "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 20 } }
+        ],
+        "responses": {
+          "200": { "description": "邀请码资格页", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AdminAbuseReferralPage" } } } },
+          "400": { "$ref": "#/components/responses/ValidationError" },
+          "401": { "$ref": "#/components/responses/Unauthenticated" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/api/admin/abuse/rewards": {
+      "get": {
+        "tags": ["Admin Abuse"],
+        "summary": "分页查询延迟奖励账本",
+        "description": "需要管理员 MFA。仅为运营审查提供只读账本投影；不能借此接口增减积分或补发奖励。",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "state", "in": "query", "schema": { "type": "string", "enum": ["pending_verification", "held", "granted", "voided"] } },
+          { "name": "userId", "in": "query", "schema": { "type": "integer", "minimum": 1 } },
+          { "name": "page", "in": "query", "schema": { "type": "integer", "minimum": 1, "default": 1 } },
+          { "name": "pageSize", "in": "query", "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 20 } }
+        ],
+        "responses": {
+          "200": { "description": "奖励账本页", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AdminAbuseRewardPage" } } } },
+          "400": { "$ref": "#/components/responses/ValidationError" },
+          "401": { "$ref": "#/components/responses/Unauthenticated" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/api/admin/abuse/users/{id}/referral-suspension": {
+      "put": {
+        "tags": ["Admin Abuse"],
+        "summary": "暂停或恢复用户未来的邀请码资格",
+        "description": "需要管理员 MFA 和受控格式的 `caseRef`。暂停会作废该邀请人仍处于 pending/held 的邀请奖励；恢复只影响未来资格，绝不恢复已作废奖励或追扣已发积分。成功的状态变更在同一事务写入 AdminLog 和 AbuseEvent。",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer", "minimum": 1 } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SetReferralSuspensionRequest" } } }
+        },
+        "responses": {
+          "200": { "description": "资格状态已更新", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ReferralSuspensionResult" } } } },
+          "400": { "$ref": "#/components/responses/ValidationError" },
+          "401": { "$ref": "#/components/responses/Unauthenticated" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/admin/abuse/rewards/{id}/void": {
+      "post": {
+        "tags": ["Admin Abuse"],
+        "summary": "作废未发放奖励",
+        "description": "需要管理员 MFA 和 `caseRef`。只有 `pending_verification` / `held` 状态可作废；`granted` 必须返回冲突，绝不通过此模块回写余额或 PointLog。成功的状态变更在同一事务写入 AdminLog 和 AbuseEvent。",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer", "minimum": 1 } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/VoidAbuseRewardRequest" } } }
+        },
+        "responses": {
+          "200": { "description": "奖励已作废", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/VoidedAbuseReward" } } } },
+          "400": { "$ref": "#/components/responses/ValidationError" },
+          "401": { "$ref": "#/components/responses/Unauthenticated" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/Conflict" }
         }
       }
     },

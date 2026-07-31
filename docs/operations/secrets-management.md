@@ -1,6 +1,6 @@
 # Production Secrets Management
 
-Review date: 2026-05-14. Scope: M5 production and staging secret inventory for frontend, backend, PostgreSQL, JWT, Sentry, SMTP, S3-compatible storage, metrics, backup, deploy, and alert routing. No secret values belong in this repository.
+Review date: 2026-08-01. Scope: M5 production and staging secret inventory for frontend, backend, PostgreSQL, JWT, MFA, registration-abuse protection, Redis, Turnstile, Sentry, SMTP, S3-compatible storage, metrics, backup, deploy, and alert routing. No secret values belong in this repository.
 
 ## Default Approach
 
@@ -31,6 +31,14 @@ Use **environment secrets** for credential material and **environment variables*
 | `POSTGRES_DB` | Environment variable | `staging`, `production` | DBA/Ops | PostgreSQL database name | Environment variables | `docker-compose.prod.yml`; host provisioning |
 | `JWT_SECRET` | Secret | `staging`, `production` | Backend/Ops | Access-token signing material; rotate with forced refresh-token revocation plan | Environment secrets | backend runtime |
 | `MFA_ENCRYPTION_KEY` | Secret | `staging`, `production` | Security/Ops (primary), Backend lead (backup) | Canonical standard-base64 encoding of exactly 32 random bytes; AES-256-GCM key for administrator TOTP seeds | Environment secrets plus an access-controlled recovery escrow; every API instance in one environment receives the same value | backend runtime; `scripts/check-prod-env.sh` preflight |
+| `ABUSE_PROTECTION_MODE` | Environment variable | `staging`, `production` | Security/Ops | Must be `enforce`; public registration and user mail fail closed when the protection dependency is unavailable | Environment variables / host env | backend runtime; `scripts/check-prod-env.sh` preflight |
+| `ABUSE_HASH_KEY` | Secret | `staging`, `production` | Security/Ops (primary), Backend lead (backup) | Independent canonical standard-base64 encoding of exactly 32 random bytes; HMACs IP/email identifiers for Redis keys and controlled audit details | Environment secrets; every API instance in one environment receives the same value | backend runtime; `scripts/check-prod-env.sh` preflight |
+| `TURNSTILE_SITE_KEY` | Environment variable | `staging`, `production` | Security/Ops | Public Cloudflare Turnstile site key; may appear only in the safe registration-status challenge DTO | Environment variables / host env | backend runtime, public login page response |
+| `TURNSTILE_SECRET_KEY` | Secret | `staging`, `production` | Security/Ops | Server-only Cloudflare siteverify credential; never sent to browser, logs, audit, metrics, or tickets | Environment secrets | backend runtime; `scripts/check-prod-env.sh` preflight |
+| `TURNSTILE_ALLOWED_HOSTNAMES` | Environment variable | `staging`, `production` | Security/Ops | Comma-separated exact public hostnames; no scheme, path, port, wildcard, or URL | Environment variables / host env | backend runtime; `scripts/check-prod-env.sh` preflight |
+| `REDIS_ENABLED` / `REDIS_REQUIRED` | Environment variable | `staging`, `production` | Backend/Ops | Both must be `true` in enforce mode; prevents protection from silently falling back to process memory | Environment variables / host env | backend runtime; `scripts/check-prod-env.sh` preflight |
+| `REDIS_URL` | Environment variable / Secret | `staging`, `production` | Backend/Ops | Redis endpoint; treat it as a secret when it embeds credentials or exposes private topology | Environment secret or host env | backend runtime |
+| `REDIS_PASSWORD` | Secret | `staging`, `production` | Backend/Ops | Redis authentication credential for self-hosted or managed Redis | Environment secrets | backend runtime; `docker-compose.prod.yml` |
 | `COOKIE_SECURE` | Environment variable | `staging`, `production` | Backend/Ops | Enables Secure cookie flag in HTTPS environments | Environment variables | backend runtime |
 | `USER_STATUS_CACHE_TTL_SEC` | Environment variable | `staging`, `production` | Backend/Ops | In-memory status-cache TTL | Environment variables | backend runtime |
 | `SENTRY_DSN` | Secret | `staging`, `production` | Observability | Backend Sentry or GlitchTip DSN | Environment secrets | backend runtime |
@@ -78,6 +86,8 @@ Use **environment secrets** for credential material and **environment variables*
 5. Keep `BACKUP_DATABASE_URL` and `BACKUP_AGE_RECIPIENT` as repository secrets for the scheduled backup workflow. The recipient is public-key material, but treating it as workflow configuration avoids accidental mismatch with the recovery identity. Never store the corresponding age identity in GitHub or on the production VPS.
 6. Ask A1/A5 to consume the deploy names in this document. If `.github/workflows/deploy.yml` is absent on a Wave 1 branch, do not create it from A2.
 7. Generate `MFA_ENCRYPTION_KEY` only in an approved secret-management session; it must be a standard-base64 encoding of exactly 32 bytes. Do not paste it into shell history, chat, PRs, or `.env.example`. The deploy preflight and production server startup both reject missing, non-canonical, or wrong-length values.
+8. Generate `ABUSE_HASH_KEY` in a separate approved session with the same canonical 32-byte base64 requirement. It is not a JWT, MFA, or encryption key and must not be reused for any other purpose. Set `ABUSE_PROTECTION_MODE=enforce`, `REDIS_ENABLED=true`, and `REDIS_REQUIRED=true` before deploying; both startup and preflight reject a production shortcut.
+9. Create distinct staging and production Turnstile widgets. Keep `TURNSTILE_SECRET_KEY` in the secret store, enter only exact hostnames in `TURNSTILE_ALLOWED_HOSTNAMES`, and confirm the public `TURNSTILE_SITE_KEY` is the only Turnstile value visible to a browser.
 
 ## Rotation Rules
 
@@ -85,6 +95,9 @@ Use **environment secrets** for credential material and **environment variables*
 | --- | --- | --- |
 | `JWT_SECRET` | Suspected signing leak, operator departure, or scheduled security rotation | Add new value to environment, deploy, revoke all refresh tokens, force re-login, retain incident note. |
 | `MFA_ENCRYPTION_KEY` | Suspected key exposure, loss, or planned cryptographic rotation | **Do not overwrite in place.** Existing encrypted TOTP seeds require the old key. First approve a keyring/re-encryption migration design and rehearse it in staging. If the key is unavailable, use the two-person offline break-glass reset for each affected admin, force fresh MFA enrollment, and retain the incident/case references. |
+| `ABUSE_HASH_KEY` | Suspected correlation-key exposure or scheduled rotation | Treat existing Redis keys and historical HMACs as non-portable across the rotation. Deploy a new key to every instance together, allow old limiter windows to expire, and record the incident/case reference. Do not reuse JWT/MFA material or backfill raw identifiers. |
+| Turnstile secret | Provider compromise, hostname change, or scheduled rotation | Create/rotate the Turnstile secret in the provider console, update the environment secret and exact hostname allow-list, deploy, then validate on the real staging hostname. Never place the secret in frontend build variables. |
+| Redis credential | Redis access leak, operator departure, or managed-service rotation | Rotate in the Redis provider, update `REDIS_URL`/`REDIS_PASSWORD` atomically on every backend instance, deploy, and verify registration fails closed during any unavailable window rather than falling back locally. |
 | PostgreSQL credentials | DBA rotation window or access leak | Create new DB role credential, update GitHub environment and host env, restart backend, then remove old credential. |
 | SMTP credentials | Provider rotation window or mail abuse incident | Rotate provider credential, update environment secret, redeploy/restart backend, send test password-reset email in staging. |
 | Storage credentials | Storage provider rotation window or object access leak | Create least-privilege replacement key, update environment secret, smoke upload/download in staging, revoke old key. |
@@ -109,3 +122,4 @@ Use **environment secrets** for credential material and **environment variables*
 - A6/A8: link this inventory in rollback/runbook sections and avoid duplicating secret values.
 - Operators: never paste values into docs, PR comments, issue comments, workflow logs, or screenshots.
 - Security/Ops: retain access-controlled recovery escrow for `MFA_ENCRYPTION_KEY`; losing it does not permit seed export or an HTTP bypass, it requires controlled per-admin MFA reset/re-enrollment.
+- Security/Ops: own the separate `ABUSE_HASH_KEY` and Turnstile credentials. Never add a protection-bypass setting to a production environment; use the registration switch and incident process when dependencies are unhealthy.
