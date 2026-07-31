@@ -98,7 +98,9 @@
 - [x] A.11 `server/src/modules/admin/controller.ts`+`routes.ts`：挂载 `GET /mail/status`、`POST /mail/test`（既有 MFA 中间件之后；limiter 在 body 校验之前）
 - [x] A.12 后端测试（新 `registration-gate.test.ts` + `admin-mail-operations.test.ts`）：§7.1 全部 8 项 + C 系列约束 + P.1–P.8（含 default/enabled/disabled、副作用零增、校验矩阵、授权矩阵、DTO 序列化金丝雀、CaptureMailer 固定内容、console 409 且零发送、SMTP 失败分类、审计脱敏断言、`skipInTests:false` 专项 limiter 测试）
 - [x] A.13 文档同步：`docs/superpowers/specs/monexus-api-openapi.json`（两个新路由、错误码、config key 全量纠偏）、`server/src/modules/auth/README.md`、`server/src/modules/admin/README.md`、部署文档 SMTP 变量与重启说明
-- [ ] A.14 验证门槛：`npm --prefix server run build` 零错误；目标套件 + 全量 server 测试（`TEST_DATABASE_URL` + `REDIS_ENABLED=false`）全绿；`git diff --check`；无 `.env`/凭证入库
+- [x] A.14 验证门槛：`npm --prefix server run build` 零错误；目标套件 + 全量 server 测试（`TEST_DATABASE_URL` + `REDIS_ENABLED=false`）全绿；`git diff --check`；无 `.env`/凭证入库
+  - 全量结果：95 文件 / 801 用例，799 通过。唯二失败为 `dashboard.service.test.ts` 的两条「本月订单」断言，**与本特性无关**：用例用 `daysAgo(1)`/`daysAgo(2)` 造单，而 `getSummary`按自然月窗口统计，跑在每月 1–2 号时造的单落在上月。已在未改动的 `origin/develop` 上复现同样两条失败（同断言、同数值），属既有日历边界缺陷，另案修复。
+  - 本地跑全量必须带 `API_RATE_LIMIT_MAX=3000`（对齐 CI）：全局 `/api` limiter 默认 300 次/15 分钟且全套件共享一个进程与 IP，缺这个变量会在第 301 个请求起整片 429。
 
 ### 阶段 B：前端（前置条件：移动端 UI 打磨已提交；基于该 commit 新开 worktree/分支）
 
