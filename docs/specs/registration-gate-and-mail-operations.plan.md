@@ -97,7 +97,7 @@
 - [x] A.10 新建 `server/src/modules/admin/mailTestLimiter.ts`：`createAdminMailTestLimiter({skipInTests})` 工厂（10min/3/`admin:<userId>`，拒绝时写审计并走 `tooManyRequests()`）；导出生产单例
 - [x] A.11 `server/src/modules/admin/controller.ts`+`routes.ts`：挂载 `GET /mail/status`、`POST /mail/test`（既有 MFA 中间件之后；limiter 在 body 校验之前）
 - [x] A.12 后端测试（新 `registration-gate.test.ts` + `admin-mail-operations.test.ts`）：§7.1 全部 8 项 + C 系列约束 + P.1–P.8（含 default/enabled/disabled、副作用零增、校验矩阵、授权矩阵、DTO 序列化金丝雀、CaptureMailer 固定内容、console 409 且零发送、SMTP 失败分类、审计脱敏断言、`skipInTests:false` 专项 limiter 测试）
-- [ ] A.13 文档同步：`docs/superpowers/specs/monexus-api-openapi.json`（两个新路由、错误码、config key 全量纠偏）、`server/src/modules/auth/README.md`、`server/src/modules/admin/README.md`、部署文档 SMTP 变量与重启说明
+- [x] A.13 文档同步：`docs/superpowers/specs/monexus-api-openapi.json`（两个新路由、错误码、config key 全量纠偏）、`server/src/modules/auth/README.md`、`server/src/modules/admin/README.md`、部署文档 SMTP 变量与重启说明
 - [ ] A.14 验证门槛：`npm --prefix server run build` 零错误；目标套件 + 全量 server 测试（`TEST_DATABASE_URL` + `REDIS_ENABLED=false`）全绿；`git diff --check`；无 `.env`/凭证入库
 
 ### 阶段 B：前端（前置条件：移动端 UI 打磨已提交；基于该 commit 新开 worktree/分支）

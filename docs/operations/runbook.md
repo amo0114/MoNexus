@@ -446,6 +446,42 @@ curl -fsS -X POST http://localhost:3000/api/auth/password-reset/request \
 
 If the SMTP handshake fails (auth / TLS / DNS), nodemailer throws and the request returns 500 — check structured logs for the underlying error code (`EAUTH`, `ETIMEDOUT`, `ENOTFOUND`) before re-trying.
 
+### Admin mail operations panel (SPEC-OPS-REGMAIL-001)
+
+Every `SMTP_*` variable above is **deployment-environment only**. There is deliberately no
+backend endpoint, admin page, or database column that edits SMTP host / port / security /
+username / password / from. To change any of them: edit `.env` (or the secret store /
+`docker-compose.prod.yml`), then **restart or redeploy the backend** — the mailer adapter and
+`config.mailer` are resolved once at boot and are not hot-reloaded.
+
+What the panel does provide, both behind admin + MFA:
+
+| Endpoint | Purpose | Notes |
+| --- | --- | --- |
+| `GET /api/admin/mail/status` | Read-only, non-sensitive delivery state | Exactly five fields: `mode`, `deliveryReady`, `from`, `authConfigured`, `configuredVia`. Never returns host, username, password, provider token, or any raw env var. Performs **no** SMTP probe, so refreshing the page cannot open outbound connections. |
+| `POST /api/admin/mail/test` | Send one fixed test email | 3 per administrator per 10 minutes. Subject `MoNexus 邮件投递测试`; body contains only the trigger note, site name and UTC timestamp — no links, tokens, or business data. |
+
+Reading the status fields:
+
+- `mode: "console"` — `SMTP_HOST` is unset; mail is only logged. Test sends return `409 MAILER_NOT_CONFIGURED` instead of pretending to succeed.
+- `deliveryReady` follows the **effective** sender (`SMTP_FROM ?? SMTP_USER`). `deliveryReady: true` with `from: null` is legal and means "deliverable, sender address not publicly displayed" — set an explicit `SMTP_FROM` if you want the address visible in the panel. Do **not** read `from: null` as "SMTP not ready".
+- `authConfigured` only reports whether both `SMTP_USER` and `SMTP_PASS` exist. Controlled relays that accept unauthenticated submission are legitimately `false`; it does not gate `deliveryReady`.
+
+Test-send failure modes and their audit trail:
+
+- Every outcome (sent / failed / `MAILER_NOT_CONFIGURED` / rate-limited) writes an `AdminLog`
+  row with `targetType = mailDelivery`. The recipient is stored masked (`o***@example.com`)
+  only; raw addresses, SMTP credentials and provider payloads never reach the audit table or
+  the HTTP response. Failures are reported as one of four classifications: `EAUTH`,
+  `ETIMEDOUT`, `ENOTFOUND`, `UNKNOWN`.
+- The send is **not atomic with its audit**. An `attempt` row is written before any network
+  egress (if that write fails, nothing is sent), and a terminal row afterwards. If the terminal
+  write fails the request returns 500 even though the mail may already have gone out. The server
+  never retries automatically — **a client retry can deliver a duplicate test email**.
+- The rate limiter uses `express-rate-limit`'s in-process memory store, so the quota is
+  **per backend process**. Before scaling to multiple replicas, move it to a shared store or
+  accept an effective quota of 3 × replica count.
+
 ## 15. Object Storage (M3)
 
 M3-A2 replaces the in-memory uploads adapter with a real S3-compatible client (`@aws-sdk/client-s3`). The in-memory adapter stays alive for local dev / tests so you can run without provisioning a bucket.
@@ -1680,3 +1716,49 @@ columns with SQL, deleting recovery-code hashes, copying a seed, exporting a
 token, or changing `MFA_ENCRYPTION_KEY` to a guessed replacement. Any such
 action breaks the atomic audit/revocation invariant and requires a security
 incident review.
+
+## 39. Public Registration Switch (SPEC-OPS-REGMAIL-001)
+
+`SystemConfig.registrationEnabled` is the **only** public-registration switch: `1` = open,
+`0` = closed. A missing row means open, so upgrading to this version never closes registration
+by accident. Do **not** express "registration is closed" by setting `registerReward` to 0 —
+that only zeroes the signup bonus.
+
+### Operating procedure
+
+1. Toggle from the admin console (系统配置 → 账户与注册), or directly:
+
+   ```bash
+   curl -fsS -X PUT https://<host>/api/admin/config/registrationEnabled \
+     -H "Authorization: Bearer <mfa-verified-admin-access-token>" \
+     -H 'Content-Type: application/json' \
+     -d '{"value":0}'
+   ```
+
+   The endpoint requires an administrator whose session already passed MFA, and writes an
+   `AdminLog` row (`targetType = systemConfig`) in the same transaction as the config change.
+   Only `0` and `1` are accepted; `2`, `-1`, decimals and strings return 400.
+
+2. Verify from an unauthenticated client:
+
+   ```bash
+   curl -fsS https://<host>/api/auth/registration-status   # {"registrationEnabled":false}
+   curl -fsS -X POST https://<host>/api/auth/register \
+     -H 'Content-Type: application/json' \
+     -d '{"email":"probe@example.com","password":"probe123"}'   # 403 REGISTRATION_DISABLED
+   ```
+
+### Guarantees and limits
+
+- The gate is the first statement in `registerUser()`, ahead of the duplicate-email lookup,
+  password hashing and every transaction. A blocked attempt creates no `User`, `PointAccount`,
+  `PointLog`, `InviteRelation` or `RefreshToken` row, and sets no refresh cookie.
+- Hiding the frontend entry point is a UX affordance, never the authorization boundary. Cached
+  HTML, stale bundles and scripted clients all still hit the backend 403.
+- Requests that already passed the check when you flipped the switch are allowed to finish;
+  anything that starts after the 200 response reads the new value. The switch does not revoke
+  accounts that were already created.
+- A value other than `0`/`1` written directly into the database (operator error) is treated as
+  **closed** — the read path is fail-closed on `=== 1`.
+- Release order: deploy the backend gate first, then the frontend, and only then close
+  registration. Never ship a frontend that merely hides the entry point.
