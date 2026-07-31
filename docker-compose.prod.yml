@@ -72,6 +72,14 @@ services:
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASS: ${SMTP_PASS:-}
       SMTP_FROM: ${SMTP_FROM:-}
+      # SPEC-RAP-001: public registration and user-email protection are
+      # fail-closed in production. Keep every value explicit at the Compose
+      # boundary so the server cannot silently start without its dependencies.
+      ABUSE_PROTECTION_MODE: ${ABUSE_PROTECTION_MODE:?ABUSE_PROTECTION_MODE is required (enforce in production)}
+      ABUSE_HASH_KEY: ${ABUSE_HASH_KEY:?ABUSE_HASH_KEY is required (32-byte base64)}
+      TURNSTILE_SITE_KEY: ${TURNSTILE_SITE_KEY:?TURNSTILE_SITE_KEY is required}
+      TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:?TURNSTILE_SECRET_KEY is required}
+      TURNSTILE_ALLOWED_HOSTNAMES: ${TURNSTILE_ALLOWED_HOSTNAMES:?TURNSTILE_ALLOWED_HOSTNAMES is required}
       APP_BASE_URL: ${APP_BASE_URL:-}
       SENTRY_DSN: ${SENTRY_DSN:-}
       LOG_LEVEL: ${LOG_LEVEL:-info}
