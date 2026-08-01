@@ -182,13 +182,25 @@ services:
     depends_on:
       minio:
         condition: service_healthy
-    entrypoint: >
-      /bin/sh -c "
-      mc alias set local http://minio:9000 ${STORAGE_ACCESS_KEY} ${STORAGE_SECRET_KEY} &&
-      mc mb --ignore-existing local/${STORAGE_BUCKET} &&
-      mc anonymous set download local/${STORAGE_BUCKET} &&
-      mc mb --ignore-existing local/${DELIVERY_STORAGE_BUCKET:-monexus-files}
-      "
+    # Keep credentials available when backup.sh / restore-objects-check.sh
+    # replace this service's entrypoint with a one-shot MinIO client command.
+    # The values remain inside the private Compose network and are never
+    # published as ports or logged by the scripts.
+    environment:
+      STORAGE_ACCESS_KEY: ${STORAGE_ACCESS_KEY}
+      STORAGE_SECRET_KEY: ${STORAGE_SECRET_KEY}
+      STORAGE_BUCKET: ${STORAGE_BUCKET}
+      DELIVERY_STORAGE_BUCKET: ${DELIVERY_STORAGE_BUCKET:-monexus-files}
+    # Use Compose's escaped dollar syntax so secrets are expanded only by the
+    # container shell, not interpolated into Docker's entrypoint metadata.
+    entrypoint:
+      - /bin/sh
+      - -ec
+      - |
+        mc alias set local http://minio:9000 "$${STORAGE_ACCESS_KEY}" "$${STORAGE_SECRET_KEY}"
+        mc mb --ignore-existing local/"$${STORAGE_BUCKET}"
+        mc anonymous set download local/"$${STORAGE_BUCKET}"
+        mc mb --ignore-existing local/"$${DELIVERY_STORAGE_BUCKET:-monexus-files}"
     networks:
       - monexus
 
