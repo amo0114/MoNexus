@@ -67,6 +67,13 @@ export type ErrorCode =
   // 同上：当前进程只有 console 兜底 mailer，测试发送必须明确拒绝而不是
   // 假装"已发送"（MAIL-03）。
   | 'MAILER_NOT_CONFIGURED'
+  // SPEC-RAP-001：高价值写操作要求当前数据库中的邮箱已验证；注册和
+  // 邮件防滥用路径则区分缺 challenge、challenge 失败和依赖不可用。
+  | 'EMAIL_VERIFICATION_REQUIRED'
+  | 'HUMAN_VERIFICATION_REQUIRED'
+  | 'HUMAN_VERIFICATION_FAILED'
+  | 'HUMAN_VERIFICATION_UNAVAILABLE'
+  | 'ABUSE_PROTECTION_UNAVAILABLE'
 
 export interface ErrorDetail {
   field: string
@@ -78,7 +85,9 @@ export class HttpError extends Error {
     public status: number,
     public code: ErrorCode,
     message: string,
-    public details?: ErrorDetail[]
+    public details?: ErrorDetail[],
+    /** Safe, rounded seconds for a caller-facing Retry-After header. */
+    public retryAfterSeconds?: number,
   ) {
     super(message)
   }
@@ -130,8 +139,13 @@ export function sessionRevoked(message = '登录会话已失效，请重新登�
   return new HttpError(401, 'SESSION_REVOKED', message)
 }
 
-export function tooManyRequests(message = '请求过于频繁，请稍后再试') {
-  return new HttpError(429, 'RATE_LIMITED', message)
+export function tooManyRequests(message = '请求过于频繁，请稍后再试', retryAfterSeconds?: number) {
+  const retryAfter = retryAfterSeconds === undefined
+    ? undefined
+    : Number.isSafeInteger(retryAfterSeconds) && retryAfterSeconds > 0
+      ? retryAfterSeconds
+      : undefined
+  return new HttpError(429, 'RATE_LIMITED', message, undefined, retryAfter)
 }
 
 export function provisionEmailUnverified(
@@ -150,4 +164,29 @@ export function mailerNotConfigured(
   message = '尚未配置真实 SMTP，无法发送测试邮件'
 ) {
   return new HttpError(409, 'MAILER_NOT_CONFIGURED', message)
+}
+
+/** SPEC-RAP-001：受限账户访问高价值写操作时的服务端资格拒绝。 */
+export function emailVerificationRequired(message = '请先完成邮箱验证后再继续操作') {
+  return new HttpError(403, 'EMAIL_VERIFICATION_REQUIRED', message)
+}
+
+/** SPEC-RAP-001：公开注册在保护启用时未提交人机验证证明。 */
+export function humanVerificationRequired(message = '请先完成安全验证后重试') {
+  return new HttpError(400, 'HUMAN_VERIFICATION_REQUIRED', message)
+}
+
+/** SPEC-RAP-001：提交的人机验证证明无效、过期或与当前站点不匹配。 */
+export function humanVerificationFailed(message = '安全验证未通过，请刷新后重试') {
+  return new HttpError(403, 'HUMAN_VERIFICATION_FAILED', message)
+}
+
+/** SPEC-RAP-001：Turnstile 或其本地配置暂不可用，必须安全失败。 */
+export function humanVerificationUnavailable(message = '安全验证服务暂不可用，请稍后重试') {
+  return new HttpError(503, 'HUMAN_VERIFICATION_UNAVAILABLE', message)
+}
+
+/** SPEC-RAP-001：Redis 反滥用保护不可用时绝不继续注册或发信副作用。 */
+export function abuseProtectionUnavailable(message = '请求保护服务暂不可用，请稍后重试') {
+  return new HttpError(503, 'ABUSE_PROTECTION_UNAVAILABLE', message)
 }

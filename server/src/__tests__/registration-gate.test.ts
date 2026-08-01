@@ -31,14 +31,15 @@ function putSwitch(accessToken: string, value: unknown) {
 
 /** REG-03 点名的五张表：关闭态下它们必须一行都不增。 */
 async function snapshotRowCounts() {
-  const [users, pointAccounts, pointLogs, inviteRelations, refreshTokens] = await Promise.all([
+  const [users, pointAccounts, pointLogs, inviteRelations, growthRewards, refreshTokens] = await Promise.all([
     prisma.user.count(),
     prisma.pointAccount.count(),
     prisma.pointLog.count(),
     prisma.inviteRelation.count(),
+    prisma.growthReward.count(),
     prisma.refreshToken.count(),
   ])
-  return { users, pointAccounts, pointLogs, inviteRelations, refreshTokens }
+  return { users, pointAccounts, pointLogs, inviteRelations, growthRewards, refreshTokens }
 }
 
 describe('GET /api/auth/registration-status', () => {
@@ -48,10 +49,19 @@ describe('GET /api/auth/registration-status', () => {
   it('defaults to enabled and never caches when the config row is absent', async () => {
     const res = await api.get('/api/auth/registration-status').expect(200)
 
-    expect(res.body).toEqual({ registrationEnabled: true })
+    expect(res.body).toEqual({
+      registrationEnabled: true,
+      registrationAvailable: true,
+      challenge: null,
+    })
     expect(res.headers['cache-control']).toBe('no-store')
-    // 公开接口只暴露这一个布尔，不得顺带泄漏其他 SystemConfig。
-    expect(Object.keys(res.body)).toEqual(['registrationEnabled'])
+    // 公开接口只暴露兼容布尔和安全的 availability/challenge DTO，不得
+    // 顺带泄漏其他 SystemConfig、Redis、Turnstile secret 或 SMTP 细节。
+    expect(Object.keys(res.body)).toEqual([
+      'registrationEnabled',
+      'registrationAvailable',
+      'challenge',
+    ])
   })
 
   it('reflects the administrator switch without authentication', async () => {
@@ -60,11 +70,15 @@ describe('GET /api/auth/registration-status', () => {
     await putSwitch(accessToken, 0).expect(200)
     expect((await api.get('/api/auth/registration-status').expect(200)).body).toEqual({
       registrationEnabled: false,
+      registrationAvailable: false,
+      challenge: null,
     })
 
     await putSwitch(accessToken, 1).expect(200)
     expect((await api.get('/api/auth/registration-status').expect(200)).body).toEqual({
       registrationEnabled: true,
+      registrationAvailable: true,
+      challenge: null,
     })
   })
 
@@ -75,6 +89,8 @@ describe('GET /api/auth/registration-status', () => {
     expect(await isRegistrationEnabled()).toBe(false)
     expect((await api.get('/api/auth/registration-status').expect(200)).body).toEqual({
       registrationEnabled: false,
+      registrationAvailable: false,
+      challenge: null,
     })
   })
 })
@@ -83,7 +99,7 @@ describe('registration gate (REG-03)', () => {
   beforeEach(clearRegistrationSwitch)
   afterEach(clearRegistrationSwitch)
 
-  it('keeps registration working with the default row absent', async () => {
+  it('keeps base registration working with the default row absent and holds its reward', async () => {
     const { user: inviter } = await createTestUser('gate-default-inviter@test.local', 'pass123', 'user', 0)
 
     const res = await api
@@ -95,13 +111,17 @@ describe('registration gate (REG-03)', () => {
       })
       .expect(201)
 
-    expect(res.body.user.points).toBe(config.registerReward)
+    expect(res.body.user.points).toBe(0)
     expect(res.body.accessToken).toBeTruthy()
-    // 邀请语义不变：邀请人拿到奖励，关系落库。
-    const relation = await prisma.inviteRelation.findFirstOrThrow({ where: { inviterId: inviter.id } })
-    expect(relation.inviteeId).toBe(res.body.user.id)
-    const inviterAccount = await prisma.pointAccount.findUniqueOrThrow({ where: { userId: inviter.id } })
-    expect(inviterAccount.balance).toBe(config.inviteReward)
+    const account = await prisma.pointAccount.findUniqueOrThrow({ where: { userId: res.body.user.id } })
+    expect(account.balance).toBe(0)
+    await expect(prisma.pointLog.count({ where: { userId: res.body.user.id } })).resolves.toBe(0)
+    await expect(prisma.growthReward.findFirstOrThrow({
+      where: { recipientUserId: res.body.user.id, kind: 'registration' },
+    })).resolves.toMatchObject({ state: 'pending_verification' })
+    // A fresh, unverified inviter is no longer eligible, but its code must
+    // never block the invitee's own registration reward path.
+    expect(await prisma.inviteRelation.count({ where: { inviterId: inviter.id } })).toBe(0)
   })
 
   it('keeps registration working after the switch is explicitly enabled', async () => {
@@ -271,6 +291,8 @@ describe('registration switch round trip (P.3)', () => {
       expect(await getSystemConfigValue(CONFIG_KEY)).toBe(expectedValue)
       expect(listed.value).toBe(expectedValue)
       expect(status.registrationEnabled).toBe(expectedValue === 1)
+      expect(status.registrationAvailable).toBe(expectedValue === 1)
+      expect(status.challenge).toBeNull()
     }
   })
 })

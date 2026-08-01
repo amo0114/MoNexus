@@ -72,6 +72,14 @@ services:
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASS: ${SMTP_PASS:-}
       SMTP_FROM: ${SMTP_FROM:-}
+      # SPEC-RAP-001: public registration and user-email protection are
+      # fail-closed in production. Keep every value explicit at the Compose
+      # boundary so the server cannot silently start without its dependencies.
+      ABUSE_PROTECTION_MODE: ${ABUSE_PROTECTION_MODE:?ABUSE_PROTECTION_MODE is required (enforce in production)}
+      ABUSE_HASH_KEY: ${ABUSE_HASH_KEY:?ABUSE_HASH_KEY is required (32-byte base64)}
+      TURNSTILE_SITE_KEY: ${TURNSTILE_SITE_KEY:?TURNSTILE_SITE_KEY is required}
+      TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:?TURNSTILE_SECRET_KEY is required}
+      TURNSTILE_ALLOWED_HOSTNAMES: ${TURNSTILE_ALLOWED_HOSTNAMES:?TURNSTILE_ALLOWED_HOSTNAMES is required}
       APP_BASE_URL: ${APP_BASE_URL:-}
       SENTRY_DSN: ${SENTRY_DSN:-}
       LOG_LEVEL: ${LOG_LEVEL:-info}
@@ -127,7 +135,10 @@ services:
     image: redis:7-alpine
     container_name: monexus-redis-prod
     restart: unless-stopped
-    command: ["redis-server", "--appendonly", "no", "--requirepass", "${REDIS_PASSWORD:?REDIS_PASSWORD is required}"]
+    # This is the deliberately single-node production limiter/cache store.
+    # It stays on the private Compose network; AOF preserves its state across
+    # container or host restarts, but does not claim host-level HA.
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec", "--requirepass", "${REDIS_PASSWORD:?REDIS_PASSWORD is required}"]
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
     volumes:
@@ -189,7 +200,9 @@ services:
     restart: unless-stopped
     profiles: [staging-mail]
     ports:
-      - "${MAILPIT_WEB_PORT:-18082}:8025"
+      # Keep captured verification/reset messages off the public network. QA
+      # reaches this UI through an SSH tunnel on the dedicated staging host.
+      - "127.0.0.1:${MAILPIT_WEB_PORT:-18082}:8025"
     networks:
       - monexus
 

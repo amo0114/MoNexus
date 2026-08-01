@@ -1,0 +1,11 @@
+# Dedicated host-level Caddy site for the staging Compose stack.
+#
+# Add this site block to the staging host's existing /etc/caddy/Caddyfile; do
+# not overwrite global options or production sites. It intentionally points to
+# the loopback port used only by scripts/staging-compose.sh.
+staging.monexus.oai-o.com {
+  encode zstd gzip
+
+  # The bundled Nginx container serves the SPA and proxies /api internally.
+  reverse_proxy 127.0.0.1:18081
+}

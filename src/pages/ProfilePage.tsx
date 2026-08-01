@@ -448,7 +448,7 @@ export default function ProfilePage() {
           </div>
           <h4 className="font-heading text-lg font-bold mb-1 text-[var(--color-text)]">邀请赚积分</h4>
           <p className="text-[var(--color-text-muted)] text-xs mb-4 leading-relaxed">
-            每邀请一人注册，您可获得 <span className="text-[var(--color-cta)] font-bold">200</span> 积分。
+            好友完成邮箱验证、通过资格期且符合邀请资格后，奖励会自动发放。
           </p>
           <div className="bg-[var(--color-background)] rounded-lg p-2.5 flex justify-between items-center border border-[var(--color-border)]">
             <span className="font-mono text-sm font-bold text-[var(--color-text)] ml-1">

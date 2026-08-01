@@ -3,6 +3,7 @@ import { useAuthStore } from '../stores/authStore'
 import { Coins, User, ShieldCheck, Store, Clock, XCircle, AlertTriangle, Plus, Search, Bell } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import EmailVerificationBanner from './EmailVerificationBanner'
+import VerifiedActionGate from './VerifiedActionGate'
 import AnnouncementBanner from './AnnouncementBanner'
 import AnnouncementCenter, { AnnouncementBellButton } from './AnnouncementCenter'
 import Logo from './ui/Logo'
@@ -312,6 +313,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
       {/* Email verification nudge — silent when verified or dismissed */}
       <EmailVerificationBanner />
+      <VerifiedActionGate />
 
       {/* Platform announcement — fetched from /api/announcements */}
       <AnnouncementBanner

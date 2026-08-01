@@ -116,6 +116,122 @@ export const redisStatus = new client.Gauge({
   registers: [registry],
 })
 
+// --- Registration abuse protection ---
+//
+// These dimensions are deliberately finite and code-owned. Never pass raw
+// email/IP/user/invite-code/provider-error data to a Prometheus label: one
+// unbounded label would turn the monitoring endpoint into an identifier store
+// and can exhaust the metrics process.
+
+export const ABUSE_METRIC_FLOWS = [
+  'registration',
+  'challenge',
+  'verification_email',
+  'password_reset',
+  'email_verification',
+  'referral',
+  'reward',
+] as const
+export type AbuseMetricFlow = typeof ABUSE_METRIC_FLOWS[number]
+
+export const ABUSE_METRIC_OUTCOMES = [
+  'attempted',
+  'accepted',
+  'rejected',
+  'rate_limited',
+  'failed',
+  'unavailable',
+  'succeeded',
+  'qualified',
+  'quota_exhausted',
+  'granted',
+  'voided',
+  'suspended',
+  'restored',
+] as const
+export type AbuseMetricOutcome = typeof ABUSE_METRIC_OUTCOMES[number]
+
+export const ABUSE_METRIC_REASONS = [
+  'none',
+  'registration_disabled',
+  'validation_failed',
+  'duplicate_email',
+  'rate_limited',
+  'missing_token',
+  'invalid_token',
+  'provider_rejected',
+  'provider_unavailable',
+  'redis_unavailable',
+  'daily_limit',
+  'lifetime_limit',
+  'inviter_ineligible',
+  'inviter_suspended',
+  'recipient_banned',
+  'invite_relation_voided',
+  'admin_void',
+] as const
+export type AbuseMetricReason = typeof ABUSE_METRIC_REASONS[number]
+
+const ABUSE_METRIC_FLOW_SET = new Set<string>(ABUSE_METRIC_FLOWS)
+const ABUSE_METRIC_OUTCOME_SET = new Set<string>(ABUSE_METRIC_OUTCOMES)
+const ABUSE_METRIC_REASON_SET = new Set<string>(ABUSE_METRIC_REASONS)
+
+export const abuseEventsTotal = new client.Counter({
+  name: 'monexus_abuse_events_total',
+  help: 'Registration abuse-protection outcomes using fixed low-cardinality labels',
+  labelNames: ['flow', 'outcome', 'reason'] as const,
+  registers: [registry],
+})
+
+export const abuseOperationDuration = new client.Histogram({
+  name: 'monexus_abuse_operation_duration_seconds',
+  help: 'Registration abuse-protection operation duration by fixed flow and outcome',
+  labelNames: ['flow', 'outcome'] as const,
+  buckets: [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 3, 5],
+  registers: [registry],
+})
+
+function assertAbuseMetricLabel(
+  flow: string,
+  outcome: string,
+  reason: string,
+): asserts flow is AbuseMetricFlow {
+  if (
+    !ABUSE_METRIC_FLOW_SET.has(flow)
+    || !ABUSE_METRIC_OUTCOME_SET.has(outcome)
+    || !ABUSE_METRIC_REASON_SET.has(reason)
+  ) {
+    throw new Error('abuse metric labels must use the fixed vocabulary')
+  }
+}
+
+/**
+ * The only supported counter write API. It validates all label values before
+ * prom-client sees them, preventing future callers from smuggling identifiers
+ * or provider text into the metrics registry.
+ */
+export function recordAbuseMetric(input: {
+  flow: AbuseMetricFlow
+  outcome: AbuseMetricOutcome
+  reason?: AbuseMetricReason
+}) {
+  const reason = input.reason ?? 'none'
+  assertAbuseMetricLabel(input.flow, input.outcome, reason)
+  abuseEventsTotal.inc({ flow: input.flow, outcome: input.outcome, reason })
+}
+
+/** Record a fixed-label latency observation without allowing an arbitrary reason label. */
+export function observeAbuseOperationDuration(
+  input: { flow: AbuseMetricFlow; outcome: AbuseMetricOutcome },
+  seconds: number,
+) {
+  assertAbuseMetricLabel(input.flow, input.outcome, 'none')
+  if (!Number.isFinite(seconds) || seconds < 0) {
+    throw new Error('abuse operation duration must be a non-negative finite number')
+  }
+  abuseOperationDuration.observe({ flow: input.flow, outcome: input.outcome }, seconds)
+}
+
 // --- FakaBridge (Xboard provision) ---
 
 export const fakaProvisionTotal = new client.Counter({

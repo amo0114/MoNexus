@@ -1,8 +1,15 @@
 import { Request, Response, NextFunction } from 'express'
 import jwt from 'jsonwebtoken'
 import { config } from '../config/index.js'
-import { forbidden, mfaRequired, sessionRevoked, unauthenticated } from '../lib/httpError.js'
+import {
+  emailVerificationRequired,
+  forbidden,
+  mfaRequired,
+  sessionRevoked,
+  unauthenticated,
+} from '../lib/httpError.js'
 import { prisma } from '../lib/prisma.js'
+import { getSystemConfigValue } from '../lib/systemConfig.js'
 import { getCached, setCached } from '../lib/userStatusCache.js'
 
 export interface AuthPayload {
@@ -175,6 +182,57 @@ export async function requireActiveUser(req: Request, _res: Response, next: Next
 
     next()
   } catch (err) {
+    next(err)
+  }
+}
+
+/**
+ * Gate the small set of value-bearing writes that are explicitly covered by
+ * SPEC-RAP-001.  The flag and verification timestamp are deliberately read
+ * from PostgreSQL for every request: neither a JWT claim nor a client-side
+ * profile cache is an authorization source.
+ *
+ * Routes still place `requireActiveUser` before this middleware.  Rechecking
+ * status here keeps the middleware safe when reused directly and, more
+ * importantly, preserves the existing ban/not-found result before exposing
+ * an email-verification state.
+ */
+export async function requireVerifiedEmail(req: Request, _res: Response, next: NextFunction) {
+  if (!req.user) {
+    next(unauthenticated('未登录'))
+    return
+  }
+
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.userId },
+      select: { status: true, emailVerified: true },
+    })
+
+    if (!user) {
+      next(unauthenticated('未登录'))
+      return
+    }
+
+    // Keep the established active-user/ban semantics ahead of the value gate.
+    if (user.status === '已封禁') {
+      next(forbidden('账号已被封禁'))
+      return
+    }
+
+    const gateEnabled = (await getSystemConfigValue('emailVerificationRequiredForValue')) === 1
+    // Treat an absent value as unverified as well.  Prisma returns `null` for
+    // this nullable column, but the nullish check keeps the authorization
+    // decision fail-closed if a test double or future projection omits it.
+    if (!gateEnabled || user.emailVerified != null) {
+      next()
+      return
+    }
+
+    next(emailVerificationRequired())
+  } catch (err) {
+    // Deliberately forward the original error so the global handler emits the
+    // generic INTERNAL_SERVER_ERROR response without leaking DB details.
     next(err)
   }
 }

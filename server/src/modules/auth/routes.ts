@@ -1,4 +1,5 @@
 import { Router } from 'express'
+import type { Request, Response, NextFunction } from 'express'
 import crypto from 'crypto'
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit'
 import { validate } from '../../middlewares/validate.js'
@@ -15,10 +16,11 @@ import {
   resetPasswordSchema,
   passwordChangeSchema,
   sessionIdParamSchema,
-  verifyEmailQuerySchema,
+  verifyEmailSchema,
   updateMeSchema,
 } from './schema.js'
 import * as controller from './controller.js'
+import * as authService from './service.js'
 
 const router = Router()
 
@@ -65,28 +67,31 @@ const refreshLimiter = rateLimit({
   },
 })
 
-// Tighter limit on the email-sending endpoints to make
-// enumeration / spam attacks more expensive.
-const mailLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  limit: 5,
-  standardHeaders: true,
-  legacyHeaders: false,
-  skip: skipInTests,
-  message: {
-    error: {
-      code: 'RATE_LIMITED',
-      message: '请求过于频繁，请稍后再试',
-    },
-  },
-})
+/**
+ * Keep the public switch ahead of request validation and every limiter. The
+ * service repeats this check as its non-bypassable boundary for direct callers
+ * and to close the switch-flip race between middleware and controller.
+ */
+async function registrationGate(_req: Request, _res: Response, next: NextFunction) {
+  try {
+    await authService.assertRegistrationEnabled()
+    next()
+  } catch (error) {
+    next(error)
+  }
+}
 
 // 公开只读：访客登录页据此决定是否展示注册入口。刻意不挂 authLimiter——
 // 它是按"认证尝试"标定的额度，页面加载不该消耗；只读且无副作用，全局
 // /api limiter 已足够（C17/F9）。
 router.get('/registration-status', controller.registrationStatus)
 
-router.post('/register', authLimiter, validate(registerSchema), controller.register)
+// Registration deliberately does not use the process-local authLimiter. Its
+// service boundary owns the fixed order: switch -> Redis preflight ->
+// Turnstile -> shared Redis buckets -> bcrypt/DB/session. Putting a memory
+// limiter before that boundary would both weaken multi-instance protection and
+// let it consume/reject a request before the registration switch is observed.
+router.post('/register', registrationGate, validate(registerSchema), controller.register)
 router.post('/login', authLimiter, validate(loginSchema), controller.login)
 router.post('/mfa/enrollment/start', authLimiter, validate(mfaEnrollmentStartSchema), controller.startMfaEnrollment)
 router.post('/mfa/enrollment/confirm', authLimiter, validate(mfaEnrollmentConfirmSchema), controller.confirmMfaEnrollment)
@@ -100,9 +105,14 @@ router.delete('/sessions/:sessionId', authenticate, requireActiveUser, validate(
 router.post('/sessions/revoke-others', authenticate, requireActiveUser, controller.revokeOtherSessions)
 router.post('/password-change', authLimiter, authenticate, requireActiveUser, validate(passwordChangeSchema), controller.changePassword)
 
-router.post('/forgot-password', mailLimiter, validate(forgotPasswordSchema), controller.forgotPassword)
+// These two sending routes use the shared, HMAC-keyed Redis policies in the
+// service. A process-local mail limiter would be bypassable across instances.
+router.post('/forgot-password', validate(forgotPasswordSchema), controller.forgotPassword)
 router.post('/reset-password', authLimiter, validate(resetPasswordSchema), controller.resetPassword)
-router.post('/send-verification', mailLimiter, authenticate, requireActiveUser, controller.sendVerification)
-router.get('/verify-email', validate({ query: verifyEmailQuerySchema }), controller.verifyEmail)
+router.post('/send-verification', authenticate, requireActiveUser, controller.sendVerification)
+router.post('/verify-email', authenticate, requireActiveUser, validate(verifyEmailSchema), controller.verifyEmail)
+// Query-string verification links may remain in old inboxes. Never parse or
+// consume their token here: the authenticated POST is the sole write path.
+router.get('/verify-email', controller.legacyVerifyEmail)
 
 export { router as authRoutes }

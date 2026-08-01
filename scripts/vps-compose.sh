@@ -9,6 +9,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 action="${1:-up}"
+if [[ "$#" -gt 0 ]]; then
+  shift
+fi
 env_file="${ENV_FILE:-$ROOT_DIR/.env}"
 project_name="${COMPOSE_PROJECT_NAME:-monexus-prod}"
 
@@ -54,8 +57,15 @@ case "$action" in
   ps|logs)
     "${compose[@]}" "$action"
     ;;
+  exec)
+    if [[ "$#" -lt 2 ]]; then
+      echo "Usage: $0 exec SERVICE COMMAND [ARG...]" >&2
+      exit 2
+    fi
+    "${compose[@]}" exec -T "$@"
+    ;;
   *)
-    echo "Usage: $0 {config|pull|up|restart|ps|logs|down}" >&2
+    echo "Usage: $0 {config|pull|up|restart|ps|logs|exec|down}" >&2
     exit 2
     ;;
 esac

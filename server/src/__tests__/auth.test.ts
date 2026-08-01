@@ -15,7 +15,9 @@ describe('POST /api/auth/register', () => {
     expect(res.body.user.email).toBe('newuser@test.local')
     expect(res.body.user.role).toBe('user')
     expect(res.body.user.status).toBeDefined()
-    expect(res.body.user.points).toBeGreaterThan(0)
+    // Registration rewards are now held until email verification and the
+    // configured release window complete; the account starts at zero.
+    expect(res.body.user.points).toBe(0)
     // refresh token cookie
     const cookies = (res.headers['set-cookie'] as unknown) as string[]
     expect(cookies.some(c => c.startsWith('refreshToken='))).toBe(true)

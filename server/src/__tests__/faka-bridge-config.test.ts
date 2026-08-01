@@ -3,6 +3,7 @@ import { spawnSync } from 'node:child_process'
 import path from 'node:path'
 
 const VALID_MFA_ENCRYPTION_KEY = Buffer.alloc(32, 7).toString('base64')
+const VALID_ABUSE_HASH_KEY = Buffer.alloc(32, 11).toString('base64')
 const SERVER_ROOT = path.resolve(__dirname, '..', '..')
 
 const PROD_BASE_ENV: Record<string, string> = {
@@ -19,6 +20,15 @@ const PROD_BASE_ENV: Record<string, string> = {
   DELIVERY_STORAGE_BUCKET: 'monexus-files',
   DELIVERY_STORAGE_PUBLIC_ENDPOINT: 'https://shop.example.com',
   MFA_ENCRYPTION_KEY: VALID_MFA_ENCRYPTION_KEY,
+  // Registration abuse protection is production-mandatory. Keep its valid
+  // baseline separate so each case below reaches the Faka-specific guard.
+  ABUSE_PROTECTION_MODE: 'enforce',
+  ABUSE_HASH_KEY: VALID_ABUSE_HASH_KEY,
+  TURNSTILE_SITE_KEY: 'turnstile-site-key',
+  TURNSTILE_SECRET_KEY: 'turnstile-secret-key',
+  TURNSTILE_ALLOWED_HOSTNAMES: 'shop.example.com',
+  REDIS_ENABLED: 'true',
+  REDIS_REQUIRED: 'true',
   // P7b：生产必配；缺省会先于 Faka 守卫 process.exit(1)
   WEBHOOK_SECRET_ENC_KEY: 'a'.repeat(64),
 }
