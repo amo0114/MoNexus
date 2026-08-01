@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | `IMPL-RAP-001` |
-| 状态 | `Feature implementation complete; full CI, staging rehearsal and production rollout remain pending` |
+| 状态 | `Feature implementation, full CI and isolated staging rehearsal complete; production rollout remains pending` |
 | 配套规格 | [spec.md](./spec.md) · [plan.md](./plan.md) · [task.md](./task.md) |
 
 ---

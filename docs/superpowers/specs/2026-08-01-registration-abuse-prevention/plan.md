@@ -314,7 +314,7 @@ Turnstile script 加载失败并不意味着可直接提交；UI 保留刷新 ch
 
 | 风险 | 缓解 / 决策 |
 | --- | --- |
-| Redis 使注册/邮件变为依赖 | 仅限新账号/用户邮件路径 fail-closed；生产通过 HA Redis、`REDIS_REQUIRED=true`、ready/alert 保证；已验证交易不依赖它 |
+| Redis 使注册/邮件变为依赖 | 仅限新账号/用户邮件路径 fail-closed；本发布使用认证、AOF `everysec` 的单机本地 Compose Redis，加 `REDIS_REQUIRED=true`、ready/alert 保证；不部署 Sentinel/副本，也不宣称 HA；已验证交易不依赖它 |
 | Turnstile 或网络故障降低注册转化 | managed 模式最小摩擦；明确 transient UI；可临时关闭总注册开关，不安全地放开 CAPTCHA 不是应急手段 |
 | 邮箱验证阻断老用户 | 默认 gate 0、至少 14 天提醒、保留售后/订单查询；用 support SOP 处理真实收不到邮件的用户 |
 | 用户自动化点击邮件链接 | 认证绑定 POST 防止匿名 scanner 直接获得资格；不声称这替代 KYC |
@@ -344,6 +344,8 @@ Turnstile script 加载失败并不意味着可直接提交；UI 保留刷新 ch
 ---
 
 ## 9. 修订记录
+
+当前发布决定：使用单机、持久化 Redis；主机故障下保护路径 fail-closed，不引入 Sentinel 或副本。
 
 | 版本 | 日期 | 说明 |
 | --- | --- | --- |

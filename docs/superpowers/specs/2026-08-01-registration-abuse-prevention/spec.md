@@ -76,7 +76,7 @@ MoNexus 当前允许任何访客直接注册：注册接口会立刻创建可登
 | --- | --- |
 | A-01 | `SPEC-OPS-REGMAIL-001` 已先合入：存在 `registrationEnabled`、安全的 SMTP 状态接口、前端注册状态机和邮件运营面。 |
 | A-02 | 生产真实 SMTP 已配置、`GET /api/admin/mail/status` 显示 `deliveryReady=true`，且发件域已完成 SPF、DKIM、DMARC 配置。 |
-| A-03 | 生产 Redis 使用独立、持久化的服务，所有 API 实例访问同一 key namespace，并启用 `REDIS_ENABLED=true`、`REDIS_REQUIRED=true`。 |
+| A-03 | 生产 Redis 使用独立、持久化的服务，所有 API 实例访问同一 key namespace，并启用 `REDIS_ENABLED=true`、`REDIS_REQUIRED=true`。本发布批准单机、认证的 Compose Redis（AOF `everysec`）；不要求 Sentinel 或副本，也不得将其表述为 HA。主机或 Redis 故障时仅注册和用户邮件路径按 fail-closed 暂停。 |
 | A-04 | 运维可提供 Turnstile site key、secret key 和生产 hostname；secret 只在后端 Secret Store，site key 可经安全公开状态 DTO 下发。 |
 | A-05 | 本规格独立 worktree/分支实施；涉及 Prisma schema/migration，必须在前置规格和并行 migration 合入后 rebase。 |
 
@@ -394,6 +394,8 @@ GrowthReward
 ---
 
 ## 12. 修订记录
+
+当前发布决定：生产使用单机、认证的 Compose Redis，且不部署 Sentinel 或副本；主机故障时注册和用户邮件按 fail-closed 暂停。
 
 | 版本 | 日期 | 说明 |
 | --- | --- | --- |

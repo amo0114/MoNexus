@@ -135,8 +135,17 @@ STORAGE_SECRET_KEY=<随机 MinIO 密钥>
 STORAGE_PUBLIC_URL_BASE=https://monexus.oai-o.com/uploads
 STORAGE_FORCE_PATH_STYLE=true
 
-REDIS_ENABLED=false
 REDIS_PASSWORD=<随机 Redis 密码>
+REDIS_ENABLED=true
+REDIS_REQUIRED=true
+REDIS_URL=redis://redis:6379
+REDIS_TLS=false
+# 注册防滥用必须使用独立于 JWT/MFA 的 key，并使用生产 Turnstile widget。
+ABUSE_PROTECTION_MODE=enforce
+ABUSE_HASH_KEY=<独立的32字节标准Base64随机值>
+TURNSTILE_SITE_KEY=<生产Turnstile site key>
+TURNSTILE_SECRET_KEY=<生产Turnstile secret key>
+TURNSTILE_ALLOWED_HOSTNAMES=monexus.oai-o.com
 METRICS_TOKEN=<至少 32 字符的随机值>
 
 # 没有真实 SMTP/Sentry 时必须清空模板占位值。
@@ -328,6 +337,22 @@ bash scripts/vps-compose.sh up
 
 不要为代码回滚删除 pgdata-prod 或 miniodata-prod volumes。代码回滚不等于数据库
 schema 回滚；新迁移已应用时，要先评估其向后兼容性。
+
+### 单机 Redis
+
+生产 Compose 内的 Redis 是经过批准的单机服务，不运行 Sentinel 或副本。它仅位于
+Docker 私有网络，Compose 不发布 `6379`；发布版本会启用 AOF 和每秒 fsync。主机故障
+会同时影响 MoNexus 和 Redis，因此这不是高可用设计：公开注册及用户邮件会按
+fail-closed 语义暂停，待主机恢复后再继续。不要为了故障临时把
+`ABUSE_PROTECTION_MODE` 改为 `off`。
+
+部署后确认 AOF 已启用，命令不会打印 Redis 密码：
+
+~~~bash
+cd /opt/monexus
+bash scripts/vps-compose.sh exec redis sh -c \
+  'REDISCLI_AUTH="$REDIS_PASSWORD" redis-cli INFO persistence | grep "^aof_enabled:1$"'
+~~~
 
 ### 备份
 

@@ -92,6 +92,7 @@ TURNSTILE_ALLOWED_HOSTNAMES=monexus.oai-o.com
 REDIS_ENABLED=true
 REDIS_REQUIRED=true
 REDIS_URL=redis://redis:6379
+REDIS_TLS=false
 
 # Pin releases in production. `latest` is acceptable only for a disposable demo.
 MONEXUS_IMAGE_TAG=latest
@@ -189,6 +190,29 @@ bash scripts/backup.sh
 Follow [the backup and restore rehearsal](./runbook.md#3-encrypted-database-and-object-backup)
 before relying on the first artifact. Test database *and object* restoration in
 an isolated environment; do not treat the local named volumes as recovery media.
+
+### Single-node Redis
+
+The bundled Redis service is intentionally a single, authenticated local
+service for cache and registration-abuse limiter state. It has no published
+port, is reachable only as `redis` on the Compose network, and writes AOF with
+`appendfsync everysec`. It is **not** Redis HA: a host failure also stops this
+application, and public registration plus user-email sends must fail closed
+until the host is recovered. Do not add Sentinel, a replica, or a second Redis
+endpoint unless the application itself has a separate failover target.
+
+After each production deployment, verify persistence without printing the
+password:
+
+```bash
+cd /opt/monexus
+bash scripts/vps-compose.sh exec redis sh -c \
+  'REDISCLI_AUTH="$REDIS_PASSWORD" redis-cli INFO persistence | grep "^aof_enabled:1$"'
+```
+
+`redisdata-prod` survives a normal container restart but is not an offsite
+backup. The recovery priority is PostgreSQL and MinIO; limiter windows can
+expire naturally after a host-loss recovery.
 
 Do not commit `.env`, backups, passwords, GitHub tokens, or private keys.
 

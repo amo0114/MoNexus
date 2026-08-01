@@ -34,7 +34,7 @@
 ## 2. 配置、Redis 与 Turnstile（P0）
 
 - [ ] **CHK-CONF-01** `ABUSE_PROTECTION_MODE`、`ABUSE_HASH_KEY`、Turnstile site/secret/hostname 配置均通过 schema；production `off` 或任一缺失/非法值在启动前失败。
-- [ ] **CHK-CONF-02** production `enforce` 同时要求 `REDIS_ENABLED=true` 和 `REDIS_REQUIRED=true`；部署 preflight 与运行时的判断一致。
+- [ ] **CHK-CONF-02** production `enforce` 同时要求 `REDIS_ENABLED=true` 和 `REDIS_REQUIRED=true`；本发布的单机 Redis 必须认证、仅 Compose 私网可达并启用 AOF `everysec`。不部署 Sentinel/副本，不得表述为 HA；Redis 或主机故障时注册与用户邮件路径 fail-closed。部署 preflight 与运行时的判断一致。
 - [ ] **CHK-CONF-03** site key 仅在 `registration-status.challenge` 的白名单 DTO 中出现；secret、hostname 内部细节、Redis/SMTP config 永不返回。
 - [ ] **CHK-CONF-04** logger/Sentry/AdminLog/AbuseEvent/metrics 对 turnstileToken、Turnstile secret、ABUSE_HASH_KEY、SMTP secret 和验证/重置 token 的金丝雀测试全部通过。
 - [ ] **CHK-CONF-05** `abuseLimiter` 使用单个 Lua `INCR + PEXPIRE + PTTL`，没有 `INCR`/`EXPIRE` 分离 race、MemoryStore、process Map 或 Redis fail-open fallback。
@@ -122,7 +122,7 @@
     存在，队列为空。待上线后的 MFA 管理员 Mail Panel 受控收件地址测试和每日额度
     确认，故本项保持未勾选。
 - [ ] **CHK-REL-04** 在生产先开启 Turnstile/Redis protection，观察 24 小时，再依据通知窗口开启 `emailVerificationRequiredForValue=1`。
-- [ ] **CHK-REL-05** 开关、报警阈值、值班 owner、用户支持话术和回滚责任人已记录；不依赖个人记忆。
+- [ ] **CHK-REL-05** 开关、报警阈值、值班 owner、用户支持话术和回滚责任人已记录；发布负责人已确认单机 Redis 的主机故障影响及恢复路径；不依赖个人记忆。
   - 2026-08-01：仓库负责人确认兼任 release/on-call/rollback 三个角色；用户支持
     owner、发布窗口和实际告警联络路径待补后才可勾选。
 - [ ] **CHK-REL-06** 回滚演练只使用 registrationEnabled/verification value gate，不删除 migration/ledger/PointLog，不把 production abuse mode 改为 off。
@@ -160,6 +160,8 @@
 P0 默认不接受豁免。仅可由仓库负责人书面批准短期生产处置，且不得取消后端邮箱资格 gate、Redis fail-closed、Turnstile server verification 或账务幂等约束。
 
 ## 13. 修订记录
+
+当前发布决定：单机 Redis 是已批准的生产拓扑；发布前验证 AOF、私网和 fail-closed 行为，不部署 Sentinel/副本。
 
 | 版本 | 日期 | 说明 |
 | --- | --- | --- |

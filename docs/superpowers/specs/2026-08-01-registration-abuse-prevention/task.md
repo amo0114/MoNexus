@@ -58,9 +58,9 @@ T10 config/redis       T20 migration/models
   - DoD：worktree 干净；`npm --prefix server run build`、目标 auth/points/orders/merchant 测试绿。
 
 - [ ] **T01 — 生产依赖演练设计**
-  - 确认 staging Turnstile keys、Redis HA、真实 SMTP sender 与 SPF/DKIM/DMARC owner；不记录真实值。
+  - 确认 staging Turnstile keys、生产单机 Redis 的认证/AOF/私网暴露与故障语义、真实 SMTP sender 与 SPF/DKIM/DMARC owner；不记录真实值。
   - 定义 `ABUSE_PROTECTION_MODE=enforce` 部署变量映射和 `check-prod-env.sh` preflight 输入。
-  - DoD：运维负责人确认 A-02/A-03/A-04；没有在 repo 或 task 日志输出秘密。
+  - DoD：运维负责人确认 A-02/A-03/A-04 与单机 Redis 主机故障时注册/用户邮件 fail-closed 的取舍；没有在 repo 或 task 日志输出秘密。
 
 ---
 
@@ -232,8 +232,10 @@ T10 config/redis       T20 migration/models
     但最终邮件证据仍须在部署后由 MFA 管理员经 Mail Panel 向受控收件地址发一次
     测试邮件，并确认每日额度。Mailu ClamAV 服务可响应，但其 PID-file health check
     目前为 `unhealthy`，须在发布窗口前修复或按独立运维变更处理。生产 Redis 已认证
-    且健康，但为单 primary、零 replica，未达到 HA 要求。线上当前镜像尚未加载 RAP
-    的 `ABUSE_*` / Turnstile 配置；本审计没有改动生产。
+    且健康，但为单 primary、零 replica；2026-08-01 发布负责人明确选择单机、持久化
+    Redis，不部署 Sentinel/副本。发布前仍须验证 AOF、健康检查、私网无 `6379` 暴露，
+    并接受 Redis/主机故障使注册与用户邮件 fail-closed。线上当前镜像尚未加载 RAP 的
+    `ABUSE_*` / Turnstile 配置；本审计没有改动生产。
   - 发布、值班和回滚职责由同一位仓库负责人兼任（2026-08-01 已确认）；用户支持
     owner、实际发布窗口和告警联络路径仍待记录。生产保护层开启后的 24 小时观察、
     通知窗口和明确授权后的生产灰度仍为必经门禁。不得因 staging 成功而跳过这些门禁。
@@ -269,6 +271,8 @@ T51 已由上述 CI、reset/replay 与 drift 记录完成。T52 的隔离 stagin
 ---
 
 ## 10. 修订记录
+
+当前发布决定：单机 Redis 是已批准的生产拓扑；删除 Redis HA/Sentinel/副本作为本发布前提，保留 AOF、私网和 fail-closed 验证门禁。
 
 | 版本 | 日期 | 说明 |
 | --- | --- | --- |

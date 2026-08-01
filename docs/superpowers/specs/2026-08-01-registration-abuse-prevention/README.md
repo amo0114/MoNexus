@@ -15,7 +15,7 @@
 | 规格 ID | `SPEC-RAP-001` |
 | 建议分支 | `feat/registration-abuse-prevention`（从最新 `develop` 创建，PR → `develop`） |
 | 日期 | 2026-08-01 |
-| 状态 | Feature implementation complete in `feat/registration-abuse-prevention`; CI/staging/release gates remain pending |
+| 状态 | Feature implementation, full CI and isolated staging rehearsal complete in `feat/registration-abuse-prevention`; production rollout gates remain pending |
 | 前置规格 | `SPEC-OPS-REGMAIL-001` 注册开关与邮件投递运营面；M3 身份与会话安全收口 |
 
 ## 范围边界
@@ -28,4 +28,4 @@
 
 - 已完成：Redis + Turnstile fail-closed 注册/邮件防护、邮箱资格门槛、延迟奖励账本与 cron、邀请码并发额度、MFA 管理端风控 API、管理台面板、OpenAPI 与运维文档。
 - 已验证：隔离 PostgreSQL 库上的奖励/管理员/注册邮件流程 20 项测试，前端构建、后端构建，以及 5 项相关 Playwright 场景。
-- 仍待发布责任人完成：完整 CI、真实 staging Redis/Turnstile/SMTP catcher 演练、24 小时观察和生产灰度。不得把这些外部步骤标记为已完成。
+- 仍待发布责任人完成：生产单机 Redis 的认证/AOF/私网验证、24 小时观察和生产灰度。不得把这些外部步骤标记为已完成。

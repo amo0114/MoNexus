@@ -255,8 +255,12 @@ tokens, or credentials, and without sending a message.
   Treat this as an operational remediation item; do not silently waive the
   health check before the release window.
 - Production Redis requires authentication and responds to authenticated
-  probes, but it is a single primary with zero connected replicas. It is not
-  Redis HA and cannot satisfy the production anti-abuse availability gate.
+  probes, but it is a single primary with zero connected replicas. On
+  2026-08-01 the release owner selected this single-node local-Compose
+  topology: no Redis HA, Sentinel, or replica is planned for this release.
+  The release must instead verify authenticated private-network access, AOF
+  persistence, and the documented fail-closed behavior for registration and
+  user-email sends during a Redis or host outage.
 - The running production application predates RAP and has not loaded the
   production `ABUSE_*` or Turnstile settings. This audit made no production
   changes.
@@ -266,9 +270,10 @@ human for all three roles), confirmed on 2026-08-01. A support owner, release
 window, and alert contact route must still be recorded before a production
 deploy.
 
-Still required: production Redis HA, the post-deploy authenticated Mail Panel
-delivery test and daily quota confirmation, ClamAV health-check remediation,
-the support owner, production alert/contact route and release window, and the
-24-hour
+Still required: production single-node Redis final validation (authentication,
+AOF, health check, and no public port), the post-deploy authenticated Mail
+Panel delivery test and daily quota confirmation, ClamAV health-check
+remediation, the support owner, production alert/contact route and release
+window, and the 24-hour
 production protection observation before the production value gate is enabled.
 Do not set a production release gate from this staging evidence.
