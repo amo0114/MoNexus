@@ -14,6 +14,7 @@ beforeEach(async () => {
   await __resetCacheForTests()
   await prisma.$executeRawUnsafe(`TRUNCATE TABLE
     "SecurityEvent",
+    "AbuseEvent",
     "AuthChallenge",
     "MfaRecoveryCode",
     "AdminLog",
@@ -30,6 +31,7 @@ beforeEach(async () => {
     "InventoryLog",
     "InventoryItem",
     "PointLog",
+    "GrowthReward",
     "CheckinRecord",
     "InviteRelation",
     "Review",

@@ -1,6 +1,7 @@
 import axios from 'axios'
 import { useAuthStore } from '../stores/authStore'
 import { refreshAccessToken } from './authRefresh'
+import { showEmailVerificationGuide } from '../lib/emailVerificationGuide'
 
 declare module 'axios' {
   interface AxiosRequestConfig {
@@ -47,6 +48,9 @@ api.interceptors.response.use(
     // Credential / MFA factor failures are business errors, not expired
     // sessions. They must not rotate a cookie or replay an attempted factor.
     const errorCode = error.response?.data?.error?.code
+    if (errorCode === 'EMAIL_VERIFICATION_REQUIRED') {
+      showEmailVerificationGuide()
+    }
     if (
       !originalRequest
       || originalRequest.skipAuthRefresh

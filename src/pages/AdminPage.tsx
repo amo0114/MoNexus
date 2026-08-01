@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { LayoutDashboard, UsersRound, Package, ShoppingCart, Activity, Users, ShoppingBag, Coins, Store, DollarSign, Settings, ClipboardList, Megaphone, DatabaseBackup, FolderLock, Cable } from 'lucide-react'
+import { LayoutDashboard, UsersRound, Package, ShoppingCart, Activity, Users, ShoppingBag, Coins, Store, DollarSign, Settings, ClipboardList, Megaphone, DatabaseBackup, FolderLock, Cable, ShieldAlert } from 'lucide-react'
 import api from '../api/client'
 import { getApiErrorMessage } from '../api/error'
 import { useAppStore } from '../stores/appStore'
@@ -23,6 +23,8 @@ import { Merchant, Settlement } from '../types/merchant'
 import RegistryPill from '../components/ui/RegistryPill'
 import { MemberTierConfigPanel } from '../components/admin/MemberTierConfigPanel'
 import AdminConfigPanel from '../components/admin/AdminConfigPanel'
+import RegistrationControlPanel from '../components/admin/RegistrationControlPanel'
+import AdminMailPanel from '../components/admin/AdminMailPanel'
 import AdminUserTable from '../components/admin/AdminUserTable'
 import AdminOrderTable from '../components/admin/AdminOrderTable'
 import AnnouncementsAdmin from '../components/admin/AnnouncementsAdmin'
@@ -31,11 +33,12 @@ import AdminFileGovernance from '../components/admin/AdminFileGovernance'
 import AdminOfferReport from '../components/admin/AdminOfferReport'
 import PortableBackupPanel from '../components/admin/PortableBackupPanel'
 import AdminFakaTasksPanel from '../components/admin/AdminFakaTasksPanel'
+import AbuseProtectionPanel from '../components/admin/AbuseProtectionPanel'
 import { Dialog, DialogContent, DialogTitle } from '../components/ui/Dialog'
 import { TableSkeleton, StatCardSkeleton } from '../components/ui/Skeleton'
 import EmptyState from '../components/ui/EmptyState'
 
-type AdminTab = 'dashboard' | 'users' | 'products' | 'orders' | 'logs' | 'audit' | 'files' | 'merchants' | 'settlements' | 'announcements' | 'config' | 'backup' | 'faka'
+type AdminTab = 'dashboard' | 'users' | 'products' | 'orders' | 'logs' | 'audit' | 'files' | 'merchants' | 'settlements' | 'announcements' | 'config' | 'backup' | 'faka' | 'abuse'
 
 const NAV_ITEMS: { id: AdminTab; label: string; icon: any }[] = [
   { id: 'dashboard', label: '数据仪表盘', icon: LayoutDashboard },
@@ -46,6 +49,7 @@ const NAV_ITEMS: { id: AdminTab; label: string; icon: any }[] = [
   { id: 'orders', label: '订单记录', icon: ShoppingCart },
   { id: 'faka', label: 'FakaBridge', icon: Cable },
   { id: 'logs', label: '积分流水', icon: Activity },
+  { id: 'abuse', label: '注册与激励风控', icon: ShieldAlert },
   { id: 'audit', label: '操作审计', icon: ClipboardList },
   { id: 'files', label: '文件治理', icon: FolderLock },
   { id: 'announcements', label: '公告管理', icon: Megaphone },
@@ -276,14 +280,14 @@ export default function AdminPage() {
   return (
     <div className="fade-in pt-2">
       <div className="flex flex-col md:flex-row gap-6 max-w-7xl mx-auto">
-        {/* Sidebar */}
-        <aside className="w-full md:w-56 flex-shrink-0 space-y-1">
-          <h3 className="text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-3 px-3">系统管理</h3>
+        {/* Sidebar — <md: sticky horizontal pill strip (spec M4); ≥md: vertical rail */}
+        <aside className="w-full md:w-56 flex-shrink-0 flex md:block gap-1 md:space-y-1 overflow-x-auto hide-scrollbar max-md:sticky max-md:top-[calc(var(--navbar-h)+var(--safe-top))] max-md:z-20 max-md:-mx-4 max-md:px-4 max-md:py-2 max-md:bg-[var(--color-background)]/95 max-md:backdrop-blur-md">
+          <h3 className="hidden md:block text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider mb-3 px-3">系统管理</h3>
           {NAV_ITEMS.map(({ id, label, icon: Icon }) => (
             <button
               key={id}
               onClick={() => setActiveTab(id)}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg font-semibold transition-colors cursor-pointer text-sm ${
+              className={`shrink-0 md:w-full flex items-center gap-3 px-4 py-3 rounded-lg font-semibold transition-colors cursor-pointer text-sm whitespace-nowrap ${
                 activeTab === id
                   ? 'bg-[var(--color-primary)] text-white shadow-sm'
                   : 'text-[var(--color-text-muted)] hover:bg-[var(--color-primary)]/8 hover:text-[var(--color-text)]'
@@ -295,7 +299,7 @@ export default function AdminPage() {
         </aside>
 
         {/* Main Content */}
-        <div className="flex-grow card p-6 sm:p-8 min-h-[600px] overflow-x-auto">
+        <div className="flex-grow card max-md:p-4 p-6 sm:p-8 max-md:min-h-0 min-h-[600px] overflow-x-auto">
           {/* Dashboard */}
           {activeTab === 'dashboard' && !stats && (
             <div className="space-y-6">
@@ -321,6 +325,7 @@ export default function AdminPage() {
 
           {activeTab === 'backup' && <PortableBackupPanel />}
           {activeTab === 'faka' && <AdminFakaTasksPanel />}
+          {activeTab === 'abuse' && <AbuseProtectionPanel />}
 
           {/* Merchants */}
           {activeTab === 'merchants' && (
@@ -508,7 +513,7 @@ export default function AdminPage() {
                 <h2 className="font-heading text-xl font-bold text-[var(--color-text)]">商品与库存</h2>
                 <button
                   type="button"
-                  className="btn-primary text-xs px-3 py-1.5"
+                  className="btn-primary btn-sm text-xs px-3 py-1.5"
                   data-testid="admin-faka-import-open"
                   onClick={async () => {
                     setShowFakaImport(true)
@@ -803,14 +808,14 @@ export default function AdminPage() {
                     <button
                       disabled={auditPage === 1}
                       onClick={() => setAuditPage(auditPage - 1)}
-                      className="px-3 py-1 border border-[var(--color-border)] rounded hover:bg-[var(--color-background)] disabled:opacity-50"
+                      className="btn-sm px-3 py-1 border border-[var(--color-border)] rounded hover:bg-[var(--color-background)] disabled:opacity-50 cursor-pointer"
                     >
                       上一页
                     </button>
                     <button
                       disabled={auditPage * 20 >= auditTotal}
                       onClick={() => setAuditPage(auditPage + 1)}
-                      className="px-3 py-1 border border-[var(--color-border)] rounded hover:bg-[var(--color-background)] disabled:opacity-50"
+                      className="btn-sm px-3 py-1 border border-[var(--color-border)] rounded hover:bg-[var(--color-background)] disabled:opacity-50 cursor-pointer"
                     >
                       下一页
                     </button>
@@ -826,7 +831,14 @@ export default function AdminPage() {
           {/* Configs */}
           {activeTab === 'config' && (
             <div className="space-y-4">
-              <section>
+              {/* SPEC-OPS-REGMAIL-001：注册开关与邮件投递作为独立卡片，不混入数值配置表 */}
+              <RegistrationControlPanel />
+
+              <section className="pt-6 border-t border-[var(--color-border)]">
+                <AdminMailPanel />
+              </section>
+
+              <section className="pt-6 border-t border-[var(--color-border)]">
                 <h2 className="font-heading text-xl font-bold mb-4 text-[var(--color-text)]">系统配置</h2>
                 <AdminConfigPanel />
               </section>
@@ -973,7 +985,7 @@ export default function AdminPage() {
 
       {/* Import product from Xboard plan catalog — multi period offers */}
       <Dialog open={showFakaImport} onOpenChange={(o) => { if (!o) setShowFakaImport(false) }}>
-        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-lg max-h-[90dvh] overflow-y-auto">
           <DialogTitle className="text-xl mb-3">从 Xboard 导入套餐</DialogTitle>
           <p className="text-xs text-[var(--color-text-muted)] mb-4 leading-relaxed">
             一个 Xboard 套餐 → <strong className="text-[var(--color-text)]">一个商品 + 多个规格</strong>
@@ -1076,7 +1088,7 @@ export default function AdminPage() {
                             <div>
                               <label className="block text-xs text-[var(--color-text-muted)] mb-1">规格名</label>
                               <input
-                                className="input text-sm"
+                                className="input"
                                 value={row.offerName}
                                 onChange={(e) =>
                                   setFakaImportRows(prev => ({
@@ -1091,7 +1103,7 @@ export default function AdminPage() {
                               <input
                                 type="number"
                                 min={1}
-                                className="input font-mono text-sm"
+                                className="input font-mono"
                                 value={row.pricePoints}
                                 onChange={(e) =>
                                   setFakaImportRows(prev => ({
@@ -1104,7 +1116,7 @@ export default function AdminPage() {
                             <div className="sm:col-span-2">
                               <label className="block text-xs text-[var(--color-text-muted)] mb-1">externalSku</label>
                               <input
-                                className="input font-mono text-xs"
+                                className="input font-mono"
                                 value={row.sku}
                                 onChange={(e) =>
                                   setFakaImportRows(prev => ({

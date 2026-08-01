@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import path from 'node:path'
 import { Router, type Request } from 'express'
 import busboy from 'busboy'
-import { authenticate, requireActiveUser, requireMerchant } from '../../middlewares/auth.js'
+import { authenticate, requireActiveUser, requireMerchant, requireVerifiedEmail } from '../../middlewares/auth.js'
 import { badRequest, HttpError } from '../../lib/httpError.js'
 import { prisma } from '../../lib/prisma.js'
 import { getDeliveryStorage } from '../../lib/storage/delivery.js'
@@ -37,7 +37,9 @@ async function myMerchantId(req: Request): Promise<number> {
  * <sha256>.<ext> 去重晋升为最终键，登记 DeliveryFile 行返回 fileId。
  * 响应不含对象键——普通 API 永不返回 key/bucket。
  */
-router.post('/delivery-file', authenticate, requireActiveUser, requireMerchant, async (req, res, next) => {
+// Authorization precedes busboy so failed qualification cannot consume a
+// stream, allocate a temporary key, or touch object storage.
+router.post('/delivery-file', authenticate, requireActiveUser, requireMerchant, requireVerifiedEmail, async (req, res, next) => {
   let settled = false
   const fail = (err: unknown) => {
     if (settled) return

@@ -67,7 +67,9 @@ export default function Toast() {
   const toasts = useAppStore((s) => s.toasts)
 
   return (
-    <div className="fixed bottom-10 left-1/2 -translate-x-1/2 z-[80] flex flex-col gap-3 pointer-events-none items-center">
+    // <md: sit above the BottomTabBar (56px + safe-area + gap) so toasts
+    // never cover or get covered by primary navigation; ≥md unchanged.
+    <div className="fixed bottom-[calc(var(--tabbar-h)+var(--safe-bottom)+0.75rem)] md:bottom-10 left-1/2 -translate-x-1/2 z-[80] flex flex-col gap-3 pointer-events-none items-center">
       {toasts.map((t) => (
         <ToastCard key={t.id} toast={t} />
       ))}

@@ -17,6 +17,9 @@ model User {
   inviteCode    String    @unique @default(uuid())
   nickname      String? // 1-20 字，个人中心可设；评价展示名回退邮箱打码
   emailVerified DateTime?
+  // Stops this user from qualifying new invite relations. It never rewrites
+  // already granted PointLog history.
+  referralSuspended Boolean @default(false)
   createdAt     DateTime  @default(now())
   // MFA seed is AES-256-GCM ciphertext. It must never be selected by public
   // serializers; only the auth MFA service reads it explicitly.
@@ -33,6 +36,10 @@ model User {
   orderStatusEvents       OrderStatusEvent[]
   invitedBy               InviteRelation[]         @relation("invitee")
   invites                 InviteRelation[]         @relation("inviter")
+  growthRewards           GrowthReward[]           @relation("GrowthRewardRecipient")
+  abuseEvents             AbuseEvent[]             @relation("AbuseEventUser")
+  abuseEventsAsInviter    AbuseEvent[]             @relation("AbuseEventInviter")
+  abuseEventsAsInvitee    AbuseEvent[]             @relation("AbuseEventInvitee")
   adminLogs               AdminLog[]
   updatedSystemConfigs    SystemConfig[]           @relation("SystemConfigUpdatedBy")
   approvedMerchants       Merchant[]               @relation("MerchantApprovedBy")
@@ -68,7 +75,7 @@ model FakaProvisionEmailProof {
   // null + verifiedAt = 永久绑定；非 null = 遗留限时证明
   proofExpiresAt  DateTime?
   createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  updatedAt       DateTime  @default(now()) @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -84,7 +91,7 @@ model FakaProvisionEmailSendBudget {
   windowStartedAt DateTime
   sendCount       Int      @default(0)
   createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  updatedAt       DateTime @default(now()) @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
@@ -695,6 +702,7 @@ model FakaBridgeTask {
   order Order @relation(fields: [orderId], references: [id], onDelete: Restrict)
 
   @@index([status, nextAttemptAt])
+  @@index([status, cancelRequested])
   @@index([requestOrderNo])
   @@index([xboardTradeNo])
   @@index([revokeStatus])
@@ -775,13 +783,69 @@ model CheckinRecord {
 }
 
 model InviteRelation {
-  id        Int      @id @default(autoincrement())
-  inviterId Int
-  inviteeId Int      @unique
-  createdAt DateTime @default(now())
+  id               Int      @id @default(autoincrement())
+  inviterId        Int
+  inviteeId        Int      @unique
+  // Existing relations enter the migration as legacy. New registration and
+  // qualification flows select the other closed state values explicitly.
+  status           String   @default("legacy") // legacy | pending_verification | qualified | quota_exhausted | voided
+  qualifiedAt      DateTime?
+  voidedAt         DateTime?
+  qualificationDay String?  // Asia/Shanghai YYYY-MM-DD; set only when qualified
+  createdAt        DateTime @default(now())
 
-  inviter User @relation("inviter", fields: [inviterId], references: [id])
-  invitee User @relation("invitee", fields: [inviteeId], references: [id])
+  inviter      User          @relation("inviter", fields: [inviterId], references: [id])
+  invitee      User          @relation("invitee", fields: [inviteeId], references: [id])
+  growthReward GrowthReward?
+
+  @@index([inviterId, status, qualifiedAt])
+  @@index([inviterId, status, qualificationDay])
+}
+
+// Source of truth for registration/referral rewards before they become a
+// PointLog entry. The later reward service owns all state transitions.
+model GrowthReward {
+  id               Int       @id @default(autoincrement())
+  recipientUserId  Int
+  inviteRelationId Int?      @unique
+  kind             String    // registration | referral
+  amount           Int
+  state            String    @default("pending_verification") // pending_verification | held | granted | voided
+  availableAt      DateTime?
+  grantedAt        DateTime?
+  voidedAt         DateTime?
+  voidReason       String?
+  dedupeKey        String    @unique
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  recipient      User            @relation("GrowthRewardRecipient", fields: [recipientUserId], references: [id])
+  inviteRelation InviteRelation? @relation(fields: [inviteRelationId], references: [id], onDelete: SetNull)
+
+  @@index([state, availableAt])
+  @@index([recipientUserId, state, createdAt])
+}
+
+// Privacy-preserving registration-abuse evidence. The future event service is
+// responsible for its closed vocabulary and detailSafe serializer.
+model AbuseEvent {
+  id         Int       @id @default(autoincrement())
+  type       String
+  userId     Int?
+  inviterId  Int?
+  inviteeId  Int?
+  ipHash     String?
+  emailHash  String?
+  detailSafe Json?
+  createdAt  DateTime  @default(now())
+
+  // Evidence survives user deletion without preserving a dangling identity.
+  user    User? @relation("AbuseEventUser", fields: [userId], references: [id], onDelete: SetNull)
+  inviter User? @relation("AbuseEventInviter", fields: [inviterId], references: [id], onDelete: SetNull)
+  invitee User? @relation("AbuseEventInvitee", fields: [inviteeId], references: [id], onDelete: SetNull)
+
+  @@index([type, createdAt])
+  @@index([inviterId, createdAt])
 }
 
 model AdminLog {

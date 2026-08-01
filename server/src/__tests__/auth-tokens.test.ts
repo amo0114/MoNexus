@@ -280,16 +280,16 @@ describe('Auth token flows (P0-D)', () => {
       expect(tokens).toHaveLength(1)
       const mail = mailer.lastTo(user.email)
       expect(mail).toBeDefined()
-      expect(mail!.text).toMatch(/verify-email\?token=[a-f0-9]+/)
+      expect(mail!.text).toMatch(/verify-email#token=[a-f0-9]+/)
     })
   })
 
-  describe('GET /api/auth/verify-email', () => {
-    it('should reject an unknown token with 400', async () => {
+  describe('email verification claim', () => {
+    it('does not consume an anonymous legacy GET token', async () => {
       const res = await api
         .get('/api/auth/verify-email')
         .query({ token: 'not-a-real-token' })
-        .expect(400)
+        .expect(410)
       expect(res.body.error.code).toBe('BAD_REQUEST')
     })
 
@@ -298,12 +298,52 @@ describe('Auth token flows (P0-D)', () => {
       const { accessToken } = await loginAs(user.email, password)
 
       await api.post('/api/auth/send-verification').set(authHeader(accessToken)).expect(200)
-      const rawToken = mailer.lastTo(user.email)!.text.match(/token=([a-f0-9]+)/)![1]
+      const rawToken = mailer.lastTo(user.email)!.text.match(/#token=([a-f0-9]+)/)![1]
 
-      await api.get('/api/auth/verify-email').query({ token: rawToken }).expect(200)
+      await api.get('/api/auth/verify-email').query({ token: rawToken }).expect(410)
+      expect((await prisma.user.findUnique({ where: { id: user.id } }))!.emailVerified).toBeNull()
+
+      await api
+        .post('/api/auth/verify-email')
+        .set(authHeader(accessToken))
+        .send({ token: rawToken })
+        .expect(200)
 
       const updated = await prisma.user.findUnique({ where: { id: user.id } })
       expect(updated!.emailVerified).toBeInstanceOf(Date)
+    })
+
+    it('requires the authenticated owner of the token and claims exactly once', async () => {
+      const first = await createTestUser('verify-owner-a@test.local')
+      const second = await createTestUser('verify-owner-b@test.local')
+      const firstSession = await loginAs(first.user.email, first.password)
+      const secondSession = await loginAs(second.user.email, second.password)
+
+      await api.post('/api/auth/send-verification').set(authHeader(firstSession.accessToken)).expect(200)
+      const rawToken = mailer.lastTo(first.user.email)!.text.match(/#token=([a-f0-9]+)/)![1]
+
+      await api.post('/api/auth/verify-email').set(authHeader(secondSession.accessToken)).send({ token: rawToken }).expect(400)
+      expect((await prisma.user.findUniqueOrThrow({ where: { id: first.user.id } })).emailVerified).toBeNull()
+
+      const attempts = await Promise.all([
+        api.post('/api/auth/verify-email').set(authHeader(firstSession.accessToken)).send({ token: rawToken }),
+        api.post('/api/auth/verify-email').set(authHeader(firstSession.accessToken)).send({ token: rawToken }),
+      ])
+      expect(attempts.map(attempt => attempt.status).sort()).toEqual([200, 400])
+      const token = await prisma.emailVerificationToken.findFirstOrThrow({ where: { userId: first.user.id } })
+      expect(token.used).toBe(true)
+    })
+
+    it('invalidates an earlier verification token when resending', async () => {
+      const { user, password } = await createTestUser('verify-reissue@test.local')
+      const { accessToken } = await loginAs(user.email, password)
+      await api.post('/api/auth/send-verification').set(authHeader(accessToken)).expect(200)
+      const firstToken = mailer.lastTo(user.email)!.text.match(/#token=([a-f0-9]+)/)![1]
+      await api.post('/api/auth/send-verification').set(authHeader(accessToken)).expect(200)
+      const secondToken = mailer.lastTo(user.email)!.text.match(/#token=([a-f0-9]+)/)![1]
+      expect(firstToken).not.toBe(secondToken)
+      await api.post('/api/auth/verify-email').set(authHeader(accessToken)).send({ token: firstToken }).expect(400)
+      await api.post('/api/auth/verify-email').set(authHeader(accessToken)).send({ token: secondToken }).expect(200)
     })
   })
 })

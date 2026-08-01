@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express'
 import { refreshTokenCookieName, setRefreshTokenCookie, clearRefreshTokenCookie } from '../../lib/cookies.js'
 import { unauthenticated } from '../../lib/httpError.js'
+import { logger } from '../../lib/logger.js'
 import * as authService from './service.js'
 import * as sessionService from './sessionService.js'
 
@@ -11,13 +12,24 @@ function currentSessionId(req: Request) {
 
 export async function register(req: Request, res: Response, next: NextFunction) {
   try {
-    const { email, password, inviteCode } = req.body
+    const { email, password, inviteCode, turnstileToken } = req.body
     const result = await authService.registerUser(
       email, password, inviteCode,
-      req.ip, req.headers['user-agent']
+      req.ip, req.headers['user-agent'], turnstileToken,
     )
     setRefreshTokenCookie(res, result.refreshToken, result.refreshTokenMaxAgeMs)
     res.status(201).json({ user: result.user, accessToken: result.accessToken })
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function registrationStatus(_req: Request, res: Response, next: NextFunction) {
+  try {
+    const status = await authService.getPublicRegistrationStatus()
+    // 开关是运营实时状态：任何中间缓存都会让访客看到已经作废的注册入口。
+    res.set('Cache-Control', 'no-store')
+    res.json(status)
   } catch (err) {
     next(err)
   }
@@ -188,11 +200,15 @@ export async function revokeOtherSessions(req: Request, res: Response, next: Nex
 // endpoint while still letting real users get a reset link.
 export async function forgotPassword(req: Request, res: Response, next: NextFunction) {
   try {
-    await authService.requestPasswordReset(req.body.email)
-    res.json({ message: '如果该邮箱已注册，重置链接已发送' })
-  } catch (err) {
-    next(err)
+    await authService.requestPasswordReset(req.body.email, req.ip)
+  } catch {
+    // This endpoint is intentionally indistinguishable for known/unknown
+    // addresses, throttles, Redis outages, and SMTP failures. Do not attach
+    // the caught error: provider and SMTP errors can include sensitive request
+    // context. The fixed event is enough to retain operational visibility.
+    logger.warn({ flow: 'password_reset', outcome: 'suppressed' }, 'password reset request suppressed')
   }
+  res.json({ message: '如果该邮箱已注册，重置链接已发送' })
 }
 
 export async function resetPassword(req: Request, res: Response, next: NextFunction) {
@@ -219,7 +235,7 @@ export async function changePassword(req: Request, res: Response, next: NextFunc
 
 export async function sendVerification(req: Request, res: Response, next: NextFunction) {
   try {
-    await authService.sendEmailVerification(req.user!.userId)
+    await authService.sendEmailVerification(req.user!.userId, req.ip)
     res.json({ ok: true })
   } catch (err) {
     next(err)
@@ -228,10 +244,24 @@ export async function sendVerification(req: Request, res: Response, next: NextFu
 
 export async function verifyEmail(req: Request, res: Response, next: NextFunction) {
   try {
-    const token = String(req.query.token ?? '')
-    await authService.verifyEmailWithToken(token)
+    await authService.verifyEmailWithToken(req.user!.userId, req.body.token)
     res.json({ ok: true })
   } catch (err) {
     next(err)
   }
+}
+
+/**
+ * Old emails can contain a query token, but accepting it here would let mail
+ * scanners or a different browser verify an account anonymously. Deliberately
+ * return a token-free terminal response and make no service/database call.
+ */
+export function legacyVerifyEmail(_req: Request, res: Response) {
+  res.set('Cache-Control', 'no-store')
+  res.status(410).json({
+    error: {
+      code: 'BAD_REQUEST',
+      message: '验证链接已失效，请登录后重新发送验证邮件',
+    },
+  })
 }

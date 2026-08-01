@@ -33,20 +33,78 @@ const logLevelEnvSchema = z.preprocess(value => {
   return value
 }, z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'))
 
+const abuseProtectionModeEnvSchema = z.enum(['off', 'enforce']).default('off')
+
+const CANONICAL_BASE64_32_PATTERN = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/
+
+/**
+ * Turnstile only returns a hostname, never a URL or wildcard. Keeping the
+ * production allow-list in the same canonical form makes the verifier's
+ * equality check unambiguous and prevents accidental scheme/path/port input.
+ */
+export function normalizeHostname(value: string): string | undefined {
+  if (value !== value.trim()) return undefined
+  const candidate = value.toLowerCase()
+  if (!candidate || /[/:?#@]/.test(candidate)) return undefined
+
+  try {
+    const parsed = new URL(`https://${candidate}`)
+    if (
+      parsed.hostname !== candidate
+      || parsed.port
+      || parsed.username
+      || parsed.password
+      || parsed.pathname !== '/'
+      || parsed.search
+      || parsed.hash
+    ) {
+      return undefined
+    }
+    return parsed.hostname
+  } catch {
+    return undefined
+  }
+}
+
+function parseTurnstileAllowedHostnames(value: string | undefined): string[] | undefined {
+  if (!value) return undefined
+
+  const entries = value.split(',').map(entry => entry.trim())
+  if (entries.length === 0 || entries.some(entry => entry.length === 0)) return undefined
+
+  const hostnames: string[] = []
+  for (const entry of entries) {
+    const hostname = normalizeHostname(entry)
+    if (!hostname) return undefined
+    hostnames.push(hostname)
+  }
+
+  return [...new Set(hostnames)]
+}
+
+function parseCanonicalBase64Key(value: string | undefined): Buffer | undefined {
+  if (!value || !CANONICAL_BASE64_32_PATTERN.test(value)) return undefined
+
+  const key = Buffer.from(value, 'base64')
+  if (key.length !== 32 || key.toString('base64') !== value) return undefined
+  return key
+}
+
 /**
  * MFA seeds are encrypted with AES-256-GCM. We deliberately accept only
  * canonical RFC 4648 base64 so malformed environment values cannot silently
  * decode to a shorter key via Node's permissive Buffer decoder.
  */
 function parseMfaEncryptionKey(value: string | undefined): Buffer | undefined {
-  if (!value) return undefined
+  return parseCanonicalBase64Key(value)
+}
 
-  const canonicalBase64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/
-  if (!canonicalBase64.test(value)) return undefined
-
-  const key = Buffer.from(value, 'base64')
-  if (key.length !== 32 || key.toString('base64') !== value) return undefined
-  return key
+/**
+ * Kept separate from MFA parsing so future callers cannot accidentally reuse
+ * the MFA seed-encryption material as an abuse-correlation secret.
+ */
+function parseAbuseHashKey(value: string | undefined): Buffer | undefined {
+  return parseCanonicalBase64Key(value)
 }
 
 const envSchema = z.object({
@@ -108,6 +166,15 @@ const envSchema = z.object({
   SMTP_USER: optionalStringEnvSchema,
   SMTP_PASS: optionalStringEnvSchema,
   SMTP_FROM: optionalEmailEnvSchema,
+
+  // --- Registration abuse protection. These are deliberately independent
+  // from JWT/MFA keys. `off` is only a local-development/test escape hatch;
+  // production always requires enforce plus the dependent infrastructure.
+  ABUSE_PROTECTION_MODE: abuseProtectionModeEnvSchema,
+  ABUSE_HASH_KEY: optionalStringEnvSchema,
+  TURNSTILE_SITE_KEY: optionalStringEnvSchema,
+  TURNSTILE_SECRET_KEY: optionalStringEnvSchema,
+  TURNSTILE_ALLOWED_HOSTNAMES: optionalStringEnvSchema,
 
   // --- Public app URL used to build links inside transactional emails.
   // Defaults to FRONTEND_ORIGIN if not set explicitly.
@@ -178,9 +245,23 @@ if (!parsed.success) {
 
 const env = parsed.data
 const mfaEncryptionKey = parseMfaEncryptionKey(env.MFA_ENCRYPTION_KEY)
+const abuseHashKey = parseAbuseHashKey(env.ABUSE_HASH_KEY)
+const turnstileAllowedHostnames = parseTurnstileAllowedHostnames(env.TURNSTILE_ALLOWED_HOSTNAMES)
+const turnstileSiteKey = env.TURNSTILE_SITE_KEY?.trim() || undefined
+const turnstileSecretKey = env.TURNSTILE_SECRET_KEY?.trim() || undefined
 
 if (env.MFA_ENCRYPTION_KEY && !mfaEncryptionKey) {
   console.error('[Config] MFA_ENCRYPTION_KEY must be canonical base64 for exactly 32 bytes')
+  process.exit(1)
+}
+
+if (env.ABUSE_HASH_KEY && !abuseHashKey) {
+  console.error('[Config] ABUSE_HASH_KEY must be canonical base64 for exactly 32 bytes')
+  process.exit(1)
+}
+
+if (env.TURNSTILE_ALLOWED_HOSTNAMES && !turnstileAllowedHostnames) {
+  console.error('[Config] TURNSTILE_ALLOWED_HOSTNAMES must be a comma-separated list of hostnames without schemes, paths, ports, or wildcards')
   process.exit(1)
 }
 
@@ -192,6 +273,29 @@ if (env.NODE_ENV === 'production' && !mfaEncryptionKey) {
 if (env.NODE_ENV === 'production' && !env.COOKIE_SECURE) {
   console.error('[Config] COOKIE_SECURE must be true in production')
   process.exit(1)
+}
+
+// Registration and user-mail protection is a security dependency in
+// production. Do not permit a deploy to silently start in "off" mode or to
+// claim enforcement without the independent HMAC key, a real Turnstile
+// verifier configuration, and a shared required Redis service.
+if (env.NODE_ENV === 'production') {
+  if (env.ABUSE_PROTECTION_MODE !== 'enforce') {
+    console.error('[Config] ABUSE_PROTECTION_MODE must be enforce in production')
+    process.exit(1)
+  }
+  if (!abuseHashKey) {
+    console.error('[Config] ABUSE_HASH_KEY is required in production and must be base64 for exactly 32 bytes')
+    process.exit(1)
+  }
+  if (!turnstileSiteKey || !turnstileSecretKey || !turnstileAllowedHostnames?.length) {
+    console.error('[Config] TURNSTILE_SITE_KEY, TURNSTILE_SECRET_KEY, and TURNSTILE_ALLOWED_HOSTNAMES are required in production')
+    process.exit(1)
+  }
+  if (!env.REDIS_ENABLED || !env.REDIS_REQUIRED) {
+    console.error('[Config] REDIS_ENABLED and REDIS_REQUIRED must be true when ABUSE_PROTECTION_MODE=enforce in production')
+    process.exit(1)
+  }
 }
 
 // /api/metrics is mounted before the general API rate limiter so a missing
@@ -368,9 +472,20 @@ export const config = {
         secure: env.SMTP_SECURE,
         user: env.SMTP_USER,
         pass: env.SMTP_PASS,
+        // 实际生效发件地址：含 SMTP_USER 兜底，驱动真实投递与就绪判定。
         from: smtpFrom,
+        // 可展示发件地址：仅显式 SMTP_FROM。管理端邮件状态只回显这一项，
+        // 绝不把 SMTP_USER 兜底值下发给浏览器（MAIL-01 / SPEC C3）。
+        displayFrom: env.SMTP_FROM,
       }
     : ({ kind: 'console' as const }),
+  abuseProtectionMode: env.ABUSE_PROTECTION_MODE,
+  abuseHashKey,
+  turnstile: {
+    siteKey: turnstileSiteKey,
+    secretKey: turnstileSecretKey,
+    allowedHostnames: turnstileAllowedHostnames ?? [],
+  },
   appBaseUrl: env.APP_BASE_URL ?? env.FRONTEND_ORIGIN,
   sentryDsn: env.SENTRY_DSN,
   logLevel: env.LOG_LEVEL,

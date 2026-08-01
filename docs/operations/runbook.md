@@ -446,6 +446,42 @@ curl -fsS -X POST http://localhost:3000/api/auth/password-reset/request \
 
 If the SMTP handshake fails (auth / TLS / DNS), nodemailer throws and the request returns 500 — check structured logs for the underlying error code (`EAUTH`, `ETIMEDOUT`, `ENOTFOUND`) before re-trying.
 
+### Admin mail operations panel (SPEC-OPS-REGMAIL-001)
+
+Every `SMTP_*` variable above is **deployment-environment only**. There is deliberately no
+backend endpoint, admin page, or database column that edits SMTP host / port / security /
+username / password / from. To change any of them: edit `.env` (or the secret store /
+`docker-compose.prod.yml`), then **restart or redeploy the backend** — the mailer adapter and
+`config.mailer` are resolved once at boot and are not hot-reloaded.
+
+What the panel does provide, both behind admin + MFA:
+
+| Endpoint | Purpose | Notes |
+| --- | --- | --- |
+| `GET /api/admin/mail/status` | Read-only, non-sensitive delivery state | Exactly five fields: `mode`, `deliveryReady`, `from`, `authConfigured`, `configuredVia`. Never returns host, username, password, provider token, or any raw env var. Performs **no** SMTP probe, so refreshing the page cannot open outbound connections. |
+| `POST /api/admin/mail/test` | Send one fixed test email | 3 per administrator per 10 minutes. Subject `MoNexus 邮件投递测试`; body contains only the trigger note, site name and UTC timestamp — no links, tokens, or business data. |
+
+Reading the status fields:
+
+- `mode: "console"` — `SMTP_HOST` is unset; mail is only logged. Test sends return `409 MAILER_NOT_CONFIGURED` instead of pretending to succeed.
+- `deliveryReady` follows the **effective** sender (`SMTP_FROM ?? SMTP_USER`). `deliveryReady: true` with `from: null` is legal and means "deliverable, sender address not publicly displayed" — set an explicit `SMTP_FROM` if you want the address visible in the panel. Do **not** read `from: null` as "SMTP not ready".
+- `authConfigured` only reports whether both `SMTP_USER` and `SMTP_PASS` exist. Controlled relays that accept unauthenticated submission are legitimately `false`; it does not gate `deliveryReady`.
+
+Test-send failure modes and their audit trail:
+
+- Every outcome (sent / failed / `MAILER_NOT_CONFIGURED` / rate-limited) writes an `AdminLog`
+  row with `targetType = mailDelivery`. The recipient is stored masked (`o***@example.com`)
+  only; raw addresses, SMTP credentials and provider payloads never reach the audit table or
+  the HTTP response. Failures are reported as one of four classifications: `EAUTH`,
+  `ETIMEDOUT`, `ENOTFOUND`, `UNKNOWN`.
+- The send is **not atomic with its audit**. An `attempt` row is written before any network
+  egress (if that write fails, nothing is sent), and a terminal row afterwards. If the terminal
+  write fails the request returns 500 even though the mail may already have gone out. The server
+  never retries automatically — **a client retry can deliver a duplicate test email**.
+- The rate limiter uses `express-rate-limit`'s in-process memory store, so the quota is
+  **per backend process**. Before scaling to multiple replicas, move it to a shared store or
+  accept an effective quota of 3 × replica count.
+
 ## 15. Object Storage (M3)
 
 M3-A2 replaces the in-memory uploads adapter with a real S3-compatible client (`@aws-sdk/client-s3`). The in-memory adapter stays alive for local dev / tests so you can run without provisioning a bucket.
@@ -962,7 +998,7 @@ ENV_FILE=.env.staging.local COMPOSE_PROFILES=selfhost-storage,staging-mail npm r
 ENV_FILE=.env.staging.local REQUIRE_METRICS_TOKEN=true npm run prod:smoke
 ```
 
-For production compose rehearsals, fill `.env` from `.env.example` and run `npm run prod:gate`. The gate starts with strict env validation, so placeholders, insecure frontend origin, missing SMTP/storage/Sentry/metrics, or missing backup values fail before Docker can start a partial stack. The compose helpers default to `COMPOSE_PROJECT_NAME=monexus-prod`, keeping production-like rehearsals separate from the dev compose project.
+For production compose rehearsals, fill `.env` from `.env.example` and run `npm run prod:gate`. The gate starts with strict env validation, so placeholders, insecure frontend origin, missing SMTP/storage/metrics, or missing backup values fail before Docker can start a partial stack. Sentry/GlitchTip is optional, but a configured DSN must be HTTPS. The compose helpers default to `COMPOSE_PROJECT_NAME=monexus-prod`, keeping production-like rehearsals separate from the dev compose project.
 
 The deploy workflow builds frontend and backend, generates Prisma client with the server package, packages artifacts, prepares a release directory, runs `prisma migrate deploy` during `deploy_candidate` only, and updates `candidate`.
 
@@ -997,7 +1033,7 @@ npm run prod:env -- --mode production --env-file .env
 npm run prod:env -- --mode staging --env-file .env.staging.local
 ```
 
-The preflight requires HTTPS `FRONTEND_ORIGIN`, `COOKIE_SECURE=true`, strong `JWT_SECRET`, configured S3-compatible storage, SMTP, Sentry/GlitchTip, `METRICS_TOKEN`, `BACKUP_AGE_RECIPIENT`, and `RESTORE_TARGET_URL`. It requires `BACKUP_DATABASE_URL` only when `BACKUP_SOURCE=url`; the self-hosted Compose route uses `BACKUP_SOURCE=docker-compose` instead.
+The preflight requires HTTPS `FRONTEND_ORIGIN`, `COOKIE_SECURE=true`, strong `JWT_SECRET`, configured S3-compatible storage, SMTP, `METRICS_TOKEN`, `BACKUP_AGE_RECIPIENT`, and `RESTORE_TARGET_URL`. Sentry/GlitchTip is optional; when configured, its DSN must use HTTPS. It requires `BACKUP_DATABASE_URL` only when `BACKUP_SOURCE=url`; the self-hosted Compose route uses `BACKUP_SOURCE=docker-compose` instead.
 
 ## 29. M5 Sentry Alert Rules
 
@@ -1680,3 +1716,139 @@ columns with SQL, deleting recovery-code hashes, copying a seed, exporting a
 token, or changing `MFA_ENCRYPTION_KEY` to a guessed replacement. Any such
 action breaks the atomic audit/revocation invariant and requires a security
 incident review.
+
+## 39. Public Registration Switch (SPEC-OPS-REGMAIL-001)
+
+`SystemConfig.registrationEnabled` is the **only** public-registration switch: `1` = open,
+`0` = closed. A missing row means open, so upgrading to this version never closes registration
+by accident. Do **not** express "registration is closed" by setting `registerReward` to 0 —
+that only zeroes the signup bonus.
+
+### Operating procedure
+
+1. Toggle from the admin console (系统配置 → 账户与注册), or directly:
+
+   ```bash
+   curl -fsS -X PUT https://<host>/api/admin/config/registrationEnabled \
+     -H "Authorization: Bearer <mfa-verified-admin-access-token>" \
+     -H 'Content-Type: application/json' \
+     -d '{"value":0}'
+   ```
+
+   The endpoint requires an administrator whose session already passed MFA, and writes an
+   `AdminLog` row (`targetType = systemConfig`) in the same transaction as the config change.
+   Only `0` and `1` are accepted; `2`, `-1`, decimals and strings return 400.
+
+2. Verify from an unauthenticated client:
+
+   ```bash
+   curl -fsS https://<host>/api/auth/registration-status   # {"registrationEnabled":false}
+   curl -fsS -X POST https://<host>/api/auth/register \
+     -H 'Content-Type: application/json' \
+     -d '{"email":"probe@example.com","password":"probe123"}'   # 403 REGISTRATION_DISABLED
+   ```
+
+### Guarantees and limits
+
+- The gate is the first statement in `registerUser()`, ahead of the duplicate-email lookup,
+  password hashing and every transaction. A blocked attempt creates no `User`, `PointAccount`,
+  `PointLog`, `InviteRelation` or `RefreshToken` row, and sets no refresh cookie.
+- Hiding the frontend entry point is a UX affordance, never the authorization boundary. Cached
+  HTML, stale bundles and scripted clients all still hit the backend 403.
+- Requests that already passed the check when you flipped the switch are allowed to finish;
+  anything that starts after the 200 response reads the new value. The switch does not revoke
+  accounts that were already created.
+- A value other than `0`/`1` written directly into the database (operator error) is treated as
+  **closed** — the read path is fail-closed on `=== 1`.
+- Release order: deploy the backend gate first, then the frontend, and only then close
+  registration. Never ship a frontend that merely hides the entry point.
+
+## 40. Registration Abuse Protection and Delayed Rewards (SPEC-RAP-001)
+
+Before executing the real-dependency rehearsal, provision the isolated
+[dedicated staging deployment](./staging-deployment.md). Do not point these
+steps at `monexus.oai-o.com` or reuse any production secret, database, Redis,
+SMTP sender, or object-storage bucket.
+
+Production registration protection is deliberately fail-closed. Do not "fix" an
+outage by setting `ABUSE_PROTECTION_MODE=off`: production startup and preflight
+both require `enforce`, a required Redis client, the independent HMAC key, and
+the three Turnstile settings.
+
+### Preflight and rollout order
+
+1. Put values in the deployment secret store / private environment file. Never
+   paste values into a shell command, ticket, browser console, screenshot, or
+   this runbook. The public Turnstile site key is configuration, but the
+   Turnstile secret and `ABUSE_HASH_KEY` remain secrets.
+2. From the release checkout, run the preflight without printing the env file:
+
+   ```bash
+   cd /opt/monexus
+   npm run prod:env
+   ```
+
+   It must confirm production `ABUSE_PROTECTION_MODE=enforce`, canonical
+   32-byte base64 `ABUSE_HASH_KEY`, exact `TURNSTILE_ALLOWED_HOSTNAMES`, and
+   Redis-required settings. Resolve a failure before migration or rollout.
+3. Apply the normal forward-only Prisma migration, deploy the backend, and
+   check readiness. Do not manually edit the reward-ledger migration or delete
+   ledger rows as a rollback shortcut.
+4. From the real staging browser hostname, open the login page and verify:
+
+   - `GET /api/auth/registration-status` returns `registrationEnabled: true`,
+     `registrationAvailable: true`, and only the public Turnstile challenge
+     descriptor;
+   - a valid Turnstile completion can register an isolated test user;
+   - a deliberately invalid challenge is rejected with no user/account/reward
+     rows; and
+   - SMTP catcher receives a fragment-token verification link, while the URL
+     sent to the backend contains no token query parameter.
+5. Keep `emailVerificationRequiredForValue=0` through the initial protection
+   observation window. After at least 24 hours of healthy Redis, Turnstile,
+   mail, and error-rate monitoring, enable it with the MFA-protected system
+   config API/UI. This gate controls value actions only; it must not block
+   login, password recovery, email verification, browsing, or support reads.
+
+### Delayed reward reconciliation
+
+New accounts start at zero balance. Registration and qualified invite rewards
+are represented by `GrowthReward` rows and become `held` only after a valid
+authenticated email claim. The minute cron releases mature rows atomically;
+it is safe to retry and must be allowed to run normally after restart.
+
+For a suspected abusive campaign, use **后台 → 注册与激励风控**, record a
+ticket-shaped case reference such as `RAP-123`, and use one of the two
+operations:
+
+| Operation | Effect | Does not do |
+| --- | --- | --- |
+| Pause referral eligibility | Stops future qualification for the inviter and voids that inviter's pending/held referral rewards | Does not claw back granted points or restore previously voided rows on later resume |
+| Void reward | Voids one pending/held registration or referral reward | Cannot void a granted reward or directly mutate a user's balance |
+
+The screen and API require an active MFA administrator session. A successful
+state-changing operation produces `AdminLog` plus a controlled `AbuseEvent` in
+the same transaction; rejected requests leave the reward ledger unchanged. The
+lists intentionally show masked addresses only. Never work around the workflow
+with direct SQL. If already-granted points require correction, use the normal
+audited point-adjustment process and attach the same incident ticket.
+
+### Incident response and rollback
+
+- **Registration attack / spam spike:** set `registrationEnabled=0` using the
+  MFA-protected configuration panel, preserve logs/events, triage the affected
+  pending rewards, then reopen only after the attack path is understood.
+- **Redis or Turnstile outage:** leave protection in enforce mode and keep
+  registration closed while the dependency is repaired. A 503 with zero
+  registration/mail side effects is the expected safe behaviour.
+- **Mail delivery issue:** use the existing admin mail status/test workflow and
+  SMTP catcher/provider evidence. Do not log, paste, or forward verification
+  fragments or mail tokens.
+- **False-positive value gate:** temporarily set only
+  `emailVerificationRequiredForValue=0`, investigate, and re-enable after a
+  verified smoke test. Do not bulk-set `emailVerified` or delete rewards.
+- **Code rollback:** revert application code only after a fresh backup and
+  staging rehearsal. Keep the migration, `GrowthReward`, `AbuseEvent`, and
+  historical `PointLog` rows intact; the supported operational rollback is via
+  `registrationEnabled` and the verification-value gate, never by turning
+  production abuse protection off.

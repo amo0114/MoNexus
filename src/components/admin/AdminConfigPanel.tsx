@@ -6,6 +6,13 @@ import { useAppStore } from '../../stores/appStore'
 /** 后端约定的 5 个分组，按此顺序渲染 */
 const GROUP_ORDER = ['奖励发放', '安全', '分页限制', '库存', '会员等级']
 
+/**
+ * SPEC-OPS-REGMAIL-001 C8/P.14：布尔型 key 由 RegistrationControlPanel 显式
+ * 渲染 switch，不得落进通用数值输入框（0/1 无标签让管理员猜含义）。
+ * 只排除这一个 key，不排除整个「账户与注册」分组——将来该分组新增数值项仍要显示。
+ */
+const BOOLEAN_KEYS: readonly string[] = ['registrationEnabled']
+
 function validateValue(raw: string): string | null {
   if (raw.trim() === '') return '请输入配置值'
   const n = Number(raw)
@@ -30,7 +37,7 @@ export default function AdminConfigPanel() {
   async function fetchConfigs() {
     setLoading(true)
     try {
-      const data = await getAdminConfig()
+      const data = (await getAdminConfig()).filter((c) => !BOOLEAN_KEYS.includes(c.key))
       setConfigs(data)
       const initial: Record<string, string> = {}
       data.forEach((c) => (initial[c.key] = c.value.toString()))
@@ -124,7 +131,7 @@ export default function AdminConfigPanel() {
                         onChange={(e) => handleChange(c.key, e.target.value)}
                         disabled={savingKey === c.key}
                         data-testid={`admin-config-input-${c.key}`}
-                        className={`input text-sm py-1.5 px-2 w-28 ${
+                        className={`input py-1.5 px-2 w-28 ${
                           errors[c.key] ? 'border-[var(--color-danger)]' : ''
                         }`}
                       />

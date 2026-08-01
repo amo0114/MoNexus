@@ -5,18 +5,31 @@ import { Prisma } from '@prisma/client'
 import { config } from '../../config/index.js'
 import { prisma } from '../../lib/prisma.js'
 import {
+  abuseProtectionUnavailable,
   badRequest,
   conflict,
+  humanVerificationFailed,
+  humanVerificationRequired,
+  humanVerificationUnavailable,
   mfaChallengeInvalid,
   mfaTooManyAttempts,
   mfaVerificationFailed,
   notFound,
+  registrationDisabled,
   sessionRevoked,
+  tooManyRequests,
   unauthenticated,
 } from '../../lib/httpError.js'
+import {
+  consumePasswordReset,
+  consumePendingReferralRelation,
+  consumeRegistrationAttempt,
+  consumeRegistrationProviderPreflight,
+  consumeVerificationEmailSend,
+} from './abusePolicy.js'
+import { getHumanVerifier } from './humanVerification.js'
 import { getMailer } from '../../lib/mailer/index.js'
 import { getRefreshTokenMaxAgeMs, getSystemConfigValue } from '../../lib/systemConfig.js'
-import { applyTierBonus, getCurrentTierConfig, resolveTier } from '../../lib/memberTier.js'
 import {
   createRefreshTokenRecord,
   hasExplicitRefreshSessionTermination,
@@ -25,6 +38,14 @@ import {
   type SessionRequestMetadata,
 } from './sessionService.js'
 import { recordSecurityEvent, type SessionRevocationReason } from './securityEvents.js'
+import { recordAbuseEvent } from './abuseEvents.js'
+import {
+  createPendingReferralGrowthReward,
+  createRegistrationGrowthReward,
+  holdGrowthRewardsAfterEmailVerification,
+  resolveEligibleReferralInviteCandidate,
+  type ReferralInviteCandidate,
+} from './growthRewards.js'
 import {
   claimMfaRecoveryCode,
   consumeAuthChallenge,
@@ -121,74 +142,190 @@ async function createStoredRefreshToken(
   return { refreshToken, maxAgeMs: configuredMaxAgeMs, sessionId: stored.sessionId }
 }
 
-export async function registerUser(email: string, password: string, inviteCode?: string, ip?: string, userAgent?: string) {
-  const existing = await prisma.user.findUnique({ where: { email } })
+/**
+ * REG-01 / C2：开关判定的唯一定义。fail-closed——只有恰好为 1 才算开启，
+ * 被手工写坏的值（例如 2）一律按关闭处理；缺记录时 `getSystemConfigValue`
+ * 回落默认 1，保证升级站点默认仍开放注册。
+ *
+ * 刻意不缓存：REG-05 要求"改开关成功之后开始处理的请求必须读到新值"，
+ * 一次主键读换取即时性。
+ */
+export async function isRegistrationEnabled(): Promise<boolean> {
+  return (await getSystemConfigValue('registrationEnabled')) === 1
+}
+
+/**
+ * REG-03/REG-04 的强制边界。放在 service 而不是 controller/路由，是为了让
+ * 未来的 CLI、内部调用共享同一道门；删路由式的"关闭"做不到这点，也留不下
+ * 运营审计记录。
+ */
+export async function assertRegistrationEnabled() {
+  if (!(await isRegistrationEnabled())) throw registrationDisabled()
+}
+
+function normalizeEmailAddress(email: string) {
+  return email.trim().toLowerCase()
+}
+
+function registrationProtectionIsEnforced() {
+  return config.abuseProtectionMode === 'enforce'
+}
+
+async function consumeAbuseBucket(
+  consume: () => Promise<{ allowed: boolean; retryAfterSeconds: number }>,
+) {
+  let result: { allowed: boolean; retryAfterSeconds: number }
+  try {
+    result = await consume()
+  } catch {
+    // Never let a Redis client/timeout/circuit error reach the generic error
+    // handler with provider/client details. Security callers fail closed.
+    throw abuseProtectionUnavailable()
+  }
+  if (!result.allowed) {
+    // Expose only the safe, rounded delay. The shared error layer emits it as
+    // `Retry-After` without revealing the hit dimension or any identifier.
+    throw tooManyRequests(undefined, result.retryAfterSeconds)
+  }
+}
+
+async function enforceRegistrationProtection(input: {
+  email: string
+  ip?: string
+  turnstileToken?: string
+}) {
+  if (!registrationProtectionIsEnforced()) return
+
+  // This is deliberately the first side effect after the registration gate:
+  // a provider flood must be stopped before Turnstile or any password/DB work.
+  await consumeAbuseBucket(() => consumeRegistrationProviderPreflight(input.ip ?? ''))
+
+  const token = typeof input.turnstileToken === 'string' ? input.turnstileToken.trim() : ''
+  if (!token) throw humanVerificationRequired()
+  if (token.length > 4_096) throw humanVerificationFailed()
+
+  let verification: Awaited<ReturnType<ReturnType<typeof getHumanVerifier>['verifyRegistration']>>
+  try {
+    verification = await getHumanVerifier().verifyRegistration({ token, ip: input.ip })
+  } catch {
+    throw humanVerificationUnavailable()
+  }
+  if (verification.kind === 'unavailable') throw humanVerificationUnavailable()
+  if (verification.kind === 'rejected') throw humanVerificationFailed()
+
+  // Turnstile has established a human proof; only now consume the expensive
+  // registration attempt buckets, immediately before bcrypt and DB work.
+  await consumeAbuseBucket(() => consumeRegistrationAttempt({
+    ip: input.ip ?? '',
+    email: input.email,
+  }))
+}
+
+/**
+ * The pending-relation limiter deliberately differs from the registration
+ * limiter: a saturated inviter must not prevent a legitimate person from
+ * creating their own account. Redis outages still fail the whole protected
+ * registration closed, while an ordinary quota denial simply drops the
+ * optional referral candidate.
+ */
+async function reservePendingReferralCandidate(
+  inviteCode: string | undefined,
+): Promise<ReferralInviteCandidate | null> {
+  const candidate = await resolveEligibleReferralInviteCandidate(inviteCode)
+  if (!candidate || !registrationProtectionIsEnforced()) return candidate
+
+  try {
+    const reservation = await consumePendingReferralRelation(candidate.inviterId)
+    return reservation.allowed ? candidate : null
+  } catch {
+    throw abuseProtectionUnavailable()
+  }
+}
+
+/**
+ * Public status intentionally reports only a safe browser challenge
+ * descriptor. Redis health is deliberately not probed here: the actual
+ * registration path remains fail-closed if a runtime command is unavailable.
+ */
+export async function getPublicRegistrationStatus() {
+  const registrationEnabled = await isRegistrationEnabled()
+  if (!registrationEnabled) {
+    return { registrationEnabled, registrationAvailable: false, challenge: null }
+  }
+
+  if (!registrationProtectionIsEnforced()) {
+    return { registrationEnabled, registrationAvailable: true, challenge: null }
+  }
+
+  const configured = Boolean(
+    config.redisEnabled
+    && config.redisRequired
+    && config.abuseHashKey
+    && config.turnstile.siteKey
+    && config.turnstile.secretKey
+    && config.turnstile.allowedHostnames.length > 0,
+  )
+  if (!configured) {
+    return { registrationEnabled, registrationAvailable: false, challenge: null }
+  }
+
+  return {
+    registrationEnabled,
+    registrationAvailable: true,
+    challenge: {
+      provider: 'turnstile' as const,
+      siteKey: config.turnstile.siteKey,
+    },
+  }
+}
+
+export async function registerUser(
+  email: string,
+  password: string,
+  inviteCode?: string,
+  ip?: string,
+  userAgent?: string,
+  turnstileToken?: string,
+) {
+  // REG-03：必须是第一步——查重、bcrypt、建号事务都在其后，关闭态下不会
+  // 产生任何可观测副作用（连"该邮箱已注册"这种探测口子也不给）。
+  await assertRegistrationEnabled()
+
+  const normalizedEmail = normalizeEmailAddress(email)
+  await enforceRegistrationProtection({
+    email: normalizedEmail,
+    ip,
+    turnstileToken,
+  })
+
+  const existing = await prisma.user.findUnique({ where: { email: normalizedEmail } })
   if (existing) throw conflict('该邮箱已注册')
+
+  // Keep the optional invitation reservation outside the database
+  // transaction: it is a Redis network call. The transaction below rechecks
+  // inviter eligibility under a row lock before it ever creates a relation.
+  const referralCandidate = await reservePendingReferralCandidate(inviteCode)
 
   const hashedPassword = await bcrypt.hash(password, PASSWORD_BCRYPT_ROUNDS)
 
   const result = await prisma.$transaction(async tx => {
     const registerReward = await getSystemConfigValue('registerReward', tx)
-    const inviteReward = await getSystemConfigValue('inviteReward', tx)
 
     const newUser = await tx.user.create({
-      data: { email, password: hashedPassword },
+      data: { email: normalizedEmail, password: hashedPassword },
     })
 
     await tx.pointAccount.create({
-      data: { userId: newUser.id, balance: registerReward },
+      data: { userId: newUser.id, balance: 0 },
     })
 
-    await tx.pointLog.create({
-      data: {
-        userId: newUser.id,
-        type: 'in',
-        amount: registerReward,
-        balanceAfter: registerReward,
-        reason: '新用户注册奖励',
-      },
+    await createRegistrationGrowthReward(tx, newUser.id, registerReward)
+    await createPendingReferralGrowthReward(tx, {
+      candidate: referralCandidate,
+      inviteeId: newUser.id,
     })
 
-    if (inviteCode) {
-      const inviter = await tx.user.findUnique({ where: { inviteCode } })
-      if (inviter) {
-        await tx.inviteRelation.create({
-          data: { inviterId: inviter.id, inviteeId: newUser.id },
-        })
-
-        const inviterAccount = await tx.pointAccount.findUnique({ where: { userId: inviter.id } })
-        if (inviterAccount) {
-          const inviterLifetimeResult = await tx.pointLog.aggregate({
-            where: { userId: inviter.id, type: 'in' },
-            _sum: { amount: true },
-          })
-          const inviterLifetimeBefore = inviterLifetimeResult._sum.amount ?? 0
-          const tierConfig = await getCurrentTierConfig()
-          const inviterTier = resolveTier(inviterLifetimeBefore, tierConfig.thresholds)
-          const { bonus, total } = applyTierBonus(inviteReward, inviterTier, tierConfig.bonusBps)
-          // Do not derive the next balance from a stale read. Multiple people
-          // can register through the same invite code concurrently; an atomic
-          // increment preserves every invite reward.
-          const updatedAccount = await tx.pointAccount.update({
-            where: { userId: inviter.id },
-            data: { balance: { increment: total } },
-          })
-          await tx.pointLog.create({
-            data: {
-              userId: inviter.id,
-              type: 'in',
-              amount: total,
-              balanceAfter: updatedAccount.balance,
-              reason: bonus > 0
-                ? `邀请新用户 ${email} 注册奖励 (tier:${inviterTier} +${bonus})`
-                : `邀请新用户 ${email} 注册奖励`,
-            },
-          })
-        }
-      }
-    }
-
-    return { user: newUser, registerReward }
+    return { user: newUser }
   })
 
   // Read the runtime setting before taking the per-user lock. No global Prisma
@@ -209,7 +346,10 @@ export async function registerUser(email: string, password: string, inviteCode?:
     accessToken,
     refreshToken: issued.session.refreshToken,
     refreshTokenMaxAgeMs: issued.session.maxAgeMs,
-    user: buildAuthUser(issued.user, result.registerReward),
+    // Registration awards are only ledger rows at this point. Returning the
+    // configured amount here would make clients advertise spendable points
+    // that do not exist yet.
+    user: buildAuthUser(issued.user, 0),
   }
 }
 
@@ -943,8 +1083,22 @@ function generateAuthToken() {
   return crypto.randomBytes(32).toString('hex')
 }
 
-export async function requestPasswordReset(email: string) {
-  const user = await prisma.user.findUnique({ where: { email } })
+async function enforcePasswordResetProtection(email: string, ip?: string) {
+  if (!registrationProtectionIsEnforced()) return
+  await consumeAbuseBucket(() => consumePasswordReset({
+    email: normalizeEmailAddress(email),
+    ip: ip ?? '',
+  }))
+}
+
+export async function requestPasswordReset(email: string, ip?: string) {
+  const normalizedEmail = normalizeEmailAddress(email)
+  // The policy is consumed before the account lookup. Unknown addresses pay
+  // the same email/IP cost as known ones, while the controller preserves the
+  // endpoint's generic 200 response for every outcome.
+  await enforcePasswordResetProtection(normalizedEmail, ip)
+
+  const user = await prisma.user.findUnique({ where: { email: normalizedEmail } })
   // Silently no-op for unknown emails so the public endpoint can return
   // the same 200 response regardless of existence (no enumeration).
   if (!user) return
@@ -1070,46 +1224,97 @@ export async function changePassword(userId: number, currentPassword: string, ne
   })
 }
 
-export async function sendEmailVerification(userId: number) {
+export async function sendEmailVerification(userId: number, ip?: string) {
   const user = await prisma.user.findUnique({ where: { id: userId } })
   if (!user) throw notFound('用户不存在')
   if (user.emailVerified) throw badRequest('邮箱已验证')
 
-  const rawToken = generateAuthToken()
-  await prisma.emailVerificationToken.create({
-    data: {
+  if (registrationProtectionIsEnforced()) {
+    await consumeAbuseBucket(() => consumeVerificationEmailSend({
       userId: user.id,
-      tokenHash: hashAuthToken(rawToken),
-      expiresAt: new Date(Date.now() + config.emailVerificationTokenMaxAgeMs),
-    },
+      email: user.email,
+      ip: ip ?? '',
+    }))
+  }
+
+  const rawToken = generateAuthToken()
+  const issued = await prisma.$transaction(async tx => {
+    await lockUserRefreshSessionMutations(tx, userId)
+    const currentUser = await tx.user.findUnique({
+      where: { id: userId },
+      select: { id: true, email: true, emailVerified: true, status: true },
+    })
+    if (!currentUser) throw notFound('用户不存在')
+    if (currentUser.status === '已封禁') throw badRequest('账号已被封禁')
+    if (currentUser.emailVerified) return null
+
+    // One active verification credential per account. The user lock makes
+    // concurrent resend requests serialize before this invalidation/create
+    // pair, so a stale link cannot remain usable after a newer send wins.
+    await tx.emailVerificationToken.updateMany({
+      where: { userId: currentUser.id, used: false },
+      data: { used: true },
+    })
+    await tx.emailVerificationToken.create({
+      data: {
+        userId: currentUser.id,
+        tokenHash: hashAuthToken(rawToken),
+        expiresAt: new Date(Date.now() + config.emailVerificationTokenMaxAgeMs),
+      },
+    })
+    return { email: currentUser.email }
   })
 
+  if (!issued) throw badRequest('邮箱已验证')
+
   const mailer = await getMailer()
-  const link = `${config.appBaseUrl}/verify-email?token=${rawToken}`
+  const link = `${config.appBaseUrl}/verify-email#token=${rawToken}`
   await mailer.send({
-    to: user.email,
+    to: issued.email,
     subject: 'MoNexus 邮箱验证',
     text: `请在 24 小时内点击下面的链接完成邮箱验证：\n${link}\n\n如非本人操作请忽略此邮件。`,
   })
 }
 
-export async function verifyEmailWithToken(rawToken: string) {
+export async function verifyEmailWithToken(userId: number, rawToken: string) {
+  if (typeof rawToken !== 'string' || rawToken.length === 0 || rawToken.length > 4_096) {
+    throw badRequest('验证链接无效或已过期', 'BAD_REQUEST')
+  }
   const tokenHash = hashAuthToken(rawToken)
-  const stored = await prisma.emailVerificationToken.findUnique({
-    where: { tokenHash },
-  })
-  if (!stored) throw badRequest('验证链接无效', 'BAD_REQUEST')
-  if (stored.used) throw badRequest('验证链接已被使用', 'BAD_REQUEST')
-  if (stored.expiresAt < new Date()) throw badRequest('验证链接已过期', 'BAD_REQUEST')
-
-  await prisma.$transaction(async tx => {
-    await tx.user.update({
-      where: { id: stored.userId },
-      data: { emailVerified: new Date() },
+  const claimed = await prisma.$transaction(async tx => {
+    // Serialize verification with resend and other account credential
+    // transitions. The token update itself remains the atomic owner/expiry
+    // claim, so a cross-account or concurrent request changes no state.
+    await lockUserRefreshSessionMutations(tx, userId)
+    const user = await tx.user.findUnique({
+      where: { id: userId },
+      select: { id: true, emailVerified: true, status: true },
     })
-    await tx.emailVerificationToken.update({
-      where: { id: stored.id },
+    if (!user || user.status === '已封禁' || user.emailVerified) return false
+
+    const claim = await tx.emailVerificationToken.updateMany({
+      where: {
+        tokenHash,
+        userId,
+        used: false,
+        expiresAt: { gt: new Date() },
+      },
       data: { used: true },
     })
+    if (claim.count !== 1) return false
+
+    const verifiedAt = new Date()
+    await tx.user.update({
+      where: { id: userId },
+      data: { emailVerified: verifiedAt },
+    })
+    await holdGrowthRewardsAfterEmailVerification(tx, { userId, verifiedAt })
+    await recordAbuseEvent({
+      type: 'email_verification_succeeded',
+      userId,
+    }, tx)
+    return true
   })
+
+  if (!claimed) throw badRequest('验证链接无效或已过期', 'BAD_REQUEST')
 }

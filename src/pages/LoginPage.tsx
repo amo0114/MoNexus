@@ -1,26 +1,35 @@
-import { useState, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { Gift, Wrench } from 'lucide-react'
 import { useAuthStore } from '../stores/authStore'
 import { useAppStore } from '../stores/appStore'
 import {
   getMeWithAccessToken,
+  getRegistrationStatus,
   isMfaLoginChallenge,
   loginWithPassword,
   registerAccount,
   type MfaEnrollmentConfirmResponse,
   type MfaLoginChallenge,
   type MfaVerifyResponse,
+  type RegistrationChallenge,
 } from '../api/auth'
-import { getApiErrorMessage } from '../api/error'
+import { getApiErrorCode, getApiErrorMessage } from '../api/error'
 import MfaEnrollment from '../components/auth/MfaEnrollment'
 import MfaVerification from '../components/auth/MfaVerification'
 import RecoveryCodeConfirmation from '../components/auth/RecoveryCodeConfirmation'
+import TurnstileWidget, { type TurnstileWidgetHandle } from '../components/auth/TurnstileWidget'
 
 type PendingRecoveryConfirmation = {
   accessToken: string
   recoveryCodes: string[]
 }
+
+type RegistrationViewState =
+  | { kind: 'loading' }
+  | { kind: 'available'; challenge: RegistrationChallenge | null }
+  | { kind: 'disabled' }
+  | { kind: 'unavailable' }
 
 function LoginShell({ children }: { children: ReactNode }) {
   return (
@@ -45,6 +54,7 @@ export default function LoginPage() {
   const navigate = useNavigate()
   const login = useAuthStore((state) => state.login)
   const showToast = useAppStore((state) => state.showToast)
+  const turnstileRef = useRef<TurnstileWidgetHandle>(null)
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -54,6 +64,32 @@ export default function LoginPage() {
   const [finalizing, setFinalizing] = useState(false)
   const [mfaChallenge, setMfaChallenge] = useState<MfaLoginChallenge | null>(null)
   const [pendingRecovery, setPendingRecovery] = useState<PendingRecoveryConfirmation | null>(null)
+  const [registrationRefresh, setRegistrationRefresh] = useState(0)
+  const [registrationState, setRegistrationState] = useState<RegistrationViewState>({ kind: 'loading' })
+
+  useEffect(() => {
+    let active = true
+    setRegistrationState({ kind: 'loading' })
+
+    getRegistrationStatus()
+      .then((status) => {
+        if (!active) return
+        if (!status.registrationEnabled) {
+          setRegistrationState({ kind: 'disabled' })
+        } else if (!status.registrationAvailable) {
+          setRegistrationState({ kind: 'unavailable' })
+        } else {
+          setRegistrationState({ kind: 'available', challenge: status.challenge })
+        }
+      })
+      .catch(() => {
+        if (active) setRegistrationState({ kind: 'unavailable' })
+      })
+
+    return () => {
+      active = false
+    }
+  }, [registrationRefresh])
 
   function clearMfaState() {
     setMfaChallenge(null)
@@ -63,6 +99,16 @@ export default function LoginPage() {
   function cancelMfaFlow() {
     clearMfaState()
     setPassword('')
+  }
+
+  function switchToLogin() {
+    turnstileRef.current?.reset()
+    setIsRegister(false)
+  }
+
+  function switchToRegistration() {
+    if (registrationState.kind !== 'available') return
+    setIsRegister(true)
   }
 
   async function establishSession(accessToken: string, successMessage: string) {
@@ -85,17 +131,68 @@ export default function LoginPage() {
     }
   }
 
+  function handleRegistrationError(error: unknown) {
+    const code = getApiErrorCode(error)
+
+    if (code === 'REGISTRATION_DISABLED') {
+      turnstileRef.current?.reset()
+      setIsRegister(false)
+      setRegistrationState({ kind: 'disabled' })
+      showToast('当前已暂停新用户注册', 'error')
+      return
+    }
+
+    if (code === 'HUMAN_VERIFICATION_REQUIRED' || code === 'HUMAN_VERIFICATION_FAILED') {
+      turnstileRef.current?.reset()
+      showToast('请完成安全验证后重试', 'error')
+      return
+    }
+
+    if (code === 'HUMAN_VERIFICATION_UNAVAILABLE' || code === 'ABUSE_PROTECTION_UNAVAILABLE') {
+      // This is an operational condition, not an administrator registration
+      // closure. Keep the status wording distinct and do not infer Redis
+      // health from the public status endpoint.
+      turnstileRef.current?.reset()
+      showToast('注册服务暂不可用，请稍后重试', 'error')
+      return
+    }
+
+    showToast(getApiErrorMessage(error, '操作失败'), 'error')
+  }
+
   async function handleSubmit(event: FormEvent) {
     event.preventDefault()
     setLoading(true)
     try {
       if (isRegister) {
+        if (registrationState.kind !== 'available') {
+          showToast('注册服务暂不可用，请稍后重试', 'error')
+          return
+        }
+
+        let turnstileToken: string | undefined
+        if (registrationState.challenge) {
+          if (!turnstileRef.current) {
+            showToast('安全验证仍在加载，请稍后重试', 'error')
+            return
+          }
+          try {
+            // The proof is a local variable only. It is neither kept in React
+            // state nor written to any browser storage.
+            turnstileToken = await turnstileRef.current.requestToken()
+          } catch {
+            showToast('请完成安全验证后重试', 'error')
+            return
+          }
+        }
+
         const result = await registerAccount({
           email,
           password,
           ...(inviteCode.trim() ? { inviteCode: inviteCode.trim() } : {}),
+          ...(turnstileToken ? { turnstileToken } : {}),
         })
-        await establishSession(result.accessToken, '注册成功！已赠送 500 积分。')
+        await establishSession(result.accessToken, '注册成功。完成邮箱验证并经过资格期后，奖励会自动发放。')
         return
       }
 
@@ -110,7 +207,8 @@ export default function LoginPage() {
 
       await establishSession(result.accessToken, '登录成功！')
     } catch (error) {
-      showToast(getApiErrorMessage(error, '操作失败'), 'error')
+      if (isRegister) handleRegistrationError(error)
+      else showToast(getApiErrorMessage(error, '操作失败'), 'error')
     } finally {
       setLoading(false)
     }
@@ -175,6 +273,8 @@ export default function LoginPage() {
     )
   }
 
+  const registrationChallenge = registrationState.kind === 'available' ? registrationState.challenge : null
+
   return (
     <LoginShell>
       <h2 className="mb-1 font-heading text-2xl font-semibold text-[var(--color-text)]">{isRegister ? '创建账号' : '欢迎回来'}</h2>
@@ -204,15 +304,20 @@ export default function LoginPage() {
         />
 
         {isRegister && (
-          <input
-            type="text"
-            placeholder="邀请码（可选）"
-            aria-label="邀请码（可选）"
-            value={inviteCode}
-            onChange={(event) => setInviteCode(event.target.value)}
-            className="input"
-            disabled={loading}
-          />
+          <>
+            <input
+              type="text"
+              placeholder="邀请码（可选）"
+              aria-label="邀请码（可选）"
+              value={inviteCode}
+              onChange={(event) => setInviteCode(event.target.value)}
+              className="input"
+              disabled={loading}
+            />
+            {registrationChallenge && (
+              <TurnstileWidget ref={turnstileRef} siteKey={registrationChallenge.siteKey} />
+            )}
+          </>
         )}
 
         <button type="submit" disabled={loading} className="btn-primary mt-2 w-full">
@@ -220,14 +325,47 @@ export default function LoginPage() {
         </button>
       </form>
 
-      <button
-        type="button"
-        onClick={() => setIsRegister((value) => !value)}
-        disabled={loading}
-        className="mt-4 cursor-pointer text-sm text-[var(--color-primary)] hover:underline"
-      >
-        {isRegister ? '已有账号？去登录' : '没有账号？注册新账号'}
-      </button>
+      {isRegister ? (
+        <button
+          type="button"
+          onClick={switchToLogin}
+          disabled={loading}
+          className="mt-4 cursor-pointer text-sm text-[var(--color-primary)] hover:underline"
+        >
+          已有账号？去登录
+        </button>
+      ) : (
+        <>
+          {registrationState.kind === 'available' && (
+            <button
+              type="button"
+              onClick={switchToRegistration}
+              disabled={loading}
+              className="mt-4 cursor-pointer text-sm text-[var(--color-primary)] hover:underline"
+            >
+              没有账号？注册新账号
+            </button>
+          )}
+          {registrationState.kind === 'loading' && (
+            <p className="mt-4 text-sm text-[var(--color-text-muted)]" role="status">正在检查注册服务…</p>
+          )}
+          {registrationState.kind === 'disabled' && (
+            <p className="mt-4 text-sm text-[var(--color-text-muted)]">当前已暂停新用户注册</p>
+          )}
+          {registrationState.kind === 'unavailable' && (
+            <div className="mt-4 flex items-center justify-center gap-2 text-sm text-[var(--color-text-muted)]">
+              <span>注册服务暂不可用，请稍后重试</span>
+              <button
+                type="button"
+                onClick={() => setRegistrationRefresh((value) => value + 1)}
+                className="min-h-[40px] px-1 font-semibold text-[var(--color-primary)] hover:underline focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)]"
+              >
+                重试
+              </button>
+            </div>
+          )}
+        </>
+      )}
 
       {!isRegister && (
         <div className="mt-2">
@@ -269,7 +407,7 @@ export default function LoginPage() {
       )}
 
       <div className="mt-6 flex items-center justify-center gap-2 rounded-lg border border-[var(--color-cta)]/25 bg-[var(--color-cta)]/10 py-2.5 text-sm font-semibold text-[var(--color-cta)]">
-        <Gift className="h-4 w-4" />新朋友注册立送 500 积分
+        <Gift className="h-4 w-4" />完成邮箱验证并经过资格期后，注册奖励会自动发放
       </div>
     </LoginShell>
   )
