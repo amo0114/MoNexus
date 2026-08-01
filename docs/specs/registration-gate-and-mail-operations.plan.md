@@ -70,16 +70,16 @@
 
 ### 前端（Playwright 断言）
 
-- [ ] P.9 **fail-closed**：注册入口可达 ⇔ 最新已接受状态为 enabled；loading/失败/畸形响应均隐藏；登录与忘记密码恒可达
-- [ ] P.10 **公告独占**：暂停公告仅显式 false 出现（error→true、true→error、false→error 序列验证）
-- [ ] P.11 **单调revocation**：新响应报 disabled 后，更早的延迟 enabled 响应不得重新打开注册 UI（乱序 resolve 构造）
-- [ ] P.12 **竞态恢复**：表单打开后状态转 false 或提交得 403 → 回登录态、清邀请码、保留邮箱/密码、无会话建立
-- [ ] P.13 **switch 忠实性**：`aria-checked` 与状态文字等于最后确认的服务端值；保存失败回读而非乐观残留；单飞（延迟+连点下恰一次 PUT）；Space/Enter 可切换
-- [ ] P.14 **布尔不漏渗**：`registrationEnabled` 不出现在通用数字编辑器，也不产生空的 `账户与注册` 数字分组
-- [ ] P.15 **邮件面板白名单渲染**：mock 注入金丝雀秘密字段，整个渲染文档与 console 输出无泄漏
-- [ ] P.16 **就绪性解耦**：发送表单启用 ⇔ `deliveryReady === true`，与 `authConfigured` 无关
-- [ ] P.17 **单飞 + 非持久**：测试发送恰一次 POST、body 仅 `{email}`；地址不入 localStorage/sessionStorage/URL/持久 store，成功后清空
-- [ ] P.18 **响应式契约**：375px 与桌面无横向溢出；新增控件 ≥40px 触控目标；长字符串换行；确认框保留 safe-bottom
+- [ ] P.9 **fail-closed**：注册入口可达 ⇔ 最新已接受状态为 enabled；loading/失败/畸形响应均隐藏；登录与忘记密码恒可达（登录页侧，由 #67 实现）
+- [ ] P.10 **公告独占**：暂停公告仅显式 false 出现（error→true、true→error、false→error 序列验证）（登录页侧，由 #67 实现）
+- [ ] P.11 **单调revocation**：新响应报 disabled 后，更早的延迟 enabled 响应不得重新打开注册 UI（乱序 resolve 构造）（登录页侧，由 #67 实现）
+- [ ] P.12 **竞态恢复**：表单打开后状态转 false 或提交得 403 → 回登录态、清邀请码、保留邮箱/密码、无会话建立（登录页侧，由 #67 实现）
+- [x] P.13 **switch 忠实性**：`aria-checked` 与状态文字等于最后确认的服务端值；保存失败回读而非乐观残留；单飞（延迟+连点下恰一次 PUT）；Space/Enter 可切换
+- [x] P.14 **布尔不漏渗**：`registrationEnabled` 不出现在通用数字编辑器，也不产生空的 `账户与注册` 数字分组
+- [x] P.15 **邮件面板白名单渲染**：mock 注入金丝雀秘密字段，整个渲染文档与 console 输出无泄漏
+- [x] P.16 **就绪性解耦**：发送表单启用 ⇔ `deliveryReady === true`，与 `authConfigured` 无关
+- [x] P.17 **单飞 + 非持久**：测试发送恰一次 POST、body 仅 `{email}`；地址不入 localStorage/sessionStorage/URL/持久 store，成功后清空
+- [x] P.18 **响应式契约**：375px 与桌面无横向溢出；新增控件 ≥40px 触控目标；长字符串换行；确认框保留 safe-bottom
 
 ## 4. 任务清单
 
@@ -104,14 +104,14 @@
 
 ### 阶段 B：前端（前置条件：移动端 UI 打磨已提交；基于该 commit 新开 worktree/分支）
 
-- [ ] B.1 契约同步：`src/api/adminConfig.ts` 增 `registrationEnabled` 并补齐 8 个缺失 key；`src/api/auth.ts` 增 `getRegistrationStatus()`（`skipAuthRefresh`）；新建 `src/api/adminMail.ts`（5 字段白名单类型 + `getAdminMailStatus`/`sendAdminMailTest`）
-- [ ] B.2 `src/components/admin/AdminConfigPanel.tsx`：按精确 key 排除 `registrationEnabled`（不排除整个分组），其余数字项渲染不变
-- [ ] B.3 新建 `src/components/admin/RegistrationControlPanel.tsx`：`role="switch"`+`aria-checked`+状态文字、≥40px 触控、关闭前确认（规格文案）、单飞保存、失败回读服务端值
-- [ ] B.4 新建 `src/components/admin/AdminMailPanel.tsx`：白名单渲染、`deliveryReady` 驱动表单、就绪且 `from === null` 时显示「发件地址未公开展示；配置 SMTP_FROM 可显示」、运维提示文案（SMTP_* 环境变量+重启）、收件地址仅组件内存、成功后清空
-- [ ] B.5 `src/pages/AdminPage.tsx`：系统配置 tab 内插入两卡片（唯一预期冲突点；保留移动端 safe-area/粘性头/padding 改动）
-- [ ] B.6 `src/pages/LoginPage.tsx`：状态机 loading/enabled/disabled/unavailable（fail-closed）；mount+focus/visibility 刷新（latest-wins）；条件渲染注册切换/邀请码/奖励文案；显式 false 才显示暂停公告；`REGISTRATION_DISABLED` 竞态恢复（回登录、清邀请码、留邮箱密码）
-- [ ] B.7 新建 `e2e/registration-mail-operations.spec.ts`：C16 策略覆盖 §7.2 全部 6 项 + P.9–P.18；**不修改** `mobile-ui-polish.spec.ts`/`mobile-regression.spec.ts`/`m3-identity-security-hardening.spec.ts`
-- [ ] B.8 验证门槛：`npm run build` 零错误；新 spec + 既有 `auth.spec.ts`/`admin-config.spec.ts` 全绿；移动端两套件不改动且跑通；`git diff --check`
+- [x] B.1 契约同步：`src/api/adminConfig.ts` 增 `registrationEnabled` 并补齐 8 个缺失 key；`src/api/auth.ts` 增 `getRegistrationStatus()`（`skipAuthRefresh`）；新建 `src/api/adminMail.ts`（5 字段白名单类型 + `getAdminMailStatus`/`sendAdminMailTest`）——其中 `src/api/auth.ts` 的 `getRegistrationStatus()` 由 #67 实现
+- [x] B.2 `src/components/admin/AdminConfigPanel.tsx`：按精确 key 排除 `registrationEnabled`（不排除整个分组），其余数字项渲染不变
+- [x] B.3 新建 `src/components/admin/RegistrationControlPanel.tsx`：`role="switch"`+`aria-checked`+状态文字、≥40px 触控、关闭前确认（规格文案）、单飞保存、失败回读服务端值
+- [x] B.4 新建 `src/components/admin/AdminMailPanel.tsx`：白名单渲染、`deliveryReady` 驱动表单、就绪且 `from === null` 时显示「发件地址未公开展示；配置 SMTP_FROM 可显示」、运维提示文案（SMTP_* 环境变量+重启）、收件地址仅组件内存、成功后清空
+- [x] B.5 `src/pages/AdminPage.tsx`：系统配置 tab 内插入两卡片（唯一预期冲突点；保留移动端 safe-area/粘性头/padding 改动）
+- [ ] B.6（由 #67 实现，本分支不触碰 LoginPage/auth API） `src/pages/LoginPage.tsx`：状态机 loading/enabled/disabled/unavailable（fail-closed）；mount+focus/visibility 刷新（latest-wins）；条件渲染注册切换/邀请码/奖励文案；显式 false 才显示暂停公告；`REGISTRATION_DISABLED` 竞态恢复（回登录、清邀请码、留邮箱密码）
+- [x] B.7 新建 `e2e/registration-mail-operations.spec.ts`：C16 策略覆盖 §7.2 管理后台/邮件面板/响应式三项 + P.13–P.18（P.9–P.12 登录页性质随 B.6 归 #67）；**不修改** `mobile-ui-polish.spec.ts`/`mobile-regression.spec.ts`/`m3-identity-security-hardening.spec.ts`
+- [x] B.8 验证门槛：`npm run build` 零错误；新 spec（10/10）+ 既有 `admin-config.spec.ts` 全绿；移动端两套件不改动且跑通；`git diff --check`
 
 ### 发布顺序（规格 §6）
 
