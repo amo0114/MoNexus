@@ -998,7 +998,7 @@ ENV_FILE=.env.staging.local COMPOSE_PROFILES=selfhost-storage,staging-mail npm r
 ENV_FILE=.env.staging.local REQUIRE_METRICS_TOKEN=true npm run prod:smoke
 ```
 
-For production compose rehearsals, fill `.env` from `.env.example` and run `npm run prod:gate`. The gate starts with strict env validation, so placeholders, insecure frontend origin, missing SMTP/storage/Sentry/metrics, or missing backup values fail before Docker can start a partial stack. The compose helpers default to `COMPOSE_PROJECT_NAME=monexus-prod`, keeping production-like rehearsals separate from the dev compose project.
+For production compose rehearsals, fill `.env` from `.env.example` and run `npm run prod:gate`. The gate starts with strict env validation, so placeholders, insecure frontend origin, missing SMTP/storage/metrics, or missing backup values fail before Docker can start a partial stack. Sentry/GlitchTip is optional, but a configured DSN must be HTTPS. The compose helpers default to `COMPOSE_PROJECT_NAME=monexus-prod`, keeping production-like rehearsals separate from the dev compose project.
 
 The deploy workflow builds frontend and backend, generates Prisma client with the server package, packages artifacts, prepares a release directory, runs `prisma migrate deploy` during `deploy_candidate` only, and updates `candidate`.
 
@@ -1033,7 +1033,7 @@ npm run prod:env -- --mode production --env-file .env
 npm run prod:env -- --mode staging --env-file .env.staging.local
 ```
 
-The preflight requires HTTPS `FRONTEND_ORIGIN`, `COOKIE_SECURE=true`, strong `JWT_SECRET`, configured S3-compatible storage, SMTP, Sentry/GlitchTip, `METRICS_TOKEN`, `BACKUP_AGE_RECIPIENT`, and `RESTORE_TARGET_URL`. It requires `BACKUP_DATABASE_URL` only when `BACKUP_SOURCE=url`; the self-hosted Compose route uses `BACKUP_SOURCE=docker-compose` instead.
+The preflight requires HTTPS `FRONTEND_ORIGIN`, `COOKIE_SECURE=true`, strong `JWT_SECRET`, configured S3-compatible storage, SMTP, `METRICS_TOKEN`, `BACKUP_AGE_RECIPIENT`, and `RESTORE_TARGET_URL`. Sentry/GlitchTip is optional; when configured, its DSN must use HTTPS. It requires `BACKUP_DATABASE_URL` only when `BACKUP_SOURCE=url`; the self-hosted Compose route uses `BACKUP_SOURCE=docker-compose` instead.
 
 ## 29. M5 Sentry Alert Rules
 

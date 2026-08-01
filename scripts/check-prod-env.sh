@@ -386,7 +386,12 @@ if [[ "$MODE" == "production" && "$allow_insecure" == "true" ]]; then
   fail "AUTO_PROVISION_ALLOW_INSECURE_TARGETS must not be true in production: it disables SSRF protections on merchant webhook calls"
 fi
 
-require_https_url SENTRY_DSN
+sentry_dsn="$(get SENTRY_DSN)"
+if [[ -n "$sentry_dsn" && "$sentry_dsn" != https://* ]]; then
+  fail "SENTRY_DSN must use https:// when set"
+elif [[ -z "$sentry_dsn" ]]; then
+  warn "SENTRY_DSN is empty; backend error reporting is disabled"
+fi
 vite_sentry_dsn="$(get VITE_SENTRY_DSN)"
 if [[ -n "$vite_sentry_dsn" && "$vite_sentry_dsn" != https://* ]]; then
   fail "VITE_SENTRY_DSN must use https:// when set"

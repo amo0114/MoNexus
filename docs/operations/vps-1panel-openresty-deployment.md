@@ -153,13 +153,15 @@ MONEXUS_PULL_POLICY=missing
 ~~~
 
 运行时允许 SMTP 与 Sentry 为空：邮件会记录到 server 日志，Sentry 不上报。真正的
-生产运营前应配置 SMTP、Sentry、备份目标，再执行严格门禁：
+生产运营前应配置 SMTP 与备份目标；Sentry/GlitchTip 为推荐的可选观测集成。再执行
+严格门禁：
 
 ~~~bash
 npm run prod:env
 ~~~
 
-严格门禁会要求 SMTP、Sentry 与备份变量；它不应以虚假占位值绕过。
+严格门禁会要求 SMTP、安全与备份变量；如配置 Sentry/GlitchTip，其 DSN 必须是 HTTPS。
+它不应以虚假占位值绕过。
 
 注意不要在 Windows 编辑后直接上传 .env。CRLF 换行会令部分带行尾匹配的替换命令
 不生效。若 sed 执行后看似没有修改，使用不依赖行尾的写法：
