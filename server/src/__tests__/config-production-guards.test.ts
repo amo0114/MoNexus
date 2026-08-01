@@ -177,4 +177,17 @@ describe('ops scripts cover both buckets (P1 regression)', () => {
     expect(preflight).toContain('require_value DELIVERY_STORAGE_BUCKET')
     expect(preflight).toContain('require_url DELIVERY_STORAGE_PUBLIC_ENDPOINT')
   })
+
+  it('makes MinIO credentials available to one-shot backup and restore clients', async () => {
+    const { readFile } = await import('node:fs/promises')
+    const compose = await readFile(path.resolve(SERVER_ROOT, '..', 'docker-compose.prod.yml'), 'utf8')
+    const minioInit = compose.slice(compose.indexOf('  minio-init:'), compose.indexOf('  mailpit:'))
+
+    expect(minioInit).toContain('STORAGE_ACCESS_KEY: ${STORAGE_ACCESS_KEY}')
+    expect(minioInit).toContain('STORAGE_SECRET_KEY: ${STORAGE_SECRET_KEY}')
+    expect(minioInit).toContain('STORAGE_BUCKET: ${STORAGE_BUCKET}')
+    expect(minioInit).toContain('DELIVERY_STORAGE_BUCKET: ${DELIVERY_STORAGE_BUCKET:-monexus-files}')
+    expect(minioInit).toContain('"$${STORAGE_ACCESS_KEY}" "$${STORAGE_SECRET_KEY}"')
+    expect(minioInit).not.toContain('http://minio:9000 ${STORAGE_ACCESS_KEY}')
+  })
 })
