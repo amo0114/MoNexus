@@ -82,14 +82,17 @@ printf 'deb [arch=%s signed-by=/etc/apt/keyrings/docker.gpg] https://download.do
 apt-get update
 apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 
-# Ubuntu's packaged Caddy is sufficient for the dedicated single-site host and
-# avoids adding another third-party apt repository. Enable Universe only when
-# the package metadata is not present on a minimal image.
-if ! apt-cache show caddy >/dev/null 2>&1; then
-  apt-get install -y software-properties-common
-  add-apt-repository -y universe
-  apt-get update
-fi
+# Caddy is not published for every Ubuntu mirror/architecture combination.
+# Use its official signed stable repository; it supplies the caddy systemd
+# service and current packages for this ARM64 Ubuntu host.
+apt-get install -y debian-keyring debian-archive-keyring apt-transport-https curl
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | \
+  gpg --dearmor --yes -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' \
+  > /etc/apt/sources.list.d/caddy-stable.list
+chmod o+r /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+chmod o+r /etc/apt/sources.list.d/caddy-stable.list
+apt-get update
 apt-get install -y caddy
 
 systemctl enable --now docker

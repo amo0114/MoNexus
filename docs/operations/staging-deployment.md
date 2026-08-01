@@ -77,7 +77,10 @@ sudo STAGING_HOST=staging.monexus.oai-o.com \
 ```
 
 The host bootstrap does not create runtime secrets or application data. It
-does not alter provider firewalls; ensure the provider allows TCP 80 and 443.
+uses Caddy's official signed stable APT repository because the Ubuntu mirror
+may not publish an ARM64 `caddy` package. It does not alter provider firewalls;
+ensure the provider allows TCP 80 and 443. See the [official Caddy installation
+instructions](https://caddyserver.com/docs/install#debian-ubuntu-raspbian).
 
 Add the GitHub Actions staging deploy public key to
 `/home/monexus-deploy/.ssh/authorized_keys`, then capture the SSH host key in
