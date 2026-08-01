@@ -115,25 +115,40 @@ describe('M7 tier earning hooks', () => {
     expect(pointLog.reason).toBe(`每日打卡签到 (tier:platinum +${expectedBonus})`)
   })
 
-  it('should keep bronze inviter reward at the base invite reward', async () => {
+  it('should snapshot a bronze referral reward without immediately crediting it', async () => {
     const inviteReward = await getSystemConfigValue('inviteReward')
     const { user: inviter } = await createTestUser('tier-invite-bronze@test.local', 'pass123', 'user', 0)
+    await prisma.user.update({
+      where: { id: inviter.id },
+      data: {
+        emailVerified: new Date(),
+        createdAt: new Date(Date.now() - 31 * 24 * 60 * 60 * 1_000),
+      },
+    })
     const inviteeEmail = 'tier-invitee-bronze@test.local'
 
-    await api
+    const res = await api
       .post('/api/auth/register')
       .send({ email: inviteeEmail, password: 'pass123', inviteCode: inviter.inviteCode })
       .expect(201)
 
-    const pointLog = await prisma.pointLog.findFirstOrThrow({
-      where: { userId: inviter.id },
-      orderBy: { id: 'desc' },
+    expect(res.body.user.points).toBe(0)
+    expect(await prisma.pointLog.count({ where: { userId: inviter.id, reason: { contains: '邀请新用户' } } })).toBe(0)
+    const relation = await prisma.inviteRelation.findFirstOrThrow({
+      where: { inviterId: inviter.id, inviteeId: res.body.user.id },
     })
-    expect(pointLog.amount).toBe(inviteReward)
-    expect(pointLog.reason).toBe(`邀请新用户 ${inviteeEmail} 注册奖励`)
+    expect(relation.status).toBe('pending_verification')
+    await expect(prisma.growthReward.findFirstOrThrow({
+      where: { inviteRelationId: relation.id },
+    })).resolves.toMatchObject({
+      recipientUserId: inviter.id,
+      kind: 'referral',
+      amount: inviteReward,
+      state: 'pending_verification',
+    })
   })
 
-  it('should apply gold tier bonus to inviter reward without changing invitee register reward', async () => {
+  it('should snapshot the gold tier bonus without changing either balance at registration', async () => {
     const config = await getCurrentTierConfig()
     const inviteReward = await getSystemConfigValue('inviteReward')
     const registerReward = await getSystemConfigValue('registerReward')
@@ -143,6 +158,13 @@ describe('M7 tier earning hooks', () => {
       'user',
       config.thresholds.gold
     )
+    await prisma.user.update({
+      where: { id: inviter.id },
+      data: {
+        emailVerified: new Date(),
+        createdAt: new Date(Date.now() - 31 * 24 * 60 * 60 * 1_000),
+      },
+    })
     const beforeLogs = await prisma.pointLog.findMany({
       where: { userId: inviter.id },
       orderBy: { id: 'asc' },
@@ -158,30 +180,39 @@ describe('M7 tier earning hooks', () => {
       .send({ email: inviteeEmail, password: 'pass123', inviteCode: inviter.inviteCode })
       .expect(201)
 
-    expect(res.body.user.points).toBe(registerReward)
+    expect(res.body.user.points).toBe(0)
 
     const inviteeAccount = await prisma.pointAccount.findUniqueOrThrow({
       where: { userId: res.body.user.id },
     })
-    expect(inviteeAccount.balance).toBe(registerReward)
+    expect(inviteeAccount.balance).toBe(0)
 
     const afterLogs = await prisma.pointLog.findMany({
       where: { userId: inviter.id },
       orderBy: { id: 'asc' },
       select: { id: true, amount: true, reason: true },
     })
-    expect(afterLogs).toHaveLength(beforeLogs.length + 1)
+    expect(afterLogs).toHaveLength(beforeLogs.length)
 
     for (const beforeLog of beforeLogs) {
       const afterLog = afterLogs.find(log => log.id === beforeLog.id)
       expect(afterLog?.amount).toBe(beforeLog.amount)
     }
 
-    const afterSum = afterLogs.reduce((sum, log) => sum + log.amount, 0)
-    const newLog = afterLogs[afterLogs.length - 1]
     expect(expectedBonus).toBeGreaterThan(0)
-    expect(afterSum).toBe(beforeSum + expectedTotal)
-    expect(newLog.amount).toBe(expectedTotal)
-    expect(newLog.reason).toBe(`邀请新用户 ${inviteeEmail} 注册奖励 (tier:gold +${expectedBonus})`)
+    expect(afterLogs.reduce((sum, log) => sum + log.amount, 0)).toBe(beforeSum)
+    const relation = await prisma.inviteRelation.findFirstOrThrow({
+      where: { inviterId: inviter.id, inviteeId: res.body.user.id },
+    })
+    await expect(prisma.growthReward.findFirstOrThrow({
+      where: { inviteRelationId: relation.id },
+    })).resolves.toMatchObject({
+      kind: 'referral',
+      amount: expectedTotal,
+      state: 'pending_verification',
+    })
+    await expect(prisma.growthReward.findFirstOrThrow({
+      where: { recipientUserId: res.body.user.id, kind: 'registration' },
+    })).resolves.toMatchObject({ amount: registerReward, state: 'pending_verification' })
   })
 })

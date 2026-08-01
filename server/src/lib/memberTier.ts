@@ -1,3 +1,4 @@
+import type { Prisma } from '@prisma/client'
 import { prisma } from './prisma.js'
 
 export type MemberTier = 'bronze' | 'silver' | 'gold' | 'platinum'
@@ -68,8 +69,15 @@ export async function computeLifetimeEarnedPoints(userId: number): Promise<numbe
   return result._sum.amount ?? 0
 }
 
-export async function getCurrentTierConfig(): Promise<TierConfig> {
-  const rows = await prisma.systemConfig.findMany({
+/**
+ * A registration reward snapshots the inviter's tier inside its registration
+ * transaction.  Accepting the transaction client keeps that read on the same
+ * connection as the relation/reward write instead of opening a second Prisma
+ * transaction while the first one owns row locks.
+ */
+export async function getCurrentTierConfig(tx?: Prisma.TransactionClient): Promise<TierConfig> {
+  const client = tx ?? prisma
+  const rows = await client.systemConfig.findMany({
     where: {
       key: {
         in: [...TIER_CONFIG_KEYS],

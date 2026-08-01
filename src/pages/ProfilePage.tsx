@@ -10,7 +10,7 @@ import { getOrders, getOrderDetail } from '../api/orders'
 import { changePassword, updateMe } from '../api/auth'
 import { UserOrderListItem, UserOrderDetail } from '../types/order'
 import OrderDetailModal from '../components/OrderDetailModal'
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/ui/Tabs'
+import PointsHistorySheet from '../components/PointsHistorySheet'
 import { TableSkeleton } from '../components/ui/Skeleton'
 import EmptyState from '../components/ui/EmptyState'
 import Reveal from '../components/ui/Reveal'
@@ -323,7 +323,9 @@ export default function ProfilePage() {
   const logout = useAuthStore((s) => s.logout)
   const showToast = useAppStore((s) => s.showToast)
 
-  const [activeTab, setActiveTab] = useState<'orders' | 'history'>('orders')
+  const historyOpen = useAppStore((s) => s.pointsHistoryOpen)
+  const setHistoryOpen = useAppStore((s) => s.setPointsHistoryOpen)
+  const [historyLoading, setHistoryLoading] = useState(false)
   const [orders, setOrders] = useState<UserOrderListItem[]>([])
   const [history, setHistory] = useState<any[]>([])
   const [hasCheckedIn, setHasCheckedIn] = useState<boolean | null>(null)
@@ -336,10 +338,19 @@ export default function ProfilePage() {
   useEffect(() => {
     Promise.allSettled([
       getOrders().then(setOrders),
-      api.get('/points/history').then(({ data }) => setHistory(data)),
       api.get('/points/checkin/status').then(({ data }) => setHasCheckedIn(data.hasCheckedIn)),
     ]).finally(() => setListsLoading(false))
   }, [])
+
+  // 流水明细（V3-T1）：Sheet 每次打开时拉取，覆盖签到/退款等全部变动
+  useEffect(() => {
+    if (!historyOpen) return
+    setHistoryLoading(true)
+    api.get('/points/history')
+      .then(({ data }) => setHistory(data))
+      .catch(() => {})
+      .finally(() => setHistoryLoading(false))
+  }, [historyOpen])
 
   async function handleCheckin() {
     setCheckingIn(true)
@@ -348,7 +359,6 @@ export default function ProfilePage() {
       useAuthStore.getState().updatePoints(data.balanceAfter)
       setHasCheckedIn(true)
       showToast(`打卡成功！积分 +${data.totalReward}`)
-      api.get('/points/history').then(({ data: h }) => setHistory(h)).catch(() => {})
     } catch (err: any) {
       showToast(getApiErrorMessage(err, '签到失败'), 'error')
     } finally {
@@ -385,7 +395,7 @@ export default function ProfilePage() {
   }
 
   return (
-    <div className="fade-in space-y-8 max-w-5xl mx-auto pt-2" style={{ animationDelay: '0.1s' }}>
+    <div className="fade-in max-md:space-y-5 space-y-8 max-w-5xl mx-auto pt-2" style={{ animationDelay: '0.1s' }}>
       {/* Top cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
         {/* Points hero — indigo gradient (replaces old Warm Latte brown) */}
@@ -422,7 +432,7 @@ export default function ProfilePage() {
                 {hasCheckedIn === null ? '加载中…' : hasCheckedIn ? '今日已打卡' : '每日打卡'}
               </button>
               <button
-                onClick={() => setActiveTab('history')}
+                onClick={() => setHistoryOpen(true)}
                 className="inline-flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white border border-white/30 px-6 py-3 rounded-lg font-medium text-sm transition-colors cursor-pointer"
               >
                 查流水明细
@@ -438,7 +448,7 @@ export default function ProfilePage() {
           </div>
           <h4 className="font-heading text-lg font-bold mb-1 text-[var(--color-text)]">邀请赚积分</h4>
           <p className="text-[var(--color-text-muted)] text-xs mb-4 leading-relaxed">
-            每邀请一人注册，您可获得 <span className="text-[var(--color-cta)] font-bold">200</span> 积分。
+            好友完成邮箱验证、通过资格期且符合邀请资格后，奖励会自动发放。
           </p>
           <div className="bg-[var(--color-background)] rounded-lg p-2.5 flex justify-between items-center border border-[var(--color-border)]">
             <span className="font-mono text-sm font-bold text-[var(--color-text)] ml-1">
@@ -495,19 +505,11 @@ export default function ProfilePage() {
       {/* Active device sessions stay isolated from the profile's orders/points loading. */}
       <SessionManager />
 
-      {/* Tabs: Orders / History */}
+      {/* 我兑换的商品（V3-T1：流水明细移入 PointsHistorySheet，本页单栏） */}
       <div className="card p-4 sm:p-6">
-        <Tabs
-          value={activeTab}
-          onValueChange={(v: string) => setActiveTab(v as 'orders' | 'history')}
-          className="w-full"
-        >
-          <TabsList className="mb-1">
-            <TabsTrigger value="orders">我兑换的商品</TabsTrigger>
-            <TabsTrigger value="history">积分变动明细</TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="orders">
+        <h3 className="font-heading text-base font-bold text-[var(--color-text)] mb-3 flex items-center gap-2">
+          <ShoppingBag className="w-4 h-4 text-[var(--color-primary)]" /> 我兑换的商品
+        </h3>
             {listsLoading ? (
               <TableSkeleton rows={4} />
             ) : orders.length === 0 ? (
@@ -528,8 +530,8 @@ export default function ProfilePage() {
                   <Reveal key={order.id} delay={Math.min(i, 8) * 50}>
                   <div className="bg-[var(--color-background)] rounded-lg p-4 border border-[var(--color-border)] flex flex-col sm:flex-row justify-between gap-4 shadow-sm hover:shadow-md transition-shadow">
                     <div className="flex-1">
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 mb-2">
+                        <div className="flex items-center gap-2 flex-wrap min-w-0">
                           <RegistryPill value={order.status} category="orderStatuses" />
                           {(() => {
                             // P6a：订阅单到期后打「已过期」小标（列表投影，详情内可续费）
@@ -608,41 +610,13 @@ export default function ProfilePage() {
                 ))}
               </div>
             )}
-          </TabsContent>
 
-          <TabsContent value="history">
-            {listsLoading ? (
-              <TableSkeleton rows={4} />
-            ) : history.length === 0 ? (
-              <EmptyState compact icon={Coins} title="暂无积分变动" description="每日签到即可获得第一笔积分" />
-            ) : (
-            <div className="space-y-2">
-              {history.map((item: any) => (
-                <div key={item.id} className="flex items-center justify-between p-3 border-b border-[var(--color-border)] last:border-0 hover:bg-[var(--color-background)] rounded-lg transition-colors">
-                  <div className="flex items-center gap-3">
-                    <div className={`w-8 h-8 rounded-full flex items-center justify-center shadow-sm ${
-                      item.type === 'in'
-                        ? 'bg-[var(--color-cta)]/10 border border-[var(--color-cta)]/25 text-[var(--color-cta)]'
-                        : 'bg-[var(--color-text-muted)]/15 border border-[var(--color-text-muted)]/25 text-[var(--color-text-muted)]'
-                    }`}>
-                      {item.type === 'in' ? <ArrowDownLeft className="w-4 h-4" /> : <ArrowUpRight className="w-4 h-4" />}
-                    </div>
-                    <div>
-                      <p className="font-bold text-xs text-[var(--color-text)]">{item.reason}</p>
-                      <p className="text-xs text-[var(--color-text-muted)] mt-0.5">
-                        {new Date(item.createdAt).toLocaleString()}
-                      </p>
-                    </div>
-                  </div>
-                  <div className={`font-bold text-sm ${item.type === 'in' ? 'text-[var(--color-cta)]' : 'text-[var(--color-text)]'}`}>
-                    {item.type === 'in' ? '+' : '-'}{item.amount}
-                  </div>
-                </div>
-              ))}
-            </div>
-            )}
-          </TabsContent>
-        </Tabs>
+      <PointsHistorySheet
+        open={historyOpen}
+        onOpenChange={setHistoryOpen}
+        items={history}
+        loading={historyLoading}
+      />
       </div>
 
       {/* Logout */}
@@ -662,7 +636,6 @@ export default function ProfilePage() {
           onClose={() => setSelectedOrder(null)}
           onUpdated={() => {
             getOrders().then(setOrders).catch(() => {})
-            api.get('/points/history').then(({ data }) => setHistory(data)).catch(() => {})
           }}
         />
       )}

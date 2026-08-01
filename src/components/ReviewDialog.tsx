@@ -55,12 +55,12 @@ export default function ReviewDialog({ open, orderId, mode, initial, onClose, on
           />
         </div>
         <div className="mt-5 flex justify-end gap-3">
-          <button type="button" onClick={onClose} className="btn-secondary px-5 py-2 text-sm">取消</button>
+          <button type="button" onClick={onClose} className="btn-secondary btn-sm px-5 py-2 text-sm">取消</button>
           <button
             type="button"
             onClick={handleSubmit}
             disabled={saving}
-            className="btn-primary px-5 py-2 text-sm"
+            className="btn-primary btn-sm px-5 py-2 text-sm"
             data-testid="review-submit"
           >
             {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : '提交'}

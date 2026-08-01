@@ -159,7 +159,8 @@ test.describe('mobile 320px', () => {
     await mockDashboardApi(page)
     await loginAs(page, SEED_ACCOUNTS.merchant)
 
-    await expectTouchTargets(page, '/', { ready: page.getByPlaceholder('搜账号、卡密、教程...') })
+    // V3 灵动岛：商城搜索收纳进 navbar——先点岛内「搜索」展开搜索卡片
+    await expectTouchTargets(page, '/', { tab: '搜索', ready: page.getByPlaceholder('搜账号、卡密、教程...') })
     // 商家后台：默认 dashboard tab + 商品/订单两个含行内操作的子 tab
     await expectTouchTargets(page, '/merchant', { ready: page.getByText('数据概览') })
     await expectTouchTargets(page, '/merchant', {

@@ -96,7 +96,7 @@ export default function AdminFakaTasksPanel() {
 
       <div className="flex flex-wrap gap-2 items-center">
         <select
-          className="admin-input text-sm"
+          className="bg-[var(--color-surface)] border border-[var(--color-border)] text-base rounded-md px-3 py-2 text-[var(--color-text)] cursor-pointer"
           value={status}
           onChange={e => {
             setPage(1)
@@ -111,7 +111,7 @@ export default function AdminFakaTasksPanel() {
           <option value="needs_reconcile">needs_reconcile</option>
         </select>
         <select
-          className="admin-input text-sm"
+          className="bg-[var(--color-surface)] border border-[var(--color-border)] text-base rounded-md px-3 py-2 text-[var(--color-text)] cursor-pointer"
           value={revokeStatus}
           onChange={e => {
             setPage(1)
@@ -124,7 +124,7 @@ export default function AdminFakaTasksPanel() {
           <option value="failed">revoke failed</option>
           <option value="skipped">revoke skipped</option>
         </select>
-        <button type="button" className="admin-btn-secondary text-sm" onClick={() => void load()}>
+        <button type="button" className="btn-secondary btn-sm" onClick={() => void load()}>
           刷新
         </button>
       </div>

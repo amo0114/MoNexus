@@ -1,13 +1,17 @@
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuthStore } from '../stores/authStore'
-import { Coins, User, ShieldCheck, Store, Clock, XCircle, AlertTriangle, Plus } from 'lucide-react'
+import { Coins, User, ShieldCheck, Store, Clock, XCircle, AlertTriangle, Plus, Search, Bell } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import EmailVerificationBanner from './EmailVerificationBanner'
+import VerifiedActionGate from './VerifiedActionGate'
 import AnnouncementBanner from './AnnouncementBanner'
-import AnnouncementCenter, { AnnouncementBellButton, MobileAnnouncementFab } from './AnnouncementCenter'
+import AnnouncementCenter, { AnnouncementBellButton } from './AnnouncementCenter'
 import Logo from './ui/Logo'
 import ThemeToggle from './ThemeToggle'
 import MobileNavDrawer from './MobileNavDrawer'
+import BottomTabBar from './BottomTabBar'
+import StoreSearchPanel from './StoreSearchPanel'
+import { useIsMobileViewport } from '../hooks/useMediaQuery'
 import { useAnnouncements } from '../hooks/useAnnouncements'
 import { useAppStore } from '../stores/appStore'
 import { getApiErrorMessage } from '../api/error'
@@ -21,6 +25,40 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const announcements = useAnnouncements()
   const [announcementCenterOpen, setAnnouncementCenterOpen] = useState(false)
   const surfacedRequiredAnnouncements = useRef(new Set<string>())
+
+  // 灵动岛药丸（V3-T3，仅移动视口）：离开顶部 >48px 收缩为居中悬浮
+  // 胶囊，回顶 <32px 恢复全宽（滞回防抖）。桌面恒 false，零影响。
+  const isMobileViewport = useIsMobileViewport()
+  const [navCompact, setNavCompact] = useState(false)
+  useEffect(() => {
+    if (!isMobileViewport) {
+      setNavCompact(false)
+      return
+    }
+    let ticking = false
+    const onScroll = () => {
+      if (ticking) return
+      ticking = true
+      window.requestAnimationFrame(() => {
+        const y = window.scrollY
+        setNavCompact((prev) => (y > 48 ? true : y < 32 ? false : prev))
+        ticking = false
+      })
+    }
+    onScroll()
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => window.removeEventListener('scroll', onScroll)
+  }, [isMobileViewport])
+
+  // 灵动岛搜索（V3）：商城页移动视口下，navbar 右侧出现搜索图标，
+  // 点击后 navbar morph 为搜索卡片（input + 分类 chips + 遮罩聚焦）。
+  // 路由变化即收起；仅商城页可触发（搜索是商城场景）。
+  const [searchOpen, setSearchOpen] = useState(false)
+  useEffect(() => {
+    setSearchOpen(false)
+  }, [location.pathname])
+  const islandSearch = searchOpen && isMobileViewport && location.pathname === '/'
+  const chromeCompact = navCompact || islandSearch
 
   // Refresh user data on mount
   useEffect(() => {
@@ -66,17 +104,67 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         <div className="absolute bottom-[-10%] left-[-10%] w-[500px] h-[500px] rounded-full bg-[var(--color-primary)]/5 blur-[120px]" />
       </div>
 
-      {/* Navigation */}
-      <nav className="glass sticky top-0 z-40 w-full px-4 sm:px-6 py-4 border-b border-[var(--color-border)]">
-        <div className="max-w-7xl mx-auto flex justify-between items-center relative">
+      {/* Navigation — 灵动岛：下滑时内层收缩为居中悬浮药丸（compact）；
+          商城页可进一步 morph 为搜索卡片（islandSearch）。
+          药丸/卡片均为实心 surface + 阴影（用户反馈去磨砂）；
+          全部样式经 max-md 与 isMobileViewport 双重隔离，桌面零变化。 */}
+      <nav
+        className={`nav-safe-x sticky top-0 z-40 w-full transition-all duration-300 ${
+          chromeCompact
+            ? 'py-2.5 border-b border-transparent'
+            : 'glass py-4 border-b border-[var(--color-border)]'
+        }`}
+        style={{
+          transitionTimingFunction: 'var(--ease-standard)',
+          /* P1：消费 safe-top（viewport-fit=cover 后页面延伸至刘海区）。
+             safe-top=0 时与原 py-4/py-2.5 完全等值，桌面零差异。 */
+          paddingTop: chromeCompact
+            ? 'calc(var(--safe-top) + 0.625rem)'
+            : 'calc(var(--safe-top) + 1rem)',
+        }}
+      >
+        {islandSearch && (
+          <div
+            aria-hidden="true"
+            onClick={() => setSearchOpen(false)}
+            className="md:hidden fixed inset-0 bg-black/25 animate-[overlayIn_0.25s_ease-out]"
+          />
+        )}
+        {/* 胶囊皮肤（V3 丝滑重构）：compact 与搜索卡片共享同一层毛玻璃皮肤，
+            差异仅圆角/内边距/阴影——全部是可过渡属性，内容布局零重排，
+            navbar 从全宽玻璃条平滑 morph 为悬浮胶囊（灵动岛）。
+            毛玻璃仅用于悬浮胶囊（用户指定）；Tab Bar 保持实心。 */}
+        <div
+          className={`max-w-7xl mx-auto flex justify-between items-center relative transition-all duration-300 ${
+            islandSearch
+              ? 'max-md:rounded-3xl max-md:px-4 max-md:py-3 max-md:shadow-xl'
+              : navCompact
+                ? 'max-md:rounded-full max-md:px-3 max-md:py-1.5 max-md:shadow-lg'
+                : ''
+          } ${
+            chromeCompact
+              ? 'max-md:mx-1 max-md:bg-[var(--color-glass-bg)] max-md:backdrop-blur-md max-md:saturate-[1.8] max-md:border max-md:border-[var(--color-glass-border)]'
+              : ''
+          }`}
+          style={{ transitionTimingFunction: 'var(--ease-standard)' }}
+        >
+        {islandSearch ? (
+          <StoreSearchPanel onClose={() => setSearchOpen(false)} />
+        ) : (
+        <>
 
           {/* Brand mark + Orbitron wordmark. See design-system/monexus/LOGO-BRIEF.md. */}
           <div
             className="flex items-center gap-2.5 cursor-pointer group"
             onClick={() => navigate('/')}
           >
-            <Logo className="w-8 h-8 text-[var(--color-primary)] transition-transform group-hover:scale-105 shrink-0" />
-            <span className="font-heading text-lg font-bold tracking-[0.18em] text-[var(--color-text)] leading-none">
+            <Logo className="w-8 h-8 text-[var(--color-primary)] transition-transform duration-300 group-hover:scale-105 shrink-0" />
+            {/* compact 时字号/字距微调——font-size 与 letter-spacing 均可平滑过渡（无跳变） */}
+            <span
+              className={`font-heading font-bold text-[var(--color-text)] leading-none transition-all duration-300 ${
+                navCompact ? 'max-md:text-sm max-md:tracking-[0.1em]' : 'max-md:text-base max-md:tracking-[0.18em]'
+              } text-lg tracking-[0.18em]`}
+            >
               MONEXUS
             </span>
           </div>
@@ -167,14 +255,45 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               </span>
             </div>
 
-            {/* Avatar */}
+            {/* 灵动岛搜索入口（商城页·移动视口）：点击后 navbar morph 为搜索卡片 */}
+            {isMobileViewport && location.pathname === '/' && (
+              <button
+                type="button"
+                onClick={() => setSearchOpen(true)}
+                aria-label="搜索"
+                className="md:hidden inline-flex items-center justify-center w-10 h-10 rounded-full text-[var(--color-text)] hover:bg-[var(--color-primary)]/10 transition-colors cursor-pointer focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)]"
+              >
+                <Search className="w-5 h-5" />
+              </button>
+            )}
+
+            {/* 公告铃铛（移动视口，V3：通知上移 navbar，继承移动端 testid 契约） */}
+            <button
+              type="button"
+              onClick={() => setAnnouncementCenterOpen(true)}
+              className="md:hidden icon-btn inline-flex relative rounded-full w-10 h-10 items-center justify-center text-[var(--color-text)] hover:bg-[var(--color-primary)]/10 transition-colors focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)] cursor-pointer"
+              aria-label={announcements.unreadCount > 0 ? `公告中心，有 ${announcements.unreadCount} 条未读` : '公告中心'}
+              data-testid="announcement-center-mobile-trigger"
+            >
+              <Bell className="w-5 h-5" />
+              {announcements.unreadCount > 0 && (
+                <span
+                  aria-hidden="true"
+                  className="absolute right-0.5 top-0.5 min-w-4 h-4 px-1 rounded-full bg-[var(--color-danger)] text-[10px] leading-4 font-bold text-white text-center ring-2 ring-[var(--color-surface)]"
+                >
+                  {announcements.unreadCount > 9 ? '9+' : announcements.unreadCount}
+                </span>
+              )}
+            </button>
+
+            {/* Avatar — 移动端入口由 Tab Bar「我的」承担（V3 去重），≥md 保留 */}
             <button
               onClick={() => navigate('/profile')}
-              className="flex items-center gap-2 ml-1 relative group cursor-pointer"
+              className="hidden md:flex items-center gap-2 ml-1 relative group cursor-pointer"
               aria-label="个人中心"
             >
               <div
-                className="w-11 h-11 rounded-full flex items-center justify-center text-white shadow-md border-2 border-[var(--color-background)] relative z-10 transition-shadow group-hover:shadow-lg"
+                className="w-11 h-11 rounded-full flex items-center justify-center text-white shadow-md border-2 border-[var(--color-background)] relative z-10 transition-shadow duration-300 group-hover:shadow-lg"
                 style={{
                   background:
                     'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-hover) 100%)',
@@ -187,11 +306,14 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             {/* Mobile hamburger — drawer carries the entries hidden below md */}
             <MobileNavDrawer />
           </div>
+        </>
+        )}
         </div>
       </nav>
 
       {/* Email verification nudge — silent when verified or dismissed */}
       <EmailVerificationBanner />
+      <VerifiedActionGate />
 
       {/* Platform announcement — fetched from /api/announcements */}
       <AnnouncementBanner
@@ -202,10 +324,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         onOpen={openAnnouncement}
       />
 
-      <MobileAnnouncementFab
-        unreadCount={announcements.unreadCount}
-        onClick={() => setAnnouncementCenterOpen(true)}
-      />
+      <BottomTabBar />
       <AnnouncementCenter
         open={announcementCenterOpen}
         onOpenChange={setAnnouncementCenterOpen}
@@ -217,8 +336,16 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
       {/* Content. 注意不要给 main 加 z-index：z-0 会创建 stacking context，
           把页面内 fixed 弹窗（z-50）整体压到 footer（z-10）之下，导致长页面
-          滚动到底部时 footer 截获弹窗底部按钮的点击。 */}
-      <main className="flex-grow max-w-7xl mx-auto w-full px-4 sm:px-6 py-6 sm:py-8 relative">
+          滚动到底部时 footer 截获弹窗底部按钮的点击。
+          padding-bottom 在 <md 预留 BottomTabBar 高度（--tabbar-h + safe-area
+          + 呼吸空间），≥md 由 md:pb-8 覆盖回原值。
+          P2-2：商品详情页 Tab Bar 不渲染（购买条接管），豁免该预留——
+          购买条空间由 ProductDetailPage 根部自行预留，避免双重预留。 */}
+      <main className={`flex-grow max-w-7xl mx-auto w-full px-4 sm:px-6 pt-6 sm:pt-8 ${
+        location.pathname.startsWith('/product')
+          ? 'max-md:pb-6 md:pb-8'
+          : 'pb-[calc(var(--tabbar-h)+var(--safe-bottom)+2rem)] md:pb-8'
+      } relative`}>
         {children}
       </main>
 

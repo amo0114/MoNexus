@@ -1,0 +1,269 @@
+name: Staging Compose Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Branch, tag, or exact SHA to deploy to the isolated staging host'
+        required: true
+        default: 'develop'
+      release_action:
+        description: 'Deploy a source release or switch back to an existing staging release'
+        required: true
+        default: 'deploy'
+        type: choice
+        options:
+          - deploy
+          - rollback
+      target_release:
+        description: 'Existing 40-character staging release SHA required for rollback'
+        required: false
+        default: ''
+      dry_run:
+        description: 'Validate and print the plan without opening SSH or changing the host'
+        required: true
+        default: true
+        type: boolean
+
+concurrency:
+  group: staging-compose-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  package-source:
+    name: Package immutable staging source
+    if: ${{ github.event.inputs.release_action == 'deploy' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      deploy_commit: ${{ steps.resolve_ref.outputs.deploy_commit }}
+    steps:
+      - name: Check out requested ref
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.ref }}
+          fetch-depth: 1
+
+      - name: Resolve immutable commit
+        id: resolve_ref
+        run: |
+          set -euo pipefail
+          deploy_commit="$(git rev-parse HEAD)"
+          echo "deploy_commit=${deploy_commit}" >> "$GITHUB_OUTPUT"
+          echo "Deploying immutable commit ${deploy_commit}"
+
+      - name: Archive source without local environment files
+        run: |
+          set -euo pipefail
+          deploy_commit="${{ steps.resolve_ref.outputs.deploy_commit }}"
+          git archive --format=tar "$deploy_commit" | gzip -n > "monexus-staging-${deploy_commit}.tar.gz"
+          sha256sum "monexus-staging-${deploy_commit}.tar.gz"
+
+      - name: Upload staging source archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: monexus-staging-source-${{ steps.resolve_ref.outputs.deploy_commit }}
+          path: monexus-staging-${{ steps.resolve_ref.outputs.deploy_commit }}.tar.gz
+          retention-days: 14
+          if-no-files-found: error
+
+  release:
+    name: Deploy or roll back isolated staging
+    needs: package-source
+    if: ${{ always() && (github.event.inputs.release_action != 'deploy' || needs.package-source.result == 'success') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: staging
+    env:
+      STAGING_SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      STAGING_SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      STAGING_SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      STAGING_SSH_PORT: ${{ secrets.STAGING_SSH_PORT || '22' }}
+      STAGING_SSH_KNOWN_HOSTS: ${{ secrets.STAGING_SSH_KNOWN_HOSTS }}
+      STAGING_HEALTHCHECK_URL: ${{ vars.STAGING_HEALTHCHECK_URL || '' }}
+      RELEASE_ACTION: ${{ github.event.inputs.release_action }}
+      TARGET_RELEASE: ${{ github.event.inputs.target_release }}
+      DEPLOY_COMMIT: ${{ needs.package-source.outputs.deploy_commit }}
+      DRY_RUN: ${{ github.event.inputs.dry_run }}
+    steps:
+      - name: Validate staging-only release plan
+        id: readiness
+        run: |
+          set -euo pipefail
+
+          echo "release_action=${RELEASE_ACTION}"
+          echo "deploy_commit=${DEPLOY_COMMIT}"
+          echo "target_release=${TARGET_RELEASE}"
+          echo "dry_run=${DRY_RUN}"
+          echo "deploy_base_path=/opt/monexus-staging"
+
+          case "$RELEASE_ACTION" in
+            deploy)
+              if [[ ! "$DEPLOY_COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
+                echo "::error::deploy requires a resolved 40-character commit SHA"
+                exit 1
+              fi
+              ;;
+            rollback)
+              if [[ ! "$TARGET_RELEASE" =~ ^[0-9a-f]{40}$ ]]; then
+                echo "::error::rollback requires target_release to be a 40-character staging release SHA"
+                exit 1
+              fi
+              ;;
+            *)
+              echo "::error::Unsupported release action: $RELEASE_ACTION"
+              exit 1
+              ;;
+          esac
+
+          if [[ "$DRY_RUN" != "false" ]]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Dry run: no SSH connection or staging-host change will occur."
+            exit 0
+          fi
+
+          missing=()
+          for key in STAGING_SSH_HOST STAGING_SSH_USER STAGING_SSH_PRIVATE_KEY STAGING_SSH_KNOWN_HOSTS STAGING_HEALTHCHECK_URL; do
+            if [[ -z "${!key}" ]]; then
+              missing+=("$key")
+            fi
+          done
+
+          if [[ "${#missing[@]}" -gt 0 ]]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            printf '::error::Missing staging environment values: %s\n' "${missing[*]}"
+            exit 1
+          fi
+
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+
+      - name: Configure verified SSH host
+        if: steps.readiness.outputs.ready == 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$STAGING_SSH_PRIVATE_KEY" > ~/.ssh/monexus_staging_deploy
+          chmod 600 ~/.ssh/monexus_staging_deploy
+          # This is a pinned host-key entry captured during staging bootstrap;
+          # intentionally do not trust a fresh ssh-keyscan result in CI.
+          printf '%s\n' "$STAGING_SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Download immutable source archive
+        if: steps.readiness.outputs.ready == 'true' && env.RELEASE_ACTION == 'deploy'
+        uses: actions/download-artifact@v4
+        with:
+          name: monexus-staging-source-${{ needs.package-source.outputs.deploy_commit }}
+          path: artifacts
+
+      - name: Upload source archive to staging host
+        if: steps.readiness.outputs.ready == 'true' && env.RELEASE_ACTION == 'deploy'
+        run: |
+          set -euo pipefail
+          archive="artifacts/monexus-staging-${DEPLOY_COMMIT}.tar.gz"
+          test -f "$archive"
+          scp \
+            -i ~/.ssh/monexus_staging_deploy \
+            -P "$STAGING_SSH_PORT" \
+            -o StrictHostKeyChecking=yes \
+            "$archive" \
+            "$STAGING_SSH_USER@$STAGING_SSH_HOST:/tmp/monexus-staging-${DEPLOY_COMMIT}.tar.gz"
+
+      - name: Apply release on staging host
+        if: steps.readiness.outputs.ready == 'true'
+        run: |
+          set -euo pipefail
+          source_archive="/tmp/monexus-staging-${DEPLOY_COMMIT}.tar.gz"
+          ssh \
+            -i ~/.ssh/monexus_staging_deploy \
+            -p "$STAGING_SSH_PORT" \
+            -o StrictHostKeyChecking=yes \
+            "$STAGING_SSH_USER@$STAGING_SSH_HOST" \
+            "bash -s -- '$RELEASE_ACTION' '$DEPLOY_COMMIT' '$TARGET_RELEASE' '$source_archive'" <<'REMOTE'
+          set -euo pipefail
+
+          release_action="$1"
+          deploy_commit="$2"
+          target_release="$3"
+          source_archive="$4"
+          base_path="/opt/monexus-staging"
+          env_file="/etc/monexus/staging.env"
+          project_name="monexus-staging"
+
+          run_release() {
+            local release_path="$1"
+            test -f "$env_file"
+            test -x "$release_path/scripts/staging-compose.sh"
+            (
+              cd "$release_path"
+              ENV_FILE="$env_file" COMPOSE_PROJECT_NAME="$project_name" \
+                bash scripts/staging-compose.sh up
+              ENV_FILE="$env_file" COMPOSE_PROJECT_NAME="$project_name" \
+                bash scripts/staging-compose.sh smoke
+            )
+            ln -sfn "$release_path" "$base_path/current"
+          }
+
+          case "$release_action" in
+            deploy)
+              [[ "$deploy_commit" =~ ^[0-9a-f]{40}$ ]]
+              test -f "$source_archive"
+              mkdir -p "$base_path/releases"
+              release_path="$base_path/releases/$deploy_commit"
+
+              if [[ -e "$release_path" ]]; then
+                if [[ "$(cat "$release_path/.staging-release-id" 2>/dev/null || true)" != "$deploy_commit" ]]; then
+                  echo "Existing staging release is incomplete or has the wrong identity: $release_path" >&2
+                  exit 1
+                fi
+              else
+                incoming_dir="$(mktemp -d "$base_path/releases/.incoming-${deploy_commit}.XXXXXX")"
+                trap 'rm -rf "$incoming_dir"' EXIT
+                tar -xzf "$source_archive" -C "$incoming_dir"
+                test -x "$incoming_dir/scripts/staging-compose.sh"
+                printf '%s\n' "$deploy_commit" > "$incoming_dir/.staging-release-id"
+                mv "$incoming_dir" "$release_path"
+                trap - EXIT
+              fi
+
+              rm -f "$source_archive"
+              run_release "$release_path"
+              echo "Staging release is now $deploy_commit"
+              ;;
+            rollback)
+              [[ "$target_release" =~ ^[0-9a-f]{40}$ ]]
+              release_path="$base_path/releases/$target_release"
+              test -f "$release_path/.staging-release-id"
+              run_release "$release_path"
+              echo "Staging rolled back to $target_release"
+              ;;
+            *)
+              echo "Unsupported staging release action: $release_action" >&2
+              exit 1
+              ;;
+          esac
+          REMOTE
+
+      - name: Check public staging readiness
+        if: steps.readiness.outputs.ready == 'true'
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error \
+            --retry 12 \
+            --retry-delay 5 \
+            --retry-connrefused \
+            "$STAGING_HEALTHCHECK_URL" \
+            >/dev/null
+          echo "Staging public readiness check passed."
+
+      - name: Dry-run summary
+        if: steps.readiness.outputs.ready != 'true'
+        run: |
+          set -euo pipefail
+          echo "No staging-host change was made."
+          echo "release_action=${RELEASE_ACTION}"
+          echo "dry_run=${DRY_RUN}"

@@ -3,7 +3,8 @@
  * replacing blank flashes and bare "加载中" text during async loads.
  */
 export function Skeleton({ className = '' }: { className?: string }) {
-  return <div className={`animate-pulse bg-[var(--color-border)] rounded ${className}`} aria-hidden="true" />
+  // <md: pulse is replaced by the shimmer sweep (index.css .skeleton-shimmer)
+  return <div className={`animate-pulse max-md:animate-none skeleton-shimmer bg-[var(--color-border)] rounded ${className}`} aria-hidden="true" />
 }
 
 /** Row-shaped skeleton for data tables / lists. */

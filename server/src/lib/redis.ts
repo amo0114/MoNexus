@@ -5,13 +5,20 @@ import { redisCircuitState, redisCommandDuration, redisStatus } from './metrics.
 
 export type RedisHealthStatus = 'ok' | 'disabled' | 'degraded'
 
-type RedisLike = {
+/**
+ * Deliberately narrow Redis surface shared by the cache and security limiter.
+ * `eval` is required because security limiters must be able to make one atomic
+ * Redis transition. The abuse limiter still runtime-checks it defensively so
+ * an untyped/incomplete injected client fails closed rather than falling back.
+ */
+export type RedisLike = {
   status?: string
   connect?: () => Promise<unknown>
   get: (key: string) => Promise<string | null>
   set: (key: string, value: string, ...args: unknown[]) => Promise<unknown>
   del: (...keys: string[]) => Promise<number>
   incr: (key: string) => Promise<number>
+  eval: (script: string, numberOfKeys: number, ...args: string[]) => Promise<unknown>
   ping: () => Promise<string>
   quit?: () => Promise<unknown>
   disconnect?: () => void

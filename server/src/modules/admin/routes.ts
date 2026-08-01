@@ -13,9 +13,17 @@ import {
   createAnnouncementSchema, updateAnnouncementSchema, listAnnouncementsQuerySchema,
   setFakaCapacitySchema, importFakaPlanSchema, addFakaOffersSchema,
   listFakaTasksQuerySchema,
+  mailDeliveryTestSchema,
+  abuseOverviewQuerySchema,
+  listAbuseReferralsQuerySchema,
+  listAbuseRewardsQuerySchema,
+  setReferralSuspensionSchema,
+  voidAbuseRewardSchema,
 } from './schema.js'
 import { adminReviewsQuerySchema } from '../reviews/schema.js'
 import * as controller from './controller.js'
+import * as abuseController from './abuseController.js'
+import { adminMailTestLimiter } from './mailTestLimiter.js'
 import { portableBackupRoutes } from '../portable-backups/routes.js'
 
 const router = Router()
@@ -28,6 +36,28 @@ router.get('/stats', controller.stats)
 router.get('/config', controller.listConfig)
 router.put('/config/:key', validate({ params: systemConfigKeyParamSchema, body: updateSystemConfigSchema }), controller.updateConfig)
 router.get('/audit', validate({ query: listAdminAuditQuerySchema }), controller.audit)
+// SPEC-RAP-001: this entire router has already passed authenticate → active
+// user → admin role → current MFA session. Keep the abuse surface here rather
+// than a separately mounted router so no future route can accidentally omit
+// the MFA boundary.
+router.get('/abuse/overview', validate({ query: abuseOverviewQuerySchema }), abuseController.overview)
+router.get('/abuse/referrals', validate({ query: listAbuseReferralsQuerySchema }), abuseController.referrals)
+router.get('/abuse/rewards', validate({ query: listAbuseRewardsQuerySchema }), abuseController.rewards)
+router.put(
+  '/abuse/users/:id/referral-suspension',
+  validate({ params: idParamSchema, body: setReferralSuspensionSchema }),
+  abuseController.setReferralSuspension,
+)
+router.post(
+  '/abuse/rewards/:id/void',
+  validate({ params: idParamSchema, body: voidAbuseRewardSchema }),
+  abuseController.voidReward,
+)
+// SPEC-OPS-REGMAIL-001：邮件投递运营面。挂在本 router 的
+// authenticate→requireActiveUser→requireAdmin→requireAdminMfa 之后即天然受
+// MFA 保护；限流器在 body 校验之前，保证畸形请求同样消耗额度（C5）。
+router.get('/mail/status', controller.mailStatus)
+router.post('/mail/test', adminMailTestLimiter, validate(mailDeliveryTestSchema), controller.mailTest)
 router.get('/users', validate({ query: listUsersQuerySchema }), controller.users)
 router.post('/users/:id/adjust', validate({ params: idParamSchema, body: adjustPointsSchema }), controller.adjustPoints)
 router.put('/users/:id/ban', validate({ params: idParamSchema, body: banUserSchema }), controller.banUser)
