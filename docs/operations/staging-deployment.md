@@ -177,3 +177,32 @@ or Turnstile response bodies—for all of the following before claiming T52:
 Keep `emailVerificationRequiredForValue=0` in production until staging passes,
 the production protection layer has been observed for at least 24 hours, and
 the user-notification window is complete.
+
+### Evidence log: 2026-08-01
+
+The dedicated staging release `54066fbb7063` has the following redacted
+evidence. These results are partial T52 evidence, not a production approval.
+
+- Public and loopback `/api/health/ready` returned `200`; the strict staging
+  preflight passed with the isolated Redis, SMTP catcher, storage, and abuse
+  configuration.
+- Redis rejects unauthenticated requests and passes its authenticated health
+  probe. With Redis stopped, registration returned controlled
+  `503 ABUSE_PROTECTION_UNAVAILABLE` and did not create an account, reward,
+  verification token, or Mailpit message. Readiness recovered after Redis was
+  restarted.
+- The real Turnstile script and managed challenge iframe loaded for the
+  staging hostname. An invalid token returned
+  `403 HUMAN_VERIFICATION_FAILED` with no account, reward, verification-token,
+  or mail side effect. A headless browser must not be used to bypass the
+  managed CAPTCHA.
+- For a unique synthetic unknown mailbox, `POST /api/auth/forgot-password`
+  returned `200` with only the generic `message` field; Mailpit stayed at
+  `0 -> 0` messages. No raw email address, token, or email content was saved
+  in this document.
+
+Still required: a person must complete a normal registration and the
+authenticated verification-mail flow in a real browser. Then complete the
+stateful mail throttling, value-gate, invite/reward, and MFA admin-void cases,
+followed by a rollback to an earlier successful staging release. Do not set a
+production release gate from this evidence.

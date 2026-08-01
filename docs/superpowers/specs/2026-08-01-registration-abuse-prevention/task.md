@@ -222,6 +222,8 @@ T10 config/redis       T20 migration/models
 - [ ] **T52 — Staging 演练与灰度**
   - 真实 Redis/SMTP catcher/Turnstile staging、正常注册、恶意速率、验证、延迟奖励、admin void、roll back drill。
   - DoD：release checklist 的环境项由责任人签字；生产先观察后打开 email value gate。
+  - 已完成的隔离 staging 证据（2026-08-01，release `54066fbb7063`）：公网与 loopback readiness 均为 `200`；严格 staging env preflight、真实 Redis、loopback-only Mailpit 和真实 Turnstile staging widget 均已就绪。Redis 未认证访问被拒绝，认证探针成功；停止 Redis 时注册受控返回 `503 ABUSE_PROTECTION_UNAVAILABLE` 且没有账号、奖励、验证 token 或邮件副作用，恢复后 readiness 重新为 `200`。无效 Turnstile token 返回 `403 HUMAN_VERIFICATION_FAILED` 且没有副作用。未知合成邮箱的 `POST /api/auth/forgot-password` 返回通用 `200`、仅含 `message`，Mailpit 消息数保持 `0 -> 0`。
+  - 仍待 release owner / 真人浏览器完成：手工完成 managed Turnstile 注册和已登录验证邮件流程；验证邮件节流、未验证 gate、验证后 value action、邀请码 cap、reward hold/release、MFA admin void；在第二个成功 release 后执行应用回滚演练。不得因此触碰生产环境或删除 migration、ledger、PointLog。
 
 ---
 
@@ -249,7 +251,7 @@ T10 config/redis       T20 migration/models
 | Prisma replay / drift | 专用 `/monexus_rap_test` reset/replay/status：47 migrations、schema up to date；一次性 shadow database 的 migration→datamodel diff 为 `No difference detected`，随后已删除 |
 | GitHub CI | [CI #30683242294](https://github.com/amo0114/MoNexus/actions/runs/30683242294)：backend 102 files / 863 tests、Playwright 85 passed、frontend build 与 `CI OK` 全绿 |
 
-T51 已由上述 CI、reset/replay 与 drift 记录完成。T52 需要外部 staging Redis、Turnstile、SMTP catcher 与发布负责人，不能由本地 feature worktree 伪造完成。
+T51 已由上述 CI、reset/replay 与 drift 记录完成。T52 的外部 staging 基础设施和首轮失效路径已验证，但真人 challenge、带状态业务流及回滚演练仍由 release owner 完成，不能由本地 feature worktree 伪造完成。
 
 ---
 
@@ -259,3 +261,4 @@ T51 已由上述 CI、reset/replay 与 drift 记录完成。T52 需要外部 sta
 | --- | --- | --- |
 | 1.0.0 | 2026-08-01 | 初版原子任务、依赖图与完成定义。 |
 | 1.1.0 | 2026-08-01 | 记录实现完成范围、本地验证证据及仍需 release-owner 的门禁。 |
+| 1.2.0 | 2026-08-01 | 记录隔离 staging 的首轮运行证据和仍待真人、状态流与回滚完成的 T52 门禁。 |
