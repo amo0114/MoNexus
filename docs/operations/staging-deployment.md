@@ -181,7 +181,8 @@ the user-notification window is complete.
 ### Evidence log: 2026-08-01
 
 The dedicated staging release `54066fbb7063` has the following redacted
-evidence. These results are partial T52 evidence, not a production approval.
+evidence. These results complete the isolated staging rehearsal; they are not
+a production approval.
 
 - Public and loopback `/api/health/ready` returned `200`; the strict staging
   preflight passed with the isolated Redis, SMTP catcher, storage, and abuse
@@ -200,9 +201,39 @@ evidence. These results are partial T52 evidence, not a production approval.
   returned `200` with only the generic `message` field; Mailpit stayed at
   `0 -> 0` messages. No raw email address, token, or email content was saved
   in this document.
+- A real browser completed a synthetic registration, managed Turnstile, login,
+  verification-email delivery through Mailpit, and authenticated fragment
+  verification. Aggregate-only database checks confirmed a consumed token,
+  no active verification token, a verified user, and a held registration
+  reward.
+- A dedicated public preflight rate rehearsal for requests without a CAPTCHA
+  returned 20 controlled `400` responses followed by one `429 RATE_LIMITED`;
+  public readiness remained `200`.
+- Isolated synthetic fixtures exercised real login, MFA enrollment, admin
+  configuration, mail, verification, value-gate, reward, and admin-abuse
+  APIs. The unverified checkin was denied with zero point writes; the verified
+  checkin succeeded. The verification mail's immediate resend was throttled
+  without a second message. A verified reward moved held -> granted through
+  the normal cron. Referral quota produced one qualified/held relation and one
+  quota-exhausted/voided relation. An MFA administrator voided a held reward
+  and created both required audit records.
+- A source release for `8b44217d2669` passed staging build, strict preflight,
+  loopback smoke, and public readiness. The application was then rolled back
+  to `54066fbb7063` using the supported release switch and passed smoke and
+  public readiness again. The RAP Prisma migration, GrowthReward rows, and
+  PointLog rows remained present throughout; no schema or ledger deletion was
+  attempted. The temporary bootstrap SSH key was revoked afterwards while the
+  permanent GitHub Actions deploy key remained authorized.
 
-Still required: a person must complete a normal registration and the
-authenticated verification-mail flow in a real browser. Then complete the
-stateful mail throttling, value-gate, invite/reward, and MFA admin-void cases,
-followed by a rollback to an earlier successful staging release. Do not set a
-production release gate from this evidence.
+The staging value gate remains enabled (`1`); the temporary hold and referral
+quota settings were restored to `7`, `3`, and `20`. A staging workflow file
+that has not reached the repository default branch cannot be manually
+dispatched by GitHub Actions, so the release rehearsal used the same checked-in
+archive, host-validation, build, smoke, and symlink-switch procedure directly
+on the dedicated staging host.
+
+Still required: production Redis HA and production SMTP ownership/delivery
+readiness, SPF/DKIM/DMARC and quota confirmation, a named release/on-call/
+support/rollback owner, and the 24-hour production protection observation
+before the production value gate is enabled. Do not set a production release
+gate from this staging evidence.

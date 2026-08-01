@@ -4,7 +4,7 @@
 | --- | --- |
 | 文档 ID | `TASK-RAP-001` |
 | 版本 | `1.0.0` |
-| 状态 | `T00, T10–T51 complete on feat/registration-abuse-prevention; T01/T52 remain release-owner work` |
+| 状态 | `T00, T10–T51 complete; T52 isolated staging rehearsal complete, while T01 and production rollout gates remain release-owner work` |
 | 规格 | [spec.md](./spec.md) |
 | 计划 | [plan.md](./plan.md) |
 
@@ -222,8 +222,11 @@ T10 config/redis       T20 migration/models
 - [ ] **T52 — Staging 演练与灰度**
   - 真实 Redis/SMTP catcher/Turnstile staging、正常注册、恶意速率、验证、延迟奖励、admin void、roll back drill。
   - DoD：release checklist 的环境项由责任人签字；生产先观察后打开 email value gate。
-  - 已完成的隔离 staging 证据（2026-08-01，release `54066fbb7063`）：公网与 loopback readiness 均为 `200`；严格 staging env preflight、真实 Redis、loopback-only Mailpit 和真实 Turnstile staging widget 均已就绪。Redis 未认证访问被拒绝，认证探针成功；停止 Redis 时注册受控返回 `503 ABUSE_PROTECTION_UNAVAILABLE` 且没有账号、奖励、验证 token 或邮件副作用，恢复后 readiness 重新为 `200`。无效 Turnstile token 返回 `403 HUMAN_VERIFICATION_FAILED` 且没有副作用。未知合成邮箱的 `POST /api/auth/forgot-password` 返回通用 `200`、仅含 `message`，Mailpit 消息数保持 `0 -> 0`。
-  - 仍待 release owner / 真人浏览器完成：手工完成 managed Turnstile 注册和已登录验证邮件流程；验证邮件节流、未验证 gate、验证后 value action、邀请码 cap、reward hold/release、MFA admin void；在第二个成功 release 后执行应用回滚演练。不得因此触碰生产环境或删除 migration、ledger、PointLog。
+  - 已完成的隔离 staging 证据（2026-08-01）：公网与 loopback readiness 均为 `200`；严格 staging env preflight、真实 Redis、loopback-only Mailpit 和真实 Turnstile staging widget 均已就绪。Redis 未认证访问被拒绝，认证探针成功；停止 Redis 时注册受控返回 `503 ABUSE_PROTECTION_UNAVAILABLE` 且没有账号、奖励、验证 token 或邮件副作用，恢复后 readiness 重新为 `200`。无效 Turnstile token 返回 `403 HUMAN_VERIFICATION_FAILED` 且没有副作用；公开 preflight rate rehearsal 对缺少 CAPTCHA 的请求产生 `20 x 400` 后 `1 x 429 RATE_LIMITED`，readiness 保持 `200`。
+  - 真人浏览器已完成 managed Turnstile 注册、登录和 fragment verification；数据库仅以聚合方式确认该账户已验证、验证 token 已消费且没有可用残留、注册奖励进入 held。未知合成邮箱的 `POST /api/auth/forgot-password` 返回通用 `200`、仅含 `message`，Mailpit 消息数保持 `0 -> 0`。
+  - 仅在隔离 staging 的合成 fixture 上，经真实登录、MFA 和业务 API 证明：未验证 value action 返回 `403 EMAIL_VERIFICATION_REQUIRED` 且零积分副作用；已验证 checkin 成功；验证邮件首发成功、紧随重发 `429` 且只产生一封邮件；验证后 reward 先 held，再由正常 cron grant；邀请码额度第一人 qualified/held、第二人 quota_exhausted/voided；MFA 管理员作废 held reward 写入 `AdminLog` 与 `AbuseEvent`。staging 的 value gate 保持 `1`，hold days 和 referral caps 已恢复为 `7`、`3`、`20`。
+  - 第二个成功 staging release `8b44217d2669` 完成 build、strict preflight、loopback smoke 与公网 readiness；随后应用回滚到 `54066fbb7063`，再次 smoke/readiness 成功。RAP migration、GrowthReward 和 PointLog 均保留；没有删除 migration、ledger 或 PointLog。临时 bootstrap SSH key 已撤销，GitHub Actions 永久 deploy key 保留。
+  - 仍待 release owner：生产 Redis HA、真实生产 SMTP 与 SPF/DKIM/DMARC/quota 负责人确认；生产保护层开启后的 24 小时观察、通知窗口、值班/支持/回滚 owner 记录，以及明确授权后的生产灰度。不得因 staging 成功而跳过这些门禁。
 
 ---
 
@@ -251,7 +254,7 @@ T10 config/redis       T20 migration/models
 | Prisma replay / drift | 专用 `/monexus_rap_test` reset/replay/status：47 migrations、schema up to date；一次性 shadow database 的 migration→datamodel diff 为 `No difference detected`，随后已删除 |
 | GitHub CI | [CI #30683242294](https://github.com/amo0114/MoNexus/actions/runs/30683242294)：backend 102 files / 863 tests、Playwright 85 passed、frontend build 与 `CI OK` 全绿 |
 
-T51 已由上述 CI、reset/replay 与 drift 记录完成。T52 的外部 staging 基础设施和首轮失效路径已验证，但真人 challenge、带状态业务流及回滚演练仍由 release owner 完成，不能由本地 feature worktree 伪造完成。
+T51 已由上述 CI、reset/replay 与 drift 记录完成。T52 的隔离 staging 场景、真人 challenge、状态型业务流和应用回滚已记录完成；production rollout 仍必须由有明确授权的 release owner 按 checklist 完成，不能由本地 feature worktree 或 staging 环境伪造完成。
 
 ---
 
@@ -262,3 +265,4 @@ T51 已由上述 CI、reset/replay 与 drift 记录完成。T52 的外部 stagin
 | 1.0.0 | 2026-08-01 | 初版原子任务、依赖图与完成定义。 |
 | 1.1.0 | 2026-08-01 | 记录实现完成范围、本地验证证据及仍需 release-owner 的门禁。 |
 | 1.2.0 | 2026-08-01 | 记录隔离 staging 的首轮运行证据和仍待真人、状态流与回滚完成的 T52 门禁。 |
+| 1.3.0 | 2026-08-01 | 记录完整隔离 staging 演练、应用回滚和生产 rollout 的剩余授权门禁。 |
