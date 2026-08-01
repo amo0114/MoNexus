@@ -67,6 +67,11 @@ Use **environment secrets** for credential material and **environment variables*
 | `DEPLOY_SSH_USER` | Secret | `staging`, `production` | Ops | Non-root deploy user | Environment secrets | A1/A5 deploy workflow |
 | `DEPLOY_SSH_PRIVATE_KEY` | Secret | `staging`, `production` | Ops | Private key for the deploy user | Environment secrets | A1/A5 deploy workflow |
 | `DEPLOY_SSH_PORT` | Secret | `staging`, `production` | Ops | SSH port when not `22` | Environment secrets | A1/A5 deploy workflow |
+| `STAGING_SSH_HOST` | Secret | `staging` | Ops | Dedicated staging-host endpoint | Staging environment secret | `staging-deploy.yml` only |
+| `STAGING_SSH_USER` | Secret | `staging` | Ops | Non-root `monexus-deploy` account | Staging environment secret | `staging-deploy.yml` only |
+| `STAGING_SSH_PRIVATE_KEY` | Secret | `staging` | Ops | Deploy key dedicated to the staging workflow | Staging environment secret | `staging-deploy.yml` only |
+| `STAGING_SSH_PORT` | Secret | `staging` | Ops | SSH port for the dedicated staging host | Staging environment secret | `staging-deploy.yml` only |
+| `STAGING_SSH_KNOWN_HOSTS` | Secret | `staging` | Ops | Pinned SSH host-key line; prevents CI trust-on-first-use | Staging environment secret | `staging-deploy.yml` only |
 | `DEPLOY_BASE_PATH` | Environment variable | `staging`, `production` | Ops | Base release directory, default `/opt/monexus` | Environment variables | A1/A5 deploy workflow |
 | `PRODUCTION_HEALTHCHECK_URL` | Environment variable | `production` | Ops | Post-deploy readiness check URL | Environment variables | A1/A5 deploy workflow |
 | `STAGING_HEALTHCHECK_URL` | Environment variable | `staging` | Ops | Staging post-deploy readiness check URL | Environment variables | A1/A5 deploy workflow |
@@ -88,6 +93,7 @@ Use **environment secrets** for credential material and **environment variables*
 7. Generate `MFA_ENCRYPTION_KEY` only in an approved secret-management session; it must be a standard-base64 encoding of exactly 32 bytes. Do not paste it into shell history, chat, PRs, or `.env.example`. The deploy preflight and production server startup both reject missing, non-canonical, or wrong-length values.
 8. Generate `ABUSE_HASH_KEY` in a separate approved session with the same canonical 32-byte base64 requirement. It is not a JWT, MFA, or encryption key and must not be reused for any other purpose. Set `ABUSE_PROTECTION_MODE=enforce`, `REDIS_ENABLED=true`, and `REDIS_REQUIRED=true` before deploying; both startup and preflight reject a production shortcut.
 9. Create distinct staging and production Turnstile widgets. Keep `TURNSTILE_SECRET_KEY` in the secret store, enter only exact hostnames in `TURNSTILE_ALLOWED_HOSTNAMES`, and confirm the public `TURNSTILE_SITE_KEY` is the only Turnstile value visible to a browser.
+10. For the dedicated Compose staging path, keep application runtime secrets in `/etc/monexus/staging.env`; configure only the five `STAGING_SSH_*` deployment values and `STAGING_HEALTHCHECK_URL` in the GitHub `staging` Environment. Pin the host key rather than allowing CI to accept a new key automatically.
 
 ## Rotation Rules
 

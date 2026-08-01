@@ -81,7 +81,17 @@ POSTGRES_PASSWORD=<strong-unique-password>
 POSTGRES_DB=monexus
 JWT_SECRET=<at-least-32-character-random-secret>
 REDIS_PASSWORD=<strong-unique-password>
-REDIS_ENABLED=false
+# Registration abuse protection is fail-closed after SPEC-RAP-001. Generate
+# ABUSE_HASH_KEY separately from JWT/MFA keys; use a production Turnstile
+# widget whose hostname list contains exactly monexus.oai-o.com.
+ABUSE_PROTECTION_MODE=enforce
+ABUSE_HASH_KEY=<independent-32-byte-standard-base64-secret>
+TURNSTILE_SITE_KEY=<production-turnstile-site-key>
+TURNSTILE_SECRET_KEY=<production-turnstile-secret-key>
+TURNSTILE_ALLOWED_HOSTNAMES=monexus.oai-o.com
+REDIS_ENABLED=true
+REDIS_REQUIRED=true
+REDIS_URL=redis://redis:6379
 
 # Pin releases in production. `latest` is acceptable only for a disposable demo.
 MONEXUS_IMAGE_TAG=latest
@@ -181,3 +191,7 @@ before relying on the first artifact. Test database *and object* restoration in
 an isolated environment; do not treat the local named volumes as recovery media.
 
 Do not commit `.env`, backups, passwords, GitHub tokens, or private keys.
+
+For the registration-abuse rehearsal, use the separate
+[dedicated staging deployment](./staging-deployment.md), never this production
+host or its environment file.

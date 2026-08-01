@@ -1765,6 +1765,11 @@ that only zeroes the signup bonus.
 
 ## 40. Registration Abuse Protection and Delayed Rewards (SPEC-RAP-001)
 
+Before executing the real-dependency rehearsal, provision the isolated
+[dedicated staging deployment](./staging-deployment.md). Do not point these
+steps at `monexus.oai-o.com` or reuse any production secret, database, Redis,
+SMTP sender, or object-storage bucket.
+
 Production registration protection is deliberately fail-closed. Do not "fix" an
 outage by setting `ABUSE_PROTECTION_MODE=off`: production startup and preflight
 both require `enforce`, a required Redis client, the independent HMAC key, and

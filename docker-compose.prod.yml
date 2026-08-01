@@ -197,7 +197,9 @@ services:
     restart: unless-stopped
     profiles: [staging-mail]
     ports:
-      - "${MAILPIT_WEB_PORT:-18082}:8025"
+      # Keep captured verification/reset messages off the public network. QA
+      # reaches this UI through an SSH tunnel on the dedicated staging host.
+      - "127.0.0.1:${MAILPIT_WEB_PORT:-18082}:8025"
     networks:
       - monexus
 
