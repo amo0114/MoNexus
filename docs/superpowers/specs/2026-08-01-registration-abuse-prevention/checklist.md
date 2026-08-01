@@ -4,7 +4,7 @@
 | --- | --- |
 | 文档 ID | `CHK-RAP-001` |
 | 版本 | `1.0.0` |
-| 状态 | `Code-level evidence recorded; final CI/staging/release gates remain pending` |
+| 状态 | `Code-level evidence and CI validation recorded; staging/release gates remain pending` |
 | 规格 | [spec.md](./spec.md) |
 | 实施协议 | [implement.md](./implement.md) |
 
@@ -12,13 +12,14 @@
 
 ### 当前本地证据（不替代 P0 勾选）
 
-- 隔离库仅为 `/monexus_rap_test`，`prisma migrate deploy` 显示 47 个 migration、无 pending migration；
+- 隔离库仅为 `/monexus_rap_test`；reset/replay/status 显示 47 个 migration、schema up to date，临时 shadow database 的 migration→datamodel diff 为 `No difference detected` 后已删除；
 - `npm --prefix server run build`、`npm run build` 均通过；
 - `growth-rewards`、`rap-admin-abuse`、`registration-auth-flow`：20/20 通过；
 - `registration-abuse-prevention.spec.ts`：5/5 Chromium 场景通过；
 - `git diff --check` 与 OpenAPI JSON parse 通过。
+- GitHub Actions [CI #30683242294](https://github.com/amo0114/MoNexus/actions/runs/30683242294) 通过：backend 102 files / 863 tests、Playwright 85 passed、frontend build 与 `CI OK` 全绿。
 
-以下清单仍保持 gate 语义：必须由 CI、真实 staging 演练和 release owner 补齐，尤其是 CHK-REL-*；不得把本地 mock 或 test adapter 当作生产证据。
+以下清单仍保持 gate 语义：CI 证据已补齐；真实 staging 演练和 release owner 仍必须补齐，尤其是 CHK-REL-*；不得把本地 mock 或 test adapter 当作生产证据。
 
 ---
 
@@ -104,10 +105,10 @@
 - [ ] **CHK-QA-01** targeted auth/limiter/verifier/mail/gate/reward/admin suites全绿，且 test mode 没有自动跳过 abuse limiter。
 - [ ] **CHK-QA-02** 真实 PostgreSQL 对 token claim、邀请码最后名额、cron/void 并发有 Promise-barrier/row-lock 证明；不使用 sleep/mock 代替。
 - [ ] **CHK-QA-03** 专用 Redis 测试覆盖 Lua atomicity、TTL、timeout/circuit、multi-instance semantics；没有 `FLUSHALL` 共享实例。
-- [ ] **CHK-QA-04** `npm --prefix server run build`、`npm --prefix server test`、`npm run build`、相关 Playwright 全绿。
-- [ ] **CHK-QA-05** Prisma `generate`、migration reset/replay/status/drift 在显式 `RAP_DATABASE_URL` 全绿；migration SQL 未被手改。
-- [ ] **CHK-QA-06** 新 E2E 与所有既有移动套件并跑通过；用 mock Turnstile 和 CaptureMailer，不访问真实 provider。
-- [ ] **CHK-QA-07** `git diff --check`、OpenAPI JSON parse、TypeScript strict checks 通过；CI OK 聚合 green。
+- [x] **CHK-QA-04** `npm --prefix server run build`、`npm --prefix server test`、`npm run build`、相关 Playwright 全绿（CI #30683242294：backend 102/863、Playwright 85 passed）。
+- [x] **CHK-QA-05** Prisma `generate`、migration reset/replay/status/drift 在显式隔离的 `/monexus_rap_test` 全绿；migration SQL 未被手改。
+- [x] **CHK-QA-06** 新 E2E 与所有既有移动套件并跑通过；用 mock Turnstile 和 CaptureMailer，不访问真实 provider（CI `npm run e2e`：85 passed）。
+- [x] **CHK-QA-07** `git diff --check`、OpenAPI JSON parse、TypeScript strict checks 通过；CI OK 聚合 green（CI #30683242294）。
 - [ ] **CHK-DOC-01** OpenAPI 覆盖 status/register/verify/admin abuse/error DTO；auth/admin README 同步。
 - [ ] **CHK-DOC-02** env examples、preflight、secrets-management、runbook 记载 Redis/Turnstile/HMAC key、SMTP readiness、灰度、回滚与 incident SOP，且无真实值。
 

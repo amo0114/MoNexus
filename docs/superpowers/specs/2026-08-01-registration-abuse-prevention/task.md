@@ -4,7 +4,7 @@
 | --- | --- |
 | 文档 ID | `TASK-RAP-001` |
 | 版本 | `1.0.0` |
-| 状态 | `T00, T10–T45 and T50 complete on feat/registration-abuse-prevention; T01/T51/T52 remain release-owner work` |
+| 状态 | `T00, T10–T51 complete on feat/registration-abuse-prevention; T01/T52 remain release-owner work` |
 | 规格 | [spec.md](./spec.md) |
 | 计划 | [plan.md](./plan.md) |
 
@@ -214,9 +214,10 @@ T10 config/redis       T20 migration/models
   - API JSON、auth/admin READMEs、env examples、secrets management、runbook、deployment templates。
   - DoD：每个新错误/endpoint/secret/rollout/rollback 都有文档；无真实 secret。
 
-- [ ] **T51 — 全量验证**
+- [x] **T51 — 全量验证**
   - 运行 targeted suites、server full test/build、frontend build、相关 Playwright、`git diff --check`、Prisma migration/replay/drift。
   - DoD：记录命令和精确 pass 数；任何 flaky retry 单列，不用“可能通过”代替证据。
+  - Evidence：GitHub Actions [CI #30683242294](https://github.com/amo0114/MoNexus/actions/runs/30683242294) 于 2026-08-01 通过：backend `102 files / 863 tests`（547.88s）、Playwright `85 passed`（3.6m）、frontend build 与 `CI OK` 均 green；无 flaky retry。专用 `/monexus_rap_test` 已执行 `prisma migrate reset --force --skip-seed`、`migrate deploy`、`migrate status`，47 个 migration replay 后 schema up to date；临时 shadow database 的 `prisma migrate diff --from-migrations ... --to-schema-datamodel ... --exit-code` 返回 `No difference detected` 并已删除。
 
 - [ ] **T52 — Staging 演练与灰度**
   - 真实 Redis/SMTP catcher/Turnstile staging、正常注册、恶意速率、验证、延迟奖励、admin void、roll back drill。
@@ -245,8 +246,10 @@ T10 config/redis       T20 migration/models
 | 构建 | `npm --prefix server run build`、`npm run build` 均通过（Node 20.19.5 / npm 10.8.2） |
 | 浏览器回归 | `registration-abuse-prevention.spec.ts`：5 passed；包含管理员面板脱敏渲染与 caseRef 作废确认 |
 | 文档检查 | `git diff --check` 与 OpenAPI JSON parse 通过 |
+| Prisma replay / drift | 专用 `/monexus_rap_test` reset/replay/status：47 migrations、schema up to date；一次性 shadow database 的 migration→datamodel diff 为 `No difference detected`，随后已删除 |
+| GitHub CI | [CI #30683242294](https://github.com/amo0114/MoNexus/actions/runs/30683242294)：backend 102 files / 863 tests、Playwright 85 passed、frontend build 与 `CI OK` 全绿 |
 
-T51 故意保持未勾选：它要求全量 server suite、CI 聚合和 migration reset/replay 的最终记录。T52 需要外部 staging Redis、Turnstile、SMTP catcher 与发布负责人，不能由本地 feature worktree 伪造完成。
+T51 已由上述 CI、reset/replay 与 drift 记录完成。T52 需要外部 staging Redis、Turnstile、SMTP catcher 与发布负责人，不能由本地 feature worktree 伪造完成。
 
 ---
 
