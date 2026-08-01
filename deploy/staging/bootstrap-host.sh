@@ -58,8 +58,17 @@ fi
 if command -v ss >/dev/null 2>&1; then
   occupied_ports="$(ss -ltnH | awk '$4 ~ /:(80|443)$/ {print $4}')"
   if [[ -n "$occupied_ports" ]]; then
-    echo "$occupied_ports" >&2
-    fail "TCP 80 or 443 is already listening; preserve the existing host configuration and investigate before installing Caddy."
+    # A repeat run sees the Caddy instance this script installed on its first
+    # pass. Permit only that known staging site; an nginx/Apache/unknown Caddy
+    # listener still stops the script before it can alter host configuration.
+    if systemctl is-active --quiet caddy \
+      && [[ -f "$SITE_FILE" ]] \
+      && grep -Fqx "$STAGING_HOST {" "$SITE_FILE"; then
+      echo "[INFO] Existing Caddy staging listener detected; continuing idempotent bootstrap."
+    else
+      echo "$occupied_ports" >&2
+      fail "TCP 80 or 443 is already listening; preserve the existing host configuration and investigate before installing Caddy."
+    fi
   fi
 fi
 
