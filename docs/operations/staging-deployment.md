@@ -60,6 +60,7 @@ staging paths used by the workflow:
 ```bash
 sudo adduser --disabled-password --gecos '' monexus-deploy
 sudo usermod -aG docker monexus-deploy
+sudo install -d -o monexus-deploy -g monexus-deploy -m 0750 /opt/monexus-staging
 sudo install -d -o monexus-deploy -g monexus-deploy -m 0750 /opt/monexus-staging/releases
 sudo install -d -o monexus-deploy -g monexus-deploy -m 0700 /etc/monexus
 sudo install -o monexus-deploy -g monexus-deploy -m 0600 /dev/null /etc/monexus/staging.env

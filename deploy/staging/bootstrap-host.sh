@@ -98,6 +98,10 @@ apt-get install -y caddy
 systemctl enable --now docker
 usermod -aG docker "$DEPLOY_USER"
 
+# The deploy workflow owns both releases and the `current` symlink. The parent
+# must therefore be deploy-user writable; owning only `releases/` would make a
+# successful image build fail at the final atomic symlink switch.
+install -d -o "$DEPLOY_USER" -g "$DEPLOY_USER" -m 0750 "$DEPLOY_BASE"
 install -d -o "$DEPLOY_USER" -g "$DEPLOY_USER" -m 0750 "$DEPLOY_BASE/releases"
 install -d -o "$DEPLOY_USER" -g "$DEPLOY_USER" -m 0700 /etc/monexus
 if [[ ! -e "$STAGING_ENV" ]]; then
