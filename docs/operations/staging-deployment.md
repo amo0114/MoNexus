@@ -242,7 +242,9 @@ tokens, or credentials, and without sending a message.
   services were running. The production application was healthy and its SMTP
   configuration was present. From the application container, the configured
   SMTP target was reachable; its configured STARTTLS transport presented a
-  hostname-valid certificate with more than 30 days remaining.
+  hostname-valid certificate with more than 30 days remaining. A single
+  Nodemailer authentication `verify()` also succeeded without sending mail or
+  exposing credentials.
 - The Mailu queue was empty at the time of inspection. Public DNS checks found
   MX, SPF, DMARC, and a DKIM record for the configured, domain-aligned sender.
   Postfix's Rspamd milter and the Rspamd DKIM signing configuration were also

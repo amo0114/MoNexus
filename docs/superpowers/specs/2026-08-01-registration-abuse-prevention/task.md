@@ -227,7 +227,8 @@ T10 config/redis       T20 migration/models
   - 仅在隔离 staging 的合成 fixture 上，经真实登录、MFA 和业务 API 证明：未验证 value action 返回 `403 EMAIL_VERIFICATION_REQUIRED` 且零积分副作用；已验证 checkin 成功；验证邮件首发成功、紧随重发 `429` 且只产生一封邮件；验证后 reward 先 held，再由正常 cron grant；邀请码额度第一人 qualified/held、第二人 quota_exhausted/voided；MFA 管理员作废 held reward 写入 `AdminLog` 与 `AbuseEvent`。staging 的 value gate 保持 `1`，hold days 和 referral caps 已恢复为 `7`、`3`、`20`。
   - 第二个成功 staging release `8b44217d2669` 完成 build、strict preflight、loopback smoke 与公网 readiness；随后应用回滚到 `54066fbb7063`，再次 smoke/readiness 成功。RAP migration、GrowthReward 和 PointLog 均保留；没有删除 migration、ledger 或 PointLog。临时 bootstrap SSH key 已撤销，GitHub Actions 永久 deploy key 保留。
   - 生产 Mailu 的授权只读审计已确认：应用容器到已配置的 `587 + STARTTLS`
-    目标可达且证书有效，空队列、发件域对齐、MX/SPF/DMARC/DKIM 路径均存在；
+    目标可达且证书有效，且无投递的 Nodemailer 认证验证成功；空队列、发件域对齐、
+    MX/SPF/DMARC/DKIM 路径均存在；
     但最终邮件证据仍须在部署后由 MFA 管理员经 Mail Panel 向受控收件地址发一次
     测试邮件，并确认每日额度。Mailu ClamAV 服务可响应，但其 PID-file health check
     目前为 `unhealthy`，须在发布窗口前修复或按独立运维变更处理。生产 Redis 已认证
