@@ -23,6 +23,8 @@ import { Merchant, Settlement } from '../types/merchant'
 import RegistryPill from '../components/ui/RegistryPill'
 import { MemberTierConfigPanel } from '../components/admin/MemberTierConfigPanel'
 import AdminConfigPanel from '../components/admin/AdminConfigPanel'
+import RegistrationControlPanel from '../components/admin/RegistrationControlPanel'
+import AdminMailPanel from '../components/admin/AdminMailPanel'
 import AdminUserTable from '../components/admin/AdminUserTable'
 import AdminOrderTable from '../components/admin/AdminOrderTable'
 import AnnouncementsAdmin from '../components/admin/AnnouncementsAdmin'
@@ -826,7 +828,14 @@ export default function AdminPage() {
           {/* Configs */}
           {activeTab === 'config' && (
             <div className="space-y-4">
-              <section>
+              {/* SPEC-OPS-REGMAIL-001：注册开关与邮件投递作为独立卡片，不混入数值配置表 */}
+              <RegistrationControlPanel />
+
+              <section className="pt-6 border-t border-[var(--color-border)]">
+                <AdminMailPanel />
+              </section>
+
+              <section className="pt-6 border-t border-[var(--color-border)]">
                 <h2 className="font-heading text-xl font-bold mb-4 text-[var(--color-text)]">系统配置</h2>
                 <AdminConfigPanel />
               </section>

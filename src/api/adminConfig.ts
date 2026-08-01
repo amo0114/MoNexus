@@ -16,6 +16,20 @@ export type AdminSystemConfigKey =
   | 'memberTierPlatinumBonusBps'
   | 'checkoutVerifyAmountThreshold'
   | 'checkoutVerifyDailyThreshold'
+  // P5 受控文件交付
+  | 'fileUrlTtlSeconds'
+  | 'fileAccessWindowDays'
+  | 'deliveryFileMaxMb'
+  // P5.5 低库存告警冷却
+  | 'lowStockNotifyCooldownHours'
+  // P6a 订单计时 / 订阅提醒
+  | 'autoCloseDays'
+  | 'fulfillmentSlaDays'
+  | 'subscriptionRemindDays'
+  // P7b 自动开通外呼上限
+  | 'autoProvisionMaxAttempts'
+  // SPEC-OPS-REGMAIL-001 公开注册总开关（仅 0/1，由 RegistrationControlPanel 渲染）
+  | 'registrationEnabled'
 
 export interface AdminSystemConfig {
   key: AdminSystemConfigKey
