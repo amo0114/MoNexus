@@ -232,8 +232,41 @@ dispatched by GitHub Actions, so the release rehearsal used the same checked-in
 archive, host-validation, build, smoke, and symlink-switch procedure directly
 on the dedicated staging host.
 
-Still required: production Redis HA and production SMTP ownership/delivery
-readiness, SPF/DKIM/DMARC and quota confirmation, a named release/on-call/
-support/rollback owner, and the 24-hour production protection observation
-before the production value gate is enabled. Do not set a production release
-gate from this staging evidence.
+### Production-readiness audit: 2026-08-01
+
+An authorised, read-only audit of the production mail host was
+performed without reading environment-file values, mail bodies, recipients,
+tokens, or credentials, and without sending a message.
+
+- Mailu SMTP, front, IMAP, admin, resolver, antispam, and related mail
+  services were running. The production application was healthy and its SMTP
+  configuration was present. From the application container, the configured
+  SMTP target was reachable; its configured STARTTLS transport presented a
+  hostname-valid certificate with more than 30 days remaining.
+- The Mailu queue was empty at the time of inspection. Public DNS checks found
+  MX, SPF, DMARC, and a DKIM record for the configured, domain-aligned sender.
+  Postfix's Rspamd milter and the Rspamd DKIM signing configuration were also
+  present. This establishes delivery-path readiness, but does not replace a
+  post-deploy authenticated admin mail-panel test to a controlled mailbox.
+- ClamAV's service endpoint responded, but its container health check is
+  currently `unhealthy` because it expects legacy PID files that are absent.
+  Treat this as an operational remediation item; do not silently waive the
+  health check before the release window.
+- Production Redis requires authentication and responds to authenticated
+  probes, but it is a single primary with zero connected replicas. It is not
+  Redis HA and cannot satisfy the production anti-abuse availability gate.
+- The running production application predates RAP and has not loaded the
+  production `ABUSE_*` or Turnstile settings. This audit made no production
+  changes.
+
+Release, on-call, and rollback owner: the repository operator (the same named
+human for all three roles), confirmed on 2026-08-01. A support owner, release
+window, and alert contact route must still be recorded before a production
+deploy.
+
+Still required: production Redis HA, the post-deploy authenticated Mail Panel
+delivery test and daily quota confirmation, ClamAV health-check remediation,
+the support owner, production alert/contact route and release window, and the
+24-hour
+production protection observation before the production value gate is enabled.
+Do not set a production release gate from this staging evidence.

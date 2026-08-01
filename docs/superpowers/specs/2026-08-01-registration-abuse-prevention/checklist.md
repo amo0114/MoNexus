@@ -117,8 +117,13 @@
 - [ ] **CHK-REL-01** staging 使用同一 Redis namespace、enforce mode、真实 Turnstile staging host和 SMTP catcher；ready/metrics/alert 无异常。
 - [ ] **CHK-REL-02** 演练：正常注册、challenge failure、Redis down、验证邮件节流、password reset generic response、verified purchase、unverified block、邀请码 cap、reward hold/release、admin void。
 - [ ] **CHK-REL-03** 生产 SMTP 已经从 admin mail panel 验证 delivery ready；SPF/DKIM/DMARC 与 provider daily quota 由运维确认。
+  - 2026-08-01 只读 Mailu 审计：应用到已配置 `587 + STARTTLS` SMTP 的 TCP/TLS
+    均通过，发件域对齐且 MX/SPF/DMARC/DKIM 路径存在，队列为空。待上线后的 MFA
+    管理员 Mail Panel 受控收件地址测试和每日额度确认，故本项保持未勾选。
 - [ ] **CHK-REL-04** 在生产先开启 Turnstile/Redis protection，观察 24 小时，再依据通知窗口开启 `emailVerificationRequiredForValue=1`。
 - [ ] **CHK-REL-05** 开关、报警阈值、值班 owner、用户支持话术和回滚责任人已记录；不依赖个人记忆。
+  - 2026-08-01：仓库负责人确认兼任 release/on-call/rollback 三个角色；用户支持
+    owner、发布窗口和实际告警联络路径待补后才可勾选。
 - [ ] **CHK-REL-06** 回滚演练只使用 registrationEnabled/verification value gate，不删除 migration/ledger/PointLog，不把 production abuse mode 改为 off。
 
 ## 10. P1（不阻塞 P0，但需明确跟踪）

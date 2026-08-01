@@ -226,7 +226,16 @@ T10 config/redis       T20 migration/models
   - 真人浏览器已完成 managed Turnstile 注册、登录和 fragment verification；数据库仅以聚合方式确认该账户已验证、验证 token 已消费且没有可用残留、注册奖励进入 held。未知合成邮箱的 `POST /api/auth/forgot-password` 返回通用 `200`、仅含 `message`，Mailpit 消息数保持 `0 -> 0`。
   - 仅在隔离 staging 的合成 fixture 上，经真实登录、MFA 和业务 API 证明：未验证 value action 返回 `403 EMAIL_VERIFICATION_REQUIRED` 且零积分副作用；已验证 checkin 成功；验证邮件首发成功、紧随重发 `429` 且只产生一封邮件；验证后 reward 先 held，再由正常 cron grant；邀请码额度第一人 qualified/held、第二人 quota_exhausted/voided；MFA 管理员作废 held reward 写入 `AdminLog` 与 `AbuseEvent`。staging 的 value gate 保持 `1`，hold days 和 referral caps 已恢复为 `7`、`3`、`20`。
   - 第二个成功 staging release `8b44217d2669` 完成 build、strict preflight、loopback smoke 与公网 readiness；随后应用回滚到 `54066fbb7063`，再次 smoke/readiness 成功。RAP migration、GrowthReward 和 PointLog 均保留；没有删除 migration、ledger 或 PointLog。临时 bootstrap SSH key 已撤销，GitHub Actions 永久 deploy key 保留。
-  - 仍待 release owner：生产 Redis HA、真实生产 SMTP 与 SPF/DKIM/DMARC/quota 负责人确认；生产保护层开启后的 24 小时观察、通知窗口、值班/支持/回滚 owner 记录，以及明确授权后的生产灰度。不得因 staging 成功而跳过这些门禁。
+  - 生产 Mailu 的授权只读审计已确认：应用容器到已配置的 `587 + STARTTLS`
+    目标可达且证书有效，空队列、发件域对齐、MX/SPF/DMARC/DKIM 路径均存在；
+    但最终邮件证据仍须在部署后由 MFA 管理员经 Mail Panel 向受控收件地址发一次
+    测试邮件，并确认每日额度。Mailu ClamAV 服务可响应，但其 PID-file health check
+    目前为 `unhealthy`，须在发布窗口前修复或按独立运维变更处理。生产 Redis 已认证
+    且健康，但为单 primary、零 replica，未达到 HA 要求。线上当前镜像尚未加载 RAP
+    的 `ABUSE_*` / Turnstile 配置；本审计没有改动生产。
+  - 发布、值班和回滚职责由同一位仓库负责人兼任（2026-08-01 已确认）；用户支持
+    owner、实际发布窗口和告警联络路径仍待记录。生产保护层开启后的 24 小时观察、
+    通知窗口和明确授权后的生产灰度仍为必经门禁。不得因 staging 成功而跳过这些门禁。
 
 ---
 
