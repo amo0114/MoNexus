@@ -136,6 +136,11 @@ fi
 caddy fmt --overwrite /etc/caddy/Caddyfile
 caddy validate --config /etc/caddy/Caddyfile
 systemctl enable --now caddy
+# `enable --now` starts an inactive service but intentionally does not reload
+# one which apt already started with Caddy's packaged default site. Reload so
+# the just-written staging include takes effect on both the first and repeat
+# bootstrap runs.
+systemctl reload caddy
 
 echo "[PASS] Host bootstrap completed."
 echo "[NEXT] Log out and back in as $DEPLOY_USER so Docker group membership applies."
