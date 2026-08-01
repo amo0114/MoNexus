@@ -30,9 +30,10 @@ https://staging.monexus.oai-o.com
 
 ## 2. One-time host and DNS setup
 
-Use a current Debian/Ubuntu VPS with at least 2 vCPU, 4 GB RAM, 40 GB SSD,
-Docker Engine with Compose v2, Caddy, Node 20, and inbound TCP 80/443. The
-staging host must be a different server from the production site.
+Use a current Ubuntu VPS with at least 2 vCPU, 4 GB RAM, 40 GB SSD, and inbound
+TCP 80/443. The staging host must be a different server from the production
+site. The host does not need Node: the staging launcher performs its preflight
+inside Docker's Node 20 image when Node is absent.
 
 Create a DNS-only A record before Caddy obtains a certificate:
 
@@ -63,6 +64,20 @@ sudo install -d -o monexus-deploy -g monexus-deploy -m 0750 /opt/monexus-staging
 sudo install -d -o monexus-deploy -g monexus-deploy -m 0700 /etc/monexus
 sudo install -o monexus-deploy -g monexus-deploy -m 0600 /dev/null /etc/monexus/staging.env
 ```
+
+On a fresh Ubuntu host, prefer the reviewed root bootstrap in this repository
+instead of manually mixing package sources. It installs Docker Engine + Compose
+v2 and Caddy, adds `monexus-deploy` to the Docker group, creates only the
+staging paths above, and appends a dedicated Caddy include without overwriting
+other site blocks:
+
+```bash
+sudo STAGING_HOST=staging.monexus.oai-o.com \
+  bash deploy/staging/bootstrap-host.sh
+```
+
+The host bootstrap does not create runtime secrets or application data. It
+does not alter provider firewalls; ensure the provider allows TCP 80 and 443.
 
 Add the GitHub Actions staging deploy public key to
 `/home/monexus-deploy/.ssh/authorized_keys`, then capture the SSH host key in

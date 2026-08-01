@@ -40,6 +40,17 @@ if [[ ! -f "$env_file" ]]; then
   exit 1
 fi
 
+# Docker bind mounts need an absolute host path. Normalizing here also keeps
+# the host-Node and Docker-Node preflight paths identical for local rehearsals.
+if [[ "$env_file" == */* ]]; then
+  env_dir="${env_file%/*}"
+  env_name="${env_file##*/}"
+else
+  env_dir="."
+  env_name="$env_file"
+fi
+env_file="$(cd "$env_dir" && pwd)/$env_name"
+
 if ! docker compose version >/dev/null 2>&1; then
   echo "[ERROR] Docker Compose v2 is required." >&2
   exit 1
@@ -56,9 +67,24 @@ compose=(
 )
 
 preflight() {
-  bash "$ROOT_DIR/scripts/check-prod-env.sh" \
-    --mode staging \
-    --env-file "$env_file"
+  if command -v node >/dev/null 2>&1; then
+    bash "$ROOT_DIR/scripts/check-prod-env.sh" \
+      --mode staging \
+      --env-file "$env_file"
+    return
+  fi
+
+  # The dedicated staging host needs Docker but not a host-wide Node install.
+  # Run the validator in the pinned major-version Node image with no container
+  # network. Docker may pull this public base image once when it is absent.
+  docker run --rm --network none \
+    -v "$ROOT_DIR:$ROOT_DIR:ro" \
+    -v "$env_file:$env_file:ro" \
+    -w "$ROOT_DIR" \
+    node:20-bookworm-slim \
+    bash scripts/check-prod-env.sh \
+      --mode staging \
+      --env-file "$env_file"
 }
 
 case "$action" in
