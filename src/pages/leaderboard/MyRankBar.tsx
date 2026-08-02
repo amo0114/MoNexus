@@ -2,7 +2,8 @@ import { Trophy } from 'lucide-react'
 import type { LeaderboardMe } from '../../api/leaderboard'
 
 /**
- * 「我的排名」吸底条。
+ * 「我的排名」吸底条 —— 仅 <lg 生效：桌面端信息驻左栏卡片
+ * （LeaderboardPage 的 leaderboard-me-card），浮层退役以降低遮挡。
  *
  * 始终挂在 DOM 上（自己已在可视区时只做视觉隐藏），这样 leaderboard-me
  * 契约稳定、可断言；隐藏态以 data-hidden 暴露，形制同 BottomTabBar。
@@ -17,7 +18,7 @@ export default function MyRankBar({ me, hidden }: { me: LeaderboardMe | null; hi
       data-testid="leaderboard-me"
       data-hidden={hidden || undefined}
       aria-hidden={hidden || undefined}
-      className={`fixed inset-x-0 z-30 px-4 pointer-events-none transition-all duration-300
+      className={`fixed inset-x-0 z-30 px-4 pointer-events-none transition-all duration-300 lg:hidden
         bottom-[calc(var(--tabbar-h)+var(--safe-bottom)+0.75rem)] md:bottom-6 ${
           hidden ? 'opacity-0 translate-y-3' : 'opacity-100 translate-y-0'
         }`}

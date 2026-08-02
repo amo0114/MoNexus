@@ -35,20 +35,35 @@ function emptyCopy(scope: LeaderboardScope, updatedAt: string | null) {
 /** 加载骨架：3 个颁奖台圆 + 8 行列表，形状对齐最终布局。 */
 function LeaderboardSkeleton() {
   return (
-    <div className="space-y-4" role="status" aria-label="加载中">
-      <div className="card flex items-end justify-center gap-2 sm:gap-5 px-4 pt-9 pb-6 sm:px-6">
-        {[2, 1, 3].map((medal) => (
-          <div
-            key={medal}
-            className={`flex flex-col items-center ${
-              medal === 1 ? 'w-[6.5rem] sm:w-32 mb-6' : 'w-[5.5rem] sm:w-28'
-            }`}
-          >
-            <Skeleton className={medal === 1 ? 'w-20 h-20 rounded-full' : 'w-16 h-16 rounded-full'} />
-            <Skeleton className="mt-4 h-3.5 w-16" />
-            <Skeleton className="mt-2 h-3 w-10" />
-          </div>
-        ))}
+    <div
+      className="space-y-4 lg:space-y-0 lg:grid lg:grid-cols-2 lg:items-start lg:gap-6"
+      role="status"
+      aria-label="加载中"
+    >
+      <div className="space-y-4">
+        <div className="card flex items-end justify-center gap-2 sm:gap-5 px-4 pt-9 pb-6 sm:px-6">
+          {[2, 1, 3].map((medal) => (
+            <div
+              key={medal}
+              className={`flex flex-col items-center ${
+                medal === 1 ? 'w-[6.5rem] sm:w-32 mb-6' : 'w-[5.5rem] sm:w-28'
+              }`}
+            >
+              <Skeleton className={medal === 1 ? 'w-20 h-20 rounded-full' : 'w-16 h-16 rounded-full'} />
+              <Skeleton className="mt-4 h-3.5 w-16" />
+              <Skeleton className="mt-2 h-3 w-10" />
+            </div>
+          ))}
+        </div>
+        <div className="hidden lg:flex card items-center gap-3">
+          <Skeleton className="w-10 h-10 rounded-full shrink-0" />
+          <Skeleton className="h-5 w-36" />
+        </div>
+        <div className="hidden lg:block card space-y-2">
+          <Skeleton className="h-4 w-20" />
+          <Skeleton className="h-3 w-full" />
+          <Skeleton className="h-3 w-3/4" />
+        </div>
       </div>
       <div className="card p-0 overflow-hidden divide-y divide-[var(--color-border)]">
         {Array.from({ length: 8 }).map((_, i) => (
@@ -116,7 +131,7 @@ export default function LeaderboardPage() {
   const copy = emptyCopy(scope, data?.updatedAt ?? null)
 
   return (
-    <div className="max-w-3xl mx-auto pt-2">
+    <div className="max-w-3xl lg:max-w-6xl mx-auto pt-2">
       <header>
         <div className="flex items-center gap-3 flex-wrap">
           <span className="w-10 h-10 shrink-0 inline-flex items-center justify-center rounded-full bg-[var(--color-primary-tint)] text-[var(--color-primary)]">
@@ -157,7 +172,7 @@ export default function LeaderboardPage() {
         {loading ? (
           <LeaderboardSkeleton />
         ) : failed || !data ? (
-          <div className="card" data-testid="leaderboard-error">
+          <div className="card lg:max-w-2xl lg:mx-auto" data-testid="leaderboard-error">
             <EmptyState
               icon={Trophy}
               title="榜单加载失败"
@@ -174,13 +189,52 @@ export default function LeaderboardPage() {
             />
           </div>
         ) : data.top.length === 0 ? (
-          <div className="card" data-testid="leaderboard-empty">
+          <div className="card lg:max-w-2xl lg:mx-auto" data-testid="leaderboard-empty">
             <EmptyState icon={Trophy} title={copy.title} description={copy.description} />
           </div>
         ) : (
-          /* .fade-in 会留下 transform，吸底条（position: fixed）必须待在它之外 */
-          <div className="fade-in space-y-4">
-            <Podium top={data.top.slice(0, 3)} meRef={registerMeEl} />
+          /* .fade-in 会留下 transform，吸底条（position: fixed）必须待在它之外。
+             lg 起双栏。密度关键：左栏不能只有一张矮颁奖台（下方会开洞），
+             而是「颁奖台 + 我的排名卡 + 榜单说明卡」叠近一屏高再粘性；
+             右栏保持单列完整列表，名次连续不拆分。 */
+          <div
+            className={`fade-in space-y-4 ${
+              data.top.length > 3 ? 'lg:space-y-0 lg:grid lg:grid-cols-2 lg:items-start lg:gap-6' : ''
+            }`}
+          >
+            <div className="space-y-4 lg:sticky lg:top-24">
+              <Podium top={data.top.slice(0, 3)} meRef={registerMeEl} />
+
+              {/* 桌面端「我的排名」入左栏卡片；<lg 仍用吸底浮条 */}
+              <div
+                className="hidden lg:flex card items-center gap-3"
+                data-testid="leaderboard-me-card"
+              >
+                <span className="w-10 h-10 shrink-0 inline-flex items-center justify-center rounded-full bg-[var(--color-primary-tint)] text-[var(--color-primary)]">
+                  <Trophy className="w-5 h-5" aria-hidden="true" />
+                </span>
+                {data.me ? (
+                  <div className="min-w-0">
+                    <div className="text-xs text-[var(--color-text-muted)]">我的排名</div>
+                    <div className="text-lg font-bold text-[var(--color-text)]">
+                      第 {data.me.rank} 名 · {data.me.points} 分
+                    </div>
+                  </div>
+                ) : (
+                  <div className="min-w-0 text-sm font-medium text-[var(--color-text)]">
+                    本期暂未上榜，去签到赚积分
+                  </div>
+                )}
+              </div>
+
+              <div className="hidden lg:block card text-sm text-[var(--color-text-muted)] space-y-1.5">
+                <div className="font-bold text-[var(--color-text)]">榜单说明</div>
+                <p>{scope === 'total' ? '统计全部时间的获得积分。' : `本期区间：${data.periodLabel}。`}</p>
+                <p>仅计「获得」积分，与会员等级同口径；消费不扣减名次。</p>
+                <p>每日刷新一次，展示前 100 名。</p>
+              </div>
+            </div>
+
             {data.top.length > 3 && (
               /* 分隔线由行自己的 border-b 画：divide-* 会以 border-color 简写
                  盖掉 isMe 行的左侧强调色（选择器特异性更高）。 */
@@ -196,8 +250,9 @@ export default function LeaderboardPage() {
 
       {!loading && !failed && data && data.top.length > 0 && (
         <>
-          {/* 让最后一行能滚过吸底条（Layout 只预留了 Tab Bar 的高度） */}
-          <div className="h-14 md:h-16" aria-hidden="true" />
+          {/* 让最后一行能滚过吸底条（Layout 只预留了 Tab Bar 的高度）；
+              lg 起浮条退役（信息在左栏卡片），占位一并撤掉 */}
+          <div className="h-14 md:h-16 lg:hidden" aria-hidden="true" />
           <MyRankBar me={data.me} hidden={meOnScreen} />
         </>
       )}
