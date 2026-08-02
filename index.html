@@ -2,10 +2,40 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon-light.svg" />
+    <link rel="shortcut icon" type="image/x-icon" href="/brand/ledger-knot/favicon.ico" />
+    <link
+      id="brand-favicon-16"
+      rel="icon"
+      type="image/png"
+      sizes="16x16"
+      href="/brand/ledger-knot/favicon-light-16.png"
+      data-brand-favicon-size="16"
+    />
+    <link
+      id="brand-favicon-32"
+      rel="icon"
+      type="image/png"
+      sizes="32x32"
+      href="/brand/ledger-knot/favicon-light-32.png"
+      data-brand-favicon-size="32"
+    />
+    <link
+      id="brand-favicon-48"
+      rel="icon"
+      type="image/png"
+      sizes="48x48"
+      href="/brand/ledger-knot/favicon-light-48.png"
+      data-brand-favicon-size="48"
+    />
+    <link
+      id="brand-apple-touch-icon"
+      rel="apple-touch-icon"
+      sizes="180x180"
+      href="/brand/ledger-knot/favicon-light-180.png"
+    />
+    <link rel="manifest" href="/site.webmanifest" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="theme-color" content="#F8FAFC" media="(prefers-color-scheme: light)" />
-    <meta name="theme-color" content="#0A0A14" media="(prefers-color-scheme: dark)" />
+    <meta id="brand-theme-color" name="theme-color" content="#F8FAFC" />
     <meta name="description" content="MoNexus - 精选数字好物，做任务赚积分，免费兑换数字资源" />
     <title>MoNexus - 精选数字好物</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -20,10 +50,34 @@
       (function () {
         try {
           var t = localStorage.getItem('theme');
+          var variant = 'light';
           if (t === 'soft') {
             document.documentElement.setAttribute('data-theme', 'soft');
+            variant = 'soft';
           } else if (t === 'dark' || (t === null && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
             document.documentElement.classList.add('dark');
+            variant = 'dark';
+          }
+
+          var icons = document.querySelectorAll('link[data-brand-favicon-size]');
+          for (var i = 0; i < icons.length; i++) {
+            var size = icons[i].getAttribute('data-brand-favicon-size');
+            if (size) {
+              icons[i].setAttribute('href', '/brand/ledger-knot/favicon-' + variant + '-' + size + '.png');
+            }
+          }
+
+          var appleTouchIcon = document.getElementById('brand-apple-touch-icon');
+          if (appleTouchIcon) {
+            appleTouchIcon.setAttribute('href', '/brand/ledger-knot/favicon-' + variant + '-180.png');
+          }
+
+          var themeColor = document.getElementById('brand-theme-color');
+          if (themeColor) {
+            themeColor.setAttribute(
+              'content',
+              variant === 'dark' ? '#0A0A14' : variant === 'soft' ? '#FFF8EC' : '#F8FAFC'
+            );
           }
         } catch (e) {}
       })();

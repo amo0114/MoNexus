@@ -137,6 +137,41 @@
 }
 
 /* =========================================================
+   Ledger Knot brand mark
+   The approved raster master contains its own optical corrections, so keep
+   each themed rendition at identical geometry and swap only the source.
+   ========================================================= */
+.brand-logo > img {
+  grid-area: 1 / 1;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.brand-logo > .brand-logo__dark,
+.brand-logo > .brand-logo__soft {
+  display: none;
+}
+
+.dark .brand-logo > .brand-logo__light {
+  display: none;
+}
+
+.dark .brand-logo > .brand-logo__dark {
+  display: block;
+}
+
+:root[data-theme="soft"] .brand-logo > .brand-logo__light,
+:root[data-theme="soft"] .brand-logo > .brand-logo__dark {
+  display: none;
+}
+
+:root[data-theme="soft"] .brand-logo > .brand-logo__soft {
+  display: block;
+}
+
+/* =========================================================
    Typography
    ========================================================= */
 

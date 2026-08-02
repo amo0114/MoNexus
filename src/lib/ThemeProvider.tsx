@@ -3,6 +3,11 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from '
 export type Theme = 'light' | 'dark' | 'soft'
 
 const STORAGE_KEY = 'theme'
+const THEME_BACKGROUND: Record<Theme, string> = {
+  light: '#F8FAFC',
+  dark: '#0A0A14',
+  soft: '#FFF8EC',
+}
 
 interface ThemeContextValue {
   theme: Theme
@@ -32,6 +37,25 @@ function applyTheme(t: Theme) {
     root.setAttribute('data-theme', 'soft')
   } else {
     root.removeAttribute('data-theme')
+  }
+
+  document
+    .querySelectorAll<HTMLLinkElement>('link[data-brand-favicon-size]')
+    .forEach((link) => {
+      const size = link.dataset.brandFaviconSize
+      if (size) {
+        link.href = '/brand/ledger-knot/favicon-' + t + '-' + size + '.png'
+      }
+    })
+
+  const appleTouchIcon = document.getElementById('brand-apple-touch-icon') as HTMLLinkElement | null
+  if (appleTouchIcon) {
+    appleTouchIcon.href = '/brand/ledger-knot/favicon-' + t + '-180.png'
+  }
+
+  const themeColor = document.getElementById('brand-theme-color') as HTMLMetaElement | null
+  if (themeColor) {
+    themeColor.content = THEME_BACKGROUND[t]
   }
 }
 

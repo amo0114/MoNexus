@@ -1,0 +1,23 @@
+{
+  "name": "MoNexus",
+  "short_name": "MoNexus",
+  "description": "精选数字好物，做任务赚积分，免费兑换数字资源",
+  "lang": "zh-CN",
+  "display": "standalone",
+  "background_color": "#F8FAFC",
+  "theme_color": "#6366F1",
+  "icons": [
+    {
+      "src": "/brand/ledger-knot/favicon-light-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/brand/ledger-knot/mark-light.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}
