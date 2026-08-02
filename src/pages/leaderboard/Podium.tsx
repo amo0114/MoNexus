@@ -96,7 +96,7 @@ export default function Podium({
   return (
     <div
       data-testid="leaderboard-podium"
-      className="card flex items-end justify-center gap-2 sm:gap-5 lg:gap-6 px-4 pt-9 pb-6 sm:px-6 lg:pt-12 lg:pb-8"
+      className="card flex items-end justify-center gap-2 sm:gap-5 lg:gap-6 px-4 pt-9 pb-6 sm:px-6 lg:h-full lg:pt-12 lg:pb-8"
     >
       {second && <PodiumSpot entry={second} medal={2} meRef={meRef} />}
       {first && <PodiumSpot entry={first} medal={1} meRef={meRef} />}
