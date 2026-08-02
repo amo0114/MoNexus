@@ -1,5 +1,6 @@
 import 'dotenv/config'
 import { prisma } from '../lib/prisma.js'
+import { generateInviteCode } from '../lib/inviteCode.js'
 import { encryptMfaSecret } from '../modules/auth/mfa.js'
 import bcrypt from 'bcryptjs'
 
@@ -29,10 +30,9 @@ async function upsertUser(opts: {
   email: string
   password: string
   role: string
-  inviteCode: string
   extraUpdate?: Record<string, unknown>
 }) {
-  const { email, password, role, inviteCode, extraUpdate = {} } = opts
+  const { email, password, role, extraUpdate = {} } = opts
   const existing = await prisma.user.findUnique({ where: { email } })
   const hashed = await bcrypt.hash(password, 10)
 
@@ -50,7 +50,7 @@ async function upsertUser(opts: {
 
   console.log(`  + ${email} — 已创建`)
   return prisma.user.create({
-    data: { email, password: hashed, role, inviteCode },
+    data: { email, password: hashed, role },
   })
 }
 
@@ -67,7 +67,6 @@ async function main() {
     email: 'admin@moyuan.net',
     password: 'admin123',
     role: 'admin',
-    inviteCode: 'ADMIN-MOYUAN',
   })
   if (e2eMfaFactor) {
     await prisma.user.update({
@@ -90,7 +89,6 @@ async function main() {
     email: 'test@moyuan.net',
     password: 'user123',
     role: 'user',
-    inviteCode: 'MOYUAN26',
   })
   await prisma.pointAccount.upsert({
     where: { userId: testUser.id },
@@ -103,7 +101,6 @@ async function main() {
     email: 'merchant@moyuan.net',
     password: 'merchant123',
     role: 'merchant',
-    inviteCode: 'MERCHANT-MOYUAN',
     extraUpdate: { status: '正常' },
   })
   await prisma.pointAccount.upsert({
@@ -338,10 +335,27 @@ async function main() {
     })
   }
 
+  // SPEC-INVITE-001：为 admin 预生成一枚长效一次性邀请码，方便本地联调
+  // 注册链路（生产不跑 seed；一次性语义不变，用掉即失效）。
+  let seedInviteCode = await prisma.inviteCode.findFirst({
+    where: { issuerId: admin.id, status: 'active', expiresAt: { gt: new Date() } },
+    orderBy: { id: 'desc' },
+  })
+  if (!seedInviteCode) {
+    seedInviteCode = await prisma.inviteCode.create({
+      data: {
+        code: generateInviteCode(),
+        issuerId: admin.id,
+        expiresAt: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000),
+      },
+    })
+  }
+
   console.log('✅ Seed completed!')
   console.log('  Admin:    admin@moyuan.net / admin123')
   console.log('  User:     test@moyuan.net / user123')
   console.log('  Merchant: merchant@moyuan.net / merchant123')
+  console.log(`  Invite:   ${seedInviteCode.code}（admin 签发的一次性邀请码，本地联调用）`)
 }
 
 main()

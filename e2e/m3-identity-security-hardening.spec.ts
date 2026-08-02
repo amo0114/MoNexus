@@ -13,7 +13,6 @@ const profile = {
   nickname: null,
   role: 'admin',
   status: '正常',
-  inviteCode: 'M3ISH',
   points: 500,
   merchant: null,
 }

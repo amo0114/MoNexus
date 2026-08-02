@@ -474,7 +474,6 @@ describe('GET /api/leaderboard', () => {
       data: Array.from({ length: 104 }, (_, i) => ({
         email: `lb-bulk-${i}@test.local`,
         password: 'x',
-        inviteCode: `lb-bulk-${i}`,
         nickname: `选手${i}`,
       })),
     })

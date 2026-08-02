@@ -9,8 +9,20 @@ export type HumanVerificationResult =
   | { kind: 'rejected' }
   | { kind: 'unavailable' }
 
+/**
+ * Server-side expected `action` values. Each protected flow renders its widget
+ * with the matching action, so a proof minted for one flow can never be
+ * replayed against another. Currently only registration is protected; add new
+ * members here when another flow (e.g. forgot-password, T8b) is approved.
+ */
+export type HumanVerificationAction = 'register'
+
 export interface HumanVerifier {
-  verifyRegistration(input: { token: string; ip: string | undefined }): Promise<HumanVerificationResult>
+  verify(input: {
+    token: string
+    ip: string | undefined
+    action: HumanVerificationAction
+  }): Promise<HumanVerificationResult>
 }
 
 export type TurnstileHumanVerifierOptions = {
@@ -63,7 +75,7 @@ function configuredHostnameSet(hostnames: readonly string[]): Set<string> | unde
  * A malformed provider payload cannot safely be called a user failure. Only a
  * structurally valid `success:false` with a known token-failure code is a user
  * failure; provider/config codes remain unavailable. A successful proof also
- * needs the action and hostname fields that bind it to register.
+ * needs the action and hostname fields that bind it to the protected flow.
  */
 function parseTurnstileResponse(value: unknown): ParsedTurnstileResponse | undefined {
   if (!isRecord(value) || typeof value.success !== 'boolean') return undefined
@@ -86,15 +98,16 @@ function parseTurnstileResponse(value: unknown): ParsedTurnstileResponse | undef
   return { kind: 'success', action: value.action, hostname: value.hostname }
 }
 
-function classifyRegistrationResponse(
+function classifyVerificationResponse(
   value: unknown,
   allowedHostnames: ReadonlySet<string>,
+  expectedAction: HumanVerificationAction,
 ): HumanVerificationResult {
   const response = parseTurnstileResponse(value)
   if (!response) return UNAVAILABLE
   if (response.kind === 'token_failure') return REJECTED
   if (response.kind === 'provider_failure') return UNAVAILABLE
-  if (response.action !== 'register') return REJECTED
+  if (response.action !== expectedAction) return REJECTED
 
   const hostname = normalizeHostname(response.hostname)
   return hostname !== undefined && allowedHostnames.has(hostname) ? VERIFIED : REJECTED
@@ -119,7 +132,7 @@ export function createTurnstileHumanVerifier(
   const fetchImplementation = options.fetchImplementation ?? globalThis.fetch
 
   return {
-    async verifyRegistration(input) {
+    async verify(input) {
       const token = typeof input.token === 'string' ? input.token.trim() : ''
       if (!token || token.length > 4_096) return REJECTED
 
@@ -156,7 +169,7 @@ export function createTurnstileHumanVerifier(
         return UNAVAILABLE
       }
 
-      return classifyRegistrationResponse(payload, allowedHostnames)
+      return classifyVerificationResponse(payload, allowedHostnames, input.action)
     },
   }
 }

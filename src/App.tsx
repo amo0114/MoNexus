@@ -10,6 +10,7 @@ import LoginPage from './pages/LoginPage'
 import ForgotPasswordPage from './pages/ForgotPasswordPage'
 import ResetPasswordPage from './pages/ResetPasswordPage'
 import VerifyEmailPage from './pages/VerifyEmailPage'
+import InviteRedirectPage from './pages/InviteRedirectPage'
 import StorePage from './pages/StorePage'
 import ProductDetailPage from './pages/ProductDetailPage'
 import ProfilePage from './pages/ProfilePage'
@@ -59,6 +60,7 @@ export default function App() {
         <Route path="/reset-password/:token" element={<ResetPasswordPage />} />
         <Route path="/verify-email" element={<VerifyEmailPage />} />
         <Route path="/restore-setup" element={<PortableRestoreSetupPage />} />
+        <Route path="/i/:code" element={<InviteRedirectPage />} />
         <Route
           path="/*"
           element={

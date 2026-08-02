@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { api, authHeader, createTestUser, loginAs } from './helpers.js'
+import { api, authHeader, createTestUser, issueTestInviteCode, loginAs } from './helpers.js'
 import { prisma } from '../lib/prisma.js'
 
 const defaultConfig = {
@@ -38,6 +38,12 @@ const defaultConfig = {
   referralInviterMinAgeDays: 30,
   referralDailyQualifiedLimit: 3,
   referralLifetimeQualifiedLimit: 20,
+  // SPEC-INVITE-001 发码资格、月名额与码有效期
+  registrationInviteOnly: 0,
+  inviteMinTierRank: 2,
+  inviteQuotaUserMonthly: 3,
+  inviteQuotaMerchantMonthly: 10,
+  inviteCodeTtlDays: 14,
 } as const
 
 async function clearSystemConfig() {
@@ -198,12 +204,13 @@ describe('Admin system config', () => {
 
     await updateConfig(accessToken, 'inviteReward', 333).expect(200)
 
+    const invite = await issueTestInviteCode(inviter.id)
     await api
       .post('/api/auth/register')
       .send({
         email: 'invitee-config@test.local',
         password: 'pass123',
-        inviteCode: inviter.inviteCode,
+        inviteCode: invite.code,
       })
       .expect(201)
 

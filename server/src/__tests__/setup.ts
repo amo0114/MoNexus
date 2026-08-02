@@ -39,6 +39,7 @@ beforeEach(async () => {
     "RefreshToken",
     "PasswordResetToken",
     "EmailVerificationToken",
+    "InviteCode",
     "Product",
     "Offer",
     "MerchantWebhookConfig",

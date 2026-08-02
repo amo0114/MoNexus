@@ -61,6 +61,24 @@ const nextTierByTier: Record<MemberTier, Exclude<MemberTier, 'bronze'> | null> =
   platinum: null,
 }
 
+/**
+ * SPEC-INVITE-001 IV-12：等级的序号形态（0=bronze .. 3=platinum），供
+ * `inviteMinTierRank` 这类"等级门槛"配置与 `resolveTier` 结果比较。
+ */
+const TIER_ORDER: readonly MemberTier[] = ['bronze', 'silver', 'gold', 'platinum']
+
+export function tierRank(tier: MemberTier): number {
+  return TIER_ORDER.indexOf(tier)
+}
+
+export function tierByRank(rank: number): MemberTier {
+  return TIER_ORDER[Math.min(Math.max(Math.floor(rank), 0), TIER_ORDER.length - 1)]
+}
+
+export function tierLabel(tier: MemberTier): string {
+  return tierMeta[tier].label
+}
+
 export async function computeLifetimeEarnedPoints(userId: number): Promise<number> {
   const result = await prisma.pointLog.aggregate({
     where: { userId, type: 'in' },

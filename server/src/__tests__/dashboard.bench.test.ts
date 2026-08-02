@@ -9,7 +9,6 @@ async function seedOrders(count = 1000) {
       email: 'bench-buyer@test.local',
       password: 'test-password',
       role: 'user',
-      inviteCode: 'TEST-bench-buyer@test.local',
     },
   })
   const merchantUser = await prisma.user.create({
@@ -17,7 +16,6 @@ async function seedOrders(count = 1000) {
       email: 'bench-merchant@test.local',
       password: 'test-password',
       role: 'merchant',
-      inviteCode: 'TEST-bench-merchant@test.local',
     },
   })
   const merchant = await prisma.merchant.create({

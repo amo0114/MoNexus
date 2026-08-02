@@ -28,7 +28,7 @@ type PendingRecoveryConfirmation = {
 
 type RegistrationViewState =
   | { kind: 'loading' }
-  | { kind: 'available'; challenge: RegistrationChallenge | null }
+  | { kind: 'available'; challenge: RegistrationChallenge | null; inviteRequired: boolean }
   | { kind: 'disabled' }
   | { kind: 'unavailable' }
 
@@ -72,6 +72,15 @@ export default function LoginPage() {
   const [registrationState, setRegistrationState] = useState<RegistrationViewState>({ kind: 'loading' })
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const inviteParam = params.get('invite')
+    if (inviteParam) {
+      setInviteCode(inviteParam)
+      setIsRegister(true)
+    }
+  }, [])
+
+  useEffect(() => {
     let active = true
     setRegistrationState({ kind: 'loading' })
 
@@ -83,7 +92,7 @@ export default function LoginPage() {
         } else if (!status.registrationAvailable) {
           setRegistrationState({ kind: 'unavailable' })
         } else {
-          setRegistrationState({ kind: 'available', challenge: status.challenge })
+          setRegistrationState({ kind: 'available', challenge: status.challenge, inviteRequired: status.inviteRequired })
         }
       })
       .catch(() => {
@@ -143,6 +152,12 @@ export default function LoginPage() {
       setIsRegister(false)
       setRegistrationState({ kind: 'disabled' })
       showToast('当前已暂停新用户注册', 'error')
+      return
+    }
+
+    if (code === 'INVITE_CODE_REQUIRED') {
+      turnstileRef.current?.reset()
+      showToast('当前注册需要邀请码', 'error')
       return
     }
 
@@ -311,12 +326,21 @@ export default function LoginPage() {
           <>
             <input
               type="text"
-              placeholder="邀请码（可选）"
-              aria-label="邀请码（可选）"
+              placeholder={
+                registrationState.kind === 'available' && registrationState.inviteRequired
+                  ? '邀请码（必填）'
+                  : '邀请码（可选）'
+              }
+              aria-label={
+                registrationState.kind === 'available' && registrationState.inviteRequired
+                  ? '邀请码（必填）'
+                  : '邀请码（可选）'
+              }
               value={inviteCode}
               onChange={(event) => setInviteCode(event.target.value)}
               className="input"
               disabled={loading}
+              required={registrationState.kind === 'available' && registrationState.inviteRequired}
             />
             {registrationChallenge && (
               <TurnstileWidget ref={turnstileRef} siteKey={registrationChallenge.siteKey} />
