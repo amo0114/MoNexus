@@ -29,10 +29,9 @@ async function upsertUser(opts: {
   email: string
   password: string
   role: string
-  inviteCode: string
   extraUpdate?: Record<string, unknown>
 }) {
-  const { email, password, role, inviteCode, extraUpdate = {} } = opts
+  const { email, password, role, extraUpdate = {} } = opts
   const existing = await prisma.user.findUnique({ where: { email } })
   const hashed = await bcrypt.hash(password, 10)
 
@@ -50,7 +49,7 @@ async function upsertUser(opts: {
 
   console.log(`  + ${email} — 已创建`)
   return prisma.user.create({
-    data: { email, password: hashed, role, inviteCode },
+    data: { email, password: hashed, role },
   })
 }
 
@@ -67,7 +66,6 @@ async function main() {
     email: 'admin@moyuan.net',
     password: 'admin123',
     role: 'admin',
-    inviteCode: 'ADMIN-MOYUAN',
   })
   if (e2eMfaFactor) {
     await prisma.user.update({
@@ -90,7 +88,6 @@ async function main() {
     email: 'test@moyuan.net',
     password: 'user123',
     role: 'user',
-    inviteCode: 'MOYUAN26',
   })
   await prisma.pointAccount.upsert({
     where: { userId: testUser.id },
@@ -103,7 +100,6 @@ async function main() {
     email: 'merchant@moyuan.net',
     password: 'merchant123',
     role: 'merchant',
-    inviteCode: 'MERCHANT-MOYUAN',
     extraUpdate: { status: '正常' },
   })
   await prisma.pointAccount.upsert({

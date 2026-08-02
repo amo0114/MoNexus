@@ -20,6 +20,7 @@ export type RegistrationStatus = {
   registrationEnabled: boolean
   registrationAvailable: boolean
   challenge: RegistrationChallenge | null
+  inviteRequired: boolean
 }
 
 export type MfaLoginChallenge = {
