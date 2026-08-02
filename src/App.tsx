@@ -13,6 +13,7 @@ import VerifyEmailPage from './pages/VerifyEmailPage'
 import StorePage from './pages/StorePage'
 import ProductDetailPage from './pages/ProductDetailPage'
 import ProfilePage from './pages/ProfilePage'
+import LeaderboardPage from './pages/LeaderboardPage'
 import AdminPage from './pages/AdminPage'
 import MerchantApplyPage from './pages/MerchantApplyPage'
 import MerchantDashboardPage from './pages/MerchantDashboardPage'
@@ -67,6 +68,7 @@ export default function App() {
                   <Route path="/" element={<StorePage />} />
                   <Route path="/product/:id" element={<ProductDetailPage />} />
                   <Route path="/profile" element={<ProfilePage />} />
+                  <Route path="/leaderboard" element={<LeaderboardPage />} />
                   <Route
                     path="/admin"
                     element={

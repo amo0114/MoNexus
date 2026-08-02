@@ -26,11 +26,11 @@ test.describe('mobile layout verification @375px', () => {
     await page.getByRole('button', { name: '取消搜索' }).click()
     await page.waitForTimeout(600)
 
-    // Tab bar: 3 tabs for plain user, 56px + safe area, pinned to bottom
+    // Tab bar: 4 tabs for plain user (首页/积分/排行/我的), 56px + safe area, pinned to bottom
     const tabBar = page.getByTestId('bottom-tab-bar')
     await expect(tabBar).toBeVisible()
     const tabs = tabBar.getByRole('button')
-    await expect(tabs).toHaveCount(3)
+    await expect(tabs).toHaveCount(4)
     const barBox = await tabBar.boundingBox()
     expect(Math.round(barBox!.y + barBox!.height)).toBe(812)
     expect(barBox!.height).toBeGreaterThanOrEqual(56)

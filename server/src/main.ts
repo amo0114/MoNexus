@@ -13,6 +13,7 @@ import { startBookingRemindCron, stopBookingRemindCron } from './lib/bookingRemi
 import { startProvisionCron, stopProvisionCron } from './modules/orders/provisionCron.js'
 import { startFakaBridgeCron, stopFakaBridgeCron } from './lib/fakaBridge/index.js'
 import { startGrowthRewardCron, stopGrowthRewardCron } from './modules/auth/growthRewardCron.js'
+import { startLeaderboardCron, stopLeaderboardCron } from './modules/leaderboard/cron.js'
 
 const server = app.listen(config.port, () => {
   logger.info(`MoNexus API running at http://localhost:${config.port}`)
@@ -25,6 +26,7 @@ const server = app.listen(config.port, () => {
   startProvisionCron()
   startFakaBridgeCron()
   startGrowthRewardCron()
+  startLeaderboardCron()
 })
 
 let shuttingDown = false
@@ -55,6 +57,7 @@ async function shutdown(signal: NodeJS.Signals) {
       stopProvisionCron()
       stopFakaBridgeCron()
       stopGrowthRewardCron()
+      stopLeaderboardCron()
       await prisma.$disconnect()
       clearTimeout(forceExit)
       logger.info({ signal }, 'shutdown completed')
