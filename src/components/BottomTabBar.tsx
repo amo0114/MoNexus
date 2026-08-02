@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { BarChart3, Coins, Home, ShieldCheck, Store, User } from 'lucide-react'
+import { BarChart3, Coins, Home, ShieldCheck, Store, Trophy, User } from 'lucide-react'
 import { useAuthStore } from '../stores/authStore'
 import { useAppStore } from '../stores/appStore'
 
@@ -17,7 +17,7 @@ interface TabItem {
 /**
  * Mobile (<md) primary navigation — 角色化（V3 用户反馈）：
  * 公告是「通知」而非目的地，已上移 navbar 铃铛；底部只放真目的地。
- *  - 买家/游客：首页 / 积分（直达流水 Sheet）/ 我的
+ *  - 买家/游客：首页 / 积分（直达流水 Sheet）/ 排行 / 我的
  *  - 商家：     首页 / 商家 / 数据（经营图表）/ 我的
  *  - 管理员：   首页 / 管理 / 我的
  * 下滑自动隐藏（阅读释放视高），上滑/近顶即现。实心背景（去磨砂）。
@@ -119,6 +119,17 @@ export default function BottomTabBar() {
       },
       testId: 'tab-bar-points',
       ariaLabel: '积分明细',
+    })
+    // 排行榜：买家的激励面。商家/管理员 tab 位已满（数据/管理优先），
+    // 他们从桌面导航或抽屉进入同一页面。
+    tabs.push({
+      key: 'leaderboard',
+      label: '排行',
+      icon: Trophy,
+      active: pathname.startsWith('/leaderboard'),
+      onSelect: () => navigate('/leaderboard'),
+      testId: 'tab-bar-leaderboard',
+      ariaLabel: '积分排行榜',
     })
   }
 

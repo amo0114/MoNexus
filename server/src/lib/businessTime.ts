@@ -56,3 +56,40 @@ export function addCalendarDays(dateStr: string, days: number): string {
 export function diffCalendarDays(a: string, b: string): number {
   return Math.round((calendarDayToUtc(a).getTime() - calendarDayToUtc(b).getTime()) / DAY_MS)
 }
+
+/* ------------------------------------------------------------------ *
+ * SPEC-LEADERBOARD-001：周 / 月边界与「日历日 → 物理时刻」换算。
+ * 上面的日历日函数处理「哪一天」；下面这三个处理「哪一段时间」，
+ * 排行榜按北京自然月 / 自然周（周一起）分期，并要把期边界还原成用于
+ * 过滤 PointLog.createdAt 的真实 UTC 时刻。
+ * ------------------------------------------------------------------ */
+
+/** 日历日所在自然月的 1 号。 */
+export function businessMonthStart(dateStr: string): string {
+  const [y, m] = dateStr.split('-').map(Number)
+  return `${y}-${String(m).padStart(2, '0')}-01`
+}
+
+/**
+ * 日历日所在自然周的周一（LB-02：周一为一周起点）。
+ * 用规范存储值（UTC 零点）取 getUTCDay，与宿主时区无关；周日的 getUTCDay
+ * 为 0，映射成 7 后统一按「减去 (dow - 1) 天」回退。
+ */
+export function businessWeekStart(dateStr: string): string {
+  const dow = calendarDayToUtc(dateStr).getUTCDay() || 7
+  return addCalendarDays(dateStr, -(dow - 1))
+}
+
+/**
+ * 该北京日历日 00:00 的**物理时刻**。
+ *
+ * 与 `calendarDayToUtc` 语义不同、不可互换：后者是日历日的规范**存储值**
+ * （同一日历日在任何时区下字节相同的 UTC 零点），差 8 小时。过滤
+ * `createdAt` 这类真实时间戳只能用本函数，混用即整体偏移 8 小时。
+ *
+ * 固定 +08:00 偏移量成立的依据：Asia/Shanghai 自 1991 年起不再实行夏令时，
+ * 业务时区恒为 UTC+8，故无需 Intl 反查。
+ */
+export function businessDayStartUtc(dateStr: string): Date {
+  return new Date(`${dateStr}T00:00:00+08:00`)
+}

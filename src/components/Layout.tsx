@@ -1,6 +1,6 @@
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuthStore } from '../stores/authStore'
-import { Coins, User, ShieldCheck, Store, Clock, XCircle, AlertTriangle, Plus, Search, Bell } from 'lucide-react'
+import { Coins, User, ShieldCheck, Store, Clock, XCircle, AlertTriangle, Plus, Search, Bell, Trophy } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import EmailVerificationBanner from './EmailVerificationBanner'
 import VerifiedActionGate from './VerifiedActionGate'
@@ -229,6 +229,25 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                 <span className="font-bold text-xs">管理后台</span>
               </div>
             )}
+
+            {/* 积分排行榜 — 全角色可见。md 视口只留图标：桌面右侧已有
+                工作台入口 + 铃铛 + 主题 + 积分 + 头像，加满词条会在 768px
+                挤出横向溢出；lg 起补回文字。 */}
+            <button
+              type="button"
+              onClick={() => navigate('/leaderboard')}
+              title="积分排行榜"
+              aria-label="积分排行榜"
+              aria-current={location.pathname.startsWith('/leaderboard') ? 'page' : undefined}
+              className={`hidden md:flex items-center gap-1.5 px-3 py-2 rounded-full cursor-pointer transition-colors border focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)] ${
+                location.pathname.startsWith('/leaderboard')
+                  ? 'bg-[var(--color-primary-tint)] text-[var(--color-primary)] border-[var(--color-primary-tint-strong)]'
+                  : 'bg-[var(--color-surface)] text-[var(--color-text)] border-[var(--color-border)] hover:border-[var(--color-primary-tint-strong)]'
+              }`}
+            >
+              <Trophy className="w-4 h-4" />
+              <span className="hidden lg:inline font-bold text-xs">排行榜</span>
+            </button>
 
             <AnnouncementBellButton
               unreadCount={announcements.unreadCount}

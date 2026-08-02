@@ -30,6 +30,7 @@ beforeEach(async () => {
     "Order",
     "InventoryLog",
     "InventoryItem",
+    "LeaderboardEntry",
     "PointLog",
     "GrowthReward",
     "CheckinRecord",

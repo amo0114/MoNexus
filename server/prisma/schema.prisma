@@ -56,6 +56,7 @@ model User {
   securityEvents          SecurityEvent[]
   fakaProvisionEmailProofs FakaProvisionEmailProof[]
   fakaProvisionEmailSendBudget FakaProvisionEmailSendBudget?
+  leaderboardEntries      LeaderboardEntry[]
 }
 
 // FakaBridge 开通邮箱归属证明：防止填写他人 Xboard 邮箱后降配/续费他人套餐。
@@ -356,6 +357,10 @@ model PointLog {
 
   user  User   @relation(fields: [userId], references: [id])
   order Order? @relation(fields: [orderId], references: [id])
+
+  // 排行榜按 (type='in', createdAt ∈ 窗口) 聚合；此前本表除主键零索引，
+  // 缺了它每次刷新都是全表扫。
+  @@index([type, createdAt])
 }
 
 model Product {
@@ -917,4 +922,25 @@ model FileGrantLog {
 
   @@index([fileId, createdAt])
   @@index([orderId])
+}
+
+// SPEC-LEADERBOARD-001：每日刷新的积分排行榜快照。
+// 一行 = 某 (scope, periodKey) 期内某用户的名次与获得积分。
+// 快照存**全量**合格且窗口内有得分的用户（不在写侧截断 Top 100），这样
+// 「我的排名」是精确值而不是「未上榜」；Top 100 只是读侧的 LIMIT。
+// periodKey：'ALL' | 'M<YYYY-MM>' | 'W<周一日历日>'——周用周一日期而非 ISO
+// 周号，规避 ISO week-year 的跨年边界（2026-12-28 属 2027-W01 这类）。
+model LeaderboardEntry {
+  id         Int      @id @default(autoincrement())
+  scope      String // total | month | week
+  periodKey  String
+  rank       Int
+  userId     Int
+  points     Int // 窗口内 SUM(PointLog.amount) WHERE type='in'
+  computedAt DateTime // 本批次刷新时刻，读侧作 updatedAt 下发
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([scope, periodKey, userId]) // 「我的排名」点查 + 幂等替换的唯一性
+  @@index([scope, periodKey, rank]) // Top 100 顺序扫
 }
