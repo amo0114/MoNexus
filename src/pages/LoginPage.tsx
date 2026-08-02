@@ -19,7 +19,6 @@ import MfaEnrollment from '../components/auth/MfaEnrollment'
 import MfaVerification from '../components/auth/MfaVerification'
 import RecoveryCodeConfirmation from '../components/auth/RecoveryCodeConfirmation'
 import TurnstileWidget, { type TurnstileWidgetHandle } from '../components/auth/TurnstileWidget'
-import Logo from '../components/ui/Logo'
 
 type PendingRecoveryConfirmation = {
   accessToken: string
@@ -41,7 +40,6 @@ function LoginShell({ children }: { children: ReactNode }) {
 
       <main className="card relative z-10 w-full max-w-md overflow-hidden text-center backdrop-blur-xl">
         <div className="mx-auto mb-6">
-          <Logo className="mx-auto mb-3 h-16 w-16 text-[var(--color-primary)]" />
           <h1 className="font-heading text-4xl font-bold tracking-[0.18em] text-[var(--color-text)]">MONEXUS</h1>
           <div className="mx-auto mt-2 h-0.5 w-12 bg-[var(--color-primary)]" />
           <p className="mt-3 text-xs uppercase tracking-[0.35em] text-[var(--color-text-muted)]">Digital · Marketplace</p>
