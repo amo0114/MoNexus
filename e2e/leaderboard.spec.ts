@@ -107,19 +107,22 @@ test.describe('积分排行榜页', () => {
     await expect(page.getByTestId('leaderboard-row')).toHaveCount(7)
     await expect(page.getByText('数据截至 2026-07-31 · 每日更新')).toBeVisible()
 
-    // 我不在可视 Top 内 → 吸底条展示精确名次
-    const meBar = page.getByTestId('leaderboard-me')
-    await expect(meBar).toBeVisible()
-    await expect(meBar).toContainText('第 57 名 · 80 分')
+    // 桌面（≥lg）「我的排名」驻左栏卡片；吸底浮条仅 <lg 生效
+    const meCard = page.getByTestId('leaderboard-me-card')
+    await expect(meCard).toBeVisible()
+    await expect(meCard).toContainText('第 57 名 · 80 分')
 
     // 切到本周榜：发出 scope=week 请求、期标签与榜首随之更新
     await page.getByTestId('leaderboard-tab-week').click()
     await expect(page.getByTestId('leaderboard-podium-1')).toContainText('周选手1')
-    await expect(page.getByText('07-27 ~ 08-02')).toBeVisible()
+    // exact 匹配头部期间徽标——左栏说明卡的「本期区间：…。」带前后缀不会命中
+    await expect(page.getByText('07-27 ~ 08-02', { exact: true })).toBeVisible()
     expect(requested).toContain('week')
   })
 
   test('自己在榜内：行高亮标注「我」，吸底条随行进入视口而隐藏', async ({ page }) => {
+    // 吸底浮条仅 <lg（1024px）生效，桌面端信息驻左栏卡片——用窄视口验证联动
+    await page.setViewportSize({ width: 900, height: 800 })
     await loginAs(page, SEED_ACCOUNTS.user)
     const top = rows(8)
     top[4] = { ...top[4], displayName: '就是我', isMe: true }
