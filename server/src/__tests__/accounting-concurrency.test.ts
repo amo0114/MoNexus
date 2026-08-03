@@ -5,7 +5,7 @@ import { resolveOrder } from '../modules/admin/service.js'
 import { respondToOrderDispute } from '../modules/merchant/service.js'
 import { closeOrder, createOrder, disputeOrder } from '../modules/orders/service.js'
 import { checkin } from '../modules/points/service.js'
-import { createProductWithOffer, createTestMerchant, createTestUser } from './helpers.js'
+import { createProductWithOffer, createTestMerchant, createTestUser, issueTestInviteCode } from './helpers.js'
 
 async function createFixedProduct(price: number, merchantId?: number) {
   return createProductWithOffer({
@@ -195,9 +195,13 @@ describe('accounting concurrency and terminal settlement', () => {
       },
     })
 
+    const [codeOne, codeTwo] = [
+      await issueTestInviteCode(inviter.id),
+      await issueTestInviteCode(inviter.id),
+    ]
     const registrations = await Promise.allSettled([
-      registerUser('invite-race-one@test.local', 'pass123', inviter.inviteCode),
-      registerUser('invite-race-two@test.local', 'pass123', inviter.inviteCode),
+      registerUser('invite-race-one@test.local', 'pass123', codeOne.code),
+      registerUser('invite-race-two@test.local', 'pass123', codeTwo.code),
     ])
     expect(registrations.filter(result => result.status === 'fulfilled')).toHaveLength(2)
 

@@ -1,12 +1,6 @@
 import crypto from 'node:crypto'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { config } from '../config/index.js'
 import { prisma } from '../lib/prisma.js'
-import { __resetRedisForTests, __setRedisForTests, type RedisLike } from '../lib/redis.js'
-import {
-  __resetHumanVerifierForTesting,
-  __setHumanVerifierForTesting,
-} from '../modules/auth/humanVerification.js'
 import { registerUser, verifyEmailWithToken } from '../modules/auth/service.js'
 import {
   __runGrowthRewardCronTickForTests,
@@ -15,27 +9,9 @@ import {
   releaseMatureGrowthRewards,
   voidGrowthReward,
 } from '../modules/auth/growthRewards.js'
-import { createTestUser } from './helpers.js'
+import { createTestUser, issueTestInviteCode } from './helpers.js'
 
 const DAY_MS = 24 * 60 * 60 * 1_000
-
-class PendingReferralLimitedRedis implements RedisLike {
-  status = 'ready'
-
-  async get() { return null }
-  async set() { return 'OK' }
-  async del() { return 0 }
-  async incr() { return 1 }
-  async ping() { return 'PONG' }
-
-  async eval(_script: string, _numberOfKeys: number, key: string, rawTtl: string) {
-    // Flow/dimension are fixed, non-sensitive parts of a limiter key. The
-    // identifier suffix remains HMACed and is intentionally never inspected.
-    return key.includes(':referral-pending:')
-      ? [7, Number(rawTtl)]
-      : [1, Number(rawTtl)]
-  }
-}
 
 function hashToken(rawToken: string) {
   return crypto.createHash('sha256').update(rawToken).digest('hex')
@@ -118,18 +94,28 @@ describe('SPEC-RAP-001 growth reward held ledger', () => {
     })).toBe(1)
   })
 
-  it('only binds a currently eligible inviter and freezes its tier-adjusted referral amount', async () => {
-    const ineligible = await createTestUser('ineligible-referrer@test.local', 'pass123', 'user', 0)
-    const unbound = await registerUser('unbound-invitee@test.local', 'pass123', ineligible.user.inviteCode)
-    expect(await prisma.inviteRelation.count({ where: { inviteeId: unbound.user.id } })).toBe(0)
+  it('binds the claimed one-time code and freezes its tier-adjusted referral amount', async () => {
+    // SPEC-INVITE-001 IV-07：被暂停的发码人 → 领用显式 400，注册整体回滚，
+    // 不再有静默"注册成功但没建关系"的路径。
+    const suspended = await makeEligibleInviter('suspended-referrer@test.local')
+    await prisma.user.update({ where: { id: suspended.id }, data: { referralSuspended: true } })
+    const suspendedCode = await issueTestInviteCode(suspended.id)
+    await expect(registerUser('unbound-invitee@test.local', 'pass123', suspendedCode.code))
+      .rejects.toMatchObject({ status: 400, message: '邀请码无效或已失效' })
+    expect(await prisma.user.findUnique({ where: { email: 'unbound-invitee@test.local' } })).toBeNull()
 
     const eligible = await makeEligibleInviter('eligible-gold-referrer@test.local', 5_000)
+    const code = await issueTestInviteCode(eligible.id)
     await setConfig('inviteReward', 333)
-    const bound = await registerUser('bound-invitee@test.local', 'pass123', eligible.inviteCode)
+    const bound = await registerUser('bound-invitee@test.local', 'pass123', code.code)
     const relation = await prisma.inviteRelation.findUniqueOrThrow({ where: { inviteeId: bound.user.id } })
     const reward = await prisma.growthReward.findUniqueOrThrow({ where: { inviteRelationId: relation.id } })
 
     expect(relation).toMatchObject({ inviterId: eligible.id, status: 'pending_verification' })
+    await expect(prisma.inviteCode.findUniqueOrThrow({ where: { id: code.id } })).resolves.toMatchObject({
+      status: 'used',
+      usedByUserId: bound.user.id,
+    })
     // Default gold bonus is 10%; this amount remains frozen even if the
     // current SystemConfig changes before the invitee verifies their email.
     expect(reward).toMatchObject({ kind: 'referral', amount: 366, state: 'pending_verification' })
@@ -137,65 +123,15 @@ describe('SPEC-RAP-001 growth reward held ledger', () => {
     expect((await prisma.growthReward.findUniqueOrThrow({ where: { id: reward.id } })).amount).toBe(366)
   })
 
-  it('does not let a full pending-referral Redis bucket block the invitee base registration', async () => {
-    const original = {
-      mode: config.abuseProtectionMode,
-      hashKey: config.abuseHashKey,
-      redisEnabled: config.redisEnabled,
-      redisRequired: config.redisRequired,
-      cacheKeyPrefix: config.cacheKeyPrefix,
-      siteKey: config.turnstile.siteKey,
-      secretKey: config.turnstile.secretKey,
-      allowedHostnames: [...config.turnstile.allowedHostnames],
-    }
-    try {
-      config.abuseProtectionMode = 'enforce'
-      config.abuseHashKey = Buffer.alloc(32, 0x75)
-      config.redisEnabled = true
-      config.redisRequired = true
-      config.cacheKeyPrefix = 'rap-growth-test'
-      config.turnstile.siteKey = 'public-test-site-key'
-      config.turnstile.secretKey = 'private-test-secret'
-      config.turnstile.allowedHostnames = ['localhost']
-      __setRedisForTests(new PendingReferralLimitedRedis())
-      __setHumanVerifierForTesting({ verifyRegistration: async () => ({ kind: 'verified' }) })
-
-      const inviter = await makeEligibleInviter('pending-cap-referrer@test.local')
-      const registered = await registerUser(
-        'pending-cap-invitee@test.local',
-        'pass123',
-        inviter.inviteCode,
-        '203.0.113.200',
-        undefined,
-        'managed-proof',
-      )
-
-      expect(registered.user.points).toBe(0)
-      expect(await prisma.inviteRelation.count({ where: { inviteeId: registered.user.id } })).toBe(0)
-      await expect(prisma.growthReward.findFirstOrThrow({
-        where: { recipientUserId: registered.user.id, kind: 'registration' },
-      })).resolves.toMatchObject({ state: 'pending_verification' })
-    } finally {
-      config.abuseProtectionMode = original.mode
-      config.abuseHashKey = original.hashKey
-      config.redisEnabled = original.redisEnabled
-      config.redisRequired = original.redisRequired
-      config.cacheKeyPrefix = original.cacheKeyPrefix
-      config.turnstile.siteKey = original.siteKey
-      config.turnstile.secretKey = original.secretKey
-      config.turnstile.allowedHostnames = original.allowedHostnames
-      __resetRedisForTests()
-      __resetHumanVerifierForTesting()
-    }
-  })
-
   it('uses the inviter row lock so only one concurrent verification claims the final quota slot', async () => {
     await setConfig('referralDailyQualifiedLimit', 1)
     await setConfig('referralLifetimeQualifiedLimit', 1)
     const inviter = await makeEligibleInviter('quota-lock-referrer@test.local')
+    const codeA = await issueTestInviteCode(inviter.id)
+    const codeB = await issueTestInviteCode(inviter.id)
 
-    const first = await registerUser('quota-lock-a@test.local', 'pass123', inviter.inviteCode)
-    const second = await registerUser('quota-lock-b@test.local', 'pass123', inviter.inviteCode)
+    const first = await registerUser('quota-lock-a@test.local', 'pass123', codeA.code)
+    const second = await registerUser('quota-lock-b@test.local', 'pass123', codeB.code)
     const firstToken = await createVerificationToken(first.user.id, 'quota-a')
     const secondToken = await createVerificationToken(second.user.id, 'quota-b')
 

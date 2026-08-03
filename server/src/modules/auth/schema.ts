@@ -9,7 +9,16 @@ const normalizedEmailSchema = z.string()
 export const registerSchema = z.object({
   email: normalizedEmailSchema,
   password: z.string().min(6, '密码至少 6 位'),
-  inviteCode: z.string().trim().max(128, '邀请码过长').optional(),
+  // SPEC-INVITE-001 IV-01：trim + 大写归一化后必须恰为 8 位短码；空串视同
+  // 未携带（invite-only 的缺码判定在 service 层，见 IV-08）。
+  inviteCode: z.preprocess(
+    value => {
+      if (typeof value !== 'string') return value
+      const trimmed = value.trim()
+      return trimmed === '' ? undefined : trimmed.toUpperCase()
+    },
+    z.string().regex(/^[A-Z0-9]{8}$/, '邀请码格式不正确').optional(),
+  ),
   // The proof stays optional at schema level so an explicit local/test
   // `ABUSE_PROTECTION_MODE=off` remains usable. Enforce mode maps an omitted
   // or blank value to HUMAN_VERIFICATION_REQUIRED at the service boundary.

@@ -76,7 +76,7 @@ describe('P5 file-delivery database constraints', () => {
 
   async function makeMerchantWithProduct(suffix: string) {
     const user = await prisma.user.create({
-      data: { email: `file-cons-${suffix}@test.local`, password: 'x', role: 'merchant', inviteCode: `FC-${suffix}` },
+      data: { email: `file-cons-${suffix}@test.local`, password: 'x', role: 'merchant' },
     })
     const merchant = await prisma.merchant.create({
       data: { userId: user.id, name: `文件约束商家${suffix}`, status: 'active' },
@@ -144,7 +144,7 @@ describe('P5 file-delivery database constraints', () => {
     const { merchant, product } = await makeMerchantWithProduct('b')
     const file = await makeFile(merchant.id, 'b2')
     const buyer = await prisma.user.create({
-      data: { email: 'file-cons-buyer@test.local', password: 'x', inviteCode: 'FC-buyer' },
+      data: { email: 'file-cons-buyer@test.local', password: 'x' },
     })
     const order = await prisma.order.create({
       data: { userId: buyer.id, productId: product.id, price: 100 },

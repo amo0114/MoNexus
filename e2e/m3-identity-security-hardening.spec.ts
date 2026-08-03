@@ -13,7 +13,6 @@ const profile = {
   nickname: null,
   role: 'admin',
   status: '正常',
-  inviteCode: 'M3ISH',
   points: 500,
   merchant: null,
 }
@@ -72,6 +71,14 @@ async function mockProfile(page: Page) {
 async function mockProfileBackgroundRequests(page: Page) {
   await page.route(apiRoute('/products'), route => route.fulfill({ json: { items: [], nextCursor: null, hasMore: false } }))
   await page.route(apiRoute('/orders'), route => route.fulfill({ json: [] }))
+  // ProfilePage now loads the invitation card alongside its existing
+  // background data. Keep the UI-only authentication fixture self-contained
+  // so its intentionally unsigned token is never sent to the real backend.
+  await page.route(apiRoute('/invites/me'), route => route.fulfill({ json: {
+    eligible: true,
+    quota: null,
+    codes: [],
+  } }))
   await page.route(apiRoute('/points/history'), route => route.fulfill({ json: [] }))
   await page.route(apiRoute('/points/checkin/status'), route => route.fulfill({ json: { hasCheckedIn: false } }))
   await page.route(apiRoute('/points/tier'), route => route.fulfill({ json: memberTier }))

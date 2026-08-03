@@ -6,7 +6,7 @@ import { refreshAccessToken } from './authRefresh'
 export { refreshAccessToken }
 
 export type AuthenticatedAuthResponse = {
-  user: Pick<AuthUser, 'id' | 'email' | 'nickname' | 'role' | 'status' | 'inviteCode' | 'points' | 'emailVerified'>
+  user: Pick<AuthUser, 'id' | 'email' | 'nickname' | 'role' | 'status' | 'points' | 'emailVerified'>
   accessToken: string
 }
 
@@ -20,6 +20,7 @@ export type RegistrationStatus = {
   registrationEnabled: boolean
   registrationAvailable: boolean
   challenge: RegistrationChallenge | null
+  inviteRequired: boolean
 }
 
 export type MfaLoginChallenge = {

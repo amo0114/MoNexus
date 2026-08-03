@@ -30,7 +30,6 @@ import {
 import {
   consumeAbusePolicy,
   consumePasswordReset,
-  consumePendingReferralRelation,
   consumeRegistrationAttempt,
   consumeRegistrationProviderPreflight,
   consumeVerificationEmailSend,
@@ -220,33 +219,28 @@ describe('SPEC-RAP-001 security primitives', () => {
     )
   })
 
-  it('encodes named registration, mail, and referral policies in the specified order and values', async () => {
+  it('encodes named registration, mail, and password-reset policies in the specified order and values', async () => {
     const limiter = new RecordingLimiter()
     await consumeRegistrationProviderPreflight('203.0.113.19', limiter)
     await consumeRegistrationAttempt({ ip: '203.0.113.19', email: 'rate@example.com' }, limiter)
     await consumeVerificationEmailSend({ userId: 7, email: 'rate@example.com', ip: '203.0.113.19' }, limiter)
     await consumePasswordReset({ email: 'rate@example.com', ip: '203.0.113.19' }, limiter)
-    await consumePendingReferralRelation(99, {
-      limiter,
-      now: new Date('2026-08-01T15:59:59.000Z'),
-    })
 
-    expect(limiter.calls.map(({ bucket }) => [bucket.flow, bucket.dimension, bucket.limit, bucket.windowMs, bucket.windowKey])).toEqual([
-      ['registration-preflight', 'ip', 20, 600_000, undefined],
-      ['registration', 'ip', 5, 3_600_000, undefined],
-      ['registration', 'ip', 20, 86_400_000, undefined],
-      ['registration', 'email', 2, 86_400_000, undefined],
-      ['verification-email', 'user', 1, 60_000, undefined],
-      ['verification-email', 'user', 5, 86_400_000, undefined],
-      ['verification-email', 'email', 1, 60_000, undefined],
-      ['verification-email', 'email', 5, 86_400_000, undefined],
-      ['verification-email', 'ip', 10, 3_600_000, undefined],
-      ['verification-email', 'ip', 30, 86_400_000, undefined],
-      ['password-reset', 'email', 1, 60_000, undefined],
-      ['password-reset', 'email', 5, 86_400_000, undefined],
-      ['password-reset', 'ip', 10, 3_600_000, undefined],
-      ['password-reset', 'ip', 30, 86_400_000, undefined],
-      ['referral-pending', 'inviter', 6, 1_000, '2026-08-01'],
+    expect(limiter.calls.map(({ bucket }) => [bucket.flow, bucket.dimension, bucket.limit, bucket.windowMs])).toEqual([
+      ['registration-preflight', 'ip', 20, 600_000],
+      ['registration', 'ip', 5, 3_600_000],
+      ['registration', 'ip', 20, 86_400_000],
+      ['registration', 'email', 2, 86_400_000],
+      ['verification-email', 'user', 1, 60_000],
+      ['verification-email', 'user', 5, 86_400_000],
+      ['verification-email', 'email', 1, 60_000],
+      ['verification-email', 'email', 5, 86_400_000],
+      ['verification-email', 'ip', 10, 3_600_000],
+      ['verification-email', 'ip', 30, 86_400_000],
+      ['password-reset', 'email', 1, 60_000],
+      ['password-reset', 'email', 5, 86_400_000],
+      ['password-reset', 'ip', 10, 3_600_000],
+      ['password-reset', 'ip', 30, 86_400_000],
     ])
   })
 
@@ -292,7 +286,7 @@ describe('SPEC-RAP-001 security primitives', () => {
       fetchImplementation,
     })
 
-    await expect(verifier.verifyRegistration({ token: 'test-token', ip: '203.0.113.21' })).resolves.toEqual({ kind: 'verified' })
+    await expect(verifier.verify({ token: 'test-token', ip: '203.0.113.21', action: 'register' })).resolves.toEqual({ kind: 'verified' })
     expect(calledUrl).toBe(TURNSTILE_SITEVERIFY_ENDPOINT)
     expect(calledInit?.method).toBe('POST')
     expect(calledInit?.signal).toBeInstanceOf(AbortSignal)
@@ -314,7 +308,7 @@ describe('SPEC-RAP-001 security primitives', () => {
         allowedHostnames: ['app.example.com'],
         fetchImplementation: async () => new Response(JSON.stringify(payload), { status: 200 }),
       })
-      await expect(verifier.verifyRegistration({ token: 'test-token', ip: undefined })).resolves.toEqual({ kind: 'rejected' })
+      await expect(verifier.verify({ token: 'test-token', ip: undefined, action: 'register' })).resolves.toEqual({ kind: 'rejected' })
     }
   })
 
@@ -324,7 +318,7 @@ describe('SPEC-RAP-001 security primitives', () => {
       allowedHostnames: ['app.example.com'],
       fetchImplementation: async () => new Response('{}', { status: 200 }),
     })
-    await expect(missingConfig.verifyRegistration({ token: 'test-token', ip: undefined })).resolves.toEqual({ kind: 'unavailable' })
+    await expect(missingConfig.verify({ token: 'test-token', ip: undefined, action: 'register' })).resolves.toEqual({ kind: 'unavailable' })
 
     const failureFetch: typeof fetch = async () => {
       throw new DOMException('timeout', 'TimeoutError')
@@ -334,28 +328,28 @@ describe('SPEC-RAP-001 security primitives', () => {
       allowedHostnames: ['app.example.com'],
       fetchImplementation: failureFetch,
     })
-    await expect(networkFailure.verifyRegistration({ token: 'test-token', ip: undefined })).resolves.toEqual({ kind: 'unavailable' })
+    await expect(networkFailure.verify({ token: 'test-token', ip: undefined, action: 'register' })).resolves.toEqual({ kind: 'unavailable' })
 
     const providerFailure = createTurnstileHumanVerifier({
       secretKey: 'test-turnstile-secret',
       allowedHostnames: ['app.example.com'],
       fetchImplementation: async () => new Response('', { status: 500 }),
     })
-    await expect(providerFailure.verifyRegistration({ token: 'test-token', ip: undefined })).resolves.toEqual({ kind: 'unavailable' })
+    await expect(providerFailure.verify({ token: 'test-token', ip: undefined, action: 'register' })).resolves.toEqual({ kind: 'unavailable' })
 
     const malformedJson = createTurnstileHumanVerifier({
       secretKey: 'test-turnstile-secret',
       allowedHostnames: ['app.example.com'],
       fetchImplementation: async () => new Response('not-json', { status: 200 }),
     })
-    await expect(malformedJson.verifyRegistration({ token: 'test-token', ip: undefined })).resolves.toEqual({ kind: 'unavailable' })
+    await expect(malformedJson.verify({ token: 'test-token', ip: undefined, action: 'register' })).resolves.toEqual({ kind: 'unavailable' })
 
     const malformedBody = createTurnstileHumanVerifier({
       secretKey: 'test-turnstile-secret',
       allowedHostnames: ['app.example.com'],
       fetchImplementation: async () => new Response(JSON.stringify({ success: true, action: 'register' }), { status: 200 }),
     })
-    await expect(malformedBody.verifyRegistration({ token: 'test-token', ip: undefined })).resolves.toEqual({ kind: 'unavailable' })
+    await expect(malformedBody.verify({ token: 'test-token', ip: undefined, action: 'register' })).resolves.toEqual({ kind: 'unavailable' })
 
     const providerConfigFailure = createTurnstileHumanVerifier({
       secretKey: 'test-turnstile-secret',
@@ -365,15 +359,15 @@ describe('SPEC-RAP-001 security primitives', () => {
         'error-codes': ['invalid-input-secret'],
       }), { status: 200 }),
     })
-    await expect(providerConfigFailure.verifyRegistration({ token: 'test-token', ip: undefined })).resolves.toEqual({ kind: 'unavailable' })
+    await expect(providerConfigFailure.verify({ token: 'test-token', ip: undefined, action: 'register' })).resolves.toEqual({ kind: 'unavailable' })
   })
 
   it('permits only explicit test-process verifier injection', async () => {
     const verifier: HumanVerifier = {
-      verifyRegistration: async () => ({ kind: 'verified' }),
+      verify: async () => ({ kind: 'verified' }),
     }
     __setHumanVerifierForTesting(verifier)
-    await expect(getHumanVerifier().verifyRegistration({ token: 'in-memory-test-token', ip: undefined })).resolves.toEqual({
+    await expect(getHumanVerifier().verify({ token: 'in-memory-test-token', ip: undefined, action: 'register' })).resolves.toEqual({
       kind: 'verified',
     })
   })

@@ -16,10 +16,6 @@ const VOIDABLE_REWARD_STATES = ['pending_verification', 'held'] as const
 
 export const GROWTH_REWARD_BATCH_SIZE = 100
 
-export type ReferralInviteCandidate = {
-  inviterId: number
-}
-
 type ReferralEligibilityUser = {
   id: number
   status: string
@@ -163,35 +159,6 @@ async function transitionReferralToVoided(
   }
 }
 
-/**
- * Resolve only an inviter that can create a *new* pending relation now. The
- * registration transaction repeats this check under the inviter row lock, so
- * a suspension/config change between this preflight and the write is safe.
- */
-export async function resolveEligibleReferralInviteCandidate(
-  inviteCode: string | undefined,
-  now: Date = new Date(),
-): Promise<ReferralInviteCandidate | null> {
-  const normalizedCode = typeof inviteCode === 'string' ? inviteCode.trim() : ''
-  if (!normalizedCode) return null
-
-  const [inviter, minimumAgeDays] = await Promise.all([
-    prisma.user.findUnique({
-      where: { inviteCode: normalizedCode },
-      select: {
-        id: true,
-        status: true,
-        emailVerified: true,
-        referralSuspended: true,
-        createdAt: true,
-      },
-    }),
-    getSystemConfigValue('referralInviterMinAgeDays'),
-  ])
-  if (!inviter || !isEligibleReferralInviter(inviter, minimumAgeDays, now)) return null
-  return { inviterId: inviter.id }
-}
-
 /** Create the held-ledger source row for a newly registered account. */
 export async function createRegistrationGrowthReward(
   tx: Prisma.TransactionClient,
@@ -211,29 +178,27 @@ export async function createRegistrationGrowthReward(
 }
 
 /**
- * Create the optional pending relation and its frozen referral reward. The
- * caller has already reserved the Redis pending-relation bucket outside this
- * transaction. Rechecking under `FOR UPDATE` is what prevents a concurrent
- * suspension from creating a fresh relation after it takes effect.
+ * SPEC-INVITE-001 IV-09: create the pending relation and its frozen referral
+ * reward for a one-time invite code that this registration transaction has
+ * already atomically claimed. The claim step re-checked issuer status and
+ * `referralSuspended` under the issuer's row lock; tier and account age were
+ * verified when the code was issued, so this path deliberately does not run
+ * `isEligibleReferralInviter` again. Any failure here rejects and rolls back
+ * the whole registration — there is no silent-degradation branch left.
+ *
+ * The email-verification qualified/quota/void pipeline below keeps its
+ * original eligibility semantics untouched.
  */
-export async function createPendingReferralGrowthReward(
+export async function createClaimedReferralGrowthReward(
   tx: Prisma.TransactionClient,
   input: {
-    candidate: ReferralInviteCandidate | null
+    inviterId: number
     inviteeId: number
-    now?: Date
   },
 ) {
-  if (!input.candidate) return null
-
-  const now = input.now ?? new Date()
-  const inviter = await lockUserForGrowthReward(tx, input.candidate.inviterId)
-  const minimumAgeDays = await getSystemConfigValue('referralInviterMinAgeDays', tx)
-  if (!inviter || !isEligibleReferralInviter(inviter, minimumAgeDays, now)) return null
-
   const relation = await tx.inviteRelation.create({
     data: {
-      inviterId: inviter.id,
+      inviterId: input.inviterId,
       inviteeId: input.inviteeId,
       status: 'pending_verification',
     },
@@ -246,7 +211,7 @@ export async function createPendingReferralGrowthReward(
     'invite reward',
   )
   const inviterLifetimeResult = await tx.pointLog.aggregate({
-    where: { userId: inviter.id, type: 'in' },
+    where: { userId: input.inviterId, type: 'in' },
     _sum: { amount: true },
   })
   const tierConfig = await getCurrentTierConfig(tx)
@@ -255,7 +220,7 @@ export async function createPendingReferralGrowthReward(
 
   const reward = await tx.growthReward.create({
     data: {
-      recipientUserId: inviter.id,
+      recipientUserId: input.inviterId,
       inviteRelationId: relation.id,
       kind: 'referral',
       amount: total,

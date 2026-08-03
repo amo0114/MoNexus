@@ -42,6 +42,12 @@ export const systemConfigKeys = [
   'referralInviterMinAgeDays',
   'referralDailyQualifiedLimit',
   'referralLifetimeQualifiedLimit',
+  // SPEC-INVITE-001：invite-only 开关、发码资格门槛、周期名额与码有效期。
+  'registrationInviteOnly',
+  'inviteMinTierRank',
+  'inviteQuotaUserMonthly',
+  'inviteQuotaMerchantMonthly',
+  'inviteCodeTtlDays',
 ] as const
 
 export type SystemConfigKey = typeof systemConfigKeys[number]
@@ -96,6 +102,12 @@ export const systemConfigDefaults: Record<SystemConfigKey, number> = {
   referralInviterMinAgeDays: 30,
   referralDailyQualifiedLimit: 3,
   referralLifetimeQualifiedLimit: 20,
+  // SPEC-INVITE-001 IV-08/IV-12：默认关闭 invite-only、金卡门槛、3/10 枚月名额、14 天有效期。
+  registrationInviteOnly: 0,
+  inviteMinTierRank: 2,
+  inviteQuotaUserMonthly: 3,
+  inviteQuotaMerchantMonthly: 10,
+  inviteCodeTtlDays: 14,
 }
 
 export const systemConfigDescriptions: Record<SystemConfigKey, string> = {
@@ -128,6 +140,11 @@ export const systemConfigDescriptions: Record<SystemConfigKey, string> = {
   referralInviterMinAgeDays: '邀请码邀请人最小账户年龄',
   referralDailyQualifiedLimit: '邀请码每日合格人数上限',
   referralLifetimeQualifiedLimit: '邀请码生命周期合格人数上限',
+  registrationInviteOnly: '仅限邀请注册',
+  inviteMinTierRank: '普通用户发码会员等级门槛',
+  inviteQuotaUserMonthly: '普通用户每月邀请名额',
+  inviteQuotaMerchantMonthly: '商家每月邀请名额',
+  inviteCodeTtlDays: '邀请码有效期',
 }
 
 /** 管理端配置项分组（中文），供配置页按组渲染。 */
@@ -161,6 +178,11 @@ export const systemConfigGroups: Record<SystemConfigKey, string> = {
   referralInviterMinAgeDays: '账户与注册',
   referralDailyQualifiedLimit: '账户与注册',
   referralLifetimeQualifiedLimit: '账户与注册',
+  registrationInviteOnly: '账户与注册',
+  inviteMinTierRank: '账户与注册',
+  inviteQuotaUserMonthly: '账户与注册',
+  inviteQuotaMerchantMonthly: '账户与注册',
+  inviteCodeTtlDays: '账户与注册',
 }
 
 /** 可选单位标注。 */
@@ -193,6 +215,11 @@ export const systemConfigUnits: Partial<Record<SystemConfigKey, string>> = {
   referralInviterMinAgeDays: '天',
   referralDailyQualifiedLimit: '人/日',
   referralLifetimeQualifiedLimit: '人',
+  registrationInviteOnly: '开关（0/1）',
+  inviteMinTierRank: '等级序号',
+  inviteQuotaUserMonthly: '枚/月',
+  inviteQuotaMerchantMonthly: '枚/月',
+  inviteCodeTtlDays: '天',
 }
 
 const BONUS_BPS_HINT = '万分比，10000=100%；例如 500 表示额外 +5%'
@@ -225,6 +252,11 @@ export const systemConfigHints: Partial<Record<SystemConfigKey, string>> = {
   referralInviterMinAgeDays: '邀请码仅在邀请人账户年龄达到该值后才能建立新的邀请关系。',
   referralDailyQualifiedLimit: '每位邀请人每个上海自然日最多合格人数；0 = 暂停后续邀请资格，非 0 时不得超过生命周期上限。',
   referralLifetimeQualifiedLimit: '每位邀请人生命周期最多合格人数；0 = 暂停后续邀请资格。',
+  registrationInviteOnly: '1 = 注册必须携带有效邀请码；0 = 邀请码可选。',
+  inviteMinTierRank: '普通用户生成邀请码的最低会员等级：0 = 不限，1 = 银卡，2 = 金卡，3 = 铂金。',
+  inviteQuotaUserMonthly: '普通合格用户每个上海自然月可生成的邀请码数；生成即消耗，过期不返还；0 = 暂停普通用户发码。',
+  inviteQuotaMerchantMonthly: '商家每个上海自然月可生成的邀请码数；生成即消耗，过期不返还；0 = 暂停商家发码。',
+  inviteCodeTtlDays: '邀请码自生成起的有效天数（1–90），过期未用不返还名额。',
 }
 
 type ConfigClient = typeof prisma | Prisma.TransactionClient
@@ -255,6 +287,7 @@ export function assertSystemConfigKey(key: string): asserts key is SystemConfigK
 const BOOLEAN_CONFIG_KEYS = [
   'registrationEnabled',
   'emailVerificationRequiredForValue',
+  'registrationInviteOnly',
 ] as const
 
 const RANGE_CONFIG_KEYS = {
@@ -273,6 +306,18 @@ const RANGE_CONFIG_KEYS = {
   referralLifetimeQualifiedLimit: {
     max: 10_000,
     message: '邀请码生命周期合格人数上限必须在 0..10000 人之间（0 = 暂停资格）',
+  },
+  inviteMinTierRank: {
+    max: 3,
+    message: '发码会员等级门槛必须在 0..3 之间（0 = 不限，3 = 铂金）',
+  },
+  inviteQuotaUserMonthly: {
+    max: 1_000,
+    message: '普通用户每月邀请名额必须在 0..1000 枚之间（0 = 暂停发码）',
+  },
+  inviteQuotaMerchantMonthly: {
+    max: 1_000,
+    message: '商家每月邀请名额必须在 0..1000 枚之间（0 = 暂停发码）',
   },
 } as const satisfies Partial<Record<SystemConfigKey, { max: number; message: string }>>
 
@@ -471,6 +516,10 @@ export async function updateSystemConfig(
   // P7b：退避表只有五档，放开更大值只会让任务在最后一档上打转（硬验收 ⑥）。
   if (key === 'autoProvisionMaxAttempts' && value > 5) {
     throw badRequest('自动开通尝试次数必须在 0–5 之间（0 = 暂停外呼）')
+  }
+  // SPEC-INVITE-001 IV-11：0/负值等于生成即失效，超长有效期抵消一次性收敛。
+  if (key === 'inviteCodeTtlDays' && (value < 1 || value > 90)) {
+    throw badRequest('邀请码有效期必须在 1–90 天之间')
   }
 
   return prisma.$transaction(async tx => {

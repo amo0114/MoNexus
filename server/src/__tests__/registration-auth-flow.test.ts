@@ -125,6 +125,7 @@ describe('SPEC-RAP-001 auth registration/mail integration', () => {
     expect(res.body).toEqual({
       registrationEnabled: true,
       registrationAvailable: true,
+      inviteRequired: false,
       challenge: { provider: 'turnstile', siteKey: 'public-test-site-key' },
     })
     expect(JSON.stringify(res.body)).not.toContain('private-test-secret')
@@ -135,6 +136,7 @@ describe('SPEC-RAP-001 auth registration/mail integration', () => {
     expect(unavailable.body).toEqual({
       registrationEnabled: true,
       registrationAvailable: false,
+      inviteRequired: false,
       challenge: null,
     })
   })
@@ -145,7 +147,7 @@ describe('SPEC-RAP-001 auth registration/mail integration', () => {
     __setRedisForTests(redis)
     let verifierCalls = 0
     __setHumanVerifierForTesting({
-      verifyRegistration: async () => {
+      verify: async () => {
         verifierCalls += 1
         return { kind: 'verified' }
       },
@@ -172,7 +174,7 @@ describe('SPEC-RAP-001 auth registration/mail integration', () => {
     __setRedisForTests(redis)
     let verifierCalls = 0
     __setHumanVerifierForTesting({
-      verifyRegistration: async () => {
+      verify: async () => {
         verifierCalls += 1
         return { kind: 'verified' }
       },
@@ -196,7 +198,7 @@ describe('SPEC-RAP-001 auth registration/mail integration', () => {
     const redis = new CountingRedis()
     __setRedisForTests(redis)
     let verification: HumanVerificationResult = { kind: 'verified' }
-    __setHumanVerifierForTesting({ verifyRegistration: async () => verification })
+    __setHumanVerifierForTesting({ verify: async () => verification })
 
     const missing = await api.post('/api/auth/register').send({
       email: 'missing-proof@test.local', password: 'pass123',
@@ -228,7 +230,7 @@ describe('SPEC-RAP-001 auth registration/mail integration', () => {
 
   it('fails closed on Redis and permits a verified registration only after all checks', async () => {
     enableProtection()
-    __setHumanVerifierForTesting({ verifyRegistration: async () => ({ kind: 'verified' }) })
+    __setHumanVerifierForTesting({ verify: async () => ({ kind: 'verified' }) })
     __setRedisForTests(null)
 
     const before = await sideEffectSnapshot()

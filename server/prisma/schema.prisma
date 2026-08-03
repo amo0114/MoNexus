@@ -14,7 +14,6 @@ model User {
   password      String
   role          String    @default("user") // user | admin | merchant
   status        String    @default("正常")
-  inviteCode    String    @unique @default(uuid())
   nickname      String? // 1-20 字，个人中心可设；评价展示名回退邮箱打码
   emailVerified DateTime?
   // Stops this user from qualifying new invite relations. It never rewrites
@@ -57,6 +56,28 @@ model User {
   fakaProvisionEmailProofs FakaProvisionEmailProof[]
   fakaProvisionEmailSendBudget FakaProvisionEmailSendBudget?
   leaderboardEntries      LeaderboardEntry[]
+  inviteCodesIssued       InviteCode[]             @relation("InviteCodeIssuer")
+  inviteCodeUsed          InviteCode?              @relation("InviteCodeUsedBy")
+}
+
+// SPEC-INVITE-001：一次性邀请码。资格前置到发码侧（IV-04），名额按上海自然月
+// 在生成时消耗（IV-05/IV-06）；注册事务内条件更新原子领用，严格一次性（IV-03）。
+// `expired` 为惰性判定：读侧一律以 expiresAt 为准（IV-02），无定时任务改状态。
+model InviteCode {
+  id           Int       @id @default(autoincrement())
+  code         String    @unique // ^[A-Z0-9]{8}$，生成字母表见 lib/inviteCode.ts（IV-01）
+  issuerId     Int
+  status       String    @default("active") // active | used | expired | revoked（expired 惰性，见 IV-02）
+  expiresAt    DateTime
+  usedByUserId Int?      @unique
+  usedAt       DateTime?
+  createdAt    DateTime  @default(now())
+
+  issuer User  @relation("InviteCodeIssuer", fields: [issuerId], references: [id])
+  usedBy User? @relation("InviteCodeUsedBy", fields: [usedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([issuerId, createdAt]) // 月度名额计数
+  @@index([issuerId, status]) // 个人中心列表
 }
 
 // FakaBridge 开通邮箱归属证明：防止填写他人 Xboard 邮箱后降配/续费他人套餐。
