@@ -329,7 +329,9 @@ function InviteCard() {
       const data = await getMyInvites()
       setInviteData(data)
     } catch (err) {
-      showToast(getApiErrorMessage(err, '加载邀请码失败'), 'error')
+      // Silently fail to avoid blocking the rest of the profile page.
+      // The component will render a minimal fallback state.
+      setInviteData(null)
     } finally {
       setLoading(false)
     }
@@ -376,11 +378,8 @@ function InviteCard() {
   }
 
   if (!inviteData) {
-    return (
-      <div className="card flex items-center justify-center py-6">
-        <p className="text-sm text-[var(--color-text-muted)]">暂时无法加载邀请信息</p>
-      </div>
-    )
+    // Silently hide the invite card when the API is unavailable.
+    return null
   }
 
   const { eligibility, codes } = inviteData
