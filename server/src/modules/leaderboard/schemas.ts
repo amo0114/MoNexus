@@ -17,6 +17,8 @@ export const LeaderboardTopRowSchema = z
     displayName: z.string(),
     points: z.number().int(),
     isMe: z.boolean(),
+    /** 上一轮快照名次；首次入榜为 null。 */
+    prevRank: z.number().int().positive().nullable(),
   })
   .strict()
 
@@ -24,6 +26,7 @@ export const LeaderboardMeSchema = z
   .object({
     rank: z.number().int().positive(),
     points: z.number().int(),
+    prevRank: z.number().int().positive().nullable(),
   })
   .strict()
 

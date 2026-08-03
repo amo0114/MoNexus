@@ -1,5 +1,6 @@
 import { Coins, Crown } from 'lucide-react'
 import type { LeaderboardEntry } from '../../api/leaderboard'
+import { fmtPoints } from './format'
 import { initialOf } from './LetterAvatar'
 
 type Medal = 1 | 2 | 3
@@ -38,6 +39,8 @@ function PodiumSpot({
         first ? 'w-[6.5rem] sm:w-32 lg:w-36 mb-6' : 'w-[5.5rem] sm:w-28 lg:w-32'
       }`}
     >
+      {/* 颁奖台不在列表结构里：视觉名次徽标 aria-hidden，名次上下文由这里补齐 */}
+      <span className="sr-only">第 {medal} 名</span>
       <div className={`relative ${first ? 'podium-float' : ''}`}>
         {first && (
           <Crown
@@ -59,7 +62,7 @@ function PodiumSpot({
             {initialOf(entry.displayName)}
           </span>
         </div>
-        <span className="podium-rank-badge" style={BADGE_STYLE[medal]}>
+        <span className="podium-rank-badge" style={BADGE_STYLE[medal]} aria-hidden="true">
           {medal}
         </span>
       </div>
@@ -70,9 +73,9 @@ function PodiumSpot({
       >
         {entry.displayName}
       </div>
-      <div className="mt-1 flex items-center gap-1 text-[var(--color-cta)]">
+      <div className="mt-1 flex items-center gap-1 text-[var(--color-points)]">
         <Coins className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
-        <span className="font-mono text-sm lg:text-base font-bold">{entry.points}</span>
+        <span className="font-mono text-sm lg:text-base font-bold tabular-nums">{fmtPoints(entry.points)}</span>
       </div>
       {entry.isMe && (
         <span className="mt-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-[var(--color-primary-tint-strong)] text-[var(--color-primary)]">

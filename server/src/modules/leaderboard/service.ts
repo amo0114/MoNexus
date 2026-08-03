@@ -151,12 +151,20 @@ export const __aggregateWindowForTests = aggregateWindow
  * LB-08：快照替换在单事务内 delete + createMany，MVCC 保证读侧任意时刻
  * 只见完整的旧份或新份。advisory lock 按 (scope, periodKey) 串行化——租约
  * 允许「互斥丢失后继续跑」，同期两轮并发才不会撞 unique 约束。
+ *
+ * 名次变化（P3-1）：替换前把旧份 userId→rank 读出，新行 prevRank 即上一轮
+ * 名次（新入榜为 null）。同一事务内先读后删，前后两份绝不会互相看见半成品。
  */
 async function replaceSnapshot(period: LeaderboardPeriod, rows: AggregateRow[], computedAt: Date) {
   const lockKey = `${period.scope}:${period.periodKey}`
   await prisma.$transaction(
     async tx => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(${LEADERBOARD_LOCK_CLASS}::int4, hashtext(${lockKey}))`
+      const previous = await tx.leaderboardEntry.findMany({
+        where: { scope: period.scope, periodKey: period.periodKey },
+        select: { userId: true, rank: true },
+      })
+      const prevRankOf = new Map(previous.map(row => [row.userId, row.rank]))
       await tx.leaderboardEntry.deleteMany({ where: { scope: period.scope, periodKey: period.periodKey } })
       if (rows.length === 0) return
       await tx.leaderboardEntry.createMany({
@@ -167,6 +175,7 @@ async function replaceSnapshot(period: LeaderboardPeriod, rows: AggregateRow[], 
           userId: row.userId,
           points: row.points,
           computedAt,
+          prevRank: prevRankOf.get(row.userId) ?? null,
         })),
       })
     },
@@ -245,11 +254,11 @@ export async function getLeaderboard(
       where,
       orderBy: { rank: 'asc' },
       take: TOP_LIMIT,
-      select: { rank: true, userId: true, points: true, computedAt: true },
+      select: { rank: true, userId: true, points: true, computedAt: true, prevRank: true },
     }),
     prisma.leaderboardEntry.findUnique({
       where: { scope_periodKey_userId: { ...where, userId } },
-      select: { rank: true, points: true },
+      select: { rank: true, points: true, prevRank: true },
     }),
   ])
 
@@ -265,7 +274,8 @@ export async function getLeaderboard(
     computedAt = totalRow?.computedAt ?? null
   }
   const names = await displayNamesFor(topRows.map(row => row.userId))
-  const me: LeaderboardMe | null = myRow === null ? null : { rank: myRow.rank, points: myRow.points }
+  const me: LeaderboardMe | null =
+    myRow === null ? null : { rank: myRow.rank, points: myRow.points, prevRank: myRow.prevRank }
 
   const result: LeaderboardResponse = {
     scope,
@@ -278,6 +288,7 @@ export async function getLeaderboard(
       displayName: names.get(row.userId) ?? '',
       points: row.points,
       isMe: row.userId === userId,
+      prevRank: row.prevRank,
     })),
     me,
   }

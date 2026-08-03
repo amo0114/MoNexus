@@ -12,11 +12,15 @@ export interface LeaderboardEntry {
   displayName: string
   points: number
   isMe: boolean
+  /** 上一轮快照名次；首次入榜为 null。prevRank - rank > 0 即名次上升。 */
+  prevRank?: number | null
 }
 
 export interface LeaderboardMe {
   rank: number
   points: number
+  /** 同 LeaderboardEntry.prevRank。 */
+  prevRank?: number | null
 }
 
 export interface LeaderboardResponse {

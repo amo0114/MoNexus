@@ -938,6 +938,9 @@ model LeaderboardEntry {
   userId     Int
   points     Int // 窗口内 SUM(PointLog.amount) WHERE type='in'
   computedAt DateTime // 本批次刷新时刻，读侧作 updatedAt 下发
+  // 上一轮快照同（scope, periodKey）的名次：读侧推导 ↑↓ 变化（prevRank - rank）。
+  // 首次入榜为 null；同期每日重刷时即「较昨日」。
+  prevRank   Int?
 
   user User @relation(fields: [userId], references: [id])
 

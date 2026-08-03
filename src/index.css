@@ -37,6 +37,13 @@
   --color-primary-tint: rgba(99, 102, 241, 0.09);
   --color-primary-tint-strong: rgba(99, 102, 241, 0.16);
 
+  /* 文字级积分绿：--color-cta 是给白字按钮做底色的，直接当文字色在白卡上
+     仅 2.28:1（WCAG AA 需 4.5）。此 token 专供文字/图标，三主题均 ≥4.5:1。 */
+  --color-points: #15803D;             /* green-700 — 白卡 5.01:1 */
+  /* primary 底色上的文字色：dark/soft 的 primary 偏浅，白字不达标，
+     改用深色文字（4.92 / 6.40）；light 维持白字基线。 */
+  --color-on-primary: #FFFFFF;
+
   /* Spacing */
   --space-xs: 0.25rem;
   --space-sm: 0.5rem;
@@ -116,6 +123,9 @@
   /* 深色底需要更高 alpha 才看得出色晕 */
   --color-primary-tint: rgba(129, 140, 248, 0.14);
   --color-primary-tint-strong: rgba(129, 140, 248, 0.22);
+
+  --color-points: #4ADE80;             /* green-400 — 深卡 10.21:1 */
+  --color-on-primary: #1E293B;         /* slate-800 on indigo-400 — 4.92:1 */
 
   /* Warning (amber family) — tuned for dark surfaces */
   --color-warning-bg: rgba(180, 83, 9, 0.18);  /* amber-700 @ ~18% */
@@ -653,6 +663,9 @@ h1, h2, h3, h4 {
   --color-primary-tint: rgba(255, 140, 66, 0.12);
   --color-primary-tint-strong: rgba(255, 140, 66, 0.2);
 
+  --color-points: #3F7A3F;             /* 暖米卡上 5.09:1 */
+  --color-on-primary: #3D2210;         /* 深棕 on 暖橙 — 6.40:1 */
+
   --color-info: #2563EB;
   --color-warning: #F5A340;
   --color-success: #6BBE6B;
@@ -708,7 +721,9 @@ h1, h2, h3, h4 {
 .podium-ring {
   position: relative;
   border-radius: var(--radius-pill);
-  box-shadow: var(--podium-glow);
+  /* glow 之外再叠 1px 金属深色描边：soft 主题米白卡片上，银/铜环的浅色
+     渐变端会融进卡片（实测仅 ~1.5:1），描边让环缘在任何主题下都成立。 */
+  box-shadow: var(--podium-glow), 0 0 0 1px var(--podium-edge);
 }
 
 /* 环层在遮罩面之下：旋转它只让流光转动，字母保持正立。 */
@@ -742,6 +757,7 @@ h1, h2, h3, h4 {
     #F59E0B 52%, #B45309 68%, #FDE68A 86%, #B45309 100%
   );
   --podium-glow: 0 0 18px rgba(245, 158, 11, 0.45), 0 0 44px rgba(245, 158, 11, 0.2);
+  --podium-edge: rgba(180, 83, 9, 0.35);
 }
 
 .podium-gold .podium-ring-metal {
@@ -751,11 +767,13 @@ h1, h2, h3, h4 {
 .podium-silver {
   --podium-metal: linear-gradient(135deg, #FFFFFF 0%, #CBD5E1 38%, #94A3B8 62%, #F1F5F9 100%);
   --podium-glow: 0 0 14px rgba(148, 163, 184, 0.4);
+  --podium-edge: rgba(100, 116, 139, 0.45);
 }
 
 .podium-bronze {
   --podium-metal: linear-gradient(135deg, #F2D0B0 0%, #C87F45 42%, #8C5A2B 68%, #E8B98E 100%);
   --podium-glow: 0 0 14px rgba(200, 127, 69, 0.4);
+  --podium-edge: rgba(140, 90, 43, 0.45);
 }
 
 .podium-float {

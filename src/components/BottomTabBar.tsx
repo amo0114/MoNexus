@@ -32,7 +32,9 @@ export default function BottomTabBar() {
   // 不再比较单帧 delta（慢速滚动每帧 <6px 会永远无法触发），
   // 而是累计同向位移跨阈值后触发并重置锚点；换向即清零。
   // 隐藏阈值(48px) > 唤回阈值(24px)：收起保守、唤回灵敏（Apple 式）。
+  // 状态同步进 appStore：吸底浮层（排行榜 MyRankBar）据此联动下移。
   const [hidden, setHidden] = useState(false)
+  const setTabbarHidden = useAppStore((s) => s.setTabbarHidden)
   useEffect(() => {
     let lastY = window.scrollY
     let acc = 0
@@ -62,6 +64,12 @@ export default function BottomTabBar() {
     window.addEventListener('scroll', onScroll, { passive: true })
     return () => window.removeEventListener('scroll', onScroll)
   }, [])
+
+  // 本地态 → 全局（含 /product 页 Tab Bar 整体让位时复位，卸载时兜底复位）
+  useEffect(() => {
+    setTabbarHidden(hidden)
+  }, [hidden, setTabbarHidden])
+  useEffect(() => () => setTabbarHidden(false), [setTabbarHidden])
 
   // Product detail is an immersive task page: the fixed buy bar takes over
   // the bottom slot (V2-M3), so the tab bar yields there.

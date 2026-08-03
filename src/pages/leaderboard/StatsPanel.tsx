@@ -1,5 +1,7 @@
 import { Crown, Flag, TrendingUp, Trophy } from 'lucide-react'
 import type { LeaderboardResponse } from '../../api/leaderboard'
+import { fmtPoints, meGap } from './format'
+import { RankDelta } from './RankRow'
 
 /**
  * 桌面端「本期战况」统计卡：hero 行右侧，与颁奖台等高（grid items-stretch）。
@@ -13,25 +15,21 @@ import type { LeaderboardResponse } from '../../api/leaderboard'
 type Stat = { icon: typeof Crown; label: string; value: string }
 
 function deriveStats(data: LeaderboardResponse): Stat[] {
-  const { top, me } = data
+  const { top } = data
   const champion = top[0]
   const runnerUp = top[1]
   const last = top[top.length - 1]
   const stats: Stat[] = []
 
-  if (me && me.rank > 1) {
-    const prev = top.find((row) => row.rank === me.rank - 1)
-    if (prev) {
-      stats.push({ icon: TrendingUp, label: '距上一名', value: `${prev.points - me.points} 分` })
-    } else if (last && me.rank > last.rank && last.points > me.points) {
-      stats.push({ icon: TrendingUp, label: '距上榜线', value: `${last.points - me.points} 分` })
-    }
+  const gap = meGap(data)
+  if (gap) {
+    stats.push({ icon: TrendingUp, label: gap.label, value: `${fmtPoints(gap.points)} 分` })
   }
   if (champion && runnerUp) {
-    stats.push({ icon: Crown, label: '榜首领先', value: `${champion.points - runnerUp.points} 分` })
+    stats.push({ icon: Crown, label: '榜首领先', value: `${fmtPoints(champion.points - runnerUp.points)} 分` })
   }
   if (last && last.rank > 3) {
-    stats.push({ icon: Flag, label: `上榜线（第 ${last.rank} 名）`, value: `${last.points} 分` })
+    stats.push({ icon: Flag, label: `上榜线（第 ${last.rank} 名）`, value: `${fmtPoints(last.points)} 分` })
   }
   return stats
 }
@@ -51,7 +49,8 @@ export default function StatsPanel({ data }: { data: LeaderboardResponse }) {
           <div className="min-w-0">
             <div className="text-xs text-[var(--color-text-muted)]">我的排名</div>
             <div className="font-mono text-2xl font-bold tracking-tight text-[var(--color-text)] tabular-nums">
-              第 {me.rank} 名 · {me.points} 分
+              第 {fmtPoints(me.rank)} 名 <RankDelta rank={me.rank} prevRank={me.prevRank} /> ·{' '}
+              {fmtPoints(me.points)} 分
             </div>
           </div>
         ) : (

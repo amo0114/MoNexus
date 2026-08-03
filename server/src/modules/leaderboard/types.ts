@@ -14,17 +14,21 @@ export interface LeaderboardPeriod {
   endDay: string | null
 }
 
-/** LB-07：他人行只含这四个字段，绝不含 userId / email / 余额。 */
+/** LB-07：他人行只含这五个字段，绝不含 userId / email / 余额。 */
 export interface LeaderboardTopRow {
   rank: number
   displayName: string
   points: number
   isMe: boolean
+  /** 上一轮快照名次；首次入榜为 null。prevRank - rank > 0 即名次上升。 */
+  prevRank: number | null
 }
 
 export interface LeaderboardMe {
   rank: number
   points: number
+  /** 同 LeaderboardTopRow.prevRank。 */
+  prevRank: number | null
 }
 
 export interface LeaderboardResponse {
