@@ -344,10 +344,20 @@ function InviteCard() {
   async function handleCreateInvite() {
     setCreating(true)
     try {
-      const result = await createInviteCode()
-      setInviteData({
-        eligibility: result.eligibility,
-        codes: [result.code, ...(inviteData?.codes || [])],
+      const code = await createInviteCode()
+      setInviteData(current => {
+        if (!current) return current
+        return {
+          ...current,
+          codes: [code, ...current.codes],
+          quota: current.quota === null
+            ? null
+            : {
+                ...current.quota,
+                used: current.quota.used + 1,
+                remaining: Math.max(0, current.quota.remaining - 1),
+              },
+        }
       })
       showToast('邀请码已生成')
     } catch (err) {
@@ -382,8 +392,26 @@ function InviteCard() {
     return null
   }
 
-  const { eligibility, codes } = inviteData
-  const activeCodes = codes.filter(c => !c.expired && !c.revoked && !c.claimedBy)
+  const { eligible, quota, codes } = inviteData
+  const canIssue = eligible && (quota === null || quota.remaining > 0)
+  const activeCodes = codes.filter(code => code.status === 'active')
+  const inactiveCodes = codes.filter(code => code.status !== 'active')
+  const ineligibilityMessage = (() => {
+    switch (inviteData.reason) {
+      case 'not_verified':
+        return '请先完成邮箱验证后再邀请好友'
+      case 'account_too_young':
+        return '账号注册时间不足，暂不可邀请好友'
+      case 'suspended':
+        return '当前账号暂不可邀请好友'
+      case 'tier_too_low':
+        return `${inviteData.tierRequired ?? '所需'}及以上会员可邀请好友`
+      case 'role_paused':
+        return '邀请功能暂未开放'
+      default:
+        return '当前账号暂不可邀请好友'
+    }
+  })()
 
   return (
     <div className="card flex flex-col gap-4">
@@ -399,12 +427,13 @@ function InviteCard() {
 
           <div className="flex items-center justify-between gap-3 mb-3 p-3 bg-[var(--color-background)] rounded-lg border border-[var(--color-border)]">
             <div className="flex items-center gap-2">
-              <MemberTierBadge tier={eligibility.tier} label={eligibility.tier} tone="neutral" />
               <span className="text-sm text-[var(--color-text)]">
-                本月已用 <strong>{eligibility.quotaStatus.used}</strong> / {eligibility.quotaStatus.limit}
+                {quota === null
+                  ? '邀请码不限量'
+                  : `本月已用 ${quota.used} / ${quota.limit}`}
               </span>
             </div>
-            {eligibility.canIssue && (
+            {canIssue && (
               <button
                 onClick={handleCreateInvite}
                 disabled={creating}
@@ -416,21 +445,21 @@ function InviteCard() {
             )}
           </div>
 
-          {!eligibility.eligible && eligibility.reason && (
+          {!eligible && (
             <div className="mb-3 p-3 bg-[var(--color-warning)]/10 border border-[var(--color-warning)]/30 rounded-lg text-xs text-[var(--color-text)]">
-              {eligibility.reason}
+              {ineligibilityMessage}
             </div>
           )}
 
           {activeCodes.length === 0 ? (
             <div className="p-4 text-center text-sm text-[var(--color-text-muted)] bg-[var(--color-background)] rounded-lg border border-[var(--color-border)]">
-              {eligibility.canIssue ? '暂无可用邀请码，点击上方按钮生成' : '暂无可用邀请码'}
+              {canIssue ? '暂无可用邀请码，点击上方按钮生成' : '暂无可用邀请码'}
             </div>
           ) : (
             <div className="space-y-2">
               {activeCodes.map(code => (
                 <div
-                  key={code.id}
+                  key={code.code}
                   className="flex items-center justify-between p-3 bg-[var(--color-background)] rounded-lg border border-[var(--color-border)]"
                 >
                   <span className="font-mono text-sm font-bold text-[var(--color-text)]">{code.code}</span>
@@ -457,20 +486,20 @@ function InviteCard() {
             </div>
           )}
 
-          {codes.length > activeCodes.length && (
+          {inactiveCodes.length > 0 && (
             <details className="mt-3">
               <summary className="text-xs text-[var(--color-text-muted)] cursor-pointer hover:text-[var(--color-text)] select-none">
-                查看已使用/过期的邀请码 ({codes.length - activeCodes.length})
+                查看已使用/过期的邀请码 ({inactiveCodes.length})
               </summary>
               <div className="mt-2 space-y-2">
-                {codes.filter(c => c.expired || c.revoked || c.claimedBy).map(code => (
+                {inactiveCodes.map(code => (
                   <div
-                    key={code.id}
+                    key={code.code}
                     className="flex items-center justify-between p-2 bg-[var(--color-background)] rounded-lg border border-[var(--color-border)] opacity-60"
                   >
                     <span className="font-mono text-xs text-[var(--color-text-muted)]">{code.code}</span>
                     <span className="text-xs text-[var(--color-text-muted)]">
-                      {code.claimedBy ? '已使用' : code.expired ? '已过期' : '已撤销'}
+                      {code.status === 'used' ? '已使用' : code.status === 'expired' ? '已过期' : '已撤销'}
                     </span>
                   </div>
                 ))}
