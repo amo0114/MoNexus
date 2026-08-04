@@ -36,6 +36,13 @@ export default function Logo({ className = '' }: LogoProps) {
         decoding="async"
         draggable={false}
       />
+      <img
+        className="brand-logo__black"
+        src="/brand/ledger-knot/mark-black.png"
+        alt=""
+        decoding="async"
+        draggable={false}
+      />
     </span>
   )
 }

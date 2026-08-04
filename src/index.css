@@ -89,6 +89,13 @@
   --color-success: #22C55E;
   --color-danger: #EF4444;
 
+  /* Toast 2.0 图标/进度条色阶（文字级，白卡实测 ≥4.5:1）。
+     与上方 --color-success 等徽章浅色不同：这组专供 surface 卡上的小图标。 */
+  --color-toast-success: #15803D;    /* green-700 — 5.01:1 */
+  --color-toast-error: #B91C1C;      /* red-700 — 5.90:1 */
+  --color-toast-info: #1D4ED8;       /* blue-700 — 6.36:1 */
+  --color-toast-warning: #B45309;    /* amber-700 — 5.02:1 */
+
   /* --- Mobile chrome metrics (T1) ---
      --tabbar-h: bottom tab bar height (icon + label row).
      --navbar-h: top navbar content height（py-4×2 + 44px 行高 + 1px border），
@@ -144,6 +151,12 @@
   --color-warning: #FBBF24;
   --color-success: #4ADE80;
   --color-danger: #F87171;
+
+  /* Toast 色阶（深色卡 #161629 上实测 ≥4.5:1） */
+  --color-toast-success: #4ADE80;    /* green-400 — 8.06:1 */
+  --color-toast-error: #F87171;      /* red-400 — 5.15:1 */
+  --color-toast-info: #60A5FA;       /* blue-400 — 5.74:1 */
+  --color-toast-warning: #FBBF24;    /* amber-400 — 8.28:1 */
 }
 
 /* =========================================================
@@ -160,7 +173,8 @@
 }
 
 .brand-logo > .brand-logo__dark,
-.brand-logo > .brand-logo__soft {
+.brand-logo > .brand-logo__soft,
+.brand-logo > .brand-logo__black {
   display: none;
 }
 
@@ -228,23 +242,36 @@ h1, h2, h3, h4 {
 }
 
 /* NOTE: X-centering is the container's job (-translate-x-1/2); item
-   keyframes must stay translateY-only or toasts land off-center. */
-@keyframes slideUp {
-  from { transform: translateY(100%); opacity: 0; }
-  to { transform: translateY(0); opacity: 1; }
+   keyframes must stay translateY/scale-only or toasts land off-center. */
+@keyframes toastIn {
+  from { transform: translateY(12px) scale(0.96); opacity: 0; }
+  to { transform: translateY(0) scale(1); opacity: 1; }
 }
 
 .toast-enter {
-  animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: toastIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 @keyframes toastOut {
-  from { opacity: 1; transform: translateY(0); }
-  to { opacity: 0; transform: translateY(8px); }
+  from { opacity: 1; transform: translateY(0) scale(1); }
+  to { opacity: 0; transform: translateY(4px) scale(0.98); }
 }
 
 .toast-exit {
-  animation: toastOut 0.2s ease-in forwards;
+  animation: toastOut 0.18s ease-in forwards;
+}
+
+/* 倒计时进度条：与 ToastCard 的自动消失同Duration（inline style 注入），
+   hover 时随计时器一起 animation-play-state: paused。 */
+@keyframes toastProgress {
+  from { transform: scaleX(1); }
+  to { transform: scaleX(0); }
+}
+
+.toast-progress {
+  animation-name: toastProgress;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
 }
 
 @keyframes slideInRight {
@@ -671,6 +698,12 @@ h1, h2, h3, h4 {
   --color-success: #6BBE6B;
   --color-danger: #FF7B6B;
 
+  /* Toast 色阶（暖米卡 #FFFEFB 上实测 ≥4.5:1） */
+  --color-toast-success: #3F7A3F;    /* 同 --color-points — 5.09:1 */
+  --color-toast-error: #B91C1C;      /* red-700 — 5.83:1 */
+  --color-toast-info: #1D4ED8;       /* blue-700 — 6.29:1 */
+  --color-toast-warning: #9A6206;    /* amber-800 调暖 — 4.71:1 */
+
   --shadow-sm: 0 1px 3px rgba(255, 140, 66, 0.08);
   --shadow-md: 0 4px 12px rgba(255, 140, 66, 0.12);
   --shadow-lg: 0 8px 24px rgba(255, 140, 66, 0.18);
@@ -695,6 +728,76 @@ h1, h2, h3, h4 {
 :root[data-theme="soft"] .star-filled {
   color: #F5A340;
   fill: #F5A340;
+}
+
+/* =========================================================
+   Ink theme — 墨韵：宣纸暖白 + 墨黑 + 朱砂 + 松绿。
+   黑白配的意象取自水墨画而非肃穆纯黑白：纸色偏暖（#F4F1E9）、
+   墨带暖棕（#26231F），点缀朱砂（印章红）与松绿（山水绿），
+   色彩逻辑与文人画「墨分五色、朱砂押角」一致。
+   半径/字体沿用 light（中性直线条衬墨意），仅覆写色彩与阴影。
+   ========================================================= */
+:root[data-theme="ink"] {
+  --color-primary: #B54534;          /* 朱砂 — 宣纸底 5.06:1，白字按钮 5.36:1 */
+  --color-primary-hover: #99392B;    /* 深朱砂 */
+  --color-secondary: #C9745F;        /* 淡朱砂 */
+  --color-cta: #3D7257;              /* 松绿 — 白字 5.35:1 */
+  --color-cta-hover: #315C46;
+  --color-background: #F4F1E9;       /* 宣纸 */
+  --color-surface: #FBF9F3;          /* 卡纸（比底稍亮，如托裱） */
+  --color-text: #26231F;             /* 墨（暖黑，非纯黑） */
+  --color-text-muted: #6E675C;       /* 淡墨 */
+  --color-border: #DFD8C9;           /* 绢边 */
+
+  --color-image-placeholder: #EDE8DC;
+  --color-grid-dot: #DFD8C9;
+  --color-glass-bg: rgba(251, 249, 243, 0.85);
+  --color-glass-border: rgba(181, 69, 52, 0.12);
+
+  --color-primary-tint: rgba(181, 69, 52, 0.09);
+  --color-primary-tint-strong: rgba(181, 69, 52, 0.16);
+
+  --color-points: #2F5C46;           /* 松绿深化 — 纸卡 6.04:1 */
+  --color-on-primary: #FFFFFF;       /* 白字 on 朱砂 5.36:1 */
+
+  --color-info: #2B5D8A;             /* 黛蓝 */
+  --color-warning: #96690F;          /* 藤黄 */
+  --color-success: #3D7257;          /* 松绿 */
+  --color-danger: #991B1B;           /* 赭石（比朱砂沉、偏红，与品牌色可区分） */
+
+  --color-toast-success: #2F5C46;    /* 6.04:1 */
+  --color-toast-error: #991B1B;      /* 6.68:1 */
+  --color-toast-info: #2B5D8A;       /* 6.12:1 */
+  --color-toast-warning: #7E580C;    /* 5.47:1 */
+
+  /* Warning banner family — 仿古笺 */
+  --color-warning-bg: #F6EDDC;
+  --color-warning-border: #E3D2B0;
+  --color-warning-text: #6B4A1F;
+  --color-warning-accent: #96690F;
+  --color-warning-accent-hover: #7E580C;
+
+  /* Shadows — 暖墨晕染 */
+  --shadow-sm: 0 1px 2px rgba(38, 35, 31, 0.05);
+  --shadow-md: 0 4px 6px rgba(38, 35, 31, 0.07);
+  --shadow-lg: 0 10px 15px rgba(38, 35, 31, 0.09);
+  --shadow-xl: 0 20px 25px rgba(38, 35, 31, 0.11);
+  --shadow-focus: 0 0 0 3px rgba(181, 69, 52, 0.22);
+}
+
+:root[data-theme="ink"] .brand-logo > .brand-logo__light,
+:root[data-theme="ink"] .brand-logo > .brand-logo__dark,
+:root[data-theme="ink"] .brand-logo > .brand-logo__soft {
+  display: none;
+}
+
+:root[data-theme="ink"] .brand-logo > .brand-logo__black {
+  display: block;
+}
+
+:root[data-theme="ink"] .star-filled {
+  color: #B8862B;                    /* 泥金 — 与朱砂、宣纸同属重彩画料 */
+  fill: #B8862B;
 }
 
 /* =========================================================

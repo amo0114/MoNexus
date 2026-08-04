@@ -46,37 +46,39 @@
     />
     <script>
       // Theme boot: apply stored theme before first paint to avoid FOUC.
-      // 'soft' and 'dark' are mutually exclusive; legacy 'default' resolves to light.
+      // 'soft'/'ink' and 'dark' are mutually exclusive; legacy 'default' resolves to light.
+      // ink 主题使用 black 系列品牌素材（favicon-black-* / mark-black）。
       (function () {
         try {
           var t = localStorage.getItem('theme');
           var variant = 'light';
-          if (t === 'soft') {
-            document.documentElement.setAttribute('data-theme', 'soft');
-            variant = 'soft';
+          if (t === 'soft' || t === 'ink') {
+            document.documentElement.setAttribute('data-theme', t);
+            variant = t;
           } else if (t === 'dark' || (t === null && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
             document.documentElement.classList.add('dark');
             variant = 'dark';
           }
+          var asset = variant === 'ink' ? 'black' : variant;
 
           var icons = document.querySelectorAll('link[data-brand-favicon-size]');
           for (var i = 0; i < icons.length; i++) {
             var size = icons[i].getAttribute('data-brand-favicon-size');
             if (size) {
-              icons[i].setAttribute('href', '/brand/ledger-knot/favicon-' + variant + '-' + size + '.png');
+              icons[i].setAttribute('href', '/brand/ledger-knot/favicon-' + asset + '-' + size + '.png');
             }
           }
 
           var appleTouchIcon = document.getElementById('brand-apple-touch-icon');
           if (appleTouchIcon) {
-            appleTouchIcon.setAttribute('href', '/brand/ledger-knot/favicon-' + variant + '-180.png');
+            appleTouchIcon.setAttribute('href', '/brand/ledger-knot/favicon-' + asset + '-180.png');
           }
 
           var themeColor = document.getElementById('brand-theme-color');
           if (themeColor) {
             themeColor.setAttribute(
               'content',
-              variant === 'dark' ? '#0A0A14' : variant === 'soft' ? '#FFF8EC' : '#F8FAFC'
+              variant === 'dark' ? '#0A0A14' : variant === 'soft' ? '#FFF8EC' : variant === 'ink' ? '#F4F1E9' : '#F8FAFC'
             );
           }
         } catch (e) {}

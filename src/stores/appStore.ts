@@ -53,10 +53,14 @@ export const useAppStore = create<AppState>()((set) => ({
 
   // Auto-dismiss lives in the Toast item component (it owns the exit
   // animation timeline); the store only adds/removes.
+  // 同文同型去重：连续触发（如重试风暴）只刷新一条，不叠罗汉。
   showToast: (message, type = 'success') => {
     const id = ++toastId
     set((state) => ({
-      toasts: [...state.toasts.slice(-(MAX_TOASTS - 1)), { id, message, type }],
+      toasts: [
+        ...state.toasts.filter((t) => !(t.message === message && t.type === type)).slice(-(MAX_TOASTS - 1)),
+        { id, message, type },
+      ],
     }))
   },
 
