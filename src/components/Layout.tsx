@@ -31,8 +31,10 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   // 胶囊，回顶 <32px 恢复全宽（滞回防抖）。桌面恒 false，零影响。
   const isMobileViewport = useIsMobileViewport()
   const [navCompact, setNavCompact] = useState(false)
+  const navCompactRef = useRef(false)
   useEffect(() => {
     if (!isMobileViewport) {
+      navCompactRef.current = false
       setNavCompact(false)
       return
     }
@@ -42,7 +44,15 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       ticking = true
       window.requestAnimationFrame(() => {
         const y = window.scrollY
-        setNavCompact((prev) => (y > 48 ? true : y < 32 ? false : prev))
+        const nextCompact = y > 48 ? true : y < 32 ? false : navCompactRef.current
+        // Scroll fires every frame. Only cross the React boundary at the two
+        // hysteresis edges; enqueuing an identical state update while the
+        // user is scrolling makes the visual morph contend with main-thread
+        // input work on lower-end mobile devices.
+        if (nextCompact !== navCompactRef.current) {
+          navCompactRef.current = nextCompact
+          setNavCompact(nextCompact)
+        }
         ticking = false
       })
     }
@@ -118,9 +128,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
     syncNavbarHeight()
     const observer = new ResizeObserver(syncNavbarHeight)
-    // The chrome changes its vertical padding while compacting. Default
-    // ResizeObserver behavior observes only the content box, whose height
-    // stays constant, so observe the border box as the actual visual edge.
+    // Search mode can change the visual border box. The compact island keeps
+    // this outer lane height stable so the page never reflows mid-scroll.
     try {
       observer.observe(nav, { box: 'border-box' })
     } catch {
@@ -134,7 +143,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   }, [syncNavbarHeight])
 
   // Safari releases that lack border-box ResizeObserver support still reach
-  // this synchronous measurement after every chrome morph.
+  // this synchronous measurement after every chrome mode change.
   useLayoutEffect(() => {
     syncNavbarHeight()
   }, [chromeMode, syncNavbarHeight])
@@ -183,29 +192,22 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         <div className="absolute bottom-[-10%] left-[-10%] w-[500px] h-[500px] rounded-full bg-[var(--color-primary)]/5 blur-[120px]" />
       </div>
 
-      {/* Navigation — 灵动岛：下滑时内层收缩为居中悬浮药丸（compact）；
-          商城页可进一步 morph 为搜索卡片（islandSearch）。
-          药丸/卡片均为实心 surface + 阴影（用户反馈去磨砂）；
-          全部样式经 max-md 与 isMobileViewport 双重隔离，桌面零变化。 */}
+      {/* Navigation — 灵动岛：外层保持固定占位，避免滚动时把整页重新排版；
+          仅内层胶囊收缩为居中悬浮药丸。移动端不用 backdrop-filter，防止
+          连续滚动与滤镜重绘争抢帧预算；桌面玻璃导航不受影响。 */}
       <nav
         ref={navRef}
         data-testid="app-navbar"
-        className={`nav-safe-x sticky top-0 z-40 w-full transition-all duration-300 ${
+        className={`nav-safe-x mobile-navbar-chrome sticky top-0 z-40 w-full py-4 border-b transition-[background-color,border-color,opacity] duration-200 ${
           chromeMode === 'expanded'
-            ? 'glass py-4 border-b border-[var(--color-border)]'
-            : chromeMode === 'search'
-              ? 'py-2 border-b border-transparent'
-              : 'py-1 border-b border-transparent'
+            ? 'glass border-[var(--color-border)]'
+            : 'border-transparent'
         } ${modalOpen ? 'opacity-0 pointer-events-none' : ''}`}
         style={{
           transitionTimingFunction: 'var(--ease-standard)',
           /* P1：消费 safe-top（viewport-fit=cover 后页面延伸至刘海区）。
-             safe-top=0 时与原 py-4/py-2.5 完全等值，桌面零差异。 */
-          paddingTop: chromeMode === 'expanded'
-            ? 'calc(var(--safe-top) + 1rem)'
-            : chromeMode === 'search'
-              ? 'calc(var(--safe-top) + 0.5rem)'
-              : 'calc(var(--safe-top) + 0.25rem)',
+             固定外层高度，避免灵动岛切换改变页面的滚动锚点。 */
+          paddingTop: 'calc(var(--safe-top) + 1rem)',
         }}
       >
         {islandSearch && (
@@ -215,21 +217,20 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             className="md:hidden fixed inset-0 bg-black/25 animate-[overlayIn_0.25s_ease-out]"
           />
         )}
-        {/* 胶囊皮肤（V3 丝滑重构）：compact 与搜索卡片共享同一层毛玻璃皮肤，
-            差异仅圆角/内边距/阴影——全部是可过渡属性，内容布局零重排，
-            navbar 从全宽玻璃条平滑 morph 为悬浮胶囊（灵动岛）。
-            毛玻璃仅用于悬浮胶囊（用户指定）；Tab Bar 保持实心。 */}
+        {/* 胶囊皮肤：以可插值的 max-width 收缩，不能从 width:100% 直接
+            过渡到 width:fit-content（后者会离散跳变）。外层高度固定，
+            所以动画只影响这一小块 chrome，而非整页布局。 */}
         <div
           data-testid="navbar-shell"
-          className={`max-w-7xl mx-auto flex justify-between items-center relative transition-all duration-300 ${
+          className={`navbar-shell max-w-7xl mx-auto flex justify-between items-center relative w-full max-md:border max-md:border-transparent transition-[max-width,border-radius,box-shadow,background-color,border-color] duration-[220ms] ${
             chromeMode === 'search'
-              ? 'max-md:w-[calc(100vw-2rem)] max-md:rounded-3xl max-md:px-4 max-md:py-3 max-md:shadow-xl'
+              ? 'max-md:max-w-[calc(100vw-2rem)] max-md:rounded-3xl max-md:px-4 max-md:py-3 max-md:shadow-xl'
               : compactIsland
-                ? 'max-md:w-fit max-md:max-w-[calc(100vw-2rem)] max-md:rounded-full max-md:px-3 max-md:py-0 max-md:shadow-lg'
-                : 'max-md:w-full'
+                ? 'max-md:max-w-[18.5rem] max-md:rounded-full max-md:px-3 max-md:py-0 max-md:shadow-lg'
+                : 'max-md:max-w-[calc(100vw-1.5rem)]'
           } ${
             chromeCompact
-              ? 'max-md:bg-[var(--color-glass-bg)] max-md:backdrop-blur-md max-md:saturate-[1.8] max-md:border max-md:border-[var(--color-glass-border)]'
+              ? 'max-md:bg-[var(--color-surface)] max-md:border-[var(--color-glass-border)]'
               : ''
           }`}
           style={{ transitionTimingFunction: 'var(--ease-standard)' }}
@@ -246,7 +247,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             else element.removeAttribute('inert')
           }}
           aria-hidden={islandNotice ? true : undefined}
-          className={`flex items-center justify-between w-full ${compactIsland ? 'max-md:w-auto' : ''} transition-opacity duration-200 ${
+          className={`flex items-center justify-between w-full transition-opacity duration-200 ${
             islandNotice ? 'opacity-0 pointer-events-none' : 'opacity-100'
           }`}
         >
@@ -257,9 +258,10 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             onClick={() => navigate('/')}
           >
             <Logo className="w-8 h-8 text-[var(--color-primary)] transition-transform duration-300 group-hover:scale-105 shrink-0" />
-            {/* compact 时字号/字距微调——font-size 与 letter-spacing 均可平滑过渡（无跳变） */}
+            {/* compact 时压缩字宽，为右侧三个 40px 触控目标留出空间。字号
+                立即切换而非逐帧插值，避免动画期间反复触发布局。 */}
             <span
-              className={`font-heading font-bold text-[var(--color-text)] leading-none transition-all duration-300 ${
+              className={`font-heading font-bold text-[var(--color-text)] leading-none ${
                 compactIsland ? 'max-md:text-sm max-md:tracking-[0.1em]' : 'max-md:text-base max-md:tracking-[0.18em]'
               } text-lg tracking-[0.18em]`}
             >

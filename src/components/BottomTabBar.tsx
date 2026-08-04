@@ -19,7 +19,7 @@ interface TabItem {
  * 公告是「通知」而非目的地，已上移 navbar 铃铛；底部只放真目的地。
  *  - 买家/游客：首页 / 积分（直达流水 Sheet）/ 排行 / 我的
  *  - 商家：     首页 / 商家 / 数据（经营图表）/ 我的
- *  - 管理员：   首页 / 管理 / 我的
+ *  - 管理员：   首页 / 管理 / 排行 / 我的
  * 下滑自动隐藏（阅读释放视高），上滑/近顶即现。实心背景（去磨砂）。
  */
 export default function BottomTabBar() {
@@ -107,13 +107,26 @@ export default function BottomTabBar() {
       },
     )
   } else if (isAdmin) {
-    tabs.push({
-      key: 'admin',
-      label: '管理',
-      icon: ShieldCheck,
-      active: pathname.startsWith('/admin'),
-      onSelect: () => navigate('/admin'),
-    })
+    // 管理员只有一个工作台入口，底栏仍有足够位置放排行榜。之前把它藏进
+    // 抽屉会让移动端管理员误以为榜单不可访问。
+    tabs.push(
+      {
+        key: 'admin',
+        label: '管理',
+        icon: ShieldCheck,
+        active: pathname.startsWith('/admin'),
+        onSelect: () => navigate('/admin'),
+      },
+      {
+        key: 'leaderboard',
+        label: '排行',
+        icon: Trophy,
+        active: pathname.startsWith('/leaderboard'),
+        onSelect: () => navigate('/leaderboard'),
+        testId: 'tab-bar-leaderboard',
+        ariaLabel: '积分排行榜',
+      },
+    )
   } else {
     // 买家/游客：积分流水是高频自查入口——Tab 直达 Sheet（动作型，无 active 态）
     tabs.push({
@@ -128,8 +141,8 @@ export default function BottomTabBar() {
       testId: 'tab-bar-points',
       ariaLabel: '积分明细',
     })
-    // 排行榜：买家的激励面。商家/管理员 tab 位已满（数据/管理优先），
-    // 他们从桌面导航或抽屉进入同一页面。
+    // 排行榜：买家的激励面。商家 tab 位已满（数据优先），从抽屉进入；
+    // 管理员则在上面的分支保留了明确入口。
     tabs.push({
       key: 'leaderboard',
       label: '排行',
