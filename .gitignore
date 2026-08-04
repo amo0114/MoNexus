@@ -13,8 +13,8 @@ worktrees
 .idea/
 
 # Dependency directories
-node_modules/
-server/node_modules/
+/node_modules
+/server/node_modules
 
 # Build output
 dist/

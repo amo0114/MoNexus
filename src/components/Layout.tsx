@@ -1,7 +1,7 @@
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuthStore } from '../stores/authStore'
-import { Coins, User, ShieldCheck, Store, Clock, XCircle, AlertTriangle, Plus, Search, Bell, Trophy } from 'lucide-react'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { Coins, User, ShieldCheck, Store, Clock, XCircle, AlertTriangle, Plus, Search, Bell, Trophy, CheckCircle2, Info } from 'lucide-react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import EmailVerificationBanner from './EmailVerificationBanner'
 import VerifiedActionGate from './VerifiedActionGate'
 import AnnouncementBanner from './AnnouncementBanner'
@@ -20,6 +20,7 @@ import type { PublicAnnouncement } from '../types/admin'
 export default function Layout({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate()
   const location = useLocation()
+  const navRef = useRef<HTMLElement>(null)
   const user = useAuthStore((s) => s.user)
   const showToast = useAppStore((s) => s.showToast)
   const announcements = useAnnouncements()
@@ -58,7 +59,85 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     setSearchOpen(false)
   }, [location.pathname])
   const islandSearch = searchOpen && isMobileViewport && location.pathname === '/'
-  const chromeCompact = navCompact || islandSearch
+
+  // 灵动岛通知（V4）：移动端简短安静级消息（success/info ≤14 字）由 navbar
+  // 胶囊短暂承载——默认内容淡出、通知淡入，几何零重排；2.4s 自动消退，
+  // 点击即散；搜索卡片展开时让位（降级回横幅 toast）。iOS 灵动岛思路：
+  // 轻确认融入既有 chrome，不打断视线流；重要/长文仍走横幅（Toast.tsx）。
+  const islandNotice = useAppStore((s) => s.islandNotice)
+  const clearIslandNotice = useAppStore((s) => s.clearIslandNotice)
+  const demoteIslandNotice = useAppStore((s) => s.demoteIslandNotice)
+  const setIslandNoticeAvailable = useAppStore((s) => s.setIslandNoticeAvailable)
+  // 模态打开时 navbar 整体淡出：玻璃 chrome 在 overlay 的 backdrop-blur 下
+  // 会变成半透隐约的脏条（用户反馈「背后的 navbar 被模糊了」）。淡出后
+  // 视觉只剩统一压暗的内容 + 弹窗；灵动岛通知同期自动降级为横幅 toast
+  // （见 appStore.showToast 的 modalDepth 分支），模态内反馈不丢失。
+  const modalOpen = useAppStore((s) => s.modalDepth > 0)
+  useEffect(() => {
+    if (islandNotice && (islandSearch || modalOpen)) demoteIslandNotice()
+  }, [islandNotice, islandSearch, modalOpen, demoteIslandNotice])
+  useEffect(() => {
+    if (!islandNotice) return
+    const t = setTimeout(clearIslandNotice, 2400)
+    return () => clearTimeout(t)
+  }, [islandNotice, clearIslandNotice])
+  // Public/auth routes render Toast without Layout. Only advertise the island
+  // while this mobile navbar is actually mounted; leaving it demotes an
+  // in-flight quiet notification back to the universally visible banner.
+  useEffect(() => {
+    setIslandNoticeAvailable(isMobileViewport)
+    return () => setIslandNoticeAvailable(false)
+  }, [isMobileViewport, setIslandNoticeAvailable])
+
+  type ChromeMode = 'expanded' | 'compact' | 'notice' | 'search'
+  const chromeMode: ChromeMode = islandSearch
+    ? 'search'
+    : islandNotice
+      ? 'notice'
+      : navCompact
+        ? 'compact'
+        : 'expanded'
+  const chromeCompact = chromeMode !== 'expanded'
+  const compactIsland = chromeMode === 'compact' || chromeMode === 'notice'
+
+  // The navbar is the source of truth for all mobile chrome. A toast that
+  // falls back to its own banner reads this variable, so it remains attached
+  // to the expanded bar, compact island, and taller search state alike.
+  const syncNavbarHeight = useCallback(() => {
+    const nav = navRef.current
+    if (!nav) return
+    document.documentElement.style.setProperty(
+      '--navbar-current-h',
+      `${Math.ceil(nav.getBoundingClientRect().height)}px`,
+    )
+  }, [])
+
+  useLayoutEffect(() => {
+    const nav = navRef.current
+    if (!nav) return
+
+    syncNavbarHeight()
+    const observer = new ResizeObserver(syncNavbarHeight)
+    // The chrome changes its vertical padding while compacting. Default
+    // ResizeObserver behavior observes only the content box, whose height
+    // stays constant, so observe the border box as the actual visual edge.
+    try {
+      observer.observe(nav, { box: 'border-box' })
+    } catch {
+      observer.observe(nav)
+    }
+
+    return () => {
+      observer.disconnect()
+      document.documentElement.style.removeProperty('--navbar-current-h')
+    }
+  }, [syncNavbarHeight])
+
+  // Safari releases that lack border-box ResizeObserver support still reach
+  // this synchronous measurement after every chrome morph.
+  useLayoutEffect(() => {
+    syncNavbarHeight()
+  }, [chromeMode, syncNavbarHeight])
 
   // Refresh user data on mount
   useEffect(() => {
@@ -109,18 +188,24 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           药丸/卡片均为实心 surface + 阴影（用户反馈去磨砂）；
           全部样式经 max-md 与 isMobileViewport 双重隔离，桌面零变化。 */}
       <nav
+        ref={navRef}
+        data-testid="app-navbar"
         className={`nav-safe-x sticky top-0 z-40 w-full transition-all duration-300 ${
-          chromeCompact
-            ? 'py-2.5 border-b border-transparent'
-            : 'glass py-4 border-b border-[var(--color-border)]'
-        }`}
+          chromeMode === 'expanded'
+            ? 'glass py-4 border-b border-[var(--color-border)]'
+            : chromeMode === 'search'
+              ? 'py-2 border-b border-transparent'
+              : 'py-1 border-b border-transparent'
+        } ${modalOpen ? 'opacity-0 pointer-events-none' : ''}`}
         style={{
           transitionTimingFunction: 'var(--ease-standard)',
           /* P1：消费 safe-top（viewport-fit=cover 后页面延伸至刘海区）。
              safe-top=0 时与原 py-4/py-2.5 完全等值，桌面零差异。 */
-          paddingTop: chromeCompact
-            ? 'calc(var(--safe-top) + 0.625rem)'
-            : 'calc(var(--safe-top) + 1rem)',
+          paddingTop: chromeMode === 'expanded'
+            ? 'calc(var(--safe-top) + 1rem)'
+            : chromeMode === 'search'
+              ? 'calc(var(--safe-top) + 0.5rem)'
+              : 'calc(var(--safe-top) + 0.25rem)',
         }}
       >
         {islandSearch && (
@@ -135,15 +220,16 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             navbar 从全宽玻璃条平滑 morph 为悬浮胶囊（灵动岛）。
             毛玻璃仅用于悬浮胶囊（用户指定）；Tab Bar 保持实心。 */}
         <div
+          data-testid="navbar-shell"
           className={`max-w-7xl mx-auto flex justify-between items-center relative transition-all duration-300 ${
-            islandSearch
-              ? 'max-md:rounded-3xl max-md:px-4 max-md:py-3 max-md:shadow-xl'
-              : navCompact
-                ? 'max-md:rounded-full max-md:px-3 max-md:py-1.5 max-md:shadow-lg'
-                : ''
+            chromeMode === 'search'
+              ? 'max-md:w-[calc(100vw-2rem)] max-md:rounded-3xl max-md:px-4 max-md:py-3 max-md:shadow-xl'
+              : compactIsland
+                ? 'max-md:w-fit max-md:max-w-[calc(100vw-2rem)] max-md:rounded-full max-md:px-3 max-md:py-0 max-md:shadow-lg'
+                : 'max-md:w-full'
           } ${
             chromeCompact
-              ? 'max-md:mx-1 max-md:bg-[var(--color-glass-bg)] max-md:backdrop-blur-md max-md:saturate-[1.8] max-md:border max-md:border-[var(--color-glass-border)]'
+              ? 'max-md:bg-[var(--color-glass-bg)] max-md:backdrop-blur-md max-md:saturate-[1.8] max-md:border max-md:border-[var(--color-glass-border)]'
               : ''
           }`}
           style={{ transitionTimingFunction: 'var(--ease-standard)' }}
@@ -152,6 +238,18 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           <StoreSearchPanel onClose={() => setSearchOpen(false)} />
         ) : (
         <>
+        {/* 灵动岛通知激活时默认内容淡出（保留布局占位 → 几何零重排） */}
+        <div
+          ref={(element) => {
+            if (!element) return
+            if (islandNotice) element.setAttribute('inert', '')
+            else element.removeAttribute('inert')
+          }}
+          aria-hidden={islandNotice ? true : undefined}
+          className={`flex items-center justify-between w-full ${compactIsland ? 'max-md:w-auto' : ''} transition-opacity duration-200 ${
+            islandNotice ? 'opacity-0 pointer-events-none' : 'opacity-100'
+          }`}
+        >
 
           {/* Brand mark + Orbitron wordmark. See design-system/monexus/LOGO-BRIEF.md. */}
           <div
@@ -162,7 +260,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             {/* compact 时字号/字距微调——font-size 与 letter-spacing 均可平滑过渡（无跳变） */}
             <span
               className={`font-heading font-bold text-[var(--color-text)] leading-none transition-all duration-300 ${
-                navCompact ? 'max-md:text-sm max-md:tracking-[0.1em]' : 'max-md:text-base max-md:tracking-[0.18em]'
+                compactIsland ? 'max-md:text-sm max-md:tracking-[0.1em]' : 'max-md:text-base max-md:tracking-[0.18em]'
               } text-lg tracking-[0.18em]`}
             >
               MONEXUS
@@ -325,6 +423,25 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             {/* Mobile hamburger — drawer carries the entries hidden below md */}
             <MobileNavDrawer />
           </div>
+        </div>
+
+        {/* 灵动岛通知覆盖层：胶囊/全宽条几何不变，仅内容交叉淡入 */}
+        {islandNotice && (
+          <div role="status" className="absolute inset-0 island-notice-enter">
+            <button
+              type="button"
+              onClick={clearIslandNotice}
+              className="w-full h-full flex items-center justify-center gap-1.5 rounded-[inherit] cursor-pointer focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)]"
+            >
+              {islandNotice.type === 'success' ? (
+                <CheckCircle2 className="w-4 h-4 shrink-0 text-[var(--color-toast-success)]" aria-hidden="true" />
+              ) : (
+                <Info className="w-4 h-4 shrink-0 text-[var(--color-toast-info)]" aria-hidden="true" />
+              )}
+              <span className="min-w-0 text-sm font-medium text-[var(--color-text)] truncate">{islandNotice.message}</span>
+            </button>
+          </div>
+        )}
         </>
         )}
         </div>

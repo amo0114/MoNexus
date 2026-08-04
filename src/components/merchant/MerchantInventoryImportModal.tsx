@@ -4,6 +4,7 @@ import * as DialogPrimitive from '@radix-ui/react-dialog'
 import { useAppStore } from '../../stores/appStore'
 import { previewMerchantInventory } from '../../api/merchant'
 import type { Offer } from '../../types/merchant'
+import { DialogOverlay } from '../ui/Dialog'
 
 interface Props {
   isOpen: boolean
@@ -133,7 +134,7 @@ export default function MerchantInventoryImportModal({ isOpen, onClose, onSubmit
   return (
     <DialogPrimitive.Root open onOpenChange={(o) => { if (!o) onClose() }}>
       <DialogPrimitive.Portal>
-        <DialogPrimitive.Overlay className="modal-overlay" />
+        <DialogOverlay />
         <DialogPrimitive.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-[calc(100%-2rem)] max-w-lg max-h-[92dvh] flex flex-col overflow-hidden bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl shadow-xl focus-visible:outline-none">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-5 border-b border-[var(--color-border)]">

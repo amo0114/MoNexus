@@ -154,7 +154,8 @@ export default function ProductDetailPage() {
         )
         return { ...prev, stock: Math.max(0, prev.stock - 1), sales: prev.sales + 1, offers: nextOffers }
       })
-      showToast(data.provisionPending ? '下单成功，订阅开通中…' : '兑换成功！')
+      // 成功反馈由 SuccessModal 承载（含交付明细），不再叠加 toast——
+      // 模态期间 toast 会被降级为顶部横幅，看起来像凭空多出的悬浮弹窗。
       return 'success'
     } catch (err: any) {
       const code = getApiErrorCode(err)
