@@ -223,6 +223,48 @@ describe('leaderboard refresh — 排名全序与幂等 (P.3, LB-04/LB-08)', () 
   })
 })
 
+describe('leaderboard refresh — 名次变化投影 prevRank (P3-1)', () => {
+  it('新一轮把上一轮 rank 写入 prevRank；新入榜为 null；读侧随行下发', async () => {
+    const a = await makeUser('lb-delta-a@test.local')
+    const b = await makeUser('lb-delta-b@test.local')
+
+    await earn(a.id, 100, at('2026-05-18'))
+    await earn(b.id, 50, at('2026-05-18'))
+    await refreshLeaderboards({ now: at('2026-05-19', '06:00:00') })
+
+    // 首轮：没有上一轮，prevRank 全 null。
+    const first = await prisma.leaderboardEntry.findMany({
+      where: { scope: 'total', periodKey: 'ALL' },
+      orderBy: { rank: 'asc' },
+      select: { userId: true, rank: true, prevRank: true },
+    })
+    expect(first.map(r => r.prevRank)).toEqual([null, null])
+
+    // 次日 B 反超、C 新入榜：prevRank 记录上一轮名次。
+    await earn(b.id, 200, at('2026-05-19'))
+    const c = await makeUser('lb-delta-c@test.local')
+    await earn(c.id, 10, at('2026-05-19'))
+    await refreshLeaderboards({ now: REF_NOW })
+
+    const second = await prisma.leaderboardEntry.findMany({
+      where: { scope: 'total', periodKey: 'ALL' },
+      orderBy: { rank: 'asc' },
+      select: { userId: true, rank: true, prevRank: true },
+    })
+    expect(second).toEqual([
+      { userId: b.id, rank: 1, prevRank: 2 },
+      { userId: a.id, rank: 2, prevRank: 1 },
+      { userId: c.id, rank: 3, prevRank: null },
+    ])
+
+    // 读侧：top 行与 me 都带 prevRank（schema 已含白名单字段）。
+    const token = (await loginAs('lb-delta-b@test.local', PASSWORD)).accessToken
+    const res = await api.get('/api/leaderboard').set(authHeader(token)).expect(200)
+    expect(res.body.top[0]).toMatchObject({ rank: 1, prevRank: 2, isMe: true })
+    expect(res.body.me).toEqual({ rank: 1, points: 250, prevRank: 2 })
+  })
+})
+
 describe('leaderboard refresh — 资格投影 (P.4, LB-05, 验收 4)', () => {
   it('admin 与封禁用户不入任何榜且 me 恒 null；merchant 正常入榜', async () => {
     const admin = await makeUser('lb-elig-admin@test.local', { role: 'admin' })
@@ -494,7 +536,7 @@ describe('GET /api/leaderboard', () => {
       Array.from({ length: 100 }, (_, i) => i + 1)
     )
     expect(res.body.top.every((row: { isMe: boolean }) => row.isMe === false)).toBe(true)
-    expect(res.body.me).toEqual({ rank: 105, points: 7 })
+    expect(res.body.me).toEqual({ rank: 105, points: 7, prevRank: null })
   })
 
   it('displayName 用昵称、缺失回退打码邮箱；isMe 由服务端标注 (验收 5)', async () => {
@@ -508,10 +550,10 @@ describe('GET /api/leaderboard', () => {
 
     const res = await api.get('/api/leaderboard').set(authHeader(token)).expect(200)
     expect(res.body.top).toEqual([
-      { rank: 1, displayName: maskEmail('lb-api-other@test.local'), points: 1280, isMe: false },
-      { rank: 2, displayName: '星河', points: 80, isMe: true },
+      { rank: 1, displayName: maskEmail('lb-api-other@test.local'), points: 1280, isMe: false, prevRank: null },
+      { rank: 2, displayName: '星河', points: 80, isMe: true, prevRank: null },
     ])
-    expect(res.body.me).toEqual({ rank: 2, points: 80 })
+    expect(res.body.me).toEqual({ rank: 2, points: 80, prevRank: null })
   })
 
   it('响应不含任何他人 userId / email，字段集恰为白名单 (P.6, LB-07, 验收 5)', async () => {
@@ -533,7 +575,7 @@ describe('GET /api/leaderboard', () => {
     expect(keys.has('userId')).toBe(false)
     expect(keys.has('email')).toBe(false)
     expect(keys.has('balance')).toBe(false)
-    expect(new Set(Object.keys(res.body.top[0]))).toEqual(new Set(['rank', 'displayName', 'points', 'isMe']))
+    expect(new Set(Object.keys(res.body.top[0]))).toEqual(new Set(['rank', 'displayName', 'points', 'isMe', 'prevRank']))
     // strict schema：多下发一个字段即失败。
     expect(LeaderboardResponseSchema.parse(res.body).top).toHaveLength(2)
   })

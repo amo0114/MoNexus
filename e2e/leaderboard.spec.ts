@@ -17,7 +17,7 @@ function pathIs(path: string) {
 
 type Scope = 'total' | 'month' | 'week'
 
-type MockRow = { rank: number; displayName: string; points: number; isMe?: boolean }
+type MockRow = { rank: number; displayName: string; points: number; isMe?: boolean; prevRank?: number | null }
 
 const PERIOD: Record<Scope, { periodKey: string; periodLabel: string }> = {
   total: { periodKey: 'ALL', periodLabel: '全部' },
@@ -29,7 +29,7 @@ function payload(
   scope: Scope,
   top: MockRow[],
   opts: {
-    me?: { rank: number; points: number } | null
+    me?: { rank: number; points: number; prevRank?: number | null } | null
     updatedAt?: string | null
     dataThrough?: string | null
   } = {}
@@ -84,7 +84,19 @@ test.describe('积分排行榜页', () => {
     await mockLeaderboard(
       page,
       {
-        total: payload('total', rows(10), { me: { rank: 57, points: 80 } }),
+        total: payload(
+          'total',
+          rows(10).map((row) =>
+            row.rank === 1
+              ? { ...row, prevRank: 3 } // ↑2
+              : row.rank === 4
+                ? { ...row, prevRank: 4 } // 持平
+                : row.rank === 5
+                  ? { ...row, prevRank: null } // 新入榜
+                  : row
+          ),
+          { me: { rank: 57, points: 80, prevRank: 60 } }
+        ),
         week: payload('week', rows(6, '周选手'), { me: { rank: 4, points: 120 } }),
       },
       requested
@@ -105,12 +117,23 @@ test.describe('积分排行榜页', () => {
 
     // 第 4 名起为行列表：10 - 3 = 7 行
     await expect(page.getByTestId('leaderboard-row')).toHaveCount(7)
+
+    // 名次变化徽标：第 4 名持平「–」、第 5 名新入榜「新」（P3-1）
+    const rowList = page.getByTestId('leaderboard-row')
+    await expect(rowList.nth(0).getByTestId('rank-delta')).toHaveAttribute('data-delta', '0')
+    await expect(rowList.nth(1).getByTestId('rank-delta')).toHaveAttribute('data-delta', 'new')
+
+    // 移动端吸底条含「距上榜线」激励行（N1）
+    await expect(page.getByTestId('leaderboard-me')).toContainText('距上榜线')
     await expect(page.getByText('数据截至 2026-07-31 · 每日更新')).toBeVisible()
 
     // 桌面（≥lg）「我的排名」驻左栏卡片；吸底浮条仅 <lg 生效
     const meCard = page.getByTestId('leaderboard-me-card')
     await expect(meCard).toBeVisible()
-    await expect(meCard).toContainText('第 57 名 · 80 分')
+    await expect(meCard).toContainText('第 57 名')
+    await expect(meCard).toContainText('80 分')
+    // me 带了 prevRank=60 → 上升 3 位
+    await expect(meCard.getByTestId('rank-delta')).toHaveAttribute('data-delta', '+3')
 
     // 切到本周榜：发出 scope=week 请求、期标签与榜首随之更新
     await page.getByTestId('leaderboard-tab-week').click()

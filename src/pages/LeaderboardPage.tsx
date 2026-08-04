@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Trophy } from 'lucide-react'
 import { getLeaderboard, LeaderboardResponse, LeaderboardScope } from '../api/leaderboard'
 import { getApiErrorMessage } from '../api/error'
@@ -9,6 +10,7 @@ import Podium from './leaderboard/Podium'
 import RankRow from './leaderboard/RankRow'
 import MyRankBar from './leaderboard/MyRankBar'
 import StatsPanel from './leaderboard/StatsPanel'
+import { fmtPoints, meGap } from './leaderboard/format'
 
 const SCOPES: { value: LeaderboardScope; label: string }[] = [
   { value: 'total', label: '总榜' },
@@ -84,6 +86,7 @@ function LeaderboardSkeleton() {
 }
 
 export default function LeaderboardPage() {
+  const navigate = useNavigate()
   const [scope, setScope] = useState<LeaderboardScope>('total')
   const [data, setData] = useState<LeaderboardResponse | null>(null)
   const [loading, setLoading] = useState(true)
@@ -124,15 +127,17 @@ export default function LeaderboardPage() {
       setMeOnScreen(false)
       return
     }
-    // 底部收缩 88px ≈ 吸底条高度 + 间距：被条盖住的行不算"看得见"。
+    // 底部收缩 104px ≈ 吸底条（含「距上一名」行）高度 + 间距：被条盖住的行不算"看得见"。
     const io = new IntersectionObserver((entries) => setMeOnScreen(entries[0].isIntersecting), {
-      rootMargin: '0px 0px -88px 0px',
+      rootMargin: '0px 0px -104px 0px',
     })
     io.observe(meEl)
     return () => io.disconnect()
   }, [meEl])
 
   const copy = emptyCopy(scope, data?.updatedAt ?? null)
+  const gap = data ? meGap(data) : null
+  const gapText = gap ? `${gap.label}还差 ${fmtPoints(gap.points)} 分` : null
 
   return (
     <div className="max-w-3xl lg:max-w-6xl mx-auto pt-2">
@@ -161,10 +166,12 @@ export default function LeaderboardPage() {
             onClick={() => setScope(opt.value)}
             aria-pressed={scope === opt.value}
             data-testid={`leaderboard-tab-${opt.value}`}
-            className={`px-4 py-1.5 btn-sm rounded-full text-sm font-medium transition-colors ${
+            className={`px-4 py-1.5 btn-sm rounded-full text-sm font-medium transition-colors border ${
               scope === opt.value
-                ? 'bg-[var(--color-primary)] text-white'
-                : 'bg-[var(--color-surface)] text-[var(--color-text-muted)] border border-[var(--color-border)] hover:text-[var(--color-text)]'
+                ? // border-transparent：height:auto 时 border-box 管不住 auto 高度，
+                  // 无 border 的激活态会比带 border 的未激活态矮 2px（实测 32 vs 34）
+                  'bg-[var(--color-primary)] text-[var(--color-on-primary)] border-transparent'
+                : 'bg-[var(--color-surface)] text-[var(--color-text-muted)] border-[var(--color-border)] hover:text-[var(--color-text)]'
             }`}
           >
             {opt.label}
@@ -194,7 +201,16 @@ export default function LeaderboardPage() {
           </div>
         ) : data.top.length === 0 ? (
           <div className="card lg:max-w-2xl lg:mx-auto" data-testid="leaderboard-empty">
-            <EmptyState icon={Trophy} title={copy.title} description={copy.description} />
+            <EmptyState
+              icon={Trophy}
+              title={copy.title}
+              description={copy.description}
+              action={
+                <button type="button" className="btn-secondary btn-sm" onClick={() => navigate('/profile')}>
+                  去签到赚积分
+                </button>
+              }
+            />
           </div>
         ) : (
           /* .fade-in 会留下 transform，吸底浮条（position: fixed）必须待在它之外。
@@ -229,8 +245,8 @@ export default function LeaderboardPage() {
         <>
           {/* 让最后一行能滚过吸底条（Layout 只预留了 Tab Bar 的高度）；
               lg 起浮条退役（信息在左栏卡片），占位一并撤掉 */}
-          <div className="h-14 md:h-16 lg:hidden" aria-hidden="true" />
-          <MyRankBar me={data.me} hidden={meOnScreen} />
+          <div className="h-24 lg:hidden" aria-hidden="true" />
+          <MyRankBar me={data.me} hidden={meOnScreen} gapText={gapText} />
         </>
       )}
     </div>

@@ -43,7 +43,10 @@ Router 级 `authenticate + requireActiveUser`（与 points 模块同姿态）：
 
 ## 快照模型
 
-`LeaderboardEntry(scope, periodKey, rank, userId, points, computedAt)`。
+`LeaderboardEntry(scope, periodKey, rank, userId, points, computedAt, prevRank)`。
+
+- `prevRank`：上一轮快照同（scope, periodKey）的名次（新入榜为 null）。替换事务先读出
+  旧份 userId→rank 再 delete + createMany，读侧据此展示 ↑↓ 名次变化（P3-1）。
 
 - `periodKey`：`ALL` / `M<YYYY-MM>` / `W<周一日历日>`。周用**周一日期**而非 ISO 周号，
   规避 ISO week-year 的跨年歧义（2026-12-28 属 2027-W01）。
@@ -69,7 +72,7 @@ Router 级 `authenticate + requireActiveUser`（与 points 模块同姿态）：
 
 ## 响应边界
 
-`top` 行的字段集恰为 `{ rank, displayName, points, isMe }`——**绝不返回他人 `userId` /
+`top` 行的字段集恰为 `{ rank, displayName, points, isMe, prevRank }`——**绝不返回他人 `userId` /
 `email` / 余额**。`isMe` 由服务端计算，前端高亮不需要他人身份。
 `displayName = nickname?.trim() || maskEmail(email)`，与 `reviews/service.ts` 的
 `displayNameFor` 同口径，两处修改必须同步。

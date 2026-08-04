@@ -22,10 +22,13 @@ interface AppState {
   storeCategory: string
   /** 积分流水 Sheet（V3 角色化 Tab Bar）：Tab Bar「积分」与 Profile 按钮共用 */
   pointsHistoryOpen: boolean
+  /** BottomTabBar 下滑自动隐藏状态：吸底浮层（如排行榜 MyRankBar）随之联动 */
+  tabbarHidden: boolean
   setActiveTab: (tab: 'store' | 'profile' | 'admin') => void
   setStoreQuery: (q: string) => void
   setStoreCategory: (c: string) => void
   setPointsHistoryOpen: (open: boolean) => void
+  setTabbarHidden: (hidden: boolean) => void
   showToast: (message: string, type?: ToastType) => void
   removeToast: (id: number) => void
   loadRegistry: () => Promise<void>
@@ -40,11 +43,13 @@ export const useAppStore = create<AppState>()((set) => ({
   storeQuery: '',
   storeCategory: '全部',
   pointsHistoryOpen: false,
+  tabbarHidden: false,
 
   setActiveTab: (tab) => set({ activeTab: tab }),
   setStoreQuery: (q) => set({ storeQuery: q }),
   setStoreCategory: (c) => set({ storeCategory: c }),
   setPointsHistoryOpen: (open) => set({ pointsHistoryOpen: open }),
+  setTabbarHidden: (hidden) => set({ tabbarHidden: hidden }),
 
   // Auto-dismiss lives in the Toast item component (it owns the exit
   // animation timeline); the store only adds/removes.
