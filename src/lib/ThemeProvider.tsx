@@ -7,7 +7,7 @@ const THEME_BACKGROUND: Record<Theme, string> = {
   light: '#F8FAFC',
   dark: '#0A0A14',
   soft: '#FFF8EC',
-  ink: '#F4F1E9',
+  ink: '#EEF0EE',
 }
 
 /** 品牌素材文件名：ink 主题对应 black 系列（favicon-black-* / mark-black）。 */

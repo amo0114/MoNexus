@@ -3,18 +3,40 @@ import { CheckCircle2, XCircle, Info, AlertTriangle, X } from 'lucide-react'
 import { useAppStore, type Toast as ToastItem } from '../stores/appStore'
 
 /**
- * Toast 2.0 — 轻巧 surface 卡片取代实心彩条：
- * - 色调由 icon chip（12% tint 底 + 深色阶图标）与 2px 倒计时进度条承载，
- *   正文落在 --color-text / --color-surface 上，对比度天然 ≥12:1；
- *   图标色阶三主题实测 ≥4.5:1（旧实心彩条的白字方案是为兜底 token 对比度，
- *   新结构把「色调」与「可读性」解耦后不再需要）。
- * - 宽度 w-fit + 22rem 上限：短消息紧凑，长消息两行封顶（line-clamp-2），
- *   全文经 title 兜底；图标 items-start 顶对齐，多行不再吊在中央。
- * - 位置：<md 底部居中（避让 Tab Bar，同旧公式）；≥md 右下角，不挡内容中轴。
- * - 同文同型去重、最多 3 条（见 appStore.showToast）。
+ * Toast 2.2 — iOS 横幅感分级通知（移动端顶部下挂 / 桌面右下）。
+ *
+ * 移动端为什么搬到顶部：底部是 chrome 密集区（Tab Bar、吸底排名条、
+ * 购买条），toast 混在其中容易被忽略；顶部下挂是 iOS 横幅 / 微信小程序
+ * 的共同惯例，落在视线焦点区，也不再需要避让底部导航的公式。
+ *
+ * iOS 通知感三要素：22px 大圆角 + 磨砂玻璃（84% surface + backdrop-blur
+ * saturate）+ 弹簧进场（overshoot 曲线）；支持上滑甩走关闭（桌面端为下拽）。
+ *
+ * 移动端宽度内容自适应（w-fit 紧凑胶囊）：短消息「兑换成功」不再撑一条
+ * 343px 长条留大片空白；长消息 max-w 封顶后 line-clamp-2 两行 + title 兜底。
+ * 桌面端维持 22rem 统一宽度（右下叠放右缘对齐）。
+ *
+ * 重要性分级（不同类型的弹窗不同的效果）：
+ * - assertive（error/warning）：卡片染色调 tint 底 + 色调描边，一眼可辨；
+ *   error 用 role="alert"（assertive live region，打断式播报）并配更弹的
+ *   进场曲线 + 更长停留（4.5s）。不弹窗、不遮罩——注意到，但不打断操作。
+ * - quiet（success/info）：中性磨砂卡，role="status"（polite）。
+ *
+ * 通用：同文同型去重、最多 3 条（appStore.showToast）；hover 暂停倒计时。
  */
 
 type Tone = ToastItem['type']
+
+/**
+ * A card-level pointer capture is needed for the swipe-to-dismiss gesture,
+ * but it must never capture a press that started on an interactive child.
+ * Capturing a close-button press retargets its subsequent pointer/click events
+ * to the card, so the button's onClick would not fire.
+ */
+function isInteractiveTarget(target: EventTarget | null) {
+  return target instanceof Element
+    && target.closest('button, a, input, textarea, select, [role="button"]') !== null
+}
 
 const TONE: Record<Tone, { token: string; label: string; icon: typeof CheckCircle2 }> = {
   success: { token: 'var(--color-toast-success)', label: '成功', icon: CheckCircle2 },
@@ -27,25 +49,29 @@ const DURATION: Record<Tone, number> = {
   error: 4500, // 错误带失败细节，多停留一拍
   success: 3000,
   info: 3000,
-  warning: 3000,
+  warning: 4000,
 }
 
 function ToastCard({ toast }: { toast: ToastItem }) {
   const removeToast = useAppStore((s) => s.removeToast)
   const [leaving, setLeaving] = useState(false)
+  // 进场动画 fill:forwards 会压过 inline transform——播完即卸掉动画类，
+  // 上滑关闭手势才能直接改写 style.transform。
+  const [entered, setEntered] = useState(false)
   const progressRef = useRef<HTMLSpanElement>(null)
+  const cardRef = useRef<HTMLDivElement>(null)
+  const drag = useRef<{ startY: number; dy: number; dismissDir: 1 | -1 } | null>(null)
 
   const duration = DURATION[toast.type]
+  const assertive = toast.type === 'error' || toast.type === 'warning'
 
   // Auto-dismiss；hover 时暂停计时（错误详情可能被抄写）。
   useEffect(() => {
     let remaining = duration
     let startedAt = Date.now()
-    let timer = setTimeout(function tick() {
-      setLeaving(true)
-    }, remaining)
+    let timer = setTimeout(() => setLeaving(true), remaining)
 
-    const card = progressRef.current?.closest('[role="status"]')
+    const card = progressRef.current?.closest('[data-toast-card]')
     const pause = () => {
       clearTimeout(timer)
       remaining -= Date.now() - startedAt
@@ -72,37 +98,91 @@ function ToastCard({ toast }: { toast: ToastItem }) {
     return () => clearTimeout(timer)
   }, [leaving, toast.id, removeToast])
 
+  // 滑走关闭（iOS 横幅手势）：移动端向上甩、桌面端向下拽；
+  // 跟随手指，过 48px 阈值或快速甩动即解散，否则回弹。
+  const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if ((e.pointerType === 'mouse' && e.button !== 0) || isInteractiveTarget(e.target)) return
+    const dismissDir = window.matchMedia('(min-width: 768px)').matches ? 1 : -1
+    drag.current = { startY: e.clientY, dy: 0, dismissDir }
+    cardRef.current?.setPointerCapture(e.pointerId)
+  }
+  const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const d = drag.current
+    if (!d || !cardRef.current) return
+    const raw = e.clientY - d.startY
+    // 只跟随关闭方向的位移，反方向给 1/4 阻尼
+    const dy = raw * d.dismissDir > 0 ? raw : raw * 0.25
+    d.dy = dy
+    cardRef.current.style.transition = 'none'
+    cardRef.current.style.transform = `translateY(${dy}px)`
+  }
+  const onPointerUp = () => {
+    const d = drag.current
+    drag.current = null
+    if (!d || !cardRef.current) return
+    const dismissDistance = d.dy * d.dismissDir
+    if (dismissDistance > 48) {
+      setLeaving(true)
+      return
+    }
+    cardRef.current.style.transition = 'transform 0.22s cubic-bezier(0.16, 1, 0.3, 1)'
+    cardRef.current.style.transform = ''
+  }
+
   const { token, label, icon: Icon } = TONE[toast.type]
 
   return (
     <div
-      role="status"
-      className={`${leaving ? 'toast-exit' : 'toast-enter'} pointer-events-auto relative overflow-hidden
-        w-full rounded-2xl border border-[var(--color-border)]
-        bg-[var(--color-surface)] shadow-[var(--shadow-xl)]`}
+      ref={cardRef}
+      data-toast-card
+      role={toast.type === 'error' ? 'alert' : 'status'}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerUp}
+      onAnimationEnd={(e) => {
+        if (e.target === cardRef.current && e.animationName.startsWith('toastIn')) setEntered(true)
+      }}
+      className={`${leaving ? 'toast-exit' : entered ? '' : assertive ? 'toast-enter-assertive' : 'toast-enter'}
+        pointer-events-auto relative overflow-hidden touch-pan-x
+        w-fit max-w-full md:w-full rounded-[22px] border shadow-[var(--shadow-xl)]
+        backdrop-blur-md backdrop-saturate-150`}
+      style={
+        assertive
+          ? {
+              background: `color-mix(in srgb, ${token} 10%, color-mix(in srgb, var(--color-surface) 84%, transparent))`,
+              borderColor: `color-mix(in srgb, ${token} 38%, var(--color-border))`,
+            }
+          : {
+              background: 'color-mix(in srgb, var(--color-surface) 84%, transparent)',
+              borderColor: 'var(--color-border)',
+            }
+      }
     >
-      <div className="flex items-start gap-2.5 pl-3 pr-2 py-2.5">
+      <div className="flex items-center gap-2.5 pl-3 pr-2 py-2">
         <span
           aria-hidden="true"
-          className="mt-px inline-flex w-7 h-7 shrink-0 items-center justify-center rounded-full"
+          className="inline-flex w-7 h-7 shrink-0 items-center justify-center rounded-full"
           style={{ color: token, background: `color-mix(in srgb, ${token} 12%, transparent)` }}
         >
           <Icon className="w-4 h-4" />
         </span>
-        {/* role=status 播报的是内容文本：类型前缀走 sr-only，不能 aria-label
-            覆盖容器（否则只读出"成功"而丢了正文）。 */}
+        {/* role=status/alert 播报的是内容文本：类型前缀走 sr-only，不能
+            aria-label 覆盖容器（否则只读出"成功"而丢了正文）。 */}
         <span
           title={toast.message}
-          className="min-w-0 pt-1 text-sm font-medium leading-snug text-[var(--color-text)] line-clamp-2 break-words"
+          className="min-w-0 text-sm font-medium leading-snug text-[var(--color-text)] line-clamp-2 break-words"
         >
           <span className="sr-only">{label}：</span>
           {toast.message}
         </span>
         <button
           type="button"
+          // Keep the parent swipe handler from capturing this button's pointer.
+          onPointerDown={(event) => event.stopPropagation()}
           onClick={() => setLeaving(true)}
           aria-label="关闭提示"
-          className="icon-btn ml-0.5 -mr-0.5 -mt-1 p-1 rounded-lg shrink-0 text-[var(--color-text-muted)]
+          className="icon-btn -my-1 -mr-0.5 ml-0.5 p-1 rounded-full shrink-0 text-[var(--color-text-muted)]
             hover:text-[var(--color-text)] hover:bg-[var(--color-primary-tint)] transition-colors cursor-pointer"
         >
           <X className="w-3.5 h-3.5" />
@@ -123,15 +203,15 @@ export default function Toast() {
   const toasts = useAppStore((s) => s.toasts)
 
   return (
-    // 统一宽度（sonner 式）：叠放多条时左缘整齐，长消息吃满允许宽度、
-    // 两行内展示更多字符。<md: 底部居中，sit above the BottomTabBar
-    // (56px + safe-area + gap) so toasts never cover or get covered by
-    // primary navigation；≥md: 右下角 22rem 固定宽。
+    // <md：紧贴 Layout 测得的实时 navbar 下缘；compact / notice / search
+    // 状态都共享同一条基线，而不是把旧的 77px header 高度硬编码进 Toast。
+    // ≥md：右下角，最新贴屏幕底缘。
     <div
-      className="fixed z-[80] flex flex-col gap-2 pointer-events-none
-        bottom-[calc(var(--tabbar-h)+var(--safe-bottom)+0.75rem)] left-1/2 -translate-x-1/2
-        w-[calc(100vw-2rem)] max-w-[24rem]
-        md:bottom-6 md:right-6 md:left-auto md:translate-x-0 md:w-[22rem] md:max-w-none"
+      className="fixed z-[80] flex pointer-events-none
+        top-[calc(var(--navbar-current-h)+0.5rem)] left-1/2 -translate-x-1/2
+        w-[calc(100vw-2rem)] max-w-[26rem] flex-col-reverse items-center gap-2
+        md:top-auto md:bottom-6 md:right-6 md:left-auto md:translate-x-0
+        md:w-[22rem] md:max-w-none md:flex-col md:items-end"
     >
       {toasts.map((t) => (
         <ToastCard key={t.id} toast={t} />

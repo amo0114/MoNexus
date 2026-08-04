@@ -6,6 +6,7 @@ import { MerchantProduct, PurchaseFormField } from '../../types/merchant'
 import { useAppStore } from '../../stores/appStore'
 import { uploadImage, UploadError } from '../../api/uploads'
 import SafeImage from '../ui/SafeImage'
+import { DialogOverlay } from '../ui/Dialog'
 import PurchaseFormFieldsEditor, {
   serializePurchaseFormFields, validatePurchaseFormFields,
 } from './PurchaseFormFieldsEditor'
@@ -289,7 +290,7 @@ export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, pr
   return (
     <DialogPrimitive.Root open onOpenChange={(o) => { if (!o) onClose() }}>
       <DialogPrimitive.Portal>
-        <DialogPrimitive.Overlay className="modal-overlay" />
+        <DialogOverlay />
         <DialogPrimitive.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-[calc(100%-2rem)] max-w-2xl max-h-[90dvh] flex flex-col overflow-hidden bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl shadow-xl focus-visible:outline-none">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-5 border-b border-[var(--color-border)]">

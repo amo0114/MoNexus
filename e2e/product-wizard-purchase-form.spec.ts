@@ -66,7 +66,8 @@ test.describe.serial('M-P2 product wizard + purchase form', () => {
     await expect(modal.getByRole('button', { name: '确认支付' })).toBeEnabled()
 
     await modal.getByRole('button', { name: '确认支付' }).click()
-    await expect(page.getByText('兑换成功！')).toBeVisible({ timeout: 10_000 })
+    // 成功反馈契约 = SuccessModal（V4 起不再叠加 toast）
+    await expect(page.getByRole('heading', { name: /兑换成功|下单成功/ })).toBeVisible({ timeout: 10_000 })
 
     // 记录订单号，供商家侧断言
     const userLogin = await request.post(`${API_BASE}/api/auth/login`, {
