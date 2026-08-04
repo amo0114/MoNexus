@@ -58,6 +58,7 @@ function ToastCard({ toast }: { toast: ToastItem }) {
   // 进场动画 fill:forwards 会压过 inline transform——播完即卸掉动画类，
   // 上滑关闭手势才能直接改写 style.transform。
   const [entered, setEntered] = useState(false)
+  const enteredRef = useRef(false)
   const progressRef = useRef<HTMLSpanElement>(null)
   const cardRef = useRef<HTMLDivElement>(null)
   const drag = useRef<{ startY: number; dy: number; dismissDir: 1 | -1 } | null>(null)
@@ -65,19 +66,31 @@ function ToastCard({ toast }: { toast: ToastItem }) {
   const duration = DURATION[toast.type]
   const assertive = toast.type === 'error' || toast.type === 'warning'
 
+  // 元素可能在静止鼠标下方出现，浏览器会因此派发 pointerenter。那不是用户
+  // 主动悬停；若此时暂停，鼠标不移开时 Toast 会永远留在屏幕上。只在进场
+  // 动画完成后响应悬停，保留真正阅读中的暂停行为。
+  useEffect(() => {
+    enteredRef.current = entered
+  }, [entered])
+
   // Auto-dismiss；hover 时暂停计时（错误详情可能被抄写）。
   useEffect(() => {
     let remaining = duration
     let startedAt = Date.now()
     let timer = setTimeout(() => setLeaving(true), remaining)
+    let paused = false
 
     const card = progressRef.current?.closest('[data-toast-card]')
     const pause = () => {
+      if (!enteredRef.current || paused) return
+      paused = true
       clearTimeout(timer)
       remaining -= Date.now() - startedAt
       progressRef.current?.style.setProperty('animation-play-state', 'paused')
     }
     const resume = () => {
+      if (!paused) return
+      paused = false
       startedAt = Date.now()
       timer = setTimeout(() => setLeaving(true), remaining)
       progressRef.current?.style.setProperty('animation-play-state', 'running')
