@@ -226,7 +226,7 @@ describe('cleanupRefundedFiles', () => {
       await prisma.deliveryFile.update({ where: { id: file.id }, data: { status: options.fileStatus } })
     }
     const buyer = await prisma.user.create({
-      data: { email: `gc-refund-${marker}@test.local`, password: 'x', inviteCode: `GCR-${marker}` },
+      data: { email: `gc-refund-${marker}@test.local`, password: 'x' },
     })
     const product = await prisma.product.create({ data: { name: `退款清理${marker}`, type: '充值卡密', price: 100, merchantId } })
     const order = await prisma.order.create({

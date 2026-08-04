@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { api, authHeader, createTestUser, loginAs } from './helpers.js'
+import { api, authHeader, createTestUser, issueTestInviteCode, loginAs } from './helpers.js'
 import { prisma } from '../lib/prisma.js'
 import { getCurrentTierConfig } from '../lib/memberTier.js'
 import { getSystemConfigValue } from '../lib/systemConfig.js'
@@ -129,7 +129,7 @@ describe('M7 tier earning hooks', () => {
 
     const res = await api
       .post('/api/auth/register')
-      .send({ email: inviteeEmail, password: 'pass123', inviteCode: inviter.inviteCode })
+      .send({ email: inviteeEmail, password: 'pass123', inviteCode: (await issueTestInviteCode(inviter.id)).code })
       .expect(201)
 
     expect(res.body.user.points).toBe(0)
@@ -177,7 +177,7 @@ describe('M7 tier earning hooks', () => {
 
     const res = await api
       .post('/api/auth/register')
-      .send({ email: inviteeEmail, password: 'pass123', inviteCode: inviter.inviteCode })
+      .send({ email: inviteeEmail, password: 'pass123', inviteCode: (await issueTestInviteCode(inviter.id)).code })
       .expect(201)
 
     expect(res.body.user.points).toBe(0)

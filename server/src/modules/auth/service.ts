@@ -22,13 +22,14 @@ import {
 } from '../../lib/httpError.js'
 import {
   consumePasswordReset,
-  consumePendingReferralRelation,
   consumeRegistrationAttempt,
   consumeRegistrationProviderPreflight,
   consumeVerificationEmailSend,
 } from './abusePolicy.js'
 import { getHumanVerifier } from './humanVerification.js'
 import { getMailer } from '../../lib/mailer/index.js'
+import { normalizeInviteCode } from '../../lib/inviteCode.js'
+import { claimInviteCodeForRegistration } from '../invite/service.js'
 import { getRefreshTokenMaxAgeMs, getSystemConfigValue } from '../../lib/systemConfig.js'
 import {
   createRefreshTokenRecord,
@@ -40,11 +41,9 @@ import {
 import { recordSecurityEvent, type SessionRevocationReason } from './securityEvents.js'
 import { recordAbuseEvent } from './abuseEvents.js'
 import {
-  createPendingReferralGrowthReward,
+  createClaimedReferralGrowthReward,
   createRegistrationGrowthReward,
   holdGrowthRewardsAfterEmailVerification,
-  resolveEligibleReferralInviteCandidate,
-  type ReferralInviteCandidate,
 } from './growthRewards.js'
 import {
   claimMfaRecoveryCode,
@@ -103,13 +102,12 @@ function hashRefreshToken(refreshToken: string) {
   return crypto.createHash('sha256').update(refreshToken).digest('hex')
 }
 
-function buildAuthUser(user: { id: number; email: string; role: string; inviteCode: string; status: string; nickname: string | null }, points = 0) {
+function buildAuthUser(user: { id: number; email: string; role: string; status: string; nickname: string | null }, points = 0) {
   return {
     id: user.id,
     email: user.email,
     role: user.role,
     status: user.status,
-    inviteCode: user.inviteCode,
     nickname: user.nickname,
     points,
   }
@@ -204,9 +202,9 @@ async function enforceRegistrationProtection(input: {
   if (!token) throw humanVerificationRequired()
   if (token.length > 4_096) throw humanVerificationFailed()
 
-  let verification: Awaited<ReturnType<ReturnType<typeof getHumanVerifier>['verifyRegistration']>>
+  let verification: Awaited<ReturnType<ReturnType<typeof getHumanVerifier>['verify']>>
   try {
-    verification = await getHumanVerifier().verifyRegistration({ token, ip: input.ip })
+    verification = await getHumanVerifier().verify({ token, ip: input.ip, action: 'register' })
   } catch {
     throw humanVerificationUnavailable()
   }
@@ -222,24 +220,11 @@ async function enforceRegistrationProtection(input: {
 }
 
 /**
- * The pending-relation limiter deliberately differs from the registration
- * limiter: a saturated inviter must not prevent a legitimate person from
- * creating their own account. Redis outages still fail the whole protected
- * registration closed, while an ordinary quota denial simply drops the
- * optional referral candidate.
+ * SPEC-INVITE-001 IV-08：invite-only 开关，读法与 registrationEnabled 同款
+ * fail-closed（恰为 1 才算开启）且刻意不缓存。
  */
-async function reservePendingReferralCandidate(
-  inviteCode: string | undefined,
-): Promise<ReferralInviteCandidate | null> {
-  const candidate = await resolveEligibleReferralInviteCandidate(inviteCode)
-  if (!candidate || !registrationProtectionIsEnforced()) return candidate
-
-  try {
-    const reservation = await consumePendingReferralRelation(candidate.inviterId)
-    return reservation.allowed ? candidate : null
-  } catch {
-    throw abuseProtectionUnavailable()
-  }
+export async function isInviteOnlyRegistration(): Promise<boolean> {
+  return (await getSystemConfigValue('registrationInviteOnly')) === 1
 }
 
 /**
@@ -248,13 +233,18 @@ async function reservePendingReferralCandidate(
  * registration path remains fail-closed if a runtime command is unavailable.
  */
 export async function getPublicRegistrationStatus() {
-  const registrationEnabled = await isRegistrationEnabled()
-  if (!registrationEnabled) {
-    return { registrationEnabled, registrationAvailable: false, challenge: null }
-  }
+  const [registrationEnabled, inviteRequired] = await Promise.all([
+    isRegistrationEnabled(),
+    isInviteOnlyRegistration(),
+  ])
 
   if (!registrationProtectionIsEnforced()) {
-    return { registrationEnabled, registrationAvailable: true, challenge: null }
+    return {
+      registrationEnabled,
+      registrationAvailable: registrationEnabled,
+      inviteRequired,
+      challenge: null,
+    }
   }
 
   const configured = Boolean(
@@ -266,12 +256,18 @@ export async function getPublicRegistrationStatus() {
     && config.turnstile.allowedHostnames.length > 0,
   )
   if (!configured) {
-    return { registrationEnabled, registrationAvailable: false, challenge: null }
+    return {
+      registrationEnabled,
+      registrationAvailable: false,
+      inviteRequired,
+      challenge: null,
+    }
   }
 
   return {
     registrationEnabled,
-    registrationAvailable: true,
+    registrationAvailable: registrationEnabled,
+    inviteRequired,
     challenge: {
       provider: 'turnstile' as const,
       siteKey: config.turnstile.siteKey,
@@ -298,13 +294,17 @@ export async function registerUser(
     turnstileToken,
   })
 
+  // IV-08：invite-only 检查位于注册开关与滥用防护之后、查邮箱重复之前。
+  // HTTP 侧 schema 已归一化；这里对直接调用方（CLI/测试）重跑同一归一化。
+  const hasInviteCodeInput = typeof inviteCode === 'string' && inviteCode.trim() !== ''
+  const claimCode = hasInviteCodeInput ? normalizeInviteCode(inviteCode) : null
+  if (hasInviteCodeInput && claimCode === null) throw badRequest('邀请码格式不正确')
+  if (!claimCode && (await isInviteOnlyRegistration())) {
+    throw badRequest('当前仅限邀请注册')
+  }
+
   const existing = await prisma.user.findUnique({ where: { email: normalizedEmail } })
   if (existing) throw conflict('该邮箱已注册')
-
-  // Keep the optional invitation reservation outside the database
-  // transaction: it is a Redis network call. The transaction below rechecks
-  // inviter eligibility under a row lock before it ever creates a relation.
-  const referralCandidate = await reservePendingReferralCandidate(inviteCode)
 
   const hashedPassword = await bcrypt.hash(password, PASSWORD_BCRYPT_ROUNDS)
 
@@ -320,10 +320,20 @@ export async function registerUser(
     })
 
     await createRegistrationGrowthReward(tx, newUser.id, registerReward)
-    await createPendingReferralGrowthReward(tx, {
-      candidate: referralCandidate,
-      inviteeId: newUser.id,
-    })
+
+    if (claimCode) {
+      // IV-03/IV-07/IV-09：一次性码在本事务内原子领用，任何失败都显式 400
+      // 并回滚整个注册；领用成功即建 pending 关系 + 冻结 referral 奖励。
+      // 锁序：新用户 User 行（create 自带）→ InviteCode 行 → issuer User 行。
+      const claimed = await claimInviteCodeForRegistration(tx, {
+        code: claimCode,
+        usedByUserId: newUser.id,
+      })
+      await createClaimedReferralGrowthReward(tx, {
+        inviterId: claimed.issuerId,
+        inviteeId: newUser.id,
+      })
+    }
 
     return { user: newUser }
   })
@@ -417,7 +427,7 @@ export async function loginUser(email: string, password: string, ip?: string, us
 
 type MfaFactorMethod = 'totp' | 'recovery_code'
 type MfaVerificationOutcome =
-  | { kind: 'issued'; user: { id: number; email: string; role: string; status: string; inviteCode: string; nickname: string | null; mfaVersion: number; pointAccount: { balance: number } | null }; session: { refreshToken: string; maxAgeMs: number; sessionId: string }; recoveryCodes?: string[]; recoveryCodeRemaining?: number }
+  | { kind: 'issued'; user: { id: number; email: string; role: string; status: string; nickname: string | null; mfaVersion: number; pointAccount: { balance: number } | null }; session: { refreshToken: string; maxAgeMs: number; sessionId: string }; recoveryCodes?: string[]; recoveryCodeRemaining?: number }
   | { kind: 'verification_failed' | 'too_many_attempts' | 'challenge_invalid' }
 
 /** Forces a transaction rollback when a recovery-code claim lost its challenge race. */
@@ -1050,7 +1060,6 @@ export async function getUserProfile(userId: number) {
     email: user.email,
     role: user.role,
     status: user.status,
-    inviteCode: user.inviteCode,
     nickname: user.nickname,
     points: user.pointAccount?.balance ?? 0,
     emailVerified: user.emailVerified,

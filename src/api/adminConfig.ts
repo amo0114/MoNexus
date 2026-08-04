@@ -30,6 +30,8 @@ export type AdminSystemConfigKey =
   | 'autoProvisionMaxAttempts'
   // SPEC-OPS-REGMAIL-001 公开注册总开关（仅 0/1，由 RegistrationControlPanel 渲染）
   | 'registrationEnabled'
+  // SPEC-INVITE-001 邀请码必填开关（0=可选，1=必填）
+  | 'registrationInviteOnly'
 
 export interface AdminSystemConfig {
   key: AdminSystemConfigKey

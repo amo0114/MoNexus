@@ -153,27 +153,6 @@ export function getShanghaiDayWindow(now: Date = new Date()): ShanghaiDayWindow 
   }
 }
 
-/**
- * This small pre-verification cap protects an inviter from a pending-relation
- * flood. It is separate from the qualification caps implemented during the
- * later verification transaction.
- */
-export function consumePendingReferralRelation(
-  inviterId: number,
-  options: { limiter?: AbuseLimiter; now?: Date } = {},
-) {
-  const day = getShanghaiDayWindow(options.now)
-  return consumeAbusePolicy(
-    [{
-      bucket: {
-        flow: 'referral-pending',
-        dimension: 'inviter',
-        limit: 6,
-        windowMs: day.windowMs,
-        windowKey: day.key,
-      },
-      subject: inviterId,
-    }],
-    options.limiter,
-  )
-}
+// SPEC-INVITE-001 IV-09：曾经的 pending-referral Redis 预约（consumePending-
+// ReferralRelation）已随一次性邀请码删除——它防的"无限常驻码堆积 pending
+// 关系"前提被生成侧月名额消灭；合格侧配额仍在 growthRewards.ts。
