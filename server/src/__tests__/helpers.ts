@@ -1,6 +1,7 @@
 import request from 'supertest'
 import bcrypt from 'bcryptjs'
 import { app } from '../app.js'
+import { generateInviteCode } from '../lib/inviteCode.js'
 import { prisma } from '../lib/prisma.js'
 import { decryptMfaSecret, generateTotp } from '../modules/auth/mfa.js'
 
@@ -18,7 +19,6 @@ export async function createTestUser(
       email,
       password: hashed,
       role,
-      inviteCode: `TEST-${email}`,
     },
   })
   await prisma.pointAccount.create({
@@ -34,6 +34,30 @@ export async function createTestUser(
     },
   })
   return { user, password }
+}
+
+/**
+ * SPEC-INVITE-001：直插一枚可用的一次性邀请码（绕过发码资格与名额），
+ * 供注册链路用例造数。默认 active、14 天有效。
+ */
+export async function issueTestInviteCode(
+  issuerId: number,
+  options: {
+    code?: string
+    status?: 'active' | 'used' | 'expired' | 'revoked'
+    expiresAt?: Date
+    createdAt?: Date
+  } = {}
+) {
+  return prisma.inviteCode.create({
+    data: {
+      code: options.code ?? generateInviteCode(),
+      issuerId,
+      status: options.status ?? 'active',
+      expiresAt: options.expiresAt ?? new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
+      ...(options.createdAt === undefined ? {} : { createdAt: options.createdAt }),
+    },
+  })
 }
 
 export async function createTestMerchant(

@@ -102,8 +102,8 @@ test.describe('mobile 320px', () => {
     await expect(page.getByRole('button', { name: '商家后台' })).toBeVisible()
     await expect(page.getByText('主题', { exact: true })).toBeVisible()
     const themeButtons = page.getByRole('radio')
-    await expect(themeButtons).toHaveCount(3)
-    for (let i = 0; i < 3; i++) {
+    await expect(themeButtons).toHaveCount(4)
+    for (let i = 0; i < 4; i++) {
       const tb = await themeButtons.nth(i).boundingBox()
       expect(tb!.width).toBeGreaterThanOrEqual(40)
       expect(tb!.height).toBeGreaterThanOrEqual(40)

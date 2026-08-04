@@ -135,6 +135,7 @@ test.describe('M-P1 checkout confirmation', () => {
     await expect(modal.getByRole('button', { name: '确认支付' })).toBeDisabled()
     await contactField.fill('tg:@e2e-changed')
     await modal.getByRole('button', { name: '确认支付' }).click()
-    await expect(page.getByText('兑换成功！')).toBeVisible({ timeout: 10_000 })
+    // 成功反馈契约 = SuccessModal（V4 起不再叠加 toast）
+    await expect(page.getByRole('heading', { name: /兑换成功|下单成功/ })).toBeVisible({ timeout: 10_000 })
   })
 })

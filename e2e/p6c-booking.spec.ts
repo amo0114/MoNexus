@@ -60,7 +60,9 @@ test.describe.serial('P6c booking', () => {
     await expect(dateInput).toBeVisible({ timeout: 10_000 })
     await dateInput.fill(BOOKING_DATE)
     await page.getByRole('button', { name: '确认支付' }).click()
-    await expect(page.getByText('兑换成功').first()).toBeVisible({ timeout: 10_000 })
+    // 成功反馈由 SuccessModal 承载；手工服务在没有即时交付内容时显示
+    // 「下单成功」，有交付内容时显示「兑换成功」。
+    await expect(page.getByRole('heading', { name: /兑换成功|下单成功/ })).toBeVisible({ timeout: 10_000 })
 
     const buyerToken = await tokenOf(request, SEED_ACCOUNTS.user)
     const orders = await request.get(`${API_BASE}/api/orders`, {

@@ -1,0 +1,98 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1600" height="1100" viewBox="0 0 1600 1100" role="img" aria-labelledby="title desc">
+  <title id="title">MoNexus Offset Clasp identity concept</title>
+  <desc id="desc">An asymmetric two-plane interlocking logo proposal with favicon, badge, and theme proof.</desc>
+  <defs>
+    <g id="offset-clasp">
+      <!-- Plane B: the route that begins behind the carrier -->
+      <path fill="currentColor" d="M74 12 96 25 72 40 72 81 52 94 52 49Z"/>
+      <!-- Plane A: the long, continuous carrier; its diagonal makes the hierarchy -->
+      <path fill="currentColor" d="M13 70 34 82 127 30 106 18Z"/>
+      <!-- Plane B reappears on the near side; the gap is the only depth cue -->
+      <path fill="currentColor" d="M52 71 72 82 72 81 52 94Z"/>
+      <path fill="#F8FAFC" d="M52 62 61 67 53 72 52 71Z"/>
+    </g>
+    <g id="offset-clasp-dark-gap">
+      <path fill="currentColor" d="M74 12 96 25 72 40 72 81 52 94 52 49Z"/>
+      <path fill="currentColor" d="M13 70 34 82 127 30 106 18Z"/>
+      <path fill="currentColor" d="M52 71 72 82 72 81 52 94Z"/>
+      <path fill="#0A0A14" d="M52 62 61 67 53 72 52 71Z"/>
+    </g>
+    <g id="offset-clasp-soft-gap">
+      <path fill="currentColor" d="M74 12 96 25 72 40 72 81 52 94 52 49Z"/>
+      <path fill="currentColor" d="M13 70 34 82 127 30 106 18Z"/>
+      <path fill="currentColor" d="M52 71 72 82 72 81 52 94Z"/>
+      <path fill="#FFF8EC" d="M52 62 61 67 53 72 52 71Z"/>
+    </g>
+    <style>
+      .eyebrow { font: 600 20px Arial, Helvetica, sans-serif; letter-spacing: 1.6px; fill: #737780; }
+      .note { font: 400 18px Arial, Helvetica, sans-serif; fill: #737780; }
+      .wordmark { font: 700 112px Arial, Helvetica, sans-serif; letter-spacing: 10px; fill: #090A19; }
+      .small-wordmark { font: 700 42px Arial, Helvetica, sans-serif; letter-spacing: 5px; fill: #090A19; }
+      .mini-wordmark { font: 700 24px Arial, Helvetica, sans-serif; letter-spacing: 3px; }
+      .guide { stroke: #E4E7EC; stroke-width: 2; }
+      .grid { stroke: #D7DAE0; stroke-width: 1; }
+    </style>
+  </defs>
+
+  <rect width="1600" height="1100" fill="#F8FAFC"/>
+  <line x1="0" y1="606" x2="1600" y2="606" class="guide"/>
+  <line x1="1158" y1="0" x2="1158" y2="606" class="guide"/>
+
+  <text x="60" y="64" class="eyebrow">PRIMARY MARK — OFFSET CLASP</text>
+  <text x="60" y="96" class="note">Two unequal planes · one offset over–under joint · no axial symmetry</text>
+
+  <g style="color:#6366F1" transform="translate(83 182) scale(4.25)">
+    <use xlink:href="#offset-clasp"/>
+  </g>
+  <text x="670" y="366" class="wordmark">MONEXUS</text>
+  <text x="676" y="410" class="note">A STRUCTURAL MARK FOR THE EXCHANGE LAYER</text>
+
+  <text x="1215" y="64" class="eyebrow">16PX FAVICON</text>
+  <g transform="translate(1224 114)">
+    <rect x="0" y="0" width="164" height="164" fill="#FFF" stroke="#D7DAE0" stroke-width="2"/>
+    <g class="grid">
+      <path d="M20 0V164M41 0V164M61 0V164M82 0V164M102 0V164M123 0V164M143 0V164M0 20H164M0 41H164M0 61H164M0 82H164M0 102H164M0 123H164M0 143H164"/>
+    </g>
+    <g style="color:#6366F1" transform="translate(17 34) scale(.9)">
+      <use xlink:href="#offset-clasp"/>
+    </g>
+  </g>
+  <text x="1216" y="313" class="note">The long carrier survives;</text>
+  <text x="1216" y="339" class="note">the relief cut stays legible.</text>
+
+  <line x1="1208" y1="388" x2="1526" y2="388" class="guide"/>
+  <text x="1215" y="443" class="eyebrow">TRUST BADGE</text>
+  <path d="M1258 483 1310 506V565C1310 603 1287 627 1258 642 1229 627 1206 603 1206 565V506Z" fill="none" stroke="#090A19" stroke-width="6"/>
+  <g style="color:#6366F1" transform="translate(1224 512) scale(.49)"><use xlink:href="#offset-clasp"/></g>
+  <text x="1340" y="547" class="eyebrow" style="fill:#090A19">SECURE BY</text>
+  <text x="1340" y="582" class="mini-wordmark" style="fill:#090A19">MONEXUS</text>
+
+  <text x="60" y="668" class="eyebrow">MONOCHROME PROOF</text>
+  <g style="color:#090A19" transform="translate(72 698) scale(1.8)"><use xlink:href="#offset-clasp"/></g>
+  <text x="355" y="832" class="small-wordmark">MONEXUS</text>
+  <rect x="661" y="692" width="390" height="176" fill="#090A19"/>
+  <g style="color:#FFF" transform="translate(695 723) scale(1.25)"><use xlink:href="#offset-clasp-dark-gap"/></g>
+  <text x="886" y="817" class="small-wordmark" style="fill:#FFF">MONEXUS</text>
+  <g style="color:#737780" transform="translate(1094 698) scale(1.8)"><use xlink:href="#offset-clasp"/></g>
+  <text x="1377" y="832" class="small-wordmark" style="fill:#737780">MONEXUS</text>
+
+  <line x1="0" y1="908" x2="1600" y2="908" class="guide"/>
+  <line x1="533" y1="908" x2="533" y2="1100" class="guide"/>
+  <line x1="1066" y1="908" x2="1066" y2="1100" class="guide"/>
+  <text x="60" y="958" class="eyebrow">PROJECT LIGHT</text>
+  <text x="60" y="986" class="note">#6366F1 on #F8FAFC</text>
+  <g style="color:#6366F1" transform="translate(72 1003) scale(.82)"><use xlink:href="#offset-clasp"/></g>
+  <text x="206" y="1070" class="mini-wordmark" style="fill:#090A19">MONEXUS</text>
+
+  <rect x="533" y="908" width="533" height="192" fill="#0A0A14"/>
+  <text x="593" y="958" class="eyebrow" style="fill:#B1B5C1">PROJECT DARK</text>
+  <text x="593" y="986" class="note" style="fill:#B1B5C1">#818CF8 on #0A0A14</text>
+  <g style="color:#818CF8" transform="translate(595 1003) scale(.82)"><use xlink:href="#offset-clasp-dark-gap"/></g>
+  <text x="729" y="1070" class="mini-wordmark" style="fill:#FFF">MONEXUS</text>
+
+  <rect x="1066" y="908" width="534" height="192" fill="#FFF8EC"/>
+  <text x="1126" y="958" class="eyebrow">PROJECT SOFT</text>
+  <text x="1126" y="986" class="note">#FF8C42 on #FFF8EC</text>
+  <g style="color:#FF8C42" transform="translate(1128 1003) scale(.82)"><use xlink:href="#offset-clasp-soft-gap"/></g>
+  <text x="1262" y="1070" class="mini-wordmark" style="fill:#090A19">MONEXUS</text>
+</svg>

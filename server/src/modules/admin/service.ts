@@ -135,7 +135,6 @@ export async function listUsers(query: ListUsersQuery = {}) {
         email: true,
         role: true,
         status: true,
-        inviteCode: true,
         createdAt: true,
         pointAccount: { select: { balance: true } },
       },

@@ -1,6 +1,7 @@
 import * as DialogPrimitive from '@radix-ui/react-dialog'
 import { X } from 'lucide-react'
-import { forwardRef } from 'react'
+import { forwardRef, useEffect } from 'react'
+import { useAppStore } from '../../stores/appStore'
 
 export const Dialog = DialogPrimitive.Root
 export const DialogTrigger = DialogPrimitive.Trigger
@@ -8,13 +9,24 @@ export const DialogPortal = DialogPrimitive.Portal
 export const DialogClose = DialogPrimitive.Close
 
 type OverlayProps = React.ComponentPropsWithoutRef<typeof DialogPrimitive.Overlay>
-export const DialogOverlay = forwardRef<HTMLDivElement, OverlayProps>(({ className = '', ...props }, ref) => (
-  <DialogPrimitive.Overlay
-    ref={ref}
-    className={`modal-overlay ${className}`}
-    {...props}
-  />
-))
+export const DialogOverlay = forwardRef<HTMLDivElement, OverlayProps>(({ className = '', ...props }, ref) => {
+  // 全局模态计数：overlay 挂载即 +1、卸载 -1（嵌套弹窗自然正确）。
+  // navbar 据此淡出（appStore.modalDepth），避免玻璃 chrome 被 overlay
+  // 的 backdrop-blur 二次模糊成「半透隐约可见」的脏条。
+  const modalOpened = useAppStore((s) => s.modalOpened)
+  const modalClosed = useAppStore((s) => s.modalClosed)
+  useEffect(() => {
+    modalOpened()
+    return () => modalClosed()
+  }, [modalOpened, modalClosed])
+  return (
+    <DialogPrimitive.Overlay
+      ref={ref}
+      className={`modal-overlay ${className}`}
+      {...props}
+    />
+  )
+})
 DialogOverlay.displayName = 'DialogOverlay'
 
 type ContentProps = React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>

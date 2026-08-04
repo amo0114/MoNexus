@@ -19,6 +19,7 @@ import MfaEnrollment from '../components/auth/MfaEnrollment'
 import MfaVerification from '../components/auth/MfaVerification'
 import RecoveryCodeConfirmation from '../components/auth/RecoveryCodeConfirmation'
 import TurnstileWidget, { type TurnstileWidgetHandle } from '../components/auth/TurnstileWidget'
+import Logo from '../components/ui/Logo'
 
 type PendingRecoveryConfirmation = {
   accessToken: string
@@ -27,7 +28,7 @@ type PendingRecoveryConfirmation = {
 
 type RegistrationViewState =
   | { kind: 'loading' }
-  | { kind: 'available'; challenge: RegistrationChallenge | null }
+  | { kind: 'available'; challenge: RegistrationChallenge | null; inviteRequired: boolean }
   | { kind: 'disabled' }
   | { kind: 'unavailable' }
 
@@ -40,6 +41,9 @@ function LoginShell({ children }: { children: ReactNode }) {
 
       <main className="card relative z-10 w-full max-w-md overflow-hidden text-center backdrop-blur-xl">
         <div className="mx-auto mb-6">
+          <div className="mb-3 flex justify-center">
+            <Logo className="h-16 w-16 shrink-0" />
+          </div>
           <h1 className="font-heading text-4xl font-bold tracking-[0.18em] text-[var(--color-text)]">MONEXUS</h1>
           <div className="mx-auto mt-2 h-0.5 w-12 bg-[var(--color-primary)]" />
           <p className="mt-3 text-xs uppercase tracking-[0.35em] text-[var(--color-text-muted)]">Digital · Marketplace</p>
@@ -68,6 +72,15 @@ export default function LoginPage() {
   const [registrationState, setRegistrationState] = useState<RegistrationViewState>({ kind: 'loading' })
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const inviteParam = params.get('invite')
+    if (inviteParam) {
+      setInviteCode(inviteParam)
+      setIsRegister(true)
+    }
+  }, [])
+
+  useEffect(() => {
     let active = true
     setRegistrationState({ kind: 'loading' })
 
@@ -79,7 +92,7 @@ export default function LoginPage() {
         } else if (!status.registrationAvailable) {
           setRegistrationState({ kind: 'unavailable' })
         } else {
-          setRegistrationState({ kind: 'available', challenge: status.challenge })
+          setRegistrationState({ kind: 'available', challenge: status.challenge, inviteRequired: status.inviteRequired })
         }
       })
       .catch(() => {
@@ -139,6 +152,12 @@ export default function LoginPage() {
       setIsRegister(false)
       setRegistrationState({ kind: 'disabled' })
       showToast('当前已暂停新用户注册', 'error')
+      return
+    }
+
+    if (code === 'INVITE_CODE_REQUIRED') {
+      turnstileRef.current?.reset()
+      showToast('当前注册需要邀请码', 'error')
       return
     }
 
@@ -307,12 +326,21 @@ export default function LoginPage() {
           <>
             <input
               type="text"
-              placeholder="邀请码（可选）"
-              aria-label="邀请码（可选）"
+              placeholder={
+                registrationState.kind === 'available' && registrationState.inviteRequired
+                  ? '邀请码（必填）'
+                  : '邀请码（可选）'
+              }
+              aria-label={
+                registrationState.kind === 'available' && registrationState.inviteRequired
+                  ? '邀请码（必填）'
+                  : '邀请码（可选）'
+              }
               value={inviteCode}
               onChange={(event) => setInviteCode(event.target.value)}
               className="input"
               disabled={loading}
+              required={registrationState.kind === 'available' && registrationState.inviteRequired}
             />
             {registrationChallenge && (
               <TurnstileWidget ref={turnstileRef} siteKey={registrationChallenge.siteKey} />

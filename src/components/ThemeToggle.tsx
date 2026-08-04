@@ -1,11 +1,12 @@
 import { useRef } from 'react'
-import { Moon, Sparkles, Sun } from 'lucide-react'
+import { Brush, Moon, Sparkles, Sun } from 'lucide-react'
 import { useTheme, type Theme } from '../lib/ThemeProvider'
 
 const OPTIONS: { value: Theme; label: string; icon: typeof Sun }[] = [
   { value: 'light', label: '浅色主题', icon: Sun },
   { value: 'dark', label: '深色主题', icon: Moon },
   { value: 'soft', label: '软萌主题', icon: Sparkles },
+  { value: 'ink', label: '墨韵主题', icon: Brush },
 ]
 
 export default function ThemeToggle() {

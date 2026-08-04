@@ -14,7 +14,6 @@ model User {
   password      String
   role          String    @default("user") // user | admin | merchant
   status        String    @default("正常")
-  inviteCode    String    @unique @default(uuid())
   nickname      String? // 1-20 字，个人中心可设；评价展示名回退邮箱打码
   emailVerified DateTime?
   // Stops this user from qualifying new invite relations. It never rewrites
@@ -56,6 +55,29 @@ model User {
   securityEvents          SecurityEvent[]
   fakaProvisionEmailProofs FakaProvisionEmailProof[]
   fakaProvisionEmailSendBudget FakaProvisionEmailSendBudget?
+  leaderboardEntries      LeaderboardEntry[]
+  inviteCodesIssued       InviteCode[]             @relation("InviteCodeIssuer")
+  inviteCodeUsed          InviteCode?              @relation("InviteCodeUsedBy")
+}
+
+// SPEC-INVITE-001：一次性邀请码。资格前置到发码侧（IV-04），名额按上海自然月
+// 在生成时消耗（IV-05/IV-06）；注册事务内条件更新原子领用，严格一次性（IV-03）。
+// `expired` 为惰性判定：读侧一律以 expiresAt 为准（IV-02），无定时任务改状态。
+model InviteCode {
+  id           Int       @id @default(autoincrement())
+  code         String    @unique // ^[A-Z0-9]{8}$，生成字母表见 lib/inviteCode.ts（IV-01）
+  issuerId     Int
+  status       String    @default("active") // active | used | expired | revoked（expired 惰性，见 IV-02）
+  expiresAt    DateTime
+  usedByUserId Int?      @unique
+  usedAt       DateTime?
+  createdAt    DateTime  @default(now())
+
+  issuer User  @relation("InviteCodeIssuer", fields: [issuerId], references: [id])
+  usedBy User? @relation("InviteCodeUsedBy", fields: [usedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([issuerId, createdAt]) // 月度名额计数
+  @@index([issuerId, status]) // 个人中心列表
 }
 
 // FakaBridge 开通邮箱归属证明：防止填写他人 Xboard 邮箱后降配/续费他人套餐。
@@ -356,6 +378,10 @@ model PointLog {
 
   user  User   @relation(fields: [userId], references: [id])
   order Order? @relation(fields: [orderId], references: [id])
+
+  // 排行榜按 (type='in', createdAt ∈ 窗口) 聚合；此前本表除主键零索引，
+  // 缺了它每次刷新都是全表扫。
+  @@index([type, createdAt])
 }
 
 model Product {
@@ -917,4 +943,28 @@ model FileGrantLog {
 
   @@index([fileId, createdAt])
   @@index([orderId])
+}
+
+// SPEC-LEADERBOARD-001：每日刷新的积分排行榜快照。
+// 一行 = 某 (scope, periodKey) 期内某用户的名次与获得积分。
+// 快照存**全量**合格且窗口内有得分的用户（不在写侧截断 Top 100），这样
+// 「我的排名」是精确值而不是「未上榜」；Top 100 只是读侧的 LIMIT。
+// periodKey：'ALL' | 'M<YYYY-MM>' | 'W<周一日历日>'——周用周一日期而非 ISO
+// 周号，规避 ISO week-year 的跨年边界（2026-12-28 属 2027-W01 这类）。
+model LeaderboardEntry {
+  id         Int      @id @default(autoincrement())
+  scope      String // total | month | week
+  periodKey  String
+  rank       Int
+  userId     Int
+  points     Int // 窗口内 SUM(PointLog.amount) WHERE type='in'
+  computedAt DateTime // 本批次刷新时刻，读侧作 updatedAt 下发
+  // 上一轮快照同（scope, periodKey）的名次：读侧推导 ↑↓ 变化（prevRank - rank）。
+  // 首次入榜为 null；同期每日重刷时即「较昨日」。
+  prevRank   Int?
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([scope, periodKey, userId]) // 「我的排名」点查 + 幂等替换的唯一性
+  @@index([scope, periodKey, rank]) // Top 100 顺序扫
 }

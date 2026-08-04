@@ -3,10 +3,11 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Menu, X, Coins, User, ShieldCheck, Store, Clock, XCircle,
-  AlertTriangle, Plus, Home,
+  AlertTriangle, Plus, Home, Trophy,
 } from 'lucide-react'
 import { useAuthStore } from '../stores/authStore'
 import ThemeToggle from './ThemeToggle'
+import { DialogOverlay } from './ui/Dialog'
 
 const ROW =
   'w-full flex items-center gap-3 px-3 min-h-[44px] rounded-lg text-sm font-medium transition-colors cursor-pointer text-left'
@@ -51,7 +52,7 @@ export default function MobileNavDrawer() {
       </DialogPrimitive.Trigger>
 
       <DialogPrimitive.Portal>
-        <DialogPrimitive.Overlay className="modal-overlay" />
+        <DialogOverlay />
         <DialogPrimitive.Content className="drawer-enter fixed right-0 top-0 h-full w-72 max-w-[85vw] z-50 flex flex-col bg-[var(--color-surface)] border-l border-[var(--color-border)] shadow-xl focus-visible:outline-none overflow-y-auto">
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-4 border-b border-[var(--color-border)] shrink-0">
@@ -110,6 +111,13 @@ export default function MobileNavDrawer() {
             >
               <Home className="w-4 h-4 text-[var(--color-text-muted)]" />
               商城首页
+            </button>
+            <button
+              className={`${ROW} text-[var(--color-text)] hover:bg-[var(--color-primary)]/8 active:bg-[var(--color-primary)]/12`}
+              onClick={() => go('/leaderboard')}
+            >
+              <Trophy className="w-4 h-4 text-[var(--color-text-muted)]" />
+              积分排行榜
             </button>
             <button
               className={`${ROW} text-[var(--color-text)] hover:bg-[var(--color-primary)]/8 active:bg-[var(--color-primary)]/12`}

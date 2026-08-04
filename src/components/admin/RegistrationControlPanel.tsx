@@ -4,19 +4,21 @@ import { getApiErrorMessage } from '../../api/error'
 import ConfirmDialog from '../ui/ConfirmDialog'
 import { useAppStore } from '../../stores/appStore'
 
-const CONFIG_KEY = 'registrationEnabled'
+const REG_ENABLED_KEY = 'registrationEnabled'
+const INVITE_ONLY_KEY = 'registrationInviteOnly'
 
 /** 规格 §5.2 的关闭确认文案，逐字使用。 */
 const DISABLE_CONFIRM = '关闭后新访客无法创建账号，现有用户仍可登录。确认关闭？'
 
 /**
- * SPEC-OPS-REGMAIL-001 §5.2「账户与注册」卡片。
- * 复用既有 `PUT /admin/config/registrationEnabled`（已受 MFA 中间件与 AdminLog 保护），
+ * SPEC-OPS-REGMAIL-001 §5.2「账户与注册」卡片 + SPEC-INVITE-001 邀请码必填开关。
+ * 复用既有 `PUT /admin/config/:key`（已受 MFA 中间件与 AdminLog 保护），
  * 不新增平行写接口。开关只是运营体验，真正的边界在后端 registerUser()（REG-04）。
  */
 export default function RegistrationControlPanel() {
   const showToast = useAppStore((s) => s.showToast)
-  const [enabled, setEnabled] = useState<boolean | null>(null)
+  const [regEnabled, setRegEnabled] = useState<boolean | null>(null)
+  const [inviteOnly, setInviteOnly] = useState<boolean | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -30,9 +32,10 @@ export default function RegistrationControlPanel() {
     setLoading(true)
     try {
       const list = await getAdminConfig()
-      const entry = list.find((c) => c.key === CONFIG_KEY)
-      // C2 fail-closed 读法：enabled ⇔ value === 1；缺项时按后端默认视为开启。
-      setEnabled(entry ? entry.value === 1 : true)
+      const regEntry = list.find((c) => c.key === REG_ENABLED_KEY)
+      const inviteEntry = list.find((c) => c.key === INVITE_ONLY_KEY)
+      setRegEnabled(regEntry ? regEntry.value === 1 : true)
+      setInviteOnly(inviteEntry ? inviteEntry.value === 1 : false)
       setLoadError(false)
     } catch (err) {
       setLoadError(true)
@@ -42,40 +45,58 @@ export default function RegistrationControlPanel() {
     }
   }
 
-  async function save(next: boolean) {
-    // 单飞：保存期间不接受任何新的切换请求，避免连点产生多次 PUT。
+  async function saveRegEnabled(next: boolean) {
     if (saving) return
     setSaving(true)
     try {
-      const updated = await updateAdminConfig(CONFIG_KEY, next ? 1 : 0)
-      setEnabled(updated.value === 1)
+      const updated = await updateAdminConfig(REG_ENABLED_KEY, next ? 1 : 0)
+      setRegEnabled(updated.value === 1)
       showToast(next ? '已开启新用户注册' : '已关闭新用户注册')
     } catch (err) {
       showToast(getApiErrorMessage(err, '更新注册开关失败'), 'error')
-      // 失败不保留乐观值：回读服务端真实状态（P.13）。
       await fetchStatus()
     } finally {
       setSaving(false)
     }
   }
 
-  function handleToggle() {
-    if (saving || enabled === null) return
-    // C13：只有「关闭」是破坏性动作需要确认；开启直接保存。
-    if (enabled) {
+  async function saveInviteOnly(next: boolean) {
+    if (saving) return
+    setSaving(true)
+    try {
+      const updated = await updateAdminConfig(INVITE_ONLY_KEY, next ? 1 : 0)
+      setInviteOnly(updated.value === 1)
+      showToast(next ? '已开启邀请码必填' : '已关闭邀请码必填')
+    } catch (err) {
+      showToast(getApiErrorMessage(err, '更新邀请码必填开关失败'), 'error')
+      await fetchStatus()
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  function handleRegToggle() {
+    if (saving || regEnabled === null) return
+    if (regEnabled) {
       setConfirmOpen(true)
       return
     }
-    void save(true)
+    void saveRegEnabled(true)
   }
 
-  const stateText = enabled ? '已开启' : '已关闭'
+  function handleInviteToggle() {
+    if (saving || inviteOnly === null) return
+    void saveInviteOnly(!inviteOnly)
+  }
+
+  const regStateText = regEnabled ? '已开启' : '已关闭'
+  const inviteStateText = inviteOnly ? '必填' : '可选'
 
   return (
     <section data-testid="registration-control-panel">
       <h2 className="font-heading text-xl font-bold mb-2 text-[var(--color-text)]">账户与注册</h2>
       <p className="text-sm text-[var(--color-text-muted)] mb-4">
-        关闭后仅阻止新账号自助注册；现有账号仍可登录。
+        关闭后仅阻止新账号自助注册；现有账号仍可登录。邀请码必填模式下，无码无法注册。
       </p>
 
       {loading ? (
@@ -88,42 +109,78 @@ export default function RegistrationControlPanel() {
           </button>
         </div>
       ) : (
-        <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] px-4 py-3 flex flex-wrap items-center gap-3">
-          <div className="flex-grow min-w-0">
-            <div className="font-bold text-sm text-[var(--color-text)]">允许新用户注册</div>
-            <div className="text-xs text-[var(--color-text-muted)] font-mono mt-0.5 break-all">{CONFIG_KEY}</div>
-          </div>
-          {/* 状态文字与开关并存：不依赖颜色单一通道传达状态（规格 §5.2） */}
-          <span
-            data-testid="registration-toggle-state"
-            className="text-sm font-semibold text-[var(--color-text)] whitespace-nowrap"
-          >
-            {stateText}
-          </span>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={enabled === true}
-            aria-label="允许新用户注册"
-            disabled={saving}
-            onClick={handleToggle}
-            data-testid="registration-toggle"
-            /* min-w/min-h 40px：与移动端 ≥40px 触控目标契约一致 */
-            className="relative inline-flex items-center shrink-0 min-w-[40px] min-h-[40px] px-1 rounded-full cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]"
-          >
+        <div className="space-y-3">
+          <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] px-4 py-3 flex flex-wrap items-center gap-3">
+            <div className="flex-grow min-w-0">
+              <div className="font-bold text-sm text-[var(--color-text)]">允许新用户注册</div>
+              <div className="text-xs text-[var(--color-text-muted)] font-mono mt-0.5 break-all">{REG_ENABLED_KEY}</div>
+            </div>
             <span
-              aria-hidden="true"
-              className={`w-11 h-6 rounded-full transition-colors ${
-                enabled ? 'bg-[var(--color-success)]' : 'bg-[var(--color-border)]'
-              }`}
+              data-testid="registration-toggle-state"
+              className="text-sm font-semibold text-[var(--color-text)] whitespace-nowrap"
+            >
+              {regStateText}
+            </span>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={regEnabled === true}
+              aria-label="允许新用户注册"
+              disabled={saving}
+              onClick={handleRegToggle}
+              data-testid="registration-toggle"
+              className="relative inline-flex items-center shrink-0 min-w-[40px] min-h-[40px] px-1 rounded-full cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]"
             >
               <span
-                className={`block w-5 h-5 mt-0.5 rounded-full bg-white shadow transition-transform ${
-                  enabled ? 'translate-x-[1.375rem]' : 'translate-x-0.5'
+                aria-hidden="true"
+                className={`w-11 h-6 rounded-full transition-colors ${
+                  regEnabled ? 'bg-[var(--color-success)]' : 'bg-[var(--color-border)]'
                 }`}
-              />
+              >
+                <span
+                  className={`block w-5 h-5 mt-0.5 rounded-full bg-white shadow transition-transform ${
+                    regEnabled ? 'translate-x-[1.375rem]' : 'translate-x-0.5'
+                  }`}
+                />
+              </span>
+            </button>
+          </div>
+
+          <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] px-4 py-3 flex flex-wrap items-center gap-3">
+            <div className="flex-grow min-w-0">
+              <div className="font-bold text-sm text-[var(--color-text)]">邀请码必填模式</div>
+              <div className="text-xs text-[var(--color-text-muted)] font-mono mt-0.5 break-all">{INVITE_ONLY_KEY}</div>
+            </div>
+            <span
+              data-testid="invite-only-toggle-state"
+              className="text-sm font-semibold text-[var(--color-text)] whitespace-nowrap"
+            >
+              {inviteStateText}
             </span>
-          </button>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={inviteOnly === true}
+              aria-label="邀请码必填模式"
+              disabled={saving}
+              onClick={handleInviteToggle}
+              data-testid="invite-only-toggle"
+              className="relative inline-flex items-center shrink-0 min-w-[40px] min-h-[40px] px-1 rounded-full cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]"
+            >
+              <span
+                aria-hidden="true"
+                className={`w-11 h-6 rounded-full transition-colors ${
+                  inviteOnly ? 'bg-[var(--color-success)]' : 'bg-[var(--color-border)]'
+                }`}
+              >
+                <span
+                  className={`block w-5 h-5 mt-0.5 rounded-full bg-white shadow transition-transform ${
+                    inviteOnly ? 'translate-x-[1.375rem]' : 'translate-x-0.5'
+                  }`}
+                />
+              </span>
+            </button>
+          </div>
         </div>
       )}
 
@@ -136,7 +193,7 @@ export default function RegistrationControlPanel() {
         loading={saving}
         onConfirm={() => {
           setConfirmOpen(false)
-          void save(false)
+          void saveRegEnabled(false)
         }}
       />
     </section>

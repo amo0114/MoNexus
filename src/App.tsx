@@ -10,9 +10,11 @@ import LoginPage from './pages/LoginPage'
 import ForgotPasswordPage from './pages/ForgotPasswordPage'
 import ResetPasswordPage from './pages/ResetPasswordPage'
 import VerifyEmailPage from './pages/VerifyEmailPage'
+import InviteRedirectPage from './pages/InviteRedirectPage'
 import StorePage from './pages/StorePage'
 import ProductDetailPage from './pages/ProductDetailPage'
 import ProfilePage from './pages/ProfilePage'
+import LeaderboardPage from './pages/LeaderboardPage'
 import AdminPage from './pages/AdminPage'
 import MerchantApplyPage from './pages/MerchantApplyPage'
 import MerchantDashboardPage from './pages/MerchantDashboardPage'
@@ -58,6 +60,7 @@ export default function App() {
         <Route path="/reset-password/:token" element={<ResetPasswordPage />} />
         <Route path="/verify-email" element={<VerifyEmailPage />} />
         <Route path="/restore-setup" element={<PortableRestoreSetupPage />} />
+        <Route path="/i/:code" element={<InviteRedirectPage />} />
         <Route
           path="/*"
           element={
@@ -67,6 +70,7 @@ export default function App() {
                   <Route path="/" element={<StorePage />} />
                   <Route path="/product/:id" element={<ProductDetailPage />} />
                   <Route path="/profile" element={<ProfilePage />} />
+                  <Route path="/leaderboard" element={<LeaderboardPage />} />
                   <Route
                     path="/admin"
                     element={

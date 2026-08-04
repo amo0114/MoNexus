@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { config } from '../config/index.js'
 import { prisma } from '../lib/prisma.js'
 import { registerUser } from '../modules/auth/service.js'
-import { api, authHeader, createTestUser, loginAs } from './helpers.js'
+import { api, authHeader, createTestUser, issueTestInviteCode, loginAs } from './helpers.js'
 
 const DAY_MS = 24 * 60 * 60 * 1_000
 
@@ -165,7 +165,14 @@ describe('SPEC-RAP-001 /api/admin/abuse MFA operations', () => {
       where: { type: 'referral_suspended', inviterId: inviter.id },
     })).resolves.toMatchObject({ detailSafe: { caseRef: 'RAP-201' } })
 
-    const newRegistration = await registerUser('rap-abuse-suspended-invitee@test.local', 'pass123', inviter.inviteCode)
+    // SPEC-INVITE-001 IV-07：暂停立即冻结其存量未用码——携码注册显式 400
+    // 且整体回滚，而不是旧模型的"注册成功但静默不建关系"。
+    const frozenCode = await issueTestInviteCode(inviter.id)
+    await expect(registerUser('rap-abuse-suspended-invitee@test.local', 'pass123', frozenCode.code))
+      .rejects.toMatchObject({ status: 400, message: '邀请码无效或已失效' })
+    expect(await prisma.user.findUnique({ where: { email: 'rap-abuse-suspended-invitee@test.local' } })).toBeNull()
+    // 不携码的基础注册不受邀请人处置影响。
+    const newRegistration = await registerUser('rap-abuse-plain-invitee@test.local', 'pass123')
     expect(newRegistration.user.points).toBe(0)
     expect(await prisma.inviteRelation.count({ where: { inviteeId: newRegistration.user.id } })).toBe(0)
 

@@ -144,7 +144,6 @@ export interface AuthUser {
   nickname?: string | null
   role: UserRole
   status: string
-  inviteCode: string
   points: number
   emailVerified?: string | null
   createdAt?: string

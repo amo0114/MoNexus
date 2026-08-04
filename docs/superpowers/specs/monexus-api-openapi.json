@@ -2,8 +2,8 @@
   "openapi": "3.0.3",
   "info": {
     "title": "MoNexus API",
-    "version": "1.7.0",
-    "description": "MoNexus 内部积分制数字商品市场 API。三种角色：user / merchant / admin。无任何法币 / 充值 / 提现。1.1.0 同步 M2 GA：health 含 db 字段、登录密码修改、用户封禁 / 解封、平台系统配置。1.2.0 同步 M3：新增 `GET /api/admin/audit`（操作员可读的 AdminLog 列表，支持分页与过滤），并标注 `refreshTokenMaxAgeDays` 现已对新签发的 refresh token 实际生效。1.3.0 同步 M4：拆分 `/api/health` 为 `/api/health/live`（liveness）和 `/api/health/ready`（readiness），保留老 `/api/health` 作为 `/live` 的兼容别名并标记为 deprecated；新增 `GET /api/metrics`（Prometheus 文本格式，可选 `METRICS_TOKEN` bearer 保护）。1.4.0 同步 M6 履约域重构 + 商家经营闭环：拆分订单 DTO 为按角色（user / merchant / admin）的边界，商家与平台列表不再返回 `delivery.content`；商品引入 `deliveryMode` 履约模式（`instant_inventory` / `manual_service`）；订单状态机扩展为 `pending → processing → delivered → disputed → closed`，旧值 `completed` 在响应中规范化为 `delivered`；新增 `POST /api/orders/{id}/dispute`、`/close`，新增商家履约动作 `start/deliver/respond-dispute`；商家商品列表、订单列表统一为 `{items,total,page,pageSize}` envelope，并支持搜索 / 筛选 / 低库存等参数；商家库存导入拆分 `preview` 与 `import`，请求体接受 `text` 或 `items`，响应携带空行 / 重复行 / 既存重复行统计；商家结算列表新增 `payable` 与 `blockReason`，与履约状态绑定（`disputed` 或未履约不可结算）；新增 `GET /api/config/registry` 暴露前端可消费的产品类型 / 履约模式 / 订单状态 / 结算状态 / 分页 / 低库存阈值的标签 + tone 注册表。1.5.0 同步 M3 identity security hardening：管理员登录为 200/202 MFA pre-auth union，新增 TOTP enrollment/verify 与设备会话管理端点；管理员已吊销 session 对 admin API 立即失效，普通业务 access token 仍受既有 15 分钟 TTL 约束。1.6.0 同步 SPEC-OPS-REGMAIL-001 注册开关与邮件投递运营面：新增公开只读 `GET /api/auth/registration-status`、管理员 `GET /api/admin/mail/status` 与 `POST /api/admin/mail/test`；`POST /api/auth/register` 新增 403 `REGISTRATION_DISABLED`；`SystemConfigKey` 枚举补齐为注册表全量 24 个 key（此前只列了 4 个），并新增布尔语义开关 `registrationEnabled`（值域 0/1）。SMTP 连接参数仍只在部署环境配置，后台不可编辑。1.7.0 同步 SPEC-RAP-001：公开注册使用 fail-closed Turnstile + Redis 防护；邮箱验证改为已登录用户的 fragment-token POST claim；注册与邀请奖励进入延迟发放账本；新增 MFA 保护的管理员反滥用运营 API。"
+    "version": "1.8.0",
+    "description": "MoNexus 内部积分制数字商品市场 API。三种角色：user / merchant / admin。无任何法币 / 充值 / 提现。1.1.0 同步 M2 GA：health 含 db 字段、登录密码修改、用户封禁 / 解封、平台系统配置。1.2.0 同步 M3：新增 `GET /api/admin/audit`（操作员可读的 AdminLog 列表，支持分页与过滤），并标注 `refreshTokenMaxAgeDays` 现已对新签发的 refresh token 实际生效。1.3.0 同步 M4：拆分 `/api/health` 为 `/api/health/live`（liveness）和 `/api/health/ready`（readiness），保留老 `/api/health` 作为 `/live` 的兼容别名并标记为 deprecated；新增 `GET /api/metrics`（Prometheus 文本格式，可选 `METRICS_TOKEN` bearer 保护）。1.4.0 同步 M6 履约域重构 + 商家经营闭环：拆分订单 DTO 为按角色（user / merchant / admin）的边界，商家与平台列表不再返回 `delivery.content`；商品引入 `deliveryMode` 履约模式（`instant_inventory` / `manual_service`）；订单状态机扩展为 `pending → processing → delivered → disputed → closed`，旧值 `completed` 在响应中规范化为 `delivered`；新增 `POST /api/orders/{id}/dispute`、`/close`，新增商家履约动作 `start/deliver/respond-dispute`；商家商品列表、订单列表统一为 `{items,total,page,pageSize}` envelope，并支持搜索 / 筛选 / 低库存等参数；商家库存导入拆分 `preview` 与 `import`，请求体接受 `text` 或 `items`，响应携带空行 / 重复行 / 既存重复行统计；商家结算列表新增 `payable` 与 `blockReason`，与履约状态绑定（`disputed` 或未履约不可结算）；新增 `GET /api/config/registry` 暴露前端可消费的产品类型 / 履约模式 / 订单状态 / 结算状态 / 分页 / 低库存阈值的标签 + tone 注册表。1.5.0 同步 M3 identity security hardening：管理员登录为 200/202 MFA pre-auth union，新增 TOTP enrollment/verify 与设备会话管理端点；管理员已吊销 session 对 admin API 立即失效，普通业务 access token 仍受既有 15 分钟 TTL 约束。1.6.0 同步 SPEC-OPS-REGMAIL-001 注册开关与邮件投递运营面：新增公开只读 `GET /api/auth/registration-status`、管理员 `GET /api/admin/mail/status` 与 `POST /api/admin/mail/test`；`POST /api/auth/register` 新增 403 `REGISTRATION_DISABLED`；`SystemConfigKey` 枚举补齐为注册表全量 24 个 key（此前只列了 4 个），并新增布尔语义开关 `registrationEnabled`（值域 0/1）。SMTP 连接参数仍只在部署环境配置，后台不可编辑。1.7.0 同步 SPEC-RAP-001：公开注册使用 fail-closed Turnstile + Redis 防护；邮箱验证改为已登录用户的 fragment-token POST claim；注册与邀请奖励进入延迟发放账本；新增 MFA 保护的管理员反滥用运营 API。1.8.0 同步 SPEC-LEADERBOARD-001 积分排行榜：新增 `GET /api/leaderboard`（总榜 / 本月榜 / 本周榜，每日快照刷新一次，读侧 Top 100 + 请求者自己的名次）；榜单口径与会员等级 lifetime earned 一致（只计 `type=in`），响应只暴露 rank / displayName / points，绝不下发他人 userId 或 email。"
   },
   "servers": [
     {
@@ -29,6 +29,10 @@
     },
     {
       "name": "Orders"
+    },
+    {
+      "name": "Leaderboard",
+      "description": "积分排行榜：总榜 / 本月榜 / 本周榜（每日快照）"
     },
     {
       "name": "Merchant"
@@ -2960,6 +2964,119 @@
           "state": { "type": "string", "enum": ["voided"] },
           "caseRef": { "type": "string" }
         }
+      },
+      "LeaderboardScope": {
+        "type": "string",
+        "enum": [
+          "total",
+          "month",
+          "week"
+        ],
+        "default": "total",
+        "description": "总榜 / 本月榜 / 本周榜"
+      },
+      "LeaderboardTopRow": {
+        "type": "object",
+        "required": [
+          "rank",
+          "displayName",
+          "points",
+          "isMe"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "rank": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "全序名次，同期内唯一且连续"
+          },
+          "displayName": {
+            "type": "string",
+            "description": "昵称；缺失时为打码邮箱（如 `ab***@example.com`）"
+          },
+          "points": {
+            "type": "integer",
+            "description": "窗口内获得的积分"
+          },
+          "isMe": {
+            "type": "boolean",
+            "description": "该行是否为请求者本人，供前端高亮"
+          }
+        }
+      },
+      "LeaderboardMe": {
+        "type": "object",
+        "required": [
+          "rank",
+          "points"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "rank": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "points": {
+            "type": "integer"
+          }
+        }
+      },
+      "LeaderboardResponse": {
+        "type": "object",
+        "required": [
+          "scope",
+          "periodKey",
+          "periodLabel",
+          "dataThrough",
+          "updatedAt",
+          "top",
+          "me"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "scope": {
+            "$ref": "#/components/schemas/LeaderboardScope"
+          },
+          "periodKey": {
+            "type": "string",
+            "description": "`ALL` / `M<YYYY-MM>` / `W<周一日历日>`",
+            "example": "W2026-07-27"
+          },
+          "periodLabel": {
+            "type": "string",
+            "description": "总榜 `全部`、月榜 `2026年8月`、周榜 `MM-DD ~ MM-DD`",
+            "example": "07-27 ~ 08-02"
+          },
+          "dataThrough": {
+            "type": "string",
+            "format": "date",
+            "nullable": true,
+            "description": "快照覆盖到的最后一个日历日（业务时区）；尚无快照为 null",
+            "example": "2026-07-31"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "快照批次时刻；尚无快照为 null"
+          },
+          "top": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "$ref": "#/components/schemas/LeaderboardTopRow"
+            }
+          },
+          "me": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/LeaderboardMe"
+              }
+            ],
+            "nullable": true,
+            "description": "请求者本期名次；不合格或无得分为 null"
+          }
+        }
       }
     },
     "responses": {
@@ -4142,6 +4259,58 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/leaderboard": {
+      "get": {
+        "tags": [
+          "Leaderboard"
+        ],
+        "summary": "积分排行榜（总榜 / 本月榜 / 本周榜）",
+        "description": "读取每日刷新一次的积分快照，返回该期 Top 100 与请求者自己的名次。\n\n计分口径 = 窗口内 `PointLog.type='in'` 的 `amount` 之和，与会员等级的 `lifetimeEarnedPoints` 完全同口径；`out` / `hold` / `release` / `refund` 一律不计。\n\n窗口按 Asia/Shanghai：总榜为全历史，月榜为自然月，周榜为自然周且**周一**为起点；右边界是刷新当日 00:00，即数据截至昨日 24:00（`dataThrough`）。榜单不含 admin 与已封禁用户，merchant 正常参与；资格在快照生成时判定，不做读时实时剔除。\n\n`top` 中的他人只有 `rank` / `displayName` / `points`，`isMe` 由服务端计算——响应任何层级都不含他人 `userId` 或 `email`；`displayName` 为昵称，缺失时回退打码邮箱。请求者不合格（admin）或本期无得分时 `me` 为 `null`。\n\n部署后首轮刷新完成前、以及新周期首日窗口为空时，返回 `top: []` 且 `updatedAt` / `dataThrough` 均为 `null`（前端空态）。",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "scope",
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/LeaderboardScope"
+            },
+            "description": "榜单口径，缺省 `total`。非法值触发 400 `VALIDATION_ERROR`。"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "该期榜单快照。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LeaderboardResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "description": "账号已被封禁（`error.code=FORBIDDEN`）。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
           }
         }
       }

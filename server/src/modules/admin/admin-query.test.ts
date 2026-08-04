@@ -101,7 +101,8 @@ describe('GET /api/admin/users search & pagination', () => {
       expect(u.email).toBeDefined()
       expect(u.role).toBeDefined()
       expect(u.status).toBeDefined()
-      expect(u.inviteCode).toBeDefined()
+      // SPEC-INVITE-001 IV-10：常驻码已删除，任何序列化都不得再出现该字段。
+      expect(u.inviteCode).toBeUndefined()
       expect(u.createdAt).toBeDefined()
       expect(u.pointAccount).toBeDefined()
       expect(u.password).toBeUndefined()

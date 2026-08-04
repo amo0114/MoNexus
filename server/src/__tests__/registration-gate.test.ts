@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import jwt from 'jsonwebtoken'
-import { api, authHeader, createTestUser, loginAs } from './helpers.js'
+import { api, authHeader, createTestUser, issueTestInviteCode, loginAs } from './helpers.js'
 import { config } from '../config/index.js'
 import { prisma } from '../lib/prisma.js'
 import { getSystemConfigValue } from '../lib/systemConfig.js'
@@ -52,6 +52,7 @@ describe('GET /api/auth/registration-status', () => {
     expect(res.body).toEqual({
       registrationEnabled: true,
       registrationAvailable: true,
+      inviteRequired: false,
       challenge: null,
     })
     expect(res.headers['cache-control']).toBe('no-store')
@@ -60,6 +61,7 @@ describe('GET /api/auth/registration-status', () => {
     expect(Object.keys(res.body)).toEqual([
       'registrationEnabled',
       'registrationAvailable',
+      'inviteRequired',
       'challenge',
     ])
   })
@@ -71,6 +73,7 @@ describe('GET /api/auth/registration-status', () => {
     expect((await api.get('/api/auth/registration-status').expect(200)).body).toEqual({
       registrationEnabled: false,
       registrationAvailable: false,
+      inviteRequired: false,
       challenge: null,
     })
 
@@ -78,6 +81,7 @@ describe('GET /api/auth/registration-status', () => {
     expect((await api.get('/api/auth/registration-status').expect(200)).body).toEqual({
       registrationEnabled: true,
       registrationAvailable: true,
+      inviteRequired: false,
       challenge: null,
     })
   })
@@ -90,6 +94,7 @@ describe('GET /api/auth/registration-status', () => {
     expect((await api.get('/api/auth/registration-status').expect(200)).body).toEqual({
       registrationEnabled: false,
       registrationAvailable: false,
+      inviteRequired: false,
       challenge: null,
     })
   })
@@ -101,13 +106,18 @@ describe('registration gate (REG-03)', () => {
 
   it('keeps base registration working with the default row absent and holds its reward', async () => {
     const { user: inviter } = await createTestUser('gate-default-inviter@test.local', 'pass123', 'user', 0)
+    await prisma.user.update({
+      where: { id: inviter.id },
+      data: { emailVerified: new Date(), createdAt: new Date(Date.now() - 31 * 24 * 60 * 60 * 1_000) },
+    })
+    const invite = await issueTestInviteCode(inviter.id)
 
     const res = await api
       .post('/api/auth/register')
       .send({
         email: 'gate-default@test.local',
         password: 'pass123',
-        inviteCode: inviter.inviteCode,
+        inviteCode: invite.code,
       })
       .expect(201)
 
@@ -119,9 +129,8 @@ describe('registration gate (REG-03)', () => {
     await expect(prisma.growthReward.findFirstOrThrow({
       where: { recipientUserId: res.body.user.id, kind: 'registration' },
     })).resolves.toMatchObject({ state: 'pending_verification' })
-    // A fresh, unverified inviter is no longer eligible, but its code must
-    // never block the invitee's own registration reward path.
-    expect(await prisma.inviteRelation.count({ where: { inviterId: inviter.id } })).toBe(0)
+    // SPEC-INVITE-001：领码成功必建 pending 关系——静默降级路径已删除。
+    expect(await prisma.inviteRelation.count({ where: { inviterId: inviter.id } })).toBe(1)
   })
 
   it('keeps registration working after the switch is explicitly enabled', async () => {
@@ -138,6 +147,7 @@ describe('registration gate (REG-03)', () => {
   it('rejects registration with 403 and zero side effects once disabled (P.2)', async () => {
     const { accessToken } = await loginAdmin('gate-disabled-admin@test.local')
     const { user: inviter } = await createTestUser('gate-disabled-inviter@test.local', 'pass123', 'user', 0)
+    const invite = await issueTestInviteCode(inviter.id)
     await putSwitch(accessToken, 0).expect(200)
 
     // 生成的合法载荷集合：邀请码有 / 无 / 不存在三种变体，密码与邮箱长度各异。
@@ -146,7 +156,7 @@ describe('registration gate (REG-03)', () => {
       password: 'p'.repeat(6 + (i % 7)),
       ...(i % 3 === 0
         ? {}
-        : { inviteCode: i % 3 === 1 ? inviter.inviteCode : `NOPE-${i}` }),
+        : { inviteCode: i % 3 === 1 ? invite.code : `NOPE${i}AB`.slice(0, 8).padEnd(8, 'X') }),
     }))
 
     const before = await snapshotRowCounts()

@@ -16,10 +16,10 @@ export default function RangeFilter() {
         <button
           key={opt.value}
           onClick={() => setRange(opt.value)}
-          className={`px-4 py-1.5 btn-sm rounded-full text-sm font-medium transition-colors ${
+          className={`px-4 py-1.5 btn-sm rounded-full text-sm font-medium transition-colors border ${
             range === opt.value
-              ? 'bg-[var(--color-primary)] text-white'
-              : 'bg-[var(--color-surface)] text-[var(--color-text-muted)] border border-[var(--color-border)] hover:text-[var(--color-text)]'
+              ? 'bg-[var(--color-primary)] text-[var(--color-on-primary)] border-transparent'
+              : 'bg-[var(--color-surface)] text-[var(--color-text-muted)] border-[var(--color-border)] hover:text-[var(--color-text)]'
           }`}
         >
           {opt.label}

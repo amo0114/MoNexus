@@ -40,7 +40,6 @@ async function createUser(email: string, role: 'user' | 'merchant' = 'user') {
       email,
       password: 'test-password',
       role,
-      inviteCode: `TEST-${email}`,
     },
   })
 }

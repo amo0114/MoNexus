@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { formatBookingDay } from '../utils/formatLocalDate'
 import { useNavigate } from 'react-router-dom'
-import { Coins, Wallet, Users, CalendarCheck, LogOut, ArrowDownLeft, ArrowUpRight, Store, Eye, Loader2, Shield, Trophy, UserRound, ShoppingBag } from 'lucide-react'
+import { Coins, Wallet, Users, CalendarCheck, LogOut, ArrowDownLeft, ArrowUpRight, Store, Eye, Loader2, Shield, Trophy, UserRound, ShoppingBag, Copy, Link as LinkIcon, Plus } from 'lucide-react'
 import { useAuthStore } from '../stores/authStore'
 import { useAppStore } from '../stores/appStore'
 import api from '../api/client'
@@ -20,6 +20,7 @@ import { getMemberTier, TierResponse } from '../api/points'
 import { getConfigRegistry } from '../api/registry'
 import { MemberTierBadge } from '../components/MemberTierBadge'
 import SessionManager from '../components/auth/SessionManager'
+import { getMyInvites, createInviteCode, type MyInvitesResponse } from '../api/invites'
 
 function NicknameCard() {
   const user = useAuthStore((s) => s.user)
@@ -316,6 +317,201 @@ function MemberTierCard() {
   )
 }
 
+function InviteCard() {
+  const showToast = useAppStore((s) => s.showToast)
+  const [inviteData, setInviteData] = useState<MyInvitesResponse | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [creating, setCreating] = useState(false)
+
+  async function loadInvites() {
+    setLoading(true)
+    try {
+      const data = await getMyInvites()
+      setInviteData(data)
+    } catch (err) {
+      // Silently fail to avoid blocking the rest of the profile page.
+      // The component will render a minimal fallback state.
+      setInviteData(null)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    loadInvites()
+  }, [])
+
+  async function handleCreateInvite() {
+    setCreating(true)
+    try {
+      const code = await createInviteCode()
+      setInviteData(current => {
+        if (!current) return current
+        return {
+          ...current,
+          codes: [code, ...current.codes],
+          quota: current.quota === null
+            ? null
+            : {
+                ...current.quota,
+                used: current.quota.used + 1,
+                remaining: Math.max(0, current.quota.remaining - 1),
+              },
+        }
+      })
+      showToast('邀请码已生成')
+    } catch (err) {
+      showToast(getApiErrorMessage(err, '生成邀请码失败'), 'error')
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  function copyCode(code: string) {
+    navigator.clipboard.writeText(code).catch(() => {})
+    showToast('邀请码已复制')
+  }
+
+  function copyLink(code: string) {
+    const link = `${window.location.origin}/i/${code}`
+    navigator.clipboard.writeText(link).catch(() => {})
+    showToast('邀请链接已复制')
+  }
+
+  if (loading) {
+    return (
+      <div className="card flex items-center justify-center py-8">
+        <Loader2 className="w-5 h-5 animate-spin text-[var(--color-text-muted)] mr-2" />
+        <span className="text-sm text-[var(--color-text-muted)]">加载邀请信息...</span>
+      </div>
+    )
+  }
+
+  if (!inviteData) {
+    // Silently hide the invite card when the API is unavailable.
+    return null
+  }
+
+  const { eligible, quota, codes } = inviteData
+  const canIssue = eligible && (quota === null || quota.remaining > 0)
+  const activeCodes = codes.filter(code => code.status === 'active')
+  const inactiveCodes = codes.filter(code => code.status !== 'active')
+  const ineligibilityMessage = (() => {
+    switch (inviteData.reason) {
+      case 'not_verified':
+        return '请先完成邮箱验证后再邀请好友'
+      case 'account_too_young':
+        return '账号注册时间不足，暂不可邀请好友'
+      case 'suspended':
+        return '当前账号暂不可邀请好友'
+      case 'tier_too_low':
+        return `${inviteData.tierRequired ?? '所需'}及以上会员可邀请好友`
+      case 'role_paused':
+        return '邀请功能暂未开放'
+      default:
+        return '当前账号暂不可邀请好友'
+    }
+  })()
+
+  return (
+    <div className="card flex flex-col gap-4">
+      <div className="flex items-start gap-4">
+        <div className="w-12 h-12 bg-[var(--color-primary)]/10 text-[var(--color-primary)] rounded-full flex items-center justify-center shrink-0">
+          <Users className="w-6 h-6" />
+        </div>
+        <div className="flex-1">
+          <h4 className="font-heading text-lg font-bold mb-1 text-[var(--color-text)]">邀请赚积分</h4>
+          <p className="text-[var(--color-text-muted)] text-xs mb-3 leading-relaxed">
+            好友完成邮箱验证、通过资格期且符合邀请资格后，奖励会自动发放。
+          </p>
+
+          <div className="flex items-center justify-between gap-3 mb-3 p-3 bg-[var(--color-background)] rounded-lg border border-[var(--color-border)]">
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-[var(--color-text)]">
+                {quota === null
+                  ? '邀请码不限量'
+                  : `本月已用 ${quota.used} / ${quota.limit}`}
+              </span>
+            </div>
+            {canIssue && (
+              <button
+                onClick={handleCreateInvite}
+                disabled={creating}
+                className="btn-primary px-3 py-1.5 text-xs inline-flex items-center gap-1.5"
+              >
+                {creating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+                生成邀请码
+              </button>
+            )}
+          </div>
+
+          {!eligible && (
+            <div className="mb-3 p-3 bg-[var(--color-warning)]/10 border border-[var(--color-warning)]/30 rounded-lg text-xs text-[var(--color-text)]">
+              {ineligibilityMessage}
+            </div>
+          )}
+
+          {activeCodes.length === 0 ? (
+            <div className="p-4 text-center text-sm text-[var(--color-text-muted)] bg-[var(--color-background)] rounded-lg border border-[var(--color-border)]">
+              {canIssue ? '暂无可用邀请码，点击上方按钮生成' : '暂无可用邀请码'}
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {activeCodes.map(code => (
+                <div
+                  key={code.code}
+                  className="flex items-center justify-between p-3 bg-[var(--color-background)] rounded-lg border border-[var(--color-border)]"
+                >
+                  <span className="font-mono text-sm font-bold text-[var(--color-text)]">{code.code}</span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => copyCode(code.code)}
+                      className="text-xs px-2.5 py-1.5 rounded-lg bg-[var(--color-primary)]/10 text-[var(--color-primary)] hover:bg-[var(--color-primary)]/20 transition-colors inline-flex items-center gap-1"
+                      title="复制邀请码"
+                    >
+                      <Copy className="w-3.5 h-3.5" />
+                      复制码
+                    </button>
+                    <button
+                      onClick={() => copyLink(code.code)}
+                      className="text-xs px-2.5 py-1.5 rounded-lg bg-[var(--color-primary)] text-white hover:bg-[var(--color-primary-hover)] transition-colors inline-flex items-center gap-1"
+                      title="复制邀请链接"
+                    >
+                      <LinkIcon className="w-3.5 h-3.5" />
+                      复制链接
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {inactiveCodes.length > 0 && (
+            <details className="mt-3">
+              <summary className="text-xs text-[var(--color-text-muted)] cursor-pointer hover:text-[var(--color-text)] select-none">
+                查看已使用/过期的邀请码 ({inactiveCodes.length})
+              </summary>
+              <div className="mt-2 space-y-2">
+                {inactiveCodes.map(code => (
+                  <div
+                    key={code.code}
+                    className="flex items-center justify-between p-2 bg-[var(--color-background)] rounded-lg border border-[var(--color-border)] opacity-60"
+                  >
+                    <span className="font-mono text-xs text-[var(--color-text-muted)]">{code.code}</span>
+                    <span className="text-xs text-[var(--color-text-muted)]">
+                      {code.status === 'used' ? '已使用' : code.status === 'expired' ? '已过期' : '已撤销'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </details>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function ProfilePage() {
 
   const navigate = useNavigate()
@@ -377,11 +573,6 @@ export default function ProfilePage() {
     }
   }
 
-  function copyInvite() {
-    navigator.clipboard.writeText(user?.inviteCode || '').catch(() => {})
-    showToast('邀请码已复制，快去发给好友吧')
-  }
-
   async function openOrderDetail(orderId: number) {
     setLoadingOrderId(orderId)
     try {
@@ -440,29 +631,10 @@ export default function ProfilePage() {
             </div>
           </div>
         </div>
-
-        {/* Invite card */}
-        <div className="card flex flex-col justify-center">
-          <div className="w-10 h-10 bg-[var(--color-primary)]/10 text-[var(--color-primary)] rounded-xl flex items-center justify-center mb-3">
-            <Users className="w-5 h-5" />
-          </div>
-          <h4 className="font-heading text-lg font-bold mb-1 text-[var(--color-text)]">邀请赚积分</h4>
-          <p className="text-[var(--color-text-muted)] text-xs mb-4 leading-relaxed">
-            好友完成邮箱验证、通过资格期且符合邀请资格后，奖励会自动发放。
-          </p>
-          <div className="bg-[var(--color-background)] rounded-lg p-2.5 flex justify-between items-center border border-[var(--color-border)]">
-            <span className="font-mono text-sm font-bold text-[var(--color-text)] ml-1">
-              {user?.inviteCode || 'MOYUAN26'}
-            </span>
-            <button
-              onClick={copyInvite}
-              className="cursor-pointer text-white bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] px-3 py-1.5 rounded-lg shadow-sm font-medium text-xs transition-colors btn-sm"
-            >
-              复制分享
-            </button>
-          </div>
-        </div>
       </div>
+
+      {/* Invite card - full width below points card */}
+      <InviteCard />
 
       {/* Member Tier Card */}
       <MemberTierCard />

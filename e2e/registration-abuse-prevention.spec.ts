@@ -6,7 +6,6 @@ const profile = {
   nickname: null,
   role: 'user',
   status: '正常',
-  inviteCode: 'RAP991',
   points: 0,
   emailVerified: null,
   merchant: null,

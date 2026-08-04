@@ -18,6 +18,8 @@ import { checkoutRoutes } from './modules/checkout/routes.js'
 import { adminRoutes } from './modules/admin/routes.js'
 import { merchantRoutes } from './modules/merchant/routes.js'
 import { dashboardRoutes } from './modules/dashboard/routes.js'
+import { leaderboardRoutes } from './modules/leaderboard/routes.js'
+import { inviteRoutes } from './modules/invite/routes.js'
 import { uploadsRoutes } from './modules/uploads/routes.js'
 import { deliveryFileRoutes } from './modules/uploads/deliveryFileRoutes.js'
 import { configRoutes } from './modules/config/routes.js'
@@ -83,6 +85,8 @@ app.use('/api', apiLimiter)
 app.use('/api/auth', authRoutes)
 app.use('/api/products', productRoutes)
 app.use('/api/points', pointRoutes)
+app.use('/api/leaderboard', leaderboardRoutes)
+app.use('/api/invites', inviteRoutes)
 app.use('/api/orders', orderRoutes)
 app.use('/api/checkout', checkoutRoutes)
 app.use('/api/faka-bridge', fakaBridgeRoutes)

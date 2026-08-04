@@ -29,6 +29,21 @@
   --color-glass-bg: rgba(255, 255, 255, 0.85);
   --color-glass-border: rgba(99, 102, 241, 0.12);
 
+  /* Primary tints as ready-made rgba tokens.
+     `bg-[var(--color-primary)]/8` does NOT work: Tailwind v3 cannot apply an
+     opacity modifier to an arbitrary var() colour (it can't split it into
+     channels), so the utility is dropped and the element renders transparent.
+     These tokens give the same wash, theme-aware, with no build-time magic. */
+  --color-primary-tint: rgba(99, 102, 241, 0.09);
+  --color-primary-tint-strong: rgba(99, 102, 241, 0.16);
+
+  /* 文字级积分绿：--color-cta 是给白字按钮做底色的，直接当文字色在白卡上
+     仅 2.28:1（WCAG AA 需 4.5）。此 token 专供文字/图标，三主题均 ≥4.5:1。 */
+  --color-points: #15803D;             /* green-700 — 白卡 5.01:1 */
+  /* primary 底色上的文字色：dark/soft 的 primary 偏浅，白字不达标，
+     改用深色文字（4.92 / 6.40）；light 维持白字基线。 */
+  --color-on-primary: #FFFFFF;
+
   /* Spacing */
   --space-xs: 0.25rem;
   --space-sm: 0.5rem;
@@ -74,14 +89,23 @@
   --color-success: #22C55E;
   --color-danger: #EF4444;
 
+  /* Toast 2.0 图标/进度条色阶（文字级，白卡实测 ≥4.5:1）。
+     与上方 --color-success 等徽章浅色不同：这组专供 surface 卡上的小图标。 */
+  --color-toast-success: #15803D;    /* green-700 — 5.01:1 */
+  --color-toast-error: #B91C1C;      /* red-700 — 5.90:1 */
+  --color-toast-info: #1D4ED8;       /* blue-700 — 6.36:1 */
+  --color-toast-warning: #B45309;    /* amber-700 — 5.02:1 */
+
   /* --- Mobile chrome metrics (T1) ---
      --tabbar-h: bottom tab bar height (icon + label row).
-     --navbar-h: top navbar content height（py-4×2 + 44px 行高 + 1px border），
-     不含 safe-top——sticky 偏移一律用 calc(var(--navbar-h) + var(--safe-top))，
-     刘海屏下导航与 sticky 条不重叠（R2-P1）。Safe-area insets default
-     to 0 on non-notch devices so calc() always works. */
+     --navbar-h: expanded navbar content height（py-4×2 + 44px 行高 + 1px border）。
+     --navbar-current-h: Layout 通过 ResizeObserver 写入的实时导航高度；Toast
+     用它与缩起岛、搜索态保持同一条视觉基线。未挂载 Layout 的公开页则
+     回落至展开态 + safe-top。Safe-area insets default to 0 on non-notch
+     devices so calc() always works. */
   --tabbar-h: 56px;
   --navbar-h: 77px;
+  --navbar-current-h: calc(var(--navbar-h) + var(--safe-top));
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-left: env(safe-area-inset-left, 0px);
@@ -105,6 +129,13 @@
   --color-glass-bg: rgba(22, 22, 41, 0.85);
   --color-glass-border: rgba(129, 140, 248, 0.15);
 
+  /* 深色底需要更高 alpha 才看得出色晕 */
+  --color-primary-tint: rgba(129, 140, 248, 0.14);
+  --color-primary-tint-strong: rgba(129, 140, 248, 0.22);
+
+  --color-points: #4ADE80;             /* green-400 — 深卡 10.21:1 */
+  --color-on-primary: #1E293B;         /* slate-800 on indigo-400 — 4.92:1 */
+
   /* Warning (amber family) — tuned for dark surfaces */
   --color-warning-bg: rgba(180, 83, 9, 0.18);  /* amber-700 @ ~18% */
   --color-warning-border: #92400E;             /* amber-800 */
@@ -122,6 +153,48 @@
   --color-warning: #FBBF24;
   --color-success: #4ADE80;
   --color-danger: #F87171;
+
+  /* Toast 色阶（深色卡 #161629 上实测 ≥4.5:1） */
+  --color-toast-success: #4ADE80;    /* green-400 — 8.06:1 */
+  --color-toast-error: #F87171;      /* red-400 — 5.15:1 */
+  --color-toast-info: #60A5FA;       /* blue-400 — 5.74:1 */
+  --color-toast-warning: #FBBF24;    /* amber-400 — 8.28:1 */
+}
+
+/* =========================================================
+   Ledger Knot brand mark
+   The approved raster master contains its own optical corrections, so keep
+   each themed rendition at identical geometry and swap only the source.
+   ========================================================= */
+.brand-logo > img {
+  grid-area: 1 / 1;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.brand-logo > .brand-logo__dark,
+.brand-logo > .brand-logo__soft,
+.brand-logo > .brand-logo__black {
+  display: none;
+}
+
+.dark .brand-logo > .brand-logo__light {
+  display: none;
+}
+
+.dark .brand-logo > .brand-logo__dark {
+  display: block;
+}
+
+:root[data-theme="soft"] .brand-logo > .brand-logo__light,
+:root[data-theme="soft"] .brand-logo > .brand-logo__dark {
+  display: none;
+}
+
+:root[data-theme="soft"] .brand-logo > .brand-logo__soft {
+  display: block;
 }
 
 /* =========================================================
@@ -170,29 +243,84 @@ h1, h2, h3, h4 {
   opacity: 0;
 }
 
-/* NOTE: X-centering is the container's job (-translate-x-1/2); item
-   keyframes must stay translateY-only or toasts land off-center. */
-@keyframes slideUp {
-  from { transform: translateY(100%); opacity: 0; }
-  to { transform: translateY(0); opacity: 1; }
+/* Toast 动效方向跟着位置走：移动端顶部下挂 → 自上而下；桌面右下 → 自下而上。
+   X 居中由容器负责（-translate-x-1/2），卡片 keyframes 只动 translateY/scale。
+   assertive 级（error/warning）用带回弹的曲线 + 稍长时长，进场分量更重。 */
+@keyframes toastInDown {
+  from { transform: translateY(-14px) scale(0.96); opacity: 0; }
+  to { transform: translateY(0) scale(1); opacity: 1; }
 }
 
+@keyframes toastInUp {
+  from { transform: translateY(12px) scale(0.96); opacity: 0; }
+  to { transform: translateY(0) scale(1); opacity: 1; }
+}
+
+/* iOS 横幅感 = 大圆角 + 磨砂 + 弹簧：两端都带轻微 overshoot，
+   assertive 级回弹更明显、时长更长（进场分量匹配重要性）。 */
 .toast-enter {
-  animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: toastInDown 0.4s cubic-bezier(0.34, 1.35, 0.64, 1) forwards;
 }
 
-@keyframes toastOut {
-  from { opacity: 1; transform: translateY(0); }
-  to { opacity: 0; transform: translateY(8px); }
+.toast-enter-assertive {
+  animation: toastInDown 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+@media (min-width: 768px) {
+  .toast-enter {
+    animation: toastInUp 0.32s cubic-bezier(0.34, 1.2, 0.64, 1) forwards;
+  }
+  .toast-enter-assertive {
+    animation: toastInUp 0.42s cubic-bezier(0.34, 1.45, 0.64, 1) forwards;
+  }
+}
+
+@keyframes toastOutUp {
+  from { opacity: 1; transform: translateY(0) scale(1); }
+  to { opacity: 0; transform: translateY(-6px) scale(0.98); }
+}
+
+@keyframes toastOutDown {
+  from { opacity: 1; transform: translateY(0) scale(1); }
+  to { opacity: 0; transform: translateY(4px) scale(0.98); }
 }
 
 .toast-exit {
-  animation: toastOut 0.2s ease-in forwards;
+  animation: toastOutUp 0.18s ease-in forwards;
+}
+
+@media (min-width: 768px) {
+  .toast-exit {
+    animation-name: toastOutDown;
+  }
+}
+
+/* 倒计时进度条：与 ToastCard 的自动消失同Duration（inline style 注入），
+   hover 时随计时器一起 animation-play-state: paused。 */
+@keyframes toastProgress {
+  from { transform: scaleX(1); }
+  to { transform: scaleX(0); }
+}
+
+.toast-progress {
+  animation-name: toastProgress;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
 }
 
 @keyframes slideInRight {
   from { transform: translateX(100%); }
   to { transform: translateX(0); }
+}
+
+/* 灵动岛通知浮现：navbar 内容交叉淡入时给一点缩放呼吸感（Layout 覆盖层）。 */
+@keyframes islandIn {
+  from { opacity: 0; transform: scale(0.94); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.island-notice-enter {
+  animation: islandIn 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 .drawer-enter {
@@ -603,10 +731,22 @@ h1, h2, h3, h4 {
   --color-glass-bg: rgba(255, 248, 236, 0.85);
   --color-glass-border: rgba(255, 140, 66, 0.18);
 
+  --color-primary-tint: rgba(255, 140, 66, 0.12);
+  --color-primary-tint-strong: rgba(255, 140, 66, 0.2);
+
+  --color-points: #3F7A3F;             /* 暖米卡上 5.09:1 */
+  --color-on-primary: #3D2210;         /* 深棕 on 暖橙 — 6.40:1 */
+
   --color-info: #2563EB;
   --color-warning: #F5A340;
   --color-success: #6BBE6B;
   --color-danger: #FF7B6B;
+
+  /* Toast 色阶（暖米卡 #FFFEFB 上实测 ≥4.5:1） */
+  --color-toast-success: #3F7A3F;    /* 同 --color-points — 5.09:1 */
+  --color-toast-error: #B91C1C;      /* red-700 — 5.83:1 */
+  --color-toast-info: #1D4ED8;       /* blue-700 — 6.29:1 */
+  --color-toast-warning: #9A6206;    /* amber-800 调暖 — 4.71:1 */
 
   --shadow-sm: 0 1px 3px rgba(255, 140, 66, 0.08);
   --shadow-md: 0 4px 12px rgba(255, 140, 66, 0.12);
@@ -633,3 +773,183 @@ h1, h2, h3, h4 {
   color: #F5A340;
   fill: #F5A340;
 }
+
+/* =========================================================
+   Ink theme — 墨韵：冷白宣纸 + 松烟墨 + 花青 + 松绿。
+   黑白配的意象取自水墨画而非肃穆纯黑白：纸为冷调宣白（不带黄），
+   墨取松烟（微青黑而非纯黑），点缀花青（石青蓝，山水点苔）与
+   松绿；全色板剔除橘黄波段，与 soft 的暖橘家族彻底分野。
+   半径/字体沿用 light（中性直线条衬墨意），仅覆写色彩与阴影。
+   ========================================================= */
+:root[data-theme="ink"] {
+  --color-primary: #34507A;          /* 花青 — 宣纸底 7.8:1，白字按钮同 */
+  --color-primary-hover: #2A4266;    /* 深花青 */
+  --color-secondary: #6B86A8;        /* 淡花青 */
+  --color-cta: #3D7257;              /* 松绿 — 白字 5.6:1 */
+  --color-cta-hover: #315C46;
+  --color-background: #EEF0EE;       /* 冷白宣纸（微青灰，不带黄） */
+  --color-surface: #F8F9F7;          /* 卡纸（比底稍亮，如托裱） */
+  --color-text: #22262C;             /* 松烟墨（微青黑，非纯黑） */
+  --color-text-muted: #666E77;       /* 淡墨 */
+  --color-border: #D9DDD9;           /* 绫绢灰边 */
+
+  --color-image-placeholder: #E6E9E5;
+  --color-grid-dot: #D9DDD9;
+  --color-glass-bg: rgba(248, 249, 247, 0.85);
+  --color-glass-border: rgba(52, 80, 122, 0.12);
+
+  --color-primary-tint: rgba(52, 80, 122, 0.09);
+  --color-primary-tint-strong: rgba(52, 80, 122, 0.16);
+
+  --color-points: #2F5C46;           /* 松绿深化 — 纸卡 7.3:1 */
+  --color-on-primary: #FFFFFF;       /* 白字 on 花青 7.8:1 */
+
+  --color-info: #2C6E8A;             /* 黛蓝偏青 */
+  --color-warning: #677220;          /* 苔黄（68° 黄绿，警示语义的黄族但不入橘调） */
+  --color-success: #3D7257;          /* 松绿 */
+  --color-danger: #A62B4D;           /* 胭脂（冷调绯红，非橘红） */
+
+  --color-toast-success: #2F5C46;
+  --color-toast-error: #A62B4D;
+  --color-toast-info: #2C6E8A;
+  --color-toast-warning: #677220;
+
+  /* Warning banner family — 苔笺 */
+  --color-warning-bg: #EFF0DC;
+  --color-warning-border: #D6D9B4;
+  --color-warning-text: #4C541A;
+  --color-warning-accent: #677220;
+  --color-warning-accent-hover: #59631B;
+
+  /* Shadows — 冷墨晕染 */
+  --shadow-sm: 0 1px 2px rgba(34, 38, 44, 0.05);
+  --shadow-md: 0 4px 6px rgba(34, 38, 44, 0.07);
+  --shadow-lg: 0 10px 15px rgba(34, 38, 44, 0.09);
+  --shadow-xl: 0 20px 25px rgba(34, 38, 44, 0.11);
+  --shadow-focus: 0 0 0 3px rgba(52, 80, 122, 0.22);
+}
+
+:root[data-theme="ink"] .star-filled {
+  color: #34507A;                    /* 花青 — 弃用金色，避免暖黄联想 */
+  fill: #34507A;
+}
+
+:root[data-theme="ink"] .brand-logo > .brand-logo__light,
+:root[data-theme="ink"] .brand-logo > .brand-logo__dark,
+:root[data-theme="ink"] .brand-logo > .brand-logo__soft {
+  display: none;
+}
+
+:root[data-theme="ink"] .brand-logo > .brand-logo__black {
+  display: block;
+}
+
+:root[data-theme="ink"] .star-filled {
+  color: #B8862B;                    /* 泥金 — 与朱砂、宣纸同属重彩画料 */
+  fill: #B8862B;
+}
+
+/* =========================================================
+   Leaderboard podium (spec §5.3)
+   金/银/铜为固定色板（奖牌语义与主题无关），但底色/描边/文字一律
+   走主题变量，light / dark / soft 三主题通用。
+   动画纯装饰：金环旋转的是环层本身（字母不转），浮动是 translateY；
+   全局 prefers-reduced-motion kill switch 生效后两者静止，
+   静止态即完整的金/银/铜环 + 正常布局，无位移依赖。
+   ========================================================= */
+
+@keyframes podiumRingSpin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes podiumFloat {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+@layer components {
+
+.podium-ring {
+  position: relative;
+  border-radius: var(--radius-pill);
+  /* glow 之外再叠 1px 金属深色描边：soft 主题米白卡片上，银/铜环的浅色
+     渐变端会融进卡片（实测仅 ~1.5:1），描边让环缘在任何主题下都成立。 */
+  box-shadow: var(--podium-glow), 0 0 0 1px var(--podium-edge);
+}
+
+/* 环层在遮罩面之下：旋转它只让流光转动，字母保持正立。 */
+.podium-ring-metal {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--podium-metal);
+}
+
+/* 遮罩面盖住环心，露出的外圈即金属环；surface 描边保证与渐变字圆分离。 */
+.podium-ring-face {
+  position: absolute;
+  inset: 4px;
+  border-radius: inherit;
+  border: 2px solid var(--color-surface);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: var(--font-weight-bold);
+  color: #FFFFFF;
+  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-hover) 100%);
+  user-select: none;
+}
+
+.podium-gold {
+  /* 首尾同色，旋转时接缝不可见 */
+  --podium-metal: conic-gradient(
+    from 0deg,
+    #B45309 0%, #FDE68A 18%, #FFFBEB 30%,
+    #F59E0B 52%, #B45309 68%, #FDE68A 86%, #B45309 100%
+  );
+  --podium-glow: 0 0 18px rgba(245, 158, 11, 0.45), 0 0 44px rgba(245, 158, 11, 0.2);
+  --podium-edge: rgba(180, 83, 9, 0.35);
+}
+
+.podium-gold .podium-ring-metal {
+  animation: podiumRingSpin 6s linear infinite;
+}
+
+.podium-silver {
+  --podium-metal: linear-gradient(135deg, #FFFFFF 0%, #CBD5E1 38%, #94A3B8 62%, #F1F5F9 100%);
+  --podium-glow: 0 0 14px rgba(148, 163, 184, 0.4);
+  --podium-edge: rgba(100, 116, 139, 0.45);
+}
+
+.podium-bronze {
+  --podium-metal: linear-gradient(135deg, #F2D0B0 0%, #C87F45 42%, #8C5A2B 68%, #E8B98E 100%);
+  --podium-glow: 0 0 14px rgba(200, 127, 69, 0.4);
+  --podium-edge: rgba(140, 90, 43, 0.45);
+}
+
+.podium-float {
+  animation: podiumFloat 3s ease-in-out infinite;
+}
+
+/* 名次徽标：金属底 + 深色字（两者均为固定色板，对比度与主题无关），
+   外圈 surface 描边使其在任意主题下都从头像上"浮"出来。 */
+.podium-rank-badge {
+  position: absolute;
+  left: 50%;
+  bottom: -0.4rem;
+  transform: translateX(-50%);
+  min-width: 1.375rem;
+  height: 1.375rem;
+  padding: 0 0.375rem;
+  border-radius: var(--radius-pill);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1;
+  box-shadow: 0 0 0 2px var(--color-surface);
+}
+
+} /* @layer components */
