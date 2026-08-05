@@ -60,7 +60,7 @@ test.describe('registration consent gate', () => {
     await page.addStyleTag({
       content: '*, *::before, *::after { animation: none !important; transition: none !important; }',
     })
-    await page.getByRole('button', { name: '没有账号？注册新账号' }).click()
+    await page.getByRole('button', { name: '没有账号？立即注册' }).click()
 
     const agreement = page.getByTestId('register-agreement')
     await expect(agreement).toBeVisible()
@@ -72,7 +72,7 @@ test.describe('registration consent gate', () => {
     await page.getByPlaceholder('邮箱地址').fill(email)
     await page.getByPlaceholder('密码（至少 6 位）').fill('legalpass123')
 
-    const submit = page.getByRole('button', { name: '注册账号' })
+    const submit = page.getByRole('button', { name: '创建账号' })
     await expect(submit).toBeDisabled()
 
     await agreement.getByRole('checkbox').check()

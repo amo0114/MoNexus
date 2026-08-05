@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, ChevronLeft, ChevronRight, Coins, FileText, Store, ShieldCheck, Info, Star } from 'lucide-react'
+import { ArrowLeft, ChevronLeft, ChevronRight, Coins, FileText, Store, ShieldCheck, Info, Star, ZoomIn } from 'lucide-react'
 import DOMPurify from 'dompurify'
 import api from '../api/client'
 import { getApiErrorMessage, getApiErrorCode } from '../api/error'
@@ -13,6 +13,8 @@ import SuccessModal from '../components/SuccessModal'
 import { formatFileSize } from '../utils/formatFileSize'
 import EmptyState from '../components/ui/EmptyState'
 import SafeImage from '../components/ui/SafeImage'
+import ProductMediaFrame from '../components/ui/ProductMediaFrame'
+import ProductImageLightbox from '../components/ProductImageLightbox'
 import { getProductReviews, type ReviewItem } from '../api/reviews'
 import StarRating from '../components/ui/StarRating'
 import { useIsMobileViewport } from '../hooks/useMediaQuery'
@@ -67,7 +69,10 @@ export default function ProductDetailPage() {
   const [merchantName, setMerchantName] = useState('')
   const [provisionPending, setProvisionPending] = useState(false)
   const [activeImage, setActiveImage] = useState(0)
+  const [lightboxOpen, setLightboxOpen] = useState(false)
   const galleryPointerStartRef = useRef<{ x: number; y: number } | null>(null)
+  /** Ignore the click that follows a horizontal swipe so swipe ≠ open lightbox. */
+  const galleryDidSwipeRef = useRef(false)
 
   const [reviews, setReviews] = useState<ReviewItem[]>([])
   const [reviewTotal, setReviewTotal] = useState(0)
@@ -212,7 +217,17 @@ export default function ProductDetailPage() {
     setActiveImage((current) => ((current + direction) % galleryImages.length + galleryImages.length) % galleryImages.length)
   }
 
+  function openLightbox() {
+    if (galleryImages.length === 0) return
+    setLightboxOpen(true)
+  }
+
   function handleGalleryKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault()
+      openLightbox()
+      return
+    }
     if (!hasMultipleImages) return
     if (event.key === 'ArrowLeft') {
       event.preventDefault()
@@ -224,21 +239,34 @@ export default function ProductDetailPage() {
   }
 
   function handleGalleryPointerDown(event: ReactPointerEvent<HTMLDivElement>) {
-    if (!hasMultipleImages || (event.pointerType === 'mouse' && event.button !== 0)) return
+    if (event.pointerType === 'mouse' && event.button !== 0) return
+    galleryDidSwipeRef.current = false
     galleryPointerStartRef.current = { x: event.clientX, y: event.clientY }
   }
 
   function handleGalleryPointerEnd(event: ReactPointerEvent<HTMLDivElement>) {
     const start = galleryPointerStartRef.current
     galleryPointerStartRef.current = null
-    if (!start || !hasMultipleImages) return
+    if (!start) return
 
     const deltaX = event.clientX - start.x
     const deltaY = event.clientY - start.y
-    // Ignore taps and vertical scrolls; a horizontal drag works with both a
-    // mouse/trackpad on desktop and a finger on touch devices.
-    if (Math.abs(deltaX) < 48 || Math.abs(deltaX) <= Math.abs(deltaY)) return
-    moveGallery(deltaX > 0 ? -1 : 1)
+
+    // Horizontal swipe → next/prev; do not open lightbox on the trailing click.
+    if (hasMultipleImages && Math.abs(deltaX) >= 48 && Math.abs(deltaX) > Math.abs(deltaY)) {
+      galleryDidSwipeRef.current = true
+      moveGallery(deltaX > 0 ? -1 : 1)
+    }
+  }
+
+  function handleGalleryClick(event: React.MouseEvent<HTMLDivElement>) {
+    // Prev/next controls stopPropagation; remaining clicks open full-view lightbox.
+    if (galleryDidSwipeRef.current) {
+      galleryDidSwipeRef.current = false
+      return
+    }
+    if ((event.target as HTMLElement).closest('button')) return
+    openLightbox()
   }
 
   const safeRichDescription = useMemo(() => {
@@ -325,73 +353,102 @@ export default function ProductDetailPage() {
 
       <div className="rounded-xl overflow-hidden bg-[var(--color-surface)] border border-[var(--color-border)] shadow-md mb-8">
         <div data-testid="product-gallery">
-          <div
-            className="w-full aspect-[4/3] sm:aspect-[3/2] lg:aspect-[16/9] bg-[var(--color-image-placeholder)] relative shrink-0 touch-pan-y select-none"
-            role={hasMultipleImages ? 'region' : undefined}
-            aria-label={hasMultipleImages ? `商品图片轮播，当前第 ${activeImage + 1} 张，共 ${galleryImages.length} 张。可左右拖动或使用方向键切换。` : undefined}
-            tabIndex={hasMultipleImages ? 0 : undefined}
-            onKeyDown={handleGalleryKeyDown}
-            onPointerDown={handleGalleryPointerDown}
-            onPointerUp={handleGalleryPointerEnd}
-            onPointerCancel={() => { galleryPointerStartRef.current = null }}
-            data-testid="product-gallery-stage"
+          {/* Stable 4:3 on every breakpoint + cover fill (full-bleed, no bars).
+              max-height keeps short landscape / large phones usable. */}
+          <ProductMediaFrame
+            src={galleryImages.length > 0 ? (galleryImages[activeImage] ?? galleryImages[0]) : undefined}
+            alt={product.name}
+            frameClassName="aspect-[4/3] max-h-[min(70dvh,36rem)]"
+            className="shrink-0 touch-pan-y select-none"
+            imageProps={{
+              'data-testid': 'product-gallery-main',
+              draggable: false,
+            }}
           >
-            {galleryImages.length > 0 && (
-              <SafeImage
-                src={galleryImages[activeImage] ?? galleryImages[0]}
-                className="w-full h-full object-contain p-1.5 sm:p-2"
-                alt={product.name}
-                data-testid="product-gallery-main"
-                draggable={false}
-              />
-            )}
-            <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/10 to-transparent pointer-events-none" />
+            <div
+              role="button"
+              aria-label={
+                hasMultipleImages
+                  ? `商品图片，当前第 ${activeImage + 1} 张，共 ${galleryImages.length} 张。点击查看全图；可左右拖动或使用方向键切换。`
+                  : '商品图片，点击查看全图'
+              }
+              tabIndex={0}
+              onKeyDown={handleGalleryKeyDown}
+              onPointerDown={handleGalleryPointerDown}
+              onPointerUp={handleGalleryPointerEnd}
+              onPointerCancel={() => { galleryPointerStartRef.current = null }}
+              onClick={handleGalleryClick}
+              data-testid="product-gallery-stage"
+              className="absolute inset-0 cursor-zoom-in outline-none"
+            >
+              <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/10 to-transparent pointer-events-none" />
 
-            {/* Chips stay overlaid at every size; the title only overlays on
-                md+（P2-4：切换点必须是 md——lg 会把 768–1023px 的桌面布局
-                也改掉，违反「≥768px 桌面不变」约束）；<md 标题在内容流。 */}
-            <div className="absolute bottom-6 left-6 right-6 flex flex-col gap-4 z-10">
-              <div className="flex gap-2 flex-wrap">
-                <span className="text-xs font-bold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5 bg-black/25 backdrop-blur-md border border-white/20">
-                  {product.type}
-                </span>
-                <span className="text-xs font-bold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5 bg-black/25 backdrop-blur-md border border-white/20">
-                  <Store className="w-3 h-3" />
-                  {product.merchant?.name || '平台自营'}
-                </span>
+              {/* Chips stay overlaid at every size; the title only overlays on
+                  md+（P2-4：切换点必须是 md——lg 会把 768–1023px 的桌面布局
+                  也改掉，违反「≥768px 桌面不变」约束）；<md 标题在内容流。 */}
+              <div className="absolute bottom-6 left-6 right-6 flex flex-col gap-4 z-10 pointer-events-none">
+                <div className="flex gap-2 flex-wrap">
+                  <span className="text-xs font-bold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5 bg-black/25 backdrop-blur-md border border-white/20">
+                    {product.type}
+                  </span>
+                  <span className="text-xs font-bold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5 bg-black/25 backdrop-blur-md border border-white/20">
+                    <Store className="w-3 h-3" />
+                    {product.merchant?.name || '平台自营'}
+                  </span>
+                </div>
+                <h1 className="hidden md:block font-heading text-3xl md:text-4xl font-bold text-white leading-snug drop-shadow-md tracking-tight">
+                  {product.name}
+                </h1>
               </div>
-              <h1 className="hidden md:block font-heading text-3xl md:text-4xl font-bold text-white leading-snug drop-shadow-md tracking-tight">
-                {product.name}
-              </h1>
-            </div>
 
-            {hasMultipleImages && (
-              <>
-                <button
-                  type="button"
-                  onClick={() => moveGallery(-1)}
-                  data-testid="product-gallery-prev"
-                  aria-label="查看上一张商品图片"
-                  className="absolute left-3 top-1/2 -translate-y-1/2 z-20 inline-flex w-11 h-11 items-center justify-center rounded-full border border-white/30 bg-black/50 text-white shadow-md backdrop-blur-sm transition-colors hover:bg-black/70 focus-visible:outline-none focus-visible:[box-shadow:0_0_0_3px_rgba(255,255,255,0.65)]"
-                >
-                  <ChevronLeft className="w-5 h-5" aria-hidden="true" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => moveGallery(1)}
-                  data-testid="product-gallery-next"
-                  aria-label="查看下一张商品图片"
-                  className="absolute right-3 top-1/2 -translate-y-1/2 z-20 inline-flex w-11 h-11 items-center justify-center rounded-full border border-white/30 bg-black/50 text-white shadow-md backdrop-blur-sm transition-colors hover:bg-black/70 focus-visible:outline-none focus-visible:[box-shadow:0_0_0_3px_rgba(255,255,255,0.65)]"
-                >
-                  <ChevronRight className="w-5 h-5" aria-hidden="true" />
-                </button>
-                <span className="absolute right-4 top-4 z-20 rounded-full border border-white/25 bg-black/45 px-2.5 py-1 text-xs font-semibold tabular-nums text-white backdrop-blur-sm" aria-hidden="true">
-                  {activeImage + 1} / {galleryImages.length}
-                </span>
-                <span className="sr-only" aria-live="polite">当前第 {activeImage + 1} 张，共 {galleryImages.length} 张</span>
-              </>
-            )}
-          </div>
+              <span className="pointer-events-none absolute left-1/2 top-4 z-20 hidden -translate-x-1/2 items-center gap-1.5 rounded-full border border-white/25 bg-black/45 px-2.5 py-1 text-xs font-medium text-white/90 backdrop-blur-sm sm:inline-flex">
+                <ZoomIn className="h-3.5 w-3.5" aria-hidden="true" />
+                点击查看全图
+              </span>
+
+              {hasMultipleImages && (
+                <>
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      moveGallery(-1)
+                    }}
+                    data-testid="product-gallery-prev"
+                    aria-label="查看上一张商品图片"
+                    className="absolute left-3 top-1/2 -translate-y-1/2 z-20 inline-flex w-11 h-11 items-center justify-center rounded-full border border-white/30 bg-black/50 text-white shadow-md backdrop-blur-sm transition-colors hover:bg-black/70 focus-visible:outline-none focus-visible:[box-shadow:0_0_0_3px_rgba(255,255,255,0.65)]"
+                  >
+                    <ChevronLeft className="w-5 h-5" aria-hidden="true" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      moveGallery(1)
+                    }}
+                    data-testid="product-gallery-next"
+                    aria-label="查看下一张商品图片"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 z-20 inline-flex w-11 h-11 items-center justify-center rounded-full border border-white/30 bg-black/50 text-white shadow-md backdrop-blur-sm transition-colors hover:bg-black/70 focus-visible:outline-none focus-visible:[box-shadow:0_0_0_3px_rgba(255,255,255,0.65)]"
+                  >
+                    <ChevronRight className="w-5 h-5" aria-hidden="true" />
+                  </button>
+                  <span className="absolute right-4 top-4 z-20 rounded-full border border-white/25 bg-black/45 px-2.5 py-1 text-xs font-semibold tabular-nums text-white backdrop-blur-sm" aria-hidden="true">
+                    {activeImage + 1} / {galleryImages.length}
+                  </span>
+                  <span className="sr-only" aria-live="polite">当前第 {activeImage + 1} 张，共 {galleryImages.length} 张</span>
+                </>
+              )}
+            </div>
+          </ProductMediaFrame>
+
+          <ProductImageLightbox
+            open={lightboxOpen}
+            images={galleryImages}
+            index={activeImage}
+            alt={product.name}
+            onClose={() => setLightboxOpen(false)}
+            onIndexChange={setActiveImage}
+          />
 
           {galleryImages.length > 1 && (
             <div className="flex gap-2.5 px-4 py-3 overflow-x-auto hide-scrollbar bg-[var(--color-background)] border-b border-[var(--color-border)]">
@@ -408,11 +465,11 @@ export default function ProductDetailPage() {
                       : 'border-transparent opacity-70 hover:opacity-100'
                   }`}
                 >
-                  <SafeImage
+                  <ProductMediaFrame
                     src={img}
                     alt={`${product.name} 图 ${i + 1}`}
-                    className="w-full h-full object-contain bg-[var(--color-image-placeholder)] p-1"
-                    loading="lazy"
+                    frameClassName="h-full w-full"
+                    imageProps={{ loading: 'lazy' }}
                   />
                 </button>
               ))}

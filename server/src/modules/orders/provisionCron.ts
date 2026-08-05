@@ -4,6 +4,7 @@ import { logger } from '../../lib/logger.js'
 import { prisma } from '../../lib/prisma.js'
 import { HttpError } from '../../lib/httpError.js'
 import { getMailer } from '../../lib/mailer/index.js'
+import { renderMail } from '../../lib/mailer/templates/index.js'
 import { getSystemConfigValue } from '../../lib/systemConfig.js'
 import { decryptWebhookSecret } from '../../lib/webhookSecret.js'
 import {
@@ -416,20 +417,14 @@ export async function notifyDegradedTasks(): Promise<void> {
         const label = offerName ? `${productName} - ${offerName}` : productName
         const mailer = await getMailer()
         // SMTP 在任何事务之外;失败抛错走 catch 释放租约。
-        await mailer.send({
-          to: recipient,
-          subject: `【自动开通失败，请人工履约】订单 #${task.order.id}`,
-          text: [
-            '您好，以下订单的自动开通未能完成，已转为人工履约：',
-            '',
-            `商品：${label}`,
-            `订单号：#${task.order.id}`,
-            `失败原因代码：${task.lastError ?? 'unknown'}`,
-            '',
-            '请尽快在商家后台手动交付该订单，避免超出履约时限。',
-            '如需恢复自动开通，请检查回调服务与 webhook 配置。',
-          ].join('\n'),
-        })
+        await mailer.send(
+          renderMail('provision_degraded', {
+            to: recipient,
+            orderId: task.order.id,
+            productLabel: label,
+            errorCode: task.lastError ?? 'unknown',
+          }),
+        )
       }
       // 成功(或无收件人——落时间戳避免死循环扫描):按 token CAS 标记。
       // 此写失败 → 租约到期重发 = 至少一次语义的重复窗口。

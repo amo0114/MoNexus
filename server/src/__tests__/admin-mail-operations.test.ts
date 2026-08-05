@@ -192,13 +192,17 @@ describe('POST /api/admin/mail/test', () => {
     // trim + lowercase 规范形（P.6）。
     expect(sent.to).toBe('ops.team@test.local')
     expect(sent.subject).toBe(MAIL_TEST_SUBJECT)
-    expect(sent.html).toBeUndefined()
+    expect(typeof sent.html).toBe('string')
+    expect(sent.html!.length).toBeGreaterThan(0)
     expect(sent.text).toContain('MoNexus')
     expect(sent.text).toMatch(/\d{4}-\d{2}-\d{2}T[\d:.]+Z/)
-    // 无链接、无 token、无业务数据（MAIL-04）。
+    // 纯文本无链接、无 token、无业务数据（MAIL-04）；HTML 仅允许品牌静态资源 URL。
     expect(sent.text).not.toMatch(/https?:\/\//)
     expect(sent.text).not.toContain(admin.email)
     expect(sent.text).not.toContain(accessToken)
+    expect(sent.html).not.toContain(admin.email)
+    expect(sent.html).not.toContain(accessToken)
+    expect(sent.html).not.toMatch(/token=/i)
 
     // 审计：attempt + sent 两行，收件人只留脱敏形态。
     const logs = await mailTestLogs(admin.id)

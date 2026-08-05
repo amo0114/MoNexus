@@ -2,6 +2,7 @@ import { config } from '../config/index.js'
 import { logger } from './logger.js'
 import { prisma } from './prisma.js'
 import { getMailer } from './mailer/index.js'
+import { renderMail } from './mailer/templates/index.js'
 import { addCalendarDays, businessDateString, calendarDayToUtc, formatCalendarDay } from './businessTime.js'
 import { acquireCronLeaseWithHeartbeat, type CronLeaseHandle } from './cronLease.js'
 
@@ -53,20 +54,13 @@ function buildMail(to: string, order: CandidateOrder, role: 'buyer' | 'merchant'
   const label = displayLabel(order)
   // 查询已过滤 bookingDate 非空；此处断言仅为类型收窄。
   const bookingDay = formatBookingDay(order.bookingDate!)
-  const roleLine = role === 'buyer'
-    ? '您预约的服务将于明天开始，请留意履约安排。'
-    : '您有一笔预约服务订单将于明天到期，请按预约日期履约。'
-  return {
+  return renderMail('booking_reminder', {
     to,
-    subject: `【预约提醒】订单 #${order.id} 预约日期为 ${bookingDay}`,
-    text: [
-      roleLine,
-      '',
-      `订单号：#${order.id}`,
-      `商品：${label}`,
-      `预约日期：${bookingDay}`,
-    ].join('\n'),
-  }
+    orderId: order.id,
+    productLabel: label,
+    bookingDay,
+    role,
+  })
 }
 
 async function processOrder(order: CandidateOrder, now: Date) {

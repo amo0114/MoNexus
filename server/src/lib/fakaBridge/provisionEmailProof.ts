@@ -2,6 +2,7 @@ import { createHash, randomInt } from 'node:crypto'
 import { prisma } from '../prisma.js'
 import { badRequest, tooManyRequests, provisionEmailUnverified } from '../httpError.js'
 import { getMailer } from '../mailer/index.js'
+import { renderMail } from '../mailer/templates/index.js'
 import { config } from '../../config/index.js'
 import { FAKA_PROVISION_EMAIL_KEYS } from './provisionEmail.js'
 
@@ -295,18 +296,13 @@ export async function sendProvisionEmailCode(userId: number, emailRaw: string) {
   // would make delivery failures a bypass.  The persisted code still permits
   // the normal retry after the 60s per-email interval (at-least-once mail).
   const mailer = await getMailer()
-  await mailer.send({
-    to: email,
-    subject: 'MoNexus 开通邮箱验证码',
-    text: [
-      `您正在 MoNexus 验证 Xboard 开通邮箱。`,
-      ``,
-      `验证码：${code}`,
-      `有效期 10 分钟。`,
-      ``,
-      `如非本人操作，请忽略本邮件。他人无法在未持有验证码的情况下为您的面板账号开通或变更套餐。`,
-    ].join('\n'),
-  })
+  await mailer.send(
+    renderMail('provision_email_otp', {
+      to: email,
+      code,
+      expiresMinutes: Math.round(PROVISION_CODE_TTL_MS / 60_000),
+    }),
+  )
 
   return { sent: true as const, alreadyTrusted: false as const, email, expiresInSec: PROVISION_CODE_TTL_MS / 1000 }
 }
