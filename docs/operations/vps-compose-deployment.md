@@ -167,17 +167,15 @@ docker compose --env-file .env -f docker-compose.prod.yml -f docker-compose.vps.
 
 ## Releases and rollback
 
-Pushing to `master` publishes `ghcr.io/amo0114/monexus-web` and
-`ghcr.io/amo0114/monexus-server`. To update the VPS after that workflow
-finishes:
+日常生产发布使用 GitHub Actions 的 **Compose Production Deploy**，而不是登录 VPS
+后手动 `git pull`、编辑 `.env` 或运行 `vps-compose.sh up`。该工作流固定完整 SHA、
+验证同 SHA 的 CI 和双架构镜像，并在 `production` Environment 审批后调用受限 VPS
+入口；详见[受审批的 Compose 生产部署](./compose-production-deploy.md)。
 
-```bash
-cd /opt/monexus
-bash scripts/vps-compose.sh up
-```
-
-Prefer an immutable `MONEXUS_IMAGE_TAG=sha-<commit>` for a real release. To
-roll back, set the last known-good tag in `.env` and run the same command.
+在自动化首次启用前，仍应优先执行其 `dry_run=true` 演练，而不是手动使用可变
+`latest` 标签。需要回退时，使用手动工作流选择一个已验证的旧完整 master SHA；不要
+因为数据库迁移失败或未知而直接编辑 `.env`，先遵循
+[rollback runbook](./rollback-runbook.md)。
 
 ## Backups
 

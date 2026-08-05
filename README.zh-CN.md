@@ -271,7 +271,7 @@ npm run e2e
 npm run e2e:ui      # Playwright 交互界面
 ```
 
-CI 工作流见 [`.github/workflows/`](./.github/workflows/)（`ci.yml`、`cd.yml`、`deploy.yml` 以及备份与告警相关作业）。
+CI 与部署工作流见 [`.github/workflows/`](./.github/workflows/)（`ci.yml`、`docker-publish.yml`、`compose-production-deploy.yml`、legacy `deploy.yml` 以及备份与告警相关作业）。
 
 ---
 
@@ -314,7 +314,16 @@ CI 工作流 [`.github/workflows/docker-publish.yml`](./.github/workflows/docker
 
 正式发布建议用不可变 tag（如 `sha-abc1234` 或 `1.2.3`）。若跟踪 `latest`，请设 `MONEXUS_PULL_POLICY=always`，避免主机一直用本地旧层。
 
-### 路径 A — 从 GHCR 拉取预构建镜像（推荐）
+### 路径 A — 经审批的 GitHub Actions Compose 发布（推荐）
+
+完成一次 VPS 引导后，请使用
+[`Compose Production Deploy`](./.github/workflows/compose-production-deploy.yml)：它会校验
+同一 `master` SHA 的 CI 与多架构镜像，等待受保护的 `production` Environment 审批，
+再执行 Compose 健康检查。先以 `workflow_dispatch + dry_run=true` 演练；手动演练成功
+前不要开启自动部署开关。详见
+[`compose-production-deploy.md`](./docs/operations/compose-production-deploy.md)。
+
+### 路径 B — 手动 GHCR/Compose 引导或恢复
 
 ```bash
 # 一次性：登录 GHCR（需对 package 有读权限）
@@ -332,7 +341,7 @@ npm run prod:smoke
 
 主机上**无需**编译前后端源码，只需 Docker Compose、Postgres 数据卷和合法 `.env`。
 
-### 路径 B — 在主机本地构建镜像
+### 路径 C — 在主机本地构建镜像
 
 GHCR 不可用或离线预演时使用：
 
@@ -348,7 +357,7 @@ npm run prod:gate
 
 Compose 中仍保留 `server` / `web` 的 `build:` 上下文，可与 `image:` 并存。
 
-### 路径 C — 非 Docker 产物部署（兜底）
+### 路径 D — 非 Docker 产物部署（legacy 兜底）
 
 GitHub Actions 仍可打 tar 包，经 SSH 部署到 **nginx + systemd**（或 PM2）主机，发布目录建议 `/opt/monexus/`：
 
@@ -362,6 +371,7 @@ GitHub Actions 仍可打 tar 包，经 SSH 部署到 **nginx + systemd**（或 P
 - [`docs/operations/runbook.md`](./docs/operations/runbook.md) — 启停、健康检查、备份、预发 compose
 - [`docs/operations/vps-1panel-openresty-deployment.md`](./docs/operations/vps-1panel-openresty-deployment.md) — 1Panel/OpenResty VPS 的完整 Docker 部署、ARM64 与排障手册
 - [`docs/operations/vps-compose-deployment.md`](./docs/operations/vps-compose-deployment.md) — 独立宿主机 Caddy + Docker + MinIO 部署
+- [`docs/operations/compose-production-deploy.md`](./docs/operations/compose-production-deploy.md) — Docker Compose VPS 的受保护 GitHub Actions 发布
 - [`docs/operations/deployment-target.md`](./docs/operations/deployment-target.md) — 主机形态选型
 - [`docs/operations/rollback-runbook.md`](./docs/operations/rollback-runbook.md)
 - [`docs/operations/secrets-management.md`](./docs/operations/secrets-management.md)

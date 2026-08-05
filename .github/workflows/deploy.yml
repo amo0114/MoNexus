@@ -1,4 +1,7 @@
-name: Production Deploy
+# Legacy artifact/systemd/PM2 deployment route. The current Docker Compose VPS
+# uses compose-production-deploy.yml; do not configure this workflow with the
+# Compose production credentials.
+name: Legacy Artifact Production Deploy
 
 on:
   workflow_dispatch:
