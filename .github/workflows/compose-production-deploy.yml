@@ -1,0 +1,336 @@
+name: Compose Production Deploy
+
+# `workflow_run` workflows are loaded from the repository default branch
+# (develop), not from master. Keep this file in develop before promoting a
+# release to master. The automatic path remains opt-in through the repository
+# variable COMPOSE_PRODUCTION_AUTO_DEPLOY_ENABLED=true; this lets operators
+# complete the manual dry-run and protected-environment rehearsal first.
+on:
+  workflow_run:
+    workflows:
+      - Publish Docker images
+    types:
+      - completed
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'master or an exact 40-character SHA already reachable from master'
+        required: true
+        default: master
+      dry_run:
+        description: 'Verify CI/image gates only; do not enter the production environment or SSH to the VPS'
+        required: true
+        default: true
+        type: boolean
+
+concurrency:
+  group: production-compose-deploy
+  cancel-in-progress: false
+
+permissions:
+  actions: read
+  contents: read
+  packages: read
+
+jobs:
+  resolve-release:
+    name: Resolve immutable master release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      eligible: ${{ steps.release.outputs.eligible }}
+      commit: ${{ steps.release.outputs.commit }}
+      short_sha: ${{ steps.release.outputs.short_sha }}
+      dry_run: ${{ steps.release.outputs.dry_run }}
+      source: ${{ steps.release.outputs.source }}
+    steps:
+      - name: Validate trigger and resolve commit
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          MANUAL_REF: ${{ github.event.inputs.ref || '' }}
+          # github.event.inputs retains workflow-dispatch booleans as the
+          # strings "true" / "false". Do not use `inputs.dry_run || 'true'`:
+          # the boolean false value would otherwise be replaced with true.
+          MANUAL_DRY_RUN: ${{ github.event.inputs.dry_run }}
+          AUTO_DEPLOY_ENABLED: ${{ vars.COMPOSE_PRODUCTION_AUTO_DEPLOY_ENABLED || 'false' }}
+          WORKFLOW_RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion || '' }}
+          WORKFLOW_RUN_EVENT: ${{ github.event.workflow_run.event || '' }}
+          WORKFLOW_RUN_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch || '' }}
+          WORKFLOW_RUN_HEAD_SHA: ${{ github.event.workflow_run.head_sha || '' }}
+          WORKFLOW_RUN_REPOSITORY: ${{ github.event.workflow_run.repository.full_name || '' }}
+          WORKFLOW_RUN_HEAD_REPOSITORY: ${{ github.event.workflow_run.head_repository.full_name || '' }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$EVENT_NAME" == 'workflow_run' ]]; then
+            if [[ "$WORKFLOW_RUN_CONCLUSION" != 'success' || "$WORKFLOW_RUN_EVENT" != 'push' || "$WORKFLOW_RUN_HEAD_BRANCH" != 'master' || "$WORKFLOW_RUN_REPOSITORY" != "$GITHUB_REPOSITORY" || "$WORKFLOW_RUN_HEAD_REPOSITORY" != "$GITHUB_REPOSITORY" ]]; then
+              echo 'eligible=false' >> "$GITHUB_OUTPUT"
+              echo 'dry_run=false' >> "$GITHUB_OUTPUT"
+              echo 'source=automatic' >> "$GITHUB_OUTPUT"
+              echo 'Automatic trigger did not originate from a successful master push in this repository; skipping.'
+              exit 0
+            fi
+
+            if [[ "$AUTO_DEPLOY_ENABLED" != 'true' ]]; then
+              echo 'eligible=false' >> "$GITHUB_OUTPUT"
+              echo 'dry_run=false' >> "$GITHUB_OUTPUT"
+              echo 'source=automatic' >> "$GITHUB_OUTPUT"
+              echo 'Automatic production deployments are disabled. Set repository variable COMPOSE_PRODUCTION_AUTO_DEPLOY_ENABLED=true only after the protected-environment rehearsal succeeds.'
+              exit 0
+            fi
+
+            commit="$WORKFLOW_RUN_HEAD_SHA"
+            dry_run='false'
+            source='automatic'
+          elif [[ "$EVENT_NAME" == 'workflow_dispatch' ]]; then
+            if [[ "$MANUAL_REF" != 'master' && ! "$MANUAL_REF" =~ ^[0-9a-f]{40}$ ]]; then
+              echo '::error::Manual ref must be master or a lowercase 40-character SHA.'
+              exit 1
+            fi
+            if [[ "$MANUAL_DRY_RUN" != 'true' && "$MANUAL_DRY_RUN" != 'false' ]]; then
+              echo '::error::Manual dry_run must be true or false.'
+              exit 1
+            fi
+
+            commit="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${MANUAL_REF}" --jq '.sha')"
+            dry_run="$MANUAL_DRY_RUN"
+            source='manual'
+          else
+            echo '::error::Unsupported event.'
+            exit 1
+          fi
+
+          if [[ ! "$commit" =~ ^[0-9a-f]{40}$ ]]; then
+            echo '::error::Resolved commit is not a lowercase 40-character SHA.'
+            exit 1
+          fi
+
+          comparison="$(gh api "repos/${GITHUB_REPOSITORY}/compare/${commit}...master" --jq '.status')"
+          if [[ "$comparison" != 'ahead' && "$comparison" != 'identical' ]]; then
+            echo "::error::${commit} is not reachable from master (comparison=${comparison})."
+            exit 1
+          fi
+
+          echo 'eligible=true' >> "$GITHUB_OUTPUT"
+          echo "commit=${commit}" >> "$GITHUB_OUTPUT"
+          echo "short_sha=${commit:0:7}" >> "$GITHUB_OUTPUT"
+          echo "dry_run=${dry_run}" >> "$GITHUB_OUTPUT"
+          echo "source=${source}" >> "$GITHUB_OUTPUT"
+          echo "Resolved ${source} release ${commit}; dry_run=${dry_run}."
+
+  verify-gates:
+    name: Verify CI and immutable images
+    needs: resolve-release
+    if: needs.resolve-release.outputs.eligible == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Wait for the same-SHA CI and Docker publish runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEPLOY_COMMIT: ${{ needs.resolve-release.outputs.commit }}
+        run: |
+          set -euo pipefail
+
+          wait_for_success() {
+            local workflow_file="$1"
+            local workflow_label="$2"
+            local deadline run_json status conclusion
+            deadline=$((SECONDS + 1800))
+
+            while (( SECONDS < deadline )); do
+              run_json="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow_file}/runs?event=push&head_sha=${DEPLOY_COMMIT}&per_page=100" | jq -c --arg commit "$DEPLOY_COMMIT" '
+                [.workflow_runs[] | select(.event == "push" and .head_sha == $commit)]
+                | sort_by([.run_attempt, .created_at])
+                | last // null
+              ')"
+
+              if [[ "$run_json" == 'null' ]]; then
+                echo "Waiting for ${workflow_label} run for ${DEPLOY_COMMIT}..."
+                sleep 10
+                continue
+              fi
+
+              status="$(jq -r '.status' <<< "$run_json")"
+              conclusion="$(jq -r '.conclusion // ""' <<< "$run_json")"
+              if [[ "$status" == 'completed' && "$conclusion" == 'success' ]]; then
+                echo "${workflow_label} succeeded for ${DEPLOY_COMMIT}."
+                return 0
+              fi
+              if [[ "$status" == 'completed' ]]; then
+                echo "::error::${workflow_label} completed with conclusion=${conclusion} for ${DEPLOY_COMMIT}."
+                jq -r '.html_url' <<< "$run_json"
+                return 1
+              fi
+
+              echo "Waiting for ${workflow_label} (status=${status})..."
+              sleep 10
+            done
+
+            echo "::error::Timed out waiting for ${workflow_label} for ${DEPLOY_COMMIT}."
+            return 1
+          }
+
+          wait_for_success ci.yml 'CI'
+          wait_for_success docker-publish.yml 'Publish Docker images'
+
+      - name: Verify multi-architecture immutable image manifests
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEPLOY_COMMIT: ${{ needs.resolve-release.outputs.commit }}
+          DEPLOY_SHORT_SHA: ${{ needs.resolve-release.outputs.short_sha }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+
+          for image in \
+            "ghcr.io/amo0114/monexus-server:sha-${DEPLOY_SHORT_SHA}" \
+            "ghcr.io/amo0114/monexus-web:sha-${DEPLOY_SHORT_SHA}"; do
+            manifest="$(DOCKER_CLI_EXPERIMENTAL=enabled docker manifest inspect "$image")"
+            printf '%s' "$manifest" | jq -e '
+              [.manifests[]?.platform | select(.os == "linux") | .architecture] as $architectures
+              | ($architectures | index("amd64")) != null
+              and ($architectures | index("arm64")) != null
+            ' >/dev/null
+            echo "Verified linux/amd64 and linux/arm64 manifest: ${image}"
+          done
+
+      - name: Require a production-environment reviewer for live deploys
+        if: needs.resolve-release.outputs.dry_run == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          reviewer_count="$(gh api "repos/${GITHUB_REPOSITORY}/environments/production" | jq '
+            [.protection_rules[]?
+              | select(.type == "required_reviewers")
+              | .reviewers[]?]
+            | length
+          ')"
+          if (( reviewer_count < 1 )); then
+            echo '::error::production Environment must have at least one required reviewer before a live Compose deployment is allowed.'
+            exit 1
+          fi
+          echo "Verified production Environment reviewer protection (${reviewer_count} reviewer(s))."
+
+      - name: Write immutable release plan
+        env:
+          DEPLOY_COMMIT: ${{ needs.resolve-release.outputs.commit }}
+          DEPLOY_SHORT_SHA: ${{ needs.resolve-release.outputs.short_sha }}
+          RELEASE_SOURCE: ${{ needs.resolve-release.outputs.source }}
+          DRY_RUN: ${{ needs.resolve-release.outputs.dry_run }}
+        run: |
+          {
+            echo '### Compose production release plan'
+            echo
+            echo "- Source: ${RELEASE_SOURCE}"
+            echo "- Commit: \`${DEPLOY_COMMIT}\`"
+            echo "- Immutable tag: \`sha-${DEPLOY_SHORT_SHA}\`"
+            echo "- Dry run: \`${DRY_RUN}\`"
+            echo '- CI and both multi-architecture image manifests: verified'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  deploy:
+    name: Deploy verified Compose release
+    needs: [resolve-release, verify-gates]
+    if: >-
+      needs.resolve-release.outputs.eligible == 'true' &&
+      needs.resolve-release.outputs.dry_run == 'false' &&
+      needs.verify-gates.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment: production
+    env:
+      GH_TOKEN: ${{ github.token }}
+      DEPLOY_SSH_HOST: ${{ secrets.DEPLOY_SSH_HOST }}
+      DEPLOY_SSH_PORT: ${{ vars.DEPLOY_SSH_PORT || '22' }}
+      DEPLOY_SSH_USER: ${{ secrets.DEPLOY_SSH_USER }}
+      DEPLOY_SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+      DEPLOY_SSH_KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}
+      PRODUCTION_HEALTHCHECK_URL: ${{ vars.PRODUCTION_HEALTHCHECK_URL }}
+      DEPLOY_COMMIT: ${{ needs.resolve-release.outputs.commit }}
+      DEPLOY_SHORT_SHA: ${{ needs.resolve-release.outputs.short_sha }}
+      RELEASE_SOURCE: ${{ needs.resolve-release.outputs.source }}
+    steps:
+      - name: Re-check production reviewer guard after approval
+        run: |
+          set -euo pipefail
+          reviewer_count="$(gh api "repos/${GITHUB_REPOSITORY}/environments/production" | jq '
+            [.protection_rules[]?
+              | select(.type == "required_reviewers")
+              | .reviewers[]?]
+            | length
+          ')"
+          if (( reviewer_count < 1 )); then
+            echo '::error::production Environment no longer has a required reviewer; refusing SSH deployment.'
+            exit 1
+          fi
+          echo "Re-verified production Environment reviewer protection (${reviewer_count} reviewer(s))."
+
+      - name: Validate protected deployment configuration
+        run: |
+          set -euo pipefail
+          missing=()
+          for key in DEPLOY_SSH_HOST DEPLOY_SSH_USER DEPLOY_SSH_PRIVATE_KEY DEPLOY_SSH_KNOWN_HOSTS PRODUCTION_HEALTHCHECK_URL; do
+            [[ -n "${!key}" ]] || missing+=("$key")
+          done
+          if [[ "${#missing[@]}" -gt 0 ]]; then
+            printf '::error::Missing production environment values: %s\n' "${missing[*]}"
+            exit 1
+          fi
+          [[ "$DEPLOY_SSH_PORT" =~ ^[0-9]{1,5}$ ]] || { echo '::error::DEPLOY_SSH_PORT must be numeric.'; exit 1; }
+          (( DEPLOY_SSH_PORT >= 1 && DEPLOY_SSH_PORT <= 65535 )) || { echo '::error::DEPLOY_SSH_PORT is out of range.'; exit 1; }
+          [[ "$PRODUCTION_HEALTHCHECK_URL" =~ ^https:// ]] || { echo '::error::PRODUCTION_HEALTHCHECK_URL must be HTTPS.'; exit 1; }
+
+      - name: Configure pinned SSH identity
+        run: |
+          set -euo pipefail
+          install -d -m 0700 "$HOME/.ssh"
+          printf '%s\n' "$DEPLOY_SSH_PRIVATE_KEY" > "$HOME/.ssh/monexus_production_deploy"
+          chmod 0600 "$HOME/.ssh/monexus_production_deploy"
+          # The host key is provisioned from a trusted console/bootstrap
+          # session. Never replace this with ssh-keyscan in CI.
+          printf '%s\n' "$DEPLOY_SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 0600 "$HOME/.ssh/known_hosts"
+
+      - name: Invoke restricted VPS deployment entry point
+        run: |
+          set -euo pipefail
+          ssh \
+            -i "$HOME/.ssh/monexus_production_deploy" \
+            -p "$DEPLOY_SSH_PORT" \
+            -o BatchMode=yes \
+            -o ConnectTimeout=15 \
+            -o IdentitiesOnly=yes \
+            -o ServerAliveInterval=15 \
+            -o ServerAliveCountMax=4 \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DEPLOY_SSH_USER@$DEPLOY_SSH_HOST" \
+            "deploy ${DEPLOY_COMMIT}"
+
+      - name: Verify public readiness
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error \
+            --retry 12 \
+            --retry-delay 5 \
+            --retry-connrefused \
+            "$PRODUCTION_HEALTHCHECK_URL" \
+            >/dev/null
+          echo 'Public production readiness check passed.'
+
+      - name: Write deployment summary
+        if: always()
+        run: |
+          {
+            echo '### Compose production deployment'
+            echo
+            echo "- Source: ${RELEASE_SOURCE}"
+            echo "- Commit: \`${DEPLOY_COMMIT}\`"
+            echo "- Immutable tag: \`sha-${DEPLOY_SHORT_SHA}\`"
+            echo '- VPS entry point: restricted forced-command SSH identity'
+            echo '- Public readiness: see the preceding step'
+          } >> "$GITHUB_STEP_SUMMARY"

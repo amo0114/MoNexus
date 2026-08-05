@@ -40,7 +40,12 @@ chore/xxx ┘                                        ▲
 
 ## 部署与运维
 
-- `cd.yml` / `deploy.yml`：workflow_dispatch，默认 ref `master`——生产只从 master 部署，不变。
+- `compose-production-deploy.yml`：Docker Compose VPS 的正式生产路径。它在成功的
+  `master` 镜像发布后生成受 `production` Environment 审批保护的部署；首次启用前可用
+  `workflow_dispatch + dry_run=true` 演练。详见
+  [`compose-production-deploy.md`](./operations/compose-production-deploy.md)。
+- `cd.yml` / `deploy.yml`：保留为 legacy artifact/systemd/PM2 路线；不得用于当前
+  Docker Compose VPS。
 - `backup.yml`（定时）、`alert-routing-test.yml`、`sentry-alert-check.yml`（手动）：与分支无关，不变。
 
 ## 分支保护建议（需仓库管理员在 Settings 配置）

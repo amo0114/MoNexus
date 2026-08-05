@@ -958,7 +958,11 @@ External monitors (Sentry, Pingdom, Uptime Robot, etc.) configured against `/api
 
 The `/api/health` alias will stay through M5 to avoid forcing a coordinated cutover. Plan to remove it in M6+ once all known external probes are migrated.
 
-## 27. M5 Production Deploy
+## 27. Legacy M5 Artifact Production Deploy
+
+> 当前 Docker Compose 生产 VPS 请使用
+> [受审批的 Compose 生产部署](./compose-production-deploy.md)。本节仅保留旧
+> nginx + systemd/PM2 artifact 发布路线，不能与当前 Compose 凭据或主机混用。
 
 M5 chooses the self-hosted nginx + systemd/PM2 target from `docs/operations/deployment-target.md`. The default host layout is:
 
@@ -972,7 +976,7 @@ M5 chooses the self-hosted nginx + systemd/PM2 target from `docs/operations/depl
       server/
 ```
 
-Production entry point: GitHub Actions -> **Production Deploy** -> **Run workflow**.
+Production entry point: GitHub Actions -> **Legacy Artifact Production Deploy** -> **Run workflow**.
 
 Use `release_action=deploy_candidate` for a new artifact build. Keep `dry_run=true` first, confirm the resolved `DEPLOY_COMMIT`, then rerun with `dry_run=false` only after the selected GitHub environment has deploy values configured.
 
@@ -1018,7 +1022,8 @@ Key groups to verify before production:
 
 | Group | Required examples | Consumer |
 | --- | --- | --- |
-| Deploy | `DEPLOY_SSH_HOST`, `DEPLOY_SSH_USER`, `DEPLOY_SSH_PRIVATE_KEY` | Production Deploy workflow |
+| Legacy artifact deploy | `DEPLOY_SSH_HOST`, `DEPLOY_SSH_USER`, `DEPLOY_SSH_PRIVATE_KEY` | Legacy Artifact Production Deploy workflow |
+| Compose deploy | `DEPLOY_SSH_HOST`, `DEPLOY_SSH_USER`, `DEPLOY_SSH_PRIVATE_KEY`, `DEPLOY_SSH_KNOWN_HOSTS` | Compose Production Deploy workflow |
 | Backend runtime | `DATABASE_URL`, `JWT_SECRET`, `SENTRY_DSN`, SMTP/storage values | deploy host env and backend process |
 | Metrics | `METRICS_TOKEN` | backend runtime and scrape target |
 | Backup | `BACKUP_AGE_RECIPIENT`, `BACKUP_DATABASE_URL` (url source only), `RESTORE_TARGET_URL` | encrypted backup workflow and restore rehearsal |
