@@ -94,13 +94,14 @@ async function openGallery(page: Page) {
   await expect(page.getByTestId('product-gallery-main')).toBeVisible()
 }
 
-test('product gallery fills a stable frame (cover) and supports buttons, keys, and desktop drag', async ({ page }) => {
+test('product gallery keeps the full image in a stable frame and supports buttons, keys, and desktop drag', async ({ page }) => {
   await openGallery(page)
 
   const mainImage = page.getByTestId('product-gallery-main')
   const stage = page.getByTestId('product-gallery-stage')
-  // Full-bleed cover in a stable 4:3 frame — no letterbox bars.
-  await expect(mainImage).toHaveCSS('object-fit', 'cover')
+  // Product artwork must remain whole even when its source ratio differs from
+  // the fixed gallery frame.
+  await expect(mainImage).toHaveCSS('object-fit', 'contain')
   await expect(mainImage).toHaveAttribute('src', images[0])
   await expect(page.getByTestId('product-gallery-next')).toBeVisible()
   await expect(page.getByTestId('product-gallery-prev')).toBeVisible()
@@ -143,12 +144,12 @@ test('product gallery opens a full-image lightbox (contain) and closes with Esc'
 test.describe('mobile product gallery', () => {
   test.use({ viewport: { width: 375, height: 812 }, hasTouch: true })
 
-  test('a horizontal touch swipe advances the image without changing the cover display mode', async ({ page }) => {
+  test('a horizontal touch swipe advances the image without cropping it', async ({ page }) => {
     await openGallery(page)
 
     const mainImage = page.getByTestId('product-gallery-main')
     const stage = page.getByTestId('product-gallery-stage')
-    await expect(mainImage).toHaveCSS('object-fit', 'cover')
+    await expect(mainImage).toHaveCSS('object-fit', 'contain')
 
     await stage.evaluate((element) => {
       element.dispatchEvent(new PointerEvent('pointerdown', {
