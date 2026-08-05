@@ -41,6 +41,8 @@ test.describe('mobile layout verification @375px', () => {
     await expect(cards.first()).toBeVisible({ timeout: 10_000 })
     const cardEls = page.locator('[data-testid^="store-product-card-"]')
     await expect(cardEls.nth(1)).toBeVisible({ timeout: 10_000 })
+    const cardImage = page.locator('[data-testid^="store-product-image-"]').first()
+    await expect(cardImage).toHaveCSS('object-fit', 'contain')
     const first = await cardEls.nth(0).boundingBox()
     const second = await cardEls.nth(1).boundingBox()
     expect(Math.round(first!.y)).toBe(Math.round(second!.y)) // same row → 2 cols
