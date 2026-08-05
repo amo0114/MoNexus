@@ -151,8 +151,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
     syncNavbarHeight()
     const observer = new ResizeObserver(syncNavbarHeight)
-    // Search mode can change the visual border box. The compact island keeps
-    // this outer lane height stable so the page never reflows mid-scroll.
+    // Search mode changes the visual border box. Observe that actual edge
+    // while the compact island keeps the outer lane stable during scrolling.
     try {
       observer.observe(nav, { box: 'border-box' })
     } catch {
