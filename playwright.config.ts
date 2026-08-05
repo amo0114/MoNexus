@@ -2,10 +2,15 @@ import { defineConfig, devices } from '@playwright/test'
 
 export default defineConfig({
   testDir: './e2e',
-  // The real MFA suite owns an isolated database/ports and is executed only by
-  // playwright.m3-identity-security-hardening.config.ts. Default CI must not
-  // import its fixture while using the shared monexus_test database.
-  testIgnore: ['**/m3-identity-security-hardening.real.spec.ts'],
+  // These suites own feature-specific configuration and isolated startup
+  // contracts. The default E2E server deliberately runs with legal pages
+  // disabled, while legal-pages.spec.ts requires enabled + enforce; run it
+  // only through playwright.legal-pages.config.ts. The real MFA suite has
+  // the same isolation requirement.
+  testIgnore: [
+    '**/m3-identity-security-hardening.real.spec.ts',
+    '**/legal-pages.spec.ts',
+  ],
   timeout: 30_000,
   retries: process.env.CI ? 1 : 0,
   workers: process.env.CI ? 1 : undefined,

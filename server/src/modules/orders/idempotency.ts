@@ -30,6 +30,11 @@ function inFlight(): HttpError {
   return new HttpError(409, 'CONFLICT', '相同的兑换请求正在处理中，请稍后查看订单')
 }
 
+/** 对外暴露的 in-flight 冲突（peek 分类后由 service 层抛出）。 */
+export function idempotencyInFlight(): HttpError {
+  return inFlight()
+}
+
 export type IdempotencyFingerprint = {
   productId: number
   // 购买的规格（P4a）。null/未传（单 SKU 默认路径）不写入 canonical，
@@ -43,6 +48,9 @@ export type IdempotencyFingerprint = {
   // P6a：续费关联（同兼容策略：未传不写入 canonical，存量摘要不变）。
   // 同 key 换续费目标（或续费↔普通购买互换）视为不同意图，必须 409。
   renewalOfOrderId?: number
+  // SPEC-LEGAL-001：协议确认版本（未传不写入 canonical）。同 key 换协议
+  // 版本 = 不同意图（用户确认的是不同文本），必须 409 而非静默重放。
+  agreementVersions?: Record<string, string>
 }
 
 /**
@@ -57,6 +65,12 @@ export function computeRequestDigest(fingerprint: IdempotencyFingerprint): strin
     .sort()
     .map(key => [key, (answers[key] ?? '').trim()])
     .filter(([, value]) => value !== '')
+  // 协议版本同 answers 的排序归一化：键序不同但内容相同的确认不判异。
+  const agreements = fingerprint.agreementVersions ?? {}
+  const canonicalAgreements = Object.keys(agreements)
+    .sort()
+    .map(key => [key, (agreements[key] ?? '').trim()])
+    .filter(([, value]) => value !== '')
   const canonical = JSON.stringify({
     productId: fingerprint.productId,
     // 仅显式选择规格时进入指纹：同 key 换 SKU 与换商品同理必须 409。
@@ -67,6 +81,9 @@ export function computeRequestDigest(fingerprint: IdempotencyFingerprint): strin
     ...(fingerprint.checkoutVersion != null ? { checkoutVersion: fingerprint.checkoutVersion } : {}),
     // P6a：续费单与普通购买是不同意图，同 key 互换必须 409。
     ...(fingerprint.renewalOfOrderId != null ? { renewalOfOrderId: fingerprint.renewalOfOrderId } : {}),
+    // SPEC-LEGAL-001：{} 与未传等价（归一化后为空即省略字段），旧客户端
+    // digest 不变；复审修复：空数组落库会让语义相同的重试误报 CONFLICT。
+    ...(canonicalAgreements.length > 0 ? { agreementVersions: canonicalAgreements } : {}),
     answers: canonicalAnswers,
   })
   return createHmac('sha256', config.jwtSecret).update(canonical).digest('hex')
@@ -158,6 +175,55 @@ export async function claimIdempotencyKey(
   }
 
   throw inFlight()
+}
+
+/**
+ * SPEC-LEGAL-001 复审 P1：既有幂等记录的无副作用分类，先于一切请求内容
+ * 校验（协议版本、价格等"随部署变化的校验规则"）。
+ *
+ * 部署把协议从 1.0 升到 1.1 后，客户端用原 key + 原版本重试：
+ * - 旧请求已成功（completed）→ 必须重放原订单，而不是 STALE——否则前端
+ *   换新幂等键重确认，同一意图产生第二笔订单；
+ * - 旧请求仍在旧实例上处理（processing 未过期）→ 必须返回 in-flight
+ *   冲突（前端保留原 key 等待结果），同样不能 STALE 触发换键。
+ *
+ * 指纹不匹配、记录不存在、或已过期的记录一律返回 null，走正常校验/claim
+ * 分类（过期 processing 可被接管重新执行、过期 completed 得
+ * IDEMPOTENCY_KEY_EXPIRED、指纹不符得 keyMismatch）。peek 与后续 claim 不
+ * 原子是安全的：漏判只回落到 claim 的完整分类逻辑。
+ */
+export type IdempotencyPeek =
+  | { kind: 'replay'; orderId: number }
+  | { kind: 'in_flight' }
+
+export async function peekIdempotencyOutcome(
+  userId: number,
+  key: string,
+  fingerprint: IdempotencyFingerprint
+): Promise<IdempotencyPeek | null> {
+  const existing = await prisma.idempotencyRecord.findUnique({
+    where: { userId_key: { userId, key } },
+  })
+  if (!existing) return null
+
+  // 指纹一致性：空摘要哨兵（P1 迁移行）只能按 productId 判定。
+  const fingerprintMatches = existing.requestDigest === ''
+    ? existing.productId === fingerprint.productId
+    : existing.requestDigest === computeRequestDigest(fingerprint)
+  if (!fingerprintMatches) return null
+
+  const now = new Date()
+  if (existing.status === 'completed' && existing.orderId != null) {
+    // 过期的 completed 记录返回 null：落入 claim 路径拿到 IDEMPOTENCY_KEY_EXPIRED。
+    if (existing.expiresAt <= now) return null
+    return { kind: 'replay', orderId: existing.orderId }
+  }
+  if (existing.status === 'processing') {
+    // 过期的 processing 是崩溃残留，返回 null 由 claim 路径接管重新执行。
+    if (existing.expiresAt <= now) return null
+    return { kind: 'in_flight' }
+  }
+  return null
 }
 
 /**

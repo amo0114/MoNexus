@@ -24,15 +24,13 @@ interface ThemeContextValue {
 }
 
 const ThemeContext = createContext<ThemeContextValue>({
-  theme: 'light',
+  theme: 'ink',
   setTheme: () => {},
 })
 
 // Legacy stored values: 'default' was the old system's explicit light
-// choice, so it maps to light (NOT to system preference) — this keeps it
-// consistent with the index.html boot script, which treats any stored
-// non-dark/non-soft value as light. Unknown values fall back to null
-// (caller then follows the OS).
+// choice, so it maps to light. Unknown values fall back to null and receive
+// the product default (ink) in the provider below.
 function normalizeTheme(raw: string | null): Theme | null {
   if (raw === 'dark' || raw === 'soft' || raw === 'ink') return raw
   if (raw === 'light' || raw === 'default') return 'light'
@@ -47,7 +45,6 @@ function applyTheme(t: Theme) {
   } else {
     root.removeAttribute('data-theme')
   }
-
   const variant = ASSET_VARIANT[t]
   document
     .querySelectorAll<HTMLLinkElement>('link[data-brand-favicon-size]')
@@ -69,38 +66,21 @@ function applyTheme(t: Theme) {
   }
 }
 
-function systemPreference(): Theme {
-  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
-}
-
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setThemeState] = useState<Theme>(() => {
-    if (typeof window === 'undefined') return 'light'
-    return normalizeTheme(localStorage.getItem(STORAGE_KEY)) ?? systemPreference()
+    if (typeof window === 'undefined') return 'ink'
+    // A first visit should present the approved 墨韵 palette consistently,
+    // rather than silently varying with the operating-system colour scheme.
+    // Existing explicit choices remain untouched.
+    return normalizeTheme(localStorage.getItem(STORAGE_KEY)) ?? 'ink'
   })
 
   useEffect(() => {
     applyTheme(theme)
   }, [theme])
 
-  // Follow live OS theme changes only while the user has not made an
-  // explicit choice (nothing stored). Once setTheme persists a value,
-  // the stored choice wins and OS changes are ignored.
-  useEffect(() => {
-    const mq = window.matchMedia('(prefers-color-scheme: dark)')
-    const onChange = () => {
-      try {
-        if (!localStorage.getItem(STORAGE_KEY)) {
-          setThemeState(systemPreference())
-        }
-      } catch {}
-    }
-    mq.addEventListener('change', onChange)
-    return () => mq.removeEventListener('change', onChange)
-  }, [])
-
-  // Only persist explicit user choices; OS-derived defaults stay unpersisted
-  // so the app keeps following the OS until the user picks a theme.
+  // Only explicit user choices are persisted. The absence of a preference
+  // always resolves to the approved ink default on a later visit too.
   const setTheme = (t: Theme) => {
     setThemeState(t)
     try { localStorage.setItem(STORAGE_KEY, t) } catch {}

@@ -162,6 +162,36 @@ describe('production config guards for auto-provision webhooks (P7b)', () => {
   })
 })
 
+describe('production config guards for legal pages & consent (SPEC-LEGAL-001)', () => {
+  it('boots in production with legal pages enabled and enforced', () => {
+    const result = loadConfigWith({ LEGAL_PAGES_ENABLED: 'true', LEGAL_PAGES_ENFORCEMENT: 'enforce' })
+    expect(result.status).toBe(0)
+    expect(result.stdout + result.stderr).toContain('CONFIG_OK')
+  })
+
+  it('refuses LEGAL_PAGES_ENFORCEMENT=enforce without LEGAL_PAGES_ENABLED (contradiction)', () => {
+    const result = loadConfigWith({ LEGAL_PAGES_ENFORCEMENT: 'enforce' })
+    expect(result.status).toBe(1)
+    expect(result.stderr + result.stdout).toContain('LEGAL_PAGES_ENFORCEMENT')
+  })
+
+  it('refuses LEGAL_PAGES_ENABLED without enforce in production', () => {
+    const result = loadConfigWith({ LEGAL_PAGES_ENABLED: 'true' })
+    expect(result.status).toBe(1)
+    expect(result.stderr + result.stdout).toContain('LEGAL_PAGES_ENFORCEMENT')
+  })
+
+  it('refuses LEGAL_PAGES_FIXTURE_PATH in production (test escape hatch)', () => {
+    const result = loadConfigWith({
+      LEGAL_PAGES_ENABLED: 'true',
+      LEGAL_PAGES_ENFORCEMENT: 'enforce',
+      LEGAL_PAGES_FIXTURE_PATH: '/tmp/legal-fixtures',
+    })
+    expect(result.status).toBe(1)
+    expect(result.stderr + result.stdout).toContain('LEGAL_PAGES_FIXTURE_PATH')
+  })
+})
+
 describe('ops scripts cover both buckets (P1 regression)', () => {
   it('backup.sh mirrors the delivery bucket and restore-objects-check.sh restores it', async () => {
     const { readFile } = await import('node:fs/promises')

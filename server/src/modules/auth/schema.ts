@@ -23,6 +23,12 @@ export const registerSchema = z.object({
   // `ABUSE_PROTECTION_MODE=off` remains usable. Enforce mode maps an omitted
   // or blank value to HUMAN_VERIFICATION_REQUIRED at the service boundary.
   turnstileToken: z.string().trim().max(4_096, '安全验证令牌过长').optional(),
+  // SPEC-LEGAL-001：协议确认 { document: version }。缺失/版本过期的判定
+  // 在 service 层按 enforcement 分级（REQUIRED/STALE）；这里只约束形状。
+  agreements: z.record(
+    z.string().trim().min(1).max(64),
+    z.string().trim().min(1).max(32),
+  ).refine(value => Object.keys(value).length <= 8, '协议确认条目过多').optional(),
 }).strict()
 
 export const loginSchema = z.object({

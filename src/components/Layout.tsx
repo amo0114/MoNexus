@@ -1,4 +1,4 @@
-import { useNavigate, useLocation } from 'react-router-dom'
+import { useNavigate, useLocation, Link } from 'react-router-dom'
 import { useAuthStore } from '../stores/authStore'
 import { Coins, User, ShieldCheck, Store, Clock, XCircle, AlertTriangle, Plus, Search, Bell, Trophy, CheckCircle2, Info } from 'lucide-react'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
@@ -15,6 +15,11 @@ import { useIsMobileViewport } from '../hooks/useMediaQuery'
 import { useAnnouncements } from '../hooks/useAnnouncements'
 import { useAppStore } from '../stores/appStore'
 import { getApiErrorMessage } from '../api/error'
+import {
+  getLegalDocumentSummaries,
+  LEGAL_PAGE_PATHS,
+  type LegalDocumentSlug,
+} from '../api/legal'
 import type { PublicAnnouncement } from '../types/admin'
 
 export default function Layout({ children }: { children: React.ReactNode }) {
@@ -26,6 +31,24 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const announcements = useAnnouncements()
   const [announcementCenterOpen, setAnnouncementCenterOpen] = useState(false)
   const surfacedRequiredAnnouncements = useRef(new Set<string>())
+
+  // SPEC-LEGAL-001：法律页脚分组（门禁感知——功能关闭/接口 404 时整组隐藏，
+  // 绝不渲染指向 404 的死链）。模块级缓存，全应用只请求一次。
+  const [legalLinks, setLegalLinks] = useState<Array<{ slug: LegalDocumentSlug; title: string }> | null>(null)
+  useEffect(() => {
+    let active = true
+    getLegalDocumentSummaries()
+      .then((summaries) => {
+        if (!active) return
+        setLegalLinks(summaries ? summaries.map(({ slug, title }) => ({ slug, title })) : null)
+      })
+      .catch(() => {
+        if (active) setLegalLinks(null)
+      })
+    return () => {
+      active = false
+    }
+  }, [])
 
   // 灵动岛药丸（V3-T3，仅移动视口）：离开顶部 >48px 收缩为居中悬浮
   // 胶囊，回顶 <32px 恢复全宽（滞回防抖）。桌面恒 false，零影响。
@@ -495,11 +518,31 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             <Logo className="w-5 h-5 text-[var(--color-primary)] shrink-0" />
             <span className="font-heading text-sm font-bold text-[var(--color-text-muted)] tracking-[0.15em]">MONEXUS</span>
           </div>
-          <div className="flex items-center gap-6 text-xs font-medium text-[var(--color-text-muted)]">
-            <a href="#" className="hover:text-[var(--color-primary)] transition-colors">关于我们</a>
-            <a href="#" className="hover:text-[var(--color-primary)] transition-colors">服务协议</a>
-            <a href="#" className="hover:text-[var(--color-primary)] transition-colors">隐私政策</a>
-          </div>
+          {legalLinks && legalLinks.length > 0 && (
+            <nav aria-label="法律与协议" className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-xs font-medium text-[var(--color-text-muted)]" data-testid="footer-legal-links">
+              <span className="flex items-center gap-4">
+                <span className="text-[var(--color-text-muted)]/60">协议</span>
+                {legalLinks
+                  .filter((link) => ['terms', 'privacy', 'refund'].includes(link.slug))
+                  .map((link) => (
+                    <Link key={link.slug} to={LEGAL_PAGE_PATHS[link.slug]} className="hover:text-[var(--color-primary)] transition-colors">
+                      {link.title}
+                    </Link>
+                  ))}
+              </span>
+              <span className="hidden h-3 w-px bg-[var(--color-border)] sm:block" aria-hidden="true" />
+              <span className="flex items-center gap-4">
+                <span className="text-[var(--color-text-muted)]/60">支持</span>
+                {legalLinks
+                  .filter((link) => ['points-rules', 'about'].includes(link.slug))
+                  .map((link) => (
+                    <Link key={link.slug} to={LEGAL_PAGE_PATHS[link.slug]} className="hover:text-[var(--color-primary)] transition-colors">
+                      {link.title}
+                    </Link>
+                  ))}
+              </span>
+            </nav>
+          )}
           <div className="text-xs text-[var(--color-text-muted)]">
             © {new Date().getFullYear()} MoNexus. All rights reserved.
           </div>

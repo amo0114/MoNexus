@@ -1,6 +1,7 @@
 import api from './client'
 import { UserOrderListItem, UserOrderDetail } from '../types/order'
 import type { PurchaseFormField } from '../types/merchant'
+import type { LegalRequirement } from './legal'
 
 export interface CheckoutPreview {
   productId: number
@@ -33,6 +34,8 @@ export interface CheckoutPreview {
     source: 'xboard' | 'unavailable'
     reason?: string
   } | null
+  /** SPEC-LEGAL-001：下单必须确认的协议版本（法律页面关闭 = null，隐藏勾选区）。 */
+  legalRequirement?: LegalRequirement | null
 }
 
 export async function getCheckoutPreview(productId: number, offerId?: number): Promise<CheckoutPreview> {
@@ -75,6 +78,8 @@ export async function createOrder(
     verificationPassword?: string
     /** P6a：续费下单时关联的原订单;服务端校验合法性并顺延到期时间。 */
     renewalOfOrderId?: number
+    /** SPEC-LEGAL-001：协议确认 { document: version }，来自预览的 legalRequirement。 */
+    agreementVersions?: Record<string, string>
   }
 ): Promise<CreateOrderResult> {
   const { data } = await api.post(
@@ -94,6 +99,7 @@ export async function createOrder(
         : {}),
       ...(options.verificationPassword ? { verificationPassword: options.verificationPassword } : {}),
       ...(options.renewalOfOrderId != null ? { renewalOfOrderId: options.renewalOfOrderId } : {}),
+      ...(options.agreementVersions ? { agreementVersions: options.agreementVersions } : {}),
     },
     { headers: { 'Idempotency-Key': options.idempotencyKey } }
   )

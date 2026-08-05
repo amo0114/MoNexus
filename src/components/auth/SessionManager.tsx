@@ -35,6 +35,7 @@ export default function SessionManager() {
   const [error, setError] = useState('')
   const [pendingAction, setPendingAction] = useState<PendingAction>(null)
   const [submitting, setSubmitting] = useState(false)
+  const [showAllSessions, setShowAllSessions] = useState(false)
 
   const loadSessions = useCallback(async () => {
     setLoading(true)
@@ -75,6 +76,13 @@ export default function SessionManager() {
   }
 
   const hasOtherSessions = sessions.some((session) => !session.current)
+  // A long-lived account can accumulate dozens of device sessions. Showing
+  // every row makes the profile feel like an endless settings page. Keep the
+  // current device visible even if the API's natural order changes, then show
+  // the next two entries until the user explicitly expands the list.
+  const prioritizedSessions = [...sessions].sort((a, b) => Number(b.current) - Number(a.current))
+  const visibleSessions = showAllSessions ? prioritizedSessions : prioritizedSessions.slice(0, 3)
+  const hiddenSessionCount = sessions.length - visibleSessions.length
   const dialogTitle = pendingAction?.kind === 'single' ? '退出此设备？' : '退出其他设备？'
   const dialogDescription = pendingAction?.kind === 'single'
     ? `“${pendingAction.session.deviceLabel}”将需要重新登录。当前设备不会受影响。`
@@ -120,7 +128,7 @@ export default function SessionManager() {
         </div>
       ) : (
         <div className="space-y-3">
-          {sessions.map((session) => (
+          {visibleSessions.map((session) => (
             <article key={session.sessionId} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] p-4" data-testid="session-device">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div className="min-w-0">
@@ -152,6 +160,16 @@ export default function SessionManager() {
               </div>
             </article>
           ))}
+          {sessions.length > 3 && (
+            <button
+              type="button"
+              onClick={() => setShowAllSessions((current) => !current)}
+              className="btn-secondary btn-sm w-full px-3 py-2 text-xs"
+              data-testid="session-toggle-all"
+            >
+              {showAllSessions ? '收起设备列表' : `查看其余 ${hiddenSessionCount} 台设备`}
+            </button>
+          )}
         </div>
       )}
 

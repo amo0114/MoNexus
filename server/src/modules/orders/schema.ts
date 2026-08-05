@@ -29,6 +29,13 @@ export const createOrderSchema = z.object({
   // P6a：手动续费——被续费的原订单 id。事务内校验同买家/同规格/订阅交付，
   // 失败返回 400 RENEW_INVALID。
   renewalOfOrderId: z.number().int().positive().optional(),
+  // SPEC-LEGAL-001：协议确认 { document: version }（来自结算预览的
+  // legalRequirement）。强制模式下缺失 → 400 LEGAL_AGREEMENT_REQUIRED，
+  // 版本落后 → 409 LEGAL_AGREEMENT_STALE（同 PRICE_CHANGED 的重确认语义）。
+  agreementVersions: z.record(
+    z.string().trim().min(1).max(64),
+    z.string().trim().min(1).max(32),
+  ).refine(value => Object.keys(value).length <= 8, '协议确认条目过多').optional(),
 })
 
 // Idempotency-Key 请求头：限定 UUID，避免任意字符串占用唯一索引空间。

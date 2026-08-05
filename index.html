@@ -45,19 +45,24 @@
       rel="stylesheet"
     />
     <script>
-      // Theme boot: apply stored theme before first paint to avoid FOUC.
-      // 'soft'/'ink' and 'dark' are mutually exclusive; legacy 'default' resolves to light.
+      // Theme boot: apply the stored theme before first paint to avoid FOUC.
+      // A visitor without an explicit choice starts in the product-default
+      // ink theme. Legacy 'default' remains an explicit light choice.
       // ink 主题使用 black 系列品牌素材（favicon-black-* / mark-black）。
       (function () {
         try {
           var t = localStorage.getItem('theme');
-          var variant = 'light';
+          var variant = 'ink';
           if (t === 'soft' || t === 'ink') {
             document.documentElement.setAttribute('data-theme', t);
             variant = t;
-          } else if (t === 'dark' || (t === null && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+          } else if (t === 'dark') {
             document.documentElement.classList.add('dark');
             variant = 'dark';
+          } else if (t === 'light' || t === 'default') {
+            variant = 'light';
+          } else {
+            document.documentElement.setAttribute('data-theme', 'ink');
           }
           var asset = variant === 'ink' ? 'black' : variant;
 
