@@ -35,6 +35,10 @@ master push
   `/usr/local/sbin/monexus-compose-deploy`。
 - 入口只接受 `dry-run <40 位 SHA>` 或 `deploy <40 位 SHA>`，并再次验证 SHA 是
   `origin/master` 历史中的提交、镜像标签和 OCI revision label 一致。
+- 默认沿用 `docker-compose.prod.yml` 的 `WEB_PORT` 暴露方式，不会首次自动发布时
+  擅自把已公开的容器端口改成 loopback。只有在宿主 Caddy/OpenResty/Nginx 已代理
+  `127.0.0.1:${WEB_PORT}` 后，才可在 VPS `.env` 显式设置
+  `MONEXUS_USE_VPS_PROXY_OVERLAY=true` 启用 `docker-compose.vps.yml`。
 - CI 使用预置的 `DEPLOY_SSH_KNOWN_HOSTS`；严禁在 GitHub Actions 中使用
   `ssh-keyscan` 临时信任服务器。
 - 部署只重建 `server`，确认 Prisma 迁移和健康后再重建 `web`；不会重建
