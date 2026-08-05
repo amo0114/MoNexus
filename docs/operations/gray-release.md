@@ -1,4 +1,9 @@
-# Gray Release Workflow
+# Legacy Gray Release Workflow
+
+> 该 `candidate` / `current` 模型仅适用于 nginx + systemd/PM2 artifact 主机。
+> 当前 Docker Compose 生产 VPS 使用
+> [受审批的 Compose 生产部署](./compose-production-deploy.md)，不会创建或切换
+> 这些 symlink。
 
 Review date: 2026-05-14. Scope: M5 release switching for the self-hosted nginx + systemd/PM2 deployment target. This keeps release state in `/opt/monexus/releases`, `/opt/monexus/candidate`, and `/opt/monexus/current`; it does not add an application feature flag platform and does not change business code.
 
@@ -21,7 +26,7 @@ Review date: 2026-05-14. Scope: M5 release switching for the self-hosted nginx +
 
 ## Candidate Publish Steps
 
-1. Open GitHub Actions -> **Production Deploy** -> **Run workflow**.
+1. Open GitHub Actions -> **Legacy Artifact Production Deploy** -> **Run workflow**.
 2. Select `release_action=deploy_candidate`.
 3. Select `ref` as `master`, a signed release tag, or an exact commit SHA.
 4. Keep `dry_run=true` and confirm the plan shows `candidate_release=<resolved commit>` and `migration=will run during deploy_candidate only`.

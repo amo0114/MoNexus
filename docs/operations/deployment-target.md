@@ -1,4 +1,8 @@
-# Production Deployment Target
+# Legacy Artifact Production Target
+
+> 当前生产 VPS 使用 Docker Compose；正式发布入口是
+> [受审批的 Compose 生产部署](./compose-production-deploy.md)。本文保留 nginx +
+> systemd/PM2 artifact 路线的历史选型与回退参考，不应作为当前生产环境的操作手册。
 
 Review date: 2026-05-14. Scope: choose the first production target for MoNexus M5 and define the minimal manual deploy path. This document does not add business features and does not store credential values.
 
@@ -60,7 +64,7 @@ VITE_SENTRY_DSN
 
 ## Deployment Steps
 
-Manual workflow entry: GitHub Actions -> **Production Deploy** -> **Run workflow**.
+Manual workflow entry: GitHub Actions -> **Legacy Artifact Production Deploy** -> **Run workflow**.
 
 1. Select `ref` to deploy. Use `master` for normal production deploys or an exact commit SHA for a rollback entry.
 2. Select `environment`. Use `production` for the first real target.

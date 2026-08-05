@@ -271,7 +271,7 @@ npm run e2e
 npm run e2e:ui      # interactive Playwright UI
 ```
 
-CI lives under [`.github/workflows/`](./.github/workflows/) (`ci.yml`, `cd.yml`, `deploy.yml`, backup & alert jobs).
+CI and deployment workflows live under [`.github/workflows/`](./.github/workflows/) (`ci.yml`, `docker-publish.yml`, `compose-production-deploy.yml`, legacy `deploy.yml`, backup & alert jobs).
 
 ---
 
@@ -314,7 +314,17 @@ same tag works on standard and ARM VPS hosts.
 
 Use an immutable tag in real deploys (e.g. `sha-abc1234` or `1.2.3`). If you track `latest`, set `MONEXUS_PULL_POLICY=always` so hosts do not reuse a stale local layer.
 
-### Path A — Pull pre-built images from GHCR (recommended)
+### Path A — Approved GitHub Actions Compose deploy (recommended)
+
+After the one-time VPS bootstrap, deploy through
+[`Compose Production Deploy`](./.github/workflows/compose-production-deploy.yml): it verifies
+the exact `master` SHA's CI and multi-architecture images, waits for the
+protected `production` Environment approval, then performs Compose health
+checks. Start with `workflow_dispatch` + `dry_run=true`; do not set the
+automatic-deploy opt-in until the manual rehearsal succeeds. See
+[`compose-production-deploy.md`](./docs/operations/compose-production-deploy.md).
+
+### Path B — Manual GHCR/Compose bootstrap or recovery
 
 ```bash
 # One-time: authenticate to GHCR (needs read access to the packages)
@@ -332,7 +342,7 @@ npm run prod:smoke
 
 No local application build is required on the host; only Docker Compose, Postgres data volumes, and a valid `.env`.
 
-### Path B — Build images on the host
+### Path C — Build images on the host
 
 Use when GHCR is unavailable or you are rehearsing offline:
 
@@ -348,7 +358,7 @@ npm run prod:gate
 
 Compose still defines `build:` contexts for `server` and `web`, so local builds work alongside `image:` references.
 
-### Path C — Non-Docker artifact deploy (fallback)
+### Path D — Non-Docker artifact deploy (legacy fallback)
 
 GitHub Actions can still produce tar artifacts and deploy over SSH to a host running **nginx + systemd** (or PM2), with release trees under `/opt/monexus/`:
 
@@ -362,6 +372,7 @@ Details: [`docs/operations/deployment-target.md`](./docs/operations/deployment-t
 - [`docs/operations/runbook.md`](./docs/operations/runbook.md) — start/stop, health, backup, staging compose
 - [`docs/operations/vps-1panel-openresty-deployment.md`](./docs/operations/vps-1panel-openresty-deployment.md) — detailed Docker deployment on a 1Panel/OpenResty VPS, including ARM64 and troubleshooting
 - [`docs/operations/vps-compose-deployment.md`](./docs/operations/vps-compose-deployment.md) — standalone host Caddy deployment
+- [`docs/operations/compose-production-deploy.md`](./docs/operations/compose-production-deploy.md) — protected GitHub Actions deployment for the Docker Compose VPS
 - [`docs/operations/deployment-target.md`](./docs/operations/deployment-target.md) — host model choices
 - [`docs/operations/rollback-runbook.md`](./docs/operations/rollback-runbook.md)
 - [`docs/operations/secrets-management.md`](./docs/operations/secrets-management.md)

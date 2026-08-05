@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# Forced-command wrapper for the monexus-deploy SSH key.
+# It intentionally accepts no shell syntax, paths, environment overrides, or
+# arbitrary arguments. The root-owned deployment entry point validates the
+# immutable SHA again before changing anything on the VPS.
+
+set -Eeuo pipefail
+IFS=$' \t\n'
+
+readonly DEPLOY_ENTRYPOINT='/usr/local/sbin/monexus-compose-deploy'
+readonly SUDO_BIN='/usr/bin/sudo'
+
+original_command="${SSH_ORIGINAL_COMMAND:-}"
+read -r action commit extra <<< "$original_command"
+
+if [[ -z "${action:-}" || -z "${commit:-}" || -n "${extra:-}" ]]; then
+  echo 'Only "dry-run <40-character-sha>" or "deploy <40-character-sha>" is permitted.' >&2
+  exit 64
+fi
+
+case "$action" in
+  dry-run|deploy) ;;
+  *)
+    echo 'Unsupported deployment action.' >&2
+    exit 64
+    ;;
+esac
+
+if [[ ! "$commit" =~ ^[0-9a-f]{40}$ ]]; then
+  echo 'Deployment commit must be a lowercase 40-character SHA.' >&2
+  exit 64
+fi
+
+exec "$SUDO_BIN" -n "$DEPLOY_ENTRYPOINT" "$action" "$commit"
