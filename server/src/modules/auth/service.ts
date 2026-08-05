@@ -41,6 +41,11 @@ import {
 import { recordSecurityEvent, type SessionRevocationReason } from './securityEvents.js'
 import { recordAbuseEvent } from './abuseEvents.js'
 import {
+  getLegalRequirement,
+  recordUserConsents,
+  resolveConsentEvidence,
+} from '../legal/service.js'
+import {
   createClaimedReferralGrowthReward,
   createRegistrationGrowthReward,
   holdGrowthRewardsAfterEmailVerification,
@@ -238,12 +243,16 @@ export async function getPublicRegistrationStatus() {
     isInviteOnlyRegistration(),
   ])
 
+  // SPEC-LEGAL-001：注册勾选项的协议要求（页面关闭 = null，前端隐藏勾选区）。
+  const legalRequirement = getLegalRequirement('registration')
+
   if (!registrationProtectionIsEnforced()) {
     return {
       registrationEnabled,
       registrationAvailable: registrationEnabled,
       inviteRequired,
       challenge: null,
+      legalRequirement,
     }
   }
 
@@ -261,6 +270,7 @@ export async function getPublicRegistrationStatus() {
       registrationAvailable: false,
       inviteRequired,
       challenge: null,
+      legalRequirement,
     }
   }
 
@@ -272,6 +282,7 @@ export async function getPublicRegistrationStatus() {
       provider: 'turnstile' as const,
       siteKey: config.turnstile.siteKey,
     },
+    legalRequirement,
   }
 }
 
@@ -282,6 +293,7 @@ export async function registerUser(
   ip?: string,
   userAgent?: string,
   turnstileToken?: string,
+  agreements?: Record<string, string>,
 ) {
   // REG-03：必须是第一步——查重、bcrypt、建号事务都在其后，关闭态下不会
   // 产生任何可观测副作用（连"该邮箱已注册"这种探测口子也不给）。
@@ -293,6 +305,10 @@ export async function registerUser(
     ip,
     turnstileToken,
   })
+
+  // SPEC-LEGAL-001：协议证据解析在任何 DB 写入之前（纯注册表比对，零副作用）。
+  // enforce 下缺/旧版本在此拒绝，不会产生半截账号。
+  const consentEvidence = resolveConsentEvidence('registration', agreements)
 
   // IV-08：invite-only 检查位于注册开关与滥用防护之后、查邮箱重复之前。
   // HTTP 侧 schema 已归一化；这里对直接调用方（CLI/测试）重跑同一归一化。
@@ -320,6 +336,15 @@ export async function registerUser(
     })
 
     await createRegistrationGrowthReward(tx, newUser.id, registerReward)
+
+    // SPEC-LEGAL-001：同意证据与账号同事务——账号在则证据在，绝不出现
+    // "已注册但未留证"的用户。IP/UA 由 retention cron 到期匿名化。
+    await recordUserConsents(tx, {
+      userId: newUser.id,
+      evidences: consentEvidence,
+      ip,
+      userAgent,
+    })
 
     if (claimCode) {
       // IV-03/IV-07/IV-09：一次性码在本事务内原子领用，任何失败都显式 400

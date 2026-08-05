@@ -22,7 +22,11 @@ export async function create(req: Request, res: Response, next: NextFunction) {
       expectedPurchaseFormVersion: req.body.expectedPurchaseFormVersion,
       verificationPassword: req.body.verificationPassword,
       renewalOfOrderId: req.body.renewalOfOrderId,
+      agreementVersions: req.body.agreementVersions,
       idempotencyKey,
+      // SPEC-LEGAL-001：订单确认证据的网络标识（同 fileAccess 的采集先例）。
+      ip: req.ip,
+      userAgent: req.headers['user-agent'],
     })
     res.status(201).json(result)
   } catch (err) {

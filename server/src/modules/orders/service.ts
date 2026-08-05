@@ -17,7 +17,10 @@ import { debitAvailablePoints, holdAvailablePoints, settleHeldOrder } from './ac
 import {
   claimIdempotencyKey,
   completeIdempotencyClaim,
+  idempotencyInFlight,
+  peekIdempotencyOutcome,
   releaseIdempotencyClaim,
+  type IdempotencyFingerprint,
 } from './idempotency.js'
 import { serializeUserOrderDetail, serializeUserOrderList } from './serializers.js'
 import { invalidateProductPublicCache } from '../products/cache.js'
@@ -41,6 +44,11 @@ import {
   resolveFakaProvisionEmail,
   scheduleFakaBridgeFirstAttempt,
 } from '../../lib/fakaBridge/index.js'
+import {
+  recordOrderAcceptances,
+  resolveConsentEvidence,
+  type ConsentEvidence,
+} from '../legal/service.js'
 
 /**
  * Deterministic seam for the Faka checkout race regression.  Production never
@@ -83,6 +91,12 @@ export type CreateOrderOptions = {
   // P6a：手动续费——指向被续费的原订单。事务内校验同买家/同规格/订阅交付，
   // 交付时若原单未过期则到期时刻自原到期顺延（resolveSubscriptionExpiresAt）。
   renewalOfOrderId?: number
+  // SPEC-LEGAL-001：协议确认 { document: version }（来自结算预览的
+  // legalRequirement）；证据在订单事务内随单落库。
+  agreementVersions?: Record<string, string>
+  // 确认证据的网络标识：IP 原样、UA 截断 ≤512，retention cron 到期匿名化。
+  ip?: string
+  userAgent?: string
 }
 
 export async function createOrder(
@@ -99,19 +113,38 @@ export async function createOrder(
     expectedCheckoutVersion,
     verificationPassword,
     renewalOfOrderId,
+    agreementVersions,
+    ip,
+    userAgent,
   } = options
+
+  const fingerprint: IdempotencyFingerprint = {
+    productId,
+    offerId,
+    expectedPrice,
+    purchaseFormVersion: expectedPurchaseFormVersion,
+    checkoutVersion: expectedCheckoutVersion,
+    formAnswers,
+    renewalOfOrderId,
+    agreementVersions,
+  }
+
+  // SPEC-LEGAL-001 复审 P1：既有幂等记录的分类（重放 / in-flight）先于协议
+  // 校验——协议升级不得阻断已成功意图的重放，也不得把"旧实例仍在处理"的
+  // 同指纹请求判为 STALE 触发前端换键（两者都会产生第二笔订单）。
+  if (idempotencyKey) {
+    const peeked = await peekIdempotencyOutcome(userId, idempotencyKey, fingerprint)
+    if (peeked?.kind === 'replay') return buildReplayResponse(peeked.orderId, userId)
+    if (peeked?.kind === 'in_flight') throw idempotencyInFlight()
+  }
+
+  // SPEC-LEGAL-001：协议证据解析先于幂等 claim——REQUIRED/STALE 是纯注册表
+  // 比对，失败请求不占幂等键，前端换新版本后同 key 重试不受污染。
+  const consentEvidence = resolveConsentEvidence('order', agreementVersions)
 
   let claimToken: string | undefined
   if (idempotencyKey) {
-    const claim = await claimIdempotencyKey(userId, idempotencyKey, {
-      productId,
-      offerId,
-      expectedPrice,
-      purchaseFormVersion: expectedPurchaseFormVersion,
-      checkoutVersion: expectedCheckoutVersion,
-      formAnswers,
-      renewalOfOrderId,
-    })
+    const claim = await claimIdempotencyKey(userId, idempotencyKey, fingerprint)
     if (claim.kind === 'replay') return buildReplayResponse(claim.orderId, userId)
     claimToken = claim.claimToken
   }
@@ -152,6 +185,9 @@ export async function createOrder(
       expectedCheckoutVersion,
       renewalOfOrderId,
       claimToken,
+      consentEvidence,
+      ip,
+      userAgent,
     })
   } catch (err) {
     // 事务已回滚，释放幂等占用让用户可以用同一 key 重试同一意图。
@@ -224,7 +260,10 @@ async function createOrderOnce(
     expectedCheckoutVersion,
     renewalOfOrderId,
     claimToken,
-  }: CreateOrderOptions & { claimToken?: string }
+    consentEvidence,
+    ip,
+    userAgent,
+  }: CreateOrderOptions & { claimToken?: string; consentEvidence: ConsentEvidence[] }
 ) {
   // P7b：事务外旁路标记——提交成功后尽力即时首呼（正确性由 cron 兜底）。
   let autoProvisionTaskCreated = false
@@ -492,6 +531,16 @@ async function createOrderOnce(
       fromStatus: null,
       toStatus: order.status,
       action: fakaBridge ? 'order.created.faka_bridge' : `order.created.${deliveryMode}`,
+    })
+
+    // SPEC-LEGAL-001：订单级协议确认快照与订单同事务落库（只插入不更新），
+    // (orderId, document) 唯一使幂等重放/重试不产生重复行。
+    await recordOrderAcceptances(tx, {
+      orderId: order.id,
+      userId,
+      evidences: consentEvidence,
+      ip,
+      userAgent,
     })
 
     // 自动履约 outbox：P7b 与 Faka 互斥——同一订单只创建一条路径。

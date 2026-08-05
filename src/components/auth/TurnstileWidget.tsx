@@ -213,16 +213,33 @@ const TurnstileWidget = forwardRef<TurnstileWidgetHandle, TurnstileWidgetProps>(
   }
 
   return (
-    <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-left">
-      <div ref={containerRef} className="min-h-px" />
+    <>
+      {/* interaction-only 模式在提交前不会给用户可见的验证内容。以前的
+          带边框外壳在 ready 状态仍会占一整块空卡片，视觉上像表单损坏。
+          容器在执行时才回到文档流，让 Cloudflare 的交互 UI 有空间出现。 */}
+      <div
+        ref={containerRef}
+        data-testid="turnstile-widget-container"
+        aria-hidden={phase === 'checking' ? undefined : true}
+        className={
+          phase === 'checking'
+            ? 'min-h-[65px] overflow-visible'
+            : 'absolute h-px w-px overflow-hidden opacity-0 pointer-events-none'
+        }
+      />
+
       {phase === 'loading' && (
-        <p className="text-xs text-[var(--color-text-muted)]" role="status">正在加载安全验证…</p>
+        <p className="text-left text-xs text-[var(--color-text-muted)]" role="status" data-testid="turnstile-status">
+          正在加载安全验证…
+        </p>
       )}
       {phase === 'checking' && (
-        <p className="text-xs text-[var(--color-text-muted)]" role="status">请完成安全验证后继续…</p>
+        <p className="text-left text-xs text-[var(--color-text-muted)]" role="status" data-testid="turnstile-status">
+          请完成安全验证后继续…
+        </p>
       )}
       {phase === 'unavailable' && (
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-[var(--color-danger)]/25 bg-[var(--color-danger)]/10 px-3 py-2 text-left">
           <p className="text-xs text-[var(--color-text-muted)]">安全验证暂不可用，请刷新后重试。</p>
           <button
             type="button"
@@ -233,7 +250,7 @@ const TurnstileWidget = forwardRef<TurnstileWidgetHandle, TurnstileWidgetProps>(
           </button>
         </div>
       )}
-    </div>
+    </>
   )
 })
 

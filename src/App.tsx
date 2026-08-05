@@ -21,6 +21,7 @@ import MerchantDashboardPage from './pages/MerchantDashboardPage'
 import Dashboard from './pages/merchant/Dashboard'
 import ProductCreateWizard from './pages/merchant/ProductCreateWizard'
 import PortableRestoreSetupPage from './pages/PortableRestoreSetupPage'
+import LegalDocumentPage from './pages/legal/LegalDocumentPage'
 import RoleGuard from './components/RoleGuard'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -61,6 +62,12 @@ export default function App() {
         <Route path="/verify-email" element={<VerifyEmailPage />} />
         <Route path="/restore-setup" element={<PortableRestoreSetupPage />} />
         <Route path="/i/:code" element={<InviteRedirectPage />} />
+        {/* SPEC-LEGAL-001：五份公开法律文档（未登录可达——注册/下单勾选链接的落地页） */}
+        <Route path="/terms" element={<LegalDocumentPage slug="terms" />} />
+        <Route path="/privacy" element={<LegalDocumentPage slug="privacy" />} />
+        <Route path="/refund" element={<LegalDocumentPage slug="refund" />} />
+        <Route path="/points-rules" element={<LegalDocumentPage slug="points-rules" />} />
+        <Route path="/about" element={<LegalDocumentPage slug="about" />} />
         <Route
           path="/*"
           element={

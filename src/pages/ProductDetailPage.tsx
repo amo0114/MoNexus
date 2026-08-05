@@ -1,7 +1,7 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Coins, FileText, Store, ShieldCheck, Info, Star } from 'lucide-react'
+import { ArrowLeft, ChevronLeft, ChevronRight, Coins, FileText, Store, ShieldCheck, Info, Star } from 'lucide-react'
 import DOMPurify from 'dompurify'
 import api from '../api/client'
 import { getApiErrorMessage, getApiErrorCode } from '../api/error'
@@ -67,6 +67,7 @@ export default function ProductDetailPage() {
   const [merchantName, setMerchantName] = useState('')
   const [provisionPending, setProvisionPending] = useState(false)
   const [activeImage, setActiveImage] = useState(0)
+  const galleryPointerStartRef = useRef<{ x: number; y: number } | null>(null)
 
   const [reviews, setReviews] = useState<ReviewItem[]>([])
   const [reviewTotal, setReviewTotal] = useState(0)
@@ -122,7 +123,8 @@ export default function ProductDetailPage() {
     preview: CheckoutPreview,
     idempotencyKey: string,
     formAnswers: Record<string, string>,
-    verificationPassword: string
+    verificationPassword: string,
+    agreementVersions?: Record<string, string>
   ): Promise<ConfirmOutcome> {
     if (!product || purchasing) return 'failed'
     setPurchasing(true)
@@ -135,6 +137,8 @@ export default function ProductDetailPage() {
         expectedPurchaseFormVersion: preview.purchaseFormVersion,
         expectedCheckoutVersion: preview.checkoutVersion,
         verificationPassword: verificationPassword || undefined,
+        // SPEC-LEGAL-001：弹窗仅在用户勾选后回传版本，服务端据此留证。
+        agreementVersions,
       })
       useAuthStore.getState().updatePoints(data.balanceAfter)
       setDeliveryContent(data.deliveryContent ?? '')
@@ -164,6 +168,11 @@ export default function ProductDetailPage() {
         showToast('商品信息已变化，请重新确认', 'error')
         return 'price_changed'
       }
+      if (code === 'LEGAL_AGREEMENT_STALE') {
+        // 协议版本已更新：弹窗重新报价拿新版本清单并强制重新勾选。
+        showToast('协议已更新，请重新阅读并同意', 'error')
+        return 'agreement_stale'
+      }
       if (code === 'VERIFICATION_REQUIRED') {
         // 预览后风控条件变化（阈值调整/改价跨过阈值）：弹窗重新报价并渲染
         // 密码框。请求无副作用，幂等键不轮换。
@@ -189,6 +198,48 @@ export default function ProductDetailPage() {
     if (product.images && product.images.length > 0) return product.images
     return product.imageUrl ? [product.imageUrl] : []
   }, [product])
+
+  const hasMultipleImages = galleryImages.length > 1
+
+  function showGalleryImage(index: number) {
+    const count = galleryImages.length
+    if (count === 0) return
+    setActiveImage(((index % count) + count) % count)
+  }
+
+  function moveGallery(direction: -1 | 1) {
+    if (!hasMultipleImages) return
+    setActiveImage((current) => ((current + direction) % galleryImages.length + galleryImages.length) % galleryImages.length)
+  }
+
+  function handleGalleryKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
+    if (!hasMultipleImages) return
+    if (event.key === 'ArrowLeft') {
+      event.preventDefault()
+      moveGallery(-1)
+    } else if (event.key === 'ArrowRight') {
+      event.preventDefault()
+      moveGallery(1)
+    }
+  }
+
+  function handleGalleryPointerDown(event: ReactPointerEvent<HTMLDivElement>) {
+    if (!hasMultipleImages || (event.pointerType === 'mouse' && event.button !== 0)) return
+    galleryPointerStartRef.current = { x: event.clientX, y: event.clientY }
+  }
+
+  function handleGalleryPointerEnd(event: ReactPointerEvent<HTMLDivElement>) {
+    const start = galleryPointerStartRef.current
+    galleryPointerStartRef.current = null
+    if (!start || !hasMultipleImages) return
+
+    const deltaX = event.clientX - start.x
+    const deltaY = event.clientY - start.y
+    // Ignore taps and vertical scrolls; a horizontal drag works with both a
+    // mouse/trackpad on desktop and a finger on touch devices.
+    if (Math.abs(deltaX) < 48 || Math.abs(deltaX) <= Math.abs(deltaY)) return
+    moveGallery(deltaX > 0 ? -1 : 1)
+  }
 
   const safeRichDescription = useMemo(() => {
     if (!product) return ''
@@ -274,16 +325,27 @@ export default function ProductDetailPage() {
 
       <div className="rounded-xl overflow-hidden bg-[var(--color-surface)] border border-[var(--color-border)] shadow-md mb-8">
         <div data-testid="product-gallery">
-          <div className="w-full h-64 sm:h-80 md:h-96 bg-[var(--color-image-placeholder)] relative shrink-0">
+          <div
+            className="w-full aspect-[4/3] sm:aspect-[3/2] lg:aspect-[16/9] bg-[var(--color-image-placeholder)] relative shrink-0 touch-pan-y select-none"
+            role={hasMultipleImages ? 'region' : undefined}
+            aria-label={hasMultipleImages ? `商品图片轮播，当前第 ${activeImage + 1} 张，共 ${galleryImages.length} 张。可左右拖动或使用方向键切换。` : undefined}
+            tabIndex={hasMultipleImages ? 0 : undefined}
+            onKeyDown={handleGalleryKeyDown}
+            onPointerDown={handleGalleryPointerDown}
+            onPointerUp={handleGalleryPointerEnd}
+            onPointerCancel={() => { galleryPointerStartRef.current = null }}
+            data-testid="product-gallery-stage"
+          >
             {galleryImages.length > 0 && (
               <SafeImage
                 src={galleryImages[activeImage] ?? galleryImages[0]}
-                className="w-full h-full object-cover"
+                className="w-full h-full object-contain p-1.5 sm:p-2"
                 alt={product.name}
                 data-testid="product-gallery-main"
+                draggable={false}
               />
             )}
-            <div className="absolute inset-0 bg-gradient-to-t from-black/45 via-black/10 to-transparent" />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/10 to-transparent pointer-events-none" />
 
             {/* Chips stay overlaid at every size; the title only overlays on
                 md+（P2-4：切换点必须是 md——lg 会把 768–1023px 的桌面布局
@@ -302,6 +364,33 @@ export default function ProductDetailPage() {
                 {product.name}
               </h1>
             </div>
+
+            {hasMultipleImages && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => moveGallery(-1)}
+                  data-testid="product-gallery-prev"
+                  aria-label="查看上一张商品图片"
+                  className="absolute left-3 top-1/2 -translate-y-1/2 z-20 inline-flex w-11 h-11 items-center justify-center rounded-full border border-white/30 bg-black/50 text-white shadow-md backdrop-blur-sm transition-colors hover:bg-black/70 focus-visible:outline-none focus-visible:[box-shadow:0_0_0_3px_rgba(255,255,255,0.65)]"
+                >
+                  <ChevronLeft className="w-5 h-5" aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => moveGallery(1)}
+                  data-testid="product-gallery-next"
+                  aria-label="查看下一张商品图片"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 z-20 inline-flex w-11 h-11 items-center justify-center rounded-full border border-white/30 bg-black/50 text-white shadow-md backdrop-blur-sm transition-colors hover:bg-black/70 focus-visible:outline-none focus-visible:[box-shadow:0_0_0_3px_rgba(255,255,255,0.65)]"
+                >
+                  <ChevronRight className="w-5 h-5" aria-hidden="true" />
+                </button>
+                <span className="absolute right-4 top-4 z-20 rounded-full border border-white/25 bg-black/45 px-2.5 py-1 text-xs font-semibold tabular-nums text-white backdrop-blur-sm" aria-hidden="true">
+                  {activeImage + 1} / {galleryImages.length}
+                </span>
+                <span className="sr-only" aria-live="polite">当前第 {activeImage + 1} 张，共 {galleryImages.length} 张</span>
+              </>
+            )}
           </div>
 
           {galleryImages.length > 1 && (
@@ -310,7 +399,7 @@ export default function ProductDetailPage() {
                 <button
                   key={`${img}-${i}`}
                   type="button"
-                  onClick={() => setActiveImage(i)}
+                  onClick={() => showGalleryImage(i)}
                   data-testid={`product-gallery-thumb-${i}`}
                   aria-label={`查看第 ${i + 1} 张图片`}
                   className={`w-16 h-16 rounded-lg overflow-hidden shrink-0 cursor-pointer border-2 transition-colors ${
@@ -322,7 +411,7 @@ export default function ProductDetailPage() {
                   <SafeImage
                     src={img}
                     alt={`${product.name} 图 ${i + 1}`}
-                    className="w-full h-full object-cover"
+                    className="w-full h-full object-contain bg-[var(--color-image-placeholder)] p-1"
                     loading="lazy"
                   />
                 </button>
