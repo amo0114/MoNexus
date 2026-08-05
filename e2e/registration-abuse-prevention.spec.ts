@@ -103,7 +103,7 @@ test('keeps registration disabled distinct from a temporary unavailable state', 
   await page.route(apiRoute('/auth/registration-status'), route => route.fulfill({ json: status }))
 
   await page.goto('/login')
-  await expect(page.getByText('当前已暂停新用户注册')).toBeVisible()
+  await expect(page.getByText('当前暂停接受新用户注册')).toBeVisible()
   await expect(page.getByRole('button', { name: '没有账号？立即注册' })).toHaveCount(0)
 
   status = {
@@ -113,7 +113,7 @@ test('keeps registration disabled distinct from a temporary unavailable state', 
   }
   await page.reload()
   await expect(page.getByText('注册服务暂不可用，请稍后重试')).toBeVisible()
-  await expect(page.getByText('当前已暂停新用户注册')).toHaveCount(0)
+  await expect(page.getByText('当前暂停接受新用户注册')).toHaveCount(0)
   await expect(page.getByRole('button', { name: '没有账号？立即注册' })).toHaveCount(0)
 })
 
