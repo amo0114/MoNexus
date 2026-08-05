@@ -166,6 +166,29 @@ test.describe('积分排行榜页', () => {
     })
   })
 
+  test('不足三人时保留完整 2-1-3 颁奖台，并标出第三名虚位', async ({ page }) => {
+    await loginAs(page, SEED_ACCOUNTS.user)
+    await mockLeaderboard(page, {
+      total: payload('total', rows(2), { me: null }),
+    })
+    await openLeaderboard(page)
+
+    const first = page.getByTestId('leaderboard-podium-1')
+    const second = page.getByTestId('leaderboard-podium-2')
+    const third = page.getByTestId('leaderboard-podium-3')
+    await expect(first).toContainText('选手1')
+    await expect(second).toContainText('选手2')
+    await expect(third).toHaveAttribute('data-vacant', 'true')
+    await expect(third).toContainText('虚位以待')
+
+    const box1 = (await first.boundingBox())!
+    const box2 = (await second.boundingBox())!
+    const box3 = (await third.boundingBox())!
+    expect(box2.x).toBeLessThan(box1.x)
+    expect(box1.x).toBeLessThan(box3.x)
+    expect(box1.y).toBeLessThan(box3.y)
+  })
+
   test('两种空态文案可区分：新周期首日 vs 首刷空窗', async ({ page }) => {
     await loginAs(page, SEED_ACCOUNTS.user)
     await mockLeaderboard(page, {

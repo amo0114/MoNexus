@@ -52,20 +52,20 @@ function NicknameCard() {
 
   return (
     <div className="card flex flex-col gap-4" data-testid="nickname-card">
-      <div className="flex items-center gap-4">
+      <div className="flex items-start sm:items-center gap-4">
         <div className="w-12 h-12 bg-[var(--color-primary)]/10 text-[var(--color-primary)] rounded-full flex items-center justify-center">
           <UserRound className="w-6 h-6" />
         </div>
-        <div>
+        <div className="min-w-0">
           <h4 className="font-heading font-bold text-[var(--color-text)] mb-1">昵称（用于评价展示）</h4>
           <p className="text-sm text-[var(--color-text-muted)]">设置后您的评价将显示昵称，未设置时显示打码邮箱。</p>
         </div>
       </div>
       <div className="mt-2 border-t border-[var(--color-border)] pt-4">
         {editing ? (
-          <div className="flex gap-2">
+          <div className="flex flex-col gap-2 sm:flex-row">
             <input
-              className="input flex-1 py-2"
+              className="input w-full min-w-0 flex-1 py-2"
               maxLength={20}
               value={nickname}
               onChange={(e) => setNickname(e.target.value)}
@@ -76,7 +76,7 @@ function NicknameCard() {
               type="button"
               onClick={handleSave}
               disabled={saving}
-              className="btn-primary px-4 py-2 text-sm"
+              className="btn-primary w-full shrink-0 px-4 py-2 text-sm sm:w-auto"
               data-testid="nickname-save"
             >
               {saving ? '保存中...' : '保存'}
@@ -85,20 +85,20 @@ function NicknameCard() {
               type="button"
               onClick={() => setEditing(false)}
               disabled={saving}
-              className="btn-secondary px-4 py-2 text-sm"
+              className="btn-secondary w-full shrink-0 px-4 py-2 text-sm sm:w-auto"
             >
               取消
             </button>
           </div>
         ) : (
-          <div className="flex items-center justify-between">
-            <span className="text-sm text-[var(--color-text)]">
+          <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <span className="min-w-0 break-words text-sm text-[var(--color-text)]">
               {user?.nickname || '未设置（评价将显示打码邮箱）'}
             </span>
             <button
               type="button"
               onClick={() => { setNickname(user?.nickname ?? ''); setEditing(true) }}
-              className="btn-secondary px-4 py-1.5 text-xs btn-sm"
+              className="btn-secondary shrink-0 self-start px-4 py-1.5 text-xs btn-sm sm:self-auto"
               data-testid="nickname-edit"
             >
               编辑
@@ -155,11 +155,11 @@ function PasswordChangeCard() {
 
   return (
     <div className="card flex flex-col gap-4">
-      <div className="flex items-center gap-4">
+      <div className="flex items-start sm:items-center gap-4">
         <div className="w-12 h-12 bg-[var(--color-primary)]/10 text-[var(--color-primary)] rounded-full flex items-center justify-center">
           <Shield className="w-6 h-6" />
         </div>
-        <div>
+        <div className="min-w-0">
           <h4 className="font-heading font-bold text-[var(--color-text)] mb-1">账号安全</h4>
           <p className="text-sm text-[var(--color-text-muted)]">修改您的登录密码。成功修改后将需要重新登录。</p>
         </div>
@@ -170,7 +170,7 @@ function PasswordChangeCard() {
             {errorMsg}
           </div>
         )}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 gap-3">
           <input
             type="password"
             placeholder="当前密码"
@@ -230,7 +230,7 @@ function MemberTierCard() {
 
   if (loading) {
     return (
-      <div className="card flex items-center justify-center py-6 text-[var(--color-text-muted)] text-sm">
+      <div className="card h-full flex items-center justify-center py-6 text-[var(--color-text-muted)] text-sm">
         <Loader2 className="w-4 h-4 animate-spin mr-2" /> 正在加载会员等级...
       </div>
     )
@@ -238,7 +238,7 @@ function MemberTierCard() {
 
   if (error || !tierData) {
     return (
-      <div className="card flex items-center justify-center py-4">
+      <div className="card h-full flex items-center justify-center py-4">
         <p className="text-sm text-[var(--color-text-muted)]">暂时无法获取会员等级</p>
       </div>
     )
@@ -271,14 +271,14 @@ function MemberTierCard() {
   }
 
   return (
-    <div className="card flex flex-col gap-4">
+    <div className="card h-full flex flex-col gap-4">
       <div className="flex items-start sm:items-center gap-4">
         <div className="w-12 h-12 bg-[var(--color-primary)]/10 text-[var(--color-primary)] rounded-full flex items-center justify-center shrink-0">
           <Trophy className="w-6 h-6" />
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 mb-2">
-            <h4 className="font-heading font-bold text-[var(--color-text)] flex items-center gap-2">
+            <h4 className="font-heading font-bold text-[var(--color-text)] flex flex-wrap items-center gap-2">
               会员等级
               <MemberTierBadge tier={tier} label={label} tone={tone} />
             </h4>
@@ -419,13 +419,13 @@ function InviteCard() {
         <div className="w-12 h-12 bg-[var(--color-primary)]/10 text-[var(--color-primary)] rounded-full flex items-center justify-center shrink-0">
           <Users className="w-6 h-6" />
         </div>
-        <div className="flex-1">
+        <div className="flex-1 min-w-0">
           <h4 className="font-heading text-lg font-bold mb-1 text-[var(--color-text)]">邀请赚积分</h4>
           <p className="text-[var(--color-text-muted)] text-xs mb-3 leading-relaxed">
             好友完成邮箱验证、通过资格期且符合邀请资格后，奖励会自动发放。
           </p>
 
-          <div className="flex items-center justify-between gap-3 mb-3 p-3 bg-[var(--color-background)] rounded-lg border border-[var(--color-border)]">
+          <div className="flex flex-col items-stretch gap-3 mb-3 p-3 bg-[var(--color-background)] rounded-lg border border-[var(--color-border)] sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-2">
               <span className="text-sm text-[var(--color-text)]">
                 {quota === null
@@ -437,7 +437,7 @@ function InviteCard() {
               <button
                 onClick={handleCreateInvite}
                 disabled={creating}
-                className="btn-primary px-3 py-1.5 text-xs inline-flex items-center gap-1.5"
+                className="btn-primary w-full shrink-0 px-3 py-1.5 text-xs inline-flex items-center justify-center gap-1.5 sm:w-auto"
               >
                 {creating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
                 生成邀请码
@@ -460,10 +460,10 @@ function InviteCard() {
               {activeCodes.map(code => (
                 <div
                   key={code.code}
-                  className="flex items-center justify-between p-3 bg-[var(--color-background)] rounded-lg border border-[var(--color-border)]"
+                  className="flex flex-col items-stretch gap-3 p-3 bg-[var(--color-background)] rounded-lg border border-[var(--color-border)] sm:flex-row sm:items-center sm:justify-between"
                 >
-                  <span className="font-mono text-sm font-bold text-[var(--color-text)]">{code.code}</span>
-                  <div className="flex items-center gap-2">
+                  <span className="min-w-0 break-all font-mono text-sm font-bold text-[var(--color-text)]">{code.code}</span>
+                  <div className="flex flex-wrap items-center gap-2 sm:justify-end">
                     <button
                       onClick={() => copyCode(code.code)}
                       className="text-xs px-2.5 py-1.5 rounded-lg bg-[var(--color-primary)]/10 text-[var(--color-primary)] hover:bg-[var(--color-primary)]/20 transition-colors inline-flex items-center gap-1"
@@ -586,12 +586,12 @@ export default function ProfilePage() {
   }
 
   return (
-    <div className="fade-in max-md:space-y-5 space-y-8 max-w-5xl mx-auto pt-2" style={{ animationDelay: '0.1s' }}>
-      {/* Top cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-        {/* Points hero — indigo gradient (replaces old Warm Latte brown) */}
+    <div className="fade-in max-w-6xl mx-auto space-y-5 pt-2 sm:space-y-6" style={{ animationDelay: '0.1s' }}>
+      {/* First screen: the balance and membership state intentionally share a row
+          on wide displays, replacing the old unused third column. */}
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-12 lg:items-stretch">
         <div
-          className="col-span-1 md:col-span-2 relative overflow-hidden rounded-xl p-8 text-white shadow-md"
+          className="lg:col-span-7 relative overflow-hidden rounded-xl p-6 sm:p-8 text-white shadow-md"
           style={{
             background:
               'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-hover) 100%)',
@@ -607,11 +607,11 @@ export default function ProfilePage() {
             <h3 className="font-heading text-5xl font-bold mb-6 tracking-tight drop-shadow-sm">
               {user?.points ?? '--'}
             </h3>
-            <div className="flex flex-wrap gap-3">
+            <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:flex-wrap sm:items-center">
               <button
                 onClick={handleCheckin}
                 disabled={hasCheckedIn !== false || checkingIn}
-                className={`inline-flex items-center gap-2 px-6 py-3 rounded-lg font-semibold shadow-sm text-sm transition-colors cursor-pointer ${
+                className={`inline-flex items-center justify-center gap-2 px-6 py-3 rounded-lg font-semibold shadow-sm text-sm transition-colors cursor-pointer ${
                   hasCheckedIn === null
                     ? 'bg-white/10 text-white/60 cursor-wait'
                     : hasCheckedIn
@@ -624,61 +624,62 @@ export default function ProfilePage() {
               </button>
               <button
                 onClick={() => setHistoryOpen(true)}
-                className="inline-flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white border border-white/30 px-6 py-3 rounded-lg font-medium text-sm transition-colors cursor-pointer"
+                className="inline-flex items-center justify-center gap-2 bg-white/10 hover:bg-white/20 text-white border border-white/30 px-6 py-3 rounded-lg font-medium text-sm transition-colors cursor-pointer"
               >
                 查流水明细
               </button>
             </div>
           </div>
         </div>
+        <div className="lg:col-span-5">
+          <MemberTierCard />
+        </div>
       </div>
 
-      {/* Invite card - full width below points card */}
-      <InviteCard />
+      {/* Cards flow in two balanced columns only when there is enough room.
+          At narrower widths the DOM order stays a single, readable sequence. */}
+      <div className="grid gap-5 xl:grid-cols-2 xl:items-start">
+        {/* Invite card */}
+        <InviteCard />
 
-      {/* Member Tier Card */}
-      <MemberTierCard />
-
-      {/* Merchant Entry Card */}
-      {user?.role === 'user' && user.merchant?.status !== 'active' && (
-        <div className="card flex flex-col sm:flex-row justify-between items-center gap-4">
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 bg-[var(--color-primary)]/10 text-[var(--color-primary)] rounded-full flex items-center justify-center">
-              <Store className="w-6 h-6" />
+        {/* Merchant entry */}
+        {user?.role === 'user' && user.merchant?.status !== 'active' && (
+          <div className="card flex flex-col items-stretch gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex min-w-0 items-start gap-4">
+              <div className="w-12 h-12 shrink-0 bg-[var(--color-primary)]/10 text-[var(--color-primary)] rounded-full flex items-center justify-center">
+                <Store className="w-6 h-6" />
+              </div>
+              <div className="min-w-0">
+                <h4 className="font-heading font-bold text-[var(--color-text)] mb-1">成为商家</h4>
+                <p className="text-sm text-[var(--color-text-muted)]">
+                  {user.merchant?.status === 'pending'
+                    ? '您的入驻申请正在审核中，请耐心等待。'
+                    : user.merchant?.status === 'rejected'
+                    ? '您的入驻申请被拒绝，可重新提交申请。'
+                    : user.merchant?.status === 'suspended'
+                    ? '您的商家账号已被停用，请联系平台。'
+                    : '入驻平台，上架您自己的商品获取收益。'}
+                </p>
+              </div>
             </div>
-            <div>
-              <h4 className="font-heading font-bold text-[var(--color-text)] mb-1">成为商家</h4>
-              <p className="text-sm text-[var(--color-text-muted)]">
-                {user.merchant?.status === 'pending'
-                  ? '您的入驻申请正在审核中，请耐心等待。'
-                  : user.merchant?.status === 'rejected'
-                  ? '您的入驻申请被拒绝，可重新提交申请。'
-                  : user.merchant?.status === 'suspended'
-                  ? '您的商家账号已被停用，请联系平台。'
-                  : '入驻平台，上架您自己的商品获取收益。'}
-              </p>
-            </div>
+            <button
+              onClick={() => navigate('/merchant/apply')}
+              className="btn-primary w-full shrink-0 whitespace-nowrap sm:w-auto"
+            >
+              {user.merchant?.status ? '查看状态' : '立即申请'}
+            </button>
           </div>
-          <button
-            onClick={() => navigate('/merchant/apply')}
-            className="btn-primary whitespace-nowrap"
-          >
-            {user.merchant?.status ? '查看状态' : '立即申请'}
-          </button>
-        </div>
-      )}
+        )}
 
-      {/* Nickname Card */}
-      <NicknameCard />
+        <NicknameCard />
 
-      {/* Password Change Card */}
-      <PasswordChangeCard />
+        <PasswordChangeCard />
 
-      {/* Active device sessions stay isolated from the profile's orders/points loading. */}
-      <SessionManager />
+        {/* Active device sessions stay isolated from the profile's orders/points loading. */}
+        <SessionManager />
 
-      {/* 我兑换的商品（V3-T1：流水明细移入 PointsHistorySheet，本页单栏） */}
-      <div className="card p-4 sm:p-6">
+        {/* 我兑换的商品（V3-T1：流水明细移入 PointsHistorySheet，本页单栏） */}
+        <div className="card p-4 sm:p-6">
         <h3 className="font-heading text-base font-bold text-[var(--color-text)] mb-3 flex items-center gap-2">
           <ShoppingBag className="w-4 h-4 text-[var(--color-primary)]" /> 我兑换的商品
         </h3>
@@ -701,7 +702,7 @@ export default function ProfilePage() {
                 {orders.map((order, i) => (
                   <Reveal key={order.id} delay={Math.min(i, 8) * 50}>
                   <div className="bg-[var(--color-background)] rounded-lg p-4 border border-[var(--color-border)] flex flex-col sm:flex-row justify-between gap-4 shadow-sm hover:shadow-md transition-shadow">
-                    <div className="flex-1">
+                    <div className="flex-1 min-w-0">
                       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 mb-2">
                         <div className="flex items-center gap-2 flex-wrap min-w-0">
                           <RegistryPill value={order.status} category="orderStatuses" />
@@ -726,7 +727,7 @@ export default function ProfilePage() {
                         </div>
                       </div>
 
-                      <h4 className="font-bold text-sm mb-1 text-[var(--color-text)]">
+                      <h4 className="break-words font-bold text-sm mb-1 text-[var(--color-text)]">
                         {order.product?.name}
                       </h4>
 
@@ -783,13 +784,15 @@ export default function ProfilePage() {
               </div>
             )}
 
+        </div>
+      </div>
+
       <PointsHistorySheet
         open={historyOpen}
         onOpenChange={setHistoryOpen}
         items={history}
         loading={historyLoading}
       />
-      </div>
 
       {/* Logout */}
       <div className="pt-2 flex justify-center">

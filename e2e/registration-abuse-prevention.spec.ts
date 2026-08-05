@@ -72,6 +72,12 @@ test('uses a one-time in-memory Turnstile proof only after registration submissi
 
   await page.goto('/login')
   await page.getByRole('button', { name: '没有账号？注册新账号' }).click()
+  // interaction-only Turnstile is deliberately invisible until submit. Its
+  // former bordered shell looked like a broken, empty card in the form.
+  const turnstileContainer = page.getByTestId('turnstile-widget-container')
+  await expect(turnstileContainer).toHaveCSS('opacity', '0')
+  await expect(turnstileContainer).toHaveCSS('height', '1px')
+  await expect(page.getByTestId('turnstile-status')).toHaveCount(0)
   await page.getByLabel('邮箱地址').fill(profile.email)
   await page.getByLabel('密码（至少 6 位）').fill('TestPass123!')
   await page.getByRole('button', { name: '注册账号' }).click()
