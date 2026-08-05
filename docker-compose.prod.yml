@@ -80,6 +80,12 @@ services:
       TURNSTILE_SITE_KEY: ${TURNSTILE_SITE_KEY:?TURNSTILE_SITE_KEY is required}
       TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:?TURNSTILE_SECRET_KEY is required}
       TURNSTILE_ALLOWED_HOSTNAMES: ${TURNSTILE_ALLOWED_HOSTNAMES:?TURNSTILE_ALLOWED_HOSTNAMES is required}
+      # SPEC-LEGAL-001: keep the public documents and consent policy explicit
+      # at the Compose boundary. Production configuration rejects enabled pages
+      # without enforce, and rejects fixture documents entirely.
+      LEGAL_PAGES_ENABLED: ${LEGAL_PAGES_ENABLED:-false}
+      LEGAL_PAGES_ENFORCEMENT: ${LEGAL_PAGES_ENFORCEMENT:-off}
+      LEGAL_PAGES_FIXTURE_PATH: ${LEGAL_PAGES_FIXTURE_PATH:-}
       APP_BASE_URL: ${APP_BASE_URL:-}
       SENTRY_DSN: ${SENTRY_DSN:-}
       LOG_LEVEL: ${LOG_LEVEL:-info}

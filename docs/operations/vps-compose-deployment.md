@@ -94,6 +94,12 @@ REDIS_REQUIRED=true
 REDIS_URL=redis://redis:6379
 REDIS_TLS=false
 
+# Public legal documents and registration/checkout consent evidence.
+# Production requires this exact enabled/enforce pair; never set the fixture
+# path there because it is reserved for isolated tests.
+LEGAL_PAGES_ENABLED=true
+LEGAL_PAGES_ENFORCEMENT=enforce
+
 # Pin releases in production. `latest` is acceptable only for a disposable demo.
 MONEXUS_IMAGE_TAG=latest
 MONEXUS_PULL_POLICY=always
