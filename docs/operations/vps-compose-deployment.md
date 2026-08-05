@@ -66,6 +66,9 @@ TRUST_PROXY=1
 # docker-compose.vps.yml binds this only to loopback. Host Caddy owns :80/:443.
 # Change this if the host already uses 18089, and update the Caddy upstream too.
 WEB_PORT=18089
+# The protected GitHub deployment only applies docker-compose.vps.yml when
+# this explicit guard is true. Keep it false/absent on a directly exposed host.
+MONEXUS_USE_VPS_PROXY_OVERLAY=true
 
 # Keep all object storage inside this Compose project.
 STORAGE_ENDPOINT=http://minio:9000

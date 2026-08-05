@@ -39,6 +39,15 @@ for required_fragment in \
   grep -Fq "$required_fragment" "$workflow" || fail "Workflow is missing required safeguard: ${required_fragment}"
 done
 
+entrypoint="${ROOT_DIR}/deploy/vps/monexus-compose-deploy"
+for required_fragment in \
+  "readonly VPS_PROXY_OVERLAY_KEY='MONEXUS_USE_VPS_PROXY_OVERLAY'" \
+  'if use_vps_proxy_overlay; then' \
+  "notice 'Using the base Compose port mapping; existing direct WEB_PORT exposure is preserved.'"; do
+  grep -Fq "$required_fragment" "$entrypoint" || \
+    fail "Deployment entry point is missing the explicit port-mapping safeguard: ${required_fragment}"
+done
+
 wrapper="${ROOT_DIR}/deploy/vps/monexus-compose-deploy-ssh-wrapper"
 for forbidden_command in 'shell' 'deploy abcdef' 'deploy 0123456789012345678901234567890123456789 extra'; do
   if SSH_ORIGINAL_COMMAND="$forbidden_command" "$wrapper" >/dev/null 2>&1; then
