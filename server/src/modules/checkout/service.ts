@@ -10,6 +10,7 @@ import {
   isFakaBridgeOffer,
   type FakaCapacitySnapshot,
 } from '../../lib/fakaBridge/index.js'
+import { getLegalRequirement, type LegalRequirement } from '../legal/service.js'
 
 export type CheckoutPreview = {
   productId: number
@@ -56,6 +57,12 @@ export type CheckoutPreview = {
     source: 'xboard' | 'unavailable'
     reason?: string
   } | null
+  /**
+   * SPEC-LEGAL-001：下单必须确认的协议版本（法律页面关闭 = null，前端据此
+   * 隐藏勾选区）。确认时随 agreementVersions 回传；版本落后 → 409
+   * LEGAL_AGREEMENT_STALE，前端重新拉取本预览即得新版本。
+   */
+  legalRequirement: LegalRequirement | null
 }
 
 /**
@@ -163,5 +170,6 @@ export async function getCheckoutPreview(
           reason: fakaCapacity.reason,
         }
       : null,
+    legalRequirement: getLegalRequirement('order'),
   }
 }

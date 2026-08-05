@@ -15,6 +15,7 @@ import {
   type RegistrationChallenge,
 } from '../api/auth'
 import { getApiErrorCode, getApiErrorMessage } from '../api/error'
+import { agreementVersionsOf, LEGAL_PAGE_PATHS, type LegalRequirement } from '../api/legal'
 import MfaEnrollment from '../components/auth/MfaEnrollment'
 import MfaVerification from '../components/auth/MfaVerification'
 import RecoveryCodeConfirmation from '../components/auth/RecoveryCodeConfirmation'
@@ -28,7 +29,7 @@ type PendingRecoveryConfirmation = {
 
 type RegistrationViewState =
   | { kind: 'loading' }
-  | { kind: 'available'; challenge: RegistrationChallenge | null; inviteRequired: boolean }
+  | { kind: 'available'; challenge: RegistrationChallenge | null; inviteRequired: boolean; legalRequirement: LegalRequirement | null }
   | { kind: 'disabled' }
   | { kind: 'unavailable' }
 
@@ -70,6 +71,8 @@ export default function LoginPage() {
   const [pendingRecovery, setPendingRecovery] = useState<PendingRecoveryConfirmation | null>(null)
   const [registrationRefresh, setRegistrationRefresh] = useState(0)
   const [registrationState, setRegistrationState] = useState<RegistrationViewState>({ kind: 'loading' })
+  // SPEC-LEGAL-001：协议勾选默认不勾（明示同意），STALE 后强制重新勾选。
+  const [agreementsChecked, setAgreementsChecked] = useState(false)
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
@@ -92,7 +95,12 @@ export default function LoginPage() {
         } else if (!status.registrationAvailable) {
           setRegistrationState({ kind: 'unavailable' })
         } else {
-          setRegistrationState({ kind: 'available', challenge: status.challenge, inviteRequired: status.inviteRequired })
+          setRegistrationState({
+            kind: 'available',
+            challenge: status.challenge,
+            inviteRequired: status.inviteRequired,
+            legalRequirement: status.legalRequirement ?? null,
+          })
         }
       })
       .catch(() => {
@@ -117,10 +125,12 @@ export default function LoginPage() {
   function switchToLogin() {
     turnstileRef.current?.reset()
     setIsRegister(false)
+    setAgreementsChecked(false)
   }
 
   function switchToRegistration() {
     if (registrationState.kind !== 'available') return
+    setAgreementsChecked(false)
     setIsRegister(true)
   }
 
@@ -176,6 +186,21 @@ export default function LoginPage() {
       return
     }
 
+    if (code === 'LEGAL_AGREEMENT_STALE') {
+      // 协议在填写期间发布新版本：刷新注册状态拿新版本清单，并强制重新
+      // 勾选——用户确认过的旧版本不能默示延伸到新文本。
+      turnstileRef.current?.reset()
+      setAgreementsChecked(false)
+      setRegistrationRefresh((value) => value + 1)
+      showToast('协议已更新，请重新阅读并同意', 'error')
+      return
+    }
+
+    if (code === 'LEGAL_AGREEMENT_REQUIRED') {
+      showToast('请先阅读并同意相关协议后再注册', 'error')
+      return
+    }
+
     showToast(getApiErrorMessage(error, '操作失败'), 'error')
   }
 
@@ -205,11 +230,19 @@ export default function LoginPage() {
           }
         }
 
+        const legalRequirement = registrationState.legalRequirement
+        if (legalRequirement && !agreementsChecked) {
+          // 双保险：按钮已禁用，但键盘提交/自动填充绕过 disabled 时仍拦下。
+          showToast('请先阅读并同意相关协议后再注册', 'error')
+          return
+        }
+
         const result = await registerAccount({
           email,
           password,
           ...(inviteCode.trim() ? { inviteCode: inviteCode.trim() } : {}),
           ...(turnstileToken ? { turnstileToken } : {}),
+          ...(legalRequirement ? { agreements: agreementVersionsOf(legalRequirement) } : {}),
         })
         await establishSession(result.accessToken, '注册成功。完成邮箱验证并经过资格期后，奖励会自动发放。')
         return
@@ -293,6 +326,13 @@ export default function LoginPage() {
   }
 
   const registrationChallenge = registrationState.kind === 'available' ? registrationState.challenge : null
+  const legalRequirement = registrationState.kind === 'available' ? registrationState.legalRequirement : null
+  const legalLinks = legalRequirement?.required.map((item) => ({
+    key: item.document,
+    title: item.title,
+    href: LEGAL_PAGE_PATHS[item.document],
+  })) ?? []
+  const missingAgreements = isRegister && legalRequirement != null && !agreementsChecked
 
   return (
     <LoginShell>
@@ -345,10 +385,42 @@ export default function LoginPage() {
             {registrationChallenge && (
               <TurnstileWidget ref={turnstileRef} siteKey={registrationChallenge.siteKey} />
             )}
+            {legalRequirement && (
+              <label
+                className="flex cursor-pointer items-start gap-2 text-left text-xs leading-relaxed text-[var(--color-text-muted)]"
+                data-testid="register-agreement"
+              >
+                <input
+                  type="checkbox"
+                  checked={agreementsChecked}
+                  onChange={(event) => setAgreementsChecked(event.target.checked)}
+                  disabled={loading}
+                  className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer accent-[var(--color-primary)]"
+                  aria-label="我已阅读并同意相关协议"
+                />
+                <span>
+                  我已阅读并同意
+                  {legalLinks.map((link, index) => (
+                    <span key={link.key}>
+                      {index > 0 && '和'}
+                      <a
+                        href={link.href}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-[var(--color-primary)] hover:underline"
+                      >
+                        《{link.title}》
+                      </a>
+                    </span>
+                  ))}
+                  （版本 {legalRequirement.required.map((item) => item.version).join(' / ')}）
+                </span>
+              </label>
+            )}
           </>
         )}
 
-        <button type="submit" disabled={loading} className="btn-primary mt-2 w-full">
+        <button type="submit" disabled={loading || missingAgreements} className="btn-primary mt-2 w-full">
           {loading ? '处理中…' : isRegister ? '注册账号' : '登录'}
         </button>
       </form>

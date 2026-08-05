@@ -5,6 +5,7 @@ import { UserOrderDetail } from '../types/order'
 import { useAppStore } from '../stores/appStore'
 import { useAuthStore } from '../stores/authStore'
 import { disputeOrder, closeOrder, createOrder, renewOrder, type RenewPrecheck } from '../api/orders'
+import { agreementVersionsOf } from '../api/legal'
 import { getApiErrorCode, getApiErrorMessage } from '../api/error'
 import { OwnReview } from '../api/reviews'
 import RegistryPill from './ui/RegistryPill'
@@ -141,6 +142,8 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
         expectedCheckoutVersion: preview.checkoutVersion,
         verificationPassword: verificationPassword || undefined,
         renewalOfOrderId: order.id,
+        // SPEC-LEGAL-001：续费同样是新订单，协议确认随单回传。
+        agreementVersions: agreementVersionsOf(preview.legalRequirement),
       })
       useAuthStore.getState().updatePoints(data.balanceAfter)
       showToast('续费成功，已生成新的订单')
@@ -153,6 +156,10 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
       if (code === 'PRICE_CHANGED' || code === 'CHECKOUT_CHANGED') {
         showToast('商品信息已变化，请重新确认', 'error')
         return 'price_changed'
+      }
+      if (code === 'LEGAL_AGREEMENT_STALE') {
+        showToast('协议已更新，请重新阅读并同意', 'error')
+        return 'agreement_stale'
       }
       if (code === 'VERIFICATION_REQUIRED') {
         showToast('本单需输入登录密码确认', 'error')

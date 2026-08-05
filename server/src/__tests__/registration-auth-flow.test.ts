@@ -127,6 +127,8 @@ describe('SPEC-RAP-001 auth registration/mail integration', () => {
       registrationAvailable: true,
       inviteRequired: false,
       challenge: { provider: 'turnstile', siteKey: 'public-test-site-key' },
+      // SPEC-LEGAL-001：测试环境默认关闭法律页面 → 无协议要求。
+      legalRequirement: null,
     })
     expect(JSON.stringify(res.body)).not.toContain('private-test-secret')
     expect(JSON.stringify(res.body)).not.toContain('localhost')
@@ -138,6 +140,7 @@ describe('SPEC-RAP-001 auth registration/mail integration', () => {
       registrationAvailable: false,
       inviteRequired: false,
       challenge: null,
+      legalRequirement: null,
     })
   })
 

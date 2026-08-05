@@ -43,6 +43,9 @@ export type IdempotencyFingerprint = {
   // P6a：续费关联（同兼容策略：未传不写入 canonical，存量摘要不变）。
   // 同 key 换续费目标（或续费↔普通购买互换）视为不同意图，必须 409。
   renewalOfOrderId?: number
+  // SPEC-LEGAL-001：协议确认版本（未传不写入 canonical）。同 key 换协议
+  // 版本 = 不同意图（用户确认的是不同文本），必须 409 而非静默重放。
+  agreementVersions?: Record<string, string>
 }
 
 /**
@@ -57,6 +60,12 @@ export function computeRequestDigest(fingerprint: IdempotencyFingerprint): strin
     .sort()
     .map(key => [key, (answers[key] ?? '').trim()])
     .filter(([, value]) => value !== '')
+  // 协议版本同 answers 的排序归一化：键序不同但内容相同的确认不判异。
+  const agreements = fingerprint.agreementVersions ?? {}
+  const canonicalAgreements = Object.keys(agreements)
+    .sort()
+    .map(key => [key, (agreements[key] ?? '').trim()])
+    .filter(([, value]) => value !== '')
   const canonical = JSON.stringify({
     productId: fingerprint.productId,
     // 仅显式选择规格时进入指纹：同 key 换 SKU 与换商品同理必须 409。
@@ -67,6 +76,8 @@ export function computeRequestDigest(fingerprint: IdempotencyFingerprint): strin
     ...(fingerprint.checkoutVersion != null ? { checkoutVersion: fingerprint.checkoutVersion } : {}),
     // P6a：续费单与普通购买是不同意图，同 key 互换必须 409。
     ...(fingerprint.renewalOfOrderId != null ? { renewalOfOrderId: fingerprint.renewalOfOrderId } : {}),
+    // SPEC-LEGAL-001：空数组与未传等价（归一化后均为 []），旧客户端 digest 不变。
+    ...(fingerprint.agreementVersions != null ? { agreementVersions: canonicalAgreements } : {}),
     answers: canonicalAnswers,
   })
   return createHmac('sha256', config.jwtSecret).update(canonical).digest('hex')

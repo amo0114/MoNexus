@@ -6,6 +6,7 @@ import DOMPurify from 'dompurify'
 import api from '../api/client'
 import { getApiErrorMessage, getApiErrorCode } from '../api/error'
 import { createOrder, type CheckoutPreview } from '../api/orders'
+import { agreementVersionsOf } from '../api/legal'
 import { useAppStore } from '../stores/appStore'
 import { useAuthStore } from '../stores/authStore'
 import PurchaseModal, { type ConfirmOutcome } from '../components/PurchaseModal'
@@ -135,6 +136,8 @@ export default function ProductDetailPage() {
         expectedPurchaseFormVersion: preview.purchaseFormVersion,
         expectedCheckoutVersion: preview.checkoutVersion,
         verificationPassword: verificationPassword || undefined,
+        // SPEC-LEGAL-001：协议确认版本与预览同批下发、随单回传。
+        agreementVersions: agreementVersionsOf(preview.legalRequirement),
       })
       useAuthStore.getState().updatePoints(data.balanceAfter)
       setDeliveryContent(data.deliveryContent ?? '')
@@ -163,6 +166,11 @@ export default function ProductDetailPage() {
         // 弹窗保持打开，由 PurchaseModal 重新报价（含新表单）并让用户再次确认。
         showToast('商品信息已变化，请重新确认', 'error')
         return 'price_changed'
+      }
+      if (code === 'LEGAL_AGREEMENT_STALE') {
+        // 协议版本已更新：弹窗重新报价拿新版本清单并强制重新勾选。
+        showToast('协议已更新，请重新阅读并同意', 'error')
+        return 'agreement_stale'
       }
       if (code === 'VERIFICATION_REQUIRED') {
         // 预览后风控条件变化（阈值调整/改价跨过阈值）：弹窗重新报价并渲染

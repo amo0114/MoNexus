@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, Coins, Loader2, ShieldCheck, Info } from 'lucide-react'
 import { Dialog, DialogContent, DialogTitle } from './ui/Dialog'
 import { getCheckoutPreview, type CheckoutPreview } from '../api/orders'
+import { LEGAL_PAGE_PATHS } from '../api/legal'
 import {
   confirmProvisionEmailCode,
   getProvisionEmailStatus,
@@ -11,7 +12,7 @@ import { getApiErrorMessage } from '../api/error'
 import { newIdempotencyKey } from '../utils/idempotencyKey'
 import { useAuthStore } from '../stores/authStore'
 
-export type ConfirmOutcome = 'success' | 'price_changed' | 'verification_required' | 'verification_failed' | 'failed'
+export type ConfirmOutcome = 'success' | 'price_changed' | 'verification_required' | 'verification_failed' | 'failed' | 'agreement_stale'
 
 const PROVISION_EMAIL_KEYS = new Set(['xboardEmail', 'xboard_email', 'email'])
 
@@ -71,6 +72,9 @@ export default function PurchaseModal({
   const [idempotencyKey, setIdempotencyKey] = useState(() => newIdempotencyKey())
   const [answers, setAnswers] = useState<Record<string, string>>({})
   const [verifyPassword, setVerifyPassword] = useState('')
+  // SPEC-LEGAL-001：协议勾选默认不勾（明示同意）；STALE 重试时强制重勾。
+  const [agreementsChecked, setAgreementsChecked] = useState(false)
+  const [agreementStale, setAgreementStale] = useState(false)
 
   // FakaBridge 开通邮箱归属
   const [provisionTrusted, setProvisionTrusted] = useState(false)
@@ -185,10 +189,20 @@ export default function PurchaseModal({
 
   async function handleConfirm() {
     if (!preview || submitting) return
+    // 双保险：按钮已按 missingAgreement 禁用，键盘/脚本路径仍拦下。
+    if (preview.legalRequirement && !agreementsChecked) return
     const outcome = await onConfirm(preview, idempotencyKey, answers, verifyPassword)
     if (outcome === 'price_changed') {
       // 服务端价格已变：换新的结算意图（新幂等键）并重新报价，由用户再次确认。
       setPriceChanged(true)
+      setIdempotencyKey(newIdempotencyKey())
+      setPreview(null)
+      loadPreview()
+    } else if (outcome === 'agreement_stale') {
+      // SPEC-LEGAL-001：协议版本已更新——换新幂等键重新报价（新版本随预览
+      // 下发），并强制重新勾选：已确认的旧版本不能默示延伸到新文本。
+      setAgreementStale(true)
+      setAgreementsChecked(false)
       setIdempotencyKey(newIdempotencyKey())
       setPreview(null)
       loadPreview()
@@ -210,6 +224,8 @@ export default function PurchaseModal({
   const missingVerification = (preview?.requiresVerification ?? false) && verifyPassword === ''
   const needsProvisionProof = Boolean(preview?.requiresProvisionEmailProof)
   const missingProvisionProof = needsProvisionProof && !provisionTrusted
+  const legalRequirement = preview?.legalRequirement ?? null
+  const missingAgreement = legalRequirement != null && !agreementsChecked
 
   const capacityHint =
     preview?.fakaCapacity?.source === 'xboard' && preview.fakaCapacity.remaining != null
@@ -231,6 +247,16 @@ export default function PurchaseModal({
           >
             <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0 text-amber-500" />
             <span>商品信息已变化，请核对最新内容后重新确认。</span>
+          </div>
+        )}
+
+        {agreementStale && (
+          <div
+            className="flex items-start gap-2 text-sm rounded-lg border border-amber-500/60 bg-amber-500/10 text-[var(--color-text)] p-3 mb-4"
+            data-testid="agreement-stale-notice"
+          >
+            <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0 text-amber-500" />
+            <span>协议已更新，请重新阅读并同意后再支付。</span>
           </div>
         )}
 
@@ -512,6 +538,60 @@ export default function PurchaseModal({
           </div>
         )}
 
+        {legalRequirement && (
+          <div className="mb-6 space-y-3" data-testid="purchase-agreement-section">
+            {/* 退款要点披露：摘要 + 全文链接（与《退款政策》草案一、二节一致） */}
+            <div
+              className="flex items-start gap-2 text-xs rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] text-[var(--color-text-muted)] p-3"
+              data-testid="refund-disclosure"
+            >
+              <Info className="w-3.5 h-3.5 mt-0.5 shrink-0 text-[var(--color-primary)]" />
+              <span className="leading-relaxed">
+                数字商品一经交付，非质量问题不支持退款；人工服务未履约全额返还。详见
+                <a
+                  href={LEGAL_PAGE_PATHS.refund}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-[var(--color-primary)] hover:underline"
+                >
+                  《退款政策》
+                </a>
+                。
+              </span>
+            </div>
+            <label
+              className="flex cursor-pointer items-start gap-2 text-xs leading-relaxed text-[var(--color-text-muted)]"
+              data-testid="purchase-agreement"
+            >
+              <input
+                type="checkbox"
+                checked={agreementsChecked}
+                onChange={(event) => setAgreementsChecked(event.target.checked)}
+                disabled={submitting}
+                className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer accent-[var(--color-primary)]"
+                aria-label="我已阅读并同意相关协议"
+              />
+              <span>
+                我已阅读并同意
+                {legalRequirement.required.map((item, index) => (
+                  <span key={item.document}>
+                    {index > 0 && '和'}
+                    <a
+                      href={LEGAL_PAGE_PATHS[item.document]}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-[var(--color-primary)] hover:underline"
+                    >
+                      《{item.title}》
+                    </a>
+                  </span>
+                ))}
+                ，下单即视为认可本次交易的全部条款。
+              </span>
+            </label>
+          </div>
+        )}
+
         <div className="flex gap-3">
           <button
             onClick={onClose}
@@ -530,6 +610,7 @@ export default function PurchaseModal({
               missingRequired ||
               missingVerification ||
               missingProvisionProof ||
+              missingAgreement ||
               provisionBusy
             }
             className="btn-cta flex-1 px-0"
