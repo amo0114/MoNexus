@@ -353,13 +353,14 @@ export default function ProductDetailPage() {
 
       <div className="rounded-xl overflow-hidden bg-[var(--color-surface)] border border-[var(--color-border)] shadow-md mb-8">
         <div data-testid="product-gallery">
-          {/* Stable 4:3 on every breakpoint + cover fill (full-bleed, no bars).
+          {/* Stable 4:3 on every breakpoint without cropping product artwork.
               max-height keeps short landscape / large phones usable. */}
           <ProductMediaFrame
             src={galleryImages.length > 0 ? (galleryImages[activeImage] ?? galleryImages[0]) : undefined}
             alt={product.name}
             frameClassName="aspect-[4/3] max-h-[min(70dvh,36rem)]"
             className="shrink-0 touch-pan-y select-none"
+            fit="contain"
             imageProps={{
               'data-testid': 'product-gallery-main',
               draggable: false,
@@ -469,6 +470,7 @@ export default function ProductDetailPage() {
                     src={img}
                     alt={`${product.name} 图 ${i + 1}`}
                     frameClassName="h-full w-full"
+                    fit="contain"
                     imageProps={{ loading: 'lazy' }}
                   />
                 </button>

@@ -5,6 +5,8 @@ type ProductImageProps = ImgHTMLAttributes<HTMLImageElement> & {
   'data-testid'?: string
 }
 
+type ProductMediaFit = 'cover' | 'contain'
+
 type ProductMediaFrameProps = {
   src?: string | null
   alt: string
@@ -15,16 +17,18 @@ type ProductMediaFrameProps = {
   frameClassName?: string
   className?: string
   imageClassName?: string
+  /** Whether to crop to fill the frame or preserve the whole source image. */
+  fit?: ProductMediaFit
   imageProps?: ProductImageProps
   children?: ReactNode
 }
 
 /**
- * Product media: controlled frame + object-cover fill.
+ * Product media: controlled frame with an explicit image-fit policy.
  *
- * Marketplace default — the frame is always full-bleed (no letterbox bars).
- * Mixed source ratios may crop edges; the frame aspect is kept stable so the
- * crop does not thrash when phone width / column count / breakpoint changes.
+ * Callers that present a product itself should use `contain` so its artwork is
+ * never silently cropped. `cover` remains available for intentional decorative
+ * full-bleed media.
  */
 export default function ProductMediaFrame({
   src,
@@ -32,6 +36,7 @@ export default function ProductMediaFrame({
   frameClassName = 'aspect-[4/3]',
   className = '',
   imageClassName = '',
+  fit = 'cover',
   imageProps,
   children,
 }: ProductMediaFrameProps) {
@@ -45,7 +50,7 @@ export default function ProductMediaFrame({
         src={src ?? undefined}
         alt={alt}
         draggable={false}
-        className={`absolute inset-0 h-full w-full object-cover object-center ${imageClassName} ${imagePropsClassName ?? ''}`}
+        className={`absolute inset-0 h-full w-full ${fit === 'contain' ? 'object-contain' : 'object-cover'} object-center ${imageClassName} ${imagePropsClassName ?? ''}`}
         {...restImageProps}
       />
       {children}
