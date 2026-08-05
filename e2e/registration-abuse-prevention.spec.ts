@@ -71,7 +71,7 @@ test('uses a one-time in-memory Turnstile proof only after registration submissi
   await page.route(apiRoute('/auth/me'), route => route.fulfill({ json: profile }))
 
   await page.goto('/login')
-  await page.getByRole('button', { name: '没有账号？注册新账号' }).click()
+  await page.getByRole('button', { name: '没有账号？立即注册' }).click()
   // interaction-only Turnstile is deliberately invisible until submit. Its
   // former bordered shell looked like a broken, empty card in the form.
   const turnstileContainer = page.getByTestId('turnstile-widget-container')
@@ -80,7 +80,7 @@ test('uses a one-time in-memory Turnstile proof only after registration submissi
   await expect(page.getByTestId('turnstile-status')).toHaveCount(0)
   await page.getByLabel('邮箱地址').fill(profile.email)
   await page.getByLabel('密码（至少 6 位）').fill('TestPass123!')
-  await page.getByRole('button', { name: '注册账号' }).click()
+  await page.getByRole('button', { name: '创建账号' }).click()
 
   await expect(page).toHaveURL(/\/$/)
   expect(registerPayload).toMatchObject({
@@ -104,7 +104,7 @@ test('keeps registration disabled distinct from a temporary unavailable state', 
 
   await page.goto('/login')
   await expect(page.getByText('当前已暂停新用户注册')).toBeVisible()
-  await expect(page.getByRole('button', { name: '没有账号？注册新账号' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '没有账号？立即注册' })).toHaveCount(0)
 
   status = {
     registrationEnabled: true,
@@ -114,7 +114,7 @@ test('keeps registration disabled distinct from a temporary unavailable state', 
   await page.reload()
   await expect(page.getByText('注册服务暂不可用，请稍后重试')).toBeVisible()
   await expect(page.getByText('当前已暂停新用户注册')).toHaveCount(0)
-  await expect(page.getByRole('button', { name: '没有账号？注册新账号' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '没有账号？立即注册' })).toHaveCount(0)
 })
 
 test('strips a fragment token and claims it once through the authenticated POST', async ({ page }) => {

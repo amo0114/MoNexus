@@ -83,7 +83,7 @@ export default function EmailVerificationBanner() {
         <MailWarning className="h-5 w-5 shrink-0 text-[var(--color-warning-accent)]" />
         <div className="min-w-0 flex-1 text-sm">
           <span className="font-semibold">邮箱尚未验证。</span>
-          <span className="hidden sm:inline">验证后才能购买、签到、申请商家或上传文件；奖励会在资格期后发放。</span>
+          <span className="hidden sm:inline">验证后可购买、签到、申请商家与上传文件；注册奖励将在验证后发放。</span>
         </div>
         <button
           type="button"

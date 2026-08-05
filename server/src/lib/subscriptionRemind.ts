@@ -2,6 +2,7 @@ import { config } from '../config/index.js'
 import { logger } from './logger.js'
 import { prisma } from './prisma.js'
 import { getMailer } from './mailer/index.js'
+import { renderMail } from './mailer/templates/index.js'
 import { getSystemConfigValue } from './systemConfig.js'
 import { acquireCronLeaseWithHeartbeat, type CronLeaseHandle } from './cronLease.js'
 
@@ -68,36 +69,22 @@ function displayNames(order: CandidateRecord['order']) {
 
 function buildPreMail(to: string, order: CandidateRecord['order'], expiresAt: Date) {
   const { label } = displayNames(order)
-  return {
+  return renderMail('subscription_expiring', {
     to,
-    subject: `【订阅即将到期】${label}`,
-    text: [
-      '您好，您购买的订阅即将到期：',
-      '',
-      `商品：${label}`,
-      `订单号：#${order.id}`,
-      `到期时间：${formatExpiry(expiresAt)}`,
-      '',
-      '如需继续使用，请到订单详情点击「续费」，避免服务中断。',
-    ].join('\n'),
-  }
+    orderId: order.id,
+    productLabel: label,
+    expiresAtLabel: formatExpiry(expiresAt),
+  })
 }
 
 function buildExpiredMail(to: string, order: CandidateRecord['order'], expiresAt: Date) {
   const { label } = displayNames(order)
-  return {
+  return renderMail('subscription_expired', {
     to,
-    subject: `【订阅已到期】${label}`,
-    text: [
-      '您好，您购买的订阅已经到期：',
-      '',
-      `商品：${label}`,
-      `订单号：#${order.id}`,
-      `到期时间：${formatExpiry(expiresAt)}`,
-      '',
-      '如需恢复使用，请到订单详情点击「续费」重新开通。',
-    ].join('\n'),
-  }
+    orderId: order.id,
+    productLabel: label,
+    expiresAtLabel: formatExpiry(expiresAt),
+  })
 }
 
 async function upsertReminder(orderId: number, stage: 'pre' | 'expired', now: Date) {

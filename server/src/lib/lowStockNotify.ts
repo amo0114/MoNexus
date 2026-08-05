@@ -2,6 +2,7 @@ import { config } from '../config/index.js'
 import { logger } from './logger.js'
 import { prisma } from './prisma.js'
 import { getMailer } from './mailer/index.js'
+import { renderMail } from './mailer/templates/index.js'
 import { getSystemConfigValue } from './systemConfig.js'
 import { acquireCronLeaseWithHeartbeat, type CronLeaseHandle } from './cronLease.js'
 
@@ -53,20 +54,13 @@ async function getAvailableCount(offer: CandidateOffer): Promise<number> {
 }
 
 function buildMail(to: string, offer: CandidateOffer, available: number, threshold: number) {
-  return {
+  return renderMail('low_stock', {
     to,
-    subject: `【低库存预警】${offer.product.name} - ${offer.name} 仅剩 ${available} 件`,
-    text: [
-      '您好，您的商品有规格库存已跌至预警阈值以下：',
-      '',
-      `商品：${offer.product.name}`,
-      `规格：${offer.name}`,
-      `当前可用库存：${available} 件`,
-      `预警阈值：${threshold} 件`,
-      '',
-      '请尽快登录商家后台补充库存或调整规格容量，避免影响买家下单。',
-    ].join('\n'),
-  }
+    productName: offer.product.name,
+    offerName: offer.name,
+    available,
+    threshold,
+  })
 }
 
 async function processOffer(offer: CandidateOffer, threshold: number, cooldownHours: number, now: Date) {

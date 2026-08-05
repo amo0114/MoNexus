@@ -2,6 +2,7 @@ import { config } from '../config/index.js'
 import { logger } from './logger.js'
 import { prisma } from './prisma.js'
 import { getMailer } from './mailer/index.js'
+import { renderMail } from './mailer/templates/index.js'
 import { acquireCronLeaseWithHeartbeat, type CronLeaseHandle } from './cronLease.js'
 
 /**
@@ -70,21 +71,13 @@ function buildMail(to: string, order: CandidateOrder, now: Date) {
   const label = displayLabel(order)
   // 查询已过滤 fulfillmentDeadline 非空；此处断言仅为类型收窄。
   const deadline = order.fulfillmentDeadline!
-  return {
+  return renderMail('sla_overdue', {
     to,
-    subject: `【履约超时提醒】订单 #${order.id} 已超过履约截止时间`,
-    text: [
-      '您好，您有一笔人工服务订单已超过履约截止时间，买家仍在等待：',
-      '',
-      `订单号：#${order.id}`,
-      `商品：${label}`,
-      `履约截止时间：${formatTime(deadline)}`,
-      `买家已等待：${formatWaitDuration(order.createdAt, now)}`,
-      '',
-      '请尽快登录商家后台，在「订单管理」待处理列表中接单/交付；',
-      '长时间未履约可能引发买家争议，影响店铺信誉与结算。',
-    ].join('\n'),
-  }
+    orderId: order.id,
+    productLabel: label,
+    deadlineLabel: formatTime(deadline),
+    waitDurationLabel: formatWaitDuration(order.createdAt, now),
+  })
 }
 
 async function processOrder(order: CandidateOrder, now: Date) {
