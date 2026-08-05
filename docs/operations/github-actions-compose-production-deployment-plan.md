@@ -1,8 +1,13 @@
-# GitHub Actions 自动化 Compose 生产部署方案（待实施）
+# GitHub Actions 自动化 Compose 生产部署方案
 
-> 状态：方案，尚未实施。  
-> 记录日期：2026-07-25。  
+> 状态：仓库实现已完成，首次 VPS 引导、GitHub Environment 配置和手动演练待执行。
+>
+> 更新日期：2026-08-05。
 > 适用目标：当前 `/opt/monexus` Docker Compose 生产环境。
+
+实际安装、演练、启用和回退步骤见
+[受审批的 Compose 生产部署](./compose-production-deploy.md)。本文保留架构决策与
+风险边界，供审计和后续演进参考。
 
 ## 1. 目的与边界
 
@@ -28,7 +33,7 @@ GitHub Actions 验证同一提交的 CI 和镜像构建结果；在生产环境�
 工作目录：/opt/monexus
 镜像：ghcr.io/amo0114/monexus-server:sha-<短SHA>
       ghcr.io/amo0114/monexus-web:sha-<短SHA>
-运行入口：bash scripts/vps-compose.sh
+运行入口：受限的 /usr/local/sbin/monexus-compose-deploy
 本机健康检查：http://127.0.0.1:18089/api/health/ready
 ```
 
@@ -40,15 +45,10 @@ MONEXUS_PULL_POLICY=missing
 ```
 
 服务端容器启动时已执行 `prisma migrate deploy`，因此应用迁移会在发布重建
-服务端容器时自动运行。发布脚本必须继续使用：
-
-```bash
-bash scripts/vps-compose.sh config
-bash scripts/vps-compose.sh restart
-```
-
-不得以 `vps-compose.sh up` 取代 `restart`。后者可能尝试拉取无关的
-Postgres、Redis、MinIO 镜像，曾因 Docker Hub 网络超时而影响发布。
+服务端容器时自动运行。入口在每次发布时将目标 SHA 检出到独立的 release
+目录，以目标版本的 Compose 文件校验配置；随后只依次重建 `server`、确认健康后
+再重建 `web`。它不会重建 Postgres、Redis、MinIO，也不会运行会删除容器或
+数据卷的 Compose 命令。
 
 仓库现有工作流的职责如下：
 
@@ -79,7 +79,7 @@ PR 合并至 master（精确完整 SHA）
                SSH 调用 VPS 固定部署入口
                          │
                          ▼
-        pull 指定镜像 → 写入 tag → Compose restart → 迁移
+        pull 指定镜像 → 写入 tag → 依次重建 server / web → 迁移
                          │
                          ▼
       本机 ready 检查 → 公网健康检查 → Actions 部署摘要
@@ -98,9 +98,9 @@ PR 合并至 master（精确完整 SHA）
 同一次 `push` 的 CI 结论，等待其变为 `success`；若失败、取消或超时，
 不得创建生产部署。
 
-### 4.2 建议新增的工作流
+### 4.2 已新增的工作流
 
-新增 `.github/workflows/compose-production-deploy.yml`，职责是部署编排，
+`.github/workflows/compose-production-deploy.yml` 已实现部署编排，
 而非重新构建应用。
 
 自动候选部署的触发建议采用 `workflow_run`：
@@ -119,14 +119,15 @@ workflow 不下载或执行来自 PR 的 artifact。
 
 为降低首次上线风险，按以下顺序启用：
 
-1. **阶段一：手动演练**。工作流只支持 `workflow_dispatch`，输入一个已验证
-   的 `master` SHA，且仍需 production 审批；支持 `dry_run=true`。
+1. **阶段一：无副作用手动演练**。使用 `workflow_dispatch` 输入一个已验证的
+   `master` SHA 且 `dry_run=true`；它只验证 CI 和镜像，不进入 production
+   Environment、不会 SSH。
 2. **阶段二：真实手动发布**。用一个已发布镜像完成一次真实部署，验证日志、
    健康检查和回退过程。
-3. **阶段三：自动生成待审批部署**。启用上述 `workflow_run` 闸门；合并后自动
-   等待你的批准。
-4. **阶段四（可选）**：仅在稳定运行一段时间且明确接受风险时，取消 required
-   reviewer，变为完全自动部署。
+3. **阶段三：自动生成待审批部署**。在真实手动发布成功后，将仓库变量
+   `COMPOSE_PRODUCTION_AUTO_DEPLOY_ENABLED` 设为 `true`。当前实现刻意要求至少
+   一名 required reviewer；之后的 master 发布会自动等待你的批准，不会提供无人
+   审批的生产部署路径。
 
 日常推荐停留在阶段三：合并 PR → 等待绿灯 → GitHub 点击
 **Review deployments / Approve and deploy**，无需 SSH。
@@ -154,11 +155,10 @@ concurrency:
 | 名称 | 类型 | 作用 |
 | --- | --- | --- |
 | `DEPLOY_SSH_HOST` | Environment secret | VPS 主机名或 IP |
-| `DEPLOY_SSH_PORT` | Environment variable/secret | SSH 端口 |
+| `DEPLOY_SSH_PORT` | Environment variable | SSH 端口 |
 | `DEPLOY_SSH_USER` | Environment secret | 专用部署账号 |
 | `DEPLOY_SSH_PRIVATE_KEY` | Environment secret | 专用 ED25519 私钥 |
-| `DEPLOY_SSH_KNOWN_HOSTS` | Environment variable | VPS 固定 SSH host key |
-| `DEPLOY_BASE_PATH` | Environment variable | `/opt/monexus` |
+| `DEPLOY_SSH_KNOWN_HOSTS` | Environment secret | VPS 固定 SSH host key |
 | `PRODUCTION_HEALTHCHECK_URL` | Environment variable | 外网 ready 健康检查 URL |
 
 `DEPLOY_SSH_KNOWN_HOSTS` 应预先从可信控制台或已验证会话取得并固定，不能在
@@ -179,37 +179,31 @@ Actions 运行时通过 `ssh-keyscan` 临时信任，以降低中间人攻击风
 Actions 仅通过 SSH 调用：
 
 ```text
-deploy <完整40位SHA> <sha-7位短SHA>
+deploy <完整40位SHA>
 ```
 
 脚本的设计要求：
 
-1. 使用 `set -euo pipefail` 与 `flock`，阻止并发部署；
-2. 严格校验完整 SHA、镜像标签格式，以及标签是否等于该 SHA 的前 7 位；
-3. 检查 `/opt/monexus/.env` 存在，检查受 Git 跟踪的工作目录无未提交修改；
-   忽略 `.env` 等本地机密文件；
-4. 以 `git -c http.version=HTTP/1.1 fetch` 拉取远端，验证目标 SHA 是
-   `origin/master` 可达的提交，并 detached checkout 到该精确 SHA；
+1. 使用 `set -Eeuo pipefail` 与 `flock`，阻止并发部署；
+2. 严格校验完整 SHA，并从其前 7 位计算不可变镜像标签；
+3. 检查 `/opt/monexus/.env` 的受控 tag/pull-policy 行存在且唯一；
+4. 在专用 release 目录 fetch `origin/master`，验证目标 SHA 可达后 detached
+   checkout 到该精确 SHA；
 5. 先拉取且验证两个目标镜像，任何一个失败都不改 `.env`；
 6. 在不输出其内容的前提下安全备份当前 `.env`，记录旧 tag、目标 tag、完整
-   SHA、时间和 Actions run URL 到权限受限的部署状态文件；
+   SHA 与时间到权限受限的部署状态文件；
 7. 仅更新 `MONEXUS_IMAGE_TAG` 与 `MONEXUS_PULL_POLICY=missing`；
-8. 执行 `bash scripts/vps-compose.sh config`，随后执行
-   `bash scripts/vps-compose.sh restart`；
-9. 在 90–120 秒内轮询本机 `/api/health/ready`；
-10. 成功时输出 tag、commit、容器状态和健康响应；失败时输出
-    `vps-compose.sh ps`、server/web 的有限最近日志，并以非零状态退出。
+8. 使用目标 release 的 Compose 配置，仅依次重建 `server`、`web`，不重建数据服务；
+9. 在限定时间内轮询 server/web 的 Docker health，再验证本机首页、live 和 ready；
+10. 成功时输出不可变 tag 与完整 SHA；失败时以非零状态退出且不自动回滚。
 
 服务端启动阶段的 `prisma migrate deploy` 保持不变。脚本不调用任何会清空、
 重置或重新 seed 生产数据库的 Prisma 命令。
 
-建议创建专用 `monexus-deploy` Linux 用户，禁用密码登录，并限制其只拥有
-`/opt/monexus` 与 Docker 所需的权限。Docker 组本身具备高权限，故该账号和
-私钥仍应按高敏感凭证管理。
-
-强化选项是在 `authorized_keys` 对该部署公钥使用 forced command：只允许执行
-上述部署入口，禁止端口转发、agent 转发、X11 和 PTY。该项可在基础方案稳定后
-再启用。
+安装器创建专用、锁定的 `monexus-deploy` Linux 用户，并明确拒绝/移除其 Docker
+组成员资格。其 home 与 `authorized_keys` 均为 root 所有，安装器每次只保留一条
+`restrict` + forced-command SSH 授权；它只能经精确 sudoers 规则调用 root 所有的
+部署入口。这是当前实现的基础安全边界，不是可选项。
 
 ## 7. 健康检查与可观测性
 
@@ -255,7 +249,8 @@ Actions Summary 至少记录：
 - [ ] 配置 SSH 禁止密码登录，并保存可信 host key；
 - [ ] 在 VPS 一次性完成 GHCR `read:packages` 登录（若包私有）；
 - [ ] 安装、审查并以 `dry_run` 验证 `monexus-compose-deploy`；
-- [ ] 确认 `/opt/monexus` 没有需要保留的受跟踪本地改动。
+- [ ] 确认 `/opt/monexus/.env` 中 `MONEXUS_IMAGE_TAG` 与
+  `MONEXUS_PULL_POLICY` 各存在且仅存在一行。
 
 ### GitHub 准备
 
@@ -295,4 +290,3 @@ GitHub Actions → Compose Production Deploy → Run workflow
 
 除非 GitHub Actions 或 VPS 本身不可用，运维人员不再需要通过 SSH 手动拉镜像、
 编辑 `.env` 或重启 Compose。
-

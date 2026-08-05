@@ -342,12 +342,26 @@ jobs:
           path: playwright-report/
           retention-days: 7
 
+  deployment-contract:
+    # This is intentionally independent of source-path filtering: a malformed
+    # workflow or forced-command wrapper must not reach the release branch just
+    # because the surrounding change is documentation or operations-only.
+    name: Compose production deploy contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Validate deployment scripts and workflow safeguards
+        run: npm run verify:compose-production-deploy
+
   ci-ok:
     # Single required status check for branch protection: succeeds when no
     # upstream job failed — skipped jobs (docs-only or unlabeled-E2E PRs)
     # count as success.
     name: CI OK
-    needs: [changes, backend, frontend, e2e]
+    needs: [changes, backend, frontend, e2e, deployment-contract]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5

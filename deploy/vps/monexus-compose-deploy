@@ -1,0 +1,337 @@
+#!/usr/bin/env bash
+#
+# Root-owned production deployment entry point for the Docker Compose VPS.
+#
+# This script deliberately accepts an immutable full Git SHA only. It keeps
+# runtime secrets in /opt/monexus/.env, clones application source into a
+# separate release directory, and changes only the server and web containers.
+# PostgreSQL, Redis and MinIO are never recreated by this entry point.
+
+set -Eeuo pipefail
+IFS=$'\n\t'
+
+readonly REPOSITORY_URL='https://github.com/amo0114/MoNexus.git'
+readonly BASE_PATH='/opt/monexus'
+readonly ENV_FILE="${BASE_PATH}/.env"
+readonly RELEASE_ROOT='/opt/monexus-releases'
+readonly STATE_ROOT='/opt/monexus-deployments'
+readonly PROJECT_NAME='monexus-prod'
+readonly LOCK_FILE='/var/lock/monexus-compose-deploy.lock'
+readonly HEALTH_TIMEOUT_SECONDS=180
+
+fail() {
+  echo "[ERROR] $*" >&2
+  exit 1
+}
+
+notice() {
+  # Keep progress messages out of command substitutions such as
+  # release_path="$(prepare_release_source ...)".
+  echo "[INFO] $*" >&2
+}
+
+usage() {
+  cat <<'USAGE'
+Usage: monexus-compose-deploy {dry-run|deploy} <40-character-master-commit-sha>
+
+dry-run validates the request and prints its immutable image tag without
+changing the host. deploy verifies the master ancestry and image labels,
+updates only MONEXUS_IMAGE_TAG/MONEXUS_PULL_POLICY, recreates server then web,
+and verifies local health endpoints. It never performs an automatic rollback.
+USAGE
+}
+
+require_root() {
+  [[ "${EUID}" -eq 0 ]] || fail 'This deployment entry point must run as root.'
+}
+
+require_commands() {
+  local command_name
+  for command_name in awk curl docker flock git grep install mktemp; do
+    command -v "$command_name" >/dev/null 2>&1 || fail "Required command is unavailable: ${command_name}"
+  done
+}
+
+validate_commit() {
+  local commit="$1"
+  [[ "$commit" =~ ^[0-9a-f]{40}$ ]] || fail 'Commit must be a lowercase 40-character SHA.'
+}
+
+tag_for_commit() {
+  printf 'sha-%s\n' "${1:0:7}"
+}
+
+host_architecture() {
+  case "$(uname -m)" in
+    aarch64|arm64) printf 'arm64\n' ;;
+    x86_64|amd64) printf 'amd64\n' ;;
+    *) fail "Unsupported Docker host architecture: $(uname -m)" ;;
+  esac
+}
+
+assert_control_lines() {
+  [[ -f "$ENV_FILE" ]] || fail "Production environment file is missing: ${ENV_FILE}"
+
+  local key count
+  for key in MONEXUS_IMAGE_TAG MONEXUS_PULL_POLICY; do
+    count="$(grep -Ec "^${key}=" "$ENV_FILE" || true)"
+    [[ "$count" == '1' ]] || fail "${key} must appear exactly once in ${ENV_FILE}."
+  done
+}
+
+read_env_value() {
+  local key="$1"
+  awk -v key="$key" '
+    index($0, key "=") == 1 {
+      value = substr($0, length(key) + 2)
+      sub(/\r$/, "", value)
+      if (value ~ /^".*"$/ || value ~ /^\047.*\047$/) {
+        value = substr(value, 2, length(value) - 2)
+      }
+      print value
+      exit
+    }
+  ' "$ENV_FILE"
+}
+
+release_path_for_commit() {
+  printf '%s/%s\n' "$RELEASE_ROOT" "$1"
+}
+
+prepare_release_source() {
+  local commit="$1"
+  local release_path
+  release_path="$(release_path_for_commit "$commit")"
+
+  install -d -m 0755 "$RELEASE_ROOT"
+
+  if [[ -e "$release_path" ]]; then
+    [[ -d "$release_path/.git" ]] || fail "Existing release path is not a Git checkout: ${release_path}"
+  else
+    notice "Cloning immutable release source into ${release_path}"
+    GIT_TERMINAL_PROMPT=0 git clone --quiet --no-checkout "$REPOSITORY_URL" "$release_path"
+  fi
+
+  [[ "$(git -C "$release_path" remote get-url origin)" == "$REPOSITORY_URL" ]] || \
+    fail "Release source origin is not the expected repository: ${release_path}"
+
+  GIT_TERMINAL_PROMPT=0 git -C "$release_path" fetch --quiet origin \
+    'refs/heads/master:refs/remotes/origin/master'
+  git -C "$release_path" cat-file -e "${commit}^{commit}" || \
+    fail "Requested commit is absent from the verified release source."
+  git -C "$release_path" merge-base --is-ancestor "$commit" refs/remotes/origin/master || \
+    fail 'Requested commit is not reachable from origin/master.'
+  git -C "$release_path" checkout --quiet --detach "$commit"
+
+  [[ "$(git -C "$release_path" rev-parse HEAD)" == "$commit" ]] || \
+    fail 'Release checkout does not match the requested commit.'
+  [[ -z "$(git -C "$release_path" status --porcelain)" ]] || \
+    fail 'Release checkout is unexpectedly dirty.'
+
+  printf '%s\n' "$release_path"
+}
+
+verify_target_image() {
+  local image="$1"
+  local commit="$2"
+  local expected_architecture="$3"
+  local architecture revision
+
+  docker pull --quiet "$image" >/dev/null
+  architecture="$(docker image inspect --format '{{.Architecture}}' "$image")"
+  revision="$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$image")"
+
+  [[ "$architecture" == "$expected_architecture" ]] || \
+    fail "Image architecture mismatch for ${image}: expected ${expected_architecture}, received ${architecture}."
+  [[ "$revision" == "$commit" ]] || \
+    fail "Image revision label mismatch for ${image}."
+}
+
+record_deployment_state() {
+  local commit="$1"
+  local tag="$2"
+  local release_path="$3"
+  local timestamp state_file env_backup
+
+  install -d -m 0700 "$STATE_ROOT"
+  timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
+  state_file="${STATE_ROOT}/${timestamp}-${tag}.state"
+  env_backup="${STATE_ROOT}/${timestamp}-${tag}.env.bak"
+
+  umask 077
+  cp -p "$ENV_FILE" "$env_backup"
+  chmod 0600 "$env_backup"
+
+  {
+    printf 'target_commit=%s\n' "$commit"
+    printf 'target_tag=%s\n' "$tag"
+    printf 'release_source=%s\n' "$release_path"
+    printf 'previous_env_tag=%s\n' "$(read_env_value MONEXUS_IMAGE_TAG)"
+    printf 'previous_env_pull_policy=%s\n' "$(read_env_value MONEXUS_PULL_POLICY)"
+    printf 'previous_server_image=%s\n' "$(docker inspect --format '{{.Config.Image}}' monexus-server-prod)"
+    printf 'previous_web_image=%s\n' "$(docker inspect --format '{{.Config.Image}}' monexus-web-prod)"
+    printf 'recorded_at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  } > "$state_file"
+  chmod 0600 "$state_file"
+
+  notice "Recorded protected deployment state: ${state_file##*/}"
+}
+
+set_runtime_image_tag() {
+  local tag="$1"
+  local temporary_env
+
+  temporary_env="$(mktemp "${ENV_FILE}.deploy.XXXXXX")"
+  chmod --reference="$ENV_FILE" "$temporary_env"
+  chown --reference="$ENV_FILE" "$temporary_env"
+
+  awk -v tag="$tag" '
+    /^MONEXUS_IMAGE_TAG=/ {
+      print "MONEXUS_IMAGE_TAG=" tag
+      next
+    }
+    /^MONEXUS_PULL_POLICY=/ {
+      print "MONEXUS_PULL_POLICY=missing"
+      next
+    }
+    { print }
+  ' "$ENV_FILE" > "$temporary_env"
+
+  if ! grep -Fqx "MONEXUS_IMAGE_TAG=${tag}" "$temporary_env"; then
+    unlink -- "$temporary_env"
+    fail 'Failed to write the requested immutable image tag to the temporary environment file.'
+  fi
+  if ! grep -Fqx 'MONEXUS_PULL_POLICY=missing' "$temporary_env"; then
+    unlink -- "$temporary_env"
+    fail 'Failed to write the required pull policy to the temporary environment file.'
+  fi
+  mv -f "$temporary_env" "$ENV_FILE"
+}
+
+wait_for_healthy() {
+  local container="$1"
+  local deadline state
+  deadline=$((SECONDS + HEALTH_TIMEOUT_SECONDS))
+  state='unknown'
+
+  while (( SECONDS < deadline )); do
+    state="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$container")"
+    if [[ "$state" == 'healthy' ]]; then
+      return 0
+    fi
+    if [[ "$state" == 'exited' || "$state" == 'dead' ]]; then
+      fail "${container} entered terminal state ${state}; no automatic rollback was attempted."
+    fi
+    sleep 3
+  done
+
+  fail "Timed out waiting for ${container}; last state was ${state}; no automatic rollback was attempted."
+}
+
+assert_loopback_health() {
+  local web_port status endpoint
+  web_port="$(read_env_value WEB_PORT)"
+  web_port="${web_port:-18089}"
+  [[ "$web_port" =~ ^[0-9]{1,5}$ ]] || fail 'WEB_PORT must be a numeric TCP port.'
+  (( web_port >= 1 && web_port <= 65535 )) || fail 'WEB_PORT is outside the valid TCP port range.'
+
+  for endpoint in / /api/health/live /api/health/ready; do
+    status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
+      --max-time 15 "http://127.0.0.1:${web_port}${endpoint}")" || \
+      fail "Loopback health request failed for ${endpoint}."
+    [[ "$status" == '200' ]] || fail "Loopback health request returned ${status} for ${endpoint}."
+  done
+}
+
+assert_running_target() {
+  local container="$1"
+  local commit="$2"
+  local image revision health
+
+  image="$(docker inspect --format '{{.Config.Image}}' "$container")"
+  revision="$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$image")"
+  health="$(docker inspect --format '{{.State.Health.Status}}' "$container")"
+
+  [[ "$revision" == "$commit" ]] || fail "${container} is not running the requested image revision."
+  [[ "$health" == 'healthy' ]] || fail "${container} is not healthy after deployment."
+}
+
+run_dry_run() {
+  local commit="$1"
+  local tag
+  tag="$(tag_for_commit "$commit")"
+  assert_control_lines
+  notice "action=dry-run"
+  notice "target_commit=${commit}"
+  notice "target_tag=${tag}"
+  notice "release_path=$(release_path_for_commit "$commit")"
+  notice 'No source checkout, image pull, environment change, migration, or container restart was performed.'
+}
+
+run_deploy() {
+  local commit="$1"
+  local tag release_path expected_architecture
+  local -a compose
+
+  tag="$(tag_for_commit "$commit")"
+  expected_architecture="$(host_architecture)"
+  assert_control_lines
+
+  exec 9>"$LOCK_FILE"
+  flock -n 9 || fail 'Another MoNexus Compose deployment is already in progress.'
+
+  release_path="$(prepare_release_source "$commit")"
+  [[ -x "${release_path}/scripts/check-prod-env.sh" ]] || \
+    fail 'Verified release does not contain the production environment checker.'
+
+  bash "${release_path}/scripts/check-prod-env.sh" --mode production --env-file "$ENV_FILE"
+
+  compose=(
+    docker compose
+    --project-name "$PROJECT_NAME"
+    --env-file "$ENV_FILE"
+    -f "${release_path}/docker-compose.prod.yml"
+    -f "${release_path}/docker-compose.vps.yml"
+    --profile selfhost-storage
+  )
+
+  MONEXUS_IMAGE_TAG="$tag" MONEXUS_PULL_POLICY='missing' "${compose[@]}" config --quiet
+  verify_target_image "ghcr.io/amo0114/monexus-server:${tag}" "$commit" "$expected_architecture"
+  verify_target_image "ghcr.io/amo0114/monexus-web:${tag}" "$commit" "$expected_architecture"
+
+  record_deployment_state "$commit" "$tag" "$release_path"
+  set_runtime_image_tag "$tag"
+
+  notice 'Recreating server only; Prisma migrations run in the server image entrypoint.'
+  "${compose[@]}" up -d --no-deps --force-recreate server
+  wait_for_healthy monexus-server-prod
+
+  notice 'Recreating web only after server readiness passed.'
+  "${compose[@]}" up -d --no-deps --force-recreate web
+  wait_for_healthy monexus-web-prod
+
+  assert_loopback_health
+  assert_running_target monexus-server-prod "$commit"
+  assert_running_target monexus-web-prod "$commit"
+
+  notice "deployment_result=success target_commit=${commit} target_tag=${tag}"
+}
+
+main() {
+  [[ "$#" -eq 2 ]] || { usage >&2; exit 64; }
+
+  local action="$1"
+  local commit="$2"
+
+  require_root
+  require_commands
+  validate_commit "$commit"
+
+  case "$action" in
+    dry-run) run_dry_run "$commit" ;;
+    deploy) run_deploy "$commit" ;;
+    *) usage >&2; exit 64 ;;
+  esac
+}
+
+main "$@"

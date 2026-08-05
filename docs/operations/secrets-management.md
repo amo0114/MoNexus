@@ -63,17 +63,19 @@ Use **environment secrets** for credential material and **environment variables*
 | `BACKUP_DATABASE_URL` | Secret | `production` | DBA/Ops | Read-only database URL for scheduled `pg_dump` when using the GitHub/url backup source | Repository secret | `.github/workflows/backup.yml` |
 | `BACKUP_AGE_RECIPIENT` | Environment variable / repository secret | `production` | DBA/Ops | Public `age1...` recipient used to encrypt database backup artifacts | Host backup env; GitHub Actions secret | `scripts/backup.sh`; `.github/workflows/backup.yml` |
 | `RESTORE_TARGET_URL` | Secret | `staging` | DBA/Ops | Staging-only restore target for backup restore rehearsals | Environment secrets | manual restore commands / future rollback workflow |
-| `DEPLOY_SSH_HOST` | Secret | `staging`, `production` | Ops | Target host for self-hosted deploy | Environment secrets | A1/A5 deploy workflow |
-| `DEPLOY_SSH_USER` | Secret | `staging`, `production` | Ops | Non-root deploy user | Environment secrets | A1/A5 deploy workflow |
-| `DEPLOY_SSH_PRIVATE_KEY` | Secret | `staging`, `production` | Ops | Private key for the deploy user | Environment secrets | A1/A5 deploy workflow |
-| `DEPLOY_SSH_PORT` | Secret | `staging`, `production` | Ops | SSH port when not `22` | Environment secrets | A1/A5 deploy workflow |
+| `DEPLOY_SSH_HOST` | Secret | `production` | Ops | Compose VPS endpoint | Production environment secret | `compose-production-deploy.yml` |
+| `DEPLOY_SSH_USER` | Secret | `production` | Ops | Forced-command `monexus-deploy` user | Production environment secret | `compose-production-deploy.yml` |
+| `DEPLOY_SSH_PRIVATE_KEY` | Secret | `production` | Ops | Dedicated ED25519 private key for the forced-command deploy identity | Production environment secret | `compose-production-deploy.yml` |
+| `DEPLOY_SSH_KNOWN_HOSTS` | Secret | `production` | Ops | Trusted pinned host-key line; CI must not TOFU with ssh-keyscan | Production environment secret | `compose-production-deploy.yml` |
+| `DEPLOY_SSH_PORT` | Environment variable | `production` | Ops | SSH port when not `22` | Production environment variable | `compose-production-deploy.yml` |
 | `STAGING_SSH_HOST` | Secret | `staging` | Ops | Dedicated staging-host endpoint | Staging environment secret | `staging-deploy.yml` only |
 | `STAGING_SSH_USER` | Secret | `staging` | Ops | Non-root `monexus-deploy` account | Staging environment secret | `staging-deploy.yml` only |
 | `STAGING_SSH_PRIVATE_KEY` | Secret | `staging` | Ops | Deploy key dedicated to the staging workflow | Staging environment secret | `staging-deploy.yml` only |
 | `STAGING_SSH_PORT` | Secret | `staging` | Ops | SSH port for the dedicated staging host | Staging environment secret | `staging-deploy.yml` only |
 | `STAGING_SSH_KNOWN_HOSTS` | Secret | `staging` | Ops | Pinned SSH host-key line; prevents CI trust-on-first-use | Staging environment secret | `staging-deploy.yml` only |
-| `DEPLOY_BASE_PATH` | Environment variable | `staging`, `production` | Ops | Base release directory, default `/opt/monexus` | Environment variables | A1/A5 deploy workflow |
-| `PRODUCTION_HEALTHCHECK_URL` | Environment variable | `production` | Ops | Post-deploy readiness check URL | Environment variables | A1/A5 deploy workflow |
+| `DEPLOY_BASE_PATH` | Environment variable | `staging`, `production` | Ops | Legacy artifact base release directory | Environment variables | legacy `deploy.yml` only |
+| `PRODUCTION_HEALTHCHECK_URL` | Environment variable | `production` | Ops | HTTPS public post-deploy readiness check URL | Production environment variable | `compose-production-deploy.yml` |
+| `COMPOSE_PRODUCTION_AUTO_DEPLOY_ENABLED` | Repository variable | repository | Ops | Explicit `true` opt-in after manual rehearsal; absent/false prevents automatic master deployment | Repository variable | `compose-production-deploy.yml` |
 | `STAGING_HEALTHCHECK_URL` | Environment variable | `staging` | Ops | Staging post-deploy readiness check URL | Environment variables | A1/A5 deploy workflow |
 | `ALERT_SLACK_WEBHOOK_URL` | Secret | `staging`, `production` | Observability | Slack incoming webhook for alert routing | Environment secrets | A4 alert routing |
 | `ALERT_EMAIL_TO` | Environment variable | `staging`, `production` | Observability | Email destination for alert routing | Environment variables | A4 alert routing |
@@ -89,7 +91,7 @@ Use **environment secrets** for credential material and **environment variables*
 3. Add environment variables first. These values are visible to workflow logs when printed, so never put credentials in variables.
 4. Add environment secrets second. GitHub masks secret values in logs, but workflow authors must still avoid printing or passing them through command-line arguments.
 5. Keep `BACKUP_DATABASE_URL` and `BACKUP_AGE_RECIPIENT` as repository secrets for the scheduled backup workflow. The recipient is public-key material, but treating it as workflow configuration avoids accidental mismatch with the recovery identity. Never store the corresponding age identity in GitHub or on the production VPS.
-6. Ask A1/A5 to consume the deploy names in this document. If `.github/workflows/deploy.yml` is absent on a Wave 1 branch, do not create it from A2.
+6. Install the root-owned VPS entry point and forced-command `monexus-deploy` identity before setting the production SSH values; follow [`compose-production-deploy.md`](./compose-production-deploy.md). Keep `COMPOSE_PRODUCTION_AUTO_DEPLOY_ENABLED` false until the protected manual rehearsal succeeds.
 7. Generate `MFA_ENCRYPTION_KEY` only in an approved secret-management session; it must be a standard-base64 encoding of exactly 32 bytes. Do not paste it into shell history, chat, PRs, or `.env.example`. The deploy preflight and production server startup both reject missing, non-canonical, or wrong-length values.
 8. Generate `ABUSE_HASH_KEY` in a separate approved session with the same canonical 32-byte base64 requirement. It is not a JWT, MFA, or encryption key and must not be reused for any other purpose. Set `ABUSE_PROTECTION_MODE=enforce`, `REDIS_ENABLED=true`, and `REDIS_REQUIRED=true` before deploying; both startup and preflight reject a production shortcut.
 9. Create distinct staging and production Turnstile widgets. Keep `TURNSTILE_SECRET_KEY` in the secret store, enter only exact hostnames in `TURNSTILE_ALLOWED_HOSTNAMES`, and confirm the public `TURNSTILE_SITE_KEY` is the only Turnstile value visible to a browser.

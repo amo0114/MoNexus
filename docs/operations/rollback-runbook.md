@@ -1,10 +1,16 @@
 # Rollback Runbook
 
+> 当前 Docker Compose 生产 VPS 的日常回退使用
+> [受审批的 Compose 生产部署](./compose-production-deploy.md) 中的手动完整 SHA
+> 发布路径。下文 nginx + systemd/PM2 artifact 指令保留给 legacy 主机；两种模型
+> 不能混用。
+
 Review date: 2026-05-14. Scope: M5 production rollback for the self-hosted nginx + systemd/PM2 target. This runbook covers artifact rollback, frontend rollback, server rollback, env rollback, failed health checks, Prisma migration fallback, backup restore rehearsal, forward fix policy, and escalation handoff.
 
 ## Related Procedures
 
-- `docs/operations/deployment-target.md` defines the self-hosted nginx + systemd/PM2 target and release directory layout.
+- `docs/operations/compose-production-deploy.md` defines the current protected Docker Compose production route.
+- `docs/operations/deployment-target.md` defines the legacy self-hosted nginx + systemd/PM2 target and release directory layout.
 - `docs/operations/gray-release.md` defines the `deploy_candidate`, `promote`, and `rollback` workflow actions and the `candidate` / `current` symlink model.
 - `docs/operations/alert-routing.md` defines Slack-first routing, email fallback, P1/P2 severity handling, and first responder ownership.
 
