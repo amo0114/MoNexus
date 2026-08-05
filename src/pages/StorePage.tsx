@@ -103,6 +103,7 @@ function ProductCard({
     <div
       key={product.id}
       onClick={() => onOpen(product)}
+      data-testid={`store-product-card-${product.id}`}
       className={`relative overflow-hidden group cursor-pointer flex flex-col min-w-0 h-[256px] md:h-[372px]
         rounded-xl bg-[var(--color-surface)] border border-[var(--color-border)]
         shadow-md hover:shadow-lg hover:border-[var(--color-primary)]/35

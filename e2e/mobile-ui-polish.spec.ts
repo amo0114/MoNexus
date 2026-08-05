@@ -35,14 +35,16 @@ test.describe('mobile layout verification @375px', () => {
     expect(Math.round(barBox!.y + barBox!.height)).toBe(812)
     expect(barBox!.height).toBeGreaterThanOrEqual(56)
 
-    // Grid: first two product cards sit side by side (2 columns), 240px tall
+    // Grid: first two product cards sit side by side (2 columns), 256px tall.
+    // Keep this independent of utility-class implementation details.
     const cards = page.locator('[data-testid^="store-stock-"]')
     await expect(cards.first()).toBeVisible({ timeout: 10_000 })
-    const cardEls = page.locator('div[class*="h-[240px]"]')
+    const cardEls = page.locator('[data-testid^="store-product-card-"]')
+    await expect(cardEls.nth(1)).toBeVisible({ timeout: 10_000 })
     const first = await cardEls.nth(0).boundingBox()
     const second = await cardEls.nth(1).boundingBox()
     expect(Math.round(first!.y)).toBe(Math.round(second!.y)) // same row → 2 cols
-    expect(first!.height).toBe(240)
+    expect(first!.height).toBe(256)
     expect(second!.x).toBeGreaterThan(first!.x)
 
     // Tab bar never covers content: last card bottom <= tab bar top after scroll-to-bottom
@@ -146,7 +148,8 @@ test.describe('mobile layout verification @320px', () => {
     await loginAs(page, SEED_ACCOUNTS.user)
     await page.getByRole('button', { name: '搜索' }).waitFor({ timeout: 10_000 })
     await page.waitForTimeout(800)
-    const cardEls = page.locator('div[class*="h-[240px]"]')
+    const cardEls = page.locator('[data-testid^="store-product-card-"]')
+    await expect(cardEls.nth(1)).toBeVisible({ timeout: 10_000 })
     const first = await cardEls.nth(0).boundingBox()
     const second = await cardEls.nth(1).boundingBox()
     expect(Math.round(first!.y)).toBe(Math.round(second!.y))
@@ -224,7 +227,7 @@ test.describe('review fixes @375px', () => {
     await expect(skeletonCard).toBeVisible()
     const skelY = (await skeletonCard.boundingBox())!.y
 
-    const firstCard = page.locator('div[class*="h-[240px]"]').first()
+    const firstCard = page.locator('[data-testid^="store-product-card-"]').first()
     await expect(firstCard).toBeVisible({ timeout: 10_000 })
     const finalY = (await firstCard.boundingBox())!.y
 
