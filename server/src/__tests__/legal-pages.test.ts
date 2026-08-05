@@ -470,6 +470,55 @@ describe('order acceptance', () => {
     expect(stale.status).toBe(409)
     expect(stale.body.error.code).toBe('LEGAL_AGREEMENT_STALE')
   })
+
+  it('classifies a matching in-flight processing record as CONFLICT, not STALE, after an agreement upgrade', async () => {
+    enableLegal('enforce')
+    const { user, product, accessToken } = await setupBuyerAndProduct()
+    const key = crypto.randomUUID()
+    const payload = { productId: product.id, agreementVersions: currentOrderAgreements() }
+
+    // 模拟旧实例仍在处理原请求：直接插入一条 processing 占用记录，指纹与
+    // 首个请求一致（computeRequestDigest 对同参确定）。
+    const digest = computeRequestDigest({
+      productId: product.id,
+      agreementVersions: currentOrderAgreements(),
+    })
+    await prisma.idempotencyRecord.create({
+      data: {
+        userId: user.id,
+        key,
+        productId: product.id,
+        requestDigest: digest,
+        claimToken: crypto.randomUUID(),
+        status: 'processing',
+        expiresAt: new Date(Date.now() + 15 * 60 * 1000),
+      },
+    })
+
+    // 部署升级协议 → 重试同 key 同内容：必须先命中 in-flight 分类（409
+    // CONFLICT，前端保留原 key），而不是被 LEGAL_AGREEMENT_STALE 触发换键。
+    __setLegalRegistryForTests(bumpedOrderDocumentDefinitions())
+
+    const retry = await api
+      .post('/api/orders')
+      .set(authHeader(accessToken))
+      .set('Idempotency-Key', key)
+      .send(payload)
+    expect(retry.status).toBe(409)
+    expect(retry.body.error.code).toBe('CONFLICT')
+    expect(retry.body.error.message).toContain('处理中')
+    expect(await prisma.order.count()).toBe(0)
+
+    // 指纹不符的同 key 重试不受 peek 影响：claim 路径报 keyMismatch。
+    const mismatch = await api
+      .post('/api/orders')
+      .set(authHeader(accessToken))
+      .set('Idempotency-Key', key)
+      .send({ productId: product.id, agreementVersions: { terms: '1.1', refund: '1.1' } })
+    expect(mismatch.status).toBe(409)
+    expect(mismatch.body.error.code).toBe('CONFLICT')
+    expect(mismatch.body.error.message).toContain('内容不同')
+  })
 })
 
 describe('idempotency fingerprint canonicalization', () => {

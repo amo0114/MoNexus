@@ -30,6 +30,11 @@ function inFlight(): HttpError {
   return new HttpError(409, 'CONFLICT', '相同的兑换请求正在处理中，请稍后查看订单')
 }
 
+/** 对外暴露的 in-flight 冲突（peek 分类后由 service 层抛出）。 */
+export function idempotencyInFlight(): HttpError {
+  return inFlight()
+}
+
 export type IdempotencyFingerprint = {
   productId: number
   // 购买的规格（P4a）。null/未传（单 SKU 默认路径）不写入 canonical，
@@ -173,36 +178,52 @@ export async function claimIdempotencyKey(
 }
 
 /**
- * SPEC-LEGAL-001 复审 P1：已完成记录的重放识别，先于一切请求内容校验。
+ * SPEC-LEGAL-001 复审 P1：既有幂等记录的无副作用分类，先于一切请求内容
+ * 校验（协议版本、价格等"随部署变化的校验规则"）。
  *
- * 部署把协议从 1.0 升到 1.1 后，客户端用原 key + 原版本重试一个其实已成功
- * 的意图（首个响应丢失），绝不能被新协议版本挡在 LEGAL_AGREEMENT_STALE——
- * 前端随后会换新幂等键重确认，同一意图就产生了第二笔订单。重放识别因此
- * 必须先于协议校验/claim。
+ * 部署把协议从 1.0 升到 1.1 后，客户端用原 key + 原版本重试：
+ * - 旧请求已成功（completed）→ 必须重放原订单，而不是 STALE——否则前端
+ *   换新幂等键重确认，同一意图产生第二笔订单；
+ * - 旧请求仍在旧实例上处理（processing 未过期）→ 必须返回 in-flight
+ *   冲突（前端保留原 key 等待结果），同样不能 STALE 触发换键。
  *
- * 仅识别"completed 且未过重放窗口且指纹匹配"的记录；其余状态一律返回
- * null 走正常 claim 分类（processing 并发 / 过期 / 指纹不符各有其义）。
- * 预识别与后续 claim 不原子是安全的：漏判只回落到 claim 的完整分类逻辑。
+ * 指纹不匹配、记录不存在、或已过期的记录一律返回 null，走正常校验/claim
+ * 分类（过期 processing 可被接管重新执行、过期 completed 得
+ * IDEMPOTENCY_KEY_EXPIRED、指纹不符得 keyMismatch）。peek 与后续 claim 不
+ * 原子是安全的：漏判只回落到 claim 的完整分类逻辑。
  */
-export async function peekCompletedIdempotencyReplay(
+export type IdempotencyPeek =
+  | { kind: 'replay'; orderId: number }
+  | { kind: 'in_flight' }
+
+export async function peekIdempotencyOutcome(
   userId: number,
   key: string,
   fingerprint: IdempotencyFingerprint
-): Promise<{ orderId: number } | null> {
+): Promise<IdempotencyPeek | null> {
   const existing = await prisma.idempotencyRecord.findUnique({
     where: { userId_key: { userId, key } },
   })
   if (!existing) return null
-  if (existing.status !== 'completed' || existing.orderId == null) return null
-  // 过期的 completed 记录返回 null：落入 claim 路径拿到 IDEMPOTENCY_KEY_EXPIRED。
-  if (existing.expiresAt <= new Date()) return null
-  // 空摘要哨兵（P1 迁移行）：只能按 productId 判定，同商品才允许重放。
-  if (existing.requestDigest === '') {
-    return existing.productId === fingerprint.productId ? { orderId: existing.orderId } : null
+
+  // 指纹一致性：空摘要哨兵（P1 迁移行）只能按 productId 判定。
+  const fingerprintMatches = existing.requestDigest === ''
+    ? existing.productId === fingerprint.productId
+    : existing.requestDigest === computeRequestDigest(fingerprint)
+  if (!fingerprintMatches) return null
+
+  const now = new Date()
+  if (existing.status === 'completed' && existing.orderId != null) {
+    // 过期的 completed 记录返回 null：落入 claim 路径拿到 IDEMPOTENCY_KEY_EXPIRED。
+    if (existing.expiresAt <= now) return null
+    return { kind: 'replay', orderId: existing.orderId }
   }
-  return existing.requestDigest === computeRequestDigest(fingerprint)
-    ? { orderId: existing.orderId }
-    : null
+  if (existing.status === 'processing') {
+    // 过期的 processing 是崩溃残留，返回 null 由 claim 路径接管重新执行。
+    if (existing.expiresAt <= now) return null
+    return { kind: 'in_flight' }
+  }
+  return null
 }
 
 /**

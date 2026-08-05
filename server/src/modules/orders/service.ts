@@ -17,7 +17,8 @@ import { debitAvailablePoints, holdAvailablePoints, settleHeldOrder } from './ac
 import {
   claimIdempotencyKey,
   completeIdempotencyClaim,
-  peekCompletedIdempotencyReplay,
+  idempotencyInFlight,
+  peekIdempotencyOutcome,
   releaseIdempotencyClaim,
   type IdempotencyFingerprint,
 } from './idempotency.js'
@@ -128,12 +129,13 @@ export async function createOrder(
     agreementVersions,
   }
 
-  // SPEC-LEGAL-001 复审 P1：已完成记录的重放识别先于协议校验——协议升级
-  // 不得阻断已成功意图按原 key + 原版本重放（否则前端换新键重确认会产生
-  // 第二笔订单）。
+  // SPEC-LEGAL-001 复审 P1：既有幂等记录的分类（重放 / in-flight）先于协议
+  // 校验——协议升级不得阻断已成功意图的重放，也不得把"旧实例仍在处理"的
+  // 同指纹请求判为 STALE 触发前端换键（两者都会产生第二笔订单）。
   if (idempotencyKey) {
-    const replay = await peekCompletedIdempotencyReplay(userId, idempotencyKey, fingerprint)
-    if (replay) return buildReplayResponse(replay.orderId, userId)
+    const peeked = await peekIdempotencyOutcome(userId, idempotencyKey, fingerprint)
+    if (peeked?.kind === 'replay') return buildReplayResponse(peeked.orderId, userId)
+    if (peeked?.kind === 'in_flight') throw idempotencyInFlight()
   }
 
   // SPEC-LEGAL-001：协议证据解析先于幂等 claim——REQUIRED/STALE 是纯注册表

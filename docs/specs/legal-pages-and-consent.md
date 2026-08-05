@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | SPEC-LEGAL-001 |
-| 版本 | 1.1.0（R1：复审修订——重放优先、enforcement 下发、携带项逐项校验、指纹空值等价） |
+| 版本 | 1.2.0（R2：in-flight 分类优先于协议校验；R1：重放优先、enforcement 下发、携带项逐项校验、指纹空值等价） |
 | 日期 | 2026-08-05 |
 | 状态 | Implemented（草案文档 v1.0 随代码发布） |
 | 产品 | MoNexus |
@@ -47,7 +47,7 @@
 | LEG-02 | `contentHash` = 对规范化公开载荷（`{slug,title,version,updatedAt,sections}`，键序固定的 JSON）的 sha256（hex）。公开响应在此载荷上仅追加 `contentHash`，任何人可重算验证。 |
 | LEG-03 | 文档内容实质性变更必须 bump `version`（`MAJOR.MINOR`）；历史同意记录锚定旧版本哈希，绝不追溯修改。 |
 | LEG-04 | `LEGAL_PAGES_ENABLED=false` 时：公开 API 一律 404，注册/下单忽略 `agreements` 输入、不落证、不报错（旧客户端零感知）。 |
-| LEG-05 | `ENFORCEMENT=enforce` 时：注册缺确认 → `400 LEGAL_AGREEMENT_REQUIRED`；版本落后 → `409 LEGAL_AGREEMENT_STALE`（details 携带必备清单 ∪ 过期项的当前版本）。拒绝发生在任何 DB 写入与幂等 claim 之前，零副作用。**例外（R1）**：已完成幂等记录的重放识别先于协议校验——协议升级不得阻断已成功意图按原 key + 原版本重放，否则前端换新键重确认会产生重复订单。 |
+| LEG-05 | `ENFORCEMENT=enforce` 时：注册缺确认 → `400 LEGAL_AGREEMENT_REQUIRED`；版本落后 → `409 LEGAL_AGREEMENT_STALE`（details 携带必备清单 ∪ 过期项的当前版本）。拒绝发生在任何 DB 写入与幂等 claim 之前，零副作用。**例外（R1/R2）**：既有幂等记录的副作用分类先于协议校验——同指纹的 completed 记录直接重放原订单、未过期 processing 记录返回 in-flight 冲突（前端保留原 key 等待结果）；两者都不得被协议升级判为 STALE 触发换键，否则同一意图产生第二笔订单。 |
 | LEG-06 | `ENFORCEMENT=off`（记录模式）：不强制，前端不门控提交（`legalRequirement.enforcement` 随清单下发）；勾选可选，未勾选不携带即不留证。两种模式下**所有携带项**均逐项校验：slug 必须已知（400）、版本必须等于注册表当前版本（409 STALE，无论是否属于本场景必备清单）；通过校验的携带项（含必备之外文档）全部留证——携带旧版本的"同意"绝不被静默丢弃。 |
 | LEG-07 | `UserAgreementConsent` 与账号同事务创建；`OrderAgreementAcceptance` 与订单同事务创建。绝不出现"已成交但未留证"。两表只插入不更新。 |
 | LEG-08 | `OrderAgreementAcceptance` 以 `@@unique([orderId, document])` 兜底幂等重放/重试；`agreementVersions` 进入幂等请求指纹——同 key 换协议版本 = 不同结算意图 → 409 CONFLICT。 |
@@ -132,7 +132,7 @@ GET /api/legal/documents/:slug?version=x.y
 ### 6.4 下单接入
 
 - `createOrderSchema` 增加 `agreementVersions?: Record<document, version>`；controller 额外透传 `req.ip` / `user-agent`。
-- `createOrder` 顺序（R1 修订）：**已完成记录重放识别（peekCompletedIdempotencyReplay）→ 协议证据解析 → 幂等 claim**。重放识别仅命中"completed + 未过重放窗口 + 指纹匹配"，其余状态回落 claim 的完整分类；协议校验失败发生于 claim 之前，不占幂等键。
+- `createOrder` 顺序（R2 修订）：**既有记录分类（peekIdempotencyOutcome：completed+指纹匹配 → 重放；processing 未过期+指纹匹配 → in-flight 409）→ 协议证据解析 → 幂等 claim**。peek 仅做无副作用预识别，其余状态（不存在/过期/指纹不符）回落 claim 的完整分类；协议校验失败发生于 claim 之前，不占幂等键。
 - `agreementVersions` 进入请求指纹（LEG-08）；空对象与未传等价（归一化空数组不写入 canonical）。
 - `OrderAgreementAcceptance` 在订单事务内 `tx.order.create` 之后落库。
 - `GET /api/checkout/preview` 响应增加 `legalRequirement`（含 `enforcement` 字段，同注册镜像语义）。
@@ -171,7 +171,7 @@ GET /api/legal/documents/:slug?version=x.y
 
 ## 8. 测试
 
-- **vitest**（`server/src/__tests__/legal-pages.test.ts`，23 例）：注册表哈希稳定性、公开 API 开关行为、注册 REQUIRED/STALE/落证/记录模式/关闭忽略、下单 REQUIRED/STALE/同事务落证/幂等重放去重/指纹冲突、留存 cron 匿名化与幂等；R1 新增：协议升级后原 key 重放回归（LEG-05 例外）、非必备文档旧版本同样 STALE + 额外当前版本文档留证（LEG-06）、指纹 `{}`/未传等价与键序无关断言、enforcement 字段下发。
+- **vitest**（`server/src/__tests__/legal-pages.test.ts`，24 例）：注册表哈希稳定性、公开 API 开关行为、注册 REQUIRED/STALE/落证/记录模式/关闭忽略、下单 REQUIRED/STALE/同事务落证/幂等重放去重/指纹冲突、留存 cron 匿名化与幂等；R1 新增：协议升级后原 key 重放回归、非必备文档旧版本同样 STALE + 额外当前版本文档留证（LEG-06）、指纹 `{}`/未传等价与键序无关断言、enforcement 字段下发；R2 新增：协议升级后同指纹 processing 记录分类为 in-flight CONFLICT 而非 STALE（LEG-05 例外扩展）。
 - **config 守卫**（`config-production-guards.test.ts`，+4 例）：矛盾配置拒启、生产 off 拒启、生产 fixture 拒启。
 - **e2e**（`e2e/legal-pages.spec.ts`，独立栈 `playwright.legal-pages.config.ts`，`LEGAL_PAGES_ENABLED=true` + `ENFORCEMENT=enforce`，独立端口 3104/5179）：五页匿名直达 + 刷新、footer 分组与跳转、注册勾选门控全链路、下单勾选门控 + 退款披露 + 成交、API 层 REQUIRED 契约。运行：`npm run e2e:legal`（数据库默认 `monexus_legal_test`，可用 `LEGAL_E2E_DATABASE_URL` 覆盖）。
 
