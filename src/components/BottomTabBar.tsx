@@ -142,7 +142,7 @@ export default function BottomTabBar() {
       ariaLabel: '积分明细',
     })
     // 排行榜：买家的激励面。商家 tab 位已满（数据优先），从抽屉进入；
-    // 管理员则在上面的分支保留了明确入口。
+    // 管理员则在上面的分支保留直接入口，避免误以为榜单不可访问。
     tabs.push({
       key: 'leaderboard',
       label: '排行',
