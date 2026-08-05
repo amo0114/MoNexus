@@ -69,7 +69,8 @@ describe('mailer adapter', () => {
     )
     expect(nodemailerMock.sendMail).toHaveBeenCalledTimes(1)
     expect(nodemailerMock.sendMail).toHaveBeenCalledWith({
-      from: 'sender@monexus.test',
+      // Default display name MoNexus when SMTP_FROM_NAME is unset.
+      from: '"MoNexus" <sender@monexus.test>',
       to: 'recipient@monexus.test',
       subject: 'Verify your email',
       text: 'Plain text body',

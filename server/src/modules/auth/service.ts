@@ -28,6 +28,7 @@ import {
 } from './abusePolicy.js'
 import { getHumanVerifier } from './humanVerification.js'
 import { getMailer } from '../../lib/mailer/index.js'
+import { renderMail } from '../../lib/mailer/templates/index.js'
 import { normalizeInviteCode } from '../../lib/inviteCode.js'
 import { claimInviteCodeForRegistration } from '../invite/service.js'
 import { getRefreshTokenMaxAgeMs, getSystemConfigValue } from '../../lib/systemConfig.js'
@@ -1157,11 +1158,13 @@ export async function requestPasswordReset(email: string, ip?: string) {
 
   const mailer = await getMailer()
   const link = `${config.appBaseUrl}/reset-password/${rawToken}`
-  await mailer.send({
-    to: user.email,
-    subject: 'MoNexus 密码重置',
-    text: `您正在重置 MoNexus 账户的密码。\n\n请在 30 分钟内点击下面的链接完成重置：\n${link}\n\n如非本人操作请忽略此邮件，账户密码不会被更改。`,
-  })
+  await mailer.send(
+    renderMail('password_reset', {
+      to: user.email,
+      resetUrl: link,
+      expiresMinutes: 30,
+    }),
+  )
 }
 
 /**
@@ -1303,11 +1306,13 @@ export async function sendEmailVerification(userId: number, ip?: string) {
 
   const mailer = await getMailer()
   const link = `${config.appBaseUrl}/verify-email#token=${rawToken}`
-  await mailer.send({
-    to: issued.email,
-    subject: 'MoNexus 邮箱验证',
-    text: `请在 24 小时内点击下面的链接完成邮箱验证：\n${link}\n\n如非本人操作请忽略此邮件。`,
-  })
+  await mailer.send(
+    renderMail('email_verification', {
+      to: issued.email,
+      verifyUrl: link,
+      expiresHours: 24,
+    }),
+  )
 }
 
 export async function verifyEmailWithToken(userId: number, rawToken: string) {

@@ -166,6 +166,12 @@ const envSchema = z.object({
   SMTP_USER: optionalStringEnvSchema,
   SMTP_PASS: optionalStringEnvSchema,
   SMTP_FROM: optionalEmailEnvSchema,
+  /**
+   * Display name for the From: header (inbox shows e.g. "MoNexus").
+   * Address stays in SMTP_FROM / SMTP_USER. Empty string = no display name.
+   * Default applied below when SMTP is configured.
+   */
+  SMTP_FROM_NAME: optionalStringEnvSchema,
 
   // --- Registration abuse protection. These are deliberately independent
   // from JWT/MFA keys. `off` is only a local-development/test escape hatch;
@@ -376,6 +382,22 @@ if (env.NODE_ENV === 'production' && hasSmtp && !smtpFrom) {
   process.exit(1)
 }
 
+/**
+ * Build RFC 5322 From with optional display name.
+ * SMTP_FROM is validated as a bare email; name is a separate field so we never
+ * break zod email parsing with `"Name" <addr>` in one env var.
+ */
+export function formatSmtpFromHeader(address: string, displayName: string | undefined): string {
+  const name = displayName === undefined ? 'MoNexus' : displayName.trim()
+  if (!name) return address
+  const escaped = name.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+  return `"${escaped}" <${address}>`
+}
+
+const smtpFromHeader = smtpFrom
+  ? formatSmtpFromHeader(smtpFrom, env.SMTP_FROM_NAME)
+  : undefined
+
 // P7b 自动开通外呼守卫。密钥格式任何环境都校验（错格式加密即坏数据）；
 // 生产必配显式密钥（商家签名密钥静态加密不允许隐式派生），逃生开关生产拒启。
 if (env.WEBHOOK_SECRET_ENC_KEY && !/^[0-9a-fA-F]{64}$/.test(env.WEBHOOK_SECRET_ENC_KEY)) {
@@ -500,10 +522,10 @@ export const config = {
         secure: env.SMTP_SECURE,
         user: env.SMTP_USER,
         pass: env.SMTP_PASS,
-        // 实际生效发件地址：含 SMTP_USER 兜底，驱动真实投递与就绪判定。
-        from: smtpFrom,
-        // 可展示发件地址：仅显式 SMTP_FROM。管理端邮件状态只回显这一项，
-        // 绝不把 SMTP_USER 兜底值下发给浏览器（MAIL-01 / SPEC C3）。
+        // 实际生效 From 头：含显示名 + 地址（SMTP_FROM ?? SMTP_USER）。
+        // 驱动真实投递；Boolean(from) 仍可用于 deliveryReady。
+        from: smtpFromHeader,
+        // 可展示发件地址：仅显式 SMTP_FROM 邮箱本体，不回显显示名/SMTP_USER。
         displayFrom: env.SMTP_FROM,
       }
     : ({ kind: 'console' as const }),

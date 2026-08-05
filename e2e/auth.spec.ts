@@ -8,10 +8,10 @@ test('register a new user, login, see profile', async ({ page }) => {
   await page.addStyleTag({
     content: '*, *::before, *::after { animation: none !important; transition: none !important; }',
   })
-  await page.getByRole('button', { name: '没有账号？注册新账号' }).click()
+  await page.getByRole('button', { name: '没有账号？立即注册' }).click()
   await page.getByPlaceholder('邮箱地址').fill(email)
   await page.getByPlaceholder('密码（至少 6 位）').fill(password)
-  await page.getByRole('button', { name: '注册账号' }).click()
+  await page.getByRole('button', { name: '创建账号' }).click()
 
   await expect(page).toHaveURL(/\/$/)
   await page.goto('/profile')
