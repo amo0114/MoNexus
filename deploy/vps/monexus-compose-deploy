@@ -18,6 +18,7 @@ readonly STATE_ROOT='/opt/monexus-deployments'
 readonly PROJECT_NAME='monexus-prod'
 readonly LOCK_FILE='/var/lock/monexus-compose-deploy.lock'
 readonly HEALTH_TIMEOUT_SECONDS=180
+readonly VPS_PROXY_OVERLAY_KEY='MONEXUS_USE_VPS_PROXY_OVERLAY'
 
 fail() {
   echo "[ERROR] $*" >&2
@@ -92,6 +93,25 @@ read_env_value() {
       exit
     }
   ' "$ENV_FILE"
+}
+
+use_vps_proxy_overlay() {
+  local count value
+
+  # Existing hosts may publish WEB_PORT directly. Do not silently change that
+  # network boundary on their first automated release: the loopback-only
+  # overlay is opt-in and is appropriate only after a host proxy is already
+  # serving the public HTTPS endpoint.
+  count="$(grep -Ec "^${VPS_PROXY_OVERLAY_KEY}=" "$ENV_FILE" || true)"
+  [[ "$count" == '0' ]] && return 1
+  [[ "$count" == '1' ]] || fail "${VPS_PROXY_OVERLAY_KEY} must appear at most once in ${ENV_FILE}."
+
+  value="$(read_env_value "$VPS_PROXY_OVERLAY_KEY")"
+  case "$value" in
+    true) return 0 ;;
+    false) return 1 ;;
+    *) fail "${VPS_PROXY_OVERLAY_KEY} must be true or false when set." ;;
+  esac
 }
 
 release_path_for_commit() {
@@ -291,9 +311,18 @@ run_deploy() {
     --project-name "$PROJECT_NAME"
     --env-file "$ENV_FILE"
     -f "${release_path}/docker-compose.prod.yml"
-    -f "${release_path}/docker-compose.vps.yml"
-    --profile selfhost-storage
   )
+
+  if use_vps_proxy_overlay; then
+    [[ -f "${release_path}/docker-compose.vps.yml" ]] || \
+      fail 'Verified release does not contain the VPS proxy Compose overlay.'
+    compose+=(-f "${release_path}/docker-compose.vps.yml")
+    notice 'Using the loopback-only VPS proxy overlay (explicitly enabled).'
+  else
+    notice 'Using the base Compose port mapping; existing direct WEB_PORT exposure is preserved.'
+  fi
+
+  compose+=(--profile selfhost-storage)
 
   MONEXUS_IMAGE_TAG="$tag" MONEXUS_PULL_POLICY='missing' "${compose[@]}" config --quiet
   verify_target_image "ghcr.io/amo0114/monexus-server:${tag}" "$commit" "$expected_architecture"
