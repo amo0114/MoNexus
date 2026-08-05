@@ -4,9 +4,13 @@ import { config } from '../config/index.js'
 import { prisma } from '../lib/prisma.js'
 import {
   __resetLegalRegistryForTests,
+  __setLegalRegistryForTests,
   listLegalDocumentSummaries,
   resolveLegalDocument,
+  type LegalDocumentDefinition,
 } from '../modules/legal/registry.js'
+import { BUILTIN_LEGAL_DOCUMENTS } from '../modules/legal/documents.js'
+import { computeRequestDigest } from '../modules/orders/idempotency.js'
 import { EVIDENCE_RETENTION_DAYS } from '../modules/legal/service.js'
 import { __runLegalRetentionBatchForTests } from '../modules/legal/cron.js'
 import {
@@ -55,6 +59,25 @@ function currentRegistrationAgreements() {
 
 function currentOrderAgreements() {
   return { terms: '1.0', refund: '1.0' }
+}
+
+/** 模拟部署升级：terms/refund 追加 1.1 版本并切换 currentVersion。 */
+function bumpedOrderDocumentDefinitions(): LegalDocumentDefinition[] {
+  return BUILTIN_LEGAL_DOCUMENTS.map(definition => {
+    if (definition.slug !== 'terms' && definition.slug !== 'refund') return definition
+    return {
+      ...definition,
+      currentVersion: '1.1',
+      versions: [
+        ...definition.versions,
+        {
+          version: '1.1',
+          updatedAt: '2026-08-06',
+          sections: [{ heading: '修订说明', paragraphs: ['版本 1.1：条款修订。'] }],
+        },
+      ],
+    }
+  })
 }
 
 let original: LegalConfigSnapshot
@@ -137,12 +160,19 @@ describe('registry & public API', () => {
     enableLegal()
     const on = await api.get('/api/auth/registration-status').expect(200)
     expect(on.body.legalRequirement.required).toHaveLength(2)
+    // 复审 P2：强制语义随清单下发，记录模式（off）客户端不得门控提交。
+    expect(on.body.legalRequirement.enforcement).toBe('enforce')
     const documents = on.body.legalRequirement.required.map((r: { document: string }) => r.document).sort()
     expect(documents).toEqual(['privacy', 'terms'])
     for (const item of on.body.legalRequirement.required) {
       expect(item.version).toBe('1.0')
       expect(item.contentHash).toMatch(/^[0-9a-f]{64}$/)
     }
+
+    enableLegal('off')
+    const recordOnly = await api.get('/api/auth/registration-status').expect(200)
+    expect(recordOnly.body.legalRequirement.enforcement).toBe('off')
+    expect(recordOnly.body.legalRequirement.required).toHaveLength(2)
   })
 })
 
@@ -238,6 +268,38 @@ describe('registration consent', () => {
     expect(res.status).toBe(201)
     const user = await prisma.user.findUniqueOrThrow({ where: { email } })
     expect(await prisma.userAgreementConsent.count({ where: { userId: user.id } })).toBe(0)
+  })
+
+  it('rejects stale versions of non-required documents too (LEG-06)', async () => {
+    enableLegal('enforce')
+    // about 不是注册必备文档，但携带的旧版本同样必须被注册表裁决——
+    // 否则"确认过 about@0.1"会被静默丢弃，证据失真。
+    const res = await api.post('/api/auth/register').send({
+      email,
+      password: 'pass123',
+      agreements: { ...currentRegistrationAgreements(), about: '0.1' },
+    })
+    expect(res.status).toBe(409)
+    expect(res.body.error.code).toBe('LEGAL_AGREEMENT_STALE')
+    const fields = (res.body.error.details as Array<{ field: string }>).map(d => d.field)
+    expect(fields).toContain('agreements.about')
+    expect(await prisma.user.findUnique({ where: { email } })).toBeNull()
+  })
+
+  it('records extra current-version documents provided alongside the required ones', async () => {
+    enableLegal('enforce')
+    const res = await api.post('/api/auth/register').send({
+      email,
+      password: 'pass123',
+      agreements: { ...currentRegistrationAgreements(), about: '1.0' },
+    })
+    expect(res.status).toBe(201)
+    const user = await prisma.user.findUniqueOrThrow({ where: { email } })
+    const consents = await prisma.userAgreementConsent.findMany({
+      where: { userId: user.id },
+      orderBy: { document: 'asc' },
+    })
+    expect(consents.map(c => c.document)).toEqual(['about', 'privacy', 'terms'])
   })
 })
 
@@ -357,6 +419,76 @@ describe('order acceptance', () => {
       .send({ productId: product.id })
     expect(res.status).toBe(201)
     expect(await prisma.orderAgreementAcceptance.count()).toBe(0)
+  })
+
+  it('replays a completed order under the original key after an agreement upgrade (P1 regression)', async () => {
+    enableLegal('enforce')
+    const { product, accessToken } = await setupBuyerAndProduct()
+    const key = crypto.randomUUID()
+    const payload = { productId: product.id, agreementVersions: currentOrderAgreements() }
+
+    const first = await api
+      .post('/api/orders')
+      .set(authHeader(accessToken))
+      .set('Idempotency-Key', key)
+      .send(payload)
+    expect(first.status).toBe(201)
+
+    // 部署升级：terms/refund 切到 1.1。客户端此时丢失首个响应，用原 key +
+    // 原版本重试——必须重放原订单，而不是被 LEGAL_AGREEMENT_STALE 挡下
+    // （否则前端换新键重确认，同一意图产生第二笔订单）。
+    __setLegalRegistryForTests(bumpedOrderDocumentDefinitions())
+
+    const replay = await api
+      .post('/api/orders')
+      .set(authHeader(accessToken))
+      .set('Idempotency-Key', key)
+      .send(payload)
+    expect(replay.status).toBe(201)
+    expect(replay.body.idempotentReplay).toBe(true)
+    expect(replay.body.orderId).toBe(first.body.orderId)
+    expect(await prisma.order.count()).toBe(1)
+    expect(
+      await prisma.orderAgreementAcceptance.count({ where: { orderId: first.body.orderId } }),
+    ).toBe(2)
+
+    // 对称：原 key + 新版本 = 不同意图，指纹不符 409，绝不静默重放。
+    const conflictRes = await api
+      .post('/api/orders')
+      .set(authHeader(accessToken))
+      .set('Idempotency-Key', key)
+      .send({ productId: product.id, agreementVersions: { terms: '1.1', refund: '1.1' } })
+    expect(conflictRes.status).toBe(409)
+    expect(conflictRes.body.error.code).toBe('CONFLICT')
+
+    // 而新 key + 旧版本则正常走协议校验：STALE。
+    const stale = await api
+      .post('/api/orders')
+      .set(authHeader(accessToken))
+      .set('Idempotency-Key', crypto.randomUUID())
+      .send(payload)
+    expect(stale.status).toBe(409)
+    expect(stale.body.error.code).toBe('LEGAL_AGREEMENT_STALE')
+  })
+})
+
+describe('idempotency fingerprint canonicalization', () => {
+  it('treats missing and empty agreementVersions as identical, and is key-order insensitive', () => {
+    const base = { productId: 1, expectedPrice: 100 }
+    // 复审 P2：{} 与未传必须同 digest——语义相同的重试不得误报 CONFLICT。
+    expect(computeRequestDigest(base)).toBe(computeRequestDigest({ ...base, agreementVersions: {} }))
+    // 空串值归一化剔除后亦等价于未传。
+    expect(computeRequestDigest(base)).toBe(
+      computeRequestDigest({ ...base, agreementVersions: { terms: '' } }),
+    )
+    // 实质内容变化必然改变指纹。
+    expect(computeRequestDigest({ ...base, agreementVersions: { terms: '1.0' } })).not.toBe(
+      computeRequestDigest(base),
+    )
+    // 键序无关。
+    expect(
+      computeRequestDigest({ ...base, agreementVersions: { terms: '1.0', refund: '1.0' } }),
+    ).toBe(computeRequestDigest({ ...base, agreementVersions: { refund: '1.0', terms: '1.0' } }))
   })
 })
 

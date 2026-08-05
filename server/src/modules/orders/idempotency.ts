@@ -76,8 +76,9 @@ export function computeRequestDigest(fingerprint: IdempotencyFingerprint): strin
     ...(fingerprint.checkoutVersion != null ? { checkoutVersion: fingerprint.checkoutVersion } : {}),
     // P6a：续费单与普通购买是不同意图，同 key 互换必须 409。
     ...(fingerprint.renewalOfOrderId != null ? { renewalOfOrderId: fingerprint.renewalOfOrderId } : {}),
-    // SPEC-LEGAL-001：空数组与未传等价（归一化后均为 []），旧客户端 digest 不变。
-    ...(fingerprint.agreementVersions != null ? { agreementVersions: canonicalAgreements } : {}),
+    // SPEC-LEGAL-001：{} 与未传等价（归一化后为空即省略字段），旧客户端
+    // digest 不变；复审修复：空数组落库会让语义相同的重试误报 CONFLICT。
+    ...(canonicalAgreements.length > 0 ? { agreementVersions: canonicalAgreements } : {}),
     answers: canonicalAnswers,
   })
   return createHmac('sha256', config.jwtSecret).update(canonical).digest('hex')
@@ -169,6 +170,39 @@ export async function claimIdempotencyKey(
   }
 
   throw inFlight()
+}
+
+/**
+ * SPEC-LEGAL-001 复审 P1：已完成记录的重放识别，先于一切请求内容校验。
+ *
+ * 部署把协议从 1.0 升到 1.1 后，客户端用原 key + 原版本重试一个其实已成功
+ * 的意图（首个响应丢失），绝不能被新协议版本挡在 LEGAL_AGREEMENT_STALE——
+ * 前端随后会换新幂等键重确认，同一意图就产生了第二笔订单。重放识别因此
+ * 必须先于协议校验/claim。
+ *
+ * 仅识别"completed 且未过重放窗口且指纹匹配"的记录；其余状态一律返回
+ * null 走正常 claim 分类（processing 并发 / 过期 / 指纹不符各有其义）。
+ * 预识别与后续 claim 不原子是安全的：漏判只回落到 claim 的完整分类逻辑。
+ */
+export async function peekCompletedIdempotencyReplay(
+  userId: number,
+  key: string,
+  fingerprint: IdempotencyFingerprint
+): Promise<{ orderId: number } | null> {
+  const existing = await prisma.idempotencyRecord.findUnique({
+    where: { userId_key: { userId, key } },
+  })
+  if (!existing) return null
+  if (existing.status !== 'completed' || existing.orderId == null) return null
+  // 过期的 completed 记录返回 null：落入 claim 路径拿到 IDEMPOTENCY_KEY_EXPIRED。
+  if (existing.expiresAt <= new Date()) return null
+  // 空摘要哨兵（P1 迁移行）：只能按 productId 判定，同商品才允许重放。
+  if (existing.requestDigest === '') {
+    return existing.productId === fingerprint.productId ? { orderId: existing.orderId } : null
+  }
+  return existing.requestDigest === computeRequestDigest(fingerprint)
+    ? { orderId: existing.orderId }
+    : null
 }
 
 /**

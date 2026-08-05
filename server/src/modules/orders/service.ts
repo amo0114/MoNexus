@@ -17,7 +17,9 @@ import { debitAvailablePoints, holdAvailablePoints, settleHeldOrder } from './ac
 import {
   claimIdempotencyKey,
   completeIdempotencyClaim,
+  peekCompletedIdempotencyReplay,
   releaseIdempotencyClaim,
+  type IdempotencyFingerprint,
 } from './idempotency.js'
 import { serializeUserOrderDetail, serializeUserOrderList } from './serializers.js'
 import { invalidateProductPublicCache } from '../products/cache.js'
@@ -115,22 +117,32 @@ export async function createOrder(
     userAgent,
   } = options
 
+  const fingerprint: IdempotencyFingerprint = {
+    productId,
+    offerId,
+    expectedPrice,
+    purchaseFormVersion: expectedPurchaseFormVersion,
+    checkoutVersion: expectedCheckoutVersion,
+    formAnswers,
+    renewalOfOrderId,
+    agreementVersions,
+  }
+
+  // SPEC-LEGAL-001 复审 P1：已完成记录的重放识别先于协议校验——协议升级
+  // 不得阻断已成功意图按原 key + 原版本重放（否则前端换新键重确认会产生
+  // 第二笔订单）。
+  if (idempotencyKey) {
+    const replay = await peekCompletedIdempotencyReplay(userId, idempotencyKey, fingerprint)
+    if (replay) return buildReplayResponse(replay.orderId, userId)
+  }
+
   // SPEC-LEGAL-001：协议证据解析先于幂等 claim——REQUIRED/STALE 是纯注册表
   // 比对，失败请求不占幂等键，前端换新版本后同 key 重试不受污染。
   const consentEvidence = resolveConsentEvidence('order', agreementVersions)
 
   let claimToken: string | undefined
   if (idempotencyKey) {
-    const claim = await claimIdempotencyKey(userId, idempotencyKey, {
-      productId,
-      offerId,
-      expectedPrice,
-      purchaseFormVersion: expectedPurchaseFormVersion,
-      checkoutVersion: expectedCheckoutVersion,
-      formAnswers,
-      renewalOfOrderId,
-      agreementVersions,
-    })
+    const claim = await claimIdempotencyKey(userId, idempotencyKey, fingerprint)
     if (claim.kind === 'replay') return buildReplayResponse(claim.orderId, userId)
     claimToken = claim.claimToken
   }

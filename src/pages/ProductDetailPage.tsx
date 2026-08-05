@@ -6,7 +6,6 @@ import DOMPurify from 'dompurify'
 import api from '../api/client'
 import { getApiErrorMessage, getApiErrorCode } from '../api/error'
 import { createOrder, type CheckoutPreview } from '../api/orders'
-import { agreementVersionsOf } from '../api/legal'
 import { useAppStore } from '../stores/appStore'
 import { useAuthStore } from '../stores/authStore'
 import PurchaseModal, { type ConfirmOutcome } from '../components/PurchaseModal'
@@ -123,7 +122,8 @@ export default function ProductDetailPage() {
     preview: CheckoutPreview,
     idempotencyKey: string,
     formAnswers: Record<string, string>,
-    verificationPassword: string
+    verificationPassword: string,
+    agreementVersions?: Record<string, string>
   ): Promise<ConfirmOutcome> {
     if (!product || purchasing) return 'failed'
     setPurchasing(true)
@@ -136,8 +136,8 @@ export default function ProductDetailPage() {
         expectedPurchaseFormVersion: preview.purchaseFormVersion,
         expectedCheckoutVersion: preview.checkoutVersion,
         verificationPassword: verificationPassword || undefined,
-        // SPEC-LEGAL-001：协议确认版本与预览同批下发、随单回传。
-        agreementVersions: agreementVersionsOf(preview.legalRequirement),
+        // SPEC-LEGAL-001：弹窗仅在用户勾选后回传版本，服务端据此留证。
+        agreementVersions,
       })
       useAuthStore.getState().updatePoints(data.balanceAfter)
       setDeliveryContent(data.deliveryContent ?? '')

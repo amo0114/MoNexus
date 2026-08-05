@@ -35,6 +35,8 @@ export interface LegalRequirement {
     title: string
     contentHash: string
   }>
+  /** enforce = 未勾选禁止提交；off = 记录模式，勾选可选（灰度不阻断交易）。 */
+  enforcement: 'off' | 'enforce'
 }
 
 /** 把 requirement 摊平为下单/注册请求携带的 { document: version }。 */

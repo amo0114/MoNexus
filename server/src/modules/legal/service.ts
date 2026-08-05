@@ -41,6 +41,11 @@ export interface LegalRequirementItem {
 /** 前端渲染勾选区所需的最小信息；功能关闭时为 null（门禁感知）。 */
 export interface LegalRequirement {
   required: LegalRequirementItem[]
+  /**
+   * 复审 P2：强制语义随清单下发。enforce = 前端门控提交（未勾选禁用）；
+   * off = 记录模式，勾选可选、提交不携带即不留证——灰度期不得阻断交易。
+   */
+  enforcement: 'off' | 'enforce'
 }
 
 export interface ConsentEvidence {
@@ -63,7 +68,7 @@ export function getLegalRequirement(kind: 'registration' | 'order'): LegalRequir
       contentHash: summary.contentHash,
     }
   })
-  return { required }
+  return { required, enforcement: config.legalPages.enforcement }
 }
 
 function isKnownSlug(document: string): document is LegalDocumentSlug {
@@ -73,6 +78,11 @@ function isKnownSlug(document: string): document is LegalDocumentSlug {
 /**
  * 解析客户端提交的协议确认 { document: version } 为可落库的证据数组。
  * agreements 为 undefined/空时：enforce → REQUIRED；off → 空数组。
+ *
+ * 复审 P2（LEG-06）：所有携带项逐项校验——slug 必须已知（400）、版本必须
+ * 等于注册表当前版本（409 STALE），无论该文档是否属于本场景必备清单；
+ * 否则携带旧版本的"同意"会被静默丢弃，证据失真。通过校验的携带项全部
+ * 留证（含必备之外的文档——客户端确实确认了该文本）。
  */
 export function resolveConsentEvidence(
   kind: 'registration' | 'order',
@@ -83,8 +93,9 @@ export function resolveConsentEvidence(
   const requirement = getLegalRequirement(kind)
   if (!requirement) return []
 
-  const provided = agreements ?? {}
-  for (const document of Object.keys(provided)) {
+  // 空串视为未携带（与幂等指纹的空值归一化口径一致）。
+  const providedEntries = Object.entries(agreements ?? {}).filter(([, version]) => version !== '')
+  for (const [document] of providedEntries) {
     if (!isKnownSlug(document)) {
       throw badRequest(`未知的协议文档：${document}`)
     }
@@ -92,27 +103,30 @@ export function resolveConsentEvidence(
 
   const enforce = config.legalPages.enforcement === 'enforce'
   const stale: Array<{ document: string; version: string }> = []
-  const missing: string[] = []
   const evidence: ConsentEvidence[] = []
 
-  for (const item of requirement.required) {
-    const version = provided[item.document]
-    if (version == null || version === '') {
-      if (enforce) missing.push(item.document)
+  for (const [document, version] of providedEntries) {
+    // isKnownSlug 已过滤 → current 恒存在（注册表启动期 fail-closed）。
+    const current = getCurrentLegalSummary(document)!
+    if (version !== current.version) {
+      stale.push({ document, version: current.version })
       continue
     }
-    if (version !== item.version) {
-      stale.push({ document: item.document, version: item.version })
-      continue
-    }
-    evidence.push({ document: item.document, version: item.version, contentHash: item.contentHash })
+    evidence.push({ document, version, contentHash: current.contentHash })
   }
+
+  const missing = enforce
+    ? requirement.required.filter(item => !providedEntries.some(([doc]) => doc === item.document))
+    : []
 
   if (missing.length > 0) throw legalAgreementRequired()
   if (stale.length > 0) {
-    // STALE 契约携带全部必备文档的当前版本（不只是过期的那份），前端
-    // 一次刷新即可完整重确认，避免多轮 409。
-    throw legalAgreementStale(requirement.required.map(r => ({ document: r.document, version: r.version })))
+    // STALE 契约携带必备清单 ∪ 过期项的当前版本，前端一次刷新即可完整
+    // 重确认，避免多轮 409。
+    const detailVersions = new Map<string, string>()
+    for (const item of requirement.required) detailVersions.set(item.document, item.version)
+    for (const item of stale) detailVersions.set(item.document, item.version)
+    throw legalAgreementStale([...detailVersions].map(([document, version]) => ({ document, version })))
   }
   return evidence
 }

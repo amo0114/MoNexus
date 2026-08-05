@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, Coins, Loader2, ShieldCheck, Info } from 'lucide-react'
 import { Dialog, DialogContent, DialogTitle } from './ui/Dialog'
 import { getCheckoutPreview, type CheckoutPreview } from '../api/orders'
-import { LEGAL_PAGE_PATHS } from '../api/legal'
+import { agreementVersionsOf, LEGAL_PAGE_PATHS } from '../api/legal'
 import {
   confirmProvisionEmailCode,
   getProvisionEmailStatus,
@@ -63,7 +63,10 @@ export default function PurchaseModal({
     preview: CheckoutPreview,
     idempotencyKey: string,
     formAnswers: Record<string, string>,
-    verificationPassword: string
+    verificationPassword: string,
+    // SPEC-LEGAL-001：用户实际勾选确认后的协议版本；未勾选（记录模式）为
+    // undefined——服务端只留证用户真实确认过的文本。
+    agreementVersions: Record<string, string> | undefined
   ) => Promise<ConfirmOutcome>
 }) {
   const [preview, setPreview] = useState<CheckoutPreview | null>(null)
@@ -190,8 +193,14 @@ export default function PurchaseModal({
   async function handleConfirm() {
     if (!preview || submitting) return
     // 双保险：按钮已按 missingAgreement 禁用，键盘/脚本路径仍拦下。
-    if (preview.legalRequirement && !agreementsChecked) return
-    const outcome = await onConfirm(preview, idempotencyKey, answers, verifyPassword)
+    if (preview.legalRequirement?.enforcement === 'enforce' && !agreementsChecked) return
+    const outcome = await onConfirm(
+      preview,
+      idempotencyKey,
+      answers,
+      verifyPassword,
+      agreementsChecked ? agreementVersionsOf(preview.legalRequirement) : undefined,
+    )
     if (outcome === 'price_changed') {
       // 服务端价格已变：换新的结算意图（新幂等键）并重新报价，由用户再次确认。
       setPriceChanged(true)
@@ -225,7 +234,8 @@ export default function PurchaseModal({
   const needsProvisionProof = Boolean(preview?.requiresProvisionEmailProof)
   const missingProvisionProof = needsProvisionProof && !provisionTrusted
   const legalRequirement = preview?.legalRequirement ?? null
-  const missingAgreement = legalRequirement != null && !agreementsChecked
+  // 复审 P2：仅 enforce 门控提交；off（记录模式）勾选可选，不阻断结算。
+  const missingAgreement = legalRequirement?.enforcement === 'enforce' && !agreementsChecked
 
   const capacityHint =
     preview?.fakaCapacity?.source === 'xboard' && preview.fakaCapacity.remaining != null
@@ -587,6 +597,7 @@ export default function PurchaseModal({
                   </span>
                 ))}
                 ，下单即视为认可本次交易的全部条款。
+                {legalRequirement.enforcement === 'off' && '（可选）'}
               </span>
             </label>
           </div>

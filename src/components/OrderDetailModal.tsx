@@ -5,7 +5,6 @@ import { UserOrderDetail } from '../types/order'
 import { useAppStore } from '../stores/appStore'
 import { useAuthStore } from '../stores/authStore'
 import { disputeOrder, closeOrder, createOrder, renewOrder, type RenewPrecheck } from '../api/orders'
-import { agreementVersionsOf } from '../api/legal'
 import { getApiErrorCode, getApiErrorMessage } from '../api/error'
 import { OwnReview } from '../api/reviews'
 import RegistryPill from './ui/RegistryPill'
@@ -128,7 +127,8 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
     preview: CheckoutPreview,
     idempotencyKey: string,
     formAnswers: Record<string, string>,
-    verificationPassword: string
+    verificationPassword: string,
+    agreementVersions?: Record<string, string>
   ): Promise<ConfirmOutcome> {
     if (!renewInfo || renewSubmitting) return 'failed'
     setRenewSubmitting(true)
@@ -142,8 +142,8 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
         expectedCheckoutVersion: preview.checkoutVersion,
         verificationPassword: verificationPassword || undefined,
         renewalOfOrderId: order.id,
-        // SPEC-LEGAL-001：续费同样是新订单，协议确认随单回传。
-        agreementVersions: agreementVersionsOf(preview.legalRequirement),
+        // SPEC-LEGAL-001：续费同样是新订单；弹窗仅在用户勾选后回传版本。
+        agreementVersions,
       })
       useAuthStore.getState().updatePoints(data.balanceAfter)
       showToast('续费成功，已生成新的订单')

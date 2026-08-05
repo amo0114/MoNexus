@@ -231,7 +231,7 @@ export default function LoginPage() {
         }
 
         const legalRequirement = registrationState.legalRequirement
-        if (legalRequirement && !agreementsChecked) {
+        if (legalRequirement?.enforcement === 'enforce' && !agreementsChecked) {
           // 双保险：按钮已禁用，但键盘提交/自动填充绕过 disabled 时仍拦下。
           showToast('请先阅读并同意相关协议后再注册', 'error')
           return
@@ -242,7 +242,8 @@ export default function LoginPage() {
           password,
           ...(inviteCode.trim() ? { inviteCode: inviteCode.trim() } : {}),
           ...(turnstileToken ? { turnstileToken } : {}),
-          ...(legalRequirement ? { agreements: agreementVersionsOf(legalRequirement) } : {}),
+          // 只提交用户真实勾选确认过的版本（记录模式下未勾选即不留证）。
+          ...(legalRequirement && agreementsChecked ? { agreements: agreementVersionsOf(legalRequirement) } : {}),
         })
         await establishSession(result.accessToken, '注册成功。完成邮箱验证并经过资格期后，奖励会自动发放。')
         return
@@ -332,7 +333,8 @@ export default function LoginPage() {
     title: item.title,
     href: LEGAL_PAGE_PATHS[item.document],
   })) ?? []
-  const missingAgreements = isRegister && legalRequirement != null && !agreementsChecked
+  // 复审 P2：仅 enforce 门控提交；off（记录模式）勾选可选，不阻断注册。
+  const missingAgreements = isRegister && legalRequirement?.enforcement === 'enforce' && !agreementsChecked
 
   return (
     <LoginShell>
@@ -414,6 +416,7 @@ export default function LoginPage() {
                     </span>
                   ))}
                   （版本 {legalRequirement.required.map((item) => item.version).join(' / ')}）
+                  {legalRequirement.enforcement === 'off' && '（可选）'}
                 </span>
               </label>
             )}
