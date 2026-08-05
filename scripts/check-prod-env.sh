@@ -303,6 +303,31 @@ require_bool_true REDIS_ENABLED
 require_bool_true REDIS_REQUIRED
 require_redis_url REDIS_URL
 
+# SPEC-LEGAL-001: legal pages are deliberately switchable for staged rollout,
+# but a production deploy must declare the state explicitly. Otherwise Compose
+# would silently use its compatibility defaults and hide the legal pages.
+legal_pages_enabled="$(get LEGAL_PAGES_ENABLED)"
+legal_pages_enforcement="$(get LEGAL_PAGES_ENFORCEMENT)"
+if [[ "$MODE" == "production" ]]; then
+  require_value LEGAL_PAGES_ENABLED
+  require_value LEGAL_PAGES_ENFORCEMENT
+fi
+if [[ -n "$legal_pages_enabled" && "$legal_pages_enabled" != "true" && "$legal_pages_enabled" != "false" ]]; then
+  fail "LEGAL_PAGES_ENABLED must be true or false"
+fi
+if [[ -n "$legal_pages_enforcement" && "$legal_pages_enforcement" != "off" && "$legal_pages_enforcement" != "enforce" ]]; then
+  fail "LEGAL_PAGES_ENFORCEMENT must be off or enforce"
+fi
+if [[ "$legal_pages_enabled" == "true" && "$legal_pages_enforcement" != "enforce" ]]; then
+  fail "LEGAL_PAGES_ENABLED=true requires LEGAL_PAGES_ENFORCEMENT=enforce"
+fi
+if [[ "$legal_pages_enforcement" == "enforce" && "$legal_pages_enabled" != "true" ]]; then
+  fail "LEGAL_PAGES_ENFORCEMENT=enforce requires LEGAL_PAGES_ENABLED=true"
+fi
+if [[ "$MODE" == "production" && -n "$(get LEGAL_PAGES_FIXTURE_PATH)" ]]; then
+  fail "LEGAL_PAGES_FIXTURE_PATH must be empty in production"
+fi
+
 require_https_url FRONTEND_ORIGIN
 require_bool_true COOKIE_SECURE
 

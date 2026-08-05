@@ -192,6 +192,22 @@ describe('production config guards for legal pages & consent (SPEC-LEGAL-001)', 
   })
 })
 
+describe('production Compose legal configuration boundary', () => {
+  it('passes every legal setting into the server and makes production intent explicit in preflight', async () => {
+    const { readFile } = await import('node:fs/promises')
+    const compose = await readFile(path.resolve(SERVER_ROOT, '..', 'docker-compose.prod.yml'), 'utf8')
+    const server = compose.slice(compose.indexOf('  server:'), compose.indexOf('  redis:'))
+    const preflight = await readFile(path.resolve(SERVER_ROOT, '..', 'scripts', 'check-prod-env.sh'), 'utf8')
+
+    expect(server).toContain('LEGAL_PAGES_ENABLED: ${LEGAL_PAGES_ENABLED:-false}')
+    expect(server).toContain('LEGAL_PAGES_ENFORCEMENT: ${LEGAL_PAGES_ENFORCEMENT:-off}')
+    expect(server).toContain('LEGAL_PAGES_FIXTURE_PATH: ${LEGAL_PAGES_FIXTURE_PATH:-}')
+    expect(preflight).toContain('require_value LEGAL_PAGES_ENABLED')
+    expect(preflight).toContain('require_value LEGAL_PAGES_ENFORCEMENT')
+    expect(preflight).toContain('LEGAL_PAGES_FIXTURE_PATH must be empty in production')
+  })
+})
+
 describe('ops scripts cover both buckets (P1 regression)', () => {
   it('backup.sh mirrors the delivery bucket and restore-objects-check.sh restores it', async () => {
     const { readFile } = await import('node:fs/promises')
