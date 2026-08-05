@@ -8,8 +8,8 @@ import { defineConfig, devices } from '@playwright/test'
  * 五页直接访问/刷新、footer 分组链接、注册勾选门控、下单勾选门控、
  * 以及 enforce 模式下 API 层的 REQUIRED 契约。
  *
- * 数据库复用主套件已 seed 的 monexus_test（固定 seed 账号），互不干扰
- * （端口不同；套件串行执行）。
+ * CI 使用预先 seed 的 monexus_test；法律套件结束后 workflow 会在启动
+ * 默认兼容套件前重新 reset + seed。端口独立，两个套件始终串行执行。
  */
 
 const DEFAULT_DATABASE_URL =
@@ -76,7 +76,10 @@ export default defineConfig({
       },
     },
     {
-      command: `npm run dev -- --port ${WEB_PORT} --strictPort`,
+      // Keep the bind address aligned with WEB_ORIGIN. GitHub runners may
+      // resolve Vite's default localhost bind to IPv6, while the readiness
+      // probe and browser use the explicit IPv4 loopback address.
+      command: `npm run dev -- --host 127.0.0.1 --port ${WEB_PORT} --strictPort`,
       url: WEB_ORIGIN,
       timeout: 60_000,
       reuseExistingServer: false,
