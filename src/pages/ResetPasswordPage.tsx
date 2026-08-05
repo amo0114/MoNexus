@@ -33,11 +33,13 @@ export default function ResetPasswordPage() {
   }
 
   return (
-    <div className="fixed inset-0 bg-[var(--color-background)] z-[60] flex items-center justify-center fade-in overflow-hidden">
-      <div className="absolute top-[-20%] left-[-10%] w-[600px] h-[600px] rounded-full bg-[var(--color-primary)]/10 blur-[120px] pointer-events-none" />
-      <div className="absolute bottom-[-10%] right-[-5%] w-[500px] h-[500px] rounded-full bg-[var(--color-primary)]/8 blur-[100px] pointer-events-none" />
+    <div className="fixed inset-0 z-[60] flex items-start justify-center overflow-x-hidden overflow-y-auto overscroll-y-contain bg-[var(--color-background)] px-4 py-6 pt-[max(1.5rem,env(safe-area-inset-top))] pb-[max(1.5rem,env(safe-area-inset-bottom))] fade-in sm:items-center">
+      <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
+        <div className="absolute left-[-10%] top-[-20%] h-[min(600px,90vw)] w-[min(600px,90vw)] rounded-full bg-[var(--color-primary)]/10 blur-[120px]" />
+        <div className="absolute bottom-[-10%] right-[-5%] h-[min(500px,80vw)] w-[min(500px,80vw)] rounded-full bg-[var(--color-primary)]/8 blur-[100px]" />
+      </div>
 
-      <div className="card w-full max-w-md mx-4 relative overflow-hidden z-10 backdrop-blur-xl">
+      <div className="card relative z-10 my-auto w-full max-w-md shrink-0 overflow-hidden backdrop-blur-xl">
         <Link
           to="/login"
           className="inline-flex items-center gap-1 text-sm text-[var(--color-text-muted)] hover:text-[var(--color-text)] mb-4 transition-colors"

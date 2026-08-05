@@ -6,7 +6,7 @@ import { useAppStore } from '../stores/appStore'
 import { Skeleton } from '../components/ui/Skeleton'
 import EmptyState from '../components/ui/EmptyState'
 import Reveal from '../components/ui/Reveal'
-import SafeImage from '../components/ui/SafeImage'
+import ProductMediaFrame from '../components/ui/ProductMediaFrame'
 
 interface Product {
   id: number
@@ -54,8 +54,9 @@ const PAGE_SIZE = 60
 // 2-column compact grid; ≥768px keeps the original roomy card. The
 // virtual scroller needs uniform row height, hence fixed buckets
 // instead of per-card measurement.
-const CARD_HEIGHT_DESKTOP = 356
-const CARD_HEIGHT_MOBILE = 240
+// Keep in sync with ProductCard media (h-36/md:h-44) + content block.
+const CARD_HEIGHT_DESKTOP = 372
+const CARD_HEIGHT_MOBILE = 256
 const GRID_GAP_DESKTOP = 24
 const GRID_GAP_MOBILE = 12
 const OVERSCAN_ROWS = 8
@@ -102,24 +103,29 @@ function ProductCard({
     <div
       key={product.id}
       onClick={() => onOpen(product)}
-      className={`relative overflow-hidden group cursor-pointer flex flex-col h-[240px] md:h-[356px] min-w-0
+      className={`relative overflow-hidden group cursor-pointer flex flex-col min-w-0 h-[256px] md:h-[372px]
         rounded-xl bg-[var(--color-surface)] border border-[var(--color-border)]
         shadow-md hover:shadow-lg hover:border-[var(--color-primary)]/35
         hover:-translate-y-0.5 transition-all duration-200
         max-md:rounded-2xl max-md:shadow-sm max-md:active:scale-[0.98] max-md:active:shadow-sm
         ${isSoldOut ? 'opacity-60 grayscale' : ''}`}
     >
-      <div className="relative h-32 md:h-40 w-full bg-[var(--color-image-placeholder)] overflow-hidden border-b border-[var(--color-border)] shrink-0">
-        <SafeImage
-          src={product.images?.[0] || product.imageUrl}
-          alt={product.name}
-          className="w-full h-full object-contain p-1.5 transition-opacity duration-200 group-hover:opacity-90"
-          loading="lazy"
-          decoding="async"
-          data-testid={`store-product-image-${product.id}`}
-          sizes="(min-width: 1024px) 33vw, (min-width: 768px) 50vw, 100vw"
-        />
-        <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+      {/* Virtual grid needs uniform card height. Media is full-bleed cover
+          (no letterbox). Slightly taller mobile slot improves narrow phones. */}
+      <ProductMediaFrame
+        src={product.images?.[0] || product.imageUrl}
+        alt={product.name}
+        frameClassName="h-36 md:h-44"
+        className="shrink-0 border-b border-[var(--color-border)]"
+        imageClassName="transition-opacity duration-200 group-hover:opacity-90"
+        imageProps={{
+          loading: 'lazy',
+          decoding: 'async',
+          'data-testid': `store-product-image-${product.id}`,
+          sizes: '(min-width: 1024px) 33vw, (min-width: 768px) 50vw, 100vw',
+        }}
+      >
+        <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
 
         {product.isHot && (
           <div className="absolute top-0 right-0 bg-[#E85D04] text-white text-xs font-bold px-2.5 py-1 rounded-bl-xl z-10 shadow-sm flex items-center gap-1">
@@ -150,7 +156,7 @@ function ProductCard({
             <span className="truncate">{product.merchant?.name || '平台自营'}</span>
           </span>
         </div>
-      </div>
+      </ProductMediaFrame>
 
       <div className="p-3 md:p-5 flex flex-col flex-grow min-h-0 bg-[var(--color-surface)]">
         <h3 className="text-sm md:text-base font-bold leading-snug group-hover:text-[var(--color-primary)] transition-colors text-[var(--color-text)] mb-1 md:mb-1.5 line-clamp-2 min-h-[2.375rem] md:min-h-[2.5rem]">

@@ -4,6 +4,7 @@ import { maskEmail } from '../../lib/email.js'
 import { HttpError, mailerNotConfigured } from '../../lib/httpError.js'
 import { logger } from '../../lib/logger.js'
 import { getMailer } from '../../lib/mailer/index.js'
+import { MAIL_TEST_SUBJECT as TEMPLATE_MAIL_TEST_SUBJECT, renderMail } from '../../lib/mailer/templates/index.js'
 import { prisma } from '../../lib/prisma.js'
 
 /**
@@ -20,11 +21,8 @@ export interface MailDeliveryStatus {
   configuredVia: 'environment'
 }
 
-/** 审计与前端提示都固定使用这个主题（C9）。 */
-export const MAIL_TEST_SUBJECT = 'MoNexus 邮件投递测试'
-
-/** 站点名固定字面量，不从可被管理员编辑的配置读，避免把业务数据带进邮件。 */
-const MAIL_TEST_SITE_NAME = 'MoNexus'
+/** 审计与前端提示都固定使用这个主题（C9）；与模板层同源。 */
+export const MAIL_TEST_SUBJECT = TEMPLATE_MAIL_TEST_SUBJECT
 
 export const MAIL_TEST_ADMIN_LOG_ACTION = '测试邮件投递'
 export const MAIL_TEST_ADMIN_LOG_TARGET_TYPE = 'mailDelivery'
@@ -77,8 +75,8 @@ export function getMailDeliveryStatus(): MailDeliveryStatus {
 
   return {
     mode: 'smtp',
-    // C3：就绪性看**实际生效**的发件地址（含 SMTP_USER 兜底）。缺显式
-    // SMTP_FROM 不等于不可投递，不能据此禁用测试发送。
+    // C3：就绪性看**实际生效**的发件 From 头（含 SMTP_USER 兜底与显示名）。
+    // 缺显式 SMTP_FROM 不等于不可投递，不能据此禁用测试发送。
     deliveryReady: Boolean(mailer.from),
     // C3：只回显显式 SMTP_FROM。兜底值就是 SMTP_USER，回显它等于泄漏凭证
     // 的一半（MAIL-01）。`deliveryReady: true` + `from: null` 是合法组合。
@@ -86,16 +84,6 @@ export function getMailDeliveryStatus(): MailDeliveryStatus {
     authConfigured: Boolean(mailer.user && mailer.pass),
     configuredVia: 'environment',
   }
-}
-
-/** 固定内容：无链接、无 token、无任何业务数据（MAIL-04 / C9）。 */
-function buildMailTestBody(): string {
-  return [
-    `这是一封由 ${MAIL_TEST_SITE_NAME} 管理员在后台手动触发的邮件投递测试。`,
-    `站点：${MAIL_TEST_SITE_NAME}`,
-    `触发时间（UTC）：${new Date().toISOString()}`,
-    '本邮件不包含任何账号、订单或配置信息，无需回复。',
-  ].join('\n')
 }
 
 export function classifyMailTestFailure(err: unknown): MailTestFailureCode {
@@ -158,11 +146,12 @@ export async function sendMailDeliveryTest(params: { adminUserId: number; email:
 
   const mailer = await getMailer()
   try {
-    await mailer.send({
-      to: email,
-      subject: MAIL_TEST_SUBJECT,
-      text: buildMailTestBody(),
-    })
+    await mailer.send(
+      renderMail('mail_delivery_test', {
+        to: email,
+        triggeredAtIso: new Date().toISOString(),
+      }),
+    )
   } catch (err) {
     const failure = classifyMailTestFailure(err)
     // 诊断只留分类与关联 id：原始报文可能含认证头/凭证（C10）。

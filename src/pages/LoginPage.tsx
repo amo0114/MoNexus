@@ -35,12 +35,20 @@ type RegistrationViewState =
 
 function LoginShell({ children }: { children: ReactNode }) {
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center overflow-auto bg-[var(--color-background)] px-4 py-6 fade-in">
-      <div className="pointer-events-none absolute left-[-10%] top-[-20%] h-[600px] w-[600px] rounded-full bg-[var(--color-primary)]/10 blur-[120px]" />
-      <div className="pointer-events-none absolute bottom-[-10%] right-[-5%] h-[500px] w-[500px] rounded-full bg-[var(--color-primary)]/8 blur-[100px]" />
-      <div className="pointer-events-none absolute inset-0 bg-grid-pattern opacity-40" />
+    // Decorative orbs use negative offsets + large blur; they must sit inside a
+    // clipped layer. overflow-auto on the shell would expand the scrollport to
+    // include those orbs → mobile horizontal + vertical rubber-band scrollbars.
+    <div
+      className="fixed inset-0 z-[60] flex items-start justify-center overflow-x-hidden overflow-y-auto overscroll-y-contain bg-[var(--color-background)] px-4 py-6 pt-[max(1.5rem,env(safe-area-inset-top))] pb-[max(1.5rem,env(safe-area-inset-bottom))] fade-in sm:items-center"
+      data-testid="login-shell"
+    >
+      <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
+        <div className="absolute left-[-10%] top-[-20%] h-[min(600px,90vw)] w-[min(600px,90vw)] rounded-full bg-[var(--color-primary)]/10 blur-[120px]" />
+        <div className="absolute bottom-[-10%] right-[-5%] h-[min(500px,80vw)] w-[min(500px,80vw)] rounded-full bg-[var(--color-primary)]/8 blur-[100px]" />
+        <div className="absolute inset-0 bg-grid-pattern opacity-40" />
+      </div>
 
-      <main className="card relative z-10 w-full max-w-md overflow-hidden text-center backdrop-blur-xl">
+      <main className="card relative z-10 my-auto w-full max-w-md shrink-0 overflow-hidden text-center backdrop-blur-xl">
         <div className="mx-auto mb-6">
           <div className="mb-3 flex justify-center">
             <Logo className="h-16 w-16 shrink-0" />
@@ -147,7 +155,7 @@ export default function LoginPage() {
       navigate('/')
       return true
     } catch (error) {
-      showToast(getApiErrorMessage(error, '登录状态初始化失败，请重新登录'), 'error')
+      showToast(getApiErrorMessage(error, '登录状态同步失败，请再试一次'), 'error')
       return false
     } finally {
       setFinalizing(false)
@@ -161,13 +169,13 @@ export default function LoginPage() {
       turnstileRef.current?.reset()
       setIsRegister(false)
       setRegistrationState({ kind: 'disabled' })
-      showToast('当前已暂停新用户注册', 'error')
+      showToast('当前暂停接受新用户注册', 'error')
       return
     }
 
     if (code === 'INVITE_CODE_REQUIRED') {
       turnstileRef.current?.reset()
-      showToast('当前注册需要邀请码', 'error')
+      showToast('注册需要邀请码', 'error')
       return
     }
 
@@ -197,7 +205,7 @@ export default function LoginPage() {
     }
 
     if (code === 'LEGAL_AGREEMENT_REQUIRED') {
-      showToast('请先阅读并同意相关协议后再注册', 'error')
+      showToast('请先阅读并同意相关协议', 'error')
       return
     }
 
@@ -233,7 +241,7 @@ export default function LoginPage() {
         const legalRequirement = registrationState.legalRequirement
         if (legalRequirement?.enforcement === 'enforce' && !agreementsChecked) {
           // 双保险：按钮已禁用，但键盘提交/自动填充绕过 disabled 时仍拦下。
-          showToast('请先阅读并同意相关协议后再注册', 'error')
+          showToast('请先阅读并同意相关协议', 'error')
           return
         }
 
@@ -245,7 +253,7 @@ export default function LoginPage() {
           // 只提交用户真实勾选确认过的版本（记录模式下未勾选即不留证）。
           ...(legalRequirement && agreementsChecked ? { agreements: agreementVersionsOf(legalRequirement) } : {}),
         })
-        await establishSession(result.accessToken, '注册成功。完成邮箱验证并经过资格期后，奖励会自动发放。')
+        await establishSession(result.accessToken, '注册成功。请验证邮箱以领取注册奖励。')
         return
       }
 
@@ -338,8 +346,10 @@ export default function LoginPage() {
 
   return (
     <LoginShell>
-      <h2 className="mb-1 font-heading text-2xl font-semibold text-[var(--color-text)]">{isRegister ? '创建账号' : '欢迎回来'}</h2>
-      <p className="mb-8 text-sm text-[var(--color-text-muted)]">轻松获取您的数字好物</p>
+      <h2 className="mb-1 font-heading text-2xl font-semibold text-[var(--color-text)]">{isRegister ? '创建账号' : '登录'}</h2>
+      <p className="mb-8 text-sm text-[var(--color-text-muted)]">
+        {isRegister ? '注册后即可浏览与兑换数字商品' : '使用邮箱登录您的账号'}
+      </p>
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <input
@@ -404,7 +414,7 @@ export default function LoginPage() {
                   我已阅读并同意
                   {legalLinks.map((link, index) => (
                     <span key={link.key}>
-                      {index > 0 && '和'}
+                      {index > 0 ? ' 和 ' : ''}
                       <a
                         href={link.href}
                         target="_blank"
@@ -415,8 +425,7 @@ export default function LoginPage() {
                       </a>
                     </span>
                   ))}
-                  （版本 {legalRequirement.required.map((item) => item.version).join(' / ')}）
-                  {legalRequirement.enforcement === 'off' && '（可选）'}
+                  {legalRequirement.enforcement === 'off' ? '（可选）' : ''}
                 </span>
               </label>
             )}
@@ -424,7 +433,7 @@ export default function LoginPage() {
         )}
 
         <button type="submit" disabled={loading || missingAgreements} className="btn-primary mt-2 w-full">
-          {loading ? '处理中…' : isRegister ? '注册账号' : '登录'}
+          {loading ? '请稍候…' : isRegister ? '创建账号' : '登录'}
         </button>
       </form>
 
@@ -446,14 +455,14 @@ export default function LoginPage() {
               disabled={loading}
               className="mt-4 cursor-pointer text-sm text-[var(--color-primary)] hover:underline"
             >
-              没有账号？注册新账号
+              没有账号？立即注册
             </button>
           )}
           {registrationState.kind === 'loading' && (
-            <p className="mt-4 text-sm text-[var(--color-text-muted)]" role="status">正在检查注册服务…</p>
+            <p className="mt-4 text-sm text-[var(--color-text-muted)]" role="status">正在确认注册状态…</p>
           )}
           {registrationState.kind === 'disabled' && (
-            <p className="mt-4 text-sm text-[var(--color-text-muted)]">当前已暂停新用户注册</p>
+            <p className="mt-4 text-sm text-[var(--color-text-muted)]">当前暂停接受新用户注册</p>
           )}
           {registrationState.kind === 'unavailable' && (
             <div className="mt-4 flex items-center justify-center gap-2 text-sm text-[var(--color-text-muted)]">
@@ -509,8 +518,13 @@ export default function LoginPage() {
         </div>
       )}
 
-      <div className="mt-6 flex items-center justify-center gap-2 rounded-lg border border-[var(--color-cta)]/25 bg-[var(--color-cta)]/10 py-2.5 text-sm font-semibold text-[var(--color-cta)]">
-        <Gift className="h-4 w-4" />完成邮箱验证并经过资格期后，注册奖励会自动发放
+      <div className="mt-6 flex items-start gap-2 rounded-lg border border-[var(--color-cta)]/25 bg-[var(--color-cta)]/10 px-3 py-2.5 text-left text-[var(--color-cta)]">
+        <Gift className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+        <p className="min-w-0 text-xs font-medium leading-snug sm:text-sm">
+          {isRegister
+            ? '验证邮箱后，注册奖励将自动发放。'
+            : '新用户验证邮箱后可领取注册奖励。'}
+        </p>
       </div>
     </LoginShell>
   )

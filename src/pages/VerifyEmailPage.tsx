@@ -128,7 +128,7 @@ export default function VerifyEmailPage() {
               <LogIn className="h-8 w-8 text-[var(--color-warning-accent)]" />
             </div>
             <h2 className="mb-2 font-heading text-2xl font-bold text-[var(--color-text)]">请先登录</h2>
-            <p className="mb-6 text-sm text-[var(--color-text-muted)]">为保护账户安全，请登录后重新发送验证邮件。</p>
+            <p className="mb-6 text-sm text-[var(--color-text-muted)]">请登录后重新发送验证邮件。</p>
             <button
               type="button"
               onClick={() => navigate('/login')}

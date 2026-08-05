@@ -81,7 +81,7 @@ export default function VerifiedActionGate() {
           <div className="min-w-0">
             <DialogTitle>请先验证邮箱</DialogTitle>
             <DialogDescription>
-              为保护账户和奖励资格，购买、签到、商家申请、评价与上传需要先完成邮箱验证。
+              购买、签到、商家申请、评价与上传前，需完成邮箱验证。
             </DialogDescription>
           </div>
         </div>

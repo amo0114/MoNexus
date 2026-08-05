@@ -72,6 +72,7 @@ services:
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASS: ${SMTP_PASS:-}
       SMTP_FROM: ${SMTP_FROM:-}
+      SMTP_FROM_NAME: ${SMTP_FROM_NAME:-MoNexus}
       # SPEC-RAP-001: public registration and user-email protection are
       # fail-closed in production. Keep every value explicit at the Compose
       # boundary so the server cannot silently start without its dependencies.

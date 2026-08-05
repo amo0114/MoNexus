@@ -403,9 +403,9 @@ function InviteCard() {
       case 'account_too_young':
         return '账号注册时间不足，暂不可邀请好友'
       case 'suspended':
-        return '当前账号暂不可邀请好友'
+        return '当前账号暂不可使用邀请'
       case 'tier_too_low':
-        return `${inviteData.tierRequired ?? '所需'}及以上会员可邀请好友`
+        return `${inviteData.tierRequired ?? '相应'}及以上会员可邀请好友`
       case 'role_paused':
         return '邀请功能暂未开放'
       default:
@@ -422,7 +422,7 @@ function InviteCard() {
         <div className="flex-1 min-w-0">
           <h4 className="font-heading text-lg font-bold mb-1 text-[var(--color-text)]">邀请赚积分</h4>
           <p className="text-[var(--color-text-muted)] text-xs mb-3 leading-relaxed">
-            好友完成邮箱验证、通过资格期且符合邀请资格后，奖励会自动发放。
+            好友完成邮箱验证后，邀请奖励将自动发放。
           </p>
 
           <div className="flex flex-col items-stretch gap-3 mb-3 p-3 bg-[var(--color-background)] rounded-lg border border-[var(--color-border)] sm:flex-row sm:items-center sm:justify-between">
