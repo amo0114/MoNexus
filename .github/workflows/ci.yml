@@ -71,6 +71,7 @@ jobs:
             e2e:
               - 'e2e/**'
               - 'playwright.config.ts'
+              - 'playwright.legal-pages.config.ts'
             code:
               - 'server/**'
               - 'src/**'
@@ -314,6 +315,22 @@ jobs:
         env:
           CI: 'true'
           E2E_BASE_URL: http://127.0.0.1:5173
+
+      # legal-pages.spec.ts deliberately does not belong to the default suite:
+      # its assertions require LEGAL_PAGES_ENABLED=true and enforce mode,
+      # whereas the compatibility suite above intentionally keeps the feature
+      # disabled. Reset after the default suite, then give the legal suite a
+      # freshly seeded database and its own 3104/5179 server pair.
+      - name: Reset database for Legal Pages E2E
+        working-directory: server
+        run: |
+          npx prisma migrate reset --force --skip-seed
+          npm run db:seed:force
+
+      - name: Run Legal Pages E2E tests
+        run: npm run e2e:legal
+        env:
+          LEGAL_E2E_DATABASE_URL: postgresql://monexus:monexus_dev_2026@localhost:5432/monexus_test?schema=public
 
       - name: Upload Playwright report
         if: failure()
