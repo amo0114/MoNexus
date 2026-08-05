@@ -54,6 +54,7 @@ describe('GET /api/auth/registration-status', () => {
       registrationAvailable: true,
       inviteRequired: false,
       challenge: null,
+      legalRequirement: null,
     })
     expect(res.headers['cache-control']).toBe('no-store')
     // 公开接口只暴露兼容布尔和安全的 availability/challenge DTO，不得
@@ -63,6 +64,7 @@ describe('GET /api/auth/registration-status', () => {
       'registrationAvailable',
       'inviteRequired',
       'challenge',
+      'legalRequirement',
     ])
   })
 
@@ -75,6 +77,7 @@ describe('GET /api/auth/registration-status', () => {
       registrationAvailable: false,
       inviteRequired: false,
       challenge: null,
+      legalRequirement: null,
     })
 
     await putSwitch(accessToken, 1).expect(200)
@@ -83,6 +86,7 @@ describe('GET /api/auth/registration-status', () => {
       registrationAvailable: true,
       inviteRequired: false,
       challenge: null,
+      legalRequirement: null,
     })
   })
 
@@ -96,6 +100,7 @@ describe('GET /api/auth/registration-status', () => {
       registrationAvailable: false,
       inviteRequired: false,
       challenge: null,
+      legalRequirement: null,
     })
   })
 })

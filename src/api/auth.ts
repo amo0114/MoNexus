@@ -2,6 +2,7 @@ import api from './client'
 import { useAuthStore } from '../stores/authStore'
 import { AuthUser, UserRole } from '../types/merchant'
 import { refreshAccessToken } from './authRefresh'
+import type { LegalRequirement } from './legal'
 
 export { refreshAccessToken }
 
@@ -21,6 +22,8 @@ export type RegistrationStatus = {
   registrationAvailable: boolean
   challenge: RegistrationChallenge | null
   inviteRequired: boolean
+  /** SPEC-LEGAL-001：注册必须确认的协议版本（法律页面关闭 = null，隐藏勾选区）。 */
+  legalRequirement: LegalRequirement | null
 }
 
 export type MfaLoginChallenge = {
@@ -77,6 +80,8 @@ export async function registerAccount(payload: {
   password: string
   inviteCode?: string
   turnstileToken?: string
+  /** SPEC-LEGAL-001：协议确认 { document: version }，来自 registration-status。 */
+  agreements?: Record<string, string>
 }): Promise<AuthenticatedAuthResponse> {
   const { data } = await api.post<AuthenticatedAuthResponse>('/auth/register', payload, preAuthRequestConfig())
   return data

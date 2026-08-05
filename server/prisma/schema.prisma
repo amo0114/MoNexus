@@ -58,6 +58,8 @@ model User {
   leaderboardEntries      LeaderboardEntry[]
   inviteCodesIssued       InviteCode[]             @relation("InviteCodeIssuer")
   inviteCodeUsed          InviteCode?              @relation("InviteCodeUsedBy")
+  userAgreementConsents   UserAgreementConsent[]
+  orderAgreementAcceptances OrderAgreementAcceptance[]
 }
 
 // SPEC-INVITE-001：一次性邀请码。资格前置到发码侧（IV-04），名额按上海自然月
@@ -683,6 +685,7 @@ model Order {
   subscriptionReminder SubscriptionReminder?
   slaReminder          SlaReminder?
   bookingReminder      BookingReminder?
+  agreementAcceptances OrderAgreementAcceptance[]
 
   // P5.5：SKU 报表/全平台报表按时间范围聚合的支撑索引（评审修订）。
   @@index([merchantId, createdAt])
@@ -967,4 +970,54 @@ model LeaderboardEntry {
 
   @@unique([scope, periodKey, userId]) // 「我的排名」点查 + 幂等替换的唯一性
   @@index([scope, periodKey, rank]) // Top 100 顺序扫
+}
+
+// SPEC-LEGAL-001：协议同意的两层证据模型。
+//
+// UserAgreementConsent —— 用户对某文档某版本的"长期同意"事实（如注册时的
+// 《服务协议》《隐私政策》）。document/version/contentHash 三件套锚定
+// 后端 legal 注册表中的不可变版本；同一 (userId, document, version) 唯一，
+// 重签新版本会产生新行而不是覆盖旧行（旧版本记录留存作审计）。
+//
+// OrderAgreementAcceptance —— 与 orderId 绑定的下单确认快照，争议/拒付时
+// 证明"该订单"确认了哪些版本。与订单同事务创建、只插入不更新；外键
+// Restrict——订单与用户行不可在存在确认记录时被删除。
+//
+// 两表的 ip/userAgent 是个人信息：仅作同意证据与反滥用审计，retentionUntil
+// 到期后由 retentionCron 置空匿名化（document/version/hash/时间保留）。
+model UserAgreementConsent {
+  id             Int       @id @default(autoincrement())
+  userId         Int
+  document       String // terms | privacy | refund | points-rules | about
+  version        String // 语义化版本，如 '1.0'
+  contentHash    String // 公开返回的规范化文档 JSON 的 sha256（hex, 64）
+  consentedAt    DateTime  @default(now())
+  ip             String? // trust proxy 后的可信客户端 IP
+  userAgent      String? // 截断 ≤512
+  retentionUntil DateTime? // 到期匿名化锚点（consentedAt + 留存窗口）
+
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@unique([userId, document, version])
+  @@index([retentionUntil])
+}
+
+model OrderAgreementAcceptance {
+  id             Int       @id @default(autoincrement())
+  orderId        Int
+  userId         Int // 冗余便于争议检索（与 Order.userId 恒等）
+  document       String // terms | refund
+  version        String
+  contentHash    String
+  acceptedAt     DateTime  @default(now())
+  ip             String?
+  userAgent      String?
+  retentionUntil DateTime?
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@unique([orderId, document])
+  @@index([userId])
+  @@index([retentionUntil])
 }

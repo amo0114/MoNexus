@@ -92,4 +92,24 @@ echo "[INFO] Running Playwright E2E"
     npm run e2e
 )
 
+# legal-pages.spec.ts owns an enabled + enforce server pair and is excluded
+# from the default compatibility suite above. Give it a fresh fixture set so
+# its registration/checkout evidence assertions never inherit prior E2E state.
+echo "[INFO] Resetting test database for Legal Pages E2E"
+(cd "$BACKEND_DIR" && DATABASE_URL="$TEST_DATABASE_URL" npx prisma migrate reset --force --skip-seed)
+
+echo "[INFO] Seeding Legal Pages E2E fixtures"
+(cd "$BACKEND_DIR" && DATABASE_URL="$TEST_DATABASE_URL" npm run db:seed:force)
+
+echo "[INFO] Running Legal Pages E2E"
+(
+  cd "$ROOT_DIR"
+  LEGAL_E2E_DATABASE_URL="$TEST_DATABASE_URL" \
+    DATABASE_URL="$TEST_DATABASE_URL" \
+    JWT_SECRET="$JWT_SECRET" \
+    FRONTEND_ORIGIN="$FRONTEND_ORIGIN" \
+    COOKIE_SECURE=false \
+    npm run e2e:legal
+)
+
 echo "[INFO] Local verification gate passed"

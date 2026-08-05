@@ -71,6 +71,7 @@ jobs:
             e2e:
               - 'e2e/**'
               - 'playwright.config.ts'
+              - 'playwright.legal-pages.config.ts'
             code:
               - 'server/**'
               - 'src/**'
@@ -277,6 +278,24 @@ jobs:
 
       - name: Build backend
         run: npm --prefix server run build
+
+      # legal-pages.spec.ts owns an enabled + enforce server pair. Run it
+      # before the shared 3000/5173 compatibility stack is started: this
+      # avoids carrying long-lived default-stack processes across the
+      # feature-specific database reset and startup boundary.
+      - name: Run Legal Pages E2E tests
+        run: npm run e2e:legal
+        env:
+          LEGAL_E2E_DATABASE_URL: postgresql://monexus:monexus_dev_2026@localhost:5432/monexus_test?schema=public
+
+      # The legal suite creates orders and registrations while enforce mode
+      # is active. Restore the fresh compatibility fixture before starting
+      # the default stack, whose contract deliberately keeps legal pages off.
+      - name: Reset database for default E2E
+        working-directory: server
+        run: |
+          npx prisma migrate reset --force --skip-seed
+          npm run db:seed:force
 
       - name: Start backend
         run: npm --prefix server run dev &

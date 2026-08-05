@@ -27,6 +27,7 @@ beforeEach(async () => {
     "FakaProvisionEmailProof",
     "DeliveryRecord",
     "ProvisionTask",
+    "OrderAgreementAcceptance",
     "Order",
     "InventoryLog",
     "InventoryItem",
@@ -45,6 +46,7 @@ beforeEach(async () => {
     "MerchantWebhookConfig",
     "Merchant",
     "PointAccount",
+    "UserAgreementConsent",
     "User"
     RESTART IDENTITY CASCADE`)
 })

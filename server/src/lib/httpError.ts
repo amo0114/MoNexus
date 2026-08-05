@@ -74,6 +74,11 @@ export type ErrorCode =
   | 'HUMAN_VERIFICATION_FAILED'
   | 'HUMAN_VERIFICATION_UNAVAILABLE'
   | 'ABUSE_PROTECTION_UNAVAILABLE'
+  // SPEC-LEGAL-001：注册/下单的协议确认。REQUIRED = 强制模式下未携带必备
+  // 协议版本（400）；STALE = 携带的版本落后于注册表当前版本（409，语义同
+  // PRICE_CHANGED——前端重新拉取预览/注册状态拿新版本，换新幂等键重试）。
+  | 'LEGAL_AGREEMENT_REQUIRED'
+  | 'LEGAL_AGREEMENT_STALE'
 
 export interface ErrorDetail {
   field: string
@@ -189,4 +194,26 @@ export function humanVerificationUnavailable(message = '安全验证服务暂不
 /** SPEC-RAP-001：Redis 反滥用保护不可用时绝不继续注册或发信副作用。 */
 export function abuseProtectionUnavailable(message = '请求保护服务暂不可用，请稍后重试') {
   return new HttpError(503, 'ABUSE_PROTECTION_UNAVAILABLE', message)
+}
+
+/** SPEC-LEGAL-001：强制模式下注册/下单缺少必备协议确认。 */
+export function legalAgreementRequired(message = '请先阅读并同意相关协议后再继续') {
+  return new HttpError(400, 'LEGAL_AGREEMENT_REQUIRED', message)
+}
+
+/**
+ * SPEC-LEGAL-001：客户端确认的协议版本落后于当前版本。details 携带每份
+ * 必备文档的当前版本，前端据此重新拉取并让用户再次确认（同 PRICE_CHANGED
+ * 的重确认语义，禁止静默按新版本落证）。
+ */
+export function legalAgreementStale(
+  required: ReadonlyArray<{ document: string; version: string }>,
+  message = '协议版本已更新，请重新阅读并确认',
+) {
+  return new HttpError(
+    409,
+    'LEGAL_AGREEMENT_STALE',
+    message,
+    required.map(r => ({ field: `agreements.${r.document}`, message: `当前版本：${r.version}` })),
+  )
 }

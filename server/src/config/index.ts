@@ -217,6 +217,15 @@ const envSchema = z.object({
   // 生产环境为 true 时拒绝启动——这是 SSRF 防线的总开关。
   AUTO_PROVISION_ALLOW_INSECURE_TARGETS: booleanEnvSchema.default(false),
 
+  // --- SPEC-LEGAL-001：法律页面与协议同意。ENABLED 是总开关（公开页面 +
+  // 注册/下单同意采集）；ENFORCEMENT=enforce 时注册/下单必须携带当前版本
+  // 的协议确认（缺 = 400 LEGAL_AGREEMENT_REQUIRED，版本旧 = 409
+  // LEGAL_AGREEMENT_STALE）；off = 只记录不强求。FIXTURE_PATH 是测试逃生：
+  // 指向覆盖内置五份草案的文档目录，生产拒启。
+  LEGAL_PAGES_ENABLED: booleanEnvSchema.default(false),
+  LEGAL_PAGES_ENFORCEMENT: z.enum(['off', 'enforce']).default('off'),
+  LEGAL_PAGES_FIXTURE_PATH: optionalStringEnvSchema,
+
   // --- FakaBridge (Xboard subscription provision). Optional until offers use
   // externalIntegration=faka_bridge. When any of URL/SECRET is set, both must
   // be present. Production path has NO /api/v1 prefix.
@@ -384,6 +393,25 @@ if (env.NODE_ENV === 'production') {
   }
 }
 
+// SPEC-LEGAL-001 守卫：enforce 但页面总开关未开是配置矛盾（会出现"必须同意
+// 但用户根本读不到协议"的死锁），任何环境拒启；生产开启页面必须 enforce
+// （公开页面却不采集同意 = 合规姿态形同虚设）；FIXTURE_PATH 是测试逃生，
+// 生产拒启（同 AUTO_PROVISION_ALLOW_INSECURE_TARGETS 模式）。
+if (env.LEGAL_PAGES_ENFORCEMENT === 'enforce' && !env.LEGAL_PAGES_ENABLED) {
+  console.error('[Config] LEGAL_PAGES_ENFORCEMENT=enforce requires LEGAL_PAGES_ENABLED=true')
+  process.exit(1)
+}
+if (env.NODE_ENV === 'production') {
+  if (env.LEGAL_PAGES_ENABLED && env.LEGAL_PAGES_ENFORCEMENT !== 'enforce') {
+    console.error('[Config] LEGAL_PAGES_ENFORCEMENT must be enforce in production when LEGAL_PAGES_ENABLED=true')
+    process.exit(1)
+  }
+  if (env.LEGAL_PAGES_FIXTURE_PATH) {
+    console.error('[Config] LEGAL_PAGES_FIXTURE_PATH must not be set in production: it overrides the built-in legal documents with test fixtures')
+    process.exit(1)
+  }
+}
+
 // FakaBridge: URL and SECRET are all-or-nothing. Status URL is optional.
 const fakaUrl = env.FAKA_BRIDGE_URL
 const fakaSecret = env.FAKA_BRIDGE_SECRET
@@ -513,6 +541,11 @@ export const config = {
   // P7b 自动开通：null = 未显式配置（dev/test 由 JWT_SECRET 派生）。
   webhookSecretEncKey: env.WEBHOOK_SECRET_ENC_KEY ?? null,
   autoProvisionAllowInsecureTargets: env.AUTO_PROVISION_ALLOW_INSECURE_TARGETS,
+  legalPages: {
+    enabled: env.LEGAL_PAGES_ENABLED,
+    enforcement: env.LEGAL_PAGES_ENFORCEMENT,
+    fixturePath: env.LEGAL_PAGES_FIXTURE_PATH,
+  },
   fakaBridge: fakaBridgeEnabled
     ? {
         enabled: true as const,
