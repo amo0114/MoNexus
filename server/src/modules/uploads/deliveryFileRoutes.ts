@@ -5,9 +5,10 @@ import busboy from 'busboy'
 import { authenticate, requireActiveUser, requireMerchant, requireVerifiedEmail } from '../../middlewares/auth.js'
 import { badRequest, HttpError } from '../../lib/httpError.js'
 import { prisma } from '../../lib/prisma.js'
-import { getDeliveryStorage } from '../../lib/storage/delivery.js'
+import { getDeliveryStorage, getDeliveryStorageForWrite } from '../../lib/storage/delivery.js'
 import { FileTooLargeError, TMP_KEY_PREFIX, sanitizeFileName } from '../../lib/storage/deliveryTypes.js'
 import { DeliveryMemoryStorage, verifyDeliveryToken } from '../../lib/storage/deliveryMemory.js'
+import { registerStoredObject } from '../../lib/storage/storedObjectRegistry.js'
 import { getSystemConfigValue } from '../../lib/systemConfig.js'
 import { withDeliveryKeyLock } from '../../lib/deliveryKeyLock.js'
 
@@ -52,7 +53,7 @@ router.post('/delivery-file', authenticate, requireActiveUser, requireMerchant, 
   try {
     const maxMb = await getSystemConfigValue('deliveryFileMaxMb')
     const maxBytes = maxMb * 1024 * 1024
-    const storage = await getDeliveryStorage()
+    const { adapter: storage, providerConfigId } = await getDeliveryStorageForWrite()
     const merchantId = await myMerchantId(req)
 
     const bb = busboy({
@@ -86,7 +87,7 @@ router.post('/delivery-file', authenticate, requireActiveUser, requireMerchant, 
           // 再等第二条连接，并发上传耗尽连接池（评审 P1）。
           const file = await withDeliveryKeyLock(finalKey, async tx => {
             await storage.promote(tmpKey, finalKey)
-            return tx.deliveryFile.create({
+            const created = await tx.deliveryFile.create({
               data: {
                 key: finalKey,
                 fileName,
@@ -95,9 +96,22 @@ router.post('/delivery-file', authenticate, requireActiveUser, requireMerchant, 
                 mimeType: info.mimeType || 'application/octet-stream',
                 sha256,
                 merchantId,
+                storageProviderId: providerConfigId,
               },
               select: { id: true, fileName: true, size: true, createdAt: true },
             })
+            await registerStoredObject({
+              providerConfigId,
+              bucketRole: 'private',
+              objectKey: finalKey,
+              size,
+              checksum: sha256,
+              mimeType: info.mimeType || 'application/octet-stream',
+              source: 'delivery_file',
+              sourceId: created.id,
+              client: tx,
+            })
+            return created
           })
           if (!settled) {
             settled = true

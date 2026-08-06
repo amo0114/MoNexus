@@ -156,9 +156,11 @@ describe('cleanupUnreferencedObjects', () => {
     const orphanKey = `${'7'.repeat(64)}.bin`
     await storage.putObjectAt(orphanKey, Buffer.from('row-less'))
 
-    vi.spyOn(prisma.deliveryFile, 'findMany').mockRejectedValueOnce(new Error('db unreachable'))
+    // Multi-provider scan may call findMany more than once; all must fail-closed.
+    const spy = vi.spyOn(prisma.deliveryFile, 'findMany').mockRejectedValue(new Error('db unreachable'))
     expect(await cleanupUnreferencedObjects(new Date(Date.now() + 25 * HOUR))).toBe(0)
     expect(storage.getBlob(orphanKey)).not.toBeNull()
+    spy.mockRestore()
 
     // DB 恢复后下一轮照常清理。
     expect(await cleanupUnreferencedObjects(new Date(Date.now() + 25 * HOUR))).toBe(1)

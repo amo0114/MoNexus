@@ -47,6 +47,14 @@ beforeEach(async () => {
     "Merchant",
     "PointAccount",
     "UserAgreementConsent",
+    "StoredObject",
+    "StorageProviderConfig",
     "User"
     RESTART IDENTITY CASCADE`)
+  // SPEC-STORAGE-001：runtime 单行复位为「仅 env 底座」
+  await prisma.storageRuntime.upsert({
+    where: { id: 1 },
+    create: { id: 1, activeConfigId: null, configVersion: 0 },
+    update: { activeConfigId: null, configVersion: 0 },
+  }).catch(() => {})
 })

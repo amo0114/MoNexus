@@ -4,7 +4,7 @@ import { prisma } from '../../lib/prisma.js'
 import { config } from '../../config/index.js'
 import { notFound, HttpError, type ErrorCode } from '../../lib/httpError.js'
 import { getSystemConfigValue } from '../../lib/systemConfig.js'
-import { getDeliveryStorage } from '../../lib/storage/delivery.js'
+import { getDeliveryStorageForProvider } from '../../lib/storage/delivery.js'
 import { getProductFulfillmentMode, normalizeOrderStatus } from './fulfillment.js'
 
 /**
@@ -93,7 +93,16 @@ async function resolveGrant(
           deliveredAt: true,
           // P6a：订阅到期时刻——订阅交付豁免平台下载窗口，只受它约束。
           expiresAt: true,
-          file: { select: { id: true, key: true, fileName: true, size: true, status: true } },
+          file: {
+            select: {
+              id: true,
+              key: true,
+              fileName: true,
+              size: true,
+              status: true,
+              storageProviderId: true,
+            },
+          },
         },
       },
     },
@@ -195,7 +204,8 @@ async function resolveGrant(
 
     const ttlRaw = await getSystemConfigValue('fileUrlTtlSeconds', tx)
     const ttlSeconds = Math.min(Math.max(ttlRaw, 30), 3600)
-    const storage = await getDeliveryStorage()
+    // SPEC-STORAGE-001：按 DeliveryFile 绑定的 provider 签发，避免 active 猜测读错副本
+    const storage = await getDeliveryStorageForProvider(file.storageProviderId ?? null)
     const { url, expiresAt } = await storage.presignDownload(file.key, file.fileName, ttlSeconds)
 
     await audit('granted', expiresAt)

@@ -1,20 +1,17 @@
-import { useMemo, useRef, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, ArrowRight, Check, CreditCard, FileText, Globe, KeyRound, Loader2,
-  Package, Sparkles, Trash2, Upload, UserRound, Wrench, Coins, Star,
+  Package, Sparkles, Trash2, UserRound, Wrench, Coins,
 } from 'lucide-react'
 import DOMPurify from 'dompurify'
 import { useAppStore } from '../../stores/appStore'
 import { createMerchantProduct } from '../../api/merchant'
-import { uploadImage, UploadError } from '../../api/uploads'
-import SafeImage from '../../components/ui/SafeImage'
 import PurchaseFormFieldsEditor, {
   serializePurchaseFormFields, validatePurchaseFormFields,
 } from '../../components/merchant/PurchaseFormFieldsEditor'
+import ProductImageUploader from '../../components/merchant/ProductImageUploader'
 import type { PurchaseFormField, DeliveryMode, StockMode } from '../../types/merchant'
-
-const MAX_IMAGES = 6
 
 /** 主规格默认名（与服务端 lib/offers.ts 的 DEFAULT_OFFER_NAME 一致）。 */
 const DEFAULT_OFFER_NAME = '默认规格'
@@ -135,9 +132,6 @@ export default function ProductCreateWizard() {
   const [submitting, setSubmitting] = useState(false)
   const [templateId, setTemplateId] = useState<string | null>(null)
   const [images, setImages] = useState<string[]>([])
-  const [imageUrlInput, setImageUrlInput] = useState('')
-  const [uploadingImage, setUploadingImage] = useState(false)
-  const fileInputRef = useRef<HTMLInputElement>(null)
   const [form, setForm] = useState<WizardForm>({
     name: '', type: '网络节点', icon: 'package', description: '', richDescription: '',
     isHot: false, price: '', originalPrice: '', deliveryMode: 'instant_inventory',
@@ -242,44 +236,6 @@ export default function ProductCreateWizard() {
       return
     }
     setStep(s => Math.min(s + 1, STEPS.length - 1))
-  }
-
-  function addImageUrl() {
-    const url = imageUrlInput.trim()
-    if (!url) return
-    if (!/^https?:\/\//.test(url) && !url.startsWith('/')) {
-      showToast('图片地址必须是 http(s) 绝对 URL 或以 / 开头的路径', 'error')
-      return
-    }
-    if (images.length >= MAX_IMAGES) {
-      showToast(`最多上传 ${MAX_IMAGES} 张图片`, 'error')
-      return
-    }
-    setImages(prev => [...prev, url])
-    setImageUrlInput('')
-  }
-
-  async function handleFilesSelected(files: FileList | null) {
-    if (!files || files.length === 0) return
-    const remaining = MAX_IMAGES - images.length
-    if (remaining <= 0) {
-      showToast(`最多上传 ${MAX_IMAGES} 张图片`, 'error')
-      return
-    }
-    setUploadingImage(true)
-    try {
-      for (const file of Array.from(files).slice(0, remaining)) {
-        const result = await uploadImage(file)
-        setImages(prev => (prev.length >= MAX_IMAGES ? prev : [...prev, result.url]))
-      }
-      showToast('图片上传成功')
-    } catch (err) {
-      const msg = err instanceof UploadError ? err.message : (err as any)?.response?.data?.error?.message || '图片上传失败'
-      showToast(msg, 'error')
-    } finally {
-      setUploadingImage(false)
-      if (fileInputRef.current) fileInputRef.current.value = ''
-    }
   }
 
   async function handlePublish() {
@@ -436,49 +392,7 @@ export default function ProductCreateWizard() {
                   onChange={(e) => setForm({ ...form, icon: e.target.value })} />
               </div>
             </div>
-            <div data-testid="product-images-uploader">
-              <FieldLabel>商品图片（最多 {MAX_IMAGES} 张，第一张为封面）</FieldLabel>
-              <div className="flex gap-2">
-                <input type="text" className="input flex-1" placeholder="粘贴图片 URL 后点添加，或点右侧上传"
-                  value={imageUrlInput} onChange={(e) => setImageUrlInput(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addImageUrl() } }} />
-                <button type="button" onClick={addImageUrl} disabled={uploadingImage || images.length >= MAX_IMAGES}
-                  className="btn-secondary px-3 py-2 text-sm whitespace-nowrap">添加</button>
-                <button type="button" onClick={() => fileInputRef.current?.click()} disabled={uploadingImage || images.length >= MAX_IMAGES}
-                  className="btn-secondary px-4 py-2 text-sm whitespace-nowrap">
-                  {uploadingImage ? <><Loader2 className="w-4 h-4 animate-spin" />上传中</> : <><Upload className="w-4 h-4" />上传</>}
-                </button>
-                <input ref={fileInputRef} type="file" multiple accept="image/png,image/jpeg,image/webp,image/gif"
-                  className="hidden" onChange={(e) => handleFilesSelected(e.target.files)} />
-              </div>
-              {images.length > 0 && (
-                <div className="mt-3 grid grid-cols-3 gap-3">
-                  {images.map((url, index) => (
-                    <div key={`${url}-${index}`} className="relative group rounded-lg border border-[var(--color-border)] overflow-hidden">
-                      <SafeImage src={url} alt={`商品图 ${index + 1}`} className="w-full h-20 object-cover" />
-                      {index === 0 && (
-                        <span className="absolute top-1 left-1 px-1.5 py-0.5 rounded text-xs font-bold bg-[var(--color-cta)] text-white">封面</span>
-                      )}
-                      {/* 触屏无 hover：移动端常显，仅 ≥md 恢复 hover 揭示 */}
-                      <div className="absolute inset-x-0 bottom-0 flex justify-end gap-1 p-1 bg-black/40 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
-                        {index !== 0 && (
-                          <button type="button" title="设为封面" aria-label={`将第 ${index + 1} 张设为封面`}
-                            onClick={() => setImages(prev => { const next = [...prev]; const [p] = next.splice(index, 1); next.unshift(p); return next })}
-                            className="icon-btn p-1 rounded bg-white/90 text-[var(--color-text)] hover:bg-white cursor-pointer">
-                            <Star className="w-3.5 h-3.5" />
-                          </button>
-                        )}
-                        <button type="button" title="删除" aria-label={`删除第 ${index + 1} 张图片`}
-                          onClick={() => setImages(prev => prev.filter((_, i) => i !== index))}
-                          className="icon-btn p-1 rounded bg-white/90 text-[var(--color-danger)] hover:bg-white cursor-pointer">
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+            <ProductImageUploader images={images} onChange={setImages} disabled={submitting} />
             <div>
               <FieldLabel>一句话简介</FieldLabel>
               <textarea className="input min-h-[60px] resize-y" placeholder="简明扼要地概括商品亮点..."
