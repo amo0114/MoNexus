@@ -1,5 +1,35 @@
 # develop 全仓代码健康审计（2026-08-01）
 
+> 2026-08-06 状态更新：第 1-15 节保留 2026-08-01 的原始审计口径和证据，
+> 本节单独记录基于 `origin/develop` `d89e8946e88f3c4d3ba3901a8431d12817376fad`
+> 的后续复核与处理结果，避免把历史状态误读为当前状态。
+
+## 0. 2026-08-06 后续复核与处理
+
+### 原审计 findings 状态
+
+| ID | 当前状态 | 处理证据 |
+| --- | --- | --- |
+| AUD-2026-08-01-01 | 已修复，待合入 | `fix/issue-91-maintenance` 的 `3ed067d` 为 `verify-local.sh` 默认传入可覆盖的 `API_RATE_LIMIT_MAX=3000`；`bash -n` 通过。 |
+| AUD-2026-08-01-02 | 已在 `develop` 修复 | `68a4805` 引入用户级锁和带 `userId`、`used=false`、有效期谓词的原子 `updateMany` claim，覆盖并发消费与跨账号 token 使用；旧的本地修复分支已删除。 |
+| AUD-2026-08-01-03 | 已修复，待合入 | `fix/password-reset-mail-consistency` 的 `e011367` 使用“不可用候选 token -> SMTP 成功 -> 用户锁内激活并废止旧 token”的两阶段切换；SMTP 失败时旧链接仍有效。 |
+
+密码重置修复保留统一 HTTP 200 契约，避免通过 SMTP 失败差异枚举账号；日志只记录有限错误分类，不记录 provider 原始错误或 token。专项验证为 2 个测试文件、25 个测试全部通过，Node 20 后端 TypeScript 构建通过。
+
+### Issue #91 WIP 复核
+
+- `agent-a760fc95c65ec0179`：30 个 tracked 修改中 19 个已与当前 `develop` 相同；邀请码源码已由 `#77` 合入。剩余 Turnstile `T8b` 规格明确要求实施前审批，且缺少配套前端，因此未擅自合入。
+- `feat/rap-auth-integration`：管理接口、奖励 cron、奖励状态机与测试已由 `#67` / `#77` 的后续实现覆盖。唯一仍有必要的差异是按 `createdAt` 清理 `AbuseEvent` 时缺少单列索引。
+- 索引已在 `fix/issue-91-maintenance` 的 `3aa72cd` 中补入 Prisma schema 和第 52 个迁移。Prisma validate 通过，迁移历史与 schema 的 diff 为空，可丢弃测试库部署成功，数据库中已验证为 btree `AbuseEvent_createdAt_idx`。
+- 反滥用留存、奖励和管理专项验证为 3 个测试文件、17 个测试全部通过。
+
+### 清理与恢复边界
+
+- 清理前快照位于 `/root/projects/MoNexus-issue-91-backup-20260806`；`repository.bundle` 包含快照时全部 42 个 refs 和完整历史，6 棵 dirty worktree 的文件副本已保存，只有可重建的 `node_modules` 被排除。
+- 复核并移除了已合并或被后续实现覆盖的 agent、RAP、邮箱验证、Compose 和 release worktree/本地分支。
+- 删除了 5 个已被 `develop` / `master` 等价提交覆盖的远程 Compose/release 分支；远程现只保留 `develop`、`master` 和 `HEAD`。
+- 未合入 Turnstile `T8b`，未删除密码重置、维护、审计或正在独立开发的对象存储分支。
+
 ## 1. 结论摘要
 
 本次审计基于 `develop` 的 `236950dc0cd7eaf23524984923653392f6de2d79`，在独立分支 `audit/monexus-develop-20260801` 和独立 worktree 中完成。工作开始时工作树干净；未修改、stash、reset 或清理其他 worktree 的用户内容，也未 push、merge 或创建 PR。
