@@ -705,10 +705,16 @@
         "required": [
           "email"
         ],
+        "additionalProperties": false,
         "properties": {
           "email": {
             "type": "string",
             "format": "email"
+          },
+          "turnstileToken": {
+            "type": "string",
+            "maxLength": 4096,
+            "description": "保护启用时由 action=`forgot_password` 的 Turnstile managed flow 产生。令牌不得持久化、记录或跨流程重用。"
           }
         }
       },
@@ -3861,7 +3867,7 @@
           "Auth"
         ],
         "summary": "请求重置密码邮件",
-        "description": "**始终返回 200**，无论邮箱是否存在——防止账号枚举。",
+        "description": "保护启用时先校验 action=`forgot_password` 的 Turnstile proof，再消耗共享 Redis 密码重置额度。邮箱不存在、账号不可接收、额度命中、数据库或 SMTP 失败均保持相同 200 外观，防止账号枚举；缺失/无效 proof 或安全依赖不可用返回与账号是否存在无关的 400/403/503，供浏览器刷新 challenge 后重试。",
         "requestBody": {
           "required": true,
           "content": {
@@ -3874,7 +3880,7 @@
         },
         "responses": {
           "200": {
-            "description": "如邮箱存在则发送链接",
+            "description": "通用结果；如邮箱存在且全部保护与发送步骤成功则发送链接",
             "content": {
               "application/json": {
                 "schema": {
@@ -3883,8 +3889,38 @@
               }
             }
           },
+          "400": {
+            "description": "参数无效，或保护启用但缺少 `turnstileToken`（`HUMAN_VERIFICATION_REQUIRED`）。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`HUMAN_VERIFICATION_FAILED`：proof 无效、过期、重复使用，或 action/hostname 不匹配。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
           "429": {
             "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "description": "`HUMAN_VERIFICATION_UNAVAILABLE` 或 `ABUSE_PROTECTION_UNAVAILABLE`；不会查询账号、创建重置 token 或发送邮件。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
           }
         }
       }

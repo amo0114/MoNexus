@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { LayoutDashboard, UsersRound, Package, ShoppingCart, Activity, Users, ShoppingBag, Coins, Store, DollarSign, Settings, ClipboardList, Megaphone, DatabaseBackup, FolderLock, Cable, ShieldAlert } from 'lucide-react'
+import { LayoutDashboard, UsersRound, Package, ShoppingCart, Activity, Users, ShoppingBag, Coins, Store, DollarSign, Settings, ClipboardList, Megaphone, DatabaseBackup, FolderLock, Cable, ShieldAlert, HardDrive } from 'lucide-react'
 import api from '../api/client'
 import { getApiErrorMessage } from '../api/error'
 import { useAppStore } from '../stores/appStore'
@@ -34,11 +34,12 @@ import AdminOfferReport from '../components/admin/AdminOfferReport'
 import PortableBackupPanel from '../components/admin/PortableBackupPanel'
 import AdminFakaTasksPanel from '../components/admin/AdminFakaTasksPanel'
 import AbuseProtectionPanel from '../components/admin/AbuseProtectionPanel'
+import AdminStoragePanel from '../components/admin/AdminStoragePanel'
 import { Dialog, DialogContent, DialogTitle } from '../components/ui/Dialog'
 import { TableSkeleton, StatCardSkeleton } from '../components/ui/Skeleton'
 import EmptyState from '../components/ui/EmptyState'
 
-type AdminTab = 'dashboard' | 'users' | 'products' | 'orders' | 'logs' | 'audit' | 'files' | 'merchants' | 'settlements' | 'announcements' | 'config' | 'backup' | 'faka' | 'abuse'
+type AdminTab = 'dashboard' | 'users' | 'products' | 'orders' | 'logs' | 'audit' | 'files' | 'merchants' | 'settlements' | 'announcements' | 'config' | 'backup' | 'faka' | 'abuse' | 'storage'
 
 const NAV_ITEMS: { id: AdminTab; label: string; icon: any }[] = [
   { id: 'dashboard', label: '数据仪表盘', icon: LayoutDashboard },
@@ -52,6 +53,7 @@ const NAV_ITEMS: { id: AdminTab; label: string; icon: any }[] = [
   { id: 'abuse', label: '注册与激励风控', icon: ShieldAlert },
   { id: 'audit', label: '操作审计', icon: ClipboardList },
   { id: 'files', label: '文件治理', icon: FolderLock },
+  { id: 'storage', label: '对象存储', icon: HardDrive },
   { id: 'announcements', label: '公告管理', icon: Megaphone },
   { id: 'config', label: '系统配置', icon: Settings },
   { id: 'backup', label: '数据备份与恢复', icon: DatabaseBackup },
@@ -326,6 +328,7 @@ export default function AdminPage() {
           {activeTab === 'backup' && <PortableBackupPanel />}
           {activeTab === 'faka' && <AdminFakaTasksPanel />}
           {activeTab === 'abuse' && <AbuseProtectionPanel />}
+          {activeTab === 'storage' && <AdminStoragePanel />}
 
           {/* Merchants */}
           {activeTab === 'merchants' && (

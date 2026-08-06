@@ -2,7 +2,9 @@ import { Router, Request, Response, NextFunction } from 'express'
 import multer, { MulterError } from 'multer'
 import { authenticate, requireActiveUser, requireVerifiedEmail } from '../../middlewares/auth.js'
 import { badRequest } from '../../lib/httpError.js'
-import { getStorage } from '../../lib/storage/index.js'
+import { logger } from '../../lib/logger.js'
+import { getStorageForWrite, getStorageForObjectKey } from '../../lib/storage/index.js'
+import { registerStoredObject } from '../../lib/storage/storedObjectRegistry.js'
 
 const router = Router()
 
@@ -91,11 +93,36 @@ router.post('/image', authenticate, requireActiveUser, requireVerifiedEmail, att
       return next(badRequest('文件内容与图片格式不匹配', 'UNSUPPORTED_MEDIA_TYPE'))
     }
     const ext = extensionByMime[detectedMime]
-    const storage = await getStorage()
+    const { adapter: storage, providerConfigId } = await getStorageForWrite()
     const result = await storage.put(req.file.buffer, {
       mimeType: detectedMime,
       ext,
     })
+    // SPEC-STORAGE-001 ST-07：登记失败则尝试删除对象并 5xx，避免「写成功、读错副本」
+    try {
+      await registerStoredObject({
+        providerConfigId,
+        bucketRole: 'public',
+        objectKey: result.key,
+        size: req.file.buffer.length,
+        mimeType: detectedMime,
+        source: 'upload_image',
+      })
+    } catch (regErr) {
+      logger.error(
+        { err: regErr instanceof Error ? regErr.message : String(regErr), key: result.key, providerConfigId },
+        'StoredObject registration failed after public upload',
+      )
+      try {
+        await storage.deleteAtKey(result.key)
+      } catch (delErr) {
+        logger.error(
+          { err: delErr instanceof Error ? delErr.message : String(delErr), key: result.key },
+          'compensating delete after registration failure also failed',
+        )
+      }
+      return next(regErr)
+    }
     res.json(result)
   } catch (err) {
     next(err)
@@ -108,7 +135,7 @@ router.post('/image', authenticate, requireActiveUser, requireVerifiedEmail, att
 // route is never hit.
 router.get('/:key', async (req, res, next) => {
   try {
-    const storage = await getStorage()
+    const storage = await getStorageForObjectKey(req.params.key)
     const blob = await storage.get(req.params.key)
     if (!blob) {
       res.status(404).end()

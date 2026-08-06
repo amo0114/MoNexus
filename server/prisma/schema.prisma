@@ -915,14 +915,18 @@ model DeliveryFile {
   status     String    @default("active")
   createdAt  DateTime  @default(now())
   deletedAt  DateTime?
+  // SPEC-STORAGE-001：写入时绑定的提供商；null = legacy env 底座
+  storageProviderId Int?
 
   merchant        Merchant         @relation(fields: [merchantId], references: [id])
   offers          Offer[]          @relation("OfferFixedFile")
   deliveryRecords DeliveryRecord[] @relation("DeliveryRecordFile")
   grants          FileGrantLog[]
+  storageProvider StorageProviderConfig? @relation(fields: [storageProviderId], references: [id], onDelete: SetNull)
 
   @@index([merchantId, status])
   @@index([key])
+  @@index([storageProviderId])
 }
 
 // P5：签名发放审计——granted 与 denied 全记，行永不删除。隐私边界：
@@ -1020,4 +1024,68 @@ model OrderAgreementAcceptance {
   @@unique([orderId, document])
   @@index([userId])
   @@index([retentionUntil])
+}
+
+// SPEC-STORAGE-001：外置对象存储提供商配置（覆盖层）。env/Compose MinIO 底座
+// 不写入本表；status=active 至多一行（应用层 + 激活事务保证）。
+model StorageProviderConfig {
+  id                     Int       @id @default(autoincrement())
+  type                   String // r2 | oss | cos | s3_compatible
+  name                   String
+  status                 String    @default("draft") // draft | verified | active | disabled
+  configVersion          Int       @default(1)
+  publicConfig           Json
+  credentialsCiphertext  String?
+  credentialsKeyVersion  Int       @default(1)
+  accessKeyLast4         String?
+  lastTestAt             DateTime?
+  lastTestOk             Boolean?
+  lastTestSummary        String?
+  verifiedAt             DateTime?
+  activatedAt            DateTime?
+  disabledAt             DateTime?
+  activatedById          Int?
+  createdById            Int?
+  previousActiveId       Int?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+
+  storedObjects StoredObject[]
+  deliveryFiles DeliveryFile[]
+
+  @@index([status])
+}
+
+// SPEC-STORAGE-001：单行运行时指针（id 恒为 1）。
+model StorageRuntime {
+  id             Int      @id @default(1)
+  activeConfigId Int?
+  configVersion  Int      @default(0)
+  updatedAt      DateTime @updatedAt
+}
+
+// SPEC-STORAGE-001：对象位置登记。读路径按 providerConfigId 路由；
+// providerConfigId null + providerRef='env' 表示 legacy env 底座（临时兼容）。
+// providerRef 避免 PG 对 NULL 唯一约束的不确定性（'env' | String(id)）。
+model StoredObject {
+  id               Int      @id @default(autoincrement())
+  providerConfigId Int?
+  providerRef      String   @default("env") // env | <configId>
+  bucketRole       String // public | private
+  objectKey        String
+  size             Int?
+  checksum         String?
+  mimeType         String?
+  status           String   @default("active") // active | deleted
+  source           String? // upload_image | delivery_file
+  sourceId         Int?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  provider StorageProviderConfig? @relation(fields: [providerConfigId], references: [id], onDelete: SetNull)
+
+  @@unique([bucketRole, objectKey, providerRef])
+  @@index([objectKey])
+  @@index([providerConfigId])
+  @@index([source, sourceId])
 }

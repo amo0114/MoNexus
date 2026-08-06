@@ -14,7 +14,8 @@ type ProductImageLightboxProps = {
 
 /**
  * Full-viewport product image viewer (Amazon / 淘宝 / Shopify style).
- * Hero stays object-cover; lightbox uses object-contain so the whole frame is visible.
+ * List/detail heroes use fixed-frame cover; lightbox uses object-contain
+ * so the full source image is visible without crop (Amazon/Taobao zoom).
  */
 export default function ProductImageLightbox({
   open,
@@ -74,7 +75,7 @@ export default function ProductImageLightbox({
       className="fixed inset-0 z-[80] flex flex-col bg-black/92 backdrop-blur-sm fade-in"
       onClick={onClose}
     >
-      <div className="flex items-center justify-between gap-3 px-4 pt-[max(0.75rem,env(safe-area-inset-top))] pb-2 shrink-0">
+      <div className="flex items-center justify-between gap-3 px-4 pt-[max(0.75rem,env(safe-area-inset-top))] pb-2 shrink-0 pr-16 sm:pr-20">
         <p className="min-w-0 truncate text-sm font-medium text-white/90">
           {alt}
           {hasMultiple ? (
@@ -83,19 +84,22 @@ export default function ProductImageLightbox({
             </span>
           ) : null}
         </p>
-        <button
-          type="button"
-          onClick={(event) => {
-            event.stopPropagation()
-            onClose()
-          }}
-          data-testid="product-image-lightbox-close"
-          aria-label="关闭全图预览"
-          className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-white/20 bg-white/10 text-white transition-colors hover:bg-white/20 focus-visible:outline-none focus-visible:[box-shadow:0_0_0_3px_rgba(255,255,255,0.45)]"
-        >
-          <X className="h-5 w-5" aria-hidden="true" />
-        </button>
       </div>
+
+      {/* 明显关闭：右上角大圆形 X（不仅依赖 Esc） */}
+      <button
+        type="button"
+        onClick={(event) => {
+          event.stopPropagation()
+          onClose()
+        }}
+        data-testid="product-image-lightbox-close"
+        aria-label="关闭全图预览"
+        className="absolute right-3 top-[max(0.75rem,env(safe-area-inset-top))] z-20 inline-flex h-12 min-w-12 items-center justify-center gap-1 rounded-full border-2 border-white/70 bg-black/60 px-3 text-white shadow-xl backdrop-blur-md transition-colors hover:bg-red-600/80 hover:border-white focus-visible:outline-none focus-visible:[box-shadow:0_0_0_3px_rgba(255,255,255,0.55)] sm:right-5 sm:top-5"
+      >
+        <X className="h-6 w-6 shrink-0" aria-hidden="true" strokeWidth={2.5} />
+        <span className="hidden sm:inline text-sm font-semibold pr-0.5">关闭</span>
+      </button>
 
       <div
         className="relative flex min-h-0 flex-1 items-center justify-center px-3 pb-[max(1rem,env(safe-area-inset-bottom))] sm:px-12"
@@ -146,7 +150,7 @@ export default function ProductImageLightbox({
 
       <p className="pointer-events-none absolute bottom-[max(0.75rem,env(safe-area-inset-bottom))] left-1/2 hidden -translate-x-1/2 items-center gap-1.5 rounded-full bg-black/40 px-3 py-1 text-xs text-white/70 sm:flex">
         <ZoomIn className="h-3.5 w-3.5" aria-hidden="true" />
-        完整显示 · Esc 关闭
+        完整显示 · 点 ✕ / Esc / 背景 关闭
       </p>
     </div>,
     document.body,

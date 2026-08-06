@@ -12,10 +12,10 @@ export type HumanVerificationResult =
 /**
  * Server-side expected `action` values. Each protected flow renders its widget
  * with the matching action, so a proof minted for one flow can never be
- * replayed against another. Currently only registration is protected; add new
- * members here when another flow (e.g. forgot-password, T8b) is approved.
+ * replayed against another. Each protected flow owns a distinct action so a
+ * proof cannot be replayed across registration and password-reset requests.
  */
-export type HumanVerificationAction = 'register'
+export type HumanVerificationAction = 'register' | 'forgot_password'
 
 export interface HumanVerifier {
   verify(input: {

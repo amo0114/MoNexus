@@ -21,7 +21,7 @@ and `/me`.
 | DELETE | `/api/auth/sessions/:sessionId` | Bearer | Revokes an owned, non-current family. Current session must use `/logout`; absent/non-owned IDs return 404. |
 | POST | `/api/auth/sessions/revoke-others` | Bearer | Revokes every other active family while retaining current. |
 | POST | `/api/auth/password-change` | Bearer | Requires current password and revokes all refresh sessions on success. |
-| POST | `/api/auth/forgot-password` | — | Always 200 to prevent enumeration. |
+| POST | `/api/auth/forgot-password` | — | Requires a `forgot_password` Turnstile proof when abuse protection is enforced. Account lookup, reset quota, database, and SMTP outcomes remain a generic 200; challenge and protection-dependency errors are account-independent 400/403/503 responses so the browser can retry safely. |
 | POST | `/api/auth/reset-password` | — | Uses email token and revokes all refresh sessions on success. |
 | POST | `/api/auth/send-verification` | Bearer | Applies shared Redis limits, invalidates earlier unused token, then sends a fragment-token verification email. |
 | POST | `/api/auth/verify-email` | Bearer | Atomically claims only the current user's token, marks `emailVerified`, and transitions eligible rewards to `held`. |

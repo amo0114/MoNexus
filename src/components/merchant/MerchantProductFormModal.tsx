@@ -1,17 +1,14 @@
-import { useState, useEffect, useRef, useMemo } from 'react'
-import { X, Package, Tag, DollarSign, Image as ImageIcon, FileText, Upload, Loader2, Star, Trash2, ClipboardList } from 'lucide-react'
+import { useState, useEffect, useMemo } from 'react'
+import { X, Package, Tag, DollarSign, Image as ImageIcon, FileText, ClipboardList } from 'lucide-react'
 import * as DialogPrimitive from '@radix-ui/react-dialog'
 import DOMPurify from 'dompurify'
 import { MerchantProduct, PurchaseFormField } from '../../types/merchant'
 import { useAppStore } from '../../stores/appStore'
-import { uploadImage, UploadError } from '../../api/uploads'
-import SafeImage from '../ui/SafeImage'
 import { DialogOverlay } from '../ui/Dialog'
 import PurchaseFormFieldsEditor, {
   serializePurchaseFormFields, validatePurchaseFormFields,
 } from './PurchaseFormFieldsEditor'
-
-const MAX_IMAGES = 6
+import ProductImageUploader, { MAX_IMAGES } from './ProductImageUploader'
 
 interface Props {
   isOpen: boolean
@@ -24,10 +21,7 @@ export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, pr
   const showToast = useAppStore((s) => s.showToast)
   const registry = useAppStore((s) => s.registry)
   const [loading, setLoading] = useState(false)
-  const [uploadingImage, setUploadingImage] = useState(false)
-  const fileInputRef = useRef<HTMLInputElement>(null)
   const [images, setImages] = useState<string[]>([])
-  const [imageUrlInput, setImageUrlInput] = useState('')
   const [descMode, setDescMode] = useState<'edit' | 'preview'>('edit')
   const [purchaseForm, setPurchaseForm] = useState<PurchaseFormField[]>([])
   const [form, setForm] = useState({
@@ -51,7 +45,6 @@ export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, pr
   useEffect(() => {
     if (isOpen) {
       setDescMode('edit')
-      setImageUrlInput('')
       if (product) {
         const existingImages = Array.isArray(product.images) ? product.images : []
         setImages(existingImages.length > 0 ? existingImages.slice(0, MAX_IMAGES) : (product.imageUrl ? [product.imageUrl] : []))
@@ -124,67 +117,6 @@ export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, pr
         quantity: '可售名额数量',
         hint: '每笔订单会占用一个可售名额；同一交付内容会发送给每位买家。',
       }
-
-  function addImageUrl() {
-    const url = imageUrlInput.trim()
-    if (!url) return
-    if (!/^https?:\/\//.test(url) && !url.startsWith('/')) {
-      showToast('图片地址必须是 http(s) 绝对 URL 或以 / 开头的路径', 'error')
-      return
-    }
-    if (images.length >= MAX_IMAGES) {
-      showToast(`最多上传 ${MAX_IMAGES} 张图片`, 'error')
-      return
-    }
-    setImages((prev) => [...prev, url])
-    setImageUrlInput('')
-  }
-
-  function removeImage(index: number) {
-    setImages((prev) => prev.filter((_, i) => i !== index))
-  }
-
-  function setAsCover(index: number) {
-    if (index === 0) return
-    setImages((prev) => {
-      const next = [...prev]
-      const [picked] = next.splice(index, 1)
-      next.unshift(picked)
-      return next
-    })
-  }
-
-  async function handleFilesSelected(files: FileList | null) {
-    if (!files || files.length === 0) return
-    const remaining = MAX_IMAGES - images.length
-    if (remaining <= 0) {
-      showToast(`最多上传 ${MAX_IMAGES} 张图片`, 'error')
-      return
-    }
-    const selected = Array.from(files).slice(0, remaining)
-    if (selected.length < files.length) {
-      showToast(`最多上传 ${MAX_IMAGES} 张图片，已忽略多余文件`, 'error')
-    }
-    setUploadingImage(true)
-    try {
-      // 串行上传，避免并发压力
-      for (const file of selected) {
-        const result = await uploadImage(file)
-        setImages((prev) => (prev.length >= MAX_IMAGES ? prev : [...prev, result.url]))
-      }
-      showToast('图片上传成功')
-    } catch (err) {
-      if (err instanceof UploadError) {
-        showToast(err.message, 'error')
-      } else {
-        const msg = (err as any)?.response?.data?.error?.message || '图片上传失败'
-        showToast(msg, 'error')
-      }
-    } finally {
-      setUploadingImage(false)
-      if (fileInputRef.current) fileInputRef.current.value = ''
-    }
-  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -524,105 +456,7 @@ export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, pr
                       onChange={(e) => setForm({ ...form, icon: e.target.value })}
                     />
                   </div>
-                  <div data-testid="product-images-uploader">
-                    <FieldLabel>商品图片（最多 {MAX_IMAGES} 张，第一张为封面）</FieldLabel>
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        placeholder="粘贴图片 URL 后点添加，或点右侧上传"
-                        className="input flex-1"
-                        value={imageUrlInput}
-                        onChange={(e) => setImageUrlInput(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            e.preventDefault()
-                            addImageUrl()
-                          }
-                        }}
-                        data-testid="product-image-url-input"
-                      />
-                      <button
-                        type="button"
-                        onClick={addImageUrl}
-                        disabled={uploadingImage || images.length >= MAX_IMAGES}
-                        className="btn-secondary px-3 py-2 text-sm whitespace-nowrap"
-                        data-testid="product-image-url-add"
-                      >
-                        添加
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => fileInputRef.current?.click()}
-                        disabled={uploadingImage || images.length >= MAX_IMAGES}
-                        className="btn-secondary px-4 py-2 text-sm whitespace-nowrap"
-                        title="上传本地图片"
-                        data-testid="product-image-upload-button"
-                      >
-                        {uploadingImage ? (
-                          <>
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                            上传中
-                          </>
-                        ) : (
-                          <>
-                            <Upload className="w-4 h-4" />
-                            上传
-                          </>
-                        )}
-                      </button>
-                      <input
-                        ref={fileInputRef}
-                        type="file"
-                        multiple
-                        accept="image/png,image/jpeg,image/webp,image/gif"
-                        className="hidden"
-                        onChange={(e) => handleFilesSelected(e.target.files)}
-                      />
-                    </div>
-                    {images.length > 0 && (
-                      <div className="mt-3 grid grid-cols-3 gap-3" data-testid="product-images-list">
-                        {images.map((url, index) => (
-                          <div
-                            key={`${url}-${index}`}
-                            className="relative group rounded-lg border border-[var(--color-border)] overflow-hidden"
-                          >
-                            <SafeImage
-                              src={url}
-                              alt={`商品图 ${index + 1}`}
-                              className="w-full h-20 object-cover"
-                            />
-                            {index === 0 && (
-                              <span className="absolute top-1 left-1 px-1.5 py-0.5 rounded text-xs font-bold bg-[var(--color-cta)] text-white">
-                                封面
-                              </span>
-                            )}
-                            <div className="absolute inset-x-0 bottom-0 flex justify-end gap-1 p-1 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity">
-                              {index !== 0 && (
-                                <button
-                                  type="button"
-                                  onClick={() => setAsCover(index)}
-                                  className="p-1 rounded bg-white/90 text-[var(--color-text)] hover:bg-white cursor-pointer"
-                                  title="设为封面"
-                                  aria-label={`将第 ${index + 1} 张设为封面`}
-                                >
-                                  <Star className="w-3.5 h-3.5" />
-                                </button>
-                              )}
-                              <button
-                                type="button"
-                                onClick={() => removeImage(index)}
-                                className="p-1 rounded bg-white/90 text-[var(--color-danger)] hover:bg-white cursor-pointer"
-                                title="删除"
-                                aria-label={`删除第 ${index + 1} 张图片`}
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
+                  <ProductImageUploader images={images} onChange={setImages} disabled={loading} />
 
                   {/* Toggle switch for isHot */}
                   <div className="flex items-center justify-between mt-2 pt-3 border-t border-[var(--color-border)]">

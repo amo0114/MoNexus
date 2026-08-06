@@ -1,9 +1,33 @@
 import { config } from '../config/index.js'
 import { logger } from './logger.js'
 import { prisma } from './prisma.js'
-import { getDeliveryStorage } from './storage/delivery.js'
+import { getDeliveryStorage, getDeliveryStorageForProvider } from './storage/delivery.js'
 import { withDeliveryKeyLock } from './deliveryKeyLock.js'
 import { acquireCronLeaseWithHeartbeat, type CronLeaseHandle } from './cronLease.js'
+
+// Collect distinct provider ids that still have non-deleted delivery files or
+// may hold tmp objects (active config + historical file bindings + env null).
+async function listDeliveryProviderIdsForCleanup(): Promise<Array<number | null>> {
+  const ids = new Set<number | null>([null])
+  try {
+    const rows = await prisma.deliveryFile.findMany({
+      where: { status: { not: 'deleted' } },
+      select: { storageProviderId: true },
+      distinct: ['storageProviderId'],
+    })
+    for (const r of rows) ids.add(r.storageProviderId ?? null)
+  } catch (err) {
+    // Fail closed: only scan env bootstrap; never invent provider list on DB errors.
+    logger.warn({ err }, 'listDeliveryProviderIdsForCleanup query failed; scanning env only')
+  }
+  try {
+    const runtime = await prisma.storageRuntime.findUnique({ where: { id: 1 } })
+    if (runtime?.activeConfigId != null) ids.add(runtime.activeConfigId)
+  } catch {
+    /* ignore */
+  }
+  return [...ids]
+}
 
 /**
  * P5 T6：交付文件生命周期清理（设计 §8）。
@@ -31,23 +55,41 @@ const ORPHAN_GRACE_MS = 24 * 60 * 60 * 1000
 const REFUND_RETENTION_MS = 90 * 24 * 60 * 60 * 1000
 const CLEANUP_INTERVAL_MS = 60 * 60 * 1000
 
-/** 无任何其他非 deleted 行引用同 key 时才允许删对象。 */
-async function canDeleteObject(key: string, excludeFileId: number): Promise<boolean> {
+/**
+ * 同一 provider 作用域内是否还有其它非 deleted 行引用同 key。
+ * 跨 provider 同 content-hash 不互相挡住删除（各桶独立）。
+ */
+async function canDeleteObject(
+  key: string,
+  excludeFileId: number,
+  storageProviderId: number | null | undefined,
+): Promise<boolean> {
   const sibling = await prisma.deliveryFile.findFirst({
-    where: { key, status: { not: 'deleted' }, id: { not: excludeFileId } },
+    where: {
+      key,
+      status: { not: 'deleted' },
+      id: { not: excludeFileId },
+      storageProviderId: storageProviderId ?? null,
+    },
     select: { id: true },
   })
   return sibling == null
 }
 
-async function markDeletedAndMaybeRemoveObject(file: { id: number; key: string }) {
+async function markDeletedAndMaybeRemoveObject(file: {
+  id: number
+  key: string
+  storageProviderId?: number | null
+}) {
   // 先标记后删对象：标记使该行退出引用计数，对象删除失败可幂等重试。
   await prisma.deliveryFile.update({
     where: { id: file.id },
     data: { status: 'deleted', deletedAt: new Date() },
   })
-  if (await canDeleteObject(file.key, file.id)) {
-    const storage = await getDeliveryStorage()
+  const providerId = file.storageProviderId ?? null
+  if (await canDeleteObject(file.key, file.id, providerId)) {
+    // SPEC-STORAGE-001：按对象绑定的 provider 删除，禁止对 active 写路径乱删
+    const storage = await getDeliveryStorageForProvider(providerId)
     await storage.delete(file.key)
   }
 }
@@ -64,7 +106,7 @@ export async function cleanupOrphanFiles(now = new Date()): Promise<number> {
       offers: { none: {} },
       deliveryRecords: { none: {} },
     },
-    select: { id: true, key: true },
+    select: { id: true, key: true, storageProviderId: true },
     take: 200,
   })
   for (const file of orphans) {
@@ -77,18 +119,43 @@ export async function cleanupOrphanFiles(now = new Date()): Promise<number> {
   return orphans.length
 }
 
-/** 场景 2：tmp/ 遗留临时对象（上传中断残留；无 DB 行）。 */
+/** 场景 2：tmp/ 遗留临时对象（上传中断残留；无 DB 行）。扫 bootstrap + 已知 provider。 */
 export async function cleanupStaleTmpObjects(now = new Date()): Promise<number> {
-  const storage = await getDeliveryStorage()
-  const stale = await storage.listTmpKeysOlderThan(new Date(now.getTime() - ORPHAN_GRACE_MS))
-  for (const key of stale) {
+  const cutoff = new Date(now.getTime() - ORPHAN_GRACE_MS)
+  const providerIds = await listDeliveryProviderIdsForCleanup()
+  let cleaned = 0
+  for (const providerId of providerIds) {
     try {
-      await storage.delete(key)
+      const storage = await getDeliveryStorageForProvider(providerId)
+      const stale = await storage.listTmpKeysOlderThan(cutoff)
+      for (const key of stale) {
+        try {
+          await storage.delete(key)
+          cleaned++
+        } catch (err) {
+          logger.warn({ err, key, providerId }, 'stale tmp object cleanup failed')
+        }
+      }
     } catch (err) {
-      logger.warn({ err, key }, 'stale tmp object cleanup failed')
+      logger.warn({ err, providerId }, 'stale tmp scan failed for provider')
     }
   }
-  return stale.length
+  // Always also scan current write backend (covers active with zero files yet)
+  try {
+    const write = await getDeliveryStorage()
+    const stale = await write.listTmpKeysOlderThan(cutoff)
+    for (const key of stale) {
+      try {
+        await write.delete(key)
+        cleaned++
+      } catch (err) {
+        logger.warn({ err, key }, 'stale tmp object cleanup failed (write backend)')
+      }
+    }
+  } catch (err) {
+    logger.warn({ err }, 'stale tmp scan failed for write backend')
+  }
+  return cleaned
 }
 
 /**
@@ -112,6 +179,7 @@ export async function cleanupRefundedFiles(now = new Date()): Promise<number> {
     select: {
       id: true,
       key: true,
+      storageProviderId: true,
       deliveryRecords: {
         select: {
           order: {
@@ -161,40 +229,54 @@ export async function cleanupRefundedFiles(now = new Date()): Promise<number> {
  * 新行指向不存在的对象（评审 P0 竞态）。
  */
 export async function cleanupUnreferencedObjects(now = new Date()): Promise<number> {
-  const storage = await getDeliveryStorage()
-  const staleKeys = await storage.listFinalKeysOlderThan(new Date(now.getTime() - ORPHAN_GRACE_MS))
+  const cutoff = new Date(now.getTime() - ORPHAN_GRACE_MS)
+  const providerIds = await listDeliveryProviderIdsForCleanup()
   let cleaned = 0
-  for (let i = 0; i < staleKeys.length; i += 100) {
-    const chunk = staleKeys.slice(i, i + 100)
-    let referenced: Set<string>
+  for (const providerId of providerIds) {
+    let storage
     try {
-      const rows = await prisma.deliveryFile.findMany({
-        where: { key: { in: chunk }, status: { not: 'deleted' } },
-        select: { key: true },
-      })
-      referenced = new Set(rows.map(row => row.key))
+      storage = await getDeliveryStorageForProvider(providerId)
     } catch (err) {
-      // 查询失败 → 本批全部保留（失败默认保留，评审 P0）。
-      logger.warn({ err }, 'unreferenced object scan query failed; keeping batch')
+      logger.warn({ err, providerId }, 'unreferenced scan: cannot open provider')
       continue
     }
-    for (const key of chunk) {
-      if (referenced.has(key)) continue
+    let staleKeys: string[]
+    try {
+      staleKeys = await storage.listFinalKeysOlderThan(cutoff)
+    } catch (err) {
+      logger.warn({ err, providerId }, 'unreferenced scan: list failed')
+      continue
+    }
+    for (let i = 0; i < staleKeys.length; i += 100) {
+      const chunk = staleKeys.slice(i, i + 100)
+      let referenced: Set<string>
       try {
-        const deleted = await withDeliveryKeyLock(key, async tx => {
-          // 持锁二次确认（走锁事务连接，不额外占池）：等到锁时并发上传可能已建行。
-          const row = await tx.deliveryFile.findFirst({
-            where: { key, status: { not: 'deleted' } },
-            select: { id: true },
-          })
-          if (row) return false
-          await storage.delete(key)
-          return true
+        // Content-addressed keys may be shared: any non-deleted row blocks delete.
+        const anyRows = await prisma.deliveryFile.findMany({
+          where: { key: { in: chunk }, status: { not: 'deleted' } },
+          select: { key: true },
         })
-        if (deleted) cleaned++
+        referenced = new Set(anyRows.map(row => row.key))
       } catch (err) {
-        // 锁超时/查询失败/删除失败一律保留到下一轮。
-        logger.warn({ err, key }, 'unreferenced delivery object cleanup failed')
+        logger.warn({ err, providerId }, 'unreferenced object scan query failed; keeping batch')
+        continue
+      }
+      for (const key of chunk) {
+        if (referenced.has(key)) continue
+        try {
+          const deleted = await withDeliveryKeyLock(key, async tx => {
+            const row = await tx.deliveryFile.findFirst({
+              where: { key, status: { not: 'deleted' } },
+              select: { id: true },
+            })
+            if (row) return false
+            await storage.delete(key)
+            return true
+          })
+          if (deleted) cleaned++
+        } catch (err) {
+          logger.warn({ err, key, providerId }, 'unreferenced delivery object cleanup failed')
+        }
       }
     }
   }

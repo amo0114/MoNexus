@@ -19,7 +19,10 @@ import { agreementVersionsOf, LEGAL_PAGE_PATHS, type LegalRequirement } from '..
 import MfaEnrollment from '../components/auth/MfaEnrollment'
 import MfaVerification from '../components/auth/MfaVerification'
 import RecoveryCodeConfirmation from '../components/auth/RecoveryCodeConfirmation'
-import TurnstileWidget, { type TurnstileWidgetHandle } from '../components/auth/TurnstileWidget'
+import TurnstileWidget, {
+  preloadTurnstileScript,
+  type TurnstileWidgetHandle,
+} from '../components/auth/TurnstileWidget'
 import Logo from '../components/ui/Logo'
 
 type PendingRecoveryConfirmation = {
@@ -79,6 +82,7 @@ export default function LoginPage() {
   const [pendingRecovery, setPendingRecovery] = useState<PendingRecoveryConfirmation | null>(null)
   const [registrationRefresh, setRegistrationRefresh] = useState(0)
   const [registrationState, setRegistrationState] = useState<RegistrationViewState>({ kind: 'loading' })
+  const [turnstileReady, setTurnstileReady] = useState(false)
   // SPEC-LEGAL-001：协议勾选默认不勾（明示同意），STALE 后强制重新勾选。
   const [agreementsChecked, setAgreementsChecked] = useState(false)
 
@@ -94,6 +98,7 @@ export default function LoginPage() {
   useEffect(() => {
     let active = true
     setRegistrationState({ kind: 'loading' })
+    setTurnstileReady(false)
 
     getRegistrationStatus()
       .then((status) => {
@@ -103,6 +108,12 @@ export default function LoginPage() {
         } else if (!status.registrationAvailable) {
           setRegistrationState({ kind: 'unavailable' })
         } else {
+          if (status.challenge) {
+            // Start the network handshake while the visitor is still on the
+            // login view. The widget itself is rendered only after they open
+            // registration, so an interactive challenge is never hidden.
+            void preloadTurnstileScript().catch(() => undefined)
+          }
           setRegistrationState({
             kind: 'available',
             challenge: status.challenge,
@@ -132,12 +143,14 @@ export default function LoginPage() {
 
   function switchToLogin() {
     turnstileRef.current?.reset()
+    setTurnstileReady(false)
     setIsRegister(false)
     setAgreementsChecked(false)
   }
 
   function switchToRegistration() {
     if (registrationState.kind !== 'available') return
+    setTurnstileReady(false)
     setAgreementsChecked(false)
     setIsRegister(true)
   }
@@ -205,10 +218,12 @@ export default function LoginPage() {
     }
 
     if (code === 'LEGAL_AGREEMENT_REQUIRED') {
+      turnstileRef.current?.reset()
       showToast('请先阅读并同意相关协议', 'error')
       return
     }
 
+    turnstileRef.current?.reset()
     showToast(getApiErrorMessage(error, '操作失败'), 'error')
   }
 
@@ -222,10 +237,17 @@ export default function LoginPage() {
           return
         }
 
+        const legalRequirement = registrationState.legalRequirement
+        if (legalRequirement?.enforcement === 'enforce' && !agreementsChecked) {
+          // 双保险：按钮已禁用，但键盘提交/自动填充绕过 disabled 时仍拦下。
+          showToast('请先阅读并同意相关协议', 'error')
+          return
+        }
+
         let turnstileToken: string | undefined
         if (registrationState.challenge) {
-          if (!turnstileRef.current) {
-            showToast('安全验证仍在加载，请稍后重试', 'error')
+          if (!turnstileRef.current || !turnstileReady) {
+            showToast('安全验证仍在准备，请稍后重试', 'error')
             return
           }
           try {
@@ -236,13 +258,6 @@ export default function LoginPage() {
             showToast('请完成安全验证后重试', 'error')
             return
           }
-        }
-
-        const legalRequirement = registrationState.legalRequirement
-        if (legalRequirement?.enforcement === 'enforce' && !agreementsChecked) {
-          // 双保险：按钮已禁用，但键盘提交/自动填充绕过 disabled 时仍拦下。
-          showToast('请先阅读并同意相关协议', 'error')
-          return
         }
 
         const result = await registerAccount({
@@ -343,6 +358,7 @@ export default function LoginPage() {
   })) ?? []
   // 复审 P2：仅 enforce 门控提交；off（记录模式）勾选可选，不阻断注册。
   const missingAgreements = isRegister && legalRequirement?.enforcement === 'enforce' && !agreementsChecked
+  const verificationPreparing = isRegister && Boolean(registrationChallenge) && !turnstileReady
 
   return (
     <LoginShell>
@@ -395,7 +411,12 @@ export default function LoginPage() {
               required={registrationState.kind === 'available' && registrationState.inviteRequired}
             />
             {registrationChallenge && (
-              <TurnstileWidget ref={turnstileRef} siteKey={registrationChallenge.siteKey} />
+              <TurnstileWidget
+                ref={turnstileRef}
+                siteKey={registrationChallenge.siteKey}
+                action="register"
+                onReadyChange={setTurnstileReady}
+              />
             )}
             {legalRequirement && (
               <label
@@ -432,8 +453,12 @@ export default function LoginPage() {
           </>
         )}
 
-        <button type="submit" disabled={loading || missingAgreements} className="btn-primary mt-2 w-full">
-          {loading ? '请稍候…' : isRegister ? '创建账号' : '登录'}
+        <button
+          type="submit"
+          disabled={loading || missingAgreements || verificationPreparing}
+          className="btn-primary mt-2 w-full"
+        >
+          {loading ? '请稍候…' : verificationPreparing ? '安全验证准备中…' : isRegister ? '创建账号' : '登录'}
         </button>
       </form>
 

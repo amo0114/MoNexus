@@ -58,6 +58,10 @@ export const mfaVerifySchema = z.object({
 
 export const forgotPasswordSchema = z.object({
   email: normalizedEmailSchema,
+  // Optional at the schema boundary so ABUSE_PROTECTION_MODE=off retains the
+  // legacy request shape. Enforce mode maps omission to a named security error
+  // in the service layer.
+  turnstileToken: z.string().trim().max(4_096, '安全验证令牌过长').optional(),
 }).strict()
 
 export const resetPasswordSchema = z.object({
