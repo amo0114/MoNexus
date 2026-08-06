@@ -26,7 +26,7 @@ import {
   consumeRegistrationProviderPreflight,
   consumeVerificationEmailSend,
 } from './abusePolicy.js'
-import { getHumanVerifier } from './humanVerification.js'
+import { getHumanVerifier, type HumanVerificationAction } from './humanVerification.js'
 import { getMailer } from '../../lib/mailer/index.js'
 import { renderMail } from '../../lib/mailer/templates/index.js'
 import { normalizeInviteCode } from '../../lib/inviteCode.js'
@@ -204,18 +204,11 @@ async function enforceRegistrationProtection(input: {
   // a provider flood must be stopped before Turnstile or any password/DB work.
   await consumeAbuseBucket(() => consumeRegistrationProviderPreflight(input.ip ?? ''))
 
-  const token = typeof input.turnstileToken === 'string' ? input.turnstileToken.trim() : ''
-  if (!token) throw humanVerificationRequired()
-  if (token.length > 4_096) throw humanVerificationFailed()
-
-  let verification: Awaited<ReturnType<ReturnType<typeof getHumanVerifier>['verify']>>
-  try {
-    verification = await getHumanVerifier().verify({ token, ip: input.ip, action: 'register' })
-  } catch {
-    throw humanVerificationUnavailable()
-  }
-  if (verification.kind === 'unavailable') throw humanVerificationUnavailable()
-  if (verification.kind === 'rejected') throw humanVerificationFailed()
+  await enforceHumanVerification({
+    token: input.turnstileToken,
+    ip: input.ip,
+    action: 'register',
+  })
 
   // Turnstile has established a human proof; only now consume the expensive
   // registration attempt buckets, immediately before bcrypt and DB work.
@@ -223,6 +216,25 @@ async function enforceRegistrationProtection(input: {
     ip: input.ip ?? '',
     email: input.email,
   }))
+}
+
+async function enforceHumanVerification(input: {
+  token?: string
+  ip?: string
+  action: HumanVerificationAction
+}) {
+  const token = typeof input.token === 'string' ? input.token.trim() : ''
+  if (!token) throw humanVerificationRequired()
+  if (token.length > 4_096) throw humanVerificationFailed()
+
+  let verification: Awaited<ReturnType<ReturnType<typeof getHumanVerifier>['verify']>>
+  try {
+    verification = await getHumanVerifier().verify({ token, ip: input.ip, action: input.action })
+  } catch {
+    throw humanVerificationUnavailable()
+  }
+  if (verification.kind === 'unavailable') throw humanVerificationUnavailable()
+  if (verification.kind === 'rejected') throw humanVerificationFailed()
 }
 
 /**
@@ -1118,20 +1130,29 @@ function generateAuthToken() {
   return crypto.randomBytes(32).toString('hex')
 }
 
-async function enforcePasswordResetProtection(email: string, ip?: string) {
+async function enforcePasswordResetProtection(email: string, ip: string | undefined, turnstileToken?: string) {
   if (!registrationProtectionIsEnforced()) return
+
+  await enforceHumanVerification({
+    token: turnstileToken,
+    ip,
+    action: 'forgot_password',
+  })
+
+  // The proof is checked before consuming the existing password-reset
+  // allowance. Invalid challenges do not burn the user's daily quota.
   await consumeAbuseBucket(() => consumePasswordReset({
     email: normalizeEmailAddress(email),
     ip: ip ?? '',
   }))
 }
 
-export async function requestPasswordReset(email: string, ip?: string) {
+export async function requestPasswordReset(email: string, ip?: string, turnstileToken?: string) {
   const normalizedEmail = normalizeEmailAddress(email)
   // The policy is consumed before the account lookup. Unknown addresses pay
   // the same email/IP cost as known ones, while the controller preserves the
   // endpoint's generic 200 response for every outcome.
-  await enforcePasswordResetProtection(normalizedEmail, ip)
+  await enforcePasswordResetProtection(normalizedEmail, ip, turnstileToken)
 
   const user = await prisma.user.findUnique({ where: { email: normalizedEmail } })
   // Silently no-op for unknown emails so the public endpoint can return

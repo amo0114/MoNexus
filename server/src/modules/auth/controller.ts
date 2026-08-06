@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express'
 import { refreshTokenCookieName, setRefreshTokenCookie, clearRefreshTokenCookie } from '../../lib/cookies.js'
-import { unauthenticated } from '../../lib/httpError.js'
+import { HttpError, unauthenticated } from '../../lib/httpError.js'
 import { logger } from '../../lib/logger.js'
 import * as authService from './service.js'
 import * as sessionService from './sessionService.js'
@@ -8,6 +8,17 @@ import * as sessionService from './sessionService.js'
 function currentSessionId(req: Request) {
   if (typeof req.user?.sid !== 'string') throw unauthenticated('登录会话已失效，请重新登录')
   return req.user.sid
+}
+
+const PASSWORD_RESET_PROTECTION_ERRORS = new Set([
+  'HUMAN_VERIFICATION_REQUIRED',
+  'HUMAN_VERIFICATION_FAILED',
+  'HUMAN_VERIFICATION_UNAVAILABLE',
+  'ABUSE_PROTECTION_UNAVAILABLE',
+])
+
+function isPasswordResetProtectionError(error: unknown): error is HttpError {
+  return error instanceof HttpError && PASSWORD_RESET_PROTECTION_ERRORS.has(error.code)
 }
 
 export async function register(req: Request, res: Response, next: NextFunction) {
@@ -200,12 +211,18 @@ export async function revokeOtherSessions(req: Request, res: Response, next: Nex
 // endpoint while still letting real users get a reset link.
 export async function forgotPassword(req: Request, res: Response, next: NextFunction) {
   try {
-    await authService.requestPasswordReset(req.body.email, req.ip)
-  } catch {
+    await authService.requestPasswordReset(req.body.email, req.ip, req.body.turnstileToken)
+  } catch (err) {
+    if (isPasswordResetProtectionError(err)) {
+      next(err)
+      return
+    }
     // This endpoint is intentionally indistinguishable for known/unknown
-    // addresses, throttles, Redis outages, and SMTP failures. Do not attach
-    // the caught error: provider and SMTP errors can include sensitive request
-    // context. The fixed event is enough to retain operational visibility.
+    // addresses, throttles, database errors, and SMTP failures. Security
+    // dependency errors above are the exception: the client must be able to
+    // distinguish a missing/failed challenge from an account-independent
+    // operational failure and retry appropriately. Do not attach the caught
+    // error: provider and SMTP details can include sensitive request context.
     logger.warn({ flow: 'password_reset', outcome: 'suppressed' }, 'password reset request suppressed')
   }
   res.json({ message: '如果该邮箱已注册，重置链接已发送' })

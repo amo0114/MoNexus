@@ -40,11 +40,8 @@ async function mockRegistry(page: Page) {
   await page.route(apiRoute('/config/registry'), route => route.fulfill({ json: registry }))
 }
 
-test('prepares a one-time in-memory Turnstile proof before registration submission', async ({ page }) => {
-  const proof = 'turnstile-proof-must-not-persist'
-  let registerPayload: Record<string, unknown> | null = null
-
-  await page.addInitScript(() => {
+async function mockTurnstile(page: Page, proof: string) {
+  await page.addInitScript((preparedProof) => {
     let options: { action: string; callback: (token: string) => void } | null = null
     ;(window as unknown as { turnstileAction?: string }).turnstileAction = undefined
     ;(window as unknown as { turnstileExecuteCalls?: number }).turnstileExecuteCalls = 0
@@ -57,12 +54,19 @@ test('prepares a one-time in-memory Turnstile proof before registration submissi
       execute: () => {
         const state = window as unknown as { turnstileExecuteCalls: number }
         state.turnstileExecuteCalls += 1
-        options?.callback('turnstile-proof-must-not-persist')
+        options?.callback(preparedProof)
       },
       reset: () => undefined,
       remove: () => undefined,
     }
-  })
+  }, proof)
+}
+
+test('prepares a one-time in-memory Turnstile proof before registration submission', async ({ page }) => {
+  const proof = 'turnstile-proof-must-not-persist'
+  let registerPayload: Record<string, unknown> | null = null
+
+  await mockTurnstile(page, proof)
   await mockRegistry(page)
   await page.route(apiRoute('/auth/registration-status'), route => route.fulfill({
     json: {
@@ -108,6 +112,43 @@ test('prepares a one-time in-memory Turnstile proof before registration submissi
   expect(registerPayload).toMatchObject({
     email: profile.email,
     password: 'TestPass123!',
+    turnstileToken: proof,
+  })
+  const stored = await page.evaluate(() => localStorage.getItem('monexus-auth') ?? '')
+  expect(stored).not.toContain(proof)
+})
+
+test('binds password-reset proofs to the forgot_password action without persisting them', async ({ page }) => {
+  const proof = 'forgot-password-proof-must-not-persist'
+  let forgotPasswordPayload: Record<string, unknown> | null = null
+
+  await mockTurnstile(page, proof)
+  await mockRegistry(page)
+  await page.route(apiRoute('/auth/registration-status'), route => route.fulfill({
+    json: {
+      registrationEnabled: true,
+      registrationAvailable: true,
+      inviteRequired: false,
+      challenge: { provider: 'turnstile', siteKey: 'public-test-site-key' },
+      legalRequirement: null,
+    },
+  }))
+  await page.route(apiRoute('/auth/forgot-password'), async route => {
+    forgotPasswordPayload = JSON.parse(route.request().postData() ?? '{}') as Record<string, unknown>
+    await route.fulfill({ json: { message: '如果该邮箱已注册，重置链接已发送' } })
+  })
+
+  await page.goto('/forgot-password')
+  await expect.poll(() => page.evaluate(() => (
+    window as unknown as { turnstileAction?: string }
+  ).turnstileAction)).toBe('forgot_password')
+  await page.getByPlaceholder('邮箱地址').fill('reset-ui@test.local')
+  await expect(page.getByRole('button', { name: '发送重置链接' })).toBeEnabled()
+  await page.getByRole('button', { name: '发送重置链接' }).click()
+
+  await expect(page.getByRole('heading', { name: '请查收邮件' })).toBeVisible()
+  expect(forgotPasswordPayload).toEqual({
+    email: 'reset-ui@test.local',
     turnstileToken: proof,
   })
   const stored = await page.evaluate(() => localStorage.getItem('monexus-auth') ?? '')
