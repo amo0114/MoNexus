@@ -1,24 +1,107 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Mail, ArrowLeft, CheckCircle2 } from 'lucide-react'
 import { useAppStore } from '../stores/appStore'
-import { forgotPassword } from '../api/auth'
-import { getApiErrorMessage } from '../api/error'
+import { forgotPassword, getRegistrationStatus, type RegistrationChallenge } from '../api/auth'
+import { getApiErrorCode, getApiErrorMessage } from '../api/error'
+import TurnstileWidget, {
+  preloadTurnstileScript,
+  type TurnstileWidgetHandle,
+} from '../components/auth/TurnstileWidget'
+
+type ProtectionState =
+  | { kind: 'loading' }
+  | { kind: 'ready'; challenge: RegistrationChallenge | null }
+  | { kind: 'unavailable' }
 
 export default function ForgotPasswordPage() {
   const showToast = useAppStore((s) => s.showToast)
+  const turnstileRef = useRef<TurnstileWidgetHandle>(null)
   const [email, setEmail] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
+  const [turnstileReady, setTurnstileReady] = useState(false)
+  const [protectionRefresh, setProtectionRefresh] = useState(0)
+  const [protectionState, setProtectionState] = useState<ProtectionState>({ kind: 'loading' })
+
+  useEffect(() => {
+    let active = true
+    setProtectionState({ kind: 'loading' })
+    setTurnstileReady(false)
+
+    getRegistrationStatus()
+      .then((status) => {
+        if (!active) return
+
+        // registration-status exposes only the browser-safe site key. The
+        // password-reset widget supplies its own action, so a registration
+        // proof cannot be replayed here.
+        if (status.challenge) {
+          void preloadTurnstileScript().catch(() => undefined)
+          setProtectionState({ kind: 'ready', challenge: status.challenge })
+          return
+        }
+
+        // registrationAvailable=false while registrationEnabled=true and no
+        // challenge means enforce mode is not fully configured. Fail closed
+        // instead of submitting a request that cannot satisfy the server.
+        if (status.registrationEnabled && !status.registrationAvailable) {
+          setProtectionState({ kind: 'unavailable' })
+          return
+        }
+
+        setProtectionState({ kind: 'ready', challenge: null })
+      })
+      .catch(() => {
+        if (active) setProtectionState({ kind: 'unavailable' })
+      })
+
+    return () => {
+      active = false
+    }
+  }, [protectionRefresh])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+
+    if (protectionState.kind !== 'ready') {
+      showToast('安全验证暂不可用，请稍后重试', 'error')
+      return
+    }
+
+    let turnstileToken: string | undefined
+    if (protectionState.challenge) {
+      if (!turnstileRef.current || !turnstileReady) {
+        showToast('安全验证仍在准备，请稍后重试', 'error')
+        return
+      }
+      try {
+        turnstileToken = await turnstileRef.current.requestToken()
+      } catch {
+        showToast('请完成安全验证后重试', 'error')
+        return
+      }
+    }
+
     setSubmitting(true)
     try {
-      await forgotPassword(email)
+      // The single-use proof remains a local variable and is never written to
+      // React state, Zustand, browser storage, URLs, or logs.
+      await forgotPassword({
+        email,
+        ...(turnstileToken ? { turnstileToken } : {}),
+      })
       setSubmitted(true)
     } catch (err) {
-      showToast(getApiErrorMessage(err, '发送失败'), 'error')
+      turnstileRef.current?.reset()
+      const code = getApiErrorCode(err)
+      if (code === 'HUMAN_VERIFICATION_REQUIRED' || code === 'HUMAN_VERIFICATION_FAILED') {
+        showToast('请完成安全验证后重试', 'error')
+      } else if (code === 'HUMAN_VERIFICATION_UNAVAILABLE' || code === 'ABUSE_PROTECTION_UNAVAILABLE') {
+        showToast('安全验证暂不可用，请稍后重试', 'error')
+      } else {
+        showToast(getApiErrorMessage(err, '发送失败'), 'error')
+      }
     } finally {
       setSubmitting(false)
     }
@@ -70,13 +153,47 @@ export default function ForgotPasswordPage() {
                 onChange={(e) => setEmail(e.target.value)}
                 required
                 className="input"
+                disabled={submitting}
               />
+              {protectionState.kind === 'ready' && protectionState.challenge && (
+                <TurnstileWidget
+                  ref={turnstileRef}
+                  siteKey={protectionState.challenge.siteKey}
+                  action="forgot_password"
+                  onReadyChange={setTurnstileReady}
+                />
+              )}
+              {protectionState.kind === 'loading' && (
+                <p className="text-left text-xs text-[var(--color-text-muted)]" role="status">
+                  正在加载安全验证…
+                </p>
+              )}
+              {protectionState.kind === 'unavailable' && (
+                <div className="flex items-center justify-between gap-3 rounded-lg border border-[var(--color-danger)]/25 bg-[var(--color-danger)]/10 px-3 py-2 text-left">
+                  <p className="text-xs text-[var(--color-text-muted)]">安全验证暂不可用，请稍后重试。</p>
+                  <button
+                    type="button"
+                    onClick={() => setProtectionRefresh((value) => value + 1)}
+                    className="min-h-[40px] shrink-0 px-2 text-xs font-semibold text-[var(--color-primary)] hover:underline focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)]"
+                  >
+                    重试
+                  </button>
+                </div>
+              )}
               <button
                 type="submit"
-                disabled={submitting}
+                disabled={
+                  submitting
+                  || protectionState.kind !== 'ready'
+                  || Boolean(protectionState.challenge && !turnstileReady)
+                }
                 className="btn-primary w-full"
               >
-                {submitting ? '发送中...' : '发送重置链接'}
+                {submitting
+                  ? '发送中...'
+                  : protectionState.kind === 'ready' && protectionState.challenge && !turnstileReady
+                    ? '安全验证准备中…'
+                    : '发送重置链接'}
               </button>
             </form>
           </>

@@ -157,6 +157,16 @@ const envSchema = z.object({
   DELIVERY_STORAGE_BUCKET: z.string().min(1).optional(),
   DELIVERY_STORAGE_PUBLIC_ENDPOINT: z.string().url().optional(),
 
+  // --- SPEC-STORAGE-001：对象存储控制台（覆盖层）。底座仍由 STORAGE_* 提供。
+  STORAGE_UI_CONFIG_ENABLED: booleanEnvSchema.default(true),
+  STORAGE_CONFIG_SOURCE: z.enum(['env', 'database']).default('database'),
+  STORAGE_CREDENTIALS_ENC_KEY: optionalStringEnvSchema,
+  STORAGE_CREDENTIALS_ENC_KEY_VERSION: z.coerce.number().int().positive().default(1),
+  /** Optional previous key for decrypt during rotation (pair with PREVIOUS_VERSION). */
+  STORAGE_CREDENTIALS_ENC_KEY_PREVIOUS: optionalStringEnvSchema,
+  STORAGE_CREDENTIALS_ENC_KEY_PREVIOUS_VERSION: z.coerce.number().int().positive().optional(),
+  STORAGE_ENDPOINT_ALLOWLIST: optionalStringEnvSchema,
+
   // --- SMTP for transactional email (P0-D). Optional at boot: when
   // unset, the server falls back to a console-logging mailer. Production
   // deployments should configure SMTP so password resets actually arrive.
@@ -404,6 +414,22 @@ if (env.WEBHOOK_SECRET_ENC_KEY && !/^[0-9a-fA-F]{64}$/.test(env.WEBHOOK_SECRET_E
   console.error('[Config] WEBHOOK_SECRET_ENC_KEY must be 64 hex characters (32 bytes)')
   process.exit(1)
 }
+
+if (env.STORAGE_CREDENTIALS_ENC_KEY && !/^[0-9a-fA-F]{64}$/.test(env.STORAGE_CREDENTIALS_ENC_KEY)) {
+  console.error('[Config] STORAGE_CREDENTIALS_ENC_KEY must be 64 hex characters (32 bytes)')
+  process.exit(1)
+}
+if (
+  env.STORAGE_CREDENTIALS_ENC_KEY_PREVIOUS
+  && !/^[0-9a-fA-F]{64}$/.test(env.STORAGE_CREDENTIALS_ENC_KEY_PREVIOUS)
+) {
+  console.error('[Config] STORAGE_CREDENTIALS_ENC_KEY_PREVIOUS must be 64 hex characters (32 bytes)')
+  process.exit(1)
+}
+if (env.STORAGE_CREDENTIALS_ENC_KEY_PREVIOUS && !env.STORAGE_CREDENTIALS_ENC_KEY_PREVIOUS_VERSION) {
+  console.error('[Config] STORAGE_CREDENTIALS_ENC_KEY_PREVIOUS_VERSION is required when PREVIOUS key is set')
+  process.exit(1)
+}
 if (env.NODE_ENV === 'production') {
   if (!env.WEBHOOK_SECRET_ENC_KEY) {
     console.error('[Config] WEBHOOK_SECRET_ENC_KEY is required in production (merchant webhook secrets are encrypted at rest)')
@@ -514,6 +540,17 @@ export const config = {
         forcePathStyle: env.STORAGE_FORCE_PATH_STYLE,
       }
     : ({ kind: 'memory' as const }),
+  // SPEC-STORAGE-001
+  storageUiConfigEnabled: env.STORAGE_UI_CONFIG_ENABLED,
+  storageConfigSource: env.STORAGE_CONFIG_SOURCE,
+  storageCredentialsEncKey: env.STORAGE_CREDENTIALS_ENC_KEY ?? null,
+  storageCredentialsEncKeyVersion: env.STORAGE_CREDENTIALS_ENC_KEY_VERSION,
+  storageCredentialsEncKeyPrevious: env.STORAGE_CREDENTIALS_ENC_KEY_PREVIOUS ?? null,
+  storageCredentialsEncKeyPreviousVersion: env.STORAGE_CREDENTIALS_ENC_KEY_PREVIOUS_VERSION ?? null,
+  storageEndpointAllowlist: (env.STORAGE_ENDPOINT_ALLOWLIST ?? '')
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean),
   mailer: hasSmtp
     ? {
         kind: 'smtp' as const,

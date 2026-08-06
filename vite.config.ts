@@ -8,6 +8,11 @@ export default defineConfig({
     alias: {
       '@': path.resolve(__dirname, 'src'),
     },
+    // Prevent dual-React invalid hook calls when prebundling deps like react-easy-crop
+    dedupe: ['react', 'react-dom'],
+  },
+  optimizeDeps: {
+    include: ['react', 'react-dom', 'react-easy-crop'],
   },
   server: {
     port: 5173,

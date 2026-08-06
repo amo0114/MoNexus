@@ -111,15 +111,14 @@ function ProductCard({
         max-md:rounded-2xl max-md:shadow-sm max-md:active:scale-[0.98] max-md:active:shadow-sm
         ${isSoldOut ? 'opacity-60 grayscale' : ''}`}
     >
-      {/* The virtual grid needs uniform card height, but storefront artwork
-          must remain whole rather than being silently cropped. */}
+      {/* 电商惯例：固定槽位 + cover 铺满；完整原图在详情灯箱查看。 */}
       <ProductMediaFrame
         src={product.images?.[0] || product.imageUrl}
         alt={product.name}
         frameClassName="h-36 md:h-44"
         className="shrink-0 border-b border-[var(--color-border)]"
-        imageClassName="p-1.5 transition-opacity duration-200 group-hover:opacity-90"
-        fit="contain"
+        imageClassName="transition-opacity duration-200 group-hover:opacity-90"
+        fit="cover"
         imageProps={{
           loading: 'lazy',
           decoding: 'async',
