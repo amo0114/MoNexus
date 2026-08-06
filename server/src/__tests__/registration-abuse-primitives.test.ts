@@ -287,6 +287,7 @@ describe('SPEC-RAP-001 security primitives', () => {
     })
 
     await expect(verifier.verify({ token: 'test-token', ip: '203.0.113.21', action: 'register' })).resolves.toEqual({ kind: 'verified' })
+    await expect(verifier.verify({ token: 'test-token', ip: '203.0.113.21', action: 'forgot_password' })).resolves.toEqual({ kind: 'rejected' })
     expect(calledUrl).toBe(TURNSTILE_SITEVERIFY_ENDPOINT)
     expect(calledInit?.method).toBe('POST')
     expect(calledInit?.signal).toBeInstanceOf(AbortSignal)

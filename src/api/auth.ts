@@ -193,8 +193,11 @@ export async function fetchMeWithRoleHealing(): Promise<AuthUser> {
 
 // --- Password reset + email verification (P0-D) ---
 
-export async function forgotPassword(email: string): Promise<{ message: string }> {
-  const { data } = await api.post<{ message: string }>('/auth/forgot-password', { email })
+export async function forgotPassword(payload: {
+  email: string
+  turnstileToken?: string
+}): Promise<{ message: string }> {
+  const { data } = await api.post<{ message: string }>('/auth/forgot-password', payload)
   return data
 }
 

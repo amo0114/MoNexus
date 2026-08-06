@@ -17,6 +17,7 @@ class CountingRedis implements RedisLike {
   status = 'ready'
   readonly counts = new Map<string, number>()
   readonly forced: Array<[number, number]> = []
+  evalCalls = 0
 
   async get() { return null }
   async set() { return 'OK' }
@@ -25,6 +26,7 @@ class CountingRedis implements RedisLike {
   async ping() { return 'PONG' }
 
   async eval(_script: string, _numberOfKeys: number, key: string, rawTtl: string, ..._rest: string[]) {
+    this.evalCalls += 1
     const forced = this.forced.shift()
     if (forced) return forced
     const count = (this.counts.get(key) ?? 0) + 1
@@ -281,29 +283,103 @@ describe('SPEC-RAP-001 auth registration/mail integration', () => {
     expect(mailer.sent).toHaveLength(0)
   })
 
-  it('keeps password reset responses generic for unknown, throttled, Redis-down, and SMTP errors', async () => {
+  it('keeps the legacy password-reset request generic when protection is off', async () => {
+    config.abuseProtectionMode = 'off'
     const unknown = await api.post('/api/auth/forgot-password').send({ email: 'unknown-reset@test.local' }).expect(200)
 
-    const { user } = await createTestUser('known-reset-generic@test.local')
+    const { user } = await createTestUser('known-reset-off@test.local')
     const known = await api.post('/api/auth/forgot-password').send({ email: user.email }).expect(200)
     expect(known.body).toEqual(unknown.body)
-
-    enableProtection()
-    const limitedRedis = new CountingRedis()
-    limitedRedis.forced.push([2, 60_000])
-    __setRedisForTests(limitedRedis)
-    const throttled = await api.post('/api/auth/forgot-password').send({ email: user.email }).expect(200)
-    expect(throttled.body).toEqual(unknown.body)
     expect(await prisma.passwordResetToken.count({ where: { userId: user.id } })).toBe(1)
 
+    __setMailerForTesting(new FailingMailer())
+    const smtpFailure = await api.post('/api/auth/forgot-password').send({ email: user.email }).expect(200)
+    expect(smtpFailure.body).toEqual(unknown.body)
+  })
+
+  it('requires a forgot_password proof before consuming password-reset quotas', async () => {
+    enableProtection()
+    const redis = new CountingRedis()
+    __setRedisForTests(redis)
+    const actions: string[] = []
+    let verification: HumanVerificationResult = { kind: 'verified' }
+    __setHumanVerifierForTesting({
+      verify: async ({ action }) => {
+        actions.push(action)
+        return verification
+      },
+    })
+    const { user } = await createTestUser('known-reset-proof-gate@test.local')
+
+    const missing = await api.post('/api/auth/forgot-password').send({ email: user.email }).expect(400)
+    expect(missing.body.error.code).toBe('HUMAN_VERIFICATION_REQUIRED')
+    expect(redis.evalCalls).toBe(0)
+
+    verification = { kind: 'rejected' }
+    const rejected = await api.post('/api/auth/forgot-password').send({
+      email: user.email,
+      turnstileToken: 'registration-or-invalid-proof',
+    }).expect(403)
+    expect(rejected.body.error.code).toBe('HUMAN_VERIFICATION_FAILED')
+    expect(redis.evalCalls).toBe(0)
+
+    verification = { kind: 'unavailable' }
+    const unavailable = await api.post('/api/auth/forgot-password').send({
+      email: user.email,
+      turnstileToken: 'provider-unavailable-proof',
+    }).expect(503)
+    expect(unavailable.body.error.code).toBe('HUMAN_VERIFICATION_UNAVAILABLE')
+    expect(redis.evalCalls).toBe(0)
+
+    verification = { kind: 'verified' }
+    redis.forced.push([2, 60_000])
+    const throttled = await api.post('/api/auth/forgot-password').send({
+      email: user.email,
+      turnstileToken: 'valid-reset-proof',
+    }).expect(200)
+    expect(throttled.body).toEqual({ message: '如果该邮箱已注册，重置链接已发送' })
+    expect(redis.evalCalls).toBe(1)
+    expect(await prisma.passwordResetToken.count({ where: { userId: user.id } })).toBe(0)
+    expect(actions).toEqual(['forgot_password', 'forgot_password', 'forgot_password'])
+  })
+
+  it('keeps post-proof outcomes account-independent without hiding security dependency outages', async () => {
+    enableProtection()
+    __setHumanVerifierForTesting({ verify: async () => ({ kind: 'verified' }) })
+    const { user } = await createTestUser('known-reset-generic@test.local')
+
     __setRedisForTests(null)
-    const redisDown = await api.post('/api/auth/forgot-password').send({ email: user.email }).expect(200)
-    expect(redisDown.body).toEqual(unknown.body)
+    const unknownRedisDown = await api.post('/api/auth/forgot-password').send({
+      email: 'unknown-reset-redis-down@test.local',
+      turnstileToken: 'valid-reset-proof-unknown',
+    }).expect(503)
+    const knownRedisDown = await api.post('/api/auth/forgot-password').send({
+      email: user.email,
+      turnstileToken: 'valid-reset-proof-known',
+    }).expect(503)
+    expect(knownRedisDown.body.error).toEqual(unknownRedisDown.body.error)
+    expect(knownRedisDown.body.error.code).toBe('ABUSE_PROTECTION_UNAVAILABLE')
+
+    const mailer = new CaptureMailer()
+    __setMailerForTesting(mailer)
+    __setRedisForTests(new CountingRedis())
+    const unknown = await api.post('/api/auth/forgot-password').send({
+      email: 'unknown-reset-valid-proof@test.local',
+      turnstileToken: 'valid-reset-proof-unknown',
+    }).expect(200)
+    const known = await api.post('/api/auth/forgot-password').send({
+      email: user.email,
+      turnstileToken: 'valid-reset-proof-known',
+    }).expect(200)
+    expect(known.body).toEqual(unknown.body)
+    expect(mailer.sent).toHaveLength(1)
 
     __setRedisForTests(new CountingRedis())
-    const failingMailer = new FailingMailer()
-    __setMailerForTesting(failingMailer)
-    const smtpFailure = await api.post('/api/auth/forgot-password').send({ email: user.email }).expect(200)
+    __setMailerForTesting(new FailingMailer())
+    const smtpFailure = await api.post('/api/auth/forgot-password').send({
+      email: user.email,
+      turnstileToken: 'valid-reset-proof-smtp-failure',
+    }).expect(200)
     expect(smtpFailure.body).toEqual(unknown.body)
   })
 })
