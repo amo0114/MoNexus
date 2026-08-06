@@ -29,7 +29,10 @@ export const DialogOverlay = forwardRef<HTMLDivElement, OverlayProps>(({ classNa
 })
 DialogOverlay.displayName = 'DialogOverlay'
 
-type ContentProps = React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>
+type ContentProps = React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & {
+  /** Hide the default top-right X (e.g. nested crop dialog provides its own). */
+  hideClose?: boolean
+}
 /**
  * Dual-form dialog content (spec M3):
  * - ≥md: centered card (original behavior, visually unchanged).
@@ -38,7 +41,8 @@ type ContentProps = React.ComponentPropsWithoutRef<typeof DialogPrimitive.Conten
  *   padding. max-md: utilities sit in the utilities layer after the
  *   unprefixed centering classes, so they cleanly override below md.
  */
-export const DialogContent = forwardRef<HTMLDivElement, ContentProps>(({ className = '', children, ...props }, ref) => (
+export const DialogContent = forwardRef<HTMLDivElement, ContentProps>(
+  ({ className = '', children, hideClose = false, ...props }, ref) => (
   <DialogPortal>
     <DialogOverlay />
     <DialogPrimitive.Content
@@ -52,12 +56,14 @@ export const DialogContent = forwardRef<HTMLDivElement, ContentProps>(({ classNa
     >
       <div aria-hidden="true" className="md:hidden mx-auto -mt-1 mb-3 h-1 w-10 rounded-full bg-[var(--color-border)] shrink-0" />
       {children}
-      <DialogPrimitive.Close
-        className="icon-btn absolute right-4 top-4 rounded-md p-1.5 text-[var(--color-text-muted)] hover:bg-[var(--color-border)] hover:text-[var(--color-text)] transition-colors focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)] cursor-pointer"
-        aria-label="关闭"
-      >
-        <X className="w-4 h-4" />
-      </DialogPrimitive.Close>
+      {!hideClose && (
+        <DialogPrimitive.Close
+          className="icon-btn absolute right-4 top-4 rounded-md p-1.5 text-[var(--color-text-muted)] hover:bg-[var(--color-border)] hover:text-[var(--color-text)] transition-colors focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)] cursor-pointer"
+          aria-label="关闭"
+        >
+          <X className="w-4 h-4" />
+        </DialogPrimitive.Close>
+      )}
     </DialogPrimitive.Content>
   </DialogPortal>
 ))
