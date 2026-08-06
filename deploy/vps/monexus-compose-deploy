@@ -301,7 +301,9 @@ run_deploy() {
   flock -n 9 || fail 'Another MoNexus Compose deployment is already in progress.'
 
   release_path="$(prepare_release_source "$commit")"
-  [[ -x "${release_path}/scripts/check-prod-env.sh" ]] || \
+  # The checker is deliberately invoked with bash, so a normal tracked
+  # script only needs to be present; Git does not require its executable bit.
+  [[ -f "${release_path}/scripts/check-prod-env.sh" ]] || \
     fail 'Verified release does not contain the production environment checker.'
 
   bash "${release_path}/scripts/check-prod-env.sh" --mode production --env-file "$ENV_FILE"
