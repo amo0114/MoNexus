@@ -79,8 +79,12 @@ main() {
   # This account is only a forced-command transport, so it has no legitimate
   # need to modify its home or authorized keys. Root ownership prevents an
   # unexpected pre-existing login from replacing the constrained key policy.
+  # sshd reads AuthorizedKeysFile after dropping to the target account on
+  # this host, so give that account's private group only traversal of .ssh and
+  # read access to its public authorization. Neither permission permits a
+  # policy change; root retains ownership and all write permission.
   install -d -m 0755 -o root -g root "$DEPLOY_HOME"
-  install -d -m 0700 -o root -g root "${DEPLOY_HOME}/.ssh"
+  install -d -m 0710 -o root -g "$DEPLOY_USER" "${DEPLOY_HOME}/.ssh"
   authorized_keys="${DEPLOY_HOME}/.ssh/authorized_keys"
   [[ ! -e "$authorized_keys" || ( -f "$authorized_keys" && ! -L "$authorized_keys" ) ]] || \
     fail "${authorized_keys} must be a regular, non-symlink file."
@@ -100,8 +104,8 @@ main() {
   # and key rotation cannot leave an older deploy key usable.
   authorized_keys_temp="$(mktemp "${DEPLOY_HOME}/.ssh/authorized_keys.XXXXXX")"
   printf 'restrict,command="%s" %s\n' "$SSH_WRAPPER" "$key_line" > "$authorized_keys_temp"
-  chown root:root "$authorized_keys_temp"
-  chmod 0600 "$authorized_keys_temp"
+  chown root:"$DEPLOY_USER" "$authorized_keys_temp"
+  chmod 0640 "$authorized_keys_temp"
   mv -f "$authorized_keys_temp" "$authorized_keys"
 
   echo "[PASS] Installed restricted ${DEPLOY_USER} deployment identity."
