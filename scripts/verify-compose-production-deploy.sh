@@ -48,6 +48,15 @@ for required_fragment in \
     fail "Deployment entry point is missing the explicit port-mapping safeguard: ${required_fragment}"
 done
 
+installer="${ROOT_DIR}/deploy/vps/install-compose-production-deploy.sh"
+for required_fragment in \
+  'install -d -m 0710 -o root -g "$DEPLOY_USER" "${DEPLOY_HOME}/.ssh"' \
+  'chown root:"$DEPLOY_USER" "$authorized_keys_temp"' \
+  'chmod 0640 "$authorized_keys_temp"'; do
+  grep -Fq "$required_fragment" "$installer" || \
+    fail "Deployment installer is missing the SSH authorized_keys read-only access contract: ${required_fragment}"
+done
+
 wrapper="${ROOT_DIR}/deploy/vps/monexus-compose-deploy-ssh-wrapper"
 for forbidden_command in 'shell' 'deploy abcdef' 'deploy 0123456789012345678901234567890123456789 extra'; do
   if SSH_ORIGINAL_COMMAND="$forbidden_command" "$wrapper" >/dev/null 2>&1; then
