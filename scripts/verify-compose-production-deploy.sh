@@ -43,9 +43,11 @@ entrypoint="${ROOT_DIR}/deploy/vps/monexus-compose-deploy"
 for required_fragment in \
   "readonly VPS_PROXY_OVERLAY_KEY='MONEXUS_USE_VPS_PROXY_OVERLAY'" \
   'if use_vps_proxy_overlay; then' \
-  "notice 'Using the base Compose port mapping; existing direct WEB_PORT exposure is preserved.'"; do
+  "notice 'Using the base Compose port mapping; existing direct WEB_PORT exposure is preserved.'" \
+  '[[ -f "${release_path}/scripts/check-prod-env.sh" ]] ||' \
+  'bash "${release_path}/scripts/check-prod-env.sh" --mode production --env-file "$ENV_FILE"'; do
   grep -Fq "$required_fragment" "$entrypoint" || \
-    fail "Deployment entry point is missing the explicit port-mapping safeguard: ${required_fragment}"
+    fail "Deployment entry point is missing a required deployment safeguard: ${required_fragment}"
 done
 
 installer="${ROOT_DIR}/deploy/vps/install-compose-production-deploy.sh"
