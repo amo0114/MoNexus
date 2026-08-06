@@ -5,8 +5,9 @@ import { badRequest } from '../httpError.js'
 
 /**
  * SPEC-STORAGE-001：管理端可配 endpoint 的 SSRF 收敛。
- * DNS 解析后检查最终 IP；生产默认 HTTPS；allowlist 仅 FQDN（≥2 标签），
- * 命中后仍做 IP 检查（仅放行 http 生产例外时的私网主机）。
+ * DNS 解析后检查最终 IP；生产默认 HTTPS。
+ * Allowlist：单标签（如 minio）仅精确匹配；多标签 FQDN 允许精确或子域后缀；
+ * 命中后仍做 DNS/IP 检查（私网仅 allowlist 主机可放行）。
  */
 
 function normalizeIp(ip: string): string {
@@ -91,10 +92,7 @@ function hostAllowedByList(hostname: string): boolean {
   return hostMatchesStorageAllowlist(hostname, config.storageEndpointAllowlist)
 }
 
-export async function assertSafeStorageEndpoint(
-  endpoint: string,
-  options?: { allowHttpOnAllowlist?: boolean },
-): Promise<void> {
+export async function assertSafeStorageEndpoint(endpoint: string): Promise<void> {
   let url: URL
   try {
     url = new URL(endpoint)
