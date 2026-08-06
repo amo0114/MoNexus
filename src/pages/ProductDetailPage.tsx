@@ -353,14 +353,14 @@ export default function ProductDetailPage() {
 
       <div className="rounded-xl overflow-hidden bg-[var(--color-surface)] border border-[var(--color-border)] shadow-md mb-8">
         <div data-testid="product-gallery">
-          {/* Stable 4:3 on every breakpoint without cropping product artwork.
-              max-height keeps short landscape / large phones usable. */}
+          {/* 电商惯例：固定 1:1 主图画布 + cover 铺满（列表/详情整齐无信箱条）。
+              完整原图点进灯箱 object-contain 查看。限高避免超大屏过高。 */}
           <ProductMediaFrame
             src={galleryImages.length > 0 ? (galleryImages[activeImage] ?? galleryImages[0]) : undefined}
             alt={product.name}
-            frameClassName="aspect-[4/3] max-h-[min(70dvh,36rem)]"
+            frameClassName="aspect-square max-h-[min(70dvh,36rem)] mx-auto"
             className="shrink-0 touch-pan-y select-none"
-            fit="contain"
+            fit="cover"
             imageProps={{
               'data-testid': 'product-gallery-main',
               draggable: false,
@@ -470,7 +470,7 @@ export default function ProductDetailPage() {
                     src={img}
                     alt={`${product.name} 图 ${i + 1}`}
                     frameClassName="h-full w-full"
-                    fit="contain"
+                    fit="cover"
                     imageProps={{ loading: 'lazy' }}
                   />
                 </button>
