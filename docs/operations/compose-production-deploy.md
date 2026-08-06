@@ -31,6 +31,9 @@ master push
   forced command、`restrict` 和 `no-pty`。
 - `monexus-deploy` 的 home 与 `authorized_keys` 都由 root 管理，安装器每次只保留
   当前这一把受限部署公钥，因此重复安装安全且密钥轮换不会遗留旧授权。
+- 为兼容 SSHD 以该账号读取 `authorized_keys` 的实现，`.ssh` 仅向该账号组开放
+  穿越权限、`authorized_keys` 仅开放读取权限；两者仍由 root 所有，部署账号没有
+  任何写入权限。
 - 该用户通过精确 sudoers 规则只能调用 root 所有的
   `/usr/local/sbin/monexus-compose-deploy`。
 - 入口只接受 `dry-run <40 位 SHA>` 或 `deploy <40 位 SHA>`，并再次验证 SHA 是
