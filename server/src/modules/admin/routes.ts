@@ -23,6 +23,11 @@ import {
 import { adminReviewsQuerySchema } from '../reviews/schema.js'
 import * as controller from './controller.js'
 import * as abuseController from './abuseController.js'
+import * as storageController from './storageController.js'
+import {
+  createStorageProviderSchema,
+  updateStorageProviderSchema,
+} from './storageSchema.js'
 import { adminMailTestLimiter } from './mailTestLimiter.js'
 import { portableBackupRoutes } from '../portable-backups/routes.js'
 
@@ -58,6 +63,39 @@ router.post(
 // MFA 保护；限流器在 body 校验之前，保证畸形请求同样消耗额度（C5）。
 router.get('/mail/status', controller.mailStatus)
 router.post('/mail/test', adminMailTestLimiter, validate(mailDeliveryTestSchema), controller.mailTest)
+// SPEC-STORAGE-001：对象存储控制台（MFA 已由本 router 统一要求）
+router.get('/storage/status', storageController.storageStatus)
+router.get('/storage/providers', storageController.listStorageProviders)
+router.post(
+  '/storage/providers',
+  validate(createStorageProviderSchema),
+  storageController.createStorageProvider,
+)
+router.patch(
+  '/storage/providers/:id',
+  validate({ params: idParamSchema, body: updateStorageProviderSchema }),
+  storageController.updateStorageProvider,
+)
+router.post(
+  '/storage/providers/:id/test',
+  validate({ params: idParamSchema }),
+  storageController.testStorageProvider,
+)
+router.post(
+  '/storage/providers/:id/activate',
+  validate({ params: idParamSchema }),
+  storageController.activateStorageProvider,
+)
+router.post(
+  '/storage/providers/:id/rollback',
+  validate({ params: idParamSchema }),
+  storageController.rollbackStorageProvider,
+)
+router.post(
+  '/storage/providers/:id/disable',
+  validate({ params: idParamSchema }),
+  storageController.disableStorageProvider,
+)
 router.get('/users', validate({ query: listUsersQuerySchema }), controller.users)
 router.post('/users/:id/adjust', validate({ params: idParamSchema, body: adjustPointsSchema }), controller.adjustPoints)
 router.put('/users/:id/ban', validate({ params: idParamSchema, body: banUserSchema }), controller.banUser)
