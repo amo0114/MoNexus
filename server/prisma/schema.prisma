@@ -60,6 +60,37 @@ model User {
   inviteCodeUsed          InviteCode?              @relation("InviteCodeUsedBy")
   userAgreementConsents   UserAgreementConsent[]
   orderAgreementAcceptances OrderAgreementAcceptance[]
+  notifications           Notification[]
+}
+
+// SPEC-NOTIFY-001 Phase 1：1:1 事务消息（与 Announcement 运营广播分离）。
+// 幂等：@@unique([recipientUserId, eventType, dedupeKey])。
+// payload 禁止卡密/交付 content/secret；title/body 仅纯文本。
+model Notification {
+  id                Int       @id @default(autoincrement())
+  recipientUserId   Int
+  recipientRole     String // user | merchant | admin
+  eventType         String // order.created_merchant | order.delivered_buyer ...
+  category          String // order | provision | booking | inventory | system
+  title             String // 纯文本展示标题（≤100 字）
+  body              String // 纯文本短文案（≤500 字；无 HTML/Markdown/图片）
+  payload           Json? // { orderId, productName, deliveryMode, ... } 禁止敏感 content
+  deeplink          String // 前端路由：/orders?focus=12 | /merchant/orders/12
+  level             String    @default("info") // info | success | warning | critical
+  status            String    @default("unread") // unread | read | archived
+  dedupeKey         String // 幂等键：order:{orderId}:merchant_new
+  relatedOrderId    Int?
+  relatedMerchantId Int?
+  readAt            DateTime?
+  createdAt         DateTime  @default(now())
+  expiresAt         DateTime?
+
+  user User @relation(fields: [recipientUserId], references: [id], onDelete: Cascade)
+
+  @@unique([recipientUserId, eventType, dedupeKey])
+  @@index([recipientUserId, status, createdAt])
+  @@index([relatedOrderId])
+  @@index([expiresAt])
 }
 
 // SPEC-INVITE-001：一次性邀请码。资格前置到发码侧（IV-04），名额按上海自然月
