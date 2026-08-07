@@ -1,6 +1,8 @@
 import { create } from 'zustand'
 import { ConfigRegistry } from '../types/config'
 import { getConfigRegistry } from '../api/registry'
+import { getUnreadCount as fetchNotificationUnreadCount } from '../api/notifications'
+import { useAuthStore } from './authStore'
 
 export type ToastType = 'success' | 'error' | 'info' | 'warning'
 
@@ -55,6 +57,9 @@ interface AppState {
   modalOpened: () => void
   modalClosed: () => void
   loadRegistry: () => Promise<void>
+  /** SPEC-NOTIFY-001：事务消息未读数（与公告未读独立） */
+  notificationUnreadCount: number
+  refreshNotificationUnread: () => Promise<void>
 }
 
 let toastId = 0
@@ -70,6 +75,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   storeCategory: '全部',
   pointsHistoryOpen: false,
   tabbarHidden: false,
+  notificationUnreadCount: 0,
 
   setActiveTab: (tab) => set({ activeTab: tab }),
   setStoreQuery: (q) => set({ storeQuery: q }),
@@ -144,5 +150,22 @@ export const useAppStore = create<AppState>()((set, get) => ({
     } catch (err) {
       console.error('Failed to load config registry:', err)
     }
-  }
+  },
+
+  refreshNotificationUnread: async () => {
+    if (!useAuthStore.getState().user) {
+      set({ notificationUnreadCount: 0 })
+      return
+    }
+    try {
+      const count = await fetchNotificationUnreadCount()
+      set({ notificationUnreadCount: count })
+    } catch (err) {
+      // Feature flag off (404) or network: keep last known count quietly.
+      const status = (err as { response?: { status?: number } })?.response?.status
+      if (status === 404 || status === 401) {
+        set({ notificationUnreadCount: 0 })
+      }
+    }
+  },
 }))
