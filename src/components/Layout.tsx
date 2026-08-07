@@ -28,9 +28,15 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const navRef = useRef<HTMLElement>(null)
   const user = useAuthStore((s) => s.user)
   const showToast = useAppStore((s) => s.showToast)
+  const notificationUnreadCount = useAppStore((s) => s.notificationUnreadCount)
+  const refreshNotificationUnread = useAppStore((s) => s.refreshNotificationUnread)
   const announcements = useAnnouncements()
   const [announcementCenterOpen, setAnnouncementCenterOpen] = useState(false)
   const surfacedRequiredAnnouncements = useRef(new Set<string>())
+  const totalBellUnread = announcements.unreadCount + notificationUnreadCount
+  const hasPendingRequiredAnnouncement = announcements.items.some(
+    (announcement) => announcement.presentation === 'acknowledgement_required' && !announcement.acknowledgedAt,
+  )
 
   // SPEC-LEGAL-001：法律页脚分组（门禁感知——功能关闭/接口 404 时整组隐藏，
   // 绝不渲染指向 404 的死链）。模块级缓存，全应用只请求一次。
@@ -197,6 +203,23 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     surfacedRequiredAnnouncements.current.add(key)
     setAnnouncementCenterOpen(true)
   }, [announcements.items])
+
+  // SPEC-NOTIFY-001：登录后拉取消息未读 + 30s 短轮询；回前台再拉一次。
+  useEffect(() => {
+    if (!user) return
+    void refreshNotificationUnread()
+    const timer = window.setInterval(() => {
+      void refreshNotificationUnread()
+    }, 30_000)
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void refreshNotificationUnread()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      window.clearInterval(timer)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
+  }, [user?.id, refreshNotificationUnread])
 
   const openAnnouncement = useCallback((announcement: PublicAnnouncement) => {
     setAnnouncementCenterOpen(true)
@@ -373,7 +396,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             </button>
 
             <AnnouncementBellButton
-              unreadCount={announcements.unreadCount}
+              unreadCount={totalBellUnread}
               onClick={() => setAnnouncementCenterOpen(true)}
             />
 
@@ -414,16 +437,17 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               type="button"
               onClick={() => setAnnouncementCenterOpen(true)}
               className="md:hidden icon-btn inline-flex relative rounded-full w-10 h-10 items-center justify-center text-[var(--color-text)] hover:bg-[var(--color-primary)]/10 transition-colors focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)] cursor-pointer"
-              aria-label={announcements.unreadCount > 0 ? `公告中心，有 ${announcements.unreadCount} 条未读` : '公告中心'}
+              aria-label={totalBellUnread > 0 ? `通知中心，有 ${totalBellUnread} 条未读` : '通知中心'}
               data-testid="announcement-center-mobile-trigger"
             >
               <Bell className="w-5 h-5" />
-              {announcements.unreadCount > 0 && (
+              {totalBellUnread > 0 && (
                 <span
                   aria-hidden="true"
+                  data-testid="notification-bell-total-count"
                   className="absolute right-0.5 top-0.5 min-w-4 h-4 px-1 rounded-full bg-[var(--color-danger)] text-[10px] leading-4 font-bold text-white text-center ring-2 ring-[var(--color-surface)]"
                 >
-                  {announcements.unreadCount > 9 ? '9+' : announcements.unreadCount}
+                  {totalBellUnread > 9 ? '9+' : totalBellUnread}
                 </span>
               )}
             </button>
@@ -493,6 +517,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         unreadCount={announcements.unreadCount}
         onMarkRead={announcements.markRead}
         onAcknowledge={announcements.acknowledge}
+        forceAnnouncementTab={hasPendingRequiredAnnouncement}
       />
 
       {/* Content. 注意不要给 main 加 z-index：z-0 会创建 stacking context，

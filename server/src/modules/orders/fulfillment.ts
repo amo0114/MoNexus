@@ -2,6 +2,10 @@ import type { Order, Prisma } from '@prisma/client'
 import { badRequest, notFound } from '../../lib/httpError.js'
 import { prisma } from '../../lib/prisma.js'
 import { structuredContentToJson, type StructuredDeliveryContent } from '../../lib/deliveryFields.js'
+import {
+  NotificationDispatcher,
+  orderNotificationSnapshot,
+} from '../notifications/dispatcher.js'
 
 export const FULFILLMENT_MODES = ['instant_inventory', 'instant_fixed', 'manual_service'] as const
 export type FulfillmentMode = (typeof FULFILLMENT_MODES)[number]
@@ -40,7 +44,7 @@ const legalTransitions: Record<FulfillmentOrderStatus, FulfillmentOrderStatus[]>
 type OrderStatusEventWriter = Pick<Prisma.TransactionClient, 'orderStatusEvent'>
 type OrderStatusTransitionClient = Pick<
   Prisma.TransactionClient,
-  'order' | 'orderStatusEvent' | 'deliveryRecord' | 'subscriptionReminder' | '$queryRaw'
+  'order' | 'orderStatusEvent' | 'deliveryRecord' | 'subscriptionReminder' | 'notification' | 'merchant' | '$queryRaw'
 >
 
 export function isFulfillmentMode(mode: string): mode is FulfillmentMode {
@@ -254,9 +258,131 @@ export async function transitionOrderStatus(
     internalNote: input.internalNote ?? null,
   })
 
+  // SPEC-NOTIFY-001：状态迁移后同事务写入站内通知（开关关闭时 dispatcher 零副作用）。
+  await emitLifecycleNotifications(client, {
+    from,
+    to,
+    action: input.action ?? `order.status.${from}_to_${to}`,
+    order: updated,
+  })
+
   return {
     ...updated,
     status: normalizeOrderStatus(updated.status),
+  }
+}
+
+function resolveDeliveredKind(action: string, deliveryMode: string): string {
+  if (action.includes('faka_bridge')) return 'faka'
+  if (action.includes('auto_provision')) return 'auto'
+  if (isInstantMode(deliveryMode)) return 'instant'
+  return 'manual'
+}
+
+async function resolveMerchantOwnerUserId(
+  client: Pick<Prisma.TransactionClient, 'merchant'>,
+  merchantId: number | null | undefined,
+): Promise<number | null> {
+  if (merchantId == null) return null
+  const merchant = await client.merchant.findUnique({
+    where: { id: merchantId },
+    select: { userId: true },
+  })
+  return merchant?.userId ?? null
+}
+
+async function emitLifecycleNotifications(
+  client: Pick<Prisma.TransactionClient, 'notification' | 'merchant'>,
+  input: {
+    from: FulfillmentOrderStatus
+    to: FulfillmentOrderStatus
+    action: string
+    order: Order
+  },
+) {
+  const snapshot = orderNotificationSnapshot(input.order)
+  const merchantOwnerUserId = await resolveMerchantOwnerUserId(client, input.order.merchantId)
+
+  if (input.to === 'processing' && input.from === 'pending') {
+    await NotificationDispatcher.emit({
+      type: 'order.processing_buyer',
+      recipientUserId: input.order.userId,
+      recipientRole: 'user',
+      order: snapshot,
+    }, client)
+  }
+
+  if (input.to === 'delivered') {
+    await NotificationDispatcher.emit({
+      type: 'order.delivered_buyer',
+      recipientUserId: input.order.userId,
+      recipientRole: 'user',
+      order: snapshot,
+      context: {
+        deliveryKind: resolveDeliveredKind(input.action, snapshot.deliveryMode),
+      },
+    }, client)
+  }
+
+  if (input.to === 'disputed') {
+    await NotificationDispatcher.emit({
+      type: 'order.disputed_buyer',
+      recipientUserId: input.order.userId,
+      recipientRole: 'user',
+      order: snapshot,
+    }, client)
+    if (merchantOwnerUserId != null) {
+      await NotificationDispatcher.emit({
+        type: 'order.disputed_merchant',
+        recipientUserId: merchantOwnerUserId,
+        recipientRole: 'merchant',
+        order: snapshot,
+      }, client)
+    }
+  }
+
+  if (input.to === 'refunded') {
+    await NotificationDispatcher.emit({
+      type: 'order.refunded_buyer',
+      recipientUserId: input.order.userId,
+      recipientRole: 'user',
+      order: snapshot,
+    }, client)
+    if (merchantOwnerUserId != null) {
+      await NotificationDispatcher.emit({
+        type: 'order.refunded_merchant',
+        recipientUserId: merchantOwnerUserId,
+        recipientRole: 'merchant',
+        order: snapshot,
+      }, client)
+    }
+  }
+
+  if (input.to === 'closed') {
+    await NotificationDispatcher.emit({
+      type: 'order.closed_buyer',
+      recipientUserId: input.order.userId,
+      recipientRole: 'user',
+      order: snapshot,
+    }, client)
+  }
+
+  // 离开争议：仲裁结果双方通知（与目标态事件并存；各有独立 dedupeKey）。
+  if (input.from === 'disputed' && input.to !== 'disputed') {
+    await NotificationDispatcher.emit({
+      type: 'order.dispute_resolved_buyer',
+      recipientUserId: input.order.userId,
+      recipientRole: 'user',
+      order: snapshot,
+    }, client)
+    if (merchantOwnerUserId != null) {
+      await NotificationDispatcher.emit({
+        type: 'order.dispute_resolved_merchant',
+        recipientUserId: merchantOwnerUserId,
+        recipientRole: 'merchant',
+        order: snapshot,
+      }, client)
+    }
   }
 }
 

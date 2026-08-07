@@ -1026,11 +1026,27 @@ export async function listAllSettlements(status?: string, page = 1, pageSize = 2
   })
 }
 
+/**
+ * Admin batch-settle: mark Settlement pending→settled AND credit the merchant
+ * owner account (settlementAmount). Previously only flipped status, so merchants
+ * saw "已结算" with no points — that was a product bug.
+ *
+ * Idempotency: only rows with status=pending are selected and credited once
+ * under the same transaction as the status CAS.
+ */
 export async function batchSettle(adminUserId: number, settlementIds: number[]) {
   return prisma.$transaction(async tx => {
     const settlements = await tx.settlement.findMany({
       where: { id: { in: settlementIds } },
-      select: { id: true, status: true, order: { select: { status: true } } },
+      select: {
+        id: true,
+        status: true,
+        orderId: true,
+        settlementAmount: true,
+        merchantId: true,
+        order: { select: { status: true } },
+        merchant: { select: { userId: true, name: true } },
+      },
     })
 
     if (
@@ -1044,13 +1060,40 @@ export async function batchSettle(adminUserId: number, settlementIds: number[]) 
     }
 
     const now = new Date()
-    const result = await tx.settlement.updateMany({
-      where: { id: { in: settlementIds }, status: 'pending' },
-      data: { status: 'settled', settledAt: now },
-    })
+    let creditedTotal = 0
 
-    if (result.count !== settlementIds.length) {
-      throw badRequest('存在不可结算的记录')
+    // Row-by-row CAS so we never double-credit under concurrent batch calls.
+    for (const settlement of settlements) {
+      const claimed = await tx.settlement.updateMany({
+        where: { id: settlement.id, status: 'pending' },
+        data: { status: 'settled', settledAt: now },
+      })
+      if (claimed.count !== 1) {
+        throw badRequest('存在不可结算的记录')
+      }
+
+      const amount = settlement.settlementAmount
+      if (amount > 0) {
+        const merchantUserId = settlement.merchant.userId
+        // Ensure merchant owner has a point account (legacy rows).
+        await tx.pointAccount.upsert({
+          where: { userId: merchantUserId },
+          create: { userId: merchantUserId, balance: 0 },
+          update: {},
+        })
+        const balanceAfter = await creditAvailablePoints(tx, merchantUserId, amount)
+        await tx.pointLog.create({
+          data: {
+            userId: merchantUserId,
+            type: 'in',
+            amount,
+            balanceAfter,
+            reason: `商家结算入账: 订单#${settlement.orderId}`,
+            orderId: settlement.orderId,
+          },
+        })
+        creditedTotal += amount
+      }
     }
 
     await tx.adminLog.create({
@@ -1058,11 +1101,11 @@ export async function batchSettle(adminUserId: number, settlementIds: number[]) 
         adminUserId,
         action: '批量结算',
         targetType: 'settlement',
-        detail: `结算 ${result.count} 笔`,
+        detail: `结算 ${settlements.length} 笔，入账合计 ${creditedTotal} 积分`,
       },
     })
 
-    return { settled: result.count }
+    return { settled: settlements.length, creditedTotal }
   })
 }
 

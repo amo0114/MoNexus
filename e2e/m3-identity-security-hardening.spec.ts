@@ -89,6 +89,12 @@ async function mockAuthenticatedAppRequests(page: Page) {
   await mockProfile(page)
   await mockProfileBackgroundRequests(page)
   await page.route(apiRoute('/announcements'), route => route.fulfill({ json: [] }))
+  // Layout polls notification unread after login (SPEC-NOTIFY-001). Keep the
+  // unsigned UI-only token off the real backend so refresh never terminal-logs out.
+  await page.route(apiRoute('/notifications/unread-count'), route => route.fulfill({ json: { count: 0 } }))
+  await page.route(apiRoute('/notifications'), route => route.fulfill({
+    json: { notifications: [], nextCursor: null, hasMore: false },
+  }))
 }
 
 async function mockNormalLogin(page: Page) {
