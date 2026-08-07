@@ -255,6 +255,9 @@ test('admin abuse panel renders masked records and requires a ticketed confirmat
   await page.route(apiRoute('/auth/refresh'), route => route.fulfill({
     json: { accessToken: 'e30.eyJyb2xlIjoiYWRtaW4ifQ.signature' },
   }))
+  // Layout polls notification unread after login; keep unsigned fixture token local.
+  await page.route(apiRoute('/notifications/unread-count'), route => route.fulfill({ json: { count: 0 } }))
+  await page.route(apiRoute('/announcements'), route => route.fulfill({ json: [] }))
   await page.route(apiRoute('/admin/stats'), route => route.fulfill({ json: { users: 0, orders: 0, totalPoints: 0 } }))
   await page.route(apiRoute('/admin/abuse/overview'), route => route.fulfill({
     json: {

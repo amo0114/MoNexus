@@ -242,6 +242,12 @@ const envSchema = z.object({
   LEGAL_PAGES_ENFORCEMENT: z.enum(['off', 'enforce']).default('off'),
   LEGAL_PAGES_FIXTURE_PATH: optionalStringEnvSchema,
 
+  // --- SPEC-NOTIFY-001：站内订单消息通知。总开关关闭时接口 404、写入跳过。
+  // 邮件通道 Phase 2；ENABLED=false 时 EMAIL_ENABLED 不得为 true。
+  NOTIFICATION_ENABLED: booleanEnvSchema.default(false),
+  NOTIFICATION_EMAIL_ENABLED: booleanEnvSchema.default(false),
+  NOTIFICATION_EXPIRY_DAYS: z.coerce.number().int().min(1).max(365).default(90),
+
   // --- FakaBridge (Xboard subscription provision). Optional until offers use
   // externalIntegration=faka_bridge. When any of URL/SECRET is set, both must
   // be present. Production path has NO /api/v1 prefix.
@@ -460,6 +466,12 @@ if (env.NODE_ENV === 'production') {
   }
 }
 
+// SPEC-NOTIFY-001：邮件通道依赖站内通知总开关；总关时邮件不得单独开启。
+if (env.NOTIFICATION_EMAIL_ENABLED && !env.NOTIFICATION_ENABLED) {
+  console.error('[Config] NOTIFICATION_EMAIL_ENABLED=true requires NOTIFICATION_ENABLED=true')
+  process.exit(1)
+}
+
 // FakaBridge: URL and SECRET are all-or-nothing. Status URL is optional.
 const fakaUrl = env.FAKA_BRIDGE_URL
 const fakaSecret = env.FAKA_BRIDGE_SECRET
@@ -604,6 +616,11 @@ export const config = {
     enabled: env.LEGAL_PAGES_ENABLED,
     enforcement: env.LEGAL_PAGES_ENFORCEMENT,
     fixturePath: env.LEGAL_PAGES_FIXTURE_PATH,
+  },
+  notification: {
+    enabled: env.NOTIFICATION_ENABLED,
+    emailEnabled: env.NOTIFICATION_EMAIL_ENABLED,
+    expiryDays: env.NOTIFICATION_EXPIRY_DAYS,
   },
   fakaBridge: fakaBridgeEnabled
     ? {
