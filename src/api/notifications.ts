@@ -18,8 +18,16 @@ export async function getNotifications(
   }
 }
 
+/**
+ * Badge polling must never log the user out.
+ * UI-only E2E fixtures use unsigned tokens; a 401 here would otherwise hit the
+ * shared refresh path and terminal-logout the session (m3/gallery mocks).
+ * Real expired sessions still refresh when the user hits a full API surface.
+ */
 export async function getUnreadCount(): Promise<number> {
-  const { data } = await api.get<NotificationUnreadCountResponse>('/notifications/unread-count')
+  const { data } = await api.get<NotificationUnreadCountResponse>('/notifications/unread-count', {
+    skipAuthRefresh: true,
+  })
   return typeof data?.count === 'number' ? data.count : 0
 }
 
