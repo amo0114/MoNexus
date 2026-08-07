@@ -86,11 +86,14 @@ describe('M4 FakaBridge worker', () => {
       where: { orderId: created.orderId },
     })
 
+    // Simulate panel end after remaining time + period (not "delivery + 30d").
+    const xboardExpiredAtSec = Math.floor(Date.now() / 1000) + 40 * 24 * 3600
     const transport: FakaTransport = async ({ body }) => {
       const parsed = JSON.parse(body!) as { order_no: string; email: string; sku: string }
       expect(parsed.order_no).toBe(`MN-${created.orderId}`)
       expect(parsed.email).toBe(email)
       expect(parsed.sku).toBe('aster-basic-monthly')
+      const beforeExp = xboardExpiredAtSec - 30 * 24 * 3600
       return {
         status: 200,
         text: JSON.stringify({
@@ -98,6 +101,37 @@ describe('M4 FakaBridge worker', () => {
           trade_no: '202607291400001',
           order_no: parsed.order_no,
           status: 'completed',
+          expired_at: xboardExpiredAtSec,
+          action: 'renew',
+          period: 'monthly',
+          before: {
+            expired_at: beforeExp,
+            transfer_enable: 100 * 1024 ** 3,
+            used: 5 * 1024 ** 3,
+            remaining: 95 * 1024 ** 3,
+          },
+          after: {
+            expired_at: xboardExpiredAtSec,
+            transfer_enable: 100 * 1024 ** 3,
+            used: 5 * 1024 ** 3,
+            remaining: 95 * 1024 ** 3,
+          },
+          subscription: {
+            action: 'renew',
+            period: 'monthly',
+            before: {
+              expired_at: beforeExp,
+              transfer_enable: 100 * 1024 ** 3,
+              used: 5 * 1024 ** 3,
+              remaining: 95 * 1024 ** 3,
+            },
+            after: {
+              expired_at: xboardExpiredAtSec,
+              transfer_enable: 100 * 1024 ** 3,
+              used: 5 * 1024 ** 3,
+              remaining: 95 * 1024 ** 3,
+            },
+          },
         }),
       }
     }
@@ -123,6 +157,20 @@ describe('M4 FakaBridge worker', () => {
     })
     expect(delivery.content).toContain('202607291400001')
     expect(delivery.content).toContain('v.uuwu.de')
+    expect(delivery.content).toContain('续费成功')
+    expect(delivery.content).toContain('续期前到期')
+    expect(delivery.content).toContain('当前到期')
+    // Prefer Xboard expired_at over local validityDays=30 from delivery time.
+    expect(delivery.expiresAt).not.toBeNull()
+    expect(delivery.expiresAt!.getTime()).toBe(xboardExpiredAtSec * 1000)
+    // Must be later than naive "now + 30d" projection.
+    const naive30d = Date.now() + 30 * 24 * 3600 * 1000
+    expect(delivery.expiresAt!.getTime()).toBeGreaterThan(naive30d + 5 * 24 * 3600 * 1000)
+    const structured = delivery.structuredContent as {
+      values?: Record<string, string>
+    } | null
+    expect(structured?.values?.action).toBe('续费成功')
+    expect(structured?.values?.expiredAfter).toBeTruthy()
 
     // Points remain frozen until buyer confirm / auto-close (manual_service model)
     const account = await prisma.pointAccount.findUniqueOrThrow({ where: { userId: user.id } })

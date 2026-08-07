@@ -48,6 +48,8 @@ export default function PurchaseModal({
   productId,
   offerId,
   validityDays = null,
+  currentExpiresAt = null,
+  renewMode = false,
   submitting = false,
   onClose,
   onConfirm,
@@ -57,6 +59,10 @@ export default function PurchaseModal({
   offerId?: number
   /** P6a：选中规格的订阅有效期(天);null = 永久,不渲染徽标。 */
   validityDays?: number | null
+  /** 续费时：当前订单剩余到期时刻，结算前明示。 */
+  currentExpiresAt?: string | null
+  /** 续费结算：标题与提示改为续费语境。 */
+  renewMode?: boolean
   submitting?: boolean
   onClose: () => void
   onConfirm: (
@@ -247,8 +253,12 @@ export default function PurchaseModal({
   return (
     <Dialog open onOpenChange={(o) => { if (!o && !submitting) onClose() }}>
       <DialogContent className="max-w-sm" data-testid="purchase-modal">
-        <DialogTitle className="text-xl mb-2">确认兑换</DialogTitle>
-        <p className="text-[var(--color-text-muted)] mb-6 text-sm">您即将消耗积分兑换以下商品：</p>
+        <DialogTitle className="text-xl mb-2">{renewMode ? '确认续费' : '确认兑换'}</DialogTitle>
+        <p className="text-[var(--color-text-muted)] mb-6 text-sm">
+          {renewMode
+            ? '您即将消耗积分续费以下规格，成功后将顺延订阅时长：'
+            : '您即将消耗积分兑换以下商品：'}
+        </p>
 
         {priceChanged && (
           <div
@@ -292,6 +302,23 @@ export default function PurchaseModal({
                 data-testid="preview-offer-name"
               >
                 {preview.offerName}
+              </div>
+            )}
+            {renewMode && currentExpiresAt && (
+              <div
+                className="text-xs text-[var(--color-text-muted)] mb-2 leading-relaxed"
+                data-testid="renew-current-expiry"
+              >
+                当前订阅有效期至{' '}
+                <span className="font-bold text-[var(--color-text)]">
+                  {(() => {
+                    const d = new Date(currentExpiresAt)
+                    if (Number.isNaN(d.getTime())) return currentExpiresAt
+                    const pad = (n: number) => String(n).padStart(2, '0')
+                    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+                  })()}
+                </span>
+                {validityDays != null ? `；续费将再延长约 ${validityDays} 天（以面板实际到期为准）` : ''}
               </div>
             )}
             {validityDays != null && (
