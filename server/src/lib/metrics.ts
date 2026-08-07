@@ -94,6 +94,13 @@ export const cacheFillDuration = new client.Histogram({
   registers: [registry],
 })
 
+export const notificationCreatedCounter = new client.Counter({
+  name: 'notification_created_total',
+  help: 'Total notifications created',
+  labelNames: ['event_type', 'recipient_role'] as const,
+  registers: [registry],
+})
+
 export const redisCommandDuration = new client.Histogram({
   name: 'monexus_redis_command_duration_seconds',
   help: 'Redis command duration in seconds by operation',

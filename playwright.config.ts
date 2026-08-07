@@ -35,7 +35,12 @@ export default defineConfig({
           // 提高 e2e 栈的限流上限避免套件尾部随机 429。认证模块也在
           // NODE_ENV=test 下跳过密码猜测限流；E2E 使用的是固定 seed 账号，
           // 不应被整套测试累计的登录次数误伤。
-          env: { NODE_ENV: 'test', API_RATE_LIMIT_MAX: '3000' },
+          env: {
+            NODE_ENV: 'test',
+            API_RATE_LIMIT_MAX: '3000',
+            // SPEC-NOTIFY-001：E2E 需要站内通知 API 可用
+            NOTIFICATION_ENABLED: 'true',
+          },
         },
         {
           command: 'npm run dev',
