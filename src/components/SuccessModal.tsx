@@ -10,25 +10,34 @@ import type { StructuredDeliveryContent } from '../types/merchant'
 const POLL_MS = 2000
 const POLL_MAX_MS = 60_000
 
-function titleFromStructured(structured: StructuredDeliveryContent | null | undefined, pending: boolean): string {
-  if (pending) return '下单成功'
+function titleFromStructured(
+  structured: StructuredDeliveryContent | null | undefined,
+  pending: boolean,
+  headline?: string | null
+): string {
+  if (pending) return headline?.includes('续费') ? '续费下单成功' : '下单成功'
   const action = structured?.values?.action?.trim()
   if (action) return action
+  if (headline?.trim()) return headline.trim()
   return '兑换成功'
 }
 
 function subtitleFromStructured(
   structured: StructuredDeliveryContent | null | undefined,
-  pending: boolean
+  pending: boolean,
+  headline?: string | null
 ): string {
   if (pending) {
-    return '积分已冻结，系统正在开通订阅，请稍候——开通完成后会在本页展示到期与流量变化'
+    return headline?.includes('续费')
+      ? '积分已冻结，系统正在续期订阅，请稍候——完成后会在本页展示新的到期时间'
+      : '积分已冻结，系统正在开通订阅，请稍候——开通完成后会在本页展示到期与流量变化'
   }
   const action = structured?.values?.action ?? ''
-  if (action.includes('续费')) return '续费已生效，以下为续期前后对比'
+  if (action.includes('续费') || headline?.includes('续费')) return '续费已生效，以下为续期前后对比'
   if (action.includes('重置')) return '流量已重置，以下为购买前后对比'
   if (action.includes('流量包')) return '流量包已到账，以下为购买前后对比'
   if (action.includes('新购')) return '新购已开通，以下为订阅状态'
+  if (headline?.includes('续费')) return '续费订单已生成，请查收下方信息'
   return '商品已下发，请查收下方信息'
 }
 
@@ -40,6 +49,8 @@ export default function SuccessModal({
   orderId,
   merchantName,
   provisionPending = false,
+  /** Override default title (e.g. 续费成功 for renew checkout). */
+  headline = null,
   onClose,
   onViewOrders
 }: {
@@ -53,6 +64,7 @@ export default function SuccessModal({
   merchantName?: string
   /** 外部开通（如 Xboard）异步履约：下单成功但卡密尚未就绪。 */
   provisionPending?: boolean
+  headline?: string | null
   onClose: () => void
   onViewOrders?: () => void
 }) {
@@ -146,13 +158,13 @@ export default function SuccessModal({
             <Check className="w-8 h-8" />
           )}
         </div>
-        <DialogTitle className="text-2xl mb-2">
-          {titleFromStructured(structuredContent, pending)}
+        <DialogTitle className="text-2xl mb-2" data-testid="success-modal-title">
+          {titleFromStructured(structuredContent, pending, headline)}
         </DialogTitle>
-        <p className="text-[var(--color-text-muted)] mb-4 text-sm">
+        <p className="text-[var(--color-text-muted)] mb-4 text-sm" data-testid="success-modal-subtitle">
           {pollFailed && pending
             ? '开通仍在处理中，可稍后在个人中心查看订单结果'
-            : subtitleFromStructured(structuredContent, pending)}
+            : subtitleFromStructured(structuredContent, pending, headline)}
         </p>
 
         {!pending && expiresAt && (

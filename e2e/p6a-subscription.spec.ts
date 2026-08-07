@@ -101,8 +101,11 @@ test.describe.serial('P6a subscription', () => {
 
     await page.getByTestId('order-renew-button').click()
     await expect(page.getByTestId('preview-validity-days')).toContainText(`有效期 ${VALIDITY_DAYS} 天`, { timeout: 10_000 })
+    // 续费结算前明示当前到期（P6a + 续费反馈）
+    await expect(page.getByTestId('renew-current-expiry')).toBeVisible({ timeout: 10_000 })
     await page.getByRole('button', { name: '确认支付' }).click()
-    await expect(page.getByText('续费成功').first()).toBeVisible({ timeout: 10_000 })
+    // 续费成功由 SuccessModal 标题承载（不再 toast「续费成功」）
+    await expect(page.getByTestId('success-modal-title')).toContainText('续费成功', { timeout: 10_000 })
 
     // 顺延断言：新单 renewalOfOrderId 指向原单，expiresAt = 原到期 + 30 天。
     const buyerToken = await tokenOf(request, SEED_ACCOUNTS.user)
