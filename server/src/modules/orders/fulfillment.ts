@@ -129,6 +129,11 @@ export async function transitionOrderStatus(
     deliveryFileId?: number | null
     // P4b：结构化交付快照 { fields, values }；null/缺省 = 纯文本交付。
     deliveryStructuredContent?: StructuredDeliveryContent | null
+    /**
+     * 覆盖本单订阅到期时刻（如 FakaBridge 回传的 Xboard user.expired_at）。
+     * 有值时优先于 validityDays 本地推算；未传则保持 resolveSubscriptionExpiresAt。
+     */
+    expiresAtOverride?: Date | null
   },
   client?: OrderStatusTransitionClient
 ): Promise<Order> {
@@ -163,12 +168,17 @@ export async function transitionOrderStatus(
     // P6a：人工/恢复交付按订单快照计算到期时刻（续费单顺延语义见
     // resolveSubscriptionExpiresAt）；争议恢复重交付时已有记录仅在原
     // expiresAt 为空时补算（不因重交付顺延订阅）。
-    const subscriptionExpiresAt = await resolveSubscriptionExpiresAt(
-      client,
-      updated,
-      updated.validityDaysSnapshot,
-      new Date()
-    )
+    // FakaBridge：Xboard user.expired_at 为权威到期（expiresAtOverride），
+    // 避免「面板已顺延、MoNexus 仍按交付+validityDays 推算」漂移。
+    const subscriptionExpiresAt =
+      input.expiresAtOverride !== undefined
+        ? input.expiresAtOverride
+        : await resolveSubscriptionExpiresAt(
+            client,
+            updated,
+            updated.validityDaysSnapshot,
+            new Date()
+          )
     await client.deliveryRecord.upsert({
       where: { orderId: order.id },
       create: {
@@ -199,10 +209,20 @@ export async function transitionOrderStatus(
       },
     })
     // 首次交付后 expiresAt 只写不改：重交付不得顺延到期（续费才顺延，T3）。
+    // 例外：FakaBridge 权威 override 在首写为空时补齐；若 create 已带值则
+    // updateMany(expiresAt:null) 为 no-op。
     await client.deliveryRecord.updateMany({
       where: { orderId: order.id, expiresAt: null },
       data: { expiresAt: subscriptionExpiresAt },
     })
+    // Faka 对账/二次成功：若首写用了本地推算、随后拿到 Xboard expired_at，
+    // 允许用 override 纠正（仅当显式传入 expiresAtOverride）。
+    if (input.expiresAtOverride != null) {
+      await client.deliveryRecord.updateMany({
+        where: { orderId: order.id },
+        data: { expiresAt: input.expiresAtOverride },
+      })
+    }
     // 复审 P1-2：争议重交付携带**新交付内容**且原订阅已过期时，按新交付
     // 时刻重算——否则争议补救内容落地即被遮蔽/拒下载，买家须付费续费才
     // 看得到补救。仅限"商家主动携带新内容 + 已过期"：resume-instant 不带

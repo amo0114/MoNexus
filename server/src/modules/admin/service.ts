@@ -25,6 +25,7 @@ import {
   scheduleFakaRevokeAttempt,
   processFakaRevokeTask,
   processFakaBridgeTask,
+  syncFakaExpiresAtFromRemote,
   isLeaseExpiredUtc,
 } from '../../lib/fakaBridge/index.js'
 import { parseStoredDeliveryFields } from '../../lib/deliveryFields.js'
@@ -2173,8 +2174,30 @@ export async function retryFakaBridgeTask(adminUserId: number, taskId: number) {
     include: { order: { select: { id: true, status: true } } },
   })
   if (!task) throw notFound('FakaBridge 任务不存在')
+  // Already opened: re-sync DeliveryRecord.expiresAt from Xboard (display drift repair).
   if (task.status === 'succeeded' && task.order.status === 'delivered') {
-    throw badRequest('任务已成功开通，无需重试')
+    let sync: Awaited<ReturnType<typeof syncFakaExpiresAtFromRemote>>
+    try {
+      sync = await syncFakaExpiresAtFromRemote(taskId)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      throw badRequest(msg.includes('not configured') ? 'FakaBridge 未配置' : msg)
+    }
+    await prisma.adminLog.create({
+      data: {
+        adminUserId,
+        action: '同步Faka订阅到期',
+        targetType: 'faka_bridge_task',
+        targetId: taskId,
+        detail: `orderId=${task.orderId}; aligned=${sync.aligned}; ${sync.previousExpiresAt ?? 'null'} → ${sync.expiresAt ?? 'null'}; ${sync.message}`,
+      },
+    })
+    return {
+      id: taskId,
+      status: task.status,
+      outcome: sync.aligned ? 'expires_aligned' : 'expires_unchanged',
+      ...sync,
+    }
   }
   if (task.order.status === 'refunded' || task.order.status === 'closed') {
     throw badRequest('订单已退款/关闭，请走撤销而非重试开通')

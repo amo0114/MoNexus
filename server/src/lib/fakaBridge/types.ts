@@ -10,12 +10,42 @@ export interface FakaOrderPaidRequest {
   sign?: string
 }
 
+/** Xboard user traffic/expiry snapshot (bytes for traffic fields). */
+export interface FakaUserSubscriptionSnapshot {
+  expired_at?: number | null
+  transfer_enable?: number
+  u?: number
+  d?: number
+  used?: number
+  remaining?: number
+  plan_id?: number | null
+}
+
+export type FakaSubscriptionAction = 'new' | 'renew' | 'onetime' | 'reset_traffic' | string
+
+export interface FakaSubscriptionResult {
+  action?: FakaSubscriptionAction | null
+  period?: string | null
+  before?: FakaUserSubscriptionSnapshot | null
+  after?: FakaUserSubscriptionSnapshot | null
+}
+
 export interface FakaOrderPaidSuccess {
   success: true
   trade_no: string | null
   order_no?: string
   status: string
   message?: string
+  /**
+   * Xboard user.expired_at (unix seconds). Ground truth for MoNexus
+   * DeliveryRecord.expiresAt after provision/renewal. Optional for older plugins.
+   */
+  expired_at?: number | null
+  period?: string | null
+  action?: FakaSubscriptionAction | null
+  before?: FakaUserSubscriptionSnapshot | null
+  after?: FakaUserSubscriptionSnapshot | null
+  subscription?: FakaSubscriptionResult | null
 }
 
 export interface FakaOrderPaidFailure {
@@ -33,6 +63,11 @@ export interface FakaOrderStatusSuccess {
   created_at?: string
   completed_at?: string | null
   error_log?: string | null
+  /** Xboard user.expired_at (unix seconds); present on FakaBridge ≥1.4.1 */
+  expired_at?: number | null
+  period?: string | null
+  after?: FakaUserSubscriptionSnapshot | null
+  subscription?: FakaSubscriptionResult | null
 }
 
 export interface FakaOrderStatusFailure {
