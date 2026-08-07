@@ -15,6 +15,9 @@ import {
   fakaRemoteOrderNoMatches,
   isFakaBridgeConfigured,
 } from './client.js'
+import { parseFakaExpiredAt } from './expiredAt.js'
+import { buildFakaDeliveryPayload, subscriptionFromPaidBody } from './subscriptionResult.js'
+import type { FakaSubscriptionResult } from './types.js'
 import {
   classifyFakaRemoteStatus,
   FAKA_ERROR,
@@ -75,16 +78,17 @@ function delaySecAfterAttempt(attempts: number): number {
   return RETRY_DELAYS_SEC[idx] ?? RETRY_DELAYS_SEC[RETRY_DELAYS_SEC.length - 1]
 }
 
-function deliveryContent(tradeNo: string | null, email?: string | null): string {
-  const no = tradeNo?.trim() || '(未知)'
-  const mail = email?.trim() || '(开通邮箱见下单信息)'
-  return [
-    'Xboard 订阅已开通',
-    `订单号: ${no}`,
-    `开通邮箱: ${mail}`,
-    `面板: ${panelUrl()}`,
-    '请使用上述邮箱登录面板（已有账号直接登录；新账号请用「忘记密码」设置密码）。',
-  ].join('\n')
+function deliveryPayload(
+  tradeNo: string | null,
+  email?: string | null,
+  subscription: FakaSubscriptionResult | null = null
+) {
+  return buildFakaDeliveryPayload({
+    tradeNo,
+    email,
+    panelUrl: panelUrl(),
+    subscription,
+  })
 }
 
 export type ProcessOutcome = 'succeeded' | 'failed' | 'retry_scheduled' | 'skipped'
@@ -301,6 +305,12 @@ export async function processFakaBridgeTask(taskId: number): Promise<ProcessOutc
       ? (result.body as { trade_no?: string | null }).trade_no
       : null
   const tradeNo = tradeNoRaw != null ? String(tradeNoRaw) : null
+  const paidSuccess =
+    result.body && result.body.success === true ? result.body : null
+  const remoteExpiredAt = paidSuccess
+    ? parseFakaExpiredAt(paidSuccess.expired_at)
+    : null
+  const subscription = paidSuccess ? subscriptionFromPaidBody(paidSuccess) : null
   const provisionOk =
     result.ok &&
     result.body &&
@@ -323,7 +333,7 @@ export async function processFakaBridgeTask(taskId: number): Promise<ProcessOutc
       fakaProvisionTotal.inc({ outcome: 'retry_scheduled' })
       return 'retry_scheduled'
     }
-    return await finalizeProvisionSuccess(claimed, tradeNo)
+    return await finalizeProvisionSuccess(claimed, tradeNo, remoteExpiredAt, subscription)
   }
 
   // Paid returned success body but intermediate remote status (pending /
@@ -370,7 +380,12 @@ export async function processFakaBridgeTask(taskId: number): Promise<ProcessOutc
       const xbTrade = st.body.trade_no != null ? String(st.body.trade_no) : null
       const remoteClass = classifyFakaRemoteStatus(xbStatus, xbTrade)
       if (remoteClass === 'opened') {
-        return await finalizeProvisionSuccess(claimed, xbTrade)
+        return await finalizeProvisionSuccess(
+          claimed,
+          xbTrade,
+          parseFakaExpiredAt(st.body.expired_at),
+          subscriptionFromPaidBody(st.body)
+        )
       }
       if (remoteClass === 'not_opened') {
         await markFailedAndRefund(claimed, code)
@@ -478,8 +493,12 @@ type ClaimedTask = {
 
 async function finalizeProvisionSuccess(
   claimed: ClaimedTask,
-  tradeNo: string | null
+  tradeNo: string | null,
+  /** Xboard ground-truth subscription end; null = fall back to validityDays projection */
+  remoteExpiredAt: Date | null = null,
+  subscription: FakaSubscriptionResult | null = null
 ): Promise<ProcessOutcome> {
+  const delivery = deliveryPayload(tradeNo, claimed.emailSnapshot, subscription)
   try {
     await prisma.$transaction(async tx => {
       // Order → Task lock order
@@ -556,17 +575,29 @@ async function finalizeProvisionSuccess(
         select: { status: true },
       })
       if (refreshed?.status === 'processing') {
+        const actionNote =
+          subscription?.action === 'renew'
+            ? 'Xboard 续费成功'
+            : subscription?.action === 'reset_traffic'
+              ? 'Xboard 流量重置成功'
+              : subscription?.action === 'onetime'
+                ? 'Xboard 流量包已开通'
+                : subscription?.action === 'new'
+                  ? 'Xboard 新购开通成功'
+                  : 'Xboard 订阅已开通'
         await transitionOrderStatus(
           {
             orderId: claimed.orderId,
             toStatus: 'delivered',
             actorRole: 'system',
             action: 'system.faka_bridge.deliver',
-            deliveryContent: deliveryContent(tradeNo, claimed.emailSnapshot),
-            publicNote: 'Xboard 订阅已开通',
+            deliveryContent: delivery.content,
+            deliveryStructuredContent: delivery.structuredContent,
+            publicNote: actionNote,
             internalNote: tradeNo
-              ? `trade_no=${tradeNo}; email=${claimed.emailSnapshot}`
-              : `email=${claimed.emailSnapshot}`,
+              ? `trade_no=${tradeNo}; email=${claimed.emailSnapshot}${remoteExpiredAt ? `; xboard_expired_at=${remoteExpiredAt.toISOString()}` : ''}${subscription?.action ? `; action=${subscription.action}` : ''}`
+              : `email=${claimed.emailSnapshot}${remoteExpiredAt ? `; xboard_expired_at=${remoteExpiredAt.toISOString()}` : ''}${subscription?.action ? `; action=${subscription.action}` : ''}`,
+            ...(remoteExpiredAt ? { expiresAtOverride: remoteExpiredAt } : {}),
           },
           tx
         )
@@ -579,7 +610,12 @@ async function finalizeProvisionSuccess(
   }
 
   logger.info(
-    { taskId: claimed.id, orderId: claimed.orderId, tradeNo },
+    {
+      taskId: claimed.id,
+      orderId: claimed.orderId,
+      tradeNo,
+      remoteExpiredAt: remoteExpiredAt?.toISOString() ?? null,
+    },
     'FakaBridge provision succeeded'
   )
   fakaProvisionTotal.inc({ outcome: 'succeeded' })

@@ -32,6 +32,16 @@ export {
 export type { FakaCapacitySnapshot } from './capacity.js'
 
 export { periodFromFakaSku } from './skuPeriod.js'
+export { parseFakaExpiredAt } from './expiredAt.js'
+export {
+  extractFakaSubscriptionResult,
+  buildFakaDeliveryPayload,
+  formatTrafficBytes,
+  formatExpiryUnix,
+  actionLabel,
+  periodLabel,
+  subscriptionFromPaidBody,
+} from './subscriptionResult.js'
 
 export {
   onFakaOrderRefundedInTx,
@@ -40,6 +50,7 @@ export {
   runFakaRevokeBatch,
   runFakaReconcileBatch,
   selectStuckFakaTasksForReconcile,
+  syncFakaExpiresAtFromRemote,
   __setFakaLifecycleClientOverridesForTests,
 } from './lifecycle.js'
 export type { StuckFakaTaskRow } from './lifecycle.js'
