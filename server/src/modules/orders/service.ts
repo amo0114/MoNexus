@@ -13,6 +13,11 @@ import {
   transitionOrderStatus,
   resolveSubscriptionExpiresAt,
 } from './fulfillment.js'
+import {
+  NotificationDispatcher,
+  orderNotificationSnapshot,
+  shouldNotifyMerchantNewOrder,
+} from '../notifications/dispatcher.js'
 import { debitAvailablePoints, holdAvailablePoints, settleHeldOrder } from './accounting.js'
 import {
   claimIdempotencyKey,
@@ -774,6 +779,54 @@ async function createOrderOnce(
         delta: -1,
         orderId: order.id,
       })
+    }
+
+    // SPEC-NOTIFY-001：在自动履约任务 / 即时 DeliveryRecord 落库之后再分发通知，
+    // 才能正确判定 NTF-05（人工待办）与 NTF-06（即时弱 delivered）。
+    {
+      const snapshot = orderNotificationSnapshot({
+        id: order.id,
+        merchantId,
+        deliveryModeSnapshot: deliveryMode,
+        productNameSnapshot: product.name,
+        offerNameSnapshot: offer.name,
+        userId,
+      })
+
+      if (
+        shouldNotifyMerchantNewOrder({
+          merchantId,
+          deliveryMode,
+          status: order.status,
+          hasProvisionTask: autoProvisionTaskCreated,
+          hasFakaBridgeTask: fakaBridgeTaskId != null,
+        })
+      ) {
+        const merchantOwner = merchantId == null
+          ? null
+          : await tx.merchant.findUnique({
+              where: { id: merchantId },
+              select: { userId: true },
+            })
+        if (merchantOwner?.userId != null) {
+          await NotificationDispatcher.emit({
+            type: 'order.created_merchant',
+            recipientUserId: merchantOwner.userId,
+            recipientRole: 'merchant',
+            order: snapshot,
+          }, tx)
+        }
+      }
+
+      if (isInstantMode(deliveryMode)) {
+        await NotificationDispatcher.emit({
+          type: 'order.delivered_buyer',
+          recipientUserId: userId,
+          recipientRole: 'user',
+          order: snapshot,
+          context: { deliveryKind: 'instant' },
+        }, tx)
+      }
     }
 
     if (idempotencyKey && claimToken) {
