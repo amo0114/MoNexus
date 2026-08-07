@@ -82,7 +82,7 @@ export function offerPeriodDetailNote(offer: {
   if (offer.validityDays != null) {
     return {
       title: `有效期 ${offer.validityDays} 天`,
-      hint: '自交付起计算，到期前后均可续费',
+      hint: '订阅类以面板实际到期为准；续费可顺延剩余时长',
     }
   }
   return null

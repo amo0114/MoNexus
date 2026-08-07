@@ -14,7 +14,9 @@ import SafeImage from './ui/SafeImage'
 import StarRating from './ui/StarRating'
 import ReviewDialog from './ReviewDialog'
 import PurchaseModal, { type ConfirmOutcome } from './PurchaseModal'
+import SuccessModal from './SuccessModal'
 import type { CheckoutPreview } from '../api/orders'
+import type { StructuredDeliveryContent } from '../types/merchant'
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from './ui/Dialog'
 
 interface OrderDetailModalProps {
@@ -74,6 +76,14 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
   const [renewInfo, setRenewInfo] = useState<RenewPrecheck | null>(null)
   const [renewLoading, setRenewLoading] = useState(false)
   const [renewSubmitting, setRenewSubmitting] = useState(false)
+  // 续费下单成功后用 SuccessModal 展示开通前后对比（与商品页新购一致）。
+  const [renewSuccess, setRenewSuccess] = useState<{
+    orderId: number
+    deliveryContent: string
+    deliveryContentType?: string
+    structuredContent?: StructuredDeliveryContent | null
+    provisionPending: boolean
+  } | null>(null)
 
   function copyContent() {
     if (!order.delivery?.content) return
@@ -146,10 +156,15 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
         agreementVersions,
       })
       useAuthStore.getState().updatePoints(data.balanceAfter)
-      showToast('续费成功，已生成新的订单')
       setRenewInfo(null)
+      setRenewSuccess({
+        orderId: data.orderId,
+        deliveryContent: data.deliveryContent ?? '',
+        deliveryContentType: data.deliveryContentType,
+        structuredContent: data.deliveryStructuredContent ?? null,
+        provisionPending: Boolean(data.provisionPending),
+      })
       onUpdated?.()
-      onClose()
       return 'success'
     } catch (err: any) {
       const code = getApiErrorCode(err)
@@ -320,10 +335,13 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
             </div>
           )}
 
-          {/* 发货内容 */}
+          {/* 发货内容 / Xboard 开通结果 */}
           <div className="bg-[var(--color-background)] rounded-lg p-5 border border-[var(--color-border)]">
             <h3 className="font-heading text-sm font-bold text-[var(--color-text)] mb-3 flex items-center gap-2">
-              <Info className="w-4 h-4 text-[var(--color-text-muted)]" /> 发货内容
+              <Info className="w-4 h-4 text-[var(--color-text-muted)]" />
+              {order.delivery?.structuredContent?.values?.action
+                ? '开通结果'
+                : '发货内容'}
             </h3>
             {/* P6a：订阅有效期展示（到期时刻/剩余天数；过期显示徽标） */}
             {subscriptionExpiresAt && (
@@ -574,9 +592,30 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
           productId={renewInfo.productId}
           offerId={renewInfo.offerId}
           validityDays={renewInfo.validityDays}
+          currentExpiresAt={renewInfo.currentExpiresAt}
+          renewMode
           submitting={renewSubmitting}
           onClose={() => { if (!renewSubmitting) setRenewInfo(null) }}
           onConfirm={handleRenewConfirm}
+        />
+      )}
+
+      {renewSuccess && (
+        <SuccessModal
+          orderId={renewSuccess.orderId}
+          deliveryContent={renewSuccess.deliveryContent}
+          deliveryContentType={renewSuccess.deliveryContentType}
+          structuredContent={renewSuccess.structuredContent}
+          provisionPending={renewSuccess.provisionPending}
+          headline="续费成功"
+          onClose={() => {
+            setRenewSuccess(null)
+            onClose()
+          }}
+          onViewOrders={() => {
+            setRenewSuccess(null)
+            onClose()
+          }}
         />
       )}
 

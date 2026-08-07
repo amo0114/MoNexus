@@ -20,6 +20,9 @@ import { releaseHeldOrder } from '../../modules/orders/accounting.js'
 import { applyRefundInventoryPolicy } from '../../modules/orders/refundInventory.js'
 import { config } from '../../config/index.js'
 import { isLeaseExpiredUtc, readTaskScheduleUtc } from './scheduleUtc.js'
+import { parseFakaExpiredAt } from './expiredAt.js'
+import { buildFakaDeliveryPayload, subscriptionFromPaidBody } from './subscriptionResult.js'
+import type { FakaSubscriptionResult } from './types.js'
 
 type Tx = Prisma.TransactionClient
 
@@ -729,15 +732,38 @@ export async function runFakaReconcileBatch(limit = 20): Promise<number> {
     if (!schedule?.leaseExpired || !schedule.nextAttemptDue) continue
 
     if (full.status === 'succeeded') {
+      // Task already succeeded without MN delivery (race). Probe status for
+      // expired_at when possible so we don't fall back to validityDays-only.
+      let tipExpired: Date | null = null
+      const tipStatus = await callFakaOrderStatus(full.requestOrderNo, clientOverrides())
+      if (tipStatus.ok && tipStatus.body && tipStatus.body.success === true) {
+        tipExpired = parseFakaExpiredAt(tipStatus.body.expired_at)
+      }
+      const tipSub =
+        tipStatus.ok && tipStatus.body && tipStatus.body.success === true
+          ? subscriptionFromPaidBody(tipStatus.body)
+          : null
       const delivered = await tryDeliverPendingOrder(
         snapshot,
         full.xboardTradeNo,
         full.emailSnapshot,
-        { reconcileNote: 'reconcile: delivered MN order after task succeeded' }
+        { reconcileNote: 'reconcile: delivered MN order after task succeeded' },
+        tipExpired,
+        tipSub
       )
       if (delivered) {
         fakaReconcileTotal.inc({ action: 'deliver_after_success' })
         actions += 1
+        continue
+      }
+      // Already delivered with a local validityDays projection that drifted from
+      // Xboard (e.g. buy while remaining time existed): align expiresAt to panel.
+      if (tipExpired) {
+        const aligned = await tryAlignDeliveredExpiresAt(snapshot.orderId, tipExpired)
+        if (aligned) {
+          fakaReconcileTotal.inc({ action: 'align_expires_at' })
+          actions += 1
+        }
       }
       continue
     }
@@ -798,7 +824,9 @@ export async function runFakaReconcileBatch(limit = 20): Promise<number> {
           leaseToken: null,
           leaseUntil: null,
           reconcileNote: `reconcile: Xboard ${xbStatus} → MN delivered`,
-        }
+        },
+        parseFakaExpiredAt(xbBody?.expired_at),
+        xbBody ? subscriptionFromPaidBody(xbBody) : null
       )
       if (delivered) {
         fakaReconcileTotal.inc({ action: 'deliver_from_xboard_status' })
@@ -933,13 +961,151 @@ async function tryRefundPendingOrder(
   }
 }
 
+/**
+ * Admin / ops: probe Xboard order-status and write user.expired_at onto the
+ * MoNexus DeliveryRecord for a succeeded Faka task (historical drift repair).
+ */
+export async function syncFakaExpiresAtFromRemote(
+  taskId: number
+): Promise<{
+  aligned: boolean
+  orderId: number
+  expiresAt: string | null
+  previousExpiresAt: string | null
+  message: string
+}> {
+  if (!hasClientCredentials()) {
+    throw new Error('FakaBridge not configured')
+  }
+  const task = await prisma.fakaBridgeTask.findUnique({
+    where: { id: taskId },
+    select: {
+      id: true,
+      orderId: true,
+      status: true,
+      requestOrderNo: true,
+      emailSnapshot: true,
+      order: {
+        select: {
+          status: true,
+          delivery: { select: { expiresAt: true } },
+        },
+      },
+    },
+  })
+  if (!task) throw new Error('FakaBridge task not found')
+  if (task.status !== 'succeeded') {
+    return {
+      aligned: false,
+      orderId: task.orderId,
+      expiresAt: task.order.delivery?.expiresAt?.toISOString() ?? null,
+      previousExpiresAt: task.order.delivery?.expiresAt?.toISOString() ?? null,
+      message: 'task is not succeeded; nothing to sync',
+    }
+  }
+  if (task.order.status !== 'delivered') {
+    return {
+      aligned: false,
+      orderId: task.orderId,
+      expiresAt: task.order.delivery?.expiresAt?.toISOString() ?? null,
+      previousExpiresAt: task.order.delivery?.expiresAt?.toISOString() ?? null,
+      message: `order status is ${task.order.status}, expected delivered`,
+    }
+  }
+
+  const statusRes = await callFakaOrderStatus(task.requestOrderNo, clientOverrides())
+  if (!statusRes.ok || !statusRes.body || statusRes.body.success !== true) {
+    return {
+      aligned: false,
+      orderId: task.orderId,
+      expiresAt: task.order.delivery?.expiresAt?.toISOString() ?? null,
+      previousExpiresAt: task.order.delivery?.expiresAt?.toISOString() ?? null,
+      message: `order-status probe failed (${statusRes.code})`,
+    }
+  }
+  const remote = parseFakaExpiredAt(statusRes.body.expired_at)
+  if (!remote) {
+    return {
+      aligned: false,
+      orderId: task.orderId,
+      expiresAt: task.order.delivery?.expiresAt?.toISOString() ?? null,
+      previousExpiresAt: task.order.delivery?.expiresAt?.toISOString() ?? null,
+      message:
+        'remote expired_at missing — deploy FakaBridge ≥1.4.1 that returns user.expired_at',
+    }
+  }
+  const previous = task.order.delivery?.expiresAt ?? null
+  const aligned = await tryAlignDeliveredExpiresAt(task.orderId, remote)
+  return {
+    aligned,
+    orderId: task.orderId,
+    expiresAt: remote.toISOString(),
+    previousExpiresAt: previous?.toISOString() ?? null,
+    message: aligned
+      ? 'DeliveryRecord.expiresAt aligned to Xboard'
+      : 'already in sync with Xboard expired_at',
+  }
+}
+
+/**
+ * Patch DeliveryRecord.expiresAt for an already-delivered Faka order when
+ * Xboard reports a different end time (subscription ground truth).
+ * No-op when missing delivery, same timestamp, or order not delivered.
+ */
+async function tryAlignDeliveredExpiresAt(
+  orderId: number,
+  remoteExpiredAt: Date
+): Promise<boolean> {
+  try {
+    const order = await prisma.order.findUnique({
+      where: { id: orderId },
+      select: {
+        status: true,
+        delivery: { select: { expiresAt: true } },
+      },
+    })
+    if (!order || order.status !== 'delivered' || !order.delivery) return false
+    const current = order.delivery.expiresAt
+    if (current && Math.abs(current.getTime() - remoteExpiredAt.getTime()) < 1000) {
+      return false
+    }
+    await prisma.deliveryRecord.update({
+      where: { orderId },
+      data: { expiresAt: remoteExpiredAt },
+    })
+    // New expiry may reopen remind window — clear terminal reminder state.
+    await prisma.subscriptionReminder.deleteMany({ where: { orderId } })
+    logger.info(
+      {
+        orderId,
+        from: current?.toISOString() ?? null,
+        to: remoteExpiredAt.toISOString(),
+        component: 'fakaBridge',
+      },
+      'Aligned DeliveryRecord.expiresAt to Xboard expired_at'
+    )
+    return true
+  } catch (err) {
+    logger.warn({ err, orderId }, 'FakaBridge expiresAt align failed')
+    return false
+  }
+}
+
 async function tryDeliverPendingOrder(
   snapshot: ReconcileTaskSnapshot,
   tradeNo: string | null | undefined,
   email: string,
-  taskData: Prisma.FakaBridgeTaskUpdateManyMutationInput
+  taskData: Prisma.FakaBridgeTaskUpdateManyMutationInput,
+  remoteExpiredAt: Date | null = null,
+  subscription: FakaSubscriptionResult | null = null
 ): Promise<boolean> {
   const { id: taskId, orderId } = snapshot
+  const delivery = buildFakaDeliveryPayload({
+    tradeNo: tradeNo ?? null,
+    email,
+    panelUrl: config.fakaBridge.panelUrl || 'https://v.uuwu.de',
+    subscription,
+  })
   try {
     return await prisma.$transaction(async tx => {
       // Keep the global Order → Task lock order.  This is also the result
@@ -987,9 +1153,13 @@ async function tryDeliverPendingOrder(
           toStatus: 'delivered',
           actorRole: 'system',
           action: 'system.faka_bridge.reconcile_deliver',
-          deliveryContent: deliveryContent(tradeNo ?? null, email),
+          deliveryContent: delivery.content,
+          deliveryStructuredContent: delivery.structuredContent,
           publicNote: 'Xboard 订阅已开通（对账收敛）',
-          internalNote: tradeNo ? `trade_no=${tradeNo}; reconcile` : 'reconcile',
+          internalNote: tradeNo
+            ? `trade_no=${tradeNo}; reconcile${remoteExpiredAt ? `; xboard_expired_at=${remoteExpiredAt.toISOString()}` : ''}`
+            : `reconcile${remoteExpiredAt ? `; xboard_expired_at=${remoteExpiredAt.toISOString()}` : ''}`,
+          ...(remoteExpiredAt ? { expiresAtOverride: remoteExpiredAt } : {}),
         },
         tx
       )
@@ -999,17 +1169,4 @@ async function tryDeliverPendingOrder(
     logger.warn({ err, orderId }, 'FakaBridge reconcile deliver failed')
     return false
   }
-}
-
-function deliveryContent(tradeNo: string | null, email?: string | null): string {
-  const panel = config.fakaBridge.panelUrl || 'https://v.uuwu.de'
-  const no = tradeNo?.trim() || '(未知)'
-  const mail = email?.trim() || '(开通邮箱见下单信息)'
-  return [
-    'Xboard 订阅已开通',
-    `订单号: ${no}`,
-    `开通邮箱: ${mail}`,
-    `面板: ${panel}`,
-    '请使用上述邮箱登录面板（已有账号直接登录；新账号请用「忘记密码」设置密码）。',
-  ].join('\n')
 }
