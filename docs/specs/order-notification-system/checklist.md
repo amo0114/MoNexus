@@ -28,7 +28,7 @@
 | A-01 | Covered (integration + E2E) |
 | A-02 | Covered (integration + E2E) |
 | A-03 | Covered (integration + E2E) |
-| A-04 | Covered by design path via `transitionOrderStatus` + unit filter (Faka worker uses same deliver path) |
+| A-04 | Covered by integration tests: autoProvision checkout silent for merchant; `system.auto_provision.deliver` / `system.faka_bridge.deliver` notify buyer only without secret leak; p7b/faka worker regression green |
 | A-05 | Covered (dispatcher + integration) |
 | A-06 | Covered (separate counters; UI dual tab) |
 | A-07 | Covered (service API + E2E) |
