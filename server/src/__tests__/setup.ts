@@ -20,6 +20,7 @@ beforeEach(async () => {
     "AdminLog",
     "AnnouncementReceipt",
     "Announcement",
+    "Notification",
     "Settlement",
     "IdempotencyRecord",
     "FakaBridgeTask",
