@@ -607,6 +607,7 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
           deliveryContentType={renewSuccess.deliveryContentType}
           structuredContent={renewSuccess.structuredContent}
           provisionPending={renewSuccess.provisionPending}
+          headline="续费成功"
           onClose={() => {
             setRenewSuccess(null)
             onClose()
