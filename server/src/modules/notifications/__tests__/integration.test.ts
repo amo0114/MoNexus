@@ -5,12 +5,15 @@ import {
   createTestMerchant,
   createTestProduct,
   createTestUser,
+  getDefaultOfferId,
   loginAs,
   makeManualService,
 } from '../../../__tests__/helpers.js'
 import { prisma } from '../../../lib/prisma.js'
 import { config } from '../../../config/index.js'
 import { transitionOrderStatus } from '../../orders/fulfillment.js'
+import * as outbound from '../../../lib/outboundWebhook.js'
+import * as webhookConfigService from '../../merchant/webhookConfig.js'
 
 describe('Order notification integration (T04)', () => {
   const prev = config.notification.enabled
@@ -245,6 +248,150 @@ describe('Order notification integration (T04)', () => {
       .expect(201)
 
     expect(await prisma.notification.count({ where: { relatedOrderId: created.body.orderId } })).toBe(0)
+  })
+
+  it('A-04: autoProvision checkout is silent for merchant; system deliver notifies buyer only without secret leak', async () => {
+    // DNS inject so webhook URL validation accepts test hostnames (same as p7b suite).
+    outbound.__setWebhookDnsResolverForTests(async () => [{ address: '93.184.216.34', family: 4 }])
+    try {
+      const { user: merchantUser, merchant } = await createTestMerchant('int-ap-m@test.local', 'pass123', {
+        role: 'merchant',
+        status: 'active',
+        name: '自动开通商家',
+        contactEmail: 'int-ap-m@test.local',
+      })
+      const { user: buyer } = await createTestUser('int-ap-b@test.local', 'pass123', 'user', 5000)
+      const product = await createTestProduct('自动开通服务', 200, 0, [], merchant.id)
+      await makeManualService(product.id)
+      const offerId = await getDefaultOfferId(product.id)
+      await webhookConfigService.saveMyWebhookConfig(merchant.id, 'https://hook-notify.example.test/provision')
+      await prisma.offer.update({ where: { id: offerId }, data: { autoProvision: true } })
+
+      // Brake first-attempt setImmediate so we only assert checkout emit first.
+      await prisma.systemConfig.upsert({
+        where: { key: 'autoProvisionMaxAttempts' },
+        update: { value: 0 },
+        create: { key: 'autoProvisionMaxAttempts', value: 0, description: 'test brake' },
+      })
+
+      const buyerLogin = await loginAs('int-ap-b@test.local', 'pass123')
+      const created = await api
+        .post('/api/orders')
+        .set(authHeader(buyerLogin.accessToken))
+        .send({ productId: product.id })
+        .expect(201)
+
+      const orderId = created.body.orderId as number
+      expect(await prisma.provisionTask.count({ where: { orderId } })).toBe(1)
+
+      // NTF-05 / D-08: ProvisionTask present → no merchant new-order notification.
+      expect(await prisma.notification.count({
+        where: {
+          recipientUserId: merchantUser.id,
+          eventType: 'order.created_merchant',
+          relatedOrderId: orderId,
+        },
+      })).toBe(0)
+
+      // Simulate autoProvision success path (same transitionOrderStatus + action as provisionCron).
+      await transitionOrderStatus({
+        orderId,
+        toStatus: 'processing',
+        actorRole: 'system',
+        action: 'system.auto_provision.start',
+      })
+      await transitionOrderStatus({
+        orderId,
+        toStatus: 'delivered',
+        actorRole: 'system',
+        action: 'system.auto_provision.deliver',
+        deliveryContent: 'AUTO-PROVISION-SECRET-TOKEN',
+      })
+
+      const buyerDelivered = await prisma.notification.findMany({
+        where: {
+          recipientUserId: buyer.id,
+          eventType: 'order.delivered_buyer',
+          relatedOrderId: orderId,
+        },
+      })
+      expect(buyerDelivered).toHaveLength(1)
+      expect(buyerDelivered[0]!.title).toBe('订阅已开通')
+      expect(JSON.stringify(buyerDelivered[0]!.payload)).not.toContain('AUTO-PROVISION-SECRET')
+      expect(buyerDelivered[0]!.body).not.toContain('AUTO-PROVISION-SECRET')
+
+      // Merchant remains silent on success (no new-order, no delivered ack).
+      expect(await prisma.notification.count({
+        where: { recipientUserId: merchantUser.id, relatedOrderId: orderId },
+      })).toBe(0)
+
+      // Idempotent re-emit of the same delivered event.
+      await prisma.$transaction(async (tx) => {
+        const { NotificationDispatcher, orderNotificationSnapshot } = await import('../dispatcher.js')
+        const order = await prisma.order.findUniqueOrThrow({ where: { id: orderId } })
+        await NotificationDispatcher.emit({
+          type: 'order.delivered_buyer',
+          recipientUserId: buyer.id,
+          recipientRole: 'user',
+          order: orderNotificationSnapshot(order),
+          context: { deliveryKind: 'auto' },
+        }, tx)
+      })
+      expect(await prisma.notification.count({
+        where: {
+          recipientUserId: buyer.id,
+          eventType: 'order.delivered_buyer',
+          relatedOrderId: orderId,
+        },
+      })).toBe(1)
+    } finally {
+      outbound.__setWebhookDnsResolverForTests(null)
+    }
+  })
+
+  it('A-04 faka-style system deliver uses faka copy and never notifies merchant on success', async () => {
+    const { user: merchantUser, merchant } = await createTestMerchant('int-faka-m@test.local', 'pass123', {
+      role: 'merchant',
+      status: 'active',
+    })
+    const { user: buyer } = await createTestUser('int-faka-b@test.local', 'pass123', 'user', 5000)
+    const product = await createTestProduct('Faka风格人工', 180, 0, [], merchant.id)
+    await makeManualService(product.id)
+    const buyerLogin = await loginAs('int-faka-b@test.local', 'pass123')
+    const created = await api
+      .post('/api/orders')
+      .set(authHeader(buyerLogin.accessToken))
+      .send({ productId: product.id })
+      .expect(201)
+    const orderId = created.body.orderId as number
+
+    // Manual pending would notify merchant once; clear so success path is isolated.
+    await prisma.notification.deleteMany({ where: { relatedOrderId: orderId } })
+
+    await transitionOrderStatus({
+      orderId,
+      toStatus: 'processing',
+      actorRole: 'system',
+      action: 'system.faka_bridge.start',
+    })
+    await transitionOrderStatus({
+      orderId,
+      toStatus: 'delivered',
+      actorRole: 'system',
+      action: 'system.faka_bridge.deliver',
+      deliveryContent: 'FAKA-PANEL-SECRET',
+    })
+
+    const buyerNotes = await prisma.notification.findMany({
+      where: { recipientUserId: buyer.id, relatedOrderId: orderId, eventType: 'order.delivered_buyer' },
+    })
+    expect(buyerNotes).toHaveLength(1)
+    expect(buyerNotes[0]!.title).toBe('订阅已开通')
+    expect(JSON.stringify(buyerNotes[0]!.payload)).not.toContain('FAKA-PANEL-SECRET')
+
+    expect(await prisma.notification.count({
+      where: { recipientUserId: merchantUser.id, relatedOrderId: orderId },
+    })).toBe(0)
   })
 
   it('A-05: repeated transition does not duplicate delivered notification', async () => {
