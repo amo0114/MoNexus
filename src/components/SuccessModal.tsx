@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Check, Copy, ExternalLink, Loader2 } from 'lucide-react'
 import { useAppStore } from '../stores/appStore'
 import { getOrderDetail } from '../api/orders'
@@ -25,8 +25,12 @@ function titleFromStructured(
 function subtitleFromStructured(
   structured: StructuredDeliveryContent | null | undefined,
   pending: boolean,
-  headline?: string | null
+  headline?: string | null,
+  awaitingMerchant = false
 ): string {
+  if (awaitingMerchant) {
+    return '订单已创建。人工服务将由商家处理，请稍后在个人中心查看发货进度'
+  }
   if (pending) {
     return headline?.includes('续费')
       ? '积分已冻结，系统正在续期订阅，请稍候——完成后会在本页展示新的到期时间'
@@ -62,7 +66,10 @@ export default function SuccessModal({
   deliveryFile?: { fileName: string; size: number } | null
   orderId?: number
   merchantName?: string
-  /** 外部开通（如 Xboard）异步履约：下单成功但卡密尚未就绪。 */
+  /**
+   * 仅外部异步开通（FakaBridge / 商家 autoProvision）为 true。
+   * 普通即时发货 / 人工服务排队 **不要** 借「无内容」误开轮询。
+   */
   provisionPending?: boolean
   headline?: string | null
   onClose: () => void
@@ -74,22 +81,37 @@ export default function SuccessModal({
   const [structuredContent, setStructuredContent] = useState(initialStructured ?? null)
   const [deliveryFile, setDeliveryFile] = useState(initialFile ?? null)
   const [expiresAt, setExpiresAt] = useState<string | null>(null)
-  const [pollFailed, setPollFailed] = useState(false)
-  const [stillPending, setStillPending] = useState(
-    () => provisionPending || (!initialContent?.trim() && !initialStructured && !initialFile)
-  )
+  const [pollTimedOut, setPollTimedOut] = useState(false)
+  // Only async provision polls. Empty payload on a normal order is NOT "开通中".
+  const [awaitingProvision, setAwaitingProvision] = useState(() => Boolean(provisionPending))
+  const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
-    if (!stillPending || orderId == null) return
+    if (!awaitingProvision || orderId == null) return
 
     let cancelled = false
     const started = Date.now()
+
+    const clearPollTimer = () => {
+      if (pollTimerRef.current != null) {
+        clearTimeout(pollTimerRef.current)
+        pollTimerRef.current = null
+      }
+    }
+
+    const schedule = (ms: number) => {
+      clearPollTimer()
+      pollTimerRef.current = setTimeout(() => {
+        void tick()
+      }, ms)
+    }
 
     async function tick() {
       if (cancelled) return
       try {
         const detail = await getOrderDetail(orderId!)
         if (cancelled) return
+
         if (detail.status === 'delivered' || detail.status === 'completed' || detail.status === 'closed') {
           setDeliveryContent(detail.delivery?.content ?? '')
           setDeliveryContentType(detail.delivery?.contentType)
@@ -100,37 +122,45 @@ export default function SuccessModal({
               : null
           )
           setExpiresAt(detail.delivery?.expiresAt ?? detail.expiresAt ?? null)
-          setStillPending(false)
+          setAwaitingProvision(false)
           return
         }
         if (detail.status === 'refunded') {
-          setStillPending(false)
-          setPollFailed(true)
+          setAwaitingProvision(false)
           setDeliveryContent('开通失败，积分已退回。请查看订单详情或联系客服。')
           return
         }
+        // pending / processing：继续等异步开通
       } catch {
-        // keep polling until timeout
+        // transient network — keep polling until timeout
       }
+
+      if (cancelled) return
       if (Date.now() - started >= POLL_MAX_MS) {
-        setPollFailed(true)
+        // Stop spinner + stop requests; user can open 个人中心
+        setPollTimedOut(true)
+        setAwaitingProvision(false)
         return
       }
-      window.setTimeout(tick, POLL_MS)
+      schedule(POLL_MS)
     }
 
-    const t = window.setTimeout(tick, 800)
+    schedule(800)
     return () => {
       cancelled = true
-      window.clearTimeout(t)
+      clearPollTimer()
     }
-  }, [stillPending, orderId])
+  }, [awaitingProvision, orderId])
 
   const hasPayload =
     Boolean(deliveryFile) ||
     Boolean(structuredContent && structuredContent.fields.length > 0) ||
     Boolean(deliveryContent?.trim())
-  const pending = stillPending && !hasPayload
+
+  // Manual-service / non-provision: order placed, no card yet — not a spinning "开通中"
+  const awaitingMerchant = !provisionPending && !hasPayload && !awaitingProvision && !pollTimedOut
+  const showSpinner = awaitingProvision
+  const pendingCopy = awaitingProvision
 
   function copyContent() {
     if (!deliveryContent?.trim()) {
@@ -152,22 +182,22 @@ export default function SuccessModal({
     <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
       <DialogContent className="max-w-md text-center flex flex-col max-h-[90dvh] overflow-hidden">
         <div className="w-16 h-16 bg-[var(--color-cta)]/10 border-2 border-[var(--color-cta)] text-[var(--color-cta)] rounded-full flex items-center justify-center mx-auto mb-5">
-          {pending ? (
+          {showSpinner ? (
             <Loader2 className="w-8 h-8 text-[var(--color-cta)] animate-spin" data-testid="success-provision-spinner" />
           ) : (
-            <Check className="w-8 h-8" />
+            <Check className="w-8 h-8" data-testid="success-check-icon" />
           )}
         </div>
         <DialogTitle className="text-2xl mb-2" data-testid="success-modal-title">
-          {titleFromStructured(structuredContent, pending, headline)}
+          {titleFromStructured(structuredContent, pendingCopy, headline)}
         </DialogTitle>
         <p className="text-[var(--color-text-muted)] mb-4 text-sm" data-testid="success-modal-subtitle">
-          {pollFailed && pending
-            ? '开通仍在处理中，可稍后在个人中心查看订单结果'
-            : subtitleFromStructured(structuredContent, pending, headline)}
+          {pollTimedOut
+            ? '开通仍在处理中，请稍后在个人中心查看订单结果（已停止自动刷新）'
+            : subtitleFromStructured(structuredContent, pendingCopy, headline, awaitingMerchant)}
         </p>
 
-        {!pending && expiresAt && (
+        {!showSpinner && expiresAt && (
           <div
             className="mb-4 text-sm rounded-lg border border-[var(--color-primary)]/25 bg-[var(--color-primary)]/8 px-3 py-2 text-[var(--color-text)]"
             data-testid="success-expires-at"
@@ -185,7 +215,7 @@ export default function SuccessModal({
 
         <div className="bg-[var(--color-background)] rounded-lg p-4 mb-6 border border-[var(--color-border)] text-left flex-1 min-h-0 overflow-y-auto">
           <p className="text-xs text-[var(--color-text-muted)] mb-2 font-bold uppercase tracking-wider">
-            {pending ? '开通状态' : '开通结果'}
+            {showSpinner ? '开通状态' : awaitingMerchant || pollTimedOut ? '订单状态' : '开通结果'}
           </p>
           {deliveryFile && orderId != null ? (
             <FileDeliveryCard orderId={orderId} fileName={deliveryFile.fileName} size={deliveryFile.size} />
@@ -201,7 +231,7 @@ export default function SuccessModal({
             >
               {deliveryContent}
             </a>
-          ) : pending ? (
+          ) : showSpinner ? (
             <div
               className="text-sm text-[var(--color-text-muted)] bg-[var(--color-surface)] p-3 rounded border border-[var(--color-border)] leading-relaxed space-y-2"
               data-testid="success-provision-pending"
@@ -212,6 +242,15 @@ export default function SuccessModal({
                 也可随时在「个人中心 → 我的订单」查看。
               </p>
             </div>
+          ) : awaitingMerchant || pollTimedOut ? (
+            <div
+              className="text-sm text-[var(--color-text-muted)] bg-[var(--color-surface)] p-3 rounded border border-[var(--color-border)] leading-relaxed"
+              data-testid="success-awaiting-fulfillment"
+            >
+              {pollTimedOut
+                ? '系统开通尚未完成。请关闭本页后在「个人中心 → 我的订单」查看；若长时间未到账请联系客服。'
+                : '本单无需即时卡密。商家接单/履约后，可在「个人中心 → 我的订单」查看发货内容。'}
+            </div>
           ) : (
             <div className="font-mono text-sm break-all text-[var(--color-text)] select-all bg-[var(--color-surface)] p-3 rounded border border-[var(--color-border)] leading-relaxed whitespace-pre-wrap">
               {deliveryContent}
@@ -220,7 +259,7 @@ export default function SuccessModal({
         </div>
 
         <div className="flex flex-col gap-3 shrink-0">
-          {!deliveryFile && !pending && (
+          {!deliveryFile && hasPayload && !showSpinner && (
             <button onClick={copyContent} className="btn-primary w-full">
               <Copy className="w-4 h-4" /> 复制发货信息
             </button>
@@ -228,7 +267,7 @@ export default function SuccessModal({
           {onViewOrders ? (
             <button
               onClick={onViewOrders}
-              className={pending ? 'btn-primary w-full px-0' : 'btn-secondary w-full px-0'}
+              className={showSpinner ? 'btn-primary w-full px-0' : 'btn-secondary w-full px-0'}
             >
               <ExternalLink className="w-4 h-4" /> 去个人中心查看订单
             </button>
