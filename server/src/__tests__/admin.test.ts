@@ -499,6 +499,8 @@ describe('POST /api/admin/settlements/batch-settle', () => {
       .expect(200)
 
     expect(res.body.settled).toBe(2)
+    // 佣金默认 10%：200 * 0.9 = 180，两笔合计 360
+    expect(res.body.creditedTotal).toBe(360)
 
     const settled = await prisma.settlement.findMany({
       where: { merchantId: merchant.id },
@@ -506,6 +508,21 @@ describe('POST /api/admin/settlements/batch-settle', () => {
     })
     expect(settled.every(settlement => settlement.status === 'settled')).toBe(true)
     expect(settled.every(settlement => settlement.settledAt !== null)).toBe(true)
+
+    // Merchant owner must receive settlementAmount into PointAccount.
+    const merchantAccount = await prisma.pointAccount.findUniqueOrThrow({
+      where: { userId: merchant.userId },
+    })
+    expect(merchantAccount.balance).toBeGreaterThanOrEqual(360)
+    const creditLogs = await prisma.pointLog.findMany({
+      where: {
+        userId: merchant.userId,
+        type: 'in',
+        reason: { startsWith: '商家结算入账:' },
+      },
+    })
+    expect(creditLogs).toHaveLength(2)
+    expect(creditLogs.reduce((s, l) => s + l.amount, 0)).toBe(360)
   })
 
   it('should reject mixed settlement statuses without partially settling pending records', async () => {
