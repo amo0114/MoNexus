@@ -3,9 +3,10 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Menu, X, Coins, User, ShieldCheck, Store, Clock, XCircle,
-  AlertTriangle, Plus, Home, Trophy,
+  AlertTriangle, Plus, Home, Trophy, Package,
 } from 'lucide-react'
 import { useAuthStore } from '../stores/authStore'
+import { useAppStore } from '../stores/appStore'
 import ThemeToggle from './ThemeToggle'
 import { DialogOverlay } from './ui/Dialog'
 
@@ -31,6 +32,7 @@ export default function MobileNavDrawer() {
   const [open, setOpen] = useState(false)
   const navigate = useNavigate()
   const user = useAuthStore((s) => s.user)
+  const orderAttentionCount = useAppStore((s) => s.orderAttentionCount)
 
   const go = (path: string) => {
     setOpen(false)
@@ -118,6 +120,19 @@ export default function MobileNavDrawer() {
             >
               <Trophy className="w-4 h-4 text-[var(--color-text-muted)]" />
               积分排行榜
+            </button>
+            <button
+              className={`${ROW} text-[var(--color-text)] hover:bg-[var(--color-primary)]/8 active:bg-[var(--color-primary)]/12 relative`}
+              onClick={() => go('/orders')}
+              data-testid="drawer-orders"
+            >
+              <Package className="w-4 h-4 text-[var(--color-text-muted)]" />
+              我的订单
+              {orderAttentionCount > 0 && (
+                <span className="ml-auto min-w-5 h-5 px-1.5 rounded-full bg-[var(--color-danger)] text-[10px] leading-5 font-bold text-white text-center">
+                  {orderAttentionCount > 99 ? '99+' : orderAttentionCount}
+                </span>
+              )}
             </button>
             <button
               className={`${ROW} text-[var(--color-text)] hover:bg-[var(--color-primary)]/8 active:bg-[var(--color-primary)]/12`}
