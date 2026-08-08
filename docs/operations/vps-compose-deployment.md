@@ -92,6 +92,12 @@ ABUSE_HASH_KEY=<independent-32-byte-standard-base64-secret>
 TURNSTILE_SITE_KEY=<production-turnstile-site-key>
 TURNSTILE_SECRET_KEY=<production-turnstile-secret-key>
 TURNSTILE_ALLOWED_HOSTNAMES=monexus.oai-o.com
+
+# SPEC-NOTIFY-001: enable after migration 20260807200000_order_notifications.
+# Must be mapped in docker-compose.prod.yml to reach the server container.
+NOTIFICATION_ENABLED=false
+NOTIFICATION_EMAIL_ENABLED=false
+NOTIFICATION_EXPIRY_DAYS=90
 REDIS_ENABLED=true
 REDIS_REQUIRED=true
 REDIS_URL=redis://redis:6379
