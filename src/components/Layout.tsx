@@ -1,6 +1,7 @@
 import { useNavigate, useLocation, Link } from 'react-router-dom'
 import { useAuthStore } from '../stores/authStore'
-import { Coins, User, ShieldCheck, Store, Clock, XCircle, AlertTriangle, Plus, Search, Bell, Trophy, CheckCircle2, Info } from 'lucide-react'
+import { Coins, User, ShieldCheck, Store, Clock, XCircle, AlertTriangle, Plus, Search, Bell, Trophy, CheckCircle2, Info, Package } from 'lucide-react'
+import CountBadge from './ui/CountBadge'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import EmailVerificationBanner from './EmailVerificationBanner'
 import VerifiedActionGate from './VerifiedActionGate'
@@ -28,6 +29,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const navRef = useRef<HTMLElement>(null)
   const user = useAuthStore((s) => s.user)
   const showToast = useAppStore((s) => s.showToast)
+  const orderAttentionCount = useAppStore((s) => s.orderAttentionCount)
+  const refreshOrderAttention = useAppStore((s) => s.refreshOrderAttention)
   const notificationUnreadCount = useAppStore((s) => s.notificationUnreadCount)
   const refreshNotificationUnread = useAppStore((s) => s.refreshNotificationUnread)
   const announcements = useAnnouncements()
@@ -37,6 +40,12 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const hasPendingRequiredAnnouncement = announcements.items.some(
     (announcement) => announcement.presentation === 'acknowledgement_required' && !announcement.acknowledgedAt,
   )
+
+  // 登录后刷新「进行中订单」角标（顶栏订单入口 / 底栏「我的」共用）
+  useEffect(() => {
+    if (!user) return
+    void refreshOrderAttention()
+  }, [user?.id, refreshOrderAttention])
 
   // SPEC-LEGAL-001：法律页脚分组（门禁感知——功能关闭/接口 404 时整组隐藏，
   // 绝不渲染指向 404 的死链）。模块级缓存，全应用只请求一次。
@@ -391,6 +400,35 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             >
               <Trophy className="w-4 h-4" />
               <span className="hidden lg:inline font-bold text-xs">排行榜</span>
+            </button>
+
+            {/* 我的订单 — 桌面主入口；进行中订单数字角标 */}
+            <button
+              type="button"
+              onClick={() => navigate('/orders')}
+              title="我的订单"
+              aria-label={
+                orderAttentionCount > 0
+                  ? `我的订单，有 ${orderAttentionCount > 99 ? '99+' : orderAttentionCount} 个进行中`
+                  : '我的订单'
+              }
+              aria-current={location.pathname.startsWith('/orders') ? 'page' : undefined}
+              data-testid="nav-orders"
+              className={`hidden md:flex relative items-center gap-1.5 px-3 py-2 rounded-full cursor-pointer transition-colors border focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)] ${
+                location.pathname.startsWith('/orders')
+                  ? 'bg-[var(--color-primary-tint)] text-[var(--color-primary)] border-[var(--color-primary-tint-strong)]'
+                  : 'bg-[var(--color-surface)] text-[var(--color-text)] border-[var(--color-border)] hover:border-[var(--color-primary-tint-strong)]'
+              }`}
+            >
+              <Package className="w-4 h-4" />
+              <span className="hidden lg:inline font-bold text-xs">订单</span>
+              {orderAttentionCount > 0 && (
+                <CountBadge
+                  count={orderAttentionCount}
+                  className="absolute -right-1 -top-1 ring-[var(--color-background)]"
+                  testId="nav-orders-badge"
+                />
+              )}
             </button>
 
             <AnnouncementBellButton
