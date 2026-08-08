@@ -79,9 +79,6 @@ test('mobile chrome morphs into an island and keeps banners attached', async ({ 
     }))
   }, TEST_USER)
   await page.goto('/profile')
-  await page.addStyleTag({
-    content: '*, *::before, *::after { animation: none !important; transition: none !important; }',
-  })
 
   const navbar = page.getByTestId('app-navbar')
   const shell = page.getByTestId('navbar-shell')
@@ -105,6 +102,10 @@ test('mobile chrome morphs into an island and keeps banners attached', async ({ 
   expect(mobileChrome!.shellBackdrop).toBe('none')
   expect(mobileChrome!.shellTransition).toContain('max-width')
   expect(mobileChrome!.shellTransition).not.toBe('all')
+
+  await page.addStyleTag({
+    content: '*, *::before, *::after { animation: none !important; transition: none !important; }',
+  })
 
   // Ensure the page can scroll even when the local fixture has few products.
   await page.evaluate(() => {
