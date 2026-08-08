@@ -16,6 +16,14 @@ const TEST_USER = {
   merchant: null,
 }
 
+const TEST_ADMIN = {
+  ...TEST_USER,
+  id: 9_902,
+  email: 'mobile-admin-chrome@example.test',
+  nickname: '移动端管理员',
+  role: 'admin' as const,
+}
+
 test('mobile chrome morphs into an island and keeps banners attached', async ({ page }) => {
   // This is a chrome test, not an authentication/API test. Keep it isolated
   // from the shared local API rate limiter while exercising the real Profile
@@ -71,13 +79,33 @@ test('mobile chrome morphs into an island and keeps banners attached', async ({ 
     }))
   }, TEST_USER)
   await page.goto('/profile')
-  await page.addStyleTag({
-    content: '*, *::before, *::after { animation: none !important; transition: none !important; }',
-  })
 
   const navbar = page.getByTestId('app-navbar')
   const shell = page.getByTestId('navbar-shell')
   await expect(navbar).toBeVisible()
+
+  // The compact transition must stay off the mobile backdrop-filter path and
+  // narrow only the shell. A broad `transition: all` plus a blur over a
+  // scrolling surface was the source of the production frame drops.
+  const mobileChrome = await page.evaluate(() => {
+    const nav = document.querySelector<HTMLElement>('[data-testid="app-navbar"]')
+    const navbarShell = document.querySelector<HTMLElement>('[data-testid="navbar-shell"]')
+    if (!nav || !navbarShell) return null
+    return {
+      navBackdrop: getComputedStyle(nav).backdropFilter,
+      shellBackdrop: getComputedStyle(navbarShell).backdropFilter,
+      shellTransition: getComputedStyle(navbarShell).transitionProperty,
+    }
+  })
+  expect(mobileChrome).not.toBeNull()
+  expect(mobileChrome!.navBackdrop).toBe('none')
+  expect(mobileChrome!.shellBackdrop).toBe('none')
+  expect(mobileChrome!.shellTransition).toContain('max-width')
+  expect(mobileChrome!.shellTransition).not.toBe('all')
+
+  await page.addStyleTag({
+    content: '*, *::before, *::after { animation: none !important; transition: none !important; }',
+  })
 
   // Ensure the page can scroll even when the local fixture has few products.
   await page.evaluate(() => {
@@ -94,6 +122,10 @@ test('mobile chrome morphs into an island and keeps banners attached', async ({ 
   expect(compactShell).not.toBeNull()
   // A 390px viewport should not leave a near-full-width rounded header.
   expect(compactShell!.width).toBeLessThan(350)
+  // 18.5rem is also the complete 320px viewport content width. Keep every
+  // existing 40px mobile target inside it rather than trading jank for an
+  // overflowed island on the narrowest supported phones.
+  expect(await shell.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true)
 
   // A real quiet success action is absorbed by the island, not rendered as a
   // second top banner. The request is mocked solely to keep the E2E fixture
@@ -130,4 +162,46 @@ test('mobile chrome morphs into an island and keeps banners attached', async ({ 
   const gap = toastBox!.y - (navbarBox!.y + navbarBox!.height)
   expect(gap).toBeGreaterThanOrEqual(4)
   expect(gap).toBeLessThan(24)
+})
+
+test('mobile admin has a direct leaderboard tab', async ({ page }) => {
+  await page.route('**/api/**', (route) => {
+    const { pathname } = new URL(route.request().url())
+    if (!pathname.startsWith('/api/')) return route.fallback()
+
+    if (pathname === '/api/auth/me') return route.fulfill({ json: TEST_ADMIN })
+    if (pathname === '/api/announcements') return route.fulfill({ json: [] })
+    if (pathname === '/api/config/registry') {
+      return route.fulfill({
+        json: {
+          productTypes: [], deliveryModes: [], orderStatuses: [], settlementStatuses: [],
+          pagination: { defaultPageSize: 20, maxPageSize: 100 }, inventory: { lowStockThreshold: 5 },
+          memberTiers: [], memberTierThresholds: { silver: 100, gold: 500, platinum: 1_000 },
+          memberTierBonusBps: { bronze: 0, silver: 0, gold: 0, platinum: 0 },
+        },
+      })
+    }
+    if (pathname === '/api/leaderboard') {
+      return route.fulfill({
+        json: {
+          scope: 'total', periodKey: 'ALL', periodLabel: '全部', dataThrough: null,
+          updatedAt: null, top: [], me: null,
+        },
+      })
+    }
+    return route.fulfill({ status: 404, json: { error: { message: 'not mocked' } } })
+  })
+
+  await page.addInitScript((user) => {
+    localStorage.setItem('monexus-auth', JSON.stringify({
+      state: { user, accessToken: 'mobile-admin-chrome-test-token', isLoggedIn: true },
+      version: 0,
+    }))
+  }, TEST_ADMIN)
+  await page.goto('/leaderboard')
+
+  const tab = page.getByTestId('tab-bar-leaderboard')
+  await expect(tab).toBeVisible()
+  await expect(tab).toHaveAttribute('aria-current', 'page')
+  await expect(page.getByTestId('bottom-tab-bar').getByRole('button')).toHaveCount(4)
 })

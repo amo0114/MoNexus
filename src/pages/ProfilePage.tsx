@@ -602,7 +602,7 @@ export default function ProfilePage() {
             <button
               type="button"
               onClick={() => navigate('/orders')}
-              className="text-xs font-bold text-[var(--color-primary)] hover:underline cursor-pointer"
+              className="inline-flex items-center justify-center min-h-10 px-3 text-sm font-bold text-[var(--color-primary)] hover:underline cursor-pointer"
               data-testid="profile-orders-view-all"
             >
               全部订单 →
@@ -710,7 +710,7 @@ export default function ProfilePage() {
                   <button
                     type="button"
                     onClick={() => navigate('/orders')}
-                    className="w-full text-center text-sm font-medium text-[var(--color-primary)] py-2 rounded-lg border border-dashed border-[var(--color-border)] hover:bg-[var(--color-primary)]/5 cursor-pointer"
+                    className="w-full min-h-10 text-center text-sm font-medium text-[var(--color-primary)] py-2 rounded-lg border border-dashed border-[var(--color-border)] hover:bg-[var(--color-primary)]/5 cursor-pointer"
                     data-testid="profile-orders-more"
                   >
                     还有 {orders.length - 3} 单，查看全部

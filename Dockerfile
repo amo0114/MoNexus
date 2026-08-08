@@ -12,6 +12,10 @@ RUN npm ci
 
 COPY tsconfig.json vite.config.ts tailwind.config.js postcss.config.js index.html ./
 COPY src ./src
+# Vite copies public/ verbatim into dist/. Brand marks and favicon are
+# referenced by root-relative URLs, so omitting this directory produces a
+# successful build with 404s only after deployment.
+COPY public ./public
 RUN npm run build
 
 # Stage 2 — runtime: nginx serves the built SPA and proxies /api to the
