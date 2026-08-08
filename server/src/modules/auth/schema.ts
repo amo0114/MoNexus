@@ -29,8 +29,8 @@ export const registerSchema = z.object({
     z.string().trim().min(1).max(64),
     z.string().trim().min(1).max(32),
   ).refine(value => Object.keys(value).length <= 8, '协议确认条目过多').optional(),
+  nickname: z.string().trim().min(1).max(20, '昵称最多 20 字').optional(),
 }).strict()
-
 export const loginSchema = z.object({
   email: normalizedEmailSchema,
   password: z.string().min(1, '请输入密码'),
@@ -75,7 +75,8 @@ export const passwordChangeSchema = z.object({
 })
 
 export const updateMeSchema = z.object({
-  nickname: z.string().trim().min(1, '昵称不能为空').max(20, '昵称最多 20 字'),
+  nickname: z.string().trim().min(1, '昵称不能为空').max(20, '昵称最多 20 字').optional(),
+  avatarUrl: z.string().url('头像 URL 无效').max(2048, '头像 URL 过长').nullable().optional(),
 }).strict()
 
 export const sessionIdParamSchema = z.object({

@@ -23,10 +23,11 @@ function isPasswordResetProtectionError(error: unknown): error is HttpError {
 
 export async function register(req: Request, res: Response, next: NextFunction) {
   try {
-    const { email, password, inviteCode, turnstileToken, agreements } = req.body
+    const { email, password, inviteCode, turnstileToken, agreements, nickname } = req.body
     const result = await authService.registerUser(
       email, password, inviteCode,
       req.ip, req.headers['user-agent'], turnstileToken, agreements,
+      nickname,
     )
     setRefreshTokenCookie(res, result.refreshToken, result.refreshTokenMaxAgeMs)
     res.status(201).json({ user: result.user, accessToken: result.accessToken })

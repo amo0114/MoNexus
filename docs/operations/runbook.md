@@ -444,7 +444,9 @@ curl -fsS -X POST http://localhost:3000/api/auth/password-reset/request \
 # - Sentry: no error events for `password reset` if delivery succeeded.
 ```
 
-If the SMTP handshake fails (auth / TLS / DNS), nodemailer throws and the request returns 500 — check structured logs for the underlying error code (`EAUTH`, `ETIMEDOUT`, `ENOTFOUND`) before re-trying.
+If the SMTP handshake fails (auth / TLS / DNS), the public endpoint still returns its generic 200 response so account existence cannot be inferred. The new reset credential remains inactive and any previously usable reset link is preserved. Structured logs retain only the allow-listed category (`EAUTH`, `ETIMEDOUT`, `ENOTFOUND`, or `UNKNOWN`), never provider payloads or the raw reset token.
+
+SMTP acceptance and the following database activation cannot be one atomic operation. If the provider accepted the message but the process or database fails before activation, the newly delivered link is intentionally unusable while the earlier recovery link remains valid. This favors preserving recovery and preventing an unseen active credential; retry after database/SMTP health is restored.
 
 ### Admin mail operations panel (SPEC-OPS-REGMAIL-001)
 

@@ -8,6 +8,7 @@ import {
   abuseProtectionUnavailable,
   badRequest,
   conflict,
+  HttpError,
   humanVerificationFailed,
   humanVerificationRequired,
   humanVerificationUnavailable,
@@ -30,6 +31,7 @@ import { getHumanVerifier, type HumanVerificationAction } from './humanVerificat
 import { getMailer } from '../../lib/mailer/index.js'
 import { renderMail } from '../../lib/mailer/templates/index.js'
 import { normalizeInviteCode } from '../../lib/inviteCode.js'
+import { logger } from '../../lib/logger.js'
 import { claimInviteCodeForRegistration } from '../invite/service.js'
 import { getRefreshTokenMaxAgeMs, getSystemConfigValue } from '../../lib/systemConfig.js'
 import {
@@ -66,7 +68,10 @@ import {
   verifyTotp,
   type AuthChallengePurpose,
 } from './mfa.js'
-
+import {
+  generateDefaultNickname,
+  normalizeUserNickname,
+} from '../../lib/defaultNickname.js'
 export const PASSWORD_BCRYPT_ROUNDS = 12
 
 type MfaSessionClaims = {
@@ -108,13 +113,14 @@ function hashRefreshToken(refreshToken: string) {
   return crypto.createHash('sha256').update(refreshToken).digest('hex')
 }
 
-function buildAuthUser(user: { id: number; email: string; role: string; status: string; nickname: string | null }, points = 0) {
+function buildAuthUser(user: { id: number; email: string; role: string; status: string; nickname: string | null; avatarUrl?: string | null }, points = 0) {
   return {
     id: user.id,
     email: user.email,
     role: user.role,
     status: user.status,
     nickname: user.nickname,
+    avatarUrl: user.avatarUrl ?? null,
     points,
   }
 }
@@ -307,6 +313,7 @@ export async function registerUser(
   userAgent?: string,
   turnstileToken?: string,
   agreements?: Record<string, string>,
+  nickname?: string,
 ) {
   // REG-03：必须是第一步——查重、bcrypt、建号事务都在其后，关闭态下不会
   // 产生任何可观测副作用（连"该邮箱已注册"这种探测口子也不给）。
@@ -337,11 +344,41 @@ export async function registerUser(
 
   const hashedPassword = await bcrypt.hash(password, PASSWORD_BCRYPT_ROUNDS)
 
+  let chosenNickname: string
+  try {
+    chosenNickname = normalizeUserNickname(nickname) ?? ''
+  } catch (err) {
+    if (err instanceof Error && err.message === 'NICKNAME_TOO_LONG') {
+      throw badRequest('昵称最多 20 字')
+    }
+    throw badRequest('昵称格式无效')
+  }
+
   const result = await prisma.$transaction(async tx => {
     const registerReward = await getSystemConfigValue('registerReward', tx)
 
+    // 未填昵称 → mn_XXXXXXXX(碰撞重试);已填则直接使用。
+    let finalNickname = chosenNickname
+    if (!finalNickname) {
+      for (let attempt = 0; attempt < 12; attempt += 1) {
+        const candidate = generateDefaultNickname()
+        const clash = await tx.user.findFirst({
+          where: { nickname: candidate },
+          select: { id: true },
+        })
+        if (!clash) {
+          finalNickname = candidate
+          break
+        }
+      }
+      if (!finalNickname) {
+        // Extremely unlikely; fold time into suffix space.
+        finalNickname = generateDefaultNickname()
+      }
+    }
+
     const newUser = await tx.user.create({
-      data: { email: normalizedEmail, password: hashedPassword },
+      data: { email: normalizedEmail, password: hashedPassword, nickname: finalNickname },
     })
 
     await tx.pointAccount.create({
@@ -1099,6 +1136,7 @@ export async function getUserProfile(userId: number) {
     role: user.role,
     status: user.status,
     nickname: user.nickname,
+    avatarUrl: user.avatarUrl ?? null,
     points: user.pointAccount?.balance ?? 0,
     emailVerified: user.emailVerified,
     createdAt: user.createdAt,
@@ -1113,8 +1151,39 @@ export async function getUserProfile(userId: number) {
   }
 }
 
-export async function updateUserProfile(userId: number, data: { nickname: string }) {
-  await prisma.user.update({ where: { id: userId }, data: { nickname: data.nickname } })
+export async function updateUserProfile(userId: number, data: { nickname?: string; avatarUrl?: string | null }) {
+  const update: { nickname?: string; avatarUrl?: string | null } = {}
+  if (data.nickname !== undefined) {
+    // 服务端二次校验:1-20 字,禁止控制字符。
+    const normalized = data.nickname.trim()
+    if (!normalized || normalized.length > 20 || /[\u0000-\u001f\u007f]/.test(normalized)) {
+      throw badRequest('昵称需为 1-20 个字符')
+    }
+    update.nickname = normalized
+  }
+  if (data.avatarUrl !== undefined) {
+    // 产品决策:头像仅限平台图床(上传接口 /uploads/image 返回的 URL)。
+    // - S3 模式:URL 必须以配置的 STORAGE_PUBLIC_URL_BASE 为前缀;
+    // - 内存/开发模式:URL 的路径必须以 /uploads/ 开头(本平台上传路径)。
+    // 禁止任意外部 URL,防止外部图片追踪与隐私泄露。
+    if (data.avatarUrl !== null) {
+      let allowed = false
+      if (config.storage.kind === 's3' && config.storage.publicUrlBase) {
+        allowed = data.avatarUrl.startsWith(config.storage.publicUrlBase.replace(/\/$/, ''))
+      } else {
+        try {
+          const u = new URL(data.avatarUrl)
+          allowed = u.pathname.startsWith('/uploads/')
+        } catch {
+          allowed = false
+        }
+      }
+      if (!allowed) throw badRequest('头像必须使用平台图床的图片 URL')
+    }
+    update.avatarUrl = data.avatarUrl
+  }
+  if (Object.keys(update).length === 0) throw badRequest('没有可更新的字段')
+  await prisma.user.update({ where: { id: userId }, data: update })
   return getUserProfile(userId)
 }
 
@@ -1161,31 +1230,90 @@ export async function requestPasswordReset(email: string, ip?: string, turnstile
   if (user.status === '已封禁') return
 
   const rawToken = generateAuthToken()
+  // A newly generated credential starts inactive. This lets SMTP fail (or the
+  // process stop after SMTP returns ambiguously) without destroying a reset
+  // link the user already possesses or leaving an unseen credential usable.
+  const candidate = await prisma.passwordResetToken.create({
+    data: {
+      userId: user.id,
+      tokenHash: hashAuthToken(rawToken),
+      used: true,
+      expiresAt: new Date(Date.now() + config.passwordResetTokenMaxAgeMs),
+    },
+  })
+
+  const link = `${config.appBaseUrl}/reset-password/${rawToken}`
+  try {
+    const mailer = await getMailer()
+    await mailer.send(renderMail('password_reset', {
+      to: user.email,
+      resetUrl: link,
+      expiresMinutes: 30,
+    }))
+  } catch (err) {
+    // SMTP delivery failed. Remove the candidate token (best-effort) so
+    // the user's existing reset link remains valid. The candidate was
+    // committed as used=true, so even a database outage cannot turn it
+    // into a usable credential.
+    try {
+      await prisma.passwordResetToken.deleteMany({
+        where: { id: candidate.id, userId: user.id, used: true },
+      })
+    } catch {
+      logger.warn({ candidateId: candidate.id }, 'password reset candidate cleanup failed')
+    }
+    // Never propagate the provider error object: an adapter is allowed to
+    // include message content in it, and the message could contain the raw
+    // token. Log and throw only an allow-listed category.
+    const code = (err as { code?: unknown } | null)?.code
+    const failure = code === 'EAUTH' || code === 'ETIMEDOUT' || code === 'ENOTFOUND' ? code : 'UNKNOWN'
+    logger.warn({ failure }, 'password reset email delivery failed')
+    // The controller catches this and suppresses the error for the caller.
+    // Throwing is necessary to abort the function so no activation happens.
+    throw Object.assign(new Error('Password reset email delivery failed'), { code: failure })
+  }
+
+  // SMTP succeeded. Atomically activate the new token inside a user-level
+  // advisory lock, invalidating all previously active tokens.
   await prisma.$transaction(async tx => {
-    // A reset link is a single active credential. Issuing a new one invalidates
-    // every earlier unused link for the account.
+    await lockUserRefreshSessionMutations(tx, user.id)
+
+    // If a reset/change/admin action changed the password while SMTP was in
+    // flight, that mutation already invalidated every credential that existed
+    // before it. Do not resurrect this earlier candidate afterwards.
+    const currentUser = await tx.user.findUnique({
+      where: { id: user.id },
+      select: { password: true },
+    })
+    if (!currentUser || currentUser.password !== user.password) {
+      throw new HttpError(500, 'INTERNAL_SERVER_ERROR', '服务器内部错误')
+    }
+
+    // Invalidate all previously active tokens.
     await tx.passwordResetToken.updateMany({
       where: { userId: user.id, used: false },
       data: { used: true },
     })
-    await tx.passwordResetToken.create({
-      data: {
-        userId: user.id,
-        tokenHash: hashAuthToken(rawToken),
-        expiresAt: new Date(Date.now() + config.passwordResetTokenMaxAgeMs),
-      },
-    })
-  })
 
-  const mailer = await getMailer()
-  const link = `${config.appBaseUrl}/reset-password/${rawToken}`
-  await mailer.send(
-    renderMail('password_reset', {
-      to: user.email,
-      resetUrl: link,
-      expiresMinutes: 30,
-    }),
-  )
+    // Atomically activate the candidate token. If it was already expired
+    // or deleted by the SMTP-failure cleanup path above, the update count
+    // will be 0 and we abort.
+    const activated = await tx.passwordResetToken.updateMany({
+      where: {
+        id: candidate.id,
+        userId: user.id,
+        used: true,
+        expiresAt: { gt: new Date() },
+      },
+      data: { used: false },
+    })
+    if (activated.count !== 1) {
+      // Throwing rolls back the old-token invalidation as well. The email may
+      // already have been accepted, but the user's earlier recovery ability is
+      // preserved and the new link cannot become an unseen active credential.
+      throw new HttpError(500, 'INTERNAL_SERVER_ERROR', '服务器内部错误')
+    }
+  })
 }
 
 /**
