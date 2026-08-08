@@ -190,3 +190,51 @@ describe('GET /api/auth/me', () => {
     await api.get('/api/auth/me').expect(401)
   })
 })
+
+describe('PATCH /api/auth/me', () => {
+  it('updates nickname and avatarUrl', async () => {
+    await createTestUser('patch-me@test.local', 'pass123')
+    const { accessToken } = await loginAs('patch-me@test.local', 'pass123')
+
+    const res = await api
+      .patch('/api/auth/me')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({ nickname: '新昵称', avatarUrl: 'http://localhost:3000/uploads/abc.png' })
+      .expect(200)
+
+    expect(res.body.nickname).toBe('新昵称')
+    expect(res.body.avatarUrl).toBe('http://localhost:3000/uploads/abc.png')
+  })
+
+  it('rejects external avatar URL (platform storage only)', async () => {
+    await createTestUser('patch-me-ext@test.local', 'pass123')
+    const { accessToken } = await loginAs('patch-me-ext@test.local', 'pass123')
+
+    const res = await api
+      .patch('/api/auth/me')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({ avatarUrl: 'https://evil.example.com/tracker.png' })
+      .expect(400)
+
+    expect(res.body.error.code).toBe('BAD_REQUEST')
+  })
+
+  it('clears avatarUrl with null', async () => {
+    await createTestUser('patch-me-clear@test.local', 'pass123')
+    const { accessToken } = await loginAs('patch-me-clear@test.local', 'pass123')
+
+    await api
+      .patch('/api/auth/me')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({ avatarUrl: 'http://localhost:3000/uploads/abc.png' })
+      .expect(200)
+
+    const res = await api
+      .patch('/api/auth/me')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({ avatarUrl: null })
+      .expect(200)
+
+    expect(res.body.avatarUrl).toBeNull()
+  })
+})

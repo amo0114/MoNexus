@@ -306,12 +306,12 @@ export async function getPublicRegistrationStatus() {
 export async function registerUser(
   email: string,
   password: string,
-  nickname: string | undefined,
   inviteCode?: string,
   ip?: string,
   userAgent?: string,
   turnstileToken?: string,
   agreements?: Record<string, string>,
+  nickname?: string,
 ) {
   // REG-03：必须是第一步——查重、bcrypt、建号事务都在其后，关闭态下不会
   // 产生任何可观测副作用（连"该邮箱已注册"这种探测口子也不给）。
@@ -1160,8 +1160,23 @@ export async function updateUserProfile(userId: number, data: { nickname?: strin
     update.nickname = normalized
   }
   if (data.avatarUrl !== undefined) {
-    if (data.avatarUrl !== null && !/^https?:\/\/.+/.test(data.avatarUrl)) {
-      throw badRequest('头像 URL 无效')
+    // 产品决策:头像仅限平台图床(上传接口 /uploads/image 返回的 URL)。
+    // - S3 模式:URL 必须以配置的 STORAGE_PUBLIC_URL_BASE 为前缀;
+    // - 内存/开发模式:URL 的路径必须以 /uploads/ 开头(本平台上传路径)。
+    // 禁止任意外部 URL,防止外部图片追踪与隐私泄露。
+    if (data.avatarUrl !== null) {
+      let allowed = false
+      if (config.storage.kind === 's3' && config.storage.publicUrlBase) {
+        allowed = data.avatarUrl.startsWith(config.storage.publicUrlBase.replace(/\/$/, ''))
+      } else {
+        try {
+          const u = new URL(data.avatarUrl)
+          allowed = u.pathname.startsWith('/uploads/')
+        } catch {
+          allowed = false
+        }
+      }
+      if (!allowed) throw badRequest('头像必须使用平台图床的图片 URL')
     }
     update.avatarUrl = data.avatarUrl
   }
