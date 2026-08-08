@@ -66,7 +66,10 @@ import {
   verifyTotp,
   type AuthChallengePurpose,
 } from './mfa.js'
-
+import {
+  generateDefaultNickname,
+  normalizeUserNickname,
+} from '../../lib/defaultNickname.js'
 export const PASSWORD_BCRYPT_ROUNDS = 12
 
 type MfaSessionClaims = {
@@ -108,13 +111,14 @@ function hashRefreshToken(refreshToken: string) {
   return crypto.createHash('sha256').update(refreshToken).digest('hex')
 }
 
-function buildAuthUser(user: { id: number; email: string; role: string; status: string; nickname: string | null }, points = 0) {
+function buildAuthUser(user: { id: number; email: string; role: string; status: string; nickname: string | null; avatarUrl?: string | null }, points = 0) {
   return {
     id: user.id,
     email: user.email,
     role: user.role,
     status: user.status,
     nickname: user.nickname,
+    avatarUrl: user.avatarUrl ?? null,
     points,
   }
 }
@@ -302,6 +306,7 @@ export async function getPublicRegistrationStatus() {
 export async function registerUser(
   email: string,
   password: string,
+  nickname: string | undefined,
   inviteCode?: string,
   ip?: string,
   userAgent?: string,
@@ -337,11 +342,41 @@ export async function registerUser(
 
   const hashedPassword = await bcrypt.hash(password, PASSWORD_BCRYPT_ROUNDS)
 
+  let chosenNickname: string
+  try {
+    chosenNickname = normalizeUserNickname(nickname) ?? ''
+  } catch (err) {
+    if (err instanceof Error && err.message === 'NICKNAME_TOO_LONG') {
+      throw badRequest('昵称最多 20 字')
+    }
+    throw badRequest('昵称格式无效')
+  }
+
   const result = await prisma.$transaction(async tx => {
     const registerReward = await getSystemConfigValue('registerReward', tx)
 
+    // 未填昵称 → mn_XXXXXXXX(碰撞重试);已填则直接使用。
+    let finalNickname = chosenNickname
+    if (!finalNickname) {
+      for (let attempt = 0; attempt < 12; attempt += 1) {
+        const candidate = generateDefaultNickname()
+        const clash = await tx.user.findFirst({
+          where: { nickname: candidate },
+          select: { id: true },
+        })
+        if (!clash) {
+          finalNickname = candidate
+          break
+        }
+      }
+      if (!finalNickname) {
+        // Extremely unlikely; fold time into suffix space.
+        finalNickname = generateDefaultNickname()
+      }
+    }
+
     const newUser = await tx.user.create({
-      data: { email: normalizedEmail, password: hashedPassword },
+      data: { email: normalizedEmail, password: hashedPassword, nickname: finalNickname },
     })
 
     await tx.pointAccount.create({
@@ -1099,6 +1134,7 @@ export async function getUserProfile(userId: number) {
     role: user.role,
     status: user.status,
     nickname: user.nickname,
+    avatarUrl: user.avatarUrl ?? null,
     points: user.pointAccount?.balance ?? 0,
     emailVerified: user.emailVerified,
     createdAt: user.createdAt,
@@ -1113,8 +1149,24 @@ export async function getUserProfile(userId: number) {
   }
 }
 
-export async function updateUserProfile(userId: number, data: { nickname: string }) {
-  await prisma.user.update({ where: { id: userId }, data: { nickname: data.nickname } })
+export async function updateUserProfile(userId: number, data: { nickname?: string; avatarUrl?: string | null }) {
+  const update: { nickname?: string; avatarUrl?: string | null } = {}
+  if (data.nickname !== undefined) {
+    // 服务端二次校验:1-20 字,禁止控制字符。
+    const normalized = data.nickname.trim()
+    if (!normalized || normalized.length > 20 || /[\u0000-\u001f\u007f]/.test(normalized)) {
+      throw badRequest('昵称需为 1-20 个字符')
+    }
+    update.nickname = normalized
+  }
+  if (data.avatarUrl !== undefined) {
+    if (data.avatarUrl !== null && !/^https?:\/\/.+/.test(data.avatarUrl)) {
+      throw badRequest('头像 URL 无效')
+    }
+    update.avatarUrl = data.avatarUrl
+  }
+  if (Object.keys(update).length === 0) throw badRequest('没有可更新的字段')
+  await prisma.user.update({ where: { id: userId }, data: update })
   return getUserProfile(userId)
 }
 

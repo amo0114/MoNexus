@@ -41,6 +41,25 @@ describe('POST /api/auth/register', () => {
 
     expect(res.body.error.code).toBe('VALIDATION_ERROR')
   })
+
+  it('assigns branded default nickname when omitted', async () => {
+    const res = await api
+      .post('/api/auth/register')
+      .send({ email: 'auto-nick@test.local', password: 'abcdef' })
+      .expect(201)
+
+    expect(res.body.user.nickname).toMatch(/^mn_[2-9A-HJ-NP-Z]{8}$/)
+    expect(res.body.user.avatarUrl).toBeNull()
+  })
+
+  it('accepts optional nickname on register', async () => {
+    const res = await api
+      .post('/api/auth/register')
+      .send({ email: 'custom-nick@test.local', password: 'abcdef', nickname: '  小明同学  ' })
+      .expect(201)
+
+    expect(res.body.user.nickname).toBe('小明同学')
+  })
 })
 
 describe('POST /api/auth/login', () => {

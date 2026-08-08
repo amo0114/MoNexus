@@ -142,6 +142,7 @@ export interface AuthUser {
   id: number
   email: string
   nickname?: string | null
+  avatarUrl?: string | null
   role: UserRole
   status: string
   points: number
