@@ -317,7 +317,6 @@ run_dry_run() {
   local tag
   tag="$(tag_for_commit "$commit")"
   assert_control_lines
-  ensure_notification_enabled
   notice "action=dry-run"
   notice "target_commit=${commit}"
   notice "target_tag=${tag}"
@@ -333,6 +332,7 @@ run_deploy() {
   tag="$(tag_for_commit "$commit")"
   expected_architecture="$(host_architecture)"
   assert_control_lines
+  ensure_notification_enabled
 
   exec 9>"$LOCK_FILE"
   flock -n 9 || fail 'Another MoNexus Compose deployment is already in progress.'
