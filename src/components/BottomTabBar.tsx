@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { BarChart3, Coins, Home, ShieldCheck, Store, Trophy, User } from 'lucide-react'
 import { useAuthStore } from '../stores/authStore'
 import { useAppStore } from '../stores/appStore'
+import CountBadge from './ui/CountBadge'
 
 interface TabItem {
   key: string
@@ -12,6 +13,7 @@ interface TabItem {
   onSelect: () => void
   testId?: string
   ariaLabel?: string
+  badgeCount?: number
 }
 
 /**
@@ -21,12 +23,22 @@ interface TabItem {
  *  - 商家：     首页 / 商家 / 数据（经营图表）/ 我的
  *  - 管理员：   首页 / 管理 / 排行 / 我的
  * 下滑自动隐藏（阅读释放视高），上滑/近顶即现。实心背景（去磨砂）。
+ *
+ * 「我的」在 /orders 时保持高亮；进行中订单数作为红点角标。
+ * 完整订单列表入口：顶栏（md+）/ 抽屉「我的订单」/ 个人中心「全部订单」。
  */
 export default function BottomTabBar() {
   const navigate = useNavigate()
   const { pathname } = useLocation()
   const user = useAuthStore((s) => s.user)
   const setPointsHistoryOpen = useAppStore((s) => s.setPointsHistoryOpen)
+  const orderAttentionCount = useAppStore((s) => s.orderAttentionCount)
+  const refreshOrderAttention = useAppStore((s) => s.refreshOrderAttention)
+
+  useEffect(() => {
+    if (!user) return
+    void refreshOrderAttention()
+  }, [user?.id, refreshOrderAttention])
 
   // Auto-hide on scroll (V3-T2)：累计位移驱动（P2-1 修复）——
   // 不再比较单帧 delta（慢速滚动每帧 <6px 会永远无法触发），
@@ -154,12 +166,18 @@ export default function BottomTabBar() {
     })
   }
 
+  const attention = orderAttentionCount > 0 ? orderAttentionCount : 0
   tabs.push({
     key: 'profile',
     label: '我的',
     icon: User,
-    active: pathname.startsWith('/profile'),
+    // 订单页也算「我的」域，避免底栏无高亮
+    active: pathname.startsWith('/profile') || pathname.startsWith('/orders'),
     onSelect: () => navigate('/profile'),
+    testId: 'tab-bar-profile',
+    ariaLabel:
+      attention > 0 ? `我的，有 ${attention > 99 ? '99+' : attention} 个进行中的订单` : '我的',
+    badgeCount: attention,
   })
 
   return (
@@ -179,7 +197,7 @@ export default function BottomTabBar() {
       data-testid="bottom-tab-bar"
     >
       <div className="flex">
-        {tabs.map(({ key, label, icon: Icon, active, onSelect, testId, ariaLabel }) => (
+        {tabs.map(({ key, label, icon: Icon, active, onSelect, testId, ariaLabel, badgeCount }) => (
           <button
             key={key}
             type="button"
@@ -193,6 +211,13 @@ export default function BottomTabBar() {
           >
             <span className={`relative transition-transform duration-150 ${active ? 'scale-105' : 'scale-100'}`}>
               <Icon className={`w-5 h-5 ${active ? 'stroke-[2.4]' : ''}`} />
+              {badgeCount != null && badgeCount > 0 && (
+                <CountBadge
+                  count={badgeCount}
+                  className="absolute -right-2.5 -top-1.5"
+                  testId={key === 'profile' ? 'tab-profile-order-badge' : undefined}
+                />
+              )}
             </span>
             <span className={`text-[10px] leading-tight ${active ? 'font-bold' : 'font-medium'}`}>{label}</span>
           </button>

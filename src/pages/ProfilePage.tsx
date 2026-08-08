@@ -678,11 +678,22 @@ export default function ProfilePage() {
         {/* Active device sessions stay isolated from the profile's orders/points loading. */}
         <SessionManager />
 
-        {/* 我兑换的商品（V3-T1：流水明细移入 PointsHistorySheet，本页单栏） */}
-        <div className="card p-4 sm:p-6">
-        <h3 className="font-heading text-base font-bold text-[var(--color-text)] mb-3 flex items-center gap-2">
-          <ShoppingBag className="w-4 h-4 text-[var(--color-primary)]" /> 我兑换的商品
-        </h3>
+        {/* 我的订单入口：完整列表在 /orders（状态 Tab + 通知深链） */}
+        <div className="card p-4 sm:p-6" data-testid="profile-orders-entry" id="orders">
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <h3 className="font-heading text-base font-bold text-[var(--color-text)] flex items-center gap-2">
+              <ShoppingBag className="w-4 h-4 text-[var(--color-primary)]" />
+              我的订单
+            </h3>
+            <button
+              type="button"
+              onClick={() => navigate('/orders')}
+              className="text-xs font-bold text-[var(--color-primary)] hover:underline cursor-pointer"
+              data-testid="profile-orders-view-all"
+            >
+              全部订单 →
+            </button>
+          </div>
             {listsLoading ? (
               <TableSkeleton rows={4} />
             ) : orders.length === 0 ? (
@@ -699,7 +710,7 @@ export default function ProfilePage() {
               />
             ) : (
               <div className="space-y-3">
-                {orders.map((order, i) => (
+                {orders.slice(0, 3).map((order, i) => (
                   <Reveal key={order.id} delay={Math.min(i, 8) * 50}>
                   <div className="bg-[var(--color-background)] rounded-lg p-4 border border-[var(--color-border)] flex flex-col sm:flex-row justify-between gap-4 shadow-sm hover:shadow-md transition-shadow">
                     <div className="flex-1 min-w-0">
@@ -781,6 +792,16 @@ export default function ProfilePage() {
                   </div>
                   </Reveal>
                 ))}
+                {orders.length > 3 && (
+                  <button
+                    type="button"
+                    onClick={() => navigate('/orders')}
+                    className="w-full text-center text-sm font-medium text-[var(--color-primary)] py-2 rounded-lg border border-dashed border-[var(--color-border)] hover:bg-[var(--color-primary)]/5 cursor-pointer"
+                    data-testid="profile-orders-more"
+                  >
+                    还有 {orders.length - 3} 单，查看全部
+                  </button>
+                )}
               </div>
             )}
 
