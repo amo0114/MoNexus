@@ -126,7 +126,9 @@ services:
       FAKA_BRIDGE_ALLOW_INSECURE_TARGETS: ${FAKA_BRIDGE_ALLOW_INSECURE_TARGETS:-false}
       # SPEC-NOTIFY-001: in-app order notifications. Default false for safe
       # Default true for production rollout; set NOTIFICATION_ENABLED=false to disable.
-      NOTIFICATION_ENABLED: ${NOTIFICATION_ENABLED:-true}
+      # Forced on for SPEC-NOTIFY-001 production enablement (login 404 when false).
+      # To disable later: set false here (or restore ${NOTIFICATION_ENABLED:-false}) and redeploy.
+      NOTIFICATION_ENABLED: "true"
       NOTIFICATION_EMAIL_ENABLED: ${NOTIFICATION_EMAIL_ENABLED:-false}
       NOTIFICATION_EXPIRY_DAYS: ${NOTIFICATION_EXPIRY_DAYS:-90}
     depends_on:
