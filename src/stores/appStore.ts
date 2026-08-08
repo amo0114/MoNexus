@@ -1,7 +1,9 @@
 import { create } from 'zustand'
 import { ConfigRegistry } from '../types/config'
 import { getConfigRegistry } from '../api/registry'
+import { getOrders } from '../api/orders'
 import { getUnreadCount as fetchNotificationUnreadCount } from '../api/notifications'
+import { countAttentionOrders } from '../utils/orderAttention'
 import { useAuthStore } from './authStore'
 
 export type ToastType = 'success' | 'error' | 'info' | 'warning'
@@ -43,11 +45,19 @@ interface AppState {
   pointsHistoryOpen: boolean
   /** BottomTabBar 下滑自动隐藏状态：吸底浮层（如排行榜 MyRankBar）随之联动 */
   tabbarHidden: boolean
+  /**
+   * 买家「进行中」订单数（pending/processing/disputed），顶栏/Tab 红点共用。
+   * -1 = 尚未拉取。
+   */
+  orderAttentionCount: number
   setActiveTab: (tab: 'store' | 'profile' | 'admin') => void
   setStoreQuery: (q: string) => void
   setStoreCategory: (c: string) => void
   setPointsHistoryOpen: (open: boolean) => void
   setTabbarHidden: (hidden: boolean) => void
+  setOrderAttentionCount: (n: number) => void
+  /** 重新统计进行中订单（登录后 / 下单后 / 订单页刷新）。 */
+  refreshOrderAttention: () => Promise<void>
   showToast: (message: string, type?: ToastType) => void
   removeToast: (id: number) => void
   clearIslandNotice: () => void
@@ -75,6 +85,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   storeCategory: '全部',
   pointsHistoryOpen: false,
   tabbarHidden: false,
+  orderAttentionCount: -1,
   notificationUnreadCount: 0,
 
   setActiveTab: (tab) => set({ activeTab: tab }),
@@ -82,6 +93,20 @@ export const useAppStore = create<AppState>()((set, get) => ({
   setStoreCategory: (c) => set({ storeCategory: c }),
   setPointsHistoryOpen: (open) => set({ pointsHistoryOpen: open }),
   setTabbarHidden: (hidden) => set({ tabbarHidden: hidden }),
+  setOrderAttentionCount: (n) => set({ orderAttentionCount: Math.max(0, n) }),
+  refreshOrderAttention: async () => {
+    if (!useAuthStore.getState().user) {
+      set({ orderAttentionCount: 0 })
+      return
+    }
+    try {
+      // 足够覆盖日常未完结单；角标只需计数，不要求全量历史。
+      const orders = await getOrders({ page: 1, pageSize: 100 })
+      set({ orderAttentionCount: countAttentionOrders(orders) })
+    } catch {
+      // 静默：角标失败不打扰主流程
+    }
+  },
 
   // Auto-dismiss lives in the Toast item component (it owns the exit
   // animation timeline); the store only adds/removes.

@@ -1,16 +1,30 @@
 /**
- * Buyer orders list — supports notification deeplink `/orders?focus=<id>` (SPEC-NOTIFY-001 NTF-04).
+ * Buyer orders list.
+ * - Status tabs via `?tab=active|delivered|done`
+ * - Notification deeplink `/orders?focus=<id>` (SPEC-NOTIFY-001 NTF-04)
  */
-import { useCallback, useEffect, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
-import { ShoppingBag } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
+import { Package, ShoppingBag } from 'lucide-react'
 import { getOrderDetail, getOrders } from '../api/orders'
 import { getApiErrorMessage } from '../api/error'
 import { useAppStore } from '../stores/appStore'
 import type { UserOrderDetail, UserOrderListItem } from '../types/order'
+import BuyerOrderCard from '../components/orders/BuyerOrderCard'
 import OrderDetailModal from '../components/OrderDetailModal'
 import EmptyState from '../components/ui/EmptyState'
 import { TableSkeleton } from '../components/ui/Skeleton'
+import {
+  ORDER_LIST_TABS,
+  countAttentionOrders,
+  filterOrdersByTab,
+  type OrderListTab,
+} from '../utils/orderAttention'
+
+function parseTab(raw: string | null): OrderListTab {
+  if (raw === 'active' || raw === 'delivered' || raw === 'done' || raw === 'all') return raw
+  return 'all'
+}
 
 function parseFocusId(raw: string | null): number | null {
   if (!raw) return null
@@ -19,39 +33,60 @@ function parseFocusId(raw: string | null): number | null {
 }
 
 export default function OrdersPage() {
+  const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const showToast = useAppStore((s) => s.showToast)
+  const refreshOrderAttention = useAppStore((s) => s.refreshOrderAttention)
+  const setOrderAttentionCount = useAppStore((s) => s.setOrderAttentionCount)
+
+  const tab = parseTab(searchParams.get('tab'))
+  const focusId = parseFocusId(searchParams.get('focus'))
   const [orders, setOrders] = useState<UserOrderListItem[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedOrder, setSelectedOrder] = useState<UserOrderDetail | null>(null)
   const [loadingOrderId, setLoadingOrderId] = useState<number | null>(null)
-  const focusId = parseFocusId(searchParams.get('focus'))
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      setOrders(await getOrders({ page: 1, pageSize: 100 }))
+      const list = await getOrders({ page: 1, pageSize: 100 })
+      setOrders(list)
+      setOrderAttentionCount(countAttentionOrders(list))
     } catch (err) {
       showToast(getApiErrorMessage(err, '加载订单失败'), 'error')
     } finally {
       setLoading(false)
     }
-  }, [showToast])
+  }, [showToast, setOrderAttentionCount])
 
   useEffect(() => {
     void load()
   }, [load])
 
-  const openOrder = useCallback(async (orderId: number) => {
-    setLoadingOrderId(orderId)
-    try {
-      setSelectedOrder(await getOrderDetail(orderId))
-    } catch (err) {
-      showToast(getApiErrorMessage(err, '获取订单详情失败'), 'error')
-    } finally {
-      setLoadingOrderId(null)
-    }
-  }, [showToast])
+  const visible = useMemo(() => filterOrdersByTab(orders, tab), [orders, tab])
+  const activeCount = useMemo(() => countAttentionOrders(orders), [orders])
+
+  function setTab(next: OrderListTab) {
+    const nextParams = new URLSearchParams(searchParams)
+    if (next === 'all') nextParams.delete('tab')
+    else nextParams.set('tab', next)
+    // keep focus if present until modal closes
+    setSearchParams(nextParams, { replace: true })
+  }
+
+  const openOrder = useCallback(
+    async (orderId: number) => {
+      setLoadingOrderId(orderId)
+      try {
+        setSelectedOrder(await getOrderDetail(orderId))
+      } catch (err) {
+        showToast(getApiErrorMessage(err, '获取订单详情失败'), 'error')
+      } finally {
+        setLoadingOrderId(null)
+      }
+    },
+    [showToast],
+  )
 
   // Deep link from notification: open order detail once when focus is present.
   useEffect(() => {
@@ -68,42 +103,101 @@ export default function OrdersPage() {
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-6 pb-24 md:pb-8" data-testid="orders-page">
-      <div className="mb-5">
-        <h1 className="font-heading text-xl font-bold text-[var(--color-text)] flex items-center gap-2">
-          <ShoppingBag className="w-5 h-5 text-[var(--color-primary)]" />
-          我的订单
-        </h1>
-        <p className="mt-1 text-sm text-[var(--color-text-muted)]">查看兑换记录与交付内容</p>
+      <div className="flex items-start justify-between gap-3 mb-5">
+        <div>
+          <h1 className="font-heading text-xl font-bold text-[var(--color-text)] flex items-center gap-2">
+            <Package className="w-5 h-5 text-[var(--color-primary)]" />
+            我的订单
+          </h1>
+          <p className="text-xs text-[var(--color-text-muted)] mt-1">
+            查看发货内容、续费与履约进度
+            {activeCount > 0 ? ` · 进行中 ${activeCount} 单` : ''}
+          </p>
+        </div>
+        <button
+          type="button"
+          className="btn-secondary text-xs px-3 py-1.5 shrink-0"
+          onClick={() => navigate('/')}
+        >
+          去商城
+        </button>
+      </div>
+
+      <div
+        className="flex gap-1 overflow-x-auto hide-scrollbar mb-4 p-1 rounded-xl bg-[var(--color-background)] border border-[var(--color-border)]"
+        role="tablist"
+        aria-label="订单状态"
+        data-testid="orders-status-tabs"
+      >
+        {ORDER_LIST_TABS.map((t) => {
+          const count =
+            t.id === 'all' ? orders.length : filterOrdersByTab(orders, t.id).length
+          const selected = tab === t.id
+          return (
+            <button
+              key={t.id}
+              type="button"
+              role="tab"
+              aria-selected={selected}
+              data-testid={`orders-tab-${t.id}`}
+              onClick={() => setTab(t.id)}
+              className={`flex-1 min-w-[4.5rem] px-3 py-2 rounded-lg text-xs font-bold transition-colors cursor-pointer whitespace-nowrap ${
+                selected
+                  ? 'bg-[var(--color-primary)] text-white shadow-sm'
+                  : 'text-[var(--color-text-muted)] hover:bg-[var(--color-surface)]'
+              }`}
+            >
+              {t.label}
+              {count > 0 && (
+                <span className={`ml-1 tabular-nums ${selected ? 'opacity-90' : 'opacity-70'}`}>
+                  {count > 99 ? '99+' : count}
+                </span>
+              )}
+            </button>
+          )
+        })}
       </div>
 
       {loading ? (
-        <TableSkeleton rows={4} />
-      ) : orders.length === 0 ? (
-        <EmptyState title="暂无订单" description="去商城兑换商品后会出现在这里" />
+        <TableSkeleton rows={5} />
+      ) : visible.length === 0 ? (
+        <div className="card p-6">
+          <EmptyState
+            icon={ShoppingBag}
+            title={tab === 'all' ? '还没有订单' : '这个分类下暂无订单'}
+            description={
+              tab === 'active'
+                ? '没有进行中的订单'
+                : tab === 'delivered'
+                  ? '没有已交付的订单'
+                  : tab === 'done'
+                    ? '没有已结束的订单'
+                    : '去商城兑换商品后会出现在这里'
+            }
+            action={
+              tab === 'all' ? (
+                <button type="button" onClick={() => navigate('/')} className="btn-secondary px-4 py-2 text-sm">
+                  前往商城
+                </button>
+              ) : (
+                <button type="button" onClick={() => setTab('all')} className="btn-secondary px-4 py-2 text-sm">
+                  查看全部
+                </button>
+              )
+            }
+          />
+        </div>
       ) : (
-        <ul className="space-y-3">
-          {orders.map((order) => (
-            <li key={order.id}>
-              <button
-                type="button"
-                onClick={() => void openOrder(order.id)}
-                disabled={loadingOrderId === order.id}
-                className="w-full text-left card p-4 hover:border-[var(--color-primary)]/30 transition-colors"
-                data-testid={`order-row-${order.id}`}
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="font-medium text-sm text-[var(--color-text)] truncate">
-                    {order.product?.name ?? `订单 #${order.id}`}
-                  </span>
-                  <span className="text-xs text-[var(--color-text-muted)] shrink-0">{order.status}</span>
-                </div>
-                <div className="mt-1 text-xs text-[var(--color-text-muted)]">
-                  #{order.id} · {order.price} 积分
-                </div>
-              </button>
-            </li>
+        <div className="space-y-3">
+          {visible.map((order) => (
+            <BuyerOrderCard
+              key={order.id}
+              order={order}
+              loading={loadingOrderId === order.id}
+              onOpen={openOrder}
+            />
           ))}
-        </ul>
+        </div>
       )}
 
       {selectedOrder && (
@@ -115,7 +209,7 @@ export default function OrdersPage() {
           }}
           onUpdated={() => {
             void load()
-            if (selectedOrder) void openOrder(selectedOrder.id)
+            void refreshOrderAttention()
           }}
         />
       )}
