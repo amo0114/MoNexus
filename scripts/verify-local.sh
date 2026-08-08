@@ -10,6 +10,7 @@ RUN_E2E="${RUN_E2E:-true}"
 INSTALL_PLAYWRIGHT="${INSTALL_PLAYWRIGHT:-true}"
 JWT_SECRET="${JWT_SECRET:-local-jwt-secret-at-least-32-characters-long}"
 FRONTEND_ORIGIN="${FRONTEND_ORIGIN:-http://localhost:5173}"
+API_RATE_LIMIT_MAX="${API_RATE_LIMIT_MAX:-3000}"
 
 if [[ "$TEST_DATABASE_URL" != *"monexus_test"* && "${ALLOW_NON_TEST_DB:-false}" != "true" ]]; then
   echo "[ERROR] TEST_DATABASE_URL must point at a disposable test database." >&2
@@ -64,7 +65,7 @@ echo "[INFO] Building frontend"
 (cd "$ROOT_DIR" && npm run build)
 
 echo "[INFO] Running backend tests"
-(cd "$BACKEND_DIR" && TEST_DATABASE_URL="$TEST_DATABASE_URL" npm test)
+(cd "$BACKEND_DIR" && TEST_DATABASE_URL="$TEST_DATABASE_URL" API_RATE_LIMIT_MAX="$API_RATE_LIMIT_MAX" npm test)
 
 if [[ "$RUN_E2E" != "true" ]]; then
   echo "[INFO] Skipping E2E because RUN_E2E=$RUN_E2E"

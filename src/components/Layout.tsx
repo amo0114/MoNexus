@@ -247,9 +247,10 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         <div className="absolute bottom-[-10%] left-[-10%] w-[500px] h-[500px] rounded-full bg-[var(--color-primary)]/5 blur-[120px]" />
       </div>
 
-      {/* Navigation — 灵动岛：外层保持固定占位，避免滚动时把整页重新排版；
-          仅内层胶囊收缩为居中悬浮药丸。移动端不用 backdrop-filter，防止
-          连续滚动与滤镜重绘争抢帧预算；桌面玻璃导航不受影响。 */}
+      {/* Navigation — 灵动岛：下滑时内层收缩为居中悬浮药丸（compact）；
+          商城页可进一步 morph 为搜索卡片（islandSearch）。
+          药丸/卡片均为实心 surface + 阴影（用户反馈去磨砂）；
+          全部样式经 max-md 与 isMobileViewport 双重隔离，桌面零变化。 */}
       <nav
         ref={navRef}
         data-testid="app-navbar"
@@ -260,8 +261,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         } ${modalOpen ? 'opacity-0 pointer-events-none' : ''}`}
         style={{
           transitionTimingFunction: 'var(--ease-standard)',
-          /* P1：消费 safe-top（viewport-fit=cover 后页面延伸至刘海区）。
-             固定外层高度，避免灵动岛切换改变页面的滚动锚点。 */
+          /* P1:消费 safe-top(viewport-fit=cover 后页面延伸至刘海区)。
+             固定外层高度,避免灵动岛切换改变页面的滚动锚点。 */
           paddingTop: 'calc(var(--safe-top) + 1rem)',
         }}
       >
@@ -272,9 +273,9 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             className="md:hidden fixed inset-0 bg-black/25 animate-[overlayIn_0.25s_ease-out]"
           />
         )}
-        {/* 胶囊皮肤：以可插值的 max-width 收缩，不能从 width:100% 直接
-            过渡到 width:fit-content（后者会离散跳变）。外层高度固定，
-            所以动画只影响这一小块 chrome，而非整页布局。 */}
+        {/* 胶囊皮肤:以可插值的 max-width 收缩,不能从 width:100% 直接
+            过渡到 width:fit-content(后者会离散跳变)。外层高度固定,
+            所以动画只影响这一小块 chrome,而非整页布局。 */}
         <div
           data-testid="navbar-shell"
           className={`navbar-shell max-w-7xl mx-auto flex justify-between items-center relative w-full max-md:border max-md:border-transparent transition-[max-width,border-radius,box-shadow,background-color,border-color] duration-[220ms] ${
@@ -313,8 +314,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             onClick={() => navigate('/')}
           >
             <Logo className="w-8 h-8 text-[var(--color-primary)] transition-transform duration-300 group-hover:scale-105 shrink-0" />
-            {/* compact 时压缩字宽，为右侧三个 40px 触控目标留出空间。字号
-                立即切换而非逐帧插值，避免动画期间反复触发布局。 */}
+            {/* compact 时压缩字宽,为右侧三个 40px 触控目标留出空间。字号
+                立即切换而非逐帧插值,避免动画期间反复触发布局。 */}
             <span
               className={`font-heading font-bold text-[var(--color-text)] leading-none ${
                 compactIsland ? 'max-md:text-sm max-md:tracking-[0.1em]' : 'max-md:text-base max-md:tracking-[0.18em]'

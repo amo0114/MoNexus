@@ -75,6 +75,7 @@ export default function LoginPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [isRegister, setIsRegister] = useState(false)
+  const [nickname, setNickname] = useState('')
   const [inviteCode, setInviteCode] = useState('')
   const [loading, setLoading] = useState(false)
   const [finalizing, setFinalizing] = useState(false)
@@ -263,6 +264,7 @@ export default function LoginPage() {
         const result = await registerAccount({
           email,
           password,
+          ...(nickname.trim() ? { nickname: nickname.trim() } : {}),
           ...(inviteCode.trim() ? { inviteCode: inviteCode.trim() } : {}),
           ...(turnstileToken ? { turnstileToken } : {}),
           // 只提交用户真实勾选确认过的版本（记录模式下未勾选即不留证）。
@@ -392,6 +394,23 @@ export default function LoginPage() {
 
         {isRegister && (
           <>
+            <div className="space-y-1 text-left">
+              <input
+                type="text"
+                placeholder="昵称(可选,不填则自动生成)"
+                aria-label="昵称(可选)"
+                value={nickname}
+                onChange={(event) => setNickname(event.target.value)}
+                maxLength={20}
+                className="input"
+                disabled={loading}
+                data-testid="register-nickname"
+                autoComplete="nickname"
+              />
+              <p className="px-0.5 text-[11px] leading-relaxed text-[var(--color-text-muted)]">
+                用于评价与个人展示。留空将分配类似 <code className="text-[10px]">mn_XXXXXXXX</code> 的默认昵称。
+              </p>
+            </div>
             <input
               type="text"
               placeholder={

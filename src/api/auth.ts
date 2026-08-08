@@ -7,7 +7,7 @@ import type { LegalRequirement } from './legal'
 export { refreshAccessToken }
 
 export type AuthenticatedAuthResponse = {
-  user: Pick<AuthUser, 'id' | 'email' | 'nickname' | 'role' | 'status' | 'points' | 'emailVerified'>
+  user: Pick<AuthUser, 'id' | 'email' | 'nickname' | 'avatarUrl' | 'role' | 'status' | 'points' | 'emailVerified'>
   accessToken: string
 }
 
@@ -78,9 +78,10 @@ export async function getRegistrationStatus(): Promise<RegistrationStatus> {
 export async function registerAccount(payload: {
   email: string
   password: string
+  nickname?: string
   inviteCode?: string
   turnstileToken?: string
-  /** SPEC-LEGAL-001：协议确认 { document: version }，来自 registration-status。 */
+  /** SPEC-LEGAL-001:协议确认 { document: version },来自 registration-status。 */
   agreements?: Record<string, string>
 }): Promise<AuthenticatedAuthResponse> {
   const { data } = await api.post<AuthenticatedAuthResponse>('/auth/register', payload, preAuthRequestConfig())
@@ -144,7 +145,7 @@ export async function getMe(): Promise<AuthUser> {
   return data
 }
 
-export async function updateMe(body: { nickname: string }): Promise<AuthUser> {
+export async function updateMe(body: { nickname?: string; avatarUrl?: string | null }): Promise<AuthUser> {
   const { data } = await api.patch<AuthUser>('/auth/me', body)
   return data
 }

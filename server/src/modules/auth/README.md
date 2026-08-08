@@ -89,7 +89,13 @@ public-registration switch, written through `PUT /api/admin/config/registrationE
 - Password change, password reset, admin ban, MFA break-glass, and other
   explicit security boundaries call the shared revoke path in the same
   user-lock transaction as their state mutation.
-
+- Password-reset issuance is two-phase without holding a database transaction
+  across SMTP: the new row starts `used=true` (not consumable), then successful
+  delivery atomically invalidates prior active rows and activates only that
+  candidate under the same cross-process user lock used by password mutation.
+  Delivery failure leaves the prior link usable; failed candidate cleanup is
+  optional because an undeleted candidate remains inactive. If the password
+  changes while SMTP is in flight, the candidate is never activated.
 ## Rate Limits and Errors
 
 | Limiter | Window | Limit | Endpoints / key |
