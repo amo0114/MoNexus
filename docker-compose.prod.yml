@@ -125,8 +125,8 @@ services:
       FAKA_BRIDGE_PANEL_URL: ${FAKA_BRIDGE_PANEL_URL:-}
       FAKA_BRIDGE_ALLOW_INSECURE_TARGETS: ${FAKA_BRIDGE_ALLOW_INSECURE_TARGETS:-false}
       # SPEC-NOTIFY-001: in-app order notifications. Default false for safe
-      # rollout; set NOTIFICATION_ENABLED=true in the VPS .env to enable.
-      NOTIFICATION_ENABLED: ${NOTIFICATION_ENABLED:-false}
+      # Default true for production rollout; set NOTIFICATION_ENABLED=false to disable.
+      NOTIFICATION_ENABLED: ${NOTIFICATION_ENABLED:-true}
       NOTIFICATION_EMAIL_ENABLED: ${NOTIFICATION_EMAIL_ENABLED:-false}
       NOTIFICATION_EXPIRY_DAYS: ${NOTIFICATION_EXPIRY_DAYS:-90}
     depends_on:
