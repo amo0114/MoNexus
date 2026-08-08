@@ -1,6 +1,7 @@
 import { useNavigate, useLocation, Link } from 'react-router-dom'
 import { useAuthStore } from '../stores/authStore'
-import { Coins, User, ShieldCheck, Store, Clock, XCircle, AlertTriangle, Plus, Search, Bell, Trophy, CheckCircle2, Info } from 'lucide-react'
+import { Coins, User, ShieldCheck, Store, Clock, XCircle, AlertTriangle, Plus, Search, Bell, Trophy, CheckCircle2, Info, Package } from 'lucide-react'
+import CountBadge from './ui/CountBadge'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import EmailVerificationBanner from './EmailVerificationBanner'
 import VerifiedActionGate from './VerifiedActionGate'
@@ -28,6 +29,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const navRef = useRef<HTMLElement>(null)
   const user = useAuthStore((s) => s.user)
   const showToast = useAppStore((s) => s.showToast)
+  const orderAttentionCount = useAppStore((s) => s.orderAttentionCount)
+  const refreshOrderAttention = useAppStore((s) => s.refreshOrderAttention)
   const notificationUnreadCount = useAppStore((s) => s.notificationUnreadCount)
   const refreshNotificationUnread = useAppStore((s) => s.refreshNotificationUnread)
   const announcements = useAnnouncements()
@@ -37,6 +40,12 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const hasPendingRequiredAnnouncement = announcements.items.some(
     (announcement) => announcement.presentation === 'acknowledgement_required' && !announcement.acknowledgedAt,
   )
+
+  // 登录后刷新「进行中订单」角标（顶栏订单入口 / 底栏「我的」共用）
+  useEffect(() => {
+    if (!user) return
+    void refreshOrderAttention()
+  }, [user?.id, refreshOrderAttention])
 
   // SPEC-LEGAL-001：法律页脚分组（门禁感知——功能关闭/接口 404 时整组隐藏，
   // 绝不渲染指向 404 的死链）。模块级缓存，全应用只请求一次。
@@ -60,10 +69,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   // 胶囊，回顶 <32px 恢复全宽（滞回防抖）。桌面恒 false，零影响。
   const isMobileViewport = useIsMobileViewport()
   const [navCompact, setNavCompact] = useState(false)
-  const navCompactRef = useRef(false)
   useEffect(() => {
     if (!isMobileViewport) {
-      navCompactRef.current = false
       setNavCompact(false)
       return
     }
@@ -73,15 +80,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       ticking = true
       window.requestAnimationFrame(() => {
         const y = window.scrollY
-        const nextCompact = y > 48 ? true : y < 32 ? false : navCompactRef.current
-        // Scroll fires every frame. Only cross the React boundary at the two
-        // hysteresis edges; enqueuing an identical state update while the
-        // user is scrolling makes the visual morph contend with main-thread
-        // input work on lower-end mobile devices.
-        if (nextCompact !== navCompactRef.current) {
-          navCompactRef.current = nextCompact
-          setNavCompact(nextCompact)
-        }
+        setNavCompact((prev) => (y > 48 ? true : y < 32 ? false : prev))
         ticking = false
       })
     }
@@ -157,8 +156,9 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
     syncNavbarHeight()
     const observer = new ResizeObserver(syncNavbarHeight)
-    // Search mode changes the visual border box. Observe that actual edge
-    // while the compact island keeps the outer lane stable during scrolling.
+    // The chrome changes its vertical padding while compacting. Default
+    // ResizeObserver behavior observes only the content box, whose height
+    // stays constant, so observe the border box as the actual visual edge.
     try {
       observer.observe(nav, { box: 'border-box' })
     } catch {
@@ -172,7 +172,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   }, [syncNavbarHeight])
 
   // Safari releases that lack border-box ResizeObserver support still reach
-  // this synchronous measurement after every chrome mode change.
+  // this synchronous measurement after every chrome morph.
   useLayoutEffect(() => {
     syncNavbarHeight()
   }, [chromeMode, syncNavbarHeight])
@@ -238,22 +238,29 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         <div className="absolute bottom-[-10%] left-[-10%] w-[500px] h-[500px] rounded-full bg-[var(--color-primary)]/5 blur-[120px]" />
       </div>
 
-      {/* Navigation — 灵动岛：外层保持固定占位，避免滚动时把整页重新排版；
-          仅内层胶囊收缩为居中悬浮药丸。移动端不用 backdrop-filter，防止
-          连续滚动与滤镜重绘争抢帧预算；桌面玻璃导航不受影响。 */}
+      {/* Navigation — 灵动岛：下滑时内层收缩为居中悬浮药丸（compact）；
+          商城页可进一步 morph 为搜索卡片（islandSearch）。
+          药丸/卡片均为实心 surface + 阴影（用户反馈去磨砂）；
+          全部样式经 max-md 与 isMobileViewport 双重隔离，桌面零变化。 */}
       <nav
         ref={navRef}
         data-testid="app-navbar"
-        className={`nav-safe-x mobile-navbar-chrome sticky top-0 z-40 w-full py-4 border-b transition-[background-color,border-color,opacity] duration-200 ${
+        className={`nav-safe-x sticky top-0 z-40 w-full transition-all duration-300 ${
           chromeMode === 'expanded'
-            ? 'glass border-[var(--color-border)]'
-            : 'border-transparent'
+            ? 'glass py-4 border-b border-[var(--color-border)]'
+            : chromeMode === 'search'
+              ? 'py-2 border-b border-transparent'
+              : 'py-1 border-b border-transparent'
         } ${modalOpen ? 'opacity-0 pointer-events-none' : ''}`}
         style={{
           transitionTimingFunction: 'var(--ease-standard)',
           /* P1：消费 safe-top（viewport-fit=cover 后页面延伸至刘海区）。
-             固定外层高度，避免灵动岛切换改变页面的滚动锚点。 */
-          paddingTop: 'calc(var(--safe-top) + 1rem)',
+             safe-top=0 时与原 py-4/py-2.5 完全等值，桌面零差异。 */
+          paddingTop: chromeMode === 'expanded'
+            ? 'calc(var(--safe-top) + 1rem)'
+            : chromeMode === 'search'
+              ? 'calc(var(--safe-top) + 0.5rem)'
+              : 'calc(var(--safe-top) + 0.25rem)',
         }}
       >
         {islandSearch && (
@@ -263,20 +270,21 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             className="md:hidden fixed inset-0 bg-black/25 animate-[overlayIn_0.25s_ease-out]"
           />
         )}
-        {/* 胶囊皮肤：以可插值的 max-width 收缩，不能从 width:100% 直接
-            过渡到 width:fit-content（后者会离散跳变）。外层高度固定，
-            所以动画只影响这一小块 chrome，而非整页布局。 */}
+        {/* 胶囊皮肤（V3 丝滑重构）：compact 与搜索卡片共享同一层毛玻璃皮肤，
+            差异仅圆角/内边距/阴影——全部是可过渡属性，内容布局零重排，
+            navbar 从全宽玻璃条平滑 morph 为悬浮胶囊（灵动岛）。
+            毛玻璃仅用于悬浮胶囊（用户指定）；Tab Bar 保持实心。 */}
         <div
           data-testid="navbar-shell"
-          className={`navbar-shell max-w-7xl mx-auto flex justify-between items-center relative w-full max-md:border max-md:border-transparent transition-[max-width,border-radius,box-shadow,background-color,border-color] duration-[220ms] ${
+          className={`max-w-7xl mx-auto flex justify-between items-center relative transition-all duration-300 ${
             chromeMode === 'search'
-              ? 'max-md:max-w-[calc(100vw-2rem)] max-md:rounded-3xl max-md:px-4 max-md:py-3 max-md:shadow-xl'
+              ? 'max-md:w-[calc(100vw-2rem)] max-md:rounded-3xl max-md:px-4 max-md:py-3 max-md:shadow-xl'
               : compactIsland
-                ? 'max-md:max-w-[18.5rem] max-md:rounded-full max-md:px-3 max-md:py-0 max-md:shadow-lg'
-                : 'max-md:max-w-[calc(100vw-1.5rem)]'
+                ? 'max-md:w-fit max-md:max-w-[calc(100vw-2rem)] max-md:rounded-full max-md:px-3 max-md:py-0 max-md:shadow-lg'
+                : 'max-md:w-full'
           } ${
             chromeCompact
-              ? 'max-md:bg-[var(--color-surface)] max-md:border-[var(--color-glass-border)]'
+              ? 'max-md:bg-[var(--color-glass-bg)] max-md:backdrop-blur-md max-md:saturate-[1.8] max-md:border max-md:border-[var(--color-glass-border)]'
               : ''
           }`}
           style={{ transitionTimingFunction: 'var(--ease-standard)' }}
@@ -293,7 +301,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             else element.removeAttribute('inert')
           }}
           aria-hidden={islandNotice ? true : undefined}
-          className={`flex items-center justify-between w-full transition-opacity duration-200 ${
+          className={`flex items-center justify-between w-full ${compactIsland ? 'max-md:w-auto' : ''} transition-opacity duration-200 ${
             islandNotice ? 'opacity-0 pointer-events-none' : 'opacity-100'
           }`}
         >
@@ -304,10 +312,9 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             onClick={() => navigate('/')}
           >
             <Logo className="w-8 h-8 text-[var(--color-primary)] transition-transform duration-300 group-hover:scale-105 shrink-0" />
-            {/* compact 时压缩字宽，为右侧三个 40px 触控目标留出空间。字号
-                立即切换而非逐帧插值，避免动画期间反复触发布局。 */}
+            {/* compact 时字号/字距微调——font-size 与 letter-spacing 均可平滑过渡（无跳变） */}
             <span
-              className={`font-heading font-bold text-[var(--color-text)] leading-none ${
+              className={`font-heading font-bold text-[var(--color-text)] leading-none transition-all duration-300 ${
                 compactIsland ? 'max-md:text-sm max-md:tracking-[0.1em]' : 'max-md:text-base max-md:tracking-[0.18em]'
               } text-lg tracking-[0.18em]`}
             >
@@ -393,6 +400,35 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             >
               <Trophy className="w-4 h-4" />
               <span className="hidden lg:inline font-bold text-xs">排行榜</span>
+            </button>
+
+            {/* 我的订单 — 桌面主入口；进行中订单数字角标 */}
+            <button
+              type="button"
+              onClick={() => navigate('/orders')}
+              title="我的订单"
+              aria-label={
+                orderAttentionCount > 0
+                  ? `我的订单，有 ${orderAttentionCount > 99 ? '99+' : orderAttentionCount} 个进行中`
+                  : '我的订单'
+              }
+              aria-current={location.pathname.startsWith('/orders') ? 'page' : undefined}
+              data-testid="nav-orders"
+              className={`hidden md:flex relative items-center gap-1.5 px-3 py-2 rounded-full cursor-pointer transition-colors border focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)] ${
+                location.pathname.startsWith('/orders')
+                  ? 'bg-[var(--color-primary-tint)] text-[var(--color-primary)] border-[var(--color-primary-tint-strong)]'
+                  : 'bg-[var(--color-surface)] text-[var(--color-text)] border-[var(--color-border)] hover:border-[var(--color-primary-tint-strong)]'
+              }`}
+            >
+              <Package className="w-4 h-4" />
+              <span className="hidden lg:inline font-bold text-xs">订单</span>
+              {orderAttentionCount > 0 && (
+                <CountBadge
+                  count={orderAttentionCount}
+                  className="absolute -right-1 -top-1 ring-[var(--color-background)]"
+                  testId="nav-orders-badge"
+                />
+              )}
             </button>
 
             <AnnouncementBellButton

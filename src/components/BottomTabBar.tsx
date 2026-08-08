@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { BarChart3, Coins, Home, ShieldCheck, Store, Trophy, User } from 'lucide-react'
 import { useAuthStore } from '../stores/authStore'
 import { useAppStore } from '../stores/appStore'
+import CountBadge from './ui/CountBadge'
 
 interface TabItem {
   key: string
@@ -12,6 +13,7 @@ interface TabItem {
   onSelect: () => void
   testId?: string
   ariaLabel?: string
+  badgeCount?: number
 }
 
 /**
@@ -19,14 +21,24 @@ interface TabItem {
  * 公告是「通知」而非目的地，已上移 navbar 铃铛；底部只放真目的地。
  *  - 买家/游客：首页 / 积分（直达流水 Sheet）/ 排行 / 我的
  *  - 商家：     首页 / 商家 / 数据（经营图表）/ 我的
- *  - 管理员：   首页 / 管理 / 排行 / 我的
+ *  - 管理员：   首页 / 管理 / 我的
  * 下滑自动隐藏（阅读释放视高），上滑/近顶即现。实心背景（去磨砂）。
+ *
+ * 「我的」在 /orders 时保持高亮；进行中订单数作为红点角标。
+ * 完整订单列表入口：顶栏（md+）/ 抽屉「我的订单」/ 个人中心「全部订单」。
  */
 export default function BottomTabBar() {
   const navigate = useNavigate()
   const { pathname } = useLocation()
   const user = useAuthStore((s) => s.user)
   const setPointsHistoryOpen = useAppStore((s) => s.setPointsHistoryOpen)
+  const orderAttentionCount = useAppStore((s) => s.orderAttentionCount)
+  const refreshOrderAttention = useAppStore((s) => s.refreshOrderAttention)
+
+  useEffect(() => {
+    if (!user) return
+    void refreshOrderAttention()
+  }, [user?.id, refreshOrderAttention])
 
   // Auto-hide on scroll (V3-T2)：累计位移驱动（P2-1 修复）——
   // 不再比较单帧 delta（慢速滚动每帧 <6px 会永远无法触发），
@@ -107,26 +119,13 @@ export default function BottomTabBar() {
       },
     )
   } else if (isAdmin) {
-    // 管理员只有一个工作台入口，底栏仍有足够位置放排行榜。之前把它藏进
-    // 抽屉会让移动端管理员误以为榜单不可访问。
-    tabs.push(
-      {
-        key: 'admin',
-        label: '管理',
-        icon: ShieldCheck,
-        active: pathname.startsWith('/admin'),
-        onSelect: () => navigate('/admin'),
-      },
-      {
-        key: 'leaderboard',
-        label: '排行',
-        icon: Trophy,
-        active: pathname.startsWith('/leaderboard'),
-        onSelect: () => navigate('/leaderboard'),
-        testId: 'tab-bar-leaderboard',
-        ariaLabel: '积分排行榜',
-      },
-    )
+    tabs.push({
+      key: 'admin',
+      label: '管理',
+      icon: ShieldCheck,
+      active: pathname.startsWith('/admin'),
+      onSelect: () => navigate('/admin'),
+    })
   } else {
     // 买家/游客：积分流水是高频自查入口——Tab 直达 Sheet（动作型，无 active 态）
     tabs.push({
@@ -141,8 +140,8 @@ export default function BottomTabBar() {
       testId: 'tab-bar-points',
       ariaLabel: '积分明细',
     })
-    // 排行榜：买家的激励面。商家 tab 位已满（数据优先），从抽屉进入；
-    // 管理员则在上面的分支保留直接入口，避免误以为榜单不可访问。
+    // 排行榜：买家的激励面。商家/管理员 tab 位已满（数据/管理优先），
+    // 他们从桌面导航或抽屉进入同一页面。
     tabs.push({
       key: 'leaderboard',
       label: '排行',
@@ -154,12 +153,18 @@ export default function BottomTabBar() {
     })
   }
 
+  const attention = orderAttentionCount > 0 ? orderAttentionCount : 0
   tabs.push({
     key: 'profile',
     label: '我的',
     icon: User,
-    active: pathname.startsWith('/profile'),
+    // 订单页也算「我的」域，避免底栏无高亮
+    active: pathname.startsWith('/profile') || pathname.startsWith('/orders'),
     onSelect: () => navigate('/profile'),
+    testId: 'tab-bar-profile',
+    ariaLabel:
+      attention > 0 ? `我的，有 ${attention > 99 ? '99+' : attention} 个进行中的订单` : '我的',
+    badgeCount: attention,
   })
 
   return (
@@ -179,7 +184,7 @@ export default function BottomTabBar() {
       data-testid="bottom-tab-bar"
     >
       <div className="flex">
-        {tabs.map(({ key, label, icon: Icon, active, onSelect, testId, ariaLabel }) => (
+        {tabs.map(({ key, label, icon: Icon, active, onSelect, testId, ariaLabel, badgeCount }) => (
           <button
             key={key}
             type="button"
@@ -193,6 +198,13 @@ export default function BottomTabBar() {
           >
             <span className={`relative transition-transform duration-150 ${active ? 'scale-105' : 'scale-100'}`}>
               <Icon className={`w-5 h-5 ${active ? 'stroke-[2.4]' : ''}`} />
+              {badgeCount != null && badgeCount > 0 && (
+                <CountBadge
+                  count={badgeCount}
+                  className="absolute -right-2.5 -top-1.5"
+                  testId={key === 'profile' ? 'tab-profile-order-badge' : undefined}
+                />
+              )}
             </span>
             <span className={`text-[10px] leading-tight ${active ? 'font-bold' : 'font-medium'}`}>{label}</span>
           </button>
