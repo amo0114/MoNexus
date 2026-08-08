@@ -119,13 +119,26 @@ export default function BottomTabBar() {
       },
     )
   } else if (isAdmin) {
-    tabs.push({
-      key: 'admin',
-      label: '管理',
-      icon: ShieldCheck,
-      active: pathname.startsWith('/admin'),
-      onSelect: () => navigate('/admin'),
-    })
+    // 管理员只有一个工作台入口,底栏仍有足够位置放排行榜。之前把它藏进
+    // 抽屉会让移动端管理员误以为榜单不可访问。
+    tabs.push(
+      {
+        key: 'admin',
+        label: '管理',
+        icon: ShieldCheck,
+        active: pathname.startsWith('/admin'),
+        onSelect: () => navigate('/admin'),
+      },
+      {
+        key: 'leaderboard',
+        label: '排行',
+        icon: Trophy,
+        active: pathname.startsWith('/leaderboard'),
+        onSelect: () => navigate('/leaderboard'),
+        testId: 'tab-bar-leaderboard',
+        ariaLabel: '积分排行榜',
+      },
+    )
   } else {
     // 买家/游客：积分流水是高频自查入口——Tab 直达 Sheet（动作型，无 active 态）
     tabs.push({

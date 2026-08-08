@@ -233,6 +233,24 @@ h1, h2, h3, h4 {
   border-bottom: 1px solid var(--color-glass-border);
 }
 
+/* The navbar changes shape while the document is actively scrolling. A
+   backdrop filter over that moving surface forces expensive repaints on many
+   mobile GPUs, so keep the desktop glass treatment but use an opaque mobile
+   lane. The shell itself is layout-contained and only animates its max-width
+   / shape, which prevents the island transition from invalidating the page. */
+@media (max-width: 767px) {
+  .mobile-navbar-chrome.glass {
+    background-color: var(--color-surface);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  .navbar-shell {
+    contain: layout;
+    will-change: max-width, border-radius;
+  }
+}
+
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(15px); }
   to { opacity: 1; transform: translateY(0); }
