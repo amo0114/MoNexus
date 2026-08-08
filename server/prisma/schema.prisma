@@ -907,6 +907,7 @@ model AbuseEvent {
 
   @@index([type, createdAt])
   @@index([inviterId, createdAt])
+  @@index([createdAt])
 }
 
 model AdminLog {
