@@ -8,6 +8,7 @@ import {
   abuseProtectionUnavailable,
   badRequest,
   conflict,
+  HttpError,
   humanVerificationFailed,
   humanVerificationRequired,
   humanVerificationUnavailable,
@@ -30,6 +31,7 @@ import { getHumanVerifier, type HumanVerificationAction } from './humanVerificat
 import { getMailer } from '../../lib/mailer/index.js'
 import { renderMail } from '../../lib/mailer/templates/index.js'
 import { normalizeInviteCode } from '../../lib/inviteCode.js'
+import { logger } from '../../lib/logger.js'
 import { claimInviteCodeForRegistration } from '../invite/service.js'
 import { getRefreshTokenMaxAgeMs, getSystemConfigValue } from '../../lib/systemConfig.js'
 import {
@@ -1161,31 +1163,90 @@ export async function requestPasswordReset(email: string, ip?: string, turnstile
   if (user.status === '已封禁') return
 
   const rawToken = generateAuthToken()
+  // A newly generated credential starts inactive. This lets SMTP fail (or the
+  // process stop after SMTP returns ambiguously) without destroying a reset
+  // link the user already possesses or leaving an unseen credential usable.
+  const candidate = await prisma.passwordResetToken.create({
+    data: {
+      userId: user.id,
+      tokenHash: hashAuthToken(rawToken),
+      used: true,
+      expiresAt: new Date(Date.now() + config.passwordResetTokenMaxAgeMs),
+    },
+  })
+
+  const link = `${config.appBaseUrl}/reset-password/${rawToken}`
+  try {
+    const mailer = await getMailer()
+    await mailer.send(renderMail('password_reset', {
+      to: user.email,
+      resetUrl: link,
+      expiresMinutes: 30,
+    }))
+  } catch (err) {
+    // SMTP delivery failed. Remove the candidate token (best-effort) so
+    // the user's existing reset link remains valid. The candidate was
+    // committed as used=true, so even a database outage cannot turn it
+    // into a usable credential.
+    try {
+      await prisma.passwordResetToken.deleteMany({
+        where: { id: candidate.id, userId: user.id, used: true },
+      })
+    } catch {
+      logger.warn({ candidateId: candidate.id }, 'password reset candidate cleanup failed')
+    }
+    // Never propagate the provider error object: an adapter is allowed to
+    // include message content in it, and the message could contain the raw
+    // token. Log and throw only an allow-listed category.
+    const code = (err as { code?: unknown } | null)?.code
+    const failure = code === 'EAUTH' || code === 'ETIMEDOUT' || code === 'ENOTFOUND' ? code : 'UNKNOWN'
+    logger.warn({ failure }, 'password reset email delivery failed')
+    // The controller catches this and suppresses the error for the caller.
+    // Throwing is necessary to abort the function so no activation happens.
+    throw Object.assign(new Error('Password reset email delivery failed'), { code: failure })
+  }
+
+  // SMTP succeeded. Atomically activate the new token inside a user-level
+  // advisory lock, invalidating all previously active tokens.
   await prisma.$transaction(async tx => {
-    // A reset link is a single active credential. Issuing a new one invalidates
-    // every earlier unused link for the account.
+    await lockUserRefreshSessionMutations(tx, user.id)
+
+    // If a reset/change/admin action changed the password while SMTP was in
+    // flight, that mutation already invalidated every credential that existed
+    // before it. Do not resurrect this earlier candidate afterwards.
+    const currentUser = await tx.user.findUnique({
+      where: { id: user.id },
+      select: { password: true },
+    })
+    if (!currentUser || currentUser.password !== user.password) {
+      throw new HttpError(500, 'INTERNAL_SERVER_ERROR', '服务器内部错误')
+    }
+
+    // Invalidate all previously active tokens.
     await tx.passwordResetToken.updateMany({
       where: { userId: user.id, used: false },
       data: { used: true },
     })
-    await tx.passwordResetToken.create({
-      data: {
-        userId: user.id,
-        tokenHash: hashAuthToken(rawToken),
-        expiresAt: new Date(Date.now() + config.passwordResetTokenMaxAgeMs),
-      },
-    })
-  })
 
-  const mailer = await getMailer()
-  const link = `${config.appBaseUrl}/reset-password/${rawToken}`
-  await mailer.send(
-    renderMail('password_reset', {
-      to: user.email,
-      resetUrl: link,
-      expiresMinutes: 30,
-    }),
-  )
+    // Atomically activate the candidate token. If it was already expired
+    // or deleted by the SMTP-failure cleanup path above, the update count
+    // will be 0 and we abort.
+    const activated = await tx.passwordResetToken.updateMany({
+      where: {
+        id: candidate.id,
+        userId: user.id,
+        used: true,
+        expiresAt: { gt: new Date() },
+      },
+      data: { used: false },
+    })
+    if (activated.count !== 1) {
+      // Throwing rolls back the old-token invalidation as well. The email may
+      // already have been accepted, but the user's earlier recovery ability is
+      // preserved and the new link cannot become an unseen active credential.
+      throw new HttpError(500, 'INTERNAL_SERVER_ERROR', '服务器内部错误')
+    }
+  })
 }
 
 /**
