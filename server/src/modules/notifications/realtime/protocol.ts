@@ -92,7 +92,13 @@ function isValidDeeplink(value: unknown): value is string {
   if (/[\\\u0000-\u001f\u007f]/.test(value)) return false
   if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(value)) return false
   if (value.includes('@')) return false
-  return true
+  try {
+    const base = 'https://monexus.invalid'
+    const resolved = new URL(value, base)
+    return resolved.origin === base && resolved.pathname.startsWith('/')
+  } catch {
+    return false
+  }
 }
 
 function codePointLength(value: string): number {

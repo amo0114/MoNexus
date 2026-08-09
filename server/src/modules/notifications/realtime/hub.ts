@@ -70,7 +70,7 @@ export class NotificationRealtimeHub implements RealtimeHubPort {
    * stream.ready, then marks `ready`. No await / promise / I/O yield, so no
    * business event can be written between registration and ready.
    */
-  registerAndReady(res: Response, userId: number, ip: string): HubEntry {
+  registerAndReady(res: Response, userId: number, ip: string): HubEntry | null {
     const connectionId = randomUUID()
     const entry: HubEntry = { connectionId, userId, ip, res, state: 'initializing' }
     let userMap = this.byUser.get(userId)
@@ -85,20 +85,7 @@ export class NotificationRealtimeHub implements RealtimeHubPort {
 
     // Stream.ready carries resyncRequired=true — REST convergence is mandatory.
     const frame = serializeReady(new Date(), config.notificationRealtime.heartbeatMs, true)
-    if (frame !== null && !res.destroyed && !res.writableEnded) {
-      let ok = false
-      try { ok = res.write(frame) } catch { ok = false }
-      if (!ok) {
-        this.removeEntry(userId, connectionId, 'write_error')
-        entry.state = 'closing'
-        try { res.destroy() } catch { /* noop */ }
-        notificationRealtimeSseEventsTotal.inc({ event: 'ready', outcome: 'dropped' })
-        return entry
-      }
-      notificationRealtimeSseEventsTotal.inc({ event: 'ready', outcome: 'sent' })
-    } else {
-      notificationRealtimeSseEventsTotal.inc({ event: 'ready', outcome: 'dropped' })
-    }
+    if (!this.writeFrame(entry, frame, 'ready')) return null
     entry.state = 'ready'
     return entry
   }
@@ -135,49 +122,66 @@ export class NotificationRealtimeHub implements RealtimeHubPort {
    * business events and destroy only this response (CHK-SSE-009).
    */
   private writeToEntry(entry: HubEntry, frame: string, eventLabel: string): void {
+    void this.writeFrame(entry, frame, eventLabel)
+  }
+
+  /** Auth/control writes use the same cap + cleanup contract as business writes. */
+  writeControl(entry: HubEntry, frame: string | null, eventLabel = 'auth_expiring'): boolean {
+    if (entry.state !== 'ready') return false
+    return this.writeFrame(entry, frame, eventLabel)
+  }
+
+  private writeFrame(entry: HubEntry, frame: string | null, eventLabel: string): boolean {
     const res = entry.res
+    if (entry.state === 'closing') return false
+    if (frame === null) {
+      notificationRealtimeSseEventsTotal.inc({ event: eventLabel, outcome: 'dropped' })
+      this.closeEntry(entry, 'write_error', true)
+      return false
+    }
     if (res.destroyed || res.writableEnded) {
-      this.removeEntry(entry.userId, entry.connectionId)
-      return
+      notificationRealtimeSseEventsTotal.inc({ event: eventLabel, outcome: 'dropped' })
+      this.closeEntry(entry, 'client', false)
+      return false
     }
     if (res.writableLength > this.options.maxBufferBytes) {
       this.closeSlowConsumer(entry)
       notificationRealtimeSseEventsTotal.inc({ event: eventLabel, outcome: 'dropped' })
-      return
+      return false
     }
-    let ok: boolean
+    let ok: boolean = false
     try {
       ok = res.write(frame)
     } catch {
-      ok = false
+      notificationRealtimeSseEventsTotal.inc({ event: eventLabel, outcome: 'dropped' })
+      this.closeEntry(entry, 'write_error', true)
+      return false
     }
     if (!ok || res.writableLength > this.options.maxBufferBytes) {
       this.closeSlowConsumer(entry)
       notificationRealtimeSseEventsTotal.inc({ event: eventLabel, outcome: 'dropped' })
-    } else {
-      notificationRealtimeSseEventsTotal.inc({ event: eventLabel, outcome: 'sent' })
+      return false
     }
+    if (res.destroyed || res.writableEnded) {
+      notificationRealtimeSseEventsTotal.inc({ event: eventLabel, outcome: 'dropped' })
+      this.closeEntry(entry, 'client', false)
+      return false
+    }
+    notificationRealtimeSseEventsTotal.inc({ event: eventLabel, outcome: 'sent' })
+    return true
   }
 
   private closeSlowConsumer(entry: HubEntry): void {
-    this.removeEntry(entry.userId, entry.connectionId, 'slow')
+    // A false write or an over-cap buffer is already unsafe: queue no further
+    // bytes, including degraded, and terminate only this response.
+    this.closeEntry(entry, 'slow', true)
+  }
+
+  private closeEntry(entry: HubEntry, reason: DisconnectReason, destroy: boolean): void {
+    this.removeEntry(entry.userId, entry.connectionId, reason)
     entry.state = 'closing'
-    const res = entry.res
-    if (res.destroyed || res.writableEnded) {
-      res.destroy()
-      return
-    }
-    // Only attempt degraded if still safe to write; otherwise destroy.
-    try {
-      const frame = serializeDegraded('slow_consumer', 0)
-      if (frame !== null && !res.write(frame)) {
-        res.destroy()
-      } else {
-        res.end()
-      }
-    } catch {
-      res.destroy()
-    }
+    if (!destroy || entry.res.destroyed || entry.res.writableEnded) return
+    try { entry.res.destroy() } catch { /* noop */ }
   }
 
   /** Idempotent removal of a connection and all its counters. */
@@ -186,6 +190,7 @@ export class NotificationRealtimeHub implements RealtimeHubPort {
     if (!userMap) return
     const entry = userMap.get(connectionId)
     if (!entry) return
+    entry.state = 'closing'
     userMap.delete(connectionId)
     if (userMap.size === 0) this.byUser.delete(userId)
     this.connectionCount = Math.max(0, this.connectionCount - 1)
@@ -201,26 +206,11 @@ export class NotificationRealtimeHub implements RealtimeHubPort {
     if (this.heartbeatTimer) return
     this.heartbeatTimer = setInterval(() => {
       const now = new Date()
+      const frame = serializeHeartbeat(now)
       for (const userMap of this.byUser.values()) {
         for (const entry of [...userMap.values()]) {
           if (entry.state !== 'ready') continue
-          const res = entry.res
-          if (res.destroyed || res.writableEnded) {
-            this.removeEntry(entry.userId, entry.connectionId)
-            continue
-          }
-          const frame = serializeHeartbeat(now)
-          try {
-            if (!res.write(frame)) {
-              this.closeSlowConsumer(entry)
-              notificationRealtimeSseEventsTotal.inc({ event: 'heartbeat', outcome: 'dropped' })
-            } else {
-              notificationRealtimeSseEventsTotal.inc({ event: 'heartbeat', outcome: 'sent' })
-            }
-          } catch {
-            this.closeSlowConsumer(entry)
-            notificationRealtimeSseEventsTotal.inc({ event: 'heartbeat', outcome: 'dropped' })
-          }
+          this.writeToEntry(entry, frame, 'heartbeat')
         }
       }
     }, this.options.heartbeatMs)
@@ -245,18 +235,32 @@ export class NotificationRealtimeHub implements RealtimeHubPort {
     const frame = serializeDegraded(reason, retryAfterMs)
     const disconnectReason: DisconnectReason = reason === 'server_shutdown' ? 'shutdown' : 'listener'
     for (const entry of snapshot) {
-      this.removeEntry(entry.userId, entry.connectionId, disconnectReason)
-      entry.state = 'closing'
       const res = entry.res
-      if (res.destroyed || res.writableEnded) continue
+      if (frame === null || res.destroyed || res.writableEnded) {
+        notificationRealtimeSseEventsTotal.inc({ event: 'degraded', outcome: 'dropped' })
+        this.closeEntry(entry, disconnectReason, false)
+        continue
+      }
+      if (res.writableLength > this.options.maxBufferBytes) {
+        notificationRealtimeSseEventsTotal.inc({ event: 'degraded', outcome: 'dropped' })
+        this.closeSlowConsumer(entry)
+        continue
+      }
+      let wrote = false
       try {
-        if (frame !== null) {
-          res.write(frame)
-          notificationRealtimeSseEventsTotal.inc({ event: 'degraded', outcome: 'sent' })
-        }
+        wrote = res.write(frame)
       } catch {
         notificationRealtimeSseEventsTotal.inc({ event: 'degraded', outcome: 'dropped' })
+        this.closeEntry(entry, 'write_error', true)
+        continue
       }
+      if (!wrote || res.writableLength > this.options.maxBufferBytes) {
+        notificationRealtimeSseEventsTotal.inc({ event: 'degraded', outcome: 'dropped' })
+        this.closeSlowConsumer(entry)
+        continue
+      }
+      notificationRealtimeSseEventsTotal.inc({ event: 'degraded', outcome: 'sent' })
+      this.closeEntry(entry, disconnectReason, false)
       try {
         res.end()
       } catch {
@@ -275,6 +279,7 @@ export class NotificationRealtimeHub implements RealtimeHubPort {
     for (const entry of snapshot) {
       this.removeEntry(entry.userId, entry.connectionId, 'shutdown')
       entry.state = 'closing'
+      if (entry.res.destroyed || entry.res.writableEnded) continue
       try {
         entry.res.end()
       } catch {

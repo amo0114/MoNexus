@@ -41,6 +41,24 @@ interface StreamTimers {
   cleared: boolean
 }
 
+export interface NotificationRealtimeStreamDependencies {
+  getHub: () => Pick<ReturnType<typeof getNotificationRealtimeHub>,
+    | 'userConnectionCount'
+    | 'ipConnectionCount'
+    | 'connectionCountValue'
+    | 'registerAndReady'
+    | 'startHeartbeat'
+    | 'writeControl'
+    | 'removeEntry'
+  >
+  getLifecycle: () => Pick<ReturnType<typeof getNotificationRealtimeLifecycle>, 'isHealthy' | 'getStatus'>
+}
+
+const DEFAULT_STREAM_DEPENDENCIES: NotificationRealtimeStreamDependencies = {
+  getHub: getNotificationRealtimeHub,
+  getLifecycle: getNotificationRealtimeLifecycle,
+}
+
 function clearTimers(timers: StreamTimers): void {
   if (timers.cleared) return
   timers.cleared = true
@@ -54,14 +72,19 @@ function clearTimers(timers: StreamTimers): void {
   }
 }
 
-export function notificationRealtimeStream(req: Request, res: Response, next: NextFunction): void {
+export function notificationRealtimeStream(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+  dependencies: NotificationRealtimeStreamDependencies = DEFAULT_STREAM_DEPENDENCIES,
+): void {
   // Feature flags (spec 8.2): realtime or notifications off -> 404 JSON.
   if (!config.notification.enabled || !config.notificationRealtime.enabled) {
     next(notFound('页面不存在'))
     return
   }
 
-  const lifecycle = getNotificationRealtimeLifecycle()
+  const lifecycle = dependencies.getLifecycle()
   if (!lifecycle.isHealthy()) {
     // Listener degraded or instance draining -> 503 before any SSE bytes.
     notificationRealtimeConnectionRejectionsTotal.inc({ reason: lifecycle.getStatus() === 'draining' ? 'draining' : 'unavailable' })
@@ -78,7 +101,7 @@ export function notificationRealtimeStream(req: Request, res: Response, next: Ne
     return
   }
   const ip = req.ip ?? '127.0.0.1'
-  const hub = getNotificationRealtimeHub()
+  const hub = dependencies.getHub()
 
   // Caps (CHK-SSE-008): user / IP / global — all before headers.
   if (hub.userConnectionCount(userId) >= config.notificationRealtime.maxConnectionsPerUser) {
@@ -105,23 +128,32 @@ export function notificationRealtimeStream(req: Request, res: Response, next: Ne
   res.flushHeaders()
 
   const entry = hub.registerAndReady(res, userId, ip)
+  if (entry === null) return
   hub.startHeartbeat()
 
   const timers: StreamTimers = { expiring: null, expiry: null, cleared: false }
-  const writeControl = (frame: string | null): boolean => {
-    if (frame === null || res.destroyed || res.writableEnded) return false
+  let cleaned = false
+  const cleanup = (reason: 'client' | 'token_expired' | 'write_error' = 'client', end = false) => {
+    if (cleaned) return
+    cleaned = true
+    clearTimers(timers)
+    hub.removeEntry(entry.userId, entry.connectionId, reason)
+    if (!end || res.destroyed || res.writableEnded) return
     try {
-      if (!res.write(frame)) {
-        hub.removeEntry(entry.userId, entry.connectionId, 'write_error')
-        try { res.destroy() } catch { /* noop */ }
-        return false
-      }
-      return true
+      res.end()
     } catch {
-      hub.removeEntry(entry.userId, entry.connectionId, 'write_error')
       try { res.destroy() } catch { /* noop */ }
-      return false
     }
+  }
+  req.on('close', () => cleanup())
+  res.on('close', () => cleanup())
+  res.on('error', () => cleanup())
+
+  const writeControl = (frame: string | null): boolean => {
+    if (cleaned) return false
+    const ok = hub.writeControl(entry, frame, 'auth_expiring')
+    if (!ok) cleanup('write_error')
+    return ok
   }
   {
     const expiresAtMs = expiresAtSec * 1000
@@ -130,39 +162,18 @@ export function notificationRealtimeStream(req: Request, res: Response, next: Ne
     if (expiringIn <= 0) {
       // Already within the lead window: emit auth.expiring immediately (spec 6.5).
       const frame = serializeAuthExpiring(new Date(expiresAtMs))
-      writeControl(frame)
-      timers.expiry = setTimeout(() => endStream(res, hub, entry), Math.max(1, remaining))
+      if (!writeControl(frame) || cleaned) return
+      timers.expiry = setTimeout(() => cleanup('token_expired', true), Math.max(1, remaining))
       timers.expiry.unref?.()
     } else {
       timers.expiring = setTimeout(() => {
+        timers.expiring = null
         const frame = serializeAuthExpiring(new Date(expiresAtMs))
         writeControl(frame)
-        timers.expiring = null
       }, expiringIn)
       timers.expiring.unref?.()
-      timers.expiry = setTimeout(() => endStream(res, hub, entry), remaining)
+      timers.expiry = setTimeout(() => cleanup('token_expired', true), remaining)
       timers.expiry.unref?.()
     }
-  }
-
-  const cleanup = () => {
-    clearTimers(timers)
-    hub.removeEntry(entry.userId, entry.connectionId, 'client')
-  }
-  req.on('close', cleanup)
-  res.on('close', cleanup)
-  res.on('error', cleanup)
-}
-
-function endStream(res: Response, hub: ReturnType<typeof getNotificationRealtimeHub>, entry: {
-  userId: number
-  connectionId: string
-}): void {
-  hub.removeEntry(entry.userId, entry.connectionId, 'token_expired')
-  if (res.destroyed || res.writableEnded) return
-  try {
-    res.end()
-  } catch {
-    res.destroy()
   }
 }

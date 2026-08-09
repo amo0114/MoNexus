@@ -257,6 +257,26 @@ describe('realtime SSE stream (SPEC-NOTIFY-RT-001 T-BE-004)', () => {
     expect(stream.frames.filter(f => f.event)).toHaveLength(0)
   })
 
+  it('rejects missing, fractional and expired exp before SSE headers', async () => {
+    await ensureHealthy()
+    const { userId } = await createRecipient()
+    const nowSec = Math.floor(Date.now() / 1000)
+    const tokens = [
+      jwt.sign({ userId, role: 'merchant' }, config.jwtSecret),
+      jwt.sign({ userId, role: 'merchant', exp: nowSec + 120.5 }, config.jwtSecret),
+      jwt.sign({ userId, role: 'merchant', exp: nowSec - 1 }, config.jwtSecret),
+    ]
+
+    for (const token of tokens) {
+      const stream = openStream(token)
+      const deadline = Date.now() + 3000
+      while (Date.now() < deadline && stream.status === 0) await sleep(25)
+      expect(stream.status).toBe(401)
+      expect(stream.headers['content-type']).not.toContain('text/event-stream')
+      expect(stream.frames.filter(f => f.event)).toHaveLength(0)
+    }
+  })
+
   it('CHK-CFG-003/CHK-SSE-005: realtime off -> 404', async () => {
     config.notificationRealtime.enabled = false
     const { userId } = await createRecipient()
