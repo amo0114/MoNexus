@@ -59,4 +59,7 @@ export const NOTIFICATION_REALTIME_PG_OUTCOMES = [
   'not_found',
   'query_error',
 ] as const
-export type NotificationRealtimePgOutcome = (typeof NOTIFICATION_REALTIME_PG_OUTCOMES)[number]
+/** Message-terminal outcomes counted into cluster wakeups (spec 8.5). */
+export type NotificationRealtimePgMessageOutcome = (typeof NOTIFICATION_REALTIME_PG_OUTCOMES)[number]
+/** Includes probe_error, which is a probe result, not a message rate (spec 8.4/8.5). */
+export type NotificationRealtimePgOutcome = NotificationRealtimePgMessageOutcome | 'probe_error'

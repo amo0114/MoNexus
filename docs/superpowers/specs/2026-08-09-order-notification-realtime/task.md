@@ -216,7 +216,7 @@ npx vitest run \
 | 优先级 | P0 |
 | 对应需求 | REQ-F-002、REQ-F-020、REQ-NF-003 |
 | 依赖 | T-BE-001、T-BE-002 |
-| 状态 | Pending |
+| 状态 | Done（I-RT-004 2026-08-09） |
 
 **Owned files**
 
@@ -234,15 +234,15 @@ npx vitest run \
 
 **工作**
 
-- [ ] 每进程只创建一条独立 `pg.Client`，配置 application_name。
-- [ ] LISTEN 静态 channel；校验 message 后按 id + user 查询 primary。
-- [ ] 启用 TCP keepalive 和固定 30 秒 `SELECT 1` probe；probe 失败进入统一 degraded / reconnect。
-- [ ] hub 无该用户本地连接时记录 no_subscriber 并跳过主库查询。
-- [ ] service select 使用显式 allowlist，deliveryMode / kind 二次净化。
-- [ ] error / end 后状态 degraded、通知 hub drain callback、指数重连。
-- [ ] lifecycle generation / CAS 保证一次 drain，旧 Client callback 不得复活状态。
-- [ ] start / stop 幂等；stop 后不能重新调度 timer。
-- [ ] 无效 / not-found / query-error 只记有界 metric / 脱敏日志。
+- [x] 每进程只创建一条独立 `pg.Client`，配置 application_name。
+- [x] LISTEN 静态 channel；校验 message 后按 id + user 查询 primary。
+- [x] 启用 TCP keepalive 和固定 30 秒 `SELECT 1` probe；probe 失败进入统一 degraded / reconnect。
+- [x] hub 无该用户本地连接时记录 no_subscriber 并跳过主库查询。
+- [x] service select 使用显式 allowlist，deliveryMode / kind 二次净化。
+- [x] error / end 后状态 degraded、通知 hub drain callback、指数重连。
+- [x] lifecycle generation / CAS 保证一次 drain，旧 Client callback 不得复活状态。
+- [x] start / stop 幂等；stop 后不能重新调度 timer。
+- [x] 无效 / not-found / query-error 只记有界 metric / 脱敏日志。
 
 **DoD**
 
@@ -260,7 +260,12 @@ cd server
 npx vitest run src/modules/notifications/__tests__/realtime-listener.integration.test.ts
 ~~~
 
-证据：待填（含 `pg_stat_activity` application_name 数量）。
+证据：I-RT-004（2026-08-09）。
+- `realtime/listener.ts`：每 generation 一条独立 `pg.Client`（application_name=`monexus-notification-realtime-listener`，非 Prisma pool），TCP keepalive + 30s `SELECT 1` probe（首 probe 成功才 ready），静态 channel LISTEN，解析 payload → hub.hasSubscribers → 无订阅跳过查询（no_subscriber）→ `getRealtimeEnvelope` 主库 allowlist 投影 → broadcast；error/end/probe 失败统一 onUnavailable（一次）。
+- `realtime/lifecycle.ts`：generation/CAS 状态机（disabled/starting/healthy/degraded/draining/stopped）；每 generation 恰好一次 `degradeAndDrain(listener_unavailable, retryAfterMs)`；1/2/4/8/16/30s ±20% 指数重连；start/stop 幂等，stop 清 retry/probe timer；状态只读（getStatus/isHealthy）。
+- `service.ts` 新增 `getRealtimeEnvelope`：显式列 allowlist + `payload->>'deliveryMode'/'deliveryKind'` JSON 子提取（不返回 payload 整体），再经 buildNotificationEnvelope 二次净化。
+- `realtime-listener.integration.test.ts`（7 tests，真实 PostgreSQL）：start 幂等（pg_stat_activity app_name 计数=1）；routed 安全投影（无 recipientUserId/dedupeKey/payload/content）；no_subscriber 跳过查询；invalid/not_found 不广播；pg_terminate_backend → degraded + 恰好一次 drain → reconnect healthy；stop 后 backend 消失且二次 stop 幂等。
+- 验证：`npm run build` exit 0；`npx vitest run src/modules/notifications/ + config guards` → 10 files / 112 tests passed。
 
 ### T-BE-004 — Local hub、SSE route、鉴权与资源治理
 
