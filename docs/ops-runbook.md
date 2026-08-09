@@ -109,12 +109,17 @@
 ### 7.2 发布顺序（O-RT-06 / CHK-REL-002）
 
 1. **准备**：合并代码但保持 realtime=false；先部署 Nginx/Caddy 新 location、后端依赖与 endpoint、metrics、health。
-2. **LISTEN session gate**：以实际部署数据库角色 + production-like URL 跑 `bash scripts/verify-notification-realtime-listen-session.sh`（AC-RT-029/CHK-INF-007）——endpoint 必须是 direct/session-pool（非 transaction pool），PID distinct=1、三轮唯一 payload 全收、无权限错误；证据 7×24h 或 endpoint/role/revision 变化即过期。失败 / 过期 → 保持 realtime=false。
-3. **验证关闭态**：notifications REST 正常、stream 404、旧前端不受影响。
-4. **后端全量就绪**：所有 backend 实例升级到支持 realtime 的版本；禁止新旧 backend 混合时先发新前端。
-5. **启用后端**：`NOTIFICATION_REALTIME_ENABLED=true` 滚动重启全部实例；观察 listener_up、raw stream、caps、proxy。
-6. **发布前端**：新 bridge 连接已全量可用的 endpoint；观察连接数、lag、503/reconnect。
-7. **canary 业务**：专用账号完成新单/发货，确认 P95 ≤2s、P99 ≤5s、无敏感 payload。
+2. **本地实现 gate**：Node 20 下从 clean worktree 跑 `bash scripts/verify-notification-realtime.sh --local`。它保留 build/test/E2E 原始计数与 exit evidence，并同时检查 session/proxy self-test、冻结提交祖先、三重 schema/migration 零 diff、专用库 migration status/drift 与 secret scanner。它只允许输出 `local implementation gate`；不能替代下面任一部署证据。
+3. **LISTEN session gate**：以实际部署数据库角色 + production-like URL 跑 `RT_SESSION_ENV_FILE=<git-ignored-file> bash scripts/verify-notification-realtime-listen-session.sh`（AC-RT-029/CHK-INF-007）——endpoint 必须是 direct/session-pool（非 transaction pool），PID distinct=1、t≈0/30/60 三轮唯一 payload 均在 SQL 成功后 5 秒内收到、4 个 aux worker 在 0..54 秒完成 40/40 事务且无权限错误；证据 7×24h 或 endpoint/role/revision 变化即过期。失败 / 过期 → 保持 realtime=false。
+4. **部署代理 smoke**：从代理外部执行 `NOTIFICATION_REALTIME_PROXY_BASE=https://<site> NOTIFICATION_REALTIME_PROXY_TOKEN=<out-of-band-token> bash scripts/verify-notification-realtime-proxy.sh`。脚本只证明 response/transport（包括 `stream.ready` 实际业务字节 ≤2 秒）与可选 metrics 未回显 secret；Nginx/Caddy/app 三层日志必须另附查询证据。
+5. **验证关闭态**：notifications REST 正常、stream 404、旧前端不受影响。
+6. **后端全量就绪**：所有 backend 实例升级到支持 realtime 的版本；禁止新旧 backend 混合时先发新前端。
+7. **启用后端**：`NOTIFICATION_REALTIME_ENABLED=true` 滚动重启全部实例；观察 listener_up、raw stream、caps、proxy。
+8. **发布前端**：新 bridge 连接已全量可用的 endpoint；观察连接数、lag、503/reconnect。
+9. **canary 业务**：专用账号完成新单/发货，采集至少 100 个独立样本，确认 P95 ≤2s、P99 ≤5s、无敏感 payload。
+10. **显式 release gate**：只有上述证据及 rollout/rollback、Owner review 均绑定同一完整 HEAD 后才运行 `bash scripts/verify-notification-realtime.sh --release`；缺少任何 production-like 环境或证据文件必须非零退出。
+
+`--release` 的五个外部 artifact 通过 `RT_STAGING_LATENCY_EVIDENCE_FILE`、`RT_DEPLOYED_LOG_EVIDENCE_FILE`、`RT_ROLLOUT_EVIDENCE_FILE`、`RT_ROLLBACK_EVIDENCE_FILE`、`RT_OWNER_REVIEW_EVIDENCE_FILE` 提供。每个文件必须在 7 天内生成，包含精确的 `result=PASS` 与 `head=<40位HEAD>`；staging 还需 `sample_count/p95_ms/p99_ms`，日志需 `nginx/app`（Caddy 拓扑另需 `caddy`），rollout/rollback 需脚本报错中列出的阶段字段，Owner 需 `reviewer` 与 `decision=APPROVED`。证据路径与 token 不得提交仓库。
 
 ### 7.3 回滚（快速降级 / 版本回滚）
 

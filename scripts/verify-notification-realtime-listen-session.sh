@@ -4,8 +4,8 @@
 #
 # Reads a git-ignored production-like env file (xtrace off) and runs the actual-
 # role gate (server/scripts/verify-notification-realtime-listen-session.mjs).
-# Requires: RT_SESSION_DATABASE_URL, RT_SESSION_ROLE, optional
-# RT_SESSION_ENDPOINT_CLASS / RT_SESSION_REVISION / RT_SESSION_ARTIFACT.
+# Requires: RT_SESSION_DATABASE_URL, RT_SESSION_ROLE,
+# RT_SESSION_ENDPOINT_CLASS and RT_SESSION_REVISION.
 #
 # Any missing/expired evidence, role mismatch, pid-distinct != 1, missed round
 # or permission failure returns non-zero and MUST block enabling realtime.
@@ -31,10 +31,12 @@ true
 
 : "${RT_SESSION_DATABASE_URL:?RT_SESSION_DATABASE_URL is required}"
 : "${RT_SESSION_ROLE:?RT_SESSION_ROLE is required}"
+: "${RT_SESSION_ENDPOINT_CLASS:?RT_SESSION_ENDPOINT_CLASS is required}"
+: "${RT_SESSION_REVISION:?RT_SESSION_REVISION is required}"
 
 # Record the evidence artifact/revision + timestamp (redacted) for CHK-INF-007.
-revision="${RT_SESSION_REVISION:-$(git -C "$(dirname "$0")/.." rev-parse --short HEAD 2>/dev/null || echo unknown)}"
-endpoint_class="${RT_SESSION_ENDPOINT_CLASS:-session_pool}"
+revision="$RT_SESSION_REVISION"
+endpoint_class="$RT_SESSION_ENDPOINT_CLASS"
 [[ "$endpoint_class" == direct || "$endpoint_class" == session_pool ]] || { echo '[gate] invalid endpoint class' >&2; exit 1; }
 [[ "$revision" != unknown && "$revision" != placeholder && -n "$revision" ]] || { echo '[gate] non-placeholder revision required' >&2; exit 1; }
 echo "[gate] artifact_revision=${revision} endpoint_class=${endpoint_class} at $(date -u +%FT%TZ)"
