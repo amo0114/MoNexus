@@ -85,8 +85,8 @@ export class NotificationRealtimeListener {
     client.on('notification', (msg) => {
       void this.handleNotification(msg.payload ?? '')
     })
-    client.on('error', () => this.reportUnavailableOnce())
-    client.on('end', () => this.reportUnavailableOnce())
+    client.on('error', () => { void this.reportUnavailableOnce() })
+    client.on('end', () => { void this.reportUnavailableOnce() })
 
     try {
       await client.connect()
@@ -98,8 +98,8 @@ export class NotificationRealtimeListener {
       const ok = await this.probeOnce(client)
       if (this.stopped || this.client !== client) { await client.end().catch(() => {}); return }
     if (!ok) {
-      this.reportUnavailableOnce()
       await this.closeClient(client)
+      await this.reportUnavailableOnce()
       return
     }
     this.scheduleProbe(client)
@@ -107,7 +107,7 @@ export class NotificationRealtimeListener {
       this.options.onReady()
     } catch {
       await this.closeClient(client)
-      this.reportUnavailableOnce()
+      await this.reportUnavailableOnce()
     }
   }
 
@@ -135,7 +135,7 @@ export class NotificationRealtimeListener {
         if (this.stopped || this.client !== client) return
         const ok = await this.probeOnce(client)
         if (!ok || this.stopped || this.client !== client) {
-          this.reportUnavailableOnce()
+          await this.reportUnavailableOnce()
           return
         }
         this.scheduleProbe(client)
@@ -172,10 +172,15 @@ export class NotificationRealtimeListener {
     this.options.reportOutcome('routed')
   }
 
-  private reportUnavailableOnce(): void {
+  private async reportUnavailableOnce(): Promise<void> {
     if (this.unavailableReported) return
     this.unavailableReported = true
     this.clearProbe()
+    // Error/end and probe failures must release the dedicated connection
+    // before lifecycle schedules the next generation.  Capture the client
+    // before clearing it; closeClient is idempotent with stop()/connect().
+    const client = this.client
+    if (client) await this.closeClient(client)
     this.options.onUnavailable()
   }
 
