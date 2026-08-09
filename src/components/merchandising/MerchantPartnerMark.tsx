@@ -9,8 +9,9 @@
 // 质量保证) are deliberately absent.
 //
 // The mark renders nothing when the merchant is not an active partner
-// (AC-MERCH-021 expiry), and it is NOT part of the product badge strip
-// (D-MERCH-19).
+// (AC-MERCH-021 expiry): fail-closed on a missing projection, an invalid
+// validUntil, or a validUntil that is not strictly in the future. It is NOT
+// part of the product badge strip (D-MERCH-19).
 
 import { useState, type MouseEvent, type FocusEvent, type KeyboardEvent } from 'react'
 import { useId } from 'react'
@@ -27,11 +28,32 @@ export interface MerchantPartnerMarkProps {
   className?: string
 }
 
+/**
+ * Deterministic, fail-closed entitlement check (AC-MERCH-021).
+ *
+ * Active only when a partner projection exists AND `validUntil` parses to a
+ * finite timestamp strictly after `now`. Missing projection, unparseable /
+ * invalid date, already expired, or exactly-at-`now` are all inactive. `now`
+ * is injectable so tests are exact and never depend on wall-clock drift.
+ */
+export function isPartnerEntitlementActive(
+  merchantPartner: MerchantPartnerProjection | null | undefined,
+  now: number = Date.now(),
+): boolean {
+  if (!merchantPartner) return false
+  const expiry = Date.parse(merchantPartner.validUntil)
+  if (Number.isNaN(expiry)) return false
+  return expiry > now
+}
+
 export default function MerchantPartnerMark({ merchantPartner, className = '' }: MerchantPartnerMarkProps) {
   const tooltipId = useId()
   const [open, setOpen] = useState(false)
 
   if (!merchantPartner) return null
+  // Fail-closed on entitlement expiry (AC-MERCH-021): an invalid or
+  // non-future validUntil hides the mark even when a projection is present.
+  if (!isPartnerEntitlementActive(merchantPartner)) return null
 
   const show = () => setOpen(true)
   const hide = () => setOpen(false)

@@ -7,16 +7,40 @@ import userEvent from '@testing-library/user-event'
 import { axe } from 'vitest-axe'
 import { describe, expect, it } from 'vitest'
 import { DISPLAY_LABEL, type MerchantPartnerProjection } from '../../types/merchandising'
-import MerchantPartnerMark, { PARTNER_TOOLTIP } from './MerchantPartnerMark'
+import MerchantPartnerMark, { isPartnerEntitlementActive, PARTNER_TOOLTIP } from './MerchantPartnerMark'
 
-const partner: MerchantPartnerProjection = { label: '平台合作伙伴', validUntil: '2026-09-08T00:00:00.000Z' }
+// Far-future fixture so the frozen render/label/tooltip/a11y tests never
+// depend on wall-clock drift (AC-MERCH-021 expiry is now explicit).
+const partner: MerchantPartnerProjection = { label: '平台合作伙伴', validUntil: '2099-12-31T23:59:59.000Z' }
 
 describe('MerchantPartnerMark', () => {
-  it('renders nothing when the merchant is not an active partner (AC-MERCH-021)', () => {
+  it('renders nothing when not an active partner (AC-MERCH-021)', () => {
     const { container } = render(<MerchantPartnerMark merchantPartner={null} />)
     expect(container.firstChild).toBeNull()
     const { container: c2 } = render(<MerchantPartnerMark merchantPartner={undefined} />)
     expect(c2.firstChild).toBeNull()
+  })
+
+  it('renders nothing when the entitlement is in the past (AC-MERCH-021 expiry)', () => {
+    const { container } = render(
+      <MerchantPartnerMark merchantPartner={{ label: '平台合作伙伴', validUntil: '2020-01-01T00:00:00.000Z' }} />,
+    )
+    expect(container.firstChild).toBeNull()
+  })
+
+  it('renders nothing when validUntil is invalid (fail-closed)', () => {
+    const { container } = render(
+      <MerchantPartnerMark merchantPartner={{ label: '平台合作伙伴', validUntil: 'not-a-date' }} />,
+    )
+    expect(container.firstChild).toBeNull()
+  })
+
+  it('renders when the entitlement is strictly in the future (AC-MERCH-021)', () => {
+    const { container } = render(
+      <MerchantPartnerMark merchantPartner={{ label: '平台合作伙伴', validUntil: '2099-12-31T23:59:59.000Z' }} />,
+    )
+    expect(container.firstChild).not.toBeNull()
+    expect(screen.getByText(DISPLAY_LABEL.PARTNER)).toBeInTheDocument()
   })
 
   it('renders the frozen 平台合作伙伴 label as visible text', () => {
@@ -70,5 +94,35 @@ describe('MerchantPartnerMark', () => {
   it('is accessible with no axe violations', async () => {
     const { container } = render(<MerchantPartnerMark merchantPartner={partner} />)
     expect(await axe(container, { rules: { 'color-contrast': { enabled: false } } })).toHaveNoViolations()
+  })
+})
+
+describe('isPartnerEntitlementActive (AC-MERCH-021 fail-closed boundary)', () => {
+  // Fixed instant so past/equal/future/invalid are exact and deterministic.
+  const NOW = Date.parse('2026-08-09T00:00:00.000Z')
+  const past = { label: '平台合作伙伴' as const, validUntil: '2026-08-08T23:59:59.000Z' }
+  const equal = { label: '平台合作伙伴' as const, validUntil: '2026-08-09T00:00:00.000Z' }
+  const future = { label: '平台合作伙伴' as const, validUntil: '2026-08-09T00:00:01.000Z' }
+  const invalid = { label: '平台合作伙伴' as const, validUntil: 'not-a-date' }
+
+  it('is inactive for a past validUntil', () => {
+    expect(isPartnerEntitlementActive(past, NOW)).toBe(false)
+  })
+
+  it('is inactive when validUntil equals now (expires exactly at now)', () => {
+    expect(isPartnerEntitlementActive(equal, NOW)).toBe(false)
+  })
+
+  it('is active only for a strictly-future validUntil', () => {
+    expect(isPartnerEntitlementActive(future, NOW)).toBe(true)
+  })
+
+  it('is inactive for an invalid/unparseable validUntil', () => {
+    expect(isPartnerEntitlementActive(invalid, NOW)).toBe(false)
+  })
+
+  it('is inactive when the projection is null/undefined', () => {
+    expect(isPartnerEntitlementActive(null, NOW)).toBe(false)
+    expect(isPartnerEntitlementActive(undefined, NOW)).toBe(false)
   })
 })
