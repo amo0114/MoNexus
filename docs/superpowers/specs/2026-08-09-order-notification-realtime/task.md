@@ -94,7 +94,7 @@ git diff --check
 | 优先级 | P0 |
 | 对应需求 | REQ-F-005、REQ-F-016、REQ-NF-006、REQ-NF-009 |
 | 依赖 | T-DOC-001 |
-| 状态 | Pending |
+| 状态 | Done（I-RT-002 2026-08-09） |
 
 **Owned files**
 
@@ -113,14 +113,14 @@ git diff --check
 
 **工作**
 
-- [ ] 安装 `pg` runtime 与 `@types/pg` dev dependency，锁文件一致。
-- [ ] 新增 8 个 realtime env 配置及范围校验。
-- [ ] unset / 空值采用默认；非法 boolean / integer / 范围在 app.listen 前非零退出。
-- [ ] 增加 realtime=true / notification=false 的 config-module 启动 guard 与固定错误断言。
-- [ ] 拒启测试使用隔离 child process，不在 Vitest 主进程直接触发 process.exit。
-- [ ] 固定 channel、协议 v1、auth lead=60s 和 reason 枚举。
-- [ ] 实现 PG payload 校验、SSE envelope allowlist 与 serializer。
-- [ ] serializer 拒绝换行注入、非安全整数、超限 frame 和敏感字段。
+- [x] 安装 `pg` runtime 与 `@types/pg` dev dependency，锁文件一致。
+- [x] 新增 8 个 realtime env 配置及范围校验。
+- [x] unset / 空值采用默认；非法 boolean / integer / 范围在 app.listen 前非零退出。
+- [x] 增加 realtime=true / notification=false 的 config-module 启动 guard 与固定错误断言。
+- [x] 拒启测试使用隔离 child process，不在 Vitest 主进程直接触发 process.exit。
+- [x] 固定 channel、协议 v1、auth lead=60s 和 reason 枚举。
+- [x] 实现 PG payload 校验、SSE envelope allowlist 与 serializer。
+- [x] serializer 拒绝换行注入、非安全整数、超限 frame 和敏感字段。
 
 **DoD**
 
@@ -140,7 +140,13 @@ npx vitest run src/modules/notifications/__tests__/realtime-protocol.test.ts
 git diff -- server/prisma/schema.prisma server/prisma/migrations
 ~~~
 
-证据：待填。
+证据：I-RT-002（2026-08-09）。
+- `npm run build`（server tsc）exit 0。
+- `npx vitest run src/__tests__/config-realtime-guards.test.ts src/__tests__/config-production-guards.test.ts src/__tests__/faka-bridge-config.test.ts src/modules/notifications/__tests__/realtime-protocol.test.ts src/modules/notifications/__tests__/dispatcher.test.ts` → 5 files / 68 tests passed（含 9 个 realtime config guard 子进程用例 + 18 个 protocol 用例）。
+- 依赖：`pg` ^8.23.0 runtime、`@types/pg` ^8.21.0 dev，`server/package-lock.json` 同步；仅这两个新依赖。
+- 配置：8 个 `NOTIFICATION_REALTIME_*` env 进入 `server/src/config/index.ts`（Zod schema + `integerEnvSchema` / `realtimeBooleanEnvSchema` + `notificationRealtime` 导出）；unset/空 → 默认；非法 boolean / 非十进制整数 / 越界 → config 初始化非零退出；realtime=true && notification=false → 固定错误含两个变量名并 exit(1)。
+- protocol：`realtime/constants.ts`（静态 channel `monexus_notification_created_v1`、v1、auth lead=60s、reason 枚举、probe=30s、重连退避、64KiB frame cap）；`realtime/protocol.ts`（PG payload 校验、SSE envelope allowlist、serializer：换行 JSON 转义、非安全整数拒绝、超限 frame 拒绝、敏感字段不复制）。
+- DoD：默认 realtime=false 已断言；schema / migrations 无 diff；`git diff -- server/prisma/schema.prisma server/prisma/migrations` 为空。
 
 ### T-BE-002 — Dispatcher 同事务 PostgreSQL hint
 
