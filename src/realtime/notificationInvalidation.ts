@@ -101,7 +101,7 @@ export class ExactIdLru {
   }
 }
 
-type Subscriber = () => void
+type Subscriber = () => void | Promise<void>
 
 /**
  * 300ms per-topic coalescer with single in-flight reload + dirty rerun.
@@ -111,6 +111,7 @@ export class InvalidationScheduler {
   private readonly timers = new Map<InvalidationTopic, ReturnType<typeof setTimeout>>()
   private readonly inflight = new Set<InvalidationTopic>()
   private readonly dirty = new Set<InvalidationTopic>()
+  private epoch = 0
 
   subscribe(topic: InvalidationTopic, cb: Subscriber): () => void {
     let set = this.subscribers.get(topic)
@@ -145,18 +146,27 @@ export class InvalidationScheduler {
       return
     }
     this.inflight.add(topic)
+    const epoch = this.epoch
+    void this.run(topic, epoch)
+  }
+
+  private async run(topic: InvalidationTopic, epoch: number): Promise<void> {
     const set = this.subscribers.get(topic)
-    if (set) {
-      for (const cb of [...set]) cb()
-    }
-    this.inflight.delete(topic)
+    const pending = set ? [...set].map((cb) => {
+      try { return Promise.resolve(cb()) } catch (error) { return Promise.reject(error) }
+    }) : []
+    await Promise.allSettled(pending)
+    if (epoch !== this.epoch) { this.inflight.delete(topic); return }
     if (this.dirty.has(topic)) {
       this.dirty.delete(topic)
-      this.dispatch(topic)
+      await this.run(topic, epoch)
+      return
     }
+    this.inflight.delete(topic)
   }
 
   clearAll(): void {
+    this.epoch++
     for (const timer of this.timers.values()) clearTimeout(timer)
     this.timers.clear()
     this.inflight.clear()

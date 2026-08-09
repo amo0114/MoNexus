@@ -3,7 +3,7 @@
  * - Status tabs via `?tab=active|delivered|done`
  * - Notification deeplink `/orders?focus=<id>` (SPEC-NOTIFY-001 NTF-04)
  */
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Package, ShoppingBag } from 'lucide-react'
 import { getOrderDetail, getOrders } from '../api/orders'
@@ -46,6 +46,7 @@ export default function OrdersPage() {
   const [loading, setLoading] = useState(true)
   const [selectedOrder, setSelectedOrder] = useState<UserOrderDetail | null>(null)
   const [loadingOrderId, setLoadingOrderId] = useState<number | null>(null)
+  const orderRequestRef = useRef(0)
 
   const load = useCallback(async (opts?: { background?: boolean }) => {
     // Background realtime reload keeps current content (no full-page skeleton).
@@ -77,12 +78,15 @@ export default function OrdersPage() {
     }
   }, [])
 
-  useNotificationInvalidation('buyer.orders', () => {
-    void load({ background: true })
+  useNotificationInvalidation('buyer.orders', async () => {
+    await load({ background: true })
+    const current = selectedOrder
+    if (current) await reloadDetailFor(current.id)
   })
-  useNotificationInvalidation('all.visible', () => {
-    void load({ background: true })
-    if (selectedOrder) void reloadDetailFor(selectedOrder.id)
+  useNotificationInvalidation('all.visible', async () => {
+    await load({ background: true })
+    const current = selectedOrder
+    if (current) await reloadDetailFor(current.id)
   })
 
   const visible = useMemo(() => filterOrdersByTab(orders, tab), [orders, tab])
@@ -98,13 +102,15 @@ export default function OrdersPage() {
 
   const openOrder = useCallback(
     async (orderId: number) => {
+      const request = ++orderRequestRef.current
       setLoadingOrderId(orderId)
       try {
-        setSelectedOrder(await getOrderDetail(orderId))
+        const detail = await getOrderDetail(orderId)
+        if (request === orderRequestRef.current) setSelectedOrder(detail)
       } catch (err) {
         showToast(getApiErrorMessage(err, '获取订单详情失败'), 'error')
       } finally {
-        setLoadingOrderId(null)
+        if (request === orderRequestRef.current) setLoadingOrderId(null)
       }
     },
     [showToast],

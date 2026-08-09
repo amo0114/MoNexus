@@ -9,7 +9,7 @@ import { useEffect, useRef } from 'react'
 import type { InvalidationTopic } from '../realtime/notificationInvalidation.js'
 import { getInvalidationScheduler } from '../realtime/runtime.js'
 
-export function useNotificationInvalidation(topic: InvalidationTopic, onInvalidate: () => void): void {
+export function useNotificationInvalidation(topic: InvalidationTopic, onInvalidate: () => void | Promise<void>): void {
   const cbRef = useRef(onInvalidate)
   cbRef.current = onInvalidate
 

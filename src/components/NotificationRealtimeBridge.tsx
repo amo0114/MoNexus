@@ -74,6 +74,13 @@ export function NotificationRealtimeBridge(): null {
     }
   }, [user, accessToken])
 
+  useEffect(() => () => {
+    streamRef.current?.stop()
+    resetRealtimeRuntime()
+    lastUserIdRef.current = null
+    lastTokenRef.current = null
+  }, [])
+
   // 回前台立即权威同步 (spec 7.2 / D-RT-15): visible -> all.visible, no Toast.
   useEffect(() => {
     const onVisible = () => {

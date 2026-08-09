@@ -34,6 +34,14 @@ export class SseParser {
   feed(chunk: string): SseFrame[] {
     const out: SseFrame[] = []
     this.buffer += chunk
+    // Bound an unterminated line as well as completed fields.
+    if (!this.oversized && new TextEncoder().encode(this.buffer).byteLength + this.frameBytes > SSE_MAX_FRAME_BYTES) {
+      this.oversized = true
+      this.frame = { dataLines: [] }
+      this.buffer = ''
+      this.tooLargeReported = true
+      out.push({ tooLarge: true })
+    }
     let newlineIndex: number
     while ((newlineIndex = this.buffer.indexOf('\n')) !== -1) {
       let line = this.buffer.slice(0, newlineIndex)
@@ -68,7 +76,7 @@ export class SseParser {
 
   private processLine(line: string): SseFrame | null {
     if (line === '') {
-      if (this.oversized) { this.oversized = false; this.frame = { dataLines: [] }; this.frameBytes = 0; return null }
+      if (this.oversized) { this.oversized = false; this.tooLargeReported = false; this.frame = { dataLines: [] }; this.frameBytes = 0; return null }
       return this.dispatchFrame()
     }
     // Comment line.

@@ -47,6 +47,7 @@ export class NotificationStream {
   private stopped = false
   private generation = 0
   private refreshPromise: Promise<RefreshOutcome> | null = null
+  private readyGeneration = 0
 
   constructor(private readonly events: NotificationStreamEvents) {}
 
@@ -85,9 +86,8 @@ export class NotificationStream {
   }
 
   private enterConnecting(): void {
-    this.clearTimers()
+    if (this.state !== 'degraded') this.clearTimers()
     this.abortFetch()
-    this.backoffIndex = 0
     this.setState('connecting')
     void this.connect()
   }
@@ -142,7 +142,7 @@ export class NotificationStream {
       return
     }
 
-    if (this.stopped || this.controller === null || generation !== this.generation) return
+    if (this.stopped || this.controller === null || generation !== this.generation || token !== this.token) return
     if (res.status === 200) {
       this.onStreamOpened(res, generation)
       return
@@ -151,7 +151,7 @@ export class NotificationStream {
     // Non-200: all decisions happen before any SSE bytes.
     if (res.status === 401) {
       const outcome = await this.refreshOnce(token)
-      if (this.stopped) return
+      if (this.stopped || generation !== this.generation || token !== this.token) return
       if (outcome.ok) {
         this.token = outcome.token
         this.enterConnecting()
@@ -202,8 +202,12 @@ export class NotificationStream {
         const { value, done } = await reader.read()
         if (done) break
         if (this.stopped || generation !== this.generation) return
+        if (this.stopped || generation !== this.generation) return
         const frames = parser.feed(decoder.decode(value, { stream: true }))
-        for (const frame of frames) this.handleFrame(frame)
+        for (const frame of frames) {
+          if (this.stopped || generation !== this.generation) return
+          this.handleFrame(frame, generation)
+        }
       }
     } catch (err) {
       if ((err as Error).name === 'AbortError') return
@@ -213,13 +217,16 @@ export class NotificationStream {
     this.enterDegraded(0)
   }
 
-  private handleFrame(frame: SseFrame): void {
+  private handleFrame(frame: SseFrame, generation: number): void {
+    if (generation !== this.generation || this.stopped) return
     if (frame.comment) return
     if (frame.tooLarge) {
       this.enterDegraded(0, 'frame_too_large')
       return
     }
     if (frame.event === 'stream.ready') {
+      if (this.readyGeneration === generation) return
+      this.readyGeneration = generation
       this.setState('healthy')
       this.backoffIndex = 0
       this.clearTimers()
@@ -281,7 +288,10 @@ export class NotificationStream {
   private enterDegraded(retryAfterFloorMs: number, reason?: string): void {
     if (this.stopped) return
     this.setState('degraded')
-    this.clearTimers()
+    if (this.state !== 'degraded') {
+      if (this.calibrationTimer) clearTimeout(this.calibrationTimer)
+      this.calibrationTimer = null
+    }
     this.startFallback()
     this.scheduleBackoff(retryAfterFloorMs)
     if (reason) this.events.onDegraded?.(reason)

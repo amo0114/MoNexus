@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Bell, CheckCheck, Loader2 } from 'lucide-react'
 import {
@@ -36,8 +36,10 @@ export default function NotificationsPage() {
   const [loadingMore, setLoadingMore] = useState(false)
   const [workingId, setWorkingId] = useState<number | null>(null)
   const [markingAll, setMarkingAll] = useState(false)
+  const requestRef = useRef(0)
 
   const load = useCallback(async (opts?: { append?: boolean; cursor?: number | null }) => {
+    const request = ++requestRef.current
     const append = opts?.append === true
     if (append) setLoadingMore(true)
     else setLoading(true)
@@ -49,14 +51,15 @@ export default function NotificationsPage() {
         cursor: opts?.cursor ?? undefined,
         category,
       })
-      setItems((prev) => (append ? [...prev, ...data.notifications] : data.notifications))
-      setNextCursor(data.nextCursor)
-      setHasMore(data.hasMore)
+      if (request !== requestRef.current) return
+      setItems((prev) => append
+        ? [...prev, ...data.notifications.filter((n) => !prev.some((p) => p.id === n.id))]
+        : data.notifications)
+      if (!append || request === requestRef.current) { setNextCursor(data.nextCursor); setHasMore(data.hasMore) }
     } catch (err) {
       showToast(getApiErrorMessage(err, '加载消息失败'), 'error')
     } finally {
-      setLoading(false)
-      setLoadingMore(false)
+      if (request === requestRef.current) { setLoading(false); setLoadingMore(false) }
     }
   }, [filter, showToast])
 
@@ -68,27 +71,23 @@ export default function NotificationsPage() {
   // filter's first page in the background — keep existing content, no skeleton,
   // and never corrupt pagination (dedupe by id, no append to history).
   const reloadFirstPageBackground = useCallback(async () => {
+    const request = ++requestRef.current
     try {
       const category: NotificationCategory | undefined = filter === 'all' ? undefined : filter
       const data = await getNotifications({ limit: 20, category })
+      if (request !== requestRef.current) return
       setItems((prev) => {
-        const seen = new Set(prev.map((n) => n.id))
-        return [...prev, ...data.notifications.filter((n) => !seen.has(n.id))]
+        const first = new Map(data.notifications.map((n) => [n.id, n]))
+        return [...data.notifications, ...prev.filter((n) => !first.has(n.id))]
       })
-      setNextCursor(data.nextCursor)
-      setHasMore(data.hasMore)
       void refreshNotificationUnread()
     } catch {
       // keep old values; wait for the next calibration/fallback tick
     }
   }, [filter, refreshNotificationUnread])
 
-  useNotificationInvalidation('notifications', () => {
-    void reloadFirstPageBackground()
-  })
-  useNotificationInvalidation('all.visible', () => {
-    void reloadFirstPageBackground()
-  })
+  useNotificationInvalidation('notifications', reloadFirstPageBackground)
+  useNotificationInvalidation('all.visible', reloadFirstPageBackground)
 
   async function handleMarkRead(item: Notification) {
     if (item.status === 'read') {
