@@ -314,7 +314,7 @@ Identity Backend 只输出 auth controller no-store/完整 projection tests；Id
 
 ## 6. API/DTO Contract-first 规则
 
-1. `F0` commit 固定 DTO fixture 后，前后端可各自在独立 worktree 并行（`B_CAT` 只补 required categoryId callers/fixtures，不新增业务 DTO）。
+1. `F0` 只固定 schema/shared contracts 与 DTO fixture 基线；`B_CAT` 完成 required-categoryId compatibility 补全。只有实际 `F` 记录并通过完整 Gate 后，Catalog/Merch 前后端业务 lanes 才可从 `F` 分叉并行；`F0`/`B_CAT` 都不解锁业务 lanes。
 2. 前端不得从页面代码猜测数据库字段；只依赖公开 DTO。
 3. 后端不得因前端实现方便而泄露 InventoryItem.content、支付明细、内部推广审核备注或外部对象 key。
 4. Contract fixture 变化必须先更新对应 SPEC 的 D/REQ/AC 和版本；Frozen 后需重新 Owner 批准。

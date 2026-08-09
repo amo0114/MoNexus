@@ -8,7 +8,7 @@
 | 状态 | **Frozen for Implementation — all tasks Pending** |
 | 输入 | [spec.md](./spec.md) · [plan.md](./plan.md) |
 
-规格已经 Owner 冻结。任何任务仍须先满足 `S`、依赖与 Entry Gate 才能切换为 In Progress；每个任务先 Red test，再实现，再运行目标与直接受影响回归，完成时把证据写入 implement/checklist。
+规格已经 Owner 冻结。任务按执行 DAG 分层满足 Entry：F0 task 需 `A_CMI`，B_CAT task 需 `F0`，全部 Catalog/Merch 业务 task 需共同基线 `F`；`S` 单独不足（仅解锁文档基线，不解锁任何实施/业务 task）。每个任务先 Red test，再实现，再运行目标与直接受影响回归，完成时把证据写入 implement/checklist。
 
 ---
 

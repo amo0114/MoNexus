@@ -264,7 +264,7 @@ CI检查：public runtime资产必须在approved manifest、sha256一致、总gz
 
 ## 9. 发布
 
-1. 部署 F0 migrations 和 backend，UI仍关闭；cleanup legacy isHot=false。
+1. 先部署由 F0 引入且已随最终集成基线（含共同基线 `F`）验证的 migrations，feature/backend/UI 仍关闭；cleanup legacy isHot=false。业务 backend 只能从包含 `F` 且通过各 lane/`M_CMI` release Gate 的 release tip 部署，不能从 `F0` tip 发布。
 2. 手动run ranking，验证计数/抽样/上一run fallback。
 3. 创建测试PromotionPackage，专用merchant完成request→approve→charge→public disclosure。
 4. 验证cancel/refund和point ledger。
