@@ -72,6 +72,8 @@ jobs:
               - 'e2e/**'
               - 'playwright.config.ts'
               - 'playwright.legal-pages.config.ts'
+              - 'playwright.notification-realtime.config.ts'
+              - 'scripts/verify-notification-realtime-e2e.sh'
             code:
               - 'server/**'
               - 'src/**'
@@ -84,6 +86,8 @@ jobs:
               - 'tailwind.config.js'
               - 'e2e/**'
               - 'playwright.config.ts'
+              - 'playwright.notification-realtime.config.ts'
+              - 'scripts/verify-notification-realtime-e2e.sh'
               - '.github/workflows/ci.yml'
 
   backend:
@@ -342,6 +346,76 @@ jobs:
           path: playwright-report/
           retention-days: 7
 
+  notification-realtime-e2e:
+    name: Notification realtime Playwright E2E
+    needs: [changes, backend, frontend]
+    # Keep the realtime suite visible as an independent gate. It follows the
+    # same PR/push selection as the compatibility E2E job, but never shares
+    # that job's database, ports, server processes, retries, or artifacts.
+    if: >-
+      !failure() && !cancelled() && (
+        github.event_name == 'push' ||
+        (github.base_ref == 'master' && needs.changes.outputs.code == 'true') ||
+        needs.changes.outputs.e2e == 'true' ||
+        contains(github.event.pull_request.labels.*.name, 'run-e2e')
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: monexus
+          POSTGRES_PASSWORD: monexus_dev_2026
+          POSTGRES_DB: monexus_test_notification_realtime
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U monexus -d monexus_test_notification_realtime"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://monexus:monexus_dev_2026@localhost:5432/monexus_test_notification_realtime?schema=public
+      TEST_DATABASE_URL: postgresql://monexus:monexus_dev_2026@localhost:5432/monexus_test_notification_realtime?schema=public
+      RT_ENV_FILE: ${{ runner.temp }}/notification-realtime.env
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            server/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Install backend dependencies
+        run: npm --prefix server ci
+
+      - name: Generate Prisma client
+        run: npm --prefix server run db:generate
+
+      - name: Install Playwright chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Create guarded realtime E2E environment
+        run: |
+          umask 077
+          printf '%s\n' "TEST_DATABASE_URL=${TEST_DATABASE_URL}" > "$RT_ENV_FILE"
+
+      - name: Run notification realtime E2E tests
+        run: bash scripts/verify-notification-realtime-e2e.sh
+
   deployment-contract:
     # This is intentionally independent of source-path filtering: a malformed
     # workflow or forced-command wrapper must not reach the release branch just
@@ -361,7 +435,7 @@ jobs:
     # upstream job failed — skipped jobs (docs-only or unlabeled-E2E PRs)
     # count as success.
     name: CI OK
-    needs: [changes, backend, frontend, e2e, deployment-contract]
+    needs: [changes, backend, frontend, e2e, notification-realtime-e2e, deployment-contract]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5

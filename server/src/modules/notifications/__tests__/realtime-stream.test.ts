@@ -291,6 +291,9 @@ describe('realtime SSE stream (SPEC-NOTIFY-RT-001 T-BE-004)', () => {
     const deadline = Date.now() + 3000
     while (Date.now() < deadline && stream.status === 0) await sleep(50)
     expect(stream.status).toBe(401)
+    // Stream admission owns the dedicated 30/60s policy; it must not consume
+    // or expose the general REST limiter's 15-minute budget.
+    expect(stream.headers['ratelimit-policy']).toContain('30;w=60')
     expect(stream.frames.filter(f => f.event)).toHaveLength(0)
   })
 

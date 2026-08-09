@@ -7,13 +7,21 @@ import { notificationRealtimeStream, notificationStreamRateLimiter } from './rea
 
 const router = Router()
 
+// Keep stream admission in its frozen order: dedicated connect limiter first,
+// then authentication/status, flags/health/caps, and finally SSE headers.
+// app.ts excludes this exact route from the general REST limiter.
+router.get(
+  '/stream',
+  notificationStreamRateLimiter,
+  authenticate,
+  requireActiveUser,
+  notificationRealtimeStream,
+)
+
 router.use(authenticate, requireActiveUser)
 
 router.get('/', validate({ query: listNotificationsQuerySchema }), controller.list)
 router.get('/unread-count', controller.unreadCount)
-// SSE stream uses its own route limiter (60s connect window), independent of the
-// global /api limiter and before the greedy /:id routes.
-router.get('/stream', notificationStreamRateLimiter, notificationRealtimeStream)
 // read-all before :id/read so "read-all" is not parsed as an id
 router.post('/read-all', controller.markAllRead)
 router.post('/:id/read', validate({ params: markAsReadParamsSchema }), controller.markRead)
