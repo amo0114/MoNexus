@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | SPEC-MERCH-001 |
-| 版本 | 0.1.0 |
+| 版本 | 0.1.1 |
 | 日期 | 2026-08-09 |
 | 状态 | **Frozen for Implementation** |
 | Owner | MoNexus Project Owner |
@@ -665,8 +665,11 @@ Owner 已于 2026-08-09 批准本规格与 PAR-CMI-001。积分、生产资产�
 
 Draft变更同步六件套/PAR/版本/追溯。Frozen后改变D/MERCH/REQ/AC、销量口径、积分扣退、disclosure、禁词、资产provider流程或Foundation模型，必须退回Draft并重新批准。
 
+Owner 于 2026-08-09 批准 v0.1.1 唯一修订：CMI Foundation DAG 改为 `S→A_CMI→F0→B_CAT→F`；只修执行 DAG/ownership/Gate，不改 D-MERCH/REQ/AC/API/积分/展示。
+
 ### 修订记录
 
 | 版本 | 日期 | 状态 | 说明 |
 | --- | --- | --- | --- |
 | 0.1.0 | 2026-08-09 | Frozen for Implementation | Owner 批准：自然热卖、积分推广、精选/自营/合作权益、Image2 资产治理 |
+| 0.1.1 | 2026-08-09 | Frozen for Implementation | Owner 批准唯一修订：CMI Foundation DAG 改为 S→A_CMI→F0→B_CAT→F；Merch 只消费最终 F、不参与 B_CAT，schema 仍 F0 落地 |

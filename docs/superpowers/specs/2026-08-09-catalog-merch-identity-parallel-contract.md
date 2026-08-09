@@ -3,11 +3,11 @@
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | PAR-CMI-001 |
-| 版本 | 0.1.0 |
+| 版本 | 0.1.1 |
 | 日期 | 2026-08-09 |
 | 状态 | **Frozen for Implementation** |
 | 审查基线 | `develop@da38dd0580eeac737f5291556b9dbdf832d91970` |
-| 关联规格 | SPEC-CATALOG-OPS-001 v0.1.0 · SPEC-MERCH-001 v0.1.0 · SPEC-IDENTITY-SYNC-001 v0.1.0 |
+| 关联规格 | SPEC-CATALOG-OPS-001 v0.1.1 · SPEC-MERCH-001 v0.1.1 · SPEC-IDENTITY-SYNC-001 v0.1.0 |
 | 批准人 | MoNexus Project Owner |
 | 批准日期 | 2026-08-09 |
 | 技术复审指纹 | Draft artifact SHA-256 `a6cbb48da46fd9987d5101b476f401e02e69d0786a8028ebda9c00ecc8f35841` |
@@ -15,7 +15,7 @@
 
 本文件是三份规格审核通过后进行多 Agent 实施时的唯一跨规格协调契约。三份规格分别冻结业务语义；本文件只冻结共享文件所有权、前置提交、Worktree/数据库/端口隔离与合并顺序。它不是第四份业务规格。
 
-Owner 已批准三份规格与本并行契约。只有本 19-document bundle 以 `D` 为直接父提交形成 docs-only `S` 后，业务实施 lane 才可按各自 Entry Gate 启动。
+Owner 已批准三份规格与本并行契约。v0.1.1 唯一修订把 CMI Foundation DAG 改为 `S→A_CMI→F0→B_CAT→F`；只有共同基线 `F` 记录后，Catalog/Merch 业务实施 lane 才可按各自 Entry Gate 启动（Identity lanes 仍从 `S` 启动）。
 
 ---
 
@@ -29,34 +29,44 @@ SPEC-CATALOG-OPS-001 与 SPEC-MERCH-001 都需要新增数据库模型，并最�
 - `src/pages/StorePage.tsx`；
 - 商家商品写 schema 中遗留的 `isHot`。
 
-因此冻结一个短且串行的 **FND-CMI-001 Shared Foundation Gate**：单一 Owner 只落数据库结构、迁移与共享类型，不实现页面、排名算法、分类工作流或推广业务。Foundation commit 通过后，各 lane 从同一 SHA 分叉并行。
+因此冻结一条串行且可证明的 CMI Foundation DAG：Foundation Owner 只落数据库结构、迁移与共享类型（`F0`），Catalog Category Bootstrap Owner 完成分类 bootstrap/resolver 与 required categoryId callers（`B_CAT`），协调者记录共同业务基线 `F`（可等于 `B_CAT`）。`F0`/`B_CAT` 都不解锁业务 lanes；只有 `F` 通过后，各 Catalog/Merch lane 从同一 `F` 分叉并行。
 
-IDENTITY-SYNC 不依赖商品 Foundation，可以与 FND-CMI-001 同时推进；它的 `Layout.tsx` 集成卡必须等待通知实时化对该文件的 Owner 释放。
+IDENTITY-SYNC 不依赖商品 Foundation，可以与 F0/B_CAT/F 链同时推进；它的 `Layout.tsx` 集成卡必须等待通知实时化对该文件的 Owner 释放。
 
 ~~~text
 latest origin/develop D
-          │ Owner approval
+          │ Owner approval（v0.1.0 freeze）
           ▼
-Frozen spec-only SHA S（S^ = D；docs-only）
+Frozen spec-only SHA S（S^ = D；docs-only v0.1.0）
           ├──────────────► Identity Backend + Core/FE（S 为祖先；不碰 Layout/auth middleware）
           │
-          └─► Foundation SHA F（S 为祖先；单 owner）
-                         │
-             ┌───────────┼──────────────┐
-             ▼           ▼              ▼
-        Catalog BE   Catalog FE     Merchandising BE/FE
-                         │
-                         └─► Catalog host release SHA H
-             └───────────┬──────────────┘
-                         ▼
-        CMI merge baseline M_CMI（F + lane tips + H 共同可达）
-                         ▼
-             CMI Integration Owner（products/Store/hosts）
-                         ▼
-                   Cross-spec QA
+          ▼
+A_CMI（v0.1.1 docs-only amendment；A_CMI^ = S；只改 PAR + Catalog/Merch 六件套；不碰 Identity）
+          │
+          ▼
+Foundation schema tip F0（从 A_CMI 分叉；单 owner；schema/migrations/shared-contracts；categoryId 最终 NOT NULL）
+          │
+          ▼
+Catalog Category Bootstrap B_CAT（从 F0 分叉；分类 bootstrap/resolver + required categoryId callers；串行特殊卡）
+          │
+          ▼
+共同业务基线 F（全量 Foundation qualification Gate；B_CAT 为 F 祖先；F 可等于 B_CAT；只有 F 解锁业务 lanes）
+          │
+  ┌────────┼──────────────┐
+  ▼        ▼              ▼
+Catalog BE  Catalog FE    Merchandising BE/FE
+           │              │
+           └─► Catalog host release SHA H
+  └────────┴──────────────┘
+                      ▼
+     CMI merge baseline M_CMI（F + lane tips + H 共同可达）
+                      ▼
+     CMI Integration Owner（products/Store/hosts）
+                      ▼
+                Cross-spec QA
 
 Notification release N + Identity Core/FE C_ID
-                         ▼
+                      ▼
 Identity merge baseline M_ID ─► Identity Integration Owner ─► Identity QA
 ~~~
 
@@ -67,19 +77,23 @@ Identity merge baseline M_ID ─► Identity Integration Owner ─► Identity Q
 本规格冻结以下可证明 DAG；“最新 develop”只能用于产生 `S`，不能绕过 `S` 直接成为实施分支基线：
 
 - `D`：Owner Freeze 时记录的最新 `origin/develop` SHA；
-- `S`：以 `D` 为直接父提交、只包含三套六件套与 PAR-CMI-001 的 Frozen spec-only commit；
-- `F`：从 `S` 开始、通过 §3 Gate 的 Foundation tip；
+- `S`：以 `D` 为直接父提交、只包含三套六件套与 PAR-CMI-001 的 Frozen spec-only commit（v0.1.0）；
+- `A_CMI`：本次 v0.1.1 docs-only amendment，直接父为 `S`；只修改 PAR-CMI-001 与 Catalog/Merch 六件套；实际 SHA 在 commit 后由协调者记录，不在文档伪造自引用；
+- `F0`：Foundation Owner 从 `A_CMI` 分叉的 schema/migrations/shared-contracts tip；包含 Catalog+Merch 全部冻结 models/constraints，`Product.categoryId` 完成 nullable→backfill→zero-null→最终 NOT NULL；通过 §3.2 F0 schema Gate；F0 不要求完整 application/server build（required categoryId 在 `B_CAT` 前会使既有 callers 类型不兼容）；
+- `B_CAT`：Catalog Category Bootstrap Owner 从 `F0` 分叉的独立原子提交；只含分类 bootstrap/resolver、legacy type→categoryId resolution、required categoryId 编译必需的 Product create/upsert production callers、seed、test helpers/fixtures 与必要输入类型；通过 §3.3；
+- `F`：完整 Foundation qualification Gate 合格后的共同业务基线；`B_CAT` 必须是其祖先（若 `B_CAT` tip 已通过全量 Gate，`F` 可等于 `B_CAT`；禁止空 evidence commit）；只有 `F` 解锁业务 lanes；
 - `H`：Catalog Frontend 完成所有 `AdminPage.tsx`/`MerchantDashboardPage.tsx` Catalog-owned 修改后的 host release tip；`F` 必须是其祖先；
 - `M_CMI`：使 `F`、Catalog BE tip、`H`、Merch BE tip、Merch FE/Assets tip 全部成为祖先的 CMI merge baseline；CMI wiring 从它开始；
 - `N`：通知 Owner 释放 `Layout.tsx` 的 notification release SHA；
 - `C_ID`：包含所需 Identity Core/FE commits 的 handoff tip，且 `S` 为其祖先；
 - `M_ID`：同时以 `N` 与 `C_ID` 为祖先的 Identity Layout merge baseline；Identity Layout 只能从它开始。
 
-任何较新的 `origin/develop` 只能通过显式 merge/rebase 纳入，同时仍须保持相应 `S` 或 `F` 的祖先关系并重跑 delta Gate。禁止从当前分叉的 `wip/root-mixed-20260808` 创建实施分支。
+任何较新的 `origin/develop` 只能通过显式 merge/rebase 纳入，同时仍须保持相应 `S/A_CMI/F0/B_CAT/F` 的祖先关系并重跑 delta Gate。禁止从当前分叉的 `wip/root-mixed-20260808` 创建实施分支。
 
 | Lane | 建议分支 | 独立 Worktree | 专用测试库 | 必含祖先/起始基线 | Backend | Frontend |
 | --- | --- | --- | --- | --- | ---: | ---: |
-| Shared Foundation | `feat/catalog-merch-foundation` | `/root/projects/worktrees/monexus-catalog-merch-foundation` | `monexus_test_catalog_merch_foundation` | 从 `S` 分叉；产出 `F` | 3120 | 不启动 |
+| Shared Foundation | `feat/catalog-merch-foundation` | `/root/projects/worktrees/monexus-catalog-merch-foundation` | `monexus_test_catalog_merch_foundation` | 从 `A_CMI` 分叉；产出 `F0`（schema tip） | 3120 | 不启动 |
+| Catalog Category Bootstrap | `feat/catalog-category-bootstrap` | `/root/projects/worktrees/monexus-catalog-category-bootstrap` | `monexus_test_catalog_bootstrap` | 从 `F0` 分叉；产出 `B_CAT`（串行特殊卡；`F` 记录后释放） | 3129 | 不启动 |
 | Catalog Backend | `feat/catalog-ops-backend` | `/root/projects/worktrees/monexus-catalog-ops-backend` | `monexus_test_catalog_ops_be` | 从 `F` 分叉 | 3121 | 不启动 |
 | Catalog Frontend | `feat/catalog-ops-frontend` | `/root/projects/worktrees/monexus-catalog-ops-frontend` | `monexus_test_catalog_ops_fe` | 从 `F` 分叉；产出 `H` | 3122 | 5192 |
 | Merch Backend | `feat/merchandising-backend` | `/root/projects/worktrees/monexus-merchandising-backend` | `monexus_test_merch_be` | 从 `F` 分叉 | 3123 | 不启动 |
@@ -88,6 +102,8 @@ Identity merge baseline M_ID ─► Identity Integration Owner ─► Identity Q
 | Identity Core / FE | `fix/identity-profile-sync` | `/root/projects/worktrees/monexus-identity-profile-sync` | `monexus_test_identity_sync` | Core 从 `S`；FE 从包含 `S` 的 Core contract tip | 3127 | 5195 |
 | Identity Layout Integration | `fix/identity-profile-layout-integration` | `/root/projects/worktrees/monexus-identity-profile-layout` | `monexus_test_identity_layout` | 从 `M_ID` 开始 | 3128 | 5198 |
 | Cross-spec Integration | `feat/catalog-merch-integration` | `/root/projects/worktrees/monexus-catalog-merch-integration` | `monexus_test_catalog_merch_integration` | 从 `M_CMI` 开始 | 3126 | 5196 |
+
+只有共同基线 `F` 解锁 Catalog/Merch 业务 lanes；`F0` 与 `B_CAT` 都不能。若 `B_CAT` tip 已通过全量 Gate，协调者记录 `F = B_CAT`；否则由唯一 Foundation Owner 提交 corrective delta 后记录该 tip 为 `F`。禁止空 evidence commit。
 
 隔离规则：
 
@@ -100,7 +116,11 @@ Identity merge baseline M_ID ─► Identity Integration Owner ─► Identity Q
 每条 Gate 的 Evidence Ledger 必须记录实际 SHA，并保存以下命令的 exit 0；仅记录“基于/包含”文字不构成证据：
 
 ~~~bash
-git merge-base --is-ancestor <S> <F>
+git merge-base --is-ancestor <D> <S>
+git merge-base --is-ancestor <S> <A_CMI>
+git merge-base --is-ancestor <A_CMI> <F0>
+git merge-base --is-ancestor <F0> <B_CAT>
+git merge-base --is-ancestor <B_CAT> <F>      # B_CAT 必须为 F 祖先（相等时对同一 commit 仍 exit 0）
 git merge-base --is-ancestor <F> <catalog-or-merch-lane-tip>
 git merge-base --is-ancestor <H> <M_CMI>
 git merge-base --is-ancestor <catalog-or-merch-lane-tip> <M_CMI>
@@ -110,9 +130,16 @@ git merge-base --is-ancestor <C_ID> <M_ID>
 
 ---
 
-## 3. FND-CMI-001 — Shared Foundation Gate
+## 3. CMI Foundation DAG — F0 / B_CAT / F
 
-### 3.1 唯一 Owner
+### 3.1 节点定义（v0.1.1 Owner 批准的唯一修订）
+
+- `A_CMI`：本次 v0.1.1 docs-only amendment，直接父为 `S`；只修改 PAR-CMI-001 与 Catalog/Merch 六件套；实际 SHA 在 commit 后由协调者记录，不在文档伪造自引用。
+- `F0`：Foundation Owner 从 `A_CMI` 分叉的 schema/migrations/shared-contracts tip；只落 Foundation Owned files。
+- `B_CAT`：Catalog Category Bootstrap Owner 从 `F0` 分叉的独立原子提交；串行特殊卡。
+- `F`：完整 Foundation qualification Gate 合格后的共同业务基线；`B_CAT` 必须是其祖先；只有 `F` 解锁业务 lanes。
+
+### 3.2 F0 — Foundation schema tip（唯一 Owner）
 
 Foundation Owner 独占：
 
@@ -121,17 +148,21 @@ Foundation Owner 独占：
 - 新增的纯类型/常量契约文件；
 - migration replay / drift 专用测试。
 
-其他 Agent 在 Foundation commit 合并前只能用规格中的 DTO fixture 开发纯前端或纯算法模块；不得自行创建“临时 schema”或第二套 migration。
+其他 Agent 在 `F0` 合并前只能用规格中的 DTO fixture 开发纯前端或纯算法模块；不得自行创建“临时 schema”或第二套 migration。
 
-Foundation Worktree 必须从 `S` 分叉；`F` 的证据必须证明 `S` 是祖先。Foundation Owner 不得从另一个“更新的 develop”重建一条不包含 `S` 的平行提交链。
+Foundation Worktree 必须从 `A_CMI` 分叉；`F0` 的证据必须证明 `A_CMI` 是祖先。Foundation Owner 不得从另一个“更新的 develop”重建一条不包含 `A_CMI` 的平行提交链。
 
-### 3.2 Foundation 必须包含
+`F0` 包含 Catalog+Merch 全部冻结 models/constraints。`Product.categoryId` 在 `F0` 完成 nullable→backfill→zero-null→最终 NOT NULL；禁止最终 nullable、DB default/trigger，或把收紧推迟给业务 lane。
+
+`F0` 明确不要求完整 application/server build：required categoryId 在 `B_CAT` 完成前会使既有 callers 类型不兼容。
+
+#### F0 必须包含（Foundation Owned files）
 
 Catalog 结构：
 
 - `ProductCategory`；
 - `CategoryApplication`；
-- `Product.categoryId` 关系与历史回填；
+- `Product.categoryId` 关系与历史回填（最终 NOT NULL）；
 - `Product.status` 支持 `draft`；
 - `Product.publishedAt` 与 legacy active/inactive 回填；
 - `ExternalCatalogLink`；
@@ -157,7 +188,7 @@ Merchandising 结构：
 - badge code、placement、campaign status、category application status 常量；
 - `Product.isHot` 标记为 deprecated，禁止新增业务依赖。
 
-### 3.3 Foundation 禁止包含
+#### F0 禁止包含（Foundation Owned files）
 
 - 分类 CRUD/审核 service；
 - 热卖计算 job；
@@ -167,9 +198,34 @@ Merchandising 结构：
 - 头像、通知或 Layout 修改；
 - Image 2 产物。
 
-### 3.4 Gate 证据
+#### F0 schema Gate 证据（不是 F full build Gate）
 
-Foundation commit 必须同时证明：
+- `prisma format` / `prisma validate` / `prisma generate` 全绿；
+- 空库与 legacy-clean fixture `prisma migrate deploy` / `migrate status` / `migrate diff` 通过、无 drift；
+- dirty preflight（external duplicate 等）expected-fail 清晰报错，不静默删除；
+- 数据库约束测试、categoryId zero-null、feature-free diff 通过。
+
+### 3.3 B_CAT — Catalog Category Bootstrap（串行特殊卡）
+
+Catalog Category Bootstrap Owner 从 `F0` 分叉，唯一 Owned：
+
+- 分类 bootstrap/resolver 与 legacy type→categoryId resolution；
+- 所有 required categoryId 编译必需的 Product create/upsert production callers；
+- seed、test helpers/fixtures 与必要输入类型（merchant/admin/Xboard/seed）。
+
+禁止：完整 category CRUD/application/publish/public projection/Store/merchandising；不得修改 schema/migrations。
+
+`B_CAT` 是业务 lanes 前的串行特殊卡：`F0` 与 `B_CAT` 都不能解锁业务 lanes。`B_CAT` 串行阶段独占其 caller/fixture 文件；`F` 记录后释放，Catalog backend 按原卡接管，不得制造双 Owner。
+
+### 3.4 F — 共同业务基线（只有 F 解锁业务 lanes）
+
+- 所有 Catalog/Merch lanes 只能从 `F` 分叉；`B_CAT` 必须是 `F` 祖先。
+- 若 `B_CAT` tip 已通过全量 Gate，`F` 可等于 `B_CAT`；禁止空 evidence commit。
+- 若需 Foundation-owned corrective delta，由唯一 Foundation Owner 提交后记录该 tip 为 `F`。
+
+### 3.5 F full build Gate 证据
+
+在 `F0`/`B_CAT` 基础上，`F` 必须额外同时证明：
 
 - 从空库 `prisma migrate deploy` 成功；
 - 从带四类商品、未知 legacy `type`、多 Offer、Xboard Offer 的基线 fixture 升级成功；
@@ -177,9 +233,11 @@ Foundation commit 必须同时证明：
 - 已有 external SKU 重复时 migration 以可理解 preflight 失败，不静默删除；
 - migration rollback 文档明确，且不声称自动回滚已完成的数据迁移；
 - `prisma migrate status`、`prisma migrate diff`、数据库约束测试与 build 全绿；
-- Foundation commit 不含 feature service/UI。
+- `F0` diff 严格 feature-free（不含 feature service/UI）；
+- `B_CAT` 只允许已批准的 bootstrap/resolver/required-categoryId callers/fixtures；
+- `F` 聚合 diff 除 `F0` 与 `B_CAT` 明确范围外，不得包含其他 Catalog/Merch 业务或任何 UI。
 
-只有 Gate 通过且 SHA 被协调者记录后，Catalog/Merch lanes 才能将它作为共同父提交。
+只有 `F` Gate 通过且 SHA 被协调者记录后，Catalog/Merch lanes 才能从 `F` 作为共同父提交分叉。
 
 ---
 
@@ -187,7 +245,8 @@ Foundation commit 必须同时证明：
 
 | 文件/区域 | 唯一 Owner | 其他 lane 的接入方式 |
 | --- | --- | --- |
-| `server/prisma/schema.prisma`、本波 migrations | FND-CMI-001 | 禁止直接修改；提出 delta 交回 Foundation Owner |
+| `server/prisma/schema.prisma`、本波 migrations | `F0`（Foundation Owner） | 禁止直接修改；提出 delta 交回 Foundation Owner；`F0` 后由 `F` 基线继承，业务 lanes 仍只读 |
+| 分类 bootstrap/resolver、legacy type→categoryId resolution、required categoryId 编译必需的 Product create/upsert production callers、seed、test helpers/fixtures 与必要输入类型 | `B_CAT`（Catalog Category Bootstrap Owner，串行阶段独占；`F` 记录后释放） | `F` 记录后 Catalog backend 按原卡接管；不得制造双 Owner |
 | `server/src/modules/products/service.ts`、controller/routes/schema | CMI Integration Owner | Catalog/Merch 提供独立 adapter 和 contract tests |
 | `src/pages/StorePage.tsx` | CMI Integration Owner | Catalog 提供 CategoryFilter；Merch 提供 SponsoredShelf/BadgeMark |
 | `server/src/modules/merchant/schema.ts`、`service.ts` | Catalog Backend Owner | Merch 的 `isHot` 禁写要求以 contract test 交给该 Owner 落地 |
@@ -255,7 +314,7 @@ Identity Backend 只输出 auth controller no-store/完整 projection tests；Id
 
 ## 6. API/DTO Contract-first 规则
 
-1. Foundation commit 固定 DTO fixture 后，前后端可各自在独立 worktree 并行。
+1. `F0` commit 固定 DTO fixture 后，前后端可各自在独立 worktree 并行（`B_CAT` 只补 required categoryId callers/fixtures，不新增业务 DTO）。
 2. 前端不得从页面代码猜测数据库字段；只依赖公开 DTO。
 3. 后端不得因前端实现方便而泄露 InventoryItem.content、支付明细、内部推广审核备注或外部对象 key。
 4. Contract fixture 变化必须先更新对应 SPEC 的 D/REQ/AC 和版本；Frozen 后需重新 Owner 批准。
@@ -285,13 +344,16 @@ Catalog/Merch/Identity Agent 绝对禁止：
 
 固定顺序：
 
-1. 协调者记录最新 `origin/develop` 为 `D`；Owner 批准三份 Draft 与 PAR-CMI-001 后，以 `D` 为直接父提交创建 docs-only Frozen spec-only commit `S`。
-2. FND-CMI-001 从 `S` 分叉，单 Owner 落 shared schema/migrations/contracts并通过 Gate，记录 Foundation tip `F`；Identity Backend/Core 也从 `S` 分叉并可并行。
-3. Catalog BE/FE 与 Merch BE/FE/Assets 全部从 `F` 分叉；Identity Frontend 从包含 `S` 的 Core contract commit 开始。每个原子 Task 独立 commit，禁止一个 commit 同时包含 schema、业务、UI 和证据回填。
-4. Catalog FE 的全部 host 修改完成后记录 `H`，把 `AdminPage.tsx`、`MerchantDashboardPage.tsx` 整文件锁移交给 CMI Integration Owner；此后 Catalog FE 不再写这两个文件。
-5. 协调者建立 `M_CMI`，证明 `F`、Catalog/Merch 各 lane tip 与 `H` 都是其祖先；CMI Integration Owner 从 `M_CMI` 开始，按“backend adapters → public projection/StorePage → frontend hosts”串行接线。
-6. 通知 T-FE-002 完成并记录 release `N`；协调者建立同时包含 `N` 与 Identity Core/FE handoff `C_ID` 的 `M_ID`。Identity Integration Owner 只能从 `M_ID` 做 Layout 接线，全部 caller 清零后再以独立 commit删除 raw writer。
-7. 合并 Identity Backend → Core/FE → Layout → writer closure；所有最终候选 HEAD 必须保留 `S` 祖先，Catalog/Merch/CMI 还必须保留 `F` 祖先。分别运行专用 Gate，最后运行 Cross-spec regression。
+1. 协调者记录最新 `origin/develop` 为 `D`；Owner 批准三份 Draft 与 PAR-CMI-001 后，以 `D` 为直接父提交创建 docs-only Frozen spec-only commit `S`（v0.1.0，已完成）。
+2. Owner 于 2026-08-09 批准 v0.1.1 CMI Foundation DAG 唯一修订；协调者以 `S` 为直接父提交创建 docs-only amendment `A_CMI`（只改 PAR-CMI-001 与 Catalog/Merch 六件套，不碰 Identity）。
+3. Foundation Owner 从 `A_CMI` 分叉，单 Owner 落 shared schema/migrations/contracts 并通过 F0 schema Gate，记录 Foundation schema tip `F0`；Identity Backend/Core 也从 `S` 分叉并可并行。
+4. Catalog Category Bootstrap Owner 从 `F0` 分叉，以独立原子提交完成分类 bootstrap/resolver 与 required categoryId callers，记录 `B_CAT`；`F0`/`B_CAT` 均不解锁业务 lanes。
+5. 协调者运行完整 Foundation qualification Gate：若 `B_CAT` tip 通过全量 Gate，记录 `F = B_CAT`；否则由唯一 Foundation Owner 提交 corrective delta 后记录该 tip 为 `F`。只有 `F` 解锁业务 lanes。
+6. Catalog BE/FE 与 Merch BE/FE/Assets 全部从 `F` 分叉；Identity Frontend 从包含 `S` 的 Core contract commit 开始。每个原子 Task 独立 commit，禁止一个 commit 同时包含 schema、业务、UI 和证据回填。
+7. Catalog FE 的全部 host 修改完成后记录 `H`，把 `AdminPage.tsx`、`MerchantDashboardPage.tsx` 整文件锁移交给 CMI Integration Owner；此后 Catalog FE 不再写这两个文件。
+8. 协调者建立 `M_CMI`，证明 `F`、Catalog/Merch 各 lane tip 与 `H` 都是其祖先；CMI Integration Owner 从 `M_CMI` 开始，按“backend adapters → public projection/StorePage → frontend hosts”串行接线。
+9. 通知 T-FE-002 完成并记录 release `N`；协调者建立同时包含 `N` 与 Identity Core/FE handoff `C_ID` 的 `M_ID`。Identity Integration Owner 只能从 `M_ID` 做 Layout 接线，全部 caller 清零后再以独立 commit删除 raw writer。
+10. 合并 Identity Backend → Core/FE → Layout → writer closure；所有最终候选 HEAD 必须保留 `S` 祖先，Catalog/Merch/CMI 还必须保留 `F` 祖先。分别运行专用 Gate，最后运行 Cross-spec regression。
 
 禁止：
 
@@ -305,17 +367,17 @@ Catalog/Merch/Identity Agent 绝对禁止：
 
 ## 9. Cross-spec Gate
 
-- [ ] PAR-GATE-001：三份规格各自六件套的版本/状态/基线内部一致；PAR 已记录各规格批准版本与基线；Owner 批准后统一 Frozen，docs-only `S` 及其直接父提交 `D` 已记录。
-- [ ] PAR-GATE-002：Foundation `F`、migration names、schema owner 已记录，且 `git merge-base --is-ancestor <S> <F>` 为 exit 0。
+- [ ] PAR-GATE-001：三份规格各自六件套的版本/状态/基线内部一致（Catalog/Merch v0.1.1、Identity v0.1.0）；PAR 已记录各规格批准版本与基线；Owner 批准后统一 Frozen，docs-only `S`（父 `D`）与 v0.1.1 docs-only amendment `A_CMI`（父 `S`）已记录。
+- [ ] PAR-GATE-002：Foundation schema tip `F0`、Bootstrap `B_CAT`、共同基线 `F`、migration names、schema owner 已记录；`S→A_CMI→F0→B_CAT→F` 各 ancestor 命令为 exit 0（`B_CAT→F` 允许相等，相等时对同一 commit 仍 exit 0）。
 - [ ] PAR-GATE-003：所有实施 worktree、DB、ports 唯一，且与通知任务不重叠。
 - [ ] PAR-GATE-004：`schema.prisma` 与本波 migrations 只有一个 owner/提交链。
 - [ ] PAR-GATE-005：`products/service.ts`、`StorePage.tsx` 只有 CMI Integration Owner 修改；`AdminPage.tsx`、`MerchantDashboardPage.tsx` 的 Catalog 整文件锁、host release `H`、CMI 整文件锁移交与 `H→M_CMI` 祖先证据完整。
 - [ ] PAR-GATE-006：`Layout.tsx` 有明确从通知到 Identity 的移交 commit；`N` 与 `C_ID` 均为 `M_ID` 祖先，无同时写入。
 - [ ] PAR-GATE-007：每个 lane 的 contract tests、DoD、commit 清单齐全。
-- [ ] PAR-GATE-008：空库和升级库 migration replay、drift、build 全绿。
+- [ ] PAR-GATE-008：F0 schema Gate（`prisma format/validate/generate`、empty 与 legacy-clean `migrate deploy/status/diff`、dirty preflight expected-fail、DB constraints/zero-null/feature-free diff，不要求完整 build）与 F full build Gate（replay、drift、build 全绿）分别完成、不混淆。
 - [ ] PAR-GATE-009：Catalog/Merch/Identity 各自专用 suite 全绿，通知相关回归无退化。
 - [ ] PAR-GATE-010：最终集成没有敏感库存、token、审核备注、对象 key 或支付内部字段泄露。
-- [ ] PAR-GATE-011：`S/F/H/M_CMI/N/C_ID/M_ID`、Identity Backend/Core/FE/Layout 与 raw-writer closure 的 parent SHA/Owner/ancestor 命令证据完整。
+- [ ] PAR-GATE-011：`S/A_CMI/F0/B_CAT/F/H/M_CMI/N/C_ID/M_ID`、Identity Backend/Core/FE/Layout 与 raw-writer closure 的 parent SHA/Owner/ancestor 命令证据完整。
 
 任一 Gate 未满足，不能宣称三线可以安全并行合并。
 
@@ -324,7 +386,7 @@ Catalog/Merch/Identity Agent 绝对禁止：
 ## 10. 变更控制
 
 - Draft 阶段 Owner 可调整 lane 与 ownership；须同步三份 `implement.md` 和 `task.md`。
-- Frozen 后改变 Foundation 数据模型、共享热点 owner/host release、`S→F→lane→M_CMI` 或 `N+C_ID→M_ID` 祖先关系、合并顺序或通知边界，必须把 PAR-CMI-001 与受影响规格退回 Draft。
+- Frozen 后改变 Foundation 数据模型、共享热点 owner/host release、`S→A_CMI→F0→B_CAT→F→lane→M_CMI` 或 `N+C_ID→M_ID` 祖先关系、合并顺序或通知边界，必须把 PAR-CMI-001 与受影响规格退回 Draft。
 - 实施中发现新的共享热点时，协调者先暂停相关两张卡、登记唯一 owner，再继续；禁止双方同时修改。
 
 ### 修订记录
@@ -332,3 +394,4 @@ Catalog/Merch/Identity Agent 绝对禁止：
 | 版本 | 日期 | 状态 | 说明 |
 | --- | --- | --- | --- |
 | 0.1.0 | 2026-08-09 | Frozen for Implementation | Owner 批准：Shared Foundation Gate、整文件锁移交、可证明 DAG、Worktree/DB/端口和通知隔离 |
+| 0.1.1 | 2026-08-09 | Frozen for Implementation | Owner 批准唯一修订：CMI Foundation DAG 改为 S→A_CMI→F0→B_CAT→F；F0/B_CAT 不解锁业务 lane、只有 F 解锁；Catalog/Merch 六件套升 v0.1.1、Identity 保持 v0.1.0 |

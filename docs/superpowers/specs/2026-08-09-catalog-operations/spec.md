@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | SPEC-CATALOG-OPS-001 |
-| 版本 | 0.1.0 |
+| 版本 | 0.1.1 |
 | 日期 | 2026-08-09 |
 | 状态 | **Frozen for Implementation** |
 | Owner | MoNexus Project Owner |
@@ -473,7 +473,7 @@ P0 禁止 coverMode=remote_url 或 ai_generate。未来若抓远程图，必须�
 2. Product.type 精确匹配四类时回填对应 category；未知/空回填 legacy-unclassified，type 原值保留，空值写“待归类”仅作为 snapshot 修复并记录计数。
 3. 添加 publishedAt：legacy active/inactive 使用 createdAt；draft 为空。
 4. 添加 ExternalCatalogLink/约束前先运行 duplicate preflight。
-5. categoryId 初始 nullable → 回填 → 验证零 null → 设置 NOT NULL。
+5. categoryId 初始 nullable → 回填 → 验证零 null → 设置 NOT NULL（由 `F0` Foundation Owner 在 Foundation schema tip 完成；禁止最终 nullable、DB default/trigger 或把收紧推迟给业务 lane）。
 6. 扩展 Product status CHECK，不重写 legacy active/inactive。
 
 ### 11.3 兼容发布
@@ -595,7 +595,7 @@ P0 禁止 coverMode=remote_url 或 ai_generate。未来若抓远程图，必须�
 | 并发重复导入 | ExternalCatalogLink + Offer DB unique，冲突读取已有资源 |
 | sanitizer 改变套餐排版 | preview 展示净化结果；保留 plain description；不存危险原文到 Product |
 | draft/status 扩展影响 checkout | public/service/checkout 均明确只接受 active，并做数据库约束回归 |
-| Catalog/Merch 同改共享文件 | 强制 PAR-CMI-001 Foundation Owner/CMI Integration Owner，其他 lane adapter-only |
+| Catalog/Merch 同改共享文件 | 强制 PAR-CMI-001 F0 Foundation Owner/B_CAT/CMI Integration Owner，其他 lane adapter-only |
 
 ---
 
@@ -629,7 +629,7 @@ Owner 已于 2026-08-09 批准本规格与 PAR-CMI-001。实施证据仍只能�
 | REQ-CAT-F-007~010 | Phase B/F | T-CAT-BE-001~002、T-CAT-FE-003、T-CAT-INT-001 | I-CAT-002~003、010、012 | CHK-CAT-001~012 | AC-CAT-010~017 |
 | REQ-CAT-F-011 | Phase D/F | T-CAT-BE-003、T-CAT-FE-004 | I-CAT-004、011 | CHK-PROD-001～003、CHK-PROD-010、CHK-UI-006 | AC-CAT-024 |
 | REQ-CAT-F-012~014 | Phase E | T-CAT-BE-005、T-CAT-FE-004 | I-CAT-006、011 | CHK-XBD-001~010 | AC-CAT-018~023 |
-| REQ-CAT-F-015 | Phase A/G | T-FND-001、T-CAT-QA-001 | I-CAT-001、013 | CHK-MIG-001~008 | AC-CAT-025、028 |
+| REQ-CAT-F-015 | Phase A/G | T-FND-001（F0）、T-CAT-BCAT-001（B_CAT）、T-CAT-QA-001 | I-CAT-001、I-CAT-BCAT、013 | CHK-MIG-001~008 | AC-CAT-025、028 |
 | REQ-CAT-NF-001～005 | All | BE/FE/QA owners | I-CAT-002～014 | CHK-SEC-001～004、CHK-PERF-001～003、CHK-OPS-001～002、CHK-QA-001～005 | AC-CAT-005～009、023、026 |
 | REQ-CAT-NF-006～010 | Phase G/H | T-CAT-QA-001～003 | I-CAT-013～015 | CHK-MIG-001～008、CHK-QA-001～006、CHK-REL-001～004、CHK-CAT-FINAL-001～005 | AC-CAT-025～028 |
 
@@ -641,9 +641,11 @@ Owner 已于 2026-08-09 批准本规格与 PAR-CMI-001。实施证据仍只能�
 2. Frozen 后改变 D-CAT、CAT、REQ、AC、migration/backfill、API status/code 或发布门禁，须退回 Draft。
 3. 实施中只能在 implement Evidence Ledger 记录不改变外部语义的澄清。
 4. develop 或通知分支改变共享文件时，实施前做 delta audit；不得静默沿用旧 line/path。
+5. Owner 于 2026-08-09 批准 v0.1.1 唯一修订：CMI Foundation DAG 改为 `S→A_CMI→F0→B_CAT→F`；只修执行 DAG/ownership/Gate，不改 D-CAT/CAT/REQ/AC/API/积分/展示。
 
 ### 修订记录
 
 | 版本 | 日期 | 状态 | 说明 |
 | --- | --- | --- | --- |
 | 0.1.0 | 2026-08-09 | Frozen for Implementation | Owner 批准：draft/publish、动态分类、Offer-first 库存、平台商品、Xboard media/idempotency |
+| 0.1.1 | 2026-08-09 | Frozen for Implementation | Owner 批准唯一修订：CMI Foundation DAG 改为 S→A_CMI→F0→B_CAT→F；categoryId 最终 NOT NULL 标 `F0` 归属 |

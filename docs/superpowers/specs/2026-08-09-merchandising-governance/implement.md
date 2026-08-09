@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | IMPL-MERCH-001 |
-| 版本 | 0.1.0 |
+| 版本 | 0.1.1 |
 | 日期 | 2026-08-09 |
 | 状态 | **Frozen for Implementation — all cards Pending** |
 | 输入 | [spec.md](./spec.md) · [plan.md](./plan.md) · [task.md](./task.md) · [checklist.md](./checklist.md) |
@@ -14,8 +14,8 @@
 
 - [ ] IMPL-MERCH-ENTRY-001：O-MERCH-01~12、Catalog依赖和PAR-CMI已批准/Frozen；各自六件套内部版本/状态/基线一致，PAR 已记录批准版本。
 - [ ] IMPL-MERCH-ENTRY-002：六件套、产品基础设计、points/order/refund现状已完整阅读。
-- [ ] IMPL-MERCH-ENTRY-003：Freeze base `D`、docs-only `S`、通知delta和shared hotspots已记录，`S^=D`。
-- [ ] IMPL-MERCH-ENTRY-004：Foundation `F` 包含 spec 5 全部 models/constraints并通过 replay，且 `git merge-base --is-ancestor <S> <F>` 为 exit 0。
+- [ ] IMPL-MERCH-ENTRY-003：Freeze base `D`、docs-only `S`、v0.1.1 docs-only amendment `A_CMI`（父 `S`）、通知delta和shared hotspots已记录，`S^=D`、`A_CMI^=S`。
+- [ ] IMPL-MERCH-ENTRY-004：Foundation schema tip `F0` 包含 spec 5 全部 models/constraints 并通过 F0 schema Gate；共同基线 `F`（可等于 `B_CAT`）通过全量 Gate，且 `S→A_CMI→F0→B_CAT→F` 各 ancestor 命令为 exit 0。
 - [ ] IMPL-MERCH-ENTRY-005：活动卡worktree/DB/ports/owner唯一。
 - [ ] IMPL-MERCH-ENTRY-006：Point测试只使用专用fixture账户/DB，无生产余额。
 - [ ] IMPL-MERCH-ENTRY-007：Merch lane 未持有宿主/Store/products/schema/migration 文件锁；CMI 卡另已记录 `H/M_CMI` 与整文件移交。
@@ -35,7 +35,7 @@
 - Merch FE/Assets：`monexus-merchandising-frontend`、DB `monexus_test_merch_fe`、3124/5194；
 - Cross integration：`monexus-catalog-merch-integration`、DB `monexus_test_catalog_merch_integration`、3126/5196。
 
-Merch BE/FE/Assets 必须从 Foundation `F` 分叉；`S` 必须是 `F` 祖先。Cross integration 只能从 `M_CMI` 开始，且 `F`、Catalog/Merch lane tips、host release `H` 均须为其祖先。禁止使用默认DB、通知DB/ports、真实Xboard/账户。Playwright reuse=false/strictPort。只清理活动卡PID/临时目录。
+Merch BE/FE/Assets 必须从共同基线 `F` 分叉；`S/A_CMI/F0/B_CAT` 必须是 `F` 祖先；Merch 不参与 `B_CAT`。Cross integration 只能从 `M_CMI` 开始，且 `F`、Catalog/Merch lane tips、host release `H` 均须为其祖先。禁止使用默认DB、通知DB/ports、真实Xboard/账户。Playwright reuse=false/strictPort。只清理活动卡PID/临时目录。
 
 ---
 
@@ -69,10 +69,11 @@ T-CAT-INT-001 与 T-MERCH-INT-001 必须由该同一 Owner/Worktree 串行完成
 - `server/src/modules/products/**` 的 legacy sort/cursor/public DTO 删除：CMI Integration Owner；
 - Merch Agent 只交付 T-MERCH-X-001 contract fixture/test，不编辑上述共享文件。
 
-### Foundation独占
+### F0 Foundation schema 独占（Foundation Owner）
 
 - schema/migrations/shared contract定义，包括 Run terminal fields/status checks/single-running/run-timeout config、run-snapshot FK、Campaign/PointLog/adjustment关系、Campaign create/adjustment 的 idempotency key+canonical payload hash/checks/唯一约束与 scheduled/active/paused partial unique
 
+Merch 不参与 `B_CAT`；Merch schema 仍 `F0` 落地；Merch 只消费最终共同基线 `F`。
 ### 禁止
 
 - notification worktree/files、Layout/appStore/auth middleware；
@@ -97,7 +98,7 @@ T-CAT-INT-001 与 T-MERCH-INT-001 必须由该同一 Owner/Worktree 串行完成
 
 | 卡 | Task | 状态 | Gate |
 | --- | --- | --- | --- |
-| I-MERCH-001 | T-MERCH-DOC-001 + T-FND-001 review | Pending | Frozen `S` / `S→F` ancestry |
+| I-MERCH-001 | T-MERCH-DOC-001 + T-FND-001（F0）review | Pending | Frozen `S`/`A_CMI`；`S→A_CMI→F0→B_CAT→F` ancestry |
 | I-MERCH-002 | T-MERCH-BE-001 ranking lifecycle | Pending | lock/run/fallback tests |
 | I-MERCH-003 | T-MERCH-BE-002 compute/projection | Pending | window/rank/cursor fixtures |
 | I-MERCH-004 | T-MERCH-X-001 isHot contract | Pending | shared-owner handoff fixture |
@@ -204,7 +205,7 @@ git diff --check
 
 ## 8. Evidence
 
-| 时间 | HEAD/Foundation | I/T | REQ/AC/CHK | 命令 | 结果 | Artifact |
+| 时间 | HEAD/F0/B_CAT/F | I/T | REQ/AC/CHK | 命令 | 结果 | Artifact |
 | --- | --- | --- | --- | --- | --- | --- |
 | 待填 | 待填 | 待填 | 待填 | 待填 | 待填 | 待填 |
 
@@ -217,7 +218,7 @@ git diff --check
 | Gate | 要求 | 状态 |
 | --- | --- | --- |
 | G-MERCH-PR-001 | Specs/PAR Frozen、P0 Tasks/CHK全Done | Pending |
-| G-MERCH-PR-002 | `D/S/F/H/M_CMI`、ancestor命令、delta与host整文件锁移交完整 | Pending |
+| G-MERCH-PR-002 | `D/S/A_CMI/F0/B_CAT/F/H/M_CMI`、ancestor命令、delta与host整文件锁移交完整 | Pending |
 | G-MERCH-PR-003 | migrations/status/drift与legacy isHot cleanup通过 | Pending |
 | G-MERCH-PR-004 | backend/frontend build及contracts通过 | Pending |
 | G-MERCH-PR-005 | ranking/points真实PG、100并发及Campaign create/adjustment幂等契约通过 | Pending |
@@ -233,7 +234,7 @@ git diff --check
 
 ~~~text
 Blocked card:
-HEAD/Foundation:
+HEAD/F0/B_CAT/F:
 Exact evidence:
 Frozen decision / money semantics affected:
 Shared file owner:
@@ -248,7 +249,7 @@ Work safely completed:
 ## 11. 完成交接
 
 ~~~text
-Outcome / branch / HEAD / Foundation:
+Outcome / branch / HEAD / Foundation（F0/B_CAT/F）:
 Spec version / tasks / commits:
 Ranking run/retention/performance:
 Promotion point charge/refund result:
@@ -259,3 +260,10 @@ Regression/rollout/rollback:
 Known limitations (no fiat/CPM/CPC):
 PR Gate status / CMI Integration Owner:
 ~~~
+
+### 修订记录
+
+| 版本 | 日期 | 状态 | 说明 |
+| --- | --- | --- | --- |
+| 0.1.0 | 2026-08-09 | Frozen for Implementation | Owner 批准：自然热卖、积分推广、精选/自营/合作权益、Image2 资产治理 |
+| 0.1.1 | 2026-08-09 | Frozen for Implementation | Owner 批准唯一修订：CMI Foundation DAG 改为 S→A_CMI→F0→B_CAT→F；Merch 只消费最终 F、不参与 B_CAT；I-MERCH-001 引用 F0 schema tip |

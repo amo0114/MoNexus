@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | PLAN-MERCH-001 |
-| 版本 | 0.1.0 |
+| 版本 | 0.1.1 |
 | 日期 | 2026-08-09 |
 | 状态 | **Frozen for Implementation** |
 | 输入 | [spec.md](./spec.md) |
@@ -71,11 +71,11 @@ src/types/merchandising.ts
 
 ---
 
-## 3. Shared Foundation
+## 3. Shared Foundation（F0 → B_CAT → F）
 
-FND-CMI-001统一创建 MerchandisingRun、Snapshot、Package、Campaign、EditorialFeature、Entitlement及PointLog关联/partial unique。它必须落 Spec §5 的 FK/onDelete/CHECK、Run completed/failed terminal fields、全局 single-running partial unique、run-snapshot关系、Campaign charge/refund/adjustment 字段、幂等 key/hash checks 和 scheduled/active/paused placement unique；Merch Agent不得自行修改schema/migration。
+v0.1.1 修订后执行 DAG 为 `S→A_CMI→F0→B_CAT→F`。`F0`（Foundation Owner）从 `A_CMI` 分叉统一创建 MerchandisingRun、Snapshot、Package、Campaign、EditorialFeature、Entitlement及PointLog关联/partial unique。它必须落 Spec §5 的 FK/onDelete/CHECK、Run completed/failed terminal fields、全局 single-running partial unique、run-snapshot关系、Campaign charge/refund/adjustment 字段、幂等 key/hash checks 和 scheduled/active/paused placement unique；Merch Agent不得自行修改schema/migration。Merch 不参与 `B_CAT`，只消费最终共同基线 `F`；Merch schema 仍 `F0` 落地。
 
-Foundation migration前检查：
+Foundation（F0）migration 前检查：
 
 - legacy Product.isHot=true数量；
 - PointAccount/PointLog约束和余额非负；
@@ -83,7 +83,7 @@ Foundation migration前检查：
 - SystemConfig key冲突；
 - partial unique所需extension/数据库能力。
 
-Foundation只建结构/constraint/shared types；不写run、不扣款、不创建package、不过滤Store。
+`F0` 只建结构/constraint/shared types（F0 diff 严格 feature-free）；不写run、不扣款、不创建package、不过滤Store。
 
 ---
 
@@ -146,7 +146,7 @@ CI检查：public runtime资产必须在approved manifest、sha256一致、总gz
 ### Phase A — Freeze/Foundation/legacy cleanup
 
 - Owner批准O-MERCH-01~12；
-- Shared Foundation Gate；
+- F0 schema Gate → Catalog Category Bootstrap（`B_CAT`）→ 共同基线 `F`；只有 `F` 解锁业务 lanes；
 - Product.isHot legacy count并迁移/cleanup false；
 - SystemConfig keys和default package seed策略冻结。
 
@@ -210,7 +210,7 @@ CI检查：public runtime资产必须在approved manifest、sha256一致、总gz
 
 ## 6. 并行边界
 
-Foundation后可并行：
+共同基线 `F` 后可并行：
 
 - ranking backend；
 - promotion backend；
@@ -225,7 +225,7 @@ Foundation后可并行：
 - PointAccount/points helper区域只Promotion billing owner修改；
 - AdminPage/MerchantDashboard/StorePage不由Merch lane改；输出独立子组件给 CMI Integration Owner；
 - AdminPage/MerchantDashboard 在 `H` 前由 Catalog Frontend 整文件持锁，`H` 后由 CMI Integration 整文件持锁；不存在 mount 区域并发锁；
-- schema/migrations Foundation only；products service/StorePage CMI Integration only；CMI 只能从包含 `F`、全部 lane tips 与 `H` 的 `M_CMI` 开始；
+- schema/migrations `F0` only（Foundation Owner）；Merch 不参与 `B_CAT`；products service/StorePage CMI Integration only；CMI 只能从包含 `F`、全部 lane tips 与 `H` 的 `M_CMI` 开始；
 - notification/Layout/appStore绝对不改。
 
 ---
@@ -264,7 +264,7 @@ Foundation后可并行：
 
 ## 9. 发布
 
-1. 部署Foundation migrations和backend，UI仍关闭；cleanup legacy isHot=false。
+1. 部署 F0 migrations 和 backend，UI仍关闭；cleanup legacy isHot=false。
 2. 手动run ranking，验证计数/抽样/上一run fallback。
 3. 创建测试PromotionPackage，专用merchant完成request→approve→charge→public disclosure。
 4. 验证cancel/refund和point ledger。
@@ -300,4 +300,11 @@ Foundation后可并行：
 
 ## 12. 完成信号
 
-Owner冻结、Foundation、Phase A~I、AC-MERCH-001~029、Checklist P0、真实PG并发/性能、资产review、兼容/回滚及PAR Gate全部通过后，Plan才完成。
+Owner冻结、F0 schema Gate、`B_CAT`、共同基线 `F`、Phase A~I、AC-MERCH-001~029、Checklist P0、真实PG并发/性能、资产review、兼容/回滚及PAR Gate全部通过后，Plan才完成。
+
+### 修订记录
+
+| 版本 | 日期 | 状态 | 说明 |
+| --- | --- | --- | --- |
+| 0.1.0 | 2026-08-09 | Frozen for Implementation | Owner 批准：自然热卖、积分推广、精选/自营/合作权益、Image2 资产治理 |
+| 0.1.1 | 2026-08-09 | Frozen for Implementation | Owner 批准唯一修订：CMI Foundation DAG 改为 S→A_CMI→F0→B_CAT→F；Merch 只消费最终 F、不参与 B_CAT，schema 仍 F0 落地 |

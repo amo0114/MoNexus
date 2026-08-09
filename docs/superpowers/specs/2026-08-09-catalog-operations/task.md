@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | TASK-CATALOG-OPS-001 |
-| 版本 | 0.1.0 |
+| 版本 | 0.1.1 |
 | 日期 | 2026-08-09 |
 | 状态 | **Frozen for Implementation — all tasks Pending** |
 | 输入 | [spec.md](./spec.md) · [plan.md](./plan.md) |
@@ -15,7 +15,7 @@
 ## 1. 全局规则
 
 1. 只修改 Owned files；共享热点以 PAR-CMI-001 文件锁为准。
-2. `schema.prisma` 和本波 migrations 只有 T-FND-001 Owner 可改。
+2. `schema.prisma` 和本波 migrations 只有 F0（Foundation Owner）可改；`B_CAT` 不得修改 schema/migrations。
 3. `products/service.ts` 与 `StorePage.tsx` 只有 T-CAT-INT-001 Owner 可改。
 4. Catalog Agent 禁止修改通知 worktree/files、`Layout.tsx`、`appStore.ts`、notification event matrix。
 5. 测试不得访问真实 Xboard、生产对象存储、生产 DB 或真实商品。
@@ -38,19 +38,19 @@
 
 **Owned**：本规格六件套、PAR-CMI-001 的 Catalog 映射；不得改业务代码。
 
-**工作**：记录 O-CAT-01~11；六件套统一 Frozen；把最新 origin/develop 记为 `D`，创建直接父提交为 `D` 的 docs-only Frozen spec SHA `S`；对通知分支和共享热点做 delta audit；记录 implementation baseline/owner/ports/DB。
+**工作**：记录 O-CAT-01~11；六件套统一 Frozen（v0.1.1）；把最新 origin/develop 记为 `D`，创建直接父提交为 `D` 的 docs-only Frozen spec SHA `S`；Owner 批准 v0.1.1 CMI Foundation DAG 修订后，创建直接父为 `S` 的 docs-only amendment `A_CMI`（只改 PAR 与 Catalog/Merch 六件套）；对通知分支和共享热点做 delta audit；记录 implementation baseline/owner/ports/DB。
 
-**DoD**：ID/版本/状态/基线一致；D/CAT/REQ/AC/Task/CHK 无断链；`S^=D` 且 `D..S` 没有业务/schema diff。
+**DoD**：ID/版本/状态/基线一致；D/CAT/REQ/AC/Task/CHK 无断链；`S^=D`、`A_CMI^=S` 且 `D..S`、`S..A_CMI` 没有业务/schema diff。
 
 **验证**：`rg` 一致性、`git diff --check`、spec-only diff audit。
 
-### T-FND-001 — Catalog/Merch Shared Foundation
+### T-FND-001 — F0：Catalog/Merch Shared Foundation schema tip
 
 | 字段 | 值 |
 | --- | --- |
 | 优先级 | P0 / 串行 Gate |
 | 对应需求 | REQ-CAT-F-015、REQ-CAT-NF-006 |
-| 依赖 | T-CAT-DOC-001 产出的 `S`、SPEC-MERCH-001 freeze、PAR-CMI-001 freeze |
+| 依赖 | `A_CMI`（v0.1.1 docs-only amendment，直接父 `S`）、SPEC-MERCH-001 freeze、PAR-CMI-001 freeze |
 | 状态 | Pending |
 
 **Owned**
@@ -67,12 +67,39 @@
 - [ ] 运行 type/image/status/default Offer/external SKU preflight。
 - [ ] 新增 Category/Application/Product 增量/ExternalCatalogLink/Offer unique。
 - [ ] 同时落 SPEC-MERCH-001 已批准的 MerchandisingRun/Snapshot/Package/Campaign/Editorial/Entitlement models，以及 single-running、run-snapshot FK、Campaign/PointLog/adjustment 关系和 scheduled/active/paused partial unique，避免第二 schema owner。
-- [ ] seed 四类+legacy，回填 categoryId/publishedAt，guard 后 tighten。
+- [ ] seed 四类+legacy，回填 categoryId/publishedAt，guard 后把 categoryId 收紧为最终 NOT NULL（nullable→backfill→zero-null→NOT NULL；禁止最终 nullable、DB default/trigger 或把收紧推迟给业务 lane）。
 - [ ] external duplicate guard 遇脏数据 RAISE，不静默删除。
 - [ ] 生成/冻结共享 DTO/status/error constants。
-- [ ] 空库和 legacy fixture migrate deploy/status/diff。
+- [ ] F0 schema Gate：prisma format/validate/generate；空库和 legacy-clean fixture migrate deploy/status/diff；dirty preflight expected-fail；DB constraints/zero-null/feature-free diff（不要求完整 application/server build——required categoryId 在 `B_CAT` 前会使既有 callers 类型不兼容）。
 
-**DoD**：PAR-CMI-001 3.4 全通过；提交只含 foundation；协调者记录 Foundation SHA `F`，且 `git merge-base --is-ancestor <S> <F>` 为 exit 0。
+**DoD**：PAR-CMI-001 §3.2 F0 schema Gate 全通过；`F0` diff 严格 feature-free（不含 feature service/UI）；协调者记录 Foundation schema tip `F0`，且 `git merge-base --is-ancestor <A_CMI> <F0>` 为 exit 0。`F0` 不解锁业务 lanes。
+
+---
+
+### T-CAT-BCAT-001 — B_CAT：Catalog Category Bootstrap
+
+| 字段 | 值 |
+| --- | --- |
+| 优先级 | P0 / 串行特殊卡（业务 lanes 前） |
+| 对应需求 | REQ-CAT-F-007、009、015 中分类 bootstrap/resolver 与 required categoryId 编译必需部分 |
+| 依赖 | `F0`（Foundation schema tip） |
+| 状态 | Pending |
+
+**Owned（`B_CAT` 串行阶段独占；`F` 记录后释放，Catalog backend 按原卡接管，不得制造双 Owner）**
+
+- 分类 bootstrap/resolver 与 legacy type→categoryId resolution；
+- 所有 required categoryId 编译必需的 Product create/upsert production callers；
+- seed、test helpers/fixtures 与必要输入类型（merchant/admin/Xboard/seed）。
+
+**Must Not Touch**：schema/migrations；完整 category CRUD/application service、publish/public projection、StorePage、merchandising。
+
+**工作**
+
+- [ ] 分类 bootstrap seed 与 resolver（legacy type→categoryId）。
+- [ ] required categoryId 的 Product create/upsert production callers 与输入类型补全。
+- [ ] seed/test helpers/fixtures 更新。
+
+**DoD**：独立原子提交；只含 `B_CAT` owned 文件；不修改 schema/migrations；协调者记录 `B_CAT`，且 `git merge-base --is-ancestor <F0> <B_CAT>` 为 exit 0。`F0`/`B_CAT` 均不解锁业务 lanes。
 
 ---
 
@@ -84,7 +111,7 @@
 | --- | --- |
 | 优先级 | P0 |
 | 对应需求 | REQ-CAT-F-007、009~010、REQ-CAT-NF-002、008 |
-| 依赖 | T-FND-001 |
+| 依赖 | `F`（共同基线） |
 | 状态 | Pending |
 
 **Owned**
@@ -135,7 +162,7 @@
 | --- | --- |
 | 优先级 | P0 |
 | 对应需求 | REQ-CAT-F-001~003、011、REQ-CAT-NF-001、004、008 |
-| 依赖 | T-FND-001、T-CAT-BE-001 |
+| 依赖 | `F`（共同基线）、T-CAT-BE-001 |
 | 状态 | Pending |
 
 **Owned**
@@ -163,7 +190,7 @@
 | --- | --- |
 | 优先级 | P0 |
 | 对应需求 | REQ-CAT-F-004~006、REQ-CAT-NF-001、005 |
-| 依赖 | T-FND-001 |
+| 依赖 | `F`（共同基线） |
 | 状态 | Pending |
 
 **Owned**
@@ -190,7 +217,7 @@
 | --- | --- |
 | 优先级 | P0 |
 | 对应需求 | REQ-CAT-F-012~014、REQ-CAT-NF-004~005、008 |
-| 依赖 | T-FND-001、T-CAT-BE-001、T-CAT-BE-003 |
+| 依赖 | `F`（共同基线）、T-CAT-BE-001、T-CAT-BE-003 |
 | 状态 | Pending |
 
 **Owned**
@@ -344,7 +371,7 @@ T-CAT-FE-002～004 的宿主修改与直接回归全部完成后，协调者记�
 
 ### T-CAT-QA-001 — Migration/constraint/replay Gate
 
-**优先级/依赖**：P0；依赖 T-FND-001 和全部 DB 相关 backend。
+**优先级/依赖**：P0；依赖 `F`（含 `F0` schema 与 `B_CAT`）和全部 DB 相关 backend。
 
 **Owned**：专用 migration fixtures/scripts、database constraint tests；不得改 migration 来迎合失败 fixture，须交回 Foundation owner。
 
@@ -378,13 +405,14 @@ T-CAT-FE-002～004 的宿主修改与直接回归全部完成后，协调者记�
 
 | Task | 前置 | 可并行 | 解锁 |
 | --- | --- | --- | --- |
-| T-CAT-DOC-001 | Owner | 无 | Foundation |
-| T-FND-001 | Catalog+Merch+PAR freeze | Identity Core | 全 Catalog/Merch lanes |
-| T-CAT-BE-001 | FND | BE-003/004/005、FE | BE-002、INT |
+| T-CAT-DOC-001 | Owner | 无 | `S`/`A_CMI` |
+| T-FND-001（F0） | `A_CMI` + Catalog+Merch+PAR freeze | Identity Core | `B_CAT` |
+| T-CAT-BCAT-001（B_CAT） | `F0` | 无（串行特殊卡） | 共同基线 `F` |
+| T-CAT-BE-001 | `F` | BE-003/004/005、FE | BE-002、INT |
 | T-CAT-BE-002 | BE-001 | BE-003~005、FE | QA |
-| T-CAT-BE-003 | FND+BE-001 | BE-004/005、FE | FE-004、INT |
-| T-CAT-BE-004 | FND | BE-001/002/003/005、FE | FE-002、QA |
-| T-CAT-BE-005 | FND+BE-001/003 | BE-004、FE | FE-004、QA |
+| T-CAT-BE-003 | `F`+BE-001 | BE-004/005、FE | FE-004、INT |
+| T-CAT-BE-004 | `F` | BE-001/002/003/005、FE | FE-002、QA |
+| T-CAT-BE-005 | `F`+BE-001/003 | BE-004、FE | FE-004、QA |
 | T-CAT-FE-001~004 | contract fixtures | 纯组件相互并行；host edits整文件串行 | `H`、INT/QA |
 | T-CAT-INT-001 | `M_CMI` + `H` + Catalog/Merch adapters | 无（共享热点） | System QA |
 | T-CAT-QA-001、T-CAT-QA-002 | 对应 backend | FE E2E准备 | T-CAT-QA-003 |
@@ -395,8 +423,15 @@ T-CAT-FE-002～004 的宿主修改与直接回归全部完成后，协调者记�
 ## 8. 总体 DoD
 
 - [ ] 所有 P0 Task Done 且当前 HEAD 证据可重现。
-- [ ] Foundation/Integration/shared hotspot 没有双 owner。
+- [ ] F0/B_CAT/F/Integration/shared hotspot 没有双 owner（`B_CAT` 释放后 Catalog backend 按原卡接管）。
 - [ ] AC-CAT-001~028 全覆盖，没有手工 DB/生产资源伪证据。
 - [ ] Migration 空库/升级/dirty guard 全通过，无 drift。
 - [ ] Catalog/Merch/通知/订单/库存/Faka 回归全绿。
 - [ ] Checklist、G-PR、compat、rollout/rollback、PAR-CMI-001 Gate 全通过。
+
+### 修订记录
+
+| 版本 | 日期 | 状态 | 说明 |
+| --- | --- | --- | --- |
+| 0.1.0 | 2026-08-09 | Frozen for Implementation | Owner 批准：draft/publish、动态分类、Offer-first 库存、平台商品、Xboard media/idempotency |
+| 0.1.1 | 2026-08-09 | Frozen for Implementation | Owner 批准唯一修订：CMI Foundation DAG 改为 S→A_CMI→F0→B_CAT→F；T-FND-001 拆为 F0 卡与 T-CAT-BCAT-001（B_CAT）卡，只有 F 解锁业务 lanes |

@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | IMPL-CATALOG-OPS-001 |
-| 版本 | 0.1.0 |
+| 版本 | 0.1.1 |
 | 日期 | 2026-08-09 |
 | 状态 | **Frozen for Implementation — all Implement cards Pending** |
 | 输入 | [spec.md](./spec.md) · [plan.md](./plan.md) · [task.md](./task.md) · [checklist.md](./checklist.md) |
@@ -14,11 +14,11 @@
 ## 1. 入口门槛
 
 - [ ] IMPL-CAT-ENTRY-001：Owner 已逐项批准 O-CAT-01~11。
-- [ ] IMPL-CAT-ENTRY-002：Catalog 六件套内部版本/状态/基线一致，PAR 记录批准版本；全部 Frozen，docs-only `S` 及直接父提交 `D` 已记录。
+- [ ] IMPL-CAT-ENTRY-002：Catalog 六件套内部版本/状态/基线一致（v0.1.1），PAR 记录批准版本；全部 Frozen，docs-only `S`（父 `D`）与 v0.1.1 docs-only amendment `A_CMI`（父 `S`）已记录。
 - [ ] IMPL-CAT-ENTRY-003：实施 Agent 已完整阅读六件套、PAR-CMI-001 和两份产品基础设计。
-- [ ] IMPL-CAT-ENTRY-004：已 fetch origin；`S^=D`，当前 Foundation/lane HEAD 对 `S/F` 的 ancestor 命令与 delta audit 已记录。
+- [ ] IMPL-CAT-ENTRY-004：已 fetch origin；`S^=D`、`A_CMI^=S`，当前 Foundation/lane HEAD 对 `S/A_CMI/F0/B_CAT/F` 的 ancestor 命令与 delta audit 已记录。
 - [ ] IMPL-CAT-ENTRY-005：通知 realtime 当前 HEAD/未提交 shared hotspots 已记录，未进入其 worktree。
-- [ ] IMPL-CAT-ENTRY-006：Foundation Owner、migration names/DB、`F`、Catalog host release `H`（未到阶段则明确 Pending）和 CMI handoff 已登记。
+- [ ] IMPL-CAT-ENTRY-006：Foundation Owner、migration names/DB、`F0`/`B_CAT`/`F`、Catalog host release `H`（未到阶段则明确 Pending）和 CMI handoff 已登记。
 - [ ] IMPL-CAT-ENTRY-007：当前 Implement 卡 Owned/Must Not Touch/DoD 已复制到活动卡。
 - [ ] IMPL-CAT-ENTRY-008：专用 Worktree/DB/ports 已验证唯一且空闲。
 - [ ] IMPL-CAT-ENTRY-009：不需要生产 DB/Xboard/storage secret/真实商品；fixture provider 已准备。
@@ -36,8 +36,8 @@
 
 实施使用 PAR-CMI-001 表中的独立 worktrees。规则：
 
-- `S` 必须以 Freeze 时最新 develop `D` 为直接父提交且只含 docs；Foundation 从 `S` 分叉并产出 `F`；
-- Catalog BE/FE、Merch BE/FE 全部从 `F` 分叉，任何较新 develop 合并都必须保留 `S/F` 祖先；
+- `S` 必须以 Freeze 时最新 develop `D` 为直接父提交且只含 docs；v0.1.1 amendment `A_CMI` 以 `S` 为直接父且只含 docs（只改 PAR 与 Catalog/Merch 六件套）；Foundation 从 `A_CMI` 分叉产出 `F0`（schema tip）；Catalog Category Bootstrap 从 `F0` 分叉产出 `B_CAT`；共同基线 `F`（可等于 `B_CAT`）解锁业务 lanes；
+- Catalog BE/FE、Merch BE/FE 全部从 `F` 分叉，任何较新 develop 合并都必须保留 `S/A_CMI/F` 祖先；
 - CMI Integration 只能从 `M_CMI` 开始；`F`、Catalog/Merch lane tips 与 host release `H` 必须都是 `M_CMI` 祖先；
 - 每张卡一个或多个原子 commit，但每个 commit 只包含一个业务意图；
 - shared hotspot 只能在指定 Integration worktree 修改；
@@ -53,7 +53,9 @@ Status: Pending | In Progress | Blocked | Done
 Agent:
 Start HEAD / merge-base:
 Frozen spec-only SHA S / parent D:
-Foundation SHA F:
+v0.1.1 amendment A_CMI:
+Foundation schema tip F0:
+Bootstrap B_CAT / 共同基线 F:
 Catalog host release H / lock owner:
 Required ancestor checks:
 Worktree / branch:
@@ -98,7 +100,7 @@ Destructive database 操作前：
 4. 断言 db name 等于活动卡专用库；
 5. 只终止本卡创建的连接/process。
 
-Foundation migration suite 至少维护：
+F0 migration suite 至少维护（F0 schema Gate）：
 
 - `empty`；
 - `legacy_clean`（四类+未知 type+无图 active+多 Offer）；
@@ -109,13 +111,21 @@ Foundation migration suite 至少维护：
 
 ## 4. 文件锁
 
-### 4.1 Shared Foundation 独占
+### 4.1 F0 Foundation schema 独占
 
 - `server/prisma/schema.prisma`
 - 本波 migrations
 - shared DTO/constants
 
-Foundation Gate 后，业务 Agent 对这些文件为只读。缺字段必须 Blocked/Ask First。
+F0 落地后，业务 Agent 对这些文件为只读；`B_CAT` 不得修改 schema/migrations。缺字段必须 Blocked/Ask First。
+
+### 4.1b B_CAT Catalog Category Bootstrap 独占（串行阶段）
+
+- 分类 bootstrap/resolver 与 legacy type→categoryId resolution
+- required categoryId 编译必需的 Product create/upsert production callers
+- seed、test helpers/fixtures 与必要输入类型（merchant/admin/Xboard/seed）
+
+`B_CAT` 串行阶段独占上述 caller/fixture 文件；`F` 记录后释放，Catalog backend 按原卡接管，不得制造双 Owner。`B_CAT` 不得实现完整 category CRUD/application/publish/public projection/Store/merchandising。
 
 ### 4.2 Catalog Backend 独占
 
@@ -186,11 +196,12 @@ T-CAT-INT-001 与 T-MERCH-INT-001 由同一 CMI Integration Owner/Worktree 串�
 
 | 卡 | 映射 Task | 状态 | 进入条件 | 提交 Gate |
 | --- | --- | --- | --- | --- |
-| I-CAT-001 | T-CAT-DOC-001、T-FND-001 | Pending | Owner freeze → `S` | `S→F` ancestry + Foundation replay/drift Gate |
-| I-CAT-002 | T-CAT-BE-001 | Pending | Foundation SHA | category registry/admin tests |
+| I-CAT-001 | T-CAT-DOC-001、T-FND-001（F0） | Pending | Owner freeze → `S`/`A_CMI` | `S→A_CMI→F0` ancestry；F0 schema Gate（不要求完整 build） |
+| I-CAT-BCAT | T-CAT-BCAT-001（B_CAT） | Pending | `F0` schema tip | 分类 bootstrap/resolver + required categoryId callers；`F0→B_CAT→F` ancestry（`F` 可等于 `B_CAT`）；B_CAT 不解锁业务 lanes |
+| I-CAT-002 | T-CAT-BE-001 | Pending | 共同基线 `F` | category registry/admin tests |
 | I-CAT-003 | T-CAT-BE-002 | Pending | I-CAT-002 contract | application CAS/auth tests |
-| I-CAT-004 | T-CAT-BE-003 | Pending | Foundation+category | draft/readiness/publish tests |
-| I-CAT-005 | T-CAT-BE-004 | Pending | Foundation | inventory/capacity concurrency |
+| I-CAT-004 | T-CAT-BE-003 | Pending | `F`+category | draft/readiness/publish tests |
+| I-CAT-005 | T-CAT-BE-004 | Pending | `F` | inventory/capacity concurrency |
 | I-CAT-006 | T-CAT-BE-005 | Pending | category+draft APIs | Xboard preview/idempotency/sanitizer |
 | I-CAT-007 | T-CAT-BE-001～005 consolidation Gate | Pending | I-CAT-002～006 | backend build/contract fixtures |
 | I-CAT-008 | T-CAT-FE-001 | Pending | frozen DTO | wizard/component tests |
@@ -202,7 +213,7 @@ T-CAT-INT-001 与 T-MERCH-INT-001 由同一 CMI Integration Owner/Worktree 串�
 | I-CAT-014 | T-CAT-QA-002 | Pending | BE+integration | security/concurrency/perf Gate |
 | I-CAT-015 | T-CAT-QA-003 | Pending | all P0 | E2E/compat/rollback/PR Gate |
 
-BE 与纯组件工作可在 Foundation 后并行；I-CAT-009～011 一旦编辑 Admin/Merchant hosts，必须在同一 Catalog Frontend Worktree 按整文件锁串行，全部完成后产出 `H`。I-CAT-012 是唯一 shared integration 串行点。I-CAT-013、I-CAT-014 可并行，I-CAT-015 最后执行。
+BE 与纯组件工作可在 `F` 后并行；I-CAT-BCAT（B_CAT）是 `F` 前唯一串行特殊卡，`F0`/`B_CAT` 均不解锁业务 lanes。I-CAT-009～011 一旦编辑 Admin/Merchant hosts，必须在同一 Catalog Frontend Worktree 按整文件锁串行，全部完成后产出 `H`。I-CAT-012 是唯一 shared integration 串行点。I-CAT-013、I-CAT-014 可并行，I-CAT-015 最后执行。
 
 ---
 
@@ -244,7 +255,7 @@ npm run check:runtime
 npm run build
 cd server && npm run build
 
-# Foundation/migration
+# Foundation/migration（F0 schema Gate：format/validate/generate、empty/legacy-clean deploy/status/diff、dirty expected-fail、DB constraints/zero-null/feature-free diff；不要求完整 build）
 bash scripts/verify-catalog-foundation.sh
 
 # Backend
@@ -280,7 +291,7 @@ git diff --check
 | Gate | 要求 | 状态 | Evidence |
 | --- | --- | --- | --- |
 | G-CAT-PR-001 | 六件套/PAR Frozen、全部 P0 Task/CHK Done | Pending | 待填 |
-| G-CAT-PR-002 | `D/S/F/H/M_CMI`、ancestor命令、delta与宿主整文件锁移交记录完整 | Pending | 待填 |
+| G-CAT-PR-002 | `D/S/A_CMI/F0/B_CAT/F/H/M_CMI`、ancestor命令、delta与宿主整文件锁移交记录完整 | Pending | 待填 |
 | G-CAT-PR-003 | empty/upgrade/dirty migration replay/status/diff通过 | Pending | 待填 |
 | G-CAT-PR-004 | backend/frontend build与contract tests通过 | Pending | 待填 |
 | G-CAT-PR-005 | 分类、publish、库存、Xboard 专用 suites通过 | Pending | 待填 |
@@ -298,7 +309,7 @@ git diff --check
 
 ~~~text
 Blocked card/task:
-Current HEAD / Foundation SHA:
+Current HEAD / Foundation（F0/B_CAT/F）SHA:
 Exact blocker and evidence:
 Shared hotspot owner:
 Frozen decision affected:
@@ -314,7 +325,7 @@ Work safely completed:
 
 ~~~text
 Outcome:
-Branch / HEAD / D / S / F / H / M_CMI:
+Branch / HEAD / D / S / A_CMI / F0 / B_CAT / F / H / M_CMI:
 Spec version:
 Tasks / commits:
 Migrations and preflight counts:
@@ -327,3 +338,10 @@ Known limitations:
 PAR-CMI handoff owner:
 PR Gate status:
 ~~~
+
+### 修订记录
+
+| 版本 | 日期 | 状态 | 说明 |
+| --- | --- | --- | --- |
+| 0.1.0 | 2026-08-09 | Frozen for Implementation | Owner 批准：draft/publish、动态分类、Offer-first 库存、平台商品、Xboard media/idempotency |
+| 0.1.1 | 2026-08-09 | Frozen for Implementation | Owner 批准唯一修订：CMI Foundation DAG 改为 S→A_CMI→F0→B_CAT→F；I-CAT-001 拆为 F0 schema 卡与 I-CAT-BCAT（B_CAT）串行特殊卡，只有 F 解锁业务 lanes |

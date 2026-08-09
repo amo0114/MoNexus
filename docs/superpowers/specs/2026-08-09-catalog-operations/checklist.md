@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | CHK-CATALOG-OPS-001 |
-| 版本 | 0.1.0 |
+| 版本 | 0.1.1 |
 | 日期 | 2026-08-09 |
 | 状态 | **Frozen for Implementation — all implementation checks unverified** |
 | 规格 | [SPEC-CATALOG-OPS-001](./spec.md) |
@@ -15,7 +15,7 @@
 ## 1. P0 — 文档、Foundation 与并行边界
 
 - [ ] **CHK-CAT-DOC-001** — O-CAT-01~11 与 PAR-CMI-001 已批准；六件套 Frozen。
-- [ ] **CHK-CAT-DOC-002** — `D/S/F`、通知 delta、ancestor命令及共享热点 owner 已记录；`S^=D`且`S→F`可证明。
+- [ ] **CHK-CAT-DOC-002** — `D/S/A_CMI/F0/B_CAT/F`、通知 delta、ancestor命令及共享热点 owner 已记录；`S^=D`、`A_CMI^=S`，`S→A_CMI→F0→B_CAT→F` 可证明（`B_CAT→F` 允许相等）。
 - [ ] **CHK-CAT-DOC-003** — REQ/AC/Task/Implement/CHK 追溯无断链。
 - [ ] **CHK-CAT-PAR-001** — schema/migrations 单 owner；products/Store 单 CMI Owner；Admin/Merchant hosts 由 Catalog FE 整文件持锁至 `H`，再移交同一 CMI Owner，零并发写入。
 - [ ] **CHK-CAT-PAR-002** — Catalog diff 不含通知 worktree、notification模块、Layout/appStore/auth middleware。
@@ -32,8 +32,7 @@
 - [ ] **CHK-MIG-005** — legacy active/inactive 状态保持，publishedAt 按契约回填。
 - [ ] **CHK-MIG-006** — external SKU/category脏数据 fixture 以清晰 guard 失败，不静默删除/合并。
 - [ ] **CHK-MIG-007** — ProductCategory/ExternalCatalogLink FK/unique/status约束数据库层生效。
-- [ ] **CHK-MIG-008** — `prisma db push` 未使用；本波 migrations 只有 Foundation owner提交。
-
+- [ ] **CHK-MIG-008** — `prisma db push` 未使用；本波 migrations 只有 `F0`（Foundation Owner）提交；`B_CAT` 不得改 schema/migrations。
 ---
 
 ## 3. P0 — 分类治理
@@ -175,3 +174,10 @@ P1 不阻断首次发布；提前实施任何 P1 属范围扩张。
 - [ ] **CHK-CAT-FINAL-003** — 所有P0 tasks Done，无Blocked/In Progress。
 - [ ] **CHK-CAT-FINAL-004** — git diff、secret scan、migration/drift/parallel ownership audit通过。
 - [ ] **CHK-CAT-FINAL-005** — Owner审阅证据、migration、发布和回滚后明确批准合并。
+
+### 修订记录
+
+| 版本 | 日期 | 状态 | 说明 |
+| --- | --- | --- | --- |
+| 0.1.0 | 2026-08-09 | Frozen for Implementation | Owner 批准：draft/publish、动态分类、Offer-first 库存、平台商品、Xboard media/idempotency |
+| 0.1.1 | 2026-08-09 | Frozen for Implementation | Owner 批准唯一修订：CMI Foundation DAG 改为 S→A_CMI→F0→B_CAT→F；只有 F 解锁业务 lanes，F0/B_CAT 不解锁 |

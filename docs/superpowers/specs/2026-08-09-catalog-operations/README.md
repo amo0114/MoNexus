@@ -19,7 +19,7 @@
 | Tasks ID | TASK-CATALOG-OPS-001 |
 | Implement ID | IMPL-CATALOG-OPS-001 |
 | Checklist ID | CHK-CATALOG-OPS-001 |
-| 版本 | 0.1.0 |
+| 版本 | 0.1.1 |
 | 日期 | 2026-08-09 |
 | 状态 | **Frozen for Implementation** |
 | 审查基线 | `develop@da38dd0580eeac737f5291556b9dbdf832d91970` |
@@ -53,8 +53,8 @@ Owner 已批准 O-CAT-01～11 与 PAR-CMI-001；六份文档已冻结。所有 I
 - SPEC-MERCH-001 独占自然热卖、推广套餐/活动、平台精选、合作伙伴权益和 badge projection。
 - SPEC-IDENTITY-SYNC-001 独占用户资料同步和头像/Navbar 一致性。
 - SPEC-NOTIFY-RT-001 独占通知实时化；本规格不新增“分类审核/推广审核”通知事件。
-- Shared Foundation Owner 统一落 Catalog/Merch 数据模型；本规格 Agent 不与 Merch Agent 并行编辑 `schema.prisma`。
-- Owner Freeze 后先以最新 develop `D` 为直接父提交形成 docs-only SHA `S`；Foundation `F` 必须包含 `S`，Catalog/Merch lane 必须包含 `F`。
+- Foundation Owner 在 `F0` 统一落 Catalog/Merch 数据模型；本规格 Agent 不与 Merch Agent 并行编辑 `schema.prisma`。
+- Owner Freeze 后先以最新 develop `D` 为直接父提交形成 docs-only SHA `S`；v0.1.1 修订后执行 DAG 为 `D→S→A_CMI→F0→B_CAT→F`：`A_CMI` 是 docs-only amendment（只改 PAR 与 Catalog/Merch 六件套），`F0` 落 schema/migrations/shared-contracts（categoryId 最终 NOT NULL），`B_CAT` 完成分类 bootstrap/resolver 与 required categoryId callers；只有共同基线 `F` 解锁业务 lanes，Catalog/Merch lane 必须包含 `F`。
 - Catalog Frontend 完成全部宿主修改后记录 host release `H`；`AdminPage.tsx`、`MerchantDashboardPage.tsx` 的整文件锁随后串行移交给 CMI Integration Owner。
 
 ## 当前已核实事实
@@ -71,3 +71,10 @@ Owner 已批准 O-CAT-01～11 与 PAR-CMI-001；六份文档已冻结。所有 I
 - Owner 修改任一 O-CAT 决策时，必须同步六件套、PAR-CMI-001、版本和追溯矩阵。
 - Frozen 后改变 D-CAT/CAT/REQ/AC、迁移策略或 API 外部语义，须退回 Draft 重新批准。
 - 本包不授权修改通知 Worktree、生产数据库、真实商品、真实 Xboard 数据或生产对象存储。
+
+### 修订记录
+
+| 版本 | 日期 | 状态 | 说明 |
+| --- | --- | --- | --- |
+| 0.1.0 | 2026-08-09 | Frozen for Implementation | Owner 批准：draft/publish、动态分类、Offer-first 库存、平台商品、Xboard media/idempotency |
+| 0.1.1 | 2026-08-09 | Frozen for Implementation | Owner 批准唯一修订：CMI Foundation DAG 改为 S→A_CMI→F0→B_CAT→F；F0 落 schema（categoryId 最终 NOT NULL），B_CAT 完成分类 bootstrap；只有 F 解锁业务 lanes |

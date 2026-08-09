@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | CHK-MERCH-001 |
-| 版本 | 0.1.0 |
+| 版本 | 0.1.1 |
 | 日期 | 2026-08-09 |
 | 状态 | **Frozen for Implementation — all checks unverified** |
 | 规格 | [SPEC-MERCH-001](./spec.md) |
@@ -15,9 +15,9 @@ Checkbox只能由当前HEAD可重现证据勾选。手工改DB、mock points、�
 ## 1. P0 — 文档/Foundation/并行
 
 - [ ] **CHK-MERCH-DOC-001** — O-MERCH-01~12、六件套、PAR-CMI均批准/Frozen。
-- [ ] **CHK-MERCH-DOC-002** — `D/S/F`、通知delta、ancestor命令与owner锁已记录；`S^=D`且`S→F`可证明。
+- [ ] **CHK-MERCH-DOC-002** — `D/S/A_CMI/F0/B_CAT/F`、通知delta、ancestor命令与owner锁已记录；`S^=D`、`A_CMI^=S`，`S→A_CMI→F0→B_CAT→F` 可证明（`B_CAT→F` 允许相等）。
 - [ ] **CHK-MERCH-DOC-003** — REQ/AC/Task/Implement/CHK追溯无断链。
-- [ ] **CHK-MERCH-FND-001** — Run/Snapshot/Package/Campaign/Editorial/Entitlement/Point关联、FK/onDelete/CHECK、Run terminal fields/single-running、幂等key/hash checks、adjustment字段和partial unique由单Owner落地。
+- [ ] **CHK-MERCH-FND-001** — Run/Snapshot/Package/Campaign/Editorial/Entitlement/Point关联、FK/onDelete/CHECK、Run terminal fields/single-running、幂等key/hash checks、adjustment字段和partial unique由 F0（Foundation Owner）从 `A_CMI` 落地；Merch 不参与 `B_CAT`，只消费最终 `F`。
 - [ ] **CHK-MERCH-FND-002** — legacy isHot preflight/cleanup false可审计，字段不再被业务读写。
 - [ ] **CHK-MERCH-PAR-001** — Merch lane不改schema/migrations/products/Store/宿主/通知；Catalog FE 整文件持锁至 `H`，随后同一 CMI Owner 从 `M_CMI` 接管 hosts，且与 Catalog integration 串行。
 
@@ -156,3 +156,10 @@ Checkbox只能由当前HEAD可重现证据勾选。手工改DB、mock points、�
 - [ ] **CHK-MERCH-FINAL-003** — P0 Tasks全Done，无Blocked/InProgress。
 - [ ] **CHK-MERCH-FINAL-004** — migration/drift/git diff/secret/points/disclosure/asset审计通过。
 - [ ] **CHK-MERCH-FINAL-005** — Owner审阅points、用户文案、视觉、发布/回滚后明确批准合并。
+
+### 修订记录
+
+| 版本 | 日期 | 状态 | 说明 |
+| --- | --- | --- | --- |
+| 0.1.0 | 2026-08-09 | Frozen for Implementation | Owner 批准：自然热卖、积分推广、精选/自营/合作权益、Image2 资产治理 |
+| 0.1.1 | 2026-08-09 | Frozen for Implementation | Owner 批准唯一修订：CMI Foundation DAG 改为 S→A_CMI→F0→B_CAT→F；Merch 只消费最终 F、不参与 B_CAT |

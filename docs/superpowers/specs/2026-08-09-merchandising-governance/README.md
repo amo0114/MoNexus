@@ -14,7 +14,7 @@
 | --- | --- |
 | 规格 ID | SPEC-MERCH-001 |
 | Plan/Tasks/Implement/Checklist | PLAN-MERCH-001 · TASK-MERCH-001 · IMPL-MERCH-001 · CHK-MERCH-001 |
-| 版本 | 0.1.0 |
+| 版本 | 0.1.1 |
 | 日期 | 2026-08-09 |
 | 状态 | **Frozen for Implementation** |
 | 审查基线 | `develop@da38dd0580eeac737f5291556b9dbdf832d91970` |
@@ -58,8 +58,15 @@
 - Catalog 分类、商品 draft/publish、库存、Xboard 媒体由 SPEC-CATALOG-OPS-001 负责。
 - Identity、Navbar 由 SPEC-IDENTITY-SYNC-001 负责。
 - 通知由 SPEC-NOTIFY-RT-001 负责。
-- Shared schema/migrations 只由 FND-CMI-001 Owner 落地；本规格业务 Agent 不直接改 schema。
-- Frozen spec-only SHA `S` 必须是 Foundation `F` 的祖先；所有 Merch BE/FE lane 从 `F` 分叉。
+- Shared schema/migrations 只由 F0（Foundation Owner）从 `A_CMI` 落地；本规格业务 Agent 不直接改 schema，也不参与 `B_CAT`。
+- v0.1.1 修订后执行 DAG 为 `S→A_CMI→F0→B_CAT→F`：Merch 只消费最终共同基线 `F`，不参与 `B_CAT`；Merch schema 仍 `F0` 落地；所有 Merch BE/FE lane 从 `F` 分叉。
 - Merch 只交独立组件；Catalog host release `H` 后，`AdminPage.tsx`、`MerchantDashboardPage.tsx` 由 CMI Integration Owner 持有整文件锁并串行 mount。
 
-Owner 已批准 O-MERCH-01～12 与 PAR-CMI-001；六件套已冻结。全部 Implement/Checklist 继续保持 Pending，直至 `S/F` 与对应 Gate 真实满足。
+Owner 已批准 O-MERCH-01～12 与 PAR-CMI-001；六件套已冻结（v0.1.1）。全部 Implement/Checklist 继续保持 Pending，直至 `S/A_CMI/F0/B_CAT/F` 与对应 Gate 真实满足。
+
+### 修订记录
+
+| 版本 | 日期 | 状态 | 说明 |
+| --- | --- | --- | --- |
+| 0.1.0 | 2026-08-09 | Frozen for Implementation | Owner 批准：自然热卖、积分推广、精选/自营/合作权益、Image2 资产治理 |
+| 0.1.1 | 2026-08-09 | Frozen for Implementation | Owner 批准唯一修订：CMI Foundation DAG 改为 S→A_CMI→F0→B_CAT→F；Merch 只消费最终 F、不参与 B_CAT，schema 仍 F0 落地 |

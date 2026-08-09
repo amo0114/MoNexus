@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | PLAN-CATALOG-OPS-001 |
-| 版本 | 0.1.0 |
+| 版本 | 0.1.1 |
 | 日期 | 2026-08-09 |
 | 状态 | **Frozen for Implementation** |
 | 输入 | [spec.md](./spec.md) |
@@ -123,18 +123,18 @@ src/api/catalog.ts
 
 ---
 
-## 4. Shared Foundation 方案
+## 4. Shared Foundation 方案（F0 → B_CAT → F）
 
-Owner Freeze 先以记录的最新 develop `D` 为直接父提交形成 docs-only Frozen spec SHA `S`。FND-CMI-001 必须从 `S` 分叉，并先于任何依赖 Prisma model 的 Catalog/Merch backend task。Foundation Owner：
+Owner Freeze 先以记录的最新 develop `D` 为直接父提交形成 docs-only Frozen spec SHA `S`。v0.1.1 修订后执行 DAG 为 `S→A_CMI→F0→B_CAT→F`：`A_CMI` 是 docs-only amendment（直接父 `S`），Foundation Owner 从 `A_CMI` 分叉落 `F0` schema/migrations/contracts，先于任何依赖 Prisma model 的 Catalog/Merch backend task。Foundation Owner（`F0`）：
 
 1. 运行 legacy preflight 并保存脱敏计数；
 2. 一次性冻结 Catalog/Merch models 与关系；
 3. 按可审查顺序创建 migration（允许多个顺序 migration，但只有一个 owner）；
 4. 添加 category seed/backfill、publishedAt 回填、external duplicate abort；
 5. 添加 shared contracts/constants，不实现 service；
-6. 在空库和升级 fixture 库验证 migrate deploy/status/diff。
+6. 在空库和升级 fixture 库验证 migrate deploy/status/diff（F0 schema Gate，不要求完整 build）。
 
-Foundation Gate tip 记为 `F`，并以 `git merge-base --is-ancestor <S> <F>` 证明祖先关系。Catalog/Merch Agent 必须从 `F` 分支；若后续发现 schema 缺口，任务进入 Blocked，由 Foundation Owner 提交 delta；禁止在业务分支自行改 schema。
+F0 schema tip 记为 `F0`，并以 `git merge-base --is-ancestor <A_CMI> <F0>` 证明祖先关系。随后 Catalog Category Bootstrap Owner 从 `F0` 分叉完成 `B_CAT`（分类 bootstrap/resolver 与 required categoryId callers）；协调者运行全量 Foundation qualification Gate 记录共同基线 `F`（可等于 `B_CAT`）。`F0`/`B_CAT` 均不解锁业务 lanes；Catalog/Merch Agent 必须从 `F` 分支；若后续发现 schema 缺口，任务进入 Blocked，由 Foundation Owner 提交 delta；禁止在业务分支自行改 schema。
 
 ---
 
@@ -145,7 +145,7 @@ Foundation Gate tip 记为 `F`，并以 `git merge-base --is-ancestor <S> <F>` �
 1. `catalog_categories_and_drafts`：Category/Application、Product nullable categoryId/publishedAt、status CHECK 扩展。
 2. `catalog_backfill_categories`：seed 四类+legacy、回填、验证并 tighten categoryId。
 3. `external_catalog_identity`：ExternalCatalogLink、Offer external unique；执行 duplicate guard。
-4. Merch migrations 由同一 Foundation owner 继续，至少包含 MerchandisingRun/Snapshot/Package/Campaign/Editorial/Entitlement、single-running、run-snapshot FK、Campaign/PointLog/adjustment 关系和 scheduled/active/paused partial unique；字段级语义见 SPEC-MERCH-001 §5。
+4. Merch migrations 由同一 Foundation Owner 在 `F0` 继续（Merch 不参与 `B_CAT`，schema 仍 `F0` 落地），至少包含 MerchandisingRun/Snapshot/Package/Campaign/Editorial/Entitlement、single-running、run-snapshot FK、Campaign/PointLog/adjustment 关系和 scheduled/active/paused partial unique；字段级语义见 SPEC-MERCH-001 §5。
 
 迁移 SQL 必须具有明确的 `DO $$ ... RAISE EXCEPTION` 数据 guard；发现重复/脏数据即阻断，不静默选择最低 ID 或删除记录。
 
@@ -201,14 +201,15 @@ Preview 返回 sourceHash；confirm 重新读取 source 并计算。若 Xboard �
 
 ## 7. 分阶段实施
 
-### Phase A — Spec freeze、delta audit、Foundation
+### Phase A — Spec freeze、delta audit、F0/B_CAT/F
 
-- Owner 批准 O-CAT-01~11 和 PAR-CMI-001；
+- Owner 批准 O-CAT-01~11 和 PAR-CMI-001（v0.1.1 唯一修订为 CMI Foundation DAG）；
 - 对最新 develop/通知分支做共享热点 delta audit；
-- 运行 preflight、落 schema/migrations/contracts；
-- 空库/升级库 Gate。
+- 运行 preflight、落 schema/migrations/contracts（F0 schema Gate）；
+- Catalog Category Bootstrap 从 `F0` 分叉完成 `B_CAT`（分类 bootstrap/resolver 与 required categoryId callers）；
+- 协调者运行全量 Gate 记录共同基线 `F`（可等于 `B_CAT`）；空库/升级库 Gate。
 
-出口：Foundation SHA 已记录，零未解释脏数据，业务 lane 可分叉。
+出口：共同基线 `F` 已记录，零未解释脏数据，业务 lane 可分叉。
 
 ### Phase B — 分类 repository 与审核
 
@@ -277,7 +278,7 @@ Preview 返回 sourceHash；confirm 重新读取 source 并计算。若 Xboard �
 ## 8. 依赖与并行图
 
 ~~~text
-FND-CMI-001
+F0 → B_CAT → 共同基线 F
   ├─► CAT-BE Category ─┐
   ├─► CAT-BE Product ──┼─► CMI Integration ─► System QA
   ├─► CAT-BE Xboard ───┤
@@ -285,11 +286,11 @@ FND-CMI-001
   └─► MERCH lanes ─────┘
 ~~~
 
-Foundation 后可并行：Category backend、Product/publication backend、Xboard backend、Catalog UI components、Merch backend/frontend。
+`F` 后可并行：Category backend、Product/publication backend、Xboard backend、Catalog UI components、Merch backend/frontend。
 
 串行热点：
 
-- schema/migrations：Foundation only；
+- schema/migrations：`F0` only（Foundation Owner）；`B_CAT` 不得修改 schema/migrations；
 - merchant schema/service：Catalog backend one owner；
 - AdminPage/MerchantDashboard：Catalog frontend 整文件 owner 直至 `H`，随后移交 CMI Integration Owner；
 - products service/StorePage：CMI Integration only；
@@ -355,4 +356,11 @@ Foundation 后可并行：Category backend、Product/publication backend、Xboar
 
 ## 13. 完成信号
 
-只有 Owner 冻结、Foundation Gate、Phase A~H、AC-CAT-001~028、Checklist P0、迁移回放、专用 E2E、兼容/回滚演练及 PAR-CMI Cross-spec Gate 全通过，PLAN-CATALOG-OPS-001 才算完成。
+只有 Owner 冻结、F0 schema Gate、`B_CAT`、共同基线 `F`、Phase A~H、AC-CAT-001~028、Checklist P0、迁移回放、专用 E2E、兼容/回滚演练及 PAR-CMI Cross-spec Gate 全通过，PLAN-CATALOG-OPS-001 才算完成。
+
+### 修订记录
+
+| 版本 | 日期 | 状态 | 说明 |
+| --- | --- | --- | --- |
+| 0.1.0 | 2026-08-09 | Frozen for Implementation | Owner 批准：draft/publish、动态分类、Offer-first 库存、平台商品、Xboard media/idempotency |
+| 0.1.1 | 2026-08-09 | Frozen for Implementation | Owner 批准唯一修订：CMI Foundation DAG 改为 S→A_CMI→F0→B_CAT→F；F0 落 schema、B_CAT 完成分类 bootstrap、只有 F 解锁业务 lanes |

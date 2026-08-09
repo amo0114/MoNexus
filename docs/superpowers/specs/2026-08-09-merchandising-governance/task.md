@@ -3,12 +3,12 @@
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | TASK-MERCH-001 |
-| 版本 | 0.1.0 |
+| 版本 | 0.1.1 |
 | 日期 | 2026-08-09 |
 | 状态 | **Frozen for Implementation — all tasks Pending** |
 | 输入 | [spec.md](./spec.md) · [plan.md](./plan.md) |
 
-所有Task在Owner Freeze前保持Pending。Shared schema/migrations由PAR-CMI的T-FND-001唯一Owner实施；Merch业务Agent不得修改。
+所有Task在Owner Freeze前保持Pending。Shared schema/migrations由PAR-CMI的 `F0`（Foundation Owner）从 `A_CMI` 实施；Merch业务Agent不得修改，也不参与 `B_CAT`。
 
 ---
 
@@ -27,11 +27,11 @@
 
 ### T-MERCH-DOC-001 — Freeze、delta与contract fixtures
 
-**P0 / Pending**。Owned：本六件套、PAR中的Merch映射、纯JSON DTO fixtures。工作：记录O-MERCH-01~12、Frozen、Freeze base `D` 与 docs-only SHA `S`、points/products/通知delta；冻结status/error/placement/badge contracts。DoD：`S^=D`、零业务/schema diff，追溯完整。
+**P0 / Pending**。Owned：本六件套、PAR中的Merch映射、纯JSON DTO fixtures。工作：记录O-MERCH-01~12、Frozen（v0.1.1）、Freeze base `D` 与 docs-only SHA `S`、v0.1.1 docs-only amendment `A_CMI`（父 `S`）、points/products/通知delta；冻结status/error/placement/badge contracts。DoD：`S^=D`、`A_CMI^=S`、零业务/schema diff，追溯完整。
 
 ### T-FND-001 — Shared Foundation（引用）
 
-**P0 / Pending**。由PAR-CMI单Owner从 `S` 实施，Merch只审核模型满足 Spec §5：Run/Snapshot/Package/Campaign/Editorial/Entitlement、Run terminal fields/status checks/single-running、run-snapshot FK、Campaign/PointLog/adjustment 关联、Campaign create/adjustment 的 idempotency key+canonical payload hash/checks 与唯一约束、scheduled/active/paused partial unique、SystemConfig keys（含 run timeout）。Foundation SHA `F` 是以下所有BE卡前置，且必须证明 `S→F`。
+**P0 / Pending**。由PAR-CMI单Owner从 `A_CMI` 实施（F0 schema tip），Merch只审核模型满足 Spec §5：Run/Snapshot/Package/Campaign/Editorial/Entitlement、Run terminal fields/status checks/single-running、run-snapshot FK、Campaign/PointLog/adjustment 关联、Campaign create/adjustment 的 idempotency key+canonical payload hash/checks 与唯一约束、scheduled/active/paused partial unique、SystemConfig keys（含 run timeout）。共同基线 `F` 是以下所有BE卡前置；Merch 只消费最终 `F` 且不参与 `B_CAT`，必须证明 `S→A_CMI→F0→B_CAT→F`（`B_CAT→F` 允许相等）。
 
 ---
 
@@ -43,7 +43,7 @@
 | --- | --- |
 | 优先级 | P0 |
 | 对应需求 | REQ-MERCH-F-002、004、REQ-MERCH-NF-001、005 |
-| 依赖 | T-FND-001 |
+| 依赖 | `F`（共同基线） |
 | 状态 | Pending |
 
 **Owned**：`modules/merchandising/ranking/repository.ts`、lifecycle/cron/admin run query、tests。
@@ -81,7 +81,7 @@
 | --- | --- |
 | 优先级 | P0 |
 | 对应需求 | REQ-MERCH-F-005~007、REQ-MERCH-NF-004~005 |
-| 依赖 | T-FND-001 |
+| 依赖 | `F`（共同基线） |
 | 状态 | Pending |
 
 **Owned**：promotions constants/schema/service/controller/routes中package/request/review非billing区域、tests。
@@ -115,7 +115,7 @@
 | --- | --- |
 | 优先级 | P0 |
 | 对应需求 | REQ-MERCH-F-009~012 |
-| 依赖 | T-FND-001、T-MERCH-BE-002、T-MERCH-BE-004 |
+| 依赖 | `F`（共同基线）、T-MERCH-BE-002、T-MERCH-BE-004 |
 | 状态 | Pending |
 
 **Owned**：editorial/entitlements modules、partner cron、public projection增量、tests。
@@ -295,12 +295,12 @@
 
 | Task | 前置 | 可并行 | 解锁 |
 | --- | --- | --- | --- |
-| T-MERCH-DOC-001 | Owner | 无 | T-FND-001 |
-| T-FND-001 | Catalog+Merch+PAR Frozen | Identity lanes | 全部 Merch BE |
-| T-MERCH-BE-001 | T-FND-001 | T-MERCH-BE-003、FE、Asset | T-MERCH-BE-002 |
+| T-MERCH-DOC-001 | Owner | 无 | `A_CMI`/`F0` 审核 |
+| T-FND-001（F0，引用） | `A_CMI` + Catalog+Merch+PAR Frozen | Identity lanes | `B_CAT`；Merch BE 仅 `F` 后 |
+| T-MERCH-BE-001 | `F`（共同基线） | T-MERCH-BE-003、FE、Asset | T-MERCH-BE-002 |
 | T-MERCH-BE-002 | T-MERCH-BE-001 | T-MERCH-BE-003～004、FE | T-MERCH-BE-005、INT、QA-001 |
 | T-MERCH-X-001 | frozen fixtures | BE/FE | T-MERCH-INT-001 |
-| T-MERCH-BE-003 | T-FND-001 | T-MERCH-BE-001～002、FE | T-MERCH-BE-004 |
+| T-MERCH-BE-003 | `F`（共同基线） | T-MERCH-BE-001～002、FE | T-MERCH-BE-004 |
 | T-MERCH-BE-004 | T-MERCH-BE-003 | T-MERCH-BE-001～002、FE | T-MERCH-BE-005、QA-002 |
 | T-MERCH-BE-005 | T-MERCH-BE-002、T-MERCH-BE-004 | FE/Asset | T-MERCH-INT-001 |
 | T-MERCH-FE-001～003 | frozen fixtures | 相互、BE | T-MERCH-INT-001、T-MERCH-QA-003 |
@@ -319,3 +319,10 @@
 - [ ] 无重复扣款、负余额、超退、partial run、无disclosure广告或认证误导。
 - [ ] Image2和runtime assets满足review/secret/bundle Gate。
 - [ ] Migration/points/orders/products/admin/notification回归、性能、a11y、rollout/rollback全绿。
+
+### 修订记录
+
+| 版本 | 日期 | 状态 | 说明 |
+| --- | --- | --- | --- |
+| 0.1.0 | 2026-08-09 | Frozen for Implementation | Owner 批准：自然热卖、积分推广、精选/自营/合作权益、Image2 资产治理 |
+| 0.1.1 | 2026-08-09 | Frozen for Implementation | Owner 批准唯一修订：CMI Foundation DAG 改为 S→A_CMI→F0→B_CAT→F；Merch 只消费最终 F、不参与 B_CAT，BE 卡前置改为共同基线 F |
