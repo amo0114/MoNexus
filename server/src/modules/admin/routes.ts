@@ -111,6 +111,9 @@ router.put('/users/:id/unban', validate({ params: idParamSchema }), controller.u
 router.get('/products', controller.products)
 router.post('/products', validate(createProductSchema), controller.createProduct)
 router.put('/products/:id', validate({ params: idParamSchema, body: updateProductSchema }), controller.updateProduct)
+router.get('/products/:id/readiness', validate({ params: idParamSchema }), controller.productReadiness)
+router.post('/products/:id/publish', validate({ params: idParamSchema }), controller.publishProduct)
+router.post('/products/:id/unpublish', validate({ params: idParamSchema }), controller.unpublishProduct)
 router.delete('/products/:id', validate({ params: idParamSchema }), controller.deleteProduct)
 router.post('/products/:id/inventory', validate({ params: idParamSchema, body: importInventorySchema }), controller.importInventory)
 // FakaBridge Xboard 管理：仅平台管理员（本路由组已 requireAdmin + MFA）

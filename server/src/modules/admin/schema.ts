@@ -134,23 +134,28 @@ const adminProductFieldsSchema = z.object({
     .optional(),
 })
 
-export const createProductSchema = adminProductFieldsSchema.extend({
+const adminDraftProductFieldsSchema = adminProductFieldsSchema.omit({
+  isHot: true,
+  stock: true,
+})
+
+export const createProductSchema = adminDraftProductFieldsSchema.extend({
   // B_CAT (D-CAT-09): explicit categoryId for new writes.
   categoryId: z.number().int().positive().optional(),
 })
+  .strict()
   .superRefine(validateProductCommercialFields)
   .superRefine(assertExactlyOneCategoryInput)
 
 export type CreateProductInput = z.infer<typeof createProductSchema>
 
-export const updateProductSchema = adminProductFieldsSchema.partial().extend({
+export const updateProductSchema = adminDraftProductFieldsSchema.partial().extend({
   // update permits explicit clearing before changing away from instant_fixed.
   fixedContent: z.string().trim().min(1).max(5000).nullable().optional(),
   // `null` is an intentional request to remove the strikethrough price.
   originalPrice: productPriceSchema.nullable().optional(),
   imageUrl: productImageItemSchema.nullable().optional(),
-  status: z.enum(['active', 'inactive']).optional(),
-}).superRefine(validateProductCommercialFields)
+}).strict().superRefine(validateProductCommercialFields)
 
 export type UpdateProductInput = z.infer<typeof updateProductSchema>
 

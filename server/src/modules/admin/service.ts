@@ -44,6 +44,11 @@ import { revokeAllUserRefreshTokens } from '../auth/service.js'
 import { lockUserRefreshSessionMutations } from '../auth/sessionService.js'
 import { invalidateProductPublicCache } from '../products/cache.js'
 import { resolveProductCategory } from '../catalog/resolver.js'
+import { checkProductReadiness } from '../catalog/publicationReadiness.js'
+import {
+  publishProduct as publishCatalogProduct,
+  unpublishProduct as unpublishCatalogProduct,
+} from '../catalog/productPublication.js'
 import { serializeAdminOrderDetail, serializeAdminOrderList } from '../orders/serializers.js'
 import { getSettlementEligibility } from '../merchant/service.js'
 import { transitionOrderStatus } from '../orders/fulfillment.js'
@@ -323,8 +328,8 @@ export async function createProduct(adminUserId: number, data: CreateProductInpu
   assertProductDeliveryConfiguration({
     deliveryMode,
     stockMode,
-    incomingStock: data.stock,
-    effectiveStock: data.stock,
+    incomingStock: undefined,
+    effectiveStock: 0,
     fixedContent: data.fixedContent,
     fixedContentType,
   })
@@ -366,7 +371,9 @@ export async function createProduct(adminUserId: number, data: CreateProductInpu
         deliveryMode,
         stockMode,
         fixedContentType,
-        stock: deliveryMode === 'instant_inventory' ? 0 : (data.stock ?? 0),
+        stock: 0,
+        status: 'draft',
+        merchantId: null,
       },
     })
     // P4a：Offer 是价格/履约配置真相源，商品创建时同事务生成默认 Offer。
@@ -375,7 +382,7 @@ export async function createProduct(adminUserId: number, data: CreateProductInpu
       originalPrice: data.originalPrice ?? null,
       deliveryMode,
       stockMode,
-      stock: deliveryMode === 'instant_inventory' ? 0 : (data.stock ?? 0),
+      stock: 0,
       fixedContent: data.fixedContent ?? null,
       fixedContentType,
       externalIntegration: faka.externalIntegration,
@@ -394,6 +401,18 @@ export async function createProduct(adminUserId: number, data: CreateProductInpu
   })
   await invalidateProductPublicCache(product.id, { list: true })
   return product
+}
+
+export async function getProductReadiness(productId: number) {
+  return checkProductReadiness(productId)
+}
+
+export async function publishProduct(productId: number) {
+  return publishCatalogProduct(productId)
+}
+
+export async function unpublishProduct(productId: number) {
+  return unpublishCatalogProduct(productId)
 }
 
 export async function updateProduct(adminUserId: number, id: number, data: UpdateProductInput) {
@@ -422,7 +441,7 @@ export async function updateProduct(adminUserId: number, id: number, data: Updat
       ?? (normalizedProductData.deliveryMode && deliveryMode !== product.deliveryMode
         ? (deliveryMode === 'instant_inventory' ? 'limited' : 'unlimited')
         : product.stockMode)
-    const incomingStock = typeof normalizedProductData.stock === 'number' ? normalizedProductData.stock : undefined
+    const incomingStock: number | undefined = undefined
 
     if (!('fixedContent' in normalizedProductData) && product.fixedContent != null && deliveryMode !== 'instant_fixed') {
       throw badRequest('切换交付模式请同时将 fixedContent 置空（传 null）')
@@ -443,7 +462,7 @@ export async function updateProduct(adminUserId: number, id: number, data: Updat
       deliveryMode,
       stockMode,
       incomingStock,
-      effectiveStock: incomingStock ?? product.stock,
+      effectiveStock: product.stock,
       fixedContent: 'fixedContent' in normalizedProductData
         ? normalizedProductData.fixedContent
         : product.fixedContent,

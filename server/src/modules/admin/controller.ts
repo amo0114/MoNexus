@@ -64,6 +64,32 @@ export async function updateProduct(req: Request, res: Response, next: NextFunct
   } catch (err) { next(err) }
 }
 
+export async function productReadiness(req: Request, res: Response, next: NextFunction) {
+  try {
+    const productId = req.params.id as unknown as number
+    const result = await adminService.getProductReadiness(productId)
+    res.json({
+      ready: result.ready,
+      productId,
+      issues: result.details.map(({ code, field, offerId }) => ({ code, field, offerId })),
+    })
+  } catch (err) { next(err) }
+}
+
+export async function publishProduct(req: Request, res: Response, next: NextFunction) {
+  try {
+    const outcome = await adminService.publishProduct(req.params.id as unknown as number)
+    res.json({ id: outcome.product.id, status: outcome.product.status, publishedAt: outcome.product.publishedAt })
+  } catch (err) { next(err) }
+}
+
+export async function unpublishProduct(req: Request, res: Response, next: NextFunction) {
+  try {
+    const outcome = await adminService.unpublishProduct(req.params.id as unknown as number)
+    res.json({ id: outcome.product.id, status: outcome.product.status, publishedAt: outcome.product.publishedAt })
+  } catch (err) { next(err) }
+}
+
 export async function importInventory(req: Request, res: Response, next: NextFunction) {
   try {
     const productId = req.params.id as unknown as number

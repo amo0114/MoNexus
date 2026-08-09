@@ -18,6 +18,11 @@ import {
 } from '../../lib/inventoryImport.js'
 import { invalidateProductPublicCache } from '../products/cache.js'
 import { resolveProductCategory } from '../catalog/resolver.js'
+import { checkProductReadiness } from '../catalog/publicationReadiness.js'
+import {
+  publishProduct as publishCatalogProduct,
+  unpublishProduct as unpublishCatalogProduct,
+} from '../catalog/productPublication.js'
 import {
   createOrderStatusEvent,
   isInstantMode,
@@ -287,8 +292,8 @@ export async function createMyProduct(
     // B_CAT (SPEC-CATALOG-OPS-001 §7.4): legacy `type` is a compatibility input;
     // new writes should use `categoryId` (exactly one required, schema-enforced).
     type?: string; categoryId?: number; icon?: string; imageUrl?: string | null; images?: string[];
-    price: number; originalPrice?: number; isHot?: boolean; deliveryMode?: string;
-    stockMode?: string; stock?: number; fixedContent?: string; fixedContentType?: string;
+    price: number; originalPrice?: number; deliveryMode?: string;
+    stockMode?: string; fixedContent?: string; fixedContentType?: string;
     purchaseForm?: PurchaseFormField[];
     // P4a F3：向导原子发布——默认规格名 + 额外规格与商品同事务落库。
     primaryOfferName?: string;
@@ -313,8 +318,8 @@ export async function createMyProduct(
   assertProductDeliveryConfiguration({
     deliveryMode,
     stockMode,
-    incomingStock: data.stock,
-    effectiveStock: data.stock,
+    incomingStock: undefined,
+    effectiveStock: 0,
     fixedContent: data.fixedContent,
     fixedContentType,
   })
@@ -333,7 +338,8 @@ export async function createMyProduct(
         deliveryMode,
         stockMode,
         fixedContentType,
-        stock: deliveryMode === 'instant_inventory' ? 0 : (data.stock ?? 0),
+        stock: 0,
+        status: 'draft',
         merchantId,
       },
     })
@@ -343,7 +349,7 @@ export async function createMyProduct(
       originalPrice: data.originalPrice ?? null,
       deliveryMode,
       stockMode,
-      stock: deliveryMode === 'instant_inventory' ? 0 : (data.stock ?? 0),
+      stock: 0,
       fixedContent: data.fixedContent ?? null,
       fixedContentType,
       validityDays: data.validityDays ?? null,
@@ -362,6 +368,29 @@ export async function createMyProduct(
 
   await invalidateProductPublicCache(product.id, { list: true })
   return product
+}
+
+async function assertProductOwnedByMerchant(merchantId: number, productId: number): Promise<void> {
+  const owned = await prisma.product.findFirst({
+    where: { id: productId, merchantId },
+    select: { id: true },
+  })
+  if (!owned) throw notFound('商品不存在')
+}
+
+export async function getMyProductReadiness(merchantId: number, productId: number) {
+  await assertProductOwnedByMerchant(merchantId, productId)
+  return checkProductReadiness(productId)
+}
+
+export async function publishMyProduct(merchantId: number, productId: number) {
+  await assertProductOwnedByMerchant(merchantId, productId)
+  return publishCatalogProduct(productId)
+}
+
+export async function unpublishMyProduct(merchantId: number, productId: number) {
+  await assertProductOwnedByMerchant(merchantId, productId)
+  return unpublishCatalogProduct(productId)
 }
 
 export async function updateMyProduct(merchantId: number, productId: number, data: Record<string, unknown>) {
