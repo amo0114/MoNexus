@@ -14,6 +14,7 @@
 import { describe, expect, it, beforeEach } from 'vitest'
 import { prisma } from '../../../lib/prisma.js'
 import {
+  buildSessionLockDatasourceUrl,
   createRunningRun,
   dbNow,
   findLatestCompletedRun,
@@ -21,6 +22,7 @@ import {
   markRunFailed,
   reclaimStaleRunning,
   RankingRunSessionLock,
+  RunFencedError,
   runRetention,
   writeSnapshotsAndComplete,
 } from '../ranking/repository.js'
@@ -123,6 +125,12 @@ async function runRow(runId: string) {
 const realPg = describe.skipIf(!process.env.TEST_DATABASE_URL)
 
 realPg('ranking run lifecycle — advisory lock (REAL-PG)', () => {
+  beforeEach(async () => {
+    // 允许该 real-PG suite 对同一专库重复执行；上一轮中断遗留的 running
+    // row 不得把本轮并发验证短路为 running_exists。
+    await prisma.merchandisingRun.deleteMany()
+  })
+
   it('is exclusive across two dedicated connections, and is released on release()', async () => {
     const lock1 = new RankingRunSessionLock()
     const lock2 = new RankingRunSessionLock()
@@ -133,6 +141,22 @@ realPg('ranking run lifecycle — advisory lock (REAL-PG)', () => {
     // release 后锁可用，不遗留孤儿锁（stop/restart 语义）。
     expect(await lock2.acquire()).toBe(true)
     await lock2.release()
+  })
+
+  it('acquire → release → reacquire on the same instance proves release() truly unlocks', async () => {
+    const lock = new RankingRunSessionLock()
+    expect(await lock.acquire()).toBe(true)
+    // release() 不抛错：pg_advisory_unlock 在同一物理会话上返回 true
+    // （connection_limit=1 保证 acquire/unlock 同一连接；返回 false 会大声抛错）。
+    await lock.release()
+    // 同实例 reacquire：另一会话 probe 能拿到锁，即为「已真正解锁」的证明
+    // （若 release 未解锁，会话锁计数仍占用，probe 会被拒）。
+    const probe = new RankingRunSessionLock()
+    expect(await probe.acquire()).toBe(true)
+    await probe.release()
+    // 锁归还后同实例再次 acquire 也成功（无残留锁计数）。
+    expect(await lock.acquire()).toBe(true)
+    await lock.release()
   })
 
   it('two concurrent lifecycle runs produce exactly one run row', async () => {
@@ -227,22 +251,32 @@ realPg('ranking run lifecycle — A/B/C failure semantics (REAL-PG)', () => {
     expect((await findLatestCompletedRun())?.id).toBe((first as { runId: string }).runId)
   })
 
-  it('mark-failed wrap-up failing only warns and never fabricates success (run stays running)', async () => {
-    const { products } = await createCategoryAndProducts(1)
+  it('mark-failed terminal CAS collision never fabricates wrap-up success', async () => {
     const throwingCompute: RunCompute = async () => {
       throw new Error('boom')
     }
-    // 让独立短事务 C 也失败：把 run 先手动置成 completed（terminal），
-    // 则 running→failed CAS 影响 0 行 → wrappedUp=false。
+    let nowCalls = 0
+    const terminalizingDbNow = async () => {
+      const now = await dbNow()
+      nowCalls += 1
+      // 第三次取时发生在事务 B 已回滚、独立事务 C 之前。模拟另一个恢复者
+      // 已把该 run 推进到 terminal：真实 DB CAS 随后必须影响 0 行。
+      if (nowCalls === 3) {
+        await prisma.merchandisingRun.updateMany({
+          where: { status: RUN_STATUS.RUNNING },
+          data: { status: RUN_STATUS.COMPLETED, completedAt: now },
+        })
+      }
+      return now
+    }
     const outcome = await runRankingRun({
       compute: throwingCompute,
       configLoader,
-      dbNow: async () => new Date(),
+      dbNow: terminalizingDbNow,
     })
-    // run 已被置成 completed，C 无法再 failed——此时不应伪报成功。
-    if (outcome.kind === 'failed') {
-      expect((outcome as { wrappedUp: boolean }).wrappedUp).toBe(false)
-    }
+    expect(outcome.kind).toBe('failed')
+    expect((outcome as { wrappedUp: boolean }).wrappedUp).toBe(false)
+    expect((await runRow((outcome as { runId: string }).runId)).status).toBe(RUN_STATUS.COMPLETED)
   })
 })
 
@@ -261,6 +295,15 @@ realPg('ranking run lifecycle — stale running reclaim / fencing (REAL-PG)', ()
       topPercent: 20,
       startedAt: new Date(now.getTime() - 2 * HOUR_MS),
     })
+    const reclaimed = await reclaimStaleRunning(TEST_CONFIG.hotRunTimeoutMinutes)
+    expect(reclaimed).toBe(1)
+    const staleRow = await runRow(stale.id)
+    expect(staleRow.status).toBe(RUN_STATUS.FAILED)
+    expect(staleRow.failureCode).toBe(RUN_FAILURE_CODES.RUN_TIMEOUT)
+    expect(staleRow.failedAt).not.toBeNull()
+
+    // partial unique 明确禁止同时存在 stale + fresh 两条 running；回收 stale
+    // 后再创建 fresh，并再次执行 reclaim 证明新鲜 run 不会被误伤。
     const fresh = await createRunningRun({
       windowStart: new Date(now.getTime() - HOUR_MS),
       windowEnd: now,
@@ -269,12 +312,7 @@ realPg('ranking run lifecycle — stale running reclaim / fencing (REAL-PG)', ()
       topPercent: 20,
       startedAt: new Date(now.getTime() - 10 * MINUTE_MS),
     })
-    const reclaimed = await reclaimStaleRunning(TEST_CONFIG.hotRunTimeoutMinutes)
-    expect(reclaimed).toBe(1)
-    const staleRow = await runRow(stale.id)
-    expect(staleRow.status).toBe(RUN_STATUS.FAILED)
-    expect(staleRow.failureCode).toBe(RUN_FAILURE_CODES.RUN_TIMEOUT)
-    expect(staleRow.failedAt).not.toBeNull()
+    expect(await reclaimStaleRunning(TEST_CONFIG.hotRunTimeoutMinutes)).toBe(0)
     const freshRow = await runRow(fresh.id)
     expect(freshRow.status).toBe(RUN_STATUS.RUNNING)
   })
@@ -309,7 +347,7 @@ realPg('ranking run lifecycle — stale running reclaim / fencing (REAL-PG)', ()
           compute: fixtureCompute(products),
         },
       ),
-    ).rejects.toThrow('RunFencedError')
+    ).rejects.toThrow(RunFencedError)
 
     const staleRow = await runRow(stale.id)
     expect(staleRow.status).toBe(RUN_STATUS.FAILED) // 不能 completed
@@ -439,10 +477,19 @@ realPg('ranking run lifecycle — retention (REAL-PG)', () => {
   it('cleans superseded completed runs (>48h, keeps latest), failed snapshots (>48h) and failed runs (>7d)', async () => {
     const now = await dbNow()
     const { products } = await createCategoryAndProducts(1)
-    const compute = fixtureCompute(products)
     const snapshotsFor = async (runId: string) => {
-      const ctx = { runId, windowStart: new Date(now.getTime() - HOUR_MS), windowEnd: now, windowDays: 30, minSales: 5, topPercent: 20 }
-      return writeSnapshotsAndComplete({ runId, completedAt: now, context: ctx, compute })
+      await prisma.productMerchandisingSnapshot.create({
+        data: {
+          runId,
+          productId: products[0].id,
+          categoryId: products[0].categoryId,
+          effectiveOrderCount: 1,
+          categoryRank: 1,
+          categoryPopulation: 1,
+          isHot: true,
+          computedAt: now,
+        },
+      })
     }
 
     // 旧 completed（>48h，被替换）→ 应删除
@@ -516,7 +563,9 @@ realPg('ranking run lifecycle — retention (REAL-PG)', () => {
     const stats = await runRetention()
 
     expect(stats.deletedSupersededCompletedRuns).toBe(1)
-    expect(stats.deletedFailedRunSnapshots).toBe(1)
+    // oldFailed（>7d）与 midFailed（>48h）两者的 snapshot 都先按 48h
+    // retention 删除；随后 oldFailed run 行再按 7d retention 删除。
+    expect(stats.deletedFailedRunSnapshots).toBe(2)
     expect(stats.deletedFailedRuns).toBe(1)
 
     expect(await prisma.merchandisingRun.findUnique({ where: { id: oldCompleted.id } })).toBeNull()
@@ -537,6 +586,19 @@ realPg('ranking run lifecycle — admin run query + manual recompute (REAL-PG)',
   async function makeAdmin() {
     return prisma.user.create({ data: { email: `admin-${Date.now()}@test.local`, password: 'x', role: 'admin' } })
   }
+
+  it('requestManualRecompute skips with compute_unavailable when no compute registered (BE-002)', async () => {
+    const admin = await makeAdmin()
+    // compute 未注册（模块级初始为 null）→ 明确 skipped(compute_unavailable)，
+    // 不再误报 running_exists（后者描述的是“已有 running 未超时”，与实况不符）。
+    expect(getRankingCompute()).toBeNull()
+    const outcome = await requestManualRecompute(admin.id)
+    expect(outcome.kind).toBe('skipped')
+    expect((outcome as { reason: string }).reason).toBe('compute_unavailable')
+    // 未真正开跑：不写 AdminLog，也不产生 run 行。
+    expect(await prisma.adminLog.count({ where: { adminUserId: admin.id } })).toBe(0)
+    expect(await prisma.merchandisingRun.count()).toBe(0)
+  })
 
   it('listAdminRuns is paginated, ordered, and exposes only desensitized run fields + snapshot count', async () => {
     const { products } = await createCategoryAndProducts(1)
@@ -610,7 +672,8 @@ realPg('ranking run lifecycle — metrics and cron (REAL-PG)', () => {
     const counter = await merchandisingRunTotal.get()
     const completedSeries = counter.values.find(v => v.labels.outcome === 'completed')
     expect(completedSeries?.value).toBeGreaterThan(0)
-    expect(merchandisingSnapshotProducts.get()).toBe(2)
+    const snapshotGauge = await merchandisingSnapshotProducts.get()
+    expect(snapshotGauge.values[0]?.value).toBe(2)
 
     expect(() => recordRunOutcome('bogus' as never)).toThrow()
   })
@@ -645,6 +708,25 @@ describe('ranking run lifecycle — pure unit (no DB)', () => {
     expect(await isRecomputeDue(60, now, fresh)).toBe(false)
     const old = { status: RUN_STATUS.COMPLETED, startedAt: new Date(now.getTime() - 61 * MINUTE_MS) }
     expect(await isRecomputeDue(60, now, old)).toBe(true)
+  })
+
+  it('buildSessionLockDatasourceUrl forces connection_limit=1 and preserves other params (pure, no DB)', () => {
+    // 纯函数：只做 URL 变换，不读 env、不打日志；返回值仅供 PrismaClient 构造，
+    // 绝不落日志/对外返回（含凭据）。
+    const url = buildSessionLockDatasourceUrl('postgresql://user:pass@dbhost:5432/monexus_test?schema=public&connect_timeout=5')
+    const parsed = new URL(url)
+    expect(parsed.searchParams.get('connection_limit')).toBe('1')
+    expect(parsed.searchParams.get('schema')).toBe('public')
+    expect(parsed.searchParams.get('connect_timeout')).toBe('5')
+    expect(parsed.hostname).toBe('dbhost')
+    expect(parsed.port).toBe('5432')
+    expect(parsed.pathname).toBe('/monexus_test')
+    // 已存在的 connection_limit 被强制覆盖为 1（force 语义），其余参数保留。
+    const replaced = new URL(
+      buildSessionLockDatasourceUrl('postgresql://user:pass@dbhost:5432/monexus_test?connection_limit=5&schema=public'),
+    )
+    expect(replaced.searchParams.get('connection_limit')).toBe('1')
+    expect(replaced.searchParams.get('schema')).toBe('public')
   })
 
   it('validateRankingConfig rejects out-of-range frozen values (pure, no DB)', () => {

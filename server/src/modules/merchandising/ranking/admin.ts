@@ -104,8 +104,7 @@ export type ManualRecomputeResult = RunOutcome & { adminUserId: number }
  * - 仅 admin：非 admin 抛 403 FORBIDDEN（路由 MFA 之外的服务层复核）。
  * - 与 scheduled 共用 cadence：最近 completed run 未到 hotRecomputeMinutes 时
  *   返回 skipped(cadence)，由路由映射为 429；failed run 允许立即重试。
- * - compute 未注册（BE-002 未接入）时返回 skipped(running_exists) 语义的
- *   说明性失败，避免静默空 run。
+ * - compute 未注册（BE-002 未接入）时返回 skipped(compute_unavailable)，避免静默空 run。
  * - 真正开跑的 recompute 写 AdminLog（action + 目标 runId 放入 detail）。
  */
 export async function requestManualRecompute(
@@ -125,7 +124,7 @@ export async function requestManualRecompute(
   const compute = getRankingCompute()
   if (!compute) {
     logger.warn({ adminUserId }, 'manual recompute skipped: ranking compute not registered (T-MERCH-BE-002)')
-    return { kind: 'skipped', reason: 'running_exists', adminUserId }
+    return { kind: 'skipped', reason: 'compute_unavailable', adminUserId }
   }
 
   const configLoader = deps.configLoader ?? loadRankingConfig

@@ -16,6 +16,7 @@
 //     失败 run 诊断保留 7 天（snapshots 48h 后可删）。
 
 import { Prisma, PrismaClient } from '@prisma/client'
+import { config } from '../../../config/index.js'
 import { prisma } from '../../../lib/prisma.js'
 import { RUN_STATUS } from '../constants.js'
 import {
@@ -121,17 +122,20 @@ export async function writeSnapshotsAndComplete(
     } catch (err) {
       throw new ComputeFailedError(input.runId, err)
     }
+    // 先写该 run 的全部 snapshots，再做 completed CAS（spec/plan 冻结顺序：
+    // “写全部 snapshots 并 CAS 为 completed”）。两者仍在同一事务 B 内，
+    // 后续 CAS 影响 0 行抛 RunFencedError 时，snapshots 一并回滚。
+    if (snapshots.length > 0) {
+      await tx.productMerchandisingSnapshot.createMany({
+        data: snapshots.map(s => ({ ...s, runId: input.runId, computedAt: input.completedAt })),
+      })
+    }
     const updated = await tx.merchandisingRun.updateMany({
       where: { id: input.runId, status: RUN_STATUS.RUNNING },
       data: { status: RUN_STATUS.COMPLETED, completedAt: input.completedAt },
     })
     if (updated.count !== 1) {
       throw new RunFencedError(input.runId)
-    }
-    if (snapshots.length > 0) {
-      await tx.productMerchandisingSnapshot.createMany({
-        data: snapshots.map(s => ({ ...s, runId: input.runId, computedAt: input.completedAt })),
-      })
     }
     return snapshots.length
   })
@@ -243,7 +247,7 @@ export async function runRetention(
       )
       DELETE FROM "MerchandisingRun" r
       WHERE r."status" = 'completed'
-        AND r."completedAt" < (now() AT TIME ZONE 'UTC') - make_interval(hours => ${COMPLETED_RUN_RETENTION_HOURS})
+        AND r."completedAt" < (now() AT TIME ZONE 'UTC') - make_interval(hours => ${COMPLETED_RUN_RETENTION_HOURS}::int)
         AND NOT EXISTS (SELECT 1 FROM latest l WHERE l."id" = r."id")
     `
 
@@ -252,13 +256,13 @@ export async function runRetention(
       USING "MerchandisingRun" r
       WHERE s."runId" = r."id"
         AND r."status" = 'failed'
-        AND r."failedAt" < (now() AT TIME ZONE 'UTC') - make_interval(hours => ${COMPLETED_RUN_RETENTION_HOURS})
+        AND r."failedAt" < (now() AT TIME ZONE 'UTC') - make_interval(hours => ${COMPLETED_RUN_RETENTION_HOURS}::int)
     `
 
     const deletedFailedRuns = await tx.$executeRaw`
       DELETE FROM "MerchandisingRun"
       WHERE "status" = 'failed'
-        AND "failedAt" < (now() AT TIME ZONE 'UTC') - make_interval(days => ${FAILED_RUN_RETENTION_DAYS})
+        AND "failedAt" < (now() AT TIME ZONE 'UTC') - make_interval(days => ${FAILED_RUN_RETENTION_DAYS}::int)
     `
 
     return {
@@ -270,6 +274,19 @@ export async function runRetention(
 }
 
 /**
+ * 把 DATABASE_URL 变换成专用连接的 Prisma datasource URL：强制
+ * `connection_limit=1`（连接池恒为一个物理连接），从而保证会话级 advisory
+ * lock 的 acquire/unlock 永远落在同一条 PG 会话上。纯函数：只做 URL 变换，
+ * 不读 env、不打日志；保留其余 query 参数（如 schema）。返回值仅供
+ * PrismaClient 构造，绝不打日志或对外返回。
+ */
+export function buildSessionLockDatasourceUrl(databaseUrl: string): string {
+  const url = new URL(databaseUrl)
+  url.searchParams.set('connection_limit', '1')
+  return url.toString()
+}
+
+/**
  * 会话级 advisory lock，持有整个 run 生命周期（横跨短事务 A / B / C）。
  *
  * 锁必须挂在**专用连接**上：Prisma 连接池可能把一条 `$queryRaw` 用的连接
@@ -277,6 +294,10 @@ export async function runRetention(
  * 专用 PrismaClient 在 release/进程退出时 `$disconnect()`，连接关闭即由 PG
  * 自动释放 session lock——stop/restart/kill -9 都不会遗留孤儿锁。
  *
+ * 专用 datasource 由 `config.databaseUrl` 经 `buildSessionLockDatasourceUrl`
+ * 构造并强制 `connection_limit=1`：没有单连接池，连接池可能把 acquire 与
+ * unlock 分派到不同的物理会话，session lock 的同一会话语义就不再是形式化
+ * 保证（专用默认池不是保证）。
  * 用非阻塞 `pg_try_advisory_lock`：锁被占用时直接跳过本轮（调度优化），
  * DB 的 single-running partial unique 是最终兜底。
  */
@@ -287,7 +308,9 @@ export class RankingRunSessionLock {
 
   async acquire(): Promise<boolean> {
     if (this.client) return true // 已持有
-    const client = new PrismaClient()
+    const client = new PrismaClient({
+      datasources: { db: { url: buildSessionLockDatasourceUrl(config.databaseUrl) } },
+    })
     try {
       const rows = await client.$queryRaw<{ locked: boolean }[]>`
         SELECT pg_try_advisory_lock(${RANKING_RUN_LOCK_CLASS}::int4, ${this.objectId}::int4) AS locked`
@@ -308,9 +331,16 @@ export class RankingRunSessionLock {
     if (!client) return
     this.client = null
     try {
-      await client.$queryRaw`
-        SELECT pg_advisory_unlock(${RANKING_RUN_LOCK_CLASS}::int4, ${this.objectId}::int4)`
+      const rows = await client.$queryRaw<{ unlocked: boolean }[]>`
+        SELECT pg_advisory_unlock(${RANKING_RUN_LOCK_CLASS}::int4, ${this.objectId}::int4) AS unlocked`
+      // unlock 返回 false 表示本会话不持有该锁（acquire/unlock 落到了不同
+      // 物理会话）——大声失败而不是静默吞掉。connection_limit=1 下不可能
+      // 分派到别的会话，此处是形式化兜底；错误信息不含 URL/凭据。
+      if (!rows[0]?.unlocked) {
+        throw new Error(`ranking run advisory lock ${RANKING_RUN_LOCK_CLASS}:${this.objectId} not held on this session`)
+      }
     } finally {
+      // 无论解锁成功与否都断开专用连接：连接关闭即由 PG 自动释放残留 session lock。
       await client.$disconnect().catch(() => {})
     }
   }

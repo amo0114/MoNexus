@@ -72,12 +72,12 @@ export type RunCompute = (
  * - completed：事务 B 成功，snapshotCount 为写入行数。
  * - failed：事务 B（或更早步骤）失败；wrappedUp 表示独立事务 C 的
  *   running→failed CAS 是否成功（false 只能告警，不能伪报成功）。
- * - skipped：未产生新 run（lock_busy / running_exists / cadence）。
+ * - skipped：未产生新 run（lock_busy / running_exists / compute_unavailable / cadence）。
  */
 export type RunOutcome =
   | { kind: 'completed'; runId: string; snapshotCount: number }
   | { kind: 'failed'; runId: string | null; failureCode: RunFailureCode; wrappedUp: boolean }
-  | { kind: 'skipped'; reason: 'lock_busy' | 'running_exists' | 'cadence' }
+  | { kind: 'skipped'; reason: 'lock_busy' | 'running_exists' | 'compute_unavailable' | 'cadence' }
 
 /** Retention 执行统计（仅用于日志/metrics 计数，不含任何标识）。 */
 export interface RetentionStats {

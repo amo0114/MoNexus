@@ -134,7 +134,17 @@ function classifyFailure(err: unknown): RunFailureCode {
   if (err instanceof RunFencedError) return RUN_FAILURE_CODES.COMMIT_FAILED
   if (err instanceof ComputeFailedError) return RUN_FAILURE_CODES.COMPUTE_FAILED
   // 事务 B 内 snapshots 写入/CAS 的 DB 错误（含 CHECK 约束、连接失败）。
-  if (err instanceof Prisma.PrismaClientKnownRequestError) return RUN_FAILURE_CODES.COMMIT_FAILED
+  // PostgreSQL CHECK violation 经 createMany 在当前 Prisma 版本会包装成
+  // UnknownRequestError，而非 KnownRequestError；两者都属于 commit 阶段失败。
+  if (
+    err instanceof Prisma.PrismaClientKnownRequestError
+    || err instanceof Prisma.PrismaClientUnknownRequestError
+    || err instanceof Prisma.PrismaClientInitializationError
+    || err instanceof Prisma.PrismaClientRustPanicError
+    || err instanceof Prisma.PrismaClientValidationError
+  ) {
+    return RUN_FAILURE_CODES.COMMIT_FAILED
+  }
   return RUN_FAILURE_CODES.INTERNAL_ERROR
 }
 
