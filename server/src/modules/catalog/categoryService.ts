@@ -1,0 +1,389 @@
+// T-CAT-BE-001 — Category repository + admin governance (SPEC-CATALOG-OPS-001
+// §7.2; D-CAT-06/D-CAT-07; REQ-CAT-F-007; CHK-CAT-001~004, 012).
+//
+// Domain rules enforced here that the schema cannot see:
+//   - code is immutable after creation (D-CAT-06) → code PATCH rejected;
+//   - code/normalizedLabel are globally unique and code is never reused, even
+//     after a category is deactivated (§5.1);
+//   - a referenced category can only be deactivated; physical delete is refused
+//     (D-CAT-07, AC-CAT-011);
+//   - activate/deactivate use a status CAS (updateMany where id + opposite
+//     status) so concurrent transitions are safe and idempotent;
+//   - reorder is transactional (last-write-wins) and never partially applies;
+//   - every mutation writes an AdminLog (detail = field/status names only, no
+//     rich text) inside the same DB transaction as the mutation, and bumps the
+//     public registry generation so caches converge without a restart
+//     (REQ-CAT-NF-008, AC-CAT-026).
+
+import { Prisma } from '@prisma/client'
+import { prisma } from '../../lib/prisma.js'
+import { badRequest, HttpError, notFound, type ErrorCode } from '../../lib/httpError.js'
+import {
+  CATALOG_ERROR_CODES,
+  CATEGORY_STATUS,
+  type CatalogErrorCode,
+  type CategoryStatus,
+} from './constants.js'
+import type { CategoryAdminDto } from './contracts.js'
+import { normalizeCategoryLabel, type CreateCategoryInput, type ListCategoriesQuery, type UpdateCategoryInput } from './categorySchema.js'
+import { bumpCategoryRegistryCacheVersion } from './registry.js'
+
+type Client = typeof prisma | Prisma.TransactionClient
+
+const adminSelect = {
+  id: true,
+  code: true,
+  label: true,
+  normalizedLabel: true,
+  description: true,
+  iconKey: true,
+  defaultCoverUrl: true,
+  sortOrder: true,
+  status: true,
+  createdByUserId: true,
+  updatedByUserId: true,
+  createdAt: true,
+  updatedAt: true,
+} as const
+
+type AdminCategoryRow = Prisma.ProductCategoryGetPayload<{ select: typeof adminSelect }>
+
+export function categoryHttpError(status: number, code: CatalogErrorCode, message: string): HttpError {
+  // CATALOG_ERROR_CODES members are a superset of the shared ErrorCode union;
+  // they still ride the standard HttpError so the error middleware formats them
+  // (same pattern as catalog/resolver.ts).
+  return new HttpError(status, code as ErrorCode, message)
+}
+
+function isPrismaErrorCode(err: unknown, code: string): boolean {
+  return err instanceof Prisma.PrismaClientKnownRequestError && err.code === code
+}
+
+/** Unique-constraint collision on one of the named columns (P2002 meta.target). */
+function isUniqueError(err: unknown, ...fields: string[]): boolean {
+  if (!(err instanceof Prisma.PrismaClientKnownRequestError) || err.code !== 'P2002') return false
+  const target = (err.meta as { target?: unknown } | undefined)?.target
+  const values = Array.isArray(target) ? target.map(String) : target != null ? [String(target)] : []
+  return fields.some(field => values.includes(field) || values.some(v => v.includes(field)))
+}
+
+function isForeignKeyError(err: unknown): boolean {
+  return isPrismaErrorCode(err, 'P2003')
+}
+
+/**
+ * Run a callback inside one DB transaction. The top-level singleton opens an
+ * interactive transaction; a caller-provided transaction client runs the
+ * callback directly so no nested transaction is ever opened.
+ */
+async function runInTransaction<T>(
+  db: Client,
+  fn: (tx: Prisma.TransactionClient) => Promise<T>,
+): Promise<T> {
+  if (db === prisma) return prisma.$transaction(fn)
+  const txAware = db as typeof prisma
+  if (typeof txAware.$transaction === 'function') {
+    return txAware.$transaction(fn)
+  }
+  return fn(db as Prisma.TransactionClient)
+}
+
+async function writeCategoryAdminLog(
+  db: Client,
+  adminId: number,
+  action: string,
+  targetId: number | null,
+  detail: string,
+): Promise<void> {
+  await db.adminLog.create({
+    data: {
+      adminUserId: adminId,
+      action,
+      targetType: 'productCategory',
+      targetId,
+      detail,
+    },
+  })
+}
+
+function toAdminDto(row: AdminCategoryRow): CategoryAdminDto {
+  return {
+    id: row.id,
+    code: row.code,
+    label: row.label,
+    normalizedLabel: row.normalizedLabel,
+    description: row.description,
+    iconKey: row.iconKey,
+    defaultCoverUrl: row.defaultCoverUrl,
+    sortOrder: row.sortOrder,
+    status: row.status as CategoryStatus,
+    createdByUserId: row.createdByUserId,
+    updatedByUserId: row.updatedByUserId,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  }
+}
+
+export async function listAdminCategories(
+  query: ListCategoriesQuery,
+  db: Client = prisma,
+) {
+  const page = query.page ?? 1
+  const pageSize = query.pageSize ?? 20
+  const where: Prisma.ProductCategoryWhereInput = {}
+  if (query.status) where.status = query.status
+
+  const [total, items] = await Promise.all([
+    db.productCategory.count({ where }),
+    db.productCategory.findMany({
+      where,
+      orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+      select: adminSelect,
+    }),
+  ])
+
+  return { items: items.map(toAdminDto), total, page, pageSize }
+}
+
+export async function createCategory(
+  adminId: number,
+  input: CreateCategoryInput,
+  db: Client = prisma,
+): Promise<CategoryAdminDto> {
+  const code = input.code.trim()
+  const normalizedLabel = normalizeCategoryLabel(input.label)
+
+  // Friendly pre-checks; the DB unique constraints + P2002 mapping below are the
+  // race-safe authority (code is never reused even after deactivation, §5.1).
+  const codeExists = await db.productCategory.findUnique({ where: { code }, select: { id: true } })
+  if (codeExists) {
+    throw categoryHttpError(409, CATALOG_ERROR_CODES.CATEGORY_CODE_TAKEN, '分类编码已存在，且停用后不可复用')
+  }
+  const labelExists = await db.productCategory.findUnique({
+    where: { normalizedLabel },
+    select: { id: true },
+  })
+  if (labelExists) {
+    throw categoryHttpError(409, CATALOG_ERROR_CODES.CATEGORY_LABEL_TAKEN, '分类名称已存在')
+  }
+
+  try {
+    const row = await runInTransaction(db, async tx => {
+      const created = await tx.productCategory.create({
+        data: {
+          code,
+          label: input.label,
+          normalizedLabel,
+          // Normalize empty strings to null (same semantics as the schema's
+          // emptyToUnset/emptyToNull) so direct service callers can't store ''.
+          description: input.description?.trim() ? input.description : null,
+          iconKey: input.iconKey?.trim() ? input.iconKey : null,
+          defaultCoverUrl: input.defaultCoverUrl?.trim() ? input.defaultCoverUrl : null,
+          sortOrder: input.sortOrder ?? 0,
+          status: CATEGORY_STATUS.ACTIVE,
+          createdByUserId: adminId,
+          updatedByUserId: adminId,
+        },
+        select: adminSelect,
+      })
+      await writeCategoryAdminLog(tx, adminId, '创建分类', created.id, `code=${code}`)
+      return created
+    })
+    await bumpCategoryRegistryCacheVersion()
+    return toAdminDto(row)
+  } catch (err) {
+    if (isUniqueError(err, 'code')) {
+      throw categoryHttpError(409, CATALOG_ERROR_CODES.CATEGORY_CODE_TAKEN, '分类编码已存在，且停用后不可复用')
+    }
+    if (isUniqueError(err, 'normalizedLabel')) {
+      throw categoryHttpError(409, CATALOG_ERROR_CODES.CATEGORY_LABEL_TAKEN, '分类名称已存在')
+    }
+    if (isPrismaErrorCode(err, 'P2002')) {
+      throw categoryHttpError(409, CATALOG_ERROR_CODES.CATEGORY_CODE_TAKEN, '分类编码或名称已存在')
+    }
+    throw err
+  }
+}
+
+export async function updateCategory(
+  adminId: number,
+  id: number,
+  input: UpdateCategoryInput,
+  db: Client = prisma,
+): Promise<CategoryAdminDto> {
+  // D-CAT-06: code is immutable after creation. The route rejects it before
+  // validation too; this guard also protects direct service callers.
+  if ('code' in input) {
+    throw categoryHttpError(400, CATALOG_ERROR_CODES.CATEGORY_CODE_IMMUTABLE, '分类编码创建后不可修改')
+  }
+
+  const existing = await db.productCategory.findUnique({
+    where: { id },
+    select: { id: true },
+  })
+  if (!existing) throw notFound('分类不存在')
+
+  const data: Prisma.ProductCategoryUpdateInput = { updatedByUser: { connect: { id: adminId } } }
+  if (input.label !== undefined) {
+    const normalizedLabel = normalizeCategoryLabel(input.label)
+    const duplicate = await db.productCategory.findFirst({
+      where: { normalizedLabel, id: { not: id } },
+      select: { id: true },
+    })
+    if (duplicate) {
+      throw categoryHttpError(409, CATALOG_ERROR_CODES.CATEGORY_LABEL_TAKEN, '分类名称已存在')
+    }
+    data.label = input.label
+    data.normalizedLabel = normalizedLabel
+  }
+  if (input.description !== undefined) data.description = input.description
+  if (input.iconKey !== undefined) data.iconKey = input.iconKey
+  if (input.defaultCoverUrl !== undefined) data.defaultCoverUrl = input.defaultCoverUrl
+  if (input.sortOrder !== undefined) data.sortOrder = input.sortOrder
+
+  try {
+    const row = await runInTransaction(db, async tx => {
+      const updated = await tx.productCategory.update({ where: { id }, data, select: adminSelect })
+      const changed = Object.keys(input)
+        .filter(key => input[key as keyof UpdateCategoryInput] !== undefined)
+        .join(',')
+      await writeCategoryAdminLog(tx, adminId, '更新分类', id, `fields=${changed || 'none'}`)
+      return updated
+    })
+    await bumpCategoryRegistryCacheVersion()
+    return toAdminDto(row)
+  } catch (err) {
+    if (isUniqueError(err, 'normalizedLabel')) {
+      throw categoryHttpError(409, CATALOG_ERROR_CODES.CATEGORY_LABEL_TAKEN, '分类名称已存在')
+    }
+    if (isPrismaErrorCode(err, 'P2002')) {
+      throw categoryHttpError(409, CATALOG_ERROR_CODES.CATEGORY_LABEL_TAKEN, '分类名称已存在')
+    }
+    throw err
+  }
+}
+
+/**
+ * CAS status transition: updateMany against the opposite status makes
+ * concurrent transitions safe and idempotent (a no-op on an already-target
+ * row returns the current state without a redundant AdminLog).
+ */
+async function setCategoryStatus(
+  adminId: number,
+  id: number,
+  targetStatus: CategoryStatus,
+  action: string,
+  db: Client = prisma,
+): Promise<CategoryAdminDto> {
+  const opposite = targetStatus === CATEGORY_STATUS.ACTIVE
+    ? CATEGORY_STATUS.INACTIVE
+    : CATEGORY_STATUS.ACTIVE
+
+  const row = await runInTransaction(db, async tx => {
+    const updated = await tx.productCategory.updateMany({
+      where: { id, status: opposite },
+      data: { status: targetStatus, updatedByUserId: adminId },
+    })
+
+    if (updated.count === 1) {
+      const current = await tx.productCategory.findUniqueOrThrow({ where: { id }, select: adminSelect })
+      await writeCategoryAdminLog(tx, adminId, action, id, `status=${targetStatus}`)
+      return current
+    }
+
+    // CAS missed: the row either no longer exists or is already in target state.
+    const existing = await tx.productCategory.findUnique({ where: { id }, select: adminSelect })
+    if (!existing) throw notFound('分类不存在')
+    return existing
+  })
+
+  await bumpCategoryRegistryCacheVersion()
+  return toAdminDto(row)
+}
+
+export function activateCategory(adminId: number, id: number, db: Client = prisma) {
+  return setCategoryStatus(adminId, id, CATEGORY_STATUS.ACTIVE, '启用分类', db)
+}
+
+export function deactivateCategory(adminId: number, id: number, db: Client = prisma) {
+  return setCategoryStatus(adminId, id, CATEGORY_STATUS.INACTIVE, '停用分类', db)
+}
+
+export async function reorderCategories(
+  adminId: number,
+  orderedIds: number[],
+  db: Client = prisma,
+): Promise<{ updated: number }> {
+  if (orderedIds.length === 0) throw badRequest('排序列表不能为空')
+  const unique = new Set(orderedIds)
+  if (unique.size !== orderedIds.length) throw badRequest('排序列表包含重复分类')
+
+  const existing = await db.productCategory.findMany({
+    where: { id: { in: orderedIds } },
+    select: { id: true },
+  })
+  if (existing.length !== orderedIds.length) throw badRequest('排序列表包含不存在的分类')
+
+  // Last-write-wins within one transaction so a concurrent reorder never
+  // leaves a partially-applied permutation.
+  await runInTransaction(db, async tx => {
+    for (let index = 0; index < orderedIds.length; index++) {
+      await tx.productCategory.updateMany({
+        where: { id: orderedIds[index] },
+        data: { sortOrder: (index + 1) * 10, updatedByUserId: adminId },
+      })
+    }
+    await writeCategoryAdminLog(tx, adminId, '调整分类排序', null, `count=${orderedIds.length}`)
+  })
+
+  await bumpCategoryRegistryCacheVersion()
+  return { updated: orderedIds.length }
+}
+
+export async function deleteCategory(
+  adminId: number,
+  id: number,
+  db: Client = prisma,
+): Promise<{ deleted: boolean; id: number }> {
+  const category = await db.productCategory.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      code: true,
+      _count: { select: { products: true, approvedApplications: true } },
+    },
+  })
+  if (!category) throw notFound('分类不存在')
+
+  // D-CAT-07 / AC-CAT-011: a category referenced by Product or an approved
+  // application can only be deactivated, never physically deleted.
+  if (category._count.products > 0 || category._count.approvedApplications > 0) {
+    throw categoryHttpError(
+      409,
+      CATALOG_ERROR_CODES.CATEGORY_REFERENCED,
+      '分类已被商品或申请引用，无法删除；可先停用该分类',
+    )
+  }
+
+  try {
+    await runInTransaction(db, async tx => {
+      await tx.productCategory.delete({ where: { id } })
+      await writeCategoryAdminLog(tx, adminId, '删除分类', id, `code=${category.code}`)
+    })
+    await bumpCategoryRegistryCacheVersion()
+    return { deleted: true, id }
+  } catch (err) {
+    // Merchandising snapshots (or any future FK, all ON DELETE RESTRICT) also
+    // block physical delete.
+    if (isForeignKeyError(err)) {
+      throw categoryHttpError(
+        409,
+        CATALOG_ERROR_CODES.CATEGORY_REFERENCED,
+        '分类仍被其他数据引用，无法删除；可先停用该分类',
+      )
+    }
+    throw err
+  }
+}

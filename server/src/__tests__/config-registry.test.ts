@@ -29,17 +29,24 @@ describe('GET /api/config/registry', () => {
   })
 
   it('should return public registry constants and default operational config', async () => {
+    // Seed categories so the DB-projected productCategories/productTypes are
+    // populated (SPEC-CATALOG-OPS-001 §7.1: registry reads from the DB).
+    await createTestUser('registry-admin@test.local', 'admin123', 'admin')
     const res = await api.get('/api/config/registry').expect(200)
 
-    expect(res.body.productTypes).toEqual(
+    expect(res.body.productCategories).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({
-          value: '网络节点',
-          label: '网络节点',
-          deliveryModes: expect.arrayContaining(['instant_inventory', 'manual_service']),
-        }),
+        expect.objectContaining({ code: 'network-node', label: '网络节点', iconKey: null, sortOrder: 10 }),
       ])
     )
+    // Legacy productTypes come from the DB (active categories only) and are
+    // flagged deprecated; no hard-coded deliveryModes coupling any more.
+    expect(res.body.productTypes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ value: '网络节点', label: '网络节点', deprecated: true }),
+      ])
+    )
+    expect(res.body.productTypes.some((t: { value: string }) => t.value === '待归类')).toBe(false)
     expect(res.body.deliveryModes).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ value: 'instant_inventory', label: '即时库存发货' }),

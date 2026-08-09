@@ -30,12 +30,17 @@ import {
 } from './storageSchema.js'
 import { adminMailTestLimiter } from './mailTestLimiter.js'
 import { portableBackupRoutes } from '../portable-backups/routes.js'
+// T-CAT-BE-001：分类管理 API。仅挂载子 router——本文件顶部的
+// authenticate→requireActiveUser→requireAdmin→requireAdminMfa 链已覆盖其权限边界。
+import { categoryAdminRoutes } from '../catalog/adminRoutes.js'
 
 const router = Router()
 
 router.use(authenticate, requireActiveUser, requireAdmin, requireAdminMfa)
 
 router.use('/portable-backups', portableBackupRoutes)
+// T-CAT-BE-001 §7.2：admin product-categories（列表/CRUD/排序/启停/删除）。
+router.use('/product-categories', categoryAdminRoutes)
 
 router.get('/stats', controller.stats)
 router.get('/config', controller.listConfig)
