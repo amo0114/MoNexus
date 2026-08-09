@@ -88,20 +88,34 @@ export class NotificationRealtimeListener {
     client.on('error', () => this.reportUnavailableOnce())
     client.on('end', () => this.reportUnavailableOnce())
 
-    await client.connect()
+    try {
+      await client.connect()
+      if (this.stopped || this.client !== client) { await client.end().catch(() => {}); return }
     // Static channel constant; LISTEN resolves after the command ACK.
-    await client.query(`LISTEN ${this.options.channel}`)
+      await client.query(`LISTEN ${this.options.channel}`)
+      if (this.stopped || this.client !== client) { await client.end().catch(() => {}); return }
     // First probe must succeed before the generation may become healthy.
-    const ok = await this.probeOnce(client)
-    if (this.stopped || this.client !== client) return
+      const ok = await this.probeOnce(client)
+      if (this.stopped || this.client !== client) { await client.end().catch(() => {}); return }
     if (!ok) {
       this.reportUnavailableOnce()
+      await this.closeClient(client)
       return
     }
     this.scheduleProbe(client)
     if (!this.stopped && this.client === client) {
       this.options.onReady()
+    } catch {
+      await this.closeClient(client)
+      this.reportUnavailableOnce()
     }
+  }
+
+  private async closeClient(client: Client): Promise<void> {
+    if (this.client === client) this.client = null
+    this.clearProbe()
+    client.removeAllListeners()
+    await client.end().catch(() => {})
   }
 
   private async probeOnce(client: Client): Promise<boolean> {
@@ -131,6 +145,8 @@ export class NotificationRealtimeListener {
   }
 
   private async handleNotification(rawPayload: string): Promise<void> {
+    const clientAtStart = this.client
+    if (this.stopped || !clientAtStart) return
     const payload = parsePgPayload(rawPayload)
     if (payload === null) {
       this.options.reportOutcome('invalid')
@@ -147,6 +163,7 @@ export class NotificationRealtimeListener {
       this.options.reportOutcome('query_error')
       return
     }
+    if (this.stopped || this.client !== clientAtStart) return
     if (envelope === null) {
       this.options.reportOutcome('not_found')
       return

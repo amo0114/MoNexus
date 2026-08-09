@@ -106,6 +106,7 @@ export class NotificationRealtimeLifecycle {
     const previous = this.listener
     this.listener = null
     if (previous) await previous.stop().catch(() => {})
+    if (!this.started || this.status === 'draining' || this.status === 'stopped') return
 
     const generation = this.generation + 1
     this.generation = generation
@@ -122,6 +123,10 @@ export class NotificationRealtimeLifecycle {
     this.listener = listener
     try {
       await listener.connect()
+      if (!this.started || this.status === 'draining' || this.status === 'stopped' || this.listener !== listener || this.generation !== generation) {
+        await listener.stop()
+        return
+      }
     } catch {
       this.handleUnavailable(generation)
     }
