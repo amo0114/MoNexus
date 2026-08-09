@@ -172,7 +172,7 @@
 - [ ] **CHK-REL-004** — **Pending**：rollback 步骤仅记录于 runbook，实际演练证据待部署。
 - [x] **CHK-REL-005** — production-like smoke 不在 feature-off 时 skip / 假绿。证据：prod-smoke realtime 段：flag-on 200/ready、flag-off 404 不静默 skip。
 - [x] **CHK-REL-006** — PR 描述含规格、配置、发布、指标、风险、回滚、证据索引。证据：PR 描述含规格/配置/发布/指标/风险/回滚/证据索引（implement.md）。
-- [ ] **CHK-REL-007** — **Pending**：branch schema / migration 零 diff；live Prisma diff 仅检测到 develop 继承的 exact baseline（三条 updatedAt DROP DEFAULT），未发现额外 drift。baseline cleanup follow-up 需由 Owner 在独立 schema change 中处理。
+- [x] **CHK-REL-007** — migration status / live drift 正常，realtime branch 的 schema / migrations 与 develop `2482a7d` 零 diff。三条 inherited storage `updatedAt` drift 已由独立 PR #129 修复，无新增 migration。
 
 ---
 

@@ -12,7 +12,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ENV_FILE="${RT_ENV_FILE:-$ROOT/.env.notification-realtime.local}"
 FROZEN_COMMIT="22ae95c8"
-DEVELOP_BASE="da38dd0580eeac737f5291556b9dbdf832d91970"
+DEVELOP_BASE="2482a7d176b1d40a3483ae8e3cc9a481fc18e201"
 MODE="local"
 
 case "${1:---local}" in
@@ -27,48 +27,6 @@ esac
 
 step() { echo; echo "==== $* ===="; }
 fail() { echo "[FAIL] $*" >&2; exit 1; }
-
-BASELINE_PRISMA_DIFF='-- AlterTable
-ALTER TABLE "StorageProviderConfig" ALTER COLUMN "updatedAt" DROP DEFAULT;
-
--- AlterTable
-ALTER TABLE "StorageRuntime" ALTER COLUMN "updatedAt" DROP DEFAULT;
-
--- AlterTable
-ALTER TABLE "StoredObject" ALTER COLUMN "updatedAt" DROP DEFAULT;'
-
-check_prisma_diff_result() {
-  local status="$1" output="$2"
-  if [[ "$status" == 0 && -z "$output" ]]; then
-    return 0
-  fi
-  if [[ "$status" == 2 && "$output" == "$BASELINE_PRISMA_DIFF" ]]; then
-    echo "[BASELINE] inherited develop drift (exact allowlist)"
-    return 0
-  fi
-  printf '%s\n' "$output" >&2
-  return 1
-}
-
-prisma_diff_self_test() {
-  check_prisma_diff_result 2 "$BASELINE_PRISMA_DIFF" >/dev/null 2>&1 || return 1
-  local fourth="$BASELINE_PRISMA_DIFF
-
--- AlterTable
-ALTER TABLE \"Unexpected\" ALTER COLUMN \"updatedAt\" DROP DEFAULT;"
-  if check_prisma_diff_result 2 "$fourth" >/dev/null 2>&1; then
-    return 1
-  fi
-  local missing='-- AlterTable
-ALTER TABLE "StorageProviderConfig" ALTER COLUMN "updatedAt" DROP DEFAULT;
-
--- AlterTable
-ALTER TABLE "StoredObject" ALTER COLUMN "updatedAt" DROP DEFAULT;'
-  if check_prisma_diff_result 2 "$missing" >/dev/null 2>&1; then
-    return 1
-  fi
-  check_prisma_diff_result 0 "" >/dev/null 2>&1 || return 1
-}
 
 require_clean_worktree() {
   local status
@@ -100,6 +58,7 @@ cd "$ROOT"
 
 step "0. immutable baseline + clean evidence boundary"
 git merge-base --is-ancestor "$FROZEN_COMMIT" HEAD || fail "$FROZEN_COMMIT is not an ancestor of HEAD"
+git merge-base --is-ancestor "$DEVELOP_BASE" HEAD || fail "$DEVELOP_BASE is not an ancestor of HEAD"
 require_clean_worktree
 echo "head=$(git rev-parse HEAD)"
 echo "node=$(node --version) npm=$(npm --version)"
@@ -150,33 +109,20 @@ step "7. git/schema/migration/secret evidence"
 git diff --check || fail "git diff --check failed"
 git diff --exit-code -- server/prisma/schema.prisma server/prisma/migrations || \
   fail "worktree schema/migrations must be unchanged"
-git diff --exit-code "$FROZEN_COMMIT..HEAD" -- server/prisma/schema.prisma server/prisma/migrations || \
-  fail "schema/migrations changed after the frozen commit"
 git diff --exit-code "$DEVELOP_BASE..HEAD" -- server/prisma/schema.prisma server/prisma/migrations || \
-  fail "schema/migrations differ from the frozen develop baseline"
+  fail "schema/migrations differ from the current develop baseline"
 (cd server && DATABASE_URL="$TEST_DATABASE_URL" npx prisma migrate status)
-step "7a. exact Prisma live-diff baseline allowlist self-test"
-prisma_diff_self_test || fail "Prisma diff allowlist self-test failed"
-prisma_diff_output_file="$(mktemp)"
-tmp_secret=""
-trap 'rm -f "$tmp_secret" "$prisma_diff_output_file"' EXIT
-set +e
 (cd server && npx prisma migrate diff \
   --from-url "$TEST_DATABASE_URL" \
   --to-schema-datamodel prisma/schema.prisma \
-  --script --exit-code) >"$prisma_diff_output_file" 2>&1
-prisma_diff_status=$?
-set -e
-prisma_diff_output="$(<"$prisma_diff_output_file")"
-check_prisma_diff_result "$prisma_diff_status" "$prisma_diff_output" || \
-  fail "Prisma live diff contains drift outside the exact develop baseline"
+  --exit-code)
 # Assemble markers at runtime so this verifier is included in the tracked-text scan.
 marker_begin='BE''GIN'
 secret_pattern="${marker_begin}[[:space:]]+(RSA|OPENSSH|EC)[[:space:]]+PRIVATE[[:space:]]+KEY|$(printf '%s' '-'{5})${marker_begin}[[:space:]]+PGP"
 if git grep -nE "$secret_pattern" -- . ':!node_modules' >/dev/null 2>&1; then
   fail "secret material found in the tree"
 fi
-tmp_secret="$(mktemp)"
+tmp_secret="$(mktemp)"; trap 'rm -f "$tmp_secret"' EXIT
 printf '%s%s RSA PRIVATE KEY%s\n' '-----' "$marker_begin" '-----' >"$tmp_secret"
 grep -nE "$secret_pattern" "$tmp_secret" >/dev/null || fail "secret scan self-test did not detect synthetic positive"
 echo "git/schema/migration/secret checks passed (synthetic positive detected)"

@@ -7,7 +7,8 @@
 | 适用分支 | `feat/order-notification-realtime` |
 | 审查 HEAD | `3ff3457f833d6f4bcd887e418116545e0f26a8e0` |
 | 冻结基线 commit | `22ae95c8`，禁止 amend / rebase 掉祖先关系 |
-| develop 审查基线 | `origin/develop@da38dd0580eeac737f5291556b9dbdf832d91970` |
+| develop 冻结审查基线 | `origin/develop@da38dd0580eeac737f5291556b9dbdf832d91970` |
+| 当前已同步 develop | `origin/develop@2482a7d176b1d40a3483ae8e3cc9a481fc18e201`（仅 PR #129 storage schema default 对齐） |
 | 文档日期 | 2026-08-09 |
 | 当前结论 | `goal_complete` 驳回；不得宣称 I-RT-011 Done、ready to merge 或 ready to enable |
 
@@ -15,7 +16,7 @@
 
 ### Schema drift baseline debt
 
-审查确认 develop 基线继承三条 Prisma live diff：StorageProviderConfig.updatedAt、StorageRuntime.updatedAt、StoredObject.updatedAt 的 DROP DEFAULT（源自 migration 20260806120000）。branch 的 schema/migrations 相对工作树及 da38dd0 均为零 diff；因此本轮不新增 notification migration，也不把 develop 基线债务伪装成实现改动。Verifier 仅允许这三条 SQL 的完整逐字 exact allowlist；任何多、少或变更都失败。Owner 后续须在独立 schema change 中清理 baseline，再更新 allowlist 与证据。
+审查发现的三条 Prisma live diff 已由独立 [PR #129](https://github.com/amo0114/MoNexus/pull/129) 修复并进入 develop `2482a7d176b1d40a3483ae8e3cc9a481fc18e201`：三个 storage `updatedAt` 字段补充 `@default(now())`，忠实描述既有数据库默认值且不新增 migration。Realtime 分支已合并该 develop 基线；Verifier 恢复严格 live diff exit 0，不再保留临时 allowlist。
 
 ---
 
