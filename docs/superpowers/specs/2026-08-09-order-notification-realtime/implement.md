@@ -46,17 +46,27 @@
 在 implement evidence ledger 记录：
 
 ~~~text
-worktree:
-branch:
-HEAD:
-origin/develop:
-merge-base:
-git status --short:
-active task:
-agent:
-timestamp:
+worktree: /root/projects/worktrees/monexus-order-notification-realtime
+branch: feat/order-notification-realtime
+HEAD: 22ae95c8fa92411679f2452956053d25393beb64 (frozen SPEC-NOTIFY-RT-001 v0.2.0, NOT amended)
+origin/develop: da38dd0580eeac737f5291556b9dbdf832d91970
+merge-base: da38dd0580eeac737f5291556b9dbdf832d91970
+git status --short: (clean at freeze; subsequent I-RT-001 edits are the first new commits)
+active task: I-RT-001 (T-DOC-001)
+agent: pi (goal 033abe57-83b2-46cd-9131-afce2ebe0ef4)
+timestamp: 2026-08-09
 ~~~
 
+**Delta audit (I-RT-001) — 最新 develop vs 冻结审查基线：无变化，冻结语义不变，继续实施。**
+
+| 项 | 结果 |
+| --- | --- |
+| 冻结审查基线 | `develop@da38dd0580eeac737f5291556b9dbdf832d91970`（spec README / spec / plan 一致） |
+| 最新 `origin/develop` | `da38dd0580eeac737f5291556b9dbdf832d91970` — 与基线 SHA 完全一致 |
+| merge-base | `da38dd0`（= 基线 = 最新 develop） |
+| diff `develop..origin/develop` | 空（零差异） |
+| 结论 | notifications / orders / auth / main / health / proxy / 前端五个接入页面均无变化 → 无受影响 REQ / AC，无语义变化；O-RT-01~08 冻结结论仍成立 |
+| 动作 | 不 rebase、不改冻结决策，直接在冻结 commit 之上实施 |
 若 develop 与 Draft 基线之间涉及 notifications、orders、auth、main、health、proxy 或前端五个接入页面，先做 delta audit。只读取变化位置并判断受影响 REQ / AC；不能直接 rebase 后继续。
 
 ---
@@ -376,7 +386,7 @@ git status --short
 
 | 时间 | HEAD | I / T | REQ / AC / CHK | 命令或动作 | 结果 | Artifact |
 | --- | --- | --- | --- | --- | --- | --- |
-| 待填 | 待填 | 待填 | 待填 | 待填 | 待填 | 待填 |
+| 2026-08-09 | 22ae95c8 (frozen) + I-RT-001 | I-RT-001 / T-DOC-001 | REQ-F-022、REQ-NF-007、REQ-NF-009；CHK-DOC-001~002 | git rev-parse HEAD / origin/develop; git diff --stat develop origin/develop; git diff --check; rg 六件套 ID/版本/状态/基线；编辑旧 spec/design superseded 指针 | develop..origin/develop diff 空 → 冻结语义不变；六件套 ID/版本/状态/基线一致；`git diff --check` exit 0；旧 spec.md / design.md 已加 superseded 指针 | commit 记录见 git log；delta audit 见本文档 2.1 |
 
 证据规则：
 

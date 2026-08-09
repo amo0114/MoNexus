@@ -41,7 +41,7 @@ CHK-P1-001~005 均不映射本波 Implement 卡；其中 D-RT-25 / CHK-P1-005 �
 | 优先级 | P0 |
 | 对应需求 | REQ-F-022、REQ-NF-007、REQ-NF-009 |
 | 依赖 | **已满足**：Owner 于 2026-08-09 批准 O-RT-01~08 |
-| 状态 | Pending |
+| 状态 | Done（I-RT-001 2026-08-09） |
 
 **Owned files**
 
@@ -56,10 +56,10 @@ CHK-P1-001~005 均不映射本波 Implement 卡；其中 D-RT-25 / CHK-P1-005 �
 
 **工作**
 
-- [ ] 记录 Owner 审核结论、版本和冻结日期。
-- [ ] 六份文档状态统一改为 Frozen for Implementation。
-- [ ] 旧 spec / design 只增加 SPEC-NOTIFY-RT-001 superseded 指针，明确覆盖 NTF-08 / SSE Phase。
-- [ ] 实现前记录最新 develop HEAD 与 delta audit；如语义变化，把本规格退回 Draft。
+- [x] 记录 Owner 审核结论、版本和冻结日期。
+- [x] 六份文档状态统一改为 Frozen for Implementation。
+- [x] 旧 spec / design 只增加 SPEC-NOTIFY-RT-001 superseded 指针，明确覆盖 NTF-08 / SSE Phase。
+- [x] 实现前记录最新 develop HEAD 与 delta audit；如语义变化，把本规格退回 Draft。
 
 **DoD**
 
@@ -77,7 +77,11 @@ rg -n "Draft for Owner Review|Frozen for Implementation|SPEC-NOTIFY-RT-001|NTF-0
 git diff --check
 ~~~
 
-证据：待填。
+证据：I-RT-001（2026-08-09）。
+- 六份文档（README / spec / plan / task / implement / checklist）ID=*-NOTIFY-RT-001、版本 0.2.0、状态 Frozen for Implementation、审查基线 develop@da38dd0 一致（grep 逐份核对）。
+- 旧 spec / design 已加 superseded 指针：`docs/specs/order-notification-system/spec.md`（顶部指针 + NTF-08 行内指针）与 `design.md`（顶部指针），明确覆盖 NTF-08 / SSE Phase 3+ 抵达方式。
+- delta audit：最新 `origin/develop`=da38dd0=冻结审查基线，`develop..origin/develop` diff 为空 → 冻结语义不变，继续实施（见 implement.md 2.1）。
+- `git diff --check` 通过；本卡仅文档改动，无代码 / schema / migration diff。
 
 ---
 
