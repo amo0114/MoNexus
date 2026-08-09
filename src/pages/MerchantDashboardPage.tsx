@@ -80,6 +80,7 @@ export default function MerchantDashboardPage() {
   const [activeTab, setActiveTab] = useState<TabKey>('dashboard')
   const [stats, setStats] = useState<MerchantStats | null>(null)
   const [loading, setLoading] = useState(true)
+  const loadGenerationRef = useRef(0)
 
   const [products, setProducts] = useState<MerchantProduct[]>([])
   const [productPage, setProductPage] = useState(1)
@@ -117,46 +118,65 @@ export default function MerchantDashboardPage() {
   }, [activeTab, productPage, orderPage, orderStatusFilter, orderSortBooking, productSearchDebounced, productStatusFilter, productTypeFilter, productModeFilter, productLowStockOnly])
 
   async function loadData(opts?: { background?: boolean }) {
+    const generation = ++loadGenerationRef.current
+    const snapshot = {
+      tab: activeTab,
+      productPage,
+      orderPage,
+      orderStatusFilter,
+      orderSortBooking,
+      productSearchDebounced,
+      productStatusFilter,
+      productTypeFilter,
+      productModeFilter,
+      productLowStockOnly,
+    }
+    const isCurrent = () => generation === loadGenerationRef.current
     if (!opts?.background) setLoading(true)
     try {
-      if (activeTab === 'dashboard' || activeTab === 'orders') {
+      if (snapshot.tab === 'dashboard' || snapshot.tab === 'orders') {
         const data = await getMerchantStats()
+        if (!isCurrent()) return
         setStats(data)
       }
-      if (activeTab === 'products') {
+      if (snapshot.tab === 'products') {
         const data = await getMerchantProducts({
-          page: productPage,
+          page: snapshot.productPage,
           pageSize: 20,
-          q: productSearchDebounced || undefined,
-          status: productStatusFilter || undefined,
-          type: productTypeFilter || undefined,
-          deliveryMode: productModeFilter || undefined,
-          lowStock: productLowStockOnly ? true : undefined,
+          q: snapshot.productSearchDebounced || undefined,
+          status: snapshot.productStatusFilter || undefined,
+          type: snapshot.productTypeFilter || undefined,
+          deliveryMode: snapshot.productModeFilter || undefined,
+          lowStock: snapshot.productLowStockOnly ? true : undefined,
         })
+        if (!isCurrent()) return
         setProducts(data.items)
         setProductTotal(data.total)
-      } else if (activeTab === 'orders') {
+      } else if (snapshot.tab === 'orders') {
         const data = await getMerchantOrders({
-          page: orderPage,
+          page: snapshot.orderPage,
           pageSize: 20,
-          status: orderStatusFilter || undefined,
-          sort: orderSortBooking ? 'booking' : undefined,
+          status: snapshot.orderStatusFilter || undefined,
+          sort: snapshot.orderSortBooking ? 'booking' : undefined,
         })
+        if (!isCurrent()) return
         setOrders(data.items)
         setOrderTotal(data.total)
-      } else if (activeTab === 'settlements') {
+      } else if (snapshot.tab === 'settlements') {
         const data = await getMerchantSettlements()
+        if (!isCurrent()) return
         setSettlements(data)
-      } else if (activeTab === 'profile') {
+      } else if (snapshot.tab === 'profile') {
         const data = await getMerchantMe()
+        if (!isCurrent()) return
         setMerchant(data)
       }
     } catch (e: any) {
-      if (!opts?.background) showToast(e.response?.data?.error?.message || '加载失败', 'error')
+      if (isCurrent() && !opts?.background) showToast(e.response?.data?.error?.message || '加载失败', 'error')
     } finally {
-      if (!opts?.background) setLoading(false)
+      if (isCurrent() && !opts?.background) setLoading(false)
     }
-    if (opts?.background) await refreshOpenOrderDialogs()
+    if (opts?.background && isCurrent()) await refreshOpenOrderDialogs()
   }
 
   async function refreshOpenOrderDialogs() {

@@ -37,7 +37,6 @@ export default function OrdersPage() {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const showToast = useAppStore((s) => s.showToast)
-  const refreshOrderAttention = useAppStore((s) => s.refreshOrderAttention)
   const setOrderAttentionCount = useAppStore((s) => s.setOrderAttentionCount)
 
   const tab = parseTab(searchParams.get('tab'))
@@ -49,21 +48,24 @@ export default function OrdersPage() {
   const reloadRequestRef = useRef(0)
   const detailRequestRef = useRef(0)
   const backgroundDetailRequestRef = useRef(0)
+  const listRequestRef = useRef(0)
   const selectedOrderRef = useRef<UserOrderDetail | null>(null)
   selectedOrderRef.current = selectedOrder
 
   const load = useCallback(async (opts?: { background?: boolean }) => {
+    const request = ++listRequestRef.current
     // Background realtime reload keeps current content (no full-page skeleton).
     if (!opts?.background) setLoading(true)
     try {
       const list = await getOrders({ page: 1, pageSize: 100 })
+      if (request !== listRequestRef.current) return
       setOrders(list)
       setOrderAttentionCount(countAttentionOrders(list))
     } catch (err) {
       // Single background failure keeps old values and waits for the next tick.
-      if (!opts?.background) showToast(getApiErrorMessage(err, '加载订单失败'), 'error')
+      if (request === listRequestRef.current && !opts?.background) showToast(getApiErrorMessage(err, '加载订单失败'), 'error')
     } finally {
-      if (!opts?.background) setLoading(false)
+      if (request === listRequestRef.current && !opts?.background) setLoading(false)
     }
   }, [showToast, setOrderAttentionCount])
 
@@ -75,14 +77,16 @@ export default function OrdersPage() {
   // attention in the background; if the current detail is the related order, reload it.
   const reloadBuyerState = useCallback(async () => {
     const request = ++reloadRequestRef.current
+    listRequestRef.current += 1
+    const listRequest = listRequestRef.current
     const currentId = selectedOrderRef.current?.id
     const detailRequest = currentId == null ? null : ++backgroundDetailRequestRef.current
     const [listResult, , detailResult] = await Promise.allSettled([
       getOrders({ page: 1, pageSize: 100 }),
-      refreshOrderAttention(),
+      Promise.resolve(),
       currentId == null ? Promise.resolve(null) : getOrderDetail(currentId),
     ])
-    if (request === reloadRequestRef.current && listResult.status === 'fulfilled') {
+    if (request === reloadRequestRef.current && listRequest === listRequestRef.current && listResult.status === 'fulfilled') {
       setOrders(listResult.value)
       setOrderAttentionCount(countAttentionOrders(listResult.value))
     }
@@ -96,7 +100,7 @@ export default function OrdersPage() {
       selectedOrderRef.current = detailResult.value
       setSelectedOrder(detailResult.value)
     }
-  }, [refreshOrderAttention, setOrderAttentionCount])
+  }, [setOrderAttentionCount])
 
   useNotificationInvalidation('buyer.orders', reloadBuyerState)
   useNotificationInvalidation('all.visible', reloadBuyerState)
@@ -124,7 +128,7 @@ export default function OrdersPage() {
           setSelectedOrder(detail)
         }
       } catch (err) {
-        showToast(getApiErrorMessage(err, '获取订单详情失败'), 'error')
+        if (request === detailRequestRef.current) showToast(getApiErrorMessage(err, '获取订单详情失败'), 'error')
       } finally {
         if (request === detailRequestRef.current) setLoadingOrderId(null)
       }
