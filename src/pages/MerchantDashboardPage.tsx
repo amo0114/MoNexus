@@ -81,6 +81,9 @@ export default function MerchantDashboardPage() {
   const [stats, setStats] = useState<MerchantStats | null>(null)
   const [loading, setLoading] = useState(true)
   const loadGenerationRef = useRef(0)
+  // The latest request owns the skeleton. A background refresh may take over
+  // an in-flight foreground load, but stale foreground completions never can.
+  const loadingOwnerRef = useRef<number | null>(0)
 
   const [products, setProducts] = useState<MerchantProduct[]>([])
   const [productPage, setProductPage] = useState(1)
@@ -132,7 +135,12 @@ export default function MerchantDashboardPage() {
       productLowStockOnly,
     }
     const isCurrent = () => generation === loadGenerationRef.current
-    if (!opts?.background) setLoading(true)
+    if (!opts?.background) {
+      loadingOwnerRef.current = generation
+      setLoading(true)
+    } else if (loadingOwnerRef.current !== null) {
+      loadingOwnerRef.current = generation
+    }
     try {
       if (snapshot.tab === 'dashboard' || snapshot.tab === 'orders') {
         const data = await getMerchantStats()
@@ -174,7 +182,10 @@ export default function MerchantDashboardPage() {
     } catch (e: any) {
       if (isCurrent() && !opts?.background) showToast(e.response?.data?.error?.message || '加载失败', 'error')
     } finally {
-      if (isCurrent() && !opts?.background) setLoading(false)
+      if (loadingOwnerRef.current === generation) {
+        loadingOwnerRef.current = null
+        setLoading(false)
+      }
     }
     if (opts?.background && isCurrent()) await refreshOpenOrderDialogs()
   }

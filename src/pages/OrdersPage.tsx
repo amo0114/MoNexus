@@ -49,13 +49,19 @@ export default function OrdersPage() {
   const detailRequestRef = useRef(0)
   const backgroundDetailRequestRef = useRef(0)
   const listRequestRef = useRef(0)
+  const loadingOwnerRef = useRef<number | null>(0)
   const selectedOrderRef = useRef<UserOrderDetail | null>(null)
   selectedOrderRef.current = selectedOrder
 
   const load = useCallback(async (opts?: { background?: boolean }) => {
     const request = ++listRequestRef.current
     // Background realtime reload keeps current content (no full-page skeleton).
-    if (!opts?.background) setLoading(true)
+    if (!opts?.background) {
+      loadingOwnerRef.current = request
+      setLoading(true)
+    } else if (loadingOwnerRef.current !== null) {
+      loadingOwnerRef.current = request
+    }
     try {
       const list = await getOrders({ page: 1, pageSize: 100 })
       if (request !== listRequestRef.current) return
@@ -65,7 +71,10 @@ export default function OrdersPage() {
       // Single background failure keeps old values and waits for the next tick.
       if (request === listRequestRef.current && !opts?.background) showToast(getApiErrorMessage(err, '加载订单失败'), 'error')
     } finally {
-      if (request === listRequestRef.current && !opts?.background) setLoading(false)
+      if (loadingOwnerRef.current === request) {
+        loadingOwnerRef.current = null
+        setLoading(false)
+      }
     }
   }, [showToast, setOrderAttentionCount])
 
@@ -81,9 +90,8 @@ export default function OrdersPage() {
     const listRequest = listRequestRef.current
     const currentId = selectedOrderRef.current?.id
     const detailRequest = currentId == null ? null : ++backgroundDetailRequestRef.current
-    const [listResult, , detailResult] = await Promise.allSettled([
+    const [listResult, detailResult] = await Promise.allSettled([
       getOrders({ page: 1, pageSize: 100 }),
-      Promise.resolve(),
       currentId == null ? Promise.resolve(null) : getOrderDetail(currentId),
     ])
     if (request === reloadRequestRef.current && listRequest === listRequestRef.current && listResult.status === 'fulfilled') {
