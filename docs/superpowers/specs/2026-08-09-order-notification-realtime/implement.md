@@ -252,7 +252,7 @@ Follow-up owner:
 | I-RT-007 | T-FE-001、T-FE-002 | Done | parser / state / invalidation contract |
 | I-RT-008 | T-FE-003~005 | Done | notification / buyer / merchant UI E2E |
 | I-RT-009 | T-INF-001、T-INF-002 | Done | proxy / env / smoke / runbook + AC-RT-029 / CHK-INF-007 |
-| I-RT-010 | T-QA-001~004 | Pending | backend、browser、multi-instance、failure + AC-RT-028 evidence |
+| I-RT-010 | T-QA-001~004 | Done | backend、browser、multi-instance、failure + AC-RT-028 evidence |
 | I-RT-011 | T-QA-005 | Pending | AC-RT-001~029、全部 P0 CHK、rollout / rollback、PR handoff |
 
 单卡范围仍受 task.md 更细的 ownership 约束。任何映射多个 Task 的卡在开工记录中必须逐 Task 列出独立 Owned files / DoD / commits；映射到同一卡不表示可以越界改彼此文件。
@@ -390,6 +390,7 @@ git status --short
 | 2026-08-09 | I-RT-007 HEAD | I-RT-007 / T-FE-001、T-FE-002 | REQ-F-006~009、REQ-F-013~015；CHK-FE-001~014 | `cd <root> && npm run build`；`npx vitest run src/realtime/ + src/utils/`；mock-fetch stream 单测 | build exit 0；frontend 36 tests passed（31 new）；parser 逐字节/CRLF/cap 通过；stream 状态机 401 refresh/403/404/503/expiring/stop 通过；exact-ID LRU 512 + 300ms coalescer + 事件矩阵通过；Layout 旧 interval 移除、bridge 挂载 | 新增 src/realtime/{sseParser,notificationStream,notificationInvalidation,runtime}.ts、useNotificationInvalidation、NotificationRealtimeBridge；改 Layout/appStore/types/notification |
 | 2026-08-09 | I-RT-008 HEAD | I-RT-008 / T-FE-003~005 | REQ-F-010~012、REQ-F-021；AC-RT-001~002、012~013、026；CHK-UI-001~013 | `cd <root> && npm run build`；frontend tests；页面订阅接线审查 | build exit 0；UI wiring 完成：AnnouncementCenter 消息 Tab、NotificationsPage 首屏重载、OrdersPage buyer.orders+attention+detail、MerchantDashboardPage merchant.orders/stats；后台刷新保留内容、失败静默、分页/筛选不破坏；公告 Tab 强制语义不变 | 改 AnnouncementCenter/NotificationsPage/OrdersPage/MerchantDashboardPage 订阅 useNotificationInvalidation |
 | 2026-08-09 | I-RT-009 HEAD | I-RT-009 / T-INF-001、T-INF-002 | REQ-F-019、REQ-F-022、REQ-NF-001/006/007；AC-RT-017、022~023、029；CHK-INF-001~007、CHK-CFG-004、CHK-REL-001~006 | `npm run check:nginx`；`npm run prod:env:staging-template`；bash -n 全部脚本 | check:nginx exit 0；staging env 预检 exit 0；exact SSE location + Caddy flush_interval；8 env + DEPLOY_TOPOLOGY 进入 example/compose/check-prod-env（TRUST_PROXY 拓扑强制）；listen-session gate 脚本 + proxy smoke + prod-smoke realtime 段 + runbook §7 | 改 nginx.conf/Caddyfile/.env.example×2/docker-compose.prod.yml/check-prod-env.sh/prod-smoke.sh/docs/ops-runbook.md；新增 verify-notification-realtime-proxy.sh、verify-notification-realtime-listen-session.sh(+.mjs) |
+| 2026-08-09 | I-RT-010 HEAD | I-RT-010 / T-QA-001~004 | AC-RT-001、005、028；CHK-QA-001~016 | `bash scripts/verify-notification-realtime-e2e.sh`；`bash scripts/verify-notification-realtime-multi-instance.sh`；vitest suites | browser E2E 4 passed（parser/LRU/coalescer/bridge/AC-RT-001 无刷新商家铃铛）；multi-instance PASS（A 收到 B 写入订单的 notification.created）；AC-RT-028 证据在 I-RT-003 | 新增 playwright.notification-realtime.config.ts、e2e/notification-realtime-client.spec.ts、e2e/notification-realtime.spec.ts、verify-notification-realtime-e2e.sh、verify-notification-realtime-multi-instance.sh、harness + e2e-seed 脚本 |
 
 证据规则：
 

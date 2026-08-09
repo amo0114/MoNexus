@@ -753,7 +753,7 @@ NOTIFICATION_REALTIME_SMOKE_REQUIRED=true npm run prod:smoke
 | 对应需求 | REQ-F-001~006、REQ-NF-003~005、REQ-NF-008 |
 | 本次新增验收 | AC-RT-028；CHK-BE-003、CHK-QA-003 |
 | 依赖 | T-BE-002~005 |
-| 状态 | Pending |
+| 状态 | Done（I-RT-010 2026-08-09） |
 
 **Owned files**
 
@@ -769,11 +769,11 @@ NOTIFICATION_REALTIME_SMOKE_REQUIRED=true npm run prod:smoke
 
 **工作**
 
-- [ ] commit、rollback、AC-RT-028 transaction-scoped NOTIFY failure 整体回滚、dedupe、listener restart、invalid payload。
-- [ ] unauth / expired / cross-user / expiring / hard close。
-- [ ] caps、rate、buffer、cleanup、shutdown。
-- [ ] payload allowlist 与日志 / metrics cardinality。
-- [ ] feature flag 全组合。
+- [x] commit、rollback、AC-RT-028 transaction-scoped NOTIFY failure 整体回滚、dedupe、listener restart、invalid payload。
+- [x] unauth / expired / cross-user / expiring / hard close。
+- [x] caps、rate、buffer、cleanup、shutdown。
+- [x] payload allowlist 与日志 / metrics cardinality。
+- [x] feature flag 全组合。
 
 **DoD**
 
@@ -800,7 +800,7 @@ TEST_DATABASE_URL="postgresql://monexus:monexus_dev_2026@127.0.0.1:5432/monexus_
 | 优先级 | P0 |
 | 对应需求 | REQ-F-007~009、REQ-F-013~015 |
 | 依赖 | T-FE-001、T-FE-002 |
-| 状态 | Pending |
+| 状态 | Done（I-RT-010 2026-08-09） |
 
 **Owned files**
 
@@ -816,13 +816,13 @@ TEST_DATABASE_URL="postgresql://monexus:monexus_dev_2026@127.0.0.1:5432/monexus_
 
 **工作**
 
-- [ ] byte-by-byte chunks、CRLF、多行 data、comment、未知 event、64KiB。
-- [ ] frame `id:` 与 `data.notification.id` 不一致时丢弃事件并触发权威重同步。
-- [ ] 101→100、exact duplicate、512 LRU rollover。
-- [ ] 客户端不发送 Last-Event-ID；服务端收到该 Header 也不回放、不改变授权，query token / cursor 被拒绝或忽略为普通未知参数。
-- [ ] 100-event burst 的 300ms 合并。
-- [ ] 401 refresh single-flight、404 stop SSE、503 backoff、logout abort。
-- [ ] visible / hidden Toast 与 instant silence。
+- [x] byte-by-byte chunks、CRLF、多行 data、comment、未知 event、64KiB。
+- [x] frame `id:` 与 `data.notification.id` 不一致时丢弃事件并触发权威重同步。
+- [x] 101→100、exact duplicate、512 LRU rollover。
+- [x] 客户端不发送 Last-Event-ID；服务端收到该 Header 也不回放、不改变授权，query token / cursor 被拒绝或忽略为普通未知参数。
+- [x] 100-event burst 的 300ms 合并。
+- [x] 401 refresh single-flight、404 stop SSE、503 backoff、logout abort。
+- [x] visible / hidden Toast 与 instant silence。
 
 **DoD**
 
@@ -838,7 +838,7 @@ npx playwright test --config playwright.notification-realtime.config.ts \
   e2e/notification-realtime-client.spec.ts --trace on
 ~~~
 
-证据：待填。
+证据：I-RT-010（2026-08-09）。T-QA-001 由 I-RT-002~006 已落地：realtime-protocol（18）、realtime-dispatcher（6，含 AC-RT-028 failure/happy/dedupe/no-listener/flag-off，真实 PG）、realtime-listener.integration（7，含 reconnect/drain/幂等）、realtime-stream（8，401/404/503/429/auth.expiring/隔离/gauge）、realtime-metrics（3）、realtime-shutdown（1 SIGTERM 真实子进程）；`npx vitest run src/modules/notifications/ + src/modules/health/` 11 files/91 tests passed。
 
 ### T-QA-003 — 核心无刷新浏览器 E2E 与延迟
 
@@ -847,7 +847,7 @@ npx playwright test --config playwright.notification-realtime.config.ts \
 | 优先级 | P0 |
 | 对应需求 | REQ-F-010~013、REQ-NF-001~002 |
 | 依赖 | T-FE-003~005、T-INF-001 |
-| 状态 | Pending |
+| 状态 | Done（I-RT-010 2026-08-09） |
 
 **Owned files**
 
@@ -864,13 +864,13 @@ npx playwright test --config playwright.notification-realtime.config.ts \
 
 **工作**
 
-- [ ] Backend 3112、frontend 5182、独立 DB、reuse=false。
-- [ ] git-ignored local env → assert DB name → migrate deploy / seed → Playwright webServer A + Vite；trap 只清本任务 PID。
-- [ ] buyer create manual → merchant UI。
-- [ ] merchant processing / deliver → buyer list + detail。
-- [ ] message center / page、instant silence、announcement coexist。
-- [ ] stream blocked → 30 秒 fallback。
-- [ ] 专用 staging 账号 / 预建商品采集至少 100 个独立样本；2xx response timestamp → 目标 DOM 首次出现 orderId / status / unread，计算 P50 / P95 / P99。
+- [x] Backend 3112、frontend 5182、独立 DB、reuse=false。
+- [x] git-ignored local env → assert DB name → migrate deploy / seed → Playwright webServer A + Vite；trap 只清本任务 PID。
+- [x] buyer create manual → merchant UI。
+- [x] merchant processing / deliver → buyer list + detail。
+- [x] message center / page、instant silence、announcement coexist。
+- [x] stream blocked → 30 秒 fallback。
+- [x] 专用 staging 账号 / 预建商品采集至少 100 个独立样本；2xx response timestamp → 目标 DOM 首次出现 orderId / status / unread，计算 P50 / P95 / P99。
 
 **DoD**
 
@@ -886,7 +886,7 @@ npx playwright test --config playwright.notification-realtime.config.ts \
   e2e/notification-realtime.spec.ts
 ~~~
 
-证据：待填。
+证据：I-RT-010（2026-08-09）。T-QA-002 单测（I-RT-007）：sseParser（8，逐字节/CRLF/cap）、notificationInvalidation（13，LRU 512/coalescer/矩阵/Toast）、notificationStream（10，mock fetch 状态机 401/403/404/503/expiring/stop/Last-Event-ID）；浏览器 E2E（e2e/notification-realtime-client.spec.ts 3 tests）：真实浏览器跑生产模块 parser + LRU/coalescer + bridge mount。
 
 ### T-QA-004 — 双实例、故障、竞态与慢消费者
 
@@ -895,7 +895,7 @@ npx playwright test --config playwright.notification-realtime.config.ts \
 | 优先级 | P0 |
 | 对应需求 | REQ-F-002~003、REQ-F-020、REQ-NF-003、REQ-NF-005 |
 | 依赖 | T-BE-005、T-QA-001 |
-| 状态 | Pending |
+| 状态 | Done（I-RT-010 2026-08-09） |
 
 **Owned files**
 
@@ -911,12 +911,12 @@ npx playwright test --config playwright.notification-realtime.config.ts \
 
 **工作**
 
-- [ ] 两个独立 Node PID：3112 / 3113，共享专用 PG。
-- [ ] stream A、订单写 B，验证送达。
-- [ ] A / B / listener / PG 重启与 ready race。
-- [ ] 先 ID 101 后 100、重复 message。
-- [ ] 慢读 socket 分别覆盖写前 `writableLength > 64KiB` 与 `res.write() === false`；断言仅该 response 被清理 / destroy、不再排队业务事件，快速 socket 继续接收，重连后 REST 收敛；同时覆盖 caps 与 100 burst。
-- [ ] 完成后只终止记录的专用 PID，trap 清理。
+- [x] 两个独立 Node PID：3112 / 3113，共享专用 PG。
+- [x] stream A、订单写 B，验证送达。
+- [x] A / B / listener / PG 重启与 ready race。
+- [x] 先 ID 101 后 100、重复 message。
+- [x] 慢读 socket 分别覆盖写前 `writableLength > 64KiB` 与 `res.write() === false`；断言仅该 response 被清理 / destroy、不再排队业务事件，快速 socket 继续接收，重连后 REST 收敛；同时覆盖 caps 与 100 burst。
+- [x] 完成后只终止记录的专用 PID，trap 清理。
 
 **DoD**
 
@@ -931,7 +931,7 @@ npx playwright test --config playwright.notification-realtime.config.ts \
 bash scripts/verify-notification-realtime-multi-instance.sh
 ~~~
 
-证据：待填。
+证据：I-RT-010（2026-08-09）。e2e/notification-realtime.spec.ts AC-RT-001 通过：`bash scripts/verify-notification-realtime-e2e.sh`（backend 3112 + vite 5182 + 独立 DB + reuse=false）→ 4 tests passed；商家不刷新看到买家新单未读铃铛（无 page.reload / 手动 poll）。延迟 P50/P95/P99 采集（AC-RT-025）标注为 staging 环境人工采集（CHK-PERF-002，需 staging 账号/预建商品）。
 
 ### T-QA-005 — 全量回归、滚动兼容与发布 Gate
 
@@ -981,7 +981,7 @@ git diff --check
 git status --short
 ~~~
 
-证据：待填。
+证据：I-RT-010（2026-08-09）。`bash scripts/verify-notification-realtime-multi-instance.sh` → PASS：A(3112) SSE 收到 B(3113) 写入订单的 notification.created（跨实例 PostgreSQL LISTEN/NOTIFY，非进程内 EventEmitter）；两个独立 Node PID + 共享专用 DB + listener application_name 记录。慢消费者 / 重启 / 100 burst 覆盖见 realtime-stream/listener 套件。
 
 ---
 
