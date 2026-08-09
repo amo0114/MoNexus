@@ -84,6 +84,12 @@ export const CATALOG_ERROR_CODES = {
   LEGACY_TYPE_WITH_CATEGORY_ID: 'LEGACY_TYPE_WITH_CATEGORY_ID',
   // Second concurrent review of the same application (spec §7.3).
   CATEGORY_APPLICATION_ALREADY_REVIEWED: 'CATEGORY_APPLICATION_ALREADY_REVIEWED',
+  // Same merchant already has a pending application for the same normalized
+  // label (spec §5.2 — at most one pending per merchant + normalizedLabel).
+  CATEGORY_APPLICATION_PENDING_DUPLICATE: 'CATEGORY_APPLICATION_PENDING_DUPLICATE',
+  // approve(map_existing) targeted an inactive category; only an active
+  // category can cover a new request (D-CAT-22, CHK-CAT-011).
+  CATEGORY_APPLICATION_MAP_TARGET_INACTIVE: 'CATEGORY_APPLICATION_MAP_TARGET_INACTIVE',
   // Publish readiness failed (spec §6.1).
   PRODUCT_NOT_READY: 'PRODUCT_NOT_READY',
   // Xboard source changed between preview and confirm (spec §9.3).
@@ -92,6 +98,11 @@ export const CATALOG_ERROR_CODES = {
   IDEMPOTENCY_KEY_REQUIRED: 'IDEMPOTENCY_KEY_REQUIRED',
   IDEMPOTENCY_KEY_INVALID: 'IDEMPOTENCY_KEY_INVALID',
   IDEMPOTENCY_KEY_REUSED: 'IDEMPOTENCY_KEY_REUSED',
+  // Category repository / admin governance (spec §7.2; D-CAT-06/D-CAT-07).
+  CATEGORY_CODE_IMMUTABLE: 'CATEGORY_CODE_IMMUTABLE',
+  CATEGORY_CODE_TAKEN: 'CATEGORY_CODE_TAKEN',
+  CATEGORY_LABEL_TAKEN: 'CATEGORY_LABEL_TAKEN',
+  CATEGORY_REFERENCED: 'CATEGORY_REFERENCED',
 } as const
 export type CatalogErrorCode =
   (typeof CATALOG_ERROR_CODES)[keyof typeof CATALOG_ERROR_CODES]
