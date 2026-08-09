@@ -63,7 +63,11 @@ fi
 
 BASE="${NOTIFICATION_REALTIME_PROXY_BASE:?NOTIFICATION_REALTIME_PROXY_BASE is required}"
 TOKEN="${NOTIFICATION_REALTIME_PROXY_TOKEN:?NOTIFICATION_REALTIME_PROXY_TOKEN is required}"
-SENTINEL="rt-proxy-sentinel-$(date +%s)-${RANDOM}"
+SENTINEL="${NOTIFICATION_REALTIME_PROXY_SENTINEL:-rt-proxy-sentinel-$(date +%s)-${RANDOM}}"
+[[ "$SENTINEL" =~ ^rt-proxy-sentinel-[A-Za-z0-9._-]+$ ]] || {
+  echo '[FAIL] invalid proxy sentinel format' >&2
+  exit 1
+}
 
 fail() { echo "[FAIL] $*" >&2; exit 1; }
 pass() { echo "[PASS] $*"; }

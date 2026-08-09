@@ -121,6 +121,16 @@
 
 `--release` 的五个外部 artifact 通过 `RT_STAGING_LATENCY_EVIDENCE_FILE`、`RT_DEPLOYED_LOG_EVIDENCE_FILE`、`RT_ROLLOUT_EVIDENCE_FILE`、`RT_ROLLBACK_EVIDENCE_FILE`、`RT_OWNER_REVIEW_EVIDENCE_FILE` 提供。每个文件必须在 7 天内生成，包含精确的 `result=PASS` 与 `head=<40位HEAD>`；staging 还需 `sample_count/p95_ms/p99_ms`，日志需 `nginx/app`（Caddy 拓扑另需 `caddy`），rollout/rollback 需脚本报错中列出的阶段字段，Owner 需 `reviewer` 与 `decision=APPROVED`。证据路径与 token 不得提交仓库。
 
+### 7.2.1 受保护 staging 自动演练
+
+专用 staging 的真实拓扑是 `public Caddy → bundled Nginx → Express`，私有 `/etc/monexus/staging.env` 必须使用 `DEPLOY_TOPOLOGY=caddy`、`TRUST_PROXY=2`。首次演练前由 root/operator 将仓库中的 staging Caddy site 同步到活动文件 `/etc/caddy/sites-enabled/monexus-staging.caddy`，确认包含 `flush_interval -1`，再执行 `caddy validate` 与 reload。deploy 用户只读检查该文件；检查失败时演练会在任何应用部署变更前停止，不得绕过。
+
+工作流 **Staging Compose Deploy** 的 `release_action=realtime_rehearsal` 执行固定的 12 阶段流程：proxy-first、backend-first/flag-off、AC-RT-029、flag-on/backend-only、创建 synthetic fixture、仅构建前端、外部 proxy smoke、frontend-after、100 样本、三层日志边界、flag-off fallback、immutable code rollback/history/cleanup/env restore。live run 还要求 `dry_run=false` 与 `confirm_rehearsal=REHEARSE_AND_ROLL_BACK`；先以 `dry_run=true` 核对最终 SHA。
+
+fixture 只允许 Compose DB hostname `postgres`，并以 `GITHUB_RUN_ID.GITHUB_RUN_ATTEMPT` 隔离。创建输出只有 synthetic IDs/email/product metadata；密码走 stdin，15 分钟 JWT 由真实登录 API 按阶段重新签发并只进入 runner 的 `0600` 临时 token 文件。token/password/order ID state 均不得上传。cleanup 会重新核验 buyer/product/offer/merchant 完整 ownership tuple；遇到 renewal 引用或 DeliveryFile 时拒绝扩大删除范围并要求人工审查。
+
+失败时 runner 必须调用 `recover`，逐项输出并留存 `flag_off`、`fixture_cleanup`、`code_rollback`、`env_runtime_restore` 的 PASS/FAIL；任一步失败会让 workflow 保持失败并标记 `manual_intervention_required=true`，不得静默吞错。成功 artifact 仅上传 aggregate latency、session、proxy、logs、rollout、rollback、fixture cleanup 与 rehearsal metadata。运行目录状态为 `COMPLETE`/`RECOVERED` 时仍保留证据；重跑使用新的 workflow attempt，不覆盖旧审计链。
+
 ### 7.3 回滚（快速降级 / 版本回滚）
 
 1. 设 `NOTIFICATION_REALTIME_ENABLED=false` 并滚动重启后端 → stream 404 → 前端自动进入 polling_only（30s fallback）。

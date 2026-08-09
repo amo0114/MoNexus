@@ -16,9 +16,15 @@ fail() {
 for script in \
   deploy/vps/monexus-compose-deploy \
   deploy/vps/monexus-compose-deploy-ssh-wrapper \
-  deploy/vps/install-compose-production-deploy.sh; do
+  deploy/vps/install-compose-production-deploy.sh \
+  scripts/staging-compose.sh \
+  scripts/notification-realtime-staging-host.sh \
+  scripts/run-notification-realtime-staging-rehearsal.sh; do
   bash -n "${ROOT_DIR}/${script}"
 done
+
+node "${ROOT_DIR}/server/scripts/notification-realtime-staging-fixture.mjs" --self-test
+node "${ROOT_DIR}/scripts/notification-realtime-staging-collector.mjs" --self-test
 
 workflow="${ROOT_DIR}/.github/workflows/compose-production-deploy.yml"
 [[ -f "$workflow" ]] || fail 'Compose production workflow is missing.'
@@ -38,6 +44,57 @@ for required_fragment in \
   'deploy ${DEPLOY_COMMIT}'; do
   grep -Fq "$required_fragment" "$workflow" || fail "Workflow is missing required safeguard: ${required_fragment}"
 done
+
+staging_workflow="${ROOT_DIR}/.github/workflows/staging-deploy.yml"
+[[ -f "$staging_workflow" ]] || fail 'Staging Compose workflow is missing.'
+if command -v ruby >/dev/null 2>&1; then
+  ruby -e 'require "yaml"; YAML.load_file(ARGV.fetch(0))' "$staging_workflow" >/dev/null
+fi
+for required_fragment in \
+  'realtime_rehearsal' \
+  'REHEARSE_AND_ROLL_BACK' \
+  'environment: staging' \
+  'StrictHostKeyChecking=yes' \
+  'run-notification-realtime-staging-rehearsal.sh' \
+  'notification-realtime-staging-evidence-'; do
+  grep -Fq "$required_fragment" "$staging_workflow" || \
+    fail "Staging workflow is missing required rehearsal safeguard: ${required_fragment}"
+done
+
+for required_fragment in \
+  "CONFIRMATION='monexus-staging-notification-realtime'" \
+  "BASE_PATH='/opt/monexus-staging'" \
+  "PROJECT_NAME='monexus-staging'" \
+  'NOTIFICATION_REALTIME_ENABLED false' \
+  'frontend-build' \
+  'read -r RT_STAGING_FIXTURE_PASSWORD' \
+  'recover_run' \
+  'manual_intervention_required=true' \
+  'fixture-clean'; do
+  grep -Fq "$required_fragment" "${ROOT_DIR}/scripts/notification-realtime-staging-host.sh" || \
+    fail "Staging host script is missing required recovery boundary: ${required_fragment}"
+done
+
+fixture_script="${ROOT_DIR}/server/scripts/notification-realtime-staging-fixture.mjs"
+if grep -Eq "jsonwebtoken|accessToken|token:[[:space:]]*sign" "$fixture_script"; then
+  fail 'Staging fixture must not sign or emit an access token.'
+fi
+grep -Fq 'userId: fixture.merchantUser.id' "$fixture_script" || \
+  fail 'Staging fixture must emit credential-free merchant identity metadata.'
+for required_fragment in \
+  "RT_STAGING_COLLECTOR_MODE=token" \
+  "RT_STAGING_TOKEN_FILE" \
+  "recovery-runner.txt"; do
+  grep -Fq "$required_fragment" "${ROOT_DIR}/scripts/run-notification-realtime-staging-rehearsal.sh" || \
+    fail "Staging runner is missing private credential/recovery safeguard: ${required_fragment}"
+done
+grep -Fq 'failure_stage=' "${ROOT_DIR}/scripts/notification-realtime-staging-collector.mjs" || \
+  fail 'Staging collector must write aggregate FAIL evidence on incomplete latency runs.'
+
+grep -Fq 'flush_interval -1' "${ROOT_DIR}/deploy/staging/Caddyfile" || \
+  fail 'Staging Caddy site must force immediate SSE flushing.'
+grep -Fq 'API_RATE_LIMIT_MAX: ${API_RATE_LIMIT_MAX:-300}' "${ROOT_DIR}/docker-compose.prod.yml" || \
+  fail 'Compose must explicitly map the existing API rate-limit configuration.'
 
 entrypoint="${ROOT_DIR}/deploy/vps/monexus-compose-deploy"
 for required_fragment in \

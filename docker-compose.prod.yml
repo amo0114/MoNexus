@@ -53,6 +53,7 @@ services:
       # sets X-Forwarded-For; TRUST_PROXY=1 lets express-rate-limit key on
       # the real client IP instead of the nginx container's internal IP.
       TRUST_PROXY: ${TRUST_PROXY:-1}
+      API_RATE_LIMIT_MAX: ${API_RATE_LIMIT_MAX:-300}
       STORAGE_ENDPOINT: ${STORAGE_ENDPOINT:?STORAGE_ENDPOINT is required}
       STORAGE_REGION: ${STORAGE_REGION:-us-east-1}
       STORAGE_BUCKET: ${STORAGE_BUCKET:?STORAGE_BUCKET is required}
