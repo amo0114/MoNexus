@@ -1,8 +1,12 @@
-// T-MERCH-BE-001 — Ranking run lifecycle module exports.
+// T-MERCH-BE-001/002 — Ranking run lifecycle + compute module exports.
 //
-// Public surface consumed by T-MERCH-BE-002 (compute + projection), admin query
-// and the CMI Integration Owner (cron wiring). BE-002 registers its compute via
-// `setRankingCompute` from `./cron.js`.
+// Public surface consumed by T-MERCH-BE-002 (projection), admin query and the
+// CMI Integration Owner (cron wiring). T-MERCH-BE-002 registers its real compute
+// here at module load: the only 'main wiring' that lives inside merchandising
+// ranking (task: 不得改 global main). Tests import submodules directly and are
+// unaffected by this registration.
+
+import { registerRankingCompute } from './compute.js'
 
 export {
   dbNow,
@@ -34,6 +38,14 @@ export {
 } from './cron.js'
 
 export {
+  computeCategoryRanks,
+  computeRankingSnapshots,
+  registerRankingCompute,
+  buildComputeAggregationSql,
+  type AggregationRow,
+  type RankedSnapshot,
+} from './compute.js'
+export {
   listAdminRuns,
   requestManualRecompute,
   type AdminRunPage,
@@ -52,5 +64,9 @@ export {
   type RunOutcome,
   type SnapshotInput,
 } from './types.js'
-
 export { RUN_STATUS } from '../constants.js'
+
+// T-MERCH-BE-002 最小接线：本模块作为 merchandising ranking 的入口被宿主 main 接线
+// import 时，自动把真实 Order 聚合 compute 注册进 BE-001 cron。幂等；测试直接
+// import 子模块（cron/lifecycle/repository），不会触发此注册。
+registerRankingCompute()
