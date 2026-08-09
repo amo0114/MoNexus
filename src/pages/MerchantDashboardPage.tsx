@@ -42,6 +42,7 @@ import RegistryPill from '../components/ui/RegistryPill'
 import { Dialog, DialogContent, DialogTitle } from '../components/ui/Dialog'
 import { TableSkeleton, StatCardSkeleton } from '../components/ui/Skeleton'
 import EmptyState from '../components/ui/EmptyState'
+import { createLatestRequestCoordinator } from '../realtime/latestRequestCoordinator'
 
 type TabKey = 'dashboard' | 'products' | 'orders' | 'settlements' | 'profile' | 'operations'
 type MerchantOrderSetter = Dispatch<SetStateAction<MerchantOrder | null>>
@@ -80,10 +81,7 @@ export default function MerchantDashboardPage() {
   const [activeTab, setActiveTab] = useState<TabKey>('dashboard')
   const [stats, setStats] = useState<MerchantStats | null>(null)
   const [loading, setLoading] = useState(true)
-  const loadGenerationRef = useRef(0)
-  // The latest request owns the skeleton. A background refresh may take over
-  // an in-flight foreground load, but stale foreground completions never can.
-  const loadingOwnerRef = useRef<number | null>(0)
+  const loadCoordinatorRef = useRef(createLatestRequestCoordinator(true))
 
   const [products, setProducts] = useState<MerchantProduct[]>([])
   const [productPage, setProductPage] = useState(1)
@@ -121,7 +119,8 @@ export default function MerchantDashboardPage() {
   }, [activeTab, productPage, orderPage, orderStatusFilter, orderSortBooking, productSearchDebounced, productStatusFilter, productTypeFilter, productModeFilter, productLowStockOnly])
 
   async function loadData(opts?: { background?: boolean }) {
-    const generation = ++loadGenerationRef.current
+    const coordinator = loadCoordinatorRef.current
+    const generation = coordinator.begin(opts?.background ? 'background' : 'foreground')
     const snapshot = {
       tab: activeTab,
       productPage,
@@ -134,13 +133,8 @@ export default function MerchantDashboardPage() {
       productModeFilter,
       productLowStockOnly,
     }
-    const isCurrent = () => generation === loadGenerationRef.current
-    if (!opts?.background) {
-      loadingOwnerRef.current = generation
-      setLoading(true)
-    } else if (loadingOwnerRef.current !== null) {
-      loadingOwnerRef.current = generation
-    }
+    const isCurrent = () => coordinator.isLatest(generation)
+    if (!opts?.background || coordinator.ownsLoading(generation)) setLoading(true)
     try {
       if (snapshot.tab === 'dashboard' || snapshot.tab === 'orders') {
         const data = await getMerchantStats()
@@ -182,8 +176,7 @@ export default function MerchantDashboardPage() {
     } catch (e: any) {
       if (isCurrent() && !opts?.background) showToast(e.response?.data?.error?.message || '加载失败', 'error')
     } finally {
-      if (loadingOwnerRef.current === generation) {
-        loadingOwnerRef.current = null
+      if (coordinator.finish(generation)) {
         setLoading(false)
       }
     }

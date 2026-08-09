@@ -49,16 +49,13 @@ export function scheduleNotificationRealtimeTimer(
   targetMs: number,
   callback: () => void,
 ): { cancel: () => void } {
+  if (!Number.isFinite(targetMs)) throw new RangeError('Timer target must be finite')
   let timer: NodeJS.Timeout | null = null
   let cancelled = false
   const schedule = (): void => {
     if (cancelled) return
     const remaining = targetMs - Date.now()
-    const delay = remaining === Infinity
-      ? NOTIFICATION_REALTIME_MAX_TIMER_DELAY_MS
-      : Number.isFinite(remaining)
-        ? Math.max(0, Math.min(remaining, NOTIFICATION_REALTIME_MAX_TIMER_DELAY_MS))
-        : 0
+    const delay = Math.max(0, Math.min(remaining, NOTIFICATION_REALTIME_MAX_TIMER_DELAY_MS))
     timer = setTimeout(() => {
       timer = null
       if (cancelled) return
@@ -138,7 +135,12 @@ export function notificationRealtimeStream(
   const expiresAtSec = req.user!.exp
   // JWT expiry is a prerequisite for opening SSE: without it there is no
   // enforceable hard-expiry boundary.
-  if (typeof expiresAtSec !== 'number' || !Number.isFinite(expiresAtSec) || !Number.isInteger(expiresAtSec) || expiresAtSec * 1000 <= Date.now()) {
+  const expiresAtMs = typeof expiresAtSec === 'number' ? expiresAtSec * 1000 : NaN
+  const expiresDate = Number.isFinite(expiresAtMs) && Number.isSafeInteger(expiresAtMs)
+    ? new Date(expiresAtMs)
+    : null
+  if (typeof expiresAtSec !== 'number' || !Number.isFinite(expiresAtSec) || !Number.isInteger(expiresAtSec)
+    || !expiresDate || !Number.isFinite(expiresDate.getTime()) || expiresAtMs <= Date.now()) {
     res.status(401).json({ error: { code: 'UNAUTHORIZED', message: '登录已过期' } })
     return
   }
@@ -198,7 +200,6 @@ export function notificationRealtimeStream(
     return ok
   }
   {
-    const expiresAtMs = expiresAtSec * 1000
     const remaining = expiresAtMs - Date.now()
     const expiringAtMs = expiresAtMs - NOTIFICATION_REALTIME_AUTH_EXPIRING_LEAD_MS
     const expiringIn = Math.max(0, remaining - NOTIFICATION_REALTIME_AUTH_EXPIRING_LEAD_MS)

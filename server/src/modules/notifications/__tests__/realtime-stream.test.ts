@@ -137,6 +137,11 @@ describe('realtime absolute timer scheduling', () => {
     vi.advanceTimersByTime(2000)
     expect(cancelled).not.toHaveBeenCalled()
   })
+
+  it('rejects non-finite targets', () => {
+    expect(() => scheduleNotificationRealtimeTimer(Infinity, vi.fn())).toThrow(RangeError)
+    expect(() => scheduleNotificationRealtimeTimer(NaN, vi.fn())).toThrow(RangeError)
+  })
 })
 
 describe('realtime SSE stream (SPEC-NOTIFY-RT-001 T-BE-004)', () => {
@@ -297,6 +302,7 @@ describe('realtime SSE stream (SPEC-NOTIFY-RT-001 T-BE-004)', () => {
       jwt.sign({ userId, role: 'merchant' }, config.jwtSecret),
       jwt.sign({ userId, role: 'merchant', exp: nowSec + 120.5 }, config.jwtSecret),
       jwt.sign({ userId, role: 'merchant', exp: nowSec - 1 }, config.jwtSecret),
+      jwt.sign({ userId, role: 'merchant', exp: Number.MAX_SAFE_INTEGER }, config.jwtSecret),
     ]
 
     for (const token of tokens) {

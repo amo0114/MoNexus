@@ -21,6 +21,7 @@ import {
   filterOrdersByTab,
   type OrderListTab,
 } from '../utils/orderAttention'
+import { createLatestRequestCoordinator } from '../realtime/latestRequestCoordinator'
 
 function parseTab(raw: string | null): OrderListTab {
   if (raw === 'active' || raw === 'delivered' || raw === 'done' || raw === 'all') return raw
@@ -48,31 +49,24 @@ export default function OrdersPage() {
   const reloadRequestRef = useRef(0)
   const detailRequestRef = useRef(0)
   const backgroundDetailRequestRef = useRef(0)
-  const listRequestRef = useRef(0)
-  const loadingOwnerRef = useRef<number | null>(0)
+  const listCoordinatorRef = useRef(createLatestRequestCoordinator(true))
   const selectedOrderRef = useRef<UserOrderDetail | null>(null)
   selectedOrderRef.current = selectedOrder
 
   const load = useCallback(async (opts?: { background?: boolean }) => {
-    const request = ++listRequestRef.current
-    // Background realtime reload keeps current content (no full-page skeleton).
-    if (!opts?.background) {
-      loadingOwnerRef.current = request
-      setLoading(true)
-    } else if (loadingOwnerRef.current !== null) {
-      loadingOwnerRef.current = request
-    }
+    const coordinator = listCoordinatorRef.current
+    const request = coordinator.begin(opts?.background ? 'background' : 'foreground')
+    if (!opts?.background || coordinator.ownsLoading(request)) setLoading(true)
     try {
       const list = await getOrders({ page: 1, pageSize: 100 })
-      if (request !== listRequestRef.current) return
+      if (!coordinator.isLatest(request)) return
       setOrders(list)
       setOrderAttentionCount(countAttentionOrders(list))
     } catch (err) {
       // Single background failure keeps old values and waits for the next tick.
-      if (request === listRequestRef.current && !opts?.background) showToast(getApiErrorMessage(err, '加载订单失败'), 'error')
+      if (coordinator.isLatest(request) && !opts?.background) showToast(getApiErrorMessage(err, '加载订单失败'), 'error')
     } finally {
-      if (loadingOwnerRef.current === request) {
-        loadingOwnerRef.current = null
+      if (coordinator.finish(request)) {
         setLoading(false)
       }
     }
@@ -86,18 +80,20 @@ export default function OrdersPage() {
   // attention in the background; if the current detail is the related order, reload it.
   const reloadBuyerState = useCallback(async () => {
     const request = ++reloadRequestRef.current
-    listRequestRef.current += 1
-    const listRequest = listRequestRef.current
+    const listCoordinator = listCoordinatorRef.current
+    const listRequest = listCoordinator.begin('background')
+    if (listCoordinator.ownsLoading(listRequest)) setLoading(true)
     const currentId = selectedOrderRef.current?.id
     const detailRequest = currentId == null ? null : ++backgroundDetailRequestRef.current
     const [listResult, detailResult] = await Promise.allSettled([
       getOrders({ page: 1, pageSize: 100 }),
       currentId == null ? Promise.resolve(null) : getOrderDetail(currentId),
     ])
-    if (request === reloadRequestRef.current && listRequest === listRequestRef.current && listResult.status === 'fulfilled') {
+    if (request === reloadRequestRef.current && listCoordinator.isLatest(listRequest) && listResult.status === 'fulfilled') {
       setOrders(listResult.value)
       setOrderAttentionCount(countAttentionOrders(listResult.value))
     }
+    if (listCoordinator.finish(listRequest)) setLoading(false)
     if (
       detailRequest !== null
       && detailRequest === backgroundDetailRequestRef.current
@@ -269,7 +265,6 @@ export default function OrdersPage() {
           }}
           onUpdated={() => {
             void load()
-            void refreshOrderAttention()
           }}
         />
       )}
