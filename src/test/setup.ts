@@ -6,6 +6,21 @@ import '@testing-library/jest-dom/vitest'
 // component tests (independent of vitest `globals`).
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
+// jsdom does not implement window.matchMedia; appStore.showToast reads it to
+// route notifications. Provide a minimal query-only stub (test infra only).
+if (typeof window !== 'undefined' && typeof window.matchMedia !== 'function') {
+  window.matchMedia = ((query: string) => ({
+    matches: false,
+    media: query,
+    onchange: null,
+    addListener: () => {},
+    removeListener: () => {},
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    dispatchEvent: () => false,
+  })) as typeof window.matchMedia
+}
+
 afterEach(() => {
   cleanup()
 })

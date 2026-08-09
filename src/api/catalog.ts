@@ -59,6 +59,8 @@ export interface CatalogAdapter {
   listActiveCategories(): Promise<CategoryRegistryItem[]>
   /** Create a draft Product + Offers; never carries secret inventory (spec §6.2). */
   createDraftProduct(payload: DraftProductCreateRequest): Promise<CatalogDraftProduct>
+  /** Reload server-assigned Offer ids after draft creation; local ids are never synthesized. */
+  listProductOffers(productId: number): Promise<AvailabilityOffer[]>
   /** Authoritative publish readiness (spec §6.1). */
   getPublicationReadiness(productId: number): Promise<PublicationReadiness>
   /** Atomic publish action; server re-runs the full readiness gate (D-CAT-03). */
@@ -79,6 +81,9 @@ export function createCatalogAdapter(transport: CatalogTransport = defaultTransp
     },
     async createDraftProduct(payload) {
       return transport.post<CatalogDraftProduct>('/merchant/products', payload)
+    },
+    async listProductOffers(productId) {
+      return transport.get<AvailabilityOffer[]>(`/merchant/products/${productId}/offers`)
     },
     async getPublicationReadiness(productId) {
       return transport.get<PublicationReadiness>(`/merchant/products/${productId}/readiness`)
