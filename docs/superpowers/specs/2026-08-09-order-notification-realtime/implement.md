@@ -248,14 +248,14 @@ Follow-up owner:
 | I-RT-001 | T-DOC-001 | Done (2949508) | 六件套 Frozen、delta audit |
 | I-RT-002 | T-BE-001 | Done | config / protocol / dependency tests |
 | I-RT-003 | T-BE-002 | Done | real PG commit / rollback / dedupe + AC-RT-028 / CHK-BE-003 |
-| I-RT-004 | T-BE-003 | Pending (Review R-RT-* 重开) | listener / generation / primary projection |
-| I-RT-005 | T-BE-004 | Pending (Review R-RT-* 重开) | hub + stream raw integration |
+| I-RT-004 | T-BE-003 | Done | listener / generation / primary projection |
+| I-RT-005 | T-BE-004 | Done | hub + stream raw integration |
 | I-RT-006 | T-BE-005 | Done | readiness / metrics / SIGTERM |
-| I-RT-007 | T-FE-001、T-FE-002 | Pending (Review R-RT-* 重开) | parser / state / invalidation contract |
-| I-RT-008 | T-FE-003~005 | Pending (Review R-RT-* 重开) | notification / buyer / merchant UI E2E |
-| I-RT-009 | T-INF-001、T-INF-002 | Pending (Review R-RT-* 重开) | proxy / env / smoke / runbook + AC-RT-029 / CHK-INF-007 |
-| I-RT-010 | T-QA-001~004 | Pending (Review R-RT-* 重开) | backend、browser、multi-instance、failure + AC-RT-028 evidence |
-| I-RT-011 | T-QA-005 | Pending (Review R-RT-* 重开) | AC-RT-001~029、全部 P0 CHK、rollout / rollback、PR handoff |
+| I-RT-007 | T-FE-001、T-FE-002 | Done | parser / state / invalidation contract |
+| I-RT-008 | T-FE-003~005 | Done | notification / buyer / merchant UI E2E |
+| I-RT-009 | T-INF-001、T-INF-002 | Done（本地实现与自测） | proxy / env / smoke / runbook；实际 AC-RT-029 / CHK-INF-007 留待 release gate |
+| I-RT-010 | T-QA-001~004 | Done（当前 HEAD 本地证据） | backend、browser、multi-instance、failure + AC-RT-028 evidence；AC-RT-025 留待 staging |
+| I-RT-011 | T-QA-005 | Pending（deployment/release gates） | AC-RT-025、AC-RT-029、部署 smoke、rollout / rollback、Owner review |
 
 单卡范围仍受 task.md 更细的 ownership 约束。任何映射多个 Task 的卡在开工记录中必须逐 Task 列出独立 Owned files / DoD / commits；映射到同一卡不表示可以越界改彼此文件。
 
@@ -394,6 +394,7 @@ git status --short
 | 2026-08-09 | I-RT-009 HEAD | I-RT-009 / T-INF-001、T-INF-002 | REQ-F-019、REQ-F-022、REQ-NF-001/006/007；AC-RT-017、022~023、029；CHK-INF-001~007、CHK-CFG-004、CHK-REL-001~006 | `npm run check:nginx`；`npm run prod:env:staging-template`；bash -n 全部脚本 | check:nginx exit 0；staging env 预检 exit 0；exact SSE location + Caddy flush_interval；8 env + DEPLOY_TOPOLOGY 进入 example/compose/check-prod-env（TRUST_PROXY 拓扑强制）；listen-session gate 脚本 + proxy smoke + prod-smoke realtime 段 + runbook §7 | 改 nginx.conf/Caddyfile/.env.example×2/docker-compose.prod.yml/check-prod-env.sh/prod-smoke.sh/docs/ops-runbook.md；新增 verify-notification-realtime-proxy.sh、verify-notification-realtime-listen-session.sh(+.mjs) |
 | 2026-08-09 | I-RT-010 HEAD **Superseded by review** | I-RT-010 / T-QA-001~004 | AC-RT-001、005、028；CHK-QA-001~016 | 历史 `bash scripts/verify-notification-realtime-e2e.sh`、multi-instance 与 vitest 记录 | **SUPERSEDED**：当时 browser E2E 仅 4 passed，不代表当前 10-test suite 或最终 HEAD；multi-instance 与 AC-RT-028 均须由最终 verifier 重建证据 | 历史文件/脚本清单保留供审计，不作为当前 gate 证据 |
 | 2026-08-09 | I-RT-011 HEAD | I-RT-011 / T-QA-005 **Invalidated by review** | AC-RT-001~029、全部 P0 CHK、G-PR-001~010 | 历史 verify 记录（需最终 HEAD 重建） | **INVALIDATED**：旧“exit 0 / 102 项”声明不可用；当前 E2E/G-PR 计数仅为历史，须最终 HEAD 重建；不得声称 final pass | 新增 scripts/verify-notification-realtime.sh；checklist.md 证据；implement.md G-PR 状态 + Evidence Ledger |
+| 2026-08-09 23:23 CST | `26aea843d434f679a76c0bc9af47ede19ecc8f76` | I-RT-004/005/007/008/009/010；I-RT-011 local evidence | AC-RT-001~024、026~028 的本地自动化证据；当前 HEAD 可验证的 P0 CHK；G-PR-002~005/007~008/010 | `PATH=/root/.nvm/versions/node/v20.19.5/bin:$PATH NODE_OPTIONS=--max-old-space-size=700 bash scripts/verify-notification-realtime.sh --local` | exit 0；Node 20.19.5 / npm 10.8.2；backend 16 files / 152 tests（230.53s，专用 DB `monexus_test_notification_realtime`）；frontend 8 files / 60 tests（2.23s）；Playwright 10/10（1.6m，3112/5182）；multi-instance A:3112/B:3113 PASS；56 migrations up to date、live diff none；secret scan + synthetic positive PASS；final clean boundary PASS | 脱敏 stdout；`test-results/.last-run.json`；`outputs/rt-multi-{A,B}.log`。`--local` 明确输出 release gates Pending |
 
 证据规则：
 
@@ -413,16 +414,16 @@ git status --short
 
 | Gate | 要求 | 状态 | Evidence |
 | --- | --- | --- | --- |
-| G-PR-001 | 六件套 Frozen，所有 P0 task / checklist 完成 | Pending | 六件套仍 Frozen；P0 checklist 尚有本地证据复核项与部署/Owner 项 Pending，不存在“102 项已全部勾选”的当前结论 |
-| G-PR-002 | 分支基于最新 develop，冲突与 delta 有记录 | Pending | 已合并 origin/develop@2482a7d；da38dd0→2482a7d 仅 PR #129 storage schema default 对齐，post-review delta audit 结论为 realtime 冻结语义不变（implement.md 2.1） |
-| G-PR-003 | backend / frontend build 全绿 | Pending | server + frontend `npm run build` exit 0（final verify step 1） |
-| G-PR-004 | 既有通知、订单、auth、announcement 回归全绿 | Pending | notifications+health+config suites 全绿；前端既有 utils tests 全绿 |
-| G-PR-005 | 新 realtime client / E2E / multi-instance / proxy suite 全绿 | Pending | 当前 browser E2E 10-test suite 与 multi-instance 证据待最终 HEAD 重建；生产 smoke 待部署 |
+| G-PR-001 | 六件套 Frozen，所有 P0 task / checklist 完成 | Pending | 六件套仍 Frozen；当前 P0/Final checklist 101/113，余 12 项均为部署/Owner/最终汇总门禁；不存在“全部勾选”的当前结论 |
+| G-PR-002 | 分支基于最新 develop，冲突与 delta 有记录 | Passed | 已合并 origin/develop@2482a7d；da38dd0→2482a7d 仅 PR #129 storage schema default 对齐；当前 HEAD 保持 develop 与冻结提交祖先关系 |
+| G-PR-003 | backend / frontend build 全绿 | Passed | 当前 HEAD final verify step 1：server + frontend build exit 0（Node 20.19.5 / npm 10.8.2） |
+| G-PR-004 | 既有通知、订单、auth、announcement 回归全绿 | Passed | 当前 HEAD backend 16 files / 152 tests、frontend 8 files / 60 tests 全绿 |
+| G-PR-005 | 新 realtime client / E2E / multi-instance / proxy suite 全绿 | Passed | 当前 HEAD Playwright 10/10、multi-instance PASS、session/proxy self-tests PASS；实际部署 proxy/log smoke 仍由 G-PR-006/009 阻断 release |
 | G-PR-006 | AC-RT-001~029 全有证据，P95 / P99 达标 | Pending | AC-RT-001/003~005/008/028 等有自动化证据；AC-RT-025（staging P95/P99）与 AC-RT-029（production session gate）需部署后采集 |
-| G-PR-007 | schema / migrations 无 branch diff，且无 live drift | Pending | 独立 PR #129 已修复 inherited storage defaults；realtime branch 与 develop `2482a7d` schema/migrations 零 diff，须由当前最终 HEAD verifier 重建 live-diff exit 0 证据 |
-| G-PR-008 | secret scan、payload allowlist、metrics cardinality 审核通过 | Pending | final verify step 7 secret scan + payload allowlist 测试 + metrics 无敏感标签 |
+| G-PR-007 | schema / migrations 无 branch diff，且无 live drift | Passed | 当前 HEAD final verify step 7：与 develop `2482a7d` schema/migrations 零 diff；56 migrations up to date；Prisma live diff `No difference detected` |
+| G-PR-008 | secret scan、payload allowlist、metrics cardinality 审核通过 | Passed | 当前 HEAD final verify：tracked-tree secret scan PASS 且 synthetic positive 被检出；payload allowlist 与 metrics 测试全绿 |
 | G-PR-009 | realtime 默认 false，发布 / 回滚 / smoke 已演练 | Pending | 默认 false + flag-off 404 已验证；发布/回滚演练与 AC-RT-029/CHK-INF-007 需部署时执行（runbook §7.2/7.3） |
-| G-PR-010 | PR 描述含规格链接、配置、监控、风险、回滚与证据索引 | Pending | PR 描述见下（§实施完成交接模板 + 本 PR 描述草稿）：规格链接 docs/superpowers/specs/2026-08-09-order-notification-realtime/README.md；开关默认 false；监控/风险/回滚见 runbook §7；证据索引见本文档 Evidence Ledger 与 checklist |
+| G-PR-010 | PR 描述含规格链接、配置、监控、风险、回滚与证据索引 | Passed | 交接模板覆盖规格链接、默认关闭、配置、监控、风险与回滚；当前 HEAD 证据索引见 Evidence Ledger 与 checklist。推送后同步 PR #130 描述/评论 |
 
 任一 Gate Pending / Failed：不得宣称 ready to merge。
 

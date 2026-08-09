@@ -5,7 +5,7 @@
 | 文档 ID | CHK-NOTIFY-RT-001 |
 | 版本 | 0.2.0 |
 | 日期 | 2026-08-09 |
-| 状态 | **Frozen for Implementation — 真实性复核中；部署门禁待执行，P1 后置** |
+| 状态 | **Frozen for Implementation — 当前 HEAD 本地真实性复核完成；部署门禁待执行，P1 后置** |
 | 规格 | [SPEC-NOTIFY-RT-001](./spec.md) |
 
 规则：checkbox 只能在同一 commit 上凭可重现证据勾选。代码存在、mock 通过、人工刷新后可见或 feature-off skip 均不构成证据。
@@ -32,8 +32,8 @@
 - [x] **CHK-BE-006** — 每 Node 进程恰好一条专用 `pg.Client`，不占 Prisma pool 做永久 LISTEN。证据：realtime-listener.integration.test.ts pg_stat_activity app_name 计数=1。
 - [x] **CHK-BE-007** — PG payload 只含 v / notificationId / recipientUserId，且严格校验正安全整数。证据：realtime-protocol.test.ts parsePgPayload 仅 3 字段、正安全整数。
 - [x] **CHK-BE-008** — 有本地订阅才按 id + recipient 从 primary 重查 allowlist 摘要；无订阅跳过查询，且绝不整体转发 payload。证据：realtime-listener.integration.test.ts no_subscriber 跳过查询；getRealtimeEnvelope allowlist 无 payload 整体。
-- [ ] **CHK-BE-009** — listener TCP keepalive / 30 秒 probe、generation CAS、error / end 后一次 drain、指数重连；旧 callback 无效，恢复后 healthy。证据：realtime-listener.integration.test.ts terminate→degraded+一次 drain→reconnect healthy；30s probe。
-- [ ] **CHK-BE-010** — start / stop 幂等，停止后无 Client / retry timer 泄漏。证据：realtime-listener.integration.test.ts stop 后 backend 消失、二次 stop 幂等。
+- [x] **CHK-BE-009** — listener TCP keepalive / 30 秒 probe、generation CAS、error / end 后一次 drain、指数重连；旧 callback 无效，恢复后 healthy。证据：realtime-listener.integration.test.ts terminate→degraded+一次 drain→reconnect healthy；30s probe；当前 HEAD backend suite 通过。
+- [x] **CHK-BE-010** — start / stop 幂等，停止后无 Client / retry timer 泄漏。证据：realtime-listener.integration.test.ts stop 后 backend 消失、二次 stop 幂等；当前 HEAD backend suite 通过。
 
 ---
 
@@ -41,14 +41,14 @@
 
 - [x] **CHK-SSE-001** — `GET /api/notifications/stream` 复用 authenticate + requireActiveUser。证据：routes.ts /stream 复用 authenticate+requireActiveUser。
 - [x] **CHK-SSE-002** — 200 headers 精确包含 event-stream、no-cache/no-transform、keep-alive、X-Accel-Buffering=no。证据：realtime-stream.test.ts headers Content-Type/Cache-Control/X-Accel-Buffering。
-- [ ] **CHK-SSE-003** — `registerAndReady` 无 yield，initializing 不收业务广播，字节流 ready 必定先于 notification。证据：hub.registerAndReady 同步无 yield；ready 先于 notification（stream 索引断言）。
+- [x] **CHK-SSE-003** — `registerAndReady` 无 yield，initializing 不收业务广播，字节流 ready 必定先于 notification。证据：hub.registerAndReady 同步无 yield；ready 先于 notification（stream 索引断言）；当前 HEAD backend suite 通过。
 - [x] **CHK-SSE-004** — ready / notification / auth.expiring / degraded / heartbeat 字节格式与 v1 fixture 一致，业务 frame id 与 data id 相等。证据：protocol fixture 与 spec 6.5 字节一致；id 与 data.id 相等。
 - [x] **CHK-SSE-005** — 401 / 403 / 404 / 429 / 503 在 headers 前返回，Retry-After 语义正确。证据：stream 测试 401/404/503/429 于 headers 前返回，Retry-After 正确。
-- [ ] **CHK-SSE-006** — local hub 按 user 路由，close / error / expiry cleanup 幂等。证据：hub per-user 路由 + cleanup 幂等（gauge 归零测试）。
+- [x] **CHK-SSE-006** — local hub 按 user 路由，close / error / expiry cleanup 幂等。证据：hub per-user 路由 + cleanup 幂等（gauge 归零测试）；当前 HEAD backend suite 通过。
 - [x] **CHK-SSE-007** — heartbeat 使用共享 scheduler，默认 20 秒且不触发业务 UI。证据：hub 单共享 heartbeat scheduler；20s 默认。
 - [x] **CHK-SSE-008** — per-user=5、per-IP=20、global=1000 cap 及建立速率限制通过。证据：stream 测试 per-user cap→429 + Retry-After。
-- [ ] **CHK-SSE-009** — 写前 `res.writableLength > 64KiB` 或任一 `res.write(...) === false` 时立即停止排队业务事件，幂等清理并只 destroy 该慢连接；其他连接不受影响，重连后 REST 收敛。证据：hub writeToEntry writableLength>cap 或 write()===false→仅 destroy 该 response。
-- [ ] **CHK-SSE-010** — 连接反复建立 / 断开后 gauge、Map、timer、response 全部回收。证据：stream 测试 repeated register/close 后 gauge 归零。
+- [x] **CHK-SSE-009** — 写前 `res.writableLength > 64KiB` 或任一 `res.write(...) === false` 时立即停止排队业务事件，幂等清理并只 destroy 该慢连接；其他连接不受影响，重连后 REST 收敛。证据：hub writeToEntry writableLength>cap 或 write()===false→仅 destroy 该 response；当前 HEAD backend suite 通过。
+- [x] **CHK-SSE-010** — 连接反复建立 / 断开后 gauge、Map、timer、response 全部回收。证据：stream 测试 repeated register/close 后 gauge 归零；当前 HEAD backend suite 通过。
 
 ---
 
@@ -56,11 +56,11 @@
 
 - [x] **CHK-SEC-001** — 无 Bearer、损坏 Bearer、过期 Bearer 均无法建立 stream。证据：stream 测试 401 无 Bearer。
 - [x] **CHK-SEC-002** — 用户 A 永远不接收 / 查询用户 B 的 event；跨用户 ID 仍隔离。证据：stream 测试 user A 收不到 B 事件。
-- [ ] **CHK-SEC-003** — token 到期前 60 秒恰好一次 `auth.expiring`。证据：stream 测试短 token 立即 auth.expiring。
-- [ ] **CHK-SEC-004** — token exp 到点硬关闭，不能靠 heartbeat 无限延长。证据：stream 测试 token 到期硬 EOF。
-- [ ] **CHK-SEC-005** — 客户端 refresh 单飞，旧 stream abort 后才建新 stream，无 cookie replay / 双连接。证据：notificationStream.test.ts 401 单飞 refresh + abort 重连。
+- [x] **CHK-SEC-003** — token 到期前 60 秒恰好一次 `auth.expiring`。证据：stream 测试短 token 立即 auth.expiring；当前 HEAD backend suite 通过。
+- [x] **CHK-SEC-004** — token exp 到点硬关闭，不能靠 heartbeat 无限延长。证据：stream 测试 token 到期硬 EOF；当前 HEAD backend suite 通过。
+- [x] **CHK-SEC-005** — 客户端 refresh 单飞，旧 stream abort 后才建新 stream，无 cookie replay / 双连接。证据：notificationStream.test.ts 401 单飞 refresh + abort 重连；当前 HEAD frontend suite 通过。
 - [x] **CHK-SEC-006** — token / refresh token 不在 URL、event、log、metric、trace、fixture、snapshot。证据：token 仅 Bearer header；无 query/log/metric（实现审查+测试）。
-- [ ] **CHK-SEC-007** — SSE 唯一 projection 的类型 / 长度 / deeplink / allowlist 通过，且不含 delivery content、structured values、文件对象键 / URL、Webhook secret 或完整 Json payload。证据：protocol allowlist：敏感字段不进入 envelope。
+- [x] **CHK-SEC-007** — SSE 唯一 projection 的类型 / 长度 / deeplink / allowlist 通过，且不含 delivery content、structured values、文件对象键 / URL、Webhook secret 或完整 Json payload。证据：protocol allowlist：敏感字段不进入 envelope；当前 HEAD backend + AC-RT-002 browser suite 通过。
 - [x] **CHK-SEC-008** — metrics 标签与日志字段 cardinality / redact 审核通过。证据：realtime-metrics.test.ts metrics 无敏感标签。
 - [x] **CHK-SEC-009** — limiter 只用 Express req.ip；TRUST_PROXY=1/2 拓扑正确，伪造 XFF 不绕过且真实客户端不被合并。证据：limiter 默认 IP keyGenerator（req.ip+trust proxy）；TRUST_PROXY 1/2 由 check-prod-env 强制。
 
@@ -70,17 +70,17 @@
 
 - [x] **CHK-FE-001** — fetch SSE 携带 Bearer、credentials、AbortSignal，不使用原生 EventSource / URL token。证据：notificationStream.ts fetch Bearer/credentials/AbortSignal，无 EventSource。
 - [x] **CHK-FE-002** — parser 正确处理逐字节 chunk、CRLF、多行 data、comment 和未知字段。证据：sseParser.test.ts 逐字节/CRLF/comment/多行/未知；浏览器 E2E。
-- [ ] **CHK-FE-003** — parser 对 malformed / 超 64KiB frame 安全降级。证据：sseParser 64KiB tooLarge；stream 遇 tooLarge 进入 degraded。
-- [ ] **CHK-FE-004** — 401 refresh、403 auth_blocked、404 polling_only、429/503/network backoff 与 timer ownership 正确。证据：notificationStream.test.ts 401/403/404/503/expiring/stop。
+- [x] **CHK-FE-003** — parser 对 malformed / 超 64KiB frame 安全降级。证据：sseParser 64KiB UTF-8 byte cap/tooLarge；stream 遇 tooLarge 进入 degraded；当前 HEAD frontend + browser client suite 通过。
+- [x] **CHK-FE-004** — 401 refresh、403 auth_blocked、404 polling_only、429/503/network backoff 与 timer ownership 正确。证据：notificationStream.test.ts 401/403/404/503/expiring/stop；当前 HEAD frontend suite 通过。
 - [x] **CHK-FE-005** — exact-ID LRU 容量 512；101 先于 100 时两者均处理。证据：ExactIdLru 101 后 100 均处理、容量 512。
 - [x] **CHK-FE-006** — 同一 exact ID 只发布一次 live invalidation / Toast。证据：LRU exact-ID 去重；first-ID Toast。
-- [ ] **CHK-FE-007** — 300ms topic 合并与 in-flight dirty rerun 通过 burst 测试。证据：InvalidationScheduler 300ms coalesce + dirty rerun；浏览器 E2E。
-- [ ] **CHK-FE-008** — ready、reconnect、回前台均立即发布 all.visible 权威同步。证据：bridge ready/visibility→all.visible。
-- [ ] **CHK-FE-009** — degraded 每 30 秒、healthy 每 5 分钟，两个 timer 不并存。证据：stream 30s fallback / 5min calibration 互斥。
-- [ ] **CHK-FE-010** — Layout 旧 30 秒未读 effect 已移除，没有重复 interval / stream。证据：Layout 旧 30s interval 删除、挂载 bridge。
+- [x] **CHK-FE-007** — 300ms topic 合并与 in-flight dirty rerun 通过 burst 测试。证据：InvalidationScheduler 300ms coalesce + dirty rerun；当前 HEAD frontend + browser client suite 通过。
+- [x] **CHK-FE-008** — ready、reconnect、回前台均立即发布 all.visible 权威同步。证据：bridge ready/visibility→all.visible；当前 HEAD frontend suite 通过。
+- [x] **CHK-FE-009** — degraded 每 30 秒、healthy 每 5 分钟，两个 timer 不并存。证据：stream 30s fallback / 5min calibration 互斥；AC-RT-011 browser E2E 33.2s 内收敛。
+- [x] **CHK-FE-010** — Layout 旧 30 秒未读 effect 已移除，没有重复 interval / stream。证据：Layout 旧 30s interval 删除、挂载 bridge；当前 HEAD build + frontend suite 通过。
 - [x] **CHK-FE-011** — Toast 仅 live + visible + first ID；ready / polling / 校准不补历史 Toast。证据：Toast 仅 live+visible+first ID（matrix 测试）。
 - [x] **CHK-FE-012** — instant delivered 与未知事件默认静默，但状态仍同步。证据：instant/unknown 静默（matrix 测试）。
-- [ ] **CHK-FE-013** — logout / user change abort stream，清 LRU / timer / pending topic / 旧用户计数。证据：logout/user change resetRealtimeRuntime + stream.stop。
+- [x] **CHK-FE-013** — logout / user change abort stream，清 LRU / timer / pending topic / 旧用户计数。证据：logout/user change resetRealtimeRuntime + stream.stop；AC-RT-020 browser E2E 通过。
 - [x] **CHK-FE-014** — 客户端不发送 Last-Event-ID；服务端 Header 不回放 / 不授权；LRU 淘汰后的极晚重复只造成允许的额外 hint。证据：stream 不发 Last-Event-ID；frame id 不匹配→degraded+resync。
 
 ---
@@ -89,17 +89,17 @@
 
 - [x] **CHK-UI-001** — 实时事件刷新全局 notification unread，铃铛总数正确。证据：AC-RT-001 浏览器 E2E：商家铃铛未读 +1 无刷新。
 - [x] **CHK-UI-002** — 打开的消息 Tab 自动重载最新 5 条。证据：AnnouncementCenter 消息 Tab notifications 订阅重载最新 5。
-- [ ] **CHK-UI-003** — NotificationsPage 按当前 filter 重载第一页，load-more / realtime 无重复或覆盖。证据：NotificationsPage 按当前 filter 后台重载首屏 + ID 去重。
+- [x] **CHK-UI-003** — NotificationsPage 按当前 filter 重载第一页，load-more / realtime 无重复或覆盖。证据：NotificationsPage 按当前 filter 后台重载首屏 + ID 去重；AC-RT-012 browser E2E 通过。
 - [x] **CHK-UI-004** — mark-read / read-all / deeplink 既有行为回归。证据：mark-read/read-all 既有逻辑未改（回归 suite）。
 - [x] **CHK-UI-005** — buyer event 重取订单列表并重算 attention。证据：OrdersPage buyer.orders 后台重取 100 + attention。
-- [ ] **CHK-UI-006** — relatedOrderId 匹配时重取当前买家详情，secret 仍只经受权 REST。证据：relatedOrderId===selectedOrder 重取详情；secret 仅 REST。
-- [ ] **CHK-UI-007** — modal 关闭 / focus query 与异步刷新无重新打开 / 旧响应覆盖。证据：modal 关闭不重开；旧响应不覆盖（prev 守卫）。
+- [x] **CHK-UI-006** — relatedOrderId 匹配时重取当前买家详情，secret 仍只经受权 REST。证据：relatedOrderId===selectedOrder 重取详情；secret 仅 REST；AC-RT-002 browser E2E 通过。
+- [x] **CHK-UI-007** — modal 关闭 / focus query 与异步刷新无重新打开 / 旧响应覆盖。证据：modal 关闭不重开；request identity/prev 守卫测试通过。
 - [x] **CHK-UI-008** — merchant event 在当前 page / status / sort 下重取 orders。证据：MerchantDashboardPage orders 按当前 page/status/sort 后台重取。
 - [x] **CHK-UI-009** — merchant dashboard / orders Tab 重取 stats，未挂载页面不乱发请求。证据：merchant.stats 仅 dashboard/orders Tab 挂载时重取。
-- [ ] **CHK-UI-010** — 相关 merchant action dialog 对状态变化刷新或安全失效。证据：相关 dialog 刷新/失效逻辑（代码接线）。
+- [x] **CHK-UI-010** — 相关 merchant action dialog 对状态变化刷新或安全失效。证据：相关 dialog 按 exact order ID 权威刷新/失效；当前 HEAD frontend suite 通过。
 - [x] **CHK-UI-011** — manual / processing / delivered / disputed / refunded / resolved / closed Toast 矩阵正确。证据：Toast 矩阵 10 eventType 全覆盖（matrix 测试）。
 - [x] **CHK-UI-012** — 10 个当前 eventType 全覆盖；未知事件只刷新 notifications。证据：10 个 eventType 全覆盖；未知仅 notifications。
-- [ ] **CHK-UI-013** — realtime / polling background reload 保留现有数据和交互状态；失败不清空页面、不产生错误 Toast 风暴。证据：后台刷新保留内容、失败静默（AC-RT-001 E2E）。
+- [x] **CHK-UI-013** — realtime / polling background reload 保留现有数据和交互状态；失败不清空页面、不产生错误 Toast 风暴。证据：后台刷新保留内容、失败静默；AC-RT-001/002/011/012 browser E2E 通过。
 
 ---
 
@@ -130,21 +130,21 @@
 ## 9. P0 — QA
 
 - [x] **CHK-QA-001** — protocol serializer / parser fixture 双端一致。证据：protocol 双端 fixture 一致。
-- [ ] **CHK-QA-002** — config、hub、token timer、cleanup 单元测试通过。证据：config/hub/token timer/cleanup 单测通过。
+- [x] **CHK-QA-002** — config、hub、token timer、cleanup 单元测试通过。证据：当前 HEAD backend 16 files / 152 tests 与 frontend 8 files / 60 tests 通过。
 - [x] **CHK-QA-003** — real PG commit / rollback / NOTIFY SQL failure 整体回滚 / dedupe 集成测试通过。证据：realtime-dispatcher.test.ts real PG commit/rollback/NOTIFY failure 整体回滚。
 - [x] **CHK-QA-004** — auth、expiry、跨用户、payload allowlist 集成测试通过。证据：stream 测试 auth/expiry/跨用户/payload allowlist。
 - [x] **CHK-QA-005** — 前端 10 eventType、unknown、Toast、exact-ID、burst 合约通过。证据：浏览器 E2E + 单测覆盖 10 eventType/unknown/Toast/exact-ID/burst。
-- [ ] **CHK-QA-006** — ready / subscribe / REST sync 并发窗口只重复不遗漏。证据：ready 先于 notification 窗口只重复不遗漏。
-- [ ] **CHK-QA-007** — listener 断开 / reconnect 测试通过。证据：listener reconnect 测试。
-- [ ] **CHK-QA-008** — PostgreSQL restart / backend restart 后 polling + reconnect 收敛。证据：PG/backend 重启收敛（reconnect + SIGTERM 测试）。
+- [x] **CHK-QA-006** — ready / subscribe / REST sync 并发窗口只重复不遗漏。证据：ready 先于 notification 窗口测试与 Bridge 权威 resync 通过。
+- [x] **CHK-QA-007** — listener 断开 / reconnect 测试通过。证据：当前 HEAD realtime-listener integration reconnect suite 通过。
+- [x] **CHK-QA-008** — PostgreSQL restart / backend restart 后 polling + reconnect 收敛。证据：reconnect、SIGTERM 与 AC-RT-011 fallback suites 通过。
 - [x] **CHK-QA-009** — 两个独立 Node PID 和同一专用 PG 已验证。证据：multi-instance：两个独立 Node PID 共享专用 PG。
 - [x] **CHK-QA-010** — stream 在 A、业务写 B，A 收到事件。证据：multi-instance：stream A、写 B、A 收到事件。
 - [x] **CHK-QA-011** — 任一实例重启后无永久遗漏，跨实例不是内存 EventEmitter。证据：multi-instance 证明非 EventEmitter。
-- [ ] **CHK-QA-012** — 慢消费者测试分别命中 `writableLength > 64KiB` 与 `res.write() === false`，验证仅慢 response 被清理 / destroy、快消费者继续接收且重连后 REST 收敛；caps、buffer、100 burst 测试通过。证据：slow consumer buffer cap + 100 burst coalescer 单测。
-- [ ] **CHK-QA-013** — SSE 阻断 / 503 时应用自身 fallback ≤35 秒，不用测试主动 poll。证据：stream 30s fallback 逻辑 + AC-RT-011 实现。
-- [ ] **CHK-QA-014** — logout 后旧流关闭，旧用户后续事件不污染新用户。证据：logout 清理（FE-013 单测）。
+- [x] **CHK-QA-012** — 慢消费者测试分别命中 `writableLength > 64KiB` 与 `res.write() === false`，验证仅慢 response 被清理 / destroy、快消费者继续接收且重连后 REST 收敛；caps、buffer、100 burst 测试通过。证据：当前 HEAD slow-consumer hub tests + frontend burst coalescer tests 通过。
+- [x] **CHK-QA-013** — SSE 阻断 / 503 时应用自身 fallback ≤35 秒，不用测试主动 poll。证据：AC-RT-011 browser E2E 33.2s 内由应用自身收敛。
+- [x] **CHK-QA-014** — logout 后旧流关闭，旧用户后续事件不污染新用户。证据：AC-RT-020 browser E2E 通过。
 - [x] **CHK-QA-015** — 既有 notification dispatcher / service / integration / E2E 全绿。证据：既有 notification dispatcher/service/integration 全绿。
-- [ ] **CHK-QA-016** — order、auth、announcement 受影响回归与前后端 build 全绿。证据：order/auth/announcement 回归 + build 全绿。
+- [x] **CHK-QA-016** — order、auth、announcement 受影响回归与前后端 build 全绿。证据：当前 HEAD final verifier builds、backend/frontend suites 与 AC-RT-001/002/020/026 browser E2E 全绿。
 
 ---
 
@@ -229,5 +229,5 @@ P1 未勾选不阻断 G-PR；若实现中提前加入任一 P1，视为范围扩
 - [ ] **CHK-FINAL-001** — 所有 P0 checkbox 已勾选并有当前 HEAD 证据。
 - [ ] **CHK-FINAL-002** — implement.md G-PR-001~010 全为 Passed。
 - [ ] **CHK-FINAL-003** — 所有 P0 task Done；没有遗留 In Progress / Blocked 卡。
-- [ ] **CHK-FINAL-004** — git diff check、secret scan、schema / migration audit 通过。
+- [x] **CHK-FINAL-004** — git diff check、secret scan、schema / migration audit 通过。证据：当前 HEAD final verifier step 7 exit 0；56 migrations up to date、live diff none、synthetic secret positive detected。
 - [ ] **CHK-FINAL-005** — Owner 审阅证据、发布顺序和回滚后明确批准合并 / 启用。

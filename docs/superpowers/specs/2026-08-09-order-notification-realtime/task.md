@@ -5,7 +5,7 @@
 | 文档 ID | TASK-NOTIFY-RT-001 |
 | 版本 | 0.2.0 |
 | 日期 | 2026-08-09 |
-| 状态 | **Frozen for Implementation — all tasks Pending** |
+| 状态 | **Frozen for Implementation — 本地实施任务完成；T-QA-005 deployment/release gates Pending** |
 | 输入 | [spec.md](./spec.md) · [plan.md](./plan.md) |
 
 所有任务初始状态均为 Pending。只有 Owner 把六件套统一冻结后，实施 Agent 才能把一个任务改为 In Progress；同一 Agent 同时只能持有一个实施卡。
@@ -216,7 +216,7 @@ npx vitest run \
 | 优先级 | P0 |
 | 对应需求 | REQ-F-002、REQ-F-020、REQ-NF-003 |
 | 依赖 | T-BE-001、T-BE-002 |
-| 状态 | Pending（Review 修复 R-RT-* 重开） |
+| 状态 | Done（I-RT-004 2026-08-09，当前 HEAD 本地证据） |
 
 **Owned files**
 
@@ -274,7 +274,7 @@ npx vitest run src/modules/notifications/__tests__/realtime-listener.integration
 | 优先级 | P0 |
 | 对应需求 | REQ-F-003~006、REQ-NF-004~005 |
 | 依赖 | T-BE-001、T-BE-003 |
-| 状态 | Pending（Review 修复 R-RT-* 重开） |
+| 状态 | Done（I-RT-005 2026-08-09，当前 HEAD 本地证据） |
 
 **Owned files**
 
@@ -391,7 +391,7 @@ npx vitest run src/modules/health src/modules/notifications/__tests__/realtime-s
 | 优先级 | P0 |
 | 对应需求 | REQ-F-006~007、REQ-F-014~015 |
 | 依赖 | T-BE-001 的 protocol fixture |
-| 状态 | Pending（Review 修复 R-RT-* 重开） |
+| 状态 | Done（I-RT-007 2026-08-09，当前 HEAD 本地证据） |
 
 **Owned files**
 
@@ -446,7 +446,7 @@ npx playwright test --config playwright.notification-realtime.config.ts \
 | 优先级 | P0 |
 | 对应需求 | REQ-F-008~009、REQ-F-013~015 |
 | 依赖 | T-FE-001 |
-| 状态 | Pending（Review 修复 R-RT-* 重开） |
+| 状态 | Done（I-RT-007 2026-08-09，当前 HEAD 本地证据） |
 
 **Owned files**
 
@@ -504,7 +504,7 @@ npx playwright test --config playwright.notification-realtime.config.ts \
 | 优先级 | P0 |
 | 对应需求 | REQ-F-010、REQ-F-021、REQ-NF-009 |
 | 依赖 | T-FE-002 |
-| 状态 | Pending（Review 修复 R-RT-* 重开） |
+| 状态 | Done（I-RT-008 2026-08-09，当前 HEAD 本地证据） |
 
 **Owned files**
 
@@ -551,7 +551,7 @@ npx playwright test --config playwright.notification-realtime.config.ts \
 | 优先级 | P0 |
 | 对应需求 | REQ-F-011、REQ-F-021 |
 | 依赖 | T-FE-002 |
-| 状态 | Pending（Review 修复 R-RT-* 重开） |
+| 状态 | Done（I-RT-008 2026-08-09，当前 HEAD 本地证据） |
 
 **Owned files**
 
@@ -596,7 +596,7 @@ npx playwright test --config playwright.notification-realtime.config.ts \
 | 优先级 | P0 |
 | 对应需求 | REQ-F-012、REQ-F-021 |
 | 依赖 | T-FE-002 |
-| 状态 | Pending（Review 修复 R-RT-* 重开） |
+| 状态 | Done（I-RT-008 2026-08-09，当前 HEAD 本地证据） |
 
 **Owned files**
 
@@ -645,7 +645,7 @@ npx playwright test --config playwright.notification-realtime.config.ts \
 | 优先级 | P0 |
 | 对应需求 | REQ-F-019、REQ-NF-001 |
 | 依赖 | T-BE-004 |
-| 状态 | Pending（Review 修复 R-RT-* 重开） |
+| 状态 | Done（I-RT-009 2026-08-09，本地实现与自测；部署 smoke Pending） |
 
 **Owned files**
 
@@ -695,7 +695,7 @@ bash scripts/verify-notification-realtime-proxy.sh
 | 对应需求 | REQ-F-002、REQ-F-016、REQ-F-022、REQ-NF-003、REQ-NF-006~007 |
 | 对应验收 | AC-RT-014、AC-RT-022~023、AC-RT-029；CHK-INF-007、CHK-REL-001~006 |
 | 依赖 | T-BE-001、T-BE-005、T-INF-001 |
-| 状态 | Pending（Review 修复 R-RT-* 重开） |
+| 状态 | Done（I-RT-009 2026-08-09，本地实现与自测；AC-RT-029 release gate Pending） |
 
 **Owned files**
 
@@ -753,7 +753,7 @@ NOTIFICATION_REALTIME_SMOKE_REQUIRED=true npm run prod:smoke
 | 对应需求 | REQ-F-001~006、REQ-NF-003~005、REQ-NF-008 |
 | 本次新增验收 | AC-RT-028；CHK-BE-003、CHK-QA-003 |
 | 依赖 | T-BE-002~005 |
-| 状态 | Pending（Review 修复 R-RT-* 重开） |
+| 状态 | Done（I-RT-010 2026-08-09，当前 HEAD 本地证据） |
 
 **Owned files**
 
@@ -791,7 +791,7 @@ TEST_DATABASE_URL="postgresql://monexus:monexus_dev_2026@127.0.0.1:5432/monexus_
   npm test
 ~~~
 
-证据：待填（测试数、耗时、DB 名）。
+证据：`26aea843d434f679a76c0bc9af47ede19ecc8f76`（2026-08-09）。Final verifier backend selection 使用专用数据库 `monexus_test_notification_realtime`，16 files / 152 tests passed，duration 230.53s；覆盖真实 PG dispatcher、listener lifecycle、hub/stream、health 与 config guards。
 
 ### T-QA-002 — 前端 parser、状态机、乱序与 burst 合约测试
 
@@ -800,7 +800,7 @@ TEST_DATABASE_URL="postgresql://monexus:monexus_dev_2026@127.0.0.1:5432/monexus_
 | 优先级 | P0 |
 | 对应需求 | REQ-F-007~009、REQ-F-013~015 |
 | 依赖 | T-FE-001、T-FE-002 |
-| 状态 | Pending（Review 修复 R-RT-* 重开） |
+| 状态 | Done（I-RT-010 2026-08-09，当前 HEAD 本地证据） |
 
 **Owned files**
 
@@ -838,7 +838,7 @@ npx playwright test --config playwright.notification-realtime.config.ts \
   e2e/notification-realtime-client.spec.ts --trace on
 ~~~
 
-证据：I-RT-010（2026-08-09）。T-QA-001 由 I-RT-002~006 已落地：realtime-protocol（18）、realtime-dispatcher（6，含 AC-RT-028 failure/happy/dedupe/no-listener/flag-off，真实 PG）、realtime-listener.integration（7，含 reconnect/drain/幂等）、realtime-stream（8，401/404/503/429/auth.expiring/隔离/gauge）、realtime-metrics（3）、realtime-shutdown（1 SIGTERM 真实子进程）；`npx vitest run src/modules/notifications/ + src/modules/health/` 11 files/91 tests passed。
+证据：`26aea843d434f679a76c0bc9af47ede19ecc8f76`（2026-08-09）。Final verifier frontend selection 8 files / 60 tests passed，duration 2.23s；Playwright client production modules 3/3 passed，覆盖逐字节 parser、exact-ID LRU 512、300ms coalescer 与 Bridge mount。
 
 ### T-QA-003 — 核心无刷新浏览器 E2E 与延迟
 
@@ -847,7 +847,7 @@ npx playwright test --config playwright.notification-realtime.config.ts \
 | 优先级 | P0 |
 | 对应需求 | REQ-F-010~013、REQ-NF-001~002 |
 | 依赖 | T-FE-003~005、T-INF-001 |
-| 状态 | Pending（Review 修复 R-RT-* 重开） |
+| 状态 | Done（I-RT-010 2026-08-09，本地 E2E；AC-RT-025 staging 性能 gate Pending） |
 
 **Owned files**
 
@@ -886,7 +886,7 @@ npx playwright test --config playwright.notification-realtime.config.ts \
   e2e/notification-realtime.spec.ts
 ~~~
 
-证据：I-RT-010（2026-08-09）。T-QA-002 单测（I-RT-007）：sseParser（8，逐字节/CRLF/cap）、notificationInvalidation（13，LRU 512/coalescer/矩阵/Toast）、notificationStream（10，mock fetch 状态机 401/403/404/503/expiring/stop/Last-Event-ID）；浏览器 E2E（e2e/notification-realtime-client.spec.ts 3 tests）：真实浏览器跑生产模块 parser + LRU/coalescer + bridge mount。
+证据：`26aea843d434f679a76c0bc9af47ede19ecc8f76`（2026-08-09）。`bash scripts/verify-notification-realtime-e2e.sh` 通过 10/10（1.6m）：AC-RT-001/002/011/012/013/020/026 与 3 个 client production-module 场景；backend 3112、Vite 5182、专用 DB、reuse=false，无 `page.reload` / 测试主动 polling。**AC-RT-025 的 staging 100 样本与 P50/P95/P99 仍 Pending**。
 
 ### T-QA-004 — 双实例、故障、竞态与慢消费者
 
@@ -895,7 +895,7 @@ npx playwright test --config playwright.notification-realtime.config.ts \
 | 优先级 | P0 |
 | 对应需求 | REQ-F-002~003、REQ-F-020、REQ-NF-003、REQ-NF-005 |
 | 依赖 | T-BE-005、T-QA-001 |
-| 状态 | Pending（Review 修复 R-RT-* 重开） |
+| 状态 | Done（I-RT-010 2026-08-09，当前 HEAD 本地证据） |
 
 **Owned files**
 
@@ -931,7 +931,7 @@ npx playwright test --config playwright.notification-realtime.config.ts \
 bash scripts/verify-notification-realtime-multi-instance.sh
 ~~~
 
-证据：db60e9116d4ca06fc8611efd80d14ab435dd2e21（2026-08-09）。bash scripts/verify-notification-realtime-e2e.sh（backend 3112 + vite 5182 + 独立 DB + reuse=false）→ 当前 10-test suite 通过；商家不刷新看到买家新单未读铃铛（无 page.reload / 手动 poll）。**AC-RT-025 的 staging 100 样本及 P50/P95/P99 仍 Pending**（CHK-PERF-002/003，需 staging 账号/预建商品）；本地单次 E2E 不构成替代证据。
+证据：`26aea843d434f679a76c0bc9af47ede19ecc8f76`（2026-08-09）。`bash scripts/verify-notification-realtime-multi-instance.sh` PASS：两个独立 Node PID，A:3112 stream、B:3113 写订单，共享专用 PG；A 收到 B 写入订单的 `notification.created`。慢消费者、重启竞态与 100 burst 由同一 final verifier 的 hub/listener/frontend suites 覆盖。
 
 ### T-QA-005 — 全量回归、滚动兼容与发布 Gate
 
@@ -941,7 +941,7 @@ bash scripts/verify-notification-realtime-multi-instance.sh
 | 对应需求 | REQ-F-022、REQ-NF-006~010 |
 | 对应验收 | AC-RT-001~029；全部 P0 CHK、G-PR-001~010 |
 | 依赖 | 所有 P0 实施任务 |
-| 状态 | Pending（Review 修复 R-RT-* 重开） |
+| 状态 | Pending（deployment/release gates） |
 
 **Owned files**
 
@@ -981,7 +981,7 @@ git diff --check
 git status --short
 ~~~
 
-证据：I-RT-010（2026-08-09）。`bash scripts/verify-notification-realtime-multi-instance.sh` → PASS：A(3112) SSE 收到 B(3113) 写入订单的 notification.created（跨实例 PostgreSQL LISTEN/NOTIFY，非进程内 EventEmitter）；两个独立 Node PID + 共享专用 DB + listener application_name 记录。慢消费者 / 重启 / 100 burst 覆盖见 realtime-stream/listener 套件。
+证据：`26aea843d434f679a76c0bc9af47ede19ecc8f76`（2026-08-09）。`PATH=/root/.nvm/versions/node/v20.19.5/bin:$PATH NODE_OPTIONS=--max-old-space-size=700 bash scripts/verify-notification-realtime.sh --local` exit 0：builds、session/proxy self-tests、backend 16 files/152 tests、frontend 8 files/60 tests、Playwright 10/10、multi-instance PASS、56 migrations up to date、live diff none、secret scan synthetic-positive PASS、final clean boundary PASS。**T-QA-005 继续 Pending**：AC-RT-025、AC-RT-029/CHK-INF-007、deployed proxy/log smoke、rollout/rollback rehearsal 与 Owner review 尚无外部证据。
 
 ---
 
