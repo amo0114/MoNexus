@@ -8,6 +8,8 @@ import { config } from '../../config/index.js'
 import { notificationCreatedCounter } from '../../lib/metrics.js'
 import { logger } from '../../lib/logger.js'
 import { renderNotification, type NotificationRenderContext } from './templates.js'
+import { NOTIFICATION_REALTIME_CHANNEL } from './realtime/constants.js'
+import { serializePgPayload } from './realtime/protocol.js'
 
 export type NotificationRecipientRole = 'user' | 'merchant' | 'admin'
 
@@ -28,7 +30,12 @@ export type NotificationEvent = {
   context?: Record<string, unknown>
 }
 
-type NotificationWriter = Pick<Prisma.TransactionClient, 'notification'>
+type NotificationWriter = Pick<Prisma.TransactionClient, 'notification'> & {
+  /** Present on every real Prisma transaction client; optional in the type so
+   * narrow caller typings (e.g. fulfillment) still satisfy the writer. The
+   * dispatcher fails loud if realtime is enabled but it is missing. */
+  $queryRaw?: Prisma.TransactionClient['$queryRaw']
+}
 
 /** NTF-05: merchant new-order only for human manual attention after auto-task branches. */
 export function shouldNotifyMerchantNewOrder(input: {
@@ -164,6 +171,33 @@ export class NotificationDispatcher {
       }, 'Duplicate notification skipped')
       return
     }
+    // SPEC-NOTIFY-RT-001: resolve the new row's id by composite unique key (D-RT-03).
+    const created = await tx.notification.findFirst({
+      where: { recipientUserId: event.recipientUserId, eventType: event.type, dedupeKey },
+      select: { id: true },
+    })
+    if (!created) {
+      logger.warn({
+        event: 'notification.missing_id',
+        eventType: event.type,
+        dedupeKey,
+        recipientUserId: event.recipientUserId,
+      }, 'Could not resolve notification id after insert; skipping realtime hint')
+      return
+    }
+
+    // D-RT-03 / NRT-003: same transaction, parameterized pg_notify on the static
+    // channel. Any SQL failure propagates so business write + Notification + hint
+    // roll back together. Never catch/defer/run-after-commit.
+    if (config.notificationRealtime.enabled) {
+      if (typeof tx.$queryRaw !== 'function') {
+        throw new Error('NotificationWriter must expose $queryRaw when NOTIFICATION_REALTIME_ENABLED=true')
+      }
+      const payload = serializePgPayload(created.id, event.recipientUserId)
+      // Called as a method on tx so Prisma keeps its internal `this` binding.
+      // ::text cast avoids Prisma's inability to deserialize a void column.
+      await tx.$queryRaw`SELECT pg_notify(${NOTIFICATION_REALTIME_CHANNEL}, ${payload})::text AS result`
+    }
 
     notificationCreatedCounter.inc({
       event_type: event.type,
@@ -174,6 +208,7 @@ export class NotificationDispatcher {
       event: 'notification.created',
       eventType: event.type,
       recipientUserId: event.recipientUserId,
+      notificationId: created.id,
       orderId: event.order.id,
       dedupeKey,
     }, 'Notification created')

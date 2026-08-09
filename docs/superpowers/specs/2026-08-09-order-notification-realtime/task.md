@@ -156,7 +156,7 @@ git diff -- server/prisma/schema.prisma server/prisma/migrations
 | 对应需求 | REQ-F-001、REQ-NF-003、REQ-NF-006 |
 | 对应验收 | AC-RT-003~004、AC-RT-028；CHK-BE-003~005、CHK-QA-003 |
 | 依赖 | T-BE-001 |
-| 状态 | Pending |
+| 状态 | Done（I-RT-003 2026-08-09） |
 
 **Owned files**
 
@@ -173,13 +173,13 @@ git diff -- server/prisma/schema.prisma server/prisma/migrations
 
 **工作**
 
-- [ ] count=1 后按复合唯一键读取新 Notification ID。
-- [ ] realtime=true 时同一 tx 参数化调用 `pg_notify`。
-- [ ] `pg_notify` SQL 异常原样向上传播，使订单 / 履约、Notification 与 hint 整体 rollback；禁止 catch 后继续、异步补发或 commit 后调用。
-- [ ] AC-RT-028 failure 测试先等待真实 LISTEN ACK，再用 transaction-scoped tx proxy 恰好一次捕获参数化 `pg_notify` 的唯一 ID 对后抛 sentinel；root Prisma `$queryRaw` 被调用或 proxy 未命中均失败。订单 / Notification 仍走专用真实 transaction；不得改生产协议或全局 REVOKE PG 权限。
-- [ ] count=0、总开关 off、realtime off 均不发 hint。
-- [ ] PG payload 仅 v / notificationId / recipientUserId。
-- [ ] commit、rollback、并发 dedupe 使用真实 PostgreSQL 验证；failure callback reject 后独立 client 查询均无行，对捕获 ID 对等待完整 2 秒无 hint；无注入 happy path 按已提交 ID 对在 commit 后 5 秒内恰好一个 hint。listener 未 ready、无唯一 ID 或超时均失败。
+- [x] count=1 后按复合唯一键读取新 Notification ID。
+- [x] realtime=true 时同一 tx 参数化调用 `pg_notify`。
+- [x] `pg_notify` SQL 异常原样向上传播，使订单 / 履约、Notification 与 hint 整体 rollback；禁止 catch 后继续、异步补发或 commit 后调用。
+- [x] AC-RT-028 failure 测试先等待真实 LISTEN ACK，再用 transaction-scoped tx proxy 恰好一次捕获参数化 `pg_notify` 的唯一 ID 对后抛 sentinel；root Prisma `$queryRaw` 被调用或 proxy 未命中均失败。订单 / Notification 仍走专用真实 transaction；不得改生产协议或全局 REVOKE PG 权限。
+- [x] count=0、总开关 off、realtime off 均不发 hint。
+- [x] PG payload 仅 v / notificationId / recipientUserId。
+- [x] commit、rollback、并发 dedupe 使用真实 PostgreSQL 验证；failure callback reject 后独立 client 查询均无行，对捕获 ID 对等待完整 2 秒无 hint；无注入 happy path 按已提交 ID 对在 commit 后 5 秒内恰好一个 hint。listener 未 ready、无唯一 ID 或超时均失败。
 
 **DoD**
 
@@ -200,7 +200,14 @@ npx vitest run \
   src/modules/notifications/__tests__/integration.test.ts
 ~~~
 
-证据：待填。
+证据：I-RT-003（2026-08-09）。
+- `server/src/modules/notifications/realtime-dispatcher.test.ts`（6 tests，真实 PostgreSQL，专用 DB `monexus_test_notification_realtime`）：
+  - AC-RT-028 failure：专用 listener 先 LISTEN ACK → tx-scoped proxy 恰好一次捕获参数化 `pg_notify` 唯一 ID 对并抛 sentinel → callback reject、proxyHits=1、独立 client 证明 Order / Notification 均无行、reject 后完整 2 秒匹配 ID 对无 hint。
+  - AC-RT-028 happy path：真实 commit 后按已提交 ID 对在 5 秒内恰好一个 v1 hint。
+  - dedupe：同事件两次 → 一行、一个 hint；no-listener：无订阅时事务正常提交；realtime off / 总开关 off → 无 hint。
+- `dispatcher.ts`：count=1 后按复合唯一键 findFirst 读取新 ID；realtime=true 时同一 tx 参数化 `tx.$queryRaw`SELECT pg_notify(..., ..)::text`（::text 规避 Prisma void 反序列化）；SQL 异常不捕获、不后移、直接向上传播使整体 rollback；`serializePgPayload` 只产出 v / notificationId / recipientUserId。
+- 验证：`npm run build` exit 0；`npx vitest run src/modules/notifications/ src/__tests__/config-realtime-guards.test.ts src/__tests__/config-production-guards.test.ts src/__tests__/faka-bridge-config.test.ts` → 9 files / 105 tests passed。
+- dispatcher 无 import hub / Express / Redis（imports 仅 config / metrics / logger / templates / realtime constants+protocol）。schema / migrations 无 diff。
 
 ### T-BE-003 — 专用 listener、主库投影与自动重连
 

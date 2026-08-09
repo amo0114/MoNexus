@@ -245,7 +245,7 @@ Follow-up owner:
 | --- | --- | --- | --- |
 | I-RT-001 | T-DOC-001 | Done (2949508) | 六件套 Frozen、delta audit |
 | I-RT-002 | T-BE-001 | Done | config / protocol / dependency tests |
-| I-RT-003 | T-BE-002 | Pending | real PG commit / rollback / dedupe + AC-RT-028 / CHK-BE-003 |
+| I-RT-003 | T-BE-002 | Done | real PG commit / rollback / dedupe + AC-RT-028 / CHK-BE-003 |
 | I-RT-004 | T-BE-003 | Pending | listener / generation / primary projection |
 | I-RT-005 | T-BE-004 | Pending | hub + stream raw integration |
 | I-RT-006 | T-BE-005 | Pending | readiness / metrics / SIGTERM |
@@ -387,7 +387,7 @@ git status --short
 | 时间 | HEAD | I / T | REQ / AC / CHK | 命令或动作 | 结果 | Artifact |
 | --- | --- | --- | --- | --- | --- | --- |
 | 2026-08-09 | 22ae95c8 (frozen) + I-RT-001 | I-RT-001 / T-DOC-001 | REQ-F-022、REQ-NF-007、REQ-NF-009；CHK-DOC-001~002 | git rev-parse HEAD / origin/develop; git diff --stat develop origin/develop; git diff --check; rg 六件套 ID/版本/状态/基线；编辑旧 spec/design superseded 指针 | develop..origin/develop diff 空 → 冻结语义不变；六件套 ID/版本/状态/基线一致；`git diff --check` exit 0；旧 spec.md / design.md 已加 superseded 指针 | commit 记录见 git log；delta audit 见本文档 2.1 |
-| 2026-08-09 | I-RT-002 HEAD | I-RT-002 / T-BE-001 | REQ-F-005、REQ-F-016、REQ-NF-006、REQ-NF-009；CHK-CFG-001~003、CHK-BE-001~002 | `cd server && npm run build`；`npx vitest run config-realtime-guards + config-production-guards + faka-bridge-config + realtime-protocol + dispatcher`；`npm install pg @types/pg`；`git diff -- server/prisma/schema.prisma server/prisma/migrations` | build exit 0；5 files / 68 tests passed；默认 realtime=false；非法组合子进程 exit(1) 且错误含两个变量名；protocol fixture 与 spec 6.5 字节一致；schema / migrations 无 diff | 新增 `realtime/constants.ts`、`realtime/protocol.ts`、`realtime-protocol.test.ts`、`config-realtime-guards.test.ts` |
+| 2026-08-09 | I-RT-003 HEAD | I-RT-003 / T-BE-002 | REQ-F-001、REQ-NF-003、REQ-NF-006；AC-RT-003~004、028；CHK-BE-003~005、CHK-QA-003 | `cd server && npm run build`；`npx vitest run src/modules/notifications/ + config guards`；专用 DB 真实 PostgreSQL 跑 `realtime-dispatcher.test.ts` | build exit 0；9 files / 105 tests passed；AC-RT-028 failure/happy/dedupe/no-listener/flag-off 全绿；rollback 无行、无 hint；payload 仅 3 字段；dispatcher 无 hub/Express/Redis import | 新增 `realtime-dispatcher.test.ts`（6 tests）；dispatcher.ts 同事务 pg_notify |
 
 证据规则：
 

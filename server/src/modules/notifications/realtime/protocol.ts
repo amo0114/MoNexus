@@ -132,6 +132,21 @@ export function parsePgPayload(raw: string): PgPayload | null {
 }
 
 /**
+ * Build the canonical PG NOTIFY payload string used by the dispatcher (D-RT-05).
+ * Only the version and two positive safe integer IDs — nothing else may enter.
+ */
+export function serializePgPayload(notificationId: number, recipientUserId: number): string {
+  if (!isPositiveSafeInteger(notificationId) || !isPositiveSafeInteger(recipientUserId)) {
+    throw new Error('serializePgPayload requires positive safe integer IDs')
+  }
+  return JSON.stringify({
+    v: NOTIFICATION_REALTIME_PROTOCOL_VERSION,
+    notificationId,
+    recipientUserId,
+  })
+}
+
+/**
  * Project a DB row into the safe SSE envelope. Returns null when the envelope
  * must be dropped (wait for REST convergence). Invalid optional delivery fields
  * are removed rather than dropping the whole envelope (spec 6.5).
