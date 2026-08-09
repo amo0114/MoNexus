@@ -7,6 +7,9 @@ import { defineConfig, devices } from '@playwright/test'
  *  - Backend A on 127.0.0.1:3112 (realtime=true), frontend on 127.0.0.1:5182.
  *  - Vite proxy -> 3112 via VITE_API_PROXY_TARGET.
  *  - reuseExistingServer=false; workers=1.
+ *  - trace, screenshot, and video artifacts are disabled because tests carry
+ *    bearer credentials, login passwords, and delivery secrets. Evidence is
+ *    limited to redacted list reporter/stdout output.
  * The DB is a dedicated `monexus_test_notification_realtime` prepared by
  * scripts/verify-notification-realtime-e2e.sh (git-ignored local env).
  */
@@ -19,8 +22,9 @@ export default defineConfig({
   reporter: 'list',
   use: {
     baseURL: 'http://localhost:5182',
-    trace: 'on',
-    screenshot: 'only-on-failure',
+    trace: 'off',
+    screenshot: 'off',
+    video: 'off',
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   webServer: [

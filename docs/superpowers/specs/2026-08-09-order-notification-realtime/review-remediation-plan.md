@@ -694,6 +694,11 @@ goal_complete: SPEC-NOTIFY-RT-001 implementation and all release gates complete 
 
 ---
 
+## 主审新增发现 / 安全证据策略
+
+- 专用 Playwright 配置关闭 trace、screenshot、video；Bearer、登录密码和 delivery secret 不得进入 artifact。E2E 证据只接受脱敏 list reporter/stdout，禁止用不存在的 trace 路径作证。
+- 静默 artifact 策略不降低 AC-RT-025、AC-RT-029、deployed proxy/log、rollout/rollback 或 Owner gate 的证据要求；这些状态继续 Pending。
+
 ## 13. 禁止的“完成”替代品
 
 以下均不能作为完成依据：

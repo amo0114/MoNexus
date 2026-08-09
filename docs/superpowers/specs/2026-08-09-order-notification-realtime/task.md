@@ -870,7 +870,7 @@ npx playwright test --config playwright.notification-realtime.config.ts \
 - [x] merchant processing / deliver → buyer list + detail。
 - [x] message center / page、instant silence、announcement coexist。
 - [x] stream blocked → 30 秒 fallback。
-- [x] 专用 staging 账号 / 预建商品采集至少 100 个独立样本；2xx response timestamp → 目标 DOM 首次出现 orderId / status / unread，计算 P50 / P95 / P99。
+- [ ] **Pending**：专用 staging 账号 / 预建商品采集至少 100 个独立样本；2xx response timestamp → 目标 DOM 首次出现 orderId / status / unread，计算 P50 / P95 / P99。当地单次 ≤5s E2E 不能替代 staging 样本与分位数证据。
 
 **DoD**
 
@@ -931,7 +931,7 @@ npx playwright test --config playwright.notification-realtime.config.ts \
 bash scripts/verify-notification-realtime-multi-instance.sh
 ~~~
 
-证据：I-RT-010（2026-08-09）。e2e/notification-realtime.spec.ts AC-RT-001 通过：`bash scripts/verify-notification-realtime-e2e.sh`（backend 3112 + vite 5182 + 独立 DB + reuse=false）→ 4 tests passed；商家不刷新看到买家新单未读铃铛（无 page.reload / 手动 poll）。延迟 P50/P95/P99 采集（AC-RT-025）标注为 staging 环境人工采集（CHK-PERF-002，需 staging 账号/预建商品）。
+证据：I-RT-010（2026-08-09）。e2e/notification-realtime.spec.ts AC-RT-001 通过：`bash scripts/verify-notification-realtime-e2e.sh`（backend 3112 + vite 5182 + 独立 DB + reuse=false）→ 4 tests passed；商家不刷新看到买家新单未读铃铛（无 page.reload / 手动 poll）。**AC-RT-025 的 staging 100 样本及 P50/P95/P99 仍 Pending**（CHK-PERF-002/003，需 staging 账号/预建商品）；本地单次 ≤5s E2E 不构成替代证据。
 
 ### T-QA-005 — 全量回归、滚动兼容与发布 Gate
 

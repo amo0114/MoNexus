@@ -2,7 +2,8 @@
 # SPEC-NOTIFY-RT-001 (T-QA-003) — dedicated realtime E2E setup + runner.
 #
 # Reads the git-ignored local env (xtrace off), asserts the dedicated DB name,
-# migrates + seeds it, then runs the realtime Playwright config (backend A on
+# migrates it, then runs the realtime Playwright config. Fixtures are generated
+# by the per-test dedicated seed flow, not shared by this script (backend A on
 # 3112 + Vite on 5182, reuse=false). trap only cleans PIDs this script records.
 set -euo pipefail
 

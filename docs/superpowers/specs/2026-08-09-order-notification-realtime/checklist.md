@@ -5,7 +5,7 @@
 | 文档 ID | CHK-NOTIFY-RT-001 |
 | 版本 | 0.2.0 |
 | 日期 | 2026-08-09 |
-| 状态 | **Frozen for Implementation — P0 实施项 71/108 已验证（Review 复核后），部署门禁待执行，P1 后置** |
+| 状态 | **Frozen for Implementation — 真实性复核中；部署门禁待执行，P1 后置** |
 | 规格 | [SPEC-NOTIFY-RT-001](./spec.md) |
 
 规则：checkbox 只能在同一 commit 上凭可重现证据勾选。代码存在、mock 通过、人工刷新后可见或 feature-off skip 均不构成证据。
@@ -151,15 +151,15 @@
 ## 10. P0 — 性能
 
 - [ ] **CHK-PERF-001** — healthy 首次 ready / small event 不被代理缓冲。证据：proxy smoke 脚本验证 ready 即时；staging 实测待部署。
-- [ ] **CHK-PERF-002** — staging 样本量、环境、P50 / P95 / P99 报告已保存。证据：staging P50/P95/P99 报告需 staging 环境（部署时采集）。
-- [ ] **CHK-PERF-003** — UI 可见 P95 ≤2 秒、P99 ≤5 秒。证据：staging P95≤2s/P99≤5s 需 staging 实测（部署时）。
+- [ ] **CHK-PERF-002** — **Pending**：staging 样本量、环境、P50 / P95 / P99 报告尚未保存；本地单次 E2E 不替代 staging 证据。
+- [ ] **CHK-PERF-003** — **Pending**：UI 可见 P95 ≤2 秒、P99 ≤5 秒需 staging 实测；本地单次 E2E 不替代分位数证据。
 - [x] **CHK-PERF-004** — 慢客户端与 burst 下 Node RSS / FD / event loop 无无界增长。证据：慢消费者/burst 有界（cap + coalescer 单测）。
 
 ---
 
 ## 11. P0 — 文档、发布与回滚
 
-- [x] **CHK-DOC-001** — Owner O-RT-01~08 全批准，六件套 Frozen。证据：README O-RT-01~08 全批准、六件套 Frozen。
+- [ ] **CHK-DOC-001** — **Pending**：Owner O-RT-01~08 最终审阅/批准证据待补齐；冻结文档不等于最终 gate 已通过。
 - [x] **CHK-DOC-002** — 旧 SPEC-NOTIFY-001 / DESIGN-NOTIFY-001 有精确 superseded 指针。证据：旧 spec/design superseded 指针（I-RT-001）。
 - [x] **CHK-DOC-003** — env、metrics、health、proxy、troubleshooting runbook 完整。证据：runbook §7 env/metrics/health/proxy/troubleshooting。
 - [x] **CHK-DOC-004** — 所有 task / AC / checklist / evidence 追溯无断链。证据：task/AC/checklist 追溯矩阵覆盖。
@@ -167,9 +167,9 @@
 - [x] **CHK-DOC-006** — Known limitations 明示无 Last-Event-ID 回放、每 Tab 连接、非可靠 hint。证据：Known limitations：无 Last-Event-ID、每 Tab 连接、非可靠 hint。
 
 - [x] **CHK-REL-001** — realtime 默认 false，关闭态部署验证通过。证据：realtime 默认 false；flag-off stream 404（smoke+测试）。
-- [ ] **CHK-REL-002** — 所有 backend 先升级，再开 flag，再发 frontend 的滚动顺序已演练。证据：发布顺序记录于 runbook §7.2（演练需部署）。
+- [ ] **CHK-REL-002** — **Pending**：rollout 顺序仅记录于 runbook，实际演练证据待部署。
 - [x] **CHK-REL-003** — 旧 frontend + 新 backend、新 frontend + off / on 兼容通过。证据：旧前端+新后端兼容（404→polling；单测+smoke）。
-- [ ] **CHK-REL-004** — 先关 flag 再回滚代码，REST / polling / Notification 历史无损。证据：回滚步骤记录（runbook §7.3）。
+- [ ] **CHK-REL-004** — **Pending**：rollback 步骤仅记录于 runbook，实际演练证据待部署。
 - [x] **CHK-REL-005** — production-like smoke 不在 feature-off 时 skip / 假绿。证据：prod-smoke realtime 段：flag-on 200/ready、flag-off 404 不静默 skip。
 - [x] **CHK-REL-006** — PR 描述含规格、配置、发布、指标、风险、回滚、证据索引。证据：PR 描述含规格/配置/发布/指标/风险/回滚/证据索引（implement.md）。
 - [x] **CHK-REL-007** — migration status / drift 正常，schema / migrations 无 diff。证据：migration status 无 drift；schema/migrations 无 diff。
