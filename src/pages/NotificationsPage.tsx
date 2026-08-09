@@ -8,6 +8,7 @@ import {
 } from '../api/notifications'
 import { getApiErrorMessage } from '../api/error'
 import { useAppStore } from '../stores/appStore'
+import { useNotificationInvalidation } from '../hooks/useNotificationInvalidation'
 import type { Notification, NotificationCategory } from '../types/notification'
 
 type FilterTab = 'all' | 'order' | 'system'
@@ -62,6 +63,32 @@ export default function NotificationsPage() {
   useEffect(() => {
     void load()
   }, [load])
+
+  // SPEC-NOTIFY-RT-001 (T-FE-003): realtime notifications reload the current
+  // filter's first page in the background — keep existing content, no skeleton,
+  // and never corrupt pagination (dedupe by id, no append to history).
+  const reloadFirstPageBackground = useCallback(async () => {
+    try {
+      const category: NotificationCategory | undefined = filter === 'all' ? undefined : filter
+      const data = await getNotifications({ limit: 20, category })
+      setItems((prev) => {
+        const seen = new Set(prev.map((n) => n.id))
+        return [...prev, ...data.notifications.filter((n) => !seen.has(n.id))]
+      })
+      setNextCursor(data.nextCursor)
+      setHasMore(data.hasMore)
+      void refreshNotificationUnread()
+    } catch {
+      // keep old values; wait for the next calibration/fallback tick
+    }
+  }, [filter, refreshNotificationUnread])
+
+  useNotificationInvalidation('notifications', () => {
+    void reloadFirstPageBackground()
+  })
+  useNotificationInvalidation('all.visible', () => {
+    void reloadFirstPageBackground()
+  })
 
   async function handleMarkRead(item: Notification) {
     if (item.status === 'read') {

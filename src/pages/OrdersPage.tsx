@@ -9,6 +9,7 @@ import { Package, ShoppingBag } from 'lucide-react'
 import { getOrderDetail, getOrders } from '../api/orders'
 import { getApiErrorMessage } from '../api/error'
 import { useAppStore } from '../stores/appStore'
+import { useNotificationInvalidation } from '../hooks/useNotificationInvalidation'
 import type { UserOrderDetail, UserOrderListItem } from '../types/order'
 import BuyerOrderCard from '../components/orders/BuyerOrderCard'
 import OrderDetailModal from '../components/OrderDetailModal'
@@ -46,22 +47,43 @@ export default function OrdersPage() {
   const [selectedOrder, setSelectedOrder] = useState<UserOrderDetail | null>(null)
   const [loadingOrderId, setLoadingOrderId] = useState<number | null>(null)
 
-  const load = useCallback(async () => {
-    setLoading(true)
+  const load = useCallback(async (opts?: { background?: boolean }) => {
+    // Background realtime reload keeps current content (no full-page skeleton).
+    if (!opts?.background) setLoading(true)
     try {
       const list = await getOrders({ page: 1, pageSize: 100 })
       setOrders(list)
       setOrderAttentionCount(countAttentionOrders(list))
     } catch (err) {
-      showToast(getApiErrorMessage(err, '加载订单失败'), 'error')
+      // Single background failure keeps old values and waits for the next tick.
+      if (!opts?.background) showToast(getApiErrorMessage(err, '加载订单失败'), 'error')
     } finally {
-      setLoading(false)
+      if (!opts?.background) setLoading(false)
     }
   }, [showToast, setOrderAttentionCount])
 
   useEffect(() => {
     void load()
   }, [load])
+
+  // SPEC-NOTIFY-RT-001 (T-FE-004): buyer.orders invalidation reloads the list +
+  // attention in the background; if the current detail is the related order, reload it.
+  const reloadDetailFor = useCallback(async (orderId: number) => {
+    try {
+      const detail = await getOrderDetail(orderId)
+      setSelectedOrder((prev) => (prev && prev.id === orderId ? detail : prev))
+    } catch {
+      // keep the existing modal content on failure
+    }
+  }, [])
+
+  useNotificationInvalidation('buyer.orders', () => {
+    void load({ background: true })
+  })
+  useNotificationInvalidation('all.visible', () => {
+    void load({ background: true })
+    if (selectedOrder) void reloadDetailFor(selectedOrder.id)
+  })
 
   const visible = useMemo(() => filterOrdersByTab(orders, tab), [orders, tab])
   const activeCount = useMemo(() => countAttentionOrders(orders), [orders])

@@ -250,7 +250,7 @@ Follow-up owner:
 | I-RT-005 | T-BE-004 | Done | hub + stream raw integration |
 | I-RT-006 | T-BE-005 | Done | readiness / metrics / SIGTERM |
 | I-RT-007 | T-FE-001、T-FE-002 | Done | parser / state / invalidation contract |
-| I-RT-008 | T-FE-003~005 | Pending | notification / buyer / merchant UI E2E |
+| I-RT-008 | T-FE-003~005 | Done | notification / buyer / merchant UI E2E |
 | I-RT-009 | T-INF-001、T-INF-002 | Pending | proxy / env / smoke / runbook + AC-RT-029 / CHK-INF-007 |
 | I-RT-010 | T-QA-001~004 | Pending | backend、browser、multi-instance、failure + AC-RT-028 evidence |
 | I-RT-011 | T-QA-005 | Pending | AC-RT-001~029、全部 P0 CHK、rollout / rollback、PR handoff |
@@ -388,6 +388,7 @@ git status --short
 | --- | --- | --- | --- | --- | --- | --- |
 | 2026-08-09 | 22ae95c8 (frozen) + I-RT-001 | I-RT-001 / T-DOC-001 | REQ-F-022、REQ-NF-007、REQ-NF-009；CHK-DOC-001~002 | git rev-parse HEAD / origin/develop; git diff --stat develop origin/develop; git diff --check; rg 六件套 ID/版本/状态/基线；编辑旧 spec/design superseded 指针 | develop..origin/develop diff 空 → 冻结语义不变；六件套 ID/版本/状态/基线一致；`git diff --check` exit 0；旧 spec.md / design.md 已加 superseded 指针 | commit 记录见 git log；delta audit 见本文档 2.1 |
 | 2026-08-09 | I-RT-007 HEAD | I-RT-007 / T-FE-001、T-FE-002 | REQ-F-006~009、REQ-F-013~015；CHK-FE-001~014 | `cd <root> && npm run build`；`npx vitest run src/realtime/ + src/utils/`；mock-fetch stream 单测 | build exit 0；frontend 36 tests passed（31 new）；parser 逐字节/CRLF/cap 通过；stream 状态机 401 refresh/403/404/503/expiring/stop 通过；exact-ID LRU 512 + 300ms coalescer + 事件矩阵通过；Layout 旧 interval 移除、bridge 挂载 | 新增 src/realtime/{sseParser,notificationStream,notificationInvalidation,runtime}.ts、useNotificationInvalidation、NotificationRealtimeBridge；改 Layout/appStore/types/notification |
+| 2026-08-09 | I-RT-008 HEAD | I-RT-008 / T-FE-003~005 | REQ-F-010~012、REQ-F-021；AC-RT-001~002、012~013、026；CHK-UI-001~013 | `cd <root> && npm run build`；frontend tests；页面订阅接线审查 | build exit 0；UI wiring 完成：AnnouncementCenter 消息 Tab、NotificationsPage 首屏重载、OrdersPage buyer.orders+attention+detail、MerchantDashboardPage merchant.orders/stats；后台刷新保留内容、失败静默、分页/筛选不破坏；公告 Tab 强制语义不变 | 改 AnnouncementCenter/NotificationsPage/OrdersPage/MerchantDashboardPage 订阅 useNotificationInvalidation |
 
 证据规则：
 

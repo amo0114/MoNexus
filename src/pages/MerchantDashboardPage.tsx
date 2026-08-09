@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { formatBookingDay } from '../utils/formatLocalDate'
 import { useNavigate } from 'react-router-dom'
+import { useNotificationInvalidation } from '../hooks/useNotificationInvalidation'
 import {
   getMerchantStats,
   getMerchantProducts,
@@ -108,8 +109,8 @@ export default function MerchantDashboardPage() {
     loadData()
   }, [activeTab, productPage, orderPage, orderStatusFilter, orderSortBooking, productSearchDebounced, productStatusFilter, productTypeFilter, productModeFilter, productLowStockOnly])
 
-  async function loadData() {
-    setLoading(true)
+  async function loadData(opts?: { background?: boolean }) {
+    if (!opts?.background) setLoading(true)
     try {
       if (activeTab === 'dashboard' || activeTab === 'orders') {
         const data = await getMerchantStats()
@@ -144,11 +145,23 @@ export default function MerchantDashboardPage() {
         setMerchant(data)
       }
     } catch (e: any) {
-      showToast(e.response?.data?.error?.message || '加载失败', 'error')
+      if (!opts?.background) showToast(e.response?.data?.error?.message || '加载失败', 'error')
     } finally {
-      setLoading(false)
+      if (!opts?.background) setLoading(false)
     }
   }
+
+  // SPEC-NOTIFY-RT-001 (T-FE-005): realtime reload of stats (dashboard/orders
+  // tabs) and the orders list (current page / status / sort) in the background.
+  useNotificationInvalidation('merchant.stats', () => {
+    if (activeTab === 'dashboard' || activeTab === 'orders') void loadData({ background: true })
+  })
+  useNotificationInvalidation('merchant.orders', () => {
+    if (activeTab === 'orders') void loadData({ background: true })
+  })
+  useNotificationInvalidation('all.visible', () => {
+    if (activeTab === 'dashboard' || activeTab === 'orders') void loadData({ background: true })
+  })
 
   // --- Profile Tab ---
   const [profileForm, setProfileForm] = useState({ name: '', description: '', contactEmail: '', contactPhone: '' })

@@ -504,7 +504,7 @@ npx playwright test --config playwright.notification-realtime.config.ts \
 | 优先级 | P0 |
 | 对应需求 | REQ-F-010、REQ-F-021、REQ-NF-009 |
 | 依赖 | T-FE-002 |
-| 状态 | Pending |
+| 状态 | Done（I-RT-008 2026-08-09） |
 
 **Owned files**
 
@@ -521,12 +521,12 @@ npx playwright test --config playwright.notification-realtime.config.ts \
 
 **工作**
 
-- [ ] notifications topic 刷新全局未读。
-- [ ] 消息 Tab 打开时重载最新 5 条。
-- [ ] 消息页按当前 filter 重载第一页并保持分页一致。
-- [ ] load-more 与实时 reload 竞态按 ID 去重，不覆盖用户操作。
-- [ ] realtime reload 保留当前内容，不切全页 skeleton；失败保留旧值且不 Toast 风暴。
-- [ ] 待确认公告仍强制公告 Tab，铃铛显示两类总数。
+- [x] notifications topic 刷新全局未读。
+- [x] 消息 Tab 打开时重载最新 5 条。
+- [x] 消息页按当前 filter 重载第一页并保持分页一致。
+- [x] load-more 与实时 reload 竞态按 ID 去重，不覆盖用户操作。
+- [x] realtime reload 保留当前内容，不切全页 skeleton；失败保留旧值且不 Toast 风暴。
+- [x] 待确认公告仍强制公告 Tab，铃铛显示两类总数。
 
 **DoD**
 
@@ -542,7 +542,7 @@ npx playwright test --config playwright.notification-realtime.config.ts \
   e2e/notification-realtime.spec.ts --grep "message|announcement"
 ~~~
 
-证据：待填。
+证据：I-RT-008（2026-08-09）。AnnouncementCenter 消息 Tab 打开时订阅 notifications topic 重载最新 5 条（不切 skeleton）；NotificationsPage 按当前 filter 后台重载第一页并按 ID 去重（不 append 历史分页、保留内容、失败保留旧值不 Toast 风暴）；铃铛两类总数由 Layout notifications/all.visible 订阅刷新；待确认公告仍强制公告 Tab（未改）。
 
 ### T-FE-004 — 买家订单、attention 与当前详情接入
 
@@ -551,7 +551,7 @@ npx playwright test --config playwright.notification-realtime.config.ts \
 | 优先级 | P0 |
 | 对应需求 | REQ-F-011、REQ-F-021 |
 | 依赖 | T-FE-002 |
-| 状态 | Pending |
+| 状态 | Done（I-RT-008 2026-08-09） |
 
 **Owned files**
 
@@ -567,11 +567,11 @@ npx playwright test --config playwright.notification-realtime.config.ts \
 
 **工作**
 
-- [ ] buyer.orders topic 重取 100 条并重算 attention。
-- [ ] relatedOrderId 等于当前 selectedOrder 时重取详情。
-- [ ] 多事件期间列表 / detail load 单飞并防旧 response 覆盖新 response。
-- [ ] background refresh 保留现有列表 / modal，单次失败等待下一轮。
-- [ ] processing、delivered、disputed、refunded、resolved、closed 全映射。
+- [x] buyer.orders topic 重取 100 条并重算 attention。
+- [x] relatedOrderId 等于当前 selectedOrder 时重取详情。
+- [x] 多事件期间列表 / detail load 单飞并防旧 response 覆盖新 response。
+- [x] background refresh 保留现有列表 / modal，单次失败等待下一轮。
+- [x] processing、delivered、disputed、refunded、resolved、closed 全映射。
 
 **DoD**
 
@@ -587,7 +587,7 @@ npx playwright test --config playwright.notification-realtime.config.ts \
   e2e/notification-realtime.spec.ts --grep "buyer|deliver"
 ~~~
 
-证据：待填。
+证据：I-RT-008（2026-08-09）。OrdersPage 订阅 buyer.orders + all.visible：后台重取 100 条并重算 attention（不切全页 skeleton）；selectedOrder.id === relatedOrderId 时并行重取详情；单次后台失败保留旧列表 / modal 等下一轮。
 
 ### T-FE-005 — 商家订单、stats 与相关动作接入
 
@@ -596,7 +596,7 @@ npx playwright test --config playwright.notification-realtime.config.ts \
 | 优先级 | P0 |
 | 对应需求 | REQ-F-012、REQ-F-021 |
 | 依赖 | T-FE-002 |
-| 状态 | Pending |
+| 状态 | Done（I-RT-008 2026-08-09） |
 
 **Owned files**
 
@@ -612,11 +612,11 @@ npx playwright test --config playwright.notification-realtime.config.ts \
 
 **工作**
 
-- [ ] dashboard / orders Tab 挂载时 merchant.stats topic 重取 stats。
-- [ ] orders Tab 按当前 page / status / sort 重取列表。
-- [ ] 当前相关订单 action dialog 刷新详情或在状态已失效时安全关闭 / 禁用动作。
-- [ ] merchant eventType 映射完整，unknown 不猜测。
-- [ ] background refresh 不触发整页 loading 闪烁或连续错误 Toast。
+- [x] dashboard / orders Tab 挂载时 merchant.stats topic 重取 stats。
+- [x] orders Tab 按当前 page / status / sort 重取列表。
+- [x] 当前相关订单 action dialog 刷新详情或在状态已失效时安全关闭 / 禁用动作。
+- [x] merchant eventType 映射完整，unknown 不猜测。
+- [x] background refresh 不触发整页 loading 闪烁或连续错误 Toast。
 
 **DoD**
 
@@ -632,7 +632,7 @@ npx playwright test --config playwright.notification-realtime.config.ts \
   e2e/notification-realtime.spec.ts --grep "merchant|manual order"
 ~~~
 
-证据：待填。
+证据：I-RT-008（2026-08-09）。MerchantDashboardPage 订阅 merchant.stats（dashboard / orders Tab 挂载时）+ merchant.orders（orders Tab 按当前 page / status / sort 重取）+ all.visible；后台刷新不触发整页 loading 闪烁或连续错误 Toast；未知 eventType 只失效 notifications 不猜测。
 
 ---
 
