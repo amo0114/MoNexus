@@ -145,6 +145,9 @@ describe('buildNotificationEnvelope allowlist (spec 6.5 / NRT-009 / AC-RT-024)',
     expect(buildNotificationEnvelope({ ...validSource, deeplink: 'javascript:alert(1)' })).toBeNull()
     expect(buildNotificationEnvelope({ ...validSource, deeplink: '/orders?focus=1@evil' })).toBeNull()
     expect(buildNotificationEnvelope({ ...validSource, deeplink: '' })).toBeNull()
+    expect(buildNotificationEnvelope({ ...validSource, deeplink: '/\\\\evil.example' })).toBeNull()
+    expect(buildNotificationEnvelope({ ...validSource, deeplink: `/orders/${String.fromCharCode(10)}x` })).toBeNull()
+    expect(buildNotificationEnvelope({ ...validSource, deeplink: '/orders/合法?focus=1' })).not.toBeNull()
   })
 
   it('never copies sensitive fields from a hostile source (AC-RT-024)', () => {

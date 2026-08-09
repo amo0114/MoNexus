@@ -68,11 +68,10 @@ step "7. git diff --check + schema/migration drift + secret scan"
 git diff --check || fail "git diff --check failed"
 (cd server && git diff --quiet -- prisma/schema.prisma prisma/migrations) || \
   fail "schema/migrations must be unchanged"
-# Build the pattern at runtime and exclude only this verifier (which contains
-# the pattern as documentation); the scan must never exclude itself wholesale.
-secret_pattern="BEGIN[[:space:]]+(RSA|OPENSSH|EC)[[:space:]]+PRIVATE[[:space:]]+KEY|-----BEGIN[[:space:]]+PGP"
-self_scan_path="${BASH_SOURCE[0]#"$ROOT/"}"
-if git grep -nE "$secret_pattern" -- . ':!node_modules' ":!$self_scan_path" >/dev/null 2>&1; then
+# Assemble markers at runtime so this verifier is included in the tracked-text scan.
+marker_begin='BE''GIN'
+secret_pattern="${marker_begin}[[:space:]]+(RSA|OPENSSH|EC)[[:space:]]+PRIVATE[[:space:]]+KEY|$(printf '%s' '-'{5})${marker_begin}[[:space:]]+PGP"
+if git grep -nE "$secret_pattern" -- . ':!node_modules' >/dev/null 2>&1; then
   fail "secret material found in the tree"
 fi
 tmp_secret="$(mktemp)"; trap 'rm -f "$tmp_secret"' EXIT

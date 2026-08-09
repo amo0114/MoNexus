@@ -36,8 +36,10 @@ if (process.argv.includes('--self-test')) {
     ['reject', { connected: 4, attempted: 40, committed: 39, failed: 1, roleMatch: true }],
     ['role mismatch', { connected: 4, attempted: 40, committed: 40, failed: 0, roleMatch: false }],
   ]
-  const accepts = (x) => x.connected === 4 && x.attempted === 40 && x.committed === 40 && x.failed === 0 && x.roleMatch
-  if (accepts(cases[0][1]) && cases.slice(1).some(([, x]) => accepts(x))) process.exit(1)
+  const accepts = (x) => x.connected === 4 && x.attempted === 40 && x.committed === 40 && x.failed === 0 && x.roleMatch && x.durationSec >= 0 && x.durationSec <= 65
+  cases[0][1].durationSec = 54
+  cases.slice(1).forEach(([, x]) => { x.durationSec = 54 })
+  if (!accepts(cases[0][1]) || cases.slice(1).some(([, x]) => accepts(x))) process.exit(1)
   console.log('[gate] self-test=PASS (valid accepted; incomplete/reject/role mismatch rejected)')
   process.exit(0)
 }
@@ -60,6 +62,7 @@ function redactedHost(url) {
 
 async function run() {
   const startedAt = Date.now()
+  let auxConnectFailed = false
   const listener = new Client({ connectionString: url, application_name: 'monexus-notification-realtime-listener' })
   const received = []
 
@@ -135,6 +138,7 @@ async function run() {
     }
   } catch (err) {
     console.error(`[gate] AUX_CONNECT_FAILED ${err.code ?? 'unknown'}`)
+    auxConnectFailed = true
   }
 
   // Independent sender (not one of the auxiliary connections).
@@ -202,7 +206,7 @@ async function run() {
   console.log(`[gate] aux_workers=4 aux_attempted=${auxAttempted} aux_committed=${auxCommitted} aux_failed=${auxFailed}`)
   console.log(`[gate] total_sec=${durationSec}`)
 
-  const pass = roleMatch === true && pidDistinct === 1 && allRoundsOk && allPermitted && auxAttempted === 40 && auxCommitted === 40 && auxFailed === 0 && durationSec <= 65
+  const pass = !auxConnectFailed && roleMatch === true && pidDistinct === 1 && allRoundsOk && allPermitted && auxAttempted === 40 && auxCommitted === 40 && auxFailed === 0 && durationSec >= 0 && durationSec <= 65
   console.log(`[gate] result=${pass ? 'PASS' : 'FAIL'}`)
   process.exit(pass ? 0 : 1)
 }
