@@ -474,6 +474,20 @@ async function createOrderOnce(
       buyerEmail = fakaPreflightEmail
     }
 
+    // Faka 竞态测试 seam：此刻 resolvePurchaseOfferChecked() 已完成（checkout
+    // 快照已定）、fakaBridge 已判定/校验（含买家邮箱），且尚未插入任何 Order
+    // 外键行、未做扣款写入——事务对 Offer 行仍未持锁。生产路径该 hook 恒为
+    // null（纯 no-op）；测试用它通过事务外 Prisma 更新 externalSku，模拟结算
+    // 后 SKU 被并发改动。置于此可避免 "Order FK KEY SHARE + hook 的 UPDATE 锁"
+    // 在同一事务内自锁。最终 Offer FOR NO KEY UPDATE 重查仍在下方 outbox 创建
+    // 前原位置保留。
+    if (fakaBridge && buyerEmail && offer.externalSku && beforeFakaOfferTaskRecheckHookForTests) {
+      await beforeFakaOfferTaskRecheckHookForTests({
+        offerId: offer.id,
+        externalSku: offer.externalSku,
+      })
+    }
+
     // 积分流转规则（PRD §4.3.1）：
     // - instant_* 模式：即时扣减，PointLog 'out'，Settlement 'pending'
     // - manual_service：原子地从可用积分转入冻结余额，Settlement 'holding'
@@ -558,13 +572,8 @@ async function createOrderOnce(
       // FakaBridge 的 preflight（邮箱证明、容量）必须在事务外执行，但其 SKU 是
       // 不可逆外呼的履约合同。最终在同一订单事务内锁 Offer 并重验，避免管理员
       // 在 resolvePurchaseOfferChecked() 与 outbox create 之间切换 SKU / 集成，
-      // 让买家按旧快照被开通到错误套餐。
-      if (beforeFakaOfferTaskRecheckHookForTests) {
-        await beforeFakaOfferTaskRecheckHookForTests({
-          offerId: offer.id,
-          externalSku: offer.externalSku,
-        })
-      }
+      // 让买家按旧快照被开通到错误套餐。（测试 seam 已上移至 buyerEmail 解析
+      // 之后、任何扣款/Order 外键写入之前，见上。）
       const fakaOfferRecheck = await tx.$queryRaw<
         Array<{
           externalIntegration: string | null
