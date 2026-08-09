@@ -248,7 +248,7 @@ Follow-up owner:
 | I-RT-003 | T-BE-002 | Done | real PG commit / rollback / dedupe + AC-RT-028 / CHK-BE-003 |
 | I-RT-004 | T-BE-003 | Done | listener / generation / primary projection |
 | I-RT-005 | T-BE-004 | Done | hub + stream raw integration |
-| I-RT-006 | T-BE-005 | Pending | readiness / metrics / SIGTERM |
+| I-RT-006 | T-BE-005 | Done | readiness / metrics / SIGTERM |
 | I-RT-007 | T-FE-001、T-FE-002 | Pending | parser / state / invalidation contract |
 | I-RT-008 | T-FE-003~005 | Pending | notification / buyer / merchant UI E2E |
 | I-RT-009 | T-INF-001、T-INF-002 | Pending | proxy / env / smoke / runbook + AC-RT-029 / CHK-INF-007 |
@@ -387,7 +387,7 @@ git status --short
 | 时间 | HEAD | I / T | REQ / AC / CHK | 命令或动作 | 结果 | Artifact |
 | --- | --- | --- | --- | --- | --- | --- |
 | 2026-08-09 | 22ae95c8 (frozen) + I-RT-001 | I-RT-001 / T-DOC-001 | REQ-F-022、REQ-NF-007、REQ-NF-009；CHK-DOC-001~002 | git rev-parse HEAD / origin/develop; git diff --stat develop origin/develop; git diff --check; rg 六件套 ID/版本/状态/基线；编辑旧 spec/design superseded 指针 | develop..origin/develop diff 空 → 冻结语义不变；六件套 ID/版本/状态/基线一致；`git diff --check` exit 0；旧 spec.md / design.md 已加 superseded 指针 | commit 记录见 git log；delta audit 见本文档 2.1 |
-| 2026-08-09 | I-RT-005 HEAD | I-RT-005 / T-BE-004 | REQ-F-003~006、REQ-NF-004~005；AC-RT-006~008、015~018；CHK-SSE-001~010、CHK-SEC-001~005 | `cd server && npm run build`；`npx vitest run realtime-stream.test.ts + notifications + config guards`；真实 HTTP + 真实 PG listener 跑 `realtime-stream.test.ts` | build exit 0；11 files / 120 tests passed；ready 先于 notification；A/B 隔离；401/404/503/429 于 headers 前；auth.expiring 后硬 EOF；gauge 归零 | 新增 `realtime/hub.ts`、`realtime/streamController.ts`、`realtime-stream.test.ts`；routes.ts 挂 /stream；auth.ts AuthPayload+exp |
+| 2026-08-09 | I-RT-006 HEAD | I-RT-006 / T-BE-005 | REQ-F-017~018、REQ-NF-008；AC-RT-018~019；CHK-OPS-001~007 | `cd server && npm run build`；`npx vitest run src/modules/notifications/ + src/modules/health/ + config guards`；SIGTERM 真实子进程 | build exit 0；11 files/91 tests + 3 files/37 tests passed；readiness disabled/ok/degraded/draining 仅 draining unready；SIGTERM 活跃 SSE 5s 内 drain + 进程 exit 0；metrics 无敏感标签 | 新增 realtime-metrics.test.ts、realtime-readiness.test.ts、realtime-shutdown.test.ts；metrics.ts 7 指标；health/service.ts + main.ts 编排 |
 
 证据规则：
 

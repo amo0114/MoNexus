@@ -11,6 +11,12 @@ import { randomUUID } from 'node:crypto'
 import type { Response } from 'express'
 import { config } from '../../../config/index.js'
 import {
+  notificationRealtimeConnections,
+  notificationRealtimeDeliveryLagSeconds,
+  notificationRealtimeDisconnectsTotal,
+  notificationRealtimeSseEventsTotal,
+} from '../../../lib/metrics.js'
+import {
   serializeDegraded,
   serializeHeartbeat,
   serializeNotificationCreated,
@@ -22,6 +28,7 @@ import type { RealtimeHubPort } from './listener.js'
 
 export type HubEntryState = 'initializing' | 'ready' | 'closing'
 
+export type DisconnectReason = 'client' | 'token_expired' | 'listener' | 'shutdown' | 'slow' | 'write_error'
 export interface HubEntry {
   connectionId: string
   userId: number
@@ -74,11 +81,15 @@ export class NotificationRealtimeHub implements RealtimeHubPort {
     userMap.set(connectionId, entry)
     this.connectionCount += 1
     this.ipCounts.set(ip, (this.ipCounts.get(ip) ?? 0) + 1)
+    notificationRealtimeConnections.set(this.connectionCount)
 
     // Stream.ready carries resyncRequired=true — REST convergence is mandatory.
     const frame = serializeReady(new Date(), config.notificationRealtime.heartbeatMs, true)
     if (frame !== null && !res.destroyed && !res.writableEnded) {
       res.write(frame)
+      notificationRealtimeSseEventsTotal.inc({ event: 'ready', outcome: 'sent' })
+    } else {
+      notificationRealtimeSseEventsTotal.inc({ event: 'ready', outcome: 'dropped' })
     }
     entry.state = 'ready'
     return entry
@@ -99,9 +110,14 @@ export class NotificationRealtimeHub implements RealtimeHubPort {
     if (!userMap) return
     const frame = serializeNotificationCreated(envelope)
     if (frame === null) return
+    // Approximate delivery lag: createdAt (ISO) to local write. No user/order labels.
+    const createdAt = new Date(envelope.notification.createdAt).getTime()
+    if (Number.isFinite(createdAt)) {
+      notificationRealtimeDeliveryLagSeconds.observe(Math.max(0, (Date.now() - createdAt) / 1000))
+    }
     for (const entry of [...userMap.values()]) {
       if (entry.state !== 'ready') continue
-      this.writeToEntry(entry, frame)
+      this.writeToEntry(entry, frame, 'notification')
     }
   }
 
@@ -110,7 +126,7 @@ export class NotificationRealtimeHub implements RealtimeHubPort {
    * is already over the cap (or a prior write returned false), stop queuing
    * business events and destroy only this response (CHK-SSE-009).
    */
-  private writeToEntry(entry: HubEntry, frame: string): void {
+  private writeToEntry(entry: HubEntry, frame: string, eventLabel: string): void {
     const res = entry.res
     if (res.destroyed || res.writableEnded) {
       this.removeEntry(entry.userId, entry.connectionId)
@@ -118,6 +134,7 @@ export class NotificationRealtimeHub implements RealtimeHubPort {
     }
     if (res.writableLength > this.options.maxBufferBytes) {
       this.closeSlowConsumer(entry)
+      notificationRealtimeSseEventsTotal.inc({ event: eventLabel, outcome: 'dropped' })
       return
     }
     let ok: boolean
@@ -128,11 +145,14 @@ export class NotificationRealtimeHub implements RealtimeHubPort {
     }
     if (!ok || res.writableLength > this.options.maxBufferBytes) {
       this.closeSlowConsumer(entry)
+      notificationRealtimeSseEventsTotal.inc({ event: eventLabel, outcome: 'dropped' })
+    } else {
+      notificationRealtimeSseEventsTotal.inc({ event: eventLabel, outcome: 'sent' })
     }
   }
 
   private closeSlowConsumer(entry: HubEntry): void {
-    this.removeEntry(entry.userId, entry.connectionId)
+    this.removeEntry(entry.userId, entry.connectionId, 'slow')
     entry.state = 'closing'
     const res = entry.res
     if (res.destroyed || res.writableEnded) {
@@ -153,7 +173,7 @@ export class NotificationRealtimeHub implements RealtimeHubPort {
   }
 
   /** Idempotent removal of a connection and all its counters. */
-  removeEntry(userId: number, connectionId: string): void {
+  removeEntry(userId: number, connectionId: string, reason: DisconnectReason = 'client'): void {
     const userMap = this.byUser.get(userId)
     if (!userMap) return
     const entry = userMap.get(connectionId)
@@ -161,6 +181,8 @@ export class NotificationRealtimeHub implements RealtimeHubPort {
     userMap.delete(connectionId)
     if (userMap.size === 0) this.byUser.delete(userId)
     this.connectionCount = Math.max(0, this.connectionCount - 1)
+    notificationRealtimeConnections.set(this.connectionCount)
+    notificationRealtimeDisconnectsTotal.inc({ reason })
     const ipCount = (this.ipCounts.get(entry.ip) ?? 1) - 1
     if (ipCount <= 0) this.ipCounts.delete(entry.ip)
     else this.ipCounts.set(entry.ip, ipCount)
@@ -183,9 +205,13 @@ export class NotificationRealtimeHub implements RealtimeHubPort {
           try {
             if (!res.write(frame)) {
               this.closeSlowConsumer(entry)
+              notificationRealtimeSseEventsTotal.inc({ event: 'heartbeat', outcome: 'dropped' })
+            } else {
+              notificationRealtimeSseEventsTotal.inc({ event: 'heartbeat', outcome: 'sent' })
             }
           } catch {
             this.closeSlowConsumer(entry)
+            notificationRealtimeSseEventsTotal.inc({ event: 'heartbeat', outcome: 'dropped' })
           }
         }
       }
@@ -209,15 +235,19 @@ export class NotificationRealtimeHub implements RealtimeHubPort {
       }
     }
     const frame = serializeDegraded(reason, retryAfterMs)
+    const disconnectReason: DisconnectReason = reason === 'server_shutdown' ? 'shutdown' : 'listener'
     for (const entry of snapshot) {
-      this.removeEntry(entry.userId, entry.connectionId)
+      this.removeEntry(entry.userId, entry.connectionId, disconnectReason)
       entry.state = 'closing'
       const res = entry.res
       if (res.destroyed || res.writableEnded) continue
       try {
-        if (frame !== null) res.write(frame)
+        if (frame !== null) {
+          res.write(frame)
+          notificationRealtimeSseEventsTotal.inc({ event: 'degraded', outcome: 'sent' })
+        }
       } catch {
-        /* fall through to end/destroy */
+        notificationRealtimeSseEventsTotal.inc({ event: 'degraded', outcome: 'dropped' })
       }
       try {
         res.end()
@@ -235,7 +265,7 @@ export class NotificationRealtimeHub implements RealtimeHubPort {
       for (const entry of userMap.values()) snapshot.push(entry)
     }
     for (const entry of snapshot) {
-      this.removeEntry(entry.userId, entry.connectionId)
+      this.removeEntry(entry.userId, entry.connectionId, 'shutdown')
       entry.state = 'closing'
       try {
         entry.res.end()

@@ -20,6 +20,8 @@ import {
 import type { NotificationEnvelope } from './protocol.js'
 import { config } from '../../../config/index.js'
 import { getRealtimeEnvelope } from '../service.js'
+import { notificationRealtimeListenerUp } from '../../../lib/metrics.js'
+import { notificationRealtimePgMessagesTotal } from '../../../lib/metrics.js'
 
 export type NotificationRealtimeStatus = 'disabled' | 'starting' | 'healthy' | 'degraded' | 'draining' | 'stopped'
 
@@ -130,6 +132,7 @@ export class NotificationRealtimeLifecycle {
     if (this.status === 'draining' || this.status === 'stopped') return
     this.status = 'healthy'
     this.retryIndex = 0
+    notificationRealtimeListenerUp.set(1)
   }
 
   private handleUnavailable(generation: number): void {
@@ -137,9 +140,8 @@ export class NotificationRealtimeLifecycle {
     if (this.drainedGeneration === generation) return
     this.drainedGeneration = generation
     // CAS healthy/starting -> degraded; only then drain exactly once.
-    if (this.status === 'healthy' || this.status === 'starting') {
-      this.status = 'degraded'
-    }
+    this.status = 'degraded'
+    notificationRealtimeListenerUp.set(0)
     const hub = this.hub
     const retryAfterMs = this.currentBackoffMs()
     if (hub) {
@@ -186,6 +188,7 @@ export function getNotificationRealtimeLifecycle(): NotificationRealtimeLifecycl
     lifecycleSingleton = new NotificationRealtimeLifecycle({
       connectionString: config.databaseUrl,
       getEnvelope: getRealtimeEnvelope,
+      reportOutcome: (outcome) => notificationRealtimePgMessagesTotal.inc({ outcome }),
     })
   }
   return lifecycleSingleton

@@ -16,18 +16,19 @@ import {
 import { serializeAuthExpiring } from './protocol.js'
 import { getNotificationRealtimeHub } from './hub.js'
 import { getNotificationRealtimeLifecycle } from './lifecycle.js'
+import { notificationRealtimeConnectionRejectionsTotal } from '../../../lib/metrics.js'
 
 // Wire the shared hub onto the shared lifecycle before any listener starts, so
 // the dedicated listener broadcasts through the real local hub (never a null hub).
 getNotificationRealtimeLifecycle().registerHub(getNotificationRealtimeHub())
 
-/** Dedicated connect rate limiter — keyed on canonical req.ip, fixed 60s window. */
+/** Dedicated connect rate limiter — keyed on canonical req.ip (default IP key
+ * generator handles IPv6 + trust proxy), fixed 60s window. */
 export const notificationStreamRateLimiter = rateLimit({
   windowMs: 60_000,
   limit: config.notificationRealtime.connectRateLimitMax,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => req.ip ?? 'unknown',
   handler: (_req, res) => {
     res.setHeader('Retry-After', '60')
     res.status(429).json({ error: { code: 'RATE_LIMITED', message: '连接过于频繁，请稍后再试' } })
@@ -63,6 +64,7 @@ export function notificationRealtimeStream(req: Request, res: Response, next: Ne
   const lifecycle = getNotificationRealtimeLifecycle()
   if (!lifecycle.isHealthy()) {
     // Listener degraded or instance draining -> 503 before any SSE bytes.
+    notificationRealtimeConnectionRejectionsTotal.inc({ reason: lifecycle.getStatus() === 'draining' ? 'draining' : 'unavailable' })
     res.status(503).json({ error: { code: 'SERVICE_UNAVAILABLE', message: '实时通知暂不可用' } })
     return
   }
@@ -73,18 +75,20 @@ export function notificationRealtimeStream(req: Request, res: Response, next: Ne
 
   // Caps (CHK-SSE-008): user / IP / global — all before headers.
   if (hub.userConnectionCount(userId) >= config.notificationRealtime.maxConnectionsPerUser) {
+    notificationRealtimeConnectionRejectionsTotal.inc({ reason: 'user_cap' })
     next(tooManyRequests('连接数已达上限', 10))
     return
   }
   if (hub.ipConnectionCount(ip) >= config.notificationRealtime.maxConnectionsPerIp) {
+    notificationRealtimeConnectionRejectionsTotal.inc({ reason: 'ip_cap' })
     next(tooManyRequests('该网络地址连接数已达上限', 10))
     return
   }
   if (hub.connectionCountValue() >= config.notificationRealtime.maxConnections) {
+    notificationRealtimeConnectionRejectionsTotal.inc({ reason: 'global_cap' })
     next(tooManyRequests('实时连接总数已达上限', 10))
     return
   }
-
   // 200 SSE headers (spec 6.4) — only for the successful stream.
   res.status(200)
   res.setHeader('Content-Type', 'text/event-stream; charset=utf-8')
@@ -122,7 +126,7 @@ export function notificationRealtimeStream(req: Request, res: Response, next: Ne
 
   const cleanup = () => {
     clearTimers(timers)
-    hub.removeEntry(entry.userId, entry.connectionId)
+    hub.removeEntry(entry.userId, entry.connectionId, 'client')
   }
   req.on('close', cleanup)
   res.on('close', cleanup)
@@ -133,7 +137,7 @@ function endStream(res: Response, hub: ReturnType<typeof getNotificationRealtime
   userId: number
   connectionId: string
 }): void {
-  hub.removeEntry(entry.userId, entry.connectionId)
+  hub.removeEntry(entry.userId, entry.connectionId, 'token_expired')
   if (res.destroyed || res.writableEnded) return
   try {
     res.end()

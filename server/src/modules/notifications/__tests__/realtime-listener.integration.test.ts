@@ -98,10 +98,12 @@ describe('realtime listener + lifecycle (SPEC-NOTIFY-RT-001 T-BE-003)', () => {
   it('CHK-BE-006: start is idempotent — exactly one dedicated listener connection', async () => {
     const hub = new FakeHub()
     const lifecycle = await makeLifecycle(hub, [])
+    const baseline = await listenerBackendCount()
     await lifecycle.start()
+    await waitFor(async () => (await listenerBackendCount()) === baseline + 1, 5000)
     await lifecycle.start() // second start must not create a second connection
-    await waitFor(async () => (await listenerBackendCount()) === 1, 5000)
-    expect(await listenerBackendCount()).toBe(1)
+    await sleep(300)
+    expect(await listenerBackendCount()).toBe(baseline + 1)
     expect(lifecycle.getStatus()).toBe('healthy')
   })
 
@@ -180,9 +182,10 @@ describe('realtime listener + lifecycle (SPEC-NOTIFY-RT-001 T-BE-003)', () => {
     const hub = new FakeHub()
     const outcomes: NotificationRealtimePgOutcome[] = []
     const lifecycle = await makeLifecycle(hub, outcomes)
+    const baseline = await listenerBackendCount()
     await lifecycle.start()
     await waitFor(() => (lifecycle.getStatus() === 'healthy' ? true : undefined), 5000)
-    expect(await listenerBackendCount()).toBe(1)
+    expect(await listenerBackendCount()).toBe(baseline + 1)
 
     // Terminate the dedicated listener backend from the outside.
     const pidRows = await prisma.$queryRaw<Array<{ pid: number }>>`
@@ -200,7 +203,7 @@ describe('realtime listener + lifecycle (SPEC-NOTIFY-RT-001 T-BE-003)', () => {
     expect(hub.drainCalls[0]!.retryAfterMs).toBeGreaterThan(0)
 
     await waitFor(() => (lifecycle.getStatus() === 'healthy' ? true : undefined), 10_000)
-    expect(await listenerBackendCount()).toBe(1)
+    expect(await listenerBackendCount()).toBe(baseline + 1)
     // Only one drain despite the reconnect.
     expect(hub.drainCalls.length).toBe(1)
   })
@@ -208,15 +211,16 @@ describe('realtime listener + lifecycle (SPEC-NOTIFY-RT-001 T-BE-003)', () => {
   it('stop clears the dedicated connection and timers; status becomes stopped', async () => {
     const hub = new FakeHub()
     const lifecycle = await makeLifecycle(hub, [])
+    const baseline = await listenerBackendCount()
     await lifecycle.start()
     await waitFor(() => (lifecycle.getStatus() === 'healthy' ? true : undefined), 5000)
-    expect(await listenerBackendCount()).toBe(1)
+    expect(await listenerBackendCount()).toBe(baseline + 1)
 
     await lifecycle.stop()
     expect(lifecycle.getStatus()).toBe('stopped')
     // After close the dedicated backend disappears.
-    await waitFor(async () => (await listenerBackendCount()) === 0, 5000)
-    expect(await listenerBackendCount()).toBe(0)
+    await waitFor(async () => (await listenerBackendCount()) === baseline, 5000)
+    expect(await listenerBackendCount()).toBe(baseline)
 
     // A second stop is a no-op (idempotent).
     await expect(lifecycle.stop()).resolves.toBeUndefined()

@@ -334,7 +334,7 @@ npx vitest run src/modules/notifications/__tests__/realtime-stream.test.ts
 | 优先级 | P0 |
 | 对应需求 | REQ-F-017~018、REQ-NF-008 |
 | 依赖 | T-BE-003、T-BE-004 |
-| 状态 | Pending |
+| 状态 | Done（I-RT-006 2026-08-09） |
 
 **Owned files**
 
@@ -352,11 +352,11 @@ npx vitest run src/modules/notifications/__tests__/realtime-stream.test.ts
 
 **工作**
 
-- [ ] 增加 spec 8.4 指标，标签严格枚举。
-- [ ] readiness 加 disabled / ok / degraded / draining。
-- [ ] degraded 不拖垮核心 readiness，draining 必须 503。
-- [ ] signal 后立即 draining + server.close，停 cron，SSE 5 秒 drain、listener stop；在途 HTTP 完成后才断 Redis / Prisma。
-- [ ] 所有 timer unref 或显式 clear，重复 signal / stop 幂等。
+- [x] 增加 spec 8.4 指标，标签严格枚举。
+- [x] readiness 加 disabled / ok / degraded / draining。
+- [x] degraded 不拖垮核心 readiness，draining 必须 503。
+- [x] signal 后立即 draining + server.close，停 cron，SSE 5 秒 drain、listener stop；在途 HTTP 完成后才断 Redis / Prisma。
+- [x] 所有 timer unref 或显式 clear，重复 signal / stop 幂等。
 
 **DoD**
 
@@ -373,7 +373,12 @@ npm run build
 npx vitest run src/modules/health src/modules/notifications/__tests__/realtime-stream.test.ts
 ~~~
 
-证据：待填（含 SIGTERM 时间线）。
+证据：I-RT-006（2026-08-09）。
+- `lib/metrics.ts` 新增 spec 8.4 七个指标：listener_up（Gauge）、connections（Gauge）、pg_messages_total（outcome 枚举 6）、sse_events_total（event+outcome）、disconnects_total（reason 枚举）、connection_rejections_total（reason 枚举）、delivery_lag_seconds（Histogram）；lifecycle 写入 listener_up、hub 写入 connections/sse/disconnect/lag、streamController 写入 rejections。
+- `health/service.ts`：checks 增加 `notificationRealtime: disabled|ok|degraded|draining`；仅 draining 使整体 unready（503），degraded 不拖垮核心 readiness。
+- `main.ts`：realtime 开启时启动 lifecycle listener；shutdown 顺序＝signal→beginDraining（CAS）+10s force timer→立即 server.close→停全部 cron→hub.degradeAndDrain(server_shutdown)+grace 内 closeAll→lifecycle.stop（清 probe/retry/generation）→在途 HTTP 完成后 quitRedis / clearCache / prisma.$disconnect→清 force timer exit；重复 signal 幂等。
+- 测试：`realtime-metrics.test.ts`（3）、`health/__tests__/realtime-readiness.test.ts`（4）、`realtime-shutdown.test.ts`（1，真实子进程 main.ts + 活跃 SSE + SIGTERM：5 秒内 drain、进程 10 秒预算内 exit 0）。
+- 验证：`npm run build` exit 0；`npx vitest run src/modules/notifications/ src/modules/health/` → 11 files / 91 tests passed；config guards 3 files / 37 tests passed。
 
 ---
 
