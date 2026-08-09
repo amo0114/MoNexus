@@ -48,6 +48,7 @@ export default function OrdersPage() {
   const [loadingOrderId, setLoadingOrderId] = useState<number | null>(null)
   const reloadRequestRef = useRef(0)
   const detailRequestRef = useRef(0)
+  const backgroundDetailRequestRef = useRef(0)
   const selectedOrderRef = useRef<UserOrderDetail | null>(null)
   selectedOrderRef.current = selectedOrder
 
@@ -75,19 +76,25 @@ export default function OrdersPage() {
   const reloadBuyerState = useCallback(async () => {
     const request = ++reloadRequestRef.current
     const currentId = selectedOrderRef.current?.id
-    try {
-      const [list, attention, detail] = await Promise.all([
-        getOrders({ page: 1, pageSize: 100 }),
-        refreshOrderAttention(),
-        currentId == null ? Promise.resolve(null) : getOrderDetail(currentId),
-      ])
-      if (request !== reloadRequestRef.current) return
-      setOrders(list)
-      setOrderAttentionCount(countAttentionOrders(list))
-      if (detail && selectedOrderRef.current?.id === currentId) setSelectedOrder(detail)
-      void attention
-    } catch {
-      // Background failures retain visible state.
+    const detailRequest = currentId == null ? null : ++backgroundDetailRequestRef.current
+    const [listResult, , detailResult] = await Promise.allSettled([
+      getOrders({ page: 1, pageSize: 100 }),
+      refreshOrderAttention(),
+      currentId == null ? Promise.resolve(null) : getOrderDetail(currentId),
+    ])
+    if (request === reloadRequestRef.current && listResult.status === 'fulfilled') {
+      setOrders(listResult.value)
+      setOrderAttentionCount(countAttentionOrders(listResult.value))
+    }
+    if (
+      detailRequest !== null
+      && detailRequest === backgroundDetailRequestRef.current
+      && detailResult.status === 'fulfilled'
+      && detailResult.value
+      && selectedOrderRef.current?.id === currentId
+    ) {
+      selectedOrderRef.current = detailResult.value
+      setSelectedOrder(detailResult.value)
     }
   }, [refreshOrderAttention, setOrderAttentionCount])
 
@@ -108,6 +115,7 @@ export default function OrdersPage() {
   const openOrder = useCallback(
     async (orderId: number) => {
       const request = ++detailRequestRef.current
+      backgroundDetailRequestRef.current += 1
       setLoadingOrderId(orderId)
       try {
         const detail = await getOrderDetail(orderId)
@@ -145,7 +153,7 @@ export default function OrdersPage() {
             <Package className="w-5 h-5 text-[var(--color-primary)]" />
             我的订单
           </h1>
-          <p className="text-xs text-[var(--color-text-muted)] mt-1">
+          <p className="text-xs text-[var(--color-text-muted)] mt-1" data-testid="orders-attention-summary">
             查看发货内容、续费与履约进度
             {activeCount > 0 ? ` · 进行中 ${activeCount} 单` : ''}
           </p>
@@ -241,6 +249,7 @@ export default function OrdersPage() {
           order={selectedOrder}
           onClose={() => {
             detailRequestRef.current += 1
+            backgroundDetailRequestRef.current += 1
             selectedOrderRef.current = null
             setLoadingOrderId(null)
             setSelectedOrder(null)

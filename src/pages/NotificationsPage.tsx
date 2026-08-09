@@ -211,7 +211,7 @@ export default function NotificationsPage() {
           暂无消息
         </div>
       ) : (
-        <ul className="space-y-3">
+        <ul className="space-y-3" data-testid="notifications-list">
           {items.map((item) => {
             const unread = item.status === 'unread'
             return (
@@ -226,6 +226,9 @@ export default function NotificationsPage() {
                       : 'border-[var(--color-border)] bg-[var(--color-surface)]/50'
                   }`}
                   data-testid={`notification-item-${item.id}`}
+                  data-notification-category={item.category}
+                  data-notification-event={item.eventType}
+                  data-related-order-id={item.relatedOrderId ?? undefined}
                 >
                   <div className="flex items-start justify-between gap-2">
                     <h2 className="text-sm font-semibold text-[var(--color-text)] break-words">

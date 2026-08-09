@@ -67,7 +67,10 @@ function formatExpiry(iso: string) {
 
 export default function OrderDetailModal({ order: initialOrder, onClose, onUpdated }: OrderDetailModalProps) {
   const showToast = useAppStore((s) => s.showToast)
-  const [order] = useState(initialOrder)
+  // The parent replaces this authoritative REST projection after realtime or
+  // fallback invalidation. Keeping the first prop in useState freezes an open
+  // modal forever even while the list has already converged.
+  const order = initialOrder
   const [loadingAction, setLoadingAction] = useState<OrderAction | null>(null)
   const [confirmAction, setConfirmAction] = useState<OrderAction | null>(null)
   const [reviewOpen, setReviewOpen] = useState(false)
@@ -232,7 +235,9 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
           <DialogTitle className="text-xl flex items-center gap-2">
             <Info className="w-5 h-5 text-[var(--color-primary)]" />
             订单详情
-            <RegistryPill value={order.status} category="orderStatuses" />
+            <span data-testid="order-detail-status" data-order-status={order.status}>
+              <RegistryPill value={order.status} category="orderStatuses" />
+            </span>
             {subscriptionExpired && (
               <span
                 className="text-xs font-bold text-[var(--color-danger)] bg-[var(--color-danger)]/10 px-2 py-0.5 rounded border border-[var(--color-danger)]/30"
@@ -489,7 +494,7 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
         </div>
 
         <div className="pt-6 mt-2 border-t border-[var(--color-border)] flex flex-wrap gap-3">
-          <button onClick={onClose} className="btn-secondary flex-1 px-0">
+          <button onClick={onClose} className="btn-secondary flex-1 px-0" data-testid="order-detail-close">
             关闭
           </button>
           <button
