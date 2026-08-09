@@ -51,19 +51,23 @@ check_prisma_diff_result() {
 }
 
 prisma_diff_self_test() {
-  check_prisma_diff_result 2 "$BASELINE_PRISMA_DIFF" || return 1
+  check_prisma_diff_result 2 "$BASELINE_PRISMA_DIFF" >/dev/null 2>&1 || return 1
   local fourth="$BASELINE_PRISMA_DIFF
 
 -- AlterTable
 ALTER TABLE \"Unexpected\" ALTER COLUMN \"updatedAt\" DROP DEFAULT;"
-  check_prisma_diff_result 2 "$fourth" && return 1
+  if check_prisma_diff_result 2 "$fourth" >/dev/null 2>&1; then
+    return 1
+  fi
   local missing='-- AlterTable
 ALTER TABLE "StorageProviderConfig" ALTER COLUMN "updatedAt" DROP DEFAULT;
 
 -- AlterTable
 ALTER TABLE "StoredObject" ALTER COLUMN "updatedAt" DROP DEFAULT;'
-  check_prisma_diff_result 2 "$missing" && return 1
-  check_prisma_diff_result 0 "" || return 1
+  if check_prisma_diff_result 2 "$missing" >/dev/null 2>&1; then
+    return 1
+  fi
+  check_prisma_diff_result 0 "" >/dev/null 2>&1 || return 1
 }
 
 require_clean_worktree() {
