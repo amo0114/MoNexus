@@ -163,6 +163,31 @@ describe('categoryService — reorder', () => {
     await expect(reorderCategories(actorId, [a.id, a.id])).rejects.toMatchObject({ status: 400 })
     await expect(reorderCategories(actorId, [a.id, 999_999])).rejects.toMatchObject({ status: 400 })
   })
+
+  it('rejects a missing id and rolls back the whole permutation (no partial reorder, no AdminLog)', async () => {
+    const actorId = await seedActor()
+    const a = await createCategory(actorId, { code: 'reorder-rb-a', label: '回滚A', sortOrder: 1 })
+    const b = await createCategory(actorId, { code: 'reorder-rb-b', label: '回滚B', sortOrder: 2 })
+
+    await expect(reorderCategories(actorId, [b.id, a.id, 999_999]))
+      .rejects.toMatchObject({ status: 400 })
+
+    // Exact-count verification inside the tx rolled everything back: neither
+    // row got a partial sortOrder rewrite.
+    const rows = await prisma.productCategory.findMany({
+      where: { id: { in: [a.id, b.id] } },
+      orderBy: { id: 'asc' },
+    })
+    const byCode = Object.fromEntries(rows.map(r => [r.code, r.sortOrder]))
+    expect(byCode['reorder-rb-a']).toBe(1)
+    expect(byCode['reorder-rb-b']).toBe(2)
+
+    // No AdminLog is written for a failed reorder.
+    const logs = await prisma.adminLog.findMany({
+      where: { targetType: 'productCategory', targetId: null, action: '调整分类排序' },
+    })
+    expect(logs.some(l => l.detail === 'count=3')).toBe(false)
+  })
 })
 
 describe('categoryService — delete', () => {
@@ -175,15 +200,32 @@ describe('categoryService — delete', () => {
 
     await expect(deleteCategory(actorId, dto.id))
       .rejects.toMatchObject({ status: 409, code: CATALOG_ERROR_CODES.CATEGORY_REFERENCED })
+
+    // The referenced category is NOT silently deactivated/tombstoned.
+    const row = await prisma.productCategory.findUniqueOrThrow({ where: { id: dto.id } })
+    expect(row.status).toBe('active')
   })
 
-  it('deletes an unreferenced category and writes an AdminLog', async () => {
+  it('tombstones an unreferenced category: row kept inactive, code reserved forever, AdminLog written', async () => {
     const actorId = await seedActor()
     const dto = await createCategory(actorId, { code: 'delete-me', label: '可删' })
 
     const result = await deleteCategory(actorId, dto.id)
     expect(result).toEqual({ deleted: true, id: dto.id })
-    await expect(prisma.productCategory.findUnique({ where: { id: dto.id } })).resolves.toBeNull()
+
+    // Logical delete — the row is preserved and flipped to inactive, so the
+    // code stays reserved and can never be reused (frozen CAT-010).
+    const row = await prisma.productCategory.findUniqueOrThrow({ where: { id: dto.id } })
+    expect(row.status).toBe('inactive')
+    expect(row.code).toBe('delete-me')
+
+    // Removed from the active public registry.
+    const registry = await getPublicCategoryRegistry()
+    expect(registry.productCategories.some(c => c.code === 'delete-me')).toBe(false)
+
+    // The reserved code still conflicts on create (409, never reused).
+    await expect(createCategory(actorId, { code: 'delete-me', label: '另一个名字' }))
+      .rejects.toMatchObject({ status: 409, code: CATALOG_ERROR_CODES.CATEGORY_CODE_TAKEN })
 
     const log = await prisma.adminLog.findFirstOrThrow({
       where: { targetType: 'productCategory', targetId: dto.id, action: '删除分类' },

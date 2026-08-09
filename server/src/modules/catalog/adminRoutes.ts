@@ -12,7 +12,7 @@
 //   POST   /:id/activate   status CAS
 //   POST   /:id/deactivate status CAS
 //   POST   /reorder        transactional sortOrder rewrite
-//   DELETE /:id            physical delete (refused while referenced)
+//   DELETE /:id            logical delete/tombstone → inactive (refused while referenced)
 
 import { Router, type RequestHandler } from 'express'
 import { validate, idParamSchema } from '../../middlewares/validate.js'

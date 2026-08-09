@@ -5,8 +5,10 @@
 //   - code is immutable after creation (D-CAT-06) → code PATCH rejected;
 //   - code/normalizedLabel are globally unique and code is never reused, even
 //     after a category is deactivated (§5.1);
-//   - a referenced category can only be deactivated; physical delete is refused
-//     (D-CAT-07, AC-CAT-011);
+//   - DELETE is a logical delete/tombstone (row preserved, set inactive) so a
+//     code stays reserved forever (CAT-010); a referenced category is still
+//     refused with CATEGORY_REFERENCED — never silently deactivated (D-CAT-07,
+//     AC-CAT-011);
 //   - activate/deactivate use a status CAS (updateMany where id + opposite
 //     status) so concurrent transitions are safe and idempotent;
 //   - reorder is transactional (last-write-wins) and never partially applies;
@@ -65,10 +67,6 @@ function isUniqueError(err: unknown, ...fields: string[]): boolean {
   const target = (err.meta as { target?: unknown } | undefined)?.target
   const values = Array.isArray(target) ? target.map(String) : target != null ? [String(target)] : []
   return fields.some(field => values.includes(field) || values.some(v => v.includes(field)))
-}
-
-function isForeignKeyError(err: unknown): boolean {
-  return isPrismaErrorCode(err, 'P2003')
 }
 
 /**
@@ -320,21 +318,37 @@ export async function reorderCategories(
   const unique = new Set(orderedIds)
   if (unique.size !== orderedIds.length) throw badRequest('排序列表包含重复分类')
 
-  const existing = await db.productCategory.findMany({
-    where: { id: { in: orderedIds } },
-    select: { id: true },
-  })
-  if (existing.length !== orderedIds.length) throw badRequest('排序列表包含不存在的分类')
-
-  // Last-write-wins within one transaction so a concurrent reorder never
-  // leaves a partially-applied permutation.
+  // Existence validation happens INSIDE the transaction: every target row is
+  // locked in stable ascending id order (FOR UPDATE), so the exact-count check
+  // and the writes are atomic — a concurrent delete can never slip between
+  // validation and application. Locking all ids in the same order keeps every
+  // concurrent reorder acquiring locks in an identical order, so there is no
+  // deadlock-prone inconsistent lock order.
   await runInTransaction(db, async tx => {
+    const sortedIds = [...orderedIds].sort((a, b) => a - b)
+    const locked = await tx.$queryRaw<Array<{ id: number }>>`
+      SELECT "id" FROM "ProductCategory"
+      WHERE "id" IN (${Prisma.join(sortedIds)})
+      ORDER BY "id"
+      FOR UPDATE
+    `
+
+    // Exact-count verification inside the tx: if a target disappeared between
+    // the request and the lock, reject the whole batch (rolls back everything).
+    if (locked.length !== orderedIds.length) throw badRequest('排序列表包含不存在的分类')
+
+    // Last-write-wins within one transaction so a concurrent reorder never
+    // leaves a partially-applied permutation. Each row is verified to have
+    // updated; any mismatch aborts and rolls back every earlier update.
     for (let index = 0; index < orderedIds.length; index++) {
-      await tx.productCategory.updateMany({
+      const updated = await tx.productCategory.updateMany({
         where: { id: orderedIds[index] },
         data: { sortOrder: (index + 1) * 10, updatedByUserId: adminId },
       })
+      if (updated.count !== 1) throw badRequest('排序列表包含不存在的分类')
     }
+
+    // AdminLog only after every update succeeded (same tx — atomic with writes).
     await writeCategoryAdminLog(tx, adminId, '调整分类排序', null, `count=${orderedIds.length}`)
   })
 
@@ -347,43 +361,46 @@ export async function deleteCategory(
   id: number,
   db: Client = prisma,
 ): Promise<{ deleted: boolean; id: number }> {
-  const category = await db.productCategory.findUnique({
-    where: { id },
-    select: {
-      id: true,
-      code: true,
-      _count: { select: { products: true, approvedApplications: true } },
-    },
-  })
-  if (!category) throw notFound('分类不存在')
-
-  // D-CAT-07 / AC-CAT-011: a category referenced by Product or an approved
-  // application can only be deactivated, never physically deleted.
-  if (category._count.products > 0 || category._count.approvedApplications > 0) {
-    throw categoryHttpError(
-      409,
-      CATALOG_ERROR_CODES.CATEGORY_REFERENCED,
-      '分类已被商品或申请引用，无法删除；可先停用该分类',
-    )
-  }
-
-  try {
-    await runInTransaction(db, async tx => {
-      await tx.productCategory.delete({ where: { id } })
-      await writeCategoryAdminLog(tx, adminId, '删除分类', id, `code=${category.code}`)
+  // Frozen CAT-010: a category code is never reused, even after removal. DELETE
+  // is therefore a logical delete / tombstone — the ProductCategory row is
+  // preserved and flipped to inactive in the same transaction as the AdminLog.
+  // `deleted: true` means "removed from the active registry"; the row and code
+  // stay reserved so the code can never be recreated (D-CAT-06 §5.1).
+  await runInTransaction(db, async tx => {
+    const category = await tx.productCategory.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        code: true,
+        _count: { select: { products: true, approvedApplications: true } },
+      },
     })
-    await bumpCategoryRegistryCacheVersion()
-    return { deleted: true, id }
-  } catch (err) {
-    // Merchandising snapshots (or any future FK, all ON DELETE RESTRICT) also
-    // block physical delete.
-    if (isForeignKeyError(err)) {
+    if (!category) throw notFound('分类不存在')
+
+    // D-CAT-07 / AC-CAT-011: a category referenced by Product or an approved
+    // application can only be deactivated via the explicit endpoint — DELETE
+    // must never silently deactivate it, so it still returns CATEGORY_REFERENCED.
+    if (category._count.products > 0 || category._count.approvedApplications > 0) {
       throw categoryHttpError(
         409,
         CATALOG_ERROR_CODES.CATEGORY_REFERENCED,
-        '分类仍被其他数据引用，无法删除；可先停用该分类',
+        '分类已被商品或申请引用，无法删除；可先停用该分类',
       )
     }
-    throw err
-  }
+
+    // Logical delete: preserve the row and set status=inactive (CAS so a
+    // repeated delete of an already-tombstoned row is an idempotent no-op).
+    // The status flip and the AdminLog commit atomically; throwing above rolls
+    // the whole transaction back.
+    const updated = await tx.productCategory.updateMany({
+      where: { id, status: { not: CATEGORY_STATUS.INACTIVE } },
+      data: { status: CATEGORY_STATUS.INACTIVE, updatedByUserId: adminId },
+    })
+    if (updated.count === 1) {
+      await writeCategoryAdminLog(tx, adminId, '删除分类', id, `code=${category.code}`)
+    }
+  })
+
+  await bumpCategoryRegistryCacheVersion()
+  return { deleted: true, id }
 }
