@@ -54,9 +54,11 @@ export function scheduleNotificationRealtimeTimer(
   const schedule = (): void => {
     if (cancelled) return
     const remaining = targetMs - Date.now()
-    const delay = Number.isFinite(remaining)
-      ? Math.max(0, Math.min(remaining, NOTIFICATION_REALTIME_MAX_TIMER_DELAY_MS))
-      : 0
+    const delay = remaining === Infinity
+      ? NOTIFICATION_REALTIME_MAX_TIMER_DELAY_MS
+      : Number.isFinite(remaining)
+        ? Math.max(0, Math.min(remaining, NOTIFICATION_REALTIME_MAX_TIMER_DELAY_MS))
+        : 0
     timer = setTimeout(() => {
       timer = null
       if (cancelled) return
