@@ -474,6 +474,56 @@ if [[ "$STRICT_BACKUP" == "true" ]]; then
   require_url RESTORE_TARGET_URL
 fi
 
+# --- SPEC-NOTIFY-RT-001: realtime config validation + trust-proxy topology. ---
+realtime_enabled="$(get NOTIFICATION_REALTIME_ENABLED)"
+notification_enabled="$(get NOTIFICATION_ENABLED)"
+if [[ -n "$realtime_enabled" && "$realtime_enabled" != "true" && "$realtime_enabled" != "false" ]]; then
+  fail "NOTIFICATION_REALTIME_ENABLED must be true or false"
+fi
+if [[ "$realtime_enabled" == "true" && "$notification_enabled" != "true" ]]; then
+  fail "NOTIFICATION_REALTIME_ENABLED=true requires NOTIFICATION_ENABLED=true"
+fi
+
+check_realtime_int() {
+  local key="$1" min="$2" max="$3" value
+  value="$(get "$key")"
+  if [[ -n "$value" && ! "$value" =~ ^[0-9]+$ ]]; then
+    fail "$key must be a decimal integer"
+  elif [[ -n "$value" && ( "$value" -lt "$min" || "$value" -gt "$max" ) ]]; then
+    fail "$key must be in [$min,$max]"
+  fi
+}
+check_realtime_int NOTIFICATION_REALTIME_HEARTBEAT_MS 5000 60000
+check_realtime_int NOTIFICATION_REALTIME_MAX_CONNECTIONS_PER_USER 1 20
+check_realtime_int NOTIFICATION_REALTIME_MAX_CONNECTIONS_PER_IP 1 200
+check_realtime_int NOTIFICATION_REALTIME_MAX_CONNECTIONS 1 100000
+check_realtime_int NOTIFICATION_REALTIME_MAX_BUFFER_BYTES 16384 1048576
+check_realtime_int NOTIFICATION_REALTIME_CONNECT_RATE_LIMIT_MAX 1 1000
+check_realtime_int NOTIFICATION_REALTIME_SHUTDOWN_GRACE_MS 1000 9000
+
+# canonical client IP (spec 8.1.1 / CHK-CFG-004): direct bundled Nginx = 1,
+# VPS Caddy overlay -> Nginx = 2. The SSE limiter keys on Express req.ip.
+deploy_topology="$(get DEPLOY_TOPOLOGY)"
+case "$deploy_topology" in
+  ""|nginx) deploy_topology="nginx" ;;
+  caddy) ;;
+  *) fail "DEPLOY_TOPOLOGY must be nginx or caddy" ;;
+esac
+trust_proxy="$(get TRUST_PROXY)"
+if [[ -n "$trust_proxy" ]]; then
+  case "$trust_proxy" in
+    0|1|2|true|false) ;;
+    *) fail "TRUST_PROXY must be 0/1/2 or true/false" ;;
+  esac
+fi
+if [[ "$realtime_enabled" == "true" ]]; then
+  if [[ "$deploy_topology" == "caddy" && "$trust_proxy" != "2" ]]; then
+    fail "realtime with Caddy overlay requires TRUST_PROXY=2"
+  elif [[ "$deploy_topology" == "nginx" && "$trust_proxy" != "1" ]]; then
+    fail "realtime with direct Nginx requires TRUST_PROXY=1"
+  fi
+fi
+
 if [[ "$errors" -gt 0 ]]; then
   echo "[FAIL] $ENV_FILE failed $MODE env validation with $errors error(s), $warnings warning(s)." >&2
   exit 1

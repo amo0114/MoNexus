@@ -85,3 +85,56 @@
 | 商家收不到降级邮件 | `merchantNotifiedAt` 为空且反复扫描 = 发信持续失败(见 SMTP 排障行);发送成功才落时间戳,失败下轮重发 |
 | cron 未按周期执行 | `SELECT * FROM "CronLease"`——多实例下同窗口已有他实例执行（holder 列 + lastStartedAt）属正常；互斥 `lockedUntil` 卡在未来而 holder 已死 = 心跳残留，≤ 90s 自然过期，不需手工清 |
 | 全量 e2e 本机随机白屏 | WSL2 swap 压力（见 `.claude` 记忆）；`--workers=1 --retries=2` |
+
+## 7. 订单通知实时化（SPEC-NOTIFY-RT-001）—— 部署 / 回滚 / 排障
+
+> 新增于 2026-08-09。实时路径：同事务 `pg_notify` → 每实例 PostgreSQL `LISTEN` → 鉴权 SSE → 前端 REST 权威重同步；30 秒轮询为降级路径。**默认关闭**（`NOTIFICATION_REALTIME_ENABLED=false`）。
+
+### 7.1 开关与配置（spec 8.1）
+
+| 变量 | 默认 | 范围 | 说明 |
+|---|---|---|---|
+| `NOTIFICATION_REALTIME_ENABLED` | false | true/false | 总开关；true 必须同时 `NOTIFICATION_ENABLED=true`（config guard / check-prod-env 双守门） |
+| `NOTIFICATION_REALTIME_HEARTBEAT_MS` | 20000 | 5000–60000 | SSE comment heartbeat |
+| `NOTIFICATION_REALTIME_MAX_CONNECTIONS_PER_USER` | 5 | 1–20 | 每用户连接 cap |
+| `NOTIFICATION_REALTIME_MAX_CONNECTIONS_PER_IP` | 20 | 1–200 | 每 canonical IP cap |
+| `NOTIFICATION_REALTIME_MAX_CONNECTIONS` | 1000 | 1–100000 | 全局 cap |
+| `NOTIFICATION_REALTIME_MAX_BUFFER_BYTES` | 65536 | 16384–1048576 | 慢消费者 buffer cap |
+| `NOTIFICATION_REALTIME_CONNECT_RATE_LIMIT_MAX` | 30 | 1–1000 | 每 IP 60s 建连限速 |
+| `NOTIFICATION_REALTIME_SHUTDOWN_GRACE_MS` | 5000 | 1000–9000 | SSE drain 宽限（< 10s 强退） |
+| `DEPLOY_TOPOLOGY` | nginx | nginx/caddy | 部署拓扑；realtime=true 时 nginx→`TRUST_PROXY=1`、caddy→`TRUST_PROXY=2`（check-prod-env 强制） |
+
+全部进入根 / server `.env.example` 与 `docker-compose.prod.yml`（默认值同表）。
+
+### 7.2 发布顺序（O-RT-06 / CHK-REL-002）
+
+1. **准备**：合并代码但保持 realtime=false；先部署 Nginx/Caddy 新 location、后端依赖与 endpoint、metrics、health。
+2. **LISTEN session gate**：以实际部署数据库角色 + production-like URL 跑 `bash scripts/verify-notification-realtime-listen-session.sh`（AC-RT-029/CHK-INF-007）——endpoint 必须是 direct/session-pool（非 transaction pool），PID distinct=1、三轮唯一 payload 全收、无权限错误；证据 7×24h 或 endpoint/role/revision 变化即过期。失败 / 过期 → 保持 realtime=false。
+3. **验证关闭态**：notifications REST 正常、stream 404、旧前端不受影响。
+4. **后端全量就绪**：所有 backend 实例升级到支持 realtime 的版本；禁止新旧 backend 混合时先发新前端。
+5. **启用后端**：`NOTIFICATION_REALTIME_ENABLED=true` 滚动重启全部实例；观察 listener_up、raw stream、caps、proxy。
+6. **发布前端**：新 bridge 连接已全量可用的 endpoint；观察连接数、lag、503/reconnect。
+7. **canary 业务**：专用账号完成新单/发货，确认 P95 ≤2s、P99 ≤5s、无敏感 payload。
+
+### 7.3 回滚（快速降级 / 版本回滚）
+
+1. 设 `NOTIFICATION_REALTIME_ENABLED=false` 并滚动重启后端 → stream 404 → 前端自动进入 polling_only（30s fallback）。
+2. Notification 写入、REST、订单与公告不受影响。
+3. 版本回滚：先关 flag → 回滚前端（或保留新前端，404→polling 均兼容）→ 回滚后端与代理。
+4. 不删除 Notification 行、不回滚/删除任何 migration（本波零 migration）。
+
+### 7.4 观测（spec 8.4）
+
+- `notification_realtime_listener_up`、`notification_realtime_connections`、`notification_realtime_pg_messages_total{outcome=…}`、`notification_realtime_sse_events_total{event,outcome}`、`notification_realtime_disconnects_total{reason}`、`notification_realtime_connection_rejections_total{reason}`、`notification_realtime_delivery_lag_seconds`。
+- readiness `checks.notificationRealtime`: disabled/ok/degraded/draining；仅 draining 令 readiness 503。
+
+### 7.5 常见排障
+
+| 症状 | 先查 |
+|---|---|
+| stream 一直 503 | listener 未 healthy（`notification_realtime_listener_up=0`）：`pg_stat_activity` 查 `application_name='monexus-notification-realtime-listener'`；LISTEN session gate 是否过期 / 指向 transaction pool |
+| stream 404 | realtime 或 notifications 总开关关（正常降级路径）；前端进 polling_only |
+| 事件不达 | 每实例一条 LISTEN 连接（不可多/少）；hub 无该用户连接时跳过主库查询（no_subscriber 正常）；Nginx 是否缓冲（应见 `X-Accel-Buffering: no`） |
+| 下单/履约错误率上升 | 先关 realtime flag 重启，禁止现场改成 commit 后广播；`pg_notify` 权限 / 连接错误按 O-RT-08 会整体回滚 |
+| 慢消费者 | 64KiB buffer cap 只断开该连接；重连后 REST 收敛 |
+| 指标基数爆炸 | 标签严格枚举；若出现 userId/orderId/IP/title/body 标签即违规 |

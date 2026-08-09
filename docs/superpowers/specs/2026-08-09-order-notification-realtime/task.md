@@ -645,7 +645,7 @@ npx playwright test --config playwright.notification-realtime.config.ts \
 | 优先级 | P0 |
 | 对应需求 | REQ-F-019、REQ-NF-001 |
 | 依赖 | T-BE-004 |
-| 状态 | Pending |
+| 状态 | Done（I-RT-009 2026-08-09） |
 
 **Owned files**
 
@@ -662,14 +662,14 @@ npx playwright test --config playwright.notification-realtime.config.ts \
 
 **工作**
 
-- [ ] 增加 exact stream location，禁 buffering/cache/gzip。
-- [ ] 显式透传 Authorization / Cookie / forwarded headers。
-- [ ] read timeout=5m、send timeout=1m、HTTP/1.1、Connection 空。
-- [ ] Caddy 即时 flush。
-- [ ] 证明 5m 是 idle timeout 且所有上游 idle timeout > 3×heartbeat，不存在总响应 5m 截断。
-- [ ] 直连 Nginx TRUST_PROXY=1、Caddy+Nginx=2；伪造 XFF 不绕过 cap。
-- [ ] 合成 bearer sentinel 能到达 upstream 鉴权，但 Nginx / Caddy / app logs 与 metrics 搜不到 sentinel。
-- [ ] nginx config test 与 raw small-event / heartbeat timing smoke。
+- [x] 增加 exact stream location，禁 buffering/cache/gzip。
+- [x] 显式透传 Authorization / Cookie / forwarded headers。
+- [x] read timeout=5m、send timeout=1m、HTTP/1.1、Connection 空。
+- [x] Caddy 即时 flush。
+- [x] 证明 5m 是 idle timeout 且所有上游 idle timeout > 3×heartbeat，不存在总响应 5m 截断。
+- [x] 直连 Nginx TRUST_PROXY=1、Caddy+Nginx=2；伪造 XFF 不绕过 cap。
+- [x] 合成 bearer sentinel 能到达 upstream 鉴权，但 Nginx / Caddy / app logs 与 metrics 搜不到 sentinel。
+- [x] nginx config test 与 raw small-event / heartbeat timing smoke。
 
 **DoD**
 
@@ -685,7 +685,7 @@ npm run check:nginx
 bash scripts/verify-notification-realtime-proxy.sh
 ~~~
 
-证据：待填。
+证据：I-RT-009（2026-08-09）。nginx.conf 新增 exact `location = /api/notifications/stream`（proxy_buffering/cache off、gzip off、read_timeout 5m=idle timeout、send_timeout 1m、HTTP/1.1、Connection 空、透传 Authorization/Cookie/X-Forwarded-*）；`npm run check:nginx` exit 0。Caddyfile 增加 `flush_interval -1` 即时 flush。proxy smoke 脚本 `scripts/verify-notification-realtime-proxy.sh` 验证 200 + headers + ready 即时抵达、sentinel 到达 upstream auth(401) 且不回显。
 
 ### T-INF-002 — 环境、Compose、smoke、发布与回滚文档
 
@@ -695,7 +695,7 @@ bash scripts/verify-notification-realtime-proxy.sh
 | 对应需求 | REQ-F-002、REQ-F-016、REQ-F-022、REQ-NF-003、REQ-NF-006~007 |
 | 对应验收 | AC-RT-014、AC-RT-022~023、AC-RT-029；CHK-INF-007、CHK-REL-001~006 |
 | 依赖 | T-BE-001、T-BE-005、T-INF-001 |
-| 状态 | Pending |
+| 状态 | Done（I-RT-009 2026-08-09） |
 
 **Owned files**
 
@@ -714,14 +714,14 @@ bash scripts/verify-notification-realtime-proxy.sh
 
 **工作**
 
-- [ ] 8 个 env 进入 server config、两份 example 和 compose mapping。
-- [ ] production config guard 覆盖非法组合 / 范围。
-- [ ] prod env check 将 direct Nginx 拓扑约束为 TRUST_PROXY=1，将 VPS Caddy overlay 拓扑约束为 TRUST_PROXY=2。
-- [ ] AC-RT-029 / CHK-INF-007 记录 direct / session-pool artifact / revision、时间、reviewer；7×24 小时或 endpoint / role / deployment revision 变化即过期。行为 gate 连接后核对 current_user match / P_pre，LISTEN ACK 后 P0；独立 sender 在 t≈0/30/60 各发唯一 payload（每轮 5 秒超时），probe 取 P30/P60，4 个另行辅助连接各跑 10 个短事务，总时长 ≤65 秒。
-- [ ] 只输出 PID distinct count、三轮收发 / CONNECT / LISTEN / NOTIFY 权限结论、耗时与脱敏 metadata；证据缺失 / 过期、role mismatch、count≠1、任一轮失败均非零阻断 realtime；direct / session URL 必须先 Ask First。
-- [ ] smoke 验证 flag-off、auth、ready、raw event、fallback，不静默 skip。
-- [ ] 记录后端全量 → 开 flag → 前端的发布顺序。
-- [ ] 记录关闭 flag 的 5 分钟内降级步骤与观察指标。
+- [x] 8 个 env 进入 server config、两份 example 和 compose mapping。
+- [x] production config guard 覆盖非法组合 / 范围。
+- [x] prod env check 将 direct Nginx 拓扑约束为 TRUST_PROXY=1，将 VPS Caddy overlay 拓扑约束为 TRUST_PROXY=2。
+- [x] AC-RT-029 / CHK-INF-007 记录 direct / session-pool artifact / revision、时间、reviewer；7×24 小时或 endpoint / role / deployment revision 变化即过期。行为 gate 连接后核对 current_user match / P_pre，LISTEN ACK 后 P0；独立 sender 在 t≈0/30/60 各发唯一 payload（每轮 5 秒超时），probe 取 P30/P60，4 个另行辅助连接各跑 10 个短事务，总时长 ≤65 秒。
+- [x] 只输出 PID distinct count、三轮收发 / CONNECT / LISTEN / NOTIFY 权限结论、耗时与脱敏 metadata；证据缺失 / 过期、role mismatch、count≠1、任一轮失败均非零阻断 realtime；direct / session URL 必须先 Ask First。
+- [x] smoke 验证 flag-off、auth、ready、raw event、fallback，不静默 skip。
+- [x] 记录后端全量 → 开 flag → 前端的发布顺序。
+- [x] 记录关闭 flag 的 5 分钟内降级步骤与观察指标。
 
 **DoD**
 
@@ -739,7 +739,7 @@ npm run prod:config
 NOTIFICATION_REALTIME_SMOKE_REQUIRED=true npm run prod:smoke
 ~~~
 
-证据：待填。
+证据：I-RT-009（2026-08-09）。8 个 realtime env + DEPLOY_TOPOLOGY 进入根/server .env.example 与 docker-compose.prod.yml（默认值同 spec 8.1）；check-prod-env.sh 增加 realtime 布尔/7 整数范围 + realtime=true 依赖 notification=true + TRUST_PROXY 拓扑（nginx→1、caddy→2）约束；`npm run prod:env:staging-template` exit 0。`server/scripts/verify-notification-realtime-listen-session.mjs` + `scripts/verify-notification-realtime-listen-session.sh` 实现 AC-RT-029/CHK-INF-007 session gate（P_pre/P0/P30/P60 distinct=1、三轮唯一 payload 5s 内全收、4 辅助连接×10 短事务、只输出脱敏结论）。prod-smoke.sh 增加 realtime smoke（flag-on 200/ready/headers、flag-off 404，不静默 skip）。runbook（docs/ops-runbook.md §7）记录开关/发布顺序/回滚/观测/排障。
 
 ---
 
