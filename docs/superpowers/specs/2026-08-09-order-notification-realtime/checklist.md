@@ -143,8 +143,8 @@
 - [x] **CHK-QA-012** — 慢消费者测试分别命中 `writableLength > 64KiB` 与 `res.write() === false`，验证仅慢 response 被清理 / destroy、快消费者继续接收且重连后 REST 收敛；caps、buffer、100 burst 测试通过。证据：当前 HEAD slow-consumer hub tests + frontend burst coalescer tests 通过。
 - [x] **CHK-QA-013** — SSE 阻断 / 503 时应用自身 fallback ≤35 秒，不用测试主动 poll。证据：AC-RT-011 browser E2E 33.2s 内由应用自身收敛。
 - [x] **CHK-QA-014** — logout 后旧流关闭，旧用户后续事件不污染新用户。证据：AC-RT-020 browser E2E 通过。
-- [x] **CHK-QA-015** — 既有 notification dispatcher / service / integration / E2E 全绿。证据：code HEAD `d7e753b` 的 backend 16 files / 152 tests、默认 CI-equivalent Playwright 110 passed / 6 skipped、专用 realtime Playwright 10/10。
-- [x] **CHK-QA-016** — order、auth、announcement 受影响回归与前后端 build 全绿。证据：code HEAD `d7e753b` final verifier builds、backend/frontend suites 与 AC-RT-001/002/020/026 browser E2E 全绿；默认 Playwright 的 unsigned-token UI fixture 显式 mock production flag-off stream contract，避免真实 auth 副作用而不跳过受测 UI。
+- [x] **CHK-QA-015** — 既有 notification dispatcher / service / integration / E2E 全绿。证据：code/workflow HEAD `d4d4fd0`，GitHub run `31326131305` backend 127 files / 1096 tests、legal E2E 10/10、默认 Playwright 110 passed / 6 skipped、专用 realtime Playwright 10/10、aggregate `CI OK` success。
+- [x] **CHK-QA-016** — order、auth、announcement 受影响回归与前后端 build 全绿。证据：GitHub run `31326131305` frontend build、backend 1096/1096 与默认 Playwright 110/6 全绿；unsigned-token UI fixture 显式 mock production flag-off stream contract，浏览器/API fixture 由真实 IPv4/IPv6 loopback client 隔离测试流量，`API_RATE_LIMIT_MAX` 保持 3000 且无 limiter bypass。
 
 ---
 

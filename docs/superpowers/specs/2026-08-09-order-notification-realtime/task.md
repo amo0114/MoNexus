@@ -886,7 +886,7 @@ npx playwright test --config playwright.notification-realtime.config.ts \
   e2e/notification-realtime.spec.ts
 ~~~
 
-证据：code HEAD `d7e753b2b23d6f57c8d021e6c28fc881aa5e35c6`（2026-08-10）。`bash scripts/verify-notification-realtime-e2e.sh` 通过 10/10：AC-RT-001/002/011/012/013/020/026 与 3 个 client production-module 场景；backend 3112、Vite 5182、专用 DB、reuse=false，无 `page.reload` / 测试主动 polling。默认 `playwright.config.ts` 明确 ignore 两个 realtime spec，`.github/workflows/ci.yml` 以独立 `Notification realtime Playwright E2E` job 创建 `monexus_test_notification_realtime` 并运行同一 guarded script，且纳入 `CI OK`；默认 CI-equivalent suite 在 `API_RATE_LIMIT_MAX=3000` 下 110 passed / 6 skipped。**AC-RT-025 的 staging 100 样本与 P50/P95/P99 仍 Pending**。
+证据：code/workflow HEAD `d4d4fd0436f3f4717b51318f3826dfa6eb3f046a`（2026-08-10）。GitHub run `31326131305` 的独立 `Notification realtime Playwright E2E` job 创建 `monexus_test_notification_realtime` 并运行 guarded `verify-notification-realtime-e2e.sh`，10/10 passed（1.2m）：AC-RT-001/002/011/012/013/020/026 与 3 个 client production-module 场景；backend 3112、Vite 5182、reuse=false，无 `page.reload` / 测试主动 polling；job 与 aggregate `CI OK` 均 success。默认 `playwright.config.ts` 明确 ignore 两个 realtime spec，默认 Playwright 110 passed / 6 skipped（4.8m）。**AC-RT-025 的 staging 100 样本与 P50/P95/P99 仍 Pending**。
 
 ### T-QA-004 — 双实例、故障、竞态与慢消费者
 
@@ -981,7 +981,7 @@ git diff --check
 git status --short
 ~~~
 
-证据：code HEAD `d7e753b2b23d6f57c8d021e6c28fc881aa5e35c6`（2026-08-10）。`PATH=/root/.nvm/versions/node/v20.19.5/bin:$PATH NODE_OPTIONS=--max-old-space-size=700 bash scripts/verify-notification-realtime.sh --local` exit 0：builds、session/proxy self-tests、backend 16 files/152 tests、frontend 8 files/60 tests、Playwright 10/10、multi-instance PASS、56 migrations up to date、live diff none、secret scan synthetic-positive PASS、final clean boundary PASS。另以 `API_RATE_LIMIT_MAX=3000` 跑默认 CI-equivalent Playwright，110 passed / 6 skipped；realtime suite 由独立专用 DB CI job 接管，不降低 DB guard、不 feature-off skip、不提高 rate limit。**T-QA-005 继续 Pending**：AC-RT-025、AC-RT-029/CHK-INF-007、deployed proxy/log smoke、rollout/rollback rehearsal 与 Owner review 尚无外部证据。
+证据：code/workflow HEAD `d4d4fd0436f3f4717b51318f3826dfa6eb3f046a`（2026-08-10）。本地 final verifier exit 0：builds、session/proxy self-tests、backend 16 files/152 tests、frontend 8 files/60 tests、Playwright 10/10、multi-instance PASS、56 migrations up to date、live diff none、secret scan synthetic-positive PASS、final clean boundary PASS。GitHub run `31326131305` overall success：backend 127 files/1096 tests、frontend build、legal E2E 10/10、默认 Playwright 110/6、专用 realtime 10/10、Compose contract 与 aggregate `CI OK` 全绿；默认 REST limit 保持 3000，未降低 DB guard、未 feature-off skip、未 bypass limiter。**T-QA-005 继续 Pending**：AC-RT-025、AC-RT-029/CHK-INF-007、deployed proxy/log smoke、rollout/rollback rehearsal 与 Owner review 尚无外部证据。
 
 ---
 
