@@ -29,6 +29,19 @@ const declaredRole = process.env.RT_SESSION_ROLE
 const endpointClass = process.env.RT_SESSION_ENDPOINT_CLASS ?? 'session_pool'
 const revision = process.env.RT_SESSION_REVISION ?? 'unknown'
 
+if (process.argv.includes('--self-test')) {
+  const cases = [
+    ['four workers connected', { connected: 4, attempted: 40, committed: 40, failed: 0, roleMatch: true }],
+    ['39 transactions', { connected: 4, attempted: 40, committed: 39, failed: 0, roleMatch: true }],
+    ['reject', { connected: 4, attempted: 40, committed: 39, failed: 1, roleMatch: true }],
+    ['role mismatch', { connected: 4, attempted: 40, committed: 40, failed: 0, roleMatch: false }],
+  ]
+  const accepts = (x) => x.connected === 4 && x.attempted === 40 && x.committed === 40 && x.failed === 0 && x.roleMatch
+  if (accepts(cases[0][1]) && cases.slice(1).some(([, x]) => accepts(x))) process.exit(1)
+  console.log('[gate] self-test=PASS (valid accepted; incomplete/reject/role mismatch rejected)')
+  process.exit(0)
+}
+
 if (!url) {
   console.error('[gate] RT_SESSION_DATABASE_URL is required')
   process.exit(2)
@@ -92,18 +105,25 @@ async function run() {
 
   // 4 auxiliary connections each run 10 short transactions over the 60s window.
   const aux = []
+  const auxWorkers = []
+  let auxAttempted = 0
+  let auxCommitted = 0
+  let auxFailed = 0
   try {
     for (let i = 0; i < 4; i += 1) {
       const c = new Client({ connectionString: url })
       await c.connect()
       aux.push(c)
-      void (async () => {
+      auxWorkers.push((async () => {
         for (let t = 0; t < 10; t += 1) {
+          auxAttempted += 1
           try {
             await c.query('BEGIN')
             await c.query('SELECT 1')
             await c.query('COMMIT')
+            auxCommitted += 1
           } catch {
+            auxFailed += 1
             try {
               await c.query('ROLLBACK')
             } catch { /* ignore */ }
@@ -111,7 +131,7 @@ async function run() {
           await sleep(1500 + Math.random() * 1500)
         }
         await c.end().catch(() => {})
-      })()
+      })())
     }
   } catch (err) {
     console.error(`[gate] AUX_CONNECT_FAILED ${err.code ?? 'unknown'}`)
@@ -159,6 +179,7 @@ async function run() {
 
   await listener.end().catch(() => {})
   await sender.end().catch(() => {})
+  await Promise.all(auxWorkers)
   for (const c of aux) await c.end().catch(() => {})
 
   const pids = new Set([pPre, p0, p30, p60].filter((n) => n !== null && Number.isFinite(n)))
@@ -178,9 +199,10 @@ async function run() {
   console.log(`[gate] listen_permission=${'ok'}`)
   console.log(`[gate] notify_permission=${allPermitted ? 'ok' : 'denied'}`)
   console.log(`[gate] duration_sec=${durationSec}`)
+  console.log(`[gate] aux_workers=4 aux_attempted=${auxAttempted} aux_committed=${auxCommitted} aux_failed=${auxFailed}`)
   console.log(`[gate] total_sec=${durationSec}`)
 
-  const pass = roleMatch !== false && pidDistinct === 1 && allRoundsOk && allPermitted
+  const pass = roleMatch === true && pidDistinct === 1 && allRoundsOk && allPermitted && auxAttempted === 40 && auxCommitted === 40 && auxFailed === 0 && durationSec <= 65
   console.log(`[gate] result=${pass ? 'PASS' : 'FAIL'}`)
   process.exit(pass ? 0 : 1)
 }

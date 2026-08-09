@@ -37,7 +37,7 @@ body_file="$(mktemp)"
 trap 'rm -f "$headers_file" "$body_file"' EXIT
 
 # curl -N disables buffering; --max-time bounds the smoke.
-timeout 8 curl -sN --max-time 8 \
+timeout 2 curl -sN --max-time 2 \
   -D "$headers_file" \
   -H "Accept: text/event-stream" \
   -H "Cache-Control: no-cache" \

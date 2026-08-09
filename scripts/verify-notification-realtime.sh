@@ -68,16 +68,22 @@ step "7. git diff --check + schema/migration drift + secret scan"
 git diff --check || fail "git diff --check failed"
 (cd server && git diff --quiet -- prisma/schema.prisma prisma/migrations) || \
   fail "schema/migrations must be unchanged"
-if git grep -nE "(BEGIN (RSA|OPENSSH|EC) PRIVATE KEY|-----BEGIN PGP)" -- . ':!node_modules' >/dev/null 2>&1; then
+# Build the pattern at runtime and exclude only this verifier (which contains
+# the pattern as documentation); the scan must never exclude itself wholesale.
+secret_pattern="BEGIN[[:space:]]+(RSA|OPENSSH|EC)[[:space:]]+PRIVATE[[:space:]]+KEY|-----BEGIN[[:space:]]+PGP"
+if git grep -nE "$secret_pattern" -- . ':!node_modules' ":!$0" >/dev/null 2>&1; then
   fail "secret material found in the tree"
 fi
-echo "git/schema/secret OK"
+tmp_secret="$(mktemp)"; trap 'rm -f "$tmp_secret"' EXIT
+printf '%s\n' '-----BEGIN RSA PRIVATE KEY-----' >"$tmp_secret"
+grep -nE "$secret_pattern" "$tmp_secret" >/dev/null || fail "secret scan self-test did not detect synthetic positive"
+echo "git/schema/secret OK (clean + synthetic positive)"
 
 step "8. AC-RT-029 / CHK-INF-007 (deployment gate, requires production-like endpoint)"
 if [[ "${NOTIFICATION_REALTIME_SESSION_GATE:-false}" == "true" ]]; then
   bash scripts/verify-notification-realtime-listen-session.sh
 else
-  echo "[INFO] skipped; run with NOTIFICATION_REALTIME_SESSION_GATE=true + production-like env before enabling realtime"
+  echo "[INFO] local PASS; release session gate PENDING (external evidence required)"
 fi
 
 echo
