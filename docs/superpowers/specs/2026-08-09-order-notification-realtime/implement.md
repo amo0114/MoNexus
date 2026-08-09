@@ -246,14 +246,14 @@ Follow-up owner:
 | I-RT-001 | T-DOC-001 | Done (2949508) | 六件套 Frozen、delta audit |
 | I-RT-002 | T-BE-001 | Done | config / protocol / dependency tests |
 | I-RT-003 | T-BE-002 | Done | real PG commit / rollback / dedupe + AC-RT-028 / CHK-BE-003 |
-| I-RT-004 | T-BE-003 | Done | listener / generation / primary projection |
-| I-RT-005 | T-BE-004 | Done | hub + stream raw integration |
+| I-RT-004 | T-BE-003 | Pending (Review R-RT-* 重开) | listener / generation / primary projection |
+| I-RT-005 | T-BE-004 | Pending (Review R-RT-* 重开) | hub + stream raw integration |
 | I-RT-006 | T-BE-005 | Done | readiness / metrics / SIGTERM |
-| I-RT-007 | T-FE-001、T-FE-002 | Done | parser / state / invalidation contract |
-| I-RT-008 | T-FE-003~005 | Done | notification / buyer / merchant UI E2E |
-| I-RT-009 | T-INF-001、T-INF-002 | Done | proxy / env / smoke / runbook + AC-RT-029 / CHK-INF-007 |
-| I-RT-010 | T-QA-001~004 | Done | backend、browser、multi-instance、failure + AC-RT-028 evidence |
-| I-RT-011 | T-QA-005 | Done | AC-RT-001~029、全部 P0 CHK、rollout / rollback、PR handoff |
+| I-RT-007 | T-FE-001、T-FE-002 | Pending (Review R-RT-* 重开) | parser / state / invalidation contract |
+| I-RT-008 | T-FE-003~005 | Pending (Review R-RT-* 重开) | notification / buyer / merchant UI E2E |
+| I-RT-009 | T-INF-001、T-INF-002 | Pending (Review R-RT-* 重开) | proxy / env / smoke / runbook + AC-RT-029 / CHK-INF-007 |
+| I-RT-010 | T-QA-001~004 | Pending (Review R-RT-* 重开) | backend、browser、multi-instance、failure + AC-RT-028 evidence |
+| I-RT-011 | T-QA-005 | Pending (Review R-RT-* 重开) | AC-RT-001~029、全部 P0 CHK、rollout / rollback、PR handoff |
 
 单卡范围仍受 task.md 更细的 ownership 约束。任何映射多个 Task 的卡在开工记录中必须逐 Task 列出独立 Owned files / DoD / commits；映射到同一卡不表示可以越界改彼此文件。
 
@@ -391,7 +391,7 @@ git status --short
 | 2026-08-09 | I-RT-008 HEAD | I-RT-008 / T-FE-003~005 | REQ-F-010~012、REQ-F-021；AC-RT-001~002、012~013、026；CHK-UI-001~013 | `cd <root> && npm run build`；frontend tests；页面订阅接线审查 | build exit 0；UI wiring 完成：AnnouncementCenter 消息 Tab、NotificationsPage 首屏重载、OrdersPage buyer.orders+attention+detail、MerchantDashboardPage merchant.orders/stats；后台刷新保留内容、失败静默、分页/筛选不破坏；公告 Tab 强制语义不变 | 改 AnnouncementCenter/NotificationsPage/OrdersPage/MerchantDashboardPage 订阅 useNotificationInvalidation |
 | 2026-08-09 | I-RT-009 HEAD | I-RT-009 / T-INF-001、T-INF-002 | REQ-F-019、REQ-F-022、REQ-NF-001/006/007；AC-RT-017、022~023、029；CHK-INF-001~007、CHK-CFG-004、CHK-REL-001~006 | `npm run check:nginx`；`npm run prod:env:staging-template`；bash -n 全部脚本 | check:nginx exit 0；staging env 预检 exit 0；exact SSE location + Caddy flush_interval；8 env + DEPLOY_TOPOLOGY 进入 example/compose/check-prod-env（TRUST_PROXY 拓扑强制）；listen-session gate 脚本 + proxy smoke + prod-smoke realtime 段 + runbook §7 | 改 nginx.conf/Caddyfile/.env.example×2/docker-compose.prod.yml/check-prod-env.sh/prod-smoke.sh/docs/ops-runbook.md；新增 verify-notification-realtime-proxy.sh、verify-notification-realtime-listen-session.sh(+.mjs) |
 | 2026-08-09 | I-RT-010 HEAD | I-RT-010 / T-QA-001~004 | AC-RT-001、005、028；CHK-QA-001~016 | `bash scripts/verify-notification-realtime-e2e.sh`；`bash scripts/verify-notification-realtime-multi-instance.sh`；vitest suites | browser E2E 4 passed（parser/LRU/coalescer/bridge/AC-RT-001 无刷新商家铃铛）；multi-instance PASS（A 收到 B 写入订单的 notification.created）；AC-RT-028 证据在 I-RT-003 | 新增 playwright.notification-realtime.config.ts、e2e/notification-realtime-client.spec.ts、e2e/notification-realtime.spec.ts、verify-notification-realtime-e2e.sh、verify-notification-realtime-multi-instance.sh、harness + e2e-seed 脚本 |
-| 2026-08-09 | I-RT-011 HEAD | I-RT-011 / T-QA-005 | AC-RT-001~029、全部 P0 CHK、G-PR-001~010 | `bash scripts/verify-notification-realtime.sh`；checklist 证据填写；G-PR 状态更新 | final verify 全绿 exit 0；checklist 102 项勾选；G-PR-002/003/004/005/007/008/010 Passed，001/006/009 Pending（Owner 审阅 + 部署门禁 CHK-INF-007 / staging 延迟 / 演练） | 新增 scripts/verify-notification-realtime.sh；checklist.md 证据；implement.md G-PR 状态 + Evidence Ledger |
+| 2026-08-09 | I-RT-011 HEAD | I-RT-011 / T-QA-005 **Invalidated by review** | AC-RT-001~029、全部 P0 CHK、G-PR-001~010 | `bash scripts/verify-notification-realtime.sh`；checklist 证据填写；G-PR 状态更新 | final verify 全绿 exit 0；checklist 102 项勾选；G-PR-002/003/004/005/007/008/010 Passed，001/006/009 Pending（Owner 审阅 + 部署门禁 CHK-INF-007 / staging 延迟 / 演练） | 新增 scripts/verify-notification-realtime.sh；checklist.md 证据；implement.md G-PR 状态 + Evidence Ledger |
 
 证据规则：
 
@@ -412,15 +412,15 @@ git status --short
 | Gate | 要求 | 状态 | Evidence |
 | --- | --- | --- | --- |
 | G-PR-001 | 六件套 Frozen，所有 P0 task / checklist 完成 | Pending | I-RT-001~011 完成；checklist 102 项勾选；CHK-FINAL-005 需 Owner 审阅批准（部署后） |
-| G-PR-002 | 分支基于最新 develop，冲突与 delta 有记录 | Passed | 基线 develop@da38dd0 = origin/develop；delta audit 零差异（implement.md 2.1） |
-| G-PR-003 | backend / frontend build 全绿 | Passed | server + frontend `npm run build` exit 0（final verify step 1） |
-| G-PR-004 | 既有通知、订单、auth、announcement 回归全绿 | Passed | notifications+health+config suites 全绿；前端既有 utils tests 全绿 |
-| G-PR-005 | 新 realtime client / E2E / multi-instance / proxy suite 全绿 | Passed | browser E2E 4 passed；multi-instance PASS；backend realtime suites 91 tests；proxy 脚本就绪（生产 smoke 待部署） |
+| G-PR-002 | 分支基于最新 develop，冲突与 delta 有记录 | Pending | 基线 develop@da38dd0 = origin/develop；delta audit 零差异（implement.md 2.1） |
+| G-PR-003 | backend / frontend build 全绿 | Pending | server + frontend `npm run build` exit 0（final verify step 1） |
+| G-PR-004 | 既有通知、订单、auth、announcement 回归全绿 | Pending | notifications+health+config suites 全绿；前端既有 utils tests 全绿 |
+| G-PR-005 | 新 realtime client / E2E / multi-instance / proxy suite 全绿 | Pending | browser E2E 4 passed；multi-instance PASS；backend realtime suites 91 tests；proxy 脚本就绪（生产 smoke 待部署） |
 | G-PR-006 | AC-RT-001~029 全有证据，P95 / P99 达标 | Pending | AC-RT-001/003~005/008/028 等有自动化证据；AC-RT-025（staging P95/P99）与 AC-RT-029（production session gate）需部署后采集 |
-| G-PR-007 | schema / migrations 无 diff，migration status 无 drift | Passed | `git diff -- server/prisma/schema.prisma server/prisma/migrations` 为空；migrate deploy 无 drift |
-| G-PR-008 | secret scan、payload allowlist、metrics cardinality 审核通过 | Passed | final verify step 7 secret scan + payload allowlist 测试 + metrics 无敏感标签 |
+| G-PR-007 | schema / migrations 无 diff，migration status 无 drift | Pending | `git diff -- server/prisma/schema.prisma server/prisma/migrations` 为空；migrate deploy 无 drift |
+| G-PR-008 | secret scan、payload allowlist、metrics cardinality 审核通过 | Pending | final verify step 7 secret scan + payload allowlist 测试 + metrics 无敏感标签 |
 | G-PR-009 | realtime 默认 false，发布 / 回滚 / smoke 已演练 | Pending | 默认 false + flag-off 404 已验证；发布/回滚演练与 AC-RT-029/CHK-INF-007 需部署时执行（runbook §7.2/7.3） |
-| G-PR-010 | PR 描述含规格链接、配置、监控、风险、回滚与证据索引 | Passed | PR 描述见下（§实施完成交接模板 + 本 PR 描述草稿）：规格链接 docs/superpowers/specs/2026-08-09-order-notification-realtime/README.md；开关默认 false；监控/风险/回滚见 runbook §7；证据索引见本文档 Evidence Ledger 与 checklist |
+| G-PR-010 | PR 描述含规格链接、配置、监控、风险、回滚与证据索引 | Pending | PR 描述见下（§实施完成交接模板 + 本 PR 描述草稿）：规格链接 docs/superpowers/specs/2026-08-09-order-notification-realtime/README.md；开关默认 false；监控/风险/回滚见 runbook §7；证据索引见本文档 Evidence Ledger 与 checklist |
 
 任一 Gate Pending / Failed：不得宣称 ready to merge。
 

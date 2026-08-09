@@ -216,7 +216,7 @@ npx vitest run \
 | 优先级 | P0 |
 | 对应需求 | REQ-F-002、REQ-F-020、REQ-NF-003 |
 | 依赖 | T-BE-001、T-BE-002 |
-| 状态 | Done（I-RT-004 2026-08-09） |
+| 状态 | Pending（Review 修复 R-RT-* 重开） |
 
 **Owned files**
 
@@ -274,7 +274,7 @@ npx vitest run src/modules/notifications/__tests__/realtime-listener.integration
 | 优先级 | P0 |
 | 对应需求 | REQ-F-003~006、REQ-NF-004~005 |
 | 依赖 | T-BE-001、T-BE-003 |
-| 状态 | Done（I-RT-005 2026-08-09） |
+| 状态 | Pending（Review 修复 R-RT-* 重开） |
 
 **Owned files**
 
@@ -391,7 +391,7 @@ npx vitest run src/modules/health src/modules/notifications/__tests__/realtime-s
 | 优先级 | P0 |
 | 对应需求 | REQ-F-006~007、REQ-F-014~015 |
 | 依赖 | T-BE-001 的 protocol fixture |
-| 状态 | Done（I-RT-007 2026-08-09） |
+| 状态 | Pending（Review 修复 R-RT-* 重开） |
 
 **Owned files**
 
@@ -446,7 +446,7 @@ npx playwright test --config playwright.notification-realtime.config.ts \
 | 优先级 | P0 |
 | 对应需求 | REQ-F-008~009、REQ-F-013~015 |
 | 依赖 | T-FE-001 |
-| 状态 | Done（I-RT-007 2026-08-09） |
+| 状态 | Pending（Review 修复 R-RT-* 重开） |
 
 **Owned files**
 
@@ -504,7 +504,7 @@ npx playwright test --config playwright.notification-realtime.config.ts \
 | 优先级 | P0 |
 | 对应需求 | REQ-F-010、REQ-F-021、REQ-NF-009 |
 | 依赖 | T-FE-002 |
-| 状态 | Done（I-RT-008 2026-08-09） |
+| 状态 | Pending（Review 修复 R-RT-* 重开） |
 
 **Owned files**
 
@@ -551,7 +551,7 @@ npx playwright test --config playwright.notification-realtime.config.ts \
 | 优先级 | P0 |
 | 对应需求 | REQ-F-011、REQ-F-021 |
 | 依赖 | T-FE-002 |
-| 状态 | Done（I-RT-008 2026-08-09） |
+| 状态 | Pending（Review 修复 R-RT-* 重开） |
 
 **Owned files**
 
@@ -596,7 +596,7 @@ npx playwright test --config playwright.notification-realtime.config.ts \
 | 优先级 | P0 |
 | 对应需求 | REQ-F-012、REQ-F-021 |
 | 依赖 | T-FE-002 |
-| 状态 | Done（I-RT-008 2026-08-09） |
+| 状态 | Pending（Review 修复 R-RT-* 重开） |
 
 **Owned files**
 
@@ -645,7 +645,7 @@ npx playwright test --config playwright.notification-realtime.config.ts \
 | 优先级 | P0 |
 | 对应需求 | REQ-F-019、REQ-NF-001 |
 | 依赖 | T-BE-004 |
-| 状态 | Done（I-RT-009 2026-08-09） |
+| 状态 | Pending（Review 修复 R-RT-* 重开） |
 
 **Owned files**
 
@@ -695,7 +695,7 @@ bash scripts/verify-notification-realtime-proxy.sh
 | 对应需求 | REQ-F-002、REQ-F-016、REQ-F-022、REQ-NF-003、REQ-NF-006~007 |
 | 对应验收 | AC-RT-014、AC-RT-022~023、AC-RT-029；CHK-INF-007、CHK-REL-001~006 |
 | 依赖 | T-BE-001、T-BE-005、T-INF-001 |
-| 状态 | Done（I-RT-009 2026-08-09） |
+| 状态 | Pending（Review 修复 R-RT-* 重开） |
 
 **Owned files**
 
@@ -753,7 +753,7 @@ NOTIFICATION_REALTIME_SMOKE_REQUIRED=true npm run prod:smoke
 | 对应需求 | REQ-F-001~006、REQ-NF-003~005、REQ-NF-008 |
 | 本次新增验收 | AC-RT-028；CHK-BE-003、CHK-QA-003 |
 | 依赖 | T-BE-002~005 |
-| 状态 | Done（I-RT-010 2026-08-09） |
+| 状态 | Pending（Review 修复 R-RT-* 重开） |
 
 **Owned files**
 
@@ -800,7 +800,7 @@ TEST_DATABASE_URL="postgresql://monexus:monexus_dev_2026@127.0.0.1:5432/monexus_
 | 优先级 | P0 |
 | 对应需求 | REQ-F-007~009、REQ-F-013~015 |
 | 依赖 | T-FE-001、T-FE-002 |
-| 状态 | Done（I-RT-010 2026-08-09） |
+| 状态 | Pending（Review 修复 R-RT-* 重开） |
 
 **Owned files**
 
@@ -847,7 +847,7 @@ npx playwright test --config playwright.notification-realtime.config.ts \
 | 优先级 | P0 |
 | 对应需求 | REQ-F-010~013、REQ-NF-001~002 |
 | 依赖 | T-FE-003~005、T-INF-001 |
-| 状态 | Done（I-RT-010 2026-08-09） |
+| 状态 | Pending（Review 修复 R-RT-* 重开） |
 
 **Owned files**
 
@@ -895,7 +895,7 @@ npx playwright test --config playwright.notification-realtime.config.ts \
 | 优先级 | P0 |
 | 对应需求 | REQ-F-002~003、REQ-F-020、REQ-NF-003、REQ-NF-005 |
 | 依赖 | T-BE-005、T-QA-001 |
-| 状态 | Done（I-RT-010 2026-08-09） |
+| 状态 | Pending（Review 修复 R-RT-* 重开） |
 
 **Owned files**
 
@@ -941,7 +941,7 @@ bash scripts/verify-notification-realtime-multi-instance.sh
 | 对应需求 | REQ-F-022、REQ-NF-006~010 |
 | 对应验收 | AC-RT-001~029；全部 P0 CHK、G-PR-001~010 |
 | 依赖 | 所有 P0 实施任务 |
-| 状态 | Done（I-RT-011 2026-08-09） |
+| 状态 | Pending（Review 修复 R-RT-* 重开） |
 
 **Owned files**
 
