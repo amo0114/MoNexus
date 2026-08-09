@@ -70,6 +70,13 @@ export function notificationRealtimeStream(req: Request, res: Response, next: Ne
   }
 
   const userId = req.user!.userId
+  const expiresAtSec = req.user!.exp
+  // JWT expiry is a prerequisite for opening SSE: without it there is no
+  // enforceable hard-expiry boundary.
+  if (typeof expiresAtSec !== 'number' || !Number.isFinite(expiresAtSec) || !Number.isInteger(expiresAtSec) || expiresAtSec * 1000 <= Date.now()) {
+    res.status(401).json({ error: { code: 'UNAUTHORIZED', message: '登录已过期' } })
+    return
+  }
   const ip = req.ip ?? '127.0.0.1'
   const hub = getNotificationRealtimeHub()
 
@@ -101,21 +108,35 @@ export function notificationRealtimeStream(req: Request, res: Response, next: Ne
   hub.startHeartbeat()
 
   const timers: StreamTimers = { expiring: null, expiry: null, cleared: false }
-  const expiresAtSec = req.user!.exp
-  if (typeof expiresAtSec === 'number' && Number.isFinite(expiresAtSec)) {
+  const writeControl = (frame: string | null): boolean => {
+    if (frame === null || res.destroyed || res.writableEnded) return false
+    try {
+      if (!res.write(frame)) {
+        hub.removeEntry(entry.userId, entry.connectionId, 'write_error')
+        try { res.destroy() } catch { /* noop */ }
+        return false
+      }
+      return true
+    } catch {
+      hub.removeEntry(entry.userId, entry.connectionId, 'write_error')
+      try { res.destroy() } catch { /* noop */ }
+      return false
+    }
+  }
+  {
     const expiresAtMs = expiresAtSec * 1000
     const remaining = expiresAtMs - Date.now()
     const expiringIn = Math.max(0, remaining - NOTIFICATION_REALTIME_AUTH_EXPIRING_LEAD_MS)
     if (expiringIn <= 0) {
       // Already within the lead window: emit auth.expiring immediately (spec 6.5).
       const frame = serializeAuthExpiring(new Date(expiresAtMs))
-      if (frame !== null && !res.destroyed && !res.writableEnded) res.write(frame)
+      writeControl(frame)
       timers.expiry = setTimeout(() => endStream(res, hub, entry), Math.max(1, remaining))
       timers.expiry.unref?.()
     } else {
       timers.expiring = setTimeout(() => {
         const frame = serializeAuthExpiring(new Date(expiresAtMs))
-        if (frame !== null && !res.destroyed && !res.writableEnded) res.write(frame)
+        writeControl(frame)
         timers.expiring = null
       }, expiringIn)
       timers.expiring.unref?.()

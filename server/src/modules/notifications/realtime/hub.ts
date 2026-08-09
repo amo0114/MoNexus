@@ -86,7 +86,15 @@ export class NotificationRealtimeHub implements RealtimeHubPort {
     // Stream.ready carries resyncRequired=true — REST convergence is mandatory.
     const frame = serializeReady(new Date(), config.notificationRealtime.heartbeatMs, true)
     if (frame !== null && !res.destroyed && !res.writableEnded) {
-      res.write(frame)
+      let ok = false
+      try { ok = res.write(frame) } catch { ok = false }
+      if (!ok) {
+        this.removeEntry(userId, connectionId, 'write_error')
+        entry.state = 'closing'
+        try { res.destroy() } catch { /* noop */ }
+        notificationRealtimeSseEventsTotal.inc({ event: 'ready', outcome: 'dropped' })
+        return entry
+      }
       notificationRealtimeSseEventsTotal.inc({ event: 'ready', outcome: 'sent' })
     } else {
       notificationRealtimeSseEventsTotal.inc({ event: 'ready', outcome: 'dropped' })

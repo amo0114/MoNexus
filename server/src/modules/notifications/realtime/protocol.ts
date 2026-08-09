@@ -87,6 +87,9 @@ function isValidDeeplink(value: unknown): value is string {
   if (typeof value !== 'string') return false
   if (value.length < 1 || value.length > 512) return false
   if (!value.startsWith('/') || value.startsWith('//')) return false
+  // Backslashes are normalized by WHATWG URL parsing and can turn a relative
+  // path into an authority (e.g. /\\evil.example).
+  if (/[\\\u0000-\u001f\u007f]/.test(value)) return false
   if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(value)) return false
   if (value.includes('@')) return false
   return true
