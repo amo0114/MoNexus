@@ -1081,7 +1081,7 @@ model StorageProviderConfig {
   createdById            Int?
   previousActiveId       Int?
   createdAt              DateTime  @default(now())
-  updatedAt              DateTime  @updatedAt
+  updatedAt              DateTime  @default(now()) @updatedAt
 
   storedObjects StoredObject[]
   deliveryFiles DeliveryFile[]
@@ -1094,7 +1094,7 @@ model StorageRuntime {
   id             Int      @id @default(1)
   activeConfigId Int?
   configVersion  Int      @default(0)
-  updatedAt      DateTime @updatedAt
+  updatedAt      DateTime @default(now()) @updatedAt
 }
 
 // SPEC-STORAGE-001：对象位置登记。读路径按 providerConfigId 路由；
@@ -1113,7 +1113,7 @@ model StoredObject {
   source           String? // upload_image | delivery_file
   sourceId         Int?
   createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  updatedAt        DateTime @default(now()) @updatedAt
 
   provider StorageProviderConfig? @relation(fields: [providerConfigId], references: [id], onDelete: SetNull)
 
