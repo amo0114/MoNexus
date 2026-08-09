@@ -44,6 +44,15 @@ const defaultConfig = {
   inviteQuotaUserMonthly: 3,
   inviteQuotaMerchantMonthly: 10,
   inviteCodeTtlDays: 14,
+  // SPEC-MERCH-001 §12（F0）
+  hotWindowDays: 30,
+  hotMinSales: 5,
+  hotTopPercent: 20,
+  hotRecomputeMinutes: 60,
+  hotRunTimeoutMinutes: 30,
+  partnerSpendWindowDays: 90,
+  partnerMinPromotionPoints: 1000,
+  partnerEntitlementDays: 30,
 } as const
 
 async function clearSystemConfig() {
