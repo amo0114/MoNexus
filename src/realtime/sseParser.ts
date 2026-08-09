@@ -27,6 +27,7 @@ export class SseParser {
   private buffer = ''
   private frame: PartialFrame = { dataLines: [] }
   private frameBytes = 0
+  private bufferBytes = 0
   private tooLargeReported = false
   private oversized = false
 
@@ -34,11 +35,13 @@ export class SseParser {
   feed(chunk: string): SseFrame[] {
     const out: SseFrame[] = []
     this.buffer += chunk
+    this.bufferBytes += new TextEncoder().encode(chunk).byteLength
     // Bound an unterminated line as well as completed fields.
-    if (!this.oversized && new TextEncoder().encode(this.buffer).byteLength + this.frameBytes > SSE_MAX_FRAME_BYTES) {
+    if (!this.oversized && this.bufferBytes + this.frameBytes > SSE_MAX_FRAME_BYTES) {
       this.oversized = true
       this.frame = { dataLines: [] }
       this.buffer = ''
+      this.bufferBytes = 0
       this.tooLargeReported = true
       out.push({ tooLarge: true })
     }
@@ -46,8 +49,11 @@ export class SseParser {
     while ((newlineIndex = this.buffer.indexOf('\n')) !== -1) {
       let line = this.buffer.slice(0, newlineIndex)
       this.buffer = this.buffer.slice(newlineIndex + 1)
+      const rawLine = line + '\n'
+      const lineBytes = new TextEncoder().encode(rawLine).byteLength
+      this.bufferBytes = Math.max(0, this.bufferBytes - lineBytes)
       if (line.endsWith('\r')) line = line.slice(0, -1)
-      const frame = this.processLine(line)
+      const frame = this.processLine(line, lineBytes)
       if (frame) out.push(frame)
     }
     return out
@@ -59,6 +65,7 @@ export class SseParser {
     if (this.buffer.length > 0) {
       const frame = this.processLine(this.buffer)
       this.buffer = ''
+      this.bufferBytes = 0
       if (frame) out.push(frame)
     }
     const dispatched = this.dispatchFrame()
@@ -70,11 +77,12 @@ export class SseParser {
     this.buffer = ''
     this.frame = { dataLines: [] }
     this.frameBytes = 0
+    this.bufferBytes = 0
     this.tooLargeReported = false
     this.oversized = false
   }
 
-  private processLine(line: string): SseFrame | null {
+  private processLine(line: string, rawBytes?: number): SseFrame | null {
     if (line === '') {
       if (this.oversized) { this.oversized = false; this.tooLargeReported = false; this.frame = { dataLines: [] }; this.frameBytes = 0; return null }
       return this.dispatchFrame()
@@ -86,7 +94,7 @@ export class SseParser {
 
     // Track byte size of the accumulating frame (excluding comments).
     if (this.oversized) return null
-    this.frameBytes += new TextEncoder().encode(line).byteLength + 1
+    this.frameBytes += rawBytes ?? (new TextEncoder().encode(line).byteLength + 1)
     if (this.frameBytes > SSE_MAX_FRAME_BYTES && !this.tooLargeReported) {
       this.tooLargeReported = true
       this.oversized = true

@@ -47,6 +47,8 @@ export default function OrdersPage() {
   const [selectedOrder, setSelectedOrder] = useState<UserOrderDetail | null>(null)
   const [loadingOrderId, setLoadingOrderId] = useState<number | null>(null)
   const orderRequestRef = useRef(0)
+  const selectedOrderRef = useRef<UserOrderDetail | null>(null)
+  selectedOrderRef.current = selectedOrder
 
   const load = useCallback(async (opts?: { background?: boolean }) => {
     // Background realtime reload keeps current content (no full-page skeleton).
@@ -80,12 +82,12 @@ export default function OrdersPage() {
 
   useNotificationInvalidation('buyer.orders', async () => {
     await load({ background: true })
-    const current = selectedOrder
+    const current = selectedOrderRef.current
     if (current) await reloadDetailFor(current.id)
   })
   useNotificationInvalidation('all.visible', async () => {
     await load({ background: true })
-    const current = selectedOrder
+    const current = selectedOrderRef.current
     if (current) await reloadDetailFor(current.id)
   })
 

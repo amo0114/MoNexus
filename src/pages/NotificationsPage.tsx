@@ -80,6 +80,9 @@ export default function NotificationsPage() {
         const first = new Map(data.notifications.map((n) => [n.id, n]))
         return [...data.notifications, ...prev.filter((n) => !first.has(n.id))]
       })
+      // The authoritative first page also owns the pagination boundary.
+      setNextCursor(data.nextCursor)
+      setHasMore(data.hasMore)
       void refreshNotificationUnread()
     } catch {
       // keep old values; wait for the next calibration/fallback tick

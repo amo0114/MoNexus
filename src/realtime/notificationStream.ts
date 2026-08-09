@@ -61,6 +61,10 @@ export class NotificationStream {
     this.userId = userId
     this.token = token
     this.stopped = false
+    if (userChanged) {
+      this.backoffIndex = 0
+      this.clearTimers()
+    }
     if (userChanged || this.state === 'logged_out' || this.state === 'auth_blocked' || this.state === 'polling_only' || this.state === 'idle') {
       this.enterConnecting()
     }
@@ -122,7 +126,8 @@ export class NotificationStream {
     if (this.stopped || this.userId === null || this.token === null) return
     const generation = ++this.generation
     this.abortFetch()
-    this.controller = new AbortController()
+    const controller = new AbortController()
+    this.controller = controller
     const token = this.token
     let res: Response
     try {
@@ -134,7 +139,7 @@ export class NotificationStream {
           Authorization: `Bearer ${token}`,
         },
         credentials: 'same-origin',
-        signal: this.controller.signal,
+        signal: controller.signal,
       })
     } catch (err) {
       if ((err as Error).name === 'AbortError') return
@@ -142,9 +147,9 @@ export class NotificationStream {
       return
     }
 
-    if (this.stopped || this.controller === null || generation !== this.generation || token !== this.token) return
+    if (this.stopped || this.controller !== controller || generation !== this.generation || token !== this.token) return
     if (res.status === 200) {
-      this.onStreamOpened(res, generation)
+      this.onStreamOpened(res, generation, controller)
       return
     }
 
@@ -179,7 +184,7 @@ export class NotificationStream {
     this.enterDegraded(retryAfter ?? 0)
   }
 
-  private onStreamOpened(res: Response, generation: number): void {
+  private onStreamOpened(res: Response, generation: number, controller: AbortController): void {
     const contentType = res.headers.get('content-type') ?? ''
     if (!contentType.includes('text/event-stream')) {
       this.enterDegraded(0)
@@ -193,19 +198,18 @@ export class NotificationStream {
     const parser = new SseParser()
     const decoder = new TextDecoder()
     this.reader = body.getReader()
-    void this.readLoop(this.reader, generation, parser, decoder)
+    void this.readLoop(this.reader, generation, controller, parser, decoder)
   }
 
-  private async readLoop(reader: ReadableStreamDefaultReader<Uint8Array>, generation: number, parser: SseParser, decoder: TextDecoder): Promise<void> {
+  private async readLoop(reader: ReadableStreamDefaultReader<Uint8Array>, generation: number, controller: AbortController, parser: SseParser, decoder: TextDecoder): Promise<void> {
     try {
       for (;;) {
         const { value, done } = await reader.read()
         if (done) break
-        if (this.stopped || generation !== this.generation) return
-        if (this.stopped || generation !== this.generation) return
+        if (this.stopped || generation !== this.generation || this.controller !== controller) return
         const frames = parser.feed(decoder.decode(value, { stream: true }))
         for (const frame of frames) {
-          if (this.stopped || generation !== this.generation) return
+          if (this.stopped || generation !== this.generation || this.controller !== controller) return
           this.handleFrame(frame, generation)
         }
       }
@@ -213,7 +217,7 @@ export class NotificationStream {
       if ((err as Error).name === 'AbortError') return
       // Read error -> degrade.
     }
-    if (this.stopped || generation !== this.generation) return
+    if (this.stopped || generation !== this.generation || this.controller !== controller) return
     this.enterDegraded(0)
   }
 
@@ -287,11 +291,9 @@ export class NotificationStream {
 
   private enterDegraded(retryAfterFloorMs: number, reason?: string): void {
     if (this.stopped) return
+    if (this.calibrationTimer) clearTimeout(this.calibrationTimer)
+    this.calibrationTimer = null
     this.setState('degraded')
-    if (this.state !== 'degraded') {
-      if (this.calibrationTimer) clearTimeout(this.calibrationTimer)
-      this.calibrationTimer = null
-    }
     this.startFallback()
     this.scheduleBackoff(retryAfterFloorMs)
     if (reason) this.events.onDegraded?.(reason)

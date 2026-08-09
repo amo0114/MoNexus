@@ -64,4 +64,25 @@ describe('SseParser (SPEC-NOTIFY-RT-001 / CHK-FE-002~003)', () => {
     const frames = parser.feed('event: stream.ready\ndata: {}\n\n')
     expect(frames).toEqual([{ event: 'stream.ready', data: '{}' }])
   })
+
+  it('caps by UTF-8 bytes and allows the exact boundary', () => {
+    const exact = new SseParser()
+    const prefix = 'data: '
+    const payload = '界'.repeat(Math.floor((SSE_MAX_FRAME_BYTES - new TextEncoder().encode(prefix + '\n\n').byteLength) / 3))
+    const raw = `${prefix}${payload}\n\n`
+    expect(new TextEncoder().encode(raw).byteLength).toBeLessThanOrEqual(SSE_MAX_FRAME_BYTES)
+    expect(exact.feed(raw).some((frame) => frame.tooLarge)).toBe(false)
+
+    const oversized = new SseParser()
+    expect(oversized.feed(`${prefix}${'界'.repeat(22_000)}`).some((frame) => frame.tooLarge)).toBe(true)
+    // Bytes after the overflow are discarded until the frame boundary.
+    expect(oversized.feed('\n\nevent: stream.ready\ndata: {}\n\n')).toEqual([
+      { event: 'stream.ready', data: '{}' },
+    ])
+  })
+
+  it('bounds an unterminated UTF-8 line', () => {
+    const parser = new SseParser()
+    expect(parser.feed('界'.repeat(22_000)).some((frame) => frame.tooLarge)).toBe(true)
+  })
 })
