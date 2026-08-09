@@ -80,16 +80,27 @@ export default function OrdersPage() {
     }
   }, [])
 
-  useNotificationInvalidation('buyer.orders', async () => {
-    await load({ background: true })
-    const current = selectedOrderRef.current
-    if (current) await reloadDetailFor(current.id)
-  })
-  useNotificationInvalidation('all.visible', async () => {
-    await load({ background: true })
-    const current = selectedOrderRef.current
-    if (current) await reloadDetailFor(current.id)
-  })
+  const reloadBuyerState = useCallback(async () => {
+    const request = ++orderRequestRef.current
+    const currentId = selectedOrderRef.current?.id
+    try {
+      const [list, attention, detail] = await Promise.all([
+        getOrders({ page: 1, pageSize: 100 }),
+        refreshOrderAttention(),
+        currentId == null ? Promise.resolve(null) : getOrderDetail(currentId),
+      ])
+      if (request !== orderRequestRef.current) return
+      setOrders(list)
+      setOrderAttentionCount(countAttentionOrders(list))
+      if (detail && selectedOrderRef.current?.id === currentId) setSelectedOrder(detail)
+      void attention
+    } catch {
+      // Background failures retain visible state.
+    }
+  }, [refreshOrderAttention, setOrderAttentionCount])
+
+  useNotificationInvalidation('buyer.orders', reloadBuyerState)
+  useNotificationInvalidation('all.visible', reloadBuyerState)
 
   const visible = useMemo(() => filterOrdersByTab(orders, tab), [orders, tab])
   const activeCount = useMemo(() => countAttentionOrders(orders), [orders])

@@ -10,6 +10,7 @@ import { getApiErrorMessage } from '../api/error'
 import { useAppStore } from '../stores/appStore'
 import { useNotificationInvalidation } from '../hooks/useNotificationInvalidation'
 import type { Notification, NotificationCategory } from '../types/notification'
+import { appendUniqueNotifications, mergeNotificationFirstPage } from '../utils/notificationMerge'
 
 type FilterTab = 'all' | 'order' | 'system'
 
@@ -52,10 +53,8 @@ export default function NotificationsPage() {
         category,
       })
       if (request !== requestRef.current) return
-      setItems((prev) => append
-        ? [...prev, ...data.notifications.filter((n) => !prev.some((p) => p.id === n.id))]
-        : data.notifications)
-      if (!append || request === requestRef.current) { setNextCursor(data.nextCursor); setHasMore(data.hasMore) }
+      setItems((prev) => append ? appendUniqueNotifications(prev, data.notifications) : data.notifications)
+      if (!append) { setNextCursor(data.nextCursor); setHasMore(data.hasMore) }
     } catch (err) {
       showToast(getApiErrorMessage(err, '加载消息失败'), 'error')
     } finally {
@@ -78,11 +77,9 @@ export default function NotificationsPage() {
       if (request !== requestRef.current) return
       setItems((prev) => {
         const first = new Map(data.notifications.map((n) => [n.id, n]))
-        return [...data.notifications, ...prev.filter((n) => !first.has(n.id))]
+        return mergeNotificationFirstPage(data.notifications, prev)
       })
-      // The authoritative first page also owns the pagination boundary.
-      setNextCursor(data.nextCursor)
-      setHasMore(data.hasMore)
+      // Background refresh must not move the user's pagination boundary.
       void refreshNotificationUnread()
     } catch {
       // keep old values; wait for the next calibration/fallback tick

@@ -67,6 +67,11 @@ function getAvailabilityLabel(product: MerchantProduct) {
     : '可售名额'
 }
 
+function isGoneOrForbidden(error: any) {
+  const status = error?.response?.status
+  return status === 403 || status === 404
+}
+
 export default function MerchantDashboardPage() {
   const navigate = useNavigate()
   const showToast = useAppStore((s) => s.showToast)
@@ -297,6 +302,10 @@ export default function MerchantDashboardPage() {
       setRejectNote('')
       loadData()
     } catch (e: any) {
+      if (isGoneOrForbidden(e)) {
+        setRejectingOrder(null)
+        setRejectNote('')
+      }
       showToast(e.response?.data?.error?.message || '拒单失败', 'error')
     } finally {
       setRejecting(false)
@@ -305,23 +314,41 @@ export default function MerchantDashboardPage() {
 
   async function handleDeliverSubmit(payload: { deliveryContent?: string; structuredValues?: Record<string, string>; attachmentFileId?: number; publicNote?: string }) {
     if (!deliveringOrder) return
-    await deliverOrder(deliveringOrder.id, payload)
-    showToast('发货成功')
-    loadData()
+    try {
+      await deliverOrder(deliveringOrder.id, payload)
+      setDeliveringOrder(null)
+      showToast('发货成功')
+      await loadData()
+    } catch (e: any) {
+      if (isGoneOrForbidden(e)) setDeliveringOrder(null)
+      throw e
+    }
   }
 
   async function handleProgressSubmit(note: string) {
     if (!progressOrder) return
-    await postOrderProgress(progressOrder.id, note)
-    showToast('进度已更新')
-    loadData()
+    try {
+      await postOrderProgress(progressOrder.id, note)
+      setProgressOrder(null)
+      showToast('进度已更新')
+      await loadData()
+    } catch (e: any) {
+      if (isGoneOrForbidden(e)) setProgressOrder(null)
+      throw e
+    }
   }
 
   async function handleDisputeSubmit(resolution: 'resume' | 'close') {
     if (!disputeOrder) return
-    await respondDispute(disputeOrder.id, { resolution })
-    showToast('争议处理成功')
-    loadData()
+    try {
+      await respondDispute(disputeOrder.id, { resolution })
+      setDisputeOrder(null)
+      showToast('争议处理成功')
+      await loadData()
+    } catch (e: any) {
+      if (isGoneOrForbidden(e)) setDisputeOrder(null)
+      throw e
+    }
   }
 
   return (
