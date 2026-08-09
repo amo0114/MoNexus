@@ -84,3 +84,108 @@ export const BADGE_ORDER: readonly BadgeCode[] = ['platform_owned', 'platform_pi
 
 /** Product card badge cap (SPEC-MERCH-001 §9): 最多三项. */
 export const MAX_PRODUCT_BADGES = 3
+
+// ============================================================================
+// T-MERCH-FE-002 — Merchant promotion workflow (SPEC-MERCH-001 §5.3/§5.4/§7,
+// §11). Merchant-facing DTOs mirror the frozen server contracts. These shapes
+// deliberately exclude internal fields (reviewReason, reviewer, PointLog ids,
+// idempotency keys/hashes, admin-only notes) so the merchant UI can never leak
+// them (MERCH-015 / CHK-SEC-001).
+// ============================================================================
+
+/** PromotionCampaign.status (SPEC-MERCH-001 §5.4). */
+export type CampaignStatus =
+  | 'pending_review'
+  | 'payment_failed'
+  | 'scheduled'
+  | 'active'
+  | 'paused'
+  | 'expired'
+  | 'rejected'
+  | 'cancelled'
+
+export const CAMPAIGN_STATUS = {
+  PENDING_REVIEW: 'pending_review',
+  PAYMENT_FAILED: 'payment_failed',
+  SCHEDULED: 'scheduled',
+  ACTIVE: 'active',
+  PAUSED: 'paused',
+  EXPIRED: 'expired',
+  REJECTED: 'rejected',
+  CANCELLED: 'cancelled',
+} as const
+
+/** PromotionPackage.status (SPEC-MERCH-001 §5.3). */
+export type PackageStatus = 'active' | 'inactive'
+export const PACKAGE_STATUS = { ACTIVE: 'active', INACTIVE: 'inactive' } as const
+
+/**
+ * Merchant-facing PromotionPackage (SPEC-MERCH-001 §5.3). Price/placement/
+ * duration are the frozen server facts; the client never overrides them.
+ */
+export interface PromotionPackageDTO {
+  id: number
+  code: string
+  label: string
+  placement: SponsoredPlacement
+  durationDays: number
+  pricePoints: number
+  description: string
+  sortOrder: number
+  status: PackageStatus
+}
+
+/**
+ * Merchant-facing PromotionCampaign (SPEC-MERCH-001 §5.4). Only public/
+ * merchant-safe fields are present: price/placement/duration are immutable
+ * package snapshots; charged/refunded points are the merchant's own ledger.
+ * No review reason, reviewer, PointLog id, idempotency key or hash.
+ */
+export interface PromotionCampaignDTO {
+  id: number
+  productId: number
+  productName: string | null
+  packageId: number
+  packageCode: string
+  packageLabel: string
+  placement: SponsoredPlacement
+  durationDays: number
+  pricePoints: number
+  status: CampaignStatus
+  requestedStartAt: string | null
+  startsAt: string | null
+  endsAt: string | null
+  chargedPoints: number
+  refundedPoints: number
+  createdAt: string
+  updatedAt: string
+}
+
+/** Paged merchant campaign list (SPEC-MERCH-001 §11 merchant API). */
+export interface PromotionCampaignPage {
+  items: PromotionCampaignDTO[]
+  total: number
+  page: number
+  pageSize: number
+}
+
+/** Merchant campaign filter ('all' = no status filter). */
+export type CampaignStatusFilter = CampaignStatus | 'all'
+
+/**
+ * Create payload — the ONLY fields a merchant may submit (SPEC-MERCH-001 §7.2 /
+ * AC-MERCH-009). Price/placement/duration come from the server package
+ * snapshot; the client must never send or override them (MERCH-007).
+ */
+export interface PromotionCreatePayload {
+  productId: number
+  packageId: number
+  /** Optional UTC ISO-8601; null means "start as soon as reviewed". */
+  requestedStartAt: string | null
+}
+
+/** Product options the picker can offer for a campaign request. */
+export interface PromotionProductOption {
+  id: number
+  name: string
+}
