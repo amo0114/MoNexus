@@ -66,6 +66,12 @@ export function NotificationRealtimeBridge(): null {
       lastTokenRef.current = accessToken
       streamRef.current?.onAccessTokenChanged(accessToken)
     }
+    return () => {
+      streamRef.current?.stop()
+      resetRealtimeRuntime()
+      lastUserIdRef.current = null
+      lastTokenRef.current = null
+    }
   }, [user, accessToken])
 
   // 回前台立即权威同步 (spec 7.2 / D-RT-15): visible -> all.visible, no Toast.
@@ -91,6 +97,7 @@ function handleNotification(n: RealtimeNotificationData, showToast: (message: st
   const scheduler = getInvalidationScheduler()
   const isFirst = !lru.has(n.id)
   lru.record(n.id)
+  if (!isFirst) return
 
   const { topics, toast } = resolveInvalidation(n)
   for (const topic of topics) scheduler.invalidate(topic)

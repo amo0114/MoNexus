@@ -45,8 +45,7 @@ export class NotificationStream {
   private userId: number | null = null
   private token: string | null = null
   private stopped = false
-  private readonly parser = new SseParser()
-  private readonly decoder = new TextDecoder()
+  private generation = 0
   private refreshPromise: Promise<RefreshOutcome> | null = null
 
   constructor(private readonly events: NotificationStreamEvents) {}
@@ -76,12 +75,12 @@ export class NotificationStream {
 
   /** Full cleanup on logout / user change / unmount. */
   stop(): void {
+    this.generation++
     this.stopped = true
     this.userId = null
     this.token = null
     this.clearTimers()
     this.abortFetch()
-    this.parser.reset()
     this.setState('idle')
   }
 
@@ -121,6 +120,7 @@ export class NotificationStream {
 
   private async connect(): Promise<void> {
     if (this.stopped || this.userId === null || this.token === null) return
+    const generation = ++this.generation
     this.abortFetch()
     this.controller = new AbortController()
     const token = this.token
@@ -142,9 +142,9 @@ export class NotificationStream {
       return
     }
 
-    if (this.stopped || this.controller === null) return
+    if (this.stopped || this.controller === null || generation !== this.generation) return
     if (res.status === 200) {
-      this.onStreamOpened(res)
+      this.onStreamOpened(res, generation)
       return
     }
 
@@ -179,7 +179,7 @@ export class NotificationStream {
     this.enterDegraded(retryAfter ?? 0)
   }
 
-  private onStreamOpened(res: Response): void {
+  private onStreamOpened(res: Response, generation: number): void {
     const contentType = res.headers.get('content-type') ?? ''
     if (!contentType.includes('text/event-stream')) {
       this.enterDegraded(0)
@@ -190,28 +190,26 @@ export class NotificationStream {
       this.enterDegraded(0)
       return
     }
-    this.setState('healthy')
-    this.backoffIndex = 0
-    this.clearTimers()
-    this.startCalibration()
-    this.events.onReady?.()
+    const parser = new SseParser()
+    const decoder = new TextDecoder()
     this.reader = body.getReader()
-    void this.readLoop(this.reader)
+    void this.readLoop(this.reader, generation, parser, decoder)
   }
 
-  private async readLoop(reader: ReadableStreamDefaultReader<Uint8Array>): Promise<void> {
+  private async readLoop(reader: ReadableStreamDefaultReader<Uint8Array>, generation: number, parser: SseParser, decoder: TextDecoder): Promise<void> {
     try {
       for (;;) {
         const { value, done } = await reader.read()
         if (done) break
-        const frames = this.parser.feed(this.decoder.decode(value, { stream: true }))
+        if (this.stopped || generation !== this.generation) return
+        const frames = parser.feed(decoder.decode(value, { stream: true }))
         for (const frame of frames) this.handleFrame(frame)
       }
     } catch (err) {
       if ((err as Error).name === 'AbortError') return
       // Read error -> degrade.
     }
-    if (this.stopped) return
+    if (this.stopped || generation !== this.generation) return
     this.enterDegraded(0)
   }
 

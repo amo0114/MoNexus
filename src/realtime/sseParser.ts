@@ -28,6 +28,7 @@ export class SseParser {
   private frame: PartialFrame = { dataLines: [] }
   private frameBytes = 0
   private tooLargeReported = false
+  private oversized = false
 
   /** Feed a decoded text chunk; returns the frames completed by this chunk. */
   feed(chunk: string): SseFrame[] {
@@ -62,10 +63,12 @@ export class SseParser {
     this.frame = { dataLines: [] }
     this.frameBytes = 0
     this.tooLargeReported = false
+    this.oversized = false
   }
 
   private processLine(line: string): SseFrame | null {
     if (line === '') {
+      if (this.oversized) { this.oversized = false; this.frame = { dataLines: [] }; this.frameBytes = 0; return null }
       return this.dispatchFrame()
     }
     // Comment line.
@@ -74,11 +77,12 @@ export class SseParser {
     }
 
     // Track byte size of the accumulating frame (excluding comments).
-    this.frameBytes += line.length + 1
+    if (this.oversized) return null
+    this.frameBytes += new TextEncoder().encode(line).byteLength + 1
     if (this.frameBytes > SSE_MAX_FRAME_BYTES && !this.tooLargeReported) {
       this.tooLargeReported = true
+      this.oversized = true
       this.frame = { dataLines: [] }
-      this.frameBytes = 0
       return { tooLarge: true }
     }
 
