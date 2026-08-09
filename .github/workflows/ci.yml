@@ -381,7 +381,6 @@ jobs:
       NODE_ENV: test
       DATABASE_URL: postgresql://monexus:monexus_dev_2026@localhost:5432/monexus_test_notification_realtime?schema=public
       TEST_DATABASE_URL: postgresql://monexus:monexus_dev_2026@localhost:5432/monexus_test_notification_realtime?schema=public
-      RT_ENV_FILE: ${{ runner.temp }}/notification-realtime.env
 
     steps:
       - name: Check out repository
@@ -411,7 +410,9 @@ jobs:
       - name: Create guarded realtime E2E environment
         run: |
           umask 077
+          RT_ENV_FILE="$RUNNER_TEMP/notification-realtime.env"
           printf '%s\n' "TEST_DATABASE_URL=${TEST_DATABASE_URL}" > "$RT_ENV_FILE"
+          printf '%s\n' "RT_ENV_FILE=$RT_ENV_FILE" >> "$GITHUB_ENV"
 
       - name: Run notification realtime E2E tests
         run: bash scripts/verify-notification-realtime-e2e.sh
