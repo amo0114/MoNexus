@@ -15,6 +15,7 @@ import {
   merchantWebhookConfigSchema,
 } from './schema.js'
 import * as controller from './controller.js'
+import { categoryApplicationRoutes } from '../catalog/applicationRoutes.js'
 import { z } from 'zod'
 
 const offerParamSchema = z.object({
@@ -65,5 +66,8 @@ router.get('/webhook-config', controller.getWebhookConfig)
 router.put('/webhook-config', validate(merchantWebhookConfigSchema), controller.saveWebhookConfig)
 router.delete('/webhook-config', controller.revokeWebhookConfig)
 router.post('/webhook-config/test', controller.testWebhookConfig)
+
+// T-CAT-BE-002 §7.3：商家分类申请（列表/创建/撤回，强制 ownership）。
+router.use('/category-applications', categoryApplicationRoutes)
 
 export { router as merchantRoutes }
