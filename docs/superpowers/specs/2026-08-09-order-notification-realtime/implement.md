@@ -415,9 +415,9 @@ git status --short
 | G-PR-002 | 分支基于最新 develop，冲突与 delta 有记录 | Pending | 基线 develop@da38dd0 = origin/develop；delta audit 零差异（implement.md 2.1） |
 | G-PR-003 | backend / frontend build 全绿 | Pending | server + frontend `npm run build` exit 0（final verify step 1） |
 | G-PR-004 | 既有通知、订单、auth、announcement 回归全绿 | Pending | notifications+health+config suites 全绿；前端既有 utils tests 全绿 |
-| G-PR-005 | 新 realtime client / E2E / multi-instance / proxy suite 全绿 | Pending | browser E2E 4 passed；multi-instance PASS；backend realtime suites 91 tests；proxy 脚本就绪（生产 smoke 待部署） |
+| G-PR-005 | 新 realtime client / E2E / multi-instance / proxy suite 全绿 | Pending | 当前 browser E2E 10-test suite 与 multi-instance 证据待最终 HEAD 重建；生产 smoke 待部署 |
 | G-PR-006 | AC-RT-001~029 全有证据，P95 / P99 达标 | Pending | AC-RT-001/003~005/008/028 等有自动化证据；AC-RT-025（staging P95/P99）与 AC-RT-029（production session gate）需部署后采集 |
-| G-PR-007 | schema / migrations 无 diff，migration status 无 drift | Pending | `git diff -- server/prisma/schema.prisma server/prisma/migrations` 为空；migrate deploy 无 drift |
+| G-PR-007 | schema / migrations 无 branch diff，且无新增 live drift | Pending | branch schema/migrations 零 diff；live Prisma diff 仅 exact inherited develop baseline（三条 updatedAt DROP DEFAULT），无 additional drift；baseline cleanup follow-up 需 Owner 在独立 schema change 处理 |
 | G-PR-008 | secret scan、payload allowlist、metrics cardinality 审核通过 | Pending | final verify step 7 secret scan + payload allowlist 测试 + metrics 无敏感标签 |
 | G-PR-009 | realtime 默认 false，发布 / 回滚 / smoke 已演练 | Pending | 默认 false + flag-off 404 已验证；发布/回滚演练与 AC-RT-029/CHK-INF-007 需部署时执行（runbook §7.2/7.3） |
 | G-PR-010 | PR 描述含规格链接、配置、监控、风险、回滚与证据索引 | Pending | PR 描述见下（§实施完成交接模板 + 本 PR 描述草稿）：规格链接 docs/superpowers/specs/2026-08-09-order-notification-realtime/README.md；开关默认 false；监控/风险/回滚见 runbook §7；证据索引见本文档 Evidence Ledger 与 checklist |

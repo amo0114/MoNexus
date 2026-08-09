@@ -13,6 +13,10 @@
 
 > 本文只规定如何修复已确认缺陷、重建证据和恢复正确状态，不修改任何冻结的 D-RT、NRT、REQ、AC、endpoint、事件名、事件矩阵、收件人或 JWT TTL。若实现过程中发现必须改变冻结语义，应立即停止并走 Owner delta review，不得在本方案下自行扩项。
 
+### Schema drift baseline debt
+
+审查确认 develop 基线继承三条 Prisma live diff：StorageProviderConfig.updatedAt、StorageRuntime.updatedAt、StoredObject.updatedAt 的 DROP DEFAULT（源自 migration 20260806120000）。branch 的 schema/migrations 相对工作树及 da38dd0 均为零 diff；因此本轮不新增 notification migration，也不把 develop 基线债务伪装成实现改动。Verifier 仅允许这三条 SQL 的完整逐字 exact allowlist；任何多、少或变更都失败。Owner 后续须在独立 schema change 中清理 baseline，再更新 allowlist 与证据。
+
 ---
 
 ## 1. 目标与完成边界

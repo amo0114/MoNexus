@@ -28,6 +28,44 @@ esac
 step() { echo; echo "==== $* ===="; }
 fail() { echo "[FAIL] $*" >&2; exit 1; }
 
+BASELINE_PRISMA_DIFF='-- AlterTable
+ALTER TABLE "StorageProviderConfig" ALTER COLUMN "updatedAt" DROP DEFAULT;
+
+-- AlterTable
+ALTER TABLE "StorageRuntime" ALTER COLUMN "updatedAt" DROP DEFAULT;
+
+-- AlterTable
+ALTER TABLE "StoredObject" ALTER COLUMN "updatedAt" DROP DEFAULT;'
+
+check_prisma_diff_result() {
+  local status="$1" output="$2"
+  if [[ "$status" == 0 && -z "$output" ]]; then
+    return 0
+  fi
+  if [[ "$status" == 2 && "$output" == "$BASELINE_PRISMA_DIFF" ]]; then
+    echo "[BASELINE] inherited develop drift (exact allowlist)"
+    return 0
+  fi
+  printf '%s\n' "$output" >&2
+  return 1
+}
+
+prisma_diff_self_test() {
+  check_prisma_diff_result 2 "$BASELINE_PRISMA_DIFF" || return 1
+  local fourth="$BASELINE_PRISMA_DIFF
+
+-- AlterTable
+ALTER TABLE \"Unexpected\" ALTER COLUMN \"updatedAt\" DROP DEFAULT;"
+  check_prisma_diff_result 2 "$fourth" && return 1
+  local missing='-- AlterTable
+ALTER TABLE "StorageProviderConfig" ALTER COLUMN "updatedAt" DROP DEFAULT;
+
+-- AlterTable
+ALTER TABLE "StoredObject" ALTER COLUMN "updatedAt" DROP DEFAULT;'
+  check_prisma_diff_result 2 "$missing" && return 1
+  check_prisma_diff_result 0 "" || return 1
+}
+
 require_clean_worktree() {
   local status
   status="$(git status --porcelain --untracked-files=all)"
@@ -113,17 +151,28 @@ git diff --exit-code "$FROZEN_COMMIT..HEAD" -- server/prisma/schema.prisma serve
 git diff --exit-code "$DEVELOP_BASE..HEAD" -- server/prisma/schema.prisma server/prisma/migrations || \
   fail "schema/migrations differ from the frozen develop baseline"
 (cd server && DATABASE_URL="$TEST_DATABASE_URL" npx prisma migrate status)
+step "7a. exact Prisma live-diff baseline allowlist self-test"
+prisma_diff_self_test || fail "Prisma diff allowlist self-test failed"
+prisma_diff_output_file="$(mktemp)"
+tmp_secret=""
+trap 'rm -f "$tmp_secret" "$prisma_diff_output_file"' EXIT
+set +e
 (cd server && npx prisma migrate diff \
   --from-url "$TEST_DATABASE_URL" \
   --to-schema-datamodel prisma/schema.prisma \
-  --exit-code)
+  --script --exit-code) >"$prisma_diff_output_file" 2>&1
+prisma_diff_status=$?
+set -e
+prisma_diff_output="$(<"$prisma_diff_output_file")"
+check_prisma_diff_result "$prisma_diff_status" "$prisma_diff_output" || \
+  fail "Prisma live diff contains drift outside the exact develop baseline"
 # Assemble markers at runtime so this verifier is included in the tracked-text scan.
 marker_begin='BE''GIN'
 secret_pattern="${marker_begin}[[:space:]]+(RSA|OPENSSH|EC)[[:space:]]+PRIVATE[[:space:]]+KEY|$(printf '%s' '-'{5})${marker_begin}[[:space:]]+PGP"
 if git grep -nE "$secret_pattern" -- . ':!node_modules' >/dev/null 2>&1; then
   fail "secret material found in the tree"
 fi
-tmp_secret="$(mktemp)"; trap 'rm -f "$tmp_secret"' EXIT
+tmp_secret="$(mktemp)"
 printf '%s%s RSA PRIVATE KEY%s\n' '-----' "$marker_begin" '-----' >"$tmp_secret"
 grep -nE "$secret_pattern" "$tmp_secret" >/dev/null || fail "secret scan self-test did not detect synthetic positive"
 echo "git/schema/migration/secret checks passed (synthetic positive detected)"

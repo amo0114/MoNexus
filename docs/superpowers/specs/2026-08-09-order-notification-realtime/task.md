@@ -931,7 +931,7 @@ npx playwright test --config playwright.notification-realtime.config.ts \
 bash scripts/verify-notification-realtime-multi-instance.sh
 ~~~
 
-证据：I-RT-010（2026-08-09）。e2e/notification-realtime.spec.ts AC-RT-001 通过：`bash scripts/verify-notification-realtime-e2e.sh`（backend 3112 + vite 5182 + 独立 DB + reuse=false）→ 4 tests passed；商家不刷新看到买家新单未读铃铛（无 page.reload / 手动 poll）。**AC-RT-025 的 staging 100 样本及 P50/P95/P99 仍 Pending**（CHK-PERF-002/003，需 staging 账号/预建商品）；本地单次 ≤5s E2E 不构成替代证据。
+证据：db60e9116d4ca06fc8611efd80d14ab435dd2e21（2026-08-09）。bash scripts/verify-notification-realtime-e2e.sh（backend 3112 + vite 5182 + 独立 DB + reuse=false）→ 当前 10-test suite 通过；商家不刷新看到买家新单未读铃铛（无 page.reload / 手动 poll）。**AC-RT-025 的 staging 100 样本及 P50/P95/P99 仍 Pending**（CHK-PERF-002/003，需 staging 账号/预建商品）；本地单次 E2E 不构成替代证据。
 
 ### T-QA-005 — 全量回归、滚动兼容与发布 Gate
 
