@@ -32,6 +32,16 @@ export type NotificationEnvelopeProvider = (
   recipientUserId: number
 ) => Promise<NotificationEnvelope | null>
 
+/** Minimal pg.Client surface, injectable for deterministic lifecycle tests. */
+export interface NotificationRealtimePgClient {
+  connect(): Promise<unknown>
+  query(text: string): Promise<unknown>
+  end(): Promise<void>
+  on(event: 'notification', listener: (message: { payload?: string }) => void): this
+  on(event: 'error' | 'end', listener: () => void): this
+  removeAllListeners(): this
+}
+
 export interface NotificationRealtimeListenerOptions {
   connectionString: string
   applicationName?: string
@@ -44,13 +54,18 @@ export interface NotificationRealtimeListenerOptions {
   reportOutcome: (outcome: NotificationRealtimePgOutcome) => void
   onReady: () => void
   onUnavailable: () => void
+  /** Test seam only; production always uses the dedicated pg.Client below. */
+  createClient?: () => NotificationRealtimePgClient
 }
 
 export class NotificationRealtimeListener {
-  private client: Client | null = null
+  private client: NotificationRealtimePgClient | null = null
   private probeTimer: NodeJS.Timeout | null = null
   private stopped = false
   private unavailableReported = false
+  private attempt = 0
+  private stopPromise: Promise<void> | null = null
+  private readonly closePromises = new WeakMap<object, Promise<void>>()
 
   private readonly options: NotificationRealtimeListenerOptions
 
@@ -73,80 +88,100 @@ export class NotificationRealtimeListener {
   }
 
   async connect(): Promise<void> {
-    if (this.stopped) return
-    const client = new Client({
-      connectionString: this.options.connectionString,
-      application_name: this.options.applicationName,
-      keepAlive: true,
-      keepAliveInitialDelayMillis: 30_000,
-    })
+    if (this.stopped || this.client !== null) return
+    const attempt = ++this.attempt
+    const client = this.options.createClient?.() ?? new Client({
+        connectionString: this.options.connectionString,
+        application_name: this.options.applicationName,
+        keepAlive: true,
+        keepAliveInitialDelayMillis: 30_000,
+      }) as NotificationRealtimePgClient
     this.client = client
 
     client.on('notification', (msg) => {
-      void this.handleNotification(msg.payload ?? '')
+      void this.handleNotification(msg.payload ?? '', client, attempt)
     })
-    client.on('error', () => { void this.reportUnavailableOnce() })
-    client.on('end', () => { void this.reportUnavailableOnce() })
+    client.on('error', () => { void this.reportUnavailableOnce(client, attempt) })
+    client.on('end', () => { void this.reportUnavailableOnce(client, attempt) })
 
     try {
       await client.connect()
-      if (this.stopped || this.client !== client) { await client.end().catch(() => {}); return }
-    // Static channel constant; LISTEN resolves after the command ACK.
+      if (!this.isCurrent(client, attempt)) { await this.closeClient(client); return }
+      // Static channel constant; LISTEN resolves after the command ACK.
       await client.query(`LISTEN ${this.options.channel}`)
-      if (this.stopped || this.client !== client) { await client.end().catch(() => {}); return }
-    // First probe must succeed before the generation may become healthy.
-      const ok = await this.probeOnce(client)
-      if (this.stopped || this.client !== client) { await client.end().catch(() => {}); return }
-    if (!ok) {
-      await this.closeClient(client)
-      await this.reportUnavailableOnce()
-      return
-    }
-    this.scheduleProbe(client)
-    if (!this.stopped && this.client === client) {
-      this.options.onReady()
+      if (!this.isCurrent(client, attempt)) { await this.closeClient(client); return }
+      // First probe must succeed before the generation may become healthy.
+      const ok = await this.probeOnce(client, attempt)
+      if (!this.isCurrent(client, attempt)) { await this.closeClient(client); return }
+      if (ok !== true) {
+        await this.reportUnavailableOnce(client, attempt)
+        return
+      }
+      this.scheduleProbe(client, attempt)
+      if (this.isCurrent(client, attempt)) {
+        this.options.onReady()
+      }
     } catch {
-      await this.closeClient(client)
-      await this.reportUnavailableOnce()
+      if (!this.isCurrent(client, attempt)) {
+        await this.closeClient(client)
+        return
+      }
+      await this.reportUnavailableOnce(client, attempt)
     }
   }
 
-  private async closeClient(client: Client): Promise<void> {
-    if (this.client === client) this.client = null
-    this.clearProbe()
-    client.removeAllListeners()
-    await client.end().catch(() => {})
+  private isCurrent(client: NotificationRealtimePgClient, attempt: number): boolean {
+    return !this.stopped && this.attempt === attempt && this.client === client
   }
 
-  private async probeOnce(client: Client): Promise<boolean> {
+  private closeClient(client: NotificationRealtimePgClient): Promise<void> {
+    const existing = this.closePromises.get(client)
+    if (existing) return existing
+    if (this.client === client) {
+      this.client = null
+      this.clearProbe()
+    }
+    client.removeAllListeners()
+    const closing = client.end().catch(() => {})
+    this.closePromises.set(client, closing)
+    return closing
+  }
+
+  /** null means the attempt became stale while the probe was in flight. */
+  private async probeOnce(client: NotificationRealtimePgClient, attempt: number): Promise<boolean | null> {
     try {
       await client.query('SELECT 1')
-      return true
+      return this.isCurrent(client, attempt) ? true : null
     } catch {
+      if (!this.isCurrent(client, attempt)) return null
       this.options.reportOutcome('probe_error')
       return false
     }
   }
 
-  private scheduleProbe(client: Client): void {
+  private scheduleProbe(client: NotificationRealtimePgClient, attempt: number): void {
     this.clearProbe()
     this.probeTimer = setTimeout(() => {
       void (async () => {
-        if (this.stopped || this.client !== client) return
-        const ok = await this.probeOnce(client)
-        if (!ok || this.stopped || this.client !== client) {
-          await this.reportUnavailableOnce()
+        if (!this.isCurrent(client, attempt)) return
+        const ok = await this.probeOnce(client, attempt)
+        if (ok === null) return
+        if (!ok) {
+          await this.reportUnavailableOnce(client, attempt)
           return
         }
-        this.scheduleProbe(client)
+        if (this.isCurrent(client, attempt)) this.scheduleProbe(client, attempt)
       })()
     }, this.options.probeIntervalMs)
     this.probeTimer.unref?.()
   }
 
-  private async handleNotification(rawPayload: string): Promise<void> {
-    const clientAtStart = this.client
-    if (this.stopped || !clientAtStart) return
+  private async handleNotification(
+    rawPayload: string,
+    sourceClient: NotificationRealtimePgClient,
+    attempt: number
+  ): Promise<void> {
+    if (!this.isCurrent(sourceClient, attempt)) return
     const payload = parsePgPayload(rawPayload)
     if (payload === null) {
       this.options.reportOutcome('invalid')
@@ -160,10 +195,11 @@ export class NotificationRealtimeListener {
     try {
       envelope = await this.options.getEnvelope(payload.notificationId, payload.recipientUserId)
     } catch {
+      if (!this.isCurrent(sourceClient, attempt)) return
       this.options.reportOutcome('query_error')
       return
     }
-    if (this.stopped || this.client !== clientAtStart) return
+    if (!this.isCurrent(sourceClient, attempt)) return
     if (envelope === null) {
       this.options.reportOutcome('not_found')
       return
@@ -172,15 +208,15 @@ export class NotificationRealtimeListener {
     this.options.reportOutcome('routed')
   }
 
-  private async reportUnavailableOnce(): Promise<void> {
-    if (this.unavailableReported) return
+  private async reportUnavailableOnce(client: NotificationRealtimePgClient, attempt: number): Promise<void> {
+    if (!this.isCurrent(client, attempt) || this.unavailableReported) return
     this.unavailableReported = true
     this.clearProbe()
     // Error/end and probe failures must release the dedicated connection
     // before lifecycle schedules the next generation.  Capture the client
     // before clearing it; closeClient is idempotent with stop()/connect().
-    const client = this.client
-    if (client) await this.closeClient(client)
+    await this.closeClient(client)
+    if (this.stopped || this.attempt !== attempt) return
     this.options.onUnavailable()
   }
 
@@ -192,15 +228,13 @@ export class NotificationRealtimeListener {
   }
 
   /** Idempotent: closes the client and clears the probe timer. */
-  async stop(): Promise<void> {
-    if (this.stopped) return
+  stop(): Promise<void> {
+    if (this.stopPromise) return this.stopPromise
     this.stopped = true
+    this.attempt += 1
     this.clearProbe()
     const client = this.client
-    this.client = null
-    if (client) {
-      client.removeAllListeners()
-      await client.end().catch(() => {})
-    }
+    this.stopPromise = client ? this.closeClient(client) : Promise.resolve()
+    return this.stopPromise
   }
 }

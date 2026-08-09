@@ -15,6 +15,7 @@ import {
 import {
   NotificationRealtimeListener,
   type NotificationEnvelopeProvider,
+  type NotificationRealtimeListenerOptions,
   type RealtimeHubPort,
 } from './listener.js'
 import type { NotificationEnvelope } from './protocol.js'
@@ -40,16 +41,26 @@ export interface NotificationRealtimeLifecycleOptions {
   getEnvelope: NotificationEnvelopeProvider
   /** Optional metric hook (T-BE-005 wires the real counters). */
   reportOutcome?: (outcome: NotificationRealtimePgOutcome) => void
+  /** Deterministic test seam; production constructs NotificationRealtimeListener. */
+  createListener?: (options: NotificationRealtimeListenerOptions) => RealtimeListenerHandle
+}
+
+export interface RealtimeListenerHandle {
+  connect(): Promise<void>
+  stop(): Promise<void>
 }
 
 export class NotificationRealtimeLifecycle {
   private status: NotificationRealtimeStatus = 'disabled'
   private generation = 0
-  private listener: NotificationRealtimeListener | null = null
+  private connectAttempt = 0
+  private listener: RealtimeListenerHandle | null = null
   private hub: RealtimeHubController | null = null
   private retryTimer: NodeJS.Timeout | null = null
   private retryIndex = 0
   private started = false
+  private readonly pendingStops = new Set<Promise<void>>()
+  private readonly listenerStopPromises = new WeakMap<object, Promise<void>>()
   /** Generation already drained (exactly-once drain per transition, spec 6.2). */
   private drainedGeneration = 0
 
@@ -74,13 +85,14 @@ export class NotificationRealtimeLifecycle {
     this.started = true
     this.status = 'starting'
     this.retryIndex = 0
-    await this.connectGeneration()
+    await this.beginConnectGeneration()
   }
 
   /** Graceful shutdown step: stop accepting new streams; keeps listener for drain. */
   beginDraining(): void {
     if (this.status === 'disabled' || this.status === 'stopped' || this.status === 'draining') return
     this.status = 'draining'
+    this.connectAttempt += 1
     this.clearRetry()
   }
 
@@ -88,46 +100,70 @@ export class NotificationRealtimeLifecycle {
   async stop(): Promise<void> {
     if (!this.started) {
       this.status = 'stopped'
+      await this.waitForPendingStops()
       return
     }
     this.started = false
     this.status = 'stopped'
     this.clearRetry()
+    this.connectAttempt += 1
     // Bump the generation so any in-flight old callback is ignored.
     this.generation += 1
     const listener = this.listener
     this.listener = null
-    if (listener) await listener.stop()
+    if (listener) await this.stopListener(listener)
+    await this.waitForPendingStops()
   }
 
-  private async connectGeneration(): Promise<void> {
-    if (!this.started || this.status === 'draining' || this.status === 'stopped') return
+  private beginConnectGeneration(): Promise<void> {
+    const attempt = ++this.connectAttempt
+    return this.connectGeneration(attempt)
+  }
+
+  private isCurrentAttempt(attempt: number): boolean {
+    return this.started
+      && attempt === this.connectAttempt
+      && this.status !== 'draining'
+      && this.status !== 'stopped'
+  }
+
+  private async connectGeneration(attempt: number): Promise<void> {
+    if (!this.isCurrentAttempt(attempt)) return
     this.clearRetry()
     const previous = this.listener
     this.listener = null
-    if (previous) await previous.stop().catch(() => {})
-    if (!this.started || this.status === 'draining' || this.status === 'stopped') return
+    if (previous) void this.stopListener(previous)
+    await this.waitForPendingStops()
+    if (!this.isCurrentAttempt(attempt)) return
 
     const generation = this.generation + 1
     this.generation = generation
     this.status = 'starting'
 
-    const listener = new NotificationRealtimeListener({
+    const listenerOptions: NotificationRealtimeListenerOptions = {
       connectionString: this.options.connectionString,
       hub: this.hub ?? NULL_HUB,
       getEnvelope: this.options.getEnvelope,
       reportOutcome: (outcome) => this.options.reportOutcome?.(outcome),
       onReady: () => this.handleReady(generation),
       onUnavailable: () => this.handleUnavailable(generation),
-    })
+    }
+    const listener = this.options.createListener?.(listenerOptions)
+      ?? new NotificationRealtimeListener(listenerOptions)
     this.listener = listener
     try {
       await listener.connect()
-      if (!this.started || this.status === 'draining' || this.status === 'stopped' || this.listener !== listener || this.generation !== generation) {
-        await listener.stop()
+      if (!this.isCurrentAttempt(attempt) || this.listener !== listener || this.generation !== generation) {
+        if (this.listener === listener) this.listener = null
+        await this.stopListener(listener)
         return
       }
     } catch {
+      if (!this.isCurrentAttempt(attempt) || this.listener !== listener || this.generation !== generation) {
+        if (this.listener === listener) this.listener = null
+        await this.stopListener(listener)
+        return
+      }
       this.handleUnavailable(generation)
     }
   }
@@ -142,6 +178,7 @@ export class NotificationRealtimeLifecycle {
 
   private handleUnavailable(generation: number): void {
     if (!this.started || generation !== this.generation) return
+    if (this.status === 'draining' || this.status === 'stopped') return
     if (this.drainedGeneration === generation) return
     this.drainedGeneration = generation
     // CAS healthy/starting -> degraded; only then drain exactly once.
@@ -152,7 +189,7 @@ export class NotificationRealtimeLifecycle {
     if (hub) {
       void hub.degradeAndDrain('listener_unavailable', retryAfterMs)
     }
-    this.scheduleReconnect()
+    this.scheduleReconnect(retryAfterMs)
   }
 
   private currentBackoffMs(): number {
@@ -163,14 +200,13 @@ export class NotificationRealtimeLifecycle {
     return Math.round(base * jitter)
   }
 
-  private scheduleReconnect(): void {
+  private scheduleReconnect(delay: number): void {
     if (!this.started || this.status === 'draining' || this.status === 'stopped') return
     this.clearRetry()
-    const delay = this.currentBackoffMs()
     this.retryIndex = Math.min(this.retryIndex + 1, NOTIFICATION_REALTIME_RECONNECT_DELAYS_MS.length - 1)
     this.retryTimer = setTimeout(() => {
       this.retryTimer = null
-      void this.connectGeneration()
+      void this.beginConnectGeneration()
     }, delay)
     this.retryTimer.unref?.()
   }
@@ -179,6 +215,25 @@ export class NotificationRealtimeLifecycle {
     if (this.retryTimer) {
       clearTimeout(this.retryTimer)
       this.retryTimer = null
+    }
+  }
+
+  private stopListener(listener: RealtimeListenerHandle): Promise<void> {
+    const key = listener as object
+    const existing = this.listenerStopPromises.get(key)
+    if (existing) return existing
+    const stopping = listener.stop().catch(() => {})
+    this.listenerStopPromises.set(key, stopping)
+    this.pendingStops.add(stopping)
+    void stopping.then(() => {
+      this.pendingStops.delete(stopping)
+    })
+    return stopping
+  }
+
+  private async waitForPendingStops(): Promise<void> {
+    while (this.pendingStops.size > 0) {
+      await Promise.all([...this.pendingStops])
     }
   }
 }
