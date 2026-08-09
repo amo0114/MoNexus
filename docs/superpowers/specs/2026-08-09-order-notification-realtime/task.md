@@ -941,7 +941,7 @@ bash scripts/verify-notification-realtime-multi-instance.sh
 | 对应需求 | REQ-F-022、REQ-NF-006~010 |
 | 对应验收 | AC-RT-001~029；全部 P0 CHK、G-PR-001~010 |
 | 依赖 | 所有 P0 实施任务 |
-| 状态 | Pending |
+| 状态 | Done（I-RT-011 2026-08-09） |
 
 **Owned files**
 
