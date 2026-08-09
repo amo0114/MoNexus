@@ -71,7 +71,8 @@ git diff --check || fail "git diff --check failed"
 # Build the pattern at runtime and exclude only this verifier (which contains
 # the pattern as documentation); the scan must never exclude itself wholesale.
 secret_pattern="BEGIN[[:space:]]+(RSA|OPENSSH|EC)[[:space:]]+PRIVATE[[:space:]]+KEY|-----BEGIN[[:space:]]+PGP"
-if git grep -nE "$secret_pattern" -- . ':!node_modules' ":!$0" >/dev/null 2>&1; then
+self_scan_path="${BASH_SOURCE[0]#"$ROOT/"}"
+if git grep -nE "$secret_pattern" -- . ':!node_modules' ":!$self_scan_path" >/dev/null 2>&1; then
   fail "secret material found in the tree"
 fi
 tmp_secret="$(mktemp)"; trap 'rm -f "$tmp_secret"' EXIT
