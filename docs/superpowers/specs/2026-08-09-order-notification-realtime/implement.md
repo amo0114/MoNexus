@@ -16,15 +16,15 @@
 实施 Agent 必须逐项现场验证；文档里已有路径不等于门槛自动通过。
 
 - [x] IMPL-ENTRY-001：Owner 已于 2026-08-09 批准 O-RT-01~08，六份文档状态均为 Frozen for Implementation。
-- [ ] IMPL-ENTRY-002：已完整阅读 README、spec、plan、task、implement、checklist。
-- [ ] IMPL-ENTRY-003：独立 worktree 为 `/root/projects/worktrees/monexus-order-notification-realtime`。
-- [ ] IMPL-ENTRY-004：分支为 `feat/order-notification-realtime`，目标 PR 为 `develop`。
-- [ ] IMPL-ENTRY-005：已 fetch / 对比最新 `origin/develop` 并记录实现基线；无未处理 delta。
-- [ ] IMPL-ENTRY-006：当前任务卡的 Owned、Must Not Touch、依赖、DoD 和验证已复制到活动实施卡。
-- [ ] IMPL-ENTRY-007：专用 DB / ports / Playwright 不与其他 worktree 共用。
-- [ ] IMPL-ENTRY-008：不需要生产密钥、生产数据库、真实订单或他人工作树。
-- [ ] IMPL-ENTRY-009：确认本波零 Prisma migration；若实现看似需要 migration，停止并 Ask First。
-- [ ] IMPL-ENTRY-010：确认只允许 `pg` / `@types/pg` 两个预批准新依赖；其他依赖先 Ask First。
+- [x] IMPL-ENTRY-002：已完整阅读 README、spec、plan、task、implement、checklist。
+- [x] IMPL-ENTRY-003：独立 worktree 为 `/root/projects/worktrees/monexus-order-notification-realtime`。
+- [x] IMPL-ENTRY-004：分支为 `feat/order-notification-realtime`，目标 PR 为 `develop`。
+- [x] IMPL-ENTRY-005：已 fetch / 对比最新 `origin/develop` 并记录实现基线；无未处理 delta。
+- [x] IMPL-ENTRY-006：当前任务卡的 Owned、Must Not Touch、依赖、DoD 和验证已复制到活动实施卡（I-RT-001 卡见 §6；后续每卡开工前复制）。
+- [x] IMPL-ENTRY-007：专用 DB `monexus_test_notification_realtime` 已建（127.0.0.1:5432）；端口 3112 / 3113 / 5182 空闲，未与其他 worktree 共用。
+- [x] IMPL-ENTRY-008：不需要生产密钥、生产数据库、真实订单或他人工作树。
+- [x] IMPL-ENTRY-009：确认本波零 Prisma migration；若实现看似需要 migration，停止并 Ask First。
+- [x] IMPL-ENTRY-010：确认只允许 `pg` / `@types/pg` 两个预批准新依赖；其他依赖先 Ask First。
 
 任一门槛失败：不得编码。记录阻断项并交回 Owner，不得用“先做起来再补规格”绕过。
 
@@ -243,7 +243,7 @@ Follow-up owner:
 
 | Implement ID | 对应任务 | 状态 | 提交门槛 |
 | --- | --- | --- | --- |
-| I-RT-001 | T-DOC-001 | Pending | 六件套 Frozen、delta audit |
+| I-RT-001 | T-DOC-001 | Done (2949508) | 六件套 Frozen、delta audit |
 | I-RT-002 | T-BE-001 | Pending | config / protocol / dependency tests |
 | I-RT-003 | T-BE-002 | Pending | real PG commit / rollback / dedupe + AC-RT-028 / CHK-BE-003 |
 | I-RT-004 | T-BE-003 | Pending | listener / generation / primary projection |
