@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import http, { type IncomingMessage, type ClientRequest } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import jwt from 'jsonwebtoken'
@@ -8,6 +8,7 @@ import { prisma } from '../../../lib/prisma.js'
 import { NotificationDispatcher } from '../dispatcher.js'
 import { getNotificationRealtimeHub } from '../realtime/hub.js'
 import { getNotificationRealtimeLifecycle } from '../realtime/lifecycle.js'
+import { NOTIFICATION_REALTIME_MAX_TIMER_DELAY_MS, scheduleNotificationRealtimeTimer } from '../realtime/streamController.js'
 import { createTestMerchant, createTestProduct, createTestUser } from '../../../__tests__/helpers.js'
 
 /**
@@ -106,6 +107,37 @@ function parseSseBlock(block: string): ParsedFrame {
 function signToken(userId: number, role: string, expiresIn: jwt.SignOptions["expiresIn"]): string {
   return jwt.sign({ userId, role }, config.jwtSecret, { expiresIn })
 }
+
+describe('realtime absolute timer scheduling', () => {
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => vi.useRealTimers())
+
+  it('caps the first delay and reschedules until a distant target', () => {
+    const callback = vi.fn()
+    const target = Date.now() + NOTIFICATION_REALTIME_MAX_TIMER_DELAY_MS * 2 + 10
+    const timer = scheduleNotificationRealtimeTimer(target, callback)
+    vi.advanceTimersByTime(NOTIFICATION_REALTIME_MAX_TIMER_DELAY_MS)
+    expect(callback).not.toHaveBeenCalled()
+    vi.advanceTimersByTime(NOTIFICATION_REALTIME_MAX_TIMER_DELAY_MS + 10)
+    expect(callback).toHaveBeenCalledTimes(1)
+    timer.cancel()
+  })
+
+  it('fires once at the target and cancellation suppresses it', () => {
+    const callback = vi.fn()
+    const timer = scheduleNotificationRealtimeTimer(Date.now() + 1000, callback)
+    vi.advanceTimersByTime(1000)
+    vi.advanceTimersByTime(1000)
+    expect(callback).toHaveBeenCalledTimes(1)
+    timer.cancel()
+
+    const cancelled = vi.fn()
+    const cancelledTimer = scheduleNotificationRealtimeTimer(Date.now() + 1000, cancelled)
+    cancelledTimer.cancel()
+    vi.advanceTimersByTime(2000)
+    expect(cancelled).not.toHaveBeenCalled()
+  })
+})
 
 describe('realtime SSE stream (SPEC-NOTIFY-RT-001 T-BE-004)', () => {
   const prevNotification = config.notification.enabled

@@ -36,9 +36,49 @@ export const notificationStreamRateLimiter = rateLimit({
 })
 
 interface StreamTimers {
-  expiring: NodeJS.Timeout | null
-  expiry: NodeJS.Timeout | null
+  expiring: { cancel: () => void } | null
+  expiry: { cancel: () => void } | null
   cleared: boolean
+}
+
+export const NOTIFICATION_REALTIME_MAX_TIMER_DELAY_MS = 2_147_483_647
+
+/** Schedule a callback for an absolute millisecond timestamp without relying
+ * on Node's overflowing setTimeout range. */
+export function scheduleNotificationRealtimeTimer(
+  targetMs: number,
+  callback: () => void,
+): { cancel: () => void } {
+  let timer: NodeJS.Timeout | null = null
+  let cancelled = false
+  const schedule = (): void => {
+    if (cancelled) return
+    const remaining = targetMs - Date.now()
+    const delay = Number.isFinite(remaining)
+      ? Math.max(0, Math.min(remaining, NOTIFICATION_REALTIME_MAX_TIMER_DELAY_MS))
+      : 0
+    timer = setTimeout(() => {
+      timer = null
+      if (cancelled) return
+      if (targetMs > Date.now()) {
+        schedule()
+        return
+      }
+      callback()
+    }, delay)
+    timer.unref?.()
+  }
+  schedule()
+  return {
+    cancel: () => {
+      if (cancelled) return
+      cancelled = true
+      if (timer) {
+        clearTimeout(timer)
+        timer = null
+      }
+    },
+  }
 }
 
 export interface NotificationRealtimeStreamDependencies {
@@ -63,11 +103,11 @@ function clearTimers(timers: StreamTimers): void {
   if (timers.cleared) return
   timers.cleared = true
   if (timers.expiring) {
-    clearTimeout(timers.expiring)
+    timers.expiring.cancel()
     timers.expiring = null
   }
   if (timers.expiry) {
-    clearTimeout(timers.expiry)
+    timers.expiry.cancel()
     timers.expiry = null
   }
 }
@@ -158,22 +198,21 @@ export function notificationRealtimeStream(
   {
     const expiresAtMs = expiresAtSec * 1000
     const remaining = expiresAtMs - Date.now()
+    const expiringAtMs = expiresAtMs - NOTIFICATION_REALTIME_AUTH_EXPIRING_LEAD_MS
     const expiringIn = Math.max(0, remaining - NOTIFICATION_REALTIME_AUTH_EXPIRING_LEAD_MS)
     if (expiringIn <= 0) {
       // Already within the lead window: emit auth.expiring immediately (spec 6.5).
       const frame = serializeAuthExpiring(new Date(expiresAtMs))
       if (!writeControl(frame) || cleaned) return
-      timers.expiry = setTimeout(() => cleanup('token_expired', true), Math.max(1, remaining))
-      timers.expiry.unref?.()
+      timers.expiry = scheduleNotificationRealtimeTimer(expiresAtMs, () => cleanup('token_expired', true))
     } else {
-      timers.expiring = setTimeout(() => {
+      const expiringTimer = scheduleNotificationRealtimeTimer(expiringAtMs, () => {
         timers.expiring = null
         const frame = serializeAuthExpiring(new Date(expiresAtMs))
         writeControl(frame)
-      }, expiringIn)
-      timers.expiring.unref?.()
-      timers.expiry = setTimeout(() => cleanup('token_expired', true), remaining)
-      timers.expiry.unref?.()
+      })
+      timers.expiring = expiringTimer
+      timers.expiry = scheduleNotificationRealtimeTimer(expiresAtMs, () => cleanup('token_expired', true))
     }
   }
 }
