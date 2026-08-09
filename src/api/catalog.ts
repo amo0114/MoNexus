@@ -135,6 +135,38 @@ export interface DraftProductInput {
 }
 
 /**
+ * Whitelist a single runtime offer into the exact `DraftOfferInput` shape.
+ *
+ * Only the frozen optional fields survive with their contract semantics:
+ * `originalPrice`/`validityDays` may be a number or explicit null, while
+ * `fixedContent` must be a string and `fixedContentType` one of `'text'`/
+ * `'url'`. Nested secret inventory (`inventoryItems`), `content`, `adminNote`,
+ * `isHot`, `stock` and any unknown keys are dropped before the wire.
+ */
+function sanitizeDraftOffer(offer: DraftOfferInput): DraftOfferInput {
+  const o = offer as DraftOfferInput & Record<string, unknown>
+  const out: DraftOfferInput = {
+    name: o.name,
+    price: o.price,
+    deliveryMode: o.deliveryMode,
+    stockMode: o.stockMode,
+  }
+  if (typeof o.originalPrice === 'number' || o.originalPrice === null) {
+    out.originalPrice = o.originalPrice
+  }
+  if (typeof o.validityDays === 'number' || o.validityDays === null) {
+    out.validityDays = o.validityDays
+  }
+  if (typeof o.fixedContent === 'string') {
+    out.fixedContent = o.fixedContent
+  }
+  if (o.fixedContentType === 'text' || o.fixedContentType === 'url') {
+    out.fixedContentType = o.fixedContentType
+  }
+  return out
+}
+
+/**
  * Build the draft create body from a normalized form.
  *
  * Guarantees:
@@ -143,6 +175,9 @@ export interface DraftProductInput {
  *   silently sending both.
  * - The payload is assembled from an explicit whitelist, so secret inventory
  *   content, `isHot`, `stock` and any unknown keys never reach the wire.
+ * - Each offer is remapped through `sanitizeDraftOffer`, so nested
+ *   `inventoryItems`/`content`/`adminNote`/`isHot`/`stock` and unknown keys
+ *   inside an offer are never assigned directly from the input object.
  */
 export function buildDraftProductRequest(input: DraftProductInput): DraftProductCreateRequest {
   if (typeof input.type === 'string' && input.type.trim() !== '') {
@@ -166,7 +201,7 @@ export function buildDraftProductRequest(input: DraftProductInput): DraftProduct
   if (Array.isArray(input.images)) payload.images = input.images.map(String)
   if (typeof input.originalPrice === 'number') payload.originalPrice = input.originalPrice
   if (typeof input.primaryOfferName === 'string') payload.primaryOfferName = input.primaryOfferName
-  if (Array.isArray(input.offers)) payload.offers = input.offers
+  if (Array.isArray(input.offers)) payload.offers = input.offers.map(sanitizeDraftOffer)
 
   return payload
 }

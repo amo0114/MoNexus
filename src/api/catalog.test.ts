@@ -64,6 +64,88 @@ describe('buildDraftProductRequest (spec §6.2, D-CAT-09)', () => {
     expect(json).not.toContain('secret-content-do-not-leak')
   })
 
+  it('never leaks nested secret keys from runtime offers while keeping allowed fields', () => {
+    const dirtyOffer = {
+      name: '隐藏库存规格',
+      price: 88,
+      deliveryMode: 'instant_fixed' as const,
+      stockMode: 'limited' as const,
+      originalPrice: 120,
+      validityDays: 30,
+      fixedContent: 'http://cdn.example/secret-package.zip',
+      fixedContentType: 'url' as const,
+      inventoryItems: [{ secretKey: 'inventory-secret-do-not-leak' }],
+      content: 'offer-secret-do-not-leak',
+      adminNote: 'internal-offer-note',
+      isHot: true,
+      stock: 99,
+      unknownNested: { deep: 'unknown-offer-key' },
+    }
+    const input: DraftProductInput = {
+      ...base,
+      offers: [dirtyOffer] as unknown as DraftOfferInput[],
+    }
+    const payload = buildDraftProductRequest(input)
+    const json = JSON.stringify(payload.offers)
+
+    expect(payload.offers).toEqual([
+      {
+        name: '隐藏库存规格',
+        price: 88,
+        deliveryMode: 'instant_fixed',
+        stockMode: 'limited',
+        originalPrice: 120,
+        validityDays: 30,
+        fixedContent: 'http://cdn.example/secret-package.zip',
+        fixedContentType: 'url',
+      },
+    ])
+    // Allowed fields survive the whitelist.
+    expect(payload.offers?.[0].name).toBe('隐藏库存规格')
+    expect(payload.offers?.[0].fixedContent).toBe('http://cdn.example/secret-package.zip')
+    // Secret / unknown keys never reach the wire.
+    expect(json).not.toContain('inventoryItems')
+    expect(json).not.toContain('secretKey')
+    expect(json).not.toContain('inventory-secret-do-not-leak')
+    expect(json).not.toContain('offer-secret-do-not-leak')
+    expect(json).not.toContain('adminNote')
+    expect(json).not.toContain('internal-offer-note')
+    expect(json).not.toContain('isHot')
+    expect(json).not.toContain('"stock"')
+    expect(json).not.toContain('unknownNested')
+  })
+
+  it('normalizes optional offer fields to their contract null/string semantics', () => {
+    const input: DraftProductInput = {
+      ...base,
+      offers: [
+        {
+          name: '空值规格',
+          price: 1,
+          deliveryMode: 'instant_fixed',
+          stockMode: 'unlimited',
+          originalPrice: null,
+          validityDays: null,
+          fixedContent: '真实固定交付内容',
+          fixedContentType: 'text',
+        },
+      ],
+    }
+    const payload = buildDraftProductRequest(input)
+    expect(payload.offers).toEqual([
+      {
+        name: '空值规格',
+        price: 1,
+        deliveryMode: 'instant_fixed',
+        stockMode: 'unlimited',
+        originalPrice: null,
+        validityDays: null,
+        fixedContent: '真实固定交付内容',
+        fixedContentType: 'text',
+      },
+    ])
+  })
+
   it('includes optional catalog fields when provided', () => {
     const payload = buildDraftProductRequest({
       ...base,
