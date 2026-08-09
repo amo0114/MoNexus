@@ -16,7 +16,7 @@
 #   * Every prisma command runs from the server cwd with an explicit absolute
 #     --schema path, so Prisma resolves server/.env and the frozen schema.
 #   * The repository secret scan (gate 9) only inspects content that the F0
-#     diff ADDS (70ff17c → working tree), never baseline content, so a local
+#     diff ADDS (FROZEN_HEAD → working tree), never baseline content, so a local
 #     dev credential that already exists at HEAD cannot cause a false positive.
 #     Output is paths/rules only — never the credential.
 #
@@ -64,7 +64,10 @@ F0_MIGRATIONS=(
   "20260809030000_external_catalog_identity"
   "20260809040000_merchandising_governance"
 )
-FROZEN_HEAD="70ff17c393d7703823ec0ee92142aaacf9b18e25"
+# Frozen baseline for the feature-free / secret-scan diff gates. Advanced from the
+# pre-F0 baseline 70ff17c to the F0 commit 70517f78 once F0 landed, so HEAD (the F0
+# commit + uncommitted corrective gate.sh edit) satisfies the ancestry checks.
+FROZEN_HEAD="70517f78cf345d31b5676641f7eb7bdaa76b3bb9"
 
 # Owned file allowlist for the feature-free diff gate (paths relative to root).
 ALLOWED_FILES=(
@@ -474,7 +477,11 @@ gate_6_storage_regression() {
 gate_7_feature_free() {
   say "── Gate 7: feature-free owned-file diff ──"
   local found f ok m a
-  found="$(git -C "$PROJECT_ROOT" status --porcelain --untracked-files=all | awk '{print $2}' | grep -v '^$' | sort)"
+  # grep -v '^$' returns 1 when the tree is clean (nothing to invert), which under
+  # `set -o pipefail` makes this substitution fail and can abort the whole gate.
+  # Fold the empty-line filter into awk (NF > 1 => non-empty $2) so a clean tree is
+  # a stable success; the pipeline has no grep stage that can trip pipefail.
+  found="$(git -C "$PROJECT_ROOT" status --porcelain --untracked-files=all | awk 'NF > 1 {print $2}' | sort)"
   while IFS= read -r f; do
     [[ -n "$f" ]] || continue
     case "$f" in
@@ -500,7 +507,7 @@ gate_7_feature_free() {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Gate 8 — 70ff17c ancestry of the F0 commit. At this point HEAD must still be
+# Gate 8 — FROZEN_HEAD ancestry. At this point HEAD must still be
 # the frozen baseline (the commit-time parent check runs in the commit step).
 # ─────────────────────────────────────────────────────────────────────────────
 gate_8_ancestry() {
@@ -521,7 +528,7 @@ gate_8_ancestry() {
 # Gate 9 — repository secret scan, F0-diff-only semantics.
 #
 # The scan inspects ONLY the content the F0 change set ADDS between the frozen
-# baseline 70ff17c and the working tree:
+# baseline FROZEN_HEAD and the working tree:
 #   * tracked+modified files → their git-added (+) lines
 #   * untracked (new) files   → the whole file (it is all new)
 # Baseline content is never scanned, so a local dev credential that already
@@ -555,10 +562,16 @@ gate_9_secret_scan() {
     else
       added="$(cat "$PROJECT_ROOT/$f")"
     fi
-    if printf '%s\n' "$added" | grep -qF -- "$pw"; then
+    # Full-input grep (no -q): under `set -o pipefail` a `printf | grep -q` that finds
+    # a hit early makes the upstream printf get SIGPIPE (141), so the `if` misjudges
+    # the hit as a miss and the leak is silently undetected. Capturing grep's output
+    # keeps the producer feeding the whole stream (a hit is then a stable true) while
+    # the matched lines are only length-tested and never printed - leak carries just
+    # the file path + rule label, never the credential.
+    if [[ -n "$(printf '%s\n' "$added" | grep -F -- "$pw" || true)" ]]; then
       leak="$leak $f[credential]"
     fi
-    if printf '%s\n' "$added" | grep -qE 'postgres(ql)?://[^/[:space:]${}]+:[^@[:space:]${}]+@'; then
+    if [[ -n "$(printf '%s\n' "$added" | grep -E 'postgres(ql)?://[^/[:space:]${}]+:[^@[:space:]${}]+@' || true)" ]]; then
       leak="$leak $f[inline-postgres-url]"
     fi
   done <<<"$scanned"
