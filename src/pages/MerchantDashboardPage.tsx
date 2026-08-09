@@ -6,6 +6,7 @@ import {
   getMerchantStats,
   getMerchantProducts,
   getMerchantOrders,
+  getMerchantOrderDetail,
   getMerchantSettlements,
   getMerchantMe,
   createMerchantProduct,
@@ -137,6 +138,19 @@ export default function MerchantDashboardPage() {
         })
         setOrders(data.items)
         setOrderTotal(data.total)
+        if (opts?.background) {
+          const openIds = [deliveringOrder?.id, disputeOrder?.id, progressOrder?.id, rejectingOrder?.id]
+            .filter((id): id is number => id != null)
+          const details = await Promise.allSettled(openIds.map((id) => getMerchantOrderDetail(id)))
+          for (const result of details) {
+            if (result.status !== 'fulfilled') continue
+            const detail = result.value
+            if (deliveringOrder?.id === detail.id) setDeliveringOrder(detail)
+            if (disputeOrder?.id === detail.id) setDisputeOrder(detail)
+            if (progressOrder?.id === detail.id) setProgressOrder(detail)
+            if (rejectingOrder?.id === detail.id) setRejectingOrder(detail)
+          }
+        }
       } else if (activeTab === 'settlements') {
         const data = await getMerchantSettlements()
         setSettlements(data)
