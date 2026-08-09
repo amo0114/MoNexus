@@ -70,6 +70,9 @@ interface AppState {
   /** SPEC-NOTIFY-001：事务消息未读数（与公告未读独立） */
   notificationUnreadCount: number
   refreshNotificationUnread: () => Promise<void>
+  /** SPEC-NOTIFY-RT-001：realtime stream 状态（observability / UI glue） */
+  notificationStreamState: string
+  setNotificationStreamState: (state: string) => void
 }
 
 let toastId = 0
@@ -87,8 +90,9 @@ export const useAppStore = create<AppState>()((set, get) => ({
   tabbarHidden: false,
   orderAttentionCount: -1,
   notificationUnreadCount: 0,
-
+  notificationStreamState: 'disabled',
   setActiveTab: (tab) => set({ activeTab: tab }),
+  setNotificationStreamState: (state) => set({ notificationStreamState: state }),
   setStoreQuery: (q) => set({ storeQuery: q }),
   setStoreCategory: (c) => set({ storeCategory: c }),
   setPointsHistoryOpen: (open) => set({ pointsHistoryOpen: open }),

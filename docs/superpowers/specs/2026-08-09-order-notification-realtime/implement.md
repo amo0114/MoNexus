@@ -249,7 +249,7 @@ Follow-up owner:
 | I-RT-004 | T-BE-003 | Done | listener / generation / primary projection |
 | I-RT-005 | T-BE-004 | Done | hub + stream raw integration |
 | I-RT-006 | T-BE-005 | Done | readiness / metrics / SIGTERM |
-| I-RT-007 | T-FE-001、T-FE-002 | Pending | parser / state / invalidation contract |
+| I-RT-007 | T-FE-001、T-FE-002 | Done | parser / state / invalidation contract |
 | I-RT-008 | T-FE-003~005 | Pending | notification / buyer / merchant UI E2E |
 | I-RT-009 | T-INF-001、T-INF-002 | Pending | proxy / env / smoke / runbook + AC-RT-029 / CHK-INF-007 |
 | I-RT-010 | T-QA-001~004 | Pending | backend、browser、multi-instance、failure + AC-RT-028 evidence |
@@ -387,7 +387,7 @@ git status --short
 | 时间 | HEAD | I / T | REQ / AC / CHK | 命令或动作 | 结果 | Artifact |
 | --- | --- | --- | --- | --- | --- | --- |
 | 2026-08-09 | 22ae95c8 (frozen) + I-RT-001 | I-RT-001 / T-DOC-001 | REQ-F-022、REQ-NF-007、REQ-NF-009；CHK-DOC-001~002 | git rev-parse HEAD / origin/develop; git diff --stat develop origin/develop; git diff --check; rg 六件套 ID/版本/状态/基线；编辑旧 spec/design superseded 指针 | develop..origin/develop diff 空 → 冻结语义不变；六件套 ID/版本/状态/基线一致；`git diff --check` exit 0；旧 spec.md / design.md 已加 superseded 指针 | commit 记录见 git log；delta audit 见本文档 2.1 |
-| 2026-08-09 | I-RT-006 HEAD | I-RT-006 / T-BE-005 | REQ-F-017~018、REQ-NF-008；AC-RT-018~019；CHK-OPS-001~007 | `cd server && npm run build`；`npx vitest run src/modules/notifications/ + src/modules/health/ + config guards`；SIGTERM 真实子进程 | build exit 0；11 files/91 tests + 3 files/37 tests passed；readiness disabled/ok/degraded/draining 仅 draining unready；SIGTERM 活跃 SSE 5s 内 drain + 进程 exit 0；metrics 无敏感标签 | 新增 realtime-metrics.test.ts、realtime-readiness.test.ts、realtime-shutdown.test.ts；metrics.ts 7 指标；health/service.ts + main.ts 编排 |
+| 2026-08-09 | I-RT-007 HEAD | I-RT-007 / T-FE-001、T-FE-002 | REQ-F-006~009、REQ-F-013~015；CHK-FE-001~014 | `cd <root> && npm run build`；`npx vitest run src/realtime/ + src/utils/`；mock-fetch stream 单测 | build exit 0；frontend 36 tests passed（31 new）；parser 逐字节/CRLF/cap 通过；stream 状态机 401 refresh/403/404/503/expiring/stop 通过；exact-ID LRU 512 + 300ms coalescer + 事件矩阵通过；Layout 旧 interval 移除、bridge 挂载 | 新增 src/realtime/{sseParser,notificationStream,notificationInvalidation,runtime}.ts、useNotificationInvalidation、NotificationRealtimeBridge；改 Layout/appStore/types/notification |
 
 证据规则：
 

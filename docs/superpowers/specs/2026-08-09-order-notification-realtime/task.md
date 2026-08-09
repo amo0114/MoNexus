@@ -391,7 +391,7 @@ npx vitest run src/modules/health src/modules/notifications/__tests__/realtime-s
 | 优先级 | P0 |
 | 对应需求 | REQ-F-006~007、REQ-F-014~015 |
 | 依赖 | T-BE-001 的 protocol fixture |
-| 状态 | Pending |
+| 状态 | Done（I-RT-007 2026-08-09） |
 
 **Owned files**
 
@@ -409,11 +409,11 @@ npx vitest run src/modules/health src/modules/notifications/__tests__/realtime-s
 
 **工作**
 
-- [ ] parser 支持任意 chunk、CRLF、comment、多行 data、未知字段和 64KiB cap。
-- [ ] fetch 携带 Bearer / credentials / AbortSignal，校验 Content-Type。
-- [ ] 实现 401 单飞 refresh、403 auth_blocked、404 polling_only、429/503/network backoff 与完整 timer cleanup。
-- [ ] auth.expiring 成功 refresh 后 abort + 重连；硬 EOF 无重叠连接。
-- [ ] user / token 改变与 logout 时同步清理。
+- [x] parser 支持任意 chunk、CRLF、comment、多行 data、未知字段和 64KiB cap。
+- [x] fetch 携带 Bearer / credentials / AbortSignal，校验 Content-Type。
+- [x] 实现 401 单飞 refresh、403 auth_blocked、404 polling_only、429/503/network backoff 与完整 timer cleanup。
+- [x] auth.expiring 成功 refresh 后 abort + 重连；硬 EOF 无重叠连接。
+- [x] user / token 改变与 logout 时同步清理。
 
 **DoD**
 
@@ -432,7 +432,12 @@ npx playwright test --config playwright.notification-realtime.config.ts \
   e2e/notification-realtime-client.spec.ts
 ~~~
 
-证据：待填。
+证据：I-RT-007（2026-08-09）。
+- `src/realtime/sseParser.ts`：受控 SSE v1 parser（任意 chunk / CRLF / comment / 多行 data / 未知字段 / 64KiB frame cap→tooLarge），无 EventSource 第三方包。
+- `src/realtime/notificationStream.ts`：fetch + ReadableStream + TextDecoder，Bearer / credentials / AbortSignal，校验 Content-Type；状态机 idle→connecting→healthy/degraded/polling_only/auth_blocked/logged_out；401 单飞 refresh（复用 authRefresh）、403/404/429/503/network backoff（1/2/4/8/16/30s ±20%）、auth.expiring 成功 refresh 后 abort+重连、30s fallback / 5min calibration、logout/user/token 变化全清理；不发 Last-Event-ID。
+- `src/realtime/notificationInvalidation.ts`：512 exact-ID LRU（非 maxSeen）、300ms per-topic coalescer + in-flight dirty rerun、spec 7.3 事件矩阵、live Toast 规则（live+visible+first ID；instant/unknown 静默）。`runtime.ts` 单例 + user 变化 reset。
+- `src/hooks/useNotificationInvalidation.ts`、`src/components/NotificationRealtimeBridge.tsx`（唯一 owner fetch/backoff/fallback/calibration timer）、`src/components/Layout.tsx`（移除旧 30s interval effect，挂载 bridge，notifications/all.visible 订阅刷新未读）、`src/stores/appStore.ts`（realtime 状态 glue）、`src/types/notification.ts`（realtime 类型）。
+- 测试：`sseParser.test.ts`（8）、`notificationInvalidation.test.ts`（13）、`notificationStream.test.ts`（10，mock fetch）共 31 tests；`npm run build` exit 0；既有 frontend utils tests 回归通过。
 
 ### T-FE-002 — Exact-ID 去重、typed invalidation 与 realtime bridge
 
@@ -441,7 +446,7 @@ npx playwright test --config playwright.notification-realtime.config.ts \
 | 优先级 | P0 |
 | 对应需求 | REQ-F-008~009、REQ-F-013~015 |
 | 依赖 | T-FE-001 |
-| 状态 | Pending |
+| 状态 | Done（I-RT-007 2026-08-09） |
 
 **Owned files**
 
@@ -460,12 +465,12 @@ npx playwright test --config playwright.notification-realtime.config.ts \
 
 **工作**
 
-- [ ] 当前用户容量 512 exact-ID LRU，不使用 maxSeen。
-- [ ] 300ms topic coalescer + in-flight 后脏标记重跑。
-- [ ] ready / visible / 30 秒 degraded / 5 分钟 healthy 调度。
-- [ ] Layout 删除旧独立 30 秒 notification interval，挂载 bridge。
-- [ ] Toast 仅 live + visible + first exact ID；instant / unknown 静默。
-- [ ] logout / user change 清空 LRU、timer、pending topics、stream status。
+- [x] 当前用户容量 512 exact-ID LRU，不使用 maxSeen。
+- [x] 300ms topic coalescer + in-flight 后脏标记重跑。
+- [x] ready / visible / 30 秒 degraded / 5 分钟 healthy 调度。
+- [x] Layout 删除旧独立 30 秒 notification interval，挂载 bridge。
+- [x] Toast 仅 live + visible + first exact ID；instant / unknown 静默。
+- [x] logout / user change 清空 LRU、timer、pending topics、stream status。
 
 **DoD**
 
@@ -483,7 +488,14 @@ npx playwright test --config playwright.notification-realtime.config.ts \
   e2e/notification-realtime-client.spec.ts
 ~~~
 
-证据：待填。
+证据：I-RT-007（2026-08-09）。
+- exact-ID LRU 512（LRU 测试覆盖 512 容量淘汰与 recency）；101 后 100 均处理（LRU 不按 maxSeen，test 覆盖）。
+- 300ms per-topic coalescer + in-flight dirty rerun（`InvalidationScheduler` 测试覆盖 coalesce / 独立 topic / clearAll / unsubscribe）。
+- 调度：bridge 唯一 owner；ready → all.visible；visibilitychange visible → all.visible；degraded/fallback 30s → onFallbackTick→all.visible；healthy 5min → onCalibrationTick→all.visible（healthy/degraded interval 互斥由 clearTimers 保证，stream 测试覆盖 stop 后无额外 fetch）。
+- Layout 旧 30s notification interval effect 已删除，挂载 `<NotificationRealtimeBridge/>`；notifications + all.visible 订阅刷新未读（CHK-FE-010）。
+- Toast 仅 live + visible + first exact ID；instant delivered / unknown 静默（matrix 测试覆盖）。
+- logout / user change 清空 LRU / timers / pending topics / stream status（`resetRealtimeRuntime()` + stream.stop()）。
+- 验证：`npm run build` exit 0；frontend 测试 36 passed（含 31 个新 realtime 单测）。
 
 ### T-FE-003 — 通知未读、中心与消息页接入
 
