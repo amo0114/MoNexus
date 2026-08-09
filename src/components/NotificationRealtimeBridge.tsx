@@ -34,7 +34,7 @@ export function NotificationRealtimeBridge(): null {
     streamRef.current = new NotificationStream({
       onStateChange: (state) => setStreamState(state),
       onReady: () => publishAllVisible(),
-      onNotification: (n) => handleNotification(n, showToast),
+      onNotification: (n) => handleRealtimeNotification(n, showToast),
       onAuthExpiring: () => {
         void handleAuthExpiring(streamRef)
       },
@@ -66,12 +66,6 @@ export function NotificationRealtimeBridge(): null {
       lastTokenRef.current = accessToken
       streamRef.current?.onAccessTokenChanged(accessToken)
     }
-    return () => {
-      streamRef.current?.stop()
-      resetRealtimeRuntime()
-      lastUserIdRef.current = null
-      lastTokenRef.current = null
-    }
   }, [user, accessToken])
 
   useEffect(() => () => {
@@ -99,7 +93,7 @@ function publishAllVisible(): void {
   getInvalidationScheduler().publishNow('all.visible')
 }
 
-function handleNotification(n: RealtimeNotificationData, showToast: (message: string, type: 'success' | 'error' | 'info' | 'warning') => void): void {
+export function handleRealtimeNotification(n: RealtimeNotificationData, showToast: (message: string, type: 'success' | 'error' | 'info' | 'warning') => void): void {
   const lru = getExactIdLru()
   const scheduler = getInvalidationScheduler()
   const isFirst = !lru.has(n.id)

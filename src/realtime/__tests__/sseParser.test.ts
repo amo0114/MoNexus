@@ -85,4 +85,47 @@ describe('SseParser (SPEC-NOTIFY-RT-001 / CHK-FE-002~003)', () => {
     const parser = new SseParser()
     expect(parser.feed('界'.repeat(22_000)).some((frame) => frame.tooLarge)).toBe(true)
   })
+
+  it('applies the cap per frame rather than per aggregate network chunk', () => {
+    const parser = new SseParser()
+    const frame = 'event: stream.ready\ndata: {}\n\n'
+    const raw = frame.repeat(Math.ceil(SSE_MAX_FRAME_BYTES / frame.length) + 1)
+    expect(new TextEncoder().encode(raw).byteLength).toBeGreaterThan(SSE_MAX_FRAME_BYTES)
+    const frames = parser.feed(raw)
+    expect(frames.some((item) => item.tooLarge)).toBe(false)
+    expect(frames).toHaveLength(raw.length / frame.length)
+  })
+
+  it('accepts exactly 65536 raw field bytes and rejects 65537', () => {
+    const prefix = 'data: '
+    const exactPayload = 'x'.repeat(SSE_MAX_FRAME_BYTES - prefix.length - 1)
+    const exact = new SseParser()
+    expect(exact.feed(`${prefix}${exactPayload}\n\n`).some((frame) => frame.tooLarge)).toBe(false)
+
+    const oversized = new SseParser()
+    expect(oversized.feed(`${prefix}${exactPayload}x\n\n`).filter((frame) => frame.tooLarge)).toHaveLength(1)
+  })
+
+  it('counts comments and unknown fields toward the frame byte cap', () => {
+    const comment = new SseParser()
+    expect(comment.feed(`:${'x'.repeat(SSE_MAX_FRAME_BYTES)}\n\n`).some((frame) => frame.tooLarge)).toBe(true)
+
+    const unknown = new SseParser()
+    expect(unknown.feed(`ignored: ${'x'.repeat(SSE_MAX_FRAME_BYTES)}\n\n`).some((frame) => frame.tooLarge)).toBe(true)
+  })
+
+  it('discards every oversized tail field until the next blank boundary', () => {
+    const parser = new SseParser()
+    const frames = parser.feed([
+      `data: ${'x'.repeat(SSE_MAX_FRAME_BYTES)}\n`,
+      'id: 9\n',
+      'event: notification.created\n',
+      'data: {"v":1}\n',
+      '\n',
+      'event: stream.ready\n',
+      'data: {}\n',
+      '\n',
+    ].join(''))
+    expect(frames).toEqual([{ tooLarge: true }, { event: 'stream.ready', data: '{}' }])
+  })
 })

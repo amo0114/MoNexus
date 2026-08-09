@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, type Dispatch, type SetStateAction } from 'react'
 import { formatBookingDay } from '../utils/formatLocalDate'
 import { useNavigate } from 'react-router-dom'
 import { useNotificationInvalidation } from '../hooks/useNotificationInvalidation'
@@ -44,6 +44,7 @@ import { TableSkeleton, StatCardSkeleton } from '../components/ui/Skeleton'
 import EmptyState from '../components/ui/EmptyState'
 
 type TabKey = 'dashboard' | 'products' | 'orders' | 'settlements' | 'profile' | 'operations'
+type MerchantOrderSetter = Dispatch<SetStateAction<MerchantOrder | null>>
 
 const TABS: { key: TabKey; label: string; Icon: typeof Store; path?: string }[] = [
   { key: 'dashboard', label: '概览', Icon: Store },
@@ -143,19 +144,6 @@ export default function MerchantDashboardPage() {
         })
         setOrders(data.items)
         setOrderTotal(data.total)
-        if (opts?.background) {
-          const openIds = [deliveringOrder?.id, disputeOrder?.id, progressOrder?.id, rejectingOrder?.id]
-            .filter((id): id is number => id != null)
-          const details = await Promise.allSettled(openIds.map((id) => getMerchantOrderDetail(id)))
-          for (const result of details) {
-            if (result.status !== 'fulfilled') continue
-            const detail = result.value
-            if (deliveringOrder?.id === detail.id) setDeliveringOrder(detail)
-            if (disputeOrder?.id === detail.id) setDisputeOrder(detail)
-            if (progressOrder?.id === detail.id) setProgressOrder(detail)
-            if (rejectingOrder?.id === detail.id) setRejectingOrder(detail)
-          }
-        }
       } else if (activeTab === 'settlements') {
         const data = await getMerchantSettlements()
         setSettlements(data)
@@ -168,19 +156,57 @@ export default function MerchantDashboardPage() {
     } finally {
       if (!opts?.background) setLoading(false)
     }
+    if (opts?.background) await refreshOpenOrderDialogs()
+  }
+
+  async function refreshOpenOrderDialogs() {
+    const dialogs: Array<{ order: MerchantOrder | null; action: string; update: MerchantOrderSetter }> = [
+      { order: deliveringOrderRef.current, action: 'deliver', update: setDeliveringOrder },
+      { order: disputeOrderRef.current, action: 'respond_dispute', update: setDisputeOrder },
+      { order: progressOrderRef.current, action: 'post_progress', update: setProgressOrder },
+      { order: rejectingOrderRef.current, action: 'reject', update: setRejectingOrder },
+    ]
+    const open = dialogs.filter((entry) => entry.order !== null)
+    const requests = new Map<number, Promise<MerchantOrder>>()
+    for (const entry of open) {
+      const id = entry.order!.id
+      if (!requests.has(id)) requests.set(id, getMerchantOrderDetail(id))
+    }
+    const settled = new Map<number, PromiseSettledResult<MerchantOrder>>()
+    await Promise.all([...requests].map(async ([id, request]) => {
+      const [result] = await Promise.allSettled([request])
+      settled.set(id, result!)
+    }))
+    for (const entry of open) {
+      const result = settled.get(entry.order!.id)
+      if (!result) continue
+      if (result.status === 'rejected') {
+        if (isGoneOrForbidden(result.reason)) {
+          const requestedId = entry.order!.id
+          entry.update((current) => current?.id === requestedId ? null : current)
+        }
+        continue
+      }
+      const requestedId = entry.order!.id
+      if (!result.value.availableActions?.includes(entry.action)) {
+        entry.update((current) => current?.id === requestedId ? null : current)
+        continue
+      }
+      entry.update((current) => current?.id === requestedId ? result.value : current)
+    }
   }
 
   // SPEC-NOTIFY-RT-001 (T-FE-005): realtime reload of stats (dashboard/orders
   // tabs) and the orders list (current page / status / sort) in the background.
-  useNotificationInvalidation('merchant.stats', () => {
-    if (activeTab === 'dashboard' || activeTab === 'orders') void loadData({ background: true })
-  })
-  useNotificationInvalidation('merchant.orders', () => {
-    if (activeTab === 'orders') void loadData({ background: true })
-  })
-  useNotificationInvalidation('all.visible', () => {
-    if (activeTab === 'dashboard' || activeTab === 'orders') void loadData({ background: true })
-  })
+  useNotificationInvalidation('merchant.stats', () => (
+    activeTab === 'dashboard' || activeTab === 'orders' ? loadData({ background: true }) : undefined
+  ))
+  useNotificationInvalidation('merchant.orders', () => (
+    activeTab === 'orders' ? loadData({ background: true }) : undefined
+  ))
+  useNotificationInvalidation('all.visible', () => (
+    activeTab === 'dashboard' || activeTab === 'orders' ? loadData({ background: true }) : undefined
+  ))
 
   // --- Profile Tab ---
   const [profileForm, setProfileForm] = useState({ name: '', description: '', contactEmail: '', contactPhone: '' })
@@ -228,6 +254,14 @@ export default function MerchantDashboardPage() {
   // P6b：进度更新对话框（processing 人工服务订单）。
   const [progressOrder, setProgressOrder] = useState<MerchantOrder | null>(null)
   const [rejectingOrder, setRejectingOrder] = useState<MerchantOrder | null>(null)
+  const deliveringOrderRef = useRef<MerchantOrder | null>(null)
+  const disputeOrderRef = useRef<MerchantOrder | null>(null)
+  const progressOrderRef = useRef<MerchantOrder | null>(null)
+  const rejectingOrderRef = useRef<MerchantOrder | null>(null)
+  deliveringOrderRef.current = deliveringOrder
+  disputeOrderRef.current = disputeOrder
+  progressOrderRef.current = progressOrder
+  rejectingOrderRef.current = rejectingOrder
   const [rejectNote, setRejectNote] = useState('')
   const [rejecting, setRejecting] = useState(false)
 

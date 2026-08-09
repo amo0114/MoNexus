@@ -37,10 +37,15 @@ export default function NotificationsPage() {
   const [loadingMore, setLoadingMore] = useState(false)
   const [workingId, setWorkingId] = useState<number | null>(null)
   const [markingAll, setMarkingAll] = useState(false)
-  const requestRef = useRef(0)
+  const filterRef = useRef<FilterTab>(filter)
+  const itemsFilterRef = useRef<FilterTab>(filter)
+  const loadRequestRef = useRef(0)
+  const backgroundRequestRef = useRef(0)
+  filterRef.current = filter
 
   const load = useCallback(async (opts?: { append?: boolean; cursor?: number | null }) => {
-    const request = ++requestRef.current
+    const request = ++loadRequestRef.current
+    const requestedFilter = filter
     const append = opts?.append === true
     if (append) setLoadingMore(true)
     else setLoading(true)
@@ -52,13 +57,18 @@ export default function NotificationsPage() {
         cursor: opts?.cursor ?? undefined,
         category,
       })
-      if (request !== requestRef.current) return
+      if (request !== loadRequestRef.current || filterRef.current !== requestedFilter) return
+      if (append && itemsFilterRef.current !== requestedFilter) return
+      if (!append) itemsFilterRef.current = requestedFilter
       setItems((prev) => append ? appendUniqueNotifications(prev, data.notifications) : data.notifications)
-      if (!append) { setNextCursor(data.nextCursor); setHasMore(data.hasMore) }
+      setNextCursor(data.nextCursor)
+      setHasMore(data.hasMore)
     } catch (err) {
-      showToast(getApiErrorMessage(err, '加载消息失败'), 'error')
+      if (request === loadRequestRef.current && filterRef.current === requestedFilter) {
+        showToast(getApiErrorMessage(err, '加载消息失败'), 'error')
+      }
     } finally {
-      if (request === requestRef.current) { setLoading(false); setLoadingMore(false) }
+      if (request === loadRequestRef.current) { setLoading(false); setLoadingMore(false) }
     }
   }, [filter, showToast])
 
@@ -70,15 +80,15 @@ export default function NotificationsPage() {
   // filter's first page in the background — keep existing content, no skeleton,
   // and never corrupt pagination (dedupe by id, no append to history).
   const reloadFirstPageBackground = useCallback(async () => {
-    const request = ++requestRef.current
+    const request = ++backgroundRequestRef.current
+    const requestedFilter = filter
     try {
       const category: NotificationCategory | undefined = filter === 'all' ? undefined : filter
       const data = await getNotifications({ limit: 20, category })
-      if (request !== requestRef.current) return
-      setItems((prev) => {
-        const first = new Map(data.notifications.map((n) => [n.id, n]))
-        return mergeNotificationFirstPage(data.notifications, prev)
-      })
+      if (request !== backgroundRequestRef.current
+        || filterRef.current !== requestedFilter
+        || itemsFilterRef.current !== requestedFilter) return
+      setItems((prev) => mergeNotificationFirstPage(data.notifications, prev))
       // Background refresh must not move the user's pagination boundary.
       void refreshNotificationUnread()
     } catch {
@@ -88,6 +98,24 @@ export default function NotificationsPage() {
 
   useNotificationInvalidation('notifications', reloadFirstPageBackground)
   useNotificationInvalidation('all.visible', reloadFirstPageBackground)
+
+  function changeFilter(next: FilterTab) {
+    if (next === filter) return
+    // Invalidate both request classes before React commits the new render, so
+    // an old response cannot briefly write under the new tab. The empty list is
+    // also the new filter's merge base if a realtime refresh wins the race with
+    // the ordinary first-page load.
+    loadRequestRef.current += 1
+    backgroundRequestRef.current += 1
+    filterRef.current = next
+    itemsFilterRef.current = next
+    setItems([])
+    setNextCursor(null)
+    setHasMore(false)
+    setLoading(true)
+    setLoadingMore(false)
+    setFilter(next)
+  }
 
   async function handleMarkRead(item: Notification) {
     if (item.status === 'read') {
@@ -161,7 +189,7 @@ export default function NotificationsPage() {
             type="button"
             role="tab"
             aria-selected={filter === tab.id}
-            onClick={() => setFilter(tab.id)}
+            onClick={() => changeFilter(tab.id)}
             className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
               filter === tab.id
                 ? 'bg-[var(--color-primary)]/10 text-[var(--color-primary)] border-[var(--color-primary)]/30'

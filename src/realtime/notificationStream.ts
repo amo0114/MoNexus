@@ -46,7 +46,6 @@ export class NotificationStream {
   private token: string | null = null
   private stopped = false
   private generation = 0
-  private refreshPromise: Promise<RefreshOutcome> | null = null
   private readyGeneration = 0
 
   constructor(private readonly events: NotificationStreamEvents) {}
@@ -84,13 +83,18 @@ export class NotificationStream {
     this.stopped = true
     this.userId = null
     this.token = null
+    this.backoffIndex = 0
+    this.readyGeneration = 0
     this.clearTimers()
     this.abortFetch()
     this.setState('idle')
   }
 
   private enterConnecting(): void {
-    if (this.state !== 'degraded') this.clearTimers()
+    const preserveFallback = this.state === 'degraded'
+    this.clearBackoff()
+    this.clearCalibration()
+    if (!preserveFallback) this.clearFallback()
     this.abortFetch()
     this.setState('connecting')
     void this.connect()
@@ -114,12 +118,36 @@ export class NotificationStream {
   }
 
   private clearTimers(): void {
+    this.clearBackoff()
+    this.clearFallback()
+    this.clearCalibration()
+  }
+
+  private clearBackoff(): void {
     if (this.backoffTimer) clearTimeout(this.backoffTimer)
     this.backoffTimer = null
+  }
+
+  private clearFallback(): void {
     if (this.fallbackTimer) clearTimeout(this.fallbackTimer)
     this.fallbackTimer = null
+  }
+
+  private clearCalibration(): void {
     if (this.calibrationTimer) clearTimeout(this.calibrationTimer)
     this.calibrationTimer = null
+  }
+
+  private isCurrent(generation: number, controller: AbortController, token?: string): boolean {
+    return !this.stopped
+      && generation === this.generation
+      && controller === this.controller
+      && (token === undefined || token === this.token)
+  }
+
+  private invalidateConnection(): void {
+    this.generation++
+    this.abortFetch()
   }
 
   private async connect(): Promise<void> {
@@ -143,11 +171,12 @@ export class NotificationStream {
       })
     } catch (err) {
       if ((err as Error).name === 'AbortError') return
+      if (!this.isCurrent(generation, controller, token)) return
       this.enterDegraded(0)
       return
     }
 
-    if (this.stopped || this.controller !== controller || generation !== this.generation || token !== this.token) return
+    if (!this.isCurrent(generation, controller, token)) return
     if (res.status === 200) {
       this.onStreamOpened(res, generation, controller)
       return
@@ -156,11 +185,13 @@ export class NotificationStream {
     // Non-200: all decisions happen before any SSE bytes.
     if (res.status === 401) {
       const outcome = await this.refreshOnce(token)
-      if (this.stopped || generation !== this.generation || token !== this.token) return
+      if (!this.isCurrent(generation, controller, token)) return
       if (outcome.ok) {
         this.token = outcome.token
         this.enterConnecting()
       } else if (outcome.terminal) {
+        this.invalidateConnection()
+        this.clearTimers()
         this.setState('logged_out')
         this.events.onTerminalLogout?.()
       } else {
@@ -169,11 +200,13 @@ export class NotificationStream {
       return
     }
     if (res.status === 403) {
+      this.invalidateConnection()
       this.clearTimers()
       this.setState('auth_blocked')
       return
     }
     if (res.status === 404) {
+      this.invalidateConnection()
       this.clearTimers()
       this.setState('polling_only')
       this.startFallback()
@@ -185,6 +218,7 @@ export class NotificationStream {
   }
 
   private onStreamOpened(res: Response, generation: number, controller: AbortController): void {
+    if (!this.isCurrent(generation, controller)) return
     const contentType = res.headers.get('content-type') ?? ''
     if (!contentType.includes('text/event-stream')) {
       this.enterDegraded(0)
@@ -238,6 +272,10 @@ export class NotificationStream {
       this.events.onReady?.()
       return
     }
+    if (this.readyGeneration !== generation) {
+      this.enterDegraded(0, 'frame_before_ready')
+      return
+    }
     if (frame.event === 'notification.created') {
       if (!frame.data) return
       let parsed: { v?: number; notification?: RealtimeNotificationData }
@@ -253,7 +291,7 @@ export class NotificationStream {
         this.enterDegraded(0, 'invalid_envelope')
         return
       }
-      if (frame.id !== undefined && String(frame.id) !== String(notification.id)) {
+      if (frame.id === undefined || String(frame.id) !== String(notification.id)) {
         this.enterDegraded(0, 'id_mismatch')
         return
       }
@@ -269,30 +307,24 @@ export class NotificationStream {
     }
   }
 
-  private refreshOnce(staleToken: string): Promise<RefreshOutcome> {
-    if (!this.refreshPromise) {
-      this.refreshPromise = (async () => {
-        try {
-          const { refreshAccessToken } = await import('../api/authRefresh.js')
-          const token = await refreshAccessToken(staleToken)
-          return { ok: true, terminal: false, token }
-        } catch {
-          // refreshAccessToken already logs out on terminal errors.
-          const { useAuthStore } = await import('../stores/authStore.js')
-          const stillLoggedIn = useAuthStore.getState().isLoggedIn
-          return { ok: false, terminal: !stillLoggedIn, token: null }
-        }
-      })().finally(() => {
-        this.refreshPromise = null
-      })
+  private async refreshOnce(staleToken: string): Promise<RefreshOutcome> {
+    try {
+      // authRefresh already owns the application-wide single-flight promise.
+      const { refreshAccessToken } = await import('../api/authRefresh.js')
+      const token = await refreshAccessToken(staleToken)
+      return { ok: true, terminal: false, token }
+    } catch {
+      // refreshAccessToken already logs out on terminal errors.
+      const { useAuthStore } = await import('../stores/authStore.js')
+      const stillLoggedIn = useAuthStore.getState().isLoggedIn
+      return { ok: false, terminal: !stillLoggedIn, token: null }
     }
-    return this.refreshPromise
   }
 
   private enterDegraded(retryAfterFloorMs: number, reason?: string): void {
     if (this.stopped) return
-    if (this.calibrationTimer) clearTimeout(this.calibrationTimer)
-    this.calibrationTimer = null
+    this.invalidateConnection()
+    this.clearCalibration()
     this.setState('degraded')
     this.startFallback()
     this.scheduleBackoff(retryAfterFloorMs)

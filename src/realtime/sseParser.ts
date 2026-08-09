@@ -35,26 +35,31 @@ export class SseParser {
   feed(chunk: string): SseFrame[] {
     const out: SseFrame[] = []
     this.buffer += chunk
-    this.bufferBytes += new TextEncoder().encode(chunk).byteLength
-    // Bound an unterminated line as well as completed fields.
-    if (!this.oversized && this.bufferBytes + this.frameBytes > SSE_MAX_FRAME_BYTES) {
-      this.oversized = true
-      this.frame = { dataLines: [] }
-      this.buffer = ''
-      this.bufferBytes = 0
-      this.tooLargeReported = true
-      out.push({ tooLarge: true })
-    }
     let newlineIndex: number
     while ((newlineIndex = this.buffer.indexOf('\n')) !== -1) {
       let line = this.buffer.slice(0, newlineIndex)
       this.buffer = this.buffer.slice(newlineIndex + 1)
       const rawLine = line + '\n'
       const lineBytes = new TextEncoder().encode(rawLine).byteLength
-      this.bufferBytes = Math.max(0, this.bufferBytes - lineBytes)
       if (line.endsWith('\r')) line = line.slice(0, -1)
       const frame = this.processLine(line, lineBytes)
       if (frame) out.push(frame)
+    }
+    this.bufferBytes = new TextEncoder().encode(this.buffer).byteLength
+    // Process complete lines first: one network chunk may legitimately contain
+    // many small frames whose aggregate size is larger than the per-frame cap.
+    if (!this.oversized && this.bufferBytes + this.frameBytes > SSE_MAX_FRAME_BYTES) {
+      this.oversized = true
+      this.frame = { dataLines: [] }
+      this.frameBytes = 0
+      this.buffer = ''
+      this.bufferBytes = 0
+      this.tooLargeReported = true
+      out.push({ tooLarge: true })
+    } else if (this.oversized) {
+      // Discard an unterminated oversized line without retaining unbounded data.
+      this.buffer = ''
+      this.bufferBytes = 0
     }
     return out
   }
@@ -87,12 +92,7 @@ export class SseParser {
       if (this.oversized) { this.oversized = false; this.tooLargeReported = false; this.frame = { dataLines: [] }; this.frameBytes = 0; return null }
       return this.dispatchFrame()
     }
-    // Comment line.
-    if (line.startsWith(':')) {
-      return { comment: true }
-    }
-
-    // Track byte size of the accumulating frame (excluding comments).
+    // Track raw UTF-8 bytes for every field/comment in the current frame.
     if (this.oversized) return null
     this.frameBytes += rawBytes ?? (new TextEncoder().encode(line).byteLength + 1)
     if (this.frameBytes > SSE_MAX_FRAME_BYTES && !this.tooLargeReported) {
@@ -100,6 +100,10 @@ export class SseParser {
       this.oversized = true
       this.frame = { dataLines: [] }
       return { tooLarge: true }
+    }
+
+    if (line.startsWith(':')) {
+      return { comment: true }
     }
 
     const colon = line.indexOf(':')

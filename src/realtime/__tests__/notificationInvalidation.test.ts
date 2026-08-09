@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   ExactIdLru,
   InvalidationScheduler,
@@ -6,6 +6,20 @@ import {
   resolveInvalidation,
   type RealtimeNotificationData,
 } from '../notificationInvalidation.js'
+
+function deferred() {
+  let resolve!: () => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<void>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise
+    reject = rejectPromise
+  })
+  return { promise, resolve, reject }
+}
+
+async function flushMicrotasks(): Promise<void> {
+  for (let i = 0; i < 6; i += 1) await Promise.resolve()
+}
 
 describe('ExactIdLru (SPEC-NOTIFY-RT-001 / CHK-FE-005~006)', () => {
   it('records and dedupes by exact id (never maxSeen)', () => {
@@ -146,5 +160,79 @@ describe('InvalidationScheduler (SPEC-NOTIFY-RT-001 / CHK-FE-007)', () => {
     scheduler.invalidate('notifications')
     await new Promise(r => setTimeout(r, 400))
     expect(calls).toBe(0)
+  })
+
+  it('awaits async subscribers and coalesces a dirty burst into one rerun', async () => {
+    const scheduler = new InvalidationScheduler()
+    const gates = [deferred(), deferred()]
+    let calls = 0
+    let active = 0
+    let maxActive = 0
+    scheduler.subscribe('notifications', async () => {
+      const gate = gates[calls]!
+      calls += 1
+      active += 1
+      maxActive = Math.max(maxActive, active)
+      await gate.promise
+      active -= 1
+    })
+
+    scheduler.publishNow('notifications')
+    await flushMicrotasks()
+    scheduler.publishNow('notifications')
+    scheduler.publishNow('notifications')
+    scheduler.publishNow('notifications')
+    expect(calls).toBe(1)
+
+    gates[0]!.resolve()
+    await flushMicrotasks()
+    expect(calls).toBe(2)
+    expect(maxActive).toBe(1)
+    gates[1]!.resolve()
+    await flushMicrotasks()
+    expect(calls).toBe(2)
+    expect(active).toBe(0)
+  })
+
+  it('isolates subscriber rejection and releases inflight state', async () => {
+    const scheduler = new InvalidationScheduler()
+    const rejected = vi.fn(() => Promise.reject(new Error('expected')))
+    const healthy = vi.fn(async () => undefined)
+    scheduler.subscribe('notifications', rejected)
+    scheduler.subscribe('notifications', healthy)
+
+    scheduler.publishNow('notifications')
+    await flushMicrotasks()
+    scheduler.publishNow('notifications')
+    await flushMicrotasks()
+
+    expect(rejected).toHaveBeenCalledTimes(2)
+    expect(healthy).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not let an old epoch completion delete a new inflight run', async () => {
+    const scheduler = new InvalidationScheduler()
+    const gates = [deferred(), deferred(), deferred()]
+    let calls = 0
+    scheduler.subscribe('notifications', () => gates[calls++]!.promise)
+
+    scheduler.publishNow('notifications')
+    await flushMicrotasks()
+    scheduler.clearAll()
+    scheduler.publishNow('notifications')
+    await flushMicrotasks()
+    expect(calls).toBe(2)
+
+    gates[0]!.resolve()
+    await flushMicrotasks()
+    scheduler.publishNow('notifications')
+    await flushMicrotasks()
+    expect(calls).toBe(2)
+
+    gates[1]!.resolve()
+    await flushMicrotasks()
+    expect(calls).toBe(3)
+    gates[2]!.resolve()
+    await flushMicrotasks()
   })
 })

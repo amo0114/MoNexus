@@ -109,7 +109,7 @@ type Subscriber = () => void | Promise<void>
 export class InvalidationScheduler {
   private readonly subscribers = new Map<InvalidationTopic, Set<Subscriber>>()
   private readonly timers = new Map<InvalidationTopic, ReturnType<typeof setTimeout>>()
-  private readonly inflight = new Set<InvalidationTopic>()
+  private readonly inflight = new Map<InvalidationTopic, number>()
   private readonly dirty = new Set<InvalidationTopic>()
   private epoch = 0
 
@@ -145,8 +145,8 @@ export class InvalidationScheduler {
       this.dirty.add(topic)
       return
     }
-    this.inflight.add(topic)
     const epoch = this.epoch
+    this.inflight.set(topic, epoch)
     void this.run(topic, epoch)
   }
 
@@ -156,13 +156,16 @@ export class InvalidationScheduler {
       try { return Promise.resolve(cb()) } catch (error) { return Promise.reject(error) }
     }) : []
     await Promise.allSettled(pending)
-    if (epoch !== this.epoch) { this.inflight.delete(topic); return }
+    if (epoch !== this.epoch) {
+      if (this.inflight.get(topic) === epoch) this.inflight.delete(topic)
+      return
+    }
     if (this.dirty.has(topic)) {
       this.dirty.delete(topic)
       await this.run(topic, epoch)
       return
     }
-    this.inflight.delete(topic)
+    if (this.inflight.get(topic) === epoch) this.inflight.delete(topic)
   }
 
   clearAll(): void {

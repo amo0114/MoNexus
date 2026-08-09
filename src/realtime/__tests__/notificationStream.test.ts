@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { NotificationStream, type NotificationStreamEvents } from '../notificationStream.js'
+import {
+  NotificationStream,
+  STREAM_BACKOFF_MS,
+  type NotificationStreamEvents,
+} from '../notificationStream.js'
 import type { RealtimeNotificationData } from '../notificationInvalidation.js'
 
 /**
@@ -19,6 +23,63 @@ vi.mock('../../stores/authStore.js', () => ({
 }))
 
 const encoder = new TextEncoder()
+
+interface Deferred<T> {
+  promise: Promise<T>
+  resolve: (value: T) => void
+  reject: (reason?: unknown) => void
+}
+
+function deferred<T>(): Deferred<T> {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise
+    reject = rejectPromise
+  })
+  return { promise, resolve, reject }
+}
+
+async function flushMicrotasks(): Promise<void> {
+  for (let i = 0; i < 6; i += 1) await Promise.resolve()
+}
+
+function controlledReaderResponse() {
+  type ReadResult = ReadableStreamReadResult<Uint8Array>
+  const queued: ReadResult[] = []
+  let pending: Deferred<ReadResult> | null = null
+  const reader = {
+    read: vi.fn(() => {
+      const next = queued.shift()
+      if (next) return Promise.resolve(next)
+      pending = deferred<ReadResult>()
+      return pending.promise
+    }),
+    // Intentionally leave a pending read unresolved. This models a transport
+    // whose cancellation/EOF settles late and lets generation guards be tested.
+    cancel: vi.fn(async () => undefined),
+  }
+  const push = (result: ReadResult) => {
+    if (pending) {
+      const current = pending
+      pending = null
+      current.resolve(result)
+    } else {
+      queued.push(result)
+    }
+  }
+  const response = {
+    status: 200,
+    headers: new Headers({ 'content-type': 'text/event-stream' }),
+    body: { getReader: () => reader },
+  } as unknown as Response
+  return {
+    response,
+    enqueue: (raw: string) => push({ done: false, value: encoder.encode(raw) }),
+    close: () => push({ done: true, value: undefined }),
+    reader,
+  }
+}
 
 function streamResponse(frames: string[]): Response {
   const stream = new ReadableStream<Uint8Array>({
@@ -85,6 +146,8 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  vi.useRealTimers()
+  vi.restoreAllMocks()
   vi.unstubAllGlobals()
   vi.clearAllMocks()
 })
@@ -246,5 +309,169 @@ describe('NotificationStream (SPEC-NOTIFY-RT-001 / CHK-FE-004/014)', () => {
     await new Promise(r => setTimeout(r, 100))
     expect(fetchCalls.length).toBe(callsBefore)
     expect(stream.getState()).toBe('idle')
+  })
+
+  it('ignores a stale fetch response after a token change', async () => {
+    const log = makeLog()
+    const stream = makeStream(log)
+    const stale = deferred<Response>()
+    const current = controlledReaderResponse()
+    let calls = 0
+    vi.stubGlobal('fetch', vi.fn(() => {
+      calls += 1
+      return calls === 1 ? stale.promise : Promise.resolve(current.response)
+    }))
+
+    stream.start(1, 'token-a')
+    await flushMicrotasks()
+    stream.onAccessTokenChanged('token-b')
+    await flushMicrotasks()
+    current.enqueue('event: stream.ready\ndata: {}\n\n')
+    await flushMicrotasks()
+    stale.resolve(streamResponse(['event: stream.ready\ndata: {}\n\n']))
+    await flushMicrotasks()
+
+    expect(calls).toBe(2)
+    expect(log.ready).toBe(1)
+    expect(stream.getState()).toBe('healthy')
+    stream.stop()
+  })
+
+  it('ignores a stale 401 refresh result after a token change', async () => {
+    const log = makeLog()
+    const stream = makeStream(log)
+    const refresh = deferred<string>()
+    const current = controlledReaderResponse()
+    mockRefresh.mockReturnValue(refresh.promise)
+    let calls = 0
+    vi.stubGlobal('fetch', vi.fn(() => {
+      calls += 1
+      return Promise.resolve(calls === 1 ? jsonResponse(401) : current.response)
+    }))
+
+    stream.start(1, 'stale-token')
+    await vi.waitFor(() => expect(mockRefresh).toHaveBeenCalledTimes(1))
+    stream.onAccessTokenChanged('current-token')
+    await flushMicrotasks()
+    current.enqueue('event: stream.ready\ndata: {}\n\n')
+    await flushMicrotasks()
+    refresh.resolve('obsolete-refresh-token')
+    await flushMicrotasks()
+
+    expect(calls).toBe(2)
+    expect(log.ready).toBe(1)
+    expect(stream.getState()).toBe('healthy')
+    stream.stop()
+  })
+
+  it('ignores an old reader EOF after the replacement stream is healthy', async () => {
+    const log = makeLog()
+    const stream = makeStream(log)
+    const oldConnection = controlledReaderResponse()
+    const currentConnection = controlledReaderResponse()
+    let calls = 0
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      calls += 1
+      return calls === 1 ? oldConnection.response : currentConnection.response
+    }))
+
+    stream.start(1, 'token-a')
+    await flushMicrotasks()
+    oldConnection.enqueue('event: stream.ready\ndata: {}\n\n')
+    await flushMicrotasks()
+    stream.onAccessTokenChanged('token-b')
+    await flushMicrotasks()
+    currentConnection.enqueue('event: stream.ready\ndata: {}\n\n')
+    await flushMicrotasks()
+    const degradedBefore = log.states.filter((state) => state === 'degraded').length
+    oldConnection.close()
+    await flushMicrotasks()
+
+    expect(log.ready).toBe(2)
+    expect(log.states.filter((state) => state === 'degraded')).toHaveLength(degradedBefore)
+    expect(stream.getState()).toBe('healthy')
+    stream.stop()
+  })
+
+  it('requires the first stream.ready before healthy or business/control frames', async () => {
+    const log = makeLog()
+    const stream = makeStream(log)
+    const connection = controlledReaderResponse()
+    vi.stubGlobal('fetch', vi.fn(async () => connection.response))
+
+    stream.start(1, 'token')
+    await flushMicrotasks()
+    expect(stream.getState()).toBe('connecting')
+    expect(log.ready).toBe(0)
+    connection.enqueue('event: auth.expiring\ndata: {}\n\n')
+    await flushMicrotasks()
+
+    expect(log.expiring).toBe(0)
+    expect(log.degraded).toContain('frame_before_ready')
+    expect(stream.getState()).toBe('degraded')
+    stream.stop()
+  })
+
+  it('fires ready once per generation and requires notification frame ids', async () => {
+    const log = makeLog()
+    const stream = makeStream(log)
+    const connection = controlledReaderResponse()
+    vi.stubGlobal('fetch', vi.fn(async () => connection.response))
+
+    stream.start(1, 'token')
+    await flushMicrotasks()
+    connection.enqueue([
+      'event: stream.ready\ndata: {}\n\n',
+      'event: stream.ready\ndata: {}\n\n',
+      'event: notification.created\ndata: {"v":1,"notification":{"id":42,"eventType":"order.created_merchant","category":"order","title":"t","body":"b","level":"info","deeplink":"/","relatedOrderId":1,"createdAt":"2026-08-09T00:00:00.000Z"}}\n\n',
+    ].join(''))
+    await flushMicrotasks()
+
+    expect(log.ready).toBe(1)
+    expect(log.notifications).toHaveLength(0)
+    expect(log.degraded).toContain('id_mismatch')
+    stream.stop()
+  })
+
+  it('aborts the current chunk after a protocol error', async () => {
+    const log = makeLog()
+    const stream = makeStream(log)
+    vi.stubGlobal('fetch', vi.fn(async () => streamResponse([[
+      'event: stream.ready\ndata: {}\n\n',
+      'event: notification.created\ndata: not-json\n\n',
+      'id: 42\nevent: notification.created\ndata: {"v":1,"notification":{"id":42,"eventType":"order.created_merchant","category":"order","title":"t","body":"b","level":"info","deeplink":"/","relatedOrderId":1,"createdAt":"2026-08-09T00:00:00.000Z"}}\n\n',
+    ].join('')])))
+
+    stream.start(1, 'token')
+    await flushMicrotasks()
+
+    expect(log.degraded).toContain('malformed')
+    expect(log.notifications).toHaveLength(0)
+    stream.stop()
+  })
+
+  it('uses the full backoff progression while one fallback timer keeps running', async () => {
+    vi.useFakeTimers()
+    vi.spyOn(Math, 'random').mockReturnValue(0.5)
+    const log = makeLog()
+    const stream = makeStream(log)
+    const fetchMock = vi.fn(async () => jsonResponse(503))
+    vi.stubGlobal('fetch', fetchMock)
+
+    stream.start(1, 'token')
+    await flushMicrotasks()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+
+    for (let index = 0; index < STREAM_BACKOFF_MS.length; index += 1) {
+      const delay = STREAM_BACKOFF_MS[index]!
+      await vi.advanceTimersByTimeAsync(delay - 1)
+      expect(fetchMock).toHaveBeenCalledTimes(index + 1)
+      await vi.advanceTimersByTimeAsync(1)
+      expect(fetchMock).toHaveBeenCalledTimes(index + 2)
+    }
+
+    expect(log.fallback).toBe(2)
+    expect(stream.getState()).toBe('degraded')
+    stream.stop()
   })
 })

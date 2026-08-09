@@ -46,7 +46,8 @@ export default function OrdersPage() {
   const [loading, setLoading] = useState(true)
   const [selectedOrder, setSelectedOrder] = useState<UserOrderDetail | null>(null)
   const [loadingOrderId, setLoadingOrderId] = useState<number | null>(null)
-  const orderRequestRef = useRef(0)
+  const reloadRequestRef = useRef(0)
+  const detailRequestRef = useRef(0)
   const selectedOrderRef = useRef<UserOrderDetail | null>(null)
   selectedOrderRef.current = selectedOrder
 
@@ -71,17 +72,8 @@ export default function OrdersPage() {
 
   // SPEC-NOTIFY-RT-001 (T-FE-004): buyer.orders invalidation reloads the list +
   // attention in the background; if the current detail is the related order, reload it.
-  const reloadDetailFor = useCallback(async (orderId: number) => {
-    try {
-      const detail = await getOrderDetail(orderId)
-      setSelectedOrder((prev) => (prev && prev.id === orderId ? detail : prev))
-    } catch {
-      // keep the existing modal content on failure
-    }
-  }, [])
-
   const reloadBuyerState = useCallback(async () => {
-    const request = ++orderRequestRef.current
+    const request = ++reloadRequestRef.current
     const currentId = selectedOrderRef.current?.id
     try {
       const [list, attention, detail] = await Promise.all([
@@ -89,7 +81,7 @@ export default function OrdersPage() {
         refreshOrderAttention(),
         currentId == null ? Promise.resolve(null) : getOrderDetail(currentId),
       ])
-      if (request !== orderRequestRef.current) return
+      if (request !== reloadRequestRef.current) return
       setOrders(list)
       setOrderAttentionCount(countAttentionOrders(list))
       if (detail && selectedOrderRef.current?.id === currentId) setSelectedOrder(detail)
@@ -115,15 +107,18 @@ export default function OrdersPage() {
 
   const openOrder = useCallback(
     async (orderId: number) => {
-      const request = ++orderRequestRef.current
+      const request = ++detailRequestRef.current
       setLoadingOrderId(orderId)
       try {
         const detail = await getOrderDetail(orderId)
-        if (request === orderRequestRef.current) setSelectedOrder(detail)
+        if (request === detailRequestRef.current) {
+          selectedOrderRef.current = detail
+          setSelectedOrder(detail)
+        }
       } catch (err) {
         showToast(getApiErrorMessage(err, '获取订单详情失败'), 'error')
       } finally {
-        if (request === orderRequestRef.current) setLoadingOrderId(null)
+        if (request === detailRequestRef.current) setLoadingOrderId(null)
       }
     },
     [showToast],
@@ -245,6 +240,9 @@ export default function OrdersPage() {
         <OrderDetailModal
           order={selectedOrder}
           onClose={() => {
+            detailRequestRef.current += 1
+            selectedOrderRef.current = null
+            setLoadingOrderId(null)
             setSelectedOrder(null)
             clearFocus()
           }}
