@@ -39,14 +39,14 @@
 
 ## 3. P0 — SSE HTTP 与连接治理
 
-- [x] **CHK-SSE-001** — `GET /api/notifications/stream` 复用 authenticate + requireActiveUser。证据：routes.ts /stream 复用 authenticate+requireActiveUser。
+- [x] **CHK-SSE-001** — `GET /api/notifications/stream` 复用 authenticate + requireActiveUser。证据：code HEAD `d7e753b` 的 routes.ts 将 exact stream route 置于 router-wide auth 前，并显式按 dedicated limiter → authenticate → requireActiveUser → flags/health/caps → SSE 排序；app.ts 仅跳过该 exact GET 的普通 REST limiter。
 - [x] **CHK-SSE-002** — 200 headers 精确包含 event-stream、no-cache/no-transform、keep-alive、X-Accel-Buffering=no。证据：realtime-stream.test.ts headers Content-Type/Cache-Control/X-Accel-Buffering。
 - [x] **CHK-SSE-003** — `registerAndReady` 无 yield，initializing 不收业务广播，字节流 ready 必定先于 notification。证据：hub.registerAndReady 同步无 yield；ready 先于 notification（stream 索引断言）；当前 HEAD backend suite 通过。
 - [x] **CHK-SSE-004** — ready / notification / auth.expiring / degraded / heartbeat 字节格式与 v1 fixture 一致，业务 frame id 与 data id 相等。证据：protocol fixture 与 spec 6.5 字节一致；id 与 data.id 相等。
 - [x] **CHK-SSE-005** — 401 / 403 / 404 / 429 / 503 在 headers 前返回，Retry-After 语义正确。证据：stream 测试 401/404/503/429 于 headers 前返回，Retry-After 正确。
 - [x] **CHK-SSE-006** — local hub 按 user 路由，close / error / expiry cleanup 幂等。证据：hub per-user 路由 + cleanup 幂等（gauge 归零测试）；当前 HEAD backend suite 通过。
 - [x] **CHK-SSE-007** — heartbeat 使用共享 scheduler，默认 20 秒且不触发业务 UI。证据：hub 单共享 heartbeat scheduler；20s 默认。
-- [x] **CHK-SSE-008** — per-user=5、per-IP=20、global=1000 cap 及建立速率限制通过。证据：stream 测试 per-user cap→429 + Retry-After。
+- [x] **CHK-SSE-008** — per-user=5、per-IP=20、global=1000 cap 及建立速率限制通过。证据：stream 测试 per-user cap→429 + Retry-After；code HEAD `d7e753b` 另断言未鉴权连接暴露 dedicated `30;w=60` policy 而非 REST 15 分钟策略，默认 REST limit 保持 3000 未上调。
 - [x] **CHK-SSE-009** — 写前 `res.writableLength > 64KiB` 或任一 `res.write(...) === false` 时立即停止排队业务事件，幂等清理并只 destroy 该慢连接；其他连接不受影响，重连后 REST 收敛。证据：hub writeToEntry writableLength>cap 或 write()===false→仅 destroy 该 response；当前 HEAD backend suite 通过。
 - [x] **CHK-SSE-010** — 连接反复建立 / 断开后 gauge、Map、timer、response 全部回收。证据：stream 测试 repeated register/close 后 gauge 归零；当前 HEAD backend suite 通过。
 
@@ -143,8 +143,8 @@
 - [x] **CHK-QA-012** — 慢消费者测试分别命中 `writableLength > 64KiB` 与 `res.write() === false`，验证仅慢 response 被清理 / destroy、快消费者继续接收且重连后 REST 收敛；caps、buffer、100 burst 测试通过。证据：当前 HEAD slow-consumer hub tests + frontend burst coalescer tests 通过。
 - [x] **CHK-QA-013** — SSE 阻断 / 503 时应用自身 fallback ≤35 秒，不用测试主动 poll。证据：AC-RT-011 browser E2E 33.2s 内由应用自身收敛。
 - [x] **CHK-QA-014** — logout 后旧流关闭，旧用户后续事件不污染新用户。证据：AC-RT-020 browser E2E 通过。
-- [x] **CHK-QA-015** — 既有 notification dispatcher / service / integration / E2E 全绿。证据：既有 notification dispatcher/service/integration 全绿。
-- [x] **CHK-QA-016** — order、auth、announcement 受影响回归与前后端 build 全绿。证据：当前 HEAD final verifier builds、backend/frontend suites 与 AC-RT-001/002/020/026 browser E2E 全绿。
+- [x] **CHK-QA-015** — 既有 notification dispatcher / service / integration / E2E 全绿。证据：code HEAD `d7e753b` 的 backend 16 files / 152 tests、默认 CI-equivalent Playwright 110 passed / 6 skipped、专用 realtime Playwright 10/10。
+- [x] **CHK-QA-016** — order、auth、announcement 受影响回归与前后端 build 全绿。证据：code HEAD `d7e753b` final verifier builds、backend/frontend suites 与 AC-RT-001/002/020/026 browser E2E 全绿；默认 Playwright 的 unsigned-token UI fixture 显式 mock production flag-off stream contract，避免真实 auth 副作用而不跳过受测 UI。
 
 ---
 

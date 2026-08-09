@@ -322,9 +322,9 @@ npx vitest run src/modules/notifications/__tests__/realtime-stream.test.ts
 
 证据：I-RT-005（2026-08-09）。
 - `realtime/hub.ts`：`registerAndReady` 同步（initializing → 写 stream.ready → ready，无 await/yield）；按 userId → connectionId 分组；shared heartbeat（单 setInterval）；broadcast 只写 ready；slow-consumer 写前检查 `writableLength > maxBufferBytes` 与 `res.write()===false`，幂等清理并只 destroy 该 response；`degradeAndDrain` 对快照恰好一次发 degraded + end；startHeartbeat/stopHeartbeat/closeAll。
-- `realtime/streamController.ts`：route limiter（60s 窗口，key=req.ip）→ authenticate（router.use）→ flags(404) → lifecycle.isHealthy(503) → per-user/IP/global cap(429 + Retry-After) → 200 SSE headers + flush → registerAndReady → JWT exp 安排 auth.expiring（lead 60s）与 hard expiry timer → cleanup。模块加载时把 hub 注册到 lifecycle 单例。
-- `routes.ts`：`GET /stream` 使用独立 route limiter，先于 `/:id` 贪婪路由。`middlewares/auth.ts`：AuthPayload 增加 `exp?: number`（仅类型/读取，不改签发语义）。
-- `realtime-stream.test.ts`（8 tests，真实 HTTP + 真实 PG listener）：200 headers + stream.ready 先于 notification.created（NRT-026 id 相等）；用户 A 收不到 B 事件；401/404/503/429（Retry-After）都在 headers 前；短 token 立即 auth.expiring 后 EOF；repeated register/close 后 gauge 归零。
+- `realtime/streamController.ts`：dedicated route limiter（60s 窗口，key=req.ip）→ authenticate → requireActiveUser → flags(404) → lifecycle.isHealthy(503) → per-user/IP/global cap(429 + Retry-After) → 200 SSE headers + flush → registerAndReady → JWT exp 安排 auth.expiring（lead 60s）与 hard expiry timer → cleanup。模块加载时把 hub 注册到 lifecycle 单例。
+- `routes.ts`：`GET /stream` 在 router-wide auth 与 `/:id` 贪婪路由之前显式拥有 dedicated limiter / authenticate / requireActiveUser 顺序；`app.ts` 只对 exact GET `/notifications/stream` 跳过普通 REST limiter，连接仍受 dedicated 30/60s limiter 与 hard caps 约束。`middlewares/auth.ts`：AuthPayload 增加 `exp?: number`（仅类型/读取，不改签发语义）。
+- `realtime-stream.test.ts`（code HEAD `d7e753b` 为 12 tests，真实 HTTP + 真实 PG listener）：200 headers + stream.ready 先于 notification.created（NRT-026 id 相等）；用户 A 收不到 B 事件；401/404/503/429（Retry-After）都在 headers 前；未鉴权连接断言 `RateLimit-Policy` 为 dedicated `30;w=60` 而非 REST 15 分钟策略；短 token 立即 auth.expiring 后 EOF；repeated register/close 后 gauge 归零。
 - 验证：`npm run build` exit 0；`npx vitest run src/modules/notifications/ + config guards` → 11 files / 120 tests passed。
 
 ### T-BE-005 — Metrics、readiness 与优雅关闭
@@ -886,7 +886,7 @@ npx playwright test --config playwright.notification-realtime.config.ts \
   e2e/notification-realtime.spec.ts
 ~~~
 
-证据：`26aea843d434f679a76c0bc9af47ede19ecc8f76`（2026-08-09）。`bash scripts/verify-notification-realtime-e2e.sh` 通过 10/10（1.6m）：AC-RT-001/002/011/012/013/020/026 与 3 个 client production-module 场景；backend 3112、Vite 5182、专用 DB、reuse=false，无 `page.reload` / 测试主动 polling。**AC-RT-025 的 staging 100 样本与 P50/P95/P99 仍 Pending**。
+证据：code HEAD `d7e753b2b23d6f57c8d021e6c28fc881aa5e35c6`（2026-08-10）。`bash scripts/verify-notification-realtime-e2e.sh` 通过 10/10：AC-RT-001/002/011/012/013/020/026 与 3 个 client production-module 场景；backend 3112、Vite 5182、专用 DB、reuse=false，无 `page.reload` / 测试主动 polling。默认 `playwright.config.ts` 明确 ignore 两个 realtime spec，`.github/workflows/ci.yml` 以独立 `Notification realtime Playwright E2E` job 创建 `monexus_test_notification_realtime` 并运行同一 guarded script，且纳入 `CI OK`；默认 CI-equivalent suite 在 `API_RATE_LIMIT_MAX=3000` 下 110 passed / 6 skipped。**AC-RT-025 的 staging 100 样本与 P50/P95/P99 仍 Pending**。
 
 ### T-QA-004 — 双实例、故障、竞态与慢消费者
 
@@ -981,7 +981,7 @@ git diff --check
 git status --short
 ~~~
 
-证据：`26aea843d434f679a76c0bc9af47ede19ecc8f76`（2026-08-09）。`PATH=/root/.nvm/versions/node/v20.19.5/bin:$PATH NODE_OPTIONS=--max-old-space-size=700 bash scripts/verify-notification-realtime.sh --local` exit 0：builds、session/proxy self-tests、backend 16 files/152 tests、frontend 8 files/60 tests、Playwright 10/10、multi-instance PASS、56 migrations up to date、live diff none、secret scan synthetic-positive PASS、final clean boundary PASS。**T-QA-005 继续 Pending**：AC-RT-025、AC-RT-029/CHK-INF-007、deployed proxy/log smoke、rollout/rollback rehearsal 与 Owner review 尚无外部证据。
+证据：code HEAD `d7e753b2b23d6f57c8d021e6c28fc881aa5e35c6`（2026-08-10）。`PATH=/root/.nvm/versions/node/v20.19.5/bin:$PATH NODE_OPTIONS=--max-old-space-size=700 bash scripts/verify-notification-realtime.sh --local` exit 0：builds、session/proxy self-tests、backend 16 files/152 tests、frontend 8 files/60 tests、Playwright 10/10、multi-instance PASS、56 migrations up to date、live diff none、secret scan synthetic-positive PASS、final clean boundary PASS。另以 `API_RATE_LIMIT_MAX=3000` 跑默认 CI-equivalent Playwright，110 passed / 6 skipped；realtime suite 由独立专用 DB CI job 接管，不降低 DB guard、不 feature-off skip、不提高 rate limit。**T-QA-005 继续 Pending**：AC-RT-025、AC-RT-029/CHK-INF-007、deployed proxy/log smoke、rollout/rollback rehearsal 与 Owner review 尚无外部证据。
 
 ---
 
