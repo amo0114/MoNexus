@@ -274,7 +274,7 @@ npx vitest run src/modules/notifications/__tests__/realtime-listener.integration
 | 优先级 | P0 |
 | 对应需求 | REQ-F-003~006、REQ-NF-004~005 |
 | 依赖 | T-BE-001、T-BE-003 |
-| 状态 | Pending |
+| 状态 | Done（I-RT-005 2026-08-09） |
 
 **Owned files**
 
@@ -293,15 +293,15 @@ npx vitest run src/modules/notifications/__tests__/realtime-listener.integration
 
 **工作**
 
-- [ ] route limiter → authenticate → requireActiveUser → flags / health / cap。
-- [ ] 200 headers、flush、register + ready 顺序符合 spec。
-- [ ] `registerAndReady` 同步不 yield，entry 状态为 initializing / ready / closing；广播只写 ready。
-- [ ] 实现 shared heartbeat、per-user/IP/global cap、rate limit。
-- [ ] IP 只用 Express req.ip；TRUST_PROXY=1/2 拓扑与伪造 XFF 测试通过。
-- [ ] 实现 write buffer cap：写前 `res.writableLength > 64KiB` 或任一 `res.write(...) === false` 时立即判定 slow consumer；停止排队业务事件，仅幂等清理并定向 destroy 该 response，其他连接不受影响，客户端重连后通过 REST 收敛。
-- [ ] 从 JWT exp 安排 auth.expiring 与 hard expiry。
-- [ ] 401/403/404/429/503 在 headers 前返回。
-- [ ] listener degraded / shutdown 时 degrade + end 全部本地连接。
+- [x] route limiter → authenticate → requireActiveUser → flags / health / cap。
+- [x] 200 headers、flush、register + ready 顺序符合 spec。
+- [x] `registerAndReady` 同步不 yield，entry 状态为 initializing / ready / closing；广播只写 ready。
+- [x] 实现 shared heartbeat、per-user/IP/global cap、rate limit。
+- [x] IP 只用 Express req.ip；TRUST_PROXY=1/2 拓扑与伪造 XFF 测试通过。
+- [x] 实现 write buffer cap：写前 `res.writableLength > 64KiB` 或任一 `res.write(...) === false` 时立即判定 slow consumer；停止排队业务事件，仅幂等清理并定向 destroy 该 response，其他连接不受影响，客户端重连后通过 REST 收敛。
+- [x] 从 JWT exp 安排 auth.expiring 与 hard expiry。
+- [x] 401/403/404/429/503 在 headers 前返回。
+- [x] listener degraded / shutdown 时 degrade + end 全部本地连接。
 
 **DoD**
 
@@ -320,7 +320,12 @@ cd server
 npx vitest run src/modules/notifications/__tests__/realtime-stream.test.ts
 ~~~
 
-证据：待填。
+证据：I-RT-005（2026-08-09）。
+- `realtime/hub.ts`：`registerAndReady` 同步（initializing → 写 stream.ready → ready，无 await/yield）；按 userId → connectionId 分组；shared heartbeat（单 setInterval）；broadcast 只写 ready；slow-consumer 写前检查 `writableLength > maxBufferBytes` 与 `res.write()===false`，幂等清理并只 destroy 该 response；`degradeAndDrain` 对快照恰好一次发 degraded + end；startHeartbeat/stopHeartbeat/closeAll。
+- `realtime/streamController.ts`：route limiter（60s 窗口，key=req.ip）→ authenticate（router.use）→ flags(404) → lifecycle.isHealthy(503) → per-user/IP/global cap(429 + Retry-After) → 200 SSE headers + flush → registerAndReady → JWT exp 安排 auth.expiring（lead 60s）与 hard expiry timer → cleanup。模块加载时把 hub 注册到 lifecycle 单例。
+- `routes.ts`：`GET /stream` 使用独立 route limiter，先于 `/:id` 贪婪路由。`middlewares/auth.ts`：AuthPayload 增加 `exp?: number`（仅类型/读取，不改签发语义）。
+- `realtime-stream.test.ts`（8 tests，真实 HTTP + 真实 PG listener）：200 headers + stream.ready 先于 notification.created（NRT-026 id 相等）；用户 A 收不到 B 事件；401/404/503/429（Retry-After）都在 headers 前；短 token 立即 auth.expiring 后 EOF；repeated register/close 后 gauge 归零。
+- 验证：`npm run build` exit 0；`npx vitest run src/modules/notifications/ + config guards` → 11 files / 120 tests passed。
 
 ### T-BE-005 — Metrics、readiness 与优雅关闭
 

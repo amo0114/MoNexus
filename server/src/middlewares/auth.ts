@@ -21,6 +21,8 @@ export interface AuthPayload {
   mfaVerified?: boolean
   /** Invalidates prior administrator access tokens after MFA security changes. */
   mfaVersion?: number
+  /** JWT standard `exp` claim (seconds since epoch) — used for SSE auth timers. */
+  exp?: number
 }
 
 declare global {

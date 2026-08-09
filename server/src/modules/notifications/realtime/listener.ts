@@ -23,7 +23,7 @@ export interface RealtimeHubPort {
   /** True when at least one local connection exists for this user. */
   hasSubscribers(recipientUserId: number): boolean
   /** Route a validated envelope to this user's local connections only. */
-  broadcastNotification(envelope: NotificationEnvelope): void
+  broadcastNotification(recipientUserId: number, envelope: NotificationEnvelope): void
 }
 
 /** Reads the safe envelope from the primary by id + recipientUserId. */
@@ -151,7 +151,7 @@ export class NotificationRealtimeListener {
       this.options.reportOutcome('not_found')
       return
     }
-    this.options.hub.broadcastNotification(envelope)
+    this.options.hub.broadcastNotification(payload.recipientUserId, envelope)
     this.options.reportOutcome('routed')
   }
 

@@ -37,7 +37,7 @@ class FakeHub {
     return this.subscribers.has(recipientUserId)
   }
 
-  broadcastNotification(envelope: NotificationEnvelope): void {
+  broadcastNotification(_recipientUserId: number, envelope: NotificationEnvelope): void {
     this.broadcast.push(envelope)
   }
 

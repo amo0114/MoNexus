@@ -247,7 +247,7 @@ Follow-up owner:
 | I-RT-002 | T-BE-001 | Done | config / protocol / dependency tests |
 | I-RT-003 | T-BE-002 | Done | real PG commit / rollback / dedupe + AC-RT-028 / CHK-BE-003 |
 | I-RT-004 | T-BE-003 | Done | listener / generation / primary projection |
-| I-RT-005 | T-BE-004 | Pending | hub + stream raw integration |
+| I-RT-005 | T-BE-004 | Done | hub + stream raw integration |
 | I-RT-006 | T-BE-005 | Pending | readiness / metrics / SIGTERM |
 | I-RT-007 | T-FE-001、T-FE-002 | Pending | parser / state / invalidation contract |
 | I-RT-008 | T-FE-003~005 | Pending | notification / buyer / merchant UI E2E |
@@ -387,7 +387,7 @@ git status --short
 | 时间 | HEAD | I / T | REQ / AC / CHK | 命令或动作 | 结果 | Artifact |
 | --- | --- | --- | --- | --- | --- | --- |
 | 2026-08-09 | 22ae95c8 (frozen) + I-RT-001 | I-RT-001 / T-DOC-001 | REQ-F-022、REQ-NF-007、REQ-NF-009；CHK-DOC-001~002 | git rev-parse HEAD / origin/develop; git diff --stat develop origin/develop; git diff --check; rg 六件套 ID/版本/状态/基线；编辑旧 spec/design superseded 指针 | develop..origin/develop diff 空 → 冻结语义不变；六件套 ID/版本/状态/基线一致；`git diff --check` exit 0；旧 spec.md / design.md 已加 superseded 指针 | commit 记录见 git log；delta audit 见本文档 2.1 |
-| 2026-08-09 | I-RT-004 HEAD | I-RT-004 / T-BE-003 | REQ-F-002、REQ-F-020、REQ-NF-003；AC-RT-005、010、029；CHK-BE-006~010 | `cd server && npm run build`；`npx vitest run realtime-listener.integration.test.ts + notifications + config guards`；pg_stat_activity application_name 计数 | build exit 0；10 files / 112 tests passed；start 幂等 app_name 计数=1；no_subscriber 跳过查询；pg_terminate_backend → degraded + 恰好一次 drain → reconnect healthy；stop 后无 backend；query 无 payload 整体/敏感字段 | 新增 `realtime/listener.ts`、`realtime/lifecycle.ts`、`realtime-listener.integration.test.ts`；`service.ts` 新增 getRealtimeEnvelope |
+| 2026-08-09 | I-RT-005 HEAD | I-RT-005 / T-BE-004 | REQ-F-003~006、REQ-NF-004~005；AC-RT-006~008、015~018；CHK-SSE-001~010、CHK-SEC-001~005 | `cd server && npm run build`；`npx vitest run realtime-stream.test.ts + notifications + config guards`；真实 HTTP + 真实 PG listener 跑 `realtime-stream.test.ts` | build exit 0；11 files / 120 tests passed；ready 先于 notification；A/B 隔离；401/404/503/429 于 headers 前；auth.expiring 后硬 EOF；gauge 归零 | 新增 `realtime/hub.ts`、`realtime/streamController.ts`、`realtime-stream.test.ts`；routes.ts 挂 /stream；auth.ts AuthPayload+exp |
 
 证据规则：
 

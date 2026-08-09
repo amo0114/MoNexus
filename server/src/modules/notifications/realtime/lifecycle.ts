@@ -18,6 +18,8 @@ import {
   type RealtimeHubPort,
 } from './listener.js'
 import type { NotificationEnvelope } from './protocol.js'
+import { config } from '../../../config/index.js'
+import { getRealtimeEnvelope } from '../service.js'
 
 export type NotificationRealtimeStatus = 'disabled' | 'starting' | 'healthy' | 'degraded' | 'draining' | 'stopped'
 
@@ -28,7 +30,7 @@ export interface RealtimeHubController extends RealtimeHubPort {
 
 const NULL_HUB: RealtimeHubPort = {
   hasSubscribers: () => false,
-  broadcastNotification: (_envelope: NotificationEnvelope) => {},
+  broadcastNotification: (_recipientUserId: number, _envelope: NotificationEnvelope) => {},
 }
 
 export interface NotificationRealtimeLifecycleOptions {
@@ -172,4 +174,19 @@ export class NotificationRealtimeLifecycle {
       this.retryTimer = null
     }
   }
+}
+
+/**
+ * Singleton bound to config + the safe service projection. main.ts / health /
+ * streamController import this so they share one lifecycle instance.
+ */
+let lifecycleSingleton: NotificationRealtimeLifecycle | null = null
+export function getNotificationRealtimeLifecycle(): NotificationRealtimeLifecycle {
+  if (!lifecycleSingleton) {
+    lifecycleSingleton = new NotificationRealtimeLifecycle({
+      connectionString: config.databaseUrl,
+      getEnvelope: getRealtimeEnvelope,
+    })
+  }
+  return lifecycleSingleton
 }
