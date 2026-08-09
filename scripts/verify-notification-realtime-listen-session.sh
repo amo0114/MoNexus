@@ -11,6 +11,10 @@
 # or permission failure returns non-zero and MUST block enabling realtime.
 set -euo pipefail
 
+if [[ "${1:-}" == "--self-test" ]]; then
+  exec node "$(dirname "$0")/../server/scripts/verify-notification-realtime-listen-session.mjs" --self-test
+fi
+
 ENV_FILE="${RT_SESSION_ENV_FILE:-.env.notification-realtime.production-like}"
 if [[ ! -f "$ENV_FILE" ]]; then
   echo "[gate] missing production-like env file: $ENV_FILE" >&2
@@ -31,6 +35,8 @@ true
 # Record the evidence artifact/revision + timestamp (redacted) for CHK-INF-007.
 revision="${RT_SESSION_REVISION:-$(git -C "$(dirname "$0")/.." rev-parse --short HEAD 2>/dev/null || echo unknown)}"
 endpoint_class="${RT_SESSION_ENDPOINT_CLASS:-session_pool}"
+[[ "$endpoint_class" == direct || "$endpoint_class" == session_pool ]] || { echo '[gate] invalid endpoint class' >&2; exit 1; }
+[[ "$revision" != unknown && "$revision" != placeholder && -n "$revision" ]] || { echo '[gate] non-placeholder revision required' >&2; exit 1; }
 echo "[gate] artifact_revision=${revision} endpoint_class=${endpoint_class} at $(date -u +%FT%TZ)"
 
 cd "$(dirname "$0")/../server"

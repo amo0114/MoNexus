@@ -31,16 +31,18 @@ const revision = process.env.RT_SESSION_REVISION ?? 'unknown'
 
 if (process.argv.includes('--self-test')) {
   const cases = [
-    ['four workers connected', { connected: 4, attempted: 40, committed: 40, failed: 0, roleMatch: true }],
-    ['39 transactions', { connected: 4, attempted: 40, committed: 39, failed: 0, roleMatch: true }],
-    ['reject', { connected: 4, attempted: 40, committed: 39, failed: 1, roleMatch: true }],
-    ['role mismatch', { connected: 4, attempted: 40, committed: 40, failed: 0, roleMatch: false }],
+    ['valid', { connected: 4, attempted: 40, committed: 40, failed: 0, completed: true, roleMatch: true, endpointClass: 'direct', revision: 'abc123', durationSec: 54 }],
+    ['39 transactions', { connected: 4, attempted: 40, committed: 39, failed: 0, completed: true, roleMatch: true, endpointClass: 'direct', revision: 'abc123', durationSec: 54 }],
+    ['reject', { connected: 4, attempted: 40, committed: 40, failed: 1, completed: true, roleMatch: true, endpointClass: 'direct', revision: 'abc123', durationSec: 54 }],
+    ['unfinished', { connected: 4, attempted: 40, committed: 40, failed: 0, completed: false, roleMatch: true, endpointClass: 'direct', revision: 'abc123', durationSec: 54 }],
+    ['role mismatch', { connected: 4, attempted: 40, committed: 40, failed: 0, completed: true, roleMatch: false, endpointClass: 'direct', revision: 'abc123', durationSec: 54 }],
+    ['class', { connected: 4, attempted: 40, committed: 40, failed: 0, completed: true, roleMatch: true, endpointClass: 'unknown', revision: 'abc123', durationSec: 54 }],
+    ['revision', { connected: 4, attempted: 40, committed: 40, failed: 0, completed: true, roleMatch: true, endpointClass: 'direct', revision: 'unknown', durationSec: 54 }],
+    ['duration', { connected: 4, attempted: 40, committed: 40, failed: 0, completed: true, roleMatch: true, endpointClass: 'direct', revision: 'abc123', durationSec: 66 }],
   ]
-  const accepts = (x) => x.connected === 4 && x.attempted === 40 && x.committed === 40 && x.failed === 0 && x.roleMatch && x.durationSec >= 0 && x.durationSec <= 65
-  cases[0][1].durationSec = 54
-  cases.slice(1).forEach(([, x]) => { x.durationSec = 54 })
+  const accepts = (x) => x.connected === 4 && x.attempted === 40 && x.committed === 40 && x.failed === 0 && x.completed === true && x.roleMatch === true && (x.endpointClass === 'direct' || x.endpointClass === 'session_pool') && x.revision !== 'unknown' && x.revision !== 'placeholder' && x.durationSec >= 0 && x.durationSec <= 65
   if (!accepts(cases[0][1]) || cases.slice(1).some(([, x]) => accepts(x))) process.exit(1)
-  console.log('[gate] self-test=PASS (valid accepted; incomplete/reject/role mismatch rejected)')
+  console.log('[gate] self-test=PASS (valid accepted; all negative fixtures rejected)')
   process.exit(0)
 }
 
@@ -191,6 +193,7 @@ async function run() {
   const allRoundsOk = rounds.every((r) => r.ok)
   const allPermitted = rounds.every((r) => r.permission)
   const durationSec = Math.round((Date.now() - startedAt) / 1000)
+  const completed = rounds.length === 3 && auxWorkers.length === 4
 
   // ---- redacted output (no PID / URL / user / password) ----
   console.log(`[gate] endpoint_class=${endpointClass}`)
@@ -205,8 +208,9 @@ async function run() {
   console.log(`[gate] duration_sec=${durationSec}`)
   console.log(`[gate] aux_workers=4 aux_attempted=${auxAttempted} aux_committed=${auxCommitted} aux_failed=${auxFailed}`)
   console.log(`[gate] total_sec=${durationSec}`)
+  console.log(`[gate] completed=${completed}`)
 
-  const pass = !auxConnectFailed && roleMatch === true && pidDistinct === 1 && allRoundsOk && allPermitted && auxAttempted === 40 && auxCommitted === 40 && auxFailed === 0 && durationSec >= 0 && durationSec <= 65
+  const pass = !auxConnectFailed && roleMatch === true && pidDistinct === 1 && allRoundsOk && allPermitted && auxAttempted === 40 && auxCommitted === 40 && auxFailed === 0 && completed && (endpointClass === 'direct' || endpointClass === 'session_pool') && revision !== 'unknown' && revision !== 'placeholder' && durationSec >= 0 && durationSec <= 65
   console.log(`[gate] result=${pass ? 'PASS' : 'FAIL'}`)
   process.exit(pass ? 0 : 1)
 }

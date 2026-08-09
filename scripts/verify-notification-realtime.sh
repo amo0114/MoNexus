@@ -75,7 +75,7 @@ if git grep -nE "$secret_pattern" -- . ':!node_modules' >/dev/null 2>&1; then
   fail "secret material found in the tree"
 fi
 tmp_secret="$(mktemp)"; trap 'rm -f "$tmp_secret"' EXIT
-printf '%s\n' '-----BEGIN RSA PRIVATE KEY-----' >"$tmp_secret"
+printf '%s%s RSA PRIVATE KEY%s\n' '-----' "$marker_begin" '-----' >"$tmp_secret"
 grep -nE "$secret_pattern" "$tmp_secret" >/dev/null || fail "secret scan self-test did not detect synthetic positive"
 echo "git/schema/secret OK (clean + synthetic positive)"
 
@@ -83,8 +83,9 @@ step "8. AC-RT-029 / CHK-INF-007 (deployment gate, requires production-like endp
 if [[ "${NOTIFICATION_REALTIME_SESSION_GATE:-false}" == "true" ]]; then
   bash scripts/verify-notification-realtime-listen-session.sh
 else
-  echo "[INFO] local PASS; release session gate PENDING (external evidence required)"
+  echo "[PASS] local PASS"
+  echo "[PENDING] release PENDING (external evidence required)"
 fi
 
 echo
-echo "[PASS] notification-realtime verify gate completed"
+echo "[PASS] local verification completed; release PENDING"

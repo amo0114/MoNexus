@@ -34,7 +34,8 @@ require_cmd curl
 echo "[INFO] Opening SSE stream at ${BASE}/api/notifications/stream"
 headers_file="$(mktemp)"
 body_file="$(mktemp)"
-trap 'rm -f "$headers_file" "$body_file"' EXIT
+timing_file="$(mktemp)"
+trap 'rm -f "$headers_file" "$body_file" "$timing_file"' EXIT
 
 # curl -N disables buffering; --max-time bounds the smoke.
 timeout 2 curl -sN --max-time 2 \
@@ -43,14 +44,17 @@ timeout 2 curl -sN --max-time 2 \
   -H "Cache-Control: no-cache" \
   -H "Authorization: Bearer ${TOKEN}" \
   -o "$body_file" \
-  "${BASE}/api/notifications/stream" >/dev/null 2>&1 || true
+  -w '%{time_starttransfer}' >"$timing_file" \
+  "${BASE}/api/notifications/stream" 2>/dev/null || true
 
 grep -qi "^HTTP/.* 200" "$headers_file" || fail "stream did not return 200"
 grep -qi "content-type: text/event-stream" "$headers_file" || fail "missing Content-Type: text/event-stream"
 grep -qi "cache-control: no-cache, no-transform" "$headers_file" || fail "missing Cache-Control: no-cache, no-transform"
 grep -qi "x-accel-buffering: no" "$headers_file" || fail "missing X-Accel-Buffering: no"
 grep -q "stream.ready" "$body_file" || fail "no stream.ready in first bytes (buffered?)"
-pass "raw stream: 200 + headers + ready arrived immediately"
+ready_elapsed="$(tr -d '[:space:]' <"$timing_file")"
+awk -v t="$ready_elapsed" 'BEGIN { exit !(t != "" && t <= 2) }' || fail "stream.ready did not arrive within 2s (elapsed=${ready_elapsed:-unknown})"
+pass "raw stream: 200 + headers + ready arrived within ${ready_elapsed}s"
 
 # 2. Nginx config test (bundled image) is exercised by npm run check:nginx.
 
