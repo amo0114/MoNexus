@@ -21,6 +21,7 @@ import {
 } from '../lib/fakaBridge/index.js'
 import type { FakaTransport } from '../lib/fakaBridge/types.js'
 import { createTestUser } from './helpers.js'
+import { getActiveNetworkNodeCategoryId } from './catalogFixture.js'
 import { __setMailerForTesting } from '../lib/mailer/index.js'
 import { CaptureMailer } from '../lib/mailer/capture.js'
 import { listFakaTasksQuerySchema } from '../modules/admin/schema.js'
@@ -52,6 +53,7 @@ async function fakaProduct(price = 100) {
     data: {
       name: 'P1 Faka',
       type: '网络节点',
+      categoryId: await getActiveNetworkNodeCategoryId(),
       price,
       status: 'active',
       deliveryMode: 'manual_service',

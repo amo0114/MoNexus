@@ -6,6 +6,7 @@ import { respondToOrderDispute } from '../modules/merchant/service.js'
 import { closeOrder, createOrder, disputeOrder } from '../modules/orders/service.js'
 import { checkin } from '../modules/points/service.js'
 import { createProductWithOffer, createTestMerchant, createTestUser, issueTestInviteCode } from './helpers.js'
+import { getActiveCategoryIdByLabel } from './catalogFixture.js'
 
 async function createFixedProduct(price: number, merchantId?: number) {
   return createProductWithOffer({
@@ -61,6 +62,7 @@ describe('accounting concurrency and terminal settlement', () => {
       data: {
         name: '并发库存领取商品',
         type: '邀请码',
+        categoryId: await getActiveCategoryIdByLabel('邀请码'),
         price: 100,
         status: 'active',
         deliveryMode: 'instant_inventory',

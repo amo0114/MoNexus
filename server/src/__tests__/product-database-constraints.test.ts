@@ -1,23 +1,24 @@
 import { describe, expect, it } from 'vitest'
 import { prisma } from '../lib/prisma.js'
+import { getActiveCategoryIdByLabel } from './catalogFixture.js'
 
 describe('Product and InventoryItem database constraints', () => {
   it('rejects invalid product commercial values and finite state values', async () => {
+    const categoryId = await getActiveCategoryIdByLabel('充值卡密')
     const invalidProducts = [
-      { name: '零价格', type: '充值卡密', price: 0 },
-      { name: '倒挂原价', type: '充值卡密', price: 100, originalPrice: 99 },
-      { name: '负库存', type: '充值卡密', price: 100, stock: -1 },
-      { name: '负销量', type: '充值卡密', price: 100, sales: -1 },
-      { name: '非法上下架状态', type: '充值卡密', price: 100, status: 'archived' },
-      { name: '非法履约方式', type: '充值卡密', price: 100, deliveryMode: 'scheduled' },
-      { name: '非法库存方式', type: '充值卡密', price: 100, stockMode: 'reserved' },
-      { name: '非法固定内容类型', type: '充值卡密', price: 100, fixedContentType: 'html' },
+      { name: '零价格', type: '充值卡密', price: 0, categoryId },
+      { name: '倒挂原价', type: '充值卡密', price: 100, originalPrice: 99, categoryId },
+      { name: '负库存', type: '充值卡密', price: 100, stock: -1, categoryId },
+      { name: '负销量', type: '充值卡密', price: 100, sales: -1, categoryId },
+      { name: '非法上下架状态', type: '充值卡密', price: 100, status: 'archived', categoryId },
+      { name: '非法履约方式', type: '充值卡密', price: 100, deliveryMode: 'scheduled', categoryId },
+      { name: '非法库存方式', type: '充值卡密', price: 100, stockMode: 'reserved', categoryId },
+      { name: '非法固定内容类型', type: '充值卡密', price: 100, fixedContentType: 'html', categoryId },
       {
-        name: '即时库存不能不限量', type: '充值卡密', price: 100,
+        name: '即时库存不能不限量', type: '充值卡密', price: 100, categoryId,
         deliveryMode: 'instant_inventory', stockMode: 'unlimited',
       },
     ]
-
     for (const data of invalidProducts) {
       await expect(prisma.product.create({ data })).rejects.toThrow()
     }
@@ -25,7 +26,7 @@ describe('Product and InventoryItem database constraints', () => {
 
   it('rejects an inventory item with an invalid lifecycle state', async () => {
     const product = await prisma.product.create({
-      data: { name: '库存状态约束商品', type: '充值卡密', price: 100 },
+      data: { name: '库存状态约束商品', type: '充值卡密', price: 100, categoryId: await getActiveCategoryIdByLabel('充值卡密') },
     })
     const offer = await prisma.offer.create({
       data: { productId: product.id, name: '默认规格', isDefault: true, price: 100 },
@@ -38,7 +39,7 @@ describe('Product and InventoryItem database constraints', () => {
 
   it('enforces auditable inventory movement semantics at the database layer', async () => {
     const product = await prisma.product.create({
-      data: { name: '库存流水约束商品', type: '充值卡密', price: 100 },
+      data: { name: '库存流水约束商品', type: '充值卡密', price: 100, categoryId: await getActiveCategoryIdByLabel('充值卡密') },
     })
 
     await expect(prisma.inventoryLog.create({
@@ -82,7 +83,7 @@ describe('P5 file-delivery database constraints', () => {
       data: { userId: user.id, name: `文件约束商家${suffix}`, status: 'active' },
     })
     const product = await prisma.product.create({
-      data: { name: `文件约束商品${suffix}`, type: '充值卡密', price: 100, merchantId: merchant.id },
+      data: { name: `文件约束商品${suffix}`, type: '充值卡密', price: 100, merchantId: merchant.id, categoryId: await getActiveCategoryIdByLabel('充值卡密') },
     })
     return { merchant, product }
   }

@@ -2,6 +2,8 @@ import 'dotenv/config'
 import { prisma } from '../lib/prisma.js'
 import { generateInviteCode } from '../lib/inviteCode.js'
 import { encryptMfaSecret } from '../modules/auth/mfa.js'
+import { ensureSeedCategories } from '../modules/catalog/bootstrap.js'
+import { resolveProductCategory } from '../modules/catalog/resolver.js'
 import bcrypt from 'bcryptjs'
 
 const FORCE_RESET = process.argv.includes('--force-reset')
@@ -83,6 +85,10 @@ async function main() {
     update: { balance: 99999 },
     create: { userId: admin.id, balance: 99999 },
   })
+
+  // B_CAT（SPEC-CATALOG-OPS-001 §11.2）：确保五个冻结 seed 分类存在
+  // （create-if-missing；与迁移 20260809020000 常量一致，幂等）。
+  await ensureSeedCategories(admin.id)
 
   // 创建测试用户
   const testUser = await upsertUser({
@@ -202,11 +208,19 @@ async function main() {
 
   for (const p of products) {
     const { inventoryItems, ...productData } = p
+    // B_CAT：legacy type 交 resolver 精确映射 categoryId/type（种子数据与
+    // 迁移常量一致；新写入必须 categoryId，type 取 category.label）。
+    const { categoryId, type } = await resolveProductCategory(
+      { type: productData.type },
+      prisma,
+    )
     const product = await prisma.product.upsert({
       where: { id: products.indexOf(p) + 1 },
       update: {},
       create: {
         ...productData,
+        categoryId,
+        type,
         stock: inventoryItems.length,
         sales: Math.floor(Math.random() * 3000) + 100,
       },
@@ -273,7 +287,8 @@ async function main() {
           name: '商家自营高速节点包',
           description: '示例商家的自营商品，可用于商家端订单与结算联调。',
           richDescription: '<p>由示例商家提供的高速节点订阅包，用于本地联调商家订单与结算流程。</p>',
-          type: '网络节点',
+          // B_CAT：legacy type 交 resolver 精确映射 categoryId/type。
+          ...(await resolveProductCategory({ type: '网络节点' }, prisma)),
           icon: 'wifi',
           imageUrl: 'https://images.unsplash.com/photo-1558494949-ef010cbdcc31?auto=format&fit=crop&q=80&w=800',
           price: 600,

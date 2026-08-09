@@ -10,6 +10,7 @@ import {
 import { config } from '../config/index.js'
 import { prisma } from '../lib/prisma.js'
 import { api, authHeader, createTestUser, loginAs } from './helpers.js'
+import { getActiveNetworkNodeCategoryId } from './catalogFixture.js'
 
 function snapshot(sku: string, remaining = 7): FakaCapacitySnapshot {
   return {
@@ -200,6 +201,7 @@ describe('Faka capacity public-read cache', () => {
         data: {
           name: '公共读容量测试',
           type: '网络节点',
+          categoryId: await getActiveNetworkNodeCategoryId(),
           price: 100,
           stock: 0,
           status: 'active',

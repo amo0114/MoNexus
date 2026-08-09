@@ -43,6 +43,7 @@ import { invalidate as invalidateUserStatusCache } from '../../lib/userStatusCac
 import { revokeAllUserRefreshTokens } from '../auth/service.js'
 import { lockUserRefreshSessionMutations } from '../auth/sessionService.js'
 import { invalidateProductPublicCache } from '../products/cache.js'
+import { resolveProductCategory } from '../catalog/resolver.js'
 import { serializeAdminOrderDetail, serializeAdminOrderList } from '../orders/serializers.js'
 import { getSettlementEligibility } from '../merchant/service.js'
 import { transitionOrderStatus } from '../orders/fulfillment.js'
@@ -340,18 +341,28 @@ export async function createProduct(adminUserId: number, data: CreateProductInpu
   })
   // Strip faka fields from product row (they live only on Offer).
   const {
+    categoryId: _categoryId, type: _type,
     externalIntegration: _ei,
     externalSku: _es,
     ...productRowFields
   } = normalizedProductData as typeof normalizedProductData & {
     externalIntegration?: string | null
     externalSku?: string | null
+    categoryId?: number
+    type?: string
   }
 
   const product = await prisma.$transaction(async tx => {
+    // B_CAT：用事务内 client 解析 categoryId/type（不开启嵌套事务）。
+    const { categoryId, type } = await resolveProductCategory(
+      { categoryId: data.categoryId, type: data.type },
+      tx,
+    )
     const created = await tx.product.create({
       data: {
         ...productRowFields,
+        categoryId,
+        type,
         deliveryMode,
         stockMode,
         fixedContentType,
@@ -1554,7 +1565,7 @@ export async function importAdminFakaPlan(
   const defaultRow = resolved[0]!
   const productName =
     input.productName?.trim() || planMeta.name || `Xboard 套餐 #${input.planId}`
-  const productType = input.type?.trim() || '网络节点'
+  // B_CAT：legacy `type`（默认 网络节点）在事务内交 resolver 解析为 categoryId。
   // Prefer Xboard plan.content as rich intro; never dump plan_id / period keys to buyers.
   const planContent =
     typeof planMeta.content === 'string' && planMeta.content.trim()
@@ -1566,12 +1577,20 @@ export async function importAdminFakaPlan(
       : `${productName} · 含 ${resolved.map(r => r.offerName).join(' / ')} 等规格`
 
   const product = await prisma.$transaction(async tx => {
+    // B_CAT：Xboard 无 categoryId 输入，仅 legacy `type`（默认 网络节点）。
+    // 冻结 legacy/default 策略：交 resolver 按 active label 精确映射；
+    // 未知/空白 legacy type → 400 拒绝（不猜测、不回落 legacy-unclassified，§11.2）。
+    const { categoryId, type } = await resolveProductCategory(
+      { type: input.type?.trim() || '网络节点' },
+      tx,
+    )
     const created = await tx.product.create({
       data: {
         name: productName,
         description: plainDescription,
         richDescription: planContent,
-        type: productType,
+        categoryId,
+        type,
         icon: 'package',
         price: defaultRow.pricePoints,
         deliveryMode: 'manual_service',

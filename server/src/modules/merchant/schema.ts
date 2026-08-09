@@ -39,11 +39,42 @@ export const updateMerchantSchema = z.object({
   contactPhone: z.string().optional(),
 })
 
+/**
+ * B_CAT (SPEC-CATALOG-OPS-001 §7.4): on create, exactly one of `categoryId`
+ * or legacy `type` must be supplied. Both together are rejected; neither is
+ * rejected. The resolver never sees an ambiguous input.
+ */
+function assertExactlyOneCategoryInput(
+  data: { categoryId?: number; type?: string },
+  ctx: z.RefinementCtx,
+) {
+  const hasCategoryId = data.categoryId != null
+  const hasType = data.type != null
+  if (hasCategoryId && hasType) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['type'],
+      message: '不能同时指定 categoryId 与商品类型',
+    })
+    return
+  }
+  if (!hasCategoryId && !hasType) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['categoryId'],
+      message: '必须提供 categoryId 或商品类型',
+    })
+  }
+}
+
 const merchantProductFieldsSchema = z.object({
   name: productNameSchema,
   description: productDescriptionSchema.optional(),
   richDescription: productRichDescriptionSchema.optional(),
-  type: productTypeSchema,
+  // B_CAT (SPEC-CATALOG-OPS-001 §7.4): legacy `type` is a compatibility input;
+  // new writes should use `categoryId` (exactly one of the two is required on
+  // create, enforced by assertExactlyOneCategoryInput).
+  type: productTypeSchema.optional(),
   icon: productIconSchema.default('package'),
   imageUrl: productImageItemSchema.optional(),
   images: productImagesSchema.optional(),
@@ -103,12 +134,16 @@ export const updateMerchantOfferSchema = merchantOfferFieldsSchema.partial().ext
 // P4a F3：向导原子发布——商品 + 默认规格名 + 额外规格一次事务落库，
 // 任一规格校验失败则整体回滚（不再有"商品建了、规格没建全"的中间态）。
 export const createMerchantProductSchema = merchantProductFieldsSchema.extend({
+  // B_CAT (D-CAT-09): explicit categoryId for new writes.
+  categoryId: z.number().int().positive().optional(),
   primaryOfferName: z.string().trim().min(1, '默认规格名称不能为空').max(50).optional(),
   // 复审 P2-2：默认规格的订阅有效期（落 Offer，不进 Product 列）；此前只有
   // 附加规格能设，单 SKU 订阅商品被迫绕路"建附加规格再下架默认规格"。
   validityDays: z.number().int().min(1).max(3650).nullable().optional(),
   offers: z.array(merchantOfferFieldsSchema).max(20, '规格数量超出上限').optional(),
-}).superRefine(validateProductCommercialFields)
+})
+  .superRefine(validateProductCommercialFields)
+  .superRefine(assertExactlyOneCategoryInput)
 
 export const updateMerchantProductSchema = merchantProductFieldsSchema.partial().extend({
   status: productStatusSchema.optional(),

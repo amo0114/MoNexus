@@ -17,6 +17,7 @@ import {
   type InventoryImportPayload,
 } from '../../lib/inventoryImport.js'
 import { invalidateProductPublicCache } from '../products/cache.js'
+import { resolveProductCategory } from '../catalog/resolver.js'
 import {
   createOrderStatusEvent,
   isInstantMode,
@@ -283,7 +284,9 @@ export async function createMyProduct(
   merchantId: number,
   data: {
     name: string; description?: string; richDescription?: string;
-    type: string; icon?: string; imageUrl?: string | null; images?: string[];
+    // B_CAT (SPEC-CATALOG-OPS-001 §7.4): legacy `type` is a compatibility input;
+    // new writes should use `categoryId` (exactly one required, schema-enforced).
+    type?: string; categoryId?: number; icon?: string; imageUrl?: string | null; images?: string[];
     price: number; originalPrice?: number; isHot?: boolean; deliveryMode?: string;
     stockMode?: string; stock?: number; fixedContent?: string; fixedContentType?: string;
     purchaseForm?: PurchaseFormField[];
@@ -296,7 +299,12 @@ export async function createMyProduct(
 ) {
   assertOriginalPriceAtLeastSale(data.price, data.originalPrice)
   // primaryOfferName/validityDays/offers 只进 Offer 表，不进 Product 列。
-  const { primaryOfferName: _primaryOfferName, validityDays: _validityDays, offers: _offers, ...productFields } = data
+  // B_CAT：categoryId/type 交由 resolver 在事务内解析（schema 已保证二者只给其一）。
+  const {
+    categoryId: _categoryId, type: _type,
+    primaryOfferName: _primaryOfferName, validityDays: _validityDays, offers: _offers,
+    ...productFields
+  } = data
   const normalizedProductData = normalizeProductImageFields(productFields)
   const deliveryMode = data.deliveryMode ?? 'instant_inventory'
   const stockMode = data.stockMode ?? (deliveryMode === 'instant_inventory' ? 'limited' : 'unlimited')
@@ -312,9 +320,16 @@ export async function createMyProduct(
   })
 
   const product = await prisma.$transaction(async tx => {
+    // B_CAT：用事务内 client 解析 categoryId/type（不开启嵌套事务）。
+    const { categoryId, type } = await resolveProductCategory(
+      { categoryId: data.categoryId, type: data.type },
+      tx,
+    )
     const created = await tx.product.create({
       data: {
         ...normalizedProductData,
+        categoryId,
+        type,
         deliveryMode,
         stockMode,
         fixedContentType,

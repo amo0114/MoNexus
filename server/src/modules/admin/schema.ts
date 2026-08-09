@@ -75,11 +75,42 @@ export type AbuseOverviewQuery = z.infer<typeof abuseOverviewQuerySchema>
 export type ListAbuseReferralsQuery = z.infer<typeof listAbuseReferralsQuerySchema>
 export type ListAbuseRewardsQuery = z.infer<typeof listAbuseRewardsQuerySchema>
 
+/**
+ * B_CAT (SPEC-CATALOG-OPS-001 §7.4): on create, exactly one of `categoryId`
+ * or legacy `type` must be supplied. Both together are rejected; neither is
+ * rejected. The resolver never sees an ambiguous input.
+ */
+function assertExactlyOneCategoryInput(
+  data: { categoryId?: number; type?: string },
+  ctx: z.RefinementCtx,
+) {
+  const hasCategoryId = data.categoryId != null
+  const hasType = data.type != null
+  if (hasCategoryId && hasType) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['type'],
+      message: '不能同时指定 categoryId 与商品类型',
+    })
+    return
+  }
+  if (!hasCategoryId && !hasType) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['categoryId'],
+      message: '必须提供 categoryId 或商品类型',
+    })
+  }
+}
+
 const adminProductFieldsSchema = z.object({
   name: productNameSchema,
   description: productDescriptionSchema.optional(),
   richDescription: productRichDescriptionSchema.optional(),
-  type: productTypeSchema,
+  // B_CAT (SPEC-CATALOG-OPS-001 §7.4): legacy `type` is a compatibility input;
+  // new writes should use `categoryId` (exactly one of the two is required on
+  // create, enforced by assertExactlyOneCategoryInput).
+  type: productTypeSchema.optional(),
   icon: productIconSchema.default('package'),
   imageUrl: productImageItemSchema.optional(),
   images: productImagesSchema.optional(),
@@ -103,7 +134,12 @@ const adminProductFieldsSchema = z.object({
     .optional(),
 })
 
-export const createProductSchema = adminProductFieldsSchema.superRefine(validateProductCommercialFields)
+export const createProductSchema = adminProductFieldsSchema.extend({
+  // B_CAT (D-CAT-09): explicit categoryId for new writes.
+  categoryId: z.number().int().positive().optional(),
+})
+  .superRefine(validateProductCommercialFields)
+  .superRefine(assertExactlyOneCategoryInput)
 
 export type CreateProductInput = z.infer<typeof createProductSchema>
 

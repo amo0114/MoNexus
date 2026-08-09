@@ -5,6 +5,7 @@ import { __setMailerForTesting } from '../lib/mailer/index.js'
 import type { Mailer } from '../lib/mailer/types.js'
 import { runLowStockNotifyBatch } from '../lib/lowStockNotify.js'
 import { createTestMerchant } from './helpers.js'
+import { getActiveNetworkNodeCategoryId } from './catalogFixture.js'
 
 const HOUR_MS = 60 * 60 * 1000
 
@@ -58,6 +59,7 @@ async function createInstantInventoryOffer(input: {
     data: {
       name: input.productName ?? '低库存商品',
       type: '网络节点',
+      categoryId: await getActiveNetworkNodeCategoryId(),
       price: 100,
       status: input.productStatus ?? 'active',
       merchantId: merchant.id,

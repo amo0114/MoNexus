@@ -9,6 +9,7 @@ import {
 import { computeOfferCheckoutVersion } from '../lib/offers.js'
 import { prisma } from '../lib/prisma.js'
 import { createTestUser } from './helpers.js'
+import { getActiveNetworkNodeCategoryId } from './catalogFixture.js'
 
 describe('normalizeFakaOfferIntegration', () => {
   it('clears both fields when unset', () => {
@@ -159,6 +160,7 @@ describe('FakaBridgeTask prisma model', () => {
       data: {
         name: 'Xboard 测试',
         type: '网络节点',
+        categoryId: await getActiveNetworkNodeCategoryId(),
         price: 100,
         stock: 0,
         deliveryMode: 'manual_service',
@@ -215,6 +217,7 @@ describe('FakaBridgeTask prisma model', () => {
       data: {
         name: 'bad offer product',
         type: '网络节点',
+        categoryId: await getActiveNetworkNodeCategoryId(),
         price: 50,
         stock: 0,
         deliveryMode: 'manual_service',

@@ -2,6 +2,7 @@ import { performance } from 'node:perf_hooks'
 import { describe, expect, it } from 'vitest'
 import { prisma } from '../lib/prisma.js'
 import { getSummary, getTimeseries } from '../modules/dashboard/service.js'
+import { getActiveNetworkNodeCategoryId } from './catalogFixture.js'
 
 async function seedOrders(count = 1000) {
   const user = await prisma.user.create({
@@ -33,6 +34,7 @@ async function seedOrders(count = 1000) {
       merchantId: merchant.id,
       name: 'Bench Product',
       type: 'network',
+      categoryId: await getActiveNetworkNodeCategoryId(),
       price: 100,
       status: 'active',
       stock: count,
