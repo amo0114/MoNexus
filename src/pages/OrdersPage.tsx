@@ -3,12 +3,13 @@
  * - Status tabs via `?tab=active|delivered|done`
  * - Notification deeplink `/orders?focus=<id>` (SPEC-NOTIFY-001 NTF-04)
  */
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Package, ShoppingBag } from 'lucide-react'
 import { getOrderDetail, getOrders } from '../api/orders'
 import { getApiErrorMessage } from '../api/error'
 import { useAppStore } from '../stores/appStore'
+import { useNotificationInvalidation } from '../hooks/useNotificationInvalidation'
 import type { UserOrderDetail, UserOrderListItem } from '../types/order'
 import BuyerOrderCard from '../components/orders/BuyerOrderCard'
 import OrderDetailModal from '../components/OrderDetailModal'
@@ -20,6 +21,7 @@ import {
   filterOrdersByTab,
   type OrderListTab,
 } from '../utils/orderAttention'
+import { createLatestRequestCoordinator } from '../realtime/latestRequestCoordinator'
 
 function parseTab(raw: string | null): OrderListTab {
   if (raw === 'active' || raw === 'delivered' || raw === 'done' || raw === 'all') return raw
@@ -36,7 +38,6 @@ export default function OrdersPage() {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const showToast = useAppStore((s) => s.showToast)
-  const refreshOrderAttention = useAppStore((s) => s.refreshOrderAttention)
   const setOrderAttentionCount = useAppStore((s) => s.setOrderAttentionCount)
 
   const tab = parseTab(searchParams.get('tab'))
@@ -45,23 +46,68 @@ export default function OrdersPage() {
   const [loading, setLoading] = useState(true)
   const [selectedOrder, setSelectedOrder] = useState<UserOrderDetail | null>(null)
   const [loadingOrderId, setLoadingOrderId] = useState<number | null>(null)
+  const reloadRequestRef = useRef(0)
+  const detailRequestRef = useRef(0)
+  const backgroundDetailRequestRef = useRef(0)
+  const listCoordinatorRef = useRef(createLatestRequestCoordinator(true))
+  const selectedOrderRef = useRef<UserOrderDetail | null>(null)
+  selectedOrderRef.current = selectedOrder
 
-  const load = useCallback(async () => {
-    setLoading(true)
+  const load = useCallback(async (opts?: { background?: boolean }) => {
+    const coordinator = listCoordinatorRef.current
+    const request = coordinator.begin(opts?.background ? 'background' : 'foreground')
+    if (!opts?.background || coordinator.ownsLoading(request)) setLoading(true)
     try {
       const list = await getOrders({ page: 1, pageSize: 100 })
+      if (!coordinator.isLatest(request)) return
       setOrders(list)
       setOrderAttentionCount(countAttentionOrders(list))
     } catch (err) {
-      showToast(getApiErrorMessage(err, '加载订单失败'), 'error')
+      // Single background failure keeps old values and waits for the next tick.
+      if (coordinator.isLatest(request) && !opts?.background) showToast(getApiErrorMessage(err, '加载订单失败'), 'error')
     } finally {
-      setLoading(false)
+      if (coordinator.finish(request)) {
+        setLoading(false)
+      }
     }
   }, [showToast, setOrderAttentionCount])
 
   useEffect(() => {
     void load()
   }, [load])
+
+  // SPEC-NOTIFY-RT-001 (T-FE-004): buyer.orders invalidation reloads the list +
+  // attention in the background; if the current detail is the related order, reload it.
+  const reloadBuyerState = useCallback(async () => {
+    const request = ++reloadRequestRef.current
+    const listCoordinator = listCoordinatorRef.current
+    const listRequest = listCoordinator.begin('background')
+    if (listCoordinator.ownsLoading(listRequest)) setLoading(true)
+    const currentId = selectedOrderRef.current?.id
+    const detailRequest = currentId == null ? null : ++backgroundDetailRequestRef.current
+    const [listResult, detailResult] = await Promise.allSettled([
+      getOrders({ page: 1, pageSize: 100 }),
+      currentId == null ? Promise.resolve(null) : getOrderDetail(currentId),
+    ])
+    if (request === reloadRequestRef.current && listCoordinator.isLatest(listRequest) && listResult.status === 'fulfilled') {
+      setOrders(listResult.value)
+      setOrderAttentionCount(countAttentionOrders(listResult.value))
+    }
+    if (listCoordinator.finish(listRequest)) setLoading(false)
+    if (
+      detailRequest !== null
+      && detailRequest === backgroundDetailRequestRef.current
+      && detailResult.status === 'fulfilled'
+      && detailResult.value
+      && selectedOrderRef.current?.id === currentId
+    ) {
+      selectedOrderRef.current = detailResult.value
+      setSelectedOrder(detailResult.value)
+    }
+  }, [setOrderAttentionCount])
+
+  useNotificationInvalidation('buyer.orders', reloadBuyerState)
+  useNotificationInvalidation('all.visible', reloadBuyerState)
 
   const visible = useMemo(() => filterOrdersByTab(orders, tab), [orders, tab])
   const activeCount = useMemo(() => countAttentionOrders(orders), [orders])
@@ -76,13 +122,19 @@ export default function OrdersPage() {
 
   const openOrder = useCallback(
     async (orderId: number) => {
+      const request = ++detailRequestRef.current
+      backgroundDetailRequestRef.current += 1
       setLoadingOrderId(orderId)
       try {
-        setSelectedOrder(await getOrderDetail(orderId))
+        const detail = await getOrderDetail(orderId)
+        if (request === detailRequestRef.current) {
+          selectedOrderRef.current = detail
+          setSelectedOrder(detail)
+        }
       } catch (err) {
-        showToast(getApiErrorMessage(err, '获取订单详情失败'), 'error')
+        if (request === detailRequestRef.current) showToast(getApiErrorMessage(err, '获取订单详情失败'), 'error')
       } finally {
-        setLoadingOrderId(null)
+        if (request === detailRequestRef.current) setLoadingOrderId(null)
       }
     },
     [showToast],
@@ -109,7 +161,7 @@ export default function OrdersPage() {
             <Package className="w-5 h-5 text-[var(--color-primary)]" />
             我的订单
           </h1>
-          <p className="text-xs text-[var(--color-text-muted)] mt-1">
+          <p className="text-xs text-[var(--color-text-muted)] mt-1" data-testid="orders-attention-summary">
             查看发货内容、续费与履约进度
             {activeCount > 0 ? ` · 进行中 ${activeCount} 单` : ''}
           </p>
@@ -204,12 +256,15 @@ export default function OrdersPage() {
         <OrderDetailModal
           order={selectedOrder}
           onClose={() => {
+            detailRequestRef.current += 1
+            backgroundDetailRequestRef.current += 1
+            selectedOrderRef.current = null
+            setLoadingOrderId(null)
             setSelectedOrder(null)
             clearFocus()
           }}
           onUpdated={() => {
             void load()
-            void refreshOrderAttention()
           }}
         />
       )}

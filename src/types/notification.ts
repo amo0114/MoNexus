@@ -43,3 +43,43 @@ export interface ListNotificationsParams {
   status?: NotificationStatus
   category?: NotificationCategory
 }
+
+// ===========================================================================
+// SPEC-NOTIFY-RT-001 realtime SSE types (T-FE-001 — additions only).
+// ===========================================================================
+
+/** Safe SSE `notification.created` envelope (server allowlist, spec 6.5). */
+export interface RealtimeNotificationPayload {
+  v: 1
+  notification: {
+    id: number
+    eventType: string
+    category: string
+    title: string
+    body: string
+    level: string
+    deeplink: string
+    relatedOrderId: number | null
+    createdAt: string
+    deliveryMode?: string
+    deliveryKind?: string
+  }
+}
+
+export interface RealtimeReadyPayload {
+  v: 1
+  serverTime: string
+  heartbeatMs: number
+  resyncRequired: boolean
+}
+
+export interface RealtimeAuthExpiringPayload {
+  v: 1
+  expiresAt: string
+}
+
+export interface RealtimeDegradedPayload {
+  v: 1
+  reason: 'listener_unavailable' | 'server_shutdown' | 'slow_consumer'
+  retryAfterMs: number
+}

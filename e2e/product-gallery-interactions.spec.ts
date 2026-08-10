@@ -78,6 +78,17 @@ async function openGallery(page: Page) {
       await route.fulfill({ json: { count: 0 } })
     } else if (path === apiPath('/notifications')) {
       await route.fulfill({ json: { notifications: [], nextCursor: null, hasMore: false } })
+    } else if (path === apiPath('/notifications/stream')) {
+      // Keep the unsigned UI-only token away from the real auth middleware;
+      // 404 is the production flag-off contract and selects polling fallback.
+      await route.fulfill({
+        status: 404,
+        json: { error: { code: 'NOT_FOUND', message: '页面不存在' } },
+      })
+    } else if (path === apiPath('/orders')) {
+      // Layout's buyer-attention projection is unrelated to this isolated
+      // gallery fixture but still mounts on the authenticated product page.
+      await route.fulfill({ json: [] })
     } else if (path === apiPath('/products/4242')) {
       await route.fulfill({ json: product })
     } else if (path === apiPath('/products/4242/reviews')) {

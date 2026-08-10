@@ -7,6 +7,7 @@ import type { Notification } from '../types/notification'
 import { getApiErrorMessage } from '../api/error'
 import { getNotifications, markAsRead } from '../api/notifications'
 import { useAppStore } from '../stores/appStore'
+import { useNotificationInvalidation } from '../hooks/useNotificationInvalidation'
 
 interface AnnouncementCenterProps {
   open: boolean
@@ -127,6 +128,18 @@ export default function AnnouncementCenter({
       active = false
     }
   }, [open, tab, showToast])
+
+  // SPEC-NOTIFY-RT-001 (T-FE-003): reload the latest 5 messages when the messages
+  // tab is open and a notifications invalidation arrives (no skeleton swap).
+  useNotificationInvalidation('notifications', () => {
+    if (!open || tab !== 'messages') return
+    void getNotifications({ limit: 5 })
+      .then((data) => setMessages(data.notifications))
+      .catch((err) => {
+        const status = (err as { response?: { status?: number } })?.response?.status
+        if (status !== 404) setMessages([])
+      })
+  })
 
   async function markRead(announcement: PublicAnnouncement) {
     setWorkingId(announcement.id)

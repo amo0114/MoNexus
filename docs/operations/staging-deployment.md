@@ -1,7 +1,8 @@
 # Dedicated Staging Deployment
 
-Review date: 2026-08-01. This is the deployment path for the registration-abuse
-protection rehearsal. It is intentionally isolated from
+Review date: 2026-08-09. This is the deployment path for protected feature
+rehearsals, including registration-abuse protection and notification realtime.
+It is intentionally isolated from
 `https://monexus.oai-o.com/`: no production database, Redis endpoint, SMTP
 sender, object-storage bucket, secret, or Compose project may be reused.
 
@@ -108,6 +109,11 @@ Required staging-specific choices:
 | Storage | Bundled MinIO and two names beginning `monexus-staging-` |
 | Protection keys | New, independent staging `ABUSE_HASH_KEY`, JWT/MFA, metrics, Redis, and webhook keys |
 
+Because public staging has two trusted proxy hops (Caddy then bundled Nginx),
+the private file must set `DEPLOY_TOPOLOGY=caddy` and `TRUST_PROXY=2`. The
+checked-in staging template uses those values. Do not copy the single-hop
+production Nginx value into this topology.
+
 For Mailpit inspection, tunnel rather than opening a public port:
 
 ```bash
@@ -153,6 +159,64 @@ full staging release SHA. This is an application rollback only: do not delete
 the Prisma migration, `GrowthReward`, `AbuseEvent`, or ledger data. Use
 `registrationEnabled` and `emailVerificationRequiredForValue` as the supported
 operational switches.
+
+### 5.1 Notification realtime rehearsal
+
+The realtime rehearsal has a stricter proxy prerequisite. A root/operator must
+first update `/etc/caddy/sites-enabled/monexus-staging.caddy` from
+[`deploy/staging/Caddyfile`](../../deploy/staging/Caddyfile), validate it, and
+reload Caddy:
+
+```bash
+sudo grep -F 'flush_interval -1' /etc/caddy/sites-enabled/monexus-staging.caddy
+sudo caddy validate --config /etc/caddy/Caddyfile
+sudo systemctl reload caddy
+```
+
+The protected deploy user deliberately cannot edit this root-owned network
+boundary. `realtime_rehearsal` checks the active site before unpacking or
+deploying the feature; a missing immediate-flush directive is an operator
+blocker, not a condition the workflow may waive.
+
+Dispatch **Staging Compose Deploy** against the exact feature SHA in this order:
+
+1. `release_action=realtime_rehearsal`, `dry_run=true` to resolve/package the
+   immutable SHA without SSH.
+2. After verifying the plan, repeat with `dry_run=false` and
+   `confirm_rehearsal=REHEARSE_AND_ROLL_BACK` through the protected `staging`
+   Environment.
+
+The orchestration keeps `/etc/monexus/staging.env` unchanged. It copies that
+file to a mode-0600, run-scoped environment, forces notifications on/realtime
+off, raises only the synthetic API rate budget, and then performs:
+
+```text
+proxy-first -> backend-first -> AC-RT-029 -> flag-on/backend-only
+-> build frontend without publishing -> external proxy smoke -> frontend-after
+-> 100 API-2xx-to-DOM samples -> Nginx/app/Caddy log boundary
+-> flag-off/<=35s fallback -> immutable code rollback/history
+-> exact fixture cleanup -> original environment runtime restore
+```
+
+The synthetic fixture is namespaced by workflow run/attempt and can connect
+only to the Compose hostname `postgres`. Its saved metadata contains no
+password or JWT. The password travels over stdin; each phase uses the real
+login/refresh contract, and short-lived tokens exist only in a runner-private
+temporary directory. Cleanup rechecks all order ownership fields and refuses
+to delete through renewal or delivery-file references. Never upload the
+fixture metadata, password, token, or order-state file.
+
+On any failure, automatic recovery records each of `flag_off`,
+`fixture_cleanup`, `code_rollback`, and `env_runtime_restore`. Recovery failure
+is a workflow failure requiring operator intervention; it is never hidden
+behind the original test error. The evidence artifact is intentionally
+aggregate-only and retained for seven days.
+
+GitHub only exposes new `workflow_dispatch` inputs after the workflow revision
+is present on the repository default branch. Until that revision is available,
+keep the release gate Pending or run the exact reviewed orchestration through
+an equivalently protected, auditable path; do not substitute an ad-hoc deploy
+that lacks Environment approval and recovery evidence.
 
 ## 6. RAP staging evidence (T01/T52)
 

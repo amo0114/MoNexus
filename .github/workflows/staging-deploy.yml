@@ -15,6 +15,7 @@ on:
         options:
           - deploy
           - rollback
+          - realtime_rehearsal
       target_release:
         description: 'Existing 40-character staging release SHA required for rollback'
         required: false
@@ -24,6 +25,10 @@ on:
         required: true
         default: true
         type: boolean
+      confirm_rehearsal:
+        description: 'Live realtime rehearsal only: enter REHEARSE_AND_ROLL_BACK'
+        required: false
+        default: ''
 
 concurrency:
   group: staging-compose-deploy
@@ -35,7 +40,7 @@ permissions:
 jobs:
   package-source:
     name: Package immutable staging source
-    if: ${{ github.event.inputs.release_action == 'deploy' }}
+    if: ${{ github.event.inputs.release_action != 'rollback' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
@@ -73,9 +78,9 @@ jobs:
   release:
     name: Deploy or roll back isolated staging
     needs: package-source
-    if: ${{ always() && (github.event.inputs.release_action != 'deploy' || needs.package-source.result == 'success') }}
+    if: ${{ always() && (github.event.inputs.release_action == 'rollback' || needs.package-source.result == 'success') }}
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 90
     environment: staging
     env:
       STAGING_SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
@@ -88,6 +93,7 @@ jobs:
       TARGET_RELEASE: ${{ github.event.inputs.target_release }}
       DEPLOY_COMMIT: ${{ needs.package-source.outputs.deploy_commit }}
       DRY_RUN: ${{ github.event.inputs.dry_run }}
+      CONFIRM_REHEARSAL: ${{ github.event.inputs.confirm_rehearsal }}
     steps:
       - name: Validate staging-only release plan
         id: readiness
@@ -101,9 +107,13 @@ jobs:
           echo "deploy_base_path=/opt/monexus-staging"
 
           case "$RELEASE_ACTION" in
-            deploy)
+            deploy|realtime_rehearsal)
               if [[ ! "$DEPLOY_COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
-                echo "::error::deploy requires a resolved 40-character commit SHA"
+                echo "::error::${RELEASE_ACTION} requires a resolved 40-character commit SHA"
+                exit 1
+              fi
+              if [[ "$RELEASE_ACTION" == "realtime_rehearsal" && "$DRY_RUN" == "false" && "$CONFIRM_REHEARSAL" != "REHEARSE_AND_ROLL_BACK" ]]; then
+                echo "::error::live realtime rehearsal requires confirm_rehearsal=REHEARSE_AND_ROLL_BACK"
                 exit 1
               fi
               ;;
@@ -154,14 +164,14 @@ jobs:
           chmod 600 ~/.ssh/known_hosts
 
       - name: Download immutable source archive
-        if: steps.readiness.outputs.ready == 'true' && env.RELEASE_ACTION == 'deploy'
+        if: steps.readiness.outputs.ready == 'true' && env.RELEASE_ACTION != 'rollback'
         uses: actions/download-artifact@v4
         with:
           name: monexus-staging-source-${{ needs.package-source.outputs.deploy_commit }}
           path: artifacts
 
       - name: Upload source archive to staging host
-        if: steps.readiness.outputs.ready == 'true' && env.RELEASE_ACTION == 'deploy'
+        if: steps.readiness.outputs.ready == 'true' && env.RELEASE_ACTION != 'rollback'
         run: |
           set -euo pipefail
           archive="artifacts/monexus-staging-${DEPLOY_COMMIT}.tar.gz"
@@ -173,8 +183,29 @@ jobs:
             "$archive" \
             "$STAGING_SSH_USER@$STAGING_SSH_HOST:/tmp/monexus-staging-${DEPLOY_COMMIT}.tar.gz"
 
+      - name: Check out rehearsal orchestration
+        if: steps.readiness.outputs.ready == 'true' && env.RELEASE_ACTION == 'realtime_rehearsal'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.package-source.outputs.deploy_commit }}
+
+      - name: Set up Node.js 20 for staging collector
+        if: steps.readiness.outputs.ready == 'true' && env.RELEASE_ACTION == 'realtime_rehearsal'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install staging collector dependencies
+        if: steps.readiness.outputs.ready == 'true' && env.RELEASE_ACTION == 'realtime_rehearsal'
+        run: npm ci
+
+      - name: Install staging collector Chromium
+        if: steps.readiness.outputs.ready == 'true' && env.RELEASE_ACTION == 'realtime_rehearsal'
+        run: npx playwright install --with-deps chromium
+
       - name: Apply release on staging host
-        if: steps.readiness.outputs.ready == 'true'
+        if: steps.readiness.outputs.ready == 'true' && env.RELEASE_ACTION != 'realtime_rehearsal'
         run: |
           set -euo pipefail
           source_archive="/tmp/monexus-staging-${DEPLOY_COMMIT}.tar.gz"
@@ -247,6 +278,24 @@ jobs:
               ;;
           esac
           REMOTE
+
+      - name: Run notification realtime staging rehearsal
+        if: steps.readiness.outputs.ready == 'true' && env.RELEASE_ACTION == 'realtime_rehearsal'
+        env:
+          RT_STAGING_CONFIRM: monexus-staging-notification-realtime
+          RT_STAGING_ARTIFACT_DIR: artifacts/notification-realtime-staging-${{ needs.package-source.outputs.deploy_commit }}
+          STAGING_SSH_KEY_FILE: /home/runner/.ssh/monexus_staging_deploy
+          DEPLOY_COMMIT: ${{ needs.package-source.outputs.deploy_commit }}
+        run: bash scripts/run-notification-realtime-staging-rehearsal.sh
+
+      - name: Upload notification realtime staging evidence
+        if: always() && env.RELEASE_ACTION == 'realtime_rehearsal'
+        uses: actions/upload-artifact@v4
+        with:
+          name: notification-realtime-staging-evidence-${{ needs.package-source.outputs.deploy_commit }}
+          path: artifacts/notification-realtime-staging-${{ needs.package-source.outputs.deploy_commit }}/
+          retention-days: 7
+          if-no-files-found: warn
 
       - name: Check public staging readiness
         if: steps.readiness.outputs.ready == 'true'
