@@ -1,6 +1,10 @@
-import { afterEach } from 'vitest'
+// Shared Catalog/Merch component and accessibility test setup.
+import { afterEach, expect } from 'vitest'
 import { cleanup } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
+import { toHaveNoViolations } from 'vitest-axe/dist/matchers.js'
+
+expect.extend({ toHaveNoViolations })
 
 // Ensure React's act() environment is enabled and the DOM is cleaned between
 // component tests (independent of vitest `globals`).
@@ -20,7 +24,6 @@ if (typeof window !== 'undefined' && typeof window.matchMedia !== 'function') {
     dispatchEvent: () => false,
   })) as typeof window.matchMedia
 }
-
 afterEach(() => {
   cleanup()
 })
