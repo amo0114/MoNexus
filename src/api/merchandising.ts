@@ -26,10 +26,14 @@ import type {
   PromotionCreatePayload,
   PromotionPackageDTO,
   SponsoredPlacement,
+  AdminPromotionPackageDTO,
+  AdminPromotionPackageCreatePayload,
+  AdminPromotionPackageUpdatePayload,
 } from '../types/merchandising'
 
 const PACKAGES_URL = '/merchant/promotion-packages'
 const CAMPAIGNS_URL = '/merchant/promotion-campaigns'
+const ADMIN_PACKAGES_URL = '/admin/promotion-packages'
 
 // ============================================================================
 // Private wire contracts — the raw shapes served by the merchant lane. The
@@ -299,4 +303,49 @@ export async function retryPromotionPayment(
     },
   )
   return toPromotionCampaignDTO(data.campaign)
+}
+
+// ============================================================================
+// Admin Promotion Package CRUD (T-MERCH-FE-003, SPEC-MERCH-001 §11 admin lane).
+// ============================================================================
+
+/** Private wire wrapper — the raw shape served by the admin lane. */
+interface AdminPromotionPackageMutationWire {
+  package: AdminPromotionPackageDTO
+}
+
+/**
+ * GET /admin/promotion-packages — list promotion packages.
+ * `includeInactive` includes inactive packages when true (exact query param).
+ */
+export async function listAdminPromotionPackages(
+  includeInactive = false,
+): Promise<AdminPromotionPackageDTO[]> {
+  const { data } = await client.get<AdminPromotionPackageDTO[]>(ADMIN_PACKAGES_URL, {
+    params: { includeInactive },
+  })
+  return data
+}
+
+/** POST /admin/promotion-packages — create a promotion package. */
+export async function createAdminPromotionPackage(
+  payload: AdminPromotionPackageCreatePayload,
+): Promise<AdminPromotionPackageDTO> {
+  const { data } = await client.post<AdminPromotionPackageMutationWire>(
+    ADMIN_PACKAGES_URL,
+    payload,
+  )
+  return data.package
+}
+
+/** PATCH /admin/promotion-packages/:id — update a promotion package. */
+export async function updateAdminPromotionPackage(
+  id: number,
+  payload: AdminPromotionPackageUpdatePayload,
+): Promise<AdminPromotionPackageDTO> {
+  const { data } = await client.patch<AdminPromotionPackageMutationWire>(
+    `${ADMIN_PACKAGES_URL}/${id}`,
+    payload,
+  )
+  return data.package
 }
