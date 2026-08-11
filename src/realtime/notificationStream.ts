@@ -16,6 +16,8 @@ export type NotificationStreamState = 'idle' | 'connecting' | 'healthy' | 'degra
 export const STREAM_BACKOFF_MS = [1_000, 2_000, 4_000, 8_000, 16_000, 30_000]
 export const STREAM_FALLBACK_MS = 30_000
 export const STREAM_CALIBRATION_MS = 5 * 60_000
+/** Consecutive 401→refresh cycles allowed before falling back to degraded backoff. */
+export const STREAM_AUTH_RETRY_LIMIT = 3
 
 export interface NotificationStreamEvents {
   onStateChange?: (state: NotificationStreamState) => void
@@ -42,6 +44,7 @@ export class NotificationStream {
   private fallbackTimer: ReturnType<typeof setTimeout> | null = null
   private calibrationTimer: ReturnType<typeof setTimeout> | null = null
   private backoffIndex = 0
+  private authRetryCount = 0
   private userId: number | null = null
   private token: string | null = null
   private stopped = false
@@ -62,6 +65,7 @@ export class NotificationStream {
     this.stopped = false
     if (userChanged) {
       this.backoffIndex = 0
+      this.authRetryCount = 0
       this.clearTimers()
     }
     if (userChanged || this.state === 'logged_out' || this.state === 'auth_blocked' || this.state === 'polling_only' || this.state === 'idle') {
@@ -84,6 +88,7 @@ export class NotificationStream {
     this.userId = null
     this.token = null
     this.backoffIndex = 0
+    this.authRetryCount = 0
     this.readyGeneration = 0
     this.clearTimers()
     this.abortFetch()
@@ -188,7 +193,14 @@ export class NotificationStream {
       if (!this.isCurrent(generation, controller, token)) return
       if (outcome.ok) {
         this.token = outcome.token
-        this.enterConnecting()
+        this.authRetryCount += 1
+        if (this.authRetryCount >= STREAM_AUTH_RETRY_LIMIT) {
+          // Break the tight 401→refresh→reconnect loop: fall back to exponential
+          // backoff (degraded) so the next attempt is rate-limited, not immediate.
+          this.enterDegraded(0, 'auth_retry_exhausted')
+        } else {
+          this.enterConnecting()
+        }
       } else if (outcome.terminal) {
         this.invalidateConnection()
         this.clearTimers()
@@ -267,6 +279,7 @@ export class NotificationStream {
       this.readyGeneration = generation
       this.setState('healthy')
       this.backoffIndex = 0
+      this.authRetryCount = 0
       this.clearTimers()
       this.startCalibration()
       this.events.onReady?.()
@@ -303,7 +316,8 @@ export class NotificationStream {
       return
     }
     if (frame.event === 'stream.degraded') {
-      this.enterDegraded(0, frame.data ?? 'server')
+      const { reason, retryAfterMs } = parseDegradedFrame(frame.data)
+      this.enterDegraded(retryAfterMs, reason)
     }
   }
 
@@ -368,4 +382,27 @@ function parseRetryAfter(value: string | null): number | null {
   if (!value) return null
   const seconds = Number(value)
   return Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : null
+}
+
+/**
+ * Parse `stream.degraded` frame data produced by the server serializer
+ * (`{ v, reason, retryAfterMs }`). Falls back to `'server'` + no floor when the
+ * payload is missing, not JSON, or carries a non-string reason.
+ */
+function parseDegradedFrame(data: string | undefined): { reason: string; retryAfterMs: number } {
+  if (data) {
+    try {
+      const parsed = JSON.parse(data) as { reason?: unknown; retryAfterMs?: unknown }
+      const reason = typeof parsed.reason === 'string' ? parsed.reason : 'server'
+      const retryAfterMs = typeof parsed.retryAfterMs === 'number'
+        && Number.isFinite(parsed.retryAfterMs)
+        && parsed.retryAfterMs > 0
+        ? Math.floor(parsed.retryAfterMs)
+        : 0
+      return { reason, retryAfterMs }
+    } catch {
+      // Fall through to the safe defaults.
+    }
+  }
+  return { reason: 'server', retryAfterMs: 0 }
 }

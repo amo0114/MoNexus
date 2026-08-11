@@ -58,8 +58,16 @@ export const NOTIFICATION_REALTIME_PG_OUTCOMES = [
   'no_subscriber',
   'not_found',
   'query_error',
+  'overload',
 ] as const
 /** Message-terminal outcomes counted into cluster wakeups (spec 8.5). */
 export type NotificationRealtimePgMessageOutcome = (typeof NOTIFICATION_REALTIME_PG_OUTCOMES)[number]
 /** Includes probe_error, which is a probe result, not a message rate (spec 8.4/8.5). */
 export type NotificationRealtimePgOutcome = NotificationRealtimePgMessageOutcome | 'probe_error'
+
+/**
+ * Max concurrent envelope lookups per listener before NOTIFY handling is
+ * dropped with an `overload` outcome. NOTIFY is a lossy wake-up by design
+ * (NRT-014 / T-BE-003 Must Not Touch) — never queue or buffer behind this gate.
+ */
+export const NOTIFICATION_REALTIME_MAX_INFLIGHT_ENVELOPE_QUERIES = 8

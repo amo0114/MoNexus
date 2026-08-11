@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   NotificationStream,
+  STREAM_AUTH_RETRY_LIMIT,
   STREAM_BACKOFF_MS,
   type NotificationStreamEvents,
 } from '../notificationStream.js'
@@ -472,6 +473,126 @@ describe('NotificationStream (SPEC-NOTIFY-RT-001 / CHK-FE-004/014)', () => {
 
     expect(log.fallback).toBe(2)
     expect(stream.getState()).toBe('degraded')
+    stream.stop()
+  })
+
+  it('breaks the 401→refresh→reconnect tight loop after STREAM_AUTH_RETRY_LIMIT', async () => {
+    vi.useFakeTimers()
+    vi.spyOn(Math, 'random').mockReturnValue(0.5)
+    const log = makeLog()
+    const stream = makeStream(log)
+    mockRefresh.mockResolvedValue('refreshed-token')
+    const fetchMock = vi.fn(async () => jsonResponse(401))
+    vi.stubGlobal('fetch', fetchMock)
+
+    stream.start(1, 'stale')
+    for (let i = 0; i < 20; i += 1) await flushMicrotasks()
+
+    // Each 401 → single-flight refresh → immediate reconnect, capped at the limit.
+    expect(mockRefresh).toHaveBeenCalledTimes(STREAM_AUTH_RETRY_LIMIT)
+    expect(fetchMock).toHaveBeenCalledTimes(STREAM_AUTH_RETRY_LIMIT)
+    expect(log.degraded).toContain('auth_retry_exhausted')
+    expect(stream.getState()).toBe('degraded')
+
+    // The degraded backoff (>=800ms) has not fired yet, so no further fetches.
+    await vi.advanceTimersByTimeAsync(100)
+    expect(fetchMock).toHaveBeenCalledTimes(STREAM_AUTH_RETRY_LIMIT)
+    stream.stop()
+  })
+
+  it('resets the auth retry counter when stream.ready confirms a real connection', async () => {
+    vi.useFakeTimers()
+    vi.spyOn(Math, 'random').mockReturnValue(0.5)
+    const log = makeLog()
+    const stream = makeStream(log)
+    const conn1 = controlledReaderResponse()
+    const conn2 = controlledReaderResponse()
+    let callIndex = 0
+    const fetchMock = vi.fn(async () => {
+      callIndex += 1
+      if (callIndex === 1 || callIndex === 2) return jsonResponse(401)
+      if (callIndex === 3) return conn1.response
+      if (callIndex === 4) return jsonResponse(401)
+      return conn2.response
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    stream.start(1, 'stale')
+    for (let i = 0; i < 30; i += 1) await flushMicrotasks()
+    // fetch#1 401 → refresh#1 → reconnect; fetch#2 401 → refresh#2 → reconnect;
+    // fetch#3 opens a hanging reader; stream.ready confirms a real connection.
+    conn1.enqueue('event: stream.ready\ndata: {}\n\n')
+    for (let i = 0; i < 30; i += 1) await flushMicrotasks()
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+    expect(mockRefresh).toHaveBeenCalledTimes(2)
+    expect(stream.getState()).toBe('healthy')
+
+    // Token change aborts conn1 and reconnects. The next 401 may refresh again
+    // because stream.ready reset the counter (instead of exhausting the loop).
+    stream.onAccessTokenChanged('token-b')
+    for (let i = 0; i < 30; i += 1) await flushMicrotasks()
+    conn2.enqueue('event: stream.ready\ndata: {}\n\n')
+    for (let i = 0; i < 30; i += 1) await flushMicrotasks()
+
+    expect(mockRefresh).toHaveBeenCalledTimes(3)
+    expect(fetchMock).toHaveBeenCalledTimes(5)
+    expect(stream.getState()).toBe('healthy')
+    stream.stop()
+  })
+
+  it('parses stream.degraded reason and honors retryAfterMs as the backoff floor', async () => {
+    vi.useFakeTimers()
+    vi.spyOn(Math, 'random').mockReturnValue(0.5)
+    const log = makeLog()
+    const stream = makeStream(log)
+    const fetchMock = vi.fn(async () => streamResponse([
+      'event: stream.ready\ndata: {}\n\n',
+      'event: stream.degraded\ndata: {"v":1,"reason":"listener_unavailable","retryAfterMs":2500}\n\n',
+    ]))
+    vi.stubGlobal('fetch', fetchMock)
+
+    stream.start(1, 'token')
+    for (let i = 0; i < 10; i += 1) await flushMicrotasks()
+
+    expect(log.degraded).toEqual(['listener_unavailable'])
+    expect(stream.getState()).toBe('degraded')
+
+    // The 2500ms floor dominates the 1000ms base backoff.
+    await vi.advanceTimersByTimeAsync(2_499)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(1)
+    for (let i = 0; i < 10; i += 1) await flushMicrotasks()
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    stream.stop()
+  })
+
+  it('parses stream.degraded reason without a retryAfterMs field', async () => {
+    const log = makeLog()
+    const stream = makeStream(log)
+    vi.stubGlobal('fetch', vi.fn(async () => streamResponse([
+      'event: stream.ready\ndata: {}\n\n',
+      'event: stream.degraded\ndata: {"v":1,"reason":"slow_consumer"}\n\n',
+    ])))
+    stream.start(1, 'token')
+    await new Promise(r => setTimeout(r, 80))
+    expect(log.degraded).toEqual(['slow_consumer'])
+    stream.stop()
+  })
+
+  it.each([
+    ['not-json', 'server'],
+    ['{"v":1,"reason":42}', 'server'],
+    ['{}', 'server'],
+  ] as const)('falls back to server reason for bad stream.degraded data (%s)', async (data, reason) => {
+    const log = makeLog()
+    const stream = makeStream(log)
+    vi.stubGlobal('fetch', vi.fn(async () => streamResponse([
+      'event: stream.ready\ndata: {}\n\n',
+      `event: stream.degraded\ndata: ${data}\n\n`,
+    ])))
+    stream.start(1, 'token')
+    await new Promise(r => setTimeout(r, 80))
+    expect(log.degraded).toEqual([reason])
     stream.stop()
   })
 })

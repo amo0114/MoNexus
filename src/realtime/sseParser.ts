@@ -8,6 +8,9 @@
  */
 export const SSE_MAX_FRAME_BYTES = 65_536
 
+/** Shared UTF-8 encoder — avoids allocating a new TextEncoder per line/chunk. */
+const utf8Encoder = new TextEncoder()
+
 export interface SseFrame {
   id?: string
   event?: string
@@ -40,12 +43,12 @@ export class SseParser {
       let line = this.buffer.slice(0, newlineIndex)
       this.buffer = this.buffer.slice(newlineIndex + 1)
       const rawLine = line + '\n'
-      const lineBytes = new TextEncoder().encode(rawLine).byteLength
+      const lineBytes = utf8Encoder.encode(rawLine).byteLength
       if (line.endsWith('\r')) line = line.slice(0, -1)
       const frame = this.processLine(line, lineBytes)
       if (frame) out.push(frame)
     }
-    this.bufferBytes = new TextEncoder().encode(this.buffer).byteLength
+    this.bufferBytes = utf8Encoder.encode(this.buffer).byteLength
     // Process complete lines first: one network chunk may legitimately contain
     // many small frames whose aggregate size is larger than the per-frame cap.
     if (!this.oversized && this.bufferBytes + this.frameBytes > SSE_MAX_FRAME_BYTES) {
@@ -94,7 +97,7 @@ export class SseParser {
     }
     // Track raw UTF-8 bytes for every field/comment in the current frame.
     if (this.oversized) return null
-    this.frameBytes += rawBytes ?? (new TextEncoder().encode(line).byteLength + 1)
+    this.frameBytes += rawBytes ?? (utf8Encoder.encode(line).byteLength + 1)
     if (this.frameBytes > SSE_MAX_FRAME_BYTES && !this.tooLargeReported) {
       this.tooLargeReported = true
       this.oversized = true
