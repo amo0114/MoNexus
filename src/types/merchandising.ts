@@ -272,6 +272,18 @@ export interface AdminPromotionCampaignPage {
   pageSize: number
 }
 
+/** POST /admin/promotion-campaigns/:id/cancel (server adminCancelCampaignSchema). */
+export interface AdminPromotionCampaignCancelPayload {
+  reason?: string
+  points?: number
+}
+
+/** POST /admin/promotion-campaigns/:id/refund-adjustment (server adjustRefundSchema). */
+export interface AdminPromotionRefundAdjustmentPayload {
+  points: number
+  reason: string
+}
+
 /** EditorialFeature.status (server EDITORIAL_STATUS, spec §5.5). */
 export type EditorialStatus = 'scheduled' | 'active' | 'revoked' | 'expired'
 export const EDITORIAL_STATUS = {

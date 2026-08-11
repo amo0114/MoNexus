@@ -31,6 +31,8 @@ import type {
   AdminPromotionPackageUpdatePayload,
   AdminPromotionCampaignDTO,
   AdminPromotionCampaignPage,
+  AdminPromotionCampaignCancelPayload,
+  AdminPromotionRefundAdjustmentPayload,
 } from '../types/merchandising'
 
 const PACKAGES_URL = '/merchant/promotion-packages'
@@ -354,9 +356,9 @@ export async function updateAdminPromotionPackage(
 }
 
 // ============================================================================
-// Admin Promotion Campaign query + reject/approve/pause/resume
-// (T-MERCH-FE-003, SPEC-MERCH-001 §11 admin lane). Admin MFA is enforced
-// server-side; cancel/refund are intentionally not implemented here.
+// Admin Promotion Campaign query + reject/approve/pause/resume/cancel/refund-
+// adjustment (T-MERCH-FE-003, SPEC-MERCH-001 §11 admin lane). Admin MFA is
+// enforced server-side; cancel/refund-adjustment are implemented in billing.
 // ============================================================================
 
 /** Private wire wrappers — raw shapes served by the admin lane. */
@@ -434,6 +436,57 @@ export async function resumeAdminPromotionCampaign(
   const { data } = await client.post<AdminPromotionCampaignMutationWire>(
     `${ADMIN_CAMPAIGNS_URL}/${id}/resume`,
     {},
+  )
+  return data.campaign
+}
+
+/**
+ * Cancel/refund-adjustment wire — the server replies { campaign, replayed }.
+ * `replayed` is ignored by the adapters; only the campaign is projected.
+ */
+interface AdminPromotionCampaignAdjustWire {
+  campaign: AdminPromotionCampaignDTO
+  replayed: boolean
+}
+
+/**
+ * POST /admin/promotion-campaigns/:id/cancel — cancel a campaign.
+ * scheduled → full auto-refund; active/paused → one-time explicit adjustment
+ * decision. `idempotencyKey` is forwarded verbatim when provided; when omitted
+ * the client never generates one (server treats cancel as state-idempotent).
+ */
+export async function cancelAdminPromotionCampaign(
+  id: number,
+  payload: AdminPromotionCampaignCancelPayload = {},
+  idempotencyKey?: string,
+): Promise<AdminPromotionCampaignDTO> {
+  const { data } = await client.post<AdminPromotionCampaignAdjustWire>(
+    `${ADMIN_CAMPAIGNS_URL}/${id}/cancel`,
+    payload,
+    {
+      headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined,
+    },
+  )
+  return data.campaign
+}
+
+/**
+ * POST /admin/promotion-campaigns/:id/refund-adjustment — one-time partial
+ * refund decision for active/paused campaigns. The Idempotency-Key is REQUIRED
+ * (SPEC-MERCH-001 §11) and forwarded verbatim; the server replays the same
+ * key+payload and rejects key reuse. `replayed` is ignored.
+ */
+export async function adjustAdminPromotionCampaignRefund(
+  id: number,
+  payload: AdminPromotionRefundAdjustmentPayload,
+  idempotencyKey: string,
+): Promise<AdminPromotionCampaignDTO> {
+  const { data } = await client.post<AdminPromotionCampaignAdjustWire>(
+    `${ADMIN_CAMPAIGNS_URL}/${id}/refund-adjustment`,
+    payload,
+    {
+      headers: { 'Idempotency-Key': idempotencyKey },
+    },
   )
   return data.campaign
 }
