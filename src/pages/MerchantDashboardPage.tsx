@@ -23,7 +23,7 @@ import {
   Settlement,
   Merchant
 } from '../types/merchant'
-import { Store, Package, ShoppingBag, DollarSign, Settings, Plus, ChevronLeft, ChevronRight, Loader2, BarChart3, Search, AlertTriangle, CalendarDays } from 'lucide-react'
+import { Store, Package, ShoppingBag, DollarSign, Settings, Plus, ChevronLeft, ChevronRight, Loader2, BarChart3, Search, AlertTriangle, CalendarDays, Megaphone } from 'lucide-react'
 import { useAppStore } from '../stores/appStore'
 import MerchantProductFormModal from '../components/merchant/MerchantProductFormModal'
 import MerchantWebhookConfigSection from '../components/merchant/MerchantWebhookConfigSection'
@@ -40,7 +40,7 @@ import { TableSkeleton, StatCardSkeleton } from '../components/ui/Skeleton'
 import EmptyState from '../components/ui/EmptyState'
 import { createLatestRequestGuard } from '../utils/latestRequest'
 
-type TabKey = 'dashboard' | 'products' | 'orders' | 'settlements' | 'profile' | 'operations'
+type TabKey = 'dashboard' | 'products' | 'orders' | 'settlements' | 'profile' | 'operations' | 'promotions'
 
 const TABS: { key: TabKey; label: string; Icon: typeof Store; path?: string }[] = [
   { key: 'dashboard', label: '概览', Icon: Store },
@@ -49,6 +49,7 @@ const TABS: { key: TabKey; label: string; Icon: typeof Store; path?: string }[] 
   { key: 'settlements', label: '结算管理', Icon: DollarSign },
   { key: 'profile', label: '商家资料', Icon: Settings },
   { key: 'operations', label: '经营数据', Icon: BarChart3, path: '/merchant/dashboard' },
+  { key: 'promotions', label: '推广中心', Icon: Megaphone, path: '/merchant/promotions' },
 ]
 
 function isInstantInventoryProduct(product: MerchantProduct) {
