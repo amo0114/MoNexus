@@ -292,7 +292,7 @@ async function resolveMerchantOwnerUserId(
 }
 
 async function emitLifecycleNotifications(
-  client: Pick<Prisma.TransactionClient, 'notification' | 'merchant'>,
+  client: Pick<Prisma.TransactionClient, 'notification' | 'merchant' | '$queryRaw'>,
   input: {
     from: FulfillmentOrderStatus
     to: FulfillmentOrderStatus
