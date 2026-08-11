@@ -72,6 +72,8 @@ jobs:
               - 'e2e/**'
               - 'playwright.config.ts'
               - 'playwright.legal-pages.config.ts'
+              - 'playwright.notification-realtime.config.ts'
+              - 'scripts/verify-notification-realtime-e2e.sh'
             code:
               - 'server/**'
               - 'src/**'
@@ -84,6 +86,8 @@ jobs:
               - 'tailwind.config.js'
               - 'e2e/**'
               - 'playwright.config.ts'
+              - 'playwright.notification-realtime.config.ts'
+              - 'scripts/verify-notification-realtime-e2e.sh'
               - '.github/workflows/ci.yml'
 
   backend:
@@ -97,7 +101,11 @@ jobs:
         needs.changes.outputs.server == 'true'
       )
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # The full real-PostgreSQL suite normally takes about 13 minutes and was
+    # still completing green test files when the old 15-minute cap cancelled
+    # it. Keep a bounded margin for runner/IO variance; individual Vitest
+    # timeouts still detect hung tests.
+    timeout-minutes: 20
 
     services:
       postgres:
@@ -121,7 +129,7 @@ jobs:
       FRONTEND_ORIGIN: http://localhost:5173
       # 全局 /api limiter 无测试跳过（app.ts），全量套件单进程共享计数，
       # 默认 300 次/15 分钟会从第 301 个请求起整片 429（与 E2E 作业同值）。
-      API_RATE_LIMIT_MAX: 10000
+      API_RATE_LIMIT_MAX: 3000
 
     steps:
       - name: Check out repository
@@ -214,7 +222,7 @@ jobs:
       TEST_DATABASE_URL: postgresql://monexus:monexus_dev_2026@localhost:5432/monexus_test?schema=public
       JWT_SECRET: ci-jwt-secret-at-least-32-characters-long-xx
       FRONTEND_ORIGIN: http://localhost:5173
-      API_RATE_LIMIT_MAX: 10000
+      API_RATE_LIMIT_MAX: 3000
 
     steps:
       - name: Check out repository
@@ -311,6 +319,11 @@ jobs:
 
       - name: Start frontend
         run: npm run dev -- --host 127.0.0.1 &
+        env:
+          # Browser traffic reaches the API through Vite over IPv4. The
+          # Playwright request fixture uses IPv6 below, so two synthetic
+          # clients do not incorrectly share one production per-IP bucket.
+          VITE_API_PROXY_TARGET: http://127.0.0.1:3000
 
       - name: Wait for servers
         run: |
@@ -333,6 +346,9 @@ jobs:
         env:
           CI: 'true'
           E2E_BASE_URL: http://127.0.0.1:5173
+          # Keep API fixture traffic on a distinct loopback client address;
+          # API_RATE_LIMIT_MAX remains 3000 and no limiter is bypassed.
+          E2E_API_URL: 'http://[::1]:3000'
 
       - name: Upload Playwright report
         if: failure()
@@ -341,6 +357,77 @@ jobs:
           name: playwright-report
           path: playwright-report/
           retention-days: 7
+
+  notification-realtime-e2e:
+    name: Notification realtime Playwright E2E
+    needs: [changes, backend, frontend]
+    # Keep the realtime suite visible as an independent gate. It follows the
+    # same PR/push selection as the compatibility E2E job, but never shares
+    # that job's database, ports, server processes, retries, or artifacts.
+    if: >-
+      !failure() && !cancelled() && (
+        github.event_name == 'push' ||
+        (github.base_ref == 'master' && needs.changes.outputs.code == 'true') ||
+        needs.changes.outputs.e2e == 'true' ||
+        contains(github.event.pull_request.labels.*.name, 'run-e2e')
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: monexus
+          POSTGRES_PASSWORD: monexus_dev_2026
+          POSTGRES_DB: monexus_test_notification_realtime
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U monexus -d monexus_test_notification_realtime"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://monexus:monexus_dev_2026@localhost:5432/monexus_test_notification_realtime?schema=public
+      TEST_DATABASE_URL: postgresql://monexus:monexus_dev_2026@localhost:5432/monexus_test_notification_realtime?schema=public
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            server/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Install backend dependencies
+        run: npm --prefix server ci
+
+      - name: Generate Prisma client
+        run: npm --prefix server run db:generate
+
+      - name: Install Playwright chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Create guarded realtime E2E environment
+        run: |
+          umask 077
+          RT_ENV_FILE="$RUNNER_TEMP/notification-realtime.env"
+          printf '%s\n' "TEST_DATABASE_URL=${TEST_DATABASE_URL}" > "$RT_ENV_FILE"
+          printf '%s\n' "RT_ENV_FILE=$RT_ENV_FILE" >> "$GITHUB_ENV"
+
+      - name: Run notification realtime E2E tests
+        run: bash scripts/verify-notification-realtime-e2e.sh
 
   deployment-contract:
     # This is intentionally independent of source-path filtering: a malformed
@@ -361,7 +448,7 @@ jobs:
     # upstream job failed — skipped jobs (docs-only or unlabeled-E2E PRs)
     # count as success.
     name: CI OK
-    needs: [changes, backend, frontend, e2e, deployment-contract]
+    needs: [changes, backend, frontend, e2e, notification-realtime-e2e, deployment-contract]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5

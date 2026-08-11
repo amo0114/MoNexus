@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Bell, CheckCheck, Loader2 } from 'lucide-react'
 import {
@@ -8,7 +8,9 @@ import {
 } from '../api/notifications'
 import { getApiErrorMessage } from '../api/error'
 import { useAppStore } from '../stores/appStore'
+import { useNotificationInvalidation } from '../hooks/useNotificationInvalidation'
 import type { Notification, NotificationCategory } from '../types/notification'
+import { appendUniqueNotifications, mergeNotificationFirstPage } from '../utils/notificationMerge'
 
 type FilterTab = 'all' | 'order' | 'system'
 
@@ -35,8 +37,15 @@ export default function NotificationsPage() {
   const [loadingMore, setLoadingMore] = useState(false)
   const [workingId, setWorkingId] = useState<number | null>(null)
   const [markingAll, setMarkingAll] = useState(false)
+  const filterRef = useRef<FilterTab>(filter)
+  const itemsFilterRef = useRef<FilterTab>(filter)
+  const loadRequestRef = useRef(0)
+  const backgroundRequestRef = useRef(0)
+  filterRef.current = filter
 
   const load = useCallback(async (opts?: { append?: boolean; cursor?: number | null }) => {
+    const request = ++loadRequestRef.current
+    const requestedFilter = filter
     const append = opts?.append === true
     if (append) setLoadingMore(true)
     else setLoading(true)
@@ -48,20 +57,65 @@ export default function NotificationsPage() {
         cursor: opts?.cursor ?? undefined,
         category,
       })
-      setItems((prev) => (append ? [...prev, ...data.notifications] : data.notifications))
+      if (request !== loadRequestRef.current || filterRef.current !== requestedFilter) return
+      if (append && itemsFilterRef.current !== requestedFilter) return
+      if (!append) itemsFilterRef.current = requestedFilter
+      setItems((prev) => append ? appendUniqueNotifications(prev, data.notifications) : data.notifications)
       setNextCursor(data.nextCursor)
       setHasMore(data.hasMore)
     } catch (err) {
-      showToast(getApiErrorMessage(err, '加载消息失败'), 'error')
+      if (request === loadRequestRef.current && filterRef.current === requestedFilter) {
+        showToast(getApiErrorMessage(err, '加载消息失败'), 'error')
+      }
     } finally {
-      setLoading(false)
-      setLoadingMore(false)
+      if (request === loadRequestRef.current) { setLoading(false); setLoadingMore(false) }
     }
   }, [filter, showToast])
 
   useEffect(() => {
     void load()
   }, [load])
+
+  // SPEC-NOTIFY-RT-001 (T-FE-003): realtime notifications reload the current
+  // filter's first page in the background — keep existing content, no skeleton,
+  // and never corrupt pagination (dedupe by id, no append to history).
+  const reloadFirstPageBackground = useCallback(async () => {
+    const request = ++backgroundRequestRef.current
+    const requestedFilter = filter
+    try {
+      const category: NotificationCategory | undefined = filter === 'all' ? undefined : filter
+      const data = await getNotifications({ limit: 20, category })
+      if (request !== backgroundRequestRef.current
+        || filterRef.current !== requestedFilter
+        || itemsFilterRef.current !== requestedFilter) return
+      setItems((prev) => mergeNotificationFirstPage(data.notifications, prev))
+      // Background refresh must not move the user's pagination boundary.
+      void refreshNotificationUnread()
+    } catch {
+      // keep old values; wait for the next calibration/fallback tick
+    }
+  }, [filter, refreshNotificationUnread])
+
+  useNotificationInvalidation('notifications', reloadFirstPageBackground)
+  useNotificationInvalidation('all.visible', reloadFirstPageBackground)
+
+  function changeFilter(next: FilterTab) {
+    if (next === filter) return
+    // Invalidate both request classes before React commits the new render, so
+    // an old response cannot briefly write under the new tab. The empty list is
+    // also the new filter's merge base if a realtime refresh wins the race with
+    // the ordinary first-page load.
+    loadRequestRef.current += 1
+    backgroundRequestRef.current += 1
+    filterRef.current = next
+    itemsFilterRef.current = next
+    setItems([])
+    setNextCursor(null)
+    setHasMore(false)
+    setLoading(true)
+    setLoadingMore(false)
+    setFilter(next)
+  }
 
   async function handleMarkRead(item: Notification) {
     if (item.status === 'read') {
@@ -135,7 +189,7 @@ export default function NotificationsPage() {
             type="button"
             role="tab"
             aria-selected={filter === tab.id}
-            onClick={() => setFilter(tab.id)}
+            onClick={() => changeFilter(tab.id)}
             className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
               filter === tab.id
                 ? 'bg-[var(--color-primary)]/10 text-[var(--color-primary)] border-[var(--color-primary)]/30'
@@ -157,7 +211,7 @@ export default function NotificationsPage() {
           暂无消息
         </div>
       ) : (
-        <ul className="space-y-3">
+        <ul className="space-y-3" data-testid="notifications-list">
           {items.map((item) => {
             const unread = item.status === 'unread'
             return (
@@ -172,6 +226,9 @@ export default function NotificationsPage() {
                       : 'border-[var(--color-border)] bg-[var(--color-surface)]/50'
                   }`}
                   data-testid={`notification-item-${item.id}`}
+                  data-notification-category={item.category}
+                  data-notification-event={item.eventType}
+                  data-related-order-id={item.relatedOrderId ?? undefined}
                 >
                   <div className="flex items-start justify-between gap-2">
                     <h2 className="text-sm font-semibold text-[var(--color-text)] break-words">

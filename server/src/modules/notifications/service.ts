@@ -6,7 +6,7 @@
 import type { Prisma } from '@prisma/client'
 import { prisma } from '../../lib/prisma.js'
 import { notFound } from '../../lib/httpError.js'
-
+import { buildNotificationEnvelope, type NotificationEnvelope } from './realtime/protocol.js'
 export type ListNotificationsParams = {
   cursor?: number
   limit?: number
@@ -156,4 +156,54 @@ export async function markAllAsRead(userId: number): Promise<{ updated: number }
     data: { status: 'read', readAt: now },
   })
   return { updated: result.count }
+}
+
+/**
+ * SPEC-NOTIFY-RT-001 (T-BE-003): safe realtime envelope projection.
+ *
+ * Explicit column allowlist only — the full Json `payload` (and dedupeKey /
+ * recipientUserId) is never returned. deliveryMode / deliveryKind are pulled
+ * out as JSON sub-values and re-validated by buildNotificationEnvelope (second
+ * sanitization pass). Invalid rows return null (wait for REST convergence).
+ */
+export async function getRealtimeEnvelope(
+  notificationId: number,
+  recipientUserId: number
+): Promise<NotificationEnvelope | null> {
+  type ProjectionRow = {
+    id: number
+    eventType: string
+    category: string
+    title: string
+    body: string
+    level: string
+    deeplink: string
+    relatedOrderId: number | null
+    createdAt: Date
+    deliveryMode: string | null
+    deliveryKind: string | null
+  }
+  const rows = await prisma.$queryRaw<ProjectionRow[]>`
+    SELECT id, "eventType", category, title, body, level, deeplink, "relatedOrderId", "createdAt",
+           payload->>'deliveryMode' AS "deliveryMode",
+           payload->>'deliveryKind' AS "deliveryKind"
+    FROM "Notification"
+    WHERE id = ${notificationId} AND "recipientUserId" = ${recipientUserId}
+    LIMIT 1
+  `
+  const row = rows[0]
+  if (!row) return null
+  return buildNotificationEnvelope({
+    id: Number(row.id),
+    eventType: row.eventType,
+    category: row.category,
+    title: row.title,
+    body: row.body,
+    level: row.level,
+    deeplink: row.deeplink,
+    relatedOrderId: row.relatedOrderId == null ? null : Number(row.relatedOrderId),
+    createdAt: row.createdAt,
+    deliveryMode: row.deliveryMode ?? undefined,
+    deliveryKind: row.deliveryKind ?? undefined,
+  })
 }

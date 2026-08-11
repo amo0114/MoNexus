@@ -124,7 +124,9 @@ cat > "$SITE_FILE" <<EOF
 # Managed by MoNexus staging bootstrap. Do not point this at production.
 $STAGING_HOST {
   encode zstd gzip
-  reverse_proxy 127.0.0.1:18081
+  reverse_proxy 127.0.0.1:18081 {
+    flush_interval -1
+  }
 }
 EOF
 chmod 0644 "$SITE_FILE"

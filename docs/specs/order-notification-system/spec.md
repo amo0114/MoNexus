@@ -10,6 +10,15 @@
 | 前置规格 | 已有 `OrderStatusEvent`、`Announcement`、邮件基础设施（SPEC-MAIL-TPL-001）、商家自动开通 webhook（P7b） |
 | 配套文档 | [design.md](./design.md) · [tasks.md](./tasks.md) |
 
+> **⚠️ 部分被 SPEC-NOTIFY-RT-001 覆盖（superseded）**
+>
+> 本规格的以下条目已由 [SPEC-NOTIFY-RT-001](../../superpowers/specs/2026-08-09-order-notification-realtime/README.md)（订单通知实时化，2026-08-09，Frozen for Implementation）覆盖并替代：
+> - 范围外项“SSE / WebSocket 实时推送 Phase 3+”；
+> - `NTF-08`“Phase 1 用前端短轮询（30–60s）作为正常主路径 / Phase 2 再 SSE”的抵达方式结论；
+> - 与“10 秒内通过轮询看到”相关的轮询型验收方式。
+>
+> SPEC-NOTIFY-001 其余条目（事件矩阵、收件人、幂等键、权限、纯文本展示、公告隔离、敏感交付内容禁入等）继续有效，SPEC-NOTIFY-RT-001 不改变这些语义，只改变“通知抵达方式”。实时化后的权威描述以 SPEC-NOTIFY-RT-001 为准。
+
 ---
 
 ## 1. 背景与问题陈述
@@ -125,7 +134,7 @@ MoNexus 已具备以下通知能力：
 | NTF-05 | 商家「新订单」只在 checkout 已完成自动履约任务创建判定后发出：`merchantId != null`、`deliveryMode = manual_service`、没有本单 `ProvisionTask` / `FakaBridgeTask`、且订单仍为 `pending/processing`。平台自营单不合成 admin 收件人 |
 | NTF-06 | 买家首次获得 `delivered` 结果时触发「已发货/已开通」：覆盖人工状态迁移、autoProvision/Faka 成功和 checkout 直接创建为 `delivered` 的 `instant_*`。直接即时交付只写弱 `in_app` 记录，不发邮件 |
 | NTF-07 | 通知写入与业务事务同事务（或 Outbox 表同事务），邮件投递异步可重试 |
-| NTF-08 | 角标刷新：Phase 1 用前端短轮询（30-60s）或登录/回前台时拉一次；Phase 2 再 SSE |
+| NTF-08 | 角标刷新：Phase 1 用前端短轮询（30-60s）或登录/回前台时拉一次；Phase 2 再 SSE — **已被 SPEC-NOTIFY-RT-001 覆盖**（SSE 实时 + 30 秒轮询降级，见 [superseded 指针](../../superpowers/specs/2026-08-09-order-notification-realtime/README.md)） |
 | NTF-09 | 权限：用户只能访问 `recipientUserId = req.user.id` 的通知；商家看的是商家主账号 `userId` 的收件箱 |
 | NTF-10 | Phase 1 默认矩阵固定在服务端：人工待处理新单、争议、退款和买家交付事件写 `in_app`；即时单 delivered 为弱记录；自动开通成功商家静默。邮件和用户覆盖设置均不在 Phase 1 |
 | NTF-11 | 顶栏只保留一个铃铛入口。它显示公告未读与事务消息未读总数，并在同一中心弹窗中以「公告 / 消息」Tab 分区；待确认公告优先打开公告 Tab，其他情况有未读消息时默认消息 Tab |

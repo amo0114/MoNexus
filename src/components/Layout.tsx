@@ -14,6 +14,8 @@ import BottomTabBar from './BottomTabBar'
 import StoreSearchPanel from './StoreSearchPanel'
 import { useIsMobileViewport } from '../hooks/useMediaQuery'
 import { useAnnouncements } from '../hooks/useAnnouncements'
+import { useNotificationInvalidation } from '../hooks/useNotificationInvalidation'
+import { NotificationRealtimeBridge } from './NotificationRealtimeBridge'
 import { useAppStore } from '../stores/appStore'
 import { getApiErrorMessage } from '../api/error'
 import {
@@ -213,22 +215,15 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     setAnnouncementCenterOpen(true)
   }, [announcements.items])
 
-  // SPEC-NOTIFY-001：登录后拉取消息未读 + 30s 短轮询；回前台再拉一次。
-  useEffect(() => {
-    if (!user) return
-    void refreshNotificationUnread()
-    const timer = window.setInterval(() => {
-      void refreshNotificationUnread()
-    }, 30_000)
-    const onVisible = () => {
-      if (document.visibilityState === 'visible') void refreshNotificationUnread()
-    }
-    document.addEventListener('visibilitychange', onVisible)
-    return () => {
-      window.clearInterval(timer)
-      document.removeEventListener('visibilitychange', onVisible)
-    }
-  }, [user?.id, refreshNotificationUnread])
+  // SPEC-NOTIFY-RT-001：实时失效驱动未读刷新。移除旧独立 30s 轮询 effect
+  // （CHK-FE-010）；notifications topic 覆盖实时事件，all.visible 覆盖
+  // ready / 回前台 / 降级 30s fallback / healthy 5min 校准。
+  useNotificationInvalidation('notifications', () => {
+    if (user) void refreshNotificationUnread()
+  })
+  useNotificationInvalidation('all.visible', () => {
+    if (user) void refreshNotificationUnread()
+  })
 
   const openAnnouncement = useCallback((announcement: PublicAnnouncement) => {
     setAnnouncementCenterOpen(true)
@@ -237,9 +232,9 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       showToast(getApiErrorMessage(err, '打开公告失败，请稍后重试'), 'error')
     })
   }, [announcements, showToast])
-
   return (
     <div className="bg-grid-pattern relative min-h-[100dvh] w-full flex flex-col" style={{ backgroundColor: 'var(--color-background)' }}>
+      <NotificationRealtimeBridge />
       {/* Decorative background — soft indigo glow */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none -z-10">
         <div className="absolute top-0 left-0 w-full h-[500px] bg-gradient-to-br from-[var(--color-primary)]/10 to-transparent" />

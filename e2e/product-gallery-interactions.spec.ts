@@ -78,6 +78,17 @@ async function openGallery(page: Page) {
       await route.fulfill({ json: { count: 0 } })
     } else if (path === apiPath('/notifications')) {
       await route.fulfill({ json: { notifications: [], nextCursor: null, hasMore: false } })
+    } else if (path === apiPath('/notifications/stream')) {
+      // Keep the unsigned UI-only token away from the real auth middleware;
+      // 404 is the production flag-off contract and selects polling fallback.
+      await route.fulfill({
+        status: 404,
+        json: { error: { code: 'NOT_FOUND', message: '页面不存在' } },
+      })
+    } else if (path === apiPath('/orders')) {
+      // Layout's buyer-attention projection is unrelated to this isolated
+      // gallery fixture but still mounts on the authenticated product page.
+      await route.fulfill({ json: [] })
     } else if (path === apiPath('/products/4242')) {
       await route.fulfill({ json: product })
     } else if (path === apiPath('/products/4242/reviews')) {
@@ -98,10 +109,6 @@ async function openGallery(page: Page) {
   await page.goto('/product/4242')
   await expect(page.getByTestId('product-gallery-main')).toBeVisible()
 }
-
-// TEMP: flaky in master-gate CI (product-gallery-main not found / stage click timeout).
-// Unrelated to orders-nav release; re-enable after gallery fixture stability fix.
-test.skip(true, 'product gallery e2e flaky on master gate; tracked separately');
 
 test('product gallery keeps the full image in a stable frame and supports buttons, keys, and desktop drag', async ({ page }) => {
   await openGallery(page)

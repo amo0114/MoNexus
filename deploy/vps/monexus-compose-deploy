@@ -80,42 +80,6 @@ assert_control_lines() {
   done
 }
 
-
-ensure_notification_enabled() {
-  # Production Phase-1 enablement for SPEC-NOTIFY-001: ensure the server
-  # container receives NOTIFICATION_ENABLED=true. Operators may later set
-  # false in /opt/monexus/.env and redeploy if they need to disable.
-  local count current
-  count="$(grep -Ec '^NOTIFICATION_ENABLED=' "$ENV_FILE" || true)"
-  if [[ "$count" == '0' ]]; then
-    printf '\n# Enabled by deploy entrypoint (SPEC-NOTIFY-001 production rollout)\nNOTIFICATION_ENABLED=true\n' >> "$ENV_FILE"
-    notice 'Appended NOTIFICATION_ENABLED=true to production .env'
-    return 0
-  fi
-  current="$(read_env_value NOTIFICATION_ENABLED || true)"
-  if [[ "${current}" != 'true' && "${current}" != '1' && "${current}" != 'yes' ]]; then
-    # rewrite in place without requiring sed -i portability concerns
-    local tmp
-    tmp="$(mktemp)"
-    awk '
-      BEGIN { done=0 }
-      /^NOTIFICATION_ENABLED=/ {
-        print "NOTIFICATION_ENABLED=true"
-        done=1
-        next
-      }
-      { print }
-      END {
-        if (done == 0) print "NOTIFICATION_ENABLED=true"
-      }
-    ' "$ENV_FILE" > "$tmp"
-    install -m 0600 -o root -g root "$tmp" "$ENV_FILE"
-    rm -f "$tmp"
-    notice "Updated NOTIFICATION_ENABLED from '${current:-unset}' to true in production .env"
-  fi
-}
-
-
 read_env_value() {
   local key="$1"
   awk -v key="$key" '
@@ -332,7 +296,6 @@ run_deploy() {
   tag="$(tag_for_commit "$commit")"
   expected_architecture="$(host_architecture)"
   assert_control_lines
-  ensure_notification_enabled
 
   exec 9>"$LOCK_FILE"
   flock -n 9 || fail 'Another MoNexus Compose deployment is already in progress.'
