@@ -12,7 +12,7 @@ import {
   listSettlementsQuerySchema, batchSettleSchema, resolveOrderSchema,
   systemConfigKeyParamSchema, updateSystemConfigSchema,
   createAnnouncementSchema, updateAnnouncementSchema, listAnnouncementsQuerySchema,
-  setFakaCapacitySchema, importFakaPlanSchema, addFakaOffersSchema,
+  setFakaCapacitySchema, previewFakaPlanSchema, importFakaPlanSchema, addFakaOffersSchema,
   listFakaTasksQuerySchema,
   mailDeliveryTestSchema,
   abuseOverviewQuerySchema,
@@ -131,6 +131,7 @@ router.post('/products/:id/offers/:offerId/inventory/preview', validate({ params
 router.post('/products/:id/offers/:offerId/inventory', validate({ params: adminOfferParamSchema, body: importOfferInventorySchema }), controller.importOfferInventory)
 // FakaBridge Xboard 管理：仅平台管理员（本路由组已 requireAdmin + MFA）
 router.get('/faka/catalog', controller.fakaCatalog)
+router.post('/faka/import/preview', validate(previewFakaPlanSchema), controller.previewFakaPlan)
 router.post('/faka/import', validate(importFakaPlanSchema), controller.importFakaPlan)
 router.post(
   '/products/:id/faka-offers',

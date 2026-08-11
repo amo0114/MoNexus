@@ -180,7 +180,20 @@ export async function fakaCatalog(_req: Request, res: Response, next: NextFuncti
 
 export async function importFakaPlan(req: Request, res: Response, next: NextFunction) {
   try {
-    res.status(201).json(await adminService.importAdminFakaPlan(req.user!.userId, req.body))
+    const result = await adminService.importAdminFakaPlan(
+      req.user!.userId,
+      req.body,
+      req.headers['idempotency-key'] as string | undefined,
+    )
+    res.status(result.replayed ? 200 : 201).json(result)
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function previewFakaPlan(req: Request, res: Response, next: NextFunction) {
+  try {
+    res.json(await adminService.previewAdminFakaPlan(req.body))
   } catch (err) {
     next(err)
   }

@@ -185,26 +185,33 @@ const fakaPeriodOfferSchema = z.object({
   validityDays: z.number().int().min(1).max(3650).nullable().optional(),
 }).strict()
 
-/**
- * 从 Xboard 套餐导入：
- * - 推荐：`offers` 数组 → 一商品多规格（月/季/年…）
- * - 兼容：单 period + pricePoints → 一商品一规格
- */
-export const importFakaPlanSchema = z
-  .object({
-    planId: z.number().int().positive(),
-    productName: z.string().trim().min(1).max(100).optional(),
-    type: z.string().trim().min(1).max(30).optional(),
-    /** 多规格（推荐） */
-    offers: z.array(fakaPeriodOfferSchema).min(1).max(12).optional(),
-    /** 单规格兼容字段 */
-    period: z.string().trim().min(1).max(32).optional(),
-    sku: fakaSkuSchema.optional(),
-    offerName: z.string().trim().min(1).max(50).optional(),
-    pricePoints: z.number().int().positive().max(MAX_PRODUCT_PRICE).optional(),
-  })
-  .strict()
-  .superRefine((val, ctx) => {
+const fakaCoverChoiceSchema = z.discriminatedUnion('mode', [
+  z.object({
+    mode: z.literal('uploaded'),
+    imageUrl: productImageItemSchema,
+    images: productImagesSchema.optional(),
+  }).strict(),
+  z.object({ mode: z.literal('category_default') }).strict(),
+])
+
+const fakaImportRequestFields = {
+  planId: z.number().int().positive(),
+  productName: z.string().trim().min(1).max(100).optional(),
+  categoryId: z.number().int().positive(),
+  cover: fakaCoverChoiceSchema,
+  /** 多规格（推荐） */
+  offers: z.array(fakaPeriodOfferSchema).min(1).max(12).optional(),
+  /** 单规格兼容字段 */
+  period: z.string().trim().min(1).max(32).optional(),
+  sku: fakaSkuSchema.optional(),
+  offerName: z.string().trim().min(1).max(50).optional(),
+  pricePoints: z.number().int().positive().max(MAX_PRODUCT_PRICE).optional(),
+} as const
+
+function requireFakaOffers(
+  val: { offers?: unknown[]; period?: string; pricePoints?: number },
+  ctx: z.RefinementCtx,
+) {
     if (val.offers && val.offers.length > 0) return
     if (!val.period || val.pricePoints == null) {
       ctx.addIssue({
@@ -212,9 +219,19 @@ export const importFakaPlanSchema = z
         message: '请提供 offers 多规格，或 period + pricePoints 单规格',
       })
     }
-  })
+}
+
+/** Preview is mandatory and side-effect free. New writes use categoryId only. */
+export const previewFakaPlanSchema = z.object(fakaImportRequestFields).strict().superRefine(requireFakaOffers)
+
+/** Confirm repeats the complete request and binds it to the preview sourceHash. */
+export const importFakaPlanSchema = z.object({
+  ...fakaImportRequestFields,
+  sourceHash: z.string().regex(/^[0-9a-f]{64}$/, 'sourceHash 格式无效'),
+}).strict().superRefine(requireFakaOffers)
 
 export type ImportFakaPlanInput = z.infer<typeof importFakaPlanSchema>
+export type PreviewFakaPlanInput = z.infer<typeof previewFakaPlanSchema>
 
 /** 给已有 Faka 商品追加周期规格（仍为一商品多规格） */
 export const addFakaOffersSchema = z.object({
