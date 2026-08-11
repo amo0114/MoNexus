@@ -29,11 +29,14 @@ import type {
   AdminPromotionPackageDTO,
   AdminPromotionPackageCreatePayload,
   AdminPromotionPackageUpdatePayload,
+  AdminPromotionCampaignDTO,
+  AdminPromotionCampaignPage,
 } from '../types/merchandising'
 
 const PACKAGES_URL = '/merchant/promotion-packages'
 const CAMPAIGNS_URL = '/merchant/promotion-campaigns'
 const ADMIN_PACKAGES_URL = '/admin/promotion-packages'
+const ADMIN_CAMPAIGNS_URL = '/admin/promotion-campaigns'
 
 // ============================================================================
 // Private wire contracts — the raw shapes served by the merchant lane. The
@@ -348,4 +351,89 @@ export async function updateAdminPromotionPackage(
     payload,
   )
   return data.package
+}
+
+// ============================================================================
+// Admin Promotion Campaign query + reject/approve/pause/resume
+// (T-MERCH-FE-003, SPEC-MERCH-001 §11 admin lane). Admin MFA is enforced
+// server-side; cancel/refund are intentionally not implemented here.
+// ============================================================================
+
+/** Private wire wrappers — raw shapes served by the admin lane. */
+interface AdminPromotionCampaignMutationWire {
+  campaign: AdminPromotionCampaignDTO
+}
+
+/** Approve wrapper mirrors the server response; the adapter returns its campaign. */
+interface AdminPromotionCampaignApproveWire {
+  campaign: AdminPromotionCampaignDTO
+  replayed: boolean
+}
+
+export interface AdminPromotionCampaignQuery {
+  status?: CampaignStatusFilter
+  page?: number
+  pageSize?: number
+}
+
+/**
+ * GET /admin/promotion-campaigns — list admin campaigns.
+ * Server already returns { campaigns, total, page, pageSize }.
+ */
+export async function listAdminPromotionCampaigns(
+  query: AdminPromotionCampaignQuery = {},
+): Promise<AdminPromotionCampaignPage> {
+  const params: Record<string, string | number> = {}
+  if (query.status && query.status !== 'all') params.status = query.status
+  if (query.page != null) params.page = query.page
+  if (query.pageSize != null) params.pageSize = query.pageSize
+  const { data } = await client.get<AdminPromotionCampaignPage>(ADMIN_CAMPAIGNS_URL, {
+    params,
+  })
+  return data
+}
+
+/** POST /admin/promotion-campaigns/:id/reject — reject a campaign with a reason. */
+export async function rejectAdminPromotionCampaign(
+  id: number,
+  reason: string,
+): Promise<AdminPromotionCampaignDTO> {
+  const { data } = await client.post<AdminPromotionCampaignMutationWire>(
+    `${ADMIN_CAMPAIGNS_URL}/${id}/reject`,
+    { reason },
+  )
+  return data.campaign
+}
+
+/** POST /admin/promotion-campaigns/:id/approve — approve a campaign (replay-aware). */
+export async function approveAdminPromotionCampaign(
+  id: number,
+): Promise<AdminPromotionCampaignDTO> {
+  const { data } = await client.post<AdminPromotionCampaignApproveWire>(
+    `${ADMIN_CAMPAIGNS_URL}/${id}/approve`,
+    {},
+  )
+  return data.campaign
+}
+
+/** POST /admin/promotion-campaigns/:id/pause — pause a campaign. */
+export async function pauseAdminPromotionCampaign(
+  id: number,
+): Promise<AdminPromotionCampaignDTO> {
+  const { data } = await client.post<AdminPromotionCampaignMutationWire>(
+    `${ADMIN_CAMPAIGNS_URL}/${id}/pause`,
+    {},
+  )
+  return data.campaign
+}
+
+/** POST /admin/promotion-campaigns/:id/resume — resume a campaign. */
+export async function resumeAdminPromotionCampaign(
+  id: number,
+): Promise<AdminPromotionCampaignDTO> {
+  const { data } = await client.post<AdminPromotionCampaignMutationWire>(
+    `${ADMIN_CAMPAIGNS_URL}/${id}/resume`,
+    {},
+  )
+  return data.campaign
 }
