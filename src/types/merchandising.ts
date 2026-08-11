@@ -189,3 +189,256 @@ export interface PromotionProductOption {
   id: number
   name: string
 }
+
+// ============================================================================
+// T-MERCH-FE-003 — Admin merchandising API (SPEC-MERCH-001 §11 admin lane).
+// Admin-only types: exact mirrors of the server admin DTOs. Internal reasons
+// (reviewReason / cancellationReason / internalReason) live ONLY here so the
+// merchant UI can never leak them (MERCH-015 / CHK-SEC-001). Idempotency keys/
+// hashes, PointLog ids and balance history are NEVER projected (CHK-PROMO-013).
+// ============================================================================
+
+/** Admin-facing PromotionPackage (server AdminPackageDto). */
+export interface AdminPromotionPackageDTO {
+  id: number
+  code: string
+  label: string
+  placement: SponsoredPlacement
+  durationDays: number
+  pricePoints: number
+  description: string
+  sortOrder: number
+  status: PackageStatus
+  createdAt: string
+  updatedAt: string
+}
+
+/** POST /admin/promotion-packages (server CreatePackageInput). Code immutable. */
+export interface AdminPromotionPackageCreatePayload {
+  code: string
+  label: string
+  placement: SponsoredPlacement
+  durationDays: number
+  pricePoints: number
+  description: string
+  sortOrder: number
+}
+
+/** PATCH /admin/promotion-packages/:id (server UpdatePackageInput). Code immutable. */
+export interface AdminPromotionPackageUpdatePayload {
+  label?: string
+  placement?: SponsoredPlacement
+  durationDays?: number
+  pricePoints?: number
+  description?: string
+  sortOrder?: number
+  status?: PackageStatus
+}
+
+/**
+ * Admin-facing PromotionCampaign (server AdminCampaignDto). Same merchant-safe
+ * snapshot facts plus review/cancellation audit and the billing totals — but
+ * never key/hash, PointLog ids or balance history.
+ */
+export interface AdminPromotionCampaignDTO {
+  id: number
+  merchantId: number
+  productId: number
+  packageId: number
+  packageCodeSnapshot: string
+  placementSnapshot: SponsoredPlacement
+  durationDaysSnapshot: number
+  pricePointsSnapshot: number
+  status: CampaignStatus
+  requestedStartAt: string | null
+  startsAt: string | null
+  endsAt: string | null
+  reviewedByUserId: number | null
+  reviewedAt: string | null
+  reviewReason: string | null
+  cancelledByUserId: number | null
+  cancellationReason: string | null
+  chargedPoints: number
+  refundedPoints: number
+  createdAt: string
+  updatedAt: string
+}
+
+/** Paged admin campaign list (server listAdminCampaigns page shape). */
+export interface AdminPromotionCampaignPage {
+  campaigns: AdminPromotionCampaignDTO[]
+  total: number
+  page: number
+  pageSize: number
+}
+
+/** EditorialFeature.status (server EDITORIAL_STATUS, spec §5.5). */
+export type EditorialStatus = 'scheduled' | 'active' | 'revoked' | 'expired'
+export const EDITORIAL_STATUS = {
+  SCHEDULED: 'scheduled',
+  ACTIVE: 'active',
+  REVOKED: 'revoked',
+  EXPIRED: 'expired',
+} as const
+
+/**
+ * Admin-facing EditorialFeature (exact editorial service select).
+ * `internalReason` is admin-only; public shelves never expose it.
+ */
+export interface AdminEditorialFeatureDTO {
+  id: number
+  productId: number
+  placement: EditorialPlacement
+  status: EditorialStatus
+  startsAt: string
+  endsAt: string
+  sortWeight: number
+  publicReason: string | null
+  /** Admin-only internal note; never projected to public/merchant responses. */
+  internalReason: string
+  createdByUserId: number
+  revokedByUserId: number | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface AdminEditorialFeaturePage {
+  items: AdminEditorialFeatureDTO[]
+  total: number
+  page: number
+  pageSize: number
+}
+
+/** POST /admin/editorial-features (server createEditorialSchema). */
+export interface AdminEditorialCreatePayload {
+  productId: number
+  placement: EditorialPlacement
+  startsAt: string
+  endsAt: string
+  sortWeight?: number
+  publicReason?: string | null
+  internalReason: string
+}
+
+/** PATCH /admin/editorial-features/:id (server updateEditorialSchema, ≥1 field). */
+export interface AdminEditorialUpdatePayload {
+  placement?: EditorialPlacement
+  startsAt?: string
+  endsAt?: string
+  sortWeight?: number
+  publicReason?: string | null
+  internalReason?: string
+}
+
+/** MerchantEntitlement.status (server ENTITLEMENT_STATUS, spec §5.6). */
+export type EntitlementStatus = 'active' | 'expired' | 'revoked'
+export const ENTITLEMENT_STATUS = {
+  ACTIVE: 'active',
+  EXPIRED: 'expired',
+  REVOKED: 'revoked',
+} as const
+
+/** MerchantEntitlement.source (server ENTITLEMENT_SOURCE). */
+export type EntitlementSource = 'promotion_spend' | 'admin_grant'
+
+/**
+ * Admin-facing MerchantEntitlement (exact entitlement service admin select).
+ * source/sourceRef/reason/admin actor fields are admin-only (merchant DTO
+ * allowlist excludes them).
+ */
+export interface AdminMerchantEntitlementDTO {
+  id: number
+  merchantId: number
+  code: 'partner'
+  source: EntitlementSource
+  sourceRef: string | null
+  status: EntitlementStatus
+  validFrom: string
+  validUntil: string
+  reason: string
+  grantedByUserId: number | null
+  revokedByUserId: number | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface AdminMerchantEntitlementPage {
+  items: AdminMerchantEntitlementDTO[]
+  total: number
+  page: number
+  pageSize: number
+}
+
+/** POST /admin/merchant-entitlements (server manualGrantEntitlementSchema). */
+export interface AdminMerchantEntitlementGrantPayload {
+  merchantId: number
+  validUntil: string
+  reason: string
+}
+
+/** MerchandisingRun.status (server RUN_STATUS, spec §5.1). */
+export type AdminMerchandisingRunStatus = 'running' | 'completed' | 'failed'
+
+/**
+ * Admin-facing MerchandisingRun (server AdminRunRow, dates as ISO strings).
+ * Sanitized view: no order/user data, only frozen config/status/failureCode.
+ */
+export interface AdminMerchandisingRunDTO {
+  id: string
+  status: AdminMerchandisingRunStatus
+  windowStart: string
+  windowEnd: string
+  windowDays: number
+  minSales: number
+  topPercent: number
+  startedAt: string
+  completedAt: string | null
+  failedAt: string | null
+  failureCode: string | null
+  createdAt: string
+  snapshotCount: number
+}
+
+export interface AdminMerchandisingRunPage {
+  runs: AdminMerchandisingRunDTO[]
+  total: number
+  page: number
+  pageSize: number
+}
+
+/** Sanitized failure-code enum (server RUN_FAILURE_CODES). */
+export type AdminRunFailureCode =
+  | 'COMPUTE_FAILED'
+  | 'COMMIT_FAILED'
+  | 'RUN_TIMEOUT'
+  | 'INTERNAL_ERROR'
+
+export const RUN_FAILURE_CODES = {
+  COMPUTE_FAILED: 'COMPUTE_FAILED',
+  COMMIT_FAILED: 'COMMIT_FAILED',
+  RUN_TIMEOUT: 'RUN_TIMEOUT',
+  INTERNAL_ERROR: 'INTERNAL_ERROR',
+} as const
+
+/**
+ * Skipped reasons that can still surface as HTTP success (200): lock_busy /
+ * running_exists. cadence → HTTP 429 and compute_unavailable → HTTP 503 are
+ * converted to errors by the recompute route, so they are NOT part of this union.
+ */
+export type AdminRecomputeSkipReason = 'lock_busy' | 'running_exists'
+
+/**
+ * POST /admin/merchandising/recompute (server ManualRecomputeResult =
+ * RunOutcome & { adminUserId }). HTTP-success shapes only; cadence/compute-
+ * unavailable skipped outcomes are surfaced as errors by the server.
+ */
+export type AdminRecomputeResult =
+  | { kind: 'completed'; runId: string; snapshotCount: number; adminUserId: number }
+  | {
+      kind: 'failed'
+      runId: string | null
+      failureCode: AdminRunFailureCode
+      wrappedUp: boolean
+      adminUserId: number
+    }
+  | { kind: 'skipped'; reason: AdminRecomputeSkipReason; adminUserId: number }
