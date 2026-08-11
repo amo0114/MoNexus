@@ -286,14 +286,83 @@ async function loadSnapshotsBounded(
   })
 }
 
+interface IdentityProjection {
+  platformPick: MerchandisingProjection['platformPick']
+  merchantPartner: MerchandisingProjection['merchantPartner']
+}
+
+/**
+ * Editorial/partner identity is independent from ranking availability. Load it
+ * in a fixed three-query batch (DB now + editorial IN + merchant IN), including
+ * the no-run fallback. Product/Merchant status is checked in the relation
+ * predicates so stale feature/entitlement rows never become public.
+ */
+async function loadIdentityProjectionBounded(
+  products: ProjectionInputProduct[],
+  db: AnyDb,
+): Promise<Map<number, IdentityProjection>> {
+  const productIds = products.map(product => product.id)
+  const merchantIds = [...new Set(products.flatMap(product => product.merchantId === null ? [] : [product.merchantId]))]
+  const [{ now }] = await db.$queryRaw<Array<{ now: Date }>>`SELECT now() AT TIME ZONE 'UTC' AS now`
+  const [features, entitlements] = await Promise.all([
+    db.editorialFeature.findMany({
+      where: {
+        productId: { in: productIds },
+        status: 'active',
+        startsAt: { lte: now },
+        endsAt: { gt: now },
+        product: {
+          status: 'active',
+          OR: [{ merchantId: null }, { merchant: { status: 'active' } }],
+        },
+      },
+      select: { productId: true, publicReason: true },
+      orderBy: [{ sortWeight: 'desc' }, { id: 'desc' }],
+    }),
+    merchantIds.length === 0
+      ? Promise.resolve([])
+      : db.merchantEntitlement.findMany({
+          where: {
+            merchantId: { in: merchantIds },
+            code: 'partner',
+            status: 'active',
+            validFrom: { lte: now },
+            validUntil: { gt: now },
+            merchant: { status: 'active' },
+          },
+          select: { merchantId: true, validUntil: true },
+          orderBy: [{ validUntil: 'desc' }, { id: 'desc' }],
+        }),
+  ])
+  const pickByProduct = new Map<number, { label: '平台精选'; publicReason: string | null }>()
+  for (const feature of features) {
+    if (!pickByProduct.has(feature.productId)) {
+      pickByProduct.set(feature.productId, { label: '平台精选', publicReason: feature.publicReason })
+    }
+  }
+  const partnerByMerchant = new Map<number, { label: '平台合作伙伴'; validUntil: string }>()
+  for (const entitlement of entitlements) {
+    if (!partnerByMerchant.has(entitlement.merchantId)) {
+      partnerByMerchant.set(entitlement.merchantId, {
+        label: '平台合作伙伴',
+        validUntil: entitlement.validUntil.toISOString(),
+      })
+    }
+  }
+  return new Map(products.map(product => [product.id, {
+    platformPick: pickByProduct.get(product.id) ?? null,
+    merchantPartner: product.merchantId === null ? null : (partnerByMerchant.get(product.merchantId) ?? null),
+  }]))
+}
+
 /** no-run fallback projection：hot 块整体缺省，绝不读 legacy isHot（AC-MERCH-008）。 */
-function buildNoRunProjection(product: ProjectionInputProduct): MerchandisingProjection {
+function buildNoRunProjection(product: ProjectionInputProduct, identity: IdentityProjection): MerchandisingProjection {
   return {
     rankingRunId: null,
     hot: null,
     platformOwned: product.merchantId === null,
-    platformPick: null,
-    merchantPartner: null,
+    platformPick: identity.platformPick,
+    merchantPartner: identity.merchantPartner,
   }
 }
 
@@ -302,6 +371,7 @@ function buildRunProjection(
   product: ProjectionInputProduct,
   run: ProjectionRun,
   snapshot: { effectiveOrderCount: number; categoryRank: number; computedAt: Date } | null,
+  identity: IdentityProjection,
 ): MerchandisingProjection {
   return {
     rankingRunId: run.id,
@@ -314,8 +384,8 @@ function buildRunProjection(
         }
       : null,
     platformOwned: product.merchantId === null,
-    platformPick: null, // BE-005 editorial 增量
-    merchantPartner: null, // BE-005 entitlement 增量
+    platformPick: identity.platformPick,
+    merchantPartner: identity.merchantPartner,
   }
 }
 
@@ -335,8 +405,12 @@ export async function decorateProducts(
       `projection decorate batch ${products.length} exceeds bounded limit ${PROJECTION_BATCH_LIMIT}`,
     )
   }
+  const identityByProduct = await loadIdentityProjectionBounded(products, db)
   if (run === null) {
-    return products.map(product => ({ id: product.id, merchandising: buildNoRunProjection(product) }))
+    return products.map(product => ({
+      id: product.id,
+      merchandising: buildNoRunProjection(product, identityByProduct.get(product.id)!),
+    }))
   }
   const snapshots = await loadSnapshotsBounded(
     run.id,
@@ -346,6 +420,11 @@ export async function decorateProducts(
   const byProduct = new Map(snapshots.map(snapshot => [snapshot.productId, snapshot]))
   return products.map(product => ({
     id: product.id,
-    merchandising: buildRunProjection(product, run, byProduct.get(product.id) ?? null),
+    merchandising: buildRunProjection(
+      product,
+      run,
+      byProduct.get(product.id) ?? null,
+      identityByProduct.get(product.id)!,
+    ),
   }))
 }

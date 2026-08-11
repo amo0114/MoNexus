@@ -474,16 +474,23 @@ describe('ranking projection — decorate contract (pure, no DB)', () => {
   it('pinned run: single IN snapshot query (no N+1) and allowlist projection shape', async () => {
     type DbLike = Parameters<typeof decorateProducts>[2]
     const calls: unknown[] = []
+    const identityCalls = { now: 0, editorial: 0, entitlement: 0 }
     const rows = [
       { productId: 42, effectiveOrderCount: 18, categoryRank: 2, computedAt: new Date('2026-08-09T00:00:00.000Z') },
     ]
     const stub = {
+      $queryRaw: async () => {
+        identityCalls.now += 1
+        return [{ now: new Date('2026-08-09T00:00:00.000Z') }]
+      },
       productMerchandisingSnapshot: {
         findMany: async (args: unknown) => {
           calls.push(args)
           return rows
         },
       },
+      editorialFeature: { findMany: async () => { identityCalls.editorial += 1; return [] } },
+      merchantEntitlement: { findMany: async () => { identityCalls.entitlement += 1; return [] } },
     } as unknown as DbLike
 
     const out = await decorateProducts(
@@ -497,6 +504,7 @@ describe('ranking projection — decorate contract (pure, no DB)', () => {
 
     // 一次 IN 查询读完整个 batch（无 N+1）
     expect(calls).toHaveLength(1)
+    expect(identityCalls).toEqual({ now: 1, editorial: 1, entitlement: 1 })
     expect(calls[0]).toMatchObject({
       where: { runId: FROZEN_RUN_ID, productId: { in: [42, 7] } },
     })
