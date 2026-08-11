@@ -444,6 +444,28 @@ describe('explicit offerId targeting for void & capacity adjust', () => {
 // T-CAT-BE-004：Offer-first URL 是 P0 权威写路径。这里使用真实 HTTP +
 // PostgreSQL，覆盖 preview→confirm 重算、规格隔离、审计字段和并发最终裁决。
 describe('Offer-first availability operations', () => {
+  it('projects available inventory separately for every Offer and the Product aggregate', async () => {
+    const { accessToken, product } = await setupMerchantWithProduct('offer-first-list@test.local', ['DEFAULT-1', 'DEFAULT-2'])
+    const second = await prisma.offer.create({
+      data: { productId: product.id, name: '第二库存池', price: 200, deliveryMode: 'instant_inventory' },
+    })
+    await prisma.inventoryItem.createMany({
+      data: ['SECOND-1', 'SECOND-2', 'SECOND-3'].map(content => ({
+        productId: product.id,
+        offerId: second.id,
+        content,
+        status: 'available',
+      })),
+    })
+
+    const response = await api.get('/api/merchant/products').set(authHeader(accessToken)).expect(200)
+    const row = response.body.items.find((item: { id: number }) => item.id === product.id)
+    expect(row.availableStock).toBe(5)
+    const byId = new Map(row.offers.map((offer: { id: number }) => [offer.id, offer]))
+    expect(byId.get(await getDefaultOfferId(product.id))).toMatchObject({ stock: 2, availableStock: 2 })
+    expect(byId.get(second.id)).toMatchObject({ stock: 3, availableStock: 3 })
+  })
+
   it('previews without writes, re-analyses on confirm, and exposes offer-scoped audit without content', async () => {
     const { user, accessToken, product } = await setupMerchantWithProduct('offer-first-import@test.local')
     const offer = await prisma.offer.create({

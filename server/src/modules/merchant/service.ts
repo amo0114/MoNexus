@@ -100,7 +100,10 @@ export async function updateMyMerchant(
 
 const productListInclude = {
   _count: { select: { inventory: { where: { status: 'available' } } } },
-  offers: { orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }] },
+  offers: {
+    orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
+    include: { _count: { select: { inventory: { where: { status: 'available' } } } } },
+  },
 } satisfies Prisma.ProductInclude
 
 type ProductWithAvailableStock = Prisma.ProductGetPayload<{ include: typeof productListInclude }>
@@ -182,7 +185,13 @@ function serializeMerchantProduct(product: ProductWithAvailableStock, lowStockTh
     purchaseForm: product.purchaseForm ?? [],
     // P4a：商家端返回完整 Offer 列表（含 fixedContent——商家本就可见自己商品
     // 的交付配置）；公开接口走 serializePublicOffer 剥离。
-    offers: product.offers,
+    offers: product.offers.map(({ _count, ...offer }) => ({
+      ...offer,
+      // Offer-first 工作台必须在背景刷新后仍看到正确的目标 Offer 库存。
+      // instant_inventory 不使用原始 Offer.stock；其他模式保持数值名额。
+      stock: offer.deliveryMode === 'instant_inventory' ? _count.inventory : offer.stock,
+      availableStock: offer.deliveryMode === 'instant_inventory' ? _count.inventory : undefined,
+    })),
     merchantId: product.merchantId,
     createdAt: product.createdAt,
     lowStock: isLowStockProduct(product, lowStockThreshold),
