@@ -43,6 +43,8 @@ import type {
   AdminMerchantEntitlementDTO,
   AdminMerchantEntitlementPage,
   AdminMerchantEntitlementGrantPayload,
+  AdminMerchandisingRunPage,
+  AdminRecomputeResult,
 } from '../types/merchandising'
 const PACKAGES_URL = '/merchant/promotion-packages'
 const CAMPAIGNS_URL = '/merchant/promotion-campaigns'
@@ -631,5 +633,52 @@ export async function revokeAdminMerchantEntitlement(
     `${ADMIN_ENTITLEMENTS_URL}/${id}/revoke`,
     { reason },
   )
+  return data
+}
+
+// ============================================================================
+// Admin Merchandising Ranking runs/recompute (SPEC-MERCH-001 §5.1 admin lane).
+// Passthrough adapter: the server replies with the bare AdminMerchandisingRunPage
+// (GET) and the bare AdminRecomputeResult union (POST) — no wrapper unwrap, no
+// date conversion, no error normalization. The server converts cadence-skipped →
+// HTTP 429 and compute_unavailable → HTTP 503; this adapter never catches, never
+// rewrites a rejection into a success union, and propagates client rejections
+// as-is.
+// ============================================================================
+
+const ADMIN_MERCHANDISING_URL = '/admin/merchandising'
+
+/** Admin ranking run query. page/pageSize are forwarded verbatim. */
+export interface AdminMerchandisingRunQuery {
+  page?: number
+  pageSize?: number
+}
+
+/**
+ * GET /admin/merchandising/runs — list admin merchandising ranking runs.
+ * Server page shape ({ runs, total, page, pageSize }) is returned as-is;
+ * dates stay as the JSON ISO strings (no wrapper conversion).
+ */
+export async function listAdminMerchandisingRuns(
+  query: AdminMerchandisingRunQuery = {},
+): Promise<AdminMerchandisingRunPage> {
+  const params: Record<string, number> = {}
+  if (query.page != null) params.page = query.page
+  if (query.pageSize != null) params.pageSize = query.pageSize
+  const { data } = await client.get<AdminMerchandisingRunPage>(`${ADMIN_MERCHANDISING_URL}/runs`, {
+    params,
+  })
+  return data
+}
+
+/**
+ * POST /admin/merchandising/recompute — trigger a manual ranking recompute.
+ * Body is strictly {}. The server replies with the bare AdminRecomputeResult
+ * union (completed/failed/skipped lock_busy|running_exists). cadence → HTTP 429
+ * and compute_unavailable → HTTP 503 are surfaced by the server as errors, so
+ * client rejections propagate as-is — never caught or converted.
+ */
+export async function recomputeAdminMerchandising(): Promise<AdminRecomputeResult> {
+  const { data } = await client.post<AdminRecomputeResult>(`${ADMIN_MERCHANDISING_URL}/recompute`, {})
   return data
 }
