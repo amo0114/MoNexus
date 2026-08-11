@@ -28,6 +28,11 @@ import { notificationRoutes } from './modules/notifications/routes.js'
 import { portableRestoreBootstrapRoutes } from './modules/portable-backups/bootstrap-routes.js'
 import { fakaBridgeRoutes } from './modules/fakaBridge/routes.js'
 import { legalRoutes } from './modules/legal/routes.js'
+import { publicSponsoredRouter } from './modules/merchandising/promotions/publicRoutes.js'
+import { publicEditorialRouter, adminEditorialRouter } from './modules/merchandising/editorial/routes.js'
+import { merchantPromotionRouter, adminPromotionRouter } from './modules/merchandising/promotions/routes.js'
+import { merchantEntitlementRouter, adminEntitlementRouter } from './modules/merchandising/entitlements/routes.js'
+import { merchandisingAdminRouter } from './integrations/cmi/merchandisingAdminRoutes.js'
 
 const app = express()
 
@@ -85,6 +90,10 @@ app.get('/api/metrics', async (req, res) => {
 app.use('/api', apiLimiter)
 
 app.use('/api/auth', authRoutes)
+// Public Merch shelves must precede Product `/:id`, otherwise Express would
+// parse `sponsored`/`editorial` as a product id.
+app.use('/api/products', publicSponsoredRouter)
+app.use('/api/products', publicEditorialRouter)
 app.use('/api/products', productRoutes)
 app.use('/api/points', pointRoutes)
 app.use('/api/leaderboard', leaderboardRoutes)
@@ -92,8 +101,14 @@ app.use('/api/invites', inviteRoutes)
 app.use('/api/orders', orderRoutes)
 app.use('/api/checkout', checkoutRoutes)
 app.use('/api/faka-bridge', fakaBridgeRoutes)
+app.use('/api/admin', adminPromotionRouter)
+app.use('/api/admin', adminEditorialRouter)
+app.use('/api/admin', adminEntitlementRouter)
+app.use('/api/admin', merchandisingAdminRouter)
 app.use('/api/admin', adminRoutes)
 app.use('/api/merchant/dashboard', dashboardRoutes)
+app.use('/api/merchant', merchantPromotionRouter)
+app.use('/api/merchant', merchantEntitlementRouter)
 app.use('/api/merchant', merchantRoutes)
 // P5：交付文件路由先挂——uploads 里的 GET /:key 是贪婪参数路由，后挂会吞掉
 // /delivery-signed/:token。

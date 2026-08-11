@@ -15,6 +15,10 @@ import { startFakaBridgeCron, stopFakaBridgeCron } from './lib/fakaBridge/index.
 import { startGrowthRewardCron, stopGrowthRewardCron } from './modules/auth/growthRewardCron.js'
 import { startLeaderboardCron, stopLeaderboardCron } from './modules/leaderboard/cron.js'
 import { startLegalRetentionCron, stopLegalRetentionCron } from './modules/legal/cron.js'
+import { startRankingCron, stopRankingCron } from './modules/merchandising/ranking/index.js'
+import { startCampaignLifecycleCron, stopCampaignLifecycleCron } from './modules/merchandising/promotions/lifecycle.js'
+import { startEditorialLifecycleCron, stopEditorialLifecycleCron } from './modules/merchandising/editorial/cron.js'
+import { startPartnerEntitlementCron, stopPartnerEntitlementCron } from './modules/merchandising/entitlements/cron.js'
 
 const server = app.listen(config.port, () => {
   logger.info(`MoNexus API running at http://localhost:${config.port}`)
@@ -29,6 +33,10 @@ const server = app.listen(config.port, () => {
   startGrowthRewardCron()
   startLeaderboardCron()
   startLegalRetentionCron()
+  startRankingCron()
+  startCampaignLifecycleCron()
+  startEditorialLifecycleCron()
+  startPartnerEntitlementCron()
 })
 
 let shuttingDown = false
@@ -61,6 +69,10 @@ async function shutdown(signal: NodeJS.Signals) {
       stopGrowthRewardCron()
       stopLeaderboardCron()
       stopLegalRetentionCron()
+      stopRankingCron()
+      stopCampaignLifecycleCron()
+      stopEditorialLifecycleCron()
+      stopPartnerEntitlementCron()
       await prisma.$disconnect()
       clearTimeout(forceExit)
       logger.info({ signal }, 'shutdown completed')

@@ -18,7 +18,7 @@ describe('Public products API images serialization', () => {
     expect(res.body.items[0].images).toEqual(images)
   })
 
-  it('paginates product list by cursor in stable store order', async () => {
+  it('paginates the no-run product list by id DESC without reading legacy isHot/sales', async () => {
     await prisma.product.createMany({
       data: [
         { name: '热门高销量', type: '网络节点', price: 100, isHot: true, sales: 10, status: 'active', categoryId: await getActiveNetworkNodeCategoryId() },
@@ -30,7 +30,7 @@ describe('Public products API images serialization', () => {
     const firstPage = await api.get('/api/products').query({ pageSize: 2 }).expect(200)
 
     expect(firstPage.body.items.map((product: { name: string }) => product.name))
-      .toEqual(['热门高销量', '热门低销量'])
+      .toEqual(['普通高销量', '热门低销量'])
     expect(firstPage.body.hasMore).toBe(true)
     expect(firstPage.body.nextCursor).toEqual(expect.any(String))
 
@@ -39,7 +39,7 @@ describe('Public products API images serialization', () => {
       .expect(200)
 
     expect(secondPage.body.items.map((product: { name: string }) => product.name))
-      .toEqual(['普通高销量'])
+      .toEqual(['热门高销量'])
     expect(secondPage.body.hasMore).toBe(false)
     expect(secondPage.body.nextCursor).toBeNull()
   })
