@@ -26,6 +26,12 @@ import type {
   PromotionCreatePayload,
   PromotionPackageDTO,
   SponsoredPlacement,
+  EditorialStatus,
+  EditorialPlacement,
+  AdminEditorialFeatureDTO,
+  AdminEditorialFeaturePage,
+  AdminEditorialCreatePayload,
+  AdminEditorialUpdatePayload,
   AdminPromotionPackageDTO,
   AdminPromotionPackageCreatePayload,
   AdminPromotionPackageUpdatePayload,
@@ -34,11 +40,11 @@ import type {
   AdminPromotionCampaignCancelPayload,
   AdminPromotionRefundAdjustmentPayload,
 } from '../types/merchandising'
-
 const PACKAGES_URL = '/merchant/promotion-packages'
 const CAMPAIGNS_URL = '/merchant/promotion-campaigns'
 const ADMIN_PACKAGES_URL = '/admin/promotion-packages'
 const ADMIN_CAMPAIGNS_URL = '/admin/promotion-campaigns'
+const ADMIN_EDITORIAL_URL = '/admin/editorial-features'
 
 // ============================================================================
 // Private wire contracts — the raw shapes served by the merchant lane. The
@@ -489,4 +495,72 @@ export async function adjustAdminPromotionCampaignRefund(
     },
   )
   return data.campaign
+}
+
+// ============================================================================
+// Admin EditorialFeature CRUD + revoke (SPEC-MERCH-001 §5.5 editorial lane).
+// The server replies with the bare AdminEditorialFeatureDTO (no wrapper) for
+// create/update/revoke, and a bare AdminEditorialFeaturePage for the list.
+// 'all' is a valid UI filter value for status/placement but is never sent —
+// the server rejects it, so these values are omitted from the query params.
+// ============================================================================
+
+/**
+ * Admin EditorialFeature query. `status`/`placement` accept the UI value
+ * 'all' (no filter), but 'all' is never transmitted — the server rejects it.
+ */
+export interface AdminEditorialFeatureQuery {
+  status?: EditorialStatus | 'all'
+  placement?: EditorialPlacement | 'all'
+  page?: number
+  pageSize?: number
+}
+
+/**
+ * GET /admin/editorial-features — list admin editorial features.
+ * Server page shape is returned as-is (passthrough adapter).
+ */
+export async function listAdminEditorialFeatures(
+  query: AdminEditorialFeatureQuery = {},
+): Promise<AdminEditorialFeaturePage> {
+  const params: Record<string, string | number> = {}
+  if (query.status && query.status !== 'all') params.status = query.status
+  if (query.placement && query.placement !== 'all') params.placement = query.placement
+  if (query.page != null) params.page = query.page
+  if (query.pageSize != null) params.pageSize = query.pageSize
+  const { data } = await client.get<AdminEditorialFeaturePage>(ADMIN_EDITORIAL_URL, {
+    params,
+  })
+  return data
+}
+
+/** POST /admin/editorial-features — create an editorial feature (direct DTO). */
+export async function createAdminEditorialFeature(
+  payload: AdminEditorialCreatePayload,
+): Promise<AdminEditorialFeatureDTO> {
+  const { data } = await client.post<AdminEditorialFeatureDTO>(ADMIN_EDITORIAL_URL, payload)
+  return data
+}
+
+/** PATCH /admin/editorial-features/:id — update an editorial feature (direct DTO). */
+export async function updateAdminEditorialFeature(
+  id: number,
+  payload: AdminEditorialUpdatePayload,
+): Promise<AdminEditorialFeatureDTO> {
+  const { data } = await client.patch<AdminEditorialFeatureDTO>(`${ADMIN_EDITORIAL_URL}/${id}`, payload)
+  return data
+}
+
+/**
+ * POST /admin/editorial-features/:id/revoke — revoke an editorial feature.
+ * Body is strictly { reason }; the server replies with the bare DTO.
+ */
+export async function revokeAdminEditorialFeature(
+  id: number,
+  reason: string,
+): Promise<AdminEditorialFeatureDTO> {
+  const { data } = await client.post<AdminEditorialFeatureDTO>(`${ADMIN_EDITORIAL_URL}/${id}/revoke`, {
+    reason,
+  })
+  return data
 }
