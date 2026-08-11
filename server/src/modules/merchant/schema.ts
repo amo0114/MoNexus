@@ -133,32 +133,41 @@ export const updateMerchantOfferSchema = merchantOfferFieldsSchema.partial().ext
 
 // P4a F3：向导原子发布——商品 + 默认规格名 + 额外规格一次事务落库，
 // 任一规格校验失败则整体回滚（不再有"商品建了、规格没建全"的中间态）。
-export const createMerchantProductSchema = merchantProductFieldsSchema.extend({
+const merchantDraftProductFieldsSchema = merchantProductFieldsSchema.omit({
+  isHot: true,
+  stock: true,
+})
+
+export const createMerchantProductSchema = merchantDraftProductFieldsSchema.extend({
   // B_CAT (D-CAT-09): explicit categoryId for new writes.
   categoryId: z.number().int().positive().optional(),
   primaryOfferName: z.string().trim().min(1, '默认规格名称不能为空').max(50).optional(),
   // 复审 P2-2：默认规格的订阅有效期（落 Offer，不进 Product 列）；此前只有
   // 附加规格能设，单 SKU 订阅商品被迫绕路"建附加规格再下架默认规格"。
   validityDays: z.number().int().min(1).max(3650).nullable().optional(),
-  offers: z.array(merchantOfferFieldsSchema).max(20, '规格数量超出上限').optional(),
+  offers: z.array(merchantOfferFieldsSchema.omit({ stock: true })).max(20, '规格数量超出上限').optional(),
 })
+  .strict()
   .superRefine(validateProductCommercialFields)
   .superRefine(assertExactlyOneCategoryInput)
 
-export const updateMerchantProductSchema = merchantProductFieldsSchema.partial().extend({
-  status: productStatusSchema.optional(),
+export const updateMerchantProductSchema = merchantDraftProductFieldsSchema.partial().extend({
   // update 允许显式传 null 清空固定内容（如从 instant_fixed 切到其他交付模式）；create 保持非 null
   fixedContent: z.string().trim().min(1).max(5000).nullable().optional(),
   // `null` is the explicit API contract for clearing these optional fields.
   originalPrice: productPriceSchema.nullable().optional(),
   imageUrl: productImageItemSchema.nullable().optional(),
-}).superRefine(validateProductCommercialFields)
+}).strict().superRefine(validateProductCommercialFields)
 
 // P4b：预览也接受 offerId——模板挂在规格上，预览必须知道解析目标。
 export const previewMerchantInventorySchema = z.intersection(
   inventoryImportPayloadSchema,
   z.object({ offerId: z.number().int().positive().optional() })
 )
+
+// T-CAT-BE-004（D-CAT-12/13）：新 Offer-first 路径把 offerId 放进 URL，body 不再携带。
+export const previewMerchantOfferInventorySchema = inventoryImportPayloadSchema
+export const importMerchantOfferInventorySchema = inventoryImportPayloadSchema
 
 // P4a：库存/名额操作可指定规格；缺省落到默认 Offer（单 SKU 商家无感）。
 const offerScopeSchema = z.object({ offerId: z.number().int().positive().optional() })
@@ -171,6 +180,11 @@ export const voidMerchantInventorySchema = z.object({
   offerId: z.number().int().positive().optional(),
 }).strict()
 
+export const voidMerchantOfferInventorySchema = z.object({
+  count: z.number().int('作废数量必须是整数').positive('作废数量必须大于 0'),
+  reason: z.string().trim().max(500).optional(),
+}).strict()
+
 /**
  * 仅限非即时库存的限量商品：正数补充可售/服务名额，负数减少名额。
  * 即时库存必须通过逐条交付单元导入/作废，不能走这一数字调整入口。
@@ -180,6 +194,12 @@ export const adjustMerchantProductCapacitySchema = z.object({
     .refine(value => value !== 0, '调整数量不能为 0'),
   reason: z.string().trim().min(1, '请填写调整原因').max(500),
   offerId: z.number().int().positive().optional(),
+}).strict()
+
+export const adjustMerchantOfferCapacitySchema = z.object({
+  delta: z.number().int('调整数量必须是整数').min(-1_000_000).max(1_000_000)
+    .refine(value => value !== 0, '调整数量不能为 0'),
+  reason: z.string().trim().min(1, '请填写调整原因').max(500),
 }).strict()
 
 export const merchantInventoryLogQuerySchema = z.object({
