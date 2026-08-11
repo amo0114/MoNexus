@@ -19,15 +19,99 @@
 import client from './client'
 import { getApiErrorCode, getApiErrorMessage } from './error'
 import type {
+  CampaignStatus,
   CampaignStatusFilter,
   PromotionCampaignDTO,
   PromotionCampaignPage,
   PromotionCreatePayload,
   PromotionPackageDTO,
+  SponsoredPlacement,
 } from '../types/merchandising'
 
 const PACKAGES_URL = '/merchant/promotion-packages'
 const CAMPAIGNS_URL = '/merchant/promotion-campaigns'
+
+// ============================================================================
+// Private wire contracts — the raw shapes served by the merchant lane. The
+// public functions below map these into the frozen UI DTOs so the merchant
+// UI can never read server-only fields (merchantId, snapshot internals).
+// ============================================================================
+
+interface MerchantPromotionPackageWire {
+  id: number
+  code: string
+  label: string
+  placement: SponsoredPlacement
+  durationDays: number
+  pricePoints: number
+  description: string
+  sortOrder: number
+}
+
+interface MerchantPromotionCampaignWire {
+  id: number
+  merchantId: number
+  productId: number
+  packageId: number
+  packageCodeSnapshot: string
+  placementSnapshot: SponsoredPlacement
+  durationDaysSnapshot: number
+  pricePointsSnapshot: number
+  status: CampaignStatus
+  requestedStartAt: string | null
+  startsAt: string | null
+  endsAt: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+interface MerchantPromotionCampaignListWire {
+  campaigns: MerchantPromotionCampaignWire[]
+  total: number
+  page: number
+  pageSize: number
+}
+
+interface MerchantPromotionCampaignMutationWire {
+  campaign: MerchantPromotionCampaignWire
+  replayed?: boolean
+}
+
+function toPromotionPackageDTO(wire: MerchantPromotionPackageWire): PromotionPackageDTO {
+  return {
+    id: wire.id,
+    code: wire.code,
+    label: wire.label,
+    placement: wire.placement,
+    durationDays: wire.durationDays,
+    pricePoints: wire.pricePoints,
+    description: wire.description,
+    sortOrder: wire.sortOrder,
+    status: 'active',
+  }
+}
+
+function toPromotionCampaignDTO(wire: MerchantPromotionCampaignWire): PromotionCampaignDTO {
+  return {
+    id: wire.id,
+    productId: wire.productId,
+    productName: null,
+    packageId: wire.packageId,
+    packageCode: wire.packageCodeSnapshot,
+    packageLabel: wire.packageCodeSnapshot,
+    placement: wire.placementSnapshot,
+    durationDays: wire.durationDaysSnapshot,
+    pricePoints: wire.pricePointsSnapshot,
+    status: wire.status,
+    requestedStartAt: wire.requestedStartAt,
+    startsAt: wire.startsAt,
+    endsAt: wire.endsAt,
+    chargedPoints: 0,
+    refundedPoints: 0,
+    createdAt: wire.createdAt,
+    updatedAt: wire.updatedAt,
+  }
+}
 
 /** Frozen merchant-facing error codes (SPEC-MERCH-001 §11 / §7.3). */
 export type PromotionErrorCode =
@@ -150,8 +234,8 @@ export function newPromotionIdempotencyKey(): string {
 }
 
 export async function listPromotionPackages(): Promise<PromotionPackageDTO[]> {
-  const { data } = await client.get<PromotionPackageDTO[]>(PACKAGES_URL)
-  return data
+  const { data } = await client.get<MerchantPromotionPackageWire[]>(PACKAGES_URL)
+  return data.map(toPromotionPackageDTO)
 }
 
 export interface PromotionCampaignQuery {
@@ -167,8 +251,13 @@ export async function listPromotionCampaigns(
   if (query.status && query.status !== 'all') params.status = query.status
   if (query.page != null) params.page = query.page
   if (query.pageSize != null) params.pageSize = query.pageSize
-  const { data } = await client.get<PromotionCampaignPage>(CAMPAIGNS_URL, { params })
-  return data
+  const { data } = await client.get<MerchantPromotionCampaignListWire>(CAMPAIGNS_URL, { params })
+  return {
+    items: data.campaigns.map(toPromotionCampaignDTO),
+    total: data.total,
+    page: data.page,
+    pageSize: data.pageSize,
+  }
 }
 
 /** POST /merchant/promotion-campaigns — requires an Idempotency-Key. */
@@ -176,10 +265,10 @@ export async function createPromotionCampaign(
   payload: PromotionCreatePayload,
   idempotencyKey: string,
 ): Promise<PromotionCampaignDTO> {
-  const { data } = await client.post<PromotionCampaignDTO>(CAMPAIGNS_URL, payload, {
+  const { data } = await client.post<MerchantPromotionCampaignMutationWire>(CAMPAIGNS_URL, payload, {
     headers: { 'Idempotency-Key': idempotencyKey },
   })
-  return data
+  return toPromotionCampaignDTO(data.campaign)
 }
 
 /** POST /merchant/promotion-campaigns/:id/cancel — state-idempotent. */
@@ -187,14 +276,14 @@ export async function cancelPromotionCampaign(
   id: number,
   idempotencyKey?: string,
 ): Promise<PromotionCampaignDTO> {
-  const { data } = await client.post<PromotionCampaignDTO>(
+  const { data } = await client.post<MerchantPromotionCampaignMutationWire>(
     `${CAMPAIGNS_URL}/${id}/cancel`,
     undefined,
     {
       headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined,
     },
   )
-  return data
+  return toPromotionCampaignDTO(data.campaign)
 }
 
 /** POST /merchant/promotion-campaigns/:id/retry-payment — reuses the approved snapshot. */
@@ -202,12 +291,12 @@ export async function retryPromotionPayment(
   id: number,
   idempotencyKey?: string,
 ): Promise<PromotionCampaignDTO> {
-  const { data } = await client.post<PromotionCampaignDTO>(
+  const { data } = await client.post<MerchantPromotionCampaignMutationWire>(
     `${CAMPAIGNS_URL}/${id}/retry-payment`,
     undefined,
     {
       headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined,
     },
   )
-  return data
+  return toPromotionCampaignDTO(data.campaign)
 }

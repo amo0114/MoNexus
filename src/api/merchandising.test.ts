@@ -23,7 +23,12 @@ import {
   normalizePromotionError,
   retryPromotionPayment,
 } from './merchandising'
-import type { PromotionCampaignDTO, PromotionCampaignPage, PromotionPackageDTO } from '../types/merchandising'
+import type {
+  CampaignStatus,
+  PromotionCampaignDTO,
+  PromotionPackageDTO,
+  SponsoredPlacement,
+} from '../types/merchandising'
 
 const mockGet = client.get as unknown as ReturnType<typeof vi.fn>
 const mockPost = client.post as unknown as ReturnType<typeof vi.fn>
@@ -39,7 +44,22 @@ function apiError(status: number, code?: string, message?: string) {
   }
 }
 
-const packageDto: PromotionPackageDTO = {
+// ---------------------------------------------------------------------------
+// Fixture group A — wire package (raw merchant-lane shape, no `status`) and
+// its mapped UI DTO (wirePackage + status:'active').
+// ---------------------------------------------------------------------------
+interface WirePackageFixture {
+  id: number
+  code: string
+  label: string
+  placement: SponsoredPlacement
+  durationDays: number
+  pricePoints: number
+  description: string
+  sortOrder: number
+}
+
+const wirePackage: WirePackageFixture = {
   id: 7,
   code: 'store_home_7d',
   label: '首页推广 7 天',
@@ -48,28 +68,72 @@ const packageDto: PromotionPackageDTO = {
   pricePoints: 100,
   description: 'd',
   sortOrder: 1,
+}
+
+const expectedPackage: PromotionPackageDTO = {
+  ...wirePackage,
   status: 'active',
 }
 
-const campaignDto: PromotionCampaignDTO = {
+// ---------------------------------------------------------------------------
+// Fixture group B — wire campaign (raw merchant-lane shape: snapshot fields;
+// no productName/packageLabel/chargedPoints/refundedPoints) and its mapped
+// UI DTO.
+// ---------------------------------------------------------------------------
+interface WireCampaignFixture {
+  id: number
+  merchantId: number
+  productId: number
+  packageId: number
+  packageCodeSnapshot: string
+  placementSnapshot: SponsoredPlacement
+  durationDaysSnapshot: number
+  pricePointsSnapshot: number
+  status: CampaignStatus
+  requestedStartAt: string | null
+  startsAt: string | null
+  endsAt: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+const wireCampaign: WireCampaignFixture = {
   id: 1001,
+  merchantId: 555,
   productId: 42,
-  productName: '测试商品',
   packageId: 7,
-  packageCode: 'store_home_7d',
-  packageLabel: '首页推广 7 天',
-  placement: 'store_home_sponsored',
-  durationDays: 7,
-  pricePoints: 100,
+  packageCodeSnapshot: 'store_home_7d',
+  placementSnapshot: 'store_home_sponsored',
+  durationDaysSnapshot: 7,
+  pricePointsSnapshot: 100,
   status: 'pending_review',
   requestedStartAt: null,
   startsAt: null,
   endsAt: null,
-  chargedPoints: 0,
-  refundedPoints: 0,
   createdAt: '2026-08-01T02:00:00.000Z',
   updatedAt: '2026-08-01T02:00:00.000Z',
 }
+
+const expectedCampaign: PromotionCampaignDTO = {
+  id: wireCampaign.id,
+  productId: wireCampaign.productId,
+  productName: null,
+  packageId: wireCampaign.packageId,
+  packageCode: wireCampaign.packageCodeSnapshot,
+  packageLabel: wireCampaign.packageCodeSnapshot,
+  placement: wireCampaign.placementSnapshot,
+  durationDays: wireCampaign.durationDaysSnapshot,
+  pricePoints: wireCampaign.pricePointsSnapshot,
+  status: wireCampaign.status,
+  requestedStartAt: wireCampaign.requestedStartAt,
+  startsAt: wireCampaign.startsAt,
+  endsAt: wireCampaign.endsAt,
+  chargedPoints: 0,
+  refundedPoints: 0,
+  createdAt: wireCampaign.createdAt,
+  updatedAt: wireCampaign.updatedAt,
+}
+
 
 describe('normalizePromotionError', () => {
   it('maps a network failure (no response) to a retryable network error', () => {
@@ -172,17 +236,19 @@ describe('merchant promotion endpoints', () => {
   })
 
   it('GET /merchant/promotion-packages', async () => {
-    mockGet.mockResolvedValue({ data: [packageDto] })
+    mockGet.mockResolvedValue({ data: [wirePackage] })
     const result = await listPromotionPackages()
     expect(mockGet).toHaveBeenCalledWith('/merchant/promotion-packages')
-    expect(result).toEqual([packageDto])
+    expect(result).toEqual([expectedPackage])
+    expect(result[0].status).toBe('active')
   })
 
   it('GET /merchant/promotion-campaigns passes status/page/pageSize and omits all', async () => {
-    const page: PromotionCampaignPage = { items: [campaignDto], total: 1, page: 1, pageSize: 10 }
-    mockGet.mockResolvedValue({ data: page })
+    const wirePage = { campaigns: [wireCampaign], total: 1, page: 1, pageSize: 10 }
+    mockGet.mockResolvedValue({ data: wirePage })
 
-    await listPromotionCampaigns({ status: 'active', page: 3, pageSize: 10 })
+    const firstResult = await listPromotionCampaigns({ status: 'active', page: 3, pageSize: 10 })
+    expect(firstResult).toEqual({ items: [expectedCampaign], total: 1, page: 1, pageSize: 10 })
     expect(mockGet).toHaveBeenCalledWith('/merchant/promotion-campaigns', {
       params: { status: 'active', page: 3, pageSize: 10 },
     })
@@ -195,9 +261,9 @@ describe('merchant promotion endpoints', () => {
   })
 
   it('POST /merchant/promotion-campaigns sends only contract fields + Idempotency-Key header', async () => {
-    mockPost.mockResolvedValue({ data: campaignDto })
+    mockPost.mockResolvedValue({ data: { campaign: wireCampaign, replayed: false } })
     const payload = { productId: 42, packageId: 7, requestedStartAt: null }
-    await createPromotionCampaign(payload, 'key-abc')
+    const result = await createPromotionCampaign(payload, 'key-abc')
     expect(mockPost).toHaveBeenCalledWith(
       '/merchant/promotion-campaigns',
       payload,
@@ -206,25 +272,28 @@ describe('merchant promotion endpoints', () => {
     // The payload must be exactly the three contract fields (no price/duration
     // overrides — MERCH-007).
     expect(Object.keys(payload).sort()).toEqual(['packageId', 'productId', 'requestedStartAt'])
+    expect(result).toEqual(expectedCampaign)
   })
 
   it('POST /merchant/promotion-campaigns/:id/cancel', async () => {
-    mockPost.mockResolvedValue({ data: campaignDto })
-    await cancelPromotionCampaign(1001, 'key-cancel')
+    mockPost.mockResolvedValue({ data: { campaign: wireCampaign } })
+    const result = await cancelPromotionCampaign(1001, 'key-cancel')
     expect(mockPost).toHaveBeenCalledWith(
       '/merchant/promotion-campaigns/1001/cancel',
       undefined,
       { headers: { 'Idempotency-Key': 'key-cancel' } },
     )
+    expect(result).toEqual(expectedCampaign)
   })
 
   it('POST /merchant/promotion-campaigns/:id/retry-payment', async () => {
-    mockPost.mockResolvedValue({ data: campaignDto })
-    await retryPromotionPayment(1001)
+    mockPost.mockResolvedValue({ data: { campaign: wireCampaign, replayed: false } })
+    const result = await retryPromotionPayment(1001)
     expect(mockPost).toHaveBeenCalledWith(
       '/merchant/promotion-campaigns/1001/retry-payment',
       undefined,
       { headers: undefined },
     )
+    expect(result).toEqual(expectedCampaign)
   })
 })
