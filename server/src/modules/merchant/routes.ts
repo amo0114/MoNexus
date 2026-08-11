@@ -5,12 +5,16 @@ import {
   applyMerchantSchema, updateMerchantSchema,
   createMerchantProductSchema, updateMerchantProductSchema,
   importMerchantInventorySchema, merchantListQuerySchema,
+  importMerchantOfferInventorySchema,
   merchantOrderListQuerySchema, startFulfillmentSchema,
   deliverFulfillmentSchema, respondDisputeSchema, rejectOrderSchema,
   orderProgressSchema,
   merchantProductListQuerySchema, previewMerchantInventorySchema,
+  previewMerchantOfferInventorySchema,
   voidMerchantInventorySchema, merchantInventoryLogQuerySchema,
+  voidMerchantOfferInventorySchema,
   adjustMerchantProductCapacitySchema,
+  adjustMerchantOfferCapacitySchema,
   createMerchantOfferSchema, updateMerchantOfferSchema,
   merchantWebhookConfigSchema,
 } from './schema.js'
@@ -45,6 +49,12 @@ router.post('/products/:id/inventory/preview', validate({ params: idParamSchema,
 router.post('/products/:id/inventory', validate({ params: idParamSchema, body: importMerchantInventorySchema }), controller.importInventory)
 router.post('/products/:id/inventory/void', validate({ params: idParamSchema, body: voidMerchantInventorySchema }), controller.voidInventory)
 router.get('/products/:id/inventory/logs', validate({ params: idParamSchema, query: merchantInventoryLogQuerySchema }), controller.listInventoryLogs)
+
+// T-CAT-BE-004（D-CAT-12/13）：新 Offer-first 路径，offerId 显式在 URL；旧路径保留默认 Offer 兼容。
+router.post('/products/:id/offers/:offerId/inventory/preview', validate({ params: offerParamSchema, body: previewMerchantOfferInventorySchema }), controller.previewOfferInventory)
+router.post('/products/:id/offers/:offerId/inventory', validate({ params: offerParamSchema, body: importMerchantOfferInventorySchema }), controller.importOfferInventory)
+router.post('/products/:id/offers/:offerId/inventory/void', validate({ params: offerParamSchema, body: voidMerchantOfferInventorySchema }), controller.voidOfferInventory)
+router.post('/products/:id/offers/:offerId/capacity/adjust', validate({ params: offerParamSchema, body: adjustMerchantOfferCapacitySchema }), controller.adjustOfferCapacity)
 
 // P4a：SKU/规格管理
 router.get('/products/:id/offers', validate({ params: idParamSchema }), controller.listOffers)

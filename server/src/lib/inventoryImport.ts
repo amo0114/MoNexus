@@ -4,6 +4,7 @@ import { prisma } from './prisma.js'
 import { badRequest } from './httpError.js'
 import {
   canonicalDeliveryText,
+  parseStoredDeliveryFields,
   parseStructuredImportRow,
   type DeliveryField,
   type StructuredDeliveryContent,
@@ -208,6 +209,47 @@ export function isInventoryContentUniqueViolation(error: unknown) {
   const target = error.meta?.target
   const targetColumns = Array.isArray(target) ? target.map(String) : [String(target ?? '')]
   return targetColumns.includes('productId') && targetColumns.includes('content')
+}
+
+/**
+ * Offer-scoped analysis dispatch（T-CAT-BE-004）：按 Offer 的交付字段模板决定走
+ * 结构化还是纯文本分析。Merchant 与 Admin 的 preview/confirm 共用同一入口，保证
+ * 两侧统计与错误语义一致（AC-CAT-009）。模板挂在 Offer 上，因此分析必须先有
+ * 明确的 Offer 目标——与 D-CAT-12「所有库存操作显式 Offer ID」一致。
+ */
+export async function analyzeInventoryForOffer(
+  productId: number,
+  offer: { deliveryFields: unknown },
+  payload: InventoryImportPayload,
+  client: InventoryClient = prisma
+): Promise<InventoryImportAnalysis | StructuredInventoryImportAnalysis> {
+  const deliveryFields = parseStoredDeliveryFields(offer.deliveryFields)
+  if (deliveryFields.length > 0) {
+    return analyzeStructuredInventoryImport(productId, payload, deliveryFields, client)
+  }
+  return analyzeInventoryImport(productId, payload, client)
+}
+
+/**
+ * confirm 阶段的事务内重算校验（T-CAT-BE-004）：preview 与写入之间数据可能变化，
+ * 因此 confirm 必须重新运行分析与这套校验；Merchant/Admin 共用，保证重复/模板/空
+ * 输入整体拒绝且零写入、零审计假记录（AC-CAT-006）。
+ */
+export function assertConfirmableInventoryAnalysis(
+  analysis: InventoryImportAnalysis | StructuredInventoryImportAnalysis
+): void {
+  if ('rowErrors' in analysis && analysis.rowErrors.length > 0) {
+    throw badRequest(
+      '部分行不符合交付字段模板，请先预览修正',
+      analysis.rowErrors.map(err => ({ field: 'items', message: `第 ${err.row} 行：${err.message}` }))
+    )
+  }
+  if (analysis.duplicateRows > 0 || analysis.existingDuplicateRows > 0) {
+    throw badRequest('库存导入包含重复项', duplicateInventoryImportDetails(analysis))
+  }
+  if (analysis.validRows === 0) {
+    throw badRequest('至少提供一条有效库存')
+  }
 }
 
 /** Shared API schema. Empty lines are intentionally accepted then ignored by analysis. */

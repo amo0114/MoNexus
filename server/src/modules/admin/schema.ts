@@ -230,6 +230,12 @@ export const importInventorySchema = z.intersection(
   z.object({ offerId: z.number().int().positive().optional() })
 )
 
+// T-CAT-BE-004（D-CAT-13/15）：admin preview 与 merchant 共用领域分析器；
+// 新 Offer-first 路径把 offerId 放进 URL，body 不再携带。
+export const previewInventorySchema = importInventorySchema
+export const previewOfferInventorySchema = inventoryImportPayloadSchema
+export const importOfferInventorySchema = inventoryImportPayloadSchema
+
 // P5：吊销交付文件。
 export const revokeDeliveryFileSchema = z.object({
   reason: z.string().trim().max(500).optional(),

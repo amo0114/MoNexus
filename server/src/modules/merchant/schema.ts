@@ -165,6 +165,10 @@ export const previewMerchantInventorySchema = z.intersection(
   z.object({ offerId: z.number().int().positive().optional() })
 )
 
+// T-CAT-BE-004（D-CAT-12/13）：新 Offer-first 路径把 offerId 放进 URL，body 不再携带。
+export const previewMerchantOfferInventorySchema = inventoryImportPayloadSchema
+export const importMerchantOfferInventorySchema = inventoryImportPayloadSchema
+
 // P4a：库存/名额操作可指定规格；缺省落到默认 Offer（单 SKU 商家无感）。
 const offerScopeSchema = z.object({ offerId: z.number().int().positive().optional() })
 
@@ -176,6 +180,11 @@ export const voidMerchantInventorySchema = z.object({
   offerId: z.number().int().positive().optional(),
 }).strict()
 
+export const voidMerchantOfferInventorySchema = z.object({
+  count: z.number().int('作废数量必须是整数').positive('作废数量必须大于 0'),
+  reason: z.string().trim().max(500).optional(),
+}).strict()
+
 /**
  * 仅限非即时库存的限量商品：正数补充可售/服务名额，负数减少名额。
  * 即时库存必须通过逐条交付单元导入/作废，不能走这一数字调整入口。
@@ -185,6 +194,12 @@ export const adjustMerchantProductCapacitySchema = z.object({
     .refine(value => value !== 0, '调整数量不能为 0'),
   reason: z.string().trim().min(1, '请填写调整原因').max(500),
   offerId: z.number().int().positive().optional(),
+}).strict()
+
+export const adjustMerchantOfferCapacitySchema = z.object({
+  delta: z.number().int('调整数量必须是整数').min(-1_000_000).max(1_000_000)
+    .refine(value => value !== 0, '调整数量不能为 0'),
+  reason: z.string().trim().min(1, '请填写调整原因').max(500),
 }).strict()
 
 export const merchantInventoryLogQuerySchema = z.object({

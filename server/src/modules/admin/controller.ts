@@ -98,6 +98,28 @@ export async function importInventory(req: Request, res: Response, next: NextFun
   } catch (err) { next(err) }
 }
 
+// T-CAT-BE-004（D-CAT-13/15）：admin preview → confirm，与商家共用领域分析器。
+export async function previewInventory(req: Request, res: Response, next: NextFunction) {
+  try {
+    const productId = req.params.id as unknown as number
+    res.json(await adminService.previewInventory(productId, req.body))
+  } catch (err) { next(err) }
+}
+
+export async function previewOfferInventory(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { id, offerId } = req.params as unknown as { id: number; offerId: number }
+    res.json(await adminService.previewOfferInventory(id, offerId, req.body))
+  } catch (err) { next(err) }
+}
+
+export async function importOfferInventory(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { id, offerId } = req.params as unknown as { id: number; offerId: number }
+    res.json(await adminService.importOfferInventory(id, offerId, req.body, req.user!.userId))
+  } catch (err) { next(err) }
+}
+
 export async function orders(req: Request, res: Response, next: NextFunction) {
   try {
     res.json(await adminService.listAllOrders(req.query as unknown as ListOrdersQuery))

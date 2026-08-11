@@ -440,3 +440,154 @@ describe('explicit offerId targeting for void & capacity adjust', () => {
       .expect(404)
   })
 })
+
+// T-CAT-BE-004：Offer-first URL 是 P0 权威写路径。这里使用真实 HTTP +
+// PostgreSQL，覆盖 preview→confirm 重算、规格隔离、审计字段和并发最终裁决。
+describe('Offer-first availability operations', () => {
+  it('previews without writes, re-analyses on confirm, and exposes offer-scoped audit without content', async () => {
+    const { user, accessToken, product } = await setupMerchantWithProduct('offer-first-import@test.local')
+    const offer = await prisma.offer.create({
+      data: {
+        productId: product.id,
+        name: '独立卡密池',
+        price: 200,
+        deliveryMode: 'instant_inventory',
+        stockMode: 'limited',
+        stock: 0,
+      },
+    })
+    const url = `/api/merchant/products/${product.id}/offers/${offer.id}/inventory`
+
+    const preview = await api.post(`${url}/preview`).set(authHeader(accessToken))
+      .send({ items: ['OFFER-SECRET-1', 'OFFER-SECRET-2'] }).expect(200)
+    expect(preview.body).toMatchObject({ totalRows: 2, validRows: 2, canImport: true })
+    expect(await prisma.inventoryItem.count({ where: { offerId: offer.id } })).toBe(0)
+
+    const imported = await api.post(url).set(authHeader(accessToken))
+      .send({ items: ['OFFER-SECRET-1', 'OFFER-SECRET-2'] }).expect(200)
+    expect(imported.body.imported).toBe(2)
+
+    // preview 后数据库状态改变；confirm 必须在事务内重算，不能信任旧 preview。
+    await api.post(url).set(authHeader(accessToken))
+      .send({ items: ['OFFER-SECRET-1'] }).expect(400)
+
+    const logs = await api.get(`/api/merchant/products/${product.id}/inventory/logs`)
+      .set(authHeader(accessToken)).expect(200)
+    expect(logs.body.items[0]).toMatchObject({
+      productId: product.id,
+      offerId: offer.id,
+      actorUserId: user.id,
+      action: 'import',
+      delta: 2,
+    })
+    expect(logs.body.items[0].batchId).toMatch(/^[0-9a-f-]{36}$/i)
+    expect(JSON.stringify(logs.body)).not.toContain('OFFER-SECRET')
+  })
+
+  it('voids only the URL offer and returns both offer and product availability totals', async () => {
+    const { accessToken, product } = await setupMerchantWithProduct('offer-first-void@test.local', ['DEFAULT-1', 'DEFAULT-2'])
+    const defaultOfferId = await getDefaultOfferId(product.id)
+    const offer = await prisma.offer.create({
+      data: { productId: product.id, name: '第二库存池', price: 200, deliveryMode: 'instant_inventory' },
+    })
+    await prisma.inventoryItem.createMany({
+      data: ['SECOND-1', 'SECOND-2', 'SECOND-3'].map(content => ({
+        productId: product.id,
+        offerId: offer.id,
+        content,
+        status: 'available',
+      })),
+    })
+
+    const response = await api
+      .post(`/api/merchant/products/${product.id}/offers/${offer.id}/inventory/void`)
+      .set(authHeader(accessToken))
+      .send({ count: 2, reason: '规格池作废' })
+      .expect(200)
+    expect(response.body).toMatchObject({
+      offerId: offer.id,
+      voided: 2,
+      availableStock: 1,
+      productAvailableStock: 3,
+      stock: 1,
+    })
+    expect(await prisma.inventoryItem.count({ where: { offerId: defaultOfferId, status: 'available' } })).toBe(2)
+  })
+
+  it('rejects a URL offer that belongs to a different product on every merchant operation', async () => {
+    const { accessToken, product } = await setupMerchantWithProduct('offer-first-scope@test.local')
+    const foreignProduct = await createTestProduct('外部商品', 100, 0, [])
+    const foreignOfferId = await getDefaultOfferId(foreignProduct.id)
+    const base = `/api/merchant/products/${product.id}/offers/${foreignOfferId}`
+
+    await api.post(`${base}/inventory/preview`).set(authHeader(accessToken)).send({ items: ['x'] }).expect(404)
+    await api.post(`${base}/inventory`).set(authHeader(accessToken)).send({ items: ['x'] }).expect(404)
+    await api.post(`${base}/inventory/void`).set(authHeader(accessToken)).send({ count: 1 }).expect(404)
+    await api.post(`${base}/capacity/adjust`).set(authHeader(accessToken))
+      .send({ delta: 1, reason: '越权' }).expect(404)
+  })
+
+  it('uses the unique index as final arbiter for 50 concurrent imports of the same secret', async () => {
+    const { accessToken, product } = await setupMerchantWithProduct('offer-first-race@test.local')
+    const offerId = await getDefaultOfferId(product.id)
+    const url = `/api/merchant/products/${product.id}/offers/${offerId}/inventory`
+    const responses = await Promise.all(
+      Array.from({ length: 50 }, () => api.post(url).set(authHeader(accessToken)).send({ items: ['ONLY-ONCE'] })),
+    )
+
+    expect(responses.filter(response => response.status === 200)).toHaveLength(1)
+    expect(responses.filter(response => response.status === 400)).toHaveLength(49)
+    expect(await prisma.inventoryItem.count({ where: { offerId, content: 'ONLY-ONCE' } })).toBe(1)
+    expect(await prisma.inventoryLog.count({ where: { offerId, action: 'import' } })).toBe(1)
+  }, 30_000)
+
+  it('keeps limited capacity non-negative under 50 concurrent decrements', async () => {
+    const { accessToken, product } = await setupMerchantWithProduct('offer-first-capacity@test.local')
+    const offerId = await getDefaultOfferId(product.id)
+    await prisma.offer.update({
+      where: { id: offerId },
+      data: { deliveryMode: 'manual_service', stockMode: 'limited', stock: 25 },
+    })
+    await prisma.product.update({
+      where: { id: product.id },
+      data: { deliveryMode: 'manual_service', stockMode: 'limited', stock: 25 },
+    })
+    const url = `/api/merchant/products/${product.id}/offers/${offerId}/capacity/adjust`
+    const responses = await Promise.all(
+      Array.from({ length: 50 }, () => api.post(url).set(authHeader(accessToken))
+        .send({ delta: -1, reason: '并发缩减' })),
+    )
+    expect(responses.filter(response => response.status === 200)).toHaveLength(25)
+    expect(responses.filter(response => response.status === 400)).toHaveLength(25)
+    expect((await prisma.offer.findUniqueOrThrow({ where: { id: offerId } })).stock).toBe(0)
+    expect((await prisma.product.findUniqueOrThrow({ where: { id: product.id } })).stock).toBe(0)
+    expect(await prisma.inventoryLog.count({ where: { offerId, action: 'capacity_adjust' } })).toBe(25)
+  }, 30_000)
+
+  it('allows admin preview/confirm on the same offer contract and records offer in both audit trails', async () => {
+    const { user: admin } = await createTestUser('offer-first-admin@test.local', 'pass123', 'admin')
+    const adminAuth = await loginAs('offer-first-admin@test.local', 'pass123')
+    const { merchant } = await createTestMerchant('offer-first-admin-merchant@test.local', 'pass123', {
+      role: 'merchant', status: 'active', name: '被补货商家',
+    })
+    const product = await createTestProduct('管理员补货商品', 100, 0, [], merchant.id)
+    const offerId = await getDefaultOfferId(product.id)
+    const url = `/api/admin/products/${product.id}/offers/${offerId}/inventory`
+
+    await api.post(`${url}/preview`).set(authHeader(adminAuth.accessToken))
+      .send({ items: ['ADMIN-OFFER-1'] }).expect(200)
+    const confirmed = await api.post(url).set(authHeader(adminAuth.accessToken))
+      .send({ items: ['ADMIN-OFFER-1'] }).expect(200)
+    expect(confirmed.body.imported).toBe(1)
+
+    const inventoryLog = await prisma.inventoryLog.findFirstOrThrow({
+      where: { productId: product.id, offerId, actorUserId: admin.id, action: 'import' },
+    })
+    expect(inventoryLog.batchId).not.toBeNull()
+    const adminLog = await prisma.adminLog.findFirstOrThrow({
+      where: { adminUserId: admin.id, targetType: 'product', targetId: product.id },
+    })
+    expect(adminLog.detail).toContain(`offerId=${offerId}`)
+    expect(adminLog.detail).not.toContain('ADMIN-OFFER-1')
+  })
+})

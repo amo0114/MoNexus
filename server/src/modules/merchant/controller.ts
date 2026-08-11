@@ -115,6 +115,39 @@ export async function listInventoryLogs(req: Request, res: Response, next: NextF
   } catch (err) { next(err) }
 }
 
+// ---- T-CAT-BE-004：新 Offer-first 路径（offerId 显式在 URL，D-CAT-12/13）----
+
+export async function previewOfferInventory(req: Request, res: Response, next: NextFunction) {
+  try {
+    const merchant = await merchantService.getMyMerchant(req.user!.userId)
+    const { id, offerId } = req.params as unknown as { id: number; offerId: number }
+    res.json(await merchantService.previewMyOfferInventory(merchant.id, id, offerId, req.body))
+  } catch (err) { next(err) }
+}
+
+export async function importOfferInventory(req: Request, res: Response, next: NextFunction) {
+  try {
+    const merchant = await merchantService.getMyMerchant(req.user!.userId)
+    const { id, offerId } = req.params as unknown as { id: number; offerId: number }
+    res.json(await merchantService.importMyOfferInventory(merchant.id, req.user!.userId, id, offerId, req.body))
+  } catch (err) { next(err) }
+}
+
+export async function voidOfferInventory(req: Request, res: Response, next: NextFunction) {
+  try {
+    const merchant = await merchantService.getMyMerchant(req.user!.userId)
+    const { id, offerId } = req.params as unknown as { id: number; offerId: number }
+    res.json(await merchantService.voidMyOfferInventory(merchant.id, req.user!.userId, id, offerId, req.body))
+  } catch (err) { next(err) }
+}
+
+export async function adjustOfferCapacity(req: Request, res: Response, next: NextFunction) {
+  try {
+    const merchant = await merchantService.getMyMerchant(req.user!.userId)
+    const { id, offerId } = req.params as unknown as { id: number; offerId: number }
+    res.json(await merchantService.adjustMyOfferCapacity(merchant.id, req.user!.userId, id, offerId, req.body))
+  } catch (err) { next(err) }
+}
 // ---- Orders ----
 
 type OrderWithSettlement = {
