@@ -38,8 +38,9 @@ import EmptyState from '../components/ui/EmptyState'
 import AdminPlatformProductWizard from '../components/catalog/AdminPlatformProductWizard'
 import AdminFakaImportPreview from '../components/catalog/AdminFakaImportPreview'
 import AdminInventoryImportPreview, { type AdminInventoryTarget } from '../components/catalog/AdminInventoryImportPreview'
+import AdminMerchandisingPage from '../components/merchandising/AdminMerchandisingPage'
 
-type AdminTab = 'dashboard' | 'users' | 'products' | 'orders' | 'logs' | 'audit' | 'files' | 'merchants' | 'settlements' | 'announcements' | 'config' | 'backup' | 'faka' | 'abuse' | 'storage'
+type AdminTab = 'dashboard' | 'users' | 'products' | 'orders' | 'logs' | 'audit' | 'files' | 'merchants' | 'settlements' | 'announcements' | 'config' | 'backup' | 'faka' | 'abuse' | 'storage' | 'merchandising'
 
 const NAV_ITEMS: { id: AdminTab; label: string; icon: any }[] = [
   { id: 'dashboard', label: '数据仪表盘', icon: LayoutDashboard },
@@ -55,6 +56,7 @@ const NAV_ITEMS: { id: AdminTab; label: string; icon: any }[] = [
   { id: 'files', label: '文件治理', icon: FolderLock },
   { id: 'storage', label: '对象存储', icon: HardDrive },
   { id: 'announcements', label: '公告管理', icon: Megaphone },
+  { id: 'merchandising', label: '营销与陈列', icon: ShoppingBag },
   { id: 'config', label: '系统配置', icon: Settings },
   { id: 'backup', label: '数据备份与恢复', icon: DatabaseBackup },
 ]
@@ -278,6 +280,7 @@ export default function AdminPage() {
           {activeTab === 'faka' && <AdminFakaTasksPanel />}
           {activeTab === 'abuse' && <AbuseProtectionPanel />}
           {activeTab === 'storage' && <AdminStoragePanel />}
+          {activeTab === 'merchandising' && <AdminMerchandisingPage />}
 
           {/* Merchants */}
           {activeTab === 'merchants' && (
