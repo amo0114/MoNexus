@@ -82,22 +82,23 @@ describe('promotions DTO allowlist — internal fields never leak (pure, no DB)'
     expect(serialized).not.toContain('cancelledByUserId')
   })
 
-  it('admin campaign DTO exposes review fields but still zero key/hash/billing fields', () => {
+  it('admin campaign DTO exposes review and billing summaries but no key/hash/point-log fields', () => {
     const dto = toAdminCampaignDto(richCampaignRow())
     const serialized = JSON.stringify(dto)
     // admin 可见 review 字段（内部审计视图）。
     expect(dto.reviewReason).toBe('internal-review-reason')
     expect(dto.reviewedByUserId).toBe(9)
     expect(dto.cancelledByUserId).toBe(10)
-    // 但 key/hash / pointLog / 扣款 / adjustment 绝不返回（CHK-PROMO-013）。
+    // Admin 需要汇总扣退金额做调整判断，但 key/hash / pointLog / adjustment
+    // 内部字段绝不返回（CHK-PROMO-013）。
     expect(serialized).not.toContain('requestIdempotencyKey')
     expect(serialized).not.toContain('requestPayloadHash')
     expect(serialized).not.toContain(INTERNAL_SENTINELS.requestIdempotencyKey)
     expect(serialized).not.toContain(INTERNAL_SENTINELS.requestPayloadHash)
     expect(serialized).not.toContain('chargePointLogId')
-    expect(serialized).not.toContain('chargedPoints')
+    expect(dto.chargedPoints).toBe(999)
     expect(serialized).not.toContain('refundPointLogId')
-    expect(serialized).not.toContain('refundedPoints')
+    expect(dto.refundedPoints).toBe(888)
     expect(serialized).not.toContain('adjustment')
   })
 

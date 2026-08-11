@@ -97,3 +97,51 @@ export const cancelCampaignSchema = z
   .strict()
 
 export type CancelCampaignInput = z.infer<typeof cancelCampaignSchema>
+
+// ---------------------------------------------------------------------------
+// T-MERCH-BE-004 — billing / lifecycle / public sponsored schemas
+// (SPEC-MERCH-001 §7.3/§7.4/§7.5/§11, AC-MERCH-010/011/014/015/016).
+// ---------------------------------------------------------------------------
+
+/** approve / pause / resume：无 body（状态由 URL 表达）。 */
+export const noBodySchema = z.object({}).strict()
+
+/**
+ * admin cancel body（BE-004）：scheduled 开跑前取消用 reason（可选，全额自动退）；
+ * active/paused 取消走一次性调整决定，points+reason 必填（0..chargedPoints 由 service 校验，
+ * 因为 chargedPoints 是 DB 状态）。
+ */
+export const adminCancelCampaignSchema = z
+  .object({
+    reason: z.string().trim().min(1, '取消理由不能为空').max(500, '取消理由过长').optional(),
+    points: z.number().int().min(0, '调整金额不能为负').optional(),
+  })
+  .strict()
+
+export type AdminCancelCampaignInput = z.infer<typeof adminCancelCampaignSchema>
+
+/**
+ * refund-adjustment body（§11）：{ points: 0..chargedPoints, reason }。
+ * 强制 Idempotency-Key 头；points 上限在 service 用当前 chargedPoints 校验。
+ */
+export const adjustRefundSchema = z
+  .object({
+    points: z.number().int().min(0, '调整金额不能为负'),
+    reason: z.string().trim().min(1, '调整理由不能为空').max(500, '调整理由过长'),
+  })
+  .strict()
+
+export type AdjustRefundInput = z.infer<typeof adjustRefundSchema>
+
+export const retryPaymentSchema = z.object({}).strict()
+
+/** public sponsored 查询（§7.5）：limit 1..12，placement 枚举，categoryCode 可选。 */
+export const sponsoredQuerySchema = z
+  .object({
+    placement: z.enum(['store_home_sponsored', 'category_sponsored']).optional(),
+    categoryCode: z.string().trim().min(1, '分类编码不能为空').max(64, '分类编码过长').optional(),
+    limit: z.coerce.number().int().min(1, 'limit 至少为 1').max(12, 'limit 最多为 12').optional(),
+  })
+  .strict()
+
+export type SponsoredQueryInput = z.infer<typeof sponsoredQuerySchema>

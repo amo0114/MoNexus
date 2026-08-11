@@ -15,11 +15,15 @@ import { validate, idParamSchema } from '../../../middlewares/validate.js'
 import * as controller from './controller.js'
 import {
   cancelCampaignSchema,
+  adminCancelCampaignSchema,
+  adjustRefundSchema,
   createCampaignSchema,
   createPackageSchema,
   listCampaignsQuerySchema,
   listPackagesQuerySchema,
   rejectCampaignSchema,
+  noBodySchema,
+  retryPaymentSchema,
   updatePackageSchema,
 } from './schema.js'
 
@@ -38,6 +42,11 @@ merchantPromotionRouter.post(
   validate({ params: idParamSchema, body: cancelCampaignSchema }),
   controller.cancelCampaign,
 )
+merchantPromotionRouter.post(
+  '/promotion-campaigns/:id/retry-payment',
+  validate({ params: idParamSchema, body: retryPaymentSchema }),
+  controller.merchantRetryPayment,
+)
 
 const adminPromotionRouter = Router()
 adminPromotionRouter.use(authenticate, requireActiveUser, requireAdmin, requireAdminMfa)
@@ -54,6 +63,31 @@ adminPromotionRouter.post(
   '/promotion-campaigns/:id/reject',
   validate({ params: idParamSchema, body: rejectCampaignSchema }),
   controller.adminRejectCampaign,
+)
+adminPromotionRouter.post(
+  '/promotion-campaigns/:id/approve',
+  validate({ params: idParamSchema, body: noBodySchema }),
+  controller.adminApproveCampaign,
+)
+adminPromotionRouter.post(
+  '/promotion-campaigns/:id/pause',
+  validate({ params: idParamSchema, body: noBodySchema }),
+  controller.adminPauseCampaign,
+)
+adminPromotionRouter.post(
+  '/promotion-campaigns/:id/resume',
+  validate({ params: idParamSchema, body: noBodySchema }),
+  controller.adminResumeCampaign,
+)
+adminPromotionRouter.post(
+  '/promotion-campaigns/:id/cancel',
+  validate({ params: idParamSchema, body: adminCancelCampaignSchema }),
+  controller.adminCancelCampaign,
+)
+adminPromotionRouter.post(
+  '/promotion-campaigns/:id/refund-adjustment',
+  validate({ params: idParamSchema, body: adjustRefundSchema }),
+  controller.adminRefundAdjustment,
 )
 
 export { merchantPromotionRouter, adminPromotionRouter }

@@ -8,6 +8,7 @@
 
 import { Request, Response, NextFunction } from 'express'
 import * as promotionService from './service.js'
+import * as billingService from './billing.js'
 import type { ListCampaignsQuery } from './schema.js'
 
 // ---- Merchant lanes ----
@@ -80,5 +81,64 @@ export async function adminRejectCampaign(req: Request, res: Response, next: Nex
   try {
     const campaign = await promotionService.rejectCampaign(req.user!.userId, req.params.id as unknown as number, req.body)
     res.json({ campaign })
+  } catch (err) { next(err) }
+}
+
+// ---------------------------------------------------------------------------
+// T-MERCH-BE-004 — billing / lifecycle handlers（approve/retry/pause/resume/
+// cancel/refund-adjustment）。薄 handler：读 header 的 Idempotency-Key 传给
+// service；DTO allowlist 是唯一序列化边界（key/hash 永不返回）。
+// ---------------------------------------------------------------------------
+
+export async function merchantRetryPayment(req: Request, res: Response, next: NextFunction) {
+  try {
+    const merchantId = await promotionService.resolveMerchantId(req.user!.userId)
+    const result = await billingService.retryCampaignPayment(merchantId, req.user!.userId, req.params.id as unknown as number)
+    res.json({ campaign: result.campaign, replayed: false })
+  } catch (err) { next(err) }
+}
+
+export async function adminApproveCampaign(req: Request, res: Response, next: NextFunction) {
+  try {
+    const result = await billingService.approveCampaign(req.user!.userId, req.params.id as unknown as number)
+    res.json({ campaign: result.campaign, replayed: false })
+  } catch (err) { next(err) }
+}
+
+export async function adminPauseCampaign(req: Request, res: Response, next: NextFunction) {
+  try {
+    const campaign = await billingService.pauseCampaign(req.user!.userId, req.params.id as unknown as number)
+    res.json({ campaign })
+  } catch (err) { next(err) }
+}
+
+export async function adminResumeCampaign(req: Request, res: Response, next: NextFunction) {
+  try {
+    const campaign = await billingService.resumeCampaign(req.user!.userId, req.params.id as unknown as number)
+    res.json({ campaign })
+  } catch (err) { next(err) }
+}
+
+export async function adminCancelCampaign(req: Request, res: Response, next: NextFunction) {
+  try {
+    const result = await billingService.adminCancelCampaign(
+      req.user!.userId,
+      req.params.id as unknown as number,
+      req.body,
+      req.headers['idempotency-key'] as string | undefined,
+    )
+    res.json({ campaign: result.campaign, replayed: result.replayed })
+  } catch (err) { next(err) }
+}
+
+export async function adminRefundAdjustment(req: Request, res: Response, next: NextFunction) {
+  try {
+    const result = await billingService.adjustCampaignRefund(
+      req.user!.userId,
+      req.params.id as unknown as number,
+      req.body,
+      req.headers['idempotency-key'] as string | undefined,
+    )
+    res.json({ campaign: result.campaign, replayed: result.replayed })
   } catch (err) { next(err) }
 }

@@ -46,6 +46,10 @@ export interface CampaignRow {
   reviewReason: string | null
   cancelledByUserId: number | null
   cancellationReason: string | null
+  // T-MERCH-BE-004：billing 汇总（admin 可见；merchant DTO 不投影）。
+  // 绝非 key/hash / point-log ID / 余额历史。
+  chargedPoints: number
+  refundedPoints: number
   createdAt: Date
   updatedAt: Date
 }
@@ -94,6 +98,10 @@ export interface AdminCampaignDto extends MerchantCampaignDto {
   reviewReason: string | null
   cancelledByUserId: number | null
   cancellationReason: string | null
+  // T-MERCH-BE-004：billing 汇总（admin 调整视图需要 charged/refunded 金额，
+  // CHK-PROMO-009）；point-log ID、key/hash、余额历史仍永不返回（CHK-PROMO-013）。
+  chargedPoints: number
+  refundedPoints: number
 }
 
 function toIso(value: Date | null): string | null {
@@ -157,5 +165,7 @@ export function toAdminCampaignDto(row: CampaignRow): AdminCampaignDto {
     reviewReason: row.reviewReason,
     cancelledByUserId: row.cancelledByUserId,
     cancellationReason: row.cancellationReason,
+    chargedPoints: row.chargedPoints,
+    refundedPoints: row.refundedPoints,
   }
 }

@@ -32,6 +32,11 @@ export const PROMOTION_ERROR_CODES = {
   PRODUCT_NOT_ELIGIBLE: 'PRODUCT_NOT_ELIGIBLE',
   // §7.2：请求的套餐必须 active（inactive 套餐不再售卖）。
   PACKAGE_NOT_ACTIVE: 'PACKAGE_NOT_ACTIVE',
+  // §7.3（BE-004）：approve/retry 时商家账户必须 active。
+  MERCHANT_NOT_ELIGIBLE: 'MERCHANT_NOT_ELIGIBLE',
+  // §7.4/D-MERCH-13（BE-004）：P0 最多一次 active/paused 调整决定；
+  // 第二个新 key 的决定或并发 CAS 落空 → 稳定 409。
+  CAMPAIGN_ADJUSTMENT_ALREADY_DECIDED: 'CAMPAIGN_ADJUSTMENT_ALREADY_DECIDED',
   // code 唯一冲突（套餐编码 immutable，重名拒绝）。
   PACKAGE_CODE_TAKEN: 'PACKAGE_CODE_TAKEN',
 } as const

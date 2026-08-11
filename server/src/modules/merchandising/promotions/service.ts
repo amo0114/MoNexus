@@ -126,6 +126,10 @@ const campaignRowSelect = {
   reviewReason: true,
   cancelledByUserId: true,
   cancellationReason: true,
+  // T-MERCH-BE-004：billing 汇总（admin list 需展示 charged/refunded，
+  // CHK-PROMO-009）；DTO allowlist 控制是否投影。
+  chargedPoints: true,
+  refundedPoints: true,
   // Selected only for service-side replay comparison. DTO mappers are
   // explicit allowlists and never project this internal value.
   requestPayloadHash: true,
