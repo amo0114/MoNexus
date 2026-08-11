@@ -34,4 +34,3 @@ describe('merchant Offer-first availability API', () => {
     ])
   })
 })
-
