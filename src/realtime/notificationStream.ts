@@ -202,6 +202,7 @@ export class NotificationStream {
           this.enterConnecting()
         }
       } else if (outcome.terminal) {
+        this.invalidateConnection()
         this.clearTimers()
         this.setState('logged_out')
         this.events.onTerminalLogout?.()
