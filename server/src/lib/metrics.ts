@@ -329,7 +329,7 @@ export const notificationRealtimeDisconnectsTotal = new client.Counter({
 export const notificationRealtimeConnectionRejectionsTotal = new client.Counter({
   name: 'notification_realtime_connection_rejections_total',
   help: 'SSE connection rejections by reason',
-  labelNames: ['reason'] as const, // rate|user_cap|ip_cap|global_cap|unavailable|draining
+  labelNames: ['reason'] as const, // rate|auth_expired|user_cap|ip_cap|global_cap|unavailable|draining
   registers: [registry],
 })
 
