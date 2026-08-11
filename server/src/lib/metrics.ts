@@ -305,7 +305,7 @@ export const notificationRealtimeConnections = new client.Gauge({
 export const notificationRealtimePgMessagesTotal = new client.Counter({
   name: 'notification_realtime_pg_messages_total',
   help: 'PostgreSQL NOTIFY messages by terminal outcome',
-  labelNames: ['outcome'] as const, // routed|invalid|no_subscriber|not_found|query_error|probe_error
+  labelNames: ['outcome'] as const, // routed|invalid|no_subscriber|not_found|query_error|overload|probe_error
   registers: [registry],
 })
 
