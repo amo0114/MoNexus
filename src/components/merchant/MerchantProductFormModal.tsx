@@ -372,7 +372,7 @@ export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, pr
                 )}
                 {isInstantInventory && (
                   <div className="md:col-span-2 rounded-lg border border-[var(--color-primary)]/20 bg-[var(--color-primary)]/8 px-4 py-3 text-xs text-[var(--color-text-muted)]">
-                    即时库存商品按“一个交付单元对应一位买家”管理。保存商品后，请在商品列表中使用“管理交付库存”导入账号、卡密、邀请码或其他独立交付内容。
+                    即时库存商品按“一个交付单元对应一位买家”管理。保存商品后，请在商品列表中进入“管理可售资源”，先选规格再导入账号、卡密、邀请码或其他独立交付内容。
                   </div>
                 )}
                 {!isInstantInventory && (

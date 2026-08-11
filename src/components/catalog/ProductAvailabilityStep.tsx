@@ -20,6 +20,8 @@ interface Props {
   onVoidInventory?: (request: VoidInventoryRequest) => Promise<void> | void
   /** Open the delivery-inventory import flow for a specific Offer. */
   onOpenImport?: (offerId: number) => void
+  /** Product-level aggregate of available instant-inventory units (display only). */
+  productAvailableStock?: number
   /** External busy state (e.g. parent background refresh). */
   busy?: boolean
   disabled?: boolean
@@ -42,6 +44,7 @@ export default function ProductAvailabilityStep({
   onAdjustCapacity,
   onVoidInventory,
   onOpenImport,
+  productAvailableStock,
   busy = false,
   disabled = false,
 }: Props) {
@@ -93,6 +96,8 @@ export default function ProductAvailabilityStep({
       await onAdjustCapacity({ offerId: selectedOffer.id, delta, reason })
       setCapacityDelta('')
       setCapacityReason('')
+    } catch {
+      // Parent owns the user-facing error toast. Preserve inputs for retry.
     } finally {
       setSubmitting(null)
     }
@@ -111,6 +116,8 @@ export default function ProductAvailabilityStep({
       await onVoidInventory({ offerId: selectedOffer.id, count, reason })
       setVoidCount('')
       setVoidReason('')
+    } catch {
+      // Parent owns the user-facing error toast. Preserve inputs for retry.
     } finally {
       setSubmitting(null)
     }
@@ -119,7 +126,9 @@ export default function ProductAvailabilityStep({
   const capacityLabel = selectedOffer ? getCapacityLabel(selectedOffer.deliveryMode) : '名额'
   const delta = Number(capacityDelta)
   const validDelta = capacityDelta.trim() !== '' && Number.isInteger(delta) && delta !== 0
-  const currentStock = selectedOffer?.stock ?? selectedOffer?.availableStock ?? 0
+  const currentStock = action === 'inventory'
+    ? (selectedOffer?.availableStock ?? selectedOffer?.stock ?? 0)
+    : (selectedOffer?.stock ?? selectedOffer?.availableStock ?? 0)
   const wouldBecomeNegative = validDelta && currentStock + delta < 0
 
   return (
@@ -243,6 +252,21 @@ export default function ProductAvailabilityStep({
               <p className="text-xs text-[var(--color-text-muted)]">
                 即时库存按「一个交付单元对应一位买家」管理。导入走独立交付库存流程；作废按规格执行。
               </p>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3" data-testid="availability-inventory-totals">
+                <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] px-4 py-3">
+                  <div className="text-xs font-medium text-[var(--color-text-muted)]">当前规格可用交付库存</div>
+                  <div className="mt-1 font-mono text-2xl font-bold text-[var(--color-text)]" data-testid="availability-offer-stock">
+                    {currentStock}
+                  </div>
+                </div>
+                <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] px-4 py-3">
+                  <div className="text-xs font-medium text-[var(--color-text-muted)]">商品交付库存汇总</div>
+                  <div className="mt-1 font-mono text-2xl font-bold text-[var(--color-text)]" data-testid="availability-product-stock">
+                    {productAvailableStock ?? '—'}
+                  </div>
+                </div>
+              </div>
 
               {onOpenImport && (
                 <button

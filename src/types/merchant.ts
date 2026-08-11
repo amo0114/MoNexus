@@ -20,6 +20,8 @@ export interface Offer {
   deliveryMode: DeliveryMode
   stockMode: StockMode
   stock: number
+  /** instant_inventory 的 Offer 级可用交付单元数；非即时库存可缺省。 */
+  availableStock?: number
   /** 仅商家端可见;公开商品详情剥离。 */
   fixedContent?: string | null
   fixedContentType?: string
