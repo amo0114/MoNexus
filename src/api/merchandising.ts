@@ -39,12 +39,17 @@ import type {
   AdminPromotionCampaignPage,
   AdminPromotionCampaignCancelPayload,
   AdminPromotionRefundAdjustmentPayload,
+  EntitlementStatus,
+  AdminMerchantEntitlementDTO,
+  AdminMerchantEntitlementPage,
+  AdminMerchantEntitlementGrantPayload,
 } from '../types/merchandising'
 const PACKAGES_URL = '/merchant/promotion-packages'
 const CAMPAIGNS_URL = '/merchant/promotion-campaigns'
 const ADMIN_PACKAGES_URL = '/admin/promotion-packages'
 const ADMIN_CAMPAIGNS_URL = '/admin/promotion-campaigns'
 const ADMIN_EDITORIAL_URL = '/admin/editorial-features'
+const ADMIN_ENTITLEMENTS_URL = '/admin/merchant-entitlements'
 
 // ============================================================================
 // Private wire contracts — the raw shapes served by the merchant lane. The
@@ -562,5 +567,69 @@ export async function revokeAdminEditorialFeature(
   const { data } = await client.post<AdminEditorialFeatureDTO>(`${ADMIN_EDITORIAL_URL}/${id}/revoke`, {
     reason,
   })
+  return data
+}
+
+// ============================================================================
+// Admin MerchantEntitlement query + grant + revoke (SPEC-MERCH-001 §5.6 admin
+// lane). The server replies with the bare AdminMerchantEntitlementDTO (no
+// wrapper) for grant/revoke and a bare AdminMerchantEntitlementPage for the
+// list. The client performs no date conversion, no trimming, and no 365-day/
+// status validation — the server is authoritative. 'all' is a valid UI filter
+// value for status but is never transmitted (the server rejects it).
+// ============================================================================
+
+/**
+ * Admin MerchantEntitlement query. `status` accepts the UI value 'all' (no
+ * filter), but 'all' is never sent — the server rejects it.
+ */
+export interface AdminMerchantEntitlementQuery {
+  merchantId?: number
+  status?: EntitlementStatus | 'all'
+  page?: number
+  pageSize?: number
+}
+
+/**
+ * GET /admin/merchant-entitlements — list admin merchant entitlements.
+ * Server page shape is returned as-is (passthrough adapter).
+ */
+export async function listAdminMerchantEntitlements(
+  query: AdminMerchantEntitlementQuery = {},
+): Promise<AdminMerchantEntitlementPage> {
+  const params: Record<string, string | number> = {}
+  if (query.merchantId != null) params.merchantId = query.merchantId
+  if (query.status && query.status !== 'all') params.status = query.status
+  if (query.page != null) params.page = query.page
+  if (query.pageSize != null) params.pageSize = query.pageSize
+  const { data } = await client.get<AdminMerchantEntitlementPage>(ADMIN_ENTITLEMENTS_URL, {
+    params,
+  })
+  return data
+}
+
+/**
+ * POST /admin/merchant-entitlements — grant a merchant entitlement.
+ * 201 body is the bare AdminMerchantEntitlementDTO (no wrapper).
+ */
+export async function grantAdminMerchantEntitlement(
+  payload: AdminMerchantEntitlementGrantPayload,
+): Promise<AdminMerchantEntitlementDTO> {
+  const { data } = await client.post<AdminMerchantEntitlementDTO>(ADMIN_ENTITLEMENTS_URL, payload)
+  return data
+}
+
+/**
+ * POST /admin/merchant-entitlements/:id/revoke — revoke an entitlement.
+ * Body is strictly { reason }; the server replies with the bare DTO.
+ */
+export async function revokeAdminMerchantEntitlement(
+  id: number,
+  reason: string,
+): Promise<AdminMerchantEntitlementDTO> {
+  const { data } = await client.post<AdminMerchantEntitlementDTO>(
+    `${ADMIN_ENTITLEMENTS_URL}/${id}/revoke`,
+    { reason },
+  )
   return data
 }
