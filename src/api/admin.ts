@@ -103,6 +103,74 @@ export interface AdminFakaCapacity {
   reason?: string
 }
 
+export type AdminPlatformProductCreateRequest = {
+  name: string
+  categoryId: number
+  description?: string
+  richDescription?: string
+  icon?: string
+  imageUrl?: string
+  images?: string[]
+  price: number
+  originalPrice?: number
+  deliveryMode: 'instant_inventory' | 'instant_fixed' | 'manual_service'
+  stockMode: 'limited' | 'unlimited'
+  fixedContent?: string
+  fixedContentType?: 'text' | 'url'
+}
+
+export type AdminPlatformProduct = {
+  id: number
+  merchantId: null
+  name: string
+  categoryId: number
+  type: string
+  status: 'draft'
+  publishedAt: null
+}
+
+/** Admin-authored platform products are always server-owned drafts (merchantId=null). */
+export async function createAdminPlatformProduct(
+  payload: AdminPlatformProductCreateRequest,
+): Promise<AdminPlatformProduct> {
+  const { data } = await api.post<AdminPlatformProduct>('/admin/products', payload)
+  return data
+}
+
+export type AdminInventoryPreview = {
+  totalRows: number
+  validRows: number
+  emptyRows: number
+  duplicateRows: number
+  existingDuplicateRows: number
+  canImport: boolean
+  rowErrors?: Array<{ row: number; message: string }>
+}
+
+export async function previewAdminOfferInventory(
+  productId: number,
+  offerId: number,
+  payload: { text: string },
+): Promise<AdminInventoryPreview> {
+  const { data } = await api.post<AdminInventoryPreview>(
+    `/admin/products/${productId}/offers/${offerId}/inventory/preview`,
+    payload,
+  )
+  return data
+}
+
+export async function importAdminOfferInventory(
+  productId: number,
+  offerId: number,
+  payload: { items: string[] },
+): Promise<{ imported: number }> {
+  const { data } = await api.post<{ imported: number }>(
+    `/admin/products/${productId}/offers/${offerId}/inventory`,
+    payload,
+  )
+  return data
+}
+
 export async function deleteAdminProduct(
   productId: number,
 ): Promise<{ mode: 'hard' | 'soft'; productId: number; orderCount: number; status?: string }> {
@@ -146,23 +214,61 @@ export type AdminFakaImportOffer = {
   validityDays?: number | null
 }
 
-/** 一商品多规格导入（推荐传 offers）；兼容单 period+pricePoints */
-export async function importAdminFakaPlan(payload: {
+export type AdminFakaCoverChoice =
+  | { mode: 'uploaded'; imageUrl: string; images?: string[] }
+  | { mode: 'category_default' }
+
+export type AdminFakaImportRequest = {
   planId: number
   productName?: string
-  type?: string
-  offers?: AdminFakaImportOffer[]
-  period?: string
-  sku?: string
-  offerName?: string
-  pricePoints?: number
-}): Promise<{
+  categoryId: number
+  cover: AdminFakaCoverChoice
+  offers: AdminFakaImportOffer[]
+}
+
+export type AdminFakaImportPreview = {
+  sourceHash: string
+  capacity: {
+    limit: number | null
+    activeUsers: number
+    remaining: number | null
+    sellable: boolean
+  }
+  productName: string
+  plainDescription: string
+  richDescription: string | null
+  cover: { imageUrl: string; images: string[] } | null
+  offers: Array<{
+    period: string
+    sku: string
+    offerName: string
+    pricePoints: number
+    validityDays: number | null
+  }>
+  issues: Array<{ code: string; field: string; message: string }>
+  canConfirm: boolean
+}
+
+export async function previewAdminFakaPlan(
+  payload: AdminFakaImportRequest,
+): Promise<AdminFakaImportPreview> {
+  const { data } = await api.post<AdminFakaImportPreview>('/admin/faka/import/preview', payload)
+  return data
+}
+
+/** Confirm repeats the preview request and binds it to sourceHash + Idempotency-Key. */
+export async function importAdminFakaPlan(
+  payload: AdminFakaImportRequest & { sourceHash: string },
+  idempotencyKey: string,
+): Promise<{
   productId: number
-  offerCount: number
-  offers: Array<{ period: string; sku: string; offerName: string; pricePoints: number }>
-  fakaCapacity: AdminFakaCapacity
+  offerCount?: number
+  offers?: Array<{ period: string; sku: string; offerName: string; pricePoints: number }>
+  replayed: boolean
 }> {
-  const { data } = await api.post('/admin/faka/import', payload)
+  const { data } = await api.post('/admin/faka/import', payload, {
+    headers: { 'Idempotency-Key': idempotencyKey },
+  })
   return data
 }
 
