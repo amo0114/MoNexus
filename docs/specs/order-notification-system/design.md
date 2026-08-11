@@ -8,6 +8,10 @@
 | 状态 | Ready for Phase 1 |
 | 输入 | [spec.md](./spec.md) |
 
+> **⚠️ 部分被 SPEC-NOTIFY-RT-001 覆盖（superseded）**
+>
+> DESIGN-NOTIFY-001 中关于“实时推送 / SSE / WebSocket Phase 3+ 延后”与“前端短轮询作为正常主路径”的抵达方式设计已由 [SPEC-NOTIFY-RT-001](../../superpowers/specs/2026-08-09-order-notification-realtime/README.md) 及其配套 plan（PLAN-NOTIFY-RT-001）覆盖并替代：实时抵达改为“同事务 `pg_notify` 提交后唤醒 → 每实例 PostgreSQL `LISTEN` → 鉴权 SSE → 前端 REST 权威重同步”，保留 30 秒轮询为降级路径。其余设计（数据模型、幂等、收件人、纯文本展示、公告隔离）保持有效。
+
 ---
 
 ## 1. 架构概览

@@ -45,6 +45,7 @@ function applyTheme(t: Theme) {
   } else {
     root.removeAttribute('data-theme')
   }
+
   const variant = ASSET_VARIANT[t]
   document
     .querySelectorAll<HTMLLinkElement>('link[data-brand-favicon-size]')

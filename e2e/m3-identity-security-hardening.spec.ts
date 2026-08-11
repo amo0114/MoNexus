@@ -95,6 +95,13 @@ async function mockAuthenticatedAppRequests(page: Page) {
   await page.route(apiRoute('/notifications'), route => route.fulfill({
     json: { notifications: [], nextCursor: null, hasMore: false },
   }))
+  // The realtime bridge is mounted for every authenticated layout. This
+  // UI-only fixture intentionally uses an unsigned token, so keep the stream
+  // request inside the fixture and exercise the documented flag-off fallback.
+  await page.route(apiRoute('/notifications/stream'), route => route.fulfill({
+    status: 404,
+    json: { error: { code: 'NOT_FOUND', message: '页面不存在' } },
+  }))
 }
 
 async function mockNormalLogin(page: Page) {

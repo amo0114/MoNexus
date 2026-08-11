@@ -733,6 +733,7 @@ export default function ProfilePage() {
       <div className="pt-2 flex justify-center">
         <button
           onClick={handleLogout}
+          data-testid="profile-logout"
           className="cursor-pointer text-[var(--color-text-muted)] font-medium hover:text-[var(--color-danger)] flex items-center gap-1.5 px-4 py-2 btn-sm rounded-lg hover:bg-[var(--color-danger)]/10 transition-colors text-sm"
         >
           <LogOut className="w-4 h-4" /> 退出当前账号

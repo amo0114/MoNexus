@@ -281,3 +281,62 @@ export const fakaRevokePendingGauge = new client.Gauge({
   help: 'FakaBridge tasks waiting for Xboard revoke',
   registers: [registry],
 })
+
+// ===========================================================================
+// SPEC-NOTIFY-RT-001 realtime notification metrics (spec 8.4).
+// Labels are strictly bounded; never userId / orderId / IP / deeplink / title.
+// ===========================================================================
+
+/** 1 when the dedicated LISTEN connection is healthy, else 0. */
+export const notificationRealtimeListenerUp = new client.Gauge({
+  name: 'notification_realtime_listener_up',
+  help: 'Dedicated PostgreSQL LISTEN listener health (1 = healthy)',
+  registers: [registry],
+})
+
+/** Current number of local SSE connections. */
+export const notificationRealtimeConnections = new client.Gauge({
+  name: 'notification_realtime_connections',
+  help: 'Current number of local SSE connections',
+  registers: [registry],
+})
+
+/** Terminal outcome of each received NOTIFY message (probe_error is a probe result). */
+export const notificationRealtimePgMessagesTotal = new client.Counter({
+  name: 'notification_realtime_pg_messages_total',
+  help: 'PostgreSQL NOTIFY messages by terminal outcome',
+  labelNames: ['outcome'] as const, // routed|invalid|no_subscriber|not_found|query_error|probe_error
+  registers: [registry],
+})
+
+/** SSE frames written/dropped by event type. */
+export const notificationRealtimeSseEventsTotal = new client.Counter({
+  name: 'notification_realtime_sse_events_total',
+  help: 'SSE events by event and write outcome',
+  labelNames: ['event', 'outcome'] as const, // event: ready|notification|auth_expiring|degraded|heartbeat; outcome: sent|dropped
+  registers: [registry],
+})
+
+/** SSE disconnect reasons. */
+export const notificationRealtimeDisconnectsTotal = new client.Counter({
+  name: 'notification_realtime_disconnects_total',
+  help: 'SSE disconnects by reason',
+  labelNames: ['reason'] as const, // client|token_expired|listener|shutdown|slow|write_error
+  registers: [registry],
+})
+
+/** Connect rejections before headers. */
+export const notificationRealtimeConnectionRejectionsTotal = new client.Counter({
+  name: 'notification_realtime_connection_rejections_total',
+  help: 'SSE connection rejections by reason',
+  labelNames: ['reason'] as const, // rate|user_cap|ip_cap|global_cap|unavailable|draining
+  registers: [registry],
+})
+
+/** Approximate createdAt -> local write latency. */
+export const notificationRealtimeDeliveryLagSeconds = new client.Histogram({
+  name: 'notification_realtime_delivery_lag_seconds',
+  help: 'Notification createdAt to local SSE write latency',
+  buckets: [0.01, 0.05, 0.1, 0.25, 0.5, 1, 2, 5],
+  registers: [registry],
+})

@@ -7,5 +7,9 @@ staging.monexus.oai-o.com {
   encode zstd gzip
 
   # The bundled Nginx container serves the SPA and proxies /api internally.
-  reverse_proxy 127.0.0.1:18081
+  reverse_proxy 127.0.0.1:18081 {
+    # SPEC-NOTIFY-RT-001: forward ready/events immediately; do not wait for
+    # Caddy's adaptive response buffering heuristics.
+    flush_interval -1
+  }
 }
