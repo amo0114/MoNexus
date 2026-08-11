@@ -5,42 +5,59 @@ import DOMPurify from 'dompurify'
 import { MerchantProduct, PurchaseFormField } from '../../types/merchant'
 import { useAppStore } from '../../stores/appStore'
 import { DialogOverlay } from '../ui/Dialog'
+import ProductCategorySelect from '../catalog/ProductCategorySelect'
 import PurchaseFormFieldsEditor, {
   serializePurchaseFormFields, validatePurchaseFormFields,
 } from './PurchaseFormFieldsEditor'
 import ProductImageUploader, { MAX_IMAGES } from './ProductImageUploader'
+import { catalogApi, type CatalogAdapter } from '../../api/catalog'
+import type { CategoryRegistryItem } from '../../types/catalog'
 
 interface Props {
   isOpen: boolean
   onClose: () => void
   onSubmit: (payload: any) => Promise<void>
   product: MerchantProduct | null
+  /** 可注入 Catalog adapter（生产默认共享 client；测试注入 fixture transport）。 */
+  adapter?: CatalogAdapter
 }
 
-export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, product }: Props) {
+export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, product, adapter = catalogApi }: Props) {
   const showToast = useAppStore((s) => s.showToast)
   const registry = useAppStore((s) => s.registry)
   const [loading, setLoading] = useState(false)
   const [images, setImages] = useState<string[]>([])
   const [descMode, setDescMode] = useState<'edit' | 'preview'>('edit')
   const [purchaseForm, setPurchaseForm] = useState<PurchaseFormField[]>([])
+  const [categories, setCategories] = useState<CategoryRegistryItem[]>([])
   const [form, setForm] = useState({
     name: '',
-    type: '网络节点',
+    /** 稳定分类 id；分类只影响展示/检索，绝不自动切 deliveryMode（D-CAT-05）。 */
+    categoryId: null as number | null,
     price: '',
     originalPrice: '',
     description: '',
     richDescription: '',
     icon: '',
     imageUrl: '',
-    isHot: false,
     status: 'active',
-    deliveryMode: 'instant_inventory',
-    stockMode: 'unlimited',
-    stock: '',
+    deliveryMode: 'instant_inventory' as MerchantProduct['deliveryMode'],
+    stockMode: 'unlimited' as MerchantProduct['stockMode'],
     fixedContent: '',
-    fixedContentType: 'text'
+    fixedContentType: 'text' as 'text' | 'url'
   })
+
+  // 打开时加载 active 分类（公开 registry 只返回 active，spec §7.1）。
+  useEffect(() => {
+    if (isOpen && categories.length === 0) {
+      let cancelled = false
+      adapter.listActiveCategories()
+        .then((cats) => { if (!cancelled) setCategories(cats) })
+        .catch(() => { if (!cancelled) showToast('分类加载失败，请刷新重试', 'error') })
+      return () => { cancelled = true }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen])
 
   useEffect(() => {
     if (isOpen) {
@@ -50,48 +67,60 @@ export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, pr
         setImages(existingImages.length > 0 ? existingImages.slice(0, MAX_IMAGES) : (product.imageUrl ? [product.imageUrl] : []))
         // 深拷贝：编辑中途取消不能污染列表里的商品对象
         setPurchaseForm((product.purchaseForm ?? []).map(f => ({ ...f, options: f.options ? [...f.options] : undefined })))
+        // 优先用商品自身 categoryId；历史 type label 快照的兜底解析交给下方
+        // 独立 effect（避免 categories 异步到达时整体重置表单、抹掉用户编辑）。
+        const productWithCategory = product as MerchantProduct & { categoryId?: number }
+        const categoryId = productWithCategory.categoryId ?? null
         setForm({
           name: product.name,
-          type: product.type,
+          categoryId,
           price: product.price.toString(),
           originalPrice: product.originalPrice ? product.originalPrice.toString() : '',
           description: product.description || '',
           richDescription: product.richDescription || '',
           icon: product.icon || '',
           imageUrl: product.imageUrl || '',
-          isHot: product.isHot || false,
           status: product.status || 'active',
           deliveryMode: product.deliveryMode || 'instant_inventory',
           stockMode: product.stockMode || (product.deliveryMode === 'instant_inventory' ? 'limited' : 'unlimited'),
-          stock: typeof product.stock === 'number' ? product.stock.toString() : '',
           fixedContent: product.fixedContent || '',
-          fixedContentType: product.fixedContentType || 'text'
+          fixedContentType: (product.fixedContentType as 'text' | 'url') || 'text'
         })
       } else {
-        const defaultType = registry?.productTypes?.[0]?.value || '网络节点'
-        const defaultMode = registry?.productTypes?.find(t => t.value === defaultType)?.deliveryModes?.[0] || 'instant_inventory'
         setImages([])
         setPurchaseForm([])
         setForm({
           name: '',
-          type: defaultType,
+          categoryId: null,
           price: '',
           originalPrice: '',
           description: '',
           richDescription: '',
           icon: '',
           imageUrl: '',
-          isHot: false,
           status: 'active',
-          deliveryMode: defaultMode,
+          deliveryMode: 'instant_inventory',
           stockMode: 'unlimited',
-          stock: '',
           fixedContent: '',
           fixedContentType: 'text'
         })
       }
     }
-  }, [isOpen, product, registry])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, product])
+
+  // categories 异步到达（首次打开）：只把解析出的 categoryId 补进表单，
+  // 绝不整体重置——否则会覆盖用户在加载期间已做的编辑。
+  useEffect(() => {
+    if (!isOpen || !product || form.categoryId != null) return
+    const productWithCategory = product as MerchantProduct & { categoryId?: number }
+    const resolved = productWithCategory.categoryId
+      ?? categories.find(c => c.label === product.type)?.id
+      ?? null
+    if (resolved != null && resolved !== form.categoryId) {
+      setForm(prev => ({ ...prev, categoryId: resolved }))
+    }
+  }, [isOpen, product, categories, form.categoryId])
 
   // 与 ProductDetailPage 同一净化管线：DOMPurify HTML profile 后再注入
   const safePreviewHtml = useMemo(
@@ -126,6 +155,13 @@ export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, pr
       return
     }
 
+    // 新写与编辑路径都必须提交稳定 categoryId。分类加载失败时阻断保存，
+    // 不能退回 legacy type 或创建无分类商品。
+    if (form.categoryId == null) {
+      showToast('请选择商品分类', 'error')
+      return
+    }
+
     const priceNum = Number(form.price)
     if (isNaN(priceNum) || priceNum <= 0) {
       showToast('价格必须是大于0的数字', 'error')
@@ -153,14 +189,6 @@ export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, pr
       showToast('链接必须以 http(s):// 开头', 'error')
       return
     }
-    let stockNum: number | undefined
-    if (form.deliveryMode !== 'instant_inventory' && form.stockMode === 'limited') {
-      stockNum = Number(form.stock)
-      if (form.stock.trim() === '' || !Number.isInteger(stockNum) || stockNum < 0) {
-        showToast('限量库存必须填写有效数量', 'error')
-        return
-      }
-    }
 
     const purchaseFormError = validatePurchaseFormFields(purchaseForm)
     if (purchaseFormError) {
@@ -168,9 +196,11 @@ export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, pr
       return
     }
 
+    // 显式白名单 payload：categoryId 代替 type；不携带 isHot（已移除）与 stock
+    // （可售量只走独立 capacity API，CAT-003）。未知/越权键不进入对象。
     const payload: any = {
       name: form.name.trim(),
-      type: form.type,
+      categoryId: form.categoryId,
       price: priceNum,
       description: form.description.trim() || undefined,
       richDescription: form.richDescription.trim() || undefined,
@@ -178,7 +208,6 @@ export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, pr
       // 封面写 imageUrl（取第一张），全列表写 images
       imageUrl: images[0] || undefined,
       images,
-      isHot: form.isHot,
       deliveryMode: form.deliveryMode,
       // 空数组即清空表单（后端契约用 [] 而非 null，避免 Prisma Json null 语义）
       purchaseForm: serializePurchaseFormFields(purchaseForm),
@@ -186,7 +215,6 @@ export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, pr
 
     if (payload.deliveryMode !== 'instant_inventory') {
       payload.stockMode = form.stockMode
-      if (stockNum !== undefined) payload.stock = stockNum
     }
     if (payload.deliveryMode === 'instant_fixed') {
       payload.fixedContent = form.fixedContent.trim()
@@ -266,38 +294,29 @@ export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, pr
                   />
                 </div>
                 <div>
-                  <FieldLabel required>商品类别</FieldLabel>
-                  <select
-                    className="input appearance-none cursor-pointer"
-                    value={form.type}
-                    onChange={(e) => {
-                      const newType = e.target.value
-                      const typeConfig = registry?.productTypes?.find(t => t.value === newType)
-                      const availableModes = typeConfig?.deliveryModes || ['instant_inventory']
-                      const newMode = availableModes.includes(form.deliveryMode) ? form.deliveryMode : availableModes[0]
-                      setForm({ ...form, type: newType, deliveryMode: newMode })
-                    }}
-                  >
-                    {registry?.productTypes?.map(pt => (
-                      <option key={pt.value} value={pt.value}>{pt.label}</option>
-                    ))}
-                  </select>
+                  {/* 分类只影响展示/检索，绝不自动切换交付方式（D-CAT-05, CHK-CAT-005） */}
+                  <ProductCategorySelect
+                    categories={categories}
+                    value={form.categoryId}
+                    onChange={(categoryId) => setForm({ ...form, categoryId })}
+                    disabled={loading}
+                  />
                 </div>
                 <div>
                   <FieldLabel required>发货模式</FieldLabel>
                   <div className="flex gap-4 items-center h-[46px]">
-                    {registry?.productTypes?.find(t => t.value === form.type)?.deliveryModes?.map(modeValue => {
-                      const modeLabel = registry?.deliveryModes?.find(m => m.value === modeValue)?.label || modeValue
+                    {registry?.deliveryModes?.map(modeValue => {
+                      const modeLabel = registry?.deliveryModes?.find(m => m.value === modeValue.value)?.label || modeValue.value
                       return (
-                        <label key={modeValue} className="flex items-center gap-2 cursor-pointer text-sm">
+                        <label key={modeValue.value} className="flex items-center gap-2 cursor-pointer text-sm">
                           <input
                             type="radio"
                             name="deliveryMode"
-                            value={modeValue}
-                            checked={form.deliveryMode === modeValue}
+                            value={modeValue.value}
+                            checked={form.deliveryMode === modeValue.value}
                             onChange={(e) => setForm({
                               ...form,
-                              deliveryMode: e.target.value,
+                              deliveryMode: e.target.value as MerchantProduct['deliveryMode'],
                               stockMode: e.target.value === 'instant_inventory' ? 'limited' : form.stockMode,
                             })}
                             className="w-4 h-4 text-[var(--color-primary)] border-[var(--color-border)] focus:ring-[var(--color-primary)]"
@@ -320,7 +339,7 @@ export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, pr
                               name="fixedContentType"
                               value={value}
                               checked={form.fixedContentType === value}
-                              onChange={(e) => setForm({ ...form, fixedContentType: e.target.value })}
+                              onChange={(e) => setForm({ ...form, fixedContentType: e.target.value as 'text' | 'url' })}
                               className="w-4 h-4 text-[var(--color-primary)] border-[var(--color-border)] focus:ring-[var(--color-primary)]"
                             />
                             {label}
@@ -353,7 +372,7 @@ export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, pr
                 )}
                 {isInstantInventory && (
                   <div className="md:col-span-2 rounded-lg border border-[var(--color-primary)]/20 bg-[var(--color-primary)]/8 px-4 py-3 text-xs text-[var(--color-text-muted)]">
-                    即时库存商品按“一个交付单元对应一位买家”管理。保存商品后，请在商品列表中使用“管理交付库存”导入账号、卡密、邀请码或其他独立交付内容。
+                    即时库存商品按“一个交付单元对应一位买家”管理。保存商品后，请在商品列表中进入“管理可售资源”，先选规格再导入账号、卡密、邀请码或其他独立交付内容。
                   </div>
                 )}
                 {!isInstantInventory && (
@@ -363,7 +382,7 @@ export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, pr
                       <select
                         className="input appearance-none cursor-pointer"
                         value={form.stockMode}
-                        onChange={(e) => setForm({ ...form, stockMode: e.target.value })}
+                        onChange={(e) => setForm({ ...form, stockMode: e.target.value as MerchantProduct['stockMode'] })}
                         data-testid="stock-mode-select"
                       >
                         <option value="unlimited">{availabilityLabels.unlimited}</option>
@@ -371,20 +390,11 @@ export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, pr
                       </select>
                       <p className="mt-1.5 text-xs text-[var(--color-text-muted)]">{availabilityLabels.hint}</p>
                     </div>
-                    {form.stockMode === 'limited' && (
-                      <div>
-                        <FieldLabel required>{availabilityLabels.quantity}</FieldLabel>
-                        <input
-                          type="number"
-                          step="1"
-                          min="0"
-                          className="input font-mono"
-                          value={form.stock}
-                          onChange={(e) => setForm({ ...form, stock: e.target.value })}
-                          data-testid="stock-input"
-                        />
-                      </div>
-                    )}
+                    <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] px-4 py-2.5 flex items-center">
+                      <p className="text-xs text-[var(--color-text-muted)]" data-testid="modal-initial-stock-hint">
+                        名额不随商品保存提交；请在商品列表的「调整可售名额」中通过独立 API 调整。
+                      </p>
+                    </div>
                   </div>
                 )}
                 {product && (
@@ -457,25 +467,6 @@ export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, pr
                     />
                   </div>
                   <ProductImageUploader images={images} onChange={setImages} disabled={loading} />
-
-                  {/* Toggle switch for isHot */}
-                  <div className="flex items-center justify-between mt-2 pt-3 border-t border-[var(--color-border)]">
-                    <div className="flex flex-col">
-                      <span className="text-sm font-bold text-[var(--color-text)]">设为热门推荐</span>
-                      <span className="text-xs text-[var(--color-text-muted)]">在商店中显示 Hot 徽章</span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setForm({ ...form, isHot: !form.isHot })}
-                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors cursor-pointer focus:outline-none focus-visible:[box-shadow:var(--shadow-focus)] ${
-                        form.isHot ? 'bg-[var(--color-cta)]' : 'bg-[var(--color-border)]'
-                      }`}
-                      aria-pressed={form.isHot}
-                      aria-label="设为热门推荐"
-                    >
-                      <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${form.isHot ? 'translate-x-6' : 'translate-x-1'}`} />
-                    </button>
-                  </div>
                 </div>
               </FormSection>
             </div>

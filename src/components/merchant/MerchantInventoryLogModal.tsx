@@ -1,88 +1,63 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { ChevronLeft, ChevronRight, Loader2, History } from 'lucide-react'
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '../ui/Dialog'
 import EmptyState from '../ui/EmptyState'
 import { useAppStore } from '../../stores/appStore'
-import { getMerchantInventoryLogs, voidMerchantInventory, InventoryLog } from '../../api/merchant'
+import { getMerchantInventoryLogs, InventoryLog } from '../../api/merchant'
+import type { MerchantProduct } from '../../types/merchant'
+import { createLatestRequestGuard } from '../../utils/latestRequest'
 
 const PAGE_SIZE = 10
 
 interface Props {
   isOpen: boolean
   onClose: () => void
-  product: { id: number; name: string; deliveryMode?: 'instant_inventory' | 'instant_fixed' | 'manual_service' } | null
-  /** 作废成功后通知父级刷新商品列表（库存数变化）。名额记录页不显示作废操作。 */
-  onVoided: () => void
+  product: MerchantProduct | null
 }
 
-export default function MerchantInventoryLogModal({ isOpen, onClose, product, onVoided }: Props) {
+export default function MerchantInventoryLogModal({ isOpen, onClose, product }: Props) {
   const showToast = useAppStore((s) => s.showToast)
   const [logs, setLogs] = useState<InventoryLog[]>([])
   const [page, setPage] = useState(1)
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(false)
-
-  const [voidCount, setVoidCount] = useState('')
-  const [voidReason, setVoidReason] = useState('')
-  const [voiding, setVoiding] = useState(false)
+  const loadRequestGuard = useRef(createLatestRequestGuard()).current
 
   const productId = product?.id
-  const inventoryManaged = (product?.deliveryMode ?? 'instant_inventory') === 'instant_inventory'
-  const resourceLabel = inventoryManaged ? '交付库存' : product?.deliveryMode === 'manual_service' ? '服务名额' : '可售名额'
+  const offerNames = new Map((product?.offers ?? []).map((offer) => [offer.id, offer.name]))
+  const resourceLabel = '可售资源'
 
   const loadLogs = useCallback(async (targetPage: number) => {
     if (!productId) return
+    const canCommit = loadRequestGuard.begin()
     setLoading(true)
     try {
       const data = await getMerchantInventoryLogs(productId, { page: targetPage, pageSize: PAGE_SIZE })
+      if (!canCommit()) return
       setLogs(data.items)
       setTotal(data.total)
     } catch (e: any) {
+      if (!canCommit()) return
       showToast(e.response?.data?.error?.message || `${resourceLabel}记录加载失败`, 'error')
     } finally {
-      setLoading(false)
+      if (canCommit()) setLoading(false)
     }
-  }, [productId, showToast])
+  }, [loadRequestGuard, productId, showToast])
 
   useEffect(() => {
     if (isOpen && productId) {
       setPage(1)
-      setVoidCount('')
-      setVoidReason('')
       loadLogs(1)
+    } else {
+      loadRequestGuard.invalidate()
+      setLoading(false)
     }
-  }, [isOpen, productId, loadLogs])
+    return () => loadRequestGuard.invalidate()
+  }, [isOpen, productId, loadLogs, loadRequestGuard])
 
   function changePage(next: number) {
     setPage(next)
     loadLogs(next)
-  }
-
-  async function handleVoidSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    if (!productId) return
-    const count = Number(voidCount)
-    if (!Number.isInteger(count) || count <= 0) {
-      showToast('作废数量必须是大于 0 的整数', 'error')
-      return
-    }
-    setVoiding(true)
-    try {
-      const result = await voidMerchantInventory(productId, {
-        count,
-        reason: voidReason.trim() || undefined,
-      })
-      showToast(`已作废 ${result.voided} 个交付单元，剩余 ${result.stock} 个`)
-      setVoidCount('')
-      setVoidReason('')
-      setPage(1)
-      await loadLogs(1)
-      onVoided()
-    } catch (e: any) {
-      showToast(e.response?.data?.error?.message || '作废失败', 'error')
-    } finally {
-      setVoiding(false)
-    }
   }
 
   const totalPages = Math.ceil(total / PAGE_SIZE) || 1
@@ -102,6 +77,7 @@ export default function MerchantInventoryLogModal({ isOpen, onClose, product, on
               <tr className="border-b border-[var(--color-border)]">
                 <th className="py-2 px-2 font-medium text-[var(--color-text-muted)] text-xs uppercase tracking-wider">时间</th>
                 <th className="py-2 px-2 font-medium text-[var(--color-text-muted)] text-xs uppercase tracking-wider">动作</th>
+                <th className="py-2 px-2 font-medium text-[var(--color-text-muted)] text-xs uppercase tracking-wider">目标规格</th>
                 <th className="py-2 px-2 font-medium text-[var(--color-text-muted)] text-xs uppercase tracking-wider text-right">数量</th>
                 <th className="py-2 px-2 font-medium text-[var(--color-text-muted)] text-xs uppercase tracking-wider">操作人</th>
                 <th className="py-2 px-2 font-medium text-[var(--color-text-muted)] text-xs uppercase tracking-wider">备注</th>
@@ -110,13 +86,13 @@ export default function MerchantInventoryLogModal({ isOpen, onClose, product, on
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={5} className="py-8 text-center text-[var(--color-text-muted)] text-sm">
+                  <td colSpan={6} className="py-8 text-center text-[var(--color-text-muted)] text-sm">
                     <Loader2 className="w-5 h-5 animate-spin inline" />
                   </td>
                 </tr>
               ) : logs.length === 0 ? (
                 <tr>
-                  <td colSpan={5}>
+                  <td colSpan={6}>
                     <EmptyState compact icon={History} title="暂无流水记录" />
                   </td>
                 </tr>
@@ -144,6 +120,9 @@ export default function MerchantInventoryLogModal({ isOpen, onClose, product, on
                           作废
                         </span>
                       )}
+                    </td>
+                    <td className="py-2.5 px-2 text-xs text-[var(--color-text-muted)]" data-label="目标规格">
+                      {log.offerId == null ? '历史默认规格' : (offerNames.get(log.offerId) ?? `#${log.offerId}`)}
                     </td>
                     <td className={`py-2.5 px-2 text-sm text-right font-mono font-bold ${log.delta >= 0 ? 'text-[var(--color-cta)]' : 'text-[var(--color-danger)]'}`} data-label="数量">
                       {log.delta >= 0 ? `+${log.delta}` : log.delta}
@@ -186,59 +165,6 @@ export default function MerchantInventoryLogModal({ isOpen, onClose, product, on
           </div>
         </div>
 
-        {/* 作废库存表单 */}
-        {inventoryManaged && <form
-          onSubmit={handleVoidSubmit}
-          className="mt-5 pt-4 border-t border-[var(--color-border)] space-y-3"
-          data-testid="inventory-void-form"
-        >
-          <h4 className="text-sm font-bold text-[var(--color-text)]">作废交付单元</h4>
-          <p className="text-xs text-[var(--color-text-muted)]">
-            按导入时间从早到晚作废可用交付单元，作废后不可恢复。
-          </p>
-          <div className="flex flex-col sm:flex-row gap-3">
-            <div className="sm:w-40">
-              <label className="block text-xs font-bold text-[var(--color-text-muted)] mb-1.5 uppercase tracking-wider">
-                数量 <span className="text-red-500 normal-case">*</span>
-              </label>
-              <input
-                type="number"
-                min="1"
-                step="1"
-                required
-                placeholder="0"
-                className="input font-mono"
-                value={voidCount}
-                onChange={(e) => setVoidCount(e.target.value)}
-                data-testid="inventory-void-count"
-              />
-            </div>
-            <div className="flex-1">
-              <label className="block text-xs font-bold text-[var(--color-text-muted)] mb-1.5 uppercase tracking-wider">
-                原因 - 可选
-              </label>
-              <input
-                type="text"
-                maxLength={500}
-                placeholder="例如：交付内容失效、上游撤回"
-                className="input"
-                value={voidReason}
-                onChange={(e) => setVoidReason(e.target.value)}
-                data-testid="inventory-void-reason"
-              />
-            </div>
-          </div>
-          <div className="flex justify-end">
-            <button
-              type="submit"
-              disabled={voiding}
-              className="btn-primary px-5 py-2 text-sm min-w-[120px]"
-              data-testid="inventory-void-submit"
-            >
-              {voiding ? <Loader2 className="w-4 h-4 animate-spin inline" /> : '确认作废'}
-            </button>
-          </div>
-        </form>}
       </DialogContent>
     </Dialog>
   )

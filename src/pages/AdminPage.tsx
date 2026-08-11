@@ -14,10 +14,7 @@ import {
 } from '../api/adminMerchant'
 import {
   deleteAdminProduct,
-  getAdminFakaCatalog,
-  importAdminFakaPlan,
   setAdminFakaCapacity,
-  type AdminFakaCatalogPlan,
 } from '../api/admin'
 import { Merchant, Settlement } from '../types/merchant'
 import RegistryPill from '../components/ui/RegistryPill'
@@ -38,6 +35,9 @@ import AdminStoragePanel from '../components/admin/AdminStoragePanel'
 import { Dialog, DialogContent, DialogTitle } from '../components/ui/Dialog'
 import { TableSkeleton, StatCardSkeleton } from '../components/ui/Skeleton'
 import EmptyState from '../components/ui/EmptyState'
+import AdminPlatformProductWizard from '../components/catalog/AdminPlatformProductWizard'
+import AdminFakaImportPreview from '../components/catalog/AdminFakaImportPreview'
+import AdminInventoryImportPreview, { type AdminInventoryTarget } from '../components/catalog/AdminInventoryImportPreview'
 
 type AdminTab = 'dashboard' | 'users' | 'products' | 'orders' | 'logs' | 'audit' | 'files' | 'merchants' | 'settlements' | 'announcements' | 'config' | 'backup' | 'faka' | 'abuse' | 'storage'
 
@@ -81,15 +81,9 @@ export default function AdminPage() {
   // Commission dialog
   const [commissionTarget, setCommissionTarget] = useState<Merchant | null>(null)
 
-  // Inventory import modal
-  const [showInventory, setShowInventory] = useState(false)
-  const [inventoryProductId, setInventoryProductId] = useState(0)
-  const [inventoryProductName, setInventoryProductName] = useState('')
-  const [inventoryText, setInventoryText] = useState('')
-  // P4a F2：可导入的即时库存规格（不含交付字段模板规格——那些必须走商家端
-  // 结构化导入）。单个自动选中；多个要求管理员显式选择。
-  const [inventoryOffers, setInventoryOffers] = useState<{ id: number; name: string; status: string; isDefault?: boolean }[]>([])
-  const [inventoryOfferId, setInventoryOfferId] = useState(0)
+  // Catalog FE owns the complete Admin host until H; feature logic lives in isolated components.
+  const [inventoryTarget, setInventoryTarget] = useState<AdminInventoryTarget | null>(null)
+  const [showPlatformProduct, setShowPlatformProduct] = useState(false)
 
   // FakaBridge capacity edit (admin only)
   const [fakaCapProduct, setFakaCapProduct] = useState<any | null>(null)
@@ -97,28 +91,8 @@ export default function AdminPage() {
   const [fakaCapUnlimited, setFakaCapUnlimited] = useState(false)
   const [fakaCapSaving, setFakaCapSaving] = useState(false)
 
-  // FakaBridge import wizard (admin only) — one product, multi period offers
+  // FakaBridge mandatory preview → idempotent confirm.
   const [showFakaImport, setShowFakaImport] = useState(false)
-  const [fakaCatalog, setFakaCatalog] = useState<AdminFakaCatalogPlan[]>([])
-  const [fakaImportLoading, setFakaImportLoading] = useState(false)
-  const [fakaImportPlanId, setFakaImportPlanId] = useState<number | null>(null)
-  const [fakaImportName, setFakaImportName] = useState('')
-  /** period → { selected, pricePoints, sku, offerName } */
-  const [fakaImportRows, setFakaImportRows] = useState<
-    Record<string, { selected: boolean; pricePoints: string; sku: string; offerName: string }>
-  >({})
-  const [fakaImportSubmitting, setFakaImportSubmitting] = useState(false)
-
-  const PERIOD_LABELS: Record<string, string> = {
-    monthly: '月付',
-    quarterly: '季付',
-    half_yearly: '半年付',
-    yearly: '年付',
-    two_yearly: '两年付',
-    three_yearly: '三年付',
-    onetime: '流量包',
-    reset_traffic: '重置包',
-  }
 
   // Settle multiselect
   const [selectedSettlements, setSelectedSettlements] = useState<number[]>([])
@@ -202,31 +176,6 @@ export default function AdminPage() {
       showToast(getApiErrorMessage(err, '加载失败'), 'error')
     } finally {
       setTabLoading(false)
-    }
-  }
-
-  async function confirmImportInventory() {
-    const items = inventoryText.split('\n').map(s => s.trim()).filter(Boolean)
-    if (items.length === 0) {
-      showToast('请输入至少一条库存', 'error')
-      return
-    }
-    if (inventoryOffers.length > 1 && !inventoryOfferId) {
-      showToast('请选择目标规格', 'error')
-      return
-    }
-    try {
-      const { data } = await api.post(`/admin/products/${inventoryProductId}/inventory`, {
-        items,
-        ...(inventoryOfferId ? { offerId: inventoryOfferId } : {}),
-      })
-      showToast(`成功导入 ${data.imported} 个交付单元`)
-      setShowInventory(false)
-      setInventoryProductName('')
-      setInventoryText('')
-      loadTabData('products')
-    } catch (err: any) {
-      showToast(getApiErrorMessage(err, '导入失败'), 'error')
     }
   }
 
@@ -514,30 +463,16 @@ export default function AdminPage() {
             <div className="space-y-4">
               <div className="flex justify-between items-center mb-4 gap-3 flex-wrap">
                 <h2 className="font-heading text-xl font-bold text-[var(--color-text)]">商品与库存</h2>
-                <button
-                  type="button"
-                  className="btn-primary btn-sm text-xs px-3 py-1.5"
-                  data-testid="admin-faka-import-open"
-                  onClick={async () => {
-                    setShowFakaImport(true)
-                    setFakaImportLoading(true)
-                    setFakaCatalog([])
-                    setFakaImportPlanId(null)
-                    setFakaImportName('')
-                    setFakaImportRows({})
-                    try {
-                      const data = await getAdminFakaCatalog()
-                      setFakaCatalog(data.plans ?? [])
-                    } catch (err) {
-                      showToast(getApiErrorMessage(err, '拉取 Xboard 套餐失败'), 'error')
-                      setShowFakaImport(false)
-                    } finally {
-                      setFakaImportLoading(false)
-                    }
-                  }}
-                >
-                  从 Xboard 导入套餐
-                </button>
+                <div className="flex gap-2 flex-wrap">
+                  <button type="button" className="btn-secondary btn-sm text-xs px-3 py-1.5"
+                    data-testid="admin-platform-product-open" onClick={() => setShowPlatformProduct(true)}>
+                    新建平台商品
+                  </button>
+                  <button type="button" className="btn-primary btn-sm text-xs px-3 py-1.5"
+                    data-testid="admin-faka-import-open" onClick={() => setShowFakaImport(true)}>
+                    从 Xboard 导入套餐
+                  </button>
+                </div>
               </div>
               <div className="overflow-x-auto">
                 {tabLoading && products.length === 0 ? (
@@ -564,8 +499,8 @@ export default function AdminPage() {
                       const importableOffers = (p.offers ?? [])
                         .filter((o: any) => o.deliveryMode === 'instant_inventory'
                           && !(Array.isArray(o.deliveryFields) && o.deliveryFields.length > 0))
-                      // offers 缺失（旧接口）时回落到投影判定，行为与改造前一致。
-                      const canImport = p.offers ? importableOffers.length > 0 : isInstantInventory
+                      // 新 UI 只允许显式 Offer-first；缺少 offers 的旧响应不再提供盲导入入口。
+                      const canImport = importableOffers.length > 0
                       const available = isInstantInventory ? (p._count?.inventory ?? p.stock) : p.stock
                       const fakaCap = p.fakaCapacity
                       const stockLabel = isFaka && fakaCap?.source === 'xboard'
@@ -621,13 +556,7 @@ export default function AdminPage() {
                               {canImport ? (
                                 <button
                                   onClick={() => {
-                                    setInventoryProductId(p.id)
-                                    setInventoryProductName(p.name)
-                                    setInventoryText('')
-                                    setInventoryOffers(importableOffers)
-                                    // 单个可导入规格自动选中；多个要求显式选择。
-                                    setInventoryOfferId(importableOffers.length === 1 ? importableOffers[0].id : 0)
-                                    setShowInventory(true)
+                                    setInventoryTarget({ id: p.id, name: p.name, offers: importableOffers })
                                   }}
                                   data-testid={`admin-import-inventory-${p.id}`}
                                   className="text-[var(--color-cta)] hover:bg-[var(--color-cta)]/10 font-semibold text-xs px-3 py-1.5 btn-sm rounded-lg transition-colors border border-[var(--color-cta)]/25 cursor-pointer"
@@ -867,49 +796,18 @@ export default function AdminPage() {
         }}
       />
 
-      {/* Import Inventory Modal */}
-      <Dialog open={showInventory} onOpenChange={(o) => { if (!o) setShowInventory(false) }}>
-        <DialogContent>
-          <DialogTitle className="text-xl mb-5">导入交付库存</DialogTitle>
-          <p className="text-xs text-[var(--color-text-muted)] mb-3">
-            {inventoryProductName ? `商品：${inventoryProductName}。` : ''}仅适用于即时库存发货；每行是一份可独立交付给一位买家的内容（卡密/账号/链接）。
-          </p>
-          {inventoryOffers.length > 1 ? (
-            <div className="mb-3">
-              <label className="block text-sm font-bold text-[var(--color-text)] mb-1.5">目标规格 <span className="text-red-500">*</span></label>
-              <select
-                className="input appearance-none cursor-pointer"
-                value={inventoryOfferId || ''}
-                onChange={(e) => setInventoryOfferId(Number(e.target.value) || 0)}
-                data-testid="admin-import-offer-select"
-              >
-                <option value="">请选择规格</option>
-                {inventoryOffers.map(o => (
-                  <option key={o.id} value={o.id}>
-                    {o.name}{o.isDefault ? '（默认）' : ''}{o.status === 'inactive' ? '（已下架）' : ''}
-                  </option>
-                ))}
-              </select>
-            </div>
-          ) : inventoryOffers.length === 1 ? (
-            <p className="text-xs text-[var(--color-text-muted)] mb-3">
-              目标规格：<span className="font-bold text-[var(--color-text)]">{inventoryOffers[0].name}</span>
-              {inventoryOffers[0].status === 'inactive' ? '（已下架）' : ''}
-            </p>
-          ) : null}
-          <textarea
-            value={inventoryText}
-            onChange={(e) => setInventoryText(e.target.value)}
-            rows={8}
-            placeholder="XXXX-XXXX-XXXX-XXXX&#10;YYYY-YYYY-YYYY-YYYY"
-            className="input font-mono resize-none mb-4"
-            data-testid="admin-import-inventory-text"
-          />
-          <button onClick={confirmImportInventory} className="btn-primary w-full" data-testid="admin-import-inventory-confirm">
-            确认导入
-          </button>
-        </DialogContent>
-      </Dialog>
+      <AdminInventoryImportPreview
+        open={inventoryTarget != null}
+        product={inventoryTarget}
+        onClose={() => setInventoryTarget(null)}
+        onImported={() => loadTabData('products')}
+      />
+
+      <AdminPlatformProductWizard
+        open={showPlatformProduct}
+        onClose={() => setShowPlatformProduct(false)}
+        onCreated={() => loadTabData('products')}
+      />
 
       {/* Faka capacity edit — writes Xboard capacity_limit via platform HMAC */}
       <Dialog open={!!fakaCapProduct} onOpenChange={(o) => { if (!o) setFakaCapProduct(null) }}>
@@ -986,214 +884,11 @@ export default function AdminPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Import product from Xboard plan catalog — multi period offers */}
-      <Dialog open={showFakaImport} onOpenChange={(o) => { if (!o) setShowFakaImport(false) }}>
-        <DialogContent className="max-w-lg max-h-[90dvh] overflow-y-auto">
-          <DialogTitle className="text-xl mb-3">从 Xboard 导入套餐</DialogTitle>
-          <p className="text-xs text-[var(--color-text-muted)] mb-4 leading-relaxed">
-            一个 Xboard 套餐 → <strong className="text-[var(--color-text)]">一个商品 + 多个规格</strong>
-            （月付/年付…各自不同积分价与 externalSku）。含开通邮箱表单；人数限制在套餐级共用。
-          </p>
-          {fakaImportLoading ? (
-            <p className="text-sm text-[var(--color-text-muted)]">正在拉取套餐目录…</p>
-          ) : (
-            <div className="space-y-3">
-              <div>
-                <label className="block text-sm font-bold mb-1.5">Xboard 套餐</label>
-                <select
-                  className="input appearance-none cursor-pointer"
-                  value={fakaImportPlanId ?? ''}
-                  data-testid="admin-faka-import-plan"
-                  onChange={(e) => {
-                    const id = Number(e.target.value) || null
-                    setFakaImportPlanId(id)
-                    const plan = fakaCatalog.find(p => p.plan_id === id)
-                    setFakaImportName(plan?.name ?? '')
-                    const rows: Record<string, { selected: boolean; pricePoints: string; sku: string; offerName: string }> = {}
-                    for (const pe of plan?.periods ?? []) {
-                      const named = plan?.named_skus?.find(s => s.period === pe.period)
-                      rows[pe.period] = {
-                        // 默认勾选全部可售周期
-                        selected: true,
-                        pricePoints: String(Math.max(1, Math.round(pe.price * 100))),
-                        sku: named?.sku ?? pe.sku_alias,
-                        offerName: PERIOD_LABELS[pe.period] ?? pe.period,
-                      }
-                    }
-                    setFakaImportRows(rows)
-                  }}
-                >
-                  <option value="">请选择</option>
-                  {fakaCatalog.map(plan => (
-                    <option key={plan.plan_id} value={plan.plan_id}>
-                      #{plan.plan_id} {plan.name}
-                      {plan.capacity_limit != null
-                        ? `（名额 ${plan.remaining ?? 0}/${plan.capacity_limit}）`
-                        : '（不限）'}
-                      {!plan.sell ? ' · 停售' : ''}
-                      {` · ${plan.periods?.length ?? 0} 周期`}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              {fakaImportPlanId != null && (
-                <>
-                  <div>
-                    <label className="block text-sm font-bold mb-1.5">商品名称</label>
-                    <input
-                      className="input"
-                      value={fakaImportName}
-                      onChange={(e) => setFakaImportName(e.target.value)}
-                      data-testid="admin-faka-import-name"
-                    />
-                  </div>
-                  <div className="space-y-2" data-testid="admin-faka-import-periods">
-                    <div className="flex justify-between items-center">
-                      <label className="text-sm font-bold">规格（周期）</label>
-                      <button
-                        type="button"
-                        className="text-xs text-[var(--color-primary)] underline"
-                        onClick={() => {
-                          setFakaImportRows(prev => {
-                            const next = { ...prev }
-                            const allOn = Object.values(next).every(r => r.selected)
-                            for (const k of Object.keys(next)) {
-                              next[k] = { ...next[k]!, selected: !allOn }
-                            }
-                            return next
-                          })
-                        }}
-                      >
-                        全选/反选
-                      </button>
-                    </div>
-                    {Object.entries(fakaImportRows).map(([period, row]) => (
-                      <div
-                        key={period}
-                        className="rounded-lg border border-[var(--color-border)] p-3 space-y-2 bg-[var(--color-background)]"
-                      >
-                        <label className="flex items-center gap-2 text-sm font-bold cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={row.selected}
-                            onChange={(e) =>
-                              setFakaImportRows(prev => ({
-                                ...prev,
-                                [period]: { ...prev[period]!, selected: e.target.checked },
-                              }))
-                            }
-                          />
-                          {row.offerName || period}
-                          <span className="text-xs font-normal text-[var(--color-text-muted)]">({period})</span>
-                        </label>
-                        {row.selected && (
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                            <div>
-                              <label className="block text-xs text-[var(--color-text-muted)] mb-1">规格名</label>
-                              <input
-                                className="input"
-                                value={row.offerName}
-                                onChange={(e) =>
-                                  setFakaImportRows(prev => ({
-                                    ...prev,
-                                    [period]: { ...prev[period]!, offerName: e.target.value },
-                                  }))
-                                }
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-xs text-[var(--color-text-muted)] mb-1">积分售价</label>
-                              <input
-                                type="number"
-                                min={1}
-                                className="input font-mono"
-                                value={row.pricePoints}
-                                onChange={(e) =>
-                                  setFakaImportRows(prev => ({
-                                    ...prev,
-                                    [period]: { ...prev[period]!, pricePoints: e.target.value },
-                                  }))
-                                }
-                              />
-                            </div>
-                            <div className="sm:col-span-2">
-                              <label className="block text-xs text-[var(--color-text-muted)] mb-1">externalSku</label>
-                              <input
-                                className="input font-mono"
-                                value={row.sku}
-                                onChange={(e) =>
-                                  setFakaImportRows(prev => ({
-                                    ...prev,
-                                    [period]: { ...prev[period]!, sku: e.target.value },
-                                  }))
-                                }
-                              />
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                    {Object.keys(fakaImportRows).length === 0 && (
-                      <p className="text-xs text-amber-600">该套餐没有可售周期（prices 为空）</p>
-                    )}
-                  </div>
-                </>
-              )}
-              <button
-                type="button"
-                className="btn-primary w-full"
-                disabled={
-                  fakaImportSubmitting ||
-                  !fakaImportPlanId ||
-                  !Object.values(fakaImportRows).some(r => r.selected)
-                }
-                data-testid="admin-faka-import-submit"
-                onClick={async () => {
-                  if (!fakaImportPlanId) return
-                  setFakaImportSubmitting(true)
-                  try {
-                    const built = []
-                    for (const [period, r] of Object.entries(fakaImportRows)) {
-                      if (!r.selected) continue
-                      const pricePoints = Number(r.pricePoints)
-                      if (!Number.isInteger(pricePoints) || pricePoints <= 0) {
-                        showToast(`周期 ${period} 积分价无效`, 'error')
-                        setFakaImportSubmitting(false)
-                        return
-                      }
-                      built.push({
-                        period,
-                        sku: r.sku || undefined,
-                        offerName: r.offerName || undefined,
-                        pricePoints,
-                      })
-                    }
-                    if (built.length === 0) {
-                      showToast('请至少选择一个周期规格', 'error')
-                      setFakaImportSubmitting(false)
-                      return
-                    }
-                    const result = await importAdminFakaPlan({
-                      planId: fakaImportPlanId,
-                      productName: fakaImportName || undefined,
-                      offers: built,
-                    })
-                    showToast(`已创建商品 #${result.productId}（${result.offerCount} 个规格）`)
-                    setShowFakaImport(false)
-                    loadTabData('products')
-                  } catch (err) {
-                    showToast(getApiErrorMessage(err, '导入失败'), 'error')
-                  } finally {
-                    setFakaImportSubmitting(false)
-                  }
-                }}
-              >
-                {fakaImportSubmitting ? '创建中…' : '确认导入（一商品多规格）'}
-              </button>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
+      <AdminFakaImportPreview
+        open={showFakaImport}
+        onClose={() => setShowFakaImport(false)}
+        onImported={() => loadTabData('products')}
+      />
     </div>
   )
 }

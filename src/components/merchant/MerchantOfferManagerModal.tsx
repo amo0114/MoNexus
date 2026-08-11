@@ -487,7 +487,7 @@ export default function MerchantOfferManagerModal({ isOpen, onClose, product, on
               )}
               {isInstantInventory && (
                 <p className="sm:col-span-2 text-xs text-[var(--color-text-muted)] bg-[var(--color-background)] border border-[var(--color-border)] rounded px-3 py-2">
-                  交付库存规格的库存通过「管理交付库存」按规格导入卡密；这里不直接设置库存数量。
+                  交付库存规格的库存通过「管理可售资源」先选规格、再导入卡密；这里不直接设置库存数量。
                 </p>
               )}
 

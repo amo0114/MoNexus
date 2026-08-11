@@ -20,6 +20,8 @@ export interface Offer {
   deliveryMode: DeliveryMode
   stockMode: StockMode
   stock: number
+  /** instant_inventory 的 Offer 级可用交付单元数；非即时库存可缺省。 */
+  availableStock?: number
   /** 仅商家端可见;公开商品详情剥离。 */
   fixedContent?: string | null
   fixedContentType?: string
@@ -288,17 +290,15 @@ export interface CreateMerchantProductRequest {
   name: string
   description?: string
   richDescription?: string
-  type: string
+  /** 新写路径必须使用稳定 categoryId（D-CAT-09）；legacy type 不可写。 */
+  categoryId: number
   icon?: string
   imageUrl?: string
   images?: string[]
   price: number
   originalPrice?: number
-  isHot?: boolean
   deliveryMode?: DeliveryMode
   stockMode?: StockMode
-  /** 非即时库存商品的可售/服务名额。即时库存请使用交付库存管理。 */
-  stock?: number
   fixedContent?: string
   fixedContentType?: 'text' | 'url'
   /** F3：默认规格名称（缺省「默认规格」）；与商品同事务落库。 */

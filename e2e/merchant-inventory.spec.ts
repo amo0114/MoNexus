@@ -40,43 +40,46 @@ test('merchant filters products, imports then voids inventory with log entry', a
   await page.getByTestId('merchant-product-lowstock-toggle').uncheck()
   await expect(row).toBeVisible({ timeout: 10_000 })
 
-  // 库存数值有稳定测试标识；展示文案可随履约模式变化（如「交付库存 3 / 已售 0」）。
+  // 库存分为 Product 汇总和 Offer 细分；这里取 Product 交付库存汇总。
   const availability = page.getByTestId(`merchant-product-availability-${productId}`)
-  const stockBefore = Number(await availability.innerText())
+  const stockBeforeText = await availability.innerText()
+  const stockBefore = Number(stockBeforeText.match(/商品交付库存汇总：(\d+)/)?.[1])
   expect(Number.isInteger(stockBefore)).toBe(true)
 
   // 导入 1 个唯一交付单元，库存 +1
   const uniqueItem = `E2E-VOID-${Date.now()}`
-  await row.getByText('管理交付库存').click()
-  await page.locator('textarea').fill(uniqueItem)
-  await page.getByRole('button', { name: '预览' }).click()
+  await row.getByText('管理可售资源').click()
+  await expect(page.getByTestId('availability-offer-select')).toBeVisible()
+  await page.getByTestId('availability-open-import').click()
+  await page.getByTestId('merchant-inventory-content').fill(uniqueItem)
+  await page.getByRole('button', { name: '预览导入内容' }).click()
   await expect(page.getByText('预览结果')).toBeVisible({ timeout: 10_000 })
-  await page.getByRole('button', { name: '确认导入' }).click()
+  await page.getByRole('button', { name: '确认导入 1 个' }).click()
   await expect(page.getByText('成功导入 1 个交付单元')).toBeVisible({ timeout: 10_000 })
-  await expect(availability).toHaveText(String(stockBefore + 1), { timeout: 10_000 })
+  await expect(availability).toContainText(`商品交付库存汇总：${stockBefore + 1}`, { timeout: 10_000 })
 
-  // 打开交付库存记录：应已有导入记录
-  await row.getByText('交付库存记录').click()
-  const logModal = page.getByTestId('inventory-log-modal')
-  await expect(logModal).toBeVisible({ timeout: 10_000 })
-  const logTable = page.getByTestId('inventory-log-table')
-  await expect(logTable.getByText('导入').first()).toBeVisible({ timeout: 10_000 })
-
-  // 作废 1 个交付单元，断言流水新增 void 记录、库存数 -1
+  // 重新进入 Offer-first 工作台作废 1 个，并验证 Offer/Product 分栏结果。
   const voidReason = `E2E 自动化作废 ${Date.now()}`
+  await row.getByText('管理可售资源').click()
   await page.getByTestId('inventory-void-count').fill('1')
   await page.getByTestId('inventory-void-reason').fill(voidReason)
   await page.getByTestId('inventory-void-submit').click()
 
-  await expect(page.getByText(/已作废 1 个交付单元/)).toBeVisible({ timeout: 10_000 })
-  // 流水第一行应是刚产生的作废记录（-1 + 原因）
+  await expect(page.getByText(/已作废 1 个交付单元；当前规格剩余 .*商品汇总/)).toBeVisible({ timeout: 10_000 })
+  await expect(availability).toContainText(`商品交付库存汇总：${stockBefore}`, { timeout: 10_000 })
+
+  // 资源记录只做安全投影，显示 Offer 而不显示交付内容。
+  await row.getByText('可售资源记录').click()
+  const logModal = page.getByTestId('inventory-log-modal')
+  await expect(logModal).toBeVisible({ timeout: 10_000 })
+  const logTable = page.getByTestId('inventory-log-table')
   const firstLogRow = logTable.locator('tbody tr').first()
   await expect(firstLogRow.getByText('作废', { exact: true })).toBeVisible({ timeout: 10_000 })
   await expect(firstLogRow).toContainText('-1')
   await expect(firstLogRow).toContainText(voidReason)
+  await expect(firstLogRow).not.toContainText(uniqueItem)
 
-  // 关闭弹窗，商品行库存恢复为导入前数值（净变化 0，可重复执行）
+  // 关闭弹窗，净变化为 0，测试可重复执行。
   await logModal.getByRole('button', { name: '关闭' }).click()
   await expect(logModal).toBeHidden({ timeout: 10_000 })
-  await expect(availability).toHaveText(String(stockBefore), { timeout: 10_000 })
 })
