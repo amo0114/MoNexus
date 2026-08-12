@@ -35,7 +35,6 @@ const product: MerchantProduct = {
   stock: 0,
   availableStock: 5,
   sales: 0,
-  isHot: false,
   status: 'active',
   createdAt: '2026-08-09T00:00:00.000Z',
   stockMode: 'limited',

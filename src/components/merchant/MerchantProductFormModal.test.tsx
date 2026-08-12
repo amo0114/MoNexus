@@ -50,7 +50,6 @@ const product: MerchantProduct = {
   originalPrice: 120,
   stock: 0,
   sales: 0,
-  isHot: false,
   status: 'active',
   createdAt: '2026-01-01T00:00:00.000Z',
   deliveryMode: 'instant_inventory',

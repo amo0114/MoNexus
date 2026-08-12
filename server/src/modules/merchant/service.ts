@@ -176,7 +176,6 @@ function serializeMerchantProduct(product: ProductWithAvailableStock, lowStockTh
     stock: product.deliveryMode === 'instant_inventory' ? availableStock : product.stock,
     availableStock,
     sales: product.sales,
-    isHot: product.isHot,
     status: product.status,
     deliveryMode: product.deliveryMode,
     stockMode: product.stockMode,
@@ -196,6 +195,16 @@ function serializeMerchantProduct(product: ProductWithAvailableStock, lowStockTh
     createdAt: product.createdAt,
     lowStock: isLowStockProduct(product, lowStockThreshold),
   }
+}
+
+/**
+ * D-MERCH-01：Product.isHot 是遗留只读列，不进入任何商家/管理端 wire DTO。
+ * 公开投影的 isHot 由 merchandising run 计算（与 Product.isHot 列无关）。
+ * 仅用于剥离 create/update 直接返回的 Prisma Product 行，不改变持久化。
+ */
+function stripLegacyIsHot<T extends { isHot: boolean }>(product: T): Omit<T, 'isHot'> {
+  const { isHot: _legacyIsHot, ...rest } = product
+  return rest
 }
 
 export async function listMyProducts(merchantId: number, filters: MerchantProductListFilters = {}) {
@@ -409,7 +418,8 @@ export async function createMyProduct(
   })
 
   await invalidateProductPublicCache(product.id, { list: true })
-  return product
+  // 返回边界最小剥离：wire DTO 不携带遗留 Product.isHot（D-MERCH-01）。
+  return stripLegacyIsHot(product)
 }
 
 async function assertProductOwnedByMerchant(merchantId: number, productId: number): Promise<void> {
@@ -534,7 +544,8 @@ export async function updateMyProduct(merchantId: number, productId: number, dat
   })
 
   await invalidateProductPublicCache(productId, { detail: true, list: true })
-  return updated
+  // 返回边界最小剥离：wire DTO 不携带遗留 Product.isHot（D-MERCH-01）。
+  return stripLegacyIsHot(updated)
 }
 
 /**

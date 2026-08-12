@@ -98,3 +98,58 @@ describe('merchant product isHot is not writable', () => {
     expect(res.body.error.code).toBe('VALIDATION_ERROR')
   })
 })
+
+// D-MERCH-01：读取/写入 wire DTO 绝不携带遗留 Product.isHot——即使 legacy DB 列被
+// 直接置 true（公开投影的 isHot 由 merchandising run 计算，与 Product.isHot 列无关）。
+describe('merchant product read DTO never exposes legacy isHot', () => {
+  it('GET /api/merchant/products strips isHot from every item even when legacy DB isHot=true', async () => {
+    const { accessToken } = await setupMerchant('is-hot-read-dto@test.local')
+
+    const created = await api
+      .post('/api/merchant/products')
+      .set(authHeader(accessToken))
+      .send({ name: '读取DTO热销商品', type: '邀请码', price: 100 })
+      .expect(201)
+    // 模拟 legacy 数据：DB 里直接置 isHot=true（客户端无法写，测试直接落库）。
+    await prisma.product.update({ where: { id: created.body.id }, data: { isHot: true } })
+
+    const res = await api
+      .get('/api/merchant/products')
+      .set(authHeader(accessToken))
+      .expect(200)
+
+    expect(res.body.items.length).toBeGreaterThan(0)
+    // 用户可见 wire JSON：每个商品都不得有 isHot key。
+    expect(res.body.items.every((item: Record<string, unknown>) => !('isHot' in item))).toBe(true)
+
+    // 关键前提：DB 里确实还是 true——只有 DTO 剥离，持久化未变。
+    const row = await prisma.product.findUniqueOrThrow({ where: { id: created.body.id } })
+    expect(row.isHot).toBe(true)
+  })
+
+  it('merchant create/update HTTP responses never carry legacy isHot', async () => {
+    const { accessToken } = await setupMerchant('is-hot-write-dto@test.local')
+
+    const created = await api
+      .post('/api/merchant/products')
+      .set(authHeader(accessToken))
+      .send({ name: '创建响应商品', type: '邀请码', price: 100 })
+      .expect(201)
+    expect(typeof created.body.id).toBe('number')
+    expect('isHot' in created.body).toBe(false)
+
+    // 模拟 legacy 数据后更新：更新响应同样不得携带 isHot。
+    await prisma.product.update({ where: { id: created.body.id }, data: { isHot: true } })
+
+    const updated = await api
+      .put(`/api/merchant/products/${created.body.id}`)
+      .set(authHeader(accessToken))
+      .send({ name: '更新响应商品' })
+      .expect(200)
+    expect(updated.body.name).toBe('更新响应商品')
+    expect('isHot' in updated.body).toBe(false)
+
+    const row = await prisma.product.findUniqueOrThrow({ where: { id: created.body.id } })
+    expect(row.isHot).toBe(true) // 持久化未受影响（仅 DTO 剥离）。
+  })
+})

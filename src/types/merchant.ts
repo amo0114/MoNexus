@@ -173,7 +173,6 @@ export interface MerchantProduct {
   originalPrice: number | null
   stock: number
   sales: number
-  isHot: boolean
   status: ProductStatus
   createdAt: string
   merchant?: { id: number; name: string } | null

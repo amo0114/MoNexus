@@ -297,7 +297,6 @@ function productAuditSnapshot(product: {
   price: number
   originalPrice: number | null
   stock: number
-  isHot: boolean
   status: string
   deliveryMode: string
   stockMode: string
@@ -313,12 +312,21 @@ function productAuditSnapshot(product: {
     price: product.price,
     originalPrice: product.originalPrice,
     stock: product.stock,
-    isHot: product.isHot,
     status: product.status,
     deliveryMode: product.deliveryMode,
     stockMode: product.stockMode,
     fixedContentType: product.fixedContentType,
   }
+}
+
+/**
+ * D-MERCH-01：Product.isHot 是遗留只读列，不进入任何商家/管理端 wire DTO
+ * 与审计快照；公开投影的 isHot 由 merchandising run 计算。
+ * 仅用于剥离 create/update 直接返回的 Prisma Product 行，不改变持久化。
+ */
+function stripLegacyIsHot<T extends { isHot: boolean }>(product: T): Omit<T, 'isHot'> {
+  const { isHot: _legacyIsHot, ...rest } = product
+  return rest
 }
 
 function assertOriginalPriceAtLeastSale(price: number, originalPrice: number | null | undefined) {
@@ -409,7 +417,8 @@ export async function createProduct(adminUserId: number, data: CreateProductInpu
     return created
   })
   await invalidateProductPublicCache(product.id, { list: true })
-  return product
+  // 返回边界最小剥离：wire DTO 不携带遗留 Product.isHot（D-MERCH-01）。
+  return stripLegacyIsHot(product)
 }
 
 export async function getProductReadiness(productId: number) {
@@ -570,7 +579,8 @@ export async function updateProduct(adminUserId: number, id: number, data: Updat
     return next
   })
   await invalidateProductPublicCache(updated.id, { detail: true, list: true })
-  return updated
+  // 返回边界最小剥离：wire DTO 不携带遗留 Product.isHot（D-MERCH-01）。
+  return stripLegacyIsHot(updated)
 }
 
 /**
@@ -1307,8 +1317,10 @@ export async function listAdminProducts() {
       return { ...o, fakaCapacity }
     })
     const primaryFaka = offers.find(o => o.fakaCapacity?.source === 'xboard')?.fakaCapacity ?? null
+    // D-MERCH-01：显式剥离遗留 Product.isHot（...p 会带出），其余管理字段原样保留。
+    const { isHot: _legacyIsHot, ...productDto } = p
     return {
-      ...p,
+      ...productDto,
       offers,
       fakaBridge: offers.some(o => o.externalIntegration === 'faka_bridge'),
       fakaCapacity: primaryFaka,
