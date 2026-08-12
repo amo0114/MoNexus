@@ -2,7 +2,7 @@ import { expect, test, type Locator, type Page } from '@playwright/test'
 import { SEED_ACCOUNTS, loginAs } from './helpers'
 
 /**
- * PAR-CMI-002 — Catalog category governance（create + pending duplicate + withdraw + admin create_new/map_existing/reject review + withdraw vs stale review race + admin repository create/edit/deactivate）。
+ * PAR-CMI-002 — Catalog category governance（create + pending duplicate + withdraw + admin create_new/map_existing/reject review + withdraw vs stale review race + admin repository create/edit/deactivate/activate）。
  *
  * 已覆盖（REQ-CAT-F-008 / D-CAT-10 / AC-CAT-012 / CHK-CAT-008）：
  * 1. 商家真实登录 → /merchant → 点击「分类申请」→ 面板 category-application-panel 出现；
@@ -176,6 +176,25 @@ import { SEED_ACCOUNTS, loginAs } from './helpers'
  *      data-status=inactive、inactive-historical-label 文案「历史分类（已发布商品仍显示，
  *      不可用于新商品首次发布）」、category-deactivate-<id> 消失、category-activate-<id>
  *      出现；deactivate POST 总计 1。
+ *
+ * 已覆盖（D-CAT-22 / CHK-CAT-011）——第 13 个用例：admin 分类仓库真实 UI 重新启用分类：
+ *   a. 复用第 12 用例保存的正整数 categoryId（先断言 >0，且该分类当前为 inactive）；真实
+ *      admin MFA loginAs → /admin → 点击「目录治理」前先监听精确 GET /api/admin/product-categories
+ *      （page=1&pageSize=10、status 缺失/空），从 unknown 严格读 total/page/pageSize；
+ *   b. 把状态筛选切到 inactive（操作前监听精确 status=inactive&page=1&pageSize=10 GET），断言
+ *      页重置 1；从响应严格读 total/page/pageSize 计算 totalPages，真实逐页点「下一页」到
+ *      末页（每次点击前监听精确 inactive 下一页 GET 且断言 UI 页码同步）；
+ *   c. 定位 category-row-<id>，断言 data-status=inactive、code/编辑后 label 及
+ *      inactive-historical-label 历史分类文案「历史分类（已发布商品仍显示，不可用于新商品首次发布）」；
+ *   d. 点击启用按钮前同时监听精确 POST /api/admin/product-categories/<id>/activate 与 inactive
+ *      当前页 refresh GET；断言 POST 200、请求体过现有 isEmptyMutationPayload、响应过严格
+ *      parseCategoryAdminDto 且 status=active、编辑后字段精确、id/code 不变；refresh GET status 200
+ *      且 page=当前 inactive 页、pageSize=10、status=inactive；toast「分类已启用」；
+ *      inactive 筛选下该行消失（禁止 page.reload）；activate POST 总计 1；
+ *   e. 切状态筛选 active（操作前监听 status=active&page=1 GET，断言页重置 1）；按响应 total
+ *      算页数并真实逐页导航到末页（sortOrder=1_000_000 应在末页），每页 GET 参数精确且 UI
+ *      页码同步；断言行 data-status=active、code/编辑后 label 正确、历史标签消失、
+ *      停用按钮出现、启用按钮消失。
  */
 
 /** 唯一申请名称（每次运行不同，避免 pending duplicate 撞车）。 */
@@ -2044,5 +2063,170 @@ test.describe.serial('PAR-CMI-002 catalog category governance merchant flow', ()
 
     // 全程仅发出一次该 id 的 deactivate 请求（取消那次未发出任何请求）。
     expect(deactivateRequests).toHaveLength(1)
+  })
+
+  test('admin activates the inactive repository category and finds it via the active filter', async ({ page }) => {
+    // 串行依赖：第 12 个 deactivate 用例必须已保存正整数 categoryId，且该分类当前为 inactive
+    //（复用其编辑后的 ADMIN_CATEGORY_CODE / ADMIN_CATEGORY_*_EDIT 常量）。
+    expect(categoryId).toBeGreaterThan(0)
+
+    // 真实 admin MFA 登录（loginAs admin 走 seed TOTP 验证）→ /admin。
+    await loginAs(page, SEED_ACCOUNTS.admin)
+    await page.goto('/admin')
+
+    // 点击「目录治理」前先监听分类仓库列表初始 GET：精确 /api/admin/product-categories、
+    // GET、page=1&pageSize=10、status 缺失/空（复用 isCategoryRepositoryListPage）。
+    const initialCategoriesResponse = page.waitForResponse(isCategoryRepositoryListPage(1))
+    await page.getByRole('button', { name: '目录治理' }).click()
+    await expect(page.getByTestId('admin-category-manager')).toBeVisible({ timeout: 10_000 })
+
+    // 默认 category filter = 全部（admin-category-status-filter value ''）。
+    await expect(page.getByTestId('admin-category-status-filter')).toHaveValue('')
+    const initialCategoriesResult = await initialCategoriesResponse
+    expect(initialCategoriesResult.status()).toBe(200)
+    const initialBody: unknown = await initialCategoriesResult.json()
+    const initialPageInfo = readCategoryListPageInfo(initialBody)
+    expect(initialPageInfo.page).toBe(1)
+    expect(initialPageInfo.pageSize).toBe(10)
+
+    // ── 第一步：切状态筛选 inactive（操作前监听精确 status=inactive&page=1&pageSize=10 GET），
+    //    断言页重置 1；从响应严格读 total/page/pageSize，真实逐页「下一页」到末页。
+    const inactiveFirstResponse = page.waitForResponse(isCategoryRepositoryListPageFiltered('inactive', 1))
+    await page.getByTestId('admin-category-status-filter').selectOption('inactive')
+    const categoryPagination = page.getByTestId('admin-category-pagination')
+    await expect(categoryPagination).toContainText('第 1 /')
+    const inactiveFirstResult = await inactiveFirstResponse
+    expect(inactiveFirstResult.status()).toBe(200)
+    const inactiveFirstBody: unknown = await inactiveFirstResult.json()
+    const inactivePageInfo = readCategoryListPageInfo(inactiveFirstBody)
+    expect(inactivePageInfo.page).toBe(1)
+    expect(inactivePageInfo.pageSize).toBe(10)
+    const inactiveTotalPages = Math.max(1, Math.ceil(inactivePageInfo.total / inactivePageInfo.pageSize))
+
+    // 真实逐页「下一页」到 inactive 末页：每次点击前监听精确 inactive 下一页 GET、status 200、
+    // 页参数精确，并用 UI 页码断言同步（杜绝响应到达而 DOM 未更新竞态）。
+    let inactiveCurrentPage = 1
+    for (let targetPage = 2; targetPage <= inactiveTotalPages; targetPage++) {
+      const pageResponse = page.waitForResponse(isCategoryRepositoryListPageFiltered('inactive', targetPage))
+      await categoryPagination.getByRole('button', { name: '下一页' }).click()
+      const pageResult = await pageResponse
+      expect(pageResult.status()).toBe(200)
+      const pageBody: unknown = await pageResult.json()
+      const pageInfo = readCategoryListPageInfo(pageBody)
+      expect(pageInfo.page).toBe(targetPage)
+      expect(pageInfo.pageSize).toBe(10)
+      inactiveCurrentPage = targetPage
+      await expect(categoryPagination).toContainText(`第 ${targetPage} /`)
+    }
+
+    // 定位上一用例已停用且 inactive 的行（sortOrder=1_000_000 保证落在 inactive 末页）。
+    const inactiveRow = page.getByTestId(`category-row-${categoryId}`)
+    await expect(inactiveRow).toBeVisible({ timeout: 10_000 })
+    await expect(inactiveRow).toHaveAttribute('data-status', 'inactive')
+    await expect(inactiveRow).toContainText(ADMIN_CATEGORY_CODE)
+    await expect(inactiveRow).toContainText(ADMIN_CATEGORY_LABEL_EDIT)
+    await expect(inactiveRow.getByTestId('inactive-historical-label')).toHaveText(
+      '历史分类（已发布商品仍显示，不可用于新商品首次发布）',
+    )
+
+    // 从第一次点启用起统计精确 activate POST（禁 sleep：page request 事件精确计数）。
+    const activateRequests: string[] = []
+    page.on('request', (request) => {
+      if (request.method() !== 'POST') return
+      const url = new URL(request.url())
+      if (url.pathname === `/api/admin/product-categories/${categoryId}/activate`) {
+        activateRequests.push(request.url())
+      }
+    })
+
+    // 点击启用按钮前同时监听精确 activate POST 与 inactive 当前页 refresh GET
+    // （启用成功后 refreshCategories 停在当前 inactive 页）。
+    await expect(page.getByTestId(`category-activate-${categoryId}`)).toBeVisible()
+    const activateResponse = page.waitForResponse((response) =>
+      new URL(response.url()).pathname === `/api/admin/product-categories/${categoryId}/activate`
+      && response.request().method() === 'POST'
+    )
+    const inactiveRefreshResponse = page.waitForResponse(isCategoryRepositoryListPageFiltered('inactive', inactiveCurrentPage))
+    await page.getByTestId(`category-activate-${categoryId}`).click()
+    const activateResult = await activateResponse
+
+    // 真实契约（server categoryAdminRoutes.test.ts）：POST activate → 200。
+    expect(activateResult.status()).toBe(200)
+
+    // 请求体通过现有 isEmptyMutationPayload（启用为无 body 变更；无 any/as any）。
+    const activateRequestBody: unknown = activateResult.request().postDataJSON()
+    expect(isEmptyMutationPayload(activateRequestBody)).toBe(true)
+
+    // 响应通过现有严格 parseCategoryAdminDto：status=active、编辑后字段精确、id/code 不变。
+    const activateBody: unknown = await activateResult.json()
+    const activated = parseCategoryAdminDto(activateBody, {
+      code: ADMIN_CATEGORY_CODE,
+      label: ADMIN_CATEGORY_LABEL_EDIT,
+      description: ADMIN_CATEGORY_DESCRIPTION_EDIT,
+      iconKey: ADMIN_CATEGORY_ICON_EDIT,
+      defaultCoverUrl: ADMIN_CATEGORY_COVER_EDIT,
+      sortOrder: ADMIN_CATEGORY_SORT_EDIT,
+      status: 'active',
+    })
+    expect(activated.id).toBe(categoryId)
+    expect(activated.code).toBe(ADMIN_CATEGORY_CODE)
+    expect(activated.status).toBe('active')
+
+    // inactive 当前页 refresh GET：status 200、page=当前 inactive 页、pageSize=10（参数精确）。
+    const inactiveRefreshResult = await inactiveRefreshResponse
+    expect(inactiveRefreshResult.status()).toBe(200)
+    const inactiveRefreshBody: unknown = await inactiveRefreshResult.json()
+    const inactiveRefreshPageInfo = readCategoryListPageInfo(inactiveRefreshBody)
+    expect(inactiveRefreshPageInfo.page).toBe(inactiveCurrentPage)
+    expect(inactiveRefreshPageInfo.pageSize).toBe(10)
+
+    // toast「分类已启用」。
+    await expect(
+      page.locator('[data-toast-card]', { hasText: '分类已启用' }),
+    ).toBeVisible({ timeout: 10_000 })
+
+    // 列表自行刷新（禁止 page.reload）：inactive 筛选下该行消失（已转 active）。
+    await expect(inactiveRow).toHaveCount(0, { timeout: 10_000 })
+
+    // 全程仅发出一次该 id 的 activate 请求。
+    expect(activateRequests).toHaveLength(1)
+
+    // ── 第二步：切状态筛选 active（操作前监听精确 status=active&page=1&pageSize=10 GET），
+    //    断言页重置 1；从响应严格读 total/page/pageSize 计算 totalPages。
+    const activeFirstResponse = page.waitForResponse(isCategoryRepositoryListPageFiltered('active', 1))
+    await page.getByTestId('admin-category-status-filter').selectOption('active')
+    await expect(categoryPagination).toContainText('第 1 /')
+    const activeFirstResult = await activeFirstResponse
+    expect(activeFirstResult.status()).toBe(200)
+    const activeFirstBody: unknown = await activeFirstResult.json()
+    const activePageInfo = readCategoryListPageInfo(activeFirstBody)
+    expect(activePageInfo.page).toBe(1)
+    expect(activePageInfo.pageSize).toBe(10)
+    const activeTotalPages = Math.max(1, Math.ceil(activePageInfo.total / activePageInfo.pageSize))
+
+    // 按响应 total 算页数并真实逐页「下一页」到 active 末页（sortOrder=1_000_000 应在末页）；
+    // 每页 GET 参数精确且 UI 页码同步。
+    for (let targetPage = 2; targetPage <= activeTotalPages; targetPage++) {
+      const pageResponse = page.waitForResponse(isCategoryRepositoryListPageFiltered('active', targetPage))
+      await categoryPagination.getByRole('button', { name: '下一页' }).click()
+      const pageResult = await pageResponse
+      expect(pageResult.status()).toBe(200)
+      const pageBody: unknown = await pageResult.json()
+      const pageInfo = readCategoryListPageInfo(pageBody)
+      expect(pageInfo.page).toBe(targetPage)
+      expect(pageInfo.pageSize).toBe(10)
+      await expect(categoryPagination).toContainText(`第 ${targetPage} /`)
+    }
+
+    // 定位已启用的行：data-status=active、code/编辑后 label 正确、历史标签消失、
+    // 停用按钮出现、启用按钮消失。
+    const activeRow = page.getByTestId(`category-row-${categoryId}`)
+    await expect(activeRow).toBeVisible({ timeout: 10_000 })
+    await expect(activeRow).toHaveAttribute('data-status', 'active')
+    await expect(activeRow).toContainText(ADMIN_CATEGORY_CODE)
+    await expect(activeRow).toContainText(ADMIN_CATEGORY_LABEL_EDIT)
+    await expect(activeRow.getByTestId('inactive-historical-label')).toHaveCount(0)
+    await expect(page.getByTestId(`category-deactivate-${categoryId}`)).toBeVisible()
+    await expect(page.getByTestId(`category-activate-${categoryId}`)).toHaveCount(0)
   })
 })
