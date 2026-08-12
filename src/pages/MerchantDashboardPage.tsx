@@ -16,6 +16,8 @@ import {
   rejectOrder,
   postOrderProgress,
 } from '../api/merchant'
+import { catalogApi } from '../api/catalog'
+import { getApiErrorMessage } from '../api/error'
 import {
   MerchantStats,
   MerchantProduct,
@@ -87,6 +89,10 @@ export default function MerchantDashboardPage() {
   const [products, setProducts] = useState<MerchantProduct[]>([])
   const [productPage, setProductPage] = useState(1)
   const [productTotal, setProductTotal] = useState(0)
+  // 上架/下架进行中的商品 id。per-product guard：只锁同商品，不影响其他商品/其他页。
+  // 同步原子 guard 用 ref（同一 React commit 内连续触发也能拦截）；state 仅驱动 disabled UI。
+  const [publishingProductIds, setPublishingProductIds] = useState<ReadonlySet<number>>(new Set())
+  const publishingInFlightRef = useRef<Set<number>>(new Set())
 
   // --- 商品列表筛选（任一筛选变化时重置页码到 1）---
   const [productSearch, setProductSearch] = useState('')
@@ -226,13 +232,27 @@ export default function MerchantDashboardPage() {
   }
 
   async function handleToggleProductStatus(product: MerchantProduct) {
-    const nextStatus = product.status === 'active' ? 'inactive' : 'active'
+    if (publishingInFlightRef.current.has(product.id)) return
+    const isPublishing = product.status !== 'active' // active → 下架；inactive/draft → 上架
+    publishingInFlightRef.current.add(product.id)
+    setPublishingProductIds((prev) => new Set(prev).add(product.id))
     try {
-      await updateMerchantProduct(product.id, { status: nextStatus })
-      showToast(`商品已${nextStatus === 'active' ? '上架' : '下架'}`)
+      if (isPublishing) {
+        await catalogApi.publishProduct(product.id)
+      } else {
+        await catalogApi.unpublishProduct(product.id)
+      }
+      showToast(`商品已${isPublishing ? '上架' : '下架'}`)
       loadData()
-    } catch (e: any) {
-      showToast(e.response?.data?.error?.message || '操作失败', 'error')
+    } catch (e: unknown) {
+      showToast(getApiErrorMessage(e, '操作失败'), 'error')
+    } finally {
+      publishingInFlightRef.current.delete(product.id)
+      setPublishingProductIds((prev) => {
+        const next = new Set(prev)
+        next.delete(product.id)
+        return next
+      })
     }
   }
 
@@ -530,7 +550,11 @@ export default function MerchantDashboardPage() {
                               <LinkAction onClick={() => { setOfferProduct(p); setIsOfferManagerOpen(true); }}>
                                 规格管理
                               </LinkAction>
-                              <LinkAction onClick={() => handleToggleProductStatus(p)}>
+                              <LinkAction
+                                onClick={() => handleToggleProductStatus(p)}
+                                disabled={publishingProductIds.has(p.id)}
+                                testId={`merchant-product-toggle-status-${p.id}`}
+                              >
                                 {p.status === 'active' ? '下架' : '上架'}
                               </LinkAction>
                             </td>
@@ -944,12 +968,21 @@ function StatusPill({ kind }: { kind: 'active' | 'inactive' }) {
   )
 }
 
-function LinkAction({ children, onClick }: { children: React.ReactNode; onClick: () => void }) {
+interface LinkActionProps {
+  children: React.ReactNode
+  onClick: () => void
+  disabled?: boolean
+  testId?: string
+}
+
+function LinkAction({ children, onClick, disabled, testId }: LinkActionProps) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="text-[var(--color-primary)] hover:underline text-sm mr-3 last:mr-0 cursor-pointer btn-sm"
+      disabled={disabled}
+      data-testid={testId}
+      className={`text-[var(--color-primary)] hover:underline text-sm mr-3 last:mr-0 cursor-pointer btn-sm ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
     >
       {children}
     </button>
