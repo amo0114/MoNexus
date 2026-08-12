@@ -6,12 +6,17 @@
  * reject with zero product writes).
  *
  * This file defines the shared typed guards, fixtures, and response parsers
- * that the xboard import test() cases build on, and hosts two real-UI tests:
+ * that the xboard import test() cases build on, and hosts three real-UI tests:
+ *   - an admin confirms a stale Xboard preview after the fixture source was
+ *     mutated and gets FAKA_SOURCE_CHANGED (409) with zero product writes;
+ *   - three admin pages sharing one context replay the same Xboard request:
+ *     A creates the draft (201 replayed:false), B gets the idempotent replay
+ *     (200 replayed:true with the same productId), and C reuses the same key
+ *     with only the top-level productName changed (offers identical to A/B)
+ *     and is rejected (409 IDEMPOTENCY_KEY_REUSED);
  *   - an admin previews and confirms a sanitized Xboard draft, then the
  *     refreshed admin product list is re-verified against a strict typed DTO
- *     and the real DOM table;
- *   - an admin confirms a stale Xboard preview after the fixture source was
- *     mutated and gets FAKA_SOURCE_CHANGED (409) with zero product writes.
+ *     and the real DOM table.
  *
  * HTTP response predicates (method + exact pathname; empty search where noted):
  *   - isCatalogResponse        GET  /api/admin/faka/catalog
@@ -986,6 +991,31 @@ export function parseFakaImportResponse(value: unknown): FakaImportResponse {
   };
 }
 
+export interface FakaReplayResponse {
+  productId: number;
+  replayed: true;
+}
+
+/**
+ * Strictly parses an idempotent replay response payload.
+ * A replay returns exactly { productId, replayed: true } — without the
+ * offerCount/offers that a fresh create carries — so this parser is
+ * independent of parseFakaImportResponse:
+ *   - productId: positive integer
+ *   - replayed: must be exactly true
+ * Rejects any extra key and any replayed value other than true.
+ */
+export function parseFakaReplayResponse(value: unknown): FakaReplayResponse {
+  assertExactKeys(value, ['productId', 'replayed'], 'Faka replay response');
+  if (!isPositiveInteger(value.productId)) {
+    throw new Error('Faka replay response: productId must be a positive integer');
+  }
+  if (value.replayed !== true) {
+    throw new Error('Faka replay response: replayed must be exactly true');
+  }
+  return { productId: value.productId, replayed: true };
+}
+
 // ---------------------------------------------------------------------------
 // Faka import conflict error parser (409)
 // ---------------------------------------------------------------------------
@@ -1523,6 +1553,338 @@ test.describe.serial('Catalog Xboard import', () => {
     }
   });
 
+  test('admin replays the same Xboard request and rejects idempotency key reuse', async ({ page }) => {
+    await resetXboardFixture();
+
+    // All three pages share one BrowserContext (same localStorage/cookies, so
+    // the same admin auth). crypto.randomUUID is pinned BEFORE any navigation,
+    // which makes every dialog mint the SAME idempotency key. Flow:
+    //   - A previews + confirms the standard Gold Plan  -> 201 replayed:false
+    //   - B previews + confirms the exact same request  -> 200 replayed:true
+    //     (same productId as A)
+    //   - C previews after changing only the top-level productName to
+    //     "Gold Plan Variant" (offers identical to A/B) and confirms with the
+    //     same key but a different body -> 409 IDEMPOTENCY_KEY_REUSED
+    // All three previews run before any confirm so every preview stays clean
+    // (a plan only becomes "already imported" after A confirms it).
+    const FIXED_IDEMPOTENCY_KEY = '00000000-0000-4000-8000-000000000077';
+    const pinRandomUuid = (): void => {
+      if (typeof window.crypto === 'object' && window.crypto !== null) {
+        Object.defineProperty(window.crypto, 'randomUUID', {
+          configurable: true,
+          value: () => '00000000-0000-4000-8000-000000000077',
+        });
+      }
+    };
+    await page.addInitScript(pinRandomUuid);
+
+    const pageB = await page.context().newPage();
+    const pageC = await page.context().newPage();
+    await pageB.addInitScript(pinRandomUuid);
+    await pageC.addInitScript(pinRandomUuid);
+
+    let productIdA = 0;
+    try {
+      // ===== Page A: admin setup + baseline products read =====
+      await loginAs(page, SEED_ACCOUNTS.admin);
+      await page.goto('/admin');
+      await ensureNetworkNodeDefaultCoverViaUi(page);
+
+      const baselineProductsPromise = page.waitForResponse(isAdminProductsResponse);
+      await page.getByRole('button', { name: '商品与库存', exact: true }).click();
+      const baselineProductsResponse = await baselineProductsPromise;
+      expect(baselineProductsResponse.status()).toBe(200);
+      const baselineBody: unknown = await baselineProductsResponse.json();
+      const baselineProducts = parseAdminProductsResponse(baselineBody);
+
+      // ===== Shared Gold Plan inputs (A/B identical; C changes only productName) =====
+      const aCatalogPromise = page.waitForResponse(isCatalogResponse);
+      const aRegistryPromise = page.waitForResponse(isRegistryResponse);
+      await page.getByTestId('admin-faka-import-open').click();
+      const [aCatalogResponse, aRegistryResponse] = await Promise.all([
+        aCatalogPromise,
+        aRegistryPromise,
+      ]);
+      expect(aCatalogResponse.status()).toBe(200);
+      expect(aRegistryResponse.status()).toBe(200);
+      const aCatalogBody: unknown = await aCatalogResponse.json();
+      const aCatalog = parseFakaCatalogResponse(aCatalogBody);
+      const goldPlan = aCatalog.plans.find((plan) => plan.plan_id === 77);
+      if (!goldPlan) {
+        throw new Error('Faka catalog is missing plan 77');
+      }
+      const aRegistryBody: unknown = await aRegistryResponse.json();
+      const aCategories = parseCategoryRegistryResponse(aRegistryBody);
+      const networkNode = aCategories.find((category) => category.code === 'network-node');
+      if (!networkNode) {
+        throw new Error('active category registry is missing network-node');
+      }
+
+      const goldRequest = (productName: string): FakaImportRequest => ({
+        planId: 77,
+        productName,
+        categoryId: networkNode.id,
+        cover: { mode: 'category_default' },
+        offers: [
+          { period: 'monthly', sku: 'gold-monthly', offerName: '月付', pricePoints: 300000 },
+          { period: 'yearly', sku: 'gold-yearly', offerName: '年付', pricePoints: 3000000 },
+        ],
+      });
+
+      // ===== Page A: preview only (no confirm yet) =====
+      await page.getByTestId('admin-faka-import-plan').selectOption('77');
+      await page.getByTestId('product-category-select').selectOption(String(networkNode.id));
+      const aRequest = goldRequest('Gold Plan');
+      const aPreviewResponsePromise = page.waitForResponse(isImportPreviewResponse);
+      await page.getByTestId('admin-faka-import-preview-submit').click();
+      const aPreviewResponse = await aPreviewResponsePromise;
+      expect(aPreviewResponse.status()).toBe(200);
+      const aPreviewRequestBody: unknown = aPreviewResponse.request().postDataJSON();
+      expect(parseFakaImportRequest(aPreviewRequestBody)).toEqual(aRequest);
+      const aPreviewBody: unknown = await aPreviewResponse.json();
+      const aPreview = parseFakaPreviewResponse(aPreviewBody);
+      expect(aPreview.canConfirm).toBe(true);
+      expect(aPreview.offers[0]!.offerName).toBe('月付');
+
+      // ===== Page B: same Gold Plan request, previewed before any confirm =====
+      await pageB.goto('/admin');
+      await pageB.getByRole('button', { name: '商品与库存', exact: true }).click();
+      const bCatalogPromise = pageB.waitForResponse(isCatalogResponse);
+      const bRegistryPromise = pageB.waitForResponse(isRegistryResponse);
+      await pageB.getByTestId('admin-faka-import-open').click();
+      const [bCatalogResponse, bRegistryResponse] = await Promise.all([
+        bCatalogPromise,
+        bRegistryPromise,
+      ]);
+      expect(bCatalogResponse.status()).toBe(200);
+      expect(bRegistryResponse.status()).toBe(200);
+      await pageB.getByTestId('admin-faka-import-plan').selectOption('77');
+      await pageB.getByTestId('product-category-select').selectOption(String(networkNode.id));
+      const bRequest = goldRequest('Gold Plan');
+      const bPreviewResponsePromise = pageB.waitForResponse(isImportPreviewResponse);
+      await pageB.getByTestId('admin-faka-import-preview-submit').click();
+      const bPreviewResponse = await bPreviewResponsePromise;
+      expect(bPreviewResponse.status()).toBe(200);
+      const bPreviewRequestBody: unknown = bPreviewResponse.request().postDataJSON();
+      expect(parseFakaImportRequest(bPreviewRequestBody)).toEqual(bRequest);
+      const bPreviewBody: unknown = await bPreviewResponse.json();
+      const bPreview = parseFakaPreviewResponse(bPreviewBody);
+      expect(bPreview.sourceHash).toBe(aPreview.sourceHash);
+      expect(bPreview.canConfirm).toBe(true);
+
+      // ===== Page C: same Gold Plan offers, only the top-level productName changes =====
+      // A/B send the identical request (productName: "Gold Plan"). C differs
+      // only in the top-level productName ("Gold Plan Variant"); offers are
+      // byte-for-byte the same as A/B, which the equality below proves.
+      await pageC.goto('/admin');
+      await pageC.getByRole('button', { name: '商品与库存', exact: true }).click();
+      const cCatalogPromise = pageC.waitForResponse(isCatalogResponse);
+      const cRegistryPromise = pageC.waitForResponse(isRegistryResponse);
+      await pageC.getByTestId('admin-faka-import-open').click();
+      const [cCatalogResponse, cRegistryResponse] = await Promise.all([
+        cCatalogPromise,
+        cRegistryPromise,
+      ]);
+      expect(cCatalogResponse.status()).toBe(200);
+      expect(cRegistryResponse.status()).toBe(200);
+      await pageC.getByTestId('admin-faka-import-plan').selectOption('77');
+      await pageC.getByTestId('product-category-select').selectOption(String(networkNode.id));
+      await pageC.getByTestId('admin-faka-import-name').fill('Gold Plan Variant');
+      const cRequest = goldRequest('Gold Plan Variant');
+      expect(cRequest).toEqual({ ...aRequest, productName: 'Gold Plan Variant' });
+      const cPreviewResponsePromise = pageC.waitForResponse(isImportPreviewResponse);
+      await pageC.getByTestId('admin-faka-import-preview-submit').click();
+      const cPreviewResponse = await cPreviewResponsePromise;
+      expect(cPreviewResponse.status()).toBe(200);
+      const cPreviewRequestBody: unknown = cPreviewResponse.request().postDataJSON();
+      expect(parseFakaImportRequest(cPreviewRequestBody)).toEqual(cRequest);
+      const cPreviewBody: unknown = await cPreviewResponse.json();
+      const cPreview = parseFakaPreviewResponse(cPreviewBody);
+      expect(cPreview.sourceHash).toBe(aPreview.sourceHash);
+      expect(cPreview.canConfirm).toBe(true);
+      expect(cPreview.productName).toBe('Gold Plan Variant');
+      expect(cPreview.offers).toEqual(aPreview.offers);
+
+      // ===== Page A: confirm -> 201 replayed:false (idempotency key stored) =====
+      let aConfirmCount = 0;
+      const onAConfirm = (request: Request) => {
+        if (request.method() === 'POST'
+          && new URL(request.url()).pathname === '/api/admin/faka/import') {
+          aConfirmCount += 1;
+        }
+      };
+      page.on('request', onAConfirm);
+      try {
+        const aImportPromise = page.waitForResponse(isImportResponse);
+        await page.getByTestId('admin-faka-import-submit').click({ clickCount: 2 });
+        const aImportResponse = await aImportPromise;
+        expect(aImportResponse.status()).toBe(201);
+        expect(aConfirmCount).toBe(1);
+        const aConfirmBody: unknown = aImportResponse.request().postDataJSON();
+        expect(parseFakaConfirmRequest(aConfirmBody)).toEqual({ ...aRequest, sourceHash: aPreview.sourceHash });
+        expect(readIdempotencyKey(aImportResponse.request())).toBe(FIXED_IDEMPOTENCY_KEY);
+        const aImportBody: unknown = await aImportResponse.json();
+        const aImported = parseFakaImportResponse(aImportBody);
+        expect(aImported.replayed).toBe(false);
+        expect(aImported.offerCount).toBe(2);
+        productIdA = aImported.productId;
+        const aSuccessToast = `已创建 Xboard 商品草稿 #${productIdA}（2 个规格）`;
+        await expect(page.locator('[data-toast-card]').filter({ hasText: aSuccessToast })).toBeVisible();
+        await page.getByTestId('admin-faka-import-preview').waitFor({ state: 'detached' });
+      } finally {
+        page.off('request', onAConfirm);
+      }
+
+      // ===== Page B: same key + same request -> 200 replay, productId = A =====
+      let bConfirmCount = 0;
+      const onBConfirm = (request: Request) => {
+        if (request.method() === 'POST'
+          && new URL(request.url()).pathname === '/api/admin/faka/import') {
+          bConfirmCount += 1;
+        }
+      };
+      pageB.on('request', onBConfirm);
+      try {
+        const bImportPromise = pageB.waitForResponse(isImportResponse);
+        await pageB.getByTestId('admin-faka-import-submit').click({ clickCount: 2 });
+        const bImportResponse = await bImportPromise;
+        expect(bImportResponse.status()).toBe(200);
+        expect(bConfirmCount).toBe(1);
+        const bConfirmBody: unknown = bImportResponse.request().postDataJSON();
+        expect(parseFakaConfirmRequest(bConfirmBody)).toEqual({ ...bRequest, sourceHash: bPreview.sourceHash });
+        expect(readIdempotencyKey(bImportResponse.request())).toBe(FIXED_IDEMPOTENCY_KEY);
+        const bImportBody: unknown = await bImportResponse.json();
+        const replayed = parseFakaReplayResponse(bImportBody);
+        expect(replayed).toEqual({ productId: productIdA, replayed: true });
+        const bReplayToast = `幂等重放：商品 #${productIdA} 已存在，未重复创建`;
+        await expect(pageB.locator('[data-toast-card]').filter({ hasText: bReplayToast }))
+          .toHaveText(bReplayToast);
+        await pageB.getByTestId('admin-faka-import-preview').waitFor({ state: 'detached' });
+      } finally {
+        pageB.off('request', onBConfirm);
+      }
+
+      // ===== Page C: same key, different body -> 409 IDEMPOTENCY_KEY_REUSED =====
+      let cConfirmCount = 0;
+      const onCConfirm = (request: Request) => {
+        if (request.method() === 'POST'
+          && new URL(request.url()).pathname === '/api/admin/faka/import') {
+          cConfirmCount += 1;
+        }
+      };
+      pageC.on('request', onCConfirm);
+      try {
+        const cImportPromise = pageC.waitForResponse(isImportResponse);
+        await pageC.getByTestId('admin-faka-import-submit').click({ clickCount: 2 });
+        const cImportResponse = await cImportPromise;
+        expect(cImportResponse.status()).toBe(409);
+        expect(cConfirmCount).toBe(1);
+        const cConfirmBody: unknown = cImportResponse.request().postDataJSON();
+        expect(parseFakaConfirmRequest(cConfirmBody)).toEqual({ ...cRequest, sourceHash: cPreview.sourceHash });
+        expect(readIdempotencyKey(cImportResponse.request())).toBe(FIXED_IDEMPOTENCY_KEY);
+        const cConflictBody: unknown = await cImportResponse.json();
+        const cConflict = parseFakaConflictError(cConflictBody);
+        expect(cConflict.code).toBe('IDEMPOTENCY_KEY_REUSED');
+        expect(cConflict.message).toBe('该幂等键已用于不同请求');
+
+        // The dialog and its preview stay intact, the confirm button stays
+        // enabled, and no "existing product" shortcut is rendered.
+        await expect(pageC.getByTestId('admin-faka-import-preview')).toBeVisible();
+        await expect(pageC.getByTestId('admin-faka-preview-result')).toBeVisible();
+        await expect(pageC.getByTestId('admin-faka-import-submit')).toBeVisible();
+        await expect(pageC.getByTestId('admin-faka-import-submit')).toBeEnabled();
+        await expect(pageC.getByTestId('admin-faka-existing-product')).toHaveCount(0);
+        await expect(pageC.locator('[data-toast-card]').filter({ hasText: '该幂等键已用于不同请求' }))
+          .toBeVisible();
+      } finally {
+        pageC.off('request', onCConfirm);
+      }
+
+      // ===== Final real products back-check vs baseline =====
+      await pageC.getByRole('dialog').getByRole('button', { name: '取消' }).click();
+      await pageC.getByRole('button', { name: '数据仪表盘', exact: true }).click();
+      const finalProductsPromise = pageC.waitForResponse(isAdminProductsResponse);
+      await pageC.getByRole('button', { name: '商品与库存', exact: true }).click();
+      const finalProductsResponse = await finalProductsPromise;
+      expect(finalProductsResponse.status()).toBe(200);
+      const finalBody: unknown = await finalProductsResponse.json();
+      const finalProducts = parseAdminProductsResponse(finalBody);
+
+      const baselineIds = baselineProducts.map((product) => product.id).sort((a, b) => a - b);
+      const finalIds = finalProducts.map((product) => product.id).sort((a, b) => a - b);
+      expect(finalIds).toHaveLength(baselineIds.length + 1);
+      const addedIds = finalIds.filter((id) => !baselineIds.includes(id));
+      expect(addedIds).toEqual([productIdA]);
+
+      const goldSkuProducts = finalProducts.filter((product) =>
+        product.offers.some((offer) =>
+          offer.externalSku === 'gold-monthly' || offer.externalSku === 'gold-yearly'),
+      );
+      expect(goldSkuProducts).toHaveLength(1);
+      const goldProduct = goldSkuProducts[0]!;
+      expect(goldProduct.id).toBe(productIdA);
+      expect(goldProduct.status).toBe('draft');
+      expect(goldProduct.merchantId).toBeNull();
+      expect(goldProduct.offers).toHaveLength(2);
+      const goldSkus = goldProduct.offers.map((offer) => offer.externalSku).sort();
+      expect(goldSkus).toEqual(['gold-monthly', 'gold-yearly']);
+    } finally {
+      // Real UI cleanup: remove the draft created by Page A through the real
+      // admin UI (confirm dialog -> hard delete -> list refresh) so it does
+      // not leak into later tests. The fixture reset and page closes run
+      // unconditionally afterwards, with page closes nested so pageC.close()
+      // is still attempted if pageB.close() throws.
+      try {
+        if (productIdA > 0) {
+          const deleteButton = page.getByTestId(`admin-delete-product-${productIdA}`);
+          const deleteResponsePromise = page.waitForResponse(
+            (response) =>
+              response.request().method() === 'DELETE'
+              && new URL(response.url()).pathname === `/api/admin/products/${productIdA}`,
+          );
+          const refreshResponsePromise = page.waitForResponse(isAdminProductsResponse);
+          const dialogPromise = page.waitForEvent('dialog');
+
+          const clickPromise = deleteButton.click();
+          const deleteDialog = await dialogPromise;
+          expect(deleteDialog.type()).toBe('confirm');
+          expect(deleteDialog.message()).toContain('Gold Plan');
+          expect(deleteDialog.message()).toContain('永久删除');
+          await deleteDialog.accept();
+          await clickPromise;
+
+          const deleteResponse = await deleteResponsePromise;
+          expect(deleteResponse.status()).toBe(200);
+          const deleteBody: unknown = await deleteResponse.json();
+          assertExactKeys(deleteBody, ['mode', 'productId', 'orderCount'], 'admin product delete response');
+          if (
+            deleteBody.mode !== 'hard'
+            || deleteBody.productId !== productIdA
+            || deleteBody.orderCount !== 0
+          ) {
+            throw new Error('admin product delete response mismatch');
+          }
+
+          const refreshResponse = await refreshResponsePromise;
+          expect(refreshResponse.status()).toBe(200);
+          await expect(page.getByTestId(`admin-delete-product-${productIdA}`)).toHaveCount(0);
+          await expect(
+            page.locator('[data-toast-card]').filter({ hasText: '商品已删除' }),
+          ).toBeVisible();
+        }
+      } finally {
+        try {
+          await resetXboardFixture();
+        } finally {
+          try {
+            await pageB.close();
+          } finally {
+            await pageC.close();
+          }
+        }
+      }
+    }
+  });
   test('admin previews and confirms a sanitized Xboard draft via the real UI', async ({ page }) => {
     await resetXboardFixture();
     await loginAs(page, SEED_ACCOUNTS.admin);
@@ -1717,4 +2079,5 @@ test.describe.serial('Catalog Xboard import', () => {
       page.off('request', onConfirmRequest);
     }
   });
+
 });
