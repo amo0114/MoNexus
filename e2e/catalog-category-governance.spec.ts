@@ -49,6 +49,32 @@ import { SEED_ACCOUNTS, loginAs } from './helpers'
  * ID；toast「已通过并新建分类」
  * + dialog 关闭；pending 列表刷新后 row 消失；切 admin-application-status-filter=
  * approved 回查同 row data-status=approved、resolution「新建分类」并含 #approvedCategoryId。
+ *
+ * map_existing 数据准备（第 6 个用例，纯 merchant 侧，不做 admin）：独立 loginAs →
+ * /merchant → 分类申请 → 真实表单，填唯一 MAP_REVIEW_LABEL / 合法 lower-case
+ * MAP_REVIEW_CODE / ≥20 字 MAP_REVIEW_DESCRIPTION；点击前监听精确 POST
+ * /api/merchant/category-applications 断言 201；复用 parseApplication(expected) 严格
+ * 解析正整数 mapReviewApplicationId，label/code/status 精确匹配；请求体精确四
+ * allowlist 且无 merchantId/status；toast 成功 + application-row-<mapReviewApplicationId>
+ * data-status=pending；绝不 withdraw。该 pending 将在后续映射到前一 create_new 已
+ * 生成的 approvedCategoryId（map 审核留后续）。
+ *
+ * admin map_existing 审核（D-CAT-10 / D-CAT-11 / AC-CAT-014）：真实 admin MFA loginAs → /admin →
+ * 「目录治理」→ admin-category-manager；默认 pending 筛选下按 application-row-
+ * <mapReviewApplicationId> 精准定位，点击 application-approve-map-<id> 打开 map_existing
+ * review dialog；核对模式标题 + 申请名称，在 review-category 下拉选择
+ * String(approvedCategoryId)——既有 create_new 分类为 active，组件以 GET
+ * /api/admin/product-categories?status=active&pageSize=100 加载该下拉；再填常量
+ * MAP_REVIEW_REASON；点击前监听精确 POST /api/admin/category-applications/<id>/approve
+ * 断言 200；严格类型守卫从 unknown JSON 证明 id 相同、status='approved'、
+ * resolution='map_existing'、approvedCategoryId 精确等于既有值、reviewReason 精确，
+ * 且响应键命中冻结 DTO allowlist（拒绝额外键、点名内部/操作者字段）；请求体精确
+ * { resolution, categoryId, reviewReason } 三键且无 category 块/操作者 ID；
+ * toast「已通过并映射到现有分类」+ dialog 关闭；pending row 消失；切 approved 回查
+ * data-status=approved、resolution「映射现有分类」并含 #approvedCategoryId。
+ * 分类仓库 total 以真实 read network 在审核前/审核后各解析一次并严格断言不变，证明
+ * map_existing 不新建分类；绝不断言 MAP_REVIEW_CODE 分类存在（它不应被创建）。
+ *
  * 硬约束：无 mock / 无 DB 直读直写 / 无 page.reload / 无 waitForTimeout /
  * 无 page.route / 无写 API 替代 UI 提交 / 无 any / 无 ts-ignore。
  */
@@ -73,6 +99,16 @@ const ADMIN_REVIEW_CODE = `e2e-admin-review-${Date.now()}-${Math.random().toStri
 const ADMIN_REVIEW_DESCRIPTION = '这是为平台管理员审核准备的分类申请描述，用于后续 admin review 端到端验证，长度满足表单校验要求。'
 /** 管理员审核理由常量（1..500 字、无控制字符；请求与响应 reviewReason 精确断言共用）。 */
 const ADMIN_REVIEW_REASON = 'E2E 管理员审核：名称与编码均符合分类规范，通过并新建分类。'
+/** map_existing 数据准备：唯一 label（与 LABEL / ADMIN_REVIEW_LABEL 不同避免语义混淆），
+ *  供后续 admin map_existing 审核把本 pending 映射到前一 create_new 已生成的 approvedCategoryId。 */
+const MAP_REVIEW_LABEL = `E2E映射分类-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+/** 合法 lower-case 分类编码（满足 CATEGORY_CODE_PATTERN：小写字母开头、仅小写/数字/-/_），
+ *  供后续 admin map_existing 审核直接复用。 */
+const MAP_REVIEW_CODE = `e2e-map-review-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+/** ≥20 字的描述（表单校验：description.trim().length >= 20）。 */
+const MAP_REVIEW_DESCRIPTION = '这是为平台管理员 map_existing 审核准备的分类申请描述，用于后续映射到已建分类的端到端验证，长度满足表单校验要求。'
+/** map_existing 审核理由常量（1..500 字、无控制字符；请求与响应 reviewReason 精确断言共用）。 */
+const MAP_REVIEW_REASON = 'E2E 管理员审核：该申请与既有已建分类语义一致，映射到现有分类，不新建分类。'
 
 /** create 响应解析出的申请 id（正整数）。 */
 let applicationId = 0
@@ -81,6 +117,9 @@ let applicationId = 0
 let adminReviewApplicationId = 0
 /** admin create_new 审核响应解析出的新建分类 id（正整数）。 */
 let approvedCategoryId = 0
+
+/** map_existing 数据准备：为后续管理员 map_existing 审核创建的新申请 id（正整数）。 */
+let mapReviewApplicationId = 0
 
 /** unknown JSON → 记录（类型守卫）。 */
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -284,6 +323,95 @@ function readApproveCreateNewPayload(
       description: category.description,
       iconKey: category.iconKey,
     },
+    reviewReason: body.reviewReason,
+  }
+}
+
+/**
+ * 分类仓库列表响应 total（真实 read network 解析，禁止 any）：listCategories 分页信封
+ * { items, total, page, pageSize } 中的 total 必须是非负整数；任何形状不符直接抛错。
+ */
+function readCategoryListTotal(body: unknown): number {
+  if (!isRecord(body)) throw new Error('分类列表响应不是 JSON 对象')
+  if (typeof body.total !== 'number' || !Number.isInteger(body.total) || body.total < 0) {
+    throw new Error('分类列表响应缺少非负整数 total')
+  }
+  return body.total
+}
+
+/**
+ * 从 admin approve(map_existing) 响应 unknown JSON 严格解析审核结果（类型守卫，禁止
+ * any/as any）：id 必须等于提交的 applicationId、status==='approved'、
+ * resolution==='map_existing'、approvedCategoryId 必须精确等于既有 approvedCategoryId、
+ * reviewReason 精确匹配；响应键必须命中冻结 DTO allowlist（任何额外键拒绝，且显式点名
+ * 内部/操作者 ID）；任何形状不符直接抛错。
+ */
+function parseMapApprovedApplication(
+  body: unknown,
+  expected: { id: number; categoryId: number; reviewReason: string },
+): {
+  id: number
+  status: 'approved'
+  resolution: 'map_existing'
+  approvedCategoryId: number
+  reviewReason: string
+} {
+  if (!isRecord(body)) throw new Error('审核分类申请响应不是 JSON 对象')
+
+  // 显式点名内部/操作者字段（即使将来误入 allowlist 也单独拒绝，防回归）。
+  const forbiddenKeys = [...CATEGORY_APPLICATION_FORBIDDEN_KEYS].filter((key) => key in body)
+  if (forbiddenKeys.length > 0) {
+    throw new Error(`审核分类申请响应泄露内部/操作者字段: ${forbiddenKeys.join(', ')}`)
+  }
+
+  // 冻结 DTO allowlist：任何额外键一律拒绝（merchantId 是合法公开字段，不在禁止之列）。
+  const extraKeys = Object.keys(body).filter((key) => !CATEGORY_APPLICATION_ALLOWED_KEYS.has(key))
+  if (extraKeys.length > 0) {
+    throw new Error(`审核分类申请响应含未允许字段: ${extraKeys.join(', ')}`)
+  }
+  if (!isPositiveInteger(body.id) || body.id !== expected.id) {
+    throw new Error(`审核分类申请响应 id 非预期，期望 ${expected.id}，实际 ${String(body.id)}`)
+  }
+  if (body.status !== 'approved') {
+    throw new Error(`审核分类申请响应 status 非 approved，实际 ${String(body.status)}`)
+  }
+  if (body.resolution !== 'map_existing') {
+    throw new Error(`审核分类申请响应 resolution 非 map_existing，实际 ${String(body.resolution)}`)
+  }
+  if (!isPositiveInteger(body.approvedCategoryId) || body.approvedCategoryId !== expected.categoryId) {
+    throw new Error(`审核分类申请响应 approvedCategoryId 非预期，期望 ${expected.categoryId}，实际 ${String(body.approvedCategoryId)}`)
+  }
+  if (body.reviewReason !== expected.reviewReason) {
+    throw new Error('审核分类申请响应 reviewReason 与提交值不匹配')
+  }
+  return {
+    id: body.id,
+    status: 'approved',
+    resolution: 'map_existing',
+    approvedCategoryId: body.approvedCategoryId,
+    reviewReason: body.reviewReason,
+  }
+}
+
+/**
+ * 请求 JSON unknown → approve(map_existing) payload（类型守卫）。必须精确顶层三键
+ * { resolution, categoryId, reviewReason }：resolution==='map_existing'、categoryId
+ * 正整数、reviewReason 字符串；任何多余键（category 块 / reviewer/user/admin 操作者
+ * ID，操作者由服务端从 auth 派生）或形状不符直接返回 null。
+ */
+function readApproveMapExistingPayload(
+  body: unknown,
+): { resolution: 'map_existing'; categoryId: number; reviewReason: string } | null {
+  if (!isRecord(body)) return null
+  if (Object.keys(body).length !== 3) return null
+  if (body.resolution !== 'map_existing') return null
+  if (!isPositiveInteger(body.categoryId)) return null
+  if (typeof body.reviewReason !== 'string') return null
+  // 精确三键已由 length 校验锁定：category 块或操作者 ID 必然使长度溢出，此处显式点名拒绝。
+  if ('category' in body || 'reviewer' in body || 'user' in body || 'admin' in body) return null
+  return {
+    resolution: 'map_existing',
+    categoryId: body.categoryId,
     reviewReason: body.reviewReason,
   }
 }
@@ -594,5 +722,181 @@ test.describe.serial('PAR-CMI-002 catalog category governance merchant flow', ()
     await expect(approvedRow).toHaveAttribute('data-status', 'approved')
     await expect(page.getByTestId(`application-resolution-${adminReviewApplicationId}`)).toContainText('新建分类')
     await expect(page.getByTestId(`application-resolution-${adminReviewApplicationId}`)).toContainText(`#${approvedCategoryId}`)
+  })
+
+  test('prepares a pending application for the later admin map_existing review (map_existing prep)', async ({ page }) => {
+    // map_existing 数据准备：独立登录 + 进入 /merchant 分类申请面板。
+    await loginAs(page, SEED_ACCOUNTS.merchant)
+    await page.goto('/merchant')
+    await page.getByRole('button', { name: '分类申请' }).click()
+    await expect(page.getByTestId('category-application-panel')).toBeVisible({ timeout: 10_000 })
+
+    // 打开真实创建表单，填唯一 MAP_REVIEW_LABEL / 合法 lower-case MAP_REVIEW_CODE /
+    // ≥20 字 MAP_REVIEW_DESCRIPTION + 合法示例商品。
+    await page.getByTestId('merchant-application-create').click()
+    await expect(page.getByTestId('application-form-label')).toBeVisible({ timeout: 10_000 })
+    await page.getByTestId('application-form-label').fill(MAP_REVIEW_LABEL)
+    await page.getByTestId('application-form-code').fill(MAP_REVIEW_CODE)
+    await page.getByTestId('application-form-description').fill(MAP_REVIEW_DESCRIPTION)
+    await page.getByTestId('application-form-example').fill(EXAMPLE_PRODUCTS)
+
+    // 点击真实提交动作前监听精确 pathname + POST。
+    const mapReviewCreateResponse = page.waitForResponse((response) =>
+      new URL(response.url()).pathname === '/api/merchant/category-applications'
+      && response.request().method() === 'POST'
+    )
+    await page.getByTestId('application-form-submit').click()
+    const mapReviewCreateResult = await mapReviewCreateResponse
+
+    // 真实契约（server applicationRoutes.test.ts）：POST create → 201。
+    expect(mapReviewCreateResult.status()).toBe(201)
+
+    // 严格类型守卫：从 unknown JSON 断言正整数 id、精确 label/code、status=pending，
+    // 保存 mapReviewApplicationId（禁止 any/as any）。
+    const mapReviewBody: unknown = await mapReviewCreateResult.json()
+    const mapReviewCreated = parseApplication(mapReviewBody, { label: MAP_REVIEW_LABEL, code: MAP_REVIEW_CODE })
+    mapReviewApplicationId = mapReviewCreated.id
+    expect(mapReviewCreated.label).toBe(MAP_REVIEW_LABEL)
+    expect(mapReviewCreated.code).toBe(MAP_REVIEW_CODE)
+    expect(mapReviewCreated.status).toBe('pending')
+    expect(mapReviewApplicationId).toBeGreaterThan(0)
+
+    // 请求 JSON：精确四 allowlist 字段，明确无 merchantId/status（复用既有 readCreatePayload，
+    // 未弱化任何断言）。
+    const mapReviewRequestBody: unknown = mapReviewCreateResult.request().postDataJSON()
+    expect(readCreatePayload(mapReviewRequestBody)).toEqual({
+      proposedLabel: MAP_REVIEW_LABEL,
+      proposedCode: MAP_REVIEW_CODE,
+      description: MAP_REVIEW_DESCRIPTION,
+      exampleProducts: EXAMPLE_PRODUCTS,
+    })
+
+    // toast 成功 + 列表行 data-status=pending。
+    await expect(
+      page.locator('[data-toast-card]', { hasText: '分类申请已提交，等待平台审核' }),
+    ).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByTestId(`application-row-${mapReviewApplicationId}`)).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByTestId(`application-row-${mapReviewApplicationId}`)).toHaveAttribute('data-status', 'pending')
+
+    // 本卡仅为后续 admin map_existing 审核准备 pending 数据：绝不 withdraw 该申请。
+  })
+
+  test('admin approves the prepared application via map_existing and the row becomes approved (map_existing review)', async ({ page }) => {
+    // 串行依赖：第 6 个 pending 数据准备用例已保存正整数 mapReviewApplicationId，
+    // 且第 5 个 create_new 用例已保存正整数 approvedCategoryId（映射目标，active）。
+    expect(mapReviewApplicationId).toBeGreaterThan(0)
+    expect(approvedCategoryId).toBeGreaterThan(0)
+
+    // 真实 admin MFA 登录 → /admin。
+    await loginAs(page, SEED_ACCOUNTS.admin)
+    await page.goto('/admin')
+
+    // 点击「目录治理」前建立 before 分类仓库 GET 监听：精确 GET /api/admin/product-categories
+    // 且 searchParams：status 缺失或 ''、page='1'、pageSize='10'（组件默认 status ''，
+    // axios 省略 undefined → status 参数缺失；双兼容精确匹配）。
+    const isCategoryRepositoryList = (response: {
+      url(): string
+      request(): { method(): string }
+    }): boolean => {
+      const url = new URL(response.url())
+      if (url.pathname !== '/api/admin/product-categories') return false
+      if (response.request().method() !== 'GET') return false
+      const status = url.searchParams.get('status')
+      return (
+        (status === null || status === '')
+        && url.searchParams.get('page') === '1'
+        && url.searchParams.get('pageSize') === '10'
+      )
+    }
+    const beforeCategoriesResponse = page.waitForResponse(isCategoryRepositoryList)
+    await page.getByRole('button', { name: '目录治理' }).click()
+    const beforeCategoriesResult = await beforeCategoriesResponse
+    expect(beforeCategoriesResult.status()).toBe(200)
+    const beforeCategoriesBody: unknown = await beforeCategoriesResult.json()
+    const beforeCategoriesTotal = readCategoryListTotal(beforeCategoriesBody)
+
+    // 等 admin-category-manager；默认 pending 筛选；按 map row 精准定位并断言 pending。
+    await expect(page.getByTestId('admin-category-manager')).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByTestId('admin-application-status-filter')).toHaveValue('pending')
+    const mapRow = page.getByTestId(`application-row-${mapReviewApplicationId}`)
+    await expect(mapRow).toBeVisible({ timeout: 10_000 })
+    await expect(mapRow).toHaveAttribute('data-status', 'pending')
+
+    // 点击「通过（映射）」打开 map_existing 审核 dialog。
+    await page.getByTestId(`application-approve-map-${mapReviewApplicationId}`).click()
+
+    // dialog：核对模式标题「通过并映射现有分类」+ 申请名称（MAP_REVIEW_LABEL）；
+    // 在 review-category 下拉选择 String(approvedCategoryId)（既有 create_new 分类为
+    // active，必出现在该下拉）并 toHaveValue；再填常量 MAP_REVIEW_REASON。
+    const mapDialog = page.getByRole('dialog')
+    await expect(mapDialog).toBeVisible({ timeout: 10_000 })
+    await expect(mapDialog).toContainText('通过并映射现有分类')
+    await expect(mapDialog).toContainText(MAP_REVIEW_LABEL)
+    await mapDialog.getByTestId('review-category').selectOption(String(approvedCategoryId))
+    await expect(mapDialog.getByTestId('review-category')).toHaveValue(String(approvedCategoryId))
+    await mapDialog.getByTestId('review-reason').fill(MAP_REVIEW_REASON)
+
+    // 点击 submit 前同时建立 approve POST 精确 wait 与 after 分类仓库 GET 精确 wait
+    // （分类刷新在 approve 成功后触发）；两个 promise 均在点击前建立，先 await approve 再 await after。
+    const approveResponse = page.waitForResponse((response) =>
+      new URL(response.url()).pathname === `/api/admin/category-applications/${mapReviewApplicationId}/approve`
+      && response.request().method() === 'POST'
+    )
+    const afterCategoriesResponse = page.waitForResponse(isCategoryRepositoryList)
+    await mapDialog.getByTestId('review-submit').click()
+    const approveResult = await approveResponse
+    const afterCategoriesResult = await afterCategoriesResponse
+
+    // 真实契约（server applicationRoutes.test.ts）：POST approve → 200。
+    expect(approveResult.status()).toBe(200)
+
+    // 严格类型守卫：从 unknown JSON 证明 id 相同、status=approved、resolution=map_existing、
+    // approvedCategoryId 精确等于既有值、reviewReason 精确，且响应键命中冻结 DTO allowlist
+    // （拒绝额外键、点名内部/操作者字段）。
+    const approveBody: unknown = await approveResult.json()
+    const approved = parseMapApprovedApplication(approveBody, {
+      id: mapReviewApplicationId,
+      categoryId: approvedCategoryId,
+      reviewReason: MAP_REVIEW_REASON,
+    })
+    expect(approved.id).toBe(mapReviewApplicationId)
+    expect(approved.status).toBe('approved')
+    expect(approved.resolution).toBe('map_existing')
+    expect(approved.approvedCategoryId).toBe(approvedCategoryId)
+    expect(approved.reviewReason).toBe(MAP_REVIEW_REASON)
+
+    // 请求 JSON：严格等于 { resolution:'map_existing', categoryId, reviewReason } 精确三键，
+    // 无 category 块 / reviewer/user/admin 操作者 ID（操作者由服务端从 auth 派生）。
+    const approveRequestBody: unknown = approveResult.request().postDataJSON()
+    expect(readApproveMapExistingPayload(approveRequestBody)).toEqual({
+      resolution: 'map_existing',
+      categoryId: approvedCategoryId,
+      reviewReason: MAP_REVIEW_REASON,
+    })
+
+    // after 分类仓库 GET status 200；total 严格等于 before（map_existing 不新建分类）。
+    expect(afterCategoriesResult.status()).toBe(200)
+    const afterCategoriesBody: unknown = await afterCategoriesResult.json()
+    expect(readCategoryListTotal(afterCategoriesBody)).toBe(beforeCategoriesTotal)
+
+    // toast「已通过并映射到现有分类」+ review dialog 关闭（Radix unmount 后 role=dialog 消失）。
+    await expect(
+      page.locator('[data-toast-card]', { hasText: '已通过并映射到现有分类' }),
+    ).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+
+    // 默认 pending 列表自行刷新（禁止 page.reload）：application-row-<id> 消失（已转 approved）。
+    await expect(page.getByTestId(`application-row-${mapReviewApplicationId}`)).toHaveCount(0, { timeout: 10_000 })
+
+    // 切 admin-application-status-filter=approved 回查同 row：data-status=approved，
+    // resolution 显示「映射现有分类」且包含 #approvedCategoryId。
+    await page.getByTestId('admin-application-status-filter').selectOption('approved')
+    const approvedMapRow = page.getByTestId(`application-row-${mapReviewApplicationId}`)
+    await expect(approvedMapRow).toBeVisible({ timeout: 10_000 })
+    await expect(approvedMapRow).toHaveAttribute('data-status', 'approved')
+    await expect(page.getByTestId(`application-resolution-${mapReviewApplicationId}`)).toContainText('映射现有分类')
+    await expect(page.getByTestId(`application-resolution-${mapReviewApplicationId}`)).toContainText(`#${approvedCategoryId}`)
+
+    // 本卡为 map_existing 审核：不新建分类，故绝不检查 MAP_REVIEW_CODE 分类是否存在。
   })
 })
