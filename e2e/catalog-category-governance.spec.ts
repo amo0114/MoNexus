@@ -2,7 +2,7 @@ import { expect, test, type Locator, type Page } from '@playwright/test'
 import { SEED_ACCOUNTS, loginAs } from './helpers'
 
 /**
- * PAR-CMI-002 — Catalog category governance（create + pending duplicate + withdraw + admin create_new/map_existing/reject review + withdraw vs stale review race）。
+ * PAR-CMI-002 — Catalog category governance（create + pending duplicate + withdraw + admin create_new/map_existing/reject review + withdraw vs stale review race + admin repository create/edit/deactivate）。
  *
  * 已覆盖（REQ-CAT-F-008 / D-CAT-10 / AC-CAT-012 / CHK-CAT-008）：
  * 1. 商家真实登录 → /merchant → 点击「分类申请」→ 面板 category-application-panel 出现；
@@ -157,6 +157,25 @@ import { SEED_ACCOUNTS, loginAs } from './helpers'
  *      前监听精确 page=currentCategoryPage GET、status 200、页参数精确）；随后真实
  *      「下一页」逐页导航到末页后，显示新 label/description/sortOrder、旧 label 不再
  *      显示、edit button aria-label 更新。
+ *
+ * 已覆盖（D-CAT-22 / CHK-CAT-011）——第 12 个用例：admin 分类仓库真实 UI 停用分类：
+ *   a. 复用第 11 用例保存的正整数 categoryId（先断言 >0）；真实 admin MFA loginAs → /admin →
+ *      点击「目录治理」前先监听精确 GET /api/admin/product-categories（page=1&pageSize=10、
+ *      status 缺失/空），从 unknown 严格读 total/page/pageSize 计算 totalPages；
+ *   b. admin-category-pagination「下一页」真实逐页走到末页（每次点击前监听精确对应 page GET、
+ *      status 200、页参数精确，并用 UI 页码断言同步）后，定位 category-row-<id> 为 active
+ *      （上一用例已编辑的 code/label_edit 仍在末页，sortOrder=1_000_000 保证落末页）；
+ *   c. 第一次点 category-deactivate-<id>：断言 ConfirmDialog 标题「停用分类」+ 提示
+ *      「历史已发布商品仍可显示该分类，但新商品首次发布不能使用」，点「取消」关闭并证明
+ *      零 deactivate POST（page request 精确计数，禁 sleep）；
+ *   d. 第二次点 category-deactivate-<id>：点击 dialog 内精确「停用」按钮前同时监听精确
+ *      POST /api/admin/product-categories/<id>/deactivate 与末页列表 refresh GET；断言
+ *      POST 200、请求体过现有 isEmptyMutationPayload、响应过严格 parseCategoryAdminDto 且
+ *      status=inactive、id/code 不变；refresh GET status 200 且 page=末页、pageSize=10；
+ *   e. toast「分类已停用；历史商品仍可读取」+ dialog 关闭（禁止 page.reload）；同一行
+ *      data-status=inactive、inactive-historical-label 文案「历史分类（已发布商品仍显示，
+ *      不可用于新商品首次发布）」、category-deactivate-<id> 消失、category-activate-<id>
+ *      出现；deactivate POST 总计 1。
  */
 
 /** 唯一申请名称（每次运行不同，避免 pending duplicate 撞车）。 */
@@ -490,6 +509,30 @@ function readCategoryListPageInfo(body: unknown): { total: number; page: number;
 }
 
 /**
+ * 精确分类列表 GET 谓词（禁止 any）：参数 (status: 'active'|'inactive'|'', page)。
+ * 精确匹配 pathname=/api/admin/product-categories、GET、page=page、pageSize=10（与
+ * AdminCategoryManager 的 PAGE_SIZE=10 一致）；status 为空字符串时接受缺失或空 status
+ * 参数（axios 省略 undefined 的行为），非空时必须是精确值。
+ */
+function isCategoryRepositoryListPageFiltered(
+  status: 'active' | 'inactive' | '',
+  page: number,
+): (response: { url(): string; request(): { method(): string } }) => boolean {
+  return (response) => {
+    const url = new URL(response.url())
+    if (url.pathname !== '/api/admin/product-categories') return false
+    if (response.request().method() !== 'GET') return false
+    if (url.searchParams.get('page') !== String(page)) return false
+    if (url.searchParams.get('pageSize') !== '10') return false
+    if (status === '') {
+      const queryStatus = url.searchParams.get('status')
+      return queryStatus === null || queryStatus === ''
+    }
+    return url.searchParams.get('status') === status
+  }
+}
+
+/**
  * 精确匹配某页的分类仓库列表 GET（status 缺失/空、page=page、pageSize=10，与
  * AdminCategoryManager 的 PAGE_SIZE=10 及 axios 省略 status 的行为一致）。返回类型
  * 守卫谓词供 waitForResponse 逐页监听使用（禁止 any）。
@@ -497,17 +540,7 @@ function readCategoryListPageInfo(body: unknown): { total: number; page: number;
 function isCategoryRepositoryListPage(
   page: number,
 ): (response: { url(): string; request(): { method(): string } }) => boolean {
-  return (response) => {
-    const url = new URL(response.url())
-    if (url.pathname !== '/api/admin/product-categories') return false
-    if (response.request().method() !== 'GET') return false
-    const status = url.searchParams.get('status')
-    return (
-      (status === null || status === '')
-      && url.searchParams.get('page') === String(page)
-      && url.searchParams.get('pageSize') === '10'
-    )
-  }
+  return isCategoryRepositoryListPageFiltered('', page)
 }
 
 /**
@@ -696,7 +729,7 @@ function isIsoTimestamp(value: unknown): value is string {
 /**
  * 从 admin 分类仓库 create/update 响应 unknown JSON 严格解析 CategoryAdminDto（类型
  * 守卫，禁止 any/as any）：响应键必须命中冻结 allowlist（任何额外键拒绝，且显式点名
- * relations/secrets）；id/createdByUserId/updatedByUserId 必须正整数、status 必须 active、
+ * relations/secrets）；id/createdByUserId/updatedByUserId 必须正整数、status 必须等于 expected.status、
  * 提交字段（code/label/description/iconKey/defaultCoverUrl/sortOrder）精确匹配、
  * normalizedLabel 必须等于 label trim lowercase、createdAt/updatedAt 必须 ISO 时间戳；
  * 任何形状不符直接抛错，绝不静默返回伪造值。
@@ -710,6 +743,7 @@ function parseCategoryAdminDto(
     iconKey: string
     defaultCoverUrl: string
     sortOrder: number
+    status: 'active' | 'inactive'
   },
 ): {
   id: number
@@ -720,7 +754,7 @@ function parseCategoryAdminDto(
   sortOrder: number
   description: string
   defaultCoverUrl: string
-  status: 'active'
+  status: 'active' | 'inactive'
   createdByUserId: number
   updatedByUserId: number
   createdAt: string
@@ -752,7 +786,7 @@ function parseCategoryAdminDto(
   if (typeof body.sortOrder !== 'number' || !Number.isInteger(body.sortOrder) || body.sortOrder !== expected.sortOrder) {
     throw new Error('分类仓库响应 sortOrder 与提交值不匹配')
   }
-  if (body.status !== 'active') throw new Error(`分类仓库响应 status 非 active，实际: ${String(body.status)}`)
+  if (body.status !== expected.status) throw new Error(`分类仓库响应 status 非 ${expected.status}，实际: ${String(body.status)}`)
   if (!isPositiveInteger(body.createdByUserId)) throw new Error('分类仓库响应缺少正整数 createdByUserId')
   if (!isPositiveInteger(body.updatedByUserId)) throw new Error('分类仓库响应缺少正整数 updatedByUserId')
   if (!isIsoTimestamp(body.createdAt)) throw new Error('分类仓库响应 createdAt 非 ISO 时间戳')
@@ -842,6 +876,17 @@ function readUpdateCategoryPayload(
     defaultCoverUrl: body.defaultCoverUrl,
     sortOrder: body.sortOrder,
   }
+}
+
+/**
+ * unknown 请求 body 空 payload 守卫（禁止 any/as any）：接受 undefined/null 或空 record；
+ * 拒绝数组与任何非空键（任何非 object 或含键的对象一律 false）。
+ */
+function isEmptyMutationPayload(body: unknown): boolean {
+  if (body === undefined || body === null) return true
+  if (Array.isArray(body)) return false
+  if (typeof body !== 'object') return false
+  return Object.keys(body).length === 0
 }
 
 test.describe.serial('PAR-CMI-002 catalog category governance merchant flow', () => {
@@ -1720,6 +1765,7 @@ test.describe.serial('PAR-CMI-002 catalog category governance merchant flow', ()
       iconKey: ADMIN_CATEGORY_ICON,
       defaultCoverUrl: ADMIN_CATEGORY_COVER,
       sortOrder: ADMIN_CATEGORY_SORT,
+      status: 'active',
     })
     categoryId = created.id
     expect(categoryId).toBeGreaterThan(0)
@@ -1822,6 +1868,7 @@ test.describe.serial('PAR-CMI-002 catalog category governance merchant flow', ()
       iconKey: ADMIN_CATEGORY_ICON_EDIT,
       defaultCoverUrl: ADMIN_CATEGORY_COVER_EDIT,
       sortOrder: ADMIN_CATEGORY_SORT_EDIT,
+      status: 'active',
     })
     expect(updated.id).toBe(categoryId)
     expect(updated.code).toBe(ADMIN_CATEGORY_CODE)
@@ -1863,5 +1910,139 @@ test.describe.serial('PAR-CMI-002 catalog category governance merchant flow', ()
       `编辑分类 ${ADMIN_CATEGORY_LABEL_EDIT}`,
     )
     expect(createRequests).toHaveLength(1)
+  })
+  test('admin deactivates the repository category via the real UI', async ({ page }) => {
+    // 串行依赖：第 11 个 create/edit 用例必须已保存正整数 categoryId（复用其编辑后的
+    // ADMIN_CATEGORY_CODE / ADMIN_CATEGORY_*_EDIT 常量，且该分类当前仍为 active）。
+    expect(categoryId).toBeGreaterThan(0)
+
+    // 真实 admin MFA 登录（loginAs admin 走 seed TOTP 验证）→ /admin。
+    await loginAs(page, SEED_ACCOUNTS.admin)
+    await page.goto('/admin')
+
+    // 点击「目录治理」前先监听分类仓库列表初始 GET：精确 /api/admin/product-categories、
+    // GET、page=1&pageSize=10、status 缺失/空（复用 isCategoryRepositoryListPage）。
+    const initialCategoriesResponse = page.waitForResponse(isCategoryRepositoryListPage(1))
+    await page.getByRole('button', { name: '目录治理' }).click()
+    await expect(page.getByTestId('admin-category-manager')).toBeVisible({ timeout: 10_000 })
+
+    // 从 unknown 严格解析 total/page/pageSize，计算 totalPages（真实 read network，禁止 any）。
+    const initialCategoriesResult = await initialCategoriesResponse
+    expect(initialCategoriesResult.status()).toBe(200)
+    const initialBody: unknown = await initialCategoriesResult.json()
+    const initialPageInfo = readCategoryListPageInfo(initialBody)
+    expect(initialPageInfo.page).toBe(1)
+    expect(initialPageInfo.pageSize).toBe(10)
+    const totalPages = Math.max(1, Math.ceil(initialPageInfo.total / initialPageInfo.pageSize))
+
+    // 默认 category filter = 全部（admin-category-status-filter value ''）。
+    await expect(page.getByTestId('admin-category-status-filter')).toHaveValue('')
+
+    // 用 admin-category-pagination「下一页」真实逐页走到末页；每次点击前监听精确对应 page
+    // GET、status 200、页参数精确，并用 UI 页码断言同步（杜绝响应到达而 DOM 未更新竞态）。
+    const categoryPagination = page.getByTestId('admin-category-pagination')
+    await expect(categoryPagination).toContainText(`第 1 /`)
+    for (let targetPage = 2; targetPage <= totalPages; targetPage++) {
+      const pageResponse = page.waitForResponse(isCategoryRepositoryListPage(targetPage))
+      await categoryPagination.getByRole('button', { name: '下一页' }).click()
+      const pageResult = await pageResponse
+      expect(pageResult.status()).toBe(200)
+      const pageBody: unknown = await pageResult.json()
+      const pageInfo = readCategoryListPageInfo(pageBody)
+      expect(pageInfo.page).toBe(targetPage)
+      expect(pageInfo.pageSize).toBe(10)
+      await expect(categoryPagination).toContainText(`第 ${targetPage} /`)
+    }
+
+    // 定位上一用例已编辑且 active 的行（末页；sortOrder=1_000_000 保证落在末页）。
+    const row = page.getByTestId(`category-row-${categoryId}`)
+    await expect(row).toBeVisible({ timeout: 10_000 })
+    await expect(row).toHaveAttribute('data-status', 'active')
+    await expect(row).toContainText(ADMIN_CATEGORY_CODE)
+    await expect(row).toContainText(ADMIN_CATEGORY_LABEL_EDIT)
+
+    // 从第一次点停用起统计精确 deactivate POST（禁 sleep：page request 事件精确计数）。
+    const deactivateRequests: string[] = []
+    page.on('request', (request) => {
+      if (request.method() !== 'POST') return
+      const url = new URL(request.url())
+      if (url.pathname === `/api/admin/product-categories/${categoryId}/deactivate`) {
+        deactivateRequests.push(request.url())
+      }
+    })
+
+    // ── 第一次点停用：断言 ConfirmDialog 标题「停用分类」+ 历史已发布商品仍可显示的提示，
+    //    点「取消」关闭并证明零 deactivate POST（列表不刷新、行仍 active）。
+    const deactivateButton = page.getByTestId(`category-deactivate-${categoryId}`)
+    await expect(deactivateButton).toBeVisible()
+    await deactivateButton.click()
+    const confirmDialog = page.getByRole('dialog')
+    await expect(confirmDialog).toBeVisible({ timeout: 10_000 })
+    await expect(confirmDialog).toContainText('停用分类')
+    await expect(confirmDialog).toContainText('历史已发布商品仍可显示该分类，但新商品首次发布不能使用')
+    await confirmDialog.getByRole('button', { name: '取消', exact: true }).click()
+    await expect(confirmDialog).toHaveCount(0)
+    await expect(row).toHaveAttribute('data-status', 'active')
+    expect(deactivateRequests).toHaveLength(0)
+
+    // ── 第二次点停用：点击 dialog 内精确「停用」按钮前，同时监听精确 deactivate POST 与
+    //    末页列表 refresh GET（成功后 refreshCategories 停在当前末页）。
+    await page.getByTestId(`category-deactivate-${categoryId}`).click()
+    await expect(confirmDialog).toBeVisible({ timeout: 10_000 })
+    const deactivateResponse = page.waitForResponse((response) =>
+      new URL(response.url()).pathname === `/api/admin/product-categories/${categoryId}/deactivate`
+      && response.request().method() === 'POST'
+    )
+    const refreshResponse = page.waitForResponse(isCategoryRepositoryListPage(totalPages))
+    await confirmDialog.getByRole('button', { name: '停用', exact: true }).click()
+    const deactivateResult = await deactivateResponse
+
+    // 真实契约（server categoryAdminRoutes.test.ts）：POST deactivate → 200。
+    expect(deactivateResult.status()).toBe(200)
+
+    // 请求体通过现有 isEmptyMutationPayload（停用为无 body 变更；无 any/as any）。
+    const deactivateRequestBody: unknown = deactivateResult.request().postDataJSON()
+    expect(isEmptyMutationPayload(deactivateRequestBody)).toBe(true)
+
+    // 响应通过现有严格 parseCategoryAdminDto：status=inactive、id/code 不变、编辑后字段精确。
+    const deactivateBody: unknown = await deactivateResult.json()
+    const deactivated = parseCategoryAdminDto(deactivateBody, {
+      code: ADMIN_CATEGORY_CODE,
+      label: ADMIN_CATEGORY_LABEL_EDIT,
+      description: ADMIN_CATEGORY_DESCRIPTION_EDIT,
+      iconKey: ADMIN_CATEGORY_ICON_EDIT,
+      defaultCoverUrl: ADMIN_CATEGORY_COVER_EDIT,
+      sortOrder: ADMIN_CATEGORY_SORT_EDIT,
+      status: 'inactive',
+    })
+    expect(deactivated.id).toBe(categoryId)
+    expect(deactivated.code).toBe(ADMIN_CATEGORY_CODE)
+    expect(deactivated.status).toBe('inactive')
+
+    // 末页列表 refresh GET：status 200、page=末页、pageSize=10（参数精确）。
+    const refreshResult = await refreshResponse
+    expect(refreshResult.status()).toBe(200)
+    const refreshBody: unknown = await refreshResult.json()
+    const refreshPageInfo = readCategoryListPageInfo(refreshBody)
+    expect(refreshPageInfo.page).toBe(totalPages)
+    expect(refreshPageInfo.pageSize).toBe(10)
+
+    // toast「分类已停用；历史商品仍可读取」+ dialog 关闭（Radix unmount 后 role=dialog 消失）。
+    await expect(
+      page.locator('[data-toast-card]', { hasText: '分类已停用；历史商品仍可读取' }),
+    ).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+
+    // 列表自行刷新（禁止 page.reload）：同一行 data-status=inactive、
+    // inactive-historical-label 文案精确、停用按钮消失、启用按钮出现。
+    await expect(row).toHaveAttribute('data-status', 'inactive', { timeout: 10_000 })
+    await expect(row.getByTestId('inactive-historical-label')).toHaveText(
+      '历史分类（已发布商品仍显示，不可用于新商品首次发布）',
+    )
+    await expect(page.getByTestId(`category-deactivate-${categoryId}`)).toHaveCount(0)
+    await expect(page.getByTestId(`category-activate-${categoryId}`)).toBeVisible()
+
+    // 全程仅发出一次该 id 的 deactivate 请求（取消那次未发出任何请求）。
+    expect(deactivateRequests).toHaveLength(1)
   })
 })
