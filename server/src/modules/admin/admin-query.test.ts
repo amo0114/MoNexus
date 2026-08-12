@@ -426,3 +426,23 @@ describe('seed.ts no longer creates fake reviews', () => {
     expect(source).not.toContain('prisma.review')
   })
 })
+
+describe('seed.ts no longer sets legacy Product.isHot = true', () => {
+  it('should not write isHot:true and should provide isHot:false cleanup for demo products', async () => {
+    const seedPath = fileURLToPath(new URL('../../prisma/seed.ts', import.meta.url))
+    const source = await readFile(seedPath, 'utf8')
+
+    // 语义：seed 管理的 demo 产品（平台 + 商家）不得再写入 legacy Product.isHot=true。
+    // 遗留 true 会让重复 seed 后公开 merchandising computed hot 仍命中这些 demo 商品。
+    expect(source).not.toContain('isHot: true')
+
+    // 语义：重复 seed 必须能把已存在的 demo 商品 isHot 归 false（幂等 cleanup）。
+    // 至少两条显式 false 写入：平台 products 的 upsert update 与商家产品的 update 路径。
+    // 用正则计数而非整段格式匹配，避免测试脆弱。
+    const falseWrites = (source.match(/isHot:\s*false/g) ?? []).length
+    expect(falseWrites).toBeGreaterThanOrEqual(2)
+
+    // 语义：平台 products 的 upsert 不得再保留空的 update:{}（那会让历史 demo true 留存）。
+    expect(source).not.toMatch(/update:\s*\{\s*\}/)
+  })
+})

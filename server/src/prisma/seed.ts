@@ -150,7 +150,7 @@ async function main() {
       imageUrl: 'https://images.unsplash.com/photo-1544197150-b99a580bb7a8?auto=format&fit=crop&q=80&w=800',
       price: 800,
       originalPrice: 1000,
-      isHot: true,
+      isHot: false,
       inventoryItems: [
         'https://api.moyuan.net/sub/abc123def456',
         'https://api.moyuan.net/sub/ghi789jkl012',
@@ -167,7 +167,7 @@ async function main() {
       icon: 'message-square',
       imageUrl: 'https://images.unsplash.com/photo-1677442136019-21780ecad995?auto=format&fit=crop&q=80&w=800',
       price: 1500,
-      isHot: true,
+      isHot: false,
       inventoryItems: [
         '账号: gpt_share_01@163.com\n密码: Pw83721',
         '账号: gpt_share_02@163.com\n密码: Pw49253',
@@ -196,7 +196,7 @@ async function main() {
       icon: 'smartphone',
       imageUrl: 'https://images.unsplash.com/photo-1611186871348-b1ce696e52c9?auto=format&fit=crop&q=80&w=800',
       price: 300,
-      isHot: true,
+      isHot: false,
       inventoryItems: [
         'apple_us_001@icloud.com----Ap2026!x1----颜色?蓝色----宠物?猫咪----城市?纽约----1990-01-15',
         'apple_us_002@icloud.com----Ap2026!x2----颜色?红色----宠物?狗狗----城市?洛杉矶----1992-05-20',
@@ -216,7 +216,7 @@ async function main() {
     )
     const product = await prisma.product.upsert({
       where: { id: products.indexOf(p) + 1 },
-      update: {},
+      update: { isHot: false }, // 幂等 cleanup：重复 seed 将 seed 管理的 demo 产品 isHot 归 false
       create: {
         ...productData,
         categoryId,
@@ -277,7 +277,7 @@ async function main() {
           imageUrl: 'https://images.unsplash.com/photo-1558494949-ef010cbdcc31?auto=format&fit=crop&q=80&w=800',
           price: 600,
           originalPrice: 800,
-          isHot: true,
+          isHot: false,
           status: 'active',
           merchantId: merchant.id,
         },
@@ -295,7 +295,7 @@ async function main() {
           originalPrice: 800,
           stock: merchantInventoryItems.length,
           sales: 0,
-          isHot: true,
+          isHot: false,
           status: 'active',
           merchantId: merchant.id,
         },
