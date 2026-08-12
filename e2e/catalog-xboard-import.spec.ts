@@ -1631,7 +1631,7 @@ test.describe.serial('Catalog Xboard import', () => {
       const productsResponsePromise = page.waitForResponse(isAdminProductsResponse);
       await page.getByTestId('admin-faka-import-submit').click({ clickCount: 2 });
       const importResponse = await importResponsePromise;
-      expect(importResponse.status()).toBe(200);
+      expect(importResponse.status()).toBe(201);
       expect(confirmRequestCount).toBe(1);
 
       const confirmRequestBody: unknown = importResponse.request().postDataJSON();
