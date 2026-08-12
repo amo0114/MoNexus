@@ -12,6 +12,7 @@
     "check:nginx": "bash scripts/check-nginx-config.sh",
     "verify:local": "bash scripts/verify-local.sh",
     "verify:local:no-e2e": "RUN_E2E=false bash scripts/verify-local.sh",
+    "verify:quick": "bash scripts/verify-quick.sh",
     "verify:m3-identity-security-hardening": "bash scripts/verify-m3-identity-security-hardening.sh",
     "verify:compose-production-deploy": "bash scripts/verify-compose-production-deploy.sh",
     "prod:env": "bash scripts/check-prod-env.sh",
@@ -30,6 +31,8 @@
     "prebuild": "npm run check:runtime",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "e2e": "playwright test",
     "e2e:legal": "playwright test --config playwright.legal-pages.config.ts",
     "e2e:ui": "playwright test --ui",
@@ -60,6 +63,7 @@
     "postcss": "^8.4.47",
     "tailwindcss": "^3.4.14",
     "typescript": "~5.6.2",
-    "vite": "^6.0.0"
+    "vite": "^6.0.0",
+    "vitest": "^4.1.10"
   }
 }
