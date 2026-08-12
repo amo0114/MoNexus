@@ -2,13 +2,17 @@
 /**
  * Xboard local catalog fixture server (narrow card PAR-CMI-001 fixture).
  *
- * Loopback-only fixture that mimics the Xboard (FakaBridge) `/plan-catalog`
- * contract so the business catalog import / sanitizer E2E has a deterministic,
- * secret-safe local source. Built only on Node20 built-ins (`node:http`,
- * `node:crypto`, `node:url`). No new dependencies.
+ * Loopback-only fixture that mimics the Xboard (FakaBridge) provider
+ * contracts — read-only `GET /plan-catalog` and `GET /plan-capacity` — so the
+ * business catalog import / sanitizer E2E and MoNexus capacity precheck have
+ * deterministic, secret-safe local sources. Built only on Node20 built-ins
+ * (`node:http`, `node:crypto`, `node:url`). No new dependencies.
  *
  * Signing contract (mirrors server/src/lib/fakaBridge/sign.ts):
- *   HMAC-SHA256(secret, `paid_at=<value>`) → 64 lowercase hex `sign`.
+ *   `/plan-catalog`   HMAC-SHA256(secret, `paid_at=<value>`)
+ *   `/plan-capacity`  HMAC-SHA256(secret, `paid_at=<unix>&sku=<sku>`)
+ *                     (sku + paid_at canonicalized by key, lexicographic)
+ * both → 64 lowercase hex `sign`.
  *
  * The module never auto-starts on import; it only starts when executed
  * directly as the main module (guarded via `import.meta.url`), and always
@@ -58,6 +62,11 @@ export const MAX_FIXTURE_BODY_BYTES = 4096
 
 /** Upper bound for a "reasonable" unix-seconds `paid_at` (2100-01-01T00:00:00Z). */
 const MAX_UNIX_SECONDS = 4102444800
+
+/** Upper bound for a "reasonable" `sku` length (covers gold/basic aliases). */
+const MAX_SKU_LENGTH = 64
+/** Allowed sku chars after normalization: lowercase alnum, `-`, `_`. */
+const SKU_PATTERN = /^[a-z0-9][a-z0-9_-]*$/
 
 const ERROR_CATALOG_UNAVAILABLE = 'fixture catalog unavailable'
 
@@ -172,6 +181,11 @@ function createFixtureState() {
             p.period === 'yearly'
               ? { ...p, price: 33000, sku_alias: 'gold-yearly-v2' }
               : p
+          ),
+          // Keep named_skus consistent with the flipped period alias so the
+          // capacity lookup sees only the live sku (old gold-yearly → 404).
+          named_skus: plan.named_skus.map(n =>
+            n.period === 'yearly' ? { ...n, sku: 'gold-yearly-v2' } : n
           ),
         }
       })
@@ -349,6 +363,30 @@ function isPlainDigits(value) {
 }
 
 /**
+ * Canonicalize a requested sku exactly like the production client
+ * (server/src/lib/fakaBridge/client.ts): trim + lowercase.
+ * @param {unknown} value
+ * @returns {string}
+ */
+function normalizeSku(value) {
+  return String(value).trim().toLowerCase()
+}
+
+/**
+ * `sku` must be a non-empty, reasonably short lowercase alnum/`-`/`_` string
+ * (compatible with gold-monthly / gold-yearly / basic-* aliases).
+ * @param {unknown} value
+ */
+function isValidSku(value) {
+  return (
+    typeof value === 'string' &&
+    value.length > 0 &&
+    value.length <= MAX_SKU_LENGTH &&
+    SKU_PATTERN.test(value)
+  )
+}
+
+/**
  * `paid_at` must be a reasonable unix-seconds value (decimal digits, no sign,
  * bounded to [0, 2100-01-01]).
  * @param {unknown} value
@@ -365,23 +403,38 @@ function isValidHexSign(value) {
 }
 
 /**
- * Constant-time HMAC verification of `sign` against `paid_at` (contract:
- * payload is the literal string `paid_at=<value>`).
- * @param {string} paidAt
+ * Constant-time HMAC verification of `sign` against a canonical payload.
+ * Mirrors server/src/lib/fakaBridge/sign.ts: strict 64-lowercase-hex sign,
+ * HMAC-SHA256(secret, payload) compared with timingSafeEqual (never echoes
+ * the secret or the sign).
+ * @param {string} payload
  * @param {string} sign
  * @param {string} secret
  */
-function signatureValid(paidAt, sign, secret) {
+function hmacMatches(payload, sign, secret) {
   // Strict 64-lowercase-hex validation before decoding — never treat the sign
   // as a raw utf8 string here, or the decoded bytes won't match the 32-byte
   // digest and every valid signature would fail. Decode as hex so the byte
   // length matches the SHA-256 digest for the constant-time compare.
   if (!isValidHexSign(sign)) return false
   const expected = createHmac('sha256', secret)
-    .update(`paid_at=${paidAt}`, 'utf8')
+    .update(payload, 'utf8')
     .digest()
   const provided = Buffer.from(sign, 'hex')
   return provided.length === expected.length && timingSafeEqual(provided, expected)
+}
+
+/** `/plan-catalog` payload is the literal string `paid_at=<value>`. */
+function signatureValid(paidAt, sign, secret) {
+  return hmacMatches(`paid_at=${paidAt}`, sign, secret)
+}
+
+/**
+ * `/plan-capacity` payload is the lexicographic-canonical `paid_at=<unix>&sku=<sku>`
+ * (sku is already normalized — matches how the production client signs).
+ */
+function capacitySignatureValid(sku, paidAt, sign, secret) {
+  return hmacMatches(`paid_at=${paidAt}&sku=${sku}`, sign, secret)
 }
 
 /**
@@ -517,6 +570,11 @@ async function handleRequest(server, state, host, secret, req, res) {
       return await handlePlanCatalog(state, secret, req, res, url)
     }
 
+    if (url.pathname === '/plan-capacity') {
+      if (method !== 'GET') return methodNotAllowed(res, 'GET')
+      return await handlePlanCapacity(state, secret, req, res, url)
+    }
+
     if (url.pathname.startsWith('/__fixture/')) {
       return await handleFixtureEndpoint(state, req, res, url)
     }
@@ -579,6 +637,113 @@ async function handlePlanCatalog(state, secret, req, res, url) {
     success: true,
     plans,
   })
+}
+
+/**
+ * Resolve a normalized sku to a plan + period from the *current* catalog.
+ * `periods[].sku_alias` is the live sellable alias and takes precedence over
+ * `named_skus[]` (which the mutate control keeps consistent). Returns null for
+ * unknown skus — the caller turns that into a 404 (never leaks catalog
+ * content).
+ * @param {CatalogPlan[]} catalog
+ * @param {string} sku
+ * @returns {{ plan: CatalogPlan, period: string } | null}
+ */
+function lookupPlanCapacity(catalog, sku) {
+  for (const plan of catalog) {
+    const period = plan.periods.find(p => p.sku_alias === sku)
+    if (period) return { plan, period: period.period }
+  }
+  for (const plan of catalog) {
+    const named = plan.named_skus.find(n => n.sku === sku)
+    if (named) return { plan, period: named.period }
+  }
+  return null
+}
+
+/**
+ * Build the read-only capacity snapshot for a matched plan/period.
+ * @param {{ plan: CatalogPlan, period: string }} hit
+ * @param {string} sku normalized sku echoed back
+ * @returns {Record<string, unknown>}
+ */
+function buildPlanCapacityResponse(hit, sku) {
+  const { plan, period } = hit
+  const sellable = plan.sell && plan.show && (plan.remaining === null || plan.remaining > 0)
+  return {
+    success: true,
+    sku,
+    plan_id: plan.plan_id,
+    period,
+    capacity_limit: plan.capacity_limit,
+    active_users: plan.active_users,
+    remaining: plan.remaining,
+    sellable,
+    show: plan.show,
+    sell: plan.sell,
+  }
+}
+
+/**
+ * Read-only `GET /plan-capacity` — signed capacity precheck used by MoNexus
+ * callFakaPlanCapacity. Strict query allowlist (sku, paid_at, sign), HMAC
+ * verified against `paid_at=<unix>&sku=<sku>`, then resolves the sku against
+ * the current catalog.
+ * @param {ReturnType<typeof createFixtureState>} state
+ * @param {string} secret
+ * @param {IncomingMessage} req
+ * @param {ServerResponse} res
+ * @param {URL} url
+ */
+async function handlePlanCapacity(state, secret, req, res, url) {
+  // Strict key allowlist — only sku/paid_at/sign, nothing else.
+  for (const key of url.searchParams.keys()) {
+    if (key !== 'sku' && key !== 'paid_at' && key !== 'sign') {
+      throw new HttpRespond(400, { success: false, error: 'unexpected query parameter' })
+    }
+  }
+  // Reject missing / duplicate keys.
+  for (const key of ['sku', 'paid_at', 'sign']) {
+    if (!url.searchParams.has(key)) {
+      throw new HttpRespond(400, { success: false, error: `missing query parameter: ${key}` })
+    }
+    if (url.searchParams.getAll(key).length > 1) {
+      throw new HttpRespond(400, { success: false, error: `duplicate query parameter: ${key}` })
+    }
+  }
+
+  const sku = normalizeSku(url.searchParams.get('sku'))
+  if (!isValidSku(sku)) {
+    throw new HttpRespond(400, {
+      success: false,
+      error: 'invalid sku: expected non-empty lowercase alnum/-/_ up to 64 chars',
+    })
+  }
+  const paidAt = url.searchParams.get('paid_at')
+  if (!isValidUnixSeconds(paidAt)) {
+    throw new HttpRespond(400, { success: false, error: 'invalid paid_at: expected unix seconds' })
+  }
+  const sign = url.searchParams.get('sign')
+  if (!isValidHexSign(sign)) {
+    throw new HttpRespond(400, { success: false, error: 'invalid sign: expected 64 lowercase hex chars' })
+  }
+  if (!capacitySignatureValid(sku, paidAt, sign, secret)) {
+    throw new HttpRespond(400, { success: false, error: 'invalid signature' })
+  }
+  if (!acceptsJson(req.headers.accept)) {
+    throw new HttpRespond(400, { success: false, error: 'unsupported Accept: expected application/json' })
+  }
+
+  if (state.consumeCatalogFail()) {
+    return sendJson(res, 503, { success: false, error: ERROR_CATALOG_UNAVAILABLE })
+  }
+
+  const hit = lookupPlanCapacity(state.getCatalog(), sku)
+  if (!hit) {
+    // Unknown sku: generic 404, never echoes catalog content or the secret.
+    return sendJson(res, 404, { success: false, error: 'sku not found' })
+  }
+  return sendJson(res, 200, buildPlanCapacityResponse(hit, sku))
 }
 
 /**

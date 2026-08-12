@@ -14,9 +14,22 @@ import { createFixtureServer, MAX_FIXTURE_BODY_BYTES } from './xboard-fixture-se
 
 const TEST_SECRET = 'unit-test-fixture-secret'
 
-/** Independent implementation of the server-side signing contract. */
+/** Independent implementation of the server-side `/plan-catalog` signing contract. */
 function signPaidAt(paidAt, secret) {
   return createHmac('sha256', secret).update(`paid_at=${paidAt}`, 'utf8').digest('hex')
+}
+
+/**
+ * Independent implementation of the `/plan-capacity` signing contract (do not
+ * import the production sign). Payload is the lexicographic-canonical
+ * `paid_at=<unix>&sku=<sku>`; sku is normalized trim+lowercase like the
+ * production client.
+ */
+function signPlanCapacity(sku, paidAt, secret) {
+  const skuNorm = sku.trim().toLowerCase()
+  return createHmac('sha256', secret)
+    .update(`paid_at=${paidAt}&sku=${skuNorm}`, 'utf8')
+    .digest('hex')
 }
 
 function parseJson(text) {
@@ -42,7 +55,7 @@ async function request(baseUrl, path, init) {
     `expected application/json on ${path}, got ${contentType}`
   )
   const text = await res.text()
-  return { status: res.status, body: parseJson(text), rawText: text }
+  return { status: res.status, body: parseJson(text), rawText: text, headers: res.headers }
 }
 
 /** Signed plan-catalog GET (returns full request result). */
@@ -50,6 +63,15 @@ function planCatalog(baseUrl, { paidAt, sign, accept }) {
   const headers = {}
   if (accept !== undefined) headers.Accept = accept
   return request(baseUrl, `/plan-catalog?paid_at=${paidAt}&sign=${sign}`, { headers })
+}
+
+/** Signed plan-capacity GET (returns full request result). */
+function planCapacity(baseUrl, { sku, paidAt, sign, accept }) {
+  const headers = {}
+  if (accept !== undefined) headers.Accept = accept
+  return request(baseUrl, `/plan-capacity?sku=${encodeURIComponent(sku)}&paid_at=${paidAt}&sign=${sign}`, {
+    headers,
+  })
 }
 
 /**
@@ -350,6 +372,264 @@ test('fail-catalog: JSON body strict allowlist + body size limit', async () => {
 
     for (const res of [unknown, nonBool, invalid, wrongType, oversized]) {
       assert.equal(typeof res.body.error, 'string')
+      assertNoSecretLeak(res)
+    }
+  })
+})
+
+test('plan-capacity: gold aliases return the exact capacity snapshot with exact keys', async () => {
+  const fixture = await freshFixture()
+  await withFixture(fixture, async () => {
+    const paidAt = String(Math.floor(Date.now() / 1000))
+
+    const goldMonthly = await planCapacity(fixture.baseUrl, {
+      sku: 'gold-monthly',
+      paidAt,
+      sign: signPlanCapacity('gold-monthly', paidAt, TEST_SECRET),
+      accept: 'application/json',
+    })
+    assert.equal(goldMonthly.status, 200)
+    assert.deepEqual(goldMonthly.body, {
+      success: true,
+      sku: 'gold-monthly',
+      plan_id: 77,
+      period: 'monthly',
+      capacity_limit: 200,
+      active_users: 12,
+      remaining: 188,
+      sellable: true,
+      show: true,
+      sell: true,
+    })
+    assert.deepEqual(Object.keys(goldMonthly.body), [
+      'success',
+      'sku',
+      'plan_id',
+      'period',
+      'capacity_limit',
+      'active_users',
+      'remaining',
+      'sellable',
+      'show',
+      'sell',
+    ])
+    assertNoSecretLeak(goldMonthly)
+
+    const goldYearly = await planCapacity(fixture.baseUrl, {
+      sku: 'gold-yearly',
+      paidAt,
+      sign: signPlanCapacity('gold-yearly', paidAt, TEST_SECRET),
+      accept: 'application/json',
+    })
+    assert.equal(goldYearly.status, 200)
+    assert.deepEqual(goldYearly.body, {
+      success: true,
+      sku: 'gold-yearly',
+      plan_id: 77,
+      period: 'yearly',
+      capacity_limit: 200,
+      active_users: 12,
+      remaining: 188,
+      sellable: true,
+      show: true,
+      sell: true,
+    })
+    assertNoSecretLeak(goldYearly)
+  })
+})
+
+test('plan-capacity: basic aliases map to plan 1 with null capacity/remaining and active 0', async () => {
+  const fixture = await freshFixture()
+  await withFixture(fixture, async () => {
+    const paidAt = String(Math.floor(Date.now() / 1000))
+    for (const [sku, period] of [
+      ['basic-monthly', 'monthly'],
+      ['basic-yearly', 'yearly'],
+    ]) {
+      const res = await planCapacity(fixture.baseUrl, {
+        sku,
+        paidAt,
+        sign: signPlanCapacity(sku, paidAt, TEST_SECRET),
+        accept: 'application/json',
+      })
+      assert.equal(res.status, 200, `${sku} resolves`)
+      assert.deepEqual(res.body, {
+        success: true,
+        sku,
+        plan_id: 1,
+        period,
+        capacity_limit: null,
+        active_users: 0,
+        remaining: null,
+        sellable: true,
+        show: true,
+        sell: true,
+      })
+      assertNoSecretLeak(res)
+    }
+  })
+})
+
+test('plan-capacity: wrong/missing/uppercase sign, extra/duplicate query, bad sku/paid_at rejected 400 without leaking', async () => {
+  const fixture = await freshFixture()
+  await withFixture(fixture, async () => {
+    const paidAt = String(Math.floor(Date.now() / 1000))
+    const validSign = signPlanCapacity('gold-monthly', paidAt, TEST_SECRET)
+
+    /** @type {Array<[string, number]>} */
+    const bad = [
+      // wrong sign / missing sign / uppercase hex
+      [`/plan-capacity?sku=gold-monthly&paid_at=${paidAt}&sign=${'0'.repeat(64)}`, 400],
+      [`/plan-capacity?sku=gold-monthly&paid_at=${paidAt}`, 400],
+      [`/plan-capacity?sku=gold-monthly&paid_at=${paidAt}&sign=${'A'.repeat(64)}`, 400],
+      [`/plan-capacity?sku=gold-monthly&paid_at=${paidAt}&sign=${'a'.repeat(63)}`, 400],
+      // extra query parameter / duplicate keys
+      [`/plan-capacity?sku=gold-monthly&paid_at=${paidAt}&sign=${validSign}&foo=bar`, 400],
+      [`/plan-capacity?sku=gold-monthly&sku=gold-monthly&paid_at=${paidAt}&sign=${validSign}`, 400],
+      [`/plan-capacity?sku=gold-monthly&paid_at=${paidAt}&paid_at=${paidAt}&sign=${validSign}`, 400],
+      // missing required key
+      [`/plan-capacity?paid_at=${paidAt}&sign=${validSign}`, 400],
+      [`/plan-capacity?sku=gold-monthly&sign=${validSign}`, 400],
+      // bad sku: empty / invalid chars / too long
+      [`/plan-capacity?sku=&paid_at=${paidAt}&sign=${validSign}`, 400],
+      [`/plan-capacity?sku=gold/monthly&paid_at=${paidAt}&sign=${validSign}`, 400],
+      [`/plan-capacity?sku=bad%20sku&paid_at=${paidAt}&sign=${validSign}`, 400],
+      [`/plan-capacity?sku=${'a'.repeat(65)}&paid_at=${paidAt}&sign=${validSign}`, 400],
+      // bad paid_at
+      [`/plan-capacity?sku=gold-monthly&paid_at=not-a-date&sign=${validSign}`, 400],
+      [`/plan-capacity?sku=gold-monthly&paid_at=-1&sign=${validSign}`, 400],
+      [`/plan-capacity?sku=gold-monthly&paid_at=99999999999&sign=${validSign}`, 400],
+    ]
+
+    for (const [path, expectedStatus] of bad) {
+      const res = await request(fixture.baseUrl, path)
+      assert.equal(res.status, expectedStatus, `expected ${expectedStatus} for ${path}`)
+      assert.equal(res.body.success, false)
+      assert.equal(typeof res.body.error, 'string')
+      assertNoSecretLeak(res)
+      assert.ok(!res.rawText.includes('Error'), 'no stack/error object leaked')
+    }
+  })
+})
+
+test('plan-capacity: sku is normalized (trim+lowercase) before signing and lookup', async () => {
+  const fixture = await freshFixture()
+  await withFixture(fixture, async () => {
+    const paidAt = String(Math.floor(Date.now() / 1000))
+    // Sign the normalized value exactly as the production client would.
+    const res = await planCapacity(fixture.baseUrl, {
+      sku: ' GOLD-MONTHLY ',
+      paidAt,
+      sign: signPlanCapacity(' GOLD-MONTHLY ', paidAt, TEST_SECRET),
+      accept: 'application/json',
+    })
+    assert.equal(res.status, 200)
+    assert.equal(res.body.sku, 'gold-monthly')
+    assert.equal(res.body.plan_id, 77)
+    assert.equal(res.body.period, 'monthly')
+    assertNoSecretLeak(res)
+  })
+})
+
+test('plan-capacity: unknown sku returns 404 with no catalog content / secret leak', async () => {
+  const fixture = await freshFixture()
+  await withFixture(fixture, async () => {
+    const paidAt = String(Math.floor(Date.now() / 1000))
+    const unknown = 'no-such-sku'
+    const res = await planCapacity(fixture.baseUrl, {
+      sku: unknown,
+      paidAt,
+      sign: signPlanCapacity(unknown, paidAt, TEST_SECRET),
+      accept: 'application/json',
+    })
+    assert.equal(res.status, 404)
+    assert.deepEqual(res.body, { success: false, error: 'sku not found' })
+    assertNoSecretLeak(res)
+    assert.ok(!res.rawText.includes('Gold Plan'), 'no catalog content leaked')
+    assert.ok(!res.rawText.includes('gold-monthly'), 'no sku aliases leaked')
+    assert.ok(!res.rawText.includes('capacity_limit'), 'no catalog fields leaked')
+  })
+})
+
+test('plan-capacity: unsupported Accept rejected with 400 (still JSON + no-store)', async () => {
+  const fixture = await freshFixture()
+  await withFixture(fixture, async () => {
+    const paidAt = String(Math.floor(Date.now() / 1000))
+    const res = await planCapacity(fixture.baseUrl, {
+      sku: 'gold-monthly',
+      paidAt,
+      sign: signPlanCapacity('gold-monthly', paidAt, TEST_SECRET),
+      accept: 'text/html',
+    })
+    assert.equal(res.status, 400)
+    assert.equal(res.body.success, false)
+    assertNoSecretLeak(res)
+  })
+})
+
+test('plan-capacity: mutate-source flips gold-yearly alias; reset restores baseline', async () => {
+  const fixture = await freshFixture()
+  await withFixture(fixture, async () => {
+    const paidAt = String(Math.floor(Date.now() / 1000))
+    const goldYearly = () =>
+      planCapacity(fixture.baseUrl, {
+        sku: 'gold-yearly',
+        paidAt,
+        sign: signPlanCapacity('gold-yearly', paidAt, TEST_SECRET),
+      })
+    const goldYearlyV2 = () =>
+      planCapacity(fixture.baseUrl, {
+        sku: 'gold-yearly-v2',
+        paidAt,
+        sign: signPlanCapacity('gold-yearly-v2', paidAt, TEST_SECRET),
+      })
+
+    // baseline: gold-yearly present, v2 absent
+    assert.equal((await goldYearly()).status, 200)
+    assert.equal((await goldYearlyV2()).status, 404)
+
+    const mutated = await request(fixture.baseUrl, '/__fixture/mutate-source', { method: 'POST' })
+    assert.equal(mutated.status, 200)
+    assertNoSecretLeak(mutated)
+
+    // after mutate: v2 resolves (period yearly, plan 77), old alias 404s
+    const v2 = await goldYearlyV2()
+    assert.equal(v2.status, 200)
+    assert.deepEqual(v2.body, {
+      success: true,
+      sku: 'gold-yearly-v2',
+      plan_id: 77,
+      period: 'yearly',
+      capacity_limit: 200,
+      active_users: 12,
+      remaining: 188,
+      sellable: true,
+      show: true,
+      sell: true,
+    })
+    const stale = await goldYearly()
+    assert.equal(stale.status, 404)
+    assert.deepEqual(stale.body, { success: false, error: 'sku not found' })
+    assertNoSecretLeak(v2)
+    assertNoSecretLeak(stale)
+
+    const reset = await request(fixture.baseUrl, '/__fixture/reset', { method: 'POST' })
+    assert.equal(reset.status, 200)
+
+    // reset restores: gold-yearly back, v2 gone
+    assert.equal((await goldYearly()).status, 200)
+    assert.equal((await goldYearlyV2()).status, 404)
+  })
+})
+
+test('plan-capacity: non-GET methods get 405 with Allow: GET (still JSON + no-store)', async () => {
+  const fixture = await freshFixture()
+  await withFixture(fixture, async () => {
+    for (const method of ['POST', 'PUT', 'DELETE']) {
+      const res = await request(fixture.baseUrl, '/plan-capacity', { method })
+      assert.equal(res.status, 405, `${method} /plan-capacity`)
+      assert.equal(res.headers.get('allow'), 'GET')
+      assert.equal(res.body.success, false)
       assertNoSecretLeak(res)
     }
   })
