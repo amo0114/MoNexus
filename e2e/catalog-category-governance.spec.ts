@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 import { SEED_ACCOUNTS, loginAs } from './helpers'
 
 /**
- * PAR-CMI-002 — Catalog category governance（create + pending duplicate + withdraw）。
+ * PAR-CMI-002 — Catalog category governance（create + pending duplicate + withdraw + admin create_new/map_existing/reject review）。
  *
  * 已覆盖（REQ-CAT-F-008 / D-CAT-10 / AC-CAT-012）：
  * 1. 商家真实登录 → /merchant → 点击「分类申请」→ 面板 category-application-panel 出现；
@@ -74,6 +74,28 @@ import { SEED_ACCOUNTS, loginAs } from './helpers'
  * data-status=approved、resolution「映射现有分类」并含 #approvedCategoryId。
  * 分类仓库 total 以真实 read network 在审核前/审核后各解析一次并严格断言不变，证明
  * map_existing 不新建分类；绝不断言 MAP_REVIEW_CODE 分类存在（它不应被创建）。
+ * reject 数据准备（第 8 个用例，纯 merchant 侧，不做 admin）：独立 loginAs →
+ * /merchant → 分类申请 → 真实表单，填唯一 REJECT_REVIEW_LABEL / 合法 lower-case
+ * REJECT_REVIEW_CODE / ≥20 字 REJECT_REVIEW_DESCRIPTION；点击前监听精确 POST
+ * /api/merchant/category-applications 断言 201；复用 parseApplication(expected) 严格
+ * 解析正整数 rejectReviewApplicationId，label/code/status 精确匹配；请求体精确四
+ * allowlist 且无 merchantId/status；toast 成功 + application-row-<rejectReviewApplicationId>
+ * data-status=pending；绝不 withdraw（供后续 admin reject 审核）。
+ *
+ * admin reject（D-CAT-10 / D-CAT-11 / REQ-CAT-F-008 / CHK-CAT-008）：真实 admin MFA
+ * loginAs → /admin → 「目录治理」→ admin-category-manager；默认 pending 筛选下按
+ * application-row-<rejectReviewApplicationId> 精准定位，点击 application-reject-<id>
+ * 打开 reject review dialog；断言标题「拒绝申请」+ 申请名称；reason 留空点击
+ * review-submit → 必须断言「审核理由不能为空」且 dialog 保持，并用 page request
+ * 计数仅统计精确 pathname+POST 证明未发出该 id 的 reject 请求（计数为 0）；填常量
+ * REJECT_REVIEW_REASON；点击前监听精确 POST /api/admin/category-applications/<id>/reject
+ * 断言 200；严格类型守卫从 unknown JSON 证明 id 相同、status='rejected'、
+ * resolution===null、approvedCategoryId===null、reviewReason 精确，且响应键命中冻结
+ * DTO allowlist（拒绝额外键、点名内部/操作者字段）；请求体类型守卫验证精确一键
+ * { reviewReason }，拒绝任何额外键（含 reviewer/user/admin 操作者 ID）；toast
+ * 「已拒绝该申请」+ dialog 关闭；pending row 消失；切 rejected 回查同 row
+ * data-status=rejected、显示 reviewReason、「已处理」，且不显示 approve/reject
+ * 操作按钮（reject 成功后仅展示结果，不再可操作）。
  *
  * 硬约束：无 mock / 无 DB 直读直写 / 无 page.reload / 无 waitForTimeout /
  * 无 page.route / 无写 API 替代 UI 提交 / 无 any / 无 ts-ignore。
@@ -109,6 +131,15 @@ const MAP_REVIEW_CODE = `e2e-map-review-${Date.now()}-${Math.random().toString(3
 const MAP_REVIEW_DESCRIPTION = '这是为平台管理员 map_existing 审核准备的分类申请描述，用于后续映射到已建分类的端到端验证，长度满足表单校验要求。'
 /** map_existing 审核理由常量（1..500 字、无控制字符；请求与响应 reviewReason 精确断言共用）。 */
 const MAP_REVIEW_REASON = 'E2E 管理员审核：该申请与既有已建分类语义一致，映射到现有分类，不新建分类。'
+/** reject 数据准备：唯一 label（与 LABEL / ADMIN_REVIEW_LABEL / MAP_REVIEW_LABEL 不同避免语义混淆），
+ *  供后续 admin reject 审核把本 pending 拒绝（D-CAT-10 / D-CAT-11）。 */
+const REJECT_REVIEW_LABEL = `E2E拒绝分类-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+/** 合法 lower-case 分类编码（满足 CATEGORY_CODE_PATTERN：小写字母开头、仅小写/数字/-/_）。 */
+const REJECT_REVIEW_CODE = `e2e-reject-review-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+/** ≥20 字的描述（表单校验：description.trim().length >= 20）。 */
+const REJECT_REVIEW_DESCRIPTION = '这是为平台管理员 reject 审核准备的分类申请描述，用于后续管理员拒绝流程的端到端验证，长度满足表单校验要求。'
+/** reject 审核理由常量（1..500 字、无控制字符；请求与响应 reviewReason 精确断言共用）。 */
+const REJECT_REVIEW_REASON = 'E2E 管理员审核：申请信息与平台分类规范不符，予以拒绝。'
 
 /** create 响应解析出的申请 id（正整数）。 */
 let applicationId = 0
@@ -120,6 +151,8 @@ let approvedCategoryId = 0
 
 /** map_existing 数据准备：为后续管理员 map_existing 审核创建的新申请 id（正整数）。 */
 let mapReviewApplicationId = 0
+/** reject 数据准备：为后续 admin reject 审核创建的新申请 id（正整数）。 */
+let rejectReviewApplicationId = 0
 
 /** unknown JSON → 记录（类型守卫）。 */
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -414,6 +447,70 @@ function readApproveMapExistingPayload(
     categoryId: body.categoryId,
     reviewReason: body.reviewReason,
   }
+}
+/**
+ * 从 admin reject 响应 unknown JSON 严格解析拒绝结果（类型守卫，禁止 any/as any）：
+ * id 必须等于提交的 applicationId、status==='rejected'、resolution===null、
+ * approvedCategoryId===null、reviewReason 精确匹配；响应键必须命中冻结 DTO allowlist
+ * （任何额外键拒绝，且显式点名内部/操作者 ID）；任何形状不符直接抛错。
+ */
+function parseRejectedApplication(
+  body: unknown,
+  expected: { id: number; reviewReason: string },
+): {
+  id: number
+  status: 'rejected'
+  resolution: null
+  approvedCategoryId: null
+  reviewReason: string
+} {
+  if (!isRecord(body)) throw new Error('拒绝分类申请响应不是 JSON 对象')
+
+  // 显式点名内部/操作者字段（即使将来误入 allowlist 也单独拒绝，防回归）。
+  const forbiddenKeys = [...CATEGORY_APPLICATION_FORBIDDEN_KEYS].filter((key) => key in body)
+  if (forbiddenKeys.length > 0) {
+    throw new Error(`拒绝分类申请响应泄露内部/操作者字段: ${forbiddenKeys.join(', ')}`)
+  }
+
+  // 冻结 DTO allowlist：任何额外键一律拒绝（merchantId 是合法公开字段，不在禁止之列）。
+  const extraKeys = Object.keys(body).filter((key) => !CATEGORY_APPLICATION_ALLOWED_KEYS.has(key))
+  if (extraKeys.length > 0) {
+    throw new Error(`拒绝分类申请响应含未允许字段: ${extraKeys.join(', ')}`)
+  }
+  if (!isPositiveInteger(body.id) || body.id !== expected.id) {
+    throw new Error(`拒绝分类申请响应 id 非预期，期望 ${expected.id}，实际 ${String(body.id)}`)
+  }
+  if (body.status !== 'rejected') {
+    throw new Error(`拒绝分类申请响应 status 非 rejected，实际 ${String(body.status)}`)
+  }
+  if (body.resolution !== null) {
+    throw new Error(`拒绝分类申请响应 resolution 非 null，实际 ${String(body.resolution)}`)
+  }
+  if (body.approvedCategoryId !== null) {
+    throw new Error(`拒绝分类申请响应 approvedCategoryId 非 null，实际 ${String(body.approvedCategoryId)}`)
+  }
+  if (body.reviewReason !== expected.reviewReason) {
+    throw new Error('拒绝分类申请响应 reviewReason 与提交值不匹配')
+  }
+  return {
+    id: body.id,
+    status: 'rejected',
+    resolution: null,
+    approvedCategoryId: null,
+    reviewReason: body.reviewReason,
+  }
+}
+
+/**
+ * 请求 JSON unknown → reject payload（类型守卫）。必须精确一键 { reviewReason }；
+ * 任何多余键（含 reviewer/user/admin 操作者 ID、resolution、categoryId 等，操作者由
+ * 服务端从 auth 派生）或形状不符直接返回 null。
+ */
+function readRejectPayload(body: unknown): { reviewReason: string } | null {
+  if (!isRecord(body)) return null
+  if (Object.keys(body).length !== 1) return null
+  if (typeof body.reviewReason !== 'string') return null
+  return { reviewReason: body.reviewReason }
 }
 
 test.describe.serial('PAR-CMI-002 catalog category governance merchant flow', () => {
@@ -898,5 +995,156 @@ test.describe.serial('PAR-CMI-002 catalog category governance merchant flow', ()
     await expect(page.getByTestId(`application-resolution-${mapReviewApplicationId}`)).toContainText(`#${approvedCategoryId}`)
 
     // 本卡为 map_existing 审核：不新建分类，故绝不检查 MAP_REVIEW_CODE 分类是否存在。
+  })
+
+  test('prepares a pending application for the later admin reject review (reject prep)', async ({ page }) => {
+    // reject 数据准备：独立登录 + 进入 /merchant 分类申请面板。
+    await loginAs(page, SEED_ACCOUNTS.merchant)
+    await page.goto('/merchant')
+    await page.getByRole('button', { name: '分类申请' }).click()
+    await expect(page.getByTestId('category-application-panel')).toBeVisible({ timeout: 10_000 })
+
+    // 打开真实创建表单，填唯一 REJECT_REVIEW_LABEL / 合法 lower-case REJECT_REVIEW_CODE /
+    // ≥20 字 REJECT_REVIEW_DESCRIPTION + 合法示例商品。
+    await page.getByTestId('merchant-application-create').click()
+    await expect(page.getByTestId('application-form-label')).toBeVisible({ timeout: 10_000 })
+    await page.getByTestId('application-form-label').fill(REJECT_REVIEW_LABEL)
+    await page.getByTestId('application-form-code').fill(REJECT_REVIEW_CODE)
+    await page.getByTestId('application-form-description').fill(REJECT_REVIEW_DESCRIPTION)
+    await page.getByTestId('application-form-example').fill(EXAMPLE_PRODUCTS)
+
+    // 点击真实提交动作前监听精确 pathname + POST。
+    const rejectReviewCreateResponse = page.waitForResponse((response) =>
+      new URL(response.url()).pathname === '/api/merchant/category-applications'
+      && response.request().method() === 'POST'
+    )
+    await page.getByTestId('application-form-submit').click()
+    const rejectReviewCreateResult = await rejectReviewCreateResponse
+
+    // 真实契约（server applicationRoutes.test.ts）：POST create → 201。
+    expect(rejectReviewCreateResult.status()).toBe(201)
+
+    // 严格类型守卫：从 unknown JSON 断言正整数 id、精确 label/code、status=pending，
+    // 保存 rejectReviewApplicationId（禁止 any/as any）。
+    const rejectReviewBody: unknown = await rejectReviewCreateResult.json()
+    const rejectReviewCreated = parseApplication(rejectReviewBody, { label: REJECT_REVIEW_LABEL, code: REJECT_REVIEW_CODE })
+    rejectReviewApplicationId = rejectReviewCreated.id
+    expect(rejectReviewCreated.label).toBe(REJECT_REVIEW_LABEL)
+    expect(rejectReviewCreated.code).toBe(REJECT_REVIEW_CODE)
+    expect(rejectReviewCreated.status).toBe('pending')
+    expect(rejectReviewApplicationId).toBeGreaterThan(0)
+
+    // 请求 JSON：精确四 allowlist 字段，明确无 merchantId/status（复用既有 readCreatePayload，
+    // 未弱化任何断言）。
+    const rejectReviewRequestBody: unknown = rejectReviewCreateResult.request().postDataJSON()
+    expect(readCreatePayload(rejectReviewRequestBody)).toEqual({
+      proposedLabel: REJECT_REVIEW_LABEL,
+      proposedCode: REJECT_REVIEW_CODE,
+      description: REJECT_REVIEW_DESCRIPTION,
+      exampleProducts: EXAMPLE_PRODUCTS,
+    })
+
+    // toast 成功 + 列表行 data-status=pending。
+    await expect(
+      page.locator('[data-toast-card]', { hasText: '分类申请已提交，等待平台审核' }),
+    ).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByTestId(`application-row-${rejectReviewApplicationId}`)).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByTestId(`application-row-${rejectReviewApplicationId}`)).toHaveAttribute('data-status', 'pending')
+
+    // 本卡仅为后续 admin reject 审核准备 pending 数据：绝不 withdraw 该申请。
+  })
+
+  test('admin rejects the prepared application with a required review reason (D-CAT-10/D-CAT-11)', async ({ page }) => {
+    // 串行依赖：第 8 个 pending 数据准备用例必须已保存正整数 rejectReviewApplicationId。
+    expect(rejectReviewApplicationId).toBeGreaterThan(0)
+
+    // 真实 admin MFA 登录（loginAs admin 走 seed TOTP 验证）→ /admin → 「目录治理」。
+    await loginAs(page, SEED_ACCOUNTS.admin)
+    await page.goto('/admin')
+    await page.getByRole('button', { name: '目录治理' }).click()
+    await expect(page.getByTestId('admin-category-manager')).toBeVisible({ timeout: 10_000 })
+
+    // 显式断言状态筛选当前 value = 'pending'（组件默认值，非 UI 猜测），再按
+    // application-row-<id> 精准定位本卡准备的行，断言 pending 后点击
+    // application-reject-<id> 打开 reject 审核 dialog。
+    await expect(page.getByTestId('admin-application-status-filter')).toHaveValue('pending')
+    const row = page.getByTestId(`application-row-${rejectReviewApplicationId}`)
+    await expect(row).toBeVisible({ timeout: 10_000 })
+    await expect(row).toHaveAttribute('data-status', 'pending')
+    await page.getByTestId(`application-reject-${rejectReviewApplicationId}`).click()
+
+    // reject dialog：断言标题「拒绝申请」及申请名称（REJECT_REVIEW_LABEL）。
+    const rejectDialog = page.getByRole('dialog')
+    await expect(rejectDialog).toBeVisible({ timeout: 10_000 })
+    await expect(rejectDialog).toContainText('拒绝申请')
+    await expect(rejectDialog).toContainText(REJECT_REVIEW_LABEL)
+
+    // reason 留空点击 review-submit：必须断言「审核理由不能为空」，dialog 保持，且没有
+    // 发出该 id 的 reject 请求。实现必须稳定（禁止 fixed sleep）：用 page request 事件
+    // 计数/数组，仅统计精确 pathname+POST。
+    const rejectRequests: string[] = []
+    page.on('request', (request) => {
+      if (request.method() !== 'POST') return
+      const url = new URL(request.url())
+      if (url.pathname === `/api/admin/category-applications/${rejectReviewApplicationId}/reject`) {
+        rejectRequests.push(request.url())
+      }
+    })
+    await rejectDialog.getByTestId('review-submit').click()
+    await expect(rejectDialog.getByText('审核理由不能为空', { exact: true })).toBeVisible({ timeout: 10_000 })
+    await expect(rejectDialog).toBeVisible()
+    await expect(rejectDialog.getByTestId('review-reason')).toBeVisible()
+    expect(rejectRequests).toHaveLength(0)
+
+    // 填固定合法 reason（1..500 字、无控制字符）；点击前 waitForResponse 精确 POST reject。
+    await rejectDialog.getByTestId('review-reason').fill(REJECT_REVIEW_REASON)
+    const rejectResponse = page.waitForResponse((response) =>
+      new URL(response.url()).pathname === `/api/admin/category-applications/${rejectReviewApplicationId}/reject`
+      && response.request().method() === 'POST'
+    )
+    await rejectDialog.getByTestId('review-submit').click()
+    const rejectResult = await rejectResponse
+
+    // 真实契约（server applicationAdminRoutes.ts）：POST reject → 200。
+    expect(rejectResult.status()).toBe(200)
+
+    // 严格类型守卫：从 unknown JSON 证明 id 相同、status=rejected、resolution=null、
+    // approvedCategoryId=null、reviewReason 精确，且响应键命中冻结 DTO allowlist
+    // （拒绝任何额外键、显式点名内部/操作者字段）。
+    const rejectBody: unknown = await rejectResult.json()
+    const rejected = parseRejectedApplication(rejectBody, { id: rejectReviewApplicationId, reviewReason: REJECT_REVIEW_REASON })
+    expect(rejected.id).toBe(rejectReviewApplicationId)
+    expect(rejected.status).toBe('rejected')
+    expect(rejected.resolution).toBeNull()
+    expect(rejected.approvedCategoryId).toBeNull()
+    expect(rejected.reviewReason).toBe(REJECT_REVIEW_REASON)
+
+    // 请求 body 类型守卫：精确一键 { reviewReason }，拒绝任何额外键（禁止 any/as any）。
+    const rejectRequestBody: unknown = rejectResult.request().postDataJSON()
+    expect(readRejectPayload(rejectRequestBody)).toEqual({ reviewReason: REJECT_REVIEW_REASON })
+
+    // 全程仅发出一次该 id 的 reject 请求（空理由那次未发出任何请求）。
+    expect(rejectRequests).toHaveLength(1)
+
+    // toast「已拒绝该申请」+ review dialog 关闭（Radix unmount 后 role=dialog 消失）。
+    await expect(
+      page.locator('[data-toast-card]', { hasText: '已拒绝该申请' }),
+    ).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+
+    // 默认 pending 列表自行刷新（禁止 page.reload）：application-row-<id> 消失（已转 rejected）。
+    await expect(page.getByTestId(`application-row-${rejectReviewApplicationId}`)).toHaveCount(0, { timeout: 10_000 })
+
+    // 切 admin-application-status-filter=rejected 回查同 row：data-status=rejected，
+    // 显示 reviewReason、「已处理」，且不显示 approve/reject 操作按钮。
+    await page.getByTestId('admin-application-status-filter').selectOption('rejected')
+    const rejectedRow = page.getByTestId(`application-row-${rejectReviewApplicationId}`)
+    await expect(rejectedRow).toBeVisible({ timeout: 10_000 })
+    await expect(rejectedRow).toHaveAttribute('data-status', 'rejected')
+    await expect(rejectedRow).toContainText(REJECT_REVIEW_REASON)
+    await expect(rejectedRow).toContainText('已处理')
+    await expect(page.getByTestId(`application-approve-new-${rejectReviewApplicationId}`)).toHaveCount(0)
+    await expect(page.getByTestId(`application-approve-map-${rejectReviewApplicationId}`)).toHaveCount(0)
+    await expect(page.getByTestId(`application-reject-${rejectReviewApplicationId}`)).toHaveCount(0)
   })
 })
