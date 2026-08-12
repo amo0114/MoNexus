@@ -1,21 +1,27 @@
 /**
  * e2e/catalog-xboard-import.spec.ts
  *
- * Catalog ↔ XBoard (external import board) integration spec — skeleton.
+ * Catalog ↔ XBoard (external import board) integration spec — happy-path
+ * browser E2E (preview → confirm → admin products list back-check).
  *
- * This file defines the shared guards, fixtures, and response parsers that
- * the catalog xboard import test() cases build on. It deliberately contains
- * no test() blocks and no file I/O: it only exports typed building blocks.
+ * This file defines the shared typed guards, fixtures, and response parsers
+ * that the xboard import test() case builds on, and hosts one real-UI test:
+ * an admin previews and confirms a sanitized Xboard draft, then the refreshed
+ * admin product list is re-verified against a strict typed DTO and the real
+ * DOM table.
  *
- * HTTP response predicates (method + exact pathname):
+ * HTTP response predicates (method + exact pathname; empty search where noted):
  *   - isCatalogResponse        GET  /api/admin/faka/catalog
  *   - isRegistryResponse       GET  /api/config/registry
  *   - isImportPreviewResponse  POST /api/admin/faka/import/preview
  *   - isImportResponse         POST /api/admin/faka/import
+ *   - isAdminProductsResponse  GET  /api/admin/products (empty URL search)
  *
  * Response parsers (strict, reject extra keys, throw clear errors):
  *   - parseFakaCatalogResponse      GET /api/admin/faka/catalog payload
  *   - parseCategoryRegistryResponse GET /api/config/registry payload
+ *   - parseAdminProductsResponse    GET /api/admin/products payload
+ *     (allows extra server keys; every required field is type-validated)
  *
  * XBoard fixture reset:
  *   - resetXboardFixture() POSTs http://127.0.0.1:3106/__fixture/reset
@@ -99,6 +105,16 @@ export const isCatalogResponse = exactResponse('GET', '/api/admin/faka/catalog')
 export const isRegistryResponse = exactResponse('GET', '/api/config/registry');
 export const isImportPreviewResponse = exactResponse('POST', '/api/admin/faka/import/preview');
 export const isImportResponse = exactResponse('POST', '/api/admin/faka/import');
+
+/**
+ * Matches the admin products list response: GET with exact pathname
+ * /api/admin/products and an empty URL search string. The real UI refresh
+ * triggered by onImported() after a successful import sends no query params.
+ */
+export const isAdminProductsResponse = (response: Response): boolean =>
+  response.request().method() === 'GET'
+  && new URL(response.url()).pathname === '/api/admin/products'
+  && new URL(response.url()).search === '';
 
 // ---------------------------------------------------------------------------
 // XBoard fixture reset
@@ -932,6 +948,261 @@ export function parseFakaImportResponse(value: unknown): FakaImportResponse {
     replayed: value.replayed,
   };
 }
+
+// ---------------------------------------------------------------------------
+// Admin products response parser (typed DTO)
+// ---------------------------------------------------------------------------
+
+/**
+ * Asserts that `value` is a plain record containing at least every key in
+ * `required`. Extra keys are allowed — the admin products wire DTO carries
+ * fields this card does not care about; every required field is
+ * type-validated by the caller.
+ */
+function assertHasKeys(
+  value: unknown,
+  required: readonly string[],
+  context: string,
+): asserts value is Record<string, unknown> {
+  if (!isRecord(value)) {
+    const kind =
+      value === null ? 'null' : Array.isArray(value) ? 'an array' : typeof value;
+    throw new Error(`${context}: expected a plain object, got ${kind}`);
+  }
+  const missing = required.filter((key) => !(key in value));
+  if (missing.length > 0) {
+    throw new Error(`${context}: missing [${missing.join(', ')}]`);
+  }
+}
+
+export interface AdminProductCapacityDto {
+  sku: string;
+  planId: number | null;
+  capacityLimit: number | null;
+  activeUsers: number | null;
+  remaining: number | null;
+  sellable: boolean;
+  source: 'xboard' | 'unavailable';
+}
+
+export interface AdminProductOfferDto {
+  id: number;
+  name: string;
+  status: string;
+  isDefault: boolean;
+  price: number;
+  externalIntegration: string | null;
+  externalSku: string | null;
+}
+
+export interface AdminProductDto {
+  id: number;
+  name: string;
+  status: string;
+  categoryId: number;
+  merchantId: number | null;
+  imageUrl: string | null;
+  images: string[];
+  price: number;
+  fakaBridge: boolean;
+  fakaCapacity: AdminProductCapacityDto | null;
+  offers: AdminProductOfferDto[];
+}
+
+/**
+ * Strictly parses a GET /api/admin/products response body (a JSON array).
+ * Server product/offer objects may carry extra keys this card does not care
+ * about, but every required field below is type-guarded:
+ *   - product: id (positive integer, unique), name (non-empty string),
+ *     status (non-empty string), categoryId (positive integer),
+ *     merchantId (positive integer or null), imageUrl (non-empty string or
+ *     null), images (array of non-empty strings), price (positive integer),
+ *     fakaBridge (boolean), fakaCapacity (null or validated snapshot),
+ *     offers (array of validated offers)
+ *   - fakaCapacity (when not null): sku (non-empty string), planId (positive
+ *     integer or null), capacityLimit/activeUsers/remaining (null or
+ *     non-negative integer), sellable (boolean), source ("xboard" |
+ *     "unavailable"). An optional `reason` is ignored.
+ *   - offer: id (positive integer, unique), name (non-empty string), status
+ *     (non-empty string), isDefault (boolean), price (positive integer),
+ *     externalIntegration/externalSku (string or null).
+ * Returns a fully typed minimal DTO.
+ */
+export function parseAdminProductsResponse(value: unknown): AdminProductDto[] {
+  if (!Array.isArray(value)) {
+    throw new Error('Admin products response: expected a JSON array');
+  }
+  const rawProducts: unknown[] = value;
+
+  const parsedProducts: AdminProductDto[] = [];
+  const seenProductIds = new Set<number>();
+
+  for (const product of rawProducts) {
+    assertHasKeys(
+      product,
+      [
+        'id',
+        'name',
+        'status',
+        'categoryId',
+        'merchantId',
+        'imageUrl',
+        'images',
+        'price',
+        'fakaBridge',
+        'fakaCapacity',
+        'offers',
+      ],
+      'Admin products response: product',
+    );
+
+    if (!isPositiveInteger(product.id)) {
+      throw new Error('Admin products response: product.id must be a positive integer');
+    }
+    if (seenProductIds.has(product.id)) {
+      throw new Error(`Admin products response: duplicate product id ${product.id}`);
+    }
+    seenProductIds.add(product.id);
+
+    if (typeof product.name !== 'string' || product.name.length === 0) {
+      throw new Error('Admin products response: product.name must be a non-empty string');
+    }
+    if (typeof product.status !== 'string' || product.status.length === 0) {
+      throw new Error('Admin products response: product.status must be a non-empty string');
+    }
+    if (!isPositiveInteger(product.categoryId)) {
+      throw new Error('Admin products response: product.categoryId must be a positive integer');
+    }
+    if (product.merchantId !== null && !isPositiveInteger(product.merchantId)) {
+      throw new Error('Admin products response: product.merchantId must be a positive integer or null');
+    }
+    if (product.imageUrl !== null && (typeof product.imageUrl !== 'string' || product.imageUrl.length === 0)) {
+      throw new Error('Admin products response: product.imageUrl must be a non-empty string or null');
+    }
+    if (!isPositiveInteger(product.price)) {
+      throw new Error('Admin products response: product.price must be a positive integer');
+    }
+    if (typeof product.fakaBridge !== 'boolean') {
+      throw new Error('Admin products response: product.fakaBridge must be a boolean');
+    }
+
+    if (!Array.isArray(product.images)) {
+      throw new Error('Admin products response: product.images must be an array');
+    }
+    const rawImages: unknown[] = product.images;
+    const images: string[] = [];
+    for (const image of rawImages) {
+      if (typeof image !== 'string' || image.length === 0) {
+        throw new Error('Admin products response: product.images must contain only non-empty strings');
+      }
+      images.push(image);
+    }
+
+    let fakaCapacity: AdminProductCapacityDto | null = null;
+    if (product.fakaCapacity !== null) {
+      assertHasKeys(
+        product.fakaCapacity,
+        ['sku', 'planId', 'capacityLimit', 'activeUsers', 'remaining', 'sellable', 'source'],
+        'Admin products response: product.fakaCapacity',
+      );
+      const capacity = product.fakaCapacity;
+      if (typeof capacity.sku !== 'string' || capacity.sku.length === 0) {
+        throw new Error('Admin products response: fakaCapacity.sku must be a non-empty string');
+      }
+      if (capacity.planId !== null && !isPositiveInteger(capacity.planId)) {
+        throw new Error('Admin products response: fakaCapacity.planId must be a positive integer or null');
+      }
+      if (!isNullableNonNegativeInteger(capacity.capacityLimit)) {
+        throw new Error('Admin products response: fakaCapacity.capacityLimit must be null or a non-negative integer');
+      }
+      if (!isNullableNonNegativeInteger(capacity.activeUsers)) {
+        throw new Error('Admin products response: fakaCapacity.activeUsers must be null or a non-negative integer');
+      }
+      if (!isNullableNonNegativeInteger(capacity.remaining)) {
+        throw new Error('Admin products response: fakaCapacity.remaining must be null or a non-negative integer');
+      }
+      if (typeof capacity.sellable !== 'boolean') {
+        throw new Error('Admin products response: fakaCapacity.sellable must be a boolean');
+      }
+      if (capacity.source !== 'xboard' && capacity.source !== 'unavailable') {
+        throw new Error('Admin products response: fakaCapacity.source must be "xboard" or "unavailable"');
+      }
+      fakaCapacity = {
+        sku: capacity.sku,
+        planId: capacity.planId,
+        capacityLimit: capacity.capacityLimit,
+        activeUsers: capacity.activeUsers,
+        remaining: capacity.remaining,
+        sellable: capacity.sellable,
+        source: capacity.source,
+      };
+    }
+
+    if (!Array.isArray(product.offers)) {
+      throw new Error('Admin products response: product.offers must be an array');
+    }
+    const rawOffers: unknown[] = product.offers;
+    const seenOfferIds = new Set<number>();
+    const offers: AdminProductOfferDto[] = [];
+    for (const offer of rawOffers) {
+      assertHasKeys(
+        offer,
+        ['id', 'name', 'status', 'isDefault', 'price', 'externalIntegration', 'externalSku'],
+        'Admin products response: offers item',
+      );
+      if (!isPositiveInteger(offer.id)) {
+        throw new Error('Admin products response: offers item id must be a positive integer');
+      }
+      if (seenOfferIds.has(offer.id)) {
+        throw new Error(`Admin products response: duplicate offer id ${offer.id}`);
+      }
+      seenOfferIds.add(offer.id);
+      if (typeof offer.name !== 'string' || offer.name.length === 0) {
+        throw new Error('Admin products response: offers item name must be a non-empty string');
+      }
+      if (typeof offer.status !== 'string' || offer.status.length === 0) {
+        throw new Error('Admin products response: offers item status must be a non-empty string');
+      }
+      if (typeof offer.isDefault !== 'boolean') {
+        throw new Error('Admin products response: offers item isDefault must be a boolean');
+      }
+      if (!isPositiveInteger(offer.price)) {
+        throw new Error('Admin products response: offers item price must be a positive integer');
+      }
+      if (offer.externalIntegration !== null && typeof offer.externalIntegration !== 'string') {
+        throw new Error('Admin products response: offers item externalIntegration must be a string or null');
+      }
+      if (offer.externalSku !== null && typeof offer.externalSku !== 'string') {
+        throw new Error('Admin products response: offers item externalSku must be a string or null');
+      }
+      offers.push({
+        id: offer.id,
+        name: offer.name,
+        status: offer.status,
+        isDefault: offer.isDefault,
+        price: offer.price,
+        externalIntegration: offer.externalIntegration,
+        externalSku: offer.externalSku,
+      });
+    }
+
+    parsedProducts.push({
+      id: product.id,
+      name: product.name,
+      status: product.status,
+      categoryId: product.categoryId,
+      merchantId: product.merchantId,
+      imageUrl: product.imageUrl,
+      images,
+      price: product.price,
+      fakaBridge: product.fakaBridge,
+      fakaCapacity,
+      offers,
+    });
+  }
+
+  return parsedProducts;
+}
 export async function ensureNetworkNodeDefaultCoverViaUi(page: Page): Promise<void> {
   const waitForCategoryList = () => page.waitForResponse((response) =>
     response.request().method() === 'GET'
@@ -1113,6 +1384,9 @@ test.describe.serial('Catalog Xboard import', () => {
 
     try {
       const importResponsePromise = page.waitForResponse(isImportResponse);
+      // Capture the real admin products list refresh triggered by onImported()
+      // after confirm — no direct business-API write and no browser reload.
+      const productsResponsePromise = page.waitForResponse(isAdminProductsResponse);
       await page.getByTestId('admin-faka-import-submit').click({ clickCount: 2 });
       const importResponse = await importResponsePromise;
       expect(importResponse.status()).toBe(200);
@@ -1136,6 +1410,67 @@ test.describe.serial('Catalog Xboard import', () => {
       const successMessage = `已创建 Xboard 商品草稿 #${imported.productId}（2 个规格）`;
       await expect(page.locator('[data-toast-card]').filter({ hasText: successMessage })).toBeVisible();
       await page.getByTestId('admin-faka-import-preview').waitFor({ state: 'detached' });
+
+      // --- Admin products list back-check after the real onImported() refresh ---
+      const productsResponse = await productsResponsePromise;
+      expect(productsResponse.status()).toBe(200);
+      const productsBody: unknown = await productsResponse.json();
+      const products = parseAdminProductsResponse(productsBody);
+
+      const importedProducts = products.filter((candidate) => candidate.id === imported.productId);
+      expect(importedProducts).toHaveLength(1);
+      const product = importedProducts[0]!;
+      expect(product.id).toBe(imported.productId);
+      expect(product.name).toBe('Gold Plan');
+      expect(product.status).toBe('draft');
+      expect(product.categoryId).toBe(networkNode.id);
+      expect(product.merchantId).toBeNull();
+      expect(product.imageUrl).toBe('/assets/network.webp');
+      expect(product.images).toEqual(['/assets/network.webp']);
+      expect(product.price).toBe(300000);
+      expect(product.fakaBridge).toBe(true);
+      expect(product.fakaCapacity).toEqual({
+        sku: 'gold-monthly',
+        planId: 77,
+        capacityLimit: 200,
+        activeUsers: 12,
+        remaining: 188,
+        sellable: true,
+        source: 'xboard',
+      });
+
+      expect(product.offers).toHaveLength(2);
+      expect(product.offers.filter((offer) => offer.isDefault)).toHaveLength(1);
+      const monthlyOffer = product.offers.find((offer) => offer.externalSku === 'gold-monthly');
+      const yearlyOffer = product.offers.find((offer) => offer.externalSku === 'gold-yearly');
+      const assertOffer = (
+        offer: AdminProductOfferDto | undefined,
+        expected: { name: string; isDefault: boolean; price: number; externalSku: string },
+      ) => {
+        if (!offer) {
+          throw new Error(`admin products back-check: missing offer "${expected.externalSku}"`);
+        }
+        expect(offer.id).toBeGreaterThan(0);
+        expect(offer.name).toBe(expected.name);
+        expect(offer.status).toBe('active');
+        expect(offer.isDefault).toBe(expected.isDefault);
+        expect(offer.price).toBe(expected.price);
+        expect(offer.externalIntegration).toBe('faka_bridge');
+        expect(offer.externalSku).toBe(expected.externalSku);
+      };
+      assertOffer(monthlyOffer, { name: '月付', isDefault: true, price: 300000, externalSku: 'gold-monthly' });
+      assertOffer(yearlyOffer, { name: '年付', isDefault: false, price: 3000000, externalSku: 'gold-yearly' });
+
+      // Real DOM table back-check: unique row located via the product name cell.
+      const productRow = page.locator('tbody tr').filter({
+        has: page.locator('td[data-label="商品名称"]').getByText('Gold Plan', { exact: true }),
+      });
+      await expect(productRow).toHaveCount(1);
+      const nameCell = productRow.locator('td[data-label="商品名称"]');
+      await expect(nameCell).toContainText('Gold Plan');
+      await expect(nameCell).toContainText('FakaBridge · Xboard');
+      await expect(productRow.locator('td[data-label="售价 (积分)"]')).toHaveText('300000');
+      await expect(productRow.locator('td[data-label="可售资源"]')).toHaveText('Xboard 188/200（在用 12）');
     } finally {
       page.off('request', onConfirmRequest);
     }
