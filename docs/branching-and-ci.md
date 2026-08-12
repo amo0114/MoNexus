@@ -28,9 +28,17 @@ chore/xxx ┘                                        ▲
 | push → master | ✅ | ✅ | ✅ |
 
 - **`CI OK`** 聚合 job 是唯一需要设为 required 的状态检查：上游 job 被路径过滤跳过时它仍成功，只有真实失败/取消才红。
+- **执行结构**：backend 测试按文件分 3 个 shard 并行（每 shard 独立 PostgreSQL，互不共享状态）；两个 Playwright job 自带依赖、数据库与后端构建，**不排在 backend 之后**。全量墙钟 ≈ max(backend shard, e2e)，约 8–9 分钟（原约 20 分钟）。
+- **frontend job 含前端单元测试**（根目录 `npm test`，纯逻辑，秒级）。
+- `.github/workflows/ci.yml` 变更会**自动**触发两个 e2e job（已加入 e2e 路径过滤器）。
 - **不要在 PR 分支上用 `[skip ci]`**：它会抑制整个 workflow，required 的 `CI OK` 将永远 Pending，受保护分支的 PR 无法合并；纯文档 PR 靠路径过滤即可快速出绿，无需手动跳过。
-- **强制跑 e2e**：给 PR 打 `run-e2e` 标签。
+- **强制跑 e2e**：给 PR 打 `run-e2e` 标签；何时必须打、何时新增 e2e spec 见 [`testing-policy.md`](./testing-policy.md)。
 - 文档类路径（`docs/**`、`*.md`、`.claude/**` 等未列入过滤器的路径）的 PR 三个重活全跳过，约 1 分钟出绿。
+
+## 本地验证
+
+- 小改动：`npm run verify:quick`（只跑受 git 变更影响的测试；`npm run verify:quick -- e2e/xxx.spec.ts` 追加指定 e2e spec）。
+- 全量（与 CI 等价）：`npm run verify:local` / `verify:local:no-e2e`。日常合并前无需本地全量，push→develop 的集成门会跑全套。
 
 ## 镜像发布（`docker-publish.yml`）
 

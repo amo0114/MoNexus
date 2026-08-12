@@ -14,6 +14,12 @@
 # protected branches. Do NOT use [skip ci] on PR branches: it suppresses the
 # whole workflow, so the required "CI OK" check stays Pending forever and the
 # PR cannot merge — path filtering already makes docs-only PRs finish fast.
+#
+# Scheduling: the backend suite runs as 3 file-level shards, and both
+# Playwright jobs are self-contained (own dependencies, DB service and
+# backend build), so they run in parallel with the backend shards instead
+# of after them. "CI OK" aggregates every result, so the parallelism does
+# not weaken the gate. See docs/testing-policy.md for the layering policy.
 
 name: CI
 
@@ -65,6 +71,7 @@ jobs:
               - 'package.json'
               - 'package-lock.json'
               - 'vite.config.ts'
+              - 'vitest.config.ts'
               - 'tsconfig.json'
               - 'tailwind.config.js'
               - '.github/workflows/ci.yml'
@@ -74,6 +81,9 @@ jobs:
               - 'playwright.legal-pages.config.ts'
               - 'playwright.notification-realtime.config.ts'
               - 'scripts/verify-notification-realtime-e2e.sh'
+              # Workflow edits change how the E2E jobs themselves run, so
+              # they must prove the restructured pipeline on the PR itself.
+              - '.github/workflows/ci.yml'
             code:
               - 'server/**'
               - 'src/**'
@@ -101,11 +111,17 @@ jobs:
         needs.changes.outputs.server == 'true'
       )
     runs-on: ubuntu-latest
-    # The full real-PostgreSQL suite normally takes about 13 minutes and was
-    # still completing green test files when the old 15-minute cap cancelled
-    # it. Keep a bounded margin for runner/IO variance; individual Vitest
-    # timeouts still detect hung tests.
-    timeout-minutes: 20
+    # The full real-PostgreSQL suite is serial by design (singleFork) and
+    # takes ~13 minutes on a single runner, so it is split into 3 file-level
+    # shards, each against its own PostgreSQL service. setup.ts TRUNCATEs
+    # every table before each test, so shards share no cross-file state.
+    # Per-shard runtime is ~6 minutes; keep a bounded margin for runner/IO
+    # variance — individual Vitest timeouts still detect hung tests.
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
 
     services:
       postgres:
@@ -154,8 +170,8 @@ jobs:
       - name: Build backend
         run: npm --prefix server run build
 
-      - name: Test backend
-        run: npm --prefix server test
+      - name: Test backend (shard ${{ matrix.shard }}/3)
+        run: npm --prefix server test -- --shard=${{ matrix.shard }}/3
 
   frontend:
     name: Frontend typecheck and build
@@ -182,12 +198,21 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      - name: Run frontend unit tests
+        run: npm test
+
       - name: Build frontend
         run: npm run build
 
   e2e:
     name: Playwright E2E
-    needs: [changes, backend, frontend]
+    # Deliberately NOT gated on the backend job: this job installs its own
+    # dependencies, owns its own PostgreSQL service and builds the backend
+    # itself, so it runs concurrently with the backend shards instead of
+    # queueing behind them. "CI OK" still requires every job to be green,
+    # so gating strength is unchanged; the only cost is some wasted runner
+    # minutes when backend tests fail.
+    needs: [changes, frontend]
     # Runs on: any push to master/develop; PRs to master that touch code;
     # PRs to develop only when e2e files changed or the `run-e2e` label is
     # set (the post-merge push to develop still runs the full suite).
@@ -281,8 +306,24 @@ jobs:
       - name: Seed E2E fixtures
         run: npm --prefix server run db:seed:force
 
+      - name: Resolve Playwright version
+        id: playwright-version
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright-version.outputs.version }}
+
       - name: Install Playwright chromium
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
         run: npx playwright install --with-deps chromium
+
+      - name: Install Playwright system dependencies
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
 
       - name: Build backend
         run: npm --prefix server run build
@@ -360,10 +401,12 @@ jobs:
 
   notification-realtime-e2e:
     name: Notification realtime Playwright E2E
-    needs: [changes, backend, frontend]
     # Keep the realtime suite visible as an independent gate. It follows the
     # same PR/push selection as the compatibility E2E job, but never shares
     # that job's database, ports, server processes, retries, or artifacts.
+    # Like the compatibility job it is self-contained, so it does not queue
+    # behind the backend shards either.
+    needs: [changes, frontend]
     if: >-
       !failure() && !cancelled() && (
         github.event_name == 'push' ||
@@ -416,8 +459,24 @@ jobs:
       - name: Generate Prisma client
         run: npm --prefix server run db:generate
 
+      - name: Resolve Playwright version
+        id: playwright-version
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright-version.outputs.version }}
+
       - name: Install Playwright chromium
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
         run: npx playwright install --with-deps chromium
+
+      - name: Install Playwright system dependencies
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
 
       - name: Create guarded realtime E2E environment
         run: |
