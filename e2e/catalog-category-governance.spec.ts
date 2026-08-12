@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Locator, type Page } from '@playwright/test'
 import { SEED_ACCOUNTS, loginAs } from './helpers'
 
 /**
@@ -121,6 +121,42 @@ import { SEED_ACCOUNTS, loginAs } from './helpers'
  *
  * 硬约束：无 mock / 无 DB 直读直写 / 无 page.reload / 无 waitForTimeout /
  * 无 page.route / 无写 API 替代 UI 提交 / 无 any / 无 ts-ignore。
+ *
+ * 已覆盖（REQ-CAT-F-007 / D-CAT-06 / D-CAT-17 / AC-CAT-010 / AC-CAT-011 /
+ * CHK-CAT-001~004 / CHK-CAT-012）——第 11 个用例：admin 分类仓库真实 UI create + edit
+ *（冻结编号，本卡不使用 D-CAT-12）：
+ *   a. 真实 admin MFA loginAs → /admin → 「目录治理」→ admin-category-manager，
+ *      断言默认 category filter = 全部（admin-category-status-filter value ''）；
+ *   b. admin-category-create 打开「新建分类」dialog；先验证 code 必填本地校验
+ *      （分类编码不能为空）且用 page request 事件精确计数证明零请求（禁 sleep）；
+ *      再填唯一合法 lower-case code / 唯一 label / description / kebab iconKey /
+ *      合法平台资源 defaultCoverUrl（/assets/…）/ sortOrder 整数；
+ *   c. 点击前精确 waitForResponse POST /api/admin/product-categories → 201；create
+ *      request unknown JSON 类型守卫严格精确六键 {code,label,description,iconKey,
+ *      defaultCoverUrl,sortOrder}，无 status/createdByUserId/updatedByUserId/actor/
+ *      user/admin；create response 用严格 CategoryAdminDto parser/allowlist（仅
+ *      id/code/label/normalizedLabel/iconKey/sortOrder/description/defaultCoverUrl/
+ *      status/createdByUserId/updatedByUserId/createdAt/updatedAt，拒绝额外键、
+ *      relations/secrets），id/creator/updater 正整数、status active、提交字段精确、
+ *      normalizedLabel 为 label trim lowercase、ISO 时间戳，保存正整数 categoryId；
+ *   d. toast「分类已创建」+ dialog 关闭 + 列表自行刷新；点击 create submit 前监听
+ *      精确 GET /api/admin/product-categories（page=1&pageSize=10、status 缺失/空），
+ *      从 unknown 严格读 total/page/pageSize 计算 totalPages；先看第一页，未找到时用
+ *      admin-category-pagination「下一页」逐页导航（每次点击前监听精确对应 page GET、
+ *      status 200、页参数精确）真实分页定位新建行——新分类 sortOrder 初始 999_999 接近
+ *      schema 最大值，不假定其必在末页；每页响应后用 UI 页码断言同步再判断行可见，
+ *      杜绝响应到达而 DOM 未更新竞态；category-row-<id> data-status=active 且
+ *      显示 code/label/description/sortOrder；
+ *   e. category-edit-<id> 打开「编辑分类」，完整字段回填，category-form-code 原
+ *      code 且 disabled，出现「编码创建后不可修改（D-CAT-06）」；
+ *   f. 修改 label/description/icon/defaultCover/sortOrder；点击前精确 waitForResponse
+ *      PATCH /api/admin/product-categories/:id → 200；edit request 严格精确五键
+ *      {label,description,iconKey,defaultCoverUrl,sortOrder}，绝无 code/status/操作者
+ *      ID；edit response 复用同一严格 parser：id/code 不变、所有修改值精确、active；
+ *   g. toast「分类已更新」+ dialog 关闭 + 编辑后列表刷新停在 currentCategoryPage（点击
+ *      前监听精确 page=currentCategoryPage GET、status 200、页参数精确）；随后真实
+ *      「下一页」逐页导航到末页后，显示新 label/description/sortOrder、旧 label 不再
+ *      显示、edit button aria-label 更新。
  */
 
 /** 唯一申请名称（每次运行不同，避免 pending duplicate 撞车）。 */
@@ -173,7 +209,36 @@ const RACE_CODE = `e2e-race-review-${Date.now()}-${Math.random().toString(36).sl
 const RACE_DESCRIPTION = '这是用于验证管理员陈旧审核弹窗与商家撤回竞态的端到端分类申请描述，长度满足表单校验要求。'
 /** 竞态审核理由常量（1..500 字、无控制字符；stale approve 请求体 reviewReason 精确断言共用）。 */
 const RACE_REASON = 'E2E 竞态审核：该申请提交审核前已被商家撤回，管理员不应能再次通过或新建分类。'
-/** create 响应解析出的申请 id（正整数）。 */
+
+/** admin 分类仓库 create→edit 用例：唯一合法 lower-case 分类编码（CATEGORY_CODE_PATTERN）。 */
+const ADMIN_CATEGORY_CODE = `e2e-admin-cat-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+/** 唯一 label（≤50 字；含大写 E2E 以验证 normalizedLabel 为 trim lowercase）。 */
+const ADMIN_CATEGORY_LABEL = `E2E仓库分类-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+/** 分类描述（≤500 字；create 请求六键之一）。 */
+const ADMIN_CATEGORY_DESCRIPTION = '这是通过平台分类仓库真实表单创建的分类描述，用于端到端验证管理员创建与编辑展示信息，长度满足表单校验要求。'
+/** kebab-case iconKey（categoryIconKeyPattern：字母/数字/连字符）。 */
+const ADMIN_CATEGORY_ICON = 'folder-tree'
+/** 合法平台资源 defaultCoverUrl（isPlatformPublicAssetUrl：/assets/… 仓库静态资源）。 */
+const ADMIN_CATEGORY_COVER = '/assets/e2e-category-cover.svg'
+/** 初始排序值：接近 schema 最大值（MAX_CATEGORY_SORT_ORDER=1_000_000）而非默认小值，
+ * 保证重复 E2E 运行累积后新分类仍大概率落在靠后页，配合真实分页逐页定位
+ * category-row-<id>（先查第一页、未找到再逐页导航），不依赖"必在末页"假设。
+ * 与 ADMIN_CATEGORY_SORT_EDIT 不同且均合法（0..1_000_000）。 */
+const ADMIN_CATEGORY_SORT = 999_999
+/** edit 变体：唯一新 label（与 ADMIN_CATEGORY_LABEL 不同避免撞名）。 */
+const ADMIN_CATEGORY_LABEL_EDIT = `E2E仓库分类已编辑-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+/** edit 变体：新描述（PATCH 五键之一）。 */
+const ADMIN_CATEGORY_DESCRIPTION_EDIT = '编辑后的分类描述：管理员在编辑对话框中修改展示信息并保存，端到端验证 PATCH 路径与列表刷新。'
+/** edit 变体：新 kebab iconKey。 */
+const ADMIN_CATEGORY_ICON_EDIT = 'network'
+/** edit 变体：新平台资源 defaultCoverUrl。 */
+const ADMIN_CATEGORY_COVER_EDIT = '/assets/e2e-category-cover-edit.svg'
+/** edit 变体：新排序值 = schema 最大值 1_000_000（与初始值 999_999 不同且均合法）。
+ * edit 后列表 refresh 停在 currentCategoryPage，再以真实「下一页」逐页导航到末页后
+ * 断言 category-row-<id> 的新字段；不依赖 refresh 保留末页的假设。 */
+const ADMIN_CATEGORY_SORT_EDIT = 1_000_000
+/** 分类仓库 create 响应解析出的分类 id（正整数；第 11 个用例内自足使用）。 */
+let categoryId = 0
 let applicationId = 0
 
 /** 额外 pending 数据准备：为后续管理员审核创建的新申请 id（正整数）。 */
@@ -405,6 +470,47 @@ function readCategoryListTotal(body: unknown): number {
 }
 
 /**
+ * 分类仓库列表分页信封（真实 read network 解析，禁止 any）：{ items, total, page,
+ * pageSize } 中的 total 非负整数、page/pageSize 正整数；任何形状不符直接抛错。
+ * 用于从 create/edit 后的列表刷新响应计算 totalPages，并以 AdminPagination 导航到
+ * 新建项所在末页。
+ */
+function readCategoryListPageInfo(body: unknown): { total: number; page: number; pageSize: number } {
+  if (!isRecord(body)) throw new Error('分类列表响应不是 JSON 对象')
+  if (typeof body.total !== 'number' || !Number.isInteger(body.total) || body.total < 0) {
+    throw new Error('分类列表响应缺少非负整数 total')
+  }
+  if (typeof body.page !== 'number' || !Number.isInteger(body.page) || body.page < 1) {
+    throw new Error('分类列表响应缺少正整数 page')
+  }
+  if (typeof body.pageSize !== 'number' || !Number.isInteger(body.pageSize) || body.pageSize < 1) {
+    throw new Error('分类列表响应缺少正整数 pageSize')
+  }
+  return { total: body.total, page: body.page, pageSize: body.pageSize }
+}
+
+/**
+ * 精确匹配某页的分类仓库列表 GET（status 缺失/空、page=page、pageSize=10，与
+ * AdminCategoryManager 的 PAGE_SIZE=10 及 axios 省略 status 的行为一致）。返回类型
+ * 守卫谓词供 waitForResponse 逐页监听使用（禁止 any）。
+ */
+function isCategoryRepositoryListPage(
+  page: number,
+): (response: { url(): string; request(): { method(): string } }) => boolean {
+  return (response) => {
+    const url = new URL(response.url())
+    if (url.pathname !== '/api/admin/product-categories') return false
+    if (response.request().method() !== 'GET') return false
+    const status = url.searchParams.get('status')
+    return (
+      (status === null || status === '')
+      && url.searchParams.get('page') === String(page)
+      && url.searchParams.get('pageSize') === '10'
+    )
+  }
+}
+
+/**
  * 从 admin approve(map_existing) 响应 unknown JSON 严格解析审核结果（类型守卫，禁止
  * any/as any）：id 必须等于提交的 applicationId、status==='approved'、
  * resolution==='map_existing'、approvedCategoryId 必须精确等于既有 approvedCategoryId、
@@ -543,6 +649,199 @@ function readRejectPayload(body: unknown): { reviewReason: string } | null {
   if (Object.keys(body).length !== 1) return null
   if (typeof body.reviewReason !== 'string') return null
   return { reviewReason: body.reviewReason }
+}
+
+/**
+ * CategoryAdminDto 响应冻结允许键（server/src/modules/catalog/contracts.ts
+ * CategoryAdminDto；与 server 端 toAdminDto 输出完全一致）。服务端只允许返回这些
+ * 公开字段；任何额外键（含 relations/secrets）一律拒绝。注意 createdByUserId /
+ * updatedByUserId / normalizedLabel 是合法 admin DTO 字段（REQ-CAT-F-007），
+ * 绝不允许被误判为泄露而拒绝。
+ */
+const CATEGORY_ADMIN_ALLOWED_KEYS: ReadonlySet<string> = new Set([
+  'id',
+  'code',
+  'label',
+  'normalizedLabel',
+  'iconKey',
+  'sortOrder',
+  'description',
+  'defaultCoverUrl',
+  'status',
+  'createdByUserId',
+  'updatedByUserId',
+  'createdAt',
+  'updatedAt',
+])
+
+/**
+ * 显式禁止的 relations/secrets（即使误加进 allowlist 也必须点名拒绝）：products /
+ * approvedApplications / _count 是 Prisma relation/计数，createdByUser / updatedByUser
+ * 是关系对象；merchantId 属于申请 DTO，绝不属于 admin 分类 DTO。
+ */
+const CATEGORY_ADMIN_FORBIDDEN_KEYS: ReadonlySet<string> = new Set([
+  'products',
+  'approvedApplications',
+  '_count',
+  'createdByUser',
+  'updatedByUser',
+  'merchantId',
+])
+
+/** ISO 8601 UTC 时间戳类型守卫（Prisma toISOString 输出，毫秒精度 + Z）。 */
+function isIsoTimestamp(value: unknown): value is string {
+  return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(value)
+}
+
+/**
+ * 从 admin 分类仓库 create/update 响应 unknown JSON 严格解析 CategoryAdminDto（类型
+ * 守卫，禁止 any/as any）：响应键必须命中冻结 allowlist（任何额外键拒绝，且显式点名
+ * relations/secrets）；id/createdByUserId/updatedByUserId 必须正整数、status 必须 active、
+ * 提交字段（code/label/description/iconKey/defaultCoverUrl/sortOrder）精确匹配、
+ * normalizedLabel 必须等于 label trim lowercase、createdAt/updatedAt 必须 ISO 时间戳；
+ * 任何形状不符直接抛错，绝不静默返回伪造值。
+ */
+function parseCategoryAdminDto(
+  body: unknown,
+  expected: {
+    code: string
+    label: string
+    description: string
+    iconKey: string
+    defaultCoverUrl: string
+    sortOrder: number
+  },
+): {
+  id: number
+  code: string
+  label: string
+  normalizedLabel: string
+  iconKey: string
+  sortOrder: number
+  description: string
+  defaultCoverUrl: string
+  status: 'active'
+  createdByUserId: number
+  updatedByUserId: number
+  createdAt: string
+  updatedAt: string
+} {
+  if (!isRecord(body)) throw new Error('分类仓库响应不是 JSON 对象')
+
+  // 显式点名 relations/secrets（即使将来误入 allowlist 也单独拒绝，防回归）。
+  const forbiddenKeys = [...CATEGORY_ADMIN_FORBIDDEN_KEYS].filter((key) => key in body)
+  if (forbiddenKeys.length > 0) {
+    throw new Error(`分类仓库响应泄露关联/敏感字段: ${forbiddenKeys.join(', ')}`)
+  }
+
+  // 冻结 CategoryAdminDto allowlist：任何额外键一律拒绝。
+  const extraKeys = Object.keys(body).filter((key) => !CATEGORY_ADMIN_ALLOWED_KEYS.has(key))
+  if (extraKeys.length > 0) {
+    throw new Error(`分类仓库响应含未允许字段: ${extraKeys.join(', ')}`)
+  }
+
+  if (!isPositiveInteger(body.id)) throw new Error('分类仓库响应缺少正整数 id')
+  if (typeof body.code !== 'string' || body.code !== expected.code) throw new Error('分类仓库响应 code 与提交值不匹配')
+  if (typeof body.label !== 'string' || body.label !== expected.label) throw new Error('分类仓库响应 label 与提交值不匹配')
+  if (typeof body.normalizedLabel !== 'string' || body.normalizedLabel !== expected.label.trim().toLowerCase()) {
+    throw new Error('分类仓库响应 normalizedLabel 非 label 的 trim lowercase')
+  }
+  if (typeof body.description !== 'string' || body.description !== expected.description) throw new Error('分类仓库响应 description 与提交值不匹配')
+  if (typeof body.iconKey !== 'string' || body.iconKey !== expected.iconKey) throw new Error('分类仓库响应 iconKey 与提交值不匹配')
+  if (typeof body.defaultCoverUrl !== 'string' || body.defaultCoverUrl !== expected.defaultCoverUrl) throw new Error('分类仓库响应 defaultCoverUrl 与提交值不匹配')
+  if (typeof body.sortOrder !== 'number' || !Number.isInteger(body.sortOrder) || body.sortOrder !== expected.sortOrder) {
+    throw new Error('分类仓库响应 sortOrder 与提交值不匹配')
+  }
+  if (body.status !== 'active') throw new Error(`分类仓库响应 status 非 active，实际: ${String(body.status)}`)
+  if (!isPositiveInteger(body.createdByUserId)) throw new Error('分类仓库响应缺少正整数 createdByUserId')
+  if (!isPositiveInteger(body.updatedByUserId)) throw new Error('分类仓库响应缺少正整数 updatedByUserId')
+  if (!isIsoTimestamp(body.createdAt)) throw new Error('分类仓库响应 createdAt 非 ISO 时间戳')
+  if (!isIsoTimestamp(body.updatedAt)) throw new Error('分类仓库响应 updatedAt 非 ISO 时间戳')
+
+  return {
+    id: body.id,
+    code: body.code,
+    label: body.label,
+    normalizedLabel: body.normalizedLabel,
+    iconKey: body.iconKey,
+    sortOrder: body.sortOrder,
+    description: body.description,
+    defaultCoverUrl: body.defaultCoverUrl,
+    status: body.status,
+    createdByUserId: body.createdByUserId,
+    updatedByUserId: body.updatedByUserId,
+    createdAt: body.createdAt,
+    updatedAt: body.updatedAt,
+  }
+}
+
+/**
+ * 请求 JSON unknown → create category payload（类型守卫）。必须精确六键
+ * { code, label, description, iconKey, defaultCoverUrl, sortOrder }；任何多余键
+ * （status/createdByUserId/updatedByUserId/actor/user/admin，归属与审计由服务端
+ * 从 auth 派生）或形状不符直接返回 null。
+ */
+function readCreateCategoryPayload(
+  body: unknown,
+): {
+  code: string
+  label: string
+  description: string
+  iconKey: string
+  defaultCoverUrl: string
+  sortOrder: number
+} | null {
+  if (!isRecord(body)) return null
+  if (Object.keys(body).length !== 6) return null
+  if (typeof body.code !== 'string') return null
+  if (typeof body.label !== 'string') return null
+  if (typeof body.description !== 'string') return null
+  if (typeof body.iconKey !== 'string') return null
+  if (typeof body.defaultCoverUrl !== 'string') return null
+  if (typeof body.sortOrder !== 'number' || !Number.isInteger(body.sortOrder)) return null
+  // 精确六键已由 length 校验锁定：服务端派生/操作者字段必然使长度溢出，此处显式点名拒绝。
+  if ('status' in body || 'createdByUserId' in body || 'updatedByUserId' in body || 'actor' in body || 'user' in body || 'admin' in body) return null
+  return {
+    code: body.code,
+    label: body.label,
+    description: body.description,
+    iconKey: body.iconKey,
+    defaultCoverUrl: body.defaultCoverUrl,
+    sortOrder: body.sortOrder,
+  }
+}
+
+/**
+ * 请求 JSON unknown → update category payload（类型守卫）。必须精确五键
+ * { label, description, iconKey, defaultCoverUrl, sortOrder }；绝无 code/status/
+ * 操作者 ID（code 不可修改 D-CAT-06，归属与审计由服务端从 auth 派生）——任何多余键
+ * 或形状不符直接返回 null。
+ */
+function readUpdateCategoryPayload(
+  body: unknown,
+): {
+  label: string
+  description: string
+  iconKey: string
+  defaultCoverUrl: string
+  sortOrder: number
+} | null {
+  if (!isRecord(body)) return null
+  if (Object.keys(body).length !== 5) return null
+  if (typeof body.label !== 'string') return null
+  if (typeof body.description !== 'string') return null
+  if (typeof body.iconKey !== 'string') return null
+  if (typeof body.defaultCoverUrl !== 'string') return null
+  if (typeof body.sortOrder !== 'number' || !Number.isInteger(body.sortOrder)) return null
+  // 精确五键已由 length 校验锁定：code/status/操作者 ID 必然使长度溢出，此处显式点名拒绝。
+  if ('code' in body || 'status' in body || 'createdByUserId' in body || 'updatedByUserId' in body || 'actor' in body || 'user' in body || 'admin' in body) return null
+  return {
+    label: body.label,
+    description: body.description,
+    iconKey: body.iconKey,
+    defaultCoverUrl: body.defaultCoverUrl,
+    sortOrder: body.sortOrder,
+  }
 }
 
 test.describe.serial('PAR-CMI-002 catalog category governance merchant flow', () => {
@@ -1345,5 +1644,224 @@ test.describe.serial('PAR-CMI-002 catalog category governance merchant flow', ()
     } finally {
       await adminContext.close()
     }
+  })
+
+  test('admin creates and edits a category in the repository via the real UI (D-CAT-06)', async ({ page }) => {
+    // 串行依赖：本用例自足（create + edit），无前置数据；categoryId 由 create 响应解析后保存。
+
+    // 真实 admin MFA 登录（loginAs admin 走 seed TOTP 验证）→ /admin → 「目录治理」。
+    await loginAs(page, SEED_ACCOUNTS.admin)
+    await page.goto('/admin')
+    await page.getByRole('button', { name: '目录治理' }).click()
+    await expect(page.getByTestId('admin-category-manager')).toBeVisible({ timeout: 10_000 })
+
+    // a. 断言默认 category filter = 全部（admin-category-status-filter value ''）。
+    await expect(page.getByTestId('admin-category-status-filter')).toHaveValue('')
+
+    // b. admin-category-create 打开「新建分类」dialog。
+    await page.getByTestId('admin-category-create').click()
+    const createDialog = page.getByRole('dialog')
+    await expect(createDialog).toBeVisible({ timeout: 10_000 })
+    await expect(createDialog).toContainText('新建分类')
+
+    // 空 code 点击 submit：本地校验「分类编码不能为空」；page request 事件精确计数证明零请求（禁 sleep）。
+    const createRequests: string[] = []
+    page.on('request', (request) => {
+      if (request.method() !== 'POST') return
+      const url = new URL(request.url())
+      if (url.pathname === '/api/admin/product-categories') {
+        createRequests.push(request.url())
+      }
+    })
+    await createDialog.getByTestId('category-form-submit').click()
+    await expect(createDialog.getByText('分类编码不能为空', { exact: true })).toBeVisible({ timeout: 10_000 })
+    await expect(createDialog).toBeVisible()
+    expect(createRequests).toHaveLength(0)
+
+    // 填唯一合法 lower-case code / 唯一 label / description / kebab iconKey /
+    // 合法平台资源 defaultCoverUrl（/assets/…）/ sortOrder 整数。
+    await createDialog.getByTestId('category-form-code').fill(ADMIN_CATEGORY_CODE)
+    await createDialog.getByTestId('category-form-label').fill(ADMIN_CATEGORY_LABEL)
+    await createDialog.getByTestId('category-form-description').fill(ADMIN_CATEGORY_DESCRIPTION)
+    await createDialog.getByTestId('category-form-icon').fill(ADMIN_CATEGORY_ICON)
+    await createDialog.getByTestId('category-form-sort').fill(String(ADMIN_CATEGORY_SORT))
+    await createDialog.getByTestId('category-form-cover').fill(ADMIN_CATEGORY_COVER)
+
+    // c. 点击前精确 waitForResponse POST /api/admin/product-categories → 201；
+    //    同时监听随后 create 成功触发的列表刷新 GET（page=1&pageSize=10、status 空），
+    //    用于从真实响应解析 total/page/pageSize 计算 totalPages 并导航到末页。
+    const createResponse = page.waitForResponse((response) =>
+      new URL(response.url()).pathname === '/api/admin/product-categories'
+      && response.request().method() === 'POST'
+    )
+    const afterCreateListResponse = page.waitForResponse(isCategoryRepositoryListPage(1))
+    await createDialog.getByTestId('category-form-submit').click()
+    const createResult = await createResponse
+    expect(createResult.status()).toBe(201)
+
+    // create request unknown JSON 类型守卫严格精确六键，无 status/createdByUserId/操作者 ID。
+    const createRequestBody: unknown = createResult.request().postDataJSON()
+    expect(readCreateCategoryPayload(createRequestBody)).toEqual({
+      code: ADMIN_CATEGORY_CODE,
+      label: ADMIN_CATEGORY_LABEL,
+      description: ADMIN_CATEGORY_DESCRIPTION,
+      iconKey: ADMIN_CATEGORY_ICON,
+      defaultCoverUrl: ADMIN_CATEGORY_COVER,
+      sortOrder: ADMIN_CATEGORY_SORT,
+    })
+
+    // create response 用严格 CategoryAdminDto parser/allowlist 解析（id/creator/updater 正整数、
+    // status active、提交字段精确、normalizedLabel trim lowercase、ISO 时间戳），保存正整数 categoryId。
+    const createBody: unknown = await createResult.json()
+    const created = parseCategoryAdminDto(createBody, {
+      code: ADMIN_CATEGORY_CODE,
+      label: ADMIN_CATEGORY_LABEL,
+      description: ADMIN_CATEGORY_DESCRIPTION,
+      iconKey: ADMIN_CATEGORY_ICON,
+      defaultCoverUrl: ADMIN_CATEGORY_COVER,
+      sortOrder: ADMIN_CATEGORY_SORT,
+    })
+    categoryId = created.id
+    expect(categoryId).toBeGreaterThan(0)
+    expect(created.status).toBe('active')
+
+    // d. toast「分类已创建」+ dialog 关闭 + 列表自行刷新（禁止 page.reload）：
+    //    刷新 GET 必须 status 200；从 unknown 严格解析 total/page/pageSize 计算
+    //    totalPages。先看当前第一页；未找到时用 admin-category-pagination 内
+    //    aria-label「下一页」真实逐页导航（每次点击前监听精确对应 page GET，每 GET
+    //    status 200 且页参数精确）定位新建行——不假定其必在末页；每页响应后用 UI
+    //    页码断言同步，再 row.isVisible() 判断，杜绝响应到达而 DOM 未更新的竞态。
+    await expect(
+      page.locator('[data-toast-card]', { hasText: '分类已创建' }),
+    ).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+    const afterCreateListResult = await afterCreateListResponse
+    expect(afterCreateListResult.status()).toBe(200)
+    const afterCreateListBody: unknown = await afterCreateListResult.json()
+    const afterCreatePageInfo = readCategoryListPageInfo(afterCreateListBody)
+    expect(afterCreatePageInfo.page).toBe(1)
+    expect(afterCreatePageInfo.pageSize).toBe(10)
+    const totalPages = Math.max(1, Math.ceil(afterCreatePageInfo.total / afterCreatePageInfo.pageSize))
+    const categoryPagination = page.getByTestId('admin-category-pagination')
+    let currentCategoryPage = 1
+    const row = page.getByTestId(`category-row-${categoryId}`)
+    await expect(categoryPagination).toContainText(`第 1 /`)
+    let rowFound = await row.isVisible()
+    for (let targetPage = 2; !rowFound && targetPage <= totalPages; targetPage++) {
+      const pageResponse = page.waitForResponse(isCategoryRepositoryListPage(targetPage))
+      await categoryPagination.getByRole('button', { name: '下一页' }).click()
+      const pageResult = await pageResponse
+      expect(pageResult.status()).toBe(200)
+      const pageBody: unknown = await pageResult.json()
+      const pageInfo = readCategoryListPageInfo(pageBody)
+      expect(pageInfo.page).toBe(targetPage)
+      expect(pageInfo.pageSize).toBe(10)
+      currentCategoryPage = targetPage
+      // 响应已到达但 React 可能尚未重渲染当前页：先用 UI 页码断言同步，再判断行可见。
+      await expect(categoryPagination).toContainText(`第 ${targetPage} /`)
+      rowFound = await row.isVisible()
+    }
+    expect(await row.isVisible(), '创建的分类在所有真实分页中均未找到').toBe(true)
+    await expect(row).toBeVisible({ timeout: 10_000 })
+    await expect(row).toHaveAttribute('data-status', 'active')
+    await expect(row).toContainText(ADMIN_CATEGORY_CODE)
+    await expect(row).toContainText(ADMIN_CATEGORY_LABEL)
+    await expect(row).toContainText(ADMIN_CATEGORY_DESCRIPTION)
+    await expect(row.locator('td').nth(3)).toHaveText(String(ADMIN_CATEGORY_SORT))
+
+    // e. category-edit-<id> 打开「编辑分类」，完整字段回填；code disabled + D-CAT-06 文案。
+    await page.getByTestId(`category-edit-${categoryId}`).click()
+    const editDialog = page.getByRole('dialog')
+    await expect(editDialog).toBeVisible({ timeout: 10_000 })
+    await expect(editDialog).toContainText('编辑分类')
+    await expect(editDialog.getByTestId('category-form-code')).toHaveValue(ADMIN_CATEGORY_CODE)
+    await expect(editDialog.getByTestId('category-form-code')).toBeDisabled()
+    await expect(editDialog.getByTestId('category-form-label')).toHaveValue(ADMIN_CATEGORY_LABEL)
+    await expect(editDialog.getByTestId('category-form-description')).toHaveValue(ADMIN_CATEGORY_DESCRIPTION)
+    await expect(editDialog.getByTestId('category-form-icon')).toHaveValue(ADMIN_CATEGORY_ICON)
+    await expect(editDialog.getByTestId('category-form-sort')).toHaveValue(String(ADMIN_CATEGORY_SORT))
+    await expect(editDialog.getByTestId('category-form-cover')).toHaveValue(ADMIN_CATEGORY_COVER)
+    await expect(editDialog).toContainText('编码创建后不可修改（D-CAT-06）。')
+
+    // f. 修改 label/description/icon/defaultCover/sortOrder 为 *_EDIT 常量。
+    await editDialog.getByTestId('category-form-label').fill(ADMIN_CATEGORY_LABEL_EDIT)
+    await editDialog.getByTestId('category-form-description').fill(ADMIN_CATEGORY_DESCRIPTION_EDIT)
+    await editDialog.getByTestId('category-form-icon').fill(ADMIN_CATEGORY_ICON_EDIT)
+    await editDialog.getByTestId('category-form-sort').fill(String(ADMIN_CATEGORY_SORT_EDIT))
+    await editDialog.getByTestId('category-form-cover').fill(ADMIN_CATEGORY_COVER_EDIT)
+
+    // 点击前精确 waitForResponse PATCH /api/admin/product-categories/:id → 200；
+    //    同时监听随后 edit 成功触发的列表刷新 GET（停在 currentCategoryPage：
+    //    page=currentCategoryPage&pageSize=10、status 空），随后再真实「下一页」
+    //    逐页导航到末页后断言更新后的行。
+    const updateResponse = page.waitForResponse((response) =>
+      new URL(response.url()).pathname === `/api/admin/product-categories/${categoryId}`
+      && response.request().method() === 'PATCH'
+    )
+    const afterEditListResponse = page.waitForResponse(isCategoryRepositoryListPage(currentCategoryPage))
+    await editDialog.getByTestId('category-form-submit').click()
+    const updateResult = await updateResponse
+    expect(updateResult.status()).toBe(200)
+
+    // edit request 严格精确五键 {label,description,iconKey,defaultCoverUrl,sortOrder}，绝无 code/status/操作者 ID。
+    const updateRequestBody: unknown = updateResult.request().postDataJSON()
+    expect(readUpdateCategoryPayload(updateRequestBody)).toEqual({
+      label: ADMIN_CATEGORY_LABEL_EDIT,
+      description: ADMIN_CATEGORY_DESCRIPTION_EDIT,
+      iconKey: ADMIN_CATEGORY_ICON_EDIT,
+      defaultCoverUrl: ADMIN_CATEGORY_COVER_EDIT,
+      sortOrder: ADMIN_CATEGORY_SORT_EDIT,
+    })
+
+    // edit response 复用同一严格 parser：id/code 不变、所有修改值精确、active。
+    const updateBody: unknown = await updateResult.json()
+    const updated = parseCategoryAdminDto(updateBody, {
+      code: ADMIN_CATEGORY_CODE,
+      label: ADMIN_CATEGORY_LABEL_EDIT,
+      description: ADMIN_CATEGORY_DESCRIPTION_EDIT,
+      iconKey: ADMIN_CATEGORY_ICON_EDIT,
+      defaultCoverUrl: ADMIN_CATEGORY_COVER_EDIT,
+      sortOrder: ADMIN_CATEGORY_SORT_EDIT,
+    })
+    expect(updated.id).toBe(categoryId)
+    expect(updated.code).toBe(ADMIN_CATEGORY_CODE)
+    expect(updated.status).toBe('active')
+
+    // g. toast「分类已更新」+ dialog 关闭 + 编辑后列表刷新停在 currentCategoryPage
+    //    status 200 且页参数精确；随后用真实「下一页」逐页导航到 totalPages 末页，
+    //    same row 在末页仍显示新 label/description/sortOrder、旧 label 不再显示、
+    //    edit button aria-label 更新；create 精确 request 事件总数应 1。
+    await expect(
+      page.locator('[data-toast-card]', { hasText: '分类已更新' }),
+    ).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+    const afterEditListResult = await afterEditListResponse
+    expect(afterEditListResult.status()).toBe(200)
+    const afterEditListBody: unknown = await afterEditListResult.json()
+    const afterEditPageInfo = readCategoryListPageInfo(afterEditListBody)
+    expect(afterEditPageInfo.page).toBe(currentCategoryPage)
+    expect(afterEditPageInfo.pageSize).toBe(10)
+    for (let targetPage = currentCategoryPage + 1; targetPage <= totalPages; targetPage++) {
+      const pageResponse = page.waitForResponse(isCategoryRepositoryListPage(targetPage))
+      await categoryPagination.getByRole('button', { name: '下一页' }).click()
+      const pageResult = await pageResponse
+      expect(pageResult.status()).toBe(200)
+      const pageBody: unknown = await pageResult.json()
+      const pageInfo = readCategoryListPageInfo(pageBody)
+      expect(pageInfo.page).toBe(targetPage)
+      expect(pageInfo.pageSize).toBe(10)
+      await expect(categoryPagination).toContainText(`第 ${targetPage} /`)
+    }
+    await expect(row).toBeVisible({ timeout: 10_000 })
+    await expect(row).toContainText(ADMIN_CATEGORY_LABEL_EDIT, { timeout: 10_000 })
+    await expect(row).toContainText(ADMIN_CATEGORY_DESCRIPTION_EDIT)
+    await expect(row.locator('td').nth(3)).toHaveText(String(ADMIN_CATEGORY_SORT_EDIT))
+    await expect(row).toContainText(ADMIN_CATEGORY_CODE)
+    await expect(row).not.toContainText(ADMIN_CATEGORY_LABEL)
+    await expect(page.getByTestId(`category-edit-${categoryId}`)).toHaveAttribute(
+      'aria-label',
+      `编辑分类 ${ADMIN_CATEGORY_LABEL_EDIT}`,
+    )
+    expect(createRequests).toHaveLength(1)
   })
 })
