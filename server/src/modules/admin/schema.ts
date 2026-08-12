@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { markNotWritableFields } from '../../middlewares/validate.js'
 import { systemConfigKeys } from '../../lib/systemConfig.js'
 import { businessRegistry } from '../../lib/businessRegistry.js'
 import { normalizedEmailSchema } from '../../lib/email.js'
@@ -139,24 +140,31 @@ const adminDraftProductFieldsSchema = adminProductFieldsSchema.omit({
   stock: true,
 })
 
-export const createProductSchema = adminDraftProductFieldsSchema.extend({
-  // B_CAT (D-CAT-09): explicit categoryId for new writes.
-  categoryId: z.number().int().positive().optional(),
-})
-  .strict()
-  .superRefine(validateProductCommercialFields)
-  .superRefine(assertExactlyOneCategoryInput)
+// SPEC-MERCH-001 AC-MERCH-001 / CHK-HOT-001：isHot 是只读受控字段——客户端传了
+// 稳定 400 FIELD_NOT_WRITABLE，绝不落库、不进 DTO。
+export const createProductSchema = markNotWritableFields(
+  adminDraftProductFieldsSchema.extend({
+    // B_CAT (D-CAT-09): explicit categoryId for new writes.
+    categoryId: z.number().int().positive().optional(),
+  })
+    .strict()
+    .superRefine(validateProductCommercialFields)
+    .superRefine(assertExactlyOneCategoryInput),
+  ['isHot'],
+)
 
 export type CreateProductInput = z.infer<typeof createProductSchema>
 
-export const updateProductSchema = adminDraftProductFieldsSchema.partial().extend({
-  // update permits explicit clearing before changing away from instant_fixed.
-  fixedContent: z.string().trim().min(1).max(5000).nullable().optional(),
-  // `null` is an intentional request to remove the strikethrough price.
-  originalPrice: productPriceSchema.nullable().optional(),
-  imageUrl: productImageItemSchema.nullable().optional(),
-}).strict().superRefine(validateProductCommercialFields)
-
+export const updateProductSchema = markNotWritableFields(
+  adminDraftProductFieldsSchema.partial().extend({
+    // update permits explicit clearing before changing away from instant_fixed.
+    fixedContent: z.string().trim().min(1).max(5000).nullable().optional(),
+    // `null` is an intentional request to remove the strikethrough price.
+    originalPrice: productPriceSchema.nullable().optional(),
+    imageUrl: productImageItemSchema.nullable().optional(),
+  }).strict().superRefine(validateProductCommercialFields),
+  ['isHot'],
+)
 export type UpdateProductInput = z.infer<typeof updateProductSchema>
 
 // FakaBridge admin (requireAdmin only): set Xboard capacity_limit; null = unlimited.

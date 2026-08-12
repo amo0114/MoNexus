@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { markNotWritableFields } from '../../middlewares/validate.js'
 import { ORDER_STATUSES } from '../orders/fulfillment.js'
 import {
   productDescriptionSchema,
@@ -138,27 +139,34 @@ const merchantDraftProductFieldsSchema = merchantProductFieldsSchema.omit({
   stock: true,
 })
 
-export const createMerchantProductSchema = merchantDraftProductFieldsSchema.extend({
-  // B_CAT (D-CAT-09): explicit categoryId for new writes.
-  categoryId: z.number().int().positive().optional(),
-  primaryOfferName: z.string().trim().min(1, '默认规格名称不能为空').max(50).optional(),
-  // 复审 P2-2：默认规格的订阅有效期（落 Offer，不进 Product 列）；此前只有
-  // 附加规格能设，单 SKU 订阅商品被迫绕路"建附加规格再下架默认规格"。
-  validityDays: z.number().int().min(1).max(3650).nullable().optional(),
-  offers: z.array(merchantOfferFieldsSchema.omit({ stock: true })).max(20, '规格数量超出上限').optional(),
-})
-  .strict()
-  .superRefine(validateProductCommercialFields)
-  .superRefine(assertExactlyOneCategoryInput)
+// SPEC-MERCH-001 AC-MERCH-001 / CHK-HOT-001：isHot 是只读受控字段——客户端传了
+// 稳定 400 FIELD_NOT_WRITABLE，绝不落库、不进 DTO。
+export const createMerchantProductSchema = markNotWritableFields(
+  merchantDraftProductFieldsSchema.extend({
+    // B_CAT (D-CAT-09): explicit categoryId for new writes.
+    categoryId: z.number().int().positive().optional(),
+    primaryOfferName: z.string().trim().min(1, '默认规格名称不能为空').max(50).optional(),
+    // 复审 P2-2：默认规格的订阅有效期（落 Offer，不进 Product 列）；此前只有
+    // 附加规格能设，单 SKU 订阅商品被迫绕路"建附加规格再下架默认规格"。
+    validityDays: z.number().int().min(1).max(3650).nullable().optional(),
+    offers: z.array(merchantOfferFieldsSchema.omit({ stock: true })).max(20, '规格数量超出上限').optional(),
+  })
+    .strict()
+    .superRefine(validateProductCommercialFields)
+    .superRefine(assertExactlyOneCategoryInput),
+  ['isHot'],
+)
 
-export const updateMerchantProductSchema = merchantDraftProductFieldsSchema.partial().extend({
-  // update 允许显式传 null 清空固定内容（如从 instant_fixed 切到其他交付模式）；create 保持非 null
-  fixedContent: z.string().trim().min(1).max(5000).nullable().optional(),
-  // `null` is the explicit API contract for clearing these optional fields.
-  originalPrice: productPriceSchema.nullable().optional(),
-  imageUrl: productImageItemSchema.nullable().optional(),
-}).strict().superRefine(validateProductCommercialFields)
-
+export const updateMerchantProductSchema = markNotWritableFields(
+  merchantDraftProductFieldsSchema.partial().extend({
+    // update 允许显式传 null 清空固定内容（如从 instant_fixed 切到其他交付模式）；create 保持非 null
+    fixedContent: z.string().trim().min(1).max(5000).nullable().optional(),
+    // `null` is the explicit API contract for clearing these optional fields.
+    originalPrice: productPriceSchema.nullable().optional(),
+    imageUrl: productImageItemSchema.nullable().optional(),
+  }).strict().superRefine(validateProductCommercialFields),
+  ['isHot'],
+)
 // P4b：预览也接受 offerId——模板挂在规格上，预览必须知道解析目标。
 export const previewMerchantInventorySchema = z.intersection(
   inventoryImportPayloadSchema,
