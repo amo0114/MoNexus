@@ -2,9 +2,9 @@ import { expect, test } from '@playwright/test'
 import { SEED_ACCOUNTS, loginAs } from './helpers'
 
 /**
- * PAR-CMI-002 — Catalog category governance（create + pending duplicate + withdraw + admin create_new/map_existing/reject review）。
+ * PAR-CMI-002 — Catalog category governance（create + pending duplicate + withdraw + admin create_new/map_existing/reject review + withdraw vs stale review race）。
  *
- * 已覆盖（REQ-CAT-F-008 / D-CAT-10 / AC-CAT-012）：
+ * 已覆盖（REQ-CAT-F-008 / D-CAT-10 / AC-CAT-012 / CHK-CAT-008）：
  * 1. 商家真实登录 → /merchant → 点击「分类申请」→ 面板 category-application-panel 出现；
  * 2. 打开申请表 → 填 unique LABEL / CODE、≥20 字描述、示例商品；
  * 3. 点击真实提交动作前监听「精确 pathname /api/merchant/category-applications 且 POST」；
@@ -97,6 +97,28 @@ import { SEED_ACCOUNTS, loginAs } from './helpers'
  * data-status=rejected、显示 reviewReason、「已处理」，且不显示 approve/reject
  * 操作按钮（reject 成功后仅展示结果，不再可操作）。
  *
+ * withdraw vs stale review 竞态（第 10 个用例；冻结依据 D-CAT-10 / AC-CAT-012 /
+ * CHK-CAT-008 / AC-CAT-013；本卡绝不引入任何其他 D-CAT 编号）：同一会话内完成
+ * 「创建 + 竞态」，无额外 prep。merchant page 真实表单创建唯一 pending，严格
+ * parseApplication + readCreatePayload，保存局部正整数 raceApplicationId；从
+ * test.info().project.use.baseURL 读 string（非 string 明确 throw），用
+ * browser.newContext({ baseURL }) 开隔离 adminContext/adminPage（try/finally 关闭）；
+ * adminPage 真实 admin MFA 登录 → /admin → 目录治理，按 application-row-
+ * <raceApplicationId> 精准定位 pending，点击 application-approve-new-<id> 打开 stale
+ * create_new dialog（断言 code/label/description 预填，填 review-icon='folder-tree' +
+ * 常量 RACE_REASON，保持弹窗打开不提交）；回 merchant page 对同一 pending 点击
+ * application-withdraw-<id> → 真实 confirm dialog 确认，点击前精确 waitForResponse POST
+ * /api/merchant/category-applications/<id>/withdraw 断言 200，复用
+ * parseWithdrawnApplication，toast「申请已撤回」，merchant row 变 withdrawn；此时 admin
+ * stale dialog 仍打开，点击前精确 waitForResponse POST /api/admin/category-applications/
+ * <id>/approve 断言响应 409，unknown JSON 用 readErrorCode 断言
+ * CATEGORY_APPLICATION_ALREADY_REVIEWED，请求 body 用现有 readApproveCreateNewPayload
+ * 严格断言精确 create_new payload；admin UI toast「该申请已被审核或已撤回，无法重复操作」
+ * + dialog 关闭 + 默认 pending row 消失（组件冲突路径 refreshApplications）+ 绝无成功 toast
+ * 「已通过并新建分类」；切 admin-application-status-filter=withdrawn 回查同 row
+ * data-status=withdrawn、显示「已处理」、无 approve/map/reject 按钮；409 绝不被伪造成
+ * 成功，且绝不断言任何新分类产生。
+ *
  * 硬约束：无 mock / 无 DB 直读直写 / 无 page.reload / 无 waitForTimeout /
  * 无 page.route / 无写 API 替代 UI 提交 / 无 any / 无 ts-ignore。
  */
@@ -141,6 +163,16 @@ const REJECT_REVIEW_DESCRIPTION = '这是为平台管理员 reject 审核准备�
 /** reject 审核理由常量（1..500 字、无控制字符；请求与响应 reviewReason 精确断言共用）。 */
 const REJECT_REVIEW_REASON = 'E2E 管理员审核：申请信息与平台分类规范不符，予以拒绝。'
 
+/** 竞态用例数据准备：唯一 label（与 LABEL / ADMIN_REVIEW_LABEL / MAP_REVIEW_LABEL /
+ *  REJECT_REVIEW_LABEL 不同避免语义混淆）。本用例自身完成「创建 + 竞态」，无额外 prep。 */
+const RACE_LABEL = `E2E竞态分类-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+/** 合法 lower-case 分类编码（满足 CATEGORY_CODE_PATTERN：小写字母开头、仅小写/数字/-/_），
+ *  供 stale admin create_new dialog 直接复用为分类 code。 */
+const RACE_CODE = `e2e-race-review-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+/** ≥20 字的描述（表单校验：description.trim().length >= 20）。 */
+const RACE_DESCRIPTION = '这是用于验证管理员陈旧审核弹窗与商家撤回竞态的端到端分类申请描述，长度满足表单校验要求。'
+/** 竞态审核理由常量（1..500 字、无控制字符；stale approve 请求体 reviewReason 精确断言共用）。 */
+const RACE_REASON = 'E2E 竞态审核：该申请提交审核前已被商家撤回，管理员不应能再次通过或新建分类。'
 /** create 响应解析出的申请 id（正整数）。 */
 let applicationId = 0
 
@@ -1146,5 +1178,172 @@ test.describe.serial('PAR-CMI-002 catalog category governance merchant flow', ()
     await expect(page.getByTestId(`application-approve-new-${rejectReviewApplicationId}`)).toHaveCount(0)
     await expect(page.getByTestId(`application-approve-map-${rejectReviewApplicationId}`)).toHaveCount(0)
     await expect(page.getByTestId(`application-reject-${rejectReviewApplicationId}`)).toHaveCount(0)
+  })
+
+  test('merchant withdraws a pending application while the admin stale review dialog is open → 409 CATEGORY_APPLICATION_ALREADY_REVIEWED (D-CAT-10/AC-CAT-012)', async ({ page, browser }) => {
+    // 本用例较其他用例多一个隔离 admin context + 一次 MFA 登录，放宽单测超时（非 sleep）。
+    test.setTimeout(60_000)
+
+    // ── 1) merchant page：真实表单创建唯一 pending（本用例自身完成「创建 + 竞态」）。
+    await loginAs(page, SEED_ACCOUNTS.merchant)
+    await page.goto('/merchant')
+    await page.getByRole('button', { name: '分类申请' }).click()
+    await expect(page.getByTestId('category-application-panel')).toBeVisible({ timeout: 10_000 })
+    await page.getByTestId('merchant-application-create').click()
+    await expect(page.getByTestId('application-form-label')).toBeVisible({ timeout: 10_000 })
+    await page.getByTestId('application-form-label').fill(RACE_LABEL)
+    await page.getByTestId('application-form-code').fill(RACE_CODE)
+    await page.getByTestId('application-form-description').fill(RACE_DESCRIPTION)
+    await page.getByTestId('application-form-example').fill(EXAMPLE_PRODUCTS)
+
+    // 点击真实提交动作前监听精确 pathname + POST。
+    const raceCreateResponse = page.waitForResponse((response) =>
+      new URL(response.url()).pathname === '/api/merchant/category-applications'
+      && response.request().method() === 'POST'
+    )
+    await page.getByTestId('application-form-submit').click()
+    const raceCreateResult = await raceCreateResponse
+    expect(raceCreateResult.status()).toBe(201)
+
+    // 严格类型守卫从 unknown JSON 解析，保存局部正整数 raceApplicationId。
+    const raceCreateBody: unknown = await raceCreateResult.json()
+    const raceCreated = parseApplication(raceCreateBody, { label: RACE_LABEL, code: RACE_CODE })
+    const raceApplicationId = raceCreated.id
+    expect(raceApplicationId).toBeGreaterThan(0)
+    expect(raceCreated.label).toBe(RACE_LABEL)
+    expect(raceCreated.code).toBe(RACE_CODE)
+    expect(raceCreated.status).toBe('pending')
+
+    // 请求 JSON：精确四 allowlist 字段，明确无 merchantId/status（复用既有 readCreatePayload）。
+    const raceCreateRequestBody: unknown = raceCreateResult.request().postDataJSON()
+    expect(readCreatePayload(raceCreateRequestBody)).toEqual({
+      proposedLabel: RACE_LABEL,
+      proposedCode: RACE_CODE,
+      description: RACE_DESCRIPTION,
+      exampleProducts: EXAMPLE_PRODUCTS,
+    })
+
+    // toast 成功 + 列表行 data-status=pending。
+    await expect(
+      page.locator('[data-toast-card]', { hasText: '分类申请已提交，等待平台审核' }),
+    ).toBeVisible({ timeout: 10_000 })
+    const raceMerchantRow = page.getByTestId(`application-row-${raceApplicationId}`)
+    await expect(raceMerchantRow).toBeVisible({ timeout: 10_000 })
+    await expect(raceMerchantRow).toHaveAttribute('data-status', 'pending')
+
+    // ── 2) 隔离 admin context：baseURL 必须为 string（否则显式 throw），
+    //    browser.newContext({ baseURL }) 创建独立 cookie/localStorage 会话。
+    const baseURL = test.info().project.use.baseURL
+    if (typeof baseURL !== 'string' || baseURL.length === 0) {
+      throw new Error('project.use.baseURL 必须是 string（隔离 admin context 依赖 baseURL）')
+    }
+    const adminContext = await browser.newContext({ baseURL })
+    try {
+      const adminPage = await adminContext.newPage()
+
+      // ── 3) adminPage：真实 admin MFA 登录 → /admin → 目录治理，打开 stale create_new dialog。
+      await loginAs(adminPage, SEED_ACCOUNTS.admin)
+      await adminPage.goto('/admin')
+      await adminPage.getByRole('button', { name: '目录治理' }).click()
+      await expect(adminPage.getByTestId('admin-category-manager')).toBeVisible({ timeout: 10_000 })
+      await expect(adminPage.getByTestId('admin-application-status-filter')).toHaveValue('pending')
+      const adminRaceRow = adminPage.getByTestId(`application-row-${raceApplicationId}`)
+      await expect(adminRaceRow).toBeVisible({ timeout: 10_000 })
+      await expect(adminRaceRow).toHaveAttribute('data-status', 'pending')
+      await adminPage.getByTestId(`application-approve-new-${raceApplicationId}`).click()
+
+      // stale dialog：断言预填（code/label/description），填 icon + reason，保持打开不提交。
+      const staleReviewDialog = adminPage.getByRole('dialog')
+      await expect(staleReviewDialog).toBeVisible({ timeout: 10_000 })
+      await expect(staleReviewDialog.getByTestId('review-code')).toHaveValue(RACE_CODE)
+      await expect(staleReviewDialog.getByTestId('review-label')).toHaveValue(RACE_LABEL)
+      await expect(staleReviewDialog.getByTestId('review-description')).toHaveValue(RACE_DESCRIPTION)
+      await staleReviewDialog.getByTestId('review-icon').fill('folder-tree')
+      await staleReviewDialog.getByTestId('review-reason').fill(RACE_REASON)
+
+      // ── 4) 回 merchant page：对同一 pending 点击 withdraw → 真实 confirm dialog 确认。
+      const merchantRow = page.getByTestId(`application-row-${raceApplicationId}`)
+      await expect(merchantRow).toBeVisible({ timeout: 10_000 })
+      await expect(merchantRow).toHaveAttribute('data-status', 'pending')
+      const withdrawButton = page.getByTestId(`application-withdraw-${raceApplicationId}`)
+      await expect(withdrawButton).toBeVisible()
+      await withdrawButton.click()
+      const confirmDialog = page.getByRole('dialog')
+      await expect(confirmDialog).toBeVisible({ timeout: 10_000 })
+      await expect(confirmDialog).toContainText('撤回分类申请')
+      await expect(confirmDialog).toContainText('确定撤回')
+      const withdrawResponse = page.waitForResponse((response) =>
+        new URL(response.url()).pathname === `/api/merchant/category-applications/${raceApplicationId}/withdraw`
+        && response.request().method() === 'POST'
+      )
+      await confirmDialog.getByRole('button', { name: '撤回', exact: true }).click()
+      const withdrawResult = await withdrawResponse
+      expect(withdrawResult.status()).toBe(200)
+
+      // 复用 parseWithdrawnApplication 严格解析撤回结果。
+      const withdrawBody: unknown = await withdrawResult.json()
+      const withdrawn = parseWithdrawnApplication(withdrawBody, raceApplicationId)
+      expect(withdrawn.id).toBe(raceApplicationId)
+      expect(withdrawn.status).toBe('withdrawn')
+      await expect(
+        page.locator('[data-toast-card]', { hasText: '申请已撤回' }),
+      ).toBeVisible({ timeout: 10_000 })
+      await expect(merchantRow).toHaveAttribute('data-status', 'withdrawn', { timeout: 10_000 })
+      await expect(page.getByTestId(`application-withdraw-${raceApplicationId}`)).toHaveCount(0)
+
+      // ── 5) admin stale dialog 仍打开 → 点 submit：点击前精确 waitForResponse POST /approve。
+      await expect(staleReviewDialog).toBeVisible()
+      const approveResponse = adminPage.waitForResponse((response) =>
+        new URL(response.url()).pathname === `/api/admin/category-applications/${raceApplicationId}/approve`
+        && response.request().method() === 'POST'
+      )
+      await staleReviewDialog.getByTestId('review-submit').click()
+      const approveResult = await approveResponse
+
+      // 真实契约（server applicationRoutes.test.ts「second review returns 409」）：
+      // withdraw 后 CAS 命中失败 → 409 CATEGORY_APPLICATION_ALREADY_REVIEWED，绝不能被伪造成成功。
+      expect(approveResult.status()).toBe(409)
+      const approveBody: unknown = await approveResult.json()
+      expect(readErrorCode(approveBody)).toBe('CATEGORY_APPLICATION_ALREADY_REVIEWED')
+
+      // 请求 body 用现有 readApproveCreateNewPayload 严格断言精确 create_new payload。
+      const approveRequestBody: unknown = approveResult.request().postDataJSON()
+      expect(readApproveCreateNewPayload(approveRequestBody)).toEqual({
+        resolution: 'create_new',
+        category: {
+          code: RACE_CODE,
+          label: RACE_LABEL,
+          description: RACE_DESCRIPTION,
+          iconKey: 'folder-tree',
+        },
+        reviewReason: RACE_REASON,
+      })
+
+      // ── 6) admin UI 稳定冲突 UX（组件冲突路径 refreshApplications）。
+      await expect(
+        adminPage.locator('[data-toast-card]', { hasText: '该申请已被审核或已撤回，无法重复操作' }),
+      ).toBeVisible({ timeout: 10_000 })
+      await expect(adminPage.getByRole('dialog')).toHaveCount(0)
+      // 默认 pending 列表自行刷新：同 row 消失（已 withdrawn，不再命中 pending）。
+      await expect(adminPage.getByTestId(`application-row-${raceApplicationId}`)).toHaveCount(0, { timeout: 10_000 })
+      // 409 冲突路径绝不出现成功 toast「已通过并新建分类」。
+      await expect(
+        adminPage.locator('[data-toast-card]', { hasText: '已通过并新建分类' }),
+      ).toHaveCount(0)
+
+      // 切 withdrawn 状态回查同 row：data-status=withdrawn、显示「已处理」、无操作按钮。
+      await adminPage.getByTestId('admin-application-status-filter').selectOption('withdrawn')
+      const withdrawnAdminRow = adminPage.getByTestId(`application-row-${raceApplicationId}`)
+      await expect(withdrawnAdminRow).toBeVisible({ timeout: 10_000 })
+      await expect(withdrawnAdminRow).toHaveAttribute('data-status', 'withdrawn')
+      await expect(withdrawnAdminRow).toContainText('已处理')
+      await expect(adminPage.getByTestId(`application-approve-new-${raceApplicationId}`)).toHaveCount(0)
+      await expect(adminPage.getByTestId(`application-approve-map-${raceApplicationId}`)).toHaveCount(0)
+      await expect(adminPage.getByTestId(`application-reject-${raceApplicationId}`)).toHaveCount(0)
+
+      // ── 7) 409 不被伪造成成功：不通过、不新建分类，故绝不断言任何新分类产生。
+    } finally {
+      await adminContext.close()
+    }
   })
 })
