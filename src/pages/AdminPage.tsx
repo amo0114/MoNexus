@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { LayoutDashboard, UsersRound, Package, ShoppingCart, Activity, Users, ShoppingBag, Coins, Store, DollarSign, Settings, ClipboardList, Megaphone, DatabaseBackup, FolderLock, Cable, ShieldAlert, HardDrive } from 'lucide-react'
+import { LayoutDashboard, UsersRound, Package, ShoppingCart, Activity, Users, ShoppingBag, Coins, Store, Tags, DollarSign, Settings, ClipboardList, Megaphone, DatabaseBackup, FolderLock, Cable, ShieldAlert, HardDrive } from 'lucide-react'
 import api from '../api/client'
 import { getApiErrorMessage } from '../api/error'
 import { useAppStore } from '../stores/appStore'
@@ -39,8 +39,9 @@ import AdminPlatformProductWizard from '../components/catalog/AdminPlatformProdu
 import AdminFakaImportPreview from '../components/catalog/AdminFakaImportPreview'
 import AdminInventoryImportPreview, { type AdminInventoryTarget } from '../components/catalog/AdminInventoryImportPreview'
 import AdminMerchandisingPage from '../components/merchandising/AdminMerchandisingPage'
+import AdminCategoryManager from '../components/catalog/AdminCategoryManager'
 
-type AdminTab = 'dashboard' | 'users' | 'products' | 'orders' | 'logs' | 'audit' | 'files' | 'merchants' | 'settlements' | 'announcements' | 'config' | 'backup' | 'faka' | 'abuse' | 'storage' | 'merchandising'
+type AdminTab = 'dashboard' | 'users' | 'products' | 'orders' | 'logs' | 'audit' | 'files' | 'merchants' | 'settlements' | 'announcements' | 'config' | 'backup' | 'faka' | 'abuse' | 'storage' | 'merchandising' | 'catalogGovernance'
 
 const NAV_ITEMS: { id: AdminTab; label: string; icon: any }[] = [
   { id: 'dashboard', label: '数据仪表盘', icon: LayoutDashboard },
@@ -57,6 +58,7 @@ const NAV_ITEMS: { id: AdminTab; label: string; icon: any }[] = [
   { id: 'storage', label: '对象存储', icon: HardDrive },
   { id: 'announcements', label: '公告管理', icon: Megaphone },
   { id: 'merchandising', label: '营销与陈列', icon: ShoppingBag },
+  { id: 'catalogGovernance', label: '目录治理', icon: Tags },
   { id: 'config', label: '系统配置', icon: Settings },
   { id: 'backup', label: '数据备份与恢复', icon: DatabaseBackup },
 ]
@@ -281,6 +283,7 @@ export default function AdminPage() {
           {activeTab === 'abuse' && <AbuseProtectionPanel />}
           {activeTab === 'storage' && <AdminStoragePanel />}
           {activeTab === 'merchandising' && <AdminMerchandisingPage />}
+          {activeTab === 'catalogGovernance' && <AdminCategoryManager />}
 
           {/* Merchants */}
           {activeTab === 'merchants' && (
