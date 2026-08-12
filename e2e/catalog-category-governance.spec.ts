@@ -195,6 +195,24 @@ import { SEED_ACCOUNTS, loginAs } from './helpers'
  *      算页数并真实逐页导航到末页（sortOrder=1_000_000 应在末页），每页 GET 参数精确且 UI
  *      页码同步；断言行 data-status=active、code/编辑后 label 正确、历史标签消失、
  *      停用按钮出现、启用按钮消失。
+ * 已覆盖（D-CAT-07 / AC-CAT-011 / CHK-UI-005）——第 14 个用例：admin 分类仓库真实 UI 全量重排：
+ *   a. 复用第 11 用例保存的正整数 categoryId（先断言 >0，且当前为 active）；真实 admin MFA loginAs →
+ *      /admin → 点击「目录治理」前先监听精确 GET /api/admin/product-categories（page=1&pageSize=10、
+ *      status 缺失/空）并断言 ok；
+ *   b. 点击 reorder-enter 前预注册 pageSize=100 的 page 1..11 全部 response listeners（未使用 promise
+ *      必须 catch 防 unhandled timeout），按实际 total 只 await 所需页；每页用现有
+ *      parseCategoryRepositoryPage 断言 response.ok、page/pageSize/total 一致、跨页 ID 不重复、
+ *      合并数量等于 total；
+ *   c. 断言 reorder-list DOM IDs（现有 readReorderRowIds）严格等于网络全量 IDs；至少两项、包含
+ *      categoryId，且 categoryId 不是首项（若它是首项，选择另一个非首项作为 target，但仍断言列表
+ *      包含 categoryId）；
+ *   d. 点击目标行 reorder-up 一次，断言 DOM 顺序只交换目标与前一项；
+ *   e. 保存前预监听精确 POST /api/admin/product-categories/reorder + 默认 page=1,pageSize=10 refresh
+ *      GET，并用 page request 事件计数精确 reorder POST 次数；执行 saveButton.click({ clickCount: 2 })，
+ *      断言实际只一个 POST（double-submit 守卫 CHK-UI-005）；严格解析请求 JSON 用 parseReorderRequest，
+ *      orderedIds 等于完整交换后顺序；严格解析响应用 parseReorderResponse，updated 等于全量 IDs 数；
+ *      断言 toast 精确消息「已保存排序（N 个分类）」、reorder 模式退出、分页恢复、POST 总数仍为 1；
+ *   f. 不得恢复原顺序：保存后完整仓库即新顺序，后续 serial 测试接受该顺序。
  */
 
 /** 唯一申请名称（每次运行不同，避免 pending duplicate 撞车）。 */
@@ -826,6 +844,241 @@ function parseCategoryAdminDto(
     createdAt: body.createdAt,
     updatedAt: body.updatedAt,
   }
+}
+/**
+ * 精确分类仓库 reorder 列表 GET 谓词（禁止 any）：reorder 视图通过分页接口按
+ * pageSize=100 全量拉取待排序分类（与 AdminCategoryReorder 的 REORDER_PAGE_SIZE=100
+ * 一致）。精确匹配 pathname=/api/admin/product-categories、GET、page=page、
+ * pageSize=100；status 接受缺失或空（axios 省略 undefined 的行为），非空即不匹配。
+ * 返回类型守卫谓词供 waitForResponse 监听使用。
+ */
+function isCategoryRepositoryReorderPage(
+  page: number,
+): (response: { url(): string; request(): { method(): string } }) => boolean {
+  return (response) => {
+    const url = new URL(response.url())
+    if (url.pathname !== '/api/admin/product-categories') return false
+    if (response.request().method() !== 'GET') return false
+    if (url.searchParams.get('page') !== String(page)) return false
+    if (url.searchParams.get('pageSize') !== '100') return false
+    const status = url.searchParams.get('status')
+    return status === null || status === ''
+  }
+}
+
+/**
+ * 从 admin 分类仓库响应 unknown JSON 严格解析单个 CategoryAdminDto（类型守卫，禁止
+ * any/as any）：不预知任何字段值，仅校验形状——响应键必须命中冻结 allowlist（任何额外键
+ * 拒绝，且显式点名 relations/secrets）；id/createdByUserId/updatedByUserId 必须正整数、
+ * code/label 必须非空 string、normalizedLabel 必须 string、sortOrder 必须整数、
+ * iconKey/description/defaultCoverUrl 必须 string 或 null（可空）、
+ * normalizedLabel 必须等于 label 的 trim lowercase、
+ * status 必须 'active'|'inactive'、createdAt/updatedAt 必须 ISO 时间戳。任何形状不符
+ * 直接抛错，绝不静默返回伪造值。与 parseCategoryAdminDto 不同，本 parser 不预知任何字段值。
+ */
+function parseCategoryAdminDtoStrict(body: unknown): {
+  id: number
+  code: string
+  label: string
+  normalizedLabel: string
+  iconKey: string | null
+  sortOrder: number
+  description: string | null
+  defaultCoverUrl: string | null
+  status: 'active' | 'inactive'
+  createdByUserId: number
+  updatedByUserId: number
+  createdAt: string
+  updatedAt: string
+} {
+  if (!isRecord(body)) throw new Error('分类仓库条目不是 JSON 对象')
+
+  // 显式点名 relations/secrets（即使将来误入 allowlist 也单独拒绝，防回归）。
+  const forbiddenKeys = [...CATEGORY_ADMIN_FORBIDDEN_KEYS].filter((key) => key in body)
+  if (forbiddenKeys.length > 0) {
+    throw new Error(`分类仓库条目泄露关联/敏感字段: ${forbiddenKeys.join(', ')}`)
+  }
+
+  // 冻结 CategoryAdminDto allowlist：任何额外键一律拒绝。
+  const extraKeys = Object.keys(body).filter((key) => !CATEGORY_ADMIN_ALLOWED_KEYS.has(key))
+  if (extraKeys.length > 0) {
+    throw new Error(`分类仓库条目含未允许字段: ${extraKeys.join(', ')}`)
+  }
+
+  if (!isPositiveInteger(body.id)) throw new Error('分类仓库条目缺少正整数 id')
+  if (typeof body.code !== 'string' || body.code.length === 0) throw new Error('分类仓库条目 code 必须是非空 string')
+  if (typeof body.label !== 'string' || body.label.length === 0) throw new Error('分类仓库条目 label 必须是非空 string')
+  if (typeof body.normalizedLabel !== 'string' || body.normalizedLabel !== body.label.trim().toLowerCase()) {
+    throw new Error('分类仓库条目 normalizedLabel 非 label 的 trim lowercase')
+  }
+  if (body.description !== null && (typeof body.description !== 'string' || body.description.length === 0)) throw new Error('分类仓库条目 description 必须是非空 string 或 null')
+  if (body.iconKey !== null && (typeof body.iconKey !== 'string' || body.iconKey.length === 0)) throw new Error('分类仓库条目 iconKey 必须是非空 string 或 null')
+  if (body.defaultCoverUrl !== null && (typeof body.defaultCoverUrl !== 'string' || body.defaultCoverUrl.length === 0)) throw new Error('分类仓库条目 defaultCoverUrl 必须是非空 string 或 null')
+  if (typeof body.sortOrder !== 'number' || !Number.isInteger(body.sortOrder)) {
+    throw new Error('分类仓库条目 sortOrder 必须整数')
+  }
+  if (body.status !== 'active' && body.status !== 'inactive') {
+    throw new Error(`分类仓库条目 status 非 active/inactive，实际: ${String(body.status)}`)
+  }
+  if (!isPositiveInteger(body.createdByUserId)) throw new Error('分类仓库条目缺少正整数 createdByUserId')
+  if (!isPositiveInteger(body.updatedByUserId)) throw new Error('分类仓库条目缺少正整数 updatedByUserId')
+  if (!isIsoTimestamp(body.createdAt)) throw new Error('分类仓库条目 createdAt 非 ISO 时间戳')
+  if (!isIsoTimestamp(body.updatedAt)) throw new Error('分类仓库条目 updatedAt 非 ISO 时间戳')
+
+  return {
+    id: body.id,
+    code: body.code,
+    label: body.label,
+    normalizedLabel: body.normalizedLabel,
+    iconKey: body.iconKey,
+    sortOrder: body.sortOrder,
+    description: body.description,
+    defaultCoverUrl: body.defaultCoverUrl,
+    status: body.status,
+    createdByUserId: body.createdByUserId,
+    updatedByUserId: body.updatedByUserId,
+    createdAt: body.createdAt,
+    updatedAt: body.updatedAt,
+  }
+}
+
+/**
+ * 从 admin 分类仓库分页列表响应 unknown JSON 严格解析分页信封（类型守卫，禁止 any/as
+ * any）：顶层键必须精确恰 { items, total, page, pageSize }；total 非负整数、
+ * page/pageSize 正整数；items 必须数组，且每项经 parseCategoryAdminDtoStrict 严格校验
+ * CategoryAdminDto 形状/allowlist（不预知字段值）；items id 必须互不重复。一致性约束：
+ * items.length 不得超过 pageSize 或 total、total=0 时 items 必须为空、
+ * page 超出 ceil(total/pageSize) 时 items 必须为空。任何形状不符直接抛错，绝不静默返回伪造值。
+ */
+function parseCategoryRepositoryPage(body: unknown): {
+  items: Array<ReturnType<typeof parseCategoryAdminDtoStrict>>
+  total: number
+  page: number
+  pageSize: number
+} {
+  if (!isRecord(body)) throw new Error('分类仓库分页响应不是 JSON 对象')
+  const topKeys = Object.keys(body)
+  if (
+    topKeys.length !== 4 ||
+    !('items' in body) ||
+    !('total' in body) ||
+    !('page' in body) ||
+    !('pageSize' in body)
+  ) {
+    throw new Error(`分类仓库分页响应顶层键必须精确为 items/total/page/pageSize，实际: ${topKeys.join(', ')}`)
+  }
+  if (typeof body.total !== 'number' || !Number.isInteger(body.total) || body.total < 0) {
+    throw new Error('分类仓库分页响应缺少非负整数 total')
+  }
+  if (typeof body.page !== 'number' || !Number.isInteger(body.page) || body.page < 1) {
+    throw new Error('分类仓库分页响应缺少正整数 page')
+  }
+  if (typeof body.pageSize !== 'number' || !Number.isInteger(body.pageSize) || body.pageSize < 1) {
+    throw new Error('分类仓库分页响应缺少正整数 pageSize')
+  }
+  const rawItems: unknown = body.items
+  if (!Array.isArray(rawItems)) throw new Error('分类仓库分页响应 items 必须是非空数组')
+  const items: unknown[] = rawItems
+  const parsed: Array<ReturnType<typeof parseCategoryAdminDtoStrict>> = []
+  for (let i = 0; i < items.length; i++) {
+    try {
+      parsed.push(parseCategoryAdminDtoStrict(items[i]))
+    } catch (error) {
+      throw new Error(`分类仓库分页响应 items[${i}] 校验失败: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+  // items id 必须互不重复。
+  const seen = new Set<number>()
+  for (const item of parsed) {
+    if (seen.has(item.id)) throw new Error(`分类仓库分页响应 items id 重复: ${item.id}`)
+    seen.add(item.id)
+  }
+  // 一致性约束：items.length 不得超过 pageSize 或 total；total=0 时 items 必须为空；
+  // page 超出 ceil(total/pageSize) 时 items 必须为空。
+  if (parsed.length > body.pageSize) {
+    throw new Error(`分类仓库分页响应 items.length(${parsed.length}) 超过 pageSize(${body.pageSize})`)
+  }
+  if (parsed.length > body.total) {
+    throw new Error(`分类仓库分页响应 items.length(${parsed.length}) 超过 total(${body.total})`)
+  }
+  if (body.total === 0 && parsed.length !== 0) {
+    throw new Error('分类仓库分页响应 total=0 时 items 必须为空')
+  }
+  const maxPage = Math.ceil(body.total / body.pageSize)
+  if (body.page > maxPage && parsed.length !== 0) {
+    throw new Error(`分类仓库分页响应 page(${body.page}) 超出最大页数 ${maxPage}，items 必须为空`)
+  }
+  return { items: parsed, total: body.total, page: body.page, pageSize: body.pageSize }
+}
+
+/**
+ * 从 reorder 列表直接子行读取 data-testid 为 reorder-row-<id> 的分类 id（类型守卫，
+ * 禁止 ElementHandle/any，全程 Locator + 字符串校验）：行必须是列表的直接子元素、
+ * data-testid 必须严格匹配 /^reorder-row-([1-9][0-9]*)$/、id 必须正整数且互不重复；
+ * 任何形状不符直接抛错。
+ */
+async function readReorderRowIds(reorderList: Locator): Promise<number[]> {
+  const rows = reorderList.locator(':scope > [data-testid^="reorder-row-"]')
+  const count = await rows.count()
+  const ids: number[] = []
+  const seen = new Set<number>()
+  for (let i = 0; i < count; i++) {
+    const testId = await rows.nth(i).getAttribute('data-testid')
+    const match = /^reorder-row-([1-9][0-9]*)$/.exec(testId ?? '')
+    if (match === null) {
+      throw new Error(`reorder 行 data-testid 格式非法（须为 reorder-row-<正整数>）: ${String(testId)}`)
+    }
+    const id = Number(match[1])
+    if (!Number.isSafeInteger(id) || id < 1) {
+      throw new Error(`reorder 行 id 非安全正整数: ${match[1]}`)
+    }
+    if (seen.has(id)) throw new Error(`reorder 行 id 重复: ${id}`)
+    seen.add(id)
+    ids.push(id)
+  }
+  return ids
+}
+
+/**
+ * 请求 JSON unknown → reorder payload（类型守卫，禁止 any/as any）：必须精确顶层单键
+ * { orderedIds }；orderedIds 必须非空正整数数组且互不重复；任何多余键或形状不符直接抛错。
+ */
+function parseReorderRequest(body: unknown): { orderedIds: number[] } {
+  if (!isRecord(body)) throw new Error('排序请求不是 JSON 对象')
+  const topKeys = Object.keys(body)
+  if (topKeys.length !== 1 || !('orderedIds' in body)) {
+    throw new Error(`排序请求顶层必须精确单键 orderedIds，实际: ${topKeys.join(', ')}`)
+  }
+  const raw: unknown = body.orderedIds
+  if (!Array.isArray(raw) || raw.length === 0) {
+    throw new Error('排序请求 orderedIds 必须是非空数组')
+  }
+  const list: unknown[] = raw
+  const orderedIds: number[] = []
+  const seen = new Set<number>()
+  for (const value of list) {
+    if (!isPositiveInteger(value)) throw new Error('排序请求 orderedIds 必须全为正整数')
+    if (seen.has(value)) throw new Error(`排序请求 orderedIds 含重复 id: ${value}`)
+    seen.add(value)
+    orderedIds.push(value)
+  }
+  return { orderedIds }
+}
+
+/**
+ * reorder 响应 unknown JSON → 严格解析（类型守卫，禁止 any/as any）：必须精确顶层单键
+ * { updated }；updated 必须非负整数；任何多余键或形状不符直接抛错。
+ */
+function parseReorderResponse(body: unknown): { updated: number } {
+  if (!isRecord(body)) throw new Error('排序响应不是 JSON 对象')
+  const topKeys = Object.keys(body)
+  if (topKeys.length !== 1 || !('updated' in body)) {
+    throw new Error(`排序响应顶层必须精确单键 updated，实际: ${topKeys.join(', ')}`)
+  }
+  if (typeof body.updated !== 'number' || !Number.isInteger(body.updated) || body.updated < 0) {
+    throw new Error('排序响应 updated 必须是非负整数')
+  }
+  return { updated: body.updated }
 }
 
 /**
@@ -2228,5 +2481,150 @@ test.describe.serial('PAR-CMI-002 catalog category governance merchant flow', ()
     await expect(activeRow.getByTestId('inactive-historical-label')).toHaveCount(0)
     await expect(page.getByTestId(`category-deactivate-${categoryId}`)).toBeVisible()
     await expect(page.getByTestId(`category-activate-${categoryId}`)).toHaveCount(0)
+  })
+  test('admin reorders the full category repository via the real UI', async ({ page }) => {
+    // 串行依赖：第 11 个 create/edit 用例必须已保存正整数 categoryId（复用其编辑后的
+    // ADMIN_CATEGORY_CODE / ADMIN_CATEGORY_*_EDIT 常量，且当前仍为 active）。
+    expect(categoryId).toBeGreaterThan(0)
+
+    // 真实 admin MFA 登录（loginAs admin 走 seed TOTP 验证）→ /admin。
+    await loginAs(page, SEED_ACCOUNTS.admin)
+    await page.goto('/admin')
+
+    // 点击「目录治理」前预监听默认 page=1,pageSize=10 GET（复用 isCategoryRepositoryListPage）。
+    const initialCategoriesResponse = page.waitForResponse(isCategoryRepositoryListPage(1))
+    await page.getByRole('button', { name: '目录治理' }).click()
+    await expect(page.getByTestId('admin-category-manager')).toBeVisible({ timeout: 10_000 })
+    const initialCategoriesResult = await initialCategoriesResponse
+    expect(initialCategoriesResult.ok()).toBe(true)
+
+    // 点击 reorder-enter 前预注册 pageSize=100 的 page 1..11 全部 response listeners；
+    // 未使用的 promise 必须 catch 防 unhandled timeout；按实际 total 只 await 所需页。
+    const reorderResponses: Array<ReturnType<typeof page.waitForResponse>> = []
+    for (let reorderPage = 1; reorderPage <= 11; reorderPage++) {
+      const responsePromise = page.waitForResponse(isCategoryRepositoryReorderPage(reorderPage))
+      responsePromise.catch(() => {}) // 未使用 promise 防 unhandled timeout/rejection
+      reorderResponses.push(responsePromise)
+    }
+    await page.getByTestId('reorder-enter').click()
+
+    // 第一页响应：断言 response.ok、page/pageSize/total 一致，解析并保存 total。
+    const firstReorderResult = await reorderResponses[0]
+    expect(firstReorderResult.ok()).toBe(true)
+    const firstReorderBody: unknown = await firstReorderResult.json()
+    const firstReorderPage = parseCategoryRepositoryPage(firstReorderBody)
+    expect(firstReorderPage.page).toBe(1)
+    expect(firstReorderPage.pageSize).toBe(100)
+    const total = firstReorderPage.total
+    expect(total).toBeGreaterThan(0)
+    const allReorderIds: number[] = firstReorderPage.items.map((item) => item.id)
+
+    // 按实际 total 只 await 所需页：每页用现有 parseCategoryRepositoryPage，
+    // 断言 response.ok、page/pageSize/total 一致、跨页 ID 不重复、合并数量等于 total。
+    const neededPages = Math.min(11, Math.max(1, Math.ceil(total / 100)))
+    const seenReorderIds = new Set<number>(allReorderIds)
+    for (let reorderPage = 2; reorderPage <= neededPages; reorderPage++) {
+      const pageResult = await reorderResponses[reorderPage - 1]
+      expect(pageResult.ok()).toBe(true)
+      const pageBody: unknown = await pageResult.json()
+      const parsedPage = parseCategoryRepositoryPage(pageBody)
+      expect(parsedPage.page).toBe(reorderPage)
+      expect(parsedPage.pageSize).toBe(100)
+      expect(parsedPage.total).toBe(total)
+      for (const item of parsedPage.items) {
+        expect(seenReorderIds.has(item.id), `跨页 ID 重复: ${item.id}`).toBe(false)
+        seenReorderIds.add(item.id)
+        allReorderIds.push(item.id)
+      }
+    }
+    // 合并数量等于 total。
+    expect(allReorderIds.length).toBe(total)
+
+    // 等 reorder-list 渲染完成，用现有 readReorderRowIds 读取 DOM IDs，断言严格等于网络全量 IDs。
+    const reorderList = page.getByTestId('reorder-list')
+    await expect(reorderList).toBeVisible({ timeout: 10_000 })
+    const domIds = await readReorderRowIds(reorderList)
+    expect(domIds).toEqual(allReorderIds)
+
+    // 至少两项、包含 categoryId。
+    expect(domIds.length).toBeGreaterThanOrEqual(2)
+    expect(domIds).toContain(categoryId)
+
+    // 若 categoryId 是首项，则选择另一个非首项作为 target（reorder-up 对首项 disabled）；
+    // 否则 target=categoryId。无论哪种，列表仍断言包含 categoryId。
+    let targetIndex = domIds.indexOf(categoryId)
+    let targetId = categoryId
+    if (targetIndex === 0) {
+      targetIndex = 1
+      targetId = domIds[targetIndex]
+    }
+    expect(targetIndex).toBeGreaterThan(0)
+    expect(domIds).toContain(categoryId)
+
+    // 点击目标行 reorder-up 一次：断言 DOM 顺序只交换目标与前一项。
+    const expectedAfterSwap = [...domIds]
+    const previousId = expectedAfterSwap[targetIndex - 1]
+    expectedAfterSwap[targetIndex - 1] = expectedAfterSwap[targetIndex]
+    expectedAfterSwap[targetIndex] = previousId
+    await page.getByTestId(`reorder-up-${targetId}`).click()
+    const domIdsAfterSwap = await readReorderRowIds(reorderList)
+    expect(domIdsAfterSwap).toEqual(expectedAfterSwap)
+
+    // 保存前预监听精确 POST /api/admin/product-categories/reorder + 默认 page=1,pageSize=10 refresh GET；
+    // 并用 page request 事件计数精确 reorder POST 次数（禁 sleep）。
+    const reorderPostRequests: string[] = []
+    page.on('request', (request) => {
+      if (request.method() !== 'POST') return
+      const url = new URL(request.url())
+      if (url.pathname === '/api/admin/product-categories/reorder') {
+        reorderPostRequests.push(request.url())
+      }
+    })
+    const reorderResponse = page.waitForResponse((response) =>
+      new URL(response.url()).pathname === '/api/admin/product-categories/reorder'
+      && response.request().method() === 'POST'
+    )
+    const afterSaveListResponse = page.waitForResponse(isCategoryRepositoryListPage(1))
+
+    // 执行 saveButton.click({ clickCount: 2 })：double-submit 守卫（CHK-UI-005）应只发一个 POST。
+    const saveButton = page.getByTestId('reorder-save')
+    await expect(saveButton).toBeVisible()
+    await saveButton.click({ clickCount: 2 })
+
+    const reorderResult = await reorderResponse
+    expect(reorderResult.ok()).toBe(true)
+    expect(reorderPostRequests).toHaveLength(1)
+
+    // 严格解析请求 JSON（parseReorderRequest）：orderedIds 等于完整交换后顺序。
+    const reorderRequestBody: unknown = reorderResult.request().postDataJSON()
+    const reorderRequest = parseReorderRequest(reorderRequestBody)
+    expect(reorderRequest.orderedIds).toEqual(expectedAfterSwap)
+
+    // 严格解析响应（parseReorderResponse）：updated 等于全量 IDs 数。
+    const reorderResponseBody: unknown = await reorderResult.json()
+    const reorderParsed = parseReorderResponse(reorderResponseBody)
+    expect(reorderParsed.updated).toBe(total)
+
+    // 默认 page=1,pageSize=10 refresh GET：status 200 且页参数精确。
+    const afterSaveListResult = await afterSaveListResponse
+    expect(afterSaveListResult.status()).toBe(200)
+    const afterSaveListBody: unknown = await afterSaveListResult.json()
+    const afterSavePageInfo = readCategoryListPageInfo(afterSaveListBody)
+    expect(afterSavePageInfo.page).toBe(1)
+    expect(afterSavePageInfo.pageSize).toBe(10)
+
+    // toast 精确消息「已保存排序（N 个分类）」，N=updated=total。
+    await expect(
+      page.locator('[data-toast-card]', { hasText: `已保存排序（${reorderParsed.updated} 个分类）` }),
+    ).toBeVisible({ timeout: 10_000 })
+
+    // reorder 模式退出：reorder-save 消失、reorder-enter 恢复；分页恢复（admin-category-pagination 可见）。
+    await expect(page.getByTestId('reorder-save')).toHaveCount(0)
+    await expect(page.getByTestId('reorder-enter')).toBeVisible()
+    await expect(page.getByTestId('admin-category-pagination')).toBeVisible()
+
+    // 全程仅一次 reorder POST。
+    expect(reorderPostRequests).toHaveLength(1)
+    // 不得恢复原顺序：保存后完整仓库即新顺序（expectedAfterSwap），后续 serial 测试接受该顺序。
   })
 })
