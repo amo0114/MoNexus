@@ -1,14 +1,17 @@
 /**
  * e2e/catalog-xboard-import.spec.ts
  *
- * Catalog ↔ XBoard (external import board) integration spec — happy-path
- * browser E2E (preview → confirm → admin products list back-check).
+ * Catalog ↔ XBoard (external import board) integration spec — browser E2E
+ * (preview → confirm → admin products list back-check, plus stale-preview
+ * reject with zero product writes).
  *
  * This file defines the shared typed guards, fixtures, and response parsers
- * that the xboard import test() case builds on, and hosts one real-UI test:
- * an admin previews and confirms a sanitized Xboard draft, then the refreshed
- * admin product list is re-verified against a strict typed DTO and the real
- * DOM table.
+ * that the xboard import test() cases build on, and hosts two real-UI tests:
+ *   - an admin previews and confirms a sanitized Xboard draft, then the
+ *     refreshed admin product list is re-verified against a strict typed DTO
+ *     and the real DOM table;
+ *   - an admin confirms a stale Xboard preview after the fixture source was
+ *     mutated and gets FAKA_SOURCE_CHANGED (409) with zero product writes.
  *
  * HTTP response predicates (method + exact pathname; empty search where noted):
  *   - isCatalogResponse        GET  /api/admin/faka/catalog
@@ -22,21 +25,27 @@
  *   - parseCategoryRegistryResponse GET /api/config/registry payload
  *   - parseAdminProductsResponse    GET /api/admin/products payload
  *     (allows extra server keys; every required field is type-validated)
+ *   - parseFakaConflictError        POST /api/admin/faka/import 409 payload
+ *     (optional top-level requestId, exact { code, message })
  *
- * XBoard fixture reset:
- *   - resetXboardFixture() POSTs http://127.0.0.1:3106/__fixture/reset
- *     with no body, strictly validates the JSON payload
- *     { success: true, action: "reset", sourceHash: <64-char lowercase hex> },
- *     and returns sourceHash. Every unexpected response throws a fixed error.
+ * XBoard fixture controls (POST, no body, strict JSON validation, return
+ * sourceHash; every unexpected response throws a fixed error):
+ *   - resetXboardFixture()  POSTs http://127.0.0.1:3106/__fixture/reset
+ *     { success: true, action: "reset", sourceHash: <64-char lowercase hex> }
+ *   - mutateXboardFixture() POSTs http://127.0.0.1:3106/__fixture/mutate-source
+ *     { success: true, action: "mutate-source", sourceHash: <64-char lowercase hex> }
  */
 
 import { expect, test, type Page, type Request, type Response } from '@playwright/test';
 import { SEED_ACCOUNTS, loginAs } from './helpers';
 
 const XBOARD_FIXTURE_RESET_URL = 'http://127.0.0.1:3106/__fixture/reset';
+const XBOARD_FIXTURE_MUTATE_URL = 'http://127.0.0.1:3106/__fixture/mutate-source';
 
 const FIXTURE_RESET_ERROR_MESSAGE =
   'XBoard fixture reset failed: unexpected response from __fixture/reset';
+const FIXTURE_MUTATE_ERROR_MESSAGE =
+  'XBoard fixture mutate failed: unexpected response from __fixture/mutate-source';
 
 // ---------------------------------------------------------------------------
 // Primitive guards
@@ -143,6 +152,34 @@ export async function resetXboardFixture(): Promise<string> {
   }
   if (typeof payload.sourceHash !== 'string' || !/^[0-9a-f]{64}$/.test(payload.sourceHash)) {
     throw new Error(FIXTURE_RESET_ERROR_MESSAGE);
+  }
+  return payload.sourceHash;
+}
+
+/**
+ * Mutates the XBoard fixture catalog source (plan 77 name/content/period
+ * price flip). Returns the reported sourceHash on success; throws the fixed
+ * FIXTURE_MUTATE_ERROR_MESSAGE on any failure.
+ */
+export async function mutateXboardFixture(): Promise<string> {
+  const response = await fetch(XBOARD_FIXTURE_MUTATE_URL, { method: 'POST' });
+  if (!response.ok) {
+    throw new Error(FIXTURE_MUTATE_ERROR_MESSAGE);
+  }
+
+  let payload: unknown;
+  try {
+    payload = await response.json();
+  } catch {
+    throw new Error(FIXTURE_MUTATE_ERROR_MESSAGE);
+  }
+
+  assertExactKeys(payload, ['success', 'action', 'sourceHash'], FIXTURE_MUTATE_ERROR_MESSAGE);
+  if (payload.success !== true || payload.action !== 'mutate-source') {
+    throw new Error(FIXTURE_MUTATE_ERROR_MESSAGE);
+  }
+  if (typeof payload.sourceHash !== 'string' || !/^[0-9a-f]{64}$/.test(payload.sourceHash)) {
+    throw new Error(FIXTURE_MUTATE_ERROR_MESSAGE);
   }
   return payload.sourceHash;
 }
@@ -950,6 +987,61 @@ export function parseFakaImportResponse(value: unknown): FakaImportResponse {
 }
 
 // ---------------------------------------------------------------------------
+// Faka import conflict error parser (409)
+// ---------------------------------------------------------------------------
+
+export interface FakaConflictError {
+  requestId: string | null;
+  code: string;
+  message: string;
+}
+
+/**
+ * Strictly parses a Faka import 409 conflict error payload.
+ * The top level may carry exactly { error } plus an optional { requestId } —
+ * no other top-level key is allowed. `error` must be exactly { code, message }:
+ * the FAKA_SOURCE_CHANGED conflict never carries `details`, so a `details` key
+ * is rejected. code/message must be non-empty strings; requestId, when
+ * present, must be a non-empty string. Returns a fully typed object.
+ */
+export function parseFakaConflictError(value: unknown): FakaConflictError {
+  if (!isRecord(value)) {
+    throw new Error('Faka import conflict error: expected a plain object');
+  }
+  const actualKeys = Object.keys(value);
+  const unexpectedKeys = actualKeys.filter((key) => key !== 'error' && key !== 'requestId');
+  if (unexpectedKeys.length > 0) {
+    throw new Error(
+      `Faka import conflict error: unexpected top-level keys [${unexpectedKeys.join(', ')}]`,
+    );
+  }
+  if (!Object.prototype.hasOwnProperty.call(value, 'error')) {
+    throw new Error('Faka import conflict error: missing "error"');
+  }
+
+  let requestId: string | null = null;
+  if (Object.prototype.hasOwnProperty.call(value, 'requestId')) {
+    if (typeof value.requestId !== 'string' || value.requestId.length === 0) {
+      throw new Error('Faka import conflict error: requestId must be a non-empty string when present');
+    }
+    requestId = value.requestId;
+  }
+
+  assertExactKeys(value.error, ['code', 'message'], 'Faka import conflict error: error');
+  if (typeof value.error.code !== 'string' || value.error.code.length === 0) {
+    throw new Error('Faka import conflict error: error.code must be a non-empty string');
+  }
+  if (typeof value.error.message !== 'string' || value.error.message.length === 0) {
+    throw new Error('Faka import conflict error: error.message must be a non-empty string');
+  }
+  return {
+    requestId,
+    code: value.error.code,
+    message: value.error.message,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Admin products response parser (typed DTO)
 // ---------------------------------------------------------------------------
 
@@ -1281,6 +1373,156 @@ export async function ensureNetworkNodeDefaultCoverViaUi(page: Page): Promise<vo
   }
 }
 test.describe.serial('Catalog Xboard import', () => {
+  test('admin rejects a stale Xboard preview with zero product writes', async ({ page }) => {
+    await resetXboardFixture();
+    try {
+      await loginAs(page, SEED_ACCOUNTS.admin);
+      await page.goto('/admin');
+      await ensureNetworkNodeDefaultCoverViaUi(page);
+
+      // --- Baseline admin products list (real UI read; no gold skus yet) ---
+      const baselineProductsPromise = page.waitForResponse(isAdminProductsResponse);
+      await page.getByRole('button', { name: '商品与库存', exact: true }).click();
+      const baselineProductsResponse = await baselineProductsPromise;
+      expect(baselineProductsResponse.status()).toBe(200);
+      const baselineBody: unknown = await baselineProductsResponse.json();
+      const baselineProducts = parseAdminProductsResponse(baselineBody);
+      const baselineExternalSkus = baselineProducts.flatMap((product) =>
+        product.offers.map((offer) => offer.externalSku),
+      );
+      expect(baselineExternalSkus).not.toContain('gold-monthly');
+      expect(baselineExternalSkus).not.toContain('gold-yearly');
+
+      // --- Open the real Xboard import UI (catalog + category registry) ---
+      const catalogResponsePromise = page.waitForResponse(isCatalogResponse);
+      const registryResponsePromise = page.waitForResponse(isRegistryResponse);
+      await page.getByTestId('admin-faka-import-open').click();
+      const [catalogResponse, registryResponse] = await Promise.all([
+        catalogResponsePromise,
+        registryResponsePromise,
+      ]);
+      expect(catalogResponse.status()).toBe(200);
+      expect(registryResponse.status()).toBe(200);
+
+      const catalogBody: unknown = await catalogResponse.json();
+      const catalog = parseFakaCatalogResponse(catalogBody);
+      const goldPlan = catalog.plans.find((plan) => plan.plan_id === 77);
+      if (!goldPlan) {
+        throw new Error('Faka catalog is missing plan 77');
+      }
+
+      const registryBody: unknown = await registryResponse.json();
+      const categories = parseCategoryRegistryResponse(registryBody);
+      const networkNode = categories.find((category) => category.code === 'network-node');
+      if (!networkNode) {
+        throw new Error('active category registry is missing network-node');
+      }
+
+      await page.getByTestId('admin-faka-import-plan').selectOption('77');
+      await page.getByTestId('product-category-select').selectOption(String(networkNode.id));
+
+      const expectedRequest: FakaImportRequest = {
+        planId: 77,
+        productName: 'Gold Plan',
+        categoryId: networkNode.id,
+        cover: { mode: 'category_default' },
+        offers: [
+          { period: 'monthly', sku: 'gold-monthly', offerName: '月付', pricePoints: 300000 },
+          { period: 'yearly', sku: 'gold-yearly', offerName: '年付', pricePoints: 3000000 },
+        ],
+      };
+
+      // --- Preview the (still unmutated) source, same request as the happy path ---
+      const previewResponsePromise = page.waitForResponse(isImportPreviewResponse);
+      await page.getByTestId('admin-faka-import-preview-submit').click();
+      const previewResponse = await previewResponsePromise;
+      expect(previewResponse.status()).toBe(200);
+      const previewRequestBody: unknown = previewResponse.request().postDataJSON();
+      expect(parseFakaImportRequest(previewRequestBody)).toEqual(expectedRequest);
+
+      const previewBody: unknown = await previewResponse.json();
+      const preview = parseFakaPreviewResponse(previewBody);
+      expect(preview.sourceHash).toMatch(/^[0-9a-f]{64}$/);
+      expect(preview.canConfirm).toBe(true);
+
+      // --- Mutate the fixture source underneath the stale preview ---
+      const mutatedSourceHash = await mutateXboardFixture();
+      expect(mutatedSourceHash).toMatch(/^[0-9a-f]{64}$/);
+      expect(mutatedSourceHash).not.toBe(preview.sourceHash);
+
+      // --- Confirm with the stale sourceHash: exactly one request, 409, zero writes ---
+      let confirmRequestCount = 0;
+      const onConfirmRequest = (request: Request) => {
+        if (
+          request.method() === 'POST'
+          && new URL(request.url()).pathname === '/api/admin/faka/import'
+        ) {
+          confirmRequestCount += 1;
+        }
+      };
+      page.on('request', onConfirmRequest);
+
+      try {
+        const importResponsePromise = page.waitForResponse(isImportResponse);
+        await page.getByTestId('admin-faka-import-submit').click({ clickCount: 2 });
+        const importResponse = await importResponsePromise;
+        expect(confirmRequestCount).toBe(1);
+        expect(importResponse.status()).toBe(409);
+
+        const confirmRequestBody: unknown = importResponse.request().postDataJSON();
+        expect(parseFakaConfirmRequest(confirmRequestBody)).toEqual({
+          ...expectedRequest,
+          sourceHash: preview.sourceHash,
+        });
+        expect(readIdempotencyKey(importResponse.request())).not.toHaveLength(0);
+
+        const conflictBody: unknown = await importResponse.json();
+        const conflict = parseFakaConflictError(conflictBody);
+        expect(conflict.code).toBe('FAKA_SOURCE_CHANGED');
+        expect(conflict.message).toBe('Xboard 套餐已变化，请重新预览');
+
+        // --- User-visible behaviour: toast + preview cleared, dialog stays open ---
+        const sourceChangedToast = page.locator('[data-toast-card]').filter({ hasText: 'Xboard 套餐已变化，请重新预览' });
+        await expect(sourceChangedToast).toHaveText('Xboard 套餐已变化，请重新预览');
+        await page.getByTestId('admin-faka-preview-result').waitFor({ state: 'detached' });
+        await expect(page.getByTestId('admin-faka-import-submit')).toHaveCount(0);
+        await expect(page.getByTestId('admin-faka-import-preview')).toBeVisible();
+        await expect(page.getByTestId('admin-faka-import-preview-submit')).toBeVisible();
+        await expect(page.getByTestId('admin-faka-import-preview-submit')).toBeEnabled();
+
+        // --- Zero-write proof via the real read-only Admin UI (no DB, no reload) ---
+        // Close the modal with the real cancel button (pure UI; not a business
+        // write), tab-switch, and prove the product list is unchanged.
+        await page.getByRole('dialog').getByRole('button', { name: '取消' }).click();
+        await page.getByRole('button', { name: '数据仪表盘', exact: true }).click();
+        const afterProductsPromise = page.waitForResponse(isAdminProductsResponse);
+        await page.getByRole('button', { name: '商品与库存', exact: true }).click();
+        const afterProductsResponse = await afterProductsPromise;
+        expect(afterProductsResponse.status()).toBe(200);
+        const afterBody: unknown = await afterProductsResponse.json();
+        const afterProducts = parseAdminProductsResponse(afterBody);
+
+        const baselineProductIds = baselineProducts
+          .map((product) => product.id)
+          .sort((a, b) => a - b);
+        const afterProductIds = afterProducts
+          .map((product) => product.id)
+          .sort((a, b) => a - b);
+        expect(afterProductIds).toEqual(baselineProductIds);
+
+        const afterExternalSkus = afterProducts.flatMap((product) =>
+          product.offers.map((offer) => offer.externalSku),
+        );
+        expect(afterExternalSkus).not.toContain('gold-monthly');
+        expect(afterExternalSkus).not.toContain('gold-yearly');
+      } finally {
+        page.off('request', onConfirmRequest);
+      }
+    } finally {
+      await resetXboardFixture();
+    }
+  });
+
   test('admin previews and confirms a sanitized Xboard draft via the real UI', async ({ page }) => {
     await resetXboardFixture();
     await loginAs(page, SEED_ACCOUNTS.admin);
