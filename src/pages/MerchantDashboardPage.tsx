@@ -25,7 +25,7 @@ import {
   Settlement,
   Merchant
 } from '../types/merchant'
-import { Store, Package, ShoppingBag, DollarSign, Settings, Plus, ChevronLeft, ChevronRight, Loader2, BarChart3, Search, AlertTriangle, CalendarDays, Megaphone } from 'lucide-react'
+import { Store, Package, ShoppingBag, DollarSign, Settings, Plus, ChevronLeft, ChevronRight, Loader2, BarChart3, Search, AlertTriangle, CalendarDays, Megaphone, FilePlus2 } from 'lucide-react'
 import { useAppStore } from '../stores/appStore'
 import MerchantProductFormModal from '../components/merchant/MerchantProductFormModal'
 import MerchantWebhookConfigSection from '../components/merchant/MerchantWebhookConfigSection'
@@ -36,13 +36,14 @@ import MerchantOfferManagerModal from '../components/merchant/MerchantOfferManag
 import MerchantDeliverDialog from '../components/merchant/MerchantDeliverDialog'
 import MerchantDisputeDialog from '../components/merchant/MerchantDisputeDialog'
 import MerchantProgressDialog from '../components/merchant/MerchantProgressDialog'
+import CategoryApplicationPanel from '../components/catalog/CategoryApplicationPanel'
 import RegistryPill from '../components/ui/RegistryPill'
 import { Dialog, DialogContent, DialogTitle } from '../components/ui/Dialog'
 import { TableSkeleton, StatCardSkeleton } from '../components/ui/Skeleton'
 import EmptyState from '../components/ui/EmptyState'
 import { createLatestRequestGuard } from '../utils/latestRequest'
 
-type TabKey = 'dashboard' | 'products' | 'orders' | 'settlements' | 'profile' | 'operations' | 'promotions'
+type TabKey = 'dashboard' | 'products' | 'orders' | 'settlements' | 'profile' | 'operations' | 'promotions' | 'categoryApplications'
 
 const TABS: { key: TabKey; label: string; Icon: typeof Store; path?: string }[] = [
   { key: 'dashboard', label: '概览', Icon: Store },
@@ -52,6 +53,7 @@ const TABS: { key: TabKey; label: string; Icon: typeof Store; path?: string }[] 
   { key: 'profile', label: '商家资料', Icon: Settings },
   { key: 'operations', label: '经营数据', Icon: BarChart3, path: '/merchant/dashboard' },
   { key: 'promotions', label: '推广中心', Icon: Megaphone, path: '/merchant/promotions' },
+  { key: 'categoryApplications', label: '分类申请', Icon: FilePlus2 },
 ]
 
 function isInstantInventoryProduct(product: MerchantProduct) {
@@ -844,6 +846,13 @@ export default function MerchantDashboardPage() {
               <MerchantWebhookConfigSection />
             </div>
           )}
+
+          {activeTab === 'categoryApplications' && (
+            <div className="fade-in">
+              <CategoryApplicationPanel />
+            </div>
+          )}
+
         </div>
       </div>
 

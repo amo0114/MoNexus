@@ -110,6 +110,10 @@ vi.mock('../api/catalog', () => ({
   getOfferAvailabilityAction: vi.fn<(offer: unknown) => unknown>(),
 }))
 
+vi.mock('../components/catalog/CategoryApplicationPanel', () => ({
+  default: () => <div data-testid="category-application-panel-host-probe">分类申请面板</div>,
+}))
+
 // ---------------------------------------------------------------------------
 // Fixtures.
 // ---------------------------------------------------------------------------
@@ -304,5 +308,30 @@ describe('MerchantDashboardPage 商品上架/下架接线', () => {
     await waitFor(() => {
       expect(merchantApi.getMerchantProducts.mock.calls.length).toBeGreaterThan(productsCallsBefore)
     })
+  })
+
+  it('分类申请 tab：渲染 CategoryApplicationPanel 且不触发 merchant 列表 mock', async () => {
+    renderPage()
+    // 初始在 dashboard，probe 不应存在
+    expect(screen.queryByTestId('category-application-panel-host-probe')).not.toBeInTheDocument()
+
+    // 等初始 stats 完成后，记录各 merchant 列表 mock 的调用次数
+    await waitFor(() => {
+      expect(merchantApi.getMerchantStats).toHaveBeenCalled()
+    })
+    const productsCallsBefore = merchantApi.getMerchantProducts.mock.calls.length
+    const ordersCallsBefore = merchantApi.getMerchantOrders.mock.calls.length
+    const settlementsCallsBefore = merchantApi.getMerchantSettlements.mock.calls.length
+    const profileCallsBefore = merchantApi.getMerchantMe.mock.calls.length
+
+    // 点击「分类申请」后 probe 出现
+    fireEvent.click(screen.getByRole('button', { name: '分类申请' }))
+    expect(await screen.findByTestId('category-application-panel-host-probe')).toBeInTheDocument()
+
+    // 切换仅展示面板，不新增任何 merchant 列表调用
+    expect(merchantApi.getMerchantProducts.mock.calls.length).toBe(productsCallsBefore)
+    expect(merchantApi.getMerchantOrders.mock.calls.length).toBe(ordersCallsBefore)
+    expect(merchantApi.getMerchantSettlements.mock.calls.length).toBe(settlementsCallsBefore)
+    expect(merchantApi.getMerchantMe.mock.calls.length).toBe(profileCallsBefore)
   })
 })
