@@ -5,28 +5,9 @@ import { encryptMfaSecret } from '../modules/auth/mfa.js'
 import { ensureSeedCategories } from '../modules/catalog/bootstrap.js'
 import { resolveProductCategory } from '../modules/catalog/resolver.js'
 import bcrypt from 'bcryptjs'
+import { resolveE2eAdminMfaFactor } from './e2eSeedGuard.js'
 
 const FORCE_RESET = process.argv.includes('--force-reset')
-const E2E_TOTP_FACTOR = /^[A-Z2-7]{32}$/
-
-function e2eAdminMfaFactor() {
-  const factor = process.env.E2E_ADMIN_MFA_TOTP_SECRET
-  if (!factor) return null
-
-  if (!FORCE_RESET || process.env.NODE_ENV !== 'test') {
-    throw new Error('E2E administrator MFA seed is only allowed in test mode')
-  }
-  let databaseUrl: URL
-  try {
-    databaseUrl = new URL(process.env.DATABASE_URL ?? '')
-  } catch {
-    throw new Error('E2E administrator MFA seed requires the dedicated test database')
-  }
-  if (databaseUrl.pathname !== '/monexus_test' || !E2E_TOTP_FACTOR.test(factor)) {
-    throw new Error('E2E administrator MFA seed configuration is invalid')
-  }
-  return factor
-}
 
 async function upsertUser(opts: {
   email: string
@@ -62,7 +43,12 @@ async function main() {
     console.log('  ⚠ --force-reset 模式：将重置所有用户密码')
   }
 
-  const e2eMfaFactor = e2eAdminMfaFactor()
+  const e2eMfaFactor = resolveE2eAdminMfaFactor({
+    forceReset: FORCE_RESET,
+    nodeEnv: process.env.NODE_ENV,
+    factor: process.env.E2E_ADMIN_MFA_TOTP_SECRET,
+    databaseUrl: process.env.DATABASE_URL,
+  })
 
   // 创建管理员
   const admin = await upsertUser({
