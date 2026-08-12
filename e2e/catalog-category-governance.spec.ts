@@ -213,6 +213,27 @@ import { SEED_ACCOUNTS, loginAs } from './helpers'
  *      orderedIds 等于完整交换后顺序；严格解析响应用 parseReorderResponse，updated 等于全量 IDs 数；
  *      断言 toast 精确消息「已保存排序（N 个分类）」、reorder 模式退出、分页恢复、POST 总数仍为 1；
  *   f. 不得恢复原顺序：保存后完整仓库即新顺序，后续 serial 测试接受该顺序。
+ *
+ * 已覆盖（D-CAT-07 / AC-CAT-011 / CHK-CAT-004）——第 15 个用例：admin 分类仓库真实 UI
+ * 删除被引用分类（被 approved application 引用 → 409 CATEGORY_REFERENCED）：
+ *   a. 复用第 5/7 个 create_new/map_existing 审核保存的正整数 approvedCategoryId（先断言 >0）；
+ *      该分类被 approved application 引用，无需额外造 Product；真实 admin MFA loginAs → /admin →
+ *      点击「目录治理」前预监听默认无 status 的 page=1,pageSize=10 GET；
+ *   b. approvedCategoryId 的 sortOrder 非固定页，必须基于真实分页逐页 UI 查找目标行：先查第一页，
+ *      未找到时用 admin-category-pagination「下一页」逐页导航（每次下一页前预监听精确对应 GET、
+ *      断言 status/page/pageSize 与 UI 页码同步），禁止假定第一页或末页；找到 category-row-
+ *      <approvedCategoryId> 后保存原 data-status 与可见 code/label 文本证据；
+ *   c. 第一次点 category-delete-<id>：断言 ConfirmDialog 标题「删除分类」+ 正文包含
+ *      「被商品或申请引用时会被拒绝，可改为停用」，点「取消」关闭并证明零 DELETE（page request
+ *      精确计数，禁 sleep）；
+ *   d. 第二次点删除：确认前预监听精确 DELETE /api/admin/product-categories/<id> 与失败处理触发的
+ *      当前页 refresh GET；在 dialog 范围点「删除」用 click({clickCount:2}) 覆盖防重复；断言 DELETE
+ *      仅 1 次、请求 body 用现有 isEmptyMutationPayload 严格判空、响应 409、unknown JSON 用
+ *      readErrorCode 断言 CATEGORY_REFERENCED；
+ *   e. toast 精确包含「该分类已被商品或申请引用，无法删除；可先停用该分类」，绝无成功 toast
+ *      「分类已删除（保留记录，编码不再复用）」；dialog 关闭；
+ *   f. 断言失败处理触发的 refresh GET current page/status/pageSize 精确，刷新后目标行仍存在、
+ *      data-status 与原值相同、原 code/label 证据仍可见；DELETE 总计 1（分类绝未删除）。
  */
 
 /** 唯一申请名称（每次运行不同，避免 pending duplicate 撞车）。 */
@@ -2626,5 +2647,142 @@ test.describe.serial('PAR-CMI-002 catalog category governance merchant flow', ()
     // 全程仅一次 reorder POST。
     expect(reorderPostRequests).toHaveLength(1)
     // 不得恢复原顺序：保存后完整仓库即新顺序（expectedAfterSwap），后续 serial 测试接受该顺序。
+  })
+
+  test('admin cannot delete a category referenced by approved applications', async ({ page }) => {
+    // 串行依赖：第 5 个 create_new 审核用例已保存正整数 approvedCategoryId，且该分类被
+    // 第 5/7 个 create_new/map_existing 审核的 approved application 引用（approvedCategoryId
+    // 即 map 映射目标），因此 DELETE 必然被 409 CATEGORY_REFERENCED 拒绝；无需额外造 Product。
+    expect(approvedCategoryId).toBeGreaterThan(0)
+
+    // 真实 admin MFA 登录（loginAs admin 走 seed TOTP 验证）→ /admin。
+    await loginAs(page, SEED_ACCOUNTS.admin)
+    await page.goto('/admin')
+
+    // 点击「目录治理」前预监听默认无 status 的 page=1,pageSize=10 GET（复用
+    // isCategoryRepositoryListPage）；从 unknown 严格读 total/page/pageSize 计算 totalPages。
+    const initialCategoriesResponse = page.waitForResponse(isCategoryRepositoryListPage(1))
+    await page.getByRole('button', { name: '目录治理' }).click()
+    await expect(page.getByTestId('admin-category-manager')).toBeVisible({ timeout: 10_000 })
+
+    // 默认 category filter = 全部（admin-category-status-filter value ''）。
+    await expect(page.getByTestId('admin-category-status-filter')).toHaveValue('')
+
+    const initialCategoriesResult = await initialCategoriesResponse
+    expect(initialCategoriesResult.status()).toBe(200)
+    const initialStatus = new URL(initialCategoriesResult.url()).searchParams.get('status')
+    expect(initialStatus === null || initialStatus === '').toBe(true)
+    const initialBody: unknown = await initialCategoriesResult.json()
+    const initialPageInfo = readCategoryListPageInfo(initialBody)
+    expect(initialPageInfo.page).toBe(1)
+    expect(initialPageInfo.pageSize).toBe(10)
+    const totalPages = Math.max(1, Math.ceil(initialPageInfo.total / initialPageInfo.pageSize))
+
+    // 基于真实分页逐页 UI 查找目标行：先看第一页，未找到再逐页「下一页」。每次下一页前
+    // 预监听精确对应 GET、status 200、status/page/pageSize 参数精确，并用 UI 页码断言同步
+    //（杜绝响应到达而 DOM 未更新竞态）；禁止假定第一页或末页。
+    const categoryPagination = page.getByTestId('admin-category-pagination')
+    const row = page.getByTestId(`category-row-${approvedCategoryId}`)
+    await expect(categoryPagination).toContainText('第 1 /')
+    let currentCategoryPage = 1
+    let rowFound = await row.isVisible()
+    for (let targetPage = 2; !rowFound && targetPage <= totalPages; targetPage++) {
+      const pageResponse = page.waitForResponse(isCategoryRepositoryListPage(targetPage))
+      await categoryPagination.getByRole('button', { name: '下一页' }).click()
+      const pageResult = await pageResponse
+      expect(pageResult.status()).toBe(200)
+      const pageStatus = new URL(pageResult.url()).searchParams.get('status')
+      expect(pageStatus === null || pageStatus === '').toBe(true)
+      const pageBody: unknown = await pageResult.json()
+      const pageInfo = readCategoryListPageInfo(pageBody)
+      expect(pageInfo.page).toBe(targetPage)
+      expect(pageInfo.pageSize).toBe(10)
+      currentCategoryPage = targetPage
+      await expect(categoryPagination).toContainText(`第 ${targetPage} /`)
+      rowFound = await row.isVisible()
+    }
+    expect(rowFound, 'approvedCategoryId 分类在所有真实分页中均未找到').toBe(true)
+    await expect(row).toBeVisible({ timeout: 10_000 })
+
+    // 保存原 data-status 与可见 code/label 文本证据（定位后、删除失败刷新前后必须一致）。
+    const originalStatus = await row.getAttribute('data-status')
+    if (originalStatus === null) throw new Error('目标分类行缺少 data-status')
+    const originalCodeText = (await row.locator('td').nth(0).innerText()).trim()
+    const originalLabelText = (await row.locator('td').nth(1).locator('div').first().innerText()).trim()
+    expect(originalCodeText.length).toBeGreaterThan(0)
+    expect(originalLabelText.length).toBeGreaterThan(0)
+
+    // 从第一次点删除起统计精确 DELETE（禁 sleep：page request 事件精确计数）。
+    const deleteRequests: string[] = []
+    page.on('request', (request) => {
+      if (request.method() !== 'DELETE') return
+      const url = new URL(request.url())
+      if (url.pathname === `/api/admin/product-categories/${approvedCategoryId}`) {
+        deleteRequests.push(request.url())
+      }
+    })
+
+    // ── 第一次点删除：断言 ConfirmDialog 标题「删除分类」+ 正文包含
+    //    「被商品或申请引用时会被拒绝，可改为停用」，点「取消」关闭并证明零 DELETE。
+    const deleteButton = page.getByTestId(`category-delete-${approvedCategoryId}`)
+    await expect(deleteButton).toBeVisible()
+    await deleteButton.click()
+    const confirmDialog = page.getByRole('dialog')
+    await expect(confirmDialog).toBeVisible({ timeout: 10_000 })
+    await expect(confirmDialog).toContainText('删除分类')
+    await expect(confirmDialog).toContainText('被商品或申请引用时会被拒绝，可改为停用')
+    await confirmDialog.getByRole('button', { name: '取消', exact: true }).click()
+    await expect(confirmDialog).toHaveCount(0)
+    await expect(row).toHaveAttribute('data-status', originalStatus)
+    expect(deleteRequests).toHaveLength(0)
+
+    // ── 第二次点删除：确认前预监听精确 DELETE 与失败处理触发的当前页 refresh GET；
+    //    在 dialog 范围点「删除」用 click({clickCount:2}) 覆盖防重复（CHK-UI-005）。
+    await page.getByTestId(`category-delete-${approvedCategoryId}`).click()
+    await expect(confirmDialog).toBeVisible({ timeout: 10_000 })
+    await expect(confirmDialog).toContainText('删除分类')
+    const deleteResponse = page.waitForResponse((response) =>
+      new URL(response.url()).pathname === `/api/admin/product-categories/${approvedCategoryId}`
+      && response.request().method() === 'DELETE'
+    )
+    const refreshResponse = page.waitForResponse(isCategoryRepositoryListPage(currentCategoryPage))
+    await confirmDialog.getByRole('button', { name: '删除', exact: true }).click({ clickCount: 2 })
+    const deleteResult = await deleteResponse
+
+    // 真实契约（server categoryService.deleteCategory）：被 approved application 引用 →
+    // 409 CATEGORY_REFERENCED；请求 body 用现有 isEmptyMutationPayload 严格判空。
+    expect(deleteResult.status()).toBe(409)
+    const deleteRequestBody: unknown = deleteResult.request().postDataJSON()
+    expect(isEmptyMutationPayload(deleteRequestBody)).toBe(true)
+    const deleteBody: unknown = await deleteResult.json()
+    expect(readErrorCode(deleteBody)).toBe('CATEGORY_REFERENCED')
+
+    // 失败处理触发当前页 refresh GET：status 200、status 缺失/空、page=当前页、pageSize=10。
+    const refreshResult = await refreshResponse
+    expect(refreshResult.status()).toBe(200)
+    const refreshStatus = new URL(refreshResult.url()).searchParams.get('status')
+    expect(refreshStatus === null || refreshStatus === '').toBe(true)
+    const refreshBody: unknown = await refreshResult.json()
+    const refreshPageInfo = readCategoryListPageInfo(refreshBody)
+    expect(refreshPageInfo.page).toBe(currentCategoryPage)
+    expect(refreshPageInfo.pageSize).toBe(10)
+
+    // toast 精确包含「该分类已被商品或申请引用，无法删除；可先停用该分类」，
+    // 绝无成功 toast「分类已删除（保留记录，编码不再复用）」；dialog 关闭。
+    await expect(
+      page.locator('[data-toast-card]', { hasText: '该分类已被商品或申请引用，无法删除；可先停用该分类' }),
+    ).toBeVisible({ timeout: 10_000 })
+    await expect(
+      page.locator('[data-toast-card]', { hasText: '分类已删除（保留记录，编码不再复用）' }),
+    ).toHaveCount(0)
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+
+    // 列表自行刷新（禁止 page.reload）：目标行仍存在、data-status 与原值相同、
+    // 原 code/label 证据仍可见；DELETE 总计 1（分类绝未删除）。
+    await expect(row).toBeVisible({ timeout: 10_000 })
+    await expect(row).toHaveAttribute('data-status', originalStatus)
+    await expect(row.locator('td').nth(0)).toContainText(originalCodeText)
+    await expect(row.locator('td').nth(1)).toContainText(originalLabelText)
+    expect(deleteRequests).toHaveLength(1)
   })
 })
