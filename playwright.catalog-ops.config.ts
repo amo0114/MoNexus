@@ -133,6 +133,7 @@ export default defineConfig({
     'catalog-product-lifecycle.spec.ts',
     'catalog-category-governance.spec.ts',
     'catalog-xboard-import.spec.ts',
+    'merchandising-smoke.spec.ts',
   ],
   timeout: 60_000,
   retries: 0,
