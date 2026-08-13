@@ -66,6 +66,8 @@ Dispatch text (English, verbatim):
 >
 > **Report**: files changed, commands + results, and the public-surface non-leak evidence reference.
 
+**C2b 结果(2026-08-13,协调者记录)**:以 `d714f8a` 提交(dto.ts 投影 + admin 键序保持、FE parser 根因修复——此前硬编码 `chargedPoints: 0`、正反例测试、冒烟断言收紧为精确"已扣 100 积分")。协调者独立验证:双端 typecheck ✅、前端 28/28 ✅、服务端 merchandising 113/113 ✅、全新 DB 冒烟 3/3 ✅;公开端点非泄露由 `promotions-billing.test.ts:253` 精确形状断言 + publicSponsored select 级排除兜底。
+
 ### C3 — 集成测试覆盖审计 + 缺口补齐(pi,session `cmi-c3-gaps`)
 
 Dispatch text (English, verbatim):
