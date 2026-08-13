@@ -3,12 +3,14 @@
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | CHK-MERCH-001 |
-| 版本 | 0.1.1 |
+| 版本 | 0.1.2 |
 | 日期 | 2026-08-09 |
 | 状态 | **Frozen for Implementation — all checks unverified** |
 | 规格 | [SPEC-MERCH-001](./spec.md) |
 
 Checkbox只能由当前HEAD可重现证据勾选。手工改DB、mock points、仅截图有badge、隐藏feature或未审核AI图都不构成通过。
+
+> **v0.1.2**：证据规则以 [AMD-CMI-012](../2026-08-13-cmi-qa-rescope-v012.md) §2 与 §4.2 重映射为准——默认引用单元/集成/组件测试（文件+用例）；浏览器证据=1 条冒烟 spec；CHK-ASSET-001~006、CHK-PERF-001/004 Deferred；CHK-REL-001~003 改 runbook 文档确认；全部证据在 merge develop 后的最终 HEAD 一次采集。
 
 ---
 
@@ -163,3 +165,4 @@ Checkbox只能由当前HEAD可重现证据勾选。手工改DB、mock points、�
 | --- | --- | --- | --- |
 | 0.1.0 | 2026-08-09 | Frozen for Implementation | Owner 批准：自然热卖、积分推广、精选/自营/合作权益、Image2 资产治理 |
 | 0.1.1 | 2026-08-09 | Frozen for Implementation | Owner 批准唯一修订：CMI Foundation DAG 改为 S→A_CMI→F0→B_CAT→F；Merch 只消费最终 F、不参与 B_CAT |
+| 0.1.2 | 2026-08-13 | Frozen for Implementation | Owner 批准 QA 收口修订（AMD-CMI-012）：证据下沉集成/组件测试，浏览器=1 条冒烟；ASSET/PERF 部分 Deferred；REL 演练改 runbook 确认 |

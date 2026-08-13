@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | IMPL-MERCH-001 |
-| 版本 | 0.1.1 |
+| 版本 | 0.1.2 |
 | 日期 | 2026-08-09 |
 | 状态 | **Frozen for Implementation — all cards Pending** |
 | 输入 | [spec.md](./spec.md) · [plan.md](./plan.md) · [task.md](./task.md) · [checklist.md](./checklist.md) |
@@ -267,3 +267,4 @@ PR Gate status / CMI Integration Owner:
 | --- | --- | --- | --- |
 | 0.1.0 | 2026-08-09 | Frozen for Implementation | Owner 批准：自然热卖、积分推广、精选/自营/合作权益、Image2 资产治理 |
 | 0.1.1 | 2026-08-09 | Frozen for Implementation | Owner 批准唯一修订：CMI Foundation DAG 改为 S→A_CMI→F0→B_CAT→F；Merch 只消费最终 F、不参与 B_CAT；I-MERCH-001 引用 F0 schema tip |
+| 0.1.2 | 2026-08-13 | Frozen for Implementation | Owner 批准 QA 收口修订（AMD-CMI-012）：证据规则对齐 testing-policy；QA 卡收敛；T-MERCH-ASSET-001 拆出本次交付 |

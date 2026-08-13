@@ -3,12 +3,14 @@
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | CHK-CATALOG-OPS-001 |
-| 版本 | 0.1.1 |
+| 版本 | 0.1.2 |
 | 日期 | 2026-08-09 |
 | 状态 | **Frozen for Implementation — all implementation checks unverified** |
 | 规格 | [SPEC-CATALOG-OPS-001](./spec.md) |
 
 规则：只有同一 commit 上的可重现证据才能勾选。代码存在、mock 通过、手工改数据库、刷新页面或 feature-off skip 都不是证据。
+
+> **v0.1.2**：证据规则以 [AMD-CMI-012](../2026-08-13-cmi-qa-rescope-v012.md) §2 与 §4.1 重映射为准——默认引用单元/集成/组件测试（文件+用例）；浏览器证据仅限关键旅程；CHK-REL-001~003 改 runbook 文档确认；CHK-PERF-001~003 列 P1；全部证据在 merge develop 后的最终 HEAD 一次采集。
 
 ---
 
@@ -181,3 +183,4 @@ P1 不阻断首次发布；提前实施任何 P1 属范围扩张。
 | --- | --- | --- | --- |
 | 0.1.0 | 2026-08-09 | Frozen for Implementation | Owner 批准：draft/publish、动态分类、Offer-first 库存、平台商品、Xboard media/idempotency |
 | 0.1.1 | 2026-08-09 | Frozen for Implementation | Owner 批准唯一修订：CMI Foundation DAG 改为 S→A_CMI→F0→B_CAT→F；只有 F 解锁业务 lanes，F0/B_CAT 不解锁 |
+| 0.1.2 | 2026-08-13 | Frozen for Implementation | Owner 批准 QA 收口修订（AMD-CMI-012）：证据默认下沉集成/组件测试，REL 演练改 runbook 确认，PERF 数值列 P1 |

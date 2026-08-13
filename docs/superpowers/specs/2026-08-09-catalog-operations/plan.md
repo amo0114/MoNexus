@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | PLAN-CATALOG-OPS-001 |
-| 版本 | 0.1.1 |
+| 版本 | 0.1.2 |
 | 日期 | 2026-08-09 |
 | 状态 | **Frozen for Implementation** |
 | 输入 | [spec.md](./spec.md) |
@@ -364,3 +364,4 @@ F0 → B_CAT → 共同基线 F
 | --- | --- | --- | --- |
 | 0.1.0 | 2026-08-09 | Frozen for Implementation | Owner 批准：draft/publish、动态分类、Offer-first 库存、平台商品、Xboard media/idempotency |
 | 0.1.1 | 2026-08-09 | Frozen for Implementation | Owner 批准唯一修订：CMI Foundation DAG 改为 S→A_CMI→F0→B_CAT→F；F0 落 schema、B_CAT 完成分类 bootstrap、只有 F 解锁业务 lanes |
+| 0.1.2 | 2026-08-13 | Frozen for Implementation | Owner 批准 QA 收口修订（AMD-CMI-012）：证据规则对齐 testing-policy；QA 卡收敛；T-MERCH-ASSET-001 拆出本次交付 |

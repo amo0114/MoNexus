@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | IMPL-CATALOG-OPS-001 |
-| 版本 | 0.1.1 |
+| 版本 | 0.1.2 |
 | 日期 | 2026-08-09 |
 | 状态 | **Frozen for Implementation — all Implement cards Pending** |
 | 输入 | [spec.md](./spec.md) · [plan.md](./plan.md) · [task.md](./task.md) · [checklist.md](./checklist.md) |
@@ -345,3 +345,4 @@ PR Gate status:
 | --- | --- | --- | --- |
 | 0.1.0 | 2026-08-09 | Frozen for Implementation | Owner 批准：draft/publish、动态分类、Offer-first 库存、平台商品、Xboard media/idempotency |
 | 0.1.1 | 2026-08-09 | Frozen for Implementation | Owner 批准唯一修订：CMI Foundation DAG 改为 S→A_CMI→F0→B_CAT→F；I-CAT-001 拆为 F0 schema 卡与 I-CAT-BCAT（B_CAT）串行特殊卡，只有 F 解锁业务 lanes |
+| 0.1.2 | 2026-08-13 | Frozen for Implementation | Owner 批准 QA 收口修订（AMD-CMI-012）：证据规则对齐 testing-policy；QA 卡收敛；T-MERCH-ASSET-001 拆出本次交付 |

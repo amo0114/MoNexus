@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | TASK-CATALOG-OPS-001 |
-| 版本 | 0.1.1 |
+| 版本 | 0.1.2 |
 | 日期 | 2026-08-09 |
 | 状态 | **Frozen for Implementation — all tasks Pending** |
 | 输入 | [spec.md](./spec.md) · [plan.md](./plan.md) |
@@ -377,27 +377,27 @@ T-CAT-FE-002～004 的宿主修改与直接回归全部完成后，协调者记�
 
 **DoD**：empty/legacy/dirty-expected-fail 三套；migrate deploy/status/diff；前后计数/hash；AC-CAT-025、028。
 
-### T-CAT-QA-002 — Backend、安全、并发与性能 Gate
+### T-CAT-QA-002 — Backend、安全与并发证据 Gate（v0.1.2 修订，见 AMD-CMI-012 §3.1）
 
 **优先级/依赖**：P0；依赖所有 BE/INT。
 
-**Owned**：Catalog backend integration/performance harness、专用 DB setup。
+**Owned**：Catalog backend 证据审计、缺口定向集成测试、专用 DB setup。
 
-**工作**：auth/ownership/MFA、review CAS、publish race、capacity race、inventory unique、Xboard multi-process idempotency、sanitizer、cache、P95。
+**工作**：auth/ownership/MFA、review CAS、publish race、capacity race、inventory unique、Xboard multi-process idempotency、sanitizer、cache——逐项引用既有集成测试（文件+用例）；缺口以最小定向集成测试补齐。性能数值（P95）移入 P1 跟进，不在本卡。
 
-**DoD**：REQ-CAT-NF-001~005、008；无敏感泄漏；测试顺序独立。
+**DoD**：REQ-CAT-NF-001~004、008（NF-005 性能数值除外）有集成测试证据引用；无敏感泄漏；测试顺序独立。
 
-### T-CAT-QA-003 — Browser E2E、兼容、回滚与最终 Gate
+### T-CAT-QA-003 — Browser 收口、回归与最终 Gate（v0.1.2 修订，见 AMD-CMI-012 §3.2）
 
 **优先级/依赖**：P0；依赖所有 P0 task。
 
-**Owned**：`playwright.catalog-ops.config.ts`、`e2e/catalog-*.spec.ts`、`scripts/verify-catalog-ops*.sh`、Checklist evidence、Implement ledger。
+**Owned**：`playwright.catalog-ops.config.ts`、既有 `e2e/catalog-*.spec.ts` 收口、`scripts/verify-catalog-*.sh`、Checklist evidence、Implement ledger。
 
 **Must Not Touch**：放宽生产代码、page DB hack、test.skip、通知专用环境。
 
-**工作**：merchant draft→availability→publish；category申请/审核；admin platform商品；Xboard preview/confirm/replay；Store filter；old/new compat；rollback；全回归；PAR Gate。
+**工作**：三个既有 catalog spec（product-lifecycle / category-governance / xboard-import）保持全绿，**不再新增场景**；Store filter / 新旧兼容 / 回滚不写专用 e2e——分别由 `StorePage.cmi.test.tsx`+组件测试、public contract 集成测试、runbook 文档确认承接；全量回归 + PAR Gate 证据在 merge origin/develop 后的最终 HEAD 一次采集。
 
-**DoD**：一条 verify command 可复现；AC-CAT-001~028/全部 P0 CHK/G-PR 有当前 HEAD 证据。
+**DoD**：verify 命令序列可复现；AC-CAT-001~028/全部 P0 CHK/G-PR 按 AMD-CMI-012 §2 证据规则在最终 HEAD 有证据。
 
 ---
 
@@ -435,3 +435,4 @@ T-CAT-FE-002～004 的宿主修改与直接回归全部完成后，协调者记�
 | --- | --- | --- | --- |
 | 0.1.0 | 2026-08-09 | Frozen for Implementation | Owner 批准：draft/publish、动态分类、Offer-first 库存、平台商品、Xboard media/idempotency |
 | 0.1.1 | 2026-08-09 | Frozen for Implementation | Owner 批准唯一修订：CMI Foundation DAG 改为 S→A_CMI→F0→B_CAT→F；T-FND-001 拆为 F0 卡与 T-CAT-BCAT-001（B_CAT）卡，只有 F 解锁业务 lanes |
+| 0.1.2 | 2026-08-13 | Frozen for Implementation | Owner 批准 QA 收口修订（AMD-CMI-012）：证据对齐 testing-policy 下沉集成/组件测试，浏览器仅关键旅程收口，性能数值列 P1 |

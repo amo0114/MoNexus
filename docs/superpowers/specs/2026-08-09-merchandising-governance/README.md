@@ -14,7 +14,7 @@
 | --- | --- |
 | 规格 ID | SPEC-MERCH-001 |
 | Plan/Tasks/Implement/Checklist | PLAN-MERCH-001 · TASK-MERCH-001 · IMPL-MERCH-001 · CHK-MERCH-001 |
-| 版本 | 0.1.1 |
+| 版本 | 0.1.2 |
 | 日期 | 2026-08-09 |
 | 状态 | **Frozen for Implementation** |
 | 审查基线 | `develop@da38dd0580eeac737f5291556b9dbdf832d91970` |

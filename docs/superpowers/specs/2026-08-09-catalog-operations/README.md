@@ -19,7 +19,7 @@
 | Tasks ID | TASK-CATALOG-OPS-001 |
 | Implement ID | IMPL-CATALOG-OPS-001 |
 | Checklist ID | CHK-CATALOG-OPS-001 |
-| 版本 | 0.1.1 |
+| 版本 | 0.1.2 |
 | 日期 | 2026-08-09 |
 | 状态 | **Frozen for Implementation** |
 | 审查基线 | `develop@da38dd0580eeac737f5291556b9dbdf832d91970` |

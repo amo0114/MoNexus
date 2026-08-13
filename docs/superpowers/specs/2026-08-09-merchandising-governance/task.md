@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | TASK-MERCH-001 |
-| 版本 | 0.1.1 |
+| 版本 | 0.1.2 |
 | 日期 | 2026-08-09 |
 | 状态 | **Frozen for Implementation — all tasks Pending** |
 | 输入 | [spec.md](./spec.md) · [plan.md](./plan.md) |
@@ -195,29 +195,16 @@
 
 **DoD**：AC-MERCH-010～015、018、021～022、029 的 admin UI 路径；MFA/409/422、确认、禁词、filter/page、keyboard/a11y Green。
 
-### T-MERCH-ASSET-001 — Image2概念与runtime视觉转译
+### T-MERCH-ASSET-001 — Image2概念与runtime视觉转译（v0.1.2：Deferred，拆出本次交付）
 
 | 字段 | 值 |
 | --- | --- |
-| 优先级 | P0（视觉交付） |
-| 对应需求 | REQ-MERCH-F-013、REQ-MERCH-NF-006 |
-| 依赖 | Owner批准视觉语义；不依赖BE |
-| 状态 | Pending |
+| 优先级 | Deferred（原 P0 视觉交付） |
+| 对应需求 | REQ-MERCH-F-013（随卡 Deferred） |
+| 依赖 | 后续独立 spec/PR |
+| 状态 | **Deferred — 移出本分支交付范围（AMD-CMI-012 §3.6，Owner 2026-08-13 批准）** |
 
-**Owned**：`docs/design/merchandising/concepts/**`、approved asset manifest、`public/assets/merchandising/**`（批准后）、Badge视觉tokens。
-
-**Must Not Touch**：provider配置/auth.json/config.toml、业务数据、品牌logo重设计、runtime network调用。
-
-**工作**
-
-- [ ] 读取api-image SKILL和当前provider配置（不输出secret）。
-- [ ] 使用项目品牌reference，脚本`generate_image.py`、gpt-image-2、opaque、n=1。
-- [ ] 保存prompt/input roles/model/size/quality/hash和人工review。
-- [ ] 拒绝含认证勾/担保暗示/错误文字的概念。
-- [ ] 将批准方向转为SVG/CSS/HTML文本；可选纹理压缩入manifest。
-- [ ] bundle、1x/2x、dark/light、a11y/visual regression。
-
-**DoD**：AC-MERCH-025～026；repo无key/base_url；未批准稿不进public；runtime不import image SDK。
+badge/shelf 以现有 CSS token 上线；REQ-MERCH-F-013、AC-MERCH-025～026、CHK-ASSET-001～006、CHK-PERF-004 随卡 Deferred，不阻塞本次合并。原卡完整内容见 v0.1.1 历史版本（git）。
 
 ---
 
@@ -244,7 +231,7 @@
 
 ## 6. QA/发布
 
-### T-MERCH-QA-001 — Ranking/Projection real-PG与性能
+### T-MERCH-QA-001 — Ranking/Projection real-PG 证据审计（v0.1.2 修订，见 AMD-CMI-012 §3.3）
 
 | 字段 | 值 |
 | --- | --- |
@@ -253,13 +240,13 @@
 | 依赖 | T-MERCH-BE-001～002、T-MERCH-INT-001 的 public adapter |
 | 状态 | Pending |
 
-**Owned**：ranking fixture/performance harness、专用 DB scripts、query-plan/evidence；QA 不顺手修业务，失败退回 Owner。
+**Owned**：ranking 证据审计与缺口定向集成测试；QA 不顺手修业务，失败退回 Owner。
 
-**验证**：真实 PostgreSQL 两进程 advisory/single-running；running/atomic completed/独立 failed 三阶段故障注入；kill -9 stale timeout/recovery/旧事务 CAS；全 status/refund/window boundary/tie；run-pinned cursor/retention/409；10万 Order+1万 Product ≤10min；public P95、N+1/index plan、metrics label。
+**验证**：既有 `server/src/modules/merchandising/__tests__/ranking-lifecycle.test.ts`（REAL-PG advisory 双进程单 run、三阶段故障注入、stale 回收、无孤儿锁）与 `ranking-compute-projection.test.ts`（window/status 口径、rank/tie、fallback、cursor）即本卡证据；逐条对照 CHK-HOT-001～012 引用文件+用例，缺口以定向集成测试补齐。10万 Order production-like 基准、查询计划采样列 P1 跟进。
 
-**DoD**：AC-MERCH-001～008 与 CHK-HOT-001～012、CHK-PERF-001～003、CHK-OPS-001～002 全有可重现证据；不使用 mock DB 或手工改 snapshot。
+**DoD**：CHK-HOT-001～012（性能数值除外）有测试引用；不使用 mock DB 或手工改 snapshot。
 
-### T-MERCH-QA-002 — Promotion/Points并发、安全与API
+### T-MERCH-QA-002 — Promotion/Points 并发与安全证据审计（v0.1.2 修订，见 AMD-CMI-012 §3.4）
 
 | 字段 | 值 |
 | --- | --- |
@@ -268,26 +255,26 @@
 | 依赖 | T-MERCH-BE-003～005 |
 | 状态 | Pending |
 
-**Owned**：真实 PG concurrency/security harness、merchant/admin/public API contract、脱敏 evidence。
+**Owned**：promotions/entitlements 证据审计与缺口定向集成测试（预计 ≤3 用例）。
 
-**验证**：100并发 approve/retry/cancel/scheduled refund/active adjustment；PointAccount/PointLog/Campaign/AdminLog 原子性；paused placement unique；零积分 adjustment；分别覆盖 Campaign create 与 adjustment 的冻结 hash 向量、缺失/非法 key、同 key 同 payload 重放、同 key 异 payload稳定409、第二 adjustment、跨 merchant/campaign key scope、并发重放及 key/hash 不出 DTO/log/metric；MFA/ownership/cross-merchant；public field allowlist；bounded metrics/log。
+**验证**：既有 `promotions-billing.test.ts`（100 并发 approve 恰扣一次/无负余额、placement 约束回滚、并发 cancel/adjustment）、`promotions-campaign.test.ts` + `promotions-idempotency.test.ts`（key/hash、并发首创唯一、同 key 异 payload 409、跨 scope）、`promotions-dto-state.test.ts`（allowlist/状态机）、`editorial-entitlements.test.ts`（100 并发 grant 幂等）即本卡证据；逐条对照 CHK-PROMO-001～013、CHK-ID-001～006、CHK-SEC-001～004 审计缺口并补定向用例。
 
-**DoD**：AC-MERCH-009～015、017、021～022、027；零负余额、重复扣款、超退、第二 adjustment、内部字段泄露。
+**DoD**：上述 CHK 全部有测试引用；零负余额、重复扣款、超退、第二 adjustment、内部字段泄露。
 
-### T-MERCH-QA-003 — Browser、资产、兼容与Final Gate
+### T-MERCH-QA-003 — Browser 冒烟与 Final Gate（v0.1.2 修订，见 AMD-CMI-012 §3.5）
 
 | 字段 | 值 |
 | --- | --- |
 | 优先级 | P0 / Final |
-| 对应需求 | REQ-MERCH-F-008～013、REQ-MERCH-NF-006～008 |
+| 对应需求 | REQ-MERCH-F-008～012、REQ-MERCH-NF-007～008 |
 | 依赖 | 全部 P0 lane + T-MERCH-INT-001 + T-MERCH-QA-001～002 |
 | 状态 | Pending |
 
-**Owned**：`playwright.merchandising.config.ts`、`e2e/merchandising-*.spec.ts`、verify scripts、checklist/evidence；不得在 QA 卡直接修产品代码。
+**Owned**：`e2e/merchandising-smoke.spec.ts`（新）、`playwright.catalog-ops.config.ts` testMatch 登记、verify/checklist evidence；不得在 QA 卡直接修产品代码。
 
-**验证**：organic/sponsored/editorial/platform-owned/partner 同屏语义；merchant/admin 全流程；disclosure/禁词/a11y/visual/mobile；Image2 manifest/hash/bundle/runtime-no-SDK；Catalog/points/orders/refund/products/admin/notification 回归；发布/回滚/PAR Gate。
+**验证**：单条确定性冒烟旅程（≤400 行、无 sleep）：admin 创建 package → merchant 为自己 active 商品申请 → admin approve 扣积分 → campaign 达 active → Store 单次加载断言 organic/sponsored 区隔、条目级"推广"文字 disclosure、badge 顺序、editorial/partner mark（以确定性种子为限）→ merchant timeline 可见 active。a11y/禁词/视觉细节引用既有组件测试；visual/assets/bundle 随 T-MERCH-ASSET-001 Deferred；回归=全量 suite 在最终 HEAD。
 
-**DoD**：AC-MERCH-016～020、023～026、028～029，且引用 T-MERCH-QA-001、T-MERCH-QA-002 evidence 覆盖全 29 AC；无 feature-off、人工 DB、未审资产或 skip 假绿。
+**DoD**：冒烟 spec 全绿且注册进 config；AC-MERCH-016～020、023～024、028～029 按 AMD-CMI-012 §2 规则有证据；无 feature-off、人工 DB 状态伪造、skip 假绿。
 
 ---
 
@@ -304,7 +291,7 @@
 | T-MERCH-BE-004 | T-MERCH-BE-003 | T-MERCH-BE-001～002、FE | T-MERCH-BE-005、QA-002 |
 | T-MERCH-BE-005 | T-MERCH-BE-002、T-MERCH-BE-004 | FE/Asset | T-MERCH-INT-001 |
 | T-MERCH-FE-001～003 | frozen fixtures | 相互、BE | T-MERCH-INT-001、T-MERCH-QA-003 |
-| T-MERCH-ASSET-001 | visual approval | 全部业务 lane | FE visual、T-MERCH-QA-003 |
+| T-MERCH-ASSET-001 | **Deferred（v0.1.2 拆出，后续独立 PR）** | — | — |
 | T-MERCH-INT-001 | `M_CMI` + `H` + Catalog/Merch outputs | 无（与 T-CAT-INT-001 同 Owner 串行） | T-MERCH-QA-001、T-MERCH-QA-003 |
 | T-MERCH-QA-001、T-MERCH-QA-002 | 对应 BE/INT | 相互 | T-MERCH-QA-003 |
 | T-MERCH-QA-003 | 全部 P0 | 无 | PR Gate |
@@ -317,7 +304,7 @@
 - [ ] schema/products/Store/Page宿主/通知文件Ownership零违规。
 - [ ] AC-MERCH-001~029全部有自动化或明确受控证据。
 - [ ] 无重复扣款、负余额、超退、partial run、无disclosure广告或认证误导。
-- [ ] Image2和runtime assets满足review/secret/bundle Gate。
+- [ ] Image2和runtime assets满足review/secret/bundle Gate。（v0.1.2 Deferred：随 T-MERCH-ASSET-001 后续独立交付，不阻塞本次合并）
 - [ ] Migration/points/orders/products/admin/notification回归、性能、a11y、rollout/rollback全绿。
 
 ### 修订记录
@@ -326,3 +313,4 @@
 | --- | --- | --- | --- |
 | 0.1.0 | 2026-08-09 | Frozen for Implementation | Owner 批准：自然热卖、积分推广、精选/自营/合作权益、Image2 资产治理 |
 | 0.1.1 | 2026-08-09 | Frozen for Implementation | Owner 批准唯一修订：CMI Foundation DAG 改为 S→A_CMI→F0→B_CAT→F；Merch 只消费最终 F、不参与 B_CAT，BE 卡前置改为共同基线 F |
+| 0.1.2 | 2026-08-13 | Frozen for Implementation | Owner 批准 QA 收口修订（AMD-CMI-012）：QA-001/002 改证据审计+定向缺口，QA-003 收敛为 1 条冒烟 e2e；T-MERCH-ASSET-001 拆出本次交付 |

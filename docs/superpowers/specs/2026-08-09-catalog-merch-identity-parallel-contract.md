@@ -3,11 +3,11 @@
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | PAR-CMI-001 |
-| 版本 | 0.1.1 |
+| 版本 | 0.1.2 |
 | 日期 | 2026-08-09 |
 | 状态 | **Frozen for Implementation** |
 | 审查基线 | `develop@da38dd0580eeac737f5291556b9dbdf832d91970` |
-| 关联规格 | SPEC-CATALOG-OPS-001 v0.1.1 · SPEC-MERCH-001 v0.1.1 · SPEC-IDENTITY-SYNC-001 v0.1.0 |
+| 关联规格 | SPEC-CATALOG-OPS-001 v0.1.2 · SPEC-MERCH-001 v0.1.2 · SPEC-IDENTITY-SYNC-001 v0.1.0 · AMD-CMI-012 |
 | 批准人 | MoNexus Project Owner |
 | 批准日期 | 2026-08-09 |
 | 技术复审指纹 | Draft artifact SHA-256 `a6cbb48da46fd9987d5101b476f401e02e69d0786a8028ebda9c00ecc8f35841` |
@@ -395,3 +395,4 @@ Catalog/Merch/Identity Agent 绝对禁止：
 | --- | --- | --- | --- |
 | 0.1.0 | 2026-08-09 | Frozen for Implementation | Owner 批准：Shared Foundation Gate、整文件锁移交、可证明 DAG、Worktree/DB/端口和通知隔离 |
 | 0.1.1 | 2026-08-09 | Frozen for Implementation | Owner 批准唯一修订：CMI Foundation DAG 改为 S→A_CMI→F0→B_CAT→F；F0/B_CAT 不解锁业务 lane、只有 F 解锁；Catalog/Merch 六件套升 v0.1.1、Identity 保持 v0.1.0 |
+| 0.1.2 | 2026-08-13 | Frozen for Implementation | Owner 批准 QA 收口修订（AMD-CMI-012）：Cross-spec QA 证据规则对齐 testing-policy（下沉集成/组件测试、浏览器仅关键旅程+1 条冒烟）；T-MERCH-ASSET-001 拆出本次交付；Catalog/Merch 六件套升 v0.1.2、Identity 保持 v0.1.0 |
