@@ -2,11 +2,15 @@
 // (SPEC-MERCH-001 §5.4/§7.1/§11, CHK-PROMO-003/013, CHK-SEC-001/002,
 // MERCH-015). PURE UNIT — no DB, no express.
 //
-// The whole point of these tests is the negative space: a campaign row CAN
-// carry internal fields (key/hash/pointLog/charged/refunded/adjustment) in
-// the DB, but NO DTO may ever project them. We feed the mappers a maximally
-// rich fake row (with internal fields set to distinguishable sentinels) and
-// assert none of them survive into either merchant or admin DTO.
+// The point of these tests is the negative space: a campaign row CAN carry
+// internal fields (key/hash/pointLog/charged/refunded/adjustment) in the DB,
+// but only the merchant's OWN ledger totals (chargedPoints/refundedPoints,
+// SPEC-MERCH-001 §5.4 frozen FE contract) are projected into BOTH DTOs. The
+// truly internal fields — point-log IDs, key/hash, adjustment internals,
+// review fields — must never survive into any DTO. We feed the mappers a
+// maximally rich fake row (with internal fields set to distinguishable
+// sentinels) and assert the non-projectable ones never leak while the
+// merchant ledger totals do pass through.
 
 import { describe, expect, it } from 'vitest'
 import { HttpError } from '../../../lib/httpError.js'
@@ -19,6 +23,8 @@ import {
 } from '../promotions/dto.js'
 import { assertAllowedTransition } from '../promotions/transitions.js'
 
+// Sentinel values for truly-internal columns (must never be projected) plus
+// the merchant-ledger totals (chargedPoints/refundedPoints — MUST pass through).
 const INTERNAL_SENTINELS = {
   requestIdempotencyKey: 'SHOULD-NOT-LEAK-KEY',
   requestPayloadHash: 'a'.repeat(64),
@@ -33,7 +39,7 @@ const INTERNAL_SENTINELS = {
   adjustmentPayloadHash: 'b'.repeat(64),
 }
 
-/** 携带全部内部字段的富行；DTO 必须把这些字段全部丢弃。 */
+/** 携带全部内部字段的富行：true-internal 列必须丢弃；ledger 汇总（charged/refunded）必须透传。 */
 function richCampaignRow(overrides: Partial<CampaignRow> = {}): CampaignRow {
   return {
     id: 1,
@@ -62,24 +68,53 @@ function richCampaignRow(overrides: Partial<CampaignRow> = {}): CampaignRow {
 }
 
 describe('promotions DTO allowlist — internal fields never leak (pure, no DB)', () => {
-  it('merchant campaign DTO contains zero internal fields', () => {
+  it('merchant campaign DTO carries the merchant-safe ledger totals but never leaks key/hash/point-log/adjustment/review internals', () => {
     const dto = toMerchantCampaignDto(richCampaignRow())
     const serialized = JSON.stringify(dto)
+    // §5.4 frozen contract (C2b fix): the merchant's OWN charged/refunded ledger
+    // IS projected into the merchant DTO (UI renders 已扣/已退回 from it).
+    expect(dto.chargedPoints).toBe(999)
+    expect(dto.refundedPoints).toBe(888)
+    // Still no key/hash, point-log IDs, adjustment internals, or review fields.
     expect(serialized).not.toContain('SHOULD-NOT-LEAK')
     expect(serialized).not.toContain(INTERNAL_SENTINELS.requestIdempotencyKey)
     expect(serialized).not.toContain(INTERNAL_SENTINELS.requestPayloadHash)
     expect(serialized).not.toContain('requestIdempotencyKey')
     expect(serialized).not.toContain('requestPayloadHash')
     expect(serialized).not.toContain('chargePointLogId')
-    expect(serialized).not.toContain('chargedPoints')
     expect(serialized).not.toContain('refundPointLogId')
-    expect(serialized).not.toContain('refundedPoints')
     expect(serialized).not.toContain('adjustmentDecidedAt')
+    expect(serialized).not.toContain('adjustmentByUserId')
     expect(serialized).not.toContain('adjustmentReason')
+    expect(serialized).not.toContain('adjustmentIdempotencyKey')
+    expect(serialized).not.toContain('adjustmentPayloadHash')
     // merchant DTO 也不含内部 review 字段（reviewReason 仅 admin 可见）。
     expect(serialized).not.toContain('reviewReason')
     expect(serialized).not.toContain('reviewedByUserId')
     expect(serialized).not.toContain('cancelledByUserId')
+    expect(serialized).not.toContain('cancellationReason')
+  })
+
+  it('an approved campaign merchant DTO carries chargedPoints === pricePointsSnapshot (§5.4 / C2b)', () => {
+    const dto = toMerchantCampaignDto(richCampaignRow({
+      status: CAMPAIGN_STATUS.ACTIVE,
+      chargedPoints: 120,
+      refundedPoints: 0,
+    }))
+    expect(dto.pricePointsSnapshot).toBe(120)
+    expect(dto.chargedPoints).toBe(dto.pricePointsSnapshot)
+    expect(dto.refundedPoints).toBe(0)
+  })
+
+  it('a refund adjustment reflects in the merchant DTO refundedPoints (still ≤ chargedPoints)', () => {
+    const dto = toMerchantCampaignDto(richCampaignRow({
+      status: CAMPAIGN_STATUS.ACTIVE,
+      chargedPoints: 120,
+      refundedPoints: 40,
+    }))
+    expect(dto.chargedPoints).toBe(120)
+    expect(dto.refundedPoints).toBe(40)
+    expect(dto.refundedPoints).toBeLessThanOrEqual(dto.chargedPoints)
   })
 
   it('admin campaign DTO exposes review and billing summaries but no key/hash/point-log fields', () => {

@@ -83,6 +83,10 @@ interface MerchantPromotionCampaignWire {
   requestedStartAt: string | null
   startsAt: string | null
   endsAt: string | null
+  // 商家自己账本汇总（§5.4 冻结契约）：服务端 merchant 活动 DTO 必须携带，
+  // 不再允许缺失/默认 0（修复“已扣 0 积分”显示缺陷）。
+  chargedPoints: number
+  refundedPoints: number
   createdAt: string
   updatedAt: string
 }
@@ -97,6 +101,20 @@ interface MerchantPromotionCampaignListWire {
 interface MerchantPromotionCampaignMutationWire {
   campaign: MerchantPromotionCampaignWire
   replayed?: boolean
+}
+
+/**
+ * Require a finite, non-negative integer ledger total from the merchant
+ * campaign wire (SPEC-MERCH-001 §5.4 frozen contract). The server DTO now
+ * always carries chargedPoints/refundedPoints; a missing/non-integer value is
+ * a protocol breach and must fail fast instead of silently defaulting to 0
+ * (which previously rendered 已扣 0 积分 in the merchant timeline).
+ */
+function requireLedgerPoints(value: number, field: string): number {
+  if (!Number.isInteger(value) || value < 0) {
+    throw new Error(`invalid merchant campaign wire: ${field} must be a non-negative integer (got ${String(value)})`)
+  }
+  return value
 }
 
 function toPromotionPackageDTO(wire: MerchantPromotionPackageWire): PromotionPackageDTO {
@@ -128,8 +146,10 @@ function toPromotionCampaignDTO(wire: MerchantPromotionCampaignWire): PromotionC
     requestedStartAt: wire.requestedStartAt,
     startsAt: wire.startsAt,
     endsAt: wire.endsAt,
-    chargedPoints: 0,
-    refundedPoints: 0,
+    // §5.4 冻结契约：服务端保证 finite 整数；缺失/非整数 = 协议违约，快速失败
+    // （绝不再静默默认 0——那正是商家时间线“已扣 0 积分”缺陷的根因）。
+    chargedPoints: requireLedgerPoints(wire.chargedPoints, 'chargedPoints'),
+    refundedPoints: requireLedgerPoints(wire.refundedPoints, 'refundedPoints'),
     createdAt: wire.createdAt,
     updatedAt: wire.updatedAt,
   }

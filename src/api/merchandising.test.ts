@@ -77,8 +77,8 @@ const expectedPackage: PromotionPackageDTO = {
 
 // ---------------------------------------------------------------------------
 // Fixture group B — wire campaign (raw merchant-lane shape: snapshot fields;
-// no productName/packageLabel/chargedPoints/refundedPoints) and its mapped
-// UI DTO.
+// no productName/packageLabel — but ALWAYS carries the merchant's own ledger
+// chargedPoints/refundedPoints per SPEC-MERCH-001 §5.4) and its mapped UI DTO.
 // ---------------------------------------------------------------------------
 interface WireCampaignFixture {
   id: number
@@ -93,6 +93,8 @@ interface WireCampaignFixture {
   requestedStartAt: string | null
   startsAt: string | null
   endsAt: string | null
+  chargedPoints: number
+  refundedPoints: number
   createdAt: string
   updatedAt: string
 }
@@ -110,6 +112,8 @@ const wireCampaign: WireCampaignFixture = {
   requestedStartAt: null,
   startsAt: null,
   endsAt: null,
+  chargedPoints: 0,
+  refundedPoints: 0,
   createdAt: '2026-08-01T02:00:00.000Z',
   updatedAt: '2026-08-01T02:00:00.000Z',
 }
@@ -128,8 +132,8 @@ const expectedCampaign: PromotionCampaignDTO = {
   requestedStartAt: wireCampaign.requestedStartAt,
   startsAt: wireCampaign.startsAt,
   endsAt: wireCampaign.endsAt,
-  chargedPoints: 0,
-  refundedPoints: 0,
+  chargedPoints: wireCampaign.chargedPoints,
+  refundedPoints: wireCampaign.refundedPoints,
   createdAt: wireCampaign.createdAt,
   updatedAt: wireCampaign.updatedAt,
 }
@@ -258,6 +262,33 @@ describe('merchant promotion endpoints', () => {
     expect(mockGet).toHaveBeenCalledWith('/merchant/promotion-campaigns', {
       params: { page: 1 },
     })
+  })
+
+  it('merchant campaign wire ledger totals pass through the DTO (no defaulting to 0)', async () => {
+    const charged = {
+      ...wireCampaign,
+      status: 'active' as const,
+      chargedPoints: 100,
+      refundedPoints: 40,
+    }
+    mockGet.mockResolvedValue({ data: { campaigns: [charged], total: 1, page: 1, pageSize: 10 } })
+    const result = await listPromotionCampaigns({ status: 'active' })
+    expect(result.items[0].chargedPoints).toBe(100)
+    expect(result.items[0].refundedPoints).toBe(40)
+    // Server-only identity is still never projected into the UI DTO.
+    expect(result.items[0]).not.toHaveProperty('merchantId')
+  })
+
+  it('rejects a merchant campaign wire with non-integer or missing ledger totals (contract is guaranteed)', async () => {
+    const badFloat = { ...wireCampaign, chargedPoints: 1.5 }
+    mockGet.mockResolvedValue({ data: { campaigns: [badFloat], total: 1, page: 1, pageSize: 10 } })
+    await expect(listPromotionCampaigns({ status: 'active' })).rejects.toThrow(/chargedPoints/)
+
+    const missing = { ...wireCampaign } as Record<string, unknown>
+    delete missing.chargedPoints
+    mockGet.mockReset()
+    mockGet.mockResolvedValue({ data: { campaigns: [missing], total: 1, page: 1, pageSize: 10 } })
+    await expect(listPromotionCampaigns({ status: 'active' })).rejects.toThrow(/chargedPoints/)
   })
 
   it('POST /merchant/promotion-campaigns sends only contract fields + Idempotency-Key header', async () => {

@@ -207,14 +207,13 @@ test.describe.serial('T-MERCH-QA-003 merchandising smoke', () => {
     await expect(card.locator('.merch-status-badge[data-status="active"]')).toHaveText('展示中')
 
     // timeline 状态机断言（CampaignTimeline data-state 机器契约）：
-    // 提交申请(done) → 审核通过已扣 N 积分(done) → 推广展示中(done) → 预计结束(pending)。
-    // 注：merchant DTO 恒投影 chargedPoints=0（billing 字段不下沉到 merchant 面板），
-    // 故真实 UI 此刻显示「已扣 0 积分」——见最终报告的 product bug 条目；
-    // 本断言用数字通配正则，只验证 charge 里程碑存在（不把缺陷数字写死进冒烟）。
+    // 提交申请(done) → 审核通过已扣 100 积分(done) → 推广展示中(done) → 预计结束(pending)。
+    // C2b 修复后 merchant DTO 携带真实 chargedPoints（=套餐价快照），
+    // 此处断言精确金额，防止"已扣 0 积分"缺陷回归。
     const doneMilestones = card.locator('.merch-timeline-item[data-state="done"]')
     await expect(doneMilestones.filter({ hasText: '提交申请' })).toHaveCount(1)
     await expect(
-      doneMilestones.filter({ hasText: /审核通过，已扣 \d+ 积分/ })
+      doneMilestones.filter({ hasText: `审核通过，已扣 ${PACKAGE_PRICE_POINTS} 积分` })
     ).toHaveCount(1)
     await expect(doneMilestones.filter({ hasText: '推广展示中' })).toHaveCount(1)
     await expect(
