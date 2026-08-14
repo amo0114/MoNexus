@@ -1,10 +1,12 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, type Dispatch, type SetStateAction } from 'react'
 import { formatBookingDay } from '../utils/formatLocalDate'
 import { useNavigate } from 'react-router-dom'
+import { useNotificationInvalidation } from '../hooks/useNotificationInvalidation'
 import {
   getMerchantStats,
   getMerchantProducts,
   getMerchantOrders,
+  getMerchantOrderDetail,
   getMerchantSettlements,
   getMerchantMe,
   createMerchantProduct,
@@ -15,6 +17,7 @@ import {
   respondDispute,
   rejectOrder,
   postOrderProgress,
+  importMerchantInventory,
 } from '../api/merchant'
 import { catalogApi } from '../api/catalog'
 import { getApiErrorMessage } from '../api/error'
@@ -32,6 +35,8 @@ import MerchantWebhookConfigSection from '../components/merchant/MerchantWebhook
 import ProvisionBadge from '../components/ProvisionBadge'
 import MerchantInventoryLogModal from '../components/merchant/MerchantInventoryLogModal'
 import MerchantAvailabilityModal from '../components/merchant/MerchantAvailabilityModal'
+import MerchantInventoryImportModal from '../components/merchant/MerchantInventoryImportModal'
+import MerchantCapacityAdjustModal from '../components/merchant/MerchantCapacityAdjustModal'
 import MerchantOfferManagerModal from '../components/merchant/MerchantOfferManagerModal'
 import MerchantDeliverDialog from '../components/merchant/MerchantDeliverDialog'
 import MerchantDisputeDialog from '../components/merchant/MerchantDisputeDialog'
@@ -41,9 +46,10 @@ import RegistryPill from '../components/ui/RegistryPill'
 import { Dialog, DialogContent, DialogTitle } from '../components/ui/Dialog'
 import { TableSkeleton, StatCardSkeleton } from '../components/ui/Skeleton'
 import EmptyState from '../components/ui/EmptyState'
-import { createLatestRequestGuard } from '../utils/latestRequest'
+import { createLatestRequestCoordinator } from '../realtime/latestRequestCoordinator'
 
 type TabKey = 'dashboard' | 'products' | 'orders' | 'settlements' | 'profile' | 'operations' | 'promotions' | 'categoryApplications'
+type MerchantOrderSetter = Dispatch<SetStateAction<MerchantOrder | null>>
 
 const TABS: { key: TabKey; label: string; Icon: typeof Store; path?: string }[] = [
   { key: 'dashboard', label: '概览', Icon: Store },
@@ -79,6 +85,11 @@ function getOfferAvailabilityLabel(offer: NonNullable<MerchantProduct['offers']>
     : `可售名额 ${offer.stock}`
 }
 
+function isGoneOrForbidden(error: any) {
+  const status = error?.response?.status
+  return status === 403 || status === 404
+}
+
 export default function MerchantDashboardPage() {
   const navigate = useNavigate()
   const showToast = useAppStore((s) => s.showToast)
@@ -86,7 +97,7 @@ export default function MerchantDashboardPage() {
   const [activeTab, setActiveTab] = useState<TabKey>('dashboard')
   const [stats, setStats] = useState<MerchantStats | null>(null)
   const [loading, setLoading] = useState(true)
-  const loadRequestGuard = useRef(createLatestRequestGuard()).current
+  const loadCoordinatorRef = useRef(createLatestRequestCoordinator(true))
 
   const [products, setProducts] = useState<MerchantProduct[]>([])
   const [productPage, setProductPage] = useState(1)
@@ -127,54 +138,119 @@ export default function MerchantDashboardPage() {
     loadData()
   }, [activeTab, productPage, orderPage, orderStatusFilter, orderSortBooking, productSearchDebounced, productStatusFilter, productTypeFilter, productModeFilter, productLowStockOnly])
 
-  async function loadData() {
-    const canCommit = loadRequestGuard.begin()
-    setLoading(true)
+  async function loadData(opts?: { background?: boolean }) {
+    const coordinator = loadCoordinatorRef.current
+    const generation = coordinator.begin(opts?.background ? 'background' : 'foreground')
+    const snapshot = {
+      tab: activeTab,
+      productPage,
+      orderPage,
+      orderStatusFilter,
+      orderSortBooking,
+      productSearchDebounced,
+      productStatusFilter,
+      productTypeFilter,
+      productModeFilter,
+      productLowStockOnly,
+    }
+    const isCurrent = () => coordinator.isLatest(generation)
+    if (!opts?.background || coordinator.ownsLoading(generation)) setLoading(true)
     try {
-      if (activeTab === 'dashboard' || activeTab === 'orders') {
+      if (snapshot.tab === 'dashboard' || snapshot.tab === 'orders') {
         const data = await getMerchantStats()
-        if (!canCommit()) return
+        if (!isCurrent()) return
         setStats(data)
       }
-      if (activeTab === 'products') {
+      if (snapshot.tab === 'products') {
         const data = await getMerchantProducts({
-          page: productPage,
+          page: snapshot.productPage,
           pageSize: 20,
-          q: productSearchDebounced || undefined,
-          status: productStatusFilter || undefined,
-          type: productTypeFilter || undefined,
-          deliveryMode: productModeFilter || undefined,
-          lowStock: productLowStockOnly ? true : undefined,
+          q: snapshot.productSearchDebounced || undefined,
+          status: snapshot.productStatusFilter || undefined,
+          type: snapshot.productTypeFilter || undefined,
+          deliveryMode: snapshot.productModeFilter || undefined,
+          lowStock: snapshot.productLowStockOnly ? true : undefined,
         })
-        if (!canCommit()) return
+        if (!isCurrent()) return
         setProducts(data.items)
         setProductTotal(data.total)
-      } else if (activeTab === 'orders') {
+      } else if (snapshot.tab === 'orders') {
         const data = await getMerchantOrders({
-          page: orderPage,
+          page: snapshot.orderPage,
           pageSize: 20,
-          status: orderStatusFilter || undefined,
-          sort: orderSortBooking ? 'booking' : undefined,
+          status: snapshot.orderStatusFilter || undefined,
+          sort: snapshot.orderSortBooking ? 'booking' : undefined,
         })
-        if (!canCommit()) return
+        if (!isCurrent()) return
         setOrders(data.items)
         setOrderTotal(data.total)
-      } else if (activeTab === 'settlements') {
+      } else if (snapshot.tab === 'settlements') {
         const data = await getMerchantSettlements()
-        if (!canCommit()) return
+        if (!isCurrent()) return
         setSettlements(data)
-      } else if (activeTab === 'profile') {
+      } else if (snapshot.tab === 'profile') {
         const data = await getMerchantMe()
-        if (!canCommit()) return
+        if (!isCurrent()) return
         setMerchant(data)
       }
     } catch (e: any) {
-      if (!canCommit()) return
-      showToast(e.response?.data?.error?.message || '加载失败', 'error')
+      if (isCurrent() && !opts?.background) showToast(e.response?.data?.error?.message || '加载失败', 'error')
     } finally {
-      if (canCommit()) setLoading(false)
+      if (coordinator.finish(generation)) {
+        setLoading(false)
+      }
+    }
+    if (opts?.background && isCurrent()) await refreshOpenOrderDialogs()
+  }
+
+  async function refreshOpenOrderDialogs() {
+    const dialogs: Array<{ order: MerchantOrder | null; action: string; update: MerchantOrderSetter }> = [
+      { order: deliveringOrderRef.current, action: 'deliver', update: setDeliveringOrder },
+      { order: disputeOrderRef.current, action: 'respond_dispute', update: setDisputeOrder },
+      { order: progressOrderRef.current, action: 'post_progress', update: setProgressOrder },
+      { order: rejectingOrderRef.current, action: 'reject', update: setRejectingOrder },
+    ]
+    const open = dialogs.filter((entry) => entry.order !== null)
+    const requests = new Map<number, Promise<MerchantOrder>>()
+    for (const entry of open) {
+      const id = entry.order!.id
+      if (!requests.has(id)) requests.set(id, getMerchantOrderDetail(id))
+    }
+    const settled = new Map<number, PromiseSettledResult<MerchantOrder>>()
+    await Promise.all([...requests].map(async ([id, request]) => {
+      const [result] = await Promise.allSettled([request])
+      settled.set(id, result!)
+    }))
+    for (const entry of open) {
+      const result = settled.get(entry.order!.id)
+      if (!result) continue
+      if (result.status === 'rejected') {
+        if (isGoneOrForbidden(result.reason)) {
+          const requestedId = entry.order!.id
+          entry.update((current) => current?.id === requestedId ? null : current)
+        }
+        continue
+      }
+      const requestedId = entry.order!.id
+      if (!result.value.availableActions?.includes(entry.action)) {
+        entry.update((current) => current?.id === requestedId ? null : current)
+        continue
+      }
+      entry.update((current) => current?.id === requestedId ? result.value : current)
     }
   }
+
+  // SPEC-NOTIFY-RT-001 (T-FE-005): realtime reload of stats (dashboard/orders
+  // tabs) and the orders list (current page / status / sort) in the background.
+  useNotificationInvalidation('merchant.stats', () => (
+    activeTab === 'dashboard' || activeTab === 'orders' ? loadData({ background: true }) : undefined
+  ))
+  useNotificationInvalidation('merchant.orders', () => (
+    activeTab === 'orders' ? loadData({ background: true }) : undefined
+  ))
+  useNotificationInvalidation('all.visible', () => (
+    activeTab === 'dashboard' || activeTab === 'orders' ? loadData({ background: true }) : undefined
+  ))
 
   // --- Profile Tab ---
   const [profileForm, setProfileForm] = useState({ name: '', description: '', contactEmail: '', contactPhone: '' })
@@ -207,6 +283,12 @@ export default function MerchantDashboardPage() {
   const [isAvailabilityOpen, setIsAvailabilityOpen] = useState(false)
   const [availabilityProduct, setAvailabilityProduct] = useState<MerchantProduct | null>(null)
 
+  const [isInventoryModalOpen, setIsInventoryModalOpen] = useState(false)
+  const [importingProduct, setImportingProduct] = useState<{ id: number, name: string, offers?: MerchantProduct['offers'] } | null>(null)
+
+  const [isCapacityAdjustOpen, setIsCapacityAdjustOpen] = useState(false)
+  const [capacityProduct, setCapacityProduct] = useState<MerchantProduct | null>(null)
+
   const [isInventoryLogOpen, setIsInventoryLogOpen] = useState(false)
   const [logProduct, setLogProduct] = useState<MerchantProduct | null>(null)
 
@@ -219,6 +301,14 @@ export default function MerchantDashboardPage() {
   // P6b：进度更新对话框（processing 人工服务订单）。
   const [progressOrder, setProgressOrder] = useState<MerchantOrder | null>(null)
   const [rejectingOrder, setRejectingOrder] = useState<MerchantOrder | null>(null)
+  const deliveringOrderRef = useRef<MerchantOrder | null>(null)
+  const disputeOrderRef = useRef<MerchantOrder | null>(null)
+  const progressOrderRef = useRef<MerchantOrder | null>(null)
+  const rejectingOrderRef = useRef<MerchantOrder | null>(null)
+  deliveringOrderRef.current = deliveringOrder
+  disputeOrderRef.current = disputeOrder
+  progressOrderRef.current = progressOrder
+  rejectingOrderRef.current = rejectingOrder
   const [rejectNote, setRejectNote] = useState('')
   const [rejecting, setRejecting] = useState(false)
 
@@ -264,6 +354,13 @@ export default function MerchantDashboardPage() {
     setAvailabilityProduct(null)
   }
 
+  async function handleInventorySubmit(items: string[], offerId?: number) {
+    if (!importingProduct) return
+    await importMerchantInventory(importingProduct.id, { items, ...(offerId != null ? { offerId } : {}) })
+    showToast(`成功导入 ${items.length} 个交付单元`)
+    loadData()
+  }
+
   async function handleOrderAction(
     action: 'start_fulfillment' | 'deliver' | 'respond_dispute' | 'reject' | 'post_progress',
     order: MerchantOrder,
@@ -306,6 +403,10 @@ export default function MerchantDashboardPage() {
       setRejectNote('')
       loadData()
     } catch (e: any) {
+      if (isGoneOrForbidden(e)) {
+        setRejectingOrder(null)
+        setRejectNote('')
+      }
       showToast(e.response?.data?.error?.message || '拒单失败', 'error')
     } finally {
       setRejecting(false)
@@ -314,23 +415,41 @@ export default function MerchantDashboardPage() {
 
   async function handleDeliverSubmit(payload: { deliveryContent?: string; structuredValues?: Record<string, string>; attachmentFileId?: number; publicNote?: string }) {
     if (!deliveringOrder) return
-    await deliverOrder(deliveringOrder.id, payload)
-    showToast('发货成功')
-    loadData()
+    try {
+      await deliverOrder(deliveringOrder.id, payload)
+      setDeliveringOrder(null)
+      showToast('发货成功')
+      await loadData()
+    } catch (e: any) {
+      if (isGoneOrForbidden(e)) setDeliveringOrder(null)
+      throw e
+    }
   }
 
   async function handleProgressSubmit(note: string) {
     if (!progressOrder) return
-    await postOrderProgress(progressOrder.id, note)
-    showToast('进度已更新')
-    loadData()
+    try {
+      await postOrderProgress(progressOrder.id, note)
+      setProgressOrder(null)
+      showToast('进度已更新')
+      await loadData()
+    } catch (e: any) {
+      if (isGoneOrForbidden(e)) setProgressOrder(null)
+      throw e
+    }
   }
 
   async function handleDisputeSubmit(resolution: 'resume' | 'close') {
     if (!disputeOrder) return
-    await respondDispute(disputeOrder.id, { resolution })
-    showToast('争议处理成功')
-    loadData()
+    try {
+      await respondDispute(disputeOrder.id, { resolution })
+      setDisputeOrder(null)
+      showToast('争议处理成功')
+      await loadData()
+    } catch (e: any) {
+      if (isGoneOrForbidden(e)) setDisputeOrder(null)
+      throw e
+    }
   }
 
   return (
@@ -539,6 +658,16 @@ export default function MerchantDashboardPage() {
                               {rowOffers.length > 0 && (
                                 <LinkAction onClick={() => { setAvailabilityProduct(p); setIsAvailabilityOpen(true); }}>
                                   管理可售资源
+                                </LinkAction>
+                              )}
+                              {inventoryManaged && (
+                                <LinkAction onClick={() => { setImportingProduct({ id: p.id, name: p.name, offers: p.offers }); setIsInventoryModalOpen(true); }}>
+                                  管理交付库存
+                                </LinkAction>
+                              )}
+                              {capacityManaged && (
+                                <LinkAction onClick={() => { setCapacityProduct(p); setIsCapacityAdjustOpen(true); }}>
+                                  {p.deliveryMode === 'manual_service' ? '调整服务名额' : '调整可售名额'}
                                 </LinkAction>
                               )}
                               {(inventoryManaged || capacityManaged) && (
@@ -874,6 +1003,23 @@ export default function MerchantDashboardPage() {
         isOpen={isInventoryLogOpen}
         onClose={() => setIsInventoryLogOpen(false)}
         product={logProduct}
+      />
+
+      <MerchantInventoryImportModal
+        isOpen={isInventoryModalOpen}
+        onClose={() => setIsInventoryModalOpen(false)}
+        onSubmit={handleInventorySubmit}
+        productName={importingProduct?.name || ''}
+        productId={importingProduct?.id}
+        // 含已下架规格：商家常在重新上架前先备货，过滤掉会让入口可点但无处可导。
+        offers={(importingProduct?.offers ?? []).filter(o => o.deliveryMode === 'instant_inventory')}
+      />
+
+      <MerchantCapacityAdjustModal
+        isOpen={isCapacityAdjustOpen}
+        onClose={() => setIsCapacityAdjustOpen(false)}
+        product={capacityProduct}
+        onAdjusted={loadData}
       />
 
       <MerchantOfferManagerModal

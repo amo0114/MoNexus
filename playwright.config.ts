@@ -5,11 +5,24 @@ export default defineConfig({
   // These suites own feature-specific configuration and isolated startup
   // contracts. The default E2E server deliberately runs with legal pages
   // disabled, while legal-pages.spec.ts requires enabled + enforce; run it
-  // only through playwright.legal-pages.config.ts. The real MFA suite has
-  // the same isolation requirement.
+  // only through playwright.legal-pages.config.ts. The real MFA and
+  // notification realtime suites have the same isolation requirement; the
+  // latter owns dedicated ports plus monexus_test_notification_realtime.
   testIgnore: [
     '**/m3-identity-security-hardening.real.spec.ts',
     '**/legal-pages.spec.ts',
+    '**/notification-realtime-client.spec.ts',
+    '**/notification-realtime.spec.ts',
+    // Catalog-ops integration lane (PAR-CMI-001): the four specs below own a
+    // dedicated stack (fixed ports 3105/5180/3106, Xboard fixture server,
+    // disposable DB monexus_test_catalog_merch_integration, fresh-DB per run
+    // for the merchandising smoke's placement partial-unique determinism).
+    // They run only via playwright.catalog-ops.config.ts in the
+    // catalog-ops-e2e CI job (mirroring scripts/verify-catalog-ops-e2e.sh).
+    '**/catalog-product-lifecycle.spec.ts',
+    '**/catalog-category-governance.spec.ts',
+    '**/catalog-xboard-import.spec.ts',
+    '**/merchandising-smoke.spec.ts',
   ],
   timeout: 30_000,
   retries: process.env.CI ? 1 : 0,

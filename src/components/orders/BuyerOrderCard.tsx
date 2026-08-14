@@ -23,7 +23,12 @@ export default function BuyerOrderCard({
       <div className="flex-1 min-w-0">
         <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 mb-2">
           <div className="flex items-center gap-2 flex-wrap min-w-0">
-            <RegistryPill value={order.status} category="orderStatuses" />
+            <span
+              data-testid={`buyer-order-status-${order.id}`}
+              data-order-status={order.status}
+            >
+              <RegistryPill value={order.status} category="orderStatuses" />
+            </span>
             {expired && (
               <span
                 className="text-xs font-bold text-[var(--color-danger)] bg-[var(--color-danger)]/10 px-1.5 py-0.5 rounded border border-[var(--color-danger)]/30"

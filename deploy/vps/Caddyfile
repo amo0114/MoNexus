@@ -6,5 +6,9 @@ monexus.oai-o.com {
 
   # The bundled Nginx image serves the SPA, proxies /api to Express, and
   # proxies /uploads to private MinIO storage.
-  reverse_proxy 127.0.0.1:18089
+  # SPEC-NOTIFY-RT-001: flush every upstream write immediately so SSE events /
+  # heartbeats arrive the moment they are written (never buffered to 60s).
+  reverse_proxy 127.0.0.1:18089 {
+    flush_interval -1
+  }
 }

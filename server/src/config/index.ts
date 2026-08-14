@@ -8,6 +8,35 @@ const booleanEnvSchema = z.preprocess(value => {
   return value
 }, z.boolean())
 
+/**
+ * SPEC-NOTIFY-RT-001 strict integer env: unset/empty -> default; otherwise only a
+ * canonical decimal integer string in [min,max] is accepted. Anything else is
+ * left as-is so zod rejects it (config boot must exit non-zero, never clamp).
+ */
+function integerEnvSchema(min: number, max: number, defaultValue: number) {
+  return z.preprocess(value => {
+    if (value === undefined || value === '') return undefined
+    if (typeof value === 'number' && Number.isInteger(value)) return value
+    if (typeof value === 'string' && /^[0-9]+$/.test(value)) return Number(value)
+    return value
+  }, z.number().int().min(min).max(max).default(defaultValue))
+}
+
+/**
+ * SPEC-NOTIFY-RT-001 strict boolean env: unset/empty -> false (spec default).
+ * Only exact lowercase 'true'/'false' are accepted; anything else is left as-is
+ * so zod rejects it. The default is applied inside the preprocess so empty
+ * strings never surface to z.boolean() as an unparsable undefined.
+ */
+function realtimeBooleanEnvSchema() {
+  return z.preprocess(value => {
+    if (value === undefined || value === '') return false
+    if (value === 'true') return true
+    if (value === 'false') return false
+    return value
+  }, z.boolean())
+}
+
 const optionalUrlEnvSchema = z.preprocess(value => {
   if (value === undefined || value === '') return undefined
   return value
@@ -249,6 +278,19 @@ const envSchema = z.object({
   NOTIFICATION_EMAIL_ENABLED: booleanEnvSchema.default(false),
   NOTIFICATION_EXPIRY_DAYS: z.coerce.number().int().min(1).max(365).default(90),
 
+  // --- SPEC-NOTIFY-RT-001：订单通知实时化（SSE + PostgreSQL LISTEN/NOTIFY）。
+  // 默认全部关闭 / 保守默认值；realtime=true 必须在 config 层要求 NOTIFICATION_ENABLED=true。
+  // 类型 / 范围错误在 config 初始化时非零退出，绝不静默 clamp 或回退默认值。
+  NOTIFICATION_REALTIME_ENABLED: realtimeBooleanEnvSchema(),
+  NOTIFICATION_REALTIME_HEARTBEAT_MS: integerEnvSchema(5000, 60_000, 20_000),
+  NOTIFICATION_REALTIME_MAX_CONNECTIONS_PER_USER: integerEnvSchema(1, 20, 5),
+  NOTIFICATION_REALTIME_MAX_CONNECTIONS_PER_IP: integerEnvSchema(1, 200, 20),
+  NOTIFICATION_REALTIME_MAX_CONNECTIONS: integerEnvSchema(1, 100_000, 1000),
+  NOTIFICATION_REALTIME_MAX_BUFFER_BYTES: integerEnvSchema(16_384, 1_048_576, 65_536),
+  NOTIFICATION_REALTIME_CONNECT_RATE_LIMIT_MAX: integerEnvSchema(1, 1000, 30),
+  // 必须严格小于现有 10 秒强退上限。
+  NOTIFICATION_REALTIME_SHUTDOWN_GRACE_MS: integerEnvSchema(1000, 9000, 5000),
+
   // --- FakaBridge (Xboard subscription provision). Optional until offers use
   // externalIntegration=faka_bridge. When any of URL/SECRET is set, both must
   // be present. Production path has NO /api/v1 prefix.
@@ -473,6 +515,13 @@ if (env.NOTIFICATION_EMAIL_ENABLED && !env.NOTIFICATION_ENABLED) {
   process.exit(1)
 }
 
+// SPEC-NOTIFY-RT-001：realtime 依赖站内通知总开关。固定错误必须同时包含两个变量名；
+// 在 Zod parse 后、config 导出前执行（所有环境一致）。
+if (env.NOTIFICATION_REALTIME_ENABLED && !env.NOTIFICATION_ENABLED) {
+  console.error('[Config] NOTIFICATION_REALTIME_ENABLED=true requires NOTIFICATION_ENABLED=true')
+  process.exit(1)
+}
+
 // FakaBridge: URL and SECRET are all-or-nothing. Status URL is optional.
 const fakaUrl = env.FAKA_BRIDGE_URL
 const fakaSecret = env.FAKA_BRIDGE_SECRET
@@ -623,6 +672,16 @@ export const config = {
     enabled: env.NOTIFICATION_ENABLED,
     emailEnabled: env.NOTIFICATION_EMAIL_ENABLED,
     expiryDays: env.NOTIFICATION_EXPIRY_DAYS,
+  },
+  notificationRealtime: {
+    enabled: env.NOTIFICATION_REALTIME_ENABLED,
+    heartbeatMs: env.NOTIFICATION_REALTIME_HEARTBEAT_MS,
+    maxConnectionsPerUser: env.NOTIFICATION_REALTIME_MAX_CONNECTIONS_PER_USER,
+    maxConnectionsPerIp: env.NOTIFICATION_REALTIME_MAX_CONNECTIONS_PER_IP,
+    maxConnections: env.NOTIFICATION_REALTIME_MAX_CONNECTIONS,
+    maxBufferBytes: env.NOTIFICATION_REALTIME_MAX_BUFFER_BYTES,
+    connectRateLimitMax: env.NOTIFICATION_REALTIME_CONNECT_RATE_LIMIT_MAX,
+    shutdownGraceMs: env.NOTIFICATION_REALTIME_SHUTDOWN_GRACE_MS,
   },
   fakaBridge: fakaBridgeEnabled
     ? {

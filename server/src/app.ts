@@ -49,6 +49,11 @@ const apiLimiter = rateLimit({
   limit: config.apiRateLimitMax,
   standardHeaders: true,
   legacyHeaders: false,
+  // SSE connection admission has a dedicated 60-second limiter and hard
+  // connection caps. Do not also charge each connect/reconnect against the
+  // general REST budget: the two windows otherwise couple independently
+  // bounded stream churn to unrelated API availability.
+  skip: req => req.method === 'GET' && req.path === '/notifications/stream',
   message: {
     error: {
       code: 'RATE_LIMITED',

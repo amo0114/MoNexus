@@ -14,7 +14,7 @@ project_name="${COMPOSE_PROJECT_NAME:-monexus-staging}"
 
 usage() {
   cat <<'EOF'
-Usage: scripts/staging-compose.sh {config|build|up|restart|smoke|ps|logs|down}
+Usage: scripts/staging-compose.sh {config|build|build-backend|up-backend|build-frontend|up-frontend|up|restart|smoke|ps|logs|down}
 
 Environment:
   ENV_FILE             Private staging env file (default: .env.staging.local)
@@ -97,6 +97,29 @@ case "$action" in
   build)
     preflight
     "${compose[@]}" build
+    ;;
+  build-backend)
+    preflight
+    "${compose[@]}" build server
+    ;;
+  up-backend)
+    preflight
+    "${compose[@]}" config --no-interpolate >/dev/null
+    # Backend-first rollout intentionally leaves the currently served web
+    # container untouched. Dependencies must already be healthy in the
+    # isolated staging stack; prepare/recovery verifies that precondition.
+    "${compose[@]}" up -d --no-deps server
+    "${compose[@]}" ps server
+    ;;
+  build-frontend)
+    preflight
+    "${compose[@]}" build web
+    ;;
+  up-frontend)
+    preflight
+    "${compose[@]}" config --no-interpolate >/dev/null
+    "${compose[@]}" up -d --no-deps web
+    "${compose[@]}" ps web
     ;;
   up)
     preflight

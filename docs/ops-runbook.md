@@ -85,3 +85,71 @@
 | 商家收不到降级邮件 | `merchantNotifiedAt` 为空且反复扫描 = 发信持续失败(见 SMTP 排障行);发送成功才落时间戳,失败下轮重发 |
 | cron 未按周期执行 | `SELECT * FROM "CronLease"`——多实例下同窗口已有他实例执行（holder 列 + lastStartedAt）属正常；互斥 `lockedUntil` 卡在未来而 holder 已死 = 心跳残留，≤ 90s 自然过期，不需手工清 |
 | 全量 e2e 本机随机白屏 | WSL2 swap 压力（见 `.claude` 记忆）；`--workers=1 --retries=2` |
+
+## 7. 订单通知实时化（SPEC-NOTIFY-RT-001）—— 部署 / 回滚 / 排障
+
+> 新增于 2026-08-09。实时路径：同事务 `pg_notify` → 每实例 PostgreSQL `LISTEN` → 鉴权 SSE → 前端 REST 权威重同步；30 秒轮询为降级路径。**默认关闭**（`NOTIFICATION_REALTIME_ENABLED=false`）。
+
+### 7.1 开关与配置（spec 8.1）
+
+| 变量 | 默认 | 范围 | 说明 |
+|---|---|---|---|
+| `NOTIFICATION_REALTIME_ENABLED` | false | true/false | 总开关；true 必须同时 `NOTIFICATION_ENABLED=true`（config guard / check-prod-env 双守门） |
+| `NOTIFICATION_REALTIME_HEARTBEAT_MS` | 20000 | 5000–60000 | SSE comment heartbeat |
+| `NOTIFICATION_REALTIME_MAX_CONNECTIONS_PER_USER` | 5 | 1–20 | 每用户连接 cap |
+| `NOTIFICATION_REALTIME_MAX_CONNECTIONS_PER_IP` | 20 | 1–200 | 每 canonical IP cap |
+| `NOTIFICATION_REALTIME_MAX_CONNECTIONS` | 1000 | 1–100000 | 全局 cap |
+| `NOTIFICATION_REALTIME_MAX_BUFFER_BYTES` | 65536 | 16384–1048576 | 慢消费者 buffer cap |
+| `NOTIFICATION_REALTIME_CONNECT_RATE_LIMIT_MAX` | 30 | 1–1000 | 每 IP 60s 建连限速 |
+| `NOTIFICATION_REALTIME_SHUTDOWN_GRACE_MS` | 5000 | 1000–9000 | SSE drain 宽限（< 10s 强退） |
+| `DEPLOY_TOPOLOGY` | nginx | nginx/caddy | 部署拓扑；realtime=true 时 nginx→`TRUST_PROXY=1`、caddy→`TRUST_PROXY=2`（check-prod-env 强制） |
+
+全部进入根 / server `.env.example` 与 `docker-compose.prod.yml`（默认值同表）。
+
+### 7.2 发布顺序（O-RT-06 / CHK-REL-002）
+
+1. **准备**：合并代码但保持 realtime=false；先部署 Nginx/Caddy 新 location、后端依赖与 endpoint、metrics、health。
+2. **本地实现 gate**：Node 20 下从 clean worktree 跑 `bash scripts/verify-notification-realtime.sh --local`。它保留 build/test/E2E 原始计数与 exit evidence，并同时检查 session/proxy self-test、冻结提交祖先、三重 schema/migration 零 diff、专用库 migration status/drift 与 secret scanner。它只允许输出 `local implementation gate`；不能替代下面任一部署证据。
+3. **LISTEN session gate**：以实际部署数据库角色 + production-like URL 跑 `RT_SESSION_ENV_FILE=<git-ignored-file> bash scripts/verify-notification-realtime-listen-session.sh`（AC-RT-029/CHK-INF-007）——endpoint 必须是 direct/session-pool（非 transaction pool），PID distinct=1、t≈0/30/60 三轮唯一 payload 均在 SQL 成功后 5 秒内收到、4 个 aux worker 在 0..54 秒完成 40/40 事务且无权限错误；证据 7×24h 或 endpoint/role/revision 变化即过期。失败 / 过期 → 保持 realtime=false。
+4. **部署代理 smoke**：从代理外部执行 `NOTIFICATION_REALTIME_PROXY_BASE=https://<site> NOTIFICATION_REALTIME_PROXY_TOKEN=<out-of-band-token> bash scripts/verify-notification-realtime-proxy.sh`。脚本只证明 response/transport（包括 `stream.ready` 实际业务字节 ≤2 秒）与可选 metrics 未回显 secret；Nginx/Caddy/app 三层日志必须另附查询证据。
+5. **验证关闭态**：notifications REST 正常、stream 404、旧前端不受影响。
+6. **后端全量就绪**：所有 backend 实例升级到支持 realtime 的版本；禁止新旧 backend 混合时先发新前端。
+7. **启用后端**：`NOTIFICATION_REALTIME_ENABLED=true` 滚动重启全部实例；观察 listener_up、raw stream、caps、proxy。
+8. **发布前端**：新 bridge 连接已全量可用的 endpoint；观察连接数、lag、503/reconnect。
+9. **canary 业务**：专用账号完成新单/发货，采集至少 100 个独立样本，确认 P95 ≤2s、P99 ≤5s、无敏感 payload。
+10. **显式 release gate**：只有上述证据及 rollout/rollback、Owner review 均绑定同一完整 HEAD 后才运行 `bash scripts/verify-notification-realtime.sh --release`；缺少任何 production-like 环境或证据文件必须非零退出。
+
+`--release` 的五个外部 artifact 通过 `RT_STAGING_LATENCY_EVIDENCE_FILE`、`RT_DEPLOYED_LOG_EVIDENCE_FILE`、`RT_ROLLOUT_EVIDENCE_FILE`、`RT_ROLLBACK_EVIDENCE_FILE`、`RT_OWNER_REVIEW_EVIDENCE_FILE` 提供。每个文件必须在 7 天内生成，包含精确的 `result=PASS` 与 `head=<40位HEAD>`；staging 还需 `sample_count/p95_ms/p99_ms`，日志需 `nginx/app`（Caddy 拓扑另需 `caddy`），rollout/rollback 需脚本报错中列出的阶段字段，Owner 需 `reviewer` 与 `decision=APPROVED`。证据路径与 token 不得提交仓库。
+
+### 7.2.1 受保护 staging 自动演练
+
+专用 staging 的真实拓扑是 `public Caddy → bundled Nginx → Express`，私有 `/etc/monexus/staging.env` 必须使用 `DEPLOY_TOPOLOGY=caddy`、`TRUST_PROXY=2`。首次演练前由 root/operator 将仓库中的 staging Caddy site 同步到活动文件 `/etc/caddy/sites-enabled/monexus-staging.caddy`，确认包含 `flush_interval -1`，再执行 `caddy validate` 与 reload。deploy 用户只读检查该文件；检查失败时演练会在任何应用部署变更前停止，不得绕过。
+
+工作流 **Staging Compose Deploy** 的 `release_action=realtime_rehearsal` 执行固定的 12 阶段流程：proxy-first、backend-first/flag-off、AC-RT-029、flag-on/backend-only、创建 synthetic fixture、仅构建前端、外部 proxy smoke、frontend-after、100 样本、三层日志边界、flag-off fallback、immutable code rollback/history/cleanup/env restore。live run 还要求 `dry_run=false` 与 `confirm_rehearsal=REHEARSE_AND_ROLL_BACK`；先以 `dry_run=true` 核对最终 SHA。
+
+fixture 只允许 Compose DB hostname `postgres`，并以 `GITHUB_RUN_ID.GITHUB_RUN_ATTEMPT` 隔离。创建输出只有 synthetic IDs/email/product metadata；密码走 stdin，15 分钟 JWT 由真实登录 API 按阶段重新签发并只进入 runner 的 `0600` 临时 token 文件。token/password/order ID state 均不得上传。cleanup 会重新核验 buyer/product/offer/merchant 完整 ownership tuple；遇到 renewal 引用或 DeliveryFile 时拒绝扩大删除范围并要求人工审查。
+
+失败时 runner 必须调用 `recover`，逐项输出并留存 `flag_off`、`fixture_cleanup`、`code_rollback`、`env_runtime_restore` 的 PASS/FAIL；任一步失败会让 workflow 保持失败并标记 `manual_intervention_required=true`，不得静默吞错。成功 artifact 仅上传 aggregate latency、session、proxy、logs、rollout、rollback、fixture cleanup 与 rehearsal metadata。运行目录状态为 `COMPLETE`/`RECOVERED` 时仍保留证据；重跑使用新的 workflow attempt，不覆盖旧审计链。
+
+### 7.3 回滚（快速降级 / 版本回滚）
+
+1. 设 `NOTIFICATION_REALTIME_ENABLED=false` 并滚动重启后端 → stream 404 → 前端自动进入 polling_only（30s fallback）。
+2. Notification 写入、REST、订单与公告不受影响。
+3. 版本回滚：先关 flag → 回滚前端（或保留新前端，404→polling 均兼容）→ 回滚后端与代理。
+4. 不删除 Notification 行、不回滚/删除任何 migration（本波零 migration）。
+
+### 7.4 观测（spec 8.4）
+
+- `notification_realtime_listener_up`、`notification_realtime_connections`、`notification_realtime_pg_messages_total{outcome=…}`、`notification_realtime_sse_events_total{event,outcome}`、`notification_realtime_disconnects_total{reason}`、`notification_realtime_connection_rejections_total{reason}`、`notification_realtime_delivery_lag_seconds`。
+- readiness `checks.notificationRealtime`: disabled/ok/degraded/draining；仅 draining 令 readiness 503。
+
+### 7.5 常见排障
+
+| 症状 | 先查 |
+|---|---|
+| stream 一直 503 | listener 未 healthy（`notification_realtime_listener_up=0`）：`pg_stat_activity` 查 `application_name='monexus-notification-realtime-listener'`；LISTEN session gate 是否过期 / 指向 transaction pool |
+| stream 404 | realtime 或 notifications 总开关关（正常降级路径）；前端进 polling_only |
+| 事件不达 | 每实例一条 LISTEN 连接（不可多/少）；hub 无该用户连接时跳过主库查询（no_subscriber 正常）；Nginx 是否缓冲（应见 `X-Accel-Buffering: no`） |
+| 下单/履约错误率上升 | 先关 realtime flag 重启，禁止现场改成 commit 后广播；`pg_notify` 权限 / 连接错误按 O-RT-08 会整体回滚 |
+| 慢消费者 | 64KiB buffer cap 只断开该连接；重连后 REST 收敛 |
+| 指标基数爆炸 | 标签严格枚举；若出现 userId/orderId/IP/title/body 标签即违规 |

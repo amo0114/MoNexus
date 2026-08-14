@@ -4,7 +4,10 @@ import react from '@vitejs/plugin-react'
 
 const srcDir = fileURLToPath(new URL('./src', import.meta.url))
 
-// Combined Catalog/Merch frontend tests: jsdom only, no backend or env access.
+// Frontend unit tests: single unified config (catalog/merch component tests +
+// pure-logic realtime/utils tests). jsdom is a superset of node for the
+// pure-logic suites, so one environment covers both. DOM-driven component
+// tests rely on the jsdom environment, globals, and the shared setup file.
 export default defineConfig({
   plugins: [react()],
   resolve: {
