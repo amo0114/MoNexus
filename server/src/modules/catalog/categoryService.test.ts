@@ -3,8 +3,11 @@
 // CHK-CAT-001~004; AC-CAT-010~011). DB-backed — run by the coordinator against
 // the dedicated monexus_test_catalog_ops_be database.
 
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { prisma } from '../../lib/prisma.js'
+import { __resetCacheForTests, getCacheVersion } from '../../lib/cache.js'
+import { __resetRedisForTests, __setRedisForTests } from '../../lib/redis.js'
+import { config } from '../../config/index.js'
 import { ensureSeedCategories } from './bootstrap.js'
 import {
   activateCategory,
@@ -82,6 +85,29 @@ describe('categoryService — update', () => {
     expect(updated.label).toBe(' 新名字 ')
     expect(updated.normalizedLabel).toBe('新名字')
     expect(updated.code).toBe('upd-test')
+  })
+
+  it('renames label without rewriting existing Product.type / Order snapshot history (CHK-CAT-010)', async () => {
+    const actorId = await seedActor()
+    const dto = await createCategory(actorId, { code: 'snap-test', label: '历史标签' })
+    const buyer = await prisma.user.create({ data: { email: 'snap-buyer@test.local', password: 'x', role: 'user' } })
+    const product = await prisma.product.create({
+      data: { name: '历史商品', type: dto.label, price: 100, categoryId: dto.id },
+    })
+    const order = await prisma.order.create({
+      data: { userId: buyer.id, productId: product.id, productTypeSnapshot: dto.label, price: 100 },
+    })
+
+    const updated = await updateCategory(actorId, dto.id, { label: '新历史标签' })
+    expect(updated.label).toBe('新历史标签')
+
+    // The label snapshot captured at write time must survive the rename: neither
+    // the Product.type legacy snapshot nor the Order.productTypeSnapshot is
+    // rewritten (D-CAT-06 snapshot contract).
+    const afterProduct = await prisma.product.findUniqueOrThrow({ where: { id: product.id } })
+    expect(afterProduct.type).toBe('历史标签')
+    const afterOrder = await prisma.order.findUniqueOrThrow({ where: { id: order.id } })
+    expect(afterOrder.productTypeSnapshot).toBe('历史标签')
   })
 
   it('rejects a duplicate normalized label (409)', async () => {
@@ -275,5 +301,81 @@ describe('categoryService — list + public registry', () => {
     const legacy = registry.productTypes.find(t => t.value === '网络节点')
     expect(legacy).toEqual({ value: '网络节点', label: '网络节点', deprecated: true })
     expect(registry.productTypes.some(t => t.value === '待归类')).toBe(false)
+  })
+})
+
+class FakeRedis {
+  readonly store = new Map<string, string>()
+
+  async get(key: string) {
+    return this.store.get(key) ?? null
+  }
+
+  async set(key: string, value: string, ...args: unknown[]) {
+    if (args.includes('NX') && this.store.has(key)) return null
+    this.store.set(key, value)
+    return 'OK'
+  }
+
+  async del(...keys: string[]) {
+    let count = 0
+    for (const key of keys) {
+      if (this.store.delete(key)) count += 1
+    }
+    return count
+  }
+
+  async incr(key: string) {
+    const next = Number(this.store.get(key) ?? '0') + 1
+    this.store.set(key, String(next))
+    return next
+  }
+
+  async eval() {
+    throw new Error('FakeRedis.eval is not implemented for category cache tests')
+  }
+
+  async ping() {
+    return 'PONG'
+  }
+
+  async keys(pattern: string) {
+    const prefix = pattern.endsWith('*') ? pattern.slice(0, -1) : pattern
+    return [...this.store.keys()].filter(key => key.startsWith(prefix))
+  }
+}
+
+const mutableConfig = config as typeof config & {
+  redisEnabled: boolean
+  cacheProductListVersionCoalesceMs: number
+}
+
+describe('categoryService — product list cache invalidation (CHK-CAT-012)', () => {
+  let redis: FakeRedis
+
+  beforeEach(async () => {
+    mutableConfig.redisEnabled = true
+    // Disable coalescing so every mutation deterministically bumps the version.
+    mutableConfig.cacheProductListVersionCoalesceMs = 0
+    redis = new FakeRedis()
+    __setRedisForTests(redis)
+    await __resetCacheForTests()
+  })
+
+  afterEach(() => {
+    __resetRedisForTests()
+    mutableConfig.redisEnabled = false
+  })
+
+  it('renaming a category label invalidates the public product list cache version', async () => {
+    const actorId = await seedActor()
+    const dto = await createCategory(actorId, { code: 'list-cache-test', label: '旧标签' })
+    const before = await getCacheVersion({ name: 'product-list' })
+    expect(before).toBe(0)
+
+    await updateCategory(actorId, dto.id, { label: '新标签' })
+
+    const after = await getCacheVersion({ name: 'product-list' })
+    expect(after).toBe((before ?? 0) + 1)
   })
 })

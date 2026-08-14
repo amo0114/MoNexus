@@ -29,6 +29,7 @@ import {
 import type { CategoryAdminDto } from './contracts.js'
 import { normalizeCategoryLabel, type CreateCategoryInput, type ListCategoriesQuery, type UpdateCategoryInput } from './categorySchema.js'
 import { bumpCategoryRegistryCacheVersion } from './registry.js'
+import { bumpProductListVersionCoalesced } from '../../lib/cache.js'
 
 type Client = typeof prisma | Prisma.TransactionClient
 
@@ -251,6 +252,9 @@ export async function updateCategory(
       return updated
     })
     await bumpCategoryRegistryCacheVersion()
+    // CHK-CAT-012: public product list caches embed category DTOs — a label or
+    // other public-field change must invalidate them too, not wait out the TTL.
+    await bumpProductListVersionCoalesced()
     return toAdminDto(row)
   } catch (err) {
     if (isUniqueError(err, 'normalizedLabel')) {
@@ -298,6 +302,9 @@ async function setCategoryStatus(
   })
 
   await bumpCategoryRegistryCacheVersion()
+  // CHK-CAT-012: a status flip changes the category DTO embedded in public
+  // product lists, so invalidate that scope as well.
+  await bumpProductListVersionCoalesced()
   return toAdminDto(row)
 }
 
@@ -402,5 +409,8 @@ export async function deleteCategory(
   })
 
   await bumpCategoryRegistryCacheVersion()
+  // CHK-CAT-012: tombstoning flips the category to inactive, changing the DTO
+  // embedded in public product lists — invalidate that scope too.
+  await bumpProductListVersionCoalesced()
   return { deleted: true, id }
 }
