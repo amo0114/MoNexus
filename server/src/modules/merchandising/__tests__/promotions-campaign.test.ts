@@ -546,3 +546,28 @@ realPg('promotions — merchant cancel + admin reject state CAS (REAL-PG)', () =
     expect(() => validateIdempotencyKey('nope!')).toThrow(HttpError)
   })
 })
+
+realPg('promotions — admin permission boundary (REAL-PG)', () => {
+  let fx: Fixture
+
+  beforeEach(async () => {
+    await prisma.promotionCampaign.deleteMany()
+    await prisma.promotionPackage.deleteMany()
+    await prisma.product.deleteMany()
+    await prisma.merchant.deleteMany()
+    await prisma.user.deleteMany()
+    fx = await setupFixture()
+  })
+
+  it('merchant role cannot call admin reject endpoint (403 via requireAdmin middleware)', async () => {
+    const result = await createCampaign({
+      merchantId: fx.merchantA.id,
+      campaignInput: { productId: fx.productA.id, packageId: fx.pkg.id, requestedStartAt: null },
+      idempotencyKeyRaw: uniq('key'),
+    })
+    await expectErrorCode(
+      rejectCampaign(fx.merchantA.userId, result.campaign.id, { reason: 'attempt by merchant' }),
+      'FORBIDDEN',
+    )
+  })
+})

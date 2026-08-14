@@ -223,6 +223,47 @@ realPg('promotions — billing and lifecycle (REAL-PG)', () => {
     )).rejects.toMatchObject({ code: PROMOTION_ERROR_CODES.CAMPAIGN_ADJUSTMENT_ALREADY_DECIDED })
   }, 30_000)
 
+  it('zero-points adjustment writes the immutable decision but creates no refund ledger row (CHK-PROMO-009)', async () => {
+    const fx = await setupFixture()
+    const campaign = await requestCampaign(fx, 'zero-adjustment')
+    await approveCampaign(fx.adminUserId, campaign.id)
+    const balanceBefore = (await prisma.pointAccount.findUniqueOrThrow({ where: { userId: fx.merchant.userId } })).balance
+
+    const decided = await adjustCampaignRefund(
+      fx.adminUserId,
+      campaign.id,
+      { points: 0, reason: '明确不退' },
+      'zero-adjust-key',
+    )
+    expect(decided.kind).toBe('decided')
+
+    // 不可变决定已写:adjustmentDecidedAt/by 落库;refund 侧全零、余额不动。
+    const row = await prisma.promotionCampaign.findUniqueOrThrow({ where: { id: campaign.id } })
+    expect(row.adjustmentDecidedAt).not.toBeNull()
+    expect(row.adjustmentByUserId).toBe(fx.adminUserId)
+    expect(row.refundedPoints).toBe(0)
+    expect(row.refundPointLogId).toBeNull()
+    expect(await prisma.pointLog.count({ where: { userId: fx.merchant.userId, type: 'refund' } })).toBe(0)
+    const balanceAfter = (await prisma.pointAccount.findUniqueOrThrow({ where: { userId: fx.merchant.userId } })).balance
+    expect(balanceAfter).toBe(balanceBefore)
+
+    // 同 key 重放返回既有零退款决定;新 key(即便金额不同)稳定 409;仍零 refund log。
+    const replayed = await adjustCampaignRefund(
+      fx.adminUserId,
+      campaign.id,
+      { points: 0, reason: '明确不退' },
+      'zero-adjust-key',
+    )
+    expect(replayed.kind).toBe('replayed')
+    await expect(adjustCampaignRefund(
+      fx.adminUserId,
+      campaign.id,
+      { points: 10, reason: '第二次尝试' },
+      'zero-adjust-second-key',
+    )).rejects.toMatchObject({ code: PROMOTION_ERROR_CODES.CAMPAIGN_ADJUSTMENT_ALREADY_DECIDED })
+    expect(await prisma.pointLog.count({ where: { userId: fx.merchant.userId, type: 'refund' } })).toBe(0)
+  }, 30_000)
+
   it('pause/resume is idempotent, and lifecycle uses DB time to converge delayed scheduled rows to expired', async () => {
     const fx = await setupFixture()
     const campaign = await requestCampaign(fx, 'pause-resume')

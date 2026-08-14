@@ -5,6 +5,8 @@
 
 import { describe, expect, it } from 'vitest'
 import { api, authHeader, createTestUser, loginAs } from '../../__tests__/helpers.js'
+import jwt from 'jsonwebtoken'
+import { config } from '../../config/index.js'
 import { prisma } from '../../lib/prisma.js'
 
 async function loginAdmin(email = 'cat-admin@test.local') {
@@ -29,6 +31,29 @@ describe('admin product-categories API — authorization', () => {
     const token = await loginUser()
     await api.get('/api/admin/product-categories').set(authHeader(token)).expect(403)
     await api.post('/api/admin/product-categories').set(authHeader(token)).send({}).expect(403)
+  })
+
+  it('rejects an admin-role token WITHOUT the MFA claim on mutations (403 MFA_REQUIRED)', async () => {
+    const { user } = await createTestUser('cat-admin-nomfa@test.local', 'admin123', 'admin')
+    await loginAs(user.email, 'admin123')
+    const session = await prisma.refreshToken.findFirstOrThrow({
+      where: { userId: user.id, revoked: false },
+      orderBy: { id: 'desc' },
+    })
+    // Admin-role token that never completed MFA: requireAdminMfa must stop it
+    // before any mutation runs (CHK-CAT-003).
+    const adminWithoutMfa = jwt.sign(
+      { userId: user.id, role: 'admin', sid: session.sessionId },
+      config.jwtSecret,
+      { expiresIn: '15m' },
+    )
+    const before = await prisma.productCategory.count()
+    const res = await api.post('/api/admin/product-categories')
+      .set(authHeader(adminWithoutMfa))
+      .send({ code: 'mfa-gated', label: 'MFA拦截' })
+      .expect(403)
+    expect(res.body.error.code).toBe('MFA_REQUIRED')
+    expect(await prisma.productCategory.count()).toBe(before)
   })
 })
 

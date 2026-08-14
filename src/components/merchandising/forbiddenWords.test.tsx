@@ -2,6 +2,10 @@
 // The spec bans certification/guarantee phrasing (spec §8.3 / implement §6.3 /
 // CHK-ID-004): 平台认证 / 官方认证 / 平台担保 / 质量保证. These must never
 // appear in the rendered DOM of the badge/disclosure/shelf primitives.
+// v0.1.2 (CHK-PROMO-012): additionally ban fiat/billing-model wording —
+// 法币 / CPM / CPC / 竞价 — the promotion system sells fixed-duration
+// exposure pool time only (spec §7.5). Note: "保证展示" 等短语不入表——
+// 规格强制的披露文案「不保证展示、点击或成交次数」包含其子串,会误报。
 
 import { render } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
@@ -11,7 +15,11 @@ import EditorialShelf, { type EditorialShelfItem } from './EditorialShelf'
 import MerchantPartnerMark from './MerchantPartnerMark'
 import SponsoredShelf, { type SponsoredShelfProps } from './SponsoredShelf'
 
-const FORBIDDEN_WORDS = ['平台认证', '官方认证', '平台担保', '质量保证'] as const
+const FORBIDDEN_WORDS = [
+  '平台认证', '官方认证', '平台担保', '质量保证',
+  // CHK-PROMO-012 (v0.1.2): no fiat pricing or auction/impression-billing wording.
+  '法币', 'CPM', 'CPC', '竞价',
+] as const
 
 const badges: BadgeSpec[] = [
   { code: 'platform_owned', label: DISPLAY_LABEL.PLATFORM_OWNED },
