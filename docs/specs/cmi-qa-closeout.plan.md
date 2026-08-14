@@ -112,6 +112,8 @@ Dispatch text (English, verbatim):
 >
 > Final report (print BEFORE any cleanup): per-item status (done/blocked+reason), test commands + pass counts, files changed.
 
+**C3b 结果(2026-08-14,协调者记录)**:12/12 完成,以 `61db1f0`(fix:categoryService 三处变更点补 `bumpProductListVersionCoalesced`,reorder/create 经核实正确豁免——公开商品 DTO category 块仅 id/code/label)+ `8cf1ec4`(test:6 个测试文件 + verify 脚本)提交。分工实况:条目 1-7 由 pi 交付并自验(含 CAT-012 生产修复);其后 pi 运行时反复假死(provider 端零调用,最后一次停在条目 8 开头 30 分钟无输出),条目 8-12 由协调者兜底实施。协调者终验:双端 typecheck OK;受影响 6 个服务端测试文件 **72/72 全绿**(CMI 专用库);前端禁词表 5/5;`verify-catalog-ops-e2e.sh` bash -n 通过。修正记录:禁词表扩展未纳入"保证展示/点击/成交"(规格强制披露文案「不保证展示…」含其子串,会误报),仅加 法币/CPM/CPC/竞价。
+
 Dispatch text (English, verbatim):
 
 > Execute task cards T-CAT-QA-002, T-MERCH-QA-001, T-MERCH-QA-002 (all v0.1.2 — evidence audit, NOT new harnesses). Read `docs/superpowers/specs/2026-08-13-cmi-qa-rescope-v012.md` §2–§4 first, then the three cards in the two task.md files.
