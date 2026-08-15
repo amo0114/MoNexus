@@ -520,6 +520,25 @@ realPg('promotions — merchant cancel + admin reject state CAS (REAL-PG)', () =
     await expectErrorCode(rejectCampaign(fx.adminUserId, result.campaign.id, { reason: '再拒一次' }), PROMOTION_ERROR_CODES.CAMPAIGN_TRANSITION_INVALID)
   })
 
+  it('keeps the full admin review reason in the private row but bounds the AdminLog projection', async () => {
+    const result = await createCampaign({
+      merchantId: fx.merchantA.id,
+      campaignInput: { productId: fx.productA.id, packageId: fx.pkg.id, requestedStartAt: null },
+      idempotencyKeyRaw: KEY,
+    })
+    const reason = `${'长理由'.repeat(150)} alice@example.com Bearer secret-token`
+    const rejected = await rejectCampaign(fx.adminUserId, result.campaign.id, { reason })
+    expect(rejected.reviewReason).toBe(reason)
+
+    const adminLog = await prisma.adminLog.findFirstOrThrow({
+      where: { action: '拒绝推广活动', targetType: 'promotion_campaign', targetId: result.campaign.id },
+    })
+    expect(adminLog.detail).toContain('reasonTruncated=true')
+    expect(adminLog.detail).not.toContain(reason)
+    expect(adminLog.detail).not.toContain('alice@example.com')
+    expect(adminLog.detail).not.toContain('secret-token')
+  })
+
   it('admin list exposes review fields; merchant list does not; neither leaks key/hash', async () => {
     const result = await createCampaign({
       merchantId: fx.merchantA.id,

@@ -47,6 +47,7 @@ import {
   type PackageRow,
 } from './dto.js'
 import { recordCampaignRequest, recordCampaignTransition, recordPackageOutcome } from './metrics.js'
+import { summarizeAdminAuditReason } from '../audit.js'
 
 type Db = typeof prisma | Prisma.TransactionClient
 
@@ -536,7 +537,7 @@ export async function rejectCampaign(
   if (updated.count === 0) {
     throw new HttpError(409, PROMOTION_ERROR_CODES.CAMPAIGN_TRANSITION_INVALID as never, '当前状态不允许拒绝')
   }
-  await writeAdminLog(db, adminUserId, '拒绝推广活动', 'promotion_campaign', campaignId, `reason=${input.reason}`).catch(err => {
+  await writeAdminLog(db, adminUserId, '拒绝推广活动', 'promotion_campaign', campaignId, summarizeAdminAuditReason(input.reason)).catch(err => {
     logger.error({ err }, 'failed to write campaign reject admin log')
   })
   recordCampaignTransition(existing.status as CampaignStatus, CAMPAIGN_STATUS.REJECTED)

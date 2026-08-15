@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { summarizeAdminAuditReason } from '../audit.js'
 
 const source = (relative: string) => readFileSync(resolve(import.meta.dirname, '../../../', relative), 'utf8')
 
@@ -42,8 +43,29 @@ describe('CMI merchandising security evidence', () => {
     expect(authReadme).toMatch(/complete User-Agent, token, token hash, MFA seed, or recovery code/i)
   })
 
+  it('bounds operator reasons before they enter AdminLog', () => {
+    const longReason = `${'长理由'.repeat(150)} alice@example.com Bearer secret-token`
+    const summary = summarizeAdminAuditReason(longReason)
+
+    expect(summary).toContain('reasonTruncated=true')
+    expect(summary).not.toContain(longReason)
+    expect(summary).not.toContain('alice@example.com')
+    expect(summary).not.toContain('secret-token')
+    expect(summarizeAdminAuditReason('运营调整')).toBe('reason=运营调整')
+    expect(source('modules/merchandising/promotions/service.ts')).toMatch(/summarizeAdminAuditReason/)
+    expect(source('modules/merchandising/editorial/service.ts')).toMatch(/summarizeAdminAuditReason/)
+    expect(source('modules/merchandising/entitlements/service.ts')).toMatch(/summarizeAdminAuditReason/)
+  })
+
   it('has no CPM/CPC/bidding/fiat/earnings-promise promotion vocabulary in the current catalog surface', () => {
-    const catalog = `${source('modules/merchant/schema.ts')}\n${source('modules/merchant/service.ts')}\n${source('modules/admin/schema.ts')}`
+    const catalog = [
+      'modules/merchant/schema.ts',
+      'modules/merchant/service.ts',
+      'modules/admin/schema.ts',
+      'modules/merchandising/promotions/schema.ts',
+      'modules/merchandising/promotions/service.ts',
+      'modules/merchandising/promotions/billing.ts',
+    ].map(source).join('\n')
     expect(catalog).not.toMatch(/\b(?:CPM|CPC)\b|竞价|法币|收益承诺/i)
   })
 })

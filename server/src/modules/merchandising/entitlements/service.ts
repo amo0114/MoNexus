@@ -3,6 +3,7 @@ import { badRequest, conflict, forbidden, notFound } from '../../../lib/httpErro
 import { prisma } from '../../../lib/prisma.js'
 import { getSystemConfigValue } from '../../../lib/systemConfig.js'
 import { DISPLAY_LABEL, ENTITLEMENT_CODE, ENTITLEMENT_SOURCE, ENTITLEMENT_STATUS } from '../constants.js'
+import { summarizeAdminAuditReason } from '../audit.js'
 
 type TransactionHost = typeof prisma
 type EntitlementDb = typeof prisma | Prisma.TransactionClient
@@ -144,7 +145,7 @@ export async function manualGrantPartnerEntitlement(
         action: '授予平台合作伙伴权益',
         targetType: 'merchant_entitlement',
         targetId: entitlement.id,
-        detail: `merchantId=${input.merchantId}; validUntil=${validUntil.toISOString()}; reason=${input.reason}`,
+        detail: `merchantId=${input.merchantId}; validUntil=${validUntil.toISOString()}; ${summarizeAdminAuditReason(input.reason)}`,
       },
     })
     return entitlement
@@ -178,7 +179,7 @@ export async function revokePartnerEntitlement(
         action: '撤销平台合作伙伴权益',
         targetType: 'merchant_entitlement',
         targetId: entitlementId,
-        detail: `merchantId=${current.merchantId}; reason=${reason}`,
+        detail: `merchantId=${current.merchantId}; ${summarizeAdminAuditReason(reason)}`,
       },
     })
     return updated

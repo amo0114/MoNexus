@@ -215,10 +215,9 @@ git diff --check
 | 2026-08-15 | `c690025` / `70517f7` / `8c2800e` / `8c2800e` | C5b | `PAR-GATE-006/011` | `git merge-base --is-ancestor f586efd dc9fb306`; `git merge-base --is-ancestor 2bf77c1 dc9fb306`; `git merge-base --is-ancestor dc9fb306 50b774c`; `git merge-base --is-ancestor 50b774c 0d9f7ce` | PASS, all four exit 0; Identity raw-writer closure `0d9f7ce` is parented by Layout handoff `50b774c`; Identity logic 56/56 and build green | `docs/specs/cmi-c5b-evidence.md`; Identity lane `fix/identity-profile-layout-integration` |
 | 2026-08-15 | `c690025` / `70517f7` / `8c2800e` / `8c2800e` | C5b | `PAR-GATE-011` | `git merge-base --is-ancestor 0d9f7ce 560d00c` | PASS (exit 0); Identity docs-only evidence handoff `560d00c` retains the raw-writer closure parent | Identity lane `fix/identity-profile-layout-integration`; `docs/specs/cmi-c5b-evidence.md` |
 | 2026-08-15 | `c690025` / `685d23b` / `495d1a0` / `e279c72` / `70517f7` / `8c2800e` / `8c2800e` | C5b | `G-MERCH-PR-004/005/006` | `PATH=/root/.nvm/versions/node/v20.19.5/bin:$PATH bash scripts/verify-merchandising.sh` | PASS for build/contracts and ranking/points/asset regression: ranking 2 files/55, points 4 server files/56 + 3 UI files/91, asset gallery 3/3; Image2 delivery remains Deferred | `docs/specs/cmi-c5b-evidence.md`; dedicated runners `685d23b`, `495d1a0`, `e279c72` |
-| 2026-08-15 | `ae4c483` (docs-only; code ancestor `c690025`) | C5b | `G-MERCH-PR-007/008` | Root security/public-field suite (8 files/117 tests, exit 0); server split security runs (pure 3 files/33 tests, 45.26s; DB-backed 5 files/53 tests, each exit 0); `docs/specs/cmi-qa-evidence-map.md` refresh | Partial evidence recorded; public/DTO/ownership rows are indexed, but merch admin MFA, log/trace redaction, metrics/cron and other audit gaps remain; G-MERCH-PR-007/008 stay Pending | `docs/specs/cmi-c5b-evidence.md`; `docs/specs/cmi-qa-evidence-map.md` |
-| 2026-08-15 | `b078153` (docs-only; code ancestor `c690025`) | C5b | `CHK-MERCH-FND-002` / `G-MERCH-PR-003` | Production-source `isHot` scan; serial Node 20 CMI runs for `admin-query` (17), admin/merchant `product-is-hot` (7+6), ranking projection (30), products integration (5) | Static scan PASS; five serial files 65/65 tests exit 0 and each CMI DB cleaned. Independent true-count→false-count cleanup fixture/artifact still missing, so both remain Pending; initial concurrent batch's `40P01` deadlock is excluded | `docs/specs/cmi-c5b-evidence.md`; CMI dbguard cleanup |
-| 2026-08-15 | `30efbe4` | C5b | `G-MERCH-PR-008` | Targeted `security-gaps.test.ts` on Node 20.19.5/npm 10.8.2 with disposable CMI DB | PASS, 1 file / 5 tests; route MFA, PointLog boundary, sensitive projection, and forbidden vocabulary assertions pass. Unified security gate remains Pending | `docs/specs/cmi-c5b-evidence.md` |
-| 2026-08-15 | `30efbe4` / `e329d1b` | C5b | `G-MERCH-PR-009` | `TEST_DATABASE_URL=<CMI> DATABASE_URL=<CMI> REDIS_ENABLED=false REDIS_REQUIRED=false bash scripts/verify-cmi-perf-compat.sh` | Local PASS: cache 7/7, server build PASS, dashboard benchmark 2/2; no percentile measured; staging/production, 100k-order, and bundle evidence Pending | `docs/specs/cmi-perf-compat-evidence.md` |
+| 2026-08-15 | `4ab3de9` + C5b security changes | C5b | `G-MERCH-PR-007/008` | Unified CMI security command: Node 20.19.5/npm 10.8.2, disposable CMI DB, 8 focused security/admin files | PASS, 8 files / 70 tests, exit 0; runtime MFA for all Merch admin surfaces, bounded AdminLog reasons, public-field/PointLog boundaries, auth/security-event and mail redaction covered | `docs/specs/cmi-c5b-evidence.md` |
+| 2026-08-15 | `c690025` + C5b fixture | C5b | `CHK-MERCH-FND-002` / `G-MERCH-PR-003` | `bash scripts/verify-cmi-legacy-hot-cleanup.sh` after Node 20 CMI migrations/seed | PASS: `legacy_is_hot_before=5`, `legacy_is_hot_after=0`, `legacy_is_hot_cleanup=PASS`; DB dropped afterward; production-source scan still finds no `isHot: true` write | `docs/specs/cmi-c5b-evidence.md`; CMI dbguard cleanup |
+| 2026-08-15 | `4ab3de9` / `e329d1b` | C5b | `G-MERCH-PR-009` | `bash scripts/verify-cmi-perf-compat.sh`; `bash scripts/verify-cmi-100k-order-p95.sh`; `npm run check:bundle-budget` | Local cache/build/dashboard PASS; latest 100k synthetic-order P95 PASS (30 samples: summary 16.504372 ms, timeseries 80.750211 ms); bundle build PASS but 150 KiB proxy FAIL at 315.74 KiB; staging/canary P95 and external bundle acceptance remain Pending | `docs/specs/cmi-perf-compat-evidence.md` |
 | 2026-08-15 | `30efbe4` / `1d37d86` | C5b | `G-MERCH-PR-010` | Release rehearsal/Owner handoff docs and `bash -n` local checks | Docs/local checks PASS; staging/canary/restore/rollback and Owner/PAR approval not executed, so Gate remains Pending | `docs/specs/cmi-release-rehearsal.md`; `docs/specs/cmi-owner-handoff.md` |
 
 证据含exit/test count/duration/DB/ports/clock/fixture revision；ranking报告含行数、窗口、P50/P95；points含净变化断言但不泄露真实余额；assets含prompt/model/hash/reviewer，不含provider secret。
@@ -231,12 +230,12 @@ git diff --check
 | --- | --- | --- |
 | G-MERCH-PR-001 | Specs/PAR Frozen、P0 Tasks/CHK全Done | Pending |
 | G-MERCH-PR-002 | `D/S/A_CMI/F0/B_CAT/F/H/M_CMI`、ancestor命令、delta与host整文件锁移交完整 | Pending |
-| G-MERCH-PR-003 | migrations/status/drift与legacy isHot cleanup通过 | Pending |
+| G-MERCH-PR-003 | migrations/status/drift与legacy isHot cleanup通过 | Passed |
 | G-MERCH-PR-004 | backend/frontend build及contracts通过 | Passed |
 | G-MERCH-PR-005 | ranking/points真实PG、100并发及Campaign create/adjustment幂等契约通过 | Passed |
 | G-MERCH-PR-006 | browser/disclosure/a11y/visual/assets通过 | Pending |
 | G-MERCH-PR-007 | AC-MERCH-001~029当前HEAD证据齐全 | Pending |
-| G-MERCH-PR-008 | points/PII/secret/禁词/public field审计通过 | Pending |
+| G-MERCH-PR-008 | points/PII/secret/禁词/public field审计通过 | Passed |
 | G-MERCH-PR-009 | 性能/bundle/cache/rollout/rollback通过 | Pending |
 | G-MERCH-PR-010 | points/orders/products/admin/notification回归与PR交接完整 | Pending |
 
@@ -244,11 +243,12 @@ git diff --check
 
 ### C5b 状态（2026-08-15）
 
-Merch browser/backend, server-wide, and Identity closure evidence are green. The
-cross-spec `N + C_ID → M_ID → Layout → raw-writer closure` chain is proven by
-the ancestor matrix in `docs/specs/cmi-c5b-evidence.md`. Merch PR gates remain
-Pending until Owner review and the remaining release/performance/PR evidence are
-recorded; this branch is not yet declared ready to merge.
+Merch browser/backend, server-wide, security, legacy-isHot, and Identity closure
+evidence are green. The cross-spec `N + C_ID → M_ID → Layout → raw-writer
+closure` chain is proven by the ancestor matrix in `docs/specs/cmi-c5b-evidence.md`.
+Merch PR gates remain Pending until Owner review and the remaining external
+release/performance/PR evidence are recorded; this branch is not yet declared
+ready to merge.
 
 ## 10. Blocked模板
 

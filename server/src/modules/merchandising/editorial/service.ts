@@ -2,6 +2,7 @@ import { Prisma } from '@prisma/client'
 import { prisma } from '../../../lib/prisma.js'
 import { badRequest, conflict, notFound, forbidden } from '../../../lib/httpError.js'
 import { EDITORIAL_STATUS } from '../constants.js'
+import { summarizeAdminAuditReason } from '../audit.js'
 
 type TransactionHost = typeof prisma
 type EditorialDb = typeof prisma | Prisma.TransactionClient
@@ -122,7 +123,7 @@ export async function revokeEditorialFeature(adminUserId: number, featureId: num
     const updated = await tx.editorialFeature.update({
       where: { id: featureId }, data: { status: EDITORIAL_STATUS.REVOKED, revokedByUserId: adminUserId }, select: editorialSelect,
     })
-    await tx.adminLog.create({ data: { adminUserId, action: '撤销平台精选', targetType: 'editorial_feature', targetId: featureId, detail: `status=revoked; reason=${reason}` } })
+    await tx.adminLog.create({ data: { adminUserId, action: '撤销平台精选', targetType: 'editorial_feature', targetId: featureId, detail: `status=revoked; ${summarizeAdminAuditReason(reason)}` } })
     return updated
   })
 }

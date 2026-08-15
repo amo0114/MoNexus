@@ -5,8 +5,9 @@
 - Base: `develop`
 - Label: `run-e2e`
 - Source branch: `feat/catalog-merch-integration`
-- Current evidence HEAD: `bfe70f8` (docs-only evidence ledger tip; based on code/
-  test tip `30efbe4`); implementation code ancestor under test: `c690025`
+- Current evidence baseline: `4ab3de9` (100k benchmark tip; security/audit
+  evidence is recorded in the next C5b ledger commit); implementation code
+  ancestor under test: `c690025`
 - C5b runners: `685d23b`, `495d1a0`, `e279c72`, `e329d1b`, and `1d37d86`
 
 ## Summary
@@ -14,7 +15,9 @@
 This PR integrates the Catalog Operations and Merchandising Governance lanes
 after the C4 `develop` merge. It includes the authorized `/api/merchant`
 registration mount-order fix, C5a legacy assertion reconciliation, the
-catalog-ops CI option-B isolated E2E job, and the final C5b evidence ledger.
+catalog-ops CI option-B isolated E2E job, unified Merch admin MFA/audit
+hardening, the independent legacy-isHot cleanup fixture, and the final C5b
+evidence ledger.
 
 The cross-spec Identity handoff is recorded without merging Identity files into
 this branch: `N=f586efd` and `C_ID=2bf77c1` both reach `M_ID=dc9fb306`, Layout
@@ -40,24 +43,25 @@ performance numbers are not invented or promoted to P0 acceptance criteria.
   56 tests plus 3 UI files / 91 tests; asset gallery 3/3; root/server
   runtime and build green; disposable databases cleaned.
 - Root security/public-field targeted suite: 8 files / 117 tests, exit 0.
-- Targeted CMI security-gap evidence: 1 file / 5 tests, exit 0 on Node
-  20.19.5/npm 10.8.2 with the disposable CMI database; this does not replace
-  the incomplete unified server-security gate.
-- Partial server-security split evidence: pure subset 3 files / 33 tests,
-  Vitest duration 45.26s, and five subsequent DB-backed per-file runs (3 + 15 +
-  9 + 22 + 4 = 53 tests), all exit 0. The earlier 12-file run was interrupted;
-  this split is not a single full server gate. Explicit MFA/log/other audit
-  gaps remain, so `G-CAT-PR-008` and `G-MERCH-PR-008` stay Pending.
+- Unified CMI server-security gate: 8 focused files / 70 tests, exit 0 on Node
+  20.19.5/npm 10.8.2 with the disposable CMI database. It covers runtime MFA
+  boundaries for all Merch admin surfaces, bounded AdminLog reasons, public
+  fields, PointLog HTTP boundaries, auth/security events, and mail redaction;
+  the database was dropped afterward.
 - Legacy `Product.isHot` static source audit found no production `isHot: true`
-  writes and confirmed public/admin projection stripping. A serial Node
-  20.19.5 CMI rerun passed five legacy-hot files (65 tests total, all exit 0),
-  but the independent true-count-to-false-count cleanup fixture is still
-  missing; `CHK-MERCH-FND-002`/`G-MERCH-PR-003` remain Pending.
+  writes and confirmed public/admin projection stripping. The serial Node
+  20.19.5 CMI rerun passed five legacy-hot files (65 tests total), and the
+  independent cleanup fixture now records `legacy_is_hot_before=5` →
+  `legacy_is_hot_after=0`; `CHK-MERCH-FND-002`/`G-MERCH-PR-003` evidence is
+  complete.
 - Identity closure: 56/56 logic tests, raw-writer static scan zero, frontend
   build green.
 - Local perf/compat: cache 7/7, server build PASS, dashboard benchmark 2/2
-  under Node 20.19.5/npm 10.8.2. No P50/P95 was measured; staging/production
-  P95, 100k-order P95, and frontend bundle budget remain Pending.
+  under Node 20.19.5/npm 10.8.2. The disposable 100k-order benchmark reports
+  30 samples with summary P95 16.504372 ms and timeseries P95 80.750211 ms.
+  The frontend build passes, while the conservative 150 KiB gzip proxy reports
+  315.74 KiB and exits non-zero. Staging/production/canary P95 and external
+  bundle acceptance remain Pending.
 - Release rehearsal and Owner handoff documents pass `bash -n`/local dry-run
   checks, but staging deploy, canary, restore/rollback, and Owner/PAR approval
   remain Pending.
@@ -67,16 +71,17 @@ performance numbers are not invented or promoted to P0 acceptance criteria.
 - Image2 concept/runtime asset delivery (`T-MERCH-ASSET-001`, AC-MERCH-025/026,
   CHK-ASSET-001~006, PERF-004) remains Deferred by AMD-CMI-012 and is not
   represented as shipped functionality.
-- External performance/bundle acceptance (staging/production P95, 100k-order
-  P95, and frontend budget) and any broader recommendation or multi-tab
-  expansion remain follow-up work under their existing specs.
+- External performance/bundle acceptance (staging/production/canary P95,
+  Owner/PAR rollout, rollback/restore, and an owner-approved incremental
+  bundle baseline) remains follow-up work under the existing specs. The local
+  100k-order P95 and conservative bundle proxy are recorded but do not close
+  those external gates.
 
 ## Readiness
 
 This draft is not a ready-to-merge declaration. The remaining Pending gates
-are the Owner/PAR handoff review, the explicit legacy-isHot/security/AC-map
-audit, external performance and rollout/rollback evidence, and the final
-PR risk/monitoring/rollback handoff. The PR must remain blocked until those
-rows are filled and reviewed. In particular, `G-CAT-PR-008` and
-`G-MERCH-PR-008` remain Pending; all gates without Owner, staging, P95, or
+are the Owner/PAR handoff review, external staging/canary P95 and
+rollout/rollback evidence, the bundle budget exception or remediation, and the
+final PR risk/monitoring/rollback handoff. The PR must remain blocked until
+those rows are filled and reviewed; all gates without Owner, staging, P95, or
 rollback evidence remain Pending.
