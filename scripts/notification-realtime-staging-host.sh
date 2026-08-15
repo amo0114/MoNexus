@@ -341,7 +341,9 @@ inspect_logs() {
   IFS= read -r token
   IFS= read -r sentinel
   [[ -n "$token" && "$sentinel" =~ ^rt-proxy-sentinel-[A-Za-z0-9._-]+$ ]] || fail 'invalid log sentinel input'
-  since="${RT_STAGING_LOG_SINCE:-10 minutes ago}"
+  # Docker's --since accepts a Go duration (for example 10m) or an absolute
+  # timestamp; natural-language values such as "10 minutes ago" are rejected.
+  since="${RT_STAGING_LOG_SINCE:-10m}"
   temp_dir="$(mktemp -d "$run_path/.logs.XXXXXX")"
   trap 'rm -rf "$temp_dir"' RETURN
   local compose=(

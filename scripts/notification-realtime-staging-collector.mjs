@@ -387,8 +387,13 @@ async function runLatency(password) {
     await openMerchantOrders(page, 'ready', merchantSession)
     for (let index = 0; index < sampleCount; index += 1) {
       failureStage = 'order_api'
-      failedSample = index + 1
-      const orderId = await createOrder(buyerApi, checkout, password)
+      let orderId
+      try {
+        orderId = await createOrder(buyerApi, checkout, password)
+      } catch (error) {
+        failedSample = index + 1
+        throw error
+      }
       const apiCompletedAt = performance.now()
       failureStage = 'merchant_dom'
       try {
