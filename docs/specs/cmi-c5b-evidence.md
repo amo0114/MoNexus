@@ -65,3 +65,11 @@ temporary runner resources were cleaned after each run.
 2. Prepare the C6 PR to `develop` with `run-e2e`, the v0.1.2 revision note,
    Deferred list, and this evidence index; keep the PR blocked while any gate
    remains Pending.
+
+The Merch implement contract also names
+`scripts/verify-merchandising-ranking.sh`,
+`scripts/verify-merchandising-points.sh`,
+`scripts/verify-merchandising-assets.sh`, and
+`scripts/verify-merchandising.sh` as required verification entry points.
+All four are absent at this HEAD; direct invocations returned exit 127. No
+Merch PR gate was marked Passed on the basis of a missing command.
