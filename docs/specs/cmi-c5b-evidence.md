@@ -2,7 +2,7 @@
 
 Date: 2026-08-15
 Branch: `feat/catalog-merch-integration`
-Current evidence HEAD: `603d874` (staging sudo-boundary repair; based on the
+Current evidence HEAD: `0a4696a` (staging sudo-boundary repair; based on the
 security/audit and fixture tip `61e41af`, which in turn includes benchmark
 `4ab3de9`).
 Implementation code ancestor under test: `c690025b9d1059bc47b6c1c16aa5811b2971d373`.
