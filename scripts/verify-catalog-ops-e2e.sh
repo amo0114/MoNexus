@@ -77,6 +77,7 @@ if ! kill -0 "$FIXTURE_PID" 2>/dev/null; then
   exit 1
 fi
 
-say "running playwright (catalog-ops config)"
-npx playwright test --config playwright.catalog-ops.config.ts "$@"
+PLAYWRIGHT_CONFIG="${CATALOG_OPS_PLAYWRIGHT_CONFIG:-playwright.catalog-ops.config.ts}"
+say "running playwright ($PLAYWRIGHT_CONFIG)"
+npx playwright test --config "$PLAYWRIGHT_CONFIG" "$@"
 say "catalog-ops e2e gate: PASS"
