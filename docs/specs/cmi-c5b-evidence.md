@@ -52,12 +52,17 @@ legacy column (`server/src/modules/admin/service.ts:1320-1323`,
 `server/src/modules/products/service.ts:429-456`,
 `server/src/modules/products/cache.ts:67-70`).
 
-The attempted disposable-DB test batch was not valid evidence: the first run
-hit a PostgreSQL `40P01` deadlock during the shared setup `TRUNCATE`, and the
-follow-up CLI attempt used the wrong Node runtime. No exit-0 legacy cleanup
-artifact or true-count-to-false-count fixture was produced; the CMI database
-was subsequently removed by `scripts/cmi/dbguard.sh`. Therefore
-`CHK-MERCH-FND-002` and `G-MERCH-PR-003` remain **Pending**.
+The initial multi-file disposable-DB batch was invalid: it hit a PostgreSQL
+`40P01` deadlock during shared setup `TRUNCATE`, and the follow-up CLI attempt
+used the wrong Node runtime. A subsequent serial Node `v20.19.5` rerun against
+the CMI database passed all five files (each database was cleaned afterward):
+`admin-query.test.ts` 17 tests / 30.04s, `admin/product-is-hot.test.ts` 7 /
+13.96s, `merchant/product-is-hot.test.ts` 6 / 13.11s,
+`ranking-compute-projection.test.ts` 30 / 35.10s, and
+`products/catalog-merch-integration.test.ts` 5 / 9.20s (65 tests total, all
+exit 0). This still does not provide an independent true-count-to-false-count
+cleanup fixture or artifact; therefore `CHK-MERCH-FND-002` and
+`G-MERCH-PR-003` remain **Pending**.
 
 The first full-run attempt was invalid because the disposable CMI database had already
 been removed by the prior runner (154 files failed during initialization and 1420 tests

@@ -46,9 +46,10 @@ performance numbers are not invented or promoted to P0 acceptance criteria.
   this split is not a single full server gate. Explicit MFA/log/other audit
   gaps remain, so `G-CAT-PR-008` and `G-MERCH-PR-008` stay Pending.
 - Legacy `Product.isHot` static source audit found no production `isHot: true`
-  writes and confirmed public/admin projection stripping; the disposable-DB
-  batch was invalidated by a PostgreSQL `40P01` setup deadlock, so no cleanup
-  count artifact exists and `CHK-MERCH-FND-002`/`G-MERCH-PR-003` remain Pending.
+  writes and confirmed public/admin projection stripping. A serial Node
+  20.19.5 CMI rerun passed five legacy-hot files (65 tests total, all exit 0),
+  but the independent true-count-to-false-count cleanup fixture is still
+  missing; `CHK-MERCH-FND-002`/`G-MERCH-PR-003` remain Pending.
 - Identity closure: 56/56 logic tests, raw-writer static scan zero, frontend
   build green.
 
