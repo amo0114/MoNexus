@@ -63,9 +63,12 @@ performance numbers are not invented or promoted to P0 acceptance criteria.
   The frontend build passes, while the conservative 150 KiB gzip proxy reports
   315.74 KiB and exits non-zero. Staging/production/canary P95 and external
   bundle acceptance remain Pending.
-- Release rehearsal and Owner handoff documents pass `bash -n`/local dry-run
-  checks, but staging deploy, canary, restore/rollback, and Owner/PAR approval
-  remain Pending.
+- Baseline staging deployment is now real: [workflow run 31877359120](https://github.com/amo0114/MoNexus/actions/runs/31877359120)
+  resolved SHA `4fe0fbcac899bbc388184e0dfe2d59b9dbe90c2c` and succeeded through
+  Compose smoke and public readiness; deployment `5919176861` is the known-good
+  rollback target. Owner `amo0114` and the protected staging required-reviewer
+  rule are recorded. Distinct canary/rehearsal, rollback execution, external P95,
+  and bundle acceptance remain Pending.
 
 ## Deferred
 

@@ -1,6 +1,6 @@
 # CMI release rehearsal — G-CAT / MERCH-PR-010
 
-Status: design-confirmed; external Owner, canary, and rollback gates remain **Pending**.
+Status: baseline deployed; live canary, rollback rehearsal, and external performance gates remain **Pending**.
 This is a release/operator document only. It does not add a feature flag, production
 traffic split, schema change, or migration.
 
@@ -17,8 +17,7 @@ migration caution, health checks, and backup restore rehearsal follow
 ## Local dry-run / command validation evidence
 
 The following validation was performed locally on 2026-08-15. It is static/local
-validation only; no SSH connection, staging deployment, canary traffic, production
-traffic, database restore, or rollback was executed.
+validation only; it does not replace the live workflow evidence below.
 
 ```bash
 git diff --check
@@ -40,20 +39,23 @@ The safe command matrix for an operator is:
 | plan rollback | `release_action=rollback`, known staging SHA, `dry_run=true` | Validate target; no SSH/host mutation |
 | live rehearsal | `release_action=realtime_rehearsal`, exact SHA, `dry_run=false`, `confirm_rehearsal=REHEARSE_AND_ROLL_BACK` | Staging-only rehearsal; requires all staging secrets and explicit confirmation |
 
-Do not represent the first two rows as staging evidence. The live row remains
-unexecuted until the release Owner authorizes it.
+The plan row is not deployment evidence. A baseline deployment was subsequently
+executed as [workflow run 31877359120](https://github.com/amo0114/MoNexus/actions/runs/31877359120)
+for immutable SHA `4fe0fbcac899bbc388184e0dfe2d59b9dbe90c2c`; its successful
+staging deployment (`5919176861`) is the known-good rollback target. The live
+rehearsal target remains distinct and requires the protected `staging` reviewer.
 
 ## Rehearsal gates (all explicit)
 
-- [ ] Owner named in the release record; support/on-call contact and window recorded.
-- [ ] PAR (pre-authorized release) is approved for this exact SHA and staging window.
+- [x] Owner named in the release record: `amo0114`; support/on-call contact and exact window remain Pending.
+- [x] PAR authorization is recorded in `docs/specs/cmi-owner-handoff.md`; exact rehearsal target/window approval remains Pending.
 - [ ] Staging secrets/known-host key and `STAGING_HEALTHCHECK_URL` are present; no
   secret values enter logs or this repository.
 - [ ] Baseline health passes before exercise: public health URL plus
   `/api/health/live` and `/api/health/ready` where exposed.
 - [ ] Canary account and merchant test fixture are identified; canary percentage,
   duration, success/error/latency thresholds, and stop authority are written down.
-- [ ] Known-good staging release SHA is recorded before any live exercise.
+- [x] Known-good staging release SHA `4fe0fbcac899bbc388184e0dfe2d59b9dbe90c2c` is recorded before the live exercise.
 - [ ] Rollback approver and exact target SHA are recorded; database migration state
   is checked before choosing artifact rollback.
 - [ ] Evidence bundle is retained: workflow run URL, resolved SHA, health results,
@@ -79,6 +81,6 @@ unexecuted until the release Owner authorizes it.
 
 Design confirmations are the staging-only path, immutable SHA checks, dry-run no-SSH
 property, explicit live rehearsal confirmation, health gate, and migration fallback.
-Not executed: live staging workflow, SSH, Compose up/smoke, realtime collector,
-public readiness, CMI canary, alert observation, backup restore, and rollback.
-Therefore no release/canary/rollback gate may be marked passed by this document.
+The baseline staging workflow, Compose up/smoke, and public readiness are now
+executed in run 31877359120. Still not executed: CMI canary, realtime collector,
+alert observation, backup restore, and rollback. Those gates remain Pending.
