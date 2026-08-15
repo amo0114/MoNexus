@@ -133,6 +133,7 @@ async function createFixture() {
         stock: capacity,
         deliveryMode: 'manual_service',
         stockMode: 'limited',
+        category: { connect: { code: 'network-node' } },
         merchantId: merchant.id,
       },
     })
