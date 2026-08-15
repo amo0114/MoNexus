@@ -48,6 +48,11 @@
 - `merchant.test.ts`（1）：`PRODUCT-BUG`（仅报告，不改测试）。默认 value gate 关闭时，普通已认证用户申请商家仍应 201；干净 CMI DB 复现实际为 `403 FORBIDDEN`。根因是 `app.ts` 先将 `merchantPromotionRouter`、`merchantEntitlementRouter` 挂到 `/api/merchant`，二者在 root `router.use` 上执行 `requireMerchant`（`server/src/app.ts:114-117`、`server/src/modules/merchandising/promotions/routes.ts:30-33`、`server/src/modules/merchandising/entitlements/routes.ts:13-15`），在 `/register` 进入 merchant registration route 前截断普通用户。`server/src/modules/merchant/routes.ts:32-33` 的契约明确 register 面向 authenticated user；保持 201 happy-path 断言，不得改为 403。
 - `verified-value-gates.test.ts`（1）：`PRODUCT-BUG`（仅报告，不改测试）。同一根因使 `requireMerchant` 先返回 `403 FORBIDDEN`，掩盖本应由 `requireVerifiedEmail` 发出的 stable `403 EMAIL_VERIFICATION_REQUIRED`。最小探针在干净 CMI DB（未验证普通用户、`emailVerificationRequiredForValue=1`）实测 `{httpStatus:403,errorCode:'FORBIDDEN',merchantCount:0}`；冻结 RAP spec REQ-F-001/002 要求该路由返回 `EMAIL_VERIFICATION_REQUIRED`（`docs/superpowers/specs/2026-08-01-registration-abuse-prevention/spec.md:169-170`），中间件实现亦如此（`server/src/middlewares/auth.ts:202-234`）。保持错误码与零 Merchant 写入断言，不得放宽为仅检查 403。
 
+#### 授权后续修复（2026-08-15）
+
+- 用户授权修复上述同一根因后，`server/src/app.ts` 将 `merchantRoutes` 挂到两个 merchandising merchant router 之前。`/register` 现先到达其专用的 `authenticate → requireActiveUser → validate → requireVerifiedEmail` 链；其它 merchant 路径仍由 `merchantRoutes` 和 merchandising router 各自的 `requireMerchant` 守卫。
+- 新建 CMI DB 定向回归：`merchant.test.ts`、`verified-value-gates.test.ts`、`promotions-campaign.test.ts`、`editorial-entitlements.test.ts` 为 `50/50` 通过。前两项分别恢复 201 与 `EMAIL_VERIFICATION_REQUIRED`，后两项证明 promotion/entitlement merchant 子路由仍可达。
+
 ## catalog E2E（2 个既有失败）
 
 - category-governance 引用删除场景：`STALE-ASSERTION`。专用 runner 实测失败在 response 已到后立即 `row.isVisible()` 的 React render window；失败快照与 CMI DB 均证明 approvedCategoryId 对应 active category 已存在、approved application 仍引用该行，后端 list 也返回全量 7 行。更新为从当前真实分页响应解析目标 id 是否在该页，再严格等待同 `category-row-<id>` 渲染；之后仍须精确断言 DELETE `409` / `CATEGORY_REFERENCED` 和原分类不变。

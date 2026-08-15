@@ -112,9 +112,12 @@ app.use('/api/admin', adminEntitlementRouter)
 app.use('/api/admin', merchandisingAdminRouter)
 app.use('/api/admin', adminRoutes)
 app.use('/api/merchant/dashboard', dashboardRoutes)
+// Registration is intentionally outside the merchant-only subtree in
+// merchantRoutes; it must reach its own authenticated/value-gate chain before
+// the merchandising routers apply requireMerchant.
+app.use('/api/merchant', merchantRoutes)
 app.use('/api/merchant', merchantPromotionRouter)
 app.use('/api/merchant', merchantEntitlementRouter)
-app.use('/api/merchant', merchantRoutes)
 // P5：交付文件路由先挂——uploads 里的 GET /:key 是贪婪参数路由，后挂会吞掉
 // /delivery-signed/:token。
 app.use('/api/uploads', deliveryFileRoutes)
