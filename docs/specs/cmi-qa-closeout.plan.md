@@ -142,6 +142,12 @@ Dispatch text (English, verbatim):
 
 ### C5 — 最终 Gate + 证据回填(协调者主导,pi 跑长命令)
 
+**C4 结果(2026-08-15,协调者验收通过)**:merge commit `d9ce97e`(parents `254c45d` + develop `9f9d117`);8 个冲突文件双侧保留(含 MerchantDashboardPage 10 区手工合并、main.ts 优雅停机序列拼接);61 迁移干净部署、migrations 零改写、schema 57 模型 CMI 完整;CI 采用**方案 B**(专用 `catalog-ops-e2e` job 镜像 verify 脚本 + 默认 config testIgnore 四 spec + ci-ok needs,理由:冒烟需全新 DB + #134 已确立每套件独立栈模式)——协调者接受此对卡片"倾向 A"的偏离。合并后:根测试 450/450 ✅;服务端 1396/1420(**24 失败/9 文件,经 pi 在临时 worktree 于合并前 HEAD 复现,确认全部既有**);catalog-ops e2e 26 过 2 失败(冒烟 3/3、product-lifecycle 9/9;2 失败同为既有)。
+
+**C5 拆分**:
+- **C5a(遗留债务清偿,pi,session `cmi-c5-legacy`)**:9 个既有失败文件(admin / admin-product-delivery / dispute-resume / file-delivery-chain / merchant / p7a-multi-instance / purchase-form / subscription-expiry / verified-value-gates)的 24 个失败——逐文件裁定"旧断言过时(按冻结语义更新)"或"真实产品缺陷(只报告不修)",更新后逐文件跑绿;2 个 e2e 失败(category-governance 引用删除场景、xboard network-node 分类定位)同样先诊断出书面裁定再修。纪律:不改生产代码(缺陷上报协调者裁决)、不放宽断言强度、write-as-you-go。
+- **C5b(最终 Gate + 证据,协调者)**:C5a 绿后在最终 HEAD 跑完整 verify 序列(foundation/backend 脚本 + server 全量 + 根测试 + verify-catalog-ops-e2e.sh + PAR ancestor 命令),把 evidence-map 折入两份 checklist/implement Ledger,记录 PAR-GATE-001~011。
+
 在 C4 后的 HEAD 上按一条命令序列采集:foundation/backend verify 脚本 → server 全量 → 根测试 → catalog-ops e2e 全量(含冒烟)→ PAR Gate ancestor 命令。把 evidence-map 内容折入两份 checklist.md 勾选与 implement.md Evidence Ledger;PAR-GATE-001~011 逐条记录。文档由协调者书写。
 
 ### C6 — PR(协调者)
