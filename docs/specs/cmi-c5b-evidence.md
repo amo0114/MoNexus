@@ -23,6 +23,23 @@ CMI database: `monexus_test_catalog_merch_integration` only
 | Root security/public-field targeted suite | Root targeted security/public-field suite | PASS, 8 files / 117 tests; exit 0 |
 | Server security suite | Server security suite with `TEST_DATABASE_URL` | NOT PASS: execution was interrupted after the `TEST_DATABASE_URL`-backed run did not complete; no PASS evidence was produced |
 
+### Security split ledger (2026-08-15)
+
+The server security check was split only to preserve the evidence boundary; this
+is partial evidence, not a substitute for one complete server gate.  The runs
+used Node `v20.19.5` (npm 10) and the disposable PostgreSQL database
+`monexus_test_catalog_merch_integration`; database creation/migrations and
+cleanup were performed by the CMI dbguard runner.
+
+| Subset | Exact command / files | Result |
+| --- | --- | --- |
+| Pure security subset (3 files / 33 tests) | `TEST_DATABASE_URL=<CMI> DATABASE_URL=<CMI> REDIS_ENABLED=false REDIS_REQUIRED=false server/node_modules/.bin/vitest run --config server/vitest.config.ts src/modules/catalog/contentSanitizer.test.ts src/modules/catalog/categorySchema.test.ts src/modules/merchandising/__tests__/promotions-dto-state.test.ts` | PASS, exit 0; duration was captured in the disposable-run transcript (not retained in this ledger) |
+| DB-backed security subset (5 files / 53 tests) | `TEST_DATABASE_URL=<CMI> DATABASE_URL=<CMI> REDIS_ENABLED=false REDIS_REQUIRED=false server/node_modules/.bin/vitest run --config server/vitest.config.ts src/modules/catalog/publicationRoutes.test.ts src/modules/catalog/applicationService.test.ts src/modules/catalog/fakaPreviewConfirm.test.ts src/modules/merchandising/__tests__/promotions-campaign.test.ts src/modules/merchandising/__tests__/editorial-entitlements.test.ts` | NOT PASS / interrupted; no exit-0 or duration evidence; therefore no server security PASS is claimed |
+
+The split does not establish a single full server security gate.  Explicit MFA,
+log, and other audit gaps remain; consequently `G-CAT-PR-008` and
+`G-MERCH-PR-008` remain **Pending**.
+
 The first full-run attempt was invalid because the disposable CMI database had already
 been removed by the prior runner (154 files failed during initialization and 1420 tests
 were skipped). It is excluded from the result above; the database was recreated from

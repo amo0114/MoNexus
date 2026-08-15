@@ -42,6 +42,10 @@ performance numbers are not invented or promoted to P0 acceptance criteria.
 - Root security/public-field targeted suite: 8 files / 117 tests, exit 0.
 - Server security suite did not complete because the `TEST_DATABASE_URL`-backed
   run was interrupted; it is not recorded as PASS.
+- Partial server-security split evidence: pure subset 3 files / 33 tests and
+  DB-backed subset 5 files / 53 tests, both against Node 20.19.5 and the CMI
+  disposable DB; the split is not a single full server gate. Explicit MFA/log/
+  other audit gaps remain, so `G-CAT-PR-008` and `G-MERCH-PR-008` stay Pending.
 - Identity closure: 56/56 logic tests, raw-writer static scan zero, frontend
   build green.
 
