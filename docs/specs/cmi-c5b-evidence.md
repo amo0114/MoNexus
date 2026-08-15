@@ -38,11 +38,13 @@ All commands below were run from the integration worktree and returned exit 0 un
 | `C_ID → M_ID` | `2bf77c1 → dc9fb30` | PASS (exit 0) |
 | `M_ID → Identity Layout` | `dc9fb30 → 50b774c` | PASS (exit 0) |
 | `Identity Layout → raw-writer closure` | `50b774c → 0d9f7ce` | PASS (exit 0) |
+| `Identity closure → evidence candidate` | `0d9f7ce → 560d00c` | PASS (exit 0; docs-only Identity evidence handoff) |
 
 The Identity handoff is now established in the dedicated
 `fix/identity-profile-layout-integration` lane: `M_ID` is the merge of `N` and
 `C_ID`, Layout integration starts from `M_ID`, and `0d9f7ce` is the separate
-raw-writer closure commit. PAR-GATE-006 and PAR-GATE-011 have reproducible
+raw-writer closure commit; `560d00c` records the Identity evidence handoff and
+retains both ancestors. PAR-GATE-006 and PAR-GATE-011 have reproducible
 ancestor evidence; this evidence is cross-spec and does not merge Identity
 production files into the CMI branch.
 
