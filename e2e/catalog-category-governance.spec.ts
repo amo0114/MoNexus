@@ -567,6 +567,23 @@ function readCategoryListPageInfo(body: unknown): { total: number; page: number;
 }
 
 /**
+ * 真实分类分页响应是否包含指定行。响应到达与 React 提交表格行不是同一时刻；先以
+ * 该页 API 数据定位，再等待对应 stable testid 渲染，证明 UI 没有丢失该响应项。
+ */
+function categoryPageIncludesId(body: unknown, expectedId: number): boolean {
+  if (!isRecord(body) || !Array.isArray(body.items)) {
+    throw new Error('分类列表响应缺少 items 数组')
+  }
+  for (const item of body.items) {
+    if (!isRecord(item) || !isPositiveInteger(item.id)) {
+      throw new Error('分类列表响应 items 含缺少正整数 id 的条目')
+    }
+    if (item.id === expectedId) return true
+  }
+  return false
+}
+
+/**
  * 精确分类列表 GET 谓词（禁止 any）：参数 (status: 'active'|'inactive'|'', page)。
  * 精确匹配 pathname=/api/admin/product-categories、GET、page=page、pageSize=10（与
  * AdminCategoryManager 的 PAGE_SIZE=10 一致）；status 为空字符串时接受缺失或空 status
@@ -2685,7 +2702,8 @@ test.describe.serial('PAR-CMI-002 catalog category governance merchant flow', ()
     const row = page.getByTestId(`category-row-${approvedCategoryId}`)
     await expect(categoryPagination).toContainText('第 1 /')
     let currentCategoryPage = 1
-    let rowFound = await row.isVisible()
+    let rowFound = categoryPageIncludesId(initialBody, approvedCategoryId)
+    if (rowFound) await expect(row).toBeVisible({ timeout: 10_000 })
     for (let targetPage = 2; !rowFound && targetPage <= totalPages; targetPage++) {
       const pageResponse = page.waitForResponse(isCategoryRepositoryListPage(targetPage))
       await categoryPagination.getByRole('button', { name: '下一页' }).click()
@@ -2699,7 +2717,8 @@ test.describe.serial('PAR-CMI-002 catalog category governance merchant flow', ()
       expect(pageInfo.pageSize).toBe(10)
       currentCategoryPage = targetPage
       await expect(categoryPagination).toContainText(`第 ${targetPage} /`)
-      rowFound = await row.isVisible()
+      rowFound = categoryPageIncludesId(pageBody, approvedCategoryId)
+      if (rowFound) await expect(row).toBeVisible({ timeout: 10_000 })
     }
     expect(rowFound, 'approvedCategoryId 分类在所有真实分页中均未找到').toBe(true)
     await expect(row).toBeVisible({ timeout: 10_000 })
