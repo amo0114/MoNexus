@@ -214,6 +214,7 @@ git diff --check
 | 2026-08-15 | `c690025` / `70517f7` / `8c2800e` / `8c2800e` | C5b | `CHK-MERCH-PAR-001` | PAR ancestor/ownership audit | Catalog/Merch lane tips and `H→M_CMI` exit 0; the pre-closure Identity probe was exit 1 and is superseded by the closure row below | SHA matrix: `docs/specs/cmi-c5b-evidence.md` |
 | 2026-08-15 | `c690025` / `70517f7` / `8c2800e` / `8c2800e` | C5b | `PAR-GATE-006/011` | `git merge-base --is-ancestor f586efd dc9fb306`; `git merge-base --is-ancestor 2bf77c1 dc9fb306`; `git merge-base --is-ancestor dc9fb306 50b774c`; `git merge-base --is-ancestor 50b774c 0d9f7ce` | PASS, all four exit 0; Identity raw-writer closure `0d9f7ce` is parented by Layout handoff `50b774c`; Identity logic 56/56 and build green | `docs/specs/cmi-c5b-evidence.md`; Identity lane `fix/identity-profile-layout-integration` |
 | 2026-08-15 | `c690025` / `70517f7` / `8c2800e` / `8c2800e` | C5b | `PAR-GATE-011` | `git merge-base --is-ancestor 0d9f7ce 560d00c` | PASS (exit 0); Identity docs-only evidence handoff `560d00c` retains the raw-writer closure parent | Identity lane `fix/identity-profile-layout-integration`; `docs/specs/cmi-c5b-evidence.md` |
+| 2026-08-15 | `c690025` / `685d23b` / `70517f7` / `8c2800e` / `8c2800e` | C5b | `G-MERCH-PR-004/005/006` | `PATH=/root/.nvm/versions/node/v20.19.5/bin:$PATH bash scripts/verify-merchandising.sh` | PASS for build/contracts and ranking/points/asset regression: ranking 2 files/55, points 4 server files/56 + 3 UI files/91, asset gallery 3/3; Image2 delivery remains Deferred | `docs/specs/cmi-c5b-evidence.md`; dedicated runner `685d23b` |
 
 证据含exit/test count/duration/DB/ports/clock/fixture revision；ranking报告含行数、窗口、P50/P95；points含净变化断言但不泄露真实余额；assets含prompt/model/hash/reviewer，不含provider secret。
 
@@ -226,8 +227,8 @@ git diff --check
 | G-MERCH-PR-001 | Specs/PAR Frozen、P0 Tasks/CHK全Done | Pending |
 | G-MERCH-PR-002 | `D/S/A_CMI/F0/B_CAT/F/H/M_CMI`、ancestor命令、delta与host整文件锁移交完整 | Pending |
 | G-MERCH-PR-003 | migrations/status/drift与legacy isHot cleanup通过 | Pending |
-| G-MERCH-PR-004 | backend/frontend build及contracts通过 | Pending |
-| G-MERCH-PR-005 | ranking/points真实PG、100并发及Campaign create/adjustment幂等契约通过 | Pending |
+| G-MERCH-PR-004 | backend/frontend build及contracts通过 | Passed |
+| G-MERCH-PR-005 | ranking/points真实PG、100并发及Campaign create/adjustment幂等契约通过 | Passed |
 | G-MERCH-PR-006 | browser/disclosure/a11y/visual/assets通过 | Pending |
 | G-MERCH-PR-007 | AC-MERCH-001~029当前HEAD证据齐全 | Pending |
 | G-MERCH-PR-008 | points/PII/secret/禁词/public field审计通过 | Pending |

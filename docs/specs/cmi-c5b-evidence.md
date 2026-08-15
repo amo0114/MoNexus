@@ -4,6 +4,7 @@ Date: 2026-08-15
 Branch: `feat/catalog-merch-integration`
 Code HEAD under test: `c690025b9d1059bc47b6c1c16aa5811b2971d373`
 Evidence/checklist changes are docs-only and are committed after this code HEAD.
+C5b runner commit: `685d23b` (dedicated Merch gates and isolated asset config).
 CMI database: `monexus_test_catalog_merch_integration` only
 
 ## Verification
@@ -17,6 +18,7 @@ CMI database: `monexus_test_catalog_merch_integration` only
 | Catalog-ops browser | `bash scripts/verify-catalog-ops-e2e.sh` | PASS, 30/30: category governance 15, product lifecycle 9, Xboard 3, merchandising smoke 3 |
 | Merchant route fix | CMI Vitest targeted suite | PASS, 4 files / 50 tests: merchant registration, verified value gate, promotions campaign, editorial entitlements |
 | Identity raw-writer closure | `PATH=/root/.nvm/versions/node/v20.19.5/bin:$PATH npx playwright test --config playwright.identity-sync.logic.config.ts`; `rg -n "\\.setUser\\(|\\.setAccessToken\\(|setUser:|setAccessToken:" src tests` | PASS, 56/56 Identity logic tests; static scan returned zero source/test matches after `0d9f7ce`; Node 20; frontend `npm run build` passed |
+| Merch dedicated gates | `PATH=/root/.nvm/versions/node/v20.19.5/bin:$PATH bash scripts/verify-merchandising.sh` | PASS; ranking 2 files / 55 tests, points 4 server files / 56 tests + 3 UI files / 91 tests, asset gallery 3/3; root/server runtime and build passed; each disposable CMI DB cleaned |
 
 The first full-run attempt was invalid because the disposable CMI database had already
 been removed by the prior runner (154 files failed during initialization and 1420 tests
@@ -66,10 +68,7 @@ temporary runner resources were cleaned after each run.
    Deferred list, and this evidence index; keep the PR blocked while any gate
    remains Pending.
 
-The Merch implement contract also names
-`scripts/verify-merchandising-ranking.sh`,
-`scripts/verify-merchandising-points.sh`,
-`scripts/verify-merchandising-assets.sh`, and
-`scripts/verify-merchandising.sh` as required verification entry points.
-All four are absent at this HEAD; direct invocations returned exit 127. No
-Merch PR gate was marked Passed on the basis of a missing command.
+The four Merch verification entry points now exist at runner commit `685d23b`.
+The asset gate explicitly discloses that Image2 concept/runtime delivery is
+Deferred and runs only the existing product-gallery regression (`3/3`); no
+Deferred asset work is represented as shipped functionality.

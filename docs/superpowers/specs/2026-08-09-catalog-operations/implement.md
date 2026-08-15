@@ -288,6 +288,7 @@ git diff --check
 | 2026-08-15 | `c690025` | C5b | `CHK-CAT-FINAL-002/004` | PAR ancestor/ownership audit | Catalog/Merch chain and `H→M_CMI` exit 0; the pre-closure Identity probe was exit 1 and is superseded by the closure row below | SHA matrix: `docs/specs/cmi-c5b-evidence.md` |
 | 2026-08-15 | `c690025` | C5b | `PAR-GATE-006/011` | `git merge-base --is-ancestor f586efd dc9fb306`; `git merge-base --is-ancestor 2bf77c1 dc9fb306`; `git merge-base --is-ancestor dc9fb306 50b774c`; `git merge-base --is-ancestor 50b774c 0d9f7ce` | PASS, all four exit 0; Identity raw-writer closure `0d9f7ce` is parented by Layout handoff `50b774c`; Identity logic 56/56 and build green | `docs/specs/cmi-c5b-evidence.md`; Identity lane `fix/identity-profile-layout-integration` |
 | 2026-08-15 | `c690025` | C5b | `PAR-GATE-011` | `git merge-base --is-ancestor 0d9f7ce 560d00c` | PASS (exit 0); Identity docs-only evidence handoff `560d00c` retains the raw-writer closure parent | Identity lane `fix/identity-profile-layout-integration`; `docs/specs/cmi-c5b-evidence.md` |
+| 2026-08-15 | `c690025` / `685d23b` | C5b | `G-CAT-PR-004/005/006` | `PATH=/root/.nvm/versions/node/v20.19.5/bin:$PATH bash scripts/verify-merchandising.sh` | PASS; ranking 2 files/55, points 4 server files/56 + 3 UI files/91, asset gallery 3/3, root/server runtime+build; CMI DBs cleaned | `docs/specs/cmi-c5b-evidence.md`; dedicated runner output |
 
 证据必须含 exit code、测试数、耗时、脱敏 DB/ports、fixture revision。Migration 证据含前后计数和 expected-failure。E2E 保留 trace/screenshot 路径；不得截图秘密库存文本。
 
@@ -299,10 +300,10 @@ git diff --check
 | --- | --- | --- | --- |
 | G-CAT-PR-001 | 六件套/PAR Frozen、全部 P0 Task/CHK Done | Pending | 待填 |
 | G-CAT-PR-002 | `D/S/A_CMI/F0/B_CAT/F/H/M_CMI`、ancestor命令、delta与宿主整文件锁移交记录完整 | Pending | 待填 |
-| G-CAT-PR-003 | empty/upgrade/dirty migration replay/status/diff通过 | Pending | 待填 |
-| G-CAT-PR-004 | backend/frontend build与contract tests通过 | Pending | 待填 |
-| G-CAT-PR-005 | 分类、publish、库存、Xboard 专用 suites通过 | Pending | 待填 |
-| G-CAT-PR-006 | 既有 product/offer/checkout/Faka/notification回归通过 | Pending | 待填 |
+| G-CAT-PR-003 | empty/upgrade/dirty migration replay/status/diff通过 | Passed | `cmi-c5b-evidence.md` Foundation 11/11 |
+| G-CAT-PR-004 | backend/frontend build与contract tests通过 | Passed | Catalog backend 7/7 + runner `685d23b` root/server build |
+| G-CAT-PR-005 | 分类、publish、库存、Xboard 专用 suites通过 | Passed | Catalog-ops browser 30/30 |
+| G-CAT-PR-006 | 既有 product/offer/checkout/Faka/notification回归通过 | Passed | Server 154 files/1420 + root 49/450 |
 | G-CAT-PR-007 | AC-CAT-001~028 当前 HEAD 证据完整 | Pending | 待填 |
 | G-CAT-PR-008 | secret/XSS/SSRF/object-key/ownership审计通过 | Pending | 待填 |
 | G-CAT-PR-009 | 性能预算、cache、compat、rollout/rollback演练通过 | Pending | 待填 |
