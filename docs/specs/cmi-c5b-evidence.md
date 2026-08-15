@@ -2,7 +2,7 @@
 
 Date: 2026-08-15
 Branch: `feat/catalog-merch-integration`
-Current evidence HEAD: `2dc7ffc` (docs-only evidence ledger tip).
+Current evidence HEAD: `754d945` (docs-only evidence ledger tip).
 Implementation code ancestor under test: `c690025b9d1059bc47b6c1c16aa5811b2971d373`.
 C5b runner commits: `685d23b` (dedicated Merch gates/config), `495d1a0`
 (disposable E2E database cleanup), and `e279c72` (executable modes).
@@ -81,7 +81,7 @@ All commands below were run from the integration worktree and returned exit 0 un
 | `Merch BE/FE/Assets → M_CMI` | `8dc5d57`, `e1846db`, `b61c83c → d9ce97e` | PASS |
 | `M_CMI → implementation code ancestor` | `d9ce97e → c690025` | PASS |
 | `implementation code ancestor → prior evidence HEAD` | `c690025 → 87626c9` | PASS (docs-only commits) |
-| `implementation code ancestor → current evidence HEAD` | `c690025 → 2dc7ffc` | PASS (docs-only commits) |
+| `implementation code ancestor → current evidence HEAD` | `c690025 → 754d945` | PASS (docs-only commits) |
 | `N → M_ID` | `f586efd → dc9fb30` | PASS (exit 0) |
 | `C_ID → M_ID` | `2bf77c1 → dc9fb30` | PASS (exit 0) |
 | `M_ID → Identity Layout` | `dc9fb30 → 50b774c` | PASS (exit 0) |

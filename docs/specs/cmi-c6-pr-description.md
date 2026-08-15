@@ -5,7 +5,7 @@
 - Base: `develop`
 - Label: `run-e2e`
 - Source branch: `feat/catalog-merch-integration`
-- Current evidence HEAD: `2dc7ffc` (docs-only); implementation code ancestor
+- Current evidence HEAD: `754d945` (docs-only); implementation code ancestor
   under test: `c690025`
 - C5b runners: `685d23b`, `495d1a0`, and `e279c72`
 
