@@ -2,14 +2,15 @@
 
 Date: 2026-08-15
 Branch: `feat/catalog-merch-integration`
-Current evidence HEAD: `0a4696a` (staging sudo-boundary repair; based on the
-security/audit and fixture tip `61e41af`, which in turn includes benchmark
-`4ab3de9`).
+Code/evidence run HEAD: `d650014a9d816a9c6c3476d6e6e02861bce208ac` (the exact SHA
+deployed by the final staging rehearsal; this document update is docs-only).
 Implementation code ancestor under test: `c690025b9d1059bc47b6c1c16aa5811b2971d373`.
 C5b runner commits: `685d23b` (dedicated Merch gates/config), `495d1a0`
 (disposable E2E database cleanup), `e279c72` (executable modes), `e329d1b`
 (local perf/compat runner), `1d37d86` (release rehearsal/Owner handoff),
 `4ab3de9` (100k benchmark), and `61e41af` (security/audit and fixture closure).
+Staging rehearsal fixes are carried by `66d230e`, `d835621`, `3cf448b`,
+`eb79c9f`, `e9c55d6`, and `d650014`.
 CMI database: `monexus_test_catalog_merch_integration` only
 
 ## Verification
@@ -26,8 +27,8 @@ CMI database: `monexus_test_catalog_merch_integration` only
 | Merch dedicated gates | `PATH=/root/.nvm/versions/node/v20.19.5/bin:$PATH bash scripts/verify-merchandising.sh` | PASS; ranking 2 files / 55 tests, points 4 server files / 56 tests + 3 UI files / 91 tests, asset gallery 3/3; root/server runtime and build passed; each disposable CMI DB cleaned |
 | Root security/public-field targeted suite | Root targeted security/public-field suite | PASS, 8 files / 117 tests; exit 0 |
 | Unified CMI server security gate | Node 20.19.5/npm 10.8.2, disposable CMI DB, 8 focused security/admin files | **PASS, 8 files / 70 tests, exit 0, Vitest 111.43s;** runtime admin MFA boundaries, audit reason redaction, public-field/PointLog boundaries, catalog admin authorization, auth/security-event and mail redaction suites all passed; DB dropped afterward |
-| Local perf/compat runner | `TEST_DATABASE_URL=<CMI> DATABASE_URL=<CMI> REDIS_ENABLED=false REDIS_REQUIRED=false bash scripts/verify-cmi-perf-compat.sh`; `bash scripts/verify-cmi-100k-order-p95.sh`; `npm run check:bundle-budget` | Cache 7/7, server build and dashboard 2/2 PASS; latest 100k synthetic-order benchmark PASS locally (30 samples; summary P95 16.504372 ms, timeseries P95 80.750211 ms); frontend build PASS but conservative 150 KiB proxy **FAIL** at 315.74 KiB gzip; staging/production/canary P95 and release bundle acceptance remain Pending |
-| Release rehearsal / Owner handoff | baseline run `31877359120`; exact-SHA dry-run `31885929935`; live attempt `31885609141`; local syntax checks | Baseline deploy/smoke/public readiness PASS; deployment `5919176861` is known-good. Latest dry-run PASS with no host change. Live attempt was Owner-approved but failed closed at Caddy `sudo -n` because the host lacked the restricted delegation; no app/fixture/rollback ran. Commit `603d874` provides the fixed-helper root repair; root host action and a succeeding live rehearsal are Pending. `staging` Environment reviewer `amo0114` (rule `62780483`) is configured. Canary, rollback rehearsal, external P95, and exact target-window approval remain Pending |
+| Local perf/compat runner | `TEST_DATABASE_URL=<CMI> DATABASE_URL=<CMI> REDIS_ENABLED=false REDIS_REQUIRED=false bash scripts/verify-cmi-perf-compat.sh`; `bash scripts/verify-cmi-100k-order-p95.sh`; `npm run check:bundle-budget` | Cache 7/7, server build and dashboard 2/2 PASS; 100k synthetic-order benchmark PASS locally (30 samples; summary P95 16.504372 ms, timeseries P95 80.750211 ms). The conservative all-assets bundle proxy remains 315.74 KiB gzip versus 150 KiB and is explicitly **Deferred** with `T-MERCH-ASSET-001` by AMD-CMI-012 §3.6; it is not represented as a shipped budget pass |
+| Final staging rehearsal / Owner handoff | [workflow run 31890663141](https://github.com/amo0114/MoNexus/actions/runs/31890663141), exact SHA `d650014a9d816a9c6c3476d6e6e02861bce208ac`; artifact `notification-realtime-staging-evidence-d650014a9d816a9c6c3476d6e6e02861bce208ac` | **PASS**. Owner `amo0114` approved the protected `staging` Environment (rule `62780483`); Caddy sudo delegation was installed by root on `free-vnic`; rollout, 100-sample canary/latency, flag-off fallback, code rollback to known-good `4fe0fbcac899bbc388184e0dfe2d59b9dbe90c2c`, fixture cleanup, and final readiness all passed |
 
 The unified security command used `server/vitest.config.ts` with
 `fileParallelism=false`/`singleFork=true` and these eight files: `security-gaps.test.ts`,
@@ -86,6 +87,39 @@ been removed by the prior runner (154 files failed during initialization and 142
 were skipped). It is excluded from the result above; the database was recreated from
 the committed migrations before the valid run.
 
+### Final staging rehearsal evidence (2026-08-15)
+
+The protected workflow [31890663141](https://github.com/amo0114/MoNexus/actions/runs/31890663141)
+ran against the immutable code SHA
+`d650014a9d816a9c6c3476d6e6e02861bce208ac` after the root-only Caddy delegation was
+installed on `free-vnic`. The `staging` Environment approval was recorded for Owner
+`amo0114` under required-reviewer rule `62780483` (approval comment: "Owner-approved
+staging realtime rehearsal per current PAR authorization.").
+
+The retained artifact is
+`notification-realtime-staging-evidence-d650014a9d816a9c6c3476d6e6e02861bce208ac`.
+Its files all have `result=PASS` except the explicitly informational external log-query
+note in `proxy.txt`; no secret or token was uploaded. The material results are:
+
+- `rollout.txt`: backend-first, proxy-first, frontend-after, and feature flag on all
+  passed; `logs.txt` passed Nginx/app/Caddy boundary inspection.
+- `staging-latency.txt`: 100/100 samples, `failure_count=0`, `p50_ms=790`,
+  `p95_ms=793`, `p99_ms=797`, `max_ms=810`; the sample path was API 2xx to the
+  merchant order-id DOM.
+- `session.txt`: production-like LISTEN gate passed (`pid_samples=4/4`, distinct
+  PID count 1, connect/listen/notify permissions ok, 40/40 auxiliary commits).
+- `rollback.txt`: flag-off fallback, REST history polling, and code rollback passed;
+  `fixture-cleanup.json` reports `CLEAN`.
+- `rehearsal-meta.txt`: baseline captured as
+  `4fe0fbcac899bbc388184e0dfe2d59b9dbe90c2c`; the workflow restored this baseline and
+  the final public readiness check passed. A direct post-run probe returned
+  `{"status":"ready", "checks":{"database":"ok","config":"ok","redis":"ok","notificationRealtime":"disabled"}}`.
+
+This closes the staging Owner/PAR, canary, external staging P95, rollback, and cleanup
+evidence rows. It does not claim production traffic, backup-restore, or an incremental
+frontend bundle baseline; the bundle/asset work remains the Owner-approved Deferred
+scope in AMD-CMI-012 §3.6.
+
 ## Ancestor Matrix
 
 All commands below were run from the integration worktree and returned exit 0 unless marked otherwise.
@@ -129,14 +163,14 @@ temporary runner resources were cleaned after each run.
 
 ## Remaining Before C6
 
-1. Owner reviews the evidence and fills the remaining Catalog/Merch PR Gate
-   rows (release/rollback, external performance, and PR description evidence).
-2. Keep release/performance gates Pending until staging Owner/PAR, canary,
-   rollback/restore, and external P95 evidence exist; the local 100k benchmark
-   and bundle proxy do not substitute for those controls.
-3. Prepare the C6 PR to `develop` with `run-e2e`, the v0.1.2 revision note,
-   Deferred list, release rehearsal and Owner handoff docs, and this evidence
-   index; keep the PR blocked while any gate remains Pending.
+1. Review this evidence and the Owner handoff, then prepare the C6 PR to `develop`
+   with the `run-e2e` label, v0.1.2 revision note, Deferred list, release rehearsal,
+   and evidence index.
+2. Keep the explicitly Deferred Image2/runtime-asset and incremental bundle work out
+   of shipped-scope claims; it is not a failed CMI implementation gate under
+   AMD-CMI-012 §3.6.
+3. Production promotion, production/canary traffic, and backup-restore rehearsal are
+   outside this staging-only run and require a separate Owner authorization.
 
 The four Merch verification entry points now exist at runner commits `685d23b`
 and `e279c72`; the shared E2E runner cleanup hardening is `495d1a0`.

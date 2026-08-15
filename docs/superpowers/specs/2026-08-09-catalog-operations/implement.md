@@ -290,8 +290,8 @@ git diff --check
 | 2026-08-15 | `c690025` | C5b | `PAR-GATE-011` | `git merge-base --is-ancestor 0d9f7ce 560d00c` | PASS (exit 0); Identity docs-only evidence handoff `560d00c` retains the raw-writer closure parent | Identity lane `fix/identity-profile-layout-integration`; `docs/specs/cmi-c5b-evidence.md` |
 | 2026-08-15 | `c690025` / `685d23b` / `495d1a0` / `e279c72` | C5b | `G-CAT-PR-004/005/006` | `PATH=/root/.nvm/versions/node/v20.19.5/bin:$PATH bash scripts/verify-merchandising.sh` | PASS; ranking 2 files/55, points 4 server files/56 + 3 UI files/91, asset gallery 3/3, root/server runtime+build; CMI DBs cleaned | `docs/specs/cmi-c5b-evidence.md`; dedicated runner output |
 | 2026-08-15 | `61e41af` | C5b | `G-CAT-PR-007/008` | Unified CMI security command: Node 20.19.5/npm 10.8.2, disposable CMI DB, 8 focused security/admin files | PASS, 8 files / 70 tests, exit 0; runtime MFA, audit reason redaction, public-field/PointLog boundaries, catalog authorization, auth/security-event and mail redaction covered | `docs/specs/cmi-c5b-evidence.md` |
-| 2026-08-15 | `4ab3de9` / `e329d1b` | C5b | `G-CAT-PR-009` | `bash scripts/verify-cmi-perf-compat.sh`; `bash scripts/verify-cmi-100k-order-p95.sh`; `npm run check:bundle-budget` | Local cache/build/dashboard PASS; latest 100k synthetic-order P95 PASS (30 samples: summary 16.504372 ms, timeseries 80.750211 ms); bundle build PASS but 150 KiB proxy FAIL at 315.74 KiB; staging/canary P95 and release bundle acceptance remain Pending | `docs/specs/cmi-perf-compat-evidence.md` |
-| 2026-08-15 | `30efbe4` / `1d37d86` | C5b | `G-CAT-PR-010` | Release rehearsal/Owner handoff docs and `bash -n` local checks | Docs/local checks PASS; staging/canary/restore/rollback and Owner/PAR approval not executed, so Gate remains Pending | `docs/specs/cmi-release-rehearsal.md`; `docs/specs/cmi-owner-handoff.md` |
+| 2026-08-15 | `4ab3de9` / `e329d1b` / `d650014` | C5b | `G-CAT-PR-009` | `bash scripts/verify-cmi-perf-compat.sh`; `bash scripts/verify-cmi-100k-order-p95.sh`; `npm run check:bundle-budget`; protected staging rehearsal `31890663141` | Local cache/build/dashboard and 100k benchmark PASS (30 samples: summary P95 16.504372 ms, timeseries P95 80.750211 ms); staging 100-sample canary PASS (`p95_ms=793`, zero failures), fallback and rollback PASS. The 315.74 KiB all-assets proxy is explicitly Deferred by AMD-CMI-012 §3.6, not a shipped budget pass | `docs/specs/cmi-perf-compat-evidence.md`; workflow artifact `notification-realtime-staging-evidence-d650014...` |
+| 2026-08-15 | `d650014` / `31890663141` | C5b | `G-CAT-PR-010` | Protected staging release rehearsal and Owner/PAR handoff; `bash -n` local checks | PASS for staging scope: Owner approval, exact-SHA rollout, canary, readiness, rollback, fixture cleanup, and evidence retention all recorded; production promotion/restore remains out of scope | `docs/specs/cmi-release-rehearsal.md`; `docs/specs/cmi-owner-handoff.md` |
 
 证据必须含 exit code、测试数、耗时、脱敏 DB/ports、fixture revision。Migration 证据含前后计数和 expected-failure。E2E 保留 trace/screenshot 路径；不得截图秘密库存文本。
 
@@ -309,8 +309,8 @@ git diff --check
 | G-CAT-PR-006 | 既有 product/offer/checkout/Faka/notification回归通过 | Passed | Server 154 files/1420 + root 49/450 |
 | G-CAT-PR-007 | AC-CAT-001~028 当前 HEAD 证据完整 | Pending | 待填 |
 | G-CAT-PR-008 | secret/XSS/SSRF/object-key/ownership审计通过 | Passed | Unified CMI security gate: 8 files / 70 tests, exit 0; runtime MFA and bounded audit projection included |
-| G-CAT-PR-009 | 性能预算、cache、compat、rollout/rollback演练通过 | Pending | Local cache/build/dashboard evidence is recorded; external P95/bundle and rollout/rollback remain open |
-| G-CAT-PR-010 | PR 含规格、migration、监控、风险、回滚、证据索引 | Pending | Release rehearsal and Owner handoff docs recorded; Owner/PAR approval and final rollback evidence remain open |
+| G-CAT-PR-009 | 性能预算、cache、compat、rollout/rollback演练通过 | Passed (asset/bundle scope Deferred) | Local cache/build/100k P95, staging P95 `793 ms`, fallback and rollback in `cmi-perf-compat-evidence.md`; AMD-CMI-012 §3.6 excludes incremental asset/bundle work from this release |
+| G-CAT-PR-010 | PR 含规格、migration、监控、风险、回滚、证据索引 | Passed (staging scope) | Protected workflow `31890663141`, `cmi-release-rehearsal.md`, and `cmi-owner-handoff.md`; production monitoring/restore is separately authorized |
 
 任一 Pending/Failed 不得宣称 ready to merge。
 

@@ -1,6 +1,9 @@
 # CMI release rehearsal — G-CAT / MERCH-PR-010
 
-Status: baseline deployed; live canary, rollback rehearsal, and external performance gates remain **Pending**.
+Status: **PASS for the staging-only rehearsal**. The immutable target was exercised,
+100 canary/latency samples passed, fallback and code rollback passed, and the known-good
+baseline was restored. Production promotion, production traffic, and backup-restore
+remain outside this rehearsal.
 This is a release/operator document only. It does not add a feature flag, production
 traffic split, schema change, or migration.
 
@@ -45,39 +48,40 @@ for immutable SHA `4fe0fbcac899bbc388184e0dfe2d59b9dbe90c2c`; its successful
 staging deployment (`5919176861`) is the known-good rollback target. The live
 rehearsal target remains distinct and requires the protected `staging` reviewer.
 
-The exact-SHA dry-run was executed as [workflow run 31885929935](https://github.com/amo0114/MoNexus/actions/runs/31885929935)
-for `603d87405fb0d3b59d6fe41ee6cd569ef7ccac51`; both jobs passed and the release
-job recorded that no SSH connection or staging-host change occurred. The first
-live attempt was [workflow run 31885609141](https://github.com/amo0114/MoNexus/actions/runs/31885609141)
-with Owner approval and the required confirmation, but it stopped at the first
-Caddy host step because the remote deploy user lacked passwordless sudo. No
-application release, fixture, collector, or rollback ran. Commit `3710138`
-added the initial repair, and `603d874` tightened it to a fixed root-owned
-helper; a root/operator must run that repair on the staging host before a new
-live run.
+The exact-SHA dry-run [31885929935](https://github.com/amo0114/MoNexus/actions/runs/31885929935)
+and the earlier failed-closed attempt [31885609141](https://github.com/amo0114/MoNexus/actions/runs/31885609141)
+remain historical traceability. The latter stopped before application deployment
+because the host lacked `sudo -n`; after the reviewed root repair (`603d874`) was
+installed on `free-vnic`, the final run above completed successfully.
 
 ## Rehearsal gates (all explicit)
 
-- [x] Owner named in the release record: `amo0114`; support/on-call contact and exact window remain Pending.
-- [x] PAR authorization is recorded in `docs/specs/cmi-owner-handoff.md`; exact rehearsal target/window approval remains Pending.
-- [ ] Staging secrets/known-host key and `STAGING_HEALTHCHECK_URL` are present; no
-  secret values enter logs or this repository.
-- [ ] Host Caddy sudo delegation is installed by a root/operator; the prior live
-  run proved the workflow fails closed when `sudo -n` is unavailable.
-- [ ] Baseline health passes before exercise: public health URL plus
-  `/api/health/live` and `/api/health/ready` where exposed.
-- [ ] Canary account and merchant test fixture are identified; canary percentage,
-  duration, success/error/latency thresholds, and stop authority are written down.
+- [x] Owner named in the release record: `amo0114`; the protected `staging`
+  Environment approval and workflow run are the PAR decision record for the
+  2026-08-15 rehearsal window.
+- [x] PAR authorization is recorded in `docs/specs/cmi-owner-handoff.md`; the exact
+  target SHA, baseline SHA, and workflow run are recorded above.
+- [x] Staging secrets, pinned known-host key, and `STAGING_HEALTHCHECK_URL` were
+  consumed by the workflow without entering the repository or uploaded artifacts.
+- [x] Host Caddy sudo delegation was installed by root on `free-vnic` and the
+  workflow's pre-deploy validation passed.
+- [x] Baseline health passed before and after the exercise; public `/api/health/live`
+  and `/api/health/ready` were checked by the workflow and post-run probe.
+- [x] Disposable merchant fixture/canary was created and removed by the workflow;
+  100/100 API-2xx-to-merchant-DOM samples passed with `p95_ms=793` and zero failures.
+  Stop authority was `amo0114`; the workflow's explicit stop conditions are listed
+  below.
 - [x] Known-good staging release SHA `4fe0fbcac899bbc388184e0dfe2d59b9dbe90c2c` is recorded before the live exercise.
-- [ ] Rollback approver and exact target SHA are recorded; database migration state
-  is checked before choosing artifact rollback.
-- [ ] Evidence bundle is retained: workflow run URL, resolved SHA, health results,
-  CMI business smoke results, alerts, and decision timestamps.
+- [x] Rollback approver is `amo0114`; the exact target SHA and successful code rollback
+  are recorded in `rollback.txt`, with migration-safe artifact rollback semantics.
+- [x] Evidence bundle is retained as the named workflow artifact: workflow URL,
+  resolved SHA, health/readiness, CMI canary/latency, logs, rollback, cleanup, and
+  timestamps.
 
 ## Execution and stop conditions
 
-1. Owner records baseline and opens the PAR. Keep external Owner/canary/rollback
-   status Pending until the corresponding evidence exists.
+1. Owner records baseline and opens the PAR. The final run now contains the approved
+   Owner/canary/rollback evidence; production promotion still requires a new PAR.
 2. Run the dry-run row and review resolved SHA/target. Abort on malformed SHA,
    missing staging values, or an unexpected action.
 3. For an authorized staging rehearsal, deploy the immutable SHA, run health checks,
@@ -94,6 +98,29 @@ live run.
 
 Design confirmations are the staging-only path, immutable SHA checks, dry-run no-SSH
 property, explicit live rehearsal confirmation, health gate, and migration fallback.
-The baseline staging workflow, Compose up/smoke, and public readiness are now
-executed in run 31877359120. Still not executed: CMI canary, realtime collector,
-alert observation, backup restore, and rollback. Those gates remain Pending.
+The final staging rehearsal is [workflow run 31890663141](https://github.com/amo0114/MoNexus/actions/runs/31890663141)
+for immutable SHA `d650014a9d816a9c6c3476d6e6e02861bce208ac`. It was approved by
+Owner `amo0114` through the protected `staging` Environment (required-reviewer rule
+`62780483`) after root installed the restricted Caddy sudoers rule on `free-vnic`.
+The retained artifact is
+`notification-realtime-staging-evidence-d650014a9d816a9c6c3476d6e6e02861bce208ac`.
+
+The workflow completed all 12 stages: backend/proxy/frontend ordering, production-like
+LISTEN/session gate, realtime flag-on, disposable merchant canary, authenticated SSE
+proxy smoke, 100 API-2xx-to-merchant-DOM samples, log-boundary inspection, flag-off
+30-second fallback/history, immutable code rollback, fixture cleanup, and environment
+finalization. The known-good baseline restored by the workflow was
+`4fe0fbcac899bbc388184e0dfe2d59b9dbe90c2c`.
+
+The artifact reports `staging-latency.txt` with 100 samples (`p50_ms=790`,
+`p95_ms=793`, `p99_ms=797`, `max_ms=810`, zero failures), `rollout.txt` and
+`rollback.txt` as `PASS`, `fixture-cleanup.json` as `CLEAN`, and final public
+readiness `status=ready` with `notificationRealtime=disabled` after baseline restore.
+The only non-assertive line is the informational external log-query note in
+`proxy.txt`; the deployed Nginx/app/Caddy boundary check itself is `PASS` in
+`logs.txt`.
+
+Unresolved items are limited to production promotion/traffic, a production or
+backup-restore exercise, and the incremental frontend bundle baseline. Image2 and
+runtime asset/bundle work is explicitly Deferred by AMD-CMI-012 §3.6 and is not a
+failure of this staging release rehearsal.

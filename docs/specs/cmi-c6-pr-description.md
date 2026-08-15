@@ -5,11 +5,11 @@
 - Base: `develop`
 - Label: `run-e2e`
 - Source branch: `feat/catalog-merch-integration`
-- Current evidence HEAD: `dd98dc3` (docs-only evidence tip; based on the
-  security/audit and fixture tip `61e41af`, which includes benchmark `4ab3de9`);
-  implementation code ancestor under test: `c690025`
+- Current code/evidence run SHA: `d650014a9d816a9c6c3476d6e6e02861bce208ac`
+  (final staging rehearsal exact SHA; this document is docs-only); implementation
+  code ancestor under test: `c690025`
 - C5b runners/evidence: `685d23b`, `495d1a0`, `e279c72`, `e329d1b`, `1d37d86`,
-  `4ab3de9`, and `61e41af`
+  `4ab3de9`, `61e41af`, and final staging fixes through `d650014`
 
 ## Summary
 
@@ -60,38 +60,36 @@ performance numbers are not invented or promoted to P0 acceptance criteria.
 - Local perf/compat: cache 7/7, server build PASS, dashboard benchmark 2/2
   under Node 20.19.5/npm 10.8.2. The disposable 100k-order benchmark reports
   30 samples with summary P95 16.504372 ms and timeseries P95 80.750211 ms.
-  The frontend build passes, while the conservative 150 KiB gzip proxy reports
-  315.74 KiB and exits non-zero. Staging/production/canary P95 and external
-  bundle acceptance remain Pending.
-- Baseline staging deployment is now real: [workflow run 31877359120](https://github.com/amo0114/MoNexus/actions/runs/31877359120)
-  resolved SHA `4fe0fbcac899bbc388184e0dfe2d59b9dbe90c2c` and succeeded through
-  Compose smoke and public readiness; deployment `5919176861` is the known-good
-  rollback target. Owner `amo0114` and the protected staging required-reviewer
-  rule are recorded. Distinct canary/rehearsal, rollback execution, external P95,
-  and bundle acceptance remain Pending.
+  The frontend build passes, while the conservative all-assets 150 KiB gzip proxy
+  reports 315.74 KiB and exits non-zero. This proxy is explicitly Deferred with
+  `T-MERCH-ASSET-001` by AMD-CMI-012 §3.6; it is not presented as a shipped budget
+  pass. The protected staging run below supplies the external staging P95.
+- Final staging rehearsal [workflow run 31890663141](https://github.com/amo0114/MoNexus/actions/runs/31890663141)
+  deployed the exact SHA `d650014a9d816a9c6c3476d6e6e02861bce208ac` after root
+  installed the reviewed Caddy sudoers delegation on `free-vnic`. Owner `amo0114`
+  approved the protected `staging` Environment (rule `62780483`). Its retained
+  artifact reports 100/100 canary samples, P50 790 ms / P95 793 ms / P99 797 ms,
+  zero failures, flag-off fallback PASS, code rollback PASS to known-good
+  `4fe0fbcac899bbc388184e0dfe2d59b9dbe90c2c`, fixture cleanup `CLEAN`, and final
+  public readiness `ready` with realtime `disabled`.
 - Exact-SHA dry-run [31885929935](https://github.com/amo0114/MoNexus/actions/runs/31885929935)
-  passed with no host change. Owner-approved live attempt
-  [31885609141](https://github.com/amo0114/MoNexus/actions/runs/31885609141)
-  failed closed before application deployment because the staging deploy user
-  lacked the required `sudo -n` Caddy delegation. Commit `603d874` adds the
-  fixed-helper root repair; a successful live rehearsal remains Pending.
+  passed with no host change. The earlier failed-closed attempt
+  [31885609141](https://github.com/amo0114/MoNexus/actions/runs/31885609141) is
+  retained as historical evidence; the root repair and final run above closed it.
 
 ## Deferred
 
 - Image2 concept/runtime asset delivery (`T-MERCH-ASSET-001`, AC-MERCH-025/026,
   CHK-ASSET-001~006, PERF-004) remains Deferred by AMD-CMI-012 and is not
   represented as shipped functionality.
-- External performance/bundle acceptance (staging/production/canary P95,
-  Owner/PAR rollout, rollback/restore, and an owner-approved incremental
-  bundle baseline) remains follow-up work under the existing specs. The local
-  100k-order P95 and conservative bundle proxy are recorded but do not close
-  those external gates.
+- Production performance, production traffic, backup-restore, and an incremental
+  frontend bundle baseline remain follow-up work under separate authorization. The
+  staging P95, Owner/PAR rollout, rollback, and cleanup gates are closed by run
+  `31890663141`; the bundle/asset work remains Deferred rather than silently passed.
 
 ## Readiness
 
-This draft is not a ready-to-merge declaration. The remaining Pending gates
-are the Owner/PAR handoff review, external staging/canary P95 and
-rollout/rollback evidence, the bundle budget exception or remediation, and the
-final PR risk/monitoring/rollback handoff. The PR must remain blocked until
-those rows are filled and reviewed; all gates without Owner, staging, P95, or
-rollback evidence remain Pending.
+This draft records the completed staging C5b evidence and is ready for Owner review
+before opening C6. It is not a production-promotion declaration: production traffic,
+production monitoring/restore, and the Deferred asset/bundle scope remain outside
+this PR. The C6 PR should retain the `run-e2e` label and link the workflow artifact.
