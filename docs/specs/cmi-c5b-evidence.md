@@ -4,7 +4,8 @@ Date: 2026-08-15
 Branch: `feat/catalog-merch-integration`
 Code HEAD under test: `c690025b9d1059bc47b6c1c16aa5811b2971d373`
 Evidence/checklist changes are docs-only and are committed after this code HEAD.
-C5b runner commit: `685d23b` (dedicated Merch gates and isolated asset config).
+C5b runner commits: `685d23b` (dedicated Merch gates/config) and `495d1a0`
+(disposable E2E database cleanup).
 CMI database: `monexus_test_catalog_merch_integration` only
 
 ## Verification
@@ -68,7 +69,8 @@ temporary runner resources were cleaned after each run.
    Deferred list, and this evidence index; keep the PR blocked while any gate
    remains Pending.
 
-The four Merch verification entry points now exist at runner commit `685d23b`.
+The four Merch verification entry points now exist at runner commit `685d23b`;
+the shared E2E runner cleanup hardening is `495d1a0`.
 The asset gate explicitly discloses that Image2 concept/runtime delivery is
 Deferred and runs only the existing product-gallery regression (`3/3`); no
 Deferred asset work is represented as shipped functionality.
