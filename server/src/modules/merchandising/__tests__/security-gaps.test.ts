@@ -10,6 +10,12 @@ describe('CMI merchandising security evidence', () => {
     expect(routes).toMatch(/router\.use\(authenticate, requireActiveUser, requireAdmin, requireAdminMfa\)/)
     expect(routes).toMatch(/router\.(get|post|put|delete)\('\/products/)
     expect(routes).toMatch(/router\.(get|post|put|delete)\('\/logs'/)
+
+    const promotions = source('modules/merchandising/promotions/routes.ts')
+    expect(promotions).toContain(
+      'adminPromotionRouter.use(authenticate, requireActiveUser, requireAdmin, requireAdminMfa)',
+    )
+    expect(promotions).toMatch(/adminPromotionRouter\.(get|post|patch)\('\/promotion-/)
   })
 
   it('requires a verified MFA claim and version before an admin session can be allowed', () => {
@@ -32,7 +38,8 @@ describe('CMI merchandising security evidence', () => {
     const authReadme = source('modules/auth/README.md')
     expect(adminReadme).toMatch(/every email is masked/i)
     expect(adminReadme).toMatch(/PointLog.*not.*AdminLog/i)
-    expect(authReadme).toMatch(/never.*token.*token hash.*MFA seed.*recovery code/i)
+    expect(authReadme).toMatch(/Never expose raw IP/i)
+    expect(authReadme).toMatch(/complete User-Agent, token, token hash, MFA seed, or recovery code/i)
   })
 
   it('has no CPM/CPC/bidding/fiat/earnings-promise promotion vocabulary in the current catalog surface', () => {
