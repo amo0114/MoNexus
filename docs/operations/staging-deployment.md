@@ -162,10 +162,11 @@ operational switches.
 
 ### 5.1 Notification realtime rehearsal
 
-The realtime rehearsal has a stricter proxy prerequisite. A root/operator must
-first update `/etc/caddy/sites-enabled/monexus-staging.caddy` from
-[`deploy/staging/Caddyfile`](../../deploy/staging/Caddyfile), validate it, and
-reload Caddy:
+The realtime rehearsal has a stricter proxy prerequisite. The workflow's first
+host-changing step (before application release or fixture setup) installs the
+dedicated `/etc/caddy/sites-enabled/monexus-staging.caddy` from
+[`deploy/staging/Caddyfile`](../../deploy/staging/Caddyfile), validates the
+existing `/etc/caddy/Caddyfile`, and reloads Caddy:
 
 ```bash
 sudo grep -F 'flush_interval -1' /etc/caddy/sites-enabled/monexus-staging.caddy
@@ -173,10 +174,13 @@ sudo caddy validate --config /etc/caddy/Caddyfile
 sudo systemctl reload caddy
 ```
 
-The protected deploy user deliberately cannot edit this root-owned network
-boundary. `realtime_rehearsal` checks the active site before unpacking or
-deploying the feature; a missing immediate-flush directive is an operator
-blocker, not a condition the workflow may waive.
+The protected deploy user must have a non-interactive, narrowly delegated
+`sudo` capability for `install`, `grep`, `caddy validate`, and `systemctl
+reload caddy` (or an equivalent reviewed root wrapper). The workflow fails
+closed if `sudo -n` is unavailable, the dedicated site lacks
+`flush_interval -1`, validation fails, or reload fails. It does not overwrite
+the global Caddyfile or production site blocks. A missing immediate-flush
+directive is an operator blocker, not a condition the workflow may waive.
 
 Dispatch **Staging Compose Deploy** against the exact feature SHA in this order:
 

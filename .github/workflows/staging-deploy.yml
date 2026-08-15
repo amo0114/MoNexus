@@ -170,6 +170,36 @@ jobs:
           name: monexus-staging-source-${{ needs.package-source.outputs.deploy_commit }}
           path: artifacts
 
+      - name: Install and activate staging realtime Caddy site
+        if: steps.readiness.outputs.ready == 'true' && env.RELEASE_ACTION == 'realtime_rehearsal'
+        run: |
+          set -euo pipefail
+          # This is the only host configuration changed by the rehearsal gate.
+          # sudo must be non-interactive and narrowly delegated to the staging
+          # operator; a missing delegation fails the rehearsal before any app
+          # release or fixture is created.
+          site_payload="$(base64 -w0 deploy/staging/Caddyfile)"
+          ssh \
+            -i ~/.ssh/monexus_staging_deploy \
+            -p "$STAGING_SSH_PORT" \
+            -o StrictHostKeyChecking=yes \
+            "$STAGING_SSH_USER@$STAGING_SSH_HOST" \
+            "bash -s -- '$site_payload'" <<'REMOTE'
+          set -euo pipefail
+          site_payload="$1"
+          site_file=/etc/caddy/sites-enabled/monexus-staging.caddy
+          tmp_file="$(mktemp /tmp/monexus-staging.caddy.XXXXXX)"
+          trap 'rm -f "$tmp_file"' EXIT
+          printf '%s' "$site_payload" | base64 -d > "$tmp_file"
+          test -s "$tmp_file"
+          grep -Fqx '    flush_interval -1' "$tmp_file"
+          sudo -n install -o root -g root -m 0644 "$tmp_file" "$site_file"
+          sudo -n grep -Fqx '    flush_interval -1' "$site_file"
+          sudo -n caddy validate --config /etc/caddy/Caddyfile
+          sudo -n systemctl reload caddy
+          echo 'Staging Caddy site installed, validated, and reloaded.'
+          REMOTE
+
       - name: Upload source archive to staging host
         if: steps.readiness.outputs.ready == 'true' && env.RELEASE_ACTION != 'rollback'
         run: |
