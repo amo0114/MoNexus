@@ -2,8 +2,8 @@
 
 Date: 2026-08-15
 Branch: `feat/catalog-merch-integration`
-Code HEAD under test: `c690025b9d1059bc47b6c1c16aa5811b2971d373`
-Evidence/checklist changes are docs-only and are committed after this code HEAD.
+Current evidence HEAD: `87626c956593d6256a408bc4e89766f4fb94056e` (docs-only).
+Implementation code ancestor under test: `c690025b9d1059bc47b6c1c16aa5811b2971d373`.
 C5b runner commits: `685d23b` (dedicated Merch gates/config), `495d1a0`
 (disposable E2E database cleanup), and `e279c72` (executable modes).
 CMI database: `monexus_test_catalog_merch_integration` only
@@ -20,6 +20,8 @@ CMI database: `monexus_test_catalog_merch_integration` only
 | Merchant route fix | CMI Vitest targeted suite | PASS, 4 files / 50 tests: merchant registration, verified value gate, promotions campaign, editorial entitlements |
 | Identity raw-writer closure | `PATH=/root/.nvm/versions/node/v20.19.5/bin:$PATH npx playwright test --config playwright.identity-sync.logic.config.ts`; `rg -n "\\.setUser\\(|\\.setAccessToken\\(|setUser:|setAccessToken:" src tests` | PASS, 56/56 Identity logic tests; static scan returned zero source/test matches after `0d9f7ce`; Node 20; frontend `npm run build` passed |
 | Merch dedicated gates | `PATH=/root/.nvm/versions/node/v20.19.5/bin:$PATH bash scripts/verify-merchandising.sh` | PASS; ranking 2 files / 55 tests, points 4 server files / 56 tests + 3 UI files / 91 tests, asset gallery 3/3; root/server runtime and build passed; each disposable CMI DB cleaned |
+| Root security/public-field targeted suite | Root targeted security/public-field suite | PASS, 8 files / 117 tests; exit 0 |
+| Server security suite | Server security suite with `TEST_DATABASE_URL` | NOT PASS: execution was interrupted after the `TEST_DATABASE_URL`-backed run did not complete; no PASS evidence was produced |
 
 The first full-run attempt was invalid because the disposable CMI database had already
 been removed by the prior runner (154 files failed during initialization and 1420 tests
@@ -36,7 +38,8 @@ All commands below were run from the integration worktree and returned exit 0 un
 | `F → Catalog BE/FE` | `8c2800e → 179b293`, `8c2800e → 1648c10` | PASS |
 | `H → M_CMI` | `1648c10 → d9ce97e` | PASS |
 | `Merch BE/FE/Assets → M_CMI` | `8dc5d57`, `e1846db`, `b61c83c → d9ce97e` | PASS |
-| `M_CMI → final HEAD` | `d9ce97e → c690025` | PASS |
+| `M_CMI → implementation code ancestor` | `d9ce97e → c690025` | PASS |
+| `implementation code ancestor → current evidence HEAD` | `c690025 → 87626c9` | PASS (docs-only commits) |
 | `N → M_ID` | `f586efd → dc9fb30` | PASS (exit 0) |
 | `C_ID → M_ID` | `2bf77c1 → dc9fb30` | PASS (exit 0) |
 | `M_ID → Identity Layout` | `dc9fb30 → 50b774c` | PASS (exit 0) |
@@ -65,7 +68,9 @@ temporary runner resources were cleaned after each run.
 
 1. Owner reviews the evidence and fills the remaining Catalog/Merch PR Gate
    rows (release/rollback, performance, and PR description evidence).
-2. Prepare the C6 PR to `develop` with `run-e2e`, the v0.1.2 revision note,
+2. Keep `G-CAT-PR-008` and `G-MERCH-PR-008` Pending: the root targeted suite is
+   recorded above, but the interrupted server security suite is not a PASS.
+3. Prepare the C6 PR to `develop` with `run-e2e`, the v0.1.2 revision note,
    Deferred list, and this evidence index; keep the PR blocked while any gate
    remains Pending.
 

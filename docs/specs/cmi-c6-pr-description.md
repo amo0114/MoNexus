@@ -5,7 +5,8 @@
 - Base: `develop`
 - Label: `run-e2e`
 - Source branch: `feat/catalog-merch-integration`
-- Implementation code under test: `c690025`
+- Current evidence HEAD: `87626c9` (docs-only); implementation code ancestor
+  under test: `c690025`
 - C5b runners: `685d23b`, `495d1a0`, and `e279c72`
 
 ## Summary
@@ -38,6 +39,9 @@ performance numbers are not invented or promoted to P0 acceptance criteria.
 - Dedicated Merch gate: ranking 2 files / 55 tests; points 4 server files /
   56 tests plus 3 UI files / 91 tests; asset gallery 3/3; root/server
   runtime and build green; disposable databases cleaned.
+- Root security/public-field targeted suite: 8 files / 117 tests, exit 0.
+- Server security suite did not complete because the `TEST_DATABASE_URL`-backed
+  run was interrupted; it is not recorded as PASS.
 - Identity closure: 56/56 logic tests, raw-writer static scan zero, frontend
   build green.
 
@@ -55,4 +59,6 @@ This draft is not a ready-to-merge declaration. The remaining Pending gates
 are the Owner/PAR handoff review, the explicit legacy-isHot/security/AC-map
 audit, performance/cache/compat and rollout/rollback evidence, and the final
 PR risk/monitoring/rollback handoff. The PR must remain blocked until those
-rows are filled and reviewed.
+rows are filled and reviewed. In particular, `G-CAT-PR-008` and
+`G-MERCH-PR-008` remain Pending; all gates without Owner, staging, P95, or
+rollback evidence remain Pending.
