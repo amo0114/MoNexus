@@ -7,7 +7,7 @@ set -Eeuo pipefail
 
 readonly SITE_FILE='/etc/caddy/sites-enabled/monexus-staging.caddy'
 readonly CADDY_CONFIG='/etc/caddy/Caddyfile'
-readonly EXPECTED_SITE_SHA256='098549b97231d26c420b20bf4c92db3d0db3bf1e172a0b91dcb5833c44547db0'
+readonly EXPECTED_SITE_SHA256='f5e3717cfefd23be9688a8064cbdc3702830b24c2fcbe8df7a267b2aae8c5f6d'
 
 fail() {
   echo "[ERROR] $*" >&2
@@ -34,5 +34,6 @@ actual_sha256="${actual_sha256%% *}"
 
 /usr/bin/install -o root -g root -m 0644 "$tmp_file" "$SITE_FILE"
 /usr/bin/grep -Fqx '    flush_interval -1' "$SITE_FILE"
+/usr/bin/grep -Fqx '    header_down X-Accel-Buffering no' "$SITE_FILE"
 /usr/bin/caddy validate --config "$CADDY_CONFIG"
 /usr/bin/systemctl reload caddy
