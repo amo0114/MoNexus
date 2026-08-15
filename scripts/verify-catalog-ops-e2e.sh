@@ -38,6 +38,9 @@ cleanup() {
   if [[ -n "$FIXTURE_PID" ]]; then
     kill "$FIXTURE_PID" 2>/dev/null || true
   fi
+  # The runner owns the disposable CMI database for every selected spec.
+  # Drop it even when Playwright or a webServer fails during startup.
+  bash "$DBGUARD" drop >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
