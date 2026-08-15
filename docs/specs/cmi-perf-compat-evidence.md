@@ -33,14 +33,23 @@ migrations, reset a database, or contact a remote environment.
 
 ## 2026-08-15 local run
 
-Environment: Node/npm values are emitted by the runner. Database-backed
-benchmark: **PENDING** unless `TEST_DATABASE_URL` is supplied for an existing
-local test database. The cache suite and server build are the repeatable
-non-database checks.
+Command (Node `v20.19.5`, npm `10.8.2`, disposable PostgreSQL CMI database;
+60 committed migrations applied and the database dropped afterward):
 
-P50/P95: **not measured by the existing single-call benchmark**. Staging /
-production P95, 100,000-order P95, and frontend bundle budget remain
-**PENDING** and require the corresponding external dataset/tooling.
+```bash
+TEST_DATABASE_URL=<CMI> DATABASE_URL=<CMI> REDIS_ENABLED=false REDIS_REQUIRED=false \
+  bash scripts/verify-cmi-perf-compat.sh
+```
+
+Observed result: `cache_tests=PASS` (7/7), `server_build=PASS`, and
+`dashboard_benchmark=PASS` (2/2). The dashboard benchmark exercises the
+existing 1,000-order local fixture and enforces `<500 ms` for both `getSummary`
+and `getTimeseries('30d')`; it does not report a latency distribution.
+
+P50/P95: **not measured**. The 2/2 benchmark result is not a percentile and no
+latency number is inferred. Staging/production P95, 100,000-order P95, and
+frontend bundle budget remain **PENDING** and require the corresponding
+external dataset/tooling.
 
 ## Reproduction notes
 

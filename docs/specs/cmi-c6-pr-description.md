@@ -5,9 +5,9 @@
 - Base: `develop`
 - Label: `run-e2e`
 - Source branch: `feat/catalog-merch-integration`
-- Current evidence HEAD: `754d945` (docs-only); implementation code ancestor
-  under test: `c690025`
-- C5b runners: `685d23b`, `495d1a0`, and `e279c72`
+- Current evidence HEAD: `30efbe4` (code/test evidence tip; this draft update is
+  docs-only); implementation code ancestor under test: `c690025`
+- C5b runners: `685d23b`, `495d1a0`, `e279c72`, `e329d1b`, and `1d37d86`
 
 ## Summary
 
@@ -40,6 +40,9 @@ performance numbers are not invented or promoted to P0 acceptance criteria.
   56 tests plus 3 UI files / 91 tests; asset gallery 3/3; root/server
   runtime and build green; disposable databases cleaned.
 - Root security/public-field targeted suite: 8 files / 117 tests, exit 0.
+- Targeted CMI security-gap evidence: 1 file / 5 tests, exit 0 on Node
+  20.19.5/npm 10.8.2 with the disposable CMI database; this does not replace
+  the incomplete unified server-security gate.
 - Partial server-security split evidence: pure subset 3 files / 33 tests,
   Vitest duration 45.26s, and five subsequent DB-backed per-file runs (3 + 15 +
   9 + 22 + 4 = 53 tests), all exit 0. The earlier 12-file run was interrupted;
@@ -52,20 +55,27 @@ performance numbers are not invented or promoted to P0 acceptance criteria.
   missing; `CHK-MERCH-FND-002`/`G-MERCH-PR-003` remain Pending.
 - Identity closure: 56/56 logic tests, raw-writer static scan zero, frontend
   build green.
+- Local perf/compat: cache 7/7, server build PASS, dashboard benchmark 2/2
+  under Node 20.19.5/npm 10.8.2. No P50/P95 was measured; staging/production
+  P95, 100k-order P95, and frontend bundle budget remain Pending.
+- Release rehearsal and Owner handoff documents pass `bash -n`/local dry-run
+  checks, but staging deploy, canary, restore/rollback, and Owner/PAR approval
+  remain Pending.
 
 ## Deferred
 
 - Image2 concept/runtime asset delivery (`T-MERCH-ASSET-001`, AC-MERCH-025/026,
   CHK-ASSET-001~006, PERF-004) remains Deferred by AMD-CMI-012 and is not
   represented as shipped functionality.
-- P1 performance/bundle/cache measurement and any broader recommendation or
-  multi-tab expansion remain follow-up work under their existing specs.
+- External performance/bundle acceptance (staging/production P95, 100k-order
+  P95, and frontend budget) and any broader recommendation or multi-tab
+  expansion remain follow-up work under their existing specs.
 
 ## Readiness
 
 This draft is not a ready-to-merge declaration. The remaining Pending gates
 are the Owner/PAR handoff review, the explicit legacy-isHot/security/AC-map
-audit, performance/cache/compat and rollout/rollback evidence, and the final
+audit, external performance and rollout/rollback evidence, and the final
 PR risk/monitoring/rollback handoff. The PR must remain blocked until those
 rows are filled and reviewed. In particular, `G-CAT-PR-008` and
 `G-MERCH-PR-008` remain Pending; all gates without Owner, staging, P95, or

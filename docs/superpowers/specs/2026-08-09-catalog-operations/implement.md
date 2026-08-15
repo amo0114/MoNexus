@@ -290,6 +290,9 @@ git diff --check
 | 2026-08-15 | `c690025` | C5b | `PAR-GATE-011` | `git merge-base --is-ancestor 0d9f7ce 560d00c` | PASS (exit 0); Identity docs-only evidence handoff `560d00c` retains the raw-writer closure parent | Identity lane `fix/identity-profile-layout-integration`; `docs/specs/cmi-c5b-evidence.md` |
 | 2026-08-15 | `c690025` / `685d23b` / `495d1a0` / `e279c72` | C5b | `G-CAT-PR-004/005/006` | `PATH=/root/.nvm/versions/node/v20.19.5/bin:$PATH bash scripts/verify-merchandising.sh` | PASS; ranking 2 files/55, points 4 server files/56 + 3 UI files/91, asset gallery 3/3, root/server runtime+build; CMI DBs cleaned | `docs/specs/cmi-c5b-evidence.md`; dedicated runner output |
 | 2026-08-15 | `ae4c483` (docs-only; code ancestor `c690025`) | C5b | `G-CAT-PR-007/008` | Root security/public-field suite (8 files/117 tests, exit 0); server split security runs (pure 3 files/33 tests, 45.26s; DB-backed 5 files/53 tests, each exit 0); `docs/specs/cmi-qa-evidence-map.md` refresh | Partial evidence recorded; AC map now points to current test names/lines, but unified full security gate and MFA/log/other audit rows remain open; G-CAT-PR-007/008 stay Pending | `docs/specs/cmi-c5b-evidence.md`; `docs/specs/cmi-qa-evidence-map.md` |
+| 2026-08-15 | `30efbe4` | C5b | `G-CAT-PR-008` | Targeted `security-gaps.test.ts` on Node 20.19.5/npm 10.8.2 with disposable CMI DB | PASS, 1 file / 5 tests; route MFA, PointLog boundary, sensitive projection, and forbidden vocabulary assertions pass. Unified security gate remains Pending | `docs/specs/cmi-c5b-evidence.md` |
+| 2026-08-15 | `30efbe4` / `e329d1b` | C5b | `G-CAT-PR-009` | `TEST_DATABASE_URL=<CMI> DATABASE_URL=<CMI> REDIS_ENABLED=false REDIS_REQUIRED=false bash scripts/verify-cmi-perf-compat.sh` | Local PASS: cache 7/7, server build PASS, dashboard benchmark 2/2; no percentile measured; staging/production, 100k-order, and bundle evidence Pending | `docs/specs/cmi-perf-compat-evidence.md` |
+| 2026-08-15 | `30efbe4` / `1d37d86` | C5b | `G-CAT-PR-010` | Release rehearsal/Owner handoff docs and `bash -n` local checks | Docs/local checks PASS; staging/canary/restore/rollback and Owner/PAR approval not executed, so Gate remains Pending | `docs/specs/cmi-release-rehearsal.md`; `docs/specs/cmi-owner-handoff.md` |
 
 证据必须含 exit code、测试数、耗时、脱敏 DB/ports、fixture revision。Migration 证据含前后计数和 expected-failure。E2E 保留 trace/screenshot 路径；不得截图秘密库存文本。
 
@@ -306,9 +309,9 @@ git diff --check
 | G-CAT-PR-005 | 分类、publish、库存、Xboard 专用 suites通过 | Passed | Catalog-ops browser 30/30 |
 | G-CAT-PR-006 | 既有 product/offer/checkout/Faka/notification回归通过 | Passed | Server 154 files/1420 + root 49/450 |
 | G-CAT-PR-007 | AC-CAT-001~028 当前 HEAD 证据完整 | Pending | 待填 |
-| G-CAT-PR-008 | secret/XSS/SSRF/object-key/ownership审计通过 | Pending | 待填 |
-| G-CAT-PR-009 | 性能预算、cache、compat、rollout/rollback演练通过 | Pending | 待填 |
-| G-CAT-PR-010 | PR 含规格、migration、监控、风险、回滚、证据索引 | Pending | 待填 |
+| G-CAT-PR-008 | secret/XSS/SSRF/object-key/ownership审计通过 | Pending | Targeted CMI security evidence 1/5 passes; unified security/MFA/log audit remains open |
+| G-CAT-PR-009 | 性能预算、cache、compat、rollout/rollback演练通过 | Pending | Local cache/build/dashboard evidence is recorded; external P95/bundle and rollout/rollback remain open |
+| G-CAT-PR-010 | PR 含规格、migration、监控、风险、回滚、证据索引 | Pending | Release rehearsal and Owner handoff docs recorded; Owner/PAR approval and final rollback evidence remain open |
 
 任一 Pending/Failed 不得宣称 ready to merge。
 
