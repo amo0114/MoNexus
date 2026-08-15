@@ -30,6 +30,7 @@
     "dev": "vite",
     "prebuild": "npm run check:runtime",
     "build": "tsc -b && vite build",
+    "check:bundle-budget": "npm run build && node scripts/check-frontend-bundle-budget.mjs",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",

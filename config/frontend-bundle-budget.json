@@ -1,0 +1,6 @@
+{
+  "description": "Conservative local proxy for REQ-MERCH-NF-006",
+  "max_gzip_kib": 150,
+  "scope": "all emitted frontend assets under dist/assets; incremental asset attribution requires an external baseline",
+  "require_production_build": true
+}

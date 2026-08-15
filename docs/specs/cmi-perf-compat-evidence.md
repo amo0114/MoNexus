@@ -51,6 +51,18 @@ latency number is inferred. Staging/production P95, 100,000-order P95, and
 frontend bundle budget remain **PENDING** and require the corresponding
 external dataset/tooling.
 
+### Local frontend bundle budget check
+
+`REQ-MERCH-NF-006` specifies runtime bundle **new assets ≤150 KiB gzip**. The
+repository has no committed pre-change asset baseline, so the reproducible local
+check uses a conservative proxy: gzip every emitted file under `dist/assets` and
+compare the aggregate with 150 KiB (`config/frontend-bundle-budget.json`). It
+cannot establish incremental/new-asset attribution or external acceptance.
+
+Command: `npm run check:bundle-budget` (production build, then
+`node scripts/check-frontend-bundle-budget.mjs`). The external bundle gate remains
+**PENDING** regardless of a local pass.
+
 ## Reproduction notes
 
 Run from the repository root with dependencies installed. For the optional
