@@ -6,7 +6,7 @@
 | 依据 | [AMD-CMI-012](../superpowers/specs/2026-08-13-cmi-qa-rescope-v012.md) §2/§4 证据规则;CHK-CATALOG-OPS-001 / CHK-MERCH-001 v0.1.2 |
 | 采集方式 | 协调者 + 两个只读检索代理逐条比对;所有引用来自真实测试文件的 grep/读取,禁止臆造 |
 | 状态语义 | covered=有直接断言;partial=部分断言缺失(附缺口);GAP=无证据;P1/Deferred/runbook=按修订不阻塞;C5-审计=Final Gate 出具 |
-| 代码/证据基线 | 实施代码祖先 `c690025`;本次核验基于 `30efbe4`（代码/测试证据 tip；后续 docs-only 证据回填见 C5b ledger） |
+| 代码/证据基线 | 实施代码祖先 `c690025`;本次核验基于 `bfe70f8`（docs-only evidence tip，代码/测试 tip 为 `30efbe4`） |
 | 终局 | 本表是 C5 证据回填的输入;"当前 HEAD 证据"以 merge develop 后最终 HEAD 的 verify 运行为准 |
 
 ## 0. 协调者裁决(处置一览)

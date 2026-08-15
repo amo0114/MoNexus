@@ -5,8 +5,8 @@
 - Base: `develop`
 - Label: `run-e2e`
 - Source branch: `feat/catalog-merch-integration`
-- Current evidence HEAD: `30efbe4` (code/test evidence tip; this draft update is
-  docs-only); implementation code ancestor under test: `c690025`
+- Current evidence HEAD: `bfe70f8` (docs-only evidence ledger tip; based on code/
+  test tip `30efbe4`); implementation code ancestor under test: `c690025`
 - C5b runners: `685d23b`, `495d1a0`, `e279c72`, `e329d1b`, and `1d37d86`
 
 ## Summary

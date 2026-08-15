@@ -2,7 +2,7 @@
 
 Date: 2026-08-15
 Branch: `feat/catalog-merch-integration`
-Current evidence HEAD: `30efbe4` (code/test evidence tip; this update is docs-only).
+Current evidence HEAD: `bfe70f8` (docs-only evidence ledger tip; based on code/test tip `30efbe4`).
 Implementation code ancestor under test: `c690025b9d1059bc47b6c1c16aa5811b2971d373`.
 C5b runner commits: `685d23b` (dedicated Merch gates/config), `495d1a0`
 (disposable E2E database cleanup), `e279c72` (executable modes), `e329d1b`
