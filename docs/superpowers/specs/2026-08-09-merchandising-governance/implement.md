@@ -207,7 +207,12 @@ git diff --check
 
 | 时间 | HEAD/F0/B_CAT/F | I/T | REQ/AC/CHK | 命令 | 结果 | Artifact |
 | --- | --- | --- | --- | --- | --- | --- |
-| 待填 | 待填 | 待填 | 待填 | 待填 | 待填 | 待填 |
+| 2026-08-15 | `c690025` / `70517f7` / `8c2800e` / `8c2800e` | C5b | `CHK-MERCH-FINAL-001/004`; merch integration | `DATABASE_URL=<CMI> bash scripts/verify-catalog-ops-backend.sh` | PASS, 7/7 gates; build and catalog/merch suite; CMI DB/log cleanup passed | Backend runner output |
+| 2026-08-15 | `c690025` / `70517f7` / `8c2800e` / `8c2800e` | C5b | Server-wide regression | `TEST_DATABASE_URL=<CMI> DATABASE_URL=<CMI> REDIS_ENABLED=false REDIS_REQUIRED=false API_RATE_LIMIT_MAX=3000 npm test` (Node 20) | PASS, 154 files / 1420 tests; exit 0; Vitest 3185.36s (wall 3187.90s); CMI DB dropped afterward | `/tmp/cmi-server-full-final.log` (private runner log) |
+| 2026-08-15 | `c690025` / `70517f7` / `8c2800e` / `8c2800e` | C5b | `AC-MERCH-016~020/023~024/028~029` | `bash scripts/verify-catalog-ops-e2e.sh` | PASS, merchandising smoke 3/3 inside full 30/30 run; disclosure, no organic double-count, active timeline | Catalog-ops Playwright runner |
+| 2026-08-15 | `c690025` / `70517f7` / `8c2800e` / `8c2800e` | C5b | Root/frontend regression | `npm test` | PASS on immediate full rerun, 49 files / 450 tests | Vitest stdout |
+| 2026-08-15 | `c690025` / `70517f7` / `8c2800e` / `8c2800e` | C5b | `CHK-MERCH-PAR-001` | PAR ancestor/ownership audit | Catalog/Merch lane tips and `H→M_CMI` exit 0; the pre-closure Identity probe was exit 1 and is superseded by the closure row below | SHA matrix: `docs/specs/cmi-c5b-evidence.md` |
+| 2026-08-15 | `c690025` / `70517f7` / `8c2800e` / `8c2800e` | C5b | `PAR-GATE-006/011` | `git merge-base --is-ancestor f586efd dc9fb306`; `git merge-base --is-ancestor 2bf77c1 dc9fb306`; `git merge-base --is-ancestor dc9fb306 50b774c`; `git merge-base --is-ancestor 50b774c 0d9f7ce` | PASS, all four exit 0; Identity raw-writer closure `0d9f7ce` is parented by Layout handoff `50b774c`; Identity logic 56/56 and build green | `docs/specs/cmi-c5b-evidence.md`; Identity lane `fix/identity-profile-layout-integration` |
 
 证据含exit/test count/duration/DB/ports/clock/fixture revision；ranking报告含行数、窗口、P50/P95；points含净变化断言但不泄露真实余额；assets含prompt/model/hash/reviewer，不含provider secret。
 
@@ -229,6 +234,14 @@ git diff --check
 | G-MERCH-PR-010 | points/orders/products/admin/notification回归与PR交接完整 | Pending |
 
 ---
+
+### C5b 状态（2026-08-15）
+
+Merch browser/backend, server-wide, and Identity closure evidence are green. The
+cross-spec `N + C_ID → M_ID → Layout → raw-writer closure` chain is proven by
+the ancestor matrix in `docs/specs/cmi-c5b-evidence.md`. Merch PR gates remain
+Pending until Owner review and the remaining release/performance/PR evidence are
+recorded; this branch is not yet declared ready to merge.
 
 ## 10. Blocked模板
 

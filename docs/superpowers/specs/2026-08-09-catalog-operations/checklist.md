@@ -177,6 +177,11 @@ P1 不阻断首次发布；提前实施任何 P1 属范围扩张。
 - [ ] **CHK-CAT-FINAL-004** — git diff、secret scan、migration/drift/parallel ownership audit通过。
 - [ ] **CHK-CAT-FINAL-005** — Owner审阅证据、migration、发布和回滚后明确批准合并。
 
+> C5b evidence is recorded in `docs/specs/cmi-c5b-evidence.md`. The repaired HEAD,
+> Identity raw-writer closure, and cross-spec `N + C_ID → M_ID` ancestor checks are
+> green. Keep final boxes unchecked until the remaining PR gates and Owner review
+> are recorded.
+
 ### 修订记录
 
 | 版本 | 日期 | 状态 | 说明 |

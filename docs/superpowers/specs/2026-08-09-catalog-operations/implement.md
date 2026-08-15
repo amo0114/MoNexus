@@ -280,7 +280,13 @@ git diff --check
 
 | 时间 | HEAD | I/T | REQ/AC/CHK | 命令/动作 | 结果 | Artifact |
 | --- | --- | --- | --- | --- | --- | --- |
-| 待填 | 待填 | 待填 | 待填 | 待填 | 待填 | 待填 |
+| 2026-08-15 | `c690025` | C5b | `CHK-CAT-FINAL-001/004`; `CHK-PROD/CAT/INV/XBD/UI` | `DATABASE_URL=<CMI> bash scripts/verify-catalog-foundation.sh` | PASS, 11/11 gates; migration, constraints, drift, scope, secret scan and cleanup | Foundation runner output; CMI disposable DB only |
+| 2026-08-15 | `c690025` | C5b | Catalog backend | `DATABASE_URL=<CMI> bash scripts/verify-catalog-ops-backend.sh` | PASS, 7/7 gates; build plus 24-file suite; temporary logs/CMI DB cleaned | Backend runner output; raw inventory logs suppressed |
+| 2026-08-15 | `c690025` | C5b | Server-wide regression | `TEST_DATABASE_URL=<CMI> DATABASE_URL=<CMI> REDIS_ENABLED=false REDIS_REQUIRED=false API_RATE_LIMIT_MAX=3000 npm test` (Node 20) | PASS, 154 files / 1420 tests; exit 0; Vitest 3185.36s (wall 3187.90s); CMI DB dropped afterward | `/tmp/cmi-server-full-final.log` (private runner log) |
+| 2026-08-15 | `c690025` | C5b | `AC-CAT-001~028` browser evidence | `bash scripts/verify-catalog-ops-e2e.sh` | PASS, 30/30: governance 15, lifecycle 9, Xboard 3, merch smoke 3 | Catalog-ops Playwright runner; isolated fixture/DB |
+| 2026-08-15 | `c690025` | C5b | Root regression | `npm test` | PASS on immediate full rerun, 49 files / 450 tests | Vitest stdout |
+| 2026-08-15 | `c690025` | C5b | `CHK-CAT-FINAL-002/004` | PAR ancestor/ownership audit | Catalog/Merch chain and `H→M_CMI` exit 0; the pre-closure Identity probe was exit 1 and is superseded by the closure row below | SHA matrix: `docs/specs/cmi-c5b-evidence.md` |
+| 2026-08-15 | `c690025` | C5b | `PAR-GATE-006/011` | `git merge-base --is-ancestor f586efd dc9fb306`; `git merge-base --is-ancestor 2bf77c1 dc9fb306`; `git merge-base --is-ancestor dc9fb306 50b774c`; `git merge-base --is-ancestor 50b774c 0d9f7ce` | PASS, all four exit 0; Identity raw-writer closure `0d9f7ce` is parented by Layout handoff `50b774c`; Identity logic 56/56 and build green | `docs/specs/cmi-c5b-evidence.md`; Identity lane `fix/identity-profile-layout-integration` |
 
 证据必须含 exit code、测试数、耗时、脱敏 DB/ports、fixture revision。Migration 证据含前后计数和 expected-failure。E2E 保留 trace/screenshot 路径；不得截图秘密库存文本。
 
@@ -304,6 +310,14 @@ git diff --check
 任一 Pending/Failed 不得宣称 ready to merge。
 
 ---
+
+### C5b 状态（2026-08-15）
+
+Catalog-specific, server-wide, and Identity closure evidence are green. The
+cross-spec `N + C_ID → M_ID → Layout → raw-writer closure` chain is proven by
+the ancestor matrix in `docs/specs/cmi-c5b-evidence.md`. Catalog PR gates remain
+Pending until Owner review and the remaining release/performance/PR evidence are
+recorded; this branch is not yet declared ready to merge.
 
 ## 11. Blocked 模板
 
