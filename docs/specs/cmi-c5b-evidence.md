@@ -2,12 +2,13 @@
 
 Date: 2026-08-15
 Branch: `feat/catalog-merch-integration`
-Current evidence baseline: `4ab3de9` (100k benchmark tip; this ledger also
-records the subsequent security/audit changes before their evidence commit).
+Current evidence HEAD: `61e41af` (security/audit, fixture, local-performance
+and evidence ledger tip; based on the 100k benchmark tip `4ab3de9`).
 Implementation code ancestor under test: `c690025b9d1059bc47b6c1c16aa5811b2971d373`.
 C5b runner commits: `685d23b` (dedicated Merch gates/config), `495d1a0`
 (disposable E2E database cleanup), `e279c72` (executable modes), `e329d1b`
-(local perf/compat runner), and `1d37d86` (release rehearsal/Owner handoff).
+(local perf/compat runner), `1d37d86` (release rehearsal/Owner handoff),
+`4ab3de9` (100k benchmark), and `61e41af` (security/audit and fixture closure).
 CMI database: `monexus_test_catalog_merch_integration` only
 
 ## Verification

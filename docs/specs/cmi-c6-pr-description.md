@@ -5,10 +5,11 @@
 - Base: `develop`
 - Label: `run-e2e`
 - Source branch: `feat/catalog-merch-integration`
-- Current evidence baseline: `4ab3de9` (100k benchmark tip; security/audit
-  evidence is recorded in the next C5b ledger commit); implementation code
-  ancestor under test: `c690025`
-- C5b runners: `685d23b`, `495d1a0`, `e279c72`, `e329d1b`, and `1d37d86`
+- Current evidence HEAD: `61e41af` (security/audit, fixture, local-performance
+  and evidence ledger tip; based on the 100k benchmark tip `4ab3de9`);
+  implementation code ancestor under test: `c690025`
+- C5b runners/evidence: `685d23b`, `495d1a0`, `e279c72`, `e329d1b`, `1d37d86`,
+  `4ab3de9`, and `61e41af`
 
 ## Summary
 
