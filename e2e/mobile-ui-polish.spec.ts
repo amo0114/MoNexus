@@ -60,7 +60,7 @@ test.describe('mobile layout verification @375px', () => {
     await loginAs(page, SEED_ACCOUNTS.user)
     await page.goto('/product/1')
     await page.waitForTimeout(1200)
-    const h1 = page.getByRole('heading', { level: 1, name: '稳定专线节点订阅' })
+    const h1 = page.getByRole('heading', { level: 1, name: /稳定专线节点订阅/ })
     await expect(h1).toBeVisible()
     const h1Box = await h1.boundingBox()
     const hero = page.getByTestId('product-gallery-main')
@@ -220,11 +220,19 @@ test.describe('review fixes @375px', () => {
 
   test('R2-P2-3: skeleton and final grid share the exact same origin (zero layout jump)', async ({ page }) => {
     // 延迟商品接口：先捕骨架首卡 y，再捕最终首卡 y
-    await page.route('**/api/products**', async (route) => {
+    // Delay only the organic list. Sponsored/editorial shelves have separate
+    // endpoints and must settle before measuring the organic grid anchor.
+    await page.route((url) => new URL(url).pathname === '/api/products', async (route) => {
       await new Promise((r) => setTimeout(r, 1200))
       await route.continue()
     })
     await loginAs(page, SEED_ACCOUNTS.user) // 落地 / 即骨架（无 SPA 缓存）
+
+    // The merchandising shelves own separate requests and legitimately
+    // collapse from their loading skeletons to empty states. Wait for those
+    // anchors to settle so this assertion measures the organic grid only.
+    await expect(page.getByTestId('merch-sponsored-shelf').getByRole('status')).toHaveCount(0, { timeout: 10_000 })
+    await expect(page.getByTestId('merch-editorial-shelf').getByRole('status')).toHaveCount(0, { timeout: 10_000 })
 
     const skeletonCard = page.getByRole('status', { name: '加载中' }).locator('.card').first()
     await expect(skeletonCard).toBeVisible()

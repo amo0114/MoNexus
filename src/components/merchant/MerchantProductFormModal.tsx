@@ -232,10 +232,6 @@ export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, pr
       payload.originalPrice = originalPriceNum
     }
 
-    if (product) {
-      payload.status = form.status
-    }
-
     setLoading(true)
     try {
       await onSubmit(payload)

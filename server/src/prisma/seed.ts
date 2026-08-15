@@ -202,13 +202,21 @@ async function main() {
     )
     const product = await prisma.product.upsert({
       where: { id: products.indexOf(p) + 1 },
-      update: { isHot: false }, // 幂等 cleanup：重复 seed 将 seed 管理的 demo 产品 isHot 归 false
+      update: {
+        isHot: false,
+        // Seeded demo products are intentionally public fixtures; merchant
+        // authored products remain draft-only and must use the publish gate.
+        status: 'active',
+        publishedAt: new Date(),
+      },
       create: {
         ...productData,
         categoryId,
         type,
         stock: inventoryItems.length,
         sales: Math.floor(Math.random() * 3000) + 100,
+        status: 'active',
+        publishedAt: new Date(),
       },
     })
 

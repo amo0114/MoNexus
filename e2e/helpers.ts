@@ -8,6 +8,7 @@ export const SEED_ACCOUNTS = {
 } as const
 
 export const API_BASE = process.env.E2E_API_URL || 'http://localhost:3000'
+export const E2E_PRODUCT_COVER = '/assets/network.webp'
 
 type SeedAccount = { email: string; password: string }
 
@@ -110,6 +111,30 @@ export async function loginAsApi(request: APIRequestContext, account: SeedAccoun
   return authenticatedSession(await login.json())
 }
 
+/**
+ * Publish a merchant-owned fixture through the real readiness gate.
+ *
+ * Product creation is intentionally draft-only.  E2E fixtures that exercise
+ * public detail/checkout must therefore provide the canonical cover and use
+ * the publish endpoint instead of relying on the old implicit-active behavior.
+ */
+export async function publishMerchantProduct(
+  request: APIRequestContext,
+  token: string,
+  productId: number,
+) {
+  const cover = await request.put(`${API_BASE}/api/merchant/products/${productId}`, {
+    headers: { Authorization: `Bearer ${token}` },
+    data: { imageUrl: E2E_PRODUCT_COVER, images: [E2E_PRODUCT_COVER] },
+  })
+  expect(cover.ok(), await cover.text()).toBeTruthy()
+
+  const published = await request.post(`${API_BASE}/api/merchant/products/${productId}/publish`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  expect(published.ok(), await published.text()).toBeTruthy()
+}
+
 async function loginAdminPage(page: Page, account: SeedAccount) {
   // page.request shares the BrowserContext cookie jar. Open the same origin
   // first, then use its relative Vite-proxied API path rather than API_BASE.
@@ -167,7 +192,12 @@ export async function createInstantFixedProductViaWizard(
   await page.getByTestId('wizard-next').click()
 
   await page.getByTestId('wizard-name').fill(options.name)
-  await page.getByTestId('wizard-type').selectOption(options.type ?? '邀请码')
+  await page.getByTestId('product-image-url-input').fill(E2E_PRODUCT_COVER)
+  await page.getByTestId('product-image-url-hotlink').click()
+  const category = page.getByTestId('product-category-select')
+  if (!(await category.inputValue())) {
+    await category.selectOption({ index: 1 })
+  }
   await page.getByTestId('wizard-next').click()
 
   await page.getByTestId('wizard-price').fill(options.price ?? '1')
@@ -178,6 +208,10 @@ export async function createInstantFixedProductViaWizard(
   await expect(page.getByTestId('stock-mode-select')).toHaveValue('unlimited')
   await page.getByTestId('wizard-next').click()
 
-  await page.getByTestId('wizard-publish').click()
-  await expect(page.getByText('商品创建成功')).toBeVisible({ timeout: 10_000 })
+  await page.getByTestId('wizard-save-draft').click()
+  await expect(page.getByTestId('wizard-step-availability')).toBeVisible({ timeout: 10_000 })
+  await page.getByTestId('wizard-next').click()
+  await expect(page.getByTestId('publication-ready')).toBeVisible({ timeout: 10_000 })
+  await page.getByTestId('publication-publish').click()
+  await expect(page).toHaveURL(/\/merchant(?:\/|$)/, { timeout: 10_000 })
 }

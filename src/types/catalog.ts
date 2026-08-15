@@ -256,6 +256,8 @@ export interface DraftProductCreateRequest {
   imageUrl?: string
   images?: string[]
   originalPrice?: number
+  fixedContent?: string
+  fixedContentType?: 'text' | 'url'
   primaryOfferName?: string
   offers?: DraftOfferInput[]
 }

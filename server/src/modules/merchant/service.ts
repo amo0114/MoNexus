@@ -449,15 +449,29 @@ export async function updateMyProduct(merchantId: number, productId: number, dat
   const product = await prisma.product.findFirst({ where: { id: productId, merchantId } })
   if (!product) throw notFound('商品不存在')
 
+  // Category writes are authoritative by id (legacy type is still accepted
+  // for compatibility). Resolve once up front so the persisted label snapshot
+  // cannot drift from the referenced category.
+  const hasCategoryInput = Object.prototype.hasOwnProperty.call(data, 'categoryId')
+    || Object.prototype.hasOwnProperty.call(data, 'type')
+  const resolvedCategory = hasCategoryInput
+    ? await resolveProductCategory({
+        categoryId: typeof data.categoryId === 'number' ? data.categoryId : undefined,
+        type: typeof data.type === 'string' ? data.type : undefined,
+      })
+    : null
+
   const nextPrice = typeof data.price === 'number' ? data.price : product.price
   const nextOriginalPrice = 'originalPrice' in data
     ? data.originalPrice as number | null
     : product.originalPrice
   assertOriginalPriceAtLeastSale(nextPrice, nextOriginalPrice)
-  const normalizedProductData = normalizeProductImageFields(
+  const normalizedProductDataWithCategory = normalizeProductImageFields(
     data as Record<string, unknown> & { imageUrl?: string | null; images?: string[] },
     product.images
   )
+  const { categoryId: _categoryId, type: _type, ...normalizedProductData } =
+    normalizedProductDataWithCategory as Record<string, unknown>
 
   const deliveryMode = (normalizedProductData.deliveryMode as string | undefined) ?? product.deliveryMode
   if (deliveryMode !== product.deliveryMode) {
@@ -515,6 +529,9 @@ export async function updateMyProduct(merchantId: number, productId: number, dat
       where: { id: productId },
       data: {
         ...normalizedProductData,
+        ...(resolvedCategory
+          ? { categoryId: resolvedCategory.categoryId, type: resolvedCategory.type }
+          : {}),
         deliveryMode,
         stockMode,
         // 新建/无业务记录商品切到即时库存时，遗留的额度字段不再代表库存。
@@ -1524,12 +1541,23 @@ async function assertMyDeliveryFile(tx: Prisma.TransactionClient | typeof prisma
 
 export async function listMyOffers(merchantId: number, productId: number) {
   await assertMyProduct(merchantId, productId)
-  return prisma.offer.findMany({
+  const offers = await prisma.offer.findMany({
     where: { productId },
     orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
     // P5：管理 UI 需要展示已挂载文件的名称/大小/可用状态。
-    include: { fixedFile: { select: { fileName: true, size: true, status: true } } },
+    include: {
+      fixedFile: { select: { fileName: true, size: true, status: true } },
+      _count: { select: { inventory: { where: { status: 'available' } } } },
+    },
   })
+
+  // 即时库存的可售量由 InventoryItem(status=available) 唯一决定；Offer.stock
+  // 是旧投影，不能直接返回给 Offer-first 工作台，否则导入后仍显示 0。
+  return offers.map(({ _count, ...offer }) => ({
+    ...offer,
+    stock: offer.deliveryMode === 'instant_inventory' ? _count.inventory : offer.stock,
+    availableStock: offer.deliveryMode === 'instant_inventory' ? _count.inventory : undefined,
+  }))
 }
 
 /**

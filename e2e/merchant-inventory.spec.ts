@@ -61,9 +61,9 @@ test('merchant filters products, imports then voids inventory with log entry', a
   // 重新进入 Offer-first 工作台作废 1 个，并验证 Offer/Product 分栏结果。
   const voidReason = `E2E 自动化作废 ${Date.now()}`
   await row.getByText('管理可售资源').click()
-  await page.getByTestId('inventory-void-count').fill('1')
-  await page.getByTestId('inventory-void-reason').fill(voidReason)
-  await page.getByTestId('inventory-void-submit').click()
+  await page.getByTestId('availability-void-count').fill('1')
+  await page.getByTestId('availability-void-reason').fill(voidReason)
+  await page.getByTestId('availability-void-submit').click()
 
   await expect(page.getByText(/已作废 1 个交付单元；当前规格剩余 .*商品汇总/)).toBeVisible({ timeout: 10_000 })
   await expect(availability).toContainText(`商品交付库存汇总：${stockBefore}`, { timeout: 10_000 })

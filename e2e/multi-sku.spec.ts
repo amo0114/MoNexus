@@ -1,5 +1,5 @@
 import { expect, test, type APIRequestContext } from '@playwright/test'
-import { API_BASE, SEED_ACCOUNTS, loginAs } from './helpers'
+import { API_BASE, SEED_ACCOUNTS, loginAs, publishMerchantProduct } from './helpers'
 
 /**
  * P4a SKU/套餐（Offer）全链路（spec: docs/specs/product-model-and-checkout.md §5）：
@@ -103,6 +103,7 @@ test.describe.serial('P4a multi-SKU purchase chain', () => {
       `E2E-SKU-BASIC-${Date.now()}`,
     ])
     await importInventory(request, token, product.id, state.premiumOfferId, [PREMIUM_CARD])
+    await publishMerchantProduct(request, token, product.id)
   })
 
   test('buyer switches SKU, price follows, and purchases the premium offer', async ({ page }) => {
@@ -250,6 +251,8 @@ test('single-SKU product stays transparent: no selector, purchase still works', 
     fixedContentType: 'url',
     stockMode: 'unlimited',
   })
+
+  await publishMerchantProduct(request, token, product.id)
 
   await loginAs(page, SEED_ACCOUNTS.user)
   await page.goto(`/product/${product.id}`)

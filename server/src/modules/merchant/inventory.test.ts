@@ -464,6 +464,17 @@ describe('Offer-first availability operations', () => {
     const byId = new Map(row.offers.map((offer: { id: number }) => [offer.id, offer]))
     expect(byId.get(await getDefaultOfferId(product.id))).toMatchObject({ stock: 2, availableStock: 2 })
     expect(byId.get(second.id)).toMatchObject({ stock: 3, availableStock: 3 })
+
+    // The dedicated Offer endpoint must expose the same inventory-derived
+    // projection as the product list; otherwise the Offer-first UI regresses
+    // to the persisted legacy stock value after an import.
+    const offersResponse = await api
+      .get(`/api/merchant/products/${product.id}/offers`)
+      .set(authHeader(accessToken))
+      .expect(200)
+    const offersById = new Map(offersResponse.body.map((offer: { id: number }) => [offer.id, offer]))
+    expect(offersById.get(await getDefaultOfferId(product.id))).toMatchObject({ stock: 2, availableStock: 2 })
+    expect(offersById.get(second.id)).toMatchObject({ stock: 3, availableStock: 3 })
   })
 
   it('previews without writes, re-analyses on confirm, and exposes offer-scoped audit without content', async () => {

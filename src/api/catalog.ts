@@ -205,6 +205,10 @@ export function buildDraftProductRequest(input: DraftProductInput): DraftProduct
   if (typeof input.imageUrl === 'string') payload.imageUrl = input.imageUrl
   if (Array.isArray(input.images)) payload.images = input.images.map(String)
   if (typeof input.originalPrice === 'number') payload.originalPrice = input.originalPrice
+  if (typeof input.fixedContent === 'string') payload.fixedContent = input.fixedContent
+  if (input.fixedContentType === 'text' || input.fixedContentType === 'url') {
+    payload.fixedContentType = input.fixedContentType
+  }
   if (typeof input.primaryOfferName === 'string') payload.primaryOfferName = input.primaryOfferName
   if (Array.isArray(input.offers)) payload.offers = input.offers.map(sanitizeDraftOffer)
 

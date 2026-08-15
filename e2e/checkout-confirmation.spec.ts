@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { API_BASE, SEED_ACCOUNTS, loginAs } from './helpers'
+import { API_BASE, SEED_ACCOUNTS, loginAs, publishMerchantProduct } from './helpers'
 
 /**
  * P1 结算确认链路（spec: docs/specs/product-model-and-checkout.md）：
@@ -27,7 +27,9 @@ test.describe('M-P1 checkout confirmation', () => {
       data: body,
     })
     expect(res.ok(), await res.text()).toBeTruthy()
-    return (await res.json()) as { id: number }
+    const product = (await res.json()) as { id: number }
+    await publishMerchantProduct(request, token, product.id)
+    return product
   }
 
   test('preview shows balance before/after, and price change forces re-confirmation', async ({ page, request }) => {

@@ -159,6 +159,9 @@ export const createMerchantProductSchema = markNotWritableFields(
 
 export const updateMerchantProductSchema = markNotWritableFields(
   merchantDraftProductFieldsSchema.partial().extend({
+    // Category changes remain categoryId-authoritative; the service resolves
+    // the active category and refreshes the legacy type snapshot atomically.
+    categoryId: z.number().int().positive().optional(),
     // update 允许显式传 null 清空固定内容（如从 instant_fixed 切到其他交付模式）；create 保持非 null
     fixedContent: z.string().trim().min(1).max(5000).nullable().optional(),
     // `null` is the explicit API contract for clearing these optional fields.

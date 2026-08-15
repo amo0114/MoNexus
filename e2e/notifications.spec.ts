@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { API_BASE, SEED_ACCOUNTS, loginAs, loginAsApi } from './helpers'
+import { API_BASE, SEED_ACCOUNTS, loginAs, loginAsApi, publishMerchantProduct } from './helpers'
 
 /**
  * SPEC-NOTIFY-001 Phase 1 E2E.
@@ -36,11 +36,11 @@ test.describe('Order notification system Phase 1', () => {
         price: 40,
         deliveryMode: 'manual_service',
         stockMode: 'unlimited',
-        status: 'active',
       },
     })
     expect(createProduct.ok(), await createProduct.text()).toBeTruthy()
     const product = await createProduct.json()
+    await publishMerchantProduct(request, merchant.accessToken, product.id)
 
     const orderRes = await request.post(`${API_BASE}/api/orders`, {
       headers: { Authorization: `Bearer ${buyer.accessToken}` },
@@ -89,11 +89,11 @@ test.describe('Order notification system Phase 1', () => {
         fixedContent: 'E2E-FIXED-CODE',
         fixedContentType: 'text',
         stockMode: 'unlimited',
-        status: 'active',
       },
     })
     expect(createProduct.ok(), await createProduct.text()).toBeTruthy()
     const product = await createProduct.json()
+    await publishMerchantProduct(request, merchant.accessToken, product.id)
 
     const orderRes = await request.post(`${API_BASE}/api/orders`, {
       headers: { Authorization: `Bearer ${buyer.accessToken}` },
@@ -142,11 +142,11 @@ test.describe('Order notification system Phase 1', () => {
         price: 35,
         deliveryMode: 'manual_service',
         stockMode: 'unlimited',
-        status: 'active',
       },
     })
     expect(createProduct.ok(), await createProduct.text()).toBeTruthy()
     const product = await createProduct.json()
+    await publishMerchantProduct(request, merchant.accessToken, product.id)
 
     const orderRes = await request.post(`${API_BASE}/api/orders`, {
       headers: { Authorization: `Bearer ${buyer.accessToken}` },

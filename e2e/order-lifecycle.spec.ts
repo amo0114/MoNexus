@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { API_BASE, SEED_ACCOUNTS, loginAs } from './helpers'
+import { API_BASE, SEED_ACCOUNTS, loginAs, publishMerchantProduct } from './helpers'
 
 /**
  * M3 order lifecycle closure smoke.
@@ -30,13 +30,13 @@ test.describe('manual_service order lifecycle', () => {
         price: 50,
         deliveryMode: 'manual_service',
         stockMode: 'unlimited',
-        status: 'active',
       },
     })
     expect(createProduct.ok(), await createProduct.text()).toBeTruthy()
     const product = await createProduct.json()
     expect(product.id).toBeTruthy()
     expect(product.deliveryMode).toBe('manual_service')
+    await publishMerchantProduct(request, merchantToken, product.id)
 
     const orderRes = await request.post(`${API_BASE}/api/orders`, {
       headers: { Authorization: `Bearer ${userToken}` },
