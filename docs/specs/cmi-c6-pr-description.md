@@ -6,7 +6,7 @@
 - Label: `run-e2e`
 - Source branch: `feat/catalog-merch-integration`
 - Implementation code under test: `c690025`
-- C5b runners: `685d23b` and `495d1a0`
+- C5b runners: `685d23b`, `495d1a0`, and `e279c72`
 
 ## Summary
 
