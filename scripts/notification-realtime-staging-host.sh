@@ -116,8 +116,20 @@ compose_for() {
 wait_public_local() {
   # prod-smoke uses the loopback WEB_PORT from the private env and exercises
   # the currently served web -> backend path without exposing any credential.
-  local root="$1" env_file="$2"
-  compose_for "$root" "$env_file" smoke
+  local root="$1" env_file="$2" attempt
+  # Backend-first intentionally recreates the server before the proxy smoke;
+  # allow its bounded Docker health/startup window to settle without weakening
+  # the smoke assertions themselves.
+  for attempt in {1..30}; do
+    if compose_for "$root" "$env_file" smoke; then
+      return 0
+    fi
+    if [[ "$attempt" -lt 30 ]]; then
+      echo "[INFO] staging web/backend not ready (attempt ${attempt}/30); retrying in 2s"
+      sleep 2
+    fi
+  done
+  fail 'staging web/backend did not pass smoke within the 60-second startup budget'
 }
 
 run_fixture() {
