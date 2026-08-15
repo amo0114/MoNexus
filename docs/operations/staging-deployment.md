@@ -84,17 +84,21 @@ may not publish an ARM64 `caddy` package. It does not alter provider firewalls;
 ensure the provider allows TCP 80 and 443. See the [official Caddy installation
 instructions](https://caddyserver.com/docs/install#debian-ubuntu-raspbian).
 
-The bootstrap also installs the reviewed, narrow sudoers include required by
-the protected realtime rehearsal. On a host that was bootstrapped before that
-include existed, run only the idempotent repair as root:
+The bootstrap also installs a root-owned Caddy helper and the reviewed, narrow
+sudoers include required by the protected realtime rehearsal. The helper accepts
+only the checked-in staging site payload, verifies its fixed SHA256, and then
+performs the site install, validation, and reload. On a host that was
+bootstrapped before that boundary existed, run only the idempotent repair as
+root:
 
 ```bash
 sudo DEPLOY_USER=monexus-deploy \
   bash deploy/staging/install-caddy-sudoers.sh
 ```
 
-That repair changes only `/etc/sudoers.d/monexus-staging-caddy`; it grants no
-general root shell and does not accept a password from GitHub Actions.
+That repair installs `/usr/local/sbin/monexus-staging-caddy-reload` and changes
+only `/etc/sudoers.d/monexus-staging-caddy`; it grants no general root shell and
+does not accept a password from GitHub Actions.
 
 Add the GitHub Actions staging deploy public key to
 `/home/monexus-deploy/.ssh/authorized_keys`, then capture the SSH host key in
@@ -181,15 +185,15 @@ dedicated `/etc/caddy/sites-enabled/monexus-staging.caddy` from
 existing `/etc/caddy/Caddyfile`, and reloads Caddy:
 
 ```bash
-sudo grep -F 'flush_interval -1' /etc/caddy/sites-enabled/monexus-staging.caddy
-sudo caddy validate --config /etc/caddy/Caddyfile
-sudo systemctl reload caddy
+printf '%s' "$(base64 -w0 deploy/staging/Caddyfile)" | \
+  sudo -n /usr/local/sbin/monexus-staging-caddy-reload
 ```
 
 The protected deploy user must have a non-interactive, narrowly delegated
-`sudo` capability for `install`, `grep`, `caddy validate`, and `systemctl
-reload caddy` (or an equivalent reviewed root wrapper). The workflow fails
-closed if `sudo -n` is unavailable, the dedicated site lacks
+`sudo` capability for the root-owned staging Caddy helper. The helper performs
+the `install`, `grep`, `caddy validate`, and `systemctl reload caddy` operations
+with fixed paths and a checked-in payload hash. The workflow fails closed if
+`sudo -n` is unavailable, the dedicated site lacks
 `flush_interval -1`, validation fails, or reload fails. It does not overwrite
 the global Caddyfile or production site blocks. A missing immediate-flush
 directive is an operator blocker, not a condition the workflow may waive.

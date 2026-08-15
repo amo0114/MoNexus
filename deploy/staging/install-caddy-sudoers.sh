@@ -7,6 +7,8 @@ set -Eeuo pipefail
 
 DEPLOY_USER="${DEPLOY_USER:-monexus-deploy}"
 SUDOERS_FILE="/etc/sudoers.d/monexus-staging-caddy"
+HELPER_FILE="/usr/local/sbin/monexus-staging-caddy-reload"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
 fail() {
   echo "[ERROR] $*" >&2
@@ -22,17 +24,18 @@ if ! getent passwd "$DEPLOY_USER" >/dev/null; then
 fi
 
 command -v visudo >/dev/null 2>&1 || fail "visudo is required to validate sudoers."
+[[ -f "$SCRIPT_DIR/reload-caddy-site.sh" ]] || fail "Missing Caddy helper: $SCRIPT_DIR/reload-caddy-site.sh"
+
+install -o root -g root -m 0755 "$SCRIPT_DIR/reload-caddy-site.sh" "$HELPER_FILE"
 
 sudoers_temp="$(mktemp "${SUDOERS_FILE}.XXXXXX")"
 trap 'rm -f "$sudoers_temp"' EXIT
 
-# The install wildcard is limited to the run-scoped temporary Caddy file and
-# the one staging include. The remaining commands have fixed arguments.
+# The deploy user gets one fixed, root-owned helper and no direct root command
+# with user-selected paths or arguments. The helper validates the exact
+# reviewed Caddy site before it writes or reloads anything.
 cat > "$sudoers_temp" <<EOF
-$DEPLOY_USER ALL=(root) NOPASSWD: /usr/bin/install -o root -g root -m 0644 /tmp/monexus-staging.caddy.* /etc/caddy/sites-enabled/monexus-staging.caddy
-$DEPLOY_USER ALL=(root) NOPASSWD: /usr/bin/grep -Fqx "    flush_interval -1" /etc/caddy/sites-enabled/monexus-staging.caddy
-$DEPLOY_USER ALL=(root) NOPASSWD: /usr/bin/caddy validate --config /etc/caddy/Caddyfile
-$DEPLOY_USER ALL=(root) NOPASSWD: /usr/bin/systemctl reload caddy
+$DEPLOY_USER ALL=(root) NOPASSWD: $HELPER_FILE ""
 EOF
 
 chmod 0440 "$sudoers_temp"
