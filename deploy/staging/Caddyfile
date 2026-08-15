@@ -11,7 +11,5 @@ staging.monexus.oai-o.com {
     # SPEC-NOTIFY-RT-001: forward ready/events immediately; do not wait for
     # Caddy's adaptive response buffering heuristics.
     flush_interval -1
-    # Preserve the SSE no-buffer contract across the host-level proxy.
-    header_down X-Accel-Buffering no
   }
 }

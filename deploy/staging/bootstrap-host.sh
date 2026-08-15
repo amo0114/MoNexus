@@ -127,7 +127,6 @@ $STAGING_HOST {
   encode zstd gzip
   reverse_proxy 127.0.0.1:18081 {
     flush_interval -1
-    header_down X-Accel-Buffering no
   }
 }
 EOF
