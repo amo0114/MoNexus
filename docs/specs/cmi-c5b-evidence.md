@@ -21,7 +21,7 @@ CMI database: `monexus_test_catalog_merch_integration` only
 | Identity raw-writer closure | `PATH=/root/.nvm/versions/node/v20.19.5/bin:$PATH npx playwright test --config playwright.identity-sync.logic.config.ts`; `rg -n "\\.setUser\\(|\\.setAccessToken\\(|setUser:|setAccessToken:" src tests` | PASS, 56/56 Identity logic tests; static scan returned zero source/test matches after `0d9f7ce`; Node 20; frontend `npm run build` passed |
 | Merch dedicated gates | `PATH=/root/.nvm/versions/node/v20.19.5/bin:$PATH bash scripts/verify-merchandising.sh` | PASS; ranking 2 files / 55 tests, points 4 server files / 56 tests + 3 UI files / 91 tests, asset gallery 3/3; root/server runtime and build passed; each disposable CMI DB cleaned |
 | Root security/public-field targeted suite | Root targeted security/public-field suite | PASS, 8 files / 117 tests; exit 0 |
-| Server security suite | Server security suite with `TEST_DATABASE_URL` | NOT PASS: execution was interrupted after the `TEST_DATABASE_URL`-backed run did not complete; no PASS evidence was produced |
+| Server security suite | Server security suite with `TEST_DATABASE_URL` | Partial split evidence recorded below; the earlier 12-file run was interrupted, so this is not a single full server gate |
 
 ### Security split ledger (2026-08-15)
 
@@ -33,10 +33,11 @@ cleanup were performed by the CMI dbguard runner.
 
 | Subset | Exact command / files | Result |
 | --- | --- | --- |
-| Pure security subset (3 files / 33 tests) | `TEST_DATABASE_URL=<CMI> DATABASE_URL=<CMI> REDIS_ENABLED=false REDIS_REQUIRED=false server/node_modules/.bin/vitest run --config server/vitest.config.ts src/modules/catalog/contentSanitizer.test.ts src/modules/catalog/categorySchema.test.ts src/modules/merchandising/__tests__/promotions-dto-state.test.ts` | PASS, exit 0; duration was captured in the disposable-run transcript (not retained in this ledger) |
-| DB-backed security subset (5 files / 53 tests) | `TEST_DATABASE_URL=<CMI> DATABASE_URL=<CMI> REDIS_ENABLED=false REDIS_REQUIRED=false server/node_modules/.bin/vitest run --config server/vitest.config.ts src/modules/catalog/publicationRoutes.test.ts src/modules/catalog/applicationService.test.ts src/modules/catalog/fakaPreviewConfirm.test.ts src/modules/merchandising/__tests__/promotions-campaign.test.ts src/modules/merchandising/__tests__/editorial-entitlements.test.ts` | NOT PASS / interrupted; no exit-0 or duration evidence; therefore no server security PASS is claimed |
+| Pure security subset (3 files / 33 tests) | `TEST_DATABASE_URL=<CMI> DATABASE_URL=<CMI> REDIS_ENABLED=false REDIS_REQUIRED=false server/node_modules/.bin/vitest run --config server/vitest.config.ts src/modules/catalog/contentSanitizer.test.ts src/modules/catalog/categorySchema.test.ts src/modules/merchandising/__tests__/promotions-dto-state.test.ts` | PASS, exit 0; Vitest duration 45.26s |
+| DB-backed security subset (5 files / 53 tests) | Five subsequent per-file DB-backed runs: `publicationRoutes.test.ts` — 3 tests / 8.49s (wall 9s); `applicationService.test.ts` — 15 / 17.34s (wall 18s); `fakaPreviewConfirm.test.ts` — 9 / 15.71s (wall 16s); `promotions-campaign.test.ts` — 22 / 26.45s (wall 27s); `editorial-entitlements.test.ts` — 4 / 6.17s (wall 6s) | PASS, all exit 0; 5 files / 53 tests total |
 
-The split does not establish a single full server security gate.  Explicit MFA,
+The split is partial evidence and does not establish a single full server security
+gate; the earlier 12-file run was the interrupted run. Explicit MFA,
 log, and other audit gaps remain; consequently `G-CAT-PR-008` and
 `G-MERCH-PR-008` remain **Pending**.
 
@@ -85,8 +86,8 @@ temporary runner resources were cleaned after each run.
 
 1. Owner reviews the evidence and fills the remaining Catalog/Merch PR Gate
    rows (release/rollback, performance, and PR description evidence).
-2. Keep `G-CAT-PR-008` and `G-MERCH-PR-008` Pending: the root targeted suite is
-   recorded above, but the interrupted server security suite is not a PASS.
+2. Keep `G-CAT-PR-008` and `G-MERCH-PR-008` Pending: there is no unified full
+   server security gate, and explicit MFA, log, and other audit gaps remain.
 3. Prepare the C6 PR to `develop` with `run-e2e`, the v0.1.2 revision note,
    Deferred list, and this evidence index; keep the PR blocked while any gate
    remains Pending.
