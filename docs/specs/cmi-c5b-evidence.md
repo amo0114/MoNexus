@@ -2,8 +2,9 @@
 
 Date: 2026-08-15
 Branch: `feat/catalog-merch-integration`
-Current evidence HEAD: `61e41af` (security/audit, fixture, local-performance
-and evidence ledger tip; based on the 100k benchmark tip `4ab3de9`).
+Current evidence HEAD: `dd98dc3` (docs-only evidence tip; based on the
+security/audit and fixture tip `61e41af`, which in turn includes benchmark
+`4ab3de9`).
 Implementation code ancestor under test: `c690025b9d1059bc47b6c1c16aa5811b2971d373`.
 C5b runner commits: `685d23b` (dedicated Merch gates/config), `495d1a0`
 (disposable E2E database cleanup), `e279c72` (executable modes), `e329d1b`
@@ -24,7 +25,7 @@ CMI database: `monexus_test_catalog_merch_integration` only
 | Identity raw-writer closure | `PATH=/root/.nvm/versions/node/v20.19.5/bin:$PATH npx playwright test --config playwright.identity-sync.logic.config.ts`; `rg -n "\\.setUser\\(|\\.setAccessToken\\(|setUser:|setAccessToken:" src tests` | PASS, 56/56 Identity logic tests; static scan returned zero source/test matches after `0d9f7ce`; Node 20; frontend `npm run build` passed |
 | Merch dedicated gates | `PATH=/root/.nvm/versions/node/v20.19.5/bin:$PATH bash scripts/verify-merchandising.sh` | PASS; ranking 2 files / 55 tests, points 4 server files / 56 tests + 3 UI files / 91 tests, asset gallery 3/3; root/server runtime and build passed; each disposable CMI DB cleaned |
 | Root security/public-field targeted suite | Root targeted security/public-field suite | PASS, 8 files / 117 tests; exit 0 |
-| Unified CMI server security gate | Node 20.19.5/npm 10.8.2, disposable CMI DB, 8 focused security/admin files | **PASS, 8 files / 70 tests, exit 0;** runtime admin MFA boundaries, audit reason redaction, public-field/PointLog boundaries, catalog admin authorization, auth/security-event and mail redaction suites all passed; DB dropped afterward |
+| Unified CMI server security gate | Node 20.19.5/npm 10.8.2, disposable CMI DB, 8 focused security/admin files | **PASS, 8 files / 70 tests, exit 0, Vitest 111.43s;** runtime admin MFA boundaries, audit reason redaction, public-field/PointLog boundaries, catalog admin authorization, auth/security-event and mail redaction suites all passed; DB dropped afterward |
 | Local perf/compat runner | `TEST_DATABASE_URL=<CMI> DATABASE_URL=<CMI> REDIS_ENABLED=false REDIS_REQUIRED=false bash scripts/verify-cmi-perf-compat.sh`; `bash scripts/verify-cmi-100k-order-p95.sh`; `npm run check:bundle-budget` | Cache 7/7, server build and dashboard 2/2 PASS; latest 100k synthetic-order benchmark PASS locally (30 samples; summary P95 16.504372 ms, timeseries P95 80.750211 ms); frontend build PASS but conservative 150 KiB proxy **FAIL** at 315.74 KiB gzip; staging/production/canary P95 and release bundle acceptance remain Pending |
 | Release rehearsal / Owner handoff | `bash -n scripts/staging-compose.sh scripts/run-notification-realtime-staging-rehearsal.sh` plus docs review | PASS for syntax/local dry-run documentation; no staging deploy, canary, restore, rollback, or Owner/PAR approval was executed, so release gates remain Pending |
 

@@ -5,8 +5,8 @@
 - Base: `develop`
 - Label: `run-e2e`
 - Source branch: `feat/catalog-merch-integration`
-- Current evidence HEAD: `61e41af` (security/audit, fixture, local-performance
-  and evidence ledger tip; based on the 100k benchmark tip `4ab3de9`);
+- Current evidence HEAD: `dd98dc3` (docs-only evidence tip; based on the
+  security/audit and fixture tip `61e41af`, which includes benchmark `4ab3de9`);
   implementation code ancestor under test: `c690025`
 - C5b runners/evidence: `685d23b`, `495d1a0`, `e279c72`, `e329d1b`, `1d37d86`,
   `4ab3de9`, and `61e41af`
