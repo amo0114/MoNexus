@@ -110,6 +110,7 @@ async function createFixture() {
         password: hashed,
         role: 'merchant',
         nickname: `RT staging merchant ${runId.slice(-8)}`,
+        emailVerified: new Date(),
       },
     })
     const merchant = await tx.merchant.create({
@@ -154,6 +155,7 @@ async function createFixture() {
         password: hashed,
         role: 'user',
         nickname: `RT staging buyer ${runId.slice(-8)}`,
+        emailVerified: new Date(),
       },
     })
     await tx.pointAccount.create({

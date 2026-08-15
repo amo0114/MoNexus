@@ -367,6 +367,7 @@ async function runLatency(password) {
   let failureCount = 0
   let failedSample = 0
   let failureStage = 'browser_start'
+  let failureMessage = ''
   let caught = null
 
   try {
@@ -386,6 +387,7 @@ async function runLatency(password) {
     await openMerchantOrders(page, 'ready', merchantSession)
     for (let index = 0; index < sampleCount; index += 1) {
       failureStage = 'order_api'
+      failedSample = index + 1
       const orderId = await createOrder(buyerApi, checkout, password)
       const apiCompletedAt = performance.now()
       failureStage = 'merchant_dom'
@@ -403,6 +405,7 @@ async function runLatency(password) {
     failureStage = 'complete'
   } catch (error) {
     caught = error
+    failureMessage = error instanceof Error ? error.message : String(error)
     if (failureCount === 0) failureCount = 1
   } finally {
     await Promise.allSettled([
@@ -433,6 +436,7 @@ async function runLatency(password) {
     `failure_count=${failureCount}`,
     `failure_stage=${passed ? 'none' : failureStage}`,
     `failed_sample=${failedSample}`,
+    `failure_message=${(passed ? '' : failureMessage).replace(/[\r\n=]/g, ' ').slice(0, 240)}`,
     `p50_ms=${p50}`,
     `p95_ms=${p95}`,
     `p99_ms=${p99}`,
@@ -452,7 +456,7 @@ async function runLatency(password) {
   }
 
   if (!passed) {
-    console.error(`[FAIL] staging latency collection stopped at ${failureStage}; aggregate FAIL evidence was written`)
+    console.error(`[FAIL] staging latency collection stopped at ${failureStage}; ${failureMessage || 'no error message'}; aggregate FAIL evidence was written`)
     throw new Error('staging latency thresholds or sample completion requirements were not met')
   }
   saveState({ lastOrderId, latencySamples: latencies.length })
