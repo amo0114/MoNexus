@@ -51,6 +51,27 @@ latency number is inferred. Staging/production P95, 100,000-order P95, and
 frontend bundle budget remain **PENDING** and require the corresponding
 external dataset/tooling.
 
+### Disposable 100k-order local benchmark
+
+Command (Node 20.19.5; database lifecycle is guarded to the disposable
+`monexus_test_catalog_merch_integration` database):
+
+```bash
+bash scripts/verify-cmi-100k-order-p95.sh
+```
+
+Observed output on 2026-08-15 (`order_count=100000`, `samples=30`):
+
+| Operation | P50 | P95 | Max |
+| --- | ---: | ---: | ---: |
+| `getSummary` | 11.497841 ms | 14.481901 ms | 27.224439 ms |
+| `getTimeseries('30d')` | 70.925946 ms | 108.240706 ms | 123.585856 ms |
+
+This is a local PostgreSQL service benchmark with synthetic rows and 30
+sequential warm query samples per operation. It is evidence for this local
+dataset/runtime only; it is not staging/production evidence and does not
+replace an externally collected merchandising/API P95 or bundle budget.
+
 ### Local frontend bundle budget check
 
 `REQ-MERCH-NF-006` specifies runtime bundle **new assets ≤150 KiB gzip**. The
