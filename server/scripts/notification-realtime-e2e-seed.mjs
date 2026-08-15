@@ -77,6 +77,7 @@ const manualProduct = await prisma.product.create({
     deliveryMode: 'manual_service',
     stockMode: 'limited',
     merchantId: merchant.id,
+    category: { connect: { code: 'network-node' } },
   },
 })
 const manualOffer = await prisma.offer.create({
@@ -105,6 +106,7 @@ const instantProduct = await prisma.product.create({
     fixedContent: instantSecret,
     fixedContentType: 'text',
     merchantId: merchant.id,
+    category: { connect: { code: 'network-node' } },
   },
 })
 const instantOffer = await prisma.offer.create({
