@@ -163,18 +163,18 @@ jobs:
           printf '%s\n' "$STAGING_SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
 
+      - name: Check out rehearsal orchestration
+        if: steps.readiness.outputs.ready == 'true' && env.RELEASE_ACTION == 'realtime_rehearsal'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.package-source.outputs.deploy_commit }}
+
       - name: Download immutable source archive
         if: steps.readiness.outputs.ready == 'true' && env.RELEASE_ACTION != 'rollback'
         uses: actions/download-artifact@v4
         with:
           name: monexus-staging-source-${{ needs.package-source.outputs.deploy_commit }}
           path: artifacts
-
-      - name: Check out rehearsal orchestration
-        if: steps.readiness.outputs.ready == 'true' && env.RELEASE_ACTION == 'realtime_rehearsal'
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.package-source.outputs.deploy_commit }}
 
       - name: Install and activate staging realtime Caddy site
         if: steps.readiness.outputs.ready == 'true' && env.RELEASE_ACTION == 'realtime_rehearsal'
