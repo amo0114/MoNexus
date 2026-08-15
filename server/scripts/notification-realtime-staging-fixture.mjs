@@ -134,7 +134,7 @@ async function createFixture() {
         deliveryMode: 'manual_service',
         stockMode: 'limited',
         category: { connect: { code: 'network-node' } },
-        merchantId: merchant.id,
+        merchant: { connect: { id: merchant.id } },
       },
     })
     const offer = await tx.offer.create({
