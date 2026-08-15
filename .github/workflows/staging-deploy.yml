@@ -170,6 +170,12 @@ jobs:
           name: monexus-staging-source-${{ needs.package-source.outputs.deploy_commit }}
           path: artifacts
 
+      - name: Check out rehearsal orchestration
+        if: steps.readiness.outputs.ready == 'true' && env.RELEASE_ACTION == 'realtime_rehearsal'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.package-source.outputs.deploy_commit }}
+
       - name: Install and activate staging realtime Caddy site
         if: steps.readiness.outputs.ready == 'true' && env.RELEASE_ACTION == 'realtime_rehearsal'
         run: |
@@ -212,12 +218,6 @@ jobs:
             -o StrictHostKeyChecking=yes \
             "$archive" \
             "$STAGING_SSH_USER@$STAGING_SSH_HOST:/tmp/monexus-staging-${DEPLOY_COMMIT}.tar.gz"
-
-      - name: Check out rehearsal orchestration
-        if: steps.readiness.outputs.ready == 'true' && env.RELEASE_ACTION == 'realtime_rehearsal'
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.package-source.outputs.deploy_commit }}
 
       - name: Set up Node.js 20 for staging collector
         if: steps.readiness.outputs.ready == 'true' && env.RELEASE_ACTION == 'realtime_rehearsal'
