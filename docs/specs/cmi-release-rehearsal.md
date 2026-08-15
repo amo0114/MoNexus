@@ -45,12 +45,24 @@ for immutable SHA `4fe0fbcac899bbc388184e0dfe2d59b9dbe90c2c`; its successful
 staging deployment (`5919176861`) is the known-good rollback target. The live
 rehearsal target remains distinct and requires the protected `staging` reviewer.
 
+The exact-SHA dry-run was executed as [workflow run 31885572435](https://github.com/amo0114/MoNexus/actions/runs/31885572435)
+for `0b4fb2a8f3aedb188b55a9aeb0cdb3b2f174169f`; both jobs passed and the release
+job recorded that no SSH connection or staging-host change occurred. The first
+live attempt was [workflow run 31885609141](https://github.com/amo0114/MoNexus/actions/runs/31885609141)
+with Owner approval and the required confirmation, but it stopped at the first
+Caddy host step because the remote deploy user lacked passwordless sudo. No
+application release, fixture, collector, or rollback ran. Commit `3710138`
+adds the idempotent root repair `deploy/staging/install-caddy-sudoers.sh`; a
+root/operator must run that repair on the staging host before a new live run.
+
 ## Rehearsal gates (all explicit)
 
 - [x] Owner named in the release record: `amo0114`; support/on-call contact and exact window remain Pending.
 - [x] PAR authorization is recorded in `docs/specs/cmi-owner-handoff.md`; exact rehearsal target/window approval remains Pending.
 - [ ] Staging secrets/known-host key and `STAGING_HEALTHCHECK_URL` are present; no
   secret values enter logs or this repository.
+- [ ] Host Caddy sudo delegation is installed by a root/operator; the prior live
+  run proved the workflow fails closed when `sudo -n` is unavailable.
 - [ ] Baseline health passes before exercise: public health URL plus
   `/api/health/live` and `/api/health/ready` where exposed.
 - [ ] Canary account and merchant test fixture are identified; canary percentage,

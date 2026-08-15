@@ -2,7 +2,7 @@
 
 Date: 2026-08-15
 Branch: `feat/catalog-merch-integration`
-Current evidence HEAD: `dd98dc3` (docs-only evidence tip; based on the
+Current evidence HEAD: `3710138` (staging sudo-boundary repair; based on the
 security/audit and fixture tip `61e41af`, which in turn includes benchmark
 `4ab3de9`).
 Implementation code ancestor under test: `c690025b9d1059bc47b6c1c16aa5811b2971d373`.
@@ -27,7 +27,7 @@ CMI database: `monexus_test_catalog_merch_integration` only
 | Root security/public-field targeted suite | Root targeted security/public-field suite | PASS, 8 files / 117 tests; exit 0 |
 | Unified CMI server security gate | Node 20.19.5/npm 10.8.2, disposable CMI DB, 8 focused security/admin files | **PASS, 8 files / 70 tests, exit 0, Vitest 111.43s;** runtime admin MFA boundaries, audit reason redaction, public-field/PointLog boundaries, catalog admin authorization, auth/security-event and mail redaction suites all passed; DB dropped afterward |
 | Local perf/compat runner | `TEST_DATABASE_URL=<CMI> DATABASE_URL=<CMI> REDIS_ENABLED=false REDIS_REQUIRED=false bash scripts/verify-cmi-perf-compat.sh`; `bash scripts/verify-cmi-100k-order-p95.sh`; `npm run check:bundle-budget` | Cache 7/7, server build and dashboard 2/2 PASS; latest 100k synthetic-order benchmark PASS locally (30 samples; summary P95 16.504372 ms, timeseries P95 80.750211 ms); frontend build PASS but conservative 150 KiB proxy **FAIL** at 315.74 KiB gzip; staging/production/canary P95 and release bundle acceptance remain Pending |
-| Release rehearsal / Owner handoff | protected staging workflow run `31877359120` for baseline `4fe0fbcac899bbc388184e0dfe2d59b9dbe90c2c` plus local syntax checks | Baseline deploy/smoke/public readiness PASS; deployment `5919176861` is recorded as known-good. `staging` Environment required reviewer `amo0114` (rule `62780483`) is configured. Canary, rollback rehearsal, external P95, and exact target-window approval remain Pending |
+| Release rehearsal / Owner handoff | baseline run `31877359120`; exact-SHA dry-run `31885572435`; live attempt `31885609141`; local syntax checks | Baseline deploy/smoke/public readiness PASS; deployment `5919176861` is known-good. Dry-run PASS with no host change. Live attempt was Owner-approved but failed closed at Caddy `sudo -n` because the host lacked the restricted delegation; no app/fixture/rollback ran. Repair script is `3710138`; root host action and a succeeding live rehearsal are Pending. `staging` Environment reviewer `amo0114` (rule `62780483`) is configured. Canary, rollback rehearsal, external P95, and exact target-window approval remain Pending |
 
 The unified security command used `server/vitest.config.ts` with
 `fileParallelism=false`/`singleFork=true` and these eight files: `security-gaps.test.ts`,

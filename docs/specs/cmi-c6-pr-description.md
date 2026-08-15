@@ -69,6 +69,12 @@ performance numbers are not invented or promoted to P0 acceptance criteria.
   rollback target. Owner `amo0114` and the protected staging required-reviewer
   rule are recorded. Distinct canary/rehearsal, rollback execution, external P95,
   and bundle acceptance remain Pending.
+- Exact-SHA dry-run [31885572435](https://github.com/amo0114/MoNexus/actions/runs/31885572435)
+  passed with no host change. Owner-approved live attempt
+  [31885609141](https://github.com/amo0114/MoNexus/actions/runs/31885609141)
+  failed closed before application deployment because the staging deploy user
+  lacked the required `sudo -n` Caddy delegation. Commit `3710138` adds the
+  idempotent root repair; a successful live rehearsal remains Pending.
 
 ## Deferred
 
