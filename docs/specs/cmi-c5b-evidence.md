@@ -41,6 +41,24 @@ gate; the earlier 12-file run was the interrupted run. Explicit MFA,
 log, and other audit gaps remain; consequently `G-CAT-PR-008` and
 `G-MERCH-PR-008` remain **Pending**.
 
+### Legacy `Product.isHot` audit (2026-08-15)
+
+The production-source scan found no data-write literal `isHot: true` outside
+tests/fixtures/schema/migrations. The remaining matches are schema omit-key
+configuration or snapshot cursor predicates, not writes to the legacy Product
+column. Allowed cleanup writes are `isHot: false` in `server/src/prisma/seed.ts`
+(`:139,156,185,205`). The public/admin paths explicitly strip or ignore the
+legacy column (`server/src/modules/admin/service.ts:1320-1323`,
+`server/src/modules/products/service.ts:429-456`,
+`server/src/modules/products/cache.ts:67-70`).
+
+The attempted disposable-DB test batch was not valid evidence: the first run
+hit a PostgreSQL `40P01` deadlock during the shared setup `TRUNCATE`, and the
+follow-up CLI attempt used the wrong Node runtime. No exit-0 legacy cleanup
+artifact or true-count-to-false-count fixture was produced; the CMI database
+was subsequently removed by `scripts/cmi/dbguard.sh`. Therefore
+`CHK-MERCH-FND-002` and `G-MERCH-PR-003` remain **Pending**.
+
 The first full-run attempt was invalid because the disposable CMI database had already
 been removed by the prior runner (154 files failed during initialization and 1420 tests
 were skipped). It is excluded from the result above; the database was recreated from

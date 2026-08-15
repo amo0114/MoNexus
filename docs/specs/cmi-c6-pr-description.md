@@ -45,6 +45,10 @@ performance numbers are not invented or promoted to P0 acceptance criteria.
   9 + 22 + 4 = 53 tests), all exit 0. The earlier 12-file run was interrupted;
   this split is not a single full server gate. Explicit MFA/log/other audit
   gaps remain, so `G-CAT-PR-008` and `G-MERCH-PR-008` stay Pending.
+- Legacy `Product.isHot` static source audit found no production `isHot: true`
+  writes and confirmed public/admin projection stripping; the disposable-DB
+  batch was invalidated by a PostgreSQL `40P01` setup deadlock, so no cleanup
+  count artifact exists and `CHK-MERCH-FND-002`/`G-MERCH-PR-003` remain Pending.
 - Identity closure: 56/56 logic tests, raw-writer static scan zero, frontend
   build green.
 
