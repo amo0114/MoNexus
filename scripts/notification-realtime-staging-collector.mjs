@@ -242,6 +242,8 @@ async function installStreamProbe(page) {
     const listeners = new Set()
     let text = ''
     const statuses = []
+    const contentTypes = []
+    let requestCount = 0
     const notify = () => { for (const listener of [...listeners]) listener() }
     const waitFor = (predicate, timeoutMs) => new Promise((resolve, reject) => {
       if (predicate()) return resolve()
@@ -260,13 +262,22 @@ async function installStreamProbe(page) {
     target.__MONEXUS_RT_STAGING_PROBE__ = {
       waitReady: (timeoutMs) => waitFor(() => text.includes('stream.ready'), timeoutMs),
       waitStatus: (status, timeoutMs) => waitFor(() => statuses.includes(status), timeoutMs),
+      snapshot: () => ({
+        requestCount,
+        statuses: [...statuses],
+        contentTypes: [...contentTypes],
+        bodyBytesObserved: text.length,
+        readyObserved: text.includes('stream.ready'),
+      }),
     }
     window.fetch = (async (input, init) => {
       const request = new Request(input, init)
       const url = new URL(request.url, window.location.origin)
       if (url.pathname !== '/api/notifications/stream') return originalFetch(request)
+      requestCount += 1
       const response = await originalFetch(request)
       statuses.push(response.status)
+      contentTypes.push(response.headers.get('content-type') ?? '')
       notify()
       if (!response.body || !response.headers.get('content-type')?.includes('text/event-stream')) return response
       const [applicationBody, inspectionBody] = response.body.tee()
@@ -294,19 +305,29 @@ async function installStreamProbe(page) {
 }
 
 async function waitForProbe(page, kind, value, timeoutMs) {
-  await page.evaluate(({ requestedKind, requestedValue, timeout }) => {
-    const probe = window.__MONEXUS_RT_STAGING_PROBE__
-    if (!probe) throw new Error('staging stream probe missing')
-    return requestedKind === 'ready'
-      ? probe.waitReady(timeout)
-      : probe.waitStatus(requestedValue, timeout)
-  }, { requestedKind: kind, requestedValue: value, timeout: timeoutMs })
+  try {
+    await page.evaluate(({ requestedKind, requestedValue, timeout }) => {
+      const probe = window.__MONEXUS_RT_STAGING_PROBE__
+      if (!probe) throw new Error('staging stream probe missing')
+      return requestedKind === 'ready'
+        ? probe.waitReady(timeout)
+        : probe.waitStatus(requestedValue, timeout)
+    }, { requestedKind: kind, requestedValue: value, timeout: timeoutMs })
+  } catch (error) {
+    const snapshot = await page.evaluate(() => (
+      window.__MONEXUS_RT_STAGING_PROBE__?.snapshot?.() ?? null
+    )).catch(() => null)
+    const message = error instanceof Error ? error.message : String(error)
+    throw new Error(`${message}; stream_probe=${JSON.stringify(snapshot)}`)
+  }
 }
 
 async function openMerchantOrders(page, expectedStream, session) {
   await installStreamProbe(page)
   await injectMerchantSession(page, session)
-  await page.goto(new URL('/merchant/dashboard', baseUrl).href, { waitUntil: 'domcontentloaded' })
+  // The orders tab and its DOM probe belong to the main merchant workbench;
+  // /merchant/dashboard is the separate analytics page and has no order tab.
+  await page.goto(new URL('/merchant', baseUrl).href, { waitUntil: 'domcontentloaded' })
   if (expectedStream === 'ready') await waitForProbe(page, 'ready', null, 15_000)
   else await waitForProbe(page, 'status', 404, 15_000)
   await page.getByRole('button', { name: '订单管理', exact: true }).click()
