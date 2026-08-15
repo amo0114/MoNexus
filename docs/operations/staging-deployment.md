@@ -84,6 +84,18 @@ may not publish an ARM64 `caddy` package. It does not alter provider firewalls;
 ensure the provider allows TCP 80 and 443. See the [official Caddy installation
 instructions](https://caddyserver.com/docs/install#debian-ubuntu-raspbian).
 
+The bootstrap also installs the reviewed, narrow sudoers include required by
+the protected realtime rehearsal. On a host that was bootstrapped before that
+include existed, run only the idempotent repair as root:
+
+```bash
+sudo DEPLOY_USER=monexus-deploy \
+  bash deploy/staging/install-caddy-sudoers.sh
+```
+
+That repair changes only `/etc/sudoers.d/monexus-staging-caddy`; it grants no
+general root shell and does not accept a password from GitHub Actions.
+
 Add the GitHub Actions staging deploy public key to
 `/home/monexus-deploy/.ssh/authorized_keys`, then capture the SSH host key in
 known-hosts format. Do not send SSH passwords or private keys in chat.
