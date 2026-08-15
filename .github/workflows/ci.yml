@@ -148,7 +148,8 @@ jobs:
       JWT_SECRET: ci-jwt-secret-at-least-32-characters-long-xx
       FRONTEND_ORIGIN: http://localhost:5173
       # 全局 /api limiter 无测试跳过（app.ts），全量套件单进程共享计数，
-      # 默认 300 次/15 分钟会从第 301 个请求起整片 429（与 E2E 作业同值）。
+      # 默认 300 次/15 分钟会从第 301 个请求起整片 429；这个 CI 后端
+      # 测试作业保持独立的测试上限，不改变生产默认值。
       API_RATE_LIMIT_MAX: 3000
 
     steps:
@@ -251,7 +252,9 @@ jobs:
       TEST_DATABASE_URL: postgresql://monexus:monexus_dev_2026@localhost:5432/monexus_test?schema=public
       JWT_SECRET: ci-jwt-secret-at-least-32-characters-long-xx
       FRONTEND_ORIGIN: http://localhost:5173
-      API_RATE_LIMIT_MAX: 3000
+      # E2E shares one test client across the full suite; this test-only
+      # headroom prevents aggregate /api traffic from ending in 429.
+      API_RATE_LIMIT_MAX: 10000
 
     steps:
       - name: Check out repository
@@ -392,7 +395,8 @@ jobs:
           CI: 'true'
           E2E_BASE_URL: http://127.0.0.1:5173
           # Keep API fixture traffic on a distinct loopback client address;
-          # API_RATE_LIMIT_MAX remains 3000 and no limiter is bypassed.
+          # API_RATE_LIMIT_MAX is raised for aggregate E2E traffic only;
+          # no limiter is bypassed and production defaults are unchanged.
           E2E_API_URL: 'http://[::1]:3000'
 
       - name: Upload Playwright report
