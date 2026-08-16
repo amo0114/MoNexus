@@ -189,6 +189,20 @@ test.describe.serial('T-MERCH-QA-003 merchandising smoke', () => {
     await expect(sponsoredCard).toHaveCount(1)
     // 不再渲染独立 SponsoredShelf。
     await expect(page.getByTestId('merch-sponsored-shelf')).toHaveCount(0)
+
+    // UX-review screenshots (SPEC-CMI-UX-001 reviewer handoff): desktop with
+    // the sponsored card blended in, and a no-candidates category view.
+    await page.screenshot({ path: 'outputs/cmi-ux-store-with-sponsored.png', fullPage: true })
+    await page.getByRole('button', { name: '充值卡密' }).click()
+    await expect(page.getByTestId(`store-product-card-${productId}`)).toHaveCount(0, { timeout: 10_000 })
+    await page.screenshot({ path: 'outputs/cmi-ux-store-no-candidates.png', fullPage: true })
+
+    // Mobile viewport (compact 2-col grid) with candidates.
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.goto('/')
+    const sponsoredMobile = page.getByTestId(`store-product-card-${productId}`)
+    await expect(sponsoredMobile).toBeVisible({ timeout: 15_000 })
+    await page.screenshot({ path: 'outputs/cmi-ux-store-with-sponsored-mobile.png', fullPage: true })
   })
 
   test('merchant campaign panel shows the active campaign with the charged timeline state', async ({ page }) => {
