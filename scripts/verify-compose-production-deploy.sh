@@ -77,6 +77,26 @@ for required_fragment in \
     fail "Staging host script is missing required recovery boundary: ${required_fragment}"
 done
 
+restore_sequence_count="$(
+  awk '
+    function trim_indent(value) {
+      sub(/^[[:space:]]+/, "", value)
+      return value
+    }
+    trim_indent($0) == "compose_for \"$baseline_path\" \"$SOURCE_ENV_FILE\" up-backend" {
+      if ((getline second) > 0 &&
+          trim_indent(second) == "compose_for \"$baseline_path\" \"$SOURCE_ENV_FILE\" up-frontend" &&
+          (getline third) > 0 &&
+          trim_indent(third) == "wait_public_local \"$baseline_path\" \"$SOURCE_ENV_FILE\"") {
+        count += 1
+      }
+    }
+    END { print count + 0 }
+  ' "${ROOT_DIR}/scripts/notification-realtime-staging-host.sh"
+)"
+[[ "$restore_sequence_count" == '2' ]] || \
+  fail 'Staging runtime restore must recreate backend before frontend in finalize and recovery paths.'
+
 fixture_script="${ROOT_DIR}/server/scripts/notification-realtime-staging-fixture.mjs"
 if grep -Eq "jsonwebtoken|accessToken|token:[[:space:]]*sign" "$fixture_script"; then
   fail 'Staging fixture must not sign or emit an access token.'
