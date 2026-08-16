@@ -95,7 +95,7 @@ test.describe('M-P1 checkout confirmation', () => {
 
     const modal = page.getByTestId('purchase-modal')
     await expect(modal.getByText('本次待支付')).toBeVisible({ timeout: 10_000 })
-    await expect(modal.getByTestId('hold-explain')).toContainText('拒单或退款时返还')
+    await expect(modal.getByTestId('hold-explain')).toContainText('取消或退款后会自动返还')
   })
 
   test('adding a required form field after preview forces re-confirmation with the new field', async ({ page, request }) => {
