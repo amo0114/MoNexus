@@ -1,5 +1,5 @@
 import { expect, test, type APIRequestContext } from '@playwright/test'
-import { API_BASE, SEED_ACCOUNTS, loginAs } from './helpers'
+import { API_BASE, SEED_ACCOUNTS, loginAs, publishMerchantProduct } from './helpers'
 
 /**
  * P4b 结构化库存导入与结构化交付全链路：
@@ -58,6 +58,7 @@ test.describe.serial('P4b structured delivery chain', () => {
     })
     expect(imported.ok(), await imported.text()).toBeTruthy()
     expect((await imported.json()).imported).toBe(1)
+    await publishMerchantProduct(request, token, state.productId)
   })
 
   test('buyer sees the field preview, purchases, and gets field-ized delivery with masking', async ({ page }) => {

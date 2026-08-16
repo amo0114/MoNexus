@@ -11,14 +11,16 @@ import {
   getMerchantMe,
   createMerchantProduct,
   updateMerchantProduct,
-  importMerchantInventory,
   updateMerchantMe,
   startFulfillment,
   deliverOrder,
   respondDispute,
   rejectOrder,
   postOrderProgress,
+  importMerchantInventory,
 } from '../api/merchant'
+import { catalogApi } from '../api/catalog'
+import { getApiErrorMessage } from '../api/error'
 import {
   MerchantStats,
   MerchantProduct,
@@ -26,25 +28,27 @@ import {
   Settlement,
   Merchant
 } from '../types/merchant'
-import { Store, Package, ShoppingBag, DollarSign, Settings, Plus, ChevronLeft, ChevronRight, Loader2, BarChart3, Search, AlertTriangle, CalendarDays } from 'lucide-react'
+import { Store, Package, ShoppingBag, DollarSign, Settings, Plus, ChevronLeft, ChevronRight, Loader2, BarChart3, Search, AlertTriangle, CalendarDays, Megaphone, FilePlus2 } from 'lucide-react'
 import { useAppStore } from '../stores/appStore'
 import MerchantProductFormModal from '../components/merchant/MerchantProductFormModal'
-import MerchantInventoryImportModal from '../components/merchant/MerchantInventoryImportModal'
 import MerchantWebhookConfigSection from '../components/merchant/MerchantWebhookConfigSection'
 import ProvisionBadge from '../components/ProvisionBadge'
 import MerchantInventoryLogModal from '../components/merchant/MerchantInventoryLogModal'
+import MerchantAvailabilityModal from '../components/merchant/MerchantAvailabilityModal'
+import MerchantInventoryImportModal from '../components/merchant/MerchantInventoryImportModal'
 import MerchantCapacityAdjustModal from '../components/merchant/MerchantCapacityAdjustModal'
 import MerchantOfferManagerModal from '../components/merchant/MerchantOfferManagerModal'
 import MerchantDeliverDialog from '../components/merchant/MerchantDeliverDialog'
 import MerchantDisputeDialog from '../components/merchant/MerchantDisputeDialog'
 import MerchantProgressDialog from '../components/merchant/MerchantProgressDialog'
+import CategoryApplicationPanel from '../components/catalog/CategoryApplicationPanel'
 import RegistryPill from '../components/ui/RegistryPill'
 import { Dialog, DialogContent, DialogTitle } from '../components/ui/Dialog'
 import { TableSkeleton, StatCardSkeleton } from '../components/ui/Skeleton'
 import EmptyState from '../components/ui/EmptyState'
 import { createLatestRequestCoordinator } from '../realtime/latestRequestCoordinator'
 
-type TabKey = 'dashboard' | 'products' | 'orders' | 'settlements' | 'profile' | 'operations'
+type TabKey = 'dashboard' | 'products' | 'orders' | 'settlements' | 'profile' | 'operations' | 'promotions' | 'categoryApplications'
 type MerchantOrderSetter = Dispatch<SetStateAction<MerchantOrder | null>>
 
 const TABS: { key: TabKey; label: string; Icon: typeof Store; path?: string }[] = [
@@ -54,6 +58,8 @@ const TABS: { key: TabKey; label: string; Icon: typeof Store; path?: string }[] 
   { key: 'settlements', label: '结算管理', Icon: DollarSign },
   { key: 'profile', label: '商家资料', Icon: Settings },
   { key: 'operations', label: '经营数据', Icon: BarChart3, path: '/merchant/dashboard' },
+  { key: 'promotions', label: '推广中心', Icon: Megaphone, path: '/merchant/promotions' },
+  { key: 'categoryApplications', label: '分类申请', Icon: FilePlus2 },
 ]
 
 function isInstantInventoryProduct(product: MerchantProduct) {
@@ -67,6 +73,16 @@ function getAvailabilityLabel(product: MerchantProduct) {
   return product.deliveryMode === 'manual_service'
     ? '服务名额'
     : '可售名额'
+}
+
+function getOfferAvailabilityLabel(offer: NonNullable<MerchantProduct['offers']>[number]) {
+  if (offer.deliveryMode === 'instant_inventory') {
+    return `交付库存 ${offer.availableStock ?? '—'}`
+  }
+  if (offer.stockMode === 'unlimited') return '不限量'
+  return offer.deliveryMode === 'manual_service'
+    ? `服务名额 ${offer.stock}`
+    : `可售名额 ${offer.stock}`
 }
 
 function isGoneOrForbidden(error: any) {
@@ -86,6 +102,10 @@ export default function MerchantDashboardPage() {
   const [products, setProducts] = useState<MerchantProduct[]>([])
   const [productPage, setProductPage] = useState(1)
   const [productTotal, setProductTotal] = useState(0)
+  // 上架/下架进行中的商品 id。per-product guard：只锁同商品，不影响其他商品/其他页。
+  // 同步原子 guard 用 ref（同一 React commit 内连续触发也能拦截）；state 仅驱动 disabled UI。
+  const [publishingProductIds, setPublishingProductIds] = useState<ReadonlySet<number>>(new Set())
+  const publishingInFlightRef = useRef<Set<number>>(new Set())
 
   // --- 商品列表筛选（任一筛选变化时重置页码到 1）---
   const [productSearch, setProductSearch] = useState('')
@@ -260,14 +280,17 @@ export default function MerchantDashboardPage() {
   const [isProductFormOpen, setIsProductFormOpen] = useState(false)
   const [editingProduct, setEditingProduct] = useState<MerchantProduct | null>(null)
 
+  const [isAvailabilityOpen, setIsAvailabilityOpen] = useState(false)
+  const [availabilityProduct, setAvailabilityProduct] = useState<MerchantProduct | null>(null)
+
   const [isInventoryModalOpen, setIsInventoryModalOpen] = useState(false)
   const [importingProduct, setImportingProduct] = useState<{ id: number, name: string, offers?: MerchantProduct['offers'] } | null>(null)
 
-  const [isInventoryLogOpen, setIsInventoryLogOpen] = useState(false)
-  const [logProduct, setLogProduct] = useState<{ id: number, name: string, deliveryMode?: MerchantProduct['deliveryMode'] } | null>(null)
-
   const [isCapacityAdjustOpen, setIsCapacityAdjustOpen] = useState(false)
   const [capacityProduct, setCapacityProduct] = useState<MerchantProduct | null>(null)
+
+  const [isInventoryLogOpen, setIsInventoryLogOpen] = useState(false)
+  const [logProduct, setLogProduct] = useState<MerchantProduct | null>(null)
 
   const [isOfferManagerOpen, setIsOfferManagerOpen] = useState(false)
   const [offerProduct, setOfferProduct] = useState<MerchantProduct | null>(null)
@@ -300,22 +323,42 @@ export default function MerchantDashboardPage() {
     loadData()
   }
 
+  async function handleToggleProductStatus(product: MerchantProduct) {
+    if (publishingInFlightRef.current.has(product.id)) return
+    const isPublishing = product.status !== 'active' // active → 下架；inactive/draft → 上架
+    publishingInFlightRef.current.add(product.id)
+    setPublishingProductIds((prev) => new Set(prev).add(product.id))
+    try {
+      if (isPublishing) {
+        await catalogApi.publishProduct(product.id)
+      } else {
+        await catalogApi.unpublishProduct(product.id)
+      }
+      showToast(`商品已${isPublishing ? '上架' : '下架'}`)
+      loadData()
+    } catch (e: unknown) {
+      showToast(getApiErrorMessage(e, '操作失败'), 'error')
+    } finally {
+      publishingInFlightRef.current.delete(product.id)
+      setPublishingProductIds((prev) => {
+        const next = new Set(prev)
+        next.delete(product.id)
+        return next
+      })
+    }
+  }
+
+  async function handleAvailabilityChanged() {
+    await loadData()
+    setIsAvailabilityOpen(false)
+    setAvailabilityProduct(null)
+  }
+
   async function handleInventorySubmit(items: string[], offerId?: number) {
     if (!importingProduct) return
     await importMerchantInventory(importingProduct.id, { items, ...(offerId != null ? { offerId } : {}) })
     showToast(`成功导入 ${items.length} 个交付单元`)
     loadData()
-  }
-
-  async function handleToggleProductStatus(product: MerchantProduct) {
-    const nextStatus = product.status === 'active' ? 'inactive' : 'active'
-    try {
-      await updateMerchantProduct(product.id, { status: nextStatus })
-      showToast(`商品已${nextStatus === 'active' ? '上架' : '下架'}`)
-      loadData()
-    } catch (e: any) {
-      showToast(e.response?.data?.error?.message || '操作失败', 'error')
-    }
   }
 
   async function handleOrderAction(
@@ -578,13 +621,27 @@ export default function MerchantDashboardPage() {
                             <td className="py-3 px-2 text-sm font-medium text-[var(--color-text)]" data-label="名称">{p.name}</td>
                             <td className="py-3 px-2 text-sm text-[var(--color-text)]" data-label="价格">{p.price}</td>
                             <td className="py-3 px-2 text-sm text-[var(--color-text-muted)]" data-label="可售资源/销量">
-                              <span className="whitespace-nowrap">
-                                {getAvailabilityLabel(p)}{' '}
-                                {p.stockMode !== 'unlimited' && (
-                                  <span data-testid={`merchant-product-availability-${p.id}`}>{stockCount}</span>
-                                )}
-                                {' / 已售 '}{p.sales}
-                              </span>
+                              {rowOffers.length > 0 ? (
+                                <div className="space-y-1" data-testid={`merchant-product-availability-${p.id}`}>
+                                  {inventoryManaged && (
+                                    <div className="font-medium text-[var(--color-text)]">
+                                      商品交付库存汇总：{p.availableStock ?? stockCount}
+                                    </div>
+                                  )}
+                                  {rowOffers.map((offer) => (
+                                    <div key={offer.id} className="text-xs">
+                                      <span className="font-medium text-[var(--color-text)]">{offer.name}</span>：{getOfferAvailabilityLabel(offer)}
+                                    </div>
+                                  ))}
+                                  <div className="text-xs">商品累计已售：{p.sales}</div>
+                                </div>
+                              ) : (
+                                <span className="whitespace-nowrap">
+                                  {getAvailabilityLabel(p)}{' '}
+                                  {p.stockMode !== 'unlimited' && stockCount}
+                                  {' / 已售 '}{p.sales}
+                                </span>
+                              )}
                               {isLowStock && (
                                 <span
                                   className="inline-flex items-center gap-1 ml-2 px-2 py-0.5 rounded text-xs font-bold border bg-[var(--color-danger)]/10 text-[var(--color-danger)] border-[var(--color-danger)]/25"
@@ -598,25 +655,25 @@ export default function MerchantDashboardPage() {
                               <StatusPill kind={p.status === 'active' ? 'active' : 'inactive'} />
                             </td>
                             <td className="py-3 px-2 text-right whitespace-nowrap" data-label="操作">
+                              {rowOffers.length > 0 && (
+                                <LinkAction onClick={() => { setAvailabilityProduct(p); setIsAvailabilityOpen(true); }}>
+                                  管理可售资源
+                                </LinkAction>
+                              )}
                               {inventoryManaged && (
-                                <>
-                                  <LinkAction onClick={() => { setImportingProduct({ id: p.id, name: p.name, offers: p.offers }); setIsInventoryModalOpen(true); }}>
-                                    管理交付库存
-                                  </LinkAction>
-                                  <LinkAction onClick={() => { setLogProduct({ id: p.id, name: p.name, deliveryMode: p.deliveryMode }); setIsInventoryLogOpen(true); }}>
-                                    交付库存记录
-                                  </LinkAction>
-                                </>
+                                <LinkAction onClick={() => { setImportingProduct({ id: p.id, name: p.name, offers: p.offers }); setIsInventoryModalOpen(true); }}>
+                                  管理交付库存
+                                </LinkAction>
                               )}
                               {capacityManaged && (
-                                <>
-                                  <LinkAction onClick={() => { setCapacityProduct(p); setIsCapacityAdjustOpen(true); }}>
-                                    {p.deliveryMode === 'manual_service' ? '调整服务名额' : '调整可售名额'}
-                                  </LinkAction>
-                                  <LinkAction onClick={() => { setLogProduct({ id: p.id, name: p.name, deliveryMode: p.deliveryMode }); setIsInventoryLogOpen(true); }}>
-                                    名额记录
-                                  </LinkAction>
-                                </>
+                                <LinkAction onClick={() => { setCapacityProduct(p); setIsCapacityAdjustOpen(true); }}>
+                                  {p.deliveryMode === 'manual_service' ? '调整服务名额' : '调整可售名额'}
+                                </LinkAction>
+                              )}
+                              {(inventoryManaged || capacityManaged) && (
+                                <LinkAction onClick={() => { setLogProduct(p); setIsInventoryLogOpen(true); }}>
+                                  可售资源记录
+                                </LinkAction>
                               )}
                               <LinkAction onClick={() => { setEditingProduct(p); setIsProductFormOpen(true); }}>
                                 编辑
@@ -624,7 +681,11 @@ export default function MerchantDashboardPage() {
                               <LinkAction onClick={() => { setOfferProduct(p); setIsOfferManagerOpen(true); }}>
                                 规格管理
                               </LinkAction>
-                              <LinkAction onClick={() => handleToggleProductStatus(p)}>
+                              <LinkAction
+                                onClick={() => handleToggleProductStatus(p)}
+                                disabled={publishingProductIds.has(p.id)}
+                                testId={`merchant-product-toggle-status-${p.id}`}
+                              >
                                 {p.status === 'active' ? '下架' : '上架'}
                               </LinkAction>
                             </td>
@@ -914,6 +975,13 @@ export default function MerchantDashboardPage() {
               <MerchantWebhookConfigSection />
             </div>
           )}
+
+          {activeTab === 'categoryApplications' && (
+            <div className="fade-in">
+              <CategoryApplicationPanel />
+            </div>
+          )}
+
         </div>
       </div>
 
@@ -924,6 +992,19 @@ export default function MerchantDashboardPage() {
         product={editingProduct}
       />
 
+      <MerchantAvailabilityModal
+        isOpen={isAvailabilityOpen}
+        onClose={() => setIsAvailabilityOpen(false)}
+        product={availabilityProduct}
+        onChanged={handleAvailabilityChanged}
+      />
+
+      <MerchantInventoryLogModal
+        isOpen={isInventoryLogOpen}
+        onClose={() => setIsInventoryLogOpen(false)}
+        product={logProduct}
+      />
+
       <MerchantInventoryImportModal
         isOpen={isInventoryModalOpen}
         onClose={() => setIsInventoryModalOpen(false)}
@@ -932,13 +1013,6 @@ export default function MerchantDashboardPage() {
         productId={importingProduct?.id}
         // 含已下架规格：商家常在重新上架前先备货，过滤掉会让入口可点但无处可导。
         offers={(importingProduct?.offers ?? []).filter(o => o.deliveryMode === 'instant_inventory')}
-      />
-
-      <MerchantInventoryLogModal
-        isOpen={isInventoryLogOpen}
-        onClose={() => setIsInventoryLogOpen(false)}
-        product={logProduct}
-        onVoided={loadData}
       />
 
       <MerchantCapacityAdjustModal
@@ -1049,12 +1123,21 @@ function StatusPill({ kind }: { kind: 'active' | 'inactive' }) {
   )
 }
 
-function LinkAction({ children, onClick }: { children: React.ReactNode; onClick: () => void }) {
+interface LinkActionProps {
+  children: React.ReactNode
+  onClick: () => void
+  disabled?: boolean
+  testId?: string
+}
+
+function LinkAction({ children, onClick, disabled, testId }: LinkActionProps) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="text-[var(--color-primary)] hover:underline text-sm mr-3 last:mr-0 cursor-pointer btn-sm"
+      disabled={disabled}
+      data-testid={testId}
+      className={`text-[var(--color-primary)] hover:underline text-sm mr-3 last:mr-0 cursor-pointer btn-sm ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
     >
       {children}
     </button>

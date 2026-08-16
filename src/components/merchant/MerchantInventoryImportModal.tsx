@@ -1,33 +1,24 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { X, DatabaseZap, FileText, AlertCircle, Loader2 } from 'lucide-react'
 import * as DialogPrimitive from '@radix-ui/react-dialog'
 import { useAppStore } from '../../stores/appStore'
-import { previewMerchantInventory } from '../../api/merchant'
+import { previewMerchantOfferInventory, type InventoryPreview } from '../../api/merchant'
 import type { Offer } from '../../types/merchant'
 import { DialogOverlay } from '../ui/Dialog'
+import { createLatestRequestGuard } from '../../utils/latestRequest'
 
 interface Props {
   isOpen: boolean
   onClose: () => void
-  onSubmit: (items: string[], offerId?: number) => Promise<void>
+  onSubmit: (items: string[], offerId: number) => Promise<void>
   productName: string
   productId?: number
   /** 目标商品的即时库存 active 规格；>1 时渲染规格选择器（P4a）。 */
   offers?: Offer[]
 }
 
-interface PreviewStats {
-  totalRows: number
-  validRows: number
-  emptyRows: number
-  duplicateRows: number
-  existingDuplicateRows: number
-  canImport: boolean
+interface PreviewStats extends InventoryPreview {
   details?: any[]
-  /** P4b：模板行级错误（1 起行号）。 */
-  rowErrors?: Array<{ row: number; message: string }>
-  /** P4b：结构化解析预览（模板 + 前 N 行值）。 */
-  structured?: { fields: Array<{ key: string; label: string; sensitive: boolean }>; rows: Array<Record<string, string>> }
 }
 
 export default function MerchantInventoryImportModal({ isOpen, onClose, onSubmit, productName, productId, offers }: Props) {
@@ -36,6 +27,7 @@ export default function MerchantInventoryImportModal({ isOpen, onClose, onSubmit
   const [previewing, setPreviewing] = useState(false)
   const [inventoryText, setInventoryText] = useState('')
   const [stats, setStats] = useState<PreviewStats | null>(null)
+  const previewRequestGuard = useRef(createLatestRequestGuard()).current
   // 多规格时渲染选择器让商家指定卡密归属；单规格不渲染但仍显式提交它的
   // offerId（默认 Offer 未必是即时库存那条）。offers 为空才回落到服务端默认。
   const multiOffer = (offers?.length ?? 0) > 1
@@ -50,42 +42,55 @@ export default function MerchantInventoryImportModal({ isOpen, onClose, onSubmit
 
   // 打开或切换商品时，把选中规格重置为该商品的第一条即时库存规格。
   useEffect(() => {
+    previewRequestGuard.invalidate()
+    setPreviewing(false)
     if (isOpen) {
       setSelectedOfferId(offers?.[0]?.id)
       setInventoryText('')
       setStats(null)
     }
+    return () => previewRequestGuard.invalidate()
+    // offers intentionally resets only when the modal target product changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, productId])
+  }, [isOpen, productId, previewRequestGuard])
 
   if (!isOpen) return null
 
   const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    previewRequestGuard.invalidate()
+    setPreviewing(false)
     setInventoryText(e.target.value)
     if (stats) setStats(null)
   }
 
   async function handlePreview() {
     if (!productId) return
+    if (selectedOfferId == null) {
+      showToast('请先选择目标规格', 'error')
+      return
+    }
     const text = inventoryText.trim()
     if (!text) {
       showToast('请输入至少一个交付单元', 'error')
       return
     }
+    const previewLineCount = text.split('\n').map((line) => line.trim()).filter(Boolean).length
+    const canCommit = previewRequestGuard.begin()
     setPreviewing(true)
     try {
       // P4b：模板挂在规格上，预览带上目标规格才能按模板解析。
-      const data = await previewMerchantInventory(productId, {
+      const data = await previewMerchantOfferInventory(productId, selectedOfferId, {
         text,
-        ...(selectedOfferId != null ? { offerId: selectedOfferId } : {}),
       })
+      if (!canCommit()) return
       setStats(data)
     } catch (e: any) {
+      if (!canCommit()) return
       const errData = e.response?.data?.error
       if (errData?.details) {
         setStats({
           canImport: false,
-          totalRows: lineCount,
+          totalRows: previewLineCount,
           validRows: 0,
           emptyRows: 0,
           duplicateRows: errData.details.find((d: any) => d.duplicateRows)?.duplicateRows || 0,
@@ -95,14 +100,14 @@ export default function MerchantInventoryImportModal({ isOpen, onClose, onSubmit
       }
       showToast(errData?.message || '预览失败', 'error')
     } finally {
-      setPreviewing(false)
+      if (canCommit()) setPreviewing(false)
     }
   }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
 
-    if (!stats?.canImport) {
+    if (!stats?.canImport || selectedOfferId == null) {
       return
     }
 
@@ -146,9 +151,9 @@ export default function MerchantInventoryImportModal({ isOpen, onClose, onSubmit
               <DialogPrimitive.Title className="font-heading text-xl font-bold text-[var(--color-text)]">
                 导入交付单元
               </DialogPrimitive.Title>
-              <p className="text-xs text-[var(--color-text-muted)] mt-0.5 font-medium truncate max-w-[200px]" title={productName}>
+              <DialogPrimitive.Description className="text-xs text-[var(--color-text-muted)] mt-0.5 font-medium truncate max-w-[200px]" title={productName}>
                 目标商品: {productName}
-              </p>
+              </DialogPrimitive.Description>
             </div>
           </div>
           <DialogPrimitive.Close
@@ -169,7 +174,12 @@ export default function MerchantInventoryImportModal({ isOpen, onClose, onSubmit
                 <select
                   className="input appearance-none cursor-pointer"
                   value={selectedOfferId ?? ''}
-                  onChange={(e) => { setSelectedOfferId(Number(e.target.value)); setStats(null) }}
+                  onChange={(e) => {
+                    previewRequestGuard.invalidate()
+                    setPreviewing(false)
+                    setSelectedOfferId(Number(e.target.value))
+                    setStats(null)
+                  }}
                   data-testid="import-offer-select"
                 >
                   {offers!.map(o => (
@@ -208,7 +218,7 @@ export default function MerchantInventoryImportModal({ isOpen, onClose, onSubmit
 
             <div className="relative">
               <div className="flex items-center justify-between mb-2">
-                <label className="flex items-center gap-2 text-sm font-bold text-[var(--color-text)]">
+                <label htmlFor="merchant-inventory-content" className="flex items-center gap-2 text-sm font-bold text-[var(--color-text)]">
                   <FileText className="w-4 h-4 text-[var(--color-text-muted)]" />
                   交付单元内容
                 </label>
@@ -221,12 +231,15 @@ export default function MerchantInventoryImportModal({ isOpen, onClose, onSubmit
                 </span>
               </div>
               <textarea
+                id="merchant-inventory-content"
                 className="input min-h-[220px] font-mono leading-relaxed resize-y"
                 placeholder="例如：&#10;卡密：ABCD-1234-EFGH-5678&#10;账号：user@example.com | 密码：example-password&#10;节点：sg-01.example.com:443 | UUID：xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx&#10;邀请码：INVITE-2026-ABC"
                 value={inventoryText}
                 onChange={handleTextChange}
                 required
                 spellCheck="false"
+                data-testid="merchant-inventory-content"
+                disabled={loading}
               />
               {lineCount >= 500 && (
                 <p className="mt-2 text-xs text-[var(--color-warning)]">

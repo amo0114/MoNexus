@@ -11,6 +11,7 @@ import {
 import { forceFakaBridgeRevoke } from '../modules/admin/service.js'
 import type { FakaTransport } from '../lib/fakaBridge/types.js'
 import { createTestUser } from './helpers.js'
+import { getActiveNetworkNodeCategoryId } from './catalogFixture.js'
 
 const ORIG_FAKA = { ...config.fakaBridge }
 
@@ -55,6 +56,7 @@ describe('FakaBridge lifecycle: refund cancel + revoke', () => {
       data: {
         name: 'Life cancel',
         type: '网络节点',
+        categoryId: await getActiveNetworkNodeCategoryId(),
         price: 100,
         status: 'active',
         deliveryMode: 'manual_service',
@@ -102,6 +104,7 @@ describe('FakaBridge lifecycle: refund cancel + revoke', () => {
       data: {
         name: 'Life revoke',
         type: '网络节点',
+        categoryId: await getActiveNetworkNodeCategoryId(),
         price: 100,
         status: 'active',
         deliveryMode: 'manual_service',
@@ -182,6 +185,7 @@ describe('FakaBridge lifecycle: refund cancel + revoke', () => {
       data: {
         name: 'Life force revoke',
         type: '网络节点',
+        categoryId: await getActiveNetworkNodeCategoryId(),
         price: 100,
         status: 'active',
         deliveryMode: 'manual_service',

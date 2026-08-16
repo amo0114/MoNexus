@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto'
 import { Readable } from 'node:stream'
 import { prisma } from '../lib/prisma.js'
 import { api, createTestMerchant, createTestUser, loginAs, authHeader } from './helpers.js'
+import { getActiveCategoryIdByLabel } from './catalogFixture.js'
 import { __setDeliveryStorageForTesting, getDeliveryStorage } from '../lib/storage/delivery.js'
 import { DeliveryMemoryStorage } from '../lib/storage/deliveryMemory.js'
 import { TMP_KEY_PREFIX } from '../lib/storage/deliveryTypes.js'
@@ -57,7 +58,7 @@ describe('cleanupOrphanFiles', () => {
     const staleOrphan = await seedFile(merchant.id, 'a', new Date(Date.now() - 25 * HOUR))
     const freshOrphan = await seedFile(merchant.id, 'b', new Date(Date.now() - 1 * HOUR))
     const attached = await seedFile(merchant.id, 'c', new Date(Date.now() - 25 * HOUR))
-    const product = await prisma.product.create({ data: { name: 'GC商品', type: '充值卡密', price: 100, merchantId: merchant.id } })
+    const product = await prisma.product.create({ data: { name: 'GC商品', type: '充值卡密', price: 100, merchantId: merchant.id, categoryId: await getActiveCategoryIdByLabel('充值卡密') } })
     await prisma.offer.create({
       data: {
         productId: product.id, name: '文件规格', isDefault: true, price: 100,
@@ -95,7 +96,7 @@ describe('cleanupOrphanFiles', () => {
         mimeType: 'application/octet-stream', sha256: staleOrphan.sha256, merchantId: m2.id,
       },
     })
-    const product = await prisma.product.create({ data: { name: '共享键商品', type: '充值卡密', price: 100, merchantId: m2.id } })
+    const product = await prisma.product.create({ data: { name: '共享键商品', type: '充值卡密', price: 100, merchantId: m2.id, categoryId: await getActiveCategoryIdByLabel('充值卡密') } })
     await prisma.offer.create({
       data: {
         productId: product.id, name: '文件规格', isDefault: true, price: 100,
@@ -230,7 +231,7 @@ describe('cleanupRefundedFiles', () => {
     const buyer = await prisma.user.create({
       data: { email: `gc-refund-${marker}@test.local`, password: 'x' },
     })
-    const product = await prisma.product.create({ data: { name: `退款清理${marker}`, type: '充值卡密', price: 100, merchantId } })
+    const product = await prisma.product.create({ data: { name: `退款清理${marker}`, type: '充值卡密', price: 100, merchantId, categoryId: await getActiveCategoryIdByLabel('充值卡密') } })
     const order = await prisma.order.create({
       data: { userId: buyer.id, productId: product.id, price: 100, status: orderStatus, merchantId },
     })

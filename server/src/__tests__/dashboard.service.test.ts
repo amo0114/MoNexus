@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { prisma } from '../lib/prisma.js'
 import { getSummary, getTimeseries } from '../modules/dashboard/service.js'
 import type { Range } from '../modules/dashboard/types.js'
+import { getActiveNetworkNodeCategoryId } from './catalogFixture.js'
 
 function middayToday() {
   const date = new Date()
@@ -69,6 +70,7 @@ async function createProduct(
       merchantId,
       name,
       type: 'network',
+      categoryId: await getActiveNetworkNodeCategoryId(),
       price,
       status,
       stock: 10,

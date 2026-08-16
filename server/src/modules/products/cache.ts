@@ -1,5 +1,4 @@
 import { createHash } from 'node:crypto'
-import { businessRegistry } from '../../lib/businessRegistry.js'
 import {
   bumpCacheVersion,
   bumpProductListVersionCoalesced,
@@ -9,10 +8,12 @@ import {
 
 type ProductListCacheParams = {
   query?: string
+  categoryCode?: string
   category?: string
   cursor?: string
   page?: number
   pageSize?: number
+  rankingRunId?: string | null
 }
 
 type ProductPublicInvalidationScope = {
@@ -20,8 +21,6 @@ type ProductPublicInvalidationScope = {
   reviews?: boolean
   list?: boolean | 'coalesced'
 }
-
-const productTypeValues = new Set<string>(businessRegistry.productTypes.map(type => type.value))
 
 function stableStringify(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`
@@ -47,7 +46,12 @@ function normalizeSearchQuery(query?: string) {
 function normalizeCategory(category?: string) {
   const normalized = category?.trim()
   if (!normalized || normalized === '全部') return undefined
-  return productTypeValues.has(normalized) ? normalized : normalized
+  return normalized
+}
+
+function normalizeCategoryCode(categoryCode?: string) {
+  const normalized = categoryCode?.trim().toLowerCase()
+  return normalized || undefined
 }
 
 function normalizeProductListParams(params: ProductListCacheParams) {
@@ -60,14 +64,22 @@ function normalizeProductListParams(params: ProductListCacheParams) {
 
   const normalized: Record<string, unknown> = {
     status: 'active',
-    orderBy: ['isHot:desc', 'sales:desc', 'id:desc'],
+    rankingRunId: params.rankingRunId ?? null,
+    orderBy: params.rankingRunId
+      ? ['snapshot.isHot:desc', 'snapshot.effectiveOrderCount:desc', 'id:desc']
+      : ['id:desc'],
     pageSize,
   }
 
   if (query) normalized.q = query
 
-  const category = normalizeCategory(params.category)
-  if (category) normalized.category = category
+  const categoryCode = normalizeCategoryCode(params.categoryCode)
+  if (categoryCode) {
+    normalized.categoryCode = categoryCode
+  } else {
+    const category = normalizeCategory(params.category)
+    if (category) normalized.category = category
+  }
 
   if (params.cursor) {
     normalized.cursor = params.cursor

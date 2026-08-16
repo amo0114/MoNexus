@@ -84,6 +84,22 @@ may not publish an ARM64 `caddy` package. It does not alter provider firewalls;
 ensure the provider allows TCP 80 and 443. See the [official Caddy installation
 instructions](https://caddyserver.com/docs/install#debian-ubuntu-raspbian).
 
+The bootstrap also installs a root-owned Caddy helper and the reviewed, narrow
+sudoers include required by the protected realtime rehearsal. The helper accepts
+only the checked-in staging site payload, verifies its fixed SHA256, and then
+performs the site install, validation, and reload. On a host that was
+bootstrapped before that boundary existed, run only the idempotent repair as
+root:
+
+```bash
+sudo DEPLOY_USER=monexus-deploy \
+  bash deploy/staging/install-caddy-sudoers.sh
+```
+
+That repair installs `/usr/local/sbin/monexus-staging-caddy-reload` and changes
+only `/etc/sudoers.d/monexus-staging-caddy`; it grants no general root shell and
+does not accept a password from GitHub Actions.
+
 Add the GitHub Actions staging deploy public key to
 `/home/monexus-deploy/.ssh/authorized_keys`, then capture the SSH host key in
 known-hosts format. Do not send SSH passwords or private keys in chat.
@@ -162,21 +178,25 @@ operational switches.
 
 ### 5.1 Notification realtime rehearsal
 
-The realtime rehearsal has a stricter proxy prerequisite. A root/operator must
-first update `/etc/caddy/sites-enabled/monexus-staging.caddy` from
-[`deploy/staging/Caddyfile`](../../deploy/staging/Caddyfile), validate it, and
-reload Caddy:
+The realtime rehearsal has a stricter proxy prerequisite. The workflow's first
+host-changing step (before application release or fixture setup) installs the
+dedicated `/etc/caddy/sites-enabled/monexus-staging.caddy` from
+[`deploy/staging/Caddyfile`](../../deploy/staging/Caddyfile), validates the
+existing `/etc/caddy/Caddyfile`, and reloads Caddy:
 
 ```bash
-sudo grep -F 'flush_interval -1' /etc/caddy/sites-enabled/monexus-staging.caddy
-sudo caddy validate --config /etc/caddy/Caddyfile
-sudo systemctl reload caddy
+printf '%s' "$(base64 -w0 deploy/staging/Caddyfile)" | \
+  sudo -n /usr/local/sbin/monexus-staging-caddy-reload
 ```
 
-The protected deploy user deliberately cannot edit this root-owned network
-boundary. `realtime_rehearsal` checks the active site before unpacking or
-deploying the feature; a missing immediate-flush directive is an operator
-blocker, not a condition the workflow may waive.
+The protected deploy user must have a non-interactive, narrowly delegated
+`sudo` capability for the root-owned staging Caddy helper. The helper performs
+the `install`, `grep`, `caddy validate`, and `systemctl reload caddy` operations
+with fixed paths and a checked-in payload hash. The workflow fails closed if
+`sudo -n` is unavailable, the dedicated site lacks
+`flush_interval -1`, validation fails, or reload fails. It does not overwrite
+the global Caddyfile or production site blocks. A missing immediate-flush
+directive is an operator blocker, not a condition the workflow may waive.
 
 Dispatch **Staging Compose Deploy** against the exact feature SHA in this order:
 

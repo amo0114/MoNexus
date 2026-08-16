@@ -145,6 +145,7 @@ describe('P6a review P1-2: dispute re-delivery refreshes an already-expired subs
         name: `订阅争议商品${mark}`,
         type: '网络节点',
         price: 100,
+        status: 'active',
         merchantId: merchant.id,
         deliveryMode: 'manual_service',
         stockMode: 'unlimited',

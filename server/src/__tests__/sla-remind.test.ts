@@ -5,6 +5,7 @@ import { __setMailerForTesting } from '../lib/mailer/index.js'
 import type { Mailer } from '../lib/mailer/types.js'
 import { runSlaRemindBatch } from '../lib/slaRemind.js'
 import { createTestMerchant, createTestUser } from './helpers.js'
+import { getActiveNetworkNodeCategoryId } from './catalogFixture.js'
 
 /**
  * P6b：人工履约 SLA 超时提醒（runSlaRemindBatch）。
@@ -55,6 +56,7 @@ async function seedManualOrder(input: {
     data: {
       name: '代办服务',
       type: '网络节点',
+      categoryId: await getActiveNetworkNodeCategoryId(),
       price: 300,
       status: 'active',
       merchantId: merchant.id,

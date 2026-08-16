@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { API_BASE, SEED_ACCOUNTS, loginAs, loginAsApi } from './helpers'
+import { API_BASE, SEED_ACCOUNTS, loginAs, loginAsApi, publishMerchantProduct } from './helpers'
 
 /**
  * P3 高风险二次验证（spec: docs/specs/product-model-and-checkout.md）：
@@ -44,6 +44,7 @@ test.describe.serial('M-P3 checkout verification', () => {
     })
     expect(created.ok(), await created.text()).toBeTruthy()
     const productId = ((await created.json()) as { id: number }).id
+    await publishMerchantProduct(request, merchantToken, productId)
 
     await loginAs(page, SEED_ACCOUNTS.user)
     await page.goto(`/product/${productId}`)
@@ -100,6 +101,7 @@ test.describe.serial('M-P3 checkout verification', () => {
       },
     })
     const productId = ((await created.json()) as { id: number }).id
+    await publishMerchantProduct(request, merchantToken, productId)
 
     await loginAs(page, SEED_ACCOUNTS.user)
     await page.goto(`/product/${productId}`)
@@ -137,6 +139,7 @@ test.describe.serial('M-P3 checkout verification', () => {
       },
     })
     const productId = ((await created.json()) as { id: number }).id
+    await publishMerchantProduct(request, merchantToken, productId)
 
     await loginAs(page, SEED_ACCOUNTS.user)
     await page.goto(`/product/${productId}`)

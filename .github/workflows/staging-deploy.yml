@@ -163,12 +163,39 @@ jobs:
           printf '%s\n' "$STAGING_SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
 
+      - name: Check out rehearsal orchestration
+        if: steps.readiness.outputs.ready == 'true' && env.RELEASE_ACTION == 'realtime_rehearsal'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.package-source.outputs.deploy_commit }}
+
       - name: Download immutable source archive
         if: steps.readiness.outputs.ready == 'true' && env.RELEASE_ACTION != 'rollback'
         uses: actions/download-artifact@v4
         with:
           name: monexus-staging-source-${{ needs.package-source.outputs.deploy_commit }}
           path: artifacts
+
+      - name: Install and activate staging realtime Caddy site
+        if: steps.readiness.outputs.ready == 'true' && env.RELEASE_ACTION == 'realtime_rehearsal'
+        run: |
+          set -euo pipefail
+          # This is the only host configuration changed by the rehearsal gate.
+          # sudo must be non-interactive and narrowly delegated to the reviewed
+          # root-owned helper; a missing delegation fails before any app
+          # release or fixture is created.
+          site_payload="$(base64 -w0 deploy/staging/Caddyfile)"
+          ssh \
+            -i ~/.ssh/monexus_staging_deploy \
+            -p "$STAGING_SSH_PORT" \
+            -o StrictHostKeyChecking=yes \
+            "$STAGING_SSH_USER@$STAGING_SSH_HOST" \
+            "bash -s -- '$site_payload'" <<'REMOTE'
+          set -euo pipefail
+          site_payload="$1"
+          printf '%s' "$site_payload" | sudo -n /usr/local/sbin/monexus-staging-caddy-reload
+          echo 'Staging Caddy site installed, validated, and reloaded.'
+          REMOTE
 
       - name: Upload source archive to staging host
         if: steps.readiness.outputs.ready == 'true' && env.RELEASE_ACTION != 'rollback'
@@ -182,12 +209,6 @@ jobs:
             -o StrictHostKeyChecking=yes \
             "$archive" \
             "$STAGING_SSH_USER@$STAGING_SSH_HOST:/tmp/monexus-staging-${DEPLOY_COMMIT}.tar.gz"
-
-      - name: Check out rehearsal orchestration
-        if: steps.readiness.outputs.ready == 'true' && env.RELEASE_ACTION == 'realtime_rehearsal'
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.package-source.outputs.deploy_commit }}
 
       - name: Set up Node.js 20 for staging collector
         if: steps.readiness.outputs.ready == 'true' && env.RELEASE_ACTION == 'realtime_rehearsal'

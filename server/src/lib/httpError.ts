@@ -1,5 +1,8 @@
 export type ErrorCode =
   | 'VALIDATION_ERROR'
+  // SPEC-MERCH-001 AC-MERCH-001 / CHK-HOT-001：客户端试图写受控字段（如
+  // Product.isHot）时稳定返回，与普通校验失败（VALIDATION_ERROR）区分开。
+  | 'FIELD_NOT_WRITABLE'
   | 'UNAUTHENTICATED'
   | 'FORBIDDEN'
   | 'NOT_FOUND'

@@ -20,6 +20,11 @@ describe('admin product audit trail', () => {
       })
       .expect(201)
 
+    const platformProduct = await prisma.product.findUniqueOrThrow({ where: { id: created.body.id } })
+    expect(platformProduct.merchantId).toBeNull()
+    expect(platformProduct.status).toBe('draft')
+    expect(platformProduct.stock).toBe(0)
+
     const createLog = await prisma.adminLog.findFirstOrThrow({
       where: { adminUserId: admin.id, action: '创建商品', targetType: 'product', targetId: created.body.id },
     })
@@ -30,14 +35,14 @@ describe('admin product audit trail', () => {
     await api
       .put(`/api/admin/products/${created.body.id}`)
       .set(authHeader(accessToken))
-      .send({ price: 180, status: 'inactive', richDescription: '更新后的富文本' })
+      .send({ price: 180, richDescription: '更新后的富文本' })
       .expect(200)
 
     const updateLog = await prisma.adminLog.findFirstOrThrow({
       where: { adminUserId: admin.id, action: '更新商品', targetType: 'product', targetId: created.body.id },
     })
     expect(JSON.parse(updateLog.detail!).changedFields).toEqual(
-      expect.arrayContaining(['price', 'status', 'richDescription'])
+      expect.arrayContaining(['price', 'richDescription'])
     )
     expect(updateLog.detail).toContain('"price":100')
     expect(updateLog.detail).toContain('"price":180')

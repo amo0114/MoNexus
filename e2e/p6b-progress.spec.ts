@@ -1,5 +1,5 @@
 import { expect, test, type APIRequestContext } from '@playwright/test'
-import { API_BASE, SEED_ACCOUNTS, loginAs } from './helpers'
+import { API_BASE, SEED_ACCOUNTS, loginAs, publishMerchantProduct } from './helpers'
 
 /**
  * P6b 进度与验收冒烟：人工服务下单 → 商家接单并 UI 发进度更新 →
@@ -29,6 +29,7 @@ test.describe.serial('P6b progress & acceptance', () => {
     })
     expect(created.ok(), await created.text()).toBeTruthy()
     state.productId = (await created.json()).id
+    await publishMerchantProduct(request, merchantToken, state.productId)
 
     const buyerToken = await tokenOf(request, SEED_ACCOUNTS.user)
     const order = await request.post(`${API_BASE}/api/orders`, {
@@ -57,12 +58,12 @@ test.describe.serial('P6b progress & acceptance', () => {
 
   test('buyer sees the progress timeline; acceptance closes the order', async ({ page, request }) => {
     await loginAs(page, SEED_ACCOUNTS.user)
-    await page.goto('/profile')
+    await page.goto('/orders')
     const orderCard = page
-      .locator('div.shadow-sm')
-      .filter({ has: page.getByRole('heading', { name: PRODUCT_NAME }) })
+      .locator('[data-testid^="buyer-order-card-"]')
+      .filter({ hasText: PRODUCT_NAME })
       .first()
-    await orderCard.getByRole('button', { name: '查看发货内容' }).click()
+    await orderCard.getByRole('button', { name: '查看订单详情' }).click()
     const timeline = page.getByTestId('order-progress-timeline')
     await expect(timeline).toBeVisible({ timeout: 10_000 })
     await expect(timeline).toContainText(PROGRESS_NOTE)
@@ -78,10 +79,10 @@ test.describe.serial('P6b progress & acceptance', () => {
     // 买家侧：验收措辞 + 验收通过关单。
     await page.reload()
     const cardAfter = page
-      .locator('div.shadow-sm')
-      .filter({ has: page.getByRole('heading', { name: PRODUCT_NAME }) })
+      .locator('[data-testid^="buyer-order-card-"]')
+      .filter({ hasText: PRODUCT_NAME })
       .first()
-    await cardAfter.getByRole('button', { name: '查看发货内容' }).click()
+    await cardAfter.getByRole('button', { name: '查看订单详情' }).click()
     await expect(page.getByText(ACCEPT_NOTE).first()).toBeVisible({ timeout: 10_000 })
     await expect(page.getByRole('button', { name: '验收异议' })).toBeVisible()
     await page.getByRole('button', { name: '验收通过' }).click()

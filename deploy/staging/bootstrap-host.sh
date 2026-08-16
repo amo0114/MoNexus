@@ -13,6 +13,7 @@ STAGING_ENV="/etc/monexus/staging.env"
 SITE_DIR="/etc/caddy/sites-enabled"
 SITE_FILE="$SITE_DIR/monexus-staging.caddy"
 IMPORT_LINE="import /etc/caddy/sites-enabled/*"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
 usage() {
   cat <<'EOF'
@@ -130,6 +131,10 @@ $STAGING_HOST {
 }
 EOF
 chmod 0644 "$SITE_FILE"
+
+# Keep the CI rehearsal's root boundary narrow and auditable. This is
+# idempotent and writes only /etc/sudoers.d/monexus-staging-caddy.
+bash "$SCRIPT_DIR/install-caddy-sudoers.sh"
 
 if ! grep -Fqx "$IMPORT_LINE" /etc/caddy/Caddyfile; then
   printf '\n# MoNexus staging site includes\n%s\n' "$IMPORT_LINE" >> /etc/caddy/Caddyfile

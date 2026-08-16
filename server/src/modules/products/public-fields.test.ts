@@ -1,12 +1,14 @@
 import { describe, it, expect } from 'vitest'
 import { prisma } from '../../lib/prisma.js'
 import { api } from '../../__tests__/helpers.js'
+import { getActiveCategoryIdByLabel } from '../../__tests__/catalogFixture.js'
 
 describe('public product endpoints with instant_fixed', () => {
   it('never exposes fixedContent and includes stockMode/deliveryMode', async () => {
     const product = await prisma.product.create({
       data: {
         name: '公开字段商品', type: '邀请码', price: 100, stock: 0, status: 'active',
+        categoryId: await getActiveCategoryIdByLabel('邀请码'),
         deliveryMode: 'instant_fixed', stockMode: 'unlimited',
         fixedContent: 'SECRET-PAID-CONTENT', fixedContentType: 'url',
       },
@@ -25,6 +27,7 @@ describe('public product endpoints with instant_fixed', () => {
     const product = await prisma.product.create({
       data: {
         name: '库存真相商品', type: '充值卡密', price: 100, stock: 99, status: 'active',
+        categoryId: await getActiveCategoryIdByLabel('充值卡密'),
         deliveryMode: 'instant_inventory', stockMode: 'limited',
       },
     })

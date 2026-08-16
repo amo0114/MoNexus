@@ -23,14 +23,21 @@ async function createLimitedProduct(token: string, deliveryMode: 'instant_fixed'
     ? {
         name: '限量固定内容', type: '邀请码', price: 100,
         deliveryMode, fixedContent: 'https://example.test/invite', fixedContentType: 'url',
-        stockMode: 'limited', stock: 3,
+        stockMode: 'limited',
       }
     : {
         name: '限量人工服务', type: '网络节点', price: 100,
-        deliveryMode, stockMode: 'limited', stock: 3,
+        deliveryMode, stockMode: 'limited',
       }
   const res = await api.post('/api/merchant/products').set(authHeader(token)).send(body).expect(201)
-  return res.body.id as number
+  const productId = res.body.id as number
+  // Catalog Ops：建品与可售量分离。草稿初始名额恒为 0，随后显式补充名额。
+  await api.post(`/api/merchant/products/${productId}/capacity/adjust`).set(authHeader(token))
+    .send({ delta: 3, reason: '初始化可售名额' }).expect(200)
+  // 本文件包含一条下单扣减回归；发布门禁另有专门测试，这里直设 active
+  // 只为构造“已发布且已有名额”的订单前置状态。
+  await prisma.product.update({ where: { id: productId }, data: { status: 'active' } })
+  return productId
 }
 
 describe('merchant limited product capacity adjustment', () => {
@@ -58,6 +65,7 @@ describe('merchant limited product capacity adjustment', () => {
     ])
     expect(product.stock).toBe(2)
     expect(logs.map(log => ({ action: log.action, delta: log.delta, reason: log.reason }))).toEqual([
+      { action: 'capacity_adjust', delta: 3, reason: '初始化可售名额' },
       { action: 'capacity_adjust', delta: 5, reason: '新增可售邀请码配额' },
       { action: 'capacity_adjust', delta: -6, reason: '下架失效名额' },
     ])
@@ -75,7 +83,7 @@ describe('merchant limited product capacity adjustment', () => {
 
     const product = await prisma.product.findUniqueOrThrow({ where: { id: productId } })
     expect(product.stock).toBe(3)
-    expect(await prisma.inventoryLog.count({ where: { productId } })).toBe(0)
+    expect(await prisma.inventoryLog.count({ where: { productId } })).toBe(1)
   })
 
   it('records a sale against the order when limited capacity is consumed', async () => {

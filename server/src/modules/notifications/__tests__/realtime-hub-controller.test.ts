@@ -148,6 +148,33 @@ describe('NotificationRealtimeHub controlled writes (R-RT-003B)', () => {
     await hub.closeAll()
   })
 
+  it('stops the shared heartbeat when the last connection is removed, and restarts on register', async () => {
+    vi.useFakeTimers()
+    const hub = makeHub()
+    const a = fakeResponse()
+    const b = fakeResponse()
+    const entryA = hub.registerAndReady(a, 11, '127.0.0.1')!
+    const entryB = hub.registerAndReady(b, 12, '127.0.0.2')!
+    hub.startHeartbeat()
+    expect(vi.getTimerCount()).toBe(1)
+
+    // Removing one of two connections keeps the heartbeat running.
+    hub.removeEntry(11, entryA.connectionId)
+    expect(vi.getTimerCount()).toBe(1)
+
+    // Last connection removed -> heartbeat stops (no idle spin).
+    hub.removeEntry(12, entryB.connectionId)
+    expect(vi.getTimerCount()).toBe(0)
+    expect(hub.connectionCountValue()).toBe(0)
+
+    // A new registration (stream controller) restarts the heartbeat idempotently.
+    hub.registerAndReady(a, 13, '127.0.0.3')
+    hub.startHeartbeat()
+    expect(vi.getTimerCount()).toBe(1)
+    hub.stopHeartbeat()
+    await hub.closeAll()
+  })
+
   it('does not queue another frame after a degraded drain write returns false', async () => {
     let writes = 0
     const hub = makeHub()
@@ -207,8 +234,7 @@ describe('stream controller timer cleanup (R-RT-003B)', () => {
 
     expect(response.destroy).toHaveBeenCalledTimes(1)
     expect(hub.connectionCountValue()).toBe(0)
-    expect(vi.getTimerCount()).toBe(1) // shared heartbeat only
-    hub.stopHeartbeat()
+    // Last connection removed -> shared heartbeat stops (no idle spin).
     expect(vi.getTimerCount()).toBe(0)
   })
 
@@ -230,8 +256,6 @@ describe('stream controller timer cleanup (R-RT-003B)', () => {
     )
 
     expect(response.destroy).toHaveBeenCalledTimes(1)
-    expect(vi.getTimerCount()).toBe(1)
-    hub.stopHeartbeat()
     expect(vi.getTimerCount()).toBe(0)
   })
 
@@ -254,8 +278,6 @@ describe('stream controller timer cleanup (R-RT-003B)', () => {
     )
 
     expect(hub.connectionCountValue()).toBe(0)
-    expect(vi.getTimerCount()).toBe(1)
-    hub.stopHeartbeat()
     expect(vi.getTimerCount()).toBe(0)
   })
 })

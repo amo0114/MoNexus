@@ -230,8 +230,20 @@ describe('P7a — file grant rate limit is atomic under the advisory lock (A-T3)
     const created = await api
       .post('/api/merchant/products')
       .set(authHeader(seller.accessToken))
-      .send({ name: 'P7a文件商品', type: '充值卡密', price: 100, deliveryMode: 'manual_service', stockMode: 'unlimited' })
+      .send({
+        name: 'P7a文件商品',
+        type: '充值卡密',
+        price: 100,
+        deliveryMode: 'manual_service',
+        stockMode: 'unlimited',
+        imageUrl: 'https://cdn.test.local/p7a-file-cover.png',
+        images: ['https://cdn.test.local/p7a-file-cover.png'],
+      })
       .expect(201)
+    await api
+      .post(`/api/merchant/products/${created.body.id}/publish`)
+      .set(authHeader(seller.accessToken))
+      .expect(200)
     const offer = await api
       .post(`/api/merchant/products/${created.body.id}/offers`)
       .set(authHeader(seller.accessToken))

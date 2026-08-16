@@ -14,6 +14,7 @@ import {
   NOTIFICATION_REALTIME_CHANNEL,
   NOTIFICATION_REALTIME_LISTENER_APPLICATION_NAME,
   NOTIFICATION_REALTIME_PROBE_INTERVAL_MS,
+  NOTIFICATION_REALTIME_MAX_INFLIGHT_ENVELOPE_QUERIES,
   type NotificationRealtimePgOutcome,
 } from './constants.js'
 import { parsePgPayload, type NotificationEnvelope } from './protocol.js'
@@ -64,6 +65,7 @@ export class NotificationRealtimeListener {
   private stopped = false
   private unavailableReported = false
   private attempt = 0
+  private inflightEnvelopeQueries = 0
   private stopPromise: Promise<void> | null = null
   private readonly closePromises = new WeakMap<object, Promise<void>>()
 
@@ -191,6 +193,14 @@ export class NotificationRealtimeListener {
       this.options.reportOutcome('no_subscriber')
       return
     }
+    // Lightweight concurrency gate: when the DB is lagging behind a NOTIFY
+    // storm, drop the wake-up instead of stacking unbounded envelope queries.
+    // NOTIFY is a lossy signal by design; REST polling converges (NRT-014).
+    if (this.inflightEnvelopeQueries >= NOTIFICATION_REALTIME_MAX_INFLIGHT_ENVELOPE_QUERIES) {
+      this.options.reportOutcome('overload')
+      return
+    }
+    this.inflightEnvelopeQueries += 1
     let envelope: NotificationEnvelope | null
     try {
       envelope = await this.options.getEnvelope(payload.notificationId, payload.recipientUserId)
@@ -198,6 +208,8 @@ export class NotificationRealtimeListener {
       if (!this.isCurrent(sourceClient, attempt)) return
       this.options.reportOutcome('query_error')
       return
+    } finally {
+      this.inflightEnvelopeQueries = Math.max(0, this.inflightEnvelopeQueries - 1)
     }
     if (!this.isCurrent(sourceClient, attempt)) return
     if (envelope === null) {

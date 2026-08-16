@@ -64,11 +64,59 @@ export async function updateProduct(req: Request, res: Response, next: NextFunct
   } catch (err) { next(err) }
 }
 
+export async function productReadiness(req: Request, res: Response, next: NextFunction) {
+  try {
+    const productId = req.params.id as unknown as number
+    const result = await adminService.getProductReadiness(productId)
+    res.json({
+      ready: result.ready,
+      productId,
+      issues: result.details.map(({ code, field, offerId }) => ({ code, field, offerId })),
+    })
+  } catch (err) { next(err) }
+}
+
+export async function publishProduct(req: Request, res: Response, next: NextFunction) {
+  try {
+    const outcome = await adminService.publishProduct(req.params.id as unknown as number)
+    res.json({ id: outcome.product.id, status: outcome.product.status, publishedAt: outcome.product.publishedAt })
+  } catch (err) { next(err) }
+}
+
+export async function unpublishProduct(req: Request, res: Response, next: NextFunction) {
+  try {
+    const outcome = await adminService.unpublishProduct(req.params.id as unknown as number)
+    res.json({ id: outcome.product.id, status: outcome.product.status, publishedAt: outcome.product.publishedAt })
+  } catch (err) { next(err) }
+}
+
 export async function importInventory(req: Request, res: Response, next: NextFunction) {
   try {
     const productId = req.params.id as unknown as number
     const result = await adminService.importInventory(productId, req.body, req.user!.userId)
     res.json(result)
+  } catch (err) { next(err) }
+}
+
+// T-CAT-BE-004（D-CAT-13/15）：admin preview → confirm，与商家共用领域分析器。
+export async function previewInventory(req: Request, res: Response, next: NextFunction) {
+  try {
+    const productId = req.params.id as unknown as number
+    res.json(await adminService.previewInventory(productId, req.body))
+  } catch (err) { next(err) }
+}
+
+export async function previewOfferInventory(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { id, offerId } = req.params as unknown as { id: number; offerId: number }
+    res.json(await adminService.previewOfferInventory(id, offerId, req.body))
+  } catch (err) { next(err) }
+}
+
+export async function importOfferInventory(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { id, offerId } = req.params as unknown as { id: number; offerId: number }
+    res.json(await adminService.importOfferInventory(id, offerId, req.body, req.user!.userId))
   } catch (err) { next(err) }
 }
 
@@ -132,7 +180,20 @@ export async function fakaCatalog(_req: Request, res: Response, next: NextFuncti
 
 export async function importFakaPlan(req: Request, res: Response, next: NextFunction) {
   try {
-    res.status(201).json(await adminService.importAdminFakaPlan(req.user!.userId, req.body))
+    const result = await adminService.importAdminFakaPlan(
+      req.user!.userId,
+      req.body,
+      req.headers['idempotency-key'] as string | undefined,
+    )
+    res.status(result.replayed ? 200 : 201).json(result)
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function previewFakaPlan(req: Request, res: Response, next: NextFunction) {
+  try {
+    res.json(await adminService.previewAdminFakaPlan(req.body))
   } catch (err) {
     next(err)
   }
