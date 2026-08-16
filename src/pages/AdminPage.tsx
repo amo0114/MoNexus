@@ -433,8 +433,8 @@ export default function AdminPage() {
                           {s.merchant?.name || s.merchantId}
                         </td>
                         <td className="text-sm" data-label="抽成/订单金额">
-                          <div className="text-[var(--color-text)]">平台抽: <span className="text-[var(--color-text-muted)]">{s.commissionAmount}</span> ({(Number(s.commissionRate) * 100).toFixed(0)}%)</div>
-                          <div className="text-[var(--color-text)]">单总额: <span className="text-[var(--color-text)]">{s.orderAmount}</span></div>
+                          <div className="text-[var(--color-text)]">平台服务费: <span className="text-[var(--color-text-muted)]">{s.commissionAmount}</span> ({(Number(s.commissionRate) * 100).toFixed(0)}%)</div>
+                          <div className="text-[var(--color-text)]">订单金额: <span className="text-[var(--color-text)]">{s.orderAmount}</span></div>
                         </td>
                         <td className="font-bold text-[var(--color-cta)]" data-label="结算金额">
                           {s.settlementAmount}
@@ -815,15 +815,14 @@ export default function AdminPage() {
         onCreated={() => loadTabData('products')}
       />
 
-      {/* Faka capacity edit — writes Xboard capacity_limit via platform HMAC */}
+      {/* Faka capacity edit — writes the Xboard subscription seat limit via platform HMAC */}
       <Dialog open={!!fakaCapProduct} onOpenChange={(o) => { if (!o) setFakaCapProduct(null) }}>
         <DialogContent>
           <DialogTitle className="text-xl mb-3">调整 Xboard 订阅人数限制</DialogTitle>
           <p className="text-xs text-[var(--color-text-muted)] mb-4 leading-relaxed">
             商品：<span className="font-bold text-[var(--color-text)]">{fakaCapProduct?.name}</span>
             <br />
-            写入 Xboard 套餐 <code className="text-[var(--color-primary)]">capacity_limit</code>
-            （null=不限）。仅平台管理员；商家不可见。
+            写入 Xboard 套餐的「套餐容量上限」（不限数量）。仅平台管理员；商家不可见。
           </p>
           {fakaCapProduct?.fakaCapacity?.source === 'xboard' && (
             <p className="text-xs mb-3 text-[var(--color-text-muted)]" data-testid="admin-faka-cap-current">

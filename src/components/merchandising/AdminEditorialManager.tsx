@@ -36,6 +36,7 @@ import type {
   EditorialStatus,
 } from '../../types/merchandising'
 import AdminPagination from '../admin/AdminPagination'
+import AdminProductSearchSelect from './AdminProductSearchSelect'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../ui/Dialog'
 import EmptyState from '../ui/EmptyState'
 import { TableSkeleton } from '../ui/Skeleton'
@@ -280,7 +281,7 @@ export default function AdminEditorialManager({
 
   const validateForm = (): string | null => {
     if (editingFeature == null && parseSafeProductId(formProductId.trim()) == null) {
-      return '商品 ID 必须为正整数'
+      return '请选择商品'
     }
     // placement is a controlled select limited to the two frozen enums.
     const startsIso = datetimeLocalToIso(formStartsAt)
@@ -336,7 +337,7 @@ export default function AdminEditorialManager({
       if (editingFeature == null) {
         const productId = parseSafeProductId(formProductId.trim())
         if (productId == null) {
-          setFormFieldError('商品 ID 必须为正整数')
+          setFormFieldError('请选择商品')
           return
         }
         // Exact create payload — productId always present, all fields sent.
@@ -617,24 +618,17 @@ export default function AdminEditorialManager({
           <div className="space-y-4 mt-4">
             <div>
               <label
-                htmlFor="editorial-form-product-id"
+                htmlFor="editorial-form-product"
                 className="block text-xs font-bold text-[var(--color-text-muted)] mb-1.5 uppercase tracking-wider"
               >
-                商品 ID
+                商品
               </label>
-              <input
-                id="editorial-form-product-id"
-                type="text"
-                inputMode="numeric"
-                value={formProductId}
-                onChange={(e) => {
-                  setFormProductId(e.target.value)
-                  setFormFieldError(null)
-                }}
-                placeholder="请输入商品 ID"
-                className="input"
-                readOnly={editingFeature != null}
+              <AdminProductSearchSelect
+                value={formProductId.trim() ? Number(formProductId) : null}
+                onChange={(id) => { setFormProductId(String(id)); setFormFieldError(null) }}
                 disabled={formBusy}
+                readOnly={editingFeature != null}
+                testId="editorial-form-product"
               />
               {editingFeature != null && (
                 <p className="text-xs text-[var(--color-text-muted)] mt-1">新建后商品不可变更。</p>

@@ -19,7 +19,8 @@
 // entry holds BOTH resolve and reject, and requests are settled BY INDEX.
 
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { describe, expect, it, vi, type Mock } from 'vitest'
+import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
+import api from '../../api/client'
 import AdminEditorialManager, {
   type AdminEditorialAdapter,
 } from './AdminEditorialManager'
@@ -31,7 +32,26 @@ import type {
   EditorialPlacement,
 } from '../../types/merchandising'
 
-// Complete DTO fixtures covering every field of the DTO (sensitive audit
+vi.mock('../../api/client', () => ({ default: { get: vi.fn() } }))
+const apiGet = vi.mocked(api.get)
+
+const PRODUCT_OPTIONS = [
+  { id: 1001, name: '商品1001' },
+  { id: 1002, name: '商品1002' },
+  { id: 1003, name: '商品1003' },
+]
+
+beforeEach(() => {
+  apiGet.mockReset()
+  apiGet.mockImplementation((url: string) => {
+    if (url === '/products') {
+      return Promise.resolve({ data: { items: PRODUCT_OPTIONS, nextCursor: null, hasMore: false } })
+    }
+    const detail = PRODUCT_OPTIONS.find(p => url === `/products/${p.id}`)
+    if (detail) return Promise.resolve({ data: detail })
+    return Promise.reject(new Error(`unexpected api url: ${url}`))
+  })
+})
 // fields included so the fixtures type-check; they are only asserted to
 // never appear in the DOM).
 const scheduledFeature: AdminEditorialFeatureDTO = {
@@ -231,7 +251,7 @@ interface CreateFormOverrides {
  * field overridable. All queries are scoped to the dialog so the '展位'
  * filter select (same label as the form select) never collides.
  */
-function fillCreateForm(dialog: HTMLElement, overrides: CreateFormOverrides = {}) {
+async function fillCreateForm(dialog: HTMLElement, overrides: CreateFormOverrides = {}) {
   const values: Required<CreateFormOverrides> = {
     productId: '1001',
     placement: 'category_editorial',
@@ -243,7 +263,11 @@ function fillCreateForm(dialog: HTMLElement, overrides: CreateFormOverrides = {}
     ...overrides,
   }
   const scope = within(dialog)
-  fireEvent.change(scope.getByLabelText('商品 ID'), { target: { value: values.productId } })
+  // Select the product via the search selector (SPEC-CMI-UX-001 §6.3).
+  if (values.productId) {
+    fireEvent.change(scope.getByLabelText('搜索商品'), { target: { value: `商品${values.productId}` } })
+    fireEvent.click(await scope.findByTestId(`editorial-form-product-option-${values.productId}`))
+  }
   fireEvent.change(scope.getByLabelText('展位'), { target: { value: values.placement } })
   fireEvent.change(scope.getByLabelText('开始时间'), { target: { value: values.startsAt } })
   fireEvent.change(scope.getByLabelText('结束时间'), { target: { value: values.endsAt } })
@@ -600,7 +624,7 @@ describe('AdminEditorialManager create (T-MERCH-FE-003 §create)', () => {
     const endsLocal = '2099-07-01T18:45'
 
     const dialog = await openCreateDialog()
-    fillCreateForm(dialog, {
+    await fillCreateForm(dialog, {
       productId: '1001',
       placement: 'category_editorial',
       startsAt: startsLocal,
@@ -639,37 +663,27 @@ describe('AdminEditorialManager create (T-MERCH-FE-003 §create)', () => {
     await controller.resolve(1, { items: [scheduledFeature], total: 1, page: 1, pageSize: 10 })
   })
 
-  const INVALID_PRODUCT_IDS: ReadonlyArray<{ label: string; input: string }> = [
-    { label: 'a decimal', input: '1001.5' },
-    { label: 'nonnumeric', input: 'abc' },
-    { label: 'zero', input: '0' },
-    { label: 'negative', input: '-5' },
-    { label: 'above the safe-integer range', input: String(Number.MAX_SAFE_INTEGER + 1) },
-  ]
+  it('requires a product selection before create (search selector, CHK-UX-P1-008)', async () => {
+    const createFeature = vi.fn<
+      (payload: AdminEditorialCreatePayload) => Promise<AdminEditorialFeatureDTO>
+    >()
+    const { controller } = renderManagerWithCreate(createFeature)
+    await controller.resolve(0, { items: [], total: 0, page: 1, pageSize: 10 })
+    await screen.findByText('暂无精选记录')
 
-  it.each(INVALID_PRODUCT_IDS)(
-    'rejects product id $input ($label) without calling createFeature and shows the field error',
-    async ({ input }) => {
-      const createFeature = vi.fn<
-        (payload: AdminEditorialCreatePayload) => Promise<AdminEditorialFeatureDTO>
-      >()
-      const { controller } = renderManagerWithCreate(createFeature)
-      await controller.resolve(0, { items: [], total: 0, page: 1, pageSize: 10 })
-      await screen.findByText('暂无精选记录')
+    const dialog = await openCreateDialog()
+    // No product selected (search left empty).
+    await fillCreateForm(dialog, { productId: '' })
 
-      const dialog = await openCreateDialog()
-      fillCreateForm(dialog, { productId: input })
+    await act(async () => {
+      fireEvent.click(within(dialog).getByRole('button', { name: '确认新建' }))
+    })
 
-      await act(async () => {
-        fireEvent.click(within(dialog).getByRole('button', { name: '确认新建' }))
-      })
-
-      expect(createFeature).not.toHaveBeenCalled()
-      expect(within(dialog).getByRole('alert')).toHaveTextContent('商品 ID 必须为正整数')
-      // the dialog stays open so the operator can correct the id
-      expect(screen.getByRole('dialog')).toBeInTheDocument()
-    },
-  )
+    expect(createFeature).not.toHaveBeenCalled()
+    expect(within(dialog).getByRole('alert')).toHaveTextContent('请选择商品')
+    // the dialog stays open so the operator can pick a product
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+  })
 
   it('disables submit while create is pending and a rapid duplicate submit calls the adapter only once', async () => {
     const deferredCreate = createDeferredCreateFeature()
@@ -678,7 +692,7 @@ describe('AdminEditorialManager create (T-MERCH-FE-003 §create)', () => {
     await screen.findByText('暂无精选记录')
 
     const dialog = await openCreateDialog()
-    fillCreateForm(dialog)
+    await fillCreateForm(dialog)
     const submitButton = within(dialog).getByRole('button', { name: '确认新建' })
 
     // first submit → pending: adapter called exactly once
@@ -713,7 +727,7 @@ describe('AdminEditorialManager create (T-MERCH-FE-003 §create)', () => {
     await screen.findByRole('table', { name: '平台精选列表' })
 
     const dialog = await openCreateDialog()
-    fillCreateForm(dialog)
+    await fillCreateForm(dialog)
     const submitButton = within(dialog).getByRole('button', { name: '确认新建' })
 
     // first submit → server reject
@@ -729,7 +743,7 @@ describe('AdminEditorialManager create (T-MERCH-FE-003 §create)', () => {
     expect(screen.getByRole('dialog')).toBeInTheDocument()
     await waitFor(() => expect(submitButton).toBeEnabled())
     expect(within(dialog).getByRole('alert')).toHaveTextContent('新建精选失败，请稍后重试。')
-    expect(within(dialog).getByLabelText('商品 ID')).toHaveValue('1001')
+    expect(within(dialog).getByTestId('editorial-form-product-selected')).toHaveTextContent('已选择：商品1001')
 
     // retry → success
     await act(async () => {
@@ -753,7 +767,7 @@ describe('AdminEditorialManager create (T-MERCH-FE-003 §create)', () => {
     // reopening New Create shows a fresh blank/default form (no stale values,
     // no field/submit errors)
     const reopened = await openCreateDialog()
-    expect(within(reopened).getByLabelText('商品 ID')).toHaveValue('')
+    expect(within(reopened).queryByTestId('editorial-form-product-selected')).not.toBeInTheDocument()
     expect(within(reopened).getByLabelText('展位')).toHaveValue('store_editorial')
     expect(within(reopened).getByLabelText('开始时间')).toHaveValue('')
     expect(within(reopened).getByLabelText('结束时间')).toHaveValue('')
@@ -985,11 +999,8 @@ describe('AdminEditorialManager edit (T-MERCH-FE-003 §edit)', () => {
     expect(within(dialog).getByText('编辑精选')).toBeInTheDocument()
     expect(within(dialog).getByText(/正在编辑商品 1001 的平台精选（精选 ID 101）/)).toBeInTheDocument()
 
-    // product id is read-only, pre-filled, and never editable
-    const productIdInput = within(dialog).getByLabelText('商品 ID')
-    expect(productIdInput).toHaveValue('1001')
-    expect(productIdInput).toHaveAttribute('readonly')
-    expect(productIdInput).not.toBeDisabled()
+    // product is read-only via the search selector (never a raw id input)
+    expect(within(dialog).getByTestId('editorial-form-product-fixed')).toHaveTextContent('商品1001')
     expect(within(dialog).getByText('新建后商品不可变更。')).toBeInTheDocument()
 
     // every editable field pre-fills from the DTO
@@ -1142,7 +1153,7 @@ describe('AdminEditorialManager edit (T-MERCH-FE-003 §edit)', () => {
     // reopening edit clears the old submit error and re-prefills per the DTO
     const reopened = await openEditDialog(scheduledFeature)
     expect(within(reopened).queryByRole('alert')).not.toBeInTheDocument()
-    expect(within(reopened).getByLabelText('商品 ID')).toHaveValue('1001')
+    expect(within(reopened).getByTestId('editorial-form-product-fixed')).toHaveTextContent('商品1001')
     expect(within(reopened).getByLabelText('展位')).toHaveValue(scheduledFeature.placement)
     expect(within(reopened).getByLabelText('开始时间')).toHaveValue(
       isoToDatetimeLocal(scheduledFeature.startsAt),
