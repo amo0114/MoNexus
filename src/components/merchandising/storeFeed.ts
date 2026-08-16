@@ -77,6 +77,13 @@ const FIRST_SCREEN_TEMPLATE: ReadonlyArray<'O' | 'S' | 'E'> = [
 export const FIRST_SCREEN_SLOT_COUNT = FIRST_SCREEN_TEMPLATE.length
 export const MAX_SPONSORED_PER_SCREEN = 2
 export const MAX_EDITORIAL_PER_SCREEN = 1
+export const MAX_EDITORIAL_REASON_CODE_POINTS = 40
+
+/** Limit public copy by Unicode code point rather than UTF-16 code unit. */
+export function truncateEditorialReason(reason: string | null | undefined): string | null {
+  if (reason == null) return null
+  return Array.from(reason).slice(0, MAX_EDITORIAL_REASON_CODE_POINTS).join('')
+}
 
 export function composeStoreFeed<P extends FeedProductLike>(
   input: ComposeStoreFeedInput<P>,
@@ -172,7 +179,7 @@ export function composeStoreFeed<P extends FeedProductLike>(
           kind: 'editorial',
           productId: candidate.productId,
           product: candidate.product,
-          publicReason: candidate.publicReason ?? null,
+          publicReason: truncateEditorialReason(candidate.publicReason),
         })
         placed = true
       }

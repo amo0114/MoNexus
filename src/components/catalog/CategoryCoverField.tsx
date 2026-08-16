@@ -57,6 +57,12 @@ export default function CategoryCoverField({
           : existingUrl
 
   const hasCover = previewUrl != null
+  const helpId = `${testId}-help`
+  const actionErrorId = `${testId}-action-error`
+  const formErrorId = `${testId}-form-error`
+  const describedBy = [helpId, actionError ? actionErrorId : null, error ? formErrorId : null]
+    .filter(Boolean)
+    .join(' ')
 
   async function handleFile(file: File | undefined) {
     if (!file) return
@@ -93,24 +99,17 @@ export default function CategoryCoverField({
             data-testid={`${testId}-preview`}
           />
           <div className="flex flex-col gap-2">
-            <label className="btn-secondary inline-flex items-center gap-2 cursor-pointer text-sm w-fit">
+            <button
+              type="button"
+              className="btn-secondary inline-flex items-center gap-2 text-sm w-fit"
+              disabled={disabled || uploading}
+              aria-busy={uploading}
+              aria-describedby={describedBy}
+              onClick={() => fileInputRef.current?.click()}
+            >
               {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
               {uploading ? '上传中…' : '替换图片'}
-              <input
-                id={`${testId}-file`}
-                ref={fileInputRef}
-                type="file"
-                className="hidden"
-                accept="image/png,image/jpeg,image/webp,image/gif"
-                disabled={disabled || uploading}
-                aria-busy={uploading}
-                onChange={(event) => {
-                  const file = event.target.files?.[0]
-                  event.target.value = ''
-                  void handleFile(file)
-                }}
-              />
-            </label>
+            </button>
             <button
               type="button"
               className="btn-secondary inline-flex items-center gap-2 text-sm w-fit"
@@ -123,35 +122,46 @@ export default function CategoryCoverField({
         </div>
       ) : (
         <div className="rounded-lg border border-dashed border-[var(--color-border)] p-4 flex flex-col items-center gap-2">
-          <label className="btn-secondary inline-flex items-center gap-2 cursor-pointer text-sm">
+          <button
+            type="button"
+            className="btn-secondary inline-flex items-center gap-2 text-sm"
+            disabled={disabled || uploading}
+            aria-busy={uploading}
+            aria-describedby={describedBy}
+            onClick={() => fileInputRef.current?.click()}
+          >
             {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
             {uploading ? '上传中…' : '上传图片'}
-            <input
-              id={`${testId}-file`}
-              ref={fileInputRef}
-              type="file"
-              className="hidden"
-              accept="image/png,image/jpeg,image/webp,image/gif"
-              disabled={disabled || uploading}
-              aria-busy={uploading}
-              onChange={(event) => {
-                const file = event.target.files?.[0]
-                event.target.value = ''
-                void handleFile(file)
-              }}
-            />
-          </label>
-          <p className="text-xs text-[var(--color-text-muted)]">PNG / JPEG / WebP / GIF，最大 5MB</p>
+          </button>
         </div>
       )}
 
+      <p id={helpId} className="text-xs text-[var(--color-text-muted)] mt-2">PNG / JPEG / WebP / GIF，最大 5MB</p>
+
+      <input
+        id={`${testId}-file`}
+        ref={fileInputRef}
+        type="file"
+        className="hidden"
+        accept="image/png,image/jpeg,image/webp,image/gif"
+        disabled={disabled || uploading}
+        aria-busy={uploading}
+        aria-invalid={Boolean(actionError || error)}
+        aria-describedby={describedBy}
+        onChange={(event) => {
+          const file = event.target.files?.[0]
+          event.target.value = ''
+          void handleFile(file)
+        }}
+      />
+
       {actionError && (
-        <p role="alert" className="text-xs text-[var(--color-danger)] mt-1" data-testid={`${testId}-action-error`}>
+        <p id={actionErrorId} role="alert" className="text-xs text-[var(--color-danger)] mt-1" data-testid={`${testId}-action-error`}>
           {actionError}
         </p>
       )}
       {error && (
-        <p role="alert" className="text-xs text-[var(--color-danger)] mt-1">
+        <p id={formErrorId} role="alert" className="text-xs text-[var(--color-danger)] mt-1">
           {error}
         </p>
       )}

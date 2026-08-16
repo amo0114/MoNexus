@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Locator } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
 import { API_BASE, SEED_ACCOUNTS, loginAs, loginAsApi } from './helpers'
 
@@ -107,6 +107,28 @@ function findSponsoredItem(body: unknown, expectedProductId: number): string | n
   return null
 }
 
+async function expectCardReadyForEvidence(card: Locator): Promise<void> {
+  await expect(card).toBeVisible({ timeout: 15_000 })
+  await expect.poll(
+    () => card.evaluate((element) => {
+      const rect = element.getBoundingClientRect()
+      const image = element.querySelector('img')
+      let current: Element | null = element
+      while (current) {
+        if (Number(getComputedStyle(current).opacity) < 0.99) return false
+        current = current.parentElement
+      }
+      return rect.width > 100
+        && rect.height > 100
+        && (element.textContent?.trim().length ?? 0) > 0
+        && image instanceof HTMLImageElement
+        && image.complete
+        && image.naturalWidth > 0
+    }),
+    { message: '商品卡在截图前必须有文字、已加载图片且不透明', timeout: 15_000 },
+  ).toBe(true)
+}
+
 test.describe.serial('T-MERCH-QA-003 merchandising smoke', () => {
   test('admin creates a package, merchant requests its own active product, admin approves → active + charged', async ({ request }) => {
     const adminSession = await loginAsApi(request, SEED_ACCOUNTS.admin)
@@ -172,6 +194,7 @@ test.describe.serial('T-MERCH-QA-003 merchandising smoke', () => {
     expect(productId).toBeGreaterThan(0)
     expect(campaignId).toBeGreaterThan(0)
 
+    await page.emulateMedia({ reducedMotion: 'reduce' })
     await loginAs(page, SEED_ACCOUNTS.user)
     await page.goto('/')
 
@@ -192,17 +215,19 @@ test.describe.serial('T-MERCH-QA-003 merchandising smoke', () => {
 
     // UX-review screenshots (SPEC-CMI-UX-001 reviewer handoff): desktop with
     // the sponsored card blended in, and a no-candidates category view.
-    await page.screenshot({ path: 'outputs/cmi-ux-store-with-sponsored.png', fullPage: true })
+    await expectCardReadyForEvidence(sponsoredCard)
+    await page.screenshot({ path: 'outputs/cmi-ux-store-with-sponsored.png', fullPage: true, animations: 'disabled' })
     await page.getByRole('button', { name: '充值卡密' }).click()
     await expect(page.getByTestId(`store-product-card-${productId}`)).toHaveCount(0, { timeout: 10_000 })
-    await page.screenshot({ path: 'outputs/cmi-ux-store-no-candidates.png', fullPage: true })
+    await expectCardReadyForEvidence(page.locator('[data-testid^="store-product-card-"]').first())
+    await page.screenshot({ path: 'outputs/cmi-ux-store-no-candidates.png', fullPage: true, animations: 'disabled' })
 
     // Mobile viewport (compact 2-col grid) with candidates.
     await page.setViewportSize({ width: 390, height: 844 })
     await page.goto('/')
     const sponsoredMobile = page.getByTestId(`store-product-card-${productId}`)
-    await expect(sponsoredMobile).toBeVisible({ timeout: 15_000 })
-    await page.screenshot({ path: 'outputs/cmi-ux-store-with-sponsored-mobile.png', fullPage: true })
+    await expectCardReadyForEvidence(sponsoredMobile)
+    await page.screenshot({ path: 'outputs/cmi-ux-store-with-sponsored-mobile.png', animations: 'disabled' })
   })
 
   test('merchant campaign panel shows the active campaign with the charged timeline state', async ({ page }) => {

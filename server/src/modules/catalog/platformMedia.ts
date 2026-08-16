@@ -101,6 +101,7 @@ async function resolveUploadObjectKey(
   const canonicalUrl = await resolvePublicObjectCanonicalUrl(
     stored.providerConfigId,
     stored.objectKey,
+    db,
   )
   if (!canonicalUrl) {
     throw new MediaRefResolutionError('provider_unresolved', '无法生成公开访问地址')
@@ -146,6 +147,7 @@ async function resolveLegacyAbsoluteUrl(
   const canonicalUrl = await resolvePublicObjectCanonicalUrl(
     stored.providerConfigId,
     stored.objectKey,
+    db,
   )
   if (!canonicalUrl) {
     throw new MediaRefResolutionError('provider_unresolved', '无法生成公开访问地址')

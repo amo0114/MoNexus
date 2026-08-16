@@ -4,6 +4,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { useState } from 'react'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import type { PlatformMediaRef } from '../../types/catalog'
 import CategoryCoverField from './CategoryCoverField'
 
@@ -108,9 +109,18 @@ describe('CategoryCoverField — a11y (AC-UX-017)', () => {
     render(<CategoryCoverField existingUrl={null} value={undefined} onChange={vi.fn()} testId="cover" />)
 
     const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement
+    const trigger = screen.getByRole('button', { name: '上传图片' })
+    const inputClick = vi.spyOn(fileInput, 'click')
+    const user = userEvent.setup()
+
+    await user.tab()
+    expect(trigger).toHaveFocus()
+    await user.keyboard('{Enter}')
+    expect(inputClick).toHaveBeenCalledOnce()
     expect(fileInput).toHaveAttribute('aria-busy', 'false')
     fireEvent.change(fileInput, { target: { files: [makeFile()] } })
     await waitFor(() => expect(fileInput).toHaveAttribute('aria-busy', 'true'))
+    expect(trigger).toHaveAttribute('aria-busy', 'true')
   })
 
   it('renders a form-level error with role=alert (AC-UX-012)', () => {
@@ -126,5 +136,8 @@ describe('CategoryCoverField — a11y (AC-UX-017)', () => {
     )
     const alert = screen.getByRole('alert')
     expect(alert.textContent).toBe('请上传分类默认封面')
+    const fileInput = screen.getByLabelText('默认封面 *')
+    expect(fileInput).toHaveAttribute('aria-invalid', 'true')
+    expect(fileInput).toHaveAttribute('aria-describedby', expect.stringContaining(alert.id))
   })
 })

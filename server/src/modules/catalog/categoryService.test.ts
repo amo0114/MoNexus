@@ -36,6 +36,27 @@ async function categoryIdByCode(code: string): Promise<number> {
   return row.id
 }
 
+function deferred() {
+  let resolve!: () => void
+  const promise = new Promise<void>((done) => { resolve = done })
+  return { promise, resolve }
+}
+
+async function waitForRowLockWaiter(): Promise<void> {
+  for (let attempt = 0; attempt < 250; attempt++) {
+    const rows = await prisma.$queryRaw<Array<{ count: bigint }>>`
+      SELECT COUNT(*)::bigint AS count
+      FROM pg_stat_activity
+      WHERE datname = current_database()
+        AND state = 'active'
+        AND wait_event_type = 'Lock'
+    `
+    if (Number(rows[0]?.count ?? 0) > 0) return
+    await new Promise(resolve => setTimeout(resolve, 20))
+  }
+  throw new Error('barrier: no category mutation waited on the row lock')
+}
+
 describe('categoryService — create', () => {
   it('creates an active category with normalized label, canonical uniqueness and AdminLog', async () => {
     const actorId = await seedActor()
@@ -162,6 +183,100 @@ describe('categoryService — status CAS', () => {
   it('returns 404 for a missing id', async () => {
     const actorId = await seedActor()
     await expect(activateCategory(actorId, 999_999)).rejects.toMatchObject({ status: 404 })
+  })
+})
+
+describe('categoryService — status/cover concurrency', () => {
+  it('rejects cover removal queued behind an uncommitted activation', async () => {
+    const actorId = await seedActor()
+    const category = await createCategory(actorId, {
+      defaultCoverUrl: COVER_URL,
+      code: 'race-activate-remove',
+      label: '并发激活移除',
+    })
+    await deactivateCategory(actorId, category.id)
+
+    const release = deferred()
+    const activationApplied = deferred()
+    const activation = prisma.$transaction(async tx => {
+      await activateCategory(actorId, category.id, tx)
+      activationApplied.resolve()
+      await release.promise
+    })
+    await activationApplied.promise
+
+    const removal = updateCategory(actorId, category.id, { defaultCover: null })
+    try {
+      await waitForRowLockWaiter()
+    } finally {
+      release.resolve()
+    }
+    await activation
+    await expect(removal).rejects.toMatchObject({
+      status: 400,
+      code: CATALOG_ERROR_CODES.COVER_REQUIRED,
+    })
+
+    const row = await prisma.productCategory.findUniqueOrThrow({ where: { id: category.id } })
+    expect(row).toMatchObject({ status: 'active', defaultCoverUrl: COVER_URL })
+  })
+
+  it('rejects activation queued behind an uncommitted cover removal', async () => {
+    const actorId = await seedActor()
+    const category = await createCategory(actorId, {
+      defaultCoverUrl: COVER_URL,
+      code: 'race-remove-activate',
+      label: '并发移除激活',
+    })
+    await deactivateCategory(actorId, category.id)
+
+    const release = deferred()
+    const removalApplied = deferred()
+    const removal = prisma.$transaction(async tx => {
+      await updateCategory(actorId, category.id, { defaultCover: null }, tx)
+      removalApplied.resolve()
+      await release.promise
+    })
+    await removalApplied.promise
+
+    const activation = activateCategory(actorId, category.id)
+    try {
+      await waitForRowLockWaiter()
+    } finally {
+      release.resolve()
+    }
+    await removal
+    await expect(activation).rejects.toMatchObject({
+      status: 400,
+      code: CATALOG_ERROR_CODES.COVER_REQUIRED,
+    })
+
+    const row = await prisma.productCategory.findUniqueOrThrow({ where: { id: category.id } })
+    expect(row).toMatchObject({ status: 'inactive', defaultCoverUrl: null })
+    const logs = await prisma.adminLog.count({
+      where: { targetType: 'productCategory', targetId: category.id, action: '启用分类' },
+    })
+    expect(logs).toBe(0)
+  })
+
+  it('serializes activation with a valid cover replacement', async () => {
+    const actorId = await seedActor()
+    const category = await createCategory(actorId, {
+      defaultCoverUrl: COVER_URL,
+      code: 'race-activate-replace',
+      label: '并发激活替换',
+    })
+    await deactivateCategory(actorId, category.id)
+
+    await Promise.all([
+      activateCategory(actorId, category.id),
+      updateCategory(actorId, category.id, {
+        defaultCover: { kind: 'static', path: '/assets/replaced.webp' },
+      }),
+    ])
+
+    const row = await prisma.productCategory.findUniqueOrThrow({ where: { id: category.id } })
+    expect(row).toMatchObject({ status: 'active', defaultCoverUrl: '/assets/replaced.webp' })
   })
 })
 

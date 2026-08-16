@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import React from 'react'
+import userEvent from '@testing-library/user-event'
 import AdminFakaImportPreview from './AdminFakaImportPreview'
 import AdminInventoryImportPreview from './AdminInventoryImportPreview'
 import AdminPlatformProductWizard from './AdminPlatformProductWizard'
@@ -240,6 +241,28 @@ describe('Catalog admin workflows (T-CAT-FE-004)', () => {
 })
 
 describe('Xboard cover loop (SPEC-CMI-UX-001 §5.5, T-UX-004)', () => {
+  it('opens the file picker from the keyboard and associates upload errors', async () => {
+    mocks.upload.mockRejectedValueOnce(new Error('upload unavailable'))
+    render(<AdminFakaImportPreview open onClose={vi.fn()} onImported={vi.fn()} />)
+    await screen.findByRole('option', { name: /#42 Basic/ })
+    fireEvent.change(screen.getByTestId('admin-faka-import-plan'), { target: { value: '42' } })
+    fireEvent.click(screen.getByLabelText('上传平台托管封面'))
+
+    const trigger = screen.getByRole('button', { name: '选择本地图片' })
+    const fileInput = screen.getByLabelText('上传商品封面') as HTMLInputElement
+    const inputClick = vi.spyOn(fileInput, 'click')
+    trigger.focus()
+    await userEvent.keyboard('{Enter}')
+    expect(inputClick).toHaveBeenCalledOnce()
+
+    fireEvent.change(fileInput, {
+      target: { files: [new File(['x'], 'cover.webp', { type: 'image/webp' })] },
+    })
+    const alert = await screen.findByRole('alert')
+    expect(fileInput).toHaveAttribute('aria-invalid', 'true')
+    expect(fileInput).toHaveAttribute('aria-describedby', expect.stringContaining(alert.id))
+  })
+
   it('sends the uploaded objectKey (never a URL) in the preview request (AC-UX-010)', async () => {
     mocks.upload.mockResolvedValue({ key: 'uploaded-cover.webp', url: 'http://localhost:3000/uploads/uploaded-cover.webp' })
     render(<AdminFakaImportPreview open onClose={vi.fn()} onImported={vi.fn()} />)

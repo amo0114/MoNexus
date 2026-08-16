@@ -6,7 +6,9 @@ import {
   composeStoreFeed,
   FIRST_SCREEN_SLOT_COUNT,
   MAX_EDITORIAL_PER_SCREEN,
+  MAX_EDITORIAL_REASON_CODE_POINTS,
   MAX_SPONSORED_PER_SCREEN,
+  truncateEditorialReason,
   type FeedOutputItem,
   type FeedProductLike,
 } from './storeFeed'
@@ -80,6 +82,26 @@ describe('composeStoreFeed — first 12 slots (AC-UX-002)', () => {
     expect(result.items.map(i => i.productId)).toEqual([
       1, 2, 101, 3, 4, 201, 5, 6, 102, 7, 8, 9, 10, 11, 12,
     ])
+  })
+})
+
+describe('editorial public reason display boundary (AC-UX-005)', () => {
+  it('keeps 40 Unicode code points and truncates the 41st without splitting emoji', () => {
+    const exact = `${'精'.repeat(39)}😀`
+    const over = `${exact}尾`
+    expect(Array.from(exact)).toHaveLength(MAX_EDITORIAL_REASON_CODE_POINTS)
+    expect(truncateEditorialReason(exact)).toBe(exact)
+    expect(truncateEditorialReason(over)).toBe(exact)
+
+    const result = composeStoreFeed({
+      organic: organic([1, 5]),
+      sponsored: [],
+      editorial: [{ productId: 201, product: product(201), publicReason: over }],
+      searchQuery: '',
+    })
+    const editorial = result.items.find(item => item.kind === 'editorial')
+    expect(editorial?.publicReason).toBe(exact)
+    expect(Array.from(editorial?.publicReason ?? '')).toHaveLength(40)
   })
 })
 

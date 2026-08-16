@@ -57,6 +57,7 @@ export default function AdminFakaImportPreview({ open, onClose, onImported }: Pr
   const [uploadedObjectKey, setUploadedObjectKey] = useState<string | null>(null)
   const [uploadedPreviewUrl, setUploadedPreviewUrl] = useState<string | null>(null)
   const [uploading, setUploading] = useState(false)
+  const [uploadError, setUploadError] = useState<string | null>(null)
   // Category id → canonical default-cover URL (for instant preview / pre-
   // preview missing-cover action, AC-UX-012).
   const [categoryCoverMap, setCategoryCoverMap] = useState<Record<number, string | null>>({})
@@ -67,6 +68,7 @@ export default function AdminFakaImportPreview({ open, onClose, onImported }: Pr
   const [confirming, setConfirming] = useState(false)
   const [conflictProductId, setConflictProductId] = useState<number | null>(null)
   const previewGuard = useRef(createLatestRequestGuard()).current
+  const coverInputRef = useRef<HTMLInputElement | null>(null)
 
   useEffect(() => {
     if (!open) {
@@ -129,6 +131,7 @@ export default function AdminFakaImportPreview({ open, onClose, onImported }: Pr
   function clearDraft() {
     setUploadedObjectKey(null)
     setUploadedPreviewUrl(null)
+    setUploadError(null)
     setCoverMode('category_default')
   }
 
@@ -289,7 +292,7 @@ export default function AdminFakaImportPreview({ open, onClose, onImported }: Pr
                   <legend className="text-sm font-bold">封面来源 *</legend>
                   <label className="flex items-center gap-2 text-sm">
                     <input type="radio" name="faka-cover" checked={coverMode === 'category_default'}
-                      onChange={() => { invalidatePreview(); setCoverMode('category_default') }} />
+                      onChange={() => { invalidatePreview(); setUploadError(null); setCoverMode('category_default') }} />
                     使用分类默认封面（预览时校验）
                   </label>
                   {coverMode === 'category_default' && categoryId != null && (
@@ -307,33 +310,61 @@ export default function AdminFakaImportPreview({ open, onClose, onImported }: Pr
                   )}
                   <label className="flex items-center gap-2 text-sm">
                     <input type="radio" name="faka-cover" checked={coverMode === 'uploaded'}
-                      onChange={() => { invalidatePreview(); setCoverMode('uploaded') }} />
+                      onChange={() => { invalidatePreview(); setUploadError(null); setCoverMode('uploaded') }} />
                     上传平台托管封面
                   </label>
                   {coverMode === 'uploaded' && (
                     <div className="rounded-lg border border-[var(--color-border)] p-3">
-                      <label className="btn-secondary inline-flex items-center gap-2 cursor-pointer">
+                      <button
+                        type="button"
+                        className="btn-secondary inline-flex items-center gap-2"
+                        disabled={uploading || confirming}
+                        aria-busy={uploading}
+                        aria-describedby={`admin-faka-cover-help${uploadError ? ' admin-faka-cover-error' : ''}`}
+                        onClick={() => coverInputRef.current?.click()}
+                      >
                         {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
                         {uploading ? '上传中…' : '选择本地图片'}
-                        <input type="file" className="hidden" accept="image/png,image/jpeg,image/webp,image/gif"
-                          disabled={uploading || confirming}
-                          onChange={async (event) => {
-                            const file = event.target.files?.[0]
-                            event.target.value = ''
-                            if (!file) return
-                            setUploading(true)
-                            try {
-                              const result = await uploadImage(file)
-                              invalidatePreview()
-                              setUploadedObjectKey(result.key)
-                              setUploadedPreviewUrl(result.url)
-                            } catch (error) {
-                              showToast(getApiErrorMessage(error, '封面上传失败'), 'error')
-                            } finally {
-                              setUploading(false)
-                            }
-                          }} />
-                      </label>
+                      </button>
+                      <input
+                        id="admin-faka-cover-file"
+                        ref={coverInputRef}
+                        type="file"
+                        className="hidden"
+                        accept="image/png,image/jpeg,image/webp,image/gif"
+                        disabled={uploading || confirming}
+                        aria-label="上传商品封面"
+                        aria-busy={uploading}
+                        aria-invalid={Boolean(uploadError)}
+                        aria-describedby={`admin-faka-cover-help${uploadError ? ' admin-faka-cover-error' : ''}`}
+                        onChange={async (event) => {
+                          const file = event.target.files?.[0]
+                          event.target.value = ''
+                          if (!file) return
+                          setUploading(true)
+                          setUploadError(null)
+                          try {
+                            const result = await uploadImage(file)
+                            invalidatePreview()
+                            setUploadedObjectKey(result.key)
+                            setUploadedPreviewUrl(result.url)
+                          } catch (error) {
+                            const message = getApiErrorMessage(error, '封面上传失败')
+                            setUploadError(message)
+                            showToast(message, 'error')
+                          } finally {
+                            setUploading(false)
+                          }
+                        }}
+                      />
+                      <p id="admin-faka-cover-help" className="mt-2 text-xs text-[var(--color-text-muted)]">
+                        PNG / JPEG / WebP / GIF，最大 5MB
+                      </p>
+                      {uploadError && (
+                        <p id="admin-faka-cover-error" role="alert" className="mt-2 text-xs text-[var(--color-danger)]">
+                          {uploadError}
+                        </p>
+                      )}
                       {uploadedPreviewUrl && <SafeImage src={uploadedPreviewUrl} alt="已上传封面" className="mt-3 w-28 h-28 rounded-lg object-cover" data-testid="admin-faka-uploaded-cover-preview" />}
                     </div>
                   )}

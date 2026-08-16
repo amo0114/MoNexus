@@ -257,60 +257,56 @@ export async function updateCategory(
     throw categoryHttpError(400, CATALOG_ERROR_CODES.CATEGORY_CODE_IMMUTABLE, '分类编码创建后不可修改')
   }
 
-  const existing = await db.productCategory.findUnique({
-    where: { id },
-    select: { id: true, status: true, defaultCoverUrl: true },
-  })
-  if (!existing) throw notFound('分类不存在')
+  try {
+    const row = await runInTransaction(db, async tx => {
+      const locked = await tx.$queryRaw<Array<{ id: number }>>`
+        SELECT "id" FROM "ProductCategory" WHERE "id" = ${id} FOR UPDATE
+      `
+      if (locked.length === 0) throw notFound('分类不存在')
 
-  const data: Prisma.ProductCategoryUpdateInput = { updatedByUser: { connect: { id: adminId } } }
-  if (input.label !== undefined) {
-    const normalizedLabel = normalizeCategoryLabel(input.label)
-    const duplicate = await db.productCategory.findFirst({
-      where: { normalizedLabel, id: { not: id } },
-      select: { id: true },
-    })
-    if (duplicate) {
-      throw categoryHttpError(409, CATALOG_ERROR_CODES.CATEGORY_LABEL_TAKEN, '分类名称已存在')
-    }
-    data.label = input.label
-    data.normalizedLabel = normalizedLabel
-  }
-  if (input.description !== undefined) data.description = input.description
-  if (input.iconKey !== undefined) data.iconKey = input.iconKey
-      // Cover replace/remove gates (SPEC-CMI-UX-001 §5.4, AC-UX-015):
-      //   - active replace: resolve the new cover first; on failure nothing is
-      //     written (old value kept);
-      //   - active remove: rejected with the old value preserved; inactive
-      //     remove is allowed;
-      //   - legacy unresolved covers cannot be written (must be replaced).
+      const existing = await tx.productCategory.findUniqueOrThrow({
+        where: { id },
+        select: { status: true },
+      })
+      const data: Prisma.ProductCategoryUpdateInput = { updatedByUser: { connect: { id: adminId } } }
+
+      if (input.label !== undefined) {
+        const normalizedLabel = normalizeCategoryLabel(input.label)
+        const duplicate = await tx.productCategory.findFirst({
+          where: { normalizedLabel, id: { not: id } },
+          select: { id: true },
+        })
+        if (duplicate) {
+          throw categoryHttpError(409, CATALOG_ERROR_CODES.CATEGORY_LABEL_TAKEN, '分类名称已存在')
+        }
+        data.label = input.label
+        data.normalizedLabel = normalizedLabel
+      }
+      if (input.description !== undefined) data.description = input.description
+      if (input.iconKey !== undefined) data.iconKey = input.iconKey
+
+      // Lock-before-validation makes status and cover changes one atomic state
+      // transition. A concurrent activation/removal/replacement cannot validate
+      // against a stale category snapshot.
       if (input.defaultCover !== undefined || input.defaultCoverUrl !== undefined) {
         let nextUrl: string | null
         if (input.defaultCover !== undefined) {
-          if (input.defaultCover === null) {
-            nextUrl = null
-          } else {
-            const coverRef = input.defaultCover
-            nextUrl = await resolveCategoryCover(() => resolvePlatformPublicImage(coverRef))
-          }
+          nextUrl = input.defaultCover === null
+            ? null
+            : await resolveCategoryCover(() => resolvePlatformPublicImage(input.defaultCover!, tx))
         } else {
           const legacy = input.defaultCoverUrl
-          if (legacy == null || legacy.trim() === '') {
-            nextUrl = null
-          } else {
-            const legacyUrl = legacy.trim()
-            nextUrl = await resolveCategoryCover(() => resolveLegacyPlatformImageUrl(legacyUrl))
-          }
+          nextUrl = legacy == null || legacy.trim() === ''
+            ? null
+            : await resolveCategoryCover(() => resolveLegacyPlatformImageUrl(legacy.trim(), tx))
         }
         if (nextUrl === null && existing.status === CATEGORY_STATUS.ACTIVE) {
           throw categoryHttpError(400, CATALOG_ERROR_CODES.COVER_REQUIRED, '启用中的分类必须保留默认封面')
         }
         data.defaultCoverUrl = nextUrl
       }
-  if (input.sortOrder !== undefined) data.sortOrder = input.sortOrder
+      if (input.sortOrder !== undefined) data.sortOrder = input.sortOrder
 
-  try {
-    const row = await runInTransaction(db, async tx => {
       const updated = await tx.productCategory.update({ where: { id }, data, select: adminSelect })
       const changed = Object.keys(input)
         .filter(key => input[key as keyof UpdateCategoryInput] !== undefined)
@@ -350,26 +346,30 @@ async function setCategoryStatus(
     ? CATEGORY_STATUS.INACTIVE
     : CATEGORY_STATUS.ACTIVE
 
-      // D-UX-11 / §5.4: inactive → active requires a resolvable default cover.
-      // A legacy cover that can no longer be resolved must be replaced before
-      // activating (AC-UX-015).
-      if (targetStatus === CATEGORY_STATUS.ACTIVE) {
-        const current = await db.productCategory.findUnique({
-          where: { id },
-          select: { status: true, defaultCoverUrl: true },
-        })
-        if (current && current.status === CATEGORY_STATUS.INACTIVE) {
-          if (!current.defaultCoverUrl) {
-            throw categoryHttpError(400, CATALOG_ERROR_CODES.COVER_REQUIRED, '启用分类前请先设置默认封面')
-          }
-          try {
-            await resolveLegacyPlatformImageUrl(current.defaultCoverUrl, db)
-          } catch {
-            throw categoryHttpError(400, CATALOG_ERROR_CODES.COVER_INVALID, '现有默认封面已失效，请先替换封面再启用')
-          }
-        }
-      }
   const row = await runInTransaction(db, async tx => {
+    const locked = await tx.$queryRaw<Array<{ id: number }>>`
+      SELECT "id" FROM "ProductCategory" WHERE "id" = ${id} FOR UPDATE
+    `
+    if (locked.length === 0) throw notFound('分类不存在')
+
+    const existing = await tx.productCategory.findUniqueOrThrow({
+      where: { id },
+      select: adminSelect,
+    })
+    if (existing.status === targetStatus) return existing
+
+    // Validate after acquiring the same row lock used by cover mutations.
+    if (targetStatus === CATEGORY_STATUS.ACTIVE) {
+      if (!existing.defaultCoverUrl) {
+        throw categoryHttpError(400, CATALOG_ERROR_CODES.COVER_REQUIRED, '启用分类前请先设置默认封面')
+      }
+      try {
+        await resolveLegacyPlatformImageUrl(existing.defaultCoverUrl, tx)
+      } catch {
+        throw categoryHttpError(400, CATALOG_ERROR_CODES.COVER_INVALID, '现有默认封面已失效，请先替换封面再启用')
+      }
+    }
+
     const updated = await tx.productCategory.updateMany({
       where: { id, status: opposite },
       data: { status: targetStatus, updatedByUserId: adminId },
@@ -381,10 +381,9 @@ async function setCategoryStatus(
       return current
     }
 
-    // CAS missed: the row either no longer exists or is already in target state.
-    const existing = await tx.productCategory.findUnique({ where: { id }, select: adminSelect })
-    if (!existing) throw notFound('分类不存在')
-    return existing
+    // The row lock serializes every status/cover writer. Retain the CAS as a
+    // defensive assertion if another code path changes the state unexpectedly.
+    return tx.productCategory.findUniqueOrThrow({ where: { id }, select: adminSelect })
   })
 
   await bumpCategoryRegistryCacheVersion()

@@ -9,6 +9,7 @@ import type { DeliveryStorage } from './deliveryTypes.js'
 import { decryptStorageCredentials } from './credentialsCrypto.js'
 import type { ProviderPublicConfig } from './providerPresets.js'
 import { logger } from '../logger.js'
+import type { Prisma } from '@prisma/client'
 
 const VERSION_TTL_MS = 2000
 
@@ -290,6 +291,7 @@ export function invalidateStorageRuntimeCache(): void {
 export async function resolvePublicObjectCanonicalUrl(
   providerConfigId: number | null,
   objectKey: string,
+  db: typeof prisma | Prisma.TransactionClient = prisma,
 ): Promise<string | null> {
   if (providerConfigId == null) {
     if (config.storage.kind === 's3') {
@@ -301,7 +303,7 @@ export async function resolvePublicObjectCanonicalUrl(
     return `http://localhost:3000/uploads/${objectKey}`
   }
 
-  const row = await prisma.storageProviderConfig.findUnique({
+  const row = await db.storageProviderConfig.findUnique({
     where: { id: providerConfigId },
   })
   if (!row) return null

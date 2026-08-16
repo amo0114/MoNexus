@@ -12,6 +12,7 @@ import MerchantPartnerMark from '../components/merchandising/MerchantPartnerMark
 import { badgeSpecsFromProjection } from '../components/merchandising/badges'
 import {
   composeStoreFeed,
+  truncateEditorialReason,
   type EditorialFeedCandidate,
   type FeedOutputItem,
   type SponsoredFeedCandidate,
@@ -203,7 +204,7 @@ function ProductCard({
         </h3>
         {disclosure?.kind === 'editorial' && disclosure.publicReason && (
           <p className="text-xs text-[var(--color-text-muted)] mb-1 line-clamp-1">
-            {disclosure.publicReason}
+            {truncateEditorialReason(disclosure.publicReason)}
           </p>
         )}
         {product.merchandising?.merchantPartner && (
@@ -389,9 +390,12 @@ export default function StorePage() {
     candidatesSettledRef.current = false
     candidatesRef.current = { sponsored: [], editorial: [] }
 
-    if (searchQuery.trim()) {
+    const selectedCategoryHasNoStableCode = category !== '全部' && dynamicCategory == null
+    if (searchQuery.trim() || selectedCategoryHasNoStableCode) {
       // Search mode: no injection (D-UX-02). Settle immediately with no
-      // candidates so page-1 organic composes as a plain feed.
+      // candidates so page-1 organic composes as a plain feed. A legacy-only
+      // category label also cannot safely scope candidates, so fail closed
+      // instead of injecting home placements into a category result.
       candidatesSettledRef.current = true
       maybeComposePage1()
       return () => { candidateRequestRef.current += 1 }

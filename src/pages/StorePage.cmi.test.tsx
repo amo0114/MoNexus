@@ -247,6 +247,35 @@ describe('StorePage CMI — step 1 (T-CMI-001)', () => {
     expect(within(card).queryByRole('list', { name: '商品标识' })).not.toBeInTheDocument()
     expect(within(card).queryByTestId('merch-partner-mark')).not.toBeInTheDocument()
   })
+
+  it('B2: a legacy category never receives nonempty home sponsored/editorial candidates', async () => {
+    const apiGet: ApiGet = vi.fn((url: string, config?: { params?: Record<string, unknown> }) => {
+      if (url === '/products/sponsored') {
+        return Promise.resolve({ data: { items: [{ productId: 2 }] } })
+      }
+      if (url === '/products/editorial') {
+        return Promise.resolve({ data: { items: [{ productId: 3, publicReason: '首页精选' }] } })
+      }
+      if (url === '/products/2') return Promise.resolve({ data: makeProduct(2, '首页推广商品') })
+      if (url === '/products/3') return Promise.resolve({ data: makeProduct(3, '首页精选商品') })
+      if (url === '/products') {
+        return Promise.resolve({ data: { items: [LEGACY_DTO], nextCursor: null, hasMore: false } })
+      }
+      throw new Error(`unexpected api.get url: ${url} ${JSON.stringify(config)}`)
+    })
+    await renderStorePage(apiGet, LEGACY_ONLY_REGISTRY)
+    await screen.findByTestId('store-product-card-2', {}, { timeout: 3000 })
+    await screen.findByTestId('store-product-card-3', {}, { timeout: 3000 })
+    apiGet.mockClear()
+
+    fireEvent.click(screen.getByRole('button', { name: '网络节点' }))
+    await waitFor(() => expect(lastProductsParams(apiGet).category).toBe('网络节点'))
+
+    expect(apiGet.mock.calls.some(([url]) => url === '/products/sponsored')).toBe(false)
+    expect(apiGet.mock.calls.some(([url]) => url === '/products/editorial')).toBe(false)
+    expect(screen.queryByTestId('store-product-card-2')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('store-product-card-3')).not.toBeInTheDocument()
+  })
 })
 
 describe('StorePage CMI — step 2 (T-CMI-002)', () => {

@@ -57,6 +57,7 @@ beforeEach(() => {
 const scheduledFeature: AdminEditorialFeatureDTO = {
   id: 101,
   productId: 1001,
+  productName: '商品1001',
   placement: 'store_editorial',
   status: 'scheduled',
   startsAt: '2026-02-01T00:00:00.000Z',
@@ -73,6 +74,7 @@ const scheduledFeature: AdminEditorialFeatureDTO = {
 const activeFeature: AdminEditorialFeatureDTO = {
   id: 202,
   productId: 1002,
+  productName: '商品1002',
   placement: 'category_editorial',
   status: 'active',
   startsAt: '2026-01-01T00:00:00.000Z',
@@ -89,6 +91,7 @@ const activeFeature: AdminEditorialFeatureDTO = {
 const revokedFeature: AdminEditorialFeatureDTO = {
   id: 303,
   productId: 1003,
+  productName: '商品1003',
   placement: 'store_editorial',
   status: 'revoked',
   startsAt: '2025-11-01T00:00:00.000Z',
@@ -305,8 +308,8 @@ describe('AdminEditorialManager', () => {
     const table = await screen.findByRole('table', { name: '平台精选列表' })
     expect(table).toBeInTheDocument()
 
-    // status / placement / public reason / product id are rendered
-    expect(within(table).getByText('1001')).toBeInTheDocument()
+    // status / placement / public reason / product name are rendered
+    expect(within(table).getByText('商品1001')).toBeInTheDocument()
     expect(within(table).getByText('待生效')).toBeInTheDocument()
     expect(within(table).getByText('店铺精选')).toBeInTheDocument()
     expect(within(table).getByText('新品首发')).toBeInTheDocument()
@@ -553,7 +556,7 @@ describe('AdminEditorialManager', () => {
       pageSize: 10,
     })
     const table = await screen.findByRole('table', { name: '平台精选列表' })
-    expect(within(table).getByText('1002')).toBeInTheDocument()
+    expect(within(table).getByText('商品1002')).toBeInTheDocument()
     expect(within(table).queryByText('1001')).not.toBeInTheDocument()
 
     // now resolve the OLDER request with its stale store_editorial result
@@ -566,7 +569,7 @@ describe('AdminEditorialManager', () => {
 
     // the stale response must NOT overwrite the newer filtered result
     const tableAfter = screen.getByRole('table', { name: '平台精选列表' })
-    expect(within(tableAfter).getByText('1002')).toBeInTheDocument()
+    expect(within(tableAfter).getByText('商品1002')).toBeInTheDocument()
     expect(within(tableAfter).queryByText('1001')).not.toBeInTheDocument()
   })
 
@@ -598,10 +601,10 @@ describe('AdminEditorialManager', () => {
     })
     const table = await screen.findByRole('table', { name: '平台精选列表' })
 
-    // sanity: product ids ARE rendered, so the absence checks below are meaningful
-    expect(within(table).getByText('1001')).toBeInTheDocument()
-    expect(within(table).getByText('1002')).toBeInTheDocument()
-    expect(within(table).getByText('1003')).toBeInTheDocument()
+    // Sanity: product names render, so the absence checks below are meaningful.
+    expect(within(table).getByText('商品1001')).toBeInTheDocument()
+    expect(within(table).getByText('商品1002')).toBeInTheDocument()
+    expect(within(table).getByText('商品1003')).toBeInTheDocument()
 
     // the audit actor IDs must appear nowhere in the rendered document
     expect(screen.queryByText(/90001/)).not.toBeInTheDocument()
@@ -683,6 +686,27 @@ describe('AdminEditorialManager create (T-MERCH-FE-003 §create)', () => {
     expect(within(dialog).getByRole('alert')).toHaveTextContent('请选择商品')
     // the dialog stays open so the operator can pick a product
     expect(screen.getByRole('dialog')).toBeInTheDocument()
+  })
+
+  it('supports keyboard selection and lets the operator replace the chosen product', async () => {
+    const { controller } = renderManagerWithCreate(vi.fn())
+    await controller.resolve(0, { items: [], total: 0, page: 1, pageSize: 10 })
+    await screen.findByText('暂无精选记录')
+
+    const dialog = await openCreateDialog()
+    const scope = within(dialog)
+    const input = scope.getByRole('combobox', { name: '搜索商品' })
+    fireEvent.change(input, { target: { value: '商品' } })
+    await scope.findByRole('option', { name: '商品1001' })
+    expect(input).toHaveAttribute('aria-expanded', 'true')
+
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(scope.getByTestId('editorial-form-product-selected')).toHaveTextContent('已选择：商品1001')
+    expect(scope.queryByText('#1001')).not.toBeInTheDocument()
+    expect(scope.getByText('Product ID: 1001')).toBeInTheDocument()
+
+    fireEvent.click(scope.getByRole('button', { name: '更换商品' }))
+    await waitFor(() => expect(scope.getByRole('combobox', { name: '搜索商品' })).toBeInTheDocument())
   })
 
   it('disables submit while create is pending and a rapid duplicate submit calls the adapter only once', async () => {
@@ -935,7 +959,7 @@ function createDeferredRevokeFeature() {
 /** Open the 编辑精选 dialog for a feature and return its dialog element. */
 async function openEditDialog(feature: AdminEditorialFeatureDTO): Promise<HTMLElement> {
   fireEvent.click(
-    screen.getByRole('button', { name: `编辑商品 ${feature.productId} 的精选（精选 ID ${feature.id}）` }),
+    screen.getByRole('button', { name: `编辑“${feature.productName}”的精选` }),
   )
   return screen.findByRole('dialog')
 }
@@ -979,7 +1003,7 @@ function fillEditForm(dialog: HTMLElement, overrides: EditFormOverrides = {}) {
 /** Open the 撤销精选 dialog for a feature and return its dialog element. */
 async function openRevokeDialog(feature: AdminEditorialFeatureDTO): Promise<HTMLElement> {
   fireEvent.click(
-    screen.getByRole('button', { name: `撤销商品 ${feature.productId} 的精选（精选 ID ${feature.id}）` }),
+    screen.getByRole('button', { name: `撤销“${feature.productName}”的精选` }),
   )
   return screen.findByRole('dialog')
 }
@@ -997,7 +1021,7 @@ describe('AdminEditorialManager edit (T-MERCH-FE-003 §edit)', () => {
 
     // the dialog targets the right feature
     expect(within(dialog).getByText('编辑精选')).toBeInTheDocument()
-    expect(within(dialog).getByText(/正在编辑商品 1001 的平台精选（精选 ID 101）/)).toBeInTheDocument()
+    expect(within(dialog).getByText(/正在编辑“商品1001”的平台精选/)).toBeInTheDocument()
 
     // product is read-only via the search selector (never a raw id input)
     expect(within(dialog).getByTestId('editorial-form-product-fixed')).toHaveTextContent('商品1001')
@@ -1178,7 +1202,7 @@ describe('AdminEditorialManager revoke (T-MERCH-FE-003 §revoke)', () => {
     const dialog = await openRevokeDialog(scheduledFeature)
     expect(within(dialog).getByText('撤销精选')).toBeInTheDocument()
     expect(
-      within(dialog).getByText(/确认撤销商品 1001 的平台精选（精选 ID 101）/),
+      within(dialog).getByText(/确认撤销“商品1001”的平台精选/),
     ).toBeInTheDocument()
 
     await act(async () => {
@@ -1207,7 +1231,7 @@ describe('AdminEditorialManager revoke (T-MERCH-FE-003 §revoke)', () => {
     expect(revokeFeature).toHaveBeenCalledWith(101, '运营下架')
 
     // success: feedback, dialog closed, current list query refreshed
-    expect(await screen.findByText('已撤销商品 1001 的精选。')).toBeInTheDocument()
+    expect(await screen.findByText('已撤销“商品1001”的精选。')).toBeInTheDocument()
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
     await waitFor(() => expect(controller.listFeatures).toHaveBeenCalledTimes(2))
     expect(controller.listFeatures).toHaveBeenLastCalledWith({
@@ -1247,7 +1271,7 @@ describe('AdminEditorialManager revoke (T-MERCH-FE-003 §revoke)', () => {
     // resolve → success closes the dialog
     await deferredRevoke.resolve(0, scheduledFeature)
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
-    expect(await screen.findByText('已撤销商品 1001 的精选。')).toBeInTheDocument()
+    expect(await screen.findByText('已撤销“商品1001”的精选。')).toBeInTheDocument()
     await controller.resolve(1, { items: [scheduledFeature], total: 1, page: 1, pageSize: 10 })
   })
 
@@ -1267,7 +1291,7 @@ describe('AdminEditorialManager revoke (T-MERCH-FE-003 §revoke)', () => {
     await deferredRevoke.reject(0, new Error('server rejected'))
 
     // reject: no success, no list refresh, dialog stays open, retryable
-    expect(screen.queryByText('已撤销商品 1001 的精选。')).not.toBeInTheDocument()
+    expect(screen.queryByText('已撤销“商品1001”的精选。')).not.toBeInTheDocument()
     expect(controller.listFeatures).toHaveBeenCalledTimes(1)
     expect(screen.getByRole('dialog')).toBeInTheDocument()
     await waitFor(() => expect(confirmButton).toBeEnabled())
@@ -1283,7 +1307,7 @@ describe('AdminEditorialManager revoke (T-MERCH-FE-003 §revoke)', () => {
     await deferredRevoke.resolve(1, scheduledFeature)
 
     // success: feedback, dialog closed, current list query refreshed
-    expect(await screen.findByText('已撤销商品 1001 的精选。')).toBeInTheDocument()
+    expect(await screen.findByText('已撤销“商品1001”的精选。')).toBeInTheDocument()
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
     await waitFor(() => expect(controller.listFeatures).toHaveBeenCalledTimes(2))
     expect(controller.listFeatures).toHaveBeenLastCalledWith({
