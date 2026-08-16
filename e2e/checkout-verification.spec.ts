@@ -108,7 +108,7 @@ test.describe.serial('M-P3 checkout verification', () => {
     await page.getByRole('button', { name: '立即兑换' }).click()
 
     const modal = page.getByTestId('purchase-modal')
-    await expect(modal.getByText('本次扣除')).toBeVisible({ timeout: 10_000 })
+    await expect(modal.getByText('本次已支付')).toBeVisible({ timeout: 10_000 })
     await expect(modal.getByTestId('purchase-verify-section')).toHaveCount(0)
 
     // 弹窗打开期间管理员下调阈值，本单跨入验证范围
@@ -146,7 +146,7 @@ test.describe.serial('M-P3 checkout verification', () => {
     await page.getByRole('button', { name: '立即兑换' }).click()
 
     const modal = page.getByTestId('purchase-modal')
-    await expect(modal.getByText('本次扣除')).toBeVisible({ timeout: 10_000 })
+    await expect(modal.getByText('本次已支付')).toBeVisible({ timeout: 10_000 })
     await expect(modal.getByTestId('purchase-verify-section')).toHaveCount(0)
     await modal.getByRole('button', { name: '确认支付' }).click()
     await expect(page.getByTestId('success-delivery-link')).toBeVisible({ timeout: 10_000 })

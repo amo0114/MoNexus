@@ -300,6 +300,7 @@ export const EDITORIAL_STATUS = {
 export interface AdminEditorialFeatureDTO {
   id: number
   productId: number
+  productName: string
   placement: EditorialPlacement
   status: EditorialStatus
   startsAt: string

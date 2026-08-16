@@ -794,7 +794,7 @@ export default function ProductCreateWizard({ adapter = catalogApi }: Props) {
                   <div className="font-bold text-sm line-clamp-1">{form.name || '（商品名称）'}</div>
                   <div className="flex justify-between items-center text-sm mt-2 pt-2 border-t border-dashed border-[var(--color-border)]">
                     <span className="text-[var(--color-text-muted)]">
-                      {form.deliveryMode === 'manual_service' ? '本次冻结' : '本次扣除'}
+                      {form.deliveryMode === 'manual_service' ? '本次待支付' : '本次已支付'}
                     </span>
                     <span className="font-bold text-[var(--color-cta)] flex items-center gap-1">
                       <Coins className="w-4 h-4" /> {form.price || '0'}

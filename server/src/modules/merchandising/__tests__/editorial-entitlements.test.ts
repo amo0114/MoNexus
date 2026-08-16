@@ -34,6 +34,7 @@ interface Fixture {
   merchant: { id: number; userId: number }
   categoryId: number
   productId: number
+  productName: string
   draftProductId: number
   packageId: number
 }
@@ -119,6 +120,7 @@ async function setupFixture(): Promise<Fixture> {
     merchant,
     categoryId: category.id,
     productId: product.id,
+    productName: product.name,
     draftProductId: draftProduct.id,
     packageId: promotionPackage.id,
   }
@@ -167,6 +169,7 @@ realPg('editorial governance (REAL-PG)', () => {
       internalReason: '内部选品',
     })
     expect(feature.status).toBe('active')
+    expect(feature.productName).toBe(fx.productName)
     expect(await listEditorialShelf()).toEqual([
       { productId: fx.productId, placement: 'store_editorial', publicReason: '本周上新', label: '平台精选' },
     ])

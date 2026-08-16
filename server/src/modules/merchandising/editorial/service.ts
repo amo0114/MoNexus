@@ -21,7 +21,15 @@ const editorialSelect = {
   id: true, productId: true, placement: true, status: true, startsAt: true, endsAt: true,
   sortWeight: true, publicReason: true, internalReason: true, createdByUserId: true,
   revokedByUserId: true, createdAt: true, updatedAt: true,
+  product: { select: { name: true } },
 } as const
+
+type EditorialRow = Prisma.EditorialFeatureGetPayload<{ select: typeof editorialSelect }>
+
+function toEditorialDto(row: EditorialRow) {
+  const { product, ...feature } = row
+  return { ...feature, productName: product.name }
+}
 
 export async function createEditorialFeature(adminUserId: number, input: {
   productId: number; placement: string; startsAt: string; endsAt: string; sortWeight?: number;
@@ -55,7 +63,7 @@ export async function createEditorialFeature(adminUserId: number, input: {
     await tx.adminLog.create({
       data: { adminUserId, action: '安排平台精选', targetType: 'editorial_feature', targetId: feature.id, detail: `productId=${input.productId}; status=${status}` },
     })
-    return feature
+    return toEditorialDto(feature)
   })
 }
 
@@ -98,7 +106,7 @@ export async function updateEditorialFeature(adminUserId: number, featureId: num
         detail: `status=${status}; fields=${Object.keys(input).sort().join(',')}`,
       },
     })
-    return updated
+    return toEditorialDto(updated)
   })
 }
 
@@ -110,7 +118,7 @@ export async function listEditorialFeatures(query: { status?: string; placement?
     prisma.editorialFeature.count({ where }),
     prisma.editorialFeature.findMany({ where, select: editorialSelect, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], skip: (page - 1) * pageSize, take: pageSize }),
   ])
-  return { items, total, page, pageSize }
+  return { items: items.map(toEditorialDto), total, page, pageSize }
 }
 
 export async function revokeEditorialFeature(adminUserId: number, featureId: number, reason: string, db: TransactionHost = prisma) {
@@ -118,13 +126,13 @@ export async function revokeEditorialFeature(adminUserId: number, featureId: num
     await assertAdmin(adminUserId, tx)
     const feature = await tx.editorialFeature.findUnique({ where: { id: featureId }, select: editorialSelect })
     if (!feature) throw notFound('平台精选不存在')
-    if (feature.status === EDITORIAL_STATUS.REVOKED) return feature
+    if (feature.status === EDITORIAL_STATUS.REVOKED) return toEditorialDto(feature)
     if (feature.status === EDITORIAL_STATUS.EXPIRED) throw conflict('已过期精选不能撤销')
     const updated = await tx.editorialFeature.update({
       where: { id: featureId }, data: { status: EDITORIAL_STATUS.REVOKED, revokedByUserId: adminUserId }, select: editorialSelect,
     })
     await tx.adminLog.create({ data: { adminUserId, action: '撤销平台精选', targetType: 'editorial_feature', targetId: featureId, detail: `status=revoked; ${summarizeAdminAuditReason(reason)}` } })
-    return updated
+    return toEditorialDto(updated)
   })
 }
 

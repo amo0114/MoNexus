@@ -25,18 +25,24 @@
  * takes an injectable adapter so it can be mounted by the CMI Integration
  * Owner later.
  */
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import {
   ArrowDown,
   ArrowUp,
+  Book,
   CheckCircle2,
   ChevronDown,
   ChevronUp,
   FolderTree,
+  Gamepad2,
+  Gem,
   Inbox,
   Loader2,
+  Network,
+  Package,
   Pencil,
   Plus,
+  Sparkles,
   Trash2,
   XCircle,
 } from 'lucide-react'
@@ -66,10 +72,37 @@ import {
   type CategoryApplicationDto,
   type CategoryApplicationStatus,
   type CategoryStatus,
+  type PlatformMediaRef,
 } from '../../types/catalog'
+import CategoryCoverField from './CategoryCoverField'
 
 const PAGE_SIZE = 10
 const MAX_REORDER_IDS = 500
+
+/**
+ * Best-effort category code generated from a display label (D-UX-17).
+ * Non-ASCII labels cannot form a valid code → returns '' so the admin can
+ * type one in advanced settings.
+ */
+function slugifyCategoryCode(label: string): string {
+  const slug = label
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+  return CATEGORY_CODE_PATTERN.test(slug) ? slug : ''
+}
+
+/** Small icon picker for category.iconKey (D-UX-17, §6.3). */
+const CATEGORY_ICON_PRESETS = [
+  { key: 'network', label: '网络', Icon: Network },
+  { key: 'folder-tree', label: '文件夹', Icon: FolderTree },
+  { key: 'book', label: '资料', Icon: Book },
+  { key: 'gamepad2', label: '游戏', Icon: Gamepad2 },
+  { key: 'gem', label: '账号', Icon: Gem },
+  { key: 'sparkles', label: '精选', Icon: Sparkles },
+  { key: 'package', label: '通用', Icon: Package },
+] as const
 
 /* ------------------------------------------------------------------ *
  * Small display helpers
@@ -154,7 +187,8 @@ interface CategoryFormState {
   label: string
   description: string
   iconKey: string
-  defaultCoverUrl: string
+  /** Form-draft cover ref; undefined = untouched (edit keeps existing). */
+  defaultCover: PlatformMediaRef | null | undefined
   sortOrder: string
 }
 
@@ -163,7 +197,7 @@ const EMPTY_CATEGORY_FORM: CategoryFormState = {
   label: '',
   description: '',
   iconKey: '',
-  defaultCoverUrl: '',
+  defaultCover: undefined,
   sortOrder: '0',
 }
 
@@ -182,7 +216,10 @@ function validateCategoryForm(
   else if (form.label.trim().length > 50) errors.label = '分类名称最多 50 字'
   if (form.description.trim().length > 500) errors.description = '分类描述最多 500 字'
   if (form.iconKey.trim().length > 64) errors.iconKey = '分类图标最多 64 字'
-  if (form.defaultCoverUrl.trim().length > 2048) errors.defaultCoverUrl = '默认封面地址过长'
+  // D-UX-11: a new (active) category must have a default cover.
+  if (!editing && form.defaultCover == null) {
+    errors.defaultCover = '请上传分类默认封面'
+  }
   if (form.sortOrder.trim() !== '') {
     const n = Number(form.sortOrder)
     if (!Number.isInteger(n) || n < 0 || n > 1_000_000) errors.sortOrder = '排序值必须是 0 到 1000000 的整数'
@@ -209,6 +246,8 @@ function CategoryFormDialog({
   const [form, setForm] = useState<CategoryFormState>(EMPTY_CATEGORY_FORM)
   const [errors, setErrors] = useState<Partial<Record<keyof CategoryFormState, string>>>({})
   const [formError, setFormError] = useState<string | null>(null)
+  // Once the admin edits the code manually, label changes stop auto-filling it.
+  const codeTouchedRef = useRef(false)
 
   useEffect(() => {
     if (!open) return
@@ -220,7 +259,9 @@ function CategoryFormDialog({
         label: category.label,
         description: category.description ?? '',
         iconKey: category.iconKey ?? '',
-        defaultCoverUrl: category.defaultCoverUrl ?? '',
+        // Edit mode starts with an untouched cover; the field previews the
+        // existing canonical URL until the admin uploads/removes a cover.
+        defaultCover: undefined,
         sortOrder: String(category.sortOrder ?? 0),
       })
     } else {
@@ -251,26 +292,6 @@ function CategoryFormDialog({
 
         <div className="grid gap-4 mt-4">
           <div>
-            <label htmlFor="cat-form-code" className="block text-sm font-semibold mb-1">
-              分类编码 {editing ? '' : '*'}
-            </label>
-            <input
-              id="cat-form-code"
-              data-testid="category-form-code"
-              className="input font-mono"
-              value={form.code}
-              onChange={(e) => setForm((f) => ({ ...f, code: e.target.value }))}
-              placeholder="如 network-node"
-              disabled={editing || busy}
-              aria-invalid={errors.code ? true : undefined}
-            />
-            {editing && (
-              <p className="text-xs text-[var(--color-text-muted)] mt-1">编码创建后不可修改（D-CAT-06）。</p>
-            )}
-            {errors.code && <p role="alert" className="text-xs text-[var(--color-danger)] mt-1">{errors.code}</p>}
-          </div>
-
-          <div>
             <label htmlFor="cat-form-label" className="block text-sm font-semibold mb-1">
               分类名称 *
             </label>
@@ -279,7 +300,15 @@ function CategoryFormDialog({
               data-testid="category-form-label"
               className="input"
               value={form.label}
-              onChange={(e) => setForm((f) => ({ ...f, label: e.target.value }))}
+              onChange={(e) => {
+                const nextLabel = e.target.value
+                setForm((f) => {
+                  const next = { ...f, label: nextLabel }
+                  // D-UX-17: the code defaults from the name until edited manually.
+                  if (!editing && !codeTouchedRef.current) next.code = slugifyCategoryCode(nextLabel)
+                  return next
+                })
+              }}
               disabled={busy}
               aria-invalid={errors.label ? true : undefined}
             />
@@ -301,56 +330,96 @@ function CategoryFormDialog({
             {errors.description && <p role="alert" className="text-xs text-[var(--color-danger)] mt-1">{errors.description}</p>}
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <label htmlFor="cat-form-icon" className="block text-sm font-semibold mb-1">
-                分类图标
-              </label>
-              <input
-                id="cat-form-icon"
-                data-testid="category-form-icon"
-                className="input font-mono"
-                value={form.iconKey}
-                onChange={(e) => setForm((f) => ({ ...f, iconKey: e.target.value }))}
-                placeholder="如 network"
-                disabled={busy}
-              />
-              {errors.iconKey && <p role="alert" className="text-xs text-[var(--color-danger)] mt-1">{errors.iconKey}</p>}
-            </div>
-            <div>
-              <label htmlFor="cat-form-sort" className="block text-sm font-semibold mb-1">
-                排序值
-              </label>
-              <input
-                id="cat-form-sort"
-                data-testid="category-form-sort"
-                className="input"
-                type="number"
-                min={0}
-                max={1_000_000}
-                value={form.sortOrder}
-                onChange={(e) => setForm((f) => ({ ...f, sortOrder: e.target.value }))}
-                disabled={busy}
-              />
-              {errors.sortOrder && <p role="alert" className="text-xs text-[var(--color-danger)] mt-1">{errors.sortOrder}</p>}
-            </div>
+          <div>
+            <label htmlFor="cat-form-sort" className="block text-sm font-semibold mb-1">
+              排序值
+            </label>
+            <input
+              id="cat-form-sort"
+              data-testid="category-form-sort"
+              className="input"
+              type="number"
+              min={0}
+              max={1_000_000}
+              value={form.sortOrder}
+              onChange={(e) => setForm((f) => ({ ...f, sortOrder: e.target.value }))}
+              disabled={busy}
+            />
+            {errors.sortOrder && <p role="alert" className="text-xs text-[var(--color-danger)] mt-1">{errors.sortOrder}</p>}
           </div>
 
           <div>
-            <label htmlFor="cat-form-cover" className="block text-sm font-semibold mb-1">
-              默认封面（平台资源路径）
-            </label>
-            <input
-              id="cat-form-cover"
-              data-testid="category-form-cover"
-              className="input font-mono"
-              value={form.defaultCoverUrl}
-              onChange={(e) => setForm((f) => ({ ...f, defaultCoverUrl: e.target.value }))}
-              placeholder="/uploads/… 或 /assets/…"
+            <CategoryCoverField
+              existingUrl={category?.defaultCoverUrl ?? null}
+              value={form.defaultCover}
+              onChange={(ref) => setForm((f) => ({ ...f, defaultCover: ref }))}
               disabled={busy}
+              required={!editing}
+              error={errors.defaultCover ?? null}
+              testId="category-form-cover"
             />
-            {errors.defaultCoverUrl && <p role="alert" className="text-xs text-[var(--color-danger)] mt-1">{errors.defaultCoverUrl}</p>}
           </div>
+
+          {/* D-UX-17 / §6.3: code & icon live in advanced settings; code is
+              auto-derived from the name until edited manually. */}
+          <details
+            className="rounded-lg border border-[var(--color-border)] p-3"
+            data-testid="category-advanced-settings"
+          >
+            <summary className="cursor-pointer text-sm font-semibold text-[var(--color-text)]">
+              高级设置（分类编码 / 图标）
+            </summary>
+            <div className="mt-3 grid gap-4">
+              <div>
+                <label htmlFor="cat-form-code" className="block text-sm font-semibold mb-1">
+                  分类编码 {editing ? '' : '*'}
+                </label>
+                <input
+                  id="cat-form-code"
+                  data-testid="category-form-code"
+                  className="input font-mono"
+                  value={form.code}
+                  onChange={(e) => { codeTouchedRef.current = true; setForm((f) => ({ ...f, code: e.target.value })) }}
+                  placeholder="如 network-node"
+                  disabled={editing || busy}
+                  aria-invalid={errors.code ? true : undefined}
+                />
+                <p className="text-xs text-[var(--color-text-muted)] mt-1">
+                  创建后不可修改；留空时默认从名称生成。
+                </p>
+                {errors.code && <p role="alert" className="text-xs text-[var(--color-danger)] mt-1">{errors.code}</p>}
+              </div>
+              <div>
+                <span className="block text-sm font-semibold mb-1">分类图标</span>
+                <div className="flex flex-wrap gap-2">
+                  {CATEGORY_ICON_PRESETS.map(({ key, label, Icon }) => (
+                    <button
+                      key={key}
+                      type="button"
+                      aria-pressed={form.iconKey === key}
+                      data-testid={`category-icon-${key}`}
+                      className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1.5 text-xs ${
+                        form.iconKey === key
+                          ? 'border-[var(--color-primary)] text-[var(--color-primary)] bg-[var(--color-primary)]/10'
+                          : 'border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-[var(--color-primary)]/40'
+                      }`}
+                      onClick={() => setForm((f) => ({ ...f, iconKey: key }))}
+                      disabled={busy}
+                    >
+                      <Icon className="w-3.5 h-3.5" aria-hidden="true" />
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                {form.iconKey && !CATEGORY_ICON_PRESETS.some(p => p.key === form.iconKey) && (
+                  <p className="text-xs text-[var(--color-text-muted)] mt-1 font-mono">
+                    图标键：{form.iconKey}
+                  </p>
+                )}
+                {errors.iconKey && <p role="alert" className="text-xs text-[var(--color-danger)] mt-1">{errors.iconKey}</p>}
+              </div>
+            </div>
+          </details>
 
           {formError && (
             <p role="alert" data-testid="category-form-error" className="text-sm text-[var(--color-danger)]">
@@ -680,7 +749,9 @@ export default function AdminCategoryManager({ adapter = catalogGovernanceApi }:
           label: form.label.trim(),
           description: form.description.trim() || null,
           iconKey: form.iconKey.trim() || null,
-          defaultCoverUrl: form.defaultCoverUrl.trim() || null,
+          ...(form.defaultCover !== undefined
+            ? { defaultCover: form.defaultCover }
+            : {}),
           sortOrder: form.sortOrder.trim() === '' ? 0 : Number(form.sortOrder),
         }
         await adapter.updateCategory(categoryForm.category.id, payload)
@@ -691,7 +762,9 @@ export default function AdminCategoryManager({ adapter = catalogGovernanceApi }:
           label: form.label.trim(),
           description: form.description.trim() || undefined,
           iconKey: form.iconKey.trim() || undefined,
-          defaultCoverUrl: form.defaultCoverUrl.trim() || undefined,
+          ...(form.defaultCover !== undefined && form.defaultCover !== null
+            ? { defaultCover: form.defaultCover }
+            : {}),
           sortOrder: form.sortOrder.trim() === '' ? 0 : Number(form.sortOrder),
         })
         showToast('分类已创建')

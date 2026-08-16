@@ -332,7 +332,7 @@ export default function PurchaseModal({
               </div>
             )}
             <div className="flex justify-between items-center text-sm mt-3 pt-3 border-t border-[var(--color-border)] border-dashed">
-              <span className="text-[var(--color-text-muted)]">{isHold ? '本次冻结' : '本次扣除'}</span>
+              <span className="text-[var(--color-text-muted)]">{isHold ? '本次待支付' : '本次已支付'}</span>
               <span className="font-heading font-bold text-[var(--color-cta)] flex items-center gap-1 text-lg" data-testid="preview-price">
                 <Coins className="w-4 h-4" /> {preview.price}
               </span>
@@ -349,7 +349,7 @@ export default function PurchaseModal({
             </div>
             {isHold && (
               <p className="text-xs text-[var(--color-text-muted)] mt-3 pt-3 border-t border-[var(--color-border)] border-dashed" data-testid="hold-explain">
-                冻结积分：商家完成履约后扣除；拒单或退款时返还。
+                人工服务下单后，积分会暂时锁定；订单完成后才正式支付，取消或退款后会自动返还。
               </p>
             )}
             {capacityHint && (

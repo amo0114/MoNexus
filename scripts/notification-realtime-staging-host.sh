@@ -437,7 +437,9 @@ finalize_run() {
   local baseline baseline_path
   baseline="$(baseline_sha)"
   baseline_path="$BASE_PATH/releases/$baseline"
-  compose_for "$baseline_path" "$SOURCE_ENV_FILE" restart
+  # Recreate the proxy after the server so Nginx cannot retain a replaced container IP.
+  compose_for "$baseline_path" "$SOURCE_ENV_FILE" up-backend
+  compose_for "$baseline_path" "$SOURCE_ENV_FILE" up-frontend
   wait_public_local "$baseline_path" "$SOURCE_ENV_FILE"
   rm -f "$run_env"
   {
@@ -498,7 +500,9 @@ recover_run() {
 
   recover_runtime() {
     [[ -n "$baseline_path" && -d "$baseline_path" && -f "$SOURCE_ENV_FILE" ]] || return 1
-    compose_for "$baseline_path" "$SOURCE_ENV_FILE" restart
+    # Keep recovery ordering identical to the successful finalize path.
+    compose_for "$baseline_path" "$SOURCE_ENV_FILE" up-backend
+    compose_for "$baseline_path" "$SOURCE_ENV_FILE" up-frontend
     wait_public_local "$baseline_path" "$SOURCE_ENV_FILE"
     ln -sfn "$baseline_path" "$BASE_PATH/current"
   }

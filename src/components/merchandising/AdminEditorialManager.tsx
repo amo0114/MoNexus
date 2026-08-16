@@ -36,6 +36,7 @@ import type {
   EditorialStatus,
 } from '../../types/merchandising'
 import AdminPagination from '../admin/AdminPagination'
+import AdminProductSearchSelect from './AdminProductSearchSelect'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../ui/Dialog'
 import EmptyState from '../ui/EmptyState'
 import { TableSkeleton } from '../ui/Skeleton'
@@ -280,7 +281,7 @@ export default function AdminEditorialManager({
 
   const validateForm = (): string | null => {
     if (editingFeature == null && parseSafeProductId(formProductId.trim()) == null) {
-      return '商品 ID 必须为正整数'
+      return '请选择商品'
     }
     // placement is a controlled select limited to the two frozen enums.
     const startsIso = datetimeLocalToIso(formStartsAt)
@@ -336,7 +337,7 @@ export default function AdminEditorialManager({
       if (editingFeature == null) {
         const productId = parseSafeProductId(formProductId.trim())
         if (productId == null) {
-          setFormFieldError('商品 ID 必须为正整数')
+          setFormFieldError('请选择商品')
           return
         }
         // Exact create payload — productId always present, all fields sent.
@@ -411,7 +412,7 @@ export default function AdminEditorialManager({
       // Success only: close, report status, refresh the current filter/page.
       setRevokeOpen(false)
       setRevokeTarget(null)
-      setFeedback({ kind: 'success', text: `已撤销商品 ${revokeTarget.productId} 的精选。` })
+      setFeedback({ kind: 'success', text: `已撤销“${revokeTarget.productName}”的精选。` })
       void load()
     } catch (e) {
       // Failure: keep the dialog open, surface the server error, no fake success.
@@ -526,7 +527,7 @@ export default function AdminEditorialManager({
               <table className="w-full text-sm" aria-label="平台精选列表">
                 <thead>
                   <tr className="border-b border-[var(--color-border)] text-left text-xs text-[var(--color-text-muted)]">
-                    <th className="px-3 py-2">商品 ID</th>
+                    <th className="px-3 py-2">商品</th>
                     <th className="px-3 py-2">展位</th>
                     <th className="px-3 py-2">状态</th>
                     <th className="px-3 py-2">起止时间</th>
@@ -539,7 +540,14 @@ export default function AdminEditorialManager({
                 <tbody className="divide-y divide-[var(--color-border)]">
                   {items.map((feature) => (
                     <tr key={feature.id}>
-                      <td className="px-3 py-3">{feature.productId}</td>
+                      <td className="px-3 py-3">
+                        <span className="font-medium">{feature.productName}</span>
+                        <details className="mt-1 text-xs text-[var(--color-text-muted)]">
+                          <summary className="cursor-pointer w-fit">技术详情</summary>
+                          <div><code>Product ID: {feature.productId}</code></div>
+                          <div><code>精选 ID: {feature.id}</code></div>
+                        </details>
+                      </td>
                       <td className="px-3 py-3">
                         {PLACEMENT_LABEL[feature.placement] ?? feature.placement}
                       </td>
@@ -564,7 +572,7 @@ export default function AdminEditorialManager({
                           <div className="flex items-center gap-2">
                             <button
                               type="button"
-                              aria-label={`编辑商品 ${feature.productId} 的精选（精选 ID ${feature.id}）`}
+                              aria-label={`编辑“${feature.productName}”的精选`}
                               className="btn-secondary btn-sm"
                               onClick={() => openEditDialog(feature)}
                             >
@@ -572,7 +580,7 @@ export default function AdminEditorialManager({
                             </button>
                             <button
                               type="button"
-                              aria-label={`撤销商品 ${feature.productId} 的精选（精选 ID ${feature.id}）`}
+                              aria-label={`撤销“${feature.productName}”的精选`}
                               className="btn-secondary btn-sm border-[var(--color-danger)] text-[var(--color-danger)]"
                               onClick={() => openRevokeDialog(feature)}
                             >
@@ -612,29 +620,25 @@ export default function AdminEditorialManager({
           <DialogDescription>
             {editingFeature == null
               ? '为指定商品设置一个平台精选展示位，独立于自然热卖与推广。'
-              : `正在编辑商品 ${editingFeature.productId} 的平台精选（精选 ID ${editingFeature.id}）。`}
+              : `正在编辑“${editingFeature.productName}”的平台精选。`}
           </DialogDescription>
           <div className="space-y-4 mt-4">
             <div>
               <label
-                htmlFor="editorial-form-product-id"
+                id="editorial-form-product-label"
+                htmlFor="editorial-form-product"
                 className="block text-xs font-bold text-[var(--color-text-muted)] mb-1.5 uppercase tracking-wider"
               >
-                商品 ID
+                商品
               </label>
-              <input
-                id="editorial-form-product-id"
-                type="text"
-                inputMode="numeric"
-                value={formProductId}
-                onChange={(e) => {
-                  setFormProductId(e.target.value)
-                  setFormFieldError(null)
-                }}
-                placeholder="请输入商品 ID"
-                className="input"
-                readOnly={editingFeature != null}
+              <AdminProductSearchSelect
+                value={formProductId.trim() ? Number(formProductId) : null}
+                onChange={(id) => { setFormProductId(id == null ? '' : String(id)); setFormFieldError(null) }}
                 disabled={formBusy}
+                readOnly={editingFeature != null}
+                inputId="editorial-form-product"
+                labelledBy="editorial-form-product-label"
+                testId="editorial-form-product"
               />
               {editingFeature != null && (
                 <p className="text-xs text-[var(--color-text-muted)] mt-1">新建后商品不可变更。</p>
@@ -831,8 +835,7 @@ export default function AdminEditorialManager({
             <div className="min-w-0">
               <DialogTitle>撤销精选</DialogTitle>
               <DialogDescription>
-                确认撤销商品 {revokeTarget?.productId ?? '—'} 的平台精选（精选 ID{' '}
-                {revokeTarget?.id ?? '—'}）？撤销后该展示位立即失效。
+                确认撤销“{revokeTarget?.productName ?? '该商品'}”的平台精选？撤销后该展示位立即失效。
               </DialogDescription>
             </div>
           </div>

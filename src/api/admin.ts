@@ -215,7 +215,7 @@ export type AdminFakaImportOffer = {
 }
 
 export type AdminFakaCoverChoice =
-  | { mode: 'uploaded'; imageUrl: string; images?: string[] }
+  | { mode: 'uploaded'; objectKey: string }
   | { mode: 'category_default' }
 
 export type AdminFakaImportRequest = {

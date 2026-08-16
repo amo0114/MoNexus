@@ -9,7 +9,6 @@ import {
   type AdminFakaImportPreview as FakaPreview,
   type AdminFakaImportRequest,
 } from '../../api/admin'
-import { catalogApi } from '../../api/catalog'
 import { getApiErrorCode, getApiErrorMessage } from '../../api/error'
 import { uploadImage } from '../../api/uploads'
 import { useAppStore } from '../../stores/appStore'
@@ -19,6 +18,8 @@ import { createLatestRequestGuard } from '../../utils/latestRequest'
 import SafeImage from '../ui/SafeImage'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../ui/Dialog'
 import ProductCategorySelect from './ProductCategorySelect'
+import { catalogGovernanceApi } from '../../api/catalogGovernance'
+import { isCoverIssue, projectCatalogIssue } from './catalogIssueMessages'
 
 interface Props {
   open: boolean
@@ -53,8 +54,13 @@ export default function AdminFakaImportPreview({ open, onClose, onImported }: Pr
   const [categoryId, setCategoryId] = useState<number | null>(null)
   const [rows, setRows] = useState<Record<string, OfferRow>>({})
   const [coverMode, setCoverMode] = useState<CoverMode>('category_default')
-  const [uploadedCover, setUploadedCover] = useState<string | null>(null)
+  const [uploadedObjectKey, setUploadedObjectKey] = useState<string | null>(null)
+  const [uploadedPreviewUrl, setUploadedPreviewUrl] = useState<string | null>(null)
   const [uploading, setUploading] = useState(false)
+  const [uploadError, setUploadError] = useState<string | null>(null)
+  // Category id → canonical default-cover URL (for instant preview / pre-
+  // preview missing-cover action, AC-UX-012).
+  const [categoryCoverMap, setCategoryCoverMap] = useState<Record<number, string | null>>({})
   const [previewing, setPreviewing] = useState(false)
   const [preview, setPreview] = useState<FakaPreview | null>(null)
   const [previewRequest, setPreviewRequest] = useState<AdminFakaImportRequest | null>(null)
@@ -62,6 +68,7 @@ export default function AdminFakaImportPreview({ open, onClose, onImported }: Pr
   const [confirming, setConfirming] = useState(false)
   const [conflictProductId, setConflictProductId] = useState<number | null>(null)
   const previewGuard = useRef(createLatestRequestGuard()).current
+  const coverInputRef = useRef<HTMLInputElement | null>(null)
 
   useEffect(() => {
     if (!open) {
@@ -72,26 +79,36 @@ export default function AdminFakaImportPreview({ open, onClose, onImported }: Pr
     setLoading(true)
     setCatalog([])
     setCategories([])
+    setCategoryCoverMap({})
     setPlanId(null)
     setProductName('')
     setCategoryId(null)
     setRows({})
-    setCoverMode('category_default')
-    setUploadedCover(null)
+    // The uploaded-cover draft survives a temporary close/reopen (D-UX-13,
+    // T-UX-004): it is only cleared on explicit cancel or confirm success.
     setPreview(null)
     setPreviewRequest(null)
     setIdempotencyKey(null)
     setConflictProductId(null)
-    Promise.all([getAdminFakaCatalog(), catalogApi.listActiveCategories()])
+    Promise.all([
+      getAdminFakaCatalog(),
+      catalogGovernanceApi.listCategories({ status: 'active', page: 1, pageSize: 100 }),
+    ])
       .then(([catalogResult, categoryResult]) => {
         if (cancelled) return
         setCatalog(catalogResult.plans ?? [])
-        setCategories(categoryResult)
+        setCategories(categoryResult.items)
+        setCategoryCoverMap(
+          Object.fromEntries(
+            categoryResult.items.map(item => [item.id, item.defaultCoverUrl]),
+          ),
+        )
       })
       .catch((error) => {
         if (cancelled) return
         setCatalog([])
         setCategories([])
+        setCategoryCoverMap({})
         showToast(getApiErrorMessage(error, '加载 Xboard 导入数据失败'), 'error')
       })
       .finally(() => { if (!cancelled) setLoading(false) })
@@ -108,6 +125,14 @@ export default function AdminFakaImportPreview({ open, onClose, onImported }: Pr
     setPreviewRequest(null)
     setIdempotencyKey(null)
     setConflictProductId(null)
+  }
+
+  /** Clear the uploaded-cover draft — only on explicit cancel or confirm success. */
+  function clearDraft() {
+    setUploadedObjectKey(null)
+    setUploadedPreviewUrl(null)
+    setUploadError(null)
+    setCoverMode('category_default')
   }
 
   function choosePlan(nextPlanId: number | null) {
@@ -138,7 +163,7 @@ export default function AdminFakaImportPreview({ open, onClose, onImported }: Pr
       showToast('请选择 Xboard 套餐和商品分类', 'error')
       return null
     }
-    if (coverMode === 'uploaded' && !uploadedCover) {
+    if (coverMode === 'uploaded' && !uploadedObjectKey) {
       showToast('请先上传封面图片', 'error')
       return null
     }
@@ -170,7 +195,7 @@ export default function AdminFakaImportPreview({ open, onClose, onImported }: Pr
       categoryId,
       ...(productName.trim() ? { productName: productName.trim() } : {}),
       cover: coverMode === 'uploaded'
-        ? { mode: 'uploaded', imageUrl: uploadedCover!, images: [uploadedCover!] }
+        ? { mode: 'uploaded', objectKey: uploadedObjectKey! }
         : { mode: 'category_default' },
       offers,
     }
@@ -206,6 +231,7 @@ export default function AdminFakaImportPreview({ open, onClose, onImported }: Pr
       showToast(result.replayed
         ? `幂等重放：商品 #${result.productId} 已存在，未重复创建`
         : `已创建 Xboard 商品草稿 #${result.productId}（${result.offerCount ?? preview.offers.length} 个规格）`)
+      clearDraft()
       await onImported(result.productId)
       onClose()
     } catch (error) {
@@ -266,38 +292,80 @@ export default function AdminFakaImportPreview({ open, onClose, onImported }: Pr
                   <legend className="text-sm font-bold">封面来源 *</legend>
                   <label className="flex items-center gap-2 text-sm">
                     <input type="radio" name="faka-cover" checked={coverMode === 'category_default'}
-                      onChange={() => { invalidatePreview(); setCoverMode('category_default') }} />
+                      onChange={() => { invalidatePreview(); setUploadError(null); setCoverMode('category_default') }} />
                     使用分类默认封面（预览时校验）
                   </label>
+                  {coverMode === 'category_default' && categoryId != null && (
+                    categoryCoverMap[categoryId] ? (
+                      <div className="flex items-center gap-3 rounded-lg border border-[var(--color-border)] p-3">
+                        <SafeImage src={categoryCoverMap[categoryId]!} alt="分类默认封面预览" className="w-16 h-16 object-cover rounded-lg" data-testid="admin-faka-category-cover-preview" />
+                        <span className="text-sm text-[var(--color-text-muted)]">将使用该分类的默认封面。</span>
+                      </div>
+                    ) : (
+                      <div className="rounded-lg border border-[var(--color-warning)]/30 bg-[var(--color-warning)]/10 p-3 text-sm" data-testid="admin-faka-cover-missing">
+                        <p className="text-[var(--color-text)]">所选分类还没有默认封面。</p>
+                        <p className="text-xs text-[var(--color-text-muted)] mt-1">可切换上方「上传平台托管封面」，或在分类管理中为该分类设置默认封面。</p>
+                      </div>
+                    )
+                  )}
                   <label className="flex items-center gap-2 text-sm">
                     <input type="radio" name="faka-cover" checked={coverMode === 'uploaded'}
-                      onChange={() => { invalidatePreview(); setCoverMode('uploaded') }} />
+                      onChange={() => { invalidatePreview(); setUploadError(null); setCoverMode('uploaded') }} />
                     上传平台托管封面
                   </label>
                   {coverMode === 'uploaded' && (
                     <div className="rounded-lg border border-[var(--color-border)] p-3">
-                      <label className="btn-secondary inline-flex items-center gap-2 cursor-pointer">
+                      <button
+                        type="button"
+                        className="btn-secondary inline-flex items-center gap-2"
+                        disabled={uploading || confirming}
+                        aria-busy={uploading}
+                        aria-describedby={`admin-faka-cover-help${uploadError ? ' admin-faka-cover-error' : ''}`}
+                        onClick={() => coverInputRef.current?.click()}
+                      >
                         {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
                         {uploading ? '上传中…' : '选择本地图片'}
-                        <input type="file" className="hidden" accept="image/png,image/jpeg,image/webp,image/gif"
-                          disabled={uploading || confirming}
-                          onChange={async (event) => {
-                            const file = event.target.files?.[0]
-                            event.target.value = ''
-                            if (!file) return
-                            setUploading(true)
-                            try {
-                              const result = await uploadImage(file)
-                              invalidatePreview()
-                              setUploadedCover(result.url)
-                            } catch (error) {
-                              showToast(getApiErrorMessage(error, '封面上传失败'), 'error')
-                            } finally {
-                              setUploading(false)
-                            }
-                          }} />
-                      </label>
-                      {uploadedCover && <SafeImage src={uploadedCover} alt="已上传封面" className="mt-3 w-28 h-28 rounded-lg object-cover" />}
+                      </button>
+                      <input
+                        id="admin-faka-cover-file"
+                        ref={coverInputRef}
+                        type="file"
+                        className="hidden"
+                        accept="image/png,image/jpeg,image/webp,image/gif"
+                        disabled={uploading || confirming}
+                        aria-label="上传商品封面"
+                        aria-busy={uploading}
+                        aria-invalid={Boolean(uploadError)}
+                        aria-describedby={`admin-faka-cover-help${uploadError ? ' admin-faka-cover-error' : ''}`}
+                        onChange={async (event) => {
+                          const file = event.target.files?.[0]
+                          event.target.value = ''
+                          if (!file) return
+                          setUploading(true)
+                          setUploadError(null)
+                          try {
+                            const result = await uploadImage(file)
+                            invalidatePreview()
+                            setUploadedObjectKey(result.key)
+                            setUploadedPreviewUrl(result.url)
+                          } catch (error) {
+                            const message = getApiErrorMessage(error, '封面上传失败')
+                            setUploadError(message)
+                            showToast(message, 'error')
+                          } finally {
+                            setUploading(false)
+                          }
+                        }}
+                      />
+                      <p id="admin-faka-cover-help" className="mt-2 text-xs text-[var(--color-text-muted)]">
+                        PNG / JPEG / WebP / GIF，最大 5MB
+                      </p>
+                      {uploadError && (
+                        <p id="admin-faka-cover-error" role="alert" className="mt-2 text-xs text-[var(--color-danger)]">
+                          {uploadError}
+                        </p>
+                      )}
+                      {uploadedPreviewUrl && <SafeImage src={uploadedPreviewUrl} alt="已上传封面" className="mt-3 w-28 h-28 rounded-lg object-cover" data-testid="admin-faka-uploaded-cover-preview" />}
                     </div>
                   )}
                 </fieldset>
@@ -348,8 +416,15 @@ export default function AdminFakaImportPreview({ open, onClose, onImported }: Pr
                 <ul className="text-sm space-y-1">
                   {preview.offers.map((offer) => <li key={offer.sku}>{offer.offerName} · {offer.pricePoints} 积分 · {offer.sku}</li>)}
                 </ul>
-                {preview.issues.length > 0 && <ul className="text-sm text-[var(--color-danger)]" data-testid="admin-faka-preview-issues">
-                  {preview.issues.map((issue, index) => <li key={`${issue.code}-${index}`}>{issue.code}：{issue.message}</li>)}
+                {preview.issues.length > 0 && <ul className="text-sm space-y-1" data-testid="admin-faka-preview-issues">
+                  {preview.issues.map((issue, index) => {
+                    const projected = projectCatalogIssue(issue)
+                    return (
+                      <li key={`${issue.code}-${index}`} data-code={issue.code} data-action={projected.action}>
+                        {projected.message}
+                      </li>
+                    )
+                  })}
                 </ul>}
               </section>
             )}
@@ -361,7 +436,7 @@ export default function AdminFakaImportPreview({ open, onClose, onImported }: Pr
               </button>
             )}
             <div className="flex justify-end gap-3">
-              <button type="button" className="btn-secondary" onClick={onClose} disabled={confirming}>取消</button>
+              <button type="button" className="btn-secondary" onClick={() => { clearDraft(); onClose() }} disabled={confirming}>取消</button>
               {!preview ? (
                 <button type="button" className="btn-primary" onClick={runPreview}
                   disabled={previewing || uploading || confirming || planId == null}

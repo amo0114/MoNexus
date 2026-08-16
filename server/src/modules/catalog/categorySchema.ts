@@ -84,14 +84,43 @@ export const categoryDefaultCoverUrlField = z.string().trim()
   .max(MAX_CATEGORY_DEFAULT_COVER_URL_LENGTH, '默认封面地址过长')
   .refine(isPlatformPublicAssetUrl, '默认封面只能使用平台公共资源路径（如 /uploads/ 或 /assets/）')
 
+// SPEC-CMI-UX-001 §5.1: preferred new-contract cover. `objectKey` is the
+// trust anchor for uploads; `path` is a repository static asset only.
+export const platformMediaRefSchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('upload'),
+    objectKey: z.string().trim().min(1).max(512),
+  }).strict(),
+  z.object({
+    kind: z.literal('static'),
+    path: z.string().trim().min(1).max(2048),
+  }).strict(),
+])
+export type PlatformMediaRefInput = z.infer<typeof platformMediaRefSchema>
+
+/** Reject submitting both the new `defaultCover` and legacy `defaultCoverUrl`. */
+function rejectDualCoverFields<T extends { defaultCover?: unknown; defaultCoverUrl?: unknown }>(
+  val: T,
+  ctx: z.RefinementCtx,
+) {
+  if (val.defaultCover !== undefined && val.defaultCoverUrl !== undefined) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['defaultCover'],
+      message: 'defaultCover 与 defaultCoverUrl 不能同时提交',
+    })
+  }
+}
+
 export const createCategorySchema = z.object({
   code: categoryCodeSchema,
   label: categoryLabelSchema,
   description: emptyToUnset(categoryDescriptionField),
   iconKey: emptyToUnset(categoryIconKeyField),
   defaultCoverUrl: emptyToUnset(categoryDefaultCoverUrlField),
+  defaultCover: platformMediaRefSchema.optional(),
   sortOrder: categorySortOrderSchema.default(0),
-}).strict()
+}).strict().superRefine(rejectDualCoverFields)
 // Input type (sortOrder optional — the default is applied by validation). The
 // service accepts this so direct callers don't have to repeat the default, and
 // so the preprocessed empty-string fields keep usable string types.
@@ -101,6 +130,7 @@ export interface CreateCategoryInput {
   description?: string
   iconKey?: string
   defaultCoverUrl?: string
+  defaultCover?: PlatformMediaRefInput
   sortOrder?: number
 }
 
@@ -110,8 +140,9 @@ export const updateCategorySchema = z.object({
   description: emptyToNull(categoryDescriptionField),
   iconKey: emptyToNull(categoryIconKeyField),
   defaultCoverUrl: emptyToNull(categoryDefaultCoverUrlField),
+  defaultCover: platformMediaRefSchema.nullable().optional(),
   sortOrder: categorySortOrderSchema.optional(),
-}).strict()
+}).strict().superRefine(rejectDualCoverFields)
 export type UpdateCategoryInput = z.infer<typeof updateCategorySchema>
 
 export const listCategoriesQuerySchema = z.object({
