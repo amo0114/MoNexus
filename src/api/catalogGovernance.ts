@@ -117,6 +117,7 @@ export function createCatalogGovernanceAdapter(
         ...(payload.description !== undefined ? { description: payload.description } : {}),
         ...(payload.iconKey !== undefined ? { iconKey: payload.iconKey } : {}),
         ...(payload.defaultCoverUrl !== undefined ? { defaultCoverUrl: payload.defaultCoverUrl } : {}),
+        ...(payload.defaultCover !== undefined ? { defaultCover: payload.defaultCover } : {}),
         ...(payload.sortOrder !== undefined ? { sortOrder: payload.sortOrder } : {}),
       }
       return transport.post<CategoryAdminDto>('/admin/product-categories', body)
@@ -127,6 +128,7 @@ export function createCatalogGovernanceAdapter(
         ...(payload.description !== undefined ? { description: payload.description } : {}),
         ...(payload.iconKey !== undefined ? { iconKey: payload.iconKey } : {}),
         ...(payload.defaultCoverUrl !== undefined ? { defaultCoverUrl: payload.defaultCoverUrl } : {}),
+        ...(payload.defaultCover !== undefined ? { defaultCover: payload.defaultCover } : {}),
         ...(payload.sortOrder !== undefined ? { sortOrder: payload.sortOrder } : {}),
       }
       return transport.patch<CategoryAdminDto>(`/admin/product-categories/${id}`, body)

@@ -34,6 +34,7 @@ const mockPatch = client.patch as unknown as ReturnType<typeof vi.fn>
 const fixture: AdminEditorialFeatureDTO = {
   id: 12,
   productId: 555,
+  productName: '云端工具',
   placement: 'store_editorial',
   status: 'active',
   startsAt: '2026-08-01T02:00:00.000Z',

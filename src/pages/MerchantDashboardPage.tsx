@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, type Dispatch, type SetStateAction } from 'react'
 import { formatBookingDay } from '../utils/formatLocalDate'
+import { blockReasonToUserMessage, PROCESSING_TIMEOUT_LABEL, SETTLEMENT_TERM } from '../utils/settlementCopy'
 import { useNavigate } from 'react-router-dom'
 import { useNotificationInvalidation } from '../hooks/useNotificationInvalidation'
 import {
@@ -728,7 +729,7 @@ export default function MerchantDashboardPage() {
                   className="card p-2 md:p-3 text-left cursor-pointer border border-transparent"
                   data-testid="merchant-sla-todo"
                 >
-                  <div className="text-[10px] md:text-xs text-[var(--color-text-muted)] uppercase font-bold">SLA 超时</div>
+                  <div className="text-[10px] md:text-xs text-[var(--color-text-muted)] uppercase font-bold">{PROCESSING_TIMEOUT_LABEL}</div>
                   <div className="text-lg md:text-xl font-bold text-[var(--color-danger)]">{stats?.todo?.slaExceeded ?? '—'}</div>
                 </button>
               </div>
@@ -819,7 +820,7 @@ export default function MerchantDashboardPage() {
                                 className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded text-xs font-bold border bg-[var(--color-danger)]/10 text-[var(--color-danger)] border-[var(--color-danger)]/25"
                                 data-testid={`sla-exceeded-badge-${o.id}`}
                               >
-                                <AlertTriangle className="w-3 h-3" /> SLA 超时
+                                <AlertTriangle className="w-3 h-3" /> {PROCESSING_TIMEOUT_LABEL}
                               </span>
                             )}
                             {o.fulfillmentDeadline && (
@@ -892,7 +893,7 @@ export default function MerchantDashboardPage() {
                       <Th>ID</Th>
                       <Th>订单号</Th>
                       <Th>订单金额</Th>
-                      <Th>平台抽成</Th>
+                      <Th>{SETTLEMENT_TERM.PLATFORM_FEE}</Th>
                       <Th>结算金额</Th>
                       <Th>状态</Th>
                     </tr>
@@ -910,12 +911,12 @@ export default function MerchantDashboardPage() {
                           <td className="py-3 px-2 text-sm text-[var(--color-text-muted)]" data-label="ID">{s.id}</td>
                           <td className="py-3 px-2 text-sm text-[var(--color-text)]" data-label="订单号">{s.orderId}</td>
                           <td className="py-3 px-2 text-sm text-[var(--color-text)]" data-label="订单金额">{s.orderAmount}</td>
-                          <td className="py-3 px-2 text-sm text-[var(--color-text-muted)]" data-label="平台抽成">{s.commissionAmount}积分 ({(Number(s.commissionRate) * 100).toFixed(0)}%)</td>
+                          <td className="py-3 px-2 text-sm text-[var(--color-text-muted)]" data-label={SETTLEMENT_TERM.PLATFORM_FEE}>{s.commissionAmount}积分 ({(Number(s.commissionRate) * 100).toFixed(0)}%)</td>
                           <td className="py-3 px-2 text-sm font-bold text-[var(--color-cta)]" data-label="结算金额">{s.settlementAmount}积分</td>
                           <td className="py-3 px-2 text-sm" data-label="状态">
                             <RegistryPill value={s.status} category="settlementStatuses" />
                             {!s.payable && s.blockReason && (
-                              <div className="text-xs text-[var(--color-danger)] mt-1">{s.blockReason}</div>
+                              <div className="text-xs text-[var(--color-danger)] mt-1">{blockReasonToUserMessage(s.blockReason)}</div>
                             )}
                           </td>
                         </tr>

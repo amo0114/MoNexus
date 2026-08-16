@@ -316,6 +316,7 @@ const ADMIN_CATEGORY_COVER_EDIT = '/assets/e2e-category-cover-edit.svg'
 const ADMIN_CATEGORY_SORT_EDIT = 1_000_000
 /** 分类仓库 create 响应解析出的分类 id（正整数；第 11 个用例内自足使用）。 */
 let categoryId = 0
+let editedCategoryCoverUrl = ''
 let applicationId = 0
 
 /** 额外 pending 数据准备：为后续管理员审核创建的新申请 id（正整数）。 */
@@ -1132,7 +1133,7 @@ function readCreateCategoryPayload(
   label: string
   description: string
   iconKey: string
-  defaultCoverUrl: string
+  defaultCover: { kind: 'upload'; objectKey: string }
   sortOrder: number
 } | null {
   if (!isRecord(body)) return null
@@ -1141,7 +1142,7 @@ function readCreateCategoryPayload(
   if (typeof body.label !== 'string') return null
   if (typeof body.description !== 'string') return null
   if (typeof body.iconKey !== 'string') return null
-  if (typeof body.defaultCoverUrl !== 'string') return null
+  if (!isRecord(body.defaultCover) || body.defaultCover.kind !== 'upload' || typeof body.defaultCover.objectKey !== 'string') return null
   if (typeof body.sortOrder !== 'number' || !Number.isInteger(body.sortOrder)) return null
   // 精确六键已由 length 校验锁定：服务端派生/操作者字段必然使长度溢出，此处显式点名拒绝。
   if ('status' in body || 'createdByUserId' in body || 'updatedByUserId' in body || 'actor' in body || 'user' in body || 'admin' in body) return null
@@ -1150,7 +1151,7 @@ function readCreateCategoryPayload(
     label: body.label,
     description: body.description,
     iconKey: body.iconKey,
-    defaultCoverUrl: body.defaultCoverUrl,
+    defaultCover: { kind: 'upload', objectKey: body.defaultCover.objectKey },
     sortOrder: body.sortOrder,
   }
 }
@@ -1167,7 +1168,7 @@ function readUpdateCategoryPayload(
   label: string
   description: string
   iconKey: string
-  defaultCoverUrl: string
+  defaultCover: { kind: 'upload'; objectKey: string }
   sortOrder: number
 } | null {
   if (!isRecord(body)) return null
@@ -1175,7 +1176,7 @@ function readUpdateCategoryPayload(
   if (typeof body.label !== 'string') return null
   if (typeof body.description !== 'string') return null
   if (typeof body.iconKey !== 'string') return null
-  if (typeof body.defaultCoverUrl !== 'string') return null
+  if (!isRecord(body.defaultCover) || body.defaultCover.kind !== 'upload' || typeof body.defaultCover.objectKey !== 'string') return null
   if (typeof body.sortOrder !== 'number' || !Number.isInteger(body.sortOrder)) return null
   // 精确五键已由 length 校验锁定：code/status/操作者 ID 必然使长度溢出，此处显式点名拒绝。
   if ('code' in body || 'status' in body || 'createdByUserId' in body || 'updatedByUserId' in body || 'actor' in body || 'user' in body || 'admin' in body) return null
@@ -1183,9 +1184,34 @@ function readUpdateCategoryPayload(
     label: body.label,
     description: body.description,
     iconKey: body.iconKey,
-    defaultCoverUrl: body.defaultCoverUrl,
+    defaultCover: { kind: 'upload', objectKey: body.defaultCover.objectKey },
     sortOrder: body.sortOrder,
   }
+}
+
+/**
+ * Uploads a local PNG through the category cover field and returns the
+ * objectKey (write/confirm trust anchor) plus the canonical preview URL
+ * (SPEC-CMI-UX-001 §5.4: cover is upload-only, never a path textbox).
+ */
+async function uploadCategoryCover(page: Page, dialog: import('@playwright/test').Locator): Promise<{ objectKey: string; url: string }> {
+  const uploadResponsePromise = page.waitForResponse((response) =>
+    response.request().method() === 'POST'
+    && new URL(response.url()).pathname === '/api/uploads/image',
+  );
+  const png = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+    'base64',
+  );
+  await dialog.locator('#category-form-cover-file').setInputFiles({ name: 'cover.png', mimeType: 'image/png', buffer: png });
+  const uploadResponse = await uploadResponsePromise;
+  if (uploadResponse.status() !== 200) throw new Error('cover upload failed');
+  const uploadBody: unknown = await uploadResponse.json();
+  if (!isRecord(uploadBody) || typeof uploadBody.key !== 'string' || typeof uploadBody.url !== 'string') {
+    throw new Error('cover upload must return { key, url }');
+  }
+  await expect(dialog.getByTestId('category-form-cover-preview')).toBeVisible({ timeout: 10_000 });
+  return { objectKey: uploadBody.key, url: uploadBody.url };
 }
 
 /**
@@ -2018,7 +2044,9 @@ test.describe.serial('PAR-CMI-002 catalog category governance merchant flow', ()
     const createDialog = page.getByRole('dialog')
     await expect(createDialog).toBeVisible({ timeout: 10_000 })
     await expect(createDialog).toContainText('新建分类')
-
+    // D-UX-17: code/icon live in a collapsed advanced-settings section; expand
+    // it once so the code validation error is visible and the fields are fillable.
+    await createDialog.getByTestId('category-advanced-settings').locator('summary').click();
     // 空 code 点击 submit：本地校验「分类编码不能为空」；page request 事件精确计数证明零请求（禁 sleep）。
     const createRequests: string[] = []
     page.on('request', (request) => {
@@ -2034,13 +2062,14 @@ test.describe.serial('PAR-CMI-002 catalog category governance merchant flow', ()
     expect(createRequests).toHaveLength(0)
 
     // 填唯一合法 lower-case code / 唯一 label / description / kebab iconKey /
-    // 合法平台资源 defaultCoverUrl（/assets/…）/ sortOrder 整数。
+    // 上传默认封面（SPEC-CMI-UX-001 §5.4：封面上传，无 path 文本框）/ sortOrder 整数。
     await createDialog.getByTestId('category-form-code').fill(ADMIN_CATEGORY_CODE)
     await createDialog.getByTestId('category-form-label').fill(ADMIN_CATEGORY_LABEL)
     await createDialog.getByTestId('category-form-description').fill(ADMIN_CATEGORY_DESCRIPTION)
-    await createDialog.getByTestId('category-form-icon').fill(ADMIN_CATEGORY_ICON)
+    await createDialog.getByTestId(`category-icon-${ADMIN_CATEGORY_ICON}`).click()
     await createDialog.getByTestId('category-form-sort').fill(String(ADMIN_CATEGORY_SORT))
-    await createDialog.getByTestId('category-form-cover').fill(ADMIN_CATEGORY_COVER)
+    const createCover = await uploadCategoryCover(page, createDialog)
+    const createObjectKey = createCover.objectKey
 
     // c. 点击前精确 waitForResponse POST /api/admin/product-categories → 201；
     //    同时监听随后 create 成功触发的列表刷新 GET（page=1&pageSize=10、status 空），
@@ -2061,7 +2090,7 @@ test.describe.serial('PAR-CMI-002 catalog category governance merchant flow', ()
       label: ADMIN_CATEGORY_LABEL,
       description: ADMIN_CATEGORY_DESCRIPTION,
       iconKey: ADMIN_CATEGORY_ICON,
-      defaultCoverUrl: ADMIN_CATEGORY_COVER,
+      defaultCover: { kind: 'upload', objectKey: createObjectKey },
       sortOrder: ADMIN_CATEGORY_SORT,
     })
 
@@ -2073,7 +2102,7 @@ test.describe.serial('PAR-CMI-002 catalog category governance merchant flow', ()
       label: ADMIN_CATEGORY_LABEL,
       description: ADMIN_CATEGORY_DESCRIPTION,
       iconKey: ADMIN_CATEGORY_ICON,
-      defaultCoverUrl: ADMIN_CATEGORY_COVER,
+      defaultCoverUrl: createCover.url,
       sortOrder: ADMIN_CATEGORY_SORT,
       status: 'active',
     })
@@ -2130,21 +2159,26 @@ test.describe.serial('PAR-CMI-002 catalog category governance merchant flow', ()
     const editDialog = page.getByRole('dialog')
     await expect(editDialog).toBeVisible({ timeout: 10_000 })
     await expect(editDialog).toContainText('编辑分类')
+    // D-UX-17: code/icon live in the advanced-settings section; expand it once.
+    await editDialog.getByTestId('category-advanced-settings').locator('summary').click();
     await expect(editDialog.getByTestId('category-form-code')).toHaveValue(ADMIN_CATEGORY_CODE)
     await expect(editDialog.getByTestId('category-form-code')).toBeDisabled()
     await expect(editDialog.getByTestId('category-form-label')).toHaveValue(ADMIN_CATEGORY_LABEL)
     await expect(editDialog.getByTestId('category-form-description')).toHaveValue(ADMIN_CATEGORY_DESCRIPTION)
-    await expect(editDialog.getByTestId('category-form-icon')).toHaveValue(ADMIN_CATEGORY_ICON)
+    await expect(editDialog.getByTestId(`category-icon-${ADMIN_CATEGORY_ICON}`)).toHaveAttribute('aria-pressed', 'true')
     await expect(editDialog.getByTestId('category-form-sort')).toHaveValue(String(ADMIN_CATEGORY_SORT))
-    await expect(editDialog.getByTestId('category-form-cover')).toHaveValue(ADMIN_CATEGORY_COVER)
-    await expect(editDialog).toContainText('编码创建后不可修改（D-CAT-06）。')
+    // The uploaded cover is backfilled as an image preview (SPEC-CMI-UX-001 §5.4).
+    await expect(editDialog.getByTestId('category-form-cover-preview')).toBeVisible()
+    await expect(editDialog).toContainText('创建后不可修改；留空时默认从名称生成。')
 
     // f. 修改 label/description/icon/defaultCover/sortOrder 为 *_EDIT 常量。
     await editDialog.getByTestId('category-form-label').fill(ADMIN_CATEGORY_LABEL_EDIT)
     await editDialog.getByTestId('category-form-description').fill(ADMIN_CATEGORY_DESCRIPTION_EDIT)
-    await editDialog.getByTestId('category-form-icon').fill(ADMIN_CATEGORY_ICON_EDIT)
+    await editDialog.getByTestId(`category-icon-${ADMIN_CATEGORY_ICON_EDIT}`).click()
     await editDialog.getByTestId('category-form-sort').fill(String(ADMIN_CATEGORY_SORT_EDIT))
-    await editDialog.getByTestId('category-form-cover').fill(ADMIN_CATEGORY_COVER_EDIT)
+    const editCover = await uploadCategoryCover(page, editDialog)
+    editedCategoryCoverUrl = editCover.url
+    const editObjectKey = editCover.objectKey
 
     // 点击前精确 waitForResponse PATCH /api/admin/product-categories/:id → 200；
     //    同时监听随后 edit 成功触发的列表刷新 GET（停在 currentCategoryPage：
@@ -2159,13 +2193,13 @@ test.describe.serial('PAR-CMI-002 catalog category governance merchant flow', ()
     const updateResult = await updateResponse
     expect(updateResult.status()).toBe(200)
 
-    // edit request 严格精确五键 {label,description,iconKey,defaultCoverUrl,sortOrder}，绝无 code/status/操作者 ID。
+    // edit request 严格精确五键 {label,description,iconKey,defaultCover,sortOrder}，绝无 code/status/操作者 ID。
     const updateRequestBody: unknown = updateResult.request().postDataJSON()
     expect(readUpdateCategoryPayload(updateRequestBody)).toEqual({
       label: ADMIN_CATEGORY_LABEL_EDIT,
       description: ADMIN_CATEGORY_DESCRIPTION_EDIT,
       iconKey: ADMIN_CATEGORY_ICON_EDIT,
-      defaultCoverUrl: ADMIN_CATEGORY_COVER_EDIT,
+      defaultCover: { kind: 'upload', objectKey: editObjectKey },
       sortOrder: ADMIN_CATEGORY_SORT_EDIT,
     })
 
@@ -2176,7 +2210,7 @@ test.describe.serial('PAR-CMI-002 catalog category governance merchant flow', ()
       label: ADMIN_CATEGORY_LABEL_EDIT,
       description: ADMIN_CATEGORY_DESCRIPTION_EDIT,
       iconKey: ADMIN_CATEGORY_ICON_EDIT,
-      defaultCoverUrl: ADMIN_CATEGORY_COVER_EDIT,
+      defaultCoverUrl: editedCategoryCoverUrl,
       sortOrder: ADMIN_CATEGORY_SORT_EDIT,
       status: 'active',
     })
@@ -2321,7 +2355,7 @@ test.describe.serial('PAR-CMI-002 catalog category governance merchant flow', ()
       label: ADMIN_CATEGORY_LABEL_EDIT,
       description: ADMIN_CATEGORY_DESCRIPTION_EDIT,
       iconKey: ADMIN_CATEGORY_ICON_EDIT,
-      defaultCoverUrl: ADMIN_CATEGORY_COVER_EDIT,
+      defaultCoverUrl: editedCategoryCoverUrl,
       sortOrder: ADMIN_CATEGORY_SORT_EDIT,
       status: 'inactive',
     })
@@ -2455,7 +2489,7 @@ test.describe.serial('PAR-CMI-002 catalog category governance merchant flow', ()
       label: ADMIN_CATEGORY_LABEL_EDIT,
       description: ADMIN_CATEGORY_DESCRIPTION_EDIT,
       iconKey: ADMIN_CATEGORY_ICON_EDIT,
-      defaultCoverUrl: ADMIN_CATEGORY_COVER_EDIT,
+      defaultCoverUrl: editedCategoryCoverUrl,
       sortOrder: ADMIN_CATEGORY_SORT_EDIT,
       status: 'active',
     })

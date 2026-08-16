@@ -160,23 +160,19 @@ describe('Xboard preview → idempotent confirm (REAL-PG)', () => {
     })
     const body = {
       ...request(category.id),
-      cover: {
-        mode: 'uploaded',
-        imageUrl: '/uploads/xboard-cover.webp',
-        images: ['/uploads/xboard-cover.webp'],
-      },
+      cover: { mode: 'uploaded', objectKey: 'xboard-cover.webp' },
     }
     const preview = await api.post('/api/admin/faka/import/preview').set(authHeader(auth.accessToken))
       .send(body).expect(200)
     expect(preview.body).toMatchObject({
       canConfirm: true,
-      cover: { imageUrl: '/uploads/xboard-cover.webp', images: ['/uploads/xboard-cover.webp'] },
+      cover: { imageUrl: 'http://localhost:3000/uploads/xboard-cover.webp', images: ['http://localhost:3000/uploads/xboard-cover.webp'] },
     })
     const created = await api.post('/api/admin/faka/import').set(authHeader(auth.accessToken))
       .set('Idempotency-Key', 'faka:77:uploaded')
       .send({ ...body, sourceHash: preview.body.sourceHash }).expect(201)
     const product = await prisma.product.findUniqueOrThrow({ where: { id: created.body.productId } })
-    expect(product.imageUrl).toBe('/uploads/xboard-cover.webp')
+    expect(product.imageUrl).toBe('http://localhost:3000/uploads/xboard-cover.webp')
 
     await prisma.storedObject.updateMany({ where: { objectKey: 'xboard-cover.webp' }, data: { status: 'deleted' } })
     const invalidBody = { ...body, planId: 78 }
@@ -276,11 +272,7 @@ describe('Xboard preview → idempotent confirm (REAL-PG)', () => {
     const body = {
       ...request(category.id),
       planId: 80,
-      cover: {
-        mode: 'uploaded',
-        imageUrl: '/uploads/xboard-cover-absence.webp',
-        images: ['/uploads/xboard-cover-absence.webp'],
-      },
+      cover: { mode: 'uploaded', objectKey: 'xboard-cover-absence.webp' },
     }
     catalogPlan = { ...catalogPlan, plan_id: 80 }
     const preview = await api.post('/api/admin/faka/import/preview').set(authHeader(auth.accessToken))

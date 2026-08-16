@@ -248,7 +248,7 @@ describe('admin approve — create_new (D-CAT-10/11)', () => {
     const merchantId = await seedMerchant()
     const adminId = await seedAdmin()
     const app = await pendingApp(merchantId)
-    await createCategory(adminId, { code: 'taken-cat', label: '已占用' })
+    await createCategory(adminId, { defaultCoverUrl: '/assets/network.webp', code: 'taken-cat', label: '已占用' })
 
     await expect(approveCategoryApplication(adminId, app.id, {
       resolution: 'create_new',
@@ -302,7 +302,7 @@ describe('admin approve — map_existing (AC-CAT-014)', () => {
   it('links an existing ACTIVE category without creating a duplicate', async () => {
     const merchantId = await seedMerchant()
     const adminId = await seedAdmin()
-    const target = await createCategory(adminId, { code: 'existing-cat', label: '既有分类' })
+    const target = await createCategory(adminId, { defaultCoverUrl: '/assets/network.webp', code: 'existing-cat', label: '既有分类' })
     const app = await pendingApp(merchantId)
 
     const dto = await approveCategoryApplication(adminId, app.id, {
@@ -342,7 +342,7 @@ describe('admin approve — map_existing (AC-CAT-014)', () => {
       reviewReason: '目标不存在',
     })).rejects.toMatchObject({ status: 404 })
 
-    const inactive = await createCategory(adminId, { code: 'off-cat', label: '停用分类' })
+    const inactive = await createCategory(adminId, { defaultCoverUrl: '/assets/network.webp', code: 'off-cat', label: '停用分类' })
     await deactivateCategory(adminId, inactive.id)
 
     await expect(approveCategoryApplication(adminId, app.id, {

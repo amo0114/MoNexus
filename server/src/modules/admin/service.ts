@@ -43,7 +43,11 @@ import { revokeAllUserRefreshTokens } from '../auth/service.js'
 import { lockUserRefreshSessionMutations } from '../auth/sessionService.js'
 import { invalidateProductPublicCache } from '../products/cache.js'
 import { resolveProductCategory } from '../catalog/resolver.js'
-import { isPlatformPublicAssetUrl } from '../catalog/categorySchema.js'
+import {
+  MediaRefResolutionError,
+  resolveLegacyPlatformImageUrl,
+  resolvePlatformPublicImage,
+} from '../catalog/platformMedia.js'
 import { CATALOG_ERROR_CODES, EXTERNAL_CATALOG_PROVIDER } from '../catalog/constants.js'
 import {
   buildExternalCatalogRequestHash,
@@ -1580,7 +1584,21 @@ const FAKA_PURCHASE_FORM = [
 
 type FakaImportDb = typeof prisma | Prisma.TransactionClient
 
-type FakaImportIssue = { code: string; field: string; message: string }
+type FakaImportIssue = { code: string; field: string; message: string; action?: string }
+
+/**
+ * Cover sub-case that maps to a user-facing `action` (plan §4.2).
+ * Never surfaced raw — always projected to COVER_INVALID + action.
+ */
+class CoverResolutionError extends Error {
+  constructor(
+    public readonly reason: 'object_missing' | 'category_default_missing',
+    message: string,
+  ) {
+    super(message)
+    this.name = 'CoverResolutionError'
+  }
+}
 
 async function resolveFakaImportCover(
   db: FakaImportDb,
@@ -1592,29 +1610,19 @@ async function resolveFakaImportCover(
   })
   if (!category || category.status !== 'active') throw badRequest('商品分类不存在或已停用')
   if (input.cover.mode === 'category_default') {
-    const imageUrl = category.defaultCoverUrl
-    if (!imageUrl || !isPlatformPublicAssetUrl(imageUrl)) {
-      throw badRequest('该分类尚未配置可用默认封面')
+    if (!category.defaultCoverUrl) {
+      throw new CoverResolutionError('category_default_missing', '该分类尚未配置可用默认封面')
     }
-    return { imageUrl, images: [imageUrl] }
+    const resolved = await resolveLegacyPlatformImageUrl(category.defaultCoverUrl, db)
+    return { imageUrl: resolved.canonicalUrl, images: [resolved.canonicalUrl] }
   }
-
-  const images = (input.cover.images?.length ? input.cover.images : [input.cover.imageUrl])
-    .map(value => value.trim())
-  if (images[0] !== input.cover.imageUrl.trim()) throw badRequest('images 第一项必须与 imageUrl 一致')
-  if (new Set(images).size !== images.length) throw badRequest('封面图片不能重复')
-  for (const imageUrl of images) {
-    if (!imageUrl.startsWith('/uploads/') || !isPlatformPublicAssetUrl(imageUrl)) {
-      throw badRequest('上传封面必须来自平台 /uploads/ 公共对象')
-    }
-    const objectKey = imageUrl.slice('/uploads/'.length)
-    const stored = await db.storedObject.findFirst({
-      where: { bucketRole: 'public', objectKey, status: 'active', source: 'upload_image' },
-      select: { id: true },
-    })
-    if (!stored) throw badRequest('上传封面不存在或已失效')
-  }
-  return { imageUrl: images[0]!, images }
+  // uploaded: objectKey is the write/confirm trust anchor (D-UX-13) and is
+  // re-validated server-side against the StoredObject registry every time.
+  const resolved = await resolvePlatformPublicImage(
+    { kind: 'upload', objectKey: input.cover.objectKey },
+    db,
+  )
+  return { imageUrl: resolved.canonicalUrl, images: [resolved.canonicalUrl] }
 }
 
 async function analyzeAdminFakaImport(
@@ -1686,8 +1694,25 @@ async function analyzeAdminFakaImport(
   try {
     cover = await resolveFakaImportCover(db, input)
   } catch (error) {
-    if (!(error instanceof HttpError)) throw error
-    issues.push({ code: 'COVER_INVALID', field: 'cover', message: error.message })
+    // Map resolution failures to COVER_INVALID + an `action` the frontend can
+    // project without branching on Chinese prose (plan §4.2 / CHK §4).
+    if (error instanceof CoverResolutionError) {
+      issues.push({
+        code: 'COVER_INVALID',
+        field: 'cover',
+        message: error.message,
+        action: error.reason === 'category_default_missing' ? 'set_category_cover' : 'reupload_cover',
+      })
+    } else if (error instanceof MediaRefResolutionError) {
+      issues.push({
+        code: 'COVER_INVALID',
+        field: 'cover',
+        message: error.message,
+        action: 'reupload_cover',
+      })
+    } else {
+      throw error
+    }
   }
   const productName = request.productName || source.name || `Xboard 套餐 #${input.planId}`
   const plainDescription = source.plainDescription || `${productName} · 含 ${offers.map(row => row.offerName).join(' / ')} 等规格`

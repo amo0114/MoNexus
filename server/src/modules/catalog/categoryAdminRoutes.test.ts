@@ -65,7 +65,7 @@ describe('admin product-categories API — CRUD/lifecycle', () => {
     const created = await api
       .post('/api/admin/product-categories')
       .set(authHeader(token))
-      .send({ code: 'cloud-tool', label: '云工具', sortOrder: 5 })
+      .send({ code: 'cloud-tool', label: '云工具', sortOrder: 5, defaultCoverUrl: '/assets/network.webp' })
       .expect(201)
     const id = created.body.id as number
     expect(created.body).toMatchObject({
@@ -136,7 +136,7 @@ describe('admin product-categories API — CRUD/lifecycle', () => {
     const created = await api
       .post('/api/admin/product-categories')
       .set(authHeader(token))
-      .send({ code: 'ref-cat', label: '被引用' })
+      .send({ code: 'ref-cat', label: '被引用', defaultCoverUrl: '/assets/network.webp' })
       .expect(201)
     const id = created.body.id as number
 

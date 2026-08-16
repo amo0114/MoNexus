@@ -107,6 +107,7 @@ TEST_FILES=(
   src/modules/catalog/externalCatalog.test.ts
   src/modules/catalog/contentSanitizer.test.ts
   src/modules/catalog/fakaPreviewConfirm.test.ts
+  src/modules/catalog/platformMedia.test.ts
   src/modules/merchant/inventory.test.ts
   src/modules/merchant/capacity-adjust.test.ts
   src/modules/merchant/product-images.test.ts
@@ -193,7 +194,9 @@ gate_0_env() {
   branch="$(git -C "$PROJECT_ROOT" branch --show-current)"
   head="$(git -C "$PROJECT_ROOT" rev-parse HEAD)"
   say "branch=$branch head=$head"
-  [[ "$branch" == "feat/catalog-merch-integration" ]] || { fail "wrong branch: $branch"; return 1; }
+  # The CMI lane gate runs on the integration branch and, since SPEC-CMI-UX-001
+  # landed, also on the user-ux fix branch that supersedes it.
+  [[ "$branch" == "feat/catalog-merch-integration" || "$branch" == "fix/catalog-merch-user-ux" ]] || { fail "wrong branch: $branch"; return 1; }
 
   # dbguard must refuse any database name other than the frozen CMI db.
   if bash "$DBGUARD" make-url-file 'monexus_test_catalog_merch_TYPO' >/dev/null 2>&1; then
