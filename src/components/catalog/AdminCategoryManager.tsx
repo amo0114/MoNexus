@@ -66,7 +66,9 @@ import {
   type CategoryApplicationDto,
   type CategoryApplicationStatus,
   type CategoryStatus,
+  type PlatformMediaRef,
 } from '../../types/catalog'
+import CategoryCoverField from './CategoryCoverField'
 
 const PAGE_SIZE = 10
 const MAX_REORDER_IDS = 500
@@ -154,7 +156,8 @@ interface CategoryFormState {
   label: string
   description: string
   iconKey: string
-  defaultCoverUrl: string
+  /** Form-draft cover ref; undefined = untouched (edit keeps existing). */
+  defaultCover: PlatformMediaRef | null | undefined
   sortOrder: string
 }
 
@@ -163,7 +166,7 @@ const EMPTY_CATEGORY_FORM: CategoryFormState = {
   label: '',
   description: '',
   iconKey: '',
-  defaultCoverUrl: '',
+  defaultCover: undefined,
   sortOrder: '0',
 }
 
@@ -182,7 +185,10 @@ function validateCategoryForm(
   else if (form.label.trim().length > 50) errors.label = '分类名称最多 50 字'
   if (form.description.trim().length > 500) errors.description = '分类描述最多 500 字'
   if (form.iconKey.trim().length > 64) errors.iconKey = '分类图标最多 64 字'
-  if (form.defaultCoverUrl.trim().length > 2048) errors.defaultCoverUrl = '默认封面地址过长'
+  // D-UX-11: a new (active) category must have a default cover.
+  if (!editing && form.defaultCover == null) {
+    errors.defaultCover = '请上传分类默认封面'
+  }
   if (form.sortOrder.trim() !== '') {
     const n = Number(form.sortOrder)
     if (!Number.isInteger(n) || n < 0 || n > 1_000_000) errors.sortOrder = '排序值必须是 0 到 1000000 的整数'
@@ -220,7 +226,9 @@ function CategoryFormDialog({
         label: category.label,
         description: category.description ?? '',
         iconKey: category.iconKey ?? '',
-        defaultCoverUrl: category.defaultCoverUrl ?? '',
+        // Edit mode starts with an untouched cover; the field previews the
+        // existing canonical URL until the admin uploads/removes a cover.
+        defaultCover: undefined,
         sortOrder: String(category.sortOrder ?? 0),
       })
     } else {
@@ -337,19 +345,15 @@ function CategoryFormDialog({
           </div>
 
           <div>
-            <label htmlFor="cat-form-cover" className="block text-sm font-semibold mb-1">
-              默认封面（平台资源路径）
-            </label>
-            <input
-              id="cat-form-cover"
-              data-testid="category-form-cover"
-              className="input font-mono"
-              value={form.defaultCoverUrl}
-              onChange={(e) => setForm((f) => ({ ...f, defaultCoverUrl: e.target.value }))}
-              placeholder="/uploads/… 或 /assets/…"
+            <CategoryCoverField
+              existingUrl={category?.defaultCoverUrl ?? null}
+              value={form.defaultCover}
+              onChange={(ref) => setForm((f) => ({ ...f, defaultCover: ref }))}
               disabled={busy}
+              required={!editing}
+              error={errors.defaultCover ?? null}
+              testId="category-form-cover"
             />
-            {errors.defaultCoverUrl && <p role="alert" className="text-xs text-[var(--color-danger)] mt-1">{errors.defaultCoverUrl}</p>}
           </div>
 
           {formError && (
@@ -680,7 +684,9 @@ export default function AdminCategoryManager({ adapter = catalogGovernanceApi }:
           label: form.label.trim(),
           description: form.description.trim() || null,
           iconKey: form.iconKey.trim() || null,
-          defaultCoverUrl: form.defaultCoverUrl.trim() || null,
+          ...(form.defaultCover !== undefined
+            ? { defaultCover: form.defaultCover }
+            : {}),
           sortOrder: form.sortOrder.trim() === '' ? 0 : Number(form.sortOrder),
         }
         await adapter.updateCategory(categoryForm.category.id, payload)
@@ -691,7 +697,9 @@ export default function AdminCategoryManager({ adapter = catalogGovernanceApi }:
           label: form.label.trim(),
           description: form.description.trim() || undefined,
           iconKey: form.iconKey.trim() || undefined,
-          defaultCoverUrl: form.defaultCoverUrl.trim() || undefined,
+          ...(form.defaultCover !== undefined && form.defaultCover !== null
+            ? { defaultCover: form.defaultCover }
+            : {}),
           sortOrder: form.sortOrder.trim() === '' ? 0 : Number(form.sortOrder),
         })
         showToast('分类已创建')

@@ -22,6 +22,7 @@ import type {
   CategoryApplicationResolution,
   CategoryApplicationStatus,
   CategoryStatus,
+  PlatformMediaRef,
 } from './catalog'
 
 /* ------------------------------------------------------------------ *
@@ -59,6 +60,8 @@ export interface CreateCategoryRequest {
   description?: string
   iconKey?: string
   defaultCoverUrl?: string
+  /** SPEC-CMI-UX-001 §5.3: preferred new-contract cover (objectKey/static). */
+  defaultCover?: PlatformMediaRef | null
   sortOrder?: number
 }
 
@@ -72,6 +75,8 @@ export interface UpdateCategoryRequest {
   description?: string | null
   iconKey?: string | null
   defaultCoverUrl?: string | null
+  /** SPEC-CMI-UX-001 §5.3: preferred new-contract cover (objectKey/static). */
+  defaultCover?: PlatformMediaRef | null
   sortOrder?: number
 }
 

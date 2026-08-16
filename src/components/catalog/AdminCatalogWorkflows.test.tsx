@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import React from 'react'
 import AdminFakaImportPreview from './AdminFakaImportPreview'
 import AdminInventoryImportPreview from './AdminInventoryImportPreview'
 import AdminPlatformProductWizard from './AdminPlatformProductWizard'
@@ -7,6 +8,7 @@ import { useAppStore } from '../../stores/appStore'
 
 const mocks = vi.hoisted(() => ({
   categories: vi.fn(),
+  adminCategories: vi.fn(),
   createPlatform: vi.fn(),
   getCatalog: vi.fn(),
   importFaka: vi.fn(),
@@ -17,6 +19,7 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('../../api/catalog', () => ({ catalogApi: { listActiveCategories: mocks.categories } }))
+vi.mock('../../api/catalogGovernance', () => ({ catalogGovernanceApi: { listCategories: mocks.adminCategories } }))
 vi.mock('../../api/admin', async () => {
   const actual = await vi.importActual<typeof import('../../api/admin')>('../../api/admin')
   return {
@@ -65,6 +68,22 @@ describe('Catalog admin workflows (T-CAT-FE-004)', () => {
     vi.clearAllMocks()
     useAppStore.setState({ toasts: [], islandNotice: null })
     mocks.categories.mockResolvedValue(categories)
+    mocks.adminCategories.mockResolvedValue({
+      items: categories.map(c => ({
+        ...c,
+        normalizedLabel: c.label,
+        description: null,
+        defaultCoverUrl: '/assets/default.webp',
+        status: 'active',
+        createdByUserId: 1,
+        updatedByUserId: 1,
+        createdAt: '',
+        updatedAt: '',
+      })),
+      total: categories.length,
+      page: 1,
+      pageSize: 100,
+    })
     mocks.getCatalog.mockResolvedValue(catalog)
     mocks.createPlatform.mockResolvedValue({ id: 9, merchantId: null, status: 'draft' })
     mocks.previewInventory.mockResolvedValue({ totalRows: 1, validRows: 1, emptyRows: 0, duplicateRows: 0, existingDuplicateRows: 0, canImport: true })
@@ -167,7 +186,7 @@ describe('Catalog admin workflows (T-CAT-FE-004)', () => {
     mocks.previewFaka.mockResolvedValueOnce({
       ...fakaPreview,
       cover: null,
-      issues: [{ code: 'COVER_INVALID', field: 'cover', message: '分类没有默认封面' }],
+      issues: [{ code: 'COVER_INVALID', field: 'cover', message: '分类没有默认封面', action: 'set_category_cover' }],
       canConfirm: false,
     })
     render(<AdminFakaImportPreview open onClose={vi.fn()} onImported={vi.fn()} />)
@@ -176,7 +195,12 @@ describe('Catalog admin workflows (T-CAT-FE-004)', () => {
     fireEvent.change(screen.getByTestId('product-category-select'), { target: { value: '7' } })
     fireEvent.click(screen.getByTestId('admin-faka-import-preview-submit'))
     expect(await screen.findByTestId('admin-faka-import-submit')).toBeDisabled()
-    expect(screen.getByTestId('admin-faka-preview-issues')).toHaveTextContent('COVER_INVALID')
+    // AC-UX-022: the default DOM shows the projected user message, never the
+    // raw stable code; the code stays available on the data attribute.
+    const issues = screen.getByTestId('admin-faka-preview-issues')
+    expect(issues).not.toHaveTextContent('COVER_INVALID')
+    expect(issues).toHaveTextContent('所选分类还没有默认封面')
+    expect(issues.querySelector('[data-code="COVER_INVALID"]')).not.toBeNull()
   })
 
   it('surfaces the existing Product returned by an external identity conflict', async () => {
@@ -212,5 +236,55 @@ describe('Catalog admin workflows (T-CAT-FE-004)', () => {
     await waitFor(() => expect(onImported).toHaveBeenCalledWith(77))
     expect(useAppStore.getState().toasts.some((toast) => toast.message.includes('幂等重放'))).toBe(true)
     expect(mocks.importFaka).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('Xboard cover loop (SPEC-CMI-UX-001 §5.5, T-UX-004)', () => {
+  it('sends the uploaded objectKey (never a URL) in the preview request (AC-UX-010)', async () => {
+    mocks.upload.mockResolvedValue({ key: 'uploaded-cover.webp', url: 'http://localhost:3000/uploads/uploaded-cover.webp' })
+    render(<AdminFakaImportPreview open onClose={vi.fn()} onImported={vi.fn()} />)
+    await screen.findByRole('option', { name: /#42 Basic/ })
+    fireEvent.change(screen.getByTestId('admin-faka-import-plan'), { target: { value: '42' } })
+    fireEvent.change(screen.getByTestId('product-category-select'), { target: { value: '7' } })
+    fireEvent.click(await screen.findByLabelText('上传平台托管封面'))
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement
+    fireEvent.change(fileInput, { target: { files: [new File(['x'], 'cover.webp', { type: 'image/webp' })] } })
+    // Wait until the upload draft is committed (coverMode=uploaded + preview).
+    await waitFor(() => expect(screen.getByTestId('admin-faka-uploaded-cover-preview')).toBeInTheDocument())
+    fireEvent.click(screen.getByTestId('admin-faka-import-preview-submit'))
+    await waitFor(() => expect(mocks.previewFaka).toHaveBeenCalled())
+    const payload = mocks.previewFaka.mock.calls.at(-1)![0]
+    expect(payload.cover).toEqual({ mode: 'uploaded', objectKey: 'uploaded-cover.webp' })
+    expect(JSON.stringify(payload)).not.toContain('http://localhost:3000')
+  })
+
+  it('explicit cancel clears the uploaded-cover draft (D-UX-13)', async () => {
+    mocks.upload.mockResolvedValue({ key: 'draft-cover.webp', url: 'http://localhost:3000/uploads/draft-cover.webp' })
+    function Harness() {
+      const [open, setOpen] = React.useState(true)
+      return (
+        <>
+          <button type="button" onClick={() => setOpen(true)}>reopen</button>
+          <AdminFakaImportPreview open={open} onClose={() => setOpen(false)} onImported={vi.fn()} />
+        </>
+      )
+    }
+    render(<Harness />)
+    await screen.findByRole('option', { name: /#42 Basic/ })
+    fireEvent.change(screen.getByTestId('admin-faka-import-plan'), { target: { value: '42' } })
+    fireEvent.change(screen.getByTestId('product-category-select'), { target: { value: '7' } })
+    fireEvent.click(await screen.findByLabelText('上传平台托管封面'))
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement
+    fireEvent.change(fileInput, { target: { files: [new File(['x'], 'cover.webp', { type: 'image/webp' })] } })
+    await waitFor(() => expect(screen.getByTestId('admin-faka-uploaded-cover-preview')).toBeInTheDocument())
+
+    // Explicit 取消 → draft cleared + dialog closes.
+    fireEvent.click(screen.getByRole('button', { name: '取消' }))
+    fireEvent.click(screen.getByRole('button', { name: 'reopen' }))
+    await screen.findByRole('option', { name: /#42 Basic/ })
+    fireEvent.change(screen.getByTestId('admin-faka-import-plan'), { target: { value: '42' } })
+    fireEvent.change(screen.getByTestId('product-category-select'), { target: { value: '7' } })
+    fireEvent.click(await screen.findByLabelText('上传平台托管封面'))
+    expect(screen.queryByTestId('admin-faka-uploaded-cover-preview')).not.toBeInTheDocument()
   })
 })
