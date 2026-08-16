@@ -286,7 +286,7 @@ rg -n "startsWith\('/uploads/'\)|COVER_INVALID.*issue.message" \
 | 2026-08-16 | f925549 | C / T-UX-003/004 | `npm test -- CategoryCoverField AdminCategoryManager AdminCatalogWorkflows` | exit 0; 9 component+2 cover-flow tests; batch 50/50 | objectKey upload → Category/XBoard; cover draft survives temp close, cleared on cancel/success; COVER_INVALID projected (AC-UX-022); commit f925549 |
 | 2026-08-16 | 388e61a | D / T-UX-005/006 | `npm test -- storeFeed.test.ts StorePage.cmi.test.tsx` | exit 0; 12 feed-unit + 6 StorePage component tests | StorePage renders one blended feed; no empty shelf; rec 500 fail-open; disclosure text+aria; commit pending |
 | 2026-08-16 | c7de8d1 | E / T-UX-007/008 | `npm test -- AdminEditorialManager AdminCategoryManager StorePage.cmi` + copy scan | exit 0; 21+19+6 component tests; consumer-host static scan zero hits | frozen vocab, blockReason/SLA/capacity/null projections, Editorial search selector, Category code/icon advanced; commit pending |
-| Pending | Pending | F / T-UX-009/010 | Pending | Pending | Pending |
+| 2026-08-16 | c50bce9 | F / T-UX-009/010 | `bash scripts/verify-catalog-ops-e2e.sh` (31/31) + `bash scripts/verify-catalog-ops-backend.sh` (7/7) + 101 frontend tests | exit 0 | XBoard upload->preview->confirm E2E green; category-governance + merchandising-smoke + product-lifecycle E2E green; CMI DB cleaned; PR + CI pending |
 
 证据必须含：exit code、测试文件/测试数、Node/npm、脱敏 DB 名、E2E ports、fixture cleanup、
 PR/run URL。不得只写“tested”或“CI green”。
