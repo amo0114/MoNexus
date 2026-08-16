@@ -12,9 +12,8 @@ BASE_PATH='/opt/monexus-staging'
 SOURCE_ENV_FILE='/etc/monexus/staging.env'
 PROJECT_NAME='monexus-staging'
 SAMPLE_COUNT='100'
-STARTUP_MAX_ATTEMPTS='90'
-STARTUP_RETRY_DELAY_SECONDS='2'
-STARTUP_BUDGET_SECONDS='180'
+readonly STARTUP_MAX_ATTEMPTS='90'
+readonly STARTUP_RETRY_DELAY_SECONDS='2'
 
 fail() {
   echo "[ERROR] $*" >&2
@@ -128,11 +127,11 @@ wait_public_local() {
       return 0
     fi
     if [[ "$attempt" -lt "$STARTUP_MAX_ATTEMPTS" ]]; then
-      echo "[INFO] staging web/backend not ready (attempt ${attempt}/${STARTUP_MAX_ATTEMPTS}); retrying in ${STARTUP_RETRY_DELAY_SECONDS}s (bounded ${STARTUP_BUDGET_SECONDS}s budget)"
+      echo "[INFO] staging web/backend not ready (attempt ${attempt}/${STARTUP_MAX_ATTEMPTS}); retrying in ${STARTUP_RETRY_DELAY_SECONDS}s (bounded attempt window)"
       sleep "$STARTUP_RETRY_DELAY_SECONDS"
     fi
   done
-  fail "staging web/backend did not pass smoke within the bounded ${STARTUP_BUDGET_SECONDS}-second startup budget"
+  fail "staging web/backend did not pass smoke within the bounded ${STARTUP_MAX_ATTEMPTS}-attempt startup window"
 }
 
 run_fixture() {

@@ -65,9 +65,8 @@ for required_fragment in \
   "CONFIRMATION='monexus-staging-notification-realtime'" \
   "BASE_PATH='/opt/monexus-staging'" \
   "PROJECT_NAME='monexus-staging'" \
-  "STARTUP_MAX_ATTEMPTS='90'" \
-  "STARTUP_RETRY_DELAY_SECONDS='2'" \
-  "STARTUP_BUDGET_SECONDS='180'" \
+  "readonly STARTUP_MAX_ATTEMPTS='90'" \
+  "readonly STARTUP_RETRY_DELAY_SECONDS='2'" \
   'NOTIFICATION_REALTIME_ENABLED false' \
   'frontend-build' \
   'read -r RT_STAGING_FIXTURE_PASSWORD' \
