@@ -81,21 +81,21 @@ export default function PointsHistorySheet({ open, onOpenChange, items, loading 
             积分变动明细
           </DialogTitle>
           <DialogDescription>
-            收入 / 扣除 / 冻结 / 解冻分色展示。人工订单会先「冻结」再在完成时「扣除」，不是扣了两笔。
+            入账 / 待支付 / 已支付 / 已返还。人工服务下单后，积分会暂时锁定；订单完成后才正式支付，取消或退款后会自动返还。
           </DialogDescription>
 
           <div className="mt-3 flex flex-wrap gap-2 text-[10px] text-[var(--color-text-muted)]">
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-[var(--color-cta)]/25 bg-[var(--color-cta)]/8 text-[var(--color-cta)]">
-              收入 +
+              入账 +
             </span>
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-[var(--color-danger)]/25 bg-[var(--color-danger)]/8 text-[var(--color-danger)]">
-              扣除 −
+              已支付 −
             </span>
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-[var(--color-warning)]/30 bg-[var(--color-warning)]/10 text-[var(--color-warning)]">
-              冻结
+              待支付
             </span>
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-[var(--color-primary)]/25 bg-[var(--color-primary)]/8 text-[var(--color-primary)]">
-              解冻
+              已返还
             </span>
           </div>
 

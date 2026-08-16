@@ -196,8 +196,8 @@ const fakaPeriodOfferSchema = z.object({
 const fakaCoverChoiceSchema = z.discriminatedUnion('mode', [
   z.object({
     mode: z.literal('uploaded'),
-    imageUrl: productImageItemSchema,
-    images: productImagesSchema.optional(),
+    // SPEC-CMI-UX-001 §5.3: objectKey is the trust anchor — never a URL.
+    objectKey: z.string().trim().min(1).max(512),
   }).strict(),
   z.object({ mode: z.literal('category_default') }).strict(),
 ])

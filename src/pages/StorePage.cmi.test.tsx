@@ -247,6 +247,35 @@ describe('StorePage CMI — step 1 (T-CMI-001)', () => {
     expect(within(card).queryByRole('list', { name: '商品标识' })).not.toBeInTheDocument()
     expect(within(card).queryByTestId('merch-partner-mark')).not.toBeInTheDocument()
   })
+
+  it('B2: a legacy category never receives nonempty home sponsored/editorial candidates', async () => {
+    const apiGet: ApiGet = vi.fn((url: string, config?: { params?: Record<string, unknown> }) => {
+      if (url === '/products/sponsored') {
+        return Promise.resolve({ data: { items: [{ productId: 2 }] } })
+      }
+      if (url === '/products/editorial') {
+        return Promise.resolve({ data: { items: [{ productId: 3, publicReason: '首页精选' }] } })
+      }
+      if (url === '/products/2') return Promise.resolve({ data: makeProduct(2, '首页推广商品') })
+      if (url === '/products/3') return Promise.resolve({ data: makeProduct(3, '首页精选商品') })
+      if (url === '/products') {
+        return Promise.resolve({ data: { items: [LEGACY_DTO], nextCursor: null, hasMore: false } })
+      }
+      throw new Error(`unexpected api.get url: ${url} ${JSON.stringify(config)}`)
+    })
+    await renderStorePage(apiGet, LEGACY_ONLY_REGISTRY)
+    await screen.findByTestId('store-product-card-2', {}, { timeout: 3000 })
+    await screen.findByTestId('store-product-card-3', {}, { timeout: 3000 })
+    apiGet.mockClear()
+
+    fireEvent.click(screen.getByRole('button', { name: '网络节点' }))
+    await waitFor(() => expect(lastProductsParams(apiGet).category).toBe('网络节点'))
+
+    expect(apiGet.mock.calls.some(([url]) => url === '/products/sponsored')).toBe(false)
+    expect(apiGet.mock.calls.some(([url]) => url === '/products/editorial')).toBe(false)
+    expect(screen.queryByTestId('store-product-card-2')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('store-product-card-3')).not.toBeInTheDocument()
+  })
 })
 
 describe('StorePage CMI — step 2 (T-CMI-002)', () => {
@@ -298,26 +327,27 @@ describe('StorePage CMI — step 2 (T-CMI-002)', () => {
     expect(within(card).getByTestId('merch-partner-mark')).toBeInTheDocument()
     expect(within(card).getByText('平台合作伙伴')).toBeInTheDocument()
 
-    // Sponsored shelf: forced 推广 disclosure + its own product card.
-    const sponsoredShelf = await screen.findByTestId('merch-sponsored-shelf', {}, { timeout: 3000 })
-    const disclosures = within(sponsoredShelf).getAllByTestId('merch-sponsored-disclosure')
-    expect(disclosures.length).toBeGreaterThan(0)
-    disclosures.forEach((d) => expect(d.textContent).toBe('推广'))
-    expect(within(sponsoredShelf).getAllByText('推广').length).toBeGreaterThan(0)
-    await within(sponsoredShelf).findByTestId('shelf-product-card-2', {}, { timeout: 3000 })
+    // Blended feed: sponsored/editorial cards live in the SAME grid with text
+    // + aria disclosure (D-UX-01/06/07, AC-UX-004/005).
+    const sponsoredCard = await screen.findByTestId('store-product-card-2', {}, { timeout: 3000 })
+    const spDisclosure = within(sponsoredCard).getByTestId('store-disclosure-2')
+    expect(spDisclosure.textContent).toBe('推广')
+    expect(sponsoredCard.getAttribute('aria-label')).toBe('推广，赞助商品B')
 
-    // Editorial shelf: public reason + its own product card.
-    const editorialShelf = await screen.findByTestId('merch-editorial-shelf', {}, { timeout: 3000 })
-    await within(editorialShelf).findByText('编辑精选理由', {}, { timeout: 3000 })
-    await within(editorialShelf).findByTestId('shelf-product-card-3', {}, { timeout: 3000 })
+    const editorialCard = await screen.findByTestId('store-product-card-3', {}, { timeout: 3000 })
+    const edDisclosure = within(editorialCard).getByTestId('store-disclosure-3')
+    expect(edDisclosure.textContent).toBe('精选')
+    expect(editorialCard.getAttribute('aria-label')).toBe('精选，精选商品C')
+    await within(editorialCard).findByText('编辑精选理由', {}, { timeout: 3000 })
 
-    // 2/3 live only in the shelves — never as organic store cards.
-    expect(screen.queryByTestId('store-product-card-2')).not.toBeInTheDocument()
-    expect(screen.queryByTestId('store-product-card-3')).not.toBeInTheDocument()
+    // No standalone shelves render anymore.
+    expect(screen.queryByTestId('merch-sponsored-shelf')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('merch-editorial-shelf')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('shelf-product-card-2')).not.toBeInTheDocument()
 
-    // HTTP independence: one detail hydration each for the shelf cards, no
-    // detail hydration for the organic product, and the shelf endpoints are
-    // separate requests from the organic /products list.
+    // HTTP independence: one detail hydration each for the blended candidates,
+    // no detail hydration for the organic product, and the candidate endpoints
+    // are separate requests from the organic /products list.
     await waitFor(
       () => {
         expect(apiGet.mock.calls.filter(([url]) => url === '/products/2')).toHaveLength(1)
@@ -356,5 +386,43 @@ describe('StorePage CMI — step 2 (T-CMI-002)', () => {
     expect(urls).not.toContain('/products/editorial')
     expect(screen.queryByTestId('merch-sponsored-shelf')).not.toBeInTheDocument()
     expect(screen.queryByTestId('merch-editorial-shelf')).not.toBeInTheDocument()
+  })
+})
+
+describe('StorePage CMI — blended feed (SPEC-CMI-UX-001 §4)', () => {
+  it('AC-UX-001: no candidates → only organic cards, no shelf traces or empty states', async () => {
+    const organic = [makeProduct(1, '自然商品A'), makeProduct(2, '自然商品B'), makeProduct(3, '自然商品C')]
+    const apiGet = makeApiGet(organic) // sponsored/editorial return { items: [] }
+    await renderStorePage(apiGet, DYNAMIC_REGISTRY)
+
+    await screen.findByTestId('store-product-card-1', {}, { timeout: 3000 })
+    expect(screen.getByTestId('store-product-card-2')).toBeInTheDocument()
+    expect(screen.getByTestId('store-product-card-3')).toBeInTheDocument()
+    // No standalone shelves / disclosure badges / empty-shelf copy.
+    expect(screen.queryByTestId('merch-sponsored-shelf')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('merch-editorial-shelf')).not.toBeInTheDocument()
+    expect(screen.queryByText('暂无推广内容')).not.toBeInTheDocument()
+    expect(screen.queryByText('暂无精选内容')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('store-disclosure-1')).not.toBeInTheDocument()
+  })
+
+  it('AC-UX-007: recommendation API 500 → organic feed still renders (fail-open)', async () => {
+    const apiGet: ApiGet = vi.fn((url: string) => {
+      if (url === '/products/sponsored' || url === '/products/editorial') {
+        return Promise.reject(new Error('boom'))
+      }
+      if (url === '/products') {
+        return Promise.resolve({ data: { items: [makeProduct(1, '自然商品A')], nextCursor: null, hasMore: false } })
+      }
+      throw new Error(`unexpected api.get url: ${url}`)
+    })
+    await renderStorePage(apiGet, DYNAMIC_REGISTRY)
+
+    const card = await screen.findByTestId('store-product-card-1', {}, { timeout: 3000 })
+    expect(within(card).getByText('自然商品A')).toBeInTheDocument()
+    // No consumer-facing error or empty state from the recommendation failure.
+    expect(screen.queryByText('推广内容暂不可用')).not.toBeInTheDocument()
+    expect(screen.queryByText('精选内容暂不可用')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('store-disclosure-1')).not.toBeInTheDocument()
   })
 })

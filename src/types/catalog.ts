@@ -106,7 +106,6 @@ export const CATALOG_ERROR_CODES = {
 } as const
 export type CatalogErrorCode =
   (typeof CATALOG_ERROR_CODES)[keyof typeof CATALOG_ERROR_CODES]
-
 /** Publish readiness detail codes (spec §6.1). */
 export const READINESS_DETAIL_CODES = {
   COVER_REQUIRED: 'COVER_REQUIRED',
@@ -117,6 +116,23 @@ export const READINESS_DETAIL_CODES = {
 export type ReadinessDetailCode =
   (typeof READINESS_DETAIL_CODES)[keyof typeof READINESS_DETAIL_CODES]
 
+/**
+ * Platform media reference (SPEC-CMI-UX-001 §5.1). `objectKey` is the trust
+ * anchor for a write/confirm — it comes from the authenticated upload API
+ * ({key,url}) and the client NEVER treats a display URL as identity. `path`
+ * is a repository static asset only (no arbitrary remote URLs).
+ */
+export type PlatformMediaRef =
+  | { kind: 'upload'; objectKey: string }
+  | { kind: 'static'; path: `/assets/${string}` }
+
+/** Cover-related stable issue codes (SPEC-CMI-UX-001 §6.2). */
+export const COVER_ISSUE_CODES = {
+  COVER_REQUIRED: 'COVER_REQUIRED',
+  COVER_INVALID: 'COVER_INVALID',
+} as const
+export type CoverIssueCode =
+  (typeof COVER_ISSUE_CODES)[keyof typeof COVER_ISSUE_CODES]
 /** External catalog provider (P0 fixed value, spec §5.4). */
 export const EXTERNAL_CATALOG_PROVIDER = {
   FAKA_BRIDGE: 'faka_bridge',

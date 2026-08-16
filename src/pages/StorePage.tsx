@@ -8,10 +8,15 @@ import EmptyState from '../components/ui/EmptyState'
 import Reveal from '../components/ui/Reveal'
 import ProductMediaFrame from '../components/ui/ProductMediaFrame'
 import BadgeMark from '../components/merchandising/BadgeMark'
-import SponsoredShelf from '../components/merchandising/SponsoredShelf'
-import EditorialShelf, { type EditorialShelfItem } from '../components/merchandising/EditorialShelf'
 import MerchantPartnerMark from '../components/merchandising/MerchantPartnerMark'
 import { badgeSpecsFromProjection } from '../components/merchandising/badges'
+import {
+  composeStoreFeed,
+  truncateEditorialReason,
+  type EditorialFeedCandidate,
+  type FeedOutputItem,
+  type SponsoredFeedCandidate,
+} from '../components/merchandising/storeFeed'
 import type { MerchandisingProjection, SponsoredShelfItem } from '../types/merchandising'
 
 interface Product {
@@ -54,8 +59,16 @@ interface ProductListResponse {
   hasMore: boolean
 }
 
+/** Disclosure rendered on a blended sponsored/editorial card (SPEC-CMI-UX-001 §4.3). */
+interface FeedDisclosure {
+  kind: 'sponsored' | 'editorial'
+  label: string
+  publicReason?: string | null
+}
+
 interface StorePageCache {
-  products: Product[]
+  feedItems: FeedOutputItem<Product>[]
+  seenIds: number[]
   category: string
   searchQuery: string
   nextCursor: string | null
@@ -92,9 +105,12 @@ function getColumnCount(width: number, isMobile: boolean) {
 function ProductCard({
   product,
   onOpen,
+  disclosure,
 }: {
   product: Product
   onOpen: (product: Product) => void
+  /** Optional sponsored/editorial disclosure (SPEC-CMI-UX-001 §4.3). */
+  disclosure?: FeedDisclosure
 }) {
   const faka = product.fakaCapacity
   const isSoldOut =
@@ -118,6 +134,7 @@ function ProductCard({
       key={product.id}
       onClick={() => onOpen(product)}
       data-testid={`store-product-card-${product.id}`}
+      aria-label={disclosure ? `${disclosure.label}，${product.name}` : product.name}
       className={`relative overflow-hidden group cursor-pointer flex flex-col min-w-0 h-[256px] md:h-[372px]
         rounded-xl bg-[var(--color-surface)] border border-[var(--color-border)]
         shadow-md hover:shadow-lg hover:border-[var(--color-primary)]/35
@@ -140,6 +157,16 @@ function ProductCard({
           sizes: '(min-width: 1024px) 33vw, (min-width: 768px) 50vw, 100vw',
         }}
       >
+        {disclosure && (
+          <span
+            data-testid={`store-disclosure-${product.id}`}
+            data-kind={disclosure.kind}
+            className="absolute top-2 left-2 z-10 inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] md:text-xs font-bold text-[var(--color-background)] shadow-sm"
+            style={{ background: disclosure.kind === 'sponsored' ? 'var(--color-primary)' : 'var(--color-cta)' }}
+          >
+            {disclosure.label}
+          </span>
+        )}
         <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
         <BadgeMark
           badges={badgeSpecsFromProjection(product.merchandising)}
@@ -175,6 +202,11 @@ function ProductCard({
         <h3 className="text-sm md:text-base font-bold leading-snug group-hover:text-[var(--color-primary)] transition-colors text-[var(--color-text)] mb-1 md:mb-1.5 line-clamp-2 min-h-[2.375rem] md:min-h-[2.5rem]">
           {product.name}
         </h3>
+        {disclosure?.kind === 'editorial' && disclosure.publicReason && (
+          <p className="text-xs text-[var(--color-text-muted)] mb-1 line-clamp-1">
+            {truncateEditorialReason(disclosure.publicReason)}
+          </p>
+        )}
         {product.merchandising?.merchantPartner && (
           <div className="mb-1.5">
             <MerchantPartnerMark merchantPartner={product.merchandising.merchantPartner} />
@@ -215,55 +247,6 @@ function ProductCard({
   )
 }
 
-/**
- * Compact card for the sponsored/editorial shelves. Shares the merchandising
- * badge/partner primitives with the organic card but is sized for the shelf
- * grid (merch-shelf-cell) instead of the virtualized organic list.
- */
-function ShelfProductCard({
-  product,
-  onOpen,
-}: {
-  product: Product
-  onOpen: (product: Product) => void
-}) {
-  return (
-    <div
-      onClick={() => onOpen(product)}
-      data-testid={`shelf-product-card-${product.id}`}
-      className="relative flex flex-col min-w-0 overflow-hidden rounded-xl bg-[var(--color-surface)] border border-[var(--color-border)] shadow-sm hover:shadow-md hover:border-[var(--color-primary)]/35 hover:-translate-y-0.5 transition-all cursor-pointer"
-    >
-      <ProductMediaFrame
-        src={product.images?.[0] || product.imageUrl}
-        alt={product.name}
-        frameClassName="h-28 w-full"
-        className="shrink-0 border-b border-[var(--color-border)]"
-        imageClassName="transition-opacity duration-200"
-        fit="cover"
-        imageProps={{ loading: 'lazy', decoding: 'async' }}
-      >
-        <BadgeMark
-          badges={badgeSpecsFromProjection(product.merchandising)}
-          className="absolute top-1.5 right-1.5 z-10 justify-end max-w-[calc(100%-0.75rem)]"
-        />
-      </ProductMediaFrame>
-      <div className="p-2.5 md:p-3 flex flex-col flex-grow min-h-0 gap-1">
-        <h4 className="text-sm font-bold leading-snug text-[var(--color-text)] line-clamp-2">
-          {product.name}
-        </h4>
-        {product.merchandising?.merchantPartner && (
-          <div>
-            <MerchantPartnerMark merchantPartner={product.merchandising.merchantPartner} />
-          </div>
-        )}
-        <div className="mt-auto flex items-center gap-1 text-[var(--color-cta)] font-bold text-base tracking-tight">
-          <Coins className="w-3.5 h-3.5 shrink-0" />
-          {product.price}
-        </div>
-      </div>
-    </div>
-  )
-}
 
 export default function StorePage() {
   const showToast = useAppStore((s) => s.showToast)
@@ -272,30 +255,22 @@ export default function StorePage() {
   const initialCacheRef = useRef(storePageCache)
   const restoreScrollRef = useRef<number | null>(initialCacheRef.current?.scrollY ?? null)
   const hydratedQueryKeyRef = useRef<string | null>(
-    initialCacheRef.current?.products.length
+    initialCacheRef.current?.feedItems.length
       ? getProductQueryKey(initialCacheRef.current.category, initialCacheRef.current.searchQuery)
       : null,
   )
 
-  const [products, setProducts] = useState<Product[]>(() => initialCacheRef.current?.products ?? [])
+  const [feedItems, setFeedItems] = useState<FeedOutputItem<Product>[]>(() => initialCacheRef.current?.feedItems ?? [])
   // V3 灵动岛：搜索/分类上提至 appStore，岛内交互与本页网格共享；
   // store 在 SPA 生命周期内持续，详情页返回时状态自然保留
   const category = useAppStore((s) => s.storeCategory)
   const setCategory = useAppStore((s) => s.setStoreCategory)
   const searchQuery = useAppStore((s) => s.storeQuery)
   const setSearchQuery = useAppStore((s) => s.setStoreQuery)
-  const [loading, setLoading] = useState(() => !initialCacheRef.current?.products.length)
+  const [loading, setLoading] = useState(() => initialCacheRef.current?.feedItems.length === 0)
   const [nextCursor, setNextCursor] = useState<string | null>(() => initialCacheRef.current?.nextCursor ?? null)
   const [hasMore, setHasMore] = useState(() => initialCacheRef.current?.hasMore ?? false)
   const [loadingMore, setLoadingMore] = useState(false)
-  const [sponsoredItems, setSponsoredItems] = useState<SponsoredShelfItem[]>([])
-  const [sponsoredProducts, setSponsoredProducts] = useState<Product[]>([])
-  const [sponsoredLoading, setSponsoredLoading] = useState(true)
-  const [sponsoredError, setSponsoredError] = useState(false)
-  const [editorialItems, setEditorialItems] = useState<EditorialShelfItem[]>([])
-  const [editorialProducts, setEditorialProducts] = useState<Product[]>([])
-  const [editorialLoading, setEditorialLoading] = useState(true)
-  const [editorialError, setEditorialError] = useState(false)
   const [gridWidth, setGridWidth] = useState(0)
   // Viewport-driven (<768px) compact-grid flag. matchMedia 'change'
   // covers rotation / split-screen resizes; desktop path is untouched.
@@ -311,9 +286,20 @@ export default function StorePage() {
   const loadMoreRef = useRef<HTMLDivElement | null>(null)
   const loadingMoreRef = useRef(false)
   const scrollFrameRef = useRef<number | null>(null)
-  const shelfRequestRef = useRef(0)
+  const candidateRequestRef = useRef(0)
   // 有机列表 stale-response guard：分类/搜索切换后，在途旧响应必须被丢弃。
   const organicEpochRef = useRef(0)
+  // Session dedup: productIds already shown in this browse session.
+  const seenRef = useRef<Set<number>>(new Set(initialCacheRef.current?.seenIds ?? []))
+  // Page-1 organic buffered until candidates settle so the first 12 slots are
+  // composed exactly once (SPEC-CMI-UX-001 §4.2).
+  const page1OrganicRef = useRef<Product[] | null>(null)
+  const candidatesRef = useRef<{
+    sponsored: SponsoredFeedCandidate<Product>[]
+    editorial: EditorialFeedCandidate<Product>[]
+  }>({ sponsored: [], editorial: [] })
+  const candidatesSettledRef = useRef(false)
+  const composedRef = useRef(Boolean(initialCacheRef.current?.feedItems.length))
   // A cached pre-Catalog session may still hold a legacy label. Once the
   // dynamic registry is available, migrate that local selection to stable code.
   useEffect(() => {
@@ -323,6 +309,36 @@ export default function StorePage() {
     const mapped = dynamic.find(item => item.label === category)
     setCategory(mapped?.code ?? '全部')
   }, [category, registry?.productCategories, setCategory])
+
+  /** Compose the first screen once both page-1 organic and candidates are ready. */
+  const maybeComposePage1 = useCallback(() => {
+    if (composedRef.current) return
+    if (page1OrganicRef.current == null || !candidatesSettledRef.current) return
+    const organic = page1OrganicRef.current
+    page1OrganicRef.current = null
+    const result = composeStoreFeed({
+      organic,
+      sponsored: candidatesRef.current.sponsored,
+      editorial: candidatesRef.current.editorial,
+      searchQuery,
+      seenProductIds: seenRef.current,
+    })
+    seenRef.current = result.seenProductIds
+    composedRef.current = true
+    setFeedItems(result.items)
+  }, [searchQuery])
+
+  /** Append the next cursor page's organic, deduped against the session seen set. */
+  const appendOrganicPage = useCallback((items: Product[]) => {
+    const seen = seenRef.current
+    const appended: FeedOutputItem<Product>[] = []
+    for (const product of items) {
+      if (seen.has(product.id)) continue
+      seen.add(product.id)
+      appended.push({ kind: 'organic', productId: product.id, product })
+    }
+    setFeedItems((prev) => [...prev, ...appended])
+  }, [])
 
   const fetchProducts = useCallback(async (
     cursor: string | null,
@@ -343,10 +359,16 @@ export default function StorePage() {
       }
       const { data } = await api.get<ProductListResponse>('/products', { params })
       if (epoch !== organicEpochRef.current) return
-      setProducts((prev) => (append ? [...prev, ...data.items] : data.items))
       setNextCursor(data.nextCursor)
       setHasMore(data.hasMore)
-      if (!append) hydratedQueryKeyRef.current = queryKey
+      if (!append) {
+        // First page: buffer until candidates settle, then compose ONCE.
+        hydratedQueryKeyRef.current = queryKey
+        page1OrganicRef.current = data.items
+        maybeComposePage1()
+      } else {
+        appendOrganicPage(data.items)
+      }
     } catch {
       if (epoch === organicEpochRef.current) showToast('商品加载失败', 'error')
     } finally {
@@ -355,30 +377,29 @@ export default function StorePage() {
       setLoadingMore(false)
       loadingMoreRef.current = false
     }
-  }, [searchQuery, category, registry?.productCategories, showToast])
+  }, [searchQuery, category, registry?.productCategories, showToast, maybeComposePage1, appendOrganicPage])
 
   useEffect(() => {
-    const requestId = ++shelfRequestRef.current
+    const requestId = ++candidateRequestRef.current
     const dynamicCategory = category === '全部'
       ? null
       : registry?.productCategories?.find(item => item.code === category) ?? null
 
-    if (searchQuery.trim()) {
-      setSponsoredItems([])
-      setSponsoredProducts([])
-      setEditorialItems([])
-      setEditorialProducts([])
-      setSponsoredLoading(false)
-      setEditorialLoading(false)
-      setSponsoredError(false)
-      setEditorialError(false)
-      return
-    }
+    // Reset candidate readiness for this query. `composedRef` is owned by the
+    // query/category reset effect (it must survive cache-restore on mount).
+    candidatesSettledRef.current = false
+    candidatesRef.current = { sponsored: [], editorial: [] }
 
-    setSponsoredLoading(true)
-    setEditorialLoading(true)
-    setSponsoredError(false)
-    setEditorialError(false)
+    const selectedCategoryHasNoStableCode = category !== '全部' && dynamicCategory == null
+    if (searchQuery.trim() || selectedCategoryHasNoStableCode) {
+      // Search mode: no injection (D-UX-02). Settle immediately with no
+      // candidates so page-1 organic composes as a plain feed. A legacy-only
+      // category label also cannot safely scope candidates, so fail closed
+      // instead of injecting home placements into a category result.
+      candidatesSettledRef.current = true
+      maybeComposePage1()
+      return () => { candidateRequestRef.current += 1 }
+    }
 
     const loadProducts = async (ids: number[]) => {
       const uniqueIds = [...new Set(ids)]
@@ -403,63 +424,61 @@ export default function StorePage() {
         },
       }),
     ]).then(async ([sponsoredResult, editorialResult]) => {
-      if (requestId !== shelfRequestRef.current) return
+      if (requestId !== candidateRequestRef.current) return
 
+      const sponsored: SponsoredFeedCandidate<Product>[] = []
       if (sponsoredResult.status === 'fulfilled') {
         const items = sponsoredResult.value.data.items
         const details = await loadProducts(items.map(item => item.productId))
-        if (requestId !== shelfRequestRef.current) return
-        const visibleIds = new Set(details.map(product => product.id))
-        setSponsoredItems(items.filter(item => visibleIds.has(item.productId)))
-        setSponsoredProducts(details)
-      } else {
-        setSponsoredItems([])
-        setSponsoredProducts([])
-        setSponsoredError(true)
+        if (requestId !== candidateRequestRef.current) return
+        const byId = new Map(details.map(p => [p.id, p]))
+        for (const item of items) {
+          sponsored.push({ productId: item.productId, product: byId.get(item.productId) ?? null })
+        }
       }
-      setSponsoredLoading(false)
+      // Fail-open: a failed/500 sponsored fetch contributes no candidates.
 
+      const editorial: EditorialFeedCandidate<Product>[] = []
       if (editorialResult.status === 'fulfilled') {
         const rawItems = editorialResult.value.data.items
         let details = await loadProducts(rawItems.map(item => item.productId))
-        if (requestId !== shelfRequestRef.current) return
+        if (requestId !== candidateRequestRef.current) return
         if (dynamicCategory) {
           details = details.filter(product => product.category?.code === dynamicCategory.code)
         }
-        const visibleIds = new Set(details.map(product => product.id))
-        setEditorialItems(rawItems
-          .filter(item => visibleIds.has(item.productId))
-          .map(item => ({
-            id: item.productId,
-            platformPick: { label: item.label, publicReason: item.publicReason },
-          })))
-        setEditorialProducts(details)
-      } else {
-        setEditorialItems([])
-        setEditorialProducts([])
-        setEditorialError(true)
+        const byId = new Map(details.map(p => [p.id, p]))
+        for (const item of rawItems) {
+          editorial.push({
+            productId: item.productId,
+            product: byId.get(item.productId) ?? null,
+            publicReason: item.publicReason,
+          })
+        }
       }
-      setEditorialLoading(false)
+
+      candidatesRef.current = { sponsored, editorial }
+      candidatesSettledRef.current = true
+      maybeComposePage1()
     })
 
     return () => {
-      // Unmount/cleanup cancel guard: bump the shelf request id so in-flight
-      // async continuations (list + hydration) see a stale requestId and
-      // never setState after this effect is torn down.
-      shelfRequestRef.current += 1
+      // Unmount/cleanup cancel guard: bump the request id so in-flight
+      // async continuations see a stale requestId and never setState.
+      candidateRequestRef.current += 1
     }
-  }, [category, registry?.productCategories, searchQuery])
+  }, [category, registry?.productCategories, searchQuery, maybeComposePage1])
 
   const saveStorePageCache = useCallback((scrollY = window.scrollY) => {
     storePageCache = {
-      products,
+      feedItems,
+      seenIds: [...seenRef.current],
       category,
       searchQuery,
       nextCursor,
       hasMore,
       scrollY,
     }
-  }, [category, hasMore, nextCursor, products, searchQuery])
+  }, [category, feedItems, hasMore, nextCursor, searchQuery])
 
   useEffect(() => {
     const queryKey = getProductQueryKey(category, searchQuery)
@@ -472,9 +491,16 @@ export default function StorePage() {
     // 使任何在途旧列表响应失效（stale-response guard）。
     organicEpochRef.current += 1
     setLoading(true)
-    setProducts([])
+    setFeedItems([])
     setNextCursor(null)
     setHasMore(false)
+    seenRef.current = new Set()
+    page1OrganicRef.current = null
+    // `candidatesSettledRef` is owned by the candidate effect (it resets to
+    // false on non-search and settles true on search/candidate arrival). Do not
+    // reset it here — doing so after the candidate effect's synchronous search
+    // settle would block the first-page compose.
+    composedRef.current = false
     restoreScrollRef.current = null
     window.scrollTo?.({ top: 0, behavior: 'instant' })
     const timer = setTimeout(() => fetchProducts(null, false, queryKey), 300)
@@ -543,7 +569,7 @@ export default function StorePage() {
 
     observer.observe(target)
     return () => observer.disconnect()
-  }, [products.length])
+  }, [feedItems.length])
 
   useEffect(() => {
     const mq = window.matchMedia('(max-width: 767px)')
@@ -560,12 +586,11 @@ export default function StorePage() {
       height: window.innerHeight,
       gridTop: gridRef.current.getBoundingClientRect().top + window.scrollY,
     })
-  }, [gridWidth, products.length])
+  }, [gridWidth, feedItems.length])
 
-  // Shelf height changes (loading skeleton → items → error, or hiding when
-  // searching) shift the organic grid's anchor point. Recompute gridTop from
-  // the live DOM position so the virtual window never starts from a stale
-  // value. Minimal effect; virtualization / scroll-restore math is untouched.
+  // Feed height changes (loading skeleton → items) shift the grid's anchor
+  // point. Recompute gridTop from the live DOM position so the virtual window
+  // never starts from a stale value.
   useEffect(() => {
     const grid = gridRef.current
     if (!grid) return
@@ -573,21 +598,11 @@ export default function StorePage() {
       ...prev,
       gridTop: grid.getBoundingClientRect().top + window.scrollY,
     }))
-  }, [
-    searchQuery,
-    sponsoredLoading,
-    sponsoredError,
-    sponsoredItems,
-    sponsoredProducts,
-    editorialLoading,
-    editorialError,
-    editorialItems,
-    editorialProducts,
-  ])
+  }, [searchQuery, loading, feedItems.length])
 
   useLayoutEffect(() => {
     const targetScrollY = restoreScrollRef.current
-    if (targetScrollY === null || loading || products.length === 0) return
+    if (targetScrollY === null || loading || feedItems.length === 0) return
 
     let frame = 0
     let attempts = 0
@@ -629,7 +644,7 @@ export default function StorePage() {
       cancelled = true
       if (frame) window.cancelAnimationFrame(frame)
     }
-  }, [hasMore, loadMore, loading, products.length])
+  }, [hasMore, loadMore, loading, feedItems.length])
 
   function openDetail(product: Product) {
     saveStorePageCache(window.scrollY)
@@ -661,7 +676,7 @@ export default function StorePage() {
   const cardHeight = isMobile ? CARD_HEIGHT_MOBILE : CARD_HEIGHT_DESKTOP
   const gridGap = isMobile ? GRID_GAP_MOBILE : GRID_GAP_DESKTOP
   const rowStride = cardHeight + gridGap
-  const rowCount = Math.ceil(products.length / columnCount)
+  const rowCount = Math.ceil(feedItems.length / columnCount)
   const viewportStart = viewport.scrollY - viewport.gridTop
   const viewportEnd = viewportStart + viewport.height
   const startRow = Math.max(0, Math.floor(viewportStart / rowStride) - OVERSCAN_ROWS)
@@ -671,16 +686,16 @@ export default function StorePage() {
   const visibleStartIndex = startRow * columnCount
   const visibleEndIndex = endRow < startRow
     ? visibleStartIndex
-    : Math.min(products.length, (endRow + 1) * columnCount)
-  const visibleProducts = products.slice(visibleStartIndex, visibleEndIndex)
+    : Math.min(feedItems.length, (endRow + 1) * columnCount)
+  const visibleFeedItems = feedItems.slice(visibleStartIndex, visibleEndIndex)
   const virtualGridHeight = rowCount > 0
     ? rowCount * cardHeight + (rowCount - 1) * gridGap
     : 0
 
   useEffect(() => {
-    const prefetchStartIndex = Math.max(0, products.length - columnCount * PREFETCH_ROWS)
+    const prefetchStartIndex = Math.max(0, feedItems.length - columnCount * PREFETCH_ROWS)
     if (visibleEndIndex >= prefetchStartIndex) loadMore()
-  }, [columnCount, loadMore, products.length, visibleEndIndex])
+  }, [columnCount, loadMore, feedItems.length, visibleEndIndex])
 
   return (
     <div className="fade-in space-y-8 max-w-6xl mx-auto" style={{ animationDelay: '0.1s' }}>
@@ -728,32 +743,8 @@ export default function StorePage() {
       </div>
       )}
 
-      {/* 推广/精选 shelf —— 独立于 organic cursor。搜索时隐藏；分类展位按稳定 code 取数。 */}
-      {!searchQuery.trim() && (
-        <>
-          <SponsoredShelf
-            items={sponsoredItems}
-            loading={sponsoredLoading}
-            error={sponsoredError}
-            skeletonCount={3}
-            renderItem={(item) => {
-              const product = sponsoredProducts.find(p => p.id === item.productId)
-              if (!product) return null
-              return <ShelfProductCard product={product} onOpen={openDetail} />
-            }}
-          />
-          <EditorialShelf
-            items={editorialItems}
-            loading={editorialLoading}
-            error={editorialError}
-            renderItem={(item) => {
-              const product = editorialProducts.find(p => p.id === item.id)
-              if (!product) return null
-              return <ShelfProductCard product={product} onOpen={openDetail} />
-            }}
-          />
-        </>
-      )}
+      {/* Product Grid — one blended feed (SPEC-CMI-UX-001 §4): sponsored/
+          editorial cards carry a text+aria disclosure, organic cards unchanged. */}
 
       {/* Product Grid */}
       {loading ? (
@@ -773,7 +764,7 @@ export default function StorePage() {
             ))}
           </div>
         </div>
-      ) : products.length === 0 ? (
+      ) : feedItems.length === 0 ? (
         <EmptyState
           icon={SearchX}
           title="未找到相关好物"
@@ -795,14 +786,22 @@ export default function StorePage() {
                   gap: gridGap,
                 }}
               >
-                {visibleProducts.map((product, i) => (
-                  <Reveal key={product.id} delay={(i % columnCount) * 60}>
-                    <ProductCard
-                      product={product}
-                      onOpen={openDetail}
-                    />
-                  </Reveal>
-                ))}
+                {visibleFeedItems.map((item, i) => {
+                  const disclosure: FeedDisclosure | undefined = item.kind === 'sponsored'
+                    ? { kind: 'sponsored', label: '推广' }
+                    : item.kind === 'editorial'
+                      ? { kind: 'editorial', label: '精选', publicReason: item.publicReason }
+                      : undefined
+                  return (
+                    <Reveal key={item.productId} delay={(i % columnCount) * 60}>
+                      <ProductCard
+                        product={item.product}
+                        onOpen={openDetail}
+                        disclosure={disclosure}
+                      />
+                    </Reveal>
+                  )
+                })}
               </div>
             </div>
           </div>

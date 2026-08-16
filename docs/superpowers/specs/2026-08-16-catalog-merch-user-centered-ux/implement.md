@@ -281,12 +281,13 @@ rg -n "startsWith\('/uploads/'\)|COVER_INVALID.*issue.message" \
 
 | 日期 | HEAD | Card/Task | 命令 | 结果 | Artifact/备注 |
 | --- | --- | --- | --- | --- | --- |
-| Pending | Pending | A / T-UX-001 | Pending | Pending | Pending |
-| Pending | Pending | B / T-UX-002 | Pending | Pending | Pending |
-| Pending | Pending | C / T-UX-003/004 | Pending | Pending | Pending |
-| Pending | Pending | D / T-UX-005/006 | Pending | Pending | Pending |
-| Pending | Pending | E / T-UX-007/008 | Pending | Pending | Pending |
-| Pending | Pending | F / T-UX-009/010 | Pending | Pending | Pending |
+| 2026-08-16 | 5fc4454 | A / T-UX-001 | `npm test -- storeFeed.test.ts catalogIssueMessages.test.ts settlementCopy.test.ts` | exit 0; 31/31 tests | Node v20.19.5/npm 10.8.2; pure feed/media/copy contracts frozen; commit 5fc4454 |
+| 2026-08-16 | a263ea0 | B / T-UX-002 | `bash scripts/verify-catalog-ops-backend.sh` | exit 0; 7/7 gates; 25 test files PASS | CMI disposable DB (monexus_test_catalog_merch_integration) migrated+cleaned; server tsc exit 0; commit a263ea0 |
+| 2026-08-16 | f925549 | C / T-UX-003/004 | `npm test -- CategoryCoverField AdminCategoryManager AdminCatalogWorkflows` | exit 0; 9 component+2 cover-flow tests; batch 50/50 | objectKey upload → Category/XBoard; cover draft survives temp close, cleared on cancel/success; COVER_INVALID projected (AC-UX-022); commit f925549 |
+| 2026-08-16 | 388e61a | D / T-UX-005/006 | `npm test -- storeFeed.test.ts StorePage.cmi.test.tsx` | exit 0; 12 feed-unit + 6 StorePage component tests | StorePage renders one blended feed; no empty shelf; rec 500 fail-open; disclosure text+aria; commit 388e61a |
+| 2026-08-16 | c7de8d1 | E / T-UX-007/008 | `npm test -- AdminEditorialManager AdminCategoryManager StorePage.cmi` + copy scan | exit 0; 21+19+6 component tests; consumer-host static scan zero hits | frozen vocab, blockReason/SLA/capacity/null projections, Editorial search selector, Category code/icon advanced; commit c7de8d1 |
+| 2026-08-16 | 893c6bd | F / T-UX-009/010 | `bash scripts/verify-catalog-ops-e2e.sh`; `bash scripts/verify-catalog-ops-backend.sh`; full frontend; PR CI | exit 0; catalog-ops 31/31; backend gate 7/7; frontend 490/490 | PR https://github.com/amo0114/MoNexus/pull/138; implementation evidence finalized at 893c6bd; XBoard upload->preview->confirm included; disposable `monexus_test_catalog_merch_integration` cleaned |
+| 2026-08-16 | a9b6fb3 | PR review fixes / T-UX-001~010 | frontend full suite; backend full suite against disposable PostgreSQL; `bash scripts/verify-catalog-ops-e2e.sh`; frontend/backend builds; `git diff --check`; CI | exit 0; frontend 53 files, 494/494; backend 157 files, 1451/1451; catalog-ops 31/31; builds PASS; CI OK PASS | Node v20.19.5/npm 10.8.2; DB `monexus_test_catalog_merch_integration`, API `3105`, web `5180`, XBoard fixture `3106`, DB/fixture/process cleanup PASS; screenshots: `outputs/cmi-ux-store-with-sponsored.png` 1280x1350, `outputs/cmi-ux-store-no-candidates.png` 1280x954, `outputs/cmi-ux-store-with-sponsored-mobile.png` 390x844; CI https://github.com/amo0114/MoNexus/actions/runs/31955733314 |
 
 证据必须含：exit code、测试文件/测试数、Node/npm、脱敏 DB 名、E2E ports、fixture cleanup、
 PR/run URL。不得只写“tested”或“CI green”。

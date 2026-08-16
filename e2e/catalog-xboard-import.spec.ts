@@ -134,9 +134,10 @@ function exactResponse(method: string, pathname: string): (response: Response) =
 
 export const isCatalogResponse = exactResponse('GET', '/api/admin/faka/catalog');
 export const isRegistryResponse = exactResponse('GET', '/api/config/registry');
+/** Admin category list (with defaultCoverUrl) — what the Faka import dialog now loads. */
+export const isAdminCategoriesResponse = exactResponse('GET', '/api/admin/product-categories');
 export const isImportPreviewResponse = exactResponse('POST', '/api/admin/faka/import/preview');
 export const isImportResponse = exactResponse('POST', '/api/admin/faka/import');
-
 /**
  * Matches the admin products list response: GET with exact pathname
  * /api/admin/products and an empty URL search string. The real UI refresh
@@ -486,6 +487,28 @@ export function parseCategoryRegistryResponse(value: unknown): CategoryRegistryI
   return items;
 }
 
+/**
+ * Parses the admin product-categories list response (what the Faka import
+ * dialog loads to show category default covers). Top level is
+ * `{ items, total, page, pageSize }`; each item is a CategoryAdminDto. Only
+ * id/code/label are inspected.
+ */
+export function parseAdminCategoryListResponse(value: unknown): Array<{ id: number; code: string; label: string }> {
+  if (!isRecord(value)) {
+    throw new Error('Admin categories response: expected a plain object');
+  }
+  const items: unknown[] = value.items;
+  if (!Array.isArray(items) || items.length === 0) {
+    throw new Error('Admin categories response: "items" must be a non-empty array');
+  }
+  return items.map((item, index) => {
+    if (!isRecord(item) || !isPositiveInteger(item.id) || typeof item.code !== 'string' || typeof item.label !== 'string') {
+      throw new Error(`Admin categories response: items[${index}] must be { id, code, label }`);
+    }
+    return { id: item.id, code: item.code, label: item.label };
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Faka import request parsers
 // ---------------------------------------------------------------------------
@@ -498,11 +521,15 @@ export interface FakaImportOffer {
   validityDays?: number | null;
 }
 
+export type FakaImportCoverRequest =
+  | { mode: 'category_default' }
+  | { mode: 'uploaded'; objectKey: string };
+
 export interface FakaImportRequest {
   planId: number;
   productName: string;
   categoryId: number;
-  cover: { mode: 'category_default' };
+  cover: FakaImportCoverRequest;
   offers: FakaImportOffer[];
 }
 
@@ -562,11 +589,21 @@ function parseFakaImportFields(value: unknown, context: string): FakaImportReque
   }
   const productName = value.productName;
 
-  assertExactKeys(value.cover, ['mode'], `${context}: cover`);
-  if (value.cover.mode !== 'category_default') {
-    throw new Error(`${context}: cover.mode must be "category_default"`);
+  // cover may be { mode: 'category_default' } or { mode: 'uploaded', objectKey }
+  // (SPEC-CMI-UX-001 §5.3: objectKey is the write/confirm trust anchor).
+  let cover: FakaImportCoverRequest;
+  if (value.cover.mode === 'category_default') {
+    assertExactKeys(value.cover, ['mode'], `${context}: cover`);
+    cover = { mode: 'category_default' };
+  } else if (value.cover.mode === 'uploaded') {
+    assertExactKeys(value.cover, ['mode', 'objectKey'], `${context}: cover`);
+    if (typeof value.cover.objectKey !== 'string' || value.cover.objectKey.length === 0) {
+      throw new Error(`${context}: cover.objectKey must be a non-empty string`);
+    }
+    cover = { mode: 'uploaded', objectKey: value.cover.objectKey };
+  } else {
+    throw new Error(`${context}: cover.mode must be "category_default" or "uploaded"`);
   }
-
   const offers: unknown[] = value.offers;
   if (!Array.isArray(offers) || offers.length === 0) {
     throw new Error(`${context}: "offers" must be a non-empty array`);
@@ -638,7 +675,7 @@ function parseFakaImportFields(value: unknown, context: string): FakaImportReque
     planId,
     productName,
     categoryId,
-    cover: { mode: 'category_default' },
+    cover,
     offers: parsedOffers,
   };
 }
@@ -1373,7 +1410,7 @@ export function parseAdminProductsResponse(value: unknown): AdminProductDto[] {
 
   return parsedProducts;
 }
-export async function ensureNetworkNodeDefaultCoverViaUi(page: Page): Promise<void> {
+export async function ensureNetworkNodeDefaultCoverViaUi(page: Page): Promise<string> {
   const waitForCategoryList = () => page.waitForResponse((response) =>
     response.request().method() === 'GET'
     && new URL(response.url()).pathname === '/api/admin/product-categories'
@@ -1409,7 +1446,6 @@ export async function ensureNetworkNodeDefaultCoverViaUi(page: Page): Promise<vo
   const codeInput = dialog.getByTestId('category-form-code');
   const label = (await dialog.getByTestId('category-form-label').inputValue()).trim();
   const description = (await dialog.getByTestId('category-form-description').inputValue()).trim() || null;
-  const iconKey = (await dialog.getByTestId('category-form-icon').inputValue()).trim() || null;
   const sortRaw = await dialog.getByTestId('category-form-sort').inputValue();
   if (await codeInput.inputValue() !== 'network-node' || !(await codeInput.isDisabled())) {
     throw new Error('network-node edit form is invalid');
@@ -1419,7 +1455,27 @@ export async function ensureNetworkNodeDefaultCoverViaUi(page: Page): Promise<vo
   if (!Number.isInteger(sortOrder) || sortOrder < 0 || sortOrder > 1000000) {
     throw new Error('category sort is invalid');
   }
-  await dialog.getByTestId('category-form-cover').fill('/assets/network.webp');
+
+  // The category-cover field is upload-based now (SPEC-CMI-UX-001 §5.4):
+  // upload a real image so the network-node category gets a resolvable cover.
+  const uploadResponsePromise = page.waitForResponse((response) =>
+    response.request().method() === 'POST'
+    && new URL(response.url()).pathname === '/api/uploads/image',
+  );
+  const png = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+    'base64',
+  );
+  await dialog.locator('#category-form-cover-file').setInputFiles({ name: 'cover.png', mimeType: 'image/png', buffer: png });
+  const uploadResponse = await uploadResponsePromise;
+  if (uploadResponse.status() !== 200) throw new Error('cover upload failed');
+  const uploadBody: unknown = await uploadResponse.json();
+  if (!isRecord(uploadBody) || typeof uploadBody.key !== 'string') {
+    throw new Error('cover upload must return { key, url }');
+  }
+  const objectKey = uploadBody.key;
+  const coverUrl = typeof uploadBody.url === 'string' ? uploadBody.url : `http://localhost:3000/uploads/${objectKey}`;
+  await expect(dialog.getByTestId('category-form-cover-preview')).toBeVisible();
 
   let requestCount = 0;
   const onUpdate = (request: Request) => {
@@ -1438,9 +1494,11 @@ export async function ensureNetworkNodeDefaultCoverViaUi(page: Page): Promise<vo
     const update = await updatePromise;
     if (update.status() !== 200) throw new Error('category update failed');
     const body: unknown = update.request().postDataJSON();
-    assertExactKeys(body, ['label', 'description', 'iconKey', 'defaultCoverUrl', 'sortOrder'], 'category update request');
-    if (body.label !== label || body.description !== description || body.iconKey !== iconKey
-      || body.defaultCoverUrl !== '/assets/network.webp' || body.sortOrder !== sortOrder) {
+    assertExactKeys(body, ['label', 'description', 'iconKey', 'defaultCover', 'sortOrder'], 'category update request');
+    if (body.label !== label || body.description !== description
+      || !isRecord(body.defaultCover) || body.defaultCover.kind !== 'upload'
+      || body.defaultCover.objectKey !== objectKey
+      || body.sortOrder !== sortOrder) {
       throw new Error('category update payload mismatch');
     }
     if (requestCount !== 1) throw new Error('category update duplicate submit');
@@ -1449,6 +1507,7 @@ export async function ensureNetworkNodeDefaultCoverViaUi(page: Page): Promise<vo
   } finally {
     page.off('request', onUpdate);
   }
+  return coverUrl;
 }
 test.describe.serial('Catalog Xboard import', () => {
   test('admin rejects a stale Xboard preview with zero product writes', async ({ page }) => {
@@ -1473,7 +1532,7 @@ test.describe.serial('Catalog Xboard import', () => {
 
       // --- Open the real Xboard import UI (catalog + category registry) ---
       const catalogResponsePromise = page.waitForResponse(isCatalogResponse);
-      const registryResponsePromise = page.waitForResponse(isRegistryResponse);
+      const registryResponsePromise = page.waitForResponse(isAdminCategoriesResponse);
       await page.getByTestId('admin-faka-import-open').click();
       const [catalogResponse, registryResponse] = await Promise.all([
         catalogResponsePromise,
@@ -1490,7 +1549,7 @@ test.describe.serial('Catalog Xboard import', () => {
       }
 
       const registryBody: unknown = await registryResponse.json();
-      const categories = parseCategoryRegistryResponse(registryBody);
+      const categories = parseAdminCategoryListResponse(registryBody);
       const networkNode = categories.find((category) => category.code === 'network-node');
       if (!networkNode) {
         throw new Error('active category registry is missing network-node');
@@ -1647,7 +1706,7 @@ test.describe.serial('Catalog Xboard import', () => {
 
       // ===== Shared Gold Plan inputs (A/B identical; C changes only productName) =====
       const aCatalogPromise = page.waitForResponse(isCatalogResponse);
-      const aRegistryPromise = page.waitForResponse(isRegistryResponse);
+      const aRegistryPromise = page.waitForResponse(isAdminCategoriesResponse);
       await page.getByTestId('admin-faka-import-open').click();
       const [aCatalogResponse, aRegistryResponse] = await Promise.all([
         aCatalogPromise,
@@ -1662,7 +1721,7 @@ test.describe.serial('Catalog Xboard import', () => {
         throw new Error('Faka catalog is missing plan 77');
       }
       const aRegistryBody: unknown = await aRegistryResponse.json();
-      const aCategories = parseCategoryRegistryResponse(aRegistryBody);
+      const aCategories = parseAdminCategoryListResponse(aRegistryBody);
       const networkNode = aCategories.find((category) => category.code === 'network-node');
       if (!networkNode) {
         throw new Error('active category registry is missing network-node');
@@ -1698,7 +1757,7 @@ test.describe.serial('Catalog Xboard import', () => {
       await pageB.goto('/admin');
       await pageB.getByRole('button', { name: '商品与库存', exact: true }).click();
       const bCatalogPromise = pageB.waitForResponse(isCatalogResponse);
-      const bRegistryPromise = pageB.waitForResponse(isRegistryResponse);
+      const bRegistryPromise = pageB.waitForResponse(isAdminCategoriesResponse);
       await pageB.getByTestId('admin-faka-import-open').click();
       const [bCatalogResponse, bRegistryResponse] = await Promise.all([
         bCatalogPromise,
@@ -1727,7 +1786,7 @@ test.describe.serial('Catalog Xboard import', () => {
       await pageC.goto('/admin');
       await pageC.getByRole('button', { name: '商品与库存', exact: true }).click();
       const cCatalogPromise = pageC.waitForResponse(isCatalogResponse);
-      const cRegistryPromise = pageC.waitForResponse(isRegistryResponse);
+      const cRegistryPromise = pageC.waitForResponse(isAdminCategoriesResponse);
       await pageC.getByTestId('admin-faka-import-open').click();
       const [cCatalogResponse, cRegistryResponse] = await Promise.all([
         cCatalogPromise,
@@ -1937,12 +1996,12 @@ test.describe.serial('Catalog Xboard import', () => {
     await resetXboardFixture();
     await loginAs(page, SEED_ACCOUNTS.admin);
     await page.goto('/admin');
-    await ensureNetworkNodeDefaultCoverViaUi(page);
+    const networkCoverUrl = await ensureNetworkNodeDefaultCoverViaUi(page);
 
     await page.getByRole('button', { name: '商品与库存', exact: true }).click();
 
     const catalogResponsePromise = page.waitForResponse(isCatalogResponse);
-    const registryResponsePromise = page.waitForResponse(isRegistryResponse);
+    const registryResponsePromise = page.waitForResponse(isAdminCategoriesResponse);
     await page.getByTestId('admin-faka-import-open').click();
 
     const [catalogResponse, registryResponse] = await Promise.all([
@@ -1982,7 +2041,7 @@ test.describe.serial('Catalog Xboard import', () => {
     });
 
     const registryBody: unknown = await registryResponse.json();
-    const categories = parseCategoryRegistryResponse(registryBody);
+    const categories = parseAdminCategoryListResponse(registryBody);
     const networkNode = categories.find((category) => category.code === 'network-node');
     if (!networkNode) {
       throw new Error('active category registry is missing network-node');
@@ -2014,7 +2073,7 @@ test.describe.serial('Catalog Xboard import', () => {
     expect(preview.sourceHash).toMatch(/^[0-9a-f]{64}$/);
     expect(preview.capacity).toEqual({ limit: 200, activeUsers: 12, remaining: 188, sellable: true });
     expect(preview.productName).toBe('Gold Plan');
-    expect(preview.cover).toEqual({ imageUrl: '/assets/network.webp', images: ['/assets/network.webp'] });
+    expect(preview.cover).toEqual({ imageUrl: networkCoverUrl, images: [networkCoverUrl] });
     expect(preview.offers).toEqual([
       { period: 'monthly', sku: 'gold-monthly', offerName: '月付', pricePoints: 300000, validityDays: 30 },
       { period: 'yearly', sku: 'gold-yearly', offerName: '年付', pricePoints: 3000000, validityDays: 365 },
@@ -2080,8 +2139,8 @@ test.describe.serial('Catalog Xboard import', () => {
       expect(product.status).toBe('draft');
       expect(product.categoryId).toBe(networkNode.id);
       expect(product.merchantId).toBeNull();
-      expect(product.imageUrl).toBe('/assets/network.webp');
-      expect(product.images).toEqual(['/assets/network.webp']);
+      expect(product.imageUrl).toBe(networkCoverUrl);
+      expect(product.images).toEqual([networkCoverUrl]);
       expect(product.price).toBe(300000);
       expect(product.fakaBridge).toBe(true);
       expect(product.fakaCapacity).toEqual({
@@ -2129,6 +2188,103 @@ test.describe.serial('Catalog Xboard import', () => {
     } finally {
       page.off('request', onConfirmRequest);
     }
+  });
+
+  test('admin uploads a local cover, previews and confirms via the real UI (SPEC-CMI-UX-001 §5.5, AC-UX-010)', async ({ page }) => {
+    await resetXboardFixture();
+    await loginAs(page, SEED_ACCOUNTS.admin);
+    await page.goto('/admin');
+
+    await page.getByRole('button', { name: '商品与库存', exact: true }).click();
+    const catalogResponsePromise = page.waitForResponse(isCatalogResponse);
+    const registryResponsePromise = page.waitForResponse(isAdminCategoriesResponse);
+    await page.getByTestId('admin-faka-import-open').click();
+    const [catalogResponse, registryResponse] = await Promise.all([
+      catalogResponsePromise,
+      registryResponsePromise,
+    ]);
+    expect(catalogResponse.status()).toBe(200);
+    expect(registryResponse.status()).toBe(200);
+
+    const registryBody: unknown = await registryResponse.json();
+    const categories = parseAdminCategoryListResponse(registryBody);
+    const networkNode = categories.find((category) => category.code === 'network-node');
+    if (!networkNode) {
+      throw new Error('active category registry is missing network-node');
+    }
+
+    // Use Basic Plan (plan 1) so this uploaded-cover journey does not collide
+    // with the plan-77 category-default journeys in the sibling tests.
+    await page.getByTestId('admin-faka-import-plan').selectOption('1');
+    await page.getByTestId('product-category-select').selectOption(String(networkNode.id));
+
+    // Choose the uploaded-cover mode and upload a real PNG (POST /api/uploads/image).
+    await page.getByLabel('上传平台托管封面').click();
+    const uploadResponsePromise = page.waitForResponse((response) =>
+      response.request().method() === 'POST'
+      && new URL(response.url()).pathname === '/api/uploads/image',
+    );
+    const png = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+      'base64',
+    );
+    await page.locator('input[type="file"]').setInputFiles({ name: 'cover.png', mimeType: 'image/png', buffer: png });
+    const uploadResponse = await uploadResponsePromise;
+    expect(uploadResponse.status()).toBe(200);
+    const uploadBody: unknown = await uploadResponse.json();
+    if (!isRecord(uploadBody) || typeof uploadBody.key !== 'string' || typeof uploadBody.url !== 'string') {
+      throw new Error('upload response must be { key, url }');
+    }
+    // The upload key is the content-addressed objectKey (the write/confirm
+    // trust anchor — never the client URL).
+    expect(uploadBody.key).toMatch(/^[0-9a-f]{32}\.png$/);
+    await expect(page.getByTestId('admin-faka-uploaded-cover-preview')).toBeVisible();
+
+    const expectedRequest: FakaImportRequest = {
+      planId: 1,
+      productName: 'Basic Plan',
+      categoryId: networkNode.id,
+      cover: { mode: 'uploaded', objectKey: uploadBody.key },
+      offers: [
+        { period: 'monthly', sku: 'basic-monthly', offerName: '月付', pricePoints: 50000 },
+        { period: 'yearly', sku: 'basic-yearly', offerName: '年付', pricePoints: 500000 },
+      ],
+    };
+
+    const previewResponsePromise = page.waitForResponse(isImportPreviewResponse);
+    await page.getByTestId('admin-faka-import-preview-submit').click();
+    const previewResponse = await previewResponsePromise;
+    expect(previewResponse.status()).toBe(200);
+    const previewRequestBody: unknown = previewResponse.request().postDataJSON();
+    // AC-UX-010: the preview request carries the objectKey, never a CDN URL.
+    expect(parseFakaImportRequest(previewRequestBody)).toEqual(expectedRequest);
+
+    const previewBody: unknown = await previewResponse.json();
+    const preview = parseFakaPreviewResponse(previewBody);
+    expect(preview.cover).toEqual({ imageUrl: uploadBody.url, images: [uploadBody.url] });
+    expect(preview.canConfirm).toBe(true);
+
+    const importResponsePromise = page.waitForResponse(isImportResponse);
+    const productsResponsePromise = page.waitForResponse(isAdminProductsResponse);
+    await page.getByTestId('admin-faka-import-submit').click({ clickCount: 2 });
+    const importResponse = await importResponsePromise;
+    expect(importResponse.status()).toBe(201);
+    const confirmRequestBody: unknown = importResponse.request().postDataJSON();
+    expect(parseFakaConfirmRequest(confirmRequestBody)).toEqual({ ...expectedRequest, sourceHash: preview.sourceHash });
+
+    const importBody: unknown = await importResponse.json();
+    const imported = parseFakaImportResponse(importBody);
+    expect(imported.replayed).toBe(false);
+
+    // 商品预览有图: the created draft's canonical cover URL is the uploaded one.
+    const productsResponse = await productsResponsePromise;
+    expect(productsResponse.status()).toBe(200);
+    const productsBody: unknown = await productsResponse.json();
+    const products = parseAdminProductsResponse(productsBody);
+    const uploadedProduct = products.find((candidate) => candidate.id === imported.productId);
+    expect(uploadedProduct).toBeDefined();
+    expect(uploadedProduct!.imageUrl).toBe(uploadBody.url);
+    expect(uploadedProduct!.images).toEqual([uploadBody.url]);
   });
 
 });
