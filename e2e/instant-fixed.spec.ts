@@ -93,10 +93,10 @@ test.describe.serial('instant_fixed delivery flow', () => {
 
     // 用户侧订单状态回到「已交付」
     await loginAs(page, SEED_ACCOUNTS.user)
-    await page.goto('/profile')
+    await page.goto('/orders')
     const orderCard = page
-      .locator('div.shadow-sm')
-      .filter({ has: page.getByRole('heading', { name: PRODUCT_NAME }) })
+      .locator('[data-testid^="buyer-order-card-"]')
+      .filter({ hasText: PRODUCT_NAME })
       .first()
     await expect(orderCard).toBeVisible({ timeout: 10_000 })
     await expect(orderCard.getByText('已交付')).toBeVisible({ timeout: 10_000 })

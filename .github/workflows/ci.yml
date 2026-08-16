@@ -14,6 +14,12 @@
 # protected branches. Do NOT use [skip ci] on PR branches: it suppresses the
 # whole workflow, so the required "CI OK" check stays Pending forever and the
 # PR cannot merge — path filtering already makes docs-only PRs finish fast.
+#
+# Scheduling: the backend suite runs as 3 file-level shards, and both
+# Playwright jobs are self-contained (own dependencies, DB service and
+# backend build), so they run in parallel with the backend shards instead
+# of after them. "CI OK" aggregates every result, so the parallelism does
+# not weaken the gate. See docs/testing-policy.md for the layering policy.
 
 name: CI
 
@@ -65,6 +71,7 @@ jobs:
               - 'package.json'
               - 'package-lock.json'
               - 'vite.config.ts'
+              - 'vitest.config.ts'
               - 'tsconfig.json'
               - 'tailwind.config.js'
               - '.github/workflows/ci.yml'
@@ -73,7 +80,12 @@ jobs:
               - 'playwright.config.ts'
               - 'playwright.legal-pages.config.ts'
               - 'playwright.notification-realtime.config.ts'
+              - 'playwright.catalog-ops.config.ts'
               - 'scripts/verify-notification-realtime-e2e.sh'
+              - 'scripts/verify-catalog-ops-e2e.sh'
+              # Workflow edits change how the E2E jobs themselves run, so
+              # they must prove the restructured pipeline on the PR itself.
+              - '.github/workflows/ci.yml'
             code:
               - 'server/**'
               - 'src/**'
@@ -87,7 +99,9 @@ jobs:
               - 'e2e/**'
               - 'playwright.config.ts'
               - 'playwright.notification-realtime.config.ts'
+              - 'playwright.catalog-ops.config.ts'
               - 'scripts/verify-notification-realtime-e2e.sh'
+              - 'scripts/verify-catalog-ops-e2e.sh'
               - '.github/workflows/ci.yml'
 
   backend:
@@ -101,11 +115,17 @@ jobs:
         needs.changes.outputs.server == 'true'
       )
     runs-on: ubuntu-latest
-    # The full real-PostgreSQL suite normally takes about 13 minutes and was
-    # still completing green test files when the old 15-minute cap cancelled
-    # it. Keep a bounded margin for runner/IO variance; individual Vitest
-    # timeouts still detect hung tests.
-    timeout-minutes: 20
+    # The full real-PostgreSQL suite is serial by design (singleFork) and
+    # takes ~13 minutes on a single runner, so it is split into 3 file-level
+    # shards, each against its own PostgreSQL service. setup.ts TRUNCATEs
+    # every table before each test, so shards share no cross-file state.
+    # Per-shard runtime is ~6 minutes; keep a bounded margin for runner/IO
+    # variance — individual Vitest timeouts still detect hung tests.
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
 
     services:
       postgres:
@@ -128,7 +148,8 @@ jobs:
       JWT_SECRET: ci-jwt-secret-at-least-32-characters-long-xx
       FRONTEND_ORIGIN: http://localhost:5173
       # 全局 /api limiter 无测试跳过（app.ts），全量套件单进程共享计数，
-      # 默认 300 次/15 分钟会从第 301 个请求起整片 429（与 E2E 作业同值）。
+      # 默认 300 次/15 分钟会从第 301 个请求起整片 429；这个 CI 后端
+      # 测试作业保持独立的测试上限，不改变生产默认值。
       API_RATE_LIMIT_MAX: 3000
 
     steps:
@@ -154,8 +175,8 @@ jobs:
       - name: Build backend
         run: npm --prefix server run build
 
-      - name: Test backend
-        run: npm --prefix server test
+      - name: Test backend (shard ${{ matrix.shard }}/3)
+        run: npm --prefix server test -- --shard=${{ matrix.shard }}/3
 
   frontend:
     name: Frontend typecheck and build
@@ -182,12 +203,21 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      - name: Run frontend unit tests
+        run: npm test
+
       - name: Build frontend
         run: npm run build
 
   e2e:
     name: Playwright E2E
-    needs: [changes, backend, frontend]
+    # Deliberately NOT gated on the backend job: this job installs its own
+    # dependencies, owns its own PostgreSQL service and builds the backend
+    # itself, so it runs concurrently with the backend shards instead of
+    # queueing behind them. "CI OK" still requires every job to be green,
+    # so gating strength is unchanged; the only cost is some wasted runner
+    # minutes when backend tests fail.
+    needs: [changes, frontend]
     # Runs on: any push to master/develop; PRs to master that touch code;
     # PRs to develop only when e2e files changed or the `run-e2e` label is
     # set (the post-merge push to develop still runs the full suite).
@@ -222,7 +252,9 @@ jobs:
       TEST_DATABASE_URL: postgresql://monexus:monexus_dev_2026@localhost:5432/monexus_test?schema=public
       JWT_SECRET: ci-jwt-secret-at-least-32-characters-long-xx
       FRONTEND_ORIGIN: http://localhost:5173
-      API_RATE_LIMIT_MAX: 3000
+      # E2E shares one test client across the full suite; this test-only
+      # headroom prevents aggregate /api traffic from ending in 429.
+      API_RATE_LIMIT_MAX: 10000
 
     steps:
       - name: Check out repository
@@ -281,8 +313,24 @@ jobs:
       - name: Seed E2E fixtures
         run: npm --prefix server run db:seed:force
 
+      - name: Resolve Playwright version
+        id: playwright-version
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright-version.outputs.version }}
+
       - name: Install Playwright chromium
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
         run: npx playwright install --with-deps chromium
+
+      - name: Install Playwright system dependencies
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
 
       - name: Build backend
         run: npm --prefix server run build
@@ -347,7 +395,8 @@ jobs:
           CI: 'true'
           E2E_BASE_URL: http://127.0.0.1:5173
           # Keep API fixture traffic on a distinct loopback client address;
-          # API_RATE_LIMIT_MAX remains 3000 and no limiter is bypassed.
+          # API_RATE_LIMIT_MAX is raised for aggregate E2E traffic only;
+          # no limiter is bypassed and production defaults are unchanged.
           E2E_API_URL: 'http://[::1]:3000'
 
       - name: Upload Playwright report
@@ -360,10 +409,12 @@ jobs:
 
   notification-realtime-e2e:
     name: Notification realtime Playwright E2E
-    needs: [changes, backend, frontend]
     # Keep the realtime suite visible as an independent gate. It follows the
     # same PR/push selection as the compatibility E2E job, but never shares
     # that job's database, ports, server processes, retries, or artifacts.
+    # Like the compatibility job it is self-contained, so it does not queue
+    # behind the backend shards either.
+    needs: [changes, frontend]
     if: >-
       !failure() && !cancelled() && (
         github.event_name == 'push' ||
@@ -416,8 +467,24 @@ jobs:
       - name: Generate Prisma client
         run: npm --prefix server run db:generate
 
+      - name: Resolve Playwright version
+        id: playwright-version
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright-version.outputs.version }}
+
       - name: Install Playwright chromium
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
         run: npx playwright install --with-deps chromium
+
+      - name: Install Playwright system dependencies
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
 
       - name: Create guarded realtime E2E environment
         run: |
@@ -428,6 +495,94 @@ jobs:
 
       - name: Run notification realtime E2E tests
         run: bash scripts/verify-notification-realtime-e2e.sh
+
+  catalog-ops-e2e:
+    name: Catalog-ops integration Playwright E2E
+    # Dedicated-stack suite for the Catalog/Merch integration lane (PAR-CMI-001).
+    # The four catalog-ops specs own a fixed topology (API 3105 / Vite 5180 /
+    # Xboard fixture 3106) and the disposable DB monexus_test_catalog_merch_integration;
+    # the merchandising smoke additionally REQUIRES a fresh DB per run (placement
+    # partial-unique conflicts with a leftover active campaign). Folding them into
+    # the shared compatibility job's single DB would break that determinism and
+    # risk cross-spec pollution, so they run only via playwright.catalog-ops.config.ts
+    # here, mirroring scripts/verify-catalog-ops-e2e.sh 1:1. Like the other Playwright
+    # jobs it is self-contained and runs in parallel with the backend shards.
+    needs: [changes, frontend]
+    if: >-
+      !failure() && !cancelled() && (
+        github.event_name == 'push' ||
+        (github.base_ref == 'master' && needs.changes.outputs.code == 'true') ||
+        needs.changes.outputs.e2e == 'true' ||
+        contains(github.event.pull_request.labels.*.name, 'run-e2e')
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: monexus
+          POSTGRES_PASSWORD: monexus_dev_2026
+          POSTGRES_DB: monexus_test_catalog_merch_integration
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U monexus -d monexus_test_catalog_merch_integration"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://monexus:monexus_dev_2026@localhost:5432/monexus_test_catalog_merch_integration?schema=public
+      TEST_DATABASE_URL: postgresql://monexus:monexus_dev_2026@localhost:5432/monexus_test_catalog_merch_integration?schema=public
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            server/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Install backend dependencies
+        run: npm --prefix server ci
+
+      - name: Generate Prisma client
+        run: npm --prefix server run db:generate
+
+      - name: Resolve Playwright version
+        id: playwright-version
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright-version.outputs.version }}
+
+      - name: Install Playwright chromium
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium
+
+      - name: Install Playwright system dependencies
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
+
+      - name: Install PostgreSQL client (dbguard lifecycle)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends postgresql-client
+
+      - name: Run catalog-ops integration E2E tests
+        run: bash scripts/verify-catalog-ops-e2e.sh
 
   deployment-contract:
     # This is intentionally independent of source-path filtering: a malformed
@@ -448,7 +603,7 @@ jobs:
     # upstream job failed — skipped jobs (docs-only or unlabeled-E2E PRs)
     # count as success.
     name: CI OK
-    needs: [changes, backend, frontend, e2e, notification-realtime-e2e, deployment-contract]
+    needs: [changes, backend, frontend, e2e, notification-realtime-e2e, catalog-ops-e2e, deployment-contract]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5

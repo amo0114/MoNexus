@@ -9,6 +9,7 @@ import { NotificationDispatcher } from '../dispatcher.js'
 import { getNotificationRealtimeHub } from '../realtime/hub.js'
 import { getNotificationRealtimeLifecycle } from '../realtime/lifecycle.js'
 import { NOTIFICATION_REALTIME_MAX_TIMER_DELAY_MS, scheduleNotificationRealtimeTimer } from '../realtime/streamController.js'
+import { notificationRealtimeConnectionRejectionsTotal } from '../../../lib/metrics.js'
 import { createTestMerchant, createTestProduct, createTestUser } from '../../../__tests__/helpers.js'
 
 /**
@@ -106,6 +107,13 @@ function parseSseBlock(block: string): ParsedFrame {
 
 function signToken(userId: number, role: string, expiresIn: jwt.SignOptions["expiresIn"]): string {
   return jwt.sign({ userId, role }, config.jwtSecret, { expiresIn })
+}
+
+/** Read the current value of the connect-rejection counter for one reason label. */
+async function connectionRejectionValue(reason: string): Promise<number> {
+  const snapshot = await notificationRealtimeConnectionRejectionsTotal.get()
+  const hit = snapshot.values.find(v => v.labels['reason'] === reason)
+  return hit?.value ?? 0
 }
 
 describe('realtime absolute timer scheduling', () => {
@@ -307,7 +315,7 @@ describe('realtime SSE stream (SPEC-NOTIFY-RT-001 T-BE-004)', () => {
       jwt.sign({ userId, role: 'merchant', exp: nowSec - 1 }, config.jwtSecret),
       jwt.sign({ userId, role: 'merchant', exp: Number.MAX_SAFE_INTEGER }, config.jwtSecret),
     ]
-
+    const authExpiredBefore = await connectionRejectionValue('auth_expired')
     for (const token of tokens) {
       const stream = openStream(token)
       const deadline = Date.now() + 3000
@@ -316,6 +324,10 @@ describe('realtime SSE stream (SPEC-NOTIFY-RT-001 T-BE-004)', () => {
       expect(stream.headers['content-type']).not.toContain('text/event-stream')
       expect(stream.frames.filter(f => f.event)).toHaveLength(0)
     }
+    // Each exp rejected at the stream controller counts into the auth_expired
+    // rejection metric. The expired token is caught earlier by jwt.verify in the
+    // auth middleware, so only the other three reach this 401.
+    expect(await connectionRejectionValue('auth_expired') - authExpiredBefore).toBe(tokens.length - 1)
   })
 
   it('CHK-CFG-003/CHK-SSE-005: realtime off -> 404', async () => {

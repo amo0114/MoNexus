@@ -174,8 +174,20 @@ describe('file issuance under subscription expiry', () => {
     const created = await api
       .post('/api/merchant/products')
       .set(authHeader(seller.accessToken))
-      .send({ name: `文件订阅${tag}`, type: '充值卡密', price: 100, deliveryMode: 'manual_service', stockMode: 'unlimited' })
+      .send({
+        name: `文件订阅${tag}`,
+        type: '充值卡密',
+        price: 100,
+        deliveryMode: 'manual_service',
+        stockMode: 'unlimited',
+        imageUrl: 'https://cdn.test.local/subscription-file-cover.png',
+        images: ['https://cdn.test.local/subscription-file-cover.png'],
+      })
       .expect(201)
+    await api
+      .post(`/api/merchant/products/${created.body.id}/publish`)
+      .set(authHeader(seller.accessToken))
+      .expect(200)
     const offer = await api
       .post(`/api/merchant/products/${created.body.id}/offers`)
       .set(authHeader(seller.accessToken))

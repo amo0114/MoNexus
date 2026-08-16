@@ -2,7 +2,7 @@ import { Prisma } from '@prisma/client'
 import { randomUUID } from 'node:crypto'
 import { config } from '../../config/index.js'
 import { prisma } from '../../lib/prisma.js'
-import { badRequest, notFound } from '../../lib/httpError.js'
+import { badRequest, notFound, HttpError, type ErrorCode } from '../../lib/httpError.js'
 import { businessRegistry } from '../../lib/businessRegistry.js'
 import {
   getSystemConfigValue,
@@ -17,7 +17,6 @@ import {
   fetchFakaCapacityForSku,
   getFakaCapacityForPublicRead,
   invalidateFakaCapacityCache,
-  invalidateFakaCapacityFailures,
   isFakaBridgeConfigured,
   normalizeFakaOfferIntegration,
   assertOfferProvisionMutex,
@@ -28,14 +27,14 @@ import {
   syncFakaExpiresAtFromRemote,
   isLeaseExpiredUtc,
 } from '../../lib/fakaBridge/index.js'
-import { parseStoredDeliveryFields } from '../../lib/deliveryFields.js'
+import { parseStoredDeliveryFields, structuredContentToJson } from '../../lib/deliveryFields.js'
 import {
   assertProductDeliveryConfiguration,
   normalizeProductImageFields,
 } from '../../lib/productCommercial.js'
 import {
-  analyzeInventoryImport,
-  duplicateInventoryImportDetails,
+  analyzeInventoryForOffer,
+  assertConfirmableInventoryAnalysis,
   isInventoryContentUniqueViolation,
   type InventoryImportPayload,
 } from '../../lib/inventoryImport.js'
@@ -43,6 +42,22 @@ import { invalidate as invalidateUserStatusCache } from '../../lib/userStatusCac
 import { revokeAllUserRefreshTokens } from '../auth/service.js'
 import { lockUserRefreshSessionMutations } from '../auth/sessionService.js'
 import { invalidateProductPublicCache } from '../products/cache.js'
+import { resolveProductCategory } from '../catalog/resolver.js'
+import { isPlatformPublicAssetUrl } from '../catalog/categorySchema.js'
+import { CATALOG_ERROR_CODES, EXTERNAL_CATALOG_PROVIDER } from '../catalog/constants.js'
+import {
+  buildExternalCatalogRequestHash,
+  fetchNormalizedFakaSource,
+  normalizeExternalCatalogRequest,
+  validateExternalCatalogIdempotencyKey,
+  type ExternalCatalogRequestInput,
+  type NormalizedFakaSource,
+} from '../catalog/externalCatalog.js'
+import { checkProductReadiness } from '../catalog/publicationReadiness.js'
+import {
+  publishProduct as publishCatalogProduct,
+  unpublishProduct as unpublishCatalogProduct,
+} from '../catalog/productPublication.js'
 import { serializeAdminOrderDetail, serializeAdminOrderList } from '../orders/serializers.js'
 import { getSettlementEligibility } from '../merchant/service.js'
 import { transitionOrderStatus } from '../orders/fulfillment.js'
@@ -282,7 +297,6 @@ function productAuditSnapshot(product: {
   price: number
   originalPrice: number | null
   stock: number
-  isHot: boolean
   status: string
   deliveryMode: string
   stockMode: string
@@ -298,12 +312,21 @@ function productAuditSnapshot(product: {
     price: product.price,
     originalPrice: product.originalPrice,
     stock: product.stock,
-    isHot: product.isHot,
     status: product.status,
     deliveryMode: product.deliveryMode,
     stockMode: product.stockMode,
     fixedContentType: product.fixedContentType,
   }
+}
+
+/**
+ * D-MERCH-01：Product.isHot 是遗留只读列，不进入任何商家/管理端 wire DTO
+ * 与审计快照；公开投影的 isHot 由 merchandising run 计算。
+ * 仅用于剥离 create/update 直接返回的 Prisma Product 行，不改变持久化。
+ */
+function stripLegacyIsHot<T extends { isHot: boolean }>(product: T): Omit<T, 'isHot'> {
+  const { isHot: _legacyIsHot, ...rest } = product
+  return rest
 }
 
 function assertOriginalPriceAtLeastSale(price: number, originalPrice: number | null | undefined) {
@@ -322,8 +345,8 @@ export async function createProduct(adminUserId: number, data: CreateProductInpu
   assertProductDeliveryConfiguration({
     deliveryMode,
     stockMode,
-    incomingStock: data.stock,
-    effectiveStock: data.stock,
+    incomingStock: undefined,
+    effectiveStock: 0,
     fixedContent: data.fixedContent,
     fixedContentType,
   })
@@ -340,22 +363,34 @@ export async function createProduct(adminUserId: number, data: CreateProductInpu
   })
   // Strip faka fields from product row (they live only on Offer).
   const {
+    categoryId: _categoryId, type: _type,
     externalIntegration: _ei,
     externalSku: _es,
     ...productRowFields
   } = normalizedProductData as typeof normalizedProductData & {
     externalIntegration?: string | null
     externalSku?: string | null
+    categoryId?: number
+    type?: string
   }
 
   const product = await prisma.$transaction(async tx => {
+    // B_CAT：用事务内 client 解析 categoryId/type（不开启嵌套事务）。
+    const { categoryId, type } = await resolveProductCategory(
+      { categoryId: data.categoryId, type: data.type },
+      tx,
+    )
     const created = await tx.product.create({
       data: {
         ...productRowFields,
+        categoryId,
+        type,
         deliveryMode,
         stockMode,
         fixedContentType,
-        stock: deliveryMode === 'instant_inventory' ? 0 : (data.stock ?? 0),
+        stock: 0,
+        status: 'draft',
+        merchantId: null,
       },
     })
     // P4a：Offer 是价格/履约配置真相源，商品创建时同事务生成默认 Offer。
@@ -364,7 +399,7 @@ export async function createProduct(adminUserId: number, data: CreateProductInpu
       originalPrice: data.originalPrice ?? null,
       deliveryMode,
       stockMode,
-      stock: deliveryMode === 'instant_inventory' ? 0 : (data.stock ?? 0),
+      stock: 0,
       fixedContent: data.fixedContent ?? null,
       fixedContentType,
       externalIntegration: faka.externalIntegration,
@@ -382,7 +417,20 @@ export async function createProduct(adminUserId: number, data: CreateProductInpu
     return created
   })
   await invalidateProductPublicCache(product.id, { list: true })
-  return product
+  // 返回边界最小剥离：wire DTO 不携带遗留 Product.isHot（D-MERCH-01）。
+  return stripLegacyIsHot(product)
+}
+
+export async function getProductReadiness(productId: number) {
+  return checkProductReadiness(productId)
+}
+
+export async function publishProduct(productId: number) {
+  return publishCatalogProduct(productId)
+}
+
+export async function unpublishProduct(productId: number) {
+  return unpublishCatalogProduct(productId)
 }
 
 export async function updateProduct(adminUserId: number, id: number, data: UpdateProductInput) {
@@ -411,7 +459,7 @@ export async function updateProduct(adminUserId: number, id: number, data: Updat
       ?? (normalizedProductData.deliveryMode && deliveryMode !== product.deliveryMode
         ? (deliveryMode === 'instant_inventory' ? 'limited' : 'unlimited')
         : product.stockMode)
-    const incomingStock = typeof normalizedProductData.stock === 'number' ? normalizedProductData.stock : undefined
+    const incomingStock: number | undefined = undefined
 
     if (!('fixedContent' in normalizedProductData) && product.fixedContent != null && deliveryMode !== 'instant_fixed') {
       throw badRequest('切换交付模式请同时将 fixedContent 置空（传 null）')
@@ -432,7 +480,7 @@ export async function updateProduct(adminUserId: number, id: number, data: Updat
       deliveryMode,
       stockMode,
       incomingStock,
-      effectiveStock: incomingStock ?? product.stock,
+      effectiveStock: product.stock,
       fixedContent: 'fixedContent' in normalizedProductData
         ? normalizedProductData.fixedContent
         : product.fixedContent,
@@ -531,7 +579,8 @@ export async function updateProduct(adminUserId: number, id: number, data: Updat
     return next
   })
   await invalidateProductPublicCache(updated.id, { detail: true, list: true })
-  return updated
+  // 返回边界最小剥离：wire DTO 不携带遗留 Product.isHot（D-MERCH-01）。
+  return stripLegacyIsHot(updated)
 }
 
 /**
@@ -539,8 +588,10 @@ export async function updateProduct(adminUserId: number, id: number, data: Updat
  * 规格；缺省先落默认 Offer，默认非即时库存时回退到唯一的即时库存规格
  * （零个 → 商品不支持库存导入；多个 → 无法猜测意图，要求显式指定）。
  */
+type AdminInventoryClient = typeof prisma | Prisma.TransactionClient
+
 async function resolveAdminImportOffer(
-  tx: Prisma.TransactionClient,
+  tx: AdminInventoryClient,
   productId: number,
   offerId: number | undefined
 ) {
@@ -564,6 +615,122 @@ async function resolveAdminImportOffer(
   return instantOffers[0]
 }
 
+/**
+ * Admin preview（D-CAT-15）：与商家共用 lib 领域分析器，返回一致统计/错误语义
+ * （AC-CAT-009）。Preview 零业务写入。
+ */
+async function previewAdminOfferInventory(
+  productId: number,
+  offer: { id: number; deliveryFields: unknown },
+  payload: InventoryImportPayload
+) {
+  const analysis = await analyzeInventoryForOffer(productId, offer, payload)
+  if ('rowErrors' in analysis) {
+    return {
+      offerId: offer.id,
+      totalRows: analysis.totalRows,
+      validRows: analysis.validRows,
+      emptyRows: analysis.emptyRows,
+      duplicateRows: analysis.duplicateRows,
+      existingDuplicateRows: analysis.existingDuplicateRows,
+      rowErrors: analysis.rowErrors,
+      canImport: analysis.canImport,
+      // 预览表格：模板 + 前 20 行解析结果（值不落库前仅回显给上传者本人）。
+      structured: {
+        fields: parseStoredDeliveryFields(offer.deliveryFields),
+        rows: analysis.itemsToImport.slice(0, 20).map(item => item.structuredContent.values),
+      },
+    }
+  }
+  return {
+    offerId: offer.id,
+    totalRows: analysis.totalRows,
+    validRows: analysis.validRows,
+    emptyRows: analysis.emptyRows,
+    duplicateRows: analysis.duplicateRows,
+    existingDuplicateRows: analysis.existingDuplicateRows,
+    canImport: analysis.canImport,
+  }
+}
+
+export async function previewInventory(
+  productId: number,
+  payload: InventoryImportPayload & { offerId?: number }
+) {
+  const product = await prisma.product.findUnique({ where: { id: productId } })
+  if (!product) throw notFound('商品不存在')
+  // 旧兼容路径：未指定 offerId 时按既有回退规则解析即时库存规格。
+  const offer = await resolveAdminImportOffer(prisma, productId, payload.offerId)
+  return previewAdminOfferInventory(productId, offer, payload)
+}
+
+/** 新 Offer-first 路径（T-CAT-BE-004，D-CAT-12/13）：admin preview 显式 offerId。 */
+export async function previewOfferInventory(
+  productId: number,
+  offerId: number,
+  payload: InventoryImportPayload
+) {
+  const product = await prisma.product.findUnique({ where: { id: productId } })
+  if (!product) throw notFound('商品不存在')
+  const offer = await resolveAdminImportOffer(prisma, productId, offerId)
+  return previewAdminOfferInventory(productId, offer, payload)
+}
+
+/** confirm 事务内重算核心（Admin）：与商家共用分析器与确认校验；另写 AdminLog（D-CAT-15）。 */
+async function confirmAdminOfferInventoryImport(
+  tx: Prisma.TransactionClient,
+  productId: number,
+  offer: { id: number; deliveryFields: unknown },
+  merchantId: number | null,
+  adminUserId: number,
+  payload: InventoryImportPayload
+) {
+  const analysis = await analyzeInventoryForOffer(productId, offer, payload, tx)
+  assertConfirmableInventoryAnalysis(analysis)
+
+  await tx.inventoryItem.createMany({
+    data: analysis.itemsToImport.map(item =>
+      typeof item === 'string'
+        ? { productId, offerId: offer.id, content: item }
+        : {
+            productId,
+            offerId: offer.id,
+            content: item.content,
+            structuredContent: structuredContentToJson(item.structuredContent),
+          }
+    ),
+  })
+
+  await logInventoryChange(tx, {
+    productId,
+    offerId: offer.id,
+    merchantId,
+    actorUserId: adminUserId,
+    action: 'import',
+    delta: analysis.itemsToImport.length,
+    batchId: randomUUID(),
+  })
+
+  await tx.adminLog.create({
+    data: {
+      adminUserId,
+      action: '导入库存',
+      targetType: 'product',
+      targetId: productId,
+      detail: `offerId=${offer.id}; 导入 ${analysis.itemsToImport.length} 条库存`,
+    },
+  })
+
+  return {
+    imported: analysis.itemsToImport.length,
+    totalRows: analysis.totalRows,
+    validRows: analysis.validRows,
+    skippedEmptyRows: analysis.emptyRows,
+    duplicateRows: analysis.duplicateRows,
+    existingDuplicateRows: analysis.existingDuplicateRows,
+  }
+}
+
 export async function importInventory(
   productId: number,
   payload: InventoryImportPayload & { offerId?: number },
@@ -574,52 +741,9 @@ export async function importInventory(
 
   try {
     const result = await prisma.$transaction(async tx => {
+      // 旧兼容路径：未指定 offerId 时按既有回退规则解析即时库存规格。
       const offer = await resolveAdminImportOffer(tx, productId, payload.offerId)
-      // P4b：带交付字段模板的规格必须走商家端结构化导入（逐字段校验 + 快照）；
-      // 管理端纯文本导入会破坏"模板规格库存必有 structuredContent"的契约。
-      if (parseStoredDeliveryFields(offer.deliveryFields).length > 0) {
-        throw badRequest('该规格配置了交付字段模板，请使用商家端按模板导入')
-      }
-      const analysis = await analyzeInventoryImport(productId, payload, tx)
-      if (analysis.duplicateRows > 0 || analysis.existingDuplicateRows > 0) {
-        throw badRequest('库存导入包含重复项', duplicateInventoryImportDetails(analysis))
-      }
-      if (analysis.validRows === 0) {
-        throw badRequest('至少提供一条有效库存')
-      }
-
-      await tx.inventoryItem.createMany({
-        data: analysis.itemsToImport.map(content => ({ productId, offerId: offer.id, content })),
-      })
-
-      await logInventoryChange(tx, {
-        productId,
-        offerId: offer.id,
-        merchantId: product.merchantId,
-        actorUserId: adminUserId,
-        action: 'import',
-        delta: analysis.itemsToImport.length,
-        batchId: randomUUID(),
-      })
-
-      await tx.adminLog.create({
-        data: {
-          adminUserId,
-          action: '导入库存',
-          targetType: 'product',
-          targetId: productId,
-          detail: `导入 ${analysis.itemsToImport.length} 条库存`,
-        },
-      })
-
-      return {
-        imported: analysis.itemsToImport.length,
-        totalRows: analysis.totalRows,
-        validRows: analysis.validRows,
-        skippedEmptyRows: analysis.emptyRows,
-        duplicateRows: analysis.duplicateRows,
-        existingDuplicateRows: analysis.existingDuplicateRows,
-      }
+      return confirmAdminOfferInventoryImport(tx, productId, offer, product.merchantId, adminUserId, payload)
     })
 
     await invalidateProductPublicCache(productId, { detail: true, list: 'coalesced' })
@@ -627,6 +751,34 @@ export async function importInventory(
   } catch (error) {
     // 与商家导入一样，数据库唯一索引是并发导入时的最终裁决；任何冲突
     // 都会使本事务完整回滚，并返回稳定的业务错误。
+    if (isInventoryContentUniqueViolation(error)) {
+      throw badRequest('库存导入包含重复项', [
+        { field: 'items', message: 'existingDuplicateRows=concurrent' },
+      ])
+    }
+    throw error
+  }
+}
+
+/** 新 Offer-first 路径（T-CAT-BE-004，D-CAT-12/13）：admin 导入显式 offerId。 */
+export async function importOfferInventory(
+  productId: number,
+  offerId: number,
+  payload: InventoryImportPayload,
+  adminUserId: number
+) {
+  const product = await prisma.product.findUnique({ where: { id: productId } })
+  if (!product) throw notFound('商品不存在')
+
+  try {
+    const result = await prisma.$transaction(async tx => {
+      const offer = await resolveAdminImportOffer(tx, productId, offerId)
+      return confirmAdminOfferInventoryImport(tx, productId, offer, product.merchantId, adminUserId, payload)
+    })
+
+    await invalidateProductPublicCache(productId, { detail: true, list: 'coalesced' })
+    return result
+  } catch (error) {
     if (isInventoryContentUniqueViolation(error)) {
       throw badRequest('库存导入包含重复项', [
         { field: 'items', message: 'existingDuplicateRows=concurrent' },
@@ -1165,8 +1317,10 @@ export async function listAdminProducts() {
       return { ...o, fakaCapacity }
     })
     const primaryFaka = offers.find(o => o.fakaCapacity?.source === 'xboard')?.fakaCapacity ?? null
+    // D-MERCH-01：显式剥离遗留 Product.isHot（...p 会带出），其余管理字段原样保留。
+    const { isHot: _legacyIsHot, ...productDto } = p
     return {
-      ...p,
+      ...productDto,
       offers,
       fakaBridge: offers.some(o => o.externalIntegration === 'faka_bridge'),
       fakaCapacity: primaryFaka,
@@ -1340,20 +1494,6 @@ const PERIOD_OFFER_LABELS: Record<string, string> = {
   reset_traffic: '重置包',
 }
 
-/** Strip tags for short plain description (product.description). */
-function stripHtmlToPlain(html: string): string {
-  return html
-    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
-    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/\s+/g, ' ')
-    .trim()
-}
-
 /** 规格副标题（写入 Offer 名以外的展示由前端/导入说明承担） */
 export const PERIOD_OFFER_HINTS: Record<string, string> = {
   monthly: '自交付起约 30 天',
@@ -1384,36 +1524,6 @@ type FakaImportOfferRow = {
   offerName?: string
   pricePoints: number
   validityDays?: number | null
-}
-
-function normalizeFakaImportOffers(input: {
-  planId: number
-  offers?: FakaImportOfferRow[]
-  period?: string
-  sku?: string
-  offerName?: string
-  pricePoints?: number
-}): FakaImportOfferRow[] {
-  if (input.offers && input.offers.length > 0) {
-    return input.offers.map(o => ({
-      period: o.period.trim().toLowerCase(),
-      sku: o.sku?.trim().toLowerCase(),
-      offerName: o.offerName?.trim(),
-      pricePoints: o.pricePoints,
-      validityDays: o.validityDays,
-    }))
-  }
-  if (!input.period || input.pricePoints == null) {
-    throw badRequest('请提供 offers 多规格，或 period + pricePoints 单规格')
-  }
-  return [
-    {
-      period: input.period.trim().toLowerCase(),
-      sku: input.sku?.trim().toLowerCase(),
-      offerName: input.offerName?.trim(),
-      pricePoints: input.pricePoints,
-    },
-  ]
 }
 
 /**
@@ -1468,126 +1578,213 @@ const FAKA_PURCHASE_FORM = [
   },
 ]
 
+type FakaImportDb = typeof prisma | Prisma.TransactionClient
+
+type FakaImportIssue = { code: string; field: string; message: string }
+
+async function resolveFakaImportCover(
+  db: FakaImportDb,
+  input: ExternalCatalogRequestInput,
+): Promise<{ imageUrl: string; images: string[] }> {
+  const category = await db.productCategory.findUnique({
+    where: { id: input.categoryId },
+    select: { status: true, defaultCoverUrl: true },
+  })
+  if (!category || category.status !== 'active') throw badRequest('商品分类不存在或已停用')
+  if (input.cover.mode === 'category_default') {
+    const imageUrl = category.defaultCoverUrl
+    if (!imageUrl || !isPlatformPublicAssetUrl(imageUrl)) {
+      throw badRequest('该分类尚未配置可用默认封面')
+    }
+    return { imageUrl, images: [imageUrl] }
+  }
+
+  const images = (input.cover.images?.length ? input.cover.images : [input.cover.imageUrl])
+    .map(value => value.trim())
+  if (images[0] !== input.cover.imageUrl.trim()) throw badRequest('images 第一项必须与 imageUrl 一致')
+  if (new Set(images).size !== images.length) throw badRequest('封面图片不能重复')
+  for (const imageUrl of images) {
+    if (!imageUrl.startsWith('/uploads/') || !isPlatformPublicAssetUrl(imageUrl)) {
+      throw badRequest('上传封面必须来自平台 /uploads/ 公共对象')
+    }
+    const objectKey = imageUrl.slice('/uploads/'.length)
+    const stored = await db.storedObject.findFirst({
+      where: { bucketRole: 'public', objectKey, status: 'active', source: 'upload_image' },
+      select: { id: true },
+    })
+    if (!stored) throw badRequest('上传封面不存在或已失效')
+  }
+  return { imageUrl: images[0]!, images }
+}
+
+async function analyzeAdminFakaImport(
+  source: NormalizedFakaSource,
+  input: ExternalCatalogRequestInput,
+  db: FakaImportDb = prisma,
+) {
+  const request = normalizeExternalCatalogRequest(input)
+  const issues: FakaImportIssue[] = []
+  if (!source.capacity.sellable) {
+    issues.push({ code: 'SOURCE_NOT_SELLABLE', field: 'planId', message: 'Xboard 套餐当前不可售或名额不足' })
+  }
+  if (request.offers.length === 0) {
+    issues.push({ code: 'OFFER_REQUIRED', field: 'offers', message: '至少选择一个套餐周期' })
+  }
+  const periods = request.offers.map(row => row.period)
+  if (new Set(periods).size !== periods.length) {
+    issues.push({ code: 'PERIOD_DUPLICATE', field: 'offers', message: '套餐周期不能重复' })
+  }
+  const sourcePeriods = new Map(source.periods.map(row => [row.period, row]))
+  const namedSkus = new Map(source.namedSkus.map(row => [row.period, row.sku]))
+  const offers = request.offers.map(row => {
+    const sourcePeriod = sourcePeriods.get(row.period)
+    if (!sourcePeriod) {
+      issues.push({ code: 'PERIOD_NOT_FOUND', field: 'offers', message: `Xboard 套餐不支持周期 ${row.period}` })
+    }
+    const sku = row.sku || namedSkus.get(row.period) || sourcePeriod?.skuAlias || `plan-${input.planId}-${row.period}`
+    return {
+      period: row.period,
+      sku,
+      offerName: row.offerName || PERIOD_OFFER_LABELS[row.period] || row.period,
+      pricePoints: row.pricePoints,
+      validityDays: row.validityDays === undefined
+        ? (PERIOD_VALIDITY_DAYS[row.period] ?? null)
+        : row.validityDays,
+    }
+  })
+  const skus = offers.map(row => row.sku)
+  if (new Set(skus).size !== skus.length) {
+    issues.push({ code: 'SKU_DUPLICATE', field: 'offers', message: '规格 SKU 不能重复' })
+  }
+  if (skus.length > 0) {
+    const conflicts = await db.offer.findMany({
+      where: { externalIntegration: 'faka_bridge', externalSku: { in: skus } },
+      select: { externalSku: true, productId: true },
+    })
+    for (const conflict of conflicts) {
+      issues.push({
+        code: 'SKU_ALREADY_IMPORTED',
+        field: 'offers',
+        message: `所选规格已关联商品 ${conflict.productId}`,
+      })
+    }
+  }
+  const linked = await db.externalCatalogLink.findUnique({
+    where: {
+      provider_externalProductId: {
+        provider: EXTERNAL_CATALOG_PROVIDER.FAKA_BRIDGE,
+        externalProductId: String(input.planId),
+      },
+    },
+    select: { productId: true },
+  })
+  if (linked) {
+    issues.push({ code: 'PLAN_ALREADY_IMPORTED', field: 'planId', message: `该套餐已关联商品 ${linked.productId}` })
+  }
+
+  let cover: { imageUrl: string; images: string[] } | null = null
+  try {
+    cover = await resolveFakaImportCover(db, input)
+  } catch (error) {
+    if (!(error instanceof HttpError)) throw error
+    issues.push({ code: 'COVER_INVALID', field: 'cover', message: error.message })
+  }
+  const productName = request.productName || source.name || `Xboard 套餐 #${input.planId}`
+  const plainDescription = source.plainDescription || `${productName} · 含 ${offers.map(row => row.offerName).join(' / ')} 等规格`
+  return {
+    sourceHash: source.sourceHash,
+    capacity: source.capacity,
+    productName,
+    plainDescription,
+    richDescription: source.richDescription,
+    cover,
+    offers,
+    issues,
+    canConfirm: issues.length === 0 && cover !== null && offers.length > 0,
+  }
+}
+
+/** Mandatory Xboard preview. It performs remote/DB reads but zero business writes. */
+export async function previewAdminFakaPlan(input: ExternalCatalogRequestInput) {
+  const source = await fetchNormalizedFakaSource(input.planId)
+  return analyzeAdminFakaImport(source, input)
+}
+
 /**
  * Admin-only: create one product with one-or-more Faka offers (periods).
  * Same Xboard plan_id → multiple MoNexus offers (月付/年付…), like multi-SKU product page.
  */
 export async function importAdminFakaPlan(
   adminUserId: number,
-  input: {
-    planId: number
-    productName?: string
-    type?: string
-    offers?: FakaImportOfferRow[]
-    period?: string
-    sku?: string
-    offerName?: string
-    pricePoints?: number
-  }
+  input: ExternalCatalogRequestInput & { sourceHash: string },
+  idempotencyKeyRaw?: string | null,
 ) {
-  if (!isFakaBridgeConfigured()) {
-    throw badRequest('平台未配置 FakaBridge')
-  }
-
-  // Clear transient capacity failures so import is not blocked by a 15s negative cache.
-  invalidateFakaCapacityFailures()
-
-  const rows = normalizeFakaImportOffers(input)
-  const periods = rows.map(r => r.period)
-  if (new Set(periods).size !== periods.length) {
-    throw badRequest('offers 中 period 不能重复')
-  }
-
-  // Prefer catalog as source of truth for "period exists on this plan".
-  // Avoids failing the whole multi-SKU import when one named-SKU capacity probe flakes.
-  const catalog = await listAdminFakaCatalog()
-  const planMeta = catalog.plans.find(p => p.plan_id === input.planId)
-  if (!planMeta) {
-    throw badRequest(`Xboard 不存在 plan_id=${input.planId}`)
-  }
-  const planPeriods = new Set((planMeta.periods ?? []).map(p => p.period))
-  const namedByPeriod = new Map(
-    (planMeta.named_skus ?? []).map(n => [n.period, n.sku] as const)
-  )
-
-  const resolved: Array<{
-    period: string
-    sku: string
-    offerName: string
-    pricePoints: number
-    validityDays: number | null
-    faka: ReturnType<typeof normalizeFakaOfferIntegration>
-    cap: Awaited<ReturnType<typeof resolveFakaOfferSku>>['cap']
-  }> = []
-  for (const row of rows) {
-    if (!Number.isInteger(row.pricePoints) || row.pricePoints <= 0) {
-      throw badRequest(`周期 ${row.period} 的积分售价无效`)
+  const key = validateExternalCatalogIdempotencyKey(idempotencyKeyRaw)
+  const requestHash = buildExternalCatalogRequestHash(input, input.sourceHash)
+  const existingByKey = await prisma.externalCatalogLink.findUnique({
+    where: { provider_idempotencyKey: { provider: EXTERNAL_CATALOG_PROVIDER.FAKA_BRIDGE, idempotencyKey: key } },
+    select: { productId: true, requestHash: true },
+  })
+  if (existingByKey) {
+    if (existingByKey.requestHash !== requestHash) {
+      throw new HttpError(409, CATALOG_ERROR_CODES.IDEMPOTENCY_KEY_REUSED as ErrorCode, '该幂等键已用于不同请求')
     }
-    if (planPeriods.size > 0 && !planPeriods.has(row.period)) {
-      throw badRequest(
-        `套餐 #${input.planId} 不支持周期 ${row.period}（可选：${[...planPeriods].join(', ')}）`
-      )
-    }
-    const skuHint = row.sku || namedByPeriod.get(row.period)
-    const { sku, cap } = await resolveFakaOfferSku(input.planId, row.period, skuHint)
-    const faka = normalizeFakaOfferIntegration({
-      externalIntegration: 'faka_bridge',
-      externalSku: sku,
-      deliveryMode: 'manual_service',
-    })
-    const validityDays =
-      row.validityDays !== undefined
-        ? row.validityDays
-        : (PERIOD_VALIDITY_DAYS[row.period] ?? null)
-    resolved.push({
-      period: row.period,
-      sku: faka.externalSku!,
-      offerName: row.offerName || PERIOD_OFFER_LABELS[row.period] || row.period,
-      pricePoints: row.pricePoints,
-      validityDays,
-      cap,
-      faka,
-    })
+    return { productId: existingByKey.productId, replayed: true }
   }
 
-  // Default offer = first period (lowest sortOrder); product projection uses its price.
-  const defaultRow = resolved[0]!
-  const productName =
-    input.productName?.trim() || planMeta.name || `Xboard 套餐 #${input.planId}`
-  const productType = input.type?.trim() || '网络节点'
-  // Prefer Xboard plan.content as rich intro; never dump plan_id / period keys to buyers.
-  const planContent =
-    typeof planMeta.content === 'string' && planMeta.content.trim()
-      ? planMeta.content.trim()
-      : null
-  const plainDescription =
-    planContent != null
-      ? stripHtmlToPlain(planContent).slice(0, 500) || `${productName} · Xboard 订阅`
-      : `${productName} · 含 ${resolved.map(r => r.offerName).join(' / ')} 等规格`
-
-  const product = await prisma.$transaction(async tx => {
-    const created = await tx.product.create({
-      data: {
-        name: productName,
-        description: plainDescription,
-        richDescription: planContent,
-        type: productType,
-        icon: 'package',
-        price: defaultRow.pricePoints,
-        deliveryMode: 'manual_service',
-        stockMode: 'unlimited',
-        stock: 0,
-        isHot: false,
-        status: 'active',
-        purchaseForm: FAKA_PURCHASE_FORM,
+  const source = await fetchNormalizedFakaSource(input.planId)
+  if (source.sourceHash !== input.sourceHash) {
+    throw new HttpError(409, CATALOG_ERROR_CODES.FAKA_SOURCE_CHANGED as ErrorCode, 'Xboard 套餐已变化，请重新预览')
+  }
+  const existingByPlan = await prisma.externalCatalogLink.findUnique({
+    where: {
+      provider_externalProductId: {
+        provider: EXTERNAL_CATALOG_PROVIDER.FAKA_BRIDGE,
+        externalProductId: String(input.planId),
       },
-    })
+    },
+    select: { productId: true },
+  })
+  if (existingByPlan) {
+    throw new HttpError(409, 'CONFLICT', '该 Xboard 套餐已导入', [
+      { field: 'existingProductId', message: String(existingByPlan.productId) },
+    ])
+  }
+  const analysis = await analyzeAdminFakaImport(source, input)
+  if (!analysis.canConfirm || !analysis.cover) {
+    throw badRequest('Xboard 导入尚未满足确认条件', analysis.issues.map(issue => ({ field: issue.field, message: `${issue.code}:${issue.message}` })))
+  }
 
-    // First offer is default; remaining are extra SKUs on the same product.
-    await createDefaultOffer(
-      tx,
-      created.id,
-      {
+  try {
+    const product = await prisma.$transaction(async tx => {
+      // Confirm transaction repeats all mutable DB checks; no remote I/O occurs here.
+      const transactional = await analyzeAdminFakaImport(source, input, tx)
+      if (!transactional.canConfirm || !transactional.cover) {
+        throw badRequest('Xboard 导入条件已变化', transactional.issues.map(issue => ({ field: issue.field, message: `${issue.code}:${issue.message}` })))
+      }
+      const { categoryId, type } = await resolveProductCategory({ categoryId: input.categoryId }, tx)
+      const defaultRow = transactional.offers[0]!
+      const created = await tx.product.create({
+        data: {
+          name: transactional.productName,
+          description: transactional.plainDescription,
+          richDescription: transactional.richDescription,
+          categoryId,
+          type,
+          icon: 'package',
+          imageUrl: transactional.cover.imageUrl,
+          images: transactional.cover.images,
+          price: defaultRow.pricePoints,
+          deliveryMode: 'manual_service',
+          stockMode: 'unlimited',
+          stock: 0,
+          isHot: false,
+          status: 'draft',
+          merchantId: null,
+          purchaseForm: FAKA_PURCHASE_FORM,
+        },
+      })
+      await createDefaultOffer(tx, created.id, {
         price: defaultRow.pricePoints,
         originalPrice: null,
         deliveryMode: 'manual_service',
@@ -1596,66 +1793,76 @@ export async function importAdminFakaPlan(
         fixedContent: null,
         fixedContentType: 'text',
         validityDays: defaultRow.validityDays,
-        externalIntegration: defaultRow.faka.externalIntegration,
-        externalSku: defaultRow.faka.externalSku,
-      },
-      defaultRow.offerName
-    )
-
-    for (let i = 1; i < resolved.length; i++) {
-      const row = resolved[i]!
-      await tx.offer.create({
+        externalIntegration: 'faka_bridge',
+        externalSku: defaultRow.sku,
+      }, defaultRow.offerName)
+      for (let i = 1; i < transactional.offers.length; i++) {
+        const row = transactional.offers[i]!
+        await tx.offer.create({
+          data: {
+            productId: created.id,
+            name: row.offerName,
+            isDefault: false,
+            price: row.pricePoints,
+            originalPrice: null,
+            deliveryMode: 'manual_service',
+            stockMode: 'unlimited',
+            stock: 0,
+            fixedContent: null,
+            fixedContentType: 'text',
+            validityDays: row.validityDays,
+            externalIntegration: 'faka_bridge',
+            externalSku: row.sku,
+            sortOrder: i,
+            status: 'active',
+          },
+        })
+      }
+      await tx.externalCatalogLink.create({
         data: {
+          provider: EXTERNAL_CATALOG_PROVIDER.FAKA_BRIDGE,
+          externalProductId: String(input.planId),
           productId: created.id,
-          name: row.offerName,
-          isDefault: false,
-          price: row.pricePoints,
-          originalPrice: null,
-          deliveryMode: 'manual_service',
-          stockMode: 'unlimited',
-          stock: 0,
-          fixedContent: null,
-          fixedContentType: 'text',
-          validityDays: row.validityDays,
-          externalIntegration: row.faka.externalIntegration,
-          externalSku: row.faka.externalSku,
-          sortOrder: i,
-          status: 'active',
+          sourceHash: source.sourceHash,
+          sourceSnapshot: source.sourceSnapshot,
+          idempotencyKey: key,
+          requestHash,
+          importedByUserId: adminUserId,
         },
       })
-    }
-
-    await tx.adminLog.create({
-      data: {
-        adminUserId,
-        action: '从Xboard导入商品',
-        targetType: 'product',
-        targetId: created.id,
-        detail: JSON.stringify({
-          planId: input.planId,
-          offers: resolved.map(r => ({
-            period: r.period,
-            sku: r.sku,
-            pricePoints: r.pricePoints,
-            offerName: r.offerName,
-          })),
-        }),
-      },
+      await tx.adminLog.create({
+        data: {
+          adminUserId,
+          action: '从Xboard导入商品草稿',
+          targetType: 'product',
+          targetId: created.id,
+          detail: JSON.stringify({ planId: input.planId, offerCount: transactional.offers.length }),
+        },
+      })
+      return created
     })
-    return created
-  })
-
-  await invalidateProductPublicCache(product.id, { list: true })
-  return {
-    productId: product.id,
-    offerCount: resolved.length,
-    offers: resolved.map(r => ({
-      period: r.period,
-      sku: r.sku,
-      offerName: r.offerName,
-      pricePoints: r.pricePoints,
-    })),
-    fakaCapacity: defaultRow.cap,
+    await invalidateProductPublicCache(product.id, { list: true })
+    return { productId: product.id, offerCount: analysis.offers.length, offers: analysis.offers, replayed: false }
+  } catch (error) {
+    if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== 'P2002') throw error
+    const link = await prisma.externalCatalogLink.findFirst({
+      where: {
+        provider: EXTERNAL_CATALOG_PROVIDER.FAKA_BRIDGE,
+        OR: [{ idempotencyKey: key }, { externalProductId: String(input.planId) }],
+      },
+      select: { productId: true, idempotencyKey: true, requestHash: true },
+    })
+    if (link?.idempotencyKey === key && link.requestHash === requestHash) {
+      return { productId: link.productId, replayed: true }
+    }
+    const skuConflict = link ? null : await prisma.offer.findFirst({
+      where: { externalIntegration: 'faka_bridge', externalSku: { in: analysis.offers.map(row => row.sku) } },
+      select: { productId: true },
+    })
+    const existingProductId = link?.productId ?? skuConflict?.productId
+    throw new HttpError(409, 'CONFLICT', '该 Xboard 商品或规格已导入', existingProductId == null
+      ? undefined
+      : [{ field: 'existingProductId', message: String(existingProductId) }])
   }
 }
 

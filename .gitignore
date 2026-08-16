@@ -62,3 +62,7 @@ server/.generated-prisma-client/
 
 # Generated mail HTML previews (local only)
 outputs/mail-previews/
+
+# Python helper bytecode (F0 dbguard harness)
+__pycache__/
+*.pyc

@@ -25,14 +25,18 @@ async function merchantToken(request: APIRequestContext) {
 }
 
 test.describe.serial('admin offer-scoped inventory import', () => {
-  test('merchant provisions a manual-default product with two instant offers (atomic publish)', async ({ request }) => {
+  test('merchant creates a manual-default draft with two instant offers atomically', async ({ request }) => {
     const token = await merchantToken(request)
-    // F3 原子发布：默认规格人工服务 + 两个附加即时库存规格，单请求建齐。
+    const registryRes = await request.get(`${API_BASE}/api/config/registry`)
+    expect(registryRes.ok(), await registryRes.text()).toBeTruthy()
+    const registry = await registryRes.json() as { productCategories: Array<{ id: number; code: string }> }
+    const categoryId = registry.productCategories.find((category) => category.code === 'recharge-card')!.id
+    // 默认规格人工服务 + 两个附加即时库存规格，单请求创建同一草稿。
     const res = await request.post(`${API_BASE}/api/merchant/products`, {
       headers: { Authorization: `Bearer ${token}` },
       data: {
         name: PRODUCT_NAME,
-        type: '充值卡密',
+        categoryId,
         price: 3,
         deliveryMode: 'manual_service',
         stockMode: 'unlimited',
@@ -65,22 +69,26 @@ test.describe.serial('admin offer-scoped inventory import', () => {
     await expect(importButton).toBeVisible({ timeout: 10_000 })
     await importButton.click()
 
-    // 多个可导入规格：必须显式选择，不选直接导会被前端拦下。
+    // 多个可导入规格：必须显式选择，未选择时 preview 被禁用。
     const select = page.getByTestId('admin-import-offer-select')
     await expect(select).toBeVisible()
     await page.getByTestId('admin-import-inventory-text').fill(`${CARD_1}\n${CARD_2}`)
-    await page.getByTestId('admin-import-inventory-confirm').click()
-    await expect(page.getByText('请选择目标规格')).toBeVisible()
+    await expect(page.getByTestId('admin-import-inventory-preview')).toBeDisabled()
 
     await select.selectOption(String(state.offerBId))
+    await page.getByTestId('admin-import-inventory-preview').click()
+    await expect(page.getByTestId('admin-inventory-preview-result')).toBeVisible({ timeout: 10_000 })
     await page.getByTestId('admin-import-inventory-confirm').click()
     await expect(page.getByText('成功导入 2 个交付单元')).toBeVisible({ timeout: 10_000 })
 
-    // 公开详情逐规格断言：即时库存规格的公开 stock = 实际可用条目数。
-    const detail = await request.get(`${API_BASE}/api/products/${state.productId}`)
-    expect(detail.ok()).toBeTruthy()
-    const offers = (await detail.json()).offers as { id: number; stock: number }[]
-    expect(offers.find(o => o.id === state.offerBId)?.stock).toBe(2)
-    expect(offers.find(o => o.id === state.offerAId)?.stock).toBe(0)
+    // 草稿无需绕过 publish gate；商家自己的 Offer 投影即可证明库存只进入目标规格。
+    const token = await merchantToken(request)
+    const detail = await request.get(`${API_BASE}/api/merchant/products/${state.productId}/offers`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    expect(detail.ok(), await detail.text()).toBeTruthy()
+    const offers = await detail.json() as { id: number; availableStock?: number; stock: number }[]
+    expect(offers.find(o => o.id === state.offerBId)?.availableStock).toBe(2)
+    expect(offers.find(o => o.id === state.offerAId)?.availableStock).toBe(0)
   })
 })

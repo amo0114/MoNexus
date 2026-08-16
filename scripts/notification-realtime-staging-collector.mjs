@@ -242,6 +242,8 @@ async function installStreamProbe(page) {
     const listeners = new Set()
     let text = ''
     const statuses = []
+    const contentTypes = []
+    let requestCount = 0
     const notify = () => { for (const listener of [...listeners]) listener() }
     const waitFor = (predicate, timeoutMs) => new Promise((resolve, reject) => {
       if (predicate()) return resolve()
@@ -260,13 +262,22 @@ async function installStreamProbe(page) {
     target.__MONEXUS_RT_STAGING_PROBE__ = {
       waitReady: (timeoutMs) => waitFor(() => text.includes('stream.ready'), timeoutMs),
       waitStatus: (status, timeoutMs) => waitFor(() => statuses.includes(status), timeoutMs),
+      snapshot: () => ({
+        requestCount,
+        statuses: [...statuses],
+        contentTypes: [...contentTypes],
+        bodyBytesObserved: text.length,
+        readyObserved: text.includes('stream.ready'),
+      }),
     }
     window.fetch = (async (input, init) => {
       const request = new Request(input, init)
       const url = new URL(request.url, window.location.origin)
       if (url.pathname !== '/api/notifications/stream') return originalFetch(request)
+      requestCount += 1
       const response = await originalFetch(request)
       statuses.push(response.status)
+      contentTypes.push(response.headers.get('content-type') ?? '')
       notify()
       if (!response.body || !response.headers.get('content-type')?.includes('text/event-stream')) return response
       const [applicationBody, inspectionBody] = response.body.tee()
@@ -294,19 +305,29 @@ async function installStreamProbe(page) {
 }
 
 async function waitForProbe(page, kind, value, timeoutMs) {
-  await page.evaluate(({ requestedKind, requestedValue, timeout }) => {
-    const probe = window.__MONEXUS_RT_STAGING_PROBE__
-    if (!probe) throw new Error('staging stream probe missing')
-    return requestedKind === 'ready'
-      ? probe.waitReady(timeout)
-      : probe.waitStatus(requestedValue, timeout)
-  }, { requestedKind: kind, requestedValue: value, timeout: timeoutMs })
+  try {
+    await page.evaluate(({ requestedKind, requestedValue, timeout }) => {
+      const probe = window.__MONEXUS_RT_STAGING_PROBE__
+      if (!probe) throw new Error('staging stream probe missing')
+      return requestedKind === 'ready'
+        ? probe.waitReady(timeout)
+        : probe.waitStatus(requestedValue, timeout)
+    }, { requestedKind: kind, requestedValue: value, timeout: timeoutMs })
+  } catch (error) {
+    const snapshot = await page.evaluate(() => (
+      window.__MONEXUS_RT_STAGING_PROBE__?.snapshot?.() ?? null
+    )).catch(() => null)
+    const message = error instanceof Error ? error.message : String(error)
+    throw new Error(`${message}; stream_probe=${JSON.stringify(snapshot)}`)
+  }
 }
 
 async function openMerchantOrders(page, expectedStream, session) {
   await installStreamProbe(page)
   await injectMerchantSession(page, session)
-  await page.goto(new URL('/merchant/dashboard', baseUrl).href, { waitUntil: 'domcontentloaded' })
+  // The orders tab and its DOM probe belong to the main merchant workbench;
+  // /merchant/dashboard is the separate analytics page and has no order tab.
+  await page.goto(new URL('/merchant', baseUrl).href, { waitUntil: 'domcontentloaded' })
   if (expectedStream === 'ready') await waitForProbe(page, 'ready', null, 15_000)
   else await waitForProbe(page, 'status', 404, 15_000)
   await page.getByRole('button', { name: '订单管理', exact: true }).click()
@@ -346,6 +367,7 @@ async function runLatency(password) {
   let failureCount = 0
   let failedSample = 0
   let failureStage = 'browser_start'
+  let failureMessage = ''
   let caught = null
 
   try {
@@ -365,7 +387,13 @@ async function runLatency(password) {
     await openMerchantOrders(page, 'ready', merchantSession)
     for (let index = 0; index < sampleCount; index += 1) {
       failureStage = 'order_api'
-      const orderId = await createOrder(buyerApi, checkout, password)
+      let orderId
+      try {
+        orderId = await createOrder(buyerApi, checkout, password)
+      } catch (error) {
+        failedSample = index + 1
+        throw error
+      }
       const apiCompletedAt = performance.now()
       failureStage = 'merchant_dom'
       try {
@@ -382,6 +410,7 @@ async function runLatency(password) {
     failureStage = 'complete'
   } catch (error) {
     caught = error
+    failureMessage = error instanceof Error ? error.message : String(error)
     if (failureCount === 0) failureCount = 1
   } finally {
     await Promise.allSettled([
@@ -412,6 +441,7 @@ async function runLatency(password) {
     `failure_count=${failureCount}`,
     `failure_stage=${passed ? 'none' : failureStage}`,
     `failed_sample=${failedSample}`,
+    `failure_message=${(passed ? '' : failureMessage).replace(/[\r\n=]/g, ' ').slice(0, 240)}`,
     `p50_ms=${p50}`,
     `p95_ms=${p95}`,
     `p99_ms=${p99}`,
@@ -431,7 +461,7 @@ async function runLatency(password) {
   }
 
   if (!passed) {
-    console.error(`[FAIL] staging latency collection stopped at ${failureStage}; aggregate FAIL evidence was written`)
+    console.error(`[FAIL] staging latency collection stopped at ${failureStage}; ${failureMessage || 'no error message'}; aggregate FAIL evidence was written`)
     throw new Error('staging latency thresholds or sample completion requirements were not met')
   }
   saveState({ lastOrderId, latencySamples: latencies.length })

@@ -1,13 +1,14 @@
 import { describe, it, expect } from 'vitest'
 import { prisma } from '../../lib/prisma.js'
 import { api } from '../../__tests__/helpers.js'
+import { getActiveNetworkNodeCategoryId } from '../../__tests__/catalogFixture.js'
 
 const images = ['https://cdn.test.local/pub-1.png', 'https://cdn.test.local/pub-2.png']
 
 describe('Public products API images serialization', () => {
   it('includes images in product list', async () => {
     await prisma.product.create({
-      data: { name: '公开多图商品', type: '网络节点', price: 100, images },
+      data: { name: '公开多图商品', type: '网络节点', price: 100, images, status: 'active', categoryId: await getActiveNetworkNodeCategoryId() },
     })
 
     const res = await api.get('/api/products').expect(200)
@@ -17,19 +18,19 @@ describe('Public products API images serialization', () => {
     expect(res.body.items[0].images).toEqual(images)
   })
 
-  it('paginates product list by cursor in stable store order', async () => {
+  it('paginates the no-run product list by id DESC without reading legacy isHot/sales', async () => {
     await prisma.product.createMany({
       data: [
-        { name: '热门高销量', type: '网络节点', price: 100, isHot: true, sales: 10 },
-        { name: '热门低销量', type: '网络节点', price: 100, isHot: true, sales: 5 },
-        { name: '普通高销量', type: '网络节点', price: 100, isHot: false, sales: 100 },
+        { name: '热门高销量', type: '网络节点', price: 100, isHot: true, sales: 10, status: 'active', categoryId: await getActiveNetworkNodeCategoryId() },
+        { name: '热门低销量', type: '网络节点', price: 100, isHot: true, sales: 5, status: 'active', categoryId: await getActiveNetworkNodeCategoryId() },
+        { name: '普通高销量', type: '网络节点', price: 100, isHot: false, sales: 100, status: 'active', categoryId: await getActiveNetworkNodeCategoryId() },
       ],
     })
 
     const firstPage = await api.get('/api/products').query({ pageSize: 2 }).expect(200)
 
     expect(firstPage.body.items.map((product: { name: string }) => product.name))
-      .toEqual(['热门高销量', '热门低销量'])
+      .toEqual(['普通高销量', '热门低销量'])
     expect(firstPage.body.hasMore).toBe(true)
     expect(firstPage.body.nextCursor).toEqual(expect.any(String))
 
@@ -38,7 +39,7 @@ describe('Public products API images serialization', () => {
       .expect(200)
 
     expect(secondPage.body.items.map((product: { name: string }) => product.name))
-      .toEqual(['普通高销量'])
+      .toEqual(['热门高销量'])
     expect(secondPage.body.hasMore).toBe(false)
     expect(secondPage.body.nextCursor).toBeNull()
   })
@@ -49,7 +50,7 @@ describe('Public products API images serialization', () => {
 
   it('includes images in product detail', async () => {
     const product = await prisma.product.create({
-      data: { name: '公开详情商品', type: '网络节点', price: 100, images },
+      data: { name: '公开详情商品', type: '网络节点', price: 100, images, status: 'active', categoryId: await getActiveNetworkNodeCategoryId() },
     })
 
     const res = await api.get(`/api/products/${product.id}`).expect(200)

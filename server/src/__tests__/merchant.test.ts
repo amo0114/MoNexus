@@ -10,6 +10,7 @@ import {
   loginAsMerchant,
   authHeader,
 } from './helpers.js'
+import { getActiveCategoryIdByLabel, getActiveNetworkNodeCategoryId } from './catalogFixture.js'
 
 afterEach(async () => {
   await prisma.systemConfig.deleteMany({ where: { key: { in: ['lowStockThreshold'] } } })
@@ -107,6 +108,8 @@ describe('Merchant product and order flows', () => {
         merchantId: merchant.id,
         name: 'Alpha Low Node',
         type: '网络节点',
+        categoryId: await getActiveNetworkNodeCategoryId(),
+        status: 'active',
         price: 100,
         // 模拟旧 Product.stock 投影不一致；商家列表必须返回实际可用条目数。
         stock: 99,
@@ -129,6 +132,7 @@ describe('Merchant product and order flows', () => {
         merchantId: merchant.id,
         name: 'Alpha Manual Service',
         type: '共享账号',
+        categoryId: await getActiveCategoryIdByLabel('共享账号'),
         price: 200,
         deliveryMode: 'manual_service',
       },
@@ -137,6 +141,7 @@ describe('Merchant product and order flows', () => {
       data: {
         name: 'Alpha Foreign Node',
         type: '网络节点',
+        categoryId: await getActiveNetworkNodeCategoryId(),
         price: 100,
         deliveryMode: 'instant_inventory',
       },

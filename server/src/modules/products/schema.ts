@@ -51,6 +51,7 @@ export const productFixedContentTypeSchema = z.enum(['text', 'url'])
 
 export const listProductsQuerySchema = z.object({
   q: z.string().optional(),
+  categoryCode: z.string().trim().min(1).optional(),
   category: z.string().optional(),
   cursor: z.string().min(1).optional(),
   page: z.coerce.number().int().positive().default(1),

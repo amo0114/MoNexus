@@ -6,7 +6,7 @@ const PAGE_SIZE = 60
 /**
  * M9-A5：商城“加载更多”追加分页 + 商品详情移除评价区。
  * 前置：商城需要 ≥ PAGE_SIZE + 1 个上架商品才会出现第 2 页。dev 库不足时通过管理员 API
- * 一次性补齐占位商品（价格 99999、无库存，不影响既有业务数据），重复执行不再新建。
+ * 一次性补齐占位商品，并显式走当前草稿→发布门禁，重复执行不再新建。
  */
 test.beforeAll(async ({ request }) => {
   const listRes = await request.get(`${API_BASE}/api/products?pageSize=100`)
@@ -26,9 +26,20 @@ test.beforeAll(async ({ request }) => {
         description: 'E2E 分页测试自动创建的占位商品，可忽略。',
         type: '充值卡密',
         price: 99999,
+        deliveryMode: 'instant_fixed',
+        stockMode: 'unlimited',
+        fixedContent: 'https://example.test/e2e-pagination-placeholder',
+        fixedContentType: 'url',
+        imageUrl: '/assets/network.webp',
+        images: ['/assets/network.webp'],
       },
     })
     expect(createRes.ok()).toBe(true)
+    const created = await createRes.json() as { id: number }
+    const publishRes = await request.post(`${API_BASE}/api/admin/products/${created.id}/publish`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    })
+    expect(publishRes.ok(), await publishRes.text()).toBe(true)
   }
 })
 

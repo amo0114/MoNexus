@@ -30,12 +30,7 @@ export type NotificationEvent = {
   context?: Record<string, unknown>
 }
 
-type NotificationWriter = Pick<Prisma.TransactionClient, 'notification'> & {
-  /** Present on every real Prisma transaction client; optional in the type so
-   * narrow caller typings (e.g. fulfillment) still satisfy the writer. The
-   * dispatcher fails loud if realtime is enabled but it is missing. */
-  $queryRaw?: Prisma.TransactionClient['$queryRaw']
-}
+type NotificationWriter = Pick<Prisma.TransactionClient, 'notification' | '$queryRaw'>
 
 /** NTF-05: merchant new-order only for human manual attention after auto-task branches. */
 export function shouldNotifyMerchantNewOrder(input: {
@@ -190,9 +185,6 @@ export class NotificationDispatcher {
     // channel. Any SQL failure propagates so business write + Notification + hint
     // roll back together. Never catch/defer/run-after-commit.
     if (config.notificationRealtime.enabled) {
-      if (typeof tx.$queryRaw !== 'function') {
-        throw new Error('NotificationWriter must expose $queryRaw when NOTIFICATION_REALTIME_ENABLED=true')
-      }
       const payload = serializePgPayload(created.id, event.recipientUserId)
       // Called as a method on tx so Prisma keeps its internal `this` binding.
       // ::text cast avoids Prisma's inability to deserialize a void column.

@@ -305,7 +305,7 @@ export const notificationRealtimeConnections = new client.Gauge({
 export const notificationRealtimePgMessagesTotal = new client.Counter({
   name: 'notification_realtime_pg_messages_total',
   help: 'PostgreSQL NOTIFY messages by terminal outcome',
-  labelNames: ['outcome'] as const, // routed|invalid|no_subscriber|not_found|query_error|probe_error
+  labelNames: ['outcome'] as const, // routed|invalid|no_subscriber|not_found|query_error|overload|probe_error
   registers: [registry],
 })
 
@@ -329,7 +329,7 @@ export const notificationRealtimeDisconnectsTotal = new client.Counter({
 export const notificationRealtimeConnectionRejectionsTotal = new client.Counter({
   name: 'notification_realtime_connection_rejections_total',
   help: 'SSE connection rejections by reason',
-  labelNames: ['reason'] as const, // rate|user_cap|ip_cap|global_cap|unavailable|draining
+  labelNames: ['reason'] as const, // rate|auth_expired|user_cap|ip_cap|global_cap|unavailable|draining
   registers: [registry],
 })
 

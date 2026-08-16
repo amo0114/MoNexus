@@ -7,6 +7,7 @@ import {
 } from '../modules/orders/service.js'
 import { prisma } from '../lib/prisma.js'
 import { createTestUser } from './helpers.js'
+import { getActiveCategoryIdByLabel, getActiveNetworkNodeCategoryId } from './catalogFixture.js'
 
 const ORIG_FAKA = { ...config.fakaBridge }
 
@@ -44,6 +45,7 @@ async function createFakaProduct(price = 200) {
     data: {
       name: 'Aster 小雏鸡月卡',
       type: '网络节点',
+      categoryId: await getActiveNetworkNodeCategoryId(),
       price,
       status: 'active',
       stock: 0,
@@ -160,6 +162,7 @@ describe('M3 createOrder FakaBridge outbox', () => {
       data: {
         name: '普通卡密',
         type: '充值卡密',
+        categoryId: await getActiveCategoryIdByLabel('充值卡密'),
         price: 50,
         status: 'active',
         stock: 1,

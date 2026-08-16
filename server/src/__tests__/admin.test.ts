@@ -336,21 +336,33 @@ describe('POST /api/admin/products/:id/inventory', () => {
       .send({ items: ['guard-2'], offerId: foreignOfferId })
       .expect(404)
 
-    // P4b：带交付字段模板的规格必须走商家端结构化导入。
+    // P4b：带交付字段模板的规格走结构化导入（Catalog-Ops spec §8.2：Merchant/Admin 共用分析器，
+    // 结构化字段沿用现有限制）——admin 直接导入亦为合法路径。
     const templated = await prisma.offer.create({
       data: {
         productId: product.id,
         name: '模板规格',
         price: 300,
-        deliveryFields: [{ key: 'account', label: '账号', sensitive: false }],
+        deliveryFields: [
+          { key: 'account', label: '账号', sensitive: false },
+          { key: 'password', label: '密码', sensitive: true },
+        ],
       },
     })
-    const structuredOnly = await api
+    const structuredImport = await api
       .post(`/api/admin/products/${product.id}/inventory`)
       .set(authHeader(accessToken))
-      .send({ items: ['guard-3'], offerId: templated.id })
-      .expect(400)
-    expect(structuredOnly.body.error.message).toContain('交付字段模板')
+      .send({ items: ['guard-3 | secret-3'], offerId: templated.id })
+      .expect(200)
+    const structuredItem = await prisma.inventoryItem.findFirst({
+      where: { productId: product.id, offerId: templated.id },
+      select: { id: true, structuredContent: true, content: true },
+    })
+    expect(structuredItem).not.toBeNull()
+    expect(structuredItem!.structuredContent).toMatchObject({
+      values: { account: 'guard-3', password: 'secret-3' },
+    })
+    expect(structuredItem!.content).toContain('账号: guard-3')
 
     // 全商品无即时库存规格 → 维持旧错误语义。
     const serviceProduct = await createTestProduct('纯服务商品', 100, 0, [])

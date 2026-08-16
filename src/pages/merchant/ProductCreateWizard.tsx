@@ -1,32 +1,37 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  ArrowLeft, ArrowRight, Check, CreditCard, FileText, Globe, KeyRound, Loader2,
-  Package, Sparkles, Trash2, UserRound, Wrench, Coins,
+  ArrowLeft, ArrowRight, Check, Coins, CreditCard, FileText, Globe, Loader2,
+  Package, Trash2, UserRound, Wrench,
 } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import DOMPurify from 'dompurify'
 import { useAppStore } from '../../stores/appStore'
-import { createMerchantProduct } from '../../api/merchant'
-import PurchaseFormFieldsEditor, {
-  serializePurchaseFormFields, validatePurchaseFormFields,
-} from '../../components/merchant/PurchaseFormFieldsEditor'
+import ProductCategorySelect from '../../components/catalog/ProductCategorySelect'
+import ProductAvailabilityStep from '../../components/catalog/ProductAvailabilityStep'
+import ProductPublicationChecklist from '../../components/catalog/ProductPublicationChecklist'
 import ProductImageUploader from '../../components/merchant/ProductImageUploader'
-import type { PurchaseFormField, DeliveryMode, StockMode } from '../../types/merchant'
+import {
+  buildDraftProductRequest, catalogApi, readinessErrorToIssues,
+  type CatalogAdapter, type DraftProductInput,
+} from '../../api/catalog'
+import {
+  SEED_CATEGORY_CODE,
+  type AvailabilityOffer, type CatalogDraftProduct, type CategoryRegistryItem,
+  type PublicationReadiness, type SeedCategoryCode,
+} from '../../types/catalog'
+import type { DeliveryMode, StockMode } from '../../types/merchant'
 
 /** 主规格默认名（与服务端 lib/offers.ts 的 DEFAULT_OFFER_NAME 一致）。 */
 const DEFAULT_OFFER_NAME = '默认规格'
 
-/**
- * 附加规格（P4a）：主规格由「定价」+「交付方式」两步的商品级字段构成，
- * 这里是在其之上追加的其他 SKU。发布时先建商品（含主规格），再逐条建附加规格。
- */
+/** 附加规格（P4a）：主规格由「定价」+「交付方式」两步的商品级字段构成。 */
 interface ExtraOffer {
   name: string
   price: string
   originalPrice: string
   deliveryMode: DeliveryMode
   stockMode: StockMode
-  stock: string
   fixedContent: string
   fixedContentType: 'text' | 'url'
   /** P6a：订阅有效期(天),空字符串 = 永久。 */
@@ -35,21 +40,30 @@ interface ExtraOffer {
 
 const EMPTY_EXTRA_OFFER: ExtraOffer = {
   name: '', price: '', originalPrice: '', deliveryMode: 'instant_inventory',
-  stockMode: 'limited', stock: '', fixedContent: '', fixedContentType: 'text',
+  stockMode: 'limited', fixedContent: '', fixedContentType: 'text',
   validityDays: '',
+}
+
+interface TemplatePreset {
+  /** 模板预置的分类 seed code；分类加载后解析为 categoryId。 */
+  categoryCode: SeedCategoryCode | null
+  deliveryMode: DeliveryMode
+  icon: string
 }
 
 /**
  * 商品模板：只负责引导与默认值，不锁死任何选项（spec：模板机制取代
- * 类别→交付方式耦合，类别自此仅作展示分类）。
+ * 类别→交付方式耦合，类别自此仅作展示分类，绝不自动切换 deliveryMode）。
  */
-const TEMPLATES = [
+const TEMPLATES: Array<{ id: string; name: string; icon: LucideIcon; description: string; preset: TemplatePreset }> = [
   {
     id: 'card_key',
     name: '充值卡密',
     icon: CreditCard,
     description: '一人一码，导入库存后自动发货',
-    preset: { type: '充值卡密', deliveryMode: 'instant_inventory', icon: 'CreditCard', purchaseForm: [] as PurchaseFormField[] },
+    preset: {
+      categoryCode: SEED_CATEGORY_CODE.RECHARGE_CARD, deliveryMode: 'instant_inventory', icon: 'CreditCard',
+    },
   },
   {
     id: 'shared_account',
@@ -57,12 +71,7 @@ const TEMPLATES = [
     icon: UserRound,
     description: '账号密码类商品，可收集买家联系方式',
     preset: {
-      type: '共享账号',
-      deliveryMode: 'instant_inventory',
-      icon: 'UserRound',
-      purchaseForm: [
-        { key: 'contact', label: '联系方式', type: 'text', required: true, placeholder: '便于售后联系，如 TG / 邮箱' },
-      ] as PurchaseFormField[],
+      categoryCode: SEED_CATEGORY_CODE.SHARED_ACCOUNT, deliveryMode: 'instant_inventory', icon: 'UserRound',
     },
   },
   {
@@ -70,14 +79,18 @@ const TEMPLATES = [
     name: '网络服务',
     icon: Globe,
     description: '节点/订阅链接，即时或人工开通',
-    preset: { type: '网络节点', deliveryMode: 'instant_inventory', icon: 'Globe', purchaseForm: [] as PurchaseFormField[] },
+    preset: {
+      categoryCode: SEED_CATEGORY_CODE.NETWORK_NODE, deliveryMode: 'instant_inventory', icon: 'Globe',
+    },
   },
   {
     id: 'digital_content',
     name: '数字内容',
     icon: FileText,
     description: '群链接、教程等固定内容，人人相同',
-    preset: { type: '邀请码', deliveryMode: 'instant_fixed', icon: 'FileText', purchaseForm: [] as PurchaseFormField[] },
+    preset: {
+      categoryCode: SEED_CATEGORY_CODE.INVITE_CODE, deliveryMode: 'instant_fixed', icon: 'FileText',
+    },
   },
   {
     id: 'manual_service',
@@ -85,13 +98,7 @@ const TEMPLATES = [
     icon: Wrench,
     description: '代办/开通/咨询，收集需求后人工履约',
     preset: {
-      type: '共享账号',
-      deliveryMode: 'manual_service',
-      icon: 'Wrench',
-      purchaseForm: [
-        { key: 'contact', label: '联系方式', type: 'text', required: true, placeholder: '便于沟通，如 TG / 邮箱' },
-        { key: 'requirement', label: '需求说明', type: 'text', required: false, placeholder: '补充你的具体要求' },
-      ] as PurchaseFormField[],
+      categoryCode: SEED_CATEGORY_CODE.SHARED_ACCOUNT, deliveryMode: 'manual_service', icon: 'Wrench',
     },
   },
   {
@@ -99,49 +106,84 @@ const TEMPLATES = [
     name: '空白开始',
     icon: Package,
     description: '不使用模板，自由配置全部选项',
-    preset: { type: '网络节点', deliveryMode: 'instant_inventory', icon: 'package', purchaseForm: [] as PurchaseFormField[] },
+    preset: {
+      categoryCode: null, deliveryMode: 'instant_inventory', icon: 'package',
+    },
   },
-] as const
+]
 
-const STEPS = ['选择模板', '展示信息', '定价', '交付方式', '购买前信息与发布'] as const
+/**
+ * 步骤拆分（REQ-CAT-F-003）：目录/规格 → 保存草稿 → 可售量 → 发布。
+ * 可售量与发布只有在草稿保存（保留 productId）后才可达。
+ *
+ * 购买前表单不进入草稿 create（冻结 DraftProductCreateRequest 白名单无
+ * purchaseForm 字段）；草稿创建后通过商品「编辑」流程（含
+ * edit-purchase-form-section）配置。
+ */
+const STEPS = ['选择模板', '展示信息', '定价', '交付方式', '确认草稿', '可售量', '发布'] as const
+const LAST_STEP = STEPS.length - 1
 
-type WizardForm = {
+interface WizardForm {
   name: string
-  type: string
+  /** 稳定分类 id；分类只影响展示/检索，绝不自动切 deliveryMode（D-CAT-05）。 */
+  categoryId: number | null
   icon: string
   description: string
   richDescription: string
-  isHot: boolean
   price: string
   originalPrice: string
-  deliveryMode: string
-  stockMode: string
-  stock: string
+  deliveryMode: DeliveryMode
+  stockMode: StockMode
   fixedContent: string
-  fixedContentType: string
+  fixedContentType: 'text' | 'url'
   /** 复审 P2-2：默认规格的订阅有效期(天),空字符串 = 永久。 */
   validityDays: string
-  purchaseForm: PurchaseFormField[]
 }
 
-export default function ProductCreateWizard() {
+interface Props {
+  /** 可注入 Catalog adapter（生产默认共享 client；测试注入 fixture transport）。 */
+  adapter?: CatalogAdapter
+}
+
+export default function ProductCreateWizard({ adapter = catalogApi }: Props) {
   const navigate = useNavigate()
   const showToast = useAppStore((s) => s.showToast)
   const registry = useAppStore((s) => s.registry)
   const [step, setStep] = useState(0)
-  const [submitting, setSubmitting] = useState(false)
   const [templateId, setTemplateId] = useState<string | null>(null)
   const [images, setImages] = useState<string[]>([])
+  const [categories, setCategories] = useState<CategoryRegistryItem[]>([])
   const [form, setForm] = useState<WizardForm>({
-    name: '', type: '网络节点', icon: 'package', description: '', richDescription: '',
-    isHot: false, price: '', originalPrice: '', deliveryMode: 'instant_inventory',
-    stockMode: 'unlimited', stock: '', fixedContent: '', fixedContentType: 'text',
+    name: '', categoryId: null, icon: 'package', description: '', richDescription: '',
+    price: '', originalPrice: '', deliveryMode: 'instant_inventory',
+    stockMode: 'unlimited', fixedContent: '', fixedContentType: 'text',
     validityDays: '',
-    purchaseForm: [],
   })
   // P4a：主规格名 + 附加规格列表。单 SKU 商品保持两者为默认值/空，行为不变。
   const [primaryOfferName, setPrimaryOfferName] = useState(DEFAULT_OFFER_NAME)
   const [extraOffers, setExtraOffers] = useState<ExtraOffer[]>([])
+  // 草稿保存后保留 productId，可进入独立可售量步骤（CHK-UI-001）。
+  const [draft, setDraft] = useState<CatalogDraftProduct | null>(null)
+  // Offer mutation 必须使用服务端分配的真实 id；create response 不含 offers，
+  // 因而保存后从权威 endpoint 重查。加载失败时阻断可售量操作，不合成本地 id。
+  const [availabilityOffers, setAvailabilityOffers] = useState<AvailabilityOffer[] | null>(null)
+  const [availabilityLoading, setAvailabilityLoading] = useState(false)
+  const [saving, setSaving] = useState(false)
+  // 并发重入保护：状态更新在 React flush 前不生效，防止快速双击创建两个草稿。
+  const savingRef = useRef(false)
+  const [readiness, setReadiness] = useState<PublicationReadiness | null>(null)
+  const [readinessLoading, setReadinessLoading] = useState(false)
+  const [publishing, setPublishing] = useState(false)
+
+  // 加载 active 分类（公开 registry 只返回 active，spec §7.1）。
+  useEffect(() => {
+    let cancelled = false
+    adapter.listActiveCategories()
+      .then((cats) => { if (!cancelled) setCategories(cats) })
+      .catch(() => { if (!cancelled) showToast('分类加载失败，请刷新重试', 'error') })
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const safePreviewHtml = useMemo(
     () => DOMPurify.sanitize(form.richDescription || form.description || '', { USE_PROFILES: { html: true } }),
@@ -152,20 +194,20 @@ export default function ProductCreateWizard() {
     const template = TEMPLATES.find(t => t.id === id)
     if (!template) return
     setTemplateId(id)
+    const category = categories.find(c => c.code === template.preset.categoryCode)
     setForm(prev => ({
       ...prev,
-      type: template.preset.type,
+      categoryId: category ? category.id : prev.categoryId,
       deliveryMode: template.preset.deliveryMode,
       icon: template.preset.icon,
       stockMode: template.preset.deliveryMode === 'instant_inventory' ? 'limited' : 'unlimited',
-      // 深拷贝：后续编辑不能改到模板常量
-      purchaseForm: template.preset.purchaseForm.map(f => ({ ...f, options: f.options ? [...f.options] : undefined })),
     }))
   }
 
   function validateStep(current: number): string | null {
     if (current === 1) {
       if (!form.name.trim()) return '商品名称不能为空'
+      if (form.categoryId == null) return '请选择商品分类'
     }
     if (current === 2) {
       const price = Number(form.price)
@@ -203,12 +245,6 @@ export default function ProductCreateWizard() {
             return `${label}：链接必须以 http(s):// 开头`
           }
         }
-        if (offer.deliveryMode !== 'instant_inventory' && offer.stockMode === 'limited') {
-          const stock = Number(offer.stock)
-          if (offer.stock.trim() === '' || !Number.isInteger(stock) || stock < 0) {
-            return `${label}：限量名额必须填写有效数量`
-          }
-        }
       }
     }
     if (current === 3) {
@@ -218,64 +254,41 @@ export default function ProductCreateWizard() {
           return '链接必须以 http(s):// 开头'
         }
       }
-      if (form.deliveryMode !== 'instant_inventory' && form.stockMode === 'limited') {
-        const stock = Number(form.stock)
-        if (form.stock.trim() === '' || !Number.isInteger(stock) || stock < 0) return '限量名额必须填写有效数量'
-      }
-    }
-    if (current === 4) {
-      return validatePurchaseFormFields(form.purchaseForm)
     }
     return null
   }
 
-  function goNext() {
-    const error = validateStep(step)
-    if (error) {
-      showToast(error, 'error')
-      return
-    }
-    setStep(s => Math.min(s + 1, STEPS.length - 1))
-  }
-
-  async function handlePublish() {
-    const error = validateStep(4)
-    if (error) {
-      showToast(error, 'error')
-      return
-    }
-    const payload: any = {
+  /**
+   * 组装 create payload 输入。payload 本身由 buildDraftProductRequest 的白名单
+   * 生成：即时秘密库存（inventoryItems/content）、isHot、stock 与任何未知键在
+   * 构建时被剥离（CAT-002/003、CHK-PROD-002）；新草稿 limited 初始 stock 固定 0，
+   * 名额只经独立 capacity API 调整（spec §6.2）。
+   */
+  function buildCreateInput(): DraftProductInput {
+    const input: DraftProductInput = {
       name: form.name.trim(),
-      type: form.type,
+      categoryId: form.categoryId ?? 0,
       price: Number(form.price),
       description: form.description.trim() || undefined,
       richDescription: form.richDescription.trim() || undefined,
       icon: form.icon.trim() || undefined,
       imageUrl: images[0] || undefined,
       images,
-      isHot: form.isHot,
       deliveryMode: form.deliveryMode,
-      purchaseForm: serializePurchaseFormFields(form.purchaseForm),
+      stockMode: form.deliveryMode === 'instant_inventory' ? 'limited' : form.stockMode,
     }
-    if (form.originalPrice.trim() !== '') payload.originalPrice = Number(form.originalPrice)
-    // 复审 P2-2：默认规格的订阅有效期随创建请求落 Offer；缺省即永久有效。
-    if (form.validityDays.trim() !== '') payload.validityDays = Number(form.validityDays)
-    if (form.deliveryMode !== 'instant_inventory') {
-      payload.stockMode = form.stockMode
-      if (form.stockMode === 'limited') payload.stock = Number(form.stock)
-    }
+    if (form.originalPrice.trim() !== '') input.originalPrice = Number(form.originalPrice)
+    if (form.validityDays.trim() !== '') input.validityDays = Number(form.validityDays)
     if (form.deliveryMode === 'instant_fixed') {
-      payload.fixedContent = form.fixedContent.trim()
-      payload.fixedContentType = form.fixedContentType
+      input.fixedContent = form.fixedContent.trim()
+      input.fixedContentType = form.fixedContentType
     }
-    // F3：主规格名 + 附加规格随创建请求一次事务落库；任一规格无效则整体失败，
-    // 不再出现"商品建了、规格没建全"的中间态。
     const trimmedPrimaryName = primaryOfferName.trim()
     if (trimmedPrimaryName && trimmedPrimaryName !== DEFAULT_OFFER_NAME) {
-      payload.primaryOfferName = trimmedPrimaryName
+      input.primaryOfferName = trimmedPrimaryName
     }
     if (extraOffers.length > 0) {
-      payload.offers = extraOffers.map(offer => ({
+      input.offers = extraOffers.map(offer => ({
         name: offer.name.trim(),
         price: Number(offer.price),
         originalPrice: offer.originalPrice.trim() === '' ? null : Number(offer.originalPrice),
@@ -283,24 +296,127 @@ export default function ProductCreateWizard() {
         stockMode: offer.deliveryMode === 'instant_inventory' ? 'limited' : offer.stockMode,
         // P6a：填写才携带；缺省即永久有效
         ...(offer.validityDays.trim() !== '' ? { validityDays: Number(offer.validityDays) } : {}),
-        ...(offer.deliveryMode !== 'instant_inventory' && offer.stockMode === 'limited'
-          ? { stock: Number(offer.stock) }
-          : {}),
         ...(offer.deliveryMode === 'instant_fixed'
           ? { fixedContent: offer.fixedContent.trim(), fixedContentType: offer.fixedContentType }
           : {}),
       }))
     }
+    return input
+  }
 
-    setSubmitting(true)
+  async function loadAvailabilityOffers(productId: number): Promise<boolean> {
+    setAvailabilityLoading(true)
     try {
-      await createMerchantProduct(payload)
-      showToast('商品创建成功')
-      navigate('/merchant')
-    } catch (err: any) {
-      showToast(err.response?.data?.error?.message || '创建失败', 'error')
+      const offers = await adapter.listProductOffers(productId)
+      setAvailabilityOffers(offers)
+      return true
+    } catch {
+      setAvailabilityOffers(null)
+      showToast('草稿已保存，但规格加载失败；请重试后再调整可售量', 'error')
+      return false
     } finally {
-      setSubmitting(false)
+      setAvailabilityLoading(false)
+    }
+  }
+
+  /**
+   * 保存草稿：原子 create draft Product+Offers（REQ-CAT-F-001）。成功后保留
+   * productId，失败保留全部输入并停留当前步（CHK-UI-001、AC-CAT-001）。
+   * 已保存过则幂等直接通过，避免重复创建第二个草稿。
+   */
+  async function saveDraft(): Promise<boolean> {
+    // 幂等：已保存过或保存进行中（并发重入）都直接通过，绝不创建第二个草稿。
+    if (draft || savingRef.current) return true
+    savingRef.current = true
+    const firstError = [1, 2, 3].map(v => validateStep(v)).find(Boolean)
+    if (firstError) {
+      savingRef.current = false
+      showToast(firstError, 'error')
+      return false
+    }
+    setSaving(true)
+    try {
+      const created = await adapter.createDraftProduct(buildDraftProductRequest(buildCreateInput()))
+      setDraft(created)
+      await loadAvailabilityOffers(created.id)
+      showToast('草稿已保存，可继续配置可售量')
+      return true
+    } catch (err) {
+      showToast(getErrorMessage(err, '草稿保存失败，请重试'), 'error')
+      return false
+    } finally {
+      savingRef.current = false
+      setSaving(false)
+    }
+  }
+
+  async function goNext() {
+    if (step === 4) {
+      const ok = await saveDraft()
+      if (!ok) return
+    } else {
+      const error = validateStep(step)
+      if (error) {
+        showToast(error, 'error')
+        return
+      }
+    }
+    setStep(s => Math.min(s + 1, LAST_STEP))
+  }
+
+  async function handleAdjustCapacity(request: { offerId: number; delta: number; reason: string }) {
+    const id = draft?.id
+    if (id == null) throw new Error('尚未保存草稿')
+    await adapter.adjustCapacity(id, request)
+    showToast('可售名额已调整')
+  }
+
+  async function handleVoidInventory(request: { offerId: number; count: number; reason: string }) {
+    const id = draft?.id
+    if (id == null) throw new Error('尚未保存草稿')
+    await adapter.voidInventory(id, request)
+    showToast('交付库存已作废')
+  }
+
+  // 进入发布步时拉取服务端权威 readiness（spec §6.1）。
+  useEffect(() => {
+    if (step === 6 && draft && !publishing) {
+      let cancelled = false
+      setReadinessLoading(true)
+      adapter.getPublicationReadiness(draft.id)
+        .then(r => { if (!cancelled) setReadiness(r) })
+        .catch(() => {
+          if (!cancelled) {
+            setReadiness(null)
+            showToast('获取发布检查失败，请重试', 'error')
+          }
+        })
+        .finally(() => { if (!cancelled) setReadinessLoading(false) })
+      return () => { cancelled = true }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, draft, publishing])
+
+  /**
+   * 发布：客户端“看起来完整”不能绕过服务端 readiness（D-CAT-03）。
+   * 失败保留 draft/输入，并把稳定 detail codes 映射为检查清单问题。
+   */
+  async function handlePublish() {
+    const id = draft?.id
+    if (id == null) return
+    setPublishing(true)
+    try {
+      await adapter.publishProduct(id)
+      showToast('商品发布成功')
+      navigate('/merchant')
+    } catch (err) {
+      const issues = readinessErrorToIssues(err)
+      if (issues.length > 0) {
+        setReadiness({ ready: false, productId: id, issues })
+      }
+      showToast(getErrorMessage(err, '发布失败，请先解决检查清单中的问题'), 'error')
+    } finally {
+      setPublishing(false)
     }
   }
 
@@ -308,13 +424,16 @@ export default function ProductCreateWizard() {
     ? { mode: '服务名额模式', unlimited: '不限服务名额', limited: '限量服务名额', quantity: '服务名额数量' }
     : { mode: '可售名额模式', unlimited: '不限可售名额', limited: '限量可售名额', quantity: '可售名额数量' }
 
+  const busy = saving || publishing
+  const selectedCategory = categories.find(c => c.id === form.categoryId) ?? null
+
   return (
     <div className="max-w-3xl mx-auto pb-16 fade-in" data-testid="product-create-wizard">
       <button onClick={() => navigate('/merchant')} className="flex items-center gap-1 text-sm text-[var(--color-text-muted)] hover:text-[var(--color-text)] mb-4 cursor-pointer">
         <ArrowLeft className="w-4 h-4" /> 返回商家中心
       </button>
       <h1 className="font-heading text-2xl font-bold text-[var(--color-text)] mb-1">发布新商品</h1>
-      <p className="text-sm text-[var(--color-text-muted)] mb-6">按步骤完成商品配置，发布前可预览买家看到的效果</p>
+      <p className="text-sm text-[var(--color-text-muted)] mb-6">按步骤完成商品配置，保存草稿后可独立补充可售量并发布</p>
 
       {/* 步骤条 */}
       <ol className="flex items-center gap-1 sm:gap-2 mb-8 overflow-x-auto" data-testid="wizard-steps">
@@ -369,7 +488,7 @@ export default function ProductCreateWizard() {
         )}
 
         {step === 1 && (
-          <div className="space-y-5">
+          <div className="space-y-5" data-testid="wizard-step-display">
             <div>
               <FieldLabel required>商品名称</FieldLabel>
               <input type="text" className="input" placeholder="输入吸引人的商品名称" value={form.name}
@@ -377,14 +496,13 @@ export default function ProductCreateWizard() {
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
               <div>
-                <FieldLabel required>展示分类</FieldLabel>
-                {/* 分类只影响商店筛选与展示，不再限制交付方式 */}
-                <select className="input appearance-none cursor-pointer" value={form.type}
-                  onChange={(e) => setForm({ ...form, type: e.target.value })} data-testid="wizard-type">
-                  {registry?.productTypes?.map(pt => (
-                    <option key={pt.value} value={pt.value}>{pt.label}</option>
-                  ))}
-                </select>
+                {/* 分类只影响展示/检索，绝不自动切换交付方式（D-CAT-05, CHK-CAT-005） */}
+                <ProductCategorySelect
+                  categories={categories}
+                  value={form.categoryId}
+                  onChange={(categoryId) => setForm({ ...form, categoryId })}
+                  disabled={busy}
+                />
               </div>
               <div>
                 <FieldLabel>图标（Lucide 名称）</FieldLabel>
@@ -392,7 +510,7 @@ export default function ProductCreateWizard() {
                   onChange={(e) => setForm({ ...form, icon: e.target.value })} />
               </div>
             </div>
-            <ProductImageUploader images={images} onChange={setImages} disabled={submitting} />
+            <ProductImageUploader images={images} onChange={setImages} disabled={busy} />
             <div>
               <FieldLabel>一句话简介</FieldLabel>
               <textarea className="input min-h-[60px] resize-y" placeholder="简明扼要地概括商品亮点..."
@@ -435,11 +553,6 @@ export default function ProductCreateWizard() {
                   data-testid="wizard-validity-days" />
                 <p className="mt-1.5 text-xs text-[var(--color-text-muted)]">留空为永久有效；改动仅影响新订单</p>
               </div>
-              <label className="flex items-center gap-2 text-sm cursor-pointer pt-2">
-                <input type="checkbox" checked={form.isHot} onChange={(e) => setForm({ ...form, isHot: e.target.checked })}
-                  className="w-4 h-4" />
-                <Sparkles className="w-4 h-4 text-[var(--color-cta)]" /> 设为热门推荐
-              </label>
             </div>
 
             {/* 附加规格（P4a）：可选，用于月卡/季卡、容量、地区等多 SKU 商品 */}
@@ -449,7 +562,8 @@ export default function ProductCreateWizard() {
                 <span className="text-xs text-[var(--color-text-muted)]">共 {extraOffers.length + 1} 个规格</span>
               </div>
               <p className="text-xs text-[var(--color-text-muted)] mb-4">
-                需要「月卡／季卡」「128G／256G」这类多规格时在此追加；每个规格有独立的价格、库存与交付方式。
+                需要「月卡／季卡」「128G／256G」这类多规格时在此追加；每个规格有独立的价格与交付方式。
+                规格名额一律在保存草稿后的「可售量」步骤独立调整。
               </p>
 
               <div className="space-y-4">
@@ -514,13 +628,6 @@ export default function ProductCreateWizard() {
                             </select>
                           </div>
                         )}
-                        {!isInventory && offer.stockMode === 'limited' && (
-                          <div>
-                            <FieldLabel required>初始名额</FieldLabel>
-                            <input type="number" step="1" min="0" className="input font-mono" placeholder="0"
-                              value={offer.stock} onChange={(e) => update({ stock: e.target.value })} />
-                          </div>
-                        )}
                         {isFixed && (
                           <>
                             <div>
@@ -540,7 +647,7 @@ export default function ProductCreateWizard() {
                         )}
                         {isInventory && (
                           <p className="sm:col-span-2 text-xs text-[var(--color-text-muted)]">
-                            该规格的卡密在商品创建后通过「管理交付库存」按规格导入。
+                            该规格的卡密在商品创建后通过「可售量」步骤按规格导入交付库存。
                           </p>
                         )}
                       </div>
@@ -573,7 +680,7 @@ export default function ProductCreateWizard() {
                       checked={form.deliveryMode === mode.value}
                       onChange={(e) => setForm({
                         ...form,
-                        deliveryMode: e.target.value,
+                        deliveryMode: e.target.value as DeliveryMode,
                         stockMode: e.target.value === 'instant_inventory' ? 'limited' : form.stockMode,
                       })}
                       className="w-4 h-4" />
@@ -585,7 +692,7 @@ export default function ProductCreateWizard() {
 
             {form.deliveryMode === 'instant_inventory' && (
               <div className="rounded-lg border border-[var(--color-primary)]/20 bg-[var(--color-primary)]/8 px-4 py-3 text-xs text-[var(--color-text-muted)]">
-                即时库存商品按「一个交付单元对应一位买家」管理。发布后请在商品列表中使用「管理交付库存」导入账号、卡密、邀请码等独立交付内容。
+                即时库存商品按「一个交付单元对应一位买家」管理。保存草稿后请在「可售量」步骤为每个规格导入账号、卡密、邀请码等独立交付内容。
               </div>
             )}
 
@@ -598,7 +705,7 @@ export default function ProductCreateWizard() {
                       <label key={value} className="flex items-center gap-2 cursor-pointer text-sm">
                         <input type="radio" name="wizardFixedContentType" value={value}
                           checked={form.fixedContentType === value}
-                          onChange={(e) => setForm({ ...form, fixedContentType: e.target.value })}
+                          onChange={(e) => setForm({ ...form, fixedContentType: e.target.value as 'text' | 'url' })}
                           className="w-4 h-4" />
                         {label}
                       </label>
@@ -626,31 +733,56 @@ export default function ProductCreateWizard() {
                 <div>
                   <FieldLabel required>{availabilityLabels.mode}</FieldLabel>
                   <select className="input appearance-none cursor-pointer" value={form.stockMode}
-                    onChange={(e) => setForm({ ...form, stockMode: e.target.value })} data-testid="stock-mode-select">
+                    onChange={(e) => setForm({ ...form, stockMode: e.target.value as StockMode })} data-testid="stock-mode-select">
                     <option value="unlimited">{availabilityLabels.unlimited}</option>
                     <option value="limited">{availabilityLabels.limited}</option>
                   </select>
                 </div>
-                {form.stockMode === 'limited' && (
-                  <div>
-                    <FieldLabel required>{availabilityLabels.quantity}</FieldLabel>
-                    <input type="number" step="1" min="0" className="input font-mono" value={form.stock}
-                      onChange={(e) => setForm({ ...form, stock: e.target.value })} data-testid="stock-input" />
-                  </div>
-                )}
+                <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] px-4 py-2.5 flex items-center">
+                  <p className="text-xs text-[var(--color-text-muted)]" data-testid="wizard-initial-stock-hint">
+                    新草稿初始名额为 0；保存草稿后可在「可售量」步骤独立调整。
+                  </p>
+                </div>
               </div>
             )}
           </div>
         )}
 
         {step === 4 && (
-          <div className="space-y-8">
+          <div className="space-y-8" data-testid="wizard-step-confirm">
             <div>
-              <h2 className="font-heading text-lg font-bold text-[var(--color-text)] mb-1">购买前需要买家填写什么？</h2>
-              <PurchaseFormFieldsEditor
-                fields={form.purchaseForm}
-                onChange={(purchaseForm) => setForm(prev => ({ ...prev, purchaseForm }))}
-              />
+              <h2 className="font-heading text-lg font-bold text-[var(--color-text)] mb-3">确认草稿内容</h2>
+              <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-background)] p-4 text-sm">
+                <div>
+                  <dt className="text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider">商品名称</dt>
+                  <dd className="mt-0.5 text-[var(--color-text)]" data-testid="wizard-confirm-name">{form.name || '（未填写）'}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider">商品分类</dt>
+                  <dd className="mt-0.5 text-[var(--color-text)]" data-testid="wizard-confirm-category">
+                    {selectedCategory ? `${selectedCategory.label}` : '（未选择）'}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider">价格</dt>
+                  <dd className="mt-0.5 text-[var(--color-text)] font-mono" data-testid="wizard-confirm-price">{form.price || '0'}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider">主规格</dt>
+                  <dd className="mt-0.5 text-[var(--color-text)]">{primaryOfferName.trim() || DEFAULT_OFFER_NAME}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider">交付方式</dt>
+                  <dd className="mt-0.5 text-[var(--color-text)]">{form.deliveryMode}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider">规格数</dt>
+                  <dd className="mt-0.5 text-[var(--color-text)]">{extraOffers.length + 1} 个</dd>
+                </div>
+              </dl>
+              <p className="mt-3 text-xs text-[var(--color-text-muted)]">
+                保存为草稿后不会在商店展示，可继续进入「可售量」配置与「发布」检查。
+              </p>
             </div>
 
             {/* 买家侧预览 */}
@@ -669,26 +801,6 @@ export default function ProductCreateWizard() {
                     </span>
                   </div>
                 </div>
-                {form.purchaseForm.length > 0 && (
-                  <div className="space-y-2 mb-3">
-                    {form.purchaseForm.map(field => (
-                      <div key={field.key}>
-                        <div className="text-xs font-bold text-[var(--color-text-muted)] mb-1">
-                          {field.label || '（字段名称）'}{field.required && <span className="text-red-500"> *</span>}
-                        </div>
-                        {field.type === 'text' ? (
-                          <input type="text" className="input" placeholder={field.placeholder || ''} disabled />
-                        ) : field.type === 'date' ? (
-                          <input type="date" className="input" disabled />
-                        ) : (
-                          <select className="input" disabled>
-                            <option>{field.options?.[0] ?? '请选择'}</option>
-                          </select>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
                 <div className="flex gap-3">
                   <span className="btn-secondary flex-1 px-0 text-center opacity-70">再想想</span>
                   <span className="btn-cta flex-1 px-0 text-center opacity-70">确认支付</span>
@@ -704,25 +816,85 @@ export default function ProductCreateWizard() {
             </div>
           </div>
         )}
+
+        {step === 5 && (
+          <div className="space-y-5" data-testid="wizard-step-availability">
+            {draft ? (
+              availabilityLoading ? (
+                <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4 text-sm text-[var(--color-text-muted)] flex items-center gap-2" data-testid="availability-offers-loading">
+                  <Loader2 className="w-4 h-4 animate-spin" /> 正在加载规格…
+                </div>
+              ) : availabilityOffers === null ? (
+                <div className="rounded-lg border border-amber-500/25 bg-amber-500/8 px-4 py-3 text-sm text-[var(--color-text)]" data-testid="availability-offers-error">
+                  <p>未能加载服务端规格，已阻止可售量操作以避免选错规格。</p>
+                  <button type="button" className="btn-secondary mt-3" onClick={() => loadAvailabilityOffers(draft.id)}>
+                    重试加载规格
+                  </button>
+                </div>
+              ) : (
+                <ProductAvailabilityStep
+                  offers={availabilityOffers}
+                  onAdjustCapacity={handleAdjustCapacity}
+                  onVoidInventory={handleVoidInventory}
+                  busy={busy}
+                />
+              )
+            ) : (
+              <div className="rounded-lg border border-amber-500/25 bg-amber-500/8 px-4 py-3 text-sm text-[var(--color-text)]" data-testid="wizard-availability-needs-draft">
+                请先在上一步保存草稿，再进入可售量配置。
+              </div>
+            )}
+          </div>
+        )}
+
+        {step === 6 && (
+          <div className="space-y-5" data-testid="wizard-step-publish">
+            {draft ? (
+              readiness === null ? (
+                <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4 text-sm text-[var(--color-text-muted)] flex items-center gap-2" data-testid="publication-loading">
+                  {readinessLoading && <Loader2 className="w-4 h-4 animate-spin" />}
+                  {readinessLoading ? '正在获取发布检查…' : '无法获取发布检查，请返回上一步重试。'}
+                </div>
+              ) : (
+                <ProductPublicationChecklist
+                  issues={readiness.issues}
+                  ready={readiness.ready}
+                  onPublish={handlePublish}
+                  publishing={publishing}
+                  disabled={busy}
+                />
+              )
+            ) : (
+              <div className="rounded-lg border border-amber-500/25 bg-amber-500/8 px-4 py-3 text-sm text-[var(--color-text)]" data-testid="wizard-publish-needs-draft">
+                请先保存草稿，再进入发布检查。
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* 底部导航 */}
       <div className="flex justify-between mt-6">
-        <button type="button" onClick={() => setStep(s => Math.max(s - 1, 0))} disabled={step === 0 || submitting}
+        <button type="button" onClick={() => setStep(s => Math.max(s - 1, 0))} disabled={step === 0 || busy}
           className="btn-secondary px-6 py-2.5 disabled:opacity-40">
           <ArrowLeft className="w-4 h-4" /> 上一步
         </button>
-        {step < STEPS.length - 1 ? (
-          <button type="button" onClick={goNext} disabled={step === 0 && templateId == null}
-            className="btn-primary px-6 py-2.5 disabled:opacity-40" data-testid="wizard-next">
-            下一步 <ArrowRight className="w-4 h-4" />
-          </button>
+        {step < LAST_STEP ? (
+          step === 4 ? (
+            <button type="button" onClick={goNext} disabled={busy}
+              className="btn-primary px-6 py-2.5 disabled:opacity-40" data-testid="wizard-save-draft">
+              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+              {saving ? '保存中…' : '保存草稿并继续'} <ArrowRight className="w-4 h-4" />
+            </button>
+          ) : (
+            <button type="button" onClick={goNext} disabled={step === 0 && templateId == null}
+              className="btn-primary px-6 py-2.5 disabled:opacity-40" data-testid="wizard-next">
+              下一步 <ArrowRight className="w-4 h-4" />
+            </button>
+          )
         ) : (
-          <button type="button" onClick={handlePublish} disabled={submitting}
-            className="btn-cta px-8 py-2.5" data-testid="wizard-publish">
-            {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
-            {submitting ? '发布中…' : <><KeyRound className="w-4 h-4" /> 确认发布</>}
-          </button>
+          // 发布动作由 ProductPublicationChecklist 承载（服务端权威 readiness）。
+          <span data-testid="wizard-publish-slot" />
         )}
       </div>
     </div>
@@ -735,4 +907,10 @@ function FieldLabel({ children, required }: { children: React.ReactNode; require
       {children} {required && <span className="text-red-500 normal-case">*</span>}
     </label>
   )
+}
+
+function getErrorMessage(err: unknown, fallback: string): string {
+  const e = err as { response?: { data?: { error?: { message?: unknown } } } } | undefined
+  const message = e?.response?.data?.error?.message
+  return typeof message === 'string' && message.trim() !== '' ? message : fallback
 }

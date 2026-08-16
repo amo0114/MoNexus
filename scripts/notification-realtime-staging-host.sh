@@ -12,6 +12,8 @@ BASE_PATH='/opt/monexus-staging'
 SOURCE_ENV_FILE='/etc/monexus/staging.env'
 PROJECT_NAME='monexus-staging'
 SAMPLE_COUNT='100'
+readonly STARTUP_MAX_ATTEMPTS='90'
+readonly STARTUP_RETRY_DELAY_SECONDS='2'
 
 fail() {
   echo "[ERROR] $*" >&2
@@ -116,8 +118,20 @@ compose_for() {
 wait_public_local() {
   # prod-smoke uses the loopback WEB_PORT from the private env and exercises
   # the currently served web -> backend path without exposing any credential.
-  local root="$1" env_file="$2"
-  compose_for "$root" "$env_file" smoke
+  local root="$1" env_file="$2" attempt
+  # Backend-first intentionally recreates the server before the proxy smoke;
+  # allow its bounded Docker health/startup window to settle without weakening
+  # the smoke assertions themselves.
+  for ((attempt = 1; attempt <= STARTUP_MAX_ATTEMPTS; attempt += 1)); do
+    if compose_for "$root" "$env_file" smoke; then
+      return 0
+    fi
+    if [[ "$attempt" -lt "$STARTUP_MAX_ATTEMPTS" ]]; then
+      echo "[INFO] staging web/backend not ready (attempt ${attempt}/${STARTUP_MAX_ATTEMPTS}); retrying in ${STARTUP_RETRY_DELAY_SECONDS}s (bounded attempt window)"
+      sleep "$STARTUP_RETRY_DELAY_SECONDS"
+    fi
+  done
+  fail "staging web/backend did not pass smoke within the bounded ${STARTUP_MAX_ATTEMPTS}-attempt startup window"
 }
 
 run_fixture() {
@@ -329,7 +343,9 @@ inspect_logs() {
   IFS= read -r token
   IFS= read -r sentinel
   [[ -n "$token" && "$sentinel" =~ ^rt-proxy-sentinel-[A-Za-z0-9._-]+$ ]] || fail 'invalid log sentinel input'
-  since="${RT_STAGING_LOG_SINCE:-10 minutes ago}"
+  # Docker's --since accepts a Go duration (for example 10m) or an absolute
+  # timestamp; natural-language values such as "10 minutes ago" are rejected.
+  since="${RT_STAGING_LOG_SINCE:-10m}"
   temp_dir="$(mktemp -d "$run_path/.logs.XXXXXX")"
   trap 'rm -rf "$temp_dir"' RETURN
   local compose=(

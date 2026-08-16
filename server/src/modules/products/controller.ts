@@ -3,14 +3,15 @@ import * as productService from './service.js'
 
 export async function list(req: Request, res: Response, next: NextFunction) {
   try {
-    const { q, category, cursor, page, pageSize } = req.query as unknown as {
+    const { q, categoryCode, category, cursor, page, pageSize } = req.query as unknown as {
       q?: string
+      categoryCode?: string
       category?: string
       cursor?: string
       page?: number
       pageSize?: number
     }
-    const products = await productService.listProducts({ query: q, category, cursor, page, pageSize })
+    const products = await productService.listProducts({ query: q, categoryCode, category, cursor, page, pageSize })
     res.json(products)
   } catch (err) {
     next(err)

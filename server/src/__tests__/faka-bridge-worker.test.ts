@@ -9,6 +9,7 @@ import {
 } from '../lib/fakaBridge/index.js'
 import type { FakaTransport } from '../lib/fakaBridge/types.js'
 import { createTestUser } from './helpers.js'
+import { getActiveNetworkNodeCategoryId } from './catalogFixture.js'
 
 const ORIG_FAKA = { ...config.fakaBridge }
 
@@ -39,6 +40,7 @@ async function createFakaOffer(price = 200) {
     data: {
       name: 'Aster 月卡',
       type: '网络节点',
+      categoryId: await getActiveNetworkNodeCategoryId(),
       price,
       status: 'active',
       stock: 0,

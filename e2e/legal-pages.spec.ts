@@ -98,6 +98,13 @@ test.describe('checkout consent gate', () => {
     return (await login.json()).accessToken as string
   }
 
+  async function publishProduct(request: APIRequestContext, token: string, productId: number) {
+    const published = await request.post(`${API_BASE}/api/merchant/products/${productId}/publish`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    expect(published.ok(), await published.text()).toBeTruthy()
+  }
+
   async function userToken(request: APIRequestContext) {
     const login = await request.post(`${API_BASE}/api/auth/login`, {
       data: SEED_ACCOUNTS.user,
@@ -118,10 +125,13 @@ test.describe('checkout consent gate', () => {
         fixedContent: 'https://example.com/legal-e2e',
         fixedContentType: 'url',
         stockMode: 'unlimited',
+        imageUrl: '/assets/network.webp',
+        images: ['/assets/network.webp'],
       },
     })
     expect(created.ok(), await created.text()).toBeTruthy()
     const product = (await created.json()) as { id: number }
+    await publishProduct(request, token, product.id)
 
     await loginAs(page, SEED_ACCOUNTS.user)
     await page.goto(`/product/${product.id}`)
@@ -166,10 +176,13 @@ test.describe('checkout consent gate', () => {
         fixedContent: 'https://example.com/legal-api',
         fixedContentType: 'url',
         stockMode: 'unlimited',
+        imageUrl: '/assets/network.webp',
+        images: ['/assets/network.webp'],
       },
     })
     expect(created.ok(), await created.text()).toBeTruthy()
     const product = (await created.json()) as { id: number }
+    await publishProduct(request, token, product.id)
 
     const buyer = await userToken(request)
     const rejected = await request.post(`${API_BASE}/api/orders`, {

@@ -141,10 +141,19 @@ if [[ "$realtime_enabled" == "true" ]]; then
   rm -f "$body_file" "$headers_file"
   echo "[INFO] realtime stream ready + auth + headers smoke passed"
 else
-  # flag-off: stream must 404 (polling fallback), NOT silently skipped.
-  status_off="$(curl -s -o /dev/null -w '%{http_code}' "$BASE_URL/api/notifications/stream" || true)"
-  [[ "$status_off" == "404" ]] || { echo "[ERROR] realtime stream must 404 when flag off (got $status_off)" >&2; exit 1; }
-  echo "[INFO] realtime stream 404 (flag off) smoke passed"
+  # SPEC-NOTIFY-RT-001 route order: anonymous requests stop at auth (401);
+  # authenticated requests reach the flag-off controller (404). If no token is
+  # available, do not claim the authenticated contract was checked.
+  smoke_token="${NOTIFICATION_REALTIME_SMOKE_TOKEN:-}"
+  if [[ -n "$smoke_token" ]]; then
+    status_off="$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $smoke_token" "$BASE_URL/api/notifications/stream" || true)"
+    [[ "$status_off" == "404" ]] || { echo "[ERROR] authenticated realtime stream must 404 when flag off (got $status_off)" >&2; exit 1; }
+    echo "[INFO] authenticated realtime stream 404 (flag off) smoke passed"
+  else
+    status_no_token="$(curl -s -o /dev/null -w '%{http_code}' "$BASE_URL/api/notifications/stream" || true)"
+    [[ "$status_no_token" == "401" ]] || { echo "[ERROR] anonymous realtime stream must 401 (got $status_no_token)" >&2; exit 1; }
+    echo "[WARN] anonymous realtime stream 401 (flag off) smoke passed; authenticated 404 requires realtime rehearsal token"
+  fi
 fi
 
 echo "[INFO] Production smoke checks passed for $BASE_URL"

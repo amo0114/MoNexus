@@ -2,29 +2,12 @@ import 'dotenv/config'
 import { prisma } from '../lib/prisma.js'
 import { generateInviteCode } from '../lib/inviteCode.js'
 import { encryptMfaSecret } from '../modules/auth/mfa.js'
+import { ensureSeedCategories } from '../modules/catalog/bootstrap.js'
+import { resolveProductCategory } from '../modules/catalog/resolver.js'
 import bcrypt from 'bcryptjs'
+import { resolveE2eAdminMfaFactor } from './e2eSeedGuard.js'
 
 const FORCE_RESET = process.argv.includes('--force-reset')
-const E2E_TOTP_FACTOR = /^[A-Z2-7]{32}$/
-
-function e2eAdminMfaFactor() {
-  const factor = process.env.E2E_ADMIN_MFA_TOTP_SECRET
-  if (!factor) return null
-
-  if (!FORCE_RESET || process.env.NODE_ENV !== 'test') {
-    throw new Error('E2E administrator MFA seed is only allowed in test mode')
-  }
-  let databaseUrl: URL
-  try {
-    databaseUrl = new URL(process.env.DATABASE_URL ?? '')
-  } catch {
-    throw new Error('E2E administrator MFA seed requires the dedicated test database')
-  }
-  if (databaseUrl.pathname !== '/monexus_test' || !E2E_TOTP_FACTOR.test(factor)) {
-    throw new Error('E2E administrator MFA seed configuration is invalid')
-  }
-  return factor
-}
 
 async function upsertUser(opts: {
   email: string
@@ -60,7 +43,12 @@ async function main() {
     console.log('  ⚠ --force-reset 模式：将重置所有用户密码')
   }
 
-  const e2eMfaFactor = e2eAdminMfaFactor()
+  const e2eMfaFactor = resolveE2eAdminMfaFactor({
+    forceReset: FORCE_RESET,
+    nodeEnv: process.env.NODE_ENV,
+    factor: process.env.E2E_ADMIN_MFA_TOTP_SECRET,
+    databaseUrl: process.env.DATABASE_URL,
+  })
 
   // 创建管理员
   const admin = await upsertUser({
@@ -83,6 +71,10 @@ async function main() {
     update: { balance: 99999 },
     create: { userId: admin.id, balance: 99999 },
   })
+
+  // B_CAT（SPEC-CATALOG-OPS-001 §11.2）：确保五个冻结 seed 分类存在
+  // （create-if-missing；与迁移 20260809020000 常量一致，幂等）。
+  await ensureSeedCategories(admin.id)
 
   // 创建测试用户
   const testUser = await upsertUser({
@@ -144,7 +136,7 @@ async function main() {
       imageUrl: 'https://images.unsplash.com/photo-1544197150-b99a580bb7a8?auto=format&fit=crop&q=80&w=800',
       price: 800,
       originalPrice: 1000,
-      isHot: true,
+      isHot: false,
       inventoryItems: [
         'https://api.moyuan.net/sub/abc123def456',
         'https://api.moyuan.net/sub/ghi789jkl012',
@@ -161,7 +153,7 @@ async function main() {
       icon: 'message-square',
       imageUrl: 'https://images.unsplash.com/photo-1677442136019-21780ecad995?auto=format&fit=crop&q=80&w=800',
       price: 1500,
-      isHot: true,
+      isHot: false,
       inventoryItems: [
         '账号: gpt_share_01@163.com\n密码: Pw83721',
         '账号: gpt_share_02@163.com\n密码: Pw49253',
@@ -190,7 +182,7 @@ async function main() {
       icon: 'smartphone',
       imageUrl: 'https://images.unsplash.com/photo-1611186871348-b1ce696e52c9?auto=format&fit=crop&q=80&w=800',
       price: 300,
-      isHot: true,
+      isHot: false,
       inventoryItems: [
         'apple_us_001@icloud.com----Ap2026!x1----颜色?蓝色----宠物?猫咪----城市?纽约----1990-01-15',
         'apple_us_002@icloud.com----Ap2026!x2----颜色?红色----宠物?狗狗----城市?洛杉矶----1992-05-20',
@@ -202,13 +194,29 @@ async function main() {
 
   for (const p of products) {
     const { inventoryItems, ...productData } = p
+    // B_CAT：legacy type 交 resolver 精确映射 categoryId/type（种子数据与
+    // 迁移常量一致；新写入必须 categoryId，type 取 category.label）。
+    const { categoryId, type } = await resolveProductCategory(
+      { type: productData.type },
+      prisma,
+    )
     const product = await prisma.product.upsert({
       where: { id: products.indexOf(p) + 1 },
-      update: {},
+      update: {
+        isHot: false,
+        // Seeded demo products are intentionally public fixtures; merchant
+        // authored products remain draft-only and must use the publish gate.
+        status: 'active',
+        publishedAt: new Date(),
+      },
       create: {
         ...productData,
+        categoryId,
+        type,
         stock: inventoryItems.length,
         sales: Math.floor(Math.random() * 3000) + 100,
+        status: 'active',
+        publishedAt: new Date(),
       },
     })
 
@@ -263,7 +271,7 @@ async function main() {
           imageUrl: 'https://images.unsplash.com/photo-1558494949-ef010cbdcc31?auto=format&fit=crop&q=80&w=800',
           price: 600,
           originalPrice: 800,
-          isHot: true,
+          isHot: false,
           status: 'active',
           merchantId: merchant.id,
         },
@@ -273,14 +281,15 @@ async function main() {
           name: '商家自营高速节点包',
           description: '示例商家的自营商品，可用于商家端订单与结算联调。',
           richDescription: '<p>由示例商家提供的高速节点订阅包，用于本地联调商家订单与结算流程。</p>',
-          type: '网络节点',
+          // B_CAT：legacy type 交 resolver 精确映射 categoryId/type。
+          ...(await resolveProductCategory({ type: '网络节点' }, prisma)),
           icon: 'wifi',
           imageUrl: 'https://images.unsplash.com/photo-1558494949-ef010cbdcc31?auto=format&fit=crop&q=80&w=800',
           price: 600,
           originalPrice: 800,
           stock: merchantInventoryItems.length,
           sales: 0,
-          isHot: true,
+          isHot: false,
           status: 'active',
           merchantId: merchant.id,
         },

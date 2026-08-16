@@ -199,6 +199,9 @@ export class NotificationRealtimeHub implements RealtimeHubPort {
     const ipCount = (this.ipCounts.get(entry.ip) ?? 1) - 1
     if (ipCount <= 0) this.ipCounts.delete(entry.ip)
     else this.ipCounts.set(entry.ip, ipCount)
+    // No connections left -> stop the shared heartbeat instead of spinning idle.
+    // The stream controller restarts it (idempotently) on the next registration.
+    if (this.connectionCount === 0) this.stopHeartbeat()
   }
 
   /** Shared heartbeat scheduler — one timer for all connections (CHK-SSE-007). */

@@ -17,7 +17,7 @@ import {
 } from './metrics.js'
 import { getRedis, runRedisCommandWithTimeout } from './redis.js'
 
-export type CacheName = 'product-list' | 'product-detail' | 'product-reviews'
+export type CacheName = 'product-list' | 'product-detail' | 'product-reviews' | 'category-registry'
 
 export type CacheNegativeError = {
   status: number
@@ -37,6 +37,7 @@ export type CacheScope =
   | { name: 'product-list' }
   | { name: 'product-detail'; productId: number }
   | { name: 'product-reviews'; productId: number }
+  | { name: 'category-registry' }
 
 type WrapCacheOptions<T> = {
   negativeTtlSec?: number
@@ -53,6 +54,7 @@ function isCacheEnabled(name: CacheName) {
   if (!config.redisEnabled) return false
   if (name === 'product-list') return config.cacheProductList
   if (name === 'product-detail') return config.cacheProductDetail
+  if (name === 'category-registry') return config.cacheCategoryRegistry
   return config.cacheProductReviews
 }
 
@@ -66,11 +68,13 @@ export function makeCacheKey(...parts: Array<string | number>) {
 
 function versionKey(scope: CacheScope) {
   if (scope.name === 'product-list') return makeCacheKey('ver', 'product-list')
+  if (scope.name === 'category-registry') return makeCacheKey('ver', 'category-registry')
   return makeCacheKey('ver', scope.name, scope.productId)
 }
 
 function scopeLabel(scope: CacheScope) {
   if (scope.name === 'product-list') return 'product-list'
+  if (scope.name === 'category-registry') return 'category-registry'
   return `${scope.name}:${scope.productId}`
 }
 
@@ -331,7 +335,7 @@ export function clearCacheProcessState() {
   inflight.clear()
   inflightCounts.clear()
   lastProductListBumpAt = 0
-  for (const name of ['product-list', 'product-detail', 'product-reviews'] as const) {
+  for (const name of ['product-list', 'product-detail', 'product-reviews', 'category-registry'] as const) {
     cacheInflightRequests.set({ name }, 0)
   }
 }

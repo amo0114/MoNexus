@@ -35,6 +35,7 @@ describe('realtime metrics (spec 8.4 / CHK-OPS-003~005)', () => {
     notificationRealtimePgMessagesTotal.inc({ outcome: 'no_subscriber' })
     notificationRealtimePgMessagesTotal.inc({ outcome: 'not_found' })
     notificationRealtimePgMessagesTotal.inc({ outcome: 'query_error' })
+    notificationRealtimePgMessagesTotal.inc({ outcome: 'overload' })
     notificationRealtimePgMessagesTotal.inc({ outcome: 'probe_error' })
     notificationRealtimeSseEventsTotal.inc({ event: 'ready', outcome: 'sent' })
     notificationRealtimeSseEventsTotal.inc({ event: 'notification', outcome: 'sent' })

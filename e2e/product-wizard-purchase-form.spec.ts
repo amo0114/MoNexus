@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { API_BASE, SEED_ACCOUNTS, loginAs } from './helpers'
+import { API_BASE, SEED_ACCOUNTS, loginAs, publishMerchantProduct } from './helpers'
 
 const PRODUCT_NAME = `E2E人工服务表单-${Date.now()}`
 
@@ -25,8 +25,12 @@ test.describe.serial('M-P2 product wizard + purchase form', () => {
     await page.getByTestId('wizard-next').click()
 
     await page.getByTestId('wizard-name').fill(PRODUCT_NAME)
-    // 类别与交付方式已解耦：任意分类均可保留人工服务模式
-    await page.getByTestId('wizard-type').selectOption('网络节点')
+    await page.getByTestId('product-image-url-input').fill('/assets/network.webp')
+    await page.getByTestId('product-image-url-hotlink').click()
+    const category = page.getByTestId('product-category-select')
+    if (!(await category.inputValue())) {
+      await category.selectOption({ index: 1 })
+    }
     await page.getByTestId('wizard-next').click()
 
     await page.getByTestId('wizard-price').fill('2')
@@ -36,13 +40,31 @@ test.describe.serial('M-P2 product wizard + purchase form', () => {
     await expect(page.getByRole('radio', { name: '人工服务履约' })).toBeChecked()
     await page.getByTestId('wizard-next').click()
 
-    // 模板预填两个购买前字段；买家侧预览同步展示
-    await expect(page.getByTestId('form-field-list').locator('> div')).toHaveCount(2)
-    await expect(page.getByTestId('buyer-preview')).toContainText('联系方式')
-    await expect(page.getByTestId('buyer-preview')).toContainText('本次冻结')
+    await page.getByTestId('wizard-save-draft').click()
+    await expect(page.getByTestId('wizard-step-availability')).toBeVisible({ timeout: 10_000 })
+    await page.getByTestId('wizard-next').click()
+    await expect(page.getByTestId('publication-ready')).toBeVisible({ timeout: 10_000 })
+    await page.getByTestId('publication-publish').click()
+    await expect(page).toHaveURL(/\/merchant(?:\/|$)/, { timeout: 10_000 })
 
-    await page.getByTestId('wizard-publish').click()
-    await expect(page.getByText('商品创建成功')).toBeVisible({ timeout: 10_000 })
+    // 购买前表单属于草稿保存后的编辑契约；通过真实编辑弹窗配置，
+    // 再由后续买家/商家步骤验证其订单快照。
+    await page.getByRole('button', { name: '商品管理' }).click()
+    await page.getByTestId('merchant-product-search').fill(PRODUCT_NAME)
+    const row = page.locator('tbody tr').filter({ hasText: PRODUCT_NAME }).first()
+    await expect(row).toBeVisible({ timeout: 10_000 })
+    await row.getByRole('button', { name: '编辑' }).click()
+    const section = page.getByTestId('edit-purchase-form-section')
+    await expect(section).toBeVisible({ timeout: 10_000 })
+    await section.getByTestId('add-form-field').click()
+    await section.getByTestId('add-form-field').click()
+    const fields = section.getByTestId('form-field-list')
+    await fields.getByTestId('form-field-label-0').fill('联系方式')
+    await fields.getByTestId('form-field-label-1').fill('需求说明')
+    await fields.locator('input[type=checkbox]').nth(0).check()
+    await fields.locator('input[type=checkbox]').nth(1).check()
+    await page.getByRole('button', { name: '确认保存' }).click()
+    await expect(section).toBeHidden({ timeout: 10_000 })
   })
 
   test('buyer must fill the required field before confirming', async ({ page, request }) => {
@@ -61,8 +83,9 @@ test.describe.serial('M-P2 product wizard + purchase form', () => {
 
     // 必填未填 → 确认按钮禁用
     await expect(modal.getByRole('button', { name: '确认支付' })).toBeDisabled()
-    await modal.getByTestId('purchase-field-contact').fill('tg:@e2e-buyer')
-    await modal.getByTestId('purchase-field-requirement').fill('尽快开通')
+    const answerInputs = modal.getByTestId('purchase-form-fields').locator('input[type="text"]')
+    await answerInputs.nth(0).fill('tg:@e2e-buyer')
+    await answerInputs.nth(1).fill('尽快开通')
     await expect(modal.getByRole('button', { name: '确认支付' })).toBeEnabled()
 
     await modal.getByRole('button', { name: '确认支付' }).click()
@@ -137,6 +160,7 @@ test.describe('M-P2.1 edit modal purchase form', () => {
     await section.getByTestId('form-field-list').locator('input[type=checkbox]').first().check()
     await page.getByRole('button', { name: '确认保存' }).click()
     await expect(page.getByTestId('edit-purchase-form-section')).toBeHidden({ timeout: 10_000 })
+    await publishMerchantProduct(request, token, productId)
 
     // 公开商品详情返回更新后的定义
     const detail = await request.get(`${API_BASE}/api/products/${productId}`)

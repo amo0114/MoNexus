@@ -8,6 +8,7 @@ import {
   loginAs,
   loginAsMerchant,
 } from './helpers.js'
+import { getActiveNetworkNodeCategoryId } from './catalogFixture.js'
 
 // 固定当天正午：避开 getRangeWindow 的"次日零点为右开边界"在午夜附近的抖动。
 function middayToday() {
@@ -24,7 +25,7 @@ function daysAgo(days: number) {
 
 async function createProduct(merchantId: number, name: string) {
   return prisma.product.create({
-    data: { name, type: '网络节点', price: 100, status: 'active', merchantId },
+    data: { name, type: '网络节点', price: 100, status: 'active', merchantId, categoryId: await getActiveNetworkNodeCategoryId() },
   })
 }
 

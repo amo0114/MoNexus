@@ -1,4 +1,3 @@
-import { Buffer } from 'node:buffer'
 import { Prisma } from '@prisma/client'
 import { prisma } from '../../lib/prisma.js'
 import { wrapCache } from '../../lib/cache.js'
@@ -13,19 +12,24 @@ import {
   buildProductDetailCacheKey,
   buildProductListCacheKey,
 } from './cache.js'
+import {
+  assertCursorFilterMatches,
+  computeFilterHash,
+  decodeOrganicCursor,
+  decorateProducts,
+  encodeOrganicCursor,
+  resolveCursorForRequest,
+  type OrganicCursorPayload,
+  type ProjectionRun,
+} from '../merchandising/publicProjection.js'
 
 interface ProductListParams {
   query?: string
+  categoryCode?: string
   category?: string
   cursor?: string
   page?: number
   pageSize?: number
-}
-
-interface ProductCursor {
-  isHot: boolean
-  sales: number
-  id: number
 }
 
 const productListSelect = {
@@ -40,7 +44,6 @@ const productListSelect = {
   originalPrice: true,
   stock: true,
   sales: true,
-  isHot: true,
   status: true,
   deliveryMode: true,
   stockMode: true,
@@ -48,6 +51,7 @@ const productListSelect = {
   ratingCount: true,
   _count: { select: { inventory: { where: { status: 'available' } } } },
   merchant: { select: { id: true, name: true } },
+  category: { select: { id: true, code: true, label: true } },
   // P4a：公开可售状态从 active 规格集合推导，不再信任 Product 投影——
   // stockMode 投影取自默认规格（可能已下架），混合规格商品会误报售罄/不限。
   // Faka：列表页也要 external* 以投影 Xboard 剩余名额。
@@ -77,7 +81,6 @@ const productDetailSelect = {
   originalPrice: true,
   stock: true,
   sales: true,
-  isHot: true,
   status: true,
   deliveryMode: true,
   stockMode: true,
@@ -94,6 +97,7 @@ const productDetailSelect = {
   },
   _count: { select: { inventory: { where: { status: 'available' } } } },
   merchant: { select: { id: true, name: true } },
+  category: { select: { id: true, code: true, label: true } },
 } satisfies Prisma.ProductSelect
 
 type ProductListItem = Prisma.ProductGetPayload<{ select: typeof productListSelect }>
@@ -361,134 +365,205 @@ function serializePublicProductDetail(
   }
 }
 
-function encodeProductCursor(product: ProductCursor) {
-  return Buffer
-    .from(JSON.stringify({ isHot: product.isHot, sales: product.sales, id: product.id }), 'utf8')
-    .toString('base64url')
+interface NormalizedProductFilters {
+  query: string | null
+  categoryCode: string | null
+  legacyCategory: string | null
 }
 
-function decodeProductCursor(cursor: string): ProductCursor {
-  try {
-    const value = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8')) as unknown
-    if (!value || typeof value !== 'object') {
-      throw new Error('invalid cursor')
-    }
-
-    const { isHot, sales, id } = value as Record<string, unknown>
-    if (
-      typeof isHot !== 'boolean' ||
-      typeof sales !== 'number' ||
-      typeof id !== 'number' ||
-      !Number.isInteger(sales) ||
-      !Number.isInteger(id) ||
-      sales < 0 ||
-      id <= 0
-    ) {
-      throw new Error('invalid cursor')
-    }
-    return { isHot, sales, id }
-  } catch {
-    throw badRequest('分页游标无效')
-  }
+interface RankedProductRow {
+  id: number
+  isHot: boolean
+  effectiveOrderCount: number
 }
 
-function buildCursorWhere(cursor: ProductCursor): Prisma.ProductWhereInput {
-  if (cursor.isHot) {
-    return {
-      OR: [
-        { isHot: false },
-        { isHot: true, sales: { lt: cursor.sales } },
-        { isHot: true, sales: cursor.sales, id: { lt: cursor.id } },
-      ],
-    }
-  }
+interface ProductListContext {
+  filters: NormalizedProductFilters
+  cursor: OrganicCursorPayload | null
+  run: ProjectionRun | null
+}
 
+function normalizeProductFilters(params: ProductListParams): NormalizedProductFilters {
+  const query = params.query?.trim().toLowerCase().normalize('NFKC') || null
+  const categoryCode = params.categoryCode?.trim().toLowerCase() || null
+  const legacy = params.category?.trim()
   return {
-    isHot: false,
-    OR: [
-      { sales: { lt: cursor.sales } },
-      { sales: cursor.sales, id: { lt: cursor.id } },
-    ],
+    query,
+    categoryCode,
+    legacyCategory: categoryCode || !legacy || legacy === '全部' ? null : legacy,
+  }
+}
+
+function productFilterHashInput(filters: NormalizedProductFilters): Record<string, unknown> {
+  return {
+    query: filters.query,
+    categoryCode: filters.categoryCode,
+    legacyCategory: filters.legacyCategory,
+  }
+}
+
+async function listRankedProductRows(
+  params: ProductListParams,
+  context: ProductListContext,
+): Promise<RankedProductRow[]> {
+  const { page = 1, pageSize = 20 } = params
+  const { filters, cursor, run } = context
+  const where: Prisma.Sql[] = [Prisma.sql`p."status" = 'active'`]
+
+  if (filters.categoryCode) {
+    where.push(Prisma.sql`c."code" = ${filters.categoryCode} AND c."status" = 'active'`)
+  } else if (filters.legacyCategory) {
+    where.push(Prisma.sql`c."label" = ${filters.legacyCategory} AND c."status" = 'active'`)
+  }
+
+  if (filters.query) {
+    const pattern = `%${filters.query}%`
+    where.push(Prisma.sql`(
+      p."name" ILIKE ${pattern}
+      OR COALESCE(p."description", '') ILIKE ${pattern}
+      OR p."type" ILIKE ${pattern}
+      OR c."label" ILIKE ${pattern}
+    )`)
+  }
+
+  const snapshotJoin = run
+    ? Prisma.sql`LEFT JOIN "ProductMerchandisingSnapshot" s
+        ON s."productId" = p."id" AND s."runId" = ${run.id}::uuid`
+    : Prisma.empty
+  const hotExpression = run ? Prisma.sql`COALESCE(s."isHot", false)` : Prisma.sql`false`
+  const countExpression = run
+    ? Prisma.sql`COALESCE(s."effectiveOrderCount", 0)`
+    : Prisma.sql`0`
+
+  if (cursor) {
+    where.push(Prisma.sql`(
+      ${hotExpression}, ${countExpression}, p."id"
+    ) < (
+      ${cursor.isHot}, ${cursor.effectiveOrderCount}, ${cursor.productId}
+    )`)
+  }
+
+  const offset = cursor ? Prisma.empty : Prisma.sql`OFFSET ${(page - 1) * pageSize}`
+  return prisma.$queryRaw<RankedProductRow[]>`
+    SELECT
+      p."id" AS "id",
+      ${hotExpression} AS "isHot",
+      ${countExpression}::int AS "effectiveOrderCount"
+    FROM "Product" p
+    INNER JOIN "ProductCategory" c ON c."id" = p."categoryId"
+    ${snapshotJoin}
+    WHERE ${Prisma.join(where, ' AND ')}
+    ORDER BY "isHot" DESC, "effectiveOrderCount" DESC, p."id" DESC
+    LIMIT ${pageSize + 1}
+    ${offset}
+  `
+}
+
+async function attachListMerchandising<
+  T extends { items: Array<{ id: number; merchant: { id: number } | null }> },
+>(result: T, run: ProjectionRun | null) {
+  const decorated = await decorateProducts(
+    result.items.map(item => ({ id: item.id, merchantId: item.merchant?.id ?? null })),
+    run,
+  )
+  const projectionById = new Map(decorated.map(item => [item.id, item.merchandising]))
+  return {
+    ...result,
+    items: result.items.map(item => ({ ...item, merchandising: projectionById.get(item.id)! })),
   }
 }
 
 export async function listProducts(params: ProductListParams = {}) {
-  const cacheKey = await buildProductListCacheKey(params)
-  if (!cacheKey) return listProductsFromDb(params)
-
-  const ttlSec = params.query ? 10 : params.cursor ? 20 : 30
-  return wrapCache('product-list', cacheKey, ttlSec, () => listProductsFromDb(params), {
-    // A cold public read intentionally returns an unavailable projection while
-    // its Xboard probe runs in the background.  Do not freeze that transient
-    // fallback in Redis; the next request can use the freshly warmed snapshot.
-    cachePredicate: result =>
-      result.items.every(item => !isUnavailableFakaCapacity(item.fakaCapacity)),
+  const filters = normalizeProductFilters(params)
+  const cursor = params.cursor ? decodeOrganicCursor(params.cursor) : null
+  if (cursor) assertCursorFilterMatches(cursor, productFilterHashInput(filters))
+  const pinned = await resolveCursorForRequest(cursor)
+  const run = pinned.mode === 'run' ? pinned.run : null
+  const context: ProductListContext = { filters, cursor, run }
+  const cacheKey = await buildProductListCacheKey({
+    ...params,
+    categoryCode: filters.categoryCode ?? undefined,
+    category: filters.legacyCategory ?? undefined,
+    rankingRunId: run?.id ?? null,
   })
+
+  const load = () => listProductsFromDb(params, context)
+  const baseResult = cacheKey
+    ? await wrapCache('product-list', cacheKey, params.query ? 10 : params.cursor ? 20 : 30, load, {
+        // A cold public read intentionally returns an unavailable projection while
+        // its Xboard probe runs in the background. Do not cache that transient state.
+        cachePredicate: result =>
+          result.items.every(item => !isUnavailableFakaCapacity(item.fakaCapacity)),
+      })
+    : await load()
+
+  // Merch identity/entitlement is decorated after the Catalog cache, so expiry,
+  // revocation and editorial changes never get frozen inside a product cache entry.
+  return attachListMerchandising(baseResult, run)
 }
 
-async function listProductsFromDb(params: ProductListParams = {}) {
-  const query = params.query?.trim()
-  const category = params.category?.trim()
-  const { cursor, page = 1, pageSize = 20 } = params
-  const baseWhere: Prisma.ProductWhereInput = { status: 'active' }
-
-  if (category && category !== '全部') {
-    baseWhere.type = category
-  }
-
-  if (query) {
-    baseWhere.OR = [
-      { name: { contains: query, mode: 'insensitive' } },
-      { description: { contains: query, mode: 'insensitive' } },
-      { type: { contains: query, mode: 'insensitive' } },
-    ]
-  }
-
-  const cursorValue = cursor ? decodeProductCursor(cursor) : null
-  const where: Prisma.ProductWhereInput = cursorValue
-    ? { AND: [baseWhere, buildCursorWhere(cursorValue)] }
-    : baseWhere
-
+async function listProductsFromDb(params: ProductListParams, context: ProductListContext) {
+  const { pageSize = 20 } = params
+  const ranked = await listRankedProductRows(params, context)
+  const pageRows = ranked.slice(0, pageSize)
   const products = await prisma.product.findMany({
-    where,
-    orderBy: [{ isHot: 'desc' }, { sales: 'desc' }, { id: 'desc' }],
+    where: { id: { in: pageRows.map(row => row.id) }, status: 'active' },
     select: productListSelect,
-    skip: cursorValue ? undefined : (page - 1) * pageSize,
-    take: pageSize + 1,
   })
-
-  const items = products.slice(0, pageSize)
-  const hasMore = products.length > pageSize
-  const lastItem = items.at(-1)
+  const productById = new Map(products.map(product => [product.id, product]))
+  const items = pageRows.flatMap(row => {
+    const product = productById.get(row.id)
+    return product ? [product] : []
+  })
 
   const allOffers = items.flatMap(item => item.offers)
   const offerAvailableCounts = await countAvailableByOffer(allOffers)
   const fakaBySku = loadFakaCapacityBySku(
-    allOffers as Array<{ externalIntegration?: string | null; externalSku?: string | null }>
+    allOffers as Array<{ externalIntegration?: string | null; externalSku?: string | null }>,
   )
+  const lastRow = pageRows.at(-1)
+  const hasMore = ranked.length > pageSize
+  const filterHash = computeFilterHash(productFilterHashInput(context.filters))
 
   return {
     items: items.map(item => serializePublicProductListItem(item, offerAvailableCounts, fakaBySku)),
-    nextCursor: hasMore && lastItem ? encodeProductCursor(lastItem) : null,
+    nextCursor: hasMore && lastRow
+      ? encodeOrganicCursor({
+          v: 1,
+          runId: context.run?.id ?? null,
+          isHot: lastRow.isHot,
+          effectiveOrderCount: lastRow.effectiveOrderCount,
+          productId: lastRow.id,
+          filterHash,
+        })
+      : null,
     hasMore,
   }
 }
 
 export async function getProductDetail(id: number) {
   const cacheKey = await buildProductDetailCacheKey(id)
-  if (!cacheKey) return getProductDetailFromDb(id)
+  const baseProduct = cacheKey
+    ? await wrapCache('product-detail', cacheKey, 60, () => getProductDetailFromDb(id), {
+        negativeTtlSec: 20,
+        negativeErrorPredicate: err => err instanceof HttpError && err.status === 404,
+        // Same rule as the list: Redis may cache a known capacity/stale snapshot,
+        // but never the cold-cache unavailable fallback returned by SWR.
+        cachePredicate: result =>
+          !isUnavailableFakaCapacity(result.fakaCapacity) &&
+          result.offers.every(
+            offer => !('fakaCapacity' in offer) || !isUnavailableFakaCapacity(offer.fakaCapacity)
+          ),
+      })
+    : await getProductDetailFromDb(id)
 
-  return wrapCache('product-detail', cacheKey, 60, () => getProductDetailFromDb(id), {
-    negativeTtlSec: 20,
-    negativeErrorPredicate: err => err instanceof HttpError && err.status === 404,
-    // Same rule as the list: Redis may cache a known capacity/stale snapshot,
-    // but never the cold-cache unavailable fallback returned by SWR.
-    cachePredicate: result =>
-      !isUnavailableFakaCapacity(result.fakaCapacity) &&
-      result.offers.every(
-        offer => !('fakaCapacity' in offer) || !isUnavailableFakaCapacity(offer.fakaCapacity)
-      ),
-  })
+  const pinned = await resolveCursorForRequest(null)
+  const run = pinned.mode === 'run' ? pinned.run : null
+  const [decorated] = await decorateProducts(
+    [{ id: baseProduct.id, merchantId: baseProduct.merchant?.id ?? null }],
+    run,
+  )
+  return { ...baseProduct, merchandising: decorated.merchandising }
 }
 
 async function getProductDetailFromDb(id: number) {

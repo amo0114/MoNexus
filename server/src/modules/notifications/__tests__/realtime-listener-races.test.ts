@@ -5,6 +5,7 @@ import {
   type NotificationRealtimeListenerOptions,
   type NotificationRealtimePgClient,
 } from '../realtime/listener.js'
+import { NOTIFICATION_REALTIME_MAX_INFLIGHT_ENVELOPE_QUERIES } from '../realtime/constants.js'
 import {
   NotificationRealtimeLifecycle,
   type RealtimeListenerHandle,
@@ -230,5 +231,50 @@ describe('NotificationRealtimeLifecycle reconnect barriers (R-RT-003A)', () => {
     expect(harness.drains).toHaveLength(0)
     expect(harness.listeners).toHaveLength(1)
     await harness.lifecycle.stop()
+  })
+})
+
+describe('NotificationRealtimeListener envelope concurrency gate (overload)', () => {
+  it('drops NOTIFY wake-ups once too many envelope queries are in flight, then recovers', async () => {
+    const gates: Array<Deferred<NotificationEnvelope | null>> = []
+    const slowGetEnvelope = vi.fn(() => {
+      const gate = deferred<NotificationEnvelope | null>()
+      gates.push(gate)
+      return gate.promise
+    })
+    const harness = listenerHarness({ getEnvelope: slowGetEnvelope })
+    await harness.listener.connect()
+    expect(harness.onReady).toHaveBeenCalledTimes(1)
+
+    // Fire one more than the cap with every lookup hanging.
+    for (let i = 0; i < NOTIFICATION_REALTIME_MAX_INFLIGHT_ENVELOPE_QUERIES + 1; i += 1) {
+      harness.client.emit('notification', {
+        payload: JSON.stringify({ v: 1, notificationId: 7, recipientUserId: 11 }),
+      })
+    }
+    await flushMicrotasks()
+
+    expect(slowGetEnvelope).toHaveBeenCalledTimes(NOTIFICATION_REALTIME_MAX_INFLIGHT_ENVELOPE_QUERIES)
+    expect(harness.outcomes.filter((o) => o === 'overload')).toHaveLength(1)
+    expect(harness.outcomes.filter((o) => o === 'routed')).toHaveLength(0)
+    expect(harness.broadcast).not.toHaveBeenCalled()
+
+    // Release the gate: every in-flight query completes and routes.
+    for (const gate of gates) gate.resolve(envelope)
+    await flushMicrotasks()
+    expect(harness.outcomes.filter((o) => o === 'routed')).toHaveLength(NOTIFICATION_REALTIME_MAX_INFLIGHT_ENVELOPE_QUERIES)
+
+    // Counter recovered: a fresh wake-up is handled normally.
+    harness.client.emit('notification', {
+      payload: JSON.stringify({ v: 1, notificationId: 7, recipientUserId: 11 }),
+    })
+    await flushMicrotasks()
+    expect(slowGetEnvelope).toHaveBeenCalledTimes(NOTIFICATION_REALTIME_MAX_INFLIGHT_ENVELOPE_QUERIES + 1)
+    expect(harness.outcomes.filter((o) => o === 'overload')).toHaveLength(1)
+
+    // Resolve the last in-flight query, then stop cleanly.
+    gates[NOTIFICATION_REALTIME_MAX_INFLIGHT_ENVELOPE_QUERIES]!.resolve(envelope)
+    await flushMicrotasks()
+    await harness.listener.stop()
   })
 })

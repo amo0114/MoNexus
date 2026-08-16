@@ -27,8 +27,14 @@ describe('purchase form definitions (merchant API)', () => {
         deliveryMode: 'manual_service',
         stockMode: 'unlimited',
         purchaseForm: FORM,
+        imageUrl: 'https://cdn.test.local/purchase-form-cover.png',
+        images: ['https://cdn.test.local/purchase-form-cover.png'],
       })
       .expect(201)
+    await api
+      .post(`/api/merchant/products/${res.body.id}/publish`)
+      .set(authHeader(accessToken))
+      .expect(200)
     expect(user).toBeDefined()
 
     const detail = await api.get(`/api/products/${res.body.id}`).expect(200)

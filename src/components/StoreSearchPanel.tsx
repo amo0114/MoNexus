@@ -22,10 +22,22 @@ export default function StoreSearchPanel({ onClose }: { onClose: () => void }) {
     inputRef.current?.focus()
   }, [])
 
-  const categories = ['全部', ...(registry?.productTypes.map((t) => t.value) ?? [])]
-  const label = (value: string) =>
-    value === '全部' ? value : registry?.productTypes.find((t) => t.value === value)?.label ?? value
-
+  // 动态 productCategories（稳定 code）为权威分类；旧 backend 无该字段时回退
+  // legacy productTypes（value=label）——与 StorePage/fetchProducts 的回退一致。
+  const dynamicCategories = registry?.productCategories ?? []
+  const categories = [
+    '全部',
+    ...(dynamicCategories.length
+      ? dynamicCategories.map((c) => c.code)
+      : (registry?.productTypes.map((t) => t.value) ?? [])),
+  ]
+  const label = (value: string) => {
+    if (value === '全部') return value
+    if (dynamicCategories.length) {
+      return dynamicCategories.find((c) => c.code === value)?.label ?? value
+    }
+    return registry?.productTypes.find((t) => t.value === value)?.label ?? value
+  }
   return (
     <div className="w-full island-panel-in">
       <div className="flex items-center gap-2.5">

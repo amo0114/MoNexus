@@ -141,6 +141,7 @@ export function notificationRealtimeStream(
     : null
   if (typeof expiresAtSec !== 'number' || !Number.isFinite(expiresAtSec) || !Number.isInteger(expiresAtSec)
     || !expiresDate || !Number.isFinite(expiresDate.getTime()) || expiresAtMs <= Date.now()) {
+    notificationRealtimeConnectionRejectionsTotal.inc({ reason: 'auth_expired' })
     res.status(401).json({ error: { code: 'UNAUTHORIZED', message: '登录已过期' } })
     return
   }
