@@ -51,7 +51,7 @@ test.describe('M-P1 checkout confirmation', () => {
 
     // 服务端结算预览：本次扣除 + 余额前后值自洽
     const modal = page.getByTestId('purchase-modal')
-    await expect(modal.getByText('本次扣除')).toBeVisible({ timeout: 10_000 })
+    await expect(modal.getByText('本次已支付')).toBeVisible({ timeout: 10_000 })
     const before = Number(await modal.getByTestId('balance-before').locator('span').last().innerText())
     const after = Number(await modal.getByTestId('balance-after').locator('span').last().innerText())
     expect(before - after).toBe(3)
@@ -94,7 +94,7 @@ test.describe('M-P1 checkout confirmation', () => {
     await page.getByRole('button', { name: '立即兑换' }).click()
 
     const modal = page.getByTestId('purchase-modal')
-    await expect(modal.getByText('本次冻结')).toBeVisible({ timeout: 10_000 })
+    await expect(modal.getByText('本次待支付')).toBeVisible({ timeout: 10_000 })
     await expect(modal.getByTestId('hold-explain')).toContainText('拒单或退款时返还')
   })
 
@@ -113,7 +113,7 @@ test.describe('M-P1 checkout confirmation', () => {
     await page.goto(`/product/${product.id}`)
     await page.getByRole('button', { name: '立即兑换' }).click()
     const modal = page.getByTestId('purchase-modal')
-    await expect(modal.getByText('本次冻结')).toBeVisible({ timeout: 10_000 })
+    await expect(modal.getByText('本次待支付')).toBeVisible({ timeout: 10_000 })
 
     // 弹窗打开期间，商家给商品新增一个必填的购买前字段
     const update = await request.put(`${API_BASE}/api/merchant/products/${product.id}`, {
