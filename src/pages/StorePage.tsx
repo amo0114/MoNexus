@@ -492,7 +492,10 @@ export default function StorePage() {
     setHasMore(false)
     seenRef.current = new Set()
     page1OrganicRef.current = null
-    candidatesSettledRef.current = false
+    // `candidatesSettledRef` is owned by the candidate effect (it resets to
+    // false on non-search and settles true on search/candidate arrival). Do not
+    // reset it here — doing so after the candidate effect's synchronous search
+    // settle would block the first-page compose.
     composedRef.current = false
     restoreScrollRef.current = null
     window.scrollTo?.({ top: 0, behavior: 'instant' })

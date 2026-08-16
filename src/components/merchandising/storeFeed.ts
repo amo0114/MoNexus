@@ -95,9 +95,11 @@ export function composeStoreFeed<P extends FeedProductLike>(
     return { items, seenProductIds: seen }
   }
 
-  // Pass 1 — which sponsored ids are actually placed (positional S1/S2).
-  // Precomputing lets us enforce "sponsored > editorial" even when the
-  // editorial slot is processed before the second sponsored slot.
+  // Pass 1 — which sponsored/editorial ids are actually placed (positional
+  // S1/S2 and E1). Precomputing lets us enforce "sponsored > editorial" even
+  // when the editorial slot is processed before the second sponsored slot, and
+  // keeps injected products OUT of the organic pool so they are never shown as
+  // a plain organic card first (rule 2 priority).
   const placedSponsoredIds = new Set<number>()
   for (let i = 0; i < MAX_SPONSORED_PER_SCREEN && i < input.sponsored.length; i++) {
     const candidate = input.sponsored[i]!
@@ -105,7 +107,13 @@ export function composeStoreFeed<P extends FeedProductLike>(
       placedSponsoredIds.add(candidate.productId)
     }
   }
-
+  const placedEditorialIds = new Set<number>()
+  {
+    const candidate = input.editorial[0]
+    if (candidate && candidate.product != null && !seen.has(candidate.productId) && !placedSponsoredIds.has(candidate.productId)) {
+      placedEditorialIds.add(candidate.productId)
+    }
+  }
   let sponsoredIndex = 0
   let editorialIndex = 0
   // Organic consumption cursor — only the organic actually placed in the first
@@ -130,7 +138,10 @@ export function composeStoreFeed<P extends FeedProductLike>(
     while (organicIndex < input.organic.length) {
       const candidate = input.organic[organicIndex]!
       organicIndex += 1
+      // A product destined for a sponsored/editorial slot must never be shown
+      // as a plain organic card (sponsored > editorial > organic, rule 2).
       if (seen.has(candidate.id)) continue
+      if (placedSponsoredIds.has(candidate.id) || placedEditorialIds.has(candidate.id)) continue
       return candidate
     }
     return null

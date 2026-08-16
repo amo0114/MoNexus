@@ -96,6 +96,7 @@ function slugifyCategoryCode(label: string): string {
 /** Small icon picker for category.iconKey (D-UX-17, §6.3). */
 const CATEGORY_ICON_PRESETS = [
   { key: 'network', label: '网络', Icon: Network },
+  { key: 'folder-tree', label: '文件夹', Icon: FolderTree },
   { key: 'book', label: '资料', Icon: Book },
   { key: 'gamepad2', label: '游戏', Icon: Gamepad2 },
   { key: 'gem', label: '账号', Icon: Gem },
@@ -245,7 +246,6 @@ function CategoryFormDialog({
   const [form, setForm] = useState<CategoryFormState>(EMPTY_CATEGORY_FORM)
   const [errors, setErrors] = useState<Partial<Record<keyof CategoryFormState, string>>>({})
   const [formError, setFormError] = useState<string | null>(null)
-  const [showAdvanced, setShowAdvanced] = useState(false)
   // Once the admin edits the code manually, label changes stop auto-filling it.
   const codeTouchedRef = useRef(false)
 
@@ -365,8 +365,6 @@ function CategoryFormDialog({
           <details
             className="rounded-lg border border-[var(--color-border)] p-3"
             data-testid="category-advanced-settings"
-            open={showAdvanced}
-            onToggle={(e) => setShowAdvanced((e.target as HTMLDetailsElement).open)}
           >
             <summary className="cursor-pointer text-sm font-semibold text-[var(--color-text)]">
               高级设置（分类编码 / 图标）

@@ -168,31 +168,27 @@ test.describe.serial('T-MERCH-QA-003 merchandising smoke', () => {
     expect(disclosureLabel).toBe('推广')
   })
 
-  test('store home renders the sponsored shelf with a per-item 推广 disclosure and no organic double-count', async ({ page }) => {
+  test('store home blends the sponsored card into the unified feed with a per-item 推广 disclosure and no organic double-count', async ({ page }) => {
     expect(productId).toBeGreaterThan(0)
     expect(campaignId).toBeGreaterThan(0)
 
     await loginAs(page, SEED_ACCOUNTS.user)
     await page.goto('/')
 
-    // 真实数据渲染：sponsored shelf 出现且包含被推广商品的独立卡片（shelf-product-card）。
-    const shelf = page.getByTestId('merch-sponsored-shelf')
-    await expect(shelf).toBeVisible({ timeout: 15_000 })
-    const shelfCard = shelf.getByTestId(`shelf-product-card-${productId}`)
-    await expect(shelfCard).toBeVisible({ timeout: 15_000 })
-    await expect(shelfCard).toContainText(MERCHANT_PRODUCT_NAME)
+    // 真实数据渲染：被推广商品以普通商品卡混入统一商品流（SPEC-CMI-UX-001 §4）。
+    const sponsoredCard = page.getByTestId(`store-product-card-${productId}`)
+    await expect(sponsoredCard).toBeVisible({ timeout: 15_000 })
+    await expect(sponsoredCard).toContainText(MERCHANT_PRODUCT_NAME)
 
     // 强制条目级文字 disclosure：与卡片同可见层级，非 tooltip / 纯色。
-    const disclosures = shelf.getByTestId('merch-sponsored-disclosure')
-    await expect(disclosures.first()).toBeVisible({ timeout: 10_000 })
-    await expect(disclosures).toHaveText(['推广'])
+    const disclosure = sponsoredCard.getByTestId(`store-disclosure-${productId}`)
+    await expect(disclosure).toBeVisible({ timeout: 10_000 })
+    await expect(disclosure).toHaveText('推广')
 
-    // organic 列表不重复计数：同一商品在 organic grid 恰好一张卡片（store-product-card）。
-    const organicCard = page.getByTestId(`store-product-card-${productId}`)
-    await expect(organicCard).toHaveCount(1, { timeout: 15_000 })
-    await expect(organicCard).toContainText(MERCHANT_PRODUCT_NAME)
-    // shelf 卡片与 organic 卡片 testid 互不冒充。
-    await expect(shelfCard).toHaveCount(1)
+    // 同一商品在统一商品流恰好一张卡片（不重复计数）。
+    await expect(sponsoredCard).toHaveCount(1)
+    // 不再渲染独立 SponsoredShelf。
+    await expect(page.getByTestId('merch-sponsored-shelf')).toHaveCount(0)
   })
 
   test('merchant campaign panel shows the active campaign with the charged timeline state', async ({ page }) => {

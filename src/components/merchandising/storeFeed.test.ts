@@ -128,6 +128,25 @@ describe('composeStoreFeed — fallback and dedup (AC-UX-003)', () => {
     expect(result.items.find(i => i.productId === 5)?.kind).toBe('sponsored')
   })
 
+  it('a product that is BOTH in the organic list and sponsored appears as sponsored (not as an earlier organic card)', () => {
+    // Product 5 is organic[0] (appears first in the organic list) AND sponsored.
+    // It must be reserved for the sponsored slot and never shown as a plain
+    // organic card first (sponsored > organic, rule 2).
+    const result = composeStoreFeed({
+      organic: organic([5, 16]),
+      sponsored: [{ productId: 5, product: product(5) }],
+      editorial: [],
+      searchQuery: '',
+    })
+    const slot3 = result.items[2]
+    expect(slot3.kind).toBe('sponsored')
+    expect(slot3.productId).toBe(5)
+    expect(result.items.filter(i => i.productId === 5)).toHaveLength(1)
+    // The organic list that followed product 5 is preserved in order.
+    const organicIds = result.items.filter(i => i.kind === 'organic').map(i => i.productId)
+    expect(organicIds[0]).toBe(6)
+  })
+
   it('an organic item whose id was injected as sponsored is replaced, not duplicated', () => {
     // Product 3 appears in the organic list AND as a sponsored candidate.
     const result = composeStoreFeed({
