@@ -9,7 +9,7 @@ import { catalogPlainTextSummary, sanitizeCatalogRichContent } from './contentSa
 export const EXTERNAL_CATALOG_IDEMPOTENCY_KEY_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/
 
 export type ExternalCatalogCoverChoice =
-  | { mode: 'uploaded'; imageUrl: string; images?: string[] }
+  | { mode: 'uploaded'; objectKey: string }
   | { mode: 'category_default' }
 
 export interface ExternalCatalogOfferInput {
@@ -80,12 +80,7 @@ export function normalizeExternalCatalogRequest(input: ExternalCatalogRequestInp
     productName: input.productName?.trim() || null,
     categoryId: input.categoryId,
     cover: input.cover.mode === 'uploaded'
-      ? {
-          mode: 'uploaded' as const,
-          imageUrl: input.cover.imageUrl.trim(),
-          images: (input.cover.images?.length ? input.cover.images : [input.cover.imageUrl])
-            .map(value => value.trim()),
-        }
+      ? { mode: 'uploaded' as const, objectKey: input.cover.objectKey.trim() }
       : { mode: 'category_default' as const },
     offers: offers.map(row => ({
       period: row.period.trim().toLowerCase(),

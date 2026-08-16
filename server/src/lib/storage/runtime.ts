@@ -278,6 +278,37 @@ export function invalidateStorageRuntimeCache(): void {
   lastVersionCheckAt = 0
   cachedRuntimeVersion = -1
 }
+/**
+ * Canonical public URL for a registered public object (SPEC-CMI-UX-001 §5.2).
+ *
+ * This is a read-only projection helper: the base is derived from the
+ * object's own provider config (or the env bootstrap), never from a
+ * client-supplied URL. `providerConfigId == null` → env bootstrap
+ * (config.storage, memory adapter uses its upload base); otherwise the
+ * provider's publicUrlBase (or endpoint/bucket) is used.
+ */
+export async function resolvePublicObjectCanonicalUrl(
+  providerConfigId: number | null,
+  objectKey: string,
+): Promise<string | null> {
+  if (providerConfigId == null) {
+    if (config.storage.kind === 's3') {
+      const base = config.storage.publicUrlBase
+        ?? `${config.storage.endpoint.replace(/\/$/, '')}/${config.storage.bucket}`
+      return `${base.replace(/\/$/, '')}/${objectKey}`
+    }
+    // memory adapter: uploads are served under the app's /uploads/ passthrough.
+    return `http://localhost:3000/uploads/${objectKey}`
+  }
+
+  const row = await prisma.storageProviderConfig.findUnique({
+    where: { id: providerConfigId },
+  })
+  if (!row) return null
+  const pc = row.publicConfig as unknown as ProviderPublicConfig
+  const base = pc.publicUrlBase ?? `${pc.endpoint.replace(/\/$/, '')}/${pc.publicBucket}`
+  return `${base.replace(/\/$/, '')}/${objectKey}`
+}
 
 /** 测试钩子：重置全部缓存。 */
 export function __resetStorageRuntimeForTesting(): void {

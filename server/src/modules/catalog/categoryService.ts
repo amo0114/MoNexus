@@ -30,6 +30,11 @@ import type { CategoryAdminDto } from './contracts.js'
 import { normalizeCategoryLabel, type CreateCategoryInput, type ListCategoriesQuery, type UpdateCategoryInput } from './categorySchema.js'
 import { bumpCategoryRegistryCacheVersion } from './registry.js'
 import { bumpProductListVersionCoalesced } from '../../lib/cache.js'
+import {
+  MediaRefResolutionError,
+  resolveLegacyPlatformImageUrl,
+  resolvePlatformPublicImage,
+} from './platformMedia.js'
 
 type Client = typeof prisma | Prisma.TransactionClient
 
@@ -56,6 +61,24 @@ export function categoryHttpError(status: number, code: CatalogErrorCode, messag
   // they still ride the standard HttpError so the error middleware formats them
   // (same pattern as catalog/resolver.ts).
   return new HttpError(status, code as ErrorCode, message)
+}
+
+/**
+ * Run a cover resolver and project its stable failure to a 400 COVER_INVALID
+ * HttpError so the API contract stays code-keyed (SPEC-CMI-UX-001 §6.2).
+ */
+async function resolveCategoryCover(
+  resolver: () => Promise<{ canonicalUrl: string }>,
+): Promise<string> {
+  try {
+    const resolved = await resolver()
+    return resolved.canonicalUrl
+  } catch (err) {
+    if (err instanceof MediaRefResolutionError) {
+      throw categoryHttpError(400, CATALOG_ERROR_CODES.COVER_INVALID, err.message)
+    }
+    throw err
+  }
 }
 
 function isPrismaErrorCode(err: unknown, code: string): boolean {
@@ -170,6 +193,22 @@ export async function createCategory(
 
   try {
     const row = await runInTransaction(db, async tx => {
+      // D-UX-11 / §5.4: a new category is always created active, so a
+      // resolvable default cover is mandatory. The resolve happens inside the
+      // same transaction as the write (atomic gate, AC-UX-015).
+      let defaultCoverUrl: string | null = null
+      if (input.defaultCover !== undefined) {
+        if (input.defaultCover !== null) {
+          const coverRef = input.defaultCover
+          defaultCoverUrl = await resolveCategoryCover(() => resolvePlatformPublicImage(coverRef, tx))
+        }
+      } else if (input.defaultCoverUrl?.trim()) {
+        const legacyUrl = input.defaultCoverUrl.trim()
+        defaultCoverUrl = await resolveCategoryCover(() => resolveLegacyPlatformImageUrl(legacyUrl, tx))
+      }
+      if (!defaultCoverUrl) {
+        throw categoryHttpError(400, CATALOG_ERROR_CODES.COVER_REQUIRED, '请上传一张分类默认封面')
+      }
       const created = await tx.productCategory.create({
         data: {
           code,
@@ -179,7 +218,7 @@ export async function createCategory(
           // emptyToUnset/emptyToNull) so direct service callers can't store ''.
           description: input.description?.trim() ? input.description : null,
           iconKey: input.iconKey?.trim() ? input.iconKey : null,
-          defaultCoverUrl: input.defaultCoverUrl?.trim() ? input.defaultCoverUrl : null,
+          defaultCoverUrl,
           sortOrder: input.sortOrder ?? 0,
           status: CATEGORY_STATUS.ACTIVE,
           createdByUserId: adminId,
@@ -220,7 +259,7 @@ export async function updateCategory(
 
   const existing = await db.productCategory.findUnique({
     where: { id },
-    select: { id: true },
+    select: { id: true, status: true, defaultCoverUrl: true },
   })
   if (!existing) throw notFound('分类不存在')
 
@@ -239,7 +278,35 @@ export async function updateCategory(
   }
   if (input.description !== undefined) data.description = input.description
   if (input.iconKey !== undefined) data.iconKey = input.iconKey
-  if (input.defaultCoverUrl !== undefined) data.defaultCoverUrl = input.defaultCoverUrl
+      // Cover replace/remove gates (SPEC-CMI-UX-001 §5.4, AC-UX-015):
+      //   - active replace: resolve the new cover first; on failure nothing is
+      //     written (old value kept);
+      //   - active remove: rejected with the old value preserved; inactive
+      //     remove is allowed;
+      //   - legacy unresolved covers cannot be written (must be replaced).
+      if (input.defaultCover !== undefined || input.defaultCoverUrl !== undefined) {
+        let nextUrl: string | null
+        if (input.defaultCover !== undefined) {
+          if (input.defaultCover === null) {
+            nextUrl = null
+          } else {
+            const coverRef = input.defaultCover
+            nextUrl = await resolveCategoryCover(() => resolvePlatformPublicImage(coverRef))
+          }
+        } else {
+          const legacy = input.defaultCoverUrl
+          if (legacy == null || legacy.trim() === '') {
+            nextUrl = null
+          } else {
+            const legacyUrl = legacy.trim()
+            nextUrl = await resolveCategoryCover(() => resolveLegacyPlatformImageUrl(legacyUrl))
+          }
+        }
+        if (nextUrl === null && existing.status === CATEGORY_STATUS.ACTIVE) {
+          throw categoryHttpError(400, CATALOG_ERROR_CODES.COVER_REQUIRED, '启用中的分类必须保留默认封面')
+        }
+        data.defaultCoverUrl = nextUrl
+      }
   if (input.sortOrder !== undefined) data.sortOrder = input.sortOrder
 
   try {
@@ -283,6 +350,25 @@ async function setCategoryStatus(
     ? CATEGORY_STATUS.INACTIVE
     : CATEGORY_STATUS.ACTIVE
 
+      // D-UX-11 / §5.4: inactive → active requires a resolvable default cover.
+      // A legacy cover that can no longer be resolved must be replaced before
+      // activating (AC-UX-015).
+      if (targetStatus === CATEGORY_STATUS.ACTIVE) {
+        const current = await db.productCategory.findUnique({
+          where: { id },
+          select: { status: true, defaultCoverUrl: true },
+        })
+        if (current && current.status === CATEGORY_STATUS.INACTIVE) {
+          if (!current.defaultCoverUrl) {
+            throw categoryHttpError(400, CATALOG_ERROR_CODES.COVER_REQUIRED, '启用分类前请先设置默认封面')
+          }
+          try {
+            await resolveLegacyPlatformImageUrl(current.defaultCoverUrl, db)
+          } catch {
+            throw categoryHttpError(400, CATALOG_ERROR_CODES.COVER_INVALID, '现有默认封面已失效，请先替换封面再启用')
+          }
+        }
+      }
   const row = await runInTransaction(db, async tx => {
     const updated = await tx.productCategory.updateMany({
       where: { id, status: opposite },
