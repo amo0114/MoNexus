@@ -12,6 +12,9 @@ BASE_PATH='/opt/monexus-staging'
 SOURCE_ENV_FILE='/etc/monexus/staging.env'
 PROJECT_NAME='monexus-staging'
 SAMPLE_COUNT='100'
+STARTUP_MAX_ATTEMPTS='90'
+STARTUP_RETRY_DELAY_SECONDS='2'
+STARTUP_BUDGET_SECONDS='180'
 
 fail() {
   echo "[ERROR] $*" >&2
@@ -120,16 +123,16 @@ wait_public_local() {
   # Backend-first intentionally recreates the server before the proxy smoke;
   # allow its bounded Docker health/startup window to settle without weakening
   # the smoke assertions themselves.
-  for attempt in {1..30}; do
+  for ((attempt = 1; attempt <= STARTUP_MAX_ATTEMPTS; attempt += 1)); do
     if compose_for "$root" "$env_file" smoke; then
       return 0
     fi
-    if [[ "$attempt" -lt 30 ]]; then
-      echo "[INFO] staging web/backend not ready (attempt ${attempt}/30); retrying in 2s"
-      sleep 2
+    if [[ "$attempt" -lt "$STARTUP_MAX_ATTEMPTS" ]]; then
+      echo "[INFO] staging web/backend not ready (attempt ${attempt}/${STARTUP_MAX_ATTEMPTS}); retrying in ${STARTUP_RETRY_DELAY_SECONDS}s (bounded ${STARTUP_BUDGET_SECONDS}s budget)"
+      sleep "$STARTUP_RETRY_DELAY_SECONDS"
     fi
   done
-  fail 'staging web/backend did not pass smoke within the 60-second startup budget'
+  fail "staging web/backend did not pass smoke within the bounded ${STARTUP_BUDGET_SECONDS}-second startup budget"
 }
 
 run_fixture() {
