@@ -1,5 +1,5 @@
 import { expect, test, type APIRequestContext } from '@playwright/test'
-import { API_BASE, SEED_ACCOUNTS, loginAs } from './helpers'
+import { API_BASE, SEED_ACCOUNTS, loginAs, publishMerchantProduct } from './helpers'
 
 /**
  * P6c 预约服务冒烟：商家配置日期字段（可约窗口）→ 买家 UI 日期选择下单 →
@@ -49,6 +49,7 @@ test.describe.serial('P6c booking', () => {
     })
     expect(created.ok(), await created.text()).toBeTruthy()
     state.productId = (await created.json()).id
+    await publishMerchantProduct(request, token, state.productId)
   })
 
   test('buyer picks a date in the purchase form and orders', async ({ page, request }) => {

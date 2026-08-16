@@ -80,7 +80,9 @@ jobs:
               - 'playwright.config.ts'
               - 'playwright.legal-pages.config.ts'
               - 'playwright.notification-realtime.config.ts'
+              - 'playwright.catalog-ops.config.ts'
               - 'scripts/verify-notification-realtime-e2e.sh'
+              - 'scripts/verify-catalog-ops-e2e.sh'
               # Workflow edits change how the E2E jobs themselves run, so
               # they must prove the restructured pipeline on the PR itself.
               - '.github/workflows/ci.yml'
@@ -97,7 +99,9 @@ jobs:
               - 'e2e/**'
               - 'playwright.config.ts'
               - 'playwright.notification-realtime.config.ts'
+              - 'playwright.catalog-ops.config.ts'
               - 'scripts/verify-notification-realtime-e2e.sh'
+              - 'scripts/verify-catalog-ops-e2e.sh'
               - '.github/workflows/ci.yml'
 
   backend:
@@ -144,7 +148,8 @@ jobs:
       JWT_SECRET: ci-jwt-secret-at-least-32-characters-long-xx
       FRONTEND_ORIGIN: http://localhost:5173
       # 全局 /api limiter 无测试跳过（app.ts），全量套件单进程共享计数，
-      # 默认 300 次/15 分钟会从第 301 个请求起整片 429（与 E2E 作业同值）。
+      # 默认 300 次/15 分钟会从第 301 个请求起整片 429；这个 CI 后端
+      # 测试作业保持独立的测试上限，不改变生产默认值。
       API_RATE_LIMIT_MAX: 3000
 
     steps:
@@ -247,7 +252,9 @@ jobs:
       TEST_DATABASE_URL: postgresql://monexus:monexus_dev_2026@localhost:5432/monexus_test?schema=public
       JWT_SECRET: ci-jwt-secret-at-least-32-characters-long-xx
       FRONTEND_ORIGIN: http://localhost:5173
-      API_RATE_LIMIT_MAX: 3000
+      # E2E shares one test client across the full suite; this test-only
+      # headroom prevents aggregate /api traffic from ending in 429.
+      API_RATE_LIMIT_MAX: 10000
 
     steps:
       - name: Check out repository
@@ -388,7 +395,8 @@ jobs:
           CI: 'true'
           E2E_BASE_URL: http://127.0.0.1:5173
           # Keep API fixture traffic on a distinct loopback client address;
-          # API_RATE_LIMIT_MAX remains 3000 and no limiter is bypassed.
+          # API_RATE_LIMIT_MAX is raised for aggregate E2E traffic only;
+          # no limiter is bypassed and production defaults are unchanged.
           E2E_API_URL: 'http://[::1]:3000'
 
       - name: Upload Playwright report
@@ -488,6 +496,94 @@ jobs:
       - name: Run notification realtime E2E tests
         run: bash scripts/verify-notification-realtime-e2e.sh
 
+  catalog-ops-e2e:
+    name: Catalog-ops integration Playwright E2E
+    # Dedicated-stack suite for the Catalog/Merch integration lane (PAR-CMI-001).
+    # The four catalog-ops specs own a fixed topology (API 3105 / Vite 5180 /
+    # Xboard fixture 3106) and the disposable DB monexus_test_catalog_merch_integration;
+    # the merchandising smoke additionally REQUIRES a fresh DB per run (placement
+    # partial-unique conflicts with a leftover active campaign). Folding them into
+    # the shared compatibility job's single DB would break that determinism and
+    # risk cross-spec pollution, so they run only via playwright.catalog-ops.config.ts
+    # here, mirroring scripts/verify-catalog-ops-e2e.sh 1:1. Like the other Playwright
+    # jobs it is self-contained and runs in parallel with the backend shards.
+    needs: [changes, frontend]
+    if: >-
+      !failure() && !cancelled() && (
+        github.event_name == 'push' ||
+        (github.base_ref == 'master' && needs.changes.outputs.code == 'true') ||
+        needs.changes.outputs.e2e == 'true' ||
+        contains(github.event.pull_request.labels.*.name, 'run-e2e')
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: monexus
+          POSTGRES_PASSWORD: monexus_dev_2026
+          POSTGRES_DB: monexus_test_catalog_merch_integration
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U monexus -d monexus_test_catalog_merch_integration"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://monexus:monexus_dev_2026@localhost:5432/monexus_test_catalog_merch_integration?schema=public
+      TEST_DATABASE_URL: postgresql://monexus:monexus_dev_2026@localhost:5432/monexus_test_catalog_merch_integration?schema=public
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            server/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Install backend dependencies
+        run: npm --prefix server ci
+
+      - name: Generate Prisma client
+        run: npm --prefix server run db:generate
+
+      - name: Resolve Playwright version
+        id: playwright-version
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright-version.outputs.version }}
+
+      - name: Install Playwright chromium
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium
+
+      - name: Install Playwright system dependencies
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
+
+      - name: Install PostgreSQL client (dbguard lifecycle)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends postgresql-client
+
+      - name: Run catalog-ops integration E2E tests
+        run: bash scripts/verify-catalog-ops-e2e.sh
+
   deployment-contract:
     # This is intentionally independent of source-path filtering: a malformed
     # workflow or forced-command wrapper must not reach the release branch just
@@ -507,7 +603,7 @@ jobs:
     # upstream job failed — skipped jobs (docs-only or unlabeled-E2E PRs)
     # count as success.
     name: CI OK
-    needs: [changes, backend, frontend, e2e, notification-realtime-e2e, deployment-contract]
+    needs: [changes, backend, frontend, e2e, notification-realtime-e2e, catalog-ops-e2e, deployment-contract]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5

@@ -15,6 +15,7 @@ import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 import { prisma } from '../src/lib/prisma.js'
 import { config } from '../src/config/index.js'
+import { ensureSeedCategories } from '../src/modules/catalog/bootstrap.js'
 
 const databaseUrl = process.env.DATABASE_URL ?? ''
 let databaseName = ''
@@ -55,6 +56,11 @@ const merchantUser = await prisma.user.create({
     nickname: `实时商家-${uniq.slice(-4)}`,
   },
 })
+// A dedicated realtime database is migration-only; on a brand-new database
+// the application bootstrap must materialise the frozen product categories
+// before Product.create can connect to network-node.
+await ensureSeedCategories(merchantUser.id)
+
 const merchant = await prisma.merchant.create({
   data: {
     userId: merchantUser.id,
@@ -76,7 +82,8 @@ const manualProduct = await prisma.product.create({
     stock: 100,
     deliveryMode: 'manual_service',
     stockMode: 'limited',
-    merchantId: merchant.id,
+    merchant: { connect: { id: merchant.id } },
+    category: { connect: { code: 'network-node' } },
   },
 })
 const manualOffer = await prisma.offer.create({
@@ -104,7 +111,8 @@ const instantProduct = await prisma.product.create({
     stockMode: 'unlimited',
     fixedContent: instantSecret,
     fixedContentType: 'text',
-    merchantId: merchant.id,
+    merchant: { connect: { id: merchant.id } },
+    category: { connect: { code: 'network-node' } },
   },
 })
 const instantOffer = await prisma.offer.create({

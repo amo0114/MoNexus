@@ -9,18 +9,18 @@ datasource db {
 }
 
 model User {
-  id            Int       @id @default(autoincrement())
-  email         String    @unique
-  password      String
-  role          String    @default("user") // user | admin | merchant
-  status        String    @default("正常")
-  nickname      String? // 1-20 字;注册可选,空则系统生成 mn_XXXXXXXX
-  avatarUrl     String? // 公开图床 URL(POST /uploads/image → OSS/public)
-  emailVerified DateTime?
+  id                 Int       @id @default(autoincrement())
+  email              String    @unique
+  password           String
+  role               String    @default("user") // user | admin | merchant
+  status             String    @default("正常")
+  nickname           String? // 1-20 字;注册可选,空则系统生成 mn_XXXXXXXX
+  avatarUrl          String? // 公开图床 URL(POST /uploads/image → OSS/public)
+  emailVerified      DateTime?
   // Stops this user from qualifying new invite relations. It never rewrites
   // already granted PointLog history.
-  referralSuspended Boolean @default(false)
-  createdAt     DateTime  @default(now())
+  referralSuspended  Boolean   @default(false)
+  createdAt          DateTime  @default(now())
   // MFA seed is AES-256-GCM ciphertext. It must never be selected by public
   // serializers; only the auth MFA service reads it explicitly.
   mfaEnabled         Boolean   @default(false)
@@ -28,40 +28,57 @@ model User {
   mfaVerifiedAt      DateTime?
   mfaVersion         Int       @default(0)
 
-  pointAccount            PointAccount?
-  orders                  Order[]
-  pointLogs               PointLog[]
-  checkins                CheckinRecord[]
-  refreshTokens           RefreshToken[]
-  orderStatusEvents       OrderStatusEvent[]
-  invitedBy               InviteRelation[]         @relation("invitee")
-  invites                 InviteRelation[]         @relation("inviter")
-  growthRewards           GrowthReward[]           @relation("GrowthRewardRecipient")
-  abuseEvents             AbuseEvent[]             @relation("AbuseEventUser")
-  abuseEventsAsInviter    AbuseEvent[]             @relation("AbuseEventInviter")
-  abuseEventsAsInvitee    AbuseEvent[]             @relation("AbuseEventInvitee")
-  adminLogs               AdminLog[]
-  updatedSystemConfigs    SystemConfig[]           @relation("SystemConfigUpdatedBy")
-  approvedMerchants       Merchant[]               @relation("MerchantApprovedBy")
-  merchant                Merchant?
-  passwordResetTokens     PasswordResetToken[]
-  emailVerificationTokens EmailVerificationToken[]
-  reviews                 Review[]
-  announcementsCreated    Announcement[] @relation("AnnouncementCreatedBy")
-  announcementReceipts    AnnouncementReceipt[]
-  idempotencyRecords      IdempotencyRecord[]
-  fileGrants              FileGrantLog[]
-  mfaRecoveryCodes        MfaRecoveryCode[]
-  authChallenges          AuthChallenge[]
-  securityEvents          SecurityEvent[]
-  fakaProvisionEmailProofs FakaProvisionEmailProof[]
+  pointAccount                 PointAccount?
+  orders                       Order[]
+  pointLogs                    PointLog[]
+  checkins                     CheckinRecord[]
+  refreshTokens                RefreshToken[]
+  orderStatusEvents            OrderStatusEvent[]
+  invitedBy                    InviteRelation[]              @relation("invitee")
+  invites                      InviteRelation[]              @relation("inviter")
+  growthRewards                GrowthReward[]                @relation("GrowthRewardRecipient")
+  abuseEvents                  AbuseEvent[]                  @relation("AbuseEventUser")
+  abuseEventsAsInviter         AbuseEvent[]                  @relation("AbuseEventInviter")
+  abuseEventsAsInvitee         AbuseEvent[]                  @relation("AbuseEventInvitee")
+  adminLogs                    AdminLog[]
+  updatedSystemConfigs         SystemConfig[]                @relation("SystemConfigUpdatedBy")
+  approvedMerchants            Merchant[]                    @relation("MerchantApprovedBy")
+  merchant                     Merchant?
+  passwordResetTokens          PasswordResetToken[]
+  emailVerificationTokens      EmailVerificationToken[]
+  reviews                      Review[]
+  announcementsCreated         Announcement[]                @relation("AnnouncementCreatedBy")
+  announcementReceipts         AnnouncementReceipt[]
+  idempotencyRecords           IdempotencyRecord[]
+  fileGrants                   FileGrantLog[]
+  mfaRecoveryCodes             MfaRecoveryCode[]
+  authChallenges               AuthChallenge[]
+  securityEvents               SecurityEvent[]
+  fakaProvisionEmailProofs     FakaProvisionEmailProof[]
   fakaProvisionEmailSendBudget FakaProvisionEmailSendBudget?
-  leaderboardEntries      LeaderboardEntry[]
-  inviteCodesIssued       InviteCode[]             @relation("InviteCodeIssuer")
-  inviteCodeUsed          InviteCode?              @relation("InviteCodeUsedBy")
-  userAgreementConsents   UserAgreementConsent[]
-  orderAgreementAcceptances OrderAgreementAcceptance[]
-  notifications           Notification[]
+  leaderboardEntries           LeaderboardEntry[]
+  inviteCodesIssued            InviteCode[]                  @relation("InviteCodeIssuer")
+  inviteCodeUsed               InviteCode?                   @relation("InviteCodeUsedBy")
+  userAgreementConsents        UserAgreementConsent[]
+  orderAgreementAcceptances    OrderAgreementAcceptance[]
+  notifications                Notification[]
+
+  // ── FND-CMI-001 Catalog foundation back-relations ──
+  categoriesCreated            ProductCategory[]     @relation("CategoryCreatedBy")
+  categoriesUpdated            ProductCategory[]     @relation("CategoryUpdatedBy")
+  categoryApplicationsReviewed CategoryApplication[]
+  importedCatalogLinks         ExternalCatalogLink[]
+
+  // ── FND-CMI-001 Merchandising foundation back-relations ──
+  promotionPackagesCreated PromotionPackage[]    @relation("PromotionPackageCreatedBy")
+  promotionPackagesUpdated PromotionPackage[]    @relation("PromotionPackageUpdatedBy")
+  campaignsReviewed        PromotionCampaign[]   @relation("CampaignReviewedBy")
+  campaignsCancelled       PromotionCampaign[]   @relation("CampaignCancelledBy")
+  campaignsAdjusted        PromotionCampaign[]   @relation("CampaignAdjustmentBy")
+  editorialFeaturesCreated EditorialFeature[]    @relation("EditorialCreatedBy")
+  editorialFeaturesRevoked EditorialFeature[]    @relation("EditorialRevokedBy")
+  entitlementsGranted      MerchantEntitlement[] @relation("EntitlementGrantedBy")
+  entitlementsRevoked      MerchantEntitlement[] @relation("EntitlementRevokedBy")
 }
 
 // SPEC-NOTIFY-001 Phase 1：1:1 事务消息（与 Announcement 运营广播分离）。
@@ -153,22 +170,22 @@ model FakaProvisionEmailSendBudget {
 }
 
 model Announcement {
-  id             Int      @id @default(autoincrement())
+  id             Int       @id @default(autoincrement())
   title          String
   content        String
-  audience       String   @default("all") // all | user | merchant | admin
-  priority       Int      @default(0) // 数字越大越靠前
-  presentation   String   @default("notice") // notice | important | acknowledgement_required
-  maxImpressions Int      @default(3) // 仅 notice 使用，单设备展示 1-3 次
-  version        Int      @default(1) // 实质内容变更后递增，重新要求阅读/确认
+  audience       String    @default("all") // all | user | merchant | admin
+  priority       Int       @default(0) // 数字越大越靠前
+  presentation   String    @default("notice") // notice | important | acknowledgement_required
+  maxImpressions Int       @default(3) // 仅 notice 使用，单设备展示 1-3 次
+  version        Int       @default(1) // 实质内容变更后递增，重新要求阅读/确认
   startsAt       DateTime
   endsAt         DateTime? // null 表示长期
-  status         String   @default("draft") // draft | published | archived
+  status         String    @default("draft") // draft | published | archived
   createdBy      Int?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
-  createdByUser User? @relation("AnnouncementCreatedBy", fields: [createdBy], references: [id])
+  createdByUser User?                 @relation("AnnouncementCreatedBy", fields: [createdBy], references: [id])
   receipts      AnnouncementReceipt[]
 
   @@index([status, startsAt, endsAt])
@@ -178,14 +195,14 @@ model Announcement {
 // 已读 / 已确认状态与公告版本绑定。运营修改实质内容后 version 递增，
 // 用户会自然获得一条新的待读回执，旧版本记录仍保留作审计依据。
 model AnnouncementReceipt {
-  id              Int      @id @default(autoincrement())
-  announcementId  Int
-  userId          Int
-  version         Int
-  readAt          DateTime?
-  acknowledgedAt  DateTime?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id             Int       @id @default(autoincrement())
+  announcementId Int
+  userId         Int
+  version        Int
+  readAt         DateTime?
+  acknowledgedAt DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   announcement Announcement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
   user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -231,13 +248,18 @@ model Merchant {
   approvedAt     DateTime?
   approvedBy     Int?
 
-  user           User         @relation(fields: [userId], references: [id])
-  approvedByUser User?        @relation("MerchantApprovedBy", fields: [approvedBy], references: [id])
+  user           User                    @relation(fields: [userId], references: [id])
+  approvedByUser User?                   @relation("MerchantApprovedBy", fields: [approvedBy], references: [id])
   products       Product[]
   orders         Order[]
   settlements    Settlement[]
   deliveryFiles  DeliveryFile[]
   webhookConfigs MerchantWebhookConfig[]
+
+  // ── FND-CMI-001 back-relations ──
+  categoryApplications CategoryApplication[]
+  promotionCampaigns   PromotionCampaign[]
+  entitlements         MerchantEntitlement[]
 }
 
 // P7b：商家自动开通 webhook 配置（版本化）。轮换/撤销 = 旧行置 revoked +
@@ -293,21 +315,21 @@ model ProvisionTask {
 }
 
 model RefreshToken {
-  id                Int      @id @default(autoincrement())
-  userId            Int
-  tokenHash         String   @unique
-  revoked           Boolean  @default(false)
-  revokedAt         DateTime?
-  revokeReason      String?
-  expiresAt         DateTime
-  userAgent         String?
-  ip                String?
+  id               Int       @id @default(autoincrement())
+  userId           Int
+  tokenHash        String    @unique
+  revoked          Boolean   @default(false)
+  revokedAt        DateTime?
+  revokeReason     String?
+  expiresAt        DateTime
+  userAgent        String?
+  ip               String?
   // PostgreSQL default (rather than Prisma's client-side uuid()) is required
   // to assign a distinct family ID to refresh-token rows that predate M3.
-  sessionId         String   @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  sessionStartedAt  DateTime @default(now())
-  lastUsedAt        DateTime @default(now())
-  createdAt         DateTime @default(now())
+  sessionId        String    @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sessionStartedAt DateTime  @default(now())
+  lastUsedAt       DateTime  @default(now())
+  createdAt        DateTime  @default(now())
 
   user User @relation(fields: [userId], references: [id])
 
@@ -345,14 +367,14 @@ model AuthChallenge {
 }
 
 model SecurityEvent {
-  id         Int       @id @default(autoincrement())
+  id         Int      @id @default(autoincrement())
   userId     Int?
-  sessionId  String?   @db.Uuid
+  sessionId  String?  @db.Uuid
   type       String
   ipHash     String?
   deviceHint String?
   detailSafe Json?
-  createdAt  DateTime  @default(now())
+  createdAt  DateTime @default(now())
 
   // Security evidence survives a future User deletion. sessionId is a
   // family identifier rather than an FK to a single rotated token row.
@@ -364,24 +386,24 @@ model SecurityEvent {
 }
 
 model IdempotencyRecord {
-  id         Int      @id @default(autoincrement())
-  userId     Int
-  key        String   @db.Uuid
-  status     String   @default("processing") // processing | completed
+  id            Int      @id @default(autoincrement())
+  userId        Int
+  key           String   @db.Uuid
+  status        String   @default("processing") // processing | completed
   // 持有者租约令牌：每次 claim / 孤儿接管都换新值。complete 与 release
   // 必须同时匹配 token，防止被接管的旧持有者完成订单或删除新持有者的占用。
-  claimToken String   @db.Uuid
+  claimToken    String   @db.Uuid
   // 请求指纹：productId + expectedPrice + 表单版本 + 规范化答案的 HMAC 摘要。
   // 同一 key 携带不同请求体（含不同答案）必须 409，绝不静默重放另一份提交。
   // 存摘要而非明文，避免低熵答案通过本表泄露。
-  productId  Int
-  requestDigest String @default("")
+  productId     Int
+  requestDigest String   @default("")
   // 指向该结算意图最终产生的唯一订单；processing 阶段为 null。
-  orderId    Int?     @unique
-  createdAt  DateTime @default(now())
+  orderId       Int?     @unique
+  createdAt     DateTime @default(now())
   // processing 记录超过 expiresAt 视为孤儿（进程崩溃残留），可被同 key 重试接管；
   // completed 记录永久保留重放语义，仅由 cron 按保留期清理。
-  expiresAt  DateTime
+  expiresAt     DateTime
 
   user User @relation(fields: [userId], references: [id])
 
@@ -413,6 +435,12 @@ model PointLog {
   user  User   @relation(fields: [userId], references: [id])
   order Order? @relation(fields: [orderId], references: [id])
 
+  // ── FND-CMI-001 (SPEC-MERCH-001 §5.4): charge/refund named back-relations. ──
+  // PromotionCampaign.chargePointLogId / refundPointLogId (both UNIQUE, RESTRICT)
+  // point at exactly one PointLog row each; the campaign side owns the FK.
+  campaignCharged  PromotionCampaign? @relation("PromotionCampaignCharge")
+  campaignRefunded PromotionCampaign? @relation("PromotionCampaignRefund")
+
   // 排行榜按 (type='in', createdAt ∈ 窗口) 聚合；此前本表除主键零索引，
   // 缺了它每次刷新都是全表扫。
   @@index([type, createdAt])
@@ -435,8 +463,10 @@ model Product {
   sales            Int      @default(0) // >= 0; 历史成功下单/交付计数，退款不回退，不能用作净成交额
   ratingAvg        Decimal  @default(0) @db.Decimal(2, 1) // ratingCount=0 时无意义，前端显示「暂无评分」
   ratingCount      Int      @default(0)
+  // DEPRECATED (SPEC-MERCH-001 D-MERCH-01): legacy column retained only as a
+  // no-op. No write path may set it and no public ranking/display may read it.
   isHot            Boolean  @default(false)
-  status           String   @default("active") // active | inactive; PostgreSQL CHECK constrained
+  status           String   @default("draft") // draft | active | inactive; PostgreSQL CHECK constrained
   deliveryMode     String   @default("instant_inventory") // instant_inventory | instant_fixed | manual_service; PostgreSQL CHECK constrained
   stockMode        String   @default("limited") // limited | unlimited（instant_inventory 强制 limited）；PostgreSQL CHECK constrained
   fixedContent     String? // instant_fixed 专用：固定交付内容（付费内容，禁止公开序列化）
@@ -447,6 +477,14 @@ model Product {
   merchantId       Int?
   createdAt        DateTime @default(now())
 
+  // FND-CMI-001 (SPEC-CATALOG-OPS-001 §5.3): platform-governed taxonomy FK.
+  // Final required in F0: nullable -> backfill (20260809020000) -> zero-null
+  // guard -> NOT NULL. New writes must provide categoryId (D-CAT-09).
+  categoryId  Int
+  // First publish time (SPEC-CATALOG-OPS-001 D-CAT-04). Backfilled for legacy
+  // active/inactive rows; null for draft/never-published.
+  publishedAt DateTime?
+
   merchant      Merchant?       @relation(fields: [merchantId], references: [id])
   reviews       Review[]
   orders        Order[]
@@ -454,36 +492,43 @@ model Product {
   inventoryLogs InventoryLog[]
   offers        Offer[]
 
+  category               ProductCategory                @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  externalCatalogLink    ExternalCatalogLink?
+  merchandisingSnapshots ProductMerchandisingSnapshot[]
+  promotionCampaigns     PromotionCampaign[]
+  editorialFeatures      EditorialFeature[]
+
   @@index([status, isHot, sales, id])
+  @@index([categoryId])
 }
 
 // SKU/套餐（P4a）：价格、库存与履约配置的真相源（spec §2：Fulfillment 绑定
 // SKU 而非商品）。每个商品至少有一条回填的默认 Offer；Product 上的
 // price/stock/deliveryMode 等列降级为投影，由服务层在 Offer 写路径同步。
 model Offer {
-  id               Int      @id @default(autoincrement())
-  productId        Int
-  name             String // 月卡 / 季卡 / 美区 …；回填默认 Offer 为「默认规格」
+  id                  Int      @id @default(autoincrement())
+  productId           Int
+  name                String // 月卡 / 季卡 / 美区 …；回填默认 Offer 为「默认规格」
   // CHECK constraints (20260725200000) mirror the Product commercial rules.
-  price            Int // > 0
-  originalPrice    Int? // null or >= price
-  status           String   @default("active") // active | inactive
-  deliveryMode     String   @default("instant_inventory") // instant_inventory | instant_fixed | manual_service
-  stockMode        String   @default("limited") // limited | unlimited（instant_inventory 强制 limited）
-  stock            Int      @default(0) // >= 0
-  fixedContent     String? // instant_fixed 专用（text/url 形态）；禁止公开序列化
-  fixedContentType String   @default("text") // text | url | file
+  price               Int // > 0
+  originalPrice       Int? // null or >= price
+  status              String   @default("active") // active | inactive
+  deliveryMode        String   @default("instant_inventory") // instant_inventory | instant_fixed | manual_service
+  stockMode           String   @default("limited") // limited | unlimited（instant_inventory 强制 limited）
+  stock               Int      @default(0) // >= 0
+  fixedContent        String? // instant_fixed 专用（text/url 形态）；禁止公开序列化
+  fixedContentType    String   @default("text") // text | url | file
   // P5：fixedContentType='file' 时的"当前在售文件"。CHECK（20260726180000）：
   // file 形态要求 instant_fixed + fixedFileId 非空 + fixedContent 为空；
   // 非 file 形态禁止 fixedFileId。只影响新订单——下单事务把它冻结进
   // DeliveryRecord.fileId，旧订单下载永远读快照，绝不回查这里。
-  fixedFileId      Int?
+  fixedFileId         Int?
   // P4b：交付字段模板 [{ key, label, sensitive, placeholder? }]。null/空 = 纯文本
   // 交付（存量形态，行为不变）。模板本身公开（买家购前可见将获得哪些字段）；
   // 字段"值"的访问边界同 DeliveryRecord.content。instant_fixed 不支持模板。
-  deliveryFields   Json?
-  sales            Int      @default(0)
-  sortOrder        Int      @default(0)
+  deliveryFields      Json?
+  sales               Int      @default(0)
+  sortOrder           Int      @default(0)
   // 默认规格：只服务兼容路径（商品级编辑、未指定 offerId 的库存操作）。
   // 展示顺序由 sortOrder，列表价取最低 active 价——三个概念显式分离。
   // 每商品至多一条：部分唯一索引 Offer_one_default_per_product（仅存在于
@@ -493,31 +538,33 @@ model Offer {
   // 引擎不可见，既不会被 DROP 也不会触发 reset；迁移重放保证各环境拥有它。
   // 注意：本仓库只用 migrate 工作流；`prisma db push` 不重放迁移，会得到
   // 没有该索引的库，勿在本项目使用 db push。
-  isDefault        Boolean  @default(false)
+  isDefault           Boolean  @default(false)
   // P6a：订阅有效期天数。null = 永久（存量语义）。下单快照进
   // Order.validityDaysSnapshot——商家改时长不影响已购订单；进入
   // checkoutVersion canonical（null 不进，存量摘要不变）。
-  validityDays     Int?
+  validityDays        Int?
   // P7b：自动开通——manual_service 的自动化首次交付（不是第四种交付模式）。
   // CHECK（迁移 20260728100000）：仅 manual_service 且无交付模板可为 true；
   // 服务端校验为主，数据库兜底。进入 checkoutVersion canonical（true 才进）。
-  autoProvision    Boolean  @default(false)
+  autoProvision       Boolean  @default(false)
   // FakaBridge（Xboard 订阅开通）：null = 无外部集成。
   // externalIntegration='faka_bridge' 时 externalSku 必填（PG CHECK + 服务端）。
   // 与 autoProvision 互斥（迁移 CHECK + 服务端拒绝冲突组合）。
   externalIntegration String? // null | faka_bridge
   externalSku         String? // e.g. aster-basic-monthly — Xboard plugin SKU_MAPPING
-  createdAt        DateTime @default(now())
+  createdAt           DateTime @default(now())
 
-  product   Product         @relation(fields: [productId], references: [id])
-  inventory InventoryItem[]
-  orders    Order[]
+  product        Product         @relation(fields: [productId], references: [id])
+  inventory      InventoryItem[]
+  orders         Order[]
   lowStockNotice LowStockNotice?
   // Restrict：被在售规格引用的文件行不可删（生命周期只走 status 标记）。
-  fixedFile DeliveryFile?   @relation("OfferFixedFile", fields: [fixedFileId], references: [id], onDelete: Restrict)
+  fixedFile      DeliveryFile?   @relation("OfferFixedFile", fields: [fixedFileId], references: [id], onDelete: Restrict)
 
+  // FND-CMI-001 (D-CAT-19): external identity is unique at the DB level. NULL
+  // externalIntegration/SKU rows (ordinary offers) are unconstrained by this.
+  @@unique([externalIntegration, externalSku])
   @@index([productId, status, sortOrder])
-  @@index([externalIntegration, externalSku])
 }
 
 model InventoryLog {
@@ -542,7 +589,7 @@ model InventoryLog {
   product Product @relation(fields: [productId], references: [id])
   // onDelete: Restrict 与 20260724123000 手写迁移保持一致：库存审计行
   // 禁止随订单删除而悄悄断链（Prisma 对可空关系默认 SetNull，会被当作漂移改掉）。
-  order   Order?   @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  order   Order?  @relation(fields: [orderId], references: [id], onDelete: Restrict)
 
   @@index([productId, createdAt])
   // 与 batchId 唯一索引并存的普通索引，同样来自 20260724123000 手写迁移。
@@ -631,21 +678,21 @@ model Review {
 }
 
 model InventoryItem {
-  id           Int       @id @default(autoincrement())
-  productId    Int
+  id                Int       @id @default(autoincrement())
+  productId         Int
   // 库存归属的 SKU；回填后由迁移 20260725202000 收紧为 NOT NULL。
   // 唯一约束保持商品级（同一商品下卡密不允许重复，与 SKU 无关）。
-  offerId      Int
-  content      String
+  offerId           Int
+  content           String
   // P4b：结构化交付内容 { fields, values }（自包含模板快照，商家改模板不影响
   // 已导入条目）。content 保持权威——由结构化值生成规范化文本，唯一约束、
   // 领取 SQL、审计路径零改动；structuredContent 仅是展示层增强。
   structuredContent Json?
-  status       String    @default("available") // available | sold | void; PostgreSQL CHECK constrained
-  orderId      Int?      @unique
-  soldToUserId Int?
-  soldAt       DateTime?
-  createdAt    DateTime  @default(now())
+  status            String    @default("available") // available | sold | void; PostgreSQL CHECK constrained
+  orderId           Int?      @unique
+  soldToUserId      Int?
+  soldAt            DateTime?
+  createdAt         DateTime  @default(now())
 
   product Product @relation(fields: [productId], references: [id])
   offer   Offer   @relation(fields: [offerId], references: [id])
@@ -656,64 +703,64 @@ model InventoryItem {
 }
 
 model Order {
-  id                 Int       @id @default(autoincrement())
-  userId             Int
-  productId          Int
+  id                      Int       @id @default(autoincrement())
+  userId                  Int
+  productId               Int
   // 下单时选择的 SKU；可空以兼容迁移前订单（回填为默认 Offer，服务层读取
   // 时对 null 回退到商品级快照，惯例同 productNameSnapshot）。
-  offerId            Int?
-  offerNameSnapshot  String?
+  offerId                 Int?
+  offerNameSnapshot       String?
   // P4b：下单时的交付字段模板快照。人工服务发货按它强制校验——商家改模板
   // 不改变已购未发货订单的履约契约（快照惯例同 deliveryModeSnapshot）。
   // null = 纯文本交付契约。
-  deliveryFieldsSnapshot Json?
-  price              Int
-  status             String    @default("pending") // pending | processing | delivered | closed | disputed | refunded
-  merchantId         Int?
-  commissionRate      Decimal?  @db.Decimal(5, 4)
-  commissionAmount   Int       @default(0)
-  deliveryModeSnapshot String  @default("instant_inventory") // 下单时的履约模式快照；服务层保留对迁移前空值的兼容回退
+  deliveryFieldsSnapshot  Json?
+  price                   Int
+  status                  String    @default("pending") // pending | processing | delivered | closed | disputed | refunded
+  merchantId              Int?
+  commissionRate          Decimal?  @db.Decimal(5, 4)
+  commissionAmount        Int       @default(0)
+  deliveryModeSnapshot    String    @default("instant_inventory") // 下单时的履约模式快照；服务层保留对迁移前空值的兼容回退
   // 商品可在下单后改名、换图或调整分类；以下字段固定保存当时的展示合同。
   // 允许 null 是为了兼容迁移前订单，读取时回退到关联 Product。
   productNameSnapshot     String?
   productTypeSnapshot     String?
   productIconSnapshot     String?
   productImageUrlSnapshot String?
-  holdingPoints      Int? // 虚拟服务订单冻结的积分；instant 模式为 null
+  holdingPoints           Int? // 虚拟服务订单冻结的积分；instant 模式为 null
   // 购买前表单：下单时把"当时的字段定义 + 买家答案"一并快照，商家改定义不影响已购订单。
   // answers 与 DeliveryRecord.content 同一访问边界：仅买家/商家/必要管理员，
   // 禁止进入商品公开接口、订单列表接口和审计日志。
-  purchaseFormSnapshot Json?
-  purchaseFormAnswers  Json?
-  fundsHeld          Boolean   @default(false) // 仅新模型订单为 true；兼容迁移前未实际扣减的历史订单
-  fulfillmentDeadline DateTime? // manual_service 商家履约截止时间
-  confirmedAt        DateTime? // 用户确认关闭订单的时间
+  purchaseFormSnapshot    Json?
+  purchaseFormAnswers     Json?
+  fundsHeld               Boolean   @default(false) // 仅新模型订单为 true；兼容迁移前未实际扣减的历史订单
+  fulfillmentDeadline     DateTime? // manual_service 商家履约截止时间
+  confirmedAt             DateTime? // 用户确认关闭订单的时间
   // P6c：预约日期（购买前表单首个 date 字段的答案，下单校验后列化——
   // 商家排序/提醒 cron 免查 JSON）。null = 非预约单。
-  bookingDate        DateTime?
+  bookingDate             DateTime?
   // P6a：下单时的订阅有效期快照（null = 永久）；到期时刻在 DeliveryRecord.expiresAt。
-  validityDaysSnapshot Int?
+  validityDaysSnapshot    Int?
   // P6a：续费单指向被续费的原订单（同买家同 offer）。Restrict：续费链是
   // 审计链的一部分，原订单行不可删。
-  renewalOfOrderId   Int?
-  createdAt          DateTime  @default(now())
+  renewalOfOrderId        Int?
+  createdAt               DateTime  @default(now())
 
-  user         User               @relation(fields: [userId], references: [id])
-  product      Product            @relation(fields: [productId], references: [id])
-  offer        Offer?             @relation(fields: [offerId], references: [id])
-  merchant     Merchant?          @relation(fields: [merchantId], references: [id])
-  delivery     DeliveryRecord?
-  review       Review?
-  settlement   Settlement?
-  pointLogs    PointLog[]
-  statusEvents OrderStatusEvent[]
-  inventoryLogs InventoryLog[]
-  fileGrants   FileGrantLog[]
+  user           User               @relation(fields: [userId], references: [id])
+  product        Product            @relation(fields: [productId], references: [id])
+  offer          Offer?             @relation(fields: [offerId], references: [id])
+  merchant       Merchant?          @relation(fields: [merchantId], references: [id])
+  delivery       DeliveryRecord?
+  review         Review?
+  settlement     Settlement?
+  pointLogs      PointLog[]
+  statusEvents   OrderStatusEvent[]
+  inventoryLogs  InventoryLog[]
+  fileGrants     FileGrantLog[]
   provisionTask  ProvisionTask?
   fakaBridgeTask FakaBridgeTask?
 
-  renewalOf Order?  @relation("OrderRenewal", fields: [renewalOfOrderId], references: [id], onDelete: Restrict)
-  renewals  Order[] @relation("OrderRenewal")
+  renewalOf            Order?                     @relation("OrderRenewal", fields: [renewalOfOrderId], references: [id], onDelete: Restrict)
+  renewals             Order[]                    @relation("OrderRenewal")
   subscriptionReminder SubscriptionReminder?
   slaReminder          SlaReminder?
   bookingReminder      BookingReminder?
@@ -730,35 +777,35 @@ model Order {
 // 协议与商家 autoProvision 不同（body HMAC + order_no/email/sku），独立表。
 // status: pending | succeeded | failed | cancelled | needs_reconcile
 model FakaBridgeTask {
-  id             Int       @id @default(autoincrement())
-  orderId        Int       @unique
+  id              Int       @id @default(autoincrement())
+  orderId         Int       @unique
   // pending | succeeded | failed | cancelled | needs_reconcile
-  status         String    @default("pending")
+  status          String    @default("pending")
   // Refund requested while claim/HTTP in flight — worker must not deliver; revoke if opened.
-  cancelRequested Boolean  @default(false)
-  attempts       Int       @default(0)
-  maxAttempts    Int       @default(3)
-  nextAttemptAt  DateTime  @default(now())
-  leaseUntil     DateTime?
-  leaseToken     String?
+  cancelRequested Boolean   @default(false)
+  attempts        Int       @default(0)
+  maxAttempts     Int       @default(3)
+  nextAttemptAt   DateTime  @default(now())
+  leaseUntil      DateTime?
+  leaseToken      String?
   // 脱敏诊断码（FAKA_*），禁止落远端响应体 / PII 以外快照。
-  lastError      String?
-  xboardTradeNo  String?
+  lastError       String?
+  xboardTradeNo   String?
   // 幂等键，稳定为 MN-{orderId}；重试不变。
-  requestOrderNo String
+  requestOrderNo  String
   // 创建时冻结，避免用户改邮箱 / 商家改 SKU 后重试语义漂移。
-  emailSnapshot  String
-  skuSnapshot    String
-  periodSnapshot String    @default("monthly")
-  createdAt      DateTime  @default(now())
-  completedAt    DateTime?
+  emailSnapshot   String
+  skuSnapshot     String
+  periodSnapshot  String    @default("monthly")
+  createdAt       DateTime  @default(now())
+  completedAt     DateTime?
   // null | pending | succeeded | failed | skipped — 退款后撤 Xboard 订阅
-  revokeStatus   String?
-  revokeAttempts Int       @default(0)
-  revokedAt      DateTime?
+  revokeStatus    String?
+  revokeAttempts  Int       @default(0)
+  revokedAt       DateTime?
   lastRevokeError String?
   // 对账备注（半成功收敛 / 人工动作）
-  reconcileNote  String?
+  reconcileNote   String?
 
   order Order @relation(fields: [orderId], references: [id], onDelete: Restrict)
 
@@ -771,26 +818,26 @@ model FakaBridgeTask {
 }
 
 model DeliveryRecord {
-  id          Int       @id @default(autoincrement())
-  orderId     Int       @unique
-  userId      Int
-  productId   Int
-  content     String?
-  contentType String    @default("text") // text | url | file
+  id                Int       @id @default(autoincrement())
+  orderId           Int       @unique
+  userId            Int
+  productId         Int
+  content           String?
+  contentType       String    @default("text") // text | url | file
   // P4b：交付时的结构化内容快照 { fields, values }；值与 content 同一访问
   // 边界（仅订单详情，列表剥离）。null = 纯文本交付。
   structuredContent Json?
-  status      String    @default("delivered")
-  publicNote  String?
-  deliveredAt DateTime?
-  createdAt   DateTime  @default(now())
+  status            String    @default("delivered")
+  publicNote        String?
+  deliveredAt       DateTime?
+  createdAt         DateTime  @default(now())
   // P5：本单交付的文件（下单冻结的固定文件 / 交付时的人工附件）。
   // 下载授权只认这里；买家窗口从本记录的 deliveredAt 起算。
-  fileId      Int?
+  fileId            Int?
   // P6a：订阅到期时刻 = 交付时按 Order.validityDaysSnapshot 计算；续费单
   // 且原单未过期时自原到期顺延。null = 永久。到期只作用于内容访问与 UI，
   // 不引入订单状态。
-  expiresAt   DateTime?
+  expiresAt         DateTime?
 
   order Order         @relation(fields: [orderId], references: [id])
   // Restrict：交付快照引用的文件行不可删——审计链完整性优先于删除便利。
@@ -844,16 +891,16 @@ model CheckinRecord {
 }
 
 model InviteRelation {
-  id               Int      @id @default(autoincrement())
+  id               Int       @id @default(autoincrement())
   inviterId        Int
-  inviteeId        Int      @unique
+  inviteeId        Int       @unique
   // Existing relations enter the migration as legacy. New registration and
   // qualification flows select the other closed state values explicitly.
-  status           String   @default("legacy") // legacy | pending_verification | qualified | quota_exhausted | voided
+  status           String    @default("legacy") // legacy | pending_verification | qualified | quota_exhausted | voided
   qualifiedAt      DateTime?
   voidedAt         DateTime?
-  qualificationDay String?  // Asia/Shanghai YYYY-MM-DD; set only when qualified
-  createdAt        DateTime @default(now())
+  qualificationDay String? // Asia/Shanghai YYYY-MM-DD; set only when qualified
+  createdAt        DateTime  @default(now())
 
   inviter      User          @relation("inviter", fields: [inviterId], references: [id])
   invitee      User          @relation("invitee", fields: [inviteeId], references: [id])
@@ -869,7 +916,7 @@ model GrowthReward {
   id               Int       @id @default(autoincrement())
   recipientUserId  Int
   inviteRelationId Int?      @unique
-  kind             String    // registration | referral
+  kind             String // registration | referral
   amount           Int
   state            String    @default("pending_verification") // pending_verification | held | granted | voided
   availableAt      DateTime?
@@ -890,7 +937,7 @@ model GrowthReward {
 // Privacy-preserving registration-abuse evidence. The future event service is
 // responsible for its closed vocabulary and detailSafe serializer.
 model AbuseEvent {
-  id         Int       @id @default(autoincrement())
+  id         Int      @id @default(autoincrement())
   type       String
   userId     Int?
   inviterId  Int?
@@ -898,7 +945,7 @@ model AbuseEvent {
   ipHash     String?
   emailHash  String?
   detailSafe Json?
-  createdAt  DateTime  @default(now())
+  createdAt  DateTime @default(now())
 
   // Evidence survives user deletion without preserving a dangling identity.
   user    User? @relation("AbuseEventUser", fields: [userId], references: [id], onDelete: SetNull)
@@ -938,22 +985,22 @@ model SystemConfig {
 // → deleted（对象已清理，行保留供审计外键）；对象仅在无任何 active/revoked 行
 // 引用同 key 时才可删（内容寻址键可能被多商家共享）。
 model DeliveryFile {
-  id         Int       @id @default(autoincrement())
-  key        String
-  fileName   String
-  size       Int
-  mimeType   String
-  sha256     String
-  merchantId Int
-  status     String    @default("active")
-  createdAt  DateTime  @default(now())
-  deletedAt  DateTime?
+  id                Int       @id @default(autoincrement())
+  key               String
+  fileName          String
+  size              Int
+  mimeType          String
+  sha256            String
+  merchantId        Int
+  status            String    @default("active")
+  createdAt         DateTime  @default(now())
+  deletedAt         DateTime?
   // SPEC-STORAGE-001：写入时绑定的提供商；null = legacy env 底座
   storageProviderId Int?
 
-  merchant        Merchant         @relation(fields: [merchantId], references: [id])
-  offers          Offer[]          @relation("OfferFixedFile")
-  deliveryRecords DeliveryRecord[] @relation("DeliveryRecordFile")
+  merchant        Merchant               @relation(fields: [merchantId], references: [id])
+  offers          Offer[]                @relation("OfferFixedFile")
+  deliveryRecords DeliveryRecord[]       @relation("DeliveryRecordFile")
   grants          FileGrantLog[]
   storageProvider StorageProviderConfig? @relation(fields: [storageProviderId], references: [id], onDelete: SetNull)
 
@@ -1062,26 +1109,26 @@ model OrderAgreementAcceptance {
 // SPEC-STORAGE-001：外置对象存储提供商配置（覆盖层）。env/Compose MinIO 底座
 // 不写入本表；status=active 至多一行（应用层 + 激活事务保证）。
 model StorageProviderConfig {
-  id                     Int       @id @default(autoincrement())
-  type                   String // r2 | oss | cos | s3_compatible
-  name                   String
-  status                 String    @default("draft") // draft | verified | active | disabled
-  configVersion          Int       @default(1)
-  publicConfig           Json
-  credentialsCiphertext  String?
-  credentialsKeyVersion  Int       @default(1)
-  accessKeyLast4         String?
-  lastTestAt             DateTime?
-  lastTestOk             Boolean?
-  lastTestSummary        String?
-  verifiedAt             DateTime?
-  activatedAt            DateTime?
-  disabledAt             DateTime?
-  activatedById          Int?
-  createdById            Int?
-  previousActiveId       Int?
-  createdAt              DateTime  @default(now())
-  updatedAt              DateTime  @default(now()) @updatedAt
+  id                    Int       @id @default(autoincrement())
+  type                  String // r2 | oss | cos | s3_compatible
+  name                  String
+  status                String    @default("draft") // draft | verified | active | disabled
+  configVersion         Int       @default(1)
+  publicConfig          Json
+  credentialsCiphertext String?
+  credentialsKeyVersion Int       @default(1)
+  accessKeyLast4        String?
+  lastTestAt            DateTime?
+  lastTestOk            Boolean?
+  lastTestSummary       String?
+  verifiedAt            DateTime?
+  activatedAt           DateTime?
+  disabledAt            DateTime?
+  activatedById         Int?
+  createdById           Int?
+  previousActiveId      Int?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @default(now()) @updatedAt
 
   storedObjects StoredObject[]
   deliveryFiles DeliveryFile[]
@@ -1121,4 +1168,252 @@ model StoredObject {
   @@index([objectKey])
   @@index([providerConfigId])
   @@index([source, sourceId])
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// FND-CMI-001 F0 — Catalog / Merchandising Shared Foundation.
+// Frozen model set per SPEC-CATALOG-OPS-001 §5 and SPEC-MERCH-001 §5.
+// Prisma-unexpressible CHECK constraints, partial unique indexes and DESC
+// indexes are implemented in the matching wave migrations (raw SQL only).
+// ═══════════════════════════════════════════════════════════════════════════
+
+// 平台治理分类（SPEC-CATALOG-OPS-001 §5.1）。code 不可变、不复用；
+// status active|inactive；被 Product/申请引用时禁止物理删除。
+model ProductCategory {
+  id              Int      @id @default(autoincrement())
+  code            String   @unique // ^[a-z][a-z0-9_-]{1,63}$ ASCII stable, immutable
+  label           String // 1..50 Unicode code points
+  normalizedLabel String   @unique // lower/trim canonical, UNIQUE
+  description     String? // <=500
+  iconKey         String? // <=64
+  defaultCoverUrl String? // platform public asset only
+  sortOrder       Int      @default(0)
+  status          String   @default("active") // active | inactive; PostgreSQL CHECK constrained
+  createdByUserId Int
+  updatedByUserId Int
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  createdByUser User @relation("CategoryCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  updatedByUser User @relation("CategoryUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: Restrict)
+
+  products               Product[]
+  merchandisingSnapshots ProductMerchandisingSnapshot[]
+  approvedApplications   CategoryApplication[]          @relation("ApplicationApprovedCategory")
+
+  @@index([status, sortOrder, id])
+}
+
+// 商家分类申请（SPEC-CATALOG-OPS-001 §5.2）。同一 merchant + normalizedLabel
+// 同时最多一条 pending（partial unique，raw SQL）。
+model CategoryApplication {
+  id                 Int       @id @default(autoincrement())
+  merchantId         Int
+  proposedLabel      String // 1..50
+  normalizedLabel    String // lower/trim canonical
+  proposedCode       String? // 仅建议，平台可调整
+  description        String // 20..1000
+  exampleProducts    String? // <=1000
+  status             String    @default("pending") // pending | approved | rejected | withdrawn; CHECK
+  resolution         String? // create_new | map_existing | null; CHECK
+  approvedCategoryId Int?
+  reviewedByUserId   Int?
+  reviewedAt         DateTime?
+  reviewReason       String? // 1..500
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  merchant         Merchant         @relation(fields: [merchantId], references: [id], onDelete: Restrict)
+  approvedCategory ProductCategory? @relation("ApplicationApprovedCategory", fields: [approvedCategoryId], references: [id], onDelete: Restrict)
+  reviewedByUser   User?            @relation(fields: [reviewedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([merchantId, status])
+  @@index([reviewedByUserId])
+}
+
+// Xboard 导入的外部目录身份与幂等（SPEC-CATALOG-OPS-001 §5.4）。
+// productId UNIQUE（1:1）；UNIQUE(provider, externalProductId) 与
+// UNIQUE(provider, idempotencyKey) 为数据库层权威映射。
+model ExternalCatalogLink {
+  id                Int      @id @default(autoincrement())
+  provider          String // P0 固定 faka_bridge
+  externalProductId String // Xboard plan_id canonical decimal string
+  productId         Int      @unique
+  sourceHash        String // normalized source SHA-256
+  sourceSnapshot    Json // allowlist metadata, no secret/HTML
+  idempotencyKey    String
+  requestHash       String
+  importedByUserId  Int
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  product        Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  importedByUser User    @relation(fields: [importedByUserId], references: [id], onDelete: Restrict)
+
+  @@unique([provider, externalProductId])
+  @@unique([provider, idempotencyKey])
+  @@index([importedByUserId])
+}
+
+// 自然热卖排名 run（SPEC-MERCH-001 §5.1）。UUID PK；全局 single-running
+// partial unique、terminal status CHECK、DESC 查询索引均为 raw SQL。
+model MerchandisingRun {
+  id          String    @id @default(uuid()) @db.Uuid
+  status      String // running | completed | failed; PostgreSQL CHECK constrained
+  windowStart DateTime
+  windowEnd   DateTime
+  windowDays  Int
+  minSales    Int
+  topPercent  Int
+  startedAt   DateTime
+  completedAt DateTime?
+  failedAt    DateTime?
+  failureCode String? // 脱敏枚举
+  createdAt   DateTime  @default(now())
+
+  snapshots ProductMerchandisingSnapshot[]
+
+  @@index([status, completedAt(sort: Desc), id(sort: Desc)])
+}
+
+// 单 run 内某商品的排名快照（SPEC-MERCH-001 §5.2）。
+// categoryId 是计算时点分类分区快照；run 完成后不可更新。
+model ProductMerchandisingSnapshot {
+  runId               String   @db.Uuid
+  productId           Int
+  categoryId          Int
+  effectiveOrderCount Int // >= 0; PostgreSQL CHECK constrained
+  categoryRank        Int // >= 1; PostgreSQL CHECK constrained
+  categoryPopulation  Int // >= 1; PostgreSQL CHECK constrained
+  isHot               Boolean
+  computedAt          DateTime
+
+  run      MerchandisingRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  product  Product          @relation(fields: [productId], references: [id], onDelete: Cascade)
+  category ProductCategory  @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+
+  @@id([runId, productId])
+  @@index([runId, categoryId, isHot, effectiveOrderCount, productId])
+}
+
+// 积分推广套餐（SPEC-MERCH-001 §5.3）。code immutable；价格/时长由服务端快照。
+model PromotionPackage {
+  id              Int      @id @default(autoincrement())
+  code            String   @unique // immutable
+  label           String
+  placement       String // store_home_sponsored | category_sponsored; CHECK
+  durationDays    Int // 1..90; PostgreSQL CHECK constrained
+  pricePoints     Int // > 0; PostgreSQL CHECK constrained
+  description     String // <=1000
+  sortOrder       Int      @default(0)
+  status          String   @default("active") // active | inactive; CHECK
+  createdByUserId Int
+  updatedByUserId Int
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  createdByUser User @relation("PromotionPackageCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  updatedByUser User @relation("PromotionPackageUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: Restrict)
+
+  campaigns PromotionCampaign[]
+
+  @@index([placement, status, sortOrder])
+}
+
+// 商家推广活动（SPEC-MERCH-001 §5.4）。scheduled|active|paused 同
+// (productId, placementSnapshot) 最多一行（partial unique，raw SQL）。
+// charge/refund PointLog FK 为审计友好的 RESTRICT + UNIQUE。
+model PromotionCampaign {
+  id                       Int       @id @default(autoincrement())
+  merchantId               Int
+  productId                Int
+  packageId                Int
+  packageCodeSnapshot      String
+  placementSnapshot        String
+  durationDaysSnapshot     Int
+  pricePointsSnapshot      Int
+  requestIdempotencyKey    String
+  requestPayloadHash       String // 64 lowercase hex; PostgreSQL CHECK constrained
+  status                   String // pending_review | payment_failed | scheduled | active | paused | expired | rejected | cancelled; CHECK
+  requestedStartAt         DateTime?
+  startsAt                 DateTime?
+  endsAt                   DateTime?
+  reviewedByUserId         Int?
+  reviewedAt               DateTime?
+  reviewReason             String?
+  chargePointLogId         Int?      @unique
+  chargedPoints            Int       @default(0)
+  refundedPoints           Int       @default(0)
+  refundPointLogId         Int?      @unique
+  adjustmentDecidedAt      DateTime?
+  adjustmentByUserId       Int?
+  adjustmentReason         String?
+  adjustmentIdempotencyKey String?
+  adjustmentPayloadHash    String?
+  cancelledByUserId        Int?
+  cancellationReason       String?
+  createdAt                DateTime  @default(now())
+  updatedAt                DateTime  @updatedAt
+
+  merchant         Merchant         @relation(fields: [merchantId], references: [id], onDelete: Restrict)
+  product          Product          @relation(fields: [productId], references: [id], onDelete: Restrict)
+  package          PromotionPackage @relation(fields: [packageId], references: [id], onDelete: Restrict)
+  reviewedByUser   User?            @relation("CampaignReviewedBy", fields: [reviewedByUserId], references: [id], onDelete: Restrict)
+  chargePointLog   PointLog?        @relation("PromotionCampaignCharge", fields: [chargePointLogId], references: [id], onDelete: Restrict)
+  refundPointLog   PointLog?        @relation("PromotionCampaignRefund", fields: [refundPointLogId], references: [id], onDelete: Restrict)
+  adjustmentByUser User?            @relation("CampaignAdjustmentBy", fields: [adjustmentByUserId], references: [id], onDelete: Restrict)
+  cancelledByUser  User?            @relation("CampaignCancelledBy", fields: [cancelledByUserId], references: [id], onDelete: Restrict)
+
+  @@unique([merchantId, requestIdempotencyKey])
+  @@index([productId, status])
+  @@index([packageId])
+  @@index([status, startsAt])
+}
+
+// 平台精选（SPEC-MERCH-001 §5.5）。仅 admin 可创建/排期/撤销。
+model EditorialFeature {
+  id              Int      @id @default(autoincrement())
+  productId       Int
+  placement       String // store_editorial | category_editorial; CHECK
+  status          String // scheduled | active | revoked | expired; CHECK
+  startsAt        DateTime
+  endsAt          DateTime
+  sortWeight      Int      @default(0)
+  publicReason    String? // <=120
+  internalReason  String // 1..500
+  createdByUserId Int
+  revokedByUserId Int?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  product       Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+  createdByUser User    @relation("EditorialCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  revokedByUser User?   @relation("EditorialRevokedBy", fields: [revokedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([placement, status, startsAt])
+}
+
+// 合作伙伴权益（SPEC-MERCH-001 §5.6）。同 merchant+code 同时最多一个 active
+// （partial unique，raw SQL）；自动重算以幂等 upsert/expire 维护历史。
+model MerchantEntitlement {
+  id              Int      @id @default(autoincrement())
+  merchantId      Int
+  code            String // partner; CHECK
+  source          String // promotion_spend | admin_grant; CHECK
+  sourceRef       String?
+  status          String // active | expired | revoked; CHECK
+  validFrom       DateTime
+  validUntil      DateTime
+  reason          String // <=500
+  grantedByUserId Int?
+  revokedByUserId Int?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  merchant      Merchant @relation(fields: [merchantId], references: [id], onDelete: Restrict)
+  grantedByUser User?    @relation("EntitlementGrantedBy", fields: [grantedByUserId], references: [id], onDelete: Restrict)
+  revokedByUser User?    @relation("EntitlementRevokedBy", fields: [revokedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([merchantId, status])
+  @@index([code, status])
 }

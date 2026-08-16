@@ -5,6 +5,7 @@ import { __setMailerForTesting } from '../lib/mailer/index.js'
 import type { Mailer } from '../lib/mailer/types.js'
 import { runSubscriptionRemindBatch } from '../lib/subscriptionRemind.js'
 import { createTestMerchant, createTestUser } from './helpers.js'
+import { getActiveNetworkNodeCategoryId } from './catalogFixture.js'
 
 const HOUR_MS = 60 * 60 * 1000
 const DAY_MS = 24 * HOUR_MS
@@ -48,6 +49,7 @@ async function seedSubscriptionOrder(input: {
     data: {
       name: '订阅节点',
       type: '网络节点',
+      categoryId: await getActiveNetworkNodeCategoryId(),
       price: 100,
       status: 'active',
       merchantId: merchant.id,

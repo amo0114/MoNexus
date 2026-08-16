@@ -48,6 +48,15 @@ export const systemConfigKeys = [
   'inviteQuotaUserMonthly',
   'inviteQuotaMerchantMonthly',
   'inviteCodeTtlDays',
+  // SPEC-MERCH-001 §12：自然热卖与合作伙伴权益（F0 shared constants）。
+  'hotWindowDays',
+  'hotMinSales',
+  'hotTopPercent',
+  'hotRecomputeMinutes',
+  'hotRunTimeoutMinutes',
+  'partnerSpendWindowDays',
+  'partnerMinPromotionPoints',
+  'partnerEntitlementDays',
 ] as const
 
 export type SystemConfigKey = typeof systemConfigKeys[number]
@@ -108,7 +117,17 @@ export const systemConfigDefaults: Record<SystemConfigKey, number> = {
   inviteQuotaUserMonthly: 3,
   inviteQuotaMerchantMonthly: 10,
   inviteCodeTtlDays: 14,
+  // SPEC-MERCH-001 §12（F0）
+  hotWindowDays: 30,
+  hotMinSales: 5,
+  hotTopPercent: 20,
+  hotRecomputeMinutes: 60,
+  hotRunTimeoutMinutes: 30,
+  partnerSpendWindowDays: 90,
+  partnerMinPromotionPoints: 1000,
+  partnerEntitlementDays: 30,
 }
+
 
 export const systemConfigDescriptions: Record<SystemConfigKey, string> = {
   registerReward: '新用户注册奖励积分',
@@ -145,7 +164,17 @@ export const systemConfigDescriptions: Record<SystemConfigKey, string> = {
   inviteQuotaUserMonthly: '普通用户每月邀请名额',
   inviteQuotaMerchantMonthly: '商家每月邀请名额',
   inviteCodeTtlDays: '邀请码有效期',
+  // SPEC-MERCH-001 §12（F0）
+  hotWindowDays: '自然热卖统计窗口天数',
+  hotMinSales: '自然热卖最低销量门槛',
+  hotTopPercent: '自然热卖分类前百分之比',
+  hotRecomputeMinutes: '自然热卖重算周期（分钟）',
+  hotRunTimeoutMinutes: '排名 run 超时回收分钟数',
+  partnerSpendWindowDays: '合作伙伴自动授予窗口天数',
+  partnerMinPromotionPoints: '合作伙伴自动授予净推广消费积分阈值',
+  partnerEntitlementDays: '合作伙伴权益授予天数',
 }
+
 
 /** 管理端配置项分组（中文），供配置页按组渲染。 */
 export const systemConfigGroups: Record<SystemConfigKey, string> = {
@@ -183,7 +212,17 @@ export const systemConfigGroups: Record<SystemConfigKey, string> = {
   inviteQuotaUserMonthly: '账户与注册',
   inviteQuotaMerchantMonthly: '账户与注册',
   inviteCodeTtlDays: '账户与注册',
+  // SPEC-MERCH-001 §12（F0）
+  hotWindowDays: '商品运营',
+  hotMinSales: '商品运营',
+  hotTopPercent: '商品运营',
+  hotRecomputeMinutes: '商品运营',
+  hotRunTimeoutMinutes: '商品运营',
+  partnerSpendWindowDays: '商品运营',
+  partnerMinPromotionPoints: '商品运营',
+  partnerEntitlementDays: '商品运营',
 }
+
 
 /** 可选单位标注。 */
 export const systemConfigUnits: Partial<Record<SystemConfigKey, string>> = {
@@ -220,7 +259,17 @@ export const systemConfigUnits: Partial<Record<SystemConfigKey, string>> = {
   inviteQuotaUserMonthly: '枚/月',
   inviteQuotaMerchantMonthly: '枚/月',
   inviteCodeTtlDays: '天',
+  // SPEC-MERCH-001 §12（F0）
+  hotWindowDays: '天',
+  hotMinSales: '单',
+  hotTopPercent: '%',
+  hotRecomputeMinutes: '分钟',
+  hotRunTimeoutMinutes: '分钟',
+  partnerSpendWindowDays: '天',
+  partnerMinPromotionPoints: '积分',
+  partnerEntitlementDays: '天',
 }
+
 
 const BONUS_BPS_HINT = '万分比，10000=100%；例如 500 表示额外 +5%'
 
@@ -257,7 +306,17 @@ export const systemConfigHints: Partial<Record<SystemConfigKey, string>> = {
   inviteQuotaUserMonthly: '普通合格用户每个上海自然月可生成的邀请码数；生成即消耗，过期不返还；0 = 暂停普通用户发码。',
   inviteQuotaMerchantMonthly: '商家每个上海自然月可生成的邀请码数；生成即消耗，过期不返还；0 = 暂停商家发码。',
   inviteCodeTtlDays: '邀请码自生成起的有效天数（1–90），过期未用不返还名额。',
+  // SPEC-MERCH-001 §12（F0）：整数范围与 DB CHECK 一致。
+  hotWindowDays: '自然热卖统计窗口 1–365 天',
+  hotMinSales: '自然热卖最低销量门槛 1–100000',
+  hotTopPercent: '自然热卖分类前百分之比 1–100',
+  hotRecomputeMinutes: '自然热卖重算周期 10–1440 分钟',
+  hotRunTimeoutMinutes: '排名 run 超时回收 10–1440 分钟',
+  partnerSpendWindowDays: '合作伙伴自动授予窗口 1–365 天',
+  partnerMinPromotionPoints: '合作伙伴自动授予净推广消费积分阈值 1–2000000000',
+  partnerEntitlementDays: '合作伙伴权益授予 1–365 天',
 }
+
 
 type ConfigClient = typeof prisma | Prisma.TransactionClient
 
@@ -290,6 +349,9 @@ const BOOLEAN_CONFIG_KEYS = [
   'registrationInviteOnly',
 ] as const
 
+/** 整数区间配置项：`min` 缺省时下界恒为 0（由非负整数守卫保证）。 */
+type RangeConfigEntry = { min?: number; max: number; message: string }
+
 const RANGE_CONFIG_KEYS = {
   growthRewardHoldDays: {
     max: 30,
@@ -319,7 +381,16 @@ const RANGE_CONFIG_KEYS = {
     max: 1_000,
     message: '商家每月邀请名额必须在 0..1000 枚之间（0 = 暂停发码）',
   },
-} as const satisfies Partial<Record<SystemConfigKey, { max: number; message: string }>>
+  // SPEC-MERCH-001 §12（F0）：整数范围与 DB CHECK 完全一致。
+  hotWindowDays: { min: 1, max: 365, message: '自然热卖统计窗口必须在 1..365 天之间' },
+  hotMinSales: { min: 1, max: 100_000, message: '自然热卖最低销量门槛必须在 1..100000 之间' },
+  hotTopPercent: { min: 1, max: 100, message: '自然热卖分类前百分之比必须在 1..100 之间' },
+  hotRecomputeMinutes: { min: 10, max: 1440, message: '自然热卖重算周期必须在 10..1440 分钟之间' },
+  hotRunTimeoutMinutes: { min: 10, max: 1440, message: '排名 run 超时回收必须在 10..1440 分钟之间' },
+  partnerSpendWindowDays: { min: 1, max: 365, message: '合作伙伴自动授予窗口必须在 1..365 天之间' },
+  partnerMinPromotionPoints: { min: 1, max: 2_000_000_000, message: '合作伙伴净推广消费积分阈值必须在 1..2000000000 之间' },
+  partnerEntitlementDays: { min: 1, max: 365, message: '合作伙伴权益授予天数必须在 1..365 天之间' },
+} as const satisfies Partial<Record<SystemConfigKey, RangeConfigEntry>>
 
 function isBooleanConfigKey(key: SystemConfigKey): boolean {
   return (BOOLEAN_CONFIG_KEYS as readonly string[]).includes(key)
@@ -332,8 +403,8 @@ export function assertSystemConfigValue(key: SystemConfigKey, value: number) {
   if (isBooleanConfigKey(key) && value > 1) {
     throw badRequest('该开关只接受 0（关闭）或 1（开启）')
   }
-  const range = RANGE_CONFIG_KEYS[key as keyof typeof RANGE_CONFIG_KEYS]
-  if (range && value > range.max) {
+  const range: RangeConfigEntry | undefined = RANGE_CONFIG_KEYS[key as keyof typeof RANGE_CONFIG_KEYS]
+  if (range && ((range.min !== undefined && value < range.min) || value > range.max)) {
     throw badRequest(range.message)
   }
 }

@@ -15,6 +15,10 @@ import { startFakaBridgeCron, stopFakaBridgeCron } from './lib/fakaBridge/index.
 import { startGrowthRewardCron, stopGrowthRewardCron } from './modules/auth/growthRewardCron.js'
 import { startLeaderboardCron, stopLeaderboardCron } from './modules/leaderboard/cron.js'
 import { startLegalRetentionCron, stopLegalRetentionCron } from './modules/legal/cron.js'
+import { startRankingCron, stopRankingCron } from './modules/merchandising/ranking/index.js'
+import { startCampaignLifecycleCron, stopCampaignLifecycleCron } from './modules/merchandising/promotions/lifecycle.js'
+import { startEditorialLifecycleCron, stopEditorialLifecycleCron } from './modules/merchandising/editorial/cron.js'
+import { startPartnerEntitlementCron, stopPartnerEntitlementCron } from './modules/merchandising/entitlements/cron.js'
 import { getNotificationRealtimeHub } from './modules/notifications/realtime/hub.js'
 import { getNotificationRealtimeLifecycle } from './modules/notifications/realtime/lifecycle.js'
 
@@ -31,6 +35,10 @@ const server = app.listen(config.port, () => {
   startGrowthRewardCron()
   startLeaderboardCron()
   startLegalRetentionCron()
+  startRankingCron()
+  startCampaignLifecycleCron()
+  startEditorialLifecycleCron()
+  startPartnerEntitlementCron()
   if (config.notificationRealtime.enabled) {
     // Start the dedicated LISTEN listener once realtime is enabled.
     void getNotificationRealtimeLifecycle().start()
@@ -77,6 +85,10 @@ async function shutdown(signal: NodeJS.Signals) {
   stopGrowthRewardCron()
   stopLeaderboardCron()
   stopLegalRetentionCron()
+  stopRankingCron()
+  stopCampaignLifecycleCron()
+  stopEditorialLifecycleCron()
+  stopPartnerEntitlementCron()
 
   // 4. Drain SSE within the configured grace, then force-destroy leftovers.
   const drainPromise = (async () => {

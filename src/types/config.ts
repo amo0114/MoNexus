@@ -8,7 +8,17 @@ export interface ProductTypeItem extends RegistryItem {
   deliveryModes: string[]
 }
 
+export interface ProductCategoryRegistryItem {
+  id: number
+  code: string
+  label: string
+  iconKey: string | null
+  sortOrder: number
+}
+
 export interface ConfigRegistry {
+  /** Dynamic taxonomy. Optional only for rolling compatibility with an old backend. */
+  productCategories?: ProductCategoryRegistryItem[]
   productTypes: ProductTypeItem[]
   deliveryModes: RegistryItem[]
   orderStatuses: RegistryItem[]

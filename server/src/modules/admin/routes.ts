@@ -4,6 +4,7 @@ import { validate, idParamSchema } from '../../middlewares/validate.js'
 import {
   adjustPointsSchema, banUserSchema, createProductSchema, updateProductSchema,
   importInventorySchema, listUsersQuerySchema, listOrdersQuerySchema,
+  previewInventorySchema, previewOfferInventorySchema, importOfferInventorySchema,
   revokeDeliveryFileSchema,
   listDeliveryFilesQuerySchema, listFileGrantsQuerySchema, offerReportQuerySchema,
   listAdminAuditQuerySchema,
@@ -11,7 +12,7 @@ import {
   listSettlementsQuerySchema, batchSettleSchema, resolveOrderSchema,
   systemConfigKeyParamSchema, updateSystemConfigSchema,
   createAnnouncementSchema, updateAnnouncementSchema, listAnnouncementsQuerySchema,
-  setFakaCapacitySchema, importFakaPlanSchema, addFakaOffersSchema,
+  setFakaCapacitySchema, previewFakaPlanSchema, importFakaPlanSchema, addFakaOffersSchema,
   listFakaTasksQuerySchema,
   mailDeliveryTestSchema,
   abuseOverviewQuerySchema,
@@ -30,12 +31,27 @@ import {
 } from './storageSchema.js'
 import { adminMailTestLimiter } from './mailTestLimiter.js'
 import { portableBackupRoutes } from '../portable-backups/routes.js'
+// T-CAT-BE-001：分类管理 API。仅挂载子 router——本文件顶部的
+// authenticate→requireActiveUser→requireAdmin→requireAdminMfa 链已覆盖其权限边界。
+import { categoryAdminRoutes } from '../catalog/adminRoutes.js'
+import { categoryApplicationAdminRoutes } from '../catalog/applicationAdminRoutes.js'
+import { z } from 'zod'
 
 const router = Router()
 
 router.use(authenticate, requireActiveUser, requireAdmin, requireAdminMfa)
 
+// T-CAT-BE-004（D-CAT-12/13）：新 Offer-first 路径的 URL 参数。
+const adminOfferParamSchema = z.object({
+  id: z.coerce.number().int().positive('必须是正整数'),
+  offerId: z.coerce.number().int().positive('必须是正整数'),
+})
+
 router.use('/portable-backups', portableBackupRoutes)
+// T-CAT-BE-001 §7.2：admin product-categories（列表/CRUD/排序/启停/删除）。
+router.use('/product-categories', categoryAdminRoutes)
+// T-CAT-BE-002 §7.3：管理员分类申请审核（列表/approve/reject，CAS + AdminLog）。
+router.use('/category-applications', categoryApplicationAdminRoutes)
 
 router.get('/stats', controller.stats)
 router.get('/config', controller.listConfig)
@@ -103,10 +119,19 @@ router.put('/users/:id/unban', validate({ params: idParamSchema }), controller.u
 router.get('/products', controller.products)
 router.post('/products', validate(createProductSchema), controller.createProduct)
 router.put('/products/:id', validate({ params: idParamSchema, body: updateProductSchema }), controller.updateProduct)
+router.get('/products/:id/readiness', validate({ params: idParamSchema }), controller.productReadiness)
+router.post('/products/:id/publish', validate({ params: idParamSchema }), controller.publishProduct)
+router.post('/products/:id/unpublish', validate({ params: idParamSchema }), controller.unpublishProduct)
 router.delete('/products/:id', validate({ params: idParamSchema }), controller.deleteProduct)
 router.post('/products/:id/inventory', validate({ params: idParamSchema, body: importInventorySchema }), controller.importInventory)
+// T-CAT-BE-004（D-CAT-15）：管理员库存先 preview → confirm，与商家共用领域分析器。
+router.post('/products/:id/inventory/preview', validate({ params: idParamSchema, body: previewInventorySchema }), controller.previewInventory)
+// T-CAT-BE-004（D-CAT-12/13）：新 Offer-first 路径，offerId 显式在 URL。
+router.post('/products/:id/offers/:offerId/inventory/preview', validate({ params: adminOfferParamSchema, body: previewOfferInventorySchema }), controller.previewOfferInventory)
+router.post('/products/:id/offers/:offerId/inventory', validate({ params: adminOfferParamSchema, body: importOfferInventorySchema }), controller.importOfferInventory)
 // FakaBridge Xboard 管理：仅平台管理员（本路由组已 requireAdmin + MFA）
 router.get('/faka/catalog', controller.fakaCatalog)
+router.post('/faka/import/preview', validate(previewFakaPlanSchema), controller.previewFakaPlan)
 router.post('/faka/import', validate(importFakaPlanSchema), controller.importFakaPlan)
 router.post(
   '/products/:id/faka-offers',

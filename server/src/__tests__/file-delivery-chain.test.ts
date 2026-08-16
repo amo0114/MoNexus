@@ -30,8 +30,20 @@ async function createFileProduct(accessToken: string, fileId: number, name: stri
   const created = await api
     .post('/api/merchant/products')
     .set(authHeader(accessToken))
-    .send({ name, type: '充值卡密', price: 100, deliveryMode: 'manual_service', stockMode: 'unlimited' })
+    .send({
+      name,
+      type: '充值卡密',
+      price: 100,
+      deliveryMode: 'manual_service',
+      stockMode: 'unlimited',
+      imageUrl: 'https://cdn.test.local/file-product-cover.png',
+      images: ['https://cdn.test.local/file-product-cover.png'],
+    })
     .expect(201)
+  await api
+    .post(`/api/merchant/products/${created.body.id}/publish`)
+    .set(authHeader(accessToken))
+    .expect(200)
   const offer = await api
     .post(`/api/merchant/products/${created.body.id}/offers`)
     .set(authHeader(accessToken))
@@ -289,9 +301,21 @@ describe('P5 T4 — manual delivery attachments', () => {
     const created = await api
       .post('/api/merchant/products')
       .set(authHeader(seller.accessToken))
-      .send({ name: `T4商品${tag}`, type: '共享账号', price: 80, deliveryMode: 'manual_service', stockMode: 'unlimited' })
+      .send({
+        name: `T4商品${tag}`,
+        type: '共享账号',
+        price: 80,
+        deliveryMode: 'manual_service',
+        stockMode: 'unlimited',
+        imageUrl: 'https://cdn.test.local/manual-product-cover.png',
+        images: ['https://cdn.test.local/manual-product-cover.png'],
+      })
       .expect(201)
     const productId = created.body.id as number
+    await api
+      .post(`/api/merchant/products/${productId}/publish`)
+      .set(authHeader(seller.accessToken))
+      .expect(200)
     if (options?.deliveryFields) {
       const offers = await api
         .get(`/api/merchant/products/${productId}/offers`)
@@ -408,8 +432,20 @@ describe('P5 复审回归 — manual attachment across dispute resume', () => {
     const created = await api
       .post('/api/merchant/products')
       .set(authHeader(seller.accessToken))
-      .send({ name: '复审人工商品', type: '共享账号', price: 60, deliveryMode: 'manual_service', stockMode: 'unlimited' })
+      .send({
+        name: '复审人工商品',
+        type: '共享账号',
+        price: 60,
+        deliveryMode: 'manual_service',
+        stockMode: 'unlimited',
+        imageUrl: 'https://cdn.test.local/review-manual-cover.png',
+        images: ['https://cdn.test.local/review-manual-cover.png'],
+      })
       .expect(201)
+    await api
+      .post(`/api/merchant/products/${created.body.id}/publish`)
+      .set(authHeader(seller.accessToken))
+      .expect(200)
     await createTestUser('rr-manual-b@test.local', 'pass123', 'user', 1000)
     const buyer = await loginAs('rr-manual-b@test.local', 'pass123')
     const order = await api

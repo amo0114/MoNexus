@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { expect, test, type APIRequestContext } from '@playwright/test'
-import { API_BASE, SEED_ACCOUNTS, loginAs, loginAsApi } from './helpers'
+import { API_BASE, SEED_ACCOUNTS, loginAs, loginAsApi, publishMerchantProduct } from './helpers'
 
 /**
  * P5.5 运维收尾冒烟：
@@ -77,6 +77,7 @@ test.describe.serial('P5.5 ops smoke', () => {
     })
     expect(offer.ok(), await offer.text()).toBeTruthy()
     state.offerId = (await offer.json()).id
+    await publishMerchantProduct(request, merchantToken, state.productId)
 
     // 买家 API 直购该规格 → 报表立即有净成交数据。
     const buyerToken = await tokenOf(request, SEED_ACCOUNTS.user)

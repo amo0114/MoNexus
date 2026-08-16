@@ -14,6 +14,7 @@ import {
   getDefaultOfferId,
   loginAs,
 } from './helpers.js'
+import { getActiveNetworkNodeCategoryId } from './catalogFixture.js'
 
 /**
  * P6c：预约服务 v1（设计 §4 决策 ④，轻量形态——无 slot 日历）。
@@ -294,6 +295,7 @@ describe('runBookingRemindBatch', () => {
       data: {
         name: '预约服务',
         type: '网络节点',
+        categoryId: await getActiveNetworkNodeCategoryId(),
         price: 300,
         status: 'active',
         merchantId: merchant.id,

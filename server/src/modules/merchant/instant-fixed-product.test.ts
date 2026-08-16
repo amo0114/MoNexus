@@ -13,6 +13,8 @@ const baseBody = {
   deliveryMode: 'instant_fixed',
   fixedContent: 'https://example.com/group-invite', fixedContentType: 'url',
   stockMode: 'unlimited',
+  imageUrl: 'https://example.com/catalog-cover.png',
+  images: ['https://example.com/catalog-cover.png'],
 }
 
 describe('merchant instant_fixed product validation', () => {
@@ -26,13 +28,10 @@ describe('merchant instant_fixed product validation', () => {
     expect(product?.fixedContent).toBe('https://example.com/group-invite')
   })
 
-  it('creates a limited instant_fixed product with stock', async () => {
+  it('rejects initial stock on draft creation; availability uses the separate capacity API', async () => {
     const token = await merchantToken('if-limited@test.local')
-    const res = await api.post('/api/merchant/products').set(authHeader(token))
-      .send({ ...baseBody, stockMode: 'limited', stock: 10 }).expect(201)
-    const product = await prisma.product.findUnique({ where: { id: res.body.id } })
-    expect(product?.stockMode).toBe('limited')
-    expect(product?.stock).toBe(10)
+    await api.post('/api/merchant/products').set(authHeader(token))
+      .send({ ...baseBody, stockMode: 'limited', stock: 10 }).expect(400)
   })
 
   it('rejects instant_fixed without fixedContent', async () => {
@@ -47,10 +46,13 @@ describe('merchant instant_fixed product validation', () => {
       .send({ ...baseBody, fixedContent: 'javascript:alert(1)' }).expect(400)
   })
 
-  it('rejects limited stockMode without stock for instant_fixed', async () => {
+  it('creates limited instant_fixed drafts with zero initial capacity', async () => {
     const token = await merchantToken('if-nostock@test.local')
-    await api.post('/api/merchant/products').set(authHeader(token))
-      .send({ ...baseBody, stockMode: 'limited' }).expect(400)
+    const res = await api.post('/api/merchant/products').set(authHeader(token))
+      .send({ ...baseBody, stockMode: 'limited' }).expect(201)
+    const product = await prisma.product.findUniqueOrThrow({ where: { id: res.body.id } })
+    expect(product.stock).toBe(0)
+    expect(product.status).toBe('draft')
   })
 
   it('rejects fixedContent for instant_inventory products', async () => {
@@ -63,7 +65,7 @@ describe('merchant instant_fixed product validation', () => {
   it('flags limited instant_fixed products as lowStock by Product.stock', async () => {
     const token = await merchantToken('if-lowstock@test.local')
     await api.post('/api/merchant/products').set(authHeader(token))
-      .send({ ...baseBody, name: '低库存固定商品', stockMode: 'limited', stock: 2 }).expect(201)
+      .send({ ...baseBody, name: '低库存固定商品', stockMode: 'limited' }).expect(201)
 
     const list = await api.get('/api/merchant/products?lowStock=true').set(authHeader(token)).expect(200)
     const found = list.body.items.find((p: { name: string }) => p.name === '低库存固定商品')
@@ -130,6 +132,8 @@ describe('merchant instant_fixed product update', () => {
     const productId = await createInstantFixedProduct(merchantAccessToken)
     const { user, password } = await createTestUser('if-up-order-buyer@test.local', 'buyer123', 'user', 100)
     const buyer = await loginAs(user.email, password)
+    await api.post(`/api/merchant/products/${productId}/publish`)
+      .set(authHeader(merchantAccessToken)).expect(200)
     await api.post('/api/orders').set(authHeader(buyer.accessToken)).send({ productId }).expect(201)
 
     const blocked = await api.put(`/api/merchant/products/${productId}`).set(authHeader(merchantAccessToken))

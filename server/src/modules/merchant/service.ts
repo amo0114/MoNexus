@@ -10,13 +10,18 @@ import {
   normalizeProductImageFields,
 } from '../../lib/productCommercial.js'
 import {
-  analyzeInventoryImport,
-  analyzeStructuredInventoryImport,
-  duplicateInventoryImportDetails,
+  analyzeInventoryForOffer,
+  assertConfirmableInventoryAnalysis,
   isInventoryContentUniqueViolation,
   type InventoryImportPayload,
 } from '../../lib/inventoryImport.js'
 import { invalidateProductPublicCache } from '../products/cache.js'
+import { resolveProductCategory } from '../catalog/resolver.js'
+import { checkProductReadiness } from '../catalog/publicationReadiness.js'
+import {
+  publishProduct as publishCatalogProduct,
+  unpublishProduct as unpublishCatalogProduct,
+} from '../catalog/productPublication.js'
 import {
   createOrderStatusEvent,
   isInstantMode,
@@ -95,7 +100,10 @@ export async function updateMyMerchant(
 
 const productListInclude = {
   _count: { select: { inventory: { where: { status: 'available' } } } },
-  offers: { orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }] },
+  offers: {
+    orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
+    include: { _count: { select: { inventory: { where: { status: 'available' } } } } },
+  },
 } satisfies Prisma.ProductInclude
 
 type ProductWithAvailableStock = Prisma.ProductGetPayload<{ include: typeof productListInclude }>
@@ -168,7 +176,6 @@ function serializeMerchantProduct(product: ProductWithAvailableStock, lowStockTh
     stock: product.deliveryMode === 'instant_inventory' ? availableStock : product.stock,
     availableStock,
     sales: product.sales,
-    isHot: product.isHot,
     status: product.status,
     deliveryMode: product.deliveryMode,
     stockMode: product.stockMode,
@@ -177,11 +184,27 @@ function serializeMerchantProduct(product: ProductWithAvailableStock, lowStockTh
     purchaseForm: product.purchaseForm ?? [],
     // P4a：商家端返回完整 Offer 列表（含 fixedContent——商家本就可见自己商品
     // 的交付配置）；公开接口走 serializePublicOffer 剥离。
-    offers: product.offers,
+    offers: product.offers.map(({ _count, ...offer }) => ({
+      ...offer,
+      // Offer-first 工作台必须在背景刷新后仍看到正确的目标 Offer 库存。
+      // instant_inventory 不使用原始 Offer.stock；其他模式保持数值名额。
+      stock: offer.deliveryMode === 'instant_inventory' ? _count.inventory : offer.stock,
+      availableStock: offer.deliveryMode === 'instant_inventory' ? _count.inventory : undefined,
+    })),
     merchantId: product.merchantId,
     createdAt: product.createdAt,
     lowStock: isLowStockProduct(product, lowStockThreshold),
   }
+}
+
+/**
+ * D-MERCH-01：Product.isHot 是遗留只读列，不进入任何商家/管理端 wire DTO。
+ * 公开投影的 isHot 由 merchandising run 计算（与 Product.isHot 列无关）。
+ * 仅用于剥离 create/update 直接返回的 Prisma Product 行，不改变持久化。
+ */
+function stripLegacyIsHot<T extends { isHot: boolean }>(product: T): Omit<T, 'isHot'> {
+  const { isHot: _legacyIsHot, ...rest } = product
+  return rest
 }
 
 export async function listMyProducts(merchantId: number, filters: MerchantProductListFilters = {}) {
@@ -227,25 +250,30 @@ export async function listMyProducts(merchantId: number, filters: MerchantProduc
   }
 }
 
-export async function previewMyInventoryImport(
-  merchantId: number,
-  productId: number,
-  payload: InventoryImportPayload & { offerId?: number }
-) {
-  const product = await prisma.product.findFirst({ where: { id: productId, merchantId }, select: { id: true } })
-  if (!product) throw notFound('商品不存在')
-  // P4a/P4b：门禁与模板都在 Offer 上；未指定 offerId 落到默认 Offer（单 SKU 无感）。
-  const offer = payload.offerId != null
-    ? await prisma.offer.findFirst({ where: { id: payload.offerId, productId } })
-    : await getDefaultOffer(prisma, productId)
-  if (!offer) throw notFound('规格不存在')
-  if (offer.deliveryMode !== 'instant_inventory') {
-    throw badRequest('仅即时库存发货商品支持库存管理')
-  }
+/** 商家商品级 Offer 解析：显式 offerId 必须属于该商品；缺省仅兼容旧客户端（D-CAT-13）。 */
+type InventoryClient = typeof prisma | Prisma.TransactionClient
 
-  const deliveryFields = parseStoredDeliveryFields(offer.deliveryFields)
-  if (deliveryFields.length > 0) {
-    const analysis = await analyzeStructuredInventoryImport(productId, payload, deliveryFields)
+async function resolveMyOffer(
+  client: InventoryClient,
+  productId: number,
+  offerId?: number
+) {
+  if (offerId != null) {
+    const offer = await client.offer.findFirst({ where: { id: offerId, productId } })
+    if (!offer) throw notFound('规格不存在')
+    return offer
+  }
+  return getDefaultOffer(client, productId)
+}
+
+/** preview 领域分析（Merchant/Admin 共用分析器，AC-CAT-009）。绝不回显既有库存 content。 */
+async function previewOfferInventory(
+  productId: number,
+  offer: { deliveryFields: unknown },
+  payload: InventoryImportPayload
+) {
+  const analysis = await analyzeInventoryForOffer(productId, offer, payload)
+  if ('rowErrors' in analysis) {
     return {
       totalRows: analysis.totalRows,
       validRows: analysis.validRows,
@@ -256,13 +284,11 @@ export async function previewMyInventoryImport(
       canImport: analysis.canImport,
       // 预览表格：模板 + 前 20 行解析结果（值不落库前仅回显给上传者本人）。
       structured: {
-        fields: deliveryFields,
+        fields: parseStoredDeliveryFields(offer.deliveryFields),
         rows: analysis.itemsToImport.slice(0, 20).map(item => item.structuredContent.values),
       },
     }
   }
-
-  const analysis = await analyzeInventoryImport(productId, payload)
   return {
     totalRows: analysis.totalRows,
     validRows: analysis.validRows,
@@ -271,6 +297,37 @@ export async function previewMyInventoryImport(
     existingDuplicateRows: analysis.existingDuplicateRows,
     canImport: analysis.canImport,
   }
+}
+
+export async function previewMyInventoryImport(
+  merchantId: number,
+  productId: number,
+  payload: InventoryImportPayload & { offerId?: number }
+) {
+  const product = await prisma.product.findFirst({ where: { id: productId, merchantId }, select: { id: true } })
+  if (!product) throw notFound('商品不存在')
+  // 旧兼容路径：未指定 offerId 落到默认 Offer（单 SKU 无感）。
+  const offer = await resolveMyOffer(prisma, productId, payload.offerId)
+  if (offer.deliveryMode !== 'instant_inventory') {
+    throw badRequest('仅即时库存发货商品支持库存管理')
+  }
+  return previewOfferInventory(productId, offer, payload)
+}
+
+/** 新 Offer-first 路径（T-CAT-BE-004，D-CAT-12/13）：offerId 显式必填。 */
+export async function previewMyOfferInventory(
+  merchantId: number,
+  productId: number,
+  offerId: number,
+  payload: InventoryImportPayload
+) {
+  const product = await prisma.product.findFirst({ where: { id: productId, merchantId }, select: { id: true } })
+  if (!product) throw notFound('商品不存在')
+  const offer = await resolveMyOffer(prisma, productId, offerId)
+  if (offer.deliveryMode !== 'instant_inventory') {
+    throw badRequest('仅即时库存发货商品支持库存管理')
+  }
+  return previewOfferInventory(productId, offer, payload)
 }
 
 function assertOriginalPriceAtLeastSale(price: number, originalPrice: number | null | undefined) {
@@ -283,9 +340,11 @@ export async function createMyProduct(
   merchantId: number,
   data: {
     name: string; description?: string; richDescription?: string;
-    type: string; icon?: string; imageUrl?: string | null; images?: string[];
-    price: number; originalPrice?: number; isHot?: boolean; deliveryMode?: string;
-    stockMode?: string; stock?: number; fixedContent?: string; fixedContentType?: string;
+    // B_CAT (SPEC-CATALOG-OPS-001 §7.4): legacy `type` is a compatibility input;
+    // new writes should use `categoryId` (exactly one required, schema-enforced).
+    type?: string; categoryId?: number; icon?: string; imageUrl?: string | null; images?: string[];
+    price: number; originalPrice?: number; deliveryMode?: string;
+    stockMode?: string; fixedContent?: string; fixedContentType?: string;
     purchaseForm?: PurchaseFormField[];
     // P4a F3：向导原子发布——默认规格名 + 额外规格与商品同事务落库。
     primaryOfferName?: string;
@@ -296,7 +355,12 @@ export async function createMyProduct(
 ) {
   assertOriginalPriceAtLeastSale(data.price, data.originalPrice)
   // primaryOfferName/validityDays/offers 只进 Offer 表，不进 Product 列。
-  const { primaryOfferName: _primaryOfferName, validityDays: _validityDays, offers: _offers, ...productFields } = data
+  // B_CAT：categoryId/type 交由 resolver 在事务内解析（schema 已保证二者只给其一）。
+  const {
+    categoryId: _categoryId, type: _type,
+    primaryOfferName: _primaryOfferName, validityDays: _validityDays, offers: _offers,
+    ...productFields
+  } = data
   const normalizedProductData = normalizeProductImageFields(productFields)
   const deliveryMode = data.deliveryMode ?? 'instant_inventory'
   const stockMode = data.stockMode ?? (deliveryMode === 'instant_inventory' ? 'limited' : 'unlimited')
@@ -305,20 +369,28 @@ export async function createMyProduct(
   assertProductDeliveryConfiguration({
     deliveryMode,
     stockMode,
-    incomingStock: data.stock,
-    effectiveStock: data.stock,
+    incomingStock: undefined,
+    effectiveStock: 0,
     fixedContent: data.fixedContent,
     fixedContentType,
   })
 
   const product = await prisma.$transaction(async tx => {
+    // B_CAT：用事务内 client 解析 categoryId/type（不开启嵌套事务）。
+    const { categoryId, type } = await resolveProductCategory(
+      { categoryId: data.categoryId, type: data.type },
+      tx,
+    )
     const created = await tx.product.create({
       data: {
         ...normalizedProductData,
+        categoryId,
+        type,
         deliveryMode,
         stockMode,
         fixedContentType,
-        stock: deliveryMode === 'instant_inventory' ? 0 : (data.stock ?? 0),
+        stock: 0,
+        status: 'draft',
         merchantId,
       },
     })
@@ -328,7 +400,7 @@ export async function createMyProduct(
       originalPrice: data.originalPrice ?? null,
       deliveryMode,
       stockMode,
-      stock: deliveryMode === 'instant_inventory' ? 0 : (data.stock ?? 0),
+      stock: 0,
       fixedContent: data.fixedContent ?? null,
       fixedContentType,
       validityDays: data.validityDays ?? null,
@@ -346,22 +418,60 @@ export async function createMyProduct(
   })
 
   await invalidateProductPublicCache(product.id, { list: true })
-  return product
+  // 返回边界最小剥离：wire DTO 不携带遗留 Product.isHot（D-MERCH-01）。
+  return stripLegacyIsHot(product)
+}
+
+async function assertProductOwnedByMerchant(merchantId: number, productId: number): Promise<void> {
+  const owned = await prisma.product.findFirst({
+    where: { id: productId, merchantId },
+    select: { id: true },
+  })
+  if (!owned) throw notFound('商品不存在')
+}
+
+export async function getMyProductReadiness(merchantId: number, productId: number) {
+  await assertProductOwnedByMerchant(merchantId, productId)
+  return checkProductReadiness(productId)
+}
+
+export async function publishMyProduct(merchantId: number, productId: number) {
+  await assertProductOwnedByMerchant(merchantId, productId)
+  return publishCatalogProduct(productId)
+}
+
+export async function unpublishMyProduct(merchantId: number, productId: number) {
+  await assertProductOwnedByMerchant(merchantId, productId)
+  return unpublishCatalogProduct(productId)
 }
 
 export async function updateMyProduct(merchantId: number, productId: number, data: Record<string, unknown>) {
   const product = await prisma.product.findFirst({ where: { id: productId, merchantId } })
   if (!product) throw notFound('商品不存在')
 
+  // Category writes are authoritative by id (legacy type is still accepted
+  // for compatibility). Resolve once up front so the persisted label snapshot
+  // cannot drift from the referenced category.
+  const hasCategoryInput = Object.prototype.hasOwnProperty.call(data, 'categoryId')
+    || Object.prototype.hasOwnProperty.call(data, 'type')
+  const resolvedCategory = hasCategoryInput
+    ? await resolveProductCategory({
+        categoryId: typeof data.categoryId === 'number' ? data.categoryId : undefined,
+        type: typeof data.type === 'string' ? data.type : undefined,
+      })
+    : null
+
   const nextPrice = typeof data.price === 'number' ? data.price : product.price
   const nextOriginalPrice = 'originalPrice' in data
     ? data.originalPrice as number | null
     : product.originalPrice
   assertOriginalPriceAtLeastSale(nextPrice, nextOriginalPrice)
-  const normalizedProductData = normalizeProductImageFields(
+  const normalizedProductDataWithCategory = normalizeProductImageFields(
     data as Record<string, unknown> & { imageUrl?: string | null; images?: string[] },
     product.images
   )
+  const { categoryId: _categoryId, type: _type, ...normalizedProductData } =
+    normalizedProductDataWithCategory as Record<string, unknown>
 
   const deliveryMode = (normalizedProductData.deliveryMode as string | undefined) ?? product.deliveryMode
   if (deliveryMode !== product.deliveryMode) {
@@ -419,6 +529,9 @@ export async function updateMyProduct(merchantId: number, productId: number, dat
       where: { id: productId },
       data: {
         ...normalizedProductData,
+        ...(resolvedCategory
+          ? { categoryId: resolvedCategory.categoryId, type: resolvedCategory.type }
+          : {}),
         deliveryMode,
         stockMode,
         // 新建/无业务记录商品切到即时库存时，遗留的额度字段不再代表库存。
@@ -448,7 +561,67 @@ export async function updateMyProduct(merchantId: number, productId: number, dat
   })
 
   await invalidateProductPublicCache(productId, { detail: true, list: true })
-  return updated
+  // 返回边界最小剥离：wire DTO 不携带遗留 Product.isHot（D-MERCH-01）。
+  return stripLegacyIsHot(updated)
+}
+
+/**
+ * capacity 调整核心（T-CAT-BE-004）：CAS 条件 decrement 保证并发减少永不为负
+ * （AC-CAT-007）。即时库存只能 import/void，非即时 limited 只能 capacity（动作互斥）。
+ */
+async function adjustOfferCapacity(
+  tx: Prisma.TransactionClient,
+  productId: number,
+  offer: { id: number; deliveryMode: string; stockMode: string },
+  merchantId: number | null,
+  actorUserId: number,
+  input: { delta: number; reason: string }
+) {
+  if (offer.deliveryMode === 'instant_inventory') {
+    throw badRequest('即时库存商品请通过交付库存导入或作废管理')
+  }
+  if (offer.stockMode !== 'limited') {
+    throw badRequest('不限量商品无需调整可售名额')
+  }
+
+  if (input.delta > 0) {
+    const updated = await tx.offer.updateMany({
+      where: {
+        id: offer.id,
+        stockMode: 'limited',
+        deliveryMode: { not: 'instant_inventory' },
+      },
+      data: { stock: { increment: input.delta } },
+    })
+    if (updated.count !== 1) throw badRequest('商品库存模式已变更，请刷新后重试')
+  } else {
+    const updated = await tx.offer.updateMany({
+      where: {
+        id: offer.id,
+        stockMode: 'limited',
+        deliveryMode: { not: 'instant_inventory' },
+        stock: { gte: -input.delta },
+      },
+      data: { stock: { decrement: -input.delta } },
+    })
+    if (updated.count !== 1) throw badRequest('减少数量不能超过当前可售名额')
+  }
+
+  await syncProductProjection(tx, productId)
+  const updatedOffer = await tx.offer.findUniqueOrThrow({
+    where: { id: offer.id },
+    select: { stock: true },
+  })
+  await logInventoryChange(tx, {
+    productId,
+    offerId: offer.id,
+    merchantId,
+    actorUserId,
+    action: 'capacity_adjust',
+    delta: input.delta,
+    reason: input.reason,
+  })
+  return { stock: updatedOffer.stock }
 }
 
 /**
@@ -456,6 +629,7 @@ export async function updateMyProduct(merchantId: number, productId: number, dat
  * Unlike instant inventory, these products do not have one secret per buyer;
  * Product.stock therefore means remaining sale/service capacity.  A
  * conditional decrement keeps concurrent reductions from going below zero.
+ * 旧兼容路径：未指定 offerId 时落到默认 Offer（单 SKU 无感）。
  */
 export async function adjustMyProductCapacity(
   merchantId: number,
@@ -470,60 +644,78 @@ export async function adjustMyProductCapacity(
   if (!product) throw notFound('商品不存在')
 
   const result = await prisma.$transaction(async tx => {
-    // P4a：名额挂在 Offer 上；未指定 offerId 时落到默认 Offer（单 SKU 无感）。
-    const offer = input.offerId != null
-      ? await tx.offer.findFirst({ where: { id: input.offerId, productId } })
-      : await getDefaultOffer(tx, productId)
-    if (!offer) throw notFound('规格不存在')
-    if (offer.deliveryMode === 'instant_inventory') {
-      throw badRequest('即时库存商品请通过交付库存导入或作废管理')
-    }
-    if (offer.stockMode !== 'limited') {
-      throw badRequest('不限量商品无需调整可售名额')
-    }
-
-    if (input.delta > 0) {
-      const updated = await tx.offer.updateMany({
-        where: {
-          id: offer.id,
-          stockMode: 'limited',
-          deliveryMode: { not: 'instant_inventory' },
-        },
-        data: { stock: { increment: input.delta } },
-      })
-      if (updated.count !== 1) throw badRequest('商品库存模式已变更，请刷新后重试')
-    } else {
-      const updated = await tx.offer.updateMany({
-        where: {
-          id: offer.id,
-          stockMode: 'limited',
-          deliveryMode: { not: 'instant_inventory' },
-          stock: { gte: -input.delta },
-        },
-        data: { stock: { decrement: -input.delta } },
-      })
-      if (updated.count !== 1) throw badRequest('减少数量不能超过当前可售名额')
-    }
-
-    await syncProductProjection(tx, productId)
-    const updatedOffer = await tx.offer.findUniqueOrThrow({
-      where: { id: offer.id },
-      select: { stock: true },
-    })
-    await logInventoryChange(tx, {
-      productId,
-      offerId: offer.id,
-      merchantId,
-      actorUserId,
-      action: 'capacity_adjust',
-      delta: input.delta,
-      reason: input.reason,
-    })
-    return { stock: updatedOffer.stock }
+    const offer = await resolveMyOffer(tx, productId, input.offerId)
+    return adjustOfferCapacity(tx, productId, offer, merchantId, actorUserId, input)
   })
 
   await invalidateProductPublicCache(productId, { detail: true, list: 'coalesced' })
   return result
+}
+
+/** 新 Offer-first 路径（T-CAT-BE-004，D-CAT-12/13）：capacity 调整显式 offerId。 */
+export async function adjustMyOfferCapacity(
+  merchantId: number,
+  actorUserId: number,
+  productId: number,
+  offerId: number,
+  input: { delta: number; reason: string }
+) {
+  const product = await prisma.product.findFirst({
+    where: { id: productId, merchantId },
+    select: { id: true },
+  })
+  if (!product) throw notFound('商品不存在')
+
+  const result = await prisma.$transaction(async tx => {
+    const offer = await resolveMyOffer(tx, productId, offerId)
+    return adjustOfferCapacity(tx, productId, offer, merchantId, actorUserId, input)
+  })
+
+  await invalidateProductPublicCache(productId, { detail: true, list: 'coalesced' })
+  return result
+}
+
+/** import confirm 核心（T-CAT-BE-004）：事务内重算 + 写库 + 审计，Merchant/Admin 共用。 */
+async function confirmOfferInventoryImport(
+  tx: Prisma.TransactionClient,
+  productId: number,
+  offer: { id: number; deliveryFields: unknown },
+  merchantId: number | null,
+  actorUserId: number,
+  payload: InventoryImportPayload
+) {
+  const analysis = await analyzeInventoryForOffer(productId, offer, payload, tx)
+  assertConfirmableInventoryAnalysis(analysis)
+
+  await tx.inventoryItem.createMany({
+    data: analysis.itemsToImport.map(item =>
+      typeof item === 'string'
+        ? { productId, offerId: offer.id, content: item }
+        : {
+            productId,
+            offerId: offer.id,
+            content: item.content,
+            structuredContent: structuredContentToJson(item.structuredContent),
+          }
+    ),
+  })
+  await logInventoryChange(tx, {
+    productId,
+    offerId: offer.id,
+    merchantId,
+    actorUserId,
+    action: 'import',
+    delta: analysis.itemsToImport.length,
+    batchId: randomUUID(),
+  })
+  return {
+    imported: analysis.itemsToImport.length,
+    totalRows: analysis.totalRows,
+    validRows: analysis.validRows,
+    skippedEmptyRows: analysis.emptyRows,
+    duplicateRows: analysis.duplicateRows,
+    existingDuplicateRows: analysis.existingDuplicateRows,
+  }
 }
 
 export async function importMyInventory(
@@ -537,63 +729,12 @@ export async function importMyInventory(
 
   try {
     const result = await prisma.$transaction(async tx => {
-      // P4a：库存归属 Offer；未指定 offerId 时落到默认 Offer（单 SKU 无感）。
-      const offer = payload.offerId != null
-        ? await tx.offer.findFirst({ where: { id: payload.offerId, productId } })
-        : await getDefaultOffer(tx, productId)
-      if (!offer) throw notFound('规格不存在')
+      // 旧兼容路径：未指定 offerId 时落到默认 Offer（单 SKU 无感）。
+      const offer = await resolveMyOffer(tx, productId, payload.offerId)
       if (offer.deliveryMode !== 'instant_inventory') {
         throw badRequest('仅即时库存发货商品支持库存管理')
       }
-
-      // P4b：规格带交付字段模板时走结构化导入——行按 | 分隔映射字段，
-      // 规范化文本写入 content（唯一约束与领取 SQL 的权威形态不变）。
-      const deliveryFields = parseStoredDeliveryFields(offer.deliveryFields)
-      const analysis = deliveryFields.length > 0
-        ? await analyzeStructuredInventoryImport(productId, payload, deliveryFields, tx)
-        : await analyzeInventoryImport(productId, payload, tx)
-      if ('rowErrors' in analysis && analysis.rowErrors.length > 0) {
-        throw badRequest(
-          '部分行不符合交付字段模板，请先预览修正',
-          analysis.rowErrors.map(err => ({ field: 'items', message: `第 ${err.row} 行：${err.message}` }))
-        )
-      }
-      if (analysis.duplicateRows > 0 || analysis.existingDuplicateRows > 0) {
-        throw badRequest('库存导入包含重复项', duplicateInventoryImportDetails(analysis))
-      }
-      if (analysis.validRows === 0) {
-        throw badRequest('至少提供一条有效库存')
-      }
-
-      await tx.inventoryItem.createMany({
-        data: analysis.itemsToImport.map(item =>
-          typeof item === 'string'
-            ? { productId, offerId: offer.id, content: item }
-            : {
-                productId,
-                offerId: offer.id,
-                content: item.content,
-                structuredContent: structuredContentToJson(item.structuredContent),
-              }
-        ),
-      })
-      await logInventoryChange(tx, {
-        productId,
-        offerId: offer.id,
-        merchantId,
-        actorUserId,
-        action: 'import',
-        delta: analysis.itemsToImport.length,
-        batchId: randomUUID(),
-      })
-      return {
-        imported: analysis.itemsToImport.length,
-        totalRows: analysis.totalRows,
-        validRows: analysis.validRows,
-        skippedEmptyRows: analysis.emptyRows,
-        duplicateRows: analysis.duplicateRows,
-        existingDuplicateRows: analysis.existingDuplicateRows,
-      }
+      return confirmOfferInventoryImport(tx, productId, offer, merchantId, actorUserId, payload)
     })
 
     await invalidateProductPublicCache(productId, { detail: true, list: 'coalesced' })
@@ -610,6 +751,94 @@ export async function importMyInventory(
   }
 }
 
+/** 新 Offer-first 路径（T-CAT-BE-004，D-CAT-12/13）：库存导入显式 offerId。 */
+export async function importMyOfferInventory(
+  merchantId: number,
+  actorUserId: number,
+  productId: number,
+  offerId: number,
+  payload: InventoryImportPayload
+) {
+  const product = await prisma.product.findFirst({ where: { id: productId, merchantId }, select: { id: true } })
+  if (!product) throw notFound('商品不存在')
+
+  try {
+    const result = await prisma.$transaction(async tx => {
+      const offer = await resolveMyOffer(tx, productId, offerId)
+      if (offer.deliveryMode !== 'instant_inventory') {
+        throw badRequest('仅即时库存发货商品支持库存管理')
+      }
+      return confirmOfferInventoryImport(tx, productId, offer, merchantId, actorUserId, payload)
+    })
+
+    await invalidateProductPublicCache(productId, { detail: true, list: 'coalesced' })
+    return result
+  } catch (error) {
+    if (isInventoryContentUniqueViolation(error)) {
+      throw badRequest('库存导入包含重复项', [
+        { field: 'items', message: 'existingDuplicateRows=concurrent' },
+      ])
+    }
+    throw error
+  }
+}
+
+/**
+ * 作废核心（T-CAT-BE-004）：只作废 available 项；updateMany 二次过滤 status 防与
+ * 下单占用并发竞态。response 按 D-CAT-14/AC-CAT-008：availableStock 只统计目标 Offer，
+ * productAvailableStock 为商品汇总；旧含混 stock 兼容窗口 = 目标 Offer 可售数（deprecated）。
+ */
+async function voidOfferInventory(
+  tx: Prisma.TransactionClient,
+  productId: number,
+  offer: { id: number },
+  merchantId: number | null,
+  actorUserId: number,
+  input: { count: number; reason?: string }
+) {
+  const candidates = await tx.inventoryItem.findMany({
+    where: { productId, offerId: offer.id, status: 'available' },
+    orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+    take: input.count,
+    select: { id: true },
+  })
+  if (candidates.length < input.count) {
+    throw badRequest('可作废库存不足')
+  }
+
+  const voided = await tx.inventoryItem.updateMany({
+    where: { id: { in: candidates.map(item => item.id) }, status: 'available' },
+    data: { status: 'void' },
+  })
+  if (voided.count !== input.count) {
+    throw badRequest('可作废库存不足')
+  }
+
+  const [availableStock, productAvailableStock] = await Promise.all([
+    tx.inventoryItem.count({ where: { productId, offerId: offer.id, status: 'available' } }),
+    tx.inventoryItem.count({ where: { productId, status: 'available' } }),
+  ])
+
+  await logInventoryChange(tx, {
+    productId,
+    offerId: offer.id,
+    merchantId,
+    actorUserId,
+    action: 'void',
+    delta: -input.count,
+    reason: input.reason,
+  })
+
+  return {
+    offerId: offer.id,
+    voided: voided.count,
+    availableStock,
+    productAvailableStock,
+    // 兼容窗口（D-CAT-14）：旧客户端读取 stock == 目标 Offer 可售数。
+    stock: availableStock,
+  }
+}
+
 export async function voidMyInventory(
   merchantId: number,
   actorUserId: number,
@@ -620,47 +849,36 @@ export async function voidMyInventory(
   if (!product) throw notFound('商品不存在')
 
   // 单事务完成：InventoryItem 置 void + InventoryLog 落账。
-  // 只允许作废 available 项；updateMany 二次过滤 status 防与下单占用并发竞态。
   const result = await prisma.$transaction(async tx => {
-    const offer = input.offerId != null
-      ? await tx.offer.findFirst({ where: { id: input.offerId, productId } })
-      : await getDefaultOffer(tx, productId)
-    if (!offer) throw notFound('规格不存在')
+    // 旧兼容路径：未指定 offerId 时落到默认 Offer（单 SKU 无感）。
+    const offer = await resolveMyOffer(tx, productId, input.offerId)
     if (offer.deliveryMode !== 'instant_inventory') {
       throw badRequest('仅即时库存发货商品支持库存管理')
     }
+    return voidOfferInventory(tx, productId, offer, merchantId, actorUserId, input)
+  })
 
-    const candidates = await tx.inventoryItem.findMany({
-      where: { productId, offerId: offer.id, status: 'available' },
-      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
-      take: input.count,
-      select: { id: true },
-    })
-    if (candidates.length < input.count) {
-      throw badRequest('可作废库存不足')
+  await invalidateProductPublicCache(productId, { detail: true, list: 'coalesced' })
+  return result
+}
+
+/** 新 Offer-first 路径（T-CAT-BE-004，D-CAT-12/13）：作废显式 offerId。 */
+export async function voidMyOfferInventory(
+  merchantId: number,
+  actorUserId: number,
+  productId: number,
+  offerId: number,
+  input: { count: number; reason?: string }
+) {
+  const product = await prisma.product.findFirst({ where: { id: productId, merchantId }, select: { id: true } })
+  if (!product) throw notFound('商品不存在')
+
+  const result = await prisma.$transaction(async tx => {
+    const offer = await resolveMyOffer(tx, productId, offerId)
+    if (offer.deliveryMode !== 'instant_inventory') {
+      throw badRequest('仅即时库存发货商品支持库存管理')
     }
-
-    const voided = await tx.inventoryItem.updateMany({
-      where: { id: { in: candidates.map(item => item.id) }, status: 'available' },
-      data: { status: 'void' },
-    })
-    if (voided.count !== input.count) {
-      throw badRequest('可作废库存不足')
-    }
-
-    const availableStock = await tx.inventoryItem.count({ where: { productId, status: 'available' } })
-
-    await logInventoryChange(tx, {
-      productId,
-      offerId: offer.id,
-      merchantId,
-      actorUserId,
-      action: 'void',
-      delta: -input.count,
-      reason: input.reason,
-    })
-
-    return { voided: voided.count, stock: availableStock, availableStock }
+    return voidOfferInventory(tx, productId, offer, merchantId, actorUserId, input)
   })
 
   await invalidateProductPublicCache(productId, { detail: true, list: 'coalesced' })
@@ -687,6 +905,7 @@ export async function listMyInventoryLogs(
       select: {
         id: true,
         productId: true,
+        offerId: true,
         merchantId: true,
         actorUserId: true,
         action: true,
@@ -1322,12 +1541,23 @@ async function assertMyDeliveryFile(tx: Prisma.TransactionClient | typeof prisma
 
 export async function listMyOffers(merchantId: number, productId: number) {
   await assertMyProduct(merchantId, productId)
-  return prisma.offer.findMany({
+  const offers = await prisma.offer.findMany({
     where: { productId },
     orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
     // P5：管理 UI 需要展示已挂载文件的名称/大小/可用状态。
-    include: { fixedFile: { select: { fileName: true, size: true, status: true } } },
+    include: {
+      fixedFile: { select: { fileName: true, size: true, status: true } },
+      _count: { select: { inventory: { where: { status: 'available' } } } },
+    },
   })
+
+  // 即时库存的可售量由 InventoryItem(status=available) 唯一决定；Offer.stock
+  // 是旧投影，不能直接返回给 Offer-first 工作台，否则导入后仍显示 0。
+  return offers.map(({ _count, ...offer }) => ({
+    ...offer,
+    stock: offer.deliveryMode === 'instant_inventory' ? _count.inventory : offer.stock,
+    availableStock: offer.deliveryMode === 'instant_inventory' ? _count.inventory : undefined,
+  }))
 }
 
 /**

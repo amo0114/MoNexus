@@ -1,5 +1,5 @@
 import { expect, test, type APIRequestContext } from '@playwright/test'
-import { API_BASE, SEED_ACCOUNTS, loginAs } from './helpers'
+import { API_BASE, SEED_ACCOUNTS, loginAs, publishMerchantProduct } from './helpers'
 
 /**
  * P6a 订阅到期冒烟：购前「有效期 N 天」徽标 → UI 购买 → 订单详情有效期
@@ -51,6 +51,7 @@ test.describe.serial('P6a subscription', () => {
       .find(o => o.isDefault)!
     expect(defaultOffer.validityDays).toBe(VALIDITY_DAYS)
     state.offerId = defaultOffer.id
+    await publishMerchantProduct(request, token, state.productId)
   })
 
   test('buyer sees the validity badge and purchases; detail shows the expiry line', async ({ page, request }) => {

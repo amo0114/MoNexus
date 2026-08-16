@@ -1,5 +1,5 @@
 import { expect, test, type APIRequestContext } from '@playwright/test'
-import { API_BASE, SEED_ACCOUNTS, loginAs } from './helpers'
+import { API_BASE, SEED_ACCOUNTS, loginAs, publishMerchantProduct } from './helpers'
 
 /**
  * P5 T7：受控文件交付全链路（memory 适配器——dev 栈未配私有桶时的模拟签名，
@@ -71,6 +71,7 @@ test.describe.serial('P5 controlled file delivery', () => {
       { headers: { Authorization: `Bearer ${token}` }, data: { status: 'inactive' } },
     )
     expect(deactivate.ok(), await deactivate.text()).toBeTruthy()
+    await publishMerchantProduct(request, token, state.productId)
   })
 
   test('buyer purchases via UI and downloads from the success modal', async ({ page }) => {

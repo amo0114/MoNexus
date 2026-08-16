@@ -49,6 +49,7 @@ export interface MerchantProductListParams {
 export interface InventoryLog {
   id: number
   productId: number
+  offerId: number | null
   merchantId: number | null
   actorUserId: number
   action: 'import' | 'void' | 'sale' | 'capacity_adjust'
@@ -57,6 +58,42 @@ export interface InventoryLog {
   orderId: number | null
   batchId: string | null
   createdAt: string
+}
+
+export interface InventoryPreview {
+  totalRows: number
+  validRows: number
+  emptyRows: number
+  duplicateRows: number
+  existingDuplicateRows: number
+  canImport: boolean
+  rowErrors?: Array<{ row: number; message: string }>
+  structured?: {
+    fields: Array<{ key: string; label: string; sensitive: boolean }>
+    rows: Array<Record<string, string>>
+  }
+}
+
+export interface InventoryImportResult {
+  imported: number
+  totalRows: number
+  validRows: number
+  skippedEmptyRows: number
+  duplicateRows: number
+  existingDuplicateRows: number
+}
+
+export interface InventoryVoidResult {
+  offerId: number
+  voided: number
+  availableStock: number
+  productAvailableStock: number
+  /** 兼容窗口：等于 availableStock。 */
+  stock?: number
+}
+
+export interface CapacityAdjustResult {
+  stock: number
 }
 
 export async function getMerchantProducts(params?: MerchantProductListParams): Promise<ListEnvelope<MerchantProduct>> {
@@ -84,13 +121,62 @@ export async function getMerchantInventoryLogs(id: number, params?: { page?: num
   return data
 }
 
-export async function previewMerchantInventory(id: number, payload: ImportInventoryRequest): Promise<any> {
-  const { data } = await api.post<any>(`/merchant/products/${id}/inventory/preview`, payload)
+export async function previewMerchantInventory(id: number, payload: ImportInventoryRequest): Promise<InventoryPreview> {
+  const { data } = await api.post<InventoryPreview>(`/merchant/products/${id}/inventory/preview`, payload)
   return data
 }
 
-export async function importMerchantInventory(id: number, payload: ImportInventoryRequest): Promise<{ imported: number }> {
-  const { data } = await api.post<{ imported: number }>(`/merchant/products/${id}/inventory`, payload)
+export async function importMerchantInventory(id: number, payload: ImportInventoryRequest): Promise<InventoryImportResult> {
+  const { data } = await api.post<InventoryImportResult>(`/merchant/products/${id}/inventory`, payload)
+  return data
+}
+
+/** Frozen Offer-first inventory paths. New UI must never fall back to the product/default-Offer route. */
+export async function previewMerchantOfferInventory(
+  productId: number,
+  offerId: number,
+  payload: Omit<ImportInventoryRequest, 'offerId'>,
+): Promise<InventoryPreview> {
+  const { data } = await api.post<InventoryPreview>(
+    `/merchant/products/${productId}/offers/${offerId}/inventory/preview`,
+    payload,
+  )
+  return data
+}
+
+export async function importMerchantOfferInventory(
+  productId: number,
+  offerId: number,
+  payload: Omit<ImportInventoryRequest, 'offerId'>,
+): Promise<InventoryImportResult> {
+  const { data } = await api.post<InventoryImportResult>(
+    `/merchant/products/${productId}/offers/${offerId}/inventory`,
+    payload,
+  )
+  return data
+}
+
+export async function voidMerchantOfferInventory(
+  productId: number,
+  offerId: number,
+  payload: { count: number; reason?: string },
+): Promise<InventoryVoidResult> {
+  const { data } = await api.post<InventoryVoidResult>(
+    `/merchant/products/${productId}/offers/${offerId}/inventory/void`,
+    payload,
+  )
+  return data
+}
+
+export async function adjustMerchantOfferCapacity(
+  productId: number,
+  offerId: number,
+  payload: { delta: number; reason: string },
+): Promise<CapacityAdjustResult> {
+  const { data } = await api.post<CapacityAdjustResult>(
+    `/merchant/products/${productId}/offers/${offerId}/capacity/adjust`,
+    payload,
+  )
   return data
 }
 

@@ -245,6 +245,7 @@ const envSchema = z.object({
   CACHE_PRODUCT_LIST: booleanEnvSchema.default(true),
   CACHE_PRODUCT_DETAIL: booleanEnvSchema.default(true),
   CACHE_PRODUCT_REVIEWS: booleanEnvSchema.default(true),
+  CACHE_CATEGORY_REGISTRY: booleanEnvSchema.default(true),
   CACHE_PRODUCT_LIST_VERSION_COALESCE_MS: z.coerce.number().int().min(0).default(10_000),
   CACHE_MAX_VALUE_BYTES: z.coerce.number().int().positive().default(524_288),
 
@@ -651,6 +652,7 @@ export const config = {
   cacheProductList: env.CACHE_PRODUCT_LIST,
   cacheProductDetail: env.CACHE_PRODUCT_DETAIL,
   cacheProductReviews: env.CACHE_PRODUCT_REVIEWS,
+  cacheCategoryRegistry: env.CACHE_CATEGORY_REGISTRY,
   cacheProductListVersionCoalesceMs: env.CACHE_PRODUCT_LIST_VERSION_COALESCE_MS,
   cacheMaxValueBytes: env.CACHE_MAX_VALUE_BYTES,
   portableBackupWorkDir: env.PORTABLE_BACKUP_WORK_DIR,

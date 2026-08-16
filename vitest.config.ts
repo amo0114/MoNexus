@@ -1,10 +1,26 @@
+import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vitest/config'
+import react from '@vitejs/plugin-react'
 
-// 前端单元测试独立于 Vite 构建配置:被测模块均为纯逻辑(realtime 协议层、
-// utils),不经 DOM/资源管线。引入 DOM 依赖的组件测试时再切 environment。
+const srcDir = fileURLToPath(new URL('./src', import.meta.url))
+
+// Frontend unit tests: single unified config (catalog/merch component tests +
+// pure-logic realtime/utils tests). jsdom is a superset of node for the
+// pure-logic suites, so one environment covers both. DOM-driven component
+// tests rely on the jsdom environment, globals, and the shared setup file.
 export default defineConfig({
+  plugins: [react()],
+  resolve: {
+    alias: {
+      '@': srcDir,
+    },
+    dedupe: ['react', 'react-dom'],
+  },
   test: {
-    include: ['src/**/*.test.{ts,tsx}'],
-    environment: 'node',
+    include: ['src/**/*.{test,spec}.{ts,tsx}'],
+    environment: 'jsdom',
+    globals: true,
+    setupFiles: ['./src/test/setup.ts'],
+    css: false,
   },
 })
