@@ -81,11 +81,11 @@ dataset/runtime only; it does not replace production performance evidence.
 
 ### Staging canary P95
 
-The protected [workflow run 31890663141](https://github.com/amo0114/MoNexus/actions/runs/31890663141)
-deployed immutable SHA `d650014a9d816a9c6c3476d6e6e02861bce208ac` and collected
+The protected [workflow run 31929179740](https://github.com/amo0114/MoNexus/actions/runs/31929179740)
+deployed immutable SHA `440337b9f68e9c288f409e3524b4ff8b0ee301ee` and collected
 100 API-2xx-to-merchant-order-DOM samples from the disposable staging fixture. The
-artifact `staging-latency.txt` reports zero failures, P50 **790 ms**, P95 **793 ms**,
-P99 **797 ms**, and maximum **810 ms**. The same run passed authenticated SSE proxy
+artifact `staging-latency.txt` reports zero failures, P50 **790 ms**, P95 **794 ms**,
+P99 **795 ms**, and maximum **795 ms**. The same run passed authenticated SSE proxy
 transport, flag-off fallback/history, rollback, fixture cleanup, and final readiness.
 This is staging evidence only; no production/canary-traffic claim is made.
 

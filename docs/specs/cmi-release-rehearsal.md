@@ -68,7 +68,7 @@ installed on `free-vnic`, the final run above completed successfully.
 - [x] Baseline health passed before and after the exercise; public `/api/health/live`
   and `/api/health/ready` were checked by the workflow and post-run probe.
 - [x] Disposable merchant fixture/canary was created and removed by the workflow;
-  100/100 API-2xx-to-merchant-DOM samples passed with `p95_ms=793` and zero failures.
+  100/100 API-2xx-to-merchant-DOM samples passed with `p95_ms=794` and zero failures.
   Stop authority was `amo0114`; the workflow's explicit stop conditions are listed
   below.
 - [x] Known-good staging release SHA `4fe0fbcac899bbc388184e0dfe2d59b9dbe90c2c` is recorded before the live exercise.
@@ -98,12 +98,12 @@ installed on `free-vnic`, the final run above completed successfully.
 
 Design confirmations are the staging-only path, immutable SHA checks, dry-run no-SSH
 property, explicit live rehearsal confirmation, health gate, and migration fallback.
-The final staging rehearsal is [workflow run 31890663141](https://github.com/amo0114/MoNexus/actions/runs/31890663141)
-for immutable SHA `d650014a9d816a9c6c3476d6e6e02861bce208ac`. It was approved by
+The final staging rehearsal is [workflow run 31929179740](https://github.com/amo0114/MoNexus/actions/runs/31929179740)
+for immutable SHA `440337b9f68e9c288f409e3524b4ff8b0ee301ee`. It was approved by
 Owner `amo0114` through the protected `staging` Environment (required-reviewer rule
 `62780483`) after root installed the restricted Caddy sudoers rule on `free-vnic`.
 The retained artifact is
-`notification-realtime-staging-evidence-d650014a9d816a9c6c3476d6e6e02861bce208ac`.
+`notification-realtime-staging-evidence-440337b9f68e9c288f409e3524b4ff8b0ee301ee`.
 
 The workflow completed all 12 stages: backend/proxy/frontend ordering, production-like
 LISTEN/session gate, realtime flag-on, disposable merchant canary, authenticated SSE
@@ -113,7 +113,7 @@ finalization. The known-good baseline restored by the workflow was
 `4fe0fbcac899bbc388184e0dfe2d59b9dbe90c2c`.
 
 The artifact reports `staging-latency.txt` with 100 samples (`p50_ms=790`,
-`p95_ms=793`, `p99_ms=797`, `max_ms=810`, zero failures), `rollout.txt` and
+`p95_ms=794`, `p99_ms=795`, `max_ms=795`, zero failures), `rollout.txt` and
 `rollback.txt` as `PASS`, `fixture-cleanup.json` as `CLEAN`, and final public
 readiness `status=ready` with `notificationRealtime=disabled` after baseline restore.
 The only non-assertive line is the informational external log-query note in

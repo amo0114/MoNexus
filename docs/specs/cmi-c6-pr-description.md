@@ -5,11 +5,11 @@
 - Base: `develop`
 - Label: `run-e2e`
 - Source branch: `feat/catalog-merch-integration`
-- Current code/evidence run SHA: `d650014a9d816a9c6c3476d6e6e02861bce208ac`
+- Current code/evidence run SHA: `440337b9f68e9c288f409e3524b4ff8b0ee301ee`
   (final staging rehearsal exact SHA; this document is docs-only); implementation
   code ancestor under test: `c690025`
 - C5b runners/evidence: `685d23b`, `495d1a0`, `e279c72`, `e329d1b`, `1d37d86`,
-  `4ab3de9`, `61e41af`, and final staging fixes through `d650014`
+  `4ab3de9`, `61e41af`, and final staging fixes through `440337b`
 
 ## Summary
 
@@ -64,11 +64,11 @@ performance numbers are not invented or promoted to P0 acceptance criteria.
   reports 315.74 KiB and exits non-zero. This proxy is explicitly Deferred with
   `T-MERCH-ASSET-001` by AMD-CMI-012 §3.6; it is not presented as a shipped budget
   pass. The protected staging run below supplies the external staging P95.
-- Final staging rehearsal [workflow run 31890663141](https://github.com/amo0114/MoNexus/actions/runs/31890663141)
-  deployed the exact SHA `d650014a9d816a9c6c3476d6e6e02861bce208ac` after root
+- Final staging rehearsal [workflow run 31929179740](https://github.com/amo0114/MoNexus/actions/runs/31929179740)
+  deployed the exact SHA `440337b9f68e9c288f409e3524b4ff8b0ee301ee` after root
   installed the reviewed Caddy sudoers delegation on `free-vnic`. Owner `amo0114`
   approved the protected `staging` Environment (rule `62780483`). Its retained
-  artifact reports 100/100 canary samples, P50 790 ms / P95 793 ms / P99 797 ms,
+  artifact reports 100/100 canary samples, P50 790 ms / P95 794 ms / P99 795 ms,
   zero failures, flag-off fallback PASS, code rollback PASS to known-good
   `4fe0fbcac899bbc388184e0dfe2d59b9dbe90c2c`, fixture cleanup `CLEAN`, and final
   public readiness `ready` with realtime `disabled`.
@@ -85,7 +85,7 @@ performance numbers are not invented or promoted to P0 acceptance criteria.
 - Production performance, production traffic, backup-restore, and an incremental
   frontend bundle baseline remain follow-up work under separate authorization. The
   staging P95, Owner/PAR rollout, rollback, and cleanup gates are closed by run
-  `31890663141`; the bundle/asset work remains Deferred rather than silently passed.
+  `31929179740`; the bundle/asset work remains Deferred rather than silently passed.
 
 ## Readiness
 

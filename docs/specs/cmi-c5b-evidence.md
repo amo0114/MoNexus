@@ -2,7 +2,7 @@
 
 Date: 2026-08-15
 Branch: `feat/catalog-merch-integration`
-Code/evidence run HEAD: `d650014a9d816a9c6c3476d6e6e02861bce208ac` (the exact SHA
+Code/evidence run HEAD: `440337b9f68e9c288f409e3524b4ff8b0ee301ee` (the exact SHA
 deployed by the final staging rehearsal; this document update is docs-only).
 Implementation code ancestor under test: `c690025b9d1059bc47b6c1c16aa5811b2971d373`.
 C5b runner commits: `685d23b` (dedicated Merch gates/config), `495d1a0`
@@ -10,7 +10,7 @@ C5b runner commits: `685d23b` (dedicated Merch gates/config), `495d1a0`
 (local perf/compat runner), `1d37d86` (release rehearsal/Owner handoff),
 `4ab3de9` (100k benchmark), and `61e41af` (security/audit and fixture closure).
 Staging rehearsal fixes are carried by `66d230e`, `d835621`, `3cf448b`,
-`eb79c9f`, `e9c55d6`, and `d650014`.
+`eb79c9f`, `e9c55d6`, `d650014`, `bf2c56f`, and `440337b`.
 CMI database: `monexus_test_catalog_merch_integration` only
 
 ## Verification
@@ -28,7 +28,7 @@ CMI database: `monexus_test_catalog_merch_integration` only
 | Root security/public-field targeted suite | Root targeted security/public-field suite | PASS, 8 files / 117 tests; exit 0 |
 | Unified CMI server security gate | Node 20.19.5/npm 10.8.2, disposable CMI DB, 8 focused security/admin files | **PASS, 8 files / 70 tests, exit 0, Vitest 111.43s;** runtime admin MFA boundaries, audit reason redaction, public-field/PointLog boundaries, catalog admin authorization, auth/security-event and mail redaction suites all passed; DB dropped afterward |
 | Local perf/compat runner | `TEST_DATABASE_URL=<CMI> DATABASE_URL=<CMI> REDIS_ENABLED=false REDIS_REQUIRED=false bash scripts/verify-cmi-perf-compat.sh`; `bash scripts/verify-cmi-100k-order-p95.sh`; `npm run check:bundle-budget` | Cache 7/7, server build and dashboard 2/2 PASS; 100k synthetic-order benchmark PASS locally (30 samples; summary P95 16.504372 ms, timeseries P95 80.750211 ms). The conservative all-assets bundle proxy remains 315.74 KiB gzip versus 150 KiB and is explicitly **Deferred** with `T-MERCH-ASSET-001` by AMD-CMI-012 §3.6; it is not represented as a shipped budget pass |
-| Final staging rehearsal / Owner handoff | [workflow run 31890663141](https://github.com/amo0114/MoNexus/actions/runs/31890663141), exact SHA `d650014a9d816a9c6c3476d6e6e02861bce208ac`; artifact `notification-realtime-staging-evidence-d650014a9d816a9c6c3476d6e6e02861bce208ac` | **PASS**. Owner `amo0114` approved the protected `staging` Environment (rule `62780483`); Caddy sudo delegation was installed by root on `free-vnic`; rollout, 100-sample canary/latency, flag-off fallback, code rollback to known-good `4fe0fbcac899bbc388184e0dfe2d59b9dbe90c2c`, fixture cleanup, and final readiness all passed |
+| Final staging rehearsal / Owner handoff | [workflow run 31929179740](https://github.com/amo0114/MoNexus/actions/runs/31929179740), exact SHA `440337b9f68e9c288f409e3524b4ff8b0ee301ee`; artifact `notification-realtime-staging-evidence-440337b9f68e9c288f409e3524b4ff8b0ee301ee` | **PASS**. Owner `amo0114` approved the protected `staging` Environment (rule `62780483`); Caddy sudo delegation was installed by root on `free-vnic`; rollout, 100-sample canary/latency, flag-off fallback, code rollback to known-good `4fe0fbcac899bbc388184e0dfe2d59b9dbe90c2c`, fixture cleanup, and final readiness all passed |
 
 The unified security command used `server/vitest.config.ts` with
 `fileParallelism=false`/`singleFork=true` and these eight files: `security-gaps.test.ts`,
@@ -87,24 +87,24 @@ been removed by the prior runner (154 files failed during initialization and 142
 were skipped). It is excluded from the result above; the database was recreated from
 the committed migrations before the valid run.
 
-### Final staging rehearsal evidence (2026-08-15)
+### Final staging rehearsal evidence (2026-08-16)
 
-The protected workflow [31890663141](https://github.com/amo0114/MoNexus/actions/runs/31890663141)
+The protected workflow [31929179740](https://github.com/amo0114/MoNexus/actions/runs/31929179740)
 ran against the immutable code SHA
-`d650014a9d816a9c6c3476d6e6e02861bce208ac` after the root-only Caddy delegation was
+`440337b9f68e9c288f409e3524b4ff8b0ee301ee` after the root-only Caddy delegation was
 installed on `free-vnic`. The `staging` Environment approval was recorded for Owner
 `amo0114` under required-reviewer rule `62780483` (approval comment: "Owner-approved
 staging realtime rehearsal per current PAR authorization.").
 
 The retained artifact is
-`notification-realtime-staging-evidence-d650014a9d816a9c6c3476d6e6e02861bce208ac`.
+`notification-realtime-staging-evidence-440337b9f68e9c288f409e3524b4ff8b0ee301ee`.
 Its files all have `result=PASS` except the explicitly informational external log-query
 note in `proxy.txt`; no secret or token was uploaded. The material results are:
 
 - `rollout.txt`: backend-first, proxy-first, frontend-after, and feature flag on all
   passed; `logs.txt` passed Nginx/app/Caddy boundary inspection.
 - `staging-latency.txt`: 100/100 samples, `failure_count=0`, `p50_ms=790`,
-  `p95_ms=793`, `p99_ms=797`, `max_ms=810`; the sample path was API 2xx to the
+  `p95_ms=794`, `p99_ms=795`, `max_ms=795`; the sample path was API 2xx to the
   merchant order-id DOM.
 - `session.txt`: production-like LISTEN gate passed (`pid_samples=4/4`, distinct
   PID count 1, connect/listen/notify permissions ok, 40/40 auxiliary commits).
