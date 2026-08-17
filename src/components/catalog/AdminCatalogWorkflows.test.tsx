@@ -168,7 +168,11 @@ describe('Catalog admin workflows (T-CAT-FE-004)', () => {
       sourceHash: 'a'.repeat(64),
     })
     expect(key).toMatch(/^[A-Za-z0-9._:-]{1,128}$/)
-    expect(onImported).toHaveBeenCalledWith(10)
+    expect(onImported).toHaveBeenCalledWith({
+      productId: 10,
+      productName: 'Changed',
+      origin: 'xboard-import',
+    })
   })
 
   it('forces a new preview when Xboard reports source change', async () => {
@@ -220,9 +224,15 @@ describe('Catalog admin workflows (T-CAT-FE-004)', () => {
     fireEvent.click(screen.getByTestId('admin-faka-import-preview-submit'))
     fireEvent.click(await screen.findByTestId('admin-faka-import-submit'))
     const existing = await screen.findByTestId('admin-faka-existing-product')
-    expect(existing).toHaveTextContent('#55')
+    expect(existing).toHaveTextContent('打开已导入商品的发布检查')
+    expect(existing).not.toHaveTextContent('#55')
+    expect(existing).not.toHaveTextContent('55')
     fireEvent.click(existing)
-    await waitFor(() => expect(onImported).toHaveBeenCalledWith(55))
+    await waitFor(() => expect(onImported).toHaveBeenCalledWith({
+      productId: 55,
+      productName: 'Basic',
+      origin: 'xboard-import',
+    }))
   })
 
   it('treats an idempotent replay as success without asking for a new request', async () => {
@@ -234,8 +244,12 @@ describe('Catalog admin workflows (T-CAT-FE-004)', () => {
     fireEvent.change(screen.getByTestId('product-category-select'), { target: { value: '7' } })
     fireEvent.click(screen.getByTestId('admin-faka-import-preview-submit'))
     fireEvent.click(await screen.findByTestId('admin-faka-import-submit'))
-    await waitFor(() => expect(onImported).toHaveBeenCalledWith(77))
-    expect(useAppStore.getState().toasts.some((toast) => toast.message.includes('幂等重放'))).toBe(true)
+    await waitFor(() => expect(onImported).toHaveBeenCalledWith({
+      productId: 77,
+      productName: 'Basic',
+      origin: 'xboard-import',
+    }))
+    expect(useAppStore.getState().toasts.some((toast) => toast.message.includes('已存在，未重复创建'))).toBe(true)
     expect(mocks.importFaka).toHaveBeenCalledTimes(1)
   })
 })

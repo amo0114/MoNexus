@@ -2,18 +2,26 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import api from './client'
 import {
   createAdminPlatformProduct,
+  getAdminProductReadiness,
+  getAdminProducts,
   importAdminFakaPlan,
   importAdminOfferInventory,
   previewAdminFakaPlan,
   previewAdminOfferInventory,
+  publishAdminProduct,
+  unpublishAdminProduct,
 } from './admin'
 
-vi.mock('./client', () => ({ default: { post: vi.fn() } }))
+vi.mock('./client', () => ({ default: { get: vi.fn(), post: vi.fn() } }))
 
+const get = vi.mocked(api.get)
 const post = vi.mocked(api.post)
 
 describe('admin Catalog FE-004 API contracts', () => {
-  beforeEach(() => post.mockReset())
+  beforeEach(() => {
+    get.mockReset()
+    post.mockReset()
+  })
 
   it('uses Offer-first inventory preview/confirm and source-bound Xboard confirm', async () => {
     post.mockResolvedValue({ data: {} })
@@ -45,5 +53,67 @@ describe('admin Catalog FE-004 API contracts', () => {
     }
     await createAdminPlatformProduct(payload)
     expect(post).toHaveBeenCalledWith('/admin/products', payload)
+  })
+})
+
+describe('admin platform publication adapters (T-APUB-001)', () => {
+  beforeEach(() => {
+    get.mockReset()
+    post.mockReset()
+  })
+
+  it('lists products on GET /admin/products', async () => {
+    const items = [{
+      id: 11,
+      name: '平台草稿',
+      status: 'draft' as const,
+      merchantId: null,
+      type: '网络节点',
+      price: 100,
+      offers: [{ id: 21, name: '月付' }],
+    }]
+    get.mockResolvedValue({ data: items })
+
+    await expect(getAdminProducts()).resolves.toEqual(items)
+    expect(get).toHaveBeenCalledTimes(1)
+    expect(get).toHaveBeenCalledWith('/admin/products')
+    expect(JSON.stringify(get.mock.calls)).not.toMatch(/\/merchant\/products/)
+  })
+
+  it('loads readiness on GET /admin/products/:id/readiness', async () => {
+    const readiness = {
+      ready: false,
+      productId: 11,
+      issues: [{ code: 'COVER_REQUIRED', field: 'images', offerId: null }],
+    }
+    get.mockResolvedValue({ data: readiness })
+
+    await expect(getAdminProductReadiness(11)).resolves.toEqual(readiness)
+    expect(get).toHaveBeenCalledWith('/admin/products/11/readiness')
+    expect(JSON.stringify(get.mock.calls)).not.toMatch(/\/merchant\/products/)
+  })
+
+  it('publishes with POST /admin/products/:id/publish and no status payload', async () => {
+    const result = { id: 11, status: 'active' as const, publishedAt: '2026-08-17T00:00:00.000Z' }
+    post.mockResolvedValue({ data: result })
+
+    await expect(publishAdminProduct(11)).resolves.toEqual(result)
+    expect(post).toHaveBeenCalledTimes(1)
+    expect(post.mock.calls[0]).toEqual(['/admin/products/11/publish'])
+    expect(post.mock.calls[0][1]).toBeUndefined()
+    expect(JSON.stringify(post.mock.calls)).not.toMatch(/status/)
+    expect(JSON.stringify(post.mock.calls)).not.toMatch(/\/merchant\/products/)
+  })
+
+  it('unpublishes with POST /admin/products/:id/unpublish and no status payload', async () => {
+    const result = { id: 11, status: 'inactive' as const, publishedAt: '2026-08-17T00:00:00.000Z' }
+    post.mockResolvedValue({ data: result })
+
+    await expect(unpublishAdminProduct(11)).resolves.toEqual(result)
+    expect(post).toHaveBeenCalledTimes(1)
+    expect(post.mock.calls[0]).toEqual(['/admin/products/11/unpublish'])
+    expect(post.mock.calls[0][1]).toBeUndefined()
+    expect(JSON.stringify(post.mock.calls)).not.toMatch(/status/)
+    expect(JSON.stringify(post.mock.calls)).not.toMatch(/\/merchant\/products/)
   })
 })
