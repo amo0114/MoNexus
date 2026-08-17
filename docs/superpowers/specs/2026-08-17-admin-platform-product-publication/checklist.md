@@ -105,27 +105,22 @@
 
 ```text
 Date: 2026-08-17
-HEAD: 126a1041621d450c9d6124d9a128b49402089c86 (implementation; this docs commit follows)
-Card/AC: T-APUB-001..006 / AC-APUB-001..018
+HEAD: fba856efd1437de5cb14e3e08b3fd0b4649889b6
+Card/AC: T-APUB-001..006 / AC-APUB-001..018 + review refresh concurrency
 Command:
-  npm test -- src/api/admin.catalog.test.ts src/components/catalog/ProductPublicationChecklist.test.tsx src/components/catalog/AdminProductPublicationDialog.test.tsx src/components/catalog/AdminCatalogWorkflows.test.tsx src/pages/AdminPage.test.tsx src/pages/AdminPage.products.test.tsx
-  dbguard disposable DB + vitest 26 catalog-ops backend files including adminPublicationRoutes.test.ts
-  bash scripts/verify-catalog-ops-e2e.sh
-  npm run verify:quick
-  git diff --check
-Exit code: 0 / 0 / 0 / 0 / 0
+  npx tsc -b
+  npm test -- src/pages/AdminPage.products.test.tsx src/pages/AdminPage.test.tsx
+Exit code: 0 / 0
 Result (file/count):
-  frontend targeted 6 files / 43 passed
-  catalog-ops backend 26 files / 281 passed
-  catalog-ops e2e 31 passed (XBoard 4/4 including draft->publish->public)
-  verify:quick backend 2 + frontend 88 passed
+  AdminPage host 11 passed (includes unpublish lock-until-refresh and stale reload)
+  tsc -b passed
 Node/npm: v20.19.5 / 10.8.2
-Disposable DB name (redacted prefix only): monexus_test_catalog_merch_integration
-E2E ports/fixture: XBoard fixture :3106, playwright.catalog-ops.config.ts
-Cleanup: dbguard drop after backend/e2e runners; no production/staging/XBoard live
+Disposable DB name (redacted prefix only): n/a for this follow-up
+E2E ports/fixture: prior XBoard 360/1280 geometry remains in catalog-xboard-import.spec.ts
+Cleanup: n/a
 PR URL: https://github.com/amo0114/MoNexus/pull/142
-CI run URL: https://github.com/amo0114/MoNexus/actions/runs/31998216000
+CI run URL: https://github.com/amo0114/MoNexus/actions/runs/32000100722 (green on 5d2a052; this commit supersedes)
 Notes:
-  Official verify-catalog-ops-backend.sh Gate 0 still requires feat/catalog-merch-integration or fix/catalog-merch-user-ux. Equivalent TEST_FILES were executed on the implementation branch.
-  DEBT-APUB-001 remains open: admin publish/unpublish still has no actor AdminLog.
+  Review follow-up: unpublish busy lasts through list refresh; reloadProducts uses latest-request guard; retry disabled while reloading.
+  Previous implementation HEAD 5d2a052. DEBT-APUB-001 remains open.
 ```

@@ -209,6 +209,51 @@ describe('AdminPage product publication workflow (T-APUB-004/005)', () => {
     await waitFor(() => expect(mocks.unpublish).toHaveBeenCalledTimes(1))
   })
 
+  it('keeps the unpublish control locked until the list refresh finishes', async () => {
+    let resolveList: ((value: unknown) => void) | undefined
+    mocks.getProducts
+      .mockResolvedValueOnce(products)
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveList = resolve }))
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    await openProducts()
+    fireEvent.click(screen.getByTestId('admin-product-unpublish-12'))
+    await waitFor(() => expect(mocks.unpublish).toHaveBeenCalledTimes(1))
+    const button = screen.getByTestId('admin-product-unpublish-12')
+    expect(button).toBeDisabled()
+    expect(button).toHaveTextContent('下架中…')
+    expect(screen.getByTestId('admin-product-status-12')).toHaveTextContent('已发布')
+    fireEvent.click(button)
+    expect(mocks.unpublish).toHaveBeenCalledTimes(1)
+    resolveList?.(products.map((item) => (
+      item.id === 12 ? { ...item, status: 'inactive' } : item
+    )))
+    await waitFor(() => expect(screen.getByTestId('admin-product-status-12')).toHaveTextContent('已下架'))
+    expect(screen.queryByTestId('admin-product-unpublish-12')).not.toBeInTheDocument()
+  })
+
+  it('ignores a stale products reload and disables retry while a newer refresh is in flight', async () => {
+    let resolveStale: ((value: unknown) => void) | undefined
+    mocks.getProducts
+      .mockResolvedValueOnce(products)
+      .mockRejectedValueOnce(new Error('network'))
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveStale = resolve }))
+      .mockResolvedValueOnce(products.map((item) => (
+        item.id === 12 ? { ...item, status: 'inactive' } : item
+      )))
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    await openProducts()
+    fireEvent.click(screen.getByTestId('admin-product-unpublish-12'))
+    expect(await screen.findByTestId('admin-products-refresh-retry')).toBeEnabled()
+    fireEvent.click(screen.getByTestId('admin-products-refresh-retry'))
+    expect(screen.getByTestId('admin-products-refresh-retry')).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: '数据仪表盘' }))
+    expect(await screen.findByText('注册用户总数')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '商品与库存' }))
+    resolveStale?.(products)
+    await waitFor(() => expect(screen.getByTestId('admin-product-status-12')).toHaveTextContent('已下架'))
+    expect(screen.queryByTestId('admin-products-refresh-error')).not.toBeInTheDocument()
+  })
+
   it('hands a successful XBoard import to readiness and does not auto-publish (AC-APUB-001/002/009)', async () => {
     await openProducts()
     fireEvent.click(screen.getByTestId('admin-faka-import-open'))

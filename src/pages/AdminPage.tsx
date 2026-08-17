@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Archive, LayoutDashboard, UsersRound, Package, RotateCcw, ShoppingCart, Activity, Users, ShoppingBag, Coins, Store, Tags, DollarSign, Settings, ClipboardList, Megaphone, DatabaseBackup, FolderLock, Cable, ShieldAlert, HardDrive, Upload } from 'lucide-react'
 import api from '../api/client'
 import { getApiErrorMessage } from '../api/error'
+import { createLatestRequestGuard } from '../utils/latestRequest'
 import { useAppStore } from '../stores/appStore'
 import { listAdminAudit, AdminLogEntry } from '../api/adminAudit'
 import {
@@ -106,15 +107,21 @@ export default function AdminPage() {
   const [publicationTarget, setPublicationTarget] = useState<AdminPublicationTarget | null>(null)
   const [unpublishingProductIds, setUnpublishingProductIds] = useState<Set<number>>(new Set())
   const [productsRefreshError, setProductsRefreshError] = useState(false)
+  const [productsReloading, setProductsReloading] = useState(false)
   const unpublishingRef = useRef<Set<number>>(new Set())
+  const productsReloadGuard = useRef(createLatestRequestGuard()).current
 
   // Settle multiselect
   const [selectedSettlements, setSelectedSettlements] = useState<number[]>([])
   const [settlementStatusFilter, setSettlementStatusFilter] = useState('')
 
   useEffect(() => {
+    if (activeTab !== 'products') {
+      productsReloadGuard.invalidate()
+      setProductsReloading(false)
+    }
     loadTabData(activeTab)
-  }, [activeTab, settlementStatusFilter])
+  }, [activeTab, settlementStatusFilter, productsReloadGuard])
 
   useEffect(() => {
     if (activeTab === 'audit') {
@@ -162,17 +169,33 @@ export default function AdminPage() {
   }
 
   async function reloadProducts(): Promise<AdminProductListItem[]> {
+    const canCommit = productsReloadGuard.begin()
+    setProductsReloading(true)
     setTabLoading(true)
     try {
       const data = await getAdminProducts()
+      if (!canCommit()) {
+        const stale = new Error('stale-products-reload')
+        stale.name = 'StaleProductsReloadError'
+        throw stale
+      }
       setProducts(data)
       setProductsRefreshError(false)
       return data
     } catch (err) {
+      if (!canCommit() || (err instanceof Error && err.name === 'StaleProductsReloadError')) {
+        const stale = err instanceof Error && err.name === 'StaleProductsReloadError'
+          ? err
+          : Object.assign(new Error('stale-products-reload'), { name: 'StaleProductsReloadError' })
+        throw stale
+      }
       setProductsRefreshError(true)
       throw err
     } finally {
-      setTabLoading(false)
+      if (canCommit()) {
+        setTabLoading(false)
+        setProductsReloading(false)
+      }
     }
   }
 
@@ -181,6 +204,7 @@ export default function AdminPage() {
       try {
         return await reloadProducts()
       } catch (err) {
+        if (err instanceof Error && err.name === 'StaleProductsReloadError') return undefined
         showToast(getApiErrorMessage(err, '加载失败'), 'error')
         return undefined
       }
@@ -238,8 +262,13 @@ export default function AdminPage() {
     })
   }
 
+  function releaseUnpublishLock(productId: number) {
+    unpublishingRef.current.delete(productId)
+    setUnpublishingProductIds(new Set(unpublishingRef.current))
+  }
+
   async function handleUnpublishPlatformProduct(product: AdminProductListItem) {
-    if (unpublishingRef.current.has(product.id)) return
+    if (productsRefreshError || unpublishingRef.current.has(product.id)) return
     const confirmed = window.confirm(
       '下架后商品将从商城隐藏，已有订单和可售资源不会删除。确定下架吗？',
     )
@@ -250,16 +279,18 @@ export default function AdminPage() {
       await unpublishAdminProduct(product.id)
     } catch (err) {
       showToast(getApiErrorMessage(err, '下架失败'), 'error')
+      releaseUnpublishLock(product.id)
       return
-    } finally {
-      unpublishingRef.current.delete(product.id)
-      setUnpublishingProductIds(new Set(unpublishingRef.current))
     }
     try {
       await reloadProducts()
       showToast(`“${product.name}”已下架`)
-    } catch {
-      showToast(`“${product.name}”已下架，但列表刷新失败，请重试`)
+    } catch (err) {
+      if (!(err instanceof Error && err.name === 'StaleProductsReloadError')) {
+        showToast(`“${product.name}”已下架，但列表刷新失败，请重试`)
+      }
+    } finally {
+      releaseUnpublishLock(product.id)
     }
   }
 
@@ -557,8 +588,10 @@ export default function AdminPage() {
                     type="button"
                     className="btn-secondary btn-sm px-3 py-1.5"
                     data-testid="admin-products-refresh-retry"
+                    disabled={productsReloading}
                     onClick={() => {
                       void reloadProducts().catch((err) => {
+                        if (err instanceof Error && err.name === 'StaleProductsReloadError') return
                         showToast(getApiErrorMessage(err, '列表刷新失败'), 'error')
                       })
                     }}
@@ -1066,7 +1099,8 @@ export default function AdminPage() {
           try {
             await reloadProducts()
             showToast(`“${name}”已发布到商城`)
-          } catch {
+          } catch (err) {
+            if (err instanceof Error && err.name === 'StaleProductsReloadError') return
             showToast(`“${name}”已发布到商城，但列表刷新失败，请重试`)
             throw new Error('products-refresh-failed')
           }
