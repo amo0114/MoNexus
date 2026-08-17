@@ -756,8 +756,9 @@ model Order {
   statusEvents   OrderStatusEvent[]
   inventoryLogs  InventoryLog[]
   fileGrants     FileGrantLog[]
-  provisionTask  ProvisionTask?
-  fakaBridgeTask FakaBridgeTask?
+  provisionTask   ProvisionTask?
+  fakaBridgeTask  FakaBridgeTask?
+  pricingSnapshot OrderPricingSnapshot?
 
   renewalOf            Order?                     @relation("OrderRenewal", fields: [renewalOfOrderId], references: [id], onDelete: Restrict)
   renewals             Order[]                    @relation("OrderRenewal")
@@ -1416,4 +1417,79 @@ model MerchantEntitlement {
 
   @@index([merchantId, status])
   @@index([code, status])
+}
+
+// ---------------------------------------------------------------------------
+// SPEC-VALUE-POLICY-P1-001: CNY reference-value foundation.
+// Additive only. Do not seed a production active ValuePolicy here.
+// ---------------------------------------------------------------------------
+
+enum AssetKind {
+  reward_point
+  fiat
+}
+
+enum ValuePolicyStatus {
+  draft
+  approved
+  scheduled
+  active
+  retired
+}
+
+enum MoneyRoundingMode {
+  HALF_EVEN
+}
+
+model AssetDefinition {
+  code      String    @id
+  kind      AssetKind
+  scale     Int
+  enabled   Boolean   @default(false)
+  createdAt DateTime  @default(now())
+  retiredAt DateTime?
+
+  pointPolicies            ValuePolicy[]          @relation("PolicyPointAsset")
+  referencePolicies        ValuePolicy[]          @relation("PolicyReferenceAsset")
+  snapshotPointsAssets     OrderPricingSnapshot[] @relation("SnapshotPointsAsset")
+  snapshotReferenceAssets  OrderPricingSnapshot[] @relation("SnapshotReferenceAsset")
+}
+
+model ValuePolicy {
+  id                                 String            @id
+  version                            Int               @unique
+  pointAssetCode                     String
+  referenceAssetCode                 String
+  referenceAtomicPerPointNumerator   BigInt
+  referenceAtomicPerPointDenominator BigInt
+  roundingMode                       MoneyRoundingMode @default(HALF_EVEN)
+  status                             ValuePolicyStatus @default(draft)
+  effectiveAt                        DateTime
+  approvedAt                         DateTime?
+  activatedAt                        DateTime?
+  retiredAt                          DateTime?
+  createdAt                          DateTime          @default(now())
+
+  pointAsset        AssetDefinition         @relation("PolicyPointAsset", fields: [pointAssetCode], references: [code], onDelete: Restrict, onUpdate: Restrict)
+  referenceAsset    AssetDefinition         @relation("PolicyReferenceAsset", fields: [referenceAssetCode], references: [code], onDelete: Restrict, onUpdate: Restrict)
+  pricingSnapshots  OrderPricingSnapshot[]
+
+  @@index([status, referenceAssetCode])
+  @@index([pointAssetCode, status])
+}
+
+model OrderPricingSnapshot {
+  orderId               Int               @id
+  pointsAssetCode       String
+  pointsAmountAtomic    BigInt
+  valuePolicyId         String
+  referenceAssetCode    String
+  referenceAmountAtomic BigInt
+  roundingMode          MoneyRoundingMode
+  createdAt             DateTime          @default(now())
+
+  order          Order           @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  valuePolicy    ValuePolicy     @relation(fields: [valuePolicyId], references: [id], onDelete: Restrict)
+  pointsAsset    AssetDefinition @relation("SnapshotPointsAsset", fields: [pointsAssetCode], references: [code], onDelete: Restrict, onUpdate: Restrict)
+  referenceAsset AssetDefinition @relation("SnapshotReferenceAsset", fields: [referenceAssetCode], references: [code], onDelete: Restrict, onUpdate: Restrict)
 }

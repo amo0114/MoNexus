@@ -35,6 +35,10 @@ services:
     restart: unless-stopped
     environment:
       NODE_ENV: production
+      # Deploy identity is fixed by the Compose file, not the env file, so a
+      # staging .env cannot re-label this stack. Staging overlay hardcodes
+      # staging without relaxing NODE_ENV or other production-grade checks.
+      MONEXUS_DEPLOY_ENV: production
       PORT: 3000
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required (>=32 chars)}
@@ -88,6 +92,8 @@ services:
       LEGAL_PAGES_ENABLED: ${LEGAL_PAGES_ENABLED:-false}
       LEGAL_PAGES_ENFORCEMENT: ${LEGAL_PAGES_ENFORCEMENT:-off}
       LEGAL_PAGES_FIXTURE_PATH: ${LEGAL_PAGES_FIXTURE_PATH:-}
+      # SPEC-VALUE-POLICY-P1-001: production stays off until D-02.
+      POINT_VALUE_POLICY_MODE: ${POINT_VALUE_POLICY_MODE:-off}
       APP_BASE_URL: ${APP_BASE_URL:-}
       SENTRY_DSN: ${SENTRY_DSN:-}
       LOG_LEVEL: ${LOG_LEVEL:-info}
