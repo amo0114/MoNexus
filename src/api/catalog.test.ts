@@ -216,10 +216,15 @@ describe('readinessErrorToIssues (spec §6.1)', () => {
 
 describe('getReadinessIssueMessage (spec §6.1 stable-code → copy)', () => {
   it('maps every frozen detail code to human copy', () => {
-    expect(getReadinessIssueMessage(READINESS_DETAIL_CODES.COVER_REQUIRED)).toMatch(/封面/)
-    expect(getReadinessIssueMessage(READINESS_DETAIL_CODES.CATEGORY_INACTIVE)).toMatch(/分类/)
-    expect(getReadinessIssueMessage(READINESS_DETAIL_CODES.OFFER_NOT_SELLABLE)).toMatch(/规格/)
-    expect(getReadinessIssueMessage(READINESS_DETAIL_CODES.EXTERNAL_IDENTITY_INVALID)).toMatch(/身份/)
+    expect(getReadinessIssueMessage(READINESS_DETAIL_CODES.COVER_REQUIRED)).toBe('需要为商品设置有效封面')
+    expect(getReadinessIssueMessage(READINESS_DETAIL_CODES.CATEGORY_INACTIVE)).toBe(
+      '当前商品分类已停用，请先更换或启用分类',
+    )
+    expect(getReadinessIssueMessage(READINESS_DETAIL_CODES.OFFER_NOT_SELLABLE)).toBe('有规格当前不可售')
+    expect(getReadinessIssueMessage(READINESS_DETAIL_CODES.OFFER_NOT_SELLABLE, '月付')).toBe('“月付”当前不可售')
+    expect(getReadinessIssueMessage(READINESS_DETAIL_CODES.EXTERNAL_IDENTITY_INVALID)).toBe(
+      'XBoard 连接或套餐规格当前不可用，请检查平台连接配置',
+    )
   })
 
   it('falls back safely for unknown codes', () => {

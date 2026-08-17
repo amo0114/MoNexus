@@ -24,32 +24,48 @@ describe('ProductPublicationChecklist (spec §6.1)', () => {
     expect(screen.queryByTestId('publication-publish')).not.toBeInTheDocument()
   })
 
-  it('lists every readiness issue with its stable code and human copy', () => {
-    render(<ProductPublicationChecklist issues={catalogFixtureReadinessNotReady.issues} />)
+  it('lists readiness issues as human copy and never shows raw codes or offer IDs', () => {
+    render(
+      <ProductPublicationChecklist
+        issues={catalogFixtureReadinessNotReady.issues}
+        offerNames={{ 42: '月付' }}
+      />,
+    )
     const issues = screen.getAllByTestId('readiness-issue')
     expect(issues).toHaveLength(2)
 
     const [cover, offer] = issues
     expect(cover).toHaveAttribute('data-code', READINESS_DETAIL_CODES.COVER_REQUIRED)
     expect(cover).toHaveTextContent(getReadinessIssueMessage(READINESS_DETAIL_CODES.COVER_REQUIRED))
-    expect(cover).not.toHaveTextContent('规格')
+    expect(cover).not.toHaveTextContent(READINESS_DETAIL_CODES.COVER_REQUIRED)
 
     expect(offer).toHaveAttribute('data-code', READINESS_DETAIL_CODES.OFFER_NOT_SELLABLE)
-    expect(offer).toHaveTextContent(getReadinessIssueMessage(READINESS_DETAIL_CODES.OFFER_NOT_SELLABLE))
-    // Offer-scoped issue exposes the target offer id.
-    expect(offer).toHaveTextContent('规格 42')
+    expect(offer).toHaveTextContent(getReadinessIssueMessage(READINESS_DETAIL_CODES.OFFER_NOT_SELLABLE, '月付'))
+    expect(offer).not.toHaveTextContent('规格 42')
+    expect(offer).not.toHaveTextContent(READINESS_DETAIL_CODES.OFFER_NOT_SELLABLE)
+
+    const region = screen.getByRole('region', { name: '发布检查清单' })
+    expect(region).not.toHaveTextContent('COVER_REQUIRED')
+    expect(region).not.toHaveTextContent('OFFER_NOT_SELLABLE')
+    expect(region).not.toHaveTextContent('images')
+    expect(region).not.toHaveTextContent('42')
   })
 
-  it('renders the stable code for tooling even though it is visually hidden', () => {
+  it('uses a generic offer message when the offer cannot be named', () => {
+    render(<ProductPublicationChecklist issues={catalogFixtureReadinessNotReady.issues} />)
+    const offer = screen.getAllByTestId('readiness-issue')[1]
+    expect(offer).toHaveTextContent(getReadinessIssueMessage(READINESS_DETAIL_CODES.OFFER_NOT_SELLABLE))
+    expect(offer).not.toHaveTextContent('规格 42')
+    expect(offer).not.toHaveTextContent('42')
+  })
+
+  it('keeps machine codes only on data-code, never in accessible copy', () => {
     render(<ProductPublicationChecklist issues={catalogFixtureReadinessNotReady.issues} />)
     const issue = screen.getAllByTestId('readiness-issue')[0]
-    expect(issue.querySelector('.sr-only')).toHaveTextContent(
-      READINESS_DETAIL_CODES.COVER_REQUIRED,
-    )
-    // The mono code chip is aria-hidden (human text already carries meaning).
-    expect(issue.querySelector('[aria-hidden="true"]')).toHaveTextContent(
-      READINESS_DETAIL_CODES.COVER_REQUIRED,
-    )
+    expect(issue).toHaveAttribute('data-code', READINESS_DETAIL_CODES.COVER_REQUIRED)
+    expect(issue.querySelector('.sr-only')).toBeNull()
+    expect(issue.querySelector('[aria-hidden="true"]')).toBeNull()
+    expect(issue).not.toHaveTextContent(READINESS_DETAIL_CODES.COVER_REQUIRED)
   })
 
   it('falls back to a safe generic message for unknown readiness codes', () => {
@@ -107,6 +123,15 @@ describe('ProductPublicationChecklist (spec §6.1)', () => {
   it('is accessible: labelled region and CTA is a native button', () => {
     render(<ProductPublicationChecklist issues={[]} ready onPublish={vi.fn()} />)
     expect(screen.getByRole('region', { name: '发布检查清单' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /发布商品/ })).toBeInTheDocument()
+  })
+
+  it('uses publishLabel when provided and keeps the default merchant CTA otherwise', () => {
+    const { rerender } = render(
+      <ProductPublicationChecklist issues={[]} ready onPublish={vi.fn()} publishLabel="发布到商城" />,
+    )
+    expect(screen.getByRole('button', { name: '发布到商城' })).toBeInTheDocument()
+    rerender(<ProductPublicationChecklist issues={[]} ready onPublish={vi.fn()} />)
     expect(screen.getByRole('button', { name: /发布商品/ })).toBeInTheDocument()
   })
 })
