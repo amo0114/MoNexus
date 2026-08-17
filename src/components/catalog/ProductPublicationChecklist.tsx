@@ -1,15 +1,32 @@
 import { CheckCircle2, Loader2, ShieldAlert } from 'lucide-react'
 import { getReadinessIssueMessage } from '../../api/catalog'
-import type { ReadinessIssue } from '../../types/catalog'
+
+interface PublicationIssue {
+  code: string
+  field: string
+  offerId: number | null
+}
 
 interface Props {
-  issues: ReadinessIssue[]
+  issues: PublicationIssue[]
   /** Defaults to `issues.length === 0` when omitted. */
   ready?: boolean
   /** When provided, renders a publish CTA gated on `ready`. */
   onPublish?: () => void
   publishing?: boolean
   disabled?: boolean
+  offerNames?: ReadonlyMap<number, string> | Record<number, string>
+  publishLabel?: string
+}
+
+function resolveOfferName(
+  offerId: number | null,
+  offerNames?: ReadonlyMap<number, string> | Record<number, string>,
+): string | undefined {
+  if (offerId == null || offerNames == null) return undefined
+  if (offerNames instanceof Map) return offerNames.get(offerId)
+  const record = offerNames as Record<string | number, string>
+  return record[offerId] ?? record[String(offerId)]
 }
 
 /**
@@ -26,6 +43,8 @@ export default function ProductPublicationChecklist({
   onPublish,
   publishing = false,
   disabled = false,
+  offerNames,
+  publishLabel = '发布商品',
 }: Props) {
   return (
     <section
@@ -60,13 +79,8 @@ export default function ProductPublicationChecklist({
                 data-testid="readiness-issue"
                 data-code={issue.code}
               >
-                <span className="sr-only">稳定码：{issue.code}</span>
                 <span className="flex-1">
-                  {getReadinessIssueMessage(issue.code)}
-                  {issue.offerId != null ? `（规格 ${issue.offerId}）` : ''}
-                </span>
-                <span className="font-mono text-[10px] text-[var(--color-text-muted)] uppercase" aria-hidden="true">
-                  {issue.code}
+                  {getReadinessIssueMessage(issue.code, resolveOfferName(issue.offerId, offerNames))}
                 </span>
               </li>
             ))
@@ -83,7 +97,7 @@ export default function ProductPublicationChecklist({
           data-testid="publication-publish"
         >
           {publishing && <Loader2 className="w-4 h-4 animate-spin" />}
-          {publishing ? '发布中…' : '发布商品'}
+          {publishing ? '发布中…' : publishLabel}
         </button>
       )}
     </section>

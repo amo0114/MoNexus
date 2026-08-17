@@ -21,10 +21,16 @@ import ProductCategorySelect from './ProductCategorySelect'
 import { catalogGovernanceApi } from '../../api/catalogGovernance'
 import { isCoverIssue, projectCatalogIssue } from './catalogIssueMessages'
 
+export type AdminFakaImportedResult = {
+  productId: number
+  productName: string
+  origin: 'xboard-import'
+}
+
 interface Props {
   open: boolean
   onClose: () => void
-  onImported: (productId: number) => void | Promise<void>
+  onImported: (result: AdminFakaImportedResult) => void | Promise<void>
 }
 
 type OfferRow = { selected: boolean; pricePoints: string; sku: string; offerName: string }
@@ -228,11 +234,16 @@ export default function AdminFakaImportPreview({ open, onClose, onImported }: Pr
         { ...previewRequest, sourceHash: preview.sourceHash },
         idempotencyKey,
       )
+      const productName = previewRequest.productName?.trim() || preview.productName
       showToast(result.replayed
-        ? `幂等重放：商品 #${result.productId} 已存在，未重复创建`
-        : `已创建 Xboard 商品草稿 #${result.productId}（${result.offerCount ?? preview.offers.length} 个规格）`)
+        ? `“${productName}”已存在，未重复创建`
+        : `“${productName}”已导入并保存为草稿`)
       clearDraft()
-      await onImported(result.productId)
+      await onImported({
+        productId: result.productId,
+        productName,
+        origin: 'xboard-import',
+      })
       onClose()
     } catch (error) {
       const code = getApiErrorCode(error)
@@ -431,8 +442,15 @@ export default function AdminFakaImportPreview({ open, onClose, onImported }: Pr
 
             {conflictProductId != null && (
               <button type="button" className="btn-secondary w-full" data-testid="admin-faka-existing-product"
-                onClick={async () => { await onImported(conflictProductId); onClose() }}>
-                查看已存在商品 #{conflictProductId}
+                onClick={async () => {
+                  await onImported({
+                    productId: conflictProductId,
+                    productName: preview?.productName || productName.trim() || '已导入商品',
+                    origin: 'xboard-import',
+                  })
+                  onClose()
+                }}>
+                打开已导入商品的发布检查
               </button>
             )}
             <div className="flex justify-end gap-3">

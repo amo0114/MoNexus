@@ -178,6 +178,90 @@ export async function deleteAdminProduct(
   return data
 }
 
+export type AdminProductStatus = 'draft' | 'active' | 'inactive'
+
+export interface AdminProductOffer {
+  id: number
+  name: string
+  deliveryMode?: string
+  status?: string
+  isDefault?: boolean
+  deliveryFields?: unknown[] | null
+  externalIntegration?: string | null
+  externalSku?: string | null
+  stockMode?: string
+  stock?: number | null
+  price?: number
+  fakaCapacity?: AdminFakaCapacity | null
+}
+
+export interface AdminProductListItem {
+  id: number
+  name: string
+  status: string
+  merchantId: number | null
+  type?: string
+  categoryId?: number
+  price?: number
+  deliveryMode?: string
+  stockMode?: string
+  stock?: number | null
+  imageUrl?: string | null
+  images?: string[]
+  fakaBridge?: boolean
+  fakaCapacity?: AdminFakaCapacity | null
+  offers: AdminProductOffer[]
+  _count?: { inventory?: number }
+}
+
+export interface AdminProductReadiness {
+  ready: boolean
+  productId: number
+  issues: Array<{
+    code: string
+    field: string
+    offerId: number | null
+  }>
+}
+
+export interface AdminProductStatusResult {
+  id: number
+  status: AdminProductStatus
+  publishedAt: string | null
+}
+
+export async function getAdminProducts(): Promise<AdminProductListItem[]> {
+  const { data } = await api.get<AdminProductListItem[]>('/admin/products')
+  return data
+}
+
+export async function getAdminProductReadiness(
+  productId: number,
+): Promise<AdminProductReadiness> {
+  const { data } = await api.get<AdminProductReadiness>(
+    `/admin/products/${productId}/readiness`,
+  )
+  return data
+}
+
+export async function publishAdminProduct(
+  productId: number,
+): Promise<AdminProductStatusResult> {
+  const { data } = await api.post<AdminProductStatusResult>(
+    `/admin/products/${productId}/publish`,
+  )
+  return data
+}
+
+export async function unpublishAdminProduct(
+  productId: number,
+): Promise<AdminProductStatusResult> {
+  const { data } = await api.post<AdminProductStatusResult>(
+    `/admin/products/${productId}/unpublish`,
+  )
+  return data
+}
+
 export async function setAdminFakaCapacity(
   productId: number,
   payload: { offerId?: number; capacityLimit: number | null },
