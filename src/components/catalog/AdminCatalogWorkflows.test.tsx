@@ -224,7 +224,9 @@ describe('Catalog admin workflows (T-CAT-FE-004)', () => {
     fireEvent.click(screen.getByTestId('admin-faka-import-preview-submit'))
     fireEvent.click(await screen.findByTestId('admin-faka-import-submit'))
     const existing = await screen.findByTestId('admin-faka-existing-product')
-    expect(existing).toHaveTextContent('#55')
+    expect(existing).toHaveTextContent('打开已导入商品的发布检查')
+    expect(existing).not.toHaveTextContent('#55')
+    expect(existing).not.toHaveTextContent('55')
     fireEvent.click(existing)
     await waitFor(() => expect(onImported).toHaveBeenCalledWith({
       productId: 55,

@@ -156,6 +156,47 @@ export const isAdminPublishResponse = (response: Response): boolean =>
   response.request().method() === 'POST'
   && /\/api\/admin\/products\/\d+\/publish$/.test(new URL(response.url()).pathname);
 
+function boxesOverlap(
+  a: { x: number; y: number; width: number; height: number },
+  b: { x: number; y: number; width: number; height: number },
+): boolean {
+  return a.x < b.x + b.width
+    && a.x + a.width > b.x
+    && a.y < b.y + b.height
+    && a.y + a.height > b.y;
+}
+
+async function assertAdminProductRowReadable(
+  page: Page,
+  productName: string,
+  viewport: { width: number; height: number },
+): Promise<void> {
+  await page.setViewportSize(viewport);
+  const row = page.locator('tbody tr').filter({
+    has: page.locator('td[data-label="商品名称"]').getByText(productName, { exact: true }),
+  });
+  await expect(row).toHaveCount(1);
+  const name = row.locator('td[data-label="商品名称"]');
+  const status = row.locator('td[data-label="状态"]');
+  const actions = row.locator('td[data-label="操作"]');
+  await expect(name).toBeVisible();
+  await expect(status).toBeVisible();
+  await expect(actions).toBeVisible();
+  const [nameBox, statusBox, actionsBox, rowBox] = await Promise.all([
+    name.boundingBox(),
+    status.boundingBox(),
+    actions.boundingBox(),
+    row.boundingBox(),
+  ]);
+  if (!nameBox || !statusBox || !actionsBox || !rowBox) {
+    throw new Error(`admin product row geometry missing at ${viewport.width}px`);
+  }
+  expect(boxesOverlap(nameBox, statusBox)).toBe(false);
+  expect(boxesOverlap(nameBox, actionsBox)).toBe(false);
+  expect(boxesOverlap(statusBox, actionsBox)).toBe(false);
+  expect(rowBox.x + rowBox.width).toBeLessThanOrEqual(viewport.width + 1);
+}
+
 // ---------------------------------------------------------------------------
 // XBoard fixture reset
 // ---------------------------------------------------------------------------
@@ -2199,6 +2240,8 @@ test.describe.serial('Catalog Xboard import', () => {
       await expect(productRow.locator('td[data-label="售价 (积分)"]')).toHaveText('300000');
       await expect(productRow.locator('td[data-label="可售资源"]')).toHaveText('Xboard 188/200（在用 12）');
       await expect(productRow.getByTestId(`admin-product-status-${imported.productId}`)).toHaveText('草稿');
+      await assertAdminProductRowReadable(page, 'Gold Plan', { width: 360, height: 800 });
+      await assertAdminProductRowReadable(page, 'Gold Plan', { width: 1280, height: 800 });
 
       let publishRequestCount = 0;
       const onPublishRequest = (request: Request) => {

@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
+import jwt from 'jsonwebtoken'
 import { prisma } from '../../lib/prisma.js'
+import { config } from '../../config/index.js'
 import { api, authHeader, createTestUser, loginAs } from '../../__tests__/helpers.js'
 
 async function adminToken(email: string) {
@@ -73,5 +75,29 @@ describe('admin publication routes — existing contract characterization (T-APU
     await api.get('/api/admin/products/1/readiness').expect(401)
     await api.post('/api/admin/products/1/publish').expect(401)
     await api.post('/api/admin/products/1/unpublish').expect(401)
+  })
+
+  it('rejects a non-admin caller (403) and an admin token without MFA (403 MFA_REQUIRED)', async () => {
+    const { user: member, password } = await createTestUser('admin-pub-user@test.local', 'user1234', 'user')
+    const { accessToken: userToken } = await loginAs(member.email, password)
+    await api.get('/api/admin/products/1/readiness').set(authHeader(userToken)).expect(403)
+    await api.post('/api/admin/products/1/publish').set(authHeader(userToken)).expect(403)
+    await api.post('/api/admin/products/1/unpublish').set(authHeader(userToken)).expect(403)
+
+    const { user: admin } = await createTestUser('admin-pub-nomfa@test.local', 'admin123', 'admin')
+    await loginAs(admin.email, 'admin123')
+    const session = await prisma.refreshToken.findFirstOrThrow({
+      where: { userId: admin.id, revoked: false },
+      orderBy: { id: 'desc' },
+    })
+    const adminWithoutMfa = jwt.sign(
+      { userId: admin.id, role: 'admin', sid: session.sessionId },
+      config.jwtSecret,
+      { expiresIn: '15m' },
+    )
+    const blocked = await api.post('/api/admin/products/1/publish')
+      .set(authHeader(adminWithoutMfa))
+      .expect(403)
+    expect(blocked.body.error.code).toBe('MFA_REQUIRED')
   })
 })

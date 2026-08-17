@@ -221,4 +221,39 @@ describe('AdminPage product publication workflow (T-APUB-004/005)', () => {
     expect(screen.getByTestId('admin-product-publish-11')).toBeInTheDocument()
     expect(mocks.publish).not.toHaveBeenCalled()
   })
+
+  it('does not close publish or keep stale write actions when list refresh fails', async () => {
+    mocks.getProducts
+      .mockResolvedValueOnce(products)
+      .mockRejectedValueOnce(new Error('network'))
+    await openProducts()
+    fireEvent.click(screen.getByTestId('admin-product-publish-11'))
+    fireEvent.click(await screen.findByTestId('publication-publish'))
+    expect(await screen.findByTestId('admin-publication-refresh-error')).toBeInTheDocument()
+    expect(screen.getByTestId('admin-publication-dialog')).toBeInTheDocument()
+    expect(screen.getByTestId('admin-product-status-11')).toHaveTextContent('草稿')
+    expect(useAppStore.getState().toasts.some((toast) => toast.message.includes('已发布到商城') && toast.message.includes('刷新失败'))).toBe(true)
+  })
+
+  it('disables stale write actions and retries the list after a successful unpublish refresh failure', async () => {
+    mocks.getProducts
+      .mockResolvedValueOnce(products)
+      .mockRejectedValueOnce(new Error('network'))
+      .mockResolvedValueOnce(products.map((item) => (
+        item.id === 12 ? { ...item, status: 'inactive' } : item
+      )))
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    await openProducts()
+    fireEvent.click(screen.getByTestId('admin-product-unpublish-12'))
+    expect(await screen.findByTestId('admin-products-refresh-error')).toHaveTextContent('不是最新')
+    expect(screen.getByTestId('admin-product-status-12')).toHaveTextContent('已发布')
+    expect(screen.getByTestId('admin-product-unpublish-12')).toBeDisabled()
+    expect(screen.getByTestId('admin-product-publish-11')).toBeDisabled()
+    expect(useAppStore.getState().toasts.some((toast) => toast.message.includes('已下架') && toast.message.includes('刷新失败'))).toBe(true)
+
+    fireEvent.click(screen.getByTestId('admin-products-refresh-retry'))
+    await waitFor(() => expect(screen.getByTestId('admin-product-status-12')).toHaveTextContent('已下架'))
+    expect(screen.queryByTestId('admin-products-refresh-error')).not.toBeInTheDocument()
+    expect(screen.getByTestId('admin-product-publish-11')).toBeEnabled()
+  })
 })

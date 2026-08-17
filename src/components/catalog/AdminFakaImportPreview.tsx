@@ -450,7 +450,7 @@ export default function AdminFakaImportPreview({ open, onClose, onImported }: Pr
                   })
                   onClose()
                 }}>
-                查看已存在商品 #{conflictProductId}
+                打开已导入商品的发布检查
               </button>
             )}
             <div className="flex justify-end gap-3">

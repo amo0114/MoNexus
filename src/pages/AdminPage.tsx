@@ -105,6 +105,7 @@ export default function AdminPage() {
   const [showFakaImport, setShowFakaImport] = useState(false)
   const [publicationTarget, setPublicationTarget] = useState<AdminPublicationTarget | null>(null)
   const [unpublishingProductIds, setUnpublishingProductIds] = useState<Set<number>>(new Set())
+  const [productsRefreshError, setProductsRefreshError] = useState(false)
   const unpublishingRef = useRef<Set<number>>(new Set())
 
   // Settle multiselect
@@ -160,16 +161,35 @@ export default function AdminPage() {
     }, 0)
   }
 
+  async function reloadProducts(): Promise<AdminProductListItem[]> {
+    setTabLoading(true)
+    try {
+      const data = await getAdminProducts()
+      setProducts(data)
+      setProductsRefreshError(false)
+      return data
+    } catch (err) {
+      setProductsRefreshError(true)
+      throw err
+    } finally {
+      setTabLoading(false)
+    }
+  }
+
   async function loadTabData(tab: AdminTab): Promise<AdminProductListItem[] | undefined> {
+    if (tab === 'products') {
+      try {
+        return await reloadProducts()
+      } catch (err) {
+        showToast(getApiErrorMessage(err, '加载失败'), 'error')
+        return undefined
+      }
+    }
     setTabLoading(true)
     try {
       if (tab === 'dashboard') {
         const { data } = await api.get('/admin/stats')
         setStats(data)
-      } else if (tab === 'products') {
-        const data = await getAdminProducts()
-        setProducts(data)
-        return data
       } else if (tab === 'logs') {
         const { data } = await api.get('/admin/logs')
         setLogs(data)
@@ -228,13 +248,18 @@ export default function AdminPage() {
     setUnpublishingProductIds(new Set(unpublishingRef.current))
     try {
       await unpublishAdminProduct(product.id)
-      showToast(`“${product.name}”已下架`)
-      await loadTabData('products')
     } catch (err) {
       showToast(getApiErrorMessage(err, '下架失败'), 'error')
+      return
     } finally {
       unpublishingRef.current.delete(product.id)
       setUnpublishingProductIds(new Set(unpublishingRef.current))
+    }
+    try {
+      await reloadProducts()
+      showToast(`“${product.name}”已下架`)
+    } catch {
+      showToast(`“${product.name}”已下架，但列表刷新失败，请重试`)
     }
   }
 
@@ -522,6 +547,26 @@ export default function AdminPage() {
           {/* Products */}
           {activeTab === 'products' && (
             <div className="space-y-4">
+              {productsRefreshError && (
+                <div
+                  className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-500/25 bg-amber-500/8 px-3 py-2 text-sm text-[var(--color-text)]"
+                  data-testid="admin-products-refresh-error"
+                >
+                  <span>商品列表可能不是最新状态。</span>
+                  <button
+                    type="button"
+                    className="btn-secondary btn-sm px-3 py-1.5"
+                    data-testid="admin-products-refresh-retry"
+                    onClick={() => {
+                      void reloadProducts().catch((err) => {
+                        showToast(getApiErrorMessage(err, '列表刷新失败'), 'error')
+                      })
+                    }}
+                  >
+                    刷新列表
+                  </button>
+                </div>
+              )}
               <div className="flex justify-between items-center mb-4 gap-3 flex-wrap">
                 <h2 className="font-heading text-xl font-bold text-[var(--color-text)]">商品与库存</h2>
                 <div className="flex gap-2 flex-wrap">
@@ -613,7 +658,8 @@ export default function AdminPage() {
                                 <button
                                   type="button"
                                   data-testid={`admin-product-publish-${p.id}`}
-                                  className="text-[var(--color-cta)] hover:bg-[var(--color-cta)]/10 font-semibold text-xs px-3 py-1.5 btn-sm rounded-lg transition-colors border border-[var(--color-cta)]/25 cursor-pointer inline-flex items-center gap-1"
+                                  disabled={productsRefreshError}
+                                  className="text-[var(--color-cta)] hover:bg-[var(--color-cta)]/10 font-semibold text-xs px-3 py-1.5 btn-sm rounded-lg transition-colors border border-[var(--color-cta)]/25 cursor-pointer inline-flex items-center gap-1 disabled:opacity-50"
                                   onClick={() => openPublication(p, 'product-list')}
                                 >
                                   <Upload className="w-3.5 h-3.5" />
@@ -624,7 +670,8 @@ export default function AdminPage() {
                                 <button
                                   type="button"
                                   data-testid={`admin-product-relist-${p.id}`}
-                                  className="text-[var(--color-cta)] hover:bg-[var(--color-cta)]/10 font-semibold text-xs px-3 py-1.5 btn-sm rounded-lg transition-colors border border-[var(--color-cta)]/25 cursor-pointer inline-flex items-center gap-1"
+                                  disabled={productsRefreshError}
+                                  className="text-[var(--color-cta)] hover:bg-[var(--color-cta)]/10 font-semibold text-xs px-3 py-1.5 btn-sm rounded-lg transition-colors border border-[var(--color-cta)]/25 cursor-pointer inline-flex items-center gap-1 disabled:opacity-50"
                                   onClick={() => openPublication(p, 'product-list')}
                                 >
                                   <RotateCcw className="w-3.5 h-3.5" />
@@ -635,7 +682,7 @@ export default function AdminPage() {
                                 <button
                                   type="button"
                                   data-testid={`admin-product-unpublish-${p.id}`}
-                                  disabled={unpublishingProductIds.has(p.id)}
+                                  disabled={productsRefreshError || unpublishingProductIds.has(p.id)}
                                   className="text-[var(--color-text)] hover:bg-[var(--color-background)] font-semibold text-xs px-3 py-1.5 btn-sm rounded-lg transition-colors border border-[var(--color-border)] cursor-pointer inline-flex items-center gap-1 disabled:opacity-50"
                                   onClick={() => { void handleUnpublishPlatformProduct(p) }}
                                 >
@@ -1016,8 +1063,13 @@ export default function AdminPage() {
         target={publicationTarget}
         onClose={() => setPublicationTarget(null)}
         onPublished={async ({ name }) => {
-          showToast(`“${name}”已发布到商城`)
-          await loadTabData('products')
+          try {
+            await reloadProducts()
+            showToast(`“${name}”已发布到商城`)
+          } catch {
+            showToast(`“${name}”已发布到商城，但列表刷新失败，请重试`)
+            throw new Error('products-refresh-failed')
+          }
         }}
       />
     </div>

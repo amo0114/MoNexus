@@ -50,9 +50,15 @@ export default function AdminProductPublicationDialog({
   const [loadState, setLoadState] = useState<LoadState>('idle')
   const [readiness, setReadiness] = useState<AdminProductReadiness | null>(null)
   const [publishing, setPublishing] = useState(false)
+  const [publishSucceeded, setPublishSucceeded] = useState(false)
   const publishingRef = useRef(false)
+  const requestGen = useRef(0)
   const loadGuard = useRef(createLatestRequestGuard()).current
   const targetId = target?.id ?? null
+
+  function isCurrent(generation: number): boolean {
+    return requestGen.current === generation
+  }
 
   const offerNames = useMemo(() => {
     const names = new Map<number, string>()
@@ -79,12 +85,14 @@ export default function AdminProductPublicationDialog({
   }
 
   useEffect(() => {
+    requestGen.current += 1
+    publishingRef.current = false
+    setPublishing(false)
+    setPublishSucceeded(false)
     if (!open || targetId == null) {
       loadGuard.invalidate()
       setLoadState('idle')
       setReadiness(null)
-      setPublishing(false)
-      publishingRef.current = false
       return
     }
     void loadReadiness(targetId)
@@ -93,32 +101,70 @@ export default function AdminProductPublicationDialog({
     }
   }, [open, targetId, loadGuard])
 
+  async function finishPublished(generation: number, payload: {
+    id: number
+    name: string
+    status: AdminProductStatus
+  }) {
+    await onPublished(payload)
+    if (!isCurrent(generation)) return
+    onClose()
+  }
+
   async function handlePublish() {
-    if (!target || readiness?.ready !== true || publishingRef.current) return
+    if (!target || readiness?.ready !== true || publishingRef.current || publishSucceeded) return
+    const generation = requestGen.current
+    const payload = { id: target.id, name: target.name }
     publishingRef.current = true
     setPublishing(true)
+    let wrote = false
     try {
-      const result = await publishAdminProduct(target.id)
-      await onPublished({ id: result.id, name: target.name, status: result.status })
-      onClose()
+      const result = await publishAdminProduct(payload.id)
+      if (!isCurrent(generation)) return
+      wrote = true
+      try {
+        await finishPublished(generation, { ...payload, status: result.status })
+      } catch {
+        if (isCurrent(generation)) setPublishSucceeded(true)
+      }
     } catch (error) {
+      if (!isCurrent(generation) || wrote) return
       const status = httpStatus(error)
       if (status === 422 || getApiErrorCode(error) === 'PRODUCT_NOT_READY') {
         const fallback = readinessErrorToIssues(error)
         if (fallback.length > 0) {
-          setReadiness({ ready: false, productId: target.id, issues: fallback })
+          setReadiness({ ready: false, productId: payload.id, issues: fallback })
           setLoadState('loaded')
         }
-        await loadReadiness(target.id)
+        await loadReadiness(payload.id)
       } else if (status === 409) {
         showToast(getApiErrorMessage(error, '商品状态已变化，请刷新后重试'), 'error')
-        await loadReadiness(target.id)
+        await loadReadiness(payload.id)
       } else {
         showToast(getApiErrorMessage(error, '发布失败，请稍后重试'), 'error')
       }
     } finally {
-      publishingRef.current = false
-      setPublishing(false)
+      if (isCurrent(generation)) {
+        publishingRef.current = false
+        setPublishing(false)
+      }
+    }
+  }
+
+  async function retryPublishedRefresh() {
+    if (!target || !publishSucceeded) return
+    const generation = requestGen.current
+    setPublishing(true)
+    try {
+      await finishPublished(generation, {
+        id: target.id,
+        name: target.name,
+        status: 'active',
+      })
+    } catch {
+      // Parent keeps the distinct refresh-failed toast; stay open for another retry.
+    } finally {
+      if (isCurrent(generation)) setPublishing(false)
     }
   }
 
@@ -162,7 +208,16 @@ export default function AdminProductPublicationDialog({
             </p>
           )}
 
-          {loadState === 'loaded' && readiness && (
+          {publishSucceeded && (
+            <p
+              className="rounded-lg border border-amber-500/25 bg-amber-500/8 px-3 py-2 text-sm text-[var(--color-text)]"
+              data-testid="admin-publication-refresh-error"
+            >
+              已发布到商城，但商品列表刷新失败。请重试刷新，不要再次发布。
+            </p>
+          )}
+
+          {loadState === 'loaded' && readiness && !publishSucceeded && (
             <ProductPublicationChecklist
               issues={readiness.issues}
               ready={readiness.ready}
@@ -174,7 +229,18 @@ export default function AdminProductPublicationDialog({
           )}
 
           <div className="flex flex-wrap justify-end gap-2">
-            {(loadState === 'error' || (loadState === 'loaded' && readiness?.ready !== true)) && target && (
+            {publishSucceeded && (
+              <button
+                type="button"
+                className="btn-primary px-4 py-2"
+                data-testid="admin-publication-refresh-list"
+                disabled={publishing}
+                onClick={() => { void retryPublishedRefresh() }}
+              >
+                {publishing ? '刷新中…' : '刷新列表'}
+              </button>
+            )}
+            {(loadState === 'error' || (loadState === 'loaded' && readiness?.ready !== true && !publishSucceeded)) && target && (
               <button
                 type="button"
                 className="btn-secondary px-4 py-2"

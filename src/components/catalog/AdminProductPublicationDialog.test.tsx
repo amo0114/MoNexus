@@ -243,4 +243,57 @@ describe('AdminProductPublicationDialog (T-APUB-003)', () => {
     expect(await screen.findByTestId('readiness-issue')).toHaveTextContent('当前商品分类已停用')
     expect(screen.queryByTestId('publication-ready')).not.toBeInTheDocument()
   })
+
+  it('ignores a publish that finishes after the target changes', async () => {
+    let resolvePublish: ((value: unknown) => void) | undefined
+    mocks.publish.mockImplementation(
+      () => new Promise((resolve) => { resolvePublish = resolve }),
+    )
+    mocks.readiness
+      .mockResolvedValueOnce({ ready: true, productId: 11, issues: [] })
+      .mockResolvedValue({
+        ready: false,
+        productId: 22,
+        issues: [{ code: 'COVER_REQUIRED', field: 'images', offerId: null }],
+      })
+    const onPublished = vi.fn()
+    const onClose = vi.fn()
+    const { rerender } = render(
+      <AdminProductPublicationDialog
+        open
+        target={platformDraft}
+        onClose={onClose}
+        onPublished={onPublished}
+      />,
+    )
+    fireEvent.click(await screen.findByTestId('publication-publish'))
+    rerender(
+      <AdminProductPublicationDialog
+        open
+        target={{ id: 22, name: 'Other Plan', origin: 'product-list' }}
+        onClose={onClose}
+        onPublished={onPublished}
+      />,
+    )
+    resolvePublish?.({ id: 11, status: 'active', publishedAt: '2026-08-17T00:00:00.000Z' })
+    expect(await screen.findByTestId('readiness-issue')).toHaveTextContent('需要为商品设置有效封面')
+    expect(onPublished).not.toHaveBeenCalled()
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('keeps the dialog open and offers a list refresh when onPublished fails', async () => {
+    const onPublished = vi.fn().mockRejectedValueOnce(new Error('list refresh failed'))
+    const onClose = vi.fn()
+    renderDialog(platformDraft, { onPublished, onClose })
+    fireEvent.click(await screen.findByTestId('publication-publish'))
+    expect(await screen.findByTestId('admin-publication-refresh-error')).toHaveTextContent('列表刷新失败')
+    expect(screen.getByTestId('admin-publication-dialog')).toBeInTheDocument()
+    expect(screen.queryByTestId('publication-publish')).not.toBeInTheDocument()
+    expect(onClose).not.toHaveBeenCalled()
+
+    onPublished.mockResolvedValueOnce(undefined)
+    fireEvent.click(screen.getByTestId('admin-publication-refresh-list'))
+    await waitFor(() => expect(onClose).toHaveBeenCalled())
+    expect(onPublished).toHaveBeenCalledTimes(2)
+  })
 })

@@ -62,7 +62,7 @@
 | AC-APUB-004 | PASS | `AdminPage.products.test.tsx` 商家行仅“由商家管理” |
 | AC-APUB-005 | PASS | Dialog + AdminPage host：open 时 `GET /admin/products/:id/readiness` |
 | AC-APUB-006 | PASS | Dialog + host + XBoard E2E：仅 `POST /admin/products/:id/publish`，成功后列表为已发布 |
-| AC-APUB-007 | PASS | `ProductPublicationChecklist.test.tsx` 与 Dialog AC-APUB-007：可见/可访问文本无稳定码、field、raw ID |
+| AC-APUB-007 | PASS | Checklist/Dialog 无稳定码/raw ID；冲突 CTA 改为“打开已导入商品的发布检查”，组件测试断言不含 `#55` |
 | AC-APUB-008 | PASS | Dialog 422 测试：对话框保留、issues 刷新、无成功 toast |
 | AC-APUB-009 | PASS | Dialog later + host handoff：不调用 publish，列表仍有发布入口 |
 | AC-APUB-010 | PASS | `AdminPage.products.test.tsx` `window.confirm=false` 时 `unpublish` 零调用 |
@@ -71,7 +71,7 @@
 | AC-APUB-013 | PASS | Dialog publish 双击 + AdminPage unpublish 双击均为单请求 |
 | AC-APUB-014 | PASS | Dialog readiness 网络失败：草稿保留，可重试/稍后处理 |
 | AC-APUB-015 | PASS | `admin.catalog.test.ts` 四条路径；`rg` 管理员文件零命中 merchant publish/readiness |
-| AC-APUB-016 | PASS | 状态列为中文文本；操作区 `flex-wrap` + 既有 `table-cards`；桌面由 XBoard E2E 行级断言覆盖。未再跑独立 360px Playwright 截图 |
+| AC-APUB-016 | PASS | `e2e/catalog-xboard-import.spec.ts` `assertAdminProductRowReadable` 在 360x800 与 1280x800 断言名称/状态/操作不重叠且行宽不超出视口 |
 | AC-APUB-017 | PASS | `e2e/catalog-xboard-import.spec.ts`：导入 draft → readiness → publish active → `GET /api/products/:id` 200 → 商城卡片可见 |
 | AC-APUB-018 | PASS | 定向前端 43、catalog-ops 后端 26 files/281、catalog-ops E2E 31、`verify:quick` 全绿。官方 `verify-catalog-ops-backend.sh` 仍锁在 CMI 旧分支名，已用同一 TEST_FILES + dbguard 等价执行 |
 
