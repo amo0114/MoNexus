@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react'
-import { LayoutDashboard, UsersRound, Package, ShoppingCart, Activity, Users, ShoppingBag, Coins, Store, Tags, DollarSign, Settings, ClipboardList, Megaphone, DatabaseBackup, FolderLock, Cable, ShieldAlert, HardDrive } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { Archive, LayoutDashboard, UsersRound, Package, RotateCcw, ShoppingCart, Activity, Users, ShoppingBag, Coins, Store, Tags, DollarSign, Settings, ClipboardList, Megaphone, DatabaseBackup, FolderLock, Cable, ShieldAlert, HardDrive, Upload } from 'lucide-react'
 import api from '../api/client'
 import { getApiErrorMessage } from '../api/error'
 import { useAppStore } from '../stores/appStore'
@@ -14,7 +14,10 @@ import {
 } from '../api/adminMerchant'
 import {
   deleteAdminProduct,
+  getAdminProducts,
   setAdminFakaCapacity,
+  unpublishAdminProduct,
+  type AdminProductListItem,
 } from '../api/admin'
 import { Merchant, Settlement } from '../types/merchant'
 import RegistryPill from '../components/ui/RegistryPill'
@@ -37,6 +40,9 @@ import { TableSkeleton, StatCardSkeleton } from '../components/ui/Skeleton'
 import EmptyState from '../components/ui/EmptyState'
 import AdminPlatformProductWizard from '../components/catalog/AdminPlatformProductWizard'
 import AdminFakaImportPreview from '../components/catalog/AdminFakaImportPreview'
+import AdminProductPublicationDialog, {
+  type AdminPublicationTarget,
+} from '../components/catalog/AdminProductPublicationDialog'
 import AdminInventoryImportPreview, { type AdminInventoryTarget } from '../components/catalog/AdminInventoryImportPreview'
 import AdminMerchandisingPage from '../components/merchandising/AdminMerchandisingPage'
 import AdminCategoryManager from '../components/catalog/AdminCategoryManager'
@@ -67,7 +73,7 @@ export default function AdminPage() {
   const showToast = useAppStore((s) => s.showToast)
   const [activeTab, setActiveTab] = useState<AdminTab>('dashboard')
   const [stats, setStats] = useState<any>(null)
-  const [products, setProducts] = useState<any[]>([])
+  const [products, setProducts] = useState<AdminProductListItem[]>([])
   const [logs, setLogs] = useState<any[]>([])
   const [merchants, setMerchants] = useState<Merchant[]>([])
   const [settlements, setSettlements] = useState<Settlement[]>([])
@@ -97,6 +103,9 @@ export default function AdminPage() {
 
   // FakaBridge mandatory preview → idempotent confirm.
   const [showFakaImport, setShowFakaImport] = useState(false)
+  const [publicationTarget, setPublicationTarget] = useState<AdminPublicationTarget | null>(null)
+  const [unpublishingProductIds, setUnpublishingProductIds] = useState<Set<number>>(new Set())
+  const unpublishingRef = useRef<Set<number>>(new Set())
 
   // Settle multiselect
   const [selectedSettlements, setSelectedSettlements] = useState<number[]>([])
@@ -151,15 +160,16 @@ export default function AdminPage() {
     }, 0)
   }
 
-  async function loadTabData(tab: AdminTab) {
+  async function loadTabData(tab: AdminTab): Promise<AdminProductListItem[] | undefined> {
     setTabLoading(true)
     try {
       if (tab === 'dashboard') {
         const { data } = await api.get('/admin/stats')
         setStats(data)
       } else if (tab === 'products') {
-        const { data } = await api.get('/admin/products')
+        const data = await getAdminProducts()
         setProducts(data)
+        return data
       } else if (tab === 'logs') {
         const { data } = await api.get('/admin/logs')
         setLogs(data)
@@ -180,6 +190,51 @@ export default function AdminPage() {
       showToast(getApiErrorMessage(err, '加载失败'), 'error')
     } finally {
       setTabLoading(false)
+    }
+    return undefined
+  }
+
+  function openPublication(product: AdminProductListItem, origin: AdminPublicationTarget['origin']) {
+    setPublicationTarget({
+      id: product.id,
+      name: product.name,
+      offers: (product.offers ?? []).map((offer) => ({ id: offer.id, name: offer.name })),
+      origin,
+    })
+  }
+
+  async function handleImportedPlatformProduct(result: {
+    productId: number
+    productName: string
+    origin: 'xboard-import'
+  }) {
+    const items = await loadTabData('products')
+    const imported = items?.find((item) => item.id === result.productId)
+    setPublicationTarget({
+      id: result.productId,
+      name: result.productName,
+      offers: (imported?.offers ?? []).map((offer) => ({ id: offer.id, name: offer.name })),
+      origin: result.origin,
+    })
+  }
+
+  async function handleUnpublishPlatformProduct(product: AdminProductListItem) {
+    if (unpublishingRef.current.has(product.id)) return
+    const confirmed = window.confirm(
+      '下架后商品将从商城隐藏，已有订单和可售资源不会删除。确定下架吗？',
+    )
+    if (!confirmed) return
+    unpublishingRef.current.add(product.id)
+    setUnpublishingProductIds(new Set(unpublishingRef.current))
+    try {
+      await unpublishAdminProduct(product.id)
+      showToast(`“${product.name}”已下架`)
+      await loadTabData('products')
+    } catch (err) {
+      showToast(getApiErrorMessage(err, '下架失败'), 'error')
+    } finally {
+      unpublishingRef.current.delete(product.id)
+      setUnpublishingProductIds(new Set(unpublishingRef.current))
     }
   }
 
@@ -488,6 +543,7 @@ export default function AdminPage() {
                   <thead>
                     <tr>
                       <th>商品名称</th>
+                      <th>状态</th>
                       <th>类型</th>
                       <th>售价 (积分)</th>
                       <th>可售资源</th>
@@ -495,15 +551,16 @@ export default function AdminPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {products.map((p: any) => {
+                    {products.map((p) => {
                       const deliveryMode = p.deliveryMode ?? 'instant_inventory'
                       const isInstantInventory = deliveryMode === 'instant_inventory'
+                      const isPlatformOwned = p.merchantId == null
                       const isFaka = Boolean(p.fakaBridge || p.fakaCapacity)
                       // P4a F2：导入入口按"是否存在可导入规格"判定，而非商品级投影
                       //（默认规格是人工服务、另有卡密规格时投影会误隐藏入口）。
                       // 带交付字段模板的规格必须走商家端结构化导入，不可作目标。
                       const importableOffers = (p.offers ?? [])
-                        .filter((o: any) => o.deliveryMode === 'instant_inventory'
+                        .filter((o) => o.deliveryMode === 'instant_inventory'
                           && !(Array.isArray(o.deliveryFields) && o.deliveryFields.length > 0))
                       // 新 UI 只允许显式 Offer-first；缺少 offers 的旧响应不再提供盲导入入口。
                       const canImport = importableOffers.length > 0
@@ -531,6 +588,14 @@ export default function AdminPage() {
                               <div className="text-[10px] text-[var(--color-primary)] mt-0.5">FakaBridge · Xboard</div>
                             )}
                           </td>
+                          <td data-label="状态">
+                            <span
+                              className="inline-flex items-center rounded border border-[var(--color-border)] bg-[var(--color-background)] px-2 py-0.5 text-xs font-bold text-[var(--color-text)]"
+                              data-testid={`admin-product-status-${p.id}`}
+                            >
+                              {adminProductStatusLabel(p.status)}
+                            </span>
+                          </td>
                           <td data-label="类型">
                             <span className="bg-[var(--color-background)] border border-[var(--color-border)] text-[var(--color-text-muted)] px-2 py-1 rounded text-xs font-bold">
                               {p.type}
@@ -544,6 +609,48 @@ export default function AdminPage() {
                           </td>
                           <td className="text-right" data-label="操作">
                             <div className="flex flex-wrap gap-2 justify-end">
+                              {isPlatformOwned && p.status === 'draft' && (
+                                <button
+                                  type="button"
+                                  data-testid={`admin-product-publish-${p.id}`}
+                                  className="text-[var(--color-cta)] hover:bg-[var(--color-cta)]/10 font-semibold text-xs px-3 py-1.5 btn-sm rounded-lg transition-colors border border-[var(--color-cta)]/25 cursor-pointer inline-flex items-center gap-1"
+                                  onClick={() => openPublication(p, 'product-list')}
+                                >
+                                  <Upload className="w-3.5 h-3.5" />
+                                  发布
+                                </button>
+                              )}
+                              {isPlatformOwned && p.status === 'inactive' && (
+                                <button
+                                  type="button"
+                                  data-testid={`admin-product-relist-${p.id}`}
+                                  className="text-[var(--color-cta)] hover:bg-[var(--color-cta)]/10 font-semibold text-xs px-3 py-1.5 btn-sm rounded-lg transition-colors border border-[var(--color-cta)]/25 cursor-pointer inline-flex items-center gap-1"
+                                  onClick={() => openPublication(p, 'product-list')}
+                                >
+                                  <RotateCcw className="w-3.5 h-3.5" />
+                                  重新上架
+                                </button>
+                              )}
+                              {isPlatformOwned && p.status === 'active' && (
+                                <button
+                                  type="button"
+                                  data-testid={`admin-product-unpublish-${p.id}`}
+                                  disabled={unpublishingProductIds.has(p.id)}
+                                  className="text-[var(--color-text)] hover:bg-[var(--color-background)] font-semibold text-xs px-3 py-1.5 btn-sm rounded-lg transition-colors border border-[var(--color-border)] cursor-pointer inline-flex items-center gap-1 disabled:opacity-50"
+                                  onClick={() => { void handleUnpublishPlatformProduct(p) }}
+                                >
+                                  <Archive className="w-3.5 h-3.5" />
+                                  {unpublishingProductIds.has(p.id) ? '下架中…' : '下架'}
+                                </button>
+                              )}
+                              {!isPlatformOwned && (
+                                <span
+                                  className="text-xs text-[var(--color-text-muted)] px-1 py-1.5"
+                                  data-testid={`admin-product-merchant-owned-${p.id}`}
+                                >
+                                  由商家管理
+                                </span>
+                              )}
                               {isFaka && (
                                 <button
                                   type="button"
@@ -605,7 +712,7 @@ export default function AdminPage() {
                     })}
                     {!tabLoading && products.length === 0 && (
                       <tr>
-                        <td colSpan={5}>
+                        <td colSpan={6}>
                           <EmptyState compact icon={Package} title="暂无商品" description="商品创建后将显示在这里" />
                         </td>
                       </tr>
@@ -868,7 +975,7 @@ export default function AdminPage() {
               setFakaCapSaving(true)
               try {
                 const fakaOffer = (fakaCapProduct.offers ?? []).find(
-                  (o: any) => o.externalIntegration === 'faka_bridge'
+                  (o) => o.externalIntegration === 'faka_bridge'
                 )
                 await setAdminFakaCapacity(fakaCapProduct.id, {
                   offerId: fakaOffer?.id,
@@ -892,13 +999,30 @@ export default function AdminPage() {
       <AdminFakaImportPreview
         open={showFakaImport}
         onClose={() => setShowFakaImport(false)}
-        onImported={() => loadTabData('products')}
+        onImported={handleImportedPlatformProduct}
+      />
+
+      <AdminProductPublicationDialog
+        open={publicationTarget != null}
+        target={publicationTarget}
+        onClose={() => setPublicationTarget(null)}
+        onPublished={async ({ name }) => {
+          showToast(`“${name}”已发布到商城`)
+          await loadTabData('products')
+        }}
       />
     </div>
   )
 }
 
 // ---------- Local presentational helpers ----------
+
+function adminProductStatusLabel(status: string): string {
+  if (status === 'draft') return '草稿'
+  if (status === 'active') return '已发布'
+  if (status === 'inactive') return '已下架'
+  return '状态未知'
+}
 
 function DashStat({
   icon: Icon,
