@@ -51,6 +51,8 @@ export type IdempotencyFingerprint = {
   // SPEC-LEGAL-001：协议确认版本（未传不写入 canonical）。同 key 换协议
   // 版本 = 不同意图（用户确认的是不同文本），必须 409 而非静默重放。
   agreementVersions?: Record<string, string>
+  // SPEC-VALUE-POLICY-P1-001：未传不写入 canonical，旧客户端 digest 不变。
+  expectedValuePolicyId?: string
 }
 
 /**
@@ -84,6 +86,9 @@ export function computeRequestDigest(fingerprint: IdempotencyFingerprint): strin
     // SPEC-LEGAL-001：{} 与未传等价（归一化后为空即省略字段），旧客户端
     // digest 不变；复审修复：空数组落库会让语义相同的重试误报 CONFLICT。
     ...(canonicalAgreements.length > 0 ? { agreementVersions: canonicalAgreements } : {}),
+    ...(fingerprint.expectedValuePolicyId != null
+      ? { expectedValuePolicyId: fingerprint.expectedValuePolicyId }
+      : {}),
     answers: canonicalAnswers,
   })
   return createHmac('sha256', config.jwtSecret).update(canonical).digest('hex')

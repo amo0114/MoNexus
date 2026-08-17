@@ -11,6 +11,7 @@ import {
   type FakaCapacitySnapshot,
 } from '../../lib/fakaBridge/index.js'
 import { getLegalRequirement, type LegalRequirement } from '../legal/service.js'
+import { quoteOfferPricing, type OrderPricingDto } from '../valuePolicy/service.js'
 
 export type CheckoutPreview = {
   productId: number
@@ -63,6 +64,12 @@ export type CheckoutPreview = {
    * LEGAL_AGREEMENT_STALE，前端重新拉取本预览即得新版本。
    */
   legalRequirement: LegalRequirement | null
+  /**
+   * SPEC-VALUE-POLICY-P1-001: additive CNY reference pricing. Present only
+   * when POINT_VALUE_POLICY_MODE is shadow or enforce. Legacy `price` stays
+   * a number so existing clients keep working.
+   */
+  pricing?: OrderPricingDto
 }
 
 /**
@@ -141,6 +148,8 @@ export async function getCheckoutPreview(
     }
   }
 
+  const pricing = await quoteOfferPricing(prisma, offer.price)
+
   return {
     productId: product.id,
     productName: product.name,
@@ -171,5 +180,6 @@ export async function getCheckoutPreview(
         }
       : null,
     legalRequirement: getLegalRequirement('order'),
+    ...(pricing ? { pricing } : {}),
   }
 }

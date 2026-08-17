@@ -54,6 +54,12 @@ import {
   resolveConsentEvidence,
   type ConsentEvidence,
 } from '../legal/service.js'
+import {
+  createOrderPricingSnapshot,
+  resolvePricingForOrder,
+  serializeSnapshotPricing,
+  type OrderPricingDto,
+} from '../valuePolicy/service.js'
 
 /**
  * Deterministic seam for the Faka checkout race regression.  Production never
@@ -99,6 +105,8 @@ export type CreateOrderOptions = {
   // SPEC-LEGAL-001：协议确认 { document: version }（来自结算预览的
   // legalRequirement）；证据在订单事务内随单落库。
   agreementVersions?: Record<string, string>
+  // SPEC-VALUE-POLICY-P1-001：结算预览返回的价值政策 ID。
+  expectedValuePolicyId?: string
   // 确认证据的网络标识：IP 原样、UA 截断 ≤512，retention cron 到期匿名化。
   ip?: string
   userAgent?: string
@@ -119,6 +127,7 @@ export async function createOrder(
     verificationPassword,
     renewalOfOrderId,
     agreementVersions,
+    expectedValuePolicyId,
     ip,
     userAgent,
   } = options
@@ -132,6 +141,7 @@ export async function createOrder(
     formAnswers,
     renewalOfOrderId,
     agreementVersions,
+    expectedValuePolicyId,
   }
 
   // SPEC-LEGAL-001 复审 P1：既有幂等记录的分类（重放 / in-flight）先于协议
@@ -189,6 +199,7 @@ export async function createOrder(
       expectedPurchaseFormVersion,
       expectedCheckoutVersion,
       renewalOfOrderId,
+      expectedValuePolicyId,
       claimToken,
       consentEvidence,
       ip,
@@ -211,6 +222,7 @@ async function buildReplayResponse(orderId: number, userId: number) {
     include: {
       product: { select: { name: true } },
       merchant: { select: { id: true, name: true } },
+      pricingSnapshot: true,
       delivery: {
         select: {
           content: true,
@@ -250,6 +262,9 @@ async function buildReplayResponse(orderId: number, userId: number) {
     merchantName: order.merchant?.name ?? null,
     provisionPending: fakaTask != null && fakaTask.status === 'pending',
     idempotentReplay: true,
+    ...(order.pricingSnapshot
+      ? { pricing: serializeSnapshotPricing(order.pricingSnapshot) }
+      : {}),
   }
 }
 
@@ -264,6 +279,7 @@ async function createOrderOnce(
     expectedPurchaseFormVersion,
     expectedCheckoutVersion,
     renewalOfOrderId,
+    expectedValuePolicyId,
     claimToken,
     consentEvidence,
     ip,
@@ -344,6 +360,12 @@ async function createOrderOnce(
     if (expectedPrice != null && expectedPrice !== offer.price) {
       throw new HttpError(409, 'PRICE_CHANGED', '商品信息已变化，请重新确认')
     }
+
+    // SPEC-VALUE-POLICY-P1-001：政策必须在任何资金/库存副作用之前解析并校验。
+    const pricingContext = await resolvePricingForOrder(tx, {
+      pointsAmount: offer.price,
+      expectedValuePolicyId,
+    })
 
     // FakaBridge 终检：集成规格必须是 manual_service + 平台已配置 + 买家邮箱已验证。
     // 配置缺失时 400（不是静默转人工），避免扣积分却永远开不出订阅。
@@ -542,6 +564,15 @@ async function createOrderOnce(
         ...(purchaseFormAnswers ? { purchaseFormAnswers } : {}),
       },
     })
+
+    let pricing: OrderPricingDto | undefined
+    if (pricingContext) {
+      pricing = await createOrderPricingSnapshot(tx, {
+        orderId: order.id,
+        orderPrice: order.price,
+        context: pricingContext,
+      })
+    }
 
     await createOrderStatusEvent(tx, {
       orderId: order.id,
@@ -863,6 +894,7 @@ async function createOrderOnce(
       merchantName,
       // 买家可见：订阅开通任务已入队（实际 HTTP 在 M4 worker）。
       provisionPending: fakaBridge || autoProvisionTaskCreated,
+      ...(pricing ? { pricing } : {}),
     }
   })
 
@@ -904,6 +936,7 @@ export async function getOrderDetail(orderId: number, userId: number) {
       // P7b：pending 任务 → 买家详情「自动开通中」提示态（序列化层折叠为
       // provisionPending 布尔，只取 status，绝不透传任务内部字段）。
       provisionTask: { select: { status: true } },
+      pricingSnapshot: true,
       // P6b：买家时间线固定契约——仅 action/fromStatus/toStatus/publicNote/
       // createdAt/actorRole 六字段，不透出事件行 id 与操作人用户 id。
       statusEvents: {
@@ -921,10 +954,11 @@ export async function getOrderDetail(orderId: number, userId: number) {
   })
   if (!order) throw notFound('订单不存在')
   // 续费单行不进响应，只折叠为存在性布尔。
-  const { renewals, ...orderRest } = order
+  const { renewals, pricingSnapshot, ...orderRest } = order
   const normalized = normalizeOrderStatus(order.status)
   return {
     ...serializeUserOrderDetail(orderRest),
+    ...(pricingSnapshot ? { pricing: serializeSnapshotPricing(pricingSnapshot) } : {}),
     holdingPoints: order.holdingPoints ?? null,
     fulfillmentDeadline: order.fulfillmentDeadline ?? null,
     // P6c：预约日期（null = 非预约单）。

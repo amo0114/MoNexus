@@ -340,3 +340,42 @@ export const notificationRealtimeDeliveryLagSeconds = new client.Histogram({
   buckets: [0.01, 0.05, 0.1, 0.25, 0.5, 1, 2, 5],
   registers: [registry],
 })
+
+// SPEC-VALUE-POLICY-P1-001. Labels are finite vocabularies only.
+
+export const VALUE_POLICY_RESOLUTION_RESULTS = [
+  'found',
+  'disabled',
+  'unavailable',
+  'invalid',
+  'multiple',
+] as const
+export type ValuePolicyResolutionResult = typeof VALUE_POLICY_RESOLUTION_RESULTS[number]
+
+export const VALUE_POLICY_MODES = ['off', 'shadow', 'enforce'] as const
+export type ValuePolicyModeLabel = typeof VALUE_POLICY_MODES[number]
+
+export const valuePolicyResolutionTotal = new client.Counter({
+  name: 'value_policy_resolution_total',
+  help: 'Value policy resolution outcomes by result and mode',
+  labelNames: ['result', 'mode'] as const,
+  registers: [registry],
+})
+
+export const valuePolicyChangedTotal = new client.Counter({
+  name: 'value_policy_changed_total',
+  help: 'Order confirmations rejected because the value policy changed',
+  registers: [registry],
+})
+
+export const orderPricingSnapshotCreatedTotal = new client.Counter({
+  name: 'order_pricing_snapshot_created_total',
+  help: 'Order pricing snapshots created inside the order transaction',
+  registers: [registry],
+})
+
+export const orderPricingSnapshotFailureTotal = new client.Counter({
+  name: 'order_pricing_snapshot_failure_total',
+  help: 'Failed attempts to persist an order pricing snapshot',
+  registers: [registry],
+})
