@@ -15,6 +15,7 @@ import { productRoutes } from './modules/products/routes.js'
 import { pointRoutes } from './modules/points/routes.js'
 import { orderRoutes } from './modules/orders/routes.js'
 import { checkoutRoutes } from './modules/checkout/routes.js'
+import { valuePolicyRoutes } from './modules/valuePolicy/routes.js'
 import { adminRoutes } from './modules/admin/routes.js'
 import { merchantRoutes } from './modules/merchant/routes.js'
 import { dashboardRoutes } from './modules/dashboard/routes.js'
@@ -105,6 +106,7 @@ app.use('/api/leaderboard', leaderboardRoutes)
 app.use('/api/invites', inviteRoutes)
 app.use('/api/orders', orderRoutes)
 app.use('/api/checkout', checkoutRoutes)
+app.use('/api/value-policy', valuePolicyRoutes)
 app.use('/api/faka-bridge', fakaBridgeRoutes)
 app.use('/api/admin', adminPromotionRouter)
 app.use('/api/admin', adminEditorialRouter)

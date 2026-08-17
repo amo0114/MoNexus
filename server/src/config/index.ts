@@ -63,6 +63,11 @@ const logLevelEnvSchema = z.preprocess(value => {
 }, z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'))
 
 const abuseProtectionModeEnvSchema = z.enum(['off', 'enforce']).default('off')
+const pointValuePolicyModeEnvSchema = z.enum(['off', 'shadow', 'enforce']).default('off')
+const monexusDeployEnvSchema = z.preprocess(value => {
+  if (value === undefined || value === '') return undefined
+  return value
+}, z.enum(['production', 'staging']).default('production'))
 
 const CANONICAL_BASE64_32_PATTERN = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/
 
@@ -262,6 +267,15 @@ const envSchema = z.object({
   // 测试逃生：放开 http 与私网目标（e2e stub 接收端跑在 127.0.0.1）。
   // 生产环境为 true 时拒绝启动——这是 SSRF 防线的总开关。
   AUTO_PROVISION_ALLOW_INSECURE_TARGETS: booleanEnvSchema.default(false),
+
+  // --- SPEC-VALUE-POLICY-P1-001：积分参考价值政策。生产默认 off；
+  // D-02 批准前不得把 shadow/enforce 作为生产默认值，也不得 seed 生产
+  // active policy。非法值在启动时拒绝，禁止回退猜测。
+  POINT_VALUE_POLICY_MODE: pointValuePolicyModeEnvSchema,
+  // Node 运行模式（NODE_ENV）与部署环境分开：staging Compose 仍用
+  // NODE_ENV=production 以保留 Cookie/MFA/Abuse 等生产级检查，但用
+  // MONEXUS_DEPLOY_ENV=staging 允许 shadow/enforce 回测。
+  MONEXUS_DEPLOY_ENV: monexusDeployEnvSchema,
 
   // --- SPEC-LEGAL-001：法律页面与协议同意。ENABLED 是总开关（公开页面 +
   // 注册/下单同意采集）；ENFORCEMENT=enforce 时注册/下单必须携带当前版本
@@ -509,6 +523,19 @@ if (env.NODE_ENV === 'production') {
   }
 }
 
+// SPEC-VALUE-POLICY-P1-001 / D-02: the production deploy environment cannot
+// enable shadow or enforce. Staging keeps NODE_ENV=production so the other
+// runtime security checks stay on, and opts into shadow/enforce only via
+// MONEXUS_DEPLOY_ENV=staging. Unset deploy env defaults to production.
+if (
+  env.NODE_ENV === 'production'
+  && env.MONEXUS_DEPLOY_ENV === 'production'
+  && env.POINT_VALUE_POLICY_MODE !== 'off'
+) {
+  console.error('[Config] POINT_VALUE_POLICY_MODE must be off when MONEXUS_DEPLOY_ENV=production until D-02 is approved')
+  process.exit(1)
+}
+
 // SPEC-NOTIFY-001：邮件通道依赖站内通知总开关；总关时邮件不得单独开启。
 if (env.NOTIFICATION_EMAIL_ENABLED && !env.NOTIFICATION_ENABLED) {
   console.error('[Config] NOTIFICATION_EMAIL_ENABLED=true requires NOTIFICATION_ENABLED=true')
@@ -663,6 +690,8 @@ export const config = {
   // P7b 自动开通：null = 未显式配置（dev/test 由 JWT_SECRET 派生）。
   webhookSecretEncKey: env.WEBHOOK_SECRET_ENC_KEY ?? null,
   autoProvisionAllowInsecureTargets: env.AUTO_PROVISION_ALLOW_INSECURE_TARGETS,
+  pointValuePolicyMode: env.POINT_VALUE_POLICY_MODE,
+  monexusDeployEnv: env.MONEXUS_DEPLOY_ENV,
   legalPages: {
     enabled: env.LEGAL_PAGES_ENABLED,
     enforcement: env.LEGAL_PAGES_ENFORCEMENT,

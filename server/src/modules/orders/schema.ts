@@ -36,6 +36,9 @@ export const createOrderSchema = z.object({
     z.string().trim().min(1).max(64),
     z.string().trim().min(1).max(32),
   ).refine(value => Object.keys(value).length <= 8, '协议确认条目过多').optional(),
+  // SPEC-VALUE-POLICY-P1-001：结算预览返回的价值政策 ID。
+  // off 容忍并忽略；shadow 可选但提供则必须匹配；enforce 必填。
+  expectedValuePolicyId: z.string().trim().min(1).max(64).optional(),
 })
 
 // Idempotency-Key 请求头：限定 UUID，避免任意字符串占用唯一索引空间。

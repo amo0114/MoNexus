@@ -82,6 +82,12 @@ export type ErrorCode =
   // PRICE_CHANGED——前端重新拉取预览/注册状态拿新版本，换新幂等键重试）。
   | 'LEGAL_AGREEMENT_REQUIRED'
   | 'LEGAL_AGREEMENT_STALE'
+  // SPEC-VALUE-POLICY-P1-001: CNY reference-value policy.
+  | 'VALUE_POLICY_DISABLED'
+  | 'VALUE_POLICY_REQUIRED'
+  | 'VALUE_POLICY_CHANGED'
+  | 'VALUE_POLICY_UNAVAILABLE'
+  | 'VALUE_POLICY_DATA_INVALID'
 
 export interface ErrorDetail {
   field: string
@@ -219,4 +225,24 @@ export function legalAgreementStale(
     message,
     required.map(r => ({ field: `agreements.${r.document}`, message: `当前版本：${r.version}` })),
   )
+}
+
+export function valuePolicyDisabled(message = '价值政策未启用') {
+  return new HttpError(404, 'VALUE_POLICY_DISABLED', message)
+}
+
+export function valuePolicyRequired(message = '请确认当前价值政策后再下单') {
+  return new HttpError(400, 'VALUE_POLICY_REQUIRED', message)
+}
+
+export function valuePolicyChanged(message = '价值政策已变化，请重新确认') {
+  return new HttpError(409, 'VALUE_POLICY_CHANGED', message)
+}
+
+export function valuePolicyUnavailable(message = '价值政策暂不可用，请稍后重试') {
+  return new HttpError(503, 'VALUE_POLICY_UNAVAILABLE', message)
+}
+
+export function valuePolicyDataInvalid(message = '价值政策数据不合法') {
+  return new HttpError(500, 'VALUE_POLICY_DATA_INVALID', message)
 }

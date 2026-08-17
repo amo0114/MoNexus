@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { spawnSync } from 'node:child_process'
+import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import path from 'node:path'
 
 const VALID_MFA_ENCRYPTION_KEY = Buffer.alloc(32, 7).toString('base64')
@@ -181,6 +183,77 @@ describe('production config guards for legal pages & consent (SPEC-LEGAL-001)', 
     expect(result.stderr + result.stdout).toContain('LEGAL_PAGES_ENFORCEMENT')
   })
 
+  it('defaults POINT_VALUE_POLICY_MODE to off and rejects an illegal value', () => {
+    const ok = loadConfigWith({})
+    expect(ok.status).toBe(0)
+    expect(ok.stdout + ok.stderr).toContain('CONFIG_OK')
+
+    const bad = loadConfigWith({ POINT_VALUE_POLICY_MODE: 'on' })
+    expect(bad.status).toBe(1)
+    expect(bad.stderr + bad.stdout).toContain('POINT_VALUE_POLICY_MODE')
+  })
+
+  it('boots in production when POINT_VALUE_POLICY_MODE is off', () => {
+    const result = loadConfigWith({ POINT_VALUE_POLICY_MODE: 'off' })
+    expect(result.status).toBe(0)
+    expect(result.stdout + result.stderr).toContain('CONFIG_OK')
+  })
+
+  it('refuses POINT_VALUE_POLICY_MODE=shadow in production', () => {
+    const result = loadConfigWith({ POINT_VALUE_POLICY_MODE: 'shadow' })
+    expect(result.status).toBe(1)
+    expect(result.stderr + result.stdout).toContain('POINT_VALUE_POLICY_MODE')
+    expect(result.stderr + result.stdout).toContain('off')
+  })
+
+  it('refuses POINT_VALUE_POLICY_MODE=enforce in production', () => {
+    const result = loadConfigWith({ POINT_VALUE_POLICY_MODE: 'enforce' })
+    expect(result.status).toBe(1)
+    expect(result.stderr + result.stdout).toContain('POINT_VALUE_POLICY_MODE')
+    expect(result.stderr + result.stdout).toContain('off')
+  })
+
+  it('keeps production-grade checks but allows shadow/enforce when MONEXUS_DEPLOY_ENV=staging', () => {
+    const shadow = loadConfigWith({
+      MONEXUS_DEPLOY_ENV: 'staging',
+      POINT_VALUE_POLICY_MODE: 'shadow',
+    })
+    expect(shadow.status).toBe(0)
+    expect(shadow.stdout + shadow.stderr).toContain('CONFIG_OK')
+
+    const enforce = loadConfigWith({
+      MONEXUS_DEPLOY_ENV: 'staging',
+      POINT_VALUE_POLICY_MODE: 'enforce',
+    })
+    expect(enforce.status).toBe(0)
+    expect(enforce.stdout + enforce.stderr).toContain('CONFIG_OK')
+  })
+
+  it('still refuses ABUSE_PROTECTION_MODE=off under MONEXUS_DEPLOY_ENV=staging', () => {
+    const result = loadConfigWith({
+      MONEXUS_DEPLOY_ENV: 'staging',
+      POINT_VALUE_POLICY_MODE: 'shadow',
+      ABUSE_PROTECTION_MODE: 'off',
+    })
+    expect(result.status).toBe(1)
+    expect(result.stderr + result.stdout).toContain('ABUSE_PROTECTION_MODE')
+  })
+
+  it('treats unset MONEXUS_DEPLOY_ENV as production for the value-policy gate', () => {
+    const result = loadConfigWith({
+      MONEXUS_DEPLOY_ENV: undefined,
+      POINT_VALUE_POLICY_MODE: 'shadow',
+    })
+    expect(result.status).toBe(1)
+    expect(result.stderr + result.stdout).toContain('POINT_VALUE_POLICY_MODE')
+  })
+
+  it('rejects an illegal MONEXUS_DEPLOY_ENV', () => {
+    const result = loadConfigWith({ MONEXUS_DEPLOY_ENV: 'lab' })
+    expect(result.status).toBe(1)
+    expect(result.stderr + result.stdout).toContain('MONEXUS_DEPLOY_ENV')
+  })
+
   it('refuses LEGAL_PAGES_FIXTURE_PATH in production (test escape hatch)', () => {
     const result = loadConfigWith({
       LEGAL_PAGES_ENABLED: 'true',
@@ -237,3 +310,236 @@ describe('ops scripts cover both buckets (P1 regression)', () => {
     expect(minioInit).not.toContain('http://minio:9000 ${STORAGE_ACCESS_KEY}')
   })
 })
+
+describe('check-prod-env.sh POINT_VALUE_POLICY_MODE', () => {
+  const ROOT = path.resolve(SERVER_ROOT, '..')
+  const SCRIPT = path.join(ROOT, 'scripts', 'check-prod-env.sh')
+
+  function writeEnv(mode: string, extras: Record<string, string> = {}) {
+    const dir = mkdtempSync(path.join(tmpdir(), 'monexus-vp-env-'))
+    const file = path.join(dir, '.env')
+    writeFileSync(file, [
+      'POSTGRES_USER=monexus',
+      'POSTGRES_PASSWORD=test-password',
+      'POSTGRES_DB=monexus',
+      'JWT_SECRET=a-sufficiently-long-production-secret!!',
+      `MFA_ENCRYPTION_KEY=${VALID_MFA_ENCRYPTION_KEY}`,
+      'ABUSE_PROTECTION_MODE=enforce',
+      `ABUSE_HASH_KEY=${VALID_ABUSE_HASH_KEY}`,
+      'TURNSTILE_SITE_KEY=1x00000000000000000000AA',
+      'TURNSTILE_SECRET_KEY=turnstile-secret-for-preflight',
+      'TURNSTILE_ALLOWED_HOSTNAMES=shop.example.com',
+      'REDIS_ENABLED=true',
+      'REDIS_REQUIRED=true',
+      'REDIS_URL=redis://localhost:6379',
+      'LEGAL_PAGES_ENABLED=true',
+      'LEGAL_PAGES_ENFORCEMENT=enforce',
+      'FRONTEND_ORIGIN=https://shop.example.com',
+      'COOKIE_SECURE=true',
+      'USER_STATUS_CACHE_TTL_SEC=60',
+      'STORAGE_ENDPOINT=https://minio.example.com',
+      'STORAGE_BUCKET=monexus-uploads',
+      'STORAGE_ACCESS_KEY=ak',
+      'STORAGE_SECRET_KEY=sk',
+      'STORAGE_PUBLIC_URL_BASE=https://cdn.example.com',
+      'DELIVERY_STORAGE_BUCKET=monexus-files',
+      'DELIVERY_STORAGE_PUBLIC_ENDPOINT=https://files.example.com',
+      'SMTP_HOST=smtp.example.com',
+      'SMTP_PORT=587',
+      'SMTP_SECURE=false',
+      'SMTP_USER=mailer',
+      'SMTP_PASS=secret',
+      'SMTP_FROM=ops@example.com',
+      `WEBHOOK_SECRET_ENC_KEY=${'a'.repeat(64)}`,
+      'METRICS_TOKEN=metrics-token-for-preflight-at-least-32',
+      `POINT_VALUE_POLICY_MODE=${mode}`,
+      ...Object.entries(extras).map(([key, value]) => `${key}=${value}`),
+    ].join('\n'))
+    return { dir, file }
+  }
+
+  function runPreflight(envFile: string, mode: 'production' | 'staging') {
+    return spawnSync('bash', [SCRIPT, '--mode', mode, '--env-file', envFile, '--no-backup'], {
+      cwd: ROOT,
+      encoding: 'utf8',
+      timeout: 30_000,
+    })
+  }
+
+  it('accepts off in production and rejects shadow/enforce', () => {
+    const off = writeEnv('off')
+    const shadow = writeEnv('shadow')
+    const enforce = writeEnv('enforce')
+    const invalid = writeEnv('on')
+    try {
+      const offResult = runPreflight(off.file, 'production')
+      expect(offResult.status).toBe(0)
+
+      const shadowResult = runPreflight(shadow.file, 'production')
+      expect(shadowResult.status).toBe(1)
+      expect(shadowResult.stderr + shadowResult.stdout).toContain('POINT_VALUE_POLICY_MODE')
+
+      const enforceResult = runPreflight(enforce.file, 'production')
+      expect(enforceResult.status).toBe(1)
+      expect(enforceResult.stderr + enforceResult.stdout).toContain('POINT_VALUE_POLICY_MODE')
+
+      const invalidResult = runPreflight(invalid.file, 'production')
+      expect(invalidResult.status).toBe(1)
+      expect(invalidResult.stderr + invalidResult.stdout).toContain('POINT_VALUE_POLICY_MODE')
+    } finally {
+      rmSync(off.dir, { recursive: true, force: true })
+      rmSync(shadow.dir, { recursive: true, force: true })
+      rmSync(enforce.dir, { recursive: true, force: true })
+      rmSync(invalid.dir, { recursive: true, force: true })
+    }
+  })
+
+  it('allows shadow in staging for backtests', () => {
+    const shadow = writeEnv('shadow', { MONEXUS_DEPLOY_ENV: 'staging' })
+    try {
+      const result = runPreflight(shadow.file, 'staging')
+      expect(result.status).toBe(0)
+    } finally {
+      rmSync(shadow.dir, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects a production env file that claims MONEXUS_DEPLOY_ENV=staging', () => {
+    const env = writeEnv('off', { MONEXUS_DEPLOY_ENV: 'staging' })
+    try {
+      const result = runPreflight(env.file, 'production')
+      expect(result.status).toBe(1)
+      expect(result.stderr + result.stdout).toContain('MONEXUS_DEPLOY_ENV')
+    } finally {
+      rmSync(env.dir, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects a staging env file that claims MONEXUS_DEPLOY_ENV=production', () => {
+    const env = writeEnv('shadow', { MONEXUS_DEPLOY_ENV: 'production' })
+    try {
+      const result = runPreflight(env.file, 'staging')
+      expect(result.status).toBe(1)
+      expect(result.stderr + result.stdout).toContain('MONEXUS_DEPLOY_ENV')
+    } finally {
+      rmSync(env.dir, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('staging Compose deploy-env overlay', () => {
+  const ROOT = path.resolve(SERVER_ROOT, '..')
+
+  it('wires the staging overlay in staging-compose.sh', async () => {
+    const { readFile } = await import('node:fs/promises')
+    const script = await readFile(path.join(ROOT, 'scripts/staging-compose.sh'), 'utf8')
+    const overlay = await readFile(path.join(ROOT, 'docker-compose.staging.yml'), 'utf8')
+    const prod = await readFile(path.join(ROOT, 'docker-compose.prod.yml'), 'utf8')
+
+    expect(script).toContain('docker-compose.staging.yml')
+    expect(prod).toContain('NODE_ENV: production')
+    expect(prod).toMatch(/MONEXUS_DEPLOY_ENV:\s*production/)
+    expect(prod).not.toContain('${MONEXUS_DEPLOY_ENV')
+    expect(overlay).toMatch(/MONEXUS_DEPLOY_ENV:\s*staging/)
+    expect(overlay).not.toContain('${MONEXUS_DEPLOY_ENV')
+  })
+
+  it('merges NODE_ENV=production with MONEXUS_DEPLOY_ENV=staging', () => {
+    // Env file claims production on purpose: the staging overlay must win.
+    const env = writeComposeEnv({
+      MONEXUS_DEPLOY_ENV: 'production',
+      POINT_VALUE_POLICY_MODE: 'shadow',
+    })
+    try {
+      const result = runComposeConfig(env.file, [
+        path.join(ROOT, 'docker-compose.prod.yml'),
+        path.join(ROOT, 'docker-compose.vps.yml'),
+        path.join(ROOT, 'docker-compose.staging.yml'),
+      ])
+      expect(result.status, result.stderr + result.stdout).toBe(0)
+      expect(result.stdout).toMatch(/NODE_ENV:\s*production/)
+      expect(result.stdout).toMatch(/MONEXUS_DEPLOY_ENV:\s*staging/)
+      expect(result.stdout).not.toMatch(/NODE_ENV:\s*development/)
+      expect(result.stdout).toMatch(/POINT_VALUE_POLICY_MODE:\s*shadow/)
+    } finally {
+      rmSync(env.dir, { recursive: true, force: true })
+    }
+  })
+
+  it('keeps production Compose deploy env production even if the env file claims staging', () => {
+    const env = writeComposeEnv({
+      MONEXUS_DEPLOY_ENV: 'staging',
+      POINT_VALUE_POLICY_MODE: 'off',
+    })
+    try {
+      const result = runComposeConfig(env.file, [
+        path.join(ROOT, 'docker-compose.prod.yml'),
+      ])
+      expect(result.status, result.stderr + result.stdout).toBe(0)
+      expect(result.stdout).toMatch(/NODE_ENV:\s*production/)
+      expect(result.stdout).toMatch(/MONEXUS_DEPLOY_ENV:\s*production/)
+      expect(result.stdout).not.toMatch(/MONEXUS_DEPLOY_ENV:\s*staging/)
+      expect(result.stdout).not.toMatch(/NODE_ENV:\s*development/)
+    } finally {
+      rmSync(env.dir, { recursive: true, force: true })
+    }
+  })
+})
+
+function composeSpawnEnv(envFile: string): Record<string, string> {
+  const env: Record<string, string> = { PATH: process.env.PATH ?? '' }
+  for (const line of readFileSync(envFile, 'utf8').split('\n')) {
+    const idx = line.indexOf('=')
+    if (idx > 0) env[line.slice(0, idx)] = line.slice(idx + 1)
+  }
+  return env
+}
+
+function runComposeConfig(envFile: string, composeFiles: string[]) {
+  return spawnSync(
+    'docker',
+    [
+      'compose',
+      '--project-name', 'monexus-vp-config',
+      '--env-file', envFile,
+      ...composeFiles.flatMap(file => ['-f', file]),
+      'config',
+    ],
+    {
+      cwd: path.resolve(SERVER_ROOT, '..'),
+      encoding: 'utf8',
+      timeout: 30_000,
+      env: composeSpawnEnv(envFile),
+    },
+  )
+}
+
+function writeComposeEnv(extras: Record<string, string> = {}) {
+  const dir = mkdtempSync(path.join(tmpdir(), 'monexus-vp-compose-'))
+  const file = path.join(dir, '.env')
+  const values: Record<string, string> = {
+    POSTGRES_USER: 'monexus',
+    POSTGRES_PASSWORD: 'test-password',
+    POSTGRES_DB: 'monexus',
+    JWT_SECRET: 'a-sufficiently-long-production-secret!!',
+    MFA_ENCRYPTION_KEY: VALID_MFA_ENCRYPTION_KEY,
+    ABUSE_PROTECTION_MODE: 'enforce',
+    ABUSE_HASH_KEY: VALID_ABUSE_HASH_KEY,
+    TURNSTILE_SITE_KEY: '1x00000000000000000000AA',
+    TURNSTILE_SECRET_KEY: 'turnstile-secret-for-compose',
+    TURNSTILE_ALLOWED_HOSTNAMES: 'staging.example.com',
+    FRONTEND_ORIGIN: 'https://staging.example.com',
+    STORAGE_ENDPOINT: 'https://minio.example.com',
+    STORAGE_BUCKET: 'monexus-uploads',
+    STORAGE_ACCESS_KEY: 'ak',
+    STORAGE_SECRET_KEY: 'sk',
+    DELIVERY_STORAGE_BUCKET: 'monexus-files',
+    DELIVERY_STORAGE_PUBLIC_ENDPOINT: 'https://files.example.com',
+    WEBHOOK_SECRET_ENC_KEY: 'a'.repeat(64),
+    REDIS_PASSWORD: 'redis-password-for-compose',
+    POINT_VALUE_POLICY_MODE: 'shadow',
+    ...extras,
+  }
+  writeFileSync(file, Object.entries(values).map(([key, value]) => `${key}=${value}`).join('\n'))
+  return { dir, file }
+}

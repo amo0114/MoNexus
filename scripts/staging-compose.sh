@@ -62,6 +62,7 @@ compose=(
   --env-file "$env_file"
   -f "$ROOT_DIR/docker-compose.prod.yml"
   -f "$ROOT_DIR/docker-compose.vps.yml"
+  -f "$ROOT_DIR/docker-compose.staging.yml"
   --profile selfhost-storage
   --profile staging-mail
 )
