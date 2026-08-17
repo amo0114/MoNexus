@@ -6,6 +6,7 @@ import { prisma } from '../lib/prisma.js'
 import { decryptMfaSecret, generateTotp } from '../modules/auth/mfa.js'
 import { ensureSeedCategories } from '../modules/catalog/bootstrap.js'
 import { getActiveCategoryIdByLabel, getActiveNetworkNodeCategoryId } from './catalogFixture.js'
+import type { ValuePolicyStatus } from '@prisma/client'
 
 export const api = request(app)
 
@@ -131,6 +132,32 @@ export async function createTestProduct(
     })
   }
   return product
+}
+
+export async function createTestCnyValuePolicy(options?: {
+  id?: string
+  version?: number
+  status?: ValuePolicyStatus
+  numerator?: bigint
+  denominator?: bigint
+  effectiveAt?: Date
+  referenceAssetCode?: string
+}) {
+  const version = options?.version ?? 1
+  return prisma.valuePolicy.create({
+    data: {
+      id: options?.id ?? `vp_cny_${version}`,
+      version,
+      pointAssetCode: 'RP',
+      referenceAssetCode: options?.referenceAssetCode ?? 'CNY',
+      referenceAtomicPerPointNumerator: options?.numerator ?? 1n,
+      referenceAtomicPerPointDenominator: options?.denominator ?? 1n,
+      roundingMode: 'HALF_EVEN',
+      status: options?.status ?? 'active',
+      effectiveAt: options?.effectiveAt ?? new Date('2020-01-01T00:00:00.000Z'),
+      activatedAt: (options?.status ?? 'active') === 'active' ? new Date() : null,
+    },
+  })
 }
 
 export interface AuthCookies {

@@ -328,6 +328,30 @@ if [[ "$MODE" == "production" && -n "$(get LEGAL_PAGES_FIXTURE_PATH)" ]]; then
   fail "LEGAL_PAGES_FIXTURE_PATH must be empty in production"
 fi
 
+# SPEC-VALUE-POLICY-P1-001: Node runtime (NODE_ENV) stays production-grade.
+# MONEXUS_DEPLOY_ENV distinguishes the deploy environment. Production may
+# only run off until D-02; staging may use shadow/enforce for backtests.
+# An explicit value must match --mode so a staging env cannot claim
+# production (or the reverse) and then fail at container boot.
+deploy_env="$(get MONEXUS_DEPLOY_ENV)"
+if [[ -n "$deploy_env" && "$deploy_env" != "production" && "$deploy_env" != "staging" ]]; then
+  fail "MONEXUS_DEPLOY_ENV must be production or staging"
+fi
+if [[ "$MODE" == "production" && -n "$deploy_env" && "$deploy_env" != "production" ]]; then
+  fail "MONEXUS_DEPLOY_ENV must be production when validating a production deploy"
+fi
+if [[ "$MODE" == "staging" && -n "$deploy_env" && "$deploy_env" != "staging" ]]; then
+  fail "MONEXUS_DEPLOY_ENV must be staging when validating a staging deploy"
+fi
+
+value_policy_mode="$(get POINT_VALUE_POLICY_MODE)"
+if [[ -n "$value_policy_mode" && "$value_policy_mode" != "off" && "$value_policy_mode" != "shadow" && "$value_policy_mode" != "enforce" ]]; then
+  fail "POINT_VALUE_POLICY_MODE must be off, shadow, or enforce"
+fi
+if [[ "$MODE" == "production" && -n "$value_policy_mode" && "$value_policy_mode" != "off" ]]; then
+  fail "POINT_VALUE_POLICY_MODE must be off in production until D-02 is approved"
+fi
+
 require_https_url FRONTEND_ORIGIN
 require_bool_true COOKIE_SECURE
 

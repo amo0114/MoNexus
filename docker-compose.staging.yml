@@ -1,0 +1,8 @@
+# Staging overlay for docker-compose.prod.yml.
+# Keeps NODE_ENV=production (MFA/Abuse/COOKIE_SECURE/etc.) while fixing
+# this stack's deploy identity so a mis-set env file cannot re-label it
+# as production and then fail the runtime value-policy gate.
+services:
+  server:
+    environment:
+      MONEXUS_DEPLOY_ENV: staging
