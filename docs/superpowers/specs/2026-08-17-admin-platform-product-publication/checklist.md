@@ -87,15 +87,15 @@
 - [x] Catalog-ops E2E runner PASS，包含 XBoard draft -> publish。
 - [x] `npm run verify:quick` PASS。
 - [x] `git diff --check` PASS。
-- [ ] PR `run-e2e` label 已添加，`CI OK` PASS。
+- [x] PR `run-e2e` label 已添加，`CI OK` PASS。
 
 ## 7. PR Gate
 
-- [ ] PR 目标为 `develop`，不是 master。
+- [x] PR 目标为 `develop`，不是 master。
 - [x] 变更仅限 task Owned 文件和证据文档。
 - [x] 无 lockfile、migration、workflow 或生成物漂移。
-- [ ] PR 描述逐项映射 AC 和测试证据。
-- [ ] 所有 P0/SEC/Test Gate 为 PASS。
+- [x] PR 描述逐项映射 AC 和测试证据。
+- [x] 所有 P0/SEC/Test Gate 为 PASS。
 - [x] 所有 Pending/Failed 已清零，或 Owner 书面降级为后续范围。
 - [ ] Squash merge；禁止 `[skip ci]`、force push、直推或生产部署。
 
@@ -123,8 +123,8 @@ Node/npm: v20.19.5 / 10.8.2
 Disposable DB name (redacted prefix only): monexus_test_catalog_merch_integration
 E2E ports/fixture: XBoard fixture :3106, playwright.catalog-ops.config.ts
 Cleanup: dbguard drop after backend/e2e runners; no production/staging/XBoard live
-PR URL: pending
-CI run URL: pending
+PR URL: https://github.com/amo0114/MoNexus/pull/142
+CI run URL: https://github.com/amo0114/MoNexus/actions/runs/31998216000
 Notes:
   Official verify-catalog-ops-backend.sh Gate 0 still requires feat/catalog-merch-integration or fix/catalog-merch-user-ux. Equivalent TEST_FILES were executed on the implementation branch.
   DEBT-APUB-001 remains open: admin publish/unpublish still has no actor AdminLog.
