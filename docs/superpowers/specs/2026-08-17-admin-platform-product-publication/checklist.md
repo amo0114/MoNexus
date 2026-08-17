@@ -105,7 +105,7 @@
 
 ```text
 Date: 2026-08-17
-HEAD: fba856efd1437de5cb14e3e08b3fd0b4649889b6
+HEAD: 022a857c70ee3f758a1b2984ae72990efcd73755
 Card/AC: T-APUB-001..006 / AC-APUB-001..018 + review refresh concurrency
 Command:
   npx tsc -b
