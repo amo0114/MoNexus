@@ -42,7 +42,7 @@
  */
 
 import { expect, test, type Page, type Request, type Response } from '@playwright/test';
-import { SEED_ACCOUNTS, loginAs } from './helpers';
+import { API_BASE, SEED_ACCOUNTS, loginAs } from './helpers';
 
 const XBOARD_FIXTURE_RESET_URL = 'http://127.0.0.1:3106/__fixture/reset';
 const XBOARD_FIXTURE_MUTATE_URL = 'http://127.0.0.1:3106/__fixture/mutate-source';
@@ -147,6 +147,55 @@ export const isAdminProductsResponse = (response: Response): boolean =>
   response.request().method() === 'GET'
   && new URL(response.url()).pathname === '/api/admin/products'
   && new URL(response.url()).search === '';
+
+export const isAdminReadinessResponse = (response: Response): boolean =>
+  response.request().method() === 'GET'
+  && /\/api\/admin\/products\/\d+\/readiness$/.test(new URL(response.url()).pathname);
+
+export const isAdminPublishResponse = (response: Response): boolean =>
+  response.request().method() === 'POST'
+  && /\/api\/admin\/products\/\d+\/publish$/.test(new URL(response.url()).pathname);
+
+function boxesOverlap(
+  a: { x: number; y: number; width: number; height: number },
+  b: { x: number; y: number; width: number; height: number },
+): boolean {
+  return a.x < b.x + b.width
+    && a.x + a.width > b.x
+    && a.y < b.y + b.height
+    && a.y + a.height > b.y;
+}
+
+async function assertAdminProductRowReadable(
+  page: Page,
+  productName: string,
+  viewport: { width: number; height: number },
+): Promise<void> {
+  await page.setViewportSize(viewport);
+  const row = page.locator('tbody tr').filter({
+    has: page.locator('td[data-label="商品名称"]').getByText(productName, { exact: true }),
+  });
+  await expect(row).toHaveCount(1);
+  const name = row.locator('td[data-label="商品名称"]');
+  const status = row.locator('td[data-label="状态"]');
+  const actions = row.locator('td[data-label="操作"]');
+  await expect(name).toBeVisible();
+  await expect(status).toBeVisible();
+  await expect(actions).toBeVisible();
+  const [nameBox, statusBox, actionsBox, rowBox] = await Promise.all([
+    name.boundingBox(),
+    status.boundingBox(),
+    actions.boundingBox(),
+    row.boundingBox(),
+  ]);
+  if (!nameBox || !statusBox || !actionsBox || !rowBox) {
+    throw new Error(`admin product row geometry missing at ${viewport.width}px`);
+  }
+  expect(boxesOverlap(nameBox, statusBox)).toBe(false);
+  expect(boxesOverlap(nameBox, actionsBox)).toBe(false);
+  expect(boxesOverlap(statusBox, actionsBox)).toBe(false);
+  expect(rowBox.x + rowBox.width).toBeLessThanOrEqual(viewport.width + 1);
+}
 
 // ---------------------------------------------------------------------------
 // XBoard fixture reset
@@ -1835,9 +1884,11 @@ test.describe.serial('Catalog Xboard import', () => {
         expect(aImported.replayed).toBe(false);
         expect(aImported.offerCount).toBe(2);
         productIdA = aImported.productId;
-        const aSuccessToast = `已创建 Xboard 商品草稿 #${productIdA}（2 个规格）`;
+        const aSuccessToast = '“Gold Plan”已导入并保存为草稿';
         await expect(page.locator('[data-toast-card]').filter({ hasText: aSuccessToast })).toBeVisible();
         await page.getByTestId('admin-faka-import-preview').waitFor({ state: 'detached' });
+        await expect(page.getByTestId('admin-publication-dialog')).toBeVisible();
+        await page.getByTestId('admin-publication-later').click();
       } finally {
         page.off('request', onAConfirm);
       }
@@ -1863,10 +1914,12 @@ test.describe.serial('Catalog Xboard import', () => {
         const bImportBody: unknown = await bImportResponse.json();
         const replayed = parseFakaReplayResponse(bImportBody);
         expect(replayed).toEqual({ productId: productIdA, replayed: true });
-        const bReplayToast = `幂等重放：商品 #${productIdA} 已存在，未重复创建`;
+        const bReplayToast = '“Gold Plan”已存在，未重复创建';
         await expect(pageB.locator('[data-toast-card]').filter({ hasText: bReplayToast }))
           .toHaveText(`成功：${bReplayToast}`);
         await pageB.getByTestId('admin-faka-import-preview').waitFor({ state: 'detached' });
+        await expect(pageB.getByTestId('admin-publication-dialog')).toBeVisible();
+        await pageB.getByTestId('admin-publication-later').click();
       } finally {
         pageB.off('request', onBConfirm);
       }
@@ -2106,6 +2159,7 @@ test.describe.serial('Catalog Xboard import', () => {
       // Capture the real admin products list refresh triggered by onImported()
       // after confirm — no direct business-API write and no browser reload.
       const productsResponsePromise = page.waitForResponse(isAdminProductsResponse);
+      const readinessResponsePromise = page.waitForResponse(isAdminReadinessResponse);
       await page.getByTestId('admin-faka-import-submit').click({ clickCount: 2 });
       const importResponse = await importResponsePromise;
       expect(importResponse.status()).toBe(201);
@@ -2121,7 +2175,7 @@ test.describe.serial('Catalog Xboard import', () => {
       expect(imported.offerCount).toBe(2);
       expect(imported.offers).toEqual(preview.offers);
 
-      const successMessage = `已创建 Xboard 商品草稿 #${imported.productId}（2 个规格）`;
+      const successMessage = '“Gold Plan”已导入并保存为草稿';
       await expect(page.locator('[data-toast-card]').filter({ hasText: successMessage })).toBeVisible();
       await page.getByTestId('admin-faka-import-preview').waitFor({ state: 'detached' });
 
@@ -2185,6 +2239,64 @@ test.describe.serial('Catalog Xboard import', () => {
       await expect(nameCell).toContainText('FakaBridge · Xboard');
       await expect(productRow.locator('td[data-label="售价 (积分)"]')).toHaveText('300000');
       await expect(productRow.locator('td[data-label="可售资源"]')).toHaveText('Xboard 188/200（在用 12）');
+      await expect(productRow.getByTestId(`admin-product-status-${imported.productId}`)).toHaveText('草稿');
+      await assertAdminProductRowReadable(page, 'Gold Plan', { width: 360, height: 800 });
+      await assertAdminProductRowReadable(page, 'Gold Plan', { width: 1280, height: 800 });
+
+      let publishRequestCount = 0;
+      const onPublishRequest = (request: Request) => {
+        if (request.method() === 'POST' && /\/api\/admin\/products\/\d+\/publish$/.test(new URL(request.url()).pathname)) {
+          publishRequestCount += 1;
+        }
+      };
+      page.on('request', onPublishRequest);
+      try {
+        const readinessResponse = await readinessResponsePromise;
+        expect(readinessResponse.status()).toBe(200);
+        const readinessBody: unknown = await readinessResponse.json();
+        if (!isRecord(readinessBody) || readinessBody.ready !== true) {
+          throw new Error('imported Xboard draft was not publication-ready');
+        }
+        expect(publishRequestCount).toBe(0);
+        await expect(page.getByTestId('admin-publication-dialog')).toBeVisible();
+        await expect(page.getByTestId('admin-publication-dialog')).toContainText('商品已导入，准备发布');
+        await expect(page.getByTestId('admin-publication-dialog')).not.toContainText('OFFER_NOT_SELLABLE');
+        await expect(page.getByTestId('publication-publish')).toBeEnabled();
+
+        const publishResponsePromise = page.waitForResponse(isAdminPublishResponse);
+        const publishedListPromise = page.waitForResponse(isAdminProductsResponse);
+        await page.getByTestId('publication-publish').click();
+        const publishResponse = await publishResponsePromise;
+        expect(publishResponse.status()).toBe(200);
+        const publishBody: unknown = await publishResponse.json();
+        if (!isRecord(publishBody) || publishBody.status !== 'active' || publishBody.id !== imported.productId) {
+          throw new Error('admin publish response did not activate the imported product');
+        }
+        expect(publishRequestCount).toBe(1);
+
+        const publishedListResponse = await publishedListPromise;
+        expect(publishedListResponse.status()).toBe(200);
+        await expect(page.locator('[data-toast-card]').filter({ hasText: '“Gold Plan”已发布到商城' })).toBeVisible();
+        await expect(page.getByTestId('admin-publication-dialog')).toHaveCount(0);
+        await expect(productRow.getByTestId(`admin-product-status-${imported.productId}`)).toHaveText('已发布');
+
+        const publicDetail = await page.request.get(`${API_BASE}/api/products/${imported.productId}`);
+        expect(publicDetail.status()).toBe(200);
+        const publicBody: unknown = await publicDetail.json();
+        if (!isRecord(publicBody) || publicBody.id !== imported.productId || publicBody.name !== 'Gold Plan') {
+          throw new Error('public product detail did not expose the published Xboard product');
+        }
+
+        await page.goto('/');
+        const search = page.getByPlaceholder('搜账号、卡密、教程...');
+        await expect(search).toBeVisible();
+        await search.fill('Gold Plan');
+        const card = page.getByTestId(`store-product-card-${imported.productId}`);
+        await expect(card).toBeVisible({ timeout: 15_000 });
+        await expect(card).toContainText('Gold Plan');
+      } finally {
+        page.off('request', onPublishRequest);
+      }
     } finally {
       page.off('request', onConfirmRequest);
     }

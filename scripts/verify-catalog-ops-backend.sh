@@ -104,6 +104,7 @@ TEST_FILES=(
   src/modules/catalog/applicationRoutes.test.ts
   src/modules/catalog/publicationReadiness.test.ts
   src/modules/catalog/publicationRoutes.test.ts
+  src/modules/catalog/adminPublicationRoutes.test.ts
   src/modules/catalog/externalCatalog.test.ts
   src/modules/catalog/contentSanitizer.test.ts
   src/modules/catalog/fakaPreviewConfirm.test.ts

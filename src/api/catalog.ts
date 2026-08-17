@@ -260,17 +260,22 @@ export function readinessErrorToIssues(error: unknown): ReadinessIssue[] {
 /**
  * Stable human copy for a readiness detail code. Unknown codes (e.g. a newer
  * backend) fall back to a generic message instead of crashing.
+ * Offer-scoped codes may include a mapped specification name; never fall back
+ * to a raw offer ID.
  */
-export function getReadinessIssueMessage(code: ReadinessDetailCode | string): string {
+export function getReadinessIssueMessage(
+  code: ReadinessDetailCode | string,
+  offerName?: string | null,
+): string {
   switch (code) {
     case READINESS_DETAIL_CODES.COVER_REQUIRED:
-      return '需要上传至少一张封面图片'
+      return '需要为商品设置有效封面'
     case READINESS_DETAIL_CODES.CATEGORY_INACTIVE:
-      return '当前分类已停用，请更换分类'
+      return '当前商品分类已停用，请先更换或启用分类'
     case READINESS_DETAIL_CODES.OFFER_NOT_SELLABLE:
-      return '存在不可售的规格'
+      return offerName ? `“${offerName}”当前不可售` : '有规格当前不可售'
     case READINESS_DETAIL_CODES.EXTERNAL_IDENTITY_INVALID:
-      return '外部集成规格的身份校验未通过'
+      return 'XBoard 连接或套餐规格当前不可用，请检查平台连接配置'
     default:
       return '发布条件尚未全部满足'
   }
