@@ -1,9 +1,14 @@
 import { CheckCircle2, Loader2, ShieldAlert } from 'lucide-react'
 import { getReadinessIssueMessage } from '../../api/catalog'
-import type { ReadinessIssue } from '../../types/catalog'
+
+interface PublicationIssue {
+  code: string
+  field: string
+  offerId: number | null
+}
 
 interface Props {
-  issues: ReadinessIssue[]
+  issues: PublicationIssue[]
   /** Defaults to `issues.length === 0` when omitted. */
   ready?: boolean
   /** When provided, renders a publish CTA gated on `ready`. */
@@ -20,7 +25,8 @@ function resolveOfferName(
 ): string | undefined {
   if (offerId == null || offerNames == null) return undefined
   if (offerNames instanceof Map) return offerNames.get(offerId)
-  return offerNames[offerId]
+  const record = offerNames as Record<string | number, string>
+  return record[offerId] ?? record[String(offerId)]
 }
 
 /**

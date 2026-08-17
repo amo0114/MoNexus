@@ -96,7 +96,7 @@ export default function AdminPage() {
   const [showPlatformProduct, setShowPlatformProduct] = useState(false)
 
   // FakaBridge capacity edit (admin only)
-  const [fakaCapProduct, setFakaCapProduct] = useState<any | null>(null)
+  const [fakaCapProduct, setFakaCapProduct] = useState<AdminProductListItem | null>(null)
   const [fakaCapInput, setFakaCapInput] = useState('')
   const [fakaCapUnlimited, setFakaCapUnlimited] = useState(false)
   const [fakaCapSaving, setFakaCapSaving] = useState(false)
@@ -669,7 +669,16 @@ export default function AdminPage() {
                               {canImport ? (
                                 <button
                                   onClick={() => {
-                                    setInventoryTarget({ id: p.id, name: p.name, offers: importableOffers })
+                                    setInventoryTarget({
+                                      id: p.id,
+                                      name: p.name,
+                                      offers: importableOffers.map((offer) => ({
+                                        id: offer.id,
+                                        name: offer.name,
+                                        status: offer.status ?? 'active',
+                                        isDefault: offer.isDefault,
+                                      })),
+                                    })
                                   }}
                                   data-testid={`admin-import-inventory-${p.id}`}
                                   className="text-[var(--color-cta)] hover:bg-[var(--color-cta)]/10 font-semibold text-xs px-3 py-1.5 btn-sm rounded-lg transition-colors border border-[var(--color-cta)]/25 cursor-pointer"
@@ -913,13 +922,13 @@ export default function AdminPage() {
         open={inventoryTarget != null}
         product={inventoryTarget}
         onClose={() => setInventoryTarget(null)}
-        onImported={() => loadTabData('products')}
+        onImported={() => { void loadTabData('products') }}
       />
 
       <AdminPlatformProductWizard
         open={showPlatformProduct}
         onClose={() => setShowPlatformProduct(false)}
-        onCreated={() => loadTabData('products')}
+        onCreated={() => { void loadTabData('products') }}
       />
 
       {/* Faka capacity edit — writes the Xboard subscription seat limit via platform HMAC */}

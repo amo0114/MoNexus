@@ -179,7 +179,7 @@ export default function AdminProductPublicationDialog({
                 type="button"
                 className="btn-secondary px-4 py-2"
                 data-testid="admin-publication-retry"
-                disabled={publishing || loadState === 'loading'}
+                disabled={publishing}
                 onClick={() => { void loadReadiness(target.id) }}
               >
                 重新检查
