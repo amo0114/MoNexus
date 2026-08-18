@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | OPS-VALUE-POLICY-D02-BT-001 |
-| 版本 | 1.0.0 |
+| 版本 | 1.1.0 |
 | 日期 | 2026-08-18 |
 | 对应规格 | `docs/specs/value-policy-d02-backtest.md` |
 | 生产政策模式 | 必须保持 `POINT_VALUE_POLICY_MODE=off` |
@@ -69,6 +69,7 @@ npm --prefix server run value-policy:backtest -- \
 | `--gates-config /path/to/gates.json` | 覆盖默认阈值；覆盖值会写入报告 |
 | `--legacy-commission-bps 1000` | 显式传入 10.00% 时才计算 legacy FLOOR 佣金 |
 | `--overwrite` | 只覆盖目标目录中的两份报告文件 |
+| `--allow-unverifiable-source` | 仅当 git dirty 或无法取得 commit 时使用；报告标记 `sourceVerifiable=false` |
 
 工具必须：
 
@@ -86,23 +87,30 @@ npm --prefix server run value-policy:backtest -- \
 - `d02-backtest-report.json`
 - `d02-backtest-report.md`
 
-保存时一并记录：
+公开报告字段只包括：
 
-- 输入路径与 SHA-256
-- 代码 commit（报告 `metadata.gitCommit`）
+- `metadata.inputSha256`
+- `metadata.gitCommit` 与 `metadata.gitTreeState`
 - 候选列表与 gates 配置来源
-- 运行人、运行时间和环境
 
-不要把含真实业务聚合的报告提交进默认分支。如需归档，放到受控对象存储或权限受限目录。
+下列内容是**受控归档记录**，不要写入公开 JSON/Markdown，以免泄露本机绝对路径或运行人身份：
+
+- 输入文件绝对路径
+- 输出目录绝对路径
+- 运行人、主机名、工作目录和环境变量
+
+把这些信息写在权限受限的归档清单里，与报告 SHA-256 一起保存。不要把含真实业务聚合的报告提交进默认分支。
+
+默认要求干净 git 树。dirty 或无法取得 commit 时工具 fail closed。只有复核人明确接受不可验证来源时才使用 `--allow-unverifiable-source`。
 
 ## 6. 报告复核清单
 
-- [ ] `D-02 STATUS: NOT APPROVED` 出现在 JSON 与 Markdown
+- [ ] 精确文本 `D-02 STATUS: NOT APPROVED` 出现在 JSON（`d02StatusText`）与 Markdown
 - [ ] `metadata.inputSha256` 与输入文件一致
-- [ ] `metadata.gitCommit` 与当时代码版本一致
+- [ ] `metadata.gitCommit` / `gitTreeState` 与当时代码版本一致；`sourceVerifiable=true` 除非已批准 unverifiable 运行
 - [ ] 阈值完整出现，覆盖值（如有）也被记录
 - [ ] 没有 `accountRef` / `orderRef` / 邮箱 / 电话
-- [ ] 小样本分组被抑制
+- [ ] 小样本分组被抑制，且被抑制字段为 null 而不是精确单体数字
 - [ ] 成本缺失时没有伪造 margin
 - [ ] 没有 `Infinity` / `NaN`
 - [ ] 奖励预算带有 `reference-value estimate, not accounting liability`

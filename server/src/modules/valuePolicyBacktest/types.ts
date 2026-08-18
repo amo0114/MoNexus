@@ -131,8 +131,10 @@ export type UserActivityAnalysis = {
   } | null
   monthlyEarnSpendRatio: Array<{
     month: string
-    earnedPoints: string
-    spentPoints: string
+    sampleSize: number
+    suppressed: boolean
+    earnedPoints: string | null
+    spentPoints: string | null
     ratio: string | null
     reason: string | null
   }>
@@ -157,8 +159,8 @@ export type BalanceAnalysis = {
   availableReferenceCny: { p10: string | null; p50: string | null; p90: string | null }
   frozenReferenceCny: { p10: string | null; p50: string | null; p90: string | null }
   totalReferenceCny: { p10: string | null; p50: string | null; p90: string | null }
-  referenceValueExposureAtomic: string
-  referenceValueExposureCny: string
+  referenceValueExposureAtomic: string | null
+  referenceValueExposureCny: string | null
   concentration: {
     top1Percent: ReturnType<typeof import('./stats.js').concentrationTopShare>
     top5Percent: ReturnType<typeof import('./stats.js').concentrationTopShare>
@@ -179,35 +181,49 @@ export type AffordabilityAnalysis = {
   }
 }
 
+export type RewardBudgetMonth = {
+  month: string
+  sampleSize: number
+  suppressed: boolean
+  reason: string | null
+  earnedPoints: string | null
+  spentPoints: string | null
+  expiredPoints: string | null
+  refundedPoints: string | null
+  netAvailablePoints: string | null
+  earnedReferenceAtomic: string | null
+  spentReferenceAtomic: string | null
+  expiredReferenceAtomic: string | null
+  refundedReferenceAtomic: string | null
+  netAvailableReferenceAtomic: string | null
+  earnedReferenceCny: string | null
+  spentReferenceCny: string | null
+  netAvailableReferenceCny: string | null
+}
+
+export type RewardBudgetTotals = {
+  earnedPoints: string | null
+  spentPoints: string | null
+  expiredPoints: string | null
+  refundedPoints: string | null
+  netAvailablePoints: string | null
+  earnedReferenceAtomic: string | null
+  spentReferenceAtomic: string | null
+  expiredReferenceAtomic: string | null
+  refundedReferenceAtomic: string | null
+  netAvailableReferenceAtomic: string | null
+  earnedReferenceCny: string | null
+  spentReferenceCny: string | null
+  netAvailableReferenceCny: string | null
+}
+
 export type RewardBudgetAnalysis = {
   disclaimer: string
-  byMonth: Array<{
-    month: string
-    earnedPoints: string
-    spentPoints: string
-    expiredPoints: string
-    refundedPoints: string
-    unspentPoints: string
-    earnedReferenceAtomic: string
-    spentReferenceAtomic: string
-    unspentReferenceAtomic: string
-    earnedReferenceCny: string
-    spentReferenceCny: string
-    unspentReferenceCny: string
-  }>
-  totals: {
-    earnedPoints: string
-    spentPoints: string
-    expiredPoints: string
-    refundedPoints: string
-    unspentPoints: string
-    earnedReferenceAtomic: string
-    spentReferenceAtomic: string
-    unspentReferenceAtomic: string
-    earnedReferenceCny: string
-    spentReferenceCny: string
-    unspentReferenceCny: string
-  }
+  formula: 'netAvailablePoints = earned - spent - expired + refunded'
+  suppressed: boolean
+  reason: string | null
+  byMonth: RewardBudgetMonth[]
+  totals: RewardBudgetTotals
 }
 
 export type MerchantUnitEconomics = {
@@ -267,8 +283,8 @@ export type SensitivityRow = {
   offerP50ReferenceCny: string | null
   offerP90ReferenceAtomic: string | null
   offerP90ReferenceCny: string | null
-  monthlyRewardReferenceAtomic: string | null
-  monthlyRewardReferenceCny: string | null
+  periodEarnedReferenceAtomic: string | null
+  periodEarnedReferenceCny: string | null
   totalBalanceReferenceValueExposureAtomic: string | null
   totalBalanceReferenceValueExposureCny: string | null
   roundingIncidence: string | null
@@ -277,13 +293,23 @@ export type SensitivityRow = {
   multiplierVs100PtsPerCny: string | null
 }
 
+export type GitTreeState = 'clean' | 'dirty' | 'unavailable'
+
+export type GitIdentity = {
+  commit: string
+  treeState: GitTreeState
+}
+
 export type BacktestReport = {
   schemaVersion: 1
   d02Status: 'NOT APPROVED'
+  d02StatusText: 'D-02 STATUS: NOT APPROVED'
   conclusions: readonly string[]
   metadata: {
     inputSha256: string
     gitCommit: string
+    gitTreeState: GitTreeState
+    sourceVerifiable: boolean
     executedAt: string
     candidates: number[]
     candidatesSource: 'explicit_cli' | 'documented_default_analysis_set'
@@ -295,6 +321,7 @@ export type BacktestReport = {
     referenceAssetScale: 2
     gatesConfigSource: 'documented_defaults' | 'explicit_file'
     gatesThresholds: GateThresholds
+    privacyFloors: typeof import('./thresholds.js').PRIVACY_FLOORS
     limits: typeof import('./thresholds.js').INPUT_LIMITS
     period: { from: string; to: string; months: string[] }
     coverage: {
@@ -314,7 +341,7 @@ export type BacktestReport = {
 
 export type BacktestRuntime = {
   now: () => Date
-  gitCommit: () => string
+  gitIdentity: () => GitIdentity
 }
 
 export type ParsedCliArgs = {
@@ -325,6 +352,7 @@ export type ParsedCliArgs = {
   overwrite: boolean
   gatesConfigPath: string | null
   legacyCommissionBps: string | null
+  allowUnverifiableSource: boolean
   help: boolean
 }
 
@@ -338,6 +366,7 @@ export type RunOptions = {
   thresholds: GateThresholds
   gatesConfigSource: 'documented_defaults' | 'explicit_file'
   legacyCommissionBps: bigint | null
+  allowUnverifiableSource: boolean
   runtime: BacktestRuntime
 }
 

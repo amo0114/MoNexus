@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
-import { readFileSync, statSync } from 'node:fs'
+import { closeSync, fstatSync, openSync, readSync } from 'node:fs'
+import { parseStrictUtcInstant } from './calendar.js'
 import { BacktestError, BACKTEST_ERROR_CODES } from './errors.js'
 import { assertKnownSchemaVersion, backtestInputSchema, firstZodBacktestCode } from './schema.js'
 import { INPUT_LIMITS } from './thresholds.js'
@@ -58,9 +59,9 @@ export function parseBacktestInput(rawText: string, rawSha256: string, byteLengt
   }
 
   const data = result.data
-  const from = new Date(data.period.from)
-  const to = new Date(data.period.to)
-  if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime()) || from.getTime() >= to.getTime()) {
+  const from = parseStrictUtcInstant(data.period.from)
+  const to = parseStrictUtcInstant(data.period.to)
+  if (from.getTime() >= to.getTime()) {
     throw new BacktestError(BACKTEST_ERROR_CODES.INVALID_PERIOD, 'period.from must be strictly before period.to')
   }
 
@@ -183,21 +184,56 @@ export function parseBacktestInput(rawText: string, rawSha256: string, byteLengt
   }
 }
 
-export function readAndParseInputFile(inputPath: string): ValidatedInput {
-  let stat
+export function readFromSyncReader(
+  readChunk: (buffer: Buffer) => number,
+  maxBytes: number,
+): Buffer {
+  const chunks: Buffer[] = []
+  let total = 0
+  const buffer = Buffer.alloc(Math.min(64 * 1024, maxBytes + 1))
+  while (true) {
+    const bytes = readChunk(buffer)
+    if (bytes === 0) {
+      break
+    }
+    total += bytes
+    if (total > maxBytes) {
+      throw new BacktestError(BACKTEST_ERROR_CODES.FILE_TOO_LARGE, 'input file exceeds the documented size limit', {
+        maxFileBytes: maxBytes,
+      })
+    }
+    chunks.push(Buffer.from(buffer.subarray(0, bytes)))
+  }
+  if (chunks.length === 0) {
+    return Buffer.alloc(0)
+  }
+  return chunks.length === 1 ? chunks[0] : Buffer.concat(chunks, total)
+}
+
+export function readCappedFileSync(inputPath: string, maxBytes = INPUT_LIMITS.maxFileBytes): Buffer {
+  let fd: number
   try {
-    stat = statSync(inputPath)
+    fd = openSync(inputPath, 'r')
   } catch {
     throw new BacktestError(BACKTEST_ERROR_CODES.MISSING_INPUT, 'input file does not exist')
   }
-  if (!stat.isFile()) {
-    throw new BacktestError(BACKTEST_ERROR_CODES.MISSING_INPUT, 'input path is not a file')
+  try {
+    const stat = fstatSync(fd)
+    if (!stat.isFile()) {
+      throw new BacktestError(BACKTEST_ERROR_CODES.MISSING_INPUT, 'input path is not a file')
+    }
+    if (stat.size > maxBytes) {
+      throw new BacktestError(BACKTEST_ERROR_CODES.FILE_TOO_LARGE, 'input file exceeds the documented size limit', {
+        maxFileBytes: maxBytes,
+      })
+    }
+    return readFromSyncReader(chunk => readSync(fd, chunk, 0, chunk.length, null), maxBytes)
+  } finally {
+    closeSync(fd)
   }
-  if (stat.size > INPUT_LIMITS.maxFileBytes) {
-    throw new BacktestError(BACKTEST_ERROR_CODES.FILE_TOO_LARGE, 'input file exceeds the documented size limit', {
-      maxFileBytes: INPUT_LIMITS.maxFileBytes,
-    })
-  }
-  const buffer = readFileSync(inputPath)
+}
+
+export function readAndParseInputFile(inputPath: string): ValidatedInput {
+  const buffer = readCappedFileSync(inputPath)
   return parseBacktestInput(buffer.toString('utf8'), hashBufferSha256(buffer), buffer.byteLength)
 }

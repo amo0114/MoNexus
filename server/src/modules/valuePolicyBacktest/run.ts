@@ -13,7 +13,10 @@ import { assertNoIdentityLeak, buildReport, renderMarkdown, reportJson } from '.
 import { SUPPORTED_REFERENCE_ASSET } from './thresholds.js'
 import type { BacktestReport, RunOptions } from './types.js'
 
-export function createRunOptionsFromArgv(argv: string[]): RunOptions {
+export function createRunOptionsFromArgv(
+  argv: string[],
+  runtime = defaultRuntime(),
+): RunOptions {
   const parsed = parseCliArgs(argv)
   if (parsed.help) {
     throw new BacktestError(BACKTEST_ERROR_CODES.INVALID_CLI, 'help requested')
@@ -36,8 +39,24 @@ export function createRunOptionsFromArgv(argv: string[]): RunOptions {
     thresholds: gates.thresholds,
     gatesConfigSource: gates.source,
     legacyCommissionBps: parseLegacyCommissionBps(parsed.legacyCommissionBps),
-    runtime: defaultRuntime(),
+    allowUnverifiableSource: parsed.allowUnverifiableSource,
+    runtime,
   }
+}
+
+export function assertVerifiableSource(options: RunOptions): void {
+  const identity = options.runtime.gitIdentity()
+  if (identity.treeState === 'clean') {
+    return
+  }
+  if (options.allowUnverifiableSource) {
+    return
+  }
+  throw new BacktestError(
+    BACKTEST_ERROR_CODES.UNVERIFIABLE_SOURCE,
+    'git tree is dirty or unavailable; pass --allow-unverifiable-source to continue with an unverifiable report',
+    { gitTreeState: identity.treeState },
+  )
 }
 
 export function executeBacktest(options: RunOptions): {
@@ -45,6 +64,7 @@ export function executeBacktest(options: RunOptions): {
   jsonPath: string
   markdownPath: string
 } {
+  assertVerifiableSource(options)
   const input = readAndParseInputFile(options.inputPath)
   const report = buildReport(input, options)
   const json = reportJson(report)
@@ -57,9 +77,11 @@ export function executeBacktest(options: RunOptions): {
 
 export function formatCliSuccess(result: ReturnType<typeof executeBacktest>): string {
   return [
-    `D-02 STATUS: ${result.report.d02Status}`,
+    result.report.d02StatusText,
     `inputSha256: ${result.report.metadata.inputSha256}`,
     `gitCommit: ${result.report.metadata.gitCommit}`,
+    `gitTreeState: ${result.report.metadata.gitTreeState}`,
+    `sourceVerifiable: ${result.report.metadata.sourceVerifiable ? 'yes' : 'no'}`,
     `candidates: ${result.report.metadata.candidates.join(',')}`,
     `json: ${result.jsonPath}`,
     `markdown: ${result.markdownPath}`,

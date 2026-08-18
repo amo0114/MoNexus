@@ -7,6 +7,7 @@ export const POINT_SCALE = 0
 export const SUPPORTED_REFERENCE_ASSET = 'CNY'
 export const ROUNDING_MODE = 'HALF_EVEN' as const
 export const D02_STATUS = 'NOT APPROVED' as const
+export const D02_STATUS_TEXT = 'D-02 STATUS: NOT APPROVED' as const
 export const DEFAULT_ANALYSIS_CANDIDATES = [50, 100, 200, 500] as const
 export const BASELINE_POINTS_PER_CNY_MAJOR = 100
 export const RATE_DECIMAL_SCALE = 4
@@ -21,6 +22,22 @@ export const INPUT_LIMITS = {
 } as const
 
 /**
+ * Immutable privacy floors. gates-config may raise these sample minima
+ * but must not lower them.
+ */
+export const PRIVACY_FLOORS = {
+  minSampleOffers: 10,
+  minSampleAccounts: 10,
+  minSampleMonthlyActivity: 10,
+  minSampleCategory: 10,
+  minSampleConcentrationTop1: 100,
+  minSampleConcentrationTop5: 20,
+  minSampleMerchantCostedOffers: 10,
+} as const
+
+export type PrivacyFloorKey = keyof typeof PRIVACY_FLOORS
+
+/**
  * Decision-support thresholds. These are not production policy and do not
  * approve any D-02 candidate. Every value is copied into the report.
  */
@@ -31,12 +48,13 @@ export type GateThresholds = {
   minSampleCategory: number
   minSampleConcentrationTop1: number
   minSampleConcentrationTop5: number
+  minSampleMerchantCostedOffers: number
   minMerchantCostCoverageRate: string
   dataCoverageWarnBelowRate: string
   priceReadabilityMinP50Atomic: string
   priceReadabilityMaxP50Atomic: string
   priceReadabilityFailIfP50Atomic: string
-  rewardBudgetUnspentWarnAboveRate: string
+  rewardBudgetNetAvailableWarnAboveRate: string
   affordabilityWarnMonthsToP50: string
   affordabilityFailIfCanBuyP50Below: string
   merchantBelowCostWarnAboveRate: string
@@ -50,18 +68,19 @@ export type GateThresholds = {
 }
 
 export const DEFAULT_GATE_THRESHOLDS: GateThresholds = {
-  minSampleOffers: 10,
-  minSampleAccounts: 10,
-  minSampleMonthlyActivity: 10,
-  minSampleCategory: 10,
-  minSampleConcentrationTop1: 100,
-  minSampleConcentrationTop5: 20,
+  minSampleOffers: PRIVACY_FLOORS.minSampleOffers,
+  minSampleAccounts: PRIVACY_FLOORS.minSampleAccounts,
+  minSampleMonthlyActivity: PRIVACY_FLOORS.minSampleMonthlyActivity,
+  minSampleCategory: PRIVACY_FLOORS.minSampleCategory,
+  minSampleConcentrationTop1: PRIVACY_FLOORS.minSampleConcentrationTop1,
+  minSampleConcentrationTop5: PRIVACY_FLOORS.minSampleConcentrationTop5,
+  minSampleMerchantCostedOffers: PRIVACY_FLOORS.minSampleMerchantCostedOffers,
   minMerchantCostCoverageRate: '0.8000',
   dataCoverageWarnBelowRate: '0.8000',
   priceReadabilityMinP50Atomic: '100',
   priceReadabilityMaxP50Atomic: '100000',
   priceReadabilityFailIfP50Atomic: '0',
-  rewardBudgetUnspentWarnAboveRate: '0.8000',
+  rewardBudgetNetAvailableWarnAboveRate: '0.8000',
   affordabilityWarnMonthsToP50: '3.00',
   affordabilityFailIfCanBuyP50Below: '1.00',
   merchantBelowCostWarnAboveRate: '0.1000',
@@ -73,6 +92,27 @@ export const DEFAULT_GATE_THRESHOLDS: GateThresholds = {
   concentrationTop5WarnAboveRate: '0.4000',
   concentrationTop5FailAboveRate: '0.7000',
 }
+
+export const UNIT_INTERVAL_RATE_KEYS = [
+  'minMerchantCostCoverageRate',
+  'dataCoverageWarnBelowRate',
+  'rewardBudgetNetAvailableWarnAboveRate',
+  'merchantBelowCostWarnAboveRate',
+  'merchantBelowCostFailAboveRate',
+  'roundingWarnAboveRate',
+  'roundingFailAboveRate',
+  'concentrationTop1WarnAboveRate',
+  'concentrationTop1FailAboveRate',
+  'concentrationTop5WarnAboveRate',
+  'concentrationTop5FailAboveRate',
+] as const
+
+export const WARN_FAIL_PAIRS = [
+  ['roundingWarnAboveRate', 'roundingFailAboveRate'],
+  ['merchantBelowCostWarnAboveRate', 'merchantBelowCostFailAboveRate'],
+  ['concentrationTop1WarnAboveRate', 'concentrationTop1FailAboveRate'],
+  ['concentrationTop5WarnAboveRate', 'concentrationTop5FailAboveRate'],
+] as const
 
 export const FIXED_CONCLUSIONS = [
   'D-02 remains NOT APPROVED',

@@ -1,9 +1,11 @@
 import { pathToFileURL } from 'node:url'
 import { CLI_USAGE, parseCliArgs } from '../modules/valuePolicyBacktest/cli.js'
 import { isBacktestError } from '../modules/valuePolicyBacktest/errors.js'
+import { defaultRuntime } from '../modules/valuePolicyBacktest/cli.js'
 import { createRunOptionsFromArgv, executeBacktest, formatCliSuccess } from '../modules/valuePolicyBacktest/run.js'
+import type { BacktestRuntime } from '../modules/valuePolicyBacktest/types.js'
 
-export function runValuePolicyBacktestCli(argv: string[]): {
+export function runValuePolicyBacktestCli(argv: string[], runtime: BacktestRuntime = defaultRuntime()): {
   status: number
   stdout: string
   stderr: string
@@ -13,7 +15,7 @@ export function runValuePolicyBacktestCli(argv: string[]): {
   }
   try {
     parseCliArgs(argv)
-    const result = executeBacktest(createRunOptionsFromArgv(argv))
+    const result = executeBacktest(createRunOptionsFromArgv(argv, runtime))
     return { status: 0, stdout: `${formatCliSuccess(result)}\n`, stderr: '' }
   } catch (error) {
     if (isBacktestError(error)) {

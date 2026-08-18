@@ -34,6 +34,8 @@ describe('concentrationTopShare', () => {
     const result = concentrationTopShare([10n, 20n, 30n], 1, 100)
     expect(result.suppressed).toBe(true)
     expect(result.share).toBeNull()
+    expect(result.selectedSum).toBeNull()
+    expect(result.totalSum).toBeNull()
     expect(result.reason).toBe('sample_below_threshold')
   })
 

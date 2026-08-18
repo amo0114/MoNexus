@@ -1,5 +1,13 @@
 import { serializeCandidate, type NormalizedCandidate } from './candidates.js'
-import { convertPoints, formatSignedCnyFromAtomic, isExactConversion, roundingDeltaAtomic } from './convert.js'
+import { compareFixed } from './compare.js'
+import {
+  convertNetAvailableReferenceAtomic,
+  convertPoints,
+  formatSignedCnyFromAtomic,
+  isExactConversion,
+  netAvailablePoints,
+  roundingDeltaAtomic,
+} from './convert.js'
 import { formatCnyFromAtomic, formatRate } from './format.js'
 import {
   concentrationTopShare,
@@ -198,8 +206,10 @@ function analyzeUserActivity(
       monthlyAverageReferenceCny: null,
       monthlyEarnSpendRatio: input.period.months.map(month => ({
         month,
-        earnedPoints: '0',
-        spentPoints: '0',
+        sampleSize: input.monthlyActivity.filter(row => row.month === month).length,
+        suppressed: true,
+        earnedPoints: null,
+        spentPoints: null,
         ratio: null,
         reason: 'sample_below_threshold',
       })),
@@ -260,11 +270,24 @@ function analyzeUserActivity(
 
   const monthlyEarnSpendRatio = input.period.months.map((month) => {
     const rows = input.monthlyActivity.filter(row => row.month === month)
+    if (rows.length > 0 && rows.length < thresholds.minSampleMonthlyActivity) {
+      return {
+        month,
+        sampleSize: rows.length,
+        suppressed: true,
+        earnedPoints: null,
+        spentPoints: null,
+        ratio: null,
+        reason: 'sample_below_threshold',
+      }
+    }
     const earnedPoints = sumBigint(rows.map(row => row.earnedPoints))
     const spentPoints = sumBigint(rows.map(row => row.spentPoints))
     const ratio = ratioOrNull(earnedPoints, spentPoints, 'zero_spent_in_month')
     return {
       month,
+      sampleSize: rows.length,
+      suppressed: false,
       earnedPoints: earnedPoints.toString(10),
       spentPoints: spentPoints.toString(10),
       ratio: ratio.rate,
@@ -315,7 +338,50 @@ function analyzeUserActivity(
   }
 }
 
+const NULL_P1090 = { p10: null, p50: null, p90: null }
+
 function analyzeBalances(input: ValidatedInput, candidate: NormalizedCandidate, thresholds: GateThresholds): BalanceAnalysis {
+  const suppressed = input.accounts.length < thresholds.minSampleAccounts
+  const reason = suppressed ? (input.accounts.length === 0 ? 'empty_sample' : 'sample_below_threshold') : null
+  if (suppressed) {
+    return {
+      sampleSize: input.accounts.length,
+      suppressed: true,
+      reason,
+      availablePoints: { ...NULL_P1090 },
+      frozenPoints: { ...NULL_P1090 },
+      totalPoints: { ...NULL_P1090 },
+      availableReferenceAtomic: { ...NULL_P1090 },
+      frozenReferenceAtomic: { ...NULL_P1090 },
+      totalReferenceAtomic: { ...NULL_P1090 },
+      availableReferenceCny: { ...NULL_P1090 },
+      frozenReferenceCny: { ...NULL_P1090 },
+      totalReferenceCny: { ...NULL_P1090 },
+      referenceValueExposureAtomic: null,
+      referenceValueExposureCny: null,
+      concentration: {
+        top1Percent: {
+          sampleSize: input.accounts.length,
+          selectedCount: 0,
+          selectedSum: null,
+          totalSum: null,
+          share: null,
+          suppressed: true,
+          reason,
+        },
+        top5Percent: {
+          sampleSize: input.accounts.length,
+          selectedCount: 0,
+          selectedSum: null,
+          totalSum: null,
+          share: null,
+          suppressed: true,
+          reason,
+        },
+      },
+    }
+  }
+
   const available = input.accounts.map(account => account.balancePoints)
   const frozen = input.accounts.map(account => account.frozenPoints)
   const total = input.accounts.map(account => account.balancePoints + account.frozenPoints)
@@ -329,12 +395,11 @@ function analyzeBalances(input: ValidatedInput, candidate: NormalizedCandidate, 
   const frozenRefMap = quantileMap(frozenRef)
   const totalRefMap = quantileMap(totalRef)
   const exposure = sumBigint(totalRef)
-  const suppressed = input.accounts.length < thresholds.minSampleAccounts
 
   return {
     sampleSize: input.accounts.length,
-    suppressed,
-    reason: suppressed ? (input.accounts.length === 0 ? 'empty_sample' : 'sample_below_threshold') : null,
+    suppressed: false,
+    reason: null,
     availablePoints: { p10: availableMap.p10, p50: availableMap.p50, p90: availableMap.p90 },
     frozenPoints: { p10: frozenMap.p10, p50: frozenMap.p50, p90: frozenMap.p90 },
     totalPoints: { p10: totalMap.p10, p50: totalMap.p50, p90: totalMap.p90 },
@@ -370,6 +435,7 @@ function analyzeAffordability(
   candidate: NormalizedCandidate,
   activity: UserActivityAnalysis,
   offers: OfferPriceAnalysis,
+  thresholds: GateThresholds,
 ): AffordabilityAnalysis {
   const medianMonthlyEarnedPoints = activity.monthlyAveragePoints?.earned.p50 ?? null
   const p10Offer = offers.distribution?.points.p10 ?? null
@@ -379,7 +445,15 @@ function analyzeAffordability(
   const p50OfferPoints = p50Offer === null ? null : BigInt(p50Offer)
 
   let insufficient = coverage(0, input.accounts.length)
-  if (p50OfferPoints !== null && input.accounts.length > 0) {
+  if (input.accounts.length < thresholds.minSampleAccounts) {
+    insufficient = {
+      present: 0,
+      total: input.accounts.length,
+      rate: null,
+      missingRate: null,
+      reason: 'sample_below_threshold',
+    }
+  } else if (p50OfferPoints !== null && input.accounts.length > 0) {
     const below = input.accounts.filter(account => account.balancePoints < p50OfferPoints).length
     insufficient = coverage(below, input.accounts.length)
   } else if (p50OfferPoints === null) {
@@ -409,57 +483,138 @@ function analyzeAffordability(
   }
 }
 
-function analyzeRewardBudget(input: ValidatedInput, candidate: NormalizedCandidate): RewardBudgetAnalysis {
-  const byMonth = input.period.months.map((month) => {
-    const rows = input.monthlyActivity.filter(row => row.month === month)
-    const earnedPoints = sumBigint(rows.map(row => row.earnedPoints))
-    const spentPoints = sumBigint(rows.map(row => row.spentPoints))
-    const expiredPoints = sumBigint(rows.map(row => row.expiredPoints))
-    const refundedPoints = sumBigint(rows.map(row => row.refundedPoints))
-    const unspentPoints = earnedPoints - spentPoints
-    const earnedReferenceAtomic = convertPoints(earnedPoints, candidate)
-    const spentReferenceAtomic = convertPoints(spentPoints, candidate)
-    const unspentReferenceAtomic = earnedReferenceAtomic - spentReferenceAtomic
+const NULL_BUDGET_TOTALS = {
+  earnedPoints: null,
+  spentPoints: null,
+  expiredPoints: null,
+  refundedPoints: null,
+  netAvailablePoints: null,
+  earnedReferenceAtomic: null,
+  spentReferenceAtomic: null,
+  expiredReferenceAtomic: null,
+  refundedReferenceAtomic: null,
+  netAvailableReferenceAtomic: null,
+  earnedReferenceCny: null,
+  spentReferenceCny: null,
+  netAvailableReferenceCny: null,
+}
+
+function budgetMonthRow(
+  month: string,
+  rows: ValidatedInput['monthlyActivity'],
+  candidate: NormalizedCandidate,
+  minSample: number,
+  forceSuppress: boolean,
+) {
+  if (forceSuppress || (rows.length > 0 && rows.length < minSample)) {
     return {
       month,
-      earnedPoints: earnedPoints.toString(10),
-      spentPoints: spentPoints.toString(10),
-      expiredPoints: expiredPoints.toString(10),
-      refundedPoints: refundedPoints.toString(10),
-      unspentPoints: unspentPoints.toString(10),
-      earnedReferenceAtomic: earnedReferenceAtomic.toString(10),
-      spentReferenceAtomic: spentReferenceAtomic.toString(10),
-      unspentReferenceAtomic: unspentReferenceAtomic.toString(10),
-      earnedReferenceCny: formatCnyFromAtomic(earnedReferenceAtomic),
-      spentReferenceCny: formatCnyFromAtomic(spentReferenceAtomic),
-      unspentReferenceCny: formatSignedCnyFromAtomic(unspentReferenceAtomic),
+      sampleSize: rows.length,
+      suppressed: true,
+      reason: forceSuppress || rows.length > 0 ? 'sample_below_threshold' : 'sample_below_threshold',
+      ...NULL_BUDGET_TOTALS,
     }
-  })
-
-  const earnedPoints = sumBigint(byMonth.map(row => BigInt(row.earnedPoints)))
-  const spentPoints = sumBigint(byMonth.map(row => BigInt(row.spentPoints)))
-  const expiredPoints = sumBigint(byMonth.map(row => BigInt(row.expiredPoints)))
-  const refundedPoints = sumBigint(byMonth.map(row => BigInt(row.refundedPoints)))
-  const unspentPoints = earnedPoints - spentPoints
+  }
+  const earnedPoints = sumBigint(rows.map(row => row.earnedPoints))
+  const spentPoints = sumBigint(rows.map(row => row.spentPoints))
+  const expiredPoints = sumBigint(rows.map(row => row.expiredPoints))
+  const refundedPoints = sumBigint(rows.map(row => row.refundedPoints))
+  const netPoints = netAvailablePoints(earnedPoints, spentPoints, expiredPoints, refundedPoints)
   const earnedReferenceAtomic = convertPoints(earnedPoints, candidate)
   const spentReferenceAtomic = convertPoints(spentPoints, candidate)
-  const unspentReferenceAtomic = earnedReferenceAtomic - spentReferenceAtomic
+  const expiredReferenceAtomic = convertPoints(expiredPoints, candidate)
+  const refundedReferenceAtomic = convertPoints(refundedPoints, candidate)
+  const netReference = convertNetAvailableReferenceAtomic(
+    earnedPoints,
+    spentPoints,
+    expiredPoints,
+    refundedPoints,
+    candidate,
+  )
+  return {
+    month,
+    sampleSize: rows.length,
+    suppressed: false,
+    reason: null,
+    earnedPoints: earnedPoints.toString(10),
+    spentPoints: spentPoints.toString(10),
+    expiredPoints: expiredPoints.toString(10),
+    refundedPoints: refundedPoints.toString(10),
+    netAvailablePoints: netPoints.toString(10),
+    earnedReferenceAtomic: earnedReferenceAtomic.toString(10),
+    spentReferenceAtomic: spentReferenceAtomic.toString(10),
+    expiredReferenceAtomic: expiredReferenceAtomic.toString(10),
+    refundedReferenceAtomic: refundedReferenceAtomic.toString(10),
+    netAvailableReferenceAtomic: netReference.toString(10),
+    earnedReferenceCny: formatCnyFromAtomic(earnedReferenceAtomic),
+    spentReferenceCny: formatCnyFromAtomic(spentReferenceAtomic),
+    netAvailableReferenceCny: formatSignedCnyFromAtomic(netReference),
+  }
+}
+
+function analyzeRewardBudget(
+  input: ValidatedInput,
+  candidate: NormalizedCandidate,
+  thresholds: GateThresholds,
+): RewardBudgetAnalysis {
+  const overallSuppressed = input.monthlyActivity.length < thresholds.minSampleMonthlyActivity
+    || input.accounts.length < thresholds.minSampleAccounts
+  const byMonth = input.period.months.map(month => budgetMonthRow(
+    month,
+    input.monthlyActivity.filter(row => row.month === month),
+    candidate,
+    thresholds.minSampleMonthlyActivity,
+    overallSuppressed,
+  ))
+
+  if (overallSuppressed) {
+    return {
+      disclaimer: REWARD_BUDGET_DISCLAIMER,
+      formula: 'netAvailablePoints = earned - spent - expired + refunded',
+      suppressed: true,
+      reason: 'sample_below_threshold',
+      byMonth,
+      totals: { ...NULL_BUDGET_TOTALS },
+    }
+  }
+
+  const earnedPoints = sumBigint(input.monthlyActivity.map(row => row.earnedPoints))
+  const spentPoints = sumBigint(input.monthlyActivity.map(row => row.spentPoints))
+  const expiredPoints = sumBigint(input.monthlyActivity.map(row => row.expiredPoints))
+  const refundedPoints = sumBigint(input.monthlyActivity.map(row => row.refundedPoints))
+  const netPoints = netAvailablePoints(earnedPoints, spentPoints, expiredPoints, refundedPoints)
+  const earnedReferenceAtomic = convertPoints(earnedPoints, candidate)
+  const spentReferenceAtomic = convertPoints(spentPoints, candidate)
+  const expiredReferenceAtomic = convertPoints(expiredPoints, candidate)
+  const refundedReferenceAtomic = convertPoints(refundedPoints, candidate)
+  const netReference = convertNetAvailableReferenceAtomic(
+    earnedPoints,
+    spentPoints,
+    expiredPoints,
+    refundedPoints,
+    candidate,
+  )
 
   return {
     disclaimer: REWARD_BUDGET_DISCLAIMER,
+    formula: 'netAvailablePoints = earned - spent - expired + refunded',
+    suppressed: false,
+    reason: null,
     byMonth,
     totals: {
       earnedPoints: earnedPoints.toString(10),
       spentPoints: spentPoints.toString(10),
       expiredPoints: expiredPoints.toString(10),
       refundedPoints: refundedPoints.toString(10),
-      unspentPoints: unspentPoints.toString(10),
+      netAvailablePoints: netPoints.toString(10),
       earnedReferenceAtomic: earnedReferenceAtomic.toString(10),
       spentReferenceAtomic: spentReferenceAtomic.toString(10),
-      unspentReferenceAtomic: unspentReferenceAtomic.toString(10),
+      expiredReferenceAtomic: expiredReferenceAtomic.toString(10),
+      refundedReferenceAtomic: refundedReferenceAtomic.toString(10),
+      netAvailableReferenceAtomic: netReference.toString(10),
       earnedReferenceCny: formatCnyFromAtomic(earnedReferenceAtomic),
       spentReferenceCny: formatCnyFromAtomic(spentReferenceAtomic),
-      unspentReferenceCny: formatSignedCnyFromAtomic(unspentReferenceAtomic),
+      netAvailableReferenceCny: formatSignedCnyFromAtomic(netReference),
     },
   }
 }
@@ -478,12 +633,18 @@ function analyzeMerchant(
   const costCoverage = coverage(withCost.length, input.offers.length)
   const minCoverage = thresholds.minMerchantCostCoverageRate
   const coverageRate = costCoverage.rate
-  const sufficient = coverageRate !== null && compareFixed(coverageRate, minCoverage) >= 0
+  const sufficientCoverage = coverageRate !== null && compareFixed(coverageRate, minCoverage) >= 0
+  const sufficientSample = withCost.length >= thresholds.minSampleMerchantCostedOffers
+  const sufficient = sufficientCoverage && sufficientSample
 
   if (!sufficient) {
     return {
       emitted: false,
-      reason: withCost.length === 0 ? 'merchant_cost_missing' : 'merchant_cost_coverage_below_threshold',
+      reason: withCost.length === 0
+        ? 'merchant_cost_missing'
+        : !sufficientSample
+          ? 'merchant_cost_sample_below_threshold'
+          : 'merchant_cost_coverage_below_threshold',
       costCoverage,
       sampleWithCost: withCost.length,
       referenceMinusCostAtomic: null,
@@ -557,24 +718,7 @@ function analyzeMerchant(
   }
 }
 
-export function compareFixed(left: string, right: string): number {
-  const normalize = (value: string) => {
-    const [whole, fraction = ''] = value.split('.')
-    const sign = whole.startsWith('-') ? -1n : 1n
-    const absWhole = whole.startsWith('-') ? whole.slice(1) : whole
-    return { sign, whole: BigInt(absWhole || '0'), fraction }
-  }
-  const a = normalize(left)
-  const b = normalize(right)
-  const scale = Math.max(a.fraction.length, b.fraction.length)
-  const toScaled = (part: typeof a) => {
-    const frac = part.fraction.padEnd(scale, '0')
-    return part.sign * (part.whole * (10n ** BigInt(scale)) + BigInt(frac || '0'))
-  }
-  const leftValue = toScaled(a)
-  const rightValue = toScaled(b)
-  return leftValue < rightValue ? -1 : leftValue > rightValue ? 1 : 0
-}
+export { compareFixed }
 
 export function analyzeCandidate(
   input: ValidatedInput,
@@ -585,8 +729,8 @@ export function analyzeCandidate(
   const offerPrices = analyzeOffers(input, candidate, thresholds)
   const userActivity = analyzeUserActivity(input, candidate, thresholds)
   const balances = analyzeBalances(input, candidate, thresholds)
-  const affordability = analyzeAffordability(input, candidate, userActivity, offerPrices)
-  const rewardBudget = analyzeRewardBudget(input, candidate)
+  const affordability = analyzeAffordability(input, candidate, userActivity, offerPrices, thresholds)
+  const rewardBudget = analyzeRewardBudget(input, candidate, thresholds)
   const merchantUnitEconomics = analyzeMerchant(input, candidate, thresholds, legacyCommissionBps)
   return {
     candidate: serializeCandidate(candidate),
@@ -602,19 +746,38 @@ export function analyzeCandidate(
 export function buildSensitivity(analyses: Array<Omit<CandidateAnalysis, 'gates'> | CandidateAnalysis>): SensitivityRow[] {
   return analyses.map((analysis) => {
     const n = analysis.candidate.pointsPerCnyMajor
-    const monthlyReward = analysis.rewardBudget.totals.earnedReferenceAtomic
     return {
       pointsPerCnyMajor: n,
-      offerP50ReferenceAtomic: analysis.offerPrices.distribution?.referenceAtomic.p50 ?? null,
-      offerP50ReferenceCny: analysis.offerPrices.distribution?.referenceCny.p50 ?? null,
-      offerP90ReferenceAtomic: analysis.offerPrices.distribution?.referenceAtomic.p90 ?? null,
-      offerP90ReferenceCny: analysis.offerPrices.distribution?.referenceCny.p90 ?? null,
-      monthlyRewardReferenceAtomic: monthlyReward,
-      monthlyRewardReferenceCny: analysis.rewardBudget.totals.earnedReferenceCny,
-      totalBalanceReferenceValueExposureAtomic: analysis.balances.referenceValueExposureAtomic,
-      totalBalanceReferenceValueExposureCny: analysis.balances.referenceValueExposureCny,
-      roundingIncidence: analysis.offerPrices.rounding?.incidence ?? null,
-      belowCostOfferRate: analysis.merchantUnitEconomics.belowCostOfferRate?.rate ?? null,
+      offerP50ReferenceAtomic: analysis.offerPrices.suppressed
+        ? null
+        : analysis.offerPrices.distribution?.referenceAtomic.p50 ?? null,
+      offerP50ReferenceCny: analysis.offerPrices.suppressed
+        ? null
+        : analysis.offerPrices.distribution?.referenceCny.p50 ?? null,
+      offerP90ReferenceAtomic: analysis.offerPrices.suppressed
+        ? null
+        : analysis.offerPrices.distribution?.referenceAtomic.p90 ?? null,
+      offerP90ReferenceCny: analysis.offerPrices.suppressed
+        ? null
+        : analysis.offerPrices.distribution?.referenceCny.p90 ?? null,
+      periodEarnedReferenceAtomic: analysis.rewardBudget.suppressed
+        ? null
+        : analysis.rewardBudget.totals.earnedReferenceAtomic,
+      periodEarnedReferenceCny: analysis.rewardBudget.suppressed
+        ? null
+        : analysis.rewardBudget.totals.earnedReferenceCny,
+      totalBalanceReferenceValueExposureAtomic: analysis.balances.suppressed
+        ? null
+        : analysis.balances.referenceValueExposureAtomic,
+      totalBalanceReferenceValueExposureCny: analysis.balances.suppressed
+        ? null
+        : analysis.balances.referenceValueExposureCny,
+      roundingIncidence: analysis.offerPrices.suppressed
+        ? null
+        : analysis.offerPrices.rounding?.incidence ?? null,
+      belowCostOfferRate: analysis.merchantUnitEconomics.emitted
+        ? analysis.merchantUnitEconomics.belowCostOfferRate?.rate ?? null
+        : null,
       p50OffersBuyableWithMedianEarned: analysis.affordability.p50OffersBuyableWithMedianEarned.units,
       multiplierVs100PtsPerCny: formatRate(BigInt(BASELINE_POINTS_PER_CNY_MAJOR), BigInt(n)),
     }

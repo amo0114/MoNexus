@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { convertPointsToReferenceAtomic } from '../valuePolicy/money.js'
 import { normalizeCandidate } from './candidates.js'
-import { convertPoints, isExactConversion, roundingDeltaAtomic } from './convert.js'
+import { convertNetAvailableReferenceAtomic, convertPoints, isExactConversion, netAvailablePoints, roundingDeltaAtomic } from './convert.js'
 
 describe('convertPoints HALF_EVEN alignment', () => {
   it('matches even and odd ties of the shared money contract', () => {
@@ -37,5 +37,12 @@ describe('convertPoints HALF_EVEN alignment', () => {
     expect(isExactConversion(1201n, candidate)).toBe(false)
     expect(roundingDeltaAtomic(1n, candidate)).toBe(0n)
     expect(roundingDeltaAtomic(3n, candidate)).toBe(1n)
+  })
+
+  it('combines HALF_EVEN components for a possibly negative net available', () => {
+    const candidate = normalizeCandidate(100)
+    expect(netAvailablePoints(800n, 500n, 100n, 50n)).toBe(250n)
+    expect(convertNetAvailableReferenceAtomic(800n, 500n, 100n, 50n, candidate)).toBe(250n)
+    expect(convertNetAvailableReferenceAtomic(10n, 20n, 5n, 0n, candidate)).toBe(-15n)
   })
 })

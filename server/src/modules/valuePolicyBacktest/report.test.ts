@@ -4,7 +4,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { buildSyntheticSmallInput, syntheticRef } from './__fixtures__/syntheticSmall.js'
-import { DEFAULT_GATE_THRESHOLDS } from './thresholds.js'
+import { testRuntime } from './__fixtures__/runtime.js'
+import { DEFAULT_GATE_THRESHOLDS, D02_STATUS_TEXT } from './thresholds.js'
 import { BACKTEST_ERROR_CODES, BacktestError } from './errors.js'
 import { hashBufferSha256, parseBacktestInput } from './parse.js'
 import { buildReport, businessContent, renderMarkdown, reportJson } from './report.js'
@@ -27,10 +28,8 @@ function options(overrides: Partial<RunOptions> = {}): RunOptions {
     thresholds: { ...DEFAULT_GATE_THRESHOLDS },
     gatesConfigSource: 'documented_defaults',
     legacyCommissionBps: null,
-    runtime: {
-      now: () => new Date('2026-08-18T00:00:00.000Z'),
-      gitCommit: () => 'test-commit',
-    },
+    allowUnverifiableSource: false,
+    runtime: testRuntime('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'clean', '2026-08-18T00:00:00.000Z'),
     ...overrides,
   }
 }
@@ -54,10 +53,7 @@ describe('backtest report', () => {
     const input = parseFixture()
     const first = buildReport(input, options())
     const second = buildReport(input, options({
-      runtime: {
-        now: () => new Date('2026-12-01T12:00:00.000Z'),
-        gitCommit: () => 'test-commit',
-      },
+      runtime: testRuntime('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'clean', '2026-12-01T12:00:00.000Z'),
     }))
     expect(businessContent(first)).toEqual(businessContent(second))
     expect(first.metadata.inputSha256).toBe(input.rawSha256)
@@ -67,11 +63,15 @@ describe('backtest report', () => {
   it('always records D-02 as not approved and never picks a winner', () => {
     const report = buildReport(parseFixture(), options())
     expect(report.d02Status).toBe('NOT APPROVED')
+    expect(report.d02StatusText).toBe(D02_STATUS_TEXT)
     expect(report.conclusions).toContain('D-02 remains NOT APPROVED')
     expect(report.conclusions).toContain('this report is decision support only')
     expect(JSON.stringify(report)).not.toMatch(/best candidate|approved candidate|recommended face value/i)
+    const json = reportJson(report)
     const markdown = renderMarkdown(report)
-    expect(markdown).toContain('D-02 STATUS: NOT APPROVED')
+    expect(json).toContain(D02_STATUS_TEXT)
+    expect(markdown).toContain(D02_STATUS_TEXT)
+    expect(markdown).not.toMatch(/Monthly reward/i)
   })
 
   it('does not leak account, order, or offer identifiers', () => {
@@ -121,9 +121,21 @@ describe('backtest report', () => {
     expect(hundred).toBeTruthy()
     expect(markdown).toContain(report.metadata.inputSha256)
     expect(markdown).toContain(`offer P50 CNY: ${hundred?.offerPrices.distribution?.referenceCny.p50}`)
+    expect(markdown).toContain(`offer P50 points: ${hundred?.offerPrices.distribution?.points.p50}`)
     expect(markdown).toContain(`reference-value exposure CNY: ${hundred?.balances.referenceValueExposureCny}`)
     expect(markdown).toContain(`rounding incidence: ${hundred?.offerPrices.rounding?.incidence}`)
+    expect(markdown).toContain(`period earned reference CNY: ${hundred?.rewardBudget.totals.earnedReferenceCny}`)
+    expect(markdown).toContain(`net available reference CNY: ${hundred?.rewardBudget.totals.netAvailableReferenceCny}`)
     expect(markdown).toContain(hundred?.rewardBudget.disclaimer ?? 'missing')
+    const row = report.sensitivity.find(item => item.pointsPerCnyMajor === 100)
+    expect(markdown).toContain(`| 100 | ${row?.offerP50ReferenceCny} | ${row?.offerP90ReferenceCny} | ${row?.periodEarnedReferenceCny} |`)
+    expect(markdown).toContain(`${row?.totalBalanceReferenceValueExposureCny}`)
+    expect(markdown).toContain(`${row?.roundingIncidence}`)
+    expect(markdown).toContain(`${row?.p50OffersBuyableWithMedianEarned}`)
+    expect(markdown).toContain(`${row?.multiplierVs100PtsPerCny}`)
+    for (const gate of hundred?.gates ?? []) {
+      expect(markdown).toContain(`| ${gate.name} | ${gate.status} | ${gate.reason} |`)
+    }
   })
 
   it('includes every required gate and only allowed statuses', () => {
@@ -188,12 +200,9 @@ describe('backtest report', () => {
       inputPath,
       outputDir: directory,
       overwrite: true,
-      runtime: {
-        now: () => new Date('2026-08-18T01:00:00.000Z'),
-        gitCommit: () => 'test-commit-2',
-      },
+      runtime: testRuntime('bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', 'clean', '2026-08-18T01:00:00.000Z'),
     }))
-    expect(readFileSync(second.jsonPath, 'utf8')).toContain('test-commit-2')
+    expect(readFileSync(second.jsonPath, 'utf8')).toContain('bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb')
     expect(readFileSync(join(nested, 'other.txt'), 'utf8')).toBe('preserve')
   })
 

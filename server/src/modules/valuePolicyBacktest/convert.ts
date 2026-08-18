@@ -44,3 +44,30 @@ export function formatSignedCnyFromAtomic(atomic: bigint): string {
 export function formatSignedDecimal(value: bigint): string {
   return value.toString(10)
 }
+
+/**
+ * netAvailablePoints = earned - spent - expired + refunded
+ * Each non-negative component is converted with the shared HALF_EVEN
+ * contract, then combined. The result may be negative.
+ */
+export function convertNetAvailableReferenceAtomic(
+  earned: bigint,
+  spent: bigint,
+  expired: bigint,
+  refunded: bigint,
+  candidate: NormalizedCandidate,
+): bigint {
+  return convertPoints(earned, candidate)
+    - convertPoints(spent, candidate)
+    - convertPoints(expired, candidate)
+    + convertPoints(refunded, candidate)
+}
+
+export function netAvailablePoints(
+  earned: bigint,
+  spent: bigint,
+  expired: bigint,
+  refunded: bigint,
+): bigint {
+  return earned - spent - expired + refunded
+}

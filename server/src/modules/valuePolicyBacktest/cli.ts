@@ -1,9 +1,19 @@
 import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { parseCandidateList } from './candidates.js'
+import { compareFixed } from './compare.js'
 import { BacktestError, BACKTEST_ERROR_CODES } from './errors.js'
-import { DEFAULT_ANALYSIS_CANDIDATES, DEFAULT_GATE_THRESHOLDS, SUPPORTED_REFERENCE_ASSET, type GateThresholds } from './thresholds.js'
-import type { ParsedCliArgs } from './types.js'
+import {
+  DEFAULT_ANALYSIS_CANDIDATES,
+  DEFAULT_GATE_THRESHOLDS,
+  PRIVACY_FLOORS,
+  SUPPORTED_REFERENCE_ASSET,
+  UNIT_INTERVAL_RATE_KEYS,
+  WARN_FAIL_PAIRS,
+  type GateThresholds,
+  type PrivacyFloorKey,
+} from './thresholds.js'
+import type { GitIdentity, ParsedCliArgs } from './types.js'
 
 export const CLI_USAGE = `Usage:
   npm --prefix server run value-policy:backtest -- \\
@@ -20,6 +30,7 @@ Options:
   --gates-config <file>          Optional. JSON object that overrides documented thresholds.
   --legacy-commission-bps <n>    Optional. Explicit FLOOR commission in basis points.
   --overwrite                    Replace only d02-backtest-report.json and .md
+  --allow-unverifiable-source    Continue if git is dirty or unavailable; report is marked unverifiable
   --help                         Show this message
 
 The tool never approves a candidate. Every report includes:
@@ -35,7 +46,7 @@ function readFlag(args: string[], name: string): { value: string | true; rest: s
   if (current.startsWith(`${name}=`)) {
     return { value: current.slice(name.length + 1), rest: args.filter((_, i) => i !== index) }
   }
-  if (name === '--overwrite' || name === '--help') {
+  if (name === '--overwrite' || name === '--help' || name === '--allow-unverifiable-source') {
     return { value: true, rest: args.filter((_, i) => i !== index) }
   }
   const next = args[index + 1]
@@ -56,6 +67,7 @@ export function parseCliArgs(argv: string[]): ParsedCliArgs {
       overwrite: false,
       gatesConfigPath: null,
       legacyCommissionBps: null,
+      allowUnverifiableSource: false,
       help: true,
     }
   }
@@ -67,6 +79,10 @@ export function parseCliArgs(argv: string[]): ParsedCliArgs {
   const overwrite = readFlag(rest, '--overwrite')
   if (overwrite) {
     rest = overwrite.rest
+  }
+  const allowUnverifiable = readFlag(rest, '--allow-unverifiable-source')
+  if (allowUnverifiable) {
+    rest = allowUnverifiable.rest
   }
   const input = readFlag(rest, '--input')
   if (input) {
@@ -115,6 +131,7 @@ export function parseCliArgs(argv: string[]): ParsedCliArgs {
     overwrite: Boolean(overwrite),
     gatesConfigPath: gatesConfig && typeof gatesConfig.value === 'string' ? gatesConfig.value : null,
     legacyCommissionBps: commission && typeof commission.value === 'string' ? commission.value : null,
+    allowUnverifiableSource: Boolean(allowUnverifiable),
     help: false,
   }
 }
@@ -129,6 +146,26 @@ export function resolveCandidates(parsed: ParsedCliArgs): {
   return {
     candidates: [...DEFAULT_ANALYSIS_CANDIDATES],
     candidatesSource: 'documented_default_analysis_set',
+  }
+}
+
+const UNIT_INTERVAL = /^(?:0(?:\.\d{1,4})?|1(?:\.0{1,4})?)$/
+const NON_NEGATIVE_DECIMAL = /^(?:0|[1-9]\d*)(?:\.\d+)?$/
+
+function assertConsistentThresholds(thresholds: GateThresholds): void {
+  for (const [warnKey, failKey] of WARN_FAIL_PAIRS) {
+    if (compareFixed(thresholds[warnKey], thresholds[failKey]) > 0) {
+      throw new BacktestError(
+        BACKTEST_ERROR_CODES.INVALID_GATES_CONFIG,
+        'warn threshold must not exceed the matching fail threshold',
+      )
+    }
+  }
+  if (compareFixed(thresholds.priceReadabilityMinP50Atomic, thresholds.priceReadabilityMaxP50Atomic) > 0) {
+    throw new BacktestError(
+      BACKTEST_ERROR_CODES.INVALID_GATES_CONFIG,
+      'price readability min must not exceed max',
+    )
   }
 }
 
@@ -158,14 +195,29 @@ export function loadGateThresholds(path: string | null): {
       if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
         throw new BacktestError(BACKTEST_ERROR_CODES.INVALID_GATES_CONFIG, 'numeric gate threshold must be a non-negative integer')
       }
+      if (key in PRIVACY_FLOORS && value < PRIVACY_FLOORS[key as PrivacyFloorKey]) {
+        throw new BacktestError(
+          BACKTEST_ERROR_CODES.INVALID_GATES_CONFIG,
+          'gates-config cannot lower a privacy floor',
+          { key },
+        )
+      }
       (merged as Record<string, unknown>)[key] = value
     } else if (typeof current === 'string') {
-      if (typeof value !== 'string' || !/^-?\d+(?:\.\d+)?$/.test(value)) {
-        throw new BacktestError(BACKTEST_ERROR_CODES.INVALID_GATES_CONFIG, 'decimal gate threshold must be a decimal string')
+      if (typeof value !== 'string' || !NON_NEGATIVE_DECIMAL.test(value)) {
+        throw new BacktestError(BACKTEST_ERROR_CODES.INVALID_GATES_CONFIG, 'decimal gate threshold must be a non-negative decimal string')
+      }
+      if ((UNIT_INTERVAL_RATE_KEYS as readonly string[]).includes(key) && !UNIT_INTERVAL.test(value)) {
+        throw new BacktestError(
+          BACKTEST_ERROR_CODES.INVALID_GATES_CONFIG,
+          'rate threshold must be a decimal string in [0, 1]',
+          { key },
+        )
       }
       (merged as Record<string, unknown>)[key] = value
     }
   }
+  assertConsistentThresholds(merged)
   return { thresholds: merged, source: 'explicit_file' }
 }
 
@@ -182,20 +234,33 @@ export function parseLegacyCommissionBps(raw: string | null): bigint | null {
   return BigInt(raw)
 }
 
-export function readGitCommit(): string {
+export function readGitIdentity(
+  exec: typeof execFileSync = execFileSync,
+): GitIdentity {
   try {
-    return execFileSync('git', ['rev-parse', 'HEAD'], {
+    const commit = exec('git', ['rev-parse', 'HEAD'], {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],
     }).trim()
+    if (!/^[0-9a-f]{40}$/i.test(commit)) {
+      return { commit: 'UNAVAILABLE', treeState: 'unavailable' }
+    }
+    const porcelain = exec('git', ['status', '--porcelain'], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    })
+    return {
+      commit,
+      treeState: porcelain.trim().length > 0 ? 'dirty' : 'clean',
+    }
   } catch {
-    return 'UNAVAILABLE'
+    return { commit: 'UNAVAILABLE', treeState: 'unavailable' }
   }
 }
 
 export function defaultRuntime() {
   return {
     now: () => new Date(),
-    gitCommit: readGitCommit,
+    gitIdentity: readGitIdentity,
   }
 }

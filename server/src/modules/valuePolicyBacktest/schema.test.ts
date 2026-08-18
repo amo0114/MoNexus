@@ -124,6 +124,17 @@ describe('backtest input schema', () => {
     }
   })
 
+  it('rejects impossible calendar dates such as 2026-02-31', () => {
+    const input = buildSyntheticSmallInput()
+    input.period.from = '2026-02-31T00:00:00.000Z'
+    try {
+      parseJson(input)
+      throw new Error('expected calendar rejection')
+    } catch (error) {
+      expect((error as BacktestError).code).toBe(BACKTEST_ERROR_CODES.INVALID_PERIOD)
+    }
+  })
+
   it('rejects database-style incremental identifiers', () => {
     const input = buildSyntheticSmallInput()
     input.offers[0].offerRef = '42'

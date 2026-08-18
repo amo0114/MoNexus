@@ -69,8 +69,8 @@ export function averageFloor(total: bigint, count: bigint): bigint | null {
 export type ConcentrationResult = {
   sampleSize: number
   selectedCount: number
-  selectedSum: string
-  totalSum: string
+  selectedSum: string | null
+  totalSum: string | null
   share: string | null
   suppressed: boolean
   reason: string | null
@@ -89,8 +89,8 @@ export function concentrationTopShare(
     return {
       sampleSize,
       selectedCount: 0,
-      selectedSum: '0',
-      totalSum: sumBigint(values).toString(10),
+      selectedSum: null,
+      totalSum: null,
       share: null,
       suppressed: true,
       reason: sampleSize === 0 ? 'empty_sample' : 'sample_below_threshold',

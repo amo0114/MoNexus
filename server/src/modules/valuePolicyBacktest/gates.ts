@@ -1,4 +1,4 @@
-import { compareFixed } from './analyze.js'
+import { compareFixed } from './compare.js'
 import { formatRate } from './format.js'
 import type { GateThresholds } from './thresholds.js'
 import type { CandidateAnalysis, GateResult, GateStatus } from './types.js'
@@ -100,16 +100,32 @@ function priceReadabilityGate(analysis: Omit<CandidateAnalysis, 'gates'>, thresh
 }
 
 function rewardBudgetGate(analysis: Omit<CandidateAnalysis, 'gates'>, thresholds: GateThresholds): GateResult {
+  if (analysis.rewardBudget.suppressed) {
+    return {
+      name: 'REWARD_BUDGET',
+      status: 'insufficient_data',
+      reason: analysis.rewardBudget.reason ?? 'sample_below_threshold',
+      evidence: { earnedReferenceAtomic: null, disclaimer: analysis.rewardBudget.disclaimer },
+    }
+  }
   if (analysis.userActivity.sampleSizeUserMonths === 0) {
     return {
       name: 'REWARD_BUDGET',
       status: 'insufficient_data',
       reason: 'no_monthly_activity',
-      evidence: { earnedReferenceAtomic: analysis.rewardBudget.totals.earnedReferenceAtomic },
+      evidence: { earnedReferenceAtomic: null, disclaimer: analysis.rewardBudget.disclaimer },
     }
   }
   const earned = analysis.rewardBudget.totals.earnedReferenceAtomic
-  const unspent = analysis.rewardBudget.totals.unspentReferenceAtomic
+  const netAvailable = analysis.rewardBudget.totals.netAvailableReferenceAtomic
+  if (earned === null || netAvailable === null) {
+    return {
+      name: 'REWARD_BUDGET',
+      status: 'insufficient_data',
+      reason: 'reward_budget_suppressed',
+      evidence: { earnedReferenceAtomic: null, disclaimer: analysis.rewardBudget.disclaimer },
+    }
+  }
   if (earned === '0') {
     return {
       name: 'REWARD_BUDGET',
@@ -118,21 +134,25 @@ function rewardBudgetGate(analysis: Omit<CandidateAnalysis, 'gates'>, thresholds
       evidence: { earnedReferenceAtomic: earned, disclaimer: analysis.rewardBudget.disclaimer },
     }
   }
-  if (unspent.startsWith('-')) {
+  if (netAvailable.startsWith('-')) {
     return {
       name: 'REWARD_BUDGET',
       status: 'warn',
-      reason: 'spent_exceeds_earned_in_window',
-      evidence: { unspentReferenceAtomic: unspent, disclaimer: analysis.rewardBudget.disclaimer },
+      reason: 'net_available_negative_in_window',
+      evidence: { netAvailableReferenceAtomic: netAvailable, disclaimer: analysis.rewardBudget.disclaimer },
     }
   }
-  const unspentRate = formatRate(BigInt(unspent), BigInt(earned))
-  if (unspentRate !== null && compareFixed(unspentRate, thresholds.rewardBudgetUnspentWarnAboveRate) > 0) {
+  const netRate = formatRate(BigInt(netAvailable), BigInt(earned))
+  if (netRate !== null && compareFixed(netRate, thresholds.rewardBudgetNetAvailableWarnAboveRate) > 0) {
     return {
       name: 'REWARD_BUDGET',
       status: 'warn',
-      reason: 'unspent_share_above_warn_threshold',
-      evidence: { unspentRate, threshold: thresholds.rewardBudgetUnspentWarnAboveRate, disclaimer: analysis.rewardBudget.disclaimer },
+      reason: 'net_available_share_above_warn_threshold',
+      evidence: {
+        netAvailableRate: netRate,
+        threshold: thresholds.rewardBudgetNetAvailableWarnAboveRate,
+        disclaimer: analysis.rewardBudget.disclaimer,
+      },
     }
   }
   return {

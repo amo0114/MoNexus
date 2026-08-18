@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest'
 import { buildSyntheticSmallInput } from './__fixtures__/syntheticSmall.js'
 import { parseCliArgs } from './cli.js'
 import { BACKTEST_ERROR_CODES, BacktestError } from './errors.js'
+import { testRuntime } from './__fixtures__/runtime.js'
 import { runValuePolicyBacktestCli } from '../../scripts/valuePolicyBacktest.js'
 import { DEFAULT_ANALYSIS_CANDIDATES } from './thresholds.js'
 
@@ -34,6 +35,7 @@ describe('CLI parsing', () => {
     expect(parsed.candidates).toEqual([50, 100, 200, 500])
     expect(parsed.referenceAsset).toBe('CNY')
     expect(parsed.overwrite).toBe(true)
+    expect(parsed.allowUnverifiableSource).toBe(false)
   })
 
   it('uses the documented analysis set when candidates are omitted', () => {
@@ -59,7 +61,7 @@ describe('CLI runner', () => {
       '50,100,200,500',
       '--reference-asset',
       'CNY',
-    ])
+    ], testRuntime())
     expect(result.status).toBe(0)
     expect(result.stdout).toContain('D-02 STATUS: NOT APPROVED')
     expect(result.stdout).not.toContain(input.accounts[0].accountRef)
@@ -78,7 +80,7 @@ describe('CLI runner', () => {
       join(directory, 'out'),
       '--reference-asset',
       'USD',
-    ])
+    ], testRuntime())
     expect(result.status).toBe(2)
     expect(result.stderr).toContain('UNSUPPORTED_REFERENCE_ASSET')
     expect(result.stderr).not.toContain(inputPath)
