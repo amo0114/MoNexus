@@ -1,6 +1,6 @@
 # Alert Routing
 
-Review date: 2026-05-14. Scope: M5 alert routing from Sentry alert labels and manual GitHub Actions tests to the first responder path. Slack is the default route, email is the fallback route, and PagerDuty is documented only as an optional production P0/P1 path.
+Review date: 2026-08-18. Scope: alert routing from Sentry and ValuePolicy alert labels and manual GitHub Actions tests to the first responder path. Slack is the default route, email is the fallback route, and PagerDuty is documented only as an optional production P0/P1 path.
 
 ## Routing Matrix
 
@@ -15,6 +15,7 @@ Review date: 2026-05-14. Scope: M5 alert routing from Sentry alert labels and ma
 
 ## Severity Policy
 
+- P0 urgent: alert the incident channel immediately, assign an incident owner, and stop or roll back the affected rollout until the invariant is restored.
 - P1 urgent: alert the incident channel immediately, assign an owner within 10 minutes, and escalate if the first responder is unavailable. Production PagerDuty can be added for P0/P1 only, but it is not required for M5.
 - P2 team notification: notify the owning team channel during business hours or the next on-call review window. Escalate to P1 only if the symptom persists, combines with user-visible failures, or blocks a release.
 
@@ -35,10 +36,10 @@ Do not paste webhook URLs, routing keys, mailbox passwords, or bearer tokens int
 
 1. Open GitHub Actions -> **Alert Routing Test** -> **Run workflow**.
 2. Select `staging` first. Keep `dry_run` enabled for the first pass.
-3. Choose the routing label to rehearse. Use `backend-error-p1` for urgent routing and `frontend-vitals-p2` for team notification routing.
-4. Confirm the workflow prints the planned route and exits successfully when no Slack webhook or email variables are configured.
+3. Choose the routing label to rehearse. Use `value-policy-p0` and severity `P0` for the ValuePolicy production gate; use `frontend-vitals-p2` for team notification routing.
+4. Confirm the dry run prints the planned route. Dry runs do not prove delivery.
 5. Configure `ALERT_SLACK_WEBHOOK_URL` in the selected GitHub environment.
-6. Re-run with `dry_run` disabled and confirm a Slack message arrives in the expected channel.
+6. Re-run with `dry_run` disabled and confirm a Slack message arrives in the expected channel. A live rehearsal fails closed when the webhook is absent.
 7. If Slack is not configured, confirm `ALERT_EMAIL_TO` and `ALERT_EMAIL_FROM` are present and send a manual email using the incident mailbox. The workflow records the fallback plan but does not store or use an SMTP password.
 8. For production P1 routing only, configure `PAGERDUTY_ROUTING_KEY` after the PagerDuty service and escalation policy are approved. Rehearse that path outside the default workflow before enabling automatic paging.
 
