@@ -23,8 +23,14 @@ describe('storage credentials crypto (SPEC-STORAGE-001)', () => {
       secretKey: 'sec',
     })
     const parts = enc.ciphertext.split(':')
-    parts[3] = parts[3].replace(/0/g, '1').replace(/1/g, '0')
-    expect(() => decryptStorageCredentials(parts.join(':'))).toThrow()
+    expect(parts).toHaveLength(4)
+    expect(parts[3].length).toBeGreaterThan(0)
+    const firstNibble = Number.parseInt(parts[3][0], 16)
+    expect(Number.isInteger(firstNibble)).toBe(true)
+    parts[3] = ((firstNibble ^ 1).toString(16)) + parts[3].slice(1)
+    const tampered = parts.join(':')
+    expect(tampered).not.toBe(enc.ciphertext)
+    expect(() => decryptStorageCredentials(tampered)).toThrow()
   })
 
   it('rejects malformed payload', () => {
