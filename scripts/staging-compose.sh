@@ -14,7 +14,7 @@ project_name="${COMPOSE_PROJECT_NAME:-monexus-staging}"
 
 usage() {
   cat <<'EOF'
-Usage: scripts/staging-compose.sh {config|build|build-backend|up-backend|build-frontend|up-frontend|up|restart|smoke|ps|logs|down}
+Usage: scripts/staging-compose.sh {config|build|build-backend|up-backend|build-frontend|up-frontend|up|restart|smoke|value-policy-governance|set-value-policy-mode|ps|logs|down}
 
 Environment:
   ENV_FILE             Private staging env file (default: .env.staging.local)
@@ -67,11 +67,12 @@ compose=(
   --profile staging-mail
 )
 
-preflight() {
+preflight_file() {
+  local candidate_env_file="$1"
   if command -v node >/dev/null 2>&1; then
     bash "$ROOT_DIR/scripts/check-prod-env.sh" \
       --mode staging \
-      --env-file "$env_file"
+      --env-file "$candidate_env_file"
     return
   fi
 
@@ -80,12 +81,16 @@ preflight() {
   # network. Docker may pull this public base image once when it is absent.
   docker run --rm --network none \
     -v "$ROOT_DIR:$ROOT_DIR:ro" \
-    -v "$env_file:$env_file:ro" \
+    -v "$candidate_env_file:$candidate_env_file:ro" \
     -w "$ROOT_DIR" \
     node:20-bookworm-slim \
     bash scripts/check-prod-env.sh \
       --mode staging \
-      --env-file "$env_file"
+      --env-file "$candidate_env_file"
+}
+
+preflight() {
+  preflight_file "$env_file"
 }
 
 case "$action" in
@@ -139,6 +144,92 @@ case "$action" in
     ENV_FILE="$env_file" \
       REQUIRE_METRICS_TOKEN=true \
       bash "$ROOT_DIR/scripts/prod-smoke.sh" --env-file "$env_file"
+    ;;
+  value-policy-governance)
+    preflight
+    # The JSON payload is accepted only on stdin so passwords and MFA factors
+    # never appear in argv, the workflow log, or the remote process list.
+    "${compose[@]}" exec -T server node dist/scripts/runValuePolicyStagingGovernance.js
+    ;;
+  set-value-policy-mode)
+    target_mode="${2:-}"
+    confirmation="${3:-}"
+    if [[ ! "$target_mode" =~ ^(off|shadow|enforce)$ ]]; then
+      echo "[ERROR] ValuePolicy staging mode must be off, shadow, or enforce." >&2
+      exit 2
+    fi
+    if [[ "$confirmation" != "CONFIRM_VALUE_POLICY_MODE_CHANGE" ]]; then
+      echo "[ERROR] ValuePolicy staging mode change confirmation is missing." >&2
+      exit 2
+    fi
+    if [[ "$env_file" != "/etc/monexus/staging.env" ]]; then
+      echo "[ERROR] ValuePolicy mode changes require /etc/monexus/staging.env." >&2
+      exit 2
+    fi
+
+    env_dir="${env_file%/*}"
+    candidate="$(mktemp "$env_dir/.staging.env.value-policy.candidate.XXXXXX")"
+    backup="$(mktemp "$env_dir/.staging.env.value-policy.backup.XXXXXX")"
+    cleanup_mode_files() {
+      rm -f -- "$candidate" "$backup"
+    }
+    trap cleanup_mode_files EXIT
+
+    cp -p -- "$env_file" "$backup"
+    awk -v target="$target_mode" '
+      BEGIN { written = 0 }
+      /^POINT_VALUE_POLICY_MODE=/ {
+        if (!written) {
+          print "POINT_VALUE_POLICY_MODE=" target
+          written = 1
+        }
+        next
+      }
+      { print }
+      END {
+        if (!written) print "POINT_VALUE_POLICY_MODE=" target
+      }
+    ' "$env_file" > "$candidate"
+    chmod --reference="$env_file" "$candidate"
+    chown --reference="$env_file" "$candidate"
+    preflight_file "$candidate"
+    mv -f -- "$candidate" "$env_file"
+    # After publication, an unexpected process kill must preserve the backup
+    # for operator recovery instead of deleting the only pre-change copy.
+    trap - EXIT
+
+    if "${compose[@]}" up -d --remove-orphans && \
+      ENV_FILE="$env_file" REQUIRE_METRICS_TOKEN=true \
+        bash "$ROOT_DIR/scripts/prod-smoke.sh" --env-file "$env_file"; then
+      rm -f -- "$backup"
+      echo "[PASS] Staging ValuePolicy mode changed to $target_mode."
+      exit 0
+    fi
+
+    echo "[ERROR] Staging mode change failed; restoring POINT_VALUE_POLICY_MODE=off safety state." >&2
+    awk '
+      BEGIN { written = 0 }
+      /^POINT_VALUE_POLICY_MODE=/ {
+        if (!written) {
+          print "POINT_VALUE_POLICY_MODE=off"
+          written = 1
+        }
+        next
+      }
+      { print }
+      END {
+        if (!written) print "POINT_VALUE_POLICY_MODE=off"
+      }
+    ' "$backup" > "$candidate"
+    chmod --reference="$backup" "$candidate"
+    chown --reference="$backup" "$candidate"
+    preflight_file "$candidate"
+    mv -f -- "$candidate" "$env_file"
+    "${compose[@]}" up -d --remove-orphans
+    ENV_FILE="$env_file" REQUIRE_METRICS_TOKEN=true \
+      bash "$ROOT_DIR/scripts/prod-smoke.sh" --env-file "$env_file"
+    rm -f -- "$backup"
+    exit 1
     ;;
   ps|logs)
     "${compose[@]}" "$action"
