@@ -1,0 +1,206 @@
+name: Production One-Time Operations
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: 'Fixed production operation'
+        required: true
+        type: choice
+        options:
+          - probe
+          - backup_db
+      confirmation:
+        description: 'Exact confirmation phrase for the selected operation'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-ops-once
+  cancel-in-progress: false
+
+jobs:
+  operate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+    env:
+      OPS_SSH_HOST: ${{ secrets.DEPLOY_SSH_HOST }}
+      OPS_SSH_PORT: ${{ vars.DEPLOY_SSH_PORT || '22' }}
+      OPS_SSH_USER: ${{ vars.VALUE_POLICY_OPS_ONESHOT_SSH_USER }}
+      OPS_SSH_PRIVATE_KEY: ${{ secrets.VALUE_POLICY_OPS_ONESHOT_SSH_PRIVATE_KEY }}
+      OPS_SSH_KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}
+      BACKUP_AGE_RECIPIENT: ${{ secrets.BACKUP_AGE_RECIPIENT }}
+      OPERATION: ${{ inputs.operation }}
+      CONFIRMATION: ${{ inputs.confirmation }}
+
+    steps:
+      - name: Validate protected inputs
+        run: |
+          set -euo pipefail
+          missing=()
+          for key in OPS_SSH_HOST OPS_SSH_USER OPS_SSH_PRIVATE_KEY OPS_SSH_KNOWN_HOSTS; do
+            [[ -n "${!key}" ]] || missing+=("$key")
+          done
+          if (( ${#missing[@]} > 0 )); then
+            printf '::error::Missing production Environment values: %s\n' "${missing[*]}"
+            exit 1
+          fi
+
+          [[ "$OPS_SSH_PORT" =~ ^[0-9]{1,5}$ ]] || { echo '::error::OPS_SSH_PORT must be numeric.'; exit 1; }
+          (( OPS_SSH_PORT >= 1 && OPS_SSH_PORT <= 65535 )) || { echo '::error::OPS_SSH_PORT is out of range.'; exit 1; }
+          [[ "$OPS_SSH_USER" == 'monexus-ops-once' ]] || { echo '::error::Unexpected one-time SSH user.'; exit 1; }
+
+          case "$OPERATION:$CONFIRMATION" in
+            probe:PROBE_MONEXUS_PRODUCTION_ONCE) ;;
+            backup_db:BACKUP_MONEXUS_PRODUCTION_ONCE)
+              [[ "$BACKUP_AGE_RECIPIENT" =~ ^age1[0-9a-z]+$ ]] || {
+                echo '::error::BACKUP_AGE_RECIPIENT is missing or invalid.'
+                exit 1
+              }
+              ;;
+            *)
+              echo '::error::The confirmation phrase does not match the selected operation.'
+              exit 1
+              ;;
+          esac
+
+      - name: Configure pinned SSH identity
+        run: |
+          set -euo pipefail
+          install -d -m 0700 "$HOME/.ssh"
+          printf '%s\n' "$OPS_SSH_PRIVATE_KEY" > "$HOME/.ssh/monexus_ops_once"
+          chmod 0600 "$HOME/.ssh/monexus_ops_once"
+          printf '%s\n' "$OPS_SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 0600 "$HOME/.ssh/known_hosts"
+
+      - name: Probe production topology without reading secrets
+        if: inputs.operation == 'probe'
+        run: |
+          set -euo pipefail
+          ssh \
+            -i "$HOME/.ssh/monexus_ops_once" \
+            -p "$OPS_SSH_PORT" \
+            -o BatchMode=yes \
+            -o ConnectTimeout=15 \
+            -o IdentitiesOnly=yes \
+            -o ServerAliveInterval=15 \
+            -o ServerAliveCountMax=4 \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$OPS_SSH_USER@$OPS_SSH_HOST" \
+            'sudo -n bash -s' <<'REMOTE'
+          set -euo pipefail
+
+          echo "remote-user=$(id -un)"
+          echo "sudo-user=$(id -un)"
+          echo "hostname=$(hostname -f 2>/dev/null || hostname)"
+          echo "os=$(source /etc/os-release && printf '%s %s' "$ID" "$VERSION_ID")"
+
+          for path in /opt/monexus /opt/monexus/current /opt/monexus/releases /etc/monexus /var/backups/monexus; do
+            if [[ -e "$path" ]]; then
+              echo "path-present=$path"
+            else
+              echo "path-missing=$path"
+            fi
+          done
+
+          command -v docker >/dev/null && docker --version
+          docker compose version
+          if command -v age >/dev/null; then
+            age --version
+          else
+            echo 'age=missing'
+          fi
+          df -h / | tail -n 1
+
+          mapfile -t production_containers < <(docker ps --format '{{.Names}}' | sed -n '/^monexus-/p')
+          printf 'production-containers=%s\n' "${production_containers[*]:-none}"
+
+          if ! docker ps --format '{{.Names}}' | grep -Fxq 'monexus-db-prod'; then
+            echo 'database-container=missing'
+            exit 1
+          fi
+
+          echo 'database-container=present'
+          docker exec monexus-db-prod sh -ceu '
+            printf "postgres-version="
+            psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "show server_version"
+            printf "applied-migrations="
+            psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc \
+              "select count(*) from \"_prisma_migrations\" where finished_at is not null and rolled_back_at is null"
+            printf "value-policy-table="
+            psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc \
+              "select case when to_regclass('\''public.\"ValuePolicy\"'\'') is null then '\''absent'\'' else '\''present'\'' end"
+          '
+          REMOTE
+
+      - name: Install backup encryption client
+        if: inputs.operation == 'backup_db'
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y age
+          age --version
+
+      - name: Stream encrypted production database backup
+        if: inputs.operation == 'backup_db'
+        id: backup
+        run: |
+          set -euo pipefail
+          stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+          output="monexus-production-${stamp}.sql.gz.age"
+
+          ssh \
+            -i "$HOME/.ssh/monexus_ops_once" \
+            -p "$OPS_SSH_PORT" \
+            -o BatchMode=yes \
+            -o ConnectTimeout=15 \
+            -o IdentitiesOnly=yes \
+            -o ServerAliveInterval=15 \
+            -o ServerAliveCountMax=4 \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$OPS_SSH_USER@$OPS_SSH_HOST" \
+            "sudo -n docker exec monexus-db-prod sh -ceu 'exec pg_dump --no-owner --no-privileges --clean --if-exists --format=plain -U \"\$POSTGRES_USER\" \"\$POSTGRES_DB\"'" \
+            | gzip -9 \
+            | age -r "$BACKUP_AGE_RECIPIENT" > "$output"
+
+          size="$(stat -c%s "$output")"
+          if (( size < 1024 )); then
+            echo "::error::Encrypted backup is suspiciously small (${size} bytes)."
+            exit 1
+          fi
+
+          sha256sum "$output"
+          echo "filename=$output" >> "$GITHUB_OUTPUT"
+          echo "stamp=$stamp" >> "$GITHUB_OUTPUT"
+          echo "size=$size" >> "$GITHUB_OUTPUT"
+
+      - name: Upload encrypted backup artifact
+        if: inputs.operation == 'backup_db'
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-db-backup-${{ steps.backup.outputs.stamp }}
+          path: ${{ steps.backup.outputs.filename }}
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Write one-time operation summary
+        if: always()
+        run: |
+          {
+            echo '### Production one-time operation'
+            echo
+            echo "- Operation: \`$OPERATION\`"
+            echo "- One-time SSH user: \`$OPS_SSH_USER\`"
+            echo '- Secret values printed: no'
+            echo '- ValuePolicy mode changed: no'
+            if [[ "$OPERATION" == 'backup_db' && -n '${{ steps.backup.outputs.filename }}' ]]; then
+              echo "- Encrypted artifact: \`${{ steps.backup.outputs.filename }}\`"
+              echo "- Encrypted size: \`${{ steps.backup.outputs.size }} bytes\`"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
