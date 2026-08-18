@@ -32,8 +32,8 @@ Legal chain only:
 draft -> approved -> scheduled -> active -> retired
 ```
 
-Use the internal service in `server/src/modules/valuePolicy/governance.ts`.
-There is no public HTTP activation API.
+Use the restricted admin + current-MFA routes under
+`/api/admin/value-policies`. There is no unauthenticated or public write API.
 
 Rules:
 
@@ -43,20 +43,21 @@ Rules:
 - `createdAt <= approvedAt <= effectiveAt`
 - `createdAt <= activatedAt` and `activatedAt >= effectiveAt`
 - `scheduled -> active` only after `effectiveAt`.
-- Dual-control human approval (creator ≠ approver) is a **D-02 gate**. The
-  current schema has no actor columns; do not invent user IDs.
+- Dual-control human approval is enforced by lifecycle actor columns and the
+  database (`createdByUserId != approvedByUserId`). Staging actors must be real
+  active admin users with current MFA; never invent production user IDs.
 
 ## 3. D-02 / D-03 gates
 
 | Gate | Meaning | Current state |
 | --- | --- | --- |
-| D-02 | Production face value | Not approved. `100 PTS = 1 CNY` is a test fixture only. |
-| D-03 | Production disclosure copy | Not approved. API may reserve a field; do not ship user-facing copy. |
+| D-02 | Production face value | Owner directive approved `100 PTS = 1 CNY` under a prelaunch no-representative-data exception. Production enforce is not authorized. |
+| D-03 | Production disclosure copy | Owner directive approved exact `zh-CN-v1`; see `value-policy-decision-records.md`. |
 
 Do not create a production active policy. Do not switch production off of
 `off`.
 
-## 4. Data backtest before any production face-value decision
+## 4. Data backtest before production enforce
 
 Replay real (or desensitized) offer prices through
 `convertPointsToReferenceAtomic` with the candidate ratio. Record:
@@ -65,7 +66,9 @@ Replay real (or desensitized) offer prices through
 - merchant settlement impact
 - reward-budget impact
 
-That packet is an input to D-02. It is not an activation.
+The initial owner directive does not turn synthetic data into evidence. A
+representative-data report and superseding decision record are mandatory before
+production enforce. The report itself is not an activation.
 
 ## 5. Metrics and alerts
 
