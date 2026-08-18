@@ -1,15 +1,15 @@
-# D-02 CNY 积分面值决策包（READY FOR HUMAN REVIEW）
+# D-02 CNY 积分面值决策包（OWNER DIRECTIVE APPROVED）
 
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | OPS-VALUE-POLICY-D02-DECISION-001 |
-| 版本 | 0.1.0（模板） |
+| 版本 | 0.2.0 |
 | 日期 | 2026-08-18 |
 | 对应规格 | `docs/specs/value-policy-d02-backtest.md`、`docs/operations/value-policy-d02-backtest.md` |
-| 状态 | `READY FOR HUMAN REVIEW` |
-| D-02 | `NOT APPROVED` |
+| 状态 | `APPROVED — PRELAUNCH NO-REPRESENTATIVE-DATA EXCEPTION` |
+| D-02 | `100 PTS = 1 CNY` |
 
-本文件是决策包模板，不是批准记录。它不包含真实生产数据、不写入生产比例、不替任何审批人签名。即使某候选在某次回测中全部 `pass`，也不构成 D-02 批准。生产 ValuePolicy 的创建、调度和激活必须另立不可变决策记录，并由产品、财务、法务、技术四方会签。
+本文件保留原始决策包与数据限制。2026-08-18 仓库所有者明确选择 `100 PTS = 1 CNY`，并批准无代表性数据的预上线例外。不可变记录引用、SHA-256、授权范围与身份限制见 `value-policy-decision-records.md`。本次批准不伪造四方独立签名，不授权 production enforce；production enforce 前仍必须用代表性真实数据形成替代记录。
 
 ## 1. 基线与可验证来源
 
@@ -53,7 +53,7 @@
 7. `LEGACY_COMMISSION_BPS`（仅在显式提供 legacy FLOOR 佣金时填写，不得猜测）：__________
 8. `D02_GATES_CONFIG`（仅在显式覆盖默认阈值时提供，不得降低隐私 floor）：__________
 
-未提供真实输入前，D-02 保持 `NOT APPROVED`。
+真实输入仍未提供；该事实不因 owner directive 而改变。当前批准通过受控的预上线例外成立，必须在 production enforce 前补做真实数据回测。
 
 ## 3. 候选比例与规范化
 
@@ -66,7 +66,7 @@
 | 200 | 1 | 2 | 1/2 CNY atomic / point |
 | 500 | 1 | 5 | 1/5 CNY atomic / point |
 
-`100 PTS = 1 CNY` 当前仅作为测试夹具（`server/src/modules/valuePolicyBacktest/__fixtures__/synthetic-small.json`）与回测分析候选，不是生产 seed，也不是已批准面值。
+`100 PTS = 1 CNY` 已由 owner directive 批准为初始面值；它仍不是生产 seed，且合成 fixture 不是该决定的证据。
 
 ## 4. 门禁矩阵（每候选必填，禁止统计 pass 数选赢家）
 
@@ -140,7 +140,7 @@
 
 ## 7. 会签栏
 
-本决策包只能标记 `READY FOR HUMAN REVIEW`，未填写不可变批准记录前不得标 approved。不得预填批准日期或替审批人签名。
+原四方会签未完成，也未被伪造。当前批准的真实身份依据与限制记录在 `value-policy-decision-records.md`；后续四方复核可产生 superseding record。
 
 | 角色 | 姓名 | 日期 | 签名 | 意见 |
 | --- | --- | --- | --- | --- |
@@ -149,17 +149,18 @@
 | 法务负责人 | | | | 仅复核 / 不批准 / 另立决策 |
 | 技术负责人 | | | | 仅复核 / 不批准 / 另立决策 |
 
-## 8. 未来批准时必须填写（现在留空）
+## 8. 已批准记录
 
-- 选定 `N`：__________
-- 规范化分子 / 分母：__________
-- 审批人（创建人 ≠ 审批人）：__________
-- 批准日期：__________
-- 未来生效时间（≥ 提前 7 天，紧急修复除外）：__________
-- D-03 文案版本：__________
-- 报告 SHA-256（JSON / Markdown）：__________
-- 反对意见处理：__________
+- 选定 `N`：`100`
+- 规范化分子 / 分母：`1 / 1`
+- 决策 authority：`github:amo0114` owner directive；治理创建人仍不得等于审批人
+- 批准日期：`2026-08-18T13:31:13Z`
+- 生效不得早于：`2026-08-26T00:00:00Z`
+- D-03 文案版本：`zh-CN-v1`
+- 决策记录 SHA-256：`02a0d6642fec6cf542805d20970eb9d489dae8180775bc719349d1153867a998`
+- 真实回测：无合格代表性数据，production enforce 前必须补齐 superseding record
+- 反对意见：无；身份/四方独立会签限制已显式保留
 
 ```text
-D-02 STATUS: NOT APPROVED
+D-02 STATUS: APPROVED — PRELAUNCH NO-REPRESENTATIVE-DATA EXCEPTION
 ```

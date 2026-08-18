@@ -1,15 +1,15 @@
-# D-03 CNY 参考价值文案决策材料（READY FOR HUMAN REVIEW）
+# D-03 CNY 参考价值文案决策材料（OWNER DIRECTIVE APPROVED）
 
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | OPS-VALUE-POLICY-D03-DECISION-001 |
-| 版本 | 0.1.0（草案） |
+| 版本 | 0.2.0 |
 | 日期 | 2026-08-18 |
 | 对应规格 | `docs/specs/points-value-policy-phase-1.md` §8.1、`docs/specs/points-real-value-alignment.md` §11 |
-| 状态 | `READY FOR HUMAN REVIEW` |
-| D-03 | `NOT APPROVED` |
+| 状态 | `APPROVED` |
+| D-03 | `zh-CN-v1` |
 
-本文件是供产品/法务审阅的 D-03 决策材料，不是已批准文案。所有候选文案均标记 `DRAFT — NOT APPROVED`。即使 current-policy API 已有候选常量，也不等于 D-03 已批准。本阶段不得把草案接入前端，不得因常量存在而把 D-03 标成完成。
+2026-08-18 仓库所有者明确批准现有 `VALUE_POLICY_DISCLOSURE` 原文为 `zh-CN-v1`。不可变记录引用、SHA-256、展示面与身份验证限制见 `value-policy-decision-records.md`。本批准不自动启用 ValuePolicy，也不等于独立法务身份验证。
 
 ## 1. 当前候选原文与代码位置
 
@@ -22,7 +22,7 @@
 | 适用模式 | 仅 `shadow` / `enforce` 返回；`off` 模式返回 `404 VALUE_POLICY_DISABLED` |
 | 前端生产展示 | **尚未实施**（不属于 Phase 1 已完成范围） |
 
-当前候选不等于已批准文案。任何生产展示前必须先完成 D-03 批准。
+该原文现为已批准的 `zh-CN-v1`；其他长/短/紧凑变体仍未批准。
 
 ## 2. 展示面清单（未来可能出现的位置）
 
@@ -33,12 +33,11 @@
 5. 帮助 / 条款页面
 6. 错误 / 空状态（`VALUE_POLICY_DISABLED` / `VALUE_POLICY_CHANGED` / `VALUE_POLICY_UNAVAILABLE` / `VALUE_POLICY_DATA_INVALID` / `VALUE_POLICY_REQUIRED`）
 
-## 3. 文案候选（均标记 `DRAFT — NOT APPROVED`）
+## 3. 文案状态
 
-### 3.1 长版
+### 3.1 已批准原文（zh-CN-v1）
 
-> DRAFT — NOT APPROVED
-> 积分为平台内部权益，所示金额仅为参考价值，不代表现金赎回承诺。积分不可购买、转让、提现或兑换法币。
+> 积分为平台内部权益，所示金额仅为参考价值，不代表现金赎回承诺。
 
 ### 3.2 短版
 
@@ -87,22 +86,23 @@
 
 ## 8. 会签栏
 
-本材料只能标记 `READY FOR HUMAN REVIEW`。未填写不可变批准记录前不得标 approved。不得预填批准日期或替审批人签名。
+原产品/法务双签栏未被代填或伪造。当前批准的 authority 与身份验证限制见不可变记录索引；未来独立法务复核可产生 superseding record。
 
 | 角色 | 姓名 | 日期 | 签名 | 意见 |
 | --- | --- | --- | --- | --- |
 | 产品负责人 | | | | 仅复核 / 不批准 / 另立决策 |
 | 法务负责人 | | | | 仅复核 / 不批准 / 另立决策 |
 
-## 9. 未来批准时必须填写（现在留空）
+## 9. 已批准记录
 
-- 文案版本：__________
-- 适用展示面：__________
-- 批准原文（长/短/紧凑或组合）：__________
-- 产品负责人：__________
-- 法务负责人：__________
-- 批准日期：__________
+- 文案版本：`zh-CN-v1`
+- 适用展示面：current-policy API disclosure；未来认证后的商品/订单参考价值展示
+- 批准原文：`积分为平台内部权益，所示金额仅为参考价值，不代表现金赎回承诺。`
+- authority：`github:amo0114` repository-owner directive
+- 独立法务身份验证：未声称完成
+- 批准日期：`2026-08-18T13:31:13Z`
+- 决策记录 SHA-256：`72c148a645f9aaff6deb656757d6637e5688c1a987a76830badf6786464a2971`
 
 ```text
-D-03 STATUS: NOT APPROVED
+D-03 STATUS: APPROVED
 ```

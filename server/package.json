@@ -23,10 +23,12 @@
     "auth:revoke-legacy-admin-sessions": "tsx src/scripts/revokeLegacyAdminRefreshSessions.ts",
     "auth:break-glass-reset": "tsx src/scripts/resetAdminMfaForBreakGlass.ts",
     "value-policy:audit": "tsx src/scripts/auditValuePolicy.ts",
+    "value-policy:staging-governance": "tsx src/scripts/runValuePolicyStagingGovernance.ts",
     "db:studio": "prisma studio",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:value-policy-backtest": "vitest run --config vitest.backtest.config.ts",
+    "test:value-policy-staging-governance": "vitest run --config vitest.value-policy-staging.config.ts",
     "value-policy:backtest": "tsx src/scripts/valuePolicyBacktest.ts"
   },
   "dependencies": {

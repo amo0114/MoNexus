@@ -3,10 +3,10 @@
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | OPS-VALUE-POLICY-ACTIVATION-READINESS-001 |
-| 版本 | 0.1.0 |
+| 版本 | 0.2.0 |
 | 日期 | 2026-08-18 |
 | 对应规格 | `docs/specs/points-value-policy-phase-1.md` §19、`docs/operations/value-policy-runbook.md` |
-| 状态 | Evidence-only audit — 本轮不解除任何门禁 |
+| 状态 | D-02/D-03 owner directive recorded; staging release deployed; production gates remain |
 | 生产模式 | 必须保持 `POINT_VALUE_POLICY_MODE=off` |
 
 本文是生产激活前的证据化审计与后续实施设计清单。它不创建、不调度、不激活、不退役任何生产 ValuePolicy，不修改生产门禁。后续激活必须拆成独立变更包，经单独授权后实施。
@@ -15,18 +15,18 @@
 
 | Gate | 当前预期状态 | 本轮要求 | 实测证据 |
 | --- | --- | --- | --- |
-| D-02 面值 | 未批准 | 生成/准备决策支持包，不自动批准 | 决策包模板 `value-policy-d02-decision-packet.md`（READY FOR HUMAN REVIEW）；无真实输入，输出 `DATA_INPUT_REQUIRED` |
-| D-03 文案 | 未批准 | 生成法务/产品审批材料，不接入生产 UI | 决策材料 `value-policy-d03-decision-packet.md`（READY FOR HUMAN REVIEW）；当前候选常量 `constants.ts:6-8`，未接入前端 |
-| 双人审批 | 工程已实现，尚未生产部署 | additive actor/FK/CHECK、maker-checker、命令与事件审计 | `SPEC-VALUE-POLICY-ACTIVATION-CONTROLS-001`；新 migration；production 入口仍禁用 |
+| D-02 面值 | owner directive 批准 `100 PTS = 1 CNY` | 预上线无代表性数据例外；production enforce 前补真实回测 | `value-policy-decision-records.md`；D-02 SHA-256 `02a0d664...a998`；合成数据未作为证据 |
+| D-03 文案 | owner directive 批准 `zh-CN-v1` | 固定精确原文；不虚构独立法务身份验证 | `value-policy-decision-records.md`；D-03 SHA-256 `72c148a6...2971` |
+| 双人审批 | 工程已合并并部署 staging | additive actor/FK/CHECK、maker-checker、命令与事件审计 | PR #149；`develop@c52c4a8`；production 入口仍禁用 |
 | 激活入口 | 受限 admin/MFA 入口已实现，production 硬拒绝 | 仅可用于未来 staging 演练；不得作为生产解锁 | `/api/admin/value-policies/**`；公共 `/api/value-policy` 仍无写入口。见 §3 |
 | 并发重试 | 已有 advisory lock 契约 | 设计 `40001`/`55P03` 重读后重试；`40P01` 必须 P0，不盲重试 | `VALUE_POLICY_GOVERNANCE_LOCK={classid:88170001,objid:1}`（`governance.ts:17,35`）；runbook §8 已冻结。见 §4 设计 |
 | 外部告警 | 仓库有规则契约，但未证明生产告警已激活 | 列出部署、路由、接收人、演练和证据要求，不声称已部署 | `value-policy-alerts.md` + `value-policy-alerts.rules.yml` + `alertContract.ts`；静态测试 `value-policy-alerts.test.ts` 证明契约存在；文档明确“不创建或激活外部生产告警”。见 §5 |
 | 生产运行时门禁 | 强制 production 只能 `off` | 保持原样；未来解除必须单独 PR 和批准记录 | `config/index.ts:530-537`（`MONEXUS_DEPLOY_ENV=production` 时 `POINT_VALUE_POLICY_MODE!=off` 拒启）；`check-prod-env.sh:347-352`；`docker-compose.prod.yml:41,96`（`MONEXUS_DEPLOY_ENV: production`、`POINT_VALUE_POLICY_MODE: ${...:-off}`） |
 | 生产 policy | 不应存在 active policy | 不创建、不 seed、不 schedule | 本轮无数据库访问；未创建任何 policy。生产激活前须 `value-policy:audit` 证明 `activePolicyCount=0` |
-| migration | 4 个历史 migration 已合并；activation-controls migrations 待合并/部署 | 只允许 additive migration，禁止 `db push` | 新增 `20260818170000`、`20260818171000`、`20260818172000` 三个 activation-controls migration，不修改历史 migration；runbook §1/§9 禁止 `db push` 与回滚历史 migration |
+| migration | 67 个 migration 已在 staging release 启动路径成功应用 | 只允许 additive migration，禁止 `db push`；生产仍待备份/restore gate | `develop@c52c4a8` staging deployment run `32139048061` readiness 通过；生产未迁移 |
 | 回滚 | 优先切回 `off` | 给出触发条件、负责人、观察窗口和审计命令 | 见 §6 |
 
-## 2. 双人审批与操作者审计（工程已实现，未部署）
+## 2. 双人审批与操作者审计（工程已实现并部署 staging）
 
 `SPEC-VALUE-POLICY-ACTIVATION-CONTROLS-001` 已实现：
 
@@ -36,7 +36,7 @@
 4. 每次命令与 `AdminLog` 在同一 advisory-lock transaction 中完成；
 5. migration 遇到既有 policy 行时拒绝伪造 backfill。
 
-该工程能力不等于批准或部署。production 命令入口仍 fail closed。
+该工程能力已进入 staging release，但尚无两个真实 staging admin + MFA actor 完成状态机演练。production 命令入口仍 fail closed。
 
 ## 3. 受限激活入口（工程已实现，production 禁用）
 
@@ -63,7 +63,7 @@
 
 仓库已有契约：`docs/operations/value-policy-alerts.md`、`value-policy-alerts.rules.yml`、`server/src/modules/valuePolicy/alertContract.ts`，静态测试 `value-policy-alerts.test.ts` 证明 7 条告警 ID 与 PromQL 存在。但文档明确声明“本仓库不创建或激活外部生产告警”。
 
-未来部署必须由 operator 在 D-02/D-03 批准后完成，并保存证据：
+外部告警仍须由 operator 配置真实接收端并保存证据：
 
 1. **部署**：`value-policy-alerts.rules.yml` 加载进生产 Alertmanager，`promtool check rules` 通过。
 2. **路由**：`value-policy-p0` → Slack incident channel（`ALERT_SLACK_WEBHOOK_URL`）+ 邮件（`ALERT_EMAIL_TO`）；`value-policy-p1` 同路由。见 `docs/operations/alert-routing.md`。
@@ -71,7 +71,7 @@
 4. **演练**：对每条 P0 规则触发一次（如制造 `value_policy_resolution_total{result="unavailable"}`），确认告警到达。
 5. **指标暴露**：`value_policy_resolution_total{result,mode}`、`value_policy_changed_total`、`order_pricing_snapshot_created_total`、`order_pricing_snapshot_failure_total`、`order_value_policy_enabled_committed_total`、`value_policy_missing_snapshot_orders`。
 
-本轮不部署、不声称已部署。
+`value-policy-p0` 路由 dry-run `32138076898` 已通过，但 dry-run 不是消息到达证据。GitHub staging/production environment 尚无 `ALERT_SLACK_WEBHOOK_URL`、邮件路由或 Sentry 凭据，因此不声称已部署。
 
 ## 6. 回滚设计
 
@@ -90,9 +90,9 @@
 
 | # | 变更包 | 类型 | 依赖 |
 | ---: | --- | --- | --- |
-| 1 | 双人审批与操作者审计的通用工程 PR | 工程 | additive schema + API + 权限 + 审计 |
+| 1 | 双人审批与操作者审计的通用工程 PR | 工程 | **完成：PR #149 / `c52c4a8`** |
 | 2 | 外部告警部署与演练证据 | 运维 | D-02/D-03 批准后 |
-| 3 | D-02/D-03 决策记录 | 人工批准 | 真实数据回测 + 会签 |
+| 3 | D-02/D-03 决策记录 | owner directive | **完成（带 D-02 无数据例外及 production-enforce 限制）** |
 | 4 | staging `shadow` 演练 | 运维 | #1 #2 #3 |
 | 5 | staging `enforce` 演练 | 运维 | #4 |
 | 6 | 生产门禁解除 PR | 工程 | #5 + 批准记录 |
@@ -104,7 +104,7 @@
 不得把上述内容合成一次提交或一次部署。
 
 ```text
-D-02 STATUS: NOT APPROVED
-D-03 STATUS: NOT APPROVED
+D-02 STATUS: APPROVED — PRELAUNCH NO-REPRESENTATIVE-DATA EXCEPTION
+D-03 STATUS: APPROVED
 POINT_VALUE_POLICY_MODE=off (production must remain)
 ```
