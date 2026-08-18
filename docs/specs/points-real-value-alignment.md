@@ -23,6 +23,17 @@ MoNexus 不应让积分余额随 CNY、USD 或 USDT 的市场汇率每日变化�
 2. **固定积分面值（fixed face value）**：积分与本位币采用版本化、长期固定的比例。推荐候选为 `100 PTS = 1 CNY` 或 `100 PTS = 1 USD`，两者是互斥方案，绝不表示 `1 CNY = 1 USD`。一个租户在任一时期只能选择一种价值本位币：选择 CNY 时，积分面值只以 CNY 定义；选择 USD 时，积分面值只以 USD 定义。其他币种或资产必须通过订单级 FX 报价换算。该候选比例使 1 积分恰好对应所选本位币的最小单位，避免小数积分与循环舍入；最终比例应在上线前用真实商品价格分布、奖励成本与预算回测后批准。
 3. **支付/结算资产（payment and settlement assets）**：CNY、USD、USDT 等只在充值、支付或商家出款边界使用；每次生成有时效的报价并在订单上快照。USDT 必须细分网络与合约，例如 `USDT-TRON`、`USDT-ETHEREUM`，不能只记录 `USDT`。
 
+### 0.1a 两个“Phase 1”不要混用
+
+| 文档 | 含义 | 2026-08-18 状态 |
+| --- | --- | --- |
+| `SPEC-VALUE-POLICY-P1-001` | 窄 Phase 1：CNY `ValuePolicy`、精确换算、checkout preview、订单定价快照 | 工程已实现；生产激活仍被 D-02/D-03 阻断 |
+| 本文 `SPEC-VALUE-LEDGER-001` 的 P1 | 大 Phase 1：ledger、lot、双写迁移、RP/VC/XP 拆分 | **仍未实施** |
+
+窄 Phase 1 完成不等于本规格完成。LedgerAccount / LedgerTransaction /
+LedgerEntry / EntitlementLot / ConsumptionAllocation / FxQuote / 真实支付 /
+充值转账提现 / SettlementV2 均不在窄 Phase 1 交付范围内。
+
 ### 0.2 立即实施范围
 
 首期只做 **“参考价值锚定 + 账本基础改造”**：

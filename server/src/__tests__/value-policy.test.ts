@@ -150,14 +150,18 @@ describe('checkout preview and order pricing', () => {
       role: 'merchant',
       status: 'active',
     })
-    await createTestCnyValuePolicy({ id: 'vp_old', version: 1 })
+    const oldPolicy = await createTestCnyValuePolicy({ id: 'vp_old', version: 1 })
     const { user } = await createTestUser('vp-stale@test.local', 'pass123', 'user', 2000)
     await createTestProduct('变更商品', 400, 2, ['stale-1', 'stale-2'], merchant.id)
     const { accessToken } = await loginAs('vp-stale@test.local', 'pass123')
 
     await prisma.valuePolicy.update({
       where: { id: 'vp_old' },
-      data: { status: 'retired', retiredAt: new Date() },
+      data: {
+        status: 'retired',
+        retiredAt: new Date(),
+        retiredByUserId: oldPolicy.approvedByUserId!,
+      },
     })
     await createTestCnyValuePolicy({ id: 'vp_new', version: 2 })
 
@@ -184,7 +188,7 @@ describe('checkout preview and order pricing', () => {
 
   it('persists one immutable snapshot and keeps it after the policy is replaced', async () => {
     setMode('enforce')
-    await createTestCnyValuePolicy({ id: 'vp_cny_001', version: 1 })
+    const originalPolicy = await createTestCnyValuePolicy({ id: 'vp_cny_001', version: 1 })
     await createTestUser('vp-snap@test.local', 'pass123', 'user', 2000)
     await createTestProduct('快照商品', 1200, 1, ['snap-1'])
     const { accessToken } = await loginAs('vp-snap@test.local', 'pass123')
@@ -199,7 +203,11 @@ describe('checkout preview and order pricing', () => {
 
     await prisma.valuePolicy.update({
       where: { id: 'vp_cny_001' },
-      data: { status: 'retired', retiredAt: new Date() },
+      data: {
+        status: 'retired',
+        retiredAt: new Date(),
+        retiredByUserId: originalPolicy.approvedByUserId!,
+      },
     })
     await createTestCnyValuePolicy({
       id: 'vp_cny_002',

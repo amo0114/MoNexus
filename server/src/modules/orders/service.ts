@@ -56,6 +56,9 @@ import {
 } from '../legal/service.js'
 import {
   createOrderPricingSnapshot,
+  recordEnabledModeOrderCommitted,
+  recordOrderPricingSnapshotCommitted,
+  recordOrderPricingSnapshotRolledBack,
   resolvePricingForOrder,
   serializeSnapshotPricing,
   type OrderPricingDto,
@@ -347,7 +350,10 @@ async function createOrderOnce(
     }
   }
 
-  const result = await prisma.$transaction(async tx => {
+  let snapshotPersistedInTx = false
+  let result
+  try {
+    result = await prisma.$transaction(async tx => {
     const account = await tx.pointAccount.findUnique({ where: { userId } })
     if (!account) throw notFound('积分账户不存在')
 
@@ -572,6 +578,7 @@ async function createOrderOnce(
         orderPrice: order.price,
         context: pricingContext,
       })
+      snapshotPersistedInTx = true
     }
 
     await createOrderStatusEvent(tx, {
@@ -896,7 +903,18 @@ async function createOrderOnce(
       provisionPending: fakaBridge || autoProvisionTaskCreated,
       ...(pricing ? { pricing } : {}),
     }
-  })
+    })
+  } catch (err) {
+    if (snapshotPersistedInTx) {
+      recordOrderPricingSnapshotRolledBack()
+    }
+    throw err
+  }
+
+  if (result.pricing) {
+    recordOrderPricingSnapshotCommitted()
+  }
+  recordEnabledModeOrderCommitted()
 
   await invalidateProductPublicCache(productId, { detail: true, list: 'coalesced' })
   if (autoProvisionTaskCreated && config.nodeEnv !== 'test') {

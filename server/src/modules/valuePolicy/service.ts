@@ -4,6 +4,7 @@ import { logger } from '../../lib/logger.js'
 import {
   orderPricingSnapshotCreatedTotal,
   orderPricingSnapshotFailureTotal,
+  orderValuePolicyEnabledCommittedTotal,
   valuePolicyChangedTotal,
   valuePolicyResolutionTotal,
   type ValuePolicyModeLabel,
@@ -17,17 +18,25 @@ import {
   valuePolicyUnavailable,
 } from '../../lib/httpError.js'
 import { prisma } from '../../lib/prisma.js'
+import {
+  POINT_ASSET_CODE,
+  POINT_ASSET_SCALE,
+  REFERENCE_ASSET_CODE,
+  REFERENCE_ASSET_SCALE,
+  VALUE_POLICY_DISCLOSURE,
+} from './constants.js'
+import { lockValuePolicyGovernance } from './governance.js'
 import { atomicToDecimalString, convertPointsToReferenceAtomic } from './money.js'
 
 export type PointValuePolicyMode = 'off' | 'shadow' | 'enforce'
 
-export const VALUE_POLICY_DISCLOSURE =
-  '积分为平台内部权益，所示金额仅为参考价值，不代表现金赎回承诺。'
-
-export const POINT_ASSET_CODE = 'RP'
-export const REFERENCE_ASSET_CODE = 'CNY'
-const POINT_ASSET_SCALE = 0
-const REFERENCE_ASSET_SCALE = 2
+export {
+  POINT_ASSET_CODE,
+  POINT_ASSET_SCALE,
+  REFERENCE_ASSET_CODE,
+  REFERENCE_ASSET_SCALE,
+  VALUE_POLICY_DISCLOSURE,
+}
 
 type DbClient = PrismaClient | Prisma.TransactionClient
 
@@ -88,39 +97,8 @@ function isEnabledMode(mode: PointValuePolicyMode): mode is 'shadow' | 'enforce'
   return mode === 'shadow' || mode === 'enforce'
 }
 
-function validateResolvedPolicy(policy: {
-  id: string
-  version: number
-  pointAssetCode: string
-  referenceAssetCode: string
-  referenceAtomicPerPointNumerator: bigint
-  referenceAtomicPerPointDenominator: bigint
-  roundingMode: MoneyRoundingMode
-  status: string
-  effectiveAt: Date
-  retiredAt: Date | null
-  pointAsset: { kind: string; scale: number; enabled: boolean; retiredAt: Date | null }
-  referenceAsset: { kind: string; scale: number; enabled: boolean; retiredAt: Date | null }
-}): ResolvedValuePolicy {
-  const invalid =
-    policy.pointAssetCode !== POINT_ASSET_CODE
-    || policy.referenceAssetCode !== REFERENCE_ASSET_CODE
-    || policy.pointAsset.kind !== 'reward_point'
-    || policy.referenceAsset.kind !== 'fiat'
-    || policy.pointAsset.scale !== POINT_ASSET_SCALE
-    || policy.referenceAsset.scale !== REFERENCE_ASSET_SCALE
-    || policy.pointAsset.enabled !== true
-    || policy.referenceAsset.enabled !== true
-    || policy.pointAsset.retiredAt != null
-    || policy.referenceAsset.retiredAt != null
-    || policy.referenceAtomicPerPointNumerator <= 0n
-    || policy.referenceAtomicPerPointDenominator <= 0n
-    || policy.roundingMode !== 'HALF_EVEN'
-    || policy.status !== 'active'
-    || policy.retiredAt != null
-    || policy.effectiveAt.getTime() > Date.now()
-
-  if (invalid) {
+function validateResolvedPolicy(policy: PolicyWithAssets): ResolvedValuePolicy {
+  if (policyViolatesInvariants(policy)) {
     logger.error({
       event: 'value_policy_data_invalid',
       policyId: policy.id,
@@ -145,31 +123,59 @@ function validateResolvedPolicy(policy: {
   }
 }
 
+const policyInclude = {
+  pointAsset: true,
+  referenceAsset: true,
+} as const
+
+type PolicyWithAssets = Prisma.ValuePolicyGetPayload<{ include: typeof policyInclude }>
+
+function policyViolatesInvariants(policy: PolicyWithAssets): boolean {
+  return policy.pointAssetCode !== POINT_ASSET_CODE
+    || policy.referenceAssetCode !== REFERENCE_ASSET_CODE
+    || policy.pointAsset.kind !== 'reward_point'
+    || policy.referenceAsset.kind !== 'fiat'
+    || policy.pointAsset.scale !== POINT_ASSET_SCALE
+    || policy.referenceAsset.scale !== REFERENCE_ASSET_SCALE
+    || policy.pointAsset.enabled !== true
+    || policy.referenceAsset.enabled !== true
+    || policy.pointAsset.retiredAt != null
+    || policy.referenceAsset.retiredAt != null
+    || policy.referenceAtomicPerPointNumerator <= 0n
+    || policy.referenceAtomicPerPointDenominator <= 0n
+    || policy.roundingMode !== 'HALF_EVEN'
+    || policy.status !== 'active'
+    || policy.retiredAt != null
+    || policy.effectiveAt.getTime() > Date.now()
+}
+
+async function loadActiveCnyPolicies(db: DbClient): Promise<PolicyWithAssets[]> {
+  return db.valuePolicy.findMany({
+    where: {
+      status: 'active',
+      pointAssetCode: POINT_ASSET_CODE,
+      referenceAssetCode: REFERENCE_ASSET_CODE,
+    },
+    include: policyInclude,
+  })
+}
+
+function rejectChanged(): never {
+  valuePolicyChangedTotal.inc()
+  throw valuePolicyChanged()
+}
+
 export async function resolveActiveCnyPolicy(
   db: DbClient = prisma,
   options: { lock?: boolean } = {},
 ): Promise<ResolvedValuePolicy> {
   const mode = currentMode()
   if (options.lock) {
-    await db.$queryRaw`
-      SELECT "id" FROM "ValuePolicy"
-      WHERE status = 'active'
-        AND "pointAssetCode" = ${POINT_ASSET_CODE}
-        AND "referenceAssetCode" = ${REFERENCE_ASSET_CODE}
-      FOR UPDATE`
+    // Advisory lock only, and only inside an already-open transaction.
+    await lockValuePolicyGovernance(db as Prisma.TransactionClient)
   }
 
-  const policies = await db.valuePolicy.findMany({
-    where: {
-      status: 'active',
-      pointAssetCode: POINT_ASSET_CODE,
-      referenceAssetCode: REFERENCE_ASSET_CODE,
-    },
-    include: {
-      pointAsset: true,
-      referenceAsset: true,
-    },
-  })
+  const policies = await loadActiveCnyPolicies(db)
 
   if (policies.length === 0) {
     logger.error({
@@ -280,49 +286,100 @@ export async function quoteOfferPricing(
   db: DbClient,
   pointsAmount: number,
 ): Promise<OrderPricingDto | undefined> {
-  if (!isEnabledMode(currentMode())) return undefined
+  const mode = currentMode()
+  if (!isEnabledMode(mode)) {
+    recordResolution('disabled', mode)
+    return undefined
+  }
   const policy = await resolveActiveCnyPolicy(db)
   const referenceAmountAtomic = convertOfferPrice(policy, pointsAmount)
   return toOrderPricingDto(policy, pointsAmount, referenceAmountAtomic)
 }
 
-function policyMatchesExpected(
-  policy: ResolvedValuePolicy,
-  expectedValuePolicyId: string,
-): boolean {
-  return policy.id === expectedValuePolicyId
-    && policy.referenceAssetCode === REFERENCE_ASSET_CODE
-    && policy.effectiveAt.getTime() <= Date.now()
+function hasExpectedPolicyId(value: string | undefined): value is string {
+  return value != null && value !== ''
 }
 
+function toPricingContext(policy: ResolvedValuePolicy, pointsAmount: number): OrderPricingContext {
+  return {
+    policy,
+    pointsAmountAtomic: BigInt(pointsAmount),
+    referenceAmountAtomic: convertOfferPrice(policy, pointsAmount),
+  }
+}
+
+/**
+ * Frozen Phase 1 closure contract:
+ * - A concrete but unusable expectedValuePolicyId is always 409 VALUE_POLICY_CHANGED.
+ * - shadow without an ID and without a unique usable active CNY policy is 503.
+ * - An existing active CNY row whose internals are corrupt is 500.
+ */
 export async function resolvePricingForOrder(
-  db: DbClient,
+  db: Prisma.TransactionClient,
   input: {
     pointsAmount: number
     expectedValuePolicyId?: string
   },
 ): Promise<OrderPricingContext | undefined> {
   const mode = currentMode()
-  if (mode === 'off') return undefined
+  if (mode === 'off') {
+    recordResolution('disabled', mode)
+    return undefined
+  }
 
-  if (mode === 'enforce' && (input.expectedValuePolicyId == null || input.expectedValuePolicyId === '')) {
+  if (mode === 'enforce' && !hasExpectedPolicyId(input.expectedValuePolicyId)) {
     throw valuePolicyRequired()
   }
 
-  const policy = await resolveActiveCnyPolicy(db, { lock: true })
+  await lockValuePolicyGovernance(db)
 
-  if (input.expectedValuePolicyId != null && input.expectedValuePolicyId !== '') {
-    if (!policyMatchesExpected(policy, input.expectedValuePolicyId)) {
-      valuePolicyChangedTotal.inc()
-      throw valuePolicyChanged()
+  const expectedId = hasExpectedPolicyId(input.expectedValuePolicyId)
+    ? input.expectedValuePolicyId
+    : undefined
+  const actives = await loadActiveCnyPolicies(db)
+
+  if (actives.length > 1) {
+    logger.error({
+      event: 'value_policy_multiple_active',
+      mode,
+      count: actives.length,
+    }, 'multiple active CNY value policies detected')
+    if (expectedId) rejectChanged()
+    recordResolution('multiple', mode)
+    throw valuePolicyUnavailable()
+  }
+
+  if (actives.length === 1) {
+    const current = actives[0]
+    if (policyViolatesInvariants(current)) {
+      logger.error({
+        event: 'value_policy_data_invalid',
+        policyId: current.id,
+        pointAssetCode: current.pointAssetCode,
+        referenceAssetCode: current.referenceAssetCode,
+      }, 'active value policy violates internal invariants')
+      recordResolution('invalid', mode)
+      throw valuePolicyDataInvalid()
     }
+
+    const resolved = validateResolvedPolicy(current)
+    if (expectedId && expectedId !== resolved.id) {
+      rejectChanged()
+    }
+    recordResolution('found', mode)
+    return toPricingContext(resolved, input.pointsAmount)
   }
 
-  return {
-    policy,
-    pointsAmountAtomic: BigInt(input.pointsAmount),
-    referenceAmountAtomic: convertOfferPrice(policy, input.pointsAmount),
+  if (expectedId) {
+    rejectChanged()
   }
+
+  logger.error({
+    event: 'value_policy_unavailable',
+    mode,
+  }, 'no unique active CNY value policy')
+  recordResolution('unavailable', mode)
+  throw valuePolicyUnavailable()
 }
 
 export async function createOrderPricingSnapshot(
@@ -368,6 +425,19 @@ export async function createOrderPricingSnapshot(
     throw err
   }
 
-  orderPricingSnapshotCreatedTotal.inc()
   return toOrderPricingDto(context.policy, input.orderPrice, context.referenceAmountAtomic)
+}
+
+export function recordOrderPricingSnapshotCommitted(): void {
+  orderPricingSnapshotCreatedTotal.inc()
+}
+
+export function recordOrderPricingSnapshotRolledBack(): void {
+  orderPricingSnapshotFailureTotal.inc()
+}
+
+export function recordEnabledModeOrderCommitted(): void {
+  if (isEnabledMode(currentMode())) {
+    orderValuePolicyEnabledCommittedTotal.inc()
+  }
 }

@@ -1,0 +1,320 @@
+{
+  "schemaVersion": 1,
+  "period": {
+    "from": "2026-01-01T00:00:00.000Z",
+    "to": "2026-06-30T23:59:59.999Z"
+  },
+  "offers": [
+    {
+      "offerRef": "c489b34cea2b06e8dc64df0f8901cc8275b839be74502a7846ef9b074bf961e3",
+      "category": "subscription",
+      "pricePoints": "300",
+      "merchantCostCnyAtomic": "80"
+    },
+    {
+      "offerRef": "58b0d56597bc4e997e50f6068e3548edccd4fed32533b4ac3adfcf54f2d37f61",
+      "category": "subscription",
+      "pricePoints": "500",
+      "merchantCostCnyAtomic": "120"
+    },
+    {
+      "offerRef": "aa5e2d21ac50b3b1e65cc099d0fb4651861eae54bca8c35007a9887579d6fb14",
+      "category": "subscription",
+      "pricePoints": "800",
+      "merchantCostCnyAtomic": "200"
+    },
+    {
+      "offerRef": "1a85a2b368ab81f8520a3df8d3984fb78b8bd0a67ca0d16f6b7de4863e9c1f93",
+      "category": "subscription",
+      "pricePoints": "1000",
+      "merchantCostCnyAtomic": "280"
+    },
+    {
+      "offerRef": "fb4073522ee5a4e1d6afacdf14af396f12339ab91d41454d88e8fbc201983d2b",
+      "category": "subscription",
+      "pricePoints": "1200",
+      "merchantCostCnyAtomic": "400"
+    },
+    {
+      "offerRef": "159dad746f4a10f7759a4a8f4213e09d4a92ef1c128797e2e80949dd43a01550",
+      "category": "subscription",
+      "pricePoints": "1201",
+      "merchantCostCnyAtomic": "410"
+    },
+    {
+      "offerRef": "e70031aebea7b0119e9f75bf1572b2b0628f0ffd9e25f772e4daf5975062b10b",
+      "category": "subscription",
+      "pricePoints": "1500",
+      "merchantCostCnyAtomic": "500"
+    },
+    {
+      "offerRef": "4912e5113b29ffa6f691844a20da0df085db4c5a17dfcc61c8a48e0184896d1f",
+      "category": "subscription",
+      "pricePoints": "1800"
+    },
+    {
+      "offerRef": "840364083910b0e3a01842379578977d68897e98a6ee93d2c1d5ea75d28c6b78",
+      "category": "subscription",
+      "pricePoints": "2000",
+      "merchantCostCnyAtomic": "700"
+    },
+    {
+      "offerRef": "536ad602226a26c3920e8d9db164802f35e999f0f5c2661f0d05b4524eee3740",
+      "category": "subscription",
+      "pricePoints": "2500",
+      "merchantCostCnyAtomic": "900"
+    },
+    {
+      "offerRef": "9cca56a879db415f12277de54f94ba50d2dad2ba476e671a2c02ac40c720989c",
+      "category": "subscription",
+      "pricePoints": "3000",
+      "merchantCostCnyAtomic": "1100"
+    },
+    {
+      "offerRef": "fabbd94e4bd3ff4291812b1f7d35a727b59ab200a39f3480dd20a65952a84fab",
+      "category": "subscription",
+      "pricePoints": "3333",
+      "merchantCostCnyAtomic": "1500"
+    },
+    {
+      "offerRef": "690cee37134fecb361048ec199a994a2be89cce94e37d2aeea791446acb12042",
+      "category": "digital",
+      "pricePoints": "99"
+    },
+    {
+      "offerRef": "9a7423855eca0e63d6af38d132dc3d69dad62b978000ea23e1251970b8dd304c",
+      "category": "digital",
+      "pricePoints": "150"
+    },
+    {
+      "offerRef": "4d4618c2aa54deaa837d0c6f8d21a2cf4642d2d71a120f10377aadbf15dae24d",
+      "category": "digital",
+      "pricePoints": "200"
+    },
+    {
+      "offerRef": "f57aa20ca64a7ec81a7ddef70ff2ab6daac8accc9c58e73acb2ef142a2a9ea40",
+      "category": "rare",
+      "pricePoints": "9999"
+    },
+    {
+      "offerRef": "f266981cee342061ab9cd5a5d3b641837f51e657b0eeadd2f51bcfe68dbb8784",
+      "category": "rare",
+      "pricePoints": "100"
+    }
+  ],
+  "accounts": [
+    {
+      "accountRef": "cd603b1a601921deaa60a601e883201ecacf04c74e04ced33109a9f8bd703e66",
+      "balancePoints": "100000000000000000000",
+      "frozenPoints": "5000"
+    },
+    {
+      "accountRef": "fc3d737c8fb29533733da397b346c81fe579ab9831695c7c78fab71641d7d82e",
+      "balancePoints": "200",
+      "frozenPoints": "1800"
+    },
+    {
+      "accountRef": "b9554a1758e98c5cd55590ec5a8ac775d7dc18b5545e02f6fe4a8c3571d6c819",
+      "balancePoints": "4000",
+      "frozenPoints": "0"
+    },
+    {
+      "accountRef": "c35ecfab7615bfead045ade88bc2254b0462fe0abc9148179ef91dc40e9e0ec9",
+      "balancePoints": "50",
+      "frozenPoints": "0"
+    },
+    {
+      "accountRef": "6747d373fad8f465a9f8ba0940c7ba1352ac00861a66cce796962500af45a73c",
+      "balancePoints": "800",
+      "frozenPoints": "100"
+    },
+    {
+      "accountRef": "4b103e7406050fe74a3b2c2c638187af4f614c6fa0245feda0c0d07cb14bd954",
+      "balancePoints": "1500",
+      "frozenPoints": "0"
+    },
+    {
+      "accountRef": "b90ba07351f8214966450a3f7076addba7e7361ee29a2d3a7daaeb03121f01b3",
+      "balancePoints": "2200",
+      "frozenPoints": "200"
+    },
+    {
+      "accountRef": "d57dcd29e2ee60b686d00a038efbb1c0a02790697447859bbeb58ab49fc6f228",
+      "balancePoints": "600",
+      "frozenPoints": "0"
+    },
+    {
+      "accountRef": "f5a0182cda3c41a7fc440a0af7dbc53a78ed3369c4c375313a4be9a3e3cf4c03",
+      "balancePoints": "90",
+      "frozenPoints": "10"
+    },
+    {
+      "accountRef": "7a96fbfc7184eb827bdc41ab6ca738713e7c8f4efe3f4f2de7e92345690272f9",
+      "balancePoints": "3100",
+      "frozenPoints": "0"
+    },
+    {
+      "accountRef": "63e827f73bdfaacdbe54bef6b5dcab015abd7b7c77342a9da898186c382ed59d",
+      "balancePoints": "0",
+      "frozenPoints": "0"
+    },
+    {
+      "accountRef": "6ecd43b2ae57ed5b006ed648625d873406d76ef770c026173953acce1861b3d3",
+      "balancePoints": "18000",
+      "frozenPoints": "2000"
+    }
+  ],
+  "monthlyActivity": [
+    {
+      "month": "2026-01",
+      "accountRef": "cd603b1a601921deaa60a601e883201ecacf04c74e04ced33109a9f8bd703e66",
+      "earnedPoints": "8000",
+      "spentPoints": "1200",
+      "expiredPoints": "0",
+      "refundedPoints": "0"
+    },
+    {
+      "month": "2026-01",
+      "accountRef": "fc3d737c8fb29533733da397b346c81fe579ab9831695c7c78fab71641d7d82e",
+      "earnedPoints": "400",
+      "spentPoints": "100",
+      "expiredPoints": "0",
+      "refundedPoints": "50"
+    },
+    {
+      "month": "2026-01",
+      "accountRef": "b9554a1758e98c5cd55590ec5a8ac775d7dc18b5545e02f6fe4a8c3571d6c819",
+      "earnedPoints": "600",
+      "spentPoints": "0",
+      "expiredPoints": "0",
+      "refundedPoints": "0"
+    },
+    {
+      "month": "2026-01",
+      "accountRef": "c35ecfab7615bfead045ade88bc2254b0462fe0abc9148179ef91dc40e9e0ec9",
+      "earnedPoints": "80",
+      "spentPoints": "0",
+      "expiredPoints": "20",
+      "refundedPoints": "0"
+    },
+    {
+      "month": "2026-01",
+      "accountRef": "6747d373fad8f465a9f8ba0940c7ba1352ac00861a66cce796962500af45a73c",
+      "earnedPoints": "900",
+      "spentPoints": "500",
+      "expiredPoints": "0",
+      "refundedPoints": "0"
+    },
+    {
+      "month": "2026-01",
+      "accountRef": "4b103e7406050fe74a3b2c2c638187af4f614c6fa0245feda0c0d07cb14bd954",
+      "earnedPoints": "1100",
+      "spentPoints": "800",
+      "expiredPoints": "0",
+      "refundedPoints": "200"
+    },
+    {
+      "month": "2026-01",
+      "accountRef": "b90ba07351f8214966450a3f7076addba7e7361ee29a2d3a7daaeb03121f01b3",
+      "earnedPoints": "700",
+      "spentPoints": "700",
+      "expiredPoints": "0",
+      "refundedPoints": "0"
+    },
+    {
+      "month": "2026-01",
+      "accountRef": "d57dcd29e2ee60b686d00a038efbb1c0a02790697447859bbeb58ab49fc6f228",
+      "earnedPoints": "500",
+      "spentPoints": "300",
+      "expiredPoints": "0",
+      "refundedPoints": "0"
+    },
+    {
+      "month": "2026-01",
+      "accountRef": "f5a0182cda3c41a7fc440a0af7dbc53a78ed3369c4c375313a4be9a3e3cf4c03",
+      "earnedPoints": "200",
+      "spentPoints": "150",
+      "expiredPoints": "0",
+      "refundedPoints": "0"
+    },
+    {
+      "month": "2026-01",
+      "accountRef": "7a96fbfc7184eb827bdc41ab6ca738713e7c8f4efe3f4f2de7e92345690272f9",
+      "earnedPoints": "1400",
+      "spentPoints": "1000",
+      "expiredPoints": "0",
+      "refundedPoints": "0"
+    },
+    {
+      "month": "2026-01",
+      "accountRef": "63e827f73bdfaacdbe54bef6b5dcab015abd7b7c77342a9da898186c382ed59d",
+      "earnedPoints": "300",
+      "spentPoints": "300",
+      "expiredPoints": "0",
+      "refundedPoints": "0"
+    },
+    {
+      "month": "2026-01",
+      "accountRef": "6ecd43b2ae57ed5b006ed648625d873406d76ef770c026173953acce1861b3d3",
+      "earnedPoints": "2500",
+      "spentPoints": "1800",
+      "expiredPoints": "0",
+      "refundedPoints": "0"
+    },
+    {
+      "month": "2026-02",
+      "accountRef": "cd603b1a601921deaa60a601e883201ecacf04c74e04ced33109a9f8bd703e66",
+      "earnedPoints": "8000",
+      "spentPoints": "0",
+      "expiredPoints": "0",
+      "refundedPoints": "0"
+    },
+    {
+      "month": "2026-02",
+      "accountRef": "6747d373fad8f465a9f8ba0940c7ba1352ac00861a66cce796962500af45a73c",
+      "earnedPoints": "900",
+      "spentPoints": "1200",
+      "expiredPoints": "0",
+      "refundedPoints": "0"
+    },
+    {
+      "month": "2026-02",
+      "accountRef": "4b103e7406050fe74a3b2c2c638187af4f614c6fa0245feda0c0d07cb14bd954",
+      "earnedPoints": "1100",
+      "spentPoints": "400",
+      "expiredPoints": "0",
+      "refundedPoints": "0"
+    },
+    {
+      "month": "2026-03",
+      "accountRef": "6ecd43b2ae57ed5b006ed648625d873406d76ef770c026173953acce1861b3d3",
+      "earnedPoints": "2500",
+      "spentPoints": "3333",
+      "expiredPoints": "0",
+      "refundedPoints": "100"
+    }
+  ],
+  "orders": [
+    {
+      "orderRef": "8ec8c55c2f19634a51034cca6860780b2cb3212b3dd418f6bd591d7b2a9b51c0",
+      "offerRef": "fb4073522ee5a4e1d6afacdf14af396f12339ab91d41454d88e8fbc201983d2b",
+      "accountRef": "6747d373fad8f465a9f8ba0940c7ba1352ac00861a66cce796962500af45a73c",
+      "points": "1200",
+      "status": "completed"
+    },
+    {
+      "orderRef": "7701c89a3bcdc23f807de5385b4956f548c09e1ed630f1876ba52485966f5a9e",
+      "offerRef": "159dad746f4a10f7759a4a8f4213e09d4a92ef1c128797e2e80949dd43a01550",
+      "accountRef": "4b103e7406050fe74a3b2c2c638187af4f614c6fa0245feda0c0d07cb14bd954",
+      "points": "1201",
+      "status": "refunded"
+    },
+    {
+      "orderRef": "e437844153d1f2cf9442da508adba5a8c801c39746a41cf1d5c9699e332b2dbb",
+      "offerRef": "690cee37134fecb361048ec199a994a2be89cce94e37d2aeea791446acb12042",
+      "accountRef": "f5a0182cda3c41a7fc440a0af7dbc53a78ed3369c4c375313a4be9a3e3cf4c03",
+      "points": "99",
+      "status": "cancelled"
+    }
+  ]
+}

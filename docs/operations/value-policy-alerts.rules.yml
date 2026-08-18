@@ -1,0 +1,45 @@
+groups:
+  - name: monexus-value-policy
+    rules:
+      - alert: MoNexusValuePolicyUnavailable
+        expr: increase(value_policy_resolution_total{result="unavailable",mode=~"shadow|enforce"}[5m]) > 0
+        for: 2m
+        labels:
+          severity: P0
+          routing: value-policy-p0
+      - alert: MoNexusValuePolicyInvariantBroken
+        expr: increase(value_policy_resolution_total{result=~"multiple|invalid"}[5m]) > 0
+        for: 0m
+        labels:
+          severity: P0
+          routing: value-policy-p0
+      - alert: MoNexusValuePolicyAssetIllegal
+        expr: increase(value_policy_resolution_total{result="invalid"}[5m]) > 0
+        for: 0m
+        labels:
+          severity: P0
+          routing: value-policy-p0
+      - alert: MoNexusEnabledModeOrderMissingSnapshot
+        expr: (increase(order_value_policy_enabled_committed_total[15m]) - increase(order_pricing_snapshot_created_total[15m])) > 0 or value_policy_missing_snapshot_orders > 0
+        for: 15m
+        labels:
+          severity: P0
+          routing: value-policy-p0
+      - alert: MoNexusOrderPricingSnapshotInconsistent
+        expr: increase(order_pricing_snapshot_failure_total[10m]) > 0
+        for: 5m
+        labels:
+          severity: P0
+          routing: value-policy-p0
+      - alert: MoNexusOrderPricingSnapshotFailuresRising
+        expr: increase(order_pricing_snapshot_failure_total[15m]) >= 5
+        for: 10m
+        labels:
+          severity: P1
+          routing: value-policy-p1
+      - alert: MoNexusValuePolicyChangedRateElevated
+        expr: increase(value_policy_changed_total[10m]) >= 20
+        for: 10m
+        labels:
+          severity: P1
+          routing: value-policy-p1

@@ -1046,6 +1046,12 @@ The preflight requires HTTPS `FRONTEND_ORIGIN`, `COOKIE_SECURE=true`, strong `JW
 
 `docs/operations/sentry-alert-rules.md` defines the production alert rules built on the M4 Sentry, metrics, and web-vitals foundation.
 
+ValuePolicy Phase 1 (`SPEC-VALUE-POLICY-P1-001`) uses
+`docs/operations/value-policy-runbook.md` and
+`docs/operations/value-policy-alerts.md`. Those documents are the activation,
+rollback, and Prometheus-contract source of truth. They do not activate
+production alerts or a production ValuePolicy.
+
 | Rule | Severity | Window | Routing label |
 | --- | --- | --- | --- |
 | `MoNexus Backend error spike` | P1 | 5 minutes | `backend-error-p1` |

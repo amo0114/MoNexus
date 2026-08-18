@@ -7,6 +7,31 @@ import { decryptMfaSecret, generateTotp } from '../modules/auth/mfa.js'
 import { ensureSeedCategories } from '../modules/catalog/bootstrap.js'
 import { getActiveCategoryIdByLabel, getActiveNetworkNodeCategoryId } from './catalogFixture.js'
 import type { ValuePolicyStatus } from '@prisma/client'
+import { provisionValuePolicy } from '../modules/valuePolicy/governance.js'
+
+export const TEST_VALUE_POLICY_EVIDENCE = {
+  d02DecisionRecordRef: 'test-fixture/d02',
+  d02DecisionRecordSha256: 'a'.repeat(64),
+  d03DecisionRecordRef: 'test-fixture/d03',
+  d03DecisionRecordSha256: 'b'.repeat(64),
+  disclosureVersion: 'test-v1',
+} as const
+
+export async function createTestValuePolicyActors() {
+  const [creator, approver] = await Promise.all([
+    prisma.user.upsert({
+      where: { email: 'value-policy-maker@test.local' },
+      update: { role: 'admin', status: '正常' },
+      create: { email: 'value-policy-maker@test.local', password: 'test-only', role: 'admin' },
+    }),
+    prisma.user.upsert({
+      where: { email: 'value-policy-checker@test.local' },
+      update: { role: 'admin', status: '正常' },
+      create: { email: 'value-policy-checker@test.local', password: 'test-only', role: 'admin' },
+    }),
+  ])
+  return { creator, approver }
+}
 
 export const api = request(app)
 
@@ -141,23 +166,30 @@ export async function createTestCnyValuePolicy(options?: {
   numerator?: bigint
   denominator?: bigint
   effectiveAt?: Date
+  createdAt?: Date
   referenceAssetCode?: string
+  pointAssetCode?: string
+  createdByUserId?: number
+  approvedByUserId?: number
 }) {
   const version = options?.version ?? 1
-  return prisma.valuePolicy.create({
-    data: {
-      id: options?.id ?? `vp_cny_${version}`,
-      version,
-      pointAssetCode: 'RP',
-      referenceAssetCode: options?.referenceAssetCode ?? 'CNY',
-      referenceAtomicPerPointNumerator: options?.numerator ?? 1n,
-      referenceAtomicPerPointDenominator: options?.denominator ?? 1n,
-      roundingMode: 'HALF_EVEN',
-      status: options?.status ?? 'active',
-      effectiveAt: options?.effectiveAt ?? new Date('2020-01-01T00:00:00.000Z'),
-      activatedAt: (options?.status ?? 'active') === 'active' ? new Date() : null,
-    },
-  })
+  const actors = options?.createdByUserId && options?.approvedByUserId
+    ? { creator: { id: options.createdByUserId }, approver: { id: options.approvedByUserId } }
+    : await createTestValuePolicyActors()
+  return prisma.$transaction(tx => provisionValuePolicy(tx, {
+    id: options?.id ?? `vp_cny_${version}`,
+    version,
+    pointAssetCode: options?.pointAssetCode,
+    referenceAssetCode: options?.referenceAssetCode,
+    numerator: options?.numerator,
+    denominator: options?.denominator,
+    effectiveAt: options?.effectiveAt ?? new Date('2020-01-01T00:00:00.000Z'),
+    createdAt: options?.createdAt,
+    status: options?.status ?? 'active',
+    createdByUserId: actors.creator.id,
+    approvedByUserId: actors.approver.id,
+    ...TEST_VALUE_POLICY_EVIDENCE,
+  }))
 }
 
 export interface AuthCookies {
