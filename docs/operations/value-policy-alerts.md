@@ -4,11 +4,15 @@ Review date: 2026-08-18. Scope: machine-readable Prometheus alert contract for
 `SPEC-VALUE-POLICY-P1-001` closure. This document defines rule names, PromQL,
 thresholds, duration, severity, and routing labels.
 
-**This repository does not create or activate external production alerts.**
-Sentry/Alertmanager/PagerDuty objects must be created by an operator after
-D-02/D-03. The automated check in
-`server/src/__tests__/value-policy-alerts.test.ts` only proves the contract
-entries still exist in this file.
+## Production delivery implementation
+
+The repository contains an opt-in `production-monitoring` Compose profile with
+private Prometheus and Alertmanager services. Prometheus loads these rules and
+scrapes the backend through a file-backed bearer token; Alertmanager routes P0
+and P1 firing/resolved messages through the production SMTP relay to the VPS
+`ALERT_EMAIL_TO` value. Neither service publishes a host port. A merge alone
+is not delivery evidence: the protected deploy and live rehearsal below must
+both succeed.
 
 Labels are a finite vocabulary (`result`, `mode`, no `policyId` / `orderId`).
 
@@ -16,8 +20,8 @@ Labels are a finite vocabulary (`result`, `mode`, no `policyId` / `orderId`).
 
 | Routing label | Severity | Primary route | Fallback | Owner |
 | --- | --- | --- | --- | --- |
-| `value-policy-p0` | P0 | Slack incident channel via `ALERT_SLACK_WEBHOOK_URL` | Email to `ALERT_EMAIL_TO` | Backend on-call |
-| `value-policy-p1` | P1 | Slack incident channel via `ALERT_SLACK_WEBHOOK_URL` | Email to `ALERT_EMAIL_TO` | Backend on-call |
+| `value-policy-p0` | P0 | Production Alertmanager email to VPS `ALERT_EMAIL_TO` | Manual escalation to the incident owner | Backend on-call |
+| `value-policy-p1` | P1 | Production Alertmanager email to VPS `ALERT_EMAIL_TO` | Manual escalation to the incident owner | Backend on-call |
 
 See `docs/operations/alert-routing.md`.
 
@@ -98,6 +102,27 @@ value_policy_missing_snapshot_orders
 ```
 
 Machine-checkable Prometheus rules live in
-`docs/operations/value-policy-alerts.rules.yml`. They are documentation of
-the contract; this repository does not load them into a production
-Alertmanager.
+`docs/operations/value-policy-alerts.rules.yml` and are mounted read-only into
+the production Prometheus container. Alertmanager consumes alerts from
+Prometheus; it does not load PromQL rule files itself.
+
+## Deployment and live rehearsal
+
+1. Keep `POINT_VALUE_POLICY_MODE=off`; alert deployment does not authorize a
+   production policy or production shadow/enforce.
+2. Set one valid `ALERT_EMAIL_TO` in the root-owned VPS `.env`. Keep the
+   existing `SMTP_*` and `METRICS_TOKEN` secrets there; do not copy them to the
+   repository or workflow logs.
+3. Deploy a reviewed master SHA through **Compose Production Deploy**. The
+   restricted entry point creates file-backed secret sources, starts private
+   Alertmanager then Prometheus, and fails unless the `monexus` target is up
+   and the required rules are loaded.
+4. Run **Production Monitoring Rehearsal**, select `value-policy-p0`, and type
+   `REHEARSE_VALUE_POLICY_EMAIL_PRODUCTION`. The forced command posts one fixed
+   synthetic alert, waits for a successful email counter increment, resolves
+   it, then requires a second successful increment with no new failure.
+5. Confirm both firing and resolved messages in the configured inbox. Workflow
+   success proves SMTP acceptance; inbox receipt proves end-to-end delivery.
+
+The synthetic alert is named `MoNexusProductionEmailRehearsal` and cannot
+create, approve, schedule, activate, or retire a ValuePolicy.

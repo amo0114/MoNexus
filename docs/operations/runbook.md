@@ -801,18 +801,43 @@ METRICS_TOKEN=$(openssl rand -hex 32)
 
 `/api/metrics` requires `Authorization: Bearer <token>` whenever the token is set. In `NODE_ENV=production` the token is mandatory: the server refuses to start without it. Leaving it unset is only acceptable for local development or isolated test runs.
 
-### Prometheus scrape config
+### Production private monitoring profile
 
 ```yaml
 scrape_configs:
   - job_name: monexus
-    scheme: https
+    scheme: http
     scrape_interval: 30s
     metrics_path: /api/metrics
-    bearer_token: <METRICS_TOKEN value>
+    bearer_token_file: /run/secrets/metrics_token
     static_configs:
-      - targets: ['api.monexus.example.com']
+      - targets: ['server:3000']
 ```
+
+The tracked configuration is `deploy/monitoring/prometheus.yml`. The
+`production-monitoring` Compose profile keeps Prometheus and Alertmanager on
+the private `monexus` network with no host ports. The restricted deployment
+entry point copies `METRICS_TOKEN` and `SMTP_PASS` from `/opt/monexus/.env`
+into separate file-backed Compose secrets under a root-only directory; it
+never places either value in the tracked configuration or workflow output.
+
+Set one valid operational recipient in the protected VPS env:
+
+```dotenv
+ALERT_EMAIL_TO=<approved-operations-inbox>
+```
+
+Normal production deploys recreate Alertmanager and Prometheus only after the
+server and web containers are healthy. The deploy fails unless Prometheus
+reports the `monexus` target up and loads the required ValuePolicy rules.
+
+For real delivery evidence, run **Production Monitoring Rehearsal** in GitHub
+Actions, select `value-policy-p0`, and enter
+`REHEARSE_VALUE_POLICY_EMAIL_PRODUCTION`. The fixed forced command sends a
+synthetic firing alert and then resolves it. It passes only when Alertmanager
+reports two successful email notification attempts and no new failed attempt.
+Confirm both messages in the recipient inbox; SMTP acceptance alone cannot
+prove that the mailbox provider did not quarantine or bounce the message.
 
 ### Useful queries
 
@@ -1095,6 +1120,11 @@ Test notification procedure:
 3. Confirm missing webhook/email values only print the plan and exit without failure.
 4. Configure `ALERT_SLACK_WEBHOOK_URL` in the selected environment, then rerun with `dry_run=false`.
 5. Confirm the Slack message reaches the expected channel. Email fallback remains an operator procedure; do not add mailbox passwords to the repo.
+
+ValuePolicy production email does not use this generic Slack-only helper.
+Follow §23 and `docs/operations/value-policy-alerts.md`: deploy the private
+monitoring profile, then run **Production Monitoring Rehearsal** and confirm
+both firing and resolved messages in the approved inbox.
 
 ## 31. M5 Gray Release
 

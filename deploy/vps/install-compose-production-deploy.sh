@@ -109,7 +109,7 @@ main() {
   mv -f "$authorized_keys_temp" "$authorized_keys"
 
   echo "[PASS] Installed restricted ${DEPLOY_USER} deployment identity."
-  echo "[PASS] SSH accepts only dry-run/deploy with a 40-character SHA through the root-owned entry point."
+  echo "[PASS] SSH accepts only dry-run/deploy with a 40-character SHA or the fixed alert rehearsal through the root-owned entry point."
 }
 
 main "$@"
