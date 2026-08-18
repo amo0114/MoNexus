@@ -109,6 +109,10 @@ REDIS_TLS=false
 LEGAL_PAGES_ENABLED=true
 LEGAL_PAGES_ENFORCEMENT=enforce
 
+# Production-only private Prometheus/Alertmanager. These reuse the existing
+# SMTP_* relay settings and METRICS_TOKEN from the same protected file.
+ALERT_EMAIL_TO=<approved-operations-inbox>
+
 # Pin releases in production. `latest` is acceptable only for a disposable demo.
 MONEXUS_IMAGE_TAG=latest
 MONEXUS_PULL_POLICY=always
@@ -160,10 +164,15 @@ Validate the final Compose configuration, then pull and start the stack:
 
 ```bash
 bash scripts/vps-compose.sh config
-bash scripts/vps-compose.sh up
+COMPOSE_PROFILES=selfhost-storage,production-monitoring bash scripts/vps-compose.sh up
 curl -fsS https://monexus.oai-o.com/api/health/live
 curl -fsS https://monexus.oai-o.com/api/health/ready
 ```
+
+The monitoring profile adds no public port. After startup,
+`monexus-prometheus-prod` and `monexus-alertmanager-prod` must both be healthy.
+Use the protected **Production Monitoring Rehearsal** workflow for a real
+firing + resolved email test instead of exposing either management UI.
 
 The first server boot runs `prisma migrate deploy`. Do **not** seed a public
 database: the bundled seed contains publicly known demo credentials. It is

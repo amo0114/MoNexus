@@ -10,8 +10,8 @@ Review date: 2026-08-18. Scope: alert routing from Sentry and ValuePolicy alert 
 | `release-regression-p1` | `MoNexus Release regression after deploy` | P1 urgent | Slack incident channel via `ALERT_SLACK_WEBHOOK_URL` | Email to `ALERT_EMAIL_TO` from `ALERT_EMAIL_FROM` | Release manager | Optional in production when `PAGERDUTY_ROUTING_KEY` is configured |
 | `api-latency-p2` | `MoNexus API P95 latency` | P2 team notification | Slack team channel via `ALERT_SLACK_WEBHOOK_URL` | Email to `ALERT_EMAIL_TO` from `ALERT_EMAIL_FROM` | Backend on-call | No default page |
 | `frontend-vitals-p2` | `MoNexus Frontend LCP/INP/CLS poor` | P2 team notification | Slack team channel via `ALERT_SLACK_WEBHOOK_URL` | Email to `ALERT_EMAIL_TO` from `ALERT_EMAIL_FROM` | Frontend on-call | No default page |
-| `value-policy-p0` | `docs/operations/value-policy-alerts.md` | P0 urgent | Slack incident channel via `ALERT_SLACK_WEBHOOK_URL` | Email to `ALERT_EMAIL_TO` from `ALERT_EMAIL_FROM` | Backend on-call | Optional in production when `PAGERDUTY_ROUTING_KEY` is configured |
-| `value-policy-p1` | `docs/operations/value-policy-alerts.md` | P1 urgent | Slack incident channel via `ALERT_SLACK_WEBHOOK_URL` | Email to `ALERT_EMAIL_TO` from `ALERT_EMAIL_FROM` | Backend on-call | Optional in production when `PAGERDUTY_ROUTING_KEY` is configured |
+| `value-policy-p0` | `docs/operations/value-policy-alerts.md` | P0 urgent | Private production Alertmanager email to VPS `ALERT_EMAIL_TO` | Manual incident-owner escalation | Backend on-call | Optional future route |
+| `value-policy-p1` | `docs/operations/value-policy-alerts.md` | P1 urgent | Private production Alertmanager email to VPS `ALERT_EMAIL_TO` | Manual incident-owner escalation | Backend on-call | Optional future route |
 
 ## Severity Policy
 
@@ -32,6 +32,11 @@ Configure these in GitHub Actions Environments for `staging` and `production`:
 
 Do not paste webhook URLs, routing keys, mailbox passwords, or bearer tokens into the repository, PR comments, issue comments, or workflow logs.
 
+The table above configures the generic routing helper. The real ValuePolicy
+Alertmanager reads its `ALERT_EMAIL_TO` from the root-owned VPS `.env` and
+reuses the VPS SMTP relay; its password is mounted from a file-backed Compose
+secret and is not copied to GitHub.
+
 ## Test Notification Procedure
 
 1. Open GitHub Actions -> **Alert Routing Test** -> **Run workflow**.
@@ -42,6 +47,10 @@ Do not paste webhook URLs, routing keys, mailbox passwords, or bearer tokens int
 6. Re-run with `dry_run` disabled and confirm a Slack message arrives in the expected channel. A live rehearsal fails closed when the webhook is absent.
 7. If Slack is not configured, confirm `ALERT_EMAIL_TO` and `ALERT_EMAIL_FROM` are present and send a manual email using the incident mailbox. The workflow records the fallback plan but does not store or use an SMTP password.
 8. For production P1 routing only, configure `PAGERDUTY_ROUTING_KEY` after the PagerDuty service and escalation policy are approved. Rehearse that path outside the default workflow before enabling automatic paging.
+
+For ValuePolicy production routing, use **Production Monitoring Rehearsal**
+instead of steps 5-8. It exercises the private Alertmanager SMTP receiver and
+requires firing plus resolved notification success before the run passes.
 
 ## First Responder Checklist
 

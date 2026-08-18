@@ -17,7 +17,7 @@ master push
        ├─ GitHub production Environment 等待人工审批
        ├─ 固定主机密钥 SSH → 受限 monexus-deploy 身份
        ├─ VPS 仅接受 deploy <40 位 SHA>
-       └─ 镜像/迁移/本机健康/公网 ready 全部通过才成功
+       └─ 镜像/迁移/应用健康/私网监控/公网 ready 全部通过才成功
 ```
 
 `workflow_run` 文件由 GitHub 从默认分支 `develop` 读取。因此，工作流必须先
@@ -44,8 +44,15 @@ master push
   `MONEXUS_USE_VPS_PROXY_OVERLAY=true` 启用 `docker-compose.vps.yml`。
 - CI 使用预置的 `DEPLOY_SSH_KNOWN_HOSTS`；严禁在 GitHub Actions 中使用
   `ssh-keyscan` 临时信任服务器。
-- 部署只重建 `server`，确认 Prisma 迁移和健康后再重建 `web`；不会重建
-  PostgreSQL、Redis、MinIO 或移除 Compose orphan。
+- 部署只重建 `server`，确认 Prisma 迁移和健康后再重建 `web`，随后重建私网
+  `alertmanager` 与 `prometheus` 并验证 scrape target/rules；不会重建 PostgreSQL、
+  Redis、MinIO 或移除 Compose orphan。监控服务不发布宿主端口。
+- `METRICS_TOKEN` 与 `SMTP_PASS` 从 root-owned VPS `.env` 原子写入
+  `/opt/monexus-monitoring/secrets`，目录为 `0700`，Compose 只把对应文件挂入
+  各自消费者。不得用 `docker compose config`、`docker inspect` 或日志打印密码。
+- Alertmanager 的非机密路由配置由同一 root-owned 入口原子生成到
+  `/opt/monexus-monitoring/config/alertmanager.yml`；生产预检先限制所有插值字段，
+  密码始终只通过 `smtp_auth_password_file` 读取。
 
 ## 首次引导
 
@@ -86,6 +93,10 @@ root 访问方式；引导结束后应立即移除它，日常工作流不得使
 5. 保持仓库变量 `COMPOSE_PRODUCTION_AUTO_DEPLOY_ENABLED` 缺失或为 `false`。这样即使
    `master` 有新提交，工作流也只会安全地跳过自动部署。
 
+VPS `/opt/monexus/.env` 还必须有一个有效的 `ALERT_EMAIL_TO`，并保留现有生产
+`SMTP_HOST/PORT/SECURE/USER/PASS/FROM` 与 `METRICS_TOKEN`。收件地址不是 GitHub
+deploy secret；SMTP 密码与 metrics token 仍不得离开 VPS。
+
 ## 演练与启用
 
 1. Actions → **Compose Production Deploy** → Run workflow，选择 `master`，保持
@@ -94,7 +105,10 @@ root 访问方式；引导结束后应立即移除它，日常工作流不得使
 2. 在维护窗口再运行一次，选择同一完整 SHA，设为 `dry_run=false`。审批后工作流
    调用受限入口；入口会保存 root-only `.env` 备份及非机密部署状态，并执行内网
    健康检查，Actions 随后验证公网 ready。
-3. 确认 Actions 摘要、VPS 状态文件、迁移和公网健康检查均正常后，设置仓库变量：
+3. 运行 **Production Monitoring Rehearsal**，选择 `value-policy-p0`，输入精确确认
+   文本 `REHEARSE_VALUE_POLICY_EMAIL_PRODUCTION`。确认 Actions 报告 firing/resolved
+   两次 SMTP acceptance，并在 `ALERT_EMAIL_TO` 邮箱确认两封邮件。
+4. 确认 Actions 摘要、VPS 状态文件、迁移、监控演练和公网健康检查均正常后，设置仓库变量：
 
    ```text
    COMPOSE_PRODUCTION_AUTO_DEPLOY_ENABLED=true
@@ -121,3 +135,8 @@ npm run verify:compose-production-deploy
 
 此检查只验证 Bash 语法、YAML 可解析性、forced-command 拒绝非法输入，以及工作流
 的关键安全闸门；不需要 Docker daemon、VPS 或生产凭据。
+
+若生产机上的 root-owned entry point 早于监控实现，首次监控发布需从同一已验证
+release checkout 以控制台更新
+`/usr/local/sbin/monexus-compose-deploy{,-ssh-wrapper}`，再对同一 SHA 重跑受保护
+deploy。不要创建普通 shell 权限或把部署账号加入 docker 组。
