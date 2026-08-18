@@ -4,10 +4,11 @@
 | --- | --- |
 | 文档 ID | SPEC-VALUE-POLICY-P1-001 |
 | 版本 | 1.0.0 |
-| 日期 | 2026-08-17 |
-| 状态 | Ready for Implementation — Production Activation Blocked by D-02 |
+| 日期 | 2026-08-18 |
+| 状态 | Implemented — Production Activation Blocked by D-02/D-03 |
 | 上位规格 | `SPEC-VALUE-LEDGER-001 v0.2.0` |
-| 代码基线 | `origin/develop@46253bc` |
+| 代码基线 | `origin/develop@c6d21bb`（PR #144 squash merge） |
+| Closure 分支 | `feat/cny-value-policy-phase-1-closure` |
 | 首个生产本位币 | `CNY`（D-01 已批准） |
 | 生产积分面值 | 未批准（D-02 待真实数据回测） |
 | 实施范围 | 后端价值政策、精确换算、checkout preview、订单定价快照及测试 |
@@ -33,7 +34,9 @@
 | D-02 | 生产积分面值 | `100 PTS = 1 CNY` | 只可用于测试夹具和数据回测；不得创建生产 active policy |
 | D-03 | 用户披露文案 | “参考价值，不代表现金赎回承诺” | API 可预留字段；生产展示前需批准 |
 
-代码实现可以开始，但生产激活必须等待 D-02。任何 Agent 都不得把候选比例写成代码常量、默认配置或不可撤销的生产 seed。
+Phase 1 工程实现已完成，但生产激活必须等待 D-02 与 D-03。任何 Agent 都不得把候选比例写成代码常量、默认配置或不可撤销的生产 seed。
+
+这不是 `SPEC-VALUE-LEDGER-001` 的大 Phase 1（ledger / lot / 双写）。账本规格后续阶段仍未实施。
 
 ## 1. 目标
 
@@ -337,6 +340,26 @@ GET /api/value-policy/current
 - ID 不一致、政策已 retired、尚未生效或基准币不是 CNY：返回 `409 VALUE_POLICY_CHANGED`；
 - 所有拒绝路径不得创建 Order、PointLog、Settlement、InventoryLog 或 snapshot，也不得改变余额/库存。
 
+### 8.4 Implementation clarification（错误码优先级，2026-08-18 冻结）
+
+第 5 节“无 active 返回 503”与第 8.3 节“retired/future expected ID 返回 409”
+同时成立时，按以下冻结解释执行，不得静默改契约：
+
+1. 客户端提交了具体但失效的政策确认（unknown / draft / approved /
+   scheduled / retired / future / 非 CNY / 与当前唯一 active CNY policy
+   不一致）→ `409 VALUE_POLICY_CHANGED`。即使系统当前没有可用替换政策，
+   也优先 409。
+2. shadow 客户端没有提交政策 ID，且系统没有唯一可用 active CNY policy →
+   `503 VALUE_POLICY_UNAVAILABLE`。
+3. enforce 缺少 `expectedValuePolicyId` → `400 VALUE_POLICY_REQUIRED`，
+   且必须发生在任何余额、库存、订单、PointLog、Settlement、InventoryLog、
+   outbox、snapshot 副作用之前。
+4. 数据库存在 active CNY policy，但其比例、kind、scale、enabled、
+   retiredAt、rounding 等内部数据违反不变量 → `500 VALUE_POLICY_DATA_INVALID`。
+   不得回退到历史比例或猜测值。
+5. `off` 忽略格式合法的 `expectedValuePolicyId`，不查询 policy，不返回
+   pricing，不写 snapshot。
+
 订单成功响应和订单详情新增 `pricing`，其内容必须来自 `OrderPricingSnapshot`，不得使用当前政策重新计算。
 
 ## 9. 错误码
@@ -510,3 +533,68 @@ npm run verify:quick
 4. 遇到 D-02、生产 seed 或业务语义不明确时停止相关部分并报告，不擅自决定；
 5. 保留当前工作区中不属于自己的改动；
 6. 实施后运行验证、检查 diff，并按完成定义逐项报告。
+
+## 19. Implementation status（2026-08-18 closure）
+
+状态：**Implemented — Production Activation Blocked by D-02/D-03**
+
+### 19.1 实现证据
+
+| 项 | 证据 |
+| --- | --- |
+| PR #144 已合并 | `origin/develop@c6d21bb` `feat(value-policy): add CNY value policy phase 1 foundation (#144)` |
+| 合并前功能提交 | `b71abc0`、`915dc41` |
+| Closure 分支 | `feat/cny-value-policy-phase-1-closure` |
+| Foundation migration | `server/prisma/migrations/20260817180000_add_value_policy_foundation/`（已合并，禁止原地修改） |
+| Closure migration | `server/prisma/migrations/20260818120000_value_policy_phase1_closure/` |
+| 内部状态推进 | `server/src/modules/valuePolicy/governance.ts`（无公开 HTTP 激活 API） |
+| 只读审计 | `npm --prefix server run value-policy:audit` |
+| 告警契约 | `docs/operations/value-policy-alerts.md` + `server/src/modules/valuePolicy/alertContract.ts` |
+| 运行手册 | `docs/operations/value-policy-runbook.md` |
+
+### 19.2 已完成
+
+- `off` / `shadow` / `enforce` 模式与错误码矩阵
+- CNY `ValuePolicy` + `OrderPricingSnapshot` 同事务落库
+- 状态机与时间戳由数据库 CHECK/trigger 保护
+- Asset/policy 典型并发按同一 advisory lock 消除 40P01
+- 指标语义与事务提交一致
+- 只读审计命令
+- 生产配置守卫：`MONEXUS_DEPLOY_ENV=production` 时强制 `off`
+
+### 19.3 生产激活 gates（未完成，且不得由工程自行决定）
+
+- D-02 生产积分面值未批准
+- D-03 生产披露文案未批准
+- 双人审批后台入口（创建人 ≠ 审批人）未开放；当前 schema 无 actor 字段
+- 未创建生产 active ValuePolicy
+- 生产 `POINT_VALUE_POLICY_MODE` 必须保持 `off`
+
+### 19.4 明确不属于本 Phase 1 的后续范围
+
+以下属于 `SPEC-VALUE-LEDGER-001` 后续阶段，不是本次 closure 的未完成代码：
+
+- LedgerAccount / LedgerTransaction / LedgerEntry
+- EntitlementLot / ConsumptionAllocation
+- RP/VC/XP 拆分
+- FxQuote
+- 真实 CNY/USD/USDT 支付
+- 用户充值、转账、提现或现金赎回
+- 商家真实货币出款
+- SettlementV2 / Payout / Reconciliation
+- 前端生产参考价值展示
+- 多租户
+- 生产 active policy
+- 自行决定 `100 PTS = 1 CNY`
+
+### 19.5 Migration 政策
+
+已合并的 `20260817180000_add_value_policy_foundation` 不得原地修改。
+部署后只允许 forward-fix。禁止 `prisma db push`。禁止回滚历史 migration。
+
+### 19.6 DOCX 同步
+
+仓库没有可靠的 `.md` → `.docx` 生成流程。对应
+`docs/specs/points-value-policy-phase-1.docx` 与
+`docs/specs/points-real-value-alignment.docx` **未在本 closure 中手工伪造同步**。
+需要独立的文档生成任务。

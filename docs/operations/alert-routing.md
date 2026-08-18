@@ -10,6 +10,8 @@ Review date: 2026-05-14. Scope: M5 alert routing from Sentry alert labels and ma
 | `release-regression-p1` | `MoNexus Release regression after deploy` | P1 urgent | Slack incident channel via `ALERT_SLACK_WEBHOOK_URL` | Email to `ALERT_EMAIL_TO` from `ALERT_EMAIL_FROM` | Release manager | Optional in production when `PAGERDUTY_ROUTING_KEY` is configured |
 | `api-latency-p2` | `MoNexus API P95 latency` | P2 team notification | Slack team channel via `ALERT_SLACK_WEBHOOK_URL` | Email to `ALERT_EMAIL_TO` from `ALERT_EMAIL_FROM` | Backend on-call | No default page |
 | `frontend-vitals-p2` | `MoNexus Frontend LCP/INP/CLS poor` | P2 team notification | Slack team channel via `ALERT_SLACK_WEBHOOK_URL` | Email to `ALERT_EMAIL_TO` from `ALERT_EMAIL_FROM` | Frontend on-call | No default page |
+| `value-policy-p0` | `docs/operations/value-policy-alerts.md` | P0 urgent | Slack incident channel via `ALERT_SLACK_WEBHOOK_URL` | Email to `ALERT_EMAIL_TO` from `ALERT_EMAIL_FROM` | Backend on-call | Optional in production when `PAGERDUTY_ROUTING_KEY` is configured |
+| `value-policy-p1` | `docs/operations/value-policy-alerts.md` | P1 urgent | Slack incident channel via `ALERT_SLACK_WEBHOOK_URL` | Email to `ALERT_EMAIL_TO` from `ALERT_EMAIL_FROM` | Backend on-call | Optional in production when `PAGERDUTY_ROUTING_KEY` is configured |
 
 ## Severity Policy
 
