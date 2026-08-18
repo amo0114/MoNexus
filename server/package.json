@@ -24,7 +24,9 @@
     "auth:break-glass-reset": "tsx src/scripts/resetAdminMfaForBreakGlass.ts",
     "db:studio": "prisma studio",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:value-policy-backtest": "vitest run --config vitest.backtest.config.ts",
+    "value-policy:backtest": "tsx src/scripts/valuePolicyBacktest.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1045.0",
