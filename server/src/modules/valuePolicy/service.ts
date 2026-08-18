@@ -4,6 +4,7 @@ import { logger } from '../../lib/logger.js'
 import {
   orderPricingSnapshotCreatedTotal,
   orderPricingSnapshotFailureTotal,
+  orderValuePolicyEnabledCommittedTotal,
   valuePolicyChangedTotal,
   valuePolicyResolutionTotal,
   type ValuePolicyModeLabel,
@@ -170,10 +171,8 @@ export async function resolveActiveCnyPolicy(
 ): Promise<ResolvedValuePolicy> {
   const mode = currentMode()
   if (options.lock) {
-    // Advisory lock only. Do not FOR UPDATE policy rows: that would wait
-    // behind a lifecycle UPDATE that already holds the row and wants this
-    // same advisory lock.
-    await lockValuePolicyGovernance(db)
+    // Advisory lock only, and only inside an already-open transaction.
+    await lockValuePolicyGovernance(db as Prisma.TransactionClient)
   }
 
   const policies = await loadActiveCnyPolicies(db)
@@ -316,7 +315,7 @@ function toPricingContext(policy: ResolvedValuePolicy, pointsAmount: number): Or
  * - An existing active CNY row whose internals are corrupt is 500.
  */
 export async function resolvePricingForOrder(
-  db: DbClient,
+  db: Prisma.TransactionClient,
   input: {
     pointsAmount: number
     expectedValuePolicyId?: string
@@ -359,11 +358,8 @@ export async function resolvePricingForOrder(
         pointAssetCode: current.pointAssetCode,
         referenceAssetCode: current.referenceAssetCode,
       }, 'active value policy violates internal invariants')
-      if (!expectedId || expectedId === current.id) {
-        recordResolution('invalid', mode)
-        throw valuePolicyDataInvalid()
-      }
-      rejectChanged()
+      recordResolution('invalid', mode)
+      throw valuePolicyDataInvalid()
     }
 
     const resolved = validateResolvedPolicy(current)
@@ -438,4 +434,10 @@ export function recordOrderPricingSnapshotCommitted(): void {
 
 export function recordOrderPricingSnapshotRolledBack(): void {
   orderPricingSnapshotFailureTotal.inc()
+}
+
+export function recordEnabledModeOrderCommitted(): void {
+  if (isEnabledMode(currentMode())) {
+    orderValuePolicyEnabledCommittedTotal.inc()
+  }
 }

@@ -10,14 +10,23 @@ const ROUNDS = 12
 const past = new Date('2020-01-01T00:00:00.000Z')
 const TX = { timeout: 8000, maxWait: 3000 } as const
 
+function errorText(err: unknown): string {
+  return err instanceof Error ? `${err.message} ${JSON.stringify(err)}` : String(err)
+}
+
 function isDeadlock(err: unknown): boolean {
-  const text = err instanceof Error ? `${err.message} ${JSON.stringify(err)}` : String(err)
+  const text = errorText(err)
   return text.includes('40P01') || /deadlock detected/i.test(text)
 }
 
+function isLockTimeout(err: unknown): boolean {
+  const text = errorText(err)
+  return text.includes('55P03') || /lock timeout|canceling statement due to lock timeout/i.test(text)
+}
+
 function isBusinessRejection(err: unknown): boolean {
-  const text = err instanceof Error ? `${err.message} ${JSON.stringify(err)}` : String(err)
-  return /value_policy_active_asset_must_be_enabled|asset_definition_in_use_by_active_policy|effective_at_not_reached|23514/.test(text)
+  const text = errorText(err)
+  return /value_policy_active_asset_must_be_enabled|asset_definition_in_use_by_active_policy|effective_at_not_reached|asset_definition_identity_immutable|value_policy_insert_must_be_draft|23514/.test(text)
 }
 
 async function resetAssetsAndPolicies() {
@@ -125,7 +134,7 @@ describe('ValuePolicy / AssetDefinition concurrency', () => {
     }
   })
 
-  it('raw SQL activate vs disable does not produce 40P01', async () => {
+  it('raw SQL activate vs disable has exactly one winner and no 40P01/lock timeout', async () => {
     const url = process.env.DATABASE_URL
     if (!url) throw new Error('DATABASE_URL is required')
 
@@ -142,21 +151,100 @@ describe('ValuePolicy / AssetDefinition concurrency', () => {
         await a.query("SET statement_timeout = '5s'")
         await b.query("SET lock_timeout = '2s'")
         await b.query("SET statement_timeout = '5s'")
-        await a.query('BEGIN')
-        await b.query('BEGIN')
 
         const raced = await Promise.allSettled([
-          a.query(
+          runAutocommitTx(a, () => a.query(
             `UPDATE "ValuePolicy" SET status = 'active', "activatedAt" = NOW() WHERE id = $1`,
             [`vp_raw_${round}`],
-          ),
-          b.query(`UPDATE "AssetDefinition" SET enabled = false WHERE code = 'CNY'`),
+          )),
+          runAutocommitTx(b, () => b.query(`UPDATE "AssetDefinition" SET enabled = false WHERE code = 'CNY'`)),
         ])
         expect(raced.some(isDeadlockResult), `raw deadlock begin round ${round}`).toBe(false)
+        expect(raced.some(result => result.status === 'rejected' && isLockTimeout(result.reason)), `raw lock timeout round ${round}`).toBe(false)
+        expect(raced.filter(result => result.status === 'fulfilled'), `round ${round} successes`).toHaveLength(1)
+        const rejected = raced.filter(result => result.status === 'rejected')
+        expect(rejected, `round ${round} rejections`).toHaveLength(1)
+        expect(isBusinessRejection(rejected[0]!.reason), `round ${round} ${errorText(rejected[0]!.reason)}`).toBe(true)
 
-        const commits = await Promise.allSettled([a.query('COMMIT'), b.query('COMMIT')])
-        expect(commits.some(isDeadlockResult), `raw deadlock commit round ${round}`).toBe(false)
         await assertInvariant()
+        const policy = await prisma.valuePolicy.findUniqueOrThrow({ where: { id: `vp_raw_${round}` } })
+        const cny = await prisma.assetDefinition.findUniqueOrThrow({ where: { code: 'CNY' } })
+        expect(policy.status === 'active').not.toBe(cny.enabled === false)
+        if (policy.status === 'active') {
+          expect(cny.enabled).toBe(true)
+          expect(cny.retiredAt).toBeNull()
+        } else {
+          expect(policy.status).toBe('scheduled')
+          expect(cny.enabled).toBe(false)
+        }
+      } finally {
+        await a.end()
+        await b.end()
+      }
+    }
+  })
+
+  it(`policy INSERT vs AssetDefinition identity update has one winner over ${ROUNDS} rounds`, async () => {
+    const url = process.env.DATABASE_URL
+    if (!url) throw new Error('DATABASE_URL is required')
+
+    for (let round = 0; round < ROUNDS; round += 1) {
+      await resetAssetsAndPolicies()
+      const assetCode = `RP_LOCK_${round}`
+      await prisma.assetDefinition.upsert({
+        where: { code: assetCode },
+        update: { enabled: true, retiredAt: null, kind: 'reward_point', scale: 0 },
+        create: { code: assetCode, kind: 'reward_point', scale: 0, enabled: true },
+      })
+      await provisionValuePolicy(prisma, {
+        id: `vp_share_${round}`,
+        version: 17000 + round,
+        pointAssetCode: assetCode,
+        effectiveAt: past,
+        createdAt: past,
+        status: 'draft',
+      })
+
+      const a = new Client({ connectionString: url })
+      const b = new Client({ connectionString: url })
+      await a.connect()
+      await b.connect()
+      try {
+        await a.query("SET lock_timeout = '2s'")
+        await a.query("SET statement_timeout = '5s'")
+        await b.query("SET lock_timeout = '2s'")
+        await b.query("SET statement_timeout = '5s'")
+
+        const raced = await Promise.allSettled([
+          runAutocommitTx(a, () => a.query(
+            `INSERT INTO "ValuePolicy" (
+              id, version, "pointAssetCode", "referenceAssetCode",
+              "referenceAtomicPerPointNumerator", "referenceAtomicPerPointDenominator",
+              "roundingMode", status, "effectiveAt", "createdAt"
+            ) VALUES ($1, $2, $3, 'CNY', 1, 1, 'HALF_EVEN', 'draft', $4, $4)`,
+            [`vp_share_ins_${round}`, 18000 + round, assetCode, past],
+          )),
+          runAutocommitTx(b, () => b.query(
+            `UPDATE "AssetDefinition" SET scale = 1 WHERE code = $1`,
+            [assetCode],
+          )),
+        ])
+
+        expect(raced.some(isDeadlockResult), `identity deadlock round ${round}`).toBe(false)
+        expect(raced.some(result => result.status === 'rejected' && isLockTimeout(result.reason)), `identity lock timeout round ${round}`).toBe(false)
+        expect(raced.filter(result => result.status === 'fulfilled')).toHaveLength(1)
+        const rejected = raced.filter(result => result.status === 'rejected')
+        expect(rejected).toHaveLength(1)
+        expect(isBusinessRejection(rejected[0]!.reason), errorText(rejected[0]!.reason)).toBe(true)
+
+        const asset = await prisma.assetDefinition.findUniqueOrThrow({ where: { code: assetCode } })
+        const policies = await prisma.valuePolicy.findMany({
+          where: { pointAssetCode: assetCode },
+        })
+        if (policies.length > 0) {
+          expect(asset.scale).toBe(0)
+          expect(asset.kind).toBe('reward_point')
+        }
       } finally {
         await a.query('ROLLBACK').catch(() => {})
         await b.query('ROLLBACK').catch(() => {})
@@ -169,4 +257,16 @@ describe('ValuePolicy / AssetDefinition concurrency', () => {
 
 function isDeadlockResult(result: PromiseSettledResult<unknown>): boolean {
   return result.status === 'rejected' && isDeadlock(result.reason)
+}
+
+async function runAutocommitTx(client: Client, work: () => Promise<unknown>): Promise<unknown> {
+  await client.query('BEGIN')
+  try {
+    const result = await work()
+    await client.query('COMMIT')
+    return result
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {})
+    throw err
+  }
 }

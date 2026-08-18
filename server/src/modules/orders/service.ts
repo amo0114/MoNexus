@@ -56,6 +56,7 @@ import {
 } from '../legal/service.js'
 import {
   createOrderPricingSnapshot,
+  recordEnabledModeOrderCommitted,
   recordOrderPricingSnapshotCommitted,
   recordOrderPricingSnapshotRolledBack,
   resolvePricingForOrder,
@@ -913,6 +914,7 @@ async function createOrderOnce(
   if (result.pricing) {
     recordOrderPricingSnapshotCommitted()
   }
+  recordEnabledModeOrderCommitted()
 
   await invalidateProductPublicCache(productId, { detail: true, list: 'coalesced' })
   if (autoProvisionTaskCreated && config.nodeEnv !== 'test') {

@@ -54,9 +54,9 @@ export const VALUE_POLICY_ALERTS = [
     name: 'MoNexus Enabled-mode order missing snapshot',
     severity: 'P0',
     routingLabel: 'value-policy-p0',
-    expr: 'increase(order_pricing_snapshot_created_total[15m]) == 0 and increase(value_policy_resolution_total{result="found",mode=~"shadow|enforce"}[15m]) > 0',
+    expr: '(increase(order_value_policy_enabled_committed_total[15m]) - increase(order_pricing_snapshot_created_total[15m])) > 0 or value_policy_missing_snapshot_orders > 0',
     for: '15m',
-    summary: 'enabled-mode resolutions are succeeding but no snapshots are committing',
+    summary: 'enabled-mode committed orders exceed committed snapshots, or the last audit gauge is non-zero',
   },
   {
     id: 'order-pricing-snapshot-inconsistent',
@@ -90,3 +90,4 @@ export const VALUE_POLICY_ALERTS = [
 export const VALUE_POLICY_ALERT_IDS = VALUE_POLICY_ALERTS.map(alert => alert.id)
 
 export const VALUE_POLICY_ALERT_DOC_PATH = 'docs/operations/value-policy-alerts.md'
+export const VALUE_POLICY_ALERT_RULES_PATH = 'docs/operations/value-policy-alerts.rules.yml'

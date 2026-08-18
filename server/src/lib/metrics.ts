@@ -379,3 +379,15 @@ export const orderPricingSnapshotFailureTotal = new client.Counter({
   help: 'Failed attempts to persist an order pricing snapshot',
   registers: [registry],
 })
+
+export const orderValuePolicyEnabledCommittedTotal = new client.Counter({
+  name: 'order_value_policy_enabled_committed_total',
+  help: 'Orders whose creating transaction committed while POINT_VALUE_POLICY_MODE was shadow or enforce',
+  registers: [registry],
+})
+
+export const valuePolicyMissingSnapshotOrders = new client.Gauge({
+  name: 'value_policy_missing_snapshot_orders',
+  help: 'Enabled-window orders missing a pricing snapshot as of the last read-only audit',
+  registers: [registry],
+})

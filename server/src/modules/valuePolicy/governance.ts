@@ -8,15 +8,31 @@ type DbClient = PrismaClient | Prisma.TransactionClient
  * invariant changes. Must match pg_advisory_xact_lock keys in:
  * - 20260817180000_add_value_policy_foundation
  * - 20260818120000_value_policy_phase1_closure
+ * - 20260818140000_value_policy_asset_share_before_advisory
  *
- * Application order paths take this lock before reading expected/current
- * policies. Triggers take the same lock. Neither path then waits on the
- * other table's row lock, so there is no 40P01 cycle.
+ * The lock is transaction-scoped. Callers MUST hold an open transaction;
+ * a bare PrismaClient implicit transaction would release the lock at the
+ * end of the SELECT/EXECUTE statement.
  */
 export const VALUE_POLICY_GOVERNANCE_LOCK = { classid: 88170001, objid: 1 } as const
 
-export async function lockValuePolicyGovernance(db: DbClient): Promise<void> {
-  await db.$executeRaw`SELECT pg_advisory_xact_lock(88170001, 1)`
+export function isPrismaClient(db: DbClient): db is PrismaClient {
+  return typeof (db as PrismaClient).$connect === 'function'
+    && typeof (db as PrismaClient).$transaction === 'function'
+}
+
+export async function withGovernanceTransaction<T>(
+  db: DbClient,
+  fn: (tx: Prisma.TransactionClient) => Promise<T>,
+): Promise<T> {
+  if (isPrismaClient(db)) {
+    return db.$transaction(tx => fn(tx))
+  }
+  return fn(db)
+}
+
+export async function lockValuePolicyGovernance(tx: Prisma.TransactionClient): Promise<void> {
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(88170001, 1)`
 }
 
 export type DraftValuePolicyInput = {
@@ -36,12 +52,12 @@ function prismaError(message: string): Error {
   return err
 }
 
-export async function createDraftValuePolicy(
-  db: DbClient,
+async function createDraftValuePolicyInTx(
+  tx: Prisma.TransactionClient,
   input: DraftValuePolicyInput,
 ): Promise<ValuePolicy> {
-  await lockValuePolicyGovernance(db)
-  return db.valuePolicy.create({
+  await lockValuePolicyGovernance(tx)
+  return tx.valuePolicy.create({
     data: {
       id: input.id,
       version: input.version,
@@ -60,39 +76,42 @@ export async function createDraftValuePolicy(
   })
 }
 
-export async function approveValuePolicy(
-  db: DbClient,
+async function approveValuePolicyInTx(
+  tx: Prisma.TransactionClient,
   id: string,
-  approvedAt: Date = new Date(),
+  approvedAt: Date,
 ): Promise<ValuePolicy> {
-  await lockValuePolicyGovernance(db)
-  const current = await db.valuePolicy.findUnique({ where: { id } })
+  await lockValuePolicyGovernance(tx)
+  const current = await tx.valuePolicy.findUnique({ where: { id } })
   if (!current) throw prismaError('value_policy_not_found')
   if (current.status !== 'draft') throw prismaError('value_policy_invalid_status_transition')
-  return db.valuePolicy.update({
+  return tx.valuePolicy.update({
     where: { id },
     data: { status: 'approved', approvedAt },
   })
 }
 
-export async function scheduleValuePolicy(db: DbClient, id: string): Promise<ValuePolicy> {
-  await lockValuePolicyGovernance(db)
-  const current = await db.valuePolicy.findUnique({ where: { id } })
+async function scheduleValuePolicyInTx(
+  tx: Prisma.TransactionClient,
+  id: string,
+): Promise<ValuePolicy> {
+  await lockValuePolicyGovernance(tx)
+  const current = await tx.valuePolicy.findUnique({ where: { id } })
   if (!current) throw prismaError('value_policy_not_found')
   if (current.status !== 'approved') throw prismaError('value_policy_invalid_status_transition')
-  return db.valuePolicy.update({
+  return tx.valuePolicy.update({
     where: { id },
     data: { status: 'scheduled' },
   })
 }
 
-export async function activateValuePolicy(
-  db: DbClient,
+async function activateValuePolicyInTx(
+  tx: Prisma.TransactionClient,
   id: string,
-  activatedAt: Date = new Date(),
+  activatedAt: Date,
 ): Promise<ValuePolicy> {
-  await lockValuePolicyGovernance(db)
-  const current = await db.valuePolicy.findUnique({
+  await lockValuePolicyGovernance(tx)
+  const current = await tx.valuePolicy.findUnique({
     where: { id },
     include: { pointAsset: true, referenceAsset: true },
   })
@@ -108,10 +127,52 @@ export async function activateValuePolicy(
     && current.referenceAsset.retiredAt == null
   if (!assetsOk) throw prismaError('value_policy_active_asset_must_be_enabled')
 
-  return db.valuePolicy.update({
+  return tx.valuePolicy.update({
     where: { id },
     data: { status: 'active', activatedAt },
   })
+}
+
+async function retireValuePolicyInTx(
+  tx: Prisma.TransactionClient,
+  id: string,
+  retiredAt: Date,
+): Promise<ValuePolicy> {
+  await lockValuePolicyGovernance(tx)
+  const current = await tx.valuePolicy.findUnique({ where: { id } })
+  if (!current) throw prismaError('value_policy_not_found')
+  if (current.status !== 'active') throw prismaError('value_policy_retire_requires_active')
+  return tx.valuePolicy.update({
+    where: { id },
+    data: { status: 'retired', retiredAt },
+  })
+}
+
+export async function createDraftValuePolicy(
+  db: DbClient,
+  input: DraftValuePolicyInput,
+): Promise<ValuePolicy> {
+  return withGovernanceTransaction(db, tx => createDraftValuePolicyInTx(tx, input))
+}
+
+export async function approveValuePolicy(
+  db: DbClient,
+  id: string,
+  approvedAt: Date = new Date(),
+): Promise<ValuePolicy> {
+  return withGovernanceTransaction(db, tx => approveValuePolicyInTx(tx, id, approvedAt))
+}
+
+export async function scheduleValuePolicy(db: DbClient, id: string): Promise<ValuePolicy> {
+  return withGovernanceTransaction(db, tx => scheduleValuePolicyInTx(tx, id))
+}
+
+export async function activateValuePolicy(
+  db: DbClient,
+  id: string,
+  activatedAt: Date = new Date(),
+): Promise<ValuePolicy> {
+  return withGovernanceTransaction(db, tx => activateValuePolicyInTx(tx, id, activatedAt))
 }
 
 export async function retireValuePolicy(
@@ -119,14 +180,7 @@ export async function retireValuePolicy(
   id: string,
   retiredAt: Date = new Date(),
 ): Promise<ValuePolicy> {
-  await lockValuePolicyGovernance(db)
-  const current = await db.valuePolicy.findUnique({ where: { id } })
-  if (!current) throw prismaError('value_policy_not_found')
-  if (current.status !== 'active') throw prismaError('value_policy_retire_requires_active')
-  return db.valuePolicy.update({
-    where: { id },
-    data: { status: 'retired', retiredAt },
-  })
+  return withGovernanceTransaction(db, tx => retireValuePolicyInTx(tx, id, retiredAt))
 }
 
 export type ProvisionValuePolicyInput = DraftValuePolicyInput & {
@@ -142,29 +196,37 @@ export async function provisionValuePolicy(
   db: DbClient,
   input: ProvisionValuePolicyInput,
 ): Promise<ValuePolicy> {
-  const target = input.status ?? 'active'
-  const now = new Date()
-  const effectiveAt = input.effectiveAt
-  const createdAt = input.createdAt
-    ?? (effectiveAt.getTime() <= now.getTime() ? effectiveAt : now)
-  const approvedAt = createdAt.getTime() <= effectiveAt.getTime() ? createdAt : effectiveAt
+  return withGovernanceTransaction(db, async tx => {
+    const target = input.status ?? 'active'
+    const now = new Date()
+    const effectiveAt = input.effectiveAt
+    const createdAt = input.createdAt
+      ?? (effectiveAt.getTime() <= now.getTime() ? effectiveAt : now)
+    const approvedAt = createdAt.getTime() <= effectiveAt.getTime() ? createdAt : effectiveAt
 
-  const draft = await createDraftValuePolicy(db, {
-    ...input,
-    effectiveAt,
-    createdAt,
+    const draft = await createDraftValuePolicyInTx(tx, {
+      ...input,
+      effectiveAt,
+      createdAt,
+    })
+    if (target === 'draft') return draft
+
+    await approveValuePolicyInTx(tx, draft.id, approvedAt)
+    if (target === 'approved') {
+      return tx.valuePolicy.findUniqueOrThrow({ where: { id: draft.id } })
+    }
+
+    await scheduleValuePolicyInTx(tx, draft.id)
+    if (target === 'scheduled') {
+      return tx.valuePolicy.findUniqueOrThrow({ where: { id: draft.id } })
+    }
+
+    const activatedAt = now.getTime() >= effectiveAt.getTime() ? now : effectiveAt
+    await activateValuePolicyInTx(tx, draft.id, activatedAt)
+    if (target === 'active') {
+      return tx.valuePolicy.findUniqueOrThrow({ where: { id: draft.id } })
+    }
+
+    return retireValuePolicyInTx(tx, draft.id, now)
   })
-  if (target === 'draft') return draft
-
-  const approved = await approveValuePolicy(db, draft.id, approvedAt)
-  if (target === 'approved') return approved
-
-  const scheduled = await scheduleValuePolicy(db, draft.id)
-  if (target === 'scheduled') return scheduled
-
-  const activatedAt = now.getTime() >= effectiveAt.getTime() ? now : effectiveAt
-  const active = await activateValuePolicy(db, draft.id, activatedAt)
-  if (target === 'active') return active
-
-  return retireValuePolicy(db, draft.id, now)
 }

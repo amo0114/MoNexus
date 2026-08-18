@@ -1,5 +1,6 @@
 import type { Prisma, PrismaClient } from '@prisma/client'
 import { config } from '../../config/index.js'
+import { valuePolicyMissingSnapshotOrders } from '../../lib/metrics.js'
 import {
   POINT_ASSET_CODE,
   POINT_ASSET_SCALE,
@@ -27,8 +28,15 @@ export type ValuePolicyAuditReport = {
     activePolicyCount: number
     snapshotCount: number
     findingCount: number
+    missingSnapshotSince: string | null
+    missingSnapshotCheck: 'ran' | 'skipped_off' | 'skipped_no_since'
   }
   findings: ValuePolicyAuditFinding[]
+}
+
+export type ValuePolicyAuditOptions = {
+  /** Inclusive lower bound for the enabled-mode missing-snapshot window. */
+  since?: Date
 }
 
 function finding(
@@ -43,9 +51,15 @@ function finding(
 /**
  * Read-only ValuePolicy audit. Never updates, deletes, or repairs rows.
  */
-export async function auditValuePolicies(db: DbClient): Promise<ValuePolicyAuditReport> {
+export async function auditValuePolicies(
+  db: DbClient,
+  options: ValuePolicyAuditOptions = {},
+): Promise<ValuePolicyAuditReport> {
   const findings: ValuePolicyAuditFinding[] = []
   const mode = config.pointValuePolicyMode
+  let missingSnapshotCheck: ValuePolicyAuditReport['summary']['missingSnapshotCheck'] =
+    mode === 'shadow' || mode === 'enforce' ? 'skipped_no_since' : 'skipped_off'
+  let missingSnapshotSince: string | null = null
 
   const activePolicies = await db.valuePolicy.findMany({
     where: { status: 'active' },
@@ -174,31 +188,31 @@ export async function auditValuePolicies(db: DbClient): Promise<ValuePolicyAudit
     }
   }
 
-  if (mode === 'shadow' || mode === 'enforce') {
-    const activationTimes = await db.valuePolicy.findMany({
-      where: { activatedAt: { not: null } },
-      select: { activatedAt: true },
-      orderBy: { activatedAt: 'asc' },
-      take: 1,
+  if ((mode === 'shadow' || mode === 'enforce') && options.since) {
+    missingSnapshotCheck = 'ran'
+    missingSnapshotSince = options.since.toISOString()
+    const missing = await db.order.findMany({
+      where: {
+        createdAt: { gte: options.since },
+        pricingSnapshot: { is: null },
+      },
+      select: { id: true, createdAt: true },
     })
-    const since = activationTimes[0]?.activatedAt
-    if (since) {
-      const missing = await db.order.findMany({
-        where: {
-          createdAt: { gte: since },
-          pricingSnapshot: { is: null },
+    valuePolicyMissingSnapshotOrders.set(missing.length)
+    if (missing.length > 0) {
+      findings.push(finding(
+        'enabled_mode_order_missing_snapshot',
+        'P0',
+        'enabled-window orders exist without a pricing snapshot',
+        {
+          orderIds: missing.map(order => order.id),
+          count: missing.length,
+          since: missingSnapshotSince,
         },
-        select: { id: true, createdAt: true },
-      })
-      if (missing.length > 0) {
-        findings.push(finding(
-          'enabled_mode_order_missing_snapshot',
-          'P0',
-          'enabled-mode orders exist without a pricing snapshot',
-          { orderIds: missing.map(order => order.id), count: missing.length },
-        ))
-      }
+      ))
     }
+  } else {
+    valuePolicyMissingSnapshotOrders.set(0)
   }
 
   return {
@@ -209,6 +223,8 @@ export async function auditValuePolicies(db: DbClient): Promise<ValuePolicyAudit
       activePolicyCount: activePolicies.length,
       snapshotCount: snapshots.length,
       findingCount: findings.length,
+      missingSnapshotSince,
+      missingSnapshotCheck,
     },
     findings,
   }

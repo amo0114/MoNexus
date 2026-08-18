@@ -45,18 +45,59 @@ describe('value-policy audit command', () => {
     expect(report.findings).toEqual([])
   })
 
-  it('flags enabled-mode orders that lack a snapshot', async () => {
+  it('flags enabled-mode orders that lack a snapshot only inside --since', async () => {
     config.pointValuePolicyMode = 'enforce'
     await createTestCnyValuePolicy({ id: 'vp_audit_missing', version: 15002 })
     const { user } = await createTestUser('vp-audit-missing@test.local', 'pass123', 'user', 500)
     const product = await createTestProduct('缺快照商品', 80, 1, ['m-1'])
-    await prisma.order.create({
+    const order = await prisma.order.create({
       data: { userId: user.id, productId: product.id, price: 80 },
     })
 
-    const report = await auditValuePolicies(prisma)
+    const skipped = await auditValuePolicies(prisma)
+    expect(skipped.summary.missingSnapshotCheck).toBe('skipped_no_since')
+    expect(skipped.findings.some(item => item.code === 'enabled_mode_order_missing_snapshot')).toBe(false)
+
+    const report = await auditValuePolicies(prisma, {
+      since: new Date(order.createdAt.getTime() - 1000),
+    })
     expect(report.ok).toBe(false)
+    expect(report.summary.missingSnapshotCheck).toBe('ran')
     expect(report.findings.some(item => item.code === 'enabled_mode_order_missing_snapshot')).toBe(true)
+  })
+
+  it('does not treat off-era orders as missing snapshots after switching to shadow', async () => {
+    config.pointValuePolicyMode = 'off'
+    const { user } = await createTestUser('vp-audit-off@test.local', 'pass123', 'user', 500)
+    const product = await createTestProduct('off期订单', 90, 1, ['o-1'])
+    const offOrder = await prisma.order.create({
+      data: { userId: user.id, productId: product.id, price: 90 },
+    })
+
+    config.pointValuePolicyMode = 'shadow'
+    await createTestCnyValuePolicy({ id: 'vp_audit_rollout', version: 15004 })
+    const rollout = new Date(offOrder.createdAt.getTime() + 1000)
+    const report = await auditValuePolicies(prisma, { since: rollout })
+    expect(report.ok).toBe(true)
+    expect(report.summary.missingSnapshotCheck).toBe('ran')
+    expect(report.findings).toEqual([])
+  })
+
+  it('does not use an older retired policy activation as the missing-snapshot window', async () => {
+    config.pointValuePolicyMode = 'off'
+    const { user } = await createTestUser('vp-audit-retired@test.local', 'pass123', 'user', 500)
+    const product = await createTestProduct('旧政策窗口', 70, 1, ['r-1'])
+    const oldOrder = await prisma.order.create({
+      data: { userId: user.id, productId: product.id, price: 70 },
+    })
+
+    await createTestCnyValuePolicy({ id: 'vp_audit_old', version: 15005, status: 'retired' })
+    await createTestCnyValuePolicy({ id: 'vp_audit_new', version: 15006 })
+    config.pointValuePolicyMode = 'shadow'
+    const since = new Date(oldOrder.createdAt.getTime() + 1000)
+    const report = await auditValuePolicies(prisma, { since })
+    expect(report.ok).toBe(true)
+    expect(report.findings).toEqual([])
   })
 
   it('does not mutate rows', async () => {

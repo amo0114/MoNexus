@@ -203,6 +203,26 @@ describe('SPEC-VALUE-POLICY-P1-001 error-code matrix', () => {
     }
   })
 
+  it('keeps 500 VALUE_POLICY_DATA_INVALID when a stale expected ID does not match the corrupt active row', async () => {
+    setMode('enforce')
+    await createTestCnyValuePolicy({ id: 'vp_cny_001', version: 1 })
+    await prisma.$executeRawUnsafe('ALTER TABLE "AssetDefinition" DISABLE TRIGGER asset_definition_protect_row_guard')
+    try {
+      await prisma.assetDefinition.update({ where: { code: 'CNY' }, data: { enabled: false } })
+      const { user, accessToken, before } = await prepareBuyer('vp-invalid-stale@test.local', 100)
+      const res = await api
+        .post('/api/orders')
+        .set(authHeader(accessToken))
+        .send({ productId: 1, expectedPrice: 100, expectedValuePolicyId: 'vp_stale_other' })
+        .expect(500)
+      expect(res.body.error.code).toBe('VALUE_POLICY_DATA_INVALID')
+      await expectNoOrderSideEffects(user.id, before)
+    } finally {
+      await prisma.assetDefinition.update({ where: { code: 'CNY' }, data: { enabled: true } })
+      await prisma.$executeRawUnsafe('ALTER TABLE "AssetDefinition" ENABLE TRIGGER asset_definition_protect_row_guard')
+    }
+  })
+
   it('increments snapshot created only after commit, and failure after rollback', async () => {
     setMode('shadow')
     await createTestCnyValuePolicy({ id: 'vp_cny_001', version: 1 })
