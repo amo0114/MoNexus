@@ -549,6 +549,7 @@ npm run verify:quick
 | Foundation migration | `server/prisma/migrations/20260817180000_add_value_policy_foundation/`（已合并，禁止原地修改） |
 | Closure migration | `server/prisma/migrations/20260818120000_value_policy_phase1_closure/` |
 | 内部状态推进 | `server/src/modules/valuePolicy/governance.ts`（无公开 HTTP 激活 API） |
+| 双人治理入口 | `SPEC-VALUE-POLICY-ACTIVATION-CONTROLS-001`；仅 `/api/admin/value-policies`，production 硬拒绝 |
 | 只读审计 | `npm --prefix server run value-policy:audit` |
 | 告警契约 | `docs/operations/value-policy-alerts.md` + `server/src/modules/valuePolicy/alertContract.ts` |
 | 运行手册 | `docs/operations/value-policy-runbook.md` |
@@ -567,7 +568,7 @@ npm run verify:quick
 
 - D-02 生产积分面值未批准
 - D-03 生产披露文案未批准
-- 双人审批后台入口（创建人 ≠ 审批人）未开放；当前 schema 无 actor 字段
+- 双人 actor、admin/MFA 入口与幂等审计已实现但未部署；production 命令入口仍硬拒绝
 - 未创建生产 active ValuePolicy
 - 生产 `POINT_VALUE_POLICY_MODE` 必须保持 `off`
 
