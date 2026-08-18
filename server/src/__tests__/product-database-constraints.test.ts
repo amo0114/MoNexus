@@ -7,6 +7,7 @@ import {
   PG_INT8_MAX,
 } from '../modules/valuePolicy/roundingVectors.js'
 import { getActiveCategoryIdByLabel } from './catalogFixture.js'
+import { createTestCnyValuePolicy } from './helpers.js'
 
 describe('Product and InventoryItem database constraints', () => {
   it('rejects invalid product commercial values and finite state values', async () => {
@@ -222,24 +223,20 @@ describe('SPEC-VALUE-POLICY-P1-001 database constraints', () => {
   })
 
   it('rejects a second active policy for the same point asset', async () => {
-    await prisma.valuePolicy.create({
-      data: {
-        id: 'vp_active_one',
-        version: 9101,
-        pointAssetCode: 'RP',
-        referenceAssetCode: 'CNY',
-        referenceAtomicPerPointNumerator: 1n,
-        referenceAtomicPerPointDenominator: 1n,
-        roundingMode: 'HALF_EVEN',
-        status: 'active',
-        effectiveAt: new Date('2020-01-01T00:00:00.000Z'),
-      },
+    await createTestCnyValuePolicy({
+      id: 'vp_active_one',
+      version: 9101,
     })
+
+    await expect(createTestCnyValuePolicy({
+      id: 'vp_active_two',
+      version: 9102,
+    })).rejects.toThrow()
 
     await expect(prisma.valuePolicy.create({
       data: {
-        id: 'vp_active_two',
-        version: 9102,
+        id: 'vp_active_insert',
+        version: 9103,
         pointAssetCode: 'RP',
         referenceAssetCode: 'CNY',
         referenceAtomicPerPointNumerator: 1n,
@@ -248,22 +245,13 @@ describe('SPEC-VALUE-POLICY-P1-001 database constraints', () => {
         status: 'active',
         effectiveAt: new Date('2020-01-01T00:00:00.000Z'),
       },
-    })).rejects.toThrow()
+    })).rejects.toThrow(/value_policy_insert_must_be_draft/)
   })
 
   it('rejects updates to economic fields of an active policy', async () => {
-    await prisma.valuePolicy.create({
-      data: {
-        id: 'vp_locked',
-        version: 9201,
-        pointAssetCode: 'RP',
-        referenceAssetCode: 'CNY',
-        referenceAtomicPerPointNumerator: 1n,
-        referenceAtomicPerPointDenominator: 1n,
-        roundingMode: 'HALF_EVEN',
-        status: 'active',
-        effectiveAt: new Date('2020-01-01T00:00:00.000Z'),
-      },
+    await createTestCnyValuePolicy({
+      id: 'vp_locked',
+      version: 9201,
     })
 
     await expect(prisma.valuePolicy.update({
@@ -332,18 +320,9 @@ describe('SPEC-VALUE-POLICY-P1-001 database constraints', () => {
     const order = await prisma.order.create({
       data: { userId: user.id, productId: product.id, price: 100 },
     })
-    const policy = await prisma.valuePolicy.create({
-      data: {
-        id: 'vp_snap',
-        version: 9401,
-        pointAssetCode: 'RP',
-        referenceAssetCode: 'CNY',
-        referenceAtomicPerPointNumerator: 1n,
-        referenceAtomicPerPointDenominator: 1n,
-        roundingMode: 'HALF_EVEN',
-        status: 'active',
-        effectiveAt: new Date('2020-01-01T00:00:00.000Z'),
-      },
+    const policy = await createTestCnyValuePolicy({
+      id: 'vp_snap',
+      version: 9401,
     })
     const snapshot = await prisma.orderPricingSnapshot.create({
       data: {
@@ -384,20 +363,9 @@ describe('SPEC-VALUE-POLICY-P1-001 database constraints', () => {
       update: {},
       create: { code: 'RP2', kind: 'reward_point', scale: 0, enabled: true },
     })
-    const policy = await prisma.valuePolicy.create({
-      data: {
-        id: 'vp_field_lock',
-        version: 9501,
-        pointAssetCode: 'RP',
-        referenceAssetCode: 'CNY',
-        referenceAtomicPerPointNumerator: 1n,
-        referenceAtomicPerPointDenominator: 1n,
-        roundingMode: 'HALF_EVEN',
-        status: 'active',
-        effectiveAt: new Date('2020-01-01T00:00:00.000Z'),
-        approvedAt: new Date('2020-01-02T00:00:00.000Z'),
-        activatedAt: new Date('2020-01-03T00:00:00.000Z'),
-      },
+    const policy = await createTestCnyValuePolicy({
+      id: 'vp_field_lock',
+      version: 9501,
     })
 
     await expect(prisma.valuePolicy.update({
@@ -439,19 +407,9 @@ describe('SPEC-VALUE-POLICY-P1-001 database constraints', () => {
   })
 
   it('allows only a controlled active-to-retired transition with a valid retiredAt', async () => {
-    const policy = await prisma.valuePolicy.create({
-      data: {
-        id: 'vp_retire',
-        version: 9601,
-        pointAssetCode: 'RP',
-        referenceAssetCode: 'CNY',
-        referenceAtomicPerPointNumerator: 1n,
-        referenceAtomicPerPointDenominator: 1n,
-        roundingMode: 'HALF_EVEN',
-        status: 'active',
-        effectiveAt: new Date('2020-01-01T00:00:00.000Z'),
-        activatedAt: new Date('2020-06-01T00:00:00.000Z'),
-      },
+    const policy = await createTestCnyValuePolicy({
+      id: 'vp_retire',
+      version: 9601,
     })
 
     await expect(prisma.valuePolicy.update({
@@ -497,18 +455,11 @@ describe('SPEC-VALUE-POLICY-P1-001 database constraints', () => {
     const order = await prisma.order.create({
       data: { userId: user.id, productId: product.id, price: 100 },
     })
-    const policy = await prisma.valuePolicy.create({
-      data: {
-        id: 'vp_snap_cons',
-        version: 9701,
-        pointAssetCode: 'RP',
-        referenceAssetCode: 'CNY',
-        referenceAtomicPerPointNumerator: 1n,
-        referenceAtomicPerPointDenominator: 2n,
-        roundingMode: 'HALF_EVEN',
-        status: 'active',
-        effectiveAt: new Date('2020-01-01T00:00:00.000Z'),
-      },
+    const policy = await createTestCnyValuePolicy({
+      id: 'vp_snap_cons',
+      version: 9701,
+      numerator: 1n,
+      denominator: 2n,
     })
 
     await expect(prisma.orderPricingSnapshot.create({
@@ -615,18 +566,9 @@ describe('SPEC-VALUE-POLICY-P1-001 database constraints', () => {
       },
     })).rejects.toThrow()
 
-    await prisma.valuePolicy.create({
-      data: {
-        id: 'vp_live_asset',
-        version: 9902,
-        pointAssetCode: 'RP',
-        referenceAssetCode: 'CNY',
-        referenceAtomicPerPointNumerator: 1n,
-        referenceAtomicPerPointDenominator: 1n,
-        roundingMode: 'HALF_EVEN',
-        status: 'active',
-        effectiveAt: new Date('2020-01-01T00:00:00.000Z'),
-      },
+    await createTestCnyValuePolicy({
+      id: 'vp_live_asset',
+      version: 9902,
     })
     await expect(prisma.assetDefinition.update({
       where: { code: 'CNY' },
@@ -661,19 +603,10 @@ describe('SPEC-VALUE-POLICY-P1-001 database constraints', () => {
       ['approved', 10003],
       ['scheduled', 10004],
     ] as const) {
-      const policy = await prisma.valuePolicy.create({
-        data: {
-          id: `vp_retire_from_${status}`,
-          version,
-          pointAssetCode: 'RP',
-          referenceAssetCode: 'CNY',
-          referenceAtomicPerPointNumerator: 1n,
-          referenceAtomicPerPointDenominator: 1n,
-          roundingMode: 'HALF_EVEN',
-          status,
-          effectiveAt: new Date('2020-01-01T00:00:00.000Z'),
-          approvedAt: status === 'draft' ? null : new Date('2020-01-02T00:00:00.000Z'),
-        },
+      const policy = await createTestCnyValuePolicy({
+        id: `vp_retire_from_${status}`,
+        version,
+        status,
       })
       await expect(prisma.valuePolicy.update({
         where: { id: policy.id },
@@ -751,18 +684,12 @@ describe('SPEC-VALUE-POLICY-P1-001 database constraints', () => {
       const order = await prisma.order.create({
         data: { userId: user.id, productId: product.id, price: item.price },
       })
-      const policy = await prisma.valuePolicy.create({
-        data: {
-          id: `vp_he_${item.suffix}`,
-          version: 10101 + index,
-          pointAssetCode: pointCode,
-          referenceAssetCode: 'CNY',
-          referenceAtomicPerPointNumerator: item.num,
-          referenceAtomicPerPointDenominator: item.den,
-          roundingMode: 'HALF_EVEN',
-          status: 'active',
-          effectiveAt: new Date('2020-01-01T00:00:00.000Z'),
-        },
+      const policy = await createTestCnyValuePolicy({
+        id: `vp_he_${item.suffix}`,
+        version: 10101 + index,
+        pointAssetCode: pointCode,
+        numerator: item.num,
+        denominator: item.den,
       })
 
       const ts = convertPointsToReferenceAtomic({
@@ -817,18 +744,10 @@ describe('SPEC-VALUE-POLICY-P1-001 database constraints', () => {
       const order = await prisma.order.create({
         data: { userId: user.id, productId: product.id, price: 100 },
       })
-      const policy = await prisma.valuePolicy.create({
-        data: {
-          id: `vp_snap_${status}`,
-          version: 10201 + index,
-          pointAssetCode: 'RP',
-          referenceAssetCode: 'CNY',
-          referenceAtomicPerPointNumerator: 1n,
-          referenceAtomicPerPointDenominator: 1n,
-          roundingMode: 'HALF_EVEN',
-          status,
-          effectiveAt: new Date('2020-01-01T00:00:00.000Z'),
-        },
+      const policy = await createTestCnyValuePolicy({
+        id: `vp_snap_${status}`,
+        version: 10201 + index,
+        status,
       })
       await expect(prisma.orderPricingSnapshot.create({
         data: {
@@ -846,19 +765,9 @@ describe('SPEC-VALUE-POLICY-P1-001 database constraints', () => {
     const liveOrder = await prisma.order.create({
       data: { userId: user.id, productId: product.id, price: 100 },
     })
-    const livePolicy = await prisma.valuePolicy.create({
-      data: {
-        id: 'vp_snap_then_retire',
-        version: 10210,
-        pointAssetCode: 'RP',
-        referenceAssetCode: 'CNY',
-        referenceAtomicPerPointNumerator: 1n,
-        referenceAtomicPerPointDenominator: 1n,
-        roundingMode: 'HALF_EVEN',
-        status: 'active',
-        effectiveAt: new Date('2020-01-01T00:00:00.000Z'),
-        activatedAt: new Date('2020-06-01T00:00:00.000Z'),
-      },
+    const livePolicy = await createTestCnyValuePolicy({
+      id: 'vp_snap_then_retire',
+      version: 10210,
     })
     const snapshot = await prisma.orderPricingSnapshot.create({
       data: {
