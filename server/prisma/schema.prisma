@@ -63,6 +63,15 @@ model User {
   orderAgreementAcceptances    OrderAgreementAcceptance[]
   notifications                Notification[]
 
+  // SPEC-VALUE-POLICY-ACTIVATION-CONTROLS-001: immutable governance actors.
+  valuePoliciesCreated   ValuePolicy[]                  @relation("ValuePolicyCreatedBy")
+  valuePoliciesApproved  ValuePolicy[]                  @relation("ValuePolicyApprovedBy")
+  valuePoliciesScheduled ValuePolicy[]                  @relation("ValuePolicyScheduledBy")
+  valuePoliciesActivated ValuePolicy[]                  @relation("ValuePolicyActivatedBy")
+  valuePoliciesRetired   ValuePolicy[]                  @relation("ValuePolicyRetiredBy")
+  valuePolicyCommands    ValuePolicyGovernanceCommand[]
+  valuePolicyEvents      ValuePolicyGovernanceEvent[]
+
   // ── FND-CMI-001 Catalog foundation back-relations ──
   categoriesCreated            ProductCategory[]     @relation("CategoryCreatedBy")
   categoriesUpdated            ProductCategory[]     @relation("CategoryUpdatedBy")
@@ -1469,13 +1478,70 @@ model ValuePolicy {
   activatedAt                        DateTime?
   retiredAt                          DateTime?
   createdAt                          DateTime          @default(now())
+  createdByUserId                    Int
+  approvedByUserId                   Int?
+  scheduledByUserId                  Int?
+  activatedByUserId                  Int?
+  retiredByUserId                    Int?
+  d02DecisionRecordRef               String
+  d02DecisionRecordSha256            String            @db.Char(64)
+  d03DecisionRecordRef               String
+  d03DecisionRecordSha256            String            @db.Char(64)
+  disclosureVersion                  String
 
-  pointAsset        AssetDefinition         @relation("PolicyPointAsset", fields: [pointAssetCode], references: [code], onDelete: Restrict, onUpdate: Restrict)
-  referenceAsset    AssetDefinition         @relation("PolicyReferenceAsset", fields: [referenceAssetCode], references: [code], onDelete: Restrict, onUpdate: Restrict)
-  pricingSnapshots  OrderPricingSnapshot[]
+  pointAsset         AssetDefinition                @relation("PolicyPointAsset", fields: [pointAssetCode], references: [code], onDelete: Restrict, onUpdate: Restrict)
+  referenceAsset     AssetDefinition                @relation("PolicyReferenceAsset", fields: [referenceAssetCode], references: [code], onDelete: Restrict, onUpdate: Restrict)
+  pricingSnapshots   OrderPricingSnapshot[]
+  createdByUser      User                           @relation("ValuePolicyCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  approvedByUser     User?                          @relation("ValuePolicyApprovedBy", fields: [approvedByUserId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  scheduledByUser    User?                          @relation("ValuePolicyScheduledBy", fields: [scheduledByUserId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  activatedByUser    User?                          @relation("ValuePolicyActivatedBy", fields: [activatedByUserId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  retiredByUser      User?                          @relation("ValuePolicyRetiredBy", fields: [retiredByUserId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  governanceCommands ValuePolicyGovernanceCommand[]
+  governanceEvents   ValuePolicyGovernanceEvent[]
 
   @@index([status, referenceAssetCode])
   @@index([pointAssetCode, status])
+  @@index([createdByUserId])
+  @@index([approvedByUserId])
+  @@index([activatedByUserId])
+}
+
+model ValuePolicyGovernanceCommand {
+  id             Int      @id @default(autoincrement())
+  valuePolicyId  String
+  actorUserId    Int
+  idempotencyKey String
+  payloadHash    String   @db.Char(64)
+  action         String
+  result         Json
+  createdAt      DateTime @default(now())
+
+  valuePolicy ValuePolicy                 @relation(fields: [valuePolicyId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  actor       User                        @relation(fields: [actorUserId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  event       ValuePolicyGovernanceEvent?
+
+  @@unique([actorUserId, idempotencyKey])
+  @@index([valuePolicyId, createdAt])
+}
+
+model ValuePolicyGovernanceEvent {
+  id            BigInt             @id @default(autoincrement())
+  valuePolicyId String
+  commandId     Int                @unique
+  actorUserId   Int
+  action        String
+  fromStatus    ValuePolicyStatus?
+  toStatus      ValuePolicyStatus
+  reason        String
+  occurredAt    DateTime           @default(now())
+
+  valuePolicy ValuePolicy                  @relation(fields: [valuePolicyId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  command     ValuePolicyGovernanceCommand @relation(fields: [commandId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  actor       User                         @relation(fields: [actorUserId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@index([valuePolicyId, occurredAt, id])
+  @@index([actorUserId, occurredAt])
 }
 
 model OrderPricingSnapshot {

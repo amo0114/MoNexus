@@ -1,0 +1,213 @@
+name: ValuePolicy Staging Governance
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: 'Schedule, activate into shadow, promote staging to enforce, or roll back to off'
+        required: true
+        type: choice
+        options:
+          - schedule
+          - activate_shadow
+          - enable_enforce
+          - rollback_off
+      confirmation:
+        description: 'Exact operation-specific confirmation phrase from the runbook'
+        required: true
+
+concurrency:
+  group: staging-compose-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  govern:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: staging
+    env:
+      STAGING_SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      STAGING_SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      STAGING_SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      STAGING_SSH_PORT: ${{ secrets.STAGING_SSH_PORT || '22' }}
+      STAGING_SSH_KNOWN_HOSTS: ${{ secrets.STAGING_SSH_KNOWN_HOSTS }}
+      STAGING_HEALTHCHECK_URL: ${{ vars.STAGING_HEALTHCHECK_URL || '' }}
+      VP_MAKER_EMAIL: ${{ secrets.VALUE_POLICY_STAGING_MAKER_EMAIL }}
+      VP_MAKER_PASSWORD: ${{ secrets.VALUE_POLICY_STAGING_MAKER_PASSWORD }}
+      VP_MAKER_TOTP: ${{ secrets.VALUE_POLICY_STAGING_MAKER_TOTP }}
+      VP_CHECKER_EMAIL: ${{ secrets.VALUE_POLICY_STAGING_CHECKER_EMAIL }}
+      VP_CHECKER_PASSWORD: ${{ secrets.VALUE_POLICY_STAGING_CHECKER_PASSWORD }}
+      VP_CHECKER_TOTP: ${{ secrets.VALUE_POLICY_STAGING_CHECKER_TOTP }}
+      OPERATION: ${{ github.event.inputs.operation }}
+      CONFIRMATION: ${{ github.event.inputs.confirmation }}
+      EXPECTED_RELEASE: ${{ github.sha }}
+      POLICY_ID: vp_cny_100_staging_20260826_v1
+      POLICY_VERSION: '2026082601'
+      POLICY_EFFECTIVE_AT: '2026-08-26T00:00:00.000Z'
+    steps:
+      - name: Validate protected staging inputs
+        run: |
+          set -euo pipefail
+          missing=()
+          for key in STAGING_SSH_HOST STAGING_SSH_USER STAGING_SSH_PRIVATE_KEY STAGING_SSH_KNOWN_HOSTS STAGING_HEALTHCHECK_URL; do
+            [[ -n "${!key}" ]] || missing+=("$key")
+          done
+          if [[ "$OPERATION" == 'schedule' || "$OPERATION" == 'activate_shadow' ]]; then
+            for key in VP_MAKER_EMAIL VP_MAKER_PASSWORD VP_MAKER_TOTP VP_CHECKER_EMAIL VP_CHECKER_PASSWORD VP_CHECKER_TOTP; do
+              [[ -n "${!key}" ]] || missing+=("$key")
+            done
+          fi
+          if (( ${#missing[@]} > 0 )); then
+            printf '::error::Missing staging environment values: %s\n' "${missing[*]}"
+            exit 1
+          fi
+          [[ "$STAGING_SSH_PORT" =~ ^[0-9]{1,5}$ ]] || { echo '::error::STAGING_SSH_PORT must be numeric.'; exit 1; }
+          [[ "$STAGING_HEALTHCHECK_URL" =~ ^https:// ]] || { echo '::error::STAGING_HEALTHCHECK_URL must be HTTPS.'; exit 1; }
+
+          case "$OPERATION:$CONFIRMATION" in
+            schedule:SCHEDULE_100PTS_CNY_STAGING) ;;
+            activate_shadow:ACTIVATE_100PTS_CNY_STAGING_SHADOW) ;;
+            enable_enforce:ENABLE_100PTS_CNY_STAGING_ENFORCE) ;;
+            rollback_off:ROLLBACK_VALUE_POLICY_STAGING_OFF) ;;
+            *) echo '::error::The confirmation phrase does not match the requested operation.'; exit 1 ;;
+          esac
+
+      - name: Configure pinned staging SSH identity
+        run: |
+          set -euo pipefail
+          install -d -m 0700 "$HOME/.ssh"
+          printf '%s\n' "$STAGING_SSH_PRIVATE_KEY" > "$HOME/.ssh/monexus_staging_value_policy"
+          chmod 0600 "$HOME/.ssh/monexus_staging_value_policy"
+          printf '%s\n' "$STAGING_SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 0600 "$HOME/.ssh/known_hosts"
+
+      - name: Verify immutable staging release
+        run: |
+          set -euo pipefail
+          active_release="$(ssh \
+            -i "$HOME/.ssh/monexus_staging_value_policy" \
+            -p "$STAGING_SSH_PORT" \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$STAGING_SSH_USER@$STAGING_SSH_HOST" \
+            'cat /opt/monexus-staging/current/.staging-release-id')"
+          if [[ "$active_release" != "$EXPECTED_RELEASE" ]]; then
+            echo "::error::Staging release mismatch; expected $EXPECTED_RELEASE."
+            exit 1
+          fi
+
+      - name: Run maker-checker governance command
+        if: env.OPERATION == 'schedule' || env.OPERATION == 'activate_shadow'
+        run: |
+          set -euo pipefail
+          governance_operation='schedule'
+          if [[ "$OPERATION" == 'activate_shadow' ]]; then governance_operation='activate'; fi
+          export GOVERNANCE_OPERATION="$governance_operation"
+
+          node <<'NODE' | ssh \
+            -i "$HOME/.ssh/monexus_staging_value_policy" \
+            -p "$STAGING_SSH_PORT" \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$STAGING_SSH_USER@$STAGING_SSH_HOST" \
+            'cd /opt/monexus-staging/current && ENV_FILE=/etc/monexus/staging.env COMPOSE_PROJECT_NAME=monexus-staging bash scripts/staging-compose.sh value-policy-governance'
+          const payload = {
+            confirmation: 'RUN_VALUE_POLICY_STAGING_GOVERNANCE',
+            operation: process.env.GOVERNANCE_OPERATION,
+            maker: {
+              email: process.env.VP_MAKER_EMAIL,
+              password: process.env.VP_MAKER_PASSWORD,
+              totpSecret: process.env.VP_MAKER_TOTP,
+            },
+            checker: {
+              email: process.env.VP_CHECKER_EMAIL,
+              password: process.env.VP_CHECKER_PASSWORD,
+              totpSecret: process.env.VP_CHECKER_TOTP,
+            },
+            policy: {
+              id: process.env.POLICY_ID,
+              version: Number(process.env.POLICY_VERSION),
+              effectiveAt: process.env.POLICY_EFFECTIVE_AT,
+            },
+          }
+          process.stdout.write(JSON.stringify(payload))
+          NODE
+
+      - name: Change staging ValuePolicy mode
+        if: env.OPERATION != 'schedule'
+        run: |
+          set -euo pipefail
+          target_mode='off'
+          if [[ "$OPERATION" == 'activate_shadow' ]]; then target_mode='shadow'; fi
+          if [[ "$OPERATION" == 'enable_enforce' ]]; then target_mode='enforce'; fi
+
+          ssh \
+            -i "$HOME/.ssh/monexus_staging_value_policy" \
+            -p "$STAGING_SSH_PORT" \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$STAGING_SSH_USER@$STAGING_SSH_HOST" \
+            "cd /opt/monexus-staging/current && ENV_FILE=/etc/monexus/staging.env COMPOSE_PROJECT_NAME=monexus-staging bash scripts/staging-compose.sh set-value-policy-mode '$target_mode' CONFIRM_VALUE_POLICY_MODE_CHANGE"
+
+      - name: Verify public mode and fail safe to off
+        run: |
+          set -euo pipefail
+          base_url="${STAGING_HEALTHCHECK_URL%/api/health/ready}"
+          verify_enabled=false
+          if [[ "$OPERATION" == 'activate_shadow' || "$OPERATION" == 'enable_enforce' ]]; then verify_enabled=true; fi
+
+          verification_ok=false
+          if [[ "$verify_enabled" == 'true' ]]; then
+            if response="$(curl -fsS --retry 6 --retry-delay 3 "$base_url/api/value-policy/current")" && \
+              jq -e --arg id "$POLICY_ID" '
+                .id == $id
+                and .ratio.referenceAtomicPerPointNumerator == "1"
+                and .ratio.referenceAtomicPerPointDenominator == "1"
+                and .disclosure == "积分为平台内部权益，所示金额仅为参考价值，不代表现金赎回承诺。"
+              ' <<<"$response" >/dev/null; then
+              verification_ok=true
+            fi
+          else
+            status="$(curl -sS -o /tmp/value-policy-off.json -w '%{http_code}' "$base_url/api/value-policy/current")"
+            if [[ "$status" == '404' ]] && jq -e '.error.code == "VALUE_POLICY_DISABLED"' /tmp/value-policy-off.json >/dev/null; then
+              verification_ok=true
+            fi
+          fi
+
+          if [[ "$verification_ok" == 'true' ]]; then
+            echo "Public ValuePolicy verification passed for operation $OPERATION."
+            exit 0
+          fi
+
+          echo '::error::Public ValuePolicy verification failed; forcing staging back to off.'
+          ssh \
+            -i "$HOME/.ssh/monexus_staging_value_policy" \
+            -p "$STAGING_SSH_PORT" \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$STAGING_SSH_USER@$STAGING_SSH_HOST" \
+            "cd /opt/monexus-staging/current && ENV_FILE=/etc/monexus/staging.env COMPOSE_PROJECT_NAME=monexus-staging bash scripts/staging-compose.sh set-value-policy-mode off CONFIRM_VALUE_POLICY_MODE_CHANGE"
+          exit 1
+
+      - name: Write governance summary
+        if: always()
+        run: |
+          {
+            echo '### ValuePolicy staging governance'
+            echo
+            echo "- Operation: \`$OPERATION\`"
+            echo "- Policy: \`$POLICY_ID\`"
+            echo "- Effective at: \`$POLICY_EFFECTIVE_AT\`"
+            echo '- Production touched: no'
+          } >> "$GITHUB_STEP_SUMMARY"

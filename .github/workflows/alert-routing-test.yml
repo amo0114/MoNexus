@@ -21,12 +21,15 @@ on:
           - release-regression-p1
           - api-latency-p2
           - frontend-vitals-p2
+          - value-policy-p0
+          - value-policy-p1
       severity:
         description: 'Severity to include in the test notification'
         required: true
         default: 'P1'
         type: choice
         options:
+          - P0
           - P1
           - P2
       dry_run:
@@ -63,7 +66,7 @@ jobs:
           doc="docs/operations/alert-routing.md"
           test -f "$doc"
 
-          for label in backend-error-p1 release-regression-p1 api-latency-p2 frontend-vitals-p2; do
+          for label in backend-error-p1 release-regression-p1 api-latency-p2 frontend-vitals-p2 value-policy-p0 value-policy-p1; do
             if ! grep -Fq "$label" "$doc"; then
               echo "::error::Missing routing label in alert-routing.md: $label"
               exit 1
@@ -92,7 +95,7 @@ jobs:
             echo "::notice::Email fallback is not fully configured; set ALERT_EMAIL_TO and ALERT_EMAIL_FROM."
           fi
 
-          if [ "$severity" = "P1" ] && [ -n "$PAGERDUTY_ROUTING_KEY" ]; then
+          if { [ "$severity" = "P0" ] || [ "$severity" = "P1" ]; } && [ -n "$PAGERDUTY_ROUTING_KEY" ]; then
             echo "::notice::Optional production PagerDuty routing key is present; this workflow does not page by default."
           fi
 
@@ -102,8 +105,8 @@ jobs:
           fi
 
           if [ -z "$ALERT_SLACK_WEBHOOK_URL" ]; then
-            echo "::notice::Slack webhook is missing; no notification sent."
-            exit 0
+            echo "::error::Slack webhook is missing; the live routing rehearsal did not send a notification."
+            exit 1
           fi
 
           export ALERT_MESSAGE="$message"
