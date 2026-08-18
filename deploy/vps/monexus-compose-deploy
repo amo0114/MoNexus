@@ -2,10 +2,11 @@
 #
 # Root-owned production deployment entry point for the Docker Compose VPS.
 #
-# This script deliberately accepts an immutable full Git SHA only. It keeps
-# runtime secrets in /opt/monexus/.env, clones application source into a
-# separate release directory, and changes only the server and web containers.
-# PostgreSQL, Redis and MinIO are never recreated by this entry point.
+# Deployment actions deliberately accept an immutable full Git SHA; the only
+# non-deploy action accepts a fixed alert-routing label. The script keeps
+# runtime secrets in /opt/monexus/.env and clones application source into a
+# separate release directory, and changes the server, web, and production-only
+# monitoring containers. PostgreSQL, Redis and MinIO are never recreated.
 
 set -Eeuo pipefail
 IFS=$'\n\t'
@@ -19,6 +20,11 @@ readonly PROJECT_NAME='monexus-prod'
 readonly LOCK_FILE='/var/lock/monexus-compose-deploy.lock'
 readonly HEALTH_TIMEOUT_SECONDS=180
 readonly VPS_PROXY_OVERLAY_KEY='MONEXUS_USE_VPS_PROXY_OVERLAY'
+readonly MONITORING_SECRET_DIR='/opt/monexus-monitoring/secrets'
+readonly MONITORING_CONFIG_DIR='/opt/monexus-monitoring/config'
+readonly MONITORING_REHEARSAL_ALERT='MoNexusProductionEmailRehearsal'
+readonly ALERTMANAGER_IMAGE='prom/alertmanager:v0.30.0@sha256:abb750ac7b63116761c16dd481ae92496fbe04721686c0920f0fa4d0728cd4a6'
+readonly PROMETHEUS_IMAGE='prom/prometheus:v3.5.0@sha256:63805ebb8d2b3920190daf1cb14a60871b16fd38bed42b857a3182bc621f4996'
 
 fail() {
   echo "[ERROR] $*" >&2
@@ -33,12 +39,16 @@ notice() {
 
 usage() {
   cat <<'USAGE'
-Usage: monexus-compose-deploy {dry-run|deploy} <40-character-master-commit-sha>
+Usage:
+  monexus-compose-deploy {dry-run|deploy} <40-character-master-commit-sha>
+  monexus-compose-deploy rehearse-alert {value-policy-p0|value-policy-p1}
 
 dry-run validates the request and prints its immutable image tag without
 changing the host. deploy verifies the master ancestry and image labels,
 updates only MONEXUS_IMAGE_TAG/MONEXUS_PULL_POLICY, recreates server then web,
-and verifies local health endpoints. It never performs an automatic rollback.
+then recreates the private monitoring services and verifies their targets and
+rules. rehearse-alert sends fixed firing/resolved test alerts and requires two
+successful email notification attempts. No action performs automatic rollback.
 USAGE
 }
 
@@ -48,7 +58,7 @@ require_root() {
 
 require_commands() {
   local command_name
-  for command_name in awk curl docker flock git grep install mktemp; do
+  for command_name in awk curl date docker flock git grep install mktemp; do
     command -v "$command_name" >/dev/null 2>&1 || fail "Required command is unavailable: ${command_name}"
   done
 }
@@ -93,6 +103,124 @@ read_env_value() {
       exit
     }
   ' "$ENV_FILE"
+}
+
+write_monitoring_secret() {
+  local key="$1"
+  local filename="$2"
+  local value temporary
+
+  value="$(read_env_value "$key")"
+  [[ -n "$value" ]] || fail "${key} is required for production monitoring."
+  [[ "$value" != *$'\n'* && "$value" != *$'\r'* ]] || \
+    fail "${key} must be a single-line value."
+
+  temporary="$(mktemp "${MONITORING_SECRET_DIR}/.${filename}.XXXXXX")"
+  printf '%s' "$value" > "$temporary"
+  chown root:root "$temporary"
+  # The parent directory is root-only. Compose mounts the individual source
+  # file read-only so the non-root upstream image can read it in-container.
+  chmod 0444 "$temporary"
+  mv -f "$temporary" "${MONITORING_SECRET_DIR}/${filename}"
+  unset value
+}
+
+prepare_monitoring_secrets() {
+  install -d -m 0700 -o root -g root "$MONITORING_SECRET_DIR"
+  write_monitoring_secret METRICS_TOKEN metrics_token
+  write_monitoring_secret SMTP_PASS smtp_password
+}
+
+prepare_alertmanager_config() {
+  local smtp_host smtp_port smtp_user smtp_from alert_email_to temporary
+  smtp_host="$(read_env_value SMTP_HOST)"
+  smtp_port="$(read_env_value SMTP_PORT)"
+  smtp_port="${smtp_port:-587}"
+  smtp_user="$(read_env_value SMTP_USER)"
+  smtp_from="$(read_env_value SMTP_FROM)"
+  alert_email_to="$(read_env_value ALERT_EMAIL_TO)"
+
+  # check-prod-env.sh has already constrained these interpolated values to
+  # conservative single-line scalars. Password material is never rendered.
+  [[ "$smtp_host" =~ ^[A-Za-z0-9.-]+$ ]] || fail 'SMTP_HOST is unsafe for Alertmanager configuration.'
+  [[ "$smtp_port" =~ ^[0-9]+$ ]] || fail 'SMTP_PORT is unsafe for Alertmanager configuration.'
+  [[ "$smtp_user" =~ ^[A-Za-z0-9._@%+:/=-]+$ ]] || fail 'SMTP_USER is unsafe for Alertmanager configuration.'
+  [[ "$smtp_from" =~ ^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$ ]] || \
+    fail 'SMTP_FROM is unsafe for Alertmanager configuration.'
+  [[ "$alert_email_to" =~ ^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$ ]] || \
+    fail 'ALERT_EMAIL_TO is unsafe for Alertmanager configuration.'
+
+  install -d -m 0700 -o root -g root "$MONITORING_CONFIG_DIR"
+  temporary="$(mktemp "${MONITORING_CONFIG_DIR}/.alertmanager.yml.XXXXXX")"
+  {
+    printf '%s\n' \
+      'global:' \
+      '  resolve_timeout: 5m' \
+      "  smtp_smarthost: '${smtp_host}:${smtp_port}'" \
+      "  smtp_from: '${smtp_from}'" \
+      "  smtp_auth_username: '${smtp_user}'" \
+      '  smtp_auth_password_file: /run/secrets/alertmanager_smtp_password' \
+      '  smtp_require_tls: true' \
+      'route:' \
+      '  receiver: value-policy-p1-email' \
+      '  group_by: [alertname, routing, severity, environment, service]' \
+      '  group_wait: 30s' \
+      '  group_interval: 5m' \
+      '  repeat_interval: 4h' \
+      '  routes:' \
+      '    - receiver: monitoring-rehearsal-email' \
+      '      group_wait: 1s' \
+      '      group_interval: 5s' \
+      '      repeat_interval: 1h' \
+      '      matchers:' \
+      '        - alertname="MoNexusProductionEmailRehearsal"' \
+      '    - receiver: value-policy-p0-email' \
+      '      matchers:' \
+      '        - routing="value-policy-p0"' \
+      '    - receiver: value-policy-p1-email' \
+      '      matchers:' \
+      '        - routing="value-policy-p1"' \
+      'receivers:' \
+      '  - name: monitoring-rehearsal-email' \
+      '    email_configs:' \
+      "      - to: '${alert_email_to}'" \
+      '        send_resolved: true' \
+      '  - name: value-policy-p0-email' \
+      '    email_configs:' \
+      "      - to: '${alert_email_to}'" \
+      '        send_resolved: true' \
+      '  - name: value-policy-p1-email' \
+      '    email_configs:' \
+      "      - to: '${alert_email_to}'" \
+      '        send_resolved: true'
+  } > "$temporary"
+  chown root:root "$temporary"
+  chmod 0444 "$temporary"
+  mv -f "$temporary" "${MONITORING_CONFIG_DIR}/alertmanager.yml"
+}
+
+prepare_monitoring_runtime() {
+  prepare_monitoring_secrets
+  prepare_alertmanager_config
+}
+
+validate_monitoring_runtime() {
+  local release_path="$1"
+
+  docker run --rm --network none \
+    --volume "${MONITORING_CONFIG_DIR}/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro" \
+    --volume "${MONITORING_SECRET_DIR}/smtp_password:/run/secrets/alertmanager_smtp_password:ro" \
+    --entrypoint /bin/amtool \
+    "$ALERTMANAGER_IMAGE" \
+    check-config /etc/alertmanager/alertmanager.yml >/dev/null
+
+  docker run --rm --network none \
+    --volume "${release_path}/deploy/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro" \
+    --volume "${release_path}/docs/operations/value-policy-alerts.rules.yml:/etc/prometheus/rules/value-policy-alerts.rules.yml:ro" \
+    --volume "${MONITORING_SECRET_DIR}/metrics_token:/run/secrets/metrics_token:ro" \
+    --entrypoint /bin/promtool \
+    "$PROMETHEUS_IMAGE" \
+    check config /etc/prometheus/prometheus.yml >/dev/null
 }
 
 use_vps_proxy_overlay() {
@@ -276,6 +404,88 @@ assert_running_target() {
   [[ "$health" == 'healthy' ]] || fail "${container} is not healthy after deployment."
 }
 
+container_ipv4() {
+  local container="$1"
+  local address
+  address="$(docker inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$container")"
+  [[ "$address" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] || \
+    fail "Unable to resolve the private IPv4 address for ${container}."
+  printf '%s\n' "$address"
+}
+
+assert_monitoring_contract() {
+  local prometheus_address targets rules
+  prometheus_address="$(container_ipv4 monexus-prometheus-prod)"
+
+  targets="$(curl --noproxy '*' --fail --silent --show-error --max-time 15 \
+    "http://${prometheus_address}:9090/api/v1/targets")" || \
+    fail 'Unable to read Prometheus target state on the private network.'
+  grep -Fq '"job":"monexus"' <<< "$targets" || \
+    fail 'Prometheus does not report the monexus scrape job.'
+  grep -Fq '"health":"up"' <<< "$targets" || \
+    fail 'The monexus Prometheus scrape target is not up.'
+
+  rules="$(curl --noproxy '*' --fail --silent --show-error --max-time 15 \
+    "http://${prometheus_address}:9090/api/v1/rules")" || \
+    fail 'Unable to read loaded Prometheus rules on the private network.'
+  for alert_name in \
+    MoNexusValuePolicyUnavailable \
+    MoNexusEnabledModeOrderMissingSnapshot \
+    MoNexusValuePolicyChangedRateElevated; do
+    grep -Fq "\"name\":\"${alert_name}\"" <<< "$rules" || \
+      fail "Prometheus did not load required alert rule ${alert_name}."
+  done
+}
+
+alertmanager_email_metric() {
+  local address="$1"
+  local metric_name="$2"
+  curl --noproxy '*' --fail --silent --show-error --max-time 15 \
+    "http://${address}:9093/metrics" | awk -v metric="$metric_name" '
+      index($1, metric "{") == 1 && $1 ~ /integration="email"/ { total += $2 }
+      END { printf "%.0f\n", total + 0 }
+    '
+}
+
+post_rehearsal_alert() {
+  local address="$1"
+  local routing="$2"
+  local starts_at="$3"
+  local ends_at="$4"
+  local severity
+  severity='P1'
+  [[ "$routing" == 'value-policy-p0' ]] && severity='P0'
+
+  curl --noproxy '*' --fail --silent --show-error --max-time 15 \
+    --header 'Content-Type: application/json' \
+    --data-binary @- \
+    "http://${address}:9093/api/v2/alerts" >/dev/null <<JSON
+[{"labels":{"alertname":"${MONITORING_REHEARSAL_ALERT}","routing":"${routing}","severity":"${severity}","environment":"production","service":"monexus-api"},"annotations":{"summary":"Authorized MoNexus production email rehearsal","description":"Synthetic alert for notification-path validation; not a ValuePolicy incident."},"startsAt":"${starts_at}","endsAt":"${ends_at}"}]
+JSON
+}
+
+wait_for_email_notification() {
+  local address="$1"
+  local initial_total="$2"
+  local initial_failed="$3"
+  local deadline total failed
+  deadline=$((SECONDS + 120))
+
+  while (( SECONDS < deadline )); do
+    total="$(alertmanager_email_metric "$address" alertmanager_notifications_total)"
+    failed="$(alertmanager_email_metric "$address" alertmanager_notifications_failed_total)"
+    if (( failed > initial_failed )); then
+      fail 'Alertmanager reported a failed email notification during rehearsal.'
+    fi
+    if (( total > initial_total )); then
+      return 0
+    fi
+    sleep 5
+  done
+
+  fail 'Timed out waiting for Alertmanager to report a successful email notification.'
+}
+
 run_dry_run() {
   local commit="$1"
   local tag
@@ -324,11 +534,14 @@ run_deploy() {
     notice 'Using the base Compose port mapping; existing direct WEB_PORT exposure is preserved.'
   fi
 
-  compose+=(--profile selfhost-storage)
+  compose+=(--profile selfhost-storage --profile production-monitoring)
 
   MONEXUS_IMAGE_TAG="$tag" MONEXUS_PULL_POLICY='missing' "${compose[@]}" config --quiet
   verify_target_image "ghcr.io/amo0114/monexus-server:${tag}" "$commit" "$expected_architecture"
   verify_target_image "ghcr.io/amo0114/monexus-web:${tag}" "$commit" "$expected_architecture"
+  "${compose[@]}" pull --quiet prometheus alertmanager
+  prepare_monitoring_runtime
+  validate_monitoring_runtime "$release_path"
 
   record_deployment_state "$commit" "$tag" "$release_path"
   set_runtime_image_tag "$tag"
@@ -341,26 +554,75 @@ run_deploy() {
   "${compose[@]}" up -d --no-deps --force-recreate web
   wait_for_healthy monexus-web-prod
 
+  notice 'Recreating private Alertmanager and Prometheus after application readiness passed.'
+  "${compose[@]}" up -d --no-deps --force-recreate alertmanager
+  wait_for_healthy monexus-alertmanager-prod
+  "${compose[@]}" up -d --no-deps --force-recreate prometheus
+  wait_for_healthy monexus-prometheus-prod
+
   assert_loopback_health
   assert_running_target monexus-server-prod "$commit"
   assert_running_target monexus-web-prod "$commit"
+  assert_monitoring_contract
 
   notice "deployment_result=success target_commit=${commit} target_tag=${tag}"
+}
+
+run_alert_rehearsal() {
+  local routing="$1"
+  local address starts_at firing_ends_at resolved_at
+  local total_before failed_before total_after_firing failed_after_firing
+
+  exec 9>"$LOCK_FILE"
+  flock -n 9 || fail 'Another MoNexus Compose deployment or rehearsal is already in progress.'
+
+  [[ "$(docker inspect --format '{{.State.Health.Status}}' monexus-alertmanager-prod)" == 'healthy' ]] || \
+    fail 'Production Alertmanager is not healthy.'
+  [[ "$(docker inspect --format '{{.State.Health.Status}}' monexus-prometheus-prod)" == 'healthy' ]] || \
+    fail 'Production Prometheus is not healthy.'
+  assert_monitoring_contract
+
+  address="$(container_ipv4 monexus-alertmanager-prod)"
+  total_before="$(alertmanager_email_metric "$address" alertmanager_notifications_total)"
+  failed_before="$(alertmanager_email_metric "$address" alertmanager_notifications_failed_total)"
+  starts_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  firing_ends_at="$(date -u -d '+15 minutes' +%Y-%m-%dT%H:%M:%SZ)"
+
+  post_rehearsal_alert "$address" "$routing" "$starts_at" "$firing_ends_at"
+  wait_for_email_notification "$address" "$total_before" "$failed_before"
+
+  total_after_firing="$(alertmanager_email_metric "$address" alertmanager_notifications_total)"
+  failed_after_firing="$(alertmanager_email_metric "$address" alertmanager_notifications_failed_total)"
+  resolved_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  post_rehearsal_alert "$address" "$routing" "$starts_at" "$resolved_at"
+  wait_for_email_notification "$address" "$total_after_firing" "$failed_after_firing"
+
+  notice "monitoring_rehearsal=success routing=${routing} firing_email=accepted resolved_email=accepted"
 }
 
 main() {
   [[ "$#" -eq 2 ]] || { usage >&2; exit 64; }
 
   local action="$1"
-  local commit="$2"
+  local argument="$2"
 
   require_root
   require_commands
-  validate_commit "$commit"
 
   case "$action" in
-    dry-run) run_dry_run "$commit" ;;
-    deploy) run_deploy "$commit" ;;
+    dry-run)
+      validate_commit "$argument"
+      run_dry_run "$argument"
+      ;;
+    deploy)
+      validate_commit "$argument"
+      run_deploy "$argument"
+      ;;
+    rehearse-alert)
+      [[ "$argument" == 'value-policy-p0' || "$argument" == 'value-policy-p1' ]] || \
+        fail 'Alert rehearsal routing must be value-policy-p0 or value-policy-p1.'
+      run_alert_rehearsal "$argument"
+      ;;
     *) usage >&2; exit 64 ;;
   esac
 }

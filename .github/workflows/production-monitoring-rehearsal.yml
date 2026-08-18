@@ -1,0 +1,106 @@
+name: Production Monitoring Rehearsal
+
+on:
+  workflow_dispatch:
+    inputs:
+      routing:
+        description: 'ValuePolicy routing path to exercise'
+        required: true
+        default: value-policy-p0
+        type: choice
+        options:
+          - value-policy-p0
+          - value-policy-p1
+      confirmation:
+        description: 'Type REHEARSE_VALUE_POLICY_EMAIL_PRODUCTION'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-compose-deploy
+  cancel-in-progress: false
+
+jobs:
+  rehearse:
+    name: Rehearse production email alert path
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    env:
+      GH_TOKEN: ${{ github.token }}
+      DEPLOY_SSH_HOST: ${{ secrets.DEPLOY_SSH_HOST }}
+      DEPLOY_SSH_PORT: ${{ vars.DEPLOY_SSH_PORT || '22' }}
+      DEPLOY_SSH_USER: ${{ secrets.DEPLOY_SSH_USER }}
+      DEPLOY_SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+      DEPLOY_SSH_KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}
+      ROUTING: ${{ inputs.routing }}
+      CONFIRMATION: ${{ inputs.confirmation }}
+    steps:
+      - name: Re-check production reviewer and protected inputs
+        run: |
+          set -euo pipefail
+          reviewer_count="$(gh api "repos/${GITHUB_REPOSITORY}/environments/production" | jq '
+            [.protection_rules[]?
+              | select(.type == "required_reviewers")
+              | .reviewers[]?]
+            | length
+          ')"
+          if (( reviewer_count < 1 )); then
+            echo '::error::production Environment must retain at least one required reviewer.'
+            exit 1
+          fi
+
+          missing=()
+          for key in DEPLOY_SSH_HOST DEPLOY_SSH_USER DEPLOY_SSH_PRIVATE_KEY DEPLOY_SSH_KNOWN_HOSTS; do
+            [[ -n "${!key}" ]] || missing+=("$key")
+          done
+          if (( ${#missing[@]} > 0 )); then
+            printf '::error::Missing production Environment values: %s\n' "${missing[*]}"
+            exit 1
+          fi
+
+          [[ "$DEPLOY_SSH_PORT" =~ ^[0-9]{1,5}$ ]] || { echo '::error::DEPLOY_SSH_PORT must be numeric.'; exit 1; }
+          (( DEPLOY_SSH_PORT >= 1 && DEPLOY_SSH_PORT <= 65535 )) || { echo '::error::DEPLOY_SSH_PORT is out of range.'; exit 1; }
+          [[ "$ROUTING" == 'value-policy-p0' || "$ROUTING" == 'value-policy-p1' ]] || { echo '::error::Invalid routing label.'; exit 1; }
+          [[ "$CONFIRMATION" == 'REHEARSE_VALUE_POLICY_EMAIL_PRODUCTION' ]] || { echo '::error::Confirmation phrase does not match.'; exit 1; }
+
+      - name: Configure pinned SSH identity
+        run: |
+          set -euo pipefail
+          install -d -m 0700 "$HOME/.ssh"
+          printf '%s\n' "$DEPLOY_SSH_PRIVATE_KEY" > "$HOME/.ssh/monexus_production_deploy"
+          chmod 0600 "$HOME/.ssh/monexus_production_deploy"
+          printf '%s\n' "$DEPLOY_SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 0600 "$HOME/.ssh/known_hosts"
+
+      - name: Invoke restricted alert rehearsal
+        run: |
+          set -euo pipefail
+          ssh \
+            -i "$HOME/.ssh/monexus_production_deploy" \
+            -p "$DEPLOY_SSH_PORT" \
+            -o BatchMode=yes \
+            -o ConnectTimeout=15 \
+            -o IdentitiesOnly=yes \
+            -o ServerAliveInterval=15 \
+            -o ServerAliveCountMax=4 \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DEPLOY_SSH_USER@$DEPLOY_SSH_HOST" \
+            "rehearse-alert ${ROUTING}"
+
+      - name: Write rehearsal summary
+        if: always()
+        run: |
+          {
+            echo '### Production monitoring rehearsal'
+            echo
+            echo "- Routing: \`${ROUTING}\`"
+            echo '- Transport: restricted forced-command SSH identity'
+            echo '- Expected notifications: firing email and resolved email'
+            echo '- SMTP credentials or recipient printed: no'
+            echo '- ValuePolicy state changed: no'
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -45,6 +45,22 @@ for required_fragment in \
   grep -Fq "$required_fragment" "$workflow" || fail "Workflow is missing required safeguard: ${required_fragment}"
 done
 
+monitoring_workflow="${ROOT_DIR}/.github/workflows/production-monitoring-rehearsal.yml"
+[[ -f "$monitoring_workflow" ]] || fail 'Production monitoring rehearsal workflow is missing.'
+if command -v ruby >/dev/null 2>&1; then
+  ruby -e 'require "yaml"; YAML.load_file(ARGV.fetch(0))' "$monitoring_workflow" >/dev/null
+fi
+for required_fragment in \
+  'environment: production' \
+  'required_reviewers' \
+  'REHEARSE_VALUE_POLICY_EMAIL_PRODUCTION' \
+  'StrictHostKeyChecking=yes' \
+  'DEPLOY_SSH_KNOWN_HOSTS' \
+  'rehearse-alert ${ROUTING}'; do
+  grep -Fq "$required_fragment" "$monitoring_workflow" || \
+    fail "Monitoring rehearsal workflow is missing required safeguard: ${required_fragment}"
+done
+
 staging_workflow="${ROOT_DIR}/.github/workflows/staging-deploy.yml"
 [[ -f "$staging_workflow" ]] || fail 'Staging Compose workflow is missing.'
 if command -v ruby >/dev/null 2>&1; then
@@ -117,6 +133,38 @@ grep -Fq 'flush_interval -1' "${ROOT_DIR}/deploy/staging/Caddyfile" || \
   fail 'Staging Caddy site must force immediate SSE flushing.'
 grep -Fq 'API_RATE_LIMIT_MAX: ${API_RATE_LIMIT_MAX:-300}' "${ROOT_DIR}/docker-compose.prod.yml" || \
   fail 'Compose must explicitly map the existing API rate-limit configuration.'
+for required_fragment in \
+  'profiles: [production-monitoring]' \
+  'image: prom/alertmanager:v0.30.0@sha256:abb750ac7b63116761c16dd481ae92496fbe04721686c0920f0fa4d0728cd4a6' \
+  'image: prom/prometheus:v3.5.0@sha256:63805ebb8d2b3920190daf1cb14a60871b16fd38bed42b857a3182bc621f4996' \
+  'container_name: monexus-prometheus-prod' \
+  'container_name: monexus-alertmanager-prod' \
+  '/opt/monexus-monitoring/config/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro' \
+  'file: /opt/monexus-monitoring/secrets/metrics_token' \
+  'file: /opt/monexus-monitoring/secrets/smtp_password' \
+  'no-new-privileges:true'; do
+  grep -Fq "$required_fragment" "${ROOT_DIR}/docker-compose.prod.yml" || \
+    fail "Compose is missing required private monitoring safeguard: ${required_fragment}"
+done
+if awk '
+  /^  (prometheus|alertmanager):$/ { in_monitoring = 1; next }
+  in_monitoring && /^  [A-Za-z0-9_-]+:$/ { in_monitoring = 0 }
+  in_monitoring && /^[[:space:]]+ports:/ { found = 1 }
+  END { exit found ? 0 : 1 }
+' "${ROOT_DIR}/docker-compose.prod.yml"; then
+  fail 'Prometheus and Alertmanager must not publish host ports.'
+fi
+
+prometheus_config="${ROOT_DIR}/deploy/monitoring/prometheus.yml"
+[[ -f "$prometheus_config" ]] || fail 'Prometheus production configuration is missing.'
+for required_fragment in \
+  'bearer_token_file: /run/secrets/metrics_token' \
+  'server:3000' \
+  'alertmanager:9093' \
+  '/etc/prometheus/rules/value-policy-alerts.rules.yml'; do
+  grep -Fq "$required_fragment" "$prometheus_config" || \
+    fail "Prometheus configuration is missing required private scrape contract: ${required_fragment}"
+done
 
 entrypoint="${ROOT_DIR}/deploy/vps/monexus-compose-deploy"
 for required_fragment in \
@@ -124,7 +172,15 @@ for required_fragment in \
   'if use_vps_proxy_overlay; then' \
   "notice 'Using the base Compose port mapping; existing direct WEB_PORT exposure is preserved.'" \
   '[[ -f "${release_path}/scripts/check-prod-env.sh" ]] ||' \
-  'bash "${release_path}/scripts/check-prod-env.sh" --mode production --env-file "$ENV_FILE"'; do
+  'bash "${release_path}/scripts/check-prod-env.sh" --mode production --env-file "$ENV_FILE"' \
+  'compose+=(--profile selfhost-storage --profile production-monitoring)' \
+  'prepare_monitoring_runtime' \
+  'validate_monitoring_runtime "$release_path"' \
+  "readonly ALERTMANAGER_IMAGE='prom/alertmanager:v0.30.0@sha256:abb750ac7b63116761c16dd481ae92496fbe04721686c0920f0fa4d0728cd4a6'" \
+  "readonly PROMETHEUS_IMAGE='prom/prometheus:v3.5.0@sha256:63805ebb8d2b3920190daf1cb14a60871b16fd38bed42b857a3182bc621f4996'" \
+  'smtp_auth_password_file: /run/secrets/alertmanager_smtp_password' \
+  'assert_monitoring_contract' \
+  'run_alert_rehearsal'; do
   grep -Fq "$required_fragment" "$entrypoint" || \
     fail "Deployment entry point is missing a required deployment safeguard: ${required_fragment}"
 done
@@ -139,7 +195,12 @@ for required_fragment in \
 done
 
 wrapper="${ROOT_DIR}/deploy/vps/monexus-compose-deploy-ssh-wrapper"
-for forbidden_command in 'shell' 'deploy abcdef' 'deploy 0123456789012345678901234567890123456789 extra'; do
+for forbidden_command in \
+  'shell' \
+  'deploy abcdef' \
+  'deploy 0123456789012345678901234567890123456789 extra' \
+  'rehearse-alert invalid' \
+  'rehearse-alert value-policy-p0 extra'; do
   if SSH_ORIGINAL_COMMAND="$forbidden_command" "$wrapper" >/dev/null 2>&1; then
     fail "Forced-command wrapper accepted an invalid command: ${forbidden_command}"
   fi
