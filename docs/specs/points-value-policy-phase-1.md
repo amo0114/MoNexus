@@ -356,7 +356,8 @@ GET /api/value-policy/current
    outbox、snapshot 副作用之前。
 4. 数据库存在 active CNY policy，但其比例、kind、scale、enabled、
    retiredAt、rounding 等内部数据违反不变量 → `500 VALUE_POLICY_DATA_INVALID`。
-   不得回退到历史比例或猜测值。
+   无论客户端是否携带 `expectedValuePolicyId`、ID 是否与损坏行一致，
+   一律 500；不得降级为 409，不得回退到历史比例或猜测值。
 5. `off` 忽略格式合法的 `expectedValuePolicyId`，不查询 policy，不返回
    pricing，不写 snapshot。
 
@@ -594,7 +595,6 @@ npm run verify:quick
 
 ### 19.6 DOCX 同步
 
-仓库没有可靠的 `.md` → `.docx` 生成流程。对应
-`docs/specs/points-value-policy-phase-1.docx` 与
-`docs/specs/points-real-value-alignment.docx` **未在本 closure 中手工伪造同步**。
-需要独立的文档生成任务。
+两个正式 Spec 的权威正文是 Markdown。DOCX 由
+`scripts/sync-value-policy-specs-docx.sh`（pandoc）从 Markdown 重新生成，
+并用反向 `pandoc -t plain` 校验关键状态句。禁止手工改 DOCX。

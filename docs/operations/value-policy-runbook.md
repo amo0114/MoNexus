@@ -128,10 +128,13 @@ Safe retry:
 ## 10. Read-only audit
 
 ```bash
-npm --prefix server run value-policy:audit
+npm --prefix server run value-policy:audit -- --since=2026-08-18T00:00:00.000Z
 ```
 
-The command never repairs data. Exit `2` means findings exist.
+`--since` (or `VALUE_POLICY_AUDIT_SINCE`) is the inclusive enabled-mode
+window. Without it, missing-snapshot checks are skipped so off-era orders
+are not false-positives. The command never repairs data. Exit `2` means
+findings exist.
 
 Checks:
 

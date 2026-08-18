@@ -55,9 +55,9 @@ See `docs/operations/alert-routing.md`.
 - id: `order-pricing-snapshot-missing`
 - severity: P0
 - routingLabel: `value-policy-p0`
-- expr: `increase(order_pricing_snapshot_created_total[15m]) == 0 and increase(value_policy_resolution_total{result="found",mode=~"shadow|enforce"}[15m]) > 0`
+- expr: `(increase(order_value_policy_enabled_committed_total[15m]) - increase(order_pricing_snapshot_created_total[15m])) > 0 or value_policy_missing_snapshot_orders > 0`
 - for: `15m`
-- meaning: enabled-mode resolutions are succeeding but no snapshots are committing
+- meaning: committed shadow/enforce orders exceed committed snapshots, or the last read-only audit gauge is non-zero. Do not infer missing snapshots from preview/current `resolution=found`.
 
 ### MoNexus Order pricing snapshot inconsistent
 
@@ -91,6 +91,13 @@ See `docs/operations/alert-routing.md`.
 ```promql
 sum by (result, mode) (increase(value_policy_resolution_total[15m]))
 increase(value_policy_changed_total[15m])
+increase(order_value_policy_enabled_committed_total[15m])
 increase(order_pricing_snapshot_created_total[15m])
 increase(order_pricing_snapshot_failure_total[15m])
+value_policy_missing_snapshot_orders
 ```
+
+Machine-checkable Prometheus rules live in
+`docs/operations/value-policy-alerts.rules.yml`. They are documentation of
+the contract; this repository does not load them into a production
+Alertmanager.
