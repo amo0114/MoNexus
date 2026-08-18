@@ -147,6 +147,13 @@ For each rule:
 6. Set the owner field or note to the documented owner.
 7. Save the rule disabled in staging first, run validation, then enable production.
 
+## ValuePolicy Phase 1 (documented, not provisioned)
+
+Prometheus alert expressions, thresholds, and routing labels for CNY
+ValuePolicy live in `docs/operations/value-policy-alerts.md`. This repository
+does not create those rules in Sentry or Alertmanager. Do not treat the
+presence of this paragraph as production-alert activation.
+
 ## Dry-run Helper Workflow
 
 `.github/workflows/sentry-alert-check.yml` is intentionally read-only. It validates that the documented rule names still exist in this file and, when `SENTRY_AUTH_TOKEN` plus `SENTRY_ORG` are configured in the selected GitHub environment, performs a read-only Sentry API connectivity check. It does not create, update, or delete alert rules.

@@ -7,6 +7,7 @@ import { decryptMfaSecret, generateTotp } from '../modules/auth/mfa.js'
 import { ensureSeedCategories } from '../modules/catalog/bootstrap.js'
 import { getActiveCategoryIdByLabel, getActiveNetworkNodeCategoryId } from './catalogFixture.js'
 import type { ValuePolicyStatus } from '@prisma/client'
+import { provisionValuePolicy } from '../modules/valuePolicy/governance.js'
 
 export const api = request(app)
 
@@ -141,23 +142,22 @@ export async function createTestCnyValuePolicy(options?: {
   numerator?: bigint
   denominator?: bigint
   effectiveAt?: Date
+  createdAt?: Date
   referenceAssetCode?: string
+  pointAssetCode?: string
 }) {
   const version = options?.version ?? 1
-  return prisma.valuePolicy.create({
-    data: {
-      id: options?.id ?? `vp_cny_${version}`,
-      version,
-      pointAssetCode: 'RP',
-      referenceAssetCode: options?.referenceAssetCode ?? 'CNY',
-      referenceAtomicPerPointNumerator: options?.numerator ?? 1n,
-      referenceAtomicPerPointDenominator: options?.denominator ?? 1n,
-      roundingMode: 'HALF_EVEN',
-      status: options?.status ?? 'active',
-      effectiveAt: options?.effectiveAt ?? new Date('2020-01-01T00:00:00.000Z'),
-      activatedAt: (options?.status ?? 'active') === 'active' ? new Date() : null,
-    },
-  })
+  return prisma.$transaction(tx => provisionValuePolicy(tx, {
+    id: options?.id ?? `vp_cny_${version}`,
+    version,
+    pointAssetCode: options?.pointAssetCode,
+    referenceAssetCode: options?.referenceAssetCode,
+    numerator: options?.numerator,
+    denominator: options?.denominator,
+    effectiveAt: options?.effectiveAt ?? new Date('2020-01-01T00:00:00.000Z'),
+    createdAt: options?.createdAt,
+    status: options?.status ?? 'active',
+  }))
 }
 
 export interface AuthCookies {
