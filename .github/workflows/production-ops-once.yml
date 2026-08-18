@@ -10,6 +10,7 @@ on:
         options:
           - probe
           - backup_db
+          - revoke_access
       confirmation:
         description: 'Exact confirmation phrase for the selected operation'
         required: true
@@ -62,6 +63,7 @@ jobs:
                 exit 1
               }
               ;;
+            revoke_access:REVOKE_MONEXUS_PRODUCTION_ONCE) ;;
             *)
               echo '::error::The confirmation phrase does not match the selected operation.'
               exit 1
@@ -188,6 +190,49 @@ jobs:
           path: ${{ steps.backup.outputs.filename }}
           retention-days: 7
           if-no-files-found: error
+
+      - name: Revoke the one-time production account
+        if: inputs.operation == 'revoke_access'
+        run: |
+          set -euo pipefail
+          ssh \
+            -i "$HOME/.ssh/monexus_ops_once" \
+            -p "$OPS_SSH_PORT" \
+            -o BatchMode=yes \
+            -o ConnectTimeout=15 \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$OPS_SSH_USER@$OPS_SSH_HOST" \
+            'sudo -n bash -s' <<'REMOTE'
+          set -euo pipefail
+          systemd-run \
+            --unit=monexus-remove-ops-once \
+            --collect \
+            --on-active=3s \
+            --timer-property=AccuracySec=1s \
+            /bin/bash -ceu '
+              rm -f -- /etc/sudoers.d/monexus-ops-once
+              userdel --remove monexus-ops-once
+            '
+          echo 'one-time account removal scheduled'
+          REMOTE
+
+          sleep 12
+          if ssh \
+            -i "$HOME/.ssh/monexus_ops_once" \
+            -p "$OPS_SSH_PORT" \
+            -o BatchMode=yes \
+            -o ConnectTimeout=8 \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$OPS_SSH_USER@$OPS_SSH_HOST" \
+            true 2>/dev/null; then
+            echo '::error::The one-time production SSH account is still usable.'
+            exit 1
+          fi
+          echo 'Verified that the one-time production SSH account is no longer usable.'
 
       - name: Write one-time operation summary
         if: always()
