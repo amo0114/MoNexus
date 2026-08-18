@@ -5,6 +5,7 @@ import {
   activateValuePolicy,
   provisionValuePolicy,
 } from '../modules/valuePolicy/governance.js'
+import { createTestValuePolicyActors, TEST_VALUE_POLICY_EVIDENCE } from './helpers.js'
 
 const ROUNDS = 12
 const past = new Date('2020-01-01T00:00:00.000Z')
@@ -41,13 +42,16 @@ async function resetAssetsAndPolicies() {
   })
 }
 
-async function seedScheduled(id: string, version: number) {
+async function seedScheduled(id: string, version: number, creatorId: number, approverId: number) {
   return provisionValuePolicy(prisma, {
     id,
     version,
     effectiveAt: past,
     createdAt: past,
     status: 'scheduled',
+    createdByUserId: creatorId,
+    approvedByUserId: approverId,
+    ...TEST_VALUE_POLICY_EVIDENCE,
   })
 }
 
@@ -74,15 +78,16 @@ afterEach(async () => {
 
 describe('ValuePolicy / AssetDefinition concurrency', () => {
   it(`scheduled → active vs CNY enabled=false has no deadlock over ${ROUNDS} rounds`, async () => {
+    const { creator, approver } = await createTestValuePolicyActors()
     for (let round = 0; round < ROUNDS; round += 1) {
       await resetAssetsAndPolicies()
-      await seedScheduled(`vp_race_cny_${round}`, 12000 + round)
+      await seedScheduled(`vp_race_cny_${round}`, 12000 + round, creator.id, approver.id)
 
       const results = await Promise.allSettled([
         prisma.$transaction(async tx => {
           await tx.$executeRaw`SET LOCAL lock_timeout = '2s'`
           await tx.$executeRaw`SET LOCAL statement_timeout = '5s'`
-          return activateValuePolicy(tx, `vp_race_cny_${round}`)
+          return activateValuePolicy(tx, `vp_race_cny_${round}`, approver.id)
         }, TX),
         prisma.$transaction(async tx => {
           await tx.$executeRaw`SET LOCAL lock_timeout = '2s'`
@@ -107,15 +112,16 @@ describe('ValuePolicy / AssetDefinition concurrency', () => {
   })
 
   it(`scheduled → active vs RP retiredAt has no deadlock over ${ROUNDS} rounds`, async () => {
+    const { creator, approver } = await createTestValuePolicyActors()
     for (let round = 0; round < ROUNDS; round += 1) {
       await resetAssetsAndPolicies()
-      await seedScheduled(`vp_race_rp_${round}`, 13000 + round)
+      await seedScheduled(`vp_race_rp_${round}`, 13000 + round, creator.id, approver.id)
 
       const results = await Promise.allSettled([
         prisma.$transaction(async tx => {
           await tx.$executeRaw`SET LOCAL lock_timeout = '2s'`
           await tx.$executeRaw`SET LOCAL statement_timeout = '5s'`
-          return activateValuePolicy(tx, `vp_race_rp_${round}`)
+          return activateValuePolicy(tx, `vp_race_rp_${round}`, approver.id)
         }, TX),
         prisma.$transaction(async tx => {
           await tx.$executeRaw`SET LOCAL lock_timeout = '2s'`
@@ -135,12 +141,13 @@ describe('ValuePolicy / AssetDefinition concurrency', () => {
   })
 
   it('raw SQL activate vs disable has exactly one winner and no 40P01/lock timeout', async () => {
+    const { creator, approver } = await createTestValuePolicyActors()
     const url = process.env.DATABASE_URL
     if (!url) throw new Error('DATABASE_URL is required')
 
     for (let round = 0; round < ROUNDS; round += 1) {
       await resetAssetsAndPolicies()
-      await seedScheduled(`vp_raw_${round}`, 14000 + round)
+      await seedScheduled(`vp_raw_${round}`, 14000 + round, creator.id, approver.id)
 
       const a = new Client({ connectionString: url })
       const b = new Client({ connectionString: url })
@@ -154,8 +161,8 @@ describe('ValuePolicy / AssetDefinition concurrency', () => {
 
         const raced = await Promise.allSettled([
           runAutocommitTx(a, () => a.query(
-            `UPDATE "ValuePolicy" SET status = 'active', "activatedAt" = NOW() WHERE id = $1`,
-            [`vp_raw_${round}`],
+            `UPDATE "ValuePolicy" SET status = 'active', "activatedAt" = NOW(), "activatedByUserId" = $2 WHERE id = $1`,
+            [`vp_raw_${round}`, approver.id],
           )),
           runAutocommitTx(b, () => b.query(`UPDATE "AssetDefinition" SET enabled = false WHERE code = 'CNY'`)),
         ])
@@ -185,6 +192,7 @@ describe('ValuePolicy / AssetDefinition concurrency', () => {
   })
 
   it(`policy INSERT vs AssetDefinition identity update has one winner over ${ROUNDS} rounds`, async () => {
+    const { creator, approver } = await createTestValuePolicyActors()
     const url = process.env.DATABASE_URL
     if (!url) throw new Error('DATABASE_URL is required')
 
@@ -203,6 +211,9 @@ describe('ValuePolicy / AssetDefinition concurrency', () => {
         effectiveAt: past,
         createdAt: past,
         status: 'draft',
+        createdByUserId: creator.id,
+        approvedByUserId: approver.id,
+        ...TEST_VALUE_POLICY_EVIDENCE,
       })
 
       const a = new Client({ connectionString: url })
@@ -220,9 +231,12 @@ describe('ValuePolicy / AssetDefinition concurrency', () => {
             `INSERT INTO "ValuePolicy" (
               id, version, "pointAssetCode", "referenceAssetCode",
               "referenceAtomicPerPointNumerator", "referenceAtomicPerPointDenominator",
-              "roundingMode", status, "effectiveAt", "createdAt"
-            ) VALUES ($1, $2, $3, 'CNY', 1, 1, 'HALF_EVEN', 'draft', $4, $4)`,
-            [`vp_share_ins_${round}`, 18000 + round, assetCode, past],
+              "roundingMode", status, "effectiveAt", "createdAt", "createdByUserId",
+              "d02DecisionRecordRef", "d02DecisionRecordSha256",
+              "d03DecisionRecordRef", "d03DecisionRecordSha256", "disclosureVersion"
+            ) VALUES ($1, $2, $3, 'CNY', 1, 1, 'HALF_EVEN', 'draft', $4, $4, $5,
+              'test-fixture/d02', repeat('a', 64), 'test-fixture/d03', repeat('b', 64), 'test-v1')`,
+            [`vp_share_ins_${round}`, 18000 + round, assetCode, past, creator.id],
           )),
           runAutocommitTx(b, () => b.query(
             `UPDATE "AssetDefinition" SET scale = 1 WHERE code = $1`,

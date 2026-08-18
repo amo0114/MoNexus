@@ -7,6 +7,7 @@ import {
   lockValuePolicyGovernance,
   withGovernanceTransaction,
 } from '../modules/valuePolicy/governance.js'
+import { createTestValuePolicyActors, TEST_VALUE_POLICY_EVIDENCE } from './helpers.js'
 
 const past = new Date('2020-01-01T00:00:00.000Z')
 
@@ -16,11 +17,14 @@ describe('ValuePolicy governance transactions', () => {
   })
 
   it('PrismaClient entry points wrap lock/read/update in one $transaction', async () => {
+    const { creator, approver } = await createTestValuePolicyActors()
     const draft = await createDraftValuePolicy(prisma, {
       id: 'vp_gov_wrap',
       version: 16001,
       effectiveAt: past,
       createdAt: past,
+      createdByUserId: creator.id,
+      ...TEST_VALUE_POLICY_EVIDENCE,
     })
 
     const original = prisma.$transaction.bind(prisma)
@@ -30,7 +34,7 @@ describe('ValuePolicy governance transactions', () => {
       return original(fn as never, options)
     }) as typeof prisma.$transaction
     try {
-      const approved = await approveValuePolicy(prisma, draft.id, past)
+      const approved = await approveValuePolicy(prisma, draft.id, approver.id, past)
       expect(wrapped).toBe(true)
       expect(approved.status).toBe('approved')
     } finally {
@@ -39,11 +43,14 @@ describe('ValuePolicy governance transactions', () => {
   })
 
   it('keeps the advisory lock on the same txid across lock, read, and update', async () => {
+    const { creator, approver } = await createTestValuePolicyActors()
     const draft = await createDraftValuePolicy(prisma, {
       id: 'vp_gov_txid',
       version: 16002,
       effectiveAt: past,
       createdAt: past,
+      createdByUserId: creator.id,
+      ...TEST_VALUE_POLICY_EVIDENCE,
     })
 
     await withGovernanceTransaction(prisma, async tx => {
@@ -59,7 +66,7 @@ describe('ValuePolicy governance transactions', () => {
           AND granted`
       expect(Number(held[0]!.n)).toBeGreaterThan(0)
       const [{ txid: mid }] = await tx.$queryRaw<Array<{ txid: bigint }>>`SELECT txid_current() AS txid`
-      const approved = await approveValuePolicy(tx, draft.id, past)
+      const approved = await approveValuePolicy(tx, draft.id, approver.id, past)
       expect(approved.status).toBe('approved')
       const [{ txid: after }] = await tx.$queryRaw<Array<{ txid: bigint }>>`SELECT txid_current() AS txid`
       expect(mid).toBe(before)

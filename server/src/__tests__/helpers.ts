@@ -9,6 +9,30 @@ import { getActiveCategoryIdByLabel, getActiveNetworkNodeCategoryId } from './ca
 import type { ValuePolicyStatus } from '@prisma/client'
 import { provisionValuePolicy } from '../modules/valuePolicy/governance.js'
 
+export const TEST_VALUE_POLICY_EVIDENCE = {
+  d02DecisionRecordRef: 'test-fixture/d02',
+  d02DecisionRecordSha256: 'a'.repeat(64),
+  d03DecisionRecordRef: 'test-fixture/d03',
+  d03DecisionRecordSha256: 'b'.repeat(64),
+  disclosureVersion: 'test-v1',
+} as const
+
+export async function createTestValuePolicyActors() {
+  const [creator, approver] = await Promise.all([
+    prisma.user.upsert({
+      where: { email: 'value-policy-maker@test.local' },
+      update: { role: 'admin', status: '正常' },
+      create: { email: 'value-policy-maker@test.local', password: 'test-only', role: 'admin' },
+    }),
+    prisma.user.upsert({
+      where: { email: 'value-policy-checker@test.local' },
+      update: { role: 'admin', status: '正常' },
+      create: { email: 'value-policy-checker@test.local', password: 'test-only', role: 'admin' },
+    }),
+  ])
+  return { creator, approver }
+}
+
 export const api = request(app)
 
 export async function createTestUser(
@@ -145,8 +169,13 @@ export async function createTestCnyValuePolicy(options?: {
   createdAt?: Date
   referenceAssetCode?: string
   pointAssetCode?: string
+  createdByUserId?: number
+  approvedByUserId?: number
 }) {
   const version = options?.version ?? 1
+  const actors = options?.createdByUserId && options?.approvedByUserId
+    ? { creator: { id: options.createdByUserId }, approver: { id: options.approvedByUserId } }
+    : await createTestValuePolicyActors()
   return prisma.$transaction(tx => provisionValuePolicy(tx, {
     id: options?.id ?? `vp_cny_${version}`,
     version,
@@ -157,6 +186,9 @@ export async function createTestCnyValuePolicy(options?: {
     effectiveAt: options?.effectiveAt ?? new Date('2020-01-01T00:00:00.000Z'),
     createdAt: options?.createdAt,
     status: options?.status ?? 'active',
+    createdByUserId: actors.creator.id,
+    approvedByUserId: actors.approver.id,
+    ...TEST_VALUE_POLICY_EVIDENCE,
   }))
 }
 

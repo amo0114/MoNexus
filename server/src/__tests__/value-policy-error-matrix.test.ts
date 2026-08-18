@@ -120,10 +120,14 @@ describe('SPEC-VALUE-POLICY-P1-001 error-code matrix', () => {
       return 'vp_retired_alone'
     }],
     ['retired ID with replacement', async () => {
-      await createTestCnyValuePolicy({ id: 'vp_retired_old', version: 15 })
+      const oldPolicy = await createTestCnyValuePolicy({ id: 'vp_retired_old', version: 15 })
       await prisma.valuePolicy.update({
         where: { id: 'vp_retired_old' },
-        data: { status: 'retired', retiredAt: new Date() },
+        data: {
+          status: 'retired',
+          retiredAt: new Date(),
+          retiredByUserId: oldPolicy.approvedByUserId!,
+        },
       })
       await createTestCnyValuePolicy({ id: 'vp_retired_new', version: 16 })
       return 'vp_retired_old'

@@ -7,7 +7,11 @@ import {
   PG_INT8_MAX,
 } from '../modules/valuePolicy/roundingVectors.js'
 import { getActiveCategoryIdByLabel } from './catalogFixture.js'
-import { createTestCnyValuePolicy } from './helpers.js'
+import {
+  createTestCnyValuePolicy,
+  createTestValuePolicyActors,
+  TEST_VALUE_POLICY_EVIDENCE,
+} from './helpers.js'
 
 describe('Product and InventoryItem database constraints', () => {
   it('rejects invalid product commercial values and finite state values', async () => {
@@ -176,6 +180,11 @@ describe('P5 file-delivery database constraints', () => {
 })
 
 describe('SPEC-VALUE-POLICY-P1-001 database constraints', () => {
+  async function policyInsertAuditFields() {
+    const { creator } = await createTestValuePolicyActors()
+    return { createdByUserId: creator.id, ...TEST_VALUE_POLICY_EVIDENCE }
+  }
+
   async function seedUsdAsset() {
     return prisma.assetDefinition.upsert({
       where: { code: 'USD' },
@@ -195,6 +204,7 @@ describe('SPEC-VALUE-POLICY-P1-001 database constraints', () => {
   it('rejects a zero or negative policy ratio', async () => {
     await expect(prisma.valuePolicy.create({
       data: {
+        ...await policyInsertAuditFields(),
         id: 'vp_bad_zero',
         version: 9001,
         pointAssetCode: 'RP',
@@ -209,6 +219,7 @@ describe('SPEC-VALUE-POLICY-P1-001 database constraints', () => {
 
     await expect(prisma.valuePolicy.create({
       data: {
+        ...await policyInsertAuditFields(),
         id: 'vp_bad_neg',
         version: 9002,
         pointAssetCode: 'RP',
@@ -235,6 +246,7 @@ describe('SPEC-VALUE-POLICY-P1-001 database constraints', () => {
 
     await expect(prisma.valuePolicy.create({
       data: {
+        ...await policyInsertAuditFields(),
         id: 'vp_active_insert',
         version: 9103,
         pointAssetCode: 'RP',
@@ -263,6 +275,7 @@ describe('SPEC-VALUE-POLICY-P1-001 database constraints', () => {
   it('rejects a draft-to-active jump and an active USD/USDT policy', async () => {
     await prisma.valuePolicy.create({
       data: {
+        ...await policyInsertAuditFields(),
         id: 'vp_draft',
         version: 9301,
         pointAssetCode: 'RP',
@@ -282,6 +295,7 @@ describe('SPEC-VALUE-POLICY-P1-001 database constraints', () => {
     await seedUsdAsset()
     await expect(prisma.valuePolicy.create({
       data: {
+        ...await policyInsertAuditFields(),
         id: 'vp_usd_active',
         version: 9302,
         pointAssetCode: 'RP',
@@ -297,6 +311,7 @@ describe('SPEC-VALUE-POLICY-P1-001 database constraints', () => {
     await seedUsdtAsset()
     await expect(prisma.valuePolicy.create({
       data: {
+        ...await policyInsertAuditFields(),
         id: 'vp_usdt_active',
         version: 9303,
         pointAssetCode: 'RP',
@@ -423,7 +438,11 @@ describe('SPEC-VALUE-POLICY-P1-001 database constraints', () => {
 
     const retired = await prisma.valuePolicy.update({
       where: { id: policy.id },
-      data: { status: 'retired', retiredAt: new Date() },
+      data: {
+        status: 'retired',
+        retiredAt: new Date(),
+        retiredByUserId: policy.approvedByUserId!,
+      },
     })
     expect(retired.status).toBe('retired')
 
@@ -529,6 +548,7 @@ describe('SPEC-VALUE-POLICY-P1-001 database constraints', () => {
 
     await prisma.valuePolicy.create({
       data: {
+        ...await policyInsertAuditFields(),
         id: 'vp_asset_lock',
         version: 9801,
         pointAssetCode: 'RP',
@@ -554,6 +574,7 @@ describe('SPEC-VALUE-POLICY-P1-001 database constraints', () => {
     })
     await expect(prisma.valuePolicy.create({
       data: {
+        ...await policyInsertAuditFields(),
         id: 'vp_disabled_asset',
         version: 9901,
         pointAssetCode: 'RP_DISABLED',
@@ -585,6 +606,7 @@ describe('SPEC-VALUE-POLICY-P1-001 database constraints', () => {
 
     await expect(prisma.valuePolicy.create({
       data: {
+        ...await policyInsertAuditFields(),
         id: 'vp_insert_retired',
         version: 10001,
         pointAssetCode: 'RP',
@@ -783,7 +805,11 @@ describe('SPEC-VALUE-POLICY-P1-001 database constraints', () => {
 
     const retired = await prisma.valuePolicy.update({
       where: { id: livePolicy.id },
-      data: { status: 'retired', retiredAt: new Date() },
+      data: {
+        status: 'retired',
+        retiredAt: new Date(),
+        retiredByUserId: livePolicy.approvedByUserId!,
+      },
     })
     expect(retired.status).toBe('retired')
 
