@@ -63,6 +63,9 @@ server/.generated-prisma-client/
 # Generated mail HTML previews (local only)
 outputs/mail-previews/
 
+# D-02 denomination backtest operational outputs (never commit real extracts)
+artifacts/value-policy-d02-backtest/
+
 # Python helper bytecode (F0 dbguard harness)
 __pycache__/
 *.pyc
