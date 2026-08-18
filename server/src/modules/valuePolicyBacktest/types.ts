@@ -111,6 +111,7 @@ export type OfferPriceAnalysis = {
 
 export type UserActivityAnalysis = {
   sampleSizeUsers: number
+  sampleSizeActiveAccounts: number
   sampleSizeUserMonths: number
   suppressed: boolean
   reason: string | null
@@ -368,6 +369,7 @@ export type RunOptions = {
   legacyCommissionBps: bigint | null
   allowUnverifiableSource: boolean
   runtime: BacktestRuntime
+  gitIdentity?: GitIdentity
 }
 
 export type { NormalizedCandidate, GateThresholds }

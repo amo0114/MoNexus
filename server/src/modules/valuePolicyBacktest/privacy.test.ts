@@ -153,6 +153,47 @@ describe('privacy suppression', () => {
     expect(JSON.stringify(report)).not.toContain('7777')
   })
 
+  it('suppresses activity and reward totals when 10 rows belong to one active account', () => {
+    const accounts = enoughAccounts(10)
+    const offers = enoughOffers(10)
+    const monthlyActivity = [
+      '2026-01', '2026-02', '2026-03', '2026-04', '2026-05',
+      '2026-06', '2026-07', '2026-08', '2026-09', '2026-10',
+    ].map(month => ({
+      month,
+      accountRef: accounts[0].accountRef,
+      earnedPoints: '7777',
+      spentPoints: '0',
+      expiredPoints: '0',
+      refundedPoints: '0',
+    }))
+    const input = {
+      schemaVersion: 1,
+      period: {
+        from: '2026-01-01T00:00:00.000Z',
+        to: '2026-10-31T23:59:59.999Z',
+      },
+      offers,
+      accounts,
+      monthlyActivity,
+      orders: [],
+    }
+    const report = buildReport(parseJson(input), options())
+    const candidate = report.candidates[0]
+    expect(candidate.userActivity.sampleSizeUsers).toBe(10)
+    expect(candidate.userActivity.sampleSizeUserMonths).toBe(10)
+    expect(candidate.userActivity.sampleSizeActiveAccounts).toBe(1)
+    expect(candidate.userActivity.suppressed).toBe(true)
+    expect(candidate.userActivity.monthlyAveragePoints).toBeNull()
+    expect(candidate.rewardBudget.suppressed).toBe(true)
+    expect(candidate.rewardBudget.totals.earnedPoints).toBeNull()
+    expect(candidate.rewardBudget.totals.earnedReferenceAtomic).toBeNull()
+    expect(report.sensitivity[0].periodEarnedReferenceAtomic).toBeNull()
+    expect(report.sensitivity[0].periodEarnedReferenceCny).toBeNull()
+    expect(JSON.stringify(report)).not.toContain('7777')
+    expect(JSON.stringify(report)).not.toContain('77770')
+  })
+
   it('does not re-expose suppressed values through the sensitivity matrix', () => {
     const report = buildReport(parseJson(singletonInput()), options())
     const row = report.sensitivity[0]

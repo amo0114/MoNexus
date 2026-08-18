@@ -172,7 +172,8 @@ netAvailableReferenceAtomic =
 - 只提交合成 fixture。
 - 报告只输出聚合结果，禁止单用户或单商家明细。
 - 不可降低的隐私 floor：
-  - offers / accounts / monthlyActivity / category / 有成本 offer ≥ 10
+  - offers / accounts / monthlyActivity 行数 / category / 有成本 offer ≥ 10
+  - 总体用户活动、奖励 totals 与 sensitivity 的期间 earned 还要求 **distinct active `accountRef` ≥ `minSampleAccounts`**。仅有 10 行但全部属于同一账户时必须抑制。
   - top 1% 集中度 ≥ 100
   - top 5% 集中度 ≥ 20
 - 样本不足时，`suppressed=true` 且对应数字字段必须为 `null` + `reason`。禁止只打 boolean 后继续输出 P10/P50/P90、总 exposure、concentration `totalSum`、逐月 earned/spent 或商家差额。
@@ -206,7 +207,7 @@ JSON 与 Markdown 的关键数字必须一致。
 - `metadata.gitTreeState`：`clean` | `dirty` | `unavailable`
 - `metadata.sourceVerifiable`：仅 `clean` 为 true
 
-默认 fail closed：dirty 或无法取得 commit 时拒绝生成决策报告。只有显式 `--allow-unverifiable-source` 才可继续，且报告必须显著标记 `sourceVerifiable=false`。
+默认 fail closed：dirty 或无法取得 commit 时拒绝生成决策报告。只有显式 `--allow-unverifiable-source` 才可继续，且报告必须显著标记 `sourceVerifiable=false`。每次执行只解析一次 `GitIdentity`，校验与报告必须使用同一冻结值；不得在两次读取之间把 dirty 树写成未授权的 `sourceVerifiable=false` 报告。
 
 运行人、机器环境和输入绝对路径**不是**公开报告字段。它们只属于受控归档记录，由运维在报告目录外单独保存。
 

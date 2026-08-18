@@ -77,7 +77,7 @@ export function buildReport(input: ValidatedInput, options: RunOptions): Backtes
     }
   })
 
-  const git = options.runtime.gitIdentity()
+  const git = options.gitIdentity ?? options.runtime.gitIdentity()
   const report: BacktestReport = {
     schemaVersion: REPORT_SCHEMA_VERSION,
     d02Status: D02_STATUS,

@@ -178,6 +178,16 @@ function userMonthNet(row: ValidatedInput['monthlyActivity'][number]): bigint {
   return row.earnedPoints - row.spentPoints - row.expiredPoints + row.refundedPoints
 }
 
+export function distinctActiveAccountCount(rows: ReadonlyArray<{ accountRef: string }>): number {
+  return new Set(rows.map(row => row.accountRef)).size
+}
+
+function activityBelowPrivacyFloor(input: ValidatedInput, thresholds: GateThresholds): boolean {
+  return input.monthlyActivity.length < thresholds.minSampleMonthlyActivity
+    || input.accounts.length < thresholds.minSampleAccounts
+    || distinctActiveAccountCount(input.monthlyActivity) < thresholds.minSampleAccounts
+}
+
 function analyzeUserActivity(
   input: ValidatedInput,
   candidate: NormalizedCandidate,
@@ -194,10 +204,10 @@ function analyzeUserActivity(
   const accountsWithActivity = coverage(activityByAccount.size, input.accounts.length)
   const activityRows = coverage(input.monthlyActivity.length, expectedRows)
 
-  if (input.monthlyActivity.length < thresholds.minSampleMonthlyActivity
-    || input.accounts.length < thresholds.minSampleAccounts) {
+  if (activityBelowPrivacyFloor(input, thresholds)) {
     return {
       sampleSizeUsers: input.accounts.length,
+      sampleSizeActiveAccounts: activityByAccount.size,
       sampleSizeUserMonths: input.monthlyActivity.length,
       suppressed: true,
       reason: 'sample_below_threshold',
@@ -301,6 +311,7 @@ function analyzeUserActivity(
 
   return {
     sampleSizeUsers: input.accounts.length,
+    sampleSizeActiveAccounts: activityByAccount.size,
     sampleSizeUserMonths: input.monthlyActivity.length,
     suppressed: false,
     reason: null,
@@ -557,8 +568,7 @@ function analyzeRewardBudget(
   candidate: NormalizedCandidate,
   thresholds: GateThresholds,
 ): RewardBudgetAnalysis {
-  const overallSuppressed = input.monthlyActivity.length < thresholds.minSampleMonthlyActivity
-    || input.accounts.length < thresholds.minSampleAccounts
+  const overallSuppressed = activityBelowPrivacyFloor(input, thresholds)
   const byMonth = input.period.months.map(month => budgetMonthRow(
     month,
     input.monthlyActivity.filter(row => row.month === month),

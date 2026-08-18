@@ -11,7 +11,7 @@ import { writeReports } from './io.js'
 import { readAndParseInputFile } from './parse.js'
 import { assertNoIdentityLeak, buildReport, renderMarkdown, reportJson } from './report.js'
 import { SUPPORTED_REFERENCE_ASSET } from './thresholds.js'
-import type { BacktestReport, RunOptions } from './types.js'
+import type { BacktestReport, GitIdentity, RunOptions } from './types.js'
 
 export function createRunOptionsFromArgv(
   argv: string[],
@@ -44,8 +44,12 @@ export function createRunOptionsFromArgv(
   }
 }
 
+export function resolveGitIdentity(options: RunOptions): GitIdentity {
+  return options.gitIdentity ?? options.runtime.gitIdentity()
+}
+
 export function assertVerifiableSource(options: RunOptions): void {
-  const identity = options.runtime.gitIdentity()
+  const identity = resolveGitIdentity(options)
   if (identity.treeState === 'clean') {
     return
   }
@@ -64,9 +68,11 @@ export function executeBacktest(options: RunOptions): {
   jsonPath: string
   markdownPath: string
 } {
-  assertVerifiableSource(options)
-  const input = readAndParseInputFile(options.inputPath)
-  const report = buildReport(input, options)
+  const gitIdentity = resolveGitIdentity(options)
+  const frozen: RunOptions = { ...options, gitIdentity }
+  assertVerifiableSource(frozen)
+  const input = readAndParseInputFile(frozen.inputPath)
+  const report = buildReport(input, frozen)
   const json = reportJson(report)
   const markdown = renderMarkdown(report)
   assertNoIdentityLeak(json, input)

@@ -7,10 +7,10 @@ import { testRuntime } from './__fixtures__/runtime.js'
 import { BACKTEST_ERROR_CODES, BacktestError } from './errors.js'
 import { leftoverPublishFiles, writeReports, type PublishIo } from './io.js'
 import { readFromSyncReader } from './parse.js'
-import { INPUT_LIMITS } from './thresholds.js'
-import { assertVerifiableSource } from './run.js'
-import { DEFAULT_GATE_THRESHOLDS } from './thresholds.js'
-import type { RunOptions } from './types.js'
+import { DEFAULT_GATE_THRESHOLDS, INPUT_LIMITS } from './thresholds.js'
+import { assertVerifiableSource, executeBacktest } from './run.js'
+import { buildSyntheticSmallInput } from './__fixtures__/syntheticSmall.js'
+import type { GitIdentity, RunOptions } from './types.js'
 
 const defaultIo: PublishIo = {
   mkdirSync,
@@ -142,5 +142,29 @@ describe('git source identity', () => {
     } catch (error) {
       expect((error as BacktestError).code).toBe(BACKTEST_ERROR_CODES.UNVERIFIABLE_SOURCE)
     }
+  })
+
+  it('freezes a single GitIdentity so a later dirty read cannot bypass fail-closed', () => {
+    const states: GitIdentity['treeState'][] = ['clean', 'dirty']
+    let calls = 0
+    const directory = mkdtempSync(join(tmpdir(), 'd02-git-seq-'))
+    const inputPath = join(directory, 'input.json')
+    writeFileSync(inputPath, `${JSON.stringify(buildSyntheticSmallInput())}\n`)
+    const result = executeBacktest(options({
+      inputPath,
+      outputDir: join(directory, 'out'),
+      allowUnverifiableSource: false,
+      runtime: {
+        now: () => new Date('2026-08-18T00:00:00.000Z'),
+        gitIdentity: () => {
+          const treeState = states[Math.min(calls, states.length - 1)]
+          calls += 1
+          return { commit: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', treeState }
+        },
+      },
+    }))
+    expect(calls).toBe(1)
+    expect(result.report.metadata.gitTreeState).toBe('clean')
+    expect(result.report.metadata.sourceVerifiable).toBe(true)
   })
 })

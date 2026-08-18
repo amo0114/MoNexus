@@ -24,15 +24,17 @@ function statusByRate(
 function dataCoverageGate(analysis: Omit<CandidateAnalysis, 'gates'>, thresholds: GateThresholds): GateResult {
   const offerCount = analysis.offerPrices.sampleSize
   const accountCount = analysis.userActivity.sampleSizeUsers
+  const activeAccountCount = analysis.userActivity.sampleSizeActiveAccounts
   const activityCount = analysis.userActivity.sampleSizeUserMonths
   if (offerCount < thresholds.minSampleOffers
     || accountCount < thresholds.minSampleAccounts
+    || activeAccountCount < thresholds.minSampleAccounts
     || activityCount < thresholds.minSampleMonthlyActivity) {
     return {
       name: 'DATA_COVERAGE',
       status: 'insufficient_data',
       reason: 'core_sample_below_threshold',
-      evidence: { offerCount, accountCount, activityCount },
+      evidence: { offerCount, accountCount, activeAccountCount, activityCount },
     }
   }
   const activityRate = analysis.userActivity.coverage.accountsWithActivity.rate
@@ -41,7 +43,7 @@ function dataCoverageGate(analysis: Omit<CandidateAnalysis, 'gates'>, thresholds
       name: 'DATA_COVERAGE',
       status: 'insufficient_data',
       reason: 'activity_coverage_unavailable',
-      evidence: { offerCount, accountCount, activityCount },
+      evidence: { offerCount, accountCount, activeAccountCount, activityCount },
     }
   }
   if (compareFixed(activityRate, thresholds.dataCoverageWarnBelowRate) < 0) {
@@ -56,7 +58,7 @@ function dataCoverageGate(analysis: Omit<CandidateAnalysis, 'gates'>, thresholds
     name: 'DATA_COVERAGE',
     status: 'pass',
     reason: 'core_coverage_meets_threshold',
-    evidence: { activityRate, offerCount, accountCount, activityCount },
+    evidence: { activityRate, offerCount, accountCount, activeAccountCount, activityCount },
   }
 }
 
