@@ -4,7 +4,9 @@ import { prisma } from '../../../lib/prisma.js'
 import { executeRechargeCredit, parseNormalizedPaymentPayload } from '../../recharge/credit.js'
 import { consumeLimitReservations } from '../../recharge/limits.js'
 import { paymentTestHooks, tripWriteHook } from './hooks.js'
-import { newLeaseToken } from '../workers/lease.js'
+import { isPaymentDeadlock, newLeaseToken } from '../workers/lease.js'
+import { providerEnvironment } from '../../recharge/gates.js'
+import type { ReconciliationMismatchType } from '../../recharge/types.js'
 
 const TX = { timeout: 15_000, maxWait: 5_000 } as const
 const PAYABLE_ORDER = ['created', 'pending_payment', 'closure_pending'] as const
@@ -21,15 +23,8 @@ export type ApplyConfirmedPaymentResult = {
     | 'credited'
     | 'reconcile_required'
     | 'lease_lost'
+    | 'retry'
   rechargeOrderId?: string
-}
-
-function isDeadlock(error: unknown): boolean {
-  const rec = typeof error === 'object' && error !== null ? error as Record<string, unknown> : {}
-  const code = rec.code != null ? String(rec.code) : ''
-  const meta = rec.meta && typeof rec.meta === 'object' ? rec.meta as Record<string, unknown> : {}
-  const text = [code, meta.code, rec.message].map(item => item == null ? '' : String(item)).join(' ')
-  return code === 'P2034' || code === '40P01' || /40P01|deadlock/i.test(text)
 }
 
 function verificationPassed(row: {
@@ -43,23 +38,29 @@ function verificationPassed(row: {
   return row.verificationMethod === 'authenticated_provider_api'
 }
 
-async function writeDuplicatePaymentItem(tx: Prisma.TransactionClient, input: {
-  orderId: string
-  attemptId: string
+async function writeOpenReconItem(tx: Prisma.TransactionClient, input: {
+  scopePrefix: string
+  mismatchType: ReconciliationMismatchType
+  orderId?: string | null
+  attemptId?: string | null
   eventId: string
   provider: string
   providerAccountKey: string
-  providerPaymentId: string
-  amountMinor: bigint
-  currency: string
+  providerEntryKey: string
+  providerStatus?: string | null
+  localStatus?: string | null
+  providerAmountMinor?: bigint | null
+  localAmountMinor?: bigint | null
+  currency?: string | null
 }) {
-  const scopeKey = `duplicate:${input.orderId}:${input.providerPaymentId}`
+  const environment = providerEnvironment()
+  const scopeKey = `${input.scopePrefix}:${input.orderId ?? 'none'}:${input.providerEntryKey}`
   const run = await tx.reconciliationRun.upsert({
     where: {
       provider_providerAccountKey_environment_scopeType_scopeKey: {
         provider: input.provider,
         providerAccountKey: input.providerAccountKey,
-        environment: 'sandbox',
+        environment,
         scopeType: 'manual',
         scopeKey,
       },
@@ -67,7 +68,7 @@ async function writeDuplicatePaymentItem(tx: Prisma.TransactionClient, input: {
     create: {
       provider: input.provider,
       providerAccountKey: input.providerAccountKey,
-      environment: 'sandbox',
+      environment,
       scopeType: 'manual',
       scopeKey,
       status: 'completed_with_mismatches',
@@ -82,84 +83,22 @@ async function writeDuplicatePaymentItem(tx: Prisma.TransactionClient, input: {
     where: {
       reconciliationRunId_providerEntryKey_mismatchType: {
         reconciliationRunId: run.id,
-        providerEntryKey: input.providerPaymentId,
-        mismatchType: 'duplicate_provider_payment',
+        providerEntryKey: input.providerEntryKey,
+        mismatchType: input.mismatchType,
       },
     },
     create: {
       reconciliationRunId: run.id,
-      providerEntryKey: input.providerPaymentId,
-      rechargeOrderId: input.orderId,
-      paymentAttemptId: input.attemptId,
+      providerEntryKey: input.providerEntryKey,
+      rechargeOrderId: input.orderId ?? null,
+      paymentAttemptId: input.attemptId ?? null,
       paymentEventId: input.eventId,
-      mismatchType: 'duplicate_provider_payment',
-      providerStatus: 'succeeded',
-      localStatus: 'paid',
-      providerAmountMinor: input.amountMinor,
-      localAmountMinor: input.amountMinor,
-      currency: input.currency,
-      status: 'open',
-    },
-    update: {},
-  })
-}
-
-async function writeLatePaymentItem(tx: Prisma.TransactionClient, input: {
-  orderId: string
-  attemptId: string
-  eventId: string
-  provider: string
-  providerAccountKey: string
-  providerPaymentId: string
-  amountMinor: bigint
-  currency: string
-  localStatus: string
-}) {
-  const scopeKey = `late:${input.orderId}:${input.providerPaymentId}`
-  const run = await tx.reconciliationRun.upsert({
-    where: {
-      provider_providerAccountKey_environment_scopeType_scopeKey: {
-        provider: input.provider,
-        providerAccountKey: input.providerAccountKey,
-        environment: 'sandbox',
-        scopeType: 'manual',
-        scopeKey,
-      },
-    },
-    create: {
-      provider: input.provider,
-      providerAccountKey: input.providerAccountKey,
-      environment: 'sandbox',
-      scopeType: 'manual',
-      scopeKey,
-      status: 'completed_with_mismatches',
-      itemCount: 1,
-      mismatchCount: 1,
-      startedAt: new Date(),
-      completedAt: new Date(),
-    },
-    update: {},
-  })
-  await tx.reconciliationItem.upsert({
-    where: {
-      reconciliationRunId_providerEntryKey_mismatchType: {
-        reconciliationRunId: run.id,
-        providerEntryKey: input.providerPaymentId,
-        mismatchType: 'provider_paid_local_unpaid',
-      },
-    },
-    create: {
-      reconciliationRunId: run.id,
-      providerEntryKey: input.providerPaymentId,
-      rechargeOrderId: input.orderId,
-      paymentAttemptId: input.attemptId,
-      paymentEventId: input.eventId,
-      mismatchType: 'provider_paid_local_unpaid',
-      providerStatus: 'succeeded',
-      localStatus: input.localStatus,
-      providerAmountMinor: input.amountMinor,
-      localAmountMinor: input.amountMinor,
-      currency: input.currency,
+      mismatchType: input.mismatchType,
+      providerStatus: input.providerStatus ?? null,
+      localStatus: input.localStatus ?? null,
+      providerAmountMinor: input.providerAmountMinor ?? null,
+      localAmountMinor: input.localAmountMinor ?? null,
+      currency: input.currency ?? null,
       status: 'open',
     },
     update: {},
@@ -177,7 +116,7 @@ export async function applyConfirmedPayment(observationId: string): Promise<Appl
       return await applyConfirmedPaymentOnce(observationId)
     } catch (error) {
       lastError = error
-      if (!isDeadlock(error) && !(error instanceof Error && error.message.startsWith('TEST_ROLLBACK:'))) {
+      if (!isPaymentDeadlock(error) && !(error instanceof Error && error.message.startsWith('TEST_ROLLBACK:'))) {
         throw error
       }
       if (error instanceof Error && error.message.startsWith('TEST_ROLLBACK:')) throw error
@@ -263,7 +202,7 @@ async function applyConfirmedPaymentOnce(observationId: string): Promise<ApplyCo
           },
         })
       if (!attemptHint) {
-        return { outcome: 'reconcile_required' as const, reason: 'attempt_missing' }
+        return { outcome: 'retry' as const, reason: 'attempt_missing' }
       }
       const intentHint = await tx.paymentIntent.findUnique({ where: { id: attemptHint.paymentIntentId } })
       if (!intentHint) return { outcome: 'reconcile_required' as const, reason: 'intent_missing' }
@@ -310,6 +249,32 @@ async function applyConfirmedPaymentOnce(observationId: string): Promise<ApplyCo
         || order.currency !== payload.currency
         || order.amountMinor !== payload.amountMinor
       ) {
+        const mismatchType: ReconciliationMismatchType = order.currency !== payload.currency
+          ? 'currency_mismatch'
+          : order.amountMinor !== payload.amountMinor
+            ? 'amount_mismatch'
+            : 'unknown_provider_transaction'
+        await writeOpenReconItem(tx, {
+          scopePrefix: 'mismatch',
+          mismatchType,
+          orderId: order.id,
+          attemptId: attempt.id,
+          eventId: observation.id,
+          provider: observation.provider,
+          providerAccountKey: observation.providerAccountKey,
+          providerEntryKey: payload.providerPaymentId,
+          providerStatus: payload.status,
+          localStatus: order.status,
+          providerAmountMinor: payload.amountMinor,
+          localAmountMinor: order.amountMinor,
+          currency: payload.currency,
+        })
+        logger.error({
+          event: 'payment.amount_or_account_mismatch',
+          rechargeOrderId: order.id,
+          observationId,
+          mismatchType,
+        }, 'observation does not match local order')
         return { outcome: 'reconcile_required' as const, reason: 'amount_or_account_mismatch', rechargeOrderId: order.id }
       }
 
@@ -323,14 +288,19 @@ async function applyConfirmedPaymentOnce(observationId: string): Promise<ApplyCo
 
       if ((PAID_ORDER as readonly string[]).includes(order.status)) {
         if (!samePayment) {
-          await writeDuplicatePaymentItem(tx, {
+          await writeOpenReconItem(tx, {
+            scopePrefix: 'duplicate',
+            mismatchType: 'duplicate_provider_payment',
             orderId: order.id,
             attemptId: attempt.id,
             eventId: observation.id,
             provider: observation.provider,
             providerAccountKey: observation.providerAccountKey,
-            providerPaymentId: payload.providerPaymentId,
-            amountMinor: payload.amountMinor,
+            providerEntryKey: payload.providerPaymentId,
+            providerStatus: 'succeeded',
+            localStatus: 'paid',
+            providerAmountMinor: payload.amountMinor,
+            localAmountMinor: payload.amountMinor,
             currency: payload.currency,
           })
           logger.error({
@@ -372,16 +342,20 @@ async function applyConfirmedPaymentOnce(observationId: string): Promise<ApplyCo
             data: { status: 'reconcile_required' },
           })
         }
-        await writeLatePaymentItem(tx, {
+        await writeOpenReconItem(tx, {
+          scopePrefix: 'late',
+          mismatchType: 'provider_paid_local_unpaid',
           orderId: order.id,
           attemptId: attempt.id,
           eventId: observation.id,
           provider: observation.provider,
           providerAccountKey: observation.providerAccountKey,
-          providerPaymentId: payload.providerPaymentId,
-          amountMinor: payload.amountMinor,
-          currency: payload.currency,
+          providerEntryKey: payload.providerPaymentId,
+          providerStatus: 'succeeded',
           localStatus: order.status,
+          providerAmountMinor: payload.amountMinor,
+          localAmountMinor: payload.amountMinor,
+          currency: payload.currency,
         })
         logger.error({
           event: 'payment.late_success',
@@ -440,22 +414,35 @@ async function applyConfirmedPaymentOnce(observationId: string): Promise<ApplyCo
   })
 
   if (applied.outcome !== 'lease_lost') {
-    const terminalStatus = applied.outcome === 'ignored'
-      ? 'ignored'
-      : applied.outcome === 'reconcile_required'
-        ? 'reconcile_required'
-        : 'processed'
-    const marked = await prisma.$queryRaw<Array<{ id: string }>>`
-      UPDATE "PaymentEvent"
-      SET
-        "status" = ${terminalStatus},
-        "processedAt" = NOW(),
-        "leaseToken" = NULL,
-        "leaseUntil" = NULL,
-        "lastErrorCode" = ${'reason' in applied ? applied.reason ?? null : null}
-      WHERE "id" = ${observationId}::uuid
-        AND "leaseToken" = ${leaseToken}::uuid
-      RETURNING "id"`
+    const lastError = 'reason' in applied ? applied.reason ?? null : null
+    const marked = applied.outcome === 'retry'
+      ? await prisma.$queryRaw<Array<{ id: string }>>`
+          UPDATE "PaymentEvent"
+          SET
+            "status" = 'failed',
+            "processedAt" = NULL,
+            "leaseToken" = NULL,
+            "leaseUntil" = NULL,
+            "lastErrorCode" = ${lastError},
+            "nextAttemptAt" = NOW() + (LEAST("attempts", 8) * interval '2 seconds')
+          WHERE "id" = ${observationId}::uuid
+            AND "leaseToken" = ${leaseToken}::uuid
+          RETURNING "id"`
+      : await prisma.$queryRaw<Array<{ id: string }>>`
+          UPDATE "PaymentEvent"
+          SET
+            "status" = ${applied.outcome === 'ignored'
+              ? 'ignored'
+              : applied.outcome === 'reconcile_required'
+                ? 'reconcile_required'
+                : 'processed'},
+            "processedAt" = NOW(),
+            "leaseToken" = NULL,
+            "leaseUntil" = NULL,
+            "lastErrorCode" = ${lastError}
+          WHERE "id" = ${observationId}::uuid
+            AND "leaseToken" = ${leaseToken}::uuid
+          RETURNING "id"`
     if (marked.length !== 1) {
       return { observationId, outcome: 'lease_lost', rechargeOrderId: applied.rechargeOrderId }
     }

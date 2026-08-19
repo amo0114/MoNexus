@@ -20,6 +20,7 @@ import {
   completeObservationDedupeKey,
 } from '../payment/observations/record.js'
 import { applyConfirmedPayment } from '../payment/events/applyConfirmedPayment.js'
+import { paymentTestHooks } from '../payment/events/hooks.js'
 import { parseNormalizedPaymentPayload } from './credit.js'
 import { claimPaymentEvent, commitPaymentEvent } from '../payment/workers/lease.js'
 import {
@@ -265,6 +266,13 @@ export async function submitProviderRefund(refundId: string) {
   if (refund.status === 'failed') return refund
   if (!refund.paymentAttempt.providerPaymentId) throw conflict('支付尝试缺少渠道单号')
 
+  const hold = await prisma.pointHold.findUnique({
+    where: { sourceType_sourceId: { sourceType: 'recharge_refund', sourceId: refund.id } },
+  })
+  const retryStatus = hold?.status === 'active' || refund.status === 'points_held'
+    ? 'points_held'
+    : 'requested'
+
   const cas = await prisma.rechargeRefund.updateMany({
     where: { id: refund.id, status: { in: ['requested', 'points_held', 'processing'] } },
     data: { status: 'processing' },
@@ -272,14 +280,32 @@ export async function submitProviderRefund(refundId: string) {
   if (cas.count !== 1 && refund.status !== 'processing') return refund
 
   const provider = getHistoricalProvider(asProviderName(refund.rechargeOrder.provider))
-  providerRefundCalls += 1
-  const result = await provider.createRefund({
-    providerPaymentId: refund.paymentAttempt.providerPaymentId,
-    providerAccountKey: refund.rechargeOrder.providerAccountKey,
-    amountMinor: refund.amountMinor,
-    currency: refund.rechargeOrder.currency as RechargeCurrency,
-    requestIdempotencyKey: REFUND_BUSINESS_EVENT_KEY(refund.rechargeOrderId),
-  })
+  let result
+  try {
+    if (paymentTestHooks.throwAfterRefundProcessingCas) {
+      paymentTestHooks.throwAfterRefundProcessingCas = false
+      throw new Error('TEST_REFUND_PROVIDER_THROW')
+    }
+    providerRefundCalls += 1
+    result = await provider.createRefund({
+      providerPaymentId: refund.paymentAttempt.providerPaymentId,
+      providerAccountKey: refund.rechargeOrder.providerAccountKey,
+      amountMinor: refund.amountMinor,
+      currency: refund.rechargeOrder.currency as RechargeCurrency,
+      requestIdempotencyKey: REFUND_BUSINESS_EVENT_KEY(refund.rechargeOrderId),
+    })
+  } catch (error) {
+    await prisma.rechargeRefund.updateMany({
+      where: { id: refund.id, status: 'processing' },
+      data: { status: retryStatus },
+    })
+    logger.warn({
+      event: 'payment.refund_provider_retry',
+      refundId: refund.id,
+      err: error instanceof Error ? error.message : 'createRefund_failed',
+    }, 'provider refund failed; will retry without releasing hold')
+    throw error
+  }
 
   await prisma.rechargeRefund.update({
     where: { id: refund.id },

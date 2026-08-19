@@ -12,6 +12,14 @@ export function newLeaseToken(): string {
   return randomUUID()
 }
 
+export function isPaymentDeadlock(error: unknown): boolean {
+  const rec = typeof error === 'object' && error !== null ? error as Record<string, unknown> : {}
+  const code = rec.code != null ? String(rec.code) : ''
+  const meta = rec.meta && typeof rec.meta === 'object' ? rec.meta as Record<string, unknown> : {}
+  const text = [code, meta.code, rec.message].map(item => item == null ? '' : String(item)).join(' ')
+  return code === 'P2034' || code === '40P01' || /40P01|deadlock/i.test(text)
+}
+
 function leaseUntil(ms: number): Date {
   return new Date(Date.now() + ms)
 }

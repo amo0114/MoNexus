@@ -136,14 +136,30 @@ export async function recoverUnknownPayments(): Promise<number> {
   return attempts.length
 }
 
+const REFUND_PROCESSING_STALE_MS = 2_000
+
 export async function processDueRefunds(): Promise<number> {
+  const stale = new Date(Date.now() - REFUND_PROCESSING_STALE_MS)
   const refunds = await prisma.rechargeRefund.findMany({
-    where: { status: { in: ['requested', 'points_held'] } },
+    where: {
+      OR: [
+        { status: { in: ['requested', 'points_held'] } },
+        { status: 'processing', updatedAt: { lte: stale } },
+      ],
+    },
     take: 20,
     select: { id: true },
   })
   for (const refund of refunds) {
-    await submitProviderRefund(refund.id)
+    try {
+      await submitProviderRefund(refund.id)
+    } catch (error) {
+      logger.warn({
+        event: 'payment.refund_worker_retry',
+        refundId: refund.id,
+        err: error instanceof Error ? error.message : 'refund_failed',
+      }, 'refund worker will retry')
+    }
   }
   return refunds.length
 }

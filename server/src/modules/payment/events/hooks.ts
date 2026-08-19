@@ -20,6 +20,7 @@ export const paymentTestHooks = {
   applyFailAt: null as ApplyWritePoint | null,
   creditFailAt: null as CreditWritePoint | null,
   skipCreditAfterApply: false,
+  throwAfterRefundProcessingCas: false,
   onWrite: null as ((point: string) => void) | null,
 }
 
@@ -27,6 +28,7 @@ export function resetPaymentTestHooks() {
   paymentTestHooks.applyFailAt = null
   paymentTestHooks.creditFailAt = null
   paymentTestHooks.skipCreditAfterApply = false
+  paymentTestHooks.throwAfterRefundProcessingCas = false
   paymentTestHooks.onWrite = null
 }
 

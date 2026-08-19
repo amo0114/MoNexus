@@ -25,7 +25,9 @@ import {
   applyRefundObservation,
   requestRechargeRefund,
   resetProviderRefundCallCount,
+  submitProviderRefund,
 } from '../modules/recharge/refund.js'
+import { processDueRefunds } from '../modules/payment/workers/index.js'
 import {
   closeRecoveryCase,
   openPaymentDispute,
@@ -93,7 +95,7 @@ async function createRedirectOrder(accessToken: string, amountMinor = '1000') {
 
 async function recordFact(input: {
   source: 'webhook' | 'provider_query' | 'provider_complete' | 'reconciliation'
-  attemptId: string
+  attemptId?: string | null
   providerPaymentId: string
   amountMinor: bigint
   currency: string
@@ -117,7 +119,7 @@ async function recordFact(input: {
       providerAccountKey: 'simulator:sandbox:default',
       source: 'webhook',
       verificationMethod: 'webhook_signature',
-      paymentAttemptId: input.attemptId,
+      paymentAttemptId: input.attemptId ?? null,
       providerPaymentId: input.providerPaymentId,
       providerEventId,
       dedupeKey: `webhook:${providerEventId}`,
@@ -131,7 +133,7 @@ async function recordFact(input: {
     source: input.source,
     provider: 'simulator',
     providerAccountKey: 'simulator:sandbox:default',
-    paymentAttemptId: input.attemptId,
+    paymentAttemptId: input.attemptId ?? null,
     payment: {
       status,
       providerPaymentId: input.providerPaymentId,
@@ -701,6 +703,99 @@ describe('refund, dispute, and restriction on PostgreSQL', () => {
     expect((await prisma.accountRestriction.findFirstOrThrow({
       where: { sourceType: 'payment_dispute', sourceId: dispute.id },
     })).status).toBe('released')
+  })
+
+  it('retries createRefund after a throw following processing CAS and does not strand the hold', async () => {
+    await seedCnyPolicy()
+    const { user, accessToken } = await loginUser('recharge-rf-throw@test.local')
+    const created = await createRedirectOrder(accessToken)
+    await applyConfirmedPayment((await recordFact({
+      source: 'webhook',
+      attemptId: created.attempt.id,
+      providerPaymentId: created.attempt.providerPaymentId!,
+      amountMinor: created.amountMinor,
+      currency: created.currency,
+    })).id)
+    const refund = await requestRechargeRefund({
+      userId: user.id,
+      orderId: created.orderId,
+      idempotencyKey: randomUUID(),
+    })
+    const holdBefore = await prisma.pointHold.findUniqueOrThrow({
+      where: { sourceType_sourceId: { sourceType: 'recharge_refund', sourceId: refund.refundId } },
+    })
+    expect(holdBefore.status).toBe('active')
+    paymentTestHooks.throwAfterRefundProcessingCas = true
+    await expect(submitProviderRefund(refund.refundId)).rejects.toThrow('TEST_REFUND_PROVIDER_THROW')
+    const afterThrow = await prisma.rechargeRefund.findUniqueOrThrow({ where: { id: refund.refundId } })
+    expect(afterThrow.status).toBe('points_held')
+    expect((await prisma.pointHold.findUniqueOrThrow({
+      where: { sourceType_sourceId: { sourceType: 'recharge_refund', sourceId: refund.refundId } },
+    })).status).toBe('active')
+    expect(getProviderRefundCallCount()).toBe(0)
+    await processDueRefunds()
+    expect(getProviderRefundCallCount()).toBe(1)
+    expect(await prisma.rechargeReversal.count({ where: { rechargeRefundId: refund.refundId } })).toBe(1)
+    expect((await prisma.pointHold.findUniqueOrThrow({
+      where: { sourceType_sourceId: { sourceType: 'recharge_refund', sourceId: refund.refundId } },
+    })).status).toBe('consumed')
+  })
+})
+
+describe('apply observation retry and mismatch recon', () => {
+  it('keeps attempt_missing retryable instead of terminal reconcile_required', async () => {
+    await seedCnyPolicy()
+    const { user, accessToken } = await loginUser('recharge-attempt-missing@test.local')
+    const created = await createRedirectOrder(accessToken)
+    const pendingPaymentId = `pending_${randomUUID()}`
+    const observation = await recordFact({
+      source: 'webhook',
+      providerPaymentId: pendingPaymentId,
+      amountMinor: created.amountMinor,
+      currency: created.currency,
+    })
+    const first = await applyConfirmedPayment(observation.id)
+    expect(first.outcome).toBe('retry')
+    const event = await prisma.paymentEvent.findUniqueOrThrow({ where: { id: observation.id } })
+    expect(event.status).toBe('failed')
+    expect(event.lastErrorCode).toBe('attempt_missing')
+    expect(event.nextAttemptAt.getTime()).toBeGreaterThan(Date.now() - 1000)
+    expect(await prisma.rechargeCredit.count()).toBe(0)
+
+    await prisma.paymentAttempt.update({
+      where: { id: created.attempt.id },
+      data: { providerPaymentId: pendingPaymentId },
+    })
+    const second = await applyConfirmedPayment(observation.id)
+    expect(second.outcome).toBe('credited')
+    expect(await prisma.rechargeCredit.count()).toBe(1)
+    const account = await prisma.pointAccount.findUniqueOrThrow({ where: { userId: user.id } })
+    expect(account.balance).toBe(6000)
+  })
+
+  it('writes an open reconciliation item for amount mismatch using the real environment', async () => {
+    await seedCnyPolicy()
+    const { accessToken } = await loginUser('recharge-mismatch-recon@test.local')
+    const created = await createRedirectOrder(accessToken)
+    const observation = await recordFact({
+      source: 'webhook',
+      attemptId: created.attempt.id,
+      providerPaymentId: created.attempt.providerPaymentId!,
+      amountMinor: created.amountMinor + 1n,
+      currency: created.currency,
+    })
+    const applied = await applyConfirmedPayment(observation.id)
+    expect(applied.outcome).toBe('reconcile_required')
+    expect(await prisma.rechargeCredit.count()).toBe(0)
+    expect((await prisma.rechargeOrder.findUniqueOrThrow({ where: { id: created.orderId } })).status).not.toBe('paid')
+    const item = await prisma.reconciliationItem.findFirstOrThrow({
+      where: { mismatchType: 'amount_mismatch', paymentEventId: observation.id },
+      include: { reconciliationRun: true },
+    })
+    expect(item.status).toBe('open')
+    expect(item.reconciliationRun.environment).toBe('sandbox')
+    expect(item.providerAmountMinor).toBe(created.amountMinor + 1n)
+    expect(item.localAmountMinor).toBe(created.amountMinor)
   })
 })
 

@@ -34,6 +34,7 @@ import {
 } from './idempotency.js'
 import { parseStoredAction, publicPaymentAction } from './serialize.js'
 import { rechargeQuoteChanged, rechargeQuoteExpired } from '../../lib/httpError.js'
+import { isPaymentDeadlock } from '../payment/workers/lease.js'
 
 export const QUOTE_TTL_MS = 10 * 60 * 1000
 export const ORDER_TTL_MS = 30 * 60 * 1000
@@ -382,45 +383,59 @@ async function persistProviderCreate(
   const now = new Date()
   const attemptStatus: PaymentAttemptStatus = created.status
 
-  await prisma.$transaction(async tx => {
-    const cas = await tx.paymentAttempt.updateMany({
-      where: { id: attempt.id, status: 'created', providerPaymentId: null },
-      data: {
-        status: attemptStatus,
-        providerPaymentId: created.providerPaymentId,
-        providerOrderId: created.providerOrderId ?? null,
-        actionType: created.action.type,
-        actionPayload: JSON.stringify(created.action),
-        completedAt: attemptStatus === 'failed' ? now : null,
-        lastErrorCode: attemptStatus === 'failed' ? 'PAYMENT_FAILED' : null,
-      },
-    })
-    if (cas.count !== 1) return
+  let lastError: unknown
+  for (let attemptNo = 0; attemptNo < 4; attemptNo += 1) {
+    try {
+      await prisma.$transaction(async tx => {
+        await tx.$queryRaw`SELECT "id" FROM "RechargeOrder" WHERE "id" = ${order.id}::uuid FOR UPDATE`
+        await tx.$queryRaw`SELECT "id" FROM "PaymentIntent" WHERE "id" = ${intent.id}::uuid FOR UPDATE`
+        await tx.$queryRaw`SELECT "id" FROM "PaymentAttempt" WHERE "id" = ${attempt.id}::uuid FOR UPDATE`
+        const cas = await tx.paymentAttempt.updateMany({
+          where: { id: attempt.id, status: 'created', providerPaymentId: null },
+          data: {
+            status: attemptStatus,
+            providerPaymentId: created.providerPaymentId,
+            providerOrderId: created.providerOrderId ?? null,
+            actionType: created.action.type,
+            actionPayload: JSON.stringify(created.action),
+            completedAt: attemptStatus === 'failed' ? now : null,
+            lastErrorCode: attemptStatus === 'failed' ? 'PAYMENT_FAILED' : null,
+          },
+        })
+        if (cas.count !== 1) return
 
-    if (attemptStatus === 'failed') {
-      const failed = await tx.rechargeOrder.updateMany({
-        where: { id: order.id, status: { in: [...OPEN_ORDER] } },
-        data: { status: 'failed' },
-      })
-      if (failed.count === 1) {
+        if (attemptStatus === 'failed') {
+          const failed = await tx.rechargeOrder.updateMany({
+            where: { id: order.id, status: { in: [...OPEN_ORDER] } },
+            data: { status: 'failed' },
+          })
+          if (failed.count === 1) {
+            await tx.paymentIntent.updateMany({
+              where: { id: intent.id, status: { in: [...OPEN_INTENT] } },
+              data: { status: 'failed', activeAttemptId: null },
+            })
+            await releaseLimitReservations(tx, order.id)
+          }
+          return
+        }
+
         await tx.paymentIntent.updateMany({
           where: { id: intent.id, status: { in: [...OPEN_INTENT] } },
-          data: { status: 'failed', activeAttemptId: null },
+          data: { status: 'processing', activeAttemptId: attempt.id },
         })
-        await releaseLimitReservations(tx, order.id)
-      }
-      return
+        await tx.rechargeOrder.updateMany({
+          where: { id: order.id, status: { in: [...OPEN_ORDER] } },
+          data: { status: 'pending_payment' },
+        })
+      }, TX)
+      lastError = null
+      break
+    } catch (error) {
+      lastError = error
+      if (!isPaymentDeadlock(error)) throw error
     }
-
-    await tx.paymentIntent.updateMany({
-      where: { id: intent.id, status: { in: [...OPEN_INTENT] } },
-      data: { status: 'processing', activeAttemptId: attempt.id },
-    })
-    await tx.rechargeOrder.updateMany({
-      where: { id: order.id, status: { in: [...OPEN_ORDER] } },
-      data: { status: 'pending_payment' },
-    })
-  }, TX)
+  }
+  if (lastError) throw lastError
 
   const latest = await prisma.rechargeOrder.findUnique({
     where: { id: order.id },
