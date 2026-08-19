@@ -2,7 +2,7 @@
 # Forced-command wrapper for the monexus-deploy SSH key.
 # It intentionally accepts no shell syntax, paths, environment overrides, or
 # arbitrary arguments. The root-owned deployment entry point validates the
-# immutable SHA again before changing anything on the VPS.
+# immutable SHA or fixed alert-routing label again before changing anything.
 
 set -Eeuo pipefail
 IFS=$' \t\n'
@@ -11,24 +11,30 @@ readonly DEPLOY_ENTRYPOINT='/usr/local/sbin/monexus-compose-deploy'
 readonly SUDO_BIN='/usr/bin/sudo'
 
 original_command="${SSH_ORIGINAL_COMMAND:-}"
-read -r action commit extra <<< "$original_command"
+read -r action argument extra <<< "$original_command"
 
-if [[ -z "${action:-}" || -z "${commit:-}" || -n "${extra:-}" ]]; then
-  echo 'Only "dry-run <40-character-sha>" or "deploy <40-character-sha>" is permitted.' >&2
+if [[ -z "${action:-}" || -z "${argument:-}" || -n "${extra:-}" ]]; then
+  echo 'Only dry-run/deploy with a full SHA or rehearse-alert with a fixed routing label is permitted.' >&2
   exit 64
 fi
 
 case "$action" in
-  dry-run|deploy) ;;
+  dry-run|deploy)
+    if [[ ! "$argument" =~ ^[0-9a-f]{40}$ ]]; then
+      echo 'Deployment commit must be a lowercase 40-character SHA.' >&2
+      exit 64
+    fi
+    ;;
+  rehearse-alert)
+    if [[ "$argument" != 'value-policy-p0' && "$argument" != 'value-policy-p1' ]]; then
+      echo 'Alert rehearsal routing must be value-policy-p0 or value-policy-p1.' >&2
+      exit 64
+    fi
+    ;;
   *)
     echo 'Unsupported deployment action.' >&2
     exit 64
     ;;
 esac
 
-if [[ ! "$commit" =~ ^[0-9a-f]{40}$ ]]; then
-  echo 'Deployment commit must be a lowercase 40-character SHA.' >&2
-  exit 64
-fi
-
-exec "$SUDO_BIN" -n "$DEPLOY_ENTRYPOINT" "$action" "$commit"
+exec "$SUDO_BIN" -n "$DEPLOY_ENTRYPOINT" "$action" "$argument"

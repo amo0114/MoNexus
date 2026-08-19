@@ -350,6 +350,7 @@ describe('check-prod-env.sh POINT_VALUE_POLICY_MODE', () => {
       'SMTP_USER=mailer',
       'SMTP_PASS=secret',
       'SMTP_FROM=ops@example.com',
+      'ALERT_EMAIL_TO=alerts@example.com',
       `WEBHOOK_SECRET_ENC_KEY=${'a'.repeat(64)}`,
       'METRICS_TOKEN=metrics-token-for-preflight-at-least-32',
       `POINT_VALUE_POLICY_MODE=${mode}`,
@@ -401,6 +402,40 @@ describe('check-prod-env.sh POINT_VALUE_POLICY_MODE', () => {
       expect(result.status).toBe(0)
     } finally {
       rmSync(shadow.dir, { recursive: true, force: true })
+    }
+  })
+
+  it('requires a valid production alert email recipient', () => {
+    const missing = writeEnv('off', { ALERT_EMAIL_TO: '' })
+    const invalid = writeEnv('off', { ALERT_EMAIL_TO: 'not-an-email' })
+    try {
+      const missingResult = runPreflight(missing.file, 'production')
+      expect(missingResult.status).toBe(1)
+      expect(missingResult.stderr + missingResult.stdout).toContain('ALERT_EMAIL_TO')
+
+      const invalidResult = runPreflight(invalid.file, 'production')
+      expect(invalidResult.status).toBe(1)
+      expect(invalidResult.stderr + invalidResult.stdout).toContain('ALERT_EMAIL_TO')
+    } finally {
+      rmSync(missing.dir, { recursive: true, force: true })
+      rmSync(invalid.dir, { recursive: true, force: true })
+    }
+  })
+
+  it('keeps application and Alertmanager SMTP TLS modes aligned', () => {
+    const implicitOnSubmissionPort = writeEnv('off', { SMTP_SECURE: 'true', SMTP_PORT: '587' })
+    const plainOnImplicitPort = writeEnv('off', { SMTP_SECURE: 'false', SMTP_PORT: '465' })
+    try {
+      const implicitResult = runPreflight(implicitOnSubmissionPort.file, 'production')
+      expect(implicitResult.status).toBe(1)
+      expect(implicitResult.stderr + implicitResult.stdout).toContain('SMTP_PORT=465')
+
+      const plainResult = runPreflight(plainOnImplicitPort.file, 'production')
+      expect(plainResult.status).toBe(1)
+      expect(plainResult.stderr + plainResult.stdout).toContain('SMTP_SECURE=true')
+    } finally {
+      rmSync(implicitOnSubmissionPort.dir, { recursive: true, force: true })
+      rmSync(plainOnImplicitPort.dir, { recursive: true, force: true })
     }
   })
 

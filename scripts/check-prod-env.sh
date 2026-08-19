@@ -404,11 +404,45 @@ smtp_secure="$(get SMTP_SECURE)"
 if [[ "$smtp_secure" != "true" && "$smtp_secure" != "false" ]]; then
   fail "SMTP_SECURE must be true or false"
 fi
+if [[ "$MODE" == "production" && "$smtp_secure" == "true" && "$(get SMTP_PORT)" != "465" ]]; then
+  fail "SMTP_SECURE=true requires SMTP_PORT=465 for production Alertmanager implicit TLS"
+fi
+if [[ "$MODE" == "production" && "$smtp_secure" == "false" && "$(get SMTP_PORT)" == "465" ]]; then
+  fail "SMTP_PORT=465 requires SMTP_SECURE=true for consistent application and Alertmanager TLS"
+fi
 if [[ -z "$(get SMTP_USER)" || -z "$(get SMTP_PASS)" ]]; then
   if [[ "$MODE" == "production" ]]; then
     fail "SMTP_USER and SMTP_PASS are required in production"
   else
     warn "SMTP_USER or SMTP_PASS is empty; only acceptable for unauthenticated staging SMTP relays"
+  fi
+fi
+
+# The production Alertmanager configuration is interpolated by Compose while
+# the password itself is mounted from a file. Keep the remaining interpolated
+# SMTP values to single-line, conservative scalars so they cannot alter YAML.
+if [[ "$MODE" == "production" ]]; then
+  smtp_host="$(get SMTP_HOST)"
+  smtp_user="$(get SMTP_USER)"
+  smtp_from="$(get SMTP_FROM)"
+  if [[ -n "$smtp_host" && ! "$smtp_host" =~ ^[A-Za-z0-9.-]+$ ]]; then
+    fail "SMTP_HOST must be a DNS hostname for production Alertmanager"
+  fi
+  if [[ -n "$smtp_user" ]]; then
+    if [[ "$ALLOW_PLACEHOLDERS" != "true" ]] || ! is_placeholder_literal "$smtp_user"; then
+      if [[ ! "$smtp_user" =~ ^[A-Za-z0-9._@%+:/=-]+$ ]]; then
+        fail "SMTP_USER contains characters that are unsafe for production Alertmanager configuration"
+      fi
+    fi
+  fi
+  if [[ -n "$smtp_from" && ! "$smtp_from" =~ ^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$ ]]; then
+    fail "SMTP_FROM must use a conservative email address safe for production Alertmanager configuration"
+  fi
+
+  require_value ALERT_EMAIL_TO
+  alert_email_to="$(get ALERT_EMAIL_TO)"
+  if [[ -n "$alert_email_to" && ! "$alert_email_to" =~ ^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$ ]]; then
+    fail "ALERT_EMAIL_TO must be a valid email address"
   fi
 fi
 

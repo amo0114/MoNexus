@@ -7,39 +7,60 @@ groups:
         labels:
           severity: P0
           routing: value-policy-p0
+        annotations:
+          summary: Value policy is unavailable in an enabled mode
+          description: Shadow or enforce resolution could not find one unique usable active CNY policy.
       - alert: MoNexusValuePolicyInvariantBroken
         expr: increase(value_policy_resolution_total{result=~"multiple|invalid"}[5m]) > 0
         for: 0m
         labels:
           severity: P0
           routing: value-policy-p0
+        annotations:
+          summary: Value policy invariant is broken
+          description: Resolution observed multiple active policies or an internally invalid active policy.
       - alert: MoNexusValuePolicyAssetIllegal
         expr: increase(value_policy_resolution_total{result="invalid"}[5m]) > 0
         for: 0m
         labels:
           severity: P0
           routing: value-policy-p0
+        annotations:
+          summary: Value policy reference asset is illegal
+          description: The active policy reference asset violates the required kind, scale, enabled, or retirement invariant.
       - alert: MoNexusEnabledModeOrderMissingSnapshot
         expr: (increase(order_value_policy_enabled_committed_total[15m]) - increase(order_pricing_snapshot_created_total[15m])) > 0 or value_policy_missing_snapshot_orders > 0
         for: 15m
         labels:
           severity: P0
           routing: value-policy-p0
+        annotations:
+          summary: Enabled-mode order is missing its pricing snapshot
+          description: Committed enabled-mode orders exceed committed snapshots or the read-only audit found missing snapshots.
       - alert: MoNexusOrderPricingSnapshotInconsistent
         expr: increase(order_pricing_snapshot_failure_total[10m]) > 0
         for: 5m
         labels:
           severity: P0
           routing: value-policy-p0
+        annotations:
+          summary: Order pricing snapshot is inconsistent
+          description: Snapshot validation, a trigger or foreign key, or the surrounding transaction is failing.
       - alert: MoNexusOrderPricingSnapshotFailuresRising
         expr: increase(order_pricing_snapshot_failure_total[15m]) >= 5
         for: 10m
         labels:
           severity: P1
           routing: value-policy-p1
+        annotations:
+          summary: Order pricing snapshot failures are rising
+          description: At least five snapshot failures accumulated in the alert window.
       - alert: MoNexusValuePolicyChangedRateElevated
         expr: increase(value_policy_changed_total[10m]) >= 20
         for: 10m
         labels:
           severity: P1
           routing: value-policy-p1
+        annotations:
+          summary: VALUE_POLICY_CHANGED responses are elevated
+          description: Clients are confirming stale or unusable value policies at an abnormal rate.

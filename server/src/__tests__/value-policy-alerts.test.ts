@@ -47,7 +47,7 @@ describe('value-policy alert contract', () => {
       expect(doc, alert.id).toContain(alert.routingLabel)
       expect(rules, alert.id).toContain(alert.expr)
     }
-    expect(doc).toContain('This repository does not create or activate external production alerts')
+    expect(doc).toContain('Production delivery implementation')
   })
 
   it('does not infer missing snapshots from preview/current resolution=found', () => {
@@ -86,5 +86,24 @@ describe('value-policy alert contract', () => {
     }
     const output = execFileSync(promtool, ['check', 'rules', rulesPath], { encoding: 'utf8' })
     expect(output.toLowerCase()).toMatch(/success|valid/)
+  })
+
+  it('wires the rules into private, digest-pinned production monitoring', () => {
+    const compose = readFileSync(resolve(repoRoot, 'docker-compose.prod.yml'), 'utf8')
+    const prometheus = compose.slice(compose.indexOf('  prometheus:'), compose.indexOf('  # Self-hosted S3'))
+    const alertmanager = compose.slice(compose.indexOf('  alertmanager:'), compose.indexOf('  prometheus:'))
+    const scrape = readFileSync(resolve(repoRoot, 'deploy/monitoring/prometheus.yml'), 'utf8')
+    const rehearsal = readFileSync(resolve(repoRoot, '.github/workflows/production-monitoring-rehearsal.yml'), 'utf8')
+
+    expect(prometheus).toContain('prom/prometheus:v3.5.0@sha256:')
+    expect(alertmanager).toContain('prom/alertmanager:v0.30.0@sha256:')
+    expect(prometheus).toContain('profiles: [production-monitoring]')
+    expect(alertmanager).toContain('profiles: [production-monitoring]')
+    expect(prometheus).not.toMatch(/^\s+ports:/m)
+    expect(alertmanager).not.toMatch(/^\s+ports:/m)
+    expect(scrape).toContain('bearer_token_file: /run/secrets/metrics_token')
+    expect(scrape).toContain('/etc/prometheus/rules/value-policy-alerts.rules.yml')
+    expect(rehearsal).toContain('REHEARSE_VALUE_POLICY_EMAIL_PRODUCTION')
+    expect(rehearsal).toContain('rehearse-alert ${ROUTING}')
   })
 })
