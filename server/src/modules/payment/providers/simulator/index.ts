@@ -45,6 +45,7 @@ export const SIMULATOR_FIXTURES = [
   'refund_failure',
   'dispute',
   'paid_credit_crash',
+  'create_throws',
 ] as const
 export type SimulatorFixture = (typeof SIMULATOR_FIXTURES)[number]
 
@@ -83,6 +84,7 @@ const refundsByIdempotency = new Map<string, string>()
 let nextFixture: SimulatorFixture = 'success'
 let capabilityOverride: CapabilityOverride = {}
 let queryRecoveryStatus: PaymentAttemptStatus | null = null
+let queryCount = 0
 
 export function resetSimulatorState() {
   payments.clear()
@@ -92,6 +94,11 @@ export function resetSimulatorState() {
   nextFixture = 'success'
   capabilityOverride = {}
   queryRecoveryStatus = null
+  queryCount = 0
+}
+
+export function getSimulatorQueryCount() {
+  return queryCount
 }
 
 export function setSimulatorNextFixture(fixture: SimulatorFixture) {
@@ -134,6 +141,7 @@ export function listSimulatorFixtures() {
     refund_failure: { refund: 'failed' },
     dispute: { webhook: 'dispute.opened fixture' },
     paid_credit_crash: { observation: 'succeeded received, unpaid locally' },
+    create_throws: { create: 'persists payment then throws; retry returns same id' },
   }
 }
 
@@ -321,6 +329,9 @@ export const simulatorProvider: PaymentProvider = {
     }
     payments.set(providerPaymentId, row)
     paymentsByIdempotency.set(input.requestIdempotencyKey, providerPaymentId)
+    if (fixture === 'create_throws') {
+      throw new Error('simulator create_throws')
+    }
     return {
       status: status === 'failed' ? 'failed' : status === 'unknown' ? 'unknown' : status === 'processing' ? 'processing' : 'requires_action',
       providerPaymentId,
@@ -360,6 +371,7 @@ export const simulatorProvider: PaymentProvider = {
   },
 
   async queryPayment(input: QueryProviderPaymentInput): Promise<NormalizedPayment> {
+    queryCount += 1
     const row = payments.get(input.providerPaymentId)
     if (!row || row.providerAccountKey !== input.providerAccountKey) {
       throw notFound('simulator payment not found')

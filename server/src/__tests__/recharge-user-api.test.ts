@@ -11,6 +11,7 @@ import {
   computeRechargeRequestDigest,
 } from '../modules/recharge/idempotency.js'
 import {
+  getSimulatorQueryCount,
   resetSimulatorState,
 } from '../modules/payment/providers/simulator/index.js'
 import { api, authHeader, createTestUser, loginAs } from './helpers.js'
@@ -403,8 +404,104 @@ describe('recharge user API', () => {
     }).expect(201)
     const order = await api.post('/api/recharge/orders').set(authHeader(accessToken)).set('Idempotency-Key', randomUUID())
       .send({ quoteId: quote.body.quoteId }).expect(201)
+    const missing = await api.post(`/api/recharge/orders/${order.body.orderId}/refunds`)
+      .set(authHeader(accessToken)).send({})
+    expect(missing.status).toBe(400)
     const refund = await api.post(`/api/recharge/orders/${order.body.orderId}/refunds`)
       .set(authHeader(accessToken)).set('Idempotency-Key', randomUUID()).send({})
     expect(refund.status).toBe(409)
+  })
+
+  it('retries provider create on the same Idempotency-Key after createPayment failure', async () => {
+    await seedCnyPolicy()
+    const { accessToken } = await loginUser('recharge-create-retry@test.local')
+    const quote = await api.post('/api/recharge/quotes').set(authHeader(accessToken)).send({
+      currency: 'CNY', amountMinor: '1000', amountSource: 'custom', provider: 'simulator', paymentMethod: 'card',
+    }).expect(201)
+    await api.post('/api/recharge/simulator/next').set(simHeaders(accessToken)).send({ fixture: 'create_throws' }).expect(204)
+    const key = randomUUID()
+    const first = await api.post('/api/recharge/orders').set(authHeader(accessToken)).set('Idempotency-Key', key)
+      .send({ quoteId: quote.body.quoteId })
+    expect(first.status).toBe(500)
+    expect(await prisma.rechargeOrder.count()).toBe(1)
+    const pending = await prisma.paymentAttempt.findFirstOrThrow()
+    expect(pending.providerPaymentId).toBeNull()
+    expect(pending.status).toBe('created')
+
+    const second = await api.post('/api/recharge/orders').set(authHeader(accessToken)).set('Idempotency-Key', key)
+      .send({ quoteId: quote.body.quoteId }).expect(201)
+    expect(second.body.activeAttempt.providerPaymentId).toBeTruthy()
+    expect(second.body.status).toBe('pending_payment')
+    expect(await prisma.rechargeOrder.count()).toBe(1)
+  })
+
+  it('does not revive a cancelled order when in-flight createPayment later persists', async () => {
+    await seedCnyPolicy()
+    const { accessToken } = await loginUser('recharge-create-cancel-race@test.local')
+    const quote = await api.post('/api/recharge/quotes').set(authHeader(accessToken)).send({
+      currency: 'CNY', amountMinor: '1000', amountSource: 'custom', provider: 'simulator', paymentMethod: 'card',
+    }).expect(201)
+    await api.post('/api/recharge/simulator/next').set(simHeaders(accessToken)).send({ fixture: 'create_throws' }).expect(204)
+    const key = randomUUID()
+    await api.post('/api/recharge/orders').set(authHeader(accessToken)).set('Idempotency-Key', key)
+      .send({ quoteId: quote.body.quoteId }).expect(500)
+    const created = await prisma.rechargeOrder.findFirstOrThrow()
+    const cancelled = await api.post(`/api/recharge/orders/${created.id}/cancel`)
+      .set(authHeader(accessToken)).set('Idempotency-Key', randomUUID()).send({}).expect(200)
+    expect(cancelled.body.status).toBe('closure_pending')
+    const reserved = await prisma.rechargeLimitReservation.findMany({ where: { rechargeOrderId: created.id } })
+    expect(reserved.every(item => item.status === 'reserved')).toBe(true)
+
+    const replay = await api.post('/api/recharge/orders').set(authHeader(accessToken)).set('Idempotency-Key', key)
+      .send({ quoteId: quote.body.quoteId })
+    expect(replay.status).toBe(201)
+    expect(replay.body.status).not.toBe('failed')
+    expect(replay.body.status).not.toBe('pending_payment')
+    expect(['cancelled', 'closure_pending']).toContain(replay.body.status)
+    const stored = await prisma.rechargeOrder.findUniqueOrThrow({ where: { id: created.id } })
+    expect(stored.status).not.toBe('failed')
+    expect(stored.status).not.toBe('pending_payment')
+  })
+
+  it('queries the provider before releasing a reservation on cancel', async () => {
+    await seedCnyPolicy()
+    const { accessToken } = await loginUser('recharge-cancel-query@test.local')
+    const quote = await api.post('/api/recharge/quotes').set(authHeader(accessToken)).send({
+      currency: 'CNY', amountMinor: '1000', amountSource: 'custom', provider: 'simulator', paymentMethod: 'card',
+    }).expect(201)
+    const order = await api.post('/api/recharge/orders').set(authHeader(accessToken)).set('Idempotency-Key', randomUUID())
+      .send({ quoteId: quote.body.quoteId }).expect(201)
+    expect(getSimulatorQueryCount()).toBe(0)
+    await api.post('/api/recharge/simulator/query-recovery').set(simHeaders(accessToken))
+      .send({ status: 'unknown' }).expect(204)
+    const cancelled = await api.post(`/api/recharge/orders/${order.body.orderId}/cancel`)
+      .set(authHeader(accessToken)).set('Idempotency-Key', randomUUID()).send({}).expect(200)
+    expect(getSimulatorQueryCount()).toBeGreaterThanOrEqual(1)
+    expect(cancelled.body.status).toBe('closure_pending')
+    const reservations = await prisma.rechargeLimitReservation.findMany({
+      where: { rechargeOrderId: order.body.orderId },
+    })
+    expect(reservations.every(item => item.status === 'reserved')).toBe(true)
+  })
+
+  it('completes an existing order when new orders are no longer accepted', async () => {
+    await seedCnyPolicy()
+    const { accessToken } = await loginUser('recharge-complete-hold@test.local')
+    const quote = await api.post('/api/recharge/quotes').set(authHeader(accessToken)).send({
+      currency: 'CNY', amountMinor: '1000', amountSource: 'custom', provider: 'simulator', paymentMethod: 'redirect',
+    }).expect(201)
+    const order = await api.post('/api/recharge/orders').set(authHeader(accessToken)).set('Idempotency-Key', randomUUID())
+      .send({ quoteId: quote.body.quoteId }).expect(201)
+    config.recharge.acceptNewOrders = false
+    const blocked = await api.post('/api/recharge/quotes').set(authHeader(accessToken)).send({
+      currency: 'CNY', amountMinor: '1000', amountSource: 'custom', provider: 'simulator', paymentMethod: 'redirect',
+    })
+    expect(blocked.status).toBe(503)
+    expect(blocked.body.error.code).toBe('RECHARGE_DISABLED')
+    const completed = await api.post(`/api/recharge/orders/${order.body.orderId}/complete`)
+      .set(authHeader(accessToken)).set('Idempotency-Key', randomUUID()).send({}).expect(200)
+    expect(completed.body.paidAt).toBeNull()
+    expect(completed.body.observationId).toBeTruthy()
+    expect(await prisma.rechargeCredit.count()).toBe(0)
   })
 })

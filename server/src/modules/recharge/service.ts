@@ -31,6 +31,7 @@ import {
   claimRechargeIdempotency,
   completeRechargeIdempotencyClaim,
   computeRechargeRequestDigest,
+  rechargeIdempotencyInFlight,
   releaseRechargeIdempotencyClaim,
 } from './idempotency.js'
 import { parseStoredAction, publicPaymentAction } from './serialize.js'
@@ -308,15 +309,67 @@ function serializeOrder(order: {
   }
 }
 
-async function createProviderAttempt(order: {
+const OPEN_ORDER = ['created', 'pending_payment'] as const
+const CLOSING_ORDER = ['cancelled', 'expired', 'failed', 'closure_pending'] as const
+const OPEN_INTENT = ['requires_method', 'processing'] as const
+
+type OrderWithAttempts = {
   id: string
   userId: number
-  amountMinor: bigint
-  currency: string
-  paymentMethod: string
+  status: string
   provider: string
   providerAccountKey: string
-}, intent: { id: string }, attempt: { id: string; requestIdempotencyKey: string }) {
+  paymentMethod: string
+  currency: string
+  amountMinor: bigint
+  paymentIntent: {
+    id: string
+    status: string
+    activeAttemptId: string | null
+    attempts: Array<{
+      id: string
+      status: string
+      providerPaymentId: string | null
+      providerOrderId: string | null
+      requestIdempotencyKey: string
+    }>
+  } | null
+}
+
+function includeAttempts() {
+  return { paymentIntent: { include: { attempts: { orderBy: { createdAt: 'asc' as const } } } } }
+}
+
+async function loadOrderByQuote(userId: number, quoteId: string): Promise<OrderWithAttempts | null> {
+  const order = await prisma.rechargeOrder.findUnique({
+    where: { quoteId },
+    include: includeAttempts(),
+  })
+  if (!order || order.userId !== userId) return null
+  return order
+}
+
+async function provisionExistingOrder(order: OrderWithAttempts) {
+  const intent = order.paymentIntent
+  if (!intent) return
+  const attempt = intent.attempts.find(item => item.id === intent.activeAttemptId) ?? intent.attempts[0]
+  if (!attempt) return
+  await persistProviderCreate(order, intent, attempt)
+}
+
+async function persistProviderCreate(
+  order: OrderWithAttempts,
+  intent: { id: string },
+  attempt: { id: string; status: string; providerPaymentId: string | null; requestIdempotencyKey: string },
+) {
+  if (attempt.providerPaymentId) {
+    if ((CLOSING_ORDER as readonly string[]).includes(order.status)) {
+      await confirmProviderClosure(order, order.status === 'expired' ? 'expired' : 'cancelled')
+    }
+    return
+  }
+  if (attempt.status !== 'created') return
+
   const provider = getHistoricalProvider(asProviderName(order.provider))
   const created = await provider.createPayment({
     orderId: order.id,
@@ -330,9 +383,10 @@ async function createProviderAttempt(order: {
   })
   const now = new Date()
   const attemptStatus: PaymentAttemptStatus = created.status
+
   await prisma.$transaction(async tx => {
-    await tx.paymentAttempt.update({
-      where: { id: attempt.id },
+    const cas = await tx.paymentAttempt.updateMany({
+      where: { id: attempt.id, status: 'created', providerPaymentId: null },
       data: {
         status: attemptStatus,
         providerPaymentId: created.providerPaymentId,
@@ -343,31 +397,58 @@ async function createProviderAttempt(order: {
         lastErrorCode: attemptStatus === 'failed' ? 'PAYMENT_FAILED' : null,
       },
     })
+    if (cas.count !== 1) return
+
     if (attemptStatus === 'failed') {
-      await tx.paymentIntent.update({
-        where: { id: intent.id },
-        data: { status: 'failed', activeAttemptId: null },
-      })
-      await tx.rechargeOrder.update({
-        where: { id: order.id },
+      const failed = await tx.rechargeOrder.updateMany({
+        where: { id: order.id, status: { in: [...OPEN_ORDER] } },
         data: { status: 'failed' },
       })
-      await releaseLimitReservations(tx, order.id)
+      if (failed.count === 1) {
+        await tx.paymentIntent.updateMany({
+          where: { id: intent.id, status: { in: [...OPEN_INTENT] } },
+          data: { status: 'failed', activeAttemptId: null },
+        })
+        await releaseLimitReservations(tx, order.id)
+      }
       return
     }
-    await tx.paymentIntent.update({
-      where: { id: intent.id },
-      data: {
-        status: 'processing',
-        activeAttemptId: attempt.id,
-      },
+
+    await tx.paymentIntent.updateMany({
+      where: { id: intent.id, status: { in: [...OPEN_INTENT] } },
+      data: { status: 'processing', activeAttemptId: attempt.id },
     })
     await tx.rechargeOrder.updateMany({
-      where: { id: order.id, status: { in: ['created', 'pending_payment'] } },
+      where: { id: order.id, status: { in: [...OPEN_ORDER] } },
       data: { status: 'pending_payment' },
     })
   }, TX)
-  return created.action
+
+  const latest = await prisma.rechargeOrder.findUnique({
+    where: { id: order.id },
+    include: includeAttempts(),
+  })
+  if (latest && (CLOSING_ORDER as readonly string[]).includes(latest.status)) {
+    await confirmProviderClosure(latest, latest.status === 'expired' ? 'expired' : 'cancelled')
+  }
+}
+
+async function finishCreateOrder(userId: number, order: OrderWithAttempts, claimToken?: string, idempotencyKey?: string) {
+  await provisionExistingOrder(order)
+  if (claimToken && idempotencyKey) {
+    try {
+      await completeRechargeIdempotencyClaim(prisma, {
+        userId,
+        scope: 'create_order',
+        key: idempotencyKey,
+        claimToken,
+        resultId: order.id,
+      })
+    } catch {
+      // Takeover holder owns the claim; the order row is still the result.
+    }
+  }
+  return serializeOrder(await loadOwnedOrder(userId, order.id))
 }
 
 export async function createOrder(userId: number, quoteId: string, idempotencyKey: string) {
@@ -383,10 +464,23 @@ export async function createOrder(userId: number, quoteId: string, idempotencyKe
   })
   if (claim.kind === 'replay') {
     const existing = await loadOwnedOrder(userId, claim.resultId)
-    return serializeOrder(existing)
+    return finishCreateOrder(userId, existing)
+  }
+  const existingByQuote = await loadOrderByQuote(userId, quoteId)
+  const sameKeyRecovery = claim.kind === 'in_flight' || (claim.kind === 'claimed' && claim.takeover)
+  if (existingByQuote && sameKeyRecovery) {
+    return finishCreateOrder(
+      userId,
+      existingByQuote,
+      claim.kind === 'claimed' ? claim.claimToken : undefined,
+      claim.kind === 'claimed' ? idempotencyKey : undefined,
+    )
+  }
+  if (claim.kind === 'in_flight') {
+    throw rechargeIdempotencyInFlight()
   }
 
-  let committed = false
+  let orderCommitted = false
   try {
     const created = await prisma.$transaction(async tx => {
       const quoteRows = await tx.$queryRaw<Array<{
@@ -518,23 +612,21 @@ export async function createOrder(userId: number, quoteId: string, idempotencyKe
         month: periods.month,
       })
 
-      await completeRechargeIdempotencyClaim(tx, {
-        userId,
-        scope: 'create_order',
-        key: idempotencyKey,
-        claimToken: claim.claimToken,
-        resultId: order.id,
-      })
-
       return { order, intent, attempt }
     }, TX)
-    committed = true
+    orderCommitted = true
 
-    await createProviderAttempt(created.order, created.intent, created.attempt)
-    const fresh = await loadOwnedOrder(userId, created.order.id)
-    return serializeOrder(fresh)
+    return finishCreateOrder(userId, {
+      ...created.order,
+      paymentIntent: {
+        id: created.intent.id,
+        status: created.intent.status,
+        activeAttemptId: created.attempt.id,
+        attempts: [created.attempt],
+      },
+    }, claim.claimToken, idempotencyKey)
   } catch (err) {
-    if (!committed) {
+    if (!orderCommitted) {
       await releaseRechargeIdempotencyClaim({
         userId,
         scope: 'create_order',
@@ -622,7 +714,6 @@ async function persistNormalizedObservation(input: {
 }
 
 export async function completeOrder(userId: number, orderId: string, idempotencyKey: string) {
-  assertRechargeAcceptsNewOrders()
   const digest = computeRechargeRequestDigest({ orderId })
   const claim = await claimRechargeIdempotency({
     userId,
@@ -635,6 +726,7 @@ export async function completeOrder(userId: number, orderId: string, idempotency
     const existing = await loadOwnedOrder(userId, orderId)
     return serializeOrder(existing, { observationId: claim.resultId, paymentStatus: existing.status })
   }
+  if (claim.kind === 'in_flight') throw rechargeIdempotencyInFlight()
 
   try {
     const order = await loadOwnedOrder(userId, orderId)
@@ -734,87 +826,74 @@ export async function completeOrder(userId: number, orderId: string, idempotency
   }
 }
 
-async function closeAndMaybeRelease(
-  tx: Prisma.TransactionClient,
-  order: {
-    id: string
-    userId: number
-    status: string
-    provider: string
-    providerAccountKey: string
-    paymentMethod: string
-    currency: string
-    amountMinor: bigint
-  },
-  terminalStatus: Extract<RechargeOrderStatus, 'cancelled' | 'expired'>,
-) {
-  const intent = await tx.paymentIntent.findUnique({
-    where: { rechargeOrderId: order.id },
-    include: { attempts: true },
-  })
-  const attempts = intent?.attempts ?? []
-  const active = attempts.find(item => NON_TERMINAL_ATTEMPT.has(item.status))
-
-  if (!active) {
-    const confirmedClosed = attempts.length === 0 || attempts.every(item => !NON_TERMINAL_ATTEMPT.has(item.status) && item.status !== 'succeeded')
-    if (!confirmedClosed && attempts.some(item => item.status === 'succeeded')) {
-      return { status: order.status, released: false }
+async function markClosurePending(userId: number, orderId: string): Promise<OrderWithAttempts> {
+  return prisma.$transaction(async tx => {
+    const rows = await tx.$queryRaw<Array<{
+      id: string
+      userId: number
+      status: string
+    }>>`
+      SELECT "id", "userId", "status"
+      FROM "RechargeOrder" WHERE "id" = ${orderId}::uuid FOR UPDATE`
+    const locked = rows[0]
+    if (!locked || locked.userId !== userId) throw notFound('充值订单不存在')
+    if (locked.status === 'paid' || locked.status === 'credited' || locked.status === 'refund_pending' || locked.status === 'refunded') {
+      throw conflict('已支付订单不能取消')
     }
-    await tx.rechargeOrder.updateMany({
-      where: { id: order.id, status: { in: ['created', 'pending_payment', 'closure_pending'] } },
-      data: { status: terminalStatus, cancelledAt: new Date() },
-    })
-    if (intent) {
-      await tx.paymentIntent.updateMany({
-        where: { id: intent.id, status: { in: ['requires_method', 'processing'] } },
-        data: { status: 'cancelled', activeAttemptId: null },
+    if (!['cancelled', 'expired', 'failed', 'closure_pending'].includes(locked.status)) {
+      await tx.rechargeOrder.updateMany({
+        where: { id: orderId, status: { in: [...OPEN_ORDER] } },
+        data: { status: 'closure_pending' },
       })
     }
-    await releaseLimitReservations(tx, order.id)
+    return tx.rechargeOrder.findUniqueOrThrow({
+      where: { id: orderId },
+      include: includeAttempts(),
+    })
+  }, TX)
+}
+
+async function confirmProviderClosure(
+  order: OrderWithAttempts,
+  terminalStatus: Extract<RechargeOrderStatus, 'cancelled' | 'expired'>,
+) {
+  const attempts = order.paymentIntent?.attempts ?? []
+  const createInFlight = attempts.some(item => item.status === 'created' && !item.providerPaymentId)
+  if (createInFlight) {
+    return { status: 'closure_pending' as const, released: false }
+  }
+
+  if (attempts.length === 0) {
+    await finalizeClosedOrder(order, terminalStatus)
     return { status: terminalStatus, released: true }
   }
 
-  await tx.rechargeOrder.updateMany({
-    where: { id: order.id, status: { in: ['created', 'pending_payment'] } },
-    data: { status: 'closure_pending' },
-  })
-
-  if (!active.providerPaymentId) {
-    if (active.status === 'created' || active.status === 'failed' || active.status === 'cancelled') {
-      await tx.paymentAttempt.updateMany({
-        where: { id: active.id, status: { in: [...NON_TERMINAL_ATTEMPT] } },
-        data: { status: 'cancelled', completedAt: new Date() },
-      })
-      await tx.rechargeOrder.updateMany({
-        where: { id: order.id, status: { in: ['created', 'pending_payment', 'closure_pending'] } },
-        data: { status: terminalStatus, cancelledAt: new Date() },
-      })
-      await releaseLimitReservations(tx, order.id)
-      return { status: terminalStatus, released: true }
-    }
-    return { status: 'closure_pending', released: false }
+  const payable = attempts.find(item => item.providerPaymentId && NON_TERMINAL_ATTEMPT.has(item.status))
+    ?? [...attempts].reverse().find(item => item.providerPaymentId)
+  if (!payable?.providerPaymentId) {
+    return { status: 'closure_pending' as const, released: false }
   }
 
   const provider = getHistoricalProvider(asProviderName(order.provider))
-  const closed = await provider.closePayment({
-    providerPaymentId: active.providerPaymentId,
-    providerAccountKey: order.providerAccountKey,
-    requestIdempotencyKey: `recharge:${order.id}:close:v1`,
-  })
-  const queried = closed.status === 'unknown' || closed.status === 'processing' || closed.status === 'succeeded'
-    ? await provider.queryPayment({
-      providerPaymentId: active.providerPaymentId,
+  if (NON_TERMINAL_ATTEMPT.has(payable.status)) {
+    await provider.closePayment({
+      providerPaymentId: payable.providerPaymentId,
       providerAccountKey: order.providerAccountKey,
-      providerOrderId: active.providerOrderId,
+      requestIdempotencyKey: `recharge:${order.id}:close:v1`,
     })
-    : { status: closed.status, providerPaymentId: active.providerPaymentId, amountMinor: order.amountMinor, currency: order.currency as RechargeCurrency, providerAccountKey: order.providerAccountKey, immutableStateVersion: closed.immutableStateVersion, providerCaptureId: active.providerCaptureId }
+  }
+  const queried = await provider.queryPayment({
+    providerPaymentId: payable.providerPaymentId,
+    providerAccountKey: order.providerAccountKey,
+    providerOrderId: payable.providerOrderId,
+  })
 
   if (queried.status === 'succeeded') {
     await persistNormalizedObservation({
       source: 'provider_query',
       provider: order.provider,
       providerAccountKey: order.providerAccountKey,
-      paymentAttemptId: active.id,
+      paymentAttemptId: payable.id,
       payment: {
         status: 'succeeded',
         providerPaymentId: queried.providerPaymentId,
@@ -824,33 +903,55 @@ async function closeAndMaybeRelease(
         immutableStateVersion: queried.immutableStateVersion,
       },
     })
-    return { status: 'closure_pending', released: false }
+    return { status: 'closure_pending' as const, released: false }
   }
 
   if (queried.status === 'unknown' || queried.status === 'processing' || queried.status === 'requires_action' || queried.status === 'created') {
-    await tx.paymentAttempt.update({
-      where: { id: active.id },
+    await prisma.paymentAttempt.updateMany({
+      where: { id: payable.id, status: { in: [...NON_TERMINAL_ATTEMPT] } },
       data: { status: queried.status === 'created' ? 'unknown' : queried.status },
     })
-    return { status: 'closure_pending', released: false }
+    return { status: 'closure_pending' as const, released: false }
   }
 
-  await tx.paymentAttempt.update({
-    where: { id: active.id },
-    data: { status: queried.status, completedAt: new Date() },
+  await finalizeClosedOrder(order, terminalStatus, {
+    attemptId: payable.id,
+    attemptStatus: queried.status,
   })
-  await tx.rechargeOrder.updateMany({
-    where: { id: order.id, status: { in: ['closure_pending', 'pending_payment', 'created'] } },
-    data: { status: terminalStatus, cancelledAt: new Date() },
-  })
-  if (intent) {
-    await tx.paymentIntent.updateMany({
-      where: { id: intent.id },
-      data: { status: 'cancelled', activeAttemptId: null },
-    })
-  }
-  await releaseLimitReservations(tx, order.id)
   return { status: terminalStatus, released: true }
+}
+
+async function finalizeClosedOrder(
+  order: OrderWithAttempts,
+  terminalStatus: Extract<RechargeOrderStatus, 'cancelled' | 'expired'>,
+  attempt?: { attemptId: string; attemptStatus: string },
+) {
+  await prisma.$transaction(async tx => {
+    const rows = await tx.$queryRaw<Array<{ id: string; status: string }>>`
+      SELECT "id", "status" FROM "RechargeOrder" WHERE "id" = ${order.id}::uuid FOR UPDATE`
+    const locked = rows[0]
+    if (!locked) return
+    if (locked.status === 'paid' || locked.status === 'credited') return
+    if (attempt) {
+      await tx.paymentAttempt.updateMany({
+        where: { id: attempt.attemptId },
+        data: { status: attempt.attemptStatus, completedAt: new Date() },
+      })
+    }
+    if (locked.status !== 'cancelled' && locked.status !== 'expired' && locked.status !== 'failed') {
+      await tx.rechargeOrder.updateMany({
+        where: { id: order.id, status: { in: ['closure_pending', 'pending_payment', 'created'] } },
+        data: { status: terminalStatus, cancelledAt: new Date() },
+      })
+    }
+    if (order.paymentIntent) {
+      await tx.paymentIntent.updateMany({
+        where: { id: order.paymentIntent.id, status: { in: [...OPEN_INTENT] } },
+        data: { status: 'cancelled', activeAttemptId: null },
+      })
+    }
+    await releaseLimitReservations(tx, order.id)
+  }, TX)
 }
 
 export async function cancelOrder(userId: number, orderId: string, idempotencyKey: string) {
@@ -865,44 +966,19 @@ export async function cancelOrder(userId: number, orderId: string, idempotencyKe
   if (claim.kind === 'replay') {
     return serializeOrder(await loadOwnedOrder(userId, orderId))
   }
+  if (claim.kind === 'in_flight') throw rechargeIdempotencyInFlight()
   try {
-    await prisma.$transaction(async tx => {
-      const rows = await tx.$queryRaw<Array<{
-        id: string
-        userId: number
-        status: string
-        provider: string
-        providerAccountKey: string
-        paymentMethod: string
-        currency: string
-        amountMinor: bigint
-      }>>`
-        SELECT "id", "userId", "status", "provider", "providerAccountKey", "paymentMethod", "currency", "amountMinor"
-        FROM "RechargeOrder" WHERE "id" = ${orderId}::uuid FOR UPDATE`
-      const order = rows[0]
-      if (!order || order.userId !== userId) throw notFound('充值订单不存在')
-      if (order.status === 'paid' || order.status === 'credited' || order.status === 'refund_pending' || order.status === 'refunded') {
-        throw conflict('已支付订单不能取消')
-      }
-      if (order.status === 'cancelled' || order.status === 'expired' || order.status === 'failed') {
-        await completeRechargeIdempotencyClaim(tx, {
-          userId,
-          scope: 'cancel_order',
-          key: idempotencyKey,
-          claimToken: claim.claimToken,
-          resultId: order.id,
-        })
-        return
-      }
-      await closeAndMaybeRelease(tx, order, 'cancelled')
-      await completeRechargeIdempotencyClaim(tx, {
-        userId,
-        scope: 'cancel_order',
-        key: idempotencyKey,
-        claimToken: claim.claimToken,
-        resultId: order.id,
-      })
-    }, TX)
+    const order = await markClosurePending(userId, orderId)
+    if (order.status !== 'cancelled' && order.status !== 'expired' && order.status !== 'failed') {
+      await confirmProviderClosure(order, 'cancelled')
+    }
+    await completeRechargeIdempotencyClaim(prisma, {
+      userId,
+      scope: 'cancel_order',
+      key: idempotencyKey,
+      claimToken: claim.claimToken,
+      resultId: order.id,
+    })
     return serializeOrder(await loadOwnedOrder(userId, orderId))
   } catch (err) {
     await releaseRechargeIdempotencyClaim({
@@ -916,26 +992,10 @@ export async function cancelOrder(userId: number, orderId: string, idempotencyKe
 }
 
 export async function expireOrder(userId: number, orderId: string) {
-  await prisma.$transaction(async tx => {
-    const rows = await tx.$queryRaw<Array<{
-      id: string
-      userId: number
-      status: string
-      provider: string
-      providerAccountKey: string
-      paymentMethod: string
-      currency: string
-      amountMinor: bigint
-    }>>`
-      SELECT "id", "userId", "status", "provider", "providerAccountKey", "paymentMethod", "currency", "amountMinor"
-      FROM "RechargeOrder" WHERE "id" = ${orderId}::uuid FOR UPDATE`
-    const order = rows[0]
-    if (!order || order.userId !== userId) throw notFound('充值订单不存在')
-    if (order.status === 'cancelled' || order.status === 'expired' || order.status === 'failed' || order.status === 'paid' || order.status === 'credited') {
-      return
-    }
-    await closeAndMaybeRelease(tx, order, 'expired')
-  }, TX)
+  const order = await markClosurePending(userId, orderId)
+  if (order.status !== 'cancelled' && order.status !== 'expired' && order.status !== 'failed') {
+    await confirmProviderClosure(order, 'expired')
+  }
   return serializeOrder(await loadOwnedOrder(userId, orderId))
 }
 

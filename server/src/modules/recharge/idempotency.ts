@@ -9,8 +9,9 @@ const PROCESSING_TTL_MS = 15 * 60 * 1000
 export const RECHARGE_IDEMPOTENCY_COMPLETED_RETENTION_MS = 24 * 60 * 60 * 1000
 
 export type RechargeIdempotencyClaim =
-  | { kind: 'claimed'; claimToken: string }
+  | { kind: 'claimed'; claimToken: string; takeover: boolean }
   | { kind: 'replay'; resultType: string; resultId: string }
+  | { kind: 'in_flight' }
 
 function isUniqueViolation(err: unknown): boolean {
   return err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002'
@@ -20,7 +21,7 @@ function keyMismatch(): HttpError {
   return new HttpError(409, 'CONFLICT', '该幂等键已用于内容不同的充值请求')
 }
 
-function inFlight(): HttpError {
+export function rechargeIdempotencyInFlight(): HttpError {
   return new HttpError(409, 'CONFLICT', '相同的充值请求正在处理中，请稍后查看结果')
 }
 
@@ -50,7 +51,7 @@ export async function claimRechargeIdempotency(input: {
         expiresAt: new Date(now.getTime() + PROCESSING_TTL_MS),
       },
     })
-    return { kind: 'claimed', claimToken }
+    return { kind: 'claimed', claimToken, takeover: false }
   } catch (err) {
     if (!isUniqueViolation(err)) throw err
   }
@@ -84,10 +85,10 @@ export async function claimRechargeIdempotency(input: {
         expiresAt: new Date(now.getTime() + PROCESSING_TTL_MS),
       },
     })
-    if (takeover.count === 1) return { kind: 'claimed', claimToken }
+    if (takeover.count === 1) return { kind: 'claimed', claimToken, takeover: true }
   }
 
-  throw inFlight()
+  return { kind: 'in_flight' }
 }
 
 export async function completeRechargeIdempotencyClaim(
@@ -114,7 +115,7 @@ export async function completeRechargeIdempotencyClaim(
       expiresAt: new Date(Date.now() + RECHARGE_IDEMPOTENCY_COMPLETED_RETENTION_MS),
     },
   })
-  if (completed.count !== 1) throw inFlight()
+  if (completed.count !== 1) throw rechargeIdempotencyInFlight()
 }
 
 export async function releaseRechargeIdempotencyClaim(input: {

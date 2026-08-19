@@ -91,8 +91,9 @@ export async function cancelOrder(req: Request, res: Response, next: NextFunctio
   }
 }
 
-export async function requestRefund(_req: Request, res: Response, next: NextFunction) {
+export async function requestRefund(req: Request, res: Response, next: NextFunction) {
   try {
+    requireIdempotencyKey(req)
     await rechargeService.requestRefund()
     res.status(409).end()
   } catch (err) {
