@@ -17,6 +17,7 @@ import type {
   RechargeOrderStatus,
   ReconciliationScopeType,
 } from './types.js'
+import { writePaymentAdminLog } from '../payment/audit.js'
 
 function serializeAdminOrder(order: {
   id: string
@@ -156,9 +157,16 @@ export async function adminListEvents(query: {
   }
 }
 
-export async function adminRetryEvent(eventId: string) {
+export async function adminRetryEvent(eventId: string, actorUserId: number) {
   const event = await prisma.paymentEvent.findUnique({ where: { id: eventId } })
   if (!event) throw notFound('支付事件不存在')
+  await writePaymentAdminLog({
+    adminUserId: actorUserId,
+    action: 'payment.event.retry',
+    targetType: 'PaymentEvent',
+    targetKey: eventId,
+    extra: { provider: event.provider, source: event.source },
+  })
   await prisma.paymentEvent.update({
     where: { id: eventId },
     data: {
@@ -175,7 +183,13 @@ export async function adminRetryEvent(eventId: string) {
   return applyConfirmedPayment(eventId)
 }
 
-export async function adminReconcileOrder(orderId: string) {
+export async function adminReconcileOrder(orderId: string, actorUserId: number) {
+  await writePaymentAdminLog({
+    adminUserId: actorUserId,
+    action: 'payment.order.reconcile',
+    targetType: 'RechargeOrder',
+    targetKey: orderId,
+  })
   return reconcileOrder(orderId)
 }
 
@@ -183,6 +197,13 @@ export async function adminRequestRefund(orderId: string, actorUserId: number, r
   const order = await prisma.rechargeOrder.findUnique({ where: { id: orderId } })
   if (!order) throw notFound('充值订单不存在')
   const { randomUUID } = await import('node:crypto')
+  await writePaymentAdminLog({
+    adminUserId: actorUserId,
+    action: 'payment.order.refund',
+    targetType: 'RechargeOrder',
+    targetKey: orderId,
+    extra: { reasonCode: reasonCode ?? 'admin_requested' },
+  })
   return requestRechargeRefund({
     userId: order.userId,
     orderId,
@@ -208,16 +229,30 @@ export async function adminCreateReconRun(input: {
   scopeKey?: string
   createdByUserId: number
 }) {
-  return createReconciliationRun({
+  const run = await createReconciliationRun({
     provider: input.provider,
     providerAccountKey: input.providerAccountKey,
     scopeType: input.scopeType,
     scopeKey: input.scopeKey,
     createdByUserId: input.createdByUserId,
   })
+  await writePaymentAdminLog({
+    adminUserId: input.createdByUserId,
+    action: 'payment.recon.create',
+    targetType: 'ReconciliationRun',
+    targetKey: run.id,
+    extra: { provider: input.provider, scopeType: input.scopeType },
+  })
+  return run
 }
 
-export async function adminRerunRecon(runId: string) {
+export async function adminRerunRecon(runId: string, actorUserId: number) {
+  await writePaymentAdminLog({
+    adminUserId: actorUserId,
+    action: 'payment.recon.rerun',
+    targetType: 'ReconciliationRun',
+    targetKey: runId,
+  })
   return executeReconciliationRun(runId)
 }
 

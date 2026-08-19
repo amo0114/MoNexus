@@ -2,8 +2,8 @@
   "openapi": "3.0.3",
   "info": {
     "title": "MoNexus API",
-    "version": "1.8.0",
-    "description": "MoNexus 内部积分制数字商品市场 API。三种角色：user / merchant / admin。无任何法币 / 充值 / 提现。1.1.0 同步 M2 GA：health 含 db 字段、登录密码修改、用户封禁 / 解封、平台系统配置。1.2.0 同步 M3：新增 `GET /api/admin/audit`（操作员可读的 AdminLog 列表，支持分页与过滤），并标注 `refreshTokenMaxAgeDays` 现已对新签发的 refresh token 实际生效。1.3.0 同步 M4：拆分 `/api/health` 为 `/api/health/live`（liveness）和 `/api/health/ready`（readiness），保留老 `/api/health` 作为 `/live` 的兼容别名并标记为 deprecated；新增 `GET /api/metrics`（Prometheus 文本格式，可选 `METRICS_TOKEN` bearer 保护）。1.4.0 同步 M6 履约域重构 + 商家经营闭环：拆分订单 DTO 为按角色（user / merchant / admin）的边界，商家与平台列表不再返回 `delivery.content`；商品引入 `deliveryMode` 履约模式（`instant_inventory` / `manual_service`）；订单状态机扩展为 `pending → processing → delivered → disputed → closed`，旧值 `completed` 在响应中规范化为 `delivered`；新增 `POST /api/orders/{id}/dispute`、`/close`，新增商家履约动作 `start/deliver/respond-dispute`；商家商品列表、订单列表统一为 `{items,total,page,pageSize}` envelope，并支持搜索 / 筛选 / 低库存等参数；商家库存导入拆分 `preview` 与 `import`，请求体接受 `text` 或 `items`，响应携带空行 / 重复行 / 既存重复行统计；商家结算列表新增 `payable` 与 `blockReason`，与履约状态绑定（`disputed` 或未履约不可结算）；新增 `GET /api/config/registry` 暴露前端可消费的产品类型 / 履约模式 / 订单状态 / 结算状态 / 分页 / 低库存阈值的标签 + tone 注册表。1.5.0 同步 M3 identity security hardening：管理员登录为 200/202 MFA pre-auth union，新增 TOTP enrollment/verify 与设备会话管理端点；管理员已吊销 session 对 admin API 立即失效，普通业务 access token 仍受既有 15 分钟 TTL 约束。1.6.0 同步 SPEC-OPS-REGMAIL-001 注册开关与邮件投递运营面：新增公开只读 `GET /api/auth/registration-status`、管理员 `GET /api/admin/mail/status` 与 `POST /api/admin/mail/test`；`POST /api/auth/register` 新增 403 `REGISTRATION_DISABLED`；`SystemConfigKey` 枚举补齐为注册表全量 24 个 key（此前只列了 4 个），并新增布尔语义开关 `registrationEnabled`（值域 0/1）。SMTP 连接参数仍只在部署环境配置，后台不可编辑。1.7.0 同步 SPEC-RAP-001：公开注册使用 fail-closed Turnstile + Redis 防护；邮箱验证改为已登录用户的 fragment-token POST claim；注册与邀请奖励进入延迟发放账本；新增 MFA 保护的管理员反滥用运营 API。1.8.0 同步 SPEC-LEADERBOARD-001 积分排行榜：新增 `GET /api/leaderboard`（总榜 / 本月榜 / 本周榜，每日快照刷新一次，读侧 Top 100 + 请求者自己的名次）；榜单口径与会员等级 lifetime earned 一致（只计 `type=in`），响应只暴露 rank / displayName / points，绝不下发他人 userId 或 email。"
+    "version": "1.9.0",
+    "description": "MoNexus 内部积分制数字商品市场 API。三种角色：user / merchant / admin。无任何法币 / 充值 / 提现。1.1.0 同步 M2 GA：health 含 db 字段、登录密码修改、用户封禁 / 解封、平台系统配置。1.2.0 同步 M3：新增 `GET /api/admin/audit`（操作员可读的 AdminLog 列表，支持分页与过滤），并标注 `refreshTokenMaxAgeDays` 现已对新签发的 refresh token 实际生效。1.3.0 同步 M4：拆分 `/api/health` 为 `/api/health/live`（liveness）和 `/api/health/ready`（readiness），保留老 `/api/health` 作为 `/live` 的兼容别名并标记为 deprecated；新增 `GET /api/metrics`（Prometheus 文本格式，可选 `METRICS_TOKEN` bearer 保护）。1.4.0 同步 M6 履约域重构 + 商家经营闭环：拆分订单 DTO 为按角色（user / merchant / admin）的边界，商家与平台列表不再返回 `delivery.content`；商品引入 `deliveryMode` 履约模式（`instant_inventory` / `manual_service`）；订单状态机扩展为 `pending → processing → delivered → disputed → closed`，旧值 `completed` 在响应中规范化为 `delivered`；新增 `POST /api/orders/{id}/dispute`、`/close`，新增商家履约动作 `start/deliver/respond-dispute`；商家商品列表、订单列表统一为 `{items,total,page,pageSize}` envelope，并支持搜索 / 筛选 / 低库存等参数；商家库存导入拆分 `preview` 与 `import`，请求体接受 `text` 或 `items`，响应携带空行 / 重复行 / 既存重复行统计；商家结算列表新增 `payable` 与 `blockReason`，与履约状态绑定（`disputed` 或未履约不可结算）；新增 `GET /api/config/registry` 暴露前端可消费的产品类型 / 履约模式 / 订单状态 / 结算状态 / 分页 / 低库存阈值的标签 + tone 注册表。1.5.0 同步 M3 identity security hardening：管理员登录为 200/202 MFA pre-auth union，新增 TOTP enrollment/verify 与设备会话管理端点；管理员已吊销 session 对 admin API 立即失效，普通业务 access token 仍受既有 15 分钟 TTL 约束。1.6.0 同步 SPEC-OPS-REGMAIL-001 注册开关与邮件投递运营面：新增公开只读 `GET /api/auth/registration-status`、管理员 `GET /api/admin/mail/status` 与 `POST /api/admin/mail/test`；`POST /api/auth/register` 新增 403 `REGISTRATION_DISABLED`；`SystemConfigKey` 枚举补齐为注册表全量 24 个 key（此前只列了 4 个），并新增布尔语义开关 `registrationEnabled`（值域 0/1）。SMTP 连接参数仍只在部署环境配置，后台不可编辑。1.7.0 同步 SPEC-RAP-001：公开注册使用 fail-closed Turnstile + Redis 防护；邮箱验证改为已登录用户的 fragment-token POST claim；注册与邀请奖励进入延迟发放账本；新增 MFA 保护的管理员反滥用运营 API。1.8.0 同步 SPEC-LEADERBOARD-001 积分排行榜：新增 `GET /api/leaderboard`（总榜 / 本月榜 / 本周榜，每日快照刷新一次，读侧 Top 100 + 请求者自己的名次）；榜单口径与会员等级 lifetime earned 一致（只计 `type=in`），响应只暴露 rank / displayName / points，绝不下发他人 userId 或 email。 1.9.0 同步 SPEC-RECHARGE-PAYMENT-V1.2：新增积分充值用户 API、渠道 webhook 与管理修复面。金额字段为十进制字符串。生产默认关闭 live 充值，Simulator 禁止出现在 production deploy。本版本不部署真实告警接收人。"
   },
   "servers": [
     {
@@ -71,6 +71,18 @@
     {
       "name": "Admin Abuse",
       "description": "注册、邀请与延迟奖励的 MFA 保护风控运营面"
+    },
+    {
+      "name": "Recharge",
+      "description": "积分充值报价 / 下单 / 查询 / 退款。金额为 minor-unit 十进制字符串。"
+    },
+    {
+      "name": "Payment Webhooks",
+      "description": "渠道异步通知。必须使用 raw body 验签。"
+    },
+    {
+      "name": "Admin Recharge",
+      "description": "充值订单、事件重放、对账、争议。默认不返回原始 payload。"
     }
   ],
   "components": {
@@ -2804,44 +2816,147 @@
           "inviteRelation"
         ],
         "properties": {
-          "id": { "type": "integer", "minimum": 1 },
-          "kind": { "type": "string", "enum": ["registration", "referral"] },
-          "amount": { "type": "integer", "minimum": 0 },
-          "state": { "type": "string", "enum": ["pending_verification", "held", "granted", "voided"] },
-          "availableAt": { "type": "string", "format": "date-time", "nullable": true },
-          "grantedAt": { "type": "string", "format": "date-time", "nullable": true },
-          "voidedAt": { "type": "string", "format": "date-time", "nullable": true },
-          "voidReason": { "type": "string", "nullable": true },
-          "createdAt": { "type": "string", "format": "date-time" },
-          "recipient": { "$ref": "#/components/schemas/AdminAbuseParticipant" },
+          "id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "registration",
+              "referral"
+            ]
+          },
+          "amount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "pending_verification",
+              "held",
+              "granted",
+              "voided"
+            ]
+          },
+          "availableAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "grantedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "voidedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "voidReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "recipient": {
+            "$ref": "#/components/schemas/AdminAbuseParticipant"
+          },
           "inviteRelation": {
             "type": "object",
             "nullable": true,
             "properties": {
-              "id": { "type": "integer", "minimum": 1 },
-              "status": { "type": "string", "enum": ["legacy", "pending_verification", "qualified", "quota_exhausted", "voided"] },
-              "inviter": {
-                "allOf": [
-                  { "$ref": "#/components/schemas/AdminAbuseParticipant" },
-                  { "type": "object", "required": ["referralSuspended"], "properties": { "referralSuspended": { "type": "boolean" } } }
+              "id": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "legacy",
+                  "pending_verification",
+                  "qualified",
+                  "quota_exhausted",
+                  "voided"
                 ]
               },
-              "invitee": { "$ref": "#/components/schemas/AdminAbuseParticipant" }
+              "inviter": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/AdminAbuseParticipant"
+                  },
+                  {
+                    "type": "object",
+                    "required": [
+                      "referralSuspended"
+                    ],
+                    "properties": {
+                      "referralSuspended": {
+                        "type": "boolean"
+                      }
+                    }
+                  }
+                ]
+              },
+              "invitee": {
+                "$ref": "#/components/schemas/AdminAbuseParticipant"
+              }
             }
           }
         }
       },
       "AdminAbuseReferralReward": {
         "type": "object",
-        "required": ["id", "amount", "state", "availableAt", "grantedAt", "voidedAt", "voidReason"],
+        "required": [
+          "id",
+          "amount",
+          "state",
+          "availableAt",
+          "grantedAt",
+          "voidedAt",
+          "voidReason"
+        ],
         "properties": {
-          "id": { "type": "integer", "minimum": 1 },
-          "amount": { "type": "integer", "minimum": 0 },
-          "state": { "type": "string", "enum": ["pending_verification", "held", "granted", "voided"] },
-          "availableAt": { "type": "string", "format": "date-time", "nullable": true },
-          "grantedAt": { "type": "string", "format": "date-time", "nullable": true },
-          "voidedAt": { "type": "string", "format": "date-time", "nullable": true },
-          "voidReason": { "type": "string", "nullable": true }
+          "id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "amount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "pending_verification",
+              "held",
+              "granted",
+              "voided"
+            ]
+          },
+          "availableAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "grantedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "voidedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "voidReason": {
+            "type": "string",
+            "nullable": true
+          }
         }
       },
       "AdminAbuseReferral": {
@@ -2858,117 +2973,346 @@
           "reward"
         ],
         "properties": {
-          "id": { "type": "integer", "minimum": 1 },
-          "status": { "type": "string", "enum": ["legacy", "pending_verification", "qualified", "quota_exhausted", "voided"] },
-          "qualifiedAt": { "type": "string", "format": "date-time", "nullable": true },
-          "voidedAt": { "type": "string", "format": "date-time", "nullable": true },
-          "qualificationDay": { "type": "string", "format": "date", "nullable": true },
-          "createdAt": { "type": "string", "format": "date-time" },
+          "id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "legacy",
+              "pending_verification",
+              "qualified",
+              "quota_exhausted",
+              "voided"
+            ]
+          },
+          "qualifiedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "voidedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "qualificationDay": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
           "inviter": {
             "allOf": [
-              { "$ref": "#/components/schemas/AdminAbuseParticipant" },
-              { "type": "object", "required": ["referralSuspended"], "properties": { "referralSuspended": { "type": "boolean" } } }
+              {
+                "$ref": "#/components/schemas/AdminAbuseParticipant"
+              },
+              {
+                "type": "object",
+                "required": [
+                  "referralSuspended"
+                ],
+                "properties": {
+                  "referralSuspended": {
+                    "type": "boolean"
+                  }
+                }
+              }
             ]
           },
           "invitee": {
             "allOf": [
-              { "$ref": "#/components/schemas/AdminAbuseParticipant" },
-              { "type": "object", "required": ["emailVerified"], "properties": { "emailVerified": { "type": "string", "format": "date-time", "nullable": true } } }
+              {
+                "$ref": "#/components/schemas/AdminAbuseParticipant"
+              },
+              {
+                "type": "object",
+                "required": [
+                  "emailVerified"
+                ],
+                "properties": {
+                  "emailVerified": {
+                    "type": "string",
+                    "format": "date-time",
+                    "nullable": true
+                  }
+                }
+              }
             ]
           },
           "reward": {
             "nullable": true,
             "allOf": [
-              { "$ref": "#/components/schemas/AdminAbuseReferralReward" }
+              {
+                "$ref": "#/components/schemas/AdminAbuseReferralReward"
+              }
             ]
           }
         }
       },
       "AdminAbuseOverview": {
         "type": "object",
-        "required": ["window", "since", "registrations", "challengeFailures", "verificationEmail", "unverifiedUsers", "referrals", "rewards"],
+        "required": [
+          "window",
+          "since",
+          "registrations",
+          "challengeFailures",
+          "verificationEmail",
+          "unverifiedUsers",
+          "referrals",
+          "rewards"
+        ],
         "properties": {
-          "window": { "type": "string", "enum": ["1h", "24h"] },
-          "since": { "type": "string", "format": "date-time" },
+          "window": {
+            "type": "string",
+            "enum": [
+              "1h",
+              "24h"
+            ]
+          },
+          "since": {
+            "type": "string",
+            "format": "date-time"
+          },
           "registrations": {
             "type": "object",
-            "required": ["attempts", "accepted", "rejected"],
-            "properties": { "attempts": { "type": "integer" }, "accepted": { "type": "integer" }, "rejected": { "type": "integer" } }
+            "required": [
+              "attempts",
+              "accepted",
+              "rejected"
+            ],
+            "properties": {
+              "attempts": {
+                "type": "integer"
+              },
+              "accepted": {
+                "type": "integer"
+              },
+              "rejected": {
+                "type": "integer"
+              }
+            }
           },
-          "challengeFailures": { "type": "integer" },
+          "challengeFailures": {
+            "type": "integer"
+          },
           "verificationEmail": {
             "type": "object",
-            "required": ["sent", "throttled"],
-            "properties": { "sent": { "type": "integer" }, "throttled": { "type": "integer" } }
+            "required": [
+              "sent",
+              "throttled"
+            ],
+            "properties": {
+              "sent": {
+                "type": "integer"
+              },
+              "throttled": {
+                "type": "integer"
+              }
+            }
           },
-          "unverifiedUsers": { "type": "integer" },
+          "unverifiedUsers": {
+            "type": "integer"
+          },
           "referrals": {
             "type": "object",
-            "required": ["pendingVerification", "qualified", "quotaExhausted", "voided"],
-            "properties": { "pendingVerification": { "type": "integer" }, "qualified": { "type": "integer" }, "quotaExhausted": { "type": "integer" }, "voided": { "type": "integer" } }
+            "required": [
+              "pendingVerification",
+              "qualified",
+              "quotaExhausted",
+              "voided"
+            ],
+            "properties": {
+              "pendingVerification": {
+                "type": "integer"
+              },
+              "qualified": {
+                "type": "integer"
+              },
+              "quotaExhausted": {
+                "type": "integer"
+              },
+              "voided": {
+                "type": "integer"
+              }
+            }
           },
           "rewards": {
             "type": "object",
-            "required": ["pendingVerification", "held", "granted", "voided"],
-            "properties": { "pendingVerification": { "type": "integer" }, "held": { "type": "integer" }, "granted": { "type": "integer" }, "voided": { "type": "integer" } }
+            "required": [
+              "pendingVerification",
+              "held",
+              "granted",
+              "voided"
+            ],
+            "properties": {
+              "pendingVerification": {
+                "type": "integer"
+              },
+              "held": {
+                "type": "integer"
+              },
+              "granted": {
+                "type": "integer"
+              },
+              "voided": {
+                "type": "integer"
+              }
+            }
           }
         }
       },
       "AdminAbuseReferralPage": {
         "type": "object",
-        "required": ["total", "page", "pageSize", "items"],
+        "required": [
+          "total",
+          "page",
+          "pageSize",
+          "items"
+        ],
         "properties": {
-          "total": { "type": "integer", "minimum": 0 },
-          "page": { "type": "integer", "minimum": 1 },
-          "pageSize": { "type": "integer", "minimum": 1, "maximum": 100 },
-          "items": { "type": "array", "items": { "$ref": "#/components/schemas/AdminAbuseReferral" } }
+          "total": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "pageSize": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminAbuseReferral"
+            }
+          }
         }
       },
       "AdminAbuseRewardPage": {
         "type": "object",
-        "required": ["total", "page", "pageSize", "items"],
+        "required": [
+          "total",
+          "page",
+          "pageSize",
+          "items"
+        ],
         "properties": {
-          "total": { "type": "integer", "minimum": 0 },
-          "page": { "type": "integer", "minimum": 1 },
-          "pageSize": { "type": "integer", "minimum": 1, "maximum": 100 },
-          "items": { "type": "array", "items": { "$ref": "#/components/schemas/AdminAbuseReward" } }
+          "total": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "pageSize": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminAbuseReward"
+            }
+          }
         }
       },
       "SetReferralSuspensionRequest": {
         "type": "object",
-        "required": ["suspended", "caseRef"],
+        "required": [
+          "suspended",
+          "caseRef"
+        ],
         "additionalProperties": false,
         "properties": {
-          "suspended": { "type": "boolean" },
-          "caseRef": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]{1,15}-[0-9]{1,12}$", "example": "RAP-123" }
+          "suspended": {
+            "type": "boolean"
+          },
+          "caseRef": {
+            "type": "string",
+            "pattern": "^[A-Z][A-Z0-9_]{1,15}-[0-9]{1,12}$",
+            "example": "RAP-123"
+          }
         }
       },
       "ReferralSuspensionResult": {
         "type": "object",
-        "required": ["userId", "suspended", "voidedRewards"],
+        "required": [
+          "userId",
+          "suspended",
+          "voidedRewards"
+        ],
         "properties": {
-          "userId": { "type": "integer", "minimum": 1 },
-          "suspended": { "type": "boolean" },
-          "voidedRewards": { "type": "integer", "minimum": 0 }
+          "userId": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "suspended": {
+            "type": "boolean"
+          },
+          "voidedRewards": {
+            "type": "integer",
+            "minimum": 0
+          }
         }
       },
       "VoidAbuseRewardRequest": {
         "type": "object",
-        "required": ["caseRef"],
+        "required": [
+          "caseRef"
+        ],
         "additionalProperties": false,
         "properties": {
-          "caseRef": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]{1,15}-[0-9]{1,12}$", "example": "RAP-123" }
+          "caseRef": {
+            "type": "string",
+            "pattern": "^[A-Z][A-Z0-9_]{1,15}-[0-9]{1,12}$",
+            "example": "RAP-123"
+          }
         }
       },
       "VoidedAbuseReward": {
         "type": "object",
-        "required": ["id", "kind", "amount", "state", "caseRef"],
+        "required": [
+          "id",
+          "kind",
+          "amount",
+          "state",
+          "caseRef"
+        ],
         "properties": {
-          "id": { "type": "integer", "minimum": 1 },
-          "kind": { "type": "string", "enum": ["registration", "referral"] },
-          "amount": { "type": "integer", "minimum": 0 },
-          "state": { "type": "string", "enum": ["voided"] },
-          "caseRef": { "type": "string" }
+          "id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "registration",
+              "referral"
+            ]
+          },
+          "amount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "voided"
+            ]
+          },
+          "caseRef": {
+            "type": "string"
+          }
         }
       },
       "LeaderboardScope": {
@@ -3081,6 +3425,77 @@
             ],
             "nullable": true,
             "description": "请求者本期名次；不合格或无得分为 null"
+          }
+        }
+      },
+      "RechargeOrder": {
+        "type": "object",
+        "properties": {
+          "orderId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string",
+            "enum": [
+              "CNY",
+              "USD"
+            ]
+          },
+          "amountMinor": {
+            "type": "string",
+            "description": "minor-unit decimal string"
+          },
+          "totalPoints": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string",
+            "enum": [
+              "simulator",
+              "stripe",
+              "paypal",
+              "wechat_pay",
+              "alipay"
+            ]
+          },
+          "paymentMethod": {
+            "type": "string"
+          }
+        }
+      },
+      "RechargeQuote": {
+        "type": "object",
+        "properties": {
+          "quoteId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "currency": {
+            "type": "string",
+            "enum": [
+              "CNY",
+              "USD"
+            ]
+          },
+          "amountMinor": {
+            "type": "string"
+          },
+          "totalPoints": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "paymentMethod": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
           }
         }
       }
@@ -3562,8 +3977,8 @@
               }
             }
           },
-          "401": {
-            "description": "`error.code` 为 `UNAUTHENTICATED` 或 `SESSION_REVOKED`。",
+          "400": {
+            "description": "`error.code=BAD_REQUEST`（例如账号已封禁）。",
             "content": {
               "application/json": {
                 "schema": {
@@ -3572,8 +3987,8 @@
               }
             }
           },
-          "400": {
-            "description": "`error.code=BAD_REQUEST`（例如账号已封禁）。",
+          "401": {
+            "description": "`error.code` 为 `UNAUTHENTICATED` 或 `SESSION_REVOKED`。",
             "content": {
               "application/json": {
                 "schema": {
@@ -6333,106 +6748,324 @@
     },
     "/api/admin/abuse/overview": {
       "get": {
-        "tags": ["Admin Abuse"],
+        "tags": [
+          "Admin Abuse"
+        ],
         "summary": "注册与奖励风控概览",
         "description": "需要管理员角色和当前 MFA session。只返回聚合计数与受控时间窗，不返回原始 IP、邮箱、token、hash、provider payload 或凭证。",
-        "security": [{ "bearerAuth": [] }],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
         "parameters": [
           {
             "name": "window",
             "in": "query",
-            "schema": { "type": "string", "enum": ["1h", "24h"], "default": "24h" }
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1h",
+                "24h"
+              ],
+              "default": "24h"
+            }
           }
         ],
         "responses": {
-          "200": { "description": "风控聚合计数", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AdminAbuseOverview" } } } },
-          "401": { "$ref": "#/components/responses/Unauthenticated" },
-          "403": { "$ref": "#/components/responses/Forbidden" }
+          "200": {
+            "description": "风控聚合计数",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminAbuseOverview"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
         }
       }
     },
     "/api/admin/abuse/referrals": {
       "get": {
-        "tags": ["Admin Abuse"],
+        "tags": [
+          "Admin Abuse"
+        ],
         "summary": "分页查询邀请码资格",
         "description": "需要管理员 MFA。`q` 只用于后端受控搜索；响应 email 始终脱敏。",
-        "security": [{ "bearerAuth": [] }],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
         "parameters": [
-          { "name": "state", "in": "query", "schema": { "type": "string", "enum": ["legacy", "pending_verification", "qualified", "quota_exhausted", "voided"] } },
-          { "name": "q", "in": "query", "schema": { "type": "string", "minLength": 1, "maxLength": 100 } },
-          { "name": "page", "in": "query", "schema": { "type": "integer", "minimum": 1, "default": 1 } },
-          { "name": "pageSize", "in": "query", "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 20 } }
+          {
+            "name": "state",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "legacy",
+                "pending_verification",
+                "qualified",
+                "quota_exhausted",
+                "voided"
+              ]
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          }
         ],
         "responses": {
-          "200": { "description": "邀请码资格页", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AdminAbuseReferralPage" } } } },
-          "400": { "$ref": "#/components/responses/ValidationError" },
-          "401": { "$ref": "#/components/responses/Unauthenticated" },
-          "403": { "$ref": "#/components/responses/Forbidden" }
+          "200": {
+            "description": "邀请码资格页",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminAbuseReferralPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
         }
       }
     },
     "/api/admin/abuse/rewards": {
       "get": {
-        "tags": ["Admin Abuse"],
+        "tags": [
+          "Admin Abuse"
+        ],
         "summary": "分页查询延迟奖励账本",
         "description": "需要管理员 MFA。仅为运营审查提供只读账本投影；不能借此接口增减积分或补发奖励。",
-        "security": [{ "bearerAuth": [] }],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
         "parameters": [
-          { "name": "state", "in": "query", "schema": { "type": "string", "enum": ["pending_verification", "held", "granted", "voided"] } },
-          { "name": "userId", "in": "query", "schema": { "type": "integer", "minimum": 1 } },
-          { "name": "page", "in": "query", "schema": { "type": "integer", "minimum": 1, "default": 1 } },
-          { "name": "pageSize", "in": "query", "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 20 } }
+          {
+            "name": "state",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "pending_verification",
+                "held",
+                "granted",
+                "voided"
+              ]
+            }
+          },
+          {
+            "name": "userId",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          }
         ],
         "responses": {
-          "200": { "description": "奖励账本页", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AdminAbuseRewardPage" } } } },
-          "400": { "$ref": "#/components/responses/ValidationError" },
-          "401": { "$ref": "#/components/responses/Unauthenticated" },
-          "403": { "$ref": "#/components/responses/Forbidden" }
+          "200": {
+            "description": "奖励账本页",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminAbuseRewardPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
         }
       }
     },
     "/api/admin/abuse/users/{id}/referral-suspension": {
       "put": {
-        "tags": ["Admin Abuse"],
+        "tags": [
+          "Admin Abuse"
+        ],
         "summary": "暂停或恢复用户未来的邀请码资格",
         "description": "需要管理员 MFA 和受控格式的 `caseRef`。暂停会作废该邀请人仍处于 pending/held 的邀请奖励；恢复只影响未来资格，绝不恢复已作废奖励或追扣已发积分。成功的状态变更在同一事务写入 AdminLog 和 AbuseEvent。",
-        "security": [{ "bearerAuth": [] }],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
         "parameters": [
-          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer", "minimum": 1 } }
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
         ],
         "requestBody": {
           "required": true,
-          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SetReferralSuspensionRequest" } } }
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetReferralSuspensionRequest"
+              }
+            }
+          }
         },
         "responses": {
-          "200": { "description": "资格状态已更新", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ReferralSuspensionResult" } } } },
-          "400": { "$ref": "#/components/responses/ValidationError" },
-          "401": { "$ref": "#/components/responses/Unauthenticated" },
-          "403": { "$ref": "#/components/responses/Forbidden" },
-          "404": { "$ref": "#/components/responses/NotFound" }
+          "200": {
+            "description": "资格状态已更新",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReferralSuspensionResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
         }
       }
     },
     "/api/admin/abuse/rewards/{id}/void": {
       "post": {
-        "tags": ["Admin Abuse"],
+        "tags": [
+          "Admin Abuse"
+        ],
         "summary": "作废未发放奖励",
         "description": "需要管理员 MFA 和 `caseRef`。只有 `pending_verification` / `held` 状态可作废；`granted` 必须返回冲突，绝不通过此模块回写余额或 PointLog。成功的状态变更在同一事务写入 AdminLog 和 AbuseEvent。",
-        "security": [{ "bearerAuth": [] }],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
         "parameters": [
-          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer", "minimum": 1 } }
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
         ],
         "requestBody": {
           "required": true,
-          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/VoidAbuseRewardRequest" } } }
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VoidAbuseRewardRequest"
+              }
+            }
+          }
         },
         "responses": {
-          "200": { "description": "奖励已作废", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/VoidedAbuseReward" } } } },
-          "400": { "$ref": "#/components/responses/ValidationError" },
-          "401": { "$ref": "#/components/responses/Unauthenticated" },
-          "403": { "$ref": "#/components/responses/Forbidden" },
-          "404": { "$ref": "#/components/responses/NotFound" },
-          "409": { "$ref": "#/components/responses/Conflict" }
+          "200": {
+            "description": "奖励已作废",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VoidedAbuseReward"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
         }
       }
     },
@@ -6532,6 +7165,755 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/api/recharge/config": {
+      "get": {
+        "tags": [
+          "Recharge"
+        ],
+        "summary": "当前币种充值配置",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "currency",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "CNY",
+                "USD"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "配置，不含内部 account key"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "description": "RECHARGE_DISABLED"
+          }
+        }
+      }
+    },
+    "/api/recharge/quotes": {
+      "post": {
+        "tags": [
+          "Recharge"
+        ],
+        "summary": "创建充值报价",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "currency",
+                  "amountMinor",
+                  "amountSource",
+                  "provider",
+                  "paymentMethod"
+                ],
+                "properties": {
+                  "currency": {
+                    "type": "string",
+                    "enum": [
+                      "CNY",
+                      "USD"
+                    ]
+                  },
+                  "amountMinor": {
+                    "type": "string"
+                  },
+                  "amountSource": {
+                    "type": "string",
+                    "enum": [
+                      "suggested",
+                      "custom"
+                    ]
+                  },
+                  "provider": {
+                    "type": "string",
+                    "enum": [
+                      "simulator",
+                      "stripe",
+                      "paypal",
+                      "wechat_pay",
+                      "alipay"
+                    ]
+                  },
+                  "paymentMethod": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "报价",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RechargeQuote"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/recharge/orders": {
+      "get": {
+        "tags": [
+          "Recharge"
+        ],
+        "summary": "列出当前用户充值订单",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "分页订单"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Recharge"
+        ],
+        "summary": "根据报价创建充值订单",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "quoteId"
+                ],
+                "properties": {
+                  "quoteId": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "订单",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RechargeOrder"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/recharge/orders/{id}": {
+      "get": {
+        "tags": [
+          "Recharge"
+        ],
+        "summary": "读取自己的充值订单",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "订单详情"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "description": "NOT_FOUND"
+          }
+        }
+      }
+    },
+    "/api/recharge/orders/{id}/complete": {
+      "post": {
+        "tags": [
+          "Recharge"
+        ],
+        "summary": "买家批准后由服务端 capture/complete",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "已知结果或处理中"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "description": "PAYMENT_COMPLETION_NOT_SUPPORTED / PAYMENT_STATE_UNKNOWN"
+          }
+        }
+      }
+    },
+    "/api/recharge/orders/{id}/cancel": {
+      "post": {
+        "tags": [
+          "Recharge"
+        ],
+        "summary": "取消未支付充值订单",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "已取消或不可取消的当前状态"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/recharge/orders/{id}/refunds": {
+      "post": {
+        "tags": [
+          "Recharge"
+        ],
+        "summary": "申请充值退款",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "退款已创建或进入人工审核"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "description": "REFUND_BALANCE_INSUFFICIENT / REFUND_REQUIRES_REVIEW"
+          }
+        }
+      }
+    },
+    "/api/payment/webhooks/stripe": {
+      "post": {
+        "tags": [
+          "Payment Webhooks"
+        ],
+        "summary": "stripe 异步通知",
+        "security": [],
+        "description": "Raw body 验签。成功后先持久化 observation 再异步 apply。不使用 userId/orderId 作为指标标签。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "渠道要求的成功 ACK"
+          },
+          "400": {
+            "description": "验签失败"
+          },
+          "503": {
+            "description": "adapter 未注册"
+          }
+        }
+      }
+    },
+    "/api/payment/webhooks/paypal": {
+      "post": {
+        "tags": [
+          "Payment Webhooks"
+        ],
+        "summary": "paypal 异步通知",
+        "security": [],
+        "description": "Raw body 验签。成功后先持久化 observation 再异步 apply。不使用 userId/orderId 作为指标标签。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "渠道要求的成功 ACK"
+          },
+          "400": {
+            "description": "验签失败"
+          },
+          "503": {
+            "description": "adapter 未注册"
+          }
+        }
+      }
+    },
+    "/api/payment/webhooks/wechat-pay": {
+      "post": {
+        "tags": [
+          "Payment Webhooks"
+        ],
+        "summary": "wechat_pay 异步通知",
+        "security": [],
+        "description": "Raw body 验签。成功后先持久化 observation 再异步 apply。不使用 userId/orderId 作为指标标签。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "渠道要求的成功 ACK"
+          },
+          "400": {
+            "description": "验签失败"
+          },
+          "503": {
+            "description": "adapter 未注册"
+          }
+        }
+      }
+    },
+    "/api/payment/webhooks/alipay": {
+      "post": {
+        "tags": [
+          "Payment Webhooks"
+        ],
+        "summary": "alipay 异步通知",
+        "security": [],
+        "description": "Raw body 验签。成功后先持久化 observation 再异步 apply。不使用 userId/orderId 作为指标标签。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "渠道要求的成功 ACK"
+          },
+          "400": {
+            "description": "验签失败"
+          },
+          "503": {
+            "description": "adapter 未注册"
+          }
+        }
+      }
+    },
+    "/api/payment/webhooks/simulator": {
+      "post": {
+        "tags": [
+          "Payment Webhooks"
+        ],
+        "summary": "simulator 异步通知",
+        "security": [],
+        "description": "Raw body 验签。成功后先持久化 observation 再异步 apply。不使用 userId/orderId 作为指标标签。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "渠道要求的成功 ACK"
+          },
+          "400": {
+            "description": "验签失败"
+          },
+          "503": {
+            "description": "adapter 未注册"
+          }
+        }
+      }
+    },
+    "/api/admin/recharge/orders": {
+      "get": {
+        "tags": [
+          "Admin Recharge"
+        ],
+        "summary": "管理端充值订单列表（无原始 payload）",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "分页订单"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/admin/recharge/orders/{id}": {
+      "get": {
+        "tags": [
+          "Admin Recharge"
+        ],
+        "summary": "管理端充值订单详情",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "订单，不含 raw payload"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/admin/recharge/orders/{id}/reconcile": {
+      "post": {
+        "tags": [
+          "Admin Recharge"
+        ],
+        "summary": "对单笔订单发起对账修复",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "对账结果；写入 AdminLog"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/admin/payments/events/{id}/retry": {
+      "post": {
+        "tags": [
+          "Admin Recharge"
+        ],
+        "summary": "重放支付 observation",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "已重放；写入 AdminLog"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/admin/payments/reconciliation-runs": {
+      "get": {
+        "tags": [
+          "Admin Recharge"
+        ],
+        "summary": "列出对账批次",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "最近批次"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Admin Recharge"
+        ],
+        "summary": "创建并对账一批次",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "批次结果；写入 AdminLog"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/admin/payments/reconciliation-runs/{id}/rerun": {
+      "post": {
+        "tags": [
+          "Admin Recharge"
+        ],
+        "summary": "重跑对账批次",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "批次结果；写入 AdminLog"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
           }
         }
       }

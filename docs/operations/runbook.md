@@ -3,6 +3,8 @@
 > Gray-launch operations playbook. Commands assume bash and the repo cloned at `$REPO_ROOT`.
 > Replace placeholders (`<...>`) before running. Never paste secrets into this file.
 
+Payment recharge operations, circuit breaker, paid-not-credited repair, observation replay, late payment, refund, and reconciliation: `docs/operations/payment-runbook.md`. Alert contract: `docs/operations/payment-alerts.md`.
+
 ## 1. Service Start and Stop
 
 Dev stack (PostgreSQL container + Redis container + backend + frontend) via helper script:

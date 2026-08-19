@@ -1,0 +1,93 @@
+groups:
+  - name: monexus-payment
+    rules:
+      - alert: MoNexusPaidRechargeNotCredited
+        expr: increase(recharge_paid_not_credited_total[5m]) > 0
+        for: 2m
+        labels:
+          severity: P0
+          routing: payment-p0
+        annotations:
+          summary: Paid recharge not credited
+          description: A paid recharge stayed uncredited for more than two minutes.
+      - alert: MoNexusDuplicateRechargeCreditUniqueConflict
+        expr: increase(recharge_credit_total{result="duplicate_conflict"}[5m]) > 0
+        for: 0m
+        labels:
+          severity: P0
+          routing: payment-p0
+        annotations:
+          summary: Duplicate recharge credit unique conflict
+          description: A unique constraint fired while inserting a recharge credit.
+      - alert: MoNexusPaymentAmountOrCurrencyMismatch
+        expr: increase(payment_amount_mismatch_total[5m]) > 0
+        for: 0m
+        labels:
+          severity: P0
+          routing: payment-p0
+        annotations:
+          summary: Payment amount or currency mismatch
+          description: An observation amount or currency did not match the local order.
+      - alert: MoNexusPaymentWebhookSignatureFailuresRising
+        expr: increase(payment_webhook_signature_failure_total[5m]) >= 5
+        for: 2m
+        labels:
+          severity: P1
+          routing: payment-p1
+        annotations:
+          summary: Payment webhook signature failures rising
+          description: Webhook signature verification failures are accumulating.
+      - alert: MoNexusPaymentWorkerBacklogHigh
+        expr: max_over_time(payment_worker_backlog[10m]) >= 50 or max_over_time(payment_worker_oldest_age_seconds[10m]) >= 120
+        for: 5m
+        labels:
+          severity: P1
+          routing: payment-p1
+        annotations:
+          summary: Payment worker backlog high
+          description: Observation, credit, refund, or query recovery backlog exceeded the threshold.
+      - alert: MoNexusPaymentProviderQueryCircuitOpen
+        expr: max_over_time(payment_provider_circuit_open[10m]) == 1 or increase(payment_observation_total{source="provider_query",result="query_failed"}[10m]) >= 5
+        for: 5m
+        labels:
+          severity: P1
+          routing: payment-p1
+        annotations:
+          summary: Payment provider query circuit open
+          description: Provider query recovery is failing continuously or the circuit is open.
+      - alert: MoNexusLateProviderPaymentAfterLocalTerminalOrder
+        expr: increase(payment_observation_total{result="late_success"}[5m]) > 0
+        for: 0m
+        labels:
+          severity: P0
+          routing: payment-p0
+        annotations:
+          summary: Late provider payment after local terminal order
+          description: A terminal local order received a late provider succeeded observation.
+      - alert: MoNexusPaymentRefundProcessingTooLong
+        expr: payment_worker_backlog{worker="refund"} > 0 and payment_worker_oldest_age_seconds{worker="refund"} >= 900
+        for: 10m
+        labels:
+          severity: P1
+          routing: payment-p1
+        annotations:
+          summary: Payment refund processing too long
+          description: A recharge refund stayed in processing longer than 15 minutes.
+      - alert: MoNexusPaymentReconciliationMismatch
+        expr: increase(payment_reconciliation_mismatch_total[15m]) > 0
+        for: 5m
+        labels:
+          severity: P1
+          routing: payment-p1
+        annotations:
+          summary: Payment reconciliation mismatch
+          description: Reconciliation wrote an open mismatch item.
+      - alert: MoNexusSimulatorConfiguredOnProductionDeploy
+        expr: payment_simulator_configured == 1
+        for: 0m
+        labels:
+          severity: P0
+          routing: payment-p0
+        annotations:
+          summary: Simulator configured on production deploy
+          description: Production deploy registered or enabled the simulator provider.

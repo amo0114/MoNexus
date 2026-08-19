@@ -10,9 +10,22 @@ import {
   claimCreditTask,
   claimNextCreditTask,
 } from './lease.js'
+import {
+  recordPaidNotCredited,
+  recordPaymentObservationMetric,
+  setSimulatorConfigured,
+  setWorkerBacklog,
+} from '../metrics.js'
+import {
+  isProviderCircuitOpen,
+  recordProviderQueryFailure,
+  recordProviderQuerySuccess,
+} from '../providers/circuitBreaker.js'
+import { config } from '../../../config/index.js'
 
 const TICK_MS = 2_000
 const PAID_NOT_CREDITED_MS = 30_000
+const PAID_NOT_CREDITED_ALERT_MS = 120_000
 const QUERY_STALE_MS = 15_000
 
 let timer: NodeJS.Timeout | null = null
@@ -67,6 +80,14 @@ export async function recoverPaidNotCredited(): Promise<number> {
     take: 20,
     select: { id: true, creditTask: { select: { id: true } } },
   })
+  const staleAlert = new Date(Date.now() - PAID_NOT_CREDITED_ALERT_MS)
+  const alertOrders = await prisma.rechargeOrder.findMany({
+    where: { status: 'paid', creditedAt: null, paidAt: { lte: staleAlert } },
+    select: { provider: true },
+  })
+  for (const order of alertOrders) {
+    recordPaidNotCredited(order.provider)
+  }
   for (const order of orders) {
     if (order.creditTask) {
       const claimed = await claimCreditTask(order.creditTask.id)
@@ -99,6 +120,7 @@ export async function recoverUnknownPayments(): Promise<number> {
     if (!attempt.providerPaymentId) continue
     const name = asProviderName(attempt.provider)
     if (!name) continue
+    if (isProviderCircuitOpen(name)) continue
     const order = attempt.paymentIntent.rechargeOrder
     if (['credited', 'refunded', 'cancelled', 'expired', 'failed'].includes(order.status)) continue
     try {
@@ -122,10 +144,13 @@ export async function recoverUnknownPayments(): Promise<number> {
           immutableStateVersion: queried.immutableStateVersion,
         },
       })
+      recordProviderQuerySuccess(name)
       if (queried.status === 'succeeded') {
         await applyConfirmedPayment(recorded.id)
       }
     } catch (error) {
+      recordProviderQueryFailure(name)
+      recordPaymentObservationMetric(name, 'provider_query', 'query_failed')
       logger.warn({
         event: 'payment.query_recovery_failed',
         paymentAttemptId: attempt.id,
@@ -164,6 +189,44 @@ export async function processDueRefunds(): Promise<number> {
   return refunds.length
 }
 
+async function refreshPaymentWorkerGauges() {
+  const now = Date.now()
+  const [dueEvents, dueCredits, dueRefunds, dueQueries] = await Promise.all([
+    prisma.paymentEvent.findMany({
+      where: { status: { in: ['received', 'processing', 'failed'] } },
+      select: { nextAttemptAt: true, createdAt: true },
+      take: 200,
+    }),
+    prisma.rechargeCreditTask.findMany({
+      where: { status: { in: ['pending', 'processing', 'failed'] } },
+      select: { nextAttemptAt: true, createdAt: true },
+      take: 200,
+    }),
+    prisma.rechargeRefund.findMany({
+      where: { status: { in: ['requested', 'points_held', 'processing'] } },
+      select: { createdAt: true, updatedAt: true },
+      take: 200,
+    }),
+    prisma.paymentAttempt.findMany({
+      where: { status: { in: ['unknown', 'processing', 'requires_action'] }, providerPaymentId: { not: null } },
+      select: { updatedAt: true },
+      take: 200,
+    }),
+  ])
+  const age = (dates: Date[]) => {
+    if (dates.length === 0) return 0
+    const oldest = dates.reduce((min, value) => (value < min ? value : min))
+    return Math.max(0, (now - oldest.getTime()) / 1000)
+  }
+  setWorkerBacklog('observation', dueEvents.length, age(dueEvents.map(item => item.nextAttemptAt ?? item.createdAt)))
+  setWorkerBacklog('credit', dueCredits.length, age(dueCredits.map(item => item.nextAttemptAt ?? item.createdAt)))
+  setWorkerBacklog('refund', dueRefunds.length, age(dueRefunds.map(item => item.updatedAt ?? item.createdAt)))
+  setWorkerBacklog('query', dueQueries.length, age(dueQueries.map(item => item.updatedAt)))
+  const simulatorListed = config.recharge.registeredProviders.includes('simulator')
+    || config.recharge.enabledProviders.includes('simulator')
+  setSimulatorConfigured(config.isProductionDeploy && simulatorListed)
+}
+
 export async function runPaymentWorkersOnce() {
   for (let i = 0; i < 20; i += 1) {
     const worked = await processOneObservation()
@@ -176,6 +239,7 @@ export async function runPaymentWorkersOnce() {
   await recoverPaidNotCredited()
   await recoverUnknownPayments()
   await processDueRefunds()
+  await refreshPaymentWorkerGauges()
 }
 
 async function tick() {

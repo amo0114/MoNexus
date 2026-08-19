@@ -33,6 +33,7 @@ import {
 import { serializeAmountMinor } from './money.js'
 import type { PaymentProviderName, RechargeCurrency } from './types.js'
 import { PAYMENT_PROVIDER_NAMES } from './types.js'
+import { recordPaymentRefund } from '../payment/metrics.js'
 
 const TX = { timeout: 15_000, maxWait: 5_000 } as const
 export const REFUND_BUSINESS_EVENT_KEY = (orderId: string) => `recharge:${orderId}:refund:v1`
@@ -201,6 +202,14 @@ export async function requestRechargeRefund(input: {
     }, TX)
 
     if (!created) throw conflict('退款创建失败')
+    const providerRow = await prisma.rechargeOrder.findUnique({
+      where: { id: input.orderId },
+      select: { provider: true },
+    })
+    recordPaymentRefund(
+      providerRow?.provider ?? 'unknown',
+      created.status === 'manual_review' ? 'review' : 'requested',
+    )
 
     await completeRechargeIdempotencyClaim(prisma, {
       userId: input.userId,
@@ -295,6 +304,7 @@ export async function submitProviderRefund(refundId: string) {
       requestIdempotencyKey: REFUND_BUSINESS_EVENT_KEY(refund.rechargeOrderId),
     })
   } catch (error) {
+    recordPaymentRefund(refund.rechargeOrder.provider, 'failed')
     await prisma.rechargeRefund.updateMany({
       where: { id: refund.id, status: 'processing' },
       data: { status: retryStatus },
@@ -469,6 +479,12 @@ export async function applyRefundObservation(observationId: string) {
       applied.outcome === 'reconcile_required' ? 'reconcile_required' : applied.outcome === 'ignored' ? 'ignored' : 'processed',
     )
     if (!committed) return { observationId, outcome: 'lease_lost' as const }
+    if (applied.outcome === 'processed') {
+      recordPaymentRefund(
+        observation.provider,
+        observation.eventType.includes('fail') ? 'failed' : 'succeeded',
+      )
+    }
     return { observationId, outcome: applied.outcome }
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {

@@ -7,6 +7,7 @@ import { paymentTestHooks, tripWriteHook } from './hooks.js'
 import { isPaymentDeadlock, newLeaseToken } from '../workers/lease.js'
 import { providerEnvironment } from '../../recharge/gates.js'
 import type { ReconciliationMismatchType } from '../../recharge/types.js'
+import { recordAmountMismatch, recordPaymentObservationMetric, recordReconciliationMismatch } from '../metrics.js'
 
 const TX = { timeout: 15_000, maxWait: 5_000 } as const
 const PAYABLE_ORDER = ['created', 'pending_payment', 'closure_pending'] as const
@@ -103,6 +104,10 @@ async function writeOpenReconItem(tx: Prisma.TransactionClient, input: {
     },
     update: {},
   })
+  recordReconciliationMismatch(input.provider, input.mismatchType)
+  if (input.mismatchType === 'amount_mismatch' || input.mismatchType === 'currency_mismatch') {
+    recordAmountMismatch(input.provider, input.currency ?? 'other')
+  }
 }
 
 /**
@@ -363,6 +368,7 @@ async function applyConfirmedPaymentOnce(observationId: string): Promise<ApplyCo
           observationId,
           localStatus: order.status,
         }, 'late provider success requires reconcile')
+        recordPaymentObservationMetric(observation.provider, observation.source, 'late_success')
         return { outcome: 'reconcile_required' as const, reason: 'late_success', rechargeOrderId: order.id }
       }
 
@@ -447,6 +453,15 @@ async function applyConfirmedPaymentOnce(observationId: string): Promise<ApplyCo
       return { observationId, outcome: 'lease_lost', rechargeOrderId: applied.rechargeOrderId }
     }
     tripWriteHook('after_mark_processed')
+    if (applied.outcome === 'retry') {
+      recordPaymentObservationMetric(existing.provider, existing.source, 'failed')
+    } else if (applied.outcome === 'ignored') {
+      recordPaymentObservationMetric(existing.provider, existing.source, 'ignored')
+    } else if (applied.outcome === 'reconcile_required' && (!('reason' in applied) || applied.reason !== 'late_success')) {
+      recordPaymentObservationMetric(existing.provider, existing.source, 'reconcile_required')
+    } else if (applied.outcome === 'processed' || applied.outcome === 'idempotent_paid') {
+      recordPaymentObservationMetric(existing.provider, existing.source, 'processed')
+    }
   }
 
   if (

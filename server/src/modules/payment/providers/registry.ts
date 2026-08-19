@@ -1,13 +1,23 @@
 import { config } from '../../../config/index.js'
 import { paymentProviderUnavailable } from '../../../lib/httpError.js'
+import { PAYMENT_PROVIDER_NAMES, type PaymentProviderName } from '../../recharge/types.js'
 import { shouldLoadHistoricalAdapter } from '../../recharge/config.js'
-import type { PaymentProviderName } from '../../recharge/types.js'
+import { alipayProvider } from './alipay/index.js'
+import { paypalProvider } from './paypal/index.js'
 import { simulatorProvider } from './simulator/index.js'
+import { stripeProvider } from './stripe/index.js'
 import type { PaymentProvider } from './types.js'
+import { wechatPayProvider } from './wechatPay/index.js'
 
-const adapters: Partial<Record<PaymentProviderName, PaymentProvider>> = {
+const adapters: Record<PaymentProviderName, PaymentProvider> = {
   simulator: simulatorProvider,
+  stripe: stripeProvider,
+  paypal: paypalProvider,
+  wechat_pay: wechatPayProvider,
+  alipay: alipayProvider,
 }
+
+export const MOUNTED_PAYMENT_PROVIDERS: readonly PaymentProviderName[] = PAYMENT_PROVIDER_NAMES
 
 export function getRegisteredProvider(name: PaymentProviderName): PaymentProvider | undefined {
   if (!shouldLoadHistoricalAdapter(name, config.recharge.registeredProviders, config.recharge.enabledProviders)) {
@@ -40,4 +50,8 @@ export function listEnabledProviders(): PaymentProvider[] {
 
 export function listRegisteredProviderNames(): PaymentProviderName[] {
   return [...config.recharge.registeredProviders]
+}
+
+export function listMountedAdapterNames(): PaymentProviderName[] {
+  return [...PAYMENT_PROVIDER_NAMES]
 }

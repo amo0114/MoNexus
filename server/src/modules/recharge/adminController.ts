@@ -47,7 +47,7 @@ export async function listEvents(req: Request, res: Response, next: NextFunction
 
 export async function retryEvent(req: Request, res: Response, next: NextFunction) {
   try {
-    res.json(await adminService.adminRetryEvent(String(req.params.id)))
+    res.json(await adminService.adminRetryEvent(String(req.params.id), req.user!.userId))
   } catch (err) {
     next(err)
   }
@@ -55,7 +55,7 @@ export async function retryEvent(req: Request, res: Response, next: NextFunction
 
 export async function reconcileOrder(req: Request, res: Response, next: NextFunction) {
   try {
-    res.json(await adminService.adminReconcileOrder(String(req.params.id)))
+    res.json(await adminService.adminReconcileOrder(String(req.params.id), req.user!.userId))
   } catch (err) {
     next(err)
   }
@@ -93,6 +93,14 @@ export async function createReconRun(req: Request, res: Response, next: NextFunc
       ...body,
       createdByUserId: req.user!.userId,
     }))
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function rerunRecon(req: Request, res: Response, next: NextFunction) {
+  try {
+    res.json(await adminService.adminRerunRecon(String(req.params.id), req.user!.userId))
   } catch (err) {
     next(err)
   }

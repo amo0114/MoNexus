@@ -22,6 +22,7 @@ import { startPartnerEntitlementCron, stopPartnerEntitlementCron } from './modul
 import { getNotificationRealtimeHub } from './modules/notifications/realtime/hub.js'
 import { getNotificationRealtimeLifecycle } from './modules/notifications/realtime/lifecycle.js'
 import { startPaymentWorkers, stopPaymentWorkers } from './modules/payment/workers/index.js'
+import { startPaymentPayloadRetentionCron, stopPaymentPayloadRetentionCron } from './modules/payment/payloadRetention.js'
 
 const server = app.listen(config.port, () => {
   logger.info(`MoNexus API running at http://localhost:${config.port}`)
@@ -41,6 +42,7 @@ const server = app.listen(config.port, () => {
   startEditorialLifecycleCron()
   startPartnerEntitlementCron()
   startPaymentWorkers()
+  startPaymentPayloadRetentionCron()
   if (config.notificationRealtime.enabled) {
     // Start the dedicated LISTEN listener once realtime is enabled.
     void getNotificationRealtimeLifecycle().start()
@@ -92,6 +94,7 @@ async function shutdown(signal: NodeJS.Signals) {
   stopEditorialLifecycleCron()
   stopPartnerEntitlementCron()
   stopPaymentWorkers()
+  stopPaymentPayloadRetentionCron()
 
   // 4. Drain SSE within the configured grace, then force-destroy leftovers.
   const drainPromise = (async () => {

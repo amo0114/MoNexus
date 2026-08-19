@@ -9,6 +9,7 @@ import {
 import { tripWriteHook } from '../payment/events/hooks.js'
 import { commitCreditTask } from '../payment/workers/lease.js'
 import { serializeAmountMinor } from './money.js'
+import { observeCreditLatency, recordRechargeCredit } from '../payment/metrics.js'
 
 const TX = { timeout: 15_000, maxWait: 5_000 } as const
 export const CREDIT_BUSINESS_EVENT_KEY = (orderId: string) => `recharge:${orderId}:credit:v1`
@@ -115,9 +116,12 @@ async function executeRechargeCreditOnce(input: {
         userId: number
         status: string
         totalPoints: bigint
+        currency: string
+        provider: string
+        paidAt: Date | null
         paymentIntentId: string | null
       }>>`
-        SELECT o."id", o."userId", o."status", o."totalPoints", i."id" AS "paymentIntentId"
+        SELECT o."id", o."userId", o."status", o."totalPoints", o."currency", o."provider", o."paidAt", i."id" AS "paymentIntentId"
         FROM "RechargeOrder" o
         LEFT JOIN "PaymentIntent" i ON i."rechargeOrderId" = o."id"
         WHERE o."id" = ${input.rechargeOrderId}::uuid
@@ -202,9 +206,11 @@ async function executeRechargeCreditOnce(input: {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
       const existing = await prisma.rechargeCredit.findUnique({
         where: { rechargeOrderId: input.rechargeOrderId },
-        select: { id: true },
+        include: { rechargeOrder: { select: { currency: true, provider: true, paidAt: true } } },
       })
       if (existing) {
+        recordRechargeCredit(existing.rechargeOrder.currency, 'duplicate_conflict')
+        observeCreditLatency(existing.rechargeOrder.provider, existing.rechargeOrder.paidAt)
         if (input.creditTaskId && input.leaseToken) {
           await commitCreditTask(input.creditTaskId, input.leaseToken, 'succeeded')
         }
@@ -221,6 +227,11 @@ async function executeRechargeCreditOnce(input: {
       throw error
     }
     await markCreditReconcileRequired(input.rechargeOrderId, input.creditTaskId, input.leaseToken, error)
+    const failed = await prisma.rechargeOrder.findUnique({
+      where: { id: input.rechargeOrderId },
+      select: { currency: true },
+    })
+    recordRechargeCredit(failed?.currency ?? 'other', 'reconcile_required')
     return { kind: 'reconcile_required', reason: error instanceof HttpError ? error.code : 'credit_failed' }
   }
 
@@ -239,6 +250,20 @@ async function executeRechargeCreditOnce(input: {
 
   if (result.kind === 'credited' && !result.alreadyExisted) {
     logger.info({ event: 'recharge.credited', rechargeOrderId: input.rechargeOrderId }, 'recharge credited')
+  }
+  const meta = await prisma.rechargeOrder.findUnique({
+    where: { id: input.rechargeOrderId },
+    select: { currency: true, provider: true, paidAt: true },
+  })
+  if (meta) {
+    if (result.kind === 'credited') {
+      recordRechargeCredit(meta.currency, result.alreadyExisted ? 'already_existed' : 'credited')
+      observeCreditLatency(meta.provider, meta.paidAt)
+    } else if (result.kind === 'skipped') {
+      recordRechargeCredit(meta.currency, 'skipped')
+    } else {
+      recordRechargeCredit(meta.currency, 'reconcile_required')
+    }
   }
   return result
 }

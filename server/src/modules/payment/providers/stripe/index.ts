@@ -327,7 +327,8 @@ export function createStripeProvider(options: CreateStripeProviderOptions = {}):
           metadata,
           payment_intent_data: { metadata },
         }, { idempotencyKey: input.requestIdempotencyKey })
-        if (!session.url) throw paymentProviderUnavailable()
+        const checkoutUrl = session.url
+        if (!checkoutUrl) throw paymentProviderUnavailable()
         let providerPaymentId = paymentIntentIdFromSession(session)
         if (!providerPaymentId) {
           session = await retrieveSessionExpanded(session.id)
@@ -342,7 +343,7 @@ export function createStripeProvider(options: CreateStripeProviderOptions = {}):
           providerOrderId: session.id,
           action: {
             type: 'redirect',
-            url: session.url,
+            url: checkoutUrl,
             expiresAt: checkoutExpiresAt(session),
           },
           requestIdempotencyKey: input.requestIdempotencyKey,

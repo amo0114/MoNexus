@@ -7,6 +7,7 @@ import {
 } from '../../points/checkedMutation.js'
 import { serializeAmountMinor } from '../../recharge/money.js'
 import type { PaymentRecoveryCaseStatus } from '../../recharge/types.js'
+import { recordPaymentDispute } from '../metrics.js'
 
 const TX = { timeout: 15_000, maxWait: 5_000 } as const
 const EXPLICIT_CLOSE: readonly PaymentRecoveryCaseStatus[] = ['recovered', 'written_off', 'restored']
@@ -71,6 +72,7 @@ export async function openPaymentDispute(input: {
         openedAt: new Date(),
       },
     })
+    recordPaymentDispute(input.provider, 'open')
 
     if (holdPoints > 0) {
       await tx.pointHold.create({
@@ -151,10 +153,12 @@ export async function resolveDisputeOutcome(input: {
           resolvedAt: new Date(),
         },
       })
-      return tx.paymentDispute.update({
+      const won = await tx.paymentDispute.update({
         where: { id: dispute.id },
         data: { status: 'won', closedAt: new Date() },
       })
+      recordPaymentDispute(dispute.provider, 'won')
+      return won
     }
 
     if (hold?.status === 'active') {
@@ -175,10 +179,12 @@ export async function resolveDisputeOutcome(input: {
         data: { status: 'released', releasedByUserId: input.actorUserId ?? null, releasedAt: new Date() },
       })
     }
-    return tx.paymentDispute.update({
+    const lost = await tx.paymentDispute.update({
       where: { id: dispute.id },
       data: { status: 'lost', closedAt: new Date() },
     })
+    recordPaymentDispute(dispute.provider, 'lost')
+    return lost
   }, TX)
 }
 

@@ -59,6 +59,11 @@ rechargeAdminRoutes.post(
   validate(adminCreateReconSchema),
   controller.createReconRun,
 )
+rechargeAdminRoutes.post(
+  '/payments/reconciliation-runs/:id/rerun',
+  validate({ params: adminUuidParamSchema }),
+  controller.rerunRecon,
+)
 rechargeAdminRoutes.get(
   '/payments/disputes',
   validate({ query: adminListDisputesQuerySchema }),

@@ -9,6 +9,7 @@ import { serializeAmountMinor } from '../../recharge/money.js'
 import type { PaymentProviderName, ReconciliationScopeType } from '../../recharge/types.js'
 import { PAYMENT_PROVIDER_NAMES } from '../../recharge/types.js'
 import { providerEnvironment } from '../../recharge/gates.js'
+import { recordAmountMismatch, recordReconciliationMismatch } from '../metrics.js'
 
 const TX = { timeout: 20_000, maxWait: 5_000 } as const
 
@@ -261,6 +262,15 @@ async function upsertItem(runId: string, item: {
       localAmountMinor: item.localAmountMinor,
     },
   })
+  const run = await prisma.reconciliationRun.findUnique({
+    where: { id: runId },
+    select: { provider: true },
+  })
+  const providerName = run?.provider ?? 'unknown'
+  recordReconciliationMismatch(providerName, item.mismatchType)
+  if (item.mismatchType === 'amount_mismatch' || item.mismatchType === 'currency_mismatch') {
+    recordAmountMismatch(providerName, item.currency ?? 'other')
+  }
 }
 
 export async function reconcileOrder(orderId: string) {

@@ -1,5 +1,11 @@
 import type { NextFunction, Request, Response } from 'express'
-import { badRequest } from '../../lib/httpError.js'
+import { badRequest, HttpError } from '../../lib/httpError.js'
+import {
+  orderResultFromErrorCode,
+  quoteResultFromErrorCode,
+  recordRechargeOrder,
+  recordRechargeQuote,
+} from '../payment/metrics.js'
 import { parseAmountMinorString } from './money.js'
 import { rechargeIdempotencyKeySchema } from './schema.js'
 import * as rechargeService from './service.js'
@@ -40,8 +46,11 @@ export async function createQuote(req: Request, res: Response, next: NextFunctio
       provider: body.provider,
       paymentMethod: body.paymentMethod,
     })
+    recordRechargeQuote(body.currency, 'created')
     res.status(201).json(quote)
   } catch (err) {
+    const currency = typeof req.body?.currency === 'string' ? req.body.currency : 'other'
+    recordRechargeQuote(currency, quoteResultFromErrorCode(err instanceof HttpError ? err.code : undefined))
     next(err)
   }
 }
@@ -50,8 +59,10 @@ export async function createOrder(req: Request, res: Response, next: NextFunctio
   try {
     const key = requireIdempotencyKey(req)
     const order = await rechargeService.createOrder(req.user!.userId, req.body.quoteId as string, key)
+    recordRechargeOrder(order.currency, order.provider, 'created')
     res.status(201).json(order)
   } catch (err) {
+    recordRechargeOrder('other', 'unknown', orderResultFromErrorCode(err instanceof HttpError ? err.code : undefined))
     next(err)
   }
 }
