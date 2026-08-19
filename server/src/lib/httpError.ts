@@ -100,6 +100,20 @@ export type ErrorCode =
   | 'POINT_BALANCE_HARD_CAP'
   | 'POINT_INSUFFICIENT'
   | 'POINT_BALANCE_CONFLICT'
+  // SPEC-RECHARGE-PAYMENT-V1.2 user API (7.1).
+  | 'RECHARGE_DISABLED'
+  | 'RECHARGE_CURRENCY_DISABLED'
+  | 'RECHARGE_AMOUNT_BELOW_MINIMUM'
+  | 'RECHARGE_AMOUNT_ABOVE_MAXIMUM'
+  | 'RECHARGE_AMOUNT_STEP_INVALID'
+  | 'RECHARGE_LIMIT_EXCEEDED'
+  | 'RECHARGE_QUOTE_EXPIRED'
+  | 'RECHARGE_QUOTE_CHANGED'
+  | 'PAYMENT_PROVIDER_UNAVAILABLE'
+  | 'PAYMENT_METHOD_UNAVAILABLE'
+  | 'PAYMENT_ALREADY_IN_PROGRESS'
+  | 'PAYMENT_STATE_UNKNOWN'
+  | 'PAYMENT_COMPLETION_NOT_SUPPORTED'
 
 export interface ErrorDetail {
   field: string
@@ -269,4 +283,60 @@ export function pointBalanceHardCap(message = '积分余额已达上限') {
 
 export function pointBalanceConflict(message = '积分账户正在变更，请重试') {
   return new HttpError(409, 'POINT_BALANCE_CONFLICT', message)
+}
+
+export function rechargeDisabled(message = '充值功能未开放') {
+  return new HttpError(404, 'RECHARGE_DISABLED', message)
+}
+
+export function rechargeUnavailable(message = '充值服务暂不可用') {
+  return new HttpError(503, 'RECHARGE_DISABLED', message)
+}
+
+export function rechargeCurrencyDisabled(message = '当前币种未开放充值') {
+  return new HttpError(409, 'RECHARGE_CURRENCY_DISABLED', message)
+}
+
+export function rechargeAmountBelowMinimum(message = '充值金额低于最低限额') {
+  return new HttpError(400, 'RECHARGE_AMOUNT_BELOW_MINIMUM', message)
+}
+
+export function rechargeAmountAboveMaximum(message = '充值金额超过最高限额') {
+  return new HttpError(400, 'RECHARGE_AMOUNT_ABOVE_MAXIMUM', message)
+}
+
+export function rechargeAmountStepInvalid(message = '充值金额不符合步进要求') {
+  return new HttpError(400, 'RECHARGE_AMOUNT_STEP_INVALID', message)
+}
+
+export function rechargeLimitExceeded(message = '已超过当日或当月充值限额') {
+  return new HttpError(409, 'RECHARGE_LIMIT_EXCEEDED', message)
+}
+
+export function rechargeQuoteExpired(message = '充值报价已过期，请重新获取') {
+  return new HttpError(409, 'RECHARGE_QUOTE_EXPIRED', message)
+}
+
+export function rechargeQuoteChanged(message = '充值报价已变化，请重新确认') {
+  return new HttpError(409, 'RECHARGE_QUOTE_CHANGED', message)
+}
+
+export function paymentProviderUnavailable(message = '支付渠道暂不可用') {
+  return new HttpError(503, 'PAYMENT_PROVIDER_UNAVAILABLE', message)
+}
+
+export function paymentMethodUnavailable(message = '当前支付方式不可用') {
+  return new HttpError(409, 'PAYMENT_METHOD_UNAVAILABLE', message)
+}
+
+export function paymentAlreadyInProgress(message = '该充值订单已有进行中的支付') {
+  return new HttpError(409, 'PAYMENT_ALREADY_IN_PROGRESS', message)
+}
+
+export function paymentStateUnknown(message = '支付状态未知，请稍后查询') {
+  return new HttpError(409, 'PAYMENT_STATE_UNKNOWN', message)
+}
+
+export function paymentCompletionNotSupported(message = '当前支付方式不支持服务端完成') {
+  return new HttpError(409, 'PAYMENT_COMPLETION_NOT_SUPPORTED', message)
 }
