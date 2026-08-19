@@ -24,7 +24,8 @@ describe('CI workflow guards', () => {
     const notificationE2e = topLevelJob(workflow, 'notification-realtime-e2e')
 
     expect(notificationE2e).toContain('timeout-minutes: 20')
-    expect(notificationE2e).toContain('npx playwright install-deps chromium')
+    expect(notificationE2e).toContain('npx playwright install chromium')
+    expect(notificationE2e).not.toContain('npx playwright install-deps chromium')
     expect(notificationE2e).toContain('bash scripts/verify-notification-realtime-e2e.sh')
   })
 })
