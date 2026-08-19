@@ -5,7 +5,7 @@ import { badRequest } from '../../../../lib/httpError.js'
 import { assertStructuredFormPost } from '../formPost.js'
 import type { FormPostAction } from '../types.js'
 import type { AlipayAdapterConfig } from './config.js'
-import { formPostHostsFor, gatewayHostOf } from './config.js'
+import { formPostHostsFor } from './config.js'
 
 const require = createRequire(import.meta.url)
 const alipaySdkRoot = dirname(require.resolve('alipay-sdk/package.json'))
@@ -16,7 +16,7 @@ const { AlipaySdk } = require(join(alipaySdkRoot, 'dist/commonjs/index.js')) as 
 
 export type AlipaySdkSurface = {
   pageExecute(method: string, httpMethod: 'GET' | 'POST', params: Record<string, unknown>): string
-  checkNotifySign(postData: Record<string, string>): boolean
+  checkNotifySign(postData: Record<string, string>, raw?: boolean): boolean
   exec(
     method: string,
     params?: Record<string, unknown>,
@@ -45,9 +45,10 @@ export function createOfficialAlipaySdk(config: AlipayAdapterConfig): AlipaySdkS
     pageExecute(method, httpMethod, params) {
       return sdk.pageExecute(method, httpMethod, params)
     },
-    checkNotifySign(postData) {
+    checkNotifySign(postData, raw = true) {
       try {
-        return sdk.checkNotifySign(postData)
+        // Bodies are already URLSearchParams-decoded; default raw avoids a second decodeURIComponent.
+        return sdk.checkNotifySign(postData, raw)
       } catch {
         return false
       }
@@ -89,12 +90,10 @@ export function structuredFormPostFromSignedUrl(
     fields[key] = value
   }
   const actionUrl = `${parsed.protocol}//${parsed.host}${parsed.pathname}`
-  const allowHosts = new Set(formPostHostsFor(config.mode))
-  allowHosts.add(gatewayHostOf(config.gatewayUrl))
   return {
     actionUrl,
     fields: assertStructuredFormPost({ actionUrl, method: 'POST', fields }, {
-      hosts: [...allowHosts],
+      hosts: formPostHostsFor(config.mode),
     }),
   }
 }

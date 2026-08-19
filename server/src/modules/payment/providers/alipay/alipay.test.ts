@@ -14,7 +14,11 @@ import {
   alipayAccountKey,
 } from './config.js'
 import { createOfficialAlipaySdk, type AlipaySdkSurface } from './gateway.js'
-import { createAlipayProvider } from './provider.js'
+import {
+  createAlipayProvider,
+  encodeAlipayRefundId,
+  toAlipayOutRequestNo,
+} from './provider.js'
 
 const APP_ID = '2021000000000001'
 const SELLER_ID = '2088000000000001'
@@ -244,6 +248,17 @@ describe('Alipay notify verify and replay', () => {
     expect(failed.payment).toBeNull()
   })
 
+  it('verifies a notify whose subject contains % without a second decode', async () => {
+    const provider = createAlipayProvider(liveConfig)
+    const { raw } = signedNotify({
+      notify_id: 'notify_percent_subject',
+      subject: '100% recharge',
+    })
+    const ok = await provider.verifyAndNormalizeWebhook({ headers: {}, rawBody: raw })
+    expect(ok.signatureVerified).toBe(true)
+    expect(ok.payment?.status).toBe('succeeded')
+  })
+
   it('replays the same notify_id through recordPaymentObservation without marking paid', async () => {
     const provider = createAlipayProvider(liveConfig)
     const { raw } = signedNotify({ notify_id: 'notify_replay_same' })
@@ -329,7 +344,10 @@ describe('Alipay query / refund / isolation', () => {
 
   it('does not treat a partial refund as a full refund', async () => {
     const outTradeNo = '77777777-7777-7777-7777-777777777777'
-    const outRequestNo = 'recharge:order:refund:v1'
+    const platformRefundKey = 'recharge:77777777-7777-7777-7777-777777777777:refund:v1'
+    const alipayOutRequestNo = toAlipayOutRequestNo(platformRefundKey)
+    expect(alipayOutRequestNo).not.toContain(':')
+    expect(alipayOutRequestNo).toMatch(/^[A-Za-z0-9_-]+$/)
     const provider = withExec(async (method, params) => {
       const biz = (params?.bizContent ?? {}) as Record<string, unknown>
       if (method === 'alipay.trade.query') {
@@ -345,20 +363,32 @@ describe('Alipay query / refund / isolation', () => {
       }
       if (method === 'alipay.trade.refund') {
         expect(biz.refund_amount).toBe('0.01')
-        expect(biz.out_request_no).toBe(outRequestNo)
+        expect(biz.out_trade_no).toBe(outTradeNo)
+        expect(biz.out_request_no).toBe(alipayOutRequestNo)
+        expect(String(biz.out_request_no)).not.toContain(':')
         return {
           code: '10000',
           fund_change: 'Y',
           out_trade_no: outTradeNo,
-          out_request_no: outRequestNo,
+          out_request_no: alipayOutRequestNo,
           refund_fee: '0.01',
           total_amount: '1.00',
         }
       }
       if (method === 'alipay.trade.fastpay.refund.query') {
+        if (!biz.out_trade_no && !biz.trade_no) {
+          return {
+            code: '40004',
+            sub_code: 'ACQ.INVALID_PARAMETER',
+            sub_msg: 'out_trade_no or trade_no is required',
+          }
+        }
+        expect(biz.out_trade_no).toBe(outTradeNo)
+        expect(biz.out_request_no).toBe(alipayOutRequestNo)
         return {
           code: '10000',
-          out_request_no: outRequestNo,
+          out_request_no: alipayOutRequestNo,
+          out_trade_no: outTradeNo,
           refund_amount: '0.01',
           total_amount: '1.00',
           refund_status: 'REFUND_SUCCESS',
@@ -372,18 +402,25 @@ describe('Alipay query / refund / isolation', () => {
       providerAccountKey: alipayAccountKey('live', APP_ID),
       amountMinor: 1n,
       currency: 'CNY',
-      requestIdempotencyKey: outRequestNo,
+      requestIdempotencyKey: platformRefundKey,
     })
     expect(refunded.status).toBe('succeeded')
     expect(refunded.amountMinor).toBe(1n)
+    expect(refunded.providerRefundId).toBe(encodeAlipayRefundId(outTradeNo, alipayOutRequestNo))
     expect(isFullRefundAmount('1.00', amountMinorToYuanString(refunded.amountMinor))).toBe(false)
 
     const refundQuery = await provider.queryRefund({
-      providerRefundId: outRequestNo,
+      providerRefundId: refunded.providerRefundId,
       providerAccountKey: alipayAccountKey('live', APP_ID),
     })
     expect(refundQuery.amountMinor).toBe(1n)
     expect(refundQuery.status).toBe('succeeded')
+
+    const missingTrade = await provider.queryRefund({
+      providerRefundId: alipayOutRequestNo,
+      providerAccountKey: alipayAccountKey('live', APP_ID),
+    })
+    expect(missingTrade.status).toBe('unknown')
 
     const trade = await provider.queryPayment({
       providerPaymentId: outTradeNo,
@@ -419,7 +456,7 @@ describe('Alipay query / refund / isolation', () => {
     })).toThrow(/sandbox/)
   })
 
-  it('closes unpaid trades and queries unknown close results', async () => {
+  it('closes an Alipay-acknowledged unpaid trade', async () => {
     const provider = withExec(async method => {
       if (method === 'alipay.trade.close') return { code: '10000', msg: 'Success' }
       throw new Error(`unexpected ${method}`)
@@ -430,5 +467,45 @@ describe('Alipay query / refund / isolation', () => {
       requestIdempotencyKey: 'recharge:order:close:v1',
     })
     expect(closed.status).toBe('cancelled')
+  })
+
+  it('keeps TRADE_NOT_EXIST close as unknown while the signed form is still payable', async () => {
+    const provider = withExec(async method => {
+      if (method === 'alipay.trade.close') {
+        return { code: '40004', sub_code: 'ACQ.TRADE_NOT_EXIST', sub_msg: '交易不存在' }
+      }
+      throw new Error(`unexpected ${method}`)
+    })
+    const closed = await provider.closePayment({
+      providerPaymentId: '88888888-8888-8888-8888-888888888888',
+      providerAccountKey: alipayAccountKey('live', APP_ID),
+      requestIdempotencyKey: 'recharge:order:close:v1',
+    })
+    expect(closed.status).toBe('unknown')
+  })
+
+  it('rejects a live config whose gateway is not openapi.alipay.com', () => {
+    expect(() => createAlipayProvider({
+      ...liveConfig,
+      gatewayUrl: 'https://evil.example/gateway.do',
+    })).toThrow(/openapi\.alipay\.com/)
+  })
+
+  it('does not treat a query app_id mismatch as succeeded', async () => {
+    const outTradeNo = '99999999-9999-9999-9999-999999999999'
+    const provider = withExec(async () => ({
+      code: '10000',
+      app_id: '2021999999999999',
+      out_trade_no: outTradeNo,
+      trade_no: '2026082022001400000000000009',
+      trade_status: 'TRADE_SUCCESS',
+      total_amount: '1.00',
+      seller_id: SELLER_ID,
+    }))
+    const queried = await provider.queryPayment({
+      providerPaymentId: outTradeNo,
+      providerAccountKey: alipayAccountKey('live', APP_ID),
+    })
+    expect(queried.status).toBe('unknown')
   })
 })

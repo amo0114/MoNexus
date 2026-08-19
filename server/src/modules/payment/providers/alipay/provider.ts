@@ -91,11 +91,30 @@ function apiMethodFor(paymentMethod: AlipayPaymentMethod): string {
   return paymentMethod === 'wap' ? WAP_API : PAGE_API
 }
 
-function refundIdempotency(requestIdempotencyKey: string): string {
-  if (requestIdempotencyKey.length > 0 && requestIdempotencyKey.length <= 64) {
-    return requestIdempotencyKey
+const ALIPAY_OUT_NO_CHARSET = /^[A-Za-z0-9_-]+$/
+const REFUND_ID_SEP = '/'
+
+/** Alipay out_trade_no / out_request_no: letters, digits, underscore, hyphen only. */
+export function toAlipayOutRequestNo(requestIdempotencyKey: string): string {
+  const mapped = requestIdempotencyKey.replace(/[^A-Za-z0-9_-]/g, '_')
+  if (mapped.length > 0 && mapped.length <= 64 && ALIPAY_OUT_NO_CHARSET.test(mapped)) {
+    return mapped
   }
   return createHash('sha256').update(requestIdempotencyKey).digest('hex').slice(0, 64)
+}
+
+/** Composite so queryRefund can send both out_trade_no and out_request_no. */
+export function encodeAlipayRefundId(outTradeNo: string, outRequestNo: string): string {
+  return `${outTradeNo}${REFUND_ID_SEP}${outRequestNo}`
+}
+
+export function parseAlipayRefundId(providerRefundId: string): { outTradeNo: string; outRequestNo: string } | null {
+  const sep = providerRefundId.indexOf(REFUND_ID_SEP)
+  if (sep <= 0 || sep === providerRefundId.length - 1) return null
+  const outTradeNo = providerRefundId.slice(0, sep)
+  const outRequestNo = providerRefundId.slice(sep + 1)
+  if (!ALIPAY_OUT_NO_CHARSET.test(outTradeNo) || !ALIPAY_OUT_NO_CHARSET.test(outRequestNo)) return null
+  return { outTradeNo, outRequestNo }
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -280,7 +299,7 @@ export function createAlipayProvider(
         }
       }
 
-      const match = matchAlipayIdentity(config, { ...result, app_id: config.appId }, 'query')
+      const match = matchAlipayIdentity(config, result, 'query')
       if (!match) {
         return {
           status: 'unknown',
@@ -344,8 +363,9 @@ export function createAlipayProvider(
         }
       }
       if (sub === 'ACQ.TRADE_NOT_EXIST') {
+        // Signed form is still payable until timeout; not-found is not a terminal close.
         return {
-          status: 'cancelled',
+          status: 'unknown',
           providerPaymentId: input.providerPaymentId,
           immutableStateVersion: `missing:${input.providerPaymentId}`,
         }
@@ -382,7 +402,7 @@ export function createAlipayProvider(
     async createRefund(input: CreateProviderRefundInput): Promise<NormalizedRefund> {
       assertAccount(input.providerAccountKey)
       if (input.currency !== 'CNY') throw paymentMethodUnavailable()
-      const outRequestNo = refundIdempotency(input.requestIdempotencyKey)
+      const outRequestNo = toAlipayOutRequestNo(input.requestIdempotencyKey)
       const refundAmount = amountMinorToYuanString(input.amountMinor)
       const result = await execApi(sdk, REFUND_API, {
         out_trade_no: input.providerPaymentId,
@@ -404,9 +424,10 @@ export function createAlipayProvider(
         amountMinor = input.amountMinor
       }
       const status = refundStatusFrom(result)
+      const providerRefundId = encodeAlipayRefundId(input.providerPaymentId, outRequestNo)
       return {
         status,
-        providerRefundId: outRequestNo,
+        providerRefundId,
         amountMinor,
         currency: 'CNY',
         immutableStateVersion: `${status}:${outRequestNo}:${amountMinorToYuanString(amountMinor)}`,
@@ -415,8 +436,19 @@ export function createAlipayProvider(
 
     async queryRefund(input: QueryProviderRefundInput): Promise<NormalizedRefund> {
       assertAccount(input.providerAccountKey)
+      const parsed = parseAlipayRefundId(input.providerRefundId)
+      if (!parsed) {
+        return {
+          status: 'unknown',
+          providerRefundId: input.providerRefundId,
+          amountMinor: 0n,
+          currency: 'CNY',
+          immutableStateVersion: `refund:${input.providerRefundId}:missing_trade_id`,
+        }
+      }
       const result = await execApi(sdk, REFUND_QUERY_API, {
-        out_request_no: input.providerRefundId,
+        out_trade_no: parsed.outTradeNo,
+        out_request_no: parsed.outRequestNo,
       })
       const refundAmount = pickString(result, 'refund_amount', 'refundAmount', 'refund_fee', 'refundFee')
       if (!refundAmount) {

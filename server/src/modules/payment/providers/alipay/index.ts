@@ -25,7 +25,13 @@ export {
 } from './config.js'
 export { createOfficialAlipaySdk, structuredFormPostFromSignedUrl, type AlipaySdkSurface } from './gateway.js'
 export { notifyDedupeKey, parseFormUrlEncoded, verifyAndNormalizeNotify } from './notify.js'
-export { createAlipayProvider, createDisabledAlipayProvider } from './provider.js'
+export {
+  createAlipayProvider,
+  createDisabledAlipayProvider,
+  encodeAlipayRefundId,
+  parseAlipayRefundId,
+  toAlipayOutRequestNo,
+} from './provider.js'
 
 export function createAlipayProviderFromEnv(): PaymentProvider {
   const config = loadAlipayConfigFromEnv()

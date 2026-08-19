@@ -133,7 +133,7 @@ export function verifyAndNormalizeNotify(
   const fields = parseFormUrlEncoded(rawBody)
   const notifyId = fields.notify_id
   const accountKey = alipayAccountKey(config.mode, config.appId)
-  const verified = sdk.checkNotifySign(fields)
+  const verified = sdk.checkNotifySign(fields, true)
   if (!verified) {
     securityIgnore('signature_failed')
     return {

@@ -97,6 +97,9 @@ export function assertAlipayEnvironmentIsolation(
     if (isAlipaySandboxHost(host)) {
       throw paymentProviderUnavailable('live Alipay must not use a sandbox endpoint')
     }
+    if (!isAlipayLiveHost(host)) {
+      throw paymentProviderUnavailable('live Alipay must use the official openapi.alipay.com gateway')
+    }
     if (config.certs && looksLikeSandboxCertMaterial(config.certs)) {
       throw paymentProviderUnavailable('live Alipay must not use sandbox certificates')
     }
@@ -109,8 +112,8 @@ export function assertAlipayEnvironmentIsolation(
     if (config.mode === 'live') {
       throw paymentProviderUnavailable('live Alipay config cannot be used in sandbox')
     }
-    if (isAlipayLiveHost(host)) {
-      throw paymentProviderUnavailable('sandbox Alipay must not use a live endpoint')
+    if (isAlipayLiveHost(host) || !isAlipaySandboxHost(host)) {
+      throw paymentProviderUnavailable('sandbox Alipay must use an official sandbox gateway')
     }
     if (config.certs && config.certs.environment === 'live') {
       throw paymentProviderUnavailable('sandbox Alipay must not use live certificates')
