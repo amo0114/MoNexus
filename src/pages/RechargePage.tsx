@@ -1,15 +1,32 @@
+import { useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import RechargeCheckout from './recharge/RechargeCheckout'
 import RechargeHistory from './recharge/RechargeHistory'
 import RechargeResult from './recharge/RechargeResult'
+import { isRechargeOrderId, peekPendingOrder } from './recharge/session'
 
-const ORDER_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+function hasApprovalReturnParams(params: URLSearchParams): boolean {
+  return params.has('token')
+    || params.has('PayerID')
+    || params.has('paymentId')
+    || params.has('redirect_status')
+    || params.has('success')
+}
 
 export default function RechargePage() {
   const [params] = useSearchParams()
-  const orderParam = params.get('order')
-  const orderId = orderParam && ORDER_ID.test(orderParam) ? orderParam : null
+  const rawOrder = params.get('order')
+  const orderParam = isRechargeOrderId(rawOrder) ? rawOrder : null
   const history = params.get('history') === '1'
+  const [sessionOrderId] = useState(() => {
+    const pending = peekPendingOrder()
+    if (!isRechargeOrderId(pending)) return null
+    if (orderParam && pending !== orderParam) return null
+    if (!orderParam && history) return null
+    return pending
+  })
+  const orderId = orderParam ?? sessionOrderId
+  const resumePayment = Boolean(sessionOrderId && orderId === sessionOrderId) || hasApprovalReturnParams(params)
 
   return (
     <div className="fade-in max-w-3xl mx-auto space-y-5 pt-2" data-testid="recharge-page">
@@ -28,7 +45,13 @@ export default function RechargePage() {
           </Link>
         )}
       </div>
-      {orderId ? <RechargeResult orderId={orderId} /> : history ? <RechargeHistory /> : <RechargeCheckout />}
+      {orderId ? (
+        <RechargeResult orderId={orderId} resumePayment={resumePayment} />
+      ) : history ? (
+        <RechargeHistory />
+      ) : (
+        <RechargeCheckout />
+      )}
     </div>
   )
 }

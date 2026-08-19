@@ -37,4 +37,17 @@ describe('payment actions', () => {
     expect(() => assertSafeHttpUrl('javascript:alert(1)')).toThrow(UnsafePaymentUrlError)
     expect(() => assertSafeHttpUrl('data:text/html,<form></form>')).toThrow(UnsafePaymentUrlError)
   })
+
+  it('allows only HTTPS redirect and form_post action URLs', () => {
+    expect(() => assertSafeHttpUrl('http://pay.example.com/checkout')).toThrow(UnsafePaymentUrlError)
+    expect(() =>
+      buildFormPostForm({
+        type: 'form_post',
+        actionUrl: 'http://openapi.alipay.com/gateway.do',
+        method: 'POST',
+        fields: { out_trade_no: 'ord-1' },
+      }),
+    ).toThrow(UnsafePaymentUrlError)
+    expect(assertSafeHttpUrl('https://www.paypal.com/checkoutnow')).toContain('https://')
+  })
 })

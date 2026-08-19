@@ -45,7 +45,13 @@ export class UnsafePaymentUrlError extends Error {
   }
 }
 
-/** Only http(s) URLs may leave the app; javascript:/data: would execute attacker content. */
+/** Match server form_post field bounds (providers/formPost.ts). */
+export const FORM_POST_MAX_FIELDS = 32
+export const FORM_POST_MAX_NAME_LENGTH = 64
+export const FORM_POST_MAX_VALUE_LENGTH = 1024
+export const FORM_POST_FIELD_NAME = /^[A-Za-z0-9_.-]{1,64}$/
+
+/** Redirect/form action URLs must be HTTPS; javascript:/data:/http: are not allowed. */
 export function assertSafeHttpUrl(url: string): string {
   let parsed: URL
   try {
@@ -53,7 +59,7 @@ export function assertSafeHttpUrl(url: string): string {
   } catch {
     throw new UnsafePaymentUrlError()
   }
-  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+  if (parsed.protocol !== 'https:') {
     throw new UnsafePaymentUrlError()
   }
   return parsed.toString()
@@ -63,16 +69,29 @@ export function buildFormPostForm(action: FormPostAction): HTMLFormElement {
   if (action.method !== 'POST') {
     throw new UnsafePaymentUrlError('仅支持 POST 表单提交')
   }
+  const fields = action.fields ?? {}
+  const keys = Object.keys(fields)
+  if (keys.length > FORM_POST_MAX_FIELDS) {
+    throw new UnsafePaymentUrlError('支付表单字段过多')
+  }
   const form = document.createElement('form')
   form.method = 'POST'
   form.action = assertSafeHttpUrl(action.actionUrl)
   form.acceptCharset = 'UTF-8'
   form.style.display = 'none'
-  for (const [name, raw] of Object.entries(action.fields ?? {})) {
+  for (const name of keys) {
+    if (name.length > FORM_POST_MAX_NAME_LENGTH || !FORM_POST_FIELD_NAME.test(name)) {
+      throw new UnsafePaymentUrlError('支付表单字段名不合法')
+    }
+    const raw = fields[name]
+    const value = typeof raw === 'string' ? raw : String(raw)
+    if (value.length > FORM_POST_MAX_VALUE_LENGTH) {
+      throw new UnsafePaymentUrlError('支付表单字段过长')
+    }
     const input = document.createElement('input')
     input.type = 'hidden'
     input.name = name
-    input.value = typeof raw === 'string' ? raw : String(raw)
+    input.value = value
     form.appendChild(input)
   }
   return form
@@ -90,8 +109,7 @@ export function goToRedirect(url: string): void {
 
 export function isHttpsImageUrl(url: string): boolean {
   try {
-    const parsed = new URL(url)
-    return parsed.protocol === 'https:' || parsed.protocol === 'http:'
+    return new URL(url).protocol === 'https:'
   } catch {
     return false
   }

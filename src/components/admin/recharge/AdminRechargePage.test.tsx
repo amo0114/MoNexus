@@ -48,6 +48,7 @@ describe('AdminRechargePage', () => {
     expect(await screen.findByTestId('admin-recharge-refunds')).toBeInTheDocument()
     await waitFor(() => expect(listAdminRechargeOrders).toHaveBeenCalledWith(expect.objectContaining({ status: 'refund_pending' })))
     await waitFor(() => expect(listAdminRechargeOrders).toHaveBeenCalledWith(expect.objectContaining({ status: 'refunded' })))
+    await waitFor(() => expect(listAdminRechargeOrders).toHaveBeenCalledWith(expect.objectContaining({ status: 'credited' })))
 
     fireEvent.click(screen.getByRole('tab', { name: '争议' }))
     expect(await screen.findByTestId('admin-payment-disputes')).toBeInTheDocument()
@@ -56,5 +57,37 @@ describe('AdminRechargePage', () => {
     expect(await screen.findByTestId('admin-reconciliation')).toBeInTheDocument()
     expect(screen.queryByText('webhook')).not.toBeInTheDocument()
     expect(screen.queryByText(/secret/i)).not.toBeInTheDocument()
+  })
+
+  it('lists post-credit refunds with points_held on credited orders', async () => {
+    const creditedHeld = {
+      orderId: '22222222-2222-4222-8222-222222222222',
+      userId: 9,
+      status: 'credited',
+      currency: 'CNY',
+      amountMinor: '1000',
+      totalPoints: '1000',
+      provider: 'simulator',
+      paymentMethod: 'card',
+      paidAt: '2026-08-20T00:00:00.000Z',
+      creditedAt: '2026-08-20T00:00:01.000Z',
+      cancelledAt: null,
+      createdAt: '2026-08-20T00:00:00.000Z',
+      updatedAt: '2026-08-20T00:00:02.000Z',
+      creditId: 'credit-1',
+      refundId: 'refund-1',
+      refundStatus: 'points_held',
+    }
+    listAdminRechargeOrders.mockImplementation(async (query?: { status?: string }) => {
+      if (query?.status === 'credited') {
+        return { page: 1, pageSize: 100, total: 1, items: [creditedHeld] }
+      }
+      return { page: 1, pageSize: 100, total: 0, items: [] }
+    })
+    render(<AdminRechargePage />)
+    fireEvent.click(await screen.findByRole('tab', { name: '退款' }))
+    expect(await screen.findByTestId(`admin-refund-row-${creditedHeld.orderId}`)).toBeInTheDocument()
+    expect(screen.getByText('积分已冻结')).toBeInTheDocument()
+    expect(screen.getByText('已到账')).toBeInTheDocument()
   })
 })

@@ -1,6 +1,12 @@
 const ORDER_KEY = 'monexus:recharge:pendingOrderId'
 const COMPLETE_PREFIX = 'monexus:recharge:completeKey:'
 
+export const RECHARGE_ORDER_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+export function isRechargeOrderId(value: string | null | undefined): value is string {
+  return typeof value === 'string' && RECHARGE_ORDER_ID.test(value)
+}
+
 export function rememberPendingOrder(orderId: string): void {
   sessionStorage.setItem(ORDER_KEY, orderId)
 }

@@ -301,6 +301,32 @@ describe('RechargePage', () => {
     expect(screen.queryByText('已到账')).not.toBeInTheDocument()
   })
 
+  it('retries complete after a transient failure with the same Idempotency-Key', async () => {
+    getRechargeOrder.mockResolvedValue(order('pending_payment'))
+    completeRechargeOrder
+      .mockRejectedValueOnce(apiError('PAYMENT_STATE_UNKNOWN', 'temporarily unknown', 409))
+      .mockResolvedValueOnce(order('pending_payment'))
+    renderAt(`/recharge?order=${ORDER_ID}&success=1`)
+    expect(await screen.findByTestId('recharge-result-status')).toHaveTextContent('确认中')
+    await waitFor(() => expect(completeRechargeOrder).toHaveBeenCalledTimes(1))
+    const firstKey = completeRechargeOrder.mock.calls[0][1]
+    await waitFor(() => expect(completeRechargeOrder).toHaveBeenCalledTimes(2), { timeout: 4000 })
+    expect(completeRechargeOrder.mock.calls[1][0]).toBe(ORDER_ID)
+    expect(completeRechargeOrder.mock.calls[1][1]).toBe(firstKey)
+    expect(screen.queryByText('已到账')).not.toBeInTheDocument()
+  })
+
+  it('resumes complete from a stored pending order when the return URL omits order', async () => {
+    sessionStorage.setItem('monexus:recharge:pendingOrderId', ORDER_ID)
+    getRechargeOrder.mockResolvedValue(order('pending_payment'))
+    completeRechargeOrder.mockResolvedValue(order('pending_payment'))
+    renderAt('/recharge?token=EC-1&PayerID=PAYER123')
+    expect(await screen.findByTestId('recharge-result')).toBeInTheDocument()
+    await waitFor(() => expect(completeRechargeOrder).toHaveBeenCalledWith(ORDER_ID, expect.any(String)))
+    expect(screen.getByTestId('recharge-result-status')).toHaveTextContent('确认中')
+    expect(screen.queryByTestId('recharge-checkout')).not.toBeInTheDocument()
+  })
+
   it('submits Alipay form_post from structured actionUrl/method/fields', async () => {
     const user = userEvent.setup()
     createRechargeOrder.mockResolvedValue(order('pending_payment', {

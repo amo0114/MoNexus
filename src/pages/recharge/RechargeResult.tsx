@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { QRCodeSVG } from 'qrcode.react'
 import { Loader2, Wallet } from 'lucide-react'
 import { completeRechargeOrder, getRechargeOrder, type RechargeOrder } from '../../api/recharge'
@@ -16,25 +16,17 @@ import {
   providerLabel,
 } from './status'
 import { isHttpsImageUrl } from './paymentActions'
-import { completeIdempotencyKey, peekPendingOrder } from './session'
+import { completeIdempotencyKey, peekPendingOrder, takePendingOrder } from './session'
 
-function isProviderReturn(params: URLSearchParams, orderId: string): boolean {
-  return peekPendingOrder() === orderId
-    || params.has('token')
-    || params.has('PayerID')
-    || params.has('paymentId')
-    || params.has('redirect_status')
-    || params.has('success')
-}
-
-function displayStatus(orderStatus: string, providerReturn: boolean): string {
-  if (providerReturn && (orderStatus === 'created' || orderStatus === 'pending_payment')) {
+function displayStatus(orderStatus: string, resumePayment: boolean): string {
+  if (resumePayment && (orderStatus === 'created' || orderStatus === 'pending_payment')) {
     return 'paid'
   }
   return orderStatus
 }
 
 const POLL_MS = 2000
+const COMPLETABLE = new Set(['pending_payment', 'paid', 'closure_pending'])
 
 function StatusPill({ status }: { status: string }) {
   const tone = status === 'credited'
@@ -51,13 +43,18 @@ function StatusPill({ status }: { status: string }) {
   )
 }
 
-export default function RechargeResult({ orderId }: { orderId: string }) {
+export default function RechargeResult({
+  orderId,
+  resumePayment = false,
+}: {
+  orderId: string
+  resumePayment?: boolean
+}) {
   const navigate = useNavigate()
-  const [params] = useSearchParams()
-  const providerReturn = isProviderReturn(params, orderId)
   const [order, setOrder] = useState<RechargeOrder | null>(null)
   const [error, setError] = useState('')
-  const completeTried = useRef(false)
+  const completeSucceeded = useRef(false)
+  const completeInFlight = useRef(false)
   const creditedRefreshed = useRef(false)
   const statusRef = useRef<string | null>(null)
 
@@ -76,18 +73,25 @@ export default function RechargeResult({ orderId }: { orderId: string }) {
       if (statusRef.current && isTerminalOrderStatus(statusRef.current)) return
       try {
         let next = await getRechargeOrder(orderId)
+        if (peekPendingOrder() === orderId) takePendingOrder()
         if (
-          providerReturn
-          && !completeTried.current
-          && (next.status === 'pending_payment' || next.status === 'paid' || next.status === 'closure_pending')
+          resumePayment
+          && !completeSucceeded.current
+          && !completeInFlight.current
+          && COMPLETABLE.has(next.status)
         ) {
-          completeTried.current = true
+          completeInFlight.current = true
           try {
             next = await completeRechargeOrder(orderId, completeIdempotencyKey(orderId))
+            completeSucceeded.current = true
           } catch (err) {
-            if (getApiErrorCode(err) !== 'PAYMENT_COMPLETION_NOT_SUPPORTED') {
-              // Keep polling the local order; browser return params are not evidence.
+            if (getApiErrorCode(err) === 'PAYMENT_COMPLETION_NOT_SUPPORTED') {
+              completeSucceeded.current = true
             }
+            // Transient failures leave completeSucceeded false so the next poll retries
+            // with the same Idempotency-Key. URL params are still not payment evidence.
+          } finally {
+            completeInFlight.current = false
           }
         }
         if (cancelled) return
@@ -112,7 +116,7 @@ export default function RechargeResult({ orderId }: { orderId: string }) {
       cancelled = true
       window.clearInterval(timer)
     }
-  }, [orderId, providerReturn])
+  }, [orderId, resumePayment])
 
   if (error && !order) {
     return (
@@ -131,8 +135,8 @@ export default function RechargeResult({ orderId }: { orderId: string }) {
   }
 
   const action = order.action
-  const shownStatus = displayStatus(order.status, providerReturn)
-  const waiting = !providerReturn && (order.status === 'created' || order.status === 'pending_payment')
+  const shownStatus = displayStatus(order.status, resumePayment)
+  const waiting = !resumePayment && (order.status === 'created' || order.status === 'pending_payment')
   const confirming = isConfirmingOrderStatus(shownStatus)
 
   return (
