@@ -116,11 +116,11 @@ function expectedMatches(input: {
   if (!orderId) return false
   if (input.orderId && input.orderId !== orderId) return false
   const expectedAmount = input.metadata?.[STRIPE_META.amountMinor]
-  if (expectedAmount && expectedAmount !== serializeAmountMinor(input.amountMinor)) return false
+  if (!expectedAmount || expectedAmount !== serializeAmountMinor(input.amountMinor)) return false
   const expectedCurrency = input.metadata?.[STRIPE_META.currency]
-  if (expectedCurrency && expectedCurrency.toUpperCase() !== input.currency) return false
+  if (!expectedCurrency || expectedCurrency.toUpperCase() !== input.currency) return false
   const expectedAccount = input.metadata?.[STRIPE_META.accountKey]
-  if (expectedAccount && expectedAccount !== input.providerAccountKey) return false
+  if (!expectedAccount || expectedAccount !== input.providerAccountKey) return false
   return true
 }
 

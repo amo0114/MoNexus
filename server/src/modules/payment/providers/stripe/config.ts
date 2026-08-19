@@ -39,6 +39,7 @@ export type StripeAdapterClient = {
         options?: StripeRequestOptions,
       ): Promise<Stripe.Checkout.Session>
       retrieve(id: string, params?: Stripe.Checkout.SessionRetrieveParams): Promise<Stripe.Checkout.Session>
+      list(params?: Stripe.Checkout.SessionListParams): Promise<{ data: Stripe.Checkout.Session[] }>
       expire(
         id: string,
         params?: Stripe.Checkout.SessionExpireParams,

@@ -60,8 +60,13 @@ function createInput(overrides: Record<string, unknown> = {}) {
 class FakeStripe implements StripeAdapterClient {
   lastIdempotencyKey: string | undefined
   createCalls = 0
+  expireCalls = 0
+  cancelCalls = 0
+  withholdPaymentIntent = false
   sessions = new Map<string, Stripe.Checkout.Session>()
   intents = new Map<string, Stripe.PaymentIntent>()
+  sessionToIntent = new Map<string, string>()
+  checkoutOwned = new Set<string>()
   refundRows = new Map<string, Stripe.Refund>()
   sessionsByIdempotency = new Map<string, Stripe.Checkout.Session>()
   refundsByIdempotency = new Map<string, Stripe.Refund>()
@@ -80,7 +85,7 @@ class FakeStripe implements StripeAdapterClient {
           id,
           object: 'checkout.session',
           url: `https://checkout.stripe.com/c/pay/${id}`,
-          payment_intent: pi,
+          payment_intent: null,
           payment_status: 'unpaid',
           status: 'open',
           amount_total: params.line_items?.[0]?.price_data?.unit_amount ?? 100,
@@ -104,10 +109,12 @@ class FakeStripe implements StripeAdapterClient {
         } as Stripe.PaymentIntent
         this.sessions.set(id, session)
         this.intents.set(pi, intent)
+        this.sessionToIntent.set(id, pi)
+        this.checkoutOwned.add(pi)
         if (options?.idempotencyKey) this.sessionsByIdempotency.set(options.idempotencyKey, session)
         return session
       },
-      retrieve: async (id: string) => {
+      retrieve: async (id: string, params?: Stripe.Checkout.SessionRetrieveParams) => {
         const row = this.sessions.get(id)
         if (!row) {
           throw new Stripe.errors.StripeInvalidRequestError({
@@ -116,10 +123,29 @@ class FakeStripe implements StripeAdapterClient {
             code: 'resource_missing',
           })
         }
-        const intent = typeof row.payment_intent === 'string' ? this.intents.get(row.payment_intent) : null
-        return { ...row, payment_intent: intent ?? row.payment_intent } as Stripe.Checkout.Session
+        if (this.withholdPaymentIntent) return { ...row, payment_intent: null } as Stripe.Checkout.Session
+        const piId = this.sessionToIntent.get(id)
+        const intent = piId ? this.intents.get(piId) : undefined
+        const expand = params?.expand?.includes('payment_intent')
+        return {
+          ...row,
+          payment_intent: expand ? intent ?? null : piId ?? null,
+        } as Stripe.Checkout.Session
+      },
+      list: async (params?: Stripe.Checkout.SessionListParams) => {
+        if (params?.payment_intent) {
+          for (const [sessionId, piId] of this.sessionToIntent) {
+            if (piId === params.payment_intent) {
+              const session = this.sessions.get(sessionId)
+              return { data: session ? [session] : [] }
+            }
+          }
+          return { data: [] }
+        }
+        return { data: [...this.sessions.values()] }
       },
       expire: async (id: string) => {
+        this.expireCalls += 1
         const row = this.sessions.get(id)
         if (!row) {
           throw new Stripe.errors.StripeInvalidRequestError({
@@ -130,6 +156,11 @@ class FakeStripe implements StripeAdapterClient {
         }
         const expired = { ...row, status: 'expired' } as Stripe.Checkout.Session
         this.sessions.set(id, expired)
+        const piId = this.sessionToIntent.get(id)
+        if (piId) {
+          const intent = this.intents.get(piId)
+          if (intent) this.intents.set(piId, { ...intent, status: 'canceled' })
+        }
         return expired
       },
     },
@@ -148,12 +179,19 @@ class FakeStripe implements StripeAdapterClient {
       return row
     },
     cancel: async (id: string) => {
+      this.cancelCalls += 1
       const row = this.intents.get(id)
       if (!row) {
         throw new Stripe.errors.StripeInvalidRequestError({
           message: 'missing',
           type: 'invalid_request_error',
           code: 'resource_missing',
+        })
+      }
+      if (this.checkoutOwned.has(id)) {
+        throw new Stripe.errors.StripeInvalidRequestError({
+          message: 'cannot perform this action on PaymentIntents created by Checkout',
+          type: 'invalid_request_error',
         })
       }
       const canceled = { ...row, status: 'canceled' } as Stripe.PaymentIntent
@@ -309,29 +347,53 @@ describe('Stripe Checkout create, query, close, refund', () => {
     expect(fake.sessionsByIdempotency.get('recharge:order:attempt:v1')?.id).toBe(first.providerOrderId)
   })
 
-  it('queries, closes unpaid sessions, and refunds with the same idempotency key', async () => {
+  it('retrieves a deferred payment_intent after create and fails closed if it is still missing', async () => {
+    const { provider, fake } = providerWith()
+    const created = await provider.createPayment(createInput({ requestIdempotencyKey: 'recharge:order:attempt:deferred' }))
+    expect(created.providerPaymentId).toMatch(/^pi_/)
+    expect(created.providerOrderId).toMatch(/^cs_/)
+    expect(fake.sessions.get(created.providerOrderId!)?.payment_intent).toBeNull()
+
+    fake.withholdPaymentIntent = true
+    await expect(provider.createPayment(createInput({ requestIdempotencyKey: 'recharge:order:attempt:missing-pi' })))
+      .rejects.toThrow(/payment intent/)
+  })
+
+  it('expires the Checkout Session when closing a Checkout-owned PaymentIntent', async () => {
     const { provider, fake } = providerWith()
     const created = await provider.createPayment(createInput())
     const queried = await provider.queryPayment({
       providerPaymentId: created.providerPaymentId,
       providerAccountKey: stripeAccountKey('test'),
+      providerOrderId: created.providerOrderId,
     })
     expect(queried.status).toBe('requires_action')
+    expect(queried.providerPaymentId).toBe('pi_test_1')
+    expect(queried.providerOrderId).toBe('cs_test_1')
 
     const closed = await provider.closePayment({
-      providerPaymentId: created.providerOrderId!,
-      providerAccountKey: stripeAccountKey('test'),
-      requestIdempotencyKey: 'recharge:order:close:v1',
-    })
-    expect(closed.status).toBe('cancelled')
-
-    const canceled = await provider.closePayment({
       providerPaymentId: created.providerPaymentId,
       providerAccountKey: stripeAccountKey('test'),
       requestIdempotencyKey: 'recharge:order:close:v1',
     })
-    expect(canceled.status).toBe('cancelled')
+    expect(closed.status).toBe('cancelled')
+    expect(fake.expireCalls).toBe(1)
+    expect(fake.cancelCalls).toBe(0)
+    expect(fake.sessions.get(created.providerOrderId!)?.status).toBe('expired')
 
+    const afterClose = await provider.queryPayment({
+      providerPaymentId: created.providerPaymentId,
+      providerAccountKey: stripeAccountKey('test'),
+    })
+    expect(afterClose.status).toBe('cancelled')
+
+    await expect(fake.paymentIntents.cancel(created.providerPaymentId))
+      .rejects.toThrow(/Checkout/)
+  })
+
+  it('refunds a Checkout PaymentIntent with the same idempotency key', async () => {
+    const { provider, fake } = providerWith()
+    const created = await provider.createPayment(createInput())
     fake.intents.set(created.providerPaymentId, {
       ...fake.intents.get(created.providerPaymentId)!,
       status: 'succeeded',
@@ -441,6 +503,13 @@ describe('Stripe webhook fixtures', () => {
       { id: 'evt_amount', amount: 200, amount_received: 200, currency: 'usd', metadata: metadata() },
       { id: 'evt_currency', amount: 100, amount_received: 100, currency: 'cny', metadata: metadata() },
       { id: 'evt_meta', amount: 100, amount_received: 100, currency: 'usd', metadata: metadata({ [STRIPE_META.orderId]: '' }) },
+      {
+        id: 'evt_missing_keys',
+        amount: 100,
+        amount_received: 100,
+        currency: 'usd',
+        metadata: { [STRIPE_META.orderId]: ORDER_ID },
+      },
     ]
     for (const row of cases) {
       const event = stripeEventFixture({

@@ -138,6 +138,24 @@ function assertAccount(accountKey: string, config: StripeRuntimeConfig) {
   }
 }
 
+function paymentIntentIdFromSession(session: Stripe.Checkout.Session): string | null {
+  if (typeof session.payment_intent === 'string' && session.payment_intent.startsWith('pi_')) {
+    return session.payment_intent
+  }
+  if (session.payment_intent && typeof session.payment_intent === 'object' && isPaymentIntent(session.payment_intent)) {
+    return session.payment_intent.id
+  }
+  return null
+}
+
+function closeStatusFrom(payment: NormalizedPayment): CloseResult['status'] {
+  if (payment.status === 'succeeded') return 'succeeded'
+  if (payment.status === 'cancelled' || payment.status === 'failed' || payment.status === 'processing') {
+    return payment.status
+  }
+  return 'unknown'
+}
+
 export function createStripeProvider(options: CreateStripeProviderOptions = {}): PaymentProvider {
   let cachedConfig = options.config
   let cachedClient = options.client
@@ -152,25 +170,73 @@ export function createStripeProvider(options: CreateStripeProviderOptions = {}):
     return cachedClient
   }
 
-  const retrievePayment = async (providerPaymentId: string): Promise<NormalizedPayment> => {
+  const retrieveSessionExpanded = async (sessionId: string): Promise<Stripe.Checkout.Session> => {
+    return clientOf().checkout.sessions.retrieve(sessionId, { expand: ['payment_intent'] })
+  }
+
+  const findSessionForPaymentIntent = async (paymentIntentId: string): Promise<Stripe.Checkout.Session | null> => {
+    const listed = await clientOf().checkout.sessions.list({
+      payment_intent: paymentIntentId,
+      limit: 1,
+      expand: ['data.payment_intent'],
+    })
+    return listed.data[0] ?? null
+  }
+
+  const paymentFromResolvedSession = (session: Stripe.Checkout.Session, accountKey: string): NormalizedPayment => {
+    // Session expiry is the Checkout close signal; do not read a still-open PI after expire.
+    if (session.status === 'expired') return paymentFromCheckout(session, accountKey)
+    if (typeof session.payment_intent === 'object' && session.payment_intent && isPaymentIntent(session.payment_intent)) {
+      return { ...paymentFromIntent(session.payment_intent, accountKey), providerOrderId: session.id }
+    }
+    return paymentFromCheckout(session, accountKey)
+  }
+
+  const retrievePayment = async (providerPaymentId: string, providerOrderId?: string | null): Promise<NormalizedPayment> => {
     const config = configOf()
-    const client = clientOf()
     const accountKey = stripeAccountKey(config.mode)
     try {
-      if (providerPaymentId.startsWith('cs_')) {
-        const session = await client.checkout.sessions.retrieve(providerPaymentId, {
-          expand: ['payment_intent'],
-        })
-        if (typeof session.payment_intent === 'object' && session.payment_intent && isPaymentIntent(session.payment_intent)) {
-          const fromIntent = paymentFromIntent(session.payment_intent, accountKey)
-          return { ...fromIntent, providerOrderId: session.id }
-        }
-        return paymentFromCheckout(session, accountKey)
+      const sessionId = providerPaymentId.startsWith('cs_')
+        ? providerPaymentId
+        : providerOrderId?.startsWith('cs_')
+          ? providerOrderId
+          : null
+      if (sessionId) {
+        return paymentFromResolvedSession(await retrieveSessionExpanded(sessionId), accountKey)
       }
-      const intent = await client.paymentIntents.retrieve(providerPaymentId)
+      const session = await findSessionForPaymentIntent(providerPaymentId)
+      if (session) {
+        const expanded = session.payment_intent && typeof session.payment_intent === 'object'
+          ? session
+          : await retrieveSessionExpanded(session.id)
+        return paymentFromResolvedSession(expanded, accountKey)
+      }
+      const intent = await clientOf().paymentIntents.retrieve(providerPaymentId)
       return paymentFromIntent(intent, accountKey)
     } catch (err) {
       rethrowStripe(err)
+    }
+  }
+
+  const expireCheckoutSession = async (
+    sessionId: string,
+    requestIdempotencyKey: string,
+    accountKey: string,
+  ): Promise<CloseResult> => {
+    let session: Stripe.Checkout.Session
+    try {
+      session = await clientOf().checkout.sessions.expire(sessionId, undefined, {
+        idempotencyKey: requestIdempotencyKey,
+      })
+    } catch (err) {
+      if (!(err instanceof Stripe.errors.StripeInvalidRequestError)) rethrowStripe(err)
+      session = await retrieveSessionExpanded(sessionId)
+    }
+    const payment = paymentFromResolvedSession(session, accountKey)
+    return {
+      status: closeStatusFrom(payment),
+      providerPaymentId: payment.providerPaymentId,
+      immutableStateVersion: payment.immutableStateVersion,
     }
   }
 
@@ -242,13 +308,14 @@ export function createStripeProvider(options: CreateStripeProviderOptions = {}):
         throw badRequest('stripe amount is invalid')
       }
       try {
-        const session = await clientOf().checkout.sessions.create({
+        let session = await clientOf().checkout.sessions.create({
           mode: 'payment',
           client_reference_id: input.orderId,
           success_url: successUrl,
           cancel_url: cancelUrl,
           expires_at: Math.floor(Date.now() / 1000) + 31 * 60,
           payment_method_types: ['card'],
+          expand: ['payment_intent'],
           line_items: [{
             quantity: 1,
             price_data: {
@@ -261,9 +328,14 @@ export function createStripeProvider(options: CreateStripeProviderOptions = {}):
           payment_intent_data: { metadata },
         }, { idempotencyKey: input.requestIdempotencyKey })
         if (!session.url) throw paymentProviderUnavailable()
-        const providerPaymentId = typeof session.payment_intent === 'string'
-          ? session.payment_intent
-          : session.payment_intent?.id ?? session.id
+        let providerPaymentId = paymentIntentIdFromSession(session)
+        if (!providerPaymentId) {
+          session = await retrieveSessionExpanded(session.id)
+          providerPaymentId = paymentIntentIdFromSession(session)
+        }
+        if (!providerPaymentId) {
+          throw paymentProviderUnavailable('stripe checkout did not create a payment intent')
+        }
         return {
           status: 'requires_action',
           providerPaymentId,
@@ -283,7 +355,7 @@ export function createStripeProvider(options: CreateStripeProviderOptions = {}):
     async queryPayment(input: QueryProviderPaymentInput): Promise<NormalizedPayment> {
       const config = configOf()
       assertAccount(input.providerAccountKey, config)
-      return retrievePayment(input.providerPaymentId)
+      return retrievePayment(input.providerPaymentId, input.providerOrderId)
     },
 
     async closePayment(input: CloseProviderPaymentInput): Promise<CloseResult> {
@@ -292,26 +364,12 @@ export function createStripeProvider(options: CreateStripeProviderOptions = {}):
       const client = clientOf()
       try {
         if (input.providerPaymentId.startsWith('cs_')) {
-          let session: Stripe.Checkout.Session
-          try {
-            session = await client.checkout.sessions.expire(input.providerPaymentId, undefined, {
-              idempotencyKey: input.requestIdempotencyKey,
-            })
-          } catch (err) {
-            if (!(err instanceof Stripe.errors.StripeInvalidRequestError)) rethrowStripe(err)
-            session = await client.checkout.sessions.retrieve(input.providerPaymentId)
-          }
-          const payment = paymentFromCheckout(session, input.providerAccountKey)
-          const status = payment.status === 'succeeded'
-            ? 'succeeded'
-            : payment.status === 'cancelled' || session.status === 'expired'
-              ? 'cancelled'
-              : payment.status === 'failed'
-                ? 'failed'
-                : payment.status === 'processing'
-                  ? 'processing'
-                  : 'unknown'
-          return { status, providerPaymentId: payment.providerPaymentId, immutableStateVersion: payment.immutableStateVersion }
+          return expireCheckoutSession(input.providerPaymentId, input.requestIdempotencyKey, input.providerAccountKey)
+        }
+
+        const session = await findSessionForPaymentIntent(input.providerPaymentId)
+        if (session) {
+          return expireCheckoutSession(session.id, input.requestIdempotencyKey, input.providerAccountKey)
         }
 
         const current = await client.paymentIntents.retrieve(input.providerPaymentId)
@@ -323,26 +381,16 @@ export function createStripeProvider(options: CreateStripeProviderOptions = {}):
           const payment = paymentFromIntent(current, input.providerAccountKey)
           return { status: 'cancelled', providerPaymentId: current.id, immutableStateVersion: payment.immutableStateVersion }
         }
-        let canceled: Stripe.PaymentIntent
-        try {
-          canceled = await client.paymentIntents.cancel(input.providerPaymentId, undefined, {
-            idempotencyKey: input.requestIdempotencyKey,
-          })
-        } catch (err) {
-          if (!(err instanceof Stripe.errors.StripeInvalidRequestError)) rethrowStripe(err)
-          canceled = await client.paymentIntents.retrieve(input.providerPaymentId)
-        }
+        // Standalone PI only. Checkout-owned intents cannot be canceled.
+        const canceled = await client.paymentIntents.cancel(input.providerPaymentId, undefined, {
+          idempotencyKey: input.requestIdempotencyKey,
+        })
         const payment = paymentFromIntent(canceled, input.providerAccountKey)
-        const status = payment.status === 'succeeded'
-          ? 'succeeded'
-          : payment.status === 'cancelled'
-            ? 'cancelled'
-            : payment.status === 'failed'
-              ? 'failed'
-              : payment.status === 'processing'
-                ? 'processing'
-                : 'unknown'
-        return { status, providerPaymentId: payment.providerPaymentId, immutableStateVersion: payment.immutableStateVersion }
+        return {
+          status: closeStatusFrom(payment),
+          providerPaymentId: payment.providerPaymentId,
+          immutableStateVersion: payment.immutableStateVersion,
+        }
       } catch (err) {
         rethrowStripe(err)
       }
