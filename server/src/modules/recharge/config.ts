@@ -25,6 +25,7 @@ export type RechargeGateInput = {
   registeredProviders: readonly PaymentProviderName[]
   enabledProviders: readonly PaymentProviderName[]
   webhookPublicBaseUrl?: string
+  hasEventEncryptionKey?: boolean
   stripe?: ProviderCredentialSnapshot
   paypal?: ProviderCredentialSnapshot
   wechatPay?: ProviderCredentialSnapshot
@@ -137,11 +138,11 @@ function hostOf(url: string): string | undefined {
 }
 
 function looksLikeStripeTestKey(value: string | undefined): boolean {
-  return Boolean(value && /^sk_test_/.test(value))
+  return Boolean(value && /^(sk|rk)_test_/.test(value))
 }
 
 function looksLikeStripeLiveKey(value: string | undefined): boolean {
-  return Boolean(value && /^sk_live_/.test(value))
+  return Boolean(value && /^(sk|rk)_live_/.test(value))
 }
 
 function looksLikePaypalSandboxHost(hostname: string): boolean {
@@ -222,7 +223,36 @@ function checkWechatPay(input: RechargeGateInput): RechargeGateResult {
     return fail('live WeChat Pay must not use a sandbox endpoint')
   }
   if (input.enabledProviders.includes('wechat_pay') && !wechat.webhookSecret) {
-    return fail('enabled provider wechat_pay is missing a webhook verify secret')
+    return fail('enabled provider wechat_pay is missing WECHAT_PAY_PLATFORM_PUBLIC_KEY')
+  }
+  return { ok: true }
+}
+
+function providerModeFor(name: PaymentProviderName, input: RechargeGateInput): ProviderMode | undefined {
+  switch (name) {
+    case 'stripe':
+      return input.stripe?.mode
+    case 'paypal':
+      return input.paypal?.mode
+    case 'wechat_pay':
+      return input.wechatPay?.mode
+    case 'alipay':
+      return input.alipay?.mode
+    case 'simulator':
+      return 'sandbox'
+  }
+}
+
+function checkEnabledProviderModes(input: RechargeGateInput): RechargeGateResult {
+  if (input.rechargeMode === 'disabled') return { ok: true }
+  for (const name of input.enabledProviders) {
+    const mode = providerModeFor(name, input)
+    if (input.rechargeMode === 'sandbox' && mode === 'live') {
+      return fail(`RECHARGE_MODE=sandbox cannot enable live provider ${name}`)
+    }
+    if (input.rechargeMode === 'live' && (mode === 'test' || mode === 'sandbox' || mode === 'disabled')) {
+      return fail(`RECHARGE_MODE=live cannot enable ${mode} provider ${name}`)
+    }
   }
   return { ok: true }
 }
@@ -259,6 +289,13 @@ export function evaluateRechargeConfigGates(input: RechargeGateInput): RechargeG
 
   const subset = assertEnabledSubsetOfRegistered(input.enabledProviders, input.registeredProviders)
   if (!subset.ok) return subset
+
+  if (input.rechargeMode === 'live' && !input.hasEventEncryptionKey) {
+    return fail('PAYMENT_EVENT_ENCRYPTION_KEY is required when RECHARGE_MODE=live')
+  }
+
+  const enabledModes = checkEnabledProviderModes(input)
+  if (!enabledModes.ok) return enabledModes
 
   const publicUrl = requireHttpsPublicUrl(input.webhookPublicBaseUrl)
   if (!publicUrl.ok) return publicUrl

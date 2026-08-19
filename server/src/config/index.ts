@@ -353,6 +353,8 @@ const envSchema = z.object({
   WECHAT_PAY_MODE: optionalStringEnvSchema,
   WECHAT_PAY_MCH_ID: optionalStringEnvSchema,
   WECHAT_PAY_APIV3_KEY: optionalStringEnvSchema,
+  // Wechatpay-Signature material (platform cert/public key). Not the APIv3 decrypt key.
+  WECHAT_PAY_PLATFORM_PUBLIC_KEY: optionalStringEnvSchema,
   WECHAT_PAY_API_BASE_URL: optionalUrlEnvSchema,
   ALIPAY_MODE: optionalStringEnvSchema,
   ALIPAY_APP_ID: optionalStringEnvSchema,
@@ -639,6 +641,12 @@ const enabledProviders: PaymentProviderName[] = enabledProvidersParsed
 const enabledCurrencies: RechargeCurrency[] = enabledCurrenciesParsed
 const productionDeploy = isProductionDeploy(env.NODE_ENV, env.MONEXUS_DEPLOY_ENV)
 
+const paymentEventEncryptionKey = parseCanonicalBase64Key(env.PAYMENT_EVENT_ENCRYPTION_KEY)
+if (env.PAYMENT_EVENT_ENCRYPTION_KEY && !paymentEventEncryptionKey) {
+  console.error('[Config] PAYMENT_EVENT_ENCRYPTION_KEY must be canonical base64 for exactly 32 bytes')
+  process.exit(1)
+}
+
 const rechargeGate = evaluateRechargeConfigGates({
   nodeEnv: env.NODE_ENV,
   deployEnv: env.MONEXUS_DEPLOY_ENV,
@@ -648,6 +656,7 @@ const rechargeGate = evaluateRechargeConfigGates({
   registeredProviders,
   enabledProviders,
   webhookPublicBaseUrl: env.PAYMENT_WEBHOOK_PUBLIC_BASE_URL,
+  hasEventEncryptionKey: Boolean(paymentEventEncryptionKey),
   stripe: {
     mode: stripeMode,
     secretOrKey: env.STRIPE_SECRET_KEY,
@@ -663,7 +672,7 @@ const rechargeGate = evaluateRechargeConfigGates({
   wechatPay: {
     mode: wechatPayMode,
     secretOrKey: env.WECHAT_PAY_APIV3_KEY,
-    webhookSecret: env.WECHAT_PAY_APIV3_KEY,
+    webhookSecret: env.WECHAT_PAY_PLATFORM_PUBLIC_KEY,
     apiBaseUrl: env.WECHAT_PAY_API_BASE_URL,
   },
   alipay: {
@@ -819,7 +828,7 @@ export const config = {
     registeredProviders,
     enabledProviders,
     webhookPublicBaseUrl: env.PAYMENT_WEBHOOK_PUBLIC_BASE_URL,
-    eventEncryptionKey: env.PAYMENT_EVENT_ENCRYPTION_KEY,
+    eventEncryptionKey: paymentEventEncryptionKey ?? null,
   },
   legalPages: {
     enabled: env.LEGAL_PAGES_ENABLED,
