@@ -22,6 +22,8 @@ import type {
   QueryProviderPaymentInput,
   QueryProviderRefundInput,
   RawWebhookInput,
+  ReconciliationInput,
+  ProviderEntry,
 } from '../types.js'
 
 export const SIMULATOR_PROVIDER_NAME = 'simulator' as const
@@ -493,6 +495,18 @@ export const simulatorProvider: PaymentProvider = {
       amountMinor: row.amountMinor,
       currency: row.currency,
       immutableStateVersion: row.immutableStateVersion,
+    }
+  },
+
+  async *listReconciliationEntries(_input: ReconciliationInput): AsyncIterable<ProviderEntry> {
+    for (const row of payments.values()) {
+      yield {
+        providerEntryKey: row.providerPaymentId,
+        providerPaymentId: row.providerPaymentId,
+        amountMinor: row.amountMinor,
+        currency: row.currency,
+        status: row.status,
+      }
     }
   },
 }

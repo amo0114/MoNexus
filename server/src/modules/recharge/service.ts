@@ -10,11 +10,9 @@ import {
 } from '../../lib/httpError.js'
 import { getEnabledProvider, getHistoricalProvider, listEnabledProviders } from '../payment/providers/registry.js'
 import type { PaymentProvider, ProviderCapabilities } from '../payment/providers/types.js'
-import {
-  completeObservationDedupeKey,
-  hashNormalizedPayload,
-  recordPaymentObservation,
-} from '../payment/observations/record.js'
+import { recordNormalizedPaymentFact } from '../payment/observations/record.js'
+import { applyConfirmedPayment } from '../payment/events/applyConfirmedPayment.js'
+import { requestRechargeRefund } from './refund.js'
 import { PAYMENT_ATTEMPT_NON_TERMINAL_STATUSES, PAYMENT_PROVIDER_NAMES, type AmountSource, type PaymentAttemptStatus, type PaymentProviderName, type RechargeCurrency, type RechargeOrderStatus } from './types.js'
 import { serializeAmountMinor } from './money.js'
 import {
@@ -680,36 +678,12 @@ async function persistNormalizedObservation(input: {
     immutableStateVersion: string
   }
 }) {
-  const dedupeKey = completeObservationDedupeKey({
+  return recordNormalizedPaymentFact({
     source: input.source,
-    providerPaymentId: input.payment.providerPaymentId,
-    providerCaptureId: input.payment.providerCaptureId,
-    normalizedStatus: input.payment.status,
-    amountMinor: input.payment.amountMinor,
-    currency: input.payment.currency,
-    immutableStateVersion: input.payment.immutableStateVersion,
-  })
-  const normalizedPayload = {
-    status: input.payment.status,
-    providerPaymentId: input.payment.providerPaymentId,
-    providerCaptureId: input.payment.providerCaptureId ?? null,
-    amountMinor: serializeAmountMinor(input.payment.amountMinor),
-    currency: input.payment.currency,
-    immutableStateVersion: input.payment.immutableStateVersion,
-  }
-  return recordPaymentObservation({
     provider: input.provider,
     providerAccountKey: input.providerAccountKey,
-    source: input.source,
-    verificationMethod: 'authenticated_provider_api',
     paymentAttemptId: input.paymentAttemptId,
-    providerPaymentId: input.payment.providerPaymentId,
-    providerCaptureId: input.payment.providerCaptureId ?? null,
-    dedupeKey,
-    eventType: `payment.${input.payment.status}`,
-    payloadSha256: hashNormalizedPayload(normalizedPayload),
-    normalizedPayload,
-    signatureVerified: true,
+    payment: input.payment,
   })
 }
 
@@ -799,6 +773,9 @@ export async function completeOrder(userId: number, orderId: string, idempotency
         immutableStateVersion: normalized.immutableStateVersion,
       },
     })
+    if (normalized.status === 'succeeded') {
+      await applyConfirmedPayment(observation.id)
+    }
 
     await prisma.$transaction(async tx => {
       await completeRechargeIdempotencyClaim(tx, {
@@ -999,6 +976,6 @@ export async function expireOrder(userId: number, orderId: string) {
   return serializeOrder(await loadOwnedOrder(userId, orderId))
 }
 
-export async function requestRefund() {
-  throw conflict('退款尚未开放')
+export async function requestRefund(userId: number, orderId: string, idempotencyKey: string) {
+  return requestRechargeRefund({ userId, orderId, idempotencyKey })
 }

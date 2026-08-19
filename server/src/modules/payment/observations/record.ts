@@ -89,6 +89,65 @@ export function hashNormalizedPayload(payload: unknown): string {
  * Deterministic dedupe for query/complete/reconciliation facts.
  * Must not include receive time.
  */
+export type NormalizedPaymentFact = {
+  status: string
+  providerPaymentId: string
+  providerCaptureId?: string | null
+  amountMinor: bigint
+  currency: string
+  immutableStateVersion: string
+  providerRefundId?: string | null
+}
+
+export function buildNormalizedPaymentPayload(fact: NormalizedPaymentFact): Prisma.InputJsonValue {
+  return {
+    status: fact.status,
+    providerPaymentId: fact.providerPaymentId,
+    providerCaptureId: fact.providerCaptureId ?? null,
+    providerRefundId: fact.providerRefundId ?? null,
+    amountMinor: serializeAmountMinor(fact.amountMinor),
+    currency: fact.currency,
+    immutableStateVersion: fact.immutableStateVersion,
+  }
+}
+
+/** Persist an authenticated query/complete/reconciliation payment fact. */
+export async function recordNormalizedPaymentFact(input: {
+  source: Exclude<PaymentObservationSource, 'webhook'>
+  provider: string
+  providerAccountKey: string
+  paymentAttemptId?: string | null
+  providerEventId?: string | null
+  eventType?: string
+  payment: NormalizedPaymentFact
+}, db: Prisma.TransactionClient | typeof prisma = prisma): Promise<RecordedPaymentObservation> {
+  const dedupeKey = completeObservationDedupeKey({
+    source: input.source,
+    providerPaymentId: input.payment.providerPaymentId,
+    providerCaptureId: input.payment.providerCaptureId,
+    normalizedStatus: input.payment.status,
+    amountMinor: input.payment.amountMinor,
+    currency: input.payment.currency,
+    immutableStateVersion: input.payment.immutableStateVersion,
+  })
+  const normalizedPayload = buildNormalizedPaymentPayload(input.payment)
+  return recordPaymentObservation({
+    provider: input.provider,
+    providerAccountKey: input.providerAccountKey,
+    source: input.source,
+    verificationMethod: 'authenticated_provider_api',
+    paymentAttemptId: input.paymentAttemptId ?? null,
+    providerPaymentId: input.payment.providerPaymentId,
+    providerCaptureId: input.payment.providerCaptureId ?? null,
+    providerEventId: input.providerEventId ?? null,
+    dedupeKey,
+    eventType: input.eventType ?? `payment.${input.payment.status}`,
+    payloadSha256: hashNormalizedPayload(normalizedPayload),
+    normalizedPayload,
+    signatureVerified: true,
+  }, db)
+}
+
 export function completeObservationDedupeKey(input: {
   source: PaymentObservationSource
   providerPaymentId?: string | null

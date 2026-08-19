@@ -1,5 +1,6 @@
 import { config } from '../../config/index.js'
 import {
+  accountSpendingRestricted,
   forbidden,
   paymentProviderUnavailable,
   rechargeCurrencyDisabled,
@@ -42,4 +43,25 @@ export async function assertRechargeNotRestricted(userId: number) {
   if (restriction) {
     throw forbidden('当前账户暂不可充值')
   }
+}
+
+export async function assertSpendingNotRestricted(
+  userId: number,
+  db: { accountRestriction: { findFirst: typeof prisma.accountRestriction.findFirst } } = prisma,
+) {
+  const restriction = await db.accountRestriction.findFirst({
+    where: { userId, status: 'active', blocksPointSpending: true },
+    select: { id: true },
+  })
+  if (restriction) {
+    throw accountSpendingRestricted()
+  }
+}
+
+export async function hasActiveSpendingRestriction(userId: number): Promise<boolean> {
+  const restriction = await prisma.accountRestriction.findFirst({
+    where: { userId, status: 'active', blocksPointSpending: true },
+    select: { id: true },
+  })
+  return restriction != null
 }

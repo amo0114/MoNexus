@@ -115,6 +115,27 @@ export async function releaseLimitReservations(tx: Db, orderId: string) {
   }
 }
 
+export async function consumeLimitReservations(tx: Db, orderId: string) {
+  const reservations = await tx.rechargeLimitReservation.findMany({
+    where: { rechargeOrderId: orderId, status: 'reserved' },
+    orderBy: { periodType: 'asc' },
+  })
+  for (const reservation of reservations) {
+    const consumed = await tx.rechargeLimitReservation.updateMany({
+      where: { id: reservation.id, status: 'reserved' },
+      data: { status: 'consumed' },
+    })
+    if (consumed.count !== 1) continue
+    await tx.rechargeLimitBucket.update({
+      where: { id: reservation.bucketId },
+      data: {
+        reservedMinor: { decrement: reservation.amountMinor },
+        consumedMinor: { increment: reservation.amountMinor },
+      },
+    })
+  }
+}
+
 export async function remainingLimits(
   userId: number,
   currency: string,

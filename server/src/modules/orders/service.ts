@@ -19,6 +19,7 @@ import {
   shouldNotifyMerchantNewOrder,
 } from '../notifications/dispatcher.js'
 import { debitAvailablePoints, holdAvailablePoints, settleHeldOrder } from './accounting.js'
+import { assertSpendingNotRestricted } from '../recharge/gates.js'
 import {
   claimIdempotencyKey,
   completeIdempotencyClaim,
@@ -356,6 +357,7 @@ async function createOrderOnce(
     result = await prisma.$transaction(async tx => {
     const account = await tx.pointAccount.findUnique({ where: { userId } })
     if (!account) throw notFound('积分账户不存在')
+    await assertSpendingNotRestricted(userId, tx)
 
     const product = await tx.product.findUnique({ where: { id: productId } })
     if (!product) throw notFound('商品不存在')

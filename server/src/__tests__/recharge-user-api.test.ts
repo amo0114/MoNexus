@@ -205,9 +205,9 @@ describe('recharge user API', () => {
     expect(changed.body.error.code).toBe('RECHARGE_QUOTE_CHANGED')
   })
 
-  it('does not mark paid or credit on complete, including duplicates and forged browser complete', async () => {
+  it('ignores forged complete body and credits once from authenticated provider success', async () => {
     await seedCnyPolicy()
-    const { accessToken } = await loginUser('recharge-complete@test.local')
+    const { user, accessToken } = await loginUser('recharge-complete@test.local')
     const cardQuote = await api.post('/api/recharge/quotes').set(authHeader(accessToken)).send({
       currency: 'CNY', amountMinor: '1000', amountSource: 'custom', provider: 'simulator', paymentMethod: 'card',
     }).expect(201)
@@ -232,17 +232,18 @@ describe('recharge user API', () => {
       .set(authHeader(accessToken)).set('Idempotency-Key', key)
       .send({ paid: true }).expect(200)
     expect(second.body.observationId).toBe(first.body.observationId)
-    expect(first.body.paidAt).toBeNull()
-    expect(first.body.creditedAt).toBeNull()
-    expect(first.body.status).not.toBe('paid')
-    expect(await prisma.rechargeCredit.count()).toBe(0)
+    expect(first.body.status).toBe('credited')
+    expect(first.body.paidAt).toBeTruthy()
+    expect(first.body.creditedAt).toBeTruthy()
+    expect(await prisma.rechargeCredit.count()).toBe(1)
     const stored = await prisma.rechargeOrder.findUniqueOrThrow({ where: { id: order.body.orderId } })
-    expect(stored.paidAt).toBeNull()
-    expect(stored.status).not.toBe('paid')
+    expect(stored.status).toBe('credited')
     expect(await prisma.paymentEvent.count()).toBeGreaterThanOrEqual(1)
+    const account = await prisma.pointAccount.findUniqueOrThrow({ where: { userId: user.id } })
+    expect(account.balance).toBe(6000)
   })
 
-  it('keeps capture-unknown complete pending until query recovery, without marking paid', async () => {
+  it('keeps capture-unknown complete pending until query recovery credits once', async () => {
     await seedCnyPolicy()
     const { accessToken } = await loginUser('recharge-unknown@test.local')
     await api.post('/api/recharge/simulator/next').set(simHeaders(accessToken)).send({ fixture: 'timeout' }).expect(204)
@@ -264,10 +265,11 @@ describe('recharge user API', () => {
     const recovered = await api.post(`/api/recharge/orders/${order.body.orderId}/complete`)
       .set(authHeader(accessToken)).set('Idempotency-Key', randomUUID())
       .send({}).expect(200)
-    expect(recovered.body.paidAt).toBeNull()
-    expect(await prisma.rechargeCredit.count()).toBe(0)
+    expect(recovered.body.status).toBe('credited')
+    expect(recovered.body.paidAt).toBeTruthy()
+    expect(await prisma.rechargeCredit.count()).toBe(1)
     const stored = await prisma.rechargeOrder.findUniqueOrThrow({ where: { id: order.body.orderId } })
-    expect(stored.status).not.toBe('paid')
+    expect(stored.status).toBe('credited')
   })
 
   it('returns structured form_post without HTML', async () => {
@@ -500,8 +502,9 @@ describe('recharge user API', () => {
     expect(blocked.body.error.code).toBe('RECHARGE_DISABLED')
     const completed = await api.post(`/api/recharge/orders/${order.body.orderId}/complete`)
       .set(authHeader(accessToken)).set('Idempotency-Key', randomUUID()).send({}).expect(200)
-    expect(completed.body.paidAt).toBeNull()
+    expect(completed.body.status).toBe('credited')
+    expect(completed.body.paidAt).toBeTruthy()
     expect(completed.body.observationId).toBeTruthy()
-    expect(await prisma.rechargeCredit.count()).toBe(0)
+    expect(await prisma.rechargeCredit.count()).toBe(1)
   })
 })
