@@ -96,9 +96,7 @@ export type ErrorCode =
   | 'VALUE_POLICY_IDEMPOTENCY_KEY_INVALID'
   | 'VALUE_POLICY_IDEMPOTENCY_CONFLICT'
   | 'VALUE_POLICY_EFFECTIVE_AT_INVALID'
-  // PointAccount mutations: non-negative, Int-safe, and
-  // balance + frozenBalance <= 2_000_000_000. Future DB CHECK violations
-  // must map here instead of unhandled 500s.
+  // Ledger mutation failures the client can distinguish from generic BAD_REQUEST.
   | 'POINT_BALANCE_HARD_CAP'
   | 'POINT_INSUFFICIENT'
   | 'POINT_BALANCE_CONFLICT'

@@ -1,5 +1,5 @@
 import type { Prisma } from '@prisma/client'
-import { conflict, notFound } from '../../lib/httpError.js'
+import { conflict, HttpError, notFound } from '../../lib/httpError.js'
 import { applyTierBonus, getCurrentTierConfig, resolveTier } from '../../lib/memberTier.js'
 import { prisma } from '../../lib/prisma.js'
 import { getSystemConfigValue } from '../../lib/systemConfig.js'
@@ -550,10 +550,18 @@ function assertBatchSize(value: number) {
   return assertBoundedInteger(value, 1, GROWTH_REWARD_BATCH_SIZE, 'growth reward batch size')
 }
 
+function growthRewardSavepoint(rewardId: number): string {
+  if (!Number.isInteger(rewardId) || rewardId <= 0) {
+    throw new Error('invalid growth reward id')
+  }
+  return `growth_reward_${rewardId}`
+}
+
 /**
- * Claims up to one cron batch with PostgreSQL `FOR UPDATE SKIP LOCKED`. A
- * failure in any row rejects the interactive transaction, rolling every row
- * in this batch back for a later retry.
+ * Claims up to one cron batch with PostgreSQL `FOR UPDATE SKIP LOCKED`.
+ * POINT_BALANCE_HARD_CAP is isolated per row with a savepoint so one at-cap
+ * recipient cannot roll the rest of the batch back. Other grant failures
+ * still abort the transaction.
  */
 export async function releaseMatureGrowthRewards(options: {
   now?: Date
@@ -573,7 +581,19 @@ export async function releaseMatureGrowthRewards(options: {
 
     const outcomes: GrowthRewardReleaseOutcome[] = []
     for (const candidate of candidates) {
-      outcomes.push(await releaseGrowthRewardInTransaction(tx, candidate.id, now))
+      const savepoint = growthRewardSavepoint(candidate.id)
+      await tx.$executeRawUnsafe(`SAVEPOINT ${savepoint}`)
+      try {
+        outcomes.push(await releaseGrowthRewardInTransaction(tx, candidate.id, now))
+        await tx.$executeRawUnsafe(`RELEASE SAVEPOINT ${savepoint}`)
+      } catch (error) {
+        if (error instanceof HttpError && error.code === 'POINT_BALANCE_HARD_CAP') {
+          await tx.$executeRawUnsafe(`ROLLBACK TO SAVEPOINT ${savepoint}`)
+          outcomes.push({ outcome: 'skipped', rewardId: candidate.id })
+          continue
+        }
+        throw error
+      }
     }
     return outcomes
   })

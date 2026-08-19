@@ -11,6 +11,7 @@ import {
   consumeHeldPoints,
   releaseHeldPoints,
   POINT_ACCOUNT_HARD_CAP,
+  classifyPointAccountWriteError,
 } from '../modules/points/checkedMutation.js'
 import { checkin } from '../modules/points/service.js'
 import {
@@ -82,7 +83,51 @@ async function holdWithLog(userId: number, amount: number, reason: string) {
   })
 }
 
+function syntheticDbError(code: string, message: string, meta?: Record<string, unknown>) {
+  const error = new Error(message) as Error & { code: string; meta?: Record<string, unknown> }
+  error.code = code
+  if (meta) error.meta = meta
+  return error
+}
+
 describe('PointAccount hard-cap mutations', () => {
+  it('maps PointAccount CHECK payloads to HARD_CAP and leaves unrelated P2010 unmapped', () => {
+    const typicalCheck = syntheticDbError(
+      'P2004',
+      'new row for relation "PointAccount" violates check constraint "PointAccount_balance_frozen_check"',
+      { constraint: 'PointAccount_balance_frozen_check' },
+    )
+    expect(classifyPointAccountWriteError(typicalCheck)?.code).toBe('POINT_BALANCE_HARD_CAP')
+
+    const namedCap = syntheticDbError(
+      'P2010',
+      'Raw query failed. Code: `23514`. Message: `new row for relation "PointAccount" violates check constraint "point_account_hard_cap_2000000000"`',
+      { code: '23514', message: 'new row for relation "PointAccount" violates check constraint "point_account_hard_cap_2000000000"' },
+    )
+    expect(classifyPointAccountWriteError(namedCap)?.code).toBe('POINT_BALANCE_HARD_CAP')
+
+    const pgStateOnly = syntheticDbError(
+      'P2010',
+      'Raw query failed',
+      { code: '23514', message: 'new row for relation "PointAccount" violates check constraint "pa_total"' },
+    )
+    expect(classifyPointAccountWriteError(pgStateOnly)?.code).toBe('POINT_BALANCE_HARD_CAP')
+
+    const nonNegative = syntheticDbError(
+      'P2004',
+      'new row for relation "PointAccount" violates check constraint "PointAccount_balance_nonnegative"',
+      { constraint: 'PointAccount_balance_nonnegative' },
+    )
+    expect(classifyPointAccountWriteError(nonNegative)?.code).toBe('POINT_INSUFFICIENT')
+
+    const syntax = syntheticDbError(
+      'P2010',
+      'Raw query failed. Code: `42601`. Message: `syntax error at or near "UPDAT"`',
+      { code: '42601', message: 'syntax error at or near "UPDAT"' },
+    )
+    expect(classifyPointAccountWriteError(syntax)).toBeNull()
+  })
+
   it('credits 1 at 1_999_999_999 and rejects the next credit with no PointLog', async () => {
     const user = await userWithBalances(1_999_999_999)
     const before = await snapshot(user.id)
@@ -146,6 +191,14 @@ describe('PointAccount hard-cap mutations', () => {
     const after = await snapshot(user.id)
     expect(after.balance + after.frozenBalance).toBe(750)
     expect(after.balance + after.frozenBalance).toBeLessThanOrEqual(CAP)
+  })
+
+  it('releases a hold on a pre-existing over-cap row instead of blocking un-hold', async () => {
+    const user = await userWithBalances(CAP, 100)
+    await expect(releaseHeldPoints(prisma, user.id, 100)).resolves.toMatchObject({
+      balance: CAP + 100,
+      frozenBalance: 0,
+    })
   })
 
   it('allows two concurrent credits from CAP-2 and never exceeds the cap', async () => {
@@ -277,31 +330,47 @@ describe('PointAccount hard-cap mutations', () => {
     expect(await snapshot(payer.id)).toMatchObject({ balance: 380, frozenBalance: 0 })
   })
 
-  it('fails growth-reward grant at the cap without writing PointLog', async () => {
-    const user = await userWithBalances(CAP)
-    await prisma.user.update({
-      where: { id: user.id },
-      data: { emailVerified: new Date() },
-    })
-    const reward = await prisma.growthReward.create({
+  it('skips a hard-capped growth reward without rolling back the rest of the batch', async () => {
+    const capped = await userWithBalances(CAP)
+    const healthy = await userWithBalances(10)
+    await prisma.user.update({ where: { id: capped.id }, data: { emailVerified: new Date() } })
+    await prisma.user.update({ where: { id: healthy.id }, data: { emailVerified: new Date() } })
+    const now = Date.now()
+    const cappedReward = await prisma.growthReward.create({
       data: {
-        recipientUserId: user.id,
+        recipientUserId: capped.id,
         kind: 'registration',
         amount: 1,
         state: 'held',
-        availableAt: new Date(Date.now() - 1_000),
-        dedupeKey: `hard-cap:${user.id}`,
+        availableAt: new Date(now - 2_000),
+        dedupeKey: `hard-cap:${capped.id}`,
       },
     })
-    const before = await snapshot(user.id)
-    await expect(releaseMatureGrowthRewards()).rejects.toSatisfy(
-      (error: unknown) => error instanceof HttpError && error.code === 'POINT_BALANCE_HARD_CAP',
-    )
-    await expect(prisma.growthReward.findUniqueOrThrow({ where: { id: reward.id } })).resolves.toMatchObject({
+    const healthyReward = await prisma.growthReward.create({
+      data: {
+        recipientUserId: healthy.id,
+        kind: 'registration',
+        amount: 7,
+        state: 'held',
+        availableAt: new Date(now - 1_000),
+        dedupeKey: `hard-cap-ok:${healthy.id}`,
+      },
+    })
+    const cappedBefore = await snapshot(capped.id)
+
+    await expect(releaseMatureGrowthRewards()).resolves.toEqual(expect.arrayContaining([
+      { outcome: 'skipped', rewardId: cappedReward.id },
+      { outcome: 'granted', rewardId: healthyReward.id },
+    ]))
+    await expect(prisma.growthReward.findUniqueOrThrow({ where: { id: cappedReward.id } })).resolves.toMatchObject({
       state: 'held',
       grantedAt: null,
     })
-    expect(await snapshot(user.id)).toEqual(before)
+    await expect(prisma.growthReward.findUniqueOrThrow({ where: { id: healthyReward.id } })).resolves.toMatchObject({
+      state: 'granted',
+    })
+    expect(await snapshot(capped.id)).toEqual(cappedBefore)
+    expect(await snapshot(healthy.id)).toMatchObject({ balance: 17, frozenBalance: 0 })
   })
 
   it('fails an order refund at the cap and still holds/debits/refunds on a normal balance', async () => {

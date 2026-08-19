@@ -42,27 +42,43 @@ function asStoredInt(value: number | bigint): number {
   return n
 }
 
-function isPointAccountConstraintError(error: unknown): boolean {
+function errorPayload(error: unknown): { code: string; pgCode: string; text: string } {
   const message = error instanceof Error ? error.message : String(error)
-  const code = typeof error === 'object' && error !== null && 'code' in error
-    ? String((error as { code: unknown }).code)
-    : ''
-  if (code === 'P2004' || code === 'P2010' || code === '23514') return true
-  return /23514|check constraint/i.test(message)
+  const rec = typeof error === 'object' && error !== null ? error as Record<string, unknown> : {}
+  const code = rec.code != null ? String(rec.code) : ''
+  const meta = rec.meta && typeof rec.meta === 'object' ? rec.meta as Record<string, unknown> : {}
+  const pgCode = meta.code != null ? String(meta.code) : ''
+  const text = [message, JSON.stringify(meta)].join(' ')
+  return { code, pgCode, text }
 }
 
-function rethrowPointAccountWriteError(error: unknown): never {
-  if (error instanceof HttpError) throw error
-  if (isPointAccountConstraintError(error)) {
-    const text = error instanceof Error ? error.message : String(error)
-    if (/2_?000_?000_?000|2000000000|hard.?cap/i.test(text)) {
-      throw pointBalanceHardCap()
-    }
-    if (/balance|frozen/i.test(text) && />=\s*0|negative|non.?neg/i.test(text)) {
-      throw pointInsufficient()
-    }
-    throw pointBalanceConflict('积分账户约束冲突，请重试')
+function isCheckConstraintViolation(error: unknown): boolean {
+  const { code, pgCode, text } = errorPayload(error)
+  if (code === 'P2004' || code === '23514' || pgCode === '23514') return true
+  return /23514/.test(text) || /check constraint/i.test(text)
+}
+
+/**
+ * Map a PointAccount CHECK failure to a ledger HttpError. Race/0-row updates
+ * stay in the diagnose helpers as POINT_BALANCE_CONFLICT.
+ */
+export function classifyPointAccountWriteError(error: unknown): HttpError | null {
+  if (error instanceof HttpError) return error
+  if (!isCheckConstraintViolation(error)) return null
+  const { text } = errorPayload(error)
+  if (
+    /balance|frozen/i.test(text)
+    && />=\s*0|negative|non.?neg/i.test(text)
+    && !/hard.?cap|2000000000|2_000_000_000/i.test(text)
+  ) {
+    return pointInsufficient()
   }
+  return pointBalanceHardCap()
+}
+
+export function mapPointAccountWriteError(error: unknown): never {
+  const mapped = classifyPointAccountWriteError(error)
+  if (mapped) throw mapped
   throw error
 }
 
@@ -84,7 +100,7 @@ async function runConditionalUpdate(
       frozenBalance: asStoredInt(rows[0].frozenBalance),
     }
   } catch (error) {
-    rethrowPointAccountWriteError(error)
+    mapPointAccountWriteError(error)
   }
 }
 
@@ -218,7 +234,8 @@ export async function consumeHeldPoints(
   return updated
 }
 
-/** Release a hold back to available balance. Total is unchanged. */
+/** Release a hold back to available balance. Total is unchanged, so this must
+ *  not refuse pre-existing over-cap rows; over-cap inventory is PR-A's scan. */
 export async function releaseHeldPoints(
   client: PointMutationClient,
   userId: number,
@@ -235,14 +252,8 @@ export async function releaseHeldPoints(
         AND "frozenBalance" >= ${amount}
         AND "balance" >= 0
         AND ("balance"::bigint + ${BigInt(amount)}) <= ${BigInt(PRISMA_INT_MAX)}
-        AND ("balance"::bigint + "frozenBalance"::bigint) <= ${BigInt(POINT_ACCOUNT_HARD_CAP)}
       RETURNING "balance", "frozenBalance"`,
   )
-  if (!updated) {
-    const account = await loadAccountOrThrow(client, userId)
-    const total = BigInt(account.balance) + BigInt(account.frozenBalance)
-    if (total > BigInt(POINT_ACCOUNT_HARD_CAP)) throw pointBalanceHardCap()
-    return diagnoseFrozenFailure(client, userId, amount)
-  }
+  if (!updated) return diagnoseFrozenFailure(client, userId, amount)
   return updated
 }
