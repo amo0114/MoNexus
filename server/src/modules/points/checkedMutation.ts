@@ -235,7 +235,7 @@ export async function consumeHeldPoints(
 }
 
 /** Release a hold back to available balance. Total is unchanged, so this must
- *  not refuse pre-existing over-cap rows; over-cap inventory is PR-A's scan. */
+ *  not refuse pre-existing over-cap rows. */
 export async function releaseHeldPoints(
   client: PointMutationClient,
   userId: number,
