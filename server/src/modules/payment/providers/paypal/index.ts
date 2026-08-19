@@ -162,16 +162,25 @@ export function createPaypalProvider(options: PaypalProviderOptions = {}): Payme
 
   function matchContext(credentials: PaypalCredentials, extras?: {
     orderId?: string
+    paypalOrderId?: string
     amountMinor?: bigint
     currency?: RechargeCurrency
   }) {
     return {
       providerAccountKey: paypalAccountKey({ mode: credentials.mode, merchantId: credentials.merchantId }),
       expectedOrderId: extras?.orderId,
+      expectedPaypalOrderId: extras?.paypalOrderId,
       expectedAmountMinor: extras?.amountMinor,
       expectedCurrency: extras?.currency,
       merchantId: credentials.merchantId,
       payeeEmail: credentials.payeeEmail,
+    }
+  }
+
+  function writeHeaders(requestId: string): Record<string, string> {
+    return {
+      'PayPal-Request-Id': requestId,
+      Prefer: 'return=representation',
     }
   }
 
@@ -190,7 +199,12 @@ export function createPaypalProvider(options: PaypalProviderOptions = {}): Payme
   ): Promise<NormalizedPayment> {
     try {
       const order = await getOrder(credentials, input.providerPaymentId)
-      return normalizePaypalOrder(order, matchContext(credentials, input))
+      return normalizePaypalOrder(order, matchContext(credentials, {
+        orderId: input.orderId,
+        paypalOrderId: input.providerPaymentId,
+        amountMinor: input.amountMinor,
+        currency: input.currency,
+      }))
     } catch (err) {
       if (isPaypalTimeoutOrUnknown(err)) {
         return unknownPaypalPayment({
@@ -265,7 +279,7 @@ export function createPaypalProvider(options: PaypalProviderOptions = {}): Payme
         const response = await apiClient(credentials).request({
           method: 'POST',
           path: '/v2/checkout/orders',
-          headers: { 'PayPal-Request-Id': requestId },
+          headers: writeHeaders(requestId),
           json: {
             intent: 'CAPTURE',
             purchase_units: [{
@@ -278,13 +292,10 @@ export function createPaypalProvider(options: PaypalProviderOptions = {}): Payme
               },
               ...(payee ? { payee } : {}),
             }],
-            payment_source: {
-              paypal: {
-                experience_context: {
-                  user_action: 'PAY_NOW',
-                  ...(input.returnUrl ? { return_url: input.returnUrl, cancel_url: input.returnUrl } : {}),
-                },
-              },
+            // No payment_source: Orders v2 then returns rel=approve. application_context keeps return_url.
+            application_context: {
+              user_action: 'PAY_NOW',
+              ...(input.returnUrl ? { return_url: input.returnUrl, cancel_url: input.returnUrl } : {}),
             },
           },
         })
@@ -324,16 +335,27 @@ export function createPaypalProvider(options: PaypalProviderOptions = {}): Payme
         const response = await apiClient(credentials).request({
           method: 'POST',
           path: `/v2/checkout/orders/${encodeURIComponent(input.providerPaymentId)}/capture`,
-          headers: { 'PayPal-Request-Id': requestId },
+          headers: writeHeaders(requestId),
           json: {},
         })
         throwIfPaypalFailed(response)
         const order = parsePaypalJson(response.bodyText) as PaypalOrder
-        return normalizePaypalOrder(order, matchContext(credentials, {
+        const ctx = matchContext(credentials, {
           orderId: input.orderId,
+          paypalOrderId: input.providerPaymentId,
           amountMinor: input.amountMinor,
           currency: input.currency,
-        }))
+        })
+        // Minimal capture bodies omit purchase_units.payments.captures; query instead of treating as processing.
+        if (!extractPaypalCapture(order)) {
+          return queryOrUnknown(credentials, {
+            providerPaymentId: input.providerPaymentId,
+            amountMinor: input.amountMinor,
+            currency: input.currency,
+            orderId: input.orderId,
+          })
+        }
+        return normalizePaypalOrder(order, ctx)
       } catch (err) {
         // Timeout/unknown/already-captured: query; never recapture with a new request id.
         if (
@@ -359,7 +381,7 @@ export function createPaypalProvider(options: PaypalProviderOptions = {}): Payme
         const credentials = resolveAccount(input.providerAccountKey, environment)
         const order = await getOrder(credentials, input.providerPaymentId)
         return normalizePaypalOrder(order, matchContext(credentials, {
-          orderId: input.providerOrderId ?? undefined,
+          paypalOrderId: input.providerOrderId ?? input.providerPaymentId,
         }))
       } catch (err) {
         mapProviderError(err)
@@ -478,7 +500,7 @@ export function createPaypalProvider(options: PaypalProviderOptions = {}): Payme
         const response = await apiClient(credentials).request({
           method: 'POST',
           path: `/v2/payments/captures/${encodeURIComponent(captureId)}/refund`,
-          headers: { 'PayPal-Request-Id': requestId },
+          headers: writeHeaders(requestId),
           json: {
             amount: {
               currency_code: input.currency,
@@ -487,7 +509,17 @@ export function createPaypalProvider(options: PaypalProviderOptions = {}): Payme
           },
         })
         throwIfPaypalFailed(response)
-        return normalizePaypalRefund(parsePaypalJson(response.bodyText) as PaypalRefundResource)
+        const resource = parsePaypalJson(response.bodyText) as PaypalRefundResource
+        const refundId = typeof resource.id === 'string' ? resource.id : undefined
+        if (refundId && (resource.amount == null || resource.amount.value == null)) {
+          const queried = await apiClient(credentials).request({
+            method: 'GET',
+            path: `/v2/payments/refunds/${encodeURIComponent(refundId)}`,
+          })
+          throwIfPaypalFailed(queried)
+          return normalizePaypalRefund(parsePaypalJson(queried.bodyText) as PaypalRefundResource)
+        }
+        return normalizePaypalRefund(resource)
       } catch (err) {
         if (isPaypalTimeoutOrUnknown(err) || isPaypalAlreadyCaptured(err) || isPaypalUnprocessable(err)) {
           throw paymentStateUnknown()

@@ -21,9 +21,11 @@ import {
   PAYPAL_LIVE_CREDENTIALS,
   PAYPAL_SANDBOX_CREDENTIALS,
   paypalApprovedOrderWebhookFixture,
+  paypalApproveLinks,
   paypalCaptureCompletedWebhookFixture,
   paypalCompletedOrderFixture,
   paypalCreatedOrderFixture,
+  paypalMinimalCompletedCaptureFixture,
   paypalRefundFixture,
   paypalWebhookHeaders,
 } from './fixtures.js'
@@ -127,8 +129,39 @@ describe('paypal adapter contract', () => {
     }
     const createCall = calls.find(call => call.path === '/v2/checkout/orders')
     expect(createCall?.headers['PayPal-Request-Id']).toBe(toPaypalRequestId(`recharge:${PAYPAL_FIXTURE_ORDER_UUID}:create:v1`))
-    expect(JSON.parse(createCall?.body ?? '{}').intent).toBe('CAPTURE')
+    expect(createCall?.headers.Prefer).toBe('return=representation')
+    const createBody = JSON.parse(createCall?.body ?? '{}') as {
+      intent?: string
+      payment_source?: unknown
+      application_context?: { return_url?: string }
+    }
+    expect(createBody.intent).toBe('CAPTURE')
+    expect(createBody.payment_source).toBeUndefined()
+    expect(createBody.application_context?.return_url).toBe('https://shop.example.com/recharge/return')
     expect(created.action.type).not.toBe('client_secret')
+  })
+
+  it('accepts rel=payer-action HTTPS as the Orders v2 approval redirect', async () => {
+    const { transport } = withOauth((_req, path) => {
+      if (path === '/v2/checkout/orders') {
+        return jsonResponse(201, paypalCreatedOrderFixture({ links: paypalApproveLinks('sandbox', 'payer-action') }))
+      }
+      throw new Error(`unexpected ${path}`)
+    })
+    const created = await sandboxProvider(transport).createPayment({
+      orderId: PAYPAL_FIXTURE_ORDER_UUID,
+      paymentIntentId: randomUUID(),
+      paymentAttemptId: randomUUID(),
+      amountMinor: PAYPAL_FIXTURE_AMOUNT_MINOR,
+      currency: 'USD',
+      paymentMethod: 'redirect',
+      providerAccountKey: paypalAccountKey({ mode: 'sandbox', merchantId: PAYPAL_SANDBOX_CREDENTIALS.merchantId }),
+      requestIdempotencyKey: `recharge:${PAYPAL_FIXTURE_ORDER_UUID}:create:payer-action`,
+    })
+    expect(created.action.type).toBe('redirect')
+    if (created.action.type === 'redirect') {
+      expect(created.action.url).toBe(`https://www.sandbox.paypal.com/checkoutnow?token=${PAYPAL_FIXTURE_ORDER_ID}`)
+    }
   })
 
   it('does not credit when capture is not COMPLETED', async () => {
@@ -160,6 +193,51 @@ describe('paypal adapter contract', () => {
     expect(captureIds).toHaveLength(2)
     expect(captureIds[0]).toBe(captureIds[1])
     expect(captureIds[0]).toBe(toPaypalRequestId(input.requestIdempotencyKey))
+    expect(calls.find(call => call.path.endsWith('/capture'))?.headers.Prefer).toBe('return=representation')
+  })
+
+  it('keeps a COMPLETED capture succeeded when query uses the stored PayPal order id', async () => {
+    const { transport } = withOauth((_req, path) => {
+      if (path === '/v2/checkout/orders') return jsonResponse(201, paypalCreatedOrderFixture())
+      if (path === `/v2/checkout/orders/${PAYPAL_FIXTURE_ORDER_ID}`) {
+        return jsonResponse(200, paypalCompletedOrderFixture())
+      }
+      throw new Error(`unexpected ${path}`)
+    })
+    const provider = sandboxProvider(transport)
+    const created = await provider.createPayment({
+      orderId: PAYPAL_FIXTURE_ORDER_UUID,
+      paymentIntentId: randomUUID(),
+      paymentAttemptId: randomUUID(),
+      amountMinor: PAYPAL_FIXTURE_AMOUNT_MINOR,
+      currency: 'USD',
+      paymentMethod: 'redirect',
+      providerAccountKey: paypalAccountKey({ mode: 'sandbox', merchantId: PAYPAL_SANDBOX_CREDENTIALS.merchantId }),
+      requestIdempotencyKey: `recharge:${PAYPAL_FIXTURE_ORDER_UUID}:create:query`,
+    })
+    expect(created.providerOrderId).toBe(PAYPAL_FIXTURE_ORDER_ID)
+    const queried = await provider.queryPayment({
+      providerPaymentId: created.providerPaymentId,
+      providerAccountKey: paypalAccountKey({ mode: 'sandbox', merchantId: PAYPAL_SANDBOX_CREDENTIALS.merchantId }),
+      providerOrderId: created.providerOrderId,
+    })
+    expect(queried.status).toBe('succeeded')
+    expect(queried.providerCaptureId).toBe(PAYPAL_FIXTURE_CAPTURE_ID)
+  })
+
+  it('queries the order when capture 2xx is a minimal COMPLETED body', async () => {
+    const { transport, calls } = withOauth((_req, path) => {
+      if (path.endsWith('/capture')) return jsonResponse(201, paypalMinimalCompletedCaptureFixture())
+      if (path === `/v2/checkout/orders/${PAYPAL_FIXTURE_ORDER_ID}`) {
+        return jsonResponse(200, paypalCompletedOrderFixture())
+      }
+      throw new Error(`unexpected ${path}`)
+    })
+    const payment = await sandboxProvider(transport).completePayment(completeInput())
+    expect(payment.status).toBe('succeeded')
+    expect(payment.providerCaptureId).toBe(PAYPAL_FIXTURE_CAPTURE_ID)
+    expect(calls.find(call => call.path.endsWith('/capture'))?.headers.Prefer).toBe('return=representation')
+    expect(calls.filter(call => call.method === 'GET' && call.path === `/v2/checkout/orders/${PAYPAL_FIXTURE_ORDER_ID}`)).toHaveLength(1)
   })
 
   it('queries first on capture timeout and never recaptures', async () => {
@@ -225,8 +303,9 @@ describe('paypal adapter contract', () => {
     const queried = await provider.queryPayment({
       providerPaymentId: PAYPAL_FIXTURE_ORDER_ID,
       providerAccountKey: captured.providerAccountKey,
-      providerOrderId: PAYPAL_FIXTURE_ORDER_UUID,
+      providerOrderId: PAYPAL_FIXTURE_ORDER_ID,
     })
+    expect(queried.status).toBe('succeeded')
     const queryObs = await recordNormalizedPaymentFact({
       source: 'provider_query',
       provider: 'paypal',
@@ -421,6 +500,25 @@ describe('paypal adapter contract', () => {
     expect(queried.status).toBe('succeeded')
     const refundCall = calls.find(call => call.path.endsWith('/refund'))
     expect(refundCall?.headers['PayPal-Request-Id']).toBe(toPaypalRequestId(refundKey))
+    expect(refundCall?.headers.Prefer).toBe('return=representation')
+  })
+
+  it('rejects lookalike PayPal API hosts', async () => {
+    const { transport } = withOauth(() => jsonResponse(500, {}))
+    await expect(createPaypalProvider({
+      credentials: { ...PAYPAL_LIVE_CREDENTIALS, apiBaseUrl: 'https://evilpaypal.com' },
+      transport,
+    }).selectAccount({
+      environment: 'live',
+      currency: 'USD',
+      paymentMethod: 'redirect',
+    })).rejects.toMatchObject({ code: 'PAYMENT_PROVIDER_UNAVAILABLE' })
+
+    const forgedCert = await sandboxProvider(transport).verifyAndNormalizeWebhook({
+      headers: paypalWebhookHeaders({ 'paypal-cert-url': 'https://sandbox.paypal.com.evil.com/cert.pem' }),
+      rawBody: Buffer.from(JSON.stringify(paypalCaptureCompletedWebhookFixture()), 'utf8'),
+    })
+    expect(forgedCert.signatureVerified).toBe(false)
   })
 
   it('evaluates capabilities per account, environment, currency, and method', async () => {

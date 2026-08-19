@@ -8,6 +8,8 @@ export type PaypalPaymentMethod = (typeof PAYPAL_PAYMENT_METHODS)[number]
 
 export const PAYPAL_LIVE_API_BASE = 'https://api-m.paypal.com'
 export const PAYPAL_SANDBOX_API_BASE = 'https://api-m.sandbox.paypal.com'
+const PAYPAL_SANDBOX_API_HOSTS = new Set(['api-m.sandbox.paypal.com', 'api.sandbox.paypal.com'])
+const PAYPAL_LIVE_API_HOSTS = new Set(['api-m.paypal.com', 'api.paypal.com'])
 
 export type PaypalCredentials = {
   mode: 'sandbox' | 'live'
@@ -39,11 +41,11 @@ function hostnameOf(url: string): string | undefined {
 }
 
 export function isPaypalSandboxApiHost(hostname: string): boolean {
-  return hostname.includes('sandbox.paypal.com')
+  return PAYPAL_SANDBOX_API_HOSTS.has(hostname.toLowerCase())
 }
 
 export function isPaypalLiveApiHost(hostname: string): boolean {
-  return hostname.endsWith('paypal.com') && !hostname.includes('sandbox.')
+  return PAYPAL_LIVE_API_HOSTS.has(hostname.toLowerCase())
 }
 
 export function isPaypalCertUrlAllowed(certUrl: string, mode: 'sandbox' | 'live'): boolean {
@@ -55,8 +57,7 @@ export function isPaypalCertUrlAllowed(certUrl: string, mode: 'sandbox' | 'live'
   }
   if (parsed.protocol !== 'https:') return false
   const host = parsed.hostname.toLowerCase()
-  if (mode === 'sandbox') return isPaypalSandboxApiHost(host) || host === 'api.sandbox.paypal.com'
-  return isPaypalLiveApiHost(host)
+  return mode === 'sandbox' ? isPaypalSandboxApiHost(host) : isPaypalLiveApiHost(host)
 }
 
 export function defaultPaypalApiBaseUrl(mode: 'sandbox' | 'live'): string {

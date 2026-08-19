@@ -26,12 +26,23 @@ export const PAYPAL_LIVE_CREDENTIALS = {
   merchantId: PAYPAL_FIXTURE_MERCHANT_ID,
 }
 
-export function paypalApproveLinks(mode: 'sandbox' | 'live' = 'sandbox') {
+export function paypalApproveLinks(mode: 'sandbox' | 'live' = 'sandbox', rel: 'approve' | 'payer-action' = 'approve') {
   const host = mode === 'live' ? 'www.paypal.com' : 'www.sandbox.paypal.com'
+  const apiHost = mode === 'live' ? 'api-m.paypal.com' : 'api-m.sandbox.paypal.com'
   return [
-    { href: `https://api-m.${mode === 'live' ? '' : 'sandbox.'}paypal.com/v2/checkout/orders/${PAYPAL_FIXTURE_ORDER_ID}`, rel: 'self', method: 'GET' },
-    { href: `https://${host}/checkoutnow?token=${PAYPAL_FIXTURE_ORDER_ID}`, rel: 'approve', method: 'GET' },
+    { href: `https://${apiHost}/v2/checkout/orders/${PAYPAL_FIXTURE_ORDER_ID}`, rel: 'self', method: 'GET' },
+    { href: `https://${host}/checkoutnow?token=${PAYPAL_FIXTURE_ORDER_ID}`, rel, method: 'GET' },
   ]
+}
+
+export function paypalMinimalCompletedCaptureFixture() {
+  return {
+    id: PAYPAL_FIXTURE_ORDER_ID,
+    status: 'COMPLETED',
+    links: [
+      { href: `https://api-m.sandbox.paypal.com/v2/checkout/orders/${PAYPAL_FIXTURE_ORDER_ID}`, rel: 'self', method: 'GET' },
+    ],
+  }
 }
 
 export function paypalCreatedOrderFixture(overrides: Record<string, unknown> = {}) {

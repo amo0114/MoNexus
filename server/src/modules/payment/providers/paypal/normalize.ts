@@ -69,7 +69,10 @@ export type PaypalWebhookEvent = {
 
 export type PaypalMatchContext = {
   providerAccountKey: string
+  /** Platform RechargeOrder UUID; compared to custom_id / reference_id / invoice_id. */
   expectedOrderId?: string
+  /** PayPal Orders v2 id; compared to order.id only, never to platform UUID fields. */
+  expectedPaypalOrderId?: string
   expectedAmountMinor?: bigint
   expectedCurrency?: RechargeCurrency
   merchantId?: string
@@ -135,7 +138,9 @@ export function mapPaypalRefundStatus(status: string | undefined): NormalizedRef
 
 export function selectApproveHref(links: PaypalLink[] | undefined): string | undefined {
   if (!Array.isArray(links)) return undefined
+  // Prefer rel=approve (no payment_source). payer-action is the same checkout URL when payment_source is set.
   const approve = links.find(link => asString(link.rel) === 'approve')
+    ?? links.find(link => asString(link.rel) === 'payer-action')
   return asString(approve?.href)
 }
 
@@ -182,6 +187,12 @@ function orderReferenceMismatched(unit: PaypalPurchaseUnit | undefined, expected
     .filter((value): value is string => Boolean(value))
   if (refs.length === 0) return false
   return refs.some(value => value !== expectedOrderId)
+}
+
+function paypalOrderIdMismatched(order: PaypalOrder, expectedPaypalOrderId?: string): boolean {
+  const actual = asString(order.id)
+  if (!expectedPaypalOrderId || !actual) return false
+  return actual !== expectedPaypalOrderId
 }
 
 function payeeMismatched(payee: PaypalPayee | undefined, ctx: PaypalMatchContext): boolean {
@@ -235,6 +246,7 @@ export function normalizePaypalOrder(order: PaypalOrder, ctx: PaypalMatchContext
     const currencyMismatch = ctx.expectedCurrency !== undefined && currency !== ctx.expectedCurrency
     const orderMismatch = orderReferenceMismatched(unit, ctx.expectedOrderId)
       || (ctx.expectedOrderId && asString(capture?.custom_id) && asString(capture?.custom_id) !== ctx.expectedOrderId)
+      || paypalOrderIdMismatched(order, ctx.expectedPaypalOrderId)
     const payeeMismatch = payeeMismatched(payee, ctx)
     const missingMoney = !amountValid || !currency
     if (amountMismatch || currencyMismatch || orderMismatch || payeeMismatch || missingMoney) {
