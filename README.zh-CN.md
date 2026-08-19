@@ -8,7 +8,7 @@
 
 [English](./README.md) | **简体中文**
 
-> 内部福利积分兑换平台。用户通过站内积分兑换数字商品（卡密、订阅链接、虚拟服务），**不接入任何真实货币或第三方支付**。
+> 内部福利积分兑换平台。用户通过站内积分兑换数字商品（卡密、订阅链接、虚拟服务）。充值模块已落地；在缺少凭据和商户资质时，live 支付渠道保持 disabled。
 
 ---
 
@@ -32,15 +32,15 @@
 
 ## 项目简介
 
-**MoNexus** 是一个纯 **内部福利 / 积分激励平台**：平台运营方发放积分，商家供应数字商品，用户消费积分。所有金额均为系统内非负整数账面流转，与人民币、外币、银行卡、微信、支付宝、Stripe 等**无任何关联**。
+**MoNexus** 是一个 **内部福利 / 积分激励平台**：平台运营方发放积分，商家供应数字商品，用户消费积分。账本金额仍为系统内整数。可选的用户法币充值已作为独立模块实现（报价、下单、入账、退款、争议、对账），本地/预发使用 Simulator。生产默认 `RECHARGE_MODE=disabled`。Stripe、PayPal、微信支付、支付宝等 live 适配器在缺少凭据和商户资质时保持 disabled。
 
 | 角色 | 能力 |
 | --- | --- |
-| **普通用户 (user)** | 注册登录、签到邀请、浏览商城、兑换商品、查看订单与评价 |
+| **普通用户 (user)** | 注册登录、签到邀请、浏览商城、兑换商品、查看订单与评价、在功能开启时充值积分 |
 | **商家 (merchant)** | 申请入驻、管理商品与库存、履约发货、查看结算 |
-| **管理员 (admin)** | 审核商家、调整积分、配置系统奖励、批量结算、审计日志 |
+| **管理员 (admin)** | 审核商家、调整积分、配置系统奖励、批量结算、审计日志、充值/支付运营 |
 
-**明确不做的边界：** 真实支付、用户法币充值积分、提现到法币、实物物流、多租户白标 SaaS、原生 App。仅 Web + 移动浏览器响应式。
+**明确不做的边界：** 提现到法币、实物物流、多租户白标 SaaS、原生 App。仅 Web + 移动浏览器响应式。用户法币充值模块已存在；live 渠道在缺少凭据和商户资质时保持 disabled。生产部署不能以 Simulator 或 `RECHARGE_MODE=sandbox` 启动。
 
 ---
 
@@ -53,6 +53,7 @@
 - 商品大厅：搜索、分类、游标分页
 - 多种交付：即时库存卡密、固定内容、手动履约服务
 - 每日签到、邀请码、积分流水
+- 可选法币充值（报价 → 支付 → 入账；`RECHARGE_MODE` 为 sandbox/live 时开放）；回跳 URL 不得视为支付成功
 - 订单历史、发货内容复制、商品评价
 
 ### 商家端
@@ -67,13 +68,15 @@
 - 用户 / 商家 / 商品 / 订单 / 结算总览
 - 商家审核 / 停用、按商家配置抽成比例
 - 手动调积分，完整 Admin 审计
+- 充值订单、退款、争议与对账（live 渠道在缺少凭据时保持 disabled）
 - 运行时系统配置（注册 / 邀请 / 签到奖励、会员等级）
 - 可观测性：健康检查、Prometheus 指标、Sentry 错误上报
 
 ### 工程与质量
 
 - 兑换同事务：扣积分 + 占库存 + 订单 + 发货 + 结算
-- 积分与佣金全程整数运算，禁止浮点金额
+- 积分、佣金与充值金额全程整数运算，禁止浮点
+- 充值生产默认 `RECHARGE_MODE=disabled`；生产部署拒绝 Simulator / sandbox
 - Redis 可选公读缓存 + 熔断
 - S3 兼容对象存储（本地 MinIO，生产 S3/R2/OSS）
 - CI/CD、备份脚本、生产 Compose、运维手册
@@ -383,6 +386,7 @@ GitHub Actions 仍可打 tar 包，经 SSH 部署到 **nginx + systemd**（或 P
 | 文档 | 说明 |
 | --- | --- |
 | [`docs/superpowers/specs/2026-04-30-monexus-product-prd.md`](./docs/superpowers/specs/2026-04-30-monexus-product-prd.md) | 产品 PRD 与里程碑 |
+| [`docs/specs/recharge-payment-platform-v1.md`](./docs/specs/recharge-payment-platform-v1.md) | 充值与支付平台 V1（无凭据时 live 渠道保持 disabled） |
 | [`docs/superpowers/specs/2026-04-29-monexus-merchant-settlement-contract.md`](./docs/superpowers/specs/2026-04-29-monexus-merchant-settlement-contract.md) | 商家结算契约 |
 | [`docs/superpowers/specs/monexus-api-openapi.json`](./docs/superpowers/specs/monexus-api-openapi.json) | OpenAPI 定义 |
 | [`docs/operations/`](./docs/operations/) | 运维手册、灰度、告警 |
