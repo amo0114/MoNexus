@@ -96,6 +96,12 @@ export type ErrorCode =
   | 'VALUE_POLICY_IDEMPOTENCY_KEY_INVALID'
   | 'VALUE_POLICY_IDEMPOTENCY_CONFLICT'
   | 'VALUE_POLICY_EFFECTIVE_AT_INVALID'
+  // PointAccount mutations: non-negative, Int-safe, and
+  // balance + frozenBalance <= 2_000_000_000. Future DB CHECK violations
+  // must map here instead of unhandled 500s.
+  | 'POINT_BALANCE_HARD_CAP'
+  | 'POINT_INSUFFICIENT'
+  | 'POINT_BALANCE_CONFLICT'
 
 export interface ErrorDetail {
   field: string
@@ -253,4 +259,16 @@ export function valuePolicyUnavailable(message = '价值政策暂不可用，请
 
 export function valuePolicyDataInvalid(message = '价值政策数据不合法') {
   return new HttpError(500, 'VALUE_POLICY_DATA_INVALID', message)
+}
+
+export function pointInsufficient(message = '积分不足') {
+  return new HttpError(400, 'POINT_INSUFFICIENT', message)
+}
+
+export function pointBalanceHardCap(message = '积分余额已达上限') {
+  return new HttpError(400, 'POINT_BALANCE_HARD_CAP', message)
+}
+
+export function pointBalanceConflict(message = '积分账户正在变更，请重试') {
+  return new HttpError(409, 'POINT_BALANCE_CONFLICT', message)
 }

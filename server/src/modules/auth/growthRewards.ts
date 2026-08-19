@@ -3,6 +3,7 @@ import { conflict, notFound } from '../../lib/httpError.js'
 import { applyTierBonus, getCurrentTierConfig, resolveTier } from '../../lib/memberTier.js'
 import { prisma } from '../../lib/prisma.js'
 import { getSystemConfigValue } from '../../lib/systemConfig.js'
+import { creditAvailablePoints } from '../points/checkedMutation.js'
 import { getShanghaiDayWindow } from './abusePolicy.js'
 import {
   recordAbuseEvent,
@@ -512,16 +513,17 @@ export async function releaseGrowthRewardInTransaction(
     }
   }
 
-  const account = await tx.pointAccount.update({
-    where: { userId: reward.recipientUserId },
-    data: { balance: { increment: reward.amount } },
-  })
+  const account = await tx.pointAccount.findUnique({ where: { userId: reward.recipientUserId } })
+  if (!account) throw notFound('积分账户不存在')
+  const balanceAfter = reward.amount > 0
+    ? (await creditAvailablePoints(tx, reward.recipientUserId, reward.amount)).balance
+    : account.balance
   await tx.pointLog.create({
     data: {
       userId: reward.recipientUserId,
       type: 'in',
       amount: reward.amount,
-      balanceAfter: account.balance,
+      balanceAfter,
       reason: reward.kind === 'referral' ? '邀请奖励冷静期发放' : '注册奖励冷静期发放',
     },
   })

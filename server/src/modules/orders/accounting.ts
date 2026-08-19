@@ -1,9 +1,17 @@
 import type { Prisma } from '@prisma/client'
 import { badRequest, notFound } from '../../lib/httpError.js'
+import {
+  consumeHeldPoints,
+  creditAvailablePoints as creditChecked,
+  debitAvailablePoints as debitChecked,
+  holdAvailablePoints as holdChecked,
+  releaseHeldPoints,
+  type PointMutationClient,
+} from '../points/checkedMutation.js'
 
-type AccountingClient = Pick<
+type AccountingClient = PointMutationClient & Pick<
   Prisma.TransactionClient,
-  'pointAccount' | 'pointLog' | 'order' | 'settlement'
+  'pointLog' | 'order' | 'settlement'
 >
 
 export type HeldOrder = {
@@ -19,32 +27,13 @@ async function getAccountOrThrow(client: AccountingClient, userId: number) {
   return account
 }
 
-async function ensureSpendableBalance(
-  client: AccountingClient,
-  userId: number,
-  amount: number
-) {
-  const account = await getAccountOrThrow(client, userId)
-  if (account.balance < amount) throw badRequest('积分不足')
-}
-
 /** Atomically subtract from the balance that is actually available to spend. */
 export async function debitAvailablePoints(
   client: AccountingClient,
   userId: number,
   amount: number
 ): Promise<number> {
-  const result = await client.pointAccount.updateMany({
-    where: { userId, balance: { gte: amount } },
-    data: { balance: { decrement: amount } },
-  })
-  if (result.count !== 1) {
-    await ensureSpendableBalance(client, userId, amount)
-    // The account can only disappear between the conditional update and the
-    // diagnostic read if data was changed outside normal application paths.
-    throw badRequest('积分扣减失败，请重试')
-  }
-  return (await getAccountOrThrow(client, userId)).balance
+  return (await debitChecked(client, userId, amount)).balance
 }
 
 export async function creditAvailablePoints(
@@ -52,11 +41,7 @@ export async function creditAvailablePoints(
   userId: number,
   amount: number
 ): Promise<number> {
-  const account = await client.pointAccount.update({
-    where: { userId },
-    data: { balance: { increment: amount } },
-  })
-  return account.balance
+  return (await creditChecked(client, userId, amount)).balance
 }
 
 /** Atomically move available points into the manual-service reservation pool. */
@@ -65,18 +50,7 @@ export async function holdAvailablePoints(
   userId: number,
   amount: number
 ): Promise<number> {
-  const result = await client.pointAccount.updateMany({
-    where: { userId, balance: { gte: amount } },
-    data: {
-      balance: { decrement: amount },
-      frozenBalance: { increment: amount },
-    },
-  })
-  if (result.count !== 1) {
-    await ensureSpendableBalance(client, userId, amount)
-    throw badRequest('积分冻结失败，请重试')
-  }
-  return (await getAccountOrThrow(client, userId)).balance
+  return (await holdChecked(client, userId, amount)).balance
 }
 
 /**
@@ -94,12 +68,7 @@ export async function settleHeldOrder(
 
   let balanceAfter: number
   if (order.fundsHeld) {
-    const released = await client.pointAccount.updateMany({
-      where: { userId: order.userId, frozenBalance: { gte: amount } },
-      data: { frozenBalance: { decrement: amount } },
-    })
-    if (released.count !== 1) throw badRequest('订单冻结积分状态异常，请联系管理员')
-    balanceAfter = (await getAccountOrThrow(client, order.userId)).balance
+    balanceAfter = (await consumeHeldPoints(client, order.userId, amount)).balance
   } else {
     balanceAfter = await debitAvailablePoints(client, order.userId, amount)
   }
@@ -136,15 +105,7 @@ export async function releaseHeldOrder(
 
   let balanceAfter: number
   if (order.fundsHeld) {
-    const released = await client.pointAccount.updateMany({
-      where: { userId: order.userId, frozenBalance: { gte: amount } },
-      data: {
-        frozenBalance: { decrement: amount },
-        balance: { increment: amount },
-      },
-    })
-    if (released.count !== 1) throw badRequest('订单冻结积分状态异常，请联系管理员')
-    balanceAfter = (await getAccountOrThrow(client, order.userId)).balance
+    balanceAfter = (await releaseHeldPoints(client, order.userId, amount)).balance
   } else {
     // The old system only remembered the hold on Order, without reserving the
     // balance.  Preserve the amount and leave the account untouched.

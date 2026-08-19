@@ -14,11 +14,8 @@
 //     a transaction breaks the MERCH-008 invariant.
 //
 // Concurrency guarantees (AC-MERCH-027 / CHK-PROMO-011):
-//   - the PointAccount row is locked `FOR UPDATE` before the conditional debit
-//     check, so concurrent charges on the same account serialize and can never
-//     drive the balance negative;
-//   - refunds also lock the account row before `increment`, so a concurrent
-//     charge/refund cannot lose an update;
+//   - debit/credit go through the shared checked PointAccount helper so concurrent
+//     charges cannot drive the balance negative or past the hard cap;
 //   - the campaign side (billing.ts) owns the `chargePointLogId` / `refundPointLogId`
 //     UNIQUE links that make duplicate charge/refund impossible at the DB level.
 //
@@ -26,8 +23,9 @@
 // point-log id / balance snapshot required by the caller. No secrets here.
 
 import { Prisma } from '@prisma/client'
-import { notFound } from '../../../lib/httpError.js'
+import { HttpError, notFound } from '../../../lib/httpError.js'
 import { prisma } from '../../../lib/prisma.js'
+import { creditAvailablePoints, debitAvailablePoints } from '../../points/checkedMutation.js'
 
 /** 稳定 PointLog reason 模板（§7.3 / §7.4：charge 与 refund 均用固定文案，
  * 不允许审核长文本/内部 reason 进入 PointLog。CHK-SEC-003/004）。 */
@@ -43,16 +41,10 @@ export async function dbNow(client: Db): Promise<Date> {
   return rows[0].now
 }
 
-export interface ChargedAccountRow {
-  id: number
-  userId: number
-  balance: number
-}
-
 /**
- * 条件扣款（§7.3 step 3/4）：`SELECT ... FOR UPDATE` 锁 PointAccount 行 →
- * 余额不足返回 `{ ok: false }`（不扣、不写 PointLog、不部分扣款）→ 足额则
- * 同事务 decrement + 创建 PointLog(type='out', orderId=null)。
+ * 条件扣款（§7.3 step 3/4）：checked debit → 余额不足返回 `{ ok: false }`
+ * （不扣、不写 PointLog、不部分扣款）→ 足额则同事务创建 PointLog(type='out',
+ * orderId=null)。
  *
  * 必须在交互式事务内调用；返回的 pointLogId 由调用方 CAS 到 campaign 的
  * `chargePointLogId`（UNIQUE）。
@@ -65,20 +57,17 @@ export async function debitPointsForPromotionCharge(
   if (!Number.isInteger(amount) || amount <= 0) {
     throw new Error(`promotion charge amount must be a positive integer, got ${amount}`)
   }
-  const rows = await tx.$queryRaw<ChargedAccountRow[]>`
-    SELECT "id", "userId", "balance" FROM "PointAccount" WHERE "userId" = ${userId} FOR UPDATE`
-  const account = rows[0]
-  if (!account) {
-    throw notFound('积分账户不存在')
+  let updated
+  try {
+    updated = await debitAvailablePoints(tx, userId, amount)
+  } catch (error) {
+    if (error instanceof HttpError && error.code === 'POINT_INSUFFICIENT') {
+      const account = await tx.pointAccount.findUnique({ where: { userId }, select: { balance: true } })
+      if (!account) throw notFound('积分账户不存在')
+      return { ok: false, balance: account.balance }
+    }
+    throw error
   }
-  if (account.balance < amount) {
-    return { ok: false, balance: account.balance }
-  }
-  const updated = await tx.pointAccount.update({
-    where: { id: account.id },
-    data: { balance: { decrement: amount } },
-    select: { balance: true },
-  })
   const pointLog = await tx.pointLog.create({
     data: {
       userId,
@@ -94,9 +83,9 @@ export async function debitPointsForPromotionCharge(
 }
 
 /**
- * 退款入账（§7.4）：锁 PointAccount 行 → increment → 创建 PointLog(type='refund',
- * orderId=null)。余额为非负 CHECK 约束保护；调用方保证 refund ≤ 当前扣款
- * （service 校验 + DB CHECK `refundedPoints <= chargedPoints`）。
+ * 退款入账（§7.4）：checked credit → 创建 PointLog(type='refund', orderId=null)。
+ * 调用方保证 refund ≤ 当前扣款（service 校验 + DB CHECK
+ * `refundedPoints <= chargedPoints`）。
  */
 export async function creditPointsForPromotionRefund(
   tx: Prisma.TransactionClient,
@@ -106,17 +95,7 @@ export async function creditPointsForPromotionRefund(
   if (!Number.isInteger(amount) || amount <= 0) {
     throw new Error(`promotion refund amount must be a positive integer, got ${amount}`)
   }
-  const rows = await tx.$queryRaw<ChargedAccountRow[]>`
-    SELECT "id", "userId", "balance" FROM "PointAccount" WHERE "userId" = ${userId} FOR UPDATE`
-  const account = rows[0]
-  if (!account) {
-    throw notFound('积分账户不存在')
-  }
-  const updated = await tx.pointAccount.update({
-    where: { id: account.id },
-    data: { balance: { increment: amount } },
-    select: { balance: true },
-  })
+  const updated = await creditAvailablePoints(tx, userId, amount)
   const pointLog = await tx.pointLog.create({
     data: {
       userId,
