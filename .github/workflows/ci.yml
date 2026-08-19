@@ -428,7 +428,10 @@ jobs:
         contains(github.event.pull_request.labels.*.name, 'run-e2e')
       )
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # Playwright's cached-browser path still runs apt-based install-deps.
+    # GitHub-hosted runners can spend more than 10 minutes in that step, so
+    # keep this aligned with the compatibility E2E job's fail-closed window.
+    timeout-minutes: 20
 
     services:
       postgres:
