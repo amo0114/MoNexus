@@ -193,12 +193,12 @@ describe('PointAccount hard-cap mutations', () => {
     expect(after.balance + after.frozenBalance).toBeLessThanOrEqual(CAP)
   })
 
-  it('releases a hold on a pre-existing over-cap row instead of blocking un-hold', async () => {
-    const user = await userWithBalances(CAP, 100)
-    await expect(releaseHeldPoints(prisma, user.id, 100)).resolves.toMatchObject({
-      balance: CAP + 100,
-      frozenBalance: 0,
-    })
+  it('cannot insert an over-cap PointAccount row once the hard-cap CHECK exists', async () => {
+    const { user } = await createTestUser(email('over-cap'), 'pass123', 'user', 0)
+    await expect(prisma.pointAccount.update({
+      where: { userId: user.id },
+      data: { balance: CAP, frozenBalance: 100 },
+    })).rejects.toThrow()
   })
 
   it('allows two concurrent credits from CAP-2 and never exceeds the cap', async () => {

@@ -52,6 +52,108 @@ function loadConfigWith(overrides: Record<string, string | undefined>) {
   )
 }
 
+describe('recharge isProductionDeploy isolation matrix', () => {
+  it('boots production+production when RECHARGE_MODE is disabled by default', () => {
+    const result = loadConfigWith({})
+    expect(result.status, result.stdout + result.stderr).toBe(0)
+    expect(result.stdout + result.stderr).toContain('CONFIG_OK')
+  })
+
+  it('refuses RECHARGE_MODE=sandbox on production+production', () => {
+    const result = loadConfigWith({ RECHARGE_MODE: 'sandbox' })
+    expect(result.status).toBe(1)
+    expect(result.stderr + result.stdout).toContain('RECHARGE_MODE=sandbox')
+  })
+
+  it('refuses a registered simulator on production+production', () => {
+    const result = loadConfigWith({
+      PAYMENT_REGISTERED_PROVIDERS: 'simulator',
+      PAYMENT_ENABLED_PROVIDERS: 'simulator',
+    })
+    expect(result.status).toBe(1)
+    expect(result.stderr + result.stdout).toMatch(/simulator/)
+  })
+
+  it('allows sandbox and simulator on production+staging without weakening NODE_ENV checks', () => {
+    const ok = loadConfigWith({
+      MONEXUS_DEPLOY_ENV: 'staging',
+      RECHARGE_MODE: 'sandbox',
+      PAYMENT_REGISTERED_PROVIDERS: 'simulator',
+      PAYMENT_ENABLED_PROVIDERS: 'simulator',
+    })
+    expect(ok.status, ok.stdout + ok.stderr).toBe(0)
+    expect(ok.stdout + ok.stderr).toContain('CONFIG_OK')
+
+    const abuse = loadConfigWith({
+      MONEXUS_DEPLOY_ENV: 'staging',
+      RECHARGE_MODE: 'sandbox',
+      ABUSE_PROTECTION_MODE: 'off',
+    })
+    expect(abuse.status).toBe(1)
+    expect(abuse.stderr + abuse.stdout).toContain('ABUSE_PROTECTION_MODE')
+  })
+
+  it('treats a missing MONEXUS_DEPLOY_ENV as production for sandbox isolation', () => {
+    const result = loadConfigWith({
+      MONEXUS_DEPLOY_ENV: undefined,
+      RECHARGE_MODE: 'sandbox',
+    })
+    expect(result.status).toBe(1)
+    expect(result.stderr + result.stdout).toContain('RECHARGE_MODE=sandbox')
+  })
+
+  it('allows sandbox when NODE_ENV=development even if deploy env is production', () => {
+    const result = loadConfigWith({
+      NODE_ENV: 'development',
+      MONEXUS_DEPLOY_ENV: 'production',
+      RECHARGE_MODE: 'sandbox',
+      PAYMENT_REGISTERED_PROVIDERS: 'simulator',
+      PAYMENT_ENABLED_PROVIDERS: 'simulator',
+    })
+    expect(result.status, result.stdout + result.stderr).toBe(0)
+    expect(result.stdout + result.stderr).toContain('CONFIG_OK')
+  })
+
+  it('requires enabled providers to be a subset of registered', () => {
+    const result = loadConfigWith({
+      MONEXUS_DEPLOY_ENV: 'staging',
+      PAYMENT_REGISTERED_PROVIDERS: 'paypal',
+      PAYMENT_ENABLED_PROVIDERS: 'stripe',
+    })
+    expect(result.status).toBe(1)
+    expect(result.stderr + result.stdout).toContain('PAYMENT_ENABLED_PROVIDERS')
+  })
+
+  it('keeps a historical provider registered after it is removed from enabled', () => {
+    const result = loadConfigWith({
+      MONEXUS_DEPLOY_ENV: 'staging',
+      RECHARGE_MODE: 'sandbox',
+      PAYMENT_REGISTERED_PROVIDERS: 'stripe,paypal',
+      PAYMENT_ENABLED_PROVIDERS: 'paypal',
+      PAYPAL_MODE: 'sandbox',
+      PAYPAL_WEBHOOK_ID: 'wh_id',
+      PAYPAL_API_BASE_URL: 'https://api-m.sandbox.paypal.com',
+    })
+    expect(result.status, result.stdout + result.stderr).toBe(0)
+    expect(result.stdout + result.stderr).toContain('CONFIG_OK')
+  })
+
+  it('refuses HTTP webhook public URLs and live Stripe test keys', () => {
+    const http = loadConfigWith({
+      PAYMENT_WEBHOOK_PUBLIC_BASE_URL: 'http://shop.example.com',
+    })
+    expect(http.status).toBe(1)
+    expect(http.stderr + http.stdout).toContain('https')
+
+    const testKey = loadConfigWith({
+      STRIPE_MODE: 'live',
+      STRIPE_SECRET_KEY: 'sk_test_123',
+    })
+    expect(testKey.status).toBe(1)
+    expect(testKey.stderr + testKey.stdout).toMatch(/test credentials/)
+  })
+})
+
 describe('production config guards for the private delivery bucket', () => {
   it('boots with a complete delivery configuration', () => {
     const result = loadConfigWith({})
