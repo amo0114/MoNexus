@@ -25,6 +25,7 @@ import PortableRestoreSetupPage from './pages/PortableRestoreSetupPage'
 import LegalDocumentPage from './pages/legal/LegalDocumentPage'
 import NotificationsPage from './pages/NotificationsPage'
 import OrdersPage from './pages/OrdersPage'
+import RechargePage from './pages/RechargePage'
 import RoleGuard from './components/RoleGuard'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -80,6 +81,7 @@ export default function App() {
                   <Route path="/" element={<StorePage />} />
                   <Route path="/product/:id" element={<ProductDetailPage />} />
                   <Route path="/profile" element={<ProfilePage />} />
+                  <Route path="/recharge" element={<RechargePage />} />
                   <Route path="/orders" element={<OrdersPage />} />
                   <Route path="/notifications" element={<NotificationsPage />} />
                   <Route path="/leaderboard" element={<LeaderboardPage />} />

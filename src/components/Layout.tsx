@@ -1,6 +1,6 @@
 import { useNavigate, useLocation, Link } from 'react-router-dom'
 import { useAuthStore } from '../stores/authStore'
-import { Coins, User, ShieldCheck, Store, Clock, XCircle, AlertTriangle, Plus, Search, Bell, Trophy, CheckCircle2, Info, Package } from 'lucide-react'
+import { Coins, User, ShieldCheck, Store, Clock, XCircle, AlertTriangle, Plus, Search, Bell, Trophy, CheckCircle2, Info, Package, Wallet } from 'lucide-react'
 import CountBadge from './ui/CountBadge'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import EmailVerificationBanner from './EmailVerificationBanner'
@@ -440,6 +440,23 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             <div className="hidden md:block">
               <ThemeToggle />
             </div>
+
+            <button
+              type="button"
+              onClick={() => navigate('/recharge')}
+              title="积分充值"
+              aria-label="积分充值"
+              aria-current={location.pathname.startsWith('/recharge') ? 'page' : undefined}
+              data-testid="nav-recharge"
+              className={`hidden md:flex items-center gap-1.5 px-3 py-2 rounded-full cursor-pointer transition-colors border focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)] ${
+                location.pathname.startsWith('/recharge')
+                  ? 'bg-[var(--color-primary-tint)] text-[var(--color-primary)] border-[var(--color-primary-tint-strong)]'
+                  : 'bg-[var(--color-surface)] text-[var(--color-text)] border-[var(--color-border)] hover:border-[var(--color-primary-tint-strong)]'
+              }`}
+            >
+              <Wallet className="w-4 h-4" />
+              <span className="hidden lg:inline font-bold text-xs">充值</span>
+            </button>
 
             {/* Points Badge — Coins icon in CTA green to match the buy-currency story */}
             <div
