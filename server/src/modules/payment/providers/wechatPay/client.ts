@@ -3,6 +3,7 @@ import {
   buildAuthorizationHeader,
   buildResponseSignMessage,
   headerValue,
+  isTimestampFresh,
   randomNonce,
   rsaSha256Verify,
   unixTimestampSeconds,
@@ -116,13 +117,14 @@ export async function wechatPayRequest(options: WechatPayRequestOptions): Promis
     const signature = headerValue(response.headers, 'Wechatpay-Signature')
     const ts = headerValue(response.headers, 'Wechatpay-Timestamp')
     const respNonce = headerValue(response.headers, 'Wechatpay-Nonce')
-    if (response.status !== 204) {
-      if (!signature || !ts || !respNonce) throw paymentProviderUnavailable()
-      if (serial && serial !== options.credentials.platformSerialNo) throw paymentProviderUnavailable()
-      const message = buildResponseSignMessage(ts, respNonce, response.body)
-      if (!rsaSha256Verify(options.credentials.platformPublicKeyPem, message, signature)) {
-        throw paymentProviderUnavailable()
-      }
+    if (!signature || !ts || !respNonce) throw paymentProviderUnavailable()
+    if (serial && serial !== options.credentials.platformSerialNo) throw paymentProviderUnavailable()
+    if (!isTimestampFresh(ts, options.now())) throw paymentProviderUnavailable()
+    // Official 204 close is signed as timestamp\nnonce\n\n with an empty body.
+    const signedBody = response.status === 204 ? '' : response.body
+    const message = buildResponseSignMessage(ts, respNonce, signedBody)
+    if (!rsaSha256Verify(options.credentials.platformPublicKeyPem, message, signature)) {
+      throw paymentProviderUnavailable()
     }
   }
 

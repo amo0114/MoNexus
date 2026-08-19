@@ -77,7 +77,11 @@ function signedPlatformHeaders(body: string, now = NOW): Record<string, string> 
 
 function jsonResponse(status: number, payload: unknown, now = NOW): WechatPayHttpResponse {
   const body = payload == null ? '' : JSON.stringify(payload)
-  return { status, body, headers: body ? signedPlatformHeaders(body, now) : {} }
+  return { status, body, headers: signedPlatformHeaders(body, now) }
+}
+
+function signedNoContent(now = NOW): WechatPayHttpResponse {
+  return { status: 204, body: '', headers: signedPlatformHeaders('', now) }
 }
 
 function createProvider(http: WechatPayHttp) {
@@ -241,7 +245,7 @@ describe('WeChat Pay adapter', () => {
   it('queries and closes by out_trade_no without marking paid', async () => {
     const provider = createProvider(async request => {
       if (request.pathAndQuery.includes('/close')) {
-        return { status: 204, body: '', headers: {} }
+        return signedNoContent()
       }
       return jsonResponse(200, OFFICIAL_SUCCESS_TRANSACTION)
     })
@@ -261,6 +265,39 @@ describe('WeChat Pay adapter', () => {
       requestIdempotencyKey: 'close-1',
     })
     expect(closed.status).toBe('cancelled')
+  })
+
+  it('verifies a 204 close over the official empty-body sign message', async () => {
+    const timestamp = Math.floor(NOW.getTime() / 1000).toString()
+    const nonce = 'D4PJYH8323444WUNiUs5O1jorgGif5ykEs'
+    expect(buildResponseSignMessage(timestamp, nonce, '')).toBe(`${timestamp}\n${nonce}\n\n`)
+    const provider = createProvider(async () => signedNoContent())
+    const closed = await provider.closePayment({
+      providerPaymentId: OFFICIAL_DOC_OUT_TRADE_NO,
+      providerAccountKey: ACCOUNT_KEY,
+      requestIdempotencyKey: 'close-signed-204',
+    })
+    expect(closed.status).toBe('cancelled')
+  })
+
+  it('does not treat an unsigned or wrongly signed 204 close as cancelled', async () => {
+    const unsigned = createProvider(async () => ({ status: 204, body: '', headers: {} }))
+    await expect(unsigned.closePayment({
+      providerPaymentId: OFFICIAL_DOC_OUT_TRADE_NO,
+      providerAccountKey: ACCOUNT_KEY,
+      requestIdempotencyKey: 'close-unsigned',
+    })).rejects.toMatchObject({ code: 'PAYMENT_PROVIDER_UNAVAILABLE' })
+
+    const wrongBody = createProvider(async () => ({
+      status: 204,
+      body: '',
+      headers: signedPlatformHeaders('{"code":"SUCCESS"}'),
+    }))
+    await expect(wrongBody.closePayment({
+      providerPaymentId: OFFICIAL_DOC_OUT_TRADE_NO,
+      providerAccountKey: ACCOUNT_KEY,
+      requestIdempotencyKey: 'close-wrong-body',
+    })).rejects.toMatchObject({ code: 'PAYMENT_PROVIDER_UNAVAILABLE' })
   })
 
   it('does not output succeeded when mchid/appid/amount/currency mismatch', async () => {
