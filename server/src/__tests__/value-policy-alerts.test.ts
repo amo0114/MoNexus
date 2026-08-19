@@ -94,6 +94,7 @@ describe('value-policy alert contract', () => {
     const alertmanager = compose.slice(compose.indexOf('  alertmanager:'), compose.indexOf('  prometheus:'))
     const scrape = readFileSync(resolve(repoRoot, 'deploy/monitoring/prometheus.yml'), 'utf8')
     const rehearsal = readFileSync(resolve(repoRoot, '.github/workflows/production-monitoring-rehearsal.yml'), 'utf8')
+    const deployEntrypoint = readFileSync(resolve(repoRoot, 'deploy/vps/monexus-compose-deploy'), 'utf8')
 
     expect(prometheus).toContain('prom/prometheus:v3.5.0@sha256:')
     expect(alertmanager).toContain('prom/alertmanager:v0.30.0@sha256:')
@@ -105,5 +106,8 @@ describe('value-policy alert contract', () => {
     expect(scrape).toContain('/etc/prometheus/rules/value-policy-alerts.rules.yml')
     expect(rehearsal).toContain('REHEARSE_VALUE_POLICY_EMAIL_PRODUCTION')
     expect(rehearsal).toContain('rehearse-alert ${ROUTING}')
+    expect(deployEntrypoint).toContain('readonly MONITORING_READY_TIMEOUT_SECONDS=120')
+    expect(deployEntrypoint).toContain('while (( SECONDS < deadline ))')
+    expect(deployEntrypoint).toContain('monitoring_contract_ready "$prometheus_address"')
   })
 })
