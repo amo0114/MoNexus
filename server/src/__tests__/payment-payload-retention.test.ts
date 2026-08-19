@@ -3,7 +3,10 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { config } from '../config/index.js'
 import { prisma } from '../lib/prisma.js'
 import { encryptPaymentEventPayload } from '../modules/payment/payloadCrypto.js'
-import { __runPaymentPayloadRetentionForTests } from '../modules/payment/payloadRetention.js'
+import {
+  __runPaymentPayloadRetentionForTests,
+  PAYMENT_PAYLOAD_SWEEP_BATCH_SIZE,
+} from '../modules/payment/payloadRetention.js'
 import { resetSimulatorState } from '../modules/payment/providers/simulator/index.js'
 import { api, authHeader, createTestUser, loginAs } from './helpers.js'
 
@@ -181,5 +184,88 @@ describe('payment raw payload retention', () => {
     })
     expect(await __runPaymentPayloadRetentionForTests()).toBe(1)
     expect((await prisma.paymentEvent.findUniqueOrThrow({ where: { id: event.id } })).rawPayloadEncrypted).toBeNull()
+  })
+
+  it('clears a later eligible row when more than one sweep batch is held by an open case', async () => {
+    await seedCnyPolicy()
+    const { user } = await createTestUser('payload-backlog@test.local', 'pass12345')
+    const auth = await loginAs('payload-backlog@test.local', 'pass12345')
+    const quote = await api.post('/api/recharge/quotes').set(authHeader(auth.accessToken)).send({
+      currency: 'CNY', amountMinor: '1000', amountSource: 'custom', provider: 'simulator', paymentMethod: 'card',
+    }).expect(201)
+    const order = await api.post('/api/recharge/orders').set(authHeader(auth.accessToken)).set('Idempotency-Key', randomUUID())
+      .send({ quoteId: quote.body.quoteId }).expect(201)
+    const stored = await prisma.rechargeOrder.findUniqueOrThrow({
+      where: { id: order.body.orderId },
+      include: { paymentIntent: { include: { attempts: true } } },
+    })
+    const attempt = stored.paymentIntent!.attempts[0]!
+    const heldAt = new Date(Date.now() - 40 * 24 * 60 * 60 * 1000)
+    const eligibleAt = new Date(Date.now() - 31 * 24 * 60 * 60 * 1000)
+    const heldCount = PAYMENT_PAYLOAD_SWEEP_BATCH_SIZE + 1
+    const batchKey = randomUUID()
+    await prisma.paymentEvent.createMany({
+      data: Array.from({ length: heldCount }, (_, index) => ({
+        provider: 'simulator',
+        providerAccountKey: 'simulator:sandbox:default',
+        source: 'webhook',
+        verificationMethod: 'webhook_signature',
+        paymentAttemptId: attempt.id,
+        providerPaymentId: attempt.providerPaymentId,
+        dedupeKey: `webhook:held-batch-${batchKey}-${index}`,
+        eventType: 'payment.succeeded',
+        payloadSha256: 'e'.repeat(64),
+        rawPayloadEncrypted: 'v1:held:batch:00',
+        normalizedPayload: { status: 'succeeded' },
+        signatureVerified: true,
+        status: 'processed',
+        observedAt: heldAt,
+        createdAt: heldAt,
+      })),
+    })
+    await prisma.rechargeRefund.create({
+      data: {
+        rechargeOrderId: stored.id,
+        paymentAttemptId: attempt.id,
+        requestIdempotencyKey: `refund-backlog-${stored.id}`,
+        amountMinor: stored.amountMinor,
+        pointsToReverse: stored.totalPoints,
+        status: 'processing',
+        reasonCode: 'hold_payload_backlog',
+        createdByUserId: user.id,
+      },
+    })
+    const eligible = await prisma.paymentEvent.create({
+      data: {
+        provider: 'simulator',
+        providerAccountKey: 'simulator:sandbox:default',
+        source: 'webhook',
+        verificationMethod: 'webhook_signature',
+        paymentAttemptId: null,
+        providerPaymentId: `eligible-${randomUUID()}`,
+        dedupeKey: `webhook:eligible-${randomUUID()}`,
+        eventType: 'payment.succeeded',
+        payloadSha256: 'f'.repeat(64),
+        rawPayloadEncrypted: 'v1:eligible:later:00',
+        normalizedPayload: { status: 'succeeded' },
+        signatureVerified: true,
+        status: 'processed',
+        observedAt: eligibleAt,
+        createdAt: eligibleAt,
+      },
+    })
+
+    const cleared = await __runPaymentPayloadRetentionForTests()
+    expect(cleared).toBe(1)
+    expect((await prisma.paymentEvent.findUniqueOrThrow({ where: { id: eligible.id } })).rawPayloadEncrypted).toBeNull()
+    expect(await prisma.paymentEvent.count({
+      where: { paymentAttemptId: attempt.id, rawPayloadEncrypted: { not: null } },
+    })).toBe(heldCount)
+    const kept = await prisma.paymentEvent.findFirstOrThrow({
+      where: { paymentAttemptId: attempt.id },
+      select: { payloadSha256: true, normalizedPayload: true },
+    })
+    expect(kept.payloadSha256).toBe('e'.repeat(64))
+    expect(kept.normalizedPayload).toEqual({ status: 'succeeded' })
   })
 })
