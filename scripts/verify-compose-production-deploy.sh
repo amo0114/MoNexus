@@ -176,6 +176,7 @@ for required_fragment in \
   'compose+=(--profile selfhost-storage --profile production-monitoring)' \
   'prepare_monitoring_runtime' \
   'validate_monitoring_runtime "$release_path"' \
+  'docs/operations/payment-alerts.rules.yml:/etc/prometheus/rules/payment-alerts.rules.yml:ro' \
   "readonly ALERTMANAGER_IMAGE='prom/alertmanager:v0.30.0@sha256:abb750ac7b63116761c16dd481ae92496fbe04721686c0920f0fa4d0728cd4a6'" \
   "readonly PROMETHEUS_IMAGE='prom/prometheus:v3.5.0@sha256:63805ebb8d2b3920190daf1cb14a60871b16fd38bed42b857a3182bc621f4996'" \
   'smtp_auth_password_file: /run/secrets/alertmanager_smtp_password' \
