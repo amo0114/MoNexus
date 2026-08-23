@@ -149,11 +149,14 @@ function classifyFailure(err: unknown): RunFailureCode {
 }
 
 /**
- * 全流程：cadence → advisory lock → reclaim stale → active 检查 →
+ * 全流程：advisory lock → cadence（可选）→ reclaim stale → active 检查 →
  * 短事务 A 建 running → 事务 B compute+snapshots+completed →
  * catch 用独立短事务 C CAS failed。
  */
-export async function runRankingRun(deps: RunRankingDeps): Promise<RunOutcome> {
+async function executeRankingRun(
+  deps: RunRankingDeps,
+  enforceCadence: boolean,
+): Promise<RunOutcome> {
   const started = performance.now()
   const db = deps.db ?? prisma
   const config = deps.configLoader ? await deps.configLoader() : await loadRankingConfig()
@@ -169,6 +172,18 @@ export async function runRankingRun(deps: RunRankingDeps): Promise<RunOutcome> {
   let runId: string | null = null
   try {
     const now = await dbNow()
+
+    // cadence 必须在 advisory lock 内重新读取。若两个调用都在锁外看到
+    // “尚无 run”，较快的第一个调用可能在第二个真正 acquire 前完成并释放锁；
+    // 第二个随后取得锁时必须看到刚完成的 run 并跳过，不能再创建第二行。
+    if (enforceCadence) {
+      const latest = await findMostRecentRun(db)
+      const due = await isRecomputeDue(config.hotRecomputeMinutes, now, latest)
+      if (!due) {
+        recordRunOutcome('skipped_lock')
+        return { kind: 'skipped', reason: 'cadence' }
+      }
+    }
 
     const reclaimed = await reclaimStaleRunning(config.hotRunTimeoutMinutes, db)
     if (reclaimed > 0) {
@@ -252,19 +267,12 @@ export async function runRankingRun(deps: RunRankingDeps): Promise<RunOutcome> {
   }
 }
 
-/** cron / admin manual recompute 共用的对外入口：先 cadence，再进全流程。 */
+/** 直接/测试入口：持锁执行 A/B/C，但明确绕过 cadence。 */
+export async function runRankingRun(deps: RunRankingDeps): Promise<RunOutcome> {
+  return executeRankingRun(deps, false)
+}
+
+/** cron / admin manual recompute 共用的对外入口：持锁后检查 cadence，再进 A/B/C。 */
 export async function maybeRunRankingRun(deps: MaybeRunRankingDeps): Promise<RunOutcome> {
-  const db = deps.db ?? prisma
-  const config = deps.configLoader ? await deps.configLoader() : await loadRankingConfig()
-  const dbNow = deps.dbNow ?? defaultDbNow
-
-  const now = await dbNow()
-  const latest = await findMostRecentRun(db)
-  const due = await isRecomputeDue(config.hotRecomputeMinutes, now, latest)
-  if (!due) {
-    recordRunOutcome('skipped_lock')
-    return { kind: 'skipped', reason: 'cadence' }
-  }
-
-  return runRankingRun(deps)
+  return executeRankingRun(deps, true)
 }
