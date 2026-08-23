@@ -161,7 +161,7 @@ for required_fragment in \
   'bearer_token_file: /run/secrets/metrics_token' \
   'server:3000' \
   'alertmanager:9093' \
-  '/etc/prometheus/rules/value-policy-alerts.rules.yml'; do
+  '/etc/prometheus/rules/*.rules.yml'; do
   grep -Fq "$required_fragment" "$prometheus_config" || \
     fail "Prometheus configuration is missing required private scrape contract: ${required_fragment}"
 done
@@ -180,6 +180,8 @@ for required_fragment in \
   "readonly ALERTMANAGER_IMAGE='prom/alertmanager:v0.30.0@sha256:abb750ac7b63116761c16dd481ae92496fbe04721686c0920f0fa4d0728cd4a6'" \
   "readonly PROMETHEUS_IMAGE='prom/prometheus:v3.5.0@sha256:63805ebb8d2b3920190daf1cb14a60871b16fd38bed42b857a3182bc621f4996'" \
   'smtp_auth_password_file: /run/secrets/alertmanager_smtp_password' \
+  'MoNexusPaidRechargeNotCredited' \
+  'MoNexusSimulatorConfiguredOnProductionDeploy' \
   'assert_monitoring_contract' \
   'run_alert_rehearsal'; do
   grep -Fq "$required_fragment" "$entrypoint" || \

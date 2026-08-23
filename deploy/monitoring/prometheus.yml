@@ -6,8 +6,10 @@ global:
     service: monexus-api
 
 rule_files:
-  - /etc/prometheus/rules/value-policy-alerts.rules.yml
-  - /etc/prometheus/rules/payment-alerts.rules.yml
+  # Keep validation compatible with an already-installed deployment entrypoint:
+  # older copies mount only the value-policy file during preflight, while the
+  # release Compose config mounts every reviewed rule file at runtime.
+  - /etc/prometheus/rules/*.rules.yml
 
 alerting:
   alertmanagers:

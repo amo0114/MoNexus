@@ -429,7 +429,17 @@ monitoring_contract_ready() {
   for alert_name in \
     MoNexusValuePolicyUnavailable \
     MoNexusEnabledModeOrderMissingSnapshot \
-    MoNexusValuePolicyChangedRateElevated; do
+    MoNexusValuePolicyChangedRateElevated \
+    MoNexusPaidRechargeNotCredited \
+    MoNexusDuplicateRechargeCreditUniqueConflict \
+    MoNexusPaymentAmountOrCurrencyMismatch \
+    MoNexusPaymentWebhookSignatureFailuresRising \
+    MoNexusPaymentWorkerBacklogHigh \
+    MoNexusPaymentProviderQueryCircuitOpen \
+    MoNexusLateProviderPaymentAfterLocalTerminalOrder \
+    MoNexusPaymentRefundProcessingTooLong \
+    MoNexusPaymentReconciliationMismatch \
+    MoNexusSimulatorConfiguredOnProductionDeploy; do
     grep -Fq "\"name\":\"${alert_name}\"" <<< "$rules" || return 1
   done
 
@@ -448,7 +458,7 @@ assert_monitoring_contract() {
     sleep 3
   done
 
-  fail "Prometheus scrape target and required ValuePolicy rules did not become ready within ${MONITORING_READY_TIMEOUT_SECONDS} seconds."
+  fail "Prometheus scrape target and required ValuePolicy/payment rules did not become ready within ${MONITORING_READY_TIMEOUT_SECONDS} seconds."
 }
 
 alertmanager_email_metric() {
