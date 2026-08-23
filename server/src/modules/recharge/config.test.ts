@@ -60,6 +60,37 @@ describe('provider registration vs enabled', () => {
 })
 
 describe('evaluateRechargeConfigGates isolation', () => {
+  it('allows production admin sandbox only with the explicit CNY + simulator gate', () => {
+    const valid = evaluateRechargeConfigGates(baseInput({
+      nodeEnv: 'production',
+      deployEnv: 'production',
+      rechargeMode: 'admin_sandbox',
+      adminSandboxEnabled: true,
+      enabledCurrencies: ['CNY'],
+      registeredProviders: ['simulator'],
+      enabledProviders: ['simulator'],
+    }))
+    expect(valid.ok).toBe(true)
+
+    for (const overrides of [
+      { adminSandboxEnabled: false },
+      { enabledCurrencies: ['CNY', 'USD'] },
+      { registeredProviders: ['simulator', 'stripe'], enabledProviders: ['simulator', 'stripe'] },
+    ] satisfies Array<Partial<RechargeGateInput>>) {
+      const result = evaluateRechargeConfigGates(baseInput({
+        nodeEnv: 'production',
+        deployEnv: 'production',
+        rechargeMode: 'admin_sandbox',
+        adminSandboxEnabled: true,
+        enabledCurrencies: ['CNY'],
+        registeredProviders: ['simulator'],
+        enabledProviders: ['simulator'],
+        ...overrides,
+      }))
+      expect(result.ok).toBe(false)
+    }
+  })
+
   it('fails sandbox and simulator only on a production deploy', () => {
     const sandboxProd = evaluateRechargeConfigGates(baseInput({
       nodeEnv: 'production',

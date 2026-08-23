@@ -27,6 +27,10 @@ type UpdatedRow = {
   frozenBalance: number | bigint
 }
 
+type UpdatedSandboxRow = {
+  sandboxBalance: number | bigint
+}
+
 export function assertPositivePointAmount(amount: number): number {
   if (!Number.isSafeInteger(amount) || amount <= 0 || amount > PRISMA_INT_MAX) {
     throw badRequest('积分数量不合法')
@@ -161,6 +165,38 @@ export async function creditAvailablePoints(
   )
   if (!updated) return diagnoseCreditFailure(client, userId, amount)
   return updated
+}
+
+/** Credit the isolated administrator sandbox bucket. It is never spendable. */
+export async function creditSandboxPoints(
+  client: PointMutationClient,
+  userId: number,
+  amount: number,
+): Promise<{ sandboxBalance: number }> {
+  assertPositivePointAmount(amount)
+  let rows: UpdatedSandboxRow[]
+  try {
+    rows = await client.$queryRaw<UpdatedSandboxRow[]>`
+      UPDATE "PointAccount"
+      SET "sandboxBalance" = "sandboxBalance" + ${amount}
+      WHERE "userId" = ${userId}
+        AND "sandboxBalance" >= 0
+        AND ("sandboxBalance"::bigint + ${BigInt(amount)}) <= ${BigInt(POINT_ACCOUNT_HARD_CAP)}
+      RETURNING "sandboxBalance"`
+  } catch (error) {
+    mapPointAccountWriteError(error)
+  }
+  if (rows.length === 1) {
+    return { sandboxBalance: asStoredInt(rows[0].sandboxBalance) }
+  }
+  const account = await loadAccountOrThrow(client, userId)
+  if (account.sandboxBalance < 0) {
+    throw pointBalanceConflict('沙箱积分账户数据异常，请联系管理员')
+  }
+  if (BigInt(account.sandboxBalance) + BigInt(amount) > BigInt(POINT_ACCOUNT_HARD_CAP)) {
+    throw pointBalanceHardCap('沙箱积分余额已达到上限')
+  }
+  throw pointBalanceConflict('沙箱积分入账失败，请重试')
 }
 
 /** Debit available balance. Rejects when available points are insufficient. */

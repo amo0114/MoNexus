@@ -120,7 +120,7 @@ export default function AdminRechargeOrders() {
                   <td data-label="渠道">{providerLabel(item.provider)} · {methodLabel(item.paymentMethod)}</td>
                   <td data-label="状态">{orderStatusLabel(item.status)}</td>
                   <td className="text-right whitespace-nowrap space-x-3" data-label="操作">
-                    {(item.status === 'credited' || item.status === 'paid') && !item.refundId && (
+                    {(item.status === 'credited' || item.status === 'paid') && !item.refundId && !item.adminSandbox && (
                       <button type="button" className="text-sm font-bold text-[var(--color-danger)]" onClick={() => setRefundTarget(item)}>
                         退款
                       </button>
@@ -149,6 +149,9 @@ export default function AdminRechargeOrders() {
               <p>金额：{formatCurrencyAmount(detail.amountMinor, detail.currency)}</p>
               <p>积分：{formatPoints(detail.totalPoints)}</p>
               <p>渠道：{providerLabel(detail.provider)} · {methodLabel(detail.paymentMethod)}</p>
+              {detail.adminSandbox && (
+                <p className="font-bold text-amber-700 dark:text-amber-300">管理员沙箱订单（不可退款）</p>
+              )}
               {detail.paymentIntent && (
                 <div className="pt-2 border-t border-[var(--color-border)]">
                   <p className="font-bold mb-1">支付尝试</p>

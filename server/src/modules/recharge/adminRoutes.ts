@@ -35,6 +35,11 @@ rechargeAdminRoutes.post(
   validate({ params: adminUuidParamSchema, body: adminRefundSchema }),
   controller.requestRefund,
 )
+rechargeAdminRoutes.post(
+  '/recharge/sandbox/orders/:id/confirm',
+  validate({ params: adminUuidParamSchema }),
+  controller.confirmSandboxOrder,
+)
 rechargeAdminRoutes.patch(
   '/recharge/price-policies/:id',
   validate({ params: adminUuidParamSchema, body: adminPatchPricePolicySchema }),

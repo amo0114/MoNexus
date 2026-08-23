@@ -5,10 +5,12 @@ import AdminPaymentEvents from './AdminPaymentEvents'
 import AdminRechargeRefunds from './AdminRechargeRefunds'
 import AdminPaymentDisputes from './AdminPaymentDisputes'
 import AdminReconciliation from './AdminReconciliation'
+import AdminSandboxPanel from './AdminSandboxPanel'
 
-export type RechargeAdminSection = 'orders' | 'events' | 'refunds' | 'disputes' | 'reconciliation'
+export type RechargeAdminSection = 'sandbox' | 'orders' | 'events' | 'refunds' | 'disputes' | 'reconciliation'
 
 const TABS: ReadonlyArray<{ id: RechargeAdminSection; label: string }> = [
+  { id: 'sandbox', label: '管理员沙箱' },
   { id: 'orders', label: '充值订单' },
   { id: 'events', label: '支付事件' },
   { id: 'refunds', label: '退款' },
@@ -18,6 +20,8 @@ const TABS: ReadonlyArray<{ id: RechargeAdminSection; label: string }> = [
 
 function renderSection(section: RechargeAdminSection): ReactNode {
   switch (section) {
+    case 'sandbox':
+      return <AdminSandboxPanel />
     case 'orders':
       return <AdminRechargeOrders />
     case 'events':
@@ -38,7 +42,7 @@ export default function AdminRechargePage() {
     <div data-testid="admin-recharge-page">
       <h2 className="font-heading text-xl font-bold text-[var(--color-text)]">充值支付</h2>
       <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-        订单、事件、退款、争议与对账。危险操作走现有管理员 MFA，不会绕过渠道状态。
+        管理员沙箱、订单、事件、退款、争议与对账。危险操作受管理员 MFA 保护。
       </p>
       <div
         role="tablist"

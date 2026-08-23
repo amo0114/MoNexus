@@ -73,6 +73,17 @@ export async function requestRefund(req: Request, res: Response, next: NextFunct
   }
 }
 
+export async function confirmSandboxOrder(req: Request, res: Response, next: NextFunction) {
+  try {
+    res.json(await adminService.adminConfirmSandboxOrder(
+      String(req.params.id),
+      req.user!.userId,
+    ))
+  } catch (err) {
+    next(err)
+  }
+}
+
 export async function listReconRuns(_req: Request, res: Response, next: NextFunction) {
   try {
     res.json(await adminService.adminListReconRuns())
