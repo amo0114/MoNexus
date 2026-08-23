@@ -72,10 +72,12 @@ describe('payment alert contract', () => {
     const scrape = readFileSync(resolve(repoRoot, 'deploy/monitoring/prometheus.yml'), 'utf8')
     const compose = readFileSync(resolve(repoRoot, 'docker-compose.prod.yml'), 'utf8')
     const deployEntrypoint = readFileSync(resolve(repoRoot, 'deploy/vps/monexus-compose-deploy'), 'utf8')
-    expect(scrape).toContain('/etc/prometheus/rules/payment-alerts.rules.yml')
+    expect(scrape).toContain('/etc/prometheus/rules/*.rules.yml')
     expect(compose).toContain('docs/operations/payment-alerts.rules.yml')
     expect(deployEntrypoint).toContain(
       'docs/operations/payment-alerts.rules.yml:/etc/prometheus/rules/payment-alerts.rules.yml:ro',
     )
+    expect(deployEntrypoint).toContain('MoNexusPaidRechargeNotCredited')
+    expect(deployEntrypoint).toContain('MoNexusSimulatorConfiguredOnProductionDeploy')
   })
 })

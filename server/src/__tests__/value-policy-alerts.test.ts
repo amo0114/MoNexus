@@ -103,7 +103,7 @@ describe('value-policy alert contract', () => {
     expect(prometheus).not.toMatch(/^\s+ports:/m)
     expect(alertmanager).not.toMatch(/^\s+ports:/m)
     expect(scrape).toContain('bearer_token_file: /run/secrets/metrics_token')
-    expect(scrape).toContain('/etc/prometheus/rules/value-policy-alerts.rules.yml')
+    expect(scrape).toContain('/etc/prometheus/rules/*.rules.yml')
     expect(rehearsal).toContain('REHEARSE_VALUE_POLICY_EMAIL_PRODUCTION')
     expect(rehearsal).toContain('rehearse-alert ${ROUTING}')
     expect(deployEntrypoint).toContain('readonly MONITORING_READY_TIMEOUT_SECONDS=120')
