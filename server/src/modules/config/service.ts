@@ -1,6 +1,7 @@
 import { businessRegistry } from '../../lib/businessRegistry.js'
 import { getSystemConfigValue } from '../../lib/systemConfig.js'
 import { getPublicCategoryRegistry } from '../catalog/registry.js'
+import { config } from '../../config/index.js'
 
 export async function getConfigRegistry() {
   const [
@@ -54,6 +55,10 @@ export async function getConfigRegistry() {
     },
     inventory: {
       lowStockThreshold,
+    },
+    capabilities: {
+      notifications: config.notification.enabled,
+      notificationRealtime: config.notification.enabled && config.notificationRealtime.enabled,
     },
   }
 }
