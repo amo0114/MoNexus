@@ -15,6 +15,7 @@ const {
   fetchMeWithRoleHealing,
   submitFormPost,
   goToRedirect,
+  confirmAdminSandboxOrder,
 } = vi.hoisted(() => ({
   getRechargeConfig: vi.fn(),
   createRechargeQuote: vi.fn(),
@@ -25,6 +26,7 @@ const {
   fetchMeWithRoleHealing: vi.fn(),
   submitFormPost: vi.fn(),
   goToRedirect: vi.fn(),
+  confirmAdminSandboxOrder: vi.fn(),
 }))
 
 vi.mock('../api/recharge', () => ({
@@ -40,6 +42,10 @@ vi.mock('../api/recharge', () => ({
 
 vi.mock('../api/auth', () => ({
   fetchMeWithRoleHealing,
+}))
+
+vi.mock('../api/adminRecharge', () => ({
+  confirmAdminSandboxOrder,
 }))
 
 vi.mock('./recharge/paymentActions', async (importOriginal) => {
@@ -192,6 +198,7 @@ describe('RechargePage', () => {
     })
     submitFormPost.mockReset()
     goToRedirect.mockReset()
+    confirmAdminSandboxOrder.mockReset()
   })
 
   afterEach(() => {
@@ -280,27 +287,42 @@ describe('RechargePage', () => {
     expect(await screen.findByTestId('recharge-quote-changed')).toBeInTheDocument()
   })
 
-  it('routes administrator sandbox payments away from the ordinary checkout', async () => {
+  it('keeps administrator sandbox payments in the direct CNY checkout', async () => {
     getRechargeConfig.mockImplementation(async (currency: string) => {
       if (currency !== 'CNY') throw apiError('RECHARGE_CURRENCY_DISABLED')
       return configFor('CNY', { mode: 'admin_sandbox', sandboxBalance: 0 })
     })
     renderAt('/recharge')
-    expect(await screen.findByTestId('recharge-admin-sandbox-redirect')).toHaveTextContent('请在管理后台使用管理员沙箱')
+    expect(await screen.findByTestId('recharge-checkout')).toBeInTheDocument()
+    expect(screen.getByTestId('recharge-admin-sandbox-banner')).toHaveTextContent('不会产生真实扣款')
+    expect(screen.getByRole('button', { name: '模拟支付 · 银行卡' })).toBeInTheDocument()
     expect(getRechargeConfig).toHaveBeenCalledTimes(1)
-    expect(createRechargeOrder).not.toHaveBeenCalled()
   })
 
-  it('does not complete an administrator sandbox order from the ordinary result page', async () => {
-    getRechargeOrder.mockResolvedValue(order('pending_payment', {
+  it('confirms an administrator sandbox order directly through the MFA-protected endpoint', async () => {
+    const user = userEvent.setup()
+    const pending = order('pending_payment', {
       provider: 'simulator',
       paymentMethod: 'card',
       adminSandbox: true,
-    }))
+    })
+    getRechargeOrder
+      .mockResolvedValueOnce(pending)
+      .mockResolvedValueOnce(order('credited', { ...pending, status: 'credited', creditedAt: new Date().toISOString() }))
+    confirmAdminSandboxOrder.mockResolvedValue({
+      orderId: ORDER_ID,
+      observationId: 'observation-1',
+      result: 'credited',
+      sandboxBalance: 1000,
+    })
     renderAt(`/recharge?order=${ORDER_ID}&success=1`)
-    expect(await screen.findByTestId('recharge-admin-sandbox-pending')).toHaveTextContent('已停止自动查询')
+    expect(await screen.findByTestId('recharge-admin-sandbox-pending')).toHaveTextContent('不会产生真实扣款')
     expect(completeRechargeOrder).not.toHaveBeenCalled()
     expect(screen.queryByTestId('recharge-confirming')).not.toBeInTheDocument()
+    await user.click(screen.getByTestId('recharge-admin-sandbox-confirm'))
+    await waitFor(() => expect(confirmAdminSandboxOrder).toHaveBeenCalledWith(ORDER_ID))
+    expect(await screen.findByTestId('recharge-admin-sandbox-credited')).toHaveTextContent('独立沙箱余额')
+    expect(screen.getByTestId('recharge-result-status')).toHaveTextContent('已到账')
   })
 
   it('keeps a redirect return in 确认中 until the local order is credited', async () => {

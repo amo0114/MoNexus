@@ -283,28 +283,17 @@ export default function RechargeCheckout() {
     )
   }
 
-  if (config.mode === 'admin_sandbox') {
-    return (
-      <div className="card" data-testid="recharge-admin-sandbox-redirect">
-        <EmptyState
-          icon={Wallet}
-          title="请在管理后台使用管理员沙箱"
-          description="管理员沙箱订单必须通过管理后台的 MFA 确认。普通充值页不会创建或确认沙箱支付。"
-          action={(
-            <button type="button" className="btn-primary" onClick={() => navigate('/admin')}>
-              前往管理后台
-            </button>
-          )}
-        />
-      </div>
-    )
-  }
-
   const noProvider = methods.length === 0
   const canSubmit = Boolean(quote && quoteState === 'ready' && method && !inlineError && !submitting && !noProvider)
 
   return (
     <div className="space-y-5" data-testid="recharge-checkout">
+      {config.mode === 'admin_sandbox' && (
+        <div className="rounded-xl border-2 border-amber-500 bg-amber-50 p-4 text-amber-950 dark:bg-amber-950/30 dark:text-amber-100" data-testid="recharge-admin-sandbox-banner">
+          <p className="font-heading font-black">SANDBOX ONLY / 不会产生真实扣款</p>
+          <p className="mt-1 text-sm">仅管理员可通过当前 MFA 会话确认成功，积分只进入独立沙箱余额。</p>
+        </div>
+      )}
       <div
         className="relative overflow-hidden rounded-xl p-6 sm:p-8 text-white shadow-md"
         style={{ background: 'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-hover) 100%)' }}
@@ -457,7 +446,7 @@ export default function RechargeCheckout() {
           className="btn-cta w-full min-h-12"
         >
           {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-          {submitting ? '创建支付中…' : '去支付'}
+          {submitting ? '创建支付中…' : config.mode === 'admin_sandbox' ? '创建沙箱订单' : '去支付'}
         </button>
       </div>
     </div>
