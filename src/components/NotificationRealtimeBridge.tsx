@@ -26,6 +26,7 @@ export function NotificationRealtimeBridge(): null {
   const accessToken = useAuthStore((s) => s.accessToken)
   const showToast = useAppStore((s) => s.showToast)
   const setStreamState = useAppStore((s) => s.setNotificationStreamState)
+  const realtimeEnabled = useAppStore((s) => s.registry?.capabilities?.notificationRealtime)
   const streamRef = useRef<NotificationStream | null>(null)
   const lastUserIdRef = useRef<number | null>(null)
   const lastTokenRef = useRef<string | null>(null)
@@ -48,7 +49,9 @@ export function NotificationRealtimeBridge(): null {
   }
 
   useEffect(() => {
-    if (!user || !accessToken) {
+    // Wait for the public runtime capability before connecting. Disabled
+    // installations stay polling-only without deliberately probing a 404.
+    if (!user || !accessToken || realtimeEnabled !== true) {
       resetRealtimeRuntime()
       streamRef.current?.stop()
       lastUserIdRef.current = null
@@ -66,7 +69,7 @@ export function NotificationRealtimeBridge(): null {
       lastTokenRef.current = accessToken
       streamRef.current?.onAccessTokenChanged(accessToken)
     }
-  }, [user, accessToken])
+  }, [user, accessToken, realtimeEnabled])
 
   useEffect(() => () => {
     streamRef.current?.stop()

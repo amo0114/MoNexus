@@ -27,12 +27,13 @@ function enableSandbox() {
   config.recharge.enabledProviders = ['simulator']
 }
 
-async function seedCnyPolicy(overrides: { dailyLimitMinor?: bigint; monthlyLimitMinor?: bigint; amountStepMinor?: bigint } = {}) {
+async function seedCnyPolicy(overrides: { dailyLimitMinor?: bigint; monthlyLimitMinor?: bigint; amountStepMinor?: bigint; adminSandbox?: boolean } = {}) {
   return prisma.rechargePricePolicy.create({
     data: {
       code: `rp-cny-${randomUUID()}`,
       version: Math.floor(Math.random() * 1_000_000) + 1,
       currency: 'CNY',
+      adminSandbox: overrides.adminSandbox ?? false,
       currencyScale: 2,
       pointsNumerator: 1n,
       pointsDenominator: 1n,
@@ -91,7 +92,7 @@ describe('recharge disabled fail-closed', () => {
 
 describe('recharge user API', () => {
   it('keeps administrator sandbox confirmation isolated and idempotent', async () => {
-    await seedCnyPolicy()
+    await seedCnyPolicy({ adminSandbox: true })
     config.recharge.mode = 'admin_sandbox'
     config.recharge.adminSandboxEnabled = true
 

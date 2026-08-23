@@ -77,15 +77,20 @@ export default function RechargeCheckout() {
     let cancelled = false
     async function boot() {
       try {
-        const results = await Promise.all(
-          RECHARGE_CURRENCIES.map(async (code) => {
+        async function load(code: (typeof RECHARGE_CURRENCIES)[number]) {
             try {
               return { ok: true as const, config: await getRechargeConfig(code) }
             } catch (err) {
               return { ok: false as const, code: getApiErrorCode(err) }
             }
-          }),
-        )
+        }
+        const cny = await load('CNY')
+        // Administrator sandbox is intentionally CNY-only. Once the server
+        // identifies that mode, do not probe disabled currencies and create
+        // avoidable 409 responses in the browser.
+        const results = cny.ok && cny.config.mode === 'admin_sandbox'
+          ? [cny]
+          : [cny, ...await Promise.all(RECHARGE_CURRENCIES.filter(code => code !== 'CNY').map(load))]
         if (cancelled) return
         if (results.every((item) => !item.ok && item.code === 'RECHARGE_DISABLED')) {
           setBootState('disabled')

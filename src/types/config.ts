@@ -30,4 +30,8 @@ export interface ConfigRegistry {
   inventory: {
     lowStockThreshold: number
   }
+  capabilities?: {
+    notifications: boolean
+    notificationRealtime: boolean
+  }
 }
