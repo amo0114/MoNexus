@@ -132,6 +132,7 @@ function order(status: string, extra: Partial<RechargeOrder> = {}): RechargeOrde
     totalPoints: '1000',
     provider: 'paypal',
     paymentMethod: 'redirect',
+    adminSandbox: false,
     expiresAt: new Date(Date.now() + 60_000).toISOString(),
     paidAt: status === 'credited' || status === 'paid' ? new Date().toISOString() : null,
     creditedAt: status === 'credited' ? new Date().toISOString() : null,
@@ -277,6 +278,29 @@ describe('RechargePage', () => {
     createRechargeOrder.mockRejectedValue(apiError('RECHARGE_QUOTE_CHANGED', '报价已变化'))
     await user.click(screen.getByTestId('recharge-pay'))
     expect(await screen.findByTestId('recharge-quote-changed')).toBeInTheDocument()
+  })
+
+  it('routes administrator sandbox payments away from the ordinary checkout', async () => {
+    getRechargeConfig.mockImplementation(async (currency: string) => {
+      if (currency !== 'CNY') throw apiError('RECHARGE_CURRENCY_DISABLED')
+      return configFor('CNY', { mode: 'admin_sandbox', sandboxBalance: 0 })
+    })
+    renderAt('/recharge')
+    expect(await screen.findByTestId('recharge-admin-sandbox-redirect')).toHaveTextContent('请在管理后台使用管理员沙箱')
+    expect(getRechargeConfig).toHaveBeenCalledTimes(1)
+    expect(createRechargeOrder).not.toHaveBeenCalled()
+  })
+
+  it('does not complete an administrator sandbox order from the ordinary result page', async () => {
+    getRechargeOrder.mockResolvedValue(order('pending_payment', {
+      provider: 'simulator',
+      paymentMethod: 'card',
+      adminSandbox: true,
+    }))
+    renderAt(`/recharge?order=${ORDER_ID}&success=1`)
+    expect(await screen.findByTestId('recharge-admin-sandbox-pending')).toHaveTextContent('已停止自动查询')
+    expect(completeRechargeOrder).not.toHaveBeenCalled()
+    expect(screen.queryByTestId('recharge-confirming')).not.toBeInTheDocument()
   })
 
   it('keeps a redirect return in 确认中 until the local order is credited', async () => {

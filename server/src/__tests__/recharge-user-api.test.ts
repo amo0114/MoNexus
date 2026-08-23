@@ -108,6 +108,7 @@ describe('recharge user API', () => {
     }).expect(201)
     const order = await api.post('/api/recharge/orders').set(authHeader(accessToken))
       .set('Idempotency-Key', randomUUID()).send({ quoteId: quote.body.quoteId }).expect(201)
+    expect(order.body.adminSandbox).toBe(true)
 
     const first = await api.post(`/api/admin/recharge/sandbox/orders/${order.body.orderId}/confirm`)
       .set(authHeader(accessToken)).expect(200)

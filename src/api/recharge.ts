@@ -65,6 +65,7 @@ export interface RechargeOrder {
   totalPoints: string
   provider: string
   paymentMethod: string
+  adminSandbox: boolean
   expiresAt: string
   paidAt: string | null
   creditedAt: string | null
