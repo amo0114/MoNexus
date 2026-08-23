@@ -19,6 +19,7 @@ readonly STATE_ROOT='/opt/monexus-deployments'
 readonly PROJECT_NAME='monexus-prod'
 readonly LOCK_FILE='/var/lock/monexus-compose-deploy.lock'
 readonly HEALTH_TIMEOUT_SECONDS=180
+readonly MONITORING_READY_TIMEOUT_SECONDS=120
 readonly VPS_PROXY_OVERLAY_KEY='MONEXUS_USE_VPS_PROXY_OVERLAY'
 readonly MONITORING_SECRET_DIR='/opt/monexus-monitoring/secrets'
 readonly MONITORING_CONFIG_DIR='/opt/monexus-monitoring/config'
@@ -217,6 +218,7 @@ validate_monitoring_runtime() {
   docker run --rm --network none \
     --volume "${release_path}/deploy/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro" \
     --volume "${release_path}/docs/operations/value-policy-alerts.rules.yml:/etc/prometheus/rules/value-policy-alerts.rules.yml:ro" \
+    --volume "${release_path}/docs/operations/payment-alerts.rules.yml:/etc/prometheus/rules/payment-alerts.rules.yml:ro" \
     --volume "${MONITORING_SECRET_DIR}/metrics_token:/run/secrets/metrics_token:ro" \
     --entrypoint /bin/promtool \
     "$PROMETHEUS_IMAGE" \
@@ -413,28 +415,50 @@ container_ipv4() {
   printf '%s\n' "$address"
 }
 
-assert_monitoring_contract() {
-  local prometheus_address targets rules
-  prometheus_address="$(container_ipv4 monexus-prometheus-prod)"
+monitoring_contract_ready() {
+  local prometheus_address="$1"
+  local targets rules alert_name
 
   targets="$(curl --noproxy '*' --fail --silent --show-error --max-time 15 \
-    "http://${prometheus_address}:9090/api/v1/targets")" || \
-    fail 'Unable to read Prometheus target state on the private network.'
-  grep -Fq '"job":"monexus"' <<< "$targets" || \
-    fail 'Prometheus does not report the monexus scrape job.'
-  grep -Fq '"health":"up"' <<< "$targets" || \
-    fail 'The monexus Prometheus scrape target is not up.'
+    "http://${prometheus_address}:9090/api/v1/targets" 2>/dev/null)" || return 1
+  grep -Fq '"job":"monexus"' <<< "$targets" || return 1
+  grep -Fq '"health":"up"' <<< "$targets" || return 1
 
   rules="$(curl --noproxy '*' --fail --silent --show-error --max-time 15 \
-    "http://${prometheus_address}:9090/api/v1/rules")" || \
-    fail 'Unable to read loaded Prometheus rules on the private network.'
+    "http://${prometheus_address}:9090/api/v1/rules" 2>/dev/null)" || return 1
   for alert_name in \
     MoNexusValuePolicyUnavailable \
     MoNexusEnabledModeOrderMissingSnapshot \
-    MoNexusValuePolicyChangedRateElevated; do
-    grep -Fq "\"name\":\"${alert_name}\"" <<< "$rules" || \
-      fail "Prometheus did not load required alert rule ${alert_name}."
+    MoNexusValuePolicyChangedRateElevated \
+    MoNexusPaidRechargeNotCredited \
+    MoNexusDuplicateRechargeCreditUniqueConflict \
+    MoNexusPaymentAmountOrCurrencyMismatch \
+    MoNexusPaymentWebhookSignatureFailuresRising \
+    MoNexusPaymentWorkerBacklogHigh \
+    MoNexusPaymentProviderQueryCircuitOpen \
+    MoNexusLateProviderPaymentAfterLocalTerminalOrder \
+    MoNexusPaymentRefundProcessingTooLong \
+    MoNexusPaymentReconciliationMismatch \
+    MoNexusSimulatorConfiguredOnProductionDeploy; do
+    grep -Fq "\"name\":\"${alert_name}\"" <<< "$rules" || return 1
   done
+
+  return 0
+}
+
+assert_monitoring_contract() {
+  local prometheus_address deadline
+  prometheus_address="$(container_ipv4 monexus-prometheus-prod)"
+  deadline=$((SECONDS + MONITORING_READY_TIMEOUT_SECONDS))
+
+  while (( SECONDS < deadline )); do
+    if monitoring_contract_ready "$prometheus_address"; then
+      return 0
+    fi
+    sleep 3
+  done
+
+  fail "Prometheus scrape target and required ValuePolicy/payment rules did not become ready within ${MONITORING_READY_TIMEOUT_SECONDS} seconds."
 }
 
 alertmanager_email_metric() {

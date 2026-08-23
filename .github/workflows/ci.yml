@@ -428,7 +428,10 @@ jobs:
         contains(github.event.pull_request.labels.*.name, 'run-e2e')
       )
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # Playwright's cached-browser path still runs apt-based install-deps.
+    # GitHub-hosted runners can spend more than 10 minutes in that step, so
+    # keep this aligned with the compatibility E2E job's fail-closed window.
+    timeout-minutes: 20
 
     services:
       postgres:
@@ -485,11 +488,10 @@ jobs:
 
       - name: Install Playwright chromium
         if: steps.playwright-cache.outputs.cache-hit != 'true'
-        run: npx playwright install --with-deps chromium
-
-      - name: Install Playwright system dependencies
-        if: steps.playwright-cache.outputs.cache-hit == 'true'
-        run: npx playwright install-deps chromium
+        # ubuntu-latest already supplies the Chromium runtime libraries. Do
+        # not repeat the apt-based install-deps step here: its package mirror
+        # can hang for the entire job window before the realtime tests start.
+        run: npx playwright install chromium
 
       - name: Create guarded realtime E2E environment
         run: |
