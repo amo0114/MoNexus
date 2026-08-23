@@ -292,6 +292,7 @@ function serializeOrder(order: {
   totalPoints: bigint
   provider: string
   paymentMethod: string
+  adminSandbox: boolean
   expiresAt: Date
   paidAt: Date | null
   creditedAt: Date | null
@@ -323,6 +324,7 @@ function serializeOrder(order: {
     totalPoints: serializeAmountMinor(order.totalPoints),
     provider: order.provider,
     paymentMethod: order.paymentMethod,
+    adminSandbox: order.adminSandbox,
     expiresAt: order.expiresAt.toISOString(),
     paidAt: order.paidAt?.toISOString() ?? null,
     creditedAt: order.creditedAt?.toISOString() ?? null,
