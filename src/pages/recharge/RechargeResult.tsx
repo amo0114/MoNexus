@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { QRCodeSVG } from 'qrcode.react'
 import { Loader2, Wallet } from 'lucide-react'
 import { completeRechargeOrder, getRechargeOrder, type RechargeOrder } from '../../api/recharge'
+import { confirmAdminSandboxOrder } from '../../api/adminRecharge'
 import { fetchMeWithRoleHealing } from '../../api/auth'
 import { getApiErrorCode, getApiErrorMessage } from '../../api/error'
 import { useAuthStore } from '../../stores/authStore'
@@ -49,6 +50,15 @@ function StatusPill({ status }: { status: string }) {
   )
 }
 
+async function refreshCurrentUser() {
+  try {
+    const me = await fetchMeWithRoleHealing()
+    useAuthStore.getState().setUser(me)
+  } catch {
+    // Local order is the source of truth; auth refresh is best-effort.
+  }
+}
+
 export default function RechargeResult({
   orderId,
   resumePayment = false,
@@ -60,6 +70,8 @@ export default function RechargeResult({
   const [order, setOrder] = useState<RechargeOrder | null>(null)
   const [error, setError] = useState('')
   const [pollingPaused, setPollingPaused] = useState(false)
+  const [confirmingSandbox, setConfirmingSandbox] = useState(false)
+  const [sandboxConfirmError, setSandboxConfirmError] = useState('')
   const completeSucceeded = useRef(false)
   const completeInFlight = useRef(false)
   const creditedRefreshed = useRef(false)
@@ -75,6 +87,7 @@ export default function RechargeResult({
     completeInFlight.current = false
     creditedRefreshed.current = false
     setPollingPaused(false)
+    setSandboxConfirmError('')
 
     function scheduleNextPoll() {
       if (cancelled) return
@@ -87,15 +100,6 @@ export default function RechargeResult({
       timer = window.setTimeout(() => {
         void load()
       }, delay)
-    }
-
-    async function refreshAuth() {
-      try {
-        const me = await fetchMeWithRoleHealing()
-        useAuthStore.getState().setUser(me)
-      } catch {
-        // Local order is the source of truth; auth refresh is best-effort.
-      }
     }
 
     async function load() {
@@ -130,7 +134,7 @@ export default function RechargeResult({
         setError('')
         if (next.status === 'credited' && !creditedRefreshed.current) {
           creditedRefreshed.current = true
-          void refreshAuth()
+          void refreshCurrentUser()
         }
         if (!isTerminalOrderStatus(next.status)) {
           if (next.adminSandbox) setPollingPaused(true)
@@ -151,6 +155,27 @@ export default function RechargeResult({
     }
   }, [orderId, resumePayment])
 
+  async function confirmSandboxPayment() {
+    if (!order?.adminSandbox || isTerminalOrderStatus(order.status) || confirmingSandbox) return
+    setConfirmingSandbox(true)
+    setSandboxConfirmError('')
+    try {
+      await confirmAdminSandboxOrder(order.orderId)
+      const next = await getRechargeOrder(order.orderId)
+      statusRef.current = next.status
+      setOrder(next)
+      setError('')
+      if (next.status === 'credited') {
+        creditedRefreshed.current = true
+        void refreshCurrentUser()
+      }
+    } catch (err) {
+      setSandboxConfirmError(getApiErrorMessage(err, '确认沙箱支付失败'))
+    } finally {
+      setConfirmingSandbox(false)
+    }
+  }
+
   if (error && !order) {
     return (
       <div className="card">
@@ -168,7 +193,7 @@ export default function RechargeResult({
   }
 
   const action = order.action
-  const shownStatus = displayStatus(order.status, resumePayment)
+  const shownStatus = order.adminSandbox ? order.status : displayStatus(order.status, resumePayment)
   const adminSandboxPending = order.adminSandbox && !isTerminalOrderStatus(order.status)
   const waiting = !order.adminSandbox && !resumePayment && (order.status === 'created' || order.status === 'pending_payment')
   const confirming = !order.adminSandbox && isConfirmingOrderStatus(shownStatus)
@@ -224,9 +249,26 @@ export default function RechargeResult({
       )}
 
       {adminSandboxPending && (
-        <p className="text-sm text-[var(--color-warning-accent)]" data-testid="recharge-admin-sandbox-pending">
-          该沙箱订单等待管理后台 MFA 确认；本页已停止自动查询，请前往管理后台的“充值支付 → 管理员沙箱”处理。
-        </p>
+        <div className="rounded-lg border border-amber-400/60 bg-amber-50 p-4 dark:bg-amber-950/30" data-testid="recharge-admin-sandbox-pending">
+          <p className="text-sm font-bold text-amber-900 dark:text-amber-100">
+            这是管理员沙箱订单，不会产生真实扣款。请使用当前已完成 MFA 的管理员会话确认支付成功。
+          </p>
+          <button
+            type="button"
+            className="btn-primary mt-3 !bg-amber-700 hover:!bg-amber-800"
+            disabled={confirmingSandbox}
+            onClick={() => void confirmSandboxPayment()}
+            data-testid="recharge-admin-sandbox-confirm"
+          >
+            {confirmingSandbox ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+            {confirmingSandbox ? '正在确认…' : '管理员 MFA 确认支付成功'}
+          </button>
+          {sandboxConfirmError && (
+            <p className="mt-2 text-sm text-[var(--color-danger)]" data-testid="recharge-admin-sandbox-confirm-error">
+              {sandboxConfirmError}
+            </p>
+          )}
+        </div>
       )}
       {pollingPaused && !adminSandboxPending && !isTerminalOrderStatus(order.status) && (
         <p className="text-sm text-[var(--color-text-muted)]" data-testid="recharge-polling-paused">
@@ -242,6 +284,11 @@ export default function RechargeResult({
       )}
       {order.status === 'refunded' && (
         <p className="text-sm text-[var(--color-text-muted)]" data-testid="recharge-refunded">该笔充值已退款。</p>
+      )}
+      {order.adminSandbox && order.status === 'credited' && (
+        <p className="text-sm font-bold text-[var(--color-cta)]" data-testid="recharge-admin-sandbox-credited">
+          沙箱积分已进入独立沙箱余额，不会计入可消费积分。
+        </p>
       )}
 
       <div className="flex flex-col sm:flex-row gap-3">
