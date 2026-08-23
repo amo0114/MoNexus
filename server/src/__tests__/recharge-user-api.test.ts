@@ -90,6 +90,39 @@ describe('recharge disabled fail-closed', () => {
 })
 
 describe('recharge user API', () => {
+  it('keeps administrator sandbox confirmation isolated and idempotent', async () => {
+    await seedCnyPolicy()
+    config.recharge.mode = 'admin_sandbox'
+    config.recharge.adminSandboxEnabled = true
+
+    const ordinary = await loginUser('recharge-admin-sandbox-user@test.local')
+    await api.post('/api/recharge/quotes').set(authHeader(ordinary.accessToken)).send({
+      currency: 'CNY', amountMinor: '1000', amountSource: 'custom', provider: 'simulator', paymentMethod: 'card',
+    }).expect(403)
+
+    const { user: admin } = await createTestUser('recharge-admin-sandbox@test.local', 'pass12345', 'admin')
+    const { accessToken } = await loginAs('recharge-admin-sandbox@test.local', 'pass12345')
+    const quote = await api.post('/api/recharge/quotes').set(authHeader(accessToken)).send({
+      currency: 'CNY', amountMinor: '1000', amountSource: 'custom', provider: 'simulator', paymentMethod: 'card',
+    }).expect(201)
+    const order = await api.post('/api/recharge/orders').set(authHeader(accessToken))
+      .set('Idempotency-Key', randomUUID()).send({ quoteId: quote.body.quoteId }).expect(201)
+
+    const first = await api.post(`/api/admin/recharge/sandbox/orders/${order.body.orderId}/confirm`)
+      .set(authHeader(accessToken)).expect(200)
+    const replay = await api.post(`/api/admin/recharge/sandbox/orders/${order.body.orderId}/confirm`)
+      .set(authHeader(accessToken)).expect(200)
+
+    expect(replay.body.observationId).toBe(first.body.observationId)
+    expect(first.body.sandboxBalance).toBe(1000)
+    const account = await prisma.pointAccount.findUniqueOrThrow({ where: { userId: admin.id } })
+    expect(account.balance).toBe(5000)
+    expect(account.sandboxBalance).toBe(1000)
+    expect(await prisma.rechargeCredit.count({ where: { rechargeOrderId: order.body.orderId } })).toBe(1)
+    expect(await prisma.pointLog.count({ where: { userId: admin.id, type: 'sandbox_in' } })).toBe(1)
+    expect(await prisma.rechargeLimitReservation.count({ where: { rechargeOrderId: order.body.orderId } })).toBe(0)
+  })
+
   it('returns config with decimal strings and no account keys', async () => {
     await seedCnyPolicy()
     const { accessToken } = await loginUser('recharge-config@test.local')

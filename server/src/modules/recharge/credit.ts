@@ -5,6 +5,7 @@ import { prisma } from '../../lib/prisma.js'
 import {
   POINT_ACCOUNT_HARD_CAP,
   creditAvailablePoints,
+  creditSandboxPoints,
 } from '../points/checkedMutation.js'
 import { tripWriteHook } from '../payment/events/hooks.js'
 import { commitCreditTask } from '../payment/workers/lease.js'
@@ -120,8 +121,10 @@ async function executeRechargeCreditOnce(input: {
         provider: string
         paidAt: Date | null
         paymentIntentId: string | null
+        adminSandbox: boolean
       }>>`
-        SELECT o."id", o."userId", o."status", o."totalPoints", o."currency", o."provider", o."paidAt", i."id" AS "paymentIntentId"
+        SELECT o."id", o."userId", o."status", o."totalPoints", o."currency", o."provider", o."paidAt",
+               o."adminSandbox", i."id" AS "paymentIntentId"
         FROM "RechargeOrder" o
         LEFT JOIN "PaymentIntent" i ON i."rechargeOrderId" = o."id"
         WHERE o."id" = ${input.rechargeOrderId}::uuid
@@ -150,22 +153,26 @@ async function executeRechargeCreditOnce(input: {
 
       await tx.$queryRaw`SELECT "userId" FROM "PointAccount" WHERE "userId" = ${order.userId} FOR UPDATE`
       const points = toSafeCreditPoints(order.totalPoints)
-      const account = await tx.pointAccount.findUniqueOrThrow({ where: { userId: order.userId } })
-      if (BigInt(account.balance) + BigInt(account.frozenBalance) + BigInt(points) > BigInt(POINT_ACCOUNT_HARD_CAP)) {
-        throw pointBalanceHardCap()
+      if (!order.adminSandbox) {
+        const account = await tx.pointAccount.findUniqueOrThrow({ where: { userId: order.userId } })
+        if (BigInt(account.balance) + BigInt(account.frozenBalance) + BigInt(points) > BigInt(POINT_ACCOUNT_HARD_CAP)) {
+          throw pointBalanceHardCap()
+        }
       }
       tripWriteHook('after_points_check')
 
-      const credited = await creditAvailablePoints(tx, order.userId, points)
+      const balanceAfter = order.adminSandbox
+        ? (await creditSandboxPoints(tx, order.userId, points)).sandboxBalance
+        : (await creditAvailablePoints(tx, order.userId, points)).balance
       tripWriteHook('after_balance')
 
       const log = await tx.pointLog.create({
         data: {
           userId: order.userId,
-          type: 'in',
+          type: order.adminSandbox ? 'sandbox_in' : 'in',
           amount: points,
-          balanceAfter: credited.balance,
-          reason: '充值入账',
+          balanceAfter,
+          reason: order.adminSandbox ? '管理员沙箱充值入账' : '充值入账',
         },
       })
       tripWriteHook('after_point_log')
@@ -176,8 +183,9 @@ async function executeRechargeCreditOnce(input: {
           paymentIntentId: order.paymentIntentId,
           userId: order.userId,
           points: order.totalPoints,
-          balanceBefore: credited.balance - points,
-          balanceAfter: credited.balance,
+          adminSandbox: order.adminSandbox,
+          balanceBefore: balanceAfter - points,
+          balanceAfter,
           businessEventKey: CREDIT_BUSINESS_EVENT_KEY(order.id),
           pointLogId: log.id,
         },
@@ -193,12 +201,14 @@ async function executeRechargeCreditOnce(input: {
       }
       tripWriteHook('after_cas_credited')
 
-      await writeCreditNotification(tx, {
-        userId: order.userId,
-        orderId: order.id,
-        points: order.totalPoints,
-      })
-      tripWriteHook('after_notification')
+      if (!order.adminSandbox) {
+        await writeCreditNotification(tx, {
+          userId: order.userId,
+          orderId: order.id,
+          points: order.totalPoints,
+        })
+        tripWriteHook('after_notification')
+      }
 
       return { kind: 'credited', creditId: credit.id, alreadyExisted: false } as const
     }, TX)

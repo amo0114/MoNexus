@@ -24,7 +24,7 @@ function requireIdempotencyKey(req: Request): string {
 export async function config(req: Request, res: Response, next: NextFunction) {
   try {
     const { currency } = req.query as { currency: RechargeCurrency }
-    res.json(await rechargeService.getRechargeConfig(req.user!.userId, currency))
+    res.json(await rechargeService.getRechargeConfig(req.user!.userId, currency, req.user!.role))
   } catch (err) {
     next(err)
   }
@@ -45,7 +45,7 @@ export async function createQuote(req: Request, res: Response, next: NextFunctio
       amountSource: body.amountSource,
       provider: body.provider,
       paymentMethod: body.paymentMethod,
-    })
+    }, req.user!.role)
     recordRechargeQuote(body.currency, 'created')
     res.status(201).json(quote)
   } catch (err) {
@@ -58,7 +58,12 @@ export async function createQuote(req: Request, res: Response, next: NextFunctio
 export async function createOrder(req: Request, res: Response, next: NextFunction) {
   try {
     const key = requireIdempotencyKey(req)
-    const order = await rechargeService.createOrder(req.user!.userId, req.body.quoteId as string, key)
+    const order = await rechargeService.createOrder(
+      req.user!.userId,
+      req.body.quoteId as string,
+      key,
+      req.user!.role,
+    )
     recordRechargeOrder(order.currency, order.provider, 'created')
     res.status(201).json(order)
   } catch (err) {

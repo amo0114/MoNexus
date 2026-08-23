@@ -10,6 +10,7 @@ export interface AdminRechargeOrder {
   totalPoints: string
   provider: string
   paymentMethod: string
+  adminSandbox: boolean
   paidAt: string | null
   creditedAt: string | null
   cancelledAt: string | null
@@ -105,6 +106,13 @@ export interface AdminPaged<T> {
   items: T[]
 }
 
+export interface AdminSandboxConfirmResult {
+  orderId: string
+  observationId: string
+  result: string
+  sandboxBalance: number
+}
+
 export async function listAdminRechargeOrders(params?: {
   status?: string
   userId?: number
@@ -133,6 +141,13 @@ export async function adminRequestRechargeRefund(
   const { data } = await api.post<RechargeRefund>(`/admin/recharge/orders/${orderId}/refunds`, {
     ...(reasonCode ? { reasonCode } : {}),
   })
+  return data
+}
+
+export async function confirmAdminSandboxOrder(orderId: string): Promise<AdminSandboxConfirmResult> {
+  const { data } = await api.post<AdminSandboxConfirmResult>(
+    `/admin/recharge/sandbox/orders/${orderId}/confirm`,
+  )
   return data
 }
 

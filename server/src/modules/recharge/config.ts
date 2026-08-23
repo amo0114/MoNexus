@@ -26,6 +26,7 @@ export type RechargeGateInput = {
   enabledProviders: readonly PaymentProviderName[]
   webhookPublicBaseUrl?: string
   hasEventEncryptionKey?: boolean
+  adminSandboxEnabled?: boolean
   stripe?: ProviderCredentialSnapshot
   paypal?: ProviderCredentialSnapshot
   wechatPay?: ProviderCredentialSnapshot
@@ -93,7 +94,7 @@ export function isParseFailure<T>(value: T | { error: string }): value is { erro
 export function parseRechargeMode(raw: string | undefined): RechargeMode | { error: string } {
   const value = raw === undefined || raw === '' ? 'disabled' : raw
   if (!(RECHARGE_MODES as readonly string[]).includes(value)) {
-    return { error: 'RECHARGE_MODE must be disabled, sandbox, or live' }
+    return { error: 'RECHARGE_MODE must be disabled, sandbox, admin_sandbox, or live' }
   }
   return value as RechargeMode
 }
@@ -283,7 +284,18 @@ export function evaluateRechargeConfigGates(input: RechargeGateInput): RechargeG
 
   const simulatorListed = input.enabledProviders.includes('simulator')
     || input.registeredProviders.includes('simulator')
-  if (productionDeploy && simulatorListed) {
+  if (input.rechargeMode === 'admin_sandbox') {
+    if (!input.adminSandboxEnabled) {
+      return fail('RECHARGE_MODE=admin_sandbox requires ADMIN_SANDBOX_PAYMENT_ENABLED=true')
+    }
+    if (input.enabledCurrencies.length !== 1 || input.enabledCurrencies[0] !== 'CNY') {
+      return fail('admin sandbox must enable only CNY')
+    }
+    if (input.enabledProviders.length !== 1 || input.enabledProviders[0] !== 'simulator') {
+      return fail('admin sandbox must enable only the simulator provider')
+    }
+  }
+  if (productionDeploy && simulatorListed && input.rechargeMode !== 'admin_sandbox') {
     return fail('simulator provider is not allowed on a production deploy')
   }
 

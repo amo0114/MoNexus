@@ -443,6 +443,7 @@ model PointAccount {
   userId        Int @unique
   balance       Int @default(0) // 可用积分，不包含已冻结的人工服务订单金额
   frozenBalance Int @default(0) // 已为尚未终态的人工服务订单保留的积分
+  sandboxBalance Int @default(0) // 管理员沙箱积分；不可用于真实消费/结算
 
   user User @relation(fields: [userId], references: [id])
 }
@@ -1644,6 +1645,7 @@ model RechargeQuote {
   bonusPoints             BigInt
   totalPoints             BigInt
   amountSource            String
+  adminSandbox            Boolean   @default(false)
   expiresAt               DateTime
   consumedAt              DateTime?
   createdAt               DateTime  @default(now())
@@ -1674,6 +1676,7 @@ model RechargeOrder {
   currencyScale           Int
   bonusRuleVersion        String?
   amountSource            String
+  adminSandbox            Boolean   @default(false)
   provider                String
   paymentMethod           String
   providerAccountKey      String
@@ -1797,6 +1800,7 @@ model RechargeCredit {
   paymentIntentId  String    @unique @db.Uuid
   userId           Int
   points           BigInt
+  adminSandbox     Boolean   @default(false)
   balanceBefore    Int
   balanceAfter     Int
   businessEventKey String    @unique
