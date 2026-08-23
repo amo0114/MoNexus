@@ -8,7 +8,9 @@ import { afterAll, describe, expect, it } from 'vitest'
 const ADMIN_URL = 'postgresql://monexus:monexus_dev_2026@localhost:5432/postgres'
 const EMPTY_DB = 'monexus_test_recharge_a_empty'
 const UPGRADE_DB = 'monexus_test_recharge_a_upgrade'
-const NEW_MIGRATION = '20260819120000_recharge_payment_foundation'
+const FOUNDATION_MIGRATION = '20260819120000_recharge_payment_foundation'
+const ADMIN_SANDBOX_MIGRATION = '20260823183000_admin_sandbox_payment'
+const NEW_MIGRATIONS = [FOUNDATION_MIGRATION, ADMIN_SANDBOX_MIGRATION] as const
 const SERVER_ROOT = path.resolve(__dirname, '../..')
 const created: string[] = []
 
@@ -47,7 +49,9 @@ function copyPrisma(excludeNew: boolean) {
   mkdirSync(dir, { recursive: true })
   cpSync(path.join(SERVER_ROOT, 'prisma'), path.join(dir, 'prisma'), { recursive: true })
   if (excludeNew) {
-    rmSync(path.join(dir, 'prisma', 'migrations', NEW_MIGRATION), { recursive: true, force: true })
+    for (const migration of NEW_MIGRATIONS) {
+      rmSync(path.join(dir, 'prisma', 'migrations', migration), { recursive: true, force: true })
+    }
   }
   return path.join(dir, 'prisma', 'schema.prisma')
 }
@@ -68,7 +72,8 @@ describe('recharge foundation migration replay', () => {
     const schemaPath = copyPrisma(false)
     const result = migrateDeploy(dbUrl(EMPTY_DB), schemaPath)
     expect(result.status, result.stdout + result.stderr).toBe(0)
-    expect(result.stdout + result.stderr).toMatch(new RegExp(NEW_MIGRATION))
+    expect(result.stdout + result.stderr).toMatch(new RegExp(FOUNDATION_MIGRATION))
+    expect(result.stdout + result.stderr).toMatch(new RegExp(ADMIN_SANDBOX_MIGRATION))
 
     const client = new Client({ connectionString: dbUrl(EMPTY_DB) })
     await client.connect()
@@ -88,7 +93,8 @@ describe('recharge foundation migration replay', () => {
     const historicalSchema = copyPrisma(true)
     const historical = migrateDeploy(dbUrl(UPGRADE_DB), historicalSchema)
     expect(historical.status, historical.stdout + historical.stderr).toBe(0)
-    expect(historical.stdout + historical.stderr).not.toMatch(new RegExp(NEW_MIGRATION))
+    expect(historical.stdout + historical.stderr).not.toMatch(new RegExp(FOUNDATION_MIGRATION))
+    expect(historical.stdout + historical.stderr).not.toMatch(new RegExp(ADMIN_SANDBOX_MIGRATION))
 
     const clientBefore = new Client({ connectionString: dbUrl(UPGRADE_DB) })
     await clientBefore.connect()
@@ -101,7 +107,8 @@ describe('recharge foundation migration replay', () => {
     const fullSchema = copyPrisma(false)
     const upgraded = migrateDeploy(dbUrl(UPGRADE_DB), fullSchema)
     expect(upgraded.status, upgraded.stdout + upgraded.stderr).toBe(0)
-    expect(upgraded.stdout + upgraded.stderr).toMatch(new RegExp(NEW_MIGRATION))
+    expect(upgraded.stdout + upgraded.stderr).toMatch(new RegExp(FOUNDATION_MIGRATION))
+    expect(upgraded.stdout + upgraded.stderr).toMatch(new RegExp(ADMIN_SANDBOX_MIGRATION))
 
     const client = new Client({ connectionString: dbUrl(UPGRADE_DB) })
     await client.connect()
