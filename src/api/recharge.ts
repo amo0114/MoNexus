@@ -36,6 +36,7 @@ export interface RechargeConfig {
   monthlyRemainingMinor: string
   suggestedAmounts: RechargeSuggestedAmount[]
   providers: RechargeProviderOption[]
+  sandboxBalance?: number
 }
 
 export interface RechargeQuote {

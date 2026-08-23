@@ -334,6 +334,7 @@ const envSchema = z.object({
   // boots stay valid without payment credentials.
   RECHARGE_MODE: optionalStringEnvSchema,
   RECHARGE_ACCEPT_NEW_ORDERS: booleanEnvSchema.default(false),
+  ADMIN_SANDBOX_PAYMENT_ENABLED: booleanEnvSchema.default(false),
   RECHARGE_ENABLED_CURRENCIES: optionalStringEnvSchema,
   // Registered keeps historical webhook/query/refund/dispute adapters loaded.
   // Enabled only gates new quotes/attempts and must be a subset of registered.
@@ -657,6 +658,7 @@ const rechargeGate = evaluateRechargeConfigGates({
   enabledProviders,
   webhookPublicBaseUrl: env.PAYMENT_WEBHOOK_PUBLIC_BASE_URL,
   hasEventEncryptionKey: Boolean(paymentEventEncryptionKey),
+  adminSandboxEnabled: env.ADMIN_SANDBOX_PAYMENT_ENABLED,
   stripe: {
     mode: stripeMode,
     secretOrKey: env.STRIPE_SECRET_KEY,
@@ -824,6 +826,7 @@ export const config = {
   recharge: {
     mode: rechargeMode,
     acceptNewOrders: env.RECHARGE_ACCEPT_NEW_ORDERS,
+    adminSandboxEnabled: env.ADMIN_SANDBOX_PAYMENT_ENABLED,
     enabledCurrencies,
     registeredProviders,
     enabledProviders,

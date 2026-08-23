@@ -1,4 +1,4 @@
-export const RECHARGE_MODES = ['disabled', 'sandbox', 'live'] as const
+export const RECHARGE_MODES = ['disabled', 'sandbox', 'admin_sandbox', 'live'] as const
 export type RechargeMode = (typeof RECHARGE_MODES)[number]
 
 export const PAYMENT_PROVIDER_NAMES = [

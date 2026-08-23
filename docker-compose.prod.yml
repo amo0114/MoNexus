@@ -94,6 +94,15 @@ services:
       LEGAL_PAGES_FIXTURE_PATH: ${LEGAL_PAGES_FIXTURE_PATH:-}
       # SPEC-VALUE-POLICY-P1-001: production stays off until D-02.
       POINT_VALUE_POLICY_MODE: ${POINT_VALUE_POLICY_MODE:-off}
+      # Recharge is fail-closed by default. admin_sandbox is the only mode
+      # allowed to load Simulator on a production deploy and still requires
+      # the separate explicit enable flag plus admin MFA at confirmation.
+      RECHARGE_MODE: ${RECHARGE_MODE:-disabled}
+      RECHARGE_ACCEPT_NEW_ORDERS: ${RECHARGE_ACCEPT_NEW_ORDERS:-false}
+      ADMIN_SANDBOX_PAYMENT_ENABLED: ${ADMIN_SANDBOX_PAYMENT_ENABLED:-false}
+      RECHARGE_ENABLED_CURRENCIES: ${RECHARGE_ENABLED_CURRENCIES:-}
+      PAYMENT_REGISTERED_PROVIDERS: ${PAYMENT_REGISTERED_PROVIDERS:-}
+      PAYMENT_ENABLED_PROVIDERS: ${PAYMENT_ENABLED_PROVIDERS:-}
       APP_BASE_URL: ${APP_BASE_URL:-}
       SENTRY_DSN: ${SENTRY_DSN:-}
       LOG_LEVEL: ${LOG_LEVEL:-info}

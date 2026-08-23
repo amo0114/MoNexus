@@ -45,6 +45,49 @@ After disabling new orders, confirm `GET /api/recharge/config` returns
 `RECHARGE_DISABLED` for users, then confirm payment workers still drain
 `PaymentEvent` and `RechargeCreditTask` rows.
 
+## Administrator sandbox payment
+
+This is a controlled production-safe Simulator exception for administrators,
+not a real payment channel. It is disabled by default. A fresh installation
+uses:
+
+```text
+RECHARGE_MODE=admin_sandbox
+RECHARGE_ACCEPT_NEW_ORDERS=true
+ADMIN_SANDBOX_PAYMENT_ENABLED=true
+RECHARGE_ENABLED_CURRENCIES=CNY
+PAYMENT_REGISTERED_PROVIDERS=simulator
+PAYMENT_ENABLED_PROVIDERS=simulator
+```
+
+On an existing installation, keep every provider still needed for historical
+webhooks/refunds in `PAYMENT_REGISTERED_PROVIDERS` and append `simulator`;
+`PAYMENT_ENABLED_PROVIDERS` must still contain only `simulator`.
+
+Operational invariants:
+
+- only an active administrator may quote or create an order;
+- only `CNY + simulator + card` is accepted;
+- successful confirmation is only available at
+  `POST /api/admin/recharge/sandbox/orders/:id/confirm`, behind the existing
+  administrator MFA middleware, and only for the administrator's own order;
+- confirmation writes a normalized `PaymentObservation` and then uses
+  `applyConfirmedPayment`; it must never update an order or points directly;
+- credited points enter `PointAccount.sandboxBalance` with
+  `PointLog.type=sandbox_in`; they are excluded from spending, refund,
+  settlement, ranking balances, and real recharge limit buckets;
+- the admin screen must continue to display **SANDBOX ONLY / 不代表真实收款**.
+
+To close the sandbox, first set `RECHARGE_ACCEPT_NEW_ORDERS=false`, verify no
+administrator is creating an order, then set
+`ADMIN_SANDBOX_PAYMENT_ENABLED=false` and return `RECHARGE_MODE=disabled`.
+Do not delete payment observations or sandbox ledger rows.
+
+When a real provider is ready, configure it under `RECHARGE_MODE=live` using
+the existing Provider → Observation → Credit contract. Never include
+`simulator` in a live provider list and never transfer `sandboxBalance` into
+the spendable balance.
+
 ## Provider circuit breaker
 
 Query recovery records consecutive `queryPayment` failures per provider. After

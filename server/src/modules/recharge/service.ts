@@ -3,6 +3,7 @@ import { prisma } from '../../lib/prisma.js'
 import { config } from '../../config/index.js'
 import {
   conflict,
+  forbidden,
   HttpError,
   notFound,
   paymentAlreadyInProgress,
@@ -51,6 +52,27 @@ const PROVIDER_PAYMENT_METHODS: Readonly<Record<PaymentProviderName, readonly st
   alipay: ['wap', 'page'],
 }
 
+function isAdminSandboxMode(): boolean {
+  return config.recharge.mode === 'admin_sandbox'
+}
+
+function assertAdminSandboxActor(role: string): void {
+  if (isAdminSandboxMode() && role !== 'admin') {
+    throw forbidden('管理员沙箱充值仅限管理员使用')
+  }
+}
+
+function assertAdminSandboxSelection(input: {
+  currency: string
+  provider: string
+  paymentMethod: string
+}): void {
+  if (!isAdminSandboxMode()) return
+  if (input.currency !== 'CNY' || input.provider !== 'simulator' || input.paymentMethod !== 'card') {
+    throw paymentProviderUnavailable('管理员沙箱充值仅支持 CNY、Simulator 和卡支付')
+  }
+}
+
 function asProviderName(value: string): PaymentProviderName {
   if (!(PAYMENT_PROVIDER_NAMES as readonly string[]).includes(value)) {
     throw paymentProviderUnavailable()
@@ -90,8 +112,9 @@ async function resolveCapabilities(input: {
   return { provider, accountKey: providerAccountKey, capabilities }
 }
 
-export async function getRechargeConfig(userId: number, currencyRaw: string) {
+export async function getRechargeConfig(userId: number, currencyRaw: string, role: string) {
   assertRechargeAcceptsNewOrders()
+  assertAdminSandboxActor(role)
   assertCurrencyEnabled(currencyRaw)
   const currency = currencyRaw
   const policy = await getActivePricePolicy(currency)
@@ -109,7 +132,7 @@ export async function getRechargeConfig(userId: number, currencyRaw: string) {
   const providers = []
   for (const adapter of listEnabledProviders()) {
     const methods = []
-    const probeMethods = PROVIDER_PAYMENT_METHODS[adapter.name]
+    const probeMethods = isAdminSandboxMode() ? ['card'] : PROVIDER_PAYMENT_METHODS[adapter.name]
     for (const paymentMethod of probeMethods) {
       try {
         const resolved = await resolveCapabilities({
@@ -134,6 +157,9 @@ export async function getRechargeConfig(userId: number, currencyRaw: string) {
       providers.push({ provider: adapter.name, paymentMethods: methods })
     }
   }
+  const sandboxBalance = isAdminSandboxMode()
+    ? (await prisma.pointAccount.findUnique({ where: { userId }, select: { sandboxBalance: true } }))?.sandboxBalance ?? 0
+    : undefined
   return {
     currency,
     mode: config.recharge.mode,
@@ -151,6 +177,7 @@ export async function getRechargeConfig(userId: number, currencyRaw: string) {
       sortOrder: item.sortOrder,
     })),
     providers,
+    ...(sandboxBalance !== undefined ? { sandboxBalance } : {}),
   }
 }
 
@@ -160,8 +187,10 @@ export async function createQuote(userId: number, input: {
   amountSource: AmountSource
   provider: string
   paymentMethod: string
-}) {
+}, role: string) {
   assertRechargeAcceptsNewOrders()
+  assertAdminSandboxActor(role)
+  assertAdminSandboxSelection(input)
   assertCurrencyEnabled(input.currency)
   await assertRechargeNotRestricted(userId)
   const currency = input.currency
@@ -204,6 +233,7 @@ export async function createQuote(userId: number, input: {
       bonusPoints: priced.bonusPoints,
       totalPoints: priced.totalPoints,
       amountSource: input.amountSource,
+      adminSandbox: isAdminSandboxMode(),
       expiresAt,
     },
   })
@@ -327,6 +357,7 @@ type OrderWithAttempts = {
   paymentMethod: string
   currency: string
   amountMinor: bigint
+  adminSandbox: boolean
   paymentIntent: {
     id: string
     status: string
@@ -339,6 +370,11 @@ type OrderWithAttempts = {
       requestIdempotencyKey: string
     }>
   } | null
+}
+
+function assertOrderMatchesCurrentMode(order: Pick<OrderWithAttempts, 'adminSandbox' | 'provider' | 'paymentMethod' | 'currency'>): void {
+  if (order.adminSandbox !== isAdminSandboxMode()) throw rechargeQuoteChanged()
+  assertAdminSandboxSelection(order)
 }
 
 function includeAttempts() {
@@ -522,8 +558,9 @@ async function finishCreateOrder(userId: number, order: OrderWithAttempts, claim
   return serializeOrder(await loadOwnedOrder(userId, order.id))
 }
 
-export async function createOrder(userId: number, quoteId: string, idempotencyKey: string) {
+export async function createOrder(userId: number, quoteId: string, idempotencyKey: string, role: string) {
   assertRechargeAcceptsNewOrders()
+  assertAdminSandboxActor(role)
   await assertRechargeNotRestricted(userId)
   const digest = computeRechargeRequestDigest({ quoteId })
   const claim = await claimRechargeIdempotency({
@@ -535,11 +572,13 @@ export async function createOrder(userId: number, quoteId: string, idempotencyKe
   })
   if (claim.kind === 'replay') {
     const existing = await loadOwnedOrder(userId, claim.resultId)
+    assertOrderMatchesCurrentMode(existing)
     return finishCreateOrder(userId, existing)
   }
   const existingByQuote = await loadOrderByQuote(userId, quoteId)
   const sameKeyRecovery = claim.kind === 'in_flight' || (claim.kind === 'claimed' && claim.takeover)
   if (existingByQuote && sameKeyRecovery) {
+    assertOrderMatchesCurrentMode(existingByQuote)
     return finishCreateOrder(
       userId,
       existingByQuote,
@@ -571,6 +610,7 @@ export async function createOrder(userId: number, quoteId: string, idempotencyKe
         bonusPoints: bigint
         totalPoints: bigint
         amountSource: string
+        adminSandbox: boolean
         expiresAt: Date
         consumedAt: Date | null
       }>>`
@@ -579,6 +619,8 @@ export async function createOrder(userId: number, quoteId: string, idempotencyKe
       const quote = quoteRows[0]
       if (!quote || quote.userId !== userId) throw notFound('充值报价不存在')
       if (quote.consumedAt || quote.expiresAt <= new Date()) throw rechargeQuoteExpired()
+      if (quote.adminSandbox !== isAdminSandboxMode()) throw rechargeQuoteChanged()
+      assertAdminSandboxSelection(quote)
 
       const providerName = asProviderName(quote.provider)
       assertCurrencyEnabled(quote.currency)
@@ -633,6 +675,7 @@ export async function createOrder(userId: number, quoteId: string, idempotencyKe
           currencyScale: policy.currencyScale,
           bonusRuleVersion: policy.bonusRuleVersion,
           amountSource: quote.amountSource,
+          adminSandbox: quote.adminSandbox,
           provider: quote.provider,
           paymentMethod: quote.paymentMethod,
           providerAccountKey: quote.providerAccountKey,
@@ -670,18 +713,22 @@ export async function createOrder(userId: number, quoteId: string, idempotencyKe
         data: { activeAttemptId: attempt.id },
       })
 
-      const periods = resolveLimitPeriods(new Date(), policy.limitTimeZone)
-      await reserveLimitBuckets(tx, {
-        userId,
-        currency: order.currency,
-        amountMinor: order.amountMinor,
-        orderId: order.id,
-        expiresAt,
-        dailyLimitMinor: policy.dailyLimitMinor,
-        monthlyLimitMinor: policy.monthlyLimitMinor,
-        day: periods.day,
-        month: periods.month,
-      })
+      // Sandbox money is not real payment volume. Do not contaminate the
+      // administrator's live daily/monthly recharge buckets.
+      if (!order.adminSandbox) {
+        const periods = resolveLimitPeriods(new Date(), policy.limitTimeZone)
+        await reserveLimitBuckets(tx, {
+          userId,
+          currency: order.currency,
+          amountMinor: order.amountMinor,
+          orderId: order.id,
+          expiresAt,
+          dailyLimitMinor: policy.dailyLimitMinor,
+          monthlyLimitMinor: policy.monthlyLimitMinor,
+          day: periods.day,
+          month: periods.month,
+        })
+      }
 
       return { order, intent, attempt }
     }, TX)
@@ -811,6 +858,9 @@ export async function completeOrder(userId: number, orderId: string, idempotency
 
   try {
     const order = await loadOwnedOrder(userId, orderId)
+    if (order.adminSandbox) {
+      throw paymentCompletionNotSupported('管理员沙箱支付必须在管理后台确认')
+    }
     if (order.status === 'cancelled' || order.status === 'expired' || order.status === 'failed') {
       throw conflict('订单已关闭，不能完成支付')
     }

@@ -111,11 +111,13 @@ export async function requestRechargeRefund(input: {
         currency: string
         provider: string
         providerAccountKey: string
+        adminSandbox: boolean
       }>>`
-        SELECT "id", "userId", "status", "amountMinor", "totalPoints", "currency", "provider", "providerAccountKey"
+        SELECT "id", "userId", "status", "amountMinor", "totalPoints", "currency", "provider", "providerAccountKey", "adminSandbox"
         FROM "RechargeOrder" WHERE "id" = ${input.orderId}::uuid FOR UPDATE`
       const order = orders[0]
       if (!order || order.userId !== input.userId) throw conflict('充值订单不存在')
+      if (order.adminSandbox) throw conflict('管理员沙箱充值不支持退款')
       if (order.status === 'refunded') {
         return tx.rechargeRefund.findUnique({ where: { rechargeOrderId: order.id } })
       }
