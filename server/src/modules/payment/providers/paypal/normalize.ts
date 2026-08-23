@@ -26,7 +26,7 @@ export type PaypalCapture = {
   invoice_id?: unknown
   create_time?: unknown
   update_time?: unknown
-  supplementary_data?: { related_ids?: { order_id?: unknown } }
+  supplementary_data?: { related_ids?: { order_id?: unknown; capture_id?: unknown; refund_id?: unknown } }
   payee?: PaypalPayee
 }
 
@@ -55,6 +55,7 @@ export type PaypalRefundResource = {
   amount?: PaypalMoney
   update_time?: unknown
   create_time?: unknown
+  supplementary_data?: { related_ids?: { order_id?: unknown; capture_id?: unknown; refund_id?: unknown } }
 }
 
 export type PaypalWebhookEvent = {
@@ -63,7 +64,7 @@ export type PaypalWebhookEvent = {
   resource_type?: unknown
   create_time?: unknown
   resource?: PaypalCapture & PaypalOrder & PaypalRefundResource & {
-    supplementary_data?: { related_ids?: { order_id?: unknown } }
+    supplementary_data?: { related_ids?: { order_id?: unknown; capture_id?: unknown; refund_id?: unknown } }
   }
 }
 
@@ -299,11 +300,14 @@ export function normalizePaypalRefund(resource: PaypalRefundResource): Normalize
   } catch (err) {
     if (!(err instanceof PaypalAmountError)) throw err
   }
-  const id = asString(resource.id) ?? 'unknown'
+  const related = resource.supplementary_data?.related_ids
+  const id = asString(related?.refund_id) ?? asString(resource.id) ?? 'unknown'
   const versionTime = asString(resource.update_time) ?? asString(resource.create_time) ?? 'v1'
   return {
     status,
     providerRefundId: id,
+    providerPaymentId: asString(related?.order_id) ?? null,
+    providerCaptureId: asString(related?.capture_id) ?? null,
     amountMinor,
     currency: currency as RechargeCurrency,
     immutableStateVersion: `paypal-refund:${id}:${asString(resource.status) ?? 'unknown'}:${versionTime}`,

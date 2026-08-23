@@ -2,15 +2,107 @@ import { conflict, forbidden, notFound } from '../../../lib/httpError.js'
 import { prisma } from '../../../lib/prisma.js'
 import {
   consumeHeldPoints,
+  creditAvailablePoints,
   holdAvailablePoints,
   releaseHeldPoints,
 } from '../../points/checkedMutation.js'
 import { serializeAmountMinor } from '../../recharge/money.js'
 import type { PaymentRecoveryCaseStatus } from '../../recharge/types.js'
 import { recordPaymentDispute } from '../metrics.js'
+import { claimPaymentEvent, commitPaymentEvent } from '../workers/lease.js'
 
 const TX = { timeout: 15_000, maxWait: 5_000 } as const
 const EXPLICIT_CLOSE: readonly PaymentRecoveryCaseStatus[] = ['recovered', 'written_off', 'restored']
+
+type DisputeObservationPayload = {
+  providerDisputeId?: unknown
+  providerPaymentId?: unknown
+  amountMinor?: unknown
+  currency?: unknown
+}
+
+function disputePayload(value: unknown): DisputeObservationPayload {
+  return value != null && typeof value === 'object' ? value as DisputeObservationPayload : {}
+}
+
+export async function applyDisputeObservation(observationId: string) {
+  const claimed = await claimPaymentEvent(observationId)
+  if (!claimed) return { observationId, outcome: 'lease_lost' as const }
+  try {
+    const observation = await prisma.paymentEvent.findUnique({ where: { id: observationId } })
+    if (!observation || !observation.eventType.startsWith('dispute.')) {
+      await commitPaymentEvent(observationId, claimed.leaseToken, 'ignored')
+      return { observationId, outcome: 'ignored' as const }
+    }
+    const payload = disputePayload(observation.normalizedPayload)
+    const providerDisputeId = typeof payload.providerDisputeId === 'string' ? payload.providerDisputeId : null
+    const amountMinor = typeof payload.amountMinor === 'string' && /^\d+$/.test(payload.amountMinor)
+      ? BigInt(payload.amountMinor)
+      : null
+    const currency = typeof payload.currency === 'string' ? payload.currency : null
+    if (!providerDisputeId || !amountMinor || !currency || !observation.paymentAttemptId) {
+      await commitPaymentEvent(observationId, claimed.leaseToken, 'reconcile_required', 'DISPUTE_IDENTITY_INCOMPLETE')
+      return { observationId, outcome: 'reconcile_required' as const }
+    }
+
+    if (observation.eventType === 'dispute.opened') {
+      const attempt = await prisma.paymentAttempt.findUnique({
+        where: { id: observation.paymentAttemptId },
+        include: { paymentIntent: { include: { rechargeOrder: true } } },
+      })
+      if (!attempt
+        || attempt.provider !== observation.provider
+        || attempt.providerAccountKey !== observation.providerAccountKey
+        || attempt.providerPaymentId !== observation.providerPaymentId
+        || attempt.paymentIntent.rechargeOrder.amountMinor !== amountMinor
+        || attempt.paymentIntent.rechargeOrder.currency !== currency) {
+        await commitPaymentEvent(observationId, claimed.leaseToken, 'reconcile_required', 'DISPUTE_PAYMENT_MISMATCH')
+        return { observationId, outcome: 'reconcile_required' as const }
+      }
+      await openPaymentDispute({
+        provider: observation.provider,
+        providerAccountKey: observation.providerAccountKey,
+        providerDisputeId,
+        rechargeOrderId: attempt.paymentIntent.rechargeOrderId,
+        paymentAttemptId: attempt.id,
+        amountMinor,
+        currency,
+        reasonCode: observation.eventType,
+      })
+    } else if (observation.eventType === 'dispute.won' || observation.eventType === 'dispute.lost') {
+      const dispute = await prisma.paymentDispute.findUnique({
+        where: {
+          provider_providerAccountKey_providerDisputeId: {
+            provider: observation.provider,
+            providerAccountKey: observation.providerAccountKey,
+            providerDisputeId,
+          },
+        },
+      })
+      if (!dispute) {
+        await commitPaymentEvent(observationId, claimed.leaseToken, 'reconcile_required', 'DISPUTE_NOT_OPEN')
+        return { observationId, outcome: 'reconcile_required' as const }
+      }
+      await resolveDisputeOutcome({
+        disputeId: dispute.id,
+        outcome: observation.eventType === 'dispute.won' ? 'won' : 'lost',
+      })
+    } else {
+      await commitPaymentEvent(observationId, claimed.leaseToken, 'reconcile_required', 'DISPUTE_EVENT_UNSUPPORTED')
+      return { observationId, outcome: 'reconcile_required' as const }
+    }
+    await commitPaymentEvent(observationId, claimed.leaseToken, 'processed')
+    return { observationId, outcome: 'processed' as const }
+  } catch (error) {
+    await commitPaymentEvent(
+      observationId,
+      claimed.leaseToken,
+      'failed',
+      error instanceof Error ? error.message.slice(0, 80) : 'DISPUTE_APPLY_FAILED',
+    )
+    throw error
+  }
+}
 
 export async function openPaymentDispute(input: {
   provider: string
@@ -214,6 +306,10 @@ export async function closeRecoveryCase(input: {
 
     if (input.status === 'restored' && hold?.status === 'active') {
       await releaseHeldPoints(tx, recovery.userId, Number(hold.points))
+      await tx.pointHold.update({ where: { id: hold.id }, data: { status: 'released' } })
+    }
+    if (input.status === 'restored' && hold?.status === 'consumed') {
+      await creditAvailablePoints(tx, recovery.userId, Number(hold.points))
       await tx.pointHold.update({ where: { id: hold.id }, data: { status: 'released' } })
     }
     if ((input.status === 'recovered' || input.status === 'written_off') && hold?.status === 'active') {

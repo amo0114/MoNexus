@@ -8,6 +8,8 @@ import {
   adminListOrdersQuerySchema,
   adminPatchPricePolicySchema,
   adminRefundSchema,
+  adminResolveDisputeSchema,
+  adminCloseRecoveryCaseSchema,
   adminUuidParamSchema,
 } from './adminSchema.js'
 
@@ -68,4 +70,14 @@ rechargeAdminRoutes.get(
   '/payments/disputes',
   validate({ query: adminListDisputesQuerySchema }),
   controller.listDisputes,
+)
+rechargeAdminRoutes.post(
+  '/payments/disputes/:id/resolve',
+  validate({ params: adminUuidParamSchema, body: adminResolveDisputeSchema }),
+  controller.resolveDispute,
+)
+rechargeAdminRoutes.post(
+  '/payments/recovery-cases/:id/close',
+  validate({ params: adminUuidParamSchema, body: adminCloseRecoveryCaseSchema }),
+  controller.closeRecoveryCase,
 )

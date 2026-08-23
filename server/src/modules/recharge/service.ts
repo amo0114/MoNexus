@@ -3,6 +3,7 @@ import { prisma } from '../../lib/prisma.js'
 import { config } from '../../config/index.js'
 import {
   conflict,
+  HttpError,
   notFound,
   paymentAlreadyInProgress,
   paymentCompletionNotSupported,
@@ -42,6 +43,13 @@ export const DISCLOSURE_VERSION = 'recharge-disclosure-v1'
 
 const TX = { timeout: 15_000, maxWait: 5_000 } as const
 const NON_TERMINAL_ATTEMPT = new Set<string>(PAYMENT_ATTEMPT_NON_TERMINAL_STATUSES)
+const PROVIDER_PAYMENT_METHODS: Readonly<Record<PaymentProviderName, readonly string[]>> = {
+  simulator: ['card', 'redirect', 'qr_code', 'form_post'],
+  stripe: ['card'],
+  paypal: ['redirect'],
+  wechat_pay: ['native'],
+  alipay: ['wap', 'page'],
+}
 
 function asProviderName(value: string): PaymentProviderName {
   if (!(PAYMENT_PROVIDER_NAMES as readonly string[]).includes(value)) {
@@ -101,9 +109,7 @@ export async function getRechargeConfig(userId: number, currencyRaw: string) {
   const providers = []
   for (const adapter of listEnabledProviders()) {
     const methods = []
-    const probeMethods = adapter.name === 'simulator'
-      ? ['card', 'redirect', 'qr_code', 'form_post']
-      : []
+    const probeMethods = PROVIDER_PAYMENT_METHODS[adapter.name]
     for (const paymentMethod of probeMethods) {
       try {
         const resolved = await resolveCapabilities({
@@ -356,6 +362,38 @@ async function provisionExistingOrder(order: OrderWithAttempts) {
   await persistProviderCreate(order, intent, attempt)
 }
 
+function isDeterministicCreateFailure(error: unknown): boolean {
+  return error instanceof HttpError
+    && error.status >= 400
+    && error.status < 500
+    && error.code !== 'PAYMENT_STATE_UNKNOWN'
+}
+
+async function failUncreatedPayment(orderId: string, intentId: string, attemptId: string, error: unknown) {
+  await prisma.$transaction(async tx => {
+    const rows = await tx.$queryRaw<Array<{ status: string }>>`
+      SELECT "status" FROM "RechargeOrder" WHERE "id" = ${orderId}::uuid FOR UPDATE`
+    if (!rows[0] || ['paid', 'credited', 'refund_pending', 'refunded'].includes(rows[0].status)) return
+    await tx.paymentAttempt.updateMany({
+      where: { id: attemptId, status: 'created', providerPaymentId: null },
+      data: {
+        status: 'failed',
+        completedAt: new Date(),
+        lastErrorCode: error instanceof HttpError ? error.code : 'PAYMENT_FAILED',
+      },
+    })
+    await tx.paymentIntent.updateMany({
+      where: { id: intentId, status: { in: [...OPEN_INTENT] } },
+      data: { status: 'failed', activeAttemptId: null },
+    })
+    await tx.rechargeOrder.updateMany({
+      where: { id: orderId, status: { in: ['created', 'pending_payment', 'closure_pending'] } },
+      data: { status: 'failed', cancelledAt: new Date() },
+    })
+    await releaseLimitReservations(tx, orderId)
+  }, TX)
+}
+
 async function persistProviderCreate(
   order: OrderWithAttempts,
   intent: { id: string },
@@ -370,16 +408,29 @@ async function persistProviderCreate(
   if (attempt.status !== 'created') return
 
   const provider = getHistoricalProvider(asProviderName(order.provider))
-  const created = await provider.createPayment({
-    orderId: order.id,
-    paymentIntentId: intent.id,
-    paymentAttemptId: attempt.id,
-    amountMinor: order.amountMinor,
-    currency: order.currency as RechargeCurrency,
-    paymentMethod: order.paymentMethod,
-    providerAccountKey: order.providerAccountKey,
-    requestIdempotencyKey: attempt.requestIdempotencyKey,
-  })
+  let created
+  try {
+    created = await provider.createPayment({
+      orderId: order.id,
+      paymentIntentId: intent.id,
+      paymentAttemptId: attempt.id,
+      amountMinor: order.amountMinor,
+      currency: order.currency as RechargeCurrency,
+      paymentMethod: order.paymentMethod,
+      providerAccountKey: order.providerAccountKey,
+      requestIdempotencyKey: attempt.requestIdempotencyKey,
+    })
+  } catch (error) {
+    if (isDeterministicCreateFailure(error)) {
+      await failUncreatedPayment(order.id, intent.id, attempt.id, error)
+    } else {
+      await prisma.paymentAttempt.updateMany({
+        where: { id: attempt.id, status: 'created', providerPaymentId: null },
+        data: { lastErrorCode: 'PAYMENT_STATE_UNKNOWN' },
+      })
+    }
+    throw error
+  }
   const now = new Date()
   const attemptStatus: PaymentAttemptStatus = created.status
 
@@ -444,6 +495,13 @@ async function persistProviderCreate(
   if (latest && (CLOSING_ORDER as readonly string[]).includes(latest.status)) {
     await confirmProviderClosure(latest, latest.status === 'expired' ? 'expired' : 'cancelled')
   }
+}
+
+export async function recoverProviderCreate(orderId: string) {
+  const order = await prisma.rechargeOrder.findUnique({ where: { id: orderId }, include: includeAttempts() })
+  if (!order) return null
+  await provisionExistingOrder(order)
+  return prisma.rechargeOrder.findUnique({ where: { id: orderId }, include: includeAttempts() })
 }
 
 async function finishCreateOrder(userId: number, order: OrderWithAttempts, claimToken?: string, idempotencyKey?: string) {
@@ -702,6 +760,40 @@ async function persistNormalizedObservation(input: {
   })
 }
 
+export async function applyTerminalPaymentState(input: {
+  orderId: string
+  attemptId: string
+  status: Extract<PaymentAttemptStatus, 'failed' | 'cancelled'>
+}) {
+  return prisma.$transaction(async tx => {
+    const rows = await tx.$queryRaw<Array<{ status: string }>>`
+      SELECT "status" FROM "RechargeOrder" WHERE "id" = ${input.orderId}::uuid FOR UPDATE`
+    const order = rows[0]
+    if (!order || ['paid', 'credited', 'refund_pending', 'refunded'].includes(order.status)) return false
+    const attempt = await tx.paymentAttempt.findUnique({
+      where: { id: input.attemptId },
+      include: { paymentIntent: true },
+    })
+    if (!attempt
+      || attempt.paymentIntent.rechargeOrderId !== input.orderId
+      || !NON_TERMINAL_ATTEMPT.has(attempt.status)) return false
+    await tx.paymentAttempt.update({
+      where: { id: attempt.id },
+      data: { status: input.status, completedAt: new Date(), lastErrorCode: input.status === 'failed' ? 'PAYMENT_FAILED' : null },
+    })
+    await tx.paymentIntent.updateMany({
+      where: { id: attempt.paymentIntentId, status: { in: [...OPEN_INTENT] } },
+      data: { status: input.status === 'cancelled' ? 'cancelled' : 'failed', activeAttemptId: null },
+    })
+    await tx.rechargeOrder.updateMany({
+      where: { id: input.orderId, status: { in: ['created', 'pending_payment', 'closure_pending'] } },
+      data: { status: input.status === 'cancelled' ? 'cancelled' : 'failed', cancelledAt: new Date() },
+    })
+    await releaseLimitReservations(tx, input.orderId)
+    return true
+  }, TX)
+}
+
 export async function completeOrder(userId: number, orderId: string, idempotencyKey: string) {
   const digest = computeRechargeRequestDigest({ orderId })
   const claim = await claimRechargeIdempotency({
@@ -763,12 +855,12 @@ export async function completeOrder(userId: number, orderId: string, idempotency
       }
     }
 
-    if (normalized.status === 'failed' || normalized.status === 'cancelled' || normalized.status === 'unknown') {
-      await prisma.paymentAttempt.update({
-        where: { id: attempt.id },
+    if (normalized.status === 'unknown') {
+      await prisma.paymentAttempt.updateMany({
+        where: { id: attempt.id, status: { in: [...PAYMENT_ATTEMPT_NON_TERMINAL_STATUSES] } },
         data: {
           status: normalized.status,
-          lastErrorCode: normalized.status === 'unknown' ? 'PAYMENT_STATE_UNKNOWN' : 'PAYMENT_FAILED',
+          lastErrorCode: 'PAYMENT_STATE_UNKNOWN',
           providerCaptureId: normalized.providerCaptureId ?? attempt.providerCaptureId,
         },
       })
@@ -790,6 +882,8 @@ export async function completeOrder(userId: number, orderId: string, idempotency
     })
     if (normalized.status === 'succeeded') {
       await applyConfirmedPayment(observation.id)
+    } else if (normalized.status === 'failed' || normalized.status === 'cancelled') {
+      await applyTerminalPaymentState({ orderId: order.id, attemptId: attempt.id, status: normalized.status })
     }
 
     await prisma.$transaction(async tx => {
@@ -852,7 +946,16 @@ async function confirmProviderClosure(
   const attempts = order.paymentIntent?.attempts ?? []
   const createInFlight = attempts.some(item => item.status === 'created' && !item.providerPaymentId)
   if (createInFlight) {
-    return { status: 'closure_pending' as const, released: false }
+    try {
+      await provisionExistingOrder(order)
+    } catch {
+      return { status: 'closure_pending' as const, released: false }
+    }
+    const refreshed = await prisma.rechargeOrder.findUnique({ where: { id: order.id }, include: includeAttempts() })
+    if (!refreshed || ['cancelled', 'expired', 'failed'].includes(refreshed.status)) {
+      return { status: (refreshed?.status ?? 'closure_pending') as 'cancelled' | 'expired' | 'failed' | 'closure_pending', released: refreshed?.status !== 'closure_pending' }
+    }
+    return confirmProviderClosure(refreshed, terminalStatus)
   }
 
   if (attempts.length === 0) {

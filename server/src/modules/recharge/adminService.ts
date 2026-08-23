@@ -2,6 +2,7 @@ import { prisma } from '../../lib/prisma.js'
 import { conflict, notFound } from '../../lib/httpError.js'
 import { serializeAmountMinor, parseAmountMinorString } from './money.js'
 import { applyConfirmedPayment } from '../payment/events/applyConfirmedPayment.js'
+import { applyDisputeObservation } from '../payment/disputes/service.js'
 import { applyRefundObservation, requestRechargeRefund } from './refund.js'
 import {
   createReconciliationRun,
@@ -9,7 +10,7 @@ import {
   reconcileOrder,
   serializeRun,
 } from '../payment/reconciliation/service.js'
-import { serializeDispute } from '../payment/disputes/service.js'
+import { closeRecoveryCase, resolveDisputeOutcome, serializeDispute } from '../payment/disputes/service.js'
 import type {
   PaymentDisputeStatus,
   PaymentEventStatus,
@@ -177,6 +178,9 @@ export async function adminRetryEvent(eventId: string, actorUserId: number) {
       lastErrorCode: null,
     },
   })
+  if (event.eventType.startsWith('dispute.')) {
+    return applyDisputeObservation(eventId)
+  }
   if (event.eventType.startsWith('refund.')) {
     return applyRefundObservation(eventId)
   }
@@ -273,6 +277,44 @@ export async function adminListDisputes(query: {
     }),
   ])
   return { page: query.page, pageSize: query.pageSize, total, items: items.map(serializeDispute) }
+}
+
+export async function adminResolveDispute(
+  disputeId: string,
+  outcome: 'won' | 'lost',
+  actorUserId: number,
+) {
+  const result = await resolveDisputeOutcome({ disputeId, outcome, actorUserId })
+  await writePaymentAdminLog({
+    adminUserId: actorUserId,
+    action: 'payment.dispute.resolve',
+    targetType: 'PaymentDispute',
+    targetKey: disputeId,
+    extra: { outcome },
+  })
+  return result
+}
+
+export async function adminCloseRecoveryCase(
+  recoveryCaseId: string,
+  status: 'recovered' | 'written_off' | 'restored',
+  actorUserId: number,
+  resolutionReason?: string,
+) {
+  const result = await closeRecoveryCase({
+    recoveryCaseId,
+    status,
+    actorUserId,
+    resolutionReason,
+  })
+  await writePaymentAdminLog({
+    adminUserId: actorUserId,
+    action: 'payment.recovery_case.close',
+    targetType: 'PaymentRecoveryCase',
+    targetKey: recoveryCaseId,
+    extra: { status, resolutionReason: resolutionReason ?? status },
+  })
+  return result
 }
 
 export async function adminPatchPricePolicy(id: string, body: {

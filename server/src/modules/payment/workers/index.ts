@@ -4,7 +4,8 @@ import { applyConfirmedPayment } from '../events/applyConfirmedPayment.js'
 import { recordNormalizedPaymentFact } from '../observations/record.js'
 import { getHistoricalProvider } from '../providers/registry.js'
 import { executeRechargeCredit } from '../../recharge/credit.js'
-import { applyRefundObservation, submitProviderRefund } from '../../recharge/refund.js'
+import { applyRefundObservation, queryProviderRefund, submitProviderRefund } from '../../recharge/refund.js'
+import { applyDisputeObservation } from '../disputes/service.js'
 import { PAYMENT_PROVIDER_NAMES, type PaymentProviderName } from '../../recharge/types.js'
 import {
   claimCreditTask,
@@ -22,6 +23,7 @@ import {
   recordProviderQuerySuccess,
 } from '../providers/circuitBreaker.js'
 import { config } from '../../../config/index.js'
+import { applyTerminalPaymentState, expireOrder, recoverProviderCreate } from '../../recharge/service.js'
 
 const TICK_MS = 2_000
 const PAID_NOT_CREDITED_MS = 30_000
@@ -48,7 +50,9 @@ export async function processOneObservation(): Promise<boolean> {
     select: { id: true, eventType: true },
   })
   if (!due) return false
-  if (due.eventType.startsWith('refund.')) {
+  if (due.eventType.startsWith('dispute.')) {
+    await applyDisputeObservation(due.id)
+  } else if (due.eventType.startsWith('refund.')) {
     await applyRefundObservation(due.id)
   } else {
     await applyConfirmedPayment(due.id)
@@ -147,6 +151,12 @@ export async function recoverUnknownPayments(): Promise<number> {
       recordProviderQuerySuccess(name)
       if (queried.status === 'succeeded') {
         await applyConfirmedPayment(recorded.id)
+      } else if (queried.status === 'failed' || queried.status === 'cancelled') {
+        await applyTerminalPaymentState({
+          orderId: order.id,
+          attemptId: attempt.id,
+          status: queried.status,
+        })
       }
     } catch (error) {
       recordProviderQueryFailure(name)
@@ -161,6 +171,50 @@ export async function recoverUnknownPayments(): Promise<number> {
   return attempts.length
 }
 
+export async function recoverUnfinishedCreates(): Promise<number> {
+  const cutoff = new Date(Date.now() - QUERY_STALE_MS)
+  const attempts = await prisma.paymentAttempt.findMany({
+    where: { status: 'created', providerPaymentId: null, updatedAt: { lte: cutoff } },
+    take: 20,
+    select: { paymentIntent: { select: { rechargeOrderId: true } } },
+  })
+  for (const attempt of attempts) {
+    try {
+      await recoverProviderCreate(attempt.paymentIntent.rechargeOrderId)
+    } catch (error) {
+      logger.warn({
+        event: 'payment.create_recovery_failed',
+        rechargeOrderId: attempt.paymentIntent.rechargeOrderId,
+        err: error instanceof Error ? error.message : 'create_failed',
+      }, 'provider create recovery will retry with the stable idempotency key')
+    }
+  }
+  return attempts.length
+}
+
+export async function expireDueRechargeOrders(): Promise<number> {
+  const orders = await prisma.rechargeOrder.findMany({
+    where: {
+      status: { in: ['created', 'pending_payment', 'closure_pending'] },
+      expiresAt: { lte: new Date() },
+    },
+    take: 20,
+    select: { id: true, userId: true },
+  })
+  for (const order of orders) {
+    try {
+      await expireOrder(order.userId, order.id)
+    } catch (error) {
+      logger.warn({
+        event: 'payment.order_expiry_failed',
+        rechargeOrderId: order.id,
+        err: error instanceof Error ? error.message : 'expiry_failed',
+      }, 'expired recharge order closure will retry')
+    }
+  }
+  return orders.length
+}
+
 const REFUND_PROCESSING_STALE_MS = 2_000
 
 export async function processDueRefunds(): Promise<number> {
@@ -173,11 +227,15 @@ export async function processDueRefunds(): Promise<number> {
       ],
     },
     take: 20,
-    select: { id: true },
+    select: { id: true, status: true, providerRefundId: true },
   })
   for (const refund of refunds) {
     try {
-      await submitProviderRefund(refund.id)
+      if (refund.status === 'processing' && refund.providerRefundId) {
+        await queryProviderRefund(refund.id)
+      } else {
+        await submitProviderRefund(refund.id)
+      }
     } catch (error) {
       logger.warn({
         event: 'payment.refund_worker_retry',
@@ -237,7 +295,9 @@ export async function runPaymentWorkersOnce() {
     if (!worked) break
   }
   await recoverPaidNotCredited()
+  await recoverUnfinishedCreates()
   await recoverUnknownPayments()
+  await expireDueRechargeOrders()
   await processDueRefunds()
   await refreshPaymentWorkerGauges()
 }

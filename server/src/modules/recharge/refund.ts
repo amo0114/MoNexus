@@ -341,6 +341,33 @@ export async function submitProviderRefund(refundId: string) {
   return prisma.rechargeRefund.findUnique({ where: { id: refund.id } })
 }
 
+export async function queryProviderRefund(refundId: string) {
+  const refund = await prisma.rechargeRefund.findUnique({
+    where: { id: refundId },
+    include: { rechargeOrder: true, paymentAttempt: true },
+  })
+  if (!refund?.providerRefundId || !refund.paymentAttempt.providerPaymentId) return refund
+  const provider = getHistoricalProvider(asProviderName(refund.rechargeOrder.provider))
+  const result = await provider.queryRefund({
+    providerRefundId: refund.providerRefundId,
+    providerAccountKey: refund.rechargeOrder.providerAccountKey,
+  })
+  const recorded = await recordRefundObservation({
+    source: 'provider_query',
+    provider: refund.rechargeOrder.provider,
+    providerAccountKey: refund.rechargeOrder.providerAccountKey,
+    paymentAttemptId: refund.paymentAttemptId,
+    providerPaymentId: refund.paymentAttempt.providerPaymentId,
+    providerRefundId: result.providerRefundId,
+    status: result.status,
+    amountMinor: result.amountMinor,
+    currency: result.currency,
+    immutableStateVersion: result.immutableStateVersion,
+  })
+  await applyRefundObservation(recorded.id)
+  return prisma.rechargeRefund.findUnique({ where: { id: refund.id } })
+}
+
 export async function applyRefundObservation(observationId: string) {
   const observation = await prisma.paymentEvent.findUnique({ where: { id: observationId } })
   if (!observation) return { observationId, outcome: 'ignored' as const }
@@ -357,24 +384,44 @@ export async function applyRefundObservation(observationId: string) {
   try {
     const applied = await prisma.$transaction(async tx => {
       const payload = parseNormalizedPaymentPayload(observation.normalizedPayload)
-      const refund = observation.providerPaymentId
-        ? await tx.rechargeRefund.findFirst({
-          where: {
-            OR: [
-              { providerRefundId: payload.providerRefundId ?? undefined },
-              { paymentAttempt: { providerPaymentId: payload.providerPaymentId ?? observation.providerPaymentId } },
-            ],
-          },
-          include: { rechargeOrder: true },
-        })
-        : null
-      if (!refund) return { outcome: 'reconcile_required' as const }
+      const refund = await tx.rechargeRefund.findFirst({
+        where: {
+          OR: [
+            ...(payload.providerRefundId ? [{ providerRefundId: payload.providerRefundId }] : []),
+            ...(observation.paymentAttemptId ? [{ paymentAttemptId: observation.paymentAttemptId }] : []),
+          ],
+        },
+        include: { rechargeOrder: true, paymentAttempt: true },
+      })
+      if (!refund) return { outcome: 'reconcile_required' as const, reason: 'REFUND_IDENTITY_MISMATCH' }
+
+      const expectedPaymentId = refund.paymentAttempt.providerPaymentId
+      const identityMismatch = observation.provider !== refund.rechargeOrder.provider
+        || observation.providerAccountKey !== refund.rechargeOrder.providerAccountKey
+        || (observation.paymentAttemptId != null && observation.paymentAttemptId !== refund.paymentAttemptId)
+        || !payload.providerPaymentId
+        || payload.providerPaymentId !== expectedPaymentId
+        || observation.providerPaymentId !== expectedPaymentId
+        || !payload.providerRefundId
+        || (refund.providerRefundId != null && payload.providerRefundId !== refund.providerRefundId)
+      const amountMismatch = payload.amountMinor == null || payload.amountMinor !== refund.amountMinor
+      const currencyMismatch = !payload.currency || payload.currency !== refund.rechargeOrder.currency
+      if (identityMismatch || amountMismatch || currencyMismatch) {
+        return {
+          outcome: 'reconcile_required' as const,
+          reason: identityMismatch
+            ? 'REFUND_IDENTITY_MISMATCH'
+            : amountMismatch
+              ? 'REFUND_AMOUNT_MISMATCH'
+              : 'REFUND_CURRENCY_MISMATCH',
+        }
+      }
 
       const orderRows = await tx.$queryRaw<Array<{ id: string; userId: number; status: string }>>`
         SELECT "id", "userId", "status" FROM "RechargeOrder"
         WHERE "id" = ${refund.rechargeOrderId}::uuid FOR UPDATE`
       const order = orderRows[0]
-      if (!order) return { outcome: 'reconcile_required' as const }
+      if (!order) return { outcome: 'reconcile_required' as const, reason: 'REFUND_ORDER_MISSING' }
 
       const existingReversal = await tx.rechargeReversal.findUnique({
         where: { rechargeRefundId: refund.id },
@@ -421,7 +468,7 @@ export async function applyRefundObservation(observationId: string) {
       })
       if (credit) {
         if (!hold || hold.status !== 'active') {
-          return { outcome: 'reconcile_required' as const }
+          return { outcome: 'reconcile_required' as const, reason: 'REFUND_HOLD_MISSING' }
         }
         const consumed = await consumeHeldPoints(tx, order.userId, Number(hold.points))
         await tx.pointHold.update({ where: { id: hold.id }, data: { status: 'consumed' } })
@@ -477,6 +524,7 @@ export async function applyRefundObservation(observationId: string) {
       observationId,
       claimed.leaseToken,
       applied.outcome === 'reconcile_required' ? 'reconcile_required' : applied.outcome === 'ignored' ? 'ignored' : 'processed',
+      'reason' in applied ? applied.reason : undefined,
     )
     if (!committed) return { observationId, outcome: 'lease_lost' as const }
     if (applied.outcome === 'processed') {

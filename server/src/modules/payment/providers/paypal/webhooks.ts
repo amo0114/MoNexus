@@ -4,7 +4,7 @@ import type { NormalizedProviderEvent, RawWebhookInput } from '../types.js'
 import { headerValue } from './client.js'
 import { isPaypalCertUrlAllowed, type PaypalCredentials } from './credentials.js'
 import type { PaypalMatchContext, PaypalWebhookEvent } from './normalize.js'
-import { normalizePaypalCaptureResource, paypalString } from './normalize.js'
+import { normalizePaypalCaptureResource, normalizePaypalRefund, paypalString } from './normalize.js'
 
 export function buildPaypalVerifyWebhookBody(input: {
   transmissionId: string
@@ -99,9 +99,15 @@ export function normalizeVerifiedPaypalWebhook(input: {
   const eventType = paypalString(input.event.event_type) ?? 'payment.updated'
   const providerEventId = paypalString(input.event.id) ?? null
   const resource = input.event.resource ?? {}
-  const orderId = paypalString(resource.supplementary_data?.related_ids?.order_id)
-    ?? paypalString(resource.id)
-  const captureId = eventType.startsWith('PAYMENT.CAPTURE.')
+  const related = resource.supplementary_data?.related_ids
+  const refundEvent = eventType === 'PAYMENT.CAPTURE.REFUNDED'
+    || eventType === 'PAYMENT.CAPTURE.REVERSED'
+    || eventType.startsWith('PAYMENT.REFUND.')
+  const orderId = paypalString(related?.order_id)
+    ?? (!refundEvent ? paypalString(resource.id) : undefined)
+  const captureId = refundEvent
+    ? paypalString(related?.capture_id)
+    : eventType.startsWith('PAYMENT.CAPTURE.')
     ? paypalString(resource.id)
     : null
 
@@ -114,14 +120,26 @@ export function normalizeVerifiedPaypalWebhook(input: {
     payment.status = eventType === 'PAYMENT.CAPTURE.DENIED' ? 'failed' : 'processing'
   }
 
+  const refund = refundEvent ? normalizePaypalRefund(resource) : null
+  if (refund) {
+    refund.providerPaymentId = orderId ?? refund.providerPaymentId ?? null
+    refund.providerCaptureId = captureId ?? refund.providerCaptureId ?? null
+    refund.status = eventType === 'PAYMENT.CAPTURE.REFUNDED' ? 'succeeded'
+      : eventType === 'PAYMENT.CAPTURE.REVERSED' ? 'failed'
+        : refund.status
+  }
+
   return {
-    eventType,
+    eventType: refund
+      ? refund.status === 'succeeded' ? 'refund.succeeded' : refund.status === 'failed' ? 'refund.failed' : 'refund.updated'
+      : eventType,
     providerEventId,
-    providerPaymentId: orderId ?? payment?.providerPaymentId ?? null,
+    providerPaymentId: orderId ?? payment?.providerPaymentId ?? refund?.providerPaymentId ?? null,
     providerCaptureId: captureId ?? payment?.providerCaptureId ?? null,
     providerAccountKey: input.providerAccountKey,
     dedupeKey: providerEventId ? `webhook:${providerEventId}` : `webhook:${createHash('sha256').update(JSON.stringify(input.event)).digest('hex')}`,
     payment,
+    refund,
     signatureVerified: true,
   }
 }

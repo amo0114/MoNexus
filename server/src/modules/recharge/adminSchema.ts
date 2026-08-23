@@ -64,3 +64,12 @@ export const adminPatchPricePolicySchema = z.object({
 export const adminRefundSchema = z.object({
   reasonCode: z.string().min(1).max(64).optional(),
 })
+
+export const adminResolveDisputeSchema = z.object({
+  outcome: z.enum(['won', 'lost']),
+})
+
+export const adminCloseRecoveryCaseSchema = z.object({
+  status: z.enum(['recovered', 'written_off', 'restored']),
+  resolutionReason: z.string().min(1).max(160).optional(),
+})

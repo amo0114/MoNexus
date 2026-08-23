@@ -358,14 +358,26 @@ describe('applyConfirmedPayment on PostgreSQL', () => {
       amountMinor: created.amountMinor,
       currency: created.currency,
     })
+    await applyConfirmedPayment(first.id)
+    const secondAttempt = await prisma.paymentAttempt.create({
+      data: {
+        paymentIntentId: created.attempt.paymentIntentId,
+        provider: 'simulator',
+        providerAccountKey: 'simulator:sandbox:default',
+        method: 'redirect',
+        status: 'processing',
+        providerPaymentId: `other_${created.attempt.providerPaymentId}`,
+        requestIdempotencyKey: `second-${randomUUID()}`,
+        actionType: 'none',
+      },
+    })
     const second = await recordFact({
       source: 'provider_query',
-      attemptId: created.attempt.id,
-      providerPaymentId: `other_${created.attempt.providerPaymentId}`,
+      attemptId: secondAttempt.id,
+      providerPaymentId: secondAttempt.providerPaymentId!,
       amountMinor: created.amountMinor,
       currency: created.currency,
     })
-    await applyConfirmedPayment(first.id)
     const late = await applyConfirmedPayment(second.id)
     expect(late.outcome).toBe('reconcile_required')
     expect(await prisma.rechargeCredit.count()).toBe(1)
@@ -465,6 +477,29 @@ describe('refund, dispute, and restriction on PostgreSQL', () => {
       orderId: created.orderId,
       idempotencyKey: randomUUID(),
     })
+    const mismatches = [
+      { provider: 'stripe', providerAccountKey: 'stripe:test:wrong', amountMinor: created.amountMinor, currency: created.currency },
+      { provider: 'simulator', providerAccountKey: 'simulator:sandbox:default', amountMinor: created.amountMinor - 1n, currency: created.currency },
+      { provider: 'simulator', providerAccountKey: 'simulator:sandbox:default', amountMinor: created.amountMinor, currency: 'USD' },
+    ] as const
+    for (const [index, mismatch] of mismatches.entries()) {
+      const invalid = await recordRefundObservation({
+        source: 'webhook',
+        provider: mismatch.provider,
+        providerAccountKey: mismatch.providerAccountKey,
+        paymentAttemptId: created.attempt.id,
+        providerPaymentId: created.attempt.providerPaymentId!,
+        providerRefundId: `rf_invalid_${index}`,
+        status: 'succeeded',
+        amountMinor: mismatch.amountMinor,
+        currency: mismatch.currency,
+        immutableStateVersion: `invalid:${index}`,
+        providerEventId: `rf-invalid-${index}`,
+      })
+      expect((await applyRefundObservation(invalid.id)).outcome).toBe('reconcile_required')
+    }
+    expect((await prisma.rechargeRefund.findUniqueOrThrow({ where: { id: refund.refundId } })).status).toBe('points_held')
+    expect(await prisma.rechargeReversal.count()).toBe(0)
     const failed = await recordRefundObservation({
       source: 'webhook',
       provider: 'simulator',

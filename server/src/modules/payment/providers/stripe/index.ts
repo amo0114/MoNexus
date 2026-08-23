@@ -445,6 +445,7 @@ export function createStripeProvider(options: CreateStripeProviderOptions = {}):
         return {
           eventType: mapDisputeEventType(event.type, dispute?.status),
           providerEventId: event.id,
+          providerDisputeId: dispute?.id ?? null,
           providerPaymentId: paymentIntentId,
           providerCaptureId: typeof dispute?.charge === 'string' ? dispute.charge : dispute?.charge?.id ?? null,
           providerAccountKey,
@@ -482,6 +483,7 @@ export function createStripeProvider(options: CreateStripeProviderOptions = {}):
           providerCaptureId: typeof refund?.charge === 'string' ? refund.charge : null,
           providerAccountKey,
           dedupeKey,
+          refund: mapped,
           payment: paymentIntentId && mapped ? {
             // Refund facts must not look like a succeeded payment observation.
             status: 'unknown',

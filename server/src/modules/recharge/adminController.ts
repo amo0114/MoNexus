@@ -119,6 +119,31 @@ export async function listDisputes(req: Request, res: Response, next: NextFuncti
   }
 }
 
+export async function resolveDispute(req: Request, res: Response, next: NextFunction) {
+  try {
+    res.json(await adminService.adminResolveDispute(
+      String(req.params.id),
+      req.body.outcome as 'won' | 'lost',
+      req.user!.userId,
+    ))
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function closeRecoveryCase(req: Request, res: Response, next: NextFunction) {
+  try {
+    res.json(await adminService.adminCloseRecoveryCase(
+      String(req.params.id),
+      req.body.status as 'recovered' | 'written_off' | 'restored',
+      req.user!.userId,
+      typeof req.body.resolutionReason === 'string' ? req.body.resolutionReason : undefined,
+    ))
+  } catch (err) {
+    next(err)
+  }
+}
+
 export async function patchPricePolicy(req: Request, res: Response, next: NextFunction) {
   try {
     res.json(await adminService.adminPatchPricePolicy(String(req.params.id), req.body, req.user!.userId))

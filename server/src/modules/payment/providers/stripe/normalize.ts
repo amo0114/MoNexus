@@ -202,6 +202,10 @@ export function refundFromStripe(refund: Stripe.Refund, fallbackCurrency: Rechar
   return {
     status: mapRefundStatus(refund.status),
     providerRefundId: refund.id,
+    providerPaymentId: typeof refund.payment_intent === 'string'
+      ? refund.payment_intent
+      : refund.payment_intent?.id ?? null,
+    providerCaptureId: typeof refund.charge === 'string' ? refund.charge : refund.charge?.id ?? null,
     amountMinor: asAmountMinor(refund.amount) ?? 0n,
     currency: asRechargeCurrency(refund.currency) ?? fallbackCurrency,
     immutableStateVersion: `${refund.id}:${refund.status}:${refund.amount}:${refund.currency}`,

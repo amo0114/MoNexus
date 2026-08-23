@@ -126,11 +126,13 @@ export type RawWebhookInput = {
 export type NormalizedProviderEvent = {
   eventType: string
   providerEventId?: string | null
+  providerDisputeId?: string | null
   providerPaymentId?: string | null
   providerCaptureId?: string | null
   providerAccountKey: string
   dedupeKey: string
   payment: NormalizedPayment | null
+  refund?: NormalizedRefund | null
   signatureVerified: boolean
 }
 
@@ -150,6 +152,8 @@ export type QueryProviderRefundInput = {
 export type NormalizedRefund = {
   status: 'processing' | 'succeeded' | 'failed' | 'unknown'
   providerRefundId: string
+  providerPaymentId?: string | null
+  providerCaptureId?: string | null
   amountMinor: bigint
   currency: RechargeCurrency
   immutableStateVersion: string

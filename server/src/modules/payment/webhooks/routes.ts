@@ -6,7 +6,7 @@ import { getRegisteredProvider } from '../providers/registry.js'
 import { hashNormalizedPayload, recordPaymentObservation } from '../observations/record.js'
 import { applyConfirmedPayment } from '../events/applyConfirmedPayment.js'
 import { applyRefundObservation } from '../../recharge/refund.js'
-import { openPaymentDispute } from '../disputes/service.js'
+import { applyDisputeObservation } from '../disputes/service.js'
 import { encryptPaymentEventPayload } from '../payloadCrypto.js'
 import { recordWebhookSignatureFailure } from '../metrics.js'
 import type { PaymentProviderName } from '../../recharge/types.js'
@@ -77,35 +77,60 @@ function handleProviderWebhook(providerName: PaymentProviderName) {
       }
 
       const payment = event.payment
-      const attempt = payment?.providerPaymentId
+      const providerPaymentId = event.providerPaymentId ?? payment?.providerPaymentId ?? event.refund?.providerPaymentId ?? null
+      const attempt = providerPaymentId
         ? await prisma.paymentAttempt.findFirst({
           where: {
             provider: providerName,
             providerAccountKey: event.providerAccountKey,
-            providerPaymentId: payment.providerPaymentId,
+            providerPaymentId,
           },
           include: { paymentIntent: true },
         })
         : null
 
       if (event.eventType.startsWith('dispute.')) {
-        if (attempt) {
-          await openPaymentDispute({
-            provider: providerName,
-            providerAccountKey: event.providerAccountKey,
-            providerDisputeId: event.providerEventId ?? `dsp_${payment?.providerPaymentId ?? 'unknown'}`,
-            rechargeOrderId: attempt.paymentIntent.rechargeOrderId,
-            paymentAttemptId: attempt.id,
-            amountMinor: payment?.amountMinor ?? 0n,
-            currency: payment?.currency ?? 'CNY',
-            reasonCode: event.eventType,
-          })
+        const payload = {
+          status: event.eventType.slice('dispute.'.length),
+          providerDisputeId: event.providerDisputeId ?? null,
+          providerPaymentId,
+          amountMinor: serializeAmountMinor(payment?.amountMinor ?? 0n),
+          currency: payment?.currency ?? 'CNY',
+          immutableStateVersion: payment?.immutableStateVersion ?? `${event.providerDisputeId ?? 'unknown'}:${event.eventType}`,
         }
-        ackSuccess(res, providerName)
+        const recorded = await recordPaymentObservation({
+          provider: providerName,
+          providerAccountKey: event.providerAccountKey,
+          source: 'webhook',
+          verificationMethod: 'webhook_signature',
+          paymentAttemptId: attempt?.id ?? null,
+          providerPaymentId,
+          providerCaptureId: event.providerCaptureId ?? null,
+          providerEventId: event.providerEventId ?? null,
+          dedupeKey: event.dedupeKey,
+          eventType: event.eventType,
+          payloadSha256: hashNormalizedPayload(payload),
+          rawPayloadEncrypted: encryptPaymentEventPayload(body),
+          normalizedPayload: payload,
+          signatureVerified: true,
+        })
+        ackSuccess(res, providerName, { observationId: recorded.id })
+        void applyDisputeObservation(recorded.id).catch(err => {
+          logger.warn({ event: 'payment.dispute_apply_failed', observationId: recorded.id, err: err instanceof Error ? err.message : 'apply' }, 'dispute apply deferred')
+        })
         return
       }
 
-      const payload = payment
+      const payload = event.eventType.startsWith('refund.') && event.refund
+        ? {
+            status: event.refund.status,
+            providerPaymentId,
+            providerRefundId: event.refund.providerRefundId,
+            amountMinor: serializeAmountMinor(event.refund.amountMinor),
+            currency: event.refund.currency,
+            immutableStateVersion: event.refund.immutableStateVersion,
+          }
+        : payment
         ? {
             status: payment.status,
             providerPaymentId: payment.providerPaymentId,

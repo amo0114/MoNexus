@@ -288,10 +288,15 @@ async function applyConfirmedPaymentOnce(observationId: string): Promise<ApplyCo
         WHERE "rechargeOrderId" = ${order.id}::uuid
         FOR UPDATE`
 
-      const samePayment = attempt.providerPaymentId == null
-        || attempt.providerPaymentId === payload.providerPaymentId
-
       if ((PAID_ORDER as readonly string[]).includes(order.status)) {
+        const winnerAttempt = intent.activeAttemptId
+          ? await tx.paymentAttempt.findUnique({ where: { id: intent.activeAttemptId } })
+          : await tx.paymentAttempt.findFirst({
+            where: { paymentIntentId: intent.id, status: 'succeeded' },
+            orderBy: { completedAt: 'asc' },
+          })
+        const samePayment = winnerAttempt?.id === attempt.id
+          && winnerAttempt.providerPaymentId === payload.providerPaymentId
         if (!samePayment) {
           await writeOpenReconItem(tx, {
             scopePrefix: 'duplicate',
