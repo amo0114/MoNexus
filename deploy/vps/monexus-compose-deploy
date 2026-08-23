@@ -218,6 +218,7 @@ validate_monitoring_runtime() {
   docker run --rm --network none \
     --volume "${release_path}/deploy/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro" \
     --volume "${release_path}/docs/operations/value-policy-alerts.rules.yml:/etc/prometheus/rules/value-policy-alerts.rules.yml:ro" \
+    --volume "${release_path}/docs/operations/payment-alerts.rules.yml:/etc/prometheus/rules/payment-alerts.rules.yml:ro" \
     --volume "${MONITORING_SECRET_DIR}/metrics_token:/run/secrets/metrics_token:ro" \
     --entrypoint /bin/promtool \
     "$PROMETHEUS_IMAGE" \
