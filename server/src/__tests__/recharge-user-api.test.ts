@@ -437,7 +437,7 @@ describe('recharge user API', () => {
     expect(await prisma.rechargeOrder.count()).toBe(1)
   })
 
-  it('does not revive a cancelled order when in-flight createPayment later persists', async () => {
+  it('recovers an in-flight create on cancel without reviving the closed order', async () => {
     await seedCnyPolicy()
     const { accessToken } = await loginUser('recharge-create-cancel-race@test.local')
     const quote = await api.post('/api/recharge/quotes').set(authHeader(accessToken)).send({
@@ -450,16 +450,16 @@ describe('recharge user API', () => {
     const created = await prisma.rechargeOrder.findFirstOrThrow()
     const cancelled = await api.post(`/api/recharge/orders/${created.id}/cancel`)
       .set(authHeader(accessToken)).set('Idempotency-Key', randomUUID()).send({}).expect(200)
-    expect(cancelled.body.status).toBe('closure_pending')
+    expect(cancelled.body.status).toBe('cancelled')
     const reserved = await prisma.rechargeLimitReservation.findMany({ where: { rechargeOrderId: created.id } })
-    expect(reserved.every(item => item.status === 'reserved')).toBe(true)
+    expect(reserved.every(item => item.status === 'released')).toBe(true)
 
     const replay = await api.post('/api/recharge/orders').set(authHeader(accessToken)).set('Idempotency-Key', key)
       .send({ quoteId: quote.body.quoteId })
     expect(replay.status).toBe(201)
     expect(replay.body.status).not.toBe('failed')
     expect(replay.body.status).not.toBe('pending_payment')
-    expect(['cancelled', 'closure_pending']).toContain(replay.body.status)
+    expect(replay.body.status).toBe('cancelled')
     const stored = await prisma.rechargeOrder.findUniqueOrThrow({ where: { id: created.id } })
     expect(stored.status).not.toBe('failed')
     expect(stored.status).not.toBe('pending_payment')

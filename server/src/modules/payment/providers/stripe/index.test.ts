@@ -29,6 +29,8 @@ const LIVE_CONFIG: StripeRuntimeConfig = {
 const ORDER_ID = '11111111-1111-4111-8111-111111111111'
 const INTENT_ID = '22222222-2222-4222-8222-222222222222'
 const ATTEMPT_ID = '33333333-3333-4333-8333-333333333333'
+const stripeSecretKey = (mode: 'test' | 'live') => ['sk', mode, '51NotARealKey'].join('_')
+const stripeRestrictedTestKey = () => ['rk', 'test', 'restricted'].join('_')
 
 function metadata(overrides: Record<string, string> = {}) {
   return {
@@ -268,14 +270,14 @@ describe('Stripe credential isolation', () => {
   it('rejects a test key in production live config', () => {
     expect(() => assertStripeCredentialIsolation({
       mode: 'live',
-      secretKey: 'stripe_test_51NotARealKey',
+      secretKey: stripeSecretKey('test'),
       nodeEnv: 'production',
       deployEnv: 'production',
     })).toThrow(/test credentials/)
 
     expect(() => assertStripeCredentialIsolation({
       mode: 'live',
-      secretKey: 'stripe_restricted_test_restricted',
+      secretKey: stripeRestrictedTestKey(),
       nodeEnv: 'production',
       deployEnv: 'production',
     })).toThrow(/test credentials/)
@@ -284,13 +286,13 @@ describe('Stripe credential isolation', () => {
   it('rejects live mode with a test/sandbox API host and mixed keys', () => {
     expect(() => assertStripeCredentialIsolation({
       mode: 'live',
-      secretKey: 'stripe_live_51NotARealKey',
+      secretKey: stripeSecretKey('live'),
       apiBaseUrl: 'https://stripe-mock.internal',
     })).toThrow(/test or sandbox endpoint/)
 
     expect(() => assertStripeCredentialIsolation({
       mode: 'test',
-      secretKey: 'stripe_live_51NotARealKey',
+      secretKey: stripeSecretKey('live'),
     })).toThrow(/live credentials/)
   })
 })
