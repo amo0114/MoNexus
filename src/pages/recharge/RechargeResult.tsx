@@ -26,7 +26,13 @@ function displayStatus(orderStatus: string, resumePayment: boolean): string {
 }
 
 const POLL_MS = 2000
+const POLL_MAX_MS = 15_000
+const POLL_WINDOW_MS = 5 * 60 * 1000
 const COMPLETABLE = new Set(['pending_payment', 'paid', 'closure_pending'])
+
+function nextPollDelay(pollCount: number): number {
+  return Math.min(POLL_MAX_MS, POLL_MS * (2 ** Math.floor(pollCount / 5)))
+}
 
 function StatusPill({ status }: { status: string }) {
   const tone = status === 'credited'
@@ -53,6 +59,7 @@ export default function RechargeResult({
   const navigate = useNavigate()
   const [order, setOrder] = useState<RechargeOrder | null>(null)
   const [error, setError] = useState('')
+  const [pollingPaused, setPollingPaused] = useState(false)
   const completeSucceeded = useRef(false)
   const completeInFlight = useRef(false)
   const creditedRefreshed = useRef(false)
@@ -60,6 +67,28 @@ export default function RechargeResult({
 
   useEffect(() => {
     let cancelled = false
+    let timer: number | undefined
+    let pollCount = 0
+    const startedAt = Date.now()
+    statusRef.current = null
+    completeSucceeded.current = false
+    completeInFlight.current = false
+    creditedRefreshed.current = false
+    setPollingPaused(false)
+
+    function scheduleNextPoll() {
+      if (cancelled) return
+      if (Date.now() - startedAt >= POLL_WINDOW_MS) {
+        setPollingPaused(true)
+        return
+      }
+      const delay = nextPollDelay(pollCount)
+      pollCount += 1
+      timer = window.setTimeout(() => {
+        void load()
+      }, delay)
+    }
+
     async function refreshAuth() {
       try {
         const me = await fetchMeWithRoleHealing()
@@ -76,6 +105,7 @@ export default function RechargeResult({
         if (peekPendingOrder() === orderId) takePendingOrder()
         if (
           resumePayment
+          && !next.adminSandbox
           && !completeSucceeded.current
           && !completeInFlight.current
           && COMPLETABLE.has(next.status)
@@ -102,19 +132,22 @@ export default function RechargeResult({
           creditedRefreshed.current = true
           void refreshAuth()
         }
+        if (!isTerminalOrderStatus(next.status)) {
+          if (next.adminSandbox) setPollingPaused(true)
+          else scheduleNextPoll()
+        }
       } catch (err) {
-        if (!cancelled) setError(getApiErrorMessage(err, '无法加载充值订单'))
+        if (!cancelled) {
+          setError(getApiErrorMessage(err, '无法加载充值订单'))
+          scheduleNextPoll()
+        }
       }
     }
 
     void load()
-    const timer = window.setInterval(() => {
-      if (cancelled) return
-      void load()
-    }, POLL_MS)
     return () => {
       cancelled = true
-      window.clearInterval(timer)
+      if (timer !== undefined) window.clearTimeout(timer)
     }
   }, [orderId, resumePayment])
 
@@ -136,8 +169,9 @@ export default function RechargeResult({
 
   const action = order.action
   const shownStatus = displayStatus(order.status, resumePayment)
-  const waiting = !resumePayment && (order.status === 'created' || order.status === 'pending_payment')
-  const confirming = isConfirmingOrderStatus(shownStatus)
+  const adminSandboxPending = order.adminSandbox && !isTerminalOrderStatus(order.status)
+  const waiting = !order.adminSandbox && !resumePayment && (order.status === 'created' || order.status === 'pending_payment')
+  const confirming = !order.adminSandbox && isConfirmingOrderStatus(shownStatus)
 
   return (
     <div className="card space-y-5" data-testid="recharge-result">
@@ -186,6 +220,17 @@ export default function RechargeResult({
         <p className="text-sm text-[var(--color-text-muted)] flex items-center gap-2" data-testid="recharge-confirming">
           <Loader2 className="w-4 h-4 animate-spin" />
           {confirming ? '支付已提交，正在确认入账…' : '等待支付完成，正在同步订单状态…'}
+        </p>
+      )}
+
+      {adminSandboxPending && (
+        <p className="text-sm text-[var(--color-warning-accent)]" data-testid="recharge-admin-sandbox-pending">
+          该沙箱订单等待管理后台 MFA 确认；本页已停止自动查询，请前往管理后台的“充值支付 → 管理员沙箱”处理。
+        </p>
+      )}
+      {pollingPaused && !adminSandboxPending && !isTerminalOrderStatus(order.status) && (
+        <p className="text-sm text-[var(--color-text-muted)]" data-testid="recharge-polling-paused">
+          自动查询已暂停。重新打开本页可获取最新状态。
         </p>
       )}
 

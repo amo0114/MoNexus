@@ -283,6 +283,23 @@ export default function RechargeCheckout() {
     )
   }
 
+  if (config.mode === 'admin_sandbox') {
+    return (
+      <div className="card" data-testid="recharge-admin-sandbox-redirect">
+        <EmptyState
+          icon={Wallet}
+          title="请在管理后台使用管理员沙箱"
+          description="管理员沙箱订单必须通过管理后台的 MFA 确认。普通充值页不会创建或确认沙箱支付。"
+          action={(
+            <button type="button" className="btn-primary" onClick={() => navigate('/admin')}>
+              前往管理后台
+            </button>
+          )}
+        />
+      </div>
+    )
+  }
+
   const noProvider = methods.length === 0
   const canSubmit = Boolean(quote && quoteState === 'ready' && method && !inlineError && !submitting && !noProvider)
 
