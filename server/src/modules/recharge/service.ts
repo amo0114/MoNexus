@@ -117,7 +117,7 @@ export async function getRechargeConfig(userId: number, currencyRaw: string, rol
   assertAdminSandboxActor(role)
   assertCurrencyEnabled(currencyRaw)
   const currency = currencyRaw
-  const policy = await getActivePricePolicy(currency)
+  const policy = await getActivePricePolicy(currency, isAdminSandboxMode())
   const now = new Date()
   const periods = resolveLimitPeriods(now, policy.limitTimeZone)
   const remaining = await remainingLimits(
@@ -195,7 +195,7 @@ export async function createQuote(userId: number, input: {
   await assertRechargeNotRestricted(userId)
   const currency = input.currency
   const providerName = asProviderName(input.provider)
-  const policy = await getActivePricePolicy(currency)
+  const policy = await getActivePricePolicy(currency, isAdminSandboxMode())
   const resolved = await resolveCapabilities({
     providerName,
     currency,

@@ -188,19 +188,6 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     syncNavbarHeight()
   }, [chromeMode, syncNavbarHeight])
 
-  // Refresh user data on mount
-  useEffect(() => {
-    import('../api/auth').then(({ fetchMeWithRoleHealing }) => {
-      fetchMeWithRoleHealing()
-        .then((data) => {
-          useAuthStore.getState().setUser(data)
-        })
-        .catch(() => {
-          // Soft-fail: axios interceptor handles 401; transient errors keep stale user.
-        })
-    })
-  }, [location.pathname])
-
   // Required acknowledgements are surfaced proactively once per active page
   // session. Closing the dialog never acknowledges it; the banner and red dot
   // remain until the explicit confirmation is stored server-side.

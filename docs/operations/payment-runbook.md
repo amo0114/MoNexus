@@ -68,6 +68,9 @@ Operational invariants:
 
 - only an active administrator may quote or create an order;
 - only `CNY + simulator + card` is accepted;
+- migration `20260823204000_admin_sandbox_price_policy` provisions the
+  `admin-sandbox-cny-v1` pricing lane; sandbox policies are marked
+  `adminSandbox=true` and can never be selected by live mode;
 - successful confirmation is only available at
   `POST /api/admin/recharge/sandbox/orders/:id/confirm`, behind the existing
   administrator MFA middleware, and only for the administrator's own order;

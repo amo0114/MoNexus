@@ -32,9 +32,12 @@ export type EffectiveBounds = {
   maxAmountMinor: bigint
 }
 
-export async function getActivePricePolicy(currency: RechargeCurrency): Promise<ActivePricePolicy> {
+export async function getActivePricePolicy(
+  currency: RechargeCurrency,
+  adminSandbox = false,
+): Promise<ActivePricePolicy> {
   const row = await prisma.rechargePricePolicy.findFirst({
-    where: { currency, status: 'active' },
+    where: { currency, adminSandbox, status: 'active' },
     include: { suggestedAmounts: { orderBy: { sortOrder: 'asc' } } },
   })
   if (!row) throw rechargeCurrencyDisabled('当前币种没有生效的充值价格政策')

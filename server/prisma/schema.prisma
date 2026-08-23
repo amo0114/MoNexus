@@ -1591,6 +1591,7 @@ model RechargePricePolicy {
   code               String            @unique
   version            Int
   currency           String            @db.Char(3)
+  adminSandbox       Boolean           @default(false)
   currencyScale      Int
   pointsNumerator    BigInt
   pointsDenominator  BigInt
@@ -1610,9 +1611,9 @@ model RechargePricePolicy {
   quotes           RechargeQuote[]
   orders           RechargeOrder[]
 
-  @@unique([currency, version])
-  @@index([currency, status])
-  // One active policy per currency: recharge_price_policy_one_active_per_currency
+  @@unique([currency, adminSandbox, version])
+  @@index([currency, adminSandbox, status])
+  // One active policy per currency and policy lane: recharge_price_policy_one_active_per_lane
   // (SQL migration; Prisma cannot express WHERE status = 'active').
 }
 

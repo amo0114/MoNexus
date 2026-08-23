@@ -440,7 +440,12 @@ export async function adminActivatePricePolicy(id: string, actorUserId: number) 
     if (!policy) throw notFound('价格政策不存在')
     if (policy.status === 'active') return serializePolicy(policy)
     await tx.rechargePricePolicy.updateMany({
-      where: { currency: policy.currency, status: 'active', id: { not: id } },
+      where: {
+        currency: policy.currency,
+        adminSandbox: policy.adminSandbox,
+        status: 'active',
+        id: { not: id },
+      },
       data: { status: 'retired' },
     })
     const updated = await tx.rechargePricePolicy.update({
@@ -464,6 +469,7 @@ function serializePolicy(row: {
   code: string
   version: number
   currency: string
+  adminSandbox: boolean
   status: string
   minAmountMinor: bigint
   maxAmountMinor: bigint
@@ -477,6 +483,7 @@ function serializePolicy(row: {
     code: row.code,
     version: row.version,
     currency: row.currency,
+    adminSandbox: row.adminSandbox,
     status: row.status,
     minAmountMinor: serializeAmountMinor(row.minAmountMinor),
     maxAmountMinor: serializeAmountMinor(row.maxAmountMinor),
