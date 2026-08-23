@@ -52,6 +52,205 @@ function loadConfigWith(overrides: Record<string, string | undefined>) {
   )
 }
 
+describe('recharge isProductionDeploy isolation matrix', () => {
+  it('boots production+production when RECHARGE_MODE is disabled by default', () => {
+    const result = loadConfigWith({})
+    expect(result.status, result.stdout + result.stderr).toBe(0)
+    expect(result.stdout + result.stderr).toContain('CONFIG_OK')
+  })
+
+  it('refuses RECHARGE_MODE=sandbox on production+production', () => {
+    const result = loadConfigWith({ RECHARGE_MODE: 'sandbox' })
+    expect(result.status).toBe(1)
+    expect(result.stderr + result.stdout).toContain('RECHARGE_MODE=sandbox')
+  })
+
+  it('refuses a registered simulator on production+production', () => {
+    const result = loadConfigWith({
+      PAYMENT_REGISTERED_PROVIDERS: 'simulator',
+      PAYMENT_ENABLED_PROVIDERS: 'simulator',
+    })
+    expect(result.status).toBe(1)
+    expect(result.stderr + result.stdout).toMatch(/simulator/)
+  })
+
+  it('allows sandbox and simulator on production+staging without weakening NODE_ENV checks', () => {
+    const ok = loadConfigWith({
+      MONEXUS_DEPLOY_ENV: 'staging',
+      RECHARGE_MODE: 'sandbox',
+      PAYMENT_REGISTERED_PROVIDERS: 'simulator',
+      PAYMENT_ENABLED_PROVIDERS: 'simulator',
+    })
+    expect(ok.status, ok.stdout + ok.stderr).toBe(0)
+    expect(ok.stdout + ok.stderr).toContain('CONFIG_OK')
+
+    const abuse = loadConfigWith({
+      MONEXUS_DEPLOY_ENV: 'staging',
+      RECHARGE_MODE: 'sandbox',
+      ABUSE_PROTECTION_MODE: 'off',
+    })
+    expect(abuse.status).toBe(1)
+    expect(abuse.stderr + abuse.stdout).toContain('ABUSE_PROTECTION_MODE')
+  })
+
+  it('treats a missing MONEXUS_DEPLOY_ENV as production for sandbox isolation', () => {
+    const result = loadConfigWith({
+      MONEXUS_DEPLOY_ENV: undefined,
+      RECHARGE_MODE: 'sandbox',
+    })
+    expect(result.status).toBe(1)
+    expect(result.stderr + result.stdout).toContain('RECHARGE_MODE=sandbox')
+  })
+
+  it('allows sandbox when NODE_ENV=development even if deploy env is production', () => {
+    const result = loadConfigWith({
+      NODE_ENV: 'development',
+      MONEXUS_DEPLOY_ENV: 'production',
+      RECHARGE_MODE: 'sandbox',
+      PAYMENT_REGISTERED_PROVIDERS: 'simulator',
+      PAYMENT_ENABLED_PROVIDERS: 'simulator',
+    })
+    expect(result.status, result.stdout + result.stderr).toBe(0)
+    expect(result.stdout + result.stderr).toContain('CONFIG_OK')
+  })
+
+  it('requires enabled providers to be a subset of registered', () => {
+    const result = loadConfigWith({
+      MONEXUS_DEPLOY_ENV: 'staging',
+      PAYMENT_REGISTERED_PROVIDERS: 'paypal',
+      PAYMENT_ENABLED_PROVIDERS: 'stripe',
+    })
+    expect(result.status).toBe(1)
+    expect(result.stderr + result.stdout).toContain('PAYMENT_ENABLED_PROVIDERS')
+  })
+
+  it('keeps a historical provider registered after it is removed from enabled', () => {
+    const result = loadConfigWith({
+      MONEXUS_DEPLOY_ENV: 'staging',
+      RECHARGE_MODE: 'sandbox',
+      PAYMENT_REGISTERED_PROVIDERS: 'stripe,paypal',
+      PAYMENT_ENABLED_PROVIDERS: 'paypal',
+      PAYPAL_MODE: 'sandbox',
+      PAYPAL_WEBHOOK_ID: 'wh_id',
+      PAYPAL_API_BASE_URL: 'https://api-m.sandbox.paypal.com',
+    })
+    expect(result.status, result.stdout + result.stderr).toBe(0)
+    expect(result.stdout + result.stderr).toContain('CONFIG_OK')
+  })
+
+  it('refuses HTTP webhook public URLs and live Stripe test keys', () => {
+    const http = loadConfigWith({
+      PAYMENT_WEBHOOK_PUBLIC_BASE_URL: 'http://shop.example.com',
+    })
+    expect(http.status).toBe(1)
+    expect(http.stderr + http.stdout).toContain('https')
+
+    const testKey = loadConfigWith({
+      STRIPE_MODE: 'live',
+      STRIPE_SECRET_KEY: 'sk_test_123',
+    })
+    expect(testKey.status).toBe(1)
+    expect(testKey.stderr + testKey.stdout).toMatch(/test credentials/)
+
+    const restrictedKey = loadConfigWith({
+      STRIPE_MODE: 'live',
+      STRIPE_SECRET_KEY: 'rk_test_123',
+    })
+    expect(restrictedKey.status).toBe(1)
+    expect(restrictedKey.stderr + restrictedKey.stdout).toMatch(/test credentials/)
+  })
+
+  it('refuses sandbox recharge with an enabled live provider and keeps registered-only live adapters', () => {
+    const enabledLive = loadConfigWith({
+      MONEXUS_DEPLOY_ENV: 'staging',
+      RECHARGE_MODE: 'sandbox',
+      PAYMENT_REGISTERED_PROVIDERS: 'stripe',
+      PAYMENT_ENABLED_PROVIDERS: 'stripe',
+      STRIPE_MODE: 'live',
+      STRIPE_SECRET_KEY: 'sk_live_abc',
+      STRIPE_WEBHOOK_SECRET: 'whsec_x',
+    })
+    expect(enabledLive.status).toBe(1)
+    expect(enabledLive.stderr + enabledLive.stdout).toMatch(/cannot enable live provider stripe/)
+
+    const historicalLive = loadConfigWith({
+      MONEXUS_DEPLOY_ENV: 'staging',
+      RECHARGE_MODE: 'sandbox',
+      PAYMENT_REGISTERED_PROVIDERS: 'stripe,paypal',
+      PAYMENT_ENABLED_PROVIDERS: 'paypal',
+      STRIPE_MODE: 'live',
+      STRIPE_SECRET_KEY: 'sk_live_abc',
+      STRIPE_WEBHOOK_SECRET: 'whsec_x',
+      PAYPAL_MODE: 'sandbox',
+      PAYPAL_WEBHOOK_ID: 'wh_id',
+      PAYPAL_API_BASE_URL: 'https://api-m.sandbox.paypal.com',
+    })
+    expect(historicalLive.status, historicalLive.stdout + historicalLive.stderr).toBe(0)
+    expect(historicalLive.stdout + historicalLive.stderr).toContain('CONFIG_OK')
+  })
+
+  it('refuses live recharge when an enabled provider is test, sandbox, or simulator', () => {
+    const enc = Buffer.alloc(32, 9).toString('base64')
+    const stripeTest = loadConfigWith({
+      MONEXUS_DEPLOY_ENV: 'staging',
+      RECHARGE_MODE: 'live',
+      PAYMENT_EVENT_ENCRYPTION_KEY: enc,
+      PAYMENT_REGISTERED_PROVIDERS: 'stripe',
+      PAYMENT_ENABLED_PROVIDERS: 'stripe',
+      STRIPE_MODE: 'test',
+      STRIPE_SECRET_KEY: 'sk_test_abc',
+      STRIPE_WEBHOOK_SECRET: 'whsec_x',
+    })
+    expect(stripeTest.status).toBe(1)
+    expect(stripeTest.stderr + stripeTest.stdout).toMatch(/cannot enable test provider stripe/)
+
+    const simulator = loadConfigWith({
+      MONEXUS_DEPLOY_ENV: 'staging',
+      RECHARGE_MODE: 'live',
+      PAYMENT_EVENT_ENCRYPTION_KEY: enc,
+      PAYMENT_REGISTERED_PROVIDERS: 'simulator',
+      PAYMENT_ENABLED_PROVIDERS: 'simulator',
+    })
+    expect(simulator.status).toBe(1)
+    expect(simulator.stderr + simulator.stdout).toMatch(/cannot enable sandbox provider simulator/)
+  })
+
+  it('requires a canonical PAYMENT_EVENT_ENCRYPTION_KEY when live and ignores it when disabled', () => {
+    const missing = loadConfigWith({
+      MONEXUS_DEPLOY_ENV: 'staging',
+      RECHARGE_MODE: 'live',
+    })
+    expect(missing.status).toBe(1)
+    expect(missing.stderr + missing.stdout).toContain('PAYMENT_EVENT_ENCRYPTION_KEY')
+
+    const malformed = loadConfigWith({
+      PAYMENT_EVENT_ENCRYPTION_KEY: 'not-canonical-base64',
+    })
+    expect(malformed.status).toBe(1)
+    expect(malformed.stderr + malformed.stdout).toContain('PAYMENT_EVENT_ENCRYPTION_KEY')
+
+    const disabled = loadConfigWith({})
+    expect(disabled.status, disabled.stdout + disabled.stderr).toBe(0)
+    expect(disabled.stdout + disabled.stderr).toContain('CONFIG_OK')
+  })
+
+  it('does not treat WECHAT_PAY_APIV3_KEY as WeChat webhook verify material', () => {
+    const enc = Buffer.alloc(32, 9).toString('base64')
+    const missingPlatformKey = loadConfigWith({
+      MONEXUS_DEPLOY_ENV: 'staging',
+      RECHARGE_MODE: 'live',
+      PAYMENT_EVENT_ENCRYPTION_KEY: enc,
+      PAYMENT_REGISTERED_PROVIDERS: 'wechat_pay',
+      PAYMENT_ENABLED_PROVIDERS: 'wechat_pay',
+      WECHAT_PAY_MODE: 'live',
+      WECHAT_PAY_APIV3_KEY: 'apiv3-decrypt-key-only',
+    })
+    expect(missingPlatformKey.status).toBe(1)
+    expect(missingPlatformKey.stderr + missingPlatformKey.stdout).toContain('WECHAT_PAY_PLATFORM_PUBLIC_KEY')
+    expect(missingPlatformKey.stderr + missingPlatformKey.stdout).not.toMatch(/CONFIG_OK/)
+  })
+})
+
 describe('production config guards for the private delivery bucket', () => {
   it('boots with a complete delivery configuration', () => {
     const result = loadConfigWith({})

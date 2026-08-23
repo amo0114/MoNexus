@@ -48,7 +48,7 @@ describe('POST /api/orders (exchange)', () => {
       .send({ productId: 1 })
       .expect(400)
 
-    expect(res.body.error.code).toBe('BAD_REQUEST')
+    expect(res.body.error.code).toBe('POINT_INSUFFICIENT')
     expect(res.body.error.message).toContain('积分不足')
   })
 

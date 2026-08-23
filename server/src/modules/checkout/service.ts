@@ -12,6 +12,7 @@ import {
 } from '../../lib/fakaBridge/index.js'
 import { getLegalRequirement, type LegalRequirement } from '../legal/service.js'
 import { quoteOfferPricing, type OrderPricingDto } from '../valuePolicy/service.js'
+import { hasActiveSpendingRestriction } from '../recharge/gates.js'
 
 export type CheckoutPreview = {
   productId: number
@@ -149,6 +150,9 @@ export async function getCheckoutPreview(
   }
 
   const pricing = await quoteOfferPricing(prisma, offer.price)
+  if (await hasActiveSpendingRestriction(userId)) {
+    unpurchasableReason = unpurchasableReason ?? '当前账户暂不可消费积分'
+  }
 
   return {
     productId: product.id,

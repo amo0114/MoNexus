@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Archive, LayoutDashboard, UsersRound, Package, RotateCcw, ShoppingCart, Activity, Users, ShoppingBag, Coins, Store, Tags, DollarSign, Settings, ClipboardList, Megaphone, DatabaseBackup, FolderLock, Cable, ShieldAlert, HardDrive, Upload } from 'lucide-react'
+import { Archive, LayoutDashboard, UsersRound, Package, RotateCcw, ShoppingCart, Activity, Users, ShoppingBag, Coins, Store, Tags, DollarSign, Settings, ClipboardList, Megaphone, DatabaseBackup, FolderLock, Cable, ShieldAlert, HardDrive, Upload, Wallet } from 'lucide-react'
 import api from '../api/client'
 import { getApiErrorMessage } from '../api/error'
 import { createLatestRequestGuard } from '../utils/latestRequest'
@@ -47,8 +47,9 @@ import AdminProductPublicationDialog, {
 import AdminInventoryImportPreview, { type AdminInventoryTarget } from '../components/catalog/AdminInventoryImportPreview'
 import AdminMerchandisingPage from '../components/merchandising/AdminMerchandisingPage'
 import AdminCategoryManager from '../components/catalog/AdminCategoryManager'
+import AdminRechargePage from '../components/admin/recharge/AdminRechargePage'
 
-type AdminTab = 'dashboard' | 'users' | 'products' | 'orders' | 'logs' | 'audit' | 'files' | 'merchants' | 'settlements' | 'announcements' | 'config' | 'backup' | 'faka' | 'abuse' | 'storage' | 'merchandising' | 'catalogGovernance'
+type AdminTab = 'dashboard' | 'users' | 'products' | 'orders' | 'logs' | 'audit' | 'files' | 'merchants' | 'settlements' | 'announcements' | 'config' | 'backup' | 'faka' | 'abuse' | 'storage' | 'merchandising' | 'catalogGovernance' | 'recharge'
 
 const NAV_ITEMS: { id: AdminTab; label: string; icon: any }[] = [
   { id: 'dashboard', label: '数据仪表盘', icon: LayoutDashboard },
@@ -57,6 +58,7 @@ const NAV_ITEMS: { id: AdminTab; label: string; icon: any }[] = [
   { id: 'users', label: '用户管理', icon: UsersRound },
   { id: 'products', label: '商品与库存', icon: Package },
   { id: 'orders', label: '订单记录', icon: ShoppingCart },
+  { id: 'recharge', label: '充值支付', icon: Wallet },
   { id: 'faka', label: 'FakaBridge', icon: Cable },
   { id: 'logs', label: '积分流水', icon: Activity },
   { id: 'abuse', label: '注册与激励风控', icon: ShieldAlert },
@@ -395,6 +397,7 @@ export default function AdminPage() {
           {activeTab === 'storage' && <AdminStoragePanel />}
           {activeTab === 'merchandising' && <AdminMerchandisingPage />}
           {activeTab === 'catalogGovernance' && <AdminCategoryManager />}
+          {activeTab === 'recharge' && <AdminRechargePage />}
 
           {/* Merchants */}
           {activeTab === 'merchants' && (

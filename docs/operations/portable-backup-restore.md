@@ -105,3 +105,19 @@ POST /api/admin/portable-backups/import
 - 非空业务数据库或目标中已存在的同名 MoNexus 图片会被明确拒绝，避免覆盖或合并已有
   业务数据；共享 bucket 的无关对象不会阻止恢复。
 - 此功能用于迁移与人为创建的完整备份，不替代云硬盘快照或异机灾备。
+
+## 充值支付新表（逻辑转储覆盖）
+
+`pg_dump` 包含整个业务库，因此 SPEC-RECHARGE-PAYMENT-V1.2 新增表会随备份/恢复一起迁移，无需单独导出。本 PR 不写生产数据库。恢复前确认目标为空库，并在应用层跑已有 Prisma migration（禁止 `prisma db push`）。
+
+覆盖的新表包括：
+
+- `RechargePricePolicy` / `RechargeSuggestedAmount` / `RechargeQuote`
+- `RechargeOrder` / `PaymentIntent` / `PaymentAttempt` / `PaymentEvent`
+- `RechargeCredit` / `RechargeRefund` / `PointHold` / `RechargeReversal`
+- `PaymentDispute` / `PaymentRecoveryCase` / `AccountRestriction`
+- `ReconciliationRun` / `ReconciliationItem`
+- `RechargeLimitBucket` / `RechargeLimitReservation`
+- `RechargeCreditTask` / `RechargeIdempotencyRecord`
+
+`PaymentEvent.rawPayloadEncrypted` 是密文。恢复后仍受默认 30 天清理、未结争议/退款/对账结案后再留 180 天的规则约束。密钥 `PAYMENT_EVENT_ENCRYPTION_KEY` 不在备份包内，目标实例必须自行配置同一密钥才能解密历史 payload。Provider 私钥、webhook secret 也不在备份中。

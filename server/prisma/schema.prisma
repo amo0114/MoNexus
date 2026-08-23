@@ -88,6 +88,22 @@ model User {
   editorialFeaturesRevoked EditorialFeature[]    @relation("EditorialRevokedBy")
   entitlementsGranted      MerchantEntitlement[] @relation("EntitlementGrantedBy")
   entitlementsRevoked      MerchantEntitlement[] @relation("EntitlementRevokedBy")
+
+  // SPEC-RECHARGE-PAYMENT-V1.2
+  rechargeQuotes                   RechargeQuote[]
+  rechargeOrders                   RechargeOrder[]
+  rechargeCredits                  RechargeCredit[]
+  rechargeRefundsCreated           RechargeRefund[]            @relation("RechargeRefundCreatedBy")
+  pointHolds                       PointHold[]
+  rechargeReversals                RechargeReversal[]
+  paymentRecoveryCases             PaymentRecoveryCase[]
+  paymentRecoveryCasesResolved     PaymentRecoveryCase[]       @relation("PaymentRecoveryCaseResolvedBy")
+  accountRestrictions              AccountRestriction[]
+  accountRestrictionsReleased      AccountRestriction[]        @relation("AccountRestrictionReleasedBy")
+  reconciliationRunsCreated        ReconciliationRun[]         @relation("ReconciliationRunCreatedBy")
+  reconciliationItemsResolved      ReconciliationItem[]        @relation("ReconciliationItemResolvedBy")
+  rechargeLimitBuckets             RechargeLimitBucket[]
+  rechargeIdempotencyRecords       RechargeIdempotencyRecord[]
 }
 
 // SPEC-NOTIFY-001 Phase 1：1:1 事务消息（与 Announcement 运营广播分离）。
@@ -449,6 +465,9 @@ model PointLog {
   // point at exactly one PointLog row each; the campaign side owns the FK.
   campaignCharged  PromotionCampaign? @relation("PromotionCampaignCharge")
   campaignRefunded PromotionCampaign? @relation("PromotionCampaignRefund")
+
+  rechargeCredit   RechargeCredit?
+  rechargeReversal RechargeReversal?
 
   // 排行榜按 (type='in', createdAt ∈ 窗口) 聚合；此前本表除主键零索引，
   // 缺了它每次刷新都是全表扫。
@@ -1558,4 +1577,501 @@ model OrderPricingSnapshot {
   valuePolicy    ValuePolicy     @relation(fields: [valuePolicyId], references: [id], onDelete: Restrict)
   pointsAsset    AssetDefinition @relation("SnapshotPointsAsset", fields: [pointsAssetCode], references: [code], onDelete: Restrict, onUpdate: Restrict)
   referenceAsset AssetDefinition @relation("SnapshotReferenceAsset", fields: [referenceAssetCode], references: [code], onDelete: Restrict, onUpdate: Restrict)
+}
+
+// ---------------------------------------------------------------------------
+// SPEC-RECHARGE-PAYMENT-V1.2: payment/recharge foundation.
+// Additive only. Do not seed an active live provider or real orders.
+// Partial unique indexes live in the SQL migration (Prisma cannot express WHERE).
+// ---------------------------------------------------------------------------
+
+model RechargePricePolicy {
+  id                 String            @id @default(uuid()) @db.Uuid
+  code               String            @unique
+  version            Int
+  currency           String            @db.Char(3)
+  currencyScale      Int
+  pointsNumerator    BigInt
+  pointsDenominator  BigInt
+  roundingMode       MoneyRoundingMode @default(HALF_EVEN)
+  minAmountMinor     BigInt
+  maxAmountMinor     BigInt
+  amountStepMinor    BigInt
+  dailyLimitMinor    BigInt
+  monthlyLimitMinor  BigInt
+  limitTimeZone      String
+  bonusRuleVersion   String?
+  status             String
+  effectiveAt        DateTime
+  createdAt          DateTime          @default(now())
+
+  suggestedAmounts RechargeSuggestedAmount[]
+  quotes           RechargeQuote[]
+  orders           RechargeOrder[]
+
+  @@unique([currency, version])
+  @@index([currency, status])
+  // One active policy per currency: recharge_price_policy_one_active_per_currency
+  // (SQL migration; Prisma cannot express WHERE status = 'active').
+}
+
+model RechargeSuggestedAmount {
+  id          String @id @default(uuid()) @db.Uuid
+  policyId    String @db.Uuid
+  amountMinor BigInt
+  sortOrder   Int
+
+  policy RechargePricePolicy @relation(fields: [policyId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@unique([policyId, amountMinor])
+  @@index([policyId, sortOrder])
+}
+
+model RechargeQuote {
+  id                      String    @id @default(uuid()) @db.Uuid
+  userId                  Int
+  pricePolicyId           String    @db.Uuid
+  provider                String
+  paymentMethod           String
+  providerAccountKey      String
+  capabilityVersion       String
+  capabilityDigest        String
+  currency                String    @db.Char(3)
+  amountMinor             BigInt
+  effectiveMinAmountMinor BigInt
+  effectiveMaxAmountMinor BigInt
+  basePoints              BigInt
+  bonusPoints             BigInt
+  totalPoints             BigInt
+  amountSource            String
+  expiresAt               DateTime
+  consumedAt              DateTime?
+  createdAt               DateTime  @default(now())
+
+  user        User                @relation(fields: [userId], references: [id], onDelete: Restrict)
+  pricePolicy RechargePricePolicy @relation(fields: [pricePolicyId], references: [id], onDelete: Restrict)
+  order       RechargeOrder?
+
+  @@index([userId, expiresAt])
+  @@index([pricePolicyId])
+}
+
+model RechargeOrder {
+  id                      String    @id @default(uuid()) @db.Uuid
+  userId                  Int
+  quoteId                 String    @unique @db.Uuid
+  pricePolicyId           String    @db.Uuid
+  currency                String    @db.Char(3)
+  amountMinor             BigInt
+  basePoints              BigInt
+  bonusPoints             BigInt
+  totalPoints             BigInt
+  pricePolicyCode         String
+  pricePolicyVersion      Int
+  pointsNumerator         BigInt
+  pointsDenominator       BigInt
+  roundingMode            MoneyRoundingMode
+  currencyScale           Int
+  bonusRuleVersion        String?
+  amountSource            String
+  provider                String
+  paymentMethod           String
+  providerAccountKey      String
+  capabilityVersion       String
+  capabilityDigest        String
+  effectiveMinAmountMinor BigInt
+  effectiveMaxAmountMinor BigInt
+  disclosureVersion       String
+  status                  String
+  expiresAt               DateTime
+  paidAt                  DateTime?
+  creditedAt              DateTime?
+  cancelledAt             DateTime?
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+
+  user              User                       @relation(fields: [userId], references: [id], onDelete: Restrict)
+  quote             RechargeQuote              @relation(fields: [quoteId], references: [id], onDelete: Restrict)
+  pricePolicy       RechargePricePolicy        @relation(fields: [pricePolicyId], references: [id], onDelete: Restrict)
+  paymentIntent     PaymentIntent?
+  credit            RechargeCredit?
+  refund            RechargeRefund?
+  creditTask        RechargeCreditTask?
+  disputes          PaymentDispute[]
+  limitReservations RechargeLimitReservation[]
+  reconciliationItems ReconciliationItem[]
+
+  @@index([userId, createdAt])
+  @@index([status, creditedAt, updatedAt])
+  @@index([provider, providerAccountKey, status])
+}
+
+model PaymentIntent {
+  id              String    @id @default(uuid()) @db.Uuid
+  rechargeOrderId String    @unique @db.Uuid
+  amountMinor     BigInt
+  currency        String    @db.Char(3)
+  status          String
+  activeAttemptId String?   @db.Uuid
+  expiresAt       DateTime
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  rechargeOrder RechargeOrder    @relation(fields: [rechargeOrderId], references: [id], onDelete: Restrict)
+  attempts      PaymentAttempt[]
+  credit        RechargeCredit?
+
+  @@index([status, expiresAt])
+}
+
+model PaymentAttempt {
+  id                    String    @id @default(uuid()) @db.Uuid
+  paymentIntentId       String    @db.Uuid
+  provider              String
+  providerAccountKey    String
+  method                String
+  status                String
+  providerPaymentId     String?
+  providerOrderId       String?
+  providerCaptureId     String?
+  requestIdempotencyKey String
+  actionType            String
+  actionPayload         String?
+  lastErrorCode         String?
+  lastErrorSafeMessage  String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  completedAt           DateTime?
+
+  paymentIntent       PaymentIntent        @relation(fields: [paymentIntentId], references: [id], onDelete: Restrict)
+  events              PaymentEvent[]
+  refunds             RechargeRefund[]
+  disputes            PaymentDispute[]
+  reconciliationItems ReconciliationItem[]
+
+  @@unique([provider, providerAccountKey, requestIdempotencyKey])
+  @@index([paymentIntentId, status])
+  @@index([provider, providerAccountKey, status])
+  // Partial uniques in SQL: (provider, providerAccountKey, providerPaymentId)
+  // WHERE providerPaymentId IS NOT NULL; one non-terminal attempt per intent.
+}
+
+model PaymentEvent {
+  id                   String    @id @default(uuid()) @db.Uuid
+  provider             String
+  providerAccountKey   String
+  source               String
+  verificationMethod   String
+  paymentAttemptId     String?   @db.Uuid
+  providerPaymentId    String?
+  providerCaptureId    String?
+  providerEventId      String?
+  dedupeKey            String
+  eventType            String
+  payloadSha256        String    @db.Char(64)
+  rawPayloadEncrypted  String?
+  normalizedPayload    Json
+  signatureVerified    Boolean?
+  status               String
+  attempts             Int       @default(0)
+  nextAttemptAt        DateTime  @default(now())
+  leaseToken           String?   @db.Uuid
+  leaseUntil           DateTime?
+  observedAt           DateTime
+  createdAt            DateTime  @default(now())
+  processedAt          DateTime?
+  lastErrorCode        String?
+
+  paymentAttempt      PaymentAttempt?      @relation(fields: [paymentAttemptId], references: [id], onDelete: SetNull)
+  reconciliationItems ReconciliationItem[]
+
+  @@unique([provider, providerAccountKey, dedupeKey])
+  @@index([status, nextAttemptAt])
+  @@index([paymentAttemptId])
+  @@index([provider, providerPaymentId])
+}
+
+model RechargeCredit {
+  id               String    @id @default(uuid()) @db.Uuid
+  rechargeOrderId  String    @unique @db.Uuid
+  paymentIntentId  String    @unique @db.Uuid
+  userId           Int
+  points           BigInt
+  balanceBefore    Int
+  balanceAfter     Int
+  businessEventKey String    @unique
+  pointLogId       Int       @unique
+  createdAt        DateTime  @default(now())
+  reversedAt       DateTime?
+
+  rechargeOrder RechargeOrder          @relation(fields: [rechargeOrderId], references: [id], onDelete: Restrict)
+  paymentIntent PaymentIntent          @relation(fields: [paymentIntentId], references: [id], onDelete: Restrict)
+  user          User                   @relation(fields: [userId], references: [id], onDelete: Restrict)
+  pointLog      PointLog               @relation(fields: [pointLogId], references: [id], onDelete: Restrict)
+  reversal      RechargeReversal?
+  recoveryCases PaymentRecoveryCase[]
+
+  @@index([userId, createdAt])
+}
+
+model RechargeRefund {
+  id                    String    @id @default(uuid()) @db.Uuid
+  rechargeOrderId       String    @unique @db.Uuid
+  paymentAttemptId      String    @db.Uuid
+  providerRefundId      String?
+  requestIdempotencyKey String
+  amountMinor           BigInt
+  pointsToReverse       BigInt
+  status                String
+  reasonCode            String
+  createdByUserId       Int
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  completedAt           DateTime?
+
+  rechargeOrder  RechargeOrder     @relation(fields: [rechargeOrderId], references: [id], onDelete: Restrict)
+  paymentAttempt PaymentAttempt    @relation(fields: [paymentAttemptId], references: [id], onDelete: Restrict)
+  createdByUser  User              @relation("RechargeRefundCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  reversal       RechargeReversal?
+
+  @@unique([rechargeOrderId, requestIdempotencyKey])
+  @@index([status, createdAt])
+}
+
+model PointHold {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     Int
+  sourceType String
+  sourceId   String   @db.Uuid
+  points     BigInt
+  status     String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@unique([sourceType, sourceId])
+  @@index([userId, status])
+}
+
+model RechargeReversal {
+  id               String   @id @default(uuid()) @db.Uuid
+  rechargeRefundId String   @unique @db.Uuid
+  rechargeCreditId String   @unique @db.Uuid
+  userId           Int
+  points           BigInt
+  balanceBefore    Int
+  balanceAfter     Int
+  businessEventKey String   @unique
+  pointLogId       Int      @unique
+  createdAt        DateTime @default(now())
+
+  rechargeRefund RechargeRefund @relation(fields: [rechargeRefundId], references: [id], onDelete: Restrict)
+  rechargeCredit RechargeCredit @relation(fields: [rechargeCreditId], references: [id], onDelete: Restrict)
+  user           User           @relation(fields: [userId], references: [id], onDelete: Restrict)
+  pointLog       PointLog       @relation(fields: [pointLogId], references: [id], onDelete: Restrict)
+}
+
+model PaymentDispute {
+  id                  String    @id @default(uuid()) @db.Uuid
+  provider            String
+  providerAccountKey  String
+  providerDisputeId   String
+  rechargeOrderId     String    @db.Uuid
+  paymentAttemptId    String?   @db.Uuid
+  amountMinor         BigInt
+  currency            String    @db.Char(3)
+  status              String
+  reasonCode          String?
+  evidenceDueAt       DateTime?
+  openedAt            DateTime
+  closedAt            DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  rechargeOrder RechargeOrder        @relation(fields: [rechargeOrderId], references: [id], onDelete: Restrict)
+  paymentAttempt PaymentAttempt?     @relation(fields: [paymentAttemptId], references: [id], onDelete: SetNull)
+  recoveryCase  PaymentRecoveryCase?
+
+  @@unique([provider, providerAccountKey, providerDisputeId])
+  @@index([status, evidenceDueAt])
+  @@index([rechargeOrderId])
+}
+
+model PaymentRecoveryCase {
+  id                 String    @id @default(uuid()) @db.Uuid
+  paymentDisputeId   String    @unique @db.Uuid
+  rechargeCreditId   String    @db.Uuid
+  userId             Int
+  pointsToRecover    BigInt
+  pointsHeld         BigInt
+  outstandingPoints  BigInt
+  lossAmountMinor    BigInt
+  currency           String    @db.Char(3)
+  status             String
+  resolutionReason   String?
+  resolvedByUserId   Int?
+  resolvedAt         DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  paymentDispute PaymentDispute @relation(fields: [paymentDisputeId], references: [id], onDelete: Restrict)
+  rechargeCredit RechargeCredit @relation(fields: [rechargeCreditId], references: [id], onDelete: Restrict)
+  user           User           @relation(fields: [userId], references: [id], onDelete: Restrict)
+  resolvedByUser User?          @relation("PaymentRecoveryCaseResolvedBy", fields: [resolvedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([userId, status])
+}
+
+model AccountRestriction {
+  id                 String    @id @default(uuid()) @db.Uuid
+  userId             Int
+  sourceType         String
+  sourceId           String    @db.Uuid
+  blocksPointSpending Boolean
+  blocksRecharge     Boolean
+  status             String
+  releasedByUserId   Int?
+  releasedAt         DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  user           User  @relation(fields: [userId], references: [id], onDelete: Restrict)
+  releasedByUser User? @relation("AccountRestrictionReleasedBy", fields: [releasedByUserId], references: [id], onDelete: Restrict)
+
+  @@unique([sourceType, sourceId])
+  @@index([userId, status])
+}
+
+model ReconciliationRun {
+  id                 String    @id @default(uuid()) @db.Uuid
+  provider           String
+  providerAccountKey String
+  environment        String
+  scopeType          String
+  scopeKey           String
+  periodStart        DateTime?
+  periodEnd          DateTime?
+  status             String
+  sourceSha256       String?   @db.Char(64)
+  itemCount          Int       @default(0)
+  mismatchCount      Int       @default(0)
+  startedAt          DateTime?
+  completedAt        DateTime?
+  createdByUserId    Int?
+  lastErrorCode      String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  createdByUser User?                @relation("ReconciliationRunCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  items         ReconciliationItem[]
+
+  @@unique([provider, providerAccountKey, environment, scopeType, scopeKey])
+  @@index([status, createdAt])
+}
+
+model ReconciliationItem {
+  id                  String    @id @default(uuid()) @db.Uuid
+  reconciliationRunId String    @db.Uuid
+  providerEntryKey    String
+  rechargeOrderId     String?   @db.Uuid
+  paymentAttemptId    String?   @db.Uuid
+  paymentEventId      String?   @db.Uuid
+  mismatchType        String
+  providerStatus      String?
+  localStatus         String?
+  providerAmountMinor BigInt?
+  localAmountMinor    BigInt?
+  currency            String?   @db.Char(3)
+  status              String
+  resolutionReason    String?
+  resolvedByUserId    Int?
+  resolvedAt          DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  reconciliationRun ReconciliationRun @relation(fields: [reconciliationRunId], references: [id], onDelete: Restrict)
+  rechargeOrder     RechargeOrder?    @relation(fields: [rechargeOrderId], references: [id], onDelete: SetNull)
+  paymentAttempt    PaymentAttempt?   @relation(fields: [paymentAttemptId], references: [id], onDelete: SetNull)
+  paymentEvent      PaymentEvent?     @relation(fields: [paymentEventId], references: [id], onDelete: SetNull)
+  resolvedByUser    User?             @relation("ReconciliationItemResolvedBy", fields: [resolvedByUserId], references: [id], onDelete: Restrict)
+
+  @@unique([reconciliationRunId, providerEntryKey, mismatchType])
+  @@index([status, mismatchType])
+  @@index([rechargeOrderId])
+}
+
+model RechargeLimitBucket {
+  id             String   @id @default(uuid()) @db.Uuid
+  userId         Int
+  currency       String   @db.Char(3)
+  periodType     String
+  periodStart    DateTime
+  periodEnd      DateTime
+  reservedMinor  BigInt
+  consumedMinor  BigInt
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user          User                       @relation(fields: [userId], references: [id], onDelete: Restrict)
+  reservations  RechargeLimitReservation[]
+
+  @@unique([userId, currency, periodType, periodStart])
+  @@index([userId, currency, periodType])
+}
+
+model RechargeLimitReservation {
+  id              String    @id @default(uuid()) @db.Uuid
+  rechargeOrderId String    @db.Uuid
+  bucketId        String    @db.Uuid
+  periodType      String
+  amountMinor     BigInt
+  status          String
+  expiresAt       DateTime
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  rechargeOrder RechargeOrder       @relation(fields: [rechargeOrderId], references: [id], onDelete: Restrict)
+  bucket        RechargeLimitBucket @relation(fields: [bucketId], references: [id], onDelete: Restrict)
+
+  @@unique([rechargeOrderId, periodType])
+  @@index([bucketId, status])
+}
+
+model RechargeCreditTask {
+  id              String    @id @default(uuid()) @db.Uuid
+  rechargeOrderId String    @unique @db.Uuid
+  status          String
+  attempts        Int       @default(0)
+  maxAttempts     Int       @default(8)
+  nextAttemptAt   DateTime  @default(now())
+  leaseToken      String?   @db.Uuid
+  leaseUntil      DateTime?
+  lastErrorCode   String?
+  createdAt       DateTime  @default(now())
+  completedAt     DateTime?
+
+  rechargeOrder RechargeOrder @relation(fields: [rechargeOrderId], references: [id], onDelete: Restrict)
+
+  @@index([status, nextAttemptAt])
+}
+
+model RechargeIdempotencyRecord {
+  id            String    @id @default(uuid()) @db.Uuid
+  userId        Int
+  scope         String
+  key           String    @db.Uuid
+  requestDigest String
+  status        String
+  claimToken    String    @db.Uuid
+  resultType    String
+  resultId      String?
+  expiresAt     DateTime
+  createdAt     DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@unique([userId, scope, key])
+  @@index([expiresAt])
+  @@index([status, expiresAt])
 }

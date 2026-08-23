@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Menu, X, Coins, User, ShieldCheck, Store, Clock, XCircle,
-  AlertTriangle, Plus, Home, Trophy, Package,
+  AlertTriangle, Plus, Home, Trophy, Package, Wallet,
 } from 'lucide-react'
 import { useAuthStore } from '../stores/authStore'
 import { useAppStore } from '../stores/appStore'
@@ -113,6 +113,14 @@ export default function MobileNavDrawer() {
             >
               <Home className="w-4 h-4 text-[var(--color-text-muted)]" />
               商城首页
+            </button>
+            <button
+              className={`${ROW} text-[var(--color-text)] hover:bg-[var(--color-primary)]/8 active:bg-[var(--color-primary)]/12`}
+              onClick={() => go('/recharge')}
+              data-testid="drawer-recharge"
+            >
+              <Wallet className="w-4 h-4 text-[var(--color-text-muted)]" />
+              积分充值
             </button>
             <button
               className={`${ROW} text-[var(--color-text)] hover:bg-[var(--color-primary)]/8 active:bg-[var(--color-primary)]/12`}

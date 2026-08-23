@@ -1,0 +1,140 @@
+# Payment operations runbook
+
+Scope: SPEC-RECHARGE-PAYMENT-V1.2 §11. Simulator and sandbox only unless a
+later owner provides live credentials. Closing recharge must not stop credit or
+refund of already-paid orders.
+
+Related: `docs/operations/payment-alerts.md`, `docs/operations/alert-routing.md`.
+
+## Bounded metrics
+
+Do not add `userId`, `orderId`, or provider transaction IDs as Prometheus
+labels. The allowed series are:
+
+```text
+recharge_quote_total{currency,result}
+recharge_order_total{currency,provider,result}
+payment_observation_total{provider,source,result}
+payment_webhook_signature_failure_total{provider}
+payment_amount_mismatch_total{provider,currency}
+recharge_credit_total{currency,result}
+recharge_credit_latency_seconds{provider}
+recharge_paid_not_credited_total{provider}
+payment_refund_total{provider,result}
+payment_dispute_total{provider,status}
+payment_reconciliation_mismatch_total{provider,type}
+payment_worker_backlog{worker}
+```
+
+Operational gauges used by alerts: `payment_worker_oldest_age_seconds`,
+`payment_provider_circuit_open`, `payment_simulator_configured`.
+
+## Recharge kill switch
+
+`RECHARGE_MODE=disabled` or `RECHARGE_ACCEPT_NEW_ORDERS=false` blocks new
+quotes and orders. It must not unload registered adapters.
+
+Keep processing:
+
+- inbound webhooks for registered providers
+- `applyConfirmedPayment` / credit workers for already-paid orders
+- refund submit and refund observation apply
+- query recovery and reconciliation
+
+After disabling new orders, confirm `GET /api/recharge/config` returns
+`RECHARGE_DISABLED` for users, then confirm payment workers still drain
+`PaymentEvent` and `RechargeCreditTask` rows.
+
+## Provider circuit breaker
+
+Query recovery records consecutive `queryPayment` failures per provider. After
+5 failures the in-process circuit opens for 60 seconds. While open, workers
+skip that provider's query recovery so a downed API does not stampede.
+
+Actions:
+
+1. Confirm `payment_provider_circuit_open{provider}` and
+   `payment_observation_total{source="provider_query",result="query_failed"}`.
+2. Check provider status pages and credential isolation (no sandbox key on
+   live, no live endpoint on sandbox).
+3. Do not replay capture/create while the circuit is open.
+4. After the provider recovers, the next successful query closes the circuit.
+   Restart is not required.
+5. Historical adapters stay loaded when a name is removed from
+   `PAYMENT_ENABLED_PROVIDERS`.
+
+## Paid-not-credited repair
+
+Alert: paid more than two minutes without `creditedAt`.
+
+1. Load `GET /api/admin/recharge/orders/:id` (no raw payload, no payer PII).
+2. If status is `paid` and a `RechargeCreditTask` exists, wait one worker tick
+   or `POST /api/admin/payments/events/:id/retry` for the succeeded observation.
+3. If the observation is missing, run `POST /api/admin/recharge/orders/:id/reconcile`.
+4. Retry and reconcile write `AdminLog` (`payment.event.retry`,
+   `payment.order.reconcile`).
+5. Confirm a single `RechargeCredit` and one `PointLog`. Duplicate unique
+   conflicts increment `recharge_credit_total{result="duplicate_conflict"}`
+   and must be treated as an incident even when the credit already exists.
+
+## Observation replay
+
+1. List `GET /api/admin/payments/events?status=failed`.
+2. Inspect `lastErrorCode` only. Do not log or export `rawPayloadEncrypted`.
+3. `POST /api/admin/payments/events/:id/retry` resets the lease and calls the
+   same apply path (`applyConfirmedPayment` or `applyRefundObservation`).
+4. Duplicate webhooks must ACK 2xx and reuse the existing observation.
+
+## Late payment
+
+A local `cancelled` / `expired` / `failed` order that later sees provider
+`succeeded` becomes `reconcile_required`. It does **not** auto-credit or
+auto-refund.
+
+1. Confirm `payment_observation_total{result="late_success"}` and an open
+   reconciliation item `provider_paid_local_unpaid`.
+2. Manually decide: keep unpaid and refund at the provider, or credit after
+   finance review.
+3. Record the decision with an admin reconcile/refund action so `AdminLog`
+   captures the operator, not the payload.
+
+## Refund recovery
+
+1. Insufficient available points create `manual_review` and must not call the
+   provider.
+2. `processing` refunds are retried by the worker without releasing the hold.
+3. If `payment_worker_oldest_age_seconds{worker="refund"}` exceeds 15 minutes,
+   inspect the refund row and provider refund query. Do not create a second
+   `RechargeReversal`.
+4. Closing recharge does not cancel in-flight refunds.
+
+## Reconciliation
+
+1. `POST /api/admin/payments/reconciliation-runs` creates a run and executes it.
+2. `POST /api/admin/payments/reconciliation-runs/:id/rerun` re-executes a
+   pending/failed run.
+3. Open items stay until an operator resolves them. Raw payloads for those
+   events are retained until 180 days after close.
+
+## Credential rotation
+
+Rotate provider secrets in the secret store, never in git. Restart the API
+after changing webhook secrets so in-memory adapters reload. Keep the previous
+webhook secret only for the provider's documented overlap window. Log only
+internal IDs and `lastErrorCode`.
+
+## Raw payload retention
+
+Encrypted `PaymentEvent.rawPayloadEncrypted` is optional. SHA-256, verification
+metadata, and normalized fields are kept.
+
+- Default: clear ciphertext 30 days after `createdAt`.
+- Open dispute, open refund, or open reconciliation item: keep until the case
+  closes, then 180 more days.
+
+## Backup and restore
+
+Portable backup is a logical PostgreSQL dump. New recharge tables are included
+automatically. See the recharge table note in
+`docs/operations/portable-backup-restore.md`. Do not restore onto a non-empty
+production database from this PR.

@@ -1,5 +1,15 @@
 import 'dotenv/config'
 import { z } from 'zod'
+import {
+  evaluateRechargeConfigGates,
+  isParseFailure,
+  isProductionDeploy,
+  parseEnabledCurrencies,
+  parseProviderList,
+  parseRechargeMode,
+  type ProviderMode,
+} from '../modules/recharge/config.js'
+import type { PaymentProviderName, RechargeCurrency, RechargeMode } from '../modules/recharge/types.js'
 
 const booleanEnvSchema = z.preprocess(value => {
   if (value === undefined || value === '') return undefined
@@ -319,6 +329,37 @@ const envSchema = z.object({
   FAKA_BRIDGE_PANEL_URL: optionalUrlEnvSchema,
   // Test-only escape hatch. Production boot refuses true.
   FAKA_BRIDGE_ALLOW_INSECURE_TARGETS: booleanEnvSchema.default(false),
+
+  // --- SPEC-RECHARGE-PAYMENT-V1.2. Default disabled so existing production
+  // boots stay valid without payment credentials.
+  RECHARGE_MODE: optionalStringEnvSchema,
+  RECHARGE_ACCEPT_NEW_ORDERS: booleanEnvSchema.default(false),
+  RECHARGE_ENABLED_CURRENCIES: optionalStringEnvSchema,
+  // Registered keeps historical webhook/query/refund/dispute adapters loaded.
+  // Enabled only gates new quotes/attempts and must be a subset of registered.
+  PAYMENT_REGISTERED_PROVIDERS: optionalStringEnvSchema,
+  PAYMENT_ENABLED_PROVIDERS: optionalStringEnvSchema,
+  PAYMENT_EVENT_ENCRYPTION_KEY: optionalStringEnvSchema,
+  PAYMENT_WEBHOOK_PUBLIC_BASE_URL: optionalStringEnvSchema,
+  STRIPE_MODE: optionalStringEnvSchema,
+  STRIPE_SECRET_KEY: optionalStringEnvSchema,
+  STRIPE_WEBHOOK_SECRET: optionalStringEnvSchema,
+  STRIPE_API_BASE_URL: optionalUrlEnvSchema,
+  PAYPAL_MODE: optionalStringEnvSchema,
+  PAYPAL_CLIENT_ID: optionalStringEnvSchema,
+  PAYPAL_CLIENT_SECRET: optionalStringEnvSchema,
+  PAYPAL_WEBHOOK_ID: optionalStringEnvSchema,
+  PAYPAL_API_BASE_URL: optionalUrlEnvSchema,
+  WECHAT_PAY_MODE: optionalStringEnvSchema,
+  WECHAT_PAY_MCH_ID: optionalStringEnvSchema,
+  WECHAT_PAY_APIV3_KEY: optionalStringEnvSchema,
+  // Wechatpay-Signature material (platform cert/public key). Not the APIv3 decrypt key.
+  WECHAT_PAY_PLATFORM_PUBLIC_KEY: optionalStringEnvSchema,
+  WECHAT_PAY_API_BASE_URL: optionalUrlEnvSchema,
+  ALIPAY_MODE: optionalStringEnvSchema,
+  ALIPAY_APP_ID: optionalStringEnvSchema,
+  ALIPAY_GATEWAY_URL: optionalUrlEnvSchema,
+  ALIPAY_PUBLIC_KEY: optionalStringEnvSchema,
 })
 
 const parsed = envSchema.safeParse(process.env)
@@ -559,6 +600,93 @@ if (fakaPartial) {
   )
   process.exit(1)
 }
+const rechargeModeParsed = parseRechargeMode(env.RECHARGE_MODE)
+if (isParseFailure(rechargeModeParsed)) {
+  console.error(`[Config] ${rechargeModeParsed.error}`)
+  process.exit(1)
+}
+const registeredProvidersParsed = parseProviderList(env.PAYMENT_REGISTERED_PROVIDERS)
+if (isParseFailure(registeredProvidersParsed)) {
+  console.error(`[Config] PAYMENT_REGISTERED_PROVIDERS: ${registeredProvidersParsed.error}`)
+  process.exit(1)
+}
+const enabledProvidersParsed = parseProviderList(env.PAYMENT_ENABLED_PROVIDERS)
+if (isParseFailure(enabledProvidersParsed)) {
+  console.error(`[Config] PAYMENT_ENABLED_PROVIDERS: ${enabledProvidersParsed.error}`)
+  process.exit(1)
+}
+const enabledCurrenciesParsed = parseEnabledCurrencies(env.RECHARGE_ENABLED_CURRENCIES)
+if (isParseFailure(enabledCurrenciesParsed)) {
+  console.error(`[Config] ${enabledCurrenciesParsed.error}`)
+  process.exit(1)
+}
+
+function optionalProviderMode(raw: string | undefined, allowed: readonly ProviderMode[], label: string): ProviderMode | undefined {
+  if (!raw) return undefined
+  if (!(allowed as readonly string[]).includes(raw)) {
+    console.error(`[Config] ${label} must be ${allowed.join(' or ')}`)
+    process.exit(1)
+  }
+  return raw as ProviderMode
+}
+
+const stripeMode = optionalProviderMode(env.STRIPE_MODE, ['test', 'live'], 'STRIPE_MODE')
+const paypalMode = optionalProviderMode(env.PAYPAL_MODE, ['sandbox', 'live'], 'PAYPAL_MODE')
+const wechatPayMode = optionalProviderMode(env.WECHAT_PAY_MODE, ['disabled', 'live'], 'WECHAT_PAY_MODE')
+const alipayMode = optionalProviderMode(env.ALIPAY_MODE, ['sandbox', 'live'], 'ALIPAY_MODE')
+
+const rechargeMode: RechargeMode = rechargeModeParsed
+const registeredProviders: PaymentProviderName[] = registeredProvidersParsed
+const enabledProviders: PaymentProviderName[] = enabledProvidersParsed
+const enabledCurrencies: RechargeCurrency[] = enabledCurrenciesParsed
+const productionDeploy = isProductionDeploy(env.NODE_ENV, env.MONEXUS_DEPLOY_ENV)
+
+const paymentEventEncryptionKey = parseCanonicalBase64Key(env.PAYMENT_EVENT_ENCRYPTION_KEY)
+if (env.PAYMENT_EVENT_ENCRYPTION_KEY && !paymentEventEncryptionKey) {
+  console.error('[Config] PAYMENT_EVENT_ENCRYPTION_KEY must be canonical base64 for exactly 32 bytes')
+  process.exit(1)
+}
+
+const rechargeGate = evaluateRechargeConfigGates({
+  nodeEnv: env.NODE_ENV,
+  deployEnv: env.MONEXUS_DEPLOY_ENV,
+  rechargeMode,
+  acceptNewOrders: env.RECHARGE_ACCEPT_NEW_ORDERS,
+  enabledCurrencies,
+  registeredProviders,
+  enabledProviders,
+  webhookPublicBaseUrl: env.PAYMENT_WEBHOOK_PUBLIC_BASE_URL,
+  hasEventEncryptionKey: Boolean(paymentEventEncryptionKey),
+  stripe: {
+    mode: stripeMode,
+    secretOrKey: env.STRIPE_SECRET_KEY,
+    webhookSecret: env.STRIPE_WEBHOOK_SECRET,
+    apiBaseUrl: env.STRIPE_API_BASE_URL,
+  },
+  paypal: {
+    mode: paypalMode,
+    secretOrKey: env.PAYPAL_CLIENT_SECRET,
+    webhookSecret: env.PAYPAL_WEBHOOK_ID,
+    apiBaseUrl: env.PAYPAL_API_BASE_URL,
+  },
+  wechatPay: {
+    mode: wechatPayMode,
+    secretOrKey: env.WECHAT_PAY_APIV3_KEY,
+    webhookSecret: env.WECHAT_PAY_PLATFORM_PUBLIC_KEY,
+    apiBaseUrl: env.WECHAT_PAY_API_BASE_URL,
+  },
+  alipay: {
+    mode: alipayMode,
+    secretOrKey: env.ALIPAY_APP_ID,
+    webhookSecret: env.ALIPAY_PUBLIC_KEY,
+    apiBaseUrl: env.ALIPAY_GATEWAY_URL,
+  },
+})
+if (!rechargeGate.ok) {
+  console.error(`[Config] ${rechargeGate.message}`)
+  process.exit(1)
+}
+
 if (env.NODE_ENV === 'production' && env.FAKA_BRIDGE_ALLOW_INSECURE_TARGETS) {
   console.error(
     '[Config] FAKA_BRIDGE_ALLOW_INSECURE_TARGETS must be false in production'
@@ -692,6 +820,16 @@ export const config = {
   autoProvisionAllowInsecureTargets: env.AUTO_PROVISION_ALLOW_INSECURE_TARGETS,
   pointValuePolicyMode: env.POINT_VALUE_POLICY_MODE,
   monexusDeployEnv: env.MONEXUS_DEPLOY_ENV,
+  isProductionDeploy: productionDeploy,
+  recharge: {
+    mode: rechargeMode,
+    acceptNewOrders: env.RECHARGE_ACCEPT_NEW_ORDERS,
+    enabledCurrencies,
+    registeredProviders,
+    enabledProviders,
+    webhookPublicBaseUrl: env.PAYMENT_WEBHOOK_PUBLIC_BASE_URL,
+    eventEncryptionKey: paymentEventEncryptionKey ?? null,
+  },
   legalPages: {
     enabled: env.LEGAL_PAGES_ENABLED,
     enforcement: env.LEGAL_PAGES_ENFORCEMENT,

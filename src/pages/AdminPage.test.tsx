@@ -31,6 +31,12 @@ vi.mock('../components/catalog/AdminCategoryManager', () => ({
   },
 }))
 
+vi.mock('../components/admin/recharge/AdminRechargePage', () => ({
+  default: function MockAdminRechargePage() {
+    return <div data-testid="recharge-page-marker">AdminRechargePage</div>
+  },
+}))
+
 // ---------------------------------------------------------------------------
 // api/client default.get stub — resolves the dashboard (/admin/stats) and its
 // embedded offer report deterministically; unknown URLs resolve to empty data
@@ -54,6 +60,7 @@ vi.mock('../api/client', () => ({
 
 const MERCHANDISING_NAV_LABEL = '营销与陈列'
 const CATALOG_GOVERNANCE_NAV_LABEL = '目录治理'
+const RECHARGE_NAV_LABEL = '充值支付'
 
 describe('AdminPage — merchandising host wiring (T-CMI-001)', () => {
   // Test isolation: both host-wiring tests snapshot the apiGet URL sequence, so
@@ -127,6 +134,28 @@ describe('AdminPage — merchandising host wiring (T-CMI-001)', () => {
 
     // The click added no host API request: loadTabData('catalogGovernance') has
     // no branch, so the catalog governance panel self-hosts its data.
+    const urlsAfterClick = apiGet.mock.calls.map(([url]) => url)
+    expect(urlsAfterClick).toEqual(urlsBeforeClick)
+  })
+
+  it('renders the recharge nav and mounts the isolated page without extra host API requests', async () => {
+    render(<AdminPage />)
+
+    expect(await screen.findByText('注册用户总数')).toBeInTheDocument()
+    await waitFor(() => {
+      expect(apiGet.mock.calls.some(([url]) => url === '/admin/reports/offers')).toBe(true)
+    })
+
+    const nav = screen.getByRole('button', { name: RECHARGE_NAV_LABEL })
+    expect(nav).toBeInTheDocument()
+    expect(screen.queryByTestId('recharge-page-marker')).not.toBeInTheDocument()
+    const urlsBeforeClick = apiGet.mock.calls.map(([url]) => url)
+
+    fireEvent.click(nav)
+
+    const markers = screen.getAllByTestId('recharge-page-marker')
+    expect(markers).toHaveLength(1)
+    expect(screen.queryByText('注册用户总数')).not.toBeInTheDocument()
     const urlsAfterClick = apiGet.mock.calls.map(([url]) => url)
     expect(urlsAfterClick).toEqual(urlsBeforeClick)
   })

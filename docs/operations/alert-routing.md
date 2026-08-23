@@ -12,6 +12,8 @@ Review date: 2026-08-18. Scope: alert routing from Sentry and ValuePolicy alert 
 | `frontend-vitals-p2` | `MoNexus Frontend LCP/INP/CLS poor` | P2 team notification | Slack team channel via `ALERT_SLACK_WEBHOOK_URL` | Email to `ALERT_EMAIL_TO` from `ALERT_EMAIL_FROM` | Frontend on-call | No default page |
 | `value-policy-p0` | `docs/operations/value-policy-alerts.md` | P0 urgent | Private production Alertmanager email to VPS `ALERT_EMAIL_TO` | Manual incident-owner escalation | Backend on-call | Optional future route |
 | `value-policy-p1` | `docs/operations/value-policy-alerts.md` | P1 urgent | Private production Alertmanager email to VPS `ALERT_EMAIL_TO` | Manual incident-owner escalation | Backend on-call | Optional future route |
+| `payment-p0` | `docs/operations/payment-alerts.md` | P0 urgent | Manual incident-owner escalation (receivers not deployed by this PR) | Backend on-call | Backend on-call | Not deployed |
+| `payment-p1` | `docs/operations/payment-alerts.md` | P1 urgent | Manual incident-owner escalation (receivers not deployed by this PR) | Backend on-call | Backend on-call | Not deployed |
 
 ## Severity Policy
 
