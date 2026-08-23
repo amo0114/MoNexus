@@ -234,6 +234,7 @@ services:
     volumes:
       - ./deploy/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./docs/operations/value-policy-alerts.rules.yml:/etc/prometheus/rules/value-policy-alerts.rules.yml:ro
+      - ./docs/operations/payment-alerts.rules.yml:/etc/prometheus/rules/payment-alerts.rules.yml:ro
       - prometheusdata-prod:/prometheus
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:9090/-/ready"]

@@ -8,7 +8,7 @@
 
 **English** | [简体中文](./README.zh-CN.md)
 
-> An internal points-based digital goods exchange platform. Users earn and spend platform points for virtual products (card codes, subscription links, digital services). No real-money payment is involved.
+> An internal points-based digital goods exchange platform. Users earn and spend platform points for virtual products (card codes, subscription links, digital services). A recharge module exists; live payment providers stay disabled without credentials and merchant qualification.
 
 ---
 
@@ -32,15 +32,15 @@
 
 ## About
 
-**MoNexus** is a pure **internal welfare / points incentive platform**. Platform operators grant points; merchants supply digital goods; users redeem points. All amounts stay as in-system bookkeeping integers — there is no integration with CNY, USD, bank cards, WeChat Pay, Alipay, Stripe, or any other real payment rail.
+**MoNexus** is an **internal welfare / points incentive platform**. Platform operators grant points; merchants supply digital goods; users redeem points. Ledger amounts stay in-system integers. Optional user-funded recharge is implemented (quotes, orders, credit, refund, dispute, reconciliation) with a Simulator for local/staging. Production default is `RECHARGE_MODE=disabled`. Live adapters (Stripe, PayPal, WeChat Pay, Alipay) stay disabled until credentials and merchant qualification are provided.
 
 | Role | Capabilities |
 | --- | --- |
-| **User** | Register, check in, invite friends, browse the store, redeem products, review orders |
+| **User** | Register, check in, invite friends, browse the store, redeem products, review orders, recharge points when enabled |
 | **Merchant** | Apply to join, manage catalog & inventory, fulfill orders, view settlements |
-| **Admin** | Approve merchants, adjust points, configure system rewards, batch settlements, audit logs |
+| **Admin** | Approve merchants, adjust points, configure system rewards, batch settlements, audit logs, recharge/payment operations |
 
-**Product boundary (intentionally out of scope):** real payments, user-funded point top-ups, fiat withdrawal, physical goods / logistics, multi-tenant white-label SaaS, and native mobile apps. Web + responsive mobile browser only.
+**Product boundary (intentionally out of scope):** fiat withdrawal, physical goods / logistics, multi-tenant white-label SaaS, and native mobile apps. Web + responsive mobile browser only. User-funded recharge exists as a module; live providers remain disabled without credentials and merchant qualification. Production deploys cannot start with Simulator or `RECHARGE_MODE=sandbox`.
 
 ---
 
@@ -53,6 +53,7 @@
 - Product store with search, categories, cursor pagination
 - Instant inventory redeem, fixed-content redeem, and manual-service fulfillment
 - Daily check-in, invite codes, points ledger
+- Optional fiat recharge (quote → pay → credit) when `RECHARGE_MODE` is sandbox/live; return URLs are never treated as payment success
 - Order history, delivery content copy, product reviews
 
 ### Merchant
@@ -67,13 +68,15 @@
 - Users, merchants, products, orders, settlements overview
 - Merchant approval / suspension and per-merchant commission rate
 - Manual points adjustment with admin audit trail
+- Recharge orders, refunds, disputes, and reconciliation (live channels stay disabled without credentials)
 - Runtime system config (register / invite / check-in rewards, member tiers)
 - Operational observability: health probes, Prometheus metrics, Sentry
 
 ### Platform quality
 
 - Transactional redeem: debit points + reserve inventory + order + delivery + settlement in one DB transaction
-- Integer-only points and commission math (no floating point money)
+- Integer-only points, commission, and recharge money math (no floating point)
+- Recharge production default `RECHARGE_MODE=disabled`; a production deploy refuses Simulator / sandbox
 - Redis optional public-read cache with circuit breaker
 - S3-compatible uploads (MinIO locally, external S3/R2/OSS in production)
 - CI/CD, backup scripts, production compose, runbooks
@@ -384,6 +387,7 @@ Details: [`docs/operations/deployment-target.md`](./docs/operations/deployment-t
 | Document | Description |
 | --- | --- |
 | [`docs/superpowers/specs/2026-04-30-monexus-product-prd.md`](./docs/superpowers/specs/2026-04-30-monexus-product-prd.md) | Product PRD & milestones |
+| [`docs/specs/recharge-payment-platform-v1.md`](./docs/specs/recharge-payment-platform-v1.md) | Recharge & payment platform V1 (live providers stay disabled without credentials) |
 | [`docs/superpowers/specs/2026-04-29-monexus-merchant-settlement-contract.md`](./docs/superpowers/specs/2026-04-29-monexus-merchant-settlement-contract.md) | Merchant settlement contract |
 | [`docs/superpowers/specs/monexus-api-openapi.json`](./docs/superpowers/specs/monexus-api-openapi.json) | OpenAPI surface |
 | [`docs/operations/`](./docs/operations/) | Runbooks, gray release, alerts |

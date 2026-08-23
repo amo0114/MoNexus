@@ -67,6 +67,7 @@ import { getSettlementEligibility } from '../merchant/service.js'
 import { transitionOrderStatus } from '../orders/fulfillment.js'
 import {
   creditAvailablePoints,
+  debitAvailablePoints,
   refundPaidOrder,
   releaseHeldOrder,
   settleHeldOrder,
@@ -182,14 +183,14 @@ export async function adjustUserPoints(
     if (type === 'add') {
       newBalance = await creditAvailablePoints(tx, targetUserId, amount)
     } else {
-      const debited = await tx.pointAccount.updateMany({
-        where: { userId: targetUserId, balance: { gte: amount } },
-        data: { balance: { decrement: amount } },
-      })
-      if (debited.count !== 1) {
-        throw badRequest('扣除数量不能大于用户当前余额')
+      try {
+        newBalance = await debitAvailablePoints(tx, targetUserId, amount)
+      } catch (error) {
+        if (error instanceof HttpError && error.code === 'POINT_INSUFFICIENT') {
+          throw badRequest('扣除数量不能大于用户当前余额', 'POINT_INSUFFICIENT')
+        }
+        throw error
       }
-      newBalance = (await tx.pointAccount.findUniqueOrThrow({ where: { userId: targetUserId } })).balance
     }
 
     await tx.pointLog.create({

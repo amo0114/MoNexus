@@ -16,6 +16,7 @@ import { pointRoutes } from './modules/points/routes.js'
 import { orderRoutes } from './modules/orders/routes.js'
 import { checkoutRoutes } from './modules/checkout/routes.js'
 import { valuePolicyRoutes } from './modules/valuePolicy/routes.js'
+import { rechargeRoutes } from './modules/recharge/routes.js'
 import { adminRoutes } from './modules/admin/routes.js'
 import { merchantRoutes } from './modules/merchant/routes.js'
 import { dashboardRoutes } from './modules/dashboard/routes.js'
@@ -34,6 +35,7 @@ import { publicEditorialRouter, adminEditorialRouter } from './modules/merchandi
 import { merchantPromotionRouter, adminPromotionRouter } from './modules/merchandising/promotions/routes.js'
 import { merchantEntitlementRouter, adminEntitlementRouter } from './modules/merchandising/entitlements/routes.js'
 import { merchandisingAdminRouter } from './integrations/cmi/merchandisingAdminRoutes.js'
+import { paymentWebhookRoutes } from './modules/payment/webhooks/routes.js'
 
 const app = express()
 
@@ -70,6 +72,22 @@ app.use(cors({
   credentials: true,
 }))
 app.use(cookieParser())
+
+const paymentWebhookLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    error: {
+      code: 'RATE_LIMITED',
+      message: '请求过于频繁，请稍后再试',
+    },
+  },
+})
+// Provider webhooks must see the raw body and must not share the generic /api limiter.
+app.use('/api/payment/webhooks', paymentWebhookLimiter, paymentWebhookRoutes)
+
 app.use(express.json({ limit: '1mb' }))
 app.use(metricsMiddleware)
 
@@ -107,6 +125,7 @@ app.use('/api/invites', inviteRoutes)
 app.use('/api/orders', orderRoutes)
 app.use('/api/checkout', checkoutRoutes)
 app.use('/api/value-policy', valuePolicyRoutes)
+app.use('/api/recharge', rechargeRoutes)
 app.use('/api/faka-bridge', fakaBridgeRoutes)
 app.use('/api/admin', adminPromotionRouter)
 app.use('/api/admin', adminEditorialRouter)

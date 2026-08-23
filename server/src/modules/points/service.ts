@@ -3,6 +3,7 @@ import { prisma } from '../../lib/prisma.js'
 import { badRequest, notFound } from '../../lib/httpError.js'
 import { getSystemConfigValue } from '../../lib/systemConfig.js'
 import { applyTierBonus } from '../../lib/memberTier.js'
+import { creditAvailablePoints } from './checkedMutation.js'
 
 function getShanghaiDateString() {
   const now = new Date()
@@ -35,17 +36,16 @@ export async function checkin(userId: number) {
       const tier = resolveTier(lifetimeBefore, tierConfig.thresholds)
       const { base, bonus, total } = applyTierBonus(baseReward, tier, tierConfig.bonusBps)
 
-      const updatedAccount = await tx.pointAccount.update({
-        where: { userId },
-        data: { balance: { increment: total } },
-      })
+      const balanceAfter = total > 0
+        ? (await creditAvailablePoints(tx, userId, total)).balance
+        : account.balance
 
       await tx.pointLog.create({
         data: {
           userId,
           type: 'in',
           amount: total,
-          balanceAfter: updatedAccount.balance,
+          balanceAfter,
           reason: bonus > 0 ? `每日打卡签到 (tier:${tier} +${bonus})` : '每日打卡签到',
         },
       })
@@ -55,7 +55,7 @@ export async function checkin(userId: number) {
         bonusReward: bonus,
         totalReward: total,
         tier,
-        balanceAfter: updatedAccount.balance,
+        balanceAfter,
       }
     })
   } catch (error) {

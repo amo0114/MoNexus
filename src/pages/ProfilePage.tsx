@@ -537,6 +537,14 @@ export default function ProfilePage() {
                 {hasCheckedIn === null ? '加载中…' : hasCheckedIn ? '今日已打卡' : '每日打卡'}
               </button>
               <button
+                type="button"
+                onClick={() => navigate('/recharge')}
+                data-testid="profile-recharge-entry"
+                className="inline-flex items-center justify-center gap-2 bg-white text-[var(--color-primary)] hover:bg-white/90 px-6 py-3 rounded-lg font-semibold shadow-sm text-sm transition-colors cursor-pointer"
+              >
+                充值
+              </button>
+              <button
                 onClick={() => setHistoryOpen(true)}
                 className="inline-flex items-center justify-center gap-2 bg-white/10 hover:bg-white/20 text-white border border-white/30 px-6 py-3 rounded-lg font-medium text-sm transition-colors cursor-pointer"
               >
@@ -591,6 +599,25 @@ export default function ProfilePage() {
 
         {/* Active device sessions stay isolated from the profile's orders/points loading. */}
         <SessionManager />
+
+        <div className="card flex flex-col items-stretch gap-4 sm:flex-row sm:items-center sm:justify-between" data-testid="profile-recharge-history">
+          <div className="flex min-w-0 items-start gap-4">
+            <div className="w-12 h-12 shrink-0 bg-[var(--color-primary)]/10 text-[var(--color-primary)] rounded-full flex items-center justify-center">
+              <Wallet className="w-6 h-6" />
+            </div>
+            <div className="min-w-0">
+              <h4 className="font-heading font-bold text-[var(--color-text)] mb-1">充值记录</h4>
+              <p className="text-sm text-[var(--color-text-muted)]">现金充值与商品订单分开保存，可查看到账与退款状态。</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => navigate('/recharge?history=1')}
+            className="btn-primary w-full shrink-0 whitespace-nowrap sm:w-auto"
+          >
+            查看记录
+          </button>
+        </div>
 
         {/* 我的订单入口：完整列表在 /orders（状态 Tab + 通知深链） */}
         <div className="card p-4 sm:p-6" data-testid="profile-orders-entry" id="orders">
