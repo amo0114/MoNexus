@@ -190,7 +190,7 @@ export const paymentProviderCircuitOpen = new client.Gauge({
 
 export const paymentSimulatorConfigured = new client.Gauge({
   name: 'payment_simulator_configured',
-  help: '1 when a production deploy has simulator registered or enabled',
+  help: '1 when a production deploy has simulator registered or enabled outside approved administrator sandbox mode',
   registers: [registry],
 })
 
