@@ -90,4 +90,4 @@ groups:
           routing: payment-p0
         annotations:
           summary: Simulator configured on production deploy
-          description: Production deploy registered or enabled the simulator provider.
+          description: Production deploy registered or enabled the simulator provider outside approved administrator sandbox mode.

@@ -4,6 +4,10 @@ import { config } from '../config/index.js'
 import { prisma } from '../lib/prisma.js'
 import { applyConfirmedPayment } from '../modules/payment/events/applyConfirmedPayment.js'
 import { executeRechargeCredit } from '../modules/recharge/credit.js'
+import {
+  paymentSimulatorConfigured,
+  paymentWorkerBacklog,
+} from '../modules/payment/metrics.js'
 import { resetSimulatorState, setStoredPaymentStatus } from '../modules/payment/providers/simulator/index.js'
 import { recoverUnknownPayments, runPaymentWorkersOnce } from '../modules/payment/workers/index.js'
 import {
@@ -21,6 +25,7 @@ import { api, authHeader, createTestUser, loginAs } from './helpers.js'
 
 const SIM_TOKEN = 'recharge-simulator-test-token'
 const originalRecharge = { ...config.recharge }
+const originalProductionDeploy = config.isProductionDeploy
 
 function enableSandbox() {
   config.recharge.mode = 'sandbox'
@@ -60,6 +65,7 @@ beforeEach(() => {
 
 afterEach(() => {
   Object.assign(config.recharge, originalRecharge)
+  config.isProductionDeploy = originalProductionDeploy
   resetSimulatorState()
   resetProviderCircuitsForTests()
 })
@@ -156,5 +162,52 @@ describe('simulator integration (server-side; Playwright not run)', () => {
     const skipped = await recoverUnknownPayments()
     expect(skipped).toBeGreaterThanOrEqual(0)
     expect(isProviderCircuitOpen('simulator')).toBe(true)
+  })
+
+  it('excludes approved production administrator sandbox from simulator recovery alerts', async () => {
+    await seedCnyPolicy()
+    const auth = await loginAs((await createTestUser('sim-admin-worker@test.local', 'pass12345')).user.email, 'pass12345')
+    const quote = await api.post('/api/recharge/quotes').set(authHeader(auth.accessToken)).send({
+      currency: 'CNY', amountMinor: '1000', amountSource: 'custom', provider: 'simulator', paymentMethod: 'card',
+    }).expect(201)
+    const created = await api.post('/api/recharge/orders').set(authHeader(auth.accessToken)).set('Idempotency-Key', randomUUID())
+      .send({ quoteId: quote.body.quoteId }).expect(201)
+
+    await prisma.rechargeOrder.update({
+      where: { id: created.body.orderId },
+      data: { adminSandbox: true },
+    })
+    await prisma.paymentAttempt.update({
+      where: { id: created.body.activeAttempt.id },
+      data: {
+        status: 'unknown',
+        providerPaymentId: 'sim_pay_missing_admin_worker',
+        updatedAt: new Date(Date.now() - 60_000),
+      },
+    })
+    resetSimulatorState()
+    config.isProductionDeploy = true
+
+    // Preserve the P0 signal for a simulator outside the approved exception.
+    config.recharge.mode = 'disabled'
+    await runPaymentWorkersOnce()
+    expect((await paymentSimulatorConfigured.get()).values[0]?.value).toBe(1)
+
+    config.recharge.mode = 'admin_sandbox'
+    config.recharge.adminSandboxEnabled = false
+    await runPaymentWorkersOnce()
+    expect((await paymentSimulatorConfigured.get()).values[0]?.value).toBe(1)
+
+    config.recharge.adminSandboxEnabled = true
+    for (let i = 0; i < PROVIDER_QUERY_CIRCUIT.failureThreshold; i += 1) {
+      expect(await recoverUnknownPayments()).toBe(0)
+    }
+    expect(isProviderCircuitOpen('simulator')).toBe(false)
+
+    await runPaymentWorkersOnce()
+    expect((await paymentSimulatorConfigured.get()).values[0]?.value).toBe(0)
+    const queryBacklog = (await paymentWorkerBacklog.get()).values
+      .find(value => value.labels.worker === 'query')
+    expect(queryBacklog?.value).toBe(0)
   })
 })
