@@ -8,7 +8,7 @@ import { applyConfirmedPayment } from '../events/applyConfirmedPayment.js'
 import { applyRefundObservation } from '../../recharge/refund.js'
 import { applyDisputeObservation } from '../disputes/service.js'
 import { encryptPaymentEventPayload } from '../payloadCrypto.js'
-import { recordWebhookSignatureFailure } from '../metrics.js'
+import { recordWebhookAckFailure, recordWebhookSignatureFailure } from '../metrics.js'
 import type { PaymentProviderName } from '../../recharge/types.js'
 import { serializeAmountMinor } from '../../recharge/money.js'
 
@@ -20,6 +20,7 @@ const WEBHOOK_ROUTES: ReadonlyArray<{ path: string; provider: PaymentProviderNam
   { path: '/paypal', provider: 'paypal' },
   { path: '/wechat-pay', provider: 'wechat_pay' },
   { path: '/alipay', provider: 'alipay' },
+  { path: '/vmqfox', provider: 'vmqfox' },
 ]
 
 function headerMap(req: Request): Record<string, string | string[] | undefined> {
@@ -33,7 +34,7 @@ function rawBody(req: Request): Buffer {
 }
 
 function ackSuccess(res: Response, provider: PaymentProviderName, extra?: Record<string, unknown>) {
-  if (provider === 'alipay') {
+  if (provider === 'alipay' || provider === 'vmqfox') {
     res.status(200).type('text/plain').send('success')
     return
   }
@@ -45,7 +46,8 @@ function ackSuccess(res: Response, provider: PaymentProviderName, extra?: Record
 }
 
 function ackFailure(res: Response, provider: PaymentProviderName, status: number, code: string, message: string) {
-  if (provider === 'alipay') {
+  recordWebhookAckFailure(provider)
+  if (provider === 'alipay' || provider === 'vmqfox') {
     res.status(status).type('text/plain').send('failure')
     return
   }
@@ -138,6 +140,11 @@ function handleProviderWebhook(providerName: PaymentProviderName) {
             amountMinor: serializeAmountMinor(payment.amountMinor),
             currency: payment.currency,
             immutableStateVersion: payment.immutableStateVersion,
+            ...(payment.quotedAmountMinor != null
+              ? { quotedAmountMinor: serializeAmountMinor(payment.quotedAmountMinor) }
+              : {}),
+            ...(payment.quotedOrderId ? { quotedOrderId: payment.quotedOrderId } : {}),
+            ...(payment.quotedPaymentMethod ? { quotedPaymentMethod: payment.quotedPaymentMethod } : {}),
           }
         : { eventType: event.eventType, providerEventId: event.providerEventId ?? null }
       const recorded = await recordPaymentObservation({
@@ -175,10 +182,26 @@ function handleProviderWebhook(providerName: PaymentProviderName) {
         })
       }
     } catch (err) {
+      if (res.headersSent) {
+        next(err)
+        return
+      }
       if (err instanceof HttpError && (err.code === 'PAYMENT_PROVIDER_UNAVAILABLE' || err.status === 503)) {
         ackFailure(res, providerName, 503, 'PAYMENT_PROVIDER_UNAVAILABLE', `${providerName} adapter is not mounted`)
         return
       }
+      // JSON 500 from the global errorHandler is not a VMQFox success ACK and
+      // causes merchant retries; count it. Text providers get a failure body.
+      if (providerName === 'alipay' || providerName === 'vmqfox') {
+        logger.warn({
+          event: 'payment.webhook_handler_failed',
+          provider: providerName,
+          err: err instanceof Error ? err.message : 'webhook_handler_failed',
+        }, 'webhook handler failed')
+        ackFailure(res, providerName, 500, 'WEBHOOK_HANDLER_FAILED', 'webhook handler failed')
+        return
+      }
+      recordWebhookAckFailure(providerName)
       next(err)
     }
   }

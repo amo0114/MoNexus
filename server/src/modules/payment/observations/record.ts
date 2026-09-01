@@ -3,7 +3,7 @@ import { Prisma } from '@prisma/client'
 import { prisma } from '../../../lib/prisma.js'
 import type { PaymentObservationSource, PaymentVerificationMethod } from '../../recharge/types.js'
 import { serializeAmountMinor } from '../../recharge/money.js'
-import { recordPaymentObservationMetric } from '../metrics.js'
+import { recordCallbackRetry, recordPaymentObservationMetric } from '../metrics.js'
 
 function isUniqueViolation(err: unknown): boolean {
   return err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002'
@@ -81,6 +81,7 @@ export async function recordPaymentObservation(
     return recordPaymentObservation(input, db)
   }
   recordPaymentObservationMetric(input.provider, input.source, 'duplicate')
+  if (input.source === 'webhook') recordCallbackRetry(input.provider)
   return { id: existing.id, created: false }
 }
 

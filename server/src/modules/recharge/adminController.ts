@@ -4,7 +4,9 @@ import type {
   PaymentDisputeStatus,
   PaymentEventStatus,
   PaymentProviderName,
+  RechargeCurrency,
   RechargeOrderStatus,
+  RechargePricePolicyStatus,
   ReconciliationScopeType,
 } from './types.js'
 
@@ -150,6 +152,35 @@ export async function closeRecoveryCase(req: Request, res: Response, next: NextF
       req.user!.userId,
       typeof req.body.resolutionReason === 'string' ? req.body.resolutionReason : undefined,
     ))
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function listPricePolicies(req: Request, res: Response, next: NextFunction) {
+  try {
+    const query = req.query as unknown as {
+      page: number
+      pageSize: number
+      currency?: RechargeCurrency
+      status?: RechargePricePolicyStatus
+      adminSandbox?: 'true' | 'false'
+    }
+    res.json(await adminService.adminListPricePolicies({
+      page: query.page,
+      pageSize: query.pageSize,
+      currency: query.currency,
+      status: query.status,
+      adminSandbox: query.adminSandbox === undefined ? undefined : query.adminSandbox === 'true',
+    }))
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function createPricePolicy(req: Request, res: Response, next: NextFunction) {
+  try {
+    res.status(201).json(await adminService.adminCreatePricePolicy(req.body, req.user!.userId))
   } catch (err) {
     next(err)
   }

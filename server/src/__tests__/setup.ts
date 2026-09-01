@@ -43,6 +43,7 @@ beforeEach(async () => {
     "Notification",
     "Settlement",
     "IdempotencyRecord",
+    "ExternalCatalogSyncIdempotency",
     "FakaBridgeTask",
     "FakaProvisionEmailSendBudget",
     "FakaProvisionEmailProof",

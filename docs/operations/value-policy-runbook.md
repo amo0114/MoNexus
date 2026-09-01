@@ -33,7 +33,9 @@ draft -> approved -> scheduled -> active -> retired
 ```
 
 Use the restricted admin + current-MFA routes under
-`/api/admin/value-policies`. There is no unauthenticated or public write API.
+`/api/admin/value-policies`, which delegate to the internal service in
+`server/src/modules/valuePolicy/governance.ts`. There is no unauthenticated
+or public write/activation API.
 
 Rules:
 
@@ -46,18 +48,21 @@ Rules:
 - Dual-control human approval is enforced by lifecycle actor columns and the
   database (`createdByUserId != approvedByUserId`). Staging actors must be real
   active admin users with current MFA; never invent production user IDs.
+- The actor/evidence implementation is present, but production use remains
+  blocked by D-02/D-03; staging actors must be real active admin users with
+  current MFA and must never be treated as production approval.
 
 ## 3. D-02 / D-03 gates
 
 | Gate | Meaning | Current state |
 | --- | --- | --- |
-| D-02 | Production face value | Owner directive approved `100 PTS = 1 CNY` under a prelaunch no-representative-data exception. Production enforce is not authorized. |
-| D-03 | Production disclosure copy | Owner directive approved exact `zh-CN-v1`; see `value-policy-decision-records.md`. |
+| D-02 | Production face value | Not approved. `100 PTS = 1 CNY` is a test fixture only. |
+| D-03 | Production disclosure copy | Not approved. API may reserve a field; do not ship user-facing copy. |
 
 Do not create a production active policy. Do not switch production off of
 `off`.
 
-## 4. Data backtest before production enforce
+## 4. Data backtest before any production face-value decision or enforce
 
 Replay real (or desensitized) offer prices through
 `convertPointsToReferenceAtomic` with the candidate ratio. Record:
@@ -67,8 +72,8 @@ Replay real (or desensitized) offer prices through
 - reward-budget impact
 
 The initial owner directive does not turn synthetic data into evidence. A
-representative-data report and superseding decision record are mandatory before
-production enforce. The report itself is not an activation.
+representative-data report and superseding decision record are mandatory input
+to D-02 before production enforce. The report itself is not an activation.
 
 ## 5. Metrics and alerts
 

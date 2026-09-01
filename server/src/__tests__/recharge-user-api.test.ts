@@ -13,6 +13,7 @@ import {
 import {
   getSimulatorQueryCount,
   resetSimulatorState,
+  setSimulatorCreateAmountDelta,
 } from '../modules/payment/providers/simulator/index.js'
 import { api, authHeader, createTestUser, loginAs } from './helpers.js'
 
@@ -151,6 +152,8 @@ describe('recharge user API', () => {
     expect(replay.body.orderId).toBe(first.body.orderId)
     expect(await prisma.rechargeOrder.count()).toBe(1)
     expect(first.body.amountMinor).toBe('1000')
+    expect(first.body.payableAmountMinor).toBe('1000')
+    expect(first.body.totalPoints).toBe('1000')
     expect(first.body.paidAt).toBeNull()
     expect(first.body.creditedAt).toBeNull()
   })
@@ -400,9 +403,33 @@ describe('recharge user API', () => {
         status: 'created',
         requestIdempotencyKey: `recharge:${order.body.orderId}:attempt:extra`,
         actionType: 'none',
+        expectedProviderAmountMinor: 1000n,
       },
     })).rejects.toThrow()
     expect(await prisma.paymentAttempt.count({ where: { paymentIntentId: intent.id } })).toBe(1)
+  })
+
+  it('keeps providerPaymentId and reconcile_required when create returns a non-positive amount', async () => {
+    await seedCnyPolicy()
+    const { accessToken } = await loginUser('recharge-illegal-payable@test.local')
+    const quote = await api.post('/api/recharge/quotes').set(authHeader(accessToken)).send({
+      currency: 'CNY', amountMinor: '1000', amountSource: 'custom', provider: 'simulator', paymentMethod: 'redirect',
+    }).expect(201)
+    setSimulatorCreateAmountDelta(-1000n)
+    const res = await api.post('/api/recharge/orders').set(authHeader(accessToken)).set('Idempotency-Key', randomUUID())
+      .send({ quoteId: quote.body.quoteId })
+    expect(res.status).toBe(409)
+    expect(res.body.error.code).toBe('PAYMENT_STATE_UNKNOWN')
+    const stored = await prisma.rechargeOrder.findFirstOrThrow({
+      where: { quoteId: quote.body.quoteId },
+      include: { paymentIntent: { include: { attempts: true } } },
+    })
+    expect(stored.status).toBe('reconcile_required')
+    expect(stored.amountMinor).toBe(1000n)
+    const attempt = stored.paymentIntent!.attempts[0]!
+    expect(attempt.status).toBe('unknown')
+    expect(attempt.providerPaymentId).toBeTruthy()
+    expect(attempt.expectedProviderAmountMinor).toBe(1000n)
   })
 
   it('does not register simulator control endpoints on a production deploy', async () => {

@@ -13,6 +13,8 @@ import {
   systemConfigKeyParamSchema, updateSystemConfigSchema,
   createAnnouncementSchema, updateAnnouncementSchema, listAnnouncementsQuerySchema,
   setFakaCapacitySchema, previewFakaPlanSchema, importFakaPlanSchema, addFakaOffersSchema,
+  listAdminProductsQuerySchema, archiveProductSchema, adminOfferPatchSchema,
+  rebindOfferSkuSchema, confirmFakaSyncSchema,
   listFakaTasksQuerySchema,
   mailDeliveryTestSchema,
   abuseOverviewQuerySchema,
@@ -120,13 +122,52 @@ router.get('/users', validate({ query: listUsersQuerySchema }), controller.users
 router.post('/users/:id/adjust', validate({ params: idParamSchema, body: adjustPointsSchema }), controller.adjustPoints)
 router.put('/users/:id/ban', validate({ params: idParamSchema, body: banUserSchema }), controller.banUser)
 router.put('/users/:id/unban', validate({ params: idParamSchema }), controller.unbanUser)
-router.get('/products', controller.products)
+router.get('/products', validate({ query: listAdminProductsQuerySchema }), controller.products)
 router.post('/products', validate(createProductSchema), controller.createProduct)
 router.put('/products/:id', validate({ params: idParamSchema, body: updateProductSchema }), controller.updateProduct)
 router.get('/products/:id/readiness', validate({ params: idParamSchema }), controller.productReadiness)
 router.post('/products/:id/publish', validate({ params: idParamSchema }), controller.publishProduct)
 router.post('/products/:id/unpublish', validate({ params: idParamSchema }), controller.unpublishProduct)
+router.post('/products/:id/archive', validate({ params: idParamSchema, body: archiveProductSchema }), controller.archiveProduct)
+router.post('/products/:id/restore', validate({ params: idParamSchema }), controller.restoreProduct)
+router.delete('/products/:id/purge', validate({ params: idParamSchema }), controller.purgeProduct)
 router.delete('/products/:id', validate({ params: idParamSchema }), controller.deleteProduct)
+router.patch(
+  '/products/:id/offers/:offerId',
+  validate({ params: adminOfferParamSchema, body: adminOfferPatchSchema }),
+  controller.patchOffer,
+)
+router.post(
+  '/products/:id/offers/:offerId/archive',
+  validate({ params: adminOfferParamSchema }),
+  controller.archiveOffer,
+)
+router.post(
+  '/products/:id/offers/:offerId/restore',
+  validate({ params: adminOfferParamSchema }),
+  controller.restoreOffer,
+)
+router.post(
+  '/products/:id/offers/:offerId/make-default',
+  validate({ params: adminOfferParamSchema }),
+  controller.makeDefaultOffer,
+)
+router.post(
+  '/products/:id/offers/:offerId/rebind-sku/preview',
+  validate({ params: adminOfferParamSchema, body: rebindOfferSkuSchema }),
+  controller.previewRebindOfferSku,
+)
+router.post(
+  '/products/:id/offers/:offerId/rebind-sku',
+  validate({ params: adminOfferParamSchema, body: rebindOfferSkuSchema }),
+  controller.rebindOfferSku,
+)
+router.post('/products/:id/faka-sync/preview', validate({ params: idParamSchema }), controller.previewFakaSync)
+router.post(
+  '/products/:id/faka-sync',
+  validate({ params: idParamSchema, body: confirmFakaSyncSchema }),
+  controller.confirmFakaSync,
+)
 router.post('/products/:id/inventory', validate({ params: idParamSchema, body: importInventorySchema }), controller.importInventory)
 // T-CAT-BE-004（D-CAT-15）：管理员库存先 preview → confirm，与商家共用领域分析器。
 router.post('/products/:id/inventory/preview', validate({ params: idParamSchema, body: previewInventorySchema }), controller.previewInventory)

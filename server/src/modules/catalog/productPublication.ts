@@ -50,12 +50,19 @@ function notReadyError(readiness: ProductReadinessResult): HttpError {
  */
 export async function publishProduct(productId: number): Promise<PublishOutcome> {
   const outcome = await prisma.$transaction(async tx => {
+    const product = await tx.product.findUniqueOrThrow({ where: { id: productId } })
+    if (product.archivedAt) {
+      throw new HttpError(
+        409,
+        CATALOG_ERROR_CODES.PRODUCT_ARCHIVED as ErrorCode,
+        '商品已归档，请先恢复后再发布',
+      )
+    }
+
     const readiness = await checkProductReadiness(productId, tx)
     if (!readiness.ready) {
       throw notReadyError(readiness)
     }
-
-    const product = await tx.product.findUniqueOrThrow({ where: { id: productId } })
     if (product.status === PRODUCT_STATUS.ACTIVE) {
       return { product, changed: false, isFirstPublish: readiness.isFirstPublish, readiness: null }
     }
@@ -63,9 +70,11 @@ export async function publishProduct(productId: number): Promise<PublishOutcome>
       throw badRequest('商品当前状态不可发布')
     }
 
-    // Status CAS: only the exact status we read may transition to active.
+    // Status CAS: only the exact status we read may transition to active,
+    // and only while the product is not archived. Concurrent archive must
+    // not be revived by a republish that already passed the sequential check.
     const cas = await tx.product.updateMany({
-      where: { id: productId, status: product.status },
+      where: { id: productId, status: product.status, archivedAt: null },
       data: {
         status: PRODUCT_STATUS.ACTIVE,
         // First publish writes publishedAt; republish keeps the original.
@@ -74,8 +83,14 @@ export async function publishProduct(productId: number): Promise<PublishOutcome>
     })
 
     if (cas.count !== 1) {
-      // Concurrent publish raced us — re-read and settle idempotently.
       const fresh = await tx.product.findUniqueOrThrow({ where: { id: productId } })
+      if (fresh.archivedAt) {
+        throw new HttpError(
+          409,
+          CATALOG_ERROR_CODES.PRODUCT_ARCHIVED as ErrorCode,
+          '商品已归档，请先恢复后再发布',
+        )
+      }
       if (fresh.status === PRODUCT_STATUS.ACTIVE) {
         return {
           product: fresh,

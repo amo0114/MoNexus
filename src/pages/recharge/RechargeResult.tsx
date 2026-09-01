@@ -9,6 +9,7 @@ import { getApiErrorCode, getApiErrorMessage } from '../../api/error'
 import { useAuthStore } from '../../stores/authStore'
 import EmptyState from '../../components/ui/EmptyState'
 import { formatCurrencyAmount, formatPoints } from './money'
+import { buildPayableRecognitionNotice } from './payableCopy'
 import {
   isConfirmingOrderStatus,
   isTerminalOrderStatus,
@@ -197,6 +198,7 @@ export default function RechargeResult({
   const adminSandboxPending = order.adminSandbox && !isTerminalOrderStatus(order.status)
   const waiting = !order.adminSandbox && !resumePayment && (order.status === 'created' || order.status === 'pending_payment')
   const confirming = !order.adminSandbox && isConfirmingOrderStatus(shownStatus)
+  const payableNotice = buildPayableRecognitionNotice(order)
 
   return (
     <div className="card space-y-5" data-testid="recharge-result">
@@ -205,10 +207,22 @@ export default function RechargeResult({
         <StatusPill status={shownStatus} />
       </div>
 
+      {payableNotice && (
+        <div
+          className="rounded-lg border-2 border-[var(--color-warning)] bg-[var(--color-warning)]/10 p-4 space-y-1"
+          data-testid="recharge-payable-notice"
+        >
+          <p className="font-heading font-bold text-[var(--color-text)]">{payableNotice.headline}</p>
+          <p className="text-sm text-[var(--color-text-muted)]">{payableNotice.detail}</p>
+        </div>
+      )}
+
       <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] p-4 space-y-2">
         <div className="flex justify-between gap-3 text-sm">
           <span className="text-[var(--color-text-muted)]">支付金额</span>
-          <span className="font-bold whitespace-nowrap">{formatCurrencyAmount(order.amountMinor, order.currency)}</span>
+          <span className="font-bold whitespace-nowrap">
+            {formatCurrencyAmount(order.payableAmountMinor, order.currency)}
+          </span>
         </div>
         <div className="flex justify-between gap-3 text-sm">
           <span className="text-[var(--color-text-muted)]">获得积分</span>

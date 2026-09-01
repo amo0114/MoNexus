@@ -58,6 +58,23 @@ import {
   type NormalizedFakaSource,
 } from '../catalog/externalCatalog.js'
 import { checkProductReadiness } from '../catalog/publicationReadiness.js'
+import { sanitizeCatalogRichContent } from '../catalog/contentSanitizer.js'
+import { previewAdminFakaSync, confirmAdminFakaSync } from '../catalog/fakaSync.js'
+import {
+  archiveAdminProduct,
+  restoreAdminProduct,
+  purgeAdminProduct,
+  archivedWhere,
+  type ArchivedFilter,
+} from './productLifecycle.js'
+import {
+  patchAdminOffer,
+  archiveAdminOffer,
+  restoreAdminOffer,
+  makeDefaultAdminOffer,
+  previewRebindAdminOfferSku,
+  rebindAdminOfferSku,
+} from './offerAdmin.js'
 import {
   publishProduct as publishCatalogProduct,
   unpublishProduct as unpublishCatalogProduct,
@@ -449,6 +466,9 @@ export async function updateProduct(adminUserId: number, id: number, data: Updat
     )
 
     const normalizedProductData = normalizeProductImageFields(data, product.images)
+    if ('richDescription' in normalizedProductData && typeof normalizedProductData.richDescription === 'string') {
+      normalizedProductData.richDescription = sanitizeCatalogRichContent(normalizedProductData.richDescription) ?? ''
+    }
     const deliveryMode = normalizedProductData.deliveryMode ?? product.deliveryMode
     if (deliveryMode !== product.deliveryMode) {
       const [inventoryCount, orderCount] = await Promise.all([
@@ -495,37 +515,26 @@ export async function updateProduct(adminUserId: number, id: number, data: Updat
     })
 
     const {
-      externalIntegration: _updateEi,
-      externalSku: _updateEs,
+      categoryId: incomingCategoryId,
       ...productUpdateFields
     } = normalizedProductData as typeof normalizedProductData & {
-      externalIntegration?: string | null
-      externalSku?: string | null
+      categoryId?: number
     }
 
-    const fakaFieldsTouched = 'externalIntegration' in data || 'externalSku' in data
+    const categoryPatch = incomingCategoryId != null
+      ? await resolveProductCategory({ categoryId: incomingCategoryId }, tx)
+      : null
+
     const defaultOfferForFaka = await getDefaultOffer(tx, id)
-    const fakaUpdate = fakaFieldsTouched || defaultOfferForFaka.externalIntegration != null
+    // SKU rebind is a separate dangerous op; ordinary PUT cannot change it.
+    const fakaUpdate = defaultOfferForFaka.externalIntegration != null
       ? normalizeFakaOfferIntegration(
           {
-            externalIntegration: fakaFieldsTouched
-              ? ('externalIntegration' in data
-                  ? data.externalIntegration
-                  : defaultOfferForFaka.externalIntegration)
-              : defaultOfferForFaka.externalIntegration,
-            externalSku: fakaFieldsTouched
-              ? ('externalSku' in data ? data.externalSku : defaultOfferForFaka.externalSku)
-              : defaultOfferForFaka.externalSku,
+            externalIntegration: defaultOfferForFaka.externalIntegration,
+            externalSku: defaultOfferForFaka.externalSku,
             deliveryMode,
           },
-          {
-            requireConfigured:
-              (fakaFieldsTouched
-                ? ('externalIntegration' in data
-                    ? data.externalIntegration
-                    : defaultOfferForFaka.externalIntegration)
-                : defaultOfferForFaka.externalIntegration) === 'faka_bridge',
-          }
+          { requireConfigured: defaultOfferForFaka.externalIntegration === 'faka_bridge' },
         )
       : null
 
@@ -535,6 +544,9 @@ export async function updateProduct(adminUserId: number, id: number, data: Updat
         ...productUpdateFields,
         deliveryMode,
         stockMode,
+        ...(categoryPatch
+          ? { categoryId: categoryPatch.categoryId, type: categoryPatch.type }
+          : {}),
         ...(deliveryMode === 'instant_inventory' && product.deliveryMode !== 'instant_inventory'
           ? { stock: 0 }
           : {}),
@@ -1266,8 +1278,9 @@ export async function batchSettle(adminUserId: number, settlementIds: number[]) 
   })
 }
 
-export async function listAdminProducts() {
+export async function listAdminProducts(archived: ArchivedFilter = 'exclude') {
   const products = await prisma.product.findMany({
+    where: archivedWhere(archived),
     include: {
       _count: {
         select: { inventory: { where: { status: 'available' } } },
@@ -1288,6 +1301,9 @@ export async function listAdminProducts() {
           stockMode: true,
           stock: true,
           price: true,
+          originalPrice: true,
+          validityDays: true,
+          sortOrder: true,
         },
         orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
       },
@@ -1405,69 +1421,24 @@ export async function setAdminFakaCapacity(
 
 /** Admin-only: list Xboard plans for import. */
 /**
- * Admin delete product:
- * - No orders → hard delete offers + product
- * - Has orders → soft delete (status=inactive); historical orders kept
+ * Compatibility delete: always archives. Permanent delete is DELETE .../purge.
  */
 export async function deleteAdminProduct(adminUserId: number, productId: number) {
-  const product = await prisma.product.findUnique({
-    where: { id: productId },
-    select: { id: true, name: true, status: true },
-  })
-  if (!product) throw notFound('商品不存在')
+  return archiveAdminProduct(adminUserId, productId, { reason: '兼容删除入口' })
+}
 
-  const orderCount = await prisma.order.count({ where: { productId } })
-
-  if (orderCount > 0) {
-    if (product.status === 'inactive') {
-      throw badRequest('商品已下架，且存在历史订单，无法物理删除')
-    }
-    const updated = await prisma.$transaction(async tx => {
-      const row = await tx.product.update({
-        where: { id: productId },
-        data: { status: 'inactive' },
-      })
-      await tx.offer.updateMany({
-        where: { productId },
-        data: { status: 'inactive' },
-      })
-      await tx.adminLog.create({
-        data: {
-          adminUserId,
-          action: '下架商品',
-          targetType: 'product',
-          targetId: productId,
-          detail: JSON.stringify({
-            reason: '存在历史订单，仅下架',
-            orderCount,
-            name: product.name,
-          }),
-        },
-      })
-      return row
-    })
-    await invalidateProductPublicCache(productId, { list: true, detail: true })
-    return { mode: 'soft' as const, productId, orderCount, status: updated.status }
-  }
-
-  // No orders: hard delete. Clear inventory/logs then offers then product.
-  await prisma.$transaction(async tx => {
-    await tx.inventoryItem.deleteMany({ where: { productId } })
-    await tx.inventoryLog.deleteMany({ where: { productId } })
-    await tx.offer.deleteMany({ where: { productId } })
-    await tx.product.delete({ where: { id: productId } })
-    await tx.adminLog.create({
-      data: {
-        adminUserId,
-        action: '删除商品',
-        targetType: 'product',
-        targetId: productId,
-        detail: JSON.stringify({ name: product.name, mode: 'hard' }),
-      },
-    })
-  })
-  await invalidateProductPublicCache(productId, { list: true, detail: true })
-  return { mode: 'hard' as const, productId, orderCount: 0 }
+export {
+  archiveAdminProduct,
+  restoreAdminProduct,
+  purgeAdminProduct,
+  patchAdminOffer,
+  archiveAdminOffer,
+  restoreAdminOffer,
+  makeDefaultAdminOffer,
+  previewRebindAdminOfferSku,
+  rebindAdminOfferSku,
+  previewAdminFakaSync,
+  confirmAdminFakaSync,
 }
 
 export async function listAdminFakaCatalog() {
@@ -1685,10 +1656,19 @@ async function analyzeAdminFakaImport(
         externalProductId: String(input.planId),
       },
     },
-    select: { productId: true },
+    select: { productId: true, product: { select: { archivedAt: true } } },
   })
   if (linked) {
-    issues.push({ code: 'PLAN_ALREADY_IMPORTED', field: 'planId', message: `该套餐已关联商品 ${linked.productId}` })
+    if (linked.product.archivedAt) {
+      issues.push({
+        code: 'PLAN_ARCHIVED',
+        field: 'planId',
+        message: `该套餐已关联已归档商品 ${linked.productId}`,
+        action: 'restore_product',
+      })
+    } else {
+      issues.push({ code: 'PLAN_ALREADY_IMPORTED', field: 'planId', message: `该套餐已关联商品 ${linked.productId}` })
+    }
   }
 
   let cover: { imageUrl: string; images: string[] } | null = null
@@ -1717,6 +1697,7 @@ async function analyzeAdminFakaImport(
   }
   const productName = request.productName || source.name || `Xboard 套餐 #${input.planId}`
   const plainDescription = source.plainDescription || `${productName} · 含 ${offers.map(row => row.offerName).join(' / ')} 等规格`
+  const archivedLink = linked?.product.archivedAt ? linked : null
   return {
     sourceHash: source.sourceHash,
     capacity: source.capacity,
@@ -1727,6 +1708,9 @@ async function analyzeAdminFakaImport(
     offers,
     issues,
     canConfirm: issues.length === 0 && cover !== null && offers.length > 0,
+    existingProductId: linked?.productId ?? null,
+    archived: Boolean(archivedLink),
+    suggestedActions: archivedLink ? ['restore_product', 'sync'] : [],
   }
 }
 
@@ -1769,9 +1753,16 @@ export async function importAdminFakaPlan(
         externalProductId: String(input.planId),
       },
     },
-    select: { productId: true },
+    select: { productId: true, product: { select: { archivedAt: true } } },
   })
   if (existingByPlan) {
+    if (existingByPlan.product.archivedAt) {
+      throw new HttpError(409, CATALOG_ERROR_CODES.PRODUCT_ARCHIVED as ErrorCode, '该 Xboard 套餐已导入且商品已归档', [
+        { field: 'existingProductId', message: String(existingByPlan.productId) },
+        { field: 'archived', message: 'true' },
+        { field: 'action', message: 'restore_product' },
+      ])
+    }
     throw new HttpError(409, 'CONFLICT', '该 Xboard 套餐已导入', [
       { field: 'existingProductId', message: String(existingByPlan.productId) },
     ])

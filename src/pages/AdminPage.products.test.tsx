@@ -8,6 +8,8 @@ const mocks = vi.hoisted(() => ({
   readiness: vi.fn(),
   publish: vi.fn(),
   unpublish: vi.fn(),
+  archive: vi.fn(),
+  restore: vi.fn(),
 }))
 
 vi.mock('../components/merchandising/AdminMerchandisingPage', () => ({
@@ -69,6 +71,8 @@ vi.mock('../api/admin', async () => {
     getAdminProductReadiness: mocks.readiness,
     publishAdminProduct: mocks.publish,
     unpublishAdminProduct: mocks.unpublish,
+    archiveAdminProduct: mocks.archive,
+    restoreAdminProduct: mocks.restore,
   }
 })
 
@@ -136,6 +140,8 @@ describe('AdminPage product publication workflow (T-APUB-004/005)', () => {
     mocks.readiness.mockResolvedValue({ ready: true, productId: 11, issues: [] })
     mocks.publish.mockResolvedValue({ id: 11, status: 'active', publishedAt: '2026-08-17T00:00:00.000Z' })
     mocks.unpublish.mockResolvedValue({ id: 12, status: 'inactive', publishedAt: '2026-08-17T00:00:00.000Z' })
+    mocks.archive.mockResolvedValue({ mode: 'archived', productId: 12, status: 'inactive', archivedAt: '2026-09-01T00:00:00.000Z' })
+    mocks.restore.mockResolvedValue({ productId: 12, status: 'inactive', archivedAt: null })
     vi.spyOn(window, 'confirm').mockReset()
   })
 
@@ -155,6 +161,18 @@ describe('AdminPage product publication workflow (T-APUB-004/005)', () => {
     expect(screen.queryByTestId('admin-product-publish-14')).not.toBeInTheDocument()
     expect(screen.queryByTestId('admin-product-unpublish-14')).not.toBeInTheDocument()
     expect(screen.queryByTestId('admin-product-relist-14')).not.toBeInTheDocument()
+    expect(screen.getByTestId('admin-edit-product-11')).toHaveTextContent('编辑')
+    expect(screen.getByTestId('admin-archive-product-11')).toHaveTextContent('归档')
+    expect(screen.queryByTestId('admin-delete-product-11')).not.toBeInTheDocument()
+  })
+
+  it('archives from the product row and does not call delete', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    mocks.getProducts.mockResolvedValueOnce(products).mockResolvedValueOnce(products.filter((item) => item.id !== 12))
+    await openProducts()
+    fireEvent.click(screen.getByTestId('admin-archive-product-12'))
+    await waitFor(() => expect(mocks.archive).toHaveBeenCalledWith(12))
+    expect(useAppStore.getState().toasts.some((toast) => toast.message.includes('已归档'))).toBe(true)
   })
 
   it('opens readiness for a platform draft and reloads after publish (AC-APUB-005/006/011)', async () => {

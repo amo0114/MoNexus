@@ -145,6 +145,7 @@ describe('Alipay form_post signing and action contract', () => {
       returnUrl: 'https://shop.example.com/recharge/return',
     })
     expect(created.action.type).toBe('form_post')
+    expect(created.amountMinor).toBe(101n)
     if (created.action.type !== 'form_post') throw new Error('expected form_post')
     expect(created.action.actionUrl).toBe(ALIPAY_LIVE_GATEWAY)
     expect(created.action.method).toBe('POST')

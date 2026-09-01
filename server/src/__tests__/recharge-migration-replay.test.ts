@@ -11,10 +11,14 @@ const UPGRADE_DB = 'monexus_test_recharge_a_upgrade'
 const FOUNDATION_MIGRATION = '20260819120000_recharge_payment_foundation'
 const ADMIN_SANDBOX_MIGRATION = '20260823183000_admin_sandbox_payment'
 const ADMIN_SANDBOX_POLICY_MIGRATION = '20260823204000_admin_sandbox_price_policy'
+const EXPECTED_PROVIDER_AMOUNT_MIGRATION = '20260901120000_payment_attempt_expected_provider_amount'
+const QUOTED_AMOUNT_MIGRATION = '20260901121000_reconciliation_item_quoted_amount'
 const NEW_MIGRATIONS = [
   FOUNDATION_MIGRATION,
   ADMIN_SANDBOX_MIGRATION,
   ADMIN_SANDBOX_POLICY_MIGRATION,
+  EXPECTED_PROVIDER_AMOUNT_MIGRATION,
+  QUOTED_AMOUNT_MIGRATION,
 ] as const
 const SERVER_ROOT = path.resolve(__dirname, '../..')
 const created: string[] = []
@@ -80,6 +84,8 @@ describe('recharge foundation migration replay', () => {
     expect(result.stdout + result.stderr).toMatch(new RegExp(FOUNDATION_MIGRATION))
     expect(result.stdout + result.stderr).toMatch(new RegExp(ADMIN_SANDBOX_MIGRATION))
     expect(result.stdout + result.stderr).toMatch(new RegExp(ADMIN_SANDBOX_POLICY_MIGRATION))
+    expect(result.stdout + result.stderr).toMatch(new RegExp(EXPECTED_PROVIDER_AMOUNT_MIGRATION))
+    expect(result.stdout + result.stderr).toMatch(new RegExp(QUOTED_AMOUNT_MIGRATION))
 
     const client = new Client({ connectionString: dbUrl(EMPTY_DB) })
     await client.connect()
@@ -89,9 +95,18 @@ describe('recharge foundation migration replay', () => {
     const check = await client.query<{ conname: string }>(
       `SELECT conname FROM pg_constraint WHERE conname = 'point_account_hard_cap_2000000000'`,
     )
+    const expectedAmount = await client.query<{ conname: string }>(
+      `SELECT conname FROM pg_constraint WHERE conname = 'PaymentAttempt_expectedProviderAmountMinor_check'`,
+    )
+    const expectedCol = await client.query<{ is_nullable: string }>(
+      `SELECT is_nullable FROM information_schema.columns
+       WHERE table_name = 'PaymentAttempt' AND column_name = 'expectedProviderAmountMinor'`,
+    )
     await client.end()
     expect(tables.rowCount).toBe(1)
     expect(check.rowCount).toBe(1)
+    expect(expectedAmount.rowCount).toBe(1)
+    expect(expectedCol.rows[0]?.is_nullable).toBe('NO')
   }, 180_000)
 
   it('applies the foundation migration on top of the latest develop schema', async () => {
@@ -102,6 +117,8 @@ describe('recharge foundation migration replay', () => {
     expect(historical.stdout + historical.stderr).not.toMatch(new RegExp(FOUNDATION_MIGRATION))
     expect(historical.stdout + historical.stderr).not.toMatch(new RegExp(ADMIN_SANDBOX_MIGRATION))
     expect(historical.stdout + historical.stderr).not.toMatch(new RegExp(ADMIN_SANDBOX_POLICY_MIGRATION))
+    expect(historical.stdout + historical.stderr).not.toMatch(new RegExp(EXPECTED_PROVIDER_AMOUNT_MIGRATION))
+    expect(historical.stdout + historical.stderr).not.toMatch(new RegExp(QUOTED_AMOUNT_MIGRATION))
 
     const clientBefore = new Client({ connectionString: dbUrl(UPGRADE_DB) })
     await clientBefore.connect()
@@ -117,6 +134,8 @@ describe('recharge foundation migration replay', () => {
     expect(upgraded.stdout + upgraded.stderr).toMatch(new RegExp(FOUNDATION_MIGRATION))
     expect(upgraded.stdout + upgraded.stderr).toMatch(new RegExp(ADMIN_SANDBOX_MIGRATION))
     expect(upgraded.stdout + upgraded.stderr).toMatch(new RegExp(ADMIN_SANDBOX_POLICY_MIGRATION))
+    expect(upgraded.stdout + upgraded.stderr).toMatch(new RegExp(EXPECTED_PROVIDER_AMOUNT_MIGRATION))
+    expect(upgraded.stdout + upgraded.stderr).toMatch(new RegExp(QUOTED_AMOUNT_MIGRATION))
 
     const client = new Client({ connectionString: dbUrl(UPGRADE_DB) })
     await client.connect()
@@ -126,8 +145,23 @@ describe('recharge foundation migration replay', () => {
     const check = await client.query(
       `SELECT conname FROM pg_constraint WHERE conname = 'point_account_hard_cap_2000000000'`,
     )
+    const expectedAmount = await client.query(
+      `SELECT conname FROM pg_constraint WHERE conname = 'PaymentAttempt_expectedProviderAmountMinor_check'`,
+    )
+    const expectedCol = await client.query<{ is_nullable: string }>(
+      `SELECT is_nullable FROM information_schema.columns
+       WHERE table_name = 'PaymentAttempt' AND column_name = 'expectedProviderAmountMinor'`,
+    )
+    const quotedCol = await client.query<{ is_nullable: string }>(
+      `SELECT is_nullable FROM information_schema.columns
+       WHERE table_name = 'ReconciliationItem' AND column_name = 'quotedAmountMinor'`,
+    )
     await client.end()
     expect(after.rowCount).toBe(1)
     expect(check.rowCount).toBe(1)
+    expect(expectedAmount.rowCount).toBe(1)
+    expect(expectedCol.rows[0]?.is_nullable).toBe('NO')
+    expect(quotedCol.rowCount).toBe(1)
+    expect(quotedCol.rows[0]?.is_nullable).toBe('YES')
   }, 180_000)
 })

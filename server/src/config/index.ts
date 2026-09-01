@@ -361,6 +361,13 @@ const envSchema = z.object({
   ALIPAY_APP_ID: optionalStringEnvSchema,
   ALIPAY_GATEWAY_URL: optionalUrlEnvSchema,
   ALIPAY_PUBLIC_KEY: optionalStringEnvSchema,
+  VMQFOX_MODE: optionalStringEnvSchema,
+  VMQFOX_BASE_URL: optionalStringEnvSchema,
+  VMQFOX_ACCOUNT_KEY: optionalStringEnvSchema,
+  VMQFOX_MERCHANT_KEY: optionalStringEnvSchema,
+  VMQFOX_MAX_AMOUNT_MINOR: optionalStringEnvSchema,
+  VMQFOX_REQUEST_TIMEOUT_MS: optionalStringEnvSchema,
+  VMQFOX_PROTOCOL_VERSION: optionalStringEnvSchema,
 })
 
 const parsed = envSchema.safeParse(process.env)
@@ -635,6 +642,11 @@ const stripeMode = optionalProviderMode(env.STRIPE_MODE, ['test', 'live'], 'STRI
 const paypalMode = optionalProviderMode(env.PAYPAL_MODE, ['sandbox', 'live'], 'PAYPAL_MODE')
 const wechatPayMode = optionalProviderMode(env.WECHAT_PAY_MODE, ['disabled', 'live'], 'WECHAT_PAY_MODE')
 const alipayMode = optionalProviderMode(env.ALIPAY_MODE, ['sandbox', 'live'], 'ALIPAY_MODE')
+const vmqfoxMode = optionalProviderMode(env.VMQFOX_MODE, ['disabled', 'live'], 'VMQFOX_MODE')
+if (env.VMQFOX_PROTOCOL_VERSION && env.VMQFOX_PROTOCOL_VERSION !== '2') {
+  console.error('[Config] VMQFOX_PROTOCOL_VERSION must be 2')
+  process.exit(1)
+}
 
 const rechargeMode: RechargeMode = rechargeModeParsed
 const registeredProviders: PaymentProviderName[] = registeredProvidersParsed
@@ -682,6 +694,12 @@ const rechargeGate = evaluateRechargeConfigGates({
     secretOrKey: env.ALIPAY_APP_ID,
     webhookSecret: env.ALIPAY_PUBLIC_KEY,
     apiBaseUrl: env.ALIPAY_GATEWAY_URL,
+  },
+  vmqfox: {
+    mode: vmqfoxMode,
+    secretOrKey: env.VMQFOX_MERCHANT_KEY,
+    webhookSecret: env.VMQFOX_MERCHANT_KEY,
+    apiBaseUrl: env.VMQFOX_BASE_URL,
   },
 })
 if (!rechargeGate.ok) {

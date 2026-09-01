@@ -123,6 +123,7 @@ describe('paypal adapter contract', () => {
       returnUrl: 'https://shop.example.com/recharge/return',
     })
     expect(created.status).toBe('requires_action')
+    expect(created.amountMinor).toBe(PAYPAL_FIXTURE_AMOUNT_MINOR)
     expect(created.action.type).toBe('redirect')
     if (created.action.type === 'redirect') {
       expect(created.action.url).toBe(`https://www.sandbox.paypal.com/checkoutnow?token=${PAYPAL_FIXTURE_ORDER_ID}`)
@@ -530,6 +531,7 @@ describe('paypal adapter contract', () => {
       paymentMethod: 'redirect',
     })
     expect(caps.supportsBuyerApprovalCapture).toBe(true)
+    expect(caps.supportsRefunds).toBe(true)
     expect(caps.actionTypes).toEqual(['redirect'])
     expect(caps.minimumAmountMinor).toBe(100n)
     await expect(provider.getCapabilities({

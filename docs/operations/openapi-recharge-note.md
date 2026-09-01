@@ -26,6 +26,7 @@ Provider webhooks (raw body, no user session):
 - `POST /api/payment/webhooks/paypal`
 - `POST /api/payment/webhooks/wechat-pay`
 - `POST /api/payment/webhooks/alipay`
+- `POST /api/payment/webhooks/vmqfox` (text/plain body exactly `success`; see `docs/operations/openapi-vmqfox-lifecycle-note.md`)
 - `POST /api/payment/webhooks/simulator` (not registered on production deploy)
 
 Admin (existing admin + MFA chain):
@@ -40,6 +41,8 @@ Admin (existing admin + MFA chain):
 - `POST /api/admin/payments/reconciliation-runs`
 - `POST /api/admin/payments/reconciliation-runs/{id}/rerun`
 - `GET /api/admin/payments/disputes`
+- `GET /api/admin/recharge/price-policies`
+- `POST /api/admin/recharge/price-policies`
 - `PATCH /api/admin/recharge/price-policies/{id}`
 - `POST /api/admin/recharge/price-policies/{id}/activate`
 
@@ -48,6 +51,9 @@ Admin lists omit raw payloads and payer identifiers. Repair actions write `Admin
 ## Amounts
 
 JSON money fields are decimal strings of minor units. JSON numbers are rejected.
+Order DTOs also expose `payableAmountMinor` (provider expected amount /
+`reallyPrice`). Credit still uses quoted `amountMinor`. See
+`docs/operations/openapi-vmqfox-lifecycle-note.md`.
 
 ## Playwright
 

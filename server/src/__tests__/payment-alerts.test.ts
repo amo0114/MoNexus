@@ -9,6 +9,7 @@ import {
   PAYMENT_ALERT_IDS,
   PAYMENT_ALERT_RULES_PATH,
   PAYMENT_RUNBOOK_PATH,
+  VMQFOX_RUNBOOK_PATH,
 } from '../modules/payment/alertContract.js'
 
 const REQUIRED_IDS = [
@@ -22,6 +23,8 @@ const REQUIRED_IDS = [
   'payment-refund-processing-stale',
   'payment-reconciliation-mismatch',
   'payment-simulator-on-production',
+  'payment-monitor-offline',
+  'payment-callback-retry-exhaustion',
 ] as const
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../..')
@@ -50,6 +53,21 @@ describe('payment alert contract', () => {
     expect(doc).toContain('does **not** deploy Alertmanager')
     expect(runbook).toContain('Closing recharge must not stop credit')
     expect(runbook).toContain('Provider circuit breaker')
+    const vmqfoxRunbook = readFileSync(resolve(repoRoot, VMQFOX_RUNBOOK_PATH), 'utf8')
+    expect(vmqfoxRunbook).toContain('Always registered, then enabled')
+    expect(vmqfoxRunbook).toContain('RECHARGE_ACCEPT_NEW_ORDERS=false')
+    expect(vmqfoxRunbook).toContain('Keep `VMQFOX_MODE=live`')
+    expect(vmqfoxRunbook).toContain('Do **not** set `VMQFOX_MODE=disabled` to stop')
+    expect(vmqfoxRunbook).not.toContain('unless the adapter is still historically registered')
+    expect(vmqfoxRunbook).toContain('supportsRefunds')
+    expect(vmqfoxRunbook).toContain('publicToken')
+    expect(vmqfoxRunbook).toContain('does **not** enable live recharge')
+    expect(vmqfoxRunbook).toContain('VMQFox cannot refund or dispute through the provider API')
+    expect(vmqfoxRunbook).toContain('Never enable automatic refunds')
+    expect(runbook).toContain('VMQFox exception')
+    const retryAlert = PAYMENT_ALERTS.find(alert => alert.id === 'payment-callback-retry-exhaustion')
+    expect(retryAlert?.expr).toBe('increase(payment_webhook_ack_failure_total[15m]) >= 5')
+    expect(retryAlert?.expr).not.toContain('payment_callback_retry_total')
   })
 
   it('validates the rules file with promtool when the binary exists', () => {
@@ -79,5 +97,7 @@ describe('payment alert contract', () => {
     )
     expect(deployEntrypoint).toContain('MoNexusPaidRechargeNotCredited')
     expect(deployEntrypoint).toContain('MoNexusSimulatorConfiguredOnProductionDeploy')
+    expect(deployEntrypoint).toContain('MoNexusPaymentCollectionCodeMonitorOffline')
+    expect(deployEntrypoint).toContain('MoNexusPaymentCallbackRetryExhaustion')
   })
 })

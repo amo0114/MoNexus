@@ -263,6 +263,32 @@ describe('evaluateRechargeConfigGates isolation', () => {
     if (!result.ok) expect(result.message).toMatch(/webhook verify secret/)
   })
 
+  it('rejects enabled vmqfox without a merchant HMAC key', () => {
+    const result = evaluateRechargeConfigGates(baseInput({
+      registeredProviders: ['vmqfox'],
+      enabledProviders: ['vmqfox'],
+      vmqfox: { mode: 'live', apiBaseUrl: 'https://pay.snowvictor.com' },
+    }))
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.message).toMatch(/VMQFOX_MERCHANT_KEY/)
+  })
+
+  it('rejects live vmqfox on a non-allowlisted origin when recharge is live', () => {
+    const result = evaluateRechargeConfigGates(baseInput({
+      rechargeMode: 'live',
+      hasEventEncryptionKey: true,
+      registeredProviders: ['vmqfox'],
+      enabledProviders: ['vmqfox'],
+      vmqfox: {
+        mode: 'live',
+        webhookSecret: 'merchant-hmac-key',
+        apiBaseUrl: 'https://evil.example',
+      },
+    }))
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.message).toMatch(/allowlisted/)
+  })
+
   it('allows a registered historical provider after it is removed from enabled', () => {
     const result = evaluateRechargeConfigGates(baseInput({
       rechargeMode: 'sandbox',

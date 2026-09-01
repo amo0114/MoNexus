@@ -6,11 +6,13 @@ const {
   listAdminPaymentEvents,
   listAdminPaymentDisputes,
   listAdminReconRuns,
+  listAdminPricePolicies,
 } = vi.hoisted(() => ({
   listAdminRechargeOrders: vi.fn(),
   listAdminPaymentEvents: vi.fn(),
   listAdminPaymentDisputes: vi.fn(),
   listAdminReconRuns: vi.fn(),
+  listAdminPricePolicies: vi.fn(),
 }))
 
 vi.mock('../../../api/adminRecharge', () => ({
@@ -23,6 +25,29 @@ vi.mock('../../../api/adminRecharge', () => ({
   listAdminReconRuns,
   createAdminReconRun: vi.fn(),
   listAdminPaymentDisputes,
+  listAdminPricePolicies,
+  createAdminPricePolicy: vi.fn(),
+  activateAdminPricePolicy: vi.fn(),
+  RP_CNY_VMQFOX_V1_CREATE_EXAMPLE: {
+    code: 'rp-cny-vmqfox-v1',
+    currency: 'CNY',
+    currencyScale: 2,
+    pointsNumerator: '1',
+    pointsDenominator: '1',
+    roundingMode: 'HALF_EVEN',
+    minAmountMinor: '100',
+    maxAmountMinor: '100000',
+    amountStepMinor: '100',
+    dailyLimitMinor: '200000',
+    monthlyLimitMinor: '1000000',
+    limitTimeZone: 'Asia/Shanghai',
+    suggestedAmounts: [
+      { amountMinor: '1000', sortOrder: 1 },
+      { amountMinor: '3000', sortOrder: 2 },
+      { amountMinor: '5000', sortOrder: 3 },
+      { amountMinor: '10000', sortOrder: 4 },
+    ],
+  },
 }))
 
 import AdminRechargePage from './AdminRechargePage'
@@ -33,6 +58,7 @@ describe('AdminRechargePage', () => {
     listAdminPaymentEvents.mockResolvedValue({ page: 1, pageSize: 50, total: 0, items: [] })
     listAdminPaymentDisputes.mockResolvedValue({ page: 1, pageSize: 20, total: 0, items: [] })
     listAdminReconRuns.mockResolvedValue({ items: [] })
+    listAdminPricePolicies.mockResolvedValue({ page: 1, pageSize: 50, total: 0, items: [] })
   })
 
   it('hosts the five recharge/payment views from PR-C API statuses', async () => {
@@ -53,6 +79,10 @@ describe('AdminRechargePage', () => {
     fireEvent.click(screen.getByRole('tab', { name: '争议' }))
     expect(await screen.findByTestId('admin-payment-disputes')).toBeInTheDocument()
 
+    fireEvent.click(screen.getByRole('tab', { name: '价格政策' }))
+    expect(await screen.findByTestId('admin-price-policies')).toBeInTheDocument()
+    await waitFor(() => expect(listAdminPricePolicies).toHaveBeenCalledWith(expect.objectContaining({ adminSandbox: false })))
+
     fireEvent.click(screen.getByRole('tab', { name: '对账' }))
     expect(await screen.findByTestId('admin-reconciliation')).toBeInTheDocument()
     expect(screen.queryByText('webhook')).not.toBeInTheDocument()
@@ -66,6 +96,7 @@ describe('AdminRechargePage', () => {
       status: 'credited',
       currency: 'CNY',
       amountMinor: '1000',
+      payableAmountMinor: '1000',
       totalPoints: '1000',
       provider: 'simulator',
       paymentMethod: 'card',
@@ -77,6 +108,7 @@ describe('AdminRechargePage', () => {
       creditId: 'credit-1',
       refundId: 'refund-1',
       refundStatus: 'points_held',
+      supportsRefunds: true,
     }
     listAdminRechargeOrders.mockImplementation(async (query?: { status?: string }) => {
       if (query?.status === 'credited') {

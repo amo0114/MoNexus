@@ -101,6 +101,8 @@ export async function executeReconciliationRun(runId: string) {
           })
           : null
         const order = attempt?.paymentIntent.rechargeOrder
+        const expectedProviderAmountMinor = attempt?.expectedProviderAmountMinor ?? order?.amountMinor ?? null
+        const quotedAmountMinor = order?.amountMinor ?? null
         const providerPaid = entry.status === 'succeeded' || entry.status === 'paid'
         if (providerPaid && (!order || !['paid', 'credited', 'refund_pending', 'refunded'].includes(order.status))) {
           mismatchCount += 1
@@ -112,7 +114,8 @@ export async function executeReconciliationRun(runId: string) {
             providerStatus: entry.status,
             localStatus: order?.status ?? null,
             providerAmountMinor: entry.amountMinor,
-            localAmountMinor: order?.amountMinor ?? null,
+            localAmountMinor: expectedProviderAmountMinor,
+            quotedAmountMinor,
             currency: entry.currency,
           })
           if (attempt && providerPaid) {
@@ -141,7 +144,8 @@ export async function executeReconciliationRun(runId: string) {
             providerStatus: entry.status,
             localStatus: order.status,
             providerAmountMinor: entry.amountMinor,
-            localAmountMinor: order.amountMinor,
+            localAmountMinor: expectedProviderAmountMinor,
+            quotedAmountMinor,
             currency: entry.currency,
           })
         } else if (order && order.status === 'paid' && !order.creditedAt) {
@@ -154,10 +158,11 @@ export async function executeReconciliationRun(runId: string) {
             providerStatus: entry.status,
             localStatus: order.status,
             providerAmountMinor: entry.amountMinor,
-            localAmountMinor: order.amountMinor,
+            localAmountMinor: expectedProviderAmountMinor,
+            quotedAmountMinor,
             currency: entry.currency,
           })
-        } else if (order && entry.amountMinor !== order.amountMinor) {
+        } else if (order && expectedProviderAmountMinor != null && entry.amountMinor !== expectedProviderAmountMinor) {
           mismatchCount += 1
           await upsertItem(run.id, {
             providerEntryKey: entry.providerEntryKey,
@@ -167,7 +172,8 @@ export async function executeReconciliationRun(runId: string) {
             providerStatus: entry.status,
             localStatus: order.status,
             providerAmountMinor: entry.amountMinor,
-            localAmountMinor: order.amountMinor,
+            localAmountMinor: expectedProviderAmountMinor,
+            quotedAmountMinor,
             currency: entry.currency,
           })
         } else if (order && entry.currency !== order.currency) {
@@ -180,7 +186,8 @@ export async function executeReconciliationRun(runId: string) {
             providerStatus: entry.status,
             localStatus: order.status,
             providerAmountMinor: entry.amountMinor,
-            localAmountMinor: order.amountMinor,
+            localAmountMinor: expectedProviderAmountMinor,
+            quotedAmountMinor,
             currency: entry.currency,
           })
         }
@@ -203,6 +210,7 @@ export async function executeReconciliationRun(runId: string) {
         localStatus: order.status,
         providerAmountMinor: null,
         localAmountMinor: order.amountMinor,
+        quotedAmountMinor: order.amountMinor,
         currency: order.currency,
       })
     }
@@ -240,6 +248,7 @@ async function upsertItem(runId: string, item: {
   localStatus: string | null
   providerAmountMinor: bigint | null
   localAmountMinor: bigint | null
+  quotedAmountMinor?: bigint | null
   currency: string | null
 }) {
   await prisma.reconciliationItem.upsert({
@@ -253,6 +262,7 @@ async function upsertItem(runId: string, item: {
     create: {
       reconciliationRunId: runId,
       ...item,
+      quotedAmountMinor: item.quotedAmountMinor ?? null,
       status: 'open',
     },
     update: {
@@ -260,6 +270,7 @@ async function upsertItem(runId: string, item: {
       localStatus: item.localStatus,
       providerAmountMinor: item.providerAmountMinor,
       localAmountMinor: item.localAmountMinor,
+      quotedAmountMinor: item.quotedAmountMinor ?? null,
     },
   })
   const run = await prisma.reconciliationRun.findUnique({
@@ -365,6 +376,7 @@ export function serializeRun(run: {
     localStatus: string | null
     providerAmountMinor: bigint | null
     localAmountMinor: bigint | null
+    quotedAmountMinor?: bigint | null
     currency: string | null
     status: string
   }>
@@ -391,6 +403,7 @@ export function serializeRun(run: {
       localStatus: item.localStatus,
       providerAmountMinor: item.providerAmountMinor == null ? null : serializeAmountMinor(item.providerAmountMinor),
       localAmountMinor: item.localAmountMinor == null ? null : serializeAmountMinor(item.localAmountMinor),
+      quotedAmountMinor: item.quotedAmountMinor == null ? null : serializeAmountMinor(item.quotedAmountMinor),
       currency: item.currency,
       status: item.status,
     })),

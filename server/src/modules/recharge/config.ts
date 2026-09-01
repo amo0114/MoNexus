@@ -31,6 +31,7 @@ export type RechargeGateInput = {
   paypal?: ProviderCredentialSnapshot
   wechatPay?: ProviderCredentialSnapshot
   alipay?: ProviderCredentialSnapshot
+  vmqfox?: ProviderCredentialSnapshot
 }
 
 export type RechargeGateResult = { ok: true } | { ok: false; message: string }
@@ -239,6 +240,8 @@ function providerModeFor(name: PaymentProviderName, input: RechargeGateInput): P
       return input.wechatPay?.mode
     case 'alipay':
       return input.alipay?.mode
+    case 'vmqfox':
+      return input.vmqfox?.mode
     case 'simulator':
       return 'sandbox'
   }
@@ -272,6 +275,41 @@ function checkAlipay(input: RechargeGateInput): RechargeGateResult {
   }
   if (input.enabledProviders.includes('alipay') && !alipay.webhookSecret) {
     return fail('enabled provider alipay is missing a webhook verify secret')
+  }
+  return { ok: true }
+}
+
+function looksLikeVmqfoxHttpsOrigin(url: string): boolean {
+  try {
+    const parsed = new URL(url)
+    return parsed.protocol === 'https:'
+      && !parsed.username
+      && !parsed.password
+      && !parsed.search
+      && !parsed.hash
+      && (parsed.pathname === '/' || parsed.pathname === '')
+  } catch {
+    return false
+  }
+}
+
+function checkVmqfox(input: RechargeGateInput): RechargeGateResult {
+  const vmqfox = input.vmqfox ?? {}
+  if (vmqfox.apiBaseUrl && !looksLikeVmqfoxHttpsOrigin(vmqfox.apiBaseUrl)) {
+    return fail('VMQFOX_BASE_URL must be an https origin without userinfo, query, or fragment')
+  }
+  if (vmqfox.mode === 'live' && vmqfox.apiBaseUrl) {
+    try {
+      const origin = new URL(vmqfox.apiBaseUrl).origin
+      if (origin !== 'https://pay.snowvictor.com' && input.rechargeMode === 'live' && input.enabledProviders.includes('vmqfox')) {
+        return fail('live VMQFox must use the allowlisted https://pay.snowvictor.com origin')
+      }
+    } catch {
+      return fail('VMQFOX_BASE_URL must be a valid URL')
+    }
+  }
+  if (input.enabledProviders.includes('vmqfox') && !vmqfox.webhookSecret) {
+    return fail('enabled provider vmqfox is missing VMQFOX_MERCHANT_KEY')
   }
   return { ok: true }
 }
@@ -312,7 +350,7 @@ export function evaluateRechargeConfigGates(input: RechargeGateInput): RechargeG
   const publicUrl = requireHttpsPublicUrl(input.webhookPublicBaseUrl)
   if (!publicUrl.ok) return publicUrl
 
-  for (const check of [checkStripe, checkPaypal, checkWechatPay, checkAlipay]) {
+  for (const check of [checkStripe, checkPaypal, checkWechatPay, checkAlipay, checkVmqfox]) {
     const result = check(input)
     if (!result.ok) return result
   }
