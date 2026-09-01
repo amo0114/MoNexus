@@ -433,6 +433,51 @@ describe('RechargePage', () => {
     expect(screen.getByTestId('recharge-result-status')).toHaveTextContent('已退款')
   })
 
+  it('shows payable recognition copy when payableAmountMinor differs', async () => {
+    getRechargeOrder.mockResolvedValue(order('pending_payment', {
+      amountMinor: '1000',
+      payableAmountMinor: '1001',
+      totalPoints: '1000',
+      action: { type: 'qr_code', content: 'weixin://pay', display: 'text' },
+    }))
+    renderAt(`/recharge?order=${ORDER_ID}`)
+    const notice = await screen.findByTestId('recharge-payable-notice')
+    expect(notice).toHaveTextContent('应付 ¥10.01，到账后获得 1000 积分')
+    expect(notice).toHaveTextContent('基础充值金额 ¥10.00')
+    expect(notice).toHaveTextContent('¥0.01 为订单识别金额，不增加积分')
+    expect(screen.getByTestId('recharge-qr')).toBeInTheDocument()
+    expect(screen.getByTestId('recharge-confirming')).toHaveTextContent('正在同步订单状态')
+    expect(completeRechargeOrder).not.toHaveBeenCalled()
+    expect(screen.queryByRole('button', { name: '退款' })).not.toBeInTheDocument()
+  })
+
+  it('shows payable recognition detail in history when amounts differ', async () => {
+    listRechargeOrders.mockResolvedValue({
+      page: 1,
+      pageSize: 50,
+      total: 1,
+      items: [order('credited', {
+        amountMinor: '1000',
+        payableAmountMinor: '1001',
+        totalPoints: '1000',
+      })],
+    })
+    renderAt('/recharge?history=1')
+    const notice = await screen.findByTestId(`recharge-history-payable-${ORDER_ID}`)
+    expect(notice).toHaveTextContent('应付 ¥10.01，到账后获得 1000 积分')
+    expect(notice).toHaveTextContent('基础充值金额 ¥10.00')
+    expect(notice).toHaveTextContent('¥0.01 为订单识别金额，不增加积分')
+  })
+
+  it('does not show extra payable copy when amounts match', async () => {
+    getRechargeOrder.mockResolvedValue(order('credited'))
+    renderAt(`/recharge?order=${ORDER_ID}`)
+    expect(await screen.findByTestId('recharge-result')).toBeInTheDocument()
+    expect(screen.queryByTestId('recharge-payable-notice')).not.toBeInTheDocument()
+    expect(screen.queryByText(/订单识别金额/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '退款' })).not.toBeInTheDocument()
+  })
+
   it('does not clip suggested amount buttons', async () => {
     renderAt('/recharge')
     await readyCheckout()

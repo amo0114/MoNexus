@@ -1,8 +1,11 @@
 import { z } from 'zod'
+import { markNotWritableFields } from '../../middlewares/validate.js'
 import {
+  MONEY_ROUNDING_MODE,
   PAYMENT_DISPUTE_STATUSES,
   PAYMENT_EVENT_STATUSES,
   PAYMENT_PROVIDER_NAMES,
+  RECHARGE_CURRENCIES,
   RECHARGE_ORDER_STATUSES,
   RECHARGE_PRICE_POLICY_STATUSES,
   RECONCILIATION_SCOPE_TYPES,
@@ -60,6 +63,92 @@ export const adminPatchPricePolicySchema = z.object({
   monthlyLimitMinor: amountMinorSchema.optional(),
   status: z.enum(RECHARGE_PRICE_POLICY_STATUSES).optional(),
 }).refine(value => Object.keys(value).length > 0, { message: '至少提供一个字段' })
+
+export const adminListPricePoliciesQuerySchema = z.object({
+  currency: z.enum(RECHARGE_CURRENCIES).optional(),
+  status: z.enum(RECHARGE_PRICE_POLICY_STATUSES).optional(),
+  adminSandbox: z.enum(['true', 'false']).optional(),
+  page: z.coerce.number().int().positive().default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(50),
+})
+
+const positiveMinorSchema = z.string().superRefine((value, ctx) => {
+  try {
+    const amount = parseAmountMinorString(value)
+    if (amount <= 0n) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: '必须是正十进制整数字符串' })
+    }
+  } catch (err) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: err instanceof AmountParseError ? err.message : '必须是正十进制整数字符串',
+    })
+  }
+})
+
+function isIanaTimeZone(value: string): boolean {
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: value }).format()
+    return true
+  } catch {
+    return false
+  }
+}
+
+const suggestedAmountSchema = z.object({
+  amountMinor: amountMinorSchema,
+  sortOrder: z.number().int().min(0).max(999),
+})
+
+export const adminCreatePricePolicySchema = markNotWritableFields(
+  z.object({
+    code: z.string().trim().min(3).max(64).regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/, '代码格式无效'),
+    currency: z.enum(RECHARGE_CURRENCIES),
+    currencyScale: z.number().int().positive(),
+    pointsNumerator: positiveMinorSchema,
+    pointsDenominator: positiveMinorSchema,
+    roundingMode: z.literal(MONEY_ROUNDING_MODE),
+    minAmountMinor: amountMinorSchema,
+    maxAmountMinor: amountMinorSchema,
+    amountStepMinor: positiveMinorSchema,
+    dailyLimitMinor: amountMinorSchema,
+    monthlyLimitMinor: amountMinorSchema,
+    limitTimeZone: z.string().trim().min(1).max(64).refine(isIanaTimeZone, '必须是 IANA 时区'),
+    adminSandbox: z.boolean().optional().default(false),
+    bonusRuleVersion: z.string().trim().min(1).max(64).nullable().optional(),
+    suggestedAmounts: z.array(suggestedAmountSchema).max(20).default([]),
+  }).strict(),
+  ['id', 'status', 'version', 'effectiveAt'],
+)
+
+export type AdminCreatePricePolicyBody = z.infer<typeof adminCreatePricePolicySchema>
+export type AdminListPricePoliciesQuery = z.infer<typeof adminListPricePoliciesQuerySchema>
+
+/**
+ * Admin-only create payload example for the VMQFox CNY production lane.
+ * pointsNumerator/Denominator mean 1 PTS per 1 CNY minor unit (fen).
+ * Create stays draft; never auto-activate this policy in a migration.
+ */
+export const RP_CNY_VMQFOX_V1_CREATE_EXAMPLE = {
+  code: 'rp-cny-vmqfox-v1',
+  currency: 'CNY',
+  currencyScale: 2,
+  pointsNumerator: '1',
+  pointsDenominator: '1',
+  roundingMode: MONEY_ROUNDING_MODE,
+  minAmountMinor: '100',
+  maxAmountMinor: '100000',
+  amountStepMinor: '100',
+  dailyLimitMinor: '200000',
+  monthlyLimitMinor: '1000000',
+  limitTimeZone: 'Asia/Shanghai',
+  suggestedAmounts: [
+    { amountMinor: '1000', sortOrder: 1 },
+    { amountMinor: '3000', sortOrder: 2 },
+    { amountMinor: '5000', sortOrder: 3 },
+    { amountMinor: '10000', sortOrder: 4 },
+  ],
+} satisfies Omit<AdminCreatePricePolicyBody, 'adminSandbox' | 'bonusRuleVersion'>
 
 export const adminRefundSchema = z.object({
   reasonCode: z.string().min(1).max(64).optional(),
