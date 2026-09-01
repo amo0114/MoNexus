@@ -11,6 +11,8 @@ import {
 } from '../modules/payment/observations/record.js'
 import {
   resetSimulatorState,
+  setSimulatorCapabilityOverride,
+  setSimulatorCreateAmountDelta,
   setStoredPaymentStatus,
 } from '../modules/payment/providers/simulator/index.js'
 import {
@@ -369,6 +371,7 @@ describe('applyConfirmedPayment on PostgreSQL', () => {
         providerPaymentId: `other_${created.attempt.providerPaymentId}`,
         requestIdempotencyKey: `second-${randomUUID()}`,
         actionType: 'none',
+        expectedProviderAmountMinor: created.amountMinor,
       },
     })
     const second = await recordFact({
@@ -459,6 +462,30 @@ describe('refund, dispute, and restriction on PostgreSQL', () => {
     expect(getProviderRefundCallCount()).toBe(0)
     const refund = await prisma.rechargeRefund.findUniqueOrThrow({ where: { rechargeOrderId: created.orderId } })
     expect(refund.status).toBe('manual_review')
+  })
+
+  it('rejects refunds when the provider does not support refunds', async () => {
+    await seedCnyPolicy()
+    const { user, accessToken } = await loginUser('recharge-rf-unsupported@test.local')
+    const created = await createRedirectOrder(accessToken)
+    await applyConfirmedPayment((await recordFact({
+      source: 'webhook',
+      attemptId: created.attempt.id,
+      providerPaymentId: created.attempt.providerPaymentId!,
+      amountMinor: created.amountMinor,
+      currency: created.currency,
+    })).id)
+    setSimulatorCapabilityOverride({ supportsRefunds: false })
+    await expect(requestRechargeRefund({
+      userId: user.id,
+      orderId: created.orderId,
+      idempotencyKey: randomUUID(),
+    })).rejects.toMatchObject({ code: 'PAYMENT_REFUND_NOT_SUPPORTED' })
+    expect(getProviderRefundCallCount()).toBe(0)
+    expect(await prisma.rechargeRefund.count()).toBe(0)
+    const account = await prisma.pointAccount.findUniqueOrThrow({ where: { userId: user.id } })
+    expect(account.balance).toBe(6000)
+    expect(account.frozenBalance).toBe(0)
   })
 
   it('handles refund success, failure, duplicates, and out-of-order results', async () => {
@@ -830,7 +857,69 @@ describe('apply observation retry and mismatch recon', () => {
     expect(item.status).toBe('open')
     expect(item.reconciliationRun.environment).toBe('sandbox')
     expect(item.providerAmountMinor).toBe(created.amountMinor + 1n)
-    expect(item.localAmountMinor).toBe(created.amountMinor)
+    expect(item.localAmountMinor).toBe(created.attempt.expectedProviderAmountMinor)
+    expect(item.resolutionReason).toBe(`quotedAmountMinor=${created.amountMinor.toString(10)}`)
+  })
+
+  it('confirms quote 1000 / expectedProvider 1001 of 1001 and credits 1000 points', async () => {
+    await seedCnyPolicy()
+    const { user, accessToken } = await loginUser('recharge-provider-amount@test.local')
+    setSimulatorCreateAmountDelta(1n)
+    const created = await createRedirectOrder(accessToken, '1000')
+    expect(created.amountMinor).toBe(1000n)
+    expect(created.attempt.expectedProviderAmountMinor).toBe(1001n)
+    const listed = await api.get(`/api/recharge/orders/${created.orderId}`).set(authHeader(accessToken)).expect(200)
+    expect(listed.body.amountMinor).toBe('1000')
+    expect(listed.body.payableAmountMinor).toBe('1001')
+    expect(listed.body.totalPoints).toBe('1000')
+    const observation = await recordFact({
+      source: 'webhook',
+      attemptId: created.attempt.id,
+      providerPaymentId: created.attempt.providerPaymentId!,
+      amountMinor: 1001n,
+      currency: created.currency,
+    })
+    const applied = await applyConfirmedPayment(observation.id)
+    expect(applied.outcome).toBe('credited')
+    expect(await prisma.rechargeCredit.count()).toBe(1)
+    const credit = await prisma.rechargeCredit.findFirstOrThrow({ where: { rechargeOrderId: created.orderId } })
+    expect(credit.points).toBe(1000n)
+    const account = await prisma.pointAccount.findUniqueOrThrow({ where: { userId: user.id } })
+    expect(account.balance).toBe(6000)
+    const order = await prisma.rechargeOrder.findUniqueOrThrow({ where: { id: created.orderId } })
+    expect(order.amountMinor).toBe(1000n)
+    expect(order.status).toBe('credited')
+  })
+
+  it('rejects quotedAmountMinor that does not match the frozen order quote', async () => {
+    await seedCnyPolicy()
+    const { accessToken } = await loginUser('recharge-quoted-mismatch@test.local')
+    const created = await createRedirectOrder(accessToken)
+    const payload = {
+      status: 'succeeded',
+      providerPaymentId: created.attempt.providerPaymentId!,
+      amountMinor: created.amountMinor.toString(10),
+      quotedAmountMinor: (created.amountMinor + 1n).toString(10),
+      currency: created.currency,
+      immutableStateVersion: 'succeeded:quoted',
+    }
+    const observation = await recordPaymentObservation({
+      provider: 'simulator',
+      providerAccountKey: 'simulator:sandbox:default',
+      source: 'webhook',
+      verificationMethod: 'webhook_signature',
+      paymentAttemptId: created.attempt.id,
+      providerPaymentId: created.attempt.providerPaymentId,
+      providerEventId: `evt_${randomUUID()}`,
+      dedupeKey: `webhook:quoted-${randomUUID()}`,
+      eventType: 'payment.succeeded',
+      payloadSha256: hashNormalizedPayload(payload),
+      normalizedPayload: payload,
+      signatureVerified: true,
+    })
+    const applied = await applyConfirmedPayment(observation.id)
+    expect(applied.outcome).toBe('reconcile_required')
+    expect(await prisma.rechargeCredit.count()).toBe(0)
   })
 })
 

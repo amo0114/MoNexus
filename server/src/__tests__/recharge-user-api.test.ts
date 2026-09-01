@@ -151,6 +151,8 @@ describe('recharge user API', () => {
     expect(replay.body.orderId).toBe(first.body.orderId)
     expect(await prisma.rechargeOrder.count()).toBe(1)
     expect(first.body.amountMinor).toBe('1000')
+    expect(first.body.payableAmountMinor).toBe('1000')
+    expect(first.body.totalPoints).toBe('1000')
     expect(first.body.paidAt).toBeNull()
     expect(first.body.creditedAt).toBeNull()
   })
@@ -400,6 +402,7 @@ describe('recharge user API', () => {
         status: 'created',
         requestIdempotencyKey: `recharge:${order.body.orderId}:attempt:extra`,
         actionType: 'none',
+        expectedProviderAmountMinor: 1000n,
       },
     })).rejects.toThrow()
     expect(await prisma.paymentAttempt.count({ where: { paymentIntentId: intent.id } })).toBe(1)

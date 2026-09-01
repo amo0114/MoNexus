@@ -307,6 +307,12 @@ async function markCreditReconcileRequired(
   }, 'credit marked reconcile_required')
 }
 
+function parseOptionalAmountMinor(value: unknown): bigint | null | undefined {
+  if (value === undefined || value === null) return undefined
+  if (typeof value === 'string' && /^(0|[1-9]\d{0,18})$/.test(value)) return BigInt(value)
+  return null
+}
+
 export function parseNormalizedPaymentPayload(value: Prisma.JsonValue | null | undefined) {
   const payload = asJsonRecord(value)
   const amountRaw = payload.amountMinor
@@ -316,6 +322,7 @@ export function parseNormalizedPaymentPayload(value: Prisma.JsonValue | null | u
     providerCaptureId: typeof payload.providerCaptureId === 'string' ? payload.providerCaptureId : null,
     providerRefundId: typeof payload.providerRefundId === 'string' ? payload.providerRefundId : null,
     amountMinor: typeof amountRaw === 'string' ? BigInt(amountRaw) : null,
+    quotedAmountMinor: parseOptionalAmountMinor(payload.quotedAmountMinor),
     currency: typeof payload.currency === 'string' ? payload.currency : null,
     immutableStateVersion: typeof payload.immutableStateVersion === 'string' ? payload.immutableStateVersion : null,
   }

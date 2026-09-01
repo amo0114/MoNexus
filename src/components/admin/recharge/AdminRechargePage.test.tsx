@@ -66,6 +66,7 @@ describe('AdminRechargePage', () => {
       status: 'credited',
       currency: 'CNY',
       amountMinor: '1000',
+      payableAmountMinor: '1000',
       totalPoints: '1000',
       provider: 'simulator',
       paymentMethod: 'card',

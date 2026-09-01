@@ -39,13 +39,23 @@ function serializeAdminOrder(order: {
   updatedAt: Date
   credit?: { id: string } | null
   refund?: { id: string; status: string } | null
+  paymentIntent?: {
+    activeAttemptId: string | null
+    attempts: Array<{ id: string; expectedProviderAmountMinor: bigint }>
+  } | null
 }) {
+  const attempts = order.paymentIntent?.attempts ?? []
+  const active = (order.paymentIntent?.activeAttemptId
+    ? attempts.find(item => item.id === order.paymentIntent?.activeAttemptId)
+    : undefined) ?? attempts.at(-1)
+  const payableAmountMinor = active?.expectedProviderAmountMinor ?? order.amountMinor
   return {
     orderId: order.id,
     userId: order.userId,
     status: order.status,
     currency: order.currency,
     amountMinor: serializeAmountMinor(order.amountMinor),
+    payableAmountMinor: serializeAmountMinor(payableAmountMinor),
     totalPoints: serializeAmountMinor(order.totalPoints),
     provider: order.provider,
     paymentMethod: order.paymentMethod,
@@ -80,7 +90,11 @@ export async function adminListOrders(query: {
       orderBy: { createdAt: 'desc' },
       skip: (query.page - 1) * query.pageSize,
       take: query.pageSize,
-      include: { credit: true, refund: true },
+      include: {
+        credit: true,
+        refund: true,
+        paymentIntent: { include: { attempts: { orderBy: { createdAt: 'asc' } } } },
+      },
     }),
   ])
   return { page: query.page, pageSize: query.pageSize, total, items: items.map(serializeAdminOrder) }

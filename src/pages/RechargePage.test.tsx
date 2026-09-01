@@ -133,6 +133,7 @@ function order(status: string, extra: Partial<RechargeOrder> = {}): RechargeOrde
     status,
     currency: 'CNY',
     amountMinor: '1000',
+    payableAmountMinor: '1000',
     basePoints: '1000',
     bonusPoints: '0',
     totalPoints: '1000',

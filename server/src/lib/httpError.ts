@@ -114,6 +114,7 @@ export type ErrorCode =
   | 'PAYMENT_ALREADY_IN_PROGRESS'
   | 'PAYMENT_STATE_UNKNOWN'
   | 'PAYMENT_COMPLETION_NOT_SUPPORTED'
+  | 'PAYMENT_REFUND_NOT_SUPPORTED'
   | 'REFUND_BALANCE_INSUFFICIENT'
   | 'REFUND_REQUIRES_REVIEW'
   | 'ACCOUNT_SPENDING_RESTRICTED'
@@ -342,6 +343,10 @@ export function paymentStateUnknown(message = '支付状态未知，请稍后查
 
 export function paymentCompletionNotSupported(message = '当前支付方式不支持服务端完成') {
   return new HttpError(409, 'PAYMENT_COMPLETION_NOT_SUPPORTED', message)
+}
+
+export function paymentRefundNotSupported(message = '当前支付渠道不支持自动退款') {
+  return new HttpError(409, 'PAYMENT_REFUND_NOT_SUPPORTED', message)
 }
 
 export function refundBalanceInsufficient(message = '可用积分不足，无法退款') {

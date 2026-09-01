@@ -7,6 +7,7 @@ export interface AdminRechargeOrder {
   status: string
   currency: string
   amountMinor: string
+  payableAmountMinor: string
   totalPoints: string
   provider: string
   paymentMethod: string

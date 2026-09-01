@@ -9,6 +9,7 @@ import {
   paymentAlreadyInProgress,
   paymentCompletionNotSupported,
   paymentProviderUnavailable,
+  paymentStateUnknown,
 } from '../../lib/httpError.js'
 import { getEnabledProvider, getHistoricalProvider, listEnabledProviders } from '../payment/providers/registry.js'
 import type { PaymentProvider, ProviderCapabilities } from '../payment/providers/types.js'
@@ -282,6 +283,12 @@ async function loadOwnedOrder(userId: number, orderId: string) {
   return order
 }
 
+function buyerReturnUrl(orderId: string): string {
+  const origin = String(config.appBaseUrl || config.frontendOrigin || '').replace(/\/$/, '')
+  const path = `/recharge?order=${orderId}`
+  return origin ? `${origin}${path}` : path
+}
+
 function serializeOrder(order: {
   id: string
   status: string
@@ -308,17 +315,20 @@ function serializeOrder(order: {
       actionPayload: string | null
       providerPaymentId: string | null
       lastErrorCode: string | null
+      expectedProviderAmountMinor: bigint
     }>
   } | null
 }, options?: { includeAction?: boolean; observationId?: string | null; paymentStatus?: string }) {
   const attempts = order.paymentIntent?.attempts ?? []
   const active = [...attempts].reverse().find(attempt => NON_TERMINAL_ATTEMPT.has(attempt.status)) ?? attempts.at(-1)
   const action = options?.includeAction === false ? null : publicPaymentAction(parseStoredAction(active?.actionPayload ?? null))
+  const payableAmountMinor = active?.expectedProviderAmountMinor ?? order.amountMinor
   return {
     orderId: order.id,
     status: order.status,
     currency: order.currency,
     amountMinor: serializeAmountMinor(order.amountMinor),
+    payableAmountMinor: serializeAmountMinor(payableAmountMinor),
     basePoints: serializeAmountMinor(order.basePoints),
     bonusPoints: serializeAmountMinor(order.bonusPoints),
     totalPoints: serializeAmountMinor(order.totalPoints),
@@ -457,6 +467,7 @@ async function persistProviderCreate(
       paymentMethod: order.paymentMethod,
       providerAccountKey: order.providerAccountKey,
       requestIdempotencyKey: attempt.requestIdempotencyKey,
+      returnUrl: buyerReturnUrl(order.id),
     })
   } catch (error) {
     if (isDeterministicCreateFailure(error)) {
@@ -468,6 +479,10 @@ async function persistProviderCreate(
       })
     }
     throw error
+  }
+  if (typeof created.amountMinor !== 'bigint' || created.amountMinor <= 0n) {
+    await failUncreatedPayment(order.id, intent.id, attempt.id, paymentStateUnknown('渠道返回的应付金额不合法'))
+    throw paymentStateUnknown('渠道返回的应付金额不合法')
   }
   const now = new Date()
   const attemptStatus: PaymentAttemptStatus = created.status
@@ -487,6 +502,7 @@ async function persistProviderCreate(
             providerOrderId: created.providerOrderId ?? null,
             actionType: created.action.type,
             actionPayload: JSON.stringify(created.action),
+            expectedProviderAmountMinor: created.amountMinor,
             completedAt: attemptStatus === 'failed' ? now : null,
             lastErrorCode: attemptStatus === 'failed' ? 'PAYMENT_FAILED' : null,
           },
@@ -708,6 +724,7 @@ export async function createOrder(userId: number, quoteId: string, idempotencyKe
           status: 'created',
           requestIdempotencyKey: `recharge:${order.id}:attempt:v1`,
           actionType: 'none',
+          expectedProviderAmountMinor: order.amountMinor,
         },
       })
       await tx.paymentIntent.update({

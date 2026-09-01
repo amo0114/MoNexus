@@ -77,7 +77,7 @@ type StoredRefund = {
   immutableStateVersion: string
 }
 
-type CapabilityOverride = Partial<Pick<ProviderCapabilities, 'capabilityVersion' | 'minimumAmountMinor' | 'maximumAmountMinor'>>
+type CapabilityOverride = Partial<Pick<ProviderCapabilities, 'capabilityVersion' | 'minimumAmountMinor' | 'maximumAmountMinor' | 'supportsRefunds'>>
 
 const payments = new Map<string, StoredPayment>()
 const paymentsByIdempotency = new Map<string, string>()
@@ -85,6 +85,7 @@ const refunds = new Map<string, StoredRefund>()
 const refundsByIdempotency = new Map<string, string>()
 let nextFixture: SimulatorFixture = 'success'
 let capabilityOverride: CapabilityOverride = {}
+let createAmountDelta = 0n
 let queryRecoveryStatus: PaymentAttemptStatus | null = null
 let queryCount = 0
 
@@ -95,6 +96,7 @@ export function resetSimulatorState() {
   refundsByIdempotency.clear()
   nextFixture = 'success'
   capabilityOverride = {}
+  createAmountDelta = 0n
   queryRecoveryStatus = null
   queryCount = 0
 }
@@ -112,6 +114,10 @@ export function setSimulatorNextFixture(fixture: SimulatorFixture) {
 
 export function setSimulatorCapabilityOverride(override: CapabilityOverride) {
   capabilityOverride = { ...capabilityOverride, ...override }
+}
+
+export function setSimulatorCreateAmountDelta(delta: bigint) {
+  createAmountDelta = delta
 }
 
 export function setSimulatorQueryRecovery(status: PaymentAttemptStatus | null) {
@@ -268,6 +274,7 @@ export const simulatorProvider: PaymentProvider = {
       supportedCurrencies: ['CNY', 'USD'],
       paymentMethods: SIMULATOR_PAYMENT_METHODS,
       actionTypes: ['none', 'redirect', 'qr_code', 'client_secret', 'form_post'],
+      supportsRefunds: capabilityOverride.supportsRefunds ?? true,
       supportsPartialRefund: false,
       supportsDisputes: true,
       supportsReconciliation: true,
@@ -299,6 +306,7 @@ export const simulatorProvider: PaymentProvider = {
         providerOrderId: existing.providerOrderId,
         action: existing.action,
         requestIdempotencyKey: existing.requestIdempotencyKey,
+        amountMinor: existing.amountMinor,
       }
     }
 
@@ -314,12 +322,13 @@ export const simulatorProvider: PaymentProvider = {
     else if (fixture === 'timeout') status = 'unknown'
     else if (input.paymentMethod === 'card' && fixture === 'success') status = 'processing'
 
+    const payableAmountMinor = input.amountMinor + createAmountDelta
     const row: StoredPayment = {
       providerPaymentId,
       providerOrderId,
       providerCaptureId: null,
       requestIdempotencyKey: input.requestIdempotencyKey,
-      amountMinor: input.amountMinor,
+      amountMinor: payableAmountMinor,
       currency: input.currency,
       paymentMethod: input.paymentMethod,
       providerAccountKey: input.providerAccountKey,
@@ -340,6 +349,7 @@ export const simulatorProvider: PaymentProvider = {
       providerOrderId,
       action,
       requestIdempotencyKey: input.requestIdempotencyKey,
+      amountMinor: payableAmountMinor,
     }
   },
 

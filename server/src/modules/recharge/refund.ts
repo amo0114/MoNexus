@@ -2,6 +2,7 @@ import { Prisma } from '@prisma/client'
 import {
   conflict,
   HttpError,
+  paymentRefundNotSupported,
   refundBalanceInsufficient,
   refundRequiresReview,
 } from '../../lib/httpError.js'
@@ -34,6 +35,7 @@ import { serializeAmountMinor } from './money.js'
 import type { PaymentProviderName, RechargeCurrency } from './types.js'
 import { PAYMENT_PROVIDER_NAMES } from './types.js'
 import { recordPaymentRefund } from '../payment/metrics.js'
+import { providerEnvironment } from './gates.js'
 
 const TX = { timeout: 15_000, maxWait: 5_000 } as const
 export const REFUND_BUSINESS_EVENT_KEY = (orderId: string) => `recharge:${orderId}:refund:v1`
@@ -53,6 +55,24 @@ function asProviderName(value: string): PaymentProviderName {
     throw conflict('支付渠道不可用')
   }
   return value as PaymentProviderName
+}
+
+async function assertProviderSupportsRefunds(input: {
+  provider: string
+  providerAccountKey: string
+  paymentMethod: string
+  currency: string
+}) {
+  const provider = getHistoricalProvider(asProviderName(input.provider))
+  const capabilities = await provider.getCapabilities({
+    providerAccountKey: input.providerAccountKey,
+    environment: providerEnvironment(),
+    currency: input.currency as RechargeCurrency,
+    paymentMethod: input.paymentMethod,
+  })
+  if (!capabilities.supportsRefunds) {
+    throw paymentRefundNotSupported()
+  }
 }
 
 async function writeRefundNotification(
@@ -111,13 +131,15 @@ export async function requestRechargeRefund(input: {
         currency: string
         provider: string
         providerAccountKey: string
+        paymentMethod: string
         adminSandbox: boolean
       }>>`
-        SELECT "id", "userId", "status", "amountMinor", "totalPoints", "currency", "provider", "providerAccountKey", "adminSandbox"
+        SELECT "id", "userId", "status", "amountMinor", "totalPoints", "currency", "provider", "providerAccountKey", "paymentMethod", "adminSandbox"
         FROM "RechargeOrder" WHERE "id" = ${input.orderId}::uuid FOR UPDATE`
       const order = orders[0]
       if (!order || order.userId !== input.userId) throw conflict('充值订单不存在')
       if (order.adminSandbox) throw conflict('管理员沙箱充值不支持退款')
+      await assertProviderSupportsRefunds(order)
       if (order.status === 'refunded') {
         return tx.rechargeRefund.findUnique({ where: { rechargeOrderId: order.id } })
       }
@@ -276,6 +298,7 @@ export async function submitProviderRefund(refundId: string) {
   }
   if (refund.status === 'failed') return refund
   if (!refund.paymentAttempt.providerPaymentId) throw conflict('支付尝试缺少渠道单号')
+  await assertProviderSupportsRefunds(refund.rechargeOrder)
 
   const hold = await prisma.pointHold.findUnique({
     where: { sourceType_sourceId: { sourceType: 'recharge_refund', sourceId: refund.id } },

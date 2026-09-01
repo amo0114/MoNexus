@@ -207,6 +207,7 @@ export function createAlipayProvider(
         supportedCurrencies: ['CNY'],
         paymentMethods: ALIPAY_PAYMENT_METHODS,
         actionTypes: ['form_post'],
+        supportsRefunds: true,
         supportsPartialRefund: true,
         supportsDisputes: false,
         supportsReconciliation: true,
@@ -260,6 +261,7 @@ export function createAlipayProvider(
           expiresAt,
         },
         requestIdempotencyKey: input.requestIdempotencyKey,
+        amountMinor: input.amountMinor,
       }
     },
 

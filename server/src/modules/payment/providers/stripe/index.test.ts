@@ -313,6 +313,7 @@ describe('Stripe capabilities and account selection', () => {
     })
     expect(usd.minimumAmountMinor).toBe(50n)
     expect(usd.actionTypes).toEqual(['redirect'])
+    expect(usd.supportsRefunds).toBe(true)
     expect(usd.supportsPartialRefund).toBe(false)
 
     const cny = await provider.getCapabilities({
@@ -343,6 +344,7 @@ describe('Stripe Checkout create, query, close, refund', () => {
     }
     expect(first.providerPaymentId).toBe('pi_test_1')
     expect(first.providerOrderId).toBe('cs_test_1')
+    expect(first.amountMinor).toBe(100n)
     expect(second.providerPaymentId).toBe(first.providerPaymentId)
     expect(fake.createCalls).toBe(2)
     expect(fake.lastIdempotencyKey).toBe('recharge:order:attempt:v1')

@@ -143,6 +143,7 @@ describe('PaymentObservation / PaymentEvent contract', () => {
         status: 'processing',
         requestIdempotencyKey: `idem-${suffix()}`,
         actionType: 'none',
+        expectedProviderAmountMinor: 100n,
       },
     })
 
@@ -215,6 +216,7 @@ describe('PaymentAttempt uniqueness', () => {
         status: 'failed',
         requestIdempotencyKey: `idem-a-${suffix()}`,
         actionType: 'none',
+        expectedProviderAmountMinor: 100n,
       },
     })
     await expect(prisma.paymentAttempt.create({
@@ -226,6 +228,7 @@ describe('PaymentAttempt uniqueness', () => {
         status: 'failed',
         requestIdempotencyKey: `idem-b-${suffix()}`,
         actionType: 'none',
+        expectedProviderAmountMinor: 100n,
       },
     })).resolves.toMatchObject({ providerPaymentId: null })
 
@@ -240,6 +243,7 @@ describe('PaymentAttempt uniqueness', () => {
         providerPaymentId,
         requestIdempotencyKey: `idem-c-${suffix()}`,
         actionType: 'none',
+        expectedProviderAmountMinor: 100n,
       },
     })
     await expect(prisma.paymentAttempt.create({
@@ -252,6 +256,7 @@ describe('PaymentAttempt uniqueness', () => {
         providerPaymentId,
         requestIdempotencyKey: `idem-d-${suffix()}`,
         actionType: 'none',
+        expectedProviderAmountMinor: 100n,
       },
     })).rejects.toThrow()
   })
@@ -271,6 +276,7 @@ describe('PaymentAttempt uniqueness', () => {
         status: 'processing',
         requestIdempotencyKey: `idem-open-${suffix()}`,
         actionType: 'redirect',
+        expectedProviderAmountMinor: 100n,
       },
     })
     await expect(prisma.paymentAttempt.create({
@@ -282,6 +288,27 @@ describe('PaymentAttempt uniqueness', () => {
         status: 'created',
         requestIdempotencyKey: `idem-open-2-${suffix()}`,
         actionType: 'redirect',
+        expectedProviderAmountMinor: 100n,
+      },
+    })).rejects.toThrow()
+  })
+
+  it('rejects expectedProviderAmountMinor that is not positive', async () => {
+    const user = await createUser()
+    const policy = await createPolicy()
+    const quote = await createQuote(user.id, policy.id)
+    const order = await createOrder(user.id, quote.id, policy.id)
+    const intent = await createIntent(order.id)
+    await expect(prisma.paymentAttempt.create({
+      data: {
+        paymentIntentId: intent.id,
+        provider: 'simulator',
+        providerAccountKey: 'sim-default',
+        method: 'card',
+        status: 'created',
+        requestIdempotencyKey: `idem-zero-${suffix()}`,
+        actionType: 'none',
+        expectedProviderAmountMinor: 0n,
       },
     })).rejects.toThrow()
   })

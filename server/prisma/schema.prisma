@@ -1729,23 +1729,24 @@ model PaymentIntent {
 }
 
 model PaymentAttempt {
-  id                    String    @id @default(uuid()) @db.Uuid
-  paymentIntentId       String    @db.Uuid
-  provider              String
-  providerAccountKey    String
-  method                String
-  status                String
-  providerPaymentId     String?
-  providerOrderId       String?
-  providerCaptureId     String?
-  requestIdempotencyKey String
-  actionType            String
-  actionPayload         String?
-  lastErrorCode         String?
-  lastErrorSafeMessage  String?
-  createdAt             DateTime  @default(now())
-  updatedAt             DateTime  @updatedAt
-  completedAt           DateTime?
+  id                          String    @id @default(uuid()) @db.Uuid
+  paymentIntentId             String    @db.Uuid
+  provider                    String
+  providerAccountKey          String
+  method                      String
+  status                      String
+  providerPaymentId           String?
+  providerOrderId             String?
+  providerCaptureId           String?
+  requestIdempotencyKey       String
+  actionType                  String
+  actionPayload               String?
+  lastErrorCode               String?
+  lastErrorSafeMessage        String?
+  expectedProviderAmountMinor BigInt
+  createdAt                   DateTime  @default(now())
+  updatedAt                   DateTime  @updatedAt
+  completedAt                 DateTime?
 
   paymentIntent       PaymentIntent        @relation(fields: [paymentIntentId], references: [id], onDelete: Restrict)
   events              PaymentEvent[]

@@ -52,6 +52,7 @@ async function writeOpenReconItem(tx: Prisma.TransactionClient, input: {
   localStatus?: string | null
   providerAmountMinor?: bigint | null
   localAmountMinor?: bigint | null
+  quotedAmountMinor?: bigint | null
   currency?: string | null
 }) {
   const environment = providerEnvironment()
@@ -101,6 +102,9 @@ async function writeOpenReconItem(tx: Prisma.TransactionClient, input: {
       localAmountMinor: input.localAmountMinor ?? null,
       currency: input.currency ?? null,
       status: 'open',
+      resolutionReason: input.mismatchType === 'amount_mismatch' && input.quotedAmountMinor != null
+        ? `quotedAmountMinor=${input.quotedAmountMinor.toString(10)}`
+        : null,
     },
     update: {},
   })
@@ -241,22 +245,28 @@ async function applyConfirmedPaymentOnce(observationId: string): Promise<ApplyCo
         status: string
         providerPaymentId: string | null
         providerCaptureId: string | null
+        expectedProviderAmountMinor: bigint
       }>>`
-        SELECT "id", "paymentIntentId", "status", "providerPaymentId", "providerCaptureId"
+        SELECT "id", "paymentIntentId", "status", "providerPaymentId", "providerCaptureId",
+               "expectedProviderAmountMinor"
         FROM "PaymentAttempt" WHERE "id" = ${attemptHint.id}::uuid FOR UPDATE`
       const attempt = attemptRows[0]
       if (!attempt) return { outcome: 'reconcile_required' as const, reason: 'attempt_missing' }
       tripWriteHook('after_lock_order')
 
+      const quotedMismatch = payload.quotedAmountMinor !== undefined
+        && payload.quotedAmountMinor !== order.amountMinor
+      const providerAmountMismatch = payload.amountMinor !== attempt.expectedProviderAmountMinor
       if (
         order.provider !== observation.provider
         || order.providerAccountKey !== observation.providerAccountKey
         || order.currency !== payload.currency
-        || order.amountMinor !== payload.amountMinor
+        || providerAmountMismatch
+        || quotedMismatch
       ) {
         const mismatchType: ReconciliationMismatchType = order.currency !== payload.currency
           ? 'currency_mismatch'
-          : order.amountMinor !== payload.amountMinor
+          : providerAmountMismatch || quotedMismatch
             ? 'amount_mismatch'
             : 'unknown_provider_transaction'
         await writeOpenReconItem(tx, {
@@ -271,7 +281,8 @@ async function applyConfirmedPaymentOnce(observationId: string): Promise<ApplyCo
           providerStatus: payload.status,
           localStatus: order.status,
           providerAmountMinor: payload.amountMinor,
-          localAmountMinor: order.amountMinor,
+          localAmountMinor: attempt.expectedProviderAmountMinor,
+          quotedAmountMinor: order.amountMinor,
           currency: payload.currency,
         })
         logger.error({
@@ -279,6 +290,9 @@ async function applyConfirmedPaymentOnce(observationId: string): Promise<ApplyCo
           rechargeOrderId: order.id,
           observationId,
           mismatchType,
+          providerAmountMinor: payload.amountMinor?.toString(10) ?? null,
+          expectedProviderAmountMinor: attempt.expectedProviderAmountMinor.toString(10),
+          quotedAmountMinor: order.amountMinor.toString(10),
         }, 'observation does not match local order')
         return { outcome: 'reconcile_required' as const, reason: 'amount_or_account_mismatch', rechargeOrderId: order.id }
       }

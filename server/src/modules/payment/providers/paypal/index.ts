@@ -245,6 +245,7 @@ export function createPaypalProvider(options: PaypalProviderOptions = {}): Payme
         supportedCurrencies: ['CNY', 'USD'],
         paymentMethods: PAYPAL_PAYMENT_METHODS,
         actionTypes: ['redirect'],
+        supportsRefunds: true,
         supportsPartialRefund: false,
         supportsDisputes: false,
         supportsReconciliation: false,
@@ -321,6 +322,7 @@ export function createPaypalProvider(options: PaypalProviderOptions = {}): Payme
             expiresAt: new Date(now().getTime() + ORDER_TTL_MS).toISOString(),
           },
           requestIdempotencyKey: input.requestIdempotencyKey,
+          amountMinor: input.amountMinor,
         }
       } catch (err) {
         mapProviderError(err)
