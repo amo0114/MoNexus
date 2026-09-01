@@ -107,7 +107,7 @@ export const PAYMENT_ALERTS = [
     routingLabel: 'payment-p0',
     expr: 'payment_simulator_configured == 1',
     for: '0m',
-    summary: 'production deploy registered or enabled the simulator provider',
+    summary: 'production deploy registered or enabled the simulator provider outside approved administrator sandbox mode',
   },
 ] as const satisfies readonly PaymentAlert[]
 

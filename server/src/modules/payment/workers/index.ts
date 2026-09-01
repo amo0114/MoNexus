@@ -1,3 +1,4 @@
+import type { Prisma } from '@prisma/client'
 import { logger } from '../../../lib/logger.js'
 import { prisma } from '../../../lib/prisma.js'
 import { applyConfirmedPayment } from '../events/applyConfirmedPayment.js'
@@ -37,6 +38,22 @@ function asProviderName(value: string): PaymentProviderName | null {
   return (PAYMENT_PROVIDER_NAMES as readonly string[]).includes(value)
     ? value as PaymentProviderName
     : null
+}
+
+function providerQueryAttemptWhere(cutoff?: Date): Prisma.PaymentAttemptWhereInput {
+  return {
+    status: { in: ['unknown', 'processing', 'requires_action'] },
+    providerPaymentId: { not: null },
+    ...(cutoff ? { updatedAt: { lte: cutoff } } : {}),
+    // Administrator sandbox confirmation is an explicit MFA-protected local
+    // action. Simulator state is process-local, so provider query recovery is
+    // neither authoritative nor durable for these orders after a deploy.
+    paymentIntent: {
+      rechargeOrder: {
+        adminSandbox: false,
+      },
+    },
+  }
 }
 
 export async function processOneObservation(): Promise<boolean> {
@@ -112,11 +129,7 @@ export async function recoverPaidNotCredited(): Promise<number> {
 export async function recoverUnknownPayments(): Promise<number> {
   const cutoff = new Date(Date.now() - QUERY_STALE_MS)
   const attempts = await prisma.paymentAttempt.findMany({
-    where: {
-      status: { in: ['unknown', 'processing', 'requires_action'] },
-      providerPaymentId: { not: null },
-      updatedAt: { lte: cutoff },
-    },
+    where: providerQueryAttemptWhere(cutoff),
     take: 20,
     include: { paymentIntent: { include: { rechargeOrder: true } } },
   })
@@ -266,7 +279,7 @@ async function refreshPaymentWorkerGauges() {
       take: 200,
     }),
     prisma.paymentAttempt.findMany({
-      where: { status: { in: ['unknown', 'processing', 'requires_action'] }, providerPaymentId: { not: null } },
+      where: providerQueryAttemptWhere(),
       select: { updatedAt: true },
       take: 200,
     }),
@@ -282,7 +295,13 @@ async function refreshPaymentWorkerGauges() {
   setWorkerBacklog('query', dueQueries.length, age(dueQueries.map(item => item.updatedAt)))
   const simulatorListed = config.recharge.registeredProviders.includes('simulator')
     || config.recharge.enabledProviders.includes('simulator')
-  setSimulatorConfigured(config.isProductionDeploy && simulatorListed)
+  const approvedAdministratorSandbox = config.recharge.mode === 'admin_sandbox'
+    && config.recharge.adminSandboxEnabled
+  setSimulatorConfigured(
+    config.isProductionDeploy
+      && simulatorListed
+      && !approvedAdministratorSandbox,
+  )
 }
 
 export async function runPaymentWorkersOnce() {

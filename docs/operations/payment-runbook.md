@@ -76,6 +76,9 @@ Operational invariants:
   administrator MFA middleware, and only for the administrator's own order;
 - confirmation writes a normalized `PaymentObservation` and then uses
   `applyConfirmedPayment`; it must never update an order or points directly;
+- administrator sandbox attempts are excluded from provider query recovery and
+  the query-worker backlog because Simulator state is process-local and the
+  only authoritative completion path is the MFA-protected administrator action;
 - credited points enter `PointAccount.sandboxBalance` with
   `PointLog.type=sandbox_in`; they are excluded from spending, refund,
   settlement, ranking balances, and real recharge limit buckets;

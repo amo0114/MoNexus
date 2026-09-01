@@ -114,4 +114,4 @@ See `docs/operations/alert-routing.md` and `docs/operations/payment-runbook.md`.
 - routingLabel: `payment-p0`
 - expr: `payment_simulator_configured == 1`
 - for: `0m`
-- meaning: production deploy registered or enabled the simulator provider
+- meaning: production deploy registered or enabled the simulator provider outside approved administrator sandbox mode
