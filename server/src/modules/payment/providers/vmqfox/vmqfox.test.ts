@@ -130,7 +130,7 @@ describe('VMQFox amount conversion', () => {
 })
 
 describe('VMQFox HMAC golden vectors', () => {
-  it('matches official create, callback, and query-by-pay-id vectors', () => {
+  it('matches official VMQFox v2 create and callback vectors', () => {
     expect(createSignV2({
       payId: VECTOR_PAY_ID,
       param: '',
@@ -146,6 +146,9 @@ describe('VMQFox HMAC golden vectors', () => {
       price: VECTOR_PRICE,
       reallyPrice: VECTOR_REALLY_PRICE,
     }, VECTOR_KEY)).toBe(VECTOR_CALLBACK)
+  })
+
+  it('matches the MoNexus/PR-V0 query-by-pay-id contract vector', () => {
     expect(queryByPayIdSignV2({
       payId: VECTOR_PAY_ID,
       timestamp: VECTOR_TIMESTAMP,
@@ -262,12 +265,56 @@ describe('VMQFox adapter contract', () => {
     expect(capabilities.maximumAmountMinor).toBe(100_000n)
   })
 
-  it('rejects a checkout URL off the origin allowlist', async () => {
-    const http: VmqfoxHttp = async () => envelope(createData({
-      redirectUrl: `https://evil.example/#/payment/${TOKEN}`,
-    }))
+  it('recovers an allowlist-rejected checkout URL via query-by-pay-id without stamping succeeded', async () => {
+    let queried = 0
+    const http: VmqfoxHttp = async req => {
+      if (req.url.includes('/api/order/create')) {
+        return envelope(createData({
+          redirectUrl: `https://evil.example/#/payment/${TOKEN}`,
+        }))
+      }
+      if (req.url.includes('query-by-pay-id')) {
+        queried += 1
+        return envelope({
+          status: 1,
+          publicToken: TOKEN,
+          type: 1,
+          price: '10.00',
+          reallyPrice: '10.01',
+        })
+      }
+      throw new Error(`unexpected ${req.url}`)
+    }
     const provider = createVmqfoxProvider(liveConfig, { http })
-    await expect(provider.createPayment(createInput())).rejects.toMatchObject({ code: 'PAYMENT_STATE_UNKNOWN' })
+    const created = await provider.createPayment(createInput())
+    expect(queried).toBe(1)
+    expect(created.status).toBe('requires_action')
+    expect(created.action.type).toBe('redirect')
+    if (created.action.type === 'redirect') expect(created.action.url).toBe(REDIRECT)
+    expect(created.providerPaymentId).toBe(ATTEMPT_ID)
+    expect(created.providerOrderId).toBe(TOKEN)
+    expect(created.amountMinor).toBe(1001n)
+  })
+
+  it('binds payId after a successful create when query-by-pay-id recovery misses', async () => {
+    const http: VmqfoxHttp = async req => {
+      if (req.url.includes('/api/order/create')) {
+        return envelope(createData({
+          redirectUrl: `https://evil.example/#/payment/${TOKEN}`,
+        }))
+      }
+      if (req.url.includes('query-by-pay-id')) {
+        return errorEnvelope(400, '订单不存在')
+      }
+      throw new Error(`unexpected ${req.url}`)
+    }
+    const provider = createVmqfoxProvider(liveConfig, { http })
+    const created = await provider.createPayment(createInput())
+    expect(created.status).toBe('requires_action')
+    expect(created.providerPaymentId).toBe(ATTEMPT_ID)
+    expect(created.providerOrderId).toBe(TOKEN)
+    expect(created.amountMinor).toBe(1001n)
+    if (created.action.type === 'redirect') expect(created.action.url).toBe(REDIRECT)
   })
 
   it('maps remote states -1/0/1/2', async () => {
@@ -338,6 +385,7 @@ describe('VMQFox adapter contract', () => {
     }
     const provider = createVmqfoxProvider(liveConfig, { http })
     const created = await provider.createPayment(createInput())
+    expect(created.status).toBe('requires_action')
     expect(created.providerPaymentId).toBe(ATTEMPT_ID)
     expect(created.providerOrderId).toBe(TOKEN)
     expect(created.amountMinor).toBe(1001n)
@@ -353,7 +401,7 @@ describe('VMQFox adapter contract', () => {
       }
       if (req.url.includes('query-by-pay-id')) {
         return envelope({
-          status: 0,
+          status: 2,
           publicToken: TOKEN,
           type: 1,
           price: '10.00',
@@ -364,6 +412,8 @@ describe('VMQFox adapter contract', () => {
     }
     const provider = createVmqfoxProvider(liveConfig, { http })
     const created = await provider.createPayment(createInput())
+    expect(created.status).toBe('requires_action')
+    expect(created.action.type).toBe('redirect')
     expect(created.providerPaymentId).toBe(ATTEMPT_ID)
     expect(creates).toBe(1)
   })
