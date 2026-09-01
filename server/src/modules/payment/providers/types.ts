@@ -85,6 +85,9 @@ export type NormalizedPayment = {
   providerOrderId?: string | null
   providerCaptureId?: string | null
   amountMinor: bigint
+  quotedAmountMinor?: bigint
+  quotedOrderId?: string
+  quotedPaymentMethod?: string
   currency: RechargeCurrency
   providerAccountKey: string
   immutableStateVersion: string

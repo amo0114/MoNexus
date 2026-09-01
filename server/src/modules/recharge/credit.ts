@@ -323,6 +323,8 @@ export function parseNormalizedPaymentPayload(value: Prisma.JsonValue | null | u
     providerRefundId: typeof payload.providerRefundId === 'string' ? payload.providerRefundId : null,
     amountMinor: typeof amountRaw === 'string' ? BigInt(amountRaw) : null,
     quotedAmountMinor: parseOptionalAmountMinor(payload.quotedAmountMinor),
+    quotedOrderId: typeof payload.quotedOrderId === 'string' ? payload.quotedOrderId : undefined,
+    quotedPaymentMethod: typeof payload.quotedPaymentMethod === 'string' ? payload.quotedPaymentMethod : undefined,
     currency: typeof payload.currency === 'string' ? payload.currency : null,
     immutableStateVersion: typeof payload.immutableStateVersion === 'string' ? payload.immutableStateVersion : null,
   }

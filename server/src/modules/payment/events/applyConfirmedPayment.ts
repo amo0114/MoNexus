@@ -222,8 +222,9 @@ async function applyConfirmedPaymentOnce(observationId: string): Promise<ApplyCo
         currency: string
         provider: string
         providerAccountKey: string
+        paymentMethod: string
       }>>`
-        SELECT "id", "status", "amountMinor", "currency", "provider", "providerAccountKey"
+        SELECT "id", "status", "amountMinor", "currency", "provider", "providerAccountKey", "paymentMethod"
         FROM "RechargeOrder" WHERE "id" = ${intentHint.rechargeOrderId}::uuid FOR UPDATE`
       const order = orderRows[0]
       if (!order) return { outcome: 'reconcile_required' as const, reason: 'order_missing' }
@@ -254,6 +255,10 @@ async function applyConfirmedPaymentOnce(observationId: string): Promise<ApplyCo
 
       const quotedMismatch = payload.quotedAmountMinor !== undefined
         && payload.quotedAmountMinor !== order.amountMinor
+      const quotedOrderMismatch = payload.quotedOrderId !== undefined
+        && payload.quotedOrderId !== order.id
+      const quotedMethodMismatch = payload.quotedPaymentMethod !== undefined
+        && payload.quotedPaymentMethod !== order.paymentMethod
       const providerAmountMismatch = payload.amountMinor !== attempt.expectedProviderAmountMinor
       if (
         order.provider !== observation.provider
@@ -261,6 +266,9 @@ async function applyConfirmedPaymentOnce(observationId: string): Promise<ApplyCo
         || order.currency !== payload.currency
         || providerAmountMismatch
         || quotedMismatch
+        || quotedOrderMismatch
+        || quotedMethodMismatch
+        || (payload.quotedOrderId !== undefined && payload.providerPaymentId !== attempt.id)
       ) {
         const mismatchType: ReconciliationMismatchType = order.currency !== payload.currency
           ? 'currency_mismatch'

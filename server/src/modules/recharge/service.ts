@@ -51,6 +51,7 @@ const PROVIDER_PAYMENT_METHODS: Readonly<Record<PaymentProviderName, readonly st
   paypal: ['redirect'],
   wechat_pay: ['native'],
   alipay: ['wap', 'page'],
+  vmqfox: ['wechat', 'alipay'],
 }
 
 function isAdminSandboxMode(): boolean {
