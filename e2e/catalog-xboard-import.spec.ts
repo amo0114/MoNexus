@@ -18,12 +18,12 @@
  *     refreshed admin product list is re-verified against a strict typed DTO
  *     and the real DOM table.
  *
- * HTTP response predicates (method + exact pathname; empty search where noted):
+ * HTTP response predicates (method + exact pathname; expected query where noted):
  *   - isCatalogResponse        GET  /api/admin/faka/catalog
  *   - isRegistryResponse       GET  /api/config/registry
  *   - isImportPreviewResponse  POST /api/admin/faka/import/preview
  *   - isImportResponse         POST /api/admin/faka/import
- *   - isAdminProductsResponse  GET  /api/admin/products (empty URL search)
+ *   - isAdminProductsResponse  GET  /api/admin/products (archived omitted or exclude)
  *
  * Response parsers (strict, reject extra keys, throw clear errors):
  *   - parseFakaCatalogResponse      GET /api/admin/faka/catalog payload
@@ -139,14 +139,18 @@ export const isAdminCategoriesResponse = exactResponse('GET', '/api/admin/produc
 export const isImportPreviewResponse = exactResponse('POST', '/api/admin/faka/import/preview');
 export const isImportResponse = exactResponse('POST', '/api/admin/faka/import');
 /**
- * Matches the admin products list response: GET with exact pathname
- * /api/admin/products and an empty URL search string. The real UI refresh
- * triggered by onImported() after a successful import sends no query params.
+ * Matches the default admin products list response: GET with exact pathname
+ * /api/admin/products and archived either omitted or set to exclude. The admin
+ * page now sends archived=exclude for its default "active products" view.
  */
-export const isAdminProductsResponse = (response: Response): boolean =>
-  response.request().method() === 'GET'
-  && new URL(response.url()).pathname === '/api/admin/products'
-  && new URL(response.url()).search === '';
+export const isAdminProductsResponse = (response: Response): boolean => {
+  const url = new URL(response.url());
+  const archived = url.searchParams.get('archived');
+  return response.request().method() === 'GET'
+    && url.pathname === '/api/admin/products'
+    && url.searchParams.size <= (archived === null ? 0 : 1)
+    && (archived === null || archived === 'exclude');
+};
 
 export const isAdminReadinessResponse = (response: Response): boolean =>
   response.request().method() === 'GET'
@@ -800,6 +804,7 @@ export interface FakaPreviewIssue {
   code: string;
   field: string;
   message: string;
+  action?: string;
 }
 
 export interface FakaPreviewResponse {
@@ -812,12 +817,16 @@ export interface FakaPreviewResponse {
   offers: FakaPreviewOffer[];
   issues: FakaPreviewIssue[];
   canConfirm: boolean;
+  existingProductId: number | null;
+  archived: boolean;
+  suggestedActions: string[];
 }
 
 /**
  * Strictly parses the Faka import preview response payload.
  * Top level must be exactly { sourceHash, capacity, productName,
- * plainDescription, richDescription, cover, offers, issues, canConfirm }:
+ * plainDescription, richDescription, cover, offers, issues, canConfirm,
+ * existingProductId, archived, suggestedActions }:
  *   - sourceHash: 64-character lowercase hex string
  *   - capacity: exactly { limit, activeUsers, remaining, sellable } with
  *     limit/remaining null or non-negative integer, activeUsers non-negative
@@ -832,9 +841,12 @@ export interface FakaPreviewResponse {
  *     pricePoints, validityDays } with non-empty strings period/sku/offerName,
  *     positive integer pricePoints, validityDays positive integer or null, and
  *     period/sku each unique across items
- *   - issues: array; each item exactly { code, field, message } with non-empty
- *     strings
+ *   - issues: array; each item exactly { code, field, message } plus optional
+ *     action, all non-empty strings
  *   - canConfirm: boolean
+ *   - existingProductId: positive integer or null
+ *   - archived: boolean
+ *   - suggestedActions: unique non-empty strings
  * Rejects any extra key. Returns a fully typed object.
  */
 export function parseFakaPreviewResponse(value: unknown): FakaPreviewResponse {
@@ -850,6 +862,9 @@ export function parseFakaPreviewResponse(value: unknown): FakaPreviewResponse {
       'offers',
       'issues',
       'canConfirm',
+      'existingProductId',
+      'archived',
+      'suggestedActions',
     ],
     'Faka preview response',
   );
@@ -868,6 +883,27 @@ export function parseFakaPreviewResponse(value: unknown): FakaPreviewResponse {
   }
   if (typeof value.canConfirm !== 'boolean') {
     throw new Error('Faka preview response: canConfirm must be a boolean');
+  }
+  if (value.existingProductId !== null && !isPositiveInteger(value.existingProductId)) {
+    throw new Error('Faka preview response: existingProductId must be a positive integer or null');
+  }
+  if (typeof value.archived !== 'boolean') {
+    throw new Error('Faka preview response: archived must be a boolean');
+  }
+  if (!Array.isArray(value.suggestedActions)) {
+    throw new Error('Faka preview response: suggestedActions must be an array');
+  }
+  const suggestedActions: string[] = [];
+  const seenSuggestedActions = new Set<string>();
+  for (const action of value.suggestedActions) {
+    if (typeof action !== 'string' || action.length === 0) {
+      throw new Error('Faka preview response: suggestedActions must contain only non-empty strings');
+    }
+    if (seenSuggestedActions.has(action)) {
+      throw new Error(`Faka preview response: duplicate action "${action}" in suggestedActions`);
+    }
+    seenSuggestedActions.add(action);
+    suggestedActions.push(action);
   }
 
   assertExactKeys(
@@ -971,7 +1007,12 @@ export function parseFakaPreviewResponse(value: unknown): FakaPreviewResponse {
   const rawIssues: unknown[] = value.issues;
   const parsedIssues: FakaPreviewIssue[] = [];
   for (const issue of rawIssues) {
-    assertExactKeys(issue, ['code', 'field', 'message'], 'Faka preview response: issues item');
+    const hasAction = isRecord(issue) && Object.prototype.hasOwnProperty.call(issue, 'action');
+    assertExactKeys(
+      issue,
+      hasAction ? ['code', 'field', 'message', 'action'] : ['code', 'field', 'message'],
+      'Faka preview response: issues item',
+    );
     if (typeof issue.code !== 'string' || issue.code.length === 0) {
       throw new Error('Faka preview response: issues item code must be a non-empty string');
     }
@@ -981,7 +1022,15 @@ export function parseFakaPreviewResponse(value: unknown): FakaPreviewResponse {
     if (typeof issue.message !== 'string' || issue.message.length === 0) {
       throw new Error('Faka preview response: issues item message must be a non-empty string');
     }
-    parsedIssues.push({ code: issue.code, field: issue.field, message: issue.message });
+    if (hasAction && (typeof issue.action !== 'string' || issue.action.length === 0)) {
+      throw new Error('Faka preview response: issues item action must be a non-empty string when present');
+    }
+    parsedIssues.push({
+      code: issue.code,
+      field: issue.field,
+      message: issue.message,
+      ...(hasAction ? { action: issue.action as string } : {}),
+    });
   }
 
   return {
@@ -999,6 +1048,9 @@ export function parseFakaPreviewResponse(value: unknown): FakaPreviewResponse {
     offers,
     issues: parsedIssues,
     canConfirm: value.canConfirm,
+    existingProductId: value.existingProductId,
+    archived: value.archived,
+    suggestedActions,
   };
 }
 
