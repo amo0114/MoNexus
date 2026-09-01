@@ -4,7 +4,7 @@ import { config } from '../../config/index.js'
 import { serializeAmountMinor, parseAmountMinorString } from './money.js'
 import { applyConfirmedPayment } from '../payment/events/applyConfirmedPayment.js'
 import { applyDisputeObservation } from '../payment/disputes/service.js'
-import { applyRefundObservation, requestRechargeRefund } from './refund.js'
+import { applyRefundObservation, providerSupportsRefunds, requestRechargeRefund } from './refund.js'
 import {
   createReconciliationRun,
   executeReconciliationRun,
@@ -71,6 +71,32 @@ function serializeAdminOrder(order: {
   }
 }
 
+async function refundCapabilityByOrderId(
+  orders: Array<{
+    id: string
+    adminSandbox: boolean
+    provider: string
+    providerAccountKey: string
+    paymentMethod: string
+    currency: string
+  }>,
+) {
+  const cache = new Map<string, boolean>()
+  const byOrderId = new Map<string, boolean>()
+  for (const order of orders) {
+    if (order.adminSandbox) {
+      byOrderId.set(order.id, false)
+      continue
+    }
+    const key = `${order.provider}\0${order.providerAccountKey}\0${order.paymentMethod}\0${order.currency}`
+    if (!cache.has(key)) {
+      cache.set(key, await providerSupportsRefunds(order))
+    }
+    byOrderId.set(order.id, cache.get(key) === true)
+  }
+  return byOrderId
+}
+
 export async function adminListOrders(query: {
   page: number
   pageSize: number
@@ -97,7 +123,16 @@ export async function adminListOrders(query: {
       },
     }),
   ])
-  return { page: query.page, pageSize: query.pageSize, total, items: items.map(serializeAdminOrder) }
+  const refundCaps = await refundCapabilityByOrderId(items)
+  return {
+    page: query.page,
+    pageSize: query.pageSize,
+    total,
+    items: items.map(item => ({
+      ...serializeAdminOrder(item),
+      supportsRefunds: refundCaps.get(item.id) === true,
+    })),
+  }
 }
 
 export async function adminGetOrder(orderId: string) {
@@ -112,8 +147,10 @@ export async function adminGetOrder(orderId: string) {
     },
   })
   if (!order) throw notFound('充值订单不存在')
+  const refundCaps = await refundCapabilityByOrderId([order])
   return {
     ...serializeAdminOrder(order),
+    supportsRefunds: refundCaps.get(order.id) === true,
     paymentIntent: order.paymentIntent
       ? {
           id: order.paymentIntent.id,

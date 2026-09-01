@@ -442,6 +442,36 @@ async function failUncreatedPayment(orderId: string, intentId: string, attemptId
   }, TX)
 }
 
+async function persistUnknownPayable(
+  orderId: string,
+  intentId: string,
+  attemptId: string,
+  created: { providerPaymentId: string; providerOrderId?: string | null; action: { type: string } },
+) {
+  await prisma.$transaction(async tx => {
+    const cas = await tx.paymentAttempt.updateMany({
+      where: { id: attemptId, status: 'created', providerPaymentId: null },
+      data: {
+        status: 'unknown',
+        providerPaymentId: created.providerPaymentId || null,
+        providerOrderId: created.providerOrderId ?? null,
+        actionType: created.action.type,
+        actionPayload: JSON.stringify(created.action),
+        lastErrorCode: 'PAYMENT_STATE_UNKNOWN',
+      },
+    })
+    if (cas.count !== 1) return
+    await tx.paymentIntent.updateMany({
+      where: { id: intentId, status: { in: [...OPEN_INTENT] } },
+      data: { status: 'reconcile_required', activeAttemptId: attemptId },
+    })
+    await tx.rechargeOrder.updateMany({
+      where: { id: orderId, status: { in: ['created', 'pending_payment', 'closure_pending'] } },
+      data: { status: 'reconcile_required' },
+    })
+  }, TX)
+}
+
 async function persistProviderCreate(
   order: OrderWithAttempts,
   intent: { id: string },
@@ -481,7 +511,7 @@ async function persistProviderCreate(
     throw error
   }
   if (typeof created.amountMinor !== 'bigint' || created.amountMinor <= 0n) {
-    await failUncreatedPayment(order.id, intent.id, attempt.id, paymentStateUnknown('渠道返回的应付金额不合法'))
+    await persistUnknownPayable(order.id, intent.id, attempt.id, created)
     throw paymentStateUnknown('渠道返回的应付金额不合法')
   }
   const now = new Date()

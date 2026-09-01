@@ -1988,6 +1988,7 @@ model ReconciliationItem {
   localStatus         String?
   providerAmountMinor BigInt?
   localAmountMinor    BigInt?
+  quotedAmountMinor   BigInt?
   currency            String?   @db.Char(3)
   status              String
   resolutionReason    String?

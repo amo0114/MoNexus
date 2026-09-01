@@ -8,7 +8,7 @@ import {
   type AdminRechargeOrder,
   type AdminRechargeOrderDetail,
 } from '../../../api/adminRecharge'
-import { getApiErrorMessage } from '../../../api/error'
+import { getApiErrorCode, getApiErrorMessage } from '../../../api/error'
 import { useAppStore } from '../../../stores/appStore'
 import AdminPagination from '../AdminPagination'
 import ConfirmDialog from '../../ui/ConfirmDialog'
@@ -120,7 +120,7 @@ export default function AdminRechargeOrders() {
                   <td data-label="渠道">{providerLabel(item.provider)} · {methodLabel(item.paymentMethod)}</td>
                   <td data-label="状态">{orderStatusLabel(item.status)}</td>
                   <td className="text-right whitespace-nowrap space-x-3" data-label="操作">
-                    {(item.status === 'credited' || item.status === 'paid') && !item.refundId && !item.adminSandbox && (
+                    {(item.status === 'credited' || item.status === 'paid') && !item.refundId && !item.adminSandbox && item.supportsRefunds && (
                       <button type="button" className="text-sm font-bold text-[var(--color-danger)]" onClick={() => setRefundTarget(item)}>
                         退款
                       </button>
@@ -184,7 +184,12 @@ export default function AdminRechargeOrders() {
               setRefundTarget(null)
               void load()
             })
-            .catch((err) => showToast(getApiErrorMessage(err, '退款失败'), 'error'))
+            .catch((err) => showToast(
+              getApiErrorCode(err) === 'PAYMENT_REFUND_NOT_SUPPORTED'
+                ? '当前支付渠道不支持自动退款'
+                : getApiErrorMessage(err, '退款失败'),
+              'error',
+            ))
             .finally(() => setActing(false))
         }}
       />

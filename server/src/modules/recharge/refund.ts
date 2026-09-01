@@ -57,20 +57,33 @@ function asProviderName(value: string): PaymentProviderName {
   return value as PaymentProviderName
 }
 
+export async function providerSupportsRefunds(input: {
+  provider: string
+  providerAccountKey: string
+  paymentMethod: string
+  currency: string
+}): Promise<boolean> {
+  try {
+    const provider = getHistoricalProvider(asProviderName(input.provider))
+    const capabilities = await provider.getCapabilities({
+      providerAccountKey: input.providerAccountKey,
+      environment: providerEnvironment(),
+      currency: input.currency as RechargeCurrency,
+      paymentMethod: input.paymentMethod,
+    })
+    return capabilities.supportsRefunds === true
+  } catch {
+    return false
+  }
+}
+
 async function assertProviderSupportsRefunds(input: {
   provider: string
   providerAccountKey: string
   paymentMethod: string
   currency: string
 }) {
-  const provider = getHistoricalProvider(asProviderName(input.provider))
-  const capabilities = await provider.getCapabilities({
-    providerAccountKey: input.providerAccountKey,
-    environment: providerEnvironment(),
-    currency: input.currency as RechargeCurrency,
-    paymentMethod: input.paymentMethod,
-  })
-  if (!capabilities.supportsRefunds) {
+  if (!await providerSupportsRefunds(input)) {
     throw paymentRefundNotSupported()
   }
 }

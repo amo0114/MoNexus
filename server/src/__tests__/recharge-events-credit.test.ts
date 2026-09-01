@@ -35,7 +35,7 @@ import {
   openPaymentDispute,
   resolveDisputeOutcome,
 } from '../modules/payment/disputes/service.js'
-import { reconcileOrder } from '../modules/payment/reconciliation/service.js'
+import { createReconciliationRun, reconcileOrder } from '../modules/payment/reconciliation/service.js'
 import { api, authHeader, createTestProduct, createTestUser, loginAs } from './helpers.js'
 import { debitAvailablePoints } from '../modules/points/checkedMutation.js'
 
@@ -858,7 +858,8 @@ describe('apply observation retry and mismatch recon', () => {
     expect(item.reconciliationRun.environment).toBe('sandbox')
     expect(item.providerAmountMinor).toBe(created.amountMinor + 1n)
     expect(item.localAmountMinor).toBe(created.attempt.expectedProviderAmountMinor)
-    expect(item.resolutionReason).toBe(`quotedAmountMinor=${created.amountMinor.toString(10)}`)
+    expect(item.quotedAmountMinor).toBe(created.amountMinor)
+    expect(item.resolutionReason).toBeNull()
   })
 
   it('confirms quote 1000 / expectedProvider 1001 of 1001 and credits 1000 points', async () => {
@@ -889,6 +890,13 @@ describe('apply observation retry and mismatch recon', () => {
     const order = await prisma.rechargeOrder.findUniqueOrThrow({ where: { id: created.orderId } })
     expect(order.amountMinor).toBe(1000n)
     expect(order.status).toBe('credited')
+    setStoredPaymentStatus(created.attempt.providerPaymentId!, 'succeeded')
+    const run = await createReconciliationRun({
+      provider: 'simulator',
+      providerAccountKey: 'simulator:sandbox:default',
+      scopeType: 'manual',
+    })
+    expect(run.items.filter(item => item.mismatchType === 'amount_mismatch')).toEqual([])
   })
 
   it('rejects quotedAmountMinor that does not match the frozen order quote', async () => {
@@ -941,9 +949,11 @@ describe('admin recharge payment APIs', () => {
     const { user: admin } = await createTestUser('recharge-admin@test.local', 'pass12345', 'admin')
     const adminAuth = await loginAs('recharge-admin@test.local', 'pass12345')
     const listed = await api.get('/api/admin/recharge/orders').set(authHeader(adminAuth.accessToken)).expect(200)
-    expect(listed.body.items.some((item: { orderId: string }) => item.orderId === created.orderId)).toBe(true)
+    const listedOrder = listed.body.items.find((item: { orderId: string }) => item.orderId === created.orderId)
+    expect(listedOrder).toMatchObject({ supportsRefunds: true })
     const detail = await api.get(`/api/admin/recharge/orders/${created.orderId}`).set(authHeader(adminAuth.accessToken)).expect(200)
     expect(detail.body.status).toBe('paid')
+    expect(detail.body.supportsRefunds).toBe(true)
     const events = await api.get('/api/admin/payments/events').set(authHeader(adminAuth.accessToken)).expect(200)
     expect(events.body.items.length).toBeGreaterThan(0)
     await prisma.rechargeOrder.update({ where: { id: created.orderId }, data: { status: 'paid', creditedAt: null } })

@@ -20,6 +20,7 @@ export interface AdminRechargeOrder {
   creditId: string | null
   refundId: string | null
   refundStatus: string | null
+  supportsRefunds: boolean
 }
 
 export interface AdminRechargeOrderDetail extends AdminRechargeOrder {
@@ -80,6 +81,7 @@ export interface AdminReconItem {
   localStatus: string | null
   providerAmountMinor: string | null
   localAmountMinor: string | null
+  quotedAmountMinor: string | null
   currency: string | null
   status: string
 }

@@ -78,6 +78,7 @@ describe('AdminRechargePage', () => {
       creditId: 'credit-1',
       refundId: 'refund-1',
       refundStatus: 'points_held',
+      supportsRefunds: true,
     }
     listAdminRechargeOrders.mockImplementation(async (query?: { status?: string }) => {
       if (query?.status === 'credited') {

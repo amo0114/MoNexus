@@ -100,11 +100,9 @@ async function writeOpenReconItem(tx: Prisma.TransactionClient, input: {
       localStatus: input.localStatus ?? null,
       providerAmountMinor: input.providerAmountMinor ?? null,
       localAmountMinor: input.localAmountMinor ?? null,
+      quotedAmountMinor: input.quotedAmountMinor ?? null,
       currency: input.currency ?? null,
       status: 'open',
-      resolutionReason: input.mismatchType === 'amount_mismatch' && input.quotedAmountMinor != null
-        ? `quotedAmountMinor=${input.quotedAmountMinor.toString(10)}`
-        : null,
     },
     update: {},
   })
