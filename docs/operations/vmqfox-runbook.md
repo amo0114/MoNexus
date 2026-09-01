@@ -23,16 +23,25 @@ Related: `docs/operations/payment-runbook.md`, `docs/operations/payment-alerts.m
 
 Always registered, then enabled. Never reverse that order.
 
+`VMQFOX_MODE=disabled` mounts `createDisabledVmqfoxProvider()`. That stub
+throws `PAYMENT_PROVIDER_UNAVAILABLE` on webhook verify and query, so the
+route ACKs HTTP 503 body `failure`. Registered-but-disabled is **not** a
+working historical adapter.
+
 1. Keep `RECHARGE_MODE=disabled` and `VMQFOX_MODE=disabled` until PR-V0 is
    deployed on the VMQFox side (idempotent create + query-by-pay-id).
-2. Add `vmqfox` to `PAYMENT_REGISTERED_PROVIDERS` only. Webhook route and
-   query workers may load; new quotes must still reject the provider.
+2. After PR-V0: set `VMQFOX_MODE=live` (credentials + notify URL required)
+   and add `vmqfox` to `PAYMENT_REGISTERED_PROVIDERS` only. The live adapter
+   then serves historical webhook/query workers. New quotes still reject
+   `vmqfox` because it is not enabled.
 3. Confirm `PAYMENT_ENABLED_PROVIDERS` does **not** contain `vmqfox`.
+   Working window: `VMQFOX_MODE=live` + registered + enabled empty of `vmqfox`.
 4. Create and review draft price policy `rp-cny-vmqfox-v1`. Do not activate
    from a migration.
 5. Only after PR-V0 + adapter contract + small-amount staging evidence:
-   set `RECHARGE_MODE=live`, `VMQFOX_MODE=live`, then append `vmqfox` to
-   `PAYMENT_ENABLED_PROVIDERS`.
+   set `RECHARGE_MODE=live` if it is not already, then append `vmqfox` to
+   `PAYMENT_ENABLED_PROVIDERS`. Do not flip `VMQFOX_MODE` here; it is already
+   `live` from step 2.
 6. Keep `simulator` out of any live provider list.
 
 `RECHARGE_MODE=live` before PR-V0 is forbidden. Missing query-by-pay-id
@@ -53,7 +62,16 @@ VMQFOX_MODE=disabled
 PAYMENT_WEBHOOK_PUBLIC_BASE_URL=https://<monexus-public-host>/api/payment/webhooks
 ```
 
-Live recipe (do not apply in this PR):
+Registered-not-enabled window (after PR-V0, before small-amount enable):
+
+```text
+VMQFOX_MODE=live
+PAYMENT_REGISTERED_PROVIDERS=...,vmqfox
+# PAYMENT_ENABLED_PROVIDERS must omit vmqfox
+PAYMENT_WEBHOOK_PUBLIC_BASE_URL=https://<monexus-public-host>/api/payment/webhooks
+```
+
+Live enable recipe (do not apply in this PR):
 
 ```text
 RECHARGE_MODE=live
@@ -73,18 +91,21 @@ merchant key.
 
 ## Emergency stop
 
-Stop **new** VMQFox orders without unloading history:
+Stop **new** VMQFox orders without unloading history. Keep the live adapter.
 
 1. Remove `vmqfox` from `PAYMENT_ENABLED_PROVIDERS`, **or** set
    `RECHARGE_ACCEPT_NEW_ORDERS=false`.
 2. Keep `vmqfox` in `PAYMENT_REGISTERED_PROVIDERS`.
-3. Confirm inbound `POST /api/payment/webhooks/vmqfox` still ACKs `success`
+3. Keep `VMQFOX_MODE=live`. Do **not** set `VMQFOX_MODE=disabled` to stop
+   new orders. That unloads the live adapter and replaces it with the stub,
+   so webhooks ACK `failure` 503 and query-by-pay-id recovery dies.
+4. Confirm inbound `POST /api/payment/webhooks/vmqfox` still ACKs `success`
    for already-paid notifications.
-4. Confirm observation / credit / query workers still drain. Query-by-pay-id
+5. Confirm observation / credit / query workers still drain. Query-by-pay-id
    recovery must keep running for in-flight `payId`s.
-5. Do not set `VMQFOX_MODE=disabled` while paid-not-credited or unknown
-   creates remain, unless the adapter is still historically registered
-   through `PAYMENT_REGISTERED_PROVIDERS`.
+6. Only after there are no paid-not-credited rows and no unknown creates,
+   set `VMQFOX_MODE=disabled` as adapter teardown. That is not an emergency
+   stop.
 
 Closing recharge must not stop credit of already-paid orders.
 
@@ -120,7 +141,8 @@ VMQFox cannot refund or dispute through the provider API.
 ## Grayscale steps (plan §9.3)
 
 1. VMQFox PR-V0 deployed; official HMAC vectors pass.
-2. MoNexus adapter registered, not enabled. `VMQFOX_MODE=disabled`.
+2. After PR-V0: `VMQFOX_MODE=live` and `vmqfox` registered, not enabled.
+   `VMQFOX_MODE=disabled` is the pre-V0 / teardown state, not grayscale.
 3. Create and review `rp-cny-vmqfox-v1` draft. Do not auto-activate.
 4. Staging / controlled account: `¥1` and `¥10` once each. Confirm duplicate
    callback ACK `success` and query-by-pay-id recovery. This PR did **not**
@@ -146,7 +168,7 @@ Existing generic rules already cover VMQFox via the `provider` label:
 VMQFox-specific additions:
 
 - `payment-monitor-offline` (P1)
-- `payment-callback-retry-exhaustion` (P1)
+- `payment-callback-retry-exhaustion` (P1; ACK-failure only, not duplicate success ACKs)
 
 See `docs/operations/payment-alerts.md`. This repository ships the rule
 contract only. A merge is not delivery evidence and does not enable live.

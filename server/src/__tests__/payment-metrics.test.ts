@@ -39,6 +39,7 @@ describe('payment metrics', () => {
     recordWebhookAckFailure('vmqfox')
     recordQueryByPayIdRecovery('vmqfox', 'recovered')
     recordQueryByPayIdRecovery('vmqfox', 'missed')
+    recordQueryByPayIdRecovery('vmqfox', 'unusable')
     recordQueryByPayIdRecovery('vmqfox', 'failed')
     recordRefundNotSupported('vmqfox')
 
@@ -59,6 +60,7 @@ describe('payment metrics', () => {
     expect(snapshot).toContain('payment_callback_retry_total{provider="vmqfox"}')
     expect(snapshot).toContain('payment_webhook_ack_failure_total{provider="vmqfox"}')
     expect(snapshot).toContain('payment_query_by_pay_id_recovery_total{provider="vmqfox",result="recovered"}')
+    expect(snapshot).toContain('payment_query_by_pay_id_recovery_total{provider="vmqfox",result="unusable"}')
     expect(snapshot).toContain('payment_refund_not_supported_total{provider="vmqfox"}')
     expect(snapshot).not.toMatch(/payment_monitor_offline_total\{[^}]*userId/)
     expect(snapshot).not.toMatch(/payment_callback_retry_total\{[^}]*publicToken/)

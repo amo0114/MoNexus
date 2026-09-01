@@ -101,11 +101,11 @@ groups:
           summary: Payment collection-code monitor offline
           description: A collection-code monitor was offline during provider create. VMQFox cannot create new orders until the Android monitor is online. This is not an automatic refund, dispute, or standard reconciliation signal.
       - alert: MoNexusPaymentCallbackRetryExhaustion
-        expr: increase(payment_webhook_ack_failure_total[15m]) >= 5 or increase(payment_callback_retry_total[15m]) >= 10
+        expr: increase(payment_webhook_ack_failure_total[15m]) >= 5
         for: 5m
         labels:
           severity: P1
           routing: payment-p1
         annotations:
           summary: Payment callback retry exhaustion
-          description: Provider merchant callbacks are retrying without a durable success ACK. VMQFox requires the exact text body success. Do not treat this as an automatic refund or dispute.
+          description: Webhook handlers returned a non-success ACK often enough that merchant notify retries may exhaust. Duplicate webhooks that still ACK success are not this signal. VMQFox requires the exact text body success. Do not treat this as an automatic refund or dispute.

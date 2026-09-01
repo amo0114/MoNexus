@@ -131,9 +131,9 @@ See `docs/operations/alert-routing.md` and `docs/operations/payment-runbook.md`.
 - id: `payment-callback-retry-exhaustion`
 - severity: P1
 - routingLabel: `payment-p1`
-- expr: `increase(payment_webhook_ack_failure_total[15m]) >= 5 or increase(payment_callback_retry_total[15m]) >= 10`
+- expr: `increase(payment_webhook_ack_failure_total[15m]) >= 5`
 - for: `5m`
-- meaning: provider merchant callbacks are retrying without a durable success ACK
-- limitation: VMQFox retries until it receives the exact text body `success`. Failure ACK or a JSON body causes retries and eventual exhaustion. This is not a refund, dispute, or standard recon signal.
+- meaning: webhook handlers returned a non-success ACK often enough that merchant notify retries may exhaust
+- limitation: This counts failure ACKs only. Duplicate inbound webhooks that still ACK `success` increment `payment_callback_retry_total` and must not page this rule. VMQFox retries until it receives the exact text body `success`. This is not a refund, dispute, or standard recon signal.
 
 Amount mismatch (`payment-amount-mismatch`), paid-not-credited (`payment-paid-not-credited`), and webhook signature failure (`payment-webhook-signature-failure-surge`) already apply to `provider="vmqfox"` through the bounded provider label. Do not add `userId`, `orderId`, `publicToken`, or merchant keys as labels.

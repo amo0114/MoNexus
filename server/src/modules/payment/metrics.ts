@@ -71,7 +71,7 @@ export type PaymentRefundResult = (typeof PAYMENT_REFUND_RESULTS)[number]
 export const PAYMENT_WORKER_NAMES = ['observation', 'credit', 'refund', 'query'] as const
 export type PaymentWorkerName = (typeof PAYMENT_WORKER_NAMES)[number]
 
-export const PAYMENT_QUERY_BY_PAY_ID_RESULTS = ['recovered', 'missed', 'failed'] as const
+export const PAYMENT_QUERY_BY_PAY_ID_RESULTS = ['recovered', 'missed', 'unusable', 'failed'] as const
 export type PaymentQueryByPayIdResult = (typeof PAYMENT_QUERY_BY_PAY_ID_RESULTS)[number]
 
 const PROVIDER_SET = new Set<string>(PAYMENT_PROVIDER_NAMES)

@@ -123,9 +123,9 @@ export const PAYMENT_ALERTS = [
     name: 'MoNexus Payment callback retry exhaustion',
     severity: 'P1',
     routingLabel: 'payment-p1',
-    expr: 'increase(payment_webhook_ack_failure_total[15m]) >= 5 or increase(payment_callback_retry_total[15m]) >= 10',
+    expr: 'increase(payment_webhook_ack_failure_total[15m]) >= 5',
     for: '5m',
-    summary: 'provider merchant callbacks are retrying without a durable success ACK',
+    summary: 'webhook handlers returned a non-success ACK often enough that merchant notify retries may exhaust',
   },
 ] as const satisfies readonly PaymentAlert[]
 

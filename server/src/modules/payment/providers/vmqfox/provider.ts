@@ -256,8 +256,12 @@ export function createVmqfoxProvider(
     try {
       const recovered = await api.queryByPayId(input.paymentAttemptId, now())
       const action = actionFromQuery(config, input, method, recovered, now())
-      recordQueryByPayIdRecovery(VMQFOX_PROVIDER_NAME, 'recovered')
-      return action
+      if (action) {
+        recordQueryByPayIdRecovery(VMQFOX_PROVIDER_NAME, 'recovered')
+        return action
+      }
+      recordQueryByPayIdRecovery(VMQFOX_PROVIDER_NAME, 'unusable')
+      return null
     } catch (err) {
       if (err instanceof VmqfoxClientError && err.kind === 'not_found') {
         recordQueryByPayIdRecovery(VMQFOX_PROVIDER_NAME, 'missed')

@@ -182,10 +182,26 @@ function handleProviderWebhook(providerName: PaymentProviderName) {
         })
       }
     } catch (err) {
+      if (res.headersSent) {
+        next(err)
+        return
+      }
       if (err instanceof HttpError && (err.code === 'PAYMENT_PROVIDER_UNAVAILABLE' || err.status === 503)) {
         ackFailure(res, providerName, 503, 'PAYMENT_PROVIDER_UNAVAILABLE', `${providerName} adapter is not mounted`)
         return
       }
+      // JSON 500 from the global errorHandler is not a VMQFox success ACK and
+      // causes merchant retries; count it. Text providers get a failure body.
+      if (providerName === 'alipay' || providerName === 'vmqfox') {
+        logger.warn({
+          event: 'payment.webhook_handler_failed',
+          provider: providerName,
+          err: err instanceof Error ? err.message : 'webhook_handler_failed',
+        }, 'webhook handler failed')
+        ackFailure(res, providerName, 500, 'WEBHOOK_HANDLER_FAILED', 'webhook handler failed')
+        return
+      }
+      recordWebhookAckFailure(providerName)
       next(err)
     }
   }

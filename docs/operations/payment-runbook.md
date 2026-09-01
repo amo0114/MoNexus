@@ -154,9 +154,13 @@ auto-refund.
 1. Confirm `payment_observation_total{result="late_success"}` and an open
    reconciliation item `provider_paid_local_unpaid`.
 2. Manually decide: keep unpaid and refund at the provider, or credit after
-   finance review.
+   finance review. **VMQFox exception:** do not call a provider refund or
+   dispute API (`supportsRefunds=false`, `supportsDisputes=false`). Keep
+   unpaid and refund the collection-code payment outside MoNexus, then
+   record `AdminLog` / points-adjust per `docs/operations/vmqfox-runbook.md`.
 3. Record the decision with an admin reconcile/refund action so `AdminLog`
-   captures the operator, not the payload.
+   captures the operator, not the payload. Providers that advertise
+   `supportsRefunds=true` may still refund at the provider; VMQFox may not.
 
 ## Refund recovery
 
