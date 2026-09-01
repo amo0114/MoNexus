@@ -5,7 +5,7 @@ import { syncProductProjection } from '../../lib/offers.js'
 import { normalizeFakaOfferIntegration } from '../../lib/fakaBridge/index.js'
 import { invalidateProductPublicCache } from '../products/cache.js'
 import { CATALOG_ERROR_CODES } from '../catalog/constants.js'
-import { fetchNormalizedFakaSource } from '../catalog/externalCatalog.js'
+import { fakaCatalogSkuSet, fetchNormalizedFakaSource } from '../catalog/externalCatalog.js'
 import { lockProductRow } from './productLifecycle.js'
 
 type Tx = Prisma.TransactionClient
@@ -196,6 +196,13 @@ export async function makeDefaultAdminOffer(
   const updated = await prisma.$transaction(async tx => {
     await lockProductRow(tx, productId)
     const offer = await loadOffer(tx, productId, offerId)
+    if (offer.status !== 'active') {
+      throw new HttpError(
+        409,
+        CATALOG_ERROR_CODES.DEFAULT_OFFER_REQUIRES_ACTIVE as ErrorCode,
+        '已归档规格不能设为默认，请先恢复',
+      )
+    }
     if (offer.isDefault) return offer
     await tx.offer.updateMany({
       where: { productId, isDefault: true },
@@ -233,11 +240,7 @@ export async function previewRebindAdminOfferSku(
   }
   const nextSku = sku.trim().toLowerCase()
   const source = await fetchNormalizedFakaSourceForOffer(offer.externalSku)
-  const known = new Set([
-    ...source.periods.map(row => row.skuAlias),
-    ...source.namedSkus.map(row => row.sku),
-  ])
-  if (!known.has(nextSku)) {
+  if (!fakaCatalogSkuSet(source).has(nextSku)) {
     throw badRequest(`Xboard 目录不包含 SKU ${nextSku}`)
   }
   const conflict = await prisma.offer.findFirst({

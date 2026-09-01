@@ -123,6 +123,23 @@ export interface NormalizedFakaSource {
   }
 }
 
+export function fakaCatalogSkuSet(
+  source: Pick<NormalizedFakaSource, 'periods' | 'namedSkus'>,
+  period?: string,
+): Set<string> {
+  const periods = period
+    ? source.periods.filter(row => row.period === period)
+    : source.periods
+  const named = period
+    ? source.namedSkus.filter(row => row.period === period)
+    : source.namedSkus
+  return new Set(
+    [...periods.map(row => row.skuAlias), ...named.map(row => row.sku)]
+      .map(sku => sku.trim().toLowerCase())
+      .filter(sku => sku.length > 0),
+  )
+}
+
 export function normalizeFakaSource(plan: FakaPlanCatalogItem): NormalizedFakaSource {
   const periods = (plan.periods ?? []).map(row => ({
     period: row.period.trim().toLowerCase(),

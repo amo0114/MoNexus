@@ -143,7 +143,7 @@ export default function AdminOfferManagerModal({ product, onClose, onChanged }: 
                   </div>
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
-                  {!offer.isDefault && (
+                  {!offer.isDefault && offer.status !== 'inactive' && (
                     <button type="button" className="btn-sm text-xs" disabled={submitting}
                       data-testid={`admin-offer-make-default-${offer.id}`}
                       onClick={() => { void makeDefault(offer) }}>设为默认</button>

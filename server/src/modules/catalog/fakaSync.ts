@@ -7,6 +7,7 @@ import { invalidateProductPublicCache } from '../products/cache.js'
 import { lockProductRow } from '../admin/productLifecycle.js'
 import { assertOriginalPrice, countOpenFakaTasksForOffer } from '../admin/offerAdmin.js'
 import {
+  fakaCatalogSkuSet,
   fetchNormalizedFakaSource,
   sha256Canonical,
   validateExternalCatalogIdempotencyKey,
@@ -232,6 +233,88 @@ function buildFakaSyncDiff(
   }
 }
 
+type FakaSyncDiff = ReturnType<typeof buildFakaSyncDiff>
+
+function fakaActionNotInDiff(): HttpError {
+  return new HttpError(
+    400,
+    CATALOG_ERROR_CODES.FAKA_ACTION_NOT_IN_DIFF as ErrorCode,
+    '同步动作不属于当前预览 diff',
+  )
+}
+
+function bindSubmittedFakaActions(
+  submitted: FakaSyncAction[],
+  diff: FakaSyncDiff,
+  source: NormalizedFakaSource,
+): FakaSyncAction[] {
+  return submitted.map(action => bindSubmittedFakaAction(action, diff, source))
+}
+
+function bindSubmittedFakaAction(
+  action: FakaSyncAction,
+  diff: FakaSyncDiff,
+  source: NormalizedFakaSource,
+): FakaSyncAction {
+  if (action.type === 'keep_local') return { type: 'keep_local' }
+  if (action.type === 'restore_product') {
+    if (!diff.archived) throw fakaActionNotInDiff()
+    return { type: 'restore_product' }
+  }
+  if (action.type === 'add_missing') {
+    const period = action.period?.trim().toLowerCase()
+    const added = period ? diff.added.find(row => row.period === period) : undefined
+    if (!period || !added) throw fakaActionNotInDiff()
+    const sku = (action.sku || added.sku).trim().toLowerCase()
+    if (sku !== added.sku.toLowerCase() || !fakaCatalogSkuSet(source, period).has(sku)) {
+      throw fakaActionNotInDiff()
+    }
+    if (action.pricePoints == null) {
+      throw new HttpError(
+        400,
+        CATALOG_ERROR_CODES.FAKA_PRICE_CHANGE_REQUIRES_CONFIRM as ErrorCode,
+        '新增规格必须显式提供积分价，同步不会套用 Xboard 金额',
+      )
+    }
+    return {
+      type: 'add_missing',
+      period,
+      sku,
+      pricePoints: action.pricePoints,
+      offerName: action.offerName,
+      validityDays: action.validityDays,
+    }
+  }
+  if (action.type === 'archive_removed') {
+    if (action.offerId == null || !diff.removed.some(row => row.offerId === action.offerId)) {
+      throw fakaActionNotInDiff()
+    }
+    return { type: 'archive_removed', offerId: action.offerId }
+  }
+  if (action.type === 'update_sku') {
+    const changed = action.offerId == null
+      ? undefined
+      : diff.skuChanged.find(row => row.offerId === action.offerId)
+    const sku = action.sku?.trim().toLowerCase()
+    if (!changed || !sku || sku !== changed.to || !fakaCatalogSkuSet(source, changed.period).has(sku)) {
+      throw fakaActionNotInDiff()
+    }
+    return { type: 'update_sku', offerId: changed.offerId, sku, period: changed.period }
+  }
+  if (action.type === 'apply_price') {
+    if (action.offerId == null || action.pricePoints == null) {
+      throw new HttpError(
+        400,
+        CATALOG_ERROR_CODES.FAKA_PRICE_CHANGE_REQUIRES_CONFIRM as ErrorCode,
+        '改积分价必须在 diff 中显式确认 offerId 与 pricePoints',
+      )
+    }
+    if (!diff.kept.some(row => row.offerId === action.offerId)) throw fakaActionNotInDiff()
+    return { type: 'apply_price', offerId: action.offerId, pricePoints: action.pricePoints }
+  }
+  throw fakaActionNotInDiff()
+}
+
 const SYNC_IDEMPOTENCY_PROVIDER = EXTERNAL_CATALOG_PROVIDER.FAKA_BRIDGE
 
 async function claimFakaSyncIdempotency(
@@ -309,16 +392,7 @@ export async function confirmAdminFakaSync(
   }
 
   const actions = input.actions ?? []
-  if (actions.some(action => action.type === 'apply_price' && (action.offerId == null || action.pricePoints == null))) {
-    throw new HttpError(
-      400,
-      CATALOG_ERROR_CODES.FAKA_PRICE_CHANGE_REQUIRES_CONFIRM as ErrorCode,
-      '改积分价必须在 diff 中显式确认 offerId 与 pricePoints',
-    )
-  }
-
-  const diff = buildFakaSyncDiff({ ...product, externalCatalogLink: link }, source)
-  const actionSet = new Set(actions.map(action => action.type))
+  let diff = buildFakaSyncDiff({ ...product, externalCatalogLink: link }, source)
 
   try {
   const outcome = await prisma.$transaction(async tx => {
@@ -340,8 +414,10 @@ export async function confirmAdminFakaSync(
       },
     })
     if (!fresh.externalCatalogLink) throw badRequest('该商品不是 Xboard 导入商品')
+    diff = buildFakaSyncDiff({ ...fresh, externalCatalogLink: fresh.externalCatalogLink }, source)
+    const bound = bindSubmittedFakaActions(actions, diff, source)
 
-    if (actionSet.has('restore_product') && fresh.archivedAt) {
+    if (bound.some(action => action.type === 'restore_product') && fresh.archivedAt) {
       await tx.product.update({
         where: { id: productId },
         data: {
@@ -355,20 +431,10 @@ export async function confirmAdminFakaSync(
 
     const maxSort = fresh.offers.reduce((max, offer) => Math.max(max, offer.sortOrder ?? 0), 0)
     let created = 0
-    for (const action of actions) {
+    for (const action of bound) {
       if (action.type === 'add_missing') {
-        const period = action.period?.trim().toLowerCase()
-        if (!period) throw badRequest('add_missing 需要 period')
-        if (action.pricePoints == null) {
-          throw new HttpError(
-            400,
-            CATALOG_ERROR_CODES.FAKA_PRICE_CHANGE_REQUIRES_CONFIRM as ErrorCode,
-            '新增规格必须显式提供积分价，同步不会套用 Xboard 金额',
-          )
-        }
-        const remote = source.periods.find(row => row.period === period)
-        if (!remote) throw badRequest(`Xboard 不存在周期 ${period}`)
-        const sku = (action.sku || source.namedSkus.find(row => row.period === period)?.sku || remote.skuAlias).toLowerCase()
+        const period = action.period!
+        const sku = action.sku!
         const faka = normalizeFakaOfferIntegration({
           externalIntegration: 'faka_bridge',
           externalSku: sku,
@@ -379,7 +445,7 @@ export async function confirmAdminFakaSync(
             productId,
             name: action.offerName?.trim() || PERIOD_OFFER_LABELS[period] || period,
             isDefault: false,
-            price: action.pricePoints,
+            price: action.pricePoints!,
             originalPrice: null,
             deliveryMode: 'manual_service',
             stockMode: 'unlimited',
@@ -431,11 +497,9 @@ export async function confirmAdminFakaSync(
         if (openTasks > 0) {
           throw new HttpError(409, CATALOG_ERROR_CODES.FAKA_OPEN_TASK as ErrorCode, '存在未结 FakaBridge 任务，拒绝重绑 SKU')
         }
-        const sku = action.sku?.trim().toLowerCase()
-        if (!sku) throw badRequest('update_sku 需要 sku')
         const faka = normalizeFakaOfferIntegration({
           externalIntegration: 'faka_bridge',
-          externalSku: sku,
+          externalSku: action.sku!,
           deliveryMode: offer.deliveryMode,
         }, { requireConfigured: true })
         await tx.offer.update({

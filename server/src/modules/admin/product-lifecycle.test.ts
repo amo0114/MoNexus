@@ -128,6 +128,13 @@ describe('admin offer edit and archive (REAL-PG)', () => {
     const after = await prisma.offer.findUniqueOrThrow({ where: { id: offer.id } })
     expect(after.status).toBe('inactive')
     expect(after.id).toBe(offer.id)
+
+    const rejectedDefault = await api.post(`/api/admin/products/${product.id}/offers/${offer.id}/make-default`)
+      .set(authHeader(auth.accessToken)).expect(409)
+    expect(rejectedDefault.body.error.code).toBe('DEFAULT_OFFER_REQUIRES_ACTIVE')
+    const stillArchived = await prisma.offer.findUniqueOrThrow({ where: { id: offer.id } })
+    expect(stillArchived.isDefault).toBe(false)
+    expect(stillArchived.status).toBe('inactive')
   })
 })
 
@@ -280,6 +287,78 @@ describe('Xboard incremental sync and archived re-import (REAL-PG)', () => {
       .send({ sourceHash: preview.body.sourceHash, actions: [{ type: 'keep_local' }] })
       .expect(409)
     expect(reused.body.error.code).toBe('IDEMPOTENCY_KEY_REUSED')
+  })
+
+  it('rejects confirm actions that are not in the current source diff', async () => {
+    const { auth } = await adminAuth('sync-action-admin@test.local')
+    const category = await prisma.productCategory.findFirstOrThrow({ where: { status: 'active' } })
+    await prisma.productCategory.update({
+      where: { id: category.id },
+      data: { defaultCoverUrl: '/assets/category-default.webp' },
+    })
+    const imported = await importPlan(auth, category.id)
+    const monthly = await prisma.offer.findFirstOrThrow({
+      where: { productId: imported.created.body.productId, externalSku: 'plan-91-monthly' },
+    })
+    const yearly = await prisma.offer.findFirstOrThrow({
+      where: { productId: imported.created.body.productId, externalSku: 'plan-91-yearly' },
+    })
+    const localOnly = await prisma.offer.create({
+      data: {
+        productId: imported.created.body.productId,
+        name: '本地规格',
+        price: 500,
+        isDefault: false,
+        deliveryMode: 'instant_inventory',
+        stockMode: 'limited',
+        stock: 0,
+        status: 'active',
+      },
+    })
+    const preview = await api.post(`/api/admin/products/${imported.created.body.productId}/faka-sync/preview`)
+      .set(authHeader(auth.accessToken)).expect(200)
+
+    const archiveLocal = await api.post(`/api/admin/products/${imported.created.body.productId}/faka-sync`)
+      .set(authHeader(auth.accessToken))
+      .set('Idempotency-Key', 'sync:archive-local-only')
+      .send({
+        sourceHash: preview.body.sourceHash,
+        actions: [{ type: 'archive_removed', offerId: localOnly.id }],
+      })
+      .expect(400)
+    expect(archiveLocal.body.error.code).toBe('FAKA_ACTION_NOT_IN_DIFF')
+
+    const foreignSku = await api.post(`/api/admin/products/${imported.created.body.productId}/faka-sync`)
+      .set(authHeader(auth.accessToken))
+      .set('Idempotency-Key', 'sync:foreign-sku')
+      .send({
+        sourceHash: preview.body.sourceHash,
+        actions: [{ type: 'update_sku', offerId: monthly.id, sku: yearly.externalSku, period: 'monthly' }],
+      })
+      .expect(400)
+    expect(foreignSku.body.error.code).toBe('FAKA_ACTION_NOT_IN_DIFF')
+
+    catalogPlan = {
+      ...catalogPlan,
+      periods: [
+        ...catalogPlan.periods,
+        { period: 'quarterly', price: 25, sku_alias: 'plan-91-quarterly' },
+      ],
+    }
+    const addedPreview = await api.post(`/api/admin/products/${imported.created.body.productId}/faka-sync/preview`)
+      .set(authHeader(auth.accessToken)).expect(200)
+    const wrongPeriodSku = await api.post(`/api/admin/products/${imported.created.body.productId}/faka-sync`)
+      .set(authHeader(auth.accessToken))
+      .set('Idempotency-Key', 'sync:wrong-period-sku')
+      .send({
+        sourceHash: addedPreview.body.sourceHash,
+        actions: [{ type: 'add_missing', period: 'quarterly', sku: 'plan-91-monthly', pricePoints: 2500 }],
+      })
+      .expect(400)
+    expect(wrongPeriodSku.body.error.code).toBe('FAKA_ACTION_NOT_IN_DIFF')
+    expect(await prisma.offer.count({
+      where: { productId: imported.created.body.productId, externalSku: 'plan-91-quarterly' },
+    })).toBe(0)
   })
 })
 
