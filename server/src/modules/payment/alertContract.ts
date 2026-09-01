@@ -109,6 +109,24 @@ export const PAYMENT_ALERTS = [
     for: '0m',
     summary: 'production deploy registered or enabled the simulator provider outside approved administrator sandbox mode',
   },
+  {
+    id: 'payment-monitor-offline',
+    name: 'MoNexus Payment collection-code monitor offline',
+    severity: 'P1',
+    routingLabel: 'payment-p1',
+    expr: 'increase(payment_monitor_offline_total[5m]) > 0',
+    for: '2m',
+    summary: 'a collection-code monitor was offline during provider create',
+  },
+  {
+    id: 'payment-callback-retry-exhaustion',
+    name: 'MoNexus Payment callback retry exhaustion',
+    severity: 'P1',
+    routingLabel: 'payment-p1',
+    expr: 'increase(payment_webhook_ack_failure_total[15m]) >= 5 or increase(payment_callback_retry_total[15m]) >= 10',
+    for: '5m',
+    summary: 'provider merchant callbacks are retrying without a durable success ACK',
+  },
 ] as const satisfies readonly PaymentAlert[]
 
 export const PAYMENT_ALERT_IDS = PAYMENT_ALERTS.map(alert => alert.id)
@@ -116,3 +134,4 @@ export const PAYMENT_ALERT_IDS = PAYMENT_ALERTS.map(alert => alert.id)
 export const PAYMENT_ALERT_DOC_PATH = 'docs/operations/payment-alerts.md'
 export const PAYMENT_ALERT_RULES_PATH = 'docs/operations/payment-alerts.rules.yml'
 export const PAYMENT_RUNBOOK_PATH = 'docs/operations/payment-runbook.md'
+export const VMQFOX_RUNBOOK_PATH = 'docs/operations/vmqfox-runbook.md'

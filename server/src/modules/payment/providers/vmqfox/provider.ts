@@ -46,6 +46,7 @@ import {
 } from './config.js'
 import { paymentFromGet, paymentFromQuery } from './normalize.js'
 import { verifyAndNormalizeNotify } from './webhook.js'
+import { recordMonitorOffline, recordQueryByPayIdRecovery } from '../../metrics.js'
 
 const ORDER_TTL_MS = 5 * 60 * 1000
 
@@ -82,6 +83,7 @@ function deterministicFail(message: string): HttpError {
 
 function mapCreateError(err: unknown): never {
   if (err instanceof VmqfoxClientError && isDeterministicFailKind(err.kind)) {
+    if (err.kind === 'monitor_offline') recordMonitorOffline(VMQFOX_PROVIDER_NAME)
     throw deterministicFail(err.kind === 'monitor_offline' ? '监控端离线，支付渠道暂不可用' : '支付渠道配置不可用')
   }
   throw paymentStateUnknown()
@@ -253,9 +255,15 @@ export function createVmqfoxProvider(
   ): Promise<ProviderPaymentAction | null> {
     try {
       const recovered = await api.queryByPayId(input.paymentAttemptId, now())
-      return actionFromQuery(config, input, method, recovered, now())
+      const action = actionFromQuery(config, input, method, recovered, now())
+      recordQueryByPayIdRecovery(VMQFOX_PROVIDER_NAME, 'recovered')
+      return action
     } catch (err) {
-      if (err instanceof VmqfoxClientError && err.kind === 'not_found') return null
+      if (err instanceof VmqfoxClientError && err.kind === 'not_found') {
+        recordQueryByPayIdRecovery(VMQFOX_PROVIDER_NAME, 'missed')
+        return null
+      }
+      recordQueryByPayIdRecovery(VMQFOX_PROVIDER_NAME, 'failed')
       return null
     }
   }

@@ -34,7 +34,7 @@ import {
 import { serializeAmountMinor } from './money.js'
 import type { PaymentProviderName, RechargeCurrency } from './types.js'
 import { PAYMENT_PROVIDER_NAMES } from './types.js'
-import { recordPaymentRefund } from '../payment/metrics.js'
+import { recordPaymentRefund, recordRefundNotSupported } from '../payment/metrics.js'
 import { providerEnvironment } from './gates.js'
 
 const TX = { timeout: 15_000, maxWait: 5_000 } as const
@@ -84,6 +84,7 @@ async function assertProviderSupportsRefunds(input: {
   currency: string
 }) {
   if (!await providerSupportsRefunds(input)) {
+    recordRefundNotSupported(input.provider)
     throw paymentRefundNotSupported()
   }
 }

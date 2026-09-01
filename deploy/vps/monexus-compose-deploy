@@ -439,7 +439,9 @@ monitoring_contract_ready() {
     MoNexusLateProviderPaymentAfterLocalTerminalOrder \
     MoNexusPaymentRefundProcessingTooLong \
     MoNexusPaymentReconciliationMismatch \
-    MoNexusSimulatorConfiguredOnProductionDeploy; do
+    MoNexusSimulatorConfiguredOnProductionDeploy \
+    MoNexusPaymentCollectionCodeMonitorOffline \
+    MoNexusPaymentCallbackRetryExhaustion; do
     grep -Fq "\"name\":\"${alert_name}\"" <<< "$rules" || return 1
   done
 

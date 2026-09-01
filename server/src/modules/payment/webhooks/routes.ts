@@ -8,7 +8,7 @@ import { applyConfirmedPayment } from '../events/applyConfirmedPayment.js'
 import { applyRefundObservation } from '../../recharge/refund.js'
 import { applyDisputeObservation } from '../disputes/service.js'
 import { encryptPaymentEventPayload } from '../payloadCrypto.js'
-import { recordWebhookSignatureFailure } from '../metrics.js'
+import { recordWebhookAckFailure, recordWebhookSignatureFailure } from '../metrics.js'
 import type { PaymentProviderName } from '../../recharge/types.js'
 import { serializeAmountMinor } from '../../recharge/money.js'
 
@@ -46,6 +46,7 @@ function ackSuccess(res: Response, provider: PaymentProviderName, extra?: Record
 }
 
 function ackFailure(res: Response, provider: PaymentProviderName, status: number, code: string, message: string) {
+  recordWebhookAckFailure(provider)
   if (provider === 'alipay' || provider === 'vmqfox') {
     res.status(status).type('text/plain').send('failure')
     return
