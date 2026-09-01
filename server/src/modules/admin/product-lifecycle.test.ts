@@ -220,4 +220,133 @@ describe('Xboard incremental sync and archived re-import (REAL-PG)', () => {
     expect(confirm.body.error.code).toBe('PRODUCT_ARCHIVED')
     expect(await prisma.product.count({ where: { name: 'Sync Plan' } })).toBe(1)
   })
+
+  it('rejects apply_price when the new points price exceeds originalPrice', async () => {
+    const { auth } = await adminAuth('sync-price-admin@test.local')
+    const category = await prisma.productCategory.findFirstOrThrow({ where: { status: 'active' } })
+    await prisma.productCategory.update({
+      where: { id: category.id },
+      data: { defaultCoverUrl: '/assets/category-default.webp' },
+    })
+    const imported = await importPlan(auth, category.id)
+    const monthly = await prisma.offer.findFirstOrThrow({
+      where: { productId: imported.created.body.productId, externalSku: 'plan-91-monthly' },
+    })
+    await prisma.offer.update({
+      where: { id: monthly.id },
+      data: { originalPrice: 1200 },
+    })
+    const preview = await api.post(`/api/admin/products/${imported.created.body.productId}/faka-sync/preview`)
+      .set(authHeader(auth.accessToken)).expect(200)
+    const rejected = await api.post(`/api/admin/products/${imported.created.body.productId}/faka-sync`)
+      .set(authHeader(auth.accessToken))
+      .set('Idempotency-Key', 'sync:price-too-high')
+      .send({
+        sourceHash: preview.body.sourceHash,
+        actions: [{ type: 'apply_price', offerId: monthly.id, pricePoints: 1500 }],
+      })
+      .expect(400)
+    expect(rejected.body.error.message).toContain('原价不能低于售价')
+    const unchanged = await prisma.offer.findUniqueOrThrow({ where: { id: monthly.id } })
+    expect(unchanged.price).toBe(1000)
+  })
+
+  it('replays the same sync Idempotency-Key and 409s a reused key with a different body', async () => {
+    const { auth } = await adminAuth('sync-idem-admin@test.local')
+    const category = await prisma.productCategory.findFirstOrThrow({ where: { status: 'active' } })
+    await prisma.productCategory.update({
+      where: { id: category.id },
+      data: { defaultCoverUrl: '/assets/category-default.webp' },
+    })
+    const imported = await importPlan(auth, category.id)
+    const preview = await api.post(`/api/admin/products/${imported.created.body.productId}/faka-sync/preview`)
+      .set(authHeader(auth.accessToken)).expect(200)
+    const body = { sourceHash: preview.body.sourceHash, actions: [] as Array<{ type: string }> }
+    const first = await api.post(`/api/admin/products/${imported.created.body.productId}/faka-sync`)
+      .set(authHeader(auth.accessToken))
+      .set('Idempotency-Key', 'sync:same-key')
+      .send(body)
+      .expect(200)
+    expect(first.body.replayed).toBe(false)
+    const replay = await api.post(`/api/admin/products/${imported.created.body.productId}/faka-sync`)
+      .set(authHeader(auth.accessToken))
+      .set('Idempotency-Key', 'sync:same-key')
+      .send(body)
+      .expect(200)
+    expect(replay.body.replayed).toBe(true)
+    const reused = await api.post(`/api/admin/products/${imported.created.body.productId}/faka-sync`)
+      .set(authHeader(auth.accessToken))
+      .set('Idempotency-Key', 'sync:same-key')
+      .send({ sourceHash: preview.body.sourceHash, actions: [{ type: 'keep_local' }] })
+      .expect(409)
+    expect(reused.body.error.code).toBe('IDEMPOTENCY_KEY_REUSED')
+  })
+})
+
+describe('archive publish/checkout guards and SKU write boundary', () => {
+  it('refuses to publish an archived product and does not revive it as active', async () => {
+    const { auth } = await adminAuth('publish-archived-admin@test.local')
+    const created = await api.post('/api/admin/products').set(authHeader(auth.accessToken)).send({
+      name: '归档后不可发布',
+      type: '邀请码',
+      price: 50,
+      deliveryMode: 'instant_fixed',
+      stockMode: 'unlimited',
+      fixedContent: 'https://example.com/delivery',
+      fixedContentType: 'url',
+      imageUrl: 'https://example.com/cover.png',
+      images: ['https://example.com/cover.png'],
+    }).expect(201)
+    await api.post(`/api/admin/products/${created.body.id}/publish`).set(authHeader(auth.accessToken)).expect(200)
+    await api.post(`/api/admin/products/${created.body.id}/archive`).set(authHeader(auth.accessToken)).send({}).expect(200)
+    const rejected = await api.post(`/api/admin/products/${created.body.id}/publish`)
+      .set(authHeader(auth.accessToken)).expect(409)
+    expect(rejected.body.error.code).toBe('PRODUCT_ARCHIVED')
+    const row = await prisma.product.findUniqueOrThrow({ where: { id: created.body.id } })
+    expect(row.status).not.toBe('active')
+    expect(row.archivedAt).not.toBeNull()
+  })
+
+  it('refuses checkout and renew when archivedAt is set even if status is still active', async () => {
+    const { user: buyer } = await createTestUser('archived-checkout@test.local', 'pass123', 'user', 5000)
+    const buyerAuth = await loginAs('archived-checkout@test.local', 'pass123')
+    const product = await createTestProduct('竞态归档仍可售', 100, 2, ['race-a', 'race-b'])
+    const created = await api.post('/api/orders').set(authHeader(buyerAuth.accessToken))
+      .send({ productId: product.id }).expect(201)
+    await prisma.product.update({
+      where: { id: product.id },
+      data: { status: 'active', archivedAt: new Date(), archiveReason: 'race' },
+    })
+    await prisma.offer.updateMany({ where: { productId: product.id }, data: { status: 'active' } })
+
+    const checkout = await api.post('/api/orders').set(authHeader(buyerAuth.accessToken))
+      .send({ productId: product.id }).expect(400)
+    expect(checkout.body.error.message).toContain('商品已下架')
+
+    await prisma.deliveryRecord.upsert({
+      where: { orderId: created.body.orderId },
+      update: { expiresAt: new Date(Date.now() + 86400000) },
+      create: {
+        orderId: created.body.orderId,
+        userId: buyer.id,
+        productId: product.id,
+        status: 'delivered',
+        expiresAt: new Date(Date.now() + 86400000),
+      },
+    })
+    const renew = await api.post(`/api/orders/${created.body.orderId}/renew`)
+      .set(authHeader(buyerAuth.accessToken)).expect(400)
+    expect(renew.body.error.code).toBe('RENEW_OFFER_UNAVAILABLE')
+  })
+
+  it('rejects ordinary product update that tries to change externalSku', async () => {
+    const { auth } = await adminAuth('sku-not-writable-admin@test.local')
+    const created = await api.post('/api/admin/products').set(authHeader(auth.accessToken))
+      .send({ name: '禁止改SKU', type: '邀请码', price: 50 }).expect(201)
+    const rejected = await api.put(`/api/admin/products/${created.body.id}`)
+      .set(authHeader(auth.accessToken))
+      .send({ price: 60, externalSku: 'plan-1-monthly', externalIntegration: 'faka_bridge' })
+      .expect(400)
+    expect(rejected.body.error.code).toBe('FIELD_NOT_WRITABLE')
+  })
 })

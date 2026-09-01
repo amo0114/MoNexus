@@ -157,7 +157,10 @@ export const createProductSchema = markNotWritableFields(
 export type CreateProductInput = z.infer<typeof createProductSchema>
 
 export const updateProductSchema = markNotWritableFields(
-  adminDraftProductFieldsSchema.partial().extend({
+  adminDraftProductFieldsSchema.partial().omit({
+    externalIntegration: true,
+    externalSku: true,
+  }).extend({
     // update permits explicit clearing before changing away from instant_fixed.
     fixedContent: z.string().trim().min(1).max(5000).nullable().optional(),
     // `null` is an intentional request to remove the strikethrough price.
@@ -166,7 +169,7 @@ export const updateProductSchema = markNotWritableFields(
     categoryId: z.number().int().positive().optional(),
     purchaseForm: purchaseFormSchema.optional(),
   }).strict().superRefine(validateProductCommercialFields),
-  ['isHot'],
+  ['isHot', 'externalIntegration', 'externalSku'],
 )
 export type UpdateProductInput = z.infer<typeof updateProductSchema>
 

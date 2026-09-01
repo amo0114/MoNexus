@@ -90,12 +90,13 @@ export async function getCheckoutPreview(
       id: true,
       name: true,
       status: true,
+      archivedAt: true,
       purchaseForm: true,
       merchant: { select: { status: true } },
     },
   })
   if (!product) throw notFound('商品不存在')
-  if (product.status !== 'active') throw badRequest('商品已下架')
+  if (product.status !== 'active' || product.archivedAt) throw badRequest('商品已下架')
 
   // P4a：报价以所选 Offer 为准（单 SKU 未传 offerId 时解析默认）。
   const offer = await resolvePurchaseOffer(prisma, productId, offerId)

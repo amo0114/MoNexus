@@ -529,6 +529,7 @@ model Product {
   category               ProductCategory                @relation(fields: [categoryId], references: [id], onDelete: Restrict)
   archivedByUser         User?                          @relation("ProductArchivedBy", fields: [archivedByUserId], references: [id], onDelete: SetNull)
   externalCatalogLink    ExternalCatalogLink?
+  catalogSyncIdempotency ExternalCatalogSyncIdempotency[]
   merchandisingSnapshots ProductMerchandisingSnapshot[]
   promotionCampaigns     PromotionCampaign[]
   editorialFeatures      EditorialFeature[]
@@ -1290,6 +1291,23 @@ model ExternalCatalogLink {
   @@unique([provider, externalProductId])
   @@unique([provider, idempotencyKey])
   @@index([importedByUserId])
+}
+
+// Faka incremental-sync idempotency. Distinct from import ExternalCatalogLink
+// keys; UNIQUE(provider, idempotencyKey) is the concurrent claim authority.
+model ExternalCatalogSyncIdempotency {
+  id             Int      @id @default(autoincrement())
+  provider       String
+  productId      Int
+  idempotencyKey String
+  requestHash    String
+  sourceHash     String
+  createdAt      DateTime @default(now())
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, idempotencyKey])
+  @@index([productId])
 }
 
 // 自然热卖排名 run（SPEC-MERCH-001 §5.1）。UUID PK；全局 single-running

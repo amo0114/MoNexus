@@ -5,7 +5,7 @@ import { syncProductProjection } from '../../lib/offers.js'
 import { normalizeFakaOfferIntegration } from '../../lib/fakaBridge/index.js'
 import { invalidateProductPublicCache } from '../products/cache.js'
 import { lockProductRow } from '../admin/productLifecycle.js'
-import { countOpenFakaTasksForOffer } from '../admin/offerAdmin.js'
+import { assertOriginalPrice, countOpenFakaTasksForOffer } from '../admin/offerAdmin.js'
 import {
   fetchNormalizedFakaSource,
   sha256Canonical,
@@ -232,6 +232,50 @@ function buildFakaSyncDiff(
   }
 }
 
+const SYNC_IDEMPOTENCY_PROVIDER = EXTERNAL_CATALOG_PROVIDER.FAKA_BRIDGE
+
+async function claimFakaSyncIdempotency(
+  tx: Prisma.TransactionClient,
+  input: {
+    productId: number
+    idempotencyKey: string
+    requestHash: string
+    sourceHash: string
+  },
+): Promise<{ replayed: true; sourceHash: string } | { replayed: false }> {
+  // ON CONFLICT DO NOTHING keeps the surrounding transaction usable.
+  // A thrown unique violation would abort the Postgres transaction.
+  const inserted = await tx.$queryRaw<Array<{ id: number }>>`
+    INSERT INTO "ExternalCatalogSyncIdempotency"
+      ("provider", "productId", "idempotencyKey", "requestHash", "sourceHash")
+    VALUES (
+      ${SYNC_IDEMPOTENCY_PROVIDER},
+      ${input.productId},
+      ${input.idempotencyKey},
+      ${input.requestHash},
+      ${input.sourceHash}
+    )
+    ON CONFLICT ("provider", "idempotencyKey") DO NOTHING
+    RETURNING id
+  `
+  if (inserted.length > 0) return { replayed: false }
+  const existing = await tx.externalCatalogSyncIdempotency.findUnique({
+    where: {
+      provider_idempotencyKey: {
+        provider: SYNC_IDEMPOTENCY_PROVIDER,
+        idempotencyKey: input.idempotencyKey,
+      },
+    },
+  })
+  if (!existing) {
+    throw new HttpError(409, 'CONFLICT', '同步幂等键冲突，请重试')
+  }
+  if (existing.requestHash !== input.requestHash) {
+    throw new HttpError(409, CATALOG_ERROR_CODES.IDEMPOTENCY_KEY_REUSED as ErrorCode, '该幂等键已用于不同请求')
+  }
+  return { replayed: true, sourceHash: existing.sourceHash }
+}
+
 export async function confirmAdminFakaSync(
   adminUserId: number,
   productId: number,
@@ -246,30 +290,6 @@ export async function confirmAdminFakaSync(
     sourceHash: input.sourceHash,
     actions: input.actions ?? [],
   })
-
-  const recentLogs = await prisma.adminLog.findMany({
-    where: {
-      adminUserId,
-      action: '同步Xboard商品',
-      targetType: 'product',
-      targetId: productId,
-    },
-    orderBy: { id: 'desc' },
-    take: 20,
-  })
-  for (const log of recentLogs) {
-    if (!log.detail) continue
-    try {
-      const parsed = JSON.parse(log.detail) as { idempotencyKey?: string; requestHash?: string }
-      if (parsed.idempotencyKey !== key) continue
-      if (parsed.requestHash !== requestHash) {
-        throw new HttpError(409, CATALOG_ERROR_CODES.IDEMPOTENCY_KEY_REUSED as ErrorCode, '该幂等键已用于不同请求')
-      }
-      return { productId, replayed: true, sourceHash: input.sourceHash }
-    } catch (error) {
-      if (error instanceof HttpError) throw error
-    }
-  }
 
   const product = await prisma.product.findUnique({
     where: { id: productId },
@@ -300,8 +320,18 @@ export async function confirmAdminFakaSync(
   const diff = buildFakaSyncDiff({ ...product, externalCatalogLink: link }, source)
   const actionSet = new Set(actions.map(action => action.type))
 
-  await prisma.$transaction(async tx => {
+  try {
+  const outcome = await prisma.$transaction(async tx => {
     await lockProductRow(tx, productId)
+    const claimed = await claimFakaSyncIdempotency(tx, {
+      productId,
+      idempotencyKey: key,
+      requestHash,
+      sourceHash: source.sourceHash,
+    })
+    if (claimed.replayed) {
+      return { replayed: true as const, sourceHash: claimed.sourceHash }
+    }
     const fresh = await tx.product.findUniqueOrThrow({
       where: { id: productId },
       include: {
@@ -418,8 +448,11 @@ export async function confirmAdminFakaSync(
       }
 
       if (action.type === 'apply_price' && action.offerId != null && action.pricePoints != null) {
+        const offer = fresh.offers.find(row => row.id === action.offerId)
+        if (!offer) throw notFound('规格不存在')
+        assertOriginalPrice(action.pricePoints, offer.originalPrice)
         await tx.offer.update({
-          where: { id: action.offerId, productId },
+          where: { id: offer.id },
           data: { price: action.pricePoints },
         })
       }
@@ -448,8 +481,33 @@ export async function confirmAdminFakaSync(
         }),
       },
     })
+    return { replayed: false as const, sourceHash: source.sourceHash }
   })
 
   await invalidateProductPublicCache(productId, { list: true, detail: true })
-  return { productId, replayed: false, sourceHash: source.sourceHash, suggestedActions: diff.suggestedActions }
+  return {
+    productId,
+    replayed: outcome.replayed,
+    sourceHash: outcome.sourceHash,
+    suggestedActions: diff.suggestedActions,
+  }
+  } catch (error) {
+    if (error instanceof HttpError) throw error
+    if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== 'P2002') throw error
+    const existing = await prisma.externalCatalogSyncIdempotency.findUnique({
+      where: {
+        provider_idempotencyKey: {
+          provider: SYNC_IDEMPOTENCY_PROVIDER,
+          idempotencyKey: key,
+        },
+      },
+    })
+    if (existing) {
+      if (existing.requestHash === requestHash) {
+        return { productId, replayed: true, sourceHash: existing.sourceHash, suggestedActions: diff.suggestedActions }
+      }
+      throw new HttpError(409, CATALOG_ERROR_CODES.IDEMPOTENCY_KEY_REUSED as ErrorCode, '该幂等键已用于不同请求')
+    }
+    throw new HttpError(409, 'CONFLICT', '该 Xboard 商品或规格已存在')
+  }
 }

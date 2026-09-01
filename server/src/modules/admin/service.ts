@@ -515,13 +515,9 @@ export async function updateProduct(adminUserId: number, id: number, data: Updat
     })
 
     const {
-      externalIntegration: _updateEi,
-      externalSku: _updateEs,
       categoryId: incomingCategoryId,
       ...productUpdateFields
     } = normalizedProductData as typeof normalizedProductData & {
-      externalIntegration?: string | null
-      externalSku?: string | null
       categoryId?: number
     }
 
@@ -529,29 +525,16 @@ export async function updateProduct(adminUserId: number, id: number, data: Updat
       ? await resolveProductCategory({ categoryId: incomingCategoryId }, tx)
       : null
 
-    const fakaFieldsTouched = 'externalIntegration' in data || 'externalSku' in data
     const defaultOfferForFaka = await getDefaultOffer(tx, id)
-    const fakaUpdate = fakaFieldsTouched || defaultOfferForFaka.externalIntegration != null
+    // SKU rebind is a separate dangerous op; ordinary PUT cannot change it.
+    const fakaUpdate = defaultOfferForFaka.externalIntegration != null
       ? normalizeFakaOfferIntegration(
           {
-            externalIntegration: fakaFieldsTouched
-              ? ('externalIntegration' in data
-                  ? data.externalIntegration
-                  : defaultOfferForFaka.externalIntegration)
-              : defaultOfferForFaka.externalIntegration,
-            externalSku: fakaFieldsTouched
-              ? ('externalSku' in data ? data.externalSku : defaultOfferForFaka.externalSku)
-              : defaultOfferForFaka.externalSku,
+            externalIntegration: defaultOfferForFaka.externalIntegration,
+            externalSku: defaultOfferForFaka.externalSku,
             deliveryMode,
           },
-          {
-            requireConfigured:
-              (fakaFieldsTouched
-                ? ('externalIntegration' in data
-                    ? data.externalIntegration
-                    : defaultOfferForFaka.externalIntegration)
-                : defaultOfferForFaka.externalIntegration) === 'faka_bridge',
-          }
+          { requireConfigured: defaultOfferForFaka.externalIntegration === 'faka_bridge' },
         )
       : null
 
