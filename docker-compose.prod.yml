@@ -103,6 +103,19 @@ services:
       RECHARGE_ENABLED_CURRENCIES: ${RECHARGE_ENABLED_CURRENCIES:-}
       PAYMENT_REGISTERED_PROVIDERS: ${PAYMENT_REGISTERED_PROVIDERS:-}
       PAYMENT_ENABLED_PROVIDERS: ${PAYMENT_ENABLED_PROVIDERS:-}
+      # Payment observations carry encrypted provider payloads. Keep the
+      # shared public origin and VMQFox live-adapter credentials explicit at
+      # the Compose boundary; values present only in .env do not otherwise
+      # reach the server container.
+      PAYMENT_EVENT_ENCRYPTION_KEY: ${PAYMENT_EVENT_ENCRYPTION_KEY:-}
+      PAYMENT_WEBHOOK_PUBLIC_BASE_URL: ${PAYMENT_WEBHOOK_PUBLIC_BASE_URL:-}
+      VMQFOX_MODE: ${VMQFOX_MODE:-disabled}
+      VMQFOX_BASE_URL: ${VMQFOX_BASE_URL:-}
+      VMQFOX_ACCOUNT_KEY: ${VMQFOX_ACCOUNT_KEY:-vmqfox-primary}
+      VMQFOX_MERCHANT_KEY: ${VMQFOX_MERCHANT_KEY:-}
+      VMQFOX_MAX_AMOUNT_MINOR: ${VMQFOX_MAX_AMOUNT_MINOR:-100000}
+      VMQFOX_REQUEST_TIMEOUT_MS: ${VMQFOX_REQUEST_TIMEOUT_MS:-5000}
+      VMQFOX_PROTOCOL_VERSION: ${VMQFOX_PROTOCOL_VERSION:-2}
       APP_BASE_URL: ${APP_BASE_URL:-}
       SENTRY_DSN: ${SENTRY_DSN:-}
       LOG_LEVEL: ${LOG_LEVEL:-info}
