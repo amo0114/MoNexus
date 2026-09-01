@@ -71,6 +71,9 @@ export type PaymentRefundResult = (typeof PAYMENT_REFUND_RESULTS)[number]
 export const PAYMENT_WORKER_NAMES = ['observation', 'credit', 'refund', 'query'] as const
 export type PaymentWorkerName = (typeof PAYMENT_WORKER_NAMES)[number]
 
+export const PAYMENT_QUERY_BY_PAY_ID_RESULTS = ['recovered', 'missed', 'unusable', 'failed'] as const
+export type PaymentQueryByPayIdResult = (typeof PAYMENT_QUERY_BY_PAY_ID_RESULTS)[number]
+
 const PROVIDER_SET = new Set<string>(PAYMENT_PROVIDER_NAMES)
 const CURRENCY_SET = new Set<string>(RECHARGE_CURRENCIES)
 const SOURCE_SET = new Set<string>(PAYMENT_OBSERVATION_SOURCES)
@@ -194,6 +197,41 @@ export const paymentSimulatorConfigured = new client.Gauge({
   registers: [registry],
 })
 
+export const paymentMonitorOfflineTotal = new client.Counter({
+  name: 'payment_monitor_offline_total',
+  help: 'Provider create failures caused by an offline collection-code monitor, by provider',
+  labelNames: ['provider'] as const,
+  registers: [registry],
+})
+
+export const paymentCallbackRetryTotal = new client.Counter({
+  name: 'payment_callback_retry_total',
+  help: 'Duplicate inbound payment webhooks treated as provider callback retries, by provider',
+  labelNames: ['provider'] as const,
+  registers: [registry],
+})
+
+export const paymentWebhookAckFailureTotal = new client.Counter({
+  name: 'payment_webhook_ack_failure_total',
+  help: 'Webhook responses that did not ACK success and will cause provider callback retries, by provider',
+  labelNames: ['provider'] as const,
+  registers: [registry],
+})
+
+export const paymentQueryByPayIdRecoveryTotal = new client.Counter({
+  name: 'payment_query_by_pay_id_recovery_total',
+  help: 'Create-unknown recovery attempts that used query-by-pay-id, by provider and bounded result',
+  labelNames: ['provider', 'result'] as const,
+  registers: [registry],
+})
+
+export const paymentRefundNotSupportedTotal = new client.Counter({
+  name: 'payment_refund_not_supported_total',
+  help: 'Refund attempts rejected because the provider does not support automatic refunds, by provider',
+  labelNames: ['provider'] as const,
+  registers: [registry],
+})
+
 export function recordRechargeQuote(currency: string, result: PaymentQuoteResult) {
   rechargeQuoteTotal.inc({ currency: currencyLabel(currency), result })
 }
@@ -275,6 +313,29 @@ export function setProviderCircuitOpen(provider: string, open: boolean) {
 
 export function setSimulatorConfigured(value: boolean) {
   paymentSimulatorConfigured.set(value ? 1 : 0)
+}
+
+export function recordMonitorOffline(provider: string) {
+  paymentMonitorOfflineTotal.inc({ provider: providerLabel(provider) })
+}
+
+export function recordCallbackRetry(provider: string) {
+  paymentCallbackRetryTotal.inc({ provider: providerLabel(provider) })
+}
+
+export function recordWebhookAckFailure(provider: string) {
+  paymentWebhookAckFailureTotal.inc({ provider: providerLabel(provider) })
+}
+
+export function recordQueryByPayIdRecovery(provider: string, result: PaymentQueryByPayIdResult) {
+  paymentQueryByPayIdRecoveryTotal.inc({
+    provider: providerLabel(provider),
+    result,
+  })
+}
+
+export function recordRefundNotSupported(provider: string) {
+  paymentRefundNotSupportedTotal.inc({ provider: providerLabel(provider) })
 }
 
 export function quoteResultFromErrorCode(code: string | undefined): PaymentQuoteResult {

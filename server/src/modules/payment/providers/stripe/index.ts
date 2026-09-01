@@ -269,6 +269,7 @@ export function createStripeProvider(options: CreateStripeProviderOptions = {}):
         supportedCurrencies: ['CNY', 'USD'],
         paymentMethods: STRIPE_PAYMENT_METHODS,
         actionTypes: ['redirect'],
+        supportsRefunds: true,
         supportsPartialRefund: false,
         supportsDisputes: true,
         supportsReconciliation: false,
@@ -347,6 +348,7 @@ export function createStripeProvider(options: CreateStripeProviderOptions = {}):
             expiresAt: checkoutExpiresAt(session),
           },
           requestIdempotencyKey: input.requestIdempotencyKey,
+          amountMinor: input.amountMinor,
         }
       } catch (err) {
         rethrowStripe(err)

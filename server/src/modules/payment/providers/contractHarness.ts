@@ -28,6 +28,7 @@ export function assertProviderCapabilities(capabilities: ProviderCapabilities) {
   expect(capabilities.supportedCurrencies.length).toBeGreaterThan(0)
   expect(capabilities.paymentMethods.length).toBeGreaterThan(0)
   expect(capabilities.actionTypes.length).toBeGreaterThan(0)
+  expect(typeof capabilities.supportsRefunds).toBe('boolean')
   expect(capabilities.minimumAmountMinor).toBeGreaterThanOrEqual(0n)
   expect(typeof capabilities.capabilityVersion).toBe('string')
   expect(capabilities.capabilityDigest).toMatch(/^[a-f0-9]{64}$/)
@@ -37,6 +38,8 @@ export function assertProviderCapabilities(capabilities: ProviderCapabilities) {
 export function assertProviderPaymentAction(action: ProviderPaymentAction) {
   expect(ATTEMPT_SET.has(action.status)).toBe(true)
   expect(action.providerPaymentId.length).toBeGreaterThan(0)
+  expect(typeof action.amountMinor).toBe('bigint')
+  expect(action.amountMinor).toBeGreaterThan(0n)
   expect(ACTION_SET.has(action.action.type)).toBe(true)
   if (action.action.type === 'form_post') {
     expect(action.action.actionUrl.startsWith('https://')).toBe(true)
@@ -75,6 +78,7 @@ export async function runLiveProviderContract(provider: PaymentProvider, input: 
     requestIdempotencyKey: 'contract-create-1',
   })
   assertProviderPaymentAction(created)
+  expect(created.amountMinor).toBe(input.amountMinor)
 
   const queried = await provider.queryPayment({
     providerPaymentId: created.providerPaymentId,

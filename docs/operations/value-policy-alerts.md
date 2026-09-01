@@ -14,6 +14,11 @@ and P1 firing/resolved messages through the production SMTP relay to the VPS
 is not delivery evidence: the protected deploy and live rehearsal below must
 both succeed.
 
+This repository does not automatically create or activate external Sentry or
+PagerDuty objects. Deploying the opt-in monitoring profile is separately
+protected, and it does not authorize a production ValuePolicy; D-02 and D-03
+must still be approved before production activation.
+
 Labels are a finite vocabulary (`result`, `mode`, no `policyId` / `orderId`).
 
 ## Routing

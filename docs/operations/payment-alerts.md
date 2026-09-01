@@ -115,3 +115,25 @@ See `docs/operations/alert-routing.md` and `docs/operations/payment-runbook.md`.
 - expr: `payment_simulator_configured == 1`
 - for: `0m`
 - meaning: production deploy registered or enabled the simulator provider outside approved administrator sandbox mode
+
+### MoNexus Payment collection-code monitor offline
+
+- id: `payment-monitor-offline`
+- severity: P1
+- routingLabel: `payment-p1`
+- expr: `increase(payment_monitor_offline_total[5m]) > 0`
+- for: `2m`
+- meaning: a collection-code monitor was offline during provider create
+- limitation: VMQFox does **not** support automatic refunds, disputes, or standard provider reconciliation. This alert only means new collection-code orders cannot be created until the monitor is online.
+
+### MoNexus Payment callback retry exhaustion
+
+- id: `payment-callback-retry-exhaustion`
+- severity: P1
+- routingLabel: `payment-p1`
+- expr: `increase(payment_webhook_ack_failure_total[15m]) >= 5`
+- for: `5m`
+- meaning: webhook handlers returned a non-success ACK often enough that merchant notify retries may exhaust
+- limitation: This counts failure ACKs only. Duplicate inbound webhooks that still ACK `success` increment `payment_callback_retry_total` and must not page this rule. VMQFox retries until it receives the exact text body `success`. This is not a refund, dispute, or standard recon signal.
+
+Amount mismatch (`payment-amount-mismatch`), paid-not-credited (`payment-paid-not-credited`), and webhook signature failure (`payment-webhook-signature-failure-surge`) already apply to `provider="vmqfox"` through the bounded provider label. Do not add `userId`, `orderId`, `publicToken`, or merchant keys as labels.

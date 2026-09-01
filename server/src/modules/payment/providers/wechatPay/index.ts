@@ -223,6 +223,7 @@ export function createWechatPayProvider(options: WechatPayProviderOptions = {}):
         supportedCurrencies: [WECHAT_PAY_CNY],
         paymentMethods: [WECHAT_PAY_NATIVE_METHOD],
         actionTypes: ['qr_code'],
+        supportsRefunds: true,
         supportsPartialRefund: false,
         supportsDisputes: false,
         supportsReconciliation: false,
@@ -278,6 +279,7 @@ export function createWechatPayProvider(options: WechatPayProviderOptions = {}):
             providerOrderId: queried.providerOrderId,
             action: { type: 'none' },
             requestIdempotencyKey: input.requestIdempotencyKey,
+            amountMinor: input.amountMinor,
           }
         } catch {
           return {
@@ -285,6 +287,7 @@ export function createWechatPayProvider(options: WechatPayProviderOptions = {}):
             providerPaymentId: outTradeNo,
             action: { type: 'none' },
             requestIdempotencyKey: input.requestIdempotencyKey,
+            amountMinor: input.amountMinor,
           }
         }
       }
@@ -315,6 +318,7 @@ export function createWechatPayProvider(options: WechatPayProviderOptions = {}):
             expiresAt: new Date(now().getTime() + WECHAT_PAY_CODE_URL_TTL_MS).toISOString(),
           },
           requestIdempotencyKey: input.requestIdempotencyKey,
+          amountMinor: input.amountMinor,
         }
       } catch (err) {
         if (err instanceof WechatPayUnknownResultError) return recover()

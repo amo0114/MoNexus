@@ -234,6 +234,7 @@ describe('WeChat Pay adapter', () => {
     })
     const created = await provider.createPayment(nativeCreateInput())
     expect(created.status).toBe('requires_action')
+    expect(created.amountMinor).toBe(100n)
     expect(created.action).toMatchObject({
       type: 'qr_code',
       content: OFFICIAL_DOC_CODE_URL,

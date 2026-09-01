@@ -13,6 +13,7 @@ export type ProviderCapabilities = {
   supportedCurrencies: readonly RechargeCurrency[]
   paymentMethods: readonly string[]
   actionTypes: readonly PaymentActionType[]
+  supportsRefunds: boolean
   supportsPartialRefund: boolean
   supportsDisputes: boolean
   supportsReconciliation: boolean
@@ -75,6 +76,7 @@ export type ProviderPaymentAction = {
   providerOrderId?: string | null
   action: PaymentAction
   requestIdempotencyKey: string
+  amountMinor: bigint
 }
 
 export type NormalizedPayment = {
@@ -83,6 +85,9 @@ export type NormalizedPayment = {
   providerOrderId?: string | null
   providerCaptureId?: string | null
   amountMinor: bigint
+  quotedAmountMinor?: bigint
+  quotedOrderId?: string
+  quotedPaymentMethod?: string
   currency: RechargeCurrency
   providerAccountKey: string
   immutableStateVersion: string

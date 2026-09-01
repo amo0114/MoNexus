@@ -4,7 +4,8 @@ Scope: SPEC-RECHARGE-PAYMENT-V1.2 §11. Simulator and sandbox only unless a
 later owner provides live credentials. Closing recharge must not stop credit or
 refund of already-paid orders.
 
-Related: `docs/operations/payment-alerts.md`, `docs/operations/alert-routing.md`.
+Related: `docs/operations/payment-alerts.md`, `docs/operations/alert-routing.md`,
+`docs/operations/vmqfox-runbook.md`.
 
 ## Bounded metrics
 
@@ -24,10 +25,20 @@ payment_refund_total{provider,result}
 payment_dispute_total{provider,status}
 payment_reconciliation_mismatch_total{provider,type}
 payment_worker_backlog{worker}
+payment_monitor_offline_total{provider}
+payment_callback_retry_total{provider}
+payment_webhook_ack_failure_total{provider}
+payment_query_by_pay_id_recovery_total{provider,result}
+payment_refund_not_supported_total{provider}
 ```
 
 Operational gauges used by alerts: `payment_worker_oldest_age_seconds`,
 `payment_provider_circuit_open`, `payment_simulator_configured`.
+
+`PAYMENT_PROVIDER_NAMES` includes `vmqfox`. Unknown providers collapse to
+`unknown`. VMQFox does **not** support automatic refunds, disputes, or
+standard provider reconciliation; `payment_refund_not_supported_total` is the
+expected signal if a refund API is attempted.
 
 ## Recharge kill switch
 
@@ -143,9 +154,13 @@ auto-refund.
 1. Confirm `payment_observation_total{result="late_success"}` and an open
    reconciliation item `provider_paid_local_unpaid`.
 2. Manually decide: keep unpaid and refund at the provider, or credit after
-   finance review.
+   finance review. **VMQFox exception:** do not call a provider refund or
+   dispute API (`supportsRefunds=false`, `supportsDisputes=false`). Keep
+   unpaid and refund the collection-code payment outside MoNexus, then
+   record `AdminLog` / points-adjust per `docs/operations/vmqfox-runbook.md`.
 3. Record the decision with an admin reconcile/refund action so `AdminLog`
-   captures the operator, not the payload.
+   captures the operator, not the payload. Providers that advertise
+   `supportsRefunds=true` may still refund at the provider; VMQFox may not.
 
 ## Refund recovery
 
@@ -156,6 +171,10 @@ auto-refund.
    inspect the refund row and provider refund query. Do not create a second
    `RechargeReversal`.
 4. Closing recharge does not cancel in-flight refunds.
+5. VMQFox `supportsRefunds=false`. User and admin refund APIs must return
+   `PAYMENT_REFUND_NOT_SUPPORTED` and increment
+   `payment_refund_not_supported_total{provider="vmqfox"}`. Manual cash-path
+   refunds stay outside MoNexus; see `docs/operations/vmqfox-runbook.md`.
 
 ## Reconciliation
 

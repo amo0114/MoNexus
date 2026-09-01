@@ -7,6 +7,7 @@ import { paypalProvider } from './paypal/index.js'
 import { simulatorProvider } from './simulator/index.js'
 import { stripeProvider } from './stripe/index.js'
 import type { PaymentProvider } from './types.js'
+import { vmqfoxProvider } from './vmqfox/index.js'
 import { wechatPayProvider } from './wechatPay/index.js'
 
 const adapters: Record<PaymentProviderName, PaymentProvider> = {
@@ -15,6 +16,7 @@ const adapters: Record<PaymentProviderName, PaymentProvider> = {
   paypal: paypalProvider,
   wechat_pay: wechatPayProvider,
   alipay: alipayProvider,
+  vmqfox: vmqfoxProvider,
 }
 
 export const MOUNTED_PAYMENT_PROVIDERS: readonly PaymentProviderName[] = PAYMENT_PROVIDER_NAMES

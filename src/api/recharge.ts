@@ -60,6 +60,7 @@ export interface RechargeOrder {
   status: RechargeOrderStatus | string
   currency: string
   amountMinor: string
+  payableAmountMinor: string
   basePoints: string
   bonusPoints: string
   totalPoints: string

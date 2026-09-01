@@ -2,10 +2,12 @@ import { Router } from 'express'
 import { validate } from '../../middlewares/validate.js'
 import * as controller from './adminController.js'
 import {
+  adminCreatePricePolicySchema,
   adminCreateReconSchema,
   adminListDisputesQuerySchema,
   adminListEventsQuerySchema,
   adminListOrdersQuerySchema,
+  adminListPricePoliciesQuerySchema,
   adminPatchPricePolicySchema,
   adminRefundSchema,
   adminResolveDisputeSchema,
@@ -39,6 +41,16 @@ rechargeAdminRoutes.post(
   '/recharge/sandbox/orders/:id/confirm',
   validate({ params: adminUuidParamSchema }),
   controller.confirmSandboxOrder,
+)
+rechargeAdminRoutes.get(
+  '/recharge/price-policies',
+  validate({ query: adminListPricePoliciesQuerySchema }),
+  controller.listPricePolicies,
+)
+rechargeAdminRoutes.post(
+  '/recharge/price-policies',
+  validate({ body: adminCreatePricePolicySchema }),
+  controller.createPricePolicy,
 )
 rechargeAdminRoutes.patch(
   '/recharge/price-policies/:id',

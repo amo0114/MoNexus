@@ -301,9 +301,9 @@ async function createOrderOnce(
   {
     const productPeek = await prisma.product.findUnique({
       where: { id: productId },
-      select: { status: true, purchaseForm: true },
+      select: { status: true, archivedAt: true, purchaseForm: true },
     })
-    if (productPeek && productPeek.status === 'active') {
+    if (productPeek && productPeek.status === 'active' && !productPeek.archivedAt) {
       try {
         const offerPeek = await resolvePurchaseOfferChecked(
           prisma,
@@ -361,7 +361,7 @@ async function createOrderOnce(
 
     const product = await tx.product.findUnique({ where: { id: productId } })
     if (!product) throw notFound('商品不存在')
-    if (product.status !== 'active') throw badRequest('商品已下架')
+    if (product.status !== 'active' || product.archivedAt) throw badRequest('商品已下架')
     // P4a：价格与履约配置以所选 Offer 为准（单 SKU 未传 offerId 时解析默认）。
     // P4b：结算版本终检在解析内完成（与预检同序：版本先于下架判定）。
     const offer = await resolvePurchaseOfferChecked(tx, productId, offerId, expectedCheckoutVersion)
@@ -1131,9 +1131,9 @@ export async function renewOrderPrecheck(orderId: number, userId: number) {
   if (!offer || offer.status !== 'active') throw unavailable()
   const product = await prisma.product.findUnique({
     where: { id: order.productId },
-    select: { status: true },
+    select: { status: true, archivedAt: true },
   })
-  if (!product || product.status !== 'active') throw unavailable()
+  if (!product || product.status !== 'active' || product.archivedAt) throw unavailable()
 
   // 可购买性预检（与 createOrder 的挡单条件对齐，避免引导买家进入必败结算）：
   // instant_fixed 的固定内容/文件必须可用；限量规格必须仍有库存。

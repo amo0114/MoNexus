@@ -7,7 +7,39 @@ import { useAppStore } from '../../stores/appStore'
 import EmptyState from '../../components/ui/EmptyState'
 import { TableSkeleton } from '../../components/ui/Skeleton'
 import { formatCurrencyAmount, formatPoints } from './money'
+import { buildPayableRecognitionNotice } from './payableCopy'
 import { methodLabel, orderStatusLabel, providerLabel } from './status'
+
+function HistoryRow({ order, onOpen }: { order: RechargeOrder; onOpen: () => void }) {
+  const payableNotice = buildPayableRecognitionNotice(order)
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className="w-full text-left rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] p-4 hover:border-[var(--color-primary)]/40 transition-colors"
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+        <span className="text-sm font-bold text-[var(--color-text)]">{orderStatusLabel(order.status)}</span>
+        <span className="text-xs text-[var(--color-text-muted)]">{new Date(order.createdAt).toLocaleString()}</span>
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+        <span className="whitespace-nowrap">
+          {formatCurrencyAmount(order.payableAmountMinor, order.currency)}
+        </span>
+        <span className="font-bold text-[var(--color-cta)] whitespace-nowrap">{formatPoints(order.totalPoints)} 积分</span>
+      </div>
+      {payableNotice && (
+        <div className="mt-1 space-y-0.5" data-testid={`recharge-history-payable-${order.orderId}`}>
+          <p className="text-xs font-bold text-[var(--color-warning-accent)]">{payableNotice.headline}</p>
+          <p className="text-xs text-[var(--color-text-muted)]">{payableNotice.detail}</p>
+        </div>
+      )}
+      <p className="text-xs text-[var(--color-text-muted)] mt-1">
+        {providerLabel(order.provider)} · {methodLabel(order.paymentMethod)}
+      </p>
+    </button>
+  )
+}
 
 export default function RechargeHistory() {
   const navigate = useNavigate()
@@ -37,24 +69,7 @@ export default function RechargeHistory() {
       ) : (
         <div className="space-y-3">
           {items.map((order) => (
-            <button
-              key={order.orderId}
-              type="button"
-              onClick={() => navigate(`/recharge?order=${encodeURIComponent(order.orderId)}`)}
-              className="w-full text-left rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] p-4 hover:border-[var(--color-primary)]/40 transition-colors"
-            >
-              <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
-                <span className="text-sm font-bold text-[var(--color-text)]">{orderStatusLabel(order.status)}</span>
-                <span className="text-xs text-[var(--color-text-muted)]">{new Date(order.createdAt).toLocaleString()}</span>
-              </div>
-              <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
-                <span className="whitespace-nowrap">{formatCurrencyAmount(order.amountMinor, order.currency)}</span>
-                <span className="font-bold text-[var(--color-cta)] whitespace-nowrap">{formatPoints(order.totalPoints)} 积分</span>
-              </div>
-              <p className="text-xs text-[var(--color-text-muted)] mt-1">
-                {providerLabel(order.provider)} · {methodLabel(order.paymentMethod)}
-              </p>
-            </button>
+            <HistoryRow key={order.orderId} order={order} onOpen={() => navigate(`/recharge?order=${encodeURIComponent(order.orderId)}`)} />
           ))}
         </div>
       )}

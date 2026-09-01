@@ -38,6 +38,8 @@ describe('payment provider contract harness', () => {
       providerAccountKey: SIMULATOR_ACCOUNT_KEY,
     })
     expect(result.created.providerPaymentId.startsWith('sim_pay_')).toBe(true)
+    expect(result.created.amountMinor).toBe(1000n)
+    expect(result.capabilities.supportsRefunds).toBe(true)
     expect(result.queried.amountMinor).toBe(1000n)
 
     const failed = await simulatorProvider.verifyAndNormalizeWebhook({

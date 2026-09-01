@@ -7,6 +7,7 @@ export const PAYMENT_PROVIDER_NAMES = [
   'paypal',
   'wechat_pay',
   'alipay',
+  'vmqfox',
 ] as const
 export type PaymentProviderName = (typeof PAYMENT_PROVIDER_NAMES)[number]
 

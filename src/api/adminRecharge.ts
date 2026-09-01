@@ -7,6 +7,7 @@ export interface AdminRechargeOrder {
   status: string
   currency: string
   amountMinor: string
+  payableAmountMinor: string
   totalPoints: string
   provider: string
   paymentMethod: string
@@ -19,6 +20,7 @@ export interface AdminRechargeOrder {
   creditId: string | null
   refundId: string | null
   refundStatus: string | null
+  supportsRefunds: boolean
 }
 
 export interface AdminRechargeOrderDetail extends AdminRechargeOrder {
@@ -79,6 +81,7 @@ export interface AdminReconItem {
   localStatus: string | null
   providerAmountMinor: string | null
   localAmountMinor: string | null
+  quotedAmountMinor: string | null
   currency: string | null
   status: string
 }
@@ -190,5 +193,99 @@ export async function listAdminPaymentDisputes(params?: {
   pageSize?: number
 }): Promise<AdminPaged<AdminPaymentDispute>> {
   const { data } = await api.get<AdminPaged<AdminPaymentDispute>>('/admin/payments/disputes', { params })
+  return data
+}
+
+export interface AdminPricePolicySuggestedAmount {
+  amountMinor: string
+  sortOrder: number
+}
+
+export interface AdminPricePolicy {
+  id: string
+  code: string
+  version: number
+  currency: string
+  adminSandbox: boolean
+  status: 'draft' | 'active' | 'retired' | string
+  currencyScale: number
+  pointsNumerator: string
+  pointsDenominator: string
+  roundingMode: string
+  minAmountMinor: string
+  maxAmountMinor: string
+  amountStepMinor: string
+  dailyLimitMinor: string
+  monthlyLimitMinor: string
+  limitTimeZone: string
+  bonusRuleVersion: string | null
+  suggestedAmounts: AdminPricePolicySuggestedAmount[]
+  effectiveAt: string
+  createdAt: string
+}
+
+export interface AdminCreatePricePolicyBody {
+  code: string
+  currency: string
+  currencyScale: number
+  pointsNumerator: string
+  pointsDenominator: string
+  roundingMode: 'HALF_EVEN'
+  minAmountMinor: string
+  maxAmountMinor: string
+  amountStepMinor: string
+  dailyLimitMinor: string
+  monthlyLimitMinor: string
+  limitTimeZone: string
+  adminSandbox?: boolean
+  bonusRuleVersion?: string | null
+  suggestedAmounts: AdminPricePolicySuggestedAmount[]
+}
+
+/** Admin-only create example. 1 PTS per 1 CNY fen; create stays draft. */
+export const RP_CNY_VMQFOX_V1_CREATE_EXAMPLE: AdminCreatePricePolicyBody = {
+  code: 'rp-cny-vmqfox-v1',
+  currency: 'CNY',
+  currencyScale: 2,
+  pointsNumerator: '1',
+  pointsDenominator: '1',
+  roundingMode: 'HALF_EVEN',
+  minAmountMinor: '100',
+  maxAmountMinor: '100000',
+  amountStepMinor: '100',
+  dailyLimitMinor: '200000',
+  monthlyLimitMinor: '1000000',
+  limitTimeZone: 'Asia/Shanghai',
+  suggestedAmounts: [
+    { amountMinor: '1000', sortOrder: 1 },
+    { amountMinor: '3000', sortOrder: 2 },
+    { amountMinor: '5000', sortOrder: 3 },
+    { amountMinor: '10000', sortOrder: 4 },
+  ],
+}
+
+export async function listAdminPricePolicies(params?: {
+  currency?: string
+  status?: string
+  adminSandbox?: boolean
+  page?: number
+  pageSize?: number
+}): Promise<AdminPaged<AdminPricePolicy>> {
+  const { data } = await api.get<AdminPaged<AdminPricePolicy>>('/admin/recharge/price-policies', {
+    params: {
+      ...params,
+      adminSandbox: params?.adminSandbox === undefined ? undefined : params.adminSandbox ? 'true' : 'false',
+    },
+  })
+  return data
+}
+
+export async function createAdminPricePolicy(body: AdminCreatePricePolicyBody): Promise<AdminPricePolicy> {
+  const { data } = await api.post<AdminPricePolicy>('/admin/recharge/price-policies', body)
+  return data
+}
+
+export async function activateAdminPricePolicy(id: string): Promise<AdminPricePolicy> {
+  const { data } = await api.post<AdminPricePolicy>(`/admin/recharge/price-policies/${id}/activate`)
   return data
 }
