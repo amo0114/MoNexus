@@ -5,6 +5,7 @@ import { businessRegistry } from '../../lib/businessRegistry.js'
 import { normalizedEmailSchema } from '../../lib/email.js'
 import { ORDER_STATUSES } from '../orders/fulfillment.js'
 import { inventoryImportPayloadSchema } from '../../lib/inventoryImport.js'
+import { purchaseFormSchema } from '../../lib/purchaseForm.js'
 import {
   productDescriptionSchema,
   productDeliveryModeSchema,
@@ -156,16 +157,38 @@ export const createProductSchema = markNotWritableFields(
 export type CreateProductInput = z.infer<typeof createProductSchema>
 
 export const updateProductSchema = markNotWritableFields(
-  adminDraftProductFieldsSchema.partial().extend({
+  adminDraftProductFieldsSchema.partial().omit({
+    externalIntegration: true,
+    externalSku: true,
+  }).extend({
     // update permits explicit clearing before changing away from instant_fixed.
     fixedContent: z.string().trim().min(1).max(5000).nullable().optional(),
     // `null` is an intentional request to remove the strikethrough price.
     originalPrice: productPriceSchema.nullable().optional(),
     imageUrl: productImageItemSchema.nullable().optional(),
+    categoryId: z.number().int().positive().optional(),
+    purchaseForm: purchaseFormSchema.optional(),
   }).strict().superRefine(validateProductCommercialFields),
-  ['isHot'],
+  ['isHot', 'externalIntegration', 'externalSku'],
 )
 export type UpdateProductInput = z.infer<typeof updateProductSchema>
+
+export const listAdminProductsQuerySchema = z.object({
+  archived: z.enum(['exclude', 'only', 'all']).default('exclude'),
+}).strict()
+export type ListAdminProductsQuery = z.infer<typeof listAdminProductsQuerySchema>
+
+export const archiveProductSchema = z.object({
+  reason: z.string().trim().min(1).max(200).optional(),
+}).strict()
+
+export const adminOfferPatchSchema = z.object({
+  name: z.string().trim().min(1).max(50).optional(),
+  price: productPriceSchema.optional(),
+  originalPrice: productPriceSchema.nullable().optional(),
+  validityDays: z.number().int().min(1).max(3650).nullable().optional(),
+  sortOrder: z.number().int().min(0).max(10_000).optional(),
+}).strict()
 
 // FakaBridge admin (requireAdmin only): set Xboard capacity_limit; null = unlimited.
 export const setFakaCapacitySchema = z.object({
@@ -182,6 +205,26 @@ const fakaSkuSchema = z
   .min(1)
   .max(64)
   .regex(/^[a-zA-Z0-9]+(?:[-_][a-zA-Z0-9]+)*$/, 'externalSku 格式无效')
+
+export const rebindOfferSkuSchema = z.object({
+  sku: fakaSkuSchema,
+  sourceHash: z.string().regex(/^[0-9a-f]{64}$/, 'sourceHash 格式无效').optional(),
+}).strict()
+
+export const fakaSyncActionSchema = z.object({
+  type: z.enum(['add_missing', 'archive_removed', 'keep_local', 'restore_product', 'update_sku', 'apply_price']),
+  period: z.string().trim().min(1).max(32).optional(),
+  offerId: z.number().int().positive().optional(),
+  sku: fakaSkuSchema.optional(),
+  pricePoints: z.number().int().positive().max(MAX_PRODUCT_PRICE).optional(),
+  offerName: z.string().trim().min(1).max(50).optional(),
+  validityDays: z.number().int().min(1).max(3650).nullable().optional(),
+}).strict()
+
+export const confirmFakaSyncSchema = z.object({
+  sourceHash: z.string().regex(/^[0-9a-f]{64}$/, 'sourceHash 格式无效'),
+  actions: z.array(fakaSyncActionSchema).max(40).optional(),
+}).strict()
 
 const fakaPeriodOfferSchema = z.object({
   period: z.string().trim().min(1).max(32),

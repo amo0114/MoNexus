@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Archive, LayoutDashboard, UsersRound, Package, RotateCcw, ShoppingCart, Activity, Users, ShoppingBag, Coins, Store, Tags, DollarSign, Settings, ClipboardList, Megaphone, DatabaseBackup, FolderLock, Cable, ShieldAlert, HardDrive, Upload, Wallet } from 'lucide-react'
+import { Archive, LayoutDashboard, UsersRound, Package, RotateCcw, ShoppingCart, Activity, Users, ShoppingBag, Coins, Store, Tags, DollarSign, Settings, ClipboardList, Megaphone, DatabaseBackup, FolderLock, Cable, ShieldAlert, HardDrive, Upload, Wallet, Pencil, RefreshCw } from 'lucide-react'
 import api from '../api/client'
 import { getApiErrorMessage } from '../api/error'
 import { createLatestRequestGuard } from '../utils/latestRequest'
@@ -14,8 +14,9 @@ import {
   batchSettle
 } from '../api/adminMerchant'
 import {
-  deleteAdminProduct,
+  archiveAdminProduct,
   getAdminProducts,
+  restoreAdminProduct,
   setAdminFakaCapacity,
   unpublishAdminProduct,
   type AdminProductListItem,
@@ -44,6 +45,9 @@ import AdminFakaImportPreview from '../components/catalog/AdminFakaImportPreview
 import AdminProductPublicationDialog, {
   type AdminPublicationTarget,
 } from '../components/catalog/AdminProductPublicationDialog'
+import AdminProductEditDialog from '../components/catalog/AdminProductEditDialog'
+import AdminOfferManagerModal from '../components/catalog/AdminOfferManagerModal'
+import AdminFakaSyncDialog from '../components/catalog/AdminFakaSyncDialog'
 import AdminInventoryImportPreview, { type AdminInventoryTarget } from '../components/catalog/AdminInventoryImportPreview'
 import AdminMerchandisingPage from '../components/merchandising/AdminMerchandisingPage'
 import AdminCategoryManager from '../components/catalog/AdminCategoryManager'
@@ -110,6 +114,10 @@ export default function AdminPage() {
   const [unpublishingProductIds, setUnpublishingProductIds] = useState<Set<number>>(new Set())
   const [productsRefreshError, setProductsRefreshError] = useState(false)
   const [productsReloading, setProductsReloading] = useState(false)
+  const [archivedFilter, setArchivedFilter] = useState<'exclude' | 'only' | 'all'>('exclude')
+  const [editProduct, setEditProduct] = useState<AdminProductListItem | null>(null)
+  const [offerProduct, setOfferProduct] = useState<AdminProductListItem | null>(null)
+  const [syncProduct, setSyncProduct] = useState<AdminProductListItem | null>(null)
   const unpublishingRef = useRef<Set<number>>(new Set())
   const productsReloadGuard = useRef(createLatestRequestGuard()).current
 
@@ -123,7 +131,7 @@ export default function AdminPage() {
       setProductsReloading(false)
     }
     loadTabData(activeTab)
-  }, [activeTab, settlementStatusFilter, productsReloadGuard])
+  }, [activeTab, settlementStatusFilter, productsReloadGuard, archivedFilter])
 
   useEffect(() => {
     if (activeTab === 'audit') {
@@ -175,7 +183,7 @@ export default function AdminPage() {
     setProductsReloading(true)
     setTabLoading(true)
     try {
-      const data = await getAdminProducts()
+      const data = await getAdminProducts({ archived: archivedFilter })
       if (!canCommit()) {
         const stale = new Error('stale-products-reload')
         stale.name = 'StaleProductsReloadError'
@@ -605,7 +613,17 @@ export default function AdminPage() {
               )}
               <div className="flex justify-between items-center mb-4 gap-3 flex-wrap">
                 <h2 className="font-heading text-xl font-bold text-[var(--color-text)]">商品与库存</h2>
-                <div className="flex gap-2 flex-wrap">
+                <div className="flex gap-2 flex-wrap items-center">
+                  <select
+                    className="input py-1.5 text-xs"
+                    value={archivedFilter}
+                    onChange={(event) => setArchivedFilter(event.target.value as 'exclude' | 'only' | 'all')}
+                    data-testid="admin-products-archived-filter"
+                  >
+                    <option value="exclude">隐藏已归档</option>
+                    <option value="only">仅已归档</option>
+                    <option value="all">全部</option>
+                  </select>
                   <button type="button" className="btn-secondary btn-sm text-xs px-3 py-1.5"
                     data-testid="admin-platform-product-open" onClick={() => setShowPlatformProduct(true)}>
                     新建平台商品
@@ -674,7 +692,7 @@ export default function AdminPage() {
                               className="inline-flex items-center rounded border border-[var(--color-border)] bg-[var(--color-background)] px-2 py-0.5 text-xs font-bold text-[var(--color-text)]"
                               data-testid={`admin-product-status-${p.id}`}
                             >
-                              {adminProductStatusLabel(p.status)}
+                              {p.archivedAt ? '已归档' : adminProductStatusLabel(p.status)}
                             </span>
                           </td>
                           <td data-label="类型">
@@ -690,7 +708,7 @@ export default function AdminPage() {
                           </td>
                           <td className="text-right" data-label="操作">
                             <div className="flex flex-wrap gap-2 justify-end">
-                              {isPlatformOwned && p.status === 'draft' && (
+                              {isPlatformOwned && !p.archivedAt && p.status === 'draft' && (
                                 <button
                                   type="button"
                                   data-testid={`admin-product-publish-${p.id}`}
@@ -702,7 +720,7 @@ export default function AdminPage() {
                                   发布
                                 </button>
                               )}
-                              {isPlatformOwned && p.status === 'inactive' && (
+                              {isPlatformOwned && !p.archivedAt && p.status === 'inactive' && (
                                 <button
                                   type="button"
                                   data-testid={`admin-product-relist-${p.id}`}
@@ -714,7 +732,7 @@ export default function AdminPage() {
                                   重新上架
                                 </button>
                               )}
-                              {isPlatformOwned && p.status === 'active' && (
+                              {isPlatformOwned && !p.archivedAt && p.status === 'active' && (
                                 <button
                                   type="button"
                                   data-testid={`admin-product-unpublish-${p.id}`}
@@ -773,30 +791,77 @@ export default function AdminPage() {
                                   {p.merchantId ? '由商家调整名额' : '名额由商品配置管理'}
                                 </span>
                               ) : null}
-                              <button
-                                type="button"
-                                data-testid={`admin-delete-product-${p.id}`}
-                                className="text-red-500 hover:bg-red-500/10 font-semibold text-xs px-3 py-1.5 btn-sm rounded-lg transition-colors border border-red-500/25 cursor-pointer"
-                                onClick={async () => {
-                                  const ok = window.confirm(
-                                    `确定删除「${p.name}」？\n\n无订单：永久删除\n有历史订单：仅下架（不可物理删除）`
-                                  )
-                                  if (!ok) return
-                                  try {
-                                    const result = await deleteAdminProduct(p.id)
-                                    showToast(
-                                      result.mode === 'hard'
-                                        ? '商品已删除'
-                                        : `已下架（保留 ${result.orderCount} 笔历史订单）`
+                              {isPlatformOwned && (
+                                <button
+                                  type="button"
+                                  data-testid={`admin-edit-product-${p.id}`}
+                                  className="text-[var(--color-text)] hover:bg-[var(--color-background)] font-semibold text-xs px-3 py-1.5 btn-sm rounded-lg transition-colors border border-[var(--color-border)] cursor-pointer inline-flex items-center gap-1"
+                                  onClick={() => setEditProduct(p)}
+                                >
+                                  <Pencil className="w-3.5 h-3.5" />
+                                  编辑
+                                </button>
+                              )}
+                              {isPlatformOwned && (
+                                <button
+                                  type="button"
+                                  data-testid={`admin-manage-offers-${p.id}`}
+                                  className="text-[var(--color-text)] hover:bg-[var(--color-background)] font-semibold text-xs px-3 py-1.5 btn-sm rounded-lg transition-colors border border-[var(--color-border)] cursor-pointer"
+                                  onClick={() => setOfferProduct(p)}
+                                >
+                                  规格
+                                </button>
+                              )}
+                              {isFaka && (
+                                <button
+                                  type="button"
+                                  data-testid={`admin-faka-sync-${p.id}`}
+                                  className="text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 font-semibold text-xs px-3 py-1.5 btn-sm rounded-lg transition-colors border border-[var(--color-primary)]/25 cursor-pointer inline-flex items-center gap-1"
+                                  onClick={() => setSyncProduct(p)}
+                                >
+                                  <RefreshCw className="w-3.5 h-3.5" />
+                                  同步
+                                </button>
+                              )}
+                              {p.archivedAt ? (
+                                <button
+                                  type="button"
+                                  data-testid={`admin-restore-product-${p.id}`}
+                                  className="text-[var(--color-cta)] hover:bg-[var(--color-cta)]/10 font-semibold text-xs px-3 py-1.5 btn-sm rounded-lg transition-colors border border-[var(--color-cta)]/25 cursor-pointer"
+                                  onClick={async () => {
+                                    try {
+                                      await restoreAdminProduct(p.id)
+                                      showToast('商品已恢复为未上架状态')
+                                      loadTabData('products')
+                                    } catch (err) {
+                                      showToast(getApiErrorMessage(err, '恢复失败'), 'error')
+                                    }
+                                  }}
+                                >
+                                  恢复
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  data-testid={`admin-archive-product-${p.id}`}
+                                  className="text-red-500 hover:bg-red-500/10 font-semibold text-xs px-3 py-1.5 btn-sm rounded-lg transition-colors border border-red-500/25 cursor-pointer"
+                                  onClick={async () => {
+                                    const ok = window.confirm(
+                                      `确定归档「${p.name}」？\n\n商品将从商城和管理默认列表隐藏，历史订单与快照保留，不会永久删除。`,
                                     )
-                                    loadTabData('products')
-                                  } catch (err) {
-                                    showToast(getApiErrorMessage(err, '删除失败'), 'error')
-                                  }
-                                }}
-                              >
-                                删除
-                              </button>
+                                    if (!ok) return
+                                    try {
+                                      await archiveAdminProduct(p.id)
+                                      showToast('商品已归档')
+                                      loadTabData('products')
+                                    } catch (err) {
+                                      showToast(getApiErrorMessage(err, '归档失败'), 'error')
+                                    }
+                                  }}
+                                >
+                                  归档
+                                </button>
+                              )}
                             </div>
                           </td>
                         </tr>
@@ -1108,6 +1173,22 @@ export default function AdminPage() {
             throw new Error('products-refresh-failed')
           }
         }}
+      />
+
+      <AdminProductEditDialog
+        product={editProduct}
+        onClose={() => setEditProduct(null)}
+        onSaved={() => { void loadTabData('products') }}
+      />
+      <AdminOfferManagerModal
+        product={offerProduct}
+        onClose={() => setOfferProduct(null)}
+        onChanged={() => { void loadTabData('products') }}
+      />
+      <AdminFakaSyncDialog
+        product={syncProduct}
+        onClose={() => setSyncProduct(null)}
+        onSynced={() => { void loadTabData('products') }}
       />
     </div>
   )

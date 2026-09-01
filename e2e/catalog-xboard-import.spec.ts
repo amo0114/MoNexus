@@ -1989,47 +1989,39 @@ test.describe.serial('Catalog Xboard import', () => {
       const goldSkus = goldProduct.offers.map((offer) => offer.externalSku).sort();
       expect(goldSkus).toEqual(['gold-monthly', 'gold-yearly']);
     } finally {
-      // Real UI cleanup: remove the draft created by Page A through the real
-      // admin UI (confirm dialog -> hard delete -> list refresh) so it does
-      // not leak into later tests. The fixture reset and page closes run
-      // unconditionally afterwards, with page closes nested so pageC.close()
-      // is still attempted if pageB.close() throws.
+      // Real UI cleanup: archive the draft created by Page A so it does not
+      // leak into later default admin lists. Permanent purge is not in the UI.
       try {
         if (productIdA > 0) {
-          const deleteButton = page.getByTestId(`admin-delete-product-${productIdA}`);
-          const deleteResponsePromise = page.waitForResponse(
+          const archiveButton = page.getByTestId(`admin-archive-product-${productIdA}`);
+          const archiveResponsePromise = page.waitForResponse(
             (response) =>
-              response.request().method() === 'DELETE'
-              && new URL(response.url()).pathname === `/api/admin/products/${productIdA}`,
+              response.request().method() === 'POST'
+              && new URL(response.url()).pathname === `/api/admin/products/${productIdA}/archive`,
           );
           const refreshResponsePromise = page.waitForResponse(isAdminProductsResponse);
           const dialogPromise = page.waitForEvent('dialog');
 
-          const clickPromise = deleteButton.click();
-          const deleteDialog = await dialogPromise;
-          expect(deleteDialog.type()).toBe('confirm');
-          expect(deleteDialog.message()).toContain('Gold Plan');
-          expect(deleteDialog.message()).toContain('永久删除');
-          await deleteDialog.accept();
+          const clickPromise = archiveButton.click();
+          const archiveDialog = await dialogPromise;
+          expect(archiveDialog.type()).toBe('confirm');
+          expect(archiveDialog.message()).toContain('Gold Plan');
+          expect(archiveDialog.message()).toContain('归档');
+          await archiveDialog.accept();
           await clickPromise;
 
-          const deleteResponse = await deleteResponsePromise;
-          expect(deleteResponse.status()).toBe(200);
-          const deleteBody: unknown = await deleteResponse.json();
-          assertExactKeys(deleteBody, ['mode', 'productId', 'orderCount'], 'admin product delete response');
-          if (
-            deleteBody.mode !== 'hard'
-            || deleteBody.productId !== productIdA
-            || deleteBody.orderCount !== 0
-          ) {
-            throw new Error('admin product delete response mismatch');
+          const archiveResponse = await archiveResponsePromise;
+          expect(archiveResponse.status()).toBe(200);
+          const archiveBody = await archiveResponse.json() as { mode?: string; productId?: number };
+          if (archiveBody.mode !== 'archived' || archiveBody.productId !== productIdA) {
+            throw new Error('admin product archive response mismatch');
           }
 
           const refreshResponse = await refreshResponsePromise;
           expect(refreshResponse.status()).toBe(200);
-          await expect(page.getByTestId(`admin-delete-product-${productIdA}`)).toHaveCount(0);
+          await expect(page.getByTestId(`admin-archive-product-${productIdA}`)).toHaveCount(0);
           await expect(
-            page.locator('[data-toast-card]').filter({ hasText: '商品已删除' }),
+            page.locator('[data-toast-card]').filter({ hasText: '商品已归档' }),
           ).toBeVisible();
         }
       } finally {

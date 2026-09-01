@@ -250,6 +250,10 @@ export default function AdminFakaImportPreview({ open, onClose, onImported }: Pr
       if (code === 'FAKA_SOURCE_CHANGED') {
         invalidatePreview()
         showToast('Xboard 套餐已变化，请重新预览', 'error')
+      } else if (code === 'PRODUCT_ARCHIVED') {
+        const productId = existingProductId(error)
+        if (productId != null) setConflictProductId(productId)
+        showToast('该套餐已导入且商品已归档，请恢复后同步，不要重复创建', 'error')
       } else {
         const productId = existingProductId(error)
         if (productId != null) setConflictProductId(productId)
@@ -427,6 +431,11 @@ export default function AdminFakaImportPreview({ open, onClose, onImported }: Pr
                 <ul className="text-sm space-y-1">
                   {preview.offers.map((offer) => <li key={offer.sku}>{offer.offerName} · {offer.pricePoints} 积分 · {offer.sku}</li>)}
                 </ul>
+                {preview.archived && (
+                  <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm" data-testid="admin-faka-archived-guidance">
+                    该套餐已关联已归档商品 #{preview.existingProductId}。请恢复后同步，不要重复创建。
+                  </p>
+                )}
                 {preview.issues.length > 0 && <ul className="text-sm space-y-1" data-testid="admin-faka-preview-issues">
                   {preview.issues.map((issue, index) => {
                     const projected = projectCatalogIssue(issue)

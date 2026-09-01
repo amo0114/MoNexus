@@ -82,6 +82,7 @@ const productDetailSelect = {
   stock: true,
   sales: true,
   status: true,
+  archivedAt: true,
   deliveryMode: true,
   stockMode: true,
   // 购买前表单定义：买家需在详情/结算时看到并填写，属公开数据（答案才是敏感的）。
@@ -329,7 +330,7 @@ function serializePublicProductDetail(
   offerAvailableCounts: Map<number, number>,
   fakaByOfferId: Map<number, FakaCapacitySnapshot> = new Map()
 ) {
-  const { _count, offers, ...publicProduct } = product
+  const { _count, offers, archivedAt: _archivedAt, ...publicProduct } = product
   const localAvailability = computePublicAvailability(product, offers, offerAvailableCounts)
   const fakaCaps = [...fakaByOfferId.values()]
   const fakaAvailability = projectFakaAvailability(fakaCaps)
@@ -408,7 +409,7 @@ async function listRankedProductRows(
 ): Promise<RankedProductRow[]> {
   const { page = 1, pageSize = 20 } = params
   const { filters, cursor, run } = context
-  const where: Prisma.Sql[] = [Prisma.sql`p."status" = 'active'`]
+  const where: Prisma.Sql[] = [Prisma.sql`p."status" = 'active' AND p."archivedAt" IS NULL`]
 
   if (filters.categoryCode) {
     where.push(Prisma.sql`c."code" = ${filters.categoryCode} AND c."status" = 'active'`)
@@ -507,7 +508,7 @@ async function listProductsFromDb(params: ProductListParams, context: ProductLis
   const ranked = await listRankedProductRows(params, context)
   const pageRows = ranked.slice(0, pageSize)
   const products = await prisma.product.findMany({
-    where: { id: { in: pageRows.map(row => row.id) }, status: 'active' },
+    where: { id: { in: pageRows.map(row => row.id) }, status: 'active', archivedAt: null },
     select: productListSelect,
   })
   const productById = new Map(products.map(product => [product.id, product]))
@@ -572,7 +573,7 @@ async function getProductDetailFromDb(id: number) {
     select: productDetailSelect,
   })
   if (!product) throw notFound('商品不存在')
-  if (product.status !== 'active') throw badRequest('商品已下架')
+  if (product.status !== 'active' || product.archivedAt) throw badRequest('商品已下架')
 
   const offerAvailableCounts = await countAvailableByOffer(product.offers)
 
