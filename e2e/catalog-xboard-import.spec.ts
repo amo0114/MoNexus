@@ -42,7 +42,7 @@
  */
 
 import { expect, test, type Page, type Request, type Response } from '@playwright/test';
-import { API_BASE, SEED_ACCOUNTS, loginAs } from './helpers';
+import { API_BASE, SEED_ACCOUNTS, loginAs, loginAsApi } from './helpers';
 
 const XBOARD_FIXTURE_RESET_URL = 'http://127.0.0.1:3106/__fixture/reset';
 const XBOARD_FIXTURE_MUTATE_URL = 'http://127.0.0.1:3106/__fixture/mutate-source';
@@ -2041,8 +2041,10 @@ test.describe.serial('Catalog Xboard import', () => {
       const goldSkus = goldProduct.offers.map((offer) => offer.externalSku).sort();
       expect(goldSkus).toEqual(['gold-monthly', 'gold-yearly']);
     } finally {
-      // Real UI cleanup: archive the draft created by Page A so it does not
-      // leak into later default admin lists. Permanent purge is not in the UI.
+      // Exercise the real archive UI, then restore + purge this test-owned,
+      // never-published draft through the lifecycle API. Archive intentionally
+      // preserves offers and the Xboard link, so leaving it archived would
+      // contaminate later imports that reuse the fixture SKUs.
       try {
         if (productIdA > 0) {
           const archiveButton = page.getByTestId(`admin-archive-product-${productIdA}`);
@@ -2075,6 +2077,29 @@ test.describe.serial('Catalog Xboard import', () => {
           await expect(
             page.locator('[data-toast-card]').filter({ hasText: '商品已归档' }),
           ).toBeVisible();
+
+          const { accessToken } = await loginAsApi(page.request, SEED_ACCOUNTS.admin);
+          const authHeaders = { Authorization: `Bearer ${accessToken}` };
+          const restoreResponse = await page.request.post(
+            `${API_BASE}/api/admin/products/${productIdA}/restore`,
+            { headers: authHeaders },
+          );
+          expect(restoreResponse.status()).toBe(200);
+          expect(await restoreResponse.json()).toMatchObject({
+            productId: productIdA,
+            status: 'draft',
+            archivedAt: null,
+          });
+
+          const purgeResponse = await page.request.delete(
+            `${API_BASE}/api/admin/products/${productIdA}/purge`,
+            { headers: authHeaders },
+          );
+          expect(purgeResponse.status()).toBe(200);
+          expect(await purgeResponse.json()).toMatchObject({
+            mode: 'purged',
+            productId: productIdA,
+          });
         }
       } finally {
         try {
