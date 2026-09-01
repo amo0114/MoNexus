@@ -29,9 +29,10 @@ function HistoryRow({ order, onOpen }: { order: RechargeOrder; onOpen: () => voi
         <span className="font-bold text-[var(--color-cta)] whitespace-nowrap">{formatPoints(order.totalPoints)} 积分</span>
       </div>
       {payableNotice && (
-        <p className="text-xs text-[var(--color-warning-accent)] mt-1" data-testid={`recharge-history-payable-${order.orderId}`}>
-          {payableNotice.headline}
-        </p>
+        <div className="mt-1 space-y-0.5" data-testid={`recharge-history-payable-${order.orderId}`}>
+          <p className="text-xs font-bold text-[var(--color-warning-accent)]">{payableNotice.headline}</p>
+          <p className="text-xs text-[var(--color-text-muted)]">{payableNotice.detail}</p>
+        </div>
       )}
       <p className="text-xs text-[var(--color-text-muted)] mt-1">
         {providerLabel(order.provider)} · {methodLabel(order.paymentMethod)}

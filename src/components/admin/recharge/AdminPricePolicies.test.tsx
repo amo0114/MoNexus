@@ -71,6 +71,8 @@ describe('AdminPricePolicies', () => {
 
     fireEvent.click(screen.getByTestId('admin-price-policy-create'))
     fireEvent.click(screen.getByTestId('admin-price-policy-fill-example'))
+    expect(screen.getByTestId('admin-price-policy-rate-preview')).toHaveTextContent('1 PTS / 1 分')
+    expect(screen.getByTestId('admin-price-policy-rate-preview')).toHaveTextContent('¥10.00 → 1000 积分')
     fireEvent.click(screen.getByTestId('admin-price-policy-submit'))
     await waitFor(() => expect(createAdminPricePolicy).toHaveBeenCalledWith(expect.objectContaining({
       ...RP_CNY_VMQFOX_V1_CREATE_EXAMPLE,
@@ -85,8 +87,30 @@ describe('AdminPricePolicies', () => {
     listAdminPricePolicies.mockResolvedValue({ page: 1, pageSize: 50, total: 1, items: [draft] })
     activateAdminPricePolicy.mockResolvedValue({ ...draft, status: 'active' })
     render(<AdminPricePolicies />)
-    fireEvent.click(await screen.findByTestId('admin-price-policy-activate-rp-cny-vmqfox-v1'))
+    expect(await screen.findByText('1 PTS / 1 分')).toBeInTheDocument()
+    expect(screen.getByText('¥10.00 → 1000 积分')).toBeInTheDocument()
+    fireEvent.click(screen.getByTestId('admin-price-policy-activate-rp-cny-vmqfox-v1'))
+    expect(screen.getByText('激活草稿 rp-cny-vmqfox-v1？')).toBeInTheDocument()
+    expect(screen.getByText(/1 PTS \/ 1 分；¥10\.00 → 1000 积分/)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '确认激活' }))
     await waitFor(() => expect(activateAdminPricePolicy).toHaveBeenCalledWith(draft.id))
+  })
+
+  it('does not show the draft activate control on retired policies', async () => {
+    const retired = policy({
+      id: '22222222-2222-4222-8222-222222222222',
+      code: 'rp-cny-old-v1',
+      status: 'retired',
+    })
+    listAdminPricePolicies.mockResolvedValue({
+      page: 1,
+      pageSize: 50,
+      total: 2,
+      items: [policy(), retired],
+    })
+    render(<AdminPricePolicies />)
+    expect(await screen.findByTestId('admin-price-policy-activate-rp-cny-vmqfox-v1')).toBeInTheDocument()
+    expect(screen.queryByTestId('admin-price-policy-activate-rp-cny-old-v1')).not.toBeInTheDocument()
+    expect(screen.getByText('已退役')).toBeInTheDocument()
   })
 })

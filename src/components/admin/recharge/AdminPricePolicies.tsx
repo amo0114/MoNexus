@@ -19,6 +19,11 @@ import {
   formatCurrencyAmount,
   parseMajorInput,
 } from '../../../pages/recharge/money'
+import {
+  formatFenPointRatio,
+  previewTenYuanCredit,
+  vmqfoxCnyExampleRateMismatch,
+} from '../../../pages/recharge/pricePolicyPreview'
 
 const PAGE_SIZE = 50
 const POLICY_STATUS_LABEL: Record<string, string> = {
@@ -78,6 +83,22 @@ function parseYuanField(label: string, raw: string): string {
   const parsed = parseMajorInput(raw, 2)
   if (!parsed.ok) throw new Error(`${label}格式无效`)
   return parsed.minor
+}
+
+function activateConfirmCopy(target: AdminPricePolicy, currentActive: AdminPricePolicy | undefined): {
+  title: string
+  description: string
+} {
+  const preview = previewTenYuanCredit(target)
+  const ratio = formatFenPointRatio(target.pointsNumerator, target.pointsDenominator)
+  const rate = [ratio, preview?.preview].filter(Boolean).join('；')
+  const retire = currentActive
+    ? `将退役当前生效政策 ${currentActive.code}。`
+    : '当前生产通道没有生效政策。'
+  return {
+    title: `激活草稿 ${target.code}？`,
+    description: `${rate}。${retire}历史充值仍按下单时冻结的政策计价。`,
+  }
 }
 
 function buildCreateBody(form: FormState): AdminCreatePricePolicyBody {
@@ -141,6 +162,15 @@ export default function AdminPricePolicies() {
     void load()
   }, [page])
 
+  const createPreview = previewTenYuanCredit({
+    currency: form.currency,
+    pointsNumerator: form.pointsNumerator,
+    pointsDenominator: form.pointsDenominator,
+  })
+  const createExampleMismatch = vmqfoxCnyExampleRateMismatch(form)
+  const currentActive = items.find((item) => item.status === 'active')
+  const activateCopy = activateTarget ? activateConfirmCopy(activateTarget, currentActive) : null
+
   return (
     <div className="space-y-4" data-testid="admin-price-policies">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -175,7 +205,9 @@ export default function AdminPricePolicies() {
               </tr>
             </thead>
             <tbody>
-              {items.map((item) => (
+              {items.map((item) => {
+                const preview = previewTenYuanCredit(item)
+                return (
                 <tr key={item.id} data-testid={`admin-price-policy-row-${item.code}`}>
                   <td data-label="代码 / 版本">
                     <div className="font-mono text-sm">{item.code}</div>
@@ -183,7 +215,13 @@ export default function AdminPricePolicies() {
                   </td>
                   <td data-label="币种">{item.currency}</td>
                   <td data-label="积分比例">
-                    {item.pointsNumerator}/{item.pointsDenominator} 分
+                    {formatFenPointRatio(item.pointsNumerator, item.pointsDenominator)
+                      ?? `${item.pointsNumerator}/${item.pointsDenominator}`}
+                    {preview && (
+                      <div className="text-xs text-[var(--color-text-muted)]">
+                        {preview.preview}
+                      </div>
+                    )}
                   </td>
                   <td data-label="金额范围">
                     <div className="whitespace-nowrap">
@@ -197,7 +235,7 @@ export default function AdminPricePolicies() {
                   </td>
                   <td data-label="状态">{POLICY_STATUS_LABEL[item.status] ?? item.status}</td>
                   <td className="text-right whitespace-nowrap" data-label="操作">
-                    {item.status !== 'active' && (
+                    {item.status === 'draft' && (
                       <button
                         type="button"
                         className="text-sm font-bold text-[var(--color-primary)]"
@@ -209,7 +247,8 @@ export default function AdminPricePolicies() {
                     )}
                   </td>
                 </tr>
-              ))}
+                )
+              })}
             </tbody>
           </table>
         </div>
@@ -220,7 +259,7 @@ export default function AdminPricePolicies() {
         <DialogContent className="max-w-lg">
           <DialogTitle>创建生产价格政策草稿</DialogTitle>
           <DialogDescription className="mt-1 text-sm text-[var(--color-text-muted)]">
-            1 分 = 1 积分时填写分子/分母为 1/1。创建后仍是草稿，需手动激活。
+            比例是每 1 个货币最小单位获得的积分，例如 1 PTS / 1 分，不是 1 元 1 积分。创建后仍是草稿，需手动激活。
           </DialogDescription>
           <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
             <label className="text-sm font-bold sm:col-span-2">
@@ -260,6 +299,16 @@ export default function AdminPricePolicies() {
               <input className="input mt-1 w-full" value={form.suggestedYuan} onChange={(e) => setForm({ ...form, suggestedYuan: e.target.value })} data-testid="admin-price-policy-suggested" />
             </label>
           </div>
+          {createPreview && (
+            <p className="mt-3 text-sm font-bold text-[var(--color-text)]" data-testid="admin-price-policy-rate-preview">
+              {createPreview.ratio}；{createPreview.preview}
+            </p>
+          )}
+          {createExampleMismatch && (
+            <p className="mt-2 text-sm text-[var(--color-danger)]" data-testid="admin-price-policy-rate-mismatch">
+              rp-cny-vmqfox-v1 必须是 1 PTS / 1 分（¥10.00 → 1000 积分），不是 1 元 1 积分。
+            </p>
+          )}
           {formError && <p className="mt-2 text-sm text-[var(--color-danger)]">{formError}</p>}
           <div className="mt-4 flex flex-wrap justify-end gap-2">
             <button
@@ -273,8 +322,9 @@ export default function AdminPricePolicies() {
             <button
               type="button"
               className="btn-primary"
-              disabled={submitting}
+              disabled={submitting || createExampleMismatch}
               onClick={() => {
+                if (createExampleMismatch) return
                 setSubmitting(true)
                 setFormError('')
                 try {
@@ -304,8 +354,8 @@ export default function AdminPricePolicies() {
       <ConfirmDialog
         open={activateTarget != null}
         onOpenChange={(open) => { if (!open && !acting) setActivateTarget(null) }}
-        title="激活该价格政策？"
-        description="将退役同币种生产通道的当前生效政策。历史充值仍按下单时冻结的政策计价。"
+        title={activateCopy?.title ?? '激活草稿？'}
+        description={activateCopy?.description}
         confirmLabel="确认激活"
         tone="primary"
         loading={acting}
