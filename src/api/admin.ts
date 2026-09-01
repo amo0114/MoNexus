@@ -173,8 +173,124 @@ export async function importAdminOfferInventory(
 
 export async function deleteAdminProduct(
   productId: number,
-): Promise<{ mode: 'hard' | 'soft'; productId: number; orderCount: number; status?: string }> {
+): Promise<{ mode: 'archived'; productId: number; status?: string; archivedAt?: string }> {
   const { data } = await api.delete(`/admin/products/${productId}`)
+  return data
+}
+
+export type AdminProductUpdateRequest = {
+  name?: string
+  description?: string
+  richDescription?: string
+  categoryId?: number
+  imageUrl?: string | null
+  images?: string[]
+  purchaseForm?: unknown
+  price?: number
+  originalPrice?: number | null
+}
+
+export async function updateAdminProduct(
+  productId: number,
+  payload: AdminProductUpdateRequest,
+): Promise<{ id: number; name: string; status: string }> {
+  const { data } = await api.put(`/admin/products/${productId}`, payload)
+  return data
+}
+
+export async function archiveAdminProduct(
+  productId: number,
+  payload?: { reason?: string },
+): Promise<{ mode: 'archived'; productId: number; status: string; archivedAt: string; idempotent?: boolean }> {
+  const { data } = await api.post(`/admin/products/${productId}/archive`, payload ?? {})
+  return data
+}
+
+export async function restoreAdminProduct(
+  productId: number,
+): Promise<{ productId: number; status: string; archivedAt: null; idempotent?: boolean }> {
+  const { data } = await api.post(`/admin/products/${productId}/restore`)
+  return data
+}
+
+export type AdminOfferPatchRequest = {
+  name?: string
+  price?: number
+  originalPrice?: number | null
+  validityDays?: number | null
+  sortOrder?: number
+}
+
+export async function patchAdminOffer(
+  productId: number,
+  offerId: number,
+  payload: AdminOfferPatchRequest,
+) {
+  const { data } = await api.patch(`/admin/products/${productId}/offers/${offerId}`, payload)
+  return data
+}
+
+export async function archiveAdminOffer(productId: number, offerId: number) {
+  const { data } = await api.post(`/admin/products/${productId}/offers/${offerId}/archive`)
+  return data
+}
+
+export async function restoreAdminOffer(productId: number, offerId: number) {
+  const { data } = await api.post(`/admin/products/${productId}/offers/${offerId}/restore`)
+  return data
+}
+
+export async function makeDefaultAdminOffer(productId: number, offerId: number) {
+  const { data } = await api.post(`/admin/products/${productId}/offers/${offerId}/make-default`)
+  return data
+}
+
+export type AdminFakaSyncPreview = {
+  productId: number
+  productName: string
+  archived: boolean
+  productStatus: string
+  sourceHash: string
+  currentSourceHash: string
+  sourceChanged: boolean
+  plan: {
+    showSell: boolean
+    capacity: { limit: number | null; activeUsers: number; remaining: number | null; sellable: boolean }
+    name: string
+    plainDescription: string
+    localDescription: string | null
+  }
+  added: Array<{ period: string; sku: string; remotePriceHint: number; suggestedName: string; suggestedValidityDays: number | null }>
+  removed: Array<{ offerId: number; name: string; sku: string | null; period: string | null; status: string; price: number }>
+  skuChanged: Array<{ offerId: number; period: string; from: string | null; to: string }>
+  kept: Array<{ offerId: number; period: string; name: string; status: string; localPricePoints: number; remotePriceHint: number; sku: string | null }>
+  suggestedActions: Array<'add_missing' | 'archive_removed' | 'keep_local' | 'restore_product' | 'update_sku' | 'apply_price'>
+  ownership: { xboard: string[]; monexus: string[] }
+}
+
+export type AdminFakaSyncAction = {
+  type: 'add_missing' | 'archive_removed' | 'keep_local' | 'restore_product' | 'update_sku' | 'apply_price'
+  period?: string
+  offerId?: number
+  sku?: string
+  pricePoints?: number
+  offerName?: string
+  validityDays?: number | null
+}
+
+export async function previewAdminFakaSync(productId: number): Promise<AdminFakaSyncPreview> {
+  const { data } = await api.post<AdminFakaSyncPreview>(`/admin/products/${productId}/faka-sync/preview`)
+  return data
+}
+
+export async function confirmAdminFakaSync(
+  productId: number,
+  payload: { sourceHash: string; actions?: AdminFakaSyncAction[] },
+  idempotencyKey: string,
+): Promise<{ productId: number; replayed: boolean; sourceHash: string }> {
+  const { data } = await api.post(`/admin/products/${productId}/faka-sync`, payload, {
+    headers: { 'Idempotency-Key': idempotencyKey },
+  })
   return data
 }
 
@@ -192,6 +308,9 @@ export interface AdminProductOffer {
   stockMode?: string
   stock?: number | null
   price?: number
+  originalPrice?: number | null
+  validityDays?: number | null
+  sortOrder?: number
   fakaCapacity?: AdminFakaCapacity | null
 }
 
@@ -203,11 +322,17 @@ export interface AdminProductListItem {
   type?: string
   categoryId?: number
   price?: number
+  originalPrice?: number | null
+  description?: string | null
+  richDescription?: string | null
+  purchaseForm?: unknown
   deliveryMode?: string
   stockMode?: string
   stock?: number | null
   imageUrl?: string | null
   images?: string[]
+  archivedAt?: string | null
+  archiveReason?: string | null
   fakaBridge?: boolean
   fakaCapacity?: AdminFakaCapacity | null
   offers: AdminProductOffer[]
@@ -230,8 +355,12 @@ export interface AdminProductStatusResult {
   publishedAt: string | null
 }
 
-export async function getAdminProducts(): Promise<AdminProductListItem[]> {
-  const { data } = await api.get<AdminProductListItem[]>('/admin/products')
+export async function getAdminProducts(
+  params?: { archived?: 'exclude' | 'only' | 'all' },
+): Promise<AdminProductListItem[]> {
+  const { data } = params
+    ? await api.get<AdminProductListItem[]>('/admin/products', { params })
+    : await api.get<AdminProductListItem[]>('/admin/products')
   return data
 }
 
@@ -329,8 +458,11 @@ export type AdminFakaImportPreview = {
     pricePoints: number
     validityDays: number | null
   }>
-  issues: Array<{ code: string; field: string; message: string }>
+  issues: Array<{ code: string; field: string; message: string; action?: string }>
   canConfirm: boolean
+  existingProductId?: number | null
+  archived?: boolean
+  suggestedActions?: string[]
 }
 
 export async function previewAdminFakaPlan(

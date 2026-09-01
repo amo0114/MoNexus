@@ -56,6 +56,13 @@ export async function publishProduct(productId: number): Promise<PublishOutcome>
     }
 
     const product = await tx.product.findUniqueOrThrow({ where: { id: productId } })
+    if (product.archivedAt) {
+      throw new HttpError(
+        409,
+        CATALOG_ERROR_CODES.PRODUCT_ARCHIVED as ErrorCode,
+        '商品已归档，请先恢复后再发布',
+      )
+    }
     if (product.status === PRODUCT_STATUS.ACTIVE) {
       return { product, changed: false, isFirstPublish: readiness.isFirstPublish, readiness: null }
     }

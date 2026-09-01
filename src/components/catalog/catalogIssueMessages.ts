@@ -34,6 +34,8 @@ const STABLE_MESSAGES: Record<string, { message: string; action: CoverAction }> 
   COVER_REQUIRED: { message: '请上传一张封面，或使用分类默认封面', action: 'focus_cover' },
   UNSUPPORTED_MEDIA_TYPE: { message: '请选择 PNG、JPEG、WebP 或 GIF 图片', action: 'reselect_file' },
   FILE_TOO_LARGE: { message: '图片不能超过 5MB', action: 'reselect_file' },
+  PLAN_ARCHIVED: { message: '该套餐已关联已归档商品，请恢复后同步，不要重复创建', action: 'none' },
+  PLAN_ALREADY_IMPORTED: { message: '该套餐已导入，不会重复创建商品', action: 'none' },
 }
 
 const FALLBACK_MESSAGE = '封面暂时无法使用，请重新上传后再试'

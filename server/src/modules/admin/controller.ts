@@ -143,8 +143,34 @@ export async function audit(req: Request, res: Response, next: NextFunction) {
   } catch (err) { next(err) }
 }
 
-export async function products(_req: Request, res: Response, next: NextFunction) {
-  try { res.json(await adminService.listAdminProducts()) } catch (err) { next(err) }
+export async function products(req: Request, res: Response, next: NextFunction) {
+  try {
+    const archived = (req.query.archived as 'exclude' | 'only' | 'all' | undefined) ?? 'exclude'
+    res.json(await adminService.listAdminProducts(archived))
+  } catch (err) { next(err) }
+}
+
+export async function archiveProduct(req: Request, res: Response, next: NextFunction) {
+  try {
+    const productId = req.params.id as unknown as number
+    res.json(await adminService.archiveAdminProduct(req.user!.userId, productId, {
+      reason: req.body?.reason,
+    }))
+  } catch (err) { next(err) }
+}
+
+export async function restoreProduct(req: Request, res: Response, next: NextFunction) {
+  try {
+    const productId = req.params.id as unknown as number
+    res.json(await adminService.restoreAdminProduct(req.user!.userId, productId))
+  } catch (err) { next(err) }
+}
+
+export async function purgeProduct(req: Request, res: Response, next: NextFunction) {
+  try {
+    const productId = req.params.id as unknown as number
+    res.json(await adminService.purgeAdminProduct(req.user!.userId, productId))
+  } catch (err) { next(err) }
 }
 
 export async function deleteProduct(req: Request, res: Response, next: NextFunction) {
@@ -154,6 +180,74 @@ export async function deleteProduct(req: Request, res: Response, next: NextFunct
   } catch (err) {
     next(err)
   }
+}
+
+export async function patchOffer(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { id, offerId } = req.params as unknown as { id: number; offerId: number }
+    res.json(await adminService.patchAdminOffer(req.user!.userId, id, offerId, req.body))
+  } catch (err) { next(err) }
+}
+
+export async function archiveOffer(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { id, offerId } = req.params as unknown as { id: number; offerId: number }
+    res.json(await adminService.archiveAdminOffer(req.user!.userId, id, offerId))
+  } catch (err) { next(err) }
+}
+
+export async function restoreOffer(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { id, offerId } = req.params as unknown as { id: number; offerId: number }
+    res.json(await adminService.restoreAdminOffer(req.user!.userId, id, offerId))
+  } catch (err) { next(err) }
+}
+
+export async function makeDefaultOffer(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { id, offerId } = req.params as unknown as { id: number; offerId: number }
+    res.json(await adminService.makeDefaultAdminOffer(req.user!.userId, id, offerId))
+  } catch (err) { next(err) }
+}
+
+export async function previewRebindOfferSku(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { id, offerId } = req.params as unknown as { id: number; offerId: number }
+    res.json(await adminService.previewRebindAdminOfferSku(id, offerId, req.body.sku))
+  } catch (err) { next(err) }
+}
+
+export async function rebindOfferSku(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { id, offerId } = req.params as unknown as { id: number; offerId: number }
+    if (!req.body.sourceHash) {
+      res.status(400).json({ error: { code: 'BAD_REQUEST', message: '重绑 SKU 需要 sourceHash' } })
+      return
+    }
+    res.json(await adminService.rebindAdminOfferSku(req.user!.userId, id, offerId, {
+      sku: req.body.sku,
+      sourceHash: req.body.sourceHash,
+    }))
+  } catch (err) { next(err) }
+}
+
+export async function previewFakaSync(req: Request, res: Response, next: NextFunction) {
+  try {
+    const productId = req.params.id as unknown as number
+    res.json(await adminService.previewAdminFakaSync(productId))
+  } catch (err) { next(err) }
+}
+
+export async function confirmFakaSync(req: Request, res: Response, next: NextFunction) {
+  try {
+    const productId = req.params.id as unknown as number
+    res.json(await adminService.confirmAdminFakaSync(
+      req.user!.userId,
+      productId,
+      req.body,
+      req.headers['idempotency-key'] as string | undefined,
+    ))
+  } catch (err) { next(err) }
 }
 
 export async function setFakaCapacity(req: Request, res: Response, next: NextFunction) {

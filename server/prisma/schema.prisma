@@ -77,6 +77,7 @@ model User {
   categoriesUpdated            ProductCategory[]     @relation("CategoryUpdatedBy")
   categoryApplicationsReviewed CategoryApplication[]
   importedCatalogLinks         ExternalCatalogLink[]
+  productsArchived             Product[]             @relation("ProductArchivedBy")
 
   // ── FND-CMI-001 Merchandising foundation back-relations ──
   promotionPackagesCreated PromotionPackage[]    @relation("PromotionPackageCreatedBy")
@@ -513,6 +514,10 @@ model Product {
   // First publish time (SPEC-CATALOG-OPS-001 D-CAT-04). Backfilled for legacy
   // active/inactive rows; null for draft/never-published.
   publishedAt DateTime?
+  // Admin lifecycle, independent of publish status. Null = not archived.
+  archivedAt         DateTime?
+  archivedByUserId   Int?
+  archiveReason      String?
 
   merchant      Merchant?       @relation(fields: [merchantId], references: [id])
   reviews       Review[]
@@ -522,6 +527,7 @@ model Product {
   offers        Offer[]
 
   category               ProductCategory                @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  archivedByUser         User?                          @relation("ProductArchivedBy", fields: [archivedByUserId], references: [id], onDelete: SetNull)
   externalCatalogLink    ExternalCatalogLink?
   merchandisingSnapshots ProductMerchandisingSnapshot[]
   promotionCampaigns     PromotionCampaign[]
@@ -529,6 +535,7 @@ model Product {
 
   @@index([status, isHot, sales, id])
   @@index([categoryId])
+  @@index([archivedAt])
 }
 
 // SKU/套餐（P4a）：价格、库存与履约配置的真相源（spec §2：Fulfillment 绑定
