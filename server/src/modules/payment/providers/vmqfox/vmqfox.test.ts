@@ -3,6 +3,7 @@ import express from 'express'
 import request from 'supertest'
 import { describe, expect, it, vi } from 'vitest'
 import { prisma } from '../../../../lib/prisma.js'
+import { logger } from '../../../../lib/logger.js'
 import { applyConfirmedPayment } from '../../events/applyConfirmedPayment.js'
 import { hashNormalizedPayload, recordPaymentObservation } from '../../observations/record.js'
 import { serializeAmountMinor } from '../../../recharge/money.js'
@@ -11,10 +12,12 @@ import { amountMinorToYuanString, yuanStringToAmountMinor } from './amount.js'
 import {
   isAllowedCheckoutRedirect,
   parseVmqfoxBaseUrl,
+  VMQFOX_CAPABILITY_VERSION,
   VMQFOX_ORIGIN_ALLOWLIST,
   VMQFOX_RECOMMENDED_ORIGIN,
   type VmqfoxAdapterConfig,
 } from './config.js'
+import { validateVmqfoxPayUrl } from './payUrl.js'
 import {
   createSignV2,
   callbackSignV2,
@@ -47,6 +50,10 @@ const ATTEMPT_ID = '33333333-3333-3333-3333-333333333333'
 const RETURN_URL = `https://shop.example.com/recharge?order=${ORDER_ID}`
 const NOTIFY_URL = 'https://shop.example.com/api/payment/webhooks/vmqfox'
 const REDIRECT = `${VMQFOX_RECOMMENDED_ORIGIN}/#/payment/${TOKEN}`
+const WXP_PAY_URL = 'wxp://f2f0abcdefghijklmnopqrstuvwxyz012345'
+const ALIPAY_PAY_URL = 'https://qr.alipay.com/fkx0123456789abcdef'
+const FROZEN_NOW = new Date('2026-09-01T00:00:00.000Z')
+const QR_EXPIRES_AT = new Date(FROZEN_NOW.getTime() + 5 * 60 * 1000).toISOString()
 
 const liveConfig: VmqfoxAdapterConfig = {
   mode: 'live',
@@ -77,9 +84,33 @@ function createData(overrides: Record<string, unknown> = {}) {
     payType: 1,
     price: '10.00',
     reallyPrice: '10.01',
-    payUrl: 'weixin://wxpay',
+    payUrl: WXP_PAY_URL,
     isAuto: 1,
     redirectUrl: REDIRECT,
+    ...overrides,
+  }
+}
+
+function queryData(overrides: Record<string, unknown> = {}) {
+  return {
+    status: 0,
+    publicToken: TOKEN,
+    type: 1,
+    price: '10.00',
+    reallyPrice: '10.01',
+    ...overrides,
+  }
+}
+
+function getOrderData(overrides: Record<string, unknown> = {}) {
+  return {
+    payId: ATTEMPT_ID,
+    payType: 1,
+    price: '10.00',
+    reallyPrice: '10.01',
+    state: 0,
+    payUrl: WXP_PAY_URL,
+    remainingSeconds: 300,
     ...overrides,
   }
 }
@@ -215,11 +246,51 @@ describe('VMQFox origin allowlist', () => {
   })
 })
 
+describe('VMQFox payUrl allowlist', () => {
+  const cases: Array<{ name: string; method: 'wechat' | 'alipay'; raw: string; ok: boolean }> = [
+    { name: 'accepts wechat wxp production content', method: 'wechat', raw: WXP_PAY_URL, ok: true },
+    { name: 'accepts alipay qr.alipay.com production content', method: 'alipay', raw: ALIPAY_PAY_URL, ok: true },
+    { name: 'accepts alipay default https port 443', method: 'alipay', raw: 'https://qr.alipay.com:443/fkx1', ok: true },
+    { name: 'accepts max-length wechat content', method: 'wechat', raw: `wxp:${'a'.repeat(2044)}`, ok: true },
+    { name: 'rejects wechat uppercase prefix', method: 'wechat', raw: 'WXP://f2f0abc', ok: false },
+    { name: 'rejects wechat mixed-case prefix', method: 'wechat', raw: 'Wxp://f2f0abc', ok: false },
+    { name: 'rejects wechat weixin scheme', method: 'wechat', raw: 'weixin://wxpay', ok: false },
+    { name: 'rejects wechat empty payload after prefix', method: 'wechat', raw: 'wxp:', ok: false },
+    { name: 'rejects wechat leading space without trimming', method: 'wechat', raw: ` ${WXP_PAY_URL}`, ok: false },
+    { name: 'rejects wechat trailing space without trimming', method: 'wechat', raw: `${WXP_PAY_URL} `, ok: false },
+    { name: 'rejects wechat newline', method: 'wechat', raw: `${WXP_PAY_URL}\n`, ok: false },
+    { name: 'rejects wechat NUL', method: 'wechat', raw: `${WXP_PAY_URL}\u0000`, ok: false },
+    { name: 'rejects wechat tab', method: 'wechat', raw: 'wxp://f2f0abc\tmore', ok: false },
+    { name: 'rejects wechat oversize content', method: 'wechat', raw: `wxp:${'a'.repeat(2045)}`, ok: false },
+    { name: 'rejects alipay http scheme', method: 'alipay', raw: 'http://qr.alipay.com/fkx1', ok: false },
+    { name: 'rejects alipay javascript scheme', method: 'alipay', raw: 'javascript:alert(1)', ok: false },
+    { name: 'rejects alipay data scheme', method: 'alipay', raw: 'data:text/html,hi', ok: false },
+    { name: 'rejects alipay userinfo', method: 'alipay', raw: 'https://user:pass@qr.alipay.com/fkx1', ok: false },
+    { name: 'rejects alipay non-default port', method: 'alipay', raw: 'https://qr.alipay.com:8443/fkx1', ok: false },
+    { name: 'rejects alipay fragment', method: 'alipay', raw: 'https://qr.alipay.com/fkx1#x', ok: false },
+    { name: 'rejects alipay lookalike hostname', method: 'alipay', raw: 'https://qr.alipay.com.evil.com/fkx1', ok: false },
+    { name: 'rejects alipay lookalike subdomain', method: 'alipay', raw: 'https://evil.qr.alipay.com/fkx1', ok: false },
+    { name: 'rejects alipay hostname case', method: 'alipay', raw: 'https://QR.ALIPAY.COM/fkx1', ok: false },
+    { name: 'rejects alipay snowvictor checkout', method: 'alipay', raw: REDIRECT, ok: false },
+    { name: 'rejects alipay leading space without trimming', method: 'alipay', raw: ` ${ALIPAY_PAY_URL}`, ok: false },
+    { name: 'rejects alipay newline', method: 'alipay', raw: `${ALIPAY_PAY_URL}\n`, ok: false },
+    { name: 'rejects alipay oversize content', method: 'alipay', raw: `https://qr.alipay.com/${'a'.repeat(2048)}`, ok: false },
+    { name: 'rejects wechat content for alipay', method: 'alipay', raw: WXP_PAY_URL, ok: false },
+    { name: 'rejects alipay content for wechat', method: 'wechat', raw: ALIPAY_PAY_URL, ok: false },
+  ]
+
+  it.each(cases)('$name', ({ method, raw, ok }) => {
+    const accepted = validateVmqfoxPayUrl(method, raw)
+    if (ok) expect(accepted).toBe(raw)
+    else expect(accepted).toBeNull()
+  })
+})
+
 describe('VMQFox adapter contract', () => {
-  it('creates wechat and alipay redirect actions with reallyPrice as amountMinor', async () => {
+  it('creates wechat and alipay qr_code actions with reallyPrice as amountMinor', async () => {
     const seen: string[] = []
     const http: VmqfoxHttp = async req => {
-      seen.push(req.url)
+      seen.push(`${req.method} ${req.url}`)
       expect(req.headers['Content-Type']).toBe('application/x-www-form-urlencoded')
       const params = new URLSearchParams(req.body)
       const type = params.get('type')!
@@ -235,19 +306,34 @@ describe('VMQFox adapter contract', () => {
       expect(params.get('payId')).toBe(ATTEMPT_ID)
       expect(params.get('param')).toBe(ORDER_ID)
       expect(params.get('returnUrl')).toBe(RETURN_URL)
-      return envelope(createData({ payType: Number(type) }))
+      return envelope(createData({
+        payType: Number(type),
+        payUrl: type === '2' ? ALIPAY_PAY_URL : WXP_PAY_URL,
+      }))
     }
-    const provider = createVmqfoxProvider(liveConfig, { http })
+    const provider = createVmqfoxProvider(liveConfig, { http, now: () => FROZEN_NOW })
     const wechat = await provider.createPayment(createInput())
-    expect(wechat.action.type).toBe('redirect')
-    if (wechat.action.type === 'redirect') expect(wechat.action.url).toBe(REDIRECT)
+    expect(wechat.status).toBe('requires_action')
+    expect(wechat.action).toEqual({
+      type: 'qr_code',
+      content: WXP_PAY_URL,
+      display: 'text',
+      expiresAt: QR_EXPIRES_AT,
+    })
     expect(wechat.amountMinor).toBe(1001n)
     expect(wechat.providerPaymentId).toBe(ATTEMPT_ID)
     expect(wechat.providerOrderId).toBe(TOKEN)
+    expect(JSON.stringify(wechat.action)).not.toContain('pay.snowvictor.com')
 
     const alipay = await provider.createPayment(createInput({ paymentMethod: 'alipay' }))
-    expect(alipay.action.type).toBe('redirect')
+    expect(alipay.action).toEqual({
+      type: 'qr_code',
+      content: ALIPAY_PAY_URL,
+      display: 'text',
+      expiresAt: QR_EXPIRES_AT,
+    })
     expect(alipay.amountMinor).toBe(1001n)
+    expect(seen.some(entry => entry.includes('/api/order/get/'))).toBe(false)
 
     const capabilities = await provider.getCapabilities({
       providerAccountKey: 'vmqfox-primary',
@@ -260,48 +346,63 @@ describe('VMQFox adapter contract', () => {
     expect(capabilities.supportsDisputes).toBe(false)
     expect(capabilities.supportsReconciliation).toBe(false)
     expect(capabilities.supportsBuyerApprovalCapture).toBe(false)
-    expect(capabilities.actionTypes).toEqual(['redirect'])
+    expect(capabilities.actionTypes).toEqual(['qr_code'])
+    expect(capabilities.capabilityVersion).toBe('vmqfox-v3-native-qr')
+    expect(VMQFOX_CAPABILITY_VERSION).toBe('vmqfox-v3-native-qr')
     expect(capabilities.minimumAmountMinor).toBe(100n)
     expect(capabilities.maximumAmountMinor).toBe(100_000n)
   })
 
-  it('recovers an allowlist-rejected checkout URL via query-by-pay-id without stamping succeeded', async () => {
+  it('never falls back to redirect when create payUrl fails allowlist', async () => {
     let queried = 0
+    let got = 0
     const http: VmqfoxHttp = async req => {
       if (req.url.includes('/api/order/create')) {
         return envelope(createData({
-          redirectUrl: `https://evil.example/#/payment/${TOKEN}`,
+          payUrl: REDIRECT,
+          redirectUrl: REDIRECT,
         }))
       }
       if (req.url.includes('query-by-pay-id')) {
         queried += 1
-        return envelope({
-          status: 1,
-          publicToken: TOKEN,
-          type: 1,
-          price: '10.00',
-          reallyPrice: '10.01',
-        })
+        const params = new URLSearchParams(req.body)
+        expect(params.get('payId')).toBe(ATTEMPT_ID)
+        expect(queryByPayIdSignV2({
+          payId: params.get('payId')!,
+          timestamp: params.get('t')!,
+        }, VECTOR_KEY)).toBe(params.get('sign'))
+        return envelope(queryData({ status: 0 }))
+      }
+      if (req.url.includes('/api/order/get/')) {
+        got += 1
+        expect(req.method).toBe('GET')
+        expect(req.url).toBe(`${VMQFOX_RECOMMENDED_ORIGIN}/api/order/get/${TOKEN}`)
+        expect(req.url).not.toMatch(/[?&]sign=/)
+        expect(req.body).toBeUndefined()
+        return envelope(getOrderData())
       }
       throw new Error(`unexpected ${req.url}`)
     }
-    const provider = createVmqfoxProvider(liveConfig, { http })
+    const provider = createVmqfoxProvider(liveConfig, { http, now: () => FROZEN_NOW })
     const created = await provider.createPayment(createInput())
     expect(queried).toBe(1)
+    expect(got).toBe(1)
     expect(created.status).toBe('requires_action')
-    expect(created.action.type).toBe('redirect')
-    if (created.action.type === 'redirect') expect(created.action.url).toBe(REDIRECT)
+    expect(created.action).toEqual({
+      type: 'qr_code',
+      content: WXP_PAY_URL,
+      display: 'text',
+      expiresAt: QR_EXPIRES_AT,
+    })
     expect(created.providerPaymentId).toBe(ATTEMPT_ID)
     expect(created.providerOrderId).toBe(TOKEN)
     expect(created.amountMinor).toBe(1001n)
   })
 
-  it('binds payId after a successful create when query-by-pay-id recovery misses', async () => {
+  it('binds payId after a successful create when query-by-pay-id recovery misses without redirecting', async () => {
     const http: VmqfoxHttp = async req => {
       if (req.url.includes('/api/order/create')) {
-        return envelope(createData({
-          redirectUrl: `https://evil.example/#/payment/${TOKEN}`,
-        }))
+        return envelope(createData({ payUrl: 'javascript:alert(1)' }))
       }
       if (req.url.includes('query-by-pay-id')) {
         return errorEnvelope(400, '订单不存在')
@@ -310,11 +411,42 @@ describe('VMQFox adapter contract', () => {
     }
     const provider = createVmqfoxProvider(liveConfig, { http })
     const created = await provider.createPayment(createInput())
-    expect(created.status).toBe('requires_action')
+    expect(created.status).toBe('unknown')
     expect(created.providerPaymentId).toBe(ATTEMPT_ID)
     expect(created.providerOrderId).toBe(TOKEN)
     expect(created.amountMinor).toBe(1001n)
-    if (created.action.type === 'redirect') expect(created.action.url).toBe(REDIRECT)
+    expect(created.action.type).toBe('none')
+  })
+
+  it('does not redirect when create omits payUrl and redirectUrl is still the snowvictor checkout URL', async () => {
+    const http: VmqfoxHttp = async req => {
+      if (req.url.includes('/api/order/create')) {
+        const { payUrl: _omitPayUrl, ...rest } = createData({ redirectUrl: REDIRECT })
+        expect(_omitPayUrl).toBe(WXP_PAY_URL)
+        expect(isAllowedCheckoutRedirect(REDIRECT, VMQFOX_ORIGIN_ALLOWLIST)).toBe(true)
+        expect(rest).not.toHaveProperty('payUrl')
+        expect(rest.redirectUrl).toBe(REDIRECT)
+        return envelope(rest)
+      }
+      if (req.url.includes('query-by-pay-id')) {
+        return errorEnvelope(400, '订单不存在')
+      }
+      throw new Error(`unexpected ${req.url}`)
+    }
+    const provider = createVmqfoxProvider(liveConfig, { http })
+    const created = await provider.createPayment(createInput())
+    expect(created.action.type).not.toBe('redirect')
+    expect(created.action.type).toBe('none')
+    expect(created.status).toBe('unknown')
+    const serializedAction = JSON.stringify(created.action)
+    expect(serializedAction).not.toContain('pay.snowvictor.com')
+    expect(serializedAction).not.toContain(REDIRECT)
+    if ('content' in created.action) {
+      expect(String(created.action.content)).not.toContain('pay.snowvictor.com')
+    }
+    if ('url' in created.action) {
+      expect(String(created.action.url)).not.toContain('pay.snowvictor.com')
+    }
   })
 
   it('maps remote states -1/0/1/2', async () => {
@@ -346,12 +478,57 @@ describe('VMQFox adapter contract', () => {
     expect(queried.amountMinor).toBe(1001n)
     expect(queried.quotedAmountMinor).toBe(1000n)
 
+    const tokenHttp: VmqfoxHttp = async req => {
+      if (req.url.includes('/api/order/get/')) {
+        expect(req.method).toBe('GET')
+        expect(req.url).toBe(`${VMQFOX_RECOMMENDED_ORIGIN}/api/order/get/${TOKEN}`)
+        return envelope(getOrderData({ state: 2 }))
+      }
+      if (req.url.includes('/api/order/check/')) {
+        return envelope({ state: 2, remainingSeconds: 0 })
+      }
+      throw new Error(`unexpected ${req.url}`)
+    }
+    const tokenProvider = createVmqfoxProvider(liveConfig, { http: tokenHttp })
+    const byToken = await tokenProvider.queryPayment({
+      providerPaymentId: ATTEMPT_ID,
+      providerAccountKey: 'vmqfox-primary',
+      providerOrderId: TOKEN,
+    })
+    expect(byToken.status).toBe('succeeded')
+    expect(byToken.amountMinor).toBe(1001n)
+
     const closedPaid = await provider.closePayment({
       providerPaymentId: ATTEMPT_ID,
       providerAccountKey: 'vmqfox-primary',
       requestIdempotencyKey: 'close-1',
     })
     expect(closedPaid.status).toBe('succeeded')
+  })
+
+  it('queries historical GET status without payUrl', async () => {
+    const http: VmqfoxHttp = async req => {
+      if (req.url.includes('/api/order/get/')) {
+        const { payUrl: _omitPayUrl, ...rest } = getOrderData({ state: 0 })
+        expect(rest).not.toHaveProperty('payUrl')
+        return envelope(rest)
+      }
+      if (req.url.includes('/api/order/check/')) {
+        return envelope({ state: 0, remainingSeconds: 120 })
+      }
+      throw new Error(`unexpected ${req.url}`)
+    }
+    const provider = createVmqfoxProvider(liveConfig, { http })
+    const queried = await provider.queryPayment({
+      providerPaymentId: ATTEMPT_ID,
+      providerAccountKey: 'vmqfox-primary',
+      providerOrderId: TOKEN,
+    })
+    expect(queried.status).toBe('processing')
+    expect(queried.providerPaymentId).toBe(ATTEMPT_ID)
+    expect(queried.amountMinor).toBe(1001n)
+    expect(queried.quotedAmountMinor).toBe(1000n)
+    expect(queried.rawStatus).toBe('0')
   })
 
   it('fails deterministically on monitor_offline', async () => {
@@ -363,7 +540,7 @@ describe('VMQFox adapter contract', () => {
     })
   })
 
-  it('treats malformed and timeout as unknown and recovers via query-by-pay-id without a second payId', async () => {
+  it('treats malformed and timeout as unknown and recovers via query-by-pay-id then GET without a second payId', async () => {
     let creates = 0
     const http: VmqfoxHttp = async req => {
       if (req.url.includes('/api/order/create')) {
@@ -373,23 +550,140 @@ describe('VMQFox adapter contract', () => {
       if (req.url.includes('query-by-pay-id')) {
         const params = new URLSearchParams(req.body)
         expect(params.get('payId')).toBe(ATTEMPT_ID)
-        return envelope({
-          status: 0,
-          publicToken: TOKEN,
-          type: 1,
-          price: '10.00',
-          reallyPrice: '10.01',
-        })
+        return envelope(queryData())
+      }
+      if (req.url.includes('/api/order/get/')) {
+        expect(req.method).toBe('GET')
+        expect(req.url).toBe(`${VMQFOX_RECOMMENDED_ORIGIN}/api/order/get/${TOKEN}`)
+        return envelope(getOrderData())
       }
       throw new Error(`unexpected ${req.url}`)
     }
-    const provider = createVmqfoxProvider(liveConfig, { http })
+    const provider = createVmqfoxProvider(liveConfig, { http, now: () => FROZEN_NOW })
     const created = await provider.createPayment(createInput())
     expect(created.status).toBe('requires_action')
+    expect(created.action).toEqual({
+      type: 'qr_code',
+      content: WXP_PAY_URL,
+      display: 'text',
+      expiresAt: QR_EXPIRES_AT,
+    })
     expect(created.providerPaymentId).toBe(ATTEMPT_ID)
     expect(created.providerOrderId).toBe(TOKEN)
     expect(created.amountMinor).toBe(1001n)
     expect(creates).toBe(1)
+  })
+
+  it('recovers create timeout via signed query-by-pay-id then unsigned GET using the original payId and publicToken', async () => {
+    let creates = 0
+    const info = vi.spyOn(logger, 'info').mockImplementation(() => undefined as never)
+    const http: VmqfoxHttp = async req => {
+      if (req.url.includes('/api/order/create')) {
+        creates += 1
+        throw Object.assign(new Error('vmqfox request timed out'), { name: 'AbortError' })
+      }
+      if (req.url.includes('query-by-pay-id')) {
+        const params = new URLSearchParams(req.body)
+        expect(params.get('payId')).toBe(ATTEMPT_ID)
+        expect(params.get('sign')).toBe(queryByPayIdSignV2({
+          payId: ATTEMPT_ID,
+          timestamp: params.get('t')!,
+        }, VECTOR_KEY))
+        return envelope(queryData({
+          type: 1,
+          price: '10.00',
+          reallyPrice: '10.01',
+          publicToken: TOKEN,
+        }))
+      }
+      if (req.url.includes('/api/order/get/')) {
+        expect(req.method).toBe('GET')
+        expect(req.url).toBe(`${VMQFOX_RECOMMENDED_ORIGIN}/api/order/get/${TOKEN}`)
+        expect(req.url).not.toMatch(/[?&]sign=/)
+        expect(req.body).toBeUndefined()
+        return envelope(getOrderData({
+          payId: ATTEMPT_ID,
+          payType: 1,
+          price: '10.00',
+          reallyPrice: '10.01',
+          payUrl: WXP_PAY_URL,
+        }))
+      }
+      throw new Error(`unexpected ${req.url}`)
+    }
+    try {
+      const provider = createVmqfoxProvider(liveConfig, { http, now: () => FROZEN_NOW })
+      const created = await provider.createPayment(createInput())
+      expect(created.status).toBe('requires_action')
+      expect(created.action).toEqual({
+        type: 'qr_code',
+        content: WXP_PAY_URL,
+        display: 'text',
+        expiresAt: QR_EXPIRES_AT,
+      })
+      expect(created.providerPaymentId).toBe(ATTEMPT_ID)
+      expect(created.providerOrderId).toBe(TOKEN)
+      expect(creates).toBe(1)
+      const loggedPaths = info.mock.calls
+        .map(call => (call[0] as { path?: string } | undefined)?.path)
+        .filter((path): path is string => typeof path === 'string')
+      expect(loggedPaths).toContain('/api/order/get/:token')
+      expect(loggedPaths.some(path => path.includes(TOKEN))).toBe(false)
+    } finally {
+      info.mockRestore()
+    }
+  })
+
+  it('recovers alipay create timeout via signed query-by-pay-id then GET with ALIPAY_PAY_URL', async () => {
+    let creates = 0
+    const http: VmqfoxHttp = async req => {
+      if (req.url.includes('/api/order/create')) {
+        creates += 1
+        throw Object.assign(new Error('vmqfox request timed out'), { name: 'AbortError' })
+      }
+      if (req.url.includes('query-by-pay-id')) {
+        const params = new URLSearchParams(req.body)
+        expect(params.get('payId')).toBe(ATTEMPT_ID)
+        expect(params.get('sign')).toBe(queryByPayIdSignV2({
+          payId: ATTEMPT_ID,
+          timestamp: params.get('t')!,
+        }, VECTOR_KEY))
+        return envelope(queryData({
+          type: 2,
+          price: '10.00',
+          reallyPrice: '10.01',
+          publicToken: TOKEN,
+        }))
+      }
+      if (req.url.includes('/api/order/get/')) {
+        expect(req.method).toBe('GET')
+        expect(req.url).toBe(`${VMQFOX_RECOMMENDED_ORIGIN}/api/order/get/${TOKEN}`)
+        expect(req.url).not.toMatch(/[?&]sign=/)
+        expect(req.body).toBeUndefined()
+        return envelope(getOrderData({
+          payId: ATTEMPT_ID,
+          payType: 2,
+          price: '10.00',
+          reallyPrice: '10.01',
+          payUrl: ALIPAY_PAY_URL,
+        }))
+      }
+      throw new Error(`unexpected ${req.url}`)
+    }
+    const provider = createVmqfoxProvider(liveConfig, { http, now: () => FROZEN_NOW })
+    const created = await provider.createPayment(createInput({ paymentMethod: 'alipay' }))
+    expect(created.status).toBe('requires_action')
+    expect(created.action).toEqual({
+      type: 'qr_code',
+      content: ALIPAY_PAY_URL,
+      display: 'text',
+      expiresAt: QR_EXPIRES_AT,
+    })
+    expect(created.providerPaymentId).toBe(ATTEMPT_ID)
+    expect(created.providerOrderId).toBe(TOKEN)
+    expect(created.amountMinor).toBe(1001n)
+    expect(creates).toBe(1)
+    expect(JSON.stringify(created.action)).not.toContain('pay.snowvictor.com')
   })
 
   it('recovers duplicate_order via query-by-pay-id using the original payId', async () => {
@@ -400,22 +694,124 @@ describe('VMQFox adapter contract', () => {
         return errorEnvelope(409, '创建订单冲突')
       }
       if (req.url.includes('query-by-pay-id')) {
-        return envelope({
-          status: 2,
-          publicToken: TOKEN,
-          type: 1,
-          price: '10.00',
-          reallyPrice: '10.01',
-        })
+        return envelope(queryData({ status: 2 }))
+      }
+      if (req.url.includes('/api/order/get/')) {
+        return envelope(getOrderData({ state: 2 }))
       }
       throw new Error(`unexpected ${req.url}`)
     }
-    const provider = createVmqfoxProvider(liveConfig, { http })
+    const provider = createVmqfoxProvider(liveConfig, { http, now: () => FROZEN_NOW })
     const created = await provider.createPayment(createInput())
     expect(created.status).toBe('requires_action')
-    expect(created.action.type).toBe('redirect')
+    expect(created.action.type).toBe('qr_code')
+    if (created.action.type === 'qr_code') {
+      expect(created.action.content).toBe(WXP_PAY_URL)
+      expect(created.action.display).toBe('text')
+    }
     expect(created.providerPaymentId).toBe(ATTEMPT_ID)
     expect(creates).toBe(1)
+  })
+
+  it('does not emit QR or mint a second payId when recovery GET omits payUrl', async () => {
+    let creates = 0
+    const http: VmqfoxHttp = async req => {
+      if (req.url.includes('/api/order/create')) {
+        creates += 1
+        throw Object.assign(new Error('vmqfox request timed out'), { name: 'AbortError' })
+      }
+      if (req.url.includes('query-by-pay-id')) {
+        return envelope(queryData())
+      }
+      if (req.url.includes('/api/order/get/')) {
+        const { payUrl: _omitPayUrl, ...rest } = getOrderData()
+        expect(rest).not.toHaveProperty('payUrl')
+        return envelope(rest)
+      }
+      throw new Error(`unexpected ${req.url}`)
+    }
+    const provider = createVmqfoxProvider(liveConfig, { http, now: () => FROZEN_NOW })
+    await expect(provider.createPayment(createInput())).rejects.toMatchObject({
+      code: 'PAYMENT_STATE_UNKNOWN',
+    })
+    expect(creates).toBe(1)
+  })
+
+  it('treats GET field mismatch or illegal recovered payUrl as unknown and never redirects', async () => {
+    const mismatchHttp: VmqfoxHttp = async req => {
+      if (req.url.includes('/api/order/create')) {
+        return { status: 200, headers: {}, body: 'not-json' }
+      }
+      if (req.url.includes('query-by-pay-id')) {
+        return envelope(queryData())
+      }
+      if (req.url.includes('/api/order/get/')) {
+        return envelope(getOrderData({ payId: 'other-pay-id' }))
+      }
+      throw new Error(`unexpected ${req.url}`)
+    }
+    const illegalPayUrlHttp: VmqfoxHttp = async req => {
+      if (req.url.includes('/api/order/create')) {
+        return { status: 200, headers: {}, body: 'not-json' }
+      }
+      if (req.url.includes('query-by-pay-id')) {
+        return envelope(queryData())
+      }
+      if (req.url.includes('/api/order/get/')) {
+        return envelope(getOrderData({ payUrl: REDIRECT }))
+      }
+      throw new Error(`unexpected ${req.url}`)
+    }
+    const mismatchProvider = createVmqfoxProvider(liveConfig, { http: mismatchHttp })
+    await expect(mismatchProvider.createPayment(createInput())).rejects.toMatchObject({
+      code: 'PAYMENT_STATE_UNKNOWN',
+    })
+    const illegalProvider = createVmqfoxProvider(liveConfig, { http: illegalPayUrlHttp })
+    await expect(illegalProvider.createPayment(createInput())).rejects.toMatchObject({
+      code: 'PAYMENT_STATE_UNKNOWN',
+    })
+  })
+
+  it.each([
+    {
+      name: 'wechat recovery GET returning ALIPAY_PAY_URL',
+      paymentMethod: 'wechat' as const,
+      queryType: 1,
+      getPayType: 1,
+      recoveredPayUrl: ALIPAY_PAY_URL,
+    },
+    {
+      name: 'alipay recovery GET returning WXP_PAY_URL',
+      paymentMethod: 'alipay' as const,
+      queryType: 2,
+      getPayType: 2,
+      recoveredPayUrl: WXP_PAY_URL,
+    },
+  ])('treats $name as PAYMENT_STATE_UNKNOWN, not a QR for the wrong method', async ({
+    paymentMethod,
+    queryType,
+    getPayType,
+    recoveredPayUrl,
+  }) => {
+    const http: VmqfoxHttp = async req => {
+      if (req.url.includes('/api/order/create')) {
+        return { status: 200, headers: {}, body: 'not-json' }
+      }
+      if (req.url.includes('query-by-pay-id')) {
+        return envelope(queryData({ type: queryType }))
+      }
+      if (req.url.includes('/api/order/get/')) {
+        return envelope(getOrderData({
+          payType: getPayType,
+          payUrl: recoveredPayUrl,
+        }))
+      }
+      throw new Error(`unexpected ${req.url}`)
+    }
+    const provider = createVmqfoxProvider(liveConfig, { http, now: () => FROZEN_NOW })
+    await expect(provider.createPayment(createInput({ paymentMethod }))).rejects.toMatchObject({
+      code: 'PAYMENT_STATE_UNKNOWN',
+    })
   })
 
   it('keeps rate-limited create retryable without minting a second payId', async () => {

@@ -13,11 +13,44 @@ Related: `docs/operations/payment-runbook.md`, `docs/operations/payment-alerts.m
 
 | Capability | VMQFox | Operator implication |
 | --- | --- | --- |
+| `capabilityVersion` | `vmqfox-v3-native-qr` | New quotes invalidate old capability snapshots. Do not migrate historical pending `redirect` actions. |
+| `actionTypes` | `qr_code` | Checkout is a local QR of allowlisted `payUrl`. Result page still understands historical `redirect`. |
 | `supportsRefunds` | `false` | User/admin refund APIs must return `PAYMENT_REFUND_NOT_SUPPORTED`. Cash-path refund is manual outside MoNexus. |
 | `supportsDisputes` | `false` | No provider dispute webhook or auto-reversal. |
 | `supportsReconciliation` | `false` | No standard provider settlement file. Use observations + query-by-pay-id + admin reconcile. |
 | Webhook ACK | exact text `success` | JSON or any other body is a failure and VMQFox retries. |
-| Amount match | `price` vs quoted, `reallyPrice` vs payable | Do not compare `reallyPrice` to `RechargeOrder.amountMinor`. Credit quoted points, not the surcharge. |
+| Amount match | `price` vs quoted, `reallyPrice` vs payable | Do not compare `reallyPrice` to `RechargeOrder.amountMinor`. Credit quoted points, not the surcharge. Quote `¥10.00` paid `¥10.01` still credits 1000 PTS. |
+
+## Native QR checkout
+
+WeChat/Alipay checkout must **not** send the user to `pay.snowvictor.com`.
+MoNexus returns `action.type=qr_code` with `display=text`. The content is the
+validated VMQFox `payUrl` string; MoNexus encodes it locally. It is not an
+image URL, iframe, or reverse-proxy of the VMQFox checkout page.
+
+`VMQFOX_BASE_URL` remains the server-to-server origin for create, query-by-pay-id,
+GET `/api/order/get/:publicToken`, and webhook delivery. Do not change VMQFox
+root routes.
+
+| Method | Allowlisted `payUrl` |
+| --- | --- |
+| wechat | Case-sensitive prefix `wxp:` then a non-empty payload. 1..2048 chars. No leading/trailing whitespace, ASCII control, NUL, or newline. |
+| alipay | HTTPS only. Hostname exactly `qr.alipay.com`. No userinfo, non-default port, or fragment. Same length/control rules. |
+
+Reject `javascript:`, `data:`, `http:`, lookalike hostnames, and oversized
+content. Keep the original string; do not trim-then-accept. Validation failure
+is a malformed provider response. Never fall back to redirect to hide it, and
+never send unvalidated content to the frontend.
+
+Create timeout recovery (same `payId` / `publicToken` only; never mint a second order):
+
+1. Signed `POST /api/order/query-by-pay-id` returns original `publicToken` / type / price / reallyPrice / status.
+2. Bind those fields to the local attempt exactly.
+3. Unsigned `GET /api/order/get/:publicToken` for public `payUrl`. `publicToken` appears only in the VMQFox request path.
+4. Re-check GET `payId` / `payType` / `price` / `reallyPrice` against the query and local values.
+5. Allowlist-validate `payUrl` and emit the same QR action.
+
+Any mismatch follows the existing unknown/reconcile path.
 
 ## Enable order
 
@@ -113,8 +146,8 @@ Closing recharge must not stop credit of already-paid orders.
 
 `publicToken` is a 64-hex checkout secret. Treat it like a credential.
 
-- Adapter request logs replace `/[0-9a-f]{64}` path tails with `/:token`.
-- Do not log merchant key, callback `sign`, raw body, or full `redirectUrl`.
+- Adapter request logs replace `/[0-9a-f]{64}` path tails with `/:token`, including GET `/api/order/get/:token`.
+- Do not log merchant key, callback `sign`, raw body, full `redirectUrl`, or `payUrl`.
 - Admin APIs omit raw payloads and payer identifiers.
 - Metrics labels are a finite vocabulary. Never `userId`, `orderId`,
   `payId`, `publicToken`, or `sign`.

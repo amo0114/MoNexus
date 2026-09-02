@@ -80,6 +80,8 @@ export type VmqfoxGetData = {
   price: string
   reallyPrice: string
   state: number
+  /** Historical redirect GET omits this; recovery QR asserts it separately. */
+  payUrl?: string
   remainingSeconds?: number
 }
 
@@ -327,6 +329,7 @@ function pickGetData(data: Record<string, unknown>): VmqfoxGetData {
     price,
     reallyPrice,
     state,
+    payUrl: pickString(data, 'payUrl'),
     remainingSeconds: pickInt(data, 'remainingSeconds'),
   }
 }

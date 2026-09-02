@@ -23,6 +23,7 @@ export {
   type VmqfoxAdapterConfig,
   type VmqfoxPaymentMethod,
 } from './config.js'
+export { validateVmqfoxPayUrl, VMQFOX_PAY_URL_MAX_CHARS } from './payUrl.js'
 export {
   callbackSignV2,
   createSignV2,
