@@ -89,6 +89,26 @@ const AltchaHumanVerification = forwardRef<HumanVerificationHandle, HumanVerific
       setPhase('ready')
     }, [onReadyChange])
 
+    const startVerification = useCallback(() => {
+      const widget = widgetRef.current
+      if (!widget?.verify) {
+        onReadyChange?.(false)
+        setPhase(challengeJson ? 'checking' : 'loading')
+        return
+      }
+      setPhase('checking')
+      onReadyChange?.(false)
+      void withTimeout(
+        Promise.resolve(widget.verify()),
+        HUMAN_VERIFICATION_SOLVE_TIMEOUT_MS,
+        '安全验证超时',
+      ).catch(() => {
+        rejectPending('安全验证超时')
+        onReadyChange?.(false)
+        setPhase('unavailable')
+      })
+    }, [challengeJson, onReadyChange, rejectPending])
+
     const detachRef = useRef<(() => void) | null>(null)
     const attachWidget = useCallback((node: AltchaElement | null) => {
       detachRef.current?.()
@@ -123,17 +143,8 @@ const AltchaHumanVerification = forwardRef<HumanVerificationHandle, HumanVerific
         node.removeEventListener('expire', onStateChange)
         node.removeEventListener('error', onStateChange)
       }
-      setPhase('checking')
-      void withTimeout(
-        Promise.resolve(node.verify?.() ?? Promise.resolve()),
-        HUMAN_VERIFICATION_SOLVE_TIMEOUT_MS,
-        '安全验证超时',
-      ).catch(() => {
-        rejectPending('安全验证超时')
-        onReadyChange?.(false)
-        setPhase('unavailable')
-      })
-    }, [clearPayload, onReadyChange, rejectPending, storePayload])
+      startVerification()
+    }, [clearPayload, startVerification, storePayload])
 
     useEffect(() => {
       if (!supportsAltchaRuntime()) {
@@ -176,7 +187,8 @@ const AltchaHumanVerification = forwardRef<HumanVerificationHandle, HumanVerific
       rejectPending('安全验证已重置')
       clearPayload()
       widgetRef.current?.reset?.()
-    }, [clearPayload, rejectPending])
+      startVerification()
+    }, [clearPayload, rejectPending, startVerification])
 
     const requestProof = useCallback(async () => {
       const cached = payloadRef.current

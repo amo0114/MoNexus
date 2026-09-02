@@ -187,12 +187,16 @@ REDIS_ENABLED=true
 REDIS_REQUIRED=true
 REDIS_URL=redis://redis:6379
 REDIS_TLS=false
-# 注册防滥用必须使用独立于 JWT/MFA 的 key，并使用生产 Turnstile widget。
+# 注册防滥用必须使用独立于 JWT/MFA 的 ABUSE_HASH_KEY，以及独立的 ALTCHA_HMAC_KEY。
+# 生产默认 HUMAN_VERIFICATION_PROVIDER=altcha；Turnstile 仅为可选适配器。
 ABUSE_PROTECTION_MODE=enforce
 ABUSE_HASH_KEY=<独立的32字节标准Base64随机值>
-TURNSTILE_SITE_KEY=<生产Turnstile site key>
-TURNSTILE_SECRET_KEY=<生产Turnstile secret key>
-TURNSTILE_ALLOWED_HOSTNAMES=monexus.oai-o.com
+HUMAN_VERIFICATION_PROVIDER=altcha
+ALTCHA_HMAC_KEY=<独立的32字节标准Base64随机值>
+# 仅在 HUMAN_VERIFICATION_PROVIDER=turnstile 时需要：
+# TURNSTILE_SITE_KEY=<生产Turnstile site key>
+# TURNSTILE_SECRET_KEY=<生产Turnstile secret key>
+# TURNSTILE_ALLOWED_HOSTNAMES=monexus.oai-o.com
 METRICS_TOKEN=<至少 32 字符的随机值>
 
 # 没有真实 SMTP/Sentry 时必须清空模板占位值。

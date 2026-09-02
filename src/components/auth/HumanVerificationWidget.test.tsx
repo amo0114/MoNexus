@@ -21,7 +21,7 @@ class FakeAltchaWidget extends HTMLElement {
   async verify() {
     this.verifyCalls += 1
     this.dispatchEvent(new CustomEvent('statechange', {
-      detail: { state: 'verified', payload: 'altcha-proof-in-memory' },
+      detail: { state: 'verified', payload: `altcha-proof-${this.verifyCalls}` },
     }))
   }
 
@@ -74,7 +74,7 @@ describe('HumanVerificationWidget', () => {
     await waitFor(() => expect(onReadyChange).toHaveBeenCalledWith(true))
 
     const proof = await ref.current!.requestProof()
-    expect(proof).toEqual({ provider: 'altcha', payload: 'altcha-proof-in-memory' })
+    expect(proof).toEqual({ provider: 'altcha', payload: 'altcha-proof-1' })
     expect(JSON.stringify(proof)).not.toContain('challengeUrl')
   })
 
@@ -112,20 +112,33 @@ describe('HumanVerificationWidget', () => {
     expect(screen.getByRole('button', { name: '重试' })).toBeInTheDocument()
   })
 
-  it('clears the in-memory proof on reset', async () => {
+  it('re-solves after reset so a new in-memory proof is ready', async () => {
     const ref = createRef<HumanVerificationHandle>()
+    const onReadyChange = vi.fn()
     render(
       <HumanVerificationWidget
         ref={ref}
         action="register"
         descriptor={{ provider: 'altcha', challengeUrl: '/api/auth/human-challenge?action=register' }}
+        onReadyChange={onReadyChange}
       />,
     )
-    await waitFor(() => expect(getHumanChallenge).toHaveBeenCalled())
-    await waitFor(() => expect(ref.current).toBeTruthy())
-    ref.current!.reset()
+    await waitFor(() => expect(onReadyChange).toHaveBeenCalledWith(true))
+    const firstProof = await ref.current!.requestProof()
+    expect(firstProof.payload).toBe('altcha-proof-1')
+
+    onReadyChange.mockClear()
+    act(() => {
+      ref.current!.reset()
+    })
     const widget = document.querySelector('altcha-widget') as FakeAltchaWidget
     expect(widget.resetCalls).toBeGreaterThan(0)
+    await waitFor(() => expect(onReadyChange).toHaveBeenCalledWith(true))
+    expect(widget.verifyCalls).toBeGreaterThan(1)
+
+    const secondProof = await ref.current!.requestProof()
+    expect(secondProof).toEqual({ provider: 'altcha', payload: 'altcha-proof-2' })
+    expect(secondProof.payload).not.toBe(firstProof.payload)
   })
 
   it('renders the turnstile adapter only from a turnstile descriptor', async () => {
