@@ -56,6 +56,17 @@ describe('AdminRechargeOrders refund gate', () => {
     expect(await screen.findByRole('button', { name: '退款' })).toBeInTheDocument()
   })
 
+  it('shows VMQFox on admin channel labels', async () => {
+    listAdminRechargeOrders.mockResolvedValue({
+      page: 1,
+      pageSize: 20,
+      total: 1,
+      items: [order({ provider: 'vmqfox', paymentMethod: 'wechat', supportsRefunds: false })],
+    })
+    render(<AdminRechargeOrders />)
+    expect(await screen.findByText('微信支付（VMQFox）')).toBeInTheDocument()
+  })
+
   it('hides refund when supportsRefunds is false', async () => {
     listAdminRechargeOrders.mockResolvedValue({
       page: 1,

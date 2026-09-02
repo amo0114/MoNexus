@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { QRCodeSVG } from 'qrcode.react'
 import { Loader2, Wallet } from 'lucide-react'
 import { completeRechargeOrder, getRechargeOrder, type RechargeOrder } from '../../api/recharge'
 import { confirmAdminSandboxOrder } from '../../api/adminRecharge'
@@ -13,12 +12,11 @@ import { buildPayableRecognitionNotice } from './payableCopy'
 import {
   isConfirmingOrderStatus,
   isTerminalOrderStatus,
-  methodLabel,
   orderStatusLabel,
-  providerLabel,
+  paymentChannelLabel,
 } from './status'
-import { isHttpsImageUrl } from './paymentActions'
 import { completeIdempotencyKey, peekPendingOrder, takePendingOrder } from './session'
+import BrandedPaymentQr from './BrandedPaymentQr'
 
 function displayStatus(orderStatus: string, resumePayment: boolean): string {
   if (resumePayment && (orderStatus === 'created' || orderStatus === 'pending_payment')) {
@@ -231,22 +229,23 @@ export default function RechargeResult({
         <div className="flex justify-between gap-3 text-sm">
           <span className="text-[var(--color-text-muted)]">支付方式</span>
           <span className="font-medium text-right">
-            {providerLabel(order.provider)} · {methodLabel(order.paymentMethod)}
+            {paymentChannelLabel(order.provider, order.paymentMethod, 'user')}
           </span>
         </div>
       </div>
 
       {waiting && action?.type === 'qr_code' && (
-        <div className="flex flex-col items-center gap-3" data-testid="recharge-qr">
-          {action.display === 'image_url' && isHttpsImageUrl(action.content) ? (
-            <img src={action.content} alt="支付二维码" className="w-48 h-48 object-contain bg-white p-2 rounded-lg" />
-          ) : (
-            <div className="bg-white p-3 rounded-lg">
-              <QRCodeSVG value={action.content} size={192} />
-            </div>
-          )}
-          <p className="text-sm text-[var(--color-text-muted)]">请使用对应 App 扫码完成支付</p>
-        </div>
+        <BrandedPaymentQr
+          content={action.content}
+          display={action.display}
+          payableAmountMinor={order.payableAmountMinor}
+          currency={order.currency}
+          provider={order.provider}
+          paymentMethod={order.paymentMethod}
+          actionExpiresAt={action.expiresAt}
+          orderExpiresAt={order.expiresAt}
+          orderStatus={order.status}
+        />
       )}
 
       {waiting && action?.type === 'client_secret' && (

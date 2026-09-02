@@ -8,7 +8,7 @@ import EmptyState from '../../components/ui/EmptyState'
 import { TableSkeleton } from '../../components/ui/Skeleton'
 import { formatCurrencyAmount, formatPoints } from './money'
 import { buildPayableRecognitionNotice } from './payableCopy'
-import { methodLabel, orderStatusLabel, providerLabel } from './status'
+import { orderStatusLabel, paymentChannelLabel } from './status'
 
 function HistoryRow({ order, onOpen }: { order: RechargeOrder; onOpen: () => void }) {
   const payableNotice = buildPayableRecognitionNotice(order)
@@ -35,7 +35,7 @@ function HistoryRow({ order, onOpen }: { order: RechargeOrder; onOpen: () => voi
         </div>
       )}
       <p className="text-xs text-[var(--color-text-muted)] mt-1">
-        {providerLabel(order.provider)} · {methodLabel(order.paymentMethod)}
+        {paymentChannelLabel(order.provider, order.paymentMethod, 'user')}
       </p>
     </button>
   )

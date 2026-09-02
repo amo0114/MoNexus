@@ -49,6 +49,7 @@ export const PAYMENT_PROVIDERS = [
   'paypal',
   'wechat_pay',
   'alipay',
+  'vmqfox',
 ] as const
 
 export type PaymentProviderName = (typeof PAYMENT_PROVIDERS)[number]
@@ -109,6 +110,7 @@ export const PROVIDER_LABEL: Record<string, string> = {
   paypal: 'PayPal',
   wechat_pay: '微信支付',
   alipay: '支付宝',
+  vmqfox: 'VMQFox',
 }
 
 export const METHOD_LABEL: Record<string, string> = {
@@ -158,4 +160,52 @@ export function providerLabel(provider: string): string {
 
 export function methodLabel(method: string): string {
   return METHOD_LABEL[method] ?? method
+}
+
+export type PaymentLabelAudience = 'user' | 'admin'
+
+const USER_CHANNEL_LABEL: Record<string, string> = {
+  'vmqfox:wechat': '微信支付',
+  'vmqfox:alipay': '支付宝支付',
+}
+
+const ADMIN_CHANNEL_LABEL: Record<string, string> = {
+  'vmqfox:wechat': '微信支付（VMQFox）',
+  'vmqfox:alipay': '支付宝支付（VMQFox）',
+}
+
+function channelKey(provider: string, method: string): string {
+  return `${provider}:${method}`
+}
+
+/**
+ * Channel-aware checkout/result/history/admin label.
+ * Known VMQFox pairs hide the implementation name from buyers.
+ * Unknown pairs keep the existing provider · method concatenation.
+ */
+export function paymentChannelLabel(
+  provider: string,
+  method: string,
+  audience: PaymentLabelAudience = 'user',
+): string {
+  const key = channelKey(provider, method)
+  if (audience === 'admin') {
+    return ADMIN_CHANNEL_LABEL[key] ?? `${providerLabel(provider)} · ${methodLabel(method)}`
+  }
+  if (USER_CHANNEL_LABEL[key]) return USER_CHANNEL_LABEL[key]
+  if (provider === 'vmqfox') {
+    const methodText = methodLabel(method)
+    return methodText === method ? '扫码支付' : methodText
+  }
+  return `${providerLabel(provider)} · ${methodLabel(method)}`
+}
+
+export function paymentQrAriaLabel(provider: string, method: string): string {
+  if ((provider === 'vmqfox' && method === 'wechat') || provider === 'wechat_pay') {
+    return '微信支付二维码'
+  }
+  if ((provider === 'vmqfox' && method === 'alipay') || provider === 'alipay') {
+    return '支付宝支付二维码'
+  }
+  return '支付二维码'
 }

@@ -446,6 +446,8 @@ describe('RechargePage', () => {
     expect(notice).toHaveTextContent('基础充值金额 ¥10.00')
     expect(notice).toHaveTextContent('¥0.01 为订单识别金额，不增加积分')
     expect(screen.getByTestId('recharge-qr')).toBeInTheDocument()
+    expect(screen.getByTestId('recharge-qr-amount')).toHaveTextContent('¥10.01')
+    expect(screen.queryByText('请使用对应 App 扫码完成支付')).not.toBeInTheDocument()
     expect(screen.getByTestId('recharge-confirming')).toHaveTextContent('正在同步订单状态')
     expect(completeRechargeOrder).not.toHaveBeenCalled()
     expect(screen.queryByRole('button', { name: '退款' })).not.toBeInTheDocument()
@@ -476,6 +478,95 @@ describe('RechargePage', () => {
     expect(screen.queryByTestId('recharge-payable-notice')).not.toBeInTheDocument()
     expect(screen.queryByText(/订单识别金额/)).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '退款' })).not.toBeInTheDocument()
+  })
+
+  it('labels VMQFox WeChat and Alipay as payment brands for buyers', async () => {
+    getRechargeConfig.mockImplementation(async (currency: string) =>
+      configFor(currency as 'CNY' | 'USD', {
+        providers: [
+          {
+            provider: 'vmqfox',
+            paymentMethods: [method('wechat'), method('alipay')],
+          },
+        ],
+      }),
+    )
+    renderAt('/recharge')
+    await readyCheckout()
+    expect(screen.getByRole('button', { name: '微信支付' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '支付宝支付' })).toBeInTheDocument()
+    expect(screen.queryByText(/VMQFox/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/\bwechat\b/i)).not.toBeInTheDocument()
+  })
+
+  it('renders a WeChat branded QR and hides it after expiry without channel chrome', async () => {
+    getRechargeOrder.mockResolvedValue(order('pending_payment', {
+      provider: 'vmqfox',
+      paymentMethod: 'wechat',
+      amountMinor: '1000',
+      payableAmountMinor: '1001',
+      action: {
+        type: 'qr_code',
+        content: 'wxp://pay/example-token',
+        display: 'text',
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      },
+    }))
+    renderAt(`/recharge?order=${ORDER_ID}`)
+    expect(await screen.findByTestId('recharge-qr')).toBeInTheDocument()
+    expect(screen.getByTestId('recharge-qr-amount')).toHaveTextContent('¥10.01')
+    expect(screen.getByRole('img', { name: '微信支付二维码' })).toBeInTheDocument()
+    expect(screen.getByText('微信支付')).toBeInTheDocument()
+    expect(screen.queryByText('VMQFox')).not.toBeInTheDocument()
+    expect(screen.queryByText('请使用对应 App 扫码完成支付')).not.toBeInTheDocument()
+    expect(screen.getByTestId('recharge-confirming')).toBeInTheDocument()
+    cleanup()
+
+    getRechargeOrder.mockResolvedValue(order('pending_payment', {
+      provider: 'vmqfox',
+      paymentMethod: 'wechat',
+      action: {
+        type: 'qr_code',
+        content: 'wxp://pay/example-token',
+        display: 'text',
+        expiresAt: new Date(Date.now() - 1000).toISOString(),
+      },
+    }))
+    renderAt(`/recharge?order=${ORDER_ID}`)
+    expect(await screen.findByTestId('recharge-result')).toBeInTheDocument()
+    expect(screen.queryByTestId('recharge-qr')).not.toBeInTheDocument()
+  })
+
+  it('renders an Alipay QR without a center mark and labels history without VMQFox', async () => {
+    getRechargeOrder.mockResolvedValue(order('pending_payment', {
+      provider: 'vmqfox',
+      paymentMethod: 'alipay',
+      payableAmountMinor: '1001',
+      action: {
+        type: 'qr_code',
+        content: 'https://qr.alipay.com/fkx0123456789abcdef',
+        display: 'text',
+      },
+    }))
+    const { container } = renderAt(`/recharge?order=${ORDER_ID}`)
+    expect(await screen.findByRole('img', { name: '支付宝支付二维码' })).toBeInTheDocument()
+    expect(container.querySelector('#recharge-qr image, [data-testid="recharge-qr"] image')).toBeNull()
+    cleanup()
+
+    listRechargeOrders.mockResolvedValue({
+      page: 1,
+      pageSize: 50,
+      total: 2,
+      items: [
+        order('credited', { provider: 'vmqfox', paymentMethod: 'wechat' }),
+        order('credited', { orderId: '22222222-2222-4222-8222-222222222222', provider: 'vmqfox', paymentMethod: 'alipay' }),
+      ],
+    })
+    renderAt('/recharge?history=1')
+    expect(await screen.findByTestId('recharge-history')).toBeInTheDocument()
+    expect(screen.getByText('微信支付')).toBeInTheDocument()
+    expect(screen.getByText('支付宝支付')).toBeInTheDocument()
+    expect(screen.queryByText(/VMQFox/i)).not.toBeInTheDocument()
   })
 
   it('does not clip suggested amount buttons', async () => {

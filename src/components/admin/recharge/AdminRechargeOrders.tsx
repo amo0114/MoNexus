@@ -17,9 +17,9 @@ import EmptyState from '../../ui/EmptyState'
 import { TableSkeleton } from '../../ui/Skeleton'
 import { formatCurrencyAmount, formatPoints } from '../../../pages/recharge/money'
 import {
-  methodLabel,
   orderStatusLabel,
   PAYMENT_PROVIDERS,
+  paymentChannelLabel,
   providerLabel,
   RECHARGE_ORDER_STATUSES,
 } from '../../../pages/recharge/status'
@@ -117,7 +117,7 @@ export default function AdminRechargeOrders() {
                     <div className="whitespace-nowrap">{formatCurrencyAmount(item.amountMinor, item.currency)}</div>
                     <div className="text-xs text-[var(--color-cta)]">{formatPoints(item.totalPoints)} RP</div>
                   </td>
-                  <td data-label="渠道">{providerLabel(item.provider)} · {methodLabel(item.paymentMethod)}</td>
+                  <td data-label="渠道">{paymentChannelLabel(item.provider, item.paymentMethod, 'admin')}</td>
                   <td data-label="状态">{orderStatusLabel(item.status)}</td>
                   <td className="text-right whitespace-nowrap space-x-3" data-label="操作">
                     {(item.status === 'credited' || item.status === 'paid') && !item.refundId && !item.adminSandbox && item.supportsRefunds && (
@@ -148,7 +148,7 @@ export default function AdminRechargeOrders() {
               <p>用户：#{detail.userId}</p>
               <p>金额：{formatCurrencyAmount(detail.amountMinor, detail.currency)}</p>
               <p>积分：{formatPoints(detail.totalPoints)}</p>
-              <p>渠道：{providerLabel(detail.provider)} · {methodLabel(detail.paymentMethod)}</p>
+              <p>渠道：{paymentChannelLabel(detail.provider, detail.paymentMethod, 'admin')}</p>
               {detail.adminSandbox && (
                 <p className="font-bold text-amber-700 dark:text-amber-300">管理员沙箱订单（不可退款）</p>
               )}
