@@ -6,6 +6,7 @@ import path from 'node:path'
 
 const VALID_MFA_ENCRYPTION_KEY = Buffer.alloc(32, 7).toString('base64')
 const VALID_ABUSE_HASH_KEY = Buffer.alloc(32, 8).toString('base64')
+const VALID_ALTCHA_HMAC_KEY = Buffer.alloc(32, 13).toString('base64')
 
 /**
  * P5 复审 P0 回归：生产缺私有交付桶配置必须**拒绝启动**——回退是进程内存
@@ -31,6 +32,8 @@ const PROD_BASE_ENV: Record<string, string> = {
   MFA_ENCRYPTION_KEY: VALID_MFA_ENCRYPTION_KEY,
   ABUSE_PROTECTION_MODE: 'enforce',
   ABUSE_HASH_KEY: VALID_ABUSE_HASH_KEY,
+  HUMAN_VERIFICATION_PROVIDER: 'altcha',
+  ALTCHA_HMAC_KEY: VALID_ALTCHA_HMAC_KEY,
   TURNSTILE_SITE_KEY: '1x00000000000000000000AA',
   TURNSTILE_SECRET_KEY: 'turnstile-secret-for-production-guard-test',
   TURNSTILE_ALLOWED_HOSTNAMES: 'shop.example.com',
@@ -38,6 +41,8 @@ const PROD_BASE_ENV: Record<string, string> = {
   REDIS_REQUIRED: 'true',
   // P7b：商家 webhook 签名密钥的静态加密密钥（生产必配，64 位 hex）。
   WEBHOOK_SECRET_ENC_KEY: 'a'.repeat(64),
+  DEPLOY_TOPOLOGY: 'nginx',
+  TRUST_PROXY: '1',
 }
 
 function loadConfigWith(overrides: Record<string, string | undefined>) {
@@ -322,14 +327,38 @@ describe('production config guards for registration abuse protection (SPEC-RAP-0
     expect(malformed.stderr + malformed.stdout).toContain('ABUSE_HASH_KEY')
   })
 
-  it('requires Turnstile site/secret/hostname configuration and rejects URL-shaped hostnames', () => {
-    const missing = loadConfigWith({ TURNSTILE_SECRET_KEY: undefined })
-    expect(missing.status).toBe(1)
-    expect(missing.stderr + missing.stdout).toContain('TURNSTILE')
+  it('requires Turnstile site/secret/hostname configuration only when that provider is selected', () => {
+    const missingTurnstile = loadConfigWith({
+      HUMAN_VERIFICATION_PROVIDER: 'turnstile',
+      TURNSTILE_SECRET_KEY: undefined,
+    })
+    expect(missingTurnstile.status).toBe(1)
+    expect(missingTurnstile.stderr + missingTurnstile.stdout).toContain('TURNSTILE')
+
+    const altchaWithoutTurnstile = loadConfigWith({
+      TURNSTILE_SITE_KEY: undefined,
+      TURNSTILE_SECRET_KEY: undefined,
+      TURNSTILE_ALLOWED_HOSTNAMES: undefined,
+    })
+    expect(altchaWithoutTurnstile.status, altchaWithoutTurnstile.stdout + altchaWithoutTurnstile.stderr).toBe(0)
 
     const malformed = loadConfigWith({ TURNSTILE_ALLOWED_HOSTNAMES: 'https://shop.example.com' })
     expect(malformed.status).toBe(1)
     expect(malformed.stderr + malformed.stdout).toContain('TURNSTILE_ALLOWED_HOSTNAMES')
+  })
+
+  it('requires an independent ALTCHA HMAC key and refuses provider=off in production', () => {
+    const missing = loadConfigWith({ ALTCHA_HMAC_KEY: undefined })
+    expect(missing.status).toBe(1)
+    expect(missing.stderr + missing.stdout).toContain('ALTCHA_HMAC_KEY')
+
+    const reused = loadConfigWith({ ALTCHA_HMAC_KEY: VALID_ABUSE_HASH_KEY })
+    expect(reused.status).toBe(1)
+    expect(reused.stderr + reused.stdout).toContain('independent')
+
+    const off = loadConfigWith({ HUMAN_VERIFICATION_PROVIDER: 'off' })
+    expect(off.status).toBe(1)
+    expect(off.stderr + off.stdout).toContain('HUMAN_VERIFICATION_PROVIDER')
   })
 
   it('requires a shared enabled and required Redis dependency in production', () => {
@@ -525,6 +554,8 @@ describe('check-prod-env.sh POINT_VALUE_POLICY_MODE', () => {
       `MFA_ENCRYPTION_KEY=${VALID_MFA_ENCRYPTION_KEY}`,
       'ABUSE_PROTECTION_MODE=enforce',
       `ABUSE_HASH_KEY=${VALID_ABUSE_HASH_KEY}`,
+      'HUMAN_VERIFICATION_PROVIDER=altcha',
+      `ALTCHA_HMAC_KEY=${VALID_ALTCHA_HMAC_KEY}`,
       'TURNSTILE_SITE_KEY=1x00000000000000000000AA',
       'TURNSTILE_SECRET_KEY=turnstile-secret-for-preflight',
       'TURNSTILE_ALLOWED_HOSTNAMES=shop.example.com',
@@ -552,6 +583,8 @@ describe('check-prod-env.sh POINT_VALUE_POLICY_MODE', () => {
       'ALERT_EMAIL_TO=alerts@example.com',
       `WEBHOOK_SECRET_ENC_KEY=${'a'.repeat(64)}`,
       'METRICS_TOKEN=metrics-token-for-preflight-at-least-32',
+      'DEPLOY_TOPOLOGY=nginx',
+      'TRUST_PROXY=1',
       `POINT_VALUE_POLICY_MODE=${mode}`,
       ...Object.entries(extras).map(([key, value]) => `${key}=${value}`),
     ].join('\n'))
@@ -759,6 +792,8 @@ function writeComposeEnv(extras: Record<string, string> = {}) {
     MFA_ENCRYPTION_KEY: VALID_MFA_ENCRYPTION_KEY,
     ABUSE_PROTECTION_MODE: 'enforce',
     ABUSE_HASH_KEY: VALID_ABUSE_HASH_KEY,
+    HUMAN_VERIFICATION_PROVIDER: 'altcha',
+    ALTCHA_HMAC_KEY: VALID_ALTCHA_HMAC_KEY,
     TURNSTILE_SITE_KEY: '1x00000000000000000000AA',
     TURNSTILE_SECRET_KEY: 'turnstile-secret-for-compose',
     TURNSTILE_ALLOWED_HOSTNAMES: 'staging.example.com',

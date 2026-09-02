@@ -1,10 +1,23 @@
 import { z } from 'zod'
+import { HUMAN_VERIFICATION_PAYLOAD_MAX_BYTES } from './humanVerification/types.js'
 
 const normalizedEmailSchema = z.string()
   .trim()
   .toLowerCase()
   .email('请输入有效的邮箱地址')
   .max(320, '邮箱地址过长')
+
+const humanVerificationSchema = z.object({
+  provider: z.enum(['altcha', 'turnstile']),
+  payload: z.string().min(1, '安全验证证明不能为空').max(
+    HUMAN_VERIFICATION_PAYLOAD_MAX_BYTES,
+    '安全验证证明过长',
+  ),
+}).strict()
+
+export const humanChallengeQuerySchema = z.object({
+  action: z.enum(['register', 'forgot_password']),
+}).strict()
 
 export const registerSchema = z.object({
   email: normalizedEmailSchema,
@@ -22,6 +35,9 @@ export const registerSchema = z.object({
   // The proof stays optional at schema level so an explicit local/test
   // `ABUSE_PROTECTION_MODE=off` remains usable. Enforce mode maps an omitted
   // or blank value to HUMAN_VERIFICATION_REQUIRED at the service boundary.
+  // `turnstileToken` is rolling-compat only while the configured provider is
+  // still turnstile; after switching to altcha it cannot bypass verification.
+  humanVerification: humanVerificationSchema.optional(),
   turnstileToken: z.string().trim().max(4_096, '安全验证令牌过长').optional(),
   // SPEC-LEGAL-001：协议确认 { document: version }。缺失/版本过期的判定
   // 在 service 层按 enforcement 分级（REQUIRED/STALE）；这里只约束形状。
@@ -61,6 +77,7 @@ export const forgotPasswordSchema = z.object({
   // Optional at the schema boundary so ABUSE_PROTECTION_MODE=off retains the
   // legacy request shape. Enforce mode maps omission to a named security error
   // in the service layer.
+  humanVerification: humanVerificationSchema.optional(),
   turnstileToken: z.string().trim().max(4_096, '安全验证令牌过长').optional(),
 }).strict()
 

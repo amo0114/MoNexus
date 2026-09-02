@@ -19,10 +19,8 @@ import { agreementVersionsOf, LEGAL_PAGE_PATHS, type LegalRequirement } from '..
 import MfaEnrollment from '../components/auth/MfaEnrollment'
 import MfaVerification from '../components/auth/MfaVerification'
 import RecoveryCodeConfirmation from '../components/auth/RecoveryCodeConfirmation'
-import TurnstileWidget, {
-  preloadTurnstileScript,
-  type TurnstileWidgetHandle,
-} from '../components/auth/TurnstileWidget'
+import HumanVerificationWidget from '../components/auth/HumanVerificationWidget'
+import type { HumanVerificationHandle } from '../components/auth/humanVerificationTypes'
 import Logo from '../components/ui/Logo'
 
 type PendingRecoveryConfirmation = {
@@ -70,7 +68,7 @@ export default function LoginPage() {
   const navigate = useNavigate()
   const login = useAuthStore((state) => state.login)
   const showToast = useAppStore((state) => state.showToast)
-  const turnstileRef = useRef<TurnstileWidgetHandle>(null)
+  const humanVerificationRef = useRef<HumanVerificationHandle>(null)
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -83,7 +81,7 @@ export default function LoginPage() {
   const [pendingRecovery, setPendingRecovery] = useState<PendingRecoveryConfirmation | null>(null)
   const [registrationRefresh, setRegistrationRefresh] = useState(0)
   const [registrationState, setRegistrationState] = useState<RegistrationViewState>({ kind: 'loading' })
-  const [turnstileReady, setTurnstileReady] = useState(false)
+  const [verificationReady, setVerificationReady] = useState(false)
   // SPEC-LEGAL-001：协议勾选默认不勾（明示同意），STALE 后强制重新勾选。
   const [agreementsChecked, setAgreementsChecked] = useState(false)
 
@@ -99,7 +97,7 @@ export default function LoginPage() {
   useEffect(() => {
     let active = true
     setRegistrationState({ kind: 'loading' })
-    setTurnstileReady(false)
+    setVerificationReady(false)
 
     getRegistrationStatus()
       .then((status) => {
@@ -109,12 +107,6 @@ export default function LoginPage() {
         } else if (!status.registrationAvailable) {
           setRegistrationState({ kind: 'unavailable' })
         } else {
-          if (status.challenge) {
-            // Start the network handshake while the visitor is still on the
-            // login view. The widget itself is rendered only after they open
-            // registration, so an interactive challenge is never hidden.
-            void preloadTurnstileScript().catch(() => undefined)
-          }
           setRegistrationState({
             kind: 'available',
             challenge: status.challenge,
@@ -143,15 +135,15 @@ export default function LoginPage() {
   }
 
   function switchToLogin() {
-    turnstileRef.current?.reset()
-    setTurnstileReady(false)
+    humanVerificationRef.current?.reset()
+    setVerificationReady(false)
     setIsRegister(false)
     setAgreementsChecked(false)
   }
 
   function switchToRegistration() {
     if (registrationState.kind !== 'available') return
-    setTurnstileReady(false)
+    setVerificationReady(false)
     setAgreementsChecked(false)
     setIsRegister(true)
   }
@@ -180,7 +172,7 @@ export default function LoginPage() {
     const code = getApiErrorCode(error)
 
     if (code === 'REGISTRATION_DISABLED') {
-      turnstileRef.current?.reset()
+      humanVerificationRef.current?.reset()
       setIsRegister(false)
       setRegistrationState({ kind: 'disabled' })
       showToast('当前暂停接受新用户注册', 'error')
@@ -188,13 +180,13 @@ export default function LoginPage() {
     }
 
     if (code === 'INVITE_CODE_REQUIRED') {
-      turnstileRef.current?.reset()
+      humanVerificationRef.current?.reset()
       showToast('注册需要邀请码', 'error')
       return
     }
 
     if (code === 'HUMAN_VERIFICATION_REQUIRED' || code === 'HUMAN_VERIFICATION_FAILED') {
-      turnstileRef.current?.reset()
+      humanVerificationRef.current?.reset()
       showToast('请完成安全验证后重试', 'error')
       return
     }
@@ -203,7 +195,7 @@ export default function LoginPage() {
       // This is an operational condition, not an administrator registration
       // closure. Keep the status wording distinct and do not infer Redis
       // health from the public status endpoint.
-      turnstileRef.current?.reset()
+      humanVerificationRef.current?.reset()
       showToast('注册服务暂不可用，请稍后重试', 'error')
       return
     }
@@ -211,7 +203,7 @@ export default function LoginPage() {
     if (code === 'LEGAL_AGREEMENT_STALE') {
       // 协议在填写期间发布新版本：刷新注册状态拿新版本清单，并强制重新
       // 勾选——用户确认过的旧版本不能默示延伸到新文本。
-      turnstileRef.current?.reset()
+      humanVerificationRef.current?.reset()
       setAgreementsChecked(false)
       setRegistrationRefresh((value) => value + 1)
       showToast('协议已更新，请重新阅读并同意', 'error')
@@ -219,12 +211,12 @@ export default function LoginPage() {
     }
 
     if (code === 'LEGAL_AGREEMENT_REQUIRED') {
-      turnstileRef.current?.reset()
+      humanVerificationRef.current?.reset()
       showToast('请先阅读并同意相关协议', 'error')
       return
     }
 
-    turnstileRef.current?.reset()
+    humanVerificationRef.current?.reset()
     showToast(getApiErrorMessage(error, '操作失败'), 'error')
   }
 
@@ -245,16 +237,16 @@ export default function LoginPage() {
           return
         }
 
-        let turnstileToken: string | undefined
+        let humanVerification: { provider: 'altcha' | 'turnstile'; payload: string } | undefined
         if (registrationState.challenge) {
-          if (!turnstileRef.current || !turnstileReady) {
+          if (!humanVerificationRef.current || !verificationReady) {
             showToast('安全验证仍在准备，请稍后重试', 'error')
             return
           }
           try {
             // The proof is a local variable only. It is neither kept in React
             // state nor written to any browser storage.
-            turnstileToken = await turnstileRef.current.requestToken()
+            humanVerification = await humanVerificationRef.current.requestProof()
           } catch {
             showToast('请完成安全验证后重试', 'error')
             return
@@ -266,7 +258,7 @@ export default function LoginPage() {
           password,
           ...(nickname.trim() ? { nickname: nickname.trim() } : {}),
           ...(inviteCode.trim() ? { inviteCode: inviteCode.trim() } : {}),
-          ...(turnstileToken ? { turnstileToken } : {}),
+          ...(humanVerification ? { humanVerification } : {}),
           // 只提交用户真实勾选确认过的版本（记录模式下未勾选即不留证）。
           ...(legalRequirement && agreementsChecked ? { agreements: agreementVersionsOf(legalRequirement) } : {}),
         })
@@ -360,7 +352,7 @@ export default function LoginPage() {
   })) ?? []
   // 复审 P2：仅 enforce 门控提交；off（记录模式）勾选可选，不阻断注册。
   const missingAgreements = isRegister && legalRequirement?.enforcement === 'enforce' && !agreementsChecked
-  const verificationPreparing = isRegister && Boolean(registrationChallenge) && !turnstileReady
+  const verificationPreparing = isRegister && Boolean(registrationChallenge) && !verificationReady
 
   return (
     <LoginShell>
@@ -375,7 +367,10 @@ export default function LoginPage() {
           placeholder="邮箱地址"
           aria-label="邮箱地址"
           value={email}
-          onChange={(event) => setEmail(event.target.value)}
+          onChange={(event) => {
+            setEmail(event.target.value)
+            if (isRegister) humanVerificationRef.current?.reset()
+          }}
           required
           className="input"
           disabled={loading}
@@ -385,7 +380,10 @@ export default function LoginPage() {
           placeholder="密码（至少 6 位）"
           aria-label="密码（至少 6 位）"
           value={password}
-          onChange={(event) => setPassword(event.target.value)}
+          onChange={(event) => {
+            setPassword(event.target.value)
+            if (isRegister) humanVerificationRef.current?.reset()
+          }}
           required
           minLength={6}
           className="input"
@@ -424,17 +422,20 @@ export default function LoginPage() {
                   : '邀请码（可选）'
               }
               value={inviteCode}
-              onChange={(event) => setInviteCode(event.target.value)}
+              onChange={(event) => {
+                setInviteCode(event.target.value)
+                humanVerificationRef.current?.reset()
+              }}
               className="input"
               disabled={loading}
               required={registrationState.kind === 'available' && registrationState.inviteRequired}
             />
             {registrationChallenge && (
-              <TurnstileWidget
-                ref={turnstileRef}
-                siteKey={registrationChallenge.siteKey}
+              <HumanVerificationWidget
+                ref={humanVerificationRef}
+                descriptor={registrationChallenge}
                 action="register"
-                onReadyChange={setTurnstileReady}
+                onReadyChange={setVerificationReady}
               />
             )}
             {legalRequirement && (

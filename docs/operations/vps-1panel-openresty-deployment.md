@@ -19,7 +19,55 @@ Render、Neon、R2、Cloudflare Tunnel，也不要再额外运行 Caddy。
 ~~~
 
 仅 OpenResty 对外开放 80/443。Postgres、Redis、MinIO、Express 和 18089 都不应
-直接暴露到互联网。
+直接暴露到互联网。禁止存在绕过 OpenResty 与 bundled Nginx 直达 Express 的第二条
+路径，否则固定 `TRUST_PROXY=2` 不再安全。`WEB_PORT=18089` 必须只绑定 `127.0.0.1`。
+
+## 0. 可信客户端 IP（必须先于限流与注册防滥用）
+
+生产链路是 Cloudflare → 1Panel OpenResty → bundled Nginx → Express。Cloudflare
+**不计入** Express hop，因为它不与 Express 建立 socket。OpenResty 必须先把
+Cloudflare 官方 CIDR 上的 `CF-Connecting-IP` 还原为 `$remote_addr`，再**覆盖**
+（而不是追加）转发给 bundled Nginx 的 `X-Forwarded-For`。
+
+上线时从 [Cloudflare IP ranges](https://www.cloudflare.com/ips/) 取当前
+IPv4/IPv6 CIDR，逐条生成 `set_real_ip_from`。不要把会随时间变化的 CIDR 手抄进
+应用代码或仓库常量。
+
+~~~nginx
+real_ip_header CF-Connecting-IP;
+set_real_ip_from <Cloudflare IPv4/IPv6 CIDR>;
+real_ip_recursive on;
+
+proxy_set_header X-Forwarded-For $remote_addr;
+proxy_set_header X-Real-IP $remote_addr;
+proxy_set_header X-Forwarded-Proto $scheme;
+proxy_set_header Host $host;
+~~~
+
+关键点：使用 `$remote_addr` 覆盖 XFF，不要用 `$proxy_add_x_forwarded_for` 把用户
+可伪造的入站值追加进去。只有来自 Cloudflare 官方 CIDR 的连接才允许用
+`CF-Connecting-IP` 改写 `$remote_addr`；源站被直接访问时 `$remote_addr` 保持直连
+地址。bundled `nginx.conf` 继续追加一跳，Express 看到的链为：
+
+~~~text
+XFF: <canonical-client>, <openresty-to-web-hop>
+socket: <bundled-nginx>
+~~~
+
+对应环境变量必须精确匹配。第一次生产窗口复制 **3000**，不要复制 1500：
+
+~~~dotenv
+DEPLOY_TOPOLOGY=cloudflare_openresty_nginx
+TRUST_PROXY=2
+API_RATE_LIMIT_MAX=3000
+~~~
+
+`TRUST_PROXY` 只接受规范十进制 `0|1|2`，`true`/`false` 会启动失败。`1500` 只出现在
+证据表 C7：目标 backend SHA 上线后，session IP / 限流键 canary 通过，再观察至少
+24 小时，作为**单独**变更把限额从 3000 降到 1500。条件允许时，主机 80/443 仅允许
+Cloudflare CIDR；SSH 端口不受此规则影响。PLAN_ID `d91c84ec` 第一次生产窗口的检查表
+与回滚见 [d91c84ec-ops-closure.md](./d91c84ec-ops-closure.md)；金丝雀证据在授权前保持
+`PENDING`，本手册不构成部署或切 ALTCHA 的授权。
 
 ## 1. 主机前置检查
 
@@ -110,8 +158,10 @@ chmod 600 .env
 使用编辑器修改 .env。每个密码和令牌都应不同，可分别使用 openssl rand -hex 32 或
 openssl rand -hex 48 生成。不要把 .env、密钥或备份上传到 Git。
 
-下面是首次公网部署的核心配置。尖括号必须替换；等号后留空表示明确关闭可选服务，
-不要保留模板内的假 URL。
+下面是 **PLAN_ID d91c84ec 第一次生产窗口（Phase A）** 可复制的核心配置。尖括号必须
+替换；等号后留空表示明确关闭可选服务，不要保留模板内的假 URL。人机校验必须是
+`turnstile` 且三件套取消注释。不要把 Phase B 的 `altcha` / `ALTCHA_HMAC_KEY` 贴进
+这一块。限额必须是 `3000`；`1500` 只在后面的 C7 小块。
 
 ~~~dotenv
 POSTGRES_USER=monexus
@@ -122,7 +172,9 @@ JWT_SECRET=<至少 32 字符的随机值>
 FRONTEND_ORIGIN=https://monexus.oai-o.com
 APP_BASE_URL=https://monexus.oai-o.com
 COOKIE_SECURE=true
-TRUST_PROXY=1
+DEPLOY_TOPOLOGY=cloudflare_openresty_nginx
+TRUST_PROXY=2
+API_RATE_LIMIT_MAX=3000
 
 # 仅回环绑定；80 由 1Panel OpenResty 使用。
 WEB_PORT=18089
@@ -140,9 +192,13 @@ REDIS_ENABLED=true
 REDIS_REQUIRED=true
 REDIS_URL=redis://redis:6379
 REDIS_TLS=false
-# 注册防滥用必须使用独立于 JWT/MFA 的 key，并使用生产 Turnstile widget。
+# 注册防滥用：独立于 JWT/MFA 的 ABUSE_HASH_KEY。Phase A 保持 Turnstile。
+# Compose 默认 HUMAN_VERIFICATION_PROVIDER=altcha；私有 .env 必须覆盖为
+# turnstile，否则缺 ALTCHA_HMAC_KEY 会启动失败。步骤见
+# docs/operations/d91c84ec-ops-closure.md。
 ABUSE_PROTECTION_MODE=enforce
 ABUSE_HASH_KEY=<独立的32字节标准Base64随机值>
+HUMAN_VERIFICATION_PROVIDER=turnstile
 TURNSTILE_SITE_KEY=<生产Turnstile site key>
 TURNSTILE_SECRET_KEY=<生产Turnstile secret key>
 TURNSTILE_ALLOWED_HOSTNAMES=monexus.oai-o.com
@@ -159,6 +215,22 @@ VITE_SENTRY_DSN=
 # 改成已发布并验证过的 tag。
 MONEXUS_IMAGE_TAG=sha-<master-短提交号>
 MONEXUS_PULL_POLICY=missing
+~~~
+
+C7 稳态限额（目标 backend SHA 已上线，证据表 C2–C6 通过，再观察 ≥24 小时之后，
+**单独**改这一项；不要和首次 `.env` 一起粘贴）：
+
+~~~dotenv
+API_RATE_LIMIT_MAX=1500
+~~~
+
+Phase B ALTCHA 切流（需要**第二次书面授权**。只改私有 `.env` 并重建 server。不要
+和 Phase A、OpenResty、`TRUST_PROXY` 或 C7 同一变更）：
+
+~~~dotenv
+HUMAN_VERIFICATION_PROVIDER=altcha
+ALTCHA_HMAC_KEY=<独立的32字节标准Base64随机值>
+# 切流成功后可注释 TURNSTILE_*；回滚时必须仍能恢复 turnstile 三件套。
 ~~~
 
 运行时允许 SMTP 与 Sentry 为空：邮件会记录到 server 日志，Sentry 不上报。真正的

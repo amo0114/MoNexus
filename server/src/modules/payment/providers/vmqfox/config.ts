@@ -2,7 +2,7 @@ import { paymentProviderUnavailable } from '../../../../lib/httpError.js'
 import type { ProviderEnvironment } from '../types.js'
 
 export const VMQFOX_PROVIDER_NAME = 'vmqfox' as const
-export const VMQFOX_CAPABILITY_VERSION = 'vmqfox-v2'
+export const VMQFOX_CAPABILITY_VERSION = 'vmqfox-v3-native-qr'
 export const VMQFOX_PAYMENT_METHODS = ['wechat', 'alipay'] as const
 export type VmqfoxPaymentMethod = (typeof VMQFOX_PAYMENT_METHODS)[number]
 

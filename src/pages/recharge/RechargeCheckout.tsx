@@ -21,7 +21,7 @@ import {
   RECHARGE_CURRENCIES,
   validateAmountBounds,
 } from './money'
-import { methodLabel, providerLabel } from './status'
+import { paymentChannelLabel } from './status'
 import { goToRedirect, submitFormPost } from './paymentActions'
 import { newIdempotencyKey, rememberPendingOrder } from './session'
 
@@ -397,7 +397,7 @@ export default function RechargeCheckout() {
                       : 'bg-[var(--color-surface)] text-[var(--color-text)] border-[var(--color-border)]'
                   }`}
                 >
-                  {providerLabel(item.provider)} · {methodLabel(item.paymentMethod)}
+                  {paymentChannelLabel(item.provider, item.paymentMethod, 'user')}
                 </button>
               ))}
             </div>

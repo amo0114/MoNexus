@@ -288,17 +288,42 @@ fi
 
 require_canonical_base64_32 MFA_ENCRYPTION_KEY
 
-# SPEC-RAP-001: public registration and user-email sending use Redis and
-# Turnstile as fail-closed security dependencies. The server applies the same
+# SPEC-RAP-001: public registration and user-email sending use Redis and a
+# fail-closed human-verification provider. The server applies the same
 # production rules at boot; surface a bad deploy before compose starts.
 abuse_mode="$(get ABUSE_PROTECTION_MODE)"
 if [[ "$abuse_mode" != "enforce" ]]; then
   fail "ABUSE_PROTECTION_MODE must be enforce for $MODE"
 fi
 require_canonical_base64_32 ABUSE_HASH_KEY
-require_value TURNSTILE_SITE_KEY
-require_value TURNSTILE_SECRET_KEY
-require_turnstile_allowed_hostnames
+human_provider="$(get HUMAN_VERIFICATION_PROVIDER)"
+if [[ -z "$human_provider" ]]; then
+  human_provider="altcha"
+fi
+if [[ "$human_provider" != "altcha" && "$human_provider" != "turnstile" ]]; then
+  fail "HUMAN_VERIFICATION_PROVIDER must be altcha or turnstile for $MODE"
+fi
+if [[ "$human_provider" == "altcha" ]]; then
+  require_canonical_base64_32 ALTCHA_HMAC_KEY
+  altcha_key="$(get ALTCHA_HMAC_KEY)"
+  abuse_key="$(get ABUSE_HASH_KEY)"
+  mfa_key="$(get MFA_ENCRYPTION_KEY)"
+  jwt_secret="$(get JWT_SECRET)"
+  skip_independence=false
+  if [[ "$ALLOW_PLACEHOLDERS" == "true" ]] && {
+    is_placeholder_literal "$altcha_key" || is_placeholder_literal "$abuse_key" || is_placeholder_literal "$mfa_key" || is_placeholder_literal "$jwt_secret"
+  }; then
+    skip_independence=true
+  fi
+  if [[ "$skip_independence" != "true" && ( "$altcha_key" == "$abuse_key" || "$altcha_key" == "$mfa_key" || "$altcha_key" == "$jwt_secret" ) ]]; then
+    fail "ALTCHA_HMAC_KEY must be independent of JWT_SECRET, MFA_ENCRYPTION_KEY, and ABUSE_HASH_KEY"
+  fi
+fi
+if [[ "$human_provider" == "turnstile" ]]; then
+  require_value TURNSTILE_SITE_KEY
+  require_value TURNSTILE_SECRET_KEY
+  require_turnstile_allowed_hostnames
+fi
 require_bool_true REDIS_ENABLED
 require_bool_true REDIS_REQUIRED
 require_redis_url REDIS_URL
@@ -559,27 +584,29 @@ check_realtime_int NOTIFICATION_REALTIME_MAX_BUFFER_BYTES 16384 1048576
 check_realtime_int NOTIFICATION_REALTIME_CONNECT_RATE_LIMIT_MAX 1 1000
 check_realtime_int NOTIFICATION_REALTIME_SHUTDOWN_GRACE_MS 1000 9000
 
-# canonical client IP (spec 8.1.1 / CHK-CFG-004): direct bundled Nginx = 1,
-# VPS Caddy overlay -> Nginx = 2. The SSE limiter keys on Express req.ip.
+# Canonical client IP: hop count is always required, not only when SSE is on.
+# nginx → bundled Nginx → Express = 1
+# caddy → Caddy → bundled Nginx → Express = 2
+# cloudflare_openresty_nginx → Cloudflare restores $remote_addr at OpenResty,
+# then OpenResty → bundled Nginx → Express = 2 (Cloudflare is not an Express hop).
 deploy_topology="$(get DEPLOY_TOPOLOGY)"
 case "$deploy_topology" in
-  ""|nginx) deploy_topology="nginx" ;;
-  caddy) ;;
-  *) fail "DEPLOY_TOPOLOGY must be nginx or caddy" ;;
+  nginx|caddy|cloudflare_openresty_nginx) ;;
+  *) fail "DEPLOY_TOPOLOGY must be nginx, caddy, or cloudflare_openresty_nginx" ;;
 esac
 trust_proxy="$(get TRUST_PROXY)"
-if [[ -n "$trust_proxy" ]]; then
-  case "$trust_proxy" in
-    0|1|2|true|false) ;;
-    *) fail "TRUST_PROXY must be 0/1/2 or true/false" ;;
-  esac
-fi
-if [[ "$realtime_enabled" == "true" ]]; then
-  if [[ "$deploy_topology" == "caddy" && "$trust_proxy" != "2" ]]; then
-    fail "realtime with Caddy overlay requires TRUST_PROXY=2"
-  elif [[ "$deploy_topology" == "nginx" && "$trust_proxy" != "1" ]]; then
-    fail "realtime with direct Nginx requires TRUST_PROXY=1"
-  fi
+case "$trust_proxy" in
+  0|1|2) ;;
+  true|false) fail "TRUST_PROXY must be 0/1/2; boolean true/false is no longer accepted" ;;
+  *) fail "TRUST_PROXY must be 0/1/2" ;;
+esac
+expected_hops=""
+case "$deploy_topology" in
+  nginx) expected_hops="1" ;;
+  caddy|cloudflare_openresty_nginx) expected_hops="2" ;;
+esac
+if [[ "$trust_proxy" != "$expected_hops" ]]; then
+  fail "DEPLOY_TOPOLOGY=$deploy_topology requires TRUST_PROXY=$expected_hops"
 fi
 
 if [[ "$errors" -gt 0 ]]; then

@@ -88,9 +88,12 @@ function nestedSensitivePaths(field: string) {
 const ABUSE_PROTECTION_SENSITIVE_FIELDS = [
   'turnstileToken',
   'cf-turnstile-response',
+  'humanVerification',
   'TURNSTILE_SECRET_KEY',
+  'ALTCHA_HMAC_KEY',
   'ABUSE_HASH_KEY',
   'turnstileSecretKey',
+  'altchaHmacKey',
   'abuseHashKey',
   'emailVerificationToken',
   'passwordResetToken',
@@ -106,6 +109,7 @@ const ABUSE_PROTECTION_SENSITIVE_FIELDS = [
 const TURNSTILE_SITEVERIFY_PATHS = [
   ...nestedSensitivePaths('siteverify'),
   ...nestedSensitivePaths('turnstileSiteverify'),
+  ...nestedSensitivePaths('altcha'),
   'turnstile.secretKey',
   '*.turnstile.secretKey',
   '*.context.turnstile.secretKey',
@@ -118,6 +122,10 @@ const TURNSTILE_SITEVERIFY_PATHS = [
   '*.context.turnstile.response.body',
   '*.cause.turnstile.request.body',
   '*.cause.turnstile.response.body',
+  'altcha.hmacKey',
+  '*.altcha.hmacKey',
+  '*.context.altcha.hmacKey',
+  '*.cause.altcha.hmacKey',
 ] as const
 
 /**

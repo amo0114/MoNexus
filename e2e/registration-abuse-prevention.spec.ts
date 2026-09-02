@@ -112,7 +112,7 @@ test('prepares a one-time in-memory Turnstile proof before registration submissi
   expect(registerPayload).toMatchObject({
     email: profile.email,
     password: 'TestPass123!',
-    turnstileToken: proof,
+    humanVerification: { provider: 'turnstile', payload: proof },
   })
   const stored = await page.evaluate(() => localStorage.getItem('monexus-auth') ?? '')
   expect(stored).not.toContain(proof)
@@ -149,7 +149,7 @@ test('binds password-reset proofs to the forgot_password action without persisti
   await expect(page.getByRole('heading', { name: '请查收邮件' })).toBeVisible()
   expect(forgotPasswordPayload).toEqual({
     email: 'reset-ui@test.local',
-    turnstileToken: proof,
+    humanVerification: { provider: 'turnstile', payload: proof },
   })
   const stored = await page.evaluate(() => localStorage.getItem('monexus-auth') ?? '')
   expect(stored).not.toContain(proof)

@@ -14,6 +14,13 @@ export const httpRequestsTotal = new client.Counter({
   registers: [registry],
 })
 
+export const rateLimitedTotal = new client.Counter({
+  name: 'monexus_rate_limited_total',
+  help: 'HTTP 429 responses by limiter name and coarse route group; labels never include raw IP',
+  labelNames: ['limiter', 'route_group'] as const,
+  registers: [registry],
+})
+
 export const httpRequestDuration = new client.Histogram({
   name: 'monexus_http_request_duration_seconds',
   help: 'HTTP request duration in seconds by method, route, and status code',

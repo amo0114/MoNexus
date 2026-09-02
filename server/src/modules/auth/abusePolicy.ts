@@ -21,6 +21,15 @@ export const REGISTRATION_PROVIDER_PREFLIGHT_BUCKETS = [
   { flow: 'registration-preflight', dimension: 'ip', limit: 20, windowMs: 10 * MINUTE_MS },
 ] as const satisfies readonly AbuseLimiterBucket[]
 
+/**
+ * Independent of registration-preflight. Generous enough for page refresh and
+ * one expiry retry, but still bounds infinite challenge minting per IP.
+ */
+export const HUMAN_CHALLENGE_ISSUE_BUCKETS = [
+  { flow: 'human-challenge', dimension: 'ip', limit: 30, windowMs: MINUTE_MS },
+  { flow: 'human-challenge', dimension: 'ip', limit: 120, windowMs: 10 * MINUTE_MS },
+] as const satisfies readonly AbuseLimiterBucket[]
+
 export const REGISTRATION_ATTEMPT_BUCKETS = [
   { flow: 'registration', dimension: 'ip', limit: 5, windowMs: HOUR_MS },
   { flow: 'registration', dimension: 'ip', limit: 20, windowMs: DAY_MS },
@@ -80,6 +89,10 @@ function withSubject(buckets: readonly AbuseLimiterBucket[], subject: string | n
 
 export function consumeRegistrationProviderPreflight(ip: string, limiter?: AbuseLimiter) {
   return consumeAbusePolicy(withSubject(REGISTRATION_PROVIDER_PREFLIGHT_BUCKETS, ip), limiter)
+}
+
+export function consumeHumanChallengeIssue(ip: string, limiter?: AbuseLimiter) {
+  return consumeAbusePolicy(withSubject(HUMAN_CHALLENGE_ISSUE_BUCKETS, ip), limiter)
 }
 
 /** Call only after Turnstile succeeds and before bcrypt or any DB write. */

@@ -4,7 +4,11 @@
 
 该流程面向当前的 Docker Compose VPS。它取代人工登录后 `git pull`、编辑
 `.env`、拉镜像和重启容器的日常发布方式，但不会取代数据库备份/恢复演练，也
-不会自动回滚数据库迁移。
+不会自动回滚数据库迁移。GitHub Actions **不会**改写 VPS `.env`，也不是
+PLAN_ID `d91c84ec` 的发布授权：第一次上线须在私有 `.env` 钉死
+`HUMAN_VERIFICATION_PROVIDER=turnstile`，OpenResty / ALTCHA 切流见
+[d91c84ec 运维收口](./d91c84ec-ops-closure.md)。金丝雀证据在授权窗口前一律
+`PENDING`。
 
 ## 发布路径
 

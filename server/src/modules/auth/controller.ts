@@ -4,6 +4,7 @@ import { HttpError, unauthenticated } from '../../lib/httpError.js'
 import { logger } from '../../lib/logger.js'
 import * as authService from './service.js'
 import * as sessionService from './sessionService.js'
+import type { HumanVerificationAction } from './humanVerification.js'
 
 function currentSessionId(req: Request) {
   if (typeof req.user?.sid !== 'string') throw unauthenticated('登录会话已失效，请重新登录')
@@ -23,10 +24,10 @@ function isPasswordResetProtectionError(error: unknown): error is HttpError {
 
 export async function register(req: Request, res: Response, next: NextFunction) {
   try {
-    const { email, password, inviteCode, turnstileToken, agreements, nickname } = req.body
+    const { email, password, inviteCode, turnstileToken, humanVerification, agreements, nickname } = req.body
     const result = await authService.registerUser(
       email, password, inviteCode,
-      req.ip, req.headers['user-agent'], turnstileToken, agreements,
+      req.ip, req.headers['user-agent'], { humanVerification, turnstileToken }, agreements,
       nickname,
     )
     setRefreshTokenCookie(res, result.refreshToken, result.refreshTokenMaxAgeMs)
@@ -42,6 +43,19 @@ export async function registrationStatus(_req: Request, res: Response, next: Nex
     // 开关是运营实时状态：任何中间缓存都会让访客看到已经作废的注册入口。
     res.set('Cache-Control', 'no-store')
     res.json(status)
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function humanChallenge(req: Request, res: Response, next: NextFunction) {
+  res.set('Cache-Control', 'no-store')
+  try {
+    const challenge = await authService.issueHumanChallenge(
+      req.query.action as HumanVerificationAction,
+      req.ip,
+    )
+    res.json(challenge)
   } catch (err) {
     next(err)
   }
@@ -212,7 +226,10 @@ export async function revokeOtherSessions(req: Request, res: Response, next: Nex
 // endpoint while still letting real users get a reset link.
 export async function forgotPassword(req: Request, res: Response, next: NextFunction) {
   try {
-    await authService.requestPasswordReset(req.body.email, req.ip, req.body.turnstileToken)
+    await authService.requestPasswordReset(req.body.email, req.ip, {
+      humanVerification: req.body.humanVerification,
+      turnstileToken: req.body.turnstileToken,
+    })
   } catch (err) {
     if (isPasswordResetProtectionError(err)) {
       next(err)

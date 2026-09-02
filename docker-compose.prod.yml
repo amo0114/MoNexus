@@ -53,11 +53,10 @@ services:
       # STORAGE_ENDPOINT at AWS S3, R2, OSS, etc. The server's config
       # validator will refuse to boot in production if any of the four
       # core values is missing.
-      # Trust proxy hops: nginx (the web service in front of the server)
-      # sets X-Forwarded-For; TRUST_PROXY=1 lets express-rate-limit key on
-      # the real client IP instead of the nginx container's internal IP.
+      # Trust proxy hops: canonical integer only (0/1/2). Must match
+      # DEPLOY_TOPOLOGY (nginx=1, caddy=2, cloudflare_openresty_nginx=2).
       TRUST_PROXY: ${TRUST_PROXY:-1}
-      API_RATE_LIMIT_MAX: ${API_RATE_LIMIT_MAX:-300}
+      API_RATE_LIMIT_MAX: ${API_RATE_LIMIT_MAX:-1500}
       STORAGE_ENDPOINT: ${STORAGE_ENDPOINT:?STORAGE_ENDPOINT is required}
       STORAGE_REGION: ${STORAGE_REGION:-us-east-1}
       STORAGE_BUCKET: ${STORAGE_BUCKET:?STORAGE_BUCKET is required}
@@ -83,9 +82,14 @@ services:
       # boundary so the server cannot silently start without its dependencies.
       ABUSE_PROTECTION_MODE: ${ABUSE_PROTECTION_MODE:?ABUSE_PROTECTION_MODE is required (enforce in production)}
       ABUSE_HASH_KEY: ${ABUSE_HASH_KEY:?ABUSE_HASH_KEY is required (32-byte base64)}
-      TURNSTILE_SITE_KEY: ${TURNSTILE_SITE_KEY:?TURNSTILE_SITE_KEY is required}
-      TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:?TURNSTILE_SECRET_KEY is required}
-      TURNSTILE_ALLOWED_HOSTNAMES: ${TURNSTILE_ALLOWED_HOSTNAMES:?TURNSTILE_ALLOWED_HOSTNAMES is required}
+      HUMAN_VERIFICATION_PROVIDER: ${HUMAN_VERIFICATION_PROVIDER:-altcha}
+      ALTCHA_HMAC_KEY: ${ALTCHA_HMAC_KEY:-}
+      ALTCHA_MAX_NUMBER: ${ALTCHA_MAX_NUMBER:-100000}
+      ALTCHA_CHALLENGE_TTL_SEC: ${ALTCHA_CHALLENGE_TTL_SEC:-120}
+      ALTCHA_SOLVE_TIMEOUT_MS: ${ALTCHA_SOLVE_TIMEOUT_MS:-20000}
+      TURNSTILE_SITE_KEY: ${TURNSTILE_SITE_KEY:-}
+      TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:-}
+      TURNSTILE_ALLOWED_HOSTNAMES: ${TURNSTILE_ALLOWED_HOSTNAMES:-}
       # SPEC-LEGAL-001: keep the public documents and consent policy explicit
       # at the Compose boundary. Production configuration rejects enabled pages
       # without enforce, and rejects fixture documents entirely.

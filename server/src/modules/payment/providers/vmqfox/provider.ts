@@ -29,12 +29,12 @@ import {
   VmqfoxClientError,
   type VmqfoxApi,
   type VmqfoxCreateData,
+  type VmqfoxGetData,
   type VmqfoxHttp,
   type VmqfoxQueryByPayIdData,
 } from './client.js'
 import {
   assertVmqfoxEnvironmentIsolation,
-  isAllowedCheckoutRedirect,
   isValidPublicToken,
   isVmqfoxPaymentMethod,
   VMQFOX_CAPABILITY_VERSION,
@@ -44,6 +44,7 @@ import {
   type VmqfoxAdapterConfig,
   type VmqfoxPaymentMethod,
 } from './config.js'
+import { validateVmqfoxPayUrl } from './payUrl.js'
 import { paymentFromGet, paymentFromQuery } from './normalize.js'
 import { verifyAndNormalizeNotify } from './webhook.js'
 import { recordMonitorOffline, recordQueryByPayIdRecovery } from '../../metrics.js'
@@ -97,16 +98,16 @@ class VmqfoxCreateUnusableError extends Error {
   }
 }
 
-function checkoutRedirectAction(origin: string, publicToken: string, now: Date): Extract<ProviderPaymentAction['action'], { type: 'redirect' }> {
+function nativeQrAction(payUrl: string, now: Date): Extract<ProviderPaymentAction['action'], { type: 'qr_code' }> {
   return {
-    type: 'redirect',
-    url: `${origin}/#/payment/${publicToken}`,
+    type: 'qr_code',
+    content: payUrl,
+    display: 'text',
     expiresAt: new Date(now.getTime() + ORDER_TTL_MS).toISOString(),
   }
 }
 
 function actionFromCreate(
-  config: VmqfoxAdapterConfig,
   input: CreateProviderPaymentInput,
   method: VmqfoxPaymentMethod,
   data: VmqfoxCreateData,
@@ -138,51 +139,68 @@ function actionFromCreate(
   if (!isValidPublicToken(data.publicToken)) {
     throw new VmqfoxCreateUnusableError(data)
   }
-  if (!isAllowedCheckoutRedirect(data.redirectUrl, config.allowedOrigins)) {
+  const payUrl = data.payUrl == null ? null : validateVmqfoxPayUrl(method, data.payUrl)
+  if (!payUrl) {
     logger.error({
-      event: 'payment.vmqfox_redirect_rejected',
+      event: 'payment.vmqfox_payurl_rejected',
       provider: 'vmqfox',
-    }, 'vmqfox checkout URL failed origin allowlist')
+    }, 'vmqfox payUrl failed allowlist')
     throw new VmqfoxCreateUnusableError(data)
   }
   return {
     status: 'requires_action',
     providerPaymentId: data.payId,
     providerOrderId: data.publicToken,
-    action: {
-      type: 'redirect',
-      url: data.redirectUrl,
-      expiresAt: new Date(now.getTime() + ORDER_TTL_MS).toISOString(),
-    },
+    action: nativeQrAction(payUrl, now),
     requestIdempotencyKey: input.requestIdempotencyKey,
     amountMinor: payableMinor,
   }
 }
 
-/**
- * Create recovery only attaches checkout identity. It never stamps local
- * succeeded/failed; payment success still requires an observation.
- */
-function actionFromQuery(
-  config: VmqfoxAdapterConfig,
+function queryMatchesAttempt(
   input: CreateProviderPaymentInput,
   method: VmqfoxPaymentMethod,
   data: VmqfoxQueryByPayIdData,
-  now: Date,
-): ProviderPaymentAction | null {
-  if (data.type !== Number(VMQFOX_PAY_TYPE[method])) return null
+): boolean {
+  if (data.type !== Number(VMQFOX_PAY_TYPE[method])) return false
+  if (!isValidPublicToken(data.publicToken)) return false
   try {
     const quotedMinor = yuanStringToAmountMinor(data.price)
     const payableMinor = yuanStringToAmountMinor(data.reallyPrice)
+    return quotedMinor === input.amountMinor && payableMinor > 0n
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Create recovery binds the original payId/publicToken and emits a QR action
+ * only after GET payUrl is allowlisted. It never stamps local succeeded/failed
+ * and never falls back to a VMQFox checkout redirect.
+ */
+function actionFromRecoveredGet(
+  input: CreateProviderPaymentInput,
+  method: VmqfoxPaymentMethod,
+  queried: VmqfoxQueryByPayIdData,
+  got: VmqfoxGetData,
+  now: Date,
+): ProviderPaymentAction | null {
+  if (got.payId !== input.paymentAttemptId) return null
+  if (got.payType !== queried.type) return null
+  if (got.payType !== Number(VMQFOX_PAY_TYPE[method])) return null
+  if (got.price !== queried.price || got.reallyPrice !== queried.reallyPrice) return null
+  try {
+    const quotedMinor = yuanStringToAmountMinor(got.price)
+    const payableMinor = yuanStringToAmountMinor(got.reallyPrice)
     if (quotedMinor !== input.amountMinor || payableMinor <= 0n) return null
-    if (!isValidPublicToken(data.publicToken)) return null
-    const redirect = checkoutRedirectAction(config.origin, data.publicToken, now)
-    if (!isAllowedCheckoutRedirect(redirect.url, config.allowedOrigins)) return null
+    if (!got.payUrl) return null
+    const payUrl = validateVmqfoxPayUrl(method, got.payUrl)
+    if (!payUrl) return null
     return {
       status: 'requires_action',
       providerPaymentId: input.paymentAttemptId,
-      providerOrderId: data.publicToken,
-      action: redirect,
+      providerOrderId: queried.publicToken,
+      action: nativeQrAction(payUrl, now),
       requestIdempotencyKey: input.requestIdempotencyKey,
       amountMinor: payableMinor,
     }
@@ -192,36 +210,16 @@ function actionFromQuery(
 }
 
 function bindCreateIdentity(
-  config: VmqfoxAdapterConfig,
   input: CreateProviderPaymentInput,
-  method: VmqfoxPaymentMethod,
   data: VmqfoxCreateData,
-  now: Date,
 ): ProviderPaymentAction | null {
   let payableMinor = 0n
-  let quotedOk = false
   try {
-    const quotedMinor = yuanStringToAmountMinor(data.price)
     payableMinor = yuanStringToAmountMinor(data.reallyPrice)
-    quotedOk = quotedMinor === input.amountMinor && payableMinor > 0n
   } catch {
     payableMinor = 0n
   }
   const token = isValidPublicToken(data.publicToken) ? data.publicToken : null
-  const typeOk = data.payType === Number(VMQFOX_PAY_TYPE[method])
-  if (quotedOk && typeOk && token) {
-    const redirect = checkoutRedirectAction(config.origin, token, now)
-    if (isAllowedCheckoutRedirect(redirect.url, config.allowedOrigins)) {
-      return {
-        status: 'requires_action',
-        providerPaymentId: input.paymentAttemptId,
-        providerOrderId: token,
-        action: redirect,
-        requestIdempotencyKey: input.requestIdempotencyKey,
-        amountMinor: payableMinor,
-      }
-    }
-  }
   if (data.payId !== input.paymentAttemptId && !token && payableMinor <= 0n) return null
   return {
     status: 'unknown',
@@ -254,8 +252,19 @@ export function createVmqfoxProvider(
     method: VmqfoxPaymentMethod,
   ): Promise<ProviderPaymentAction | null> {
     try {
-      const recovered = await api.queryByPayId(input.paymentAttemptId, now())
-      const action = actionFromQuery(config, input, method, recovered, now())
+      const queried = await api.queryByPayId(input.paymentAttemptId, now())
+      if (!queryMatchesAttempt(input, method, queried)) {
+        recordQueryByPayIdRecovery(VMQFOX_PROVIDER_NAME, 'unusable')
+        return null
+      }
+      let got: VmqfoxGetData
+      try {
+        got = await api.get(queried.publicToken)
+      } catch {
+        recordQueryByPayIdRecovery(VMQFOX_PROVIDER_NAME, 'failed')
+        return null
+      }
+      const action = actionFromRecoveredGet(input, method, queried, got, now())
       if (action) {
         recordQueryByPayIdRecovery(VMQFOX_PROVIDER_NAME, 'recovered')
         return action
@@ -296,7 +305,7 @@ export function createVmqfoxProvider(
       return {
         supportedCurrencies: ['CNY'],
         paymentMethods: VMQFOX_PAYMENT_METHODS,
-        actionTypes: ['redirect'],
+        actionTypes: ['qr_code'],
         supportsRefunds: false,
         supportsPartialRefund: false,
         supportsDisputes: false,
@@ -333,7 +342,7 @@ export function createVmqfoxProvider(
           notifyUrl: config.notifyUrl,
           returnUrl: input.returnUrl,
         })
-        return actionFromCreate(config, input, method, created, now())
+        return actionFromCreate(input, method, created, now())
       } catch (err) {
         if (err instanceof HttpError) throw err
         if (err instanceof VmqfoxClientError && isDeterministicFailKind(err.kind)) {
@@ -342,7 +351,7 @@ export function createVmqfoxProvider(
         const recovered = await recoverCreate(input, method)
         if (recovered) return recovered
         if (err instanceof VmqfoxCreateUnusableError) {
-          const bound = bindCreateIdentity(config, input, method, err.data, now())
+          const bound = bindCreateIdentity(input, err.data)
           if (bound) return bound
         }
         if (err instanceof VmqfoxClientError && isRetryableUnknownKind(err.kind)) {

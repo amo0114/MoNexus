@@ -151,6 +151,24 @@ function parseAbuseHashKey(value: string | undefined): Buffer | undefined {
   return parseCanonicalBase64Key(value)
 }
 
+function parseAltchaHmacKey(value: string | undefined): Buffer | undefined {
+  return parseCanonicalBase64Key(value)
+}
+
+function hmacKeyReusesOtherSecret(
+  key: Buffer,
+  jwtSecret: string | undefined,
+  mfaKey: Buffer | undefined,
+  abuseKey: Buffer | undefined,
+): boolean {
+  if (mfaKey && key.equals(mfaKey)) return true
+  if (abuseKey && key.equals(abuseKey)) return true
+  if (!jwtSecret) return false
+  if (key.toString('base64') === jwtSecret || key.toString('utf8') === jwtSecret) return true
+  const jwtAsKey = parseCanonicalBase64Key(jwtSecret)
+  return Boolean(jwtAsKey && key.equals(jwtAsKey))
+}
+
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().default(3000),
@@ -168,20 +186,22 @@ const envSchema = z.object({
   // suite (which shares one IP) doesn't trip the limiter mid-run.
   API_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(300),
 
-  // --- Trust proxy hop count. In production behind nginx the server sees
-  // requests from the proxy's internal IP; setting this to the number of
-  // trusted hops lets Express parse X-Forwarded-For (set by nginx) so
-  // express-rate-limit keys on the real client IP instead of treating
-  // every request as coming from nginx. Accepts a non-negative integer
-  // (e.g. 1 for a single nginx hop) or false to disable.
-  TRUST_PROXY: z
-    .preprocess(value => {
-      if (value === undefined || value === '') return undefined
-      if (value === 'true') return true
-      if (value === 'false') return false
-      return value
-    }, z.union([z.coerce.number().int().min(0), z.boolean()]))
-    .default(false),
+  // --- Trust proxy hop count. Canonical decimal 0/1/2 only. Empty defaults
+  // to 0 (direct connections). Boolean true/false, decimals, whitespace,
+  // leading zeros, and scientific notation are rejected so they cannot coerce
+  // to the wrong hop count (production `true` previously became 1).
+  TRUST_PROXY: z.preprocess(value => {
+    if (value === undefined || value === '') return 0
+    if (typeof value === 'string' && /^(0|[1-9][0-9]*)$/.test(value)) return Number(value)
+    return value
+  }, z.number().int().min(0).max(2)),
+
+  // Deploy topology for hop matching and startup logs. check-prod-env.sh
+  // enforces the hop table; the server records the enum and numeric hop count.
+  DEPLOY_TOPOLOGY: z.preprocess(value => {
+    if (value === undefined || value === '') return undefined
+    return value
+  }, z.enum(['nginx', 'caddy', 'cloudflare_openresty_nginx']).default('nginx')),
 
   // --- Object storage (P0-C). All optional: when any are missing the
   // server falls back to an in-memory adapter that's only safe for dev
@@ -232,6 +252,14 @@ const envSchema = z.object({
   // production always requires enforce plus the dependent infrastructure.
   ABUSE_PROTECTION_MODE: abuseProtectionModeEnvSchema,
   ABUSE_HASH_KEY: optionalStringEnvSchema,
+  HUMAN_VERIFICATION_PROVIDER: z.preprocess(value => {
+    if (value === undefined || value === '') return undefined
+    return value
+  }, z.enum(['off', 'altcha', 'turnstile']).default('altcha')),
+  ALTCHA_HMAC_KEY: optionalStringEnvSchema,
+  ALTCHA_MAX_NUMBER: integerEnvSchema(1, 10_000_000, 100_000),
+  ALTCHA_CHALLENGE_TTL_SEC: integerEnvSchema(30, 600, 120),
+  ALTCHA_SOLVE_TIMEOUT_MS: integerEnvSchema(1_000, 120_000, 20_000),
   TURNSTILE_SITE_KEY: optionalStringEnvSchema,
   TURNSTILE_SECRET_KEY: optionalStringEnvSchema,
   TURNSTILE_ALLOWED_HOSTNAMES: optionalStringEnvSchema,
@@ -383,9 +411,11 @@ if (!parsed.success) {
 const env = parsed.data
 const mfaEncryptionKey = parseMfaEncryptionKey(env.MFA_ENCRYPTION_KEY)
 const abuseHashKey = parseAbuseHashKey(env.ABUSE_HASH_KEY)
+const altchaHmacKey = parseAltchaHmacKey(env.ALTCHA_HMAC_KEY)
 const turnstileAllowedHostnames = parseTurnstileAllowedHostnames(env.TURNSTILE_ALLOWED_HOSTNAMES)
 const turnstileSiteKey = env.TURNSTILE_SITE_KEY?.trim() || undefined
 const turnstileSecretKey = env.TURNSTILE_SECRET_KEY?.trim() || undefined
+const humanVerificationProvider = env.HUMAN_VERIFICATION_PROVIDER
 
 if (env.MFA_ENCRYPTION_KEY && !mfaEncryptionKey) {
   console.error('[Config] MFA_ENCRYPTION_KEY must be canonical base64 for exactly 32 bytes')
@@ -394,6 +424,11 @@ if (env.MFA_ENCRYPTION_KEY && !mfaEncryptionKey) {
 
 if (env.ABUSE_HASH_KEY && !abuseHashKey) {
   console.error('[Config] ABUSE_HASH_KEY must be canonical base64 for exactly 32 bytes')
+  process.exit(1)
+}
+
+if (env.ALTCHA_HMAC_KEY && !altchaHmacKey) {
+  console.error('[Config] ALTCHA_HMAC_KEY must be canonical base64 for exactly 32 bytes')
   process.exit(1)
 }
 
@@ -407,6 +442,10 @@ if (env.NODE_ENV === 'production' && !mfaEncryptionKey) {
   process.exit(1)
 }
 
+if (env.NODE_ENV === 'production' && env.TRUST_PROXY === 0) {
+  console.error('[Config] TRUST_PROXY=0 is not allowed in production; set a hop count of 1 or 2')
+  process.exit(1)
+}
 if (env.NODE_ENV === 'production' && !env.COOKIE_SECURE) {
   console.error('[Config] COOKIE_SECURE must be true in production')
   process.exit(1)
@@ -414,8 +453,35 @@ if (env.NODE_ENV === 'production' && !env.COOKIE_SECURE) {
 
 // Registration and user-mail protection is a security dependency in
 // production. Do not permit a deploy to silently start in "off" mode or to
-// claim enforcement without the independent HMAC key, a real Turnstile
-// verifier configuration, and a shared required Redis service.
+// claim enforcement without the independent HMAC key, a real human-verification
+// provider, and a shared required Redis service. HUMAN_VERIFICATION_PROVIDER=off
+// is only a non-production/test escape hatch.
+function assertHumanVerificationProviderConfig() {
+  const productionOrEnforce = env.NODE_ENV === 'production' || env.ABUSE_PROTECTION_MODE === 'enforce'
+  if (!productionOrEnforce) return
+
+  if (humanVerificationProvider === 'off') {
+    console.error('[Config] HUMAN_VERIFICATION_PROVIDER=off is only allowed in non-production/test when ABUSE_PROTECTION_MODE is not enforce')
+    process.exit(1)
+  }
+  if (humanVerificationProvider === 'altcha') {
+    if (!altchaHmacKey) {
+      console.error('[Config] ALTCHA_HMAC_KEY is required when HUMAN_VERIFICATION_PROVIDER=altcha and must be base64 for exactly 32 bytes')
+      process.exit(1)
+    }
+    if (hmacKeyReusesOtherSecret(altchaHmacKey, env.JWT_SECRET, mfaEncryptionKey, abuseHashKey)) {
+      console.error('[Config] ALTCHA_HMAC_KEY must be independent of JWT_SECRET, MFA_ENCRYPTION_KEY, and ABUSE_HASH_KEY')
+      process.exit(1)
+    }
+  }
+  if (humanVerificationProvider === 'turnstile') {
+    if (!turnstileSiteKey || !turnstileSecretKey || !turnstileAllowedHostnames?.length) {
+      console.error('[Config] TURNSTILE_SITE_KEY, TURNSTILE_SECRET_KEY, and TURNSTILE_ALLOWED_HOSTNAMES are required when HUMAN_VERIFICATION_PROVIDER=turnstile')
+      process.exit(1)
+    }
+  }
+}
+
 if (env.NODE_ENV === 'production') {
   if (env.ABUSE_PROTECTION_MODE !== 'enforce') {
     console.error('[Config] ABUSE_PROTECTION_MODE must be enforce in production')
@@ -425,15 +491,13 @@ if (env.NODE_ENV === 'production') {
     console.error('[Config] ABUSE_HASH_KEY is required in production and must be base64 for exactly 32 bytes')
     process.exit(1)
   }
-  if (!turnstileSiteKey || !turnstileSecretKey || !turnstileAllowedHostnames?.length) {
-    console.error('[Config] TURNSTILE_SITE_KEY, TURNSTILE_SECRET_KEY, and TURNSTILE_ALLOWED_HOSTNAMES are required in production')
-    process.exit(1)
-  }
   if (!env.REDIS_ENABLED || !env.REDIS_REQUIRED) {
     console.error('[Config] REDIS_ENABLED and REDIS_REQUIRED must be true when ABUSE_PROTECTION_MODE=enforce in production')
     process.exit(1)
   }
 }
+
+assertHumanVerificationProviderConfig()
 
 // /api/metrics is mounted before the general API rate limiter so a missing
 // token would otherwise make operational details publicly scrapeable. The
@@ -747,6 +811,7 @@ export const config = {
   userStatusCacheTtlSec: env.USER_STATUS_CACHE_TTL_SEC,
   apiRateLimitMax: env.API_RATE_LIMIT_MAX,
   trustProxy: env.TRUST_PROXY,
+  deployTopology: env.DEPLOY_TOPOLOGY,
   jwtExpiresIn: '15m' as const,
   refreshTokenMaxAgeMs: 7 * 24 * 60 * 60 * 1000,
   checkinReward: 50,
@@ -805,6 +870,13 @@ export const config = {
     : ({ kind: 'console' as const }),
   abuseProtectionMode: env.ABUSE_PROTECTION_MODE,
   abuseHashKey,
+  humanVerificationProvider,
+  altcha: {
+    hmacKey: altchaHmacKey,
+    maxNumber: env.ALTCHA_MAX_NUMBER,
+    challengeTtlSec: env.ALTCHA_CHALLENGE_TTL_SEC,
+    solveTimeoutMs: env.ALTCHA_SOLVE_TIMEOUT_MS,
+  },
   turnstile: {
     siteKey: turnstileSiteKey,
     secretKey: turnstileSecretKey,

@@ -61,7 +61,8 @@ At minimum replace all placeholders and set these values:
 FRONTEND_ORIGIN=https://monexus.oai-o.com
 APP_BASE_URL=https://monexus.oai-o.com
 COOKIE_SECURE=true
-TRUST_PROXY=1
+DEPLOY_TOPOLOGY=caddy
+TRUST_PROXY=2
 
 # docker-compose.vps.yml binds this only to loopback. Host Caddy owns :80/:443.
 # Change this if the host already uses 18089, and update the Caddy upstream too.
@@ -85,13 +86,17 @@ POSTGRES_DB=monexus
 JWT_SECRET=<at-least-32-character-random-secret>
 REDIS_PASSWORD=<strong-unique-password>
 # Registration abuse protection is fail-closed after SPEC-RAP-001. Generate
-# ABUSE_HASH_KEY separately from JWT/MFA keys; use a production Turnstile
-# widget whose hostname list contains exactly monexus.oai-o.com.
+# ABUSE_HASH_KEY and ALTCHA_HMAC_KEY separately from JWT/MFA keys and from
+# each other. Default production provider is same-origin ALTCHA. Turnstile
+# remains an optional adapter, not the only production path.
 ABUSE_PROTECTION_MODE=enforce
 ABUSE_HASH_KEY=<independent-32-byte-standard-base64-secret>
-TURNSTILE_SITE_KEY=<production-turnstile-site-key>
-TURNSTILE_SECRET_KEY=<production-turnstile-secret-key>
-TURNSTILE_ALLOWED_HOSTNAMES=monexus.oai-o.com
+HUMAN_VERIFICATION_PROVIDER=altcha
+ALTCHA_HMAC_KEY=<independent-32-byte-standard-base64-secret>
+# Optional Turnstile adapter. Required only while HUMAN_VERIFICATION_PROVIDER=turnstile.
+# TURNSTILE_SITE_KEY=<production-turnstile-site-key>
+# TURNSTILE_SECRET_KEY=<production-turnstile-secret-key>
+# TURNSTILE_ALLOWED_HOSTNAMES=monexus.oai-o.com
 
 # SPEC-NOTIFY-001: enable after migration 20260807200000_order_notifications.
 # Must be mapped in docker-compose.prod.yml to reach the server container.

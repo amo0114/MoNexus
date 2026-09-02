@@ -1,5 +1,5 @@
-import { isIP } from 'node:net'
 import type { Prisma } from '@prisma/client'
+import { redactIpHint } from '../../lib/clientIp.js'
 import { badRequest, notFound, unauthenticated } from '../../lib/httpError.js'
 import { prisma } from '../../lib/prisma.js'
 import {
@@ -112,18 +112,6 @@ export async function createRefreshTokenRecord(input: CreateRefreshTokenInput, t
       ...(input.lastUsedAt === undefined ? {} : { lastUsedAt: input.lastUsedAt }),
     },
   })
-}
-
-function redactIpHint(ip: string | null) {
-  if (!ip) return '未知 IP'
-  const normalized = ip.trim().replace(/^::ffff:/i, '')
-  if (isIP(normalized) === 4) {
-    const [first, second, third] = normalized.split('.')
-    return `${first}.${second}.${third}.*`
-  }
-  // Keep IPv6 useful without revealing any stable address prefix.
-  if (isIP(normalized) === 6) return 'IPv6 地址'
-  return '未知 IP'
 }
 
 function sessionDeviceLabel(userAgent: string | null) {

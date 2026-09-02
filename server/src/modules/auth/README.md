@@ -8,8 +8,9 @@ and `/me`.
 
 | Method | Path | Auth | Notes |
 | --- | --- | :---: | --- |
-| GET | `/api/auth/registration-status` | — | Public no-store `{ registrationEnabled, registrationAvailable, challenge }`; only a safe Turnstile site key can appear in `challenge`. |
-| POST | `/api/auth/register` | — | Checks the registration switch, then (when enabled) Redis/Turnstile protection. Creates User + zero-balance PointAccount + held-ledger `GrowthReward`, never an immediate registration or referral PointLog. |
+| GET | `/api/auth/registration-status` | — | Public no-store `{ registrationEnabled, registrationAvailable, challenge }`. ALTCHA returns `{ provider:'altcha', challengeUrl }`; Turnstile returns only a safe site key. |
+| GET | `/api/auth/human-challenge` | — | Public no-store ALTCHA challenge. Query `action` is a server enum (`register` \| `forgot_password`). Client cannot choose algorithm, difficulty, callback, or provider. |
+| POST | `/api/auth/register` | — | Checks the registration switch, then (when enabled) Redis/human-verification protection. Proof is `humanVerification: { provider, payload }`; legacy `turnstileToken` works only while the configured provider is still turnstile. Creates User + zero-balance PointAccount + held-ledger `GrowthReward`, never an immediate registration or referral PointLog. |
 | POST | `/api/auth/login` | — | User/merchant succeeds with `200 AuthSession` + Cookie. Correct admin password returns only `202 MfaLoginChallenge`; it has no access token and never sets a refresh Cookie. |
 | POST | `/api/auth/mfa/enrollment/start` | Pre-auth challenge | Starts first admin TOTP enrollment and returns a provisioning URI/manual key for that active challenge only. These values are secrets and must stay in component memory. |
 | POST | `/api/auth/mfa/enrollment/confirm` | Pre-auth challenge | Correct factor atomically enables MFA, creates the first MFA session, and returns the one-time recovery-code display with `201`. |
@@ -21,7 +22,7 @@ and `/me`.
 | DELETE | `/api/auth/sessions/:sessionId` | Bearer | Revokes an owned, non-current family. Current session must use `/logout`; absent/non-owned IDs return 404. |
 | POST | `/api/auth/sessions/revoke-others` | Bearer | Revokes every other active family while retaining current. |
 | POST | `/api/auth/password-change` | Bearer | Requires current password and revokes all refresh sessions on success. |
-| POST | `/api/auth/forgot-password` | — | Requires a `forgot_password` Turnstile proof when abuse protection is enforced. Account lookup, reset quota, database, and SMTP outcomes remain a generic 200; challenge and protection-dependency errors are account-independent 400/403/503 responses so the browser can retry safely. |
+| POST | `/api/auth/forgot-password` | — | Requires a `forgot_password` human-verification proof when abuse protection is enforced. Account lookup, reset quota, database, and SMTP outcomes remain a generic 200; challenge and protection-dependency errors are account-independent 400/403/503 responses so the browser can retry safely. |
 | POST | `/api/auth/reset-password` | — | Uses email token and revokes all refresh sessions on success. |
 | POST | `/api/auth/send-verification` | Bearer | Applies shared Redis limits, invalidates earlier unused token, then sends a fragment-token verification email. |
 | POST | `/api/auth/verify-email` | Bearer | Atomically claims only the current user's token, marks `emailVerified`, and transitions eligible rewards to `held`. |

@@ -47,6 +47,8 @@ type ProtectionConfigSnapshot = {
   redisEnabled: typeof config.redisEnabled
   redisRequired: typeof config.redisRequired
   cacheKeyPrefix: typeof config.cacheKeyPrefix
+  humanVerificationProvider: typeof config.humanVerificationProvider
+  altchaHmacKey: typeof config.altcha.hmacKey
   siteKey: typeof config.turnstile.siteKey
   secretKey: typeof config.turnstile.secretKey
   allowedHostnames: typeof config.turnstile.allowedHostnames
@@ -61,6 +63,8 @@ function snapshotProtectionConfig(): ProtectionConfigSnapshot {
     redisEnabled: config.redisEnabled,
     redisRequired: config.redisRequired,
     cacheKeyPrefix: config.cacheKeyPrefix,
+    humanVerificationProvider: config.humanVerificationProvider,
+    altchaHmacKey: config.altcha.hmacKey,
     siteKey: config.turnstile.siteKey,
     secretKey: config.turnstile.secretKey,
     allowedHostnames: [...config.turnstile.allowedHostnames],
@@ -73,6 +77,8 @@ function restoreProtectionConfig(snapshot: ProtectionConfigSnapshot) {
   config.redisEnabled = snapshot.redisEnabled
   config.redisRequired = snapshot.redisRequired
   config.cacheKeyPrefix = snapshot.cacheKeyPrefix
+  config.humanVerificationProvider = snapshot.humanVerificationProvider
+  config.altcha.hmacKey = snapshot.altchaHmacKey
   config.turnstile.siteKey = snapshot.siteKey
   config.turnstile.secretKey = snapshot.secretKey
   config.turnstile.allowedHostnames = [...snapshot.allowedHostnames]
@@ -84,6 +90,7 @@ function enableProtection() {
   config.redisEnabled = true
   config.redisRequired = true
   config.cacheKeyPrefix = 'rap-auth-test'
+  config.humanVerificationProvider = 'turnstile'
   config.turnstile.siteKey = 'public-test-site-key'
   config.turnstile.secretKey = 'private-test-secret'
   config.turnstile.allowedHostnames = ['localhost']

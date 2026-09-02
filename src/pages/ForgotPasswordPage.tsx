@@ -4,10 +4,8 @@ import { Mail, ArrowLeft, CheckCircle2 } from 'lucide-react'
 import { useAppStore } from '../stores/appStore'
 import { forgotPassword, getRegistrationStatus, type RegistrationChallenge } from '../api/auth'
 import { getApiErrorCode, getApiErrorMessage } from '../api/error'
-import TurnstileWidget, {
-  preloadTurnstileScript,
-  type TurnstileWidgetHandle,
-} from '../components/auth/TurnstileWidget'
+import HumanVerificationWidget from '../components/auth/HumanVerificationWidget'
+import type { HumanVerificationHandle } from '../components/auth/humanVerificationTypes'
 
 type ProtectionState =
   | { kind: 'loading' }
@@ -16,28 +14,27 @@ type ProtectionState =
 
 export default function ForgotPasswordPage() {
   const showToast = useAppStore((s) => s.showToast)
-  const turnstileRef = useRef<TurnstileWidgetHandle>(null)
+  const humanVerificationRef = useRef<HumanVerificationHandle>(null)
   const [email, setEmail] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
-  const [turnstileReady, setTurnstileReady] = useState(false)
+  const [verificationReady, setVerificationReady] = useState(false)
   const [protectionRefresh, setProtectionRefresh] = useState(0)
   const [protectionState, setProtectionState] = useState<ProtectionState>({ kind: 'loading' })
 
   useEffect(() => {
     let active = true
     setProtectionState({ kind: 'loading' })
-    setTurnstileReady(false)
+    setVerificationReady(false)
 
     getRegistrationStatus()
       .then((status) => {
         if (!active) return
 
-        // registration-status exposes only the browser-safe site key. The
-        // password-reset widget supplies its own action, so a registration
+        // registration-status exposes only the browser-safe provider descriptor.
+        // The password-reset widget supplies its own action, so a registration
         // proof cannot be replayed here.
         if (status.challenge) {
-          void preloadTurnstileScript().catch(() => undefined)
           setProtectionState({ kind: 'ready', challenge: status.challenge })
           return
         }
@@ -69,14 +66,14 @@ export default function ForgotPasswordPage() {
       return
     }
 
-    let turnstileToken: string | undefined
+    let humanVerification: { provider: 'altcha' | 'turnstile'; payload: string } | undefined
     if (protectionState.challenge) {
-      if (!turnstileRef.current || !turnstileReady) {
+      if (!humanVerificationRef.current || !verificationReady) {
         showToast('安全验证仍在准备，请稍后重试', 'error')
         return
       }
       try {
-        turnstileToken = await turnstileRef.current.requestToken()
+        humanVerification = await humanVerificationRef.current.requestProof()
       } catch {
         showToast('请完成安全验证后重试', 'error')
         return
@@ -89,11 +86,11 @@ export default function ForgotPasswordPage() {
       // React state, Zustand, browser storage, URLs, or logs.
       await forgotPassword({
         email,
-        ...(turnstileToken ? { turnstileToken } : {}),
+        ...(humanVerification ? { humanVerification } : {}),
       })
       setSubmitted(true)
     } catch (err) {
-      turnstileRef.current?.reset()
+      humanVerificationRef.current?.reset()
       const code = getApiErrorCode(err)
       if (code === 'HUMAN_VERIFICATION_REQUIRED' || code === 'HUMAN_VERIFICATION_FAILED') {
         showToast('请完成安全验证后重试', 'error')
@@ -150,17 +147,20 @@ export default function ForgotPasswordPage() {
                 type="email"
                 placeholder="邮箱地址"
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                onChange={(e) => {
+                  setEmail(e.target.value)
+                  humanVerificationRef.current?.reset()
+                }}
                 required
                 className="input"
                 disabled={submitting}
               />
               {protectionState.kind === 'ready' && protectionState.challenge && (
-                <TurnstileWidget
-                  ref={turnstileRef}
-                  siteKey={protectionState.challenge.siteKey}
+                <HumanVerificationWidget
+                  ref={humanVerificationRef}
+                  descriptor={protectionState.challenge}
                   action="forgot_password"
-                  onReadyChange={setTurnstileReady}
+                  onReadyChange={setVerificationReady}
                 />
               )}
               {protectionState.kind === 'loading' && (
@@ -185,13 +185,13 @@ export default function ForgotPasswordPage() {
                 disabled={
                   submitting
                   || protectionState.kind !== 'ready'
-                  || Boolean(protectionState.challenge && !turnstileReady)
+                  || Boolean(protectionState.challenge && !verificationReady)
                 }
                 className="btn-primary w-full"
               >
                 {submitting
                   ? '发送中...'
-                  : protectionState.kind === 'ready' && protectionState.challenge && !turnstileReady
+                  : protectionState.kind === 'ready' && protectionState.challenge && !verificationReady
                     ? '安全验证准备中…'
                     : '发送重置链接'}
               </button>

@@ -1816,16 +1816,20 @@ steps at `monexus.oai-o.com` or reuse any production secret, database, Redis,
 SMTP sender, or object-storage bucket.
 
 Production registration protection is deliberately fail-closed. Do not "fix" an
-outage by setting `ABUSE_PROTECTION_MODE=off`: production startup and preflight
-both require `enforce`, a required Redis client, the independent HMAC key, and
-the three Turnstile settings.
+outage by setting `ABUSE_PROTECTION_MODE=off` or `HUMAN_VERIFICATION_PROVIDER=off`:
+production startup and preflight both require `enforce`, a required Redis client,
+the independent `ABUSE_HASH_KEY`, and a selected human-verification provider.
+The default production provider is same-origin ALTCHA with an independent
+`ALTCHA_HMAC_KEY`. Turnstile remains an optional adapter (`HUMAN_VERIFICATION_PROVIDER=turnstile`)
+and is not the only production path.
 
 ### Preflight and rollout order
 
 1. Put values in the deployment secret store / private environment file. Never
    paste values into a shell command, ticket, browser console, screenshot, or
-   this runbook. The public Turnstile site key is configuration, but the
-   Turnstile secret and `ABUSE_HASH_KEY` remain secrets.
+   this runbook. `ALTCHA_HMAC_KEY` and `ABUSE_HASH_KEY` remain secrets. If the
+   optional Turnstile adapter is still enabled, its secret also remains a
+   secret; a Turnstile site key may appear only in the public challenge DTO.
 2. From the release checkout, run the preflight without printing the env file:
 
    ```bash
@@ -1834,26 +1838,47 @@ the three Turnstile settings.
    ```
 
    It must confirm production `ABUSE_PROTECTION_MODE=enforce`, canonical
-   32-byte base64 `ABUSE_HASH_KEY`, exact `TURNSTILE_ALLOWED_HOSTNAMES`, and
-   Redis-required settings. Resolve a failure before migration or rollout.
+   32-byte base64 `ABUSE_HASH_KEY`, `HUMAN_VERIFICATION_PROVIDER=altcha` with
+   an independent canonical `ALTCHA_HMAC_KEY` (or `turnstile` with the existing
+   site/secret/hostname trio), and Redis-required settings. Resolve a failure
+   before migration or rollout.
 3. Apply the normal forward-only Prisma migration, deploy the backend, and
    check readiness. Do not manually edit the reward-ledger migration or delete
    ledger rows as a rollback shortcut.
+
+   Rolling cutover from Turnstile to ALTCHA (PLAN_ID `d91c84ec` first
+   production window **stops after step 2**. Step 3 needs a second written
+   authorization. See `docs/operations/d91c84ec-ops-closure.md`):
+
+   1. Deploy a compatible backend that still has `HUMAN_VERIFICATION_PROVIDER=turnstile`.
+   2. Deploy the descriptor frontend and prove registration still works with
+      Turnstile (`registration-status.challenge.provider` is `turnstile`).
+   3. Write an independent `ALTCHA_HMAC_KEY`, switch `HUMAN_VERIFICATION_PROVIDER=altcha`,
+      and rebuild/redeploy the server only. Frontend already understands both
+      descriptors.
+
+   Rollback: switch `HUMAN_VERIFICATION_PROVIDER=turnstile` first (Turnstile
+   secrets must still be present), then roll images if needed. Never turn
+   protection off.
 4. From the real staging browser hostname, open the login page and verify:
 
    - `GET /api/auth/registration-status` returns `registrationEnabled: true`,
-     `registrationAvailable: true`, and only the public Turnstile challenge
-     descriptor;
-   - a valid Turnstile completion can register an isolated test user;
+     `registrationAvailable: true`, and the configured provider descriptor
+     (`{ provider: "altcha", challengeUrl: "/api/auth/human-challenge?action=register" }`
+     by default, or the public Turnstile site key only if that adapter is still
+     selected);
+   - a valid same-origin ALTCHA (or still-selected Turnstile) completion can
+     register an isolated test user;
    - a deliberately invalid challenge is rejected with no user/account/reward
      rows; and
    - SMTP catcher receives a fragment-token verification link, while the URL
      sent to the backend contains no token query parameter.
 5. Keep `emailVerificationRequiredForValue=0` through the initial protection
-   observation window. After at least 24 hours of healthy Redis, Turnstile,
-   mail, and error-rate monitoring, enable it with the MFA-protected system
-   config API/UI. This gate controls value actions only; it must not block
-   login, password recovery, email verification, browsing, or support reads.
+   observation window. After at least 24 hours of healthy Redis, human
+   verification, mail, and error-rate monitoring, enable it with the
+   MFA-protected system config API/UI. This gate controls value actions only;
+   it must not block login, password recovery, email verification, browsing, or
+   support reads.
 
 ### Delayed reward reconciliation
 
@@ -1883,9 +1908,12 @@ audited point-adjustment process and attach the same incident ticket.
 - **Registration attack / spam spike:** set `registrationEnabled=0` using the
   MFA-protected configuration panel, preserve logs/events, triage the affected
   pending rewards, then reopen only after the attack path is understood.
-- **Redis or Turnstile outage:** leave protection in enforce mode and keep
-  registration closed while the dependency is repaired. A 503 with zero
-  registration/mail side effects is the expected safe behaviour.
+- **Redis or human-verification outage:** leave protection in enforce mode and
+  keep registration closed while the dependency is repaired. A 503 with zero
+  registration/mail side effects is the expected safe behaviour. Do not switch
+  the provider to `off`. If ALTCHA is unhealthy and Turnstile credentials are
+  still present, the supported rollback is `HUMAN_VERIFICATION_PROVIDER=turnstile`
+  then image rollback.
 - **Mail delivery issue:** use the existing admin mail status/test workflow and
   SMTP catcher/provider evidence. Do not log, paste, or forward verification
   fragments or mail tokens.
