@@ -134,6 +134,19 @@ grep -Fq 'flush_interval -1' "${ROOT_DIR}/deploy/staging/Caddyfile" || \
 grep -Fq 'API_RATE_LIMIT_MAX: ${API_RATE_LIMIT_MAX:-300}' "${ROOT_DIR}/docker-compose.prod.yml" || \
   fail 'Compose must explicitly map the existing API rate-limit configuration.'
 for required_fragment in \
+  'PAYMENT_EVENT_ENCRYPTION_KEY: ${PAYMENT_EVENT_ENCRYPTION_KEY:-}' \
+  'PAYMENT_WEBHOOK_PUBLIC_BASE_URL: ${PAYMENT_WEBHOOK_PUBLIC_BASE_URL:-}' \
+  'VMQFOX_MODE: ${VMQFOX_MODE:-disabled}' \
+  'VMQFOX_BASE_URL: ${VMQFOX_BASE_URL:-}' \
+  'VMQFOX_ACCOUNT_KEY: ${VMQFOX_ACCOUNT_KEY:-vmqfox-primary}' \
+  'VMQFOX_MERCHANT_KEY: ${VMQFOX_MERCHANT_KEY:-}' \
+  'VMQFOX_MAX_AMOUNT_MINOR: ${VMQFOX_MAX_AMOUNT_MINOR:-100000}' \
+  'VMQFOX_REQUEST_TIMEOUT_MS: ${VMQFOX_REQUEST_TIMEOUT_MS:-5000}' \
+  'VMQFOX_PROTOCOL_VERSION: ${VMQFOX_PROTOCOL_VERSION:-2}'; do
+  grep -Fq "$required_fragment" "${ROOT_DIR}/docker-compose.prod.yml" || \
+    fail "Compose is missing required VMQFox production environment mapping: ${required_fragment%%:*}"
+done
+for required_fragment in \
   'profiles: [production-monitoring]' \
   'image: prom/alertmanager:v0.30.0@sha256:abb750ac7b63116761c16dd481ae92496fbe04721686c0920f0fa4d0728cd4a6' \
   'image: prom/prometheus:v3.5.0@sha256:63805ebb8d2b3920190daf1cb14a60871b16fd38bed42b857a3182bc621f4996' \
