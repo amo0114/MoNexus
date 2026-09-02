@@ -102,7 +102,7 @@
 | `NOTIFICATION_REALTIME_MAX_BUFFER_BYTES` | 65536 | 16384–1048576 | 慢消费者 buffer cap |
 | `NOTIFICATION_REALTIME_CONNECT_RATE_LIMIT_MAX` | 30 | 1–1000 | 每 IP 60s 建连限速 |
 | `NOTIFICATION_REALTIME_SHUTDOWN_GRACE_MS` | 5000 | 1000–9000 | SSE drain 宽限（< 10s 强退） |
-| `DEPLOY_TOPOLOGY` | nginx | nginx/caddy | 部署拓扑；realtime=true 时 nginx→`TRUST_PROXY=1`、caddy→`TRUST_PROXY=2`（check-prod-env 强制） |
+| `DEPLOY_TOPOLOGY` | nginx | nginx/caddy/cloudflare_openresty_nginx | 部署拓扑。hop 始终强制匹配：nginx→`TRUST_PROXY=1`，caddy 与 cloudflare_openresty_nginx→`TRUST_PROXY=2`。布尔 `true`/`false` 非法。 |
 
 全部进入根 / server `.env.example` 与 `docker-compose.prod.yml`（默认值同表）。
 

@@ -31,6 +31,8 @@ const PROD_BASE_ENV: Record<string, string> = {
   REDIS_REQUIRED: 'true',
   // P7b：生产必配；缺省会先于 Faka 守卫 process.exit(1)
   WEBHOOK_SECRET_ENC_KEY: 'a'.repeat(64),
+  DEPLOY_TOPOLOGY: 'nginx',
+  TRUST_PROXY: '1',
 }
 
 function loadConfigWith(overrides: Record<string, string | undefined>) {

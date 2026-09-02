@@ -559,27 +559,29 @@ check_realtime_int NOTIFICATION_REALTIME_MAX_BUFFER_BYTES 16384 1048576
 check_realtime_int NOTIFICATION_REALTIME_CONNECT_RATE_LIMIT_MAX 1 1000
 check_realtime_int NOTIFICATION_REALTIME_SHUTDOWN_GRACE_MS 1000 9000
 
-# canonical client IP (spec 8.1.1 / CHK-CFG-004): direct bundled Nginx = 1,
-# VPS Caddy overlay -> Nginx = 2. The SSE limiter keys on Express req.ip.
+# Canonical client IP: hop count is always required, not only when SSE is on.
+# nginx → bundled Nginx → Express = 1
+# caddy → Caddy → bundled Nginx → Express = 2
+# cloudflare_openresty_nginx → Cloudflare restores $remote_addr at OpenResty,
+# then OpenResty → bundled Nginx → Express = 2 (Cloudflare is not an Express hop).
 deploy_topology="$(get DEPLOY_TOPOLOGY)"
 case "$deploy_topology" in
-  ""|nginx) deploy_topology="nginx" ;;
-  caddy) ;;
-  *) fail "DEPLOY_TOPOLOGY must be nginx or caddy" ;;
+  nginx|caddy|cloudflare_openresty_nginx) ;;
+  *) fail "DEPLOY_TOPOLOGY must be nginx, caddy, or cloudflare_openresty_nginx" ;;
 esac
 trust_proxy="$(get TRUST_PROXY)"
-if [[ -n "$trust_proxy" ]]; then
-  case "$trust_proxy" in
-    0|1|2|true|false) ;;
-    *) fail "TRUST_PROXY must be 0/1/2 or true/false" ;;
-  esac
-fi
-if [[ "$realtime_enabled" == "true" ]]; then
-  if [[ "$deploy_topology" == "caddy" && "$trust_proxy" != "2" ]]; then
-    fail "realtime with Caddy overlay requires TRUST_PROXY=2"
-  elif [[ "$deploy_topology" == "nginx" && "$trust_proxy" != "1" ]]; then
-    fail "realtime with direct Nginx requires TRUST_PROXY=1"
-  fi
+case "$trust_proxy" in
+  0|1|2) ;;
+  true|false) fail "TRUST_PROXY must be 0/1/2; boolean true/false is no longer accepted" ;;
+  *) fail "TRUST_PROXY must be 0/1/2" ;;
+esac
+expected_hops=""
+case "$deploy_topology" in
+  nginx) expected_hops="1" ;;
+  caddy|cloudflare_openresty_nginx) expected_hops="2" ;;
+esac
+if [[ "$trust_proxy" != "$expected_hops" ]]; then
+  fail "DEPLOY_TOPOLOGY=$deploy_topology requires TRUST_PROXY=$expected_hops"
 fi
 
 if [[ "$errors" -gt 0 ]]; then
