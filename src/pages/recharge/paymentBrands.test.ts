@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  ALIPAY_LOGO_CIRCULAR_INTRINSIC,
   paymentQrCenterMark,
   QR_MARK_MAX_FRACTION,
   QR_VISUAL_SIZE_PX,
@@ -19,8 +20,20 @@ describe('paymentQrCenterMark', () => {
     expect(ratio).toBeCloseTo(intrinsic, 1)
   })
 
-  it('omits an Alipay center mark when no standalone official payment mark is verified (BLOCKED_CONCERN)', () => {
-    expect(paymentQrCenterMark('vmqfox', 'alipay')).toBeNull()
+  it('supplies the official Alipay circular mark within ~16% of the QR visual size', () => {
+    const mark = paymentQrCenterMark('vmqfox', 'alipay')
+    expect(mark).not.toBeNull()
+    expect(mark?.src).toMatch(/alipay-logo-circular/)
+    expect(mark!.width).toBeLessThanOrEqual(Math.ceil(QR_VISUAL_SIZE_PX * QR_MARK_MAX_FRACTION))
+    expect(mark!.height).toBeLessThanOrEqual(Math.ceil(QR_VISUAL_SIZE_PX * QR_MARK_MAX_FRACTION))
+    expect(mark!.width).toBe(mark!.height)
+    const ratio = mark!.width / mark!.height
+    const intrinsic = ALIPAY_LOGO_CIRCULAR_INTRINSIC.width / ALIPAY_LOGO_CIRCULAR_INTRINSIC.height
+    expect(ratio).toBeCloseTo(intrinsic, 1)
+    expect(ratio).toBeCloseTo(1, 5)
+  })
+
+  it('does not attach a center mark to non-QR Alipay checkout', () => {
     expect(paymentQrCenterMark('alipay', 'form_post')).toBeNull()
   })
 })

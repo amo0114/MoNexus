@@ -537,7 +537,7 @@ describe('RechargePage', () => {
     expect(screen.queryByTestId('recharge-qr')).not.toBeInTheDocument()
   })
 
-  it('renders an Alipay QR without a center mark and labels history without VMQFox', async () => {
+  it('renders an Alipay QR with the official circular center mark and labels history without VMQFox', async () => {
     getRechargeOrder.mockResolvedValue(order('pending_payment', {
       provider: 'vmqfox',
       paymentMethod: 'alipay',
@@ -550,7 +550,8 @@ describe('RechargePage', () => {
     }))
     const { container } = renderAt(`/recharge?order=${ORDER_ID}`)
     expect(await screen.findByRole('img', { name: '支付宝支付二维码' })).toBeInTheDocument()
-    expect(container.querySelector('#recharge-qr image, [data-testid="recharge-qr"] image')).toBeNull()
+    expect(container.querySelector('[data-testid="recharge-qr"] image')).toBeTruthy()
+    expect(container.querySelector('[data-testid="recharge-qr"] image')?.getAttribute('href') ?? '').toMatch(/alipay-logo-circular/)
     cleanup()
 
     listRechargeOrders.mockResolvedValue({

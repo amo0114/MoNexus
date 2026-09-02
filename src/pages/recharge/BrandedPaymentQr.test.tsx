@@ -30,7 +30,7 @@ describe('BrandedPaymentQr', () => {
     expect(screen.queryByText('请使用对应 App 扫码完成支付')).not.toBeInTheDocument()
   })
 
-  it('renders an Alipay QR without a center mark (BLOCKED_CONCERN: no standalone official 支 mark)', () => {
+  it('renders an Alipay QR with the official circular center mark', () => {
     const { container } = render(
       <BrandedPaymentQr
         {...BASE}
@@ -41,8 +41,13 @@ describe('BrandedPaymentQr', () => {
     )
     expect(screen.getByTestId('recharge-qr-amount')).toHaveTextContent('¥10.01')
     expect(screen.getByRole('img', { name: '支付宝支付二维码' })).toBeInTheDocument()
-    expect(container.querySelector('svg')).toBeTruthy()
-    expect(container.querySelector('image')).toBeNull()
+    const svg = container.querySelector('svg')
+    expect(svg).toBeTruthy()
+    expect(svg).toHaveAttribute('width', String(QR_VISUAL_SIZE_PX))
+    expect(container.querySelector('image')).toBeTruthy()
+    expect(container.querySelector('image')?.getAttribute('href') ?? '').toMatch(/alipay-logo-circular/)
+    expect(screen.queryByText('VMQFox')).not.toBeInTheDocument()
+    expect(screen.queryByText(/wechat|alipay/i)).not.toBeInTheDocument()
   })
 
   it('hides the QR when the action is expired', () => {

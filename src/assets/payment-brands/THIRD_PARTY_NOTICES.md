@@ -18,16 +18,15 @@ Runtime code must not fetch brand marks from external URLs.
 
 Do not substitute WeChat chat icons or icon-pack trademarks.
 
-## Alipay / 支付宝支付 — BLOCKED_CONCERN
+## Alipay / 支付宝支付
 
-No standalone official Alipay **payment** mark is shipped in this PR.
+- Source page: https://opendocs.alipay.com/open/01apj2
+- Retrieval date: 2026-09-02
+- Zip: `支付宝收银台视觉规范和素材.zip`
+- Zip SHA-256: `b9d0b64110d15f288479368e61f42ef83c1d8d3ccd1a485c8498da9c25b7c482`
+- Original filename in zip: `支付宝收银台视觉规范和素材/支付宝logo-圆形.png`
+- Files:
+  - `alipay-logo-circular.png` — unmodified official circular PNG (601 × 601 RGBA). Used as-is as the QR center mark. No recolor, redraw, SVG conversion, or stretch.
+- PNG SHA-256: `8b2d6272a8e97f334b3cca7647355b1a7e798ff6d40123fde427c7676409c89a`
 
-Attempted sources on 2026-09-02:
-
-1. Official 支付界面规范: https://opendocs.alipay.com/open/01apj2
-   Page advertises `支付宝收银台视觉规范和素材.zip`. The document is a JavaScript SPA; no direct zip URL was retrieved.
-2. Koubei restaurant pack (candidate): https://render.alipay.com/p/f/fd-iq34yyrt/index
-   Zip: https://os.alipayobjects.com/rmsportal/QTMnazwZvQvUBAs.zip
-   Visual review: table-card/promo collages, wifi/menu wayfinding, and a composite AI (`支付宝源logo，口碑logo.ai`) whose PDF preview is empty. One poster includes 支 + 口碑 + 饿了么 together. None is a standalone official 支 payment mark.
-
-Alipay QR therefore renders **without** a center image. Do not copy similar marks from icon libraries.
+Do not substitute Alipay marks from icon libraries or redraw the 支 glyph.
