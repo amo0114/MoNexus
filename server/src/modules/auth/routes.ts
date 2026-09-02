@@ -18,6 +18,7 @@ import {
   sessionIdParamSchema,
   verifyEmailSchema,
   updateMeSchema,
+  humanChallengeQuerySchema,
 } from './schema.js'
 import * as controller from './controller.js'
 import * as authService from './service.js'
@@ -85,12 +86,14 @@ async function registrationGate(_req: Request, _res: Response, next: NextFunctio
 // 它是按"认证尝试"标定的额度，页面加载不该消耗；只读且无副作用，全局
 // /api limiter 已足够（C17/F9）。
 router.get('/registration-status', controller.registrationStatus)
+router.get('/human-challenge', validate({ query: humanChallengeQuerySchema }), controller.humanChallenge)
 
 // Registration deliberately does not use the process-local authLimiter. Its
 // service boundary owns the fixed order: switch -> Redis preflight ->
-// Turnstile -> shared Redis buckets -> bcrypt/DB/session. Putting a memory
-// limiter before that boundary would both weaken multi-instance protection and
-// let it consume/reject a request before the registration switch is observed.
+// human verification -> shared Redis buckets -> bcrypt/DB/session. Putting a
+// memory limiter before that boundary would both weaken multi-instance
+// protection and let it consume/reject a request before the registration
+// switch is observed.
 router.post('/register', registrationGate, validate(registerSchema), controller.register)
 router.post('/login', authLimiter, validate(loginSchema), controller.login)
 router.post('/mfa/enrollment/start', authLimiter, validate(mfaEnrollmentStartSchema), controller.startMfaEnrollment)

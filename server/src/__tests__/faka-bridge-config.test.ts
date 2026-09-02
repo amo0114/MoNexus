@@ -4,6 +4,7 @@ import path from 'node:path'
 
 const VALID_MFA_ENCRYPTION_KEY = Buffer.alloc(32, 7).toString('base64')
 const VALID_ABUSE_HASH_KEY = Buffer.alloc(32, 11).toString('base64')
+const VALID_ALTCHA_HMAC_KEY = Buffer.alloc(32, 13).toString('base64')
 const SERVER_ROOT = path.resolve(__dirname, '..', '..')
 
 const PROD_BASE_ENV: Record<string, string> = {
@@ -24,6 +25,8 @@ const PROD_BASE_ENV: Record<string, string> = {
   // baseline separate so each case below reaches the Faka-specific guard.
   ABUSE_PROTECTION_MODE: 'enforce',
   ABUSE_HASH_KEY: VALID_ABUSE_HASH_KEY,
+  HUMAN_VERIFICATION_PROVIDER: 'altcha',
+  ALTCHA_HMAC_KEY: VALID_ALTCHA_HMAC_KEY,
   TURNSTILE_SITE_KEY: 'turnstile-site-key',
   TURNSTILE_SECRET_KEY: 'turnstile-secret-key',
   TURNSTILE_ALLOWED_HOSTNAMES: 'shop.example.com',

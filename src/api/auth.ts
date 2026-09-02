@@ -12,9 +12,21 @@ export type AuthenticatedAuthResponse = {
 }
 
 /** The only browser-safe portion of the public registration protection state. */
-export type RegistrationChallenge = {
-  provider: 'turnstile'
-  siteKey: string
+export type RegistrationChallenge =
+  | { provider: 'altcha'; challengeUrl: string }
+  | { provider: 'turnstile'; siteKey: string }
+
+export type HumanVerificationProof = {
+  provider: 'altcha' | 'turnstile'
+  payload: string
+}
+
+export type AltchaChallenge = {
+  algorithm: 'SHA-256'
+  challenge: string
+  maxnumber: number
+  salt: string
+  signature: string
 }
 
 export type RegistrationStatus = {
@@ -75,11 +87,20 @@ export async function getRegistrationStatus(): Promise<RegistrationStatus> {
   return data
 }
 
+export async function getHumanChallenge(action: 'register' | 'forgot_password'): Promise<AltchaChallenge> {
+  const { data } = await api.get<AltchaChallenge>('/auth/human-challenge', {
+    params: { action },
+    ...preAuthRequestConfig(),
+  })
+  return data
+}
+
 export async function registerAccount(payload: {
   email: string
   password: string
   nickname?: string
   inviteCode?: string
+  humanVerification?: HumanVerificationProof
   turnstileToken?: string
   /** SPEC-LEGAL-001:协议确认 { document: version },来自 registration-status。 */
   agreements?: Record<string, string>
@@ -196,6 +217,7 @@ export async function fetchMeWithRoleHealing(): Promise<AuthUser> {
 
 export async function forgotPassword(payload: {
   email: string
+  humanVerification?: HumanVerificationProof
   turnstileToken?: string
 }): Promise<{ message: string }> {
   const { data } = await api.post<{ message: string }>('/auth/forgot-password', payload)
