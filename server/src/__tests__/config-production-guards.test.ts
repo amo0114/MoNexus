@@ -38,6 +38,8 @@ const PROD_BASE_ENV: Record<string, string> = {
   REDIS_REQUIRED: 'true',
   // P7b：商家 webhook 签名密钥的静态加密密钥（生产必配，64 位 hex）。
   WEBHOOK_SECRET_ENC_KEY: 'a'.repeat(64),
+  DEPLOY_TOPOLOGY: 'nginx',
+  TRUST_PROXY: '1',
 }
 
 function loadConfigWith(overrides: Record<string, string | undefined>) {
@@ -552,6 +554,8 @@ describe('check-prod-env.sh POINT_VALUE_POLICY_MODE', () => {
       'ALERT_EMAIL_TO=alerts@example.com',
       `WEBHOOK_SECRET_ENC_KEY=${'a'.repeat(64)}`,
       'METRICS_TOKEN=metrics-token-for-preflight-at-least-32',
+      'DEPLOY_TOPOLOGY=nginx',
+      'TRUST_PROXY=1',
       `POINT_VALUE_POLICY_MODE=${mode}`,
       ...Object.entries(extras).map(([key, value]) => `${key}=${value}`),
     ].join('\n'))

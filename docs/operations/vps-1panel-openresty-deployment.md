@@ -19,7 +19,52 @@ Render、Neon、R2、Cloudflare Tunnel，也不要再额外运行 Caddy。
 ~~~
 
 仅 OpenResty 对外开放 80/443。Postgres、Redis、MinIO、Express 和 18089 都不应
-直接暴露到互联网。
+直接暴露到互联网。禁止存在绕过 OpenResty 与 bundled Nginx 直达 Express 的第二条
+路径，否则固定 `TRUST_PROXY=2` 不再安全。`WEB_PORT=18089` 必须只绑定 `127.0.0.1`。
+
+## 0. 可信客户端 IP（必须先于限流与注册防滥用）
+
+生产链路是 Cloudflare → 1Panel OpenResty → bundled Nginx → Express。Cloudflare
+**不计入** Express hop，因为它不与 Express 建立 socket。OpenResty 必须先把
+Cloudflare 官方 CIDR 上的 `CF-Connecting-IP` 还原为 `$remote_addr`，再**覆盖**
+（而不是追加）转发给 bundled Nginx 的 `X-Forwarded-For`。
+
+上线时从 [Cloudflare IP ranges](https://www.cloudflare.com/ips/) 取当前
+IPv4/IPv6 CIDR，逐条生成 `set_real_ip_from`。不要把会随时间变化的 CIDR 手抄进
+应用代码或仓库常量。
+
+~~~nginx
+real_ip_header CF-Connecting-IP;
+set_real_ip_from <Cloudflare IPv4/IPv6 CIDR>;
+real_ip_recursive on;
+
+proxy_set_header X-Forwarded-For $remote_addr;
+proxy_set_header X-Real-IP $remote_addr;
+proxy_set_header X-Forwarded-Proto $scheme;
+proxy_set_header Host $host;
+~~~
+
+关键点：使用 `$remote_addr` 覆盖 XFF，不要用 `$proxy_add_x_forwarded_for` 把用户
+可伪造的入站值追加进去。只有来自 Cloudflare 官方 CIDR 的连接才允许用
+`CF-Connecting-IP` 改写 `$remote_addr`；源站被直接访问时 `$remote_addr` 保持直连
+地址。bundled `nginx.conf` 继续追加一跳，Express 看到的链为：
+
+~~~text
+XFF: <canonical-client>, <openresty-to-web-hop>
+socket: <bundled-nginx>
+~~~
+
+对应环境变量必须精确匹配：
+
+~~~dotenv
+DEPLOY_TOPOLOGY=cloudflare_openresty_nginx
+TRUST_PROXY=2
+API_RATE_LIMIT_MAX=1500
+~~~
+
+`TRUST_PROXY` 只接受规范十进制 `0|1|2`，`true`/`false` 会启动失败。确认真实 IP
+恢复后再把全局限流从临时 3000 下调到 1500，至少观察 24 小时。条件允许时，主机
+80/443 仅允许 Cloudflare CIDR；SSH 端口不受此规则影响。
 
 ## 1. 主机前置检查
 
@@ -122,7 +167,9 @@ JWT_SECRET=<至少 32 字符的随机值>
 FRONTEND_ORIGIN=https://monexus.oai-o.com
 APP_BASE_URL=https://monexus.oai-o.com
 COOKIE_SECURE=true
-TRUST_PROXY=1
+DEPLOY_TOPOLOGY=cloudflare_openresty_nginx
+TRUST_PROXY=2
+API_RATE_LIMIT_MAX=1500
 
 # 仅回环绑定；80 由 1Panel OpenResty 使用。
 WEB_PORT=18089

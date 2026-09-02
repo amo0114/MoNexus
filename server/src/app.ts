@@ -4,8 +4,10 @@ import helmet from 'helmet'
 import rateLimit from 'express-rate-limit'
 import cookieParser from 'cookie-parser'
 import { config } from './config/index.js'
+import { classifyClientIp, routeGroupOf } from './lib/clientIp.js'
 import { initErrorReporter } from './lib/errorReporter.js'
-import { registry } from './lib/metrics.js'
+import { logger } from './lib/logger.js'
+import { rateLimitedTotal, registry } from './lib/metrics.js'
 import { metricsMiddleware } from './middlewares/metrics.js'
 import { requestLogger } from './middlewares/requestLogger.js'
 import { errorHandler } from './middlewares/errorHandler.js'
@@ -42,10 +44,27 @@ const app = express()
 // Behind nginx in production, express-rate-limit needs the real client IP
 // from X-Forwarded-For. Setting trust proxy here makes req.ip reflect the
 // client IP (not nginx's internal IP), so per-IP rate limiting actually works.
-// `false` disables the behavior (direct connections, e.g. dev/test).
+// Hop count is a canonical integer: 0 disables forwarded-header trust.
 app.set('trust proxy', config.trustProxy)
 
 initErrorReporter()
+
+function observeRateLimit(limiter: 'api' | 'payment_webhook') {
+  return (
+    req: express.Request,
+    res: express.Response,
+    _next: express.NextFunction,
+    options: { statusCode: number; message: unknown },
+  ) => {
+    const routeGroup = routeGroupOf(req.originalUrl ?? req.path)
+    rateLimitedTotal.inc({ limiter, route_group: routeGroup })
+    logger.info(
+      { limiter, routeGroup, ipClass: classifyClientIp(req.ip) },
+      'rate limited',
+    )
+    res.status(options.statusCode).json(options.message)
+  }
+}
 
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -57,6 +76,7 @@ const apiLimiter = rateLimit({
   // general REST budget: the two windows otherwise couple independently
   // bounded stream churn to unrelated API availability.
   skip: req => req.method === 'GET' && req.path === '/notifications/stream',
+  handler: observeRateLimit('api'),
   message: {
     error: {
       code: 'RATE_LIMITED',
@@ -78,6 +98,7 @@ const paymentWebhookLimiter = rateLimit({
   limit: 120,
   standardHeaders: true,
   legacyHeaders: false,
+  handler: observeRateLimit('payment_webhook'),
   message: {
     error: {
       code: 'RATE_LIMITED',

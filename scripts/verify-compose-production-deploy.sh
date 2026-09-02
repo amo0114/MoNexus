@@ -131,8 +131,12 @@ grep -Fq 'failure_stage=' "${ROOT_DIR}/scripts/notification-realtime-staging-col
 
 grep -Fq 'flush_interval -1' "${ROOT_DIR}/deploy/staging/Caddyfile" || \
   fail 'Staging Caddy site must force immediate SSE flushing.'
-grep -Fq 'API_RATE_LIMIT_MAX: ${API_RATE_LIMIT_MAX:-300}' "${ROOT_DIR}/docker-compose.prod.yml" || \
-  fail 'Compose must explicitly map the existing API rate-limit configuration.'
+grep -Fq 'API_RATE_LIMIT_MAX: ${API_RATE_LIMIT_MAX:-1500}' "${ROOT_DIR}/docker-compose.prod.yml" || \
+  fail 'Compose must explicitly map the API rate-limit configuration.'
+grep -Fq 'TRUST_PROXY: ${TRUST_PROXY:-1}' "${ROOT_DIR}/docker-compose.prod.yml" || \
+  fail 'Compose must map TRUST_PROXY as a hop count.'
+grep -Fq 'DEPLOY_TOPOLOGY: ${DEPLOY_TOPOLOGY:-nginx}' "${ROOT_DIR}/docker-compose.prod.yml" || \
+  fail 'Compose must map DEPLOY_TOPOLOGY.'
 for required_fragment in \
   'PAYMENT_EVENT_ENCRYPTION_KEY: ${PAYMENT_EVENT_ENCRYPTION_KEY:-}' \
   'PAYMENT_WEBHOOK_PUBLIC_BASE_URL: ${PAYMENT_WEBHOOK_PUBLIC_BASE_URL:-}' \

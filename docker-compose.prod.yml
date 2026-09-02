@@ -53,11 +53,10 @@ services:
       # STORAGE_ENDPOINT at AWS S3, R2, OSS, etc. The server's config
       # validator will refuse to boot in production if any of the four
       # core values is missing.
-      # Trust proxy hops: nginx (the web service in front of the server)
-      # sets X-Forwarded-For; TRUST_PROXY=1 lets express-rate-limit key on
-      # the real client IP instead of the nginx container's internal IP.
+      # Trust proxy hops: canonical integer only (0/1/2). Must match
+      # DEPLOY_TOPOLOGY (nginx=1, caddy=2, cloudflare_openresty_nginx=2).
       TRUST_PROXY: ${TRUST_PROXY:-1}
-      API_RATE_LIMIT_MAX: ${API_RATE_LIMIT_MAX:-300}
+      API_RATE_LIMIT_MAX: ${API_RATE_LIMIT_MAX:-1500}
       STORAGE_ENDPOINT: ${STORAGE_ENDPOINT:?STORAGE_ENDPOINT is required}
       STORAGE_REGION: ${STORAGE_REGION:-us-east-1}
       STORAGE_BUCKET: ${STORAGE_BUCKET:?STORAGE_BUCKET is required}

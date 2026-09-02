@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import type { NextFunction, Request, Response } from 'express'
+import { classifyClientIp } from '../lib/clientIp.js'
 import { logger } from '../lib/logger.js'
 
 function getIncomingRequestId(value: Request['headers']['x-request-id']) {
@@ -28,6 +29,7 @@ export function requestLogger(req: Request, res: Response, next: NextFunction) {
         status: res.statusCode,
         durationMs: Math.round(durationMs),
         userId: req.user?.userId,
+        ipClass: classifyClientIp(req.ip),
       },
       'request completed'
     )

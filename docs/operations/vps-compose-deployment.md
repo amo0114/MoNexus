@@ -61,7 +61,8 @@ At minimum replace all placeholders and set these values:
 FRONTEND_ORIGIN=https://monexus.oai-o.com
 APP_BASE_URL=https://monexus.oai-o.com
 COOKIE_SECURE=true
-TRUST_PROXY=1
+DEPLOY_TOPOLOGY=caddy
+TRUST_PROXY=2
 
 # docker-compose.vps.yml binds this only to loopback. Host Caddy owns :80/:443.
 # Change this if the host already uses 18089, and update the Caddy upstream too.

@@ -25,7 +25,13 @@ import { startPaymentWorkers, stopPaymentWorkers } from './modules/payment/worke
 import { startPaymentPayloadRetentionCron, stopPaymentPayloadRetentionCron } from './modules/payment/payloadRetention.js'
 
 const server = app.listen(config.port, () => {
-  logger.info(`MoNexus API running at http://localhost:${config.port}`)
+  logger.info(
+    {
+      deployTopology: config.deployTopology,
+      trustProxy: config.trustProxy,
+    },
+    `MoNexus API running at http://localhost:${config.port}`,
+  )
   startOrderCron()
   startFileCleanupCron()
   startLowStockNotifyCron()

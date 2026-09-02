@@ -168,20 +168,22 @@ const envSchema = z.object({
   // suite (which shares one IP) doesn't trip the limiter mid-run.
   API_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(300),
 
-  // --- Trust proxy hop count. In production behind nginx the server sees
-  // requests from the proxy's internal IP; setting this to the number of
-  // trusted hops lets Express parse X-Forwarded-For (set by nginx) so
-  // express-rate-limit keys on the real client IP instead of treating
-  // every request as coming from nginx. Accepts a non-negative integer
-  // (e.g. 1 for a single nginx hop) or false to disable.
-  TRUST_PROXY: z
-    .preprocess(value => {
-      if (value === undefined || value === '') return undefined
-      if (value === 'true') return true
-      if (value === 'false') return false
-      return value
-    }, z.union([z.coerce.number().int().min(0), z.boolean()]))
-    .default(false),
+  // --- Trust proxy hop count. Canonical decimal 0/1/2 only. Empty defaults
+  // to 0 (direct connections). Boolean true/false, decimals, whitespace,
+  // leading zeros, and scientific notation are rejected so they cannot coerce
+  // to the wrong hop count (production `true` previously became 1).
+  TRUST_PROXY: z.preprocess(value => {
+    if (value === undefined || value === '') return 0
+    if (typeof value === 'string' && /^(0|[1-9][0-9]*)$/.test(value)) return Number(value)
+    return value
+  }, z.number().int().min(0).max(2)),
+
+  // Deploy topology for hop matching and startup logs. check-prod-env.sh
+  // enforces the hop table; the server records the enum and numeric hop count.
+  DEPLOY_TOPOLOGY: z.preprocess(value => {
+    if (value === undefined || value === '') return undefined
+    return value
+  }, z.enum(['nginx', 'caddy', 'cloudflare_openresty_nginx']).default('nginx')),
 
   // --- Object storage (P0-C). All optional: when any are missing the
   // server falls back to an in-memory adapter that's only safe for dev
@@ -407,6 +409,10 @@ if (env.NODE_ENV === 'production' && !mfaEncryptionKey) {
   process.exit(1)
 }
 
+if (env.NODE_ENV === 'production' && env.TRUST_PROXY === 0) {
+  console.error('[Config] TRUST_PROXY=0 is not allowed in production; set a hop count of 1 or 2')
+  process.exit(1)
+}
 if (env.NODE_ENV === 'production' && !env.COOKIE_SECURE) {
   console.error('[Config] COOKIE_SECURE must be true in production')
   process.exit(1)
@@ -747,6 +753,7 @@ export const config = {
   userStatusCacheTtlSec: env.USER_STATUS_CACHE_TTL_SEC,
   apiRateLimitMax: env.API_RATE_LIMIT_MAX,
   trustProxy: env.TRUST_PROXY,
+  deployTopology: env.DEPLOY_TOPOLOGY,
   jwtExpiresIn: '15m' as const,
   refreshTokenMaxAgeMs: 7 * 24 * 60 * 60 * 1000,
   checkinReward: 50,
