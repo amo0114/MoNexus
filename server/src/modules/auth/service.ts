@@ -22,12 +22,21 @@ import {
   unauthenticated,
 } from '../../lib/httpError.js'
 import {
+  consumeHumanChallengeIssue,
   consumePasswordReset,
   consumeRegistrationAttempt,
   consumeRegistrationProviderPreflight,
   consumeVerificationEmailSend,
 } from './abusePolicy.js'
-import { getHumanVerifier, type HumanVerificationAction } from './humanVerification.js'
+import {
+  ALTCHA_CHALLENGE_URL,
+  getHumanVerifier,
+  HUMAN_VERIFICATION_PAYLOAD_MAX_BYTES,
+  issueAltchaChallenge,
+  resolveHumanVerificationPayload,
+  type HumanVerificationAction,
+  type HumanVerificationRequest,
+} from './humanVerification.js'
 import { getMailer } from '../../lib/mailer/index.js'
 import { renderMail } from '../../lib/mailer/templates/index.js'
 import { normalizeInviteCode } from '../../lib/inviteCode.js'
@@ -202,21 +211,21 @@ async function consumeAbuseBucket(
 async function enforceRegistrationProtection(input: {
   email: string
   ip?: string
-  turnstileToken?: string
+  proof?: HumanVerificationRequest | string
 }) {
   if (!registrationProtectionIsEnforced()) return
 
   // This is deliberately the first side effect after the registration gate:
-  // a provider flood must be stopped before Turnstile or any password/DB work.
+  // a provider flood must be stopped before proof verification or any password/DB work.
   await consumeAbuseBucket(() => consumeRegistrationProviderPreflight(input.ip ?? ''))
 
   await enforceHumanVerification({
-    token: input.turnstileToken,
+    proof: input.proof,
     ip: input.ip,
     action: 'register',
   })
 
-  // Turnstile has established a human proof; only now consume the expensive
+  // Human verification has established a proof; only now consume the expensive
   // registration attempt buckets, immediately before bcrypt and DB work.
   await consumeAbuseBucket(() => consumeRegistrationAttempt({
     ip: input.ip ?? '',
@@ -225,22 +234,57 @@ async function enforceRegistrationProtection(input: {
 }
 
 async function enforceHumanVerification(input: {
-  token?: string
+  proof?: HumanVerificationRequest | string
   ip?: string
   action: HumanVerificationAction
 }) {
-  const token = typeof input.token === 'string' ? input.token.trim() : ''
-  if (!token) throw humanVerificationRequired()
-  if (token.length > 4_096) throw humanVerificationFailed()
+  const resolved = resolveHumanVerificationPayload(input.proof)
+  if ('rejected' in resolved) throw humanVerificationFailed()
+  if ('missing' in resolved) throw humanVerificationRequired()
+  const payload = resolved.payload
+  if (Buffer.byteLength(payload, 'utf8') > HUMAN_VERIFICATION_PAYLOAD_MAX_BYTES) {
+    throw humanVerificationFailed()
+  }
 
   let verification: Awaited<ReturnType<ReturnType<typeof getHumanVerifier>['verify']>>
   try {
-    verification = await getHumanVerifier().verify({ token, ip: input.ip, action: input.action })
+    verification = await getHumanVerifier().verify({ payload, ip: input.ip, action: input.action })
   } catch {
     throw humanVerificationUnavailable()
   }
   if (verification.kind === 'unavailable') throw humanVerificationUnavailable()
   if (verification.kind === 'rejected') throw humanVerificationFailed()
+}
+
+function publicChallengeDescriptor() {
+  if (config.humanVerificationProvider === 'altcha') {
+    if (!config.altcha.hmacKey) return null
+    return {
+      provider: 'altcha' as const,
+      challengeUrl: `${ALTCHA_CHALLENGE_URL}?action=register`,
+    }
+  }
+  if (config.humanVerificationProvider === 'turnstile') {
+    if (!config.turnstile.siteKey) return null
+    return {
+      provider: 'turnstile' as const,
+      siteKey: config.turnstile.siteKey,
+    }
+  }
+  return null
+}
+
+function humanVerificationIsConfigured() {
+  if (!config.redisEnabled || !config.redisRequired || !config.abuseHashKey) return false
+  if (config.humanVerificationProvider === 'altcha') return Boolean(config.altcha.hmacKey)
+  if (config.humanVerificationProvider === 'turnstile') {
+    return Boolean(
+      config.turnstile.siteKey
+      && config.turnstile.secretKey
+      && config.turnstile.allowedHostnames.length > 0,
+    )
+  }
+  return false
 }
 
 /**
@@ -275,15 +319,7 @@ export async function getPublicRegistrationStatus() {
     }
   }
 
-  const configured = Boolean(
-    config.redisEnabled
-    && config.redisRequired
-    && config.abuseHashKey
-    && config.turnstile.siteKey
-    && config.turnstile.secretKey
-    && config.turnstile.allowedHostnames.length > 0,
-  )
-  if (!configured) {
+  if (!humanVerificationIsConfigured()) {
     return {
       registrationEnabled,
       registrationAvailable: false,
@@ -297,12 +333,21 @@ export async function getPublicRegistrationStatus() {
     registrationEnabled,
     registrationAvailable: registrationEnabled,
     inviteRequired,
-    challenge: {
-      provider: 'turnstile' as const,
-      siteKey: config.turnstile.siteKey,
-    },
+    challenge: publicChallengeDescriptor(),
     legalRequirement,
   }
+}
+
+export async function issueHumanChallenge(action: HumanVerificationAction, ip?: string) {
+  if (!registrationProtectionIsEnforced() || config.humanVerificationProvider !== 'altcha') {
+    throw humanVerificationUnavailable()
+  }
+
+  await consumeAbuseBucket(() => consumeHumanChallengeIssue(ip ?? ''))
+
+  const challenge = await issueAltchaChallenge(action)
+  if ('kind' in challenge) throw humanVerificationUnavailable()
+  return challenge
 }
 
 export async function registerUser(
@@ -311,7 +356,7 @@ export async function registerUser(
   inviteCode?: string,
   ip?: string,
   userAgent?: string,
-  turnstileToken?: string,
+  proof?: HumanVerificationRequest | string,
   agreements?: Record<string, string>,
   nickname?: string,
 ) {
@@ -323,7 +368,7 @@ export async function registerUser(
   await enforceRegistrationProtection({
     email: normalizedEmail,
     ip,
-    turnstileToken,
+    proof,
   })
 
   // SPEC-LEGAL-001：协议证据解析在任何 DB 写入之前（纯注册表比对，零副作用）。
@@ -1199,11 +1244,15 @@ function generateAuthToken() {
   return crypto.randomBytes(32).toString('hex')
 }
 
-async function enforcePasswordResetProtection(email: string, ip: string | undefined, turnstileToken?: string) {
+async function enforcePasswordResetProtection(
+  email: string,
+  ip: string | undefined,
+  proof?: HumanVerificationRequest | string,
+) {
   if (!registrationProtectionIsEnforced()) return
 
   await enforceHumanVerification({
-    token: turnstileToken,
+    proof,
     ip,
     action: 'forgot_password',
   })
@@ -1216,12 +1265,16 @@ async function enforcePasswordResetProtection(email: string, ip: string | undefi
   }))
 }
 
-export async function requestPasswordReset(email: string, ip?: string, turnstileToken?: string) {
+export async function requestPasswordReset(
+  email: string,
+  ip?: string,
+  proof?: HumanVerificationRequest | string,
+) {
   const normalizedEmail = normalizeEmailAddress(email)
   // The policy is consumed before the account lookup. Unknown addresses pay
   // the same email/IP cost as known ones, while the controller preserves the
   // endpoint's generic 200 response for every outcome.
-  await enforcePasswordResetProtection(normalizedEmail, ip, turnstileToken)
+  await enforcePasswordResetProtection(normalizedEmail, ip, proof)
 
   const user = await prisma.user.findUnique({ where: { email: normalizedEmail } })
   // Silently no-op for unknown emails so the public endpoint can return

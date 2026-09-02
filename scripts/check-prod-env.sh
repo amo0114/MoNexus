@@ -288,17 +288,42 @@ fi
 
 require_canonical_base64_32 MFA_ENCRYPTION_KEY
 
-# SPEC-RAP-001: public registration and user-email sending use Redis and
-# Turnstile as fail-closed security dependencies. The server applies the same
+# SPEC-RAP-001: public registration and user-email sending use Redis and a
+# fail-closed human-verification provider. The server applies the same
 # production rules at boot; surface a bad deploy before compose starts.
 abuse_mode="$(get ABUSE_PROTECTION_MODE)"
 if [[ "$abuse_mode" != "enforce" ]]; then
   fail "ABUSE_PROTECTION_MODE must be enforce for $MODE"
 fi
 require_canonical_base64_32 ABUSE_HASH_KEY
-require_value TURNSTILE_SITE_KEY
-require_value TURNSTILE_SECRET_KEY
-require_turnstile_allowed_hostnames
+human_provider="$(get HUMAN_VERIFICATION_PROVIDER)"
+if [[ -z "$human_provider" ]]; then
+  human_provider="altcha"
+fi
+if [[ "$human_provider" != "altcha" && "$human_provider" != "turnstile" ]]; then
+  fail "HUMAN_VERIFICATION_PROVIDER must be altcha or turnstile for $MODE"
+fi
+if [[ "$human_provider" == "altcha" ]]; then
+  require_canonical_base64_32 ALTCHA_HMAC_KEY
+  altcha_key="$(get ALTCHA_HMAC_KEY)"
+  abuse_key="$(get ABUSE_HASH_KEY)"
+  mfa_key="$(get MFA_ENCRYPTION_KEY)"
+  jwt_secret="$(get JWT_SECRET)"
+  skip_independence=false
+  if [[ "$ALLOW_PLACEHOLDERS" == "true" ]] && {
+    is_placeholder_literal "$altcha_key" || is_placeholder_literal "$abuse_key" || is_placeholder_literal "$mfa_key" || is_placeholder_literal "$jwt_secret"
+  }; then
+    skip_independence=true
+  fi
+  if [[ "$skip_independence" != "true" && ( "$altcha_key" == "$abuse_key" || "$altcha_key" == "$mfa_key" || "$altcha_key" == "$jwt_secret" ) ]]; then
+    fail "ALTCHA_HMAC_KEY must be independent of JWT_SECRET, MFA_ENCRYPTION_KEY, and ABUSE_HASH_KEY"
+  fi
+fi
+if [[ "$human_provider" == "turnstile" ]]; then
+  require_value TURNSTILE_SITE_KEY
+  require_value TURNSTILE_SECRET_KEY
+  require_turnstile_allowed_hostnames
+fi
 require_bool_true REDIS_ENABLED
 require_bool_true REDIS_REQUIRED
 require_redis_url REDIS_URL

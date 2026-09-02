@@ -286,8 +286,8 @@ describe('SPEC-RAP-001 security primitives', () => {
       fetchImplementation,
     })
 
-    await expect(verifier.verify({ token: 'test-token', ip: '203.0.113.21', action: 'register' })).resolves.toEqual({ kind: 'verified' })
-    await expect(verifier.verify({ token: 'test-token', ip: '203.0.113.21', action: 'forgot_password' })).resolves.toEqual({ kind: 'rejected' })
+    await expect(verifier.verify({ payload: 'test-token', ip: '203.0.113.21', action: 'register' })).resolves.toEqual({ kind: 'verified' })
+    await expect(verifier.verify({ payload: 'test-token', ip: '203.0.113.21', action: 'forgot_password' })).resolves.toEqual({ kind: 'rejected' })
     expect(calledUrl).toBe(TURNSTILE_SITEVERIFY_ENDPOINT)
     expect(calledInit?.method).toBe('POST')
     expect(calledInit?.signal).toBeInstanceOf(AbortSignal)
@@ -309,7 +309,7 @@ describe('SPEC-RAP-001 security primitives', () => {
         allowedHostnames: ['app.example.com'],
         fetchImplementation: async () => new Response(JSON.stringify(payload), { status: 200 }),
       })
-      await expect(verifier.verify({ token: 'test-token', ip: undefined, action: 'register' })).resolves.toEqual({ kind: 'rejected' })
+      await expect(verifier.verify({ payload: 'test-token', ip: undefined, action: 'register' })).resolves.toEqual({ kind: 'rejected' })
     }
   })
 
@@ -319,7 +319,7 @@ describe('SPEC-RAP-001 security primitives', () => {
       allowedHostnames: ['app.example.com'],
       fetchImplementation: async () => new Response('{}', { status: 200 }),
     })
-    await expect(missingConfig.verify({ token: 'test-token', ip: undefined, action: 'register' })).resolves.toEqual({ kind: 'unavailable' })
+    await expect(missingConfig.verify({ payload: 'test-token', ip: undefined, action: 'register' })).resolves.toEqual({ kind: 'unavailable' })
 
     const failureFetch: typeof fetch = async () => {
       throw new DOMException('timeout', 'TimeoutError')
@@ -329,28 +329,28 @@ describe('SPEC-RAP-001 security primitives', () => {
       allowedHostnames: ['app.example.com'],
       fetchImplementation: failureFetch,
     })
-    await expect(networkFailure.verify({ token: 'test-token', ip: undefined, action: 'register' })).resolves.toEqual({ kind: 'unavailable' })
+    await expect(networkFailure.verify({ payload: 'test-token', ip: undefined, action: 'register' })).resolves.toEqual({ kind: 'unavailable' })
 
     const providerFailure = createTurnstileHumanVerifier({
       secretKey: 'test-turnstile-secret',
       allowedHostnames: ['app.example.com'],
       fetchImplementation: async () => new Response('', { status: 500 }),
     })
-    await expect(providerFailure.verify({ token: 'test-token', ip: undefined, action: 'register' })).resolves.toEqual({ kind: 'unavailable' })
+    await expect(providerFailure.verify({ payload: 'test-token', ip: undefined, action: 'register' })).resolves.toEqual({ kind: 'unavailable' })
 
     const malformedJson = createTurnstileHumanVerifier({
       secretKey: 'test-turnstile-secret',
       allowedHostnames: ['app.example.com'],
       fetchImplementation: async () => new Response('not-json', { status: 200 }),
     })
-    await expect(malformedJson.verify({ token: 'test-token', ip: undefined, action: 'register' })).resolves.toEqual({ kind: 'unavailable' })
+    await expect(malformedJson.verify({ payload: 'test-token', ip: undefined, action: 'register' })).resolves.toEqual({ kind: 'unavailable' })
 
     const malformedBody = createTurnstileHumanVerifier({
       secretKey: 'test-turnstile-secret',
       allowedHostnames: ['app.example.com'],
       fetchImplementation: async () => new Response(JSON.stringify({ success: true, action: 'register' }), { status: 200 }),
     })
-    await expect(malformedBody.verify({ token: 'test-token', ip: undefined, action: 'register' })).resolves.toEqual({ kind: 'unavailable' })
+    await expect(malformedBody.verify({ payload: 'test-token', ip: undefined, action: 'register' })).resolves.toEqual({ kind: 'unavailable' })
 
     const providerConfigFailure = createTurnstileHumanVerifier({
       secretKey: 'test-turnstile-secret',
@@ -360,7 +360,7 @@ describe('SPEC-RAP-001 security primitives', () => {
         'error-codes': ['invalid-input-secret'],
       }), { status: 200 }),
     })
-    await expect(providerConfigFailure.verify({ token: 'test-token', ip: undefined, action: 'register' })).resolves.toEqual({ kind: 'unavailable' })
+    await expect(providerConfigFailure.verify({ payload: 'test-token', ip: undefined, action: 'register' })).resolves.toEqual({ kind: 'unavailable' })
   })
 
   it('permits only explicit test-process verifier injection', async () => {
@@ -368,7 +368,7 @@ describe('SPEC-RAP-001 security primitives', () => {
       verify: async () => ({ kind: 'verified' }),
     }
     __setHumanVerifierForTesting(verifier)
-    await expect(getHumanVerifier().verify({ token: 'in-memory-test-token', ip: undefined, action: 'register' })).resolves.toEqual({
+    await expect(getHumanVerifier().verify({ payload: 'in-memory-test-token', ip: undefined, action: 'register' })).resolves.toEqual({
       kind: 'verified',
     })
   })
@@ -379,8 +379,9 @@ describe('SPEC-RAP-001 security primitives', () => {
       code: 'HUMAN_VERIFICATION_FAILED',
       ABUSE_HASH_KEY: canary,
       TURNSTILE_SECRET_KEY: canary,
-      config: { abuseHashKey: canary, turnstile: { secretKey: canary } },
-      req: { body: { turnstileToken: canary } },
+      ALTCHA_HMAC_KEY: canary,
+      config: { abuseHashKey: canary, turnstile: { secretKey: canary }, altcha: { hmacKey: canary } },
+      req: { body: { turnstileToken: canary, humanVerification: { provider: 'altcha', payload: canary } } },
       err: {
         context: {
           siteverify: {

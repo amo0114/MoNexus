@@ -10,6 +10,7 @@ const SCRIPT = path.join(ROOT, 'scripts', 'check-prod-env.sh')
 
 const VALID_MFA_ENCRYPTION_KEY = Buffer.alloc(32, 7).toString('base64')
 const VALID_ABUSE_HASH_KEY = Buffer.alloc(32, 8).toString('base64')
+const VALID_ALTCHA_HMAC_KEY = Buffer.alloc(32, 13).toString('base64')
 
 const DEV_BASE_ENV: Record<string, string> = {
   NODE_ENV: 'test',
@@ -35,6 +36,8 @@ const PROD_BASE_ENV: Record<string, string> = {
   MFA_ENCRYPTION_KEY: VALID_MFA_ENCRYPTION_KEY,
   ABUSE_PROTECTION_MODE: 'enforce',
   ABUSE_HASH_KEY: VALID_ABUSE_HASH_KEY,
+  HUMAN_VERIFICATION_PROVIDER: 'altcha',
+  ALTCHA_HMAC_KEY: VALID_ALTCHA_HMAC_KEY,
   TURNSTILE_SITE_KEY: '1x00000000000000000000AA',
   TURNSTILE_SECRET_KEY: 'turnstile-secret-for-production-guard-test',
   TURNSTILE_ALLOWED_HOSTNAMES: 'shop.example.com',
@@ -143,6 +146,8 @@ describe('check-prod-env.sh trusted proxy topology', () => {
       MFA_ENCRYPTION_KEY: VALID_MFA_ENCRYPTION_KEY,
       ABUSE_PROTECTION_MODE: 'enforce',
       ABUSE_HASH_KEY: VALID_ABUSE_HASH_KEY,
+      HUMAN_VERIFICATION_PROVIDER: 'altcha',
+      ALTCHA_HMAC_KEY: VALID_ALTCHA_HMAC_KEY,
       TURNSTILE_SITE_KEY: '1x00000000000000000000AA',
       TURNSTILE_SECRET_KEY: 'turnstile-secret-for-preflight',
       TURNSTILE_ALLOWED_HOSTNAMES: 'shop.example.com',

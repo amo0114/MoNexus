@@ -82,9 +82,14 @@ services:
       # boundary so the server cannot silently start without its dependencies.
       ABUSE_PROTECTION_MODE: ${ABUSE_PROTECTION_MODE:?ABUSE_PROTECTION_MODE is required (enforce in production)}
       ABUSE_HASH_KEY: ${ABUSE_HASH_KEY:?ABUSE_HASH_KEY is required (32-byte base64)}
-      TURNSTILE_SITE_KEY: ${TURNSTILE_SITE_KEY:?TURNSTILE_SITE_KEY is required}
-      TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:?TURNSTILE_SECRET_KEY is required}
-      TURNSTILE_ALLOWED_HOSTNAMES: ${TURNSTILE_ALLOWED_HOSTNAMES:?TURNSTILE_ALLOWED_HOSTNAMES is required}
+      HUMAN_VERIFICATION_PROVIDER: ${HUMAN_VERIFICATION_PROVIDER:-altcha}
+      ALTCHA_HMAC_KEY: ${ALTCHA_HMAC_KEY:-}
+      ALTCHA_MAX_NUMBER: ${ALTCHA_MAX_NUMBER:-100000}
+      ALTCHA_CHALLENGE_TTL_SEC: ${ALTCHA_CHALLENGE_TTL_SEC:-120}
+      ALTCHA_SOLVE_TIMEOUT_MS: ${ALTCHA_SOLVE_TIMEOUT_MS:-20000}
+      TURNSTILE_SITE_KEY: ${TURNSTILE_SITE_KEY:-}
+      TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:-}
+      TURNSTILE_ALLOWED_HOSTNAMES: ${TURNSTILE_ALLOWED_HOSTNAMES:-}
       # SPEC-LEGAL-001: keep the public documents and consent policy explicit
       # at the Compose boundary. Production configuration rejects enabled pages
       # without enforce, and rejects fixture documents entirely.
