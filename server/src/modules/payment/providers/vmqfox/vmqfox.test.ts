@@ -498,34 +498,37 @@ describe('VMQFox adapter contract', () => {
     expect(byToken.status).toBe('succeeded')
     expect(byToken.amountMinor).toBe(1001n)
 
-    const missingPayUrlHttp: VmqfoxHttp = async req => {
-      if (req.url.includes('/api/order/get/')) {
-        return envelope({
-          payId: ATTEMPT_ID,
-          payType: 1,
-          price: '10.00',
-          reallyPrice: '10.01',
-          state: 0,
-        })
-      }
-      if (req.url.includes('/api/order/check/')) {
-        return envelope({ state: 0 })
-      }
-      throw new Error(`unexpected ${req.url}`)
-    }
-    const missingPayUrlProvider = createVmqfoxProvider(liveConfig, { http: missingPayUrlHttp })
-    await expect(missingPayUrlProvider.queryPayment({
-      providerPaymentId: ATTEMPT_ID,
-      providerAccountKey: 'vmqfox-primary',
-      providerOrderId: TOKEN,
-    })).rejects.toMatchObject({ code: 'PAYMENT_STATE_UNKNOWN' })
-
     const closedPaid = await provider.closePayment({
       providerPaymentId: ATTEMPT_ID,
       providerAccountKey: 'vmqfox-primary',
       requestIdempotencyKey: 'close-1',
     })
     expect(closedPaid.status).toBe('succeeded')
+  })
+
+  it('queries historical GET status without payUrl', async () => {
+    const http: VmqfoxHttp = async req => {
+      if (req.url.includes('/api/order/get/')) {
+        const { payUrl: _omitPayUrl, ...rest } = getOrderData({ state: 0 })
+        expect(rest).not.toHaveProperty('payUrl')
+        return envelope(rest)
+      }
+      if (req.url.includes('/api/order/check/')) {
+        return envelope({ state: 0, remainingSeconds: 120 })
+      }
+      throw new Error(`unexpected ${req.url}`)
+    }
+    const provider = createVmqfoxProvider(liveConfig, { http })
+    const queried = await provider.queryPayment({
+      providerPaymentId: ATTEMPT_ID,
+      providerAccountKey: 'vmqfox-primary',
+      providerOrderId: TOKEN,
+    })
+    expect(queried.status).toBe('processing')
+    expect(queried.providerPaymentId).toBe(ATTEMPT_ID)
+    expect(queried.amountMinor).toBe(1001n)
+    expect(queried.quotedAmountMinor).toBe(1000n)
+    expect(queried.rawStatus).toBe('0')
   })
 
   it('fails deterministically on monitor_offline', async () => {
@@ -707,6 +710,30 @@ describe('VMQFox adapter contract', () => {
       expect(created.action.display).toBe('text')
     }
     expect(created.providerPaymentId).toBe(ATTEMPT_ID)
+    expect(creates).toBe(1)
+  })
+
+  it('does not emit QR or mint a second payId when recovery GET omits payUrl', async () => {
+    let creates = 0
+    const http: VmqfoxHttp = async req => {
+      if (req.url.includes('/api/order/create')) {
+        creates += 1
+        throw Object.assign(new Error('vmqfox request timed out'), { name: 'AbortError' })
+      }
+      if (req.url.includes('query-by-pay-id')) {
+        return envelope(queryData())
+      }
+      if (req.url.includes('/api/order/get/')) {
+        const { payUrl: _omitPayUrl, ...rest } = getOrderData()
+        expect(rest).not.toHaveProperty('payUrl')
+        return envelope(rest)
+      }
+      throw new Error(`unexpected ${req.url}`)
+    }
+    const provider = createVmqfoxProvider(liveConfig, { http, now: () => FROZEN_NOW })
+    await expect(provider.createPayment(createInput())).rejects.toMatchObject({
+      code: 'PAYMENT_STATE_UNKNOWN',
+    })
     expect(creates).toBe(1)
   })
 

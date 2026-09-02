@@ -193,6 +193,7 @@ function actionFromRecoveredGet(
     const quotedMinor = yuanStringToAmountMinor(got.price)
     const payableMinor = yuanStringToAmountMinor(got.reallyPrice)
     if (quotedMinor !== input.amountMinor || payableMinor <= 0n) return null
+    if (!got.payUrl) return null
     const payUrl = validateVmqfoxPayUrl(method, got.payUrl)
     if (!payUrl) return null
     return {

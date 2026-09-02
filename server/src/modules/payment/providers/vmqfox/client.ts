@@ -80,7 +80,8 @@ export type VmqfoxGetData = {
   price: string
   reallyPrice: string
   state: number
-  payUrl: string
+  /** Historical redirect GET omits this; recovery QR asserts it separately. */
+  payUrl?: string
   remainingSeconds?: number
 }
 
@@ -319,8 +320,7 @@ function pickGetData(data: Record<string, unknown>): VmqfoxGetData {
   const price = pickString(data, 'price')
   const reallyPrice = pickString(data, 'reallyPrice')
   const state = pickInt(data, 'state', 'status')
-  const payUrl = pickString(data, 'payUrl')
-  if (!payId || payType == null || !price || !reallyPrice || state == null || !payUrl) {
+  if (!payId || payType == null || !price || !reallyPrice || state == null) {
     throw new VmqfoxClientError('malformed', 'vmqfox get payload missing allowlisted fields')
   }
   return {
@@ -329,7 +329,7 @@ function pickGetData(data: Record<string, unknown>): VmqfoxGetData {
     price,
     reallyPrice,
     state,
-    payUrl,
+    payUrl: pickString(data, 'payUrl'),
     remainingSeconds: pickInt(data, 'remainingSeconds'),
   }
 }
