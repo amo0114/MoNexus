@@ -42,8 +42,12 @@ OpenResty snippets already landed in PR-1.
    default after cutover*. Applying it without `ALTCHA_HMAC_KEY` fails boot.
    ALTCHA cutover is **not** part of the first window.
 2. Do not edit OpenResty or reload it in the same unobserved step as the
-   Express hop change. `nginx -t` first, then a dedicated OpenResty reload,
-   then observe IP class, then (later) the application image.
+   Express hop change. `nginx -t` first, then a dedicated OpenResty reload.
+   **Before** the new backend image, only verify the OpenResty `$remote_addr` /
+   overwrite-XFF contract (access-log remote addr versus a spoofed inbound
+   `X-Forwarded-For`). Session IP class and rate-limit keys are Express
+   hop-count behaviour: verify them **only after** the target backend SHA is
+   the running `server` image.
 3. `docker-compose.prod.yml` default `TRUST_PROXY:-1` is the **nginx**
    topology (`DEPLOY_TOPOLOGY=nginx`). The live 1Panel host must keep
    `DEPLOY_TOPOLOGY=cloudflare_openresty_nginx` and `TRUST_PROXY=2` in the
@@ -86,9 +90,10 @@ tick boxes here.
    owner authorized an OpenResty change. This PR does not perform that reload.
 5. Confirm the private `.env` already has, and will keep for the first image:
    `DEPLOY_TOPOLOGY=cloudflare_openresty_nginx`, `TRUST_PROXY=2`,
-   `HUMAN_VERIFICATION_PROVIDER=turnstile`, Turnstile trio present,
-   `ABUSE_PROTECTION_MODE=enforce`, Redis required. Do not add
-   `ALTCHA_HMAC_KEY` as a substitute for keeping Turnstile on this window.
+   `API_RATE_LIMIT_MAX=3000`, `HUMAN_VERIFICATION_PROVIDER=turnstile`,
+   Turnstile trio present, `ABUSE_PROTECTION_MODE=enforce`, Redis required.
+   Do not add `ALTCHA_HMAC_KEY` or set `altcha` as a substitute for keeping
+   Turnstile on this window. Do not paste `API_RATE_LIMIT_MAX=1500` until C7.
 6. Confirm `WEB_PORT` stays loopback-only. No second path that bypasses
    OpenResty + bundled Nginx to Express.
 7. `scripts/check-prod-env.sh` / `npm run prod:env` against the private file
@@ -112,17 +117,21 @@ a **second** authorization names phase B.
 
 ### Phase A — image + IP + native QR (Turnstile stays)
 
-1. OpenResty header contract already live and observed, or complete §4.4 first.
-2. Deploy backend image while `HUMAN_VERIFICATION_PROVIDER=turnstile`.
+1. OpenResty `$remote_addr` / overwrite-XFF contract already live, or complete
+   §4.4 first. This step does **not** prove session IP or rate-limit keys.
+2. Deploy backend image while `HUMAN_VERIFICATION_PROVIDER=turnstile` and
+   `API_RATE_LIMIT_MAX=3000`. Record the running `server` image SHA (evidence
+   C0) before any session-IP row.
 3. Deploy frontend that understands the challenge descriptor.
 4. Prove `GET /api/auth/registration-status` still returns
    `challenge.provider=turnstile`.
-5. IP canary: Cloudflare-normal request, spoofed `X-Forwarded-For`, loopback.
-   New logins must not all show `192.168.208.1`. Classify only; do not retain
-   full IP in tickets.
-6. Confirm 429s spread by source via `monexus_rate_limited_total{limiter,route_group}`.
-7. After ≥24h of healthy public client IP class, lower `API_RATE_LIMIT_MAX`
-   from `3000` to `1500` as its own change.
+5. After C0: IP canary (Cloudflare-normal, spoofed `X-Forwarded-For`,
+   loopback). Record class distribution of five new logins; they must not
+   share one private/CGNAT proxy hint. Classify only; do not retain full IP.
+6. After C0: confirm 429s spread by source via
+   `monexus_rate_limited_total{limiter,route_group}`.
+7. After ≥24h of healthy public client IP class on that backend SHA, lower
+   `API_RATE_LIMIT_MAX` from `3000` to `1500` as its own change (C7).
 8. One minimum-amount WeChat QR and one Alipay QR. Credit is only
    `recordPaymentObservation → applyConfirmedPayment`. Buyer UI is 微信支付 /
    支付宝支付. Do not open `pay.snowvictor.com` in the browser.

@@ -50,7 +50,7 @@ Fill only after production-window authorization.
 | B5 | OpenResty site-file backup (`chmod 600`); path only | _pending_ | PENDING |
 | B6 | PostgreSQL backup per portable-backup-restore | _pending_ | PENDING |
 | B7 | Publish Docker images amd64+arm64 for target SHA | _pending_ | PENDING |
-| B8 | Private `.env` still `HUMAN_VERIFICATION_PROVIDER=turnstile` + Turnstile trio; `DEPLOY_TOPOLOGY=cloudflare_openresty_nginx`; `TRUST_PROXY=2` | _pending_ (do not paste secrets) | PENDING |
+| B8 | Private `.env` still `HUMAN_VERIFICATION_PROVIDER=turnstile` + Turnstile trio; `DEPLOY_TOPOLOGY=cloudflare_openresty_nginx`; `TRUST_PROXY=2`; `API_RATE_LIMIT_MAX=3000` | _pending_ (do not paste secrets) | PENDING |
 | B9 | `npm run prod:env` / `scripts/check-prod-env.sh` without printing the file | _pending_ | PENDING |
 | B10 | `nginx -t` on the OpenResty config | _pending_ | PENDING |
 
@@ -58,21 +58,26 @@ Fill only after production-window authorization.
 
 Do not claim these from logs collected before this window.
 
-| # | Check | How | Result |
-| --- | --- | --- | --- |
-| C1 | OpenResty reload (only if owner authorized a config change) | `nginx -t` then reload; record UTC | PENDING |
-| C2 | Cloudflare-normal request: session IP class is `public`, not `192.168.208.1` | classify only; do not paste full IP | PENDING |
-| C3 | Spoofed `X-Forwarded-For: 1.2.3.4` (or similar) does **not** become the session IP | header ignored / overwritten | PENDING |
-| C4 | Loopback / host-local request is not treated as a public client | class `loopback` or `private` | PENDING |
-| C5 | Five new logins after hop fix are not all the same private/CGNAT address | count of distinct public class | PENDING |
-| C6 | `monexus_rate_limited_total` has no raw-IP label | scrape / metrics text | PENDING |
+**Layering:** C1 may run before the new application image. C0 records that the
+target backend SHA is actually serving. C2–C6 are Express hop-count checks and
+are invalid until C0 is filled.
 
-Do not lower `API_RATE_LIMIT_MAX` until C2–C6 pass and a quiet window is
-recorded.
+| # | Check | How | Prerequisite | Result |
+| --- | --- | --- | --- | --- |
+| C1 | OpenResty `$remote_addr` / overwrite-XFF contract | `nginx -t`; optional authorized reload; access-log remote addr vs spoofed inbound `X-Forwarded-For`. Does **not** prove session IP. | none (pre-image OK) | PENDING |
+| C0 | Target backend SHA is the running `server` image | container image tag / OCI revision vs B3; record SHA | B3 | PENDING |
+| C2 | Cloudflare-normal request: session IP class is `public`, not a private/CGNAT proxy hint | classify only; do not paste full IP | C0 | PENDING |
+| C3 | Spoofed `X-Forwarded-For: 1.2.3.4` (or similar) does **not** become the session IP | header ignored / overwritten at Express | C0 | PENDING |
+| C4 | Loopback / host-local request is not treated as a public client | class `loopback` or `private` | C0 | PENDING |
+| C5 | Five new logins: record class distribution; none share a common private/CGNAT proxy hint | classes only (`public` / `private` / `cgnat` / `ula` / `loopback`); do not record full IP | C0 | PENDING |
+| C6 | `monexus_rate_limited_total` has no raw-IP label; 429s keyed after hop fix | scrape / metrics text | C0 | PENDING |
+
+Do not lower `API_RATE_LIMIT_MAX` until C0 and C2–C6 pass and a quiet window is
+recorded. C1 alone is not enough.
 
 | # | Check | Before | After | Result |
 | --- | --- | --- | --- | --- |
-| C7 | `API_RATE_LIMIT_MAX` 3000 → 1500 (own change, ≥24h after C2–C6) | _pending_ | _pending_ | PENDING |
+| C7 | `API_RATE_LIMIT_MAX` 3000 → 1500 (own change, ≥24h after C0 and C2–C6) | _pending_ | _pending_ | PENDING |
 
 ## D. Registration while Turnstile stays (Phase A — PENDING)
 
