@@ -1846,7 +1846,9 @@ and is not the only production path.
    check readiness. Do not manually edit the reward-ledger migration or delete
    ledger rows as a rollback shortcut.
 
-   Rolling cutover from Turnstile to ALTCHA:
+   Rolling cutover from Turnstile to ALTCHA (PLAN_ID `d91c84ec` first
+   production window **stops after step 2**. Step 3 needs a second written
+   authorization. See `docs/operations/d91c84ec-ops-closure.md`):
 
    1. Deploy a compatible backend that still has `HUMAN_VERIFICATION_PROVIDER=turnstile`.
    2. Deploy the descriptor frontend and prove registration still works with

@@ -64,7 +64,10 @@ API_RATE_LIMIT_MAX=1500
 
 `TRUST_PROXY` 只接受规范十进制 `0|1|2`，`true`/`false` 会启动失败。确认真实 IP
 恢复后再把全局限流从临时 3000 下调到 1500，至少观察 24 小时。条件允许时，主机
-80/443 仅允许 Cloudflare CIDR；SSH 端口不受此规则影响。
+80/443 仅允许 Cloudflare CIDR；SSH 端口不受此规则影响。PLAN_ID `d91c84ec`
+第一次生产窗口的检查表与回滚见
+[d91c84ec-ops-closure.md](./d91c84ec-ops-closure.md)；金丝雀证据在授权前保持
+`PENDING`，本手册不构成部署或切 ALTCHA 的授权。
 
 ## 1. 主机前置检查
 
@@ -188,7 +191,10 @@ REDIS_REQUIRED=true
 REDIS_URL=redis://redis:6379
 REDIS_TLS=false
 # 注册防滥用必须使用独立于 JWT/MFA 的 ABUSE_HASH_KEY，以及独立的 ALTCHA_HMAC_KEY。
-# 生产默认 HUMAN_VERIFICATION_PROVIDER=altcha；Turnstile 仅为可选适配器。
+# 下面是切流完成后的稳态。PLAN_ID d91c84ec 第一次上线必须仍保持
+# HUMAN_VERIFICATION_PROVIDER=turnstile 以及 Turnstile 三件套，否则 Compose
+# 默认 altcha 且缺少 ALTCHA_HMAC_KEY 会启动失败。不要在同一变更里切 ALTCHA、
+# 改 OpenResty 或改 TRUST_PROXY。步骤见 docs/operations/d91c84ec-ops-closure.md。
 ABUSE_PROTECTION_MODE=enforce
 ABUSE_HASH_KEY=<独立的32字节标准Base64随机值>
 HUMAN_VERIFICATION_PROVIDER=altcha
