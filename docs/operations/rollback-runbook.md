@@ -13,6 +13,7 @@ Review date: 2026-05-14. Scope: M5 production rollback for the self-hosted nginx
 - `docs/operations/deployment-target.md` defines the legacy self-hosted nginx + systemd/PM2 target and release directory layout.
 - `docs/operations/gray-release.md` defines the `deploy_candidate`, `promote`, and `rollback` workflow actions and the `candidate` / `current` symlink model.
 - `docs/operations/alert-routing.md` defines Slack-first routing, email fallback, P1/P2 severity handling, and first responder ownership.
+- `docs/operations/d91c84ec-ops-closure.md` defines PLAN_ID `d91c84ec` IP/429, registration, and native-QR rollback. Do not mix those steps with this legacy symlink model on the Compose VPS.
 
 ## Rollback Decision Tree
 

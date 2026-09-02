@@ -54,17 +54,20 @@ XFF: <canonical-client>, <openresty-to-web-hop>
 socket: <bundled-nginx>
 ~~~
 
-对应环境变量必须精确匹配：
+对应环境变量必须精确匹配。第一次生产窗口复制 **3000**，不要复制 1500：
 
 ~~~dotenv
 DEPLOY_TOPOLOGY=cloudflare_openresty_nginx
 TRUST_PROXY=2
-API_RATE_LIMIT_MAX=1500
+API_RATE_LIMIT_MAX=3000
 ~~~
 
-`TRUST_PROXY` 只接受规范十进制 `0|1|2`，`true`/`false` 会启动失败。确认真实 IP
-恢复后再把全局限流从临时 3000 下调到 1500，至少观察 24 小时。条件允许时，主机
-80/443 仅允许 Cloudflare CIDR；SSH 端口不受此规则影响。
+`TRUST_PROXY` 只接受规范十进制 `0|1|2`，`true`/`false` 会启动失败。`1500` 只出现在
+证据表 C7：目标 backend SHA 上线后，session IP / 限流键 canary 通过，再观察至少
+24 小时，作为**单独**变更把限额从 3000 降到 1500。条件允许时，主机 80/443 仅允许
+Cloudflare CIDR；SSH 端口不受此规则影响。PLAN_ID `d91c84ec` 第一次生产窗口的检查表
+与回滚见 [d91c84ec-ops-closure.md](./d91c84ec-ops-closure.md)；金丝雀证据在授权前保持
+`PENDING`，本手册不构成部署或切 ALTCHA 的授权。
 
 ## 1. 主机前置检查
 
@@ -155,8 +158,10 @@ chmod 600 .env
 使用编辑器修改 .env。每个密码和令牌都应不同，可分别使用 openssl rand -hex 32 或
 openssl rand -hex 48 生成。不要把 .env、密钥或备份上传到 Git。
 
-下面是首次公网部署的核心配置。尖括号必须替换；等号后留空表示明确关闭可选服务，
-不要保留模板内的假 URL。
+下面是 **PLAN_ID d91c84ec 第一次生产窗口（Phase A）** 可复制的核心配置。尖括号必须
+替换；等号后留空表示明确关闭可选服务，不要保留模板内的假 URL。人机校验必须是
+`turnstile` 且三件套取消注释。不要把 Phase B 的 `altcha` / `ALTCHA_HMAC_KEY` 贴进
+这一块。限额必须是 `3000`；`1500` 只在后面的 C7 小块。
 
 ~~~dotenv
 POSTGRES_USER=monexus
@@ -169,7 +174,7 @@ APP_BASE_URL=https://monexus.oai-o.com
 COOKIE_SECURE=true
 DEPLOY_TOPOLOGY=cloudflare_openresty_nginx
 TRUST_PROXY=2
-API_RATE_LIMIT_MAX=1500
+API_RATE_LIMIT_MAX=3000
 
 # 仅回环绑定；80 由 1Panel OpenResty 使用。
 WEB_PORT=18089
@@ -187,16 +192,16 @@ REDIS_ENABLED=true
 REDIS_REQUIRED=true
 REDIS_URL=redis://redis:6379
 REDIS_TLS=false
-# 注册防滥用必须使用独立于 JWT/MFA 的 ABUSE_HASH_KEY，以及独立的 ALTCHA_HMAC_KEY。
-# 生产默认 HUMAN_VERIFICATION_PROVIDER=altcha；Turnstile 仅为可选适配器。
+# 注册防滥用：独立于 JWT/MFA 的 ABUSE_HASH_KEY。Phase A 保持 Turnstile。
+# Compose 默认 HUMAN_VERIFICATION_PROVIDER=altcha；私有 .env 必须覆盖为
+# turnstile，否则缺 ALTCHA_HMAC_KEY 会启动失败。步骤见
+# docs/operations/d91c84ec-ops-closure.md。
 ABUSE_PROTECTION_MODE=enforce
 ABUSE_HASH_KEY=<独立的32字节标准Base64随机值>
-HUMAN_VERIFICATION_PROVIDER=altcha
-ALTCHA_HMAC_KEY=<独立的32字节标准Base64随机值>
-# 仅在 HUMAN_VERIFICATION_PROVIDER=turnstile 时需要：
-# TURNSTILE_SITE_KEY=<生产Turnstile site key>
-# TURNSTILE_SECRET_KEY=<生产Turnstile secret key>
-# TURNSTILE_ALLOWED_HOSTNAMES=monexus.oai-o.com
+HUMAN_VERIFICATION_PROVIDER=turnstile
+TURNSTILE_SITE_KEY=<生产Turnstile site key>
+TURNSTILE_SECRET_KEY=<生产Turnstile secret key>
+TURNSTILE_ALLOWED_HOSTNAMES=monexus.oai-o.com
 METRICS_TOKEN=<至少 32 字符的随机值>
 
 # 没有真实 SMTP/Sentry 时必须清空模板占位值。
@@ -210,6 +215,22 @@ VITE_SENTRY_DSN=
 # 改成已发布并验证过的 tag。
 MONEXUS_IMAGE_TAG=sha-<master-短提交号>
 MONEXUS_PULL_POLICY=missing
+~~~
+
+C7 稳态限额（目标 backend SHA 已上线，证据表 C2–C6 通过，再观察 ≥24 小时之后，
+**单独**改这一项；不要和首次 `.env` 一起粘贴）：
+
+~~~dotenv
+API_RATE_LIMIT_MAX=1500
+~~~
+
+Phase B ALTCHA 切流（需要**第二次书面授权**。只改私有 `.env` 并重建 server。不要
+和 Phase A、OpenResty、`TRUST_PROXY` 或 C7 同一变更）：
+
+~~~dotenv
+HUMAN_VERIFICATION_PROVIDER=altcha
+ALTCHA_HMAC_KEY=<独立的32字节标准Base64随机值>
+# 切流成功后可注释 TURNSTILE_*；回滚时必须仍能恢复 turnstile 三件套。
 ~~~
 
 运行时允许 SMTP 与 Sentry 为空：邮件会记录到 server 日志，Sentry 不上报。真正的

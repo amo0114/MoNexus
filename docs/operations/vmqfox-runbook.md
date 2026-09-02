@@ -7,7 +7,9 @@ provider reconciliation.
 
 Related: `docs/operations/payment-runbook.md`, `docs/operations/payment-alerts.md`,
 `docs/operations/openapi-vmqfox-lifecycle-note.md`,
-`docs/operations/vmqfox-grayscale-evidence.md`.
+`docs/operations/vmqfox-grayscale-evidence.md`,
+`docs/operations/d91c84ec-ops-closure.md` (native QR + IP + ALTCHA production
+window; canary evidence stays PENDING until a separate deploy authorization).
 
 ## Capability limits
 
