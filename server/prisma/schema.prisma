@@ -1603,7 +1603,10 @@ model OrderPricingSnapshot {
   createdAt             DateTime          @default(now())
 
   order          Order           @relation(fields: [orderId], references: [id], onDelete: Restrict)
-  valuePolicy    ValuePolicy     @relation(fields: [valuePolicyId], references: [id], onDelete: Restrict)
+  // 定价快照创建后不可修改：显式冻结 onUpdate: Restrict（与 20260817 迁移建立
+  // 的库内约束一致）——省略时 Prisma 默认 CASCADE，会让历史快照随政策 ID
+  // 变化而级联漂移（#192 复审修正）。
+  valuePolicy    ValuePolicy     @relation(fields: [valuePolicyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   pointsAsset    AssetDefinition @relation("SnapshotPointsAsset", fields: [pointsAssetCode], references: [code], onDelete: Restrict, onUpdate: Restrict)
   referenceAsset AssetDefinition @relation("SnapshotReferenceAsset", fields: [referenceAssetCode], references: [code], onDelete: Restrict, onUpdate: Restrict)
 }
