@@ -76,19 +76,29 @@ function periodWindow(period: LeaderboardPeriod, cutoffDay: string) {
 }
 
 /**
- * LB-10：每轮覆盖当前三期，并在周期切换日补刷刚结束的那一期——否则
- * 周期最后一天的流水永远进不了定格快照（cutoff 恒在期末之前）。更早的
- * 周期不在集合内，已定格的行不再被触碰。
+ * LB-10：每轮覆盖当前三期，外加**最近一个已结束的**月榜与周榜。已结束期的
+ * 窗口与流水都是确定的，重算幂等（LB-08），因此持续补刷而不是只在周期切换
+ * 日补一次——边界日（1 日/周一）整天失败时，后续任何一轮都能把上一期最后
+ * 一天的流水补进定格快照，不再产生永久缺口。
  */
 export function refreshPeriods(today: string): LeaderboardPeriod[] {
   const periods = [
     resolvePeriod('total', today),
     resolvePeriod('month', today),
     resolvePeriod('week', today),
+    // 结束月 = 本月 1 日的前一天所在月；结束周 = 本周一的前 7 天。
+    resolvePeriod('month', addCalendarDays(businessMonthStart(today), -1)),
+    resolvePeriod('week', addCalendarDays(businessWeekStart(today), -7)),
   ]
-  if (today === businessMonthStart(today)) periods.push(resolvePeriod('month', addCalendarDays(today, -1)))
-  if (today === businessWeekStart(today)) periods.push(resolvePeriod('week', addCalendarDays(today, -1)))
-  return periods
+  // 按 scope + periodKey 去重并保持首现顺序（防御性：常规日期下结束期与
+  // 当前期天然不重合，但集合必须始终是安全输入）。
+  const seen = new Set<string>()
+  return periods.filter(period => {
+    const key = `${period.scope}:${period.periodKey}`
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
 }
 
 /**

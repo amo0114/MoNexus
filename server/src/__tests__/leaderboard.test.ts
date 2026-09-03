@@ -19,6 +19,7 @@ import {
   __aggregateWindowForTests,
   getLeaderboard,
   refreshLeaderboards,
+  refreshPeriods,
   resolvePeriod,
 } from '../modules/leaderboard/service.js'
 import type { LeaderboardScope } from '../modules/leaderboard/types.js'
@@ -300,7 +301,7 @@ describe('leaderboard refresh — 资格投影 (P.4, LB-05, 验收 4)', () => {
 })
 
 describe('leaderboard refresh — 周期定格 (P.5, LB-10, 验收 3)', () => {
-  it('每月 1 日补刷上月：定格快照含 31 日流水，此后不再被改写', async () => {
+  it('每月 1 日补刷上月：定格快照含 31 日流水，本月榜空态', async () => {
     const user = await makeUser('lb-freeze-month@test.local')
     await earn(user.id, 100, at('2026-05-15'))
     await earn(user.id, 50, at('2026-05-31', '23:30:00'))
@@ -312,15 +313,28 @@ describe('leaderboard refresh — 周期定格 (P.5, LB-10, 验收 3)', () => {
     // 6-1：补刷上月，窗口右边界 = 6-1 00:00 → 含 5-31 全天。
     await refreshLeaderboards({ now: at('2026-06-01', '00:30:00') })
     expect(await pointsOf('month', MONTH_KEY, user.id)).toBe(150)
-    const frozen = await snapshotRows('month', MONTH_KEY)
 
     // 新周期首日窗口 [6-1, 6-1) 为空 → 本月榜空态（C7）。
     expect(await snapshotRows('month', 'M2026-06')).toEqual([])
+  })
 
-    // 6-2 起上月已不在刷新集合内：行与 computedAt 全部原样保留。
+  it('月初整天失败后，之后任一轮仍能补齐上月定格快照（LB-10 持续补刷）', async () => {
+    const user = await makeUser('lb-freeze-recovery@test.local')
+    await earn(user.id, 100, at('2026-05-15'))
+    await earn(user.id, 50, at('2026-05-31', '23:30:00'))
+
+    // 5-31 最后一次成功刷新：本月窗口不含 31 日。
+    await refreshLeaderboards({ now: at('2026-05-31', '10:00:00') })
+    expect(await pointsOf('month', MONTH_KEY, user.id)).toBe(100)
+
+    // 6-1 整天失败（cron 宕机，无任何成功刷新）——直接跳到 6-2。
     await earn(user.id, 999, at('2026-06-01', '09:00:00'))
     await refreshLeaderboards({ now: at('2026-06-02', '03:00:00') })
-    expect(await snapshotRows('month', MONTH_KEY)).toEqual(frozen)
+
+    // 上月虽已不在「当前期」，仍在刷新集合内 → 31 日流水被补齐；
+    // 6-1 的流水归属 6 月榜，不泄漏进 5 月窗口。
+    expect(await pointsOf('month', MONTH_KEY, user.id)).toBe(150)
+    expect(await pointsOf('month', 'M2026-06', user.id)).toBe(999)
   })
 
   it('每周一补刷上周：定格快照含周日流水，本周榜为空态', async () => {
@@ -335,6 +349,36 @@ describe('leaderboard refresh — 周期定格 (P.5, LB-10, 验收 3)', () => {
     await refreshLeaderboards({ now: at('2026-05-25', '00:20:00') })
     expect(await pointsOf('week', WEEK_KEY, user.id)).toBe(170)
     expect(await snapshotRows('week', 'W2026-05-25')).toEqual([])
+  })
+})
+
+describe('refreshPeriods — 刷新集合 (LB-10 持续补刷)', () => {
+  it('常规日也包含最近一个已结束的月/周榜，且按 scope+periodKey 去重', () => {
+    // 2026-05-20 周三：当前月 2026-05、当前周 W2026-05-18；结束期 2026-04 / W2026-05-11。
+    const periods = refreshPeriods('2026-05-20')
+    const keys = periods.map(p => `${p.scope}:${p.periodKey}`)
+    expect(keys).toEqual([
+      'total:ALL',
+      'month:M2026-05',
+      'week:W2026-05-18',
+      'month:M2026-04',
+      'week:W2026-05-11',
+    ])
+    expect(new Set(keys).size).toBe(keys.length)
+  })
+
+  it('周期切换日（1 日恰为周一）当前期与结束期不重合、无重复', () => {
+    // 2026-06-01 是周一。
+    const periods = refreshPeriods('2026-06-01')
+    const keys = periods.map(p => `${p.scope}:${p.periodKey}`)
+    expect(keys).toEqual([
+      'total:ALL',
+      'month:M2026-06',
+      'week:W2026-06-01',
+      'month:M2026-05',
+      'week:W2026-05-25',
+    ])
+    expect(new Set(keys).size).toBe(keys.length)
   })
 })
 
@@ -392,6 +436,49 @@ describe('leaderboard cron — 租约互斥 (P.8, LB-09, 验收 6)', () => {
   it('同进程重入被 running 标志挡下', async () => {
     const [a, b] = await Promise.all([runLeaderboardRefreshCronBatch(), runLeaderboardRefreshCronBatch()])
     expect([a.length > 0, b.length > 0].filter(Boolean)).toHaveLength(1)
+  })
+
+  it('失败回拨（releaseForRetry）：下一 tick 可立即重新领取；普通释放仍受窗口节流', async () => {
+    const first = await acquireCronLeaseWithHeartbeat('leaderboard-refresh', LEADERBOARD_REFRESH_WINDOW_MS, {
+      force: true,
+    })
+    expect(first).not.toBeNull()
+    // 失败路径：回拨窗口后互斥与节流同时解除。
+    await first!.releaseForRetry()
+
+    const second = await acquireCronLeaseWithHeartbeat('leaderboard-refresh', LEADERBOARD_REFRESH_WINDOW_MS, {
+      force: true,
+    })
+    expect(second).not.toBeNull()
+
+    // 成功路径不受影响：普通 release 后 24h 窗口节流照常拒绝下一轮。
+    second!.release()
+    await expect(
+      acquireCronLeaseWithHeartbeat('leaderboard-refresh', LEADERBOARD_REFRESH_WINDOW_MS, { force: true })
+    ).resolves.toBeNull()
+  })
+
+  it('旧 token 不能释放或回拨新持有者的租约', async () => {
+    const first = await acquireCronLeaseWithHeartbeat('leaderboard-refresh', LEADERBOARD_REFRESH_WINDOW_MS, {
+      force: true,
+    })
+    expect(first).not.toBeNull()
+
+    // 模拟互斥 TTL 过期后被其他实例接管：token/lockedUntil/lastStartedAt 全部易主。
+    await prisma.$executeRaw`
+      UPDATE "CronLease"
+      SET "leaseToken" = 'taken-over-holder',
+          "lockedUntil" = now() + make_interval(secs => 90),
+          "lastStartedAt" = now()
+      WHERE "name" = 'leaderboard-refresh'`
+
+    await first!.releaseForRetry()
+
+    const row = await prisma.cronLease.findUnique({ where: { name: 'leaderboard-refresh' } })
+    expect(row!.leaseToken).toBe('taken-over-holder')
+    // 新持有者的互斥未被释放（lockedUntil 仍在一分钟后），节流窗口未被回拨。
+    expect(row!.lockedUntil.getTime()).toBeGreaterThan(Date.now() + 60_000)
+    expect(row!.lastStartedAt.getTime()).toBeGreaterThan(Date.now() - 10_000)
   })
 })
 
