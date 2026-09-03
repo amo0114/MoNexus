@@ -34,6 +34,7 @@ export interface RealtimeHubController extends RealtimeHubPort {
 const NULL_HUB: RealtimeHubPort = {
   hasSubscribers: () => false,
   broadcastNotification: (_recipientUserId: number, _envelope: NotificationEnvelope) => {},
+  broadcastRead: (_recipientUserId: number) => 0,
 }
 
 export interface NotificationRealtimeLifecycleOptions {

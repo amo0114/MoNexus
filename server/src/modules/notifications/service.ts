@@ -7,6 +7,7 @@ import type { Prisma } from '@prisma/client'
 import { prisma } from '../../lib/prisma.js'
 import { notFound } from '../../lib/httpError.js'
 import { buildNotificationEnvelope, type NotificationEnvelope } from './realtime/protocol.js'
+import { publishReadInvalidation } from './dispatcher.js'
 export type ListNotificationsParams = {
   cursor?: number
   limit?: number
@@ -192,6 +193,9 @@ export async function markAsRead(userId: number, notificationId: number) {
     }
   }
 
+  // PR-5：提示同用户的其他连接刷新未读数（best-effort，失败不影响本操作）。
+  await publishReadInvalidation(userId)
+
   return {
     id: existing.id,
     status: 'read' as const,
@@ -207,6 +211,10 @@ export async function markAllAsRead(userId: number): Promise<{ updated: number }
     where: { recipientUserId: userId, status: 'unread', ...notExpired(now) },
     data: { status: 'read', readAt: now },
   })
+  if (result.count > 0) {
+    // PR-5：提示同用户的其他连接刷新未读数（best-effort）。
+    await publishReadInvalidation(userId)
+  }
   return { updated: result.count }
 }
 

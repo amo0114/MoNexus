@@ -2,6 +2,8 @@ import { useNavigate, useLocation, Link } from 'react-router-dom'
 import { useAuthStore } from '../stores/authStore'
 import { Coins, User, ShieldCheck, Store, Clock, XCircle, AlertTriangle, Plus, Search, Bell, Trophy, CheckCircle2, Info, Package, Wallet } from 'lucide-react'
 import CountBadge from './ui/CountBadge'
+import { formatBadgeCount } from '../utils/orderAttention'
+import { subscribeReadInvalidation } from '../realtime/readSyncBroadcast'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import EmailVerificationBanner from './EmailVerificationBanner'
 import VerifiedActionGate from './VerifiedActionGate'
@@ -224,6 +226,15 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     void refreshOrderAttentionIfStale()
   })
 
+  // PR-5：实时关闭/降级时同浏览器多 Tab 的已读同步（BroadcastChannel 同源
+  // 广播）。只刷未读数，不带任何业务内容；实时在线时 SSE 的
+  // notification.read 控制事件已覆盖，这里的订阅是兜底，两者天然幂等。
+  useEffect(() => {
+    return subscribeReadInvalidation(() => {
+      if (user) void refreshNotificationUnread()
+    })
+  }, [user, refreshNotificationUnread])
+
   const openAnnouncement = useCallback((announcement: PublicAnnouncement) => {
     setAnnouncementCenterOpen(true)
     if (announcement.presentation === 'acknowledgement_required' || announcement.readAt) return
@@ -406,7 +417,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               title="我的订单"
               aria-label={
                 orderAttentionCount > 0
-                  ? `我的订单，有 ${orderAttentionCount > 99 ? '99+' : orderAttentionCount} 个进行中`
+                  ? `我的订单，有 ${formatBadgeCount(orderAttentionCount)} 个进行中`
                   : '我的订单'
               }
               aria-current={location.pathname.startsWith('/orders') ? 'page' : undefined}
@@ -497,7 +508,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                   data-testid="notification-bell-total-count"
                   className="absolute right-0.5 top-0.5 min-w-4 h-4 px-1 rounded-full bg-[var(--color-danger)] text-[10px] leading-4 font-bold text-white text-center ring-2 ring-[var(--color-surface)]"
                 >
-                  {totalBellUnread > 9 ? '9+' : totalBellUnread}
+                  {/* PR-5：全部数字角标统一 formatBadgeCount（1–99 / 99+）。 */}
+                  {formatBadgeCount(totalBellUnread)}
                 </span>
               )}
             </button>

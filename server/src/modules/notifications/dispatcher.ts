@@ -7,9 +7,26 @@ import type { Prisma } from '@prisma/client'
 import { config } from '../../config/index.js'
 import { notificationCreatedCounter } from '../../lib/metrics.js'
 import { logger } from '../../lib/logger.js'
+import { prisma } from '../../lib/prisma.js'
 import { renderNotification, type NotificationRenderContext } from './templates.js'
 import { NOTIFICATION_REALTIME_CHANNEL } from './realtime/constants.js'
-import { serializePgPayload } from './realtime/protocol.js'
+import { serializePgPayload, serializeReadPgPayload } from './realtime/protocol.js'
+
+/**
+ * PR-5：已读失效提示（best-effort）。与 created 提示不同：它不锚定任何
+ * 通知行、不承载任何内容，因此不要求与业务写同事务；失败只损失一次实时
+ * 提示，客户端 REST 校准（all.visible / 下一条通知）兜底收敛——绝不让它
+ * 影响已读操作本身的成功与否。
+ */
+export async function publishReadInvalidation(recipientUserId: number): Promise<void> {
+  if (!config.notification.enabled || !config.notificationRealtime.enabled) return
+  try {
+    const payload = serializeReadPgPayload(recipientUserId)
+    await prisma.$queryRaw`SELECT pg_notify(${NOTIFICATION_REALTIME_CHANNEL}, ${payload})::text AS result`
+  } catch (err) {
+    logger.warn({ err, recipientUserId }, 'notification read invalidation hint failed')
+  }
+}
 
 export type NotificationRecipientRole = 'user' | 'merchant' | 'admin'
 

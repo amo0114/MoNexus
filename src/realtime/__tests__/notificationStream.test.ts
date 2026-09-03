@@ -107,10 +107,11 @@ interface EventLog {
   fallback: number
   calibration: number
   expiring: number
+  readInvalidation: number
 }
 
 function makeLog(): EventLog {
-  return { states: [], notifications: [], ready: 0, degraded: [], fallback: 0, calibration: 0, expiring: 0 }
+  return { states: [], notifications: [], ready: 0, degraded: [], fallback: 0, calibration: 0, expiring: 0, readInvalidation: 0 }
 }
 
 function makeStream(log: EventLog): NotificationStream {
@@ -122,6 +123,9 @@ function makeStream(log: EventLog): NotificationStream {
     onNotification: (n) => log.notifications.push(n),
     onAuthExpiring: () => {
       log.expiring += 1
+    },
+    onReadInvalidation: () => {
+      log.readInvalidation += 1
     },
     onDegraded: (r) => log.degraded.push(r),
     onFallbackTick: () => {
@@ -154,6 +158,23 @@ afterEach(() => {
 })
 
 describe('NotificationStream (SPEC-NOTIFY-RT-001 / CHK-FE-004/014)', () => {
+  it('PR-5: notification.read control frame fires onReadInvalidation and no toast path', async () => {
+    const log = makeLog()
+    const stream = makeStream(log)
+    const spy = vi.fn(async () => streamResponse([
+      'event: stream.ready\ndata: {}\n\n',
+      'event: notification.read\ndata: {"v":1}\n\n',
+    ]))
+    vi.stubGlobal('fetch', spy)
+
+    stream.start(1, 'token-1')
+    await new Promise(r => setTimeout(r, 60))
+
+    expect(log.readInvalidation).toBe(1)
+    expect(log.notifications).toHaveLength(0)
+    stream.stop()
+  })
+
   it('sends Bearer, credentials and NO Last-Event-ID on connect (CHK-FE-001/014)', async () => {
     const log = makeLog()
     const stream = makeStream(log)
