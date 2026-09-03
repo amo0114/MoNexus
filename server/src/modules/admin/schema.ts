@@ -319,14 +319,51 @@ export const listUsersQuerySchema = z.object({
 
 export type ListUsersQuery = z.infer<typeof listUsersQuerySchema>
 
-export const listOrdersQuerySchema = z.object({
-  status: z.enum(ORDER_STATUSES).optional(),
-  q: z.string().trim().min(1).max(100).optional(),
-  page: z.coerce.number().int().positive('page 必须是正整数').optional(),
-  pageSize: z.coerce.number().int().positive('pageSize 必须是正整数')
-    .max(businessRegistry.pagination.maxPageSize, 'pageSize 超出最大分页限制')
-    .optional(),
-}).strict()
+export function isValidCalendarDate(dateStr: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return false
+  const [yearStr, monthStr, dayStr] = dateStr.split('-')
+  const year = Number(yearStr)
+  const month = Number(monthStr)
+  const day = Number(dayStr)
+  if (month < 1 || month > 12) return false
+  if (day < 1 || day > 31) return false
+  const d = new Date(Date.UTC(year, month - 1, day))
+  return (
+    d.getUTCFullYear() === year &&
+    d.getUTCMonth() === month - 1 &&
+    d.getUTCDate() === day
+  )
+}
+
+export const calendarDateSchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, '必须是 YYYY-MM-DD 格式')
+  .refine(isValidCalendarDate, '必须是有效的公历日期')
+
+export const listOrdersQuerySchema = z
+  .object({
+    status: z.enum(ORDER_STATUSES).optional(),
+    q: z.string().trim().min(1).max(100).optional(),
+    page: z.coerce.number().int().positive('page 必须是正整数').optional(),
+    pageSize: z.coerce.number().int().positive('pageSize 必须是正整数')
+      .max(businessRegistry.pagination.maxPageSize, 'pageSize 超出最大分页限制')
+      .optional(),
+    fromDate: calendarDateSchema.optional(),
+    toDate: calendarDateSchema.optional(),
+  })
+  .strict()
+  .refine(
+    (data) => {
+      if (data.fromDate && data.toDate) {
+        return data.fromDate <= data.toDate
+      }
+      return true
+    },
+    {
+      message: 'fromDate 不能晚于 toDate',
+      path: ['toDate'],
+    },
+  )
 
 export type ListOrdersQuery = z.infer<typeof listOrdersQuerySchema>
 
@@ -335,8 +372,8 @@ export const listAdminAuditQuerySchema = z.object({
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
   adminId: z.coerce.number().int().positive().optional(),
   action: z.string().min(1).optional(),
-  fromDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, '必须是 ISO 日期').optional(),
-  toDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, '必须是 ISO 日期').optional(),
+  fromDate: calendarDateSchema.optional(),
+  toDate: calendarDateSchema.optional(),
 }).strict()
 
 export type ListAdminAuditQuery = z.infer<typeof listAdminAuditQuerySchema>

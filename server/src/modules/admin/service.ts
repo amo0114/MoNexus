@@ -824,6 +824,21 @@ function buildAdminOrderWhere(query: ListOrdersQuery): Prisma.OrderWhereInput {
     where.OR = conditions
   }
 
+  if (query.fromDate || query.toDate) {
+    const createdAtFilter: Prisma.DateTimeFilter = {}
+    if (query.fromDate) {
+      // 起始日包含：UTC 零点
+      createdAtFilter.gte = new Date(`${query.fromDate}T00:00:00.000Z`)
+    }
+    if (query.toDate) {
+      // 结束日次日零点排除：UTC 次日零点
+      const nextDay = new Date(`${query.toDate}T00:00:00.000Z`)
+      nextDay.setUTCDate(nextDay.getUTCDate() + 1)
+      createdAtFilter.lt = nextDay
+    }
+    where.createdAt = createdAtFilter
+  }
+
   return where
 }
 
@@ -844,7 +859,7 @@ export async function listAllOrders(query: ListOrdersQuery = {}) {
         // P7b：列表徽标需要任务态安全投影（复审 P2：UI 已渲染，select 必须跟上）。
         provisionTask: { select: { status: true, attempts: true, lastError: true, lastHttpStatus: true, nextAttemptAt: true, merchantNotifiedAt: true, updatedAt: true } },
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       skip: (page - 1) * pageSize,
       take: pageSize,
     }),
