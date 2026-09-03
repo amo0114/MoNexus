@@ -1,24 +1,5 @@
 import { useState } from 'react'
-import {
-  LayoutDashboard,
-  UsersRound,
-  Package,
-  ShoppingCart,
-  Activity,
-  ClipboardList,
-  FolderLock,
-  Store,
-  DollarSign,
-  Megaphone,
-  Settings,
-  DatabaseBackup,
-  Cable,
-  ShieldAlert,
-  HardDrive,
-  ShoppingBag,
-  Tags,
-  Wallet,
-} from 'lucide-react'
+import AdminNav, { AdminTab, ADMIN_NAV_GROUPS } from '../components/admin/AdminNav'
 import AdminDashboardPanel from '../components/admin/AdminDashboardPanel'
 import AdminMerchantPanel from '../components/admin/AdminMerchantPanel'
 import AdminSettlementPanel from '../components/admin/AdminSettlementPanel'
@@ -41,46 +22,8 @@ import AdminMailPanel from '../components/admin/AdminMailPanel'
 import AdminConfigPanel from '../components/admin/AdminConfigPanel'
 import { MemberTierConfigPanel } from '../components/admin/MemberTierConfigPanel'
 
-export type AdminTab =
-  | 'dashboard'
-  | 'users'
-  | 'products'
-  | 'orders'
-  | 'logs'
-  | 'audit'
-  | 'files'
-  | 'merchants'
-  | 'settlements'
-  | 'announcements'
-  | 'config'
-  | 'backup'
-  | 'faka'
-  | 'abuse'
-  | 'storage'
-  | 'merchandising'
-  | 'catalogGovernance'
-  | 'recharge'
-
-const NAV_ITEMS: { id: AdminTab; label: string; icon: any }[] = [
-  { id: 'dashboard', label: '数据仪表盘', icon: LayoutDashboard },
-  { id: 'merchants', label: '商家管理', icon: Store },
-  { id: 'settlements', label: '结算管理', icon: DollarSign },
-  { id: 'users', label: '用户管理', icon: UsersRound },
-  { id: 'products', label: '商品与库存', icon: Package },
-  { id: 'orders', label: '订单记录', icon: ShoppingCart },
-  { id: 'recharge', label: '充值支付', icon: Wallet },
-  { id: 'faka', label: 'FakaBridge', icon: Cable },
-  { id: 'logs', label: '积分流水', icon: Activity },
-  { id: 'abuse', label: '注册与激励风控', icon: ShieldAlert },
-  { id: 'audit', label: '操作审计', icon: ClipboardList },
-  { id: 'files', label: '文件治理', icon: FolderLock },
-  { id: 'storage', label: '对象存储', icon: HardDrive },
-  { id: 'announcements', label: '公告管理', icon: Megaphone },
-  { id: 'merchandising', label: '营销与陈列', icon: ShoppingBag },
-  { id: 'catalogGovernance', label: '目录治理', icon: Tags },
-  { id: 'config', label: '系统配置', icon: Settings },
-  { id: 'backup', label: '数据备份与恢复', icon: DatabaseBackup },
-]
+export type { AdminTab }
+export { ADMIN_NAV_GROUPS }
 
 const STATEFUL_TABS: Set<AdminTab> = new Set([
   'merchants',
@@ -109,23 +52,8 @@ export default function AdminPage() {
   return (
     <div className="fade-in pt-2">
       <div className="flex flex-col md:flex-row gap-6 max-w-7xl mx-auto">
-        {/* Sidebar — <md: sticky horizontal pill strip (spec M4); ≥md: vertical rail */}
-        <aside className="w-full md:w-56 flex-shrink-0 flex md:block gap-1 md:space-y-1 overflow-x-auto hide-scrollbar max-md:sticky max-md:top-[calc(var(--navbar-h)+var(--safe-top))] max-md:z-20 max-md:-mx-4 max-md:px-4 max-md:py-2 max-md:bg-[var(--color-background)]/95 max-md:backdrop-blur-md">
-          <h3 className="hidden md:block text-xs font-bold text-[var(--color-text)] uppercase tracking-wider mb-3 px-3">系统管理</h3>
-          {NAV_ITEMS.map(({ id, label, icon: Icon }) => (
-            <button
-              key={id}
-              onClick={() => handleTabChange(id)}
-              className={`shrink-0 md:w-full flex items-center gap-3 px-4 py-3 rounded-lg font-semibold transition-colors cursor-pointer text-sm whitespace-nowrap ${
-                activeTab === id
-                  ? 'bg-[var(--color-primary)] text-white shadow-sm'
-                  : 'text-[var(--color-text-muted)] hover:bg-[var(--color-primary)]/8 hover:text-[var(--color-text)]'
-              }`}
-            >
-              <Icon className="w-4 h-4 shrink-0" /> {label}
-            </button>
-          ))}
-        </aside>
+        {/* Navigation Rail / Drawer */}
+        <AdminNav activeTab={activeTab} onTabChange={handleTabChange} />
 
         {/* Main Content */}
         <div className="flex-grow card max-md:p-4 p-6 sm:p-8 max-md:min-h-0 min-h-[600px] overflow-x-auto">
