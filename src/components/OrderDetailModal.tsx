@@ -102,6 +102,9 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
       if (action === 'close') await closeOrder(order.id)
       showToast('操作成功')
       onUpdated?.()
+      // PR-3 复审：dispute 仍是关注态、close 移出关注态——realtime 关闭时
+      // 本地动作也要立即收敛权威计数。
+      void useAppStore.getState().refreshOrderAttention()
       onClose()
     } catch (e: any) {
       showToast(e.response?.data?.error?.message || '操作失败', 'error')
@@ -159,6 +162,9 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
         agreementVersions,
       })
       useAuthStore.getState().updatePoints(data.balanceAfter)
+      // PR-3 复审：续费是全新的进行中订单——人工履约续费不会产生买家
+      // 「新订单」实时事件，这里无条件补拉权威计数（即时已交付单不计数）。
+      void useAppStore.getState().refreshOrderAttention()
       setRenewInfo(null)
       setRenewSuccess({
         orderId: data.orderId,

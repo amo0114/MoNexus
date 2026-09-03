@@ -91,6 +91,8 @@ let orderAttentionInFlight = false
 let orderAttentionTrailing = false
 let orderAttentionRequestSeq = 0
 let orderAttentionLastFetchAt = 0
+/** 通知未读刷新的请求代次：A 的慢响应不得写入 B 的界面（PR-3 复审）。 */
+let notificationUnreadRequestSeq = 0
 /** 补拉性质刷新的最小间隔：合并首次挂载时「登录初始化」与「stream ready」
     的双重触发；事件驱动（buyer.orders / 下单成功）永不节流。 */
 const ORDER_ATTENTION_IF_STALE_MIN_INTERVAL_MS = 1_000
@@ -227,17 +229,28 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
 
   refreshNotificationUnread: async () => {
+    // PR-3 复审：与订单角标同等级的「用户 ID + 请求序号」代际保护——
+    // A 的慢响应绝不写入 B 的界面；登出立即清零并作废在途响应。
     if (!useAuthStore.getState().user) {
+      notificationUnreadRequestSeq++
       set({ notificationUnreadCount: 0 })
       return
     }
+    const seq = ++notificationUnreadRequestSeq
+    const userId = useAuthStore.getState().user!.id
     try {
       const count = await fetchNotificationUnreadCount()
-      set({ notificationUnreadCount: count })
+      if (seq === notificationUnreadRequestSeq && useAuthStore.getState().user?.id === userId) {
+        set({ notificationUnreadCount: Math.max(0, count) })
+      }
     } catch (err) {
       // Feature flag off (404) or network: keep last known count quietly.
       const status = (err as { response?: { status?: number } })?.response?.status
-      if (status === 404 || status === 401) {
+      if (
+        (status === 404 || status === 401)
+        && seq === notificationUnreadRequestSeq
+        && useAuthStore.getState().user?.id === userId
+      ) {
         set({ notificationUnreadCount: 0 })
       }
     }
