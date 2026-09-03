@@ -320,7 +320,7 @@ export interface ImportInventoryRequest {
 }
 
 export interface RejectMerchantRequest {
-  reason?: string
+  reason: string
 }
 
 export interface UpdateCommissionRequest {
@@ -329,6 +329,11 @@ export interface UpdateCommissionRequest {
 
 export interface BatchSettleRequest {
   settlementIds: number[]
+}
+
+export interface BatchSettleResponse {
+  settled: number
+  creditedTotal: number
 }
 
 export interface MerchantDetail extends Merchant {

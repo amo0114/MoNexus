@@ -1,5 +1,5 @@
 import { expect, test, type Page, type Route } from '@playwright/test'
-import { loginAs, SEED_ACCOUNTS } from './helpers'
+import { loginAs, SEED_ACCOUNTS, selectAdminTab } from './helpers'
 
 /**
  * SPEC-OPS-REGMAIL-001 阶段 B：管理后台注册开关 + 邮件投递运营面。
@@ -99,7 +99,7 @@ async function openConfigTab(page: Page) {
   await page.addStyleTag({
     content: '*, *::before, *::after { animation: none !important; transition: none !important; }',
   })
-  await page.getByRole('button', { name: '系统配置' }).click()
+  await selectAdminTab(page, 'config')
 }
 
 const READY_STATUS: MailStatusBody = {

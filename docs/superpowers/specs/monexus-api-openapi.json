@@ -288,8 +288,10 @@
       "SettlementStatus": {
         "type": "string",
         "enum": [
+          "holding",
           "pending",
-          "settled"
+          "settled",
+          "voided"
         ]
       },
       "ProductStatus": {
@@ -1217,8 +1219,57 @@
               }
             }
           },
+          "bookingDate": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "预约履约日期"
+          },
+          "renewalOfOrderId": {
+            "type": "integer",
+            "nullable": true,
+            "description": "续费单指向的原订单号"
+          },
           "delivery": {
             "$ref": "#/components/schemas/DeliveryRecordPublic"
+          },
+          "provisionTask": {
+            "type": "object",
+            "nullable": true,
+            "description": "自动开通任务态安全投影",
+            "properties": {
+              "status": {
+                "type": "string",
+                "nullable": true
+              },
+              "attempts": {
+                "type": "integer",
+                "nullable": true
+              },
+              "lastError": {
+                "type": "string",
+                "nullable": true
+              },
+              "lastHttpStatus": {
+                "type": "integer",
+                "nullable": true
+              },
+              "nextAttemptAt": {
+                "type": "string",
+                "format": "date-time",
+                "nullable": true
+              },
+              "merchantNotifiedAt": {
+                "type": "string",
+                "format": "date-time",
+                "nullable": true
+              },
+              "updatedAt": {
+                "type": "string",
+                "format": "date-time",
+                "nullable": true
+              }
+            }
           }
         }
       },
@@ -1229,10 +1280,78 @@
           },
           {
             "type": "object",
-            "description": "管理员订单详情。`delivery` 携带 `content`（管理员可查证敏感交付内容用于客服 / 风控）；附带 `statusEvents` 时间线。",
+            "description": "管理员订单详情。`delivery` 携带 `content`（管理员可查证敏感交付内容用于客服 / 风控）；附带 `statusEvents` 时间线、`holdingPoints`、`fulfillmentDeadline`、`deliveryModeSnapshot`、`purchaseFormAnswers` 及自动开通任务态。",
             "properties": {
               "delivery": {
                 "$ref": "#/components/schemas/DeliveryRecordWithContent"
+              },
+              "holdingPoints": {
+                "type": "integer",
+                "nullable": true,
+                "description": "冻结积分"
+              },
+              "fulfillmentDeadline": {
+                "type": "string",
+                "format": "date-time",
+                "nullable": true,
+                "description": "履约截止时间"
+              },
+              "deliveryModeSnapshot": {
+                "type": "string",
+                "nullable": true,
+                "description": "下单时的履约交付模式快照"
+              },
+              "purchaseFormSnapshot": {
+                "type": "array",
+                "nullable": true,
+                "description": "购买前表单定义快照",
+                "items": {
+                  "type": "object"
+                }
+              },
+              "purchaseFormAnswers": {
+                "type": "object",
+                "nullable": true,
+                "description": "买家预留表单答案",
+                "additionalProperties": true
+              },
+              "provisionTask": {
+                "type": "object",
+                "nullable": true,
+                "description": "自动开通任务态安全投影",
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "attempts": {
+                    "type": "integer",
+                    "nullable": true
+                  },
+                  "lastError": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "lastHttpStatus": {
+                    "type": "integer",
+                    "nullable": true
+                  },
+                  "nextAttemptAt": {
+                    "type": "string",
+                    "format": "date-time",
+                    "nullable": true
+                  },
+                  "merchantNotifiedAt": {
+                    "type": "string",
+                    "format": "date-time",
+                    "nullable": true
+                  },
+                  "updatedAt": {
+                    "type": "string",
+                    "format": "date-time",
+                    "nullable": true
+                  }
+                }
               },
               "statusEvents": {
                 "type": "array",
@@ -1775,9 +1894,15 @@
       },
       "RejectMerchantRequest": {
         "type": "object",
+        "required": [
+          "reason"
+        ],
         "properties": {
           "reason": {
-            "type": "string"
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 500,
+            "description": "拒绝入驻原因（必填，2~500字符）"
           }
         }
       },
@@ -1937,6 +2062,17 @@
             "type": "string",
             "format": "date-time",
             "nullable": true
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "订阅到期时间"
+          },
+          "expired": {
+            "type": "boolean",
+            "nullable": true,
+            "description": "是否已过期"
           }
         }
       },
@@ -1961,6 +2097,17 @@
             "type": "string",
             "format": "date-time",
             "nullable": true
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "订阅到期时间"
+          },
+          "expired": {
+            "type": "boolean",
+            "nullable": true,
+            "description": "是否已过期"
           }
         }
       },
@@ -5316,17 +5463,67 @@
               "type": "integer",
               "default": 20
             }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "fromDate",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "toDate",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
           }
         ],
         "responses": {
           "200": {
-            "description": "订单数组",
+            "description": "订单分页数据",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/AdminOrderRow"
+                  "type": "object",
+                  "required": [
+                    "items",
+                    "total",
+                    "page",
+                    "pageSize"
+                  ],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/AdminOrderRow"
+                      }
+                    },
+                    "total": {
+                      "type": "integer"
+                    },
+                    "page": {
+                      "type": "integer"
+                    },
+                    "pageSize": {
+                      "type": "integer"
+                    }
                   }
                 }
               }
@@ -5366,6 +5563,12 @@
                 }
               }
             }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
@@ -6084,13 +6287,33 @@
         ],
         "responses": {
           "200": {
-            "description": "商家数组",
+            "description": "商家分页列表",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/Merchant"
+                  "type": "object",
+                  "required": [
+                    "items",
+                    "total",
+                    "page",
+                    "pageSize"
+                  ],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Merchant"
+                      }
+                    },
+                    "total": {
+                      "type": "integer"
+                    },
+                    "page": {
+                      "type": "integer"
+                    },
+                    "pageSize": {
+                      "type": "integer"
+                    }
                   }
                 }
               }
@@ -6338,13 +6561,33 @@
         ],
         "responses": {
           "200": {
-            "description": "结算数组",
+            "description": "结算分页列表",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/Settlement"
+                  "type": "object",
+                  "required": [
+                    "items",
+                    "total",
+                    "page",
+                    "pageSize"
+                  ],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Settlement"
+                      }
+                    },
+                    "total": {
+                      "type": "integer"
+                    },
+                    "page": {
+                      "type": "integer"
+                    },
+                    "pageSize": {
+                      "type": "integer"
+                    }
                   }
                 }
               }
@@ -6382,8 +6625,15 @@
               "application/json": {
                 "schema": {
                   "type": "object",
+                  "required": [
+                    "settled",
+                    "creditedTotal"
+                  ],
                   "properties": {
                     "settled": {
+                      "type": "integer"
+                    },
+                    "creditedTotal": {
                       "type": "integer"
                     }
                   }

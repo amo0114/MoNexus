@@ -6,7 +6,7 @@ import { loginAs, SEED_ACCOUNTS } from './helpers'
 //  2) BottomTabBar：贴底、按角色 3/4 项、公告入口继承 announcement-center-mobile-trigger
 //  3) 商品详情标题 <lg 位于文档流（不遮挡主图）
 //  4) 共享 Dialog <md 为 bottom sheet（全宽、贴底、92dvh 上限）
-//  5) Admin/Merchant 侧栏 <md 为横向可滚动 pill 条，内容不被推到首屏之下
+//  5) Admin <md 为分组抽屉，Merchant 侧栏 <md 为横向可滚动 pill 条
 
 async function expectNoHorizontalOverflow(page: Page, label: string) {
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
@@ -120,18 +120,24 @@ test.describe('mobile layout verification @375px', () => {
     await expectNoHorizontalOverflow(page, 'merchant')
   })
 
-  test('admin: 13-item strip is horizontally scrollable, content above fold', async ({ page }) => {
+  test('admin: grouped drawer replaces the old strip and keeps content above fold', async ({ page }) => {
     await loginAs(page, SEED_ACCOUNTS.admin)
     await page.goto('/admin')
-    await page.waitForTimeout(1200)
-    const strip = page.locator('aside')
-    const metrics = await strip.evaluate((el) => ({ scroll: el.scrollWidth, client: el.clientWidth }))
-    expect(metrics.scroll).toBeGreaterThan(metrics.client) // scrollable strip
-    // Main card content begins within the first viewport
-    const mainCard = page.locator('aside + div')
+    const trigger = page.getByTestId('admin-mobile-nav-trigger')
+    await expect(trigger).toBeVisible({ timeout: 10_000 })
+    await expect(page.locator('nav[aria-label="管理后台导航"]')).toBeHidden()
+
+    // Main card content begins within the first viewport.
+    const mainCard = page.getByRole('heading', { name: '数据仪表盘' }).locator('..')
     const cardBox = await mainCard.boundingBox()
     expect(cardBox!.y).toBeLessThan(700)
+
+    await trigger.click()
+    const drawer = page.getByTestId('admin-mobile-nav-drawer')
+    await expect(drawer).toBeVisible()
+    await expect(page.getByTestId('admin-mobile-nav-item-backup')).toBeVisible()
     await expectNoHorizontalOverflow(page, 'admin')
+    await page.keyboard.press('Escape')
   })
 
   test('profile: no overflow, tab bar covers nothing', async ({ page }) => {

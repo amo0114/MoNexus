@@ -52,6 +52,39 @@ export interface AdminOrderListQuery {
   q?: string
   page?: number
   pageSize?: number
+  fromDate?: string
+  toDate?: string
+}
+
+export interface AdminOrderDetail extends AdminOrderItem {
+  updatedAt?: string
+  holdingPoints?: number
+  fulfillmentDeadline?: string | null
+  deliveryModeSnapshot?: string | null
+  delivery?: {
+    id?: number
+    content?: string | null
+    status: string
+    expiresAt?: string | null
+    expired?: boolean
+    deliveredAt?: string | null
+  } | null
+  product?: {
+    id: number
+    name: string
+    icon?: string | null
+    type?: string | null
+    imageUrl?: string | null
+    price?: number
+    deliveryMode?: string | null
+  } | null
+  purchaseFormSnapshot?: Array<{
+    id: string
+    label: string
+    type: string
+    required?: boolean
+  }> | null
+  purchaseFormAnswers?: Record<string, unknown> | null
 }
 
 export async function getAdminUsers(
@@ -65,6 +98,11 @@ export async function getAdminOrders(
   params?: AdminOrderListQuery,
 ): Promise<PaginatedResult<AdminOrderItem>> {
   const { data } = await api.get<PaginatedResult<AdminOrderItem>>('/admin/orders', { params })
+  return data
+}
+
+export async function getAdminOrderDetail(id: number): Promise<AdminOrderDetail> {
+  const { data } = await api.get<AdminOrderDetail>(`/admin/orders/${id}`)
   return data
 }
 
