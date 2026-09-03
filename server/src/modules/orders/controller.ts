@@ -50,6 +50,17 @@ export async function list(req: Request, res: Response, next: NextFunction) {
   }
 }
 
+// PR-3：买家「进行中」订单权威计数（红点角标）。只按当前用户统计，
+// 响应 { count }，与列表分页完全解耦。
+export async function attentionCount(req: Request, res: Response, next: NextFunction) {
+  try {
+    const count = await orderService.getAttentionOrderCount(req.user!.userId)
+    res.json({ count })
+  } catch (err) {
+    next(err)
+  }
+}
+
 export async function dispute(req: Request, res: Response, next: NextFunction) {
   try {
     const order = await orderService.disputeOrder(

@@ -1,9 +1,8 @@
 import { create } from 'zustand'
 import { ConfigRegistry } from '../types/config'
 import { getConfigRegistry } from '../api/registry'
-import { getOrders } from '../api/orders'
+import { getOrderAttentionCount } from '../api/orders'
 import { getUnreadCount as fetchNotificationUnreadCount } from '../api/notifications'
-import { countAttentionOrders } from '../utils/orderAttention'
 import { useAuthStore } from './authStore'
 
 export type ToastType = 'success' | 'error' | 'info' | 'warning'
@@ -56,8 +55,18 @@ interface AppState {
   setPointsHistoryOpen: (open: boolean) => void
   setTabbarHidden: (hidden: boolean) => void
   setOrderAttentionCount: (n: number) => void
-  /** 重新统计进行中订单（登录后 / 下单后 / 订单页刷新）。 */
+  /**
+   * 拉取「进行中」订单权威计数（PR-3：GET /orders/attention-count）。
+   * 登录后 / 下单后 / 实时订单事件驱动。单飞 + 代际保护：
+   * 在途请求合并，慢响应绝不覆盖新请求或另一个用户的角标。
+   */
   refreshOrderAttention: () => Promise<void>
+  /**
+   * 补拉性质的角标刷新（回前台 / stream ready / 校准 tick）：距上次成功
+   * 拉取不足 1s 时跳过——只为合并登录初始化与 stream 首次 ready 的双重
+   * 触发；事件驱动的 refreshOrderAttention 不受此间隔限制。
+   */
+  refreshOrderAttentionIfStale: () => Promise<void>
   showToast: (message: string, type?: ToastType) => void
   removeToast: (id: number) => void
   clearIslandNotice: () => void
@@ -76,6 +85,15 @@ interface AppState {
 }
 
 let toastId = 0
+
+// PR-3：角标刷新的单飞/代际状态（模块级，不进 store 快照）。
+let orderAttentionInFlight = false
+let orderAttentionTrailing = false
+let orderAttentionRequestSeq = 0
+let orderAttentionLastFetchAt = 0
+/** 补拉性质刷新的最小间隔：合并首次挂载时「登录初始化」与「stream ready」
+    的双重触发；事件驱动（buyer.orders / 下单成功）永不节流。 */
+const ORDER_ATTENTION_IF_STALE_MIN_INTERVAL_MS = 1_000
 
 export const useAppStore = create<AppState>()((set, get) => ({
   activeTab: 'store',
@@ -99,17 +117,44 @@ export const useAppStore = create<AppState>()((set, get) => ({
   setTabbarHidden: (hidden) => set({ tabbarHidden: hidden }),
   setOrderAttentionCount: (n) => set({ orderAttentionCount: Math.max(0, n) }),
   refreshOrderAttention: async () => {
+    // 登出/无用户：立即归零、作废在途响应（seq 前移使其被丢弃）、取消已
+    // 登记的补跑——上一个账号的角标绝不能带进登出后的界面。
     if (!useAuthStore.getState().user) {
+      orderAttentionRequestSeq++
+      orderAttentionTrailing = false
       set({ orderAttentionCount: 0 })
       return
     }
+    // 单飞：在途时只登记一次补跑（trailing），合并突发触发。
+    if (orderAttentionInFlight) {
+      orderAttentionTrailing = true
+      return
+    }
+    orderAttentionInFlight = true
+    const seq = ++orderAttentionRequestSeq
+    const userId = useAuthStore.getState().user!.id
     try {
-      // 足够覆盖日常未完结单；角标只需计数，不要求全量历史。
-      const orders = await getOrders({ page: 1, pageSize: 100 })
-      set({ orderAttentionCount: countAttentionOrders(orders) })
+      const count = await getOrderAttentionCount()
+      orderAttentionLastFetchAt = Date.now()
+      // 代际保护：响应期间用户已切换（A→B）或已有更新请求发出 → 本响应
+      // 作废，A 的慢响应绝不能写进 B 的角标。
+      if (seq === orderAttentionRequestSeq && useAuthStore.getState().user?.id === userId) {
+        set({ orderAttentionCount: Math.max(0, count) })
+      }
     } catch {
       // 静默：角标失败不打扰主流程
+    } finally {
+      orderAttentionInFlight = false
+      if (orderAttentionTrailing) {
+        orderAttentionTrailing = false
+        // 在途期间的失效事件合并成一次补拉，保证不漏最新状态。
+        void get().refreshOrderAttention()
+      }
     }
+  },
+  refreshOrderAttentionIfStale: async () => {
+    if (Date.now() - orderAttentionLastFetchAt < ORDER_ATTENTION_IF_STALE_MIN_INTERVAL_MS) return
+    await get().refreshOrderAttention()
   },
 
   // Auto-dismiss lives in the Toast item component (it owns the exit
