@@ -111,6 +111,12 @@ export async function getOrders(params?: { page?: number; pageSize?: number; sta
   return data
 }
 
+/** PR-3：买家「进行中」订单权威计数（顶栏/底栏红点角标），与列表分页解耦。 */
+export async function getOrderAttentionCount(): Promise<number> {
+  const { data } = await api.get('/orders/attention-count')
+  return data.count
+}
+
 export async function getOrderDetail(id: number): Promise<UserOrderDetail> {
   const { data } = await api.get(`/orders/${id}`)
   return data

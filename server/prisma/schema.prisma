@@ -812,6 +812,8 @@ model Order {
   @@index([createdAt])
   @@index([renewalOfOrderId])
   @@index([merchantId, bookingDate])
+  // PR-3：买家「进行中」订单红点权威计数的支撑索引。
+  @@index([userId, status])
 }
 
 // FakaBridge outbox：下单事务内创建，事务外 HTTP 调用 Xboard 插件。

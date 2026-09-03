@@ -33,6 +33,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const showToast = useAppStore((s) => s.showToast)
   const orderAttentionCount = useAppStore((s) => s.orderAttentionCount)
   const refreshOrderAttention = useAppStore((s) => s.refreshOrderAttention)
+  const refreshOrderAttentionIfStale = useAppStore((s) => s.refreshOrderAttentionIfStale)
   const notificationUnreadCount = useAppStore((s) => s.notificationUnreadCount)
   const refreshNotificationUnread = useAppStore((s) => s.refreshNotificationUnread)
   const announcements = useAnnouncements()
@@ -43,11 +44,14 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     (announcement) => announcement.presentation === 'acknowledgement_required' && !announcement.acknowledgedAt,
   )
 
-  // 登录后刷新「进行中订单」角标（顶栏订单入口 / 底栏「我的」共用）
+  // PR-3：全局角标唯一初始化/清零点（顶栏与底栏共用 store 状态）。
+  // 用户变化即初始化两个角标；登出立即归零（store 内作废在途响应）。
+  // 首次挂载只会发出一笔订单计数请求——stream ready 的补拉由
+  // refreshOrderAttentionIfStale 的 1s 间隔合并。
   useEffect(() => {
-    if (!user) return
     void refreshOrderAttention()
-  }, [user?.id, refreshOrderAttention])
+    void refreshNotificationUnread()
+  }, [user?.id, refreshOrderAttention, refreshNotificationUnread])
 
   // SPEC-LEGAL-001：法律页脚分组（门禁感知——功能关闭/接口 404 时整组隐藏，
   // 绝不渲染指向 404 的死链）。模块级缓存，全应用只请求一次。
@@ -208,8 +212,16 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   useNotificationInvalidation('notifications', () => {
     if (user) void refreshNotificationUnread()
   })
+  // PR-3：订单红点接入实时失效总线——buyer.orders 覆盖全部状态迁移
+  // （交付/拒单/仲裁/自动开通），角标不再离开 /orders 页后冻结。
+  useNotificationInvalidation('buyer.orders', () => {
+    if (user) void refreshOrderAttention()
+  })
   useNotificationInvalidation('all.visible', () => {
-    if (user) void refreshNotificationUnread()
+    if (!user) return
+    void refreshNotificationUnread()
+    // 补拉性质（ready/回前台/校准）：走 1s 间隔去重，避免与登录初始化重复。
+    void refreshOrderAttentionIfStale()
   })
 
   const openAnnouncement = useCallback((announcement: PublicAnnouncement) => {

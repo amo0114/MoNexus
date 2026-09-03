@@ -146,6 +146,9 @@ export default function ProductDetailPage() {
         agreementVersions,
       })
       useAuthStore.getState().updatePoints(data.balanceAfter)
+      // PR-3：下单成功即刷新「进行中」角标。即时已交付订单不会被计入
+      // （权威计数只统计 pending/processing/disputed），人工/异步履约 +1。
+      void useAppStore.getState().refreshOrderAttention()
       setDeliveryContent(data.deliveryContent ?? '')
       setDeliveryContentType(data.deliveryContentType ?? '')
       setDeliveryStructured(data.deliveryStructuredContent ?? null)
