@@ -238,5 +238,12 @@ describe('AdminSettlementPanel (PR 01 Remediation)', () => {
       // Row 1 should be pruned, row 4 remains selected (1 item)
       expect(screen.getByTestId('admin-batch-settle')).toHaveTextContent('批量结算 (1)')
     })
+
+    // Open detail dialog to confirm the retained item amount was refreshed from 360 to 380
+    fireEvent.click(screen.getByTestId('admin-view-settlements-selection'))
+    expect(await screen.findByTestId('admin-settlements-selection-dialog')).toBeInTheDocument()
+    expect(screen.getByTestId('admin-selection-detail-item-4')).toHaveTextContent('ORD-104')
+    expect(screen.getByTestId('admin-selection-detail-item-4')).toHaveTextContent('380 积分')
+    expect(screen.queryByTestId('admin-selection-detail-item-1')).not.toBeInTheDocument()
   })
 })

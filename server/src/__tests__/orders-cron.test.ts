@@ -282,22 +282,64 @@ describe('M3-S2: merchant workbench SLA highlight', () => {
     const { accessToken, orderId } = await createManualOrder('cron-dispute-user@test.local', 'pass123', product.id)
     await ageOrderToPastDelivery(orderId, 8)
 
-    // Buyer disputes the delivered order
-    await api
-      .post(`/api/orders/${orderId}/dispute`)
-      .set(authHeader(accessToken))
-      .send({ note: '商品未按约定交付，发起争议' })
-      .expect(200)
+    // Check order is delivered before running batch
+    const orderBefore = await prisma.order.findUniqueOrThrow({
+      where: { id: orderId },
+      include: { settlement: true },
+    })
+    expect(orderBefore.status).toBe('delivered')
 
-    const orderBefore = await prisma.order.findUniqueOrThrow({ where: { id: orderId } })
-    expect(orderBefore.status).toBe('disputed')
+    const buyerAccountBefore = await prisma.pointAccount.findUniqueOrThrow({ where: { userId: user.id } })
+    const initialBuyerBalance = buyerAccountBefore.balance
+    const initialHolding = orderBefore.holdingPoints
 
-    // Trigger the cron batch execution
-    await __runAutoCloseBatchForTests()
+    let observedInCandidates = false
 
-    // The order must remain in disputed status, NOT closed
-    const orderAfter = await prisma.order.findUniqueOrThrow({ where: { id: orderId } })
+    // Trigger cron batch with hook
+    await __runAutoCloseBatchForTests({
+      afterCandidates: async (candidates) => {
+        // 1. Verify this order was returned in candidates while delivered
+        observedInCandidates = candidates.some((c) => c.id === orderId)
+
+        // 2. Submit dispute AFTER candidate query, while cron holds the stale candidate snapshot
+        await api
+          .post(`/api/orders/${orderId}/dispute`)
+          .set(authHeader(accessToken))
+          .send({ note: '商品未按约定交付，发起争议' })
+          .expect(200)
+      },
+    })
+
+    // Assert that the order was indeed in the candidate list
+    expect(observedInCandidates).toBe(true)
+
+    // Assert final states
+    const orderAfter = await prisma.order.findUniqueOrThrow({
+      where: { id: orderId },
+      include: { settlement: true, statusEvents: true },
+    })
+
+    // 1. Order remains disputed
     expect(orderAfter.status).toBe('disputed')
+
+    // 2. confirmedAt is null
     expect(orderAfter.confirmedAt).toBeNull()
+
+    // 3. No system.auto_close event
+    const autoCloseEvent = orderAfter.statusEvents.find((e) => e.action === 'system.auto_close')
+    expect(autoCloseEvent).toBeUndefined()
+
+    // 4. Buyer balance and holding points untouched
+    const buyerAccountAfter = await prisma.pointAccount.findUniqueOrThrow({ where: { userId: user.id } })
+    expect(buyerAccountAfter.balance).toBe(initialBuyerBalance)
+    expect(orderAfter.holdingPoints).toBe(initialHolding)
+
+    // 5. Settlement unchanged
+    if (orderBefore.settlement) {
+      expect(orderAfter.settlement?.status).toBe(orderBefore.settlement.status)
+      expect(orderAfter.settlement?.settledAt).toBe(orderBefore.settlement.settledAt)
+    } else {
+      expect(orderAfter.settlement).toBeNull()
+    }
   })
 })

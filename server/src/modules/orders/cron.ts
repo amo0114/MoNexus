@@ -93,7 +93,11 @@ async function autoCloseOrder(order: AutoCloseCandidate): Promise<void> {
   }
 }
 
-async function runAutoCloseBatch() {
+export interface AutoCloseBatchHooks {
+  afterCandidates?: (candidates: AutoCloseCandidate[]) => Promise<void> | void
+}
+
+async function runAutoCloseBatch(hooks?: AutoCloseBatchHooks) {
   if (running) return
   running = true
   let lease: CronLeaseHandle | null = null
@@ -107,6 +111,9 @@ async function runAutoCloseBatch() {
     const candidates = await findAutoCloseCandidates()
     if (candidates.length === 0) return
     logger.info({ count: candidates.length }, 'auto-close cron starting batch')
+    if (hooks?.afterCandidates) {
+      await hooks.afterCandidates(candidates)
+    }
     for (const order of candidates) {
       await autoCloseOrder(order)
     }
@@ -141,6 +148,6 @@ export function stopOrderCron() {
   logger.info('order auto-close cron stopped')
 }
 
-export async function __runAutoCloseBatchForTests() {
-  await runAutoCloseBatch()
+export async function __runAutoCloseBatchForTests(hooks?: AutoCloseBatchHooks) {
+  await runAutoCloseBatch(hooks)
 }

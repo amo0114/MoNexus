@@ -957,7 +957,7 @@ describe('POST /api/admin/settlements/batch-settle', () => {
   })
 
   it('should not deadlock or return 500 when two requests settle the same batch in opposite ID order', async () => {
-    await createTestUser('settle-rev-admin@test.local', 'admin123', 'admin')
+    const { user: adminUser } = await createTestUser('settle-rev-admin@test.local', 'admin123', 'admin')
     const { merchant } = await createTestMerchant('settle-rev-merchant@test.local', 'merchant123', {
       role: 'merchant',
       status: 'active',
@@ -973,6 +973,9 @@ describe('POST /api/admin/settlements/batch-settle', () => {
 
     const s1 = await prisma.settlement.findUniqueOrThrow({ where: { orderId: o1.body.orderId } })
     const s2 = await prisma.settlement.findUniqueOrThrow({ where: { orderId: o2.body.orderId } })
+
+    const initialMerchantAccount = await prisma.pointAccount.findUnique({ where: { userId: merchant.userId } })
+    const initialBalance = initialMerchantAccount?.balance ?? 0
 
     const [smallerId, largerId] = [s1.id, s2.id].sort((a, b) => a - b)
 
@@ -996,6 +999,21 @@ describe('POST /api/admin/settlements/batch-settle', () => {
     const s2Final = await prisma.settlement.findUniqueOrThrow({ where: { id: largerId } })
     expect(s1Final.status).toBe('settled')
     expect(s2Final.status).toBe('settled')
+
+    // Verify balance credited exactly once for the batch
+    const finalMerchantAccount = await prisma.pointAccount.findUniqueOrThrow({ where: { userId: merchant.userId } })
+    expect(finalMerchantAccount.balance).toBe(initialBalance + s1.settlementAmount + s2.settlementAmount)
+
+    // Verify exactly 2 PointLogs (one for each order) and 1 AdminLog
+    const pointLogs = await prisma.pointLog.findMany({
+      where: { userId: merchant.userId, orderId: { in: [o1.body.orderId, o2.body.orderId] } },
+    })
+    expect(pointLogs).toHaveLength(2)
+
+    const adminLogs = await prisma.adminLog.findMany({
+      where: { adminUserId: adminUser.id, action: '批量结算' },
+    })
+    expect(adminLogs).toHaveLength(1)
   })
 
   it('should successfully settle two non-overlapping batches for the same merchant concurrently without deadlock', async () => {
