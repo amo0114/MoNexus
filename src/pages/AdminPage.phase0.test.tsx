@@ -113,7 +113,7 @@ vi.mock('../api/client', () => ({
 }))
 
 vi.mock('../api/adminMerchant', () => ({
-  getAdminMerchants: vi.fn(() => Promise.resolve([])),
+  getAdminMerchants: vi.fn(() => Promise.resolve({ items: [], total: 0, page: 1, pageSize: 20 })),
   approveMerchant: vi.fn(),
   rejectMerchant: vi.fn(),
   suspendMerchant: vi.fn(),
@@ -129,8 +129,13 @@ describe('AdminPage Phase 0 verification', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     useAppStore.setState({ toasts: [] })
-    mocks.getSettlements.mockResolvedValue(settlementsFixture)
-    mocks.batchSettle.mockResolvedValue({ settled: 2 })
+    mocks.getSettlements.mockResolvedValue({
+      items: settlementsFixture,
+      total: settlementsFixture.length,
+      page: 1,
+      pageSize: 20,
+    })
+    mocks.batchSettle.mockResolvedValue({ settled: 2, creditedTotal: 285 })
   })
 
   it('renders dashboard with platform order count label and extended metrics', async () => {

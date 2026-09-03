@@ -288,8 +288,10 @@
       "SettlementStatus": {
         "type": "string",
         "enum": [
+          "holding",
           "pending",
-          "settled"
+          "settled",
+          "voided"
         ]
       },
       "ProductStatus": {
@@ -6084,13 +6086,33 @@
         ],
         "responses": {
           "200": {
-            "description": "商家数组",
+            "description": "商家分页列表",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/Merchant"
+                  "type": "object",
+                  "required": [
+                    "items",
+                    "total",
+                    "page",
+                    "pageSize"
+                  ],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Merchant"
+                      }
+                    },
+                    "total": {
+                      "type": "integer"
+                    },
+                    "page": {
+                      "type": "integer"
+                    },
+                    "pageSize": {
+                      "type": "integer"
+                    }
                   }
                 }
               }
@@ -6338,13 +6360,33 @@
         ],
         "responses": {
           "200": {
-            "description": "结算数组",
+            "description": "结算分页列表",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/Settlement"
+                  "type": "object",
+                  "required": [
+                    "items",
+                    "total",
+                    "page",
+                    "pageSize"
+                  ],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Settlement"
+                      }
+                    },
+                    "total": {
+                      "type": "integer"
+                    },
+                    "page": {
+                      "type": "integer"
+                    },
+                    "pageSize": {
+                      "type": "integer"
+                    }
                   }
                 }
               }
@@ -6382,8 +6424,15 @@
               "application/json": {
                 "schema": {
                   "type": "object",
+                  "required": [
+                    "settled",
+                    "creditedTotal"
+                  ],
                   "properties": {
                     "settled": {
+                      "type": "integer"
+                    },
+                    "creditedTotal": {
                       "type": "integer"
                     }
                   }

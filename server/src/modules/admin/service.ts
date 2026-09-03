@@ -1042,13 +1042,23 @@ export async function listMerchants(status?: string, q?: string, page = 1, pageS
   if (status) where.status = status
   if (q) where.name = { contains: q, mode: 'insensitive' }
 
-  return prisma.merchant.findMany({
-    where,
-    include: { user: { select: { id: true, email: true } } },
-    orderBy: { createdAt: 'desc' },
-    skip: (page - 1) * pageSize,
-    take: pageSize,
-  })
+  const [total, items] = await prisma.$transaction(
+    [
+      prisma.merchant.count({ where }),
+      prisma.merchant.findMany({
+        where,
+        include: { user: { select: { id: true, email: true } } },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+    ],
+    {
+      isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
+    },
+  )
+
+  return { items, total, page, pageSize }
 }
 
 export async function getMerchantDetail(id: number) {
@@ -1183,16 +1193,26 @@ export async function listAllSettlements(status?: string, page = 1, pageSize = 2
   const where: Prisma.SettlementWhereInput = {}
   if (status) where.status = status
 
-  return prisma.settlement.findMany({
-    where,
-    include: {
-      merchant: { select: { id: true, name: true } },
-      order: { select: { id: true, price: true, createdAt: true } },
+  const [total, items] = await prisma.$transaction(
+    [
+      prisma.settlement.count({ where }),
+      prisma.settlement.findMany({
+        where,
+        include: {
+          merchant: { select: { id: true, name: true } },
+          order: { select: { id: true, price: true, createdAt: true } },
+        },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+    ],
+    {
+      isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
     },
-    orderBy: { createdAt: 'desc' },
-    skip: (page - 1) * pageSize,
-    take: pageSize,
-  })
+  )
+
+  return { items, total, page, pageSize }
 }
 
 /**

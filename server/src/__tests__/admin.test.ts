@@ -457,7 +457,10 @@ describe('GET /api/admin/settlements', () => {
       .query({ status: 'holding' })
       .set(authHeader(admin.accessToken))
       .expect(200)
-    expect(holdingList.body.some((s: { orderId: number }) => s.orderId === orderId)).toBe(true)
+    expect(holdingList.body.items.some((s: { orderId: number }) => s.orderId === orderId)).toBe(true)
+    expect(holdingList.body.total).toBeGreaterThanOrEqual(1)
+    expect(holdingList.body.page).toBe(1)
+    expect(holdingList.body.pageSize).toBe(20)
 
     await api
       .post(`/api/merchant/orders/${orderId}/fulfillment/reject`)
@@ -470,7 +473,8 @@ describe('GET /api/admin/settlements', () => {
       .query({ status: 'voided' })
       .set(authHeader(admin.accessToken))
       .expect(200)
-    expect(voidedList.body.some((s: { orderId: number; status: string }) => s.orderId === orderId && s.status === 'voided')).toBe(true)
+    expect(voidedList.body.items.some((s: { orderId: number; status: string }) => s.orderId === orderId && s.status === 'voided')).toBe(true)
+    expect(voidedList.body.total).toBeGreaterThanOrEqual(1)
   })
 })
 

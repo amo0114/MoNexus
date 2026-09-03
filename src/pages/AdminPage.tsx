@@ -85,9 +85,27 @@ export default function AdminPage() {
   const [stats, setStats] = useState<any>(null)
   const [products, setProducts] = useState<AdminProductListItem[]>([])
   const [logs, setLogs] = useState<any[]>([])
+  // Merchants pagination & filter state
   const [merchants, setMerchants] = useState<Merchant[]>([])
+  const [merchantPage, setMerchantPage] = useState(1)
+  const [merchantTotal, setMerchantTotal] = useState(0)
+  const [draftMerchantStatus, setDraftMerchantStatus] = useState('')
+  const [draftMerchantSearch, setDraftMerchantSearch] = useState('')
+  const appliedMerchantFiltersRef = useRef<{ status: string; q: string }>({ status: '', q: '' })
+  const merchantsReqSeqRef = useRef(0)
+
+  // Settlements pagination & multiselect state
   const [settlements, setSettlements] = useState<Settlement[]>([])
+  const [settlementPage, setSettlementPage] = useState(1)
+  const [settlementTotal, setSettlementTotal] = useState(0)
+  const [selectedSettlementsMap, setSelectedSettlementsMap] = useState<
+    Map<number, { settlementAmount: number; status: 'pending' }>
+  >(() => new Map())
+  const [settlementStatusFilter, setSettlementStatusFilter] = useState('')
+  const settlementsReqSeqRef = useRef(0)
+
   const [tabLoading, setTabLoading] = useState(false)
+  const tabLoadSeqRef = useRef(0)
 
   // Audit state
   const [auditLogs, setAuditLogs] = useState<AdminLogEntry[]>([])
@@ -131,10 +149,6 @@ export default function AdminPage() {
   const unpublishingRef = useRef<Set<number>>(new Set())
   const productsReloadGuard = useRef(createLatestRequestGuard()).current
 
-  // Settle multiselect
-  const [selectedSettlements, setSelectedSettlements] = useState<number[]>([])
-  const [settlementStatusFilter, setSettlementStatusFilter] = useState('')
-
   // ConfirmDialog states
   const [unpublishTarget, setUnpublishTarget] = useState<AdminProductListItem | null>(null)
   const [archiveTarget, setArchiveTarget] = useState<AdminProductListItem | null>(null)
@@ -143,6 +157,7 @@ export default function AdminPage() {
   const [settling, setSettling] = useState(false)
 
   useEffect(() => {
+    tabLoadSeqRef.current++
     if (activeTab !== 'products') {
       productsReloadGuard.invalidate()
       setProductsReloading(false)
@@ -150,8 +165,14 @@ export default function AdminPage() {
     if (activeTab !== 'audit') {
       auditReqSeqRef.current++
     }
+    if (activeTab !== 'merchants') {
+      merchantsReqSeqRef.current++
+    }
+    if (activeTab !== 'settlements') {
+      settlementsReqSeqRef.current++
+    }
     loadTabData(activeTab)
-  }, [activeTab, settlementStatusFilter, productsReloadGuard, archivedFilter])
+  }, [activeTab, productsReloadGuard, archivedFilter])
 
   interface AuditFetchSnapshot {
     page?: number
@@ -253,31 +274,32 @@ export default function AdminPage() {
         return undefined
       }
     }
+    const seq = ++tabLoadSeqRef.current
     setTabLoading(true)
     try {
       if (tab === 'dashboard') {
         const { data } = await api.get('/admin/stats')
+        if (seq !== tabLoadSeqRef.current) return undefined
         setStats(data)
       } else if (tab === 'logs') {
         const { data } = await api.get('/admin/logs')
+        if (seq !== tabLoadSeqRef.current) return undefined
         setLogs(data)
       } else if (tab === 'audit') {
         await fetchAudit({ page: auditPage, filters: activeAuditFiltersRef.current })
       } else if (tab === 'merchants') {
-        const data = await getAdminMerchants()
-        setMerchants(data)
+        await fetchMerchants(merchantPage, appliedMerchantFiltersRef.current)
       } else if (tab === 'settlements') {
-        const data = await getAdminSettlements({
-          status: settlementStatusFilter || undefined,
-        })
-        setSettlements(data)
-        setSelectedSettlements([])
+        await fetchSettlements(settlementPage, settlementStatusFilter)
       }
       // users / orders / config / files Tab 由各自子组件自行拉取数据
     } catch (err: any) {
+      if (seq !== tabLoadSeqRef.current) return undefined
       showToast(getApiErrorMessage(err, '加载失败'), 'error')
     } finally {
-      setTabLoading(false)
+      if (seq === tabLoadSeqRef.current) {
+        setTabLoading(false)
+      }
     }
     return undefined
   }
@@ -350,12 +372,56 @@ export default function AdminPage() {
     }
   }
 
+  // Merchant fetching & pagination
+  async function fetchMerchants(pageArg = 1, filtersArg = appliedMerchantFiltersRef.current) {
+    const seq = ++merchantsReqSeqRef.current
+    setTabLoading(true)
+    try {
+      const data = await getAdminMerchants({
+        status: filtersArg.status || undefined,
+        q: filtersArg.q.trim() || undefined,
+        page: pageArg,
+        pageSize: 20,
+      })
+      if (seq !== merchantsReqSeqRef.current) return
+      setMerchants(data.items)
+      setMerchantTotal(data.total)
+      setMerchantPage(data.page)
+    } catch (err: any) {
+      if (seq !== merchantsReqSeqRef.current) return
+      showToast(getApiErrorMessage(err, '加载商家列表失败'), 'error')
+    } finally {
+      if (seq === merchantsReqSeqRef.current) {
+        setTabLoading(false)
+      }
+    }
+  }
+
+  function handleMerchantSearch() {
+    appliedMerchantFiltersRef.current = {
+      status: draftMerchantStatus,
+      q: draftMerchantSearch,
+    }
+    void fetchMerchants(1, appliedMerchantFiltersRef.current)
+  }
+
+  function handleMerchantReset() {
+    setDraftMerchantStatus('')
+    setDraftMerchantSearch('')
+    appliedMerchantFiltersRef.current = { status: '', q: '' }
+    void fetchMerchants(1, { status: '', q: '' })
+  }
+
+  function handleMerchantPageChange(nextPage: number) {
+    void fetchMerchants(nextPage, appliedMerchantFiltersRef.current)
+  }
+
   // Merchant actions
   async function handleApproveMerchant(id: number) {
     try {
       await approveMerchant(id)
       showToast('已通过审核')
-      loadTabData('merchants')
+      void fetchMerchants(merchantPage, appliedMerchantFiltersRef.current)
     } catch (err: any) {
       showToast(getApiErrorMessage(err, '操作失败'), 'error')
     }
@@ -365,7 +431,7 @@ export default function AdminPage() {
     try {
       await rejectMerchant(id, {})
       showToast('已拒绝入驻')
-      loadTabData('merchants')
+      void fetchMerchants(merchantPage, appliedMerchantFiltersRef.current)
     } catch (err: any) {
       showToast(getApiErrorMessage(err, '操作失败'), 'error')
     }
@@ -375,23 +441,95 @@ export default function AdminPage() {
     try {
       await suspendMerchant(id)
       showToast('已停用商家')
-      loadTabData('merchants')
+      void fetchMerchants(merchantPage, appliedMerchantFiltersRef.current)
     } catch (err: any) {
       showToast(getApiErrorMessage(err, '操作失败'), 'error')
     }
   }
 
-  // Settlement actions
-  const pendingSelectedSettlements = settlements.filter(
-    (s) => selectedSettlements.includes(s.id) && s.status === 'pending',
-  )
-  const pendingSelectedAmount = pendingSelectedSettlements.reduce(
-    (sum, s) => sum + (Number(s.settlementAmount) || 0),
+  // Settlement fetching & pagination
+  async function fetchSettlements(pageArg = 1, statusArg = settlementStatusFilter) {
+    const seq = ++settlementsReqSeqRef.current
+    setTabLoading(true)
+    try {
+      const data = await getAdminSettlements({
+        status: statusArg || undefined,
+        page: pageArg,
+        pageSize: 20,
+      })
+      if (seq !== settlementsReqSeqRef.current) return
+      setSettlements(data.items)
+      setSettlementTotal(data.total)
+      setSettlementPage(data.page)
+    } catch (err: any) {
+      if (seq !== settlementsReqSeqRef.current) return
+      showToast(getApiErrorMessage(err, '加载结算列表失败'), 'error')
+    } finally {
+      if (seq === settlementsReqSeqRef.current) {
+        setTabLoading(false)
+      }
+    }
+  }
+
+  function handleSettlementStatusFilterChange(newStatus: string) {
+    setSettlementStatusFilter(newStatus)
+    setSelectedSettlementsMap(new Map())
+    setSettlementPage(1)
+    void fetchSettlements(1, newStatus)
+  }
+
+  function handleSettlementPageChange(nextPage: number) {
+    void fetchSettlements(nextPage, settlementStatusFilter)
+  }
+
+  // Settlement actions & multi-page selection model
+  const currentPagePending = settlements.filter((s) => s.status === 'pending')
+  const isCurrentPageAllSelected =
+    currentPagePending.length > 0 &&
+    currentPagePending.every((s) => selectedSettlementsMap.has(s.id))
+
+  function handleToggleCurrentPageAll() {
+    setSelectedSettlementsMap((prev) => {
+      const next = new Map(prev)
+      if (isCurrentPageAllSelected) {
+        for (const s of currentPagePending) {
+          next.delete(s.id)
+        }
+      } else {
+        for (const s of currentPagePending) {
+          next.set(s.id, {
+            settlementAmount: Number(s.settlementAmount) || 0,
+            status: 'pending',
+          })
+        }
+      }
+      return next
+    })
+  }
+
+  function handleToggleSettlementRow(s: Settlement) {
+    if (s.status !== 'pending') return
+    setSelectedSettlementsMap((prev) => {
+      const next = new Map(prev)
+      if (next.has(s.id)) {
+        next.delete(s.id)
+      } else {
+        next.set(s.id, {
+          settlementAmount: Number(s.settlementAmount) || 0,
+          status: 'pending',
+        })
+      }
+      return next
+    })
+  }
+
+  const pendingSelectedAmount = Array.from(selectedSettlementsMap.values()).reduce(
+    (sum, item) => sum + item.settlementAmount,
     0,
   )
 
   function handleBatchSettleClick() {
-    if (pendingSelectedSettlements.length === 0) {
+    if (selectedSettlementsMap.size === 0) {
       showToast('请选择待结算（pending）记录', 'error')
       return
     }
@@ -399,16 +537,17 @@ export default function AdminPage() {
   }
 
   async function confirmBatchSettle() {
-    if (settling || pendingSelectedSettlements.length === 0) return
+    if (settling || selectedSettlementsMap.size === 0) return
     setSettling(true)
+    const idsToSettle = Array.from(selectedSettlementsMap.keys())
     try {
-      const { settled } = await batchSettle({
-        settlementIds: pendingSelectedSettlements.map((s) => s.id),
+      const { settled, creditedTotal } = await batchSettle({
+        settlementIds: idsToSettle,
       })
-      showToast(`成功结算 ${settled} 笔订单`)
+      showToast(`成功结算 ${settled} 笔订单，入账合计 ${creditedTotal ?? pendingSelectedAmount} 积分`)
       setShowBatchSettleConfirm(false)
-      setSelectedSettlements([])
-      loadTabData('settlements')
+      setSelectedSettlementsMap(new Map())
+      void fetchSettlements(settlementPage, settlementStatusFilter)
     } catch (err: any) {
       showToast(getApiErrorMessage(err, '批量结算失败'), 'error')
     } finally {
@@ -486,7 +625,47 @@ export default function AdminPage() {
           {/* Merchants */}
           {activeTab === 'merchants' && (
             <div className="space-y-4">
-              <h2 className="font-heading text-xl font-bold mb-4 text-[var(--color-text)]">商家管理</h2>
+              <div className="flex flex-wrap justify-between items-center gap-3 mb-4">
+                <h2 className="font-heading text-xl font-bold text-[var(--color-text)]">商家管理</h2>
+                <div className="flex flex-wrap items-center gap-3">
+                  <select
+                    value={draftMerchantStatus}
+                    onChange={(e) => setDraftMerchantStatus(e.target.value)}
+                    className="input py-1.5 w-36"
+                    data-testid="admin-merchant-status-filter"
+                  >
+                    <option value="">全部状态</option>
+                    <option value="pending">待审核</option>
+                    <option value="active">正常</option>
+                    <option value="suspended">已停用</option>
+                    <option value="rejected">已拒绝</option>
+                  </select>
+                  <input
+                    type="text"
+                    placeholder="搜索商家名称..."
+                    value={draftMerchantSearch}
+                    onChange={(e) => setDraftMerchantSearch(e.target.value)}
+                    className="input py-1.5 w-48"
+                    data-testid="admin-merchant-search-input"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleMerchantSearch}
+                    className="btn-primary py-1.5 px-3 text-sm cursor-pointer"
+                    data-testid="admin-merchant-search-btn"
+                  >
+                    查询
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleMerchantReset}
+                    className="btn-secondary py-1.5 px-3 text-sm cursor-pointer"
+                    data-testid="admin-merchant-reset-btn"
+                  >
+                    重置
+                  </button>
+                </div>
+              </div>
               <div className="overflow-x-auto">
                 {tabLoading && merchants.length === 0 ? (
                   <TableSkeleton />
@@ -537,7 +716,7 @@ export default function AdminPage() {
                     {!tabLoading && merchants.length === 0 && (
                       <tr>
                         <td colSpan={5}>
-                          <EmptyState compact icon={Store} title="暂无商家" description="新的商家入驻申请将出现在这里" />
+                          <EmptyState compact icon={Store} title="暂无商家" description="没有符合条件的商家数据" />
                         </td>
                       </tr>
                     )}
@@ -545,6 +724,13 @@ export default function AdminPage() {
                 </table>
                 )}
               </div>
+              <AdminPagination
+                page={merchantPage}
+                total={merchantTotal}
+                pageSize={20}
+                onPageChange={handleMerchantPageChange}
+                testId="admin-merchants-pagination"
+              />
             </div>
           )}
 
@@ -556,7 +742,7 @@ export default function AdminPage() {
                 <div className="flex items-center gap-3">
                   <select
                     value={settlementStatusFilter}
-                    onChange={(e) => setSettlementStatusFilter(e.target.value)}
+                    onChange={(e) => handleSettlementStatusFilterChange(e.target.value)}
                     className="input py-1.5 w-36"
                     data-testid="admin-settlement-status-filter"
                   >
@@ -568,11 +754,11 @@ export default function AdminPage() {
                   </select>
                   <button
                     onClick={handleBatchSettleClick}
-                    disabled={selectedSettlements.length === 0}
-                    className="btn-cta px-4 py-2 text-sm"
+                    disabled={selectedSettlementsMap.size === 0}
+                    className="btn-cta px-4 py-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
                     data-testid="admin-batch-settle"
                   >
-                    批量结算 ({selectedSettlements.length})
+                    批量结算 ({selectedSettlementsMap.size})
                   </button>
                 </div>
               </div>
@@ -587,14 +773,10 @@ export default function AdminPage() {
                         <input
                           type="checkbox"
                           className="accent-[var(--color-primary)] cursor-pointer"
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setSelectedSettlements(settlements.filter(s => s.status === 'pending').map(s => s.id))
-                            } else {
-                              setSelectedSettlements([])
-                            }
-                          }}
-                          checked={settlements.length > 0 && selectedSettlements.length === settlements.filter(s => s.status === 'pending').length}
+                          onChange={handleToggleCurrentPageAll}
+                          checked={isCurrentPageAllSelected}
+                          disabled={currentPagePending.length === 0}
+                          aria-label="选择当前页待结算订单"
                         />
                       </th>
                       <th>订单信息</th>
@@ -608,19 +790,16 @@ export default function AdminPage() {
                     {settlements.map((s) => (
                       <tr key={s.id}>
                         <td data-label="选择">
-                          {s.status === 'pending' && (
+                          {s.status === 'pending' ? (
                             <input
                               type="checkbox"
                               className="accent-[var(--color-primary)] cursor-pointer"
-                              checked={selectedSettlements.includes(s.id)}
-                              onChange={(e) => {
-                                if (e.target.checked) {
-                                  setSelectedSettlements([...selectedSettlements, s.id])
-                                } else {
-                                  setSelectedSettlements(selectedSettlements.filter(id => id !== s.id))
-                                }
-                              }}
+                              checked={selectedSettlementsMap.has(s.id)}
+                              onChange={() => handleToggleSettlementRow(s)}
+                              aria-label={`选择订单 ORD-${s.orderId}`}
                             />
+                          ) : (
+                            <span className="text-[var(--color-text-muted)] text-xs">—</span>
                           )}
                         </td>
                         <td data-label="订单信息">
@@ -653,6 +832,13 @@ export default function AdminPage() {
                 </table>
                 )}
               </div>
+              <AdminPagination
+                page={settlementPage}
+                total={settlementTotal}
+                pageSize={20}
+                onPageChange={handleSettlementPageChange}
+                testId="admin-settlements-pagination"
+              />
             </div>
           )}
 
@@ -1265,8 +1451,8 @@ export default function AdminPage() {
           if (!open && !settling) setShowBatchSettleConfirm(false)
         }}
         title="批量结算确认"
-        description={`确定对选中的 ${pendingSelectedSettlements.length} 笔待结算订单执行批量结算？合计应结金额为 ${pendingSelectedAmount.toLocaleString()} 积分。结算后将真实为对应商户账户入账，不可逆撤回。`}
-        confirmLabel={settling ? '结算中…' : `确认结算 (${pendingSelectedSettlements.length} 笔)`}
+        description={`确定对选中的 ${selectedSettlementsMap.size} 笔待结算订单执行批量结算？合计应结金额为 ${pendingSelectedAmount.toLocaleString()} 积分。结算后将真实为对应商户账户入账，不可逆撤回。`}
+        confirmLabel={settling ? '结算中…' : `确认结算 (${selectedSettlementsMap.size} 笔)`}
         tone="primary"
         loading={settling}
         onConfirm={confirmBatchSettle}

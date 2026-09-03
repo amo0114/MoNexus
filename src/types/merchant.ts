@@ -331,6 +331,11 @@ export interface BatchSettleRequest {
   settlementIds: number[]
 }
 
+export interface BatchSettleResponse {
+  settled: number
+  creditedTotal: number
+}
+
 export interface MerchantDetail extends Merchant {
   user?: { id: number; email: string; status: string; createdAt: string }
   products?: MerchantProduct[]

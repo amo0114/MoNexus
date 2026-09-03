@@ -5,12 +5,38 @@ import {
   RejectMerchantRequest,
   UpdateCommissionRequest,
   Settlement,
-  BatchSettleRequest
+  BatchSettleRequest,
+  BatchSettleResponse,
+  ListEnvelope,
 } from '../types/merchant'
 
-export async function getAdminMerchants(params?: { status?: string; q?: string; page?: number; pageSize?: number }): Promise<Merchant[]> {
-  const { data } = await api.get<Merchant[]>('/admin/merchants', { params })
-  return data
+function validateListEnvelope<T>(data: unknown, entityName: string): ListEnvelope<T> {
+  const env = data as Partial<ListEnvelope<T>> | undefined
+  if (
+    !env ||
+    typeof env !== 'object' ||
+    !Array.isArray(env.items) ||
+    !Number.isSafeInteger(env.total) ||
+    (env.total as number) < 0 ||
+    !Number.isSafeInteger(env.page) ||
+    (env.page as number) < 1 ||
+    !Number.isSafeInteger(env.pageSize) ||
+    (env.pageSize as number) < 1 ||
+    (env.pageSize as number) > 100
+  ) {
+    throw new Error(`无效的${entityName}分页响应结构，缺少 ListEnvelope 契约字段`)
+  }
+  return data as ListEnvelope<T>
+}
+
+export async function getAdminMerchants(params?: {
+  status?: string
+  q?: string
+  page?: number
+  pageSize?: number
+}): Promise<ListEnvelope<Merchant>> {
+  const { data } = await api.get<ListEnvelope<Merchant>>('/admin/merchants', { params })
+  return validateListEnvelope<Merchant>(data, '商家列表')
 }
 
 export async function getAdminMerchantDetail(id: number): Promise<MerchantDetail> {
@@ -38,12 +64,16 @@ export async function updateMerchantCommission(id: number, payload: UpdateCommis
   return data
 }
 
-export async function getAdminSettlements(params?: { status?: string; page?: number; pageSize?: number }): Promise<Settlement[]> {
-  const { data } = await api.get<Settlement[]>('/admin/settlements', { params })
-  return data
+export async function getAdminSettlements(params?: {
+  status?: string
+  page?: number
+  pageSize?: number
+}): Promise<ListEnvelope<Settlement>> {
+  const { data } = await api.get<ListEnvelope<Settlement>>('/admin/settlements', { params })
+  return validateListEnvelope<Settlement>(data, '结算列表')
 }
 
-export async function batchSettle(payload: BatchSettleRequest): Promise<{ settled: number }> {
-  const { data } = await api.post<{ settled: number }>('/admin/settlements/batch-settle', payload)
+export async function batchSettle(payload: BatchSettleRequest): Promise<BatchSettleResponse> {
+  const { data } = await api.post<BatchSettleResponse>('/admin/settlements/batch-settle', payload)
   return data
 }
