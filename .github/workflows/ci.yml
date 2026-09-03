@@ -119,11 +119,12 @@ jobs:
     # takes ~13 minutes on a single runner, so it is split into 3 file-level
     # shards, each against its own PostgreSQL service. setup.ts TRUNCATEs
     # every table before each test, so shards share no cross-file state.
-    # Shard 1 currently needs ~11 minutes of Vitest runtime; dependency setup,
-    # migrations, and build checks can push the complete job beyond 12 minutes.
+    # Shard 1 currently needs up to ~19 minutes of Vitest runtime; dependency
+    # setup, migrations, build checks, and runner variance can push the complete
+    # job beyond 20 minutes.
     # Keep a bounded margin for runner/IO variance — individual Vitest timeouts
     # still detect hung tests.
-    timeout-minutes: 20
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:

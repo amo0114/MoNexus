@@ -2048,30 +2048,29 @@ test.describe.serial('Catalog Xboard import', () => {
       try {
         if (productIdA > 0) {
           const archiveButton = page.getByTestId(`admin-archive-product-${productIdA}`);
-          const archiveResponsePromise = page.waitForResponse(
-            (response) =>
-              response.request().method() === 'POST'
-              && new URL(response.url()).pathname === `/api/admin/products/${productIdA}/archive`,
-          );
-          const refreshResponsePromise = page.waitForResponse(isAdminProductsResponse);
-          const dialogPromise = page.waitForEvent('dialog');
+          await archiveButton.click();
 
-          const clickPromise = archiveButton.click();
-          const archiveDialog = await dialogPromise;
-          expect(archiveDialog.type()).toBe('confirm');
-          expect(archiveDialog.message()).toContain('Gold Plan');
-          expect(archiveDialog.message()).toContain('归档');
-          await archiveDialog.accept();
-          await clickPromise;
+          const archiveDialog = page.getByTestId('admin-archive-product-confirm-dialog');
+          await expect(archiveDialog).toBeVisible();
+          await expect(archiveDialog).toContainText('Gold Plan');
+          await expect(archiveDialog).toContainText('归档');
 
-          const archiveResponse = await archiveResponsePromise;
+          const [archiveResponse, refreshResponse] = await Promise.all([
+            page.waitForResponse(
+              (response) =>
+                response.request().method() === 'POST'
+                && new URL(response.url()).pathname === `/api/admin/products/${productIdA}/archive`,
+            ),
+            page.waitForResponse(isAdminProductsResponse),
+            archiveDialog.getByTestId('confirm-dialog-confirm').click(),
+          ]);
+
           expect(archiveResponse.status()).toBe(200);
           const archiveBody = await archiveResponse.json() as { mode?: string; productId?: number };
           if (archiveBody.mode !== 'archived' || archiveBody.productId !== productIdA) {
             throw new Error('admin product archive response mismatch');
           }
 
-          const refreshResponse = await refreshResponsePromise;
           expect(refreshResponse.status()).toBe(200);
           await expect(page.getByTestId(`admin-archive-product-${productIdA}`)).toHaveCount(0);
           await expect(
