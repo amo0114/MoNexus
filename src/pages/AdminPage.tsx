@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Archive, LayoutDashboard, UsersRound, Package, RotateCcw, ShoppingCart, Activity, Users, ShoppingBag, Coins, Store, Tags, DollarSign, Settings, ClipboardList, Megaphone, DatabaseBackup, FolderLock, Cable, ShieldAlert, HardDrive, Upload, Wallet, Pencil, RefreshCw } from 'lucide-react'
+import { Archive, LayoutDashboard, UsersRound, Package, RotateCcw, ShoppingCart, Activity, Users, ShoppingBag, Coins, Store, Tags, DollarSign, Settings, ClipboardList, Megaphone, DatabaseBackup, FolderLock, Cable, ShieldAlert, HardDrive, Upload, Wallet, Pencil, RefreshCw, Layers } from 'lucide-react'
 import api from '../api/client'
 import { getApiErrorMessage } from '../api/error'
 import { createLatestRequestGuard } from '../utils/latestRequest'
@@ -37,6 +37,8 @@ import PortableBackupPanel from '../components/admin/PortableBackupPanel'
 import AdminFakaTasksPanel from '../components/admin/AdminFakaTasksPanel'
 import AbuseProtectionPanel from '../components/admin/AbuseProtectionPanel'
 import AdminStoragePanel from '../components/admin/AdminStoragePanel'
+import AdminPagination from '../components/admin/AdminPagination'
+import ConfirmDialog from '../components/ui/ConfirmDialog'
 import { Dialog, DialogContent, DialogTitle } from '../components/ui/Dialog'
 import { TableSkeleton, StatCardSkeleton } from '../components/ui/Skeleton'
 import EmptyState from '../components/ui/EmptyState'
@@ -52,6 +54,7 @@ import AdminInventoryImportPreview, { type AdminInventoryTarget } from '../compo
 import AdminMerchandisingPage from '../components/merchandising/AdminMerchandisingPage'
 import AdminCategoryManager from '../components/catalog/AdminCategoryManager'
 import AdminRechargePage from '../components/admin/recharge/AdminRechargePage'
+import { pointLogVisual, formatPointLogAmount } from '../utils/pointLogDisplay'
 
 type AdminTab = 'dashboard' | 'users' | 'products' | 'orders' | 'logs' | 'audit' | 'files' | 'merchants' | 'settlements' | 'announcements' | 'config' | 'backup' | 'faka' | 'abuse' | 'storage' | 'merchandising' | 'catalogGovernance' | 'recharge'
 
@@ -94,6 +97,13 @@ export default function AdminPage() {
   const [auditFilterAction, setAuditFilterAction] = useState('')
   const [auditFilterFrom, setAuditFilterFrom] = useState('')
   const [auditFilterTo, setAuditFilterTo] = useState('')
+  const auditReqSeqRef = useRef(0)
+  const activeAuditFiltersRef = useRef<{
+    adminId?: string
+    action?: string
+    fromDate?: string
+    toDate?: string
+  }>({})
 
   // Commission dialog
   const [commissionTarget, setCommissionTarget] = useState<Merchant | null>(null)
@@ -125,39 +135,66 @@ export default function AdminPage() {
   const [selectedSettlements, setSelectedSettlements] = useState<number[]>([])
   const [settlementStatusFilter, setSettlementStatusFilter] = useState('')
 
+  // ConfirmDialog states
+  const [unpublishTarget, setUnpublishTarget] = useState<AdminProductListItem | null>(null)
+  const [archiveTarget, setArchiveTarget] = useState<AdminProductListItem | null>(null)
+  const [archiving, setArchiving] = useState(false)
+  const [showBatchSettleConfirm, setShowBatchSettleConfirm] = useState(false)
+  const [settling, setSettling] = useState(false)
+
   useEffect(() => {
     if (activeTab !== 'products') {
       productsReloadGuard.invalidate()
       setProductsReloading(false)
     }
+    if (activeTab !== 'audit') {
+      auditReqSeqRef.current++
+    }
     loadTabData(activeTab)
   }, [activeTab, settlementStatusFilter, productsReloadGuard, archivedFilter])
 
-  useEffect(() => {
-    if (activeTab === 'audit') {
-      fetchAudit()
+  interface AuditFetchSnapshot {
+    page?: number
+    filters?: {
+      adminId?: string
+      action?: string
+      fromDate?: string
+      toDate?: string
     }
-  }, [auditPage])
+  }
 
-  async function fetchAudit() {
+  async function fetchAudit(snapshot?: AuditFetchSnapshot) {
+    const seq = ++auditReqSeqRef.current
+    const targetPage = snapshot?.page ?? auditPage
+    const filters = snapshot && 'filters' in snapshot ? snapshot.filters : activeAuditFiltersRef.current
+
     try {
-      const query: any = { page: auditPage, pageSize: 20 }
-      if (auditFilterAdminId) query.adminId = Number(auditFilterAdminId)
-      if (auditFilterAction) query.action = auditFilterAction
-      if (auditFilterFrom) query.fromDate = auditFilterFrom
-      if (auditFilterTo) query.toDate = auditFilterTo
+      const query: Parameters<typeof listAdminAudit>[0] = { page: targetPage, pageSize: 20 }
+      if (filters?.adminId) query.adminId = Number(filters.adminId)
+      if (filters?.action) query.action = filters.action
+      if (filters?.fromDate) query.fromDate = filters.fromDate
+      if (filters?.toDate) query.toDate = filters.toDate
 
       const data = await listAdminAudit(query)
+      if (seq !== auditReqSeqRef.current) return
       setAuditLogs(data.items)
       setAuditTotal(data.total)
     } catch (err: any) {
+      if (seq !== auditReqSeqRef.current) return
       showToast(getApiErrorMessage(err, '加载审计日志失败'), 'error')
     }
   }
 
   function handleAuditSearch() {
+    const filters = {
+      adminId: auditFilterAdminId.trim() || undefined,
+      action: auditFilterAction || undefined,
+      fromDate: auditFilterFrom || undefined,
+      toDate: auditFilterTo || undefined,
+    }
+    activeAuditFiltersRef.current = filters
     setAuditPage(1)
-    fetchAudit()
+    void fetchAudit({ page: 1, filters })
   }
 
   function handleAuditReset() {
@@ -165,17 +202,14 @@ export default function AdminPage() {
     setAuditFilterAction('')
     setAuditFilterFrom('')
     setAuditFilterTo('')
+    activeAuditFiltersRef.current = {}
     setAuditPage(1)
-    // useEffect on auditPage won't trigger if it was already 1, so we need to fetch explicitly after state updates.
-    // Use setTimeout to allow state to settle, or just fetch with empty query inline.
-    setTimeout(() => {
-      listAdminAudit({ page: 1, pageSize: 20 })
-        .then(data => {
-          setAuditLogs(data.items)
-          setAuditTotal(data.total)
-        })
-        .catch(err => showToast(getApiErrorMessage(err, '加载失败'), 'error'))
-    }, 0)
+    void fetchAudit({ page: 1, filters: {} })
+  }
+
+  function handleAuditPageChange(nextPage: number) {
+    setAuditPage(nextPage)
+    void fetchAudit({ page: nextPage, filters: activeAuditFiltersRef.current })
   }
 
   async function reloadProducts(): Promise<AdminProductListItem[]> {
@@ -228,7 +262,7 @@ export default function AdminPage() {
         const { data } = await api.get('/admin/logs')
         setLogs(data)
       } else if (tab === 'audit') {
-        await fetchAudit()
+        await fetchAudit({ page: auditPage, filters: activeAuditFiltersRef.current })
       } else if (tab === 'merchants') {
         const data = await getAdminMerchants()
         setMerchants(data)
@@ -277,16 +311,13 @@ export default function AdminPage() {
     setUnpublishingProductIds(new Set(unpublishingRef.current))
   }
 
-  async function handleUnpublishPlatformProduct(product: AdminProductListItem) {
+  async function executeUnpublishPlatformProduct(product: AdminProductListItem) {
     if (productsRefreshError || unpublishingRef.current.has(product.id)) return
-    const confirmed = window.confirm(
-      '下架后商品将从商城隐藏，已有订单和可售资源不会删除。确定下架吗？',
-    )
-    if (!confirmed) return
     unpublishingRef.current.add(product.id)
     setUnpublishingProductIds(new Set(unpublishingRef.current))
     try {
       await unpublishAdminProduct(product.id)
+      setUnpublishTarget(null)
     } catch (err) {
       showToast(getApiErrorMessage(err, '下架失败'), 'error')
       releaseUnpublishLock(product.id)
@@ -301,6 +332,21 @@ export default function AdminPage() {
       }
     } finally {
       releaseUnpublishLock(product.id)
+    }
+  }
+
+  async function executeArchiveProduct(product: AdminProductListItem) {
+    if (archiving) return
+    setArchiving(true)
+    try {
+      await archiveAdminProduct(product.id)
+      showToast('商品已归档')
+      setArchiveTarget(null)
+      loadTabData('products')
+    } catch (err) {
+      showToast(getApiErrorMessage(err, '归档失败'), 'error')
+    } finally {
+      setArchiving(false)
     }
   }
 
@@ -336,20 +382,37 @@ export default function AdminPage() {
   }
 
   // Settlement actions
-  async function handleBatchSettle() {
-    const pendingOnly = selectedSettlements.filter((id) =>
-      settlements.some((s) => s.id === id && s.status === 'pending'),
-    )
-    if (pendingOnly.length === 0) {
+  const pendingSelectedSettlements = settlements.filter(
+    (s) => selectedSettlements.includes(s.id) && s.status === 'pending',
+  )
+  const pendingSelectedAmount = pendingSelectedSettlements.reduce(
+    (sum, s) => sum + (Number(s.settlementAmount) || 0),
+    0,
+  )
+
+  function handleBatchSettleClick() {
+    if (pendingSelectedSettlements.length === 0) {
       showToast('请选择待结算（pending）记录', 'error')
       return
     }
+    setShowBatchSettleConfirm(true)
+  }
+
+  async function confirmBatchSettle() {
+    if (settling || pendingSelectedSettlements.length === 0) return
+    setSettling(true)
     try {
-      const { settled } = await batchSettle({ settlementIds: pendingOnly })
+      const { settled } = await batchSettle({
+        settlementIds: pendingSelectedSettlements.map((s) => s.id),
+      })
       showToast(`成功结算 ${settled} 笔订单`)
+      setShowBatchSettleConfirm(false)
+      setSelectedSettlements([])
       loadTabData('settlements')
     } catch (err: any) {
       showToast(getApiErrorMessage(err, '批量结算失败'), 'error')
+    } finally {
+      setSettling(false)
     }
   }
 
@@ -380,7 +443,8 @@ export default function AdminPage() {
           {activeTab === 'dashboard' && !stats && (
             <div className="space-y-6">
               <h2 className="font-heading text-xl font-bold mb-4 text-[var(--color-text)]">数据仪表盘</h2>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                <StatCardSkeleton />
                 <StatCardSkeleton />
                 <StatCardSkeleton />
                 <StatCardSkeleton />
@@ -390,10 +454,22 @@ export default function AdminPage() {
           {activeTab === 'dashboard' && stats && (
             <div className="space-y-6">
               <h2 className="font-heading text-xl font-bold mb-4 text-[var(--color-text)]">数据仪表盘</h2>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                 <DashStat icon={Users} label="注册用户总数" value={stats.users} />
-                <DashStat icon={ShoppingBag} label="累计完成订单" value={stats.orders} />
+                <DashStat icon={ShoppingBag} label="平台订单总数" value={stats.orders} />
                 <DashStat icon={Coins} label="流通积分总额" value={stats.totalPoints} tone="cta" />
+                {stats.todayOrders != null && (
+                  <DashStat icon={ShoppingCart} label="今日新增订单" value={stats.todayOrders} />
+                )}
+                {stats.todayCheckins != null && (
+                  <DashStat icon={Activity} label="今日签到人次" value={stats.todayCheckins} />
+                )}
+                {stats.productCount != null && (
+                  <DashStat icon={Package} label="在售商品数" value={stats.productCount} />
+                )}
+                {stats.availableInventory != null && (
+                  <DashStat icon={Layers} label="可用卡密库存" value={stats.availableInventory} />
+                )}
               </div>
               <AdminOfferReport />
             </div>
@@ -491,7 +567,7 @@ export default function AdminPage() {
                     <option value="voided">已作废</option>
                   </select>
                   <button
-                    onClick={handleBatchSettle}
+                    onClick={handleBatchSettleClick}
                     disabled={selectedSettlements.length === 0}
                     className="btn-cta px-4 py-2 text-sm"
                     data-testid="admin-batch-settle"
@@ -738,7 +814,7 @@ export default function AdminPage() {
                                   data-testid={`admin-product-unpublish-${p.id}`}
                                   disabled={productsRefreshError || unpublishingProductIds.has(p.id)}
                                   className="text-[var(--color-text)] hover:bg-[var(--color-background)] font-semibold text-xs px-3 py-1.5 btn-sm rounded-lg transition-colors border border-[var(--color-border)] cursor-pointer inline-flex items-center gap-1 disabled:opacity-50"
-                                  onClick={() => { void handleUnpublishPlatformProduct(p) }}
+                                  onClick={() => { setUnpublishTarget(p) }}
                                 >
                                   <Archive className="w-3.5 h-3.5" />
                                   {unpublishingProductIds.has(p.id) ? '下架中…' : '下架'}
@@ -845,19 +921,7 @@ export default function AdminPage() {
                                   type="button"
                                   data-testid={`admin-archive-product-${p.id}`}
                                   className="text-red-500 hover:bg-red-500/10 font-semibold text-xs px-3 py-1.5 btn-sm rounded-lg transition-colors border border-red-500/25 cursor-pointer"
-                                  onClick={async () => {
-                                    const ok = window.confirm(
-                                      `确定归档「${p.name}」？\n\n商品将从商城和管理默认列表隐藏，历史订单与快照保留，不会永久删除。`,
-                                    )
-                                    if (!ok) return
-                                    try {
-                                      await archiveAdminProduct(p.id)
-                                      showToast('商品已归档')
-                                      loadTabData('products')
-                                    } catch (err) {
-                                      showToast(getApiErrorMessage(err, '归档失败'), 'error')
-                                    }
-                                  }}
+                                  onClick={() => setArchiveTarget(p)}
                                 >
                                   归档
                                 </button>
@@ -897,24 +961,41 @@ export default function AdminPage() {
                     <tr>
                       <th>时间</th>
                       <th>关联用户</th>
+                      <th>类型</th>
                       <th>事件描述</th>
                       <th className="text-right">积分变动</th>
+                      <th className="text-right">变动后余额</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {logs.map((l: any) => (
-                      <tr key={l.id}>
-                        <td className="text-[var(--color-text-muted)] text-xs" data-label="时间">{new Date(l.createdAt).toLocaleString()}</td>
-                        <td className="font-bold text-[var(--color-text)] text-sm" data-label="关联用户">U{l.user?.id}</td>
-                        <td className="text-sm text-[var(--color-text-muted)]" data-label="事件描述">{l.reason}</td>
-                        <td className={`text-right font-bold text-base ${l.type === 'in' ? 'text-[var(--color-cta)]' : 'text-[var(--color-text)]'}`} data-label="积分变动">
-                          {l.type === 'in' ? '+' : '-'}{l.amount}
-                        </td>
-                      </tr>
-                    ))}
+                    {logs.map((l: any) => {
+                      const visual = pointLogVisual(l.type)
+                      const formattedAmount = formatPointLogAmount(l.type, l.amount)
+                      return (
+                        <tr key={l.id}>
+                          <td className="text-[var(--color-text-muted)] text-xs" data-label="时间">{new Date(l.createdAt).toLocaleString()}</td>
+                          <td className="font-bold text-[var(--color-text)] text-sm" data-label="关联用户">U{l.user?.id ?? l.userId}</td>
+                          <td data-label="类型">
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-bold border ${visual.iconWrapClass}`}>
+                              {visual.typeLabel}
+                            </span>
+                          </td>
+                          <td className="text-sm text-[var(--color-text-muted)]" data-label="事件描述">
+                            <div>{l.reason || '—'}</div>
+                            {visual.hint && <div className="text-[11px] text-[var(--color-text-muted)]/80 mt-0.5">{visual.hint}</div>}
+                          </td>
+                          <td className={`text-right font-bold text-base ${visual.amountClass}`} data-label="积分变动">
+                            {formattedAmount}
+                          </td>
+                          <td className="text-right font-bold text-sm text-[var(--color-text)]" data-label="变动后余额">
+                            {l.balanceAfter != null ? l.balanceAfter.toLocaleString() : '—'}
+                          </td>
+                        </tr>
+                      )
+                    })}
                     {!tabLoading && logs.length === 0 && (
                       <tr>
-                        <td colSpan={4}>
+                        <td colSpan={6}>
                           <EmptyState compact icon={Activity} title="暂无积分流水" />
                         </td>
                       </tr>
@@ -1003,27 +1084,13 @@ export default function AdminPage() {
                 </table>
                 )}
               </div>
-              {auditTotal > 20 && (
-                <div className="flex justify-between items-center mt-4 text-sm">
-                  <span className="text-[var(--color-text-muted)]">共 {auditTotal} 条记录</span>
-                  <div className="flex gap-2">
-                    <button
-                      disabled={auditPage === 1}
-                      onClick={() => setAuditPage(auditPage - 1)}
-                      className="btn-sm px-3 py-1 border border-[var(--color-border)] rounded hover:bg-[var(--color-background)] disabled:opacity-50 cursor-pointer"
-                    >
-                      上一页
-                    </button>
-                    <button
-                      disabled={auditPage * 20 >= auditTotal}
-                      onClick={() => setAuditPage(auditPage + 1)}
-                      className="btn-sm px-3 py-1 border border-[var(--color-border)] rounded hover:bg-[var(--color-background)] disabled:opacity-50 cursor-pointer"
-                    >
-                      下一页
-                    </button>
-                  </div>
-                </div>
-              )}
+              <AdminPagination
+                page={auditPage}
+                total={auditTotal}
+                pageSize={20}
+                onPageChange={handleAuditPageChange}
+                testId="admin-audit-pagination"
+              />
             </div>
           )}
 
@@ -1189,6 +1256,61 @@ export default function AdminPage() {
         product={syncProduct}
         onClose={() => setSyncProduct(null)}
         onSynced={() => { void loadTabData('products') }}
+      />
+
+      {/* 批量结算确认弹窗 */}
+      <ConfirmDialog
+        open={showBatchSettleConfirm}
+        onOpenChange={(open) => {
+          if (!open && !settling) setShowBatchSettleConfirm(false)
+        }}
+        title="批量结算确认"
+        description={`确定对选中的 ${pendingSelectedSettlements.length} 笔待结算订单执行批量结算？合计应结金额为 ${pendingSelectedAmount.toLocaleString()} 积分。结算后将真实为对应商户账户入账，不可逆撤回。`}
+        confirmLabel={settling ? '结算中…' : `确认结算 (${pendingSelectedSettlements.length} 笔)`}
+        tone="primary"
+        loading={settling}
+        onConfirm={confirmBatchSettle}
+        testId="admin-batch-settle-confirm-dialog"
+      />
+
+      {/* 商品下架确认弹窗 */}
+      <ConfirmDialog
+        open={unpublishTarget !== null}
+        onOpenChange={(open) => {
+          if (!open && !unpublishingProductIds.has(unpublishTarget?.id ?? -1)) {
+            setUnpublishTarget(null)
+          }
+        }}
+        title="下架商品"
+        description={`确定下架商品「${unpublishTarget?.name}」？下架后商品将从商城隐藏，已有订单和可售资源不会删除。`}
+        confirmLabel={unpublishTarget && unpublishingProductIds.has(unpublishTarget.id) ? '下架中…' : '确认下架'}
+        tone="danger"
+        loading={unpublishTarget ? unpublishingProductIds.has(unpublishTarget.id) : false}
+        onConfirm={async () => {
+          if (unpublishTarget) {
+            await executeUnpublishPlatformProduct(unpublishTarget)
+          }
+        }}
+        testId="admin-unpublish-product-confirm-dialog"
+      />
+
+      {/* 商品归档确认弹窗 */}
+      <ConfirmDialog
+        open={archiveTarget !== null}
+        onOpenChange={(open) => {
+          if (!open && !archiving) setArchiveTarget(null)
+        }}
+        title="归档商品"
+        description={`确定归档「${archiveTarget?.name}」？商品将从商城和管理默认列表隐藏，历史订单与快照保留，不会永久删除。`}
+        confirmLabel={archiving ? '归档中…' : '确认归档'}
+        tone="danger"
+        loading={archiving}
+        onConfirm={async () => {
+          if (archiveTarget) {
+            await executeArchiveProduct(archiveTarget)
+          }
+        }}
+        testId="admin-archive-product-confirm-dialog"
       />
     </div>
   )

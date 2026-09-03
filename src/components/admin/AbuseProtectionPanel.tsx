@@ -18,6 +18,7 @@ import { useAppStore } from '../../stores/appStore'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../ui/Dialog'
 import EmptyState from '../ui/EmptyState'
 import { TableSkeleton } from '../ui/Skeleton'
+import AdminPagination from './AdminPagination'
 
 const PAGE_SIZE = 20
 const CASE_REF_PATTERN = /^[A-Z][A-Z0-9_]{1,15}-[0-9]{1,12}$/
@@ -46,43 +47,6 @@ function Metric({ label, value }: { label: string; value: number }) {
     <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-background)]/60 p-3 min-w-0">
       <p className="text-xs text-[var(--color-text-muted)] truncate">{label}</p>
       <p className="mt-1 text-xl font-bold text-[var(--color-text)] tabular-nums">{value.toLocaleString()}</p>
-    </div>
-  )
-}
-
-function Pagination({
-  page,
-  total,
-  onChange,
-}: {
-  page: number
-  total: number
-  onChange: (page: number) => void
-}) {
-  if (total <= PAGE_SIZE) return null
-  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE))
-  return (
-    <div className="flex flex-wrap items-center justify-between gap-2 pt-3 text-sm">
-      <span className="text-[var(--color-text-muted)]">共 {total} 条</span>
-      <div className="flex gap-2">
-        <button
-          type="button"
-          className="btn-secondary min-h-10 px-3 text-sm"
-          disabled={page <= 1}
-          onClick={() => onChange(page - 1)}
-        >
-          上一页
-        </button>
-        <span className="inline-flex min-h-10 items-center text-[var(--color-text-muted)]">{page} / {pages}</span>
-        <button
-          type="button"
-          className="btn-secondary min-h-10 px-3 text-sm"
-          disabled={page >= pages}
-          onClick={() => onChange(page + 1)}
-        >
-          下一页
-        </button>
-      </div>
     </div>
   )
 }
@@ -367,7 +331,14 @@ export default function AbuseProtectionPanel() {
             </table>
           )}
         </div>
-        <Pagination page={referralPage} total={referralTotal} onChange={setReferralPage} />
+        <AdminPagination
+          page={referralPage}
+          total={referralTotal}
+          pageSize={PAGE_SIZE}
+          onPageChange={setReferralPage}
+          testId="admin-abuse-referral-pagination"
+          hideOnSinglePage={true}
+        />
       </section>
 
       <section className="border-t border-[var(--color-border)] pt-6">
@@ -439,7 +410,14 @@ export default function AbuseProtectionPanel() {
             </table>
           )}
         </div>
-        <Pagination page={rewardPage} total={rewardTotal} onChange={setRewardPage} />
+        <AdminPagination
+          page={rewardPage}
+          total={rewardTotal}
+          pageSize={PAGE_SIZE}
+          onPageChange={setRewardPage}
+          testId="admin-abuse-reward-pagination"
+          hideOnSinglePage={true}
+        />
       </section>
 
       <Dialog open={pendingAction !== null} onOpenChange={open => { if (!open && !actionBusy) setPendingAction(null) }}>

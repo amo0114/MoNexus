@@ -15,6 +15,9 @@ export default function ConfirmDialog({
   tone = 'danger',
   loading = false,
   onConfirm,
+  testId,
+  confirmTestId = 'confirm-dialog-confirm',
+  cancelTestId = 'confirm-dialog-cancel',
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -25,6 +28,9 @@ export default function ConfirmDialog({
   tone?: 'danger' | 'primary'
   loading?: boolean
   onConfirm: () => void
+  testId?: string
+  confirmTestId?: string
+  cancelTestId?: string
 }) {
   return (
     <Dialog
@@ -34,7 +40,7 @@ export default function ConfirmDialog({
         onOpenChange(o)
       }}
     >
-      <DialogContent className="max-w-sm">
+      <DialogContent className="max-w-sm" data-testid={testId}>
         <div className="flex items-start gap-3">
           {tone === 'danger' && (
             <div className="w-10 h-10 rounded-full bg-[var(--color-danger)]/10 text-[var(--color-danger)] flex items-center justify-center shrink-0">
@@ -52,6 +58,7 @@ export default function ConfirmDialog({
             className="btn-secondary px-4 py-2 text-sm"
             disabled={loading}
             onClick={() => onOpenChange(false)}
+            data-testid={cancelTestId}
           >
             {cancelLabel}
           </button>
@@ -64,6 +71,7 @@ export default function ConfirmDialog({
             }
             disabled={loading}
             onClick={onConfirm}
+            data-testid={confirmTestId}
           >
             {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : confirmLabel}
           </button>
