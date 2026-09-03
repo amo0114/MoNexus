@@ -20,6 +20,7 @@ import {
   serializeDegraded,
   serializeHeartbeat,
   serializeNotificationCreated,
+  serializeNotificationRead,
   serializeReady,
   type NotificationEnvelope,
 } from './protocol.js'
@@ -114,6 +115,23 @@ export class NotificationRealtimeHub implements RealtimeHubPort {
       if (entry.state !== 'ready') continue
       this.writeToEntry(entry, frame, 'notification')
     }
+  }
+
+  /**
+   * PR-5：把已读失效控制帧（无业务 payload）写给该用户全部 ready 的本机
+   * 连接。返回实际送达的连接数（供测试与可观测性使用）。
+   */
+  broadcastRead(recipientUserId: number): number {
+    const userMap = this.byUser.get(recipientUserId)
+    if (!userMap) return 0
+    const frame = serializeNotificationRead()
+    if (frame === null) return 0
+    let delivered = 0
+    for (const entry of [...userMap.values()]) {
+      if (entry.state !== 'ready') continue
+      if (this.writeFrame(entry, frame, 'notification_read')) delivered += 1
+    }
+    return delivered
   }
 
   /**

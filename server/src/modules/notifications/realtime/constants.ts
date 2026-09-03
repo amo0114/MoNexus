@@ -19,6 +19,7 @@ export const NOTIFICATION_REALTIME_AUTH_EXPIRING_LEAD_MS = 60_000
 /** SSE event names (spec 6.5) — control events carry no id, business events carry id. */
 export const SSE_EVENT_READY = 'stream.ready'
 export const SSE_EVENT_NOTIFICATION = 'notification.created'
+export const SSE_EVENT_NOTIFICATION_READ = 'notification.read'
 export const SSE_EVENT_AUTH_EXPIRING = 'auth.expiring'
 export const SSE_EVENT_DEGRADED = 'stream.degraded'
 

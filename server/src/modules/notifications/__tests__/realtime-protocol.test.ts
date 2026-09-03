@@ -11,6 +11,7 @@ import {
   SSE_EVENT_AUTH_EXPIRING,
   SSE_EVENT_DEGRADED,
   SSE_EVENT_NOTIFICATION,
+  SSE_EVENT_NOTIFICATION_READ,
   SSE_EVENT_READY,
 } from '../realtime/constants.js'
 import {
@@ -20,6 +21,8 @@ import {
   serializeDegraded,
   serializeHeartbeat,
   serializeNotificationCreated,
+  serializeNotificationRead,
+  serializeReadPgPayload,
   serializeReady,
   type NotificationEnvelopeSource,
 } from '../realtime/protocol.js'
@@ -275,4 +278,41 @@ describe('serializers (spec 6.5 byte format)', () => {
     expect(Buffer.byteLength(frame!, 'utf8')).toBeLessThanOrEqual(65_536)
   })
 
+})
+
+describe('PR-5 read-invalidation protocol (notification.read)', () => {
+  it('parses the exact read hint payload { v, kind, recipientUserId }', () => {
+    expect(parsePgPayload('{"v":1,"kind":"read","recipientUserId":456}')).toEqual({
+      v: 1,
+      kind: 'read',
+      recipientUserId: 456,
+    })
+  })
+
+  it('keeps parsing the legacy kindless created payload (backward compatible)', () => {
+    expect(parsePgPayload('{"v":1,"notificationId":123,"recipientUserId":456}')).toEqual({
+      v: 1,
+      notificationId: 123,
+      recipientUserId: 456,
+    })
+  })
+
+  it('rejects read hints with extra/sensitive keys or a bad user id', () => {
+    expect(parsePgPayload('{"v":1,"kind":"read","recipientUserId":456,"title":"x"}')).toBeNull()
+    expect(parsePgPayload('{"v":1,"kind":"read","recipientUserId":456,"body":"LEAK"}')).toBeNull()
+    expect(parsePgPayload('{"v":1,"kind":"read","recipientUserId":0}')).toBeNull()
+    expect(parsePgPayload('{"v":1,"kind":"other","recipientUserId":456}')).toBeNull()
+  })
+
+  it('serializes a read hint carrying nothing but version, kind and user id', () => {
+    expect(JSON.parse(serializeReadPgPayload(456))).toEqual({ v: 1, kind: 'read', recipientUserId: 456 })
+  })
+
+  it('serializes the notification.read control frame with no id and no business payload', () => {
+    const frame = serializeNotificationRead()
+    expect(frame).toContain(`event: ${SSE_EVENT_NOTIFICATION_READ}`)
+    expect(frame).toContain('data: {"v":1}')
+    expect(frame).not.toMatch(/id: /)
+    expect(frame).not.toMatch(/title|body|recipient|userId/)
+  })
 })
