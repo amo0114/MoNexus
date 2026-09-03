@@ -14,6 +14,15 @@ export type ListNotificationsParams = {
   category?: string
 }
 
+/**
+ * D-05：逻辑未过期条件（expiresAt 为空或尚在未来）。unread-count / 默认
+ * 列表 / markAllAsRead 都按它过滤，计数正确性不依赖归档 cron 的及时性；
+ * cron（expiryCron.ts）只负责把存储状态最终收敛为 archived。
+ */
+function notExpired(now: Date): Prisma.NotificationWhereInput {
+  return { OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] }
+}
+
 function serializeNotification(row: {
   id: number
   eventType: string
@@ -50,7 +59,14 @@ export async function listNotifications(userId: number, params: ListNotification
   const where: Prisma.NotificationWhereInput = {
     recipientUserId: userId,
   }
-  if (params.status) where.status = params.status
+  if (params.status) {
+    // status=archived 是显式历史查询：归档行原样可见，不再做时间过滤。
+    where.status = params.status
+  } else {
+    // 默认视图排除 archived 与逻辑已过期行（D-05）。
+    where.status = { not: 'archived' }
+    Object.assign(where, notExpired(new Date()))
+  }
   if (params.category) where.category = params.category
   if (params.cursor != null) {
     where.id = { lt: params.cursor }
@@ -89,7 +105,8 @@ export async function listNotifications(userId: number, params: ListNotification
 
 export async function getUnreadCount(userId: number): Promise<{ count: number }> {
   const count = await prisma.notification.count({
-    where: { recipientUserId: userId, status: 'unread' },
+    // D-05：立即排除逻辑已过期行——铃铛角标不依赖归档 cron 是否已跑。
+    where: { recipientUserId: userId, status: 'unread', ...notExpired(new Date()) },
   })
   return { count }
 }
@@ -152,7 +169,9 @@ export async function markAsRead(userId: number, notificationId: number) {
 export async function markAllAsRead(userId: number): Promise<{ updated: number }> {
   const now = new Date()
   const result = await prisma.notification.updateMany({
-    where: { recipientUserId: userId, status: 'unread' },
+    // D-05：过期未读行归档 cron 会收走，「全部已读」不处理它们
+    // （既不读也不复活——它们对用户已不可见）。
+    where: { recipientUserId: userId, status: 'unread', ...notExpired(now) },
     data: { status: 'read', readAt: now },
   })
   return { updated: result.count }
