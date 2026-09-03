@@ -16,6 +16,7 @@ import {
 import { getApiErrorMessage } from '../../api/error'
 import { useAppStore } from '../../stores/appStore'
 import { ProviderIcon } from './storage/ProviderIcons'
+import ConfirmDialog from '../ui/ConfirmDialog'
 
 const EMPTY_FORM: StorageProviderPublicConfig & {
   type: StoragePreset['type']
@@ -77,6 +78,12 @@ export default function AdminStoragePanel() {
   const [creating, setCreating] = useState(false)
   const [form, setForm] = useState(EMPTY_FORM)
   const [showForm, setShowForm] = useState(false)
+  const [confirmTarget, setConfirmTarget] = useState<{
+    id: number
+    action: 'activate' | 'rollback' | 'disable'
+    name: string
+  } | null>(null)
+  const [actionLoading, setActionLoading] = useState(false)
 
   const writable = Boolean(status?.uiConfigEnabled && status.configSource === 'database')
 
@@ -145,27 +152,29 @@ export default function AdminStoragePanel() {
     }
   }
 
-  async function runAction(
-    id: number,
-    action: 'test' | 'activate' | 'rollback' | 'disable',
-  ) {
-    if (!writable) return
-    if (action === 'activate') {
-      const ok = window.confirm(
-        '激活后，新上传将写入该提供商。历史对象仍按各自绑定位置读取，不会自动迁移。是否继续？',
-      )
-      if (!ok) return
-    }
-    if (action === 'rollback') {
-      const ok = window.confirm('确认回滚写入目标？新上传将回到上一配置或环境变量底座。')
-      if (!ok) return
-    }
+  async function runTest(id: number) {
+    if (!writable || busyId === id) return
     setBusyId(id)
     try {
-      if (action === 'test') {
-        const res = await testAdminStorageProvider(id)
-        showToast(res.probe.ok ? res.probe.summary : `探测失败：${res.probe.summary}`, res.probe.ok ? 'success' : 'error')
-      } else if (action === 'activate') {
+      const res = await testAdminStorageProvider(id)
+      showToast(res.probe.ok ? res.probe.summary : `探测失败：${res.probe.summary}`, res.probe.ok ? 'success' : 'error')
+      await reload()
+    } catch (err) {
+      showToast(getApiErrorMessage(err, '操作失败'), 'error')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  async function executeAction(
+    id: number,
+    action: 'activate' | 'rollback' | 'disable',
+  ) {
+    if (!writable || actionLoading) return
+    setActionLoading(true)
+    setBusyId(id)
+    try {
+      if (action === 'activate') {
         await activateAdminStorageProvider(id)
         showToast('已激活：新写入将使用该提供商')
       } else if (action === 'rollback') {
@@ -175,10 +184,12 @@ export default function AdminStoragePanel() {
         await disableAdminStorageProvider(id)
         showToast('已禁用该配置')
       }
+      setConfirmTarget(null)
       await reload()
     } catch (err) {
       showToast(getApiErrorMessage(err, '操作失败'), 'error')
     } finally {
+      setActionLoading(false)
       setBusyId(null)
     }
   }
@@ -403,7 +414,7 @@ export default function AdminStoragePanel() {
                       type="button"
                       className="btn-secondary btn-sm"
                       disabled={!writable || busyId === p.id}
-                      onClick={() => void runAction(p.id, 'test')}
+                      onClick={() => void runTest(p.id)}
                     >
                       测试连接
                     </button>
@@ -413,7 +424,7 @@ export default function AdminStoragePanel() {
                       type="button"
                       className="btn-primary btn-sm"
                       disabled={!writable || busyId === p.id}
-                      onClick={() => void runAction(p.id, 'activate')}
+                      onClick={() => setConfirmTarget({ id: p.id, action: 'activate', name: p.name })}
                       data-testid={`storage-activate-${p.id}`}
                     >
                       激活
@@ -424,7 +435,7 @@ export default function AdminStoragePanel() {
                       type="button"
                       className="btn-secondary btn-sm"
                       disabled={!writable || busyId === p.id}
-                      onClick={() => void runAction(p.id, 'rollback')}
+                      onClick={() => setConfirmTarget({ id: p.id, action: 'rollback', name: p.name })}
                     >
                       回滚
                     </button>
@@ -434,7 +445,7 @@ export default function AdminStoragePanel() {
                       type="button"
                       className="btn-secondary btn-sm text-red-500"
                       disabled={!writable || busyId === p.id}
-                      onClick={() => void runAction(p.id, 'disable')}
+                      onClick={() => setConfirmTarget({ id: p.id, action: 'disable', name: p.name })}
                     >
                       禁用
                     </button>
@@ -445,6 +456,41 @@ export default function AdminStoragePanel() {
           </div>
         )}
       </section>
+
+      <ConfirmDialog
+        open={confirmTarget !== null}
+        onOpenChange={(open) => { if (!open && !actionLoading) setConfirmTarget(null) }}
+        title={
+          confirmTarget?.action === 'activate'
+            ? '激活对象存储配置'
+            : confirmTarget?.action === 'rollback'
+              ? '回滚存储写入目标'
+              : '禁用存储配置'
+        }
+        description={
+          confirmTarget?.action === 'activate'
+            ? `确认激活配置「${confirmTarget.name}」？激活后新上传将写入该提供商，历史对象仍按各自绑定位置读取。`
+            : confirmTarget?.action === 'rollback'
+              ? '确认回滚写入目标？新上传将回到上一配置或环境变量底座。'
+              : `确认禁用配置「${confirmTarget?.name}」？禁用后不可再作为激活目标。`
+        }
+        confirmLabel={
+          actionLoading
+            ? '执行中…'
+            : confirmTarget?.action === 'activate'
+              ? '确认激活'
+              : confirmTarget?.action === 'rollback'
+                ? '确认回滚'
+                : '确认禁用'
+        }
+        tone={confirmTarget?.action === 'activate' ? 'primary' : 'danger'}
+        loading={actionLoading}
+        onConfirm={async () => {
+          if (confirmTarget) {
+            await executeAction(confirmTarget.id, confirmTarget.action)
+          }
+        }}
+      />
     </div>
   )
 }

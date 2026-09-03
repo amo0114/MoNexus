@@ -167,10 +167,10 @@ describe('AdminPage product publication workflow (T-APUB-004/005)', () => {
   })
 
   it('archives from the product row and does not call delete', async () => {
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
     mocks.getProducts.mockResolvedValueOnce(products).mockResolvedValueOnce(products.filter((item) => item.id !== 12))
     await openProducts()
     fireEvent.click(screen.getByTestId('admin-archive-product-12'))
+    fireEvent.click(await screen.findByRole('button', { name: '确认归档' }))
     await waitFor(() => expect(mocks.archive).toHaveBeenCalledWith(12))
     expect(useAppStore.getState().toasts.some((toast) => toast.message.includes('已归档'))).toBe(true)
   })
@@ -192,19 +192,18 @@ describe('AdminPage product publication workflow (T-APUB-004/005)', () => {
   })
 
   it('cancels unpublish with zero requests and confirms with a reload (AC-APUB-010/011)', async () => {
-    const confirm = vi.spyOn(window, 'confirm')
-    confirm.mockReturnValueOnce(false)
     await openProducts()
     fireEvent.click(screen.getByTestId('admin-product-unpublish-12'))
-    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('下架后商品将从商城隐藏'))
-    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('已有订单和可售资源不会删除'))
+    expect(await screen.findByText(/下架后商品将从商城隐藏/)).toBeInTheDocument()
+    expect(screen.getByText(/已有订单和可售资源不会删除/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '取消' }))
     expect(mocks.unpublish).not.toHaveBeenCalled()
 
-    confirm.mockReturnValueOnce(true)
     mocks.getProducts.mockResolvedValueOnce(products.map((item) => (
       item.id === 12 ? { ...item, status: 'inactive' } : item
     )))
     fireEvent.click(screen.getByTestId('admin-product-unpublish-12'))
+    fireEvent.click(await screen.findByRole('button', { name: '确认下架' }))
     await waitFor(() => expect(mocks.unpublish).toHaveBeenCalledWith(12))
     await waitFor(() => expect(screen.getByTestId('admin-product-status-12')).toHaveTextContent('已下架'))
     expect(useAppStore.getState().toasts.some((toast) => toast.message.includes('已下架'))).toBe(true)
@@ -216,11 +215,9 @@ describe('AdminPage product publication workflow (T-APUB-004/005)', () => {
     mocks.unpublish.mockImplementation(
       () => new Promise((resolve) => { resolveUnpublish = resolve }),
     )
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
     await openProducts()
-    const button = screen.getByTestId('admin-product-unpublish-12')
-    fireEvent.click(button)
-    fireEvent.click(button)
+    fireEvent.click(screen.getByTestId('admin-product-unpublish-12'))
+    fireEvent.click(await screen.findByRole('button', { name: '确认下架' }))
     expect(screen.getByTestId('admin-product-publish-11')).toBeEnabled()
     expect(mocks.unpublish).toHaveBeenCalledTimes(1)
     resolveUnpublish?.({ id: 12, status: 'inactive', publishedAt: '2026-08-17T00:00:00.000Z' })
@@ -232,9 +229,9 @@ describe('AdminPage product publication workflow (T-APUB-004/005)', () => {
     mocks.getProducts
       .mockResolvedValueOnce(products)
       .mockImplementationOnce(() => new Promise((resolve) => { resolveList = resolve }))
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
     await openProducts()
     fireEvent.click(screen.getByTestId('admin-product-unpublish-12'))
+    fireEvent.click(await screen.findByRole('button', { name: '确认下架' }))
     await waitFor(() => expect(mocks.unpublish).toHaveBeenCalledTimes(1))
     const button = screen.getByTestId('admin-product-unpublish-12')
     expect(button).toBeDisabled()
@@ -258,9 +255,9 @@ describe('AdminPage product publication workflow (T-APUB-004/005)', () => {
       .mockResolvedValueOnce(products.map((item) => (
         item.id === 12 ? { ...item, status: 'inactive' } : item
       )))
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
     await openProducts()
     fireEvent.click(screen.getByTestId('admin-product-unpublish-12'))
+    fireEvent.click(await screen.findByRole('button', { name: '确认下架' }))
     expect(await screen.findByTestId('admin-products-refresh-retry')).toBeEnabled()
     fireEvent.click(screen.getByTestId('admin-products-refresh-retry'))
     expect(screen.getByTestId('admin-products-refresh-retry')).toBeDisabled()
@@ -305,9 +302,9 @@ describe('AdminPage product publication workflow (T-APUB-004/005)', () => {
       .mockResolvedValueOnce(products.map((item) => (
         item.id === 12 ? { ...item, status: 'inactive' } : item
       )))
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
     await openProducts()
     fireEvent.click(screen.getByTestId('admin-product-unpublish-12'))
+    fireEvent.click(await screen.findByRole('button', { name: '确认下架' }))
     expect(await screen.findByTestId('admin-products-refresh-error')).toHaveTextContent('不是最新')
     expect(screen.getByTestId('admin-product-status-12')).toHaveTextContent('已发布')
     expect(screen.getByTestId('admin-product-unpublish-12')).toBeDisabled()

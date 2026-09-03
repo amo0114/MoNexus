@@ -26,7 +26,7 @@
 ```ts
 type UserRole = 'user' | 'admin' | 'merchant'
 type MerchantStatus = 'pending' | 'active' | 'suspended' | 'rejected'
-type SettlementStatus = 'pending' | 'settled'
+type SettlementStatus = 'holding' | 'pending' | 'settled' | 'voided'
 type ProductStatus = 'active' | 'inactive'
 ```
 
@@ -302,29 +302,44 @@ interface BatchSettleRequest {
 
 | 方法 | 路径 | 权限 | 请求 | 响应 | 说明 |
 |---|---|---|---|---|---|
-| `GET` | `/api/admin/merchants` | admin | `status?, q?, page?, pageSize?` | `Merchant[]` | 商家列表 |
+| `GET` | `/api/admin/merchants` | admin | `status?, q?, page?, pageSize?` | `ListEnvelope<Merchant>` | 商家列表（支持分页信封与关键词检索） |
 | `GET` | `/api/admin/merchants/:id` | admin | 无 | `MerchantDetail` | 商家详情 |
 | `PUT` | `/api/admin/merchants/:id/approve` | admin | 无 | `Merchant` | 审核通过，同时用户变商家 |
 | `PUT` | `/api/admin/merchants/:id/reject` | admin | `RejectMerchantRequest` | `Merchant` | 拒绝入驻 |
 | `PUT` | `/api/admin/merchants/:id/suspend` | admin | 无 | `Merchant` | 停用商家，同时用户降回普通用户 |
 | `PUT` | `/api/admin/merchants/:id/commission` | admin | `UpdateCommissionRequest` | `Merchant` | 调整抽成 |
-| `GET` | `/api/admin/settlements` | admin | `status?, page?, pageSize?` | `Settlement[]` | 结算列表 |
-| `POST` | `/api/admin/settlements/batch-settle` | admin | `BatchSettleRequest` | `{ settled: number }` | 批量结算 |
+| `GET` | `/api/admin/settlements` | admin | `status?, page?, pageSize?` | `ListEnvelope<Settlement>` | 结算列表（支持分页信封与状态筛选） |
+| `POST` | `/api/admin/settlements/batch-settle` | admin | `BatchSettleRequest` | `{ settled: number; creditedTotal: number }` | 批量结算 |
 
 ```ts
+interface ListEnvelope<T> {
+  items: T[]
+  total: number
+  page: number
+  pageSize: number
+}
+
 interface MerchantDetail extends Merchant {
   user?: { id: number; email: string; status: string; createdAt: string }
   products?: MerchantProduct[]
   orderCount?: number
   settlementCount?: number
 }
+
+interface RejectMerchantRequest {
+  reason: string // 必填，拒绝原因（2~500字符，执行 trim 校验）
+}
 ```
 
-管理员操作要求：
+管理员操作与分页规则：
 
-- 审核通过、拒绝、停用、调整抽成、批量结算均应写入 `AdminLog` 或等价审计记录。
-- 审核通过与停用必须在事务内同步更新 `Merchant.status` 与 `User.role`。
-- 批量结算只允许 `pending` 记录；任一记录不是 `pending` 时整体返回 `400 BAD_REQUEST`。
+- 商家与结算分页统一采用 `ListEnvelope<T>` 信封；
+- 分页排序采用稳定的主次排序：`[{ createdAt: 'desc' }, { id: 'desc' }]`，避免同一时间戳下跨页漂移；
+- 统计 `total` 与列表查询 `items` 在同一事务内使用完全相同的 `where` 条件；
+- 审核通过、拒绝、停用、调整抽成、批量结算均应写入 `AdminLog` 或等价审计记录；
+- 拒绝商家入驻理由必填（2~500 字符），商家状态更新与 `AdminLog` 写入在同一事务内保证强一致；
+- 审核通过与停用必须在事务内同步更新 `Merchant.status` 与 `User.role`；
+- 批量结算只允许 `pending` 记录；任一记录不是 `pending` 时整体返回 `400 BAD_REQUEST`，响应包含 `settled`（结算笔数）与 `creditedTotal`（入账积分总数）。
 
 ## 7. 用户端已有接口扩展
 

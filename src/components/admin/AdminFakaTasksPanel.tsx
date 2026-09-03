@@ -10,6 +10,8 @@ import { getApiErrorMessage } from '../../api/error'
 import { useAppStore } from '../../stores/appStore'
 import { TableSkeleton } from '../ui/Skeleton'
 import EmptyState from '../ui/EmptyState'
+import ConfirmDialog from '../ui/ConfirmDialog'
+import AdminPagination from './AdminPagination'
 
 export default function AdminFakaTasksPanel() {
   const showToast = useAppStore(s => s.showToast)
@@ -25,6 +27,8 @@ export default function AdminFakaTasksPanel() {
     configured: boolean
   } | null>(null)
   const [busyId, setBusyId] = useState<number | null>(null)
+  const [revokeTargetId, setRevokeTargetId] = useState<number | null>(null)
+  const [revoking, setRevoking] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -65,21 +69,20 @@ export default function AdminFakaTasksPanel() {
     }
   }
 
-  async function onRevoke(id: number) {
-    if (!confirm('确认向 Xboard 发起订阅撤销？用户对应套餐将被过期。')) return
-    setBusyId(id)
+  async function confirmRevoke() {
+    if (revokeTargetId === null || revoking) return
+    setRevoking(true)
     try {
-      const res = await revokeAdminFakaTask(id)
+      const res = await revokeAdminFakaTask(revokeTargetId)
       showToast(`撤销结果: ${res.outcome}`, 'success')
+      setRevokeTargetId(null)
       await load()
     } catch (err) {
       showToast(getApiErrorMessage(err, '撤销失败'), 'error')
     } finally {
-      setBusyId(null)
+      setRevoking(false)
     }
   }
-
-  const pages = Math.max(1, Math.ceil(total / 20))
 
   return (
     <div className="space-y-4">
@@ -181,7 +184,10 @@ export default function AdminFakaTasksPanel() {
                     )}
                   </td>
                   <td data-label="错误">
-                    <div className="max-w-[14rem] text-xs break-all">
+                    <div
+                      className="max-w-[14rem] text-xs break-all line-clamp-2"
+                      title={t.lastError || t.reconcileNote || undefined}
+                    >
                       {t.lastError || t.reconcileNote || '—'}
                     </div>
                   </td>
@@ -190,7 +196,7 @@ export default function AdminFakaTasksPanel() {
                       {(t.status === 'failed' || t.status === 'cancelled') && (
                         <button
                           type="button"
-                          className="admin-btn-secondary text-xs px-2 py-1"
+                          className="btn-secondary btn-sm text-xs px-2.5 py-1"
                           disabled={busyId === t.id}
                           onClick={() => void onRetry(t.id)}
                         >
@@ -200,9 +206,9 @@ export default function AdminFakaTasksPanel() {
                       {t.status === 'succeeded' && t.revokeStatus !== 'succeeded' && (
                         <button
                           type="button"
-                          className="admin-btn-secondary text-xs px-2 py-1"
+                          className="btn-secondary btn-sm text-xs px-2.5 py-1 text-red-500"
                           disabled={busyId === t.id}
-                          onClick={() => void onRevoke(t.id)}
+                          onClick={() => setRevokeTargetId(t.id)}
                         >
                           撤销订阅
                         </button>
@@ -216,29 +222,24 @@ export default function AdminFakaTasksPanel() {
         </div>
       )}
 
-      {pages > 1 && (
-        <div className="flex items-center gap-2 text-sm">
-          <button
-            type="button"
-            className="admin-btn-secondary"
-            disabled={page <= 1}
-            onClick={() => setPage(p => Math.max(1, p - 1))}
-          >
-            上一页
-          </button>
-          <span>
-            {page} / {pages}（共 {total}）
-          </span>
-          <button
-            type="button"
-            className="admin-btn-secondary"
-            disabled={page >= pages}
-            onClick={() => setPage(p => p + 1)}
-          >
-            下一页
-          </button>
-        </div>
-      )}
+      <AdminPagination
+        page={page}
+        total={total}
+        pageSize={20}
+        onPageChange={setPage}
+        testId="admin-faka-pagination"
+      />
+
+      <ConfirmDialog
+        open={revokeTargetId !== null}
+        onOpenChange={(open) => { if (!open && !revoking) setRevokeTargetId(null) }}
+        title="撤销 Xboard 订阅"
+        description={`确认向 Xboard 发起订阅撤销？任务 #${revokeTargetId} 对应用户的套餐将被置为过期状态。`}
+        confirmLabel={revoking ? '撤销中…' : '确认撤销'}
+        tone="danger"
+        loading={revoking}
+        onConfirm={confirmRevoke}
+      />
     </div>
   )
 }

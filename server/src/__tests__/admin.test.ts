@@ -402,9 +402,159 @@ describe('GET /api/admin/orders', () => {
     expect(res.body.items[0].delivery.status).toBe('delivered')
     expect(res.body.items[0].delivery.content).toBeUndefined()
   })
+
+  it('should validate fromDate and toDate calendar validity, leap years, and ordering', async () => {
+    await createTestUser('order-val-admin@test.local', 'admin222', 'admin')
+    const { accessToken } = await loginAs('order-val-admin@test.local', 'admin222')
+
+    // 1. Invalid date format
+    await api
+      .get('/api/admin/orders?fromDate=invalid-date')
+      .set(authHeader(accessToken))
+      .expect(400)
+
+    // 2. Invalid month
+    const badMonth = await api
+      .get('/api/admin/orders?fromDate=2026-13-01')
+      .set(authHeader(accessToken))
+      .expect(400)
+    expect(JSON.stringify(badMonth.body)).toContain('必须是有效的公历日期')
+
+    // 3. Non-existent day in month
+    const badDay = await api
+      .get('/api/admin/orders?fromDate=2026-02-31')
+      .set(authHeader(accessToken))
+      .expect(400)
+    expect(JSON.stringify(badDay.body)).toContain('必须是有效的公历日期')
+
+    // 4. Non-leap year Feb 29
+    const nonLeap = await api
+      .get('/api/admin/orders?fromDate=2026-02-29')
+      .set(authHeader(accessToken))
+      .expect(400)
+    expect(JSON.stringify(nonLeap.body)).toContain('必须是有效的公历日期')
+
+    // 5. Valid leap year Feb 29
+    await api
+      .get('/api/admin/orders?fromDate=2024-02-29&toDate=2024-02-29')
+      .set(authHeader(accessToken))
+      .expect(200)
+
+    // 6. Inverted range
+    const badRange = await api
+      .get('/api/admin/orders?fromDate=2026-05-10&toDate=2026-05-01')
+      .set(authHeader(accessToken))
+      .expect(400)
+    expect(JSON.stringify(badRange.body)).toContain('fromDate 不能晚于 toDate')
+  })
+
+  it('should reliably paginate orders with secondary id desc tiebreaker when createdAt is identical', async () => {
+    await createTestUser('order-sort-admin@test.local', 'admin222', 'admin')
+    await createTestUser('order-sort-buyer@test.local', 'buyerpass', 'user', 10000)
+    await createTestProduct('稳定排序商品', 50, 10, ['s1', 's2', 's3', 's4', 's5'])
+
+    const buyer = await loginAs('order-sort-buyer@test.local', 'buyerpass')
+    const ids: number[] = []
+    for (let i = 0; i < 4; i++) {
+      const created = await api
+        .post('/api/orders')
+        .set(authHeader(buyer.accessToken))
+        .send({ productId: 1 })
+        .expect(201)
+      ids.push(created.body.orderId)
+    }
+
+    const sameTime = new Date('2026-07-01T12:00:00.000Z')
+    await prisma.order.updateMany({
+      where: { id: { in: ids } },
+      data: { createdAt: sameTime },
+    })
+
+    const { accessToken } = await loginAs('order-sort-admin@test.local', 'admin222')
+
+    // Query page 1 (pageSize 2)
+    const p1 = await api
+      .get('/api/admin/orders?page=1&pageSize=2&fromDate=2026-07-01&toDate=2026-07-01')
+      .set(authHeader(accessToken))
+      .expect(200)
+
+    // Query page 2 (pageSize 2)
+    const p2 = await api
+      .get('/api/admin/orders?page=2&pageSize=2&fromDate=2026-07-01&toDate=2026-07-01')
+      .set(authHeader(accessToken))
+      .expect(200)
+
+    const page1Ids = p1.body.items.map((o: any) => o.id)
+    const page2Ids = p2.body.items.map((o: any) => o.id)
+
+    expect(page1Ids).toHaveLength(2)
+    expect(page2Ids).toHaveLength(2)
+
+    // No duplicates between page 1 and page 2
+    const intersection = page1Ids.filter((id: number) => page2Ids.includes(id))
+    expect(intersection).toHaveLength(0)
+
+    // Combined set contains all 4 IDs in strict id desc order
+    const combined = [...page1Ids, ...page2Ids]
+    const sortedIdsDesc = [...ids].sort((a, b) => b - a)
+    expect(combined).toEqual(sortedIdsDesc)
+  })
+
+  it('should filter orders by exact UTC boundaries: inclusive fromDate and exclusive toDate next day midnight', async () => {
+    await createTestUser('order-utc-admin@test.local', 'admin222', 'admin')
+    await createTestUser('order-utc-buyer@test.local', 'buyerpass', 'user', 10000)
+    await createTestProduct('UTC边界商品', 100, 5, ['utc-1', 'utc-2', 'utc-3', 'utc-4', 'utc-5'])
+
+    const buyer = await loginAs('order-utc-buyer@test.local', 'buyerpass')
+    const ord1 = await api
+      .post('/api/orders')
+      .set(authHeader(buyer.accessToken))
+      .send({ productId: 1 })
+      .expect(201)
+    const ord2 = await api
+      .post('/api/orders')
+      .set(authHeader(buyer.accessToken))
+      .send({ productId: 1 })
+      .expect(201)
+    const ord3 = await api
+      .post('/api/orders')
+      .set(authHeader(buyer.accessToken))
+      .send({ productId: 1 })
+      .expect(201)
+
+    await prisma.order.update({
+      where: { id: ord1.body.orderId },
+      data: { createdAt: new Date('2026-04-01T23:59:59.000Z') },
+    })
+    await prisma.order.update({
+      where: { id: ord2.body.orderId },
+      data: { createdAt: new Date('2026-04-02T00:00:00.000Z') },
+    })
+    await prisma.order.update({
+      where: { id: ord3.body.orderId },
+      data: { createdAt: new Date('2026-04-03T00:00:00.000Z') },
+    })
+
+    const { accessToken } = await loginAs('order-utc-admin@test.local', 'admin222')
+
+    const res = await api
+      .get('/api/admin/orders?fromDate=2026-04-02&toDate=2026-04-02')
+      .set(authHeader(accessToken))
+      .expect(200)
+
+    expect(res.body.items.some((o: any) => o.id === ord2.body.orderId)).toBe(true)
+    expect(res.body.items.some((o: any) => o.id === ord1.body.orderId)).toBe(false)
+    expect(res.body.items.some((o: any) => o.id === ord3.body.orderId)).toBe(false)
+  })
 })
 
 describe('GET /api/admin/orders/:id', () => {
+  it('should reject non-admin access to order detail', async () => {
+    await createTestUser('order-nonadmin-user@test.local', 'user123', 'user')
+    const { accessToken } = await loginAs('order-nonadmin-user@test.local', 'user123')
+    await api.get('/api/admin/orders/1').set(authHeader(accessToken)).expect(403)
+  })
+
   it('should return any order detail for admin', async () => {
     await createTestUser('boss7@test.local', 'admin333', 'admin')
     await createTestUser('buyer@test.local', 'buyerpass', 'user', 5000)
@@ -457,7 +607,10 @@ describe('GET /api/admin/settlements', () => {
       .query({ status: 'holding' })
       .set(authHeader(admin.accessToken))
       .expect(200)
-    expect(holdingList.body.some((s: { orderId: number }) => s.orderId === orderId)).toBe(true)
+    expect(holdingList.body.items.some((s: { orderId: number }) => s.orderId === orderId)).toBe(true)
+    expect(holdingList.body.total).toBeGreaterThanOrEqual(1)
+    expect(holdingList.body.page).toBe(1)
+    expect(holdingList.body.pageSize).toBe(20)
 
     await api
       .post(`/api/merchant/orders/${orderId}/fulfillment/reject`)
@@ -470,7 +623,8 @@ describe('GET /api/admin/settlements', () => {
       .query({ status: 'voided' })
       .set(authHeader(admin.accessToken))
       .expect(200)
-    expect(voidedList.body.some((s: { orderId: number; status: string }) => s.orderId === orderId && s.status === 'voided')).toBe(true)
+    expect(voidedList.body.items.some((s: { orderId: number; status: string }) => s.orderId === orderId && s.status === 'voided')).toBe(true)
+    expect(voidedList.body.total).toBeGreaterThanOrEqual(1)
   })
 })
 
@@ -671,5 +825,83 @@ describe('Refresh token revocation on merchant lifecycle', () => {
     const tokens = await prisma.refreshToken.findMany({ where: { userId: user.id } })
     expect(tokens.length).toBeGreaterThan(0)
     expect(tokens.every(t => t.revoked)).toBe(true)
+  })
+})
+
+describe('Admin reject merchant with mandatory reason and AdminLog audit', () => {
+  it('should validate reject reason is mandatory, non-empty, and within length limits', async () => {
+    await createTestUser('reject-admin1@test.local', 'admin123', 'admin')
+    const { merchant } = await createTestMerchant('reject-target1@test.local', 'pass123', {
+      role: 'user',
+      status: 'pending',
+      name: '测试待审核商家1',
+    })
+    const admin = await loginAs('reject-admin1@test.local', 'admin123')
+
+    // 1. Missing reason
+    await api
+      .put(`/api/admin/merchants/${merchant.id}/reject`)
+      .set(authHeader(admin.accessToken))
+      .send({})
+      .expect(400)
+
+    // 2. Whitespace-only reason
+    await api
+      .put(`/api/admin/merchants/${merchant.id}/reject`)
+      .set(authHeader(admin.accessToken))
+      .send({ reason: '   ' })
+      .expect(400)
+
+    // 3. Too short reason (< 2 chars)
+    await api
+      .put(`/api/admin/merchants/${merchant.id}/reject`)
+      .set(authHeader(admin.accessToken))
+      .send({ reason: 'a' })
+      .expect(400)
+
+    // 4. Too long reason (> 500 chars)
+    await api
+      .put(`/api/admin/merchants/${merchant.id}/reject`)
+      .set(authHeader(admin.accessToken))
+      .send({ reason: 'a'.repeat(501) })
+      .expect(400)
+
+    // Status remains pending
+    const unchanged = await prisma.merchant.findUniqueOrThrow({ where: { id: merchant.id } })
+    expect(unchanged.status).toBe('pending')
+  })
+
+  it('should reject pending merchant, update status, and write reason into AdminLog in the same transaction', async () => {
+    const { user: adminUser } = await createTestUser('reject-admin2@test.local', 'admin123', 'admin')
+    const { merchant } = await createTestMerchant('reject-target2@test.local', 'pass123', {
+      role: 'user',
+      status: 'pending',
+      name: '测试待审核商家2',
+    })
+    const admin = await loginAs('reject-admin2@test.local', 'admin123')
+
+    const res = await api
+      .put(`/api/admin/merchants/${merchant.id}/reject`)
+      .set(authHeader(admin.accessToken))
+      .send({ reason: ' 经营资质不全，缺乏营业执照 ' })
+      .expect(200)
+
+    expect(res.body.status).toBe('rejected')
+
+    // Verify DB state
+    const updated = await prisma.merchant.findUniqueOrThrow({ where: { id: merchant.id } })
+    expect(updated.status).toBe('rejected')
+
+    // Verify AdminLog record exists and includes trimmed reason
+    const log = await prisma.adminLog.findFirst({
+      where: {
+        adminUserId: adminUser.id,
+        targetType: 'merchant',
+        targetId: merchant.id,
+        action: '拒绝商家入驻',
+      },
+    })
+    expect(log).not.toBeNull()
+    expect(log?.detail).toBe('拒绝原因: 经营资质不全，缺乏营业执照')
   })
 })

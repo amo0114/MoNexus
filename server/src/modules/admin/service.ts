@@ -824,6 +824,21 @@ function buildAdminOrderWhere(query: ListOrdersQuery): Prisma.OrderWhereInput {
     where.OR = conditions
   }
 
+  if (query.fromDate || query.toDate) {
+    const createdAtFilter: Prisma.DateTimeFilter = {}
+    if (query.fromDate) {
+      // 起始日包含：UTC 零点
+      createdAtFilter.gte = new Date(`${query.fromDate}T00:00:00.000Z`)
+    }
+    if (query.toDate) {
+      // 结束日次日零点排除：UTC 次日零点
+      const nextDay = new Date(`${query.toDate}T00:00:00.000Z`)
+      nextDay.setUTCDate(nextDay.getUTCDate() + 1)
+      createdAtFilter.lt = nextDay
+    }
+    where.createdAt = createdAtFilter
+  }
+
   return where
 }
 
@@ -844,7 +859,7 @@ export async function listAllOrders(query: ListOrdersQuery = {}) {
         // P7b：列表徽标需要任务态安全投影（复审 P2：UI 已渲染，select 必须跟上）。
         provisionTask: { select: { status: true, attempts: true, lastError: true, lastHttpStatus: true, nextAttemptAt: true, merchantNotifiedAt: true, updatedAt: true } },
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       skip: (page - 1) * pageSize,
       take: pageSize,
     }),
@@ -1042,13 +1057,23 @@ export async function listMerchants(status?: string, q?: string, page = 1, pageS
   if (status) where.status = status
   if (q) where.name = { contains: q, mode: 'insensitive' }
 
-  return prisma.merchant.findMany({
-    where,
-    include: { user: { select: { id: true, email: true } } },
-    orderBy: { createdAt: 'desc' },
-    skip: (page - 1) * pageSize,
-    take: pageSize,
-  })
+  const [total, items] = await prisma.$transaction(
+    [
+      prisma.merchant.count({ where }),
+      prisma.merchant.findMany({
+        where,
+        include: { user: { select: { id: true, email: true } } },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+    ],
+    {
+      isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
+    },
+  )
+
+  return { items, total, page, pageSize }
 }
 
 export async function getMerchantDetail(id: number) {
@@ -1098,27 +1123,37 @@ export async function approveMerchant(adminUserId: number, merchantId: number) {
   })
 }
 
-export async function rejectMerchant(adminUserId: number, merchantId: number, reason?: string) {
-  const merchant = await prisma.merchant.findUnique({ where: { id: merchantId } })
-  if (!merchant) throw notFound('商家不存在')
-  if (merchant.status !== 'pending') throw badRequest('只能审核待审核的商家')
+export async function rejectMerchant(adminUserId: number, merchantId: number, reason: string) {
+  const trimmedReason = (reason ?? '').trim()
+  if (!trimmedReason || trimmedReason.length < 2) {
+    throw badRequest('拒绝理由至少 2 个字符')
+  }
+  if (trimmedReason.length > 500) {
+    throw badRequest('拒绝理由最多 500 个字符')
+  }
 
-  const updated = await prisma.merchant.update({
-    where: { id: merchantId },
-    data: { status: 'rejected' },
+  return prisma.$transaction(async tx => {
+    const merchant = await tx.merchant.findUnique({ where: { id: merchantId } })
+    if (!merchant) throw notFound('商家不存在')
+    if (merchant.status !== 'pending') throw badRequest('只能审核待审核的商家')
+
+    const updated = await tx.merchant.update({
+      where: { id: merchantId },
+      data: { status: 'rejected' },
+    })
+
+    await tx.adminLog.create({
+      data: {
+        adminUserId,
+        action: '拒绝商家入驻',
+        targetType: 'merchant',
+        targetId: merchantId,
+        detail: `拒绝原因: ${trimmedReason}`,
+      },
+    })
+
+    return updated
   })
-
-  await prisma.adminLog.create({
-    data: {
-      adminUserId,
-      action: '拒绝商家入驻',
-      targetType: 'merchant',
-      targetId: merchantId,
-      detail: reason ? `拒绝原因: ${reason}` : undefined,
-    },
-  })
-
-  return updated
 }
 
 export async function suspendMerchant(adminUserId: number, merchantId: number) {
@@ -1183,16 +1218,26 @@ export async function listAllSettlements(status?: string, page = 1, pageSize = 2
   const where: Prisma.SettlementWhereInput = {}
   if (status) where.status = status
 
-  return prisma.settlement.findMany({
-    where,
-    include: {
-      merchant: { select: { id: true, name: true } },
-      order: { select: { id: true, price: true, createdAt: true } },
+  const [total, items] = await prisma.$transaction(
+    [
+      prisma.settlement.count({ where }),
+      prisma.settlement.findMany({
+        where,
+        include: {
+          merchant: { select: { id: true, name: true } },
+          order: { select: { id: true, price: true, createdAt: true } },
+        },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+    ],
+    {
+      isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
     },
-    orderBy: { createdAt: 'desc' },
-    skip: (page - 1) * pageSize,
-    take: pageSize,
-  })
+  )
+
+  return { items, total, page, pageSize }
 }
 
 /**

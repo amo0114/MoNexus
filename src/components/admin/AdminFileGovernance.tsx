@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { AlertTriangle, FolderLock, Loader2 } from 'lucide-react'
 import {
   listAdminDeliveryFiles,
@@ -13,6 +13,7 @@ import { formatFileSize } from '../../utils/formatFileSize'
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '../ui/Dialog'
 import { TableSkeleton } from '../ui/Skeleton'
 import EmptyState from '../ui/EmptyState'
+import AdminPagination from './AdminPagination'
 
 const PAGE_SIZE = 20
 const GRANTS_PAGE_SIZE = 10
@@ -25,6 +26,7 @@ export default function AdminFileGovernance() {
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(false)
+  const filesReqSeqRef = useRef(0)
 
   const [filterStatus, setFilterStatus] = useState('')
   const [filterMerchantId, setFilterMerchantId] = useState('')
@@ -32,6 +34,9 @@ export default function AdminFileGovernance() {
 
   // 发放流水（行展开面板，同一时刻只展开一个文件）
   const [expandedFileId, setExpandedFileId] = useState<number | null>(null)
+  const expandedFileIdRef = useRef<number | null>(null)
+  const grantsReqSeqRef = useRef(0)
+
   const [grants, setGrants] = useState<AdminFileGrant[]>([])
   const [grantsTotal, setGrantsTotal] = useState(0)
   const [grantsPage, setGrantsPage] = useState(1)
@@ -42,10 +47,16 @@ export default function AdminFileGovernance() {
   const [revokeReason, setRevokeReason] = useState('')
   const [revoking, setRevoking] = useState(false)
 
+  function updateExpandedFile(id: number | null) {
+    expandedFileIdRef.current = id
+    setExpandedFileId(id)
+  }
+
   async function fetchFiles(
     pageArg: number,
     overrides?: { status?: string; merchantId?: string; fileName?: string },
   ) {
+    const seq = ++filesReqSeqRef.current
     setLoading(true)
     try {
       const status = overrides?.status ?? filterStatus
@@ -56,22 +67,37 @@ export default function AdminFileGovernance() {
       if (merchantId) query.merchantId = Number(merchantId)
       if (fileName) query.fileName = fileName
       const data = await listAdminDeliveryFiles(query)
+      if (seq !== filesReqSeqRef.current) return
       setFiles(data.items)
       setTotal(data.total)
     } catch (err: any) {
+      if (seq !== filesReqSeqRef.current) return
       showToast(getApiErrorMessage(err, '加载文件列表失败'), 'error')
     } finally {
-      setLoading(false)
+      if (seq === filesReqSeqRef.current) {
+        setLoading(false)
+      }
     }
   }
 
   useEffect(() => {
+    grantsReqSeqRef.current++
+    updateExpandedFile(null)
+    setGrants([])
+    setGrantsTotal(0)
+    setGrantsPage(1)
+    setGrantsLoading(false)
     fetchFiles(page)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page])
 
   function handleSearch() {
-    setExpandedFileId(null)
+    grantsReqSeqRef.current++
+    updateExpandedFile(null)
+    setGrants([])
+    setGrantsTotal(0)
+    setGrantsPage(1)
+    setGrantsLoading(false)
     if (page === 1) fetchFiles(1)
     else setPage(1)
   }
@@ -80,34 +106,56 @@ export default function AdminFileGovernance() {
     setFilterStatus('')
     setFilterMerchantId('')
     setFilterFileName('')
-    setExpandedFileId(null)
+    grantsReqSeqRef.current++
+    updateExpandedFile(null)
+    setGrants([])
+    setGrantsTotal(0)
+    setGrantsPage(1)
+    setGrantsLoading(false)
     if (page === 1) fetchFiles(1, { status: '', merchantId: '', fileName: '' })
     else setPage(1)
   }
 
   async function loadGrants(fileId: number, pageArg: number) {
+    const seq = ++grantsReqSeqRef.current
     setGrantsLoading(true)
     try {
       const data = await listAdminFileGrants(fileId, { page: pageArg, pageSize: GRANTS_PAGE_SIZE })
+      // Guard: drop response if a newer request was dispatched or expandedFile changed
+      if (seq !== grantsReqSeqRef.current || expandedFileIdRef.current !== fileId) {
+        return
+      }
       setGrants(data.items)
       setGrantsTotal(data.total)
       setGrantsPage(pageArg)
     } catch (err: any) {
+      if (seq !== grantsReqSeqRef.current || expandedFileIdRef.current !== fileId) {
+        return
+      }
       showToast(getApiErrorMessage(err, '加载发放流水失败'), 'error')
     } finally {
-      setGrantsLoading(false)
+      if (seq === grantsReqSeqRef.current && expandedFileIdRef.current === fileId) {
+        setGrantsLoading(false)
+      }
     }
   }
 
   function toggleGrants(fileId: number) {
-    if (expandedFileId === fileId) {
-      setExpandedFileId(null)
+    if (expandedFileIdRef.current === fileId) {
+      grantsReqSeqRef.current++
+      updateExpandedFile(null)
+      setGrants([])
+      setGrantsTotal(0)
+      setGrantsPage(1)
+      setGrantsLoading(false)
       return
     }
-    setExpandedFileId(fileId)
+    grantsReqSeqRef.current++
+    updateExpandedFile(fileId)
     setGrants([])
     setGrantsTotal(0)
-    loadGrants(fileId, 1)
+    setGrantsPage(1)
+    void loadGrants(fileId, 1)
   }
 
   async function handleRevoke() {
@@ -205,27 +253,13 @@ export default function AdminFileGovernance() {
         </table>
         )}
       </div>
-      {total > PAGE_SIZE && (
-        <div className="flex justify-between items-center mt-4 text-sm">
-          <span className="text-[var(--color-text-muted)]">共 {total} 条记录</span>
-          <div className="flex gap-2">
-            <button
-              disabled={page === 1}
-              onClick={() => setPage(page - 1)}
-              className="btn-sm px-3 py-1 border border-[var(--color-border)] rounded hover:bg-[var(--color-background)] disabled:opacity-50 cursor-pointer"
-            >
-              上一页
-            </button>
-            <button
-              disabled={page * PAGE_SIZE >= total}
-              onClick={() => setPage(page + 1)}
-              className="btn-sm px-3 py-1 border border-[var(--color-border)] rounded hover:bg-[var(--color-background)] disabled:opacity-50 cursor-pointer"
-            >
-              下一页
-            </button>
-          </div>
-        </div>
-      )}
+      <AdminPagination
+        page={page}
+        total={total}
+        pageSize={PAGE_SIZE}
+        onPageChange={setPage}
+        testId="admin-file-pagination"
+      />
 
       {/* 吊销确认弹窗（吊销后买家侧下载链接立即失效，需二次确认） */}
       <Dialog open={!!revokeTarget} onOpenChange={(o) => { if (!o && !revoking) setRevokeTarget(null) }}>
@@ -312,7 +346,7 @@ function FileRow({
         </td>
         <td className="text-sm text-[var(--color-text)] whitespace-nowrap" data-label="大小">{formatFileSize(file.size)}</td>
         <td className="font-mono text-xs text-[var(--color-text-muted)]" data-label="SHA-256">
-          <span title={file.sha256}>{file.sha256.slice(0, 12)}…</span>
+          <span title={file.sha256 || undefined}>{file.sha256 ? `${file.sha256.slice(0, 12)}…` : '—'}</span>
         </td>
         <td className="font-bold text-sm text-[var(--color-text)]" data-label="商家">{file.merchant?.name ?? '-'}</td>
         <td data-label="状态"><FileStatusPill status={file.status} /></td>
@@ -367,27 +401,15 @@ function FileRow({
                   </div>
                 ))
               )}
-              {grantsTotal > GRANTS_PAGE_SIZE && (
-                <div className="flex justify-between items-center pt-1 text-xs">
-                  <span className="text-[var(--color-text-muted)]">共 {grantsTotal} 条记录</span>
-                  <div className="flex gap-2">
-                    <button
-                      disabled={grantsLoading || grantsPage === 1}
-                      onClick={() => onGrantsPageChange(grantsPage - 1)}
-                      className="px-2 py-1 border border-[var(--color-border)] rounded hover:bg-[var(--color-background)] disabled:opacity-50"
-                    >
-                      上一页
-                    </button>
-                    <button
-                      disabled={grantsLoading || grantsPage * GRANTS_PAGE_SIZE >= grantsTotal}
-                      onClick={() => onGrantsPageChange(grantsPage + 1)}
-                      className="px-2 py-1 border border-[var(--color-border)] rounded hover:bg-[var(--color-background)] disabled:opacity-50"
-                    >
-                      下一页
-                    </button>
-                  </div>
-                </div>
-              )}
+              <AdminPagination
+                page={grantsPage}
+                total={grantsTotal}
+                pageSize={GRANTS_PAGE_SIZE}
+                onPageChange={onGrantsPageChange}
+                testId={`admin-grants-pagination-${file.id}`}
+                showQuickJumper={false}
+                hideOnSinglePage={true}
+              />
             </div>
           </td>
         </tr>

@@ -177,6 +177,25 @@ export async function loginAs(page: Page, account: SeedAccount) {
   await expect(page).toHaveURL(/\/$/, { timeout: 10_000 })
 }
 
+/** Select an admin panel through the navigation rendered for the current viewport. */
+export async function selectAdminTab(page: Page, tabId: string) {
+  if ((page.viewportSize()?.width ?? 1280) < 768) {
+    const trigger = page.getByTestId('admin-mobile-nav-trigger')
+    await expect(trigger).toBeVisible({ timeout: 10_000 })
+    await trigger.click()
+
+    const item = page.getByTestId(`admin-mobile-nav-item-${tabId}`)
+    await expect(item).toBeVisible()
+    await item.click()
+    await expect(page.getByTestId('admin-mobile-nav-drawer')).toBeHidden()
+    return
+  }
+
+  const item = page.getByTestId(`admin-nav-item-${tabId}`)
+  await expect(item).toBeVisible({ timeout: 10_000 })
+  await item.click()
+}
+
 /**
  * 走分步创建页发布一个「固定内容直发 · 外部链接」商品。
  * P2 起商品创建不再走弹窗，统一使用 /merchant/products/new 向导。

@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
+import { selectAdminTab } from './helpers'
 
 const profile = {
   id: 991,
@@ -328,7 +329,7 @@ test('admin abuse panel renders masked records and requires a ticketed confirmat
   })
 
   await page.goto('/admin')
-  await page.getByRole('button', { name: '注册与激励风控' }).click()
+  await selectAdminTab(page, 'abuse')
 
   await expect(page.getByRole('heading', { name: '注册与激励风控' })).toBeVisible()
   await expect(page.getByText('i***@example.test').first()).toBeVisible()
