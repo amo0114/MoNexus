@@ -33,6 +33,8 @@ import AdminFakaSyncDialog from '../catalog/AdminFakaSyncDialog'
 import AdminInventoryImportPreview, {
   type AdminInventoryTarget,
 } from '../catalog/AdminInventoryImportPreview'
+import AdminPanelHeader from './AdminPanelHeader'
+import AdminActionMenu, { type AdminActionMenuItem } from './AdminActionMenu'
 
 interface Props {
   active?: boolean
@@ -243,37 +245,40 @@ export default function AdminProductPanel({ active = true }: Props) {
           </button>
         </div>
       )}
-      <div className="flex justify-between items-center mb-4 gap-3 flex-wrap">
-        <h2 className="font-heading text-xl font-bold text-[var(--color-text)]">商品与库存</h2>
-        <div className="flex gap-2 flex-wrap items-center">
-          <select
-            className="input py-1.5 text-xs"
-            value={archivedFilter}
-            onChange={(event) => setArchivedFilter(event.target.value as 'exclude' | 'only' | 'all')}
-            data-testid="admin-products-archived-filter"
-          >
-            <option value="exclude">隐藏已归档</option>
-            <option value="only">仅已归档</option>
-            <option value="all">全部</option>
-          </select>
-          <button
-            type="button"
-            className="btn-secondary btn-sm text-xs px-3 py-1.5 cursor-pointer"
-            data-testid="admin-platform-product-open"
-            onClick={() => setShowPlatformProduct(true)}
-          >
-            新建平台商品
-          </button>
-          <button
-            type="button"
-            className="btn-primary btn-sm text-xs px-3 py-1.5 cursor-pointer"
-            data-testid="admin-faka-import-open"
-            onClick={() => setShowFakaImport(true)}
-          >
-            从 Xboard 导入套餐
-          </button>
-        </div>
-      </div>
+      <AdminPanelHeader
+        title="商品与库存"
+        description="管理平台自营与入驻商家商品、定价及交付配置"
+        actions={
+          <div className="flex gap-2 flex-wrap items-center">
+            <select
+              className="input py-1.5 text-xs"
+              value={archivedFilter}
+              onChange={(event) => setArchivedFilter(event.target.value as 'exclude' | 'only' | 'all')}
+              data-testid="admin-products-archived-filter"
+            >
+              <option value="exclude">隐藏已归档</option>
+              <option value="only">仅已归档</option>
+              <option value="all">全部</option>
+            </select>
+            <button
+              type="button"
+              className="btn-secondary btn-sm text-xs px-3 py-1.5 cursor-pointer"
+              data-testid="admin-platform-product-open"
+              onClick={() => setShowPlatformProduct(true)}
+            >
+              新建平台商品
+            </button>
+            <button
+              type="button"
+              className="btn-primary btn-sm text-xs px-3 py-1.5 cursor-pointer"
+              data-testid="admin-faka-import-open"
+              onClick={() => setShowFakaImport(true)}
+            >
+              从 Xboard 导入套餐
+            </button>
+          </div>
+        }
+      />
       <div className="overflow-x-auto">
         {loading && products.length === 0 ? (
           <TableSkeleton />
@@ -403,21 +408,6 @@ export default function AdminProductPanel({ active = true }: Props) {
                             由商家管理
                           </span>
                         )}
-                        {isFaka && (
-                          <button
-                            type="button"
-                            data-testid={`admin-faka-capacity-${p.id}`}
-                            className="text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 font-semibold text-xs px-3 py-1.5 btn-sm rounded-lg transition-colors border border-[var(--color-primary)]/25 cursor-pointer"
-                            onClick={() => {
-                              setFakaCapProduct(p)
-                              const lim = p.fakaCapacity?.capacityLimit
-                              setFakaCapUnlimited(lim == null)
-                              setFakaCapInput(lim != null ? String(lim) : '')
-                            }}
-                          >
-                            调整 Xboard 名额
-                          </button>
-                        )}
                         {canImport ? (
                           <button
                             onClick={() => {
@@ -453,27 +443,6 @@ export default function AdminProductPanel({ active = true }: Props) {
                             编辑
                           </button>
                         )}
-                        {isPlatformOwned && (
-                          <button
-                            type="button"
-                            data-testid={`admin-manage-offers-${p.id}`}
-                            className="text-[var(--color-text)] hover:bg-[var(--color-background)] font-semibold text-xs px-3 py-1.5 btn-sm rounded-lg transition-colors border border-[var(--color-border)] cursor-pointer"
-                            onClick={() => setOfferProduct(p)}
-                          >
-                            规格
-                          </button>
-                        )}
-                        {isFaka && (
-                          <button
-                            type="button"
-                            data-testid={`admin-faka-sync-${p.id}`}
-                            className="text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 font-semibold text-xs px-3 py-1.5 btn-sm rounded-lg transition-colors border border-[var(--color-primary)]/25 cursor-pointer inline-flex items-center gap-1"
-                            onClick={() => setSyncProduct(p)}
-                          >
-                            <RefreshCw className="w-3.5 h-3.5" />
-                            同步
-                          </button>
-                        )}
                         {p.archivedAt ? (
                           <button
                             type="button"
@@ -502,6 +471,44 @@ export default function AdminProductPanel({ active = true }: Props) {
                             归档
                           </button>
                         )}
+                        {(() => {
+                          const menuItems: AdminActionMenuItem[] = []
+                          if (isPlatformOwned) {
+                            menuItems.push({
+                              id: `offers-${p.id}`,
+                              label: '规格管理',
+                              onClick: () => setOfferProduct(p),
+                              testId: `admin-manage-offers-${p.id}`,
+                            })
+                          }
+                          if (isFaka) {
+                            menuItems.push({
+                              id: `capacity-${p.id}`,
+                              label: '调整 Xboard 名额',
+                              onClick: () => {
+                                setFakaCapProduct(p)
+                                const lim = p.fakaCapacity?.capacityLimit
+                                setFakaCapUnlimited(lim == null)
+                                setFakaCapInput(lim != null ? String(lim) : '')
+                              },
+                              testId: `admin-faka-capacity-${p.id}`,
+                            })
+                            menuItems.push({
+                              id: `sync-${p.id}`,
+                              label: '同步 Xboard',
+                              onClick: () => setSyncProduct(p),
+                              testId: `admin-faka-sync-${p.id}`,
+                            })
+                          }
+                          if (menuItems.length === 0) return null
+                          return (
+                            <AdminActionMenu
+                              items={menuItems}
+                              triggerLabel={`商品「${p.name}」更多操作`}
+                              triggerTestId={`admin-product-actions-${p.id}`}
+                            />
+                          )
+                        })()}
                       </div>
                     </td>
                   </tr>

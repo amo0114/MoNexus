@@ -349,7 +349,11 @@ export const listMerchantsQuerySchema = z.object({
 })
 
 export const reviewMerchantSchema = z.object({
-  reason: z.string().optional(),
+  reason: z
+    .string({ required_error: '拒绝理由不能为空' })
+    .trim()
+    .min(2, '拒绝理由至少 2 个字符')
+    .max(500, '拒绝理由最多 500 个字符'),
 })
 
 export const updateCommissionSchema = z.object({

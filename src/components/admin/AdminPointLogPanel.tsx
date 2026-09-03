@@ -6,6 +6,7 @@ import { useAppStore } from '../../stores/appStore'
 import { TableSkeleton } from '../ui/Skeleton'
 import EmptyState from '../ui/EmptyState'
 import { pointLogVisual, formatPointLogAmount } from '../../utils/pointLogDisplay'
+import AdminPanelHeader from './AdminPanelHeader'
 
 interface Props {
   active?: boolean
@@ -48,7 +49,10 @@ export default function AdminPointLogPanel({ active = true }: Props) {
 
   return (
     <div className="space-y-4">
-      <h2 className="font-heading text-xl font-bold mb-4 text-[var(--color-text)]">积分流水</h2>
+      <AdminPanelHeader
+        title="积分流水"
+        description="全平台用户积分收支流水记录与实时余额跟踪"
+      />
       <div className="overflow-x-auto">
         {loading && logs.length === 0 ? (
           <TableSkeleton />

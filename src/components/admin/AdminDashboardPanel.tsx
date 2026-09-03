@@ -13,6 +13,7 @@ import { getApiErrorMessage } from '../../api/error'
 import { useAppStore } from '../../stores/appStore'
 import { StatCardSkeleton } from '../ui/Skeleton'
 import AdminOfferReport from './AdminOfferReport'
+import AdminPanelHeader from './AdminPanelHeader'
 
 interface DashboardStats {
   users: number
@@ -96,7 +97,10 @@ export default function AdminDashboardPanel({ active = true }: Props) {
   if (loading && !stats) {
     return (
       <div className="space-y-6">
-        <h2 className="font-heading text-xl font-bold mb-4 text-[var(--color-text)]">数据仪表盘</h2>
+        <AdminPanelHeader
+          title="数据仪表盘"
+          description="平台关键运行指标、经营概览与实时数据"
+        />
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           <StatCardSkeleton />
           <StatCardSkeleton />
@@ -113,7 +117,10 @@ export default function AdminDashboardPanel({ active = true }: Props) {
 
   return (
     <div className="space-y-6">
-      <h2 className="font-heading text-xl font-bold mb-4 text-[var(--color-text)]">数据仪表盘</h2>
+      <AdminPanelHeader
+        title="数据仪表盘"
+        description="平台关键运行指标、经营概览与实时数据"
+      />
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
         <DashStat icon={Users} label="注册用户总数" value={stats.users} />
         <DashStat icon={ShoppingBag} label="平台订单总数" value={stats.orders} />

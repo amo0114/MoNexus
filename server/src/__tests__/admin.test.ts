@@ -677,3 +677,81 @@ describe('Refresh token revocation on merchant lifecycle', () => {
     expect(tokens.every(t => t.revoked)).toBe(true)
   })
 })
+
+describe('Admin reject merchant with mandatory reason and AdminLog audit', () => {
+  it('should validate reject reason is mandatory, non-empty, and within length limits', async () => {
+    await createTestUser('reject-admin1@test.local', 'admin123', 'admin')
+    const { merchant } = await createTestMerchant('reject-target1@test.local', 'pass123', {
+      role: 'user',
+      status: 'pending',
+      name: '测试待审核商家1',
+    })
+    const admin = await loginAs('reject-admin1@test.local', 'admin123')
+
+    // 1. Missing reason
+    await api
+      .put(`/api/admin/merchants/${merchant.id}/reject`)
+      .set(authHeader(admin.accessToken))
+      .send({})
+      .expect(400)
+
+    // 2. Whitespace-only reason
+    await api
+      .put(`/api/admin/merchants/${merchant.id}/reject`)
+      .set(authHeader(admin.accessToken))
+      .send({ reason: '   ' })
+      .expect(400)
+
+    // 3. Too short reason (< 2 chars)
+    await api
+      .put(`/api/admin/merchants/${merchant.id}/reject`)
+      .set(authHeader(admin.accessToken))
+      .send({ reason: 'a' })
+      .expect(400)
+
+    // 4. Too long reason (> 500 chars)
+    await api
+      .put(`/api/admin/merchants/${merchant.id}/reject`)
+      .set(authHeader(admin.accessToken))
+      .send({ reason: 'a'.repeat(501) })
+      .expect(400)
+
+    // Status remains pending
+    const unchanged = await prisma.merchant.findUniqueOrThrow({ where: { id: merchant.id } })
+    expect(unchanged.status).toBe('pending')
+  })
+
+  it('should reject pending merchant, update status, and write reason into AdminLog in the same transaction', async () => {
+    const adminUser = await createTestUser('reject-admin2@test.local', 'admin123', 'admin')
+    const { merchant } = await createTestMerchant('reject-target2@test.local', 'pass123', {
+      role: 'user',
+      status: 'pending',
+      name: '测试待审核商家2',
+    })
+    const admin = await loginAs('reject-admin2@test.local', 'admin123')
+
+    const res = await api
+      .put(`/api/admin/merchants/${merchant.id}/reject`)
+      .set(authHeader(admin.accessToken))
+      .send({ reason: ' 经营资质不全，缺乏营业执照 ' })
+      .expect(200)
+
+    expect(res.body.status).toBe('rejected')
+
+    // Verify DB state
+    const updated = await prisma.merchant.findUniqueOrThrow({ where: { id: merchant.id } })
+    expect(updated.status).toBe('rejected')
+
+    // Verify AdminLog record exists and includes trimmed reason
+    const log = await prisma.adminLog.findFirst({
+      where: {
+        adminUserId: adminUser.id,
+        targetType: 'merchant',
+        targetId: merchant.id,
+        action: '拒绝商家入驻',
+      },
+    })
+    expect(log).not.toBeNull()
+    expect(log?.detail).toBe('拒绝原因: 经营资质不全，缺乏营业执照')
+  })
+})

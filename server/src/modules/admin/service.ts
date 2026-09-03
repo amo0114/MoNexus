@@ -1108,27 +1108,37 @@ export async function approveMerchant(adminUserId: number, merchantId: number) {
   })
 }
 
-export async function rejectMerchant(adminUserId: number, merchantId: number, reason?: string) {
-  const merchant = await prisma.merchant.findUnique({ where: { id: merchantId } })
-  if (!merchant) throw notFound('商家不存在')
-  if (merchant.status !== 'pending') throw badRequest('只能审核待审核的商家')
+export async function rejectMerchant(adminUserId: number, merchantId: number, reason: string) {
+  const trimmedReason = (reason ?? '').trim()
+  if (!trimmedReason || trimmedReason.length < 2) {
+    throw badRequest('拒绝理由至少 2 个字符')
+  }
+  if (trimmedReason.length > 500) {
+    throw badRequest('拒绝理由最多 500 个字符')
+  }
 
-  const updated = await prisma.merchant.update({
-    where: { id: merchantId },
-    data: { status: 'rejected' },
+  return prisma.$transaction(async tx => {
+    const merchant = await tx.merchant.findUnique({ where: { id: merchantId } })
+    if (!merchant) throw notFound('商家不存在')
+    if (merchant.status !== 'pending') throw badRequest('只能审核待审核的商家')
+
+    const updated = await tx.merchant.update({
+      where: { id: merchantId },
+      data: { status: 'rejected' },
+    })
+
+    await tx.adminLog.create({
+      data: {
+        adminUserId,
+        action: '拒绝商家入驻',
+        targetType: 'merchant',
+        targetId: merchantId,
+        detail: `拒绝原因: ${trimmedReason}`,
+      },
+    })
+
+    return updated
   })
-
-  await prisma.adminLog.create({
-    data: {
-      adminUserId,
-      action: '拒绝商家入驻',
-      targetType: 'merchant',
-      targetId: merchantId,
-      detail: reason ? `拒绝原因: ${reason}` : undefined,
-    },
-  })
-
-  return updated
 }
 
 export async function suspendMerchant(adminUserId: number, merchantId: number) {

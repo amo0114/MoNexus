@@ -320,7 +320,7 @@ export interface ImportInventoryRequest {
 }
 
 export interface RejectMerchantRequest {
-  reason?: string
+  reason: string
 }
 
 export interface UpdateCommissionRequest {

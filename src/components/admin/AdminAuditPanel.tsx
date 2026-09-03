@@ -6,6 +6,7 @@ import { useAppStore } from '../../stores/appStore'
 import { TableSkeleton } from '../ui/Skeleton'
 import EmptyState from '../ui/EmptyState'
 import AdminPagination from './AdminPagination'
+import AdminPanelHeader from './AdminPanelHeader'
 
 interface AuditFetchSnapshot {
   page?: number
@@ -109,7 +110,10 @@ export default function AdminAuditPanel({ active = true }: Props) {
 
   return (
     <div className="space-y-4">
-      <h2 className="font-heading text-xl font-bold mb-4 text-[var(--color-text)]">操作审计</h2>
+      <AdminPanelHeader
+        title="操作审计"
+        description="追溯与审计管理人员在系统中的关键敏感操作"
+      />
       <div className="flex flex-wrap gap-3 mb-4">
         <input
           type="text"

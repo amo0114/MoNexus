@@ -325,6 +325,10 @@ interface MerchantDetail extends Merchant {
   orderCount?: number
   settlementCount?: number
 }
+
+interface RejectMerchantRequest {
+  reason: string // 必填，拒绝原因（2~500字符，执行 trim 校验）
+}
 ```
 
 管理员操作与分页规则：
@@ -333,6 +337,7 @@ interface MerchantDetail extends Merchant {
 - 分页排序采用稳定的主次排序：`[{ createdAt: 'desc' }, { id: 'desc' }]`，避免同一时间戳下跨页漂移；
 - 统计 `total` 与列表查询 `items` 在同一事务内使用完全相同的 `where` 条件；
 - 审核通过、拒绝、停用、调整抽成、批量结算均应写入 `AdminLog` 或等价审计记录；
+- 拒绝商家入驻理由必填（2~500 字符），商家状态更新与 `AdminLog` 写入在同一事务内保证强一致；
 - 审核通过与停用必须在事务内同步更新 `Merchant.status` 与 `User.role`；
 - 批量结算只允许 `pending` 记录；任一记录不是 `pending` 时整体返回 `400 BAD_REQUEST`，响应包含 `settled`（结算笔数）与 `creditedTotal`（入账积分总数）。
 

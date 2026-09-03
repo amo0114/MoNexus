@@ -13,6 +13,8 @@ import { TableSkeleton } from '../ui/Skeleton'
 import EmptyState from '../ui/EmptyState'
 import AdminPagination from './AdminPagination'
 import CommissionDialog from './CommissionDialog'
+import RejectMerchantDialog from './RejectMerchantDialog'
+import AdminPanelHeader from './AdminPanelHeader'
 
 interface Props {
   active?: boolean
@@ -67,6 +69,7 @@ export default function AdminMerchantPanel({ active = true }: Props) {
   const [draftMerchantSearch, setDraftMerchantSearch] = useState('')
   const [loading, setLoading] = useState(true)
   const [commissionTarget, setCommissionTarget] = useState<Merchant | null>(null)
+  const [rejectTarget, setRejectTarget] = useState<Merchant | null>(null)
 
   const appliedMerchantFiltersRef = useRef<{ status: string; q: string }>({ status: '', q: '' })
   const merchantsReqSeqRef = useRef(0)
@@ -135,13 +138,15 @@ export default function AdminMerchantPanel({ active = true }: Props) {
     }
   }
 
-  async function handleRejectMerchant(id: number) {
+  async function handleConfirmReject(reason: string) {
+    if (!rejectTarget) return
     try {
-      await rejectMerchant(id, {})
+      await rejectMerchant(rejectTarget.id, { reason })
       showToast('已拒绝入驻')
       void fetchMerchants(merchantPage, appliedMerchantFiltersRef.current)
     } catch (err: any) {
       showToast(getApiErrorMessage(err, '操作失败'), 'error')
+      throw err
     }
   }
 
@@ -157,47 +162,50 @@ export default function AdminMerchantPanel({ active = true }: Props) {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap justify-between items-center gap-3 mb-4">
-        <h2 className="font-heading text-xl font-bold text-[var(--color-text)]">商家管理</h2>
-        <div className="flex flex-wrap items-center gap-3">
-          <select
-            value={draftMerchantStatus}
-            onChange={(e) => setDraftMerchantStatus(e.target.value)}
-            className="input py-1.5 w-36"
-            data-testid="admin-merchant-status-filter"
-          >
-            <option value="">全部状态</option>
-            <option value="pending">待审核</option>
-            <option value="active">正常</option>
-            <option value="suspended">已停用</option>
-            <option value="rejected">已拒绝</option>
-          </select>
-          <input
-            type="text"
-            placeholder="搜索商家名称..."
-            value={draftMerchantSearch}
-            onChange={(e) => setDraftMerchantSearch(e.target.value)}
-            className="input py-1.5 w-48"
-            data-testid="admin-merchant-search-input"
-          />
-          <button
-            type="button"
-            onClick={handleMerchantSearch}
-            className="btn-primary py-1.5 px-3 text-sm cursor-pointer"
-            data-testid="admin-merchant-search-btn"
-          >
-            查询
-          </button>
-          <button
-            type="button"
-            onClick={handleMerchantReset}
-            className="btn-secondary py-1.5 px-3 text-sm cursor-pointer"
-            data-testid="admin-merchant-reset-btn"
-          >
-            重置
-          </button>
-        </div>
-      </div>
+      <AdminPanelHeader
+        title="商家管理"
+        description="审核新商户入驻申请与管理已有商户经营状态"
+        actions={
+          <div className="flex flex-wrap items-center gap-3">
+            <select
+              value={draftMerchantStatus}
+              onChange={(e) => setDraftMerchantStatus(e.target.value)}
+              className="input py-1.5 w-36"
+              data-testid="admin-merchant-status-filter"
+            >
+              <option value="">全部状态</option>
+              <option value="pending">待审核</option>
+              <option value="active">正常</option>
+              <option value="suspended">已停用</option>
+              <option value="rejected">已拒绝</option>
+            </select>
+            <input
+              type="text"
+              placeholder="搜索商家名称..."
+              value={draftMerchantSearch}
+              onChange={(e) => setDraftMerchantSearch(e.target.value)}
+              className="input py-1.5 w-48"
+              data-testid="admin-merchant-search-input"
+            />
+            <button
+              type="button"
+              onClick={handleMerchantSearch}
+              className="btn-primary py-1.5 px-3 text-sm cursor-pointer"
+              data-testid="admin-merchant-search-btn"
+            >
+              查询
+            </button>
+            <button
+              type="button"
+              onClick={handleMerchantReset}
+              className="btn-secondary py-1.5 px-3 text-sm cursor-pointer"
+              data-testid="admin-merchant-reset-btn"
+            >
+              重置
+            </button>
+          </div>
+        }
+      />
       <div className="overflow-x-auto">
         {loading && merchants.length === 0 ? (
           <TableSkeleton />
@@ -233,7 +241,7 @@ export default function AdminMerchantPanel({ active = true }: Props) {
                     {m.status === 'pending' && (
                       <>
                         <ActionLink tone="cta" onClick={() => handleApproveMerchant(m.id)}>通过</ActionLink>
-                        <ActionLink tone="danger" onClick={() => handleRejectMerchant(m.id)}>拒绝</ActionLink>
+                        <ActionLink tone="danger" onClick={() => setRejectTarget(m)}>拒绝</ActionLink>
                       </>
                     )}
                     {m.status === 'active' && (
@@ -273,6 +281,16 @@ export default function AdminMerchantPanel({ active = true }: Props) {
           showToast('抽成更新成功')
           void fetchMerchants(merchantPage, appliedMerchantFiltersRef.current)
         }}
+      />
+
+      {/* Reject Reason Dialog */}
+      <RejectMerchantDialog
+        merchant={rejectTarget}
+        open={Boolean(rejectTarget)}
+        onOpenChange={(open) => {
+          if (!open) setRejectTarget(null)
+        }}
+        onConfirm={handleConfirmReject}
       />
     </div>
   )

@@ -9,6 +9,7 @@ import ConfirmDialog from '../ui/ConfirmDialog'
 import { TableSkeleton } from '../ui/Skeleton'
 import EmptyState from '../ui/EmptyState'
 import AdminPagination from './AdminPagination'
+import AdminPanelHeader from './AdminPanelHeader'
 
 interface Props {
   active?: boolean
@@ -153,31 +154,34 @@ export default function AdminSettlementPanel({ active = true }: Props) {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap justify-between items-center gap-3 mb-4">
-        <h2 className="font-heading text-xl font-bold text-[var(--color-text)]">结算管理</h2>
-        <div className="flex items-center gap-3">
-          <select
-            value={settlementStatusFilter}
-            onChange={(e) => handleSettlementStatusFilterChange(e.target.value)}
-            className="input py-1.5 w-36"
-            data-testid="admin-settlement-status-filter"
-          >
-            <option value="">全部状态</option>
-            <option value="holding">冻结中</option>
-            <option value="pending">待结算</option>
-            <option value="settled">已结算</option>
-            <option value="voided">已作废</option>
-          </select>
-          <button
-            onClick={handleBatchSettleClick}
-            disabled={selectedSettlementsMap.size === 0}
-            className="btn-cta px-4 py-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-            data-testid="admin-batch-settle"
-          >
-            批量结算 ({selectedSettlementsMap.size})
-          </button>
-        </div>
-      </div>
+      <AdminPanelHeader
+        title="结算管理"
+        description="管理商户结算单、处理批量出账与流水核对"
+        actions={
+          <div className="flex items-center gap-3">
+            <select
+              value={settlementStatusFilter}
+              onChange={(e) => handleSettlementStatusFilterChange(e.target.value)}
+              className="input py-1.5 w-36"
+              data-testid="admin-settlement-status-filter"
+            >
+              <option value="">全部状态</option>
+              <option value="holding">冻结中</option>
+              <option value="pending">待结算</option>
+              <option value="settled">已结算</option>
+              <option value="voided">已作废</option>
+            </select>
+            <button
+              onClick={handleBatchSettleClick}
+              disabled={selectedSettlementsMap.size === 0}
+              className="btn-cta px-4 py-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+              data-testid="admin-batch-settle"
+            >
+              批量结算 ({selectedSettlementsMap.size})
+            </button>
+          </div>
+        }
+      />
       <div className="overflow-x-auto">
         {loading && settlements.length === 0 ? (
           <TableSkeleton />
