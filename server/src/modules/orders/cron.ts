@@ -48,9 +48,24 @@ async function autoCloseOrder(order: AutoCloseCandidate): Promise<void> {
   try {
     const result = await prisma.$transaction(async tx => {
       await tx.$queryRaw`SELECT "id" FROM "Order" WHERE "id" = ${order.id} FOR UPDATE`
+      const currentOrder = await tx.order.findUnique({
+        where: { id: order.id },
+        select: {
+          id: true,
+          userId: true,
+          productId: true,
+          holdingPoints: true,
+          fundsHeld: true,
+          status: true,
+        },
+      })
+      if (!currentOrder || !['delivered', 'completed'].includes(currentOrder.status)) {
+        return null
+      }
+
       const updated = await transitionOrderStatus(
         {
-          orderId: order.id,
+          orderId: currentOrder.id,
           toStatus: 'closed',
           actorRole: 'system',
           action: 'system.auto_close',
@@ -59,15 +74,17 @@ async function autoCloseOrder(order: AutoCloseCandidate): Promise<void> {
         tx
       )
 
-      await settleHeldOrder(tx, order, `系统自动关闭扣款: #${order.id}`)
+      await settleHeldOrder(tx, currentOrder, `系统自动关闭扣款: #${currentOrder.id}`)
 
       await tx.order.update({
-        where: { id: order.id },
+        where: { id: currentOrder.id },
         data: { confirmedAt: new Date() },
       })
 
       return updated
     })
+
+    if (!result) return
 
     await invalidateProductPublicCache(result.productId, { list: 'coalesced' })
     logger.info({ orderId: order.id }, 'order auto-closed by system cron')

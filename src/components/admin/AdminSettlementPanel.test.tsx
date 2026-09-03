@@ -62,13 +62,29 @@ describe('AdminSettlementPanel (PR 01 Remediation)', () => {
       payable: true,
       blockReason: null,
     },
+    {
+      id: 4,
+      orderId: 104,
+      merchantId: 10,
+      orderAmount: 400,
+      commissionRate: '0.1',
+      commissionAmount: 40,
+      settlementAmount: 360,
+      status: 'pending',
+      settledAt: null,
+      createdAt: '2026-09-01T03:00:00.000Z',
+      merchant: { id: 10, name: '测试商户' },
+      order: { id: 104, price: 400, createdAt: '2026-09-01T03:00:00.000Z', status: 'delivered' },
+      payable: true,
+      blockReason: null,
+    },
   ]
 
   beforeEach(() => {
     vi.clearAllMocks()
     vi.mocked(adminMerchantApi.getAdminSettlements).mockResolvedValue({
       items: mockSettlements as any,
-      total: 3,
+      total: 4,
       page: 1,
       pageSize: 20,
     })
@@ -90,6 +106,10 @@ describe('AdminSettlementPanel (PR 01 Remediation)', () => {
 
     // Row 3: settled -> no checkbox
     expect(screen.queryByTestId('admin-settlement-checkbox-3')).not.toBeInTheDocument()
+
+    // Row 4: payable = true -> checkbox enabled
+    const checkbox4 = screen.getByTestId('admin-settlement-checkbox-4') as HTMLInputElement
+    expect(checkbox4).toBeEnabled()
   })
 
   it('controls header checkbox indeterminate state on partial selection of eligible items', async () => {
@@ -100,13 +120,26 @@ describe('AdminSettlementPanel (PR 01 Remediation)', () => {
     expect(headerCheckbox.checked).toBe(false)
     expect(headerCheckbox.indeterminate).toBe(false)
 
-    // Select row 1 (the only eligible pending item on this page)
+    // Select row 1 (1 of 2 eligible pending items)
     const checkbox1 = screen.getByTestId('admin-settlement-checkbox-1')
     fireEvent.click(checkbox1)
 
-    // Since row 1 is the ONLY eligible pending item, selecting it makes current page all-selected
+    // With 1 of 2 eligible items selected, header checkbox must be indeterminate
+    expect(headerCheckbox.checked).toBe(false)
+    expect(headerCheckbox.indeterminate).toBe(true)
+
+    // Select row 4 (now 2 of 2 eligible pending items selected)
+    const checkbox4 = screen.getByTestId('admin-settlement-checkbox-4')
+    fireEvent.click(checkbox4)
+
+    // All eligible items selected: checked = true, indeterminate = false
     expect(headerCheckbox.checked).toBe(true)
     expect(headerCheckbox.indeterminate).toBe(false)
+
+    // Unselect row 1: partial again
+    fireEvent.click(checkbox1)
+    expect(headerCheckbox.checked).toBe(false)
+    expect(headerCheckbox.indeterminate).toBe(true)
   })
 
   it('supports mobile toolbar to toggle select-all, clear selection, and view details dialog', async () => {
@@ -117,15 +150,17 @@ describe('AdminSettlementPanel (PR 01 Remediation)', () => {
     const mobileToggleAll = screen.getByTestId('admin-mobile-toggle-page-all')
     fireEvent.click(mobileToggleAll)
 
-    // Selected 1 eligible item (row 1)
+    // Selected 2 eligible items (row 1 and row 4)
     const viewDetailBtn = await screen.findByTestId('admin-mobile-view-selection')
-    expect(viewDetailBtn).toHaveTextContent('已选 1 笔')
+    expect(viewDetailBtn).toHaveTextContent('已选 2 笔')
 
     // Open detail dialog
     fireEvent.click(viewDetailBtn)
     expect(await screen.findByTestId('admin-settlements-selection-dialog')).toBeInTheDocument()
     expect(screen.getByTestId('admin-selection-detail-item-1')).toHaveTextContent('ORD-101')
     expect(screen.getByTestId('admin-selection-detail-item-1')).toHaveTextContent('90 积分')
+    expect(screen.getByTestId('admin-selection-detail-item-4')).toHaveTextContent('ORD-104')
+    expect(screen.getByTestId('admin-selection-detail-item-4')).toHaveTextContent('360 积分')
 
     // Clear selection inside dialog
     const clearBtn = screen.getByTestId('admin-dialog-clear-selection')
@@ -165,5 +200,43 @@ describe('AdminSettlementPanel (PR 01 Remediation)', () => {
 
     const cb = screen.getByTestId('admin-settlement-checkbox-99') as HTMLInputElement
     expect(cb).toBeDisabled()
+    expect(screen.getByTestId('settlement-block-reason-99')).toHaveTextContent('暂时无法结算，请联系平台处理')
+  })
+
+  it('reconciles stale selection on fetch: unselects newly ineligible items while keeping eligible items updated', async () => {
+    const { rerender } = render(<AdminSettlementPanel active={true} />)
+    expect(await screen.findByText('ORD-101')).toBeInTheDocument()
+
+    // Select row 1 and row 4
+    fireEvent.click(screen.getByTestId('admin-settlement-checkbox-1'))
+    fireEvent.click(screen.getByTestId('admin-settlement-checkbox-4'))
+    expect(screen.getByTestId('admin-batch-settle')).toHaveTextContent('批量结算 (2)')
+
+    // Next reload: row 1 was settled, row 4 amount was updated
+    vi.mocked(adminMerchantApi.getAdminSettlements).mockResolvedValueOnce({
+      items: [
+        {
+          ...mockSettlements[0],
+          status: 'settled',
+          settledAt: '2026-09-01T04:00:00.000Z',
+        },
+        {
+          ...mockSettlements[3],
+          settlementAmount: 380,
+        },
+      ] as any,
+      total: 2,
+      page: 1,
+      pageSize: 20,
+    })
+
+    // Trigger re-fetch by switching active false -> true
+    rerender(<AdminSettlementPanel active={false} />)
+    rerender(<AdminSettlementPanel active={true} />)
+
+    await waitFor(() => {
+      // Row 1 should be pruned, row 4 remains selected (1 item)
+      expect(screen.getByTestId('admin-batch-settle')).toHaveTextContent('批量结算 (1)')
+    })
   })
 })

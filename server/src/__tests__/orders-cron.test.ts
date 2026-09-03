@@ -269,4 +269,35 @@ describe('M3-S2: merchant workbench SLA highlight', () => {
     expect(detail.body.status).toBe('delivered')
     expect(detail.body.slaExceeded).toBe(false)
   })
+
+  it('does not auto-close an order if it became disputed after candidates were queried', async () => {
+    const { merchant } = await createTestMerchant('cron-dispute-merchant@test.local', 'pass123', {
+      role: 'merchant',
+      status: 'active',
+      name: '争议商户',
+    })
+    const { user } = await createTestUser('cron-dispute-user@test.local', 'pass123', 'user', 5000)
+    const product = await createTestProduct('自动关闭争议商品', 200, 1, ['secret-cron-1'], merchant.id)
+
+    const { accessToken, orderId } = await createManualOrder('cron-dispute-user@test.local', 'pass123', product.id)
+    await ageOrderToPastDelivery(orderId, 8)
+
+    // Buyer disputes the delivered order
+    await api
+      .post(`/api/orders/${orderId}/dispute`)
+      .set(authHeader(accessToken))
+      .send({ note: '商品未按约定交付，发起争议' })
+      .expect(200)
+
+    const orderBefore = await prisma.order.findUniqueOrThrow({ where: { id: orderId } })
+    expect(orderBefore.status).toBe('disputed')
+
+    // Trigger the cron batch execution
+    await __runAutoCloseBatchForTests()
+
+    // The order must remain in disputed status, NOT closed
+    const orderAfter = await prisma.order.findUniqueOrThrow({ where: { id: orderId } })
+    expect(orderAfter.status).toBe('disputed')
+    expect(orderAfter.confirmedAt).toBeNull()
+  })
 })

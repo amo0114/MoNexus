@@ -831,7 +831,7 @@ describe('POST /api/admin/settlements/batch-settle', () => {
   })
 
   it('should reject batch and not credit any points if one settlement has a disputed order', async () => {
-    await createTestUser('settle-atomic-admin@test.local', 'admin123', 'admin')
+    const { user: adminUser } = await createTestUser('settle-atomic-admin@test.local', 'admin123', 'admin')
     const { merchant } = await createTestMerchant('settle-atomic-merchant@test.local', 'merchant123', {
       role: 'merchant',
       status: 'active',
@@ -865,11 +865,195 @@ describe('POST /api/admin/settlements/batch-settle', () => {
     const s1After = await prisma.settlement.findUniqueOrThrow({ where: { id: s1.id } })
     const s2After = await prisma.settlement.findUniqueOrThrow({ where: { id: s2.id } })
     expect(s1After.status).toBe('pending')
+    expect(s1After.settledAt).toBeNull()
     expect(s2After.status).toBe('pending')
+    expect(s2After.settledAt).toBeNull()
 
     // Verify merchant balance was untouched!
     const finalMerchantAccount = await prisma.pointAccount.findUnique({ where: { userId: merchant.userId } })
     expect(finalMerchantAccount?.balance ?? 0).toBe(initialBalance)
+
+    // Verify no PointLog or AdminLog created
+    const pointLogs = await prisma.pointLog.findMany({
+      where: { userId: merchant.userId, orderId: { in: [o1.body.orderId, o2.body.orderId] } },
+    })
+    expect(pointLogs).toHaveLength(0)
+
+    const adminLogs = await prisma.adminLog.findMany({
+      where: { adminUserId: adminUser.id, action: '批量结算' },
+    })
+    expect(adminLogs).toHaveLength(0)
+  })
+
+  it('should allow only one request to settle the same settlement concurrently, with single credit and single log', async () => {
+    const { user: adminUser } = await createTestUser('settle-race-admin@test.local', 'admin123', 'admin')
+    const { merchant } = await createTestMerchant('settle-race-merchant@test.local', 'merchant123', {
+      role: 'merchant',
+      status: 'active',
+      name: '并发结算同一单商家',
+    })
+    await createTestUser('settle-race-buyer@test.local', 'buyerpass', 'user', 5000)
+    const product = await createTestProduct('并发同一单商品', 200, 1, ['c-same-1'], merchant.id)
+    const buyer = await loginAs('settle-race-buyer@test.local', 'buyerpass')
+    const admin = await loginAs('settle-race-admin@test.local', 'admin123')
+
+    const createRes = await api
+      .post('/api/orders')
+      .set(authHeader(buyer.accessToken))
+      .send({ productId: product.id })
+      .expect(201)
+
+    const settlement = await prisma.settlement.findUniqueOrThrow({
+      where: { orderId: createRes.body.orderId },
+    })
+
+    const initialMerchantAccount = await prisma.pointAccount.findUnique({ where: { userId: merchant.userId } })
+    const initialBalance = initialMerchantAccount?.balance ?? 0
+
+    // Fire two concurrent batch-settle requests targeting the exact same settlement
+    const [resA, resB] = await Promise.all([
+      api
+        .post('/api/admin/settlements/batch-settle')
+        .set(authHeader(admin.accessToken))
+        .send({ settlementIds: [settlement.id] }),
+      api
+        .post('/api/admin/settlements/batch-settle')
+        .set(authHeader(admin.accessToken))
+        .send({ settlementIds: [settlement.id] }),
+    ])
+
+    const statuses = [resA.status, resB.status].sort()
+    expect(statuses).toEqual([200, 400])
+
+    const successRes = resA.status === 200 ? resA : resB
+    const failRes = resA.status === 400 ? resA : resB
+
+    expect(successRes.body.settled).toBe(1)
+    expect(failRes.body.error.message).toBe('存在不可结算的记录')
+
+    // Settlement state check
+    const settlementFinal = await prisma.settlement.findUniqueOrThrow({ where: { id: settlement.id } })
+    expect(settlementFinal.status).toBe('settled')
+    expect(settlementFinal.settledAt).not.toBeNull()
+
+    // Exactly one PointLog and one AdminLog
+    const pointLogs = await prisma.pointLog.findMany({
+      where: { userId: merchant.userId, orderId: createRes.body.orderId },
+    })
+    expect(pointLogs).toHaveLength(1)
+
+    const adminLogs = await prisma.adminLog.findMany({
+      where: {
+        adminUserId: adminUser.id,
+        action: '批量结算',
+        detail: { contains: '结算 1 笔' },
+      },
+    })
+    expect(adminLogs).toHaveLength(1)
+
+    // Merchant balance credited only once
+    const finalMerchantAccount = await prisma.pointAccount.findUniqueOrThrow({ where: { userId: merchant.userId } })
+    expect(finalMerchantAccount.balance).toBe(initialBalance + settlement.settlementAmount)
+  })
+
+  it('should not deadlock or return 500 when two requests settle the same batch in opposite ID order', async () => {
+    await createTestUser('settle-rev-admin@test.local', 'admin123', 'admin')
+    const { merchant } = await createTestMerchant('settle-rev-merchant@test.local', 'merchant123', {
+      role: 'merchant',
+      status: 'active',
+      name: '逆序并发商家',
+    })
+    await createTestUser('settle-rev-buyer@test.local', 'buyerpass', 'user', 10000)
+    const product = await createTestProduct('逆序并发商品', 100, 2, ['rev-1', 'rev-2'], merchant.id)
+    const buyer = await loginAs('settle-rev-buyer@test.local', 'buyerpass')
+    const admin = await loginAs('settle-rev-admin@test.local', 'admin123')
+
+    const o1 = await api.post('/api/orders').set(authHeader(buyer.accessToken)).send({ productId: product.id }).expect(201)
+    const o2 = await api.post('/api/orders').set(authHeader(buyer.accessToken)).send({ productId: product.id }).expect(201)
+
+    const s1 = await prisma.settlement.findUniqueOrThrow({ where: { orderId: o1.body.orderId } })
+    const s2 = await prisma.settlement.findUniqueOrThrow({ where: { orderId: o2.body.orderId } })
+
+    const [smallerId, largerId] = [s1.id, s2.id].sort((a, b) => a - b)
+
+    // Request A: [smallerId, largerId]
+    // Request B: [largerId, smallerId]
+    const [resA, resB] = await Promise.all([
+      api
+        .post('/api/admin/settlements/batch-settle')
+        .set(authHeader(admin.accessToken))
+        .send({ settlementIds: [smallerId, largerId] }),
+      api
+        .post('/api/admin/settlements/batch-settle')
+        .set(authHeader(admin.accessToken))
+        .send({ settlementIds: [largerId, smallerId] }),
+    ])
+
+    const statuses = [resA.status, resB.status].sort()
+    expect(statuses).toEqual([200, 400])
+
+    const s1Final = await prisma.settlement.findUniqueOrThrow({ where: { id: smallerId } })
+    const s2Final = await prisma.settlement.findUniqueOrThrow({ where: { id: largerId } })
+    expect(s1Final.status).toBe('settled')
+    expect(s2Final.status).toBe('settled')
+  })
+
+  it('should successfully settle two non-overlapping batches for the same merchant concurrently without deadlock', async () => {
+    await createTestUser('settle-nonoverlap-admin@test.local', 'admin123', 'admin')
+    const { merchant } = await createTestMerchant('settle-nonoverlap-merchant@test.local', 'merchant123', {
+      role: 'merchant',
+      status: 'active',
+      name: '同商户不重叠并发商家',
+    })
+    await createTestUser('settle-nonoverlap-buyer@test.local', 'buyerpass', 'user', 20000)
+    const product = await createTestProduct('同商户不重叠商品', 100, 4, ['no-1', 'no-2', 'no-3', 'no-4'], merchant.id)
+    const buyer = await loginAs('settle-nonoverlap-buyer@test.local', 'buyerpass')
+    const admin = await loginAs('settle-nonoverlap-admin@test.local', 'admin123')
+
+    const o1 = await api.post('/api/orders').set(authHeader(buyer.accessToken)).send({ productId: product.id }).expect(201)
+    const o2 = await api.post('/api/orders').set(authHeader(buyer.accessToken)).send({ productId: product.id }).expect(201)
+    const o3 = await api.post('/api/orders').set(authHeader(buyer.accessToken)).send({ productId: product.id }).expect(201)
+    const o4 = await api.post('/api/orders').set(authHeader(buyer.accessToken)).send({ productId: product.id }).expect(201)
+
+    const s1 = await prisma.settlement.findUniqueOrThrow({ where: { orderId: o1.body.orderId } })
+    const s2 = await prisma.settlement.findUniqueOrThrow({ where: { orderId: o2.body.orderId } })
+    const s3 = await prisma.settlement.findUniqueOrThrow({ where: { orderId: o3.body.orderId } })
+    const s4 = await prisma.settlement.findUniqueOrThrow({ where: { orderId: o4.body.orderId } })
+
+    const initialMerchantAccount = await prisma.pointAccount.findUnique({ where: { userId: merchant.userId } })
+    const initialBalance = initialMerchantAccount?.balance ?? 0
+
+    // Batch 1: [s1, s2]
+    // Batch 2: [s3, s4]
+    const [res1, res2] = await Promise.all([
+      api
+        .post('/api/admin/settlements/batch-settle')
+        .set(authHeader(admin.accessToken))
+        .send({ settlementIds: [s1.id, s2.id] }),
+      api
+        .post('/api/admin/settlements/batch-settle')
+        .set(authHeader(admin.accessToken))
+        .send({ settlementIds: [s3.id, s4.id] }),
+    ])
+
+    expect(res1.status).toBe(200)
+    expect(res2.status).toBe(200)
+    expect(res1.body.settled).toBe(2)
+    expect(res2.body.settled).toBe(2)
+
+    const expectedAdded =
+      s1.settlementAmount + s2.settlementAmount + s3.settlementAmount + s4.settlementAmount
+
+    const finalMerchantAccount = await prisma.pointAccount.findUniqueOrThrow({ where: { userId: merchant.userId } })
+    expect(finalMerchantAccount.balance).toBe(initialBalance + expectedAdded)
+
+    const pointLogs = await prisma.pointLog.findMany({
+      where: {
+        userId: merchant.userId,
+        orderId: { in: [o1.body.orderId, o2.body.orderId, o3.body.orderId, o4.body.orderId] },
+      },
+    })
+    expect(pointLogs).toHaveLength(4)
   })
 })
 

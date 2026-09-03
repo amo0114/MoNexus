@@ -11,7 +11,7 @@ import { TableSkeleton } from '../ui/Skeleton'
 import EmptyState from '../ui/EmptyState'
 import AdminPagination from './AdminPagination'
 import AdminPanelHeader from './AdminPanelHeader'
-import { blockReasonToUserMessage } from '../../utils/adminDisplay/settlements'
+import { blockReasonToUserMessage } from '../../utils/settlementCopy'
 
 interface Props {
   active?: boolean
@@ -52,6 +52,24 @@ export default function AdminSettlementPanel({ active = true }: Props) {
       setSettlements(data.items)
       setSettlementTotal(data.total)
       setSettlementPage(data.page)
+      setSelectedSettlementsMap((prev) => {
+        if (prev.size === 0) return prev
+        const next = new Map(prev)
+        for (const item of data.items) {
+          if (next.has(item.id)) {
+            if (item.status === 'pending' && item.payable === true) {
+              next.set(item.id, {
+                settlementAmount: Number(item.settlementAmount) || 0,
+                orderId: item.orderId,
+                status: 'pending',
+              })
+            } else {
+              next.delete(item.id)
+            }
+          }
+        }
+        return next
+      })
     } catch (err: any) {
       if (seq !== settlementsReqSeqRef.current) return
       showToast(getApiErrorMessage(err, '加载结算列表失败'), 'error')
@@ -306,7 +324,10 @@ export default function AdminSettlementPanel({ active = true }: Props) {
               {settlements.map((s) => {
                 const selectable = isSettlementSelectable(s)
                 const isPending = s.status === 'pending'
-                const displayReason = !selectable && isPending ? blockReasonToUserMessage(s.blockReason) : ''
+                const displayReason =
+                  !selectable && isPending
+                    ? (blockReasonToUserMessage(s.blockReason) ?? '暂时无法结算，请联系平台处理')
+                    : ''
 
                 return (
                   <tr key={s.id}>
@@ -366,7 +387,7 @@ export default function AdminSettlementPanel({ active = true }: Props) {
                     <td data-label="状态">
                       <div className="flex flex-col items-start gap-1">
                         <SettlementStatusPill status={s.status} />
-                        {isPending && !s.payable && (
+                        {isPending && !selectable && displayReason ? (
                           <span
                             className="text-[11px] text-[var(--color-danger)]"
                             data-testid={`settlement-block-reason-${s.id}`}
@@ -374,7 +395,7 @@ export default function AdminSettlementPanel({ active = true }: Props) {
                           >
                             {displayReason}
                           </span>
-                        )}
+                        ) : null}
                       </div>
                     </td>
                   </tr>

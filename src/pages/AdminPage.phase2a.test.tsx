@@ -252,6 +252,8 @@ describe('Phase 2A: AdminPage Activation-Aware Keep-Alive & Decoupling', () => {
           status: 'pending',
           createdAt: new Date().toISOString(),
           merchant: { id: 1, name: 'Alpha Store' },
+          payable: true,
+          blockReason: null,
         },
       ],
       total: 25,
