@@ -23,7 +23,11 @@ function deriveStats(data: LeaderboardResponse): Stat[] {
 
   const gap = meGap(data)
   if (gap) {
-    stats.push({ icon: TrendingUp, label: gap.label, value: `${fmtPoints(gap.points)} 分` })
+    stats.push(
+      gap.kind === 'tied'
+        ? { icon: TrendingUp, label: '与上一名', value: '同分' }
+        : { icon: TrendingUp, label: gap.label, value: `${fmtPoints(gap.points)} 分` },
+    )
   }
   if (champion && runnerUp) {
     stats.push({ icon: Crown, label: '榜首领先', value: `${fmtPoints(champion.points - runnerUp.points)} 分` })

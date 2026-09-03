@@ -80,8 +80,11 @@ export function tierLabel(tier: MemberTier): string {
 }
 
 export async function computeLifetimeEarnedPoints(userId: number): Promise<number> {
+  // LB-01：口径与 leaderboard/service.ts aggregateWindow 字面一致（含
+  // `amount > 0` 排除非正流水）——两处修改必须同步，否则总榜与会员等级会
+  // 给出两个"累计获得"。
   const result = await prisma.pointLog.aggregate({
-    where: { userId, type: 'in' },
+    where: { userId, type: 'in', amount: { gt: 0 } },
     _sum: { amount: true },
   })
   return result._sum.amount ?? 0

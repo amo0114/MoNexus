@@ -82,7 +82,8 @@ async function pointsOf(scope: LeaderboardScope, periodKey: string, userId: numb
     where: { scope_periodKey_userId: { scope, periodKey, userId } },
     select: { points: true },
   })
-  return row?.points ?? null
+  // 快照层是 bigint；断言比对其精确 number 值（测试数据都在安全整数范围内）。
+  return row ? Number(row.points) : null
 }
 
 describe('leaderboard refresh — 计分口径 (P.1, 验收 1-2)', () => {
@@ -134,6 +135,36 @@ describe('leaderboard refresh — 计分口径 (P.1, 验收 1-2)', () => {
   })
 })
 
+describe('leaderboard refresh — 数值健壮性 (PR-2)', () => {
+  it('单用户周期积分超过 2^31-1 仍可刷新、存储并按精确值读取（bigint 聚合不溢出）', async () => {
+    const user = await makeUser('lb-bigint@test.local')
+    // PointLog.amount 本身是 int4，单笔无法越过 2^31-1；多笔合法大额叠加即可。
+    await earn(user.id, 1_500_000_000, at('2026-05-10'))
+    await earn(user.id, 1_500_000_000, at('2026-05-11'))
+    await earn(user.id, 2_000_000_000, at('2026-05-12'))
+
+    await refreshLeaderboards({ now: REF_NOW })
+
+    // SUM 曾 cast ::int，超 int4 时整轮刷新直接崩——现在全程 PG bigint。
+    expect(await pointsOf('total', 'ALL', user.id)).toBe(5_000_000_000)
+    const board = await getLeaderboard('total', user.id, { now: REF_NOW })
+    expect(board.top[0]!.points).toBe(5_000_000_000)
+    expect(board.me?.points).toBe(5_000_000_000)
+  })
+
+  it('零额与负额 in 流水不产生榜单行（LB-01 口径含 amount > 0）', async () => {
+    const zero = await makeUser('lb-zero@test.local')
+    const negative = await makeUser('lb-negative@test.local')
+    await earn(zero.id, 0, at('2026-05-10'))
+    await earn(negative.id, -5, at('2026-05-10'))
+
+    await refreshLeaderboards({ now: REF_NOW })
+
+    expect(await pointsOf('total', 'ALL', zero.id)).toBeNull()
+    expect(await pointsOf('total', 'ALL', negative.id)).toBeNull()
+  })
+})
+
 describe('leaderboard refresh — 窗口封闭 (P.2, LB-03)', () => {
   it('月/周边界与 cutoff ±1 秒的流水恰好落入正确周期', async () => {
     const user = await makeUser('lb-window@test.local')
@@ -165,8 +196,9 @@ describe('leaderboard refresh — 窗口封闭 (P.2, LB-03)', () => {
     await refreshLeaderboards({ now: at(REF_DAY, '23:59:59') })
     const late = await snapshotRows('week', WEEK_KEY)
 
-    expect(early.map(r => r.points)).toEqual([42])
-    expect(late.map(r => r.points)).toEqual([42])
+    // 快照 points 列为 bigint，比对时换算成精确 number。
+    expect(early.map(r => Number(r.points))).toEqual([42])
+    expect(late.map(r => Number(r.points))).toEqual([42])
   })
 
   it('窗口边界不随 PG 会话时区漂移', async () => {
@@ -184,7 +216,7 @@ describe('leaderboard refresh — 窗口封闭 (P.2, LB-03)', () => {
         await tx.$executeRawUnsafe(`SET LOCAL TIME ZONE '${timeZone}'`)
         return __aggregateWindowForTests(null, cutoff, tx)
       })
-      expect(rows.map(row => ({ userId: row.userId, points: row.points }))).toEqual([
+      expect(rows.map(row => ({ userId: row.userId, points: Number(row.points) }))).toEqual([
         { userId: user.id, points: 5 },
       ])
     }

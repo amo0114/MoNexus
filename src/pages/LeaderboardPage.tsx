@@ -137,7 +137,11 @@ export default function LeaderboardPage() {
 
   const copy = emptyCopy(scope, data?.updatedAt ?? null)
   const gap = data ? meGap(data) : null
-  const gapText = gap ? `${gap.label}还差 ${fmtPoints(gap.points)} 分` : null
+  const gapText = !gap
+    ? null
+    : gap.kind === 'tied'
+      ? gap.label
+      : `${gap.label}还差 ${fmtPoints(gap.points)} 分`
 
   return (
     <div className="max-w-3xl lg:max-w-6xl mx-auto pt-2">
