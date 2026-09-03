@@ -626,6 +626,54 @@ describe('GET /api/admin/settlements', () => {
     expect(voidedList.body.items.some((s: { orderId: number; status: string }) => s.orderId === orderId && s.status === 'voided')).toBe(true)
     expect(voidedList.body.total).toBeGreaterThanOrEqual(1)
   })
+
+  it('should return required payable and blockReason fields reflecting order eligibility', async () => {
+    await createTestUser('settle-elig-admin@test.local', 'admin123', 'admin')
+    const { merchant } = await createTestMerchant('settle-elig-merchant@test.local', 'merchant123', {
+      role: 'merchant',
+      status: 'active',
+      name: '资格测试商家',
+    })
+    await createTestUser('settle-elig-buyer@test.local', 'buyerpass', 'user', 5000)
+    const product = await createTestProduct('资格即时商品', 100, 1, ['elig-card-1'], merchant.id)
+    const buyer = await loginAs('settle-elig-buyer@test.local', 'buyerpass')
+    const admin = await loginAs('settle-elig-admin@test.local', 'admin123')
+
+    const createRes = await api
+      .post('/api/orders')
+      .set(authHeader(buyer.accessToken))
+      .send({ productId: product.id })
+      .expect(201)
+    const orderId = createRes.body.orderId as number
+
+    const listRes = await api
+      .get('/api/admin/settlements')
+      .query({ status: 'pending' })
+      .set(authHeader(admin.accessToken))
+      .expect(200)
+
+    const item = listRes.body.items.find((s: { orderId: number }) => s.orderId === orderId)
+    expect(item).toBeDefined()
+    expect(item.payable).toBe(true)
+    expect(item.blockReason).toBeNull()
+
+    await api
+      .post(`/api/orders/${orderId}/dispute`)
+      .set(authHeader(buyer.accessToken))
+      .send({ note: '商品问题申请争议' })
+      .expect(200)
+
+    const disputedListRes = await api
+      .get('/api/admin/settlements')
+      .query({ status: 'pending' })
+      .set(authHeader(admin.accessToken))
+      .expect(200)
+
+    const disputedItem = disputedListRes.body.items.find((s: { orderId: number }) => s.orderId === orderId)
+    expect(disputedItem).toBeDefined()
+    expect(disputedItem.payable).toBe(false)
+    expect(disputedItem.blockReason).toBe('订单争议中，暂不可结算')
+  })
 })
 
 describe('POST /api/admin/settlements/batch-settle', () => {
@@ -767,6 +815,61 @@ describe('POST /api/admin/settlements/batch-settle', () => {
     const unchanged = await prisma.settlement.findUniqueOrThrow({ where: { id: settlement.id } })
     expect(unchanged.status).toBe('holding')
     expect(unchanged.settledAt).toBeNull()
+  })
+
+  it('should reject duplicate settlement IDs with 400', async () => {
+    await createTestUser('settle-dup-admin@test.local', 'admin123', 'admin')
+    const admin = await loginAs('settle-dup-admin@test.local', 'admin123')
+
+    const res = await api
+      .post('/api/admin/settlements/batch-settle')
+      .set(authHeader(admin.accessToken))
+      .send({ settlementIds: [1, 1] })
+      .expect(400)
+
+    expect(res.body.error.message).toBe('存在重复的结算ID')
+  })
+
+  it('should reject batch and not credit any points if one settlement has a disputed order', async () => {
+    await createTestUser('settle-atomic-admin@test.local', 'admin123', 'admin')
+    const { merchant } = await createTestMerchant('settle-atomic-merchant@test.local', 'merchant123', {
+      role: 'merchant',
+      status: 'active',
+      name: '原子性测试商家',
+    })
+    await createTestUser('settle-atomic-buyer@test.local', 'buyerpass', 'user', 10000)
+    const product = await createTestProduct('原子性商品', 100, 2, ['atom-card-1', 'atom-card-2'], merchant.id)
+    const buyer = await loginAs('settle-atomic-buyer@test.local', 'buyerpass')
+    const admin = await loginAs('settle-atomic-admin@test.local', 'admin123')
+
+    // Order 1: delivered (eligible)
+    const o1 = await api.post('/api/orders').set(authHeader(buyer.accessToken)).send({ productId: product.id }).expect(201)
+    // Order 2: delivered -> disputed (ineligible)
+    const o2 = await api.post('/api/orders').set(authHeader(buyer.accessToken)).send({ productId: product.id }).expect(201)
+    await api.post(`/api/orders/${o2.body.orderId}/dispute`).set(authHeader(buyer.accessToken)).send({ note: '争议' }).expect(200)
+
+    const s1 = await prisma.settlement.findUniqueOrThrow({ where: { orderId: o1.body.orderId } })
+    const s2 = await prisma.settlement.findUniqueOrThrow({ where: { orderId: o2.body.orderId } })
+
+    const initialMerchantAccount = await prisma.pointAccount.findUnique({ where: { userId: merchant.userId } })
+    const initialBalance = initialMerchantAccount?.balance ?? 0
+
+    // Try to batch settle [s1.id, s2.id]
+    await api
+      .post('/api/admin/settlements/batch-settle')
+      .set(authHeader(admin.accessToken))
+      .send({ settlementIds: [s1.id, s2.id] })
+      .expect(400)
+
+    // Verify neither was settled!
+    const s1After = await prisma.settlement.findUniqueOrThrow({ where: { id: s1.id } })
+    const s2After = await prisma.settlement.findUniqueOrThrow({ where: { id: s2.id } })
+    expect(s1After.status).toBe('pending')
+    expect(s2After.status).toBe('pending')
+
+    // Verify merchant balance was untouched!
+    const finalMerchantAccount = await prisma.pointAccount.findUnique({ where: { userId: merchant.userId } })
+    expect(finalMerchantAccount?.balance ?? 0).toBe(initialBalance)
   })
 })
 

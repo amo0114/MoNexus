@@ -1280,6 +1280,7 @@ export async function respondToOrderDispute(
   input: { resolution: 'resume' | 'close'; publicNote?: string; internalNote?: string }
 ) {
   await prisma.$transaction(async tx => {
+    await tx.$queryRaw`SELECT "id" FROM "Order" WHERE "id" = ${orderId} FOR UPDATE`
     const order = await assertMerchantOrder(merchantId, orderId, tx)
     // 即时模式（instant_*）内容已交付，恢复履约直接回到 delivered；人工服务单回 processing 由商家重新交付
     const resumeTarget: FulfillmentOrderStatus =

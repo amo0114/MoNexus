@@ -1050,6 +1050,7 @@ export async function closeOrder(orderId: number, userId: number) {
   // PRD §4.3.1：delivered > 7 天自动 closed，积分正式扣减并触发 Settlement
   await assertUserOwnsOrder(orderId, userId)
   const result = await prisma.$transaction(async tx => {
+    await tx.$queryRaw`SELECT "id" FROM "Order" WHERE "id" = ${orderId} FOR UPDATE`
     const order = await tx.order.findUnique({
       where: { id: orderId },
       select: { id: true, userId: true, holdingPoints: true, fundsHeld: true, status: true, productId: true },

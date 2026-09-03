@@ -47,6 +47,7 @@ async function findAutoCloseCandidates(): Promise<AutoCloseCandidate[]> {
 async function autoCloseOrder(order: AutoCloseCandidate): Promise<void> {
   try {
     const result = await prisma.$transaction(async tx => {
+      await tx.$queryRaw`SELECT "id" FROM "Order" WHERE "id" = ${order.id} FOR UPDATE`
       const updated = await transitionOrderStatus(
         {
           orderId: order.id,
