@@ -11,10 +11,38 @@ test.describe('Admin Grouped Navigation Mobile Verification @375px', () => {
       route.fulfill({
         status: 200,
         contentType: 'application/json',
+        json: { id: 1, email: 'admin@moyuan.net', role: 'admin', nickname: '系统管理员' },
+      }),
+    )
+    await page.route('**/api/auth/refresh', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        json: { accessToken: 'e30.eyJyb2xlIjoiYWRtaW4ifQ.signature' },
+      }),
+    )
+    await page.route('**/api/config/registry', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
         json: {
-          user: { id: 1, email: 'admin@moyuan.net', role: 'admin', nickname: '系统管理员' },
+          productTypes: [],
+          deliveryModes: [],
+          orderStatuses: [],
+          settlementStatuses: [],
+          pagination: { defaultPageSize: 20, maxPageSize: 100 },
+          inventory: { lowStockThreshold: 5 },
+          memberTiers: [],
+          memberTierThresholds: { silver: 100, gold: 500, platinum: 1000 },
+          memberTierBonusBps: { bronze: 0, silver: 0, gold: 0, platinum: 0 },
         },
       }),
+    )
+    await page.route('**/api/announcements', (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', json: [] }),
+    )
+    await page.route('**/api/notifications/unread-count', (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', json: { count: 0 } }),
     )
     await page.route('**/api/admin/stats', (route) =>
       route.fulfill({
@@ -46,7 +74,7 @@ test.describe('Admin Grouped Navigation Mobile Verification @375px', () => {
           state: {
             user: { id: 1, email: 'admin@moyuan.net', role: 'admin', nickname: '系统管理员' },
             isLoggedIn: true,
-            accessToken: 'fake-admin-token',
+            accessToken: 'e30.eyJyb2xlIjoiYWRtaW4ifQ.signature',
           },
           version: 0,
         }),
