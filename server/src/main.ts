@@ -15,6 +15,7 @@ import { startFakaBridgeCron, stopFakaBridgeCron } from './lib/fakaBridge/index.
 import { startGrowthRewardCron, stopGrowthRewardCron } from './modules/auth/growthRewardCron.js'
 import { startLeaderboardCron, stopLeaderboardCron } from './modules/leaderboard/cron.js'
 import { startLegalRetentionCron, stopLegalRetentionCron } from './modules/legal/cron.js'
+import { startNotificationExpiryCron, stopNotificationExpiryCron } from './modules/notifications/expiryCron.js'
 import { startRankingCron, stopRankingCron } from './modules/merchandising/ranking/index.js'
 import { startCampaignLifecycleCron, stopCampaignLifecycleCron } from './modules/merchandising/promotions/lifecycle.js'
 import { startEditorialLifecycleCron, stopEditorialLifecycleCron } from './modules/merchandising/editorial/cron.js'
@@ -43,6 +44,7 @@ const server = app.listen(config.port, () => {
   startGrowthRewardCron()
   startLeaderboardCron()
   startLegalRetentionCron()
+  startNotificationExpiryCron()
   startRankingCron()
   startCampaignLifecycleCron()
   startEditorialLifecycleCron()
@@ -95,6 +97,7 @@ async function shutdown(signal: NodeJS.Signals) {
   stopGrowthRewardCron()
   stopLeaderboardCron()
   stopLegalRetentionCron()
+  stopNotificationExpiryCron()
   stopRankingCron()
   stopCampaignLifecycleCron()
   stopEditorialLifecycleCron()
