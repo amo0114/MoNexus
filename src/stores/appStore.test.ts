@@ -6,8 +6,9 @@ const getOrderAttentionCount = vi.fn()
 vi.mock('../api/orders', () => ({
   getOrderAttentionCount: (...args: unknown[]) => getOrderAttentionCount(...args),
 }))
+const getUnreadCount = vi.fn()
 vi.mock('../api/notifications', () => ({
-  getUnreadCount: vi.fn(async () => 0),
+  getUnreadCount: (...args: unknown[]) => getUnreadCount(...args),
 }))
 vi.mock('../api/registry', () => ({
   getConfigRegistry: vi.fn(async () => ({ capabilities: {} })),
@@ -32,7 +33,7 @@ const flush = () => new Promise<void>(resolve => setTimeout(resolve, 0))
 beforeEach(async () => {
   vi.clearAllMocks()
   useAuthStore.setState({ user: null, accessToken: null, isLoggedIn: false })
-  useAppStore.setState({ orderAttentionCount: -1 })
+  useAppStore.setState({ orderAttentionCount: -1, notificationUnreadCount: 0 })
   await flush()
 })
 
@@ -122,6 +123,61 @@ describe('refreshOrderAttentionIfStale — 补拉去重 (PR-3)', () => {
     await useAppStore.getState().refreshOrderAttention()
     // 第二次在单飞窗口外直接发起（无在途请求）→ 两次真实网络调用。
     expect(getOrderAttentionCount).toHaveBeenCalledTimes(2)
+    await flush()
+  })
+})
+
+describe('refreshNotificationUnread — 代际保护 (PR-3 复审)', () => {
+  it('A 的慢响应在 B 登录后返回：作废；B 的响应正常落位', async () => {
+    const slowA = deferred<number>()
+    getUnreadCount.mockImplementationOnce(() => slowA.promise)
+    useAuthStore.setState({ user: userA as never, isLoggedIn: true })
+    const first = useAppStore.getState().refreshNotificationUnread()
+
+    useAuthStore.setState({ user: userB as never, isLoggedIn: true })
+    getUnreadCount.mockResolvedValueOnce(9)
+    const second = useAppStore.getState().refreshNotificationUnread()
+
+    slowA.resolve(5)
+    await first
+    // A 的 5 因 userId 不匹配被丢弃，不能写进 B 的界面。
+    expect(useAppStore.getState().notificationUnreadCount).not.toBe(5)
+
+    await second
+    expect(useAppStore.getState().notificationUnreadCount).toBe(9)
+    await flush()
+  })
+
+  it('登出时仍有请求在途：立即清零，慢响应作废后保持 0', async () => {
+    const slow = deferred<number>()
+    getUnreadCount.mockImplementationOnce(() => slow.promise)
+    useAuthStore.setState({ user: userA as never, isLoggedIn: true })
+    const first = useAppStore.getState().refreshNotificationUnread()
+
+    useAuthStore.setState({ user: null, accessToken: null, isLoggedIn: false })
+    await useAppStore.getState().refreshNotificationUnread()
+    expect(useAppStore.getState().notificationUnreadCount).toBe(0)
+
+    slow.resolve(5)
+    await first
+    expect(useAppStore.getState().notificationUnreadCount).toBe(0)
+    await flush()
+  })
+
+  it('B 的新响应先完成、A 后完成：最终保持 B 的结果', async () => {
+    const slowA = deferred<number>()
+    getUnreadCount.mockImplementationOnce(() => slowA.promise)
+    useAuthStore.setState({ user: userA as never, isLoggedIn: true })
+    const first = useAppStore.getState().refreshNotificationUnread()
+
+    useAuthStore.setState({ user: userB as never, isLoggedIn: true })
+    getUnreadCount.mockResolvedValueOnce(7)
+    await useAppStore.getState().refreshNotificationUnread()
+    expect(useAppStore.getState().notificationUnreadCount).toBe(7)
+
+    slowA.resolve(5)
+    await first
+    expect(useAppStore.getState().notificationUnreadCount).toBe(7)
     await flush()
   })
 })
