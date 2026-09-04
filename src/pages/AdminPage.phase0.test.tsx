@@ -74,6 +74,8 @@ const settlementsFixture = [
     settlementAmount: 95,
     status: 'pending',
     createdAt: '2026-09-03T07:00:00.000Z',
+    payable: true,
+    blockReason: null,
   },
   {
     id: 12,
@@ -86,6 +88,8 @@ const settlementsFixture = [
     settlementAmount: 190,
     status: 'pending',
     createdAt: '2026-09-03T07:30:00.000Z',
+    payable: true,
+    blockReason: null,
   },
   {
     id: 13,
@@ -98,6 +102,8 @@ const settlementsFixture = [
     settlementAmount: 95,
     status: 'settled',
     createdAt: '2026-09-03T06:00:00.000Z',
+    payable: true,
+    blockReason: null,
   },
 ]
 
