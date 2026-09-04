@@ -319,21 +319,58 @@ export const listUsersQuerySchema = z.object({
 
 export type ListUsersQuery = z.infer<typeof listUsersQuerySchema>
 
-export function isValidCalendarDate(dateStr: string): boolean {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return false
-  const [yearStr, monthStr, dayStr] = dateStr.split('-')
-  const year = Number(yearStr)
-  const month = Number(monthStr)
-  const day = Number(dayStr)
-  if (month < 1 || month > 12) return false
-  if (day < 1 || day > 31) return false
-  const d = new Date(Date.UTC(year, month - 1, day))
-  return (
-    d.getUTCFullYear() === year &&
-    d.getUTCMonth() === month - 1 &&
-    d.getUTCDate() === day
+import {
+  isValidCalendarDate,
+  parseAndValidateStrictDate,
+  parseAndValidateStrictRefundDate,
+} from '../../lib/queryDate.js'
+
+export { isValidCalendarDate, parseAndValidateStrictDate, parseAndValidateStrictRefundDate }
+
+export const POINT_LOG_TYPES = [
+  'in',
+  'out',
+  'hold',
+  'release',
+  'refund',
+  'sandbox_in',
+] as const
+
+export type PointLogType = (typeof POINT_LOG_TYPES)[number]
+
+export const pointLogDateSchema = z.string().trim().superRefine((val, ctx) => {
+  const result = parseAndValidateStrictRefundDate(val)
+  if (!result.valid) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: result.error || '无效日期格式' })
+  }
+})
+
+export const listPointLogsQuerySchema = z
+  .object({
+    page: z.coerce.number().int().positive('page 必须是正整数').default(1),
+    pageSize: z.coerce.number().int().min(1).max(100, 'pageSize 超出最大限制 (100)').default(20),
+    userId: z.coerce.number().int().positive('userId 必须是正整数').optional(),
+    email: normalizedEmailSchema.optional(),
+    type: z.enum(POINT_LOG_TYPES).optional(),
+    from: pointLogDateSchema.optional(),
+    to: pointLogDateSchema.optional(),
+  })
+  .strict()
+  .refine(
+    (data) => {
+      if (data.from && data.to) {
+        const fromResult = parseAndValidateStrictRefundDate(data.from)
+        const toResult = parseAndValidateStrictRefundDate(data.to)
+        if (fromResult.valid && toResult.valid && fromResult.date && toResult.date) {
+          return fromResult.date.getTime() <= toResult.date.getTime()
+        }
+      }
+      return true
+    },
+    { message: 'from 不能晚于 to', path: ['to'] },
   )
-}
+
+export type ListPointLogsQuery = z.infer<typeof listPointLogsQuerySchema>
 
 export const calendarDateSchema = z
   .string()
