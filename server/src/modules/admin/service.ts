@@ -91,18 +91,20 @@ import {
   voidRefundableSettlement,
 } from '../orders/accounting.js'
 import { applyRefundInventoryPolicy } from '../orders/refundInventory.js'
-import type {
-  CreateProductInput,
-  ListAdminAuditQuery,
-  ListAnnouncementsQuery,
-  ListDeliveryFilesQuery,
-  ListFileGrantsQuery,
-  ListOrdersQuery,
-  ListUsersQuery,
-  ResolveOrderInput,
-  UpdateProductInput,
-  CreateAnnouncementInput,
-  UpdateAnnouncementInput,
+import {
+  parseAndValidateStrictRefundDate,
+  type CreateProductInput,
+  type ListAdminAuditQuery,
+  type ListAnnouncementsQuery,
+  type ListDeliveryFilesQuery,
+  type ListFileGrantsQuery,
+  type ListOrdersQuery,
+  type ListPointLogsQuery,
+  type ListUsersQuery,
+  type ResolveOrderInput,
+  type UpdateProductInput,
+  type CreateAnnouncementInput,
+  type UpdateAnnouncementInput,
 } from './schema.js'
 
 async function resolvePagination(page?: number, pageSize?: number) {
@@ -868,6 +870,82 @@ export async function listAllOrders(query: ListOrdersQuery = {}) {
   return { items: orders.map(serializeAdminOrderList), total, page, pageSize }
 }
 
+/**
+ * Dedicated paginated and filtered point logs read model.
+ */
+export async function listPointLogs(query: ListPointLogsQuery) {
+  const page = query.page ?? 1
+  const pageSize = query.pageSize ?? 20
+  const skip = (page - 1) * pageSize
+
+  const where: Prisma.PointLogWhereInput = {}
+
+  if (query.userId) {
+    where.userId = query.userId
+  }
+
+  if (query.email) {
+    where.user = {
+      email: query.email.trim().toLowerCase(),
+    }
+  }
+
+  if (query.type) {
+    where.type = query.type
+  }
+
+  const createdAtFilter: Prisma.DateTimeFilter = {}
+  if (query.from) {
+    const parsedFrom = parseAndValidateStrictRefundDate(query.from)
+    if (parsedFrom.valid && parsedFrom.date) {
+      createdAtFilter.gte = parsedFrom.date
+    }
+  }
+  if (query.to) {
+    const parsedTo = parseAndValidateStrictRefundDate(query.to)
+    if (parsedTo.valid && parsedTo.date) {
+      if (parsedTo.isDateOnly) {
+        const nextDay = new Date(parsedTo.date.getTime())
+        nextDay.setUTCDate(nextDay.getUTCDate() + 1)
+        createdAtFilter.lt = nextDay
+      } else {
+        createdAtFilter.lte = parsedTo.date
+      }
+    }
+  }
+  if (createdAtFilter.gte || createdAtFilter.lt || createdAtFilter.lte) {
+    where.createdAt = createdAtFilter
+  }
+
+  const [total, items] = await prisma.$transaction([
+    prisma.pointLog.count({ where }),
+    prisma.pointLog.findMany({
+      where,
+      include: {
+        user: {
+          select: {
+            id: true,
+            email: true,
+            nickname: true,
+          },
+        },
+      },
+      orderBy: [
+        { createdAt: 'desc' },
+        { id: 'desc' },
+      ],
+      skip,
+      take: pageSize,
+    }),
+  ])
+
+  return { items, total, page, pageSize }
+}
+
+/**
+ * @deprecated Legacy point logs query returning unpaginated array (up to 100).
+ * Kept for backward compatibility. Use listPointLogs instead.
+ */
 export async function listLogs() {
   return prisma.pointLog.findMany({
     include: {

@@ -12,7 +12,8 @@ import {
   RECONCILIATION_SCOPE_TYPES,
 } from './types.js'
 import { parseAmountMinorString, AmountParseError } from './money.js'
-import { isValidCalendarDate } from '../admin/schema.js'
+import { isValidCalendarDate, parseAndValidateStrictRefundDate } from '../../lib/queryDate.js'
+export { parseAndValidateStrictRefundDate }
 
 export const adminUuidParamSchema = z.object({
   id: z.string().uuid('必须是 UUID'),
@@ -38,50 +39,6 @@ export const adminListDisputesQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
 })
-
-export function parseAndValidateStrictRefundDate(val: string): {
-  valid: boolean
-  error?: string
-  date?: Date
-  isDateOnly?: boolean
-} {
-  // Pattern 1: YYYY-MM-DD
-  if (/^\d{4}-\d{2}-\d{2}$/.test(val)) {
-    if (!isValidCalendarDate(val)) {
-      return { valid: false, error: '无效公历日期' }
-    }
-    return { valid: true, isDateOnly: true, date: new Date(`${val}T00:00:00.000Z`) }
-  }
-
-  // Pattern 2: Strict RFC 3339 / ISO 8601 with timezone (Z or [+-]HH:mm)
-  const rfc3339Regex = /^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,3})?(Z|[+-]\d{2}:\d{2})$/
-  const match = rfc3339Regex.exec(val)
-  if (!match) {
-    return {
-      valid: false,
-      error: '无效日期格式，必须是 YYYY-MM-DD 或带明确时区的 RFC 3339 时间戳 (例如 2026-09-04T00:00:00Z)',
-    }
-  }
-
-  const [, datePart, hourStr, minStr, secStr] = match
-  if (!isValidCalendarDate(datePart)) {
-    return { valid: false, error: '无效公历日期' }
-  }
-
-  const hour = Number(hourStr)
-  const minute = Number(minStr)
-  const second = Number(secStr)
-  if (hour > 23 || minute > 59 || second > 59) {
-    return { valid: false, error: '无效时间数值' }
-  }
-
-  const parsed = new Date(val)
-  if (isNaN(parsed.getTime())) {
-    return { valid: false, error: '无法解析的时间戳' }
-  }
-
-  return { valid: true, isDateOnly: false, date: parsed }
-}
 
 const refundDateSchema = z.string().trim().superRefine((val, ctx) => {
   const result = parseAndValidateStrictRefundDate(val)

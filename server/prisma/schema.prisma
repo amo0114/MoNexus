@@ -471,9 +471,12 @@ model PointLog {
   rechargeCredit   RechargeCredit?
   rechargeReversal RechargeReversal?
 
-  // 排行榜按 (type='in', createdAt ∈ 窗口) 聚合；此前本表除主键零索引，
-  // 缺了它每次刷新都是全表扫。
-  @@index([type, createdAt])
+  // 排行榜按 (type='in', createdAt ∈ 窗口) 聚合，后台支持按类型+时间倒序
+  @@index([type, createdAt, id])
+  // 默认流水列表稳定排序 (createdAt DESC, id DESC)
+  @@index([createdAt, id])
+  // 用户维度流水检索 + 时间倒序分页
+  @@index([userId, createdAt, id])
 }
 
 model Product {
