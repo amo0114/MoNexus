@@ -125,6 +125,8 @@ const products = [
   },
 ]
 
+const toPaged = (items: typeof products) => ({ items, total: items.length, page: 1, pageSize: 20 })
+
 async function openProducts() {
   render(<AdminPage />)
   expect(await screen.findByText('注册用户总数')).toBeInTheDocument()
@@ -136,7 +138,7 @@ describe('AdminPage product publication workflow (T-APUB-004/005)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     useAppStore.setState({ toasts: [], islandNotice: null })
-    mocks.getProducts.mockResolvedValue(products)
+    mocks.getProducts.mockResolvedValue(toPaged(products))
     mocks.readiness.mockResolvedValue({ ready: true, productId: 11, issues: [] })
     mocks.publish.mockResolvedValue({ id: 11, status: 'active', publishedAt: '2026-08-17T00:00:00.000Z' })
     mocks.unpublish.mockResolvedValue({ id: 12, status: 'inactive', publishedAt: '2026-08-17T00:00:00.000Z' })
@@ -167,7 +169,7 @@ describe('AdminPage product publication workflow (T-APUB-004/005)', () => {
   })
 
   it('archives from the product row and does not call delete', async () => {
-    mocks.getProducts.mockResolvedValueOnce(products).mockResolvedValueOnce(products.filter((item) => item.id !== 12))
+    mocks.getProducts.mockResolvedValueOnce(toPaged(products)).mockResolvedValueOnce(toPaged(products.filter((item) => item.id !== 12)))
     await openProducts()
     fireEvent.click(screen.getByTestId('admin-archive-product-12'))
     fireEvent.click(await screen.findByRole('button', { name: '确认归档' }))
@@ -177,10 +179,10 @@ describe('AdminPage product publication workflow (T-APUB-004/005)', () => {
 
   it('opens readiness for a platform draft and reloads after publish (AC-APUB-005/006/011)', async () => {
     mocks.getProducts
-      .mockResolvedValueOnce(products)
-      .mockResolvedValueOnce(products.map((item) => (
+      .mockResolvedValueOnce(toPaged(products))
+      .mockResolvedValueOnce(toPaged(products.map((item) => (
         item.id === 11 ? { ...item, status: 'active' } : item
-      )))
+      ))))
     await openProducts()
     fireEvent.click(screen.getByTestId('admin-product-publish-11'))
     await waitFor(() => expect(mocks.readiness).toHaveBeenCalledWith(11))
@@ -199,9 +201,9 @@ describe('AdminPage product publication workflow (T-APUB-004/005)', () => {
     fireEvent.click(screen.getByRole('button', { name: '取消' }))
     expect(mocks.unpublish).not.toHaveBeenCalled()
 
-    mocks.getProducts.mockResolvedValueOnce(products.map((item) => (
+    mocks.getProducts.mockResolvedValueOnce(toPaged(products.map((item) => (
       item.id === 12 ? { ...item, status: 'inactive' } : item
-    )))
+    ))))
     fireEvent.click(screen.getByTestId('admin-product-unpublish-12'))
     fireEvent.click(await screen.findByRole('button', { name: '确认下架' }))
     await waitFor(() => expect(mocks.unpublish).toHaveBeenCalledWith(12))
@@ -227,7 +229,7 @@ describe('AdminPage product publication workflow (T-APUB-004/005)', () => {
   it('keeps the unpublish control locked until the list refresh finishes', async () => {
     let resolveList: ((value: unknown) => void) | undefined
     mocks.getProducts
-      .mockResolvedValueOnce(products)
+      .mockResolvedValueOnce(toPaged(products))
       .mockImplementationOnce(() => new Promise((resolve) => { resolveList = resolve }))
     await openProducts()
     fireEvent.click(screen.getByTestId('admin-product-unpublish-12'))
@@ -239,9 +241,9 @@ describe('AdminPage product publication workflow (T-APUB-004/005)', () => {
     expect(screen.getByTestId('admin-product-status-12')).toHaveTextContent('已发布')
     fireEvent.click(button)
     expect(mocks.unpublish).toHaveBeenCalledTimes(1)
-    resolveList?.(products.map((item) => (
+    resolveList?.(toPaged(products.map((item) => (
       item.id === 12 ? { ...item, status: 'inactive' } : item
-    )))
+    ))))
     await waitFor(() => expect(screen.getByTestId('admin-product-status-12')).toHaveTextContent('已下架'))
     expect(screen.queryByTestId('admin-product-unpublish-12')).not.toBeInTheDocument()
   })
@@ -249,12 +251,12 @@ describe('AdminPage product publication workflow (T-APUB-004/005)', () => {
   it('ignores a stale products reload and disables retry while a newer refresh is in flight', async () => {
     let resolveStale: ((value: unknown) => void) | undefined
     mocks.getProducts
-      .mockResolvedValueOnce(products)
+      .mockResolvedValueOnce(toPaged(products))
       .mockRejectedValueOnce(new Error('network'))
       .mockImplementationOnce(() => new Promise((resolve) => { resolveStale = resolve }))
-      .mockResolvedValueOnce(products.map((item) => (
+      .mockResolvedValueOnce(toPaged(products.map((item) => (
         item.id === 12 ? { ...item, status: 'inactive' } : item
-      )))
+      ))))
     await openProducts()
     fireEvent.click(screen.getByTestId('admin-product-unpublish-12'))
     fireEvent.click(await screen.findByRole('button', { name: '确认下架' }))
@@ -264,7 +266,7 @@ describe('AdminPage product publication workflow (T-APUB-004/005)', () => {
     fireEvent.click(screen.getByRole('button', { name: '数据仪表盘' }))
     expect(await screen.findByText('注册用户总数')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '商品与库存' }))
-    resolveStale?.(products)
+    resolveStale?.(toPaged(products))
     await waitFor(() => expect(screen.getByTestId('admin-product-status-12')).toHaveTextContent('已下架'))
     expect(screen.queryByTestId('admin-products-refresh-error')).not.toBeInTheDocument()
   })
@@ -284,7 +286,7 @@ describe('AdminPage product publication workflow (T-APUB-004/005)', () => {
 
   it('does not close publish or keep stale write actions when list refresh fails', async () => {
     mocks.getProducts
-      .mockResolvedValueOnce(products)
+      .mockResolvedValueOnce(toPaged(products))
       .mockRejectedValueOnce(new Error('network'))
     await openProducts()
     fireEvent.click(screen.getByTestId('admin-product-publish-11'))
@@ -297,11 +299,11 @@ describe('AdminPage product publication workflow (T-APUB-004/005)', () => {
 
   it('disables stale write actions and retries the list after a successful unpublish refresh failure', async () => {
     mocks.getProducts
-      .mockResolvedValueOnce(products)
+      .mockResolvedValueOnce(toPaged(products))
       .mockRejectedValueOnce(new Error('network'))
-      .mockResolvedValueOnce(products.map((item) => (
+      .mockResolvedValueOnce(toPaged(products.map((item) => (
         item.id === 12 ? { ...item, status: 'inactive' } : item
-      )))
+      ))))
     await openProducts()
     fireEvent.click(screen.getByTestId('admin-product-unpublish-12'))
     fireEvent.click(await screen.findByRole('button', { name: '确认下架' }))

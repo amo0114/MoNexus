@@ -540,6 +540,7 @@ model Product {
   @@index([status, isHot, sales, id])
   @@index([categoryId])
   @@index([archivedAt])
+  @@index([createdAt, id])
 }
 
 // SKU/套餐（P4a）：价格、库存与履约配置的真相源（spec §2：Fulfillment 绑定
@@ -740,6 +741,7 @@ model InventoryItem {
   // 同一商品的交付内容只能入库一次；应用层预检仅用于友好提示，数据库约束负责并发兜底。
   @@unique([productId, content])
   @@index([offerId, status])
+  @@index([productId, status])
 }
 
 model Order {
