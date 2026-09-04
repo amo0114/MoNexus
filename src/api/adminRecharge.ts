@@ -289,3 +289,50 @@ export async function activateAdminPricePolicy(id: string): Promise<AdminPricePo
   const { data } = await api.post<AdminPricePolicy>(`/admin/recharge/price-policies/${id}/activate`)
   return data
 }
+
+export interface AdminRechargeRefundItem {
+  refundId: string
+  orderId: string
+  rechargeOrderId: string
+  refundStatus: string
+  status: string
+  reversalStatus: 'completed' | 'pending' | 'not_required' | 'terminated' | 'anomaly' | null
+  failureReason: string | null
+  createdByUserId: number
+  requesterUserId: number
+  createdAt: string
+  updatedAt: string
+  amountMinor: string
+  pointsToReverse: string
+  reasonCode: string
+  providerRefundId: string | null
+  rechargeOrder: {
+    id: string
+    orderId: string
+    userId: number
+    status: string
+    currency: string
+    amountMinor: string
+    totalPoints: string
+    provider: string
+    paymentMethod: string
+    paidAt: string | null
+    createdAt: string
+  }
+}
+
+export async function listAdminRechargeRefunds(params?: {
+  page?: number
+  pageSize?: number
+  status?: string
+  userId?: number
+  orderId?: string
+  provider?: string
+  from?: string
+  to?: string
+}): Promise<AdminPaged<AdminRechargeRefundItem>> {
+  const { data } = await api.get<AdminPaged<AdminRechargeRefundItem>>('/admin/recharge/refunds', {
+    params,
+  })
+  return data
+}

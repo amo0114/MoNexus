@@ -7,6 +7,7 @@ import type {
   RechargeCurrency,
   RechargeOrderStatus,
   RechargePricePolicyStatus,
+  RechargeRefundStatus,
   ReconciliationScopeType,
 } from './types.js'
 
@@ -28,6 +29,24 @@ export async function listOrders(req: Request, res: Response, next: NextFunction
 export async function getOrder(req: Request, res: Response, next: NextFunction) {
   try {
     res.json(await adminService.adminGetOrder(String(req.params.id)))
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function listRefunds(req: Request, res: Response, next: NextFunction) {
+  try {
+    const query = req.query as unknown as {
+      page: number
+      pageSize: number
+      status?: RechargeRefundStatus
+      userId?: number
+      orderId?: string
+      provider?: PaymentProviderName
+      from?: string
+      to?: string
+    }
+    res.json(await adminService.adminListRefunds(query))
   } catch (err) {
     next(err)
   }
