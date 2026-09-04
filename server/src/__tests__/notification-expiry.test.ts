@@ -7,6 +7,7 @@ import {
   getUnreadCount,
   listNotifications,
   markAllAsRead,
+  markAsRead,
 } from '../modules/notifications/service.js'
 
 /**
@@ -123,5 +124,66 @@ describe('通知过期 — 归档 cron (D-05)', () => {
     const { accessToken } = await loginAs(`notif-expiry-${userSeq}@test.local`, PASSWORD)
     const res = await api.get('/api/notifications/unread-count').set(authHeader(accessToken)).expect(200)
     expect(res.body.count).toBe(0)
+  })
+})
+
+describe('通知过期 — 复审边界 (D-05)', () => {
+  it('status=unread 与 status=read 显式查询均不返回过期记录', async () => {
+    const user = await makeUser()
+    const expiredUnread = await makeNotification(user.id, { expiresAt: new Date(Date.now() - HOUR), dedupe: 'eu' })
+    const expiredRead = await makeNotification(user.id, { expiresAt: new Date(Date.now() - HOUR), status: 'read', dedupe: 'er' })
+    const liveUnread = await makeNotification(user.id, { dedupe: 'lu' })
+
+    const unread = await listNotifications(user.id, { status: 'unread' })
+    expect(unread.notifications.map(n => n.id)).toEqual([liveUnread.id])
+
+    const read = await listNotifications(user.id, { status: 'read' })
+    expect(read.notifications.map(n => n.id)).toEqual([])
+    void expiredUnread
+    void expiredRead
+  })
+
+  it('单条标记过期通知：收敛为 archived 而不是 read，且不产生已读时间戳', async () => {
+    const user = await makeUser()
+    const expired = await makeNotification(user.id, { expiresAt: new Date(Date.now() - HOUR) })
+
+    const result = await markAsRead(user.id, expired.id)
+    expect(result.status).toBe('archived')
+    expect(result.readAt).toBeNull()
+
+    const row = await prisma.notification.findUniqueOrThrow({ where: { id: expired.id } })
+    expect(row.status).toBe('archived')
+  })
+
+  it('expiresAt === now 按过期处理：列表不可见、标记只收敛不读取', async () => {
+    const user = await makeUser()
+    const boundary = await makeNotification(user.id, { expiresAt: new Date() })
+
+    const list = await listNotifications(user.id)
+    expect(list.notifications.map(n => n.id)).toEqual([])
+
+    const result = await markAsRead(user.id, boundary.id)
+    expect(result.status).toBe('archived')
+    expect((await prisma.notification.findUniqueOrThrow({ where: { id: boundary.id } })).status).toBe('archived')
+  })
+
+  it('mark-read 与归档 cron 并发：结果只能是 read（先标记）或 archived（先归档），绝不复活', async () => {
+    const user = await makeUser()
+    const a = await makeNotification(user.id, { expiresAt: new Date(Date.now() - HOUR), dedupe: 'race-a' })
+    const b = await makeNotification(user.id, { expiresAt: new Date(Date.now() - HOUR), dedupe: 'race-b' })
+
+    // 时间线 1：先归档 cron，后 mark-read → archived，且不被改写。
+    await __runNotificationExpiryBatchForTests()
+    await markAsRead(user.id, a.id)
+    expect((await prisma.notification.findUniqueOrThrow({ where: { id: a.id } })).status).toBe('archived')
+
+    // 时间线 2：先 mark-read（已过期 → 原子收敛为 archived），后 cron → 仍 archived。
+    await markAsRead(user.id, b.id)
+    await __runNotificationExpiryBatchForTests()
+    expect((await prisma.notification.findUniqueOrThrow({ where: { id: b.id } })).status).toBe('archived')
+
+    // 已 archived 的行再次 mark-read：原样返回，不复活为 read。
+    const again = await markAsRead(user.id, a.id)
+    expect(again.status).toBe('archived')
   })
 })
