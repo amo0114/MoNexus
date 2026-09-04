@@ -118,15 +118,20 @@ describe('Phase 2A: AdminPage Activation-Aware Keep-Alive & Decoupling', () => {
       pageSize: 20,
     })
 
-    mocks.getProducts.mockResolvedValue([
-      {
-        id: 11,
-        name: 'Test Product',
-        status: 'active',
-        price: 100,
-        type: '节点',
-      },
-    ])
+    mocks.getProducts.mockResolvedValue({
+      items: [
+        {
+          id: 11,
+          name: 'Test Product',
+          status: 'active',
+          price: 100,
+          type: '节点',
+        },
+      ],
+      total: 1,
+      page: 1,
+      pageSize: 20,
+    })
   })
 
   it('preserves merchant search input, applied filters, and actual page 2 across tab switching', async () => {
@@ -291,9 +296,12 @@ describe('Phase 2A: AdminPage Activation-Aware Keep-Alive & Decoupling', () => {
     fireEvent.click(screen.getByRole('button', { name: '商品与库存' }))
     expect(await screen.findByTestId('admin-products-archived-filter')).toBeInTheDocument()
     fireEvent.change(screen.getByTestId('admin-products-archived-filter'), { target: { value: 'only' } })
+    fireEvent.click(screen.getByTestId('admin-products-search-btn'))
 
     await waitFor(() => {
-      expect(mocks.getProducts).toHaveBeenLastCalledWith({ archived: 'only' })
+      expect(mocks.getProducts).toHaveBeenLastCalledWith(
+        expect.objectContaining({ archived: 'only' }),
+      )
     })
 
     // 3. Go back to audit tab: verify input preserved and request carried adminId=88, action='ban'
@@ -310,7 +318,9 @@ describe('Phase 2A: AdminPage Activation-Aware Keep-Alive & Decoupling', () => {
     fireEvent.click(screen.getByRole('button', { name: '商品与库存' }))
     expect(screen.getByTestId('admin-products-archived-filter')).toHaveValue('only')
     await waitFor(() => {
-      expect(mocks.getProducts).toHaveBeenLastCalledWith({ archived: 'only' })
+      expect(mocks.getProducts).toHaveBeenLastCalledWith(
+        expect.objectContaining({ archived: 'only' }),
+      )
     })
   })
 

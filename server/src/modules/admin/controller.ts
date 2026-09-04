@@ -3,7 +3,7 @@ import * as adminService from './service.js'
 import * as mailOperations from './mailOperations.js'
 import * as reviewService from '../reviews/service.js'
 import type {
-  ListAdminAuditQuery, ListAnnouncementsQuery, ListOrdersQuery, ListPointLogsQuery, ListUsersQuery,
+  ListAdminAuditQuery, ListAdminProductsQuery, ListAnnouncementsQuery, ListOrdersQuery, ListPointLogsQuery, ListUsersQuery,
   ListDeliveryFilesQuery, ListFileGrantsQuery, OfferReportQuery,
   MailDeliveryTestInput,
 } from './schema.js'
@@ -156,8 +156,8 @@ export async function audit(req: Request, res: Response, next: NextFunction) {
 
 export async function products(req: Request, res: Response, next: NextFunction) {
   try {
-    const archived = (req.query.archived as 'exclude' | 'only' | 'all' | undefined) ?? 'exclude'
-    res.json(await adminService.listAdminProducts(archived))
+    const query = req.query as unknown as ListAdminProductsQuery
+    res.json(await adminService.listAdminProducts(query))
   } catch (err) { next(err) }
 }
 

@@ -95,6 +95,7 @@ import {
   parseAndValidateStrictRefundDate,
   type CreateProductInput,
   type ListAdminAuditQuery,
+  type ListAdminProductsQuery,
   type ListAnnouncementsQuery,
   type ListDeliveryFilesQuery,
   type ListFileGrantsQuery,
@@ -1449,38 +1450,80 @@ export async function batchSettle(adminUserId: number, settlementIds: number[]) 
   })
 }
 
-export async function listAdminProducts(archived: ArchivedFilter = 'exclude') {
-  const products = await prisma.product.findMany({
-    where: archivedWhere(archived),
-    include: {
-      _count: {
-        select: { inventory: { where: { status: 'available' } } },
-      },
-      // P4a F2：导入弹窗需要知道每个商品有哪些即时库存规格（含已下架——
-      // 重新上架前备货是合理操作）；deliveryFields 用于前端提示模板规格
-      // 不能走管理端纯文本导入。管理端上下文，不含 fixedContent。
-      offers: {
-        select: {
-          id: true,
-          name: true,
-          deliveryMode: true,
-          status: true,
-          isDefault: true,
-          deliveryFields: true,
-          externalIntegration: true,
-          externalSku: true,
-          stockMode: true,
-          stock: true,
-          price: true,
-          originalPrice: true,
-          validityDays: true,
-          sortOrder: true,
+export async function listAdminProducts(
+  query: ListAdminProductsQuery = { page: 1, pageSize: 20, archived: 'exclude' },
+) {
+  const page = query.page ?? 1
+  const pageSize = query.pageSize ?? 20
+  const archived = query.archived ?? 'exclude'
+  const status = query.status
+  const q = query.q?.trim()
+
+  const conditions: Prisma.ProductWhereInput[] = []
+  const arc = archivedWhere(archived)
+  if (Object.keys(arc).length > 0) {
+    conditions.push(arc)
+  }
+  if (status) {
+    conditions.push({ status })
+  }
+  if (q) {
+    const isNumeric = /^\d+$/.test(q)
+    if (isNumeric) {
+      const idNum = Number(q)
+      if (Number.isSafeInteger(idNum) && idNum > 0) {
+        conditions.push({
+          OR: [
+            { name: { contains: q, mode: 'insensitive' } },
+            { id: idNum },
+          ],
+        })
+      } else {
+        conditions.push({ name: { contains: q, mode: 'insensitive' } })
+      }
+    } else {
+      conditions.push({ name: { contains: q, mode: 'insensitive' } })
+    }
+  }
+
+  const where: Prisma.ProductWhereInput = conditions.length > 0 ? { AND: conditions } : {}
+
+  const [total, products] = await prisma.$transaction([
+    prisma.product.count({ where }),
+    prisma.product.findMany({
+      where,
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      include: {
+        _count: {
+          select: { inventory: { where: { status: 'available' } } },
         },
-        orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
+        // P4a F2：导入弹窗需要知道每个商品有哪些即时库存规格（含已下架——
+        // 重新上架前备货是合理操作）；deliveryFields 用于前端提示模板规格
+        // 不能走管理端纯文本导入。管理端上下文，不含 fixedContent。
+        offers: {
+          select: {
+            id: true,
+            name: true,
+            deliveryMode: true,
+            status: true,
+            isDefault: true,
+            deliveryFields: true,
+            externalIntegration: true,
+            externalSku: true,
+            stockMode: true,
+            stock: true,
+            price: true,
+            originalPrice: true,
+            validityDays: true,
+            sortOrder: true,
+          },
+          orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
+        },
       },
-    },
-    orderBy: { createdAt: 'desc' },
-  })
+    }),
+  ])
 
   // Attach Xboard capacity for Faka offers (admin-only read; not for merchants).
   const fakaSkus = [
@@ -1501,7 +1544,7 @@ export async function listAdminProducts(archived: ArchivedFilter = 'exclude') {
     }
   }
 
-  return products.map(p => {
+  const items = products.map(p => {
     const offers = p.offers.map(o => {
       const sku = o.externalSku?.toLowerCase() ?? null
       const fakaCapacity =
@@ -1509,8 +1552,8 @@ export async function listAdminProducts(archived: ArchivedFilter = 'exclude') {
       return { ...o, fakaCapacity }
     })
     const primaryFaka = offers.find(o => o.fakaCapacity?.source === 'xboard')?.fakaCapacity ?? null
-    // D-MERCH-01：显式剥离遗留 Product.isHot（...p 会带出），其余管理字段原样保留。
-    const { isHot: _legacyIsHot, ...productDto } = p
+    // D-MERCH-01：显式剥离遗留 Product.isHot 与 fixedContent，其余管理字段原样保留。
+    const { isHot: _legacyIsHot, fixedContent: _fixedContent, ...productDto } = p
     return {
       ...productDto,
       offers,
@@ -1518,6 +1561,13 @@ export async function listAdminProducts(archived: ArchivedFilter = 'exclude') {
       fakaCapacity: primaryFaka,
     }
   })
+
+  return {
+    items,
+    total,
+    page,
+    pageSize,
+  }
 }
 
 /**

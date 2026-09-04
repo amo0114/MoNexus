@@ -173,9 +173,15 @@ export const updateProductSchema = markNotWritableFields(
 )
 export type UpdateProductInput = z.infer<typeof updateProductSchema>
 
-export const listAdminProductsQuerySchema = z.object({
-  archived: z.enum(['exclude', 'only', 'all']).default('exclude'),
-}).strict()
+export const listAdminProductsQuerySchema = z
+  .object({
+    page: z.coerce.number().int().positive().default(1),
+    pageSize: z.coerce.number().int().min(1).max(100).default(20),
+    archived: z.enum(['exclude', 'only', 'all']).default('exclude'),
+    status: z.enum(['draft', 'active', 'inactive']).optional(),
+    q: z.string().trim().min(1).max(100).optional(),
+  })
+  .strict()
 export type ListAdminProductsQuery = z.infer<typeof listAdminProductsQuerySchema>
 
 export const archiveProductSchema = z.object({

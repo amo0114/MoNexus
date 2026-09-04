@@ -107,7 +107,7 @@ describe('admin product read DTO and audit never expose legacy isHot', () => {
       .set(authHeader(token))
       .expect(200)
 
-    const item = res.body.find((p: { id: number }) => p.id === created.body.id)
+    const item = res.body.items.find((p: { id: number }) => p.id === created.body.id)
     expect(item).toBeTruthy()
     // 用户可见 wire JSON 不得有 isHot key。
     expect('isHot' in item).toBe(false)
