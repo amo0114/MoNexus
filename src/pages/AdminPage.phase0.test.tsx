@@ -33,31 +33,34 @@ const logsFixture = [
   {
     id: 1,
     userId: 101,
-    user: { id: 101, email: 'u101@test.com' },
+    user: { id: 101, email: 'u101@test.com', nickname: null },
     type: 'refund',
     amount: 50,
     balanceAfter: 550,
     reason: '订单退款',
+    orderId: null,
     createdAt: '2026-09-03T10:00:00.000Z',
   },
   {
     id: 2,
     userId: 102,
-    user: { id: 102, email: 'u102@test.com' },
+    user: { id: 102, email: 'u102@test.com', nickname: null },
     type: 'out',
     amount: 100,
     balanceAfter: 450,
     reason: '商城购买',
+    orderId: null,
     createdAt: '2026-09-03T09:00:00.000Z',
   },
   {
     id: 3,
     userId: 103,
-    user: { id: 103, email: 'u103@test.com' },
+    user: { id: 103, email: 'u103@test.com', nickname: null },
     type: 'release',
     amount: 30,
     balanceAfter: 480,
     reason: '待支付返还',
+    orderId: null,
     createdAt: '2026-09-03T08:00:00.000Z',
   },
 ]
@@ -111,7 +114,16 @@ vi.mock('../api/client', () => ({
   default: {
     get: vi.fn((url: string) => {
       if (url === '/admin/stats') return Promise.resolve({ data: statsFixture })
-      if (url === '/admin/logs') return Promise.resolve({ data: logsFixture })
+      if (url === '/admin/logs' || url === '/admin/point-logs') {
+        return Promise.resolve({
+          data: {
+            items: logsFixture,
+            total: logsFixture.length,
+            page: 1,
+            pageSize: 20,
+          },
+        })
+      }
       if (url === '/admin/reports/offers') return Promise.resolve({ data: { items: [] } })
       return Promise.resolve({ data: [] })
     }),
@@ -166,19 +178,22 @@ describe('AdminPage Phase 0 verification', () => {
     fireEvent.click(screen.getByRole('button', { name: '积分流水' }))
     expect(await screen.findByText('变动后余额')).toBeInTheDocument()
 
+    const badges = screen.getAllByTestId('point-log-type-badge')
+    expect(badges).toHaveLength(3)
+
     // Row 1: refund (should be +50 with 退款 badge and balanceAfter 550)
     expect(screen.getByText('+50')).toBeInTheDocument()
-    expect(screen.getByText('退款')).toBeInTheDocument()
+    expect(badges[0]).toHaveTextContent('退款')
     expect(screen.getByText('550')).toBeInTheDocument()
 
     // Row 2: out (should be −100 with 已支付 badge and balanceAfter 450)
     expect(screen.getByText('−100')).toBeInTheDocument()
-    expect(screen.getByText('已支付')).toBeInTheDocument()
+    expect(badges[1]).toHaveTextContent('已支付')
     expect(screen.getByText('450')).toBeInTheDocument()
 
     // Row 3: release (should be +30 with 已返还 badge and balanceAfter 480)
     expect(screen.getByText('+30')).toBeInTheDocument()
-    expect(screen.getByText('已返还')).toBeInTheDocument()
+    expect(badges[2]).toHaveTextContent('已返还')
     expect(screen.getByText('480')).toBeInTheDocument()
   })
 
