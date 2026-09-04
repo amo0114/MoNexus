@@ -7,16 +7,19 @@ const {
   listAdminPaymentDisputes,
   listAdminReconRuns,
   listAdminPricePolicies,
+  listAdminRechargeRefunds,
 } = vi.hoisted(() => ({
   listAdminRechargeOrders: vi.fn(),
   listAdminPaymentEvents: vi.fn(),
   listAdminPaymentDisputes: vi.fn(),
   listAdminReconRuns: vi.fn(),
   listAdminPricePolicies: vi.fn(),
+  listAdminRechargeRefunds: vi.fn(),
 }))
 
 vi.mock('../../../api/adminRecharge', () => ({
   listAdminRechargeOrders,
+  listAdminRechargeRefunds,
   getAdminRechargeOrder: vi.fn(),
   adminReconcileRechargeOrder: vi.fn(),
   adminRequestRechargeRefund: vi.fn(),
@@ -59,6 +62,7 @@ describe('AdminRechargePage', () => {
     listAdminPaymentDisputes.mockResolvedValue({ page: 1, pageSize: 20, total: 0, items: [] })
     listAdminReconRuns.mockResolvedValue({ items: [] })
     listAdminPricePolicies.mockResolvedValue({ page: 1, pageSize: 50, total: 0, items: [] })
+    listAdminRechargeRefunds.mockResolvedValue({ page: 1, pageSize: 20, total: 0, items: [] })
   })
 
   it('hosts the five recharge/payment views from PR-C API statuses', async () => {
@@ -72,9 +76,7 @@ describe('AdminRechargePage', () => {
 
     fireEvent.click(screen.getByRole('tab', { name: '退款' }))
     expect(await screen.findByTestId('admin-recharge-refunds')).toBeInTheDocument()
-    await waitFor(() => expect(listAdminRechargeOrders).toHaveBeenCalledWith(expect.objectContaining({ status: 'refund_pending' })))
-    await waitFor(() => expect(listAdminRechargeOrders).toHaveBeenCalledWith(expect.objectContaining({ status: 'refunded' })))
-    await waitFor(() => expect(listAdminRechargeOrders).toHaveBeenCalledWith(expect.objectContaining({ status: 'credited' })))
+    await waitFor(() => expect(listAdminRechargeRefunds).toHaveBeenCalledWith(expect.objectContaining({ page: 1 })))
 
     fireEvent.click(screen.getByRole('tab', { name: '争议' }))
     expect(await screen.findByTestId('admin-payment-disputes')).toBeInTheDocument()
@@ -110,16 +112,48 @@ describe('AdminRechargePage', () => {
       refundStatus: 'points_held',
       supportsRefunds: true,
     }
-    listAdminRechargeOrders.mockImplementation(async (query?: { status?: string }) => {
-      if (query?.status === 'credited') {
-        return { page: 1, pageSize: 100, total: 1, items: [creditedHeld] }
-      }
-      return { page: 1, pageSize: 100, total: 0, items: [] }
+    listAdminRechargeRefunds.mockResolvedValueOnce({
+      page: 1,
+      pageSize: 20,
+      total: 1,
+      items: [
+        {
+          refundId: 'refund-1',
+          orderId: creditedHeld.orderId,
+          rechargeOrderId: creditedHeld.orderId,
+          refundStatus: creditedHeld.refundStatus,
+          status: creditedHeld.refundStatus,
+          reversalStatus: 'pending',
+          failureReason: null,
+          createdByUserId: 1,
+          requesterUserId: 1,
+          createdAt: creditedHeld.createdAt,
+          updatedAt: creditedHeld.updatedAt,
+          amountMinor: creditedHeld.amountMinor,
+          pointsToReverse: creditedHeld.totalPoints,
+          reasonCode: 'user_request',
+          providerRefundId: null,
+          rechargeOrder: {
+            id: creditedHeld.orderId,
+            orderId: creditedHeld.orderId,
+            userId: creditedHeld.userId,
+            status: creditedHeld.status,
+            currency: creditedHeld.currency,
+            amountMinor: creditedHeld.amountMinor,
+            totalPoints: creditedHeld.totalPoints,
+            provider: creditedHeld.provider,
+            paymentMethod: creditedHeld.paymentMethod,
+            paidAt: creditedHeld.paidAt,
+            createdAt: creditedHeld.createdAt,
+          },
+        },
+      ],
     })
     render(<AdminRechargePage />)
     fireEvent.click(await screen.findByRole('tab', { name: '退款' }))
     expect(await screen.findByTestId(`admin-refund-row-${creditedHeld.orderId}`)).toBeInTheDocument()
     expect(screen.getByText('积分已冻结')).toBeInTheDocument()
     expect(screen.getByText('已到账')).toBeInTheDocument()
+    expect(screen.getByText('申请人: #1')).toBeInTheDocument()
   })
 })

@@ -8,9 +8,11 @@ import {
   RECHARGE_CURRENCIES,
   RECHARGE_ORDER_STATUSES,
   RECHARGE_PRICE_POLICY_STATUSES,
+  RECHARGE_REFUND_STATUSES,
   RECONCILIATION_SCOPE_TYPES,
 } from './types.js'
 import { parseAmountMinorString, AmountParseError } from './money.js'
+import { isValidCalendarDate } from '../admin/schema.js'
 
 export const adminUuidParamSchema = z.object({
   id: z.string().uuid('必须是 UUID'),
@@ -36,6 +38,90 @@ export const adminListDisputesQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
 })
+
+export function parseAndValidateStrictRefundDate(val: string): {
+  valid: boolean
+  error?: string
+  date?: Date
+  isDateOnly?: boolean
+} {
+  // Pattern 1: YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}$/.test(val)) {
+    if (!isValidCalendarDate(val)) {
+      return { valid: false, error: '无效公历日期' }
+    }
+    return { valid: true, isDateOnly: true, date: new Date(`${val}T00:00:00.000Z`) }
+  }
+
+  // Pattern 2: Strict RFC 3339 / ISO 8601 with timezone (Z or [+-]HH:mm)
+  const rfc3339Regex = /^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,3})?(Z|[+-]\d{2}:\d{2})$/
+  const match = rfc3339Regex.exec(val)
+  if (!match) {
+    return {
+      valid: false,
+      error: '无效日期格式，必须是 YYYY-MM-DD 或带明确时区的 RFC 3339 时间戳 (例如 2026-09-04T00:00:00Z)',
+    }
+  }
+
+  const [, datePart, hourStr, minStr, secStr] = match
+  if (!isValidCalendarDate(datePart)) {
+    return { valid: false, error: '无效公历日期' }
+  }
+
+  const hour = Number(hourStr)
+  const minute = Number(minStr)
+  const second = Number(secStr)
+  if (hour > 23 || minute > 59 || second > 59) {
+    return { valid: false, error: '无效时间数值' }
+  }
+
+  const parsed = new Date(val)
+  if (isNaN(parsed.getTime())) {
+    return { valid: false, error: '无法解析的时间戳' }
+  }
+
+  return { valid: true, isDateOnly: false, date: parsed }
+}
+
+const refundDateSchema = z.string().trim().superRefine((val, ctx) => {
+  const result = parseAndValidateStrictRefundDate(val)
+  if (!result.valid) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: result.error || '无效日期格式' })
+  }
+})
+
+const refundOrderIdSchema = z
+  .string()
+  .trim()
+  .regex(
+    /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/,
+    '充值订单号必须是 36 位规范完整 UUID (例如 c0a80101-0000-4000-8000-000000000001)',
+  )
+
+export const adminListRefundsQuerySchema = z
+  .object({
+    status: z.enum(RECHARGE_REFUND_STATUSES).optional(),
+    userId: z.coerce.number().int().positive().optional(),
+    orderId: refundOrderIdSchema.optional(),
+    provider: z.enum(PAYMENT_PROVIDER_NAMES).optional(),
+    from: refundDateSchema.optional(),
+    to: refundDateSchema.optional(),
+    page: z.coerce.number().int().positive().default(1),
+    pageSize: z.coerce.number().int().min(1).max(100).default(20),
+  })
+  .refine(
+    (data) => {
+      if (data.from && data.to) {
+        const fromResult = parseAndValidateStrictRefundDate(data.from)
+        const toResult = parseAndValidateStrictRefundDate(data.to)
+        if (fromResult.valid && toResult.valid && fromResult.date && toResult.date) {
+          return fromResult.date.getTime() <= toResult.date.getTime()
+        }
+      }
+      return true
+    },
+    { message: 'from 不能晚于 to', path: ['to'] },
+  )
 
 export const adminCreateReconSchema = z.object({
   provider: z.enum(PAYMENT_PROVIDER_NAMES),
