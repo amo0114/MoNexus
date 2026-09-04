@@ -42,6 +42,12 @@ export function subscribeReadInvalidation(listener: ReadInvalidationListener): (
   ensureChannel()
   return () => {
     listeners.delete(listener)
+    // 复审优化：最后一个订阅者退订后关闭底层通道，下次订阅时懒重建——
+    // 避免长驻页面留下无人使用的 BroadcastChannel。
+    if (listeners.size === 0) {
+      channel?.close()
+      channel = null
+    }
   }
 }
 
