@@ -11,6 +11,8 @@ const router = Router()
 router.use(authenticate, requireActiveUser)
 router.post('/', validate(createOrderSchema), requireVerifiedEmail, controller.create)
 router.get('/', validate({ query: listOrdersQuerySchema }), controller.list)
+// PR-3：买家「进行中」订单权威计数（红点角标）。必须在 /:id 之前注册。
+router.get('/attention-count', controller.attentionCount)
 router.post('/:id/dispute', validate({ params: idParamSchema }), controller.dispute)
 router.post('/:id/close', validate({ params: idParamSchema }), controller.close)
 // P6a：手动续费预检（买家；只读，无副作用）。

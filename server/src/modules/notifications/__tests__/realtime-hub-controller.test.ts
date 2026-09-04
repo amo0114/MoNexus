@@ -193,6 +193,38 @@ describe('NotificationRealtimeHub controlled writes (R-RT-003B)', () => {
   })
 })
 
+describe('PR-5 hub.broadcastRead — read invalidation control routing', () => {
+  it('delivers notification.read only to the user\'s ready connections and never to others', () => {
+    const hub = makeHub()
+    const a1 = fakeResponse()
+    const a2 = fakeResponse()
+    const other = fakeResponse()
+    const entryA1 = hub.registerAndReady(a1, 11, '127.0.0.1')!
+    hub.registerAndReady(a2, 11, '127.0.0.2')!
+    hub.registerAndReady(other, 12, '127.0.0.3')!
+
+    const delivered = hub.broadcastRead(11)
+
+    expect(delivered).toBe(2)
+    for (const response of [a1, a2]) {
+      const frames = response.write.mock.calls.map((call) => call[0] as string)
+      const readFrames = frames.filter((frame) => frame.includes('event: notification.read'))
+      expect(readFrames).toHaveLength(1)
+      expect(readFrames[0]).not.toMatch(/title|body|userId|recipient/)
+    }
+    expect(other.write).toHaveBeenCalledTimes(1) // 只有 ready 帧
+  })
+
+  it('skips non-ready connections and returns 0 when the user has no subscriber', () => {
+    const hub = makeHub()
+    const response = fakeResponse()
+    const entry = hub.registerAndReady(response, 11, '127.0.0.1')!
+    entry.state = 'initializing'
+    expect(hub.broadcastRead(11)).toBe(0)
+    expect(hub.broadcastRead(999)).toBe(0)
+  })
+})
+
 describe('stream controller timer cleanup (R-RT-003B)', () => {
   it('does not start heartbeat or auth timers when ready registration fails', () => {
     vi.useFakeTimers()

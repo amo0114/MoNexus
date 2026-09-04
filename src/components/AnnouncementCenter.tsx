@@ -8,6 +8,8 @@ import { getApiErrorMessage } from '../api/error'
 import { getNotifications, markAsRead } from '../api/notifications'
 import { useAppStore } from '../stores/appStore'
 import { useNotificationInvalidation } from '../hooks/useNotificationInvalidation'
+import { formatBadgeCount } from '../utils/orderAttention'
+import { broadcastReadInvalidation } from '../realtime/readSyncBroadcast'
 
 interface AnnouncementCenterProps {
   open: boolean
@@ -170,6 +172,8 @@ export default function AnnouncementCenter({
       if (item.status === 'unread') {
         await markAsRead(item.id)
         void refreshNotificationUnread()
+        // PR-5：提示同浏览器其他 Tab 刷新未读数（实时关闭时的兜底通道）。
+        broadcastReadInvalidation()
         setMessages((prev) => prev.map((n) => (
           n.id === item.id ? { ...n, status: 'read', readAt: new Date().toISOString() } : n
         )))
@@ -191,7 +195,8 @@ export default function AnnouncementCenter({
           通知中心
           {(unreadCount + notificationUnreadCount) > 0 && (
             <span className="text-xs font-medium text-[var(--color-danger)]" data-testid="notification-center-total-unread">
-              {(unreadCount + notificationUnreadCount) > 9 ? '9+' : (unreadCount + notificationUnreadCount)} 条待处理
+              {/* PR-5：数字角标统一 formatBadgeCount（1–99 / 99+）。 */}
+              {formatBadgeCount(unreadCount + notificationUnreadCount)} 条待处理
             </span>
           )}
         </DialogTitle>
@@ -212,7 +217,7 @@ export default function AnnouncementCenter({
             }`}
             data-testid="notification-center-tab-announcements"
           >
-            公告{unreadCount > 0 ? ` ${unreadCount > 9 ? '9+' : unreadCount}` : ''}
+            公告{unreadCount > 0 ? ` ${formatBadgeCount(unreadCount)}` : ''}
           </button>
           <button
             type="button"
@@ -226,7 +231,7 @@ export default function AnnouncementCenter({
             }`}
             data-testid="notification-center-tab-messages"
           >
-            消息{notificationUnreadCount > 0 ? ` ${notificationUnreadCount > 9 ? '9+' : notificationUnreadCount}` : ''}
+            消息{notificationUnreadCount > 0 ? ` ${formatBadgeCount(notificationUnreadCount)}` : ''}
           </button>
         </div>
 

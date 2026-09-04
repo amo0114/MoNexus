@@ -1002,6 +1002,17 @@ function buildUserOrderWhere(userId: number, status?: string): Prisma.OrderWhere
   return where
 }
 
+/**
+ * 买家「进行中」订单权威计数（顶栏/底栏红点角标）。
+ * 口径与前端 isAttentionOrderStatus 一致：pending / processing / disputed。
+ * 走 COUNT 与列表分页解耦——历史单超过首页 100 条时角标也不会少计（PR-3）。
+ */
+export async function getAttentionOrderCount(userId: number): Promise<number> {
+  return prisma.order.count({
+    where: { userId, status: { in: ['pending', 'processing', 'disputed'] } },
+  })
+}
+
 export async function getUserOrders(userId: number, page = 1, pageSize = 20, status?: string) {
   const orders = await prisma.order.findMany({
     where: buildUserOrderWhere(userId, status),

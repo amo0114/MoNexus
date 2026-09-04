@@ -82,12 +82,40 @@ export async function releaseCronLease(name: string, token: string): Promise<boo
   return updated > 0
 }
 
+/**
+ * 失败回拨：仅凭当前 leaseToken 释放互斥，并把 lastStartedAt 回拨一个完整
+ * 节流窗口——失败批次不消耗窗口，下一 tick 即可重新领取（各 job 靠状态表
+ * 幂等保证重算无害）。token 不匹配（互斥 TTL 过期后被其他实例接管）时
+ * 0 行命中，新持有者的租约与窗口不受任何影响。
+ */
+export async function rollbackCronLeaseForRetry(
+  name: string,
+  token: string,
+  periodMs: number
+): Promise<boolean> {
+  const updated = await prisma.$executeRaw`
+    UPDATE "CronLease"
+    SET "lockedUntil" = now(),
+        "lastStartedAt" = now() - make_interval(secs => ${cronLeaseWindowMs(periodMs) / 1000}),
+        "updatedAt" = now()
+    WHERE "name" = ${name} AND "leaseToken" = ${token}`
+  return updated > 0
+}
+
 export interface CronLeaseHandle {
   /** 批次结束时调用（finally）：停心跳并释放互斥。窗口节流不受影响。 */
   release(): void
+  /**
+   * 批次失败时调用（可等待）：停心跳、释放互斥并回拨本次节流窗口，使下一
+   * tick 可立即重试。普通 release() 行为保持不变。
+   */
+  releaseForRetry(): Promise<void>
 }
 
-const NOOP_HANDLE: CronLeaseHandle = { release() {} }
+const NOOP_HANDLE: CronLeaseHandle = {
+  release() {},
+  async releaseForRetry() {},
+}
 
 /**
  * 领取租约并启动心跳。返回 null = 本窗口已有实例启动过（或互斥被持有），
@@ -120,6 +148,17 @@ export async function acquireCronLeaseWithHeartbeat(
       clearInterval(heartbeat)
       // 尽力释放：失败无碍（互斥 ≤ 90s 自然过期），不阻塞批次收尾。
       releaseCronLease(name, token).catch(err => logger.warn({ err, name }, 'cron lease release failed'))
+    },
+    async releaseForRetry() {
+      clearInterval(heartbeat)
+      const rolled = await rollbackCronLeaseForRetry(name, token, periodMs).catch(err => {
+        logger.warn({ err, name }, 'cron lease retry rollback failed')
+        return false
+      })
+      if (!rolled) {
+        // 0 行 = token 已易主或早已释放：新持有者的窗口绝不能被动。
+        logger.debug({ name }, 'cron lease retry rollback matched no row')
+      }
     },
   }
 }

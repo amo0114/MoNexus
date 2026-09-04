@@ -812,6 +812,8 @@ model Order {
   @@index([createdAt])
   @@index([renewalOfOrderId])
   @@index([merchantId, bookingDate])
+  // PR-3：买家「进行中」订单红点权威计数的支撑索引。
+  @@index([userId, status])
 }
 
 // FakaBridge outbox：下单事务内创建，事务外 HTTP 调用 Xboard 插件。
@@ -1085,7 +1087,7 @@ model LeaderboardEntry {
   periodKey  String
   rank       Int
   userId     Int
-  points     Int // 窗口内 SUM(PointLog.amount) WHERE type='in'
+  points     BigInt // 窗口内 SUM(PointLog.amount) WHERE type='in' AND amount > 0（PG bigint 聚合，不降级 int）
   computedAt DateTime // 本批次刷新时刻，读侧作 updatedAt 下发
   // 上一轮快照同（scope, periodKey）的名次：读侧推导 ↑↓ 变化（prevRank - rank）。
   // 首次入榜为 null；同期每日重刷时即「较昨日」。
@@ -1603,7 +1605,10 @@ model OrderPricingSnapshot {
   createdAt             DateTime          @default(now())
 
   order          Order           @relation(fields: [orderId], references: [id], onDelete: Restrict)
-  valuePolicy    ValuePolicy     @relation(fields: [valuePolicyId], references: [id], onDelete: Restrict)
+  // 定价快照创建后不可修改：显式冻结 onUpdate: Restrict（与 20260817 迁移建立
+  // 的库内约束一致）——省略时 Prisma 默认 CASCADE，会让历史快照随政策 ID
+  // 变化而级联漂移（#192 复审修正）。
+  valuePolicy    ValuePolicy     @relation(fields: [valuePolicyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   pointsAsset    AssetDefinition @relation("SnapshotPointsAsset", fields: [pointsAssetCode], references: [code], onDelete: Restrict, onUpdate: Restrict)
   referenceAsset AssetDefinition @relation("SnapshotReferenceAsset", fields: [referenceAssetCode], references: [code], onDelete: Restrict, onUpdate: Restrict)
 }

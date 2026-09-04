@@ -23,6 +23,8 @@ export interface NotificationStreamEvents {
   onStateChange?: (state: NotificationStreamState) => void
   onReady?: () => void
   onNotification?: (n: RealtimeNotificationData) => void
+  /** PR-5：同用户其他连接已读失效提示（control event，无业务 payload）。 */
+  onReadInvalidation?: () => void
   onAuthExpiring?: () => void
   onDegraded?: (reason: string) => void
   onFallbackTick?: () => void
@@ -313,6 +315,11 @@ export class NotificationStream {
     }
     if (frame.event === 'auth.expiring') {
       this.events.onAuthExpiring?.()
+      return
+    }
+    // PR-5：同用户其他连接的已读提示——控制事件，只刷未读数，绝不弹 Toast。
+    if (frame.event === 'notification.read') {
+      this.events.onReadInvalidation?.()
       return
     }
     if (frame.event === 'stream.degraded') {
