@@ -92,6 +92,7 @@ import {
 } from '../orders/accounting.js'
 import { applyRefundInventoryPolicy } from '../orders/refundInventory.js'
 import {
+  parseAndValidateStrictDate,
   parseAndValidateStrictRefundDate,
   type CreateProductInput,
   type ListAdminAuditQuery,
@@ -957,28 +958,49 @@ export async function listLogs() {
   })
 }
 
-function toDateEndOfDay(date: string) {
-  const end = new Date(date)
-  end.setUTCHours(23, 59, 59, 999)
-  return end
-}
-
 export async function listAdminLogs(query: ListAdminAuditQuery) {
   const where: Prisma.AdminLogWhereInput = {}
 
   if (query.adminId) where.adminUserId = query.adminId
   if (query.action) where.action = query.action
+  if (query.targetType) where.targetType = query.targetType
   if (query.fromDate || query.toDate) {
-    where.createdAt = {
-      ...(query.fromDate ? { gte: new Date(query.fromDate) } : {}),
-      ...(query.toDate ? { lte: toDateEndOfDay(query.toDate) } : {}),
+    const createdAtFilter: Prisma.DateTimeFilter = {}
+    if (query.fromDate) {
+      const fromParsed = parseAndValidateStrictDate(query.fromDate)
+      if (fromParsed.date) {
+        createdAtFilter.gte = fromParsed.date
+      }
     }
+    if (query.toDate) {
+      const toParsed = parseAndValidateStrictDate(query.toDate)
+      if (toParsed.date) {
+        if (toParsed.isDateOnly) {
+          createdAtFilter.lt = new Date(toParsed.date.getTime() + 24 * 60 * 60 * 1000)
+        } else {
+          createdAtFilter.lte = toParsed.date
+        }
+      }
+    }
+    where.createdAt = createdAtFilter
   }
 
   const [items, total] = await prisma.$transaction([
     prisma.adminLog.findMany({
       where,
-      include: { admin: { select: { email: true } } },
+      select: {
+        id: true,
+        adminUserId: true,
+        action: true,
+        targetType: true,
+        targetId: true,
+        createdAt: true,
+        admin: {
+          select: {
+            email: true,
+          },
+        },
+      },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       skip: (query.page - 1) * query.pageSize,
       take: query.pageSize,
@@ -994,8 +1016,7 @@ export async function listAdminLogs(query: ListAdminAuditQuery) {
       action: log.action,
       targetType: log.targetType,
       targetId: log.targetId,
-      metadata: log.detail ? { detail: log.detail } : null,
-      createdAt: log.createdAt,
+      createdAt: log.createdAt.toISOString(),
     })),
     total,
     page: query.page,

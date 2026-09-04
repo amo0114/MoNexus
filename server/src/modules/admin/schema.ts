@@ -410,14 +410,44 @@ export const listOrdersQuerySchema = z
 
 export type ListOrdersQuery = z.infer<typeof listOrdersQuerySchema>
 
-export const listAdminAuditQuerySchema = z.object({
-  page: z.coerce.number().int().positive().default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(20),
-  adminId: z.coerce.number().int().positive().optional(),
-  action: z.string().min(1).optional(),
-  fromDate: calendarDateSchema.optional(),
-  toDate: calendarDateSchema.optional(),
-}).strict()
+export const auditDateSchema = z.string().trim().superRefine((val, ctx) => {
+  const result = parseAndValidateStrictDate(val)
+  if (!result.valid) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: result.error || '无效日期格式' })
+  }
+})
+
+export const listAdminAuditQuerySchema = z
+  .object({
+    page: z.coerce.number().int().positive().default(1),
+    pageSize: z.coerce.number().int().min(1).max(100).default(20),
+    adminId: z.coerce.number().int().positive().max(Number.MAX_SAFE_INTEGER).optional(),
+    action: z.string().trim().min(1).max(128).optional(),
+    targetType: z.string().trim().min(1).max(64).optional(),
+    fromDate: auditDateSchema.optional(),
+    toDate: auditDateSchema.optional(),
+  })
+  .strict()
+  .refine(
+    (data) => {
+      if (data.fromDate && data.toDate) {
+        const fromResult = parseAndValidateStrictDate(data.fromDate)
+        const toResult = parseAndValidateStrictDate(data.toDate)
+        if (fromResult.valid && toResult.valid && fromResult.date && toResult.date) {
+          const fromTime = fromResult.date.getTime()
+          const toEndTime = toResult.isDateOnly
+            ? toResult.date.getTime() + 24 * 60 * 60 * 1000 - 1
+            : toResult.date.getTime()
+          return fromTime <= toEndTime
+        }
+      }
+      return true
+    },
+    {
+      message: 'fromDate 不能晚于 toDate',
+      path: ['toDate'],
+    },
+  )
 
 export type ListAdminAuditQuery = z.infer<typeof listAdminAuditQuerySchema>
 

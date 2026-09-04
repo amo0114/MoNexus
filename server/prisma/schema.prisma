@@ -1012,6 +1012,11 @@ model AdminLog {
   createdAt   DateTime @default(now())
 
   admin User @relation(fields: [adminUserId], references: [id])
+
+  @@index([createdAt, id])
+  @@index([adminUserId, createdAt, id])
+  @@index([action, createdAt, id])
+  @@index([targetType, createdAt, id])
 }
 
 model SystemConfig {
