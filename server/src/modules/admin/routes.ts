@@ -7,7 +7,7 @@ import {
   previewInventorySchema, previewOfferInventorySchema, importOfferInventorySchema,
   revokeDeliveryFileSchema,
   listDeliveryFilesQuerySchema, listFileGrantsQuerySchema, offerReportQuerySchema,
-  listAdminAuditQuerySchema,
+  listAdminAuditQuerySchema, listPointLogsQuerySchema,
   listMerchantsQuerySchema, reviewMerchantSchema, updateCommissionSchema,
   listSettlementsQuerySchema, batchSettleSchema, resolveOrderSchema,
   systemConfigKeyParamSchema, updateSystemConfigSchema,
@@ -202,6 +202,8 @@ router.get('/reports/offers', validate({ query: offerReportQuerySchema }), contr
 router.get('/orders', validate({ query: listOrdersQuerySchema }), controller.orders)
 router.get('/orders/:id', validate({ params: idParamSchema }), controller.orderDetail)
 router.post('/orders/:id/resolve', validate({ params: idParamSchema, body: resolveOrderSchema }), controller.resolveOrder)
+router.get('/point-logs', validate({ query: listPointLogsQuerySchema }), controller.listPointLogs)
+/** @deprecated Kept for backwards compatibility; use /point-logs */
 router.get('/logs', controller.logs)
 
 // Review moderation

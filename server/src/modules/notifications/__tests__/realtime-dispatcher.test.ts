@@ -68,7 +68,7 @@ class RealtimeListener {
   matching(pair: { notificationId: number; recipientUserId: number }): PgNotification[] {
     return this.received.filter(msg => {
       const p = parsePgPayload(msg.payload ?? '')
-      return p !== null && p.notificationId === pair.notificationId && p.recipientUserId === pair.recipientUserId
+      return p !== null && !('kind' in p) && p.notificationId === pair.notificationId && p.recipientUserId === pair.recipientUserId
     })
   }
 }
@@ -141,6 +141,7 @@ describe('NotificationDispatcher same-transaction pg_notify (SPEC-NOTIFY-RT-001)
         }
         const payload = parsePgPayload(String(args[2]))
         if (payload === null) throw new Error('pg_notify payload was not a valid v1 payload')
+        if ('kind' in payload) throw new Error('created hint must not use the read kind')
         capturedPair = { notificationId: payload.notificationId, recipientUserId: payload.recipientUserId }
         throw new Error(SENTINEL_MESSAGE)
       })

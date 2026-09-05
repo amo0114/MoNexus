@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import AdminPage from './AdminPage'
 import { useAppStore } from '../stores/appStore'
@@ -91,6 +91,8 @@ describe('Phase 2A: AdminPage Activation-Aware Keep-Alive & Decoupling', () => {
           status: 'pending',
           createdAt: new Date().toISOString(),
           merchant: { id: 1, name: 'Alpha Store' },
+          payable: true,
+          blockReason: null,
         },
       ],
       total: 25,
@@ -104,10 +106,9 @@ describe('Phase 2A: AdminPage Activation-Aware Keep-Alive & Decoupling', () => {
           id: 1,
           adminId: 1,
           adminEmail: 'admin@test.com',
-          action: 'test_action',
+          action: '封禁用户',
           targetType: 'user',
-          targetId: '10',
-          metadata: {},
+          targetId: 10,
           createdAt: new Date().toISOString(),
         },
       ],
@@ -116,15 +117,20 @@ describe('Phase 2A: AdminPage Activation-Aware Keep-Alive & Decoupling', () => {
       pageSize: 20,
     })
 
-    mocks.getProducts.mockResolvedValue([
-      {
-        id: 11,
-        name: 'Test Product',
-        status: 'active',
-        price: 100,
-        type: '节点',
-      },
-    ])
+    mocks.getProducts.mockResolvedValue({
+      items: [
+        {
+          id: 11,
+          name: 'Test Product',
+          status: 'active',
+          price: 100,
+          type: '节点',
+        },
+      ],
+      total: 1,
+      page: 1,
+      pageSize: 20,
+    })
   })
 
   it('preserves merchant search input, applied filters, and actual page 2 across tab switching', async () => {
@@ -216,6 +222,8 @@ describe('Phase 2A: AdminPage Activation-Aware Keep-Alive & Decoupling', () => {
           status: 'pending',
           createdAt: new Date().toISOString(),
           merchant: { id: 1, name: 'Alpha Store' },
+          payable: true,
+          blockReason: null,
         },
       ],
       total: 25,
@@ -248,6 +256,8 @@ describe('Phase 2A: AdminPage Activation-Aware Keep-Alive & Decoupling', () => {
           status: 'pending',
           createdAt: new Date().toISOString(),
           merchant: { id: 1, name: 'Alpha Store' },
+          payable: true,
+          blockReason: null,
         },
       ],
       total: 25,
@@ -272,12 +282,12 @@ describe('Phase 2A: AdminPage Activation-Aware Keep-Alive & Decoupling', () => {
     fireEvent.click(screen.getByRole('button', { name: '操作审计' }))
     expect(await screen.findByPlaceholderText('管理员ID')).toBeInTheDocument()
     fireEvent.change(screen.getByPlaceholderText('管理员ID'), { target: { value: '88' } })
-    fireEvent.change(screen.getByPlaceholderText('操作动作 (如: ban)'), { target: { value: 'ban' } })
+    fireEvent.change(screen.getByLabelText('操作动作'), { target: { value: '封禁用户' } })
     fireEvent.click(screen.getByRole('button', { name: '查询' }))
 
     await waitFor(() => {
       expect(mocks.listAudit).toHaveBeenLastCalledWith(
-        expect.objectContaining({ adminId: 88, action: 'ban', page: 1 }),
+        expect.objectContaining({ adminId: 88, action: '封禁用户', page: 1 }),
       )
     })
 
@@ -285,18 +295,21 @@ describe('Phase 2A: AdminPage Activation-Aware Keep-Alive & Decoupling', () => {
     fireEvent.click(screen.getByRole('button', { name: '商品与库存' }))
     expect(await screen.findByTestId('admin-products-archived-filter')).toBeInTheDocument()
     fireEvent.change(screen.getByTestId('admin-products-archived-filter'), { target: { value: 'only' } })
+    fireEvent.click(screen.getByTestId('admin-products-search-btn'))
 
     await waitFor(() => {
-      expect(mocks.getProducts).toHaveBeenLastCalledWith({ archived: 'only' })
+      expect(mocks.getProducts).toHaveBeenLastCalledWith(
+        expect.objectContaining({ archived: 'only' }),
+      )
     })
 
-    // 3. Go back to audit tab: verify input preserved and request carried adminId=88, action='ban'
+    // 3. Go back to audit tab: verify input preserved and request carried adminId=88, action='封禁用户'
     fireEvent.click(screen.getByRole('button', { name: '操作审计' }))
     expect(screen.getByPlaceholderText('管理员ID')).toHaveValue('88')
-    expect(screen.getByPlaceholderText('操作动作 (如: ban)')).toHaveValue('ban')
+    expect(screen.getByLabelText('操作动作')).toHaveValue('封禁用户')
     await waitFor(() => {
       expect(mocks.listAudit).toHaveBeenLastCalledWith(
-        expect.objectContaining({ adminId: 88, action: 'ban' }),
+        expect.objectContaining({ adminId: 88, action: '封禁用户' }),
       )
     })
 
@@ -304,7 +317,9 @@ describe('Phase 2A: AdminPage Activation-Aware Keep-Alive & Decoupling', () => {
     fireEvent.click(screen.getByRole('button', { name: '商品与库存' }))
     expect(screen.getByTestId('admin-products-archived-filter')).toHaveValue('only')
     await waitFor(() => {
-      expect(mocks.getProducts).toHaveBeenLastCalledWith({ archived: 'only' })
+      expect(mocks.getProducts).toHaveBeenLastCalledWith(
+        expect.objectContaining({ archived: 'only' }),
+      )
     })
   })
 
@@ -342,7 +357,8 @@ describe('Phase 2A: AdminPage Activation-Aware Keep-Alive & Decoupling', () => {
     // ---- Part B: Late Deferred Resolve ----
     // Switch to audit tab
     fireEvent.click(screen.getByRole('button', { name: '操作审计' }))
-    expect(await screen.findByText('test_action')).toBeInTheDocument()
+    const auditTable = await screen.findByTestId('admin-audit-table')
+    expect(within(auditTable).getByText('封禁用户')).toBeInTheDocument()
 
     const deferredResolve = createDeferred<any>()
     mocks.listAudit.mockReturnValueOnce(deferredResolve.promise)
@@ -364,8 +380,7 @@ describe('Phase 2A: AdminPage Activation-Aware Keep-Alive & Decoupling', () => {
           adminEmail: 'stale@test.com',
           action: 'STALE_ACTION_NEVER_SHOW',
           targetType: 'user',
-          targetId: '99',
-          metadata: {},
+          targetId: 99,
           createdAt: new Date().toISOString(),
         },
       ],

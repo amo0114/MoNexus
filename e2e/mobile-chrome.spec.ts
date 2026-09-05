@@ -42,6 +42,7 @@ test('mobile chrome morphs into an island and keeps banners attached', async ({ 
       return route.fulfill({ json: { notifications: [], nextCursor: null, hasMore: false } })
     }
     if (pathname === '/api/orders') return route.fulfill({ json: [] })
+    if (pathname === '/api/orders/attention-count') return route.fulfill({ json: { count: 0 } })
     if (pathname === '/api/points/checkin/status') return route.fulfill({ json: { hasCheckedIn: false } })
     if (pathname === '/api/points/checkin' && method === 'POST') {
       return route.fulfill({ json: { balanceAfter: 1330, totalReward: 50 } })

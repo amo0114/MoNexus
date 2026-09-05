@@ -27,9 +27,9 @@ describe('admin product archive lifecycle (REAL-PG)', () => {
     expect(archived.body).toMatchObject({ mode: 'archived', productId: product.id, status: 'inactive', idempotent: false })
 
     const listed = await api.get('/api/admin/products').set(authHeader(auth.accessToken)).expect(200)
-    expect(listed.body.some((item: { id: number }) => item.id === product.id)).toBe(false)
+    expect(listed.body.items.some((item: { id: number }) => item.id === product.id)).toBe(false)
     const onlyArchived = await api.get('/api/admin/products?archived=only').set(authHeader(auth.accessToken)).expect(200)
-    expect(onlyArchived.body.some((item: { id: number; archivedAt: string | null }) => item.id === product.id && item.archivedAt)).toBe(true)
+    expect(onlyArchived.body.items.some((item: { id: number; archivedAt: string | null }) => item.id === product.id && item.archivedAt)).toBe(true)
 
     const publicAfter = await api.get('/api/products').expect(200)
     expect(publicAfter.body.items.some((item: { id: number }) => item.id === product.id)).toBe(false)

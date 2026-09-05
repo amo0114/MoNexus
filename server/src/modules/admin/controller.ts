@@ -3,7 +3,7 @@ import * as adminService from './service.js'
 import * as mailOperations from './mailOperations.js'
 import * as reviewService from '../reviews/service.js'
 import type {
-  ListAdminAuditQuery, ListAnnouncementsQuery, ListOrdersQuery, ListUsersQuery,
+  ListAdminAuditQuery, ListAdminProductsQuery, ListAnnouncementsQuery, ListOrdersQuery, ListPointLogsQuery, ListUsersQuery,
   ListDeliveryFilesQuery, ListFileGrantsQuery, OfferReportQuery,
   MailDeliveryTestInput,
 } from './schema.js'
@@ -133,6 +133,17 @@ export async function orderDetail(req: Request, res: Response, next: NextFunctio
   } catch (err) { next(err) }
 }
 
+export async function listPointLogs(req: Request, res: Response, next: NextFunction) {
+  try {
+    const query = req.query as unknown as ListPointLogsQuery
+    res.json(await adminService.listPointLogs(query))
+  } catch (err) { next(err) }
+}
+
+/**
+ * @deprecated Legacy point logs handler returning unpaginated array.
+ * Kept for backward compatibility. Use listPointLogs instead.
+ */
 export async function logs(_req: Request, res: Response, next: NextFunction) {
   try { res.json(await adminService.listLogs()) } catch (err) { next(err) }
 }
@@ -145,8 +156,8 @@ export async function audit(req: Request, res: Response, next: NextFunction) {
 
 export async function products(req: Request, res: Response, next: NextFunction) {
   try {
-    const archived = (req.query.archived as 'exclude' | 'only' | 'all' | undefined) ?? 'exclude'
-    res.json(await adminService.listAdminProducts(archived))
+    const query = req.query as unknown as ListAdminProductsQuery
+    res.json(await adminService.listAdminProducts(query))
   } catch (err) { next(err) }
 }
 

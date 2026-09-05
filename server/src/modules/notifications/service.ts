@@ -7,11 +7,27 @@ import type { Prisma } from '@prisma/client'
 import { prisma } from '../../lib/prisma.js'
 import { notFound } from '../../lib/httpError.js'
 import { buildNotificationEnvelope, type NotificationEnvelope } from './realtime/protocol.js'
+import { publishReadInvalidation } from './dispatcher.js'
 export type ListNotificationsParams = {
   cursor?: number
   limit?: number
   status?: 'unread' | 'read' | 'archived'
   category?: string
+}
+
+/**
+ * D-05：逻辑未过期条件（expiresAt 为空或**严格晚于** now，等于 now 视为
+ * 已过期——与归档 cron 的 `lte` 判定同向）。unread-count / 列表各视图 /
+ * markAllAsRead / 单条 markAsRead 都按它过滤，正确性不依赖归档 cron 的
+ * 及时性；cron（expiryCron.ts）只负责把存储状态最终收敛为 archived。
+ */
+function notExpired(now: Date): Prisma.NotificationWhereInput {
+  return { OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] }
+}
+
+/** 行级判断：该通知是否仍在逻辑有效期内。 */
+function isNotExpired(row: { expiresAt: Date | null }, now: Date): boolean {
+  return row.expiresAt === null || row.expiresAt.getTime() > now.getTime()
 }
 
 function serializeNotification(row: {
@@ -50,7 +66,18 @@ export async function listNotifications(userId: number, params: ListNotification
   const where: Prisma.NotificationWhereInput = {
     recipientUserId: userId,
   }
-  if (params.status) where.status = params.status
+  if (params.status) {
+    // D-05 复审：unread / read 视图同样立即排除逻辑过期行——只有显式
+    // status=archived 历史查询允许跨时间读取归档行。
+    where.status = params.status
+    if (params.status !== 'archived') {
+      Object.assign(where, notExpired(new Date()))
+    }
+  } else {
+    // 默认视图排除 archived 与逻辑已过期行（D-05）。
+    where.status = { not: 'archived' }
+    Object.assign(where, notExpired(new Date()))
+  }
   if (params.category) where.category = params.category
   if (params.cursor != null) {
     where.id = { lt: params.cursor }
@@ -89,7 +116,8 @@ export async function listNotifications(userId: number, params: ListNotification
 
 export async function getUnreadCount(userId: number): Promise<{ count: number }> {
   const count = await prisma.notification.count({
-    where: { recipientUserId: userId, status: 'unread' },
+    // D-05：立即排除逻辑已过期行——铃铛角标不依赖归档 cron 是否已跑。
+    where: { recipientUserId: userId, status: 'unread', ...notExpired(new Date()) },
   })
   return { count }
 }
@@ -101,6 +129,7 @@ export async function markAsRead(userId: number, notificationId: number) {
       id: true,
       status: true,
       readAt: true,
+      expiresAt: true,
       eventType: true,
       category: true,
       title: true,
@@ -123,8 +152,30 @@ export async function markAsRead(userId: number, notificationId: number) {
   }
 
   const now = new Date()
+
+  // D-05 复审：逻辑已过期的未读行不能被改成 read——原子收敛为 archived
+  // （与归档 cron 同一朝向，绝不复活），并按实际状态返回。
+  if (!isNotExpired(existing, now)) {
+    await prisma.notification.updateMany({
+      where: { id: notificationId, recipientUserId: userId, status: 'unread', expiresAt: { lte: now } },
+      data: { status: 'archived' },
+    })
+    const converged = await prisma.notification.findFirst({
+      where: { id: notificationId, recipientUserId: userId },
+      select: { id: true, status: true, readAt: true },
+    })
+    if (!converged) throw notFound('通知不存在')
+    return {
+      id: converged.id,
+      status: converged.status,
+      readAt: converged.readAt ? converged.readAt.toISOString() : null,
+    }
+  }
+
   const updated = await prisma.notification.updateMany({
-    where: { id: notificationId, recipientUserId: userId, status: 'unread' },
+    // 过期判定进入原子条件：行在本函数运行期间到期时这里落空，走下方
+    // 回读路径返回实际状态（不得把已到期行改成 read）。
+    where: { id: notificationId, recipientUserId: userId, status: 'unread', ...notExpired(now) },
     data: { status: 'read', readAt: now },
   })
 
@@ -142,6 +193,9 @@ export async function markAsRead(userId: number, notificationId: number) {
     }
   }
 
+  // PR-5：提示同用户的其他连接刷新未读数（best-effort，失败不影响本操作）。
+  await publishReadInvalidation(userId)
+
   return {
     id: existing.id,
     status: 'read' as const,
@@ -152,9 +206,15 @@ export async function markAsRead(userId: number, notificationId: number) {
 export async function markAllAsRead(userId: number): Promise<{ updated: number }> {
   const now = new Date()
   const result = await prisma.notification.updateMany({
-    where: { recipientUserId: userId, status: 'unread' },
+    // D-05：过期未读行归档 cron 会收走，「全部已读」不处理它们
+    // （既不读也不复活——它们对用户已不可见）。
+    where: { recipientUserId: userId, status: 'unread', ...notExpired(now) },
     data: { status: 'read', readAt: now },
   })
+  if (result.count > 0) {
+    // PR-5：提示同用户的其他连接刷新未读数（best-effort）。
+    await publishReadInvalidation(userId)
+  }
   return { updated: result.count }
 }
 

@@ -471,9 +471,12 @@ model PointLog {
   rechargeCredit   RechargeCredit?
   rechargeReversal RechargeReversal?
 
-  // 排行榜按 (type='in', createdAt ∈ 窗口) 聚合；此前本表除主键零索引，
-  // 缺了它每次刷新都是全表扫。
-  @@index([type, createdAt])
+  // 排行榜按 (type='in', createdAt ∈ 窗口) 聚合，后台支持按类型+时间倒序
+  @@index([type, createdAt, id])
+  // 默认流水列表稳定排序 (createdAt DESC, id DESC)
+  @@index([createdAt, id])
+  // 用户维度流水检索 + 时间倒序分页
+  @@index([userId, createdAt, id])
 }
 
 model Product {
@@ -537,6 +540,7 @@ model Product {
   @@index([status, isHot, sales, id])
   @@index([categoryId])
   @@index([archivedAt])
+  @@index([createdAt, id])
 }
 
 // SKU/套餐（P4a）：价格、库存与履约配置的真相源（spec §2：Fulfillment 绑定
@@ -737,6 +741,7 @@ model InventoryItem {
   // 同一商品的交付内容只能入库一次；应用层预检仅用于友好提示，数据库约束负责并发兜底。
   @@unique([productId, content])
   @@index([offerId, status])
+  @@index([productId, status])
 }
 
 model Order {
@@ -809,6 +814,8 @@ model Order {
   @@index([createdAt])
   @@index([renewalOfOrderId])
   @@index([merchantId, bookingDate])
+  // PR-3：买家「进行中」订单红点权威计数的支撑索引。
+  @@index([userId, status])
 }
 
 // FakaBridge outbox：下单事务内创建，事务外 HTTP 调用 Xboard 插件。
@@ -1005,6 +1012,11 @@ model AdminLog {
   createdAt   DateTime @default(now())
 
   admin User @relation(fields: [adminUserId], references: [id])
+
+  @@index([createdAt, id])
+  @@index([adminUserId, createdAt, id])
+  @@index([action, createdAt, id])
+  @@index([targetType, createdAt, id])
 }
 
 model SystemConfig {
@@ -1082,7 +1094,7 @@ model LeaderboardEntry {
   periodKey  String
   rank       Int
   userId     Int
-  points     Int // 窗口内 SUM(PointLog.amount) WHERE type='in'
+  points     BigInt // 窗口内 SUM(PointLog.amount) WHERE type='in' AND amount > 0（PG bigint 聚合，不降级 int）
   computedAt DateTime // 本批次刷新时刻，读侧作 updatedAt 下发
   // 上一轮快照同（scope, periodKey）的名次：读侧推导 ↑↓ 变化（prevRank - rank）。
   // 首次入榜为 null；同期每日重刷时即「较昨日」。
@@ -1600,7 +1612,10 @@ model OrderPricingSnapshot {
   createdAt             DateTime          @default(now())
 
   order          Order           @relation(fields: [orderId], references: [id], onDelete: Restrict)
-  valuePolicy    ValuePolicy     @relation(fields: [valuePolicyId], references: [id], onDelete: Restrict)
+  // 定价快照创建后不可修改：显式冻结 onUpdate: Restrict（与 20260817 迁移建立
+  // 的库内约束一致）——省略时 Prisma 默认 CASCADE，会让历史快照随政策 ID
+  // 变化而级联漂移（#192 复审修正）。
+  valuePolicy    ValuePolicy     @relation(fields: [valuePolicyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   pointsAsset    AssetDefinition @relation("SnapshotPointsAsset", fields: [pointsAssetCode], references: [code], onDelete: Restrict, onUpdate: Restrict)
   referenceAsset AssetDefinition @relation("SnapshotReferenceAsset", fields: [referenceAssetCode], references: [code], onDelete: Restrict, onUpdate: Restrict)
 }

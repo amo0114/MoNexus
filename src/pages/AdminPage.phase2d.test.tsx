@@ -14,7 +14,7 @@ vi.mock('../api/admin', () => ({
   getAdminOrders: mocks.getOrders,
   getAdminOrderDetail: mocks.getOrderDetail,
   resolveAdminOrder: mocks.resolveAdminOrder,
-  getAdminProducts: vi.fn().mockResolvedValue([]),
+  getAdminProducts: vi.fn().mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 20 }),
   archiveAdminProduct: vi.fn(),
   restoreAdminProduct: vi.fn(),
   setAdminFakaCapacity: vi.fn(),

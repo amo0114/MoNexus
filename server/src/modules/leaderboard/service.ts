@@ -35,7 +35,8 @@ const SNAPSHOT_TX_TIMEOUT_MS = 60_000
 
 interface AggregateRow {
   userId: number
-  points: number
+  /** PG bigint 聚合原样返回，不降级 number（精度守到快照层，序列化时再校验）。 */
+  points: bigint
   lastEarnedAt: Date
 }
 
@@ -76,19 +77,29 @@ function periodWindow(period: LeaderboardPeriod, cutoffDay: string) {
 }
 
 /**
- * LB-10：每轮覆盖当前三期，并在周期切换日补刷刚结束的那一期——否则
- * 周期最后一天的流水永远进不了定格快照（cutoff 恒在期末之前）。更早的
- * 周期不在集合内，已定格的行不再被触碰。
+ * LB-10：每轮覆盖当前三期，外加**最近一个已结束的**月榜与周榜。已结束期的
+ * 窗口与流水都是确定的，重算幂等（LB-08），因此持续补刷而不是只在周期切换
+ * 日补一次——边界日（1 日/周一）整天失败时，后续任何一轮都能把上一期最后
+ * 一天的流水补进定格快照，不再产生永久缺口。
  */
 export function refreshPeriods(today: string): LeaderboardPeriod[] {
   const periods = [
     resolvePeriod('total', today),
     resolvePeriod('month', today),
     resolvePeriod('week', today),
+    // 结束月 = 本月 1 日的前一天所在月；结束周 = 本周一的前 7 天。
+    resolvePeriod('month', addCalendarDays(businessMonthStart(today), -1)),
+    resolvePeriod('week', addCalendarDays(businessWeekStart(today), -7)),
   ]
-  if (today === businessMonthStart(today)) periods.push(resolvePeriod('month', addCalendarDays(today, -1)))
-  if (today === businessWeekStart(today)) periods.push(resolvePeriod('week', addCalendarDays(today, -1)))
-  return periods
+  // 按 scope + periodKey 去重并保持首现顺序（防御性：常规日期下结束期与
+  // 当前期天然不重合，但集合必须始终是安全输入）。
+  const seen = new Set<string>()
+  return periods.filter(period => {
+    const key = `${period.scope}:${period.periodKey}`
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
 }
 
 /**
@@ -110,8 +121,12 @@ function boundAsStoredUtc(instant: Date) {
 
 /**
  * LB-01：口径与 memberTier.ts computeLifetimeEarnedPoints 字面一致——
- * SUM(amount) WHERE type='in'，out/hold/release/refund 一律不计。**两处修改
- * 必须同步**，否则总榜与会员等级会给出两个"累计获得"。
+ * SUM(amount) WHERE type='in' AND amount > 0，out/hold/release/refund 一律
+ * 不计。**两处修改必须同步**，否则总榜与会员等级会给出两个"累计获得"。
+ * `amount > 0` 排除非正流水：零额 'in'（如奖励配置为 0）不该造出 0 分榜单行。
+ *
+ * SUM(int) 返回 PG bigint，聚合全程不 cast 成 int4——单用户积分超过
+ * 2^31-1 时旧写法会让整轮刷新直接溢出崩掉。
  *
  * LB-04 的全序（points desc → 窗口内最后一笔 in 的 createdAt asc → userId
  * asc）直接由 SQL 定序，rank 就是结果集下标，可重跑复现。
@@ -127,11 +142,12 @@ async function aggregateWindow(
   return client.$queryRaw<AggregateRow[]>`
     SELECT
       pl."userId" AS "userId",
-      SUM(pl."amount")::int AS "points",
+      SUM(pl."amount") AS "points",
       MAX(pl."createdAt") AS "lastEarnedAt"
     FROM "PointLog" pl
     INNER JOIN "User" u ON u."id" = pl."userId"
     WHERE pl."type" = 'in'
+      AND pl."amount" > 0
       AND pl."createdAt" < ${boundAsStoredUtc(endUtc)}
       ${lowerBound}
       AND u."role" <> 'admin'
@@ -146,6 +162,23 @@ async function aggregateWindow(
  * 事务里跑**同一条**聚合，而不是在测试里复制一份 SQL。
  */
 export const __aggregateWindowForTests = aggregateWindow
+
+/**
+ * API 契约保持 number（前端 zod/类型不变）。bigint → number 只在 JS 安全整数
+ * 范围内放行；超出说明积分体系被异常写穿（正常业务不可达），读侧显式失败并
+ * 记录，绝不静默丢精度——快照层仍保有精确 bigint，修复后重刷即可恢复。
+ */
+function pointsToApiNumber(value: bigint): number {
+  const n = Number(value)
+  if (!Number.isSafeInteger(n)) {
+    logger.error(
+      { op: 'leaderboard.points-overflow', points: value.toString() },
+      'leaderboard points exceed JS safe integer range; refusing lossy serialization'
+    )
+    throw new Error('LEADERBOARD_POINTS_OVERFLOW')
+  }
+  return n
+}
 
 /**
  * LB-08：快照替换在单事务内 delete + createMany，MVCC 保证读侧任意时刻
@@ -275,7 +308,9 @@ export async function getLeaderboard(
   }
   const names = await displayNamesFor(topRows.map(row => row.userId))
   const me: LeaderboardMe | null =
-    myRow === null ? null : { rank: myRow.rank, points: myRow.points, prevRank: myRow.prevRank }
+    myRow === null
+      ? null
+      : { rank: myRow.rank, points: pointsToApiNumber(myRow.points), prevRank: myRow.prevRank }
 
   const result: LeaderboardResponse = {
     scope,
@@ -286,7 +321,7 @@ export async function getLeaderboard(
     top: topRows.map(row => ({
       rank: row.rank,
       displayName: names.get(row.userId) ?? '',
-      points: row.points,
+      points: pointsToApiNumber(row.points),
       isMe: row.userId === userId,
       prevRank: row.prevRank,
     })),

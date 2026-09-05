@@ -6,6 +6,7 @@ import {
   RefreshCw,
   RotateCcw,
   Upload,
+  Search,
 } from 'lucide-react'
 import {
   getAdminProducts,
@@ -14,7 +15,10 @@ import {
   setAdminFakaCapacity,
   unpublishAdminProduct,
   type AdminProductListItem,
+  type AdminProductsPaged,
+  type ListAdminProductsParams,
 } from '../../api/admin'
+import AdminPagination from './AdminPagination'
 import { getApiErrorMessage } from '../../api/error'
 import { useAppStore } from '../../stores/appStore'
 import { createLatestRequestGuard } from '../../utils/latestRequest'
@@ -50,10 +54,28 @@ function adminProductStatusLabel(status: string): string {
 export default function AdminProductPanel({ active = true }: Props) {
   const showToast = useAppStore((s) => s.showToast)
   const [products, setProducts] = useState<AdminProductListItem[]>([])
+  const [total, setTotal] = useState(0)
+  const [page, setPage] = useState(1)
+  const pageSize = 20
   const [loading, setLoading] = useState(true)
   const [productsRefreshError, setProductsRefreshError] = useState(false)
   const [productsReloading, setProductsReloading] = useState(false)
-  const [archivedFilter, setArchivedFilter] = useState<'exclude' | 'only' | 'all'>('exclude')
+
+  // Draft filter inputs
+  const [qInput, setQInput] = useState('')
+  const [statusInput, setStatusInput] = useState<'' | 'draft' | 'active' | 'inactive'>('')
+  const [archivedInput, setArchivedInput] = useState<'exclude' | 'only' | 'all'>('exclude')
+
+  // Applied filter snapshot
+  const [appliedFilter, setAppliedFilter] = useState<{
+    q: string
+    status: '' | 'draft' | 'active' | 'inactive'
+    archived: 'exclude' | 'only' | 'all'
+  }>({
+    q: '',
+    status: '',
+    archived: 'exclude',
+  })
 
   const [inventoryTarget, setInventoryTarget] = useState<AdminInventoryTarget | null>(null)
   const [showPlatformProduct, setShowPlatformProduct] = useState(false)
@@ -80,18 +102,46 @@ export default function AdminProductPanel({ active = true }: Props) {
   const unpublishingRef = useRef<Set<number>>(new Set())
   const productsReloadGuard = useRef(createLatestRequestGuard()).current
 
-  async function reloadProducts(): Promise<AdminProductListItem[]> {
+  async function reloadProducts(
+    targetPage: number = page,
+    targetFilter = appliedFilter,
+  ): Promise<AdminProductsPaged> {
     const canCommit = productsReloadGuard.begin()
     setProductsReloading(true)
     setLoading(true)
     try {
-      const data = await getAdminProducts({ archived: archivedFilter })
+      const params: ListAdminProductsParams = {
+        page: targetPage,
+        pageSize,
+        archived: targetFilter.archived,
+      }
+      if (targetFilter.status) {
+        params.status = targetFilter.status
+      }
+      if (targetFilter.q.trim()) {
+        params.q = targetFilter.q.trim()
+      }
+
+      const data = await getAdminProducts(params)
       if (!canCommit()) {
         const stale = new Error('stale-products-reload')
         stale.name = 'StaleProductsReloadError'
         throw stale
       }
-      setProducts(data)
+
+      // Check if deletion/archive/restore caused current page to be empty:
+      // "归档、恢复或删除导致当前页为空：回退到最后一个有效页，禁止停留在幽灵空页"
+      if (data.items.length === 0 && targetPage > 1) {
+        const lastValidPage = Math.max(1, Math.ceil(data.total / data.pageSize))
+        if (lastValidPage < targetPage) {
+          setPage(lastValidPage)
+          return await reloadProducts(lastValidPage, targetFilter)
+        }
+      }
+
+      setProducts(data.items)
+      setTotal(data.total)
+      setPage(data.page)
       setProductsRefreshError(false)
       return data
     } catch (err) {
@@ -118,7 +168,7 @@ export default function AdminProductPanel({ active = true }: Props) {
       setProductsReloading(false)
       return
     }
-    void reloadProducts().catch((err) => {
+    void reloadProducts(page, appliedFilter).catch((err) => {
       if (err instanceof Error && err.name === 'StaleProductsReloadError') return
       showToast(getApiErrorMessage(err, '加载失败'), 'error')
     })
@@ -126,10 +176,53 @@ export default function AdminProductPanel({ active = true }: Props) {
       productsReloadGuard.invalidate()
       setProductsReloading(false)
     }
-  }, [active, archivedFilter])
+  }, [active])
 
-  function triggerSafeReload() {
-    void reloadProducts().catch((err) => {
+  function handleQuery() {
+    const nextFilter = {
+      q: qInput.trim(),
+      status: statusInput,
+      archived: archivedInput,
+    }
+    setAppliedFilter(nextFilter)
+    setPage(1)
+    void reloadProducts(1, nextFilter).catch((err) => {
+      if (!(err instanceof Error && err.name === 'StaleProductsReloadError')) {
+        showToast(getApiErrorMessage(err, '查询失败'), 'error')
+      }
+    })
+  }
+
+  function handleReset() {
+    setQInput('')
+    setStatusInput('')
+    setArchivedInput('exclude')
+    const defaultFilter = {
+      q: '',
+      status: '' as const,
+      archived: 'exclude' as const,
+    }
+    setAppliedFilter(defaultFilter)
+    setPage(1)
+    void reloadProducts(1, defaultFilter).catch((err) => {
+      if (!(err instanceof Error && err.name === 'StaleProductsReloadError')) {
+        showToast(getApiErrorMessage(err, '重置失败'), 'error')
+      }
+    })
+  }
+
+  function handlePageChange(newPage: number) {
+    if (newPage === page) return
+    setPage(newPage)
+    void reloadProducts(newPage, appliedFilter).catch((err) => {
+      if (!(err instanceof Error && err.name === 'StaleProductsReloadError')) {
+        showToast(getApiErrorMessage(err, '翻页失败'), 'error')
+      }
+    })
+  }
+
+  function triggerSafeReload(targetPage: number = page) {
+    void reloadProducts(targetPage, appliedFilter).catch((err) => {
       if (!(err instanceof Error && err.name === 'StaleProductsReloadError')) {
         showToast(getApiErrorMessage(err, '加载失败'), 'error')
       }
@@ -150,15 +243,16 @@ export default function AdminProductPanel({ active = true }: Props) {
     productName: string
     origin: 'xboard-import'
   }) {
-    let items: AdminProductListItem[] | undefined
+    let res: AdminProductsPaged | undefined
+    setPage(1)
     try {
-      items = await reloadProducts()
+      res = await reloadProducts(1, appliedFilter)
     } catch (err) {
       if (!(err instanceof Error && err.name === 'StaleProductsReloadError')) {
         showToast(getApiErrorMessage(err, '加载失败'), 'error')
       }
     }
-    const imported = items?.find((item) => item.id === result.productId)
+    const imported = res?.items?.find((item) => item.id === result.productId)
     setPublicationTarget({
       id: result.productId,
       name: result.productName,
@@ -250,16 +344,6 @@ export default function AdminProductPanel({ active = true }: Props) {
         description="管理平台自营与入驻商家商品、定价及交付配置"
         actions={
           <div className="flex gap-2 flex-wrap items-center">
-            <select
-              className="input py-1.5 text-xs"
-              value={archivedFilter}
-              onChange={(event) => setArchivedFilter(event.target.value as 'exclude' | 'only' | 'all')}
-              data-testid="admin-products-archived-filter"
-            >
-              <option value="exclude">隐藏已归档</option>
-              <option value="only">仅已归档</option>
-              <option value="all">全部</option>
-            </select>
             <button
               type="button"
               className="btn-secondary btn-sm text-xs px-3 py-1.5 cursor-pointer"
@@ -279,6 +363,89 @@ export default function AdminProductPanel({ active = true }: Props) {
           </div>
         }
       />
+      <form
+        onSubmit={(e) => {
+          e.preventDefault()
+          handleQuery()
+        }}
+        data-testid="admin-products-filter-form"
+        className="card p-3 flex flex-wrap items-center gap-3 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg text-xs"
+      >
+        <div className="flex items-center gap-2 flex-grow sm:flex-grow-0 sm:w-64">
+          <label htmlFor="admin-products-search-input" className="sr-only">
+            搜索商品
+          </label>
+          <div className="relative w-full">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[var(--color-text-muted)] pointer-events-none" />
+            <input
+              id="admin-products-search-input"
+              type="text"
+              placeholder="按商品名称或 ID 搜索"
+              value={qInput}
+              onChange={(e) => setQInput(e.target.value)}
+              className="input pl-8 py-1.5 text-xs w-full"
+              data-testid="admin-products-search-input"
+            />
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <label htmlFor="admin-products-status-filter" className="text-xs font-medium text-[var(--color-text-muted)] shrink-0">
+            状态:
+          </label>
+          <select
+            id="admin-products-status-filter"
+            value={statusInput}
+            onChange={(e) => setStatusInput(e.target.value as '' | 'draft' | 'active' | 'inactive')}
+            className="input py-1.5 text-xs"
+            data-testid="admin-products-status-filter"
+          >
+            <option value="">全部状态</option>
+            <option value="draft">草稿</option>
+            <option value="active">已上架</option>
+            <option value="inactive">已下架</option>
+          </select>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <label htmlFor="admin-products-archived-filter" className="text-xs font-medium text-[var(--color-text-muted)] shrink-0">
+            归档:
+          </label>
+          <select
+            id="admin-products-archived-filter"
+            value={archivedInput}
+            onChange={(e) => setArchivedInput(e.target.value as 'exclude' | 'only' | 'all')}
+            className="input py-1.5 text-xs"
+            data-testid="admin-products-archived-filter"
+          >
+            <option value="exclude">隐藏已归档</option>
+            <option value="only">仅已归档</option>
+            <option value="all">全部</option>
+          </select>
+        </div>
+
+        <div className="flex items-center gap-2 ml-auto">
+          <button
+            type="submit"
+            className="btn-primary btn-sm text-xs flex items-center gap-1 cursor-pointer disabled:opacity-50"
+            disabled={productsReloading}
+            data-testid="admin-products-search-btn"
+          >
+            <Search className="w-3.5 h-3.5" />
+            <span>查询</span>
+          </button>
+          <button
+            type="button"
+            onClick={handleReset}
+            className="btn-secondary btn-sm text-xs flex items-center gap-1 cursor-pointer disabled:opacity-50"
+            disabled={productsReloading}
+            data-testid="admin-products-reset-btn"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+            <span>重置</span>
+          </button>
+        </div>
+      </form>
       <div className="overflow-x-auto">
         {loading && products.length === 0 ? (
           <TableSkeleton />
@@ -520,8 +687,28 @@ export default function AdminProductPanel({ active = true }: Props) {
                     <EmptyState
                       compact
                       icon={Package}
-                      title="暂无商品"
-                      description="商品创建后将显示在这里"
+                      title={
+                        appliedFilter.q || appliedFilter.status || appliedFilter.archived !== 'exclude'
+                          ? '未找到匹配的商品'
+                          : '暂无商品'
+                      }
+                      description={
+                        appliedFilter.q || appliedFilter.status || appliedFilter.archived !== 'exclude'
+                          ? '尝试调整搜索词或筛选条件'
+                          : '商品创建后将显示在这里'
+                      }
+                      action={
+                        appliedFilter.q || appliedFilter.status || appliedFilter.archived !== 'exclude' ? (
+                          <button
+                            type="button"
+                            className="btn-secondary btn-sm text-xs mt-2 cursor-pointer"
+                            onClick={handleReset}
+                            data-testid="admin-products-empty-reset"
+                          >
+                            清空筛选条件
+                          </button>
+                        ) : undefined
+                      }
                     />
                   </td>
                 </tr>
@@ -531,11 +718,20 @@ export default function AdminProductPanel({ active = true }: Props) {
         )}
       </div>
 
+      <AdminPagination
+        page={page}
+        pageSize={pageSize}
+        total={total}
+        onPageChange={handlePageChange}
+        testId="admin-products-pagination"
+      />
+
       <AdminPlatformProductWizard
         open={showPlatformProduct}
         onClose={() => setShowPlatformProduct(false)}
         onCreated={() => {
-          triggerSafeReload()
+          setPage(1)
+          triggerSafeReload(1)
         }}
       />
 
