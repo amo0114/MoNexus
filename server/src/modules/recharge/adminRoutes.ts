@@ -8,6 +8,7 @@ import {
   adminListEventsQuerySchema,
   adminListOrdersQuerySchema,
   adminListPricePoliciesQuerySchema,
+  adminListRefundsQuerySchema,
   adminPatchPricePolicySchema,
   adminRefundSchema,
   adminResolveDisputeSchema,
@@ -21,6 +22,16 @@ rechargeAdminRoutes.get(
   '/recharge/orders',
   validate({ query: adminListOrdersQuerySchema }),
   controller.listOrders,
+)
+rechargeAdminRoutes.get(
+  '/recharge/refunds',
+  validate({ query: adminListRefundsQuerySchema }),
+  controller.listRefunds,
+)
+rechargeAdminRoutes.get(
+  '/recharge-refunds',
+  validate({ query: adminListRefundsQuerySchema }),
+  controller.listRefunds,
 )
 rechargeAdminRoutes.get(
   '/recharge/orders/:id',

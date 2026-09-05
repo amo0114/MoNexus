@@ -96,7 +96,12 @@ describe('Phase 2C: High-frequency Operations, UI Primitives & Merchant Rejectio
       pageSize: 20,
     })
 
-    mocks.getProducts.mockResolvedValue(sampleProducts)
+    mocks.getProducts.mockResolvedValue({
+      items: sampleProducts,
+      total: sampleProducts.length,
+      page: 1,
+      pageSize: 20,
+    })
     mocks.getAudit.mockResolvedValue({ items: [], total: 0 })
     mocks.getSettlements.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 20 })
   })

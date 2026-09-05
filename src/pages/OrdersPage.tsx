@@ -38,7 +38,7 @@ export default function OrdersPage() {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const showToast = useAppStore((s) => s.showToast)
-  const setOrderAttentionCount = useAppStore((s) => s.setOrderAttentionCount)
+  const refreshOrderAttention = useAppStore((s) => s.refreshOrderAttention)
 
   const tab = parseTab(searchParams.get('tab'))
   const focusId = parseFocusId(searchParams.get('focus'))
@@ -61,7 +61,9 @@ export default function OrdersPage() {
       const list = await getOrders({ page: 1, pageSize: 100 })
       if (!coordinator.isLatest(request)) return
       setOrders(list)
-      setOrderAttentionCount(countAttentionOrders(list))
+      // PR-3：全局角标由权威计数接口负责，页面不再用首页 100 条覆盖它。
+      // 前台加载后补拉一次（本地 dispute/close 动作在 SSE 缺席时的兜底）。
+      if (!opts?.background) void refreshOrderAttention()
     } catch (err) {
       // Single background failure keeps old values and waits for the next tick.
       if (coordinator.isLatest(request) && !opts?.background) showToast(getApiErrorMessage(err, '加载订单失败'), 'error')
@@ -70,7 +72,7 @@ export default function OrdersPage() {
         setLoading(false)
       }
     }
-  }, [showToast, setOrderAttentionCount])
+  }, [showToast, refreshOrderAttention])
 
   useEffect(() => {
     void load()
@@ -91,7 +93,7 @@ export default function OrdersPage() {
     ])
     if (request === reloadRequestRef.current && listCoordinator.isLatest(listRequest) && listResult.status === 'fulfilled') {
       setOrders(listResult.value)
-      setOrderAttentionCount(countAttentionOrders(listResult.value))
+      // PR-3：角标刷新由 Layout 的 buyer.orders 订阅负责，页面只管列表本身。
     }
     if (listCoordinator.finish(listRequest)) setLoading(false)
     if (
@@ -104,7 +106,7 @@ export default function OrdersPage() {
       selectedOrderRef.current = detailResult.value
       setSelectedOrder(detailResult.value)
     }
-  }, [setOrderAttentionCount])
+  }, [])
 
   useNotificationInvalidation('buyer.orders', reloadBuyerState)
   useNotificationInvalidation('all.visible', reloadBuyerState)

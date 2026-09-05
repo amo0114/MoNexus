@@ -1002,6 +1002,17 @@ function buildUserOrderWhere(userId: number, status?: string): Prisma.OrderWhere
   return where
 }
 
+/**
+ * 买家「进行中」订单权威计数（顶栏/底栏红点角标）。
+ * 口径与前端 isAttentionOrderStatus 一致：pending / processing / disputed。
+ * 走 COUNT 与列表分页解耦——历史单超过首页 100 条时角标也不会少计（PR-3）。
+ */
+export async function getAttentionOrderCount(userId: number): Promise<number> {
+  return prisma.order.count({
+    where: { userId, status: { in: ['pending', 'processing', 'disputed'] } },
+  })
+}
+
 export async function getUserOrders(userId: number, page = 1, pageSize = 20, status?: string) {
   const orders = await prisma.order.findMany({
     where: buildUserOrderWhere(userId, status),
@@ -1050,6 +1061,7 @@ export async function closeOrder(orderId: number, userId: number) {
   // PRD §4.3.1：delivered > 7 天自动 closed，积分正式扣减并触发 Settlement
   await assertUserOwnsOrder(orderId, userId)
   const result = await prisma.$transaction(async tx => {
+    await tx.$queryRaw`SELECT "id" FROM "Order" WHERE "id" = ${orderId} FOR UPDATE`
     const order = await tx.order.findUnique({
       where: { id: orderId },
       select: { id: true, userId: true, holdingPoints: true, fundsHeld: true, status: true, productId: true },

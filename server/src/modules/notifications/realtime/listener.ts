@@ -25,6 +25,8 @@ export interface RealtimeHubPort {
   hasSubscribers(recipientUserId: number): boolean
   /** Route a validated envelope to this user's local connections only. */
   broadcastNotification(recipientUserId: number, envelope: NotificationEnvelope): void
+  /** PR-5：路由已读失效控制帧（无业务 payload）到该用户本机连接，返回送达数。 */
+  broadcastRead(recipientUserId: number): number
 }
 
 /** Reads the safe envelope from the primary by id + recipientUserId. */
@@ -191,6 +193,12 @@ export class NotificationRealtimeListener {
     }
     if (!this.options.hub.hasSubscribers(payload.recipientUserId)) {
       this.options.reportOutcome('no_subscriber')
+      return
+    }
+    // PR-5：已读失效提示——不查信封（不锚定任何通知行），直接路由控制帧。
+    if (payload.kind === 'read') {
+      this.options.hub.broadcastRead(payload.recipientUserId)
+      this.options.reportOutcome('routed')
       return
     }
     // Lightweight concurrency gate: when the DB is lagging behind a NOTIFY

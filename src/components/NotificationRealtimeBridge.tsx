@@ -36,6 +36,10 @@ export function NotificationRealtimeBridge(): null {
       onStateChange: (state) => setStreamState(state),
       onReady: () => publishAllVisible(),
       onNotification: (n) => handleRealtimeNotification(n, showToast),
+      onReadInvalidation: () => {
+        // PR-5：同用户其他连接已读提示——只刷未读数，绝不弹 Toast。
+        getInvalidationScheduler().publishNow('notifications')
+      },
       onAuthExpiring: () => {
         void handleAuthExpiring(streamRef)
       },

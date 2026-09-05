@@ -18,6 +18,7 @@ import {
   SSE_EVENT_AUTH_EXPIRING,
   SSE_EVENT_DEGRADED,
   SSE_EVENT_NOTIFICATION,
+  SSE_EVENT_NOTIFICATION_READ,
   SSE_EVENT_READY,
   type NotificationRealtimeDegradedReason,
 } from './constants.js'
@@ -36,9 +37,20 @@ export type NotificationDeliveryKind = (typeof NOTIFICATION_DELIVERY_KINDS)[numb
 
 export interface PgPayload {
   v: 1
+  /** 判别字段：created 提示（历史形态）不携带 kind。 */
+  kind?: undefined
   notificationId: number
   recipientUserId: number
 }
+
+/** PR-5：已读失效提示（无 notificationId——不锚定任何单条通知）。 */
+export interface PgReadPayload {
+  v: 1
+  kind: 'read'
+  recipientUserId: number
+}
+
+export type PgMessagePayload = PgPayload | PgReadPayload
 
 export interface NotificationEnvelope {
   v: 1
@@ -115,10 +127,13 @@ function isValidIsoUtc(value: Date | string): boolean {
 }
 
 /**
- * Parse the PG NOTIFY payload. Only `{ v: 1, notificationId, recipientUserId }`
- * with both IDs positive safe integers is accepted (D-RT-05, NRT-006).
+ * Parse the PG NOTIFY payload. Two exact shapes are accepted (D-RT-05, NRT-006):
+ * - `{ v: 1, notificationId, recipientUserId }` — created hint (legacy shape,
+ *   kindless for backward compatibility with in-flight rows of older versions);
+ * - `{ v: 1, kind: 'read', recipientUserId }` — read invalidation hint (PR-5).
+ * Both IDs must be positive safe integers; any extra keys reject the payload.
  */
-export function parsePgPayload(raw: string): PgPayload | null {
+export function parsePgPayload(raw: string): PgMessagePayload | null {
   let parsed: unknown
   try {
     parsed = JSON.parse(raw)
@@ -128,8 +143,13 @@ export function parsePgPayload(raw: string): PgPayload | null {
   if (parsed === null || typeof parsed !== 'object') return null
   const obj = parsed as Record<string, unknown>
   if (obj.v !== NOTIFICATION_REALTIME_PROTOCOL_VERSION) return null
-  if (!isPositiveSafeInteger(obj.notificationId)) return null
   if (!isPositiveSafeInteger(obj.recipientUserId)) return null
+  if (obj.kind === 'read') {
+    const keys = Object.keys(obj).sort()
+    if (keys.join(',') !== 'kind,recipientUserId,v') return null
+    return { v: NOTIFICATION_REALTIME_PROTOCOL_VERSION, kind: 'read', recipientUserId: obj.recipientUserId }
+  }
+  if (!isPositiveSafeInteger(obj.notificationId)) return null
   // NRT-006: payload is exactly version + two integer IDs — reject any extra keys.
   const keys = Object.keys(obj).sort()
   if (keys.join(',') !== 'notificationId,recipientUserId,v') return null
@@ -151,6 +171,21 @@ export function serializePgPayload(notificationId: number, recipientUserId: numb
   return JSON.stringify({
     v: NOTIFICATION_REALTIME_PROTOCOL_VERSION,
     notificationId,
+    recipientUserId,
+  })
+}
+
+/**
+ * PR-5：已读失效提示的 PG NOTIFY 载荷。只含版本、kind 与接收者 id——
+ * 绝不携带通知正文、业务 payload 或任何用户信息。
+ */
+export function serializeReadPgPayload(recipientUserId: number): string {
+  if (!isPositiveSafeInteger(recipientUserId)) {
+    throw new Error('serializeReadPgPayload requires a positive safe integer user id')
+  }
+  return JSON.stringify({
+    v: NOTIFICATION_REALTIME_PROTOCOL_VERSION,
+    kind: 'read',
     recipientUserId,
   })
 }
@@ -240,6 +275,17 @@ export function serializeAuthExpiring(expiresAt: Date): string | null {
   return serializeFrame([
     `event: ${SSE_EVENT_AUTH_EXPIRING}`,
     `data: ${JSON.stringify({ v: NOTIFICATION_REALTIME_PROTOCOL_VERSION, expiresAt: expiresAt.toISOString() })}`,
+  ])
+}
+
+/**
+ * PR-5：`notification.read` — control event, no id, no business payload.
+ * 同用户其他连接收到后只刷新未读数（REST 收敛），绝不做任何 UI 提示。
+ */
+export function serializeNotificationRead(): string | null {
+  return serializeFrame([
+    `event: ${SSE_EVENT_NOTIFICATION_READ}`,
+    `data: ${JSON.stringify({ v: NOTIFICATION_REALTIME_PROTOCOL_VERSION })}`,
   ])
 }
 

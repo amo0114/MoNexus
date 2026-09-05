@@ -393,13 +393,236 @@ export interface AdminProductStatusResult {
   publishedAt: string | null
 }
 
+export interface AdminProductsPaged {
+  items: AdminProductListItem[]
+  total: number
+  page: number
+  pageSize: number
+}
+
+export interface ListAdminProductsParams {
+  page?: number
+  pageSize?: number
+  archived?: 'exclude' | 'only' | 'all'
+  status?: 'draft' | 'active' | 'inactive'
+  q?: string
+}
+
+export function isValidAdminFakaCapacity(cap: unknown): cap is AdminFakaCapacity {
+  if (!cap || typeof cap !== 'object' || Array.isArray(cap)) return false
+  const candidate = cap as Record<string, unknown>
+  return (
+    typeof candidate.sku === 'string' &&
+    (candidate.planId === null || (typeof candidate.planId === 'number' && Number.isSafeInteger(candidate.planId))) &&
+    (candidate.capacityLimit === null ||
+      (typeof candidate.capacityLimit === 'number' &&
+        Number.isSafeInteger(candidate.capacityLimit) &&
+        candidate.capacityLimit >= 0)) &&
+    (candidate.activeUsers === null ||
+      (typeof candidate.activeUsers === 'number' &&
+        Number.isSafeInteger(candidate.activeUsers) &&
+        candidate.activeUsers >= 0)) &&
+    (candidate.remaining === null ||
+      (typeof candidate.remaining === 'number' && Number.isSafeInteger(candidate.remaining))) &&
+    typeof candidate.sellable === 'boolean' &&
+    (candidate.source === 'xboard' || candidate.source === 'unavailable') &&
+    (candidate.reason === undefined || typeof candidate.reason === 'string')
+  )
+}
+
+export function isValidAdminProductOffer(offer: unknown): offer is AdminProductOffer {
+  if (!offer || typeof offer !== 'object' || Array.isArray(offer)) return false
+  const candidate = offer as Record<string, unknown>
+  if (
+    typeof candidate.id !== 'number' ||
+    !Number.isSafeInteger(candidate.id) ||
+    candidate.id <= 0 ||
+    typeof candidate.name !== 'string' ||
+    candidate.name.length === 0
+  ) {
+    return false
+  }
+  if ('deliveryMode' in candidate && candidate.deliveryMode !== undefined && typeof candidate.deliveryMode !== 'string') {
+    return false
+  }
+  if ('status' in candidate && candidate.status !== undefined && typeof candidate.status !== 'string') {
+    return false
+  }
+  if ('isDefault' in candidate && candidate.isDefault !== undefined && typeof candidate.isDefault !== 'boolean') {
+    return false
+  }
+  if (
+    'deliveryFields' in candidate &&
+    candidate.deliveryFields !== undefined &&
+    candidate.deliveryFields !== null &&
+    !Array.isArray(candidate.deliveryFields)
+  ) {
+    return false
+  }
+  if (
+    'externalIntegration' in candidate &&
+    candidate.externalIntegration !== undefined &&
+    candidate.externalIntegration !== null &&
+    typeof candidate.externalIntegration !== 'string'
+  ) {
+    return false
+  }
+  if (
+    'externalSku' in candidate &&
+    candidate.externalSku !== undefined &&
+    candidate.externalSku !== null &&
+    typeof candidate.externalSku !== 'string'
+  ) {
+    return false
+  }
+  if ('stockMode' in candidate && candidate.stockMode !== undefined && typeof candidate.stockMode !== 'string') {
+    return false
+  }
+  if (
+    'stock' in candidate &&
+    candidate.stock !== undefined &&
+    candidate.stock !== null &&
+    (typeof candidate.stock !== 'number' || !Number.isSafeInteger(candidate.stock) || candidate.stock < 0)
+  ) {
+    return false
+  }
+  if ('price' in candidate && candidate.price !== undefined && (typeof candidate.price !== 'number' || !Number.isFinite(candidate.price))) {
+    return false
+  }
+  if (
+    'originalPrice' in candidate &&
+    candidate.originalPrice !== undefined &&
+    candidate.originalPrice !== null &&
+    (typeof candidate.originalPrice !== 'number' || !Number.isFinite(candidate.originalPrice))
+  ) {
+    return false
+  }
+  if (
+    'validityDays' in candidate &&
+    candidate.validityDays !== undefined &&
+    candidate.validityDays !== null &&
+    (typeof candidate.validityDays !== 'number' || !Number.isSafeInteger(candidate.validityDays) || candidate.validityDays < 0)
+  ) {
+    return false
+  }
+  if (
+    'sortOrder' in candidate &&
+    candidate.sortOrder !== undefined &&
+    (typeof candidate.sortOrder !== 'number' || !Number.isSafeInteger(candidate.sortOrder))
+  ) {
+    return false
+  }
+  if (
+    'fakaCapacity' in candidate &&
+    candidate.fakaCapacity !== undefined &&
+    candidate.fakaCapacity !== null &&
+    !isValidAdminFakaCapacity(candidate.fakaCapacity)
+  ) {
+    return false
+  }
+  return true
+}
+
+export function isValidAdminProductListItem(item: unknown): item is AdminProductListItem {
+  if (!item || typeof item !== 'object' || Array.isArray(item)) return false
+  const candidate = item as Record<string, unknown>
+  if (
+    typeof candidate.id !== 'number' ||
+    !Number.isSafeInteger(candidate.id) ||
+    candidate.id <= 0 ||
+    typeof candidate.name !== 'string' ||
+    candidate.name.length === 0 ||
+    typeof candidate.status !== 'string'
+  ) {
+    return false
+  }
+  if (
+    !('merchantId' in candidate) ||
+    (candidate.merchantId !== null &&
+      (typeof candidate.merchantId !== 'number' ||
+        !Number.isSafeInteger(candidate.merchantId) ||
+        candidate.merchantId <= 0))
+  ) {
+    return false
+  }
+  if (!Array.isArray(candidate.offers) || !candidate.offers.every(isValidAdminProductOffer)) {
+    return false
+  }
+  if ('_count' in candidate && candidate._count !== undefined && candidate._count !== null) {
+    if (typeof candidate._count !== 'object' || Array.isArray(candidate._count)) return false
+    const countCandidate = candidate._count as Record<string, unknown>
+    if (
+      'inventory' in countCandidate &&
+      countCandidate.inventory !== undefined &&
+      (typeof countCandidate.inventory !== 'number' ||
+        !Number.isSafeInteger(countCandidate.inventory) ||
+        countCandidate.inventory < 0)
+    ) {
+      return false
+    }
+  }
+  if ('fakaBridge' in candidate && candidate.fakaBridge !== undefined && typeof candidate.fakaBridge !== 'boolean') {
+    return false
+  }
+  if (
+    'fakaCapacity' in candidate &&
+    candidate.fakaCapacity !== undefined &&
+    candidate.fakaCapacity !== null &&
+    !isValidAdminFakaCapacity(candidate.fakaCapacity)
+  ) {
+    return false
+  }
+  if (
+    'archivedAt' in candidate &&
+    candidate.archivedAt !== undefined &&
+    candidate.archivedAt !== null &&
+    typeof candidate.archivedAt !== 'string'
+  ) {
+    return false
+  }
+  if (
+    'archiveReason' in candidate &&
+    candidate.archiveReason !== undefined &&
+    candidate.archiveReason !== null &&
+    typeof candidate.archiveReason !== 'string'
+  ) {
+    return false
+  }
+  return true
+}
+
+export function parseAdminProductsResponse(data: unknown): AdminProductsPaged {
+  const isValidEnvelope =
+    Boolean(data) &&
+    typeof data === 'object' &&
+    !Array.isArray(data) &&
+    Array.isArray((data as any).items) &&
+    typeof (data as any).total === 'number' &&
+    Number.isSafeInteger((data as any).total) &&
+    (data as any).total >= 0 &&
+    typeof (data as any).page === 'number' &&
+    Number.isSafeInteger((data as any).page) &&
+    (data as any).page >= 1 &&
+    typeof (data as any).pageSize === 'number' &&
+    Number.isSafeInteger((data as any).pageSize) &&
+    (data as any).pageSize >= 1 &&
+    (data as any).pageSize <= 100 &&
+    (data as any).items.every(isValidAdminProductListItem)
+
+  if (!isValidEnvelope) {
+    throw new Error('商品列表接口契约异常：预期分页对象格式 { items, total, page, pageSize }')
+  }
+
+  return data as AdminProductsPaged
+}
+
 export async function getAdminProducts(
-  params?: { archived?: 'exclude' | 'only' | 'all' },
-): Promise<AdminProductListItem[]> {
+  params?: ListAdminProductsParams,
+): Promise<AdminProductsPaged> {
   const { data } = params
-    ? await api.get<AdminProductListItem[]>('/admin/products', { params })
-    : await api.get<AdminProductListItem[]>('/admin/products')
-  return data
+    ? await api.get<AdminProductsPaged>('/admin/products', { params })
+    : await api.get<AdminProductsPaged>('/admin/products')
+  return parseAdminProductsResponse(data)
 }
 
 export async function getAdminProductReadiness(

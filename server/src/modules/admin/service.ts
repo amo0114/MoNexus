@@ -91,18 +91,22 @@ import {
   voidRefundableSettlement,
 } from '../orders/accounting.js'
 import { applyRefundInventoryPolicy } from '../orders/refundInventory.js'
-import type {
-  CreateProductInput,
-  ListAdminAuditQuery,
-  ListAnnouncementsQuery,
-  ListDeliveryFilesQuery,
-  ListFileGrantsQuery,
-  ListOrdersQuery,
-  ListUsersQuery,
-  ResolveOrderInput,
-  UpdateProductInput,
-  CreateAnnouncementInput,
-  UpdateAnnouncementInput,
+import {
+  parseAndValidateStrictDate,
+  parseAndValidateStrictRefundDate,
+  type CreateProductInput,
+  type ListAdminAuditQuery,
+  type ListAdminProductsQuery,
+  type ListAnnouncementsQuery,
+  type ListDeliveryFilesQuery,
+  type ListFileGrantsQuery,
+  type ListOrdersQuery,
+  type ListPointLogsQuery,
+  type ListUsersQuery,
+  type ResolveOrderInput,
+  type UpdateProductInput,
+  type CreateAnnouncementInput,
+  type UpdateAnnouncementInput,
 } from './schema.js'
 
 async function resolvePagination(page?: number, pageSize?: number) {
@@ -868,6 +872,82 @@ export async function listAllOrders(query: ListOrdersQuery = {}) {
   return { items: orders.map(serializeAdminOrderList), total, page, pageSize }
 }
 
+/**
+ * Dedicated paginated and filtered point logs read model.
+ */
+export async function listPointLogs(query: ListPointLogsQuery) {
+  const page = query.page ?? 1
+  const pageSize = query.pageSize ?? 20
+  const skip = (page - 1) * pageSize
+
+  const where: Prisma.PointLogWhereInput = {}
+
+  if (query.userId) {
+    where.userId = query.userId
+  }
+
+  if (query.email) {
+    where.user = {
+      email: query.email.trim().toLowerCase(),
+    }
+  }
+
+  if (query.type) {
+    where.type = query.type
+  }
+
+  const createdAtFilter: Prisma.DateTimeFilter = {}
+  if (query.from) {
+    const parsedFrom = parseAndValidateStrictRefundDate(query.from)
+    if (parsedFrom.valid && parsedFrom.date) {
+      createdAtFilter.gte = parsedFrom.date
+    }
+  }
+  if (query.to) {
+    const parsedTo = parseAndValidateStrictRefundDate(query.to)
+    if (parsedTo.valid && parsedTo.date) {
+      if (parsedTo.isDateOnly) {
+        const nextDay = new Date(parsedTo.date.getTime())
+        nextDay.setUTCDate(nextDay.getUTCDate() + 1)
+        createdAtFilter.lt = nextDay
+      } else {
+        createdAtFilter.lte = parsedTo.date
+      }
+    }
+  }
+  if (createdAtFilter.gte || createdAtFilter.lt || createdAtFilter.lte) {
+    where.createdAt = createdAtFilter
+  }
+
+  const [total, items] = await prisma.$transaction([
+    prisma.pointLog.count({ where }),
+    prisma.pointLog.findMany({
+      where,
+      include: {
+        user: {
+          select: {
+            id: true,
+            email: true,
+            nickname: true,
+          },
+        },
+      },
+      orderBy: [
+        { createdAt: 'desc' },
+        { id: 'desc' },
+      ],
+      skip,
+      take: pageSize,
+    }),
+  ])
+
+  return { items, total, page, pageSize }
+}
+
+/**
+ * @deprecated Legacy point logs query returning unpaginated array (up to 100).
+ * Kept for backward compatibility. Use listPointLogs instead.
+ */
 export async function listLogs() {
   return prisma.pointLog.findMany({
     include: {
@@ -878,28 +958,49 @@ export async function listLogs() {
   })
 }
 
-function toDateEndOfDay(date: string) {
-  const end = new Date(date)
-  end.setUTCHours(23, 59, 59, 999)
-  return end
-}
-
 export async function listAdminLogs(query: ListAdminAuditQuery) {
   const where: Prisma.AdminLogWhereInput = {}
 
   if (query.adminId) where.adminUserId = query.adminId
   if (query.action) where.action = query.action
+  if (query.targetType) where.targetType = query.targetType
   if (query.fromDate || query.toDate) {
-    where.createdAt = {
-      ...(query.fromDate ? { gte: new Date(query.fromDate) } : {}),
-      ...(query.toDate ? { lte: toDateEndOfDay(query.toDate) } : {}),
+    const createdAtFilter: Prisma.DateTimeFilter = {}
+    if (query.fromDate) {
+      const fromParsed = parseAndValidateStrictDate(query.fromDate)
+      if (fromParsed.date) {
+        createdAtFilter.gte = fromParsed.date
+      }
     }
+    if (query.toDate) {
+      const toParsed = parseAndValidateStrictDate(query.toDate)
+      if (toParsed.date) {
+        if (toParsed.isDateOnly) {
+          createdAtFilter.lt = new Date(toParsed.date.getTime() + 24 * 60 * 60 * 1000)
+        } else {
+          createdAtFilter.lte = toParsed.date
+        }
+      }
+    }
+    where.createdAt = createdAtFilter
   }
 
   const [items, total] = await prisma.$transaction([
     prisma.adminLog.findMany({
       where,
-      include: { admin: { select: { email: true } } },
+      select: {
+        id: true,
+        adminUserId: true,
+        action: true,
+        targetType: true,
+        targetId: true,
+        createdAt: true,
+        admin: {
+          select: {
+            email: true,
+          },
+        },
+      },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       skip: (query.page - 1) * query.pageSize,
       take: query.pageSize,
@@ -915,8 +1016,7 @@ export async function listAdminLogs(query: ListAdminAuditQuery) {
       action: log.action,
       targetType: log.targetType,
       targetId: log.targetId,
-      metadata: log.detail ? { detail: log.detail } : null,
-      createdAt: log.createdAt,
+      createdAt: log.createdAt.toISOString(),
     })),
     total,
     page: query.page,
@@ -1218,14 +1318,14 @@ export async function listAllSettlements(status?: string, page = 1, pageSize = 2
   const where: Prisma.SettlementWhereInput = {}
   if (status) where.status = status
 
-  const [total, items] = await prisma.$transaction(
+  const [total, rawItems] = await prisma.$transaction(
     [
       prisma.settlement.count({ where }),
       prisma.settlement.findMany({
         where,
         include: {
           merchant: { select: { id: true, name: true } },
-          order: { select: { id: true, price: true, createdAt: true } },
+          order: { select: { id: true, price: true, createdAt: true, status: true } },
         },
         orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
         skip: (page - 1) * pageSize,
@@ -1237,21 +1337,63 @@ export async function listAllSettlements(status?: string, page = 1, pageSize = 2
     },
   )
 
+  const items = rawItems.map(item => {
+    const eligibility = getSettlementEligibility(item.order.status)
+    return {
+      ...item,
+      payable: eligibility.payable,
+      blockReason: eligibility.blockReason,
+    }
+  })
+
   return { items, total, page, pageSize }
 }
 
 /**
  * Admin batch-settle: mark Settlement pending→settled AND credit the merchant
- * owner account (settlementAmount). Previously only flipped status, so merchants
- * saw "已结算" with no points — that was a product bug.
+ * owner account (settlementAmount).
  *
- * Idempotency: only rows with status=pending are selected and credited once
- * under the same transaction as the status CAS.
+ * Atomicity and Lock Ordering:
+ * 1. Reject duplicate settlement IDs upfront.
+ * 2. Order rows locked in orderId ASC order (FOR UPDATE).
+ * 3. Settlement rows locked in id ASC order (FOR UPDATE).
+ * 4. Re-read and verify eligibility after acquiring locks.
+ * 5. Merchant PointAccount rows locked in userId ASC order (FOR UPDATE).
+ * 6. All-or-nothing: any non-eligible settlement aborts the whole batch without partial credits.
  */
 export async function batchSettle(adminUserId: number, settlementIds: number[]) {
+  if (!Array.isArray(settlementIds) || settlementIds.length === 0) {
+    throw badRequest('请提供有效的结算单ID列表')
+  }
+  const uniqueIds = new Set(settlementIds)
+  if (uniqueIds.size !== settlementIds.length) {
+    throw badRequest('存在重复的结算ID')
+  }
+
   return prisma.$transaction(async tx => {
-    const settlements = await tx.settlement.findMany({
+    const preliminary = await tx.settlement.findMany({
       where: { id: { in: settlementIds } },
+      select: { id: true, orderId: true },
+    })
+    if (preliminary.length !== settlementIds.length) {
+      throw badRequest('存在不可结算的记录')
+    }
+
+    // 1. 所有关联 Order 按 orderId ASC 获取 FOR UPDATE
+    const sortedOrderIds = [...new Set(preliminary.map(p => p.orderId))].sort((a, b) => a - b)
+    for (const oId of sortedOrderIds) {
+      await tx.$queryRaw`SELECT "id" FROM "Order" WHERE "id" = ${oId} FOR UPDATE`
+    }
+
+    // 2. 所有 Settlement 按 id ASC 获取 FOR UPDATE
+    const sortedSettlementIds = [...settlementIds].sort((a, b) => a - b)
+    for (const sId of sortedSettlementIds) {
+      await tx.$queryRaw`SELECT "id" FROM "Settlement" WHERE "id" = ${sId} FOR UPDATE`
+    }
+
+    // 3. 锁后重新读取并验证 settlement status 和当前 order status
+    const settlements = await tx.settlement.findMany({
+      where: { id: { in: sortedSettlementIds } },
       select: {
         id: true,
         status: true,
@@ -1261,6 +1403,7 @@ export async function batchSettle(adminUserId: number, settlementIds: number[]) 
         order: { select: { status: true } },
         merchant: { select: { userId: true, name: true } },
       },
+      orderBy: { id: 'asc' },
     })
 
     if (
@@ -1271,6 +1414,17 @@ export async function batchSettle(adminUserId: number, settlementIds: number[]) 
       ))
     ) {
       throw badRequest('存在不可结算的记录')
+    }
+
+    // 4. Merchant PointAccount 按 userId ASC 锁定/更新
+    const merchantUserIds = [...new Set(settlements.map(s => s.merchant.userId))].sort((a, b) => a - b)
+    for (const uId of merchantUserIds) {
+      await tx.pointAccount.upsert({
+        where: { userId: uId },
+        create: { userId: uId, balance: 0 },
+        update: {},
+      })
+      await tx.$queryRaw`SELECT "id" FROM "PointAccount" WHERE "userId" = ${uId} FOR UPDATE`
     }
 
     const now = new Date()
@@ -1289,12 +1443,6 @@ export async function batchSettle(adminUserId: number, settlementIds: number[]) 
       const amount = settlement.settlementAmount
       if (amount > 0) {
         const merchantUserId = settlement.merchant.userId
-        // Ensure merchant owner has a point account (legacy rows).
-        await tx.pointAccount.upsert({
-          where: { userId: merchantUserId },
-          create: { userId: merchantUserId, balance: 0 },
-          update: {},
-        })
         const balanceAfter = await creditAvailablePoints(tx, merchantUserId, amount)
         await tx.pointLog.create({
           data: {
@@ -1323,38 +1471,80 @@ export async function batchSettle(adminUserId: number, settlementIds: number[]) 
   })
 }
 
-export async function listAdminProducts(archived: ArchivedFilter = 'exclude') {
-  const products = await prisma.product.findMany({
-    where: archivedWhere(archived),
-    include: {
-      _count: {
-        select: { inventory: { where: { status: 'available' } } },
-      },
-      // P4a F2：导入弹窗需要知道每个商品有哪些即时库存规格（含已下架——
-      // 重新上架前备货是合理操作）；deliveryFields 用于前端提示模板规格
-      // 不能走管理端纯文本导入。管理端上下文，不含 fixedContent。
-      offers: {
-        select: {
-          id: true,
-          name: true,
-          deliveryMode: true,
-          status: true,
-          isDefault: true,
-          deliveryFields: true,
-          externalIntegration: true,
-          externalSku: true,
-          stockMode: true,
-          stock: true,
-          price: true,
-          originalPrice: true,
-          validityDays: true,
-          sortOrder: true,
+export async function listAdminProducts(
+  query: ListAdminProductsQuery = { page: 1, pageSize: 20, archived: 'exclude' },
+) {
+  const page = query.page ?? 1
+  const pageSize = query.pageSize ?? 20
+  const archived = query.archived ?? 'exclude'
+  const status = query.status
+  const q = query.q?.trim()
+
+  const conditions: Prisma.ProductWhereInput[] = []
+  const arc = archivedWhere(archived)
+  if (Object.keys(arc).length > 0) {
+    conditions.push(arc)
+  }
+  if (status) {
+    conditions.push({ status })
+  }
+  if (q) {
+    const isNumeric = /^\d+$/.test(q)
+    if (isNumeric) {
+      const idNum = Number(q)
+      if (Number.isSafeInteger(idNum) && idNum > 0) {
+        conditions.push({
+          OR: [
+            { name: { contains: q, mode: 'insensitive' } },
+            { id: idNum },
+          ],
+        })
+      } else {
+        conditions.push({ name: { contains: q, mode: 'insensitive' } })
+      }
+    } else {
+      conditions.push({ name: { contains: q, mode: 'insensitive' } })
+    }
+  }
+
+  const where: Prisma.ProductWhereInput = conditions.length > 0 ? { AND: conditions } : {}
+
+  const [total, products] = await prisma.$transaction([
+    prisma.product.count({ where }),
+    prisma.product.findMany({
+      where,
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      include: {
+        _count: {
+          select: { inventory: { where: { status: 'available' } } },
         },
-        orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
+        // P4a F2：导入弹窗需要知道每个商品有哪些即时库存规格（含已下架——
+        // 重新上架前备货是合理操作）；deliveryFields 用于前端提示模板规格
+        // 不能走管理端纯文本导入。管理端上下文，不含 fixedContent。
+        offers: {
+          select: {
+            id: true,
+            name: true,
+            deliveryMode: true,
+            status: true,
+            isDefault: true,
+            deliveryFields: true,
+            externalIntegration: true,
+            externalSku: true,
+            stockMode: true,
+            stock: true,
+            price: true,
+            originalPrice: true,
+            validityDays: true,
+            sortOrder: true,
+          },
+          orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
+        },
       },
-    },
-    orderBy: { createdAt: 'desc' },
-  })
+    }),
+  ])
 
   // Attach Xboard capacity for Faka offers (admin-only read; not for merchants).
   const fakaSkus = [
@@ -1375,7 +1565,7 @@ export async function listAdminProducts(archived: ArchivedFilter = 'exclude') {
     }
   }
 
-  return products.map(p => {
+  const items = products.map(p => {
     const offers = p.offers.map(o => {
       const sku = o.externalSku?.toLowerCase() ?? null
       const fakaCapacity =
@@ -1383,8 +1573,8 @@ export async function listAdminProducts(archived: ArchivedFilter = 'exclude') {
       return { ...o, fakaCapacity }
     })
     const primaryFaka = offers.find(o => o.fakaCapacity?.source === 'xboard')?.fakaCapacity ?? null
-    // D-MERCH-01：显式剥离遗留 Product.isHot（...p 会带出），其余管理字段原样保留。
-    const { isHot: _legacyIsHot, ...productDto } = p
+    // D-MERCH-01：显式剥离遗留 Product.isHot 与 fixedContent，其余管理字段原样保留。
+    const { isHot: _legacyIsHot, fixedContent: _fixedContent, ...productDto } = p
     return {
       ...productDto,
       offers,
@@ -1392,6 +1582,13 @@ export async function listAdminProducts(archived: ArchivedFilter = 'exclude') {
       fakaCapacity: primaryFaka,
     }
   })
+
+  return {
+    items,
+    total,
+    page,
+    pageSize,
+  }
 }
 
 /**

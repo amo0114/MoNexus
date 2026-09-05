@@ -9,6 +9,7 @@ import {
 import { getApiErrorMessage } from '../api/error'
 import { useAppStore } from '../stores/appStore'
 import { useNotificationInvalidation } from '../hooks/useNotificationInvalidation'
+import { broadcastReadInvalidation } from '../realtime/readSyncBroadcast'
 import type { Notification, NotificationCategory } from '../types/notification'
 import { appendUniqueNotifications, mergeNotificationFirstPage } from '../utils/notificationMerge'
 
@@ -131,6 +132,8 @@ export default function NotificationsPage() {
           : n
       )))
       void refreshNotificationUnread()
+      // PR-5：提示同浏览器其他 Tab 刷新未读数（实时关闭时的兜底通道）。
+      broadcastReadInvalidation()
       navigate(item.deeplink)
     } catch (err) {
       showToast(getApiErrorMessage(err, '标记已读失败'), 'error')
@@ -149,6 +152,8 @@ export default function NotificationsPage() {
           : n
       )))
       void refreshNotificationUnread()
+      // PR-5：提示同浏览器其他 Tab 刷新未读数（实时关闭时的兜底通道）。
+      broadcastReadInvalidation()
       showToast('已全部标为已读')
     } catch (err) {
       showToast(getApiErrorMessage(err, '操作失败'), 'error')

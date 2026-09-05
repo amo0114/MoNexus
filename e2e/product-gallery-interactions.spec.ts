@@ -89,6 +89,8 @@ async function openGallery(page: Page) {
       // Layout's buyer-attention projection is unrelated to this isolated
       // gallery fixture but still mounts on the authenticated product page.
       await route.fulfill({ json: [] })
+    } else if (path === apiPath('/orders/attention-count')) {
+      await route.fulfill({ json: { count: 0 } })
     } else if (path === apiPath('/products/4242')) {
       await route.fulfill({ json: product })
     } else if (path === apiPath('/products/4242/reviews')) {

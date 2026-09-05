@@ -20,9 +20,11 @@ import type {
   RechargeCurrency,
   RechargeOrderStatus,
   RechargePricePolicyStatus,
+  RechargeRefundStatus,
   ReconciliationScopeType,
 } from './types.js'
 import type { AdminCreatePricePolicyBody } from './adminSchema.js'
+import { parseAndValidateStrictRefundDate } from './adminSchema.js'
 import { writePaymentAdminLog } from '../payment/audit.js'
 import { recordNormalizedPaymentFact } from '../payment/observations/record.js'
 
@@ -136,6 +138,145 @@ export async function adminListOrders(query: {
       ...serializeAdminOrder(item),
       supportsRefunds: refundCaps.get(item.id) === true,
     })),
+  }
+}
+
+function formatRefundItem(refund: Prisma.RechargeRefundGetPayload<{
+  include: {
+    rechargeOrder: {
+      include: {
+        credit: true
+      }
+    }
+    reversal: true
+    paymentAttempt: true
+  }
+}>) {
+  let reversalStatus: 'completed' | 'pending' | 'not_required' | 'terminated' | 'anomaly'
+  if (refund.reversal) {
+    reversalStatus = 'completed'
+  } else if (!refund.rechargeOrder?.credit && !refund.rechargeOrder?.creditedAt) {
+    reversalStatus = 'not_required'
+  } else {
+    // Credit issued, no reversal record
+    if (refund.status === 'succeeded') {
+      reversalStatus = 'anomaly'
+    } else if (refund.status === 'failed' || refund.status === 'cancelled') {
+      reversalStatus = 'terminated'
+    } else {
+      // requested, points_held, processing, manual_review
+      reversalStatus = 'pending'
+    }
+  }
+
+  const failureReason = refund.paymentAttempt?.lastErrorSafeMessage ?? refund.paymentAttempt?.lastErrorCode ?? null
+
+  return {
+    refundId: refund.id,
+    orderId: refund.rechargeOrderId,
+    rechargeOrderId: refund.rechargeOrderId,
+    refundStatus: refund.status,
+    status: refund.status,
+    reversalStatus,
+    failureReason,
+    createdByUserId: refund.createdByUserId,
+    requesterUserId: refund.createdByUserId,
+    createdAt: refund.createdAt.toISOString(),
+    updatedAt: refund.updatedAt.toISOString(),
+    amountMinor: serializeAmountMinor(refund.amountMinor),
+    pointsToReverse: serializeAmountMinor(refund.pointsToReverse),
+    reasonCode: refund.reasonCode,
+    providerRefundId: refund.providerRefundId ?? null,
+    rechargeOrder: {
+      id: refund.rechargeOrder.id,
+      orderId: refund.rechargeOrder.id,
+      userId: refund.rechargeOrder.userId,
+      status: refund.rechargeOrder.status,
+      currency: refund.rechargeOrder.currency,
+      amountMinor: serializeAmountMinor(refund.rechargeOrder.amountMinor),
+      totalPoints: serializeAmountMinor(refund.rechargeOrder.totalPoints),
+      provider: refund.rechargeOrder.provider,
+      paymentMethod: refund.rechargeOrder.paymentMethod,
+      paidAt: refund.rechargeOrder.paidAt?.toISOString() ?? null,
+      createdAt: refund.rechargeOrder.createdAt.toISOString(),
+    },
+  }
+}
+
+export async function adminListRefunds(query: {
+  page: number
+  pageSize: number
+  status?: RechargeRefundStatus
+  userId?: number
+  orderId?: string
+  provider?: PaymentProviderName
+  from?: string
+  to?: string
+}) {
+  const where: Prisma.RechargeRefundWhereInput = {}
+
+  if (query.userId || query.provider) {
+    where.rechargeOrder = {
+      ...(query.userId ? { userId: query.userId } : {}),
+      ...(query.provider ? { provider: query.provider } : {}),
+    }
+  }
+
+  const createdAtFilter: Prisma.DateTimeFilter = {}
+  if (query.from) {
+    const parsedFrom = parseAndValidateStrictRefundDate(query.from)
+    if (parsedFrom.valid && parsedFrom.date) {
+      createdAtFilter.gte = parsedFrom.date
+    }
+  }
+  if (query.to) {
+    const parsedTo = parseAndValidateStrictRefundDate(query.to)
+    if (parsedTo.valid && parsedTo.date) {
+      if (parsedTo.isDateOnly) {
+        const nextDay = new Date(parsedTo.date.getTime())
+        nextDay.setUTCDate(nextDay.getUTCDate() + 1)
+        createdAtFilter.lt = nextDay
+      } else {
+        createdAtFilter.lte = parsedTo.date
+      }
+    }
+  }
+  if (createdAtFilter.gte || createdAtFilter.lt || createdAtFilter.lte) {
+    where.createdAt = createdAtFilter
+  }
+
+  if (query.status) {
+    where.status = query.status
+  }
+
+  if (query.orderId) {
+    where.rechargeOrderId = query.orderId.trim().toLowerCase()
+  }
+
+  const [total, items] = await prisma.$transaction([
+    prisma.rechargeRefund.count({ where }),
+    prisma.rechargeRefund.findMany({
+      where,
+      orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
+      skip: (query.page - 1) * query.pageSize,
+      take: query.pageSize,
+      include: {
+        rechargeOrder: {
+          include: {
+            credit: true,
+          },
+        },
+        reversal: true,
+        paymentAttempt: true,
+      },
+    }),
+  ])
+
+  return {
+    page: query.page,
+    pageSize: query.pageSize,
+    total,
+    items: items.map(formatRefundItem),
   }
 }
 

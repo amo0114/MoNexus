@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import AdminPage from './AdminPage'
 import { useAppStore } from '../stores/appStore'
 
@@ -33,31 +33,34 @@ const logsFixture = [
   {
     id: 1,
     userId: 101,
-    user: { id: 101, email: 'u101@test.com' },
+    user: { id: 101, email: 'u101@test.com', nickname: null },
     type: 'refund',
     amount: 50,
     balanceAfter: 550,
     reason: '订单退款',
+    orderId: null,
     createdAt: '2026-09-03T10:00:00.000Z',
   },
   {
     id: 2,
     userId: 102,
-    user: { id: 102, email: 'u102@test.com' },
+    user: { id: 102, email: 'u102@test.com', nickname: null },
     type: 'out',
     amount: 100,
     balanceAfter: 450,
     reason: '商城购买',
+    orderId: null,
     createdAt: '2026-09-03T09:00:00.000Z',
   },
   {
     id: 3,
     userId: 103,
-    user: { id: 103, email: 'u103@test.com' },
+    user: { id: 103, email: 'u103@test.com', nickname: null },
     type: 'release',
     amount: 30,
     balanceAfter: 480,
     reason: '待支付返还',
+    orderId: null,
     createdAt: '2026-09-03T08:00:00.000Z',
   },
 ]
@@ -74,6 +77,8 @@ const settlementsFixture = [
     settlementAmount: 95,
     status: 'pending',
     createdAt: '2026-09-03T07:00:00.000Z',
+    payable: true,
+    blockReason: null,
   },
   {
     id: 12,
@@ -86,6 +91,8 @@ const settlementsFixture = [
     settlementAmount: 190,
     status: 'pending',
     createdAt: '2026-09-03T07:30:00.000Z',
+    payable: true,
+    blockReason: null,
   },
   {
     id: 13,
@@ -98,6 +105,8 @@ const settlementsFixture = [
     settlementAmount: 95,
     status: 'settled',
     createdAt: '2026-09-03T06:00:00.000Z',
+    payable: true,
+    blockReason: null,
   },
 ]
 
@@ -105,7 +114,16 @@ vi.mock('../api/client', () => ({
   default: {
     get: vi.fn((url: string) => {
       if (url === '/admin/stats') return Promise.resolve({ data: statsFixture })
-      if (url === '/admin/logs') return Promise.resolve({ data: logsFixture })
+      if (url === '/admin/logs' || url === '/admin/point-logs') {
+        return Promise.resolve({
+          data: {
+            items: logsFixture,
+            total: logsFixture.length,
+            page: 1,
+            pageSize: 20,
+          },
+        })
+      }
       if (url === '/admin/reports/offers') return Promise.resolve({ data: { items: [] } })
       return Promise.resolve({ data: [] })
     }),
@@ -160,19 +178,22 @@ describe('AdminPage Phase 0 verification', () => {
     fireEvent.click(screen.getByRole('button', { name: '积分流水' }))
     expect(await screen.findByText('变动后余额')).toBeInTheDocument()
 
+    const badges = screen.getAllByTestId('point-log-type-badge')
+    expect(badges).toHaveLength(3)
+
     // Row 1: refund (should be +50 with 退款 badge and balanceAfter 550)
     expect(screen.getByText('+50')).toBeInTheDocument()
-    expect(screen.getByText('退款')).toBeInTheDocument()
+    expect(badges[0]).toHaveTextContent('退款')
     expect(screen.getByText('550')).toBeInTheDocument()
 
     // Row 2: out (should be −100 with 已支付 badge and balanceAfter 450)
     expect(screen.getByText('−100')).toBeInTheDocument()
-    expect(screen.getByText('已支付')).toBeInTheDocument()
+    expect(badges[1]).toHaveTextContent('已支付')
     expect(screen.getByText('450')).toBeInTheDocument()
 
     // Row 3: release (should be +30 with 已返还 badge and balanceAfter 480)
     expect(screen.getByText('+30')).toBeInTheDocument()
-    expect(screen.getByText('已返还')).toBeInTheDocument()
+    expect(badges[2]).toHaveTextContent('已返还')
     expect(screen.getByText('480')).toBeInTheDocument()
   })
 
@@ -227,9 +248,9 @@ describe('AdminPage Phase 0 verification', () => {
 
     // Type into filters
     const adminIdInput = await screen.findByPlaceholderText('管理员ID')
-    const actionInput = screen.getByPlaceholderText('操作动作 (如: ban)')
+    const actionSelect = screen.getByLabelText('操作动作')
     fireEvent.change(adminIdInput, { target: { value: '88' } })
-    fireEvent.change(actionInput, { target: { value: 'user.ban' } })
+    fireEvent.change(actionSelect, { target: { value: '封禁用户' } })
 
     // Click search
     fireEvent.click(screen.getByRole('button', { name: '查询' }))
@@ -240,7 +261,7 @@ describe('AdminPage Phase 0 verification', () => {
       page: 1,
       pageSize: 20,
       adminId: 88,
-      action: 'user.ban',
+      action: '封禁用户',
     })
 
     mocks.listAdminAudit.mockClear()
@@ -250,20 +271,22 @@ describe('AdminPage Phase 0 verification', () => {
     expect(mocks.listAdminAudit).toHaveBeenCalledTimes(1)
     expect(mocks.listAdminAudit).toHaveBeenCalledWith({ page: 1, pageSize: 20 })
     expect(adminIdInput).toHaveValue('')
-    expect(actionInput).toHaveValue('')
+    expect(actionSelect).toHaveValue('')
   })
 
   it('audit logs protects against out-of-order responses with request sequence guard', async () => {
     let resolveSearchA: ((data: any) => void) | undefined
     mocks.listAdminAudit.mockImplementation(({ action }) => {
-      if (action === 'action_slow') {
+      if (action === '封禁用户') {
         return new Promise((resolve) => { resolveSearchA = resolve })
       }
       return Promise.resolve({
         items: [
-          { id: 99, adminId: 99, adminEmail: 'fast@test.com', action: 'action_fast', targetType: 'system', createdAt: '2026-09-03T11:00:00.000Z' },
+          { id: 99, adminId: 99, adminEmail: 'fast@test.com', action: '解封用户', targetType: 'user', targetId: 2, createdAt: '2026-09-03T11:00:00.000Z' },
         ],
         total: 1,
+        page: 1,
+        pageSize: 20,
       })
     })
 
@@ -271,32 +294,35 @@ describe('AdminPage Phase 0 verification', () => {
     expect(await screen.findByText('平台订单总数')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: '操作审计' }))
-    const actionInput = await screen.findByPlaceholderText('操作动作 (如: ban)')
+    const actionSelect = await screen.findByLabelText('操作动作')
 
     // Search A (slow)
-    fireEvent.change(actionInput, { target: { value: 'action_slow' } })
+    fireEvent.change(actionSelect, { target: { value: '封禁用户' } })
     fireEvent.click(screen.getByRole('button', { name: '查询' }))
 
     // Search B (fast)
-    fireEvent.change(actionInput, { target: { value: 'action_fast' } })
+    fireEvent.change(actionSelect, { target: { value: '解封用户' } })
     fireEvent.click(screen.getByRole('button', { name: '查询' }))
 
     // Fast search renders
-    expect(await screen.findByText('action_fast')).toBeInTheDocument()
+    const table = await screen.findByTestId('admin-audit-table')
+    expect(within(table).getByText('解封用户')).toBeInTheDocument()
 
     // Slow search A resolves later
     resolveSearchA?.({
       items: [
-        { id: 11, adminId: 11, adminEmail: 'slow@test.com', action: 'action_slow', targetType: 'system', createdAt: '2026-09-03T09:00:00.000Z' },
+        { id: 11, adminId: 11, adminEmail: 'slow@test.com', action: '封禁用户', targetType: 'user', targetId: 1, createdAt: '2026-09-03T09:00:00.000Z' },
       ],
       total: 1,
+      page: 1,
+      pageSize: 20,
     })
 
     await new Promise((r) => setTimeout(r, 20))
 
     // Verified: stale search A MUST NOT overwrite search B
-    expect(screen.getByText('action_fast')).toBeInTheDocument()
-    expect(screen.queryByText('action_slow')).not.toBeInTheDocument()
+    expect(within(table).getByText('解封用户')).toBeInTheDocument()
+    expect(within(table).queryByText('封禁用户')).not.toBeInTheDocument()
   })
 })
 

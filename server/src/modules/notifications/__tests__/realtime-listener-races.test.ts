@@ -70,6 +70,7 @@ function listenerHarness(overrides: Partial<NotificationRealtimeListenerOptions>
     hub: {
       hasSubscribers: () => true,
       broadcastNotification: broadcast,
+      broadcastRead: vi.fn(),
     },
     getEnvelope,
     reportOutcome: (outcome) => outcomes.push(outcome),
@@ -166,6 +167,7 @@ function lifecycleHarness(stopGates: Array<Deferred<void> | undefined> = []) {
   lifecycle.registerHub({
     hasSubscribers: () => false,
     broadcastNotification: () => {},
+    broadcastRead: () => 0,
     degradeAndDrain: async (reason, retryAfterMs) => {
       drains.push({ reason, retryAfterMs })
     },

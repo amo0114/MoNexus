@@ -173,9 +173,15 @@ export const updateProductSchema = markNotWritableFields(
 )
 export type UpdateProductInput = z.infer<typeof updateProductSchema>
 
-export const listAdminProductsQuerySchema = z.object({
-  archived: z.enum(['exclude', 'only', 'all']).default('exclude'),
-}).strict()
+export const listAdminProductsQuerySchema = z
+  .object({
+    page: z.coerce.number().int().positive().default(1),
+    pageSize: z.coerce.number().int().min(1).max(100).default(20),
+    archived: z.enum(['exclude', 'only', 'all']).default('exclude'),
+    status: z.enum(['draft', 'active', 'inactive']).optional(),
+    q: z.string().trim().min(1).max(100).optional(),
+  })
+  .strict()
 export type ListAdminProductsQuery = z.infer<typeof listAdminProductsQuerySchema>
 
 export const archiveProductSchema = z.object({
@@ -319,21 +325,58 @@ export const listUsersQuerySchema = z.object({
 
 export type ListUsersQuery = z.infer<typeof listUsersQuerySchema>
 
-export function isValidCalendarDate(dateStr: string): boolean {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return false
-  const [yearStr, monthStr, dayStr] = dateStr.split('-')
-  const year = Number(yearStr)
-  const month = Number(monthStr)
-  const day = Number(dayStr)
-  if (month < 1 || month > 12) return false
-  if (day < 1 || day > 31) return false
-  const d = new Date(Date.UTC(year, month - 1, day))
-  return (
-    d.getUTCFullYear() === year &&
-    d.getUTCMonth() === month - 1 &&
-    d.getUTCDate() === day
+import {
+  isValidCalendarDate,
+  parseAndValidateStrictDate,
+  parseAndValidateStrictRefundDate,
+} from '../../lib/queryDate.js'
+
+export { isValidCalendarDate, parseAndValidateStrictDate, parseAndValidateStrictRefundDate }
+
+export const POINT_LOG_TYPES = [
+  'in',
+  'out',
+  'hold',
+  'release',
+  'refund',
+  'sandbox_in',
+] as const
+
+export type PointLogType = (typeof POINT_LOG_TYPES)[number]
+
+export const pointLogDateSchema = z.string().trim().superRefine((val, ctx) => {
+  const result = parseAndValidateStrictRefundDate(val)
+  if (!result.valid) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: result.error || '无效日期格式' })
+  }
+})
+
+export const listPointLogsQuerySchema = z
+  .object({
+    page: z.coerce.number().int().positive('page 必须是正整数').default(1),
+    pageSize: z.coerce.number().int().min(1).max(100, 'pageSize 超出最大限制 (100)').default(20),
+    userId: z.coerce.number().int().positive('userId 必须是正整数').optional(),
+    email: normalizedEmailSchema.optional(),
+    type: z.enum(POINT_LOG_TYPES).optional(),
+    from: pointLogDateSchema.optional(),
+    to: pointLogDateSchema.optional(),
+  })
+  .strict()
+  .refine(
+    (data) => {
+      if (data.from && data.to) {
+        const fromResult = parseAndValidateStrictRefundDate(data.from)
+        const toResult = parseAndValidateStrictRefundDate(data.to)
+        if (fromResult.valid && toResult.valid && fromResult.date && toResult.date) {
+          return fromResult.date.getTime() <= toResult.date.getTime()
+        }
+      }
+      return true
+    },
+    { message: 'from 不能晚于 to', path: ['to'] },
   )
-}
+
+export type ListPointLogsQuery = z.infer<typeof listPointLogsQuerySchema>
 
 export const calendarDateSchema = z
   .string()
@@ -367,14 +410,44 @@ export const listOrdersQuerySchema = z
 
 export type ListOrdersQuery = z.infer<typeof listOrdersQuerySchema>
 
-export const listAdminAuditQuerySchema = z.object({
-  page: z.coerce.number().int().positive().default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(20),
-  adminId: z.coerce.number().int().positive().optional(),
-  action: z.string().min(1).optional(),
-  fromDate: calendarDateSchema.optional(),
-  toDate: calendarDateSchema.optional(),
-}).strict()
+export const auditDateSchema = z.string().trim().superRefine((val, ctx) => {
+  const result = parseAndValidateStrictDate(val)
+  if (!result.valid) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: result.error || '无效日期格式' })
+  }
+})
+
+export const listAdminAuditQuerySchema = z
+  .object({
+    page: z.coerce.number().int().positive().default(1),
+    pageSize: z.coerce.number().int().min(1).max(100).default(20),
+    adminId: z.coerce.number().int().positive().max(Number.MAX_SAFE_INTEGER).optional(),
+    action: z.string().trim().min(1).max(128).optional(),
+    targetType: z.string().trim().min(1).max(64).optional(),
+    fromDate: auditDateSchema.optional(),
+    toDate: auditDateSchema.optional(),
+  })
+  .strict()
+  .refine(
+    (data) => {
+      if (data.fromDate && data.toDate) {
+        const fromResult = parseAndValidateStrictDate(data.fromDate)
+        const toResult = parseAndValidateStrictDate(data.toDate)
+        if (fromResult.valid && toResult.valid && fromResult.date && toResult.date) {
+          const fromTime = fromResult.date.getTime()
+          const toEndTime = toResult.isDateOnly
+            ? toResult.date.getTime() + 24 * 60 * 60 * 1000 - 1
+            : toResult.date.getTime()
+          return fromTime <= toEndTime
+        }
+      }
+      return true
+    },
+    {
+      message: 'fromDate 不能晚于 toDate',
+      path: ['toDate'],
+    },
+  )
 
 export type ListAdminAuditQuery = z.infer<typeof listAdminAuditQuerySchema>
 

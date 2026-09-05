@@ -200,13 +200,13 @@ describe('Phase 1: Admin Merchants & Settlements Contract and UX Governance', ()
     it('maintains cross-page selections, limits header checkbox to current page pending, and clears on filter change', async () => {
       // Page 1 mock: 2 pending items
       const page1Items = [
-        { id: 101, orderId: 1001, merchantId: 1, status: 'pending', settlementAmount: 120, commissionAmount: 10, commissionRate: 0.1, orderAmount: 130, createdAt: '2026-09-01T00:00:00Z' },
-        { id: 102, orderId: 1002, merchantId: 1, status: 'pending', settlementAmount: 180, commissionAmount: 20, commissionRate: 0.1, orderAmount: 200, createdAt: '2026-09-01T01:00:00Z' },
+        { id: 101, orderId: 1001, merchantId: 1, status: 'pending', settlementAmount: 120, commissionAmount: 10, commissionRate: 0.1, orderAmount: 130, createdAt: '2026-09-01T00:00:00Z', payable: true, blockReason: null },
+        { id: 102, orderId: 1002, merchantId: 1, status: 'pending', settlementAmount: 180, commissionAmount: 20, commissionRate: 0.1, orderAmount: 200, createdAt: '2026-09-01T01:00:00Z', payable: true, blockReason: null },
       ]
       // Page 2 mock: 1 pending, 1 settled
       const page2Items = [
-        { id: 201, orderId: 2001, merchantId: 2, status: 'pending', settlementAmount: 300, commissionAmount: 30, commissionRate: 0.1, orderAmount: 330, createdAt: '2026-09-02T00:00:00Z' },
-        { id: 202, orderId: 2002, merchantId: 2, status: 'settled', settlementAmount: 400, commissionAmount: 40, commissionRate: 0.1, orderAmount: 440, createdAt: '2026-09-02T01:00:00Z' },
+        { id: 201, orderId: 2001, merchantId: 2, status: 'pending', settlementAmount: 300, commissionAmount: 30, commissionRate: 0.1, orderAmount: 330, createdAt: '2026-09-02T00:00:00Z', payable: true, blockReason: null },
+        { id: 202, orderId: 2002, merchantId: 2, status: 'settled', settlementAmount: 400, commissionAmount: 40, commissionRate: 0.1, orderAmount: 440, createdAt: '2026-09-02T01:00:00Z', payable: true, blockReason: null },
       ]
 
       mocks.getSettlements.mockImplementation(({ page }) => {

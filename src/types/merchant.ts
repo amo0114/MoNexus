@@ -254,9 +254,9 @@ export interface Settlement {
   settledAt: string | null
   createdAt: string
   merchant?: { id: number; name: string }
-  order?: { id: number; price: number; createdAt: string }
-  payable?: boolean
-  blockReason?: string | null
+  order?: { id: number; price: number; createdAt: string; status?: string }
+  payable: boolean
+  blockReason: string | null
 }
 
 export interface MerchantStats {

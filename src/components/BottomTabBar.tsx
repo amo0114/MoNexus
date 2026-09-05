@@ -33,12 +33,8 @@ export default function BottomTabBar() {
   const user = useAuthStore((s) => s.user)
   const setPointsHistoryOpen = useAppStore((s) => s.setPointsHistoryOpen)
   const orderAttentionCount = useAppStore((s) => s.orderAttentionCount)
-  const refreshOrderAttention = useAppStore((s) => s.refreshOrderAttention)
-
-  useEffect(() => {
-    if (!user) return
-    void refreshOrderAttention()
-  }, [user?.id, refreshOrderAttention])
+  // PR-3：角标初始化/实时刷新的唯一所有者是 Layout（桌面端本组件被 CSS
+  // 隐藏但仍会挂载，这里的重复 effect 曾导致每次登录并发两笔计数请求）。
 
   // Auto-hide on scroll (V3-T2)：累计位移驱动（P2-1 修复）——
   // 不再比较单帧 delta（慢速滚动每帧 <6px 会永远无法触发），

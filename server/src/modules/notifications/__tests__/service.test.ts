@@ -1,8 +1,9 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { api, authHeader, createTestUser, loginAs } from '../../../__tests__/helpers.js'
 import { prisma } from '../../../lib/prisma.js'
 import { config } from '../../../config/index.js'
 import { NotificationDispatcher } from '../dispatcher.js'
+import { markAllAsRead, markAsRead } from '../service.js'
 
 async function seedNotification(
   recipientUserId: number,
@@ -215,5 +216,60 @@ describe('Notification service API', () => {
       .expect(200)
     expect(merchantList.body.notifications).toHaveLength(1)
     expect(merchantList.body.notifications[0].eventType).toBe('order.created_merchant')
+  })
+})
+
+describe('PR-5 publishReadInvalidation — best-effort read hint', () => {
+  const prevEnabled = config.notification.enabled
+  const prevRealtime = config.notificationRealtime.enabled
+
+  beforeEach(() => {
+    config.notification.enabled = true
+    config.notificationRealtime.enabled = true
+  })
+
+  afterEach(() => {
+    config.notification.enabled = prevEnabled
+    config.notificationRealtime.enabled = prevRealtime
+  })
+
+  function readHintPayloads(spy: ReturnType<typeof vi.spyOn>): Array<Record<string, unknown>> {
+    return spy.mock.calls
+      .flatMap((call: unknown[]) => call.map((arg) => (typeof arg === 'string' ? arg : '')))
+      .map((text: string) => {
+        try { return JSON.parse(text) as Record<string, unknown> } catch { return null }
+      })
+      .filter((obj: Record<string, unknown> | null): obj is Record<string, unknown> => obj !== null && obj.kind === 'read')
+  }
+
+  it('markAllAsRead sends exactly one read hint payload carrying no content', async () => {
+    const a = await createTestUser('n-read-hint-all@test.local')
+    await seedNotification(a.user.id)
+
+    const queryRaw = vi.spyOn(prisma, '$queryRaw')
+    try {
+      await markAllAsRead(a.user.id)
+      const payloads = readHintPayloads(queryRaw)
+      expect(payloads).toHaveLength(1)
+      expect(payloads[0]).toEqual({ v: 1, kind: 'read', recipientUserId: a.user.id })
+    } finally {
+      queryRaw.mockRestore()
+    }
+  })
+
+  it('markAsRead emits the hint once; idempotent re-mark does not', async () => {
+    const a = await createTestUser('n-read-hint-one@test.local')
+    const note = await seedNotification(a.user.id)
+
+    const queryRaw = vi.spyOn(prisma, '$queryRaw')
+    try {
+      await markAsRead(a.user.id, note.id)
+      await markAsRead(a.user.id, note.id)
+      const payloads = readHintPayloads(queryRaw)
+      expect(payloads).toHaveLength(1)
+      expect(payloads[0]).toEqual({ v: 1, kind: 'read', recipientUserId: a.user.id })
+    } finally {
+      queryRaw.mockRestore()
+    }
   })
 })
