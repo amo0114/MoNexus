@@ -139,17 +139,18 @@ export const isAdminCategoriesResponse = exactResponse('GET', '/api/admin/produc
 export const isImportPreviewResponse = exactResponse('POST', '/api/admin/faka/import/preview');
 export const isImportResponse = exactResponse('POST', '/api/admin/faka/import');
 /**
- * Matches the default admin products list response: GET with exact pathname
- * /api/admin/products and archived either omitted or set to exclude. The admin
- * page now sends archived=exclude for its default "active products" view.
+ * Matches the default paginated admin products list response. Keep this exact:
+ * unexpected or missing query keys must not make a different request satisfy
+ * a wait that is intended to observe the default first page.
  */
 export const isAdminProductsResponse = (response: Response): boolean => {
   const url = new URL(response.url());
-  const archived = url.searchParams.get('archived');
   return response.request().method() === 'GET'
     && url.pathname === '/api/admin/products'
-    && url.searchParams.size <= (archived === null ? 0 : 1)
-    && (archived === null || archived === 'exclude');
+    && url.searchParams.size === 3
+    && url.searchParams.get('page') === '1'
+    && url.searchParams.get('pageSize') === '20'
+    && url.searchParams.get('archived') === 'exclude';
 };
 
 export const isAdminReadinessResponse = (response: Response): boolean =>
@@ -180,6 +181,7 @@ async function assertAdminProductRowReadable(
     has: page.locator('td[data-label="商品名称"]').getByText(productName, { exact: true }),
   });
   await expect(row).toHaveCount(1);
+  await expect(row).toHaveCSS('display', viewport.width < 768 ? 'block' : 'table-row');
   const name = row.locator('td[data-label="商品名称"]');
   const status = row.locator('td[data-label="状态"]');
   const actions = row.locator('td[data-label="操作"]');
@@ -195,9 +197,10 @@ async function assertAdminProductRowReadable(
   if (!nameBox || !statusBox || !actionsBox || !rowBox) {
     throw new Error(`admin product row geometry missing at ${viewport.width}px`);
   }
-  expect(boxesOverlap(nameBox, statusBox)).toBe(false);
-  expect(boxesOverlap(nameBox, actionsBox)).toBe(false);
-  expect(boxesOverlap(statusBox, actionsBox)).toBe(false);
+  const geometry = JSON.stringify({ viewport, nameBox, statusBox, actionsBox, rowBox });
+  expect(boxesOverlap(nameBox, statusBox), `name/status overlap: ${geometry}`).toBe(false);
+  expect(boxesOverlap(nameBox, actionsBox), `name/actions overlap: ${geometry}`).toBe(false);
+  expect(boxesOverlap(statusBox, actionsBox), `status/actions overlap: ${geometry}`).toBe(false);
   expect(rowBox.x + rowBox.width).toBeLessThanOrEqual(viewport.width + 1);
 }
 
@@ -1318,7 +1321,7 @@ export interface AdminProductDto {
 }
 
 /**
- * Strictly parses a GET /api/admin/products response body (a JSON array).
+ * Strictly parses a GET /api/admin/products paginated response body.
  * Server product/offer objects may carry extra keys this card does not care
  * about, but every required field below is type-guarded:
  *   - product: id (positive integer, unique), name (non-empty string),
@@ -1337,10 +1340,29 @@ export interface AdminProductDto {
  * Returns a fully typed minimal DTO.
  */
 export function parseAdminProductsResponse(value: unknown): AdminProductDto[] {
-  if (!Array.isArray(value)) {
-    throw new Error('Admin products response: expected a JSON array');
+  assertExactKeys(
+    value,
+    ['items', 'total', 'page', 'pageSize'],
+    'Admin products response',
+  );
+  if (!Array.isArray(value.items)) {
+    throw new Error('Admin products response: items must be an array');
   }
-  const rawProducts: unknown[] = value;
+  if (typeof value.total !== 'number' || !Number.isSafeInteger(value.total) || value.total < 0) {
+    throw new Error('Admin products response: total must be a non-negative safe integer');
+  }
+  if (typeof value.page !== 'number' || !Number.isSafeInteger(value.page) || value.page < 1) {
+    throw new Error('Admin products response: page must be a positive safe integer');
+  }
+  if (
+    typeof value.pageSize !== 'number'
+    || !Number.isSafeInteger(value.pageSize)
+    || value.pageSize < 1
+    || value.pageSize > 100
+  ) {
+    throw new Error('Admin products response: pageSize must be a safe integer between 1 and 100');
+  }
+  const rawProducts: unknown[] = value.items;
 
   const parsedProducts: AdminProductDto[] = [];
   const seenProductIds = new Set<number>();

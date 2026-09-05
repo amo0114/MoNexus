@@ -71,6 +71,7 @@ async function mockProfile(page: Page) {
 async function mockProfileBackgroundRequests(page: Page) {
   await page.route(apiRoute('/products'), route => route.fulfill({ json: { items: [], nextCursor: null, hasMore: false } }))
   await page.route(apiRoute('/orders'), route => route.fulfill({ json: [] }))
+  await page.route(apiRoute('/orders/attention-count'), route => route.fulfill({ json: { count: 0 } }))
   // ProfilePage now loads the invitation card alongside its existing
   // background data. Keep the UI-only authentication fixture self-contained
   // so its intentionally unsigned token is never sent to the real backend.
