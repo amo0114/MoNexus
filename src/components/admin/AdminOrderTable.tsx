@@ -407,25 +407,37 @@ export default function AdminOrderTable({ active = true }: Props) {
             订单 ORD-{resolveTarget?.id}（{resolveTarget?.product?.name}）。选择支持用户退款或支持商家关闭订单。
           </DialogDescription>
           <div className="mt-4 space-y-3">
-            <label className="flex items-center gap-2 text-sm cursor-pointer">
+            <label className="flex items-start gap-2.5 p-3 rounded-lg border border-[var(--color-border)] hover:bg-[var(--color-background)] cursor-pointer">
               <input
                 type="radio"
                 name="resolve-result"
                 checked={resolveResult === 'refund'}
                 onChange={() => setResolveResult('refund')}
                 data-testid="admin-resolve-refund"
+                className="mt-0.5 accent-[var(--color-primary)]"
               />
-              支持用户（退款 refunded，结算作废）
+              <div>
+                <div className="font-bold text-sm text-[var(--color-text)]">退款给买家</div>
+                <div className="text-xs text-[var(--color-text-muted)] mt-0.5">
+                  将订单积分全额退还至买家账户，商家结算作废，订单状态变更为已退款。
+                </div>
+              </div>
             </label>
-            <label className="flex items-center gap-2 text-sm cursor-pointer">
+            <label className="flex items-start gap-2.5 p-3 rounded-lg border border-[var(--color-border)] hover:bg-[var(--color-background)] cursor-pointer">
               <input
                 type="radio"
                 name="resolve-result"
                 checked={resolveResult === 'close'}
                 onChange={() => setResolveResult('close')}
                 data-testid="admin-resolve-close"
+                className="mt-0.5 accent-[var(--color-primary)]"
               />
-              支持商家（关闭 closed，进入可结算）
+              <div>
+                <div className="font-bold text-sm text-[var(--color-text)]">完成订单并按规则结算</div>
+                <div className="text-xs text-[var(--color-text-muted)] mt-0.5">
+                  判定交付有效，订单状态变更为已关闭，进入商家正常结算流程。
+                </div>
+              </div>
             </label>
             <div>
               <label className="block text-xs font-medium mb-1">备注（可选）</label>

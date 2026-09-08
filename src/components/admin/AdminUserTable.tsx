@@ -277,62 +277,97 @@ export default function AdminUserTable() {
       {/* Adjust Points Modal */}
       <Dialog open={showAdjust && !!adjustTarget} onOpenChange={(o) => { if (!o) setShowAdjust(false) }}>
         <DialogContent className="max-w-sm">
-          <DialogTitle className="text-xl mb-5">调整用户积分</DialogTitle>
+          <DialogTitle className="text-xl mb-4">调整用户积分</DialogTitle>
           <div className="space-y-4">
               <div>
-                <label className="block text-xs font-bold text-[var(--color-text-muted)] mb-1.5 uppercase tracking-wider">目标用户</label>
-                <input
-                  type="text"
-                  disabled
-                  value={adjustTarget ? `U${adjustTarget.id} (${adjustTarget.email}) - 当前: ${adjustTarget.pointAccount?.balance ?? 0}` : ''}
-                  className="input bg-[var(--color-background)] text-[var(--color-text-muted)] cursor-not-allowed"
-                />
+                <span className="block text-xs font-bold text-[var(--color-text-muted)] mb-1.5 uppercase tracking-wider">
+                  目标用户
+                </span>
+                <div className="p-3 bg-[var(--color-background)] rounded-lg border border-[var(--color-border)] text-sm space-y-1">
+                  <div className="font-bold text-[var(--color-text)]">
+                    用户编号：U{adjustTarget?.id} {adjustTarget?.email ? `(${adjustTarget.email})` : ''}
+                  </div>
+                  <div className="text-xs text-[var(--color-text-muted)]">
+                    当前可用积分：<span className="font-bold text-[var(--color-cta)]">{adjustTarget?.pointAccount?.balance ?? 0}</span> 积分
+                  </div>
+                </div>
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                {(['add', 'deduct'] as const).map((t) => (
-                  <label
-                    key={t}
-                    className={`flex items-center gap-2 p-2.5 border rounded-lg cursor-pointer transition-colors hover:bg-[var(--color-background)] ${
-                      adjustType === t
-                        ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/5'
-                        : 'border-[var(--color-border)]'
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      checked={adjustType === t}
-                      onChange={() => setAdjustType(t)}
-                      className="accent-[var(--color-primary)]"
-                    />
-                    <span className={`font-bold text-sm ${t === 'add' ? 'text-[var(--color-cta)]' : 'text-red-500'}`}>
-                      {t === 'add' ? '增加 (+)' : '扣除 (-)'}
-                    </span>
-                  </label>
-                ))}
-              </div>
+
               <div>
-                <label className="block text-xs font-bold text-[var(--color-text-muted)] mb-1.5 uppercase tracking-wider">调整数量</label>
+                <span className="block text-xs font-bold text-[var(--color-text-muted)] mb-1.5 uppercase tracking-wider">
+                  调整方向
+                </span>
+                <div className="grid grid-cols-2 gap-3" role="radiogroup" aria-label="调整方向">
+                  {(['add', 'deduct'] as const).map((t) => (
+                    <label
+                      key={t}
+                      className={`flex items-center gap-2 p-2.5 border rounded-lg cursor-pointer transition-colors hover:bg-[var(--color-background)] ${
+                        adjustType === t
+                          ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/5 ring-1 ring-[var(--color-primary)]'
+                          : 'border-[var(--color-border)]'
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="adjust-points-type"
+                        checked={adjustType === t}
+                        onChange={() => setAdjustType(t)}
+                        className="accent-[var(--color-primary)]"
+                      />
+                      <span className={`font-bold text-sm ${t === 'add' ? 'text-[var(--color-cta)]' : 'text-[var(--color-danger)]'}`}>
+                        {t === 'add' ? '增加积分 (+)' : '扣除积分 (-)'}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label htmlFor="adjust-points-amount" className="block text-xs font-bold text-[var(--color-text-muted)] mb-1.5 uppercase tracking-wider">
+                  调整积分数（正整数）
+                </label>
                 <input
+                  id="adjust-points-amount"
                   type="number"
+                  min="1"
+                  step="1"
                   value={adjustAmount}
                   onChange={(e) => setAdjustAmount(e.target.value)}
-                  placeholder="输入整数"
+                  placeholder="请输入正整数积分"
                   className="input"
                 />
               </div>
+
               <div>
-                <label className="block text-xs font-bold text-[var(--color-text-muted)] mb-1.5 uppercase tracking-wider">操作原因</label>
+                <label htmlFor="adjust-points-reason" className="block text-xs font-bold text-[var(--color-text-muted)] mb-1.5 uppercase tracking-wider">
+                  调整原因（用户可见）
+                </label>
                 <input
+                  id="adjust-points-reason"
                   type="text"
                   value={adjustReason}
                   onChange={(e) => setAdjustReason(e.target.value)}
                   placeholder="例如：参与活动奖励"
+                  aria-describedby="adjust-points-reason-hint"
                   className="input"
                 />
+                <p id="adjust-points-reason-hint" className="text-xs text-[var(--color-text-muted)] mt-1">
+                  将显示在该用户的积分明细中，请填写可向用户解释的原因，勿填内部排障信息。
+                </p>
               </div>
-              <button onClick={confirmAdjust} disabled={adjusting} className="btn-primary w-full mt-2">
-                {adjusting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-                {adjusting ? '执行中…' : '确认执行'}
+
+              <button
+                type="button"
+                onClick={confirmAdjust}
+                disabled={adjusting}
+                className="btn-primary w-full mt-2"
+              >
+                {adjusting ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : null}
+                {adjusting
+                  ? '提交中…'
+                  : adjustType === 'add'
+                    ? '确认增加积分'
+                    : '确认扣除积分'}
               </button>
           </div>
         </DialogContent>

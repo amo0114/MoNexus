@@ -135,9 +135,9 @@ export default function AdminSandboxPanel() {
         <div className="flex items-start gap-3">
           <ShieldAlert className="mt-0.5 h-6 w-6 shrink-0" aria-hidden="true" />
           <div>
-            <p className="font-heading text-lg font-black">SANDBOX ONLY / 不代表真实收款</p>
+            <p className="font-heading text-lg font-black">模拟充值，不产生真实资金（SANDBOX ONLY）</p>
             <p className="mt-1 text-sm">
-              仅管理员可确认成功。积分只进入独立沙箱余额，不能消费、退款、结算或进入排行榜。
+              仅管理员在沙箱环境下验证支付链路。积分只进入独立沙箱余额，绝不可用于真实消费、退款、结算或排行榜。
             </p>
           </div>
         </div>
@@ -157,13 +157,15 @@ export default function AdminSandboxPanel() {
               <FlaskConical className="h-5 w-5 text-amber-600" aria-hidden="true" />
               <div>
                 <p className="font-bold text-[var(--color-text)]">管理员沙箱充值</p>
-                <p className="text-xs text-[var(--color-text-muted)]">CNY · Simulator · Card · MFA 确认</p>
+                <p className="text-xs text-[var(--color-text-muted)]">
+                  CNY（人民币）· Simulator（模拟支付）· Card（模拟卡支付）· 身份二次验证（MFA）
+                </p>
               </div>
             </div>
             <div className="rounded-lg bg-amber-100 px-3 py-2 text-right dark:bg-amber-900/40">
               <p className="text-xs font-bold text-amber-800 dark:text-amber-200">独立沙箱余额</p>
               <p className="font-mono text-xl font-black text-amber-950 dark:text-amber-50">
-                {formatPoints(String(config?.sandboxBalance ?? 0))} RP
+                {formatPoints(String(config?.sandboxBalance ?? 0))} 积分
               </p>
             </div>
           </div>
@@ -191,16 +193,25 @@ export default function AdminSandboxPanel() {
               {loading === 'order' ? '创建中…' : order ? '✓ 订单已创建' : '2. 创建沙箱订单'}
             </button>
             <button type="button" className="btn-primary !bg-amber-700 hover:!bg-amber-800" disabled={!order || loading != null || result != null} onClick={() => void confirmOrder()}>
-              {loading === 'confirm' ? '确认中…' : result ? '✓ 已确认入账' : '3. MFA 确认成功'}
+              {loading === 'confirm' ? '确认中…' : result ? '✓ 已确认入账' : '3. 身份二次验证（MFA）'}
             </button>
           </div>
 
           {(quote || order || result) && (
             <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] p-4 text-sm space-y-1">
-              {quote && <p>报价积分：<strong>{formatPoints(quote.totalPoints)} RP</strong></p>}
+              {quote && <p>报价积分：<strong>{formatPoints(quote.totalPoints)} 积分</strong></p>}
               {order && <p>订单：<code className="text-xs">{order.orderId}</code>（{order.status}）</p>}
               {result && <p className="font-bold text-emerald-700 dark:text-emerald-300">已通过统一入账链路处理：{result.result}</p>}
-              {result && <p>Observation：<code className="text-xs">{result.observationId}</code></p>}
+              {result && (
+                <details className="text-xs text-[var(--color-text-muted)] pt-1">
+                  <summary className="cursor-pointer hover:text-[var(--color-text)]">
+                    模拟支付结果明细 (Observation)
+                  </summary>
+                  <code className="block mt-1 p-2 bg-[var(--color-surface)] rounded font-mono text-[11px] border border-[var(--color-border)]">
+                    {result.observationId}
+                  </code>
+                </details>
+              )}
             </div>
           )}
         </div>

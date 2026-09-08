@@ -12,6 +12,7 @@ import EmptyState from '../ui/EmptyState'
 import AdminPagination from './AdminPagination'
 import AdminPanelHeader from './AdminPanelHeader'
 import { blockReasonToUserMessage } from '../../utils/settlementCopy'
+import { formatCommissionRate } from '../../utils/adminRechargeDisplay'
 
 interface Props {
   active?: boolean
@@ -315,9 +316,9 @@ export default function AdminSettlementPanel({ active = true }: Props) {
                 </th>
                 <th>订单信息</th>
                 <th>商家</th>
-                <th>抽成/订单金额</th>
-                <th>结算金额</th>
-                <th>状态</th>
+                <th>订单积分／平台抽成</th>
+                <th>商家应得积分</th>
+                <th>结算状态</th>
               </tr>
             </thead>
             <tbody>
@@ -366,25 +367,24 @@ export default function AdminSettlementPanel({ active = true }: Props) {
                     <td className="font-bold text-sm text-[var(--color-text)]" data-label="商家">
                       {s.merchant?.name || s.merchantId}
                     </td>
-                    <td className="text-sm" data-label="抽成/订单金额">
+                    <td className="text-sm" data-label="订单积分／平台抽成">
                       <div className="text-[var(--color-text)]">
-                        平台服务费:{' '}
-                        <span className="text-[var(--color-text-muted)]">
-                          {s.commissionAmount.toLocaleString()}
-                        </span>{' '}
-                        ({(Number(s.commissionRate) * 100).toFixed(0)}%)
+                        订单积分:{' '}
+                        <span className="font-semibold text-[var(--color-text)]">
+                          {s.orderAmount.toLocaleString()} 积分
+                        </span>
                       </div>
-                      <div className="text-[var(--color-text)]">
-                        订单金额:{' '}
-                        <span className="text-[var(--color-text)]">
-                          {s.orderAmount.toLocaleString()}
+                      <div className="text-xs text-[var(--color-text-muted)] mt-0.5">
+                        平台抽成 ({formatCommissionRate(Number(s.commissionRate))}):{' '}
+                        <span>
+                          {s.commissionAmount.toLocaleString()} 积分
                         </span>
                       </div>
                     </td>
-                    <td className="font-bold text-[var(--color-cta)]" data-label="结算金额">
-                      {s.settlementAmount.toLocaleString()}
+                    <td className="font-bold text-[var(--color-cta)]" data-label="商家应得积分">
+                      {s.settlementAmount.toLocaleString()} 积分
                     </td>
-                    <td data-label="状态">
+                    <td data-label="结算状态">
                       <div className="flex flex-col items-start gap-1">
                         <SettlementStatusPill status={s.status} />
                         {isPending && !selectable && displayReason ? (

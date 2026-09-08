@@ -174,9 +174,12 @@ export default function AdminPricePolicies() {
   return (
     <div className="space-y-4" data-testid="admin-price-policies">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-[var(--color-text-muted)]">
-          创建只生成草稿。激活会退役同币种生产通道的当前生效政策，不会通过迁移自动生效。
-        </p>
+        <div>
+          <h3 className="text-base font-bold text-[var(--color-text)]">充值金额与积分兑换规则</h3>
+          <p className="text-xs text-[var(--color-text-muted)] mt-0.5">
+            配置不同币种下的充值换算比率与充值限额。创建只生成草稿，激活将替换同币种当前生效政策。
+          </p>
+        </div>
         <button
           type="button"
           className="btn-primary"
@@ -196,10 +199,10 @@ export default function AdminPricePolicies() {
           <table className="admin-table table-cards">
             <thead>
               <tr>
-                <th>代码 / 版本</th>
-                <th>币种</th>
-                <th>积分比例</th>
-                <th>金额范围</th>
+                <th>规则代码 / 版本</th>
+                <th>适用币种</th>
+                <th>兑换规则</th>
+                <th>充值金额范围</th>
                 <th>状态</th>
                 <th className="text-right">操作</th>
               </tr>
@@ -209,22 +212,27 @@ export default function AdminPricePolicies() {
                 const preview = previewTenYuanCredit(item)
                 return (
                 <tr key={item.id} data-testid={`admin-price-policy-row-${item.code}`}>
-                  <td data-label="代码 / 版本">
-                    <div className="font-mono text-sm">{item.code}</div>
+                  <td data-label="规则代码 / 版本">
+                    <div className="font-mono text-sm font-semibold text-[var(--color-text)]">{item.code}</div>
                     <div className="text-xs text-[var(--color-text-muted)]">v{item.version}</div>
                   </td>
-                  <td data-label="币种">{item.currency}</td>
-                  <td data-label="积分比例">
-                    {formatFenPointRatio(item.pointsNumerator, item.pointsDenominator)
-                      ?? `${item.pointsNumerator}/${item.pointsDenominator}`}
+                  <td data-label="适用币种">{item.currency}</td>
+                  <td data-label="兑换规则">
+                    <div className="text-xs font-semibold text-[var(--color-text)]">
+                      每 {item.pointsDenominator} {item.currency === 'CNY' ? '分人民币' : '美分'} 兑换 {item.pointsNumerator} 积分
+                    </div>
+                    <div className="text-xs text-[var(--color-text-muted)] font-mono mt-0.5">
+                      {formatFenPointRatio(item.pointsNumerator, item.pointsDenominator)
+                        ?? `${item.pointsNumerator}/${item.pointsDenominator}`}
+                    </div>
                     {preview && (
-                      <div className="text-xs text-[var(--color-text-muted)]">
+                      <div className="text-xs text-[var(--color-cta)] mt-0.5">
                         {preview.preview}
                       </div>
                     )}
                   </td>
-                  <td data-label="金额范围">
-                    <div className="whitespace-nowrap">
+                  <td data-label="充值金额范围">
+                    <div className="whitespace-nowrap font-medium text-[var(--color-text)]">
                       {formatCurrencyAmount(item.minAmountMinor, item.currency)}
                       {' – '}
                       {formatCurrencyAmount(item.maxAmountMinor, item.currency)}
@@ -233,12 +241,16 @@ export default function AdminPricePolicies() {
                       步进 {formatCurrencyAmount(item.amountStepMinor, item.currency)}
                     </div>
                   </td>
-                  <td data-label="状态">{POLICY_STATUS_LABEL[item.status] ?? item.status}</td>
+                  <td data-label="状态">
+                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold border border-[var(--color-border)] bg-[var(--color-background)]">
+                      {POLICY_STATUS_LABEL[item.status] ?? item.status}
+                    </span>
+                  </td>
                   <td className="text-right whitespace-nowrap" data-label="操作">
                     {item.status === 'draft' && (
                       <button
                         type="button"
-                        className="text-sm font-bold text-[var(--color-primary)]"
+                        className="text-sm font-bold text-[var(--color-primary)] hover:underline cursor-pointer"
                         onClick={() => setActivateTarget(item)}
                         data-testid={`admin-price-policy-activate-${item.code}`}
                       >
@@ -310,15 +322,20 @@ export default function AdminPricePolicies() {
             </p>
           )}
           {formError && <p className="mt-2 text-sm text-[var(--color-danger)]">{formError}</p>}
-          <div className="mt-4 flex flex-wrap justify-end gap-2">
-            <button
-              type="button"
-              className="btn-secondary"
-              onClick={() => { setForm(exampleForm()); setFormError('') }}
-              data-testid="admin-price-policy-fill-example"
-            >
-              填充 VMQFox CNY 示例
-            </button>
+          <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
+            <div className="flex flex-col items-start mr-auto">
+              <button
+                type="button"
+                className="btn-secondary text-xs"
+                onClick={() => { setForm(exampleForm()); setFormError('') }}
+                data-testid="admin-price-policy-fill-example"
+              >
+                填入人民币充值草稿示例
+              </button>
+              <span className="text-[11px] text-[var(--color-text-muted)] mt-0.5">
+                仅填充表单，不保存、不启用
+              </span>
+            </div>
             <button
               type="button"
               className="btn-primary"

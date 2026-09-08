@@ -11,13 +11,13 @@ import AdminPricePolicies from './AdminPricePolicies'
 export type RechargeAdminSection = 'sandbox' | 'orders' | 'events' | 'refunds' | 'disputes' | 'reconciliation' | 'policies'
 
 const TABS: ReadonlyArray<{ id: RechargeAdminSection; label: string }> = [
-  { id: 'sandbox', label: '管理员沙箱' },
   { id: 'orders', label: '充值订单' },
   { id: 'policies', label: '价格政策' },
   { id: 'events', label: '支付事件' },
   { id: 'refunds', label: '退款' },
   { id: 'disputes', label: '争议' },
   { id: 'reconciliation', label: '对账' },
+  { id: 'sandbox', label: '模拟充值' },
 ]
 
 function renderSection(section: RechargeAdminSection): ReactNode {
@@ -46,7 +46,7 @@ export default function AdminRechargePage() {
     <div data-testid="admin-recharge-page">
       <h2 className="font-heading text-xl font-bold text-[var(--color-text)]">充值支付</h2>
       <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-        管理员沙箱、订单、价格政策、事件、退款、争议与对账。危险操作受管理员 MFA 保护。
+        订单、价格政策、支付事件、退款、争议、对账与模拟充值。敏感操作需要再次验证管理员身份。
       </p>
       <div
         role="tablist"
@@ -55,6 +55,7 @@ export default function AdminRechargePage() {
       >
         {TABS.map((tab) => {
           const selected = section === tab.id
+          const isSandbox = tab.id === 'sandbox'
           return (
             <button
               key={tab.id}
@@ -64,8 +65,12 @@ export default function AdminRechargePage() {
               onClick={() => setSection(tab.id)}
               className={`flex-1 min-w-[5.5rem] px-3 py-2 rounded-lg text-sm font-bold transition-colors cursor-pointer whitespace-nowrap ${
                 selected
-                  ? 'bg-[var(--color-primary)] text-white shadow-sm'
-                  : 'text-[var(--color-text-muted)] hover:bg-[var(--color-surface)]'
+                  ? isSandbox
+                    ? 'bg-amber-600 text-white shadow-sm'
+                    : 'bg-[var(--color-primary)] text-white shadow-sm'
+                  : isSandbox
+                    ? 'text-amber-600 dark:text-amber-400 hover:bg-amber-500/10'
+                    : 'text-[var(--color-text-muted)] hover:bg-[var(--color-surface)]'
               }`}
             >
               {tab.label}
