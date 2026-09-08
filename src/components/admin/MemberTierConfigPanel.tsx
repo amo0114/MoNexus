@@ -1,14 +1,11 @@
-import { useEffect, useState } from 'react'
-import { getAdminConfig, updateAdminConfig, AdminSystemConfig, AdminSystemConfigKey } from '../../api/adminConfig'
-import { getApiErrorMessage } from '../../api/error'
-import { useAppStore } from '../../stores/appStore'
-import { bpsToPercentString, percentStringToBps } from './adminConfigMeta'
+import { AdminSystemConfig, AdminSystemConfigKey } from '../../api/adminConfig'
+import { bpsToPercentString } from './adminConfigMeta'
 
 export interface MemberTierConfigPanelProps {
-  items?: AdminSystemConfig[]
-  drafts?: Record<string, string>
-  onChange?: (key: AdminSystemConfigKey, raw: string) => void
-  onSave?: (key: AdminSystemConfigKey, raw: string) => Promise<void>
+  items: AdminSystemConfig[]
+  drafts: Record<string, string>
+  onChange: (key: AdminSystemConfigKey, raw: string) => void
+  onSave: (key: AdminSystemConfigKey, raw: string) => Promise<void>
   savingKey?: string | null
   errors?: Record<string, string>
 }
@@ -57,133 +54,18 @@ export function MemberTierConfigPanel({
   drafts,
   onChange,
   onSave,
-  savingKey,
+  savingKey = null,
   errors = {},
 }: MemberTierConfigPanelProps) {
-  const showToast = useAppStore((s) => s.showToast)
-
-  // Internal state when not controlled
-  const [internalConfigs, setInternalConfigs] = useState<AdminSystemConfig[]>([])
-  const [internalDrafts, setInternalDrafts] = useState<Record<string, string>>({})
-  const [internalErrors, setInternalErrors] = useState<Record<string, string>>({})
-  const [internalSavingKey, setInternalSavingKey] = useState<string | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [loadError, setLoadError] = useState(false)
-
-  const isControlled = !!items && !!onChange && !!onSave
-
-  useEffect(() => {
-    if (!isControlled) {
-      void fetchInternal()
-    }
-  }, [isControlled])
-
-  async function fetchInternal() {
-    setLoading(true)
-    try {
-      const list = await getAdminConfig()
-      setInternalConfigs(list)
-      const d: Record<string, string> = {}
-      list.forEach((c) => {
-        if (c.key.endsWith('BonusBps')) {
-          d[c.key] = bpsToPercentString(c.value)
-        } else {
-          d[c.key] = c.value.toString()
-        }
-      })
-      setInternalDrafts(d)
-      setLoadError(false)
-    } catch (err) {
-      setLoadError(true)
-      showToast(getApiErrorMessage(err, '加载会员等级配置失败'), 'error')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const effectiveConfigs = isControlled ? items : internalConfigs
-  const effectiveDrafts = isControlled ? drafts || {} : internalDrafts
-  const effectiveErrors = isControlled ? errors : internalErrors
-  const effectiveSavingKey = isControlled ? savingKey : internalSavingKey
-
-  const handleChange = (key: AdminSystemConfigKey, raw: string) => {
-    if (isControlled && onChange) {
-      onChange(key, raw)
-    } else {
-      setInternalDrafts((prev) => ({ ...prev, [key]: raw }))
-    }
-  }
-
-  const handleSave = async (key: AdminSystemConfigKey, raw: string) => {
-    if (isControlled && onSave) {
-      await onSave(key, raw)
-    } else {
-      setInternalSavingKey(key)
-      try {
-        let val: number
-        if (key.endsWith('BonusBps')) {
-          const res = percentStringToBps(raw)
-          if (res.error) {
-            setInternalErrors((prev) => ({ ...prev, [key]: res.error! }))
-            showToast(res.error, 'error')
-            setInternalSavingKey(null)
-            return
-          }
-          val = res.value!
-        } else {
-          val = parseInt(raw, 10)
-          if (isNaN(val) || val < 0) {
-            setInternalErrors((prev) => ({ ...prev, [key]: '请输入有效的非负整数' }))
-            showToast('请输入有效的非负整数', 'error')
-            setInternalSavingKey(null)
-            return
-          }
-        }
-        const updated = await updateAdminConfig(key, val)
-        setInternalConfigs((prev) => prev.map((c) => (c.key === updated.key ? updated : c)))
-        setInternalDrafts((prev) => ({
-          ...prev,
-          [updated.key]: key.endsWith('BonusBps') ? bpsToPercentString(updated.value) : updated.value.toString(),
-        }))
-        setInternalErrors((prev) => {
-          const next = { ...prev }
-          delete next[key]
-          return next
-        })
-        showToast('配置已保存')
-      } catch (err) {
-        const msg = getApiErrorMessage(err, '保存失败')
-        setInternalErrors((prev) => ({ ...prev, [key]: msg }))
-        showToast(msg, 'error')
-      } finally {
-        setInternalSavingKey(null)
-      }
-    }
-  }
-
-  if (!isControlled && loading) {
-    return <div className="text-sm text-[var(--color-text-muted)] py-4">加载中...</div>
-  }
-
-  if (!isControlled && loadError) {
-    return (
-      <div className="text-sm text-[var(--color-danger)] py-2">
-        会员等级配置加载失败
-        <button type="button" className="btn-secondary btn-sm ml-3 px-3" onClick={() => void fetchInternal()}>
-          重试
-        </button>
-      </div>
-    )
-  }
 
   return (
     <div className="space-y-4" data-testid="member-tier-config-panel">
       <div className="bg-[var(--color-info)]/8 border border-[var(--color-info)]/20 rounded-lg p-3 text-xs text-[var(--color-text-muted)] space-y-1">
         <p>
-          <strong className="text-[var(--color-text)]">升级门槛规则：</strong>按用户正向积分流水（累计充值与收入积分）统计，不含冻结或沙箱积分。门槛必须严格递增：银卡 &lt; 金卡 &lt; 铂金。如需调大某等级门槛，需先调大其上级门槛；如需调小，需先调小其下级门槛。
+          <strong className="text-[var(--color-text)]">升级门槛规则：</strong>按用户累计获得的正向积分流水统计，不含冻结积分。门槛需严格满足：银卡 &lt; 金卡 &lt; 铂金。调大门槛时需先调大更高级别，调小门槛时需先调小更低级别。
         </p>
         <p>
-          <strong className="text-[var(--color-text)]">额外加成计算：</strong>额外积分 = <code className="font-mono bg-[var(--color-background)] px-1 rounded">floor(基础奖励 × 百分比)</code>，在签到和邀请新用户时叠加发放。新计算的奖励按当前规则确定；已创建的待发奖励不会因本次修改重算。
+          <strong className="text-[var(--color-text)]">额外加成计算：</strong>基础奖励乘以加成比例，结果向下取整。在签到和邀请新用户时叠加发放；修改仅对新计算的奖励生效，已创建的待发奖励不重新计算。
         </p>
       </div>
 
@@ -218,16 +100,16 @@ export function MemberTierConfigPanel({
               }
 
               const thKey = t.thresholdKey
-              const thVal = thKey ? effectiveDrafts[thKey] ?? '' : '0'
-              const thErr = thKey ? effectiveErrors[thKey] : undefined
-              const thSaving = thKey ? effectiveSavingKey === thKey : false
-              const thCfg = thKey ? effectiveConfigs.find((c) => c.key === thKey) : undefined
+              const thVal = thKey ? drafts[thKey] ?? '' : '0'
+              const thErr = thKey ? errors[thKey] : undefined
+              const thSaving = thKey ? savingKey === thKey : false
+              const thCfg = thKey ? items.find((c) => c.key === thKey) : undefined
 
               const bpsKey = t.bonusBpsKey
-              const bpsVal = bpsKey ? effectiveDrafts[bpsKey] ?? '' : '0'
-              const bpsErr = bpsKey ? effectiveErrors[bpsKey] : undefined
-              const bpsSaving = bpsKey ? effectiveSavingKey === bpsKey : false
-              const bpsCfg = bpsKey ? effectiveConfigs.find((c) => c.key === bpsKey) : undefined
+              const bpsVal = bpsKey ? drafts[bpsKey] ?? '' : '0'
+              const bpsErr = bpsKey ? errors[bpsKey] : undefined
+              const bpsSaving = bpsKey ? savingKey === bpsKey : false
+              const bpsCfg = bpsKey ? items.find((c) => c.key === bpsKey) : undefined
 
               return (
                 <tr key={t.value} className={isBronze ? 'opacity-70 bg-[var(--color-text-muted)]/5' : ''}>
@@ -253,7 +135,7 @@ export function MemberTierConfigPanel({
                             min="0"
                             step="1"
                             value={thVal}
-                            onChange={(e) => handleChange(thKey!, e.target.value)}
+                            onChange={(e) => onChange(thKey!, e.target.value)}
                             disabled={thSaving}
                             aria-describedby={thErr ? `config-error-${thKey!}` : undefined}
                             data-testid={`admin-config-input-${thKey!}`}
@@ -262,8 +144,8 @@ export function MemberTierConfigPanel({
                           <span className="text-xs text-[var(--color-text-muted)] whitespace-nowrap">积分</span>
                           <button
                             type="button"
-                            onClick={() => void handleSave(thKey!, thVal)}
-                            disabled={thSaving || effectiveSavingKey !== null}
+                            onClick={() => void onSave(thKey!, thVal)}
+                            disabled={thSaving || savingKey !== null}
                             data-testid={`admin-config-save-${thKey!}`}
                             className="text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 font-semibold text-xs px-3 py-1.5 btn-sm rounded-lg transition-colors border border-[var(--color-primary)]/25 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
                           >
@@ -275,6 +157,14 @@ export function MemberTierConfigPanel({
                             部署默认值：{thCfg.defaultValue} 积分
                           </div>
                         )}
+                        <details className="mt-0.5 text-xs text-[var(--color-text-muted)]">
+                          <summary className="cursor-pointer text-[var(--color-text-muted)] hover:text-[var(--color-text)] transition-colors text-[11px] underline decoration-dotted inline-block">
+                            配置键名
+                          </summary>
+                          <div className="mt-0.5 font-mono text-[11px] text-[var(--color-text-muted)] select-all">
+                            {thKey}
+                          </div>
+                        </details>
                         {thErr && (
                           <div
                             id={`config-error-${thKey!}`}
@@ -304,7 +194,7 @@ export function MemberTierConfigPanel({
                             max="100"
                             step="0.01"
                             value={bpsVal}
-                            onChange={(e) => handleChange(bpsKey!, e.target.value)}
+                            onChange={(e) => onChange(bpsKey!, e.target.value)}
                             disabled={bpsSaving}
                             aria-describedby={bpsErr ? `config-error-${bpsKey!}` : undefined}
                             data-testid={`admin-config-input-${bpsKey!}`}
@@ -313,8 +203,8 @@ export function MemberTierConfigPanel({
                           <span className="text-xs text-[var(--color-text-muted)] whitespace-nowrap">%</span>
                           <button
                             type="button"
-                            onClick={() => void handleSave(bpsKey!, bpsVal)}
-                            disabled={bpsSaving || effectiveSavingKey !== null}
+                            onClick={() => void onSave(bpsKey!, bpsVal)}
+                            disabled={bpsSaving || savingKey !== null}
                             data-testid={`admin-config-save-${bpsKey!}`}
                             className="text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 font-semibold text-xs px-3 py-1.5 btn-sm rounded-lg transition-colors border border-[var(--color-primary)]/25 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
                           >
@@ -323,9 +213,17 @@ export function MemberTierConfigPanel({
                         </div>
                         {bpsCfg && (
                           <div className="text-xs text-[var(--color-text-muted)]">
-                            部署默认值：{bpsToPercentString(bpsCfg.defaultValue)}% ({bpsCfg.defaultValue} 基点)
+                            部署默认值：{bpsToPercentString(bpsCfg.defaultValue)}%
                           </div>
                         )}
+                        <details className="mt-0.5 text-xs text-[var(--color-text-muted)]">
+                          <summary className="cursor-pointer text-[var(--color-text-muted)] hover:text-[var(--color-text)] transition-colors text-[11px] underline decoration-dotted inline-block">
+                            配置键名
+                          </summary>
+                          <div className="mt-0.5 font-mono text-[11px] text-[var(--color-text-muted)] select-all">
+                            {bpsKey}
+                          </div>
+                        </details>
                         {bpsErr && (
                           <div
                             id={`config-error-${bpsKey!}`}

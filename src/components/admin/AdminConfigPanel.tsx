@@ -109,16 +109,14 @@ export default function AdminConfigPanel() {
       valueToSave = n
     }
 
-    // 2. 跨字段业务约束校验
+    // 2. 跨字段业务约束校验：仅针对当前保存项读取其待保存值，关联项取 configs 中已保存值，绝不读取其他项的草稿
     if (key === 'memberTierSilverThreshold' || key === 'memberTierGoldThreshold' || key === 'memberTierPlatinumThreshold') {
-      const getVal = (k: AdminSystemConfigKey) => {
-        const draft = drafts[k]
-        if (draft !== undefined && draft !== '') return parseInt(draft, 10)
+      const getConfirmedVal = (k: AdminSystemConfigKey) => {
         return configs.find((c) => c.key === k)?.value ?? 0
       }
-      const silver = key === 'memberTierSilverThreshold' ? valueToSave : getVal('memberTierSilverThreshold')
-      const gold = key === 'memberTierGoldThreshold' ? valueToSave : getVal('memberTierGoldThreshold')
-      const platinum = key === 'memberTierPlatinumThreshold' ? valueToSave : getVal('memberTierPlatinumThreshold')
+      const silver = key === 'memberTierSilverThreshold' ? valueToSave : getConfirmedVal('memberTierSilverThreshold')
+      const gold = key === 'memberTierGoldThreshold' ? valueToSave : getConfirmedVal('memberTierGoldThreshold')
+      const platinum = key === 'memberTierPlatinumThreshold' ? valueToSave : getConfirmedVal('memberTierPlatinumThreshold')
 
       if (key === 'memberTierSilverThreshold' && silver >= gold) {
         const msg = `银卡门槛必须小于金卡门槛（当前金卡: ${gold} 积分）`
@@ -141,7 +139,7 @@ export default function AdminConfigPanel() {
     }
 
     if (key === 'referralDailyQualifiedLimit') {
-      const lifetime = parseInt(drafts.referralLifetimeQualifiedLimit ?? configs.find((c) => c.key === 'referralLifetimeQualifiedLimit')?.value.toString() ?? '0', 10)
+      const lifetime = configs.find((c) => c.key === 'referralLifetimeQualifiedLimit')?.value ?? 0
       if (valueToSave > 0 && lifetime > 0 && valueToSave > lifetime) {
         const msg = `每日合格人数上限不能大于累计合格人数上限（当前累计: ${lifetime} 人）`
         setErrors((prev) => ({ ...prev, [key]: msg }))
@@ -151,7 +149,7 @@ export default function AdminConfigPanel() {
     }
 
     if (key === 'referralLifetimeQualifiedLimit') {
-      const daily = parseInt(drafts.referralDailyQualifiedLimit ?? configs.find((c) => c.key === 'referralDailyQualifiedLimit')?.value.toString() ?? '0', 10)
+      const daily = configs.find((c) => c.key === 'referralDailyQualifiedLimit')?.value ?? 0
       if (valueToSave === 0 && daily > 0) {
         const msg = '若要将累计合格人数上限设为 0，须先将每日上限设为 0'
         setErrors((prev) => ({ ...prev, [key]: msg }))
@@ -304,7 +302,14 @@ export default function AdminConfigPanel() {
                       <p id={`admin-config-hint-${c.key}`} className="text-xs text-[var(--color-text-muted)] mt-0.5">
                         {meta.description}
                       </p>
-                      <div className="text-xs text-[var(--color-text-muted)] font-mono mt-1">{c.key}</div>
+                      <details className="mt-1 text-xs text-[var(--color-text-muted)]">
+                        <summary className="cursor-pointer text-[var(--color-text-muted)] hover:text-[var(--color-text)] transition-colors text-[11px] underline decoration-dotted inline-block">
+                          配置键名
+                        </summary>
+                        <div className="mt-0.5 font-mono text-[11px] text-[var(--color-text-muted)] select-all">
+                          {c.key}
+                        </div>
+                      </details>
                       {error && (
                         <div className="text-xs text-[var(--color-danger)] bg-[var(--color-danger)]/10 px-2 py-1 rounded border border-[var(--color-danger)]/20 mt-1 max-w-sm">
                           {error}

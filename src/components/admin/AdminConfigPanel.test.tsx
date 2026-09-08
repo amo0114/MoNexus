@@ -386,4 +386,75 @@ describe('AdminConfigPanel & B2 Specifications', () => {
     // Draft is retained
     expect(checkinInput).toHaveValue(30)
   })
+
+  it('validates single-item saves against server values without being blocked by uncommitted drafts of other fields, preserving other drafts', async () => {
+    vi.mocked(adminConfigApi.updateAdminConfig).mockImplementation(async (key, value) => {
+      const existing = MOCK_CONFIGS.find((c) => c.key === key)
+      return {
+        key,
+        value,
+        defaultValue: existing?.defaultValue ?? value,
+        description: existing?.description ?? '',
+        group: existing?.group ?? '',
+        unit: existing?.unit ?? null,
+        hint: existing?.hint ?? null,
+        updatedAt: null,
+        updatedBy: null,
+      }
+    })
+
+    render(<AdminConfigPanel />)
+    await waitFor(() => {
+      expect(screen.getByRole('tab', { name: '注册与邀请' })).toBeInTheDocument()
+    })
+
+    // Scenario 1: referral daily limit draft vs lifetime limit save
+    // Server daily = 10, lifetime = 100
+    const dailyInput = screen.getByTestId('admin-config-input-referralDailyQualifiedLimit')
+    const lifetimeInput = screen.getByTestId('admin-config-input-referralLifetimeQualifiedLimit')
+    const lifetimeSaveBtn = screen.getByTestId('admin-config-save-referralLifetimeQualifiedLimit')
+
+    // Operator enters daily draft = 50 (uncommitted, > 20)
+    fireEvent.change(dailyInput, { target: { value: '50' } })
+    expect(dailyInput).toHaveValue(50)
+
+    // Operator enters lifetime draft = 20 (which is < draft 50, but >= server confirmed daily 10)
+    fireEvent.change(lifetimeInput, { target: { value: '20' } })
+    expect(lifetimeInput).toHaveValue(20)
+
+    // Save lifetime limit: must succeed against server daily=10, NOT blocked by daily draft=50
+    fireEvent.click(lifetimeSaveBtn)
+
+    await waitFor(() => {
+      expect(adminConfigApi.updateAdminConfig).toHaveBeenCalledWith('referralLifetimeQualifiedLimit', 20)
+    })
+
+    // Verify daily input draft 50 is NOT wiped out after lifetime was saved!
+    expect(dailyInput).toHaveValue(50)
+
+    // Scenario 2: Member tier cross-draft isolation
+    fireEvent.click(screen.getByRole('tab', { name: '会员等级' }))
+    await screen.findByText('青铜会员')
+
+    // Server silver=1000, gold=5000, platinum=20000
+    const silverInput = screen.getByTestId('admin-config-input-memberTierSilverThreshold')
+    const goldInput = screen.getByTestId('admin-config-input-memberTierGoldThreshold')
+    const silverSaveBtn = screen.getByTestId('admin-config-save-memberTierSilverThreshold')
+
+    // Operator edits gold draft to 800 (temporarily < silver 1000)
+    fireEvent.change(goldInput, { target: { value: '800' } })
+    expect(goldInput).toHaveValue(800)
+
+    // Operator edits silver draft to 900 (< server gold 5000) and saves
+    fireEvent.change(silverInput, { target: { value: '900' } })
+    fireEvent.click(silverSaveBtn)
+
+    await waitFor(() => {
+      expect(adminConfigApi.updateAdminConfig).toHaveBeenCalledWith('memberTierSilverThreshold', 900)
+    })
+
+    // Verify gold input draft 800 is still preserved in memory!
+    expect(goldInput).toHaveValue(800)
+  })
 })
+
