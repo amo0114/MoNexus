@@ -274,7 +274,7 @@ export default function AdminFakaImportPreview({ open, onClose, onImported }: Pr
       <DialogContent className="max-w-3xl max-h-[92dvh] overflow-y-auto" data-testid="admin-faka-import-preview">
         <DialogTitle>从 Xboard 导入套餐</DialogTitle>
         <DialogDescription>
-          必须先预览净化后的商品、规格与封面；确认时会重读 Xboard 并以数据库唯一约束裁决。
+          必须先预览净化后的商品、规格与封面；已存在的关联商品不会重复导入，最终结果以导入结果为准。
         </DialogDescription>
         {loading ? (
           <p className="mt-5 text-sm text-[var(--color-text-muted)]"><Loader2 className="w-4 h-4 inline animate-spin" /> 正在加载…</p>

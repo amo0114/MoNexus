@@ -81,7 +81,7 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
     title: '商品与交付',
     items: [
       { id: 'products', label: '商品与库存', icon: Package },
-      { id: 'faka', label: 'FakaBridge', icon: Cable },
+      { id: 'faka', label: '自动开通任务', icon: Cable },
       { id: 'merchandising', label: '营销与陈列', icon: ShoppingBag },
       { id: 'catalogGovernance', label: '目录治理', icon: Tags },
     ],
