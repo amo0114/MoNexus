@@ -29,8 +29,9 @@
 // a 409 is never reported as success.
 //
 // The admin DTO is consumed as-is; it is never projected onto the public/
-// merchant PromotionCampaignDTO. Internal audit fields (reviewedByUserId /
-// cancelledByUserId), idempotency keys/hashes, PointLog ids and balance history
+// merchant PromotionCampaignDTO. Audit actor ids (reviewedByUserId /
+// cancelledByUserId) are surfaced in the admin detail Dialog for operator
+// traceability (R8). Idempotency keys/hashes, PointLog ids and balance history
 // are never rendered (MERCH-015 / CHK-SEC-001 / CHK-PROMO-013).
 //
 // Concurrency: a strictly-increasing request id guards against a stale list
@@ -329,6 +330,7 @@ export default function AdminPromotionCampaignManager({
   const [dialogFieldError, setDialogFieldError] = useState<string | null>(null)
   const [dialogSubmitError, setDialogSubmitError] = useState<string | null>(null)
   const [dialogBusy, setDialogBusy] = useState(false)
+  const [detailTarget, setDetailTarget] = useState<AdminPromotionCampaignDTO | null>(null)
 
   // Synchronous mutation-in-flight ref. React state updates are asynchronous, so
   // the ref is flipped true synchronously right before the adapter call to close
@@ -623,25 +625,15 @@ export default function AdminPromotionCampaignManager({
                         <div className="text-xs text-[var(--color-text-muted)] mt-0.5">
                           <time dateTime={campaign.createdAt}>{formatDateTime(campaign.createdAt)}</time>
                         </div>
-                        <details className="mt-1.5 text-xs text-[var(--color-text-muted)]">
-                          <summary className="cursor-pointer select-none text-[var(--color-primary)] hover:underline">
-                            完整详情
-                          </summary>
-                          <div className="mt-1.5 p-2 rounded bg-[var(--color-surface)] border border-[var(--color-border)] space-y-1">
-                            <div>快照价格：<span>{campaign.pricePointsSnapshot}</span> 积分</div>
-                            <div>申请时间：{formatMaybeDate(campaign.requestedStartAt)}</div>
-                            <div>实际开始：<span>{formatMaybeDate(campaign.startsAt)}</span></div>
-                            <div>实际结束：<span>{formatMaybeDate(campaign.endsAt)}</span></div>
-                            {campaign.reviewedAt != null && (
-                              <div>审核时间：{formatDateTime(campaign.reviewedAt)}</div>
-                            )}
-                            <div>审核意见：<span>{campaign.reviewReason ?? '—'}</span></div>
-                            <div>取消原因：<span>{campaign.cancellationReason ?? '—'}</span></div>
-                            <div>
-                              更新时间：<time dateTime={campaign.updatedAt}>{formatDateTime(campaign.updatedAt)}</time>
-                            </div>
-                          </div>
-                        </details>
+                        <div className="mt-1">
+                          <button
+                            type="button"
+                            className="text-xs text-[var(--color-primary)] hover:underline cursor-pointer"
+                            onClick={() => setDetailTarget(campaign)}
+                          >
+                            详情
+                          </button>
+                        </div>
                       </td>
                       <td className="px-3 py-3">
                         <div className="text-xs space-y-1">
@@ -865,6 +857,134 @@ export default function AdminPromotionCampaignManager({
               </button>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={detailTarget != null}
+        onOpenChange={(open) => {
+          if (!open) setDetailTarget(null)
+        }}
+      >
+        <DialogContent className="max-w-xl">
+          <DialogTitle>推广活动详情</DialogTitle>
+          <DialogDescription>
+            活动 #{detailTarget?.id} 完整快照、时间线与审核信息
+          </DialogDescription>
+          {detailTarget && (
+            <div className="space-y-4 mt-4 text-xs">
+              <div className="grid grid-cols-2 gap-3 p-3 rounded bg-[var(--color-surface)] border border-[var(--color-border)]">
+                <div>
+                  <span className="text-[var(--color-text-muted)]">活动 ID：</span>
+                  <span className="font-mono font-medium">#{detailTarget.id}</span>
+                </div>
+                <div>
+                  <span className="text-[var(--color-text-muted)]">当前状态：</span>
+                  <span className="font-medium">{CAMPAIGN_STATUS_LABEL[detailTarget.status] ?? detailTarget.status}</span>
+                </div>
+                <div>
+                  <span className="text-[var(--color-text-muted)]">商家 ID：</span>
+                  <span className="font-mono">{detailTarget.merchantId}</span>
+                </div>
+                <div>
+                  <span className="text-[var(--color-text-muted)]">商品 ID：</span>
+                  <span className="font-mono">{detailTarget.productId}</span>
+                </div>
+                <div>
+                  <span className="text-[var(--color-text-muted)]">套餐规格：</span>
+                  <span>{detailTarget.packageCodeSnapshot} (ID {detailTarget.packageId})</span>
+                </div>
+                <div>
+                  <span className="text-[var(--color-text-muted)]">推广展位：</span>
+                  <span>{PLACEMENT_LABEL[detailTarget.placementSnapshot] ?? detailTarget.placementSnapshot}</span>
+                </div>
+                <div>
+                  <span className="text-[var(--color-text-muted)]">投放天数：</span>
+                  <span>{detailTarget.durationDaysSnapshot} 天</span>
+                </div>
+                <div>
+                  <span className="text-[var(--color-text-muted)]">快照价格：</span>
+                  <span>{detailTarget.pricePointsSnapshot} 积分</span>
+                </div>
+                <div>
+                  <span className="text-[var(--color-text-muted)]">已扣积分：</span>
+                  <span>{detailTarget.chargedPoints} 积分</span>
+                </div>
+                <div>
+                  <span className="text-[var(--color-text-muted)]">已退积分：</span>
+                  <span>{detailTarget.refundedPoints} 积分</span>
+                </div>
+              </div>
+
+              <div className="p-3 rounded bg-[var(--color-surface)] border border-[var(--color-border)] space-y-1.5">
+                <div className="font-medium text-[var(--color-text)] mb-1">投放与时间线</div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <span className="text-[var(--color-text-muted)]">创建时间：</span>
+                    <time dateTime={detailTarget.createdAt}>{formatDateTime(detailTarget.createdAt)}</time>
+                  </div>
+                  <div>
+                    <span className="text-[var(--color-text-muted)]">更新时间：</span>
+                    <time dateTime={detailTarget.updatedAt}>{formatDateTime(detailTarget.updatedAt)}</time>
+                  </div>
+                  <div>
+                    <span className="text-[var(--color-text-muted)]">申请开始：</span>
+                    <span>{formatMaybeDate(detailTarget.requestedStartAt)}</span>
+                  </div>
+                  <div>
+                    <span className="text-[var(--color-text-muted)]">实际开始：</span>
+                    <span>{formatMaybeDate(detailTarget.startsAt)}</span>
+                  </div>
+                  <div className="col-span-2">
+                    <span className="text-[var(--color-text-muted)]">实际结束：</span>
+                    <span>{formatMaybeDate(detailTarget.endsAt)}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-3 rounded bg-[var(--color-surface)] border border-[var(--color-border)] space-y-2">
+                <div className="font-medium text-[var(--color-text)]">审核与取消追溯</div>
+                <div className="space-y-1.5 border-b border-[var(--color-border)] pb-2">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <span className="text-[var(--color-text-muted)]">审核人 ID：</span>
+                      <span className="font-mono">{detailTarget.reviewedByUserId ?? '—'}</span>
+                    </div>
+                    <div>
+                      <span className="text-[var(--color-text-muted)]">审核时间：</span>
+                      <span>{formatMaybeDate(detailTarget.reviewedAt)}</span>
+                    </div>
+                  </div>
+                  <div>
+                    <span className="text-[var(--color-text-muted)]">审核意见：</span>
+                    <span>{detailTarget.reviewReason ?? '—'}</span>
+                  </div>
+                </div>
+                <div className="space-y-1.5 pt-1">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <span className="text-[var(--color-text-muted)]">取消人 ID：</span>
+                      <span className="font-mono">{detailTarget.cancelledByUserId ?? '—'}</span>
+                    </div>
+                  </div>
+                  <div>
+                    <span className="text-[var(--color-text-muted)]">取消原因：</span>
+                    <span>{detailTarget.cancellationReason ?? '—'}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  className="btn-secondary px-4 py-2 text-sm"
+                  onClick={() => setDetailTarget(null)}
+                >
+                  关闭
+                </button>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </section>
