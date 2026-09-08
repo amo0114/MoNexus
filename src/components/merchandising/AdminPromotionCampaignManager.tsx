@@ -603,61 +603,104 @@ export default function AdminPromotionCampaignManager({
               <table className="w-full text-sm" aria-label="推广活动列表">
                 <thead>
                   <tr className="border-b border-[var(--color-border)] text-left text-xs text-[var(--color-text-muted)]">
-                    <th className="px-3 py-2">活动 ID</th>
-                    <th className="px-3 py-2">商家 ID</th>
-                    <th className="px-3 py-2">商品 ID</th>
-                    <th className="px-3 py-2">套餐</th>
-                    <th className="px-3 py-2">展位</th>
-                    <th className="px-3 py-2">时长（天）</th>
-                    <th className="px-3 py-2">价格（积分）</th>
+                    <th className="px-3 py-2">活动</th>
+                    <th className="px-3 py-2">关联对象</th>
+                    <th className="px-3 py-2">推广规格</th>
+                    <th className="px-3 py-2">投放时间</th>
+                    <th className="px-3 py-2">积分收退</th>
                     <th className="px-3 py-2">状态</th>
-                    <th className="px-3 py-2">申请开始</th>
-                    <th className="px-3 py-2">开始</th>
-                    <th className="px-3 py-2">结束</th>
-                    <th className="px-3 py-2">已扣积分</th>
-                    <th className="px-3 py-2">已退积分</th>
-                    <th className="px-3 py-2">审核意见</th>
-                    <th className="px-3 py-2">取消原因</th>
-                    <th className="px-3 py-2">创建 / 更新</th>
                     <th className="px-3 py-2">操作</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[var(--color-border)]">
                   {campaigns.map((campaign) => (
                     <tr key={campaign.id}>
-                      <td className="px-3 py-3 font-mono text-xs">{campaign.id}</td>
-                      <td className="px-3 py-3 font-mono text-xs">{campaign.merchantId}</td>
-                      <td className="px-3 py-3 font-mono text-xs">{campaign.productId}</td>
                       <td className="px-3 py-3">
-                        <div className="font-mono text-xs">{campaign.packageCodeSnapshot}</div>
-                        <div className="text-xs text-[var(--color-text-muted)]">ID {campaign.packageId}</div>
+                        <div className="font-mono font-medium">
+                          <span className="text-[var(--color-text-muted)]">#</span>
+                          <span>{campaign.id}</span>
+                        </div>
+                        <div className="text-xs text-[var(--color-text-muted)] mt-0.5">
+                          <time dateTime={campaign.createdAt}>{formatDateTime(campaign.createdAt)}</time>
+                        </div>
+                        <details className="mt-1.5 text-xs text-[var(--color-text-muted)]">
+                          <summary className="cursor-pointer select-none text-[var(--color-primary)] hover:underline">
+                            完整详情
+                          </summary>
+                          <div className="mt-1.5 p-2 rounded bg-[var(--color-surface)] border border-[var(--color-border)] space-y-1">
+                            <div>快照价格：<span>{campaign.pricePointsSnapshot}</span> 积分</div>
+                            <div>申请时间：{formatMaybeDate(campaign.requestedStartAt)}</div>
+                            <div>实际开始：<span>{formatMaybeDate(campaign.startsAt)}</span></div>
+                            <div>实际结束：<span>{formatMaybeDate(campaign.endsAt)}</span></div>
+                            {campaign.reviewedAt != null && (
+                              <div>审核时间：{formatDateTime(campaign.reviewedAt)}</div>
+                            )}
+                            <div>审核意见：<span>{campaign.reviewReason ?? '—'}</span></div>
+                            <div>取消原因：<span>{campaign.cancellationReason ?? '—'}</span></div>
+                            <div>
+                              更新时间：<time dateTime={campaign.updatedAt}>{formatDateTime(campaign.updatedAt)}</time>
+                            </div>
+                          </div>
+                        </details>
                       </td>
                       <td className="px-3 py-3">
-                        {PLACEMENT_LABEL[campaign.placementSnapshot] ?? campaign.placementSnapshot}
+                        <div className="text-xs space-y-1">
+                          <div>
+                            <span className="text-[var(--color-text-muted)]">商家 #</span>
+                            <span className="font-mono">{campaign.merchantId}</span>
+                          </div>
+                          <div>
+                            <span className="text-[var(--color-text-muted)]">商品 #</span>
+                            <span className="font-mono">{campaign.productId}</span>
+                          </div>
+                        </div>
                       </td>
-                      <td className="px-3 py-3">{campaign.durationDaysSnapshot}</td>
-                      <td className="px-3 py-3">{campaign.pricePointsSnapshot}</td>
+                      <td className="px-3 py-3">
+                        <div>{PLACEMENT_LABEL[campaign.placementSnapshot] ?? campaign.placementSnapshot}</div>
+                        <div className="text-xs text-[var(--color-text-muted)] mt-0.5">
+                          <span>{campaign.durationDaysSnapshot}</span> 天
+                        </div>
+                        <div className="text-xs text-[var(--color-text-muted)]">
+                          套餐：<span className="font-mono">{campaign.packageCodeSnapshot}</span>{' '}
+                          <span>ID {campaign.packageId}</span>
+                        </div>
+                      </td>
+                      <td className="px-3 py-3">
+                        {campaign.status === 'pending_review' ? (
+                          <div className="text-xs space-y-0.5">
+                            <div>
+                              <span className="text-[var(--color-text-muted)]">申请开始：</span>
+                              {formatMaybeDate(campaign.requestedStartAt)}
+                            </div>
+                            <div className="text-[var(--color-text-muted)] text-[11px]">待审核，尚未生效</div>
+                          </div>
+                        ) : (
+                          <div className="text-xs space-y-0.5">
+                            <div>
+                              <span className="text-[var(--color-text-muted)]">开始：</span>
+                              {formatMaybeDate(campaign.startsAt)}
+                            </div>
+                            <div>
+                              <span className="text-[var(--color-text-muted)]">结束：</span>
+                              {formatMaybeDate(campaign.endsAt)}
+                            </div>
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-3 py-3 text-xs space-y-0.5">
+                        <div>
+                          <span className="text-[var(--color-text-muted)]">已扣：</span>
+                          <span>{campaign.chargedPoints}</span>
+                          <span className="text-[var(--color-text-muted)] ml-0.5">积分</span>
+                        </div>
+                        <div>
+                          <span className="text-[var(--color-text-muted)]">已退：</span>
+                          <span>{campaign.refundedPoints}</span>
+                          <span className="text-[var(--color-text-muted)] ml-0.5">积分</span>
+                        </div>
+                      </td>
                       <td className="px-3 py-3">
                         {CAMPAIGN_STATUS_LABEL[campaign.status] ?? campaign.status}
-                      </td>
-                      <td className="px-3 py-3">{formatMaybeDate(campaign.requestedStartAt)}</td>
-                      <td className="px-3 py-3">{formatMaybeDate(campaign.startsAt)}</td>
-                      <td className="px-3 py-3">{formatMaybeDate(campaign.endsAt)}</td>
-                      <td className="px-3 py-3">{campaign.chargedPoints}</td>
-                      <td className="px-3 py-3">{campaign.refundedPoints}</td>
-                      <td className="px-3 py-3">{campaign.reviewReason ?? '—'}</td>
-                      <td className="px-3 py-3">{campaign.cancellationReason ?? '—'}</td>
-                      <td className="px-3 py-3">
-                        <div className="flex flex-col gap-1">
-                          <span>
-                            <span className="text-[var(--color-text-muted)]">创建</span>{' '}
-                            <time dateTime={campaign.createdAt}>{formatDateTime(campaign.createdAt)}</time>
-                          </span>
-                          <span>
-                            <span className="text-[var(--color-text-muted)]">更新</span>{' '}
-                            <time dateTime={campaign.updatedAt}>{formatDateTime(campaign.updatedAt)}</time>
-                          </span>
-                        </div>
                       </td>
                       <td className="px-3 py-3">
                         {availableActions(campaign).length > 0 ? (
