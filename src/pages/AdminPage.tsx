@@ -51,12 +51,12 @@ export default function AdminPage() {
 
   return (
     <div className="fade-in pt-2">
-      <div className="flex flex-col md:flex-row gap-6 max-w-7xl mx-auto">
+      <div className="flex flex-col xl:flex-row gap-6 w-full">
         {/* Navigation Rail / Drawer */}
         <AdminNav activeTab={activeTab} onTabChange={handleTabChange} />
 
         {/* Main Content */}
-        <div className="flex-grow card max-md:p-4 p-6 sm:p-8 max-md:min-h-0 min-h-[600px] overflow-x-auto">
+        <div className="flex-grow min-w-0 card p-4 xl:p-6 min-h-[600px]">
           {/* Stateless / self-managed panels: conditional mount */}
           {activeTab === 'dashboard' && <AdminDashboardPanel />}
           {activeTab === 'users' && <AdminUserTable />}
