@@ -389,19 +389,21 @@ export default function AdminEntitlementManager({
                 <thead>
                   <tr className="border-b border-[var(--color-border)] text-left text-xs text-[var(--color-text-muted)]">
                     <th className="px-3 py-2">商家 ID</th>
-                    <th className="px-3 py-2">状态</th>
+                    <th className="px-3 py-2">当前状态</th>
                     <th className="px-3 py-2">来源</th>
-                    <th className="px-3 py-2">有效期</th>
-                    <th className="px-3 py-2">授权原因</th>
+                    <th className="px-3 py-2">生效时间 / 到期时间</th>
+                    <th className="px-3 py-2">授予或撤销原因</th>
                     <th className="px-3 py-2">操作</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[var(--color-border)]">
                   {items.map((ent) => (
                     <tr key={ent.id}>
-                      <td className="px-3 py-3">{ent.merchantId}</td>
+                      <td className="px-3 py-3 font-mono">{ent.merchantId}</td>
                       <td className="px-3 py-3">{STATUS_LABEL[ent.status] ?? ent.status}</td>
-                      <td className="px-3 py-3">{SOURCE_LABEL[ent.source] ?? ent.source}</td>
+                      <td className="px-3 py-3">
+                        <div>{SOURCE_LABEL[ent.source] ?? ent.source}</div>
+                      </td>
                       <td className="px-3 py-3">
                         <div className="flex flex-col gap-1">
                           <span>
@@ -414,7 +416,10 @@ export default function AdminEntitlementManager({
                           </span>
                         </div>
                       </td>
-                      <td className="px-3 py-3">{ent.reason || '—'}</td>
+                      <td className="px-3 py-3">
+                        <div>{ent.reason || '—'}</div>
+                        <div className="text-[11px] text-[var(--color-text-muted)] mt-0.5">内部记录，仅管理员可见</div>
+                      </td>
                       <td className="px-3 py-3">
                         {ent.status === 'active' ? (
                           <button
@@ -505,9 +510,13 @@ export default function AdminEntitlementManager({
                 className="block text-xs font-bold text-[var(--color-text-muted)] mb-1.5 uppercase tracking-wider"
               >
                 授权原因
+                <span className="text-[11px] font-normal text-[var(--color-text-muted)] ml-1">
+                  （内部记录，仅管理员可见）
+                </span>
               </label>
               <textarea
                 id="grant-reason"
+                aria-label="授权原因"
                 value={grantReason}
                 onChange={(e) => {
                   setGrantReason(e.target.value)
@@ -584,9 +593,13 @@ export default function AdminEntitlementManager({
                 className="block text-xs font-bold text-[var(--color-text-muted)] mb-1.5 uppercase tracking-wider"
               >
                 撤销原因
+                <span className="text-[11px] font-normal text-[var(--color-text-muted)] ml-1">
+                  （内部记录，仅管理员可见）
+                </span>
               </label>
               <textarea
                 id="revoke-reason"
+                aria-label="撤销原因"
                 value={revokeReason}
                 onChange={(e) => {
                   setRevokeReason(e.target.value)

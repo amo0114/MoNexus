@@ -455,43 +455,45 @@ export default function AdminPromotionPackageManager({
             <table className="w-full text-sm" aria-label="推广套餐列表">
               <thead>
                 <tr className="border-b border-[var(--color-border)] text-left text-xs text-[var(--color-text-muted)]">
-                  <th className="px-3 py-2">套餐编码</th>
-                  <th className="px-3 py-2">名称</th>
-                  <th className="px-3 py-2">展位</th>
-                  <th className="px-3 py-2">时长</th>
+                  <th className="px-3 py-2">套餐名称</th>
+                  <th className="px-3 py-2">展位与时长</th>
                   <th className="px-3 py-2">价格（积分）</th>
-                  <th className="px-3 py-2">说明</th>
-                  <th className="px-3 py-2">排序</th>
+                  <th className="px-3 py-2">
+                    展示顺序
+                    <span className="text-[11px] font-normal text-[var(--color-text-muted)] ml-1">（越小越前）</span>
+                  </th>
                   <th className="px-3 py-2">状态</th>
-                  <th className="px-3 py-2">创建 / 更新</th>
                   <th className="px-3 py-2">操作</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[var(--color-border)]">
                 {packages.map((pkg) => (
                   <tr key={pkg.id}>
-                    <td className="px-3 py-3 font-mono text-xs">{pkg.code}</td>
-                    <td className="px-3 py-3">{pkg.label}</td>
                     <td className="px-3 py-3">
-                      {PLACEMENT_LABEL[pkg.placement] ?? pkg.placement}
+                      <div className="font-medium">{pkg.label}</div>
+                      <div className="font-mono text-xs text-[var(--color-text-muted)] mt-0.5">{pkg.code}</div>
+                      <details className="mt-1 text-xs text-[var(--color-text-muted)]">
+                        <summary className="cursor-pointer select-none text-[var(--color-primary)] hover:underline">详情与时间</summary>
+                        <div className="mt-1 space-y-1">
+                          <div>说明：<span>{pkg.description || '—'}</span></div>
+                          <div>
+                            <span className="text-[var(--color-text-muted)]">创建</span>{' '}
+                            <time dateTime={pkg.createdAt}>{formatDateTime(pkg.createdAt)}</time>
+                          </div>
+                          <div>
+                            <span className="text-[var(--color-text-muted)]">更新</span>{' '}
+                            <time dateTime={pkg.updatedAt}>{formatDateTime(pkg.updatedAt)}</time>
+                          </div>
+                        </div>
+                      </details>
                     </td>
-                    <td className="px-3 py-3">{pkg.durationDays} 天</td>
+                    <td className="px-3 py-3">
+                      <div>{PLACEMENT_LABEL[pkg.placement] ?? pkg.placement}</div>
+                      <div className="text-xs text-[var(--color-text-muted)]">{pkg.durationDays} 天</div>
+                    </td>
                     <td className="px-3 py-3">{pkg.pricePoints}</td>
-                    <td className="px-3 py-3">{pkg.description || '—'}</td>
                     <td className="px-3 py-3">{pkg.sortOrder}</td>
                     <td className="px-3 py-3">{PACKAGE_STATUS_LABEL[pkg.status] ?? pkg.status}</td>
-                    <td className="px-3 py-3">
-                      <div className="flex flex-col gap-1">
-                        <span>
-                          <span className="text-[var(--color-text-muted)]">创建</span>{' '}
-                          <time dateTime={pkg.createdAt}>{formatDateTime(pkg.createdAt)}</time>
-                        </span>
-                        <span>
-                          <span className="text-[var(--color-text-muted)]">更新</span>{' '}
-                          <time dateTime={pkg.updatedAt}>{formatDateTime(pkg.updatedAt)}</time>
-                        </span>
-                      </div>
-                    </td>
                     <td className="px-3 py-3">
                       <button
                         type="button"
@@ -638,10 +640,14 @@ export default function AdminPromotionPackageManager({
                 htmlFor="package-create-sort"
                 className="block text-xs font-bold text-[var(--color-text-muted)] mb-1.5 uppercase tracking-wider"
               >
-                排序
+                展示顺序
+                <span className="text-[11px] font-normal text-[var(--color-text-muted)] ml-1">
+                  （数字越小越靠前）
+                </span>
               </label>
               <input
                 id="package-create-sort"
+                aria-label="排序"
                 type="text"
                 inputMode="numeric"
                 value={createSortOrder}
@@ -855,10 +861,14 @@ export default function AdminPromotionPackageManager({
                   htmlFor="package-edit-sort"
                   className="block text-xs font-bold text-[var(--color-text-muted)] mb-1.5 uppercase tracking-wider"
                 >
-                  排序
+                  展示顺序
+                  <span className="text-[11px] font-normal text-[var(--color-text-muted)] ml-1">
+                    （数字越小越靠前）
+                  </span>
                 </label>
                 <input
                   id="package-edit-sort"
+                  aria-label="排序"
                   type="text"
                   inputMode="numeric"
                   value={editSortOrder}
