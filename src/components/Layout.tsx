@@ -15,6 +15,7 @@ import MobileNavDrawer from './MobileNavDrawer'
 import BottomTabBar from './BottomTabBar'
 import StoreSearchPanel from './StoreSearchPanel'
 import { useIsMobileViewport } from '../hooks/useMediaQuery'
+import { useRechargeNavAvailable } from '../hooks/useRechargeNavAvailable'
 import { useAnnouncements } from '../hooks/useAnnouncements'
 import { useNotificationInvalidation } from '../hooks/useNotificationInvalidation'
 import { NotificationRealtimeBridge } from './NotificationRealtimeBridge'
@@ -39,6 +40,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const notificationUnreadCount = useAppStore((s) => s.notificationUnreadCount)
   const refreshNotificationUnread = useAppStore((s) => s.refreshNotificationUnread)
   const announcements = useAnnouncements()
+  const rechargeNavAvailable = useRechargeNavAvailable()
   const [announcementCenterOpen, setAnnouncementCenterOpen] = useState(false)
   const surfacedRequiredAnnouncements = useRef(new Set<string>())
   const totalBellUnread = announcements.unreadCount + notificationUnreadCount
@@ -451,22 +453,24 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               <ThemeToggle />
             </div>
 
-            <button
-              type="button"
-              onClick={() => navigate('/recharge')}
-              title="积分充值"
-              aria-label="积分充值"
-              aria-current={location.pathname.startsWith('/recharge') ? 'page' : undefined}
-              data-testid="nav-recharge"
-              className={`hidden md:flex items-center gap-1.5 px-3 py-2 rounded-full cursor-pointer transition-colors border focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)] ${
-                location.pathname.startsWith('/recharge')
-                  ? 'bg-[var(--color-primary-tint)] text-[var(--color-primary)] border-[var(--color-primary-tint-strong)]'
-                  : 'bg-[var(--color-surface)] text-[var(--color-text)] border-[var(--color-border)] hover:border-[var(--color-primary-tint-strong)]'
-              }`}
-            >
-              <Wallet className="w-4 h-4" />
-              <span className="hidden lg:inline font-bold text-xs">充值</span>
-            </button>
+            {rechargeNavAvailable && (
+              <button
+                type="button"
+                onClick={() => navigate('/recharge')}
+                title="积分充值"
+                aria-label="积分充值"
+                aria-current={location.pathname.startsWith('/recharge') ? 'page' : undefined}
+                data-testid="nav-recharge"
+                className={`hidden md:flex items-center gap-1.5 px-3 py-2 rounded-full cursor-pointer transition-colors border focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)] ${
+                  location.pathname.startsWith('/recharge')
+                    ? 'bg-[var(--color-primary-tint)] text-[var(--color-primary)] border-[var(--color-primary-tint-strong)]'
+                    : 'bg-[var(--color-surface)] text-[var(--color-text)] border-[var(--color-border)] hover:border-[var(--color-primary-tint-strong)]'
+                }`}
+              >
+                <Wallet className="w-4 h-4" />
+                <span className="hidden lg:inline font-bold text-xs">充值</span>
+              </button>
+            )}
 
             {/* Points Badge — Coins icon in CTA green to match the buy-currency story */}
             <div
