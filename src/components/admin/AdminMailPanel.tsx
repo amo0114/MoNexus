@@ -106,7 +106,9 @@ export default function AdminMailPanel() {
           </dl>
 
           <form onSubmit={handleSend} className="flex flex-wrap items-center gap-2 pt-1">
+            <label htmlFor="admin-mail-test-email" className="sr-only">测试收件地址</label>
             <input
+              id="admin-mail-test-email"
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
