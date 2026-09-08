@@ -105,9 +105,9 @@ export default function PortableBackupPanel() {
   const taskDescription = !job
     ? '尚未创建备份'
     : job.state === 'running'
-      ? '正在导出数据库与对象文件…'
+      ? '正在创建加密备份包（导出数据库与上传文件）…'
       : job.state === 'ready'
-        ? `已完成：${formatBytes(job.byteSize)}，${job.objectCount ?? 0} 个对象`
+        ? `备份已完成：${formatBytes(job.byteSize)}，包含 ${job.objectCount ?? 0} 个对象`
         : job.error ?? '备份创建失败'
 
   return (
@@ -118,14 +118,16 @@ export default function PortableBackupPanel() {
           <div>
             <h3 className="font-bold text-[var(--color-text)]">创建可移植备份</h3>
             <p className="text-sm text-[var(--color-text-muted)] mt-1">
-              导出数据库和上传文件为一个加密包。环境变量、JWT、数据库和对象存储密钥不会被导出。
+              备份范围：数据库与上传文件的加密备份包。说明：不含部署环境变量、JWT 密钥、数据库连接密钥及对象存储密钥，需要另外保存部署环境配置。
             </p>
           </div>
         </div>
 
         <form onSubmit={handleCreate} className="flex flex-col sm:flex-row gap-3 sm:items-end">
           <label className="block flex-grow">
-            <span className="text-sm font-medium text-[var(--color-text)]">备份口令（至少 12 字符）</span>
+            <span className="text-sm font-medium text-[var(--color-text)]">
+              备份加密口令（至少 12 字符，用于解密此备份包，请妥善保管）
+            </span>
             <input
               type="password"
               autoComplete="new-password"
@@ -148,6 +150,17 @@ export default function PortableBackupPanel() {
         <div className={`text-sm rounded-md px-3 py-2 ${job?.state === 'failed' ? 'bg-[var(--color-danger)]/10 text-[var(--color-danger)]' : 'bg-[var(--color-primary)]/8 text-[var(--color-text-muted)]'}`}>
           {taskDescription}
         </div>
+        {job && (
+          <details className="text-xs text-[var(--color-text-muted)]">
+            <summary className="cursor-pointer hover:text-[var(--color-text)]">备份任务详情（排障）</summary>
+            <div className="mt-1 font-mono text-[11px] pl-2 border-l border-[var(--color-border)] space-y-0.5">
+              <div>任务编号：{job.id}</div>
+              <div>任务状态：{job.state}</div>
+              {job.fileName && <div>文件名：{job.fileName}</div>}
+              {job.error && <div className="text-[var(--color-danger)]">失败原因：{job.error}</div>}
+            </div>
+          </details>
+        )}
         {job?.state === 'ready' && (
           <button onClick={handleDownload} disabled={downloading} className="btn-primary px-4 py-2 text-sm disabled:opacity-50">
             {downloading ? <LoaderCircle className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
@@ -162,7 +175,7 @@ export default function PortableBackupPanel() {
           <div>
             <h3 className="font-bold text-[var(--color-text)]">导入到新实例</h3>
             <p className="text-sm text-[var(--color-text-muted)] mt-1">
-              仅允许全新、没有业务数据的实例导入。系统会保留当前登录的引导管理员，并撤销所有旧会话。
+              仅适用于全新、无业务数据的空实例。系统会保留当前登录的引导管理员，并撤销所有旧会话。导入不可逆，不可在已有业务数据的实例上覆盖执行。
             </p>
           </div>
         </div>
