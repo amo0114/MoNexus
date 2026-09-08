@@ -75,7 +75,7 @@ describe('AdminRechargeOrders refund gate', () => {
       items: [order({ supportsRefunds: false })],
     })
     render(<AdminRechargeOrders />)
-    expect(await screen.findByText('已到账')).toBeInTheDocument()
+    expect(await screen.findByText('积分已入账')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '退款' })).not.toBeInTheDocument()
   })
 })

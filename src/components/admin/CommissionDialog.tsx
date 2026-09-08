@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '../ui/Dialog'
+import { formatCommissionRate } from '../../utils/adminRechargeDisplay'
 import { updateMerchantCommission } from '../../api/adminMerchant'
 import { getApiErrorMessage } from '../../api/error'
 import { Merchant } from '../../types/merchant'
@@ -61,15 +62,16 @@ export default function CommissionDialog({ merchant, onClose, onSuccess }: Props
       <DialogContent data-testid="commission-dialog" className="max-w-sm">
         <DialogTitle>调整平台抽成</DialogTitle>
         <DialogDescription>
-          商家「{merchant?.name}」当前抽成 {(Number(merchant?.commissionRate ?? 0) * 100).toFixed(2)}%
+          商家「{merchant?.name}」当前抽成 {merchant ? formatCommissionRate(Number(merchant.commissionRate)) : '0%'}
         </DialogDescription>
         <div className="space-y-4 mt-4">
           <div>
-            <label className="block text-xs font-bold text-[var(--color-text-muted)] mb-1.5 uppercase tracking-wider">
-              新抽成比例（%）
+            <label htmlFor="commission-rate-input" className="block text-xs font-bold text-[var(--color-text-muted)] mb-1.5 uppercase tracking-wider">
+              新平台抽成比例（%）
             </label>
             <div className="flex items-center gap-2">
               <input
+                id="commission-rate-input"
                 type="number"
                 min="0"
                 max="100"
@@ -94,7 +96,7 @@ export default function CommissionDialog({ merchant, onClose, onSuccess }: Props
               className="text-xs text-[var(--color-text)] bg-[var(--color-info)]/8 border border-[var(--color-info)]/20 rounded px-3 py-2"
               data-testid="commission-confirm-text"
             >
-              确认后，平台将按订单金额的 <span className="font-bold">{Number(percent)}%</span> 抽成（提交值 {rate}）。
+              确认后，平台将按订单金额的 <span className="font-bold">{Number(percent)}%</span> 抽成。
             </div>
           )}
           {error && (

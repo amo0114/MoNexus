@@ -164,7 +164,7 @@ export default function AdminOrderDetailDialog({
 
                 <div>
                   <div className="text-[var(--color-text-muted)] mb-0.5 flex items-center gap-1">
-                    <Package className="w-3.5 h-3.5" /> 扣除积分
+                    <Package className="w-3.5 h-3.5" /> 订单积分
                   </div>
                   <div className="font-bold text-[var(--color-cta)]">
                     {order.price} 积分
@@ -207,7 +207,15 @@ export default function AdminOrderDetailDialog({
                 </div>
                 {order.deliveryModeSnapshot && (
                   <div className="text-xs text-[var(--color-text-muted)] mt-0.5">
-                    交付履约模式: {order.deliveryModeSnapshot}
+                    交付履约模式: {
+                      order.deliveryModeSnapshot === 'instant_inventory'
+                        ? '自动发货（卡密池）'
+                        : order.deliveryModeSnapshot === 'instant_fixed'
+                          ? '自动发货（固定内容）'
+                          : order.deliveryModeSnapshot === 'manual_service'
+                            ? '人工履约服务'
+                            : order.deliveryModeSnapshot
+                    }
                   </div>
                 )}
               </div>
@@ -221,7 +229,17 @@ export default function AdminOrderDetailDialog({
                   </div>
                   {order.delivery?.status && (
                     <span className="text-xs text-[var(--color-text-muted)]">
-                      状态: {order.delivery.status}
+                      状态: {
+                        order.delivery.status === 'delivered'
+                          ? '已交付'
+                          : order.delivery.status === 'pending'
+                            ? '待交付'
+                            : order.delivery.status === 'failed'
+                              ? '交付失败'
+                              : order.delivery.status === 'expired'
+                                ? '已过期'
+                                : order.delivery.status
+                      }
                     </span>
                   )}
                 </div>

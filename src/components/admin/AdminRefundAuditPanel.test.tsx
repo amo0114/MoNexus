@@ -127,7 +127,7 @@ describe('AdminRefundAuditPanel', () => {
 
     // Status badges
     expect(screen.getAllByText('已退款').length).toBeGreaterThanOrEqual(2)
-    expect(screen.getByText('退款失败')).toBeInTheDocument()
+    expect(screen.getAllByText('退款失败').length).toBeGreaterThanOrEqual(2)
 
     // Reversal badges: completed, terminated, anomaly
     expect(screen.getByText('已冲正')).toBeInTheDocument()

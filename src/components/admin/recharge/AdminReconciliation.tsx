@@ -8,6 +8,12 @@ import EmptyState from '../../ui/EmptyState'
 import { TableSkeleton } from '../../ui/Skeleton'
 import { PAYMENT_PROVIDERS, providerLabel, RECON_STATUS_LABEL } from '../../../pages/recharge/status'
 
+const SCOPE_TYPE_LABELS: Record<string, string> = {
+  statement: '渠道账单',
+  provider_query: '渠道主动查询',
+  manual: '人工指定范围',
+}
+
 export default function AdminReconciliation() {
   const showToast = useAppStore((s) => s.showToast)
   const [items, setItems] = useState<AdminReconRun[]>([])
@@ -34,16 +40,31 @@ export default function AdminReconciliation() {
 
   return (
     <div className="space-y-4" data-testid="admin-reconciliation">
-      <div className="flex flex-wrap items-center gap-2">
-        <select className="input" value={provider} onChange={(e) => setProvider(e.target.value)}>
-          {PAYMENT_PROVIDERS.map((item) => (
-            <option key={item} value={item}>{providerLabel(item)}</option>
-          ))}
-        </select>
-        <button type="button" className="btn-primary" onClick={() => setConfirmOpen(true)}>
+      <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-xl bg-[var(--color-surface)] border border-[var(--color-border)]">
+        <div className="flex items-center gap-2">
+          <label htmlFor="admin-recon-provider-select" className="text-xs font-medium text-[var(--color-text-muted)] shrink-0">
+            核对渠道:
+          </label>
+          <select
+            id="admin-recon-provider-select"
+            className="input py-1.5 text-xs w-40"
+            value={provider}
+            onChange={(e) => setProvider(e.target.value)}
+          >
+            {PAYMENT_PROVIDERS.map((item) => (
+              <option key={item} value={item}>{providerLabel(item)}</option>
+            ))}
+          </select>
+        </div>
+        <button
+          type="button"
+          className="btn-primary btn-sm text-xs cursor-pointer"
+          onClick={() => setConfirmOpen(true)}
+        >
           发起对账
         </button>
       </div>
+
       {loading && items.length === 0 ? (
         <TableSkeleton />
       ) : items.length === 0 ? (
@@ -53,24 +74,50 @@ export default function AdminReconciliation() {
           <table className="admin-table table-cards">
             <thead>
               <tr>
-                <th>渠道</th>
-                <th>范围</th>
-                <th>状态</th>
-                <th>差异</th>
-                <th>时间</th>
+                <th>核对渠道 / 环境</th>
+                <th>对账范围</th>
+                <th>对账状态</th>
+                <th>核对结果</th>
+                <th>发起时间</th>
               </tr>
             </thead>
             <tbody>
               {items.map((item) => (
                 <tr key={item.id}>
-                  <td data-label="渠道">
-                    {providerLabel(item.provider)}
-                    <div className="text-xs text-[var(--color-text-muted)]">{item.environment}</div>
+                  <td data-label="核对渠道 / 环境">
+                    <div className="font-semibold text-xs text-[var(--color-text)]">
+                      {providerLabel(item.provider)}
+                    </div>
+                    <div className="text-[11px] text-[var(--color-text-muted)] mt-0.5">
+                      {item.environment === 'sandbox' ? '沙箱测试' : '正式充值'}
+                    </div>
                   </td>
-                  <td data-label="范围" className="text-xs">{item.scopeType} · {item.scopeKey}</td>
-                  <td data-label="状态">{RECON_STATUS_LABEL[item.status] ?? item.status}</td>
-                  <td data-label="差异">{item.mismatchCount} / {item.itemCount}</td>
-                  <td data-label="时间">{new Date(item.createdAt).toLocaleString()}</td>
+                  <td data-label="对账范围" className="text-xs">
+                    <div className="font-medium text-[var(--color-text)]">
+                      {SCOPE_TYPE_LABELS[item.scopeType] || item.scopeType}
+                    </div>
+                    <div className="text-[11px] font-mono text-[var(--color-text-muted)] mt-0.5 truncate max-w-[180px]" title={item.scopeKey}>
+                      {item.scopeKey}
+                    </div>
+                  </td>
+                  <td data-label="对账状态">
+                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold border border-[var(--color-border)] bg-[var(--color-background)]">
+                      {item.status === 'completed_with_mismatches'
+                        ? '核对完成（存在差异）'
+                        : RECON_STATUS_LABEL[item.status] ?? item.status}
+                    </span>
+                  </td>
+                  <td data-label="核对结果" className="text-xs">
+                    <div className={item.mismatchCount > 0 ? 'text-[var(--color-danger)] font-bold' : 'text-[var(--color-cta)] font-semibold'}>
+                      发现差异 {item.mismatchCount} 条
+                    </div>
+                    <div className="text-[11px] text-[var(--color-text-muted)] mt-0.5">
+                      已检查 {item.itemCount} 条
+                    </div>
+                  </td>
+                  <td data-label="发起时间" className="text-xs text-[var(--color-text-muted)]">
+                    {new Date(item.createdAt).toLocaleString()}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -81,8 +128,8 @@ export default function AdminReconciliation() {
         open={confirmOpen}
         onOpenChange={(open) => { if (!acting) setConfirmOpen(open) }}
         title="发起渠道对账？"
-        description="将按服务端对账合同查询渠道，不会手工改写订单或余额。"
-        confirmLabel="发起"
+        description="核对渠道记录与平台记录，查看未一致的项目。不会手工改写订单或可用积分。"
+        confirmLabel="确认发起"
         tone="primary"
         loading={acting}
         onConfirm={() => {

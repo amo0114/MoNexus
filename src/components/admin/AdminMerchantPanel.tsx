@@ -12,6 +12,7 @@ import { useAppStore } from '../../stores/appStore'
 import { TableSkeleton } from '../ui/Skeleton'
 import EmptyState from '../ui/EmptyState'
 import AdminPagination from './AdminPagination'
+import { formatCommissionRate } from '../../utils/adminRechargeDisplay'
 import CommissionDialog from './CommissionDialog'
 import RejectMerchantDialog from './RejectMerchantDialog'
 import AdminPanelHeader from './AdminPanelHeader'
@@ -215,7 +216,7 @@ export default function AdminMerchantPanel({ active = true }: Props) {
               <tr>
                 <th>商家名称</th>
                 <th>联系人</th>
-                <th>抽成比例</th>
+                <th>平台抽成</th>
                 <th>状态</th>
                 <th className="text-right">操作</th>
               </tr>
@@ -231,8 +232,8 @@ export default function AdminMerchantPanel({ active = true }: Props) {
                     <div className="text-[var(--color-text)]">{m.contactEmail || '-'}</div>
                     <div className="text-xs text-[var(--color-text-muted)]">{m.contactPhone || '-'}</div>
                   </td>
-                  <td className="text-[var(--color-primary)] font-bold" data-label="抽成比例">
-                    {(Number(m.commissionRate) * 100).toFixed(0)}%
+                  <td className="text-[var(--color-primary)] font-bold" data-label="平台抽成">
+                    {formatCommissionRate(Number(m.commissionRate))}
                   </td>
                   <td data-label="状态">
                     <MerchantStatusPill status={m.status} />
