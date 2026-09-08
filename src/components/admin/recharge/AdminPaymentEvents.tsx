@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
-import { Activity } from 'lucide-react'
+import { Activity, Copy } from 'lucide-react'
 import { listAdminPaymentEvents, retryAdminPaymentEvent, type AdminPaymentEvent } from '../../../api/adminRecharge'
 import { getApiErrorMessage } from '../../../api/error'
 import { useAppStore } from '../../../stores/appStore'
 import AdminPagination from '../AdminPagination'
 import ConfirmDialog from '../../ui/ConfirmDialog'
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../../ui/Dialog'
 import EmptyState from '../../ui/EmptyState'
 import { TableSkeleton } from '../../ui/Skeleton'
 import { EVENT_STATUS_LABEL, PAYMENT_EVENT_STATUSES, PAYMENT_PROVIDERS, providerLabel } from '../../../pages/recharge/status'
@@ -20,6 +21,7 @@ export default function AdminPaymentEvents() {
   const [status, setStatus] = useState('')
   const [provider, setProvider] = useState('')
   const [loading, setLoading] = useState(true)
+  const [detailTarget, setDetailTarget] = useState<AdminPaymentEvent | null>(null)
   const [retryTarget, setRetryTarget] = useState<AdminPaymentEvent | null>(null)
   const [acting, setActing] = useState(false)
 
@@ -119,31 +121,48 @@ export default function AdminPaymentEvents() {
                     </span>
                   </td>
                   <td data-label="关联支付标识">
-                    <div className="font-mono text-xs text-[var(--color-text)] space-y-0.5">
+                    <button
+                      type="button"
+                      onClick={() => setDetailTarget(item)}
+                      className="text-left font-mono text-xs text-[var(--color-text)] space-y-0.5 hover:text-[var(--color-primary)] transition-colors cursor-pointer"
+                      title="点击查看完整标识详情"
+                    >
                       {item.paymentAttemptId && (
-                        <div title="支付尝试编号">尝试: {item.paymentAttemptId.slice(0, 10)}…</div>
+                        <div>尝试: {item.paymentAttemptId.slice(0, 10)}…</div>
                       )}
                       {item.providerPaymentId && (
-                        <div className="text-[var(--color-text-muted)] text-[11px]" title="渠道交易号">渠道: {item.providerPaymentId.slice(0, 14)}…</div>
+                        <div className="text-[var(--color-text-muted)] text-[11px]">渠道: {item.providerPaymentId.slice(0, 14)}…</div>
                       )}
                       {!item.paymentAttemptId && !item.providerPaymentId && <span className="text-[var(--color-text-muted)]">—</span>}
-                    </div>
+                    </button>
                   </td>
                   <td data-label="失败摘要">
-                    <div className="text-xs">
-                      {item.lastErrorCode ? (
-                        <span className="text-[var(--color-danger)] font-mono">{item.lastErrorCode}</span>
-                      ) : (
-                        <span className="text-[var(--color-text-muted)]">—</span>
-                      )}
-                      <div className="text-[11px] text-[var(--color-text-muted)] font-mono mt-0.5 truncate max-w-[140px]" title={item.eventType}>
-                        {item.eventType}
+                    {item.status === 'succeeded' ? (
+                      <span className="text-xs text-[var(--color-text-muted)]">—</span>
+                    ) : (
+                      <div className="text-xs">
+                        {item.lastErrorCode ? (
+                          <span className="text-[var(--color-danger)] font-mono">{item.lastErrorCode}</span>
+                        ) : (
+                          <span className="text-[var(--color-text-muted)]">—</span>
+                        )}
                       </div>
-                    </div>
+                    )}
                   </td>
-                  <td className="text-right" data-label="操作">
+                  <td className="text-right whitespace-nowrap space-x-2" data-label="操作">
+                    <button
+                      type="button"
+                      className="text-xs font-bold text-[var(--color-primary)] hover:underline cursor-pointer"
+                      onClick={() => setDetailTarget(item)}
+                    >
+                      详情
+                    </button>
                     {(item.status === 'failed' || item.status === 'received') && (
-                      <button type="button" className="text-sm font-bold text-[var(--color-primary)] hover:underline cursor-pointer" onClick={() => setRetryTarget(item)}>
+                      <button
+                        type="button"
+                        className="text-xs font-bold text-[var(--color-primary)] hover:underline cursor-pointer"
+                        onClick={() => setRetryTarget(item)}
+                      >
                         重试
                       </button>
                     )}
@@ -155,6 +174,104 @@ export default function AdminPaymentEvents() {
         </div>
       )}
       <AdminPagination page={page} total={total} pageSize={PAGE_SIZE} onPageChange={setPage} />
+
+      <Dialog open={detailTarget != null} onOpenChange={(open) => { if (!open) setDetailTarget(null) }}>
+        <DialogContent className="max-w-lg">
+          <DialogTitle>支付事件详情</DialogTitle>
+          <DialogDescription className="text-xs text-[var(--color-text-muted)] font-mono">
+            事件ID: {detailTarget?.id}
+          </DialogDescription>
+          {detailTarget && (
+            <div className="space-y-3 mt-2 text-xs">
+              <div className="grid grid-cols-2 gap-2 p-3 bg-[var(--color-background)] rounded-lg border border-[var(--color-border)]">
+                <div>
+                  <span className="text-[var(--color-text-muted)]">渠道：</span>
+                  <span className="font-semibold text-[var(--color-text)]">{providerLabel(detailTarget.provider)}</span>
+                </div>
+                <div>
+                  <span className="text-[var(--color-text-muted)]">事件来源：</span>
+                  <span className="font-semibold text-[var(--color-text)]">{PAYMENT_EVENT_SOURCE_LABEL[detailTarget.source] || detailTarget.source}</span>
+                </div>
+                <div>
+                  <span className="text-[var(--color-text-muted)]">处理状态：</span>
+                  <span className="font-bold text-[var(--color-text)]">{EVENT_STATUS_LABEL[detailTarget.status] ?? detailTarget.status}</span>
+                </div>
+                <div>
+                  <span className="text-[var(--color-text-muted)]">重试次数：</span>
+                  <span className="font-mono text-[var(--color-text)]">{detailTarget.attempts}</span>
+                </div>
+                <div className="col-span-2">
+                  <span className="text-[var(--color-text-muted)]">原始事件类型 (EventType)：</span>
+                  <span className="font-mono font-bold text-[var(--color-text)] ml-1 select-all">{detailTarget.eventType}</span>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <div>
+                  <div className="text-[var(--color-text-muted)] font-medium mb-1">支付尝试标识 (Payment Attempt ID)</div>
+                  <div className="flex items-center justify-between gap-2 p-2 bg-[var(--color-background)] rounded border border-[var(--color-border)] font-mono text-[11px] break-all select-all">
+                    <span>{detailTarget.paymentAttemptId || '（无）'}</span>
+                    {detailTarget.paymentAttemptId && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void navigator.clipboard.writeText(detailTarget.paymentAttemptId!)
+                          showToast('已复制尝试标识')
+                        }}
+                        className="btn-ghost p-1 text-[var(--color-text-muted)] hover:text-[var(--color-text)] shrink-0 cursor-pointer"
+                        title="复制"
+                      >
+                        <Copy className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <div>
+                  <div className="text-[var(--color-text-muted)] font-medium mb-1">渠道交易号 (Provider Payment ID)</div>
+                  <div className="flex items-center justify-between gap-2 p-2 bg-[var(--color-background)] rounded border border-[var(--color-border)] font-mono text-[11px] break-all select-all">
+                    <span>{detailTarget.providerPaymentId || '（无）'}</span>
+                    {detailTarget.providerPaymentId && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void navigator.clipboard.writeText(detailTarget.providerPaymentId!)
+                          showToast('已复制渠道交易号')
+                        }}
+                        className="btn-ghost p-1 text-[var(--color-text-muted)] hover:text-[var(--color-text)] shrink-0 cursor-pointer"
+                        title="复制"
+                      >
+                        <Copy className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {detailTarget.lastErrorCode && (
+                  <div>
+                    <div className="text-[var(--color-danger)] font-medium mb-1">错误码 (Last Error Code)</div>
+                    <div className="p-2 bg-[var(--color-danger)]/10 text-[var(--color-danger)] rounded border border-[var(--color-danger)]/20 font-mono text-[11px] select-all">
+                      {detailTarget.lastErrorCode}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="p-3 bg-[var(--color-background)] rounded-lg border border-[var(--color-border)] space-y-1 text-[11px] text-[var(--color-text-muted)]">
+                <div>接收时间：{new Date(detailTarget.createdAt).toLocaleString()}</div>
+                <div>处理时间：{detailTarget.processedAt ? new Date(detailTarget.processedAt).toLocaleString() : '未完成处理'}</div>
+                <div>
+                  处理耗时：
+                  {detailTarget.processedAt
+                    ? `${Math.max(0, new Date(detailTarget.processedAt).getTime() - new Date(detailTarget.createdAt).getTime())} ms`
+                    : '—'}
+                </div>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
       <ConfirmDialog
         open={retryTarget != null}
         onOpenChange={(open) => { if (!open && !acting) setRetryTarget(null) }}

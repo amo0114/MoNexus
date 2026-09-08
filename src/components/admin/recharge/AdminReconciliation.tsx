@@ -4,8 +4,10 @@ import { createAdminReconRun, listAdminReconRuns, type AdminReconRun } from '../
 import { getApiErrorMessage } from '../../../api/error'
 import { useAppStore } from '../../../stores/appStore'
 import ConfirmDialog from '../../ui/ConfirmDialog'
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../../ui/Dialog'
 import EmptyState from '../../ui/EmptyState'
 import { TableSkeleton } from '../../ui/Skeleton'
+import { formatCurrencyAmount } from '../../../pages/recharge/money'
 import { PAYMENT_PROVIDERS, providerLabel, RECON_STATUS_LABEL } from '../../../pages/recharge/status'
 
 const SCOPE_TYPE_LABELS: Record<string, string> = {
@@ -21,6 +23,7 @@ export default function AdminReconciliation() {
   const [provider, setProvider] = useState('simulator')
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [acting, setActing] = useState(false)
+  const [selectedRun, setSelectedRun] = useState<AdminReconRun | null>(null)
 
   async function load() {
     setLoading(true)
@@ -79,6 +82,7 @@ export default function AdminReconciliation() {
                 <th>对账状态</th>
                 <th>核对结果</th>
                 <th>发起时间</th>
+                <th className="text-right">操作</th>
               </tr>
             </thead>
             <tbody>
@@ -108,15 +112,31 @@ export default function AdminReconciliation() {
                     </span>
                   </td>
                   <td data-label="核对结果" className="text-xs">
-                    <div className={item.mismatchCount > 0 ? 'text-[var(--color-danger)] font-bold' : 'text-[var(--color-cta)] font-semibold'}>
-                      发现差异 {item.mismatchCount} 条
-                    </div>
-                    <div className="text-[11px] text-[var(--color-text-muted)] mt-0.5">
-                      已检查 {item.itemCount} 条
-                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedRun(item)}
+                      className="text-left cursor-pointer hover:underline"
+                      title="点击查看差异明细"
+                    >
+                      <div className={item.mismatchCount > 0 ? 'text-[var(--color-danger)] font-bold' : 'text-[var(--color-cta)] font-semibold'}>
+                        发现差异 {item.mismatchCount} 条
+                      </div>
+                      <div className="text-[11px] text-[var(--color-text-muted)] mt-0.5">
+                        已检查 {item.itemCount} 条
+                      </div>
+                    </button>
                   </td>
                   <td data-label="发起时间" className="text-xs text-[var(--color-text-muted)]">
                     {new Date(item.createdAt).toLocaleString()}
+                  </td>
+                  <td className="text-right whitespace-nowrap" data-label="操作">
+                    <button
+                      type="button"
+                      className="text-xs font-bold text-[var(--color-primary)] hover:underline cursor-pointer"
+                      onClick={() => setSelectedRun(item)}
+                    >
+                      明细{item.items && item.items.length > 0 ? ` (${item.items.length})` : ''}
+                    </button>
                   </td>
                 </tr>
               ))}
@@ -124,6 +144,111 @@ export default function AdminReconciliation() {
           </table>
         </div>
       )}
+
+      <Dialog open={selectedRun != null} onOpenChange={(open) => { if (!open) setSelectedRun(null) }}>
+        <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
+          <DialogTitle>对账差异明细</DialogTitle>
+          <DialogDescription className="text-xs text-[var(--color-text-muted)] font-mono">
+            批次号: {selectedRun?.id}
+          </DialogDescription>
+          {selectedRun && (
+            <div className="space-y-4 mt-2 text-xs">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 p-3 bg-[var(--color-background)] rounded-lg border border-[var(--color-border)]">
+                <div>
+                  <span className="text-[var(--color-text-muted)] block">核对渠道</span>
+                  <span className="font-semibold text-[var(--color-text)]">{providerLabel(selectedRun.provider)}</span>
+                </div>
+                <div>
+                  <span className="text-[var(--color-text-muted)] block">执行环境</span>
+                  <span className="font-semibold text-[var(--color-text)]">{selectedRun.environment === 'sandbox' ? '沙箱环境' : '生产环境'}</span>
+                </div>
+                <div>
+                  <span className="text-[var(--color-text-muted)] block">检查总数</span>
+                  <span className="font-bold text-[var(--color-text)]">{selectedRun.itemCount} 条</span>
+                </div>
+                <div>
+                  <span className="text-[var(--color-text-muted)] block">差异条数</span>
+                  <span className={`font-bold ${selectedRun.mismatchCount > 0 ? 'text-[var(--color-danger)]' : 'text-[var(--color-cta)]'}`}>
+                    {selectedRun.mismatchCount} 条
+                  </span>
+                </div>
+              </div>
+
+              <div>
+                <h4 className="font-bold text-xs text-[var(--color-text)] mb-2">
+                  差异条目明细 ({selectedRun.items?.length || 0})
+                </h4>
+                {selectedRun.items && selectedRun.items.length > 0 ? (
+                  <div className="overflow-x-auto rounded-lg border border-[var(--color-border)]">
+                    <table className="admin-table text-xs">
+                      <thead>
+                        <tr>
+                          <th>差异类型</th>
+                          <th>渠道凭据 / 订单号</th>
+                          <th>平台状态 vs 渠道状态</th>
+                          <th>平台金额 vs 渠道金额</th>
+                          <th>条目状态</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {selectedRun.items.map((ri) => (
+                          <tr key={ri.id}>
+                            <td className="font-bold text-[var(--color-danger)]">
+                              {ri.mismatchType}
+                            </td>
+                            <td className="font-mono text-[11px] break-all select-all">
+                              <div>凭据: {ri.providerEntryKey}</div>
+                              {ri.rechargeOrderId && (
+                                <div className="text-[var(--color-text-muted)]">
+                                  订单: {ri.rechargeOrderId}
+                                </div>
+                              )}
+                            </td>
+                            <td>
+                              <div>
+                                <span className="text-[var(--color-text-muted)]">平台: </span>
+                                <span className="font-semibold">{ri.localStatus || '—'}</span>
+                              </div>
+                              <div className="mt-0.5">
+                                <span className="text-[var(--color-text-muted)]">渠道: </span>
+                                <span className="font-semibold text-[var(--color-primary)]">{ri.providerStatus || '—'}</span>
+                              </div>
+                            </td>
+                            <td>
+                              <div>
+                                <span className="text-[var(--color-text-muted)]">平台: </span>
+                                <span className="font-semibold">
+                                  {ri.localAmountMinor ? formatCurrencyAmount(ri.localAmountMinor, ri.currency || 'CNY') : '—'}
+                                </span>
+                              </div>
+                              <div className="mt-0.5">
+                                <span className="text-[var(--color-text-muted)]">渠道: </span>
+                                <span className="font-semibold text-[var(--color-primary)]">
+                                  {ri.providerAmountMinor ? formatCurrencyAmount(ri.providerAmountMinor, ri.currency || 'CNY') : '—'}
+                                </span>
+                              </div>
+                            </td>
+                            <td>
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-bold border border-[var(--color-border)] bg-[var(--color-background)]">
+                                {ri.status}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="p-4 bg-[var(--color-background)] rounded-lg border border-[var(--color-border)] text-center text-[var(--color-text-muted)]">
+                    本次对账批次无单项差异记录
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
       <ConfirmDialog
         open={confirmOpen}
         onOpenChange={(open) => { if (!acting) setConfirmOpen(open) }}

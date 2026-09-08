@@ -226,7 +226,11 @@ export default function AdminRechargeOrders() {
                 </div>
                 <div>
                   <div className="text-[var(--color-text-muted)] text-[11px]">
-                    {detail.status === 'credited' ? '实际到账积分' : '应到账积分'}
+                    {detail.status === 'credited'
+                      ? '实际到账积分'
+                      : detail.status === 'refund_pending' || detail.status === 'refunded'
+                        ? '原充值积分'
+                        : '应到账积分'}
                   </div>
                   <div className="font-bold text-sm text-[var(--color-cta)] mt-0.5">
                     {formatPoints(detail.totalPoints)} 积分
