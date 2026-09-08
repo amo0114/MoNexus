@@ -93,7 +93,7 @@ export default function AdminInventoryImportPreview({ open, product, onClose, on
       <DialogContent className="max-w-xl max-h-[90dvh] overflow-y-auto" data-testid="admin-inventory-preview-dialog">
         <DialogTitle>导入交付库存</DialogTitle>
         <DialogDescription>
-          商品：{product?.name ?? ''}。先选择规格并预览；确认时服务端会重新校验整批内容。
+          商品：{product?.name ?? ''}。先选择规格并预览；提交导入时服务端还会再次核验库存唯一性与可用性。
         </DialogDescription>
         <div className="mt-5 space-y-4">
           <div>
