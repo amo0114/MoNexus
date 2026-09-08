@@ -294,19 +294,19 @@ export default function AnnouncementsAdmin() {
         <table className="admin-table table-cards">
           <thead>
             <tr>
-              <th>标题 / 内容</th>
+              <th>标题与内容摘要</th>
               <th>受众</th>
               <th>展示策略</th>
-              <th>优先级</th>
-              <th>状态</th>
-              <th>时间窗口</th>
+              <th>展示优先级</th>
+              <th>发布状态</th>
+              <th>生效时间</th>
               <th className="text-right">操作</th>
             </tr>
           </thead>
           <tbody>
             {items.map((a) => (
               <tr key={a.id}>
-                <td data-label="标题 / 内容">
+                <td data-label="标题与内容摘要">
                   <div className="font-bold text-[var(--color-text)]">{a.title}</div>
                   <div className="text-xs text-[var(--color-text-muted)] mt-1 line-clamp-1 max-w-md">
                     {a.content}
@@ -322,16 +322,16 @@ export default function AnnouncementsAdmin() {
                     <span className={`inline-flex items-center px-2.5 py-1 text-xs rounded font-bold border ${PRESENTATION_PILL[a.presentation]}`}>
                       {PRESENTATION_LABEL[a.presentation]}
                     </span>
-                    <span className="text-[11px] text-[var(--color-text-muted)]">v{a.version}{a.presentation === 'notice' ? ` · ${a.maxImpressions} 次` : ''}</span>
+                    <span className="text-[11px] text-[var(--color-text-muted)]">内容版本 v{a.version}{a.presentation === 'notice' ? ` · 每台设备最多 ${a.maxImpressions} 次` : ''}</span>
                   </div>
                 </td>
-                <td className="font-mono font-bold text-[var(--color-text)]" data-label="优先级">{a.priority}</td>
-                <td data-label="状态">
+                <td className="font-mono font-bold text-[var(--color-text)]" data-label="展示优先级">{a.priority}</td>
+                <td data-label="发布状态">
                   <span className={`inline-flex items-center px-2.5 py-1 text-xs rounded font-bold border ${STATUS_PILL[a.status]}`}>
                     {STATUS_LABEL[a.status]}
                   </span>
                 </td>
-                <td className="text-xs text-[var(--color-text-muted)] whitespace-nowrap" data-label="时间窗口">
+                <td className="text-xs text-[var(--color-text-muted)] whitespace-nowrap" data-label="生效时间">
                   {formatTimeWindow(a)}
                 </td>
                 <td className="text-right space-x-2 whitespace-nowrap" data-label="操作">
@@ -384,8 +384,9 @@ export default function AnnouncementsAdmin() {
           {editor && (
             <div className="mt-4 space-y-3">
               <div>
-                <label className="block text-xs font-medium mb-1">标题</label>
+                <label htmlFor="announcement-title" className="block text-xs font-medium mb-1">标题</label>
                 <input
+                  id="announcement-title"
                   type="text"
                   className="input"
                   value={editor.title}
@@ -395,8 +396,9 @@ export default function AnnouncementsAdmin() {
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium mb-1">内容</label>
+                <label htmlFor="announcement-content" className="block text-xs font-medium mb-1">内容</label>
                 <textarea
+                  id="announcement-content"
                   className="input min-h-[96px] resize-y"
                   value={editor.content}
                   onChange={(e) => setEditor({ ...editor, content: e.target.value })}
@@ -404,10 +406,11 @@ export default function AnnouncementsAdmin() {
                   data-testid="admin-announcement-content"
                 />
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-medium mb-1">受众</label>
+                  <label htmlFor="announcement-audience" className="block text-xs font-medium mb-1">受众</label>
                   <select
+                    id="announcement-audience"
                     className="input"
                     value={editor.audience}
                     onChange={(e) => setEditor({ ...editor, audience: e.target.value as AnnouncementAudience })}
@@ -420,8 +423,12 @@ export default function AnnouncementsAdmin() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-medium mb-1">优先级 (-1000 ~ 1000)</label>
+                  <label htmlFor="announcement-priority" className="block text-xs font-medium mb-1">
+                    展示优先级
+                    <span className="text-[11px] font-normal text-[var(--color-text-muted)] ml-1">（数字越大越靠前，范围 -1000～1000）</span>
+                  </label>
                   <input
+                    id="announcement-priority"
                     type="number"
                     className="input"
                     value={editor.priority}
@@ -432,10 +439,11 @@ export default function AnnouncementsAdmin() {
                   />
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-medium mb-1">展示策略</label>
+                  <label htmlFor="announcement-presentation" className="block text-xs font-medium mb-1">展示策略</label>
                   <select
+                    id="announcement-presentation"
                     className="input"
                     value={editor.presentation}
                     onChange={(e) => setEditor({ ...editor, presentation: e.target.value as AnnouncementPresentation })}
@@ -447,8 +455,12 @@ export default function AnnouncementsAdmin() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-medium mb-1">普通通知展示次数</label>
+                  <label htmlFor="announcement-max-impressions" className="block text-xs font-medium mb-1">
+                    每台设备最多提示次数
+                    <span className="text-[11px] font-normal text-[var(--color-text-muted)] ml-1">（仅普通通知）</span>
+                  </label>
                   <select
+                    id="announcement-max-impressions"
                     className="input disabled:opacity-50"
                     value={editor.maxImpressions}
                     disabled={editor.presentation !== 'notice'}
@@ -466,10 +478,11 @@ export default function AnnouncementsAdmin() {
                   仅用于必须被用户明确知悉的事项。用户可在公告中心查看全文，点击“我已阅读并确认”后才会停止提示。
                 </p>
               )}
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-medium mb-1">开始时间</label>
+                  <label htmlFor="announcement-starts-at" className="block text-xs font-medium mb-1">开始时间</label>
                   <input
+                    id="announcement-starts-at"
                     type="datetime-local"
                     className="input"
                     value={editor.startsAt}
@@ -478,8 +491,9 @@ export default function AnnouncementsAdmin() {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium mb-1">状态</label>
+                  <label htmlFor="announcement-status" className="block text-xs font-medium mb-1">发布状态</label>
                   <select
+                    id="announcement-status"
                     className="input"
                     value={editor.status}
                     onChange={(e) => setEditor({ ...editor, status: e.target.value as AnnouncementStatus })}
@@ -492,8 +506,9 @@ export default function AnnouncementsAdmin() {
                 </div>
               </div>
               <div>
-                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                <label htmlFor="announcement-has-ends-at" className="flex items-center gap-2 text-sm cursor-pointer">
                   <input
+                    id="announcement-has-ends-at"
                     type="checkbox"
                     checked={editor.hasEndsAt}
                     onChange={(e) => setEditor({ ...editor, hasEndsAt: e.target.checked })}
@@ -503,6 +518,8 @@ export default function AnnouncementsAdmin() {
                 </label>
                 {editor.hasEndsAt && (
                   <input
+                    id="announcement-ends-at"
+                    aria-label="结束时间"
                     type="datetime-local"
                     className="input mt-2"
                     value={editor.endsAt}

@@ -210,7 +210,7 @@ export default function AdminStoragePanel() {
             <HardDrive className="w-5 h-5" /> 对象存储
           </h2>
           <p className="text-sm text-[var(--color-text-muted)] mt-1 max-w-2xl">
-            默认使用部署环境中的 MinIO / S3 底座。云厂商配置是加密覆盖层：保存 → 测试 → 激活分步进行；历史文件按对象绑定读取，不会因切换而静默读错副本。
+            默认使用部署时设置的存储。后台可新增云存储配置，保存并测试后再启用；切换只改变新上传文件的位置。
           </p>
         </div>
         <button type="button" className="btn-secondary btn-sm inline-flex items-center gap-1.5" onClick={() => void reload()}>
@@ -234,43 +234,41 @@ export default function AdminStoragePanel() {
                         : 'text-red-500 bg-red-500/10 border-red-500/25'
                     }`}
                   >
-                    {status.bootstrap.healthy ? '底座可用' : '底座异常'}
+                    {status.bootstrap.healthy ? '部署默认存储可用' : '部署默认存储异常'}
                   </span>
                   <span className="text-xs text-[var(--color-text-muted)]">
-                    写入目标：{status.runtime.writeTarget === 'bootstrap' ? '环境变量底座' : `配置 #${status.runtime.activeConfigId}`}
+                    写入目标：{status.runtime.writeTarget === 'bootstrap' ? '部署默认存储' : `后台配置 #${status.runtime.activeConfigId}`}
                   </span>
                 </div>
                 <dl className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5 text-sm">
                   <div>
-                    <dt className="text-[var(--color-text-muted)] inline">主机 </dt>
+                    <dt className="text-[var(--color-text-muted)] inline">服务地址（Endpoint） </dt>
                     <dd className="inline font-mono text-[var(--color-text)]">{status.bootstrap.endpointHost ?? '—'}</dd>
                   </div>
                   <div>
-                    <dt className="text-[var(--color-text-muted)] inline">Region </dt>
+                    <dt className="text-[var(--color-text-muted)] inline">区域（Region） </dt>
                     <dd className="inline font-mono text-[var(--color-text)]">{status.bootstrap.region ?? '—'}</dd>
                   </div>
                   <div>
-                    <dt className="text-[var(--color-text-muted)] inline">公有桶 </dt>
+                    <dt className="text-[var(--color-text-muted)] inline">公共文件存储桶 </dt>
                     <dd className="inline font-mono text-[var(--color-text)]">{status.bootstrap.publicBucket ?? '—'}</dd>
                   </div>
                   <div>
-                    <dt className="text-[var(--color-text-muted)] inline">私有桶 </dt>
+                    <dt className="text-[var(--color-text-muted)] inline">私有交付存储桶 </dt>
                     <dd className="inline font-mono text-[var(--color-text)]">{status.bootstrap.privateBucket ?? '—'}</dd>
                   </div>
                   <div className="sm:col-span-2">
-                    <dt className="text-[var(--color-text-muted)] inline">诊断 </dt>
+                    <dt className="text-[var(--color-text-muted)] inline">连通诊断 </dt>
                     <dd className="inline text-[var(--color-text)]">{status.bootstrap.healthDetail}</dd>
                   </div>
                 </dl>
-                <p className="text-xs text-[var(--color-text-muted)] mt-3">
-                  配置源：<code className="font-mono">{status.configSource}</code>
+                <div className="text-xs text-[var(--color-text-muted)] mt-3">
+                  <span>当前配置版本：{status.runtime.configVersion}</span>
                   {' · '}
-                  UI 写操作：{status.uiConfigEnabled ? '开启' : '关闭'}
+                  <span>后台写操作：{status.uiConfigEnabled ? '开启' : '关闭'}</span>
                   {' · '}
-                  凭证主密钥：{status.credentialsEncKeyConfigured ? '已配置' : '未配置'}
-                  {' · '}
-                  runtime 版本：{status.runtime.configVersion}
-                </p>
+                  <span>凭证主密钥：{status.credentialsEncKeyConfigured ? '已配置' : '未配置'}</span>
+                </div>
               </div>
             </div>
           </section>
@@ -278,17 +276,110 @@ export default function AdminStoragePanel() {
           {(!status.uiConfigEnabled || status.configSource === 'env') && (
             <div className="flex gap-2 items-start rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-200">
               <ShieldAlert className="w-4 h-4 shrink-0 mt-0.5" />
-              <span>
-                {status.configSource === 'env'
-                  ? 'STORAGE_CONFIG_SOURCE=env：已熔断，仅使用环境变量底座，后台无法激活云配置。'
-                  : 'STORAGE_UI_CONFIG_ENABLED=false：控制台只读。'}
-              </span>
+              <div>
+                <p className="font-semibold">
+                  {status.configSource === 'env'
+                    ? '环境变量强制模式：仅使用部署默认存储，后台无法新增或切换云配置。'
+                    : '存储控制台只读模式：当前不允许通过后台修改存储配置。'}
+                </p>
+                <details className="mt-1 text-xs text-amber-700 dark:text-amber-300">
+                  <summary className="cursor-pointer">运维详情</summary>
+                  <div className="font-mono mt-0.5">
+                    {status.configSource === 'env' ? 'STORAGE_CONFIG_SOURCE=env' : 'STORAGE_UI_CONFIG_ENABLED=false'}
+                  </div>
+                </details>
+              </div>
             </div>
           )}
 
-          {/* Preset cards */}
+          {/* Saved configs section */}
           <section>
-            <h3 className="font-semibold text-[var(--color-text)] mb-2">添加云提供商</h3>
+            <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between mb-2">
+              <h3 className="font-semibold text-[var(--color-text)]">已保存配置及操作</h3>
+              <span className="text-xs text-[var(--color-text-muted)]">
+                提示：激活影响新上传；历史文件按原绑定位置读取；回滚改变写入目标；禁用不等于删除历史文件。
+              </span>
+            </div>
+            {providers.length === 0 ? (
+              <p className="text-sm text-[var(--color-text-muted)] py-4">暂无云配置，新上传使用部署默认存储。</p>
+            ) : (
+              <div className="space-y-3">
+                {providers.map(p => (
+                  <div
+                    key={p.id}
+                    className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 flex flex-col sm:flex-row sm:items-center gap-3"
+                    data-testid={`storage-provider-${p.id}`}
+                  >
+                    <ProviderIcon type={p.type} className="w-9 h-9 shrink-0" />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-bold text-[var(--color-text)]">{p.name}</span>
+                        <span className={`text-xs font-semibold px-2 py-0.5 rounded border ${statusClass(p.status)}`}>
+                          {statusLabel(p.status)}
+                        </span>
+                        <span className="text-xs text-[var(--color-text-muted)] font-mono">v{p.configVersion}</span>
+                      </div>
+                      <div className="text-xs text-[var(--color-text-muted)] mt-1 font-mono truncate">
+                        {p.publicConfig.endpoint} · AK …{p.accessKeyLast4 ?? '????'}
+                      </div>
+                      {p.lastTestSummary && (
+                        <div className={`text-xs mt-1 ${p.lastTestOk ? 'text-[var(--color-cta)]' : 'text-red-500'}`}>
+                          最近探测：{p.lastTestSummary}
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap gap-2 shrink-0">
+                      {p.status !== 'disabled' && p.status !== 'active' && (
+                        <button
+                          type="button"
+                          className="btn-secondary btn-sm"
+                          disabled={!writable || busyId === p.id}
+                          onClick={() => void runTest(p.id)}
+                        >
+                          测试连接
+                        </button>
+                      )}
+                      {p.status === 'verified' && (
+                        <button
+                          type="button"
+                          className="btn-primary btn-sm"
+                          disabled={!writable || busyId === p.id}
+                          onClick={() => setConfirmTarget({ id: p.id, action: 'activate', name: p.name })}
+                          data-testid={`storage-activate-${p.id}`}
+                        >
+                          激活
+                        </button>
+                      )}
+                      {p.status === 'active' && (
+                        <button
+                          type="button"
+                          className="btn-secondary btn-sm"
+                          disabled={!writable || busyId === p.id}
+                          onClick={() => setConfirmTarget({ id: p.id, action: 'rollback', name: p.name })}
+                        >
+                          回滚
+                        </button>
+                      )}
+                      {p.status !== 'active' && p.status !== 'disabled' && (
+                        <button
+                          type="button"
+                          className="btn-secondary btn-sm text-red-500"
+                          disabled={!writable || busyId === p.id}
+                          onClick={() => setConfirmTarget({ id: p.id, action: 'disable', name: p.name })}
+                        >
+                          禁用
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+
+          {/* Preset cards & Create Form */}
+          <section className="border-t border-[var(--color-border)] pt-6">
+            <h3 className="font-semibold text-[var(--color-text)] mb-2">添加云存储提供商配置</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
               {status.presets.map(p => (
                 <button
@@ -318,7 +409,7 @@ export default function AdminStoragePanel() {
           <h3 className="font-bold text-[var(--color-text)]">新建配置 · {selectedPreset?.label ?? form.type}</h3>
           {selectedPreset && (
             <p className="text-xs text-[var(--color-text-muted)]">
-              Endpoint 示例：<code className="font-mono">{selectedPreset.endpointHint}</code>
+              服务地址示例：<code className="font-mono">{selectedPreset.endpointHint}</code>
             </p>
           )}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -327,11 +418,11 @@ export default function AdminStoragePanel() {
               <input className="input w-full" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} required />
             </label>
             <label className="text-sm space-y-1">
-              <span className="text-[var(--color-text-muted)]">Endpoint</span>
+              <span className="text-[var(--color-text-muted)]">服务地址（Endpoint）</span>
               <input className="input w-full font-mono text-xs" value={form.endpoint} onChange={e => setForm(f => ({ ...f, endpoint: e.target.value }))} required placeholder="https://..." />
             </label>
             <label className="text-sm space-y-1">
-              <span className="text-[var(--color-text-muted)]">Region</span>
+              <span className="text-[var(--color-text-muted)]">区域（Region）</span>
               <input className="input w-full" value={form.region} onChange={e => setForm(f => ({ ...f, region: e.target.value }))} required />
             </label>
             <label className="text-sm space-y-1 flex items-end gap-2 pb-2">
@@ -340,14 +431,14 @@ export default function AdminStoragePanel() {
                 checked={form.forcePathStyle}
                 onChange={e => setForm(f => ({ ...f, forcePathStyle: e.target.checked }))}
               />
-              <span className="text-[var(--color-text-muted)]">Path-style 寻址</span>
+              <span className="text-[var(--color-text-muted)]">使用路径式访问（Path-style）</span>
             </label>
             <label className="text-sm space-y-1">
-              <span className="text-[var(--color-text-muted)]">公有桶（商品图）</span>
+              <span className="text-[var(--color-text-muted)]">公共文件存储桶</span>
               <input className="input w-full" value={form.publicBucket} onChange={e => setForm(f => ({ ...f, publicBucket: e.target.value }))} required />
             </label>
             <label className="text-sm space-y-1">
-              <span className="text-[var(--color-text-muted)]">私有桶（交付文件）</span>
+              <span className="text-[var(--color-text-muted)]">私有交付存储桶</span>
               <input className="input w-full" value={form.privateBucket} onChange={e => setForm(f => ({ ...f, privateBucket: e.target.value }))} required />
             </label>
             <label className="text-sm space-y-1">
@@ -359,11 +450,11 @@ export default function AdminStoragePanel() {
               <input className="input w-full font-mono text-xs" value={form.deliveryPublicEndpoint || ''} onChange={e => setForm(f => ({ ...f, deliveryPublicEndpoint: e.target.value }))} placeholder="https://files.example.com" />
             </label>
             <label className="text-sm space-y-1">
-              <span className="text-[var(--color-text-muted)]">Access Key</span>
+              <span className="text-[var(--color-text-muted)]">访问凭证标识（Access Key）</span>
               <input className="input w-full font-mono" type="password" autoComplete="off" value={form.accessKey} onChange={e => setForm(f => ({ ...f, accessKey: e.target.value }))} required />
             </label>
             <label className="text-sm space-y-1">
-              <span className="text-[var(--color-text-muted)]">Secret Key</span>
+              <span className="text-[var(--color-text-muted)]">访问凭证密钥（Secret Key）</span>
               <input className="input w-full font-mono" type="password" autoComplete="off" value={form.secretKey} onChange={e => setForm(f => ({ ...f, secretKey: e.target.value }))} required />
             </label>
           </div>
@@ -377,85 +468,6 @@ export default function AdminStoragePanel() {
           </div>
         </form>
       )}
-
-      <section>
-        <h3 className="font-semibold text-[var(--color-text)] mb-2">已保存配置</h3>
-        {providers.length === 0 ? (
-          <p className="text-sm text-[var(--color-text-muted)] py-4">暂无云配置，新上传使用环境变量底座。</p>
-        ) : (
-          <div className="space-y-3">
-            {providers.map(p => (
-              <div
-                key={p.id}
-                className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 flex flex-col sm:flex-row sm:items-center gap-3"
-                data-testid={`storage-provider-${p.id}`}
-              >
-                <ProviderIcon type={p.type} className="w-9 h-9 shrink-0" />
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-bold text-[var(--color-text)]">{p.name}</span>
-                    <span className={`text-xs font-semibold px-2 py-0.5 rounded border ${statusClass(p.status)}`}>
-                      {statusLabel(p.status)}
-                    </span>
-                    <span className="text-xs text-[var(--color-text-muted)] font-mono">v{p.configVersion}</span>
-                  </div>
-                  <div className="text-xs text-[var(--color-text-muted)] mt-1 font-mono truncate">
-                    {p.publicConfig.endpoint} · AK …{p.accessKeyLast4 ?? '????'}
-                  </div>
-                  {p.lastTestSummary && (
-                    <div className={`text-xs mt-1 ${p.lastTestOk ? 'text-[var(--color-cta)]' : 'text-red-500'}`}>
-                      最近探测：{p.lastTestSummary}
-                    </div>
-                  )}
-                </div>
-                <div className="flex flex-wrap gap-2 shrink-0">
-                  {p.status !== 'disabled' && p.status !== 'active' && (
-                    <button
-                      type="button"
-                      className="btn-secondary btn-sm"
-                      disabled={!writable || busyId === p.id}
-                      onClick={() => void runTest(p.id)}
-                    >
-                      测试连接
-                    </button>
-                  )}
-                  {p.status === 'verified' && (
-                    <button
-                      type="button"
-                      className="btn-primary btn-sm"
-                      disabled={!writable || busyId === p.id}
-                      onClick={() => setConfirmTarget({ id: p.id, action: 'activate', name: p.name })}
-                      data-testid={`storage-activate-${p.id}`}
-                    >
-                      激活
-                    </button>
-                  )}
-                  {p.status === 'active' && (
-                    <button
-                      type="button"
-                      className="btn-secondary btn-sm"
-                      disabled={!writable || busyId === p.id}
-                      onClick={() => setConfirmTarget({ id: p.id, action: 'rollback', name: p.name })}
-                    >
-                      回滚
-                    </button>
-                  )}
-                  {p.status !== 'active' && p.status !== 'disabled' && (
-                    <button
-                      type="button"
-                      className="btn-secondary btn-sm text-red-500"
-                      disabled={!writable || busyId === p.id}
-                      onClick={() => setConfirmTarget({ id: p.id, action: 'disable', name: p.name })}
-                    >
-                      禁用
-                    </button>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
 
       <ConfirmDialog
         open={confirmTarget !== null}
@@ -471,8 +483,8 @@ export default function AdminStoragePanel() {
           confirmTarget?.action === 'activate'
             ? `确认激活配置「${confirmTarget.name}」？激活后新上传将写入该提供商，历史对象仍按各自绑定位置读取。`
             : confirmTarget?.action === 'rollback'
-              ? '确认回滚写入目标？新上传将回到上一配置或环境变量底座。'
-              : `确认禁用配置「${confirmTarget?.name}」？禁用后不可再作为激活目标。`
+              ? '确认回滚写入目标？新上传将回到上一配置或部署默认存储，历史文件不受影响。'
+              : `确认禁用配置「${confirmTarget?.name}」？禁用后不可再作为激活目标；已存储的历史文件仍可按原位置读取，不会被删除。`
         }
         confirmLabel={
           actionLoading
