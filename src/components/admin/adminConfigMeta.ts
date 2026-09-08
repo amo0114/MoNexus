@@ -47,21 +47,21 @@ export const CONFIG_METAS: Record<AdminSystemConfigKey, ConfigItemMeta> = {
     group: 'registration',
     type: 'switch',
     label: '允许新用户注册',
-    description: '关闭仅阻止新账号自助注册，现有账号仍可登录；不等于全站停用。',
+    description: '控制全站新用户注册通道。关闭后仅阻止新账号注册，已有账号仍可正常登录。',
   },
   registrationInviteOnly: {
     key: 'registrationInviteOnly',
     group: 'registration',
     type: 'switch',
     label: '注册必须使用邀请码',
-    description: '开启须有效邀请码；关闭后邀请码可选，不是停用所有邀请码。',
+    description: '开启后新用户注册必须填写有效邀请码；关闭后邀请码为选填项。',
   },
   emailVerificationRequiredForValue: {
     key: 'emailVerificationRequiredForValue',
     group: 'registration',
     type: 'switch',
     label: '交易与积分操作前须验证邮箱',
-    description: '开启后未验证邮箱不能下单、签到等价值操作；不是禁止浏览或登录。',
+    description: '开启后用户须完成邮箱验证方可进行下单、签到等涉及积分与资金的操作。',
   },
   referralInviterMinAgeDays: {
     key: 'referralInviterMinAgeDays',
@@ -71,7 +71,7 @@ export const CONFIG_METAS: Record<AdminSystemConfigKey, ConfigItemMeta> = {
     max: 365,
     unit: '天',
     label: '邀请人账号注册满多少天可建立邀请关系',
-    description: '0 不要求额外账号年龄，其他资格规则仍保留；不要混同发码会员门槛。',
+    description: '设置邀请人建立有效邀请关系的最低账号注册天数；设为 0 时不作限制。',
   },
   referralDailyQualifiedLimit: {
     key: 'referralDailyQualifiedLimit',
@@ -81,7 +81,7 @@ export const CONFIG_METAS: Record<AdminSystemConfigKey, ConfigItemMeta> = {
     max: 100,
     unit: '人',
     label: '每位邀请人每日合格人数上限',
-    description: '北京时间自然日；0 暂停后续邀请资格，不是无限；非零时不得大于累计上限。',
+    description: '单日（北京时间自然日）最多计入的合格被邀请人数；设为 0 时暂停计入新合格人数；非零时不可大于累计上限。',
   },
   referralLifetimeQualifiedLimit: {
     key: 'referralLifetimeQualifiedLimit',
@@ -91,14 +91,14 @@ export const CONFIG_METAS: Record<AdminSystemConfigKey, ConfigItemMeta> = {
     max: 10000,
     unit: '人',
     label: '每位邀请人累计合格人数上限',
-    description: '0 暂停后续邀请资格，不是清除既有记录；若要将两项均设 0，先将每日上限设为 0。',
+    description: '每位邀请人累计最多计入的合格被邀请人数；设为 0 时暂停计入新合格人数（保留历史记录）。若需将两项均设为 0，请先保存每日上限为 0。',
   },
   inviteMinTierRank: {
     key: 'inviteMinTierRank',
     group: 'registration',
     type: 'select',
     label: '普通用户发码最低会员等级',
-    description: '限制普通用户生成邀请码的会员等级门槛。',
+    description: '普通用户生成邀请码所需的最低会员等级门槛。',
     options: [
       { value: 0, label: '不限（青铜会员及以上）' },
       { value: 1, label: '银卡会员及以上' },
@@ -114,7 +114,7 @@ export const CONFIG_METAS: Record<AdminSystemConfigKey, ConfigItemMeta> = {
     max: 1000,
     unit: '枚',
     label: '普通用户每月可生成邀请码数',
-    description: '北京时间自然月；0 暂停普通用户发码；生成即占名额，过期不返还。',
+    description: '普通用户单月（自然月）可生成的邀请码总额度；设为 0 时暂停生成。生成即占用名额，过期不退还。',
   },
   inviteQuotaMerchantMonthly: {
     key: 'inviteQuotaMerchantMonthly',
@@ -124,7 +124,7 @@ export const CONFIG_METAS: Record<AdminSystemConfigKey, ConfigItemMeta> = {
     max: 1000,
     unit: '枚',
     label: '商家每月可生成邀请码数',
-    description: '北京时间自然月；0 暂停商家发码；同样不是每月“成功邀请人数”。',
+    description: '商家单月（自然月）可生成的邀请码总额度；设为 0 时暂停生成。生成即占用名额，过期不退还。',
   },
   inviteCodeTtlDays: {
     key: 'inviteCodeTtlDays',
@@ -134,7 +134,7 @@ export const CONFIG_METAS: Record<AdminSystemConfigKey, ConfigItemMeta> = {
     max: 90,
     unit: '天',
     label: '邀请码有效期',
-    description: '自生成起 1～90 天；过期未使用也不返还当月名额。',
+    description: '新生成邀请码的有效天数（1～90 天），逾期自动失效。',
   },
 
   // b. 基础奖励 (4 项)
@@ -145,7 +145,7 @@ export const CONFIG_METAS: Record<AdminSystemConfigKey, ConfigItemMeta> = {
     min: 0,
     unit: '积分',
     label: '新用户注册基础奖励',
-    description: '0 为不发放该项积分；邮箱验证、冷静期等资格规则仍生效，不承诺注册即到账。',
+    description: '新用户注册成功后发放的基础积分奖励；设为 0 时不发放。仍须符合邮箱验证与冷静期规则。',
   },
   checkinReward: {
     key: 'checkinReward',
@@ -154,7 +154,7 @@ export const CONFIG_METAS: Record<AdminSystemConfigKey, ConfigItemMeta> = {
     min: 0,
     unit: '积分',
     label: '每日签到基础奖励',
-    description: '最终值可能叠加会员额外加成；0 不等于关闭签到功能。',
+    description: '用户每日签到发放的基础积分奖励；设为 0 时不发放基础积分（高等级会员可能叠加额外加成）。',
   },
   inviteReward: {
     key: 'inviteReward',
@@ -163,7 +163,7 @@ export const CONFIG_METAS: Record<AdminSystemConfigKey, ConfigItemMeta> = {
     min: 0,
     unit: '积分',
     label: '邀请新用户基础奖励',
-    description: '奖励给符合条件的邀请人，可能叠加会员加成并进入待发流程；不是被邀请人奖励。',
+    description: '成功邀请新用户后发放给邀请人的基础积分；高等级会员可叠加额外加成。',
   },
   growthRewardHoldDays: {
     key: 'growthRewardHoldDays',
@@ -173,7 +173,7 @@ export const CONFIG_METAS: Record<AdminSystemConfigKey, ConfigItemMeta> = {
     max: 30,
     unit: '天',
     label: '注册与邀请奖励冷静期',
-    description: '邮箱验证后等待 0～30 天；0 即时发放、风险更高；不得承诺重算已创建奖励。',
+    description: '完成邮箱验证后奖励冻结等待到账的天数（0～30 天）；设为 0 时即时到账。仅对新发放奖励生效。',
   },
 
   // c. 会员等级 (6 项)
@@ -184,7 +184,7 @@ export const CONFIG_METAS: Record<AdminSystemConfigKey, ConfigItemMeta> = {
     min: 0,
     unit: '积分',
     label: '银卡累计获得积分门槛',
-    description: '与金卡、铂金严格递增；必须是用户流水累计获得积分，不是余额、消费额或充值金额。',
+    description: '晋升银卡会员所需的流水累计获得积分；需满足 银卡 < 金卡 < 铂金 严格递增关系。',
   },
   memberTierGoldThreshold: {
     key: 'memberTierGoldThreshold',
@@ -193,7 +193,7 @@ export const CONFIG_METAS: Record<AdminSystemConfigKey, ConfigItemMeta> = {
     min: 0,
     unit: '积分',
     label: '金卡累计获得积分门槛',
-    description: '银卡 < 金卡 < 铂金，保存任何一项都不能破坏严格递增关系。',
+    description: '晋升金卡会员所需的流水累计获得积分；需满足 银卡 < 金卡 < 铂金 严格递增关系。',
   },
   memberTierPlatinumThreshold: {
     key: 'memberTierPlatinumThreshold',
@@ -202,7 +202,7 @@ export const CONFIG_METAS: Record<AdminSystemConfigKey, ConfigItemMeta> = {
     min: 0,
     unit: '积分',
     label: '铂金累计获得积分门槛',
-    description: '铂金门槛必须大于金卡门槛；达到该累计积分即自动晋级。',
+    description: '晋升铂金会员所需的流水累计获得积分；需满足大于金卡门槛。',
   },
   memberTierSilverBonusBps: {
     key: 'memberTierSilverBonusBps',
@@ -212,7 +212,7 @@ export const CONFIG_METAS: Record<AdminSystemConfigKey, ConfigItemMeta> = {
     max: 100,
     unit: '%',
     label: '银卡签到／邀请额外加成',
-    description: '支持最多两位小数（如 5% 保存为 500 基点）；0 为无额外加成。按 floor(基础奖励 × 百分比) 额外发放。',
+    description: '基础奖励乘以加成比例，结果向下取整；支持最多两位小数；设为 0 时无额外加成。',
   },
   memberTierGoldBonusBps: {
     key: 'memberTierGoldBonusBps',
@@ -222,7 +222,7 @@ export const CONFIG_METAS: Record<AdminSystemConfigKey, ConfigItemMeta> = {
     max: 100,
     unit: '%',
     label: '金卡签到／邀请额外加成',
-    description: '支持最多两位小数；0 为无额外加成。',
+    description: '基础奖励乘以加成比例，结果向下取整；支持最多两位小数；设为 0 时无额外加成。',
   },
   memberTierPlatinumBonusBps: {
     key: 'memberTierPlatinumBonusBps',
@@ -232,7 +232,7 @@ export const CONFIG_METAS: Record<AdminSystemConfigKey, ConfigItemMeta> = {
     max: 100,
     unit: '%',
     label: '铂金签到／邀请额外加成',
-    description: '支持最多两位小数；0 为无额外加成。',
+    description: '基础奖励乘以加成比例，结果向下取整；支持最多两位小数；设为 0 时无额外加成。',
   },
 
   // d. 交易与交付 (9 项)
@@ -243,7 +243,7 @@ export const CONFIG_METAS: Record<AdminSystemConfigKey, ConfigItemMeta> = {
     min: 0,
     unit: '积分',
     label: '单笔订单需密码确认的积分门槛',
-    description: '本单积分达到门槛时要求登录密码；0 关闭此单笔维度，不是关闭所有鉴权。',
+    description: '单笔订单积分金额达到该门槛时要求输入登录密码二次确认；设为 0 时不开启单笔门槛限制。',
   },
   checkoutVerifyDailyThreshold: {
     key: 'checkoutVerifyDailyThreshold',
@@ -252,7 +252,7 @@ export const CONFIG_METAS: Record<AdminSystemConfigKey, ConfigItemMeta> = {
     min: 0,
     unit: '积分',
     label: '当日累计订单需密码确认的积分门槛',
-    description: '当日已成交累计加本单达到门槛时触发；0 关闭此累计维度。',
+    description: '当日累计消费积分达到该门槛时要求输入登录密码二次确认；设为 0 时不开启当日累计门槛限制。',
   },
   fileUrlTtlSeconds: {
     key: 'fileUrlTtlSeconds',
@@ -262,7 +262,7 @@ export const CONFIG_METAS: Record<AdminSystemConfigKey, ConfigItemMeta> = {
     max: 3600,
     unit: '秒',
     label: '单次下载链接有效期',
-    description: '30～3600 秒；从签发起算，已签发链接在到期前不可即时撤销。',
+    description: '生成的文件下载链接有效时限（30～3600 秒），超时需重新获取。',
   },
   fileAccessWindowDays: {
     key: 'fileAccessWindowDays',
@@ -272,7 +272,7 @@ export const CONFIG_METAS: Record<AdminSystemConfigKey, ConfigItemMeta> = {
     max: 365,
     unit: '天',
     label: '交付后允许获取下载链接的期限',
-    description: '从订单交付时刻起算；0 为不限窗口，仍需权限和其他访问条件。',
+    description: '订单交付后允许买家获取下载链接的天数；设为 0 时表示不限访问窗口。',
   },
   deliveryFileMaxMb: {
     key: 'deliveryFileMaxMb',
@@ -282,7 +282,7 @@ export const CONFIG_METAS: Record<AdminSystemConfigKey, ConfigItemMeta> = {
     max: 100,
     unit: 'MB',
     label: '单个交付文件大小上限',
-    description: '1～100 MB；限制平台上传文件体积。',
+    description: '商家交付商品时允许上传的单个文件体积上限（1～100 MB）。',
   },
   autoCloseDays: {
     key: 'autoCloseDays',
@@ -292,7 +292,7 @@ export const CONFIG_METAS: Record<AdminSystemConfigKey, ConfigItemMeta> = {
     max: 90,
     unit: '天',
     label: '交付后自动确认并结算的等待天数',
-    description: '1～90 天；买家未主动确认时适用，修改对新一轮巡检生效；不是待支付订单有效期。',
+    description: '交付后买家未主动确认收货时的超时自动结算天数（1～90 天）；修改对下一轮巡检生效。',
   },
   fulfillmentSlaDays: {
     key: 'fulfillmentSlaDays',
@@ -302,7 +302,7 @@ export const CONFIG_METAS: Record<AdminSystemConfigKey, ConfigItemMeta> = {
     max: 90,
     unit: '天',
     label: '人工服务履约期限',
-    description: '1～90 天，从下单起计算；仅影响新订单，不追改既有订单期限。',
+    description: '人工服务类订单从下单起算的履约时限（1～90 天）；仅对新创建订单生效。',
   },
   subscriptionRemindDays: {
     key: 'subscriptionRemindDays',
@@ -312,7 +312,7 @@ export const CONFIG_METAS: Record<AdminSystemConfigKey, ConfigItemMeta> = {
     max: 30,
     unit: '天',
     label: '订阅到期前提前提醒天数',
-    description: '0～30 天；0 仅关闭提前提醒，仍保留到期提醒。',
+    description: '订阅商品到期前发送续费提醒的提前天数；设为 0 时仅在到期当天提醒。',
   },
   autoProvisionMaxAttempts: {
     key: 'autoProvisionMaxAttempts',
@@ -322,7 +322,7 @@ export const CONFIG_METAS: Record<AdminSystemConfigKey, ConfigItemMeta> = {
     max: 5,
     unit: '次',
     label: '自动开通最多尝试次数',
-    description: '0～5 次；0 暂停外呼、只建任务不推进状态；恢复后已有任务按既有退避继续，不是无限重试。',
+    description: '卡密/自动交付失败时的最大重试次数（0～5 次）；设为 0 时暂停自动外呼，任务进入待处理状态。',
   },
 
   // e. 库存提醒 (2 项)
@@ -333,7 +333,7 @@ export const CONFIG_METAS: Record<AdminSystemConfigKey, ConfigItemMeta> = {
     min: 0,
     unit: '条',
     label: '即时库存低库存提醒阈值',
-    description: '可用库存 ≤ 阈值时进入低位；0 不是关闭告警，不把库存条目泛称人民币“金额”。',
+    description: '卡密可用库存条目数低于或等于该阈值时触发低库存告警；设为 0 时仅在完全无库存时预警。',
   },
   lowStockNotifyCooldownHours: {
     key: 'lowStockNotifyCooldownHours',
@@ -343,7 +343,7 @@ export const CONFIG_METAS: Record<AdminSystemConfigKey, ConfigItemMeta> = {
     max: 720,
     unit: '小时',
     label: '持续低库存邮件重发间隔',
-    description: '0～720 小时；0 进入低位只发一次、不持续重发，不是完全停发邮件。',
+    description: '商品持续处于低库存状态时重新发送预警邮件的冷却时间；设为 0 时每次低库存仅通知一次。',
   },
 
   // f. 商品运营 (8 项)
@@ -355,7 +355,7 @@ export const CONFIG_METAS: Record<AdminSystemConfigKey, ConfigItemMeta> = {
     max: 365,
     unit: '天',
     label: '自然热卖销量统计窗口',
-    description: '1～365 天；不改净成交等既有统计口径。',
+    description: '统计商品成交销量的回溯天数窗口（1～365 天）。',
   },
   hotMinSales: {
     key: 'hotMinSales',
@@ -365,7 +365,7 @@ export const CONFIG_METAS: Record<AdminSystemConfigKey, ConfigItemMeta> = {
     max: 100000,
     unit: '单',
     label: '进入自然热卖的最低成交量',
-    description: '1～100000 单；不是商品库存阈值。',
+    description: '商品入选自然热卖榜单所需的最低成交订单数（1～100,000 单）。',
   },
   hotTopPercent: {
     key: 'hotTopPercent',
@@ -375,7 +375,7 @@ export const CONFIG_METAS: Record<AdminSystemConfigKey, ConfigItemMeta> = {
     max: 100,
     unit: '%',
     label: '分类内入选自然热卖的前百分比',
-    description: '1～100；前 20% 不是“销量提高 20%”。',
+    description: '同一分类内按销量排名前百分之几的商品进入热卖榜（1%～100%）。',
   },
   hotRecomputeMinutes: {
     key: 'hotRecomputeMinutes',
@@ -385,7 +385,7 @@ export const CONFIG_METAS: Record<AdminSystemConfigKey, ConfigItemMeta> = {
     max: 1440,
     unit: '分钟',
     label: '自然热卖自动重算间隔',
-    description: '10～1440 分钟；不同于统计窗口天数。',
+    description: '系统定时重新计算商品热卖排名的执行周期（10～1440 分钟）。',
   },
   hotRunTimeoutMinutes: {
     key: 'hotRunTimeoutMinutes',
@@ -395,7 +395,7 @@ export const CONFIG_METAS: Record<AdminSystemConfigKey, ConfigItemMeta> = {
     max: 1440,
     unit: '分钟',
     label: '计算任务超时回收时间',
-    description: '10～1440 分钟；作为本组高级参数，不主显“排名 run”。',
+    description: '排名计算任务执行超时判定时间（10～1440 分钟），超时后自动释放或重试。',
   },
   partnerSpendWindowDays: {
     key: 'partnerSpendWindowDays',
@@ -405,7 +405,7 @@ export const CONFIG_METAS: Record<AdminSystemConfigKey, ConfigItemMeta> = {
     max: 365,
     unit: '天',
     label: '合作伙伴资格消费统计窗口',
-    description: '1～365 天；用于自动授予资格的净推广消费统计。',
+    description: '用于自动授予合作伙伴资格的推广消费统计回溯天数（1～365 天）。',
   },
   partnerMinPromotionPoints: {
     key: 'partnerMinPromotionPoints',
@@ -415,7 +415,7 @@ export const CONFIG_METAS: Record<AdminSystemConfigKey, ConfigItemMeta> = {
     max: 2000000000,
     unit: '积分',
     label: '自动获得合作伙伴权益的净推广消费门槛',
-    description: '1～2,000,000,000 积分；不是充值额、商品销售额或当前积分余额。',
+    description: '统计窗口内净推广消费达到的积分门槛，达标后系统自动授予权益。',
   },
   partnerEntitlementDays: {
     key: 'partnerEntitlementDays',
@@ -425,7 +425,7 @@ export const CONFIG_METAS: Record<AdminSystemConfigKey, ConfigItemMeta> = {
     max: 365,
     unit: '天',
     label: '自动授予合作伙伴权益的有效天数',
-    description: '1～365 天；与消费统计窗口区分，不把手动权益期限一并改写。',
+    description: '系统自动授予的合作伙伴权益有效天数（1～365 天）；不影响管理员手动授予的期限。',
   },
 
   // g. 高级运维 (3 项)
@@ -436,7 +436,7 @@ export const CONFIG_METAS: Record<AdminSystemConfigKey, ConfigItemMeta> = {
     min: 0,
     unit: '天',
     label: '登录续期凭证有效期',
-    description: '对新签发的续期凭证生效；0 沿现有逻辑使用部署配置值，不是永不过期或立即踢人；原 Refresh Token 术语在详情。',
+    description: '新签发的登录续期凭证（Refresh Token）有效期天数；设为 0 时使用系统环境变量默认配置。',
   },
   defaultPageSize: {
     key: 'defaultPageSize',
@@ -445,7 +445,7 @@ export const CONFIG_METAS: Record<AdminSystemConfigKey, ConfigItemMeta> = {
     min: 0,
     unit: '条',
     label: '支持此规则的接口默认每页条数',
-    description: '未显式请求页大小时使用；正值建议不大于上限。当前管理／商家列表读取处 0 回用内置默认值，不代表不分页。',
+    description: '请求未显式指定分页大小时的默认条数；设为 0 时回退到接口内置默认值。',
   },
   maxPageSize: {
     key: 'maxPageSize',
@@ -454,7 +454,7 @@ export const CONFIG_METAS: Record<AdminSystemConfigKey, ConfigItemMeta> = {
     min: 0,
     unit: '条',
     label: '支持此规则的接口每页条数上限',
-    description: '当前管理／商家列表会限制请求大小，0 回用内置上限；不是无限。不要承诺所有固定 20 条的页面立即跟随变化。',
+    description: '请求单次可拉取的最大分页条数限制；设为 0 时回退到接口内置上限。',
   },
 }
 
