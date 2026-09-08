@@ -17,10 +17,7 @@ import AdminStoragePanel from '../components/admin/AdminStoragePanel'
 import AdminMerchandisingPage from '../components/merchandising/AdminMerchandisingPage'
 import AdminCategoryManager from '../components/catalog/AdminCategoryManager'
 import AdminRechargePage from '../components/admin/recharge/AdminRechargePage'
-import RegistrationControlPanel from '../components/admin/RegistrationControlPanel'
-import AdminMailPanel from '../components/admin/AdminMailPanel'
 import AdminConfigPanel from '../components/admin/AdminConfigPanel'
-import { MemberTierConfigPanel } from '../components/admin/MemberTierConfigPanel'
 
 export type { AdminTab }
 export { ADMIN_NAV_GROUPS }
@@ -69,25 +66,7 @@ export default function AdminPage() {
           {activeTab === 'announcements' && <AnnouncementsAdmin />}
           {activeTab === 'merchandising' && <AdminMerchandisingPage />}
           {activeTab === 'catalogGovernance' && <AdminCategoryManager />}
-          {activeTab === 'config' && (
-            <div className="space-y-4">
-              <RegistrationControlPanel />
-              <section className="pt-6 border-t border-[var(--color-border)]">
-                <AdminMailPanel />
-              </section>
-              <section className="pt-6 border-t border-[var(--color-border)]">
-                <h2 className="font-heading text-xl font-bold mb-4 text-[var(--color-text)]">系统配置</h2>
-                <AdminConfigPanel />
-              </section>
-              <section className="pt-6 border-t border-[var(--color-border)]">
-                <h2 className="font-heading text-xl font-bold mb-2 text-[var(--color-text)]">会员等级配置</h2>
-                <p className="text-sm text-[var(--color-text-muted)] mb-4">
-                  配置全局等级阈值和加成倍率。修改后立即对未来的签到与邀请奖励生效。仅支持全局配置，无法对单人进行特殊覆盖。
-                </p>
-                <MemberTierConfigPanel />
-              </section>
-            </div>
-          )}
+          {activeTab === 'config' && <AdminConfigPanel />}
           {activeTab === 'backup' && <PortableBackupPanel />}
 
           {/* Stateful panels originally owned by AdminPage host: keep-alive */}
