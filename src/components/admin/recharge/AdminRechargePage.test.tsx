@@ -156,4 +156,146 @@ describe('AdminRechargePage', () => {
     expect(screen.getByText('积分已入账')).toBeInTheDocument()
     expect(screen.getByText('申请人: #1')).toBeInTheDocument()
   })
+
+  it('payment events: hides eventType from failure summary for succeeded events, and opens detail dialog', async () => {
+    const succeededEvt = {
+      id: 'evt-succeeded-1',
+      provider: 'simulator',
+      source: 'webhook',
+      eventType: 'payment.success',
+      status: 'succeeded',
+      providerPaymentId: 'tx-simulator-1234567890',
+      paymentAttemptId: 'att-simulator-1234567890',
+      attempts: 1,
+      lastErrorCode: null,
+      createdAt: '2026-09-01T10:00:00.000Z',
+      processedAt: '2026-09-01T10:00:00.120Z',
+    }
+    const failedEvt = {
+      id: 'evt-failed-1',
+      provider: 'simulator',
+      source: 'webhook',
+      eventType: 'payment.failed',
+      status: 'failed',
+      providerPaymentId: 'tx-simulator-fail-999',
+      paymentAttemptId: 'att-simulator-fail-999',
+      attempts: 2,
+      lastErrorCode: 'INSUFFICIENT_FUNDS',
+      createdAt: '2026-09-01T11:00:00.000Z',
+      processedAt: '2026-09-01T11:00:00.050Z',
+    }
+    listAdminPaymentEvents.mockResolvedValueOnce({
+      page: 1,
+      pageSize: 50,
+      total: 2,
+      items: [succeededEvt, failedEvt],
+    })
+
+    render(<AdminRechargePage />)
+    fireEvent.click(await screen.findByRole('tab', { name: '支付事件' }))
+
+    expect(await screen.findByTestId('admin-payment-events')).toBeInTheDocument()
+    // For failed event, INSUFFICIENT_FUNDS is in table
+    expect(screen.getByText('INSUFFICIENT_FUNDS')).toBeInTheDocument()
+    // For succeeded event, raw eventType is NOT in the failure column
+    // Open detail dialog
+    const detailBtns = screen.getAllByRole('button', { name: '详情' })
+    fireEvent.click(detailBtns[0])
+
+    // Dialog title
+    expect(await screen.findByText('支付事件详情')).toBeInTheDocument()
+    expect(screen.getByText(/tx-simulator-1234567890/)).toBeInTheDocument()
+    expect(screen.getByText(/att-simulator-1234567890/)).toBeInTheDocument()
+    expect(screen.getByText('payment.success')).toBeInTheDocument()
+  })
+
+  it('disputes: formats evidenceDueAt with Beijing time, and opens dispute details dialog', async () => {
+    const dispute = {
+      id: 'disp-1',
+      provider: 'simulator',
+      providerDisputeId: 'dp-simulator-88888',
+      rechargeOrderId: 'ord-recharge-77777',
+      amountMinor: '5000',
+      currency: 'CNY',
+      status: 'opened',
+      reasonCode: 'fraudulent',
+      evidenceDueAt: '2026-09-15T12:30:00.000Z',
+      openedAt: '2026-09-01T08:00:00.000Z',
+      closedAt: null,
+      recoveryCase: {
+        id: 'rec-1',
+        status: 'investigating',
+        pointsToRecover: '5000',
+        pointsHeld: '5000',
+        outstandingPoints: '0',
+      },
+    }
+    listAdminPaymentDisputes.mockResolvedValueOnce({
+      page: 1,
+      pageSize: 20,
+      total: 1,
+      items: [dispute],
+    })
+
+    render(<AdminRechargePage />)
+    fireEvent.click(await screen.findByRole('tab', { name: '争议' }))
+
+    expect(await screen.findByTestId('admin-payment-disputes')).toBeInTheDocument()
+    // Check Beijing time in table
+    expect(screen.getByText(/举证截止:.*（北京时间）/)).toBeInTheDocument()
+
+    // Click detail
+    fireEvent.click(screen.getByRole('button', { name: '详情' }))
+    expect(await screen.findByText('支付争议详情')).toBeInTheDocument()
+    expect(screen.getAllByText('dp-simulator-88888').length).toBeGreaterThanOrEqual(1)
+    expect(screen.getByText('ord-recharge-77777')).toBeInTheDocument()
+    expect(screen.getByText('fraudulent')).toBeInTheDocument()
+  })
+
+  it('reconciliation: displays items mismatch breakdown in detail dialog', async () => {
+    const run = {
+      id: 'run-recon-1',
+      provider: 'simulator',
+      environment: 'production',
+      scopeType: 'statement',
+      scopeKey: 'stmt-2026-09-01',
+      status: 'completed_with_mismatches',
+      itemCount: 20,
+      mismatchCount: 1,
+      startedAt: '2026-09-01T00:00:00.000Z',
+      completedAt: '2026-09-01T00:01:00.000Z',
+      lastErrorCode: null,
+      createdAt: '2026-09-01T00:00:00.000Z',
+      items: [
+        {
+          id: 'item-diff-1',
+          providerEntryKey: 'entry-sim-12345',
+          rechargeOrderId: 'ord-sim-67890',
+          mismatchType: 'amount_mismatch',
+          providerStatus: 'paid',
+          localStatus: 'credited',
+          providerAmountMinor: '2000',
+          localAmountMinor: '1000',
+          quotedAmountMinor: null,
+          currency: 'CNY',
+          status: 'unresolved',
+        },
+      ],
+    }
+    listAdminReconRuns.mockResolvedValueOnce({
+      items: [run],
+    })
+
+    render(<AdminRechargePage />)
+    fireEvent.click(await screen.findByRole('tab', { name: '对账' }))
+
+    expect(await screen.findByTestId('admin-reconciliation')).toBeInTheDocument()
+    expect(screen.getByText('发现差异 1 条')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '明细 (1)' }))
+    expect(await screen.findByText('对账差异明细')).toBeInTheDocument()
+    expect(screen.getByText('amount_mismatch')).toBeInTheDocument()
+    expect(screen.getByText(/entry-sim-12345/)).toBeInTheDocument()
+    expect(screen.getByText('unresolved')).toBeInTheDocument()
+  })
 })

@@ -271,13 +271,40 @@ export default function AdminPricePolicies() {
         <DialogContent className="max-w-lg">
           <DialogTitle>创建生产价格政策草稿</DialogTitle>
           <DialogDescription className="mt-1 text-sm text-[var(--color-text-muted)]">
-            比例是每 1 个货币最小单位获得的积分，例如 1 PTS / 1 分，不是 1 元 1 积分。创建后仍是草稿，需手动激活。
+            设置充值换算比率与金额额度。创建后生成草稿，确认无误后可在列表手动激活。
           </DialogDescription>
           <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <label className="text-sm font-bold sm:col-span-2">
-              代码
-              <input className="input mt-1 w-full" value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} data-testid="admin-price-policy-code" />
-            </label>
+            {/* 兑换比率：每 N 分人民币兑换 M 积分 */}
+            <div className="sm:col-span-2 p-3 bg-[var(--color-background)] rounded-lg border border-[var(--color-border)]">
+              <div className="text-xs font-bold text-[var(--color-text)] mb-1.5">兑换比率设置</div>
+              <div className="flex flex-wrap items-center gap-2 text-sm text-[var(--color-text)]">
+                <span>每</span>
+                <label htmlFor="admin-price-policy-denominator" className="sr-only">基准充值金额（分）</label>
+                <input
+                  id="admin-price-policy-denominator"
+                  className="input py-1 px-2 w-20 text-center font-bold"
+                  value={form.pointsDenominator}
+                  onChange={(e) => setForm({ ...form, pointsDenominator: e.target.value })}
+                  data-testid="admin-price-policy-denominator"
+                  placeholder="分母"
+                />
+                <span>分{form.currency === 'CNY' ? '人民币' : '货币'}，可兑换</span>
+                <label htmlFor="admin-price-policy-numerator" className="sr-only">对应获得的积分数</label>
+                <input
+                  id="admin-price-policy-numerator"
+                  className="input py-1 px-2 w-24 text-center font-bold"
+                  value={form.pointsNumerator}
+                  onChange={(e) => setForm({ ...form, pointsNumerator: e.target.value })}
+                  data-testid="admin-price-policy-numerator"
+                  placeholder="分子"
+                />
+                <span>积分</span>
+              </div>
+              <div className="text-[11px] text-[var(--color-text-muted)] mt-1.5">
+                以最小货币单位计（1 元 = 100 分）。例如填写每 1 分兑换 1 积分，则充值 10.00 元（1000 分）到账 1000 积分。
+              </div>
+            </div>
+
             <label className="text-sm font-bold">
               最低金额（元）
               <input className="input mt-1 w-full" value={form.minYuan} onChange={(e) => setForm({ ...form, minYuan: e.target.value })} />
@@ -294,31 +321,58 @@ export default function AdminPricePolicies() {
               日限额（元）
               <input className="input mt-1 w-full" value={form.dailyYuan} onChange={(e) => setForm({ ...form, dailyYuan: e.target.value })} />
             </label>
-            <label className="text-sm font-bold">
+            <label className="text-sm font-bold sm:col-span-2">
               月限额（元）
               <input className="input mt-1 w-full" value={form.monthlyYuan} onChange={(e) => setForm({ ...form, monthlyYuan: e.target.value })} />
-            </label>
-            <label className="text-sm font-bold">
-              积分分子
-              <input className="input mt-1 w-full" value={form.pointsNumerator} onChange={(e) => setForm({ ...form, pointsNumerator: e.target.value })} />
-            </label>
-            <label className="text-sm font-bold">
-              积分分母
-              <input className="input mt-1 w-full" value={form.pointsDenominator} onChange={(e) => setForm({ ...form, pointsDenominator: e.target.value })} />
             </label>
             <label className="text-sm font-bold sm:col-span-2">
               推荐金额（元，逗号分隔）
               <input className="input mt-1 w-full" value={form.suggestedYuan} onChange={(e) => setForm({ ...form, suggestedYuan: e.target.value })} data-testid="admin-price-policy-suggested" />
             </label>
+
+            {/* 高级技术参数折叠 */}
+            <details className="sm:col-span-2 rounded-lg border border-[var(--color-border)] p-3 text-xs bg-[var(--color-background)]/50">
+              <summary className="cursor-pointer font-bold text-[var(--color-text)] hover:text-[var(--color-primary)] transition-colors">
+                高级技术参数（规则代号与时区）
+              </summary>
+              <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <label className="text-xs font-bold sm:col-span-2">
+                  规则代号 (Rule Code)
+                  <input
+                    className="input mt-1 w-full font-mono text-xs"
+                    value={form.code}
+                    onChange={(e) => setForm({ ...form, code: e.target.value })}
+                    data-testid="admin-price-policy-code"
+                  />
+                  <span className="font-normal text-[var(--color-text-muted)] mt-0.5 block">系统策略代号，如 rp-cny-vmqfox-v1</span>
+                </label>
+                <label className="text-xs font-bold">
+                  小数位数 (Scale)
+                  <input
+                    className="input mt-1 w-full bg-[var(--color-background)]"
+                    disabled
+                    value="2 位小数（最小单位：分）"
+                  />
+                </label>
+                <label className="text-xs font-bold">
+                  限额统计时区 (Time Zone)
+                  <input
+                    className="input mt-1 w-full font-mono text-xs"
+                    value={form.limitTimeZone}
+                    onChange={(e) => setForm({ ...form, limitTimeZone: e.target.value })}
+                  />
+                </label>
+              </div>
+            </details>
           </div>
           {createPreview && (
             <p className="mt-3 text-sm font-bold text-[var(--color-text)]" data-testid="admin-price-policy-rate-preview">
-              {createPreview.ratio}；{createPreview.preview}
+              每 {form.pointsDenominator} 分{form.currency === 'CNY' ? '人民币' : '货币'}可兑换 {form.pointsNumerator} 积分（{createPreview.ratio}）；{createPreview.preview}
             </p>
           )}
           {createExampleMismatch && (
             <p className="mt-2 text-sm text-[var(--color-danger)]" data-testid="admin-price-policy-rate-mismatch">
-              rp-cny-vmqfox-v1 必须是 1 PTS / 1 分（¥10.00 → 1000 积分），不是 1 元 1 积分。
+              当前兑换比率不符合标准设定（参考标准：每 1 分人民币兑换 1 积分，即 1 PTS / 1 分，¥10.00 → 1000 积分，非 1 元 1 积分）。
             </p>
           )}
           {formError && <p className="mt-2 text-sm text-[var(--color-danger)]">{formError}</p>}
