@@ -19,6 +19,7 @@ import { getProductReviews, type ReviewItem } from '../api/reviews'
 import StarRating from '../components/ui/StarRating'
 import { useIsMobileViewport } from '../hooks/useMediaQuery'
 import type { Offer } from '../types/merchant'
+import type { MerchandisingProjection } from '../types/merchandising'
 import { offerPeriodDetailNote, offerPeriodSubtitle } from '../utils/offerPeriodDisplay'
 
 interface Product {
@@ -38,6 +39,13 @@ interface Product {
   ratingAvg?: number
   ratingCount?: number
   merchant?: { id: number; name: string } | null
+  merchandising?: MerchandisingProjection | null
+  assurance?: null | {
+    label: string
+    policyCode: string
+    policyText: string
+    validUntil: string
+  }
   /** 单 Faka SKU 时商品级 Xboard 容量摘要。 */
   fakaCapacity?: Offer['fakaCapacity']
   /** SKU 列表(P4a);仅含 active 规格,已剥离 fixedContent。 */
@@ -764,54 +772,51 @@ export default function ProductDetailPage() {
               <div className="bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)] shadow-sm overflow-hidden">
                 <div className="bg-[var(--color-background)] px-5 py-3 border-b border-[var(--color-border)]">
                   <h4 className="font-heading text-sm font-bold text-[var(--color-text)] flex items-center gap-2">
-                    <Store className="w-4 h-4 text-[var(--color-primary)]" /> 商家名片
+                    <Store className="w-4 h-4 text-[var(--color-primary)]" /> 提供方与服务
                   </h4>
                 </div>
-                <div className="p-5">
-                  {product.merchant ? (
-                    <>
-                      <div className="flex items-center gap-4 mb-4">
-                        <div
-                          className="w-12 h-12 rounded-xl flex items-center justify-center text-white font-heading font-bold text-xl shrink-0"
-                          style={{
-                            background:
-                              'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-hover) 100%)',
-                          }}
-                        >
-                          {product.merchant.name.charAt(0).toUpperCase()}
-                        </div>
-                        <div>
-                          <div className="font-bold text-[var(--color-text)] text-base">{product.merchant.name}</div>
-                          <div className="text-xs text-[var(--color-primary)] bg-[var(--color-primary)]/10 px-2 py-0.5 rounded inline-flex items-center gap-1 mt-1 border border-[var(--color-primary)]/25 font-medium">
-                            <ShieldCheck className="w-3 h-3" /> 平台认证商家
-                          </div>
-                        </div>
+                <div className="p-5 space-y-4">
+                  <div className="flex items-center gap-4">
+                    <div
+                      className="w-12 h-12 rounded-xl flex items-center justify-center text-white font-heading font-bold text-xl shrink-0"
+                      style={{
+                        background:
+                          'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-hover) 100%)',
+                      }}
+                    >
+                      {product.merchant ? product.merchant.name.charAt(0).toUpperCase() : 'Mo'}
+                    </div>
+                    <div>
+                      <div className="font-bold text-[var(--color-text)] text-base">
+                        {product.merchant?.name || 'MoNexus 自营'}
                       </div>
-                      <div className="text-xs text-[var(--color-text-muted)] space-y-2.5 mt-4 pt-4 border-t border-[var(--color-border)]">
-                        <p className="flex items-start gap-1.5 leading-relaxed">
-                          <ShieldCheck className="w-4 h-4 text-[var(--color-cta)] shrink-0" />
-                          本商品由该商家提供，平台记录交易与发货信息。
-                        </p>
-                      </div>
-                    </>
-                  ) : (
-                    <div className="flex items-center gap-4">
-                      <div
-                        className="w-12 h-12 rounded-xl flex items-center justify-center text-white font-heading font-bold text-xl shrink-0"
-                        style={{
-                          background:
-                            'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-hover) 100%)',
-                        }}
-                      >
-                        Mo
-                      </div>
-                      <div>
-                        <div className="font-bold text-[var(--color-text)] text-base">MoNexus 自营</div>
-                        <div className="text-xs text-[var(--color-primary)] bg-[var(--color-primary)]/10 px-2 py-0.5 rounded inline-flex items-center gap-1 mt-1 border border-[var(--color-primary)]/25 font-medium">
-                          <ShieldCheck className="w-3 h-3" /> 官方直营保障
-                        </div>
+                      <div className="mt-1 flex flex-wrap gap-1.5">
+                        {!product.merchant && (
+                          <span className="text-xs text-[var(--color-primary)] bg-[var(--color-primary)]/10 px-2 py-0.5 rounded inline-flex items-center gap-1 border border-[var(--color-primary)]/25 font-medium">
+                            平台自营
+                          </span>
+                        )}
+                        {product.merchandising?.merchantPartner && (
+                          <span className="text-xs text-[var(--color-primary)] bg-[var(--color-primary)]/10 px-2 py-0.5 rounded inline-flex items-center gap-1 border border-[var(--color-primary)]/25 font-medium">
+                            合作伙伴
+                          </span>
+                        )}
                       </div>
                     </div>
+                  </div>
+                  {product.assurance ? (
+                    <details className="text-xs text-[var(--color-text-muted)] border-t border-[var(--color-border)] pt-4" data-testid="product-assurance">
+                      <summary className="cursor-pointer min-h-[44px] flex items-center gap-1.5 text-[var(--color-text)] font-medium">
+                        <ShieldCheck className="w-4 h-4 text-[var(--color-cta)]" />
+                        {product.assurance.label}
+                      </summary>
+                      <p className="mt-2 leading-relaxed">{product.assurance.policyText}</p>
+                      <p className="mt-1">有效期至 {new Date(product.assurance.validUntil).toLocaleDateString()}</p>
+                    </details>
+                  ) : (
+                    <p className="text-xs text-[var(--color-text-muted)] border-t border-[var(--color-border)] pt-4">
+                      本商品由{product.merchant ? '商家' : '平台'}提供，平台记录交易与发货信息。入驻或自营本身不构成保障承诺。
+                    </p>
                   )}
                 </div>
               </div>

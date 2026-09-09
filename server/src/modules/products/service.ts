@@ -29,6 +29,7 @@ import {
   type OrganicCursorPayload,
   type ProjectionRun,
 } from '../merchandising/publicProjection.js'
+import { loadPublicAssuranceByProductIds } from '../catalog/assurance/service.js'
 
 interface ProductListParams {
   query?: string
@@ -540,10 +541,19 @@ export async function listProducts(params: ProductListParams = {}) {
   const visible = new Set(
     live.filter(row => isCurrentlyPubliclyVisible(row, audience)).map(row => row.id),
   )
-  return attachListMerchandising({
+  const visibleItems = baseResult.items.filter(item => visible.has(item.id))
+  const decorated = await attachListMerchandising({
     ...baseResult,
-    items: baseResult.items.filter(item => visible.has(item.id)),
+    items: visibleItems,
   }, run)
+  const assuranceById = await loadPublicAssuranceByProductIds(decorated.items.map(item => item.id))
+  return {
+    ...decorated,
+    items: decorated.items.map(item => ({
+      ...item,
+      assurance: assuranceById.get(item.id) ?? null,
+    })),
+  }
 }
 
 async function listProductsFromDb(params: ProductListParams, context: ProductListContext) {
@@ -626,7 +636,12 @@ export async function getProductDetail(id: number, audience: ProductAudience = '
     [{ id: baseProduct.id, merchantId: baseProduct.merchant?.id ?? null }],
     run,
   )
-  return { ...baseProduct, merchandising: decorated.merchandising }
+  const assuranceById = await loadPublicAssuranceByProductIds([baseProduct.id])
+  return {
+    ...baseProduct,
+    merchandising: decorated.merchandising,
+    assurance: assuranceById.get(baseProduct.id) ?? null,
+  }
 }
 
 async function getProductDetailFromDb(id: number, audience: ProductAudience = 'guest') {

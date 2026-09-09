@@ -20,6 +20,7 @@ import {
 } from './schema.js'
 import * as controller from './controller.js'
 import { categoryApplicationRoutes } from '../catalog/applicationRoutes.js'
+import { merchantAssuranceRouter } from '../catalog/assurance/routes.js'
 import { z } from 'zod'
 import { createProductV2Schema, patchProductContentSchema } from '../catalog/productV2Schema.js'
 
@@ -88,5 +89,6 @@ router.post('/webhook-config/test', controller.testWebhookConfig)
 
 // T-CAT-BE-002 §7.3：商家分类申请（列表/创建/撤回，强制 ownership）。
 router.use('/category-applications', categoryApplicationRoutes)
+router.use(merchantAssuranceRouter)
 
 export { router as merchantRoutes }

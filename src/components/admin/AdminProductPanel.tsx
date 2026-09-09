@@ -39,6 +39,7 @@ import AdminInventoryImportPreview, {
 } from '../catalog/AdminInventoryImportPreview'
 import AdminPanelHeader from './AdminPanelHeader'
 import AdminActionMenu, { type AdminActionMenuItem } from './AdminActionMenu'
+import AdminAssurancePanel from '../catalog/AdminAssurancePanel'
 
 interface Props {
   active?: boolean
@@ -58,6 +59,7 @@ export default function AdminProductPanel({ active = true }: Props) {
   const [page, setPage] = useState(1)
   const pageSize = 20
   const [loading, setLoading] = useState(true)
+  const [assuranceProductId, setAssuranceProductId] = useState<number | null>(null)
   const [productsRefreshError, setProductsRefreshError] = useState(false)
   const [productsReloading, setProductsReloading] = useState(false)
 
@@ -446,6 +448,7 @@ export default function AdminProductPanel({ active = true }: Props) {
           </button>
         </div>
       </form>
+      <AdminAssurancePanel productId={assuranceProductId} />
       <div className="overflow-x-auto">
         {loading && products.length === 0 ? (
           <TableSkeleton />
@@ -643,6 +646,12 @@ export default function AdminProductPanel({ active = true }: Props) {
                         )}
                         {(() => {
                           const menuItems: AdminActionMenuItem[] = []
+                          menuItems.push({
+                            id: `assurance-${p.id}`,
+                            label: '保障管理',
+                            onClick: () => setAssuranceProductId(p.id),
+                            testId: `admin-assurance-${p.id}`,
+                          })
                           if (isPlatformOwned) {
                             menuItems.push({
                               id: `offers-${p.id}`,
@@ -670,7 +679,6 @@ export default function AdminProductPanel({ active = true }: Props) {
                               testId: `admin-faka-sync-${p.id}`,
                             })
                           }
-                          if (menuItems.length === 0) return null
                           return (
                             <AdminActionMenu
                               items={menuItems}

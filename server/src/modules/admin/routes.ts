@@ -39,6 +39,7 @@ import { valuePolicyGovernanceRoutes } from '../valuePolicy/governanceRoutes.js'
 // authenticate→requireActiveUser→requireAdmin→requireAdminMfa 链已覆盖其权限边界。
 import { categoryAdminRoutes } from '../catalog/adminRoutes.js'
 import { categoryApplicationAdminRoutes } from '../catalog/applicationAdminRoutes.js'
+import { adminAssuranceRouter } from '../catalog/assurance/routes.js'
 import { rechargeAdminRoutes } from '../recharge/adminRoutes.js'
 import { z } from 'zod'
 
@@ -58,6 +59,7 @@ router.use('/value-policies', valuePolicyGovernanceRoutes)
 router.use('/product-categories', categoryAdminRoutes)
 // T-CAT-BE-002 §7.3：管理员分类申请审核（列表/approve/reject，CAS + AdminLog）。
 router.use('/category-applications', categoryApplicationAdminRoutes)
+router.use(adminAssuranceRouter)
 router.use(rechargeAdminRoutes)
 
 router.get('/stats', controller.stats)

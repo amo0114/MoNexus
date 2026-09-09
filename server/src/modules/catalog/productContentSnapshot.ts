@@ -72,6 +72,17 @@ export async function loadEffectiveAssuranceGrant(
 ): Promise<{ grantId: number; validUntil: Date } | null> {
   const rows = await tx.$queryRaw<Array<{ now: Date }>>`SELECT CLOCK_TIMESTAMP() AS now`
   const now = rows[0]?.now ?? new Date()
+  const product = await tx.product.findUnique({
+    where: { id: productId },
+    select: {
+      status: true,
+      archivedAt: true,
+      merchantId: true,
+      merchant: { select: { status: true } },
+    },
+  })
+  if (!product || product.status !== 'active' || product.archivedAt) return null
+  if (product.merchantId != null && product.merchant?.status !== 'active') return null
   const grant = await tx.productAssuranceGrant.findFirst({
     where: {
       productId,
