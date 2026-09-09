@@ -347,7 +347,35 @@ describe('ProductEditPage (spec §9.2 / §10.3)', () => {
       { kind: 'static', path: '/assets/cover.webp' },
       { kind: 'upload', objectKey: 'objects/new.webp' },
     ])
-    expect('descriptionImages' in body).toBe(false)
+    expect(body.descriptionImages).toEqual([])
+  })
+
+  it('includes loaded descriptionImages when PATCHing a name-only change', async () => {
+    const existingImages = [{
+      src: 'https://files.example/old.webp',
+      ref: { kind: 'upload' as const, objectKey: 'objects/old.webp' },
+    }]
+    const transport = createEditTransport({
+      editor: editorDto({ descriptionImages: existingImages }),
+      patch: (body) => ({
+        id: 42,
+        contentVersion: 4,
+        updatedFields: ['name'],
+        echoed: body,
+      }),
+    })
+    await renderEditPage(transport)
+
+    fireEvent.change(screen.getByTestId('product-edit-name'), { target: { value: '新名称' } })
+    fireEvent.click(screen.getByTestId('product-edit-save'))
+
+    await waitFor(() => {
+      expect(transport.calls.some(call => call.method === 'patch')).toBe(true)
+    })
+    const body = transport.calls.find(call => call.method === 'patch')?.body as PatchProductContentRequest
+    expect(body.name).toBe('新名称')
+    expect('richDescription' in body).toBe(true)
+    expect(body.descriptionImages).toEqual(existingImages)
   })
 
   it('sends descriptionImages only after an editor insert', async () => {
@@ -474,12 +502,65 @@ describe('ProductEditPage (spec §9.2 / §10.3)', () => {
 
     await waitFor(() => expect(merchantMocks.updateMerchantOffer).toHaveBeenCalledTimes(1))
     expect(merchantMocks.updateMerchantOffer).toHaveBeenCalledWith(42, 9, {
+      fixedContent: null,
       fixedStructuredContent: {
         fields: [{ key: 'user', label: '账号', sensitive: false }],
         values: { user: 'shared-user' },
       },
     })
     expect(transport.calls.some(call => call.method === 'patch')).toBe(false)
+  })
+
+  it('uses checkoutVersion from the update response on the next structured save', async () => {
+    merchantMocks.updateMerchantOffer.mockResolvedValue({ id: 9, checkoutVersion: 'new-digest' })
+    const base = editorDto()
+    const transport = createEditTransport({
+      editor: {
+        ...base,
+        offers: [{
+          ...base.offers[0],
+          deliveryMode: 'instant_fixed',
+          stockMode: 'unlimited',
+          checkoutVersion: 'old-digest',
+          fixedStructuredContent: {
+            fields: [{ key: 'user', label: '账号', sensitive: false }],
+            values: { user: 'demo' },
+          },
+        }],
+      },
+    })
+    await renderEditPage(transport)
+
+    fireEvent.change(screen.getByTestId('product-edit-offer-9-structured-field-value-0'), {
+      target: { value: 'shared-user' },
+    })
+    fireEvent.click(screen.getByTestId('product-edit-save'))
+
+    await waitFor(() => expect(merchantMocks.updateMerchantOffer).toHaveBeenCalledTimes(1))
+    expect(merchantMocks.updateMerchantOffer).toHaveBeenCalledWith(42, 9, {
+      fixedContent: null,
+      fixedStructuredContent: {
+        fields: [{ key: 'user', label: '账号', sensitive: false }],
+        values: { user: 'shared-user' },
+      },
+      expectedCheckoutVersion: 'old-digest',
+    })
+    await waitFor(() => expect(screen.getByTestId('product-edit-save')).toHaveTextContent('保存内容'))
+
+    fireEvent.change(screen.getByTestId('product-edit-offer-9-structured-field-value-0'), {
+      target: { value: 'shared-user-2' },
+    })
+    fireEvent.click(screen.getByTestId('product-edit-save'))
+
+    await waitFor(() => expect(merchantMocks.updateMerchantOffer).toHaveBeenCalledTimes(2))
+    expect(merchantMocks.updateMerchantOffer).toHaveBeenLastCalledWith(42, 9, {
+      fixedContent: null,
+      fixedStructuredContent: {
+        fields: [{ key: 'user', label: '账号', sensitive: false }],
+        values: { user: 'shared-user-2' },
+      },
+      expectedCheckoutVersion: 'new-digest',
+    })
   })
 
   it('PATCHes templateKey and templateVersion:1 on a legacy editor DTO', async () => {

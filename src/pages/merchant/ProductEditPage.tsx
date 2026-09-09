@@ -249,14 +249,22 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
     setBindingOfferId(offer.id)
     try {
       const uploaded = await uploadDeliveryFile(file)
-      await updateMerchantOffer(productId, offer.id, {
+      const updated = await updateMerchantOffer(productId, offer.id, {
         fixedFileId: uploaded.id,
         ...(typeof offer.checkoutVersion === 'string'
           ? { expectedCheckoutVersion: offer.checkoutVersion }
           : {}),
       })
       setOffers(prev => prev.map(item => (
-        item.id === offer.id ? { ...item, fixedFileId: uploaded.id } : item
+        item.id === offer.id
+          ? {
+              ...item,
+              fixedFileId: uploaded.id,
+              ...(typeof updated.checkoutVersion === 'string'
+                ? { checkoutVersion: updated.checkoutVersion }
+                : {}),
+            }
+          : item
       )))
       setOfferFileLabelById(prev => ({ ...prev, [offer.id]: uploaded.fileName }))
       setOfferFileById(prev => ({ ...prev, [offer.id]: null }))
@@ -344,7 +352,8 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
             ? { templateKey, templateVersion: 1 as const }
             : {}),
           ...(imageRefs ? { images: imageRefs } : {}),
-          ...(descriptionImagesTouched ? { descriptionImages } : {}),
+          // Sanitizer allowlist: omit descriptionImages with richDescription => strip imgs.
+          descriptionImages,
         })
         setContentVersion(result.contentVersion)
         setBaseline(JSON.stringify(form))
@@ -370,12 +379,13 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
               draft.structuredFields,
               draft.structuredValues,
             )
+            payload.fixedContent = null
           }
           if (Object.keys(payload).length === 0) continue
           if (typeof offer.checkoutVersion === 'string') {
             payload.expectedCheckoutVersion = offer.checkoutVersion
           }
-          await updateMerchantOffer(productId, offer.id, payload)
+          const updated = await updateMerchantOffer(productId, offer.id, payload)
           setOffers(prev => prev.map(item => (
             item.id === offer.id
               ? {
@@ -384,6 +394,9 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
                   fixedStructuredContent: 'fixedStructuredContent' in payload
                     ? payload.fixedStructuredContent
                     : item.fixedStructuredContent,
+                  ...(typeof updated.checkoutVersion === 'string'
+                    ? { checkoutVersion: updated.checkoutVersion }
+                    : {}),
                 }
               : item
           )))
