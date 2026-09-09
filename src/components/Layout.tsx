@@ -1,6 +1,6 @@
 import { useNavigate, useLocation, Link } from 'react-router-dom'
 import { useAuthStore } from '../stores/authStore'
-import { Coins, User, ShieldCheck, Store, Clock, XCircle, AlertTriangle, Plus, Search, Bell, Trophy, CheckCircle2, Info, Package, Wallet } from 'lucide-react'
+import { Coins, User, ShieldCheck, Store, Clock, XCircle, AlertTriangle, Plus, Search, Bell, Trophy, CheckCircle2, Info, Package, Wallet, ArrowLeft } from 'lucide-react'
 import CountBadge from './ui/CountBadge'
 import { formatBadgeCount } from '../utils/orderAttention'
 import { subscribeReadInvalidation } from '../realtime/readSyncBroadcast'
@@ -30,6 +30,7 @@ import type { PublicAnnouncement } from '../types/admin'
 export default function Layout({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate()
   const location = useLocation()
+  const isAdminPage = location.pathname.startsWith('/admin')
   const navRef = useRef<HTMLElement>(null)
   const user = useAuthStore((s) => s.user)
   const showToast = useAppStore((s) => s.showToast)
@@ -283,7 +284,9 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             所以动画只影响这一小块 chrome,而非整页布局。 */}
         <div
           data-testid="navbar-shell"
-          className={`navbar-shell max-w-7xl mx-auto flex justify-between items-center relative w-full max-md:border max-md:border-transparent transition-[max-width,border-radius,box-shadow,background-color,border-color] duration-[220ms] ${
+          className={`navbar-shell ${
+            isAdminPage ? 'max-w-[1600px] px-4 xl:px-6' : 'max-w-7xl'
+          } mx-auto flex justify-between items-center relative w-full max-md:border max-md:border-transparent transition-[max-width,border-radius,box-shadow,background-color,border-color] duration-[220ms] ${
             chromeMode === 'search'
               ? 'max-md:max-w-[calc(100vw-2rem)] max-md:rounded-3xl max-md:px-4 max-md:py-3 max-md:shadow-xl'
               : compactIsland
@@ -314,172 +317,226 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         >
 
           {/* Brand mark + Orbitron wordmark. See design-system/monexus/LOGO-BRIEF.md. */}
-          <div
-            className="flex items-center gap-2.5 cursor-pointer group"
-            onClick={() => navigate('/')}
-          >
-            <Logo className="w-8 h-8 text-[var(--color-primary)] transition-transform duration-300 group-hover:scale-105 shrink-0" />
-            {/* compact 时压缩字宽,为右侧三个 40px 触控目标留出空间。字号
-                立即切换而非逐帧插值,避免动画期间反复触发布局。 */}
-            <span
-              className={`font-heading font-bold text-[var(--color-text)] leading-none ${
-                compactIsland ? 'max-md:text-sm max-md:tracking-[0.1em]' : 'max-md:text-base max-md:tracking-[0.18em]'
-              } text-lg tracking-[0.18em]`}
+          {isAdminPage ? (
+            <div className="flex items-center gap-2.5">
+              <button
+                type="button"
+                className="min-h-[40px] py-1 flex items-center gap-2.5 cursor-pointer group focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)] rounded"
+                onClick={() => navigate('/')}
+                title="MoNexus 首页"
+                aria-label="MoNexus 首页"
+              >
+                <Logo className="w-8 h-8 text-[var(--color-primary)] transition-transform duration-300 group-hover:scale-105 shrink-0" />
+                <span className="font-heading font-bold text-[var(--color-text)] leading-none text-lg tracking-[0.18em]">
+                  MONEXUS
+                </span>
+              </button>
+              <span className="hidden sm:inline-flex items-center px-2 py-0.5 rounded-md text-xs font-bold bg-[var(--color-primary)]/10 text-[var(--color-primary)] border border-[var(--color-primary)]/20 whitespace-nowrap">
+                管理后台
+              </span>
+            </div>
+          ) : (
+            <button
+              type="button"
+              className="min-h-[40px] py-1 flex items-center gap-2.5 cursor-pointer group focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)] rounded text-left"
+              onClick={() => navigate('/')}
+              title="MoNexus 首页"
+              aria-label="MoNexus 首页"
             >
-              MONEXUS
-            </span>
-          </div>
+              <Logo className="w-8 h-8 text-[var(--color-primary)] transition-transform duration-300 group-hover:scale-105 shrink-0" />
+              {/* compact 时压缩字宽,为右侧三个 40px 触控目标留出空间。字号
+                  立即切换而非逐帧插值,避免动画期间反复触发布局。 */}
+              <span
+                className={`font-heading font-bold text-[var(--color-text)] leading-none ${
+                  compactIsland ? 'max-md:text-sm max-md:tracking-[0.1em]' : 'max-md:text-base max-md:tracking-[0.18em]'
+                } text-lg tracking-[0.18em]`}
+              >
+                MONEXUS
+              </span>
+            </button>
+          )}
 
           {/* Right Actions */}
           <div className="flex items-center gap-2 sm:gap-3">
-            {/* Merchant Portal entry — depends on user.role × merchant.status */}
-            {user?.role === 'user' && !user.merchant && (
-              <div
-                className="hidden md:flex items-center gap-1.5 px-3 py-2 bg-[var(--color-primary)]/8 text-[var(--color-primary)] rounded-full cursor-pointer hover:bg-[var(--color-primary)]/12 transition-colors border border-[var(--color-primary)]/20"
-                onClick={() => navigate('/merchant/apply')}
-                title="申请成为商家"
-              >
-                <Plus className="w-4 h-4" />
-                <span className="font-bold text-xs">申请成为商家</span>
-              </div>
-            )}
-            {user?.role === 'user' && user.merchant?.status === 'pending' && (
-              <div
-                className="hidden md:flex items-center gap-1.5 px-3 py-2 bg-[var(--color-text-muted)]/10 text-[var(--color-text-muted)] rounded-full border border-[var(--color-border)]"
-                title="商家申请审核中"
-              >
-                <Clock className="w-4 h-4" />
-                <span className="font-bold text-xs">商家申请审核中</span>
-              </div>
-            )}
-            {user?.role === 'user' && user.merchant?.status === 'rejected' && (
-              <div
-                className="hidden md:flex items-center gap-1.5 px-3 py-2 bg-[var(--color-text-muted)]/10 text-[var(--color-text-muted)] rounded-full cursor-pointer hover:bg-[var(--color-text-muted)]/15 transition-colors border border-[var(--color-border)]"
-                onClick={() => navigate('/merchant/apply')}
-                title="申请被拒绝，可重新申请"
-              >
-                <XCircle className="w-4 h-4" />
-                <span className="font-bold text-xs">申请被拒，重试</span>
-              </div>
-            )}
-            {user?.role === 'user' && user.merchant?.status === 'suspended' && (
-              <div
-                className="hidden md:flex items-center gap-1.5 px-3 py-2 bg-[var(--color-danger)]/10 text-[var(--color-danger)] rounded-full border border-[var(--color-danger)]/20"
-                title="商家账号已被停用，请联系平台"
-              >
-                <AlertTriangle className="w-4 h-4" />
-                <span className="font-bold text-xs">账号已停用</span>
-              </div>
-            )}
-            {user?.role === 'merchant' && user.merchant?.status === 'active' && (
-              <div
-                className="hidden md:flex items-center gap-1.5 px-3 py-2 bg-[var(--color-primary)]/8 text-[var(--color-primary)] rounded-full cursor-pointer hover:bg-[var(--color-primary)]/12 transition-colors border border-[var(--color-primary)]/20"
-                onClick={() => navigate('/merchant')}
-              >
-                <Store className="w-4 h-4" />
-                <span className="font-bold text-xs">商家后台</span>
-              </div>
-            )}
-            {/* Admin Portal */}
-            {user?.role === 'admin' && (
-              <div
-                className="hidden md:flex items-center gap-1.5 px-3 py-2 bg-[var(--color-primary)]/8 text-[var(--color-primary)] rounded-full cursor-pointer hover:bg-[var(--color-primary)]/12 transition-colors border border-[var(--color-primary)]/20"
-                onClick={() => navigate('/admin')}
-              >
-                <ShieldCheck className="w-4 h-4" />
-                <span className="font-bold text-xs">管理后台</span>
-              </div>
-            )}
+            {isAdminPage ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => navigate('/')}
+                  aria-label="返回商城"
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-full text-xs font-bold border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] hover:border-[var(--color-primary-tint-strong)] transition-colors cursor-pointer whitespace-nowrap focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)]"
+                >
+                  <ArrowLeft className="w-4 h-4" />
+                  <span className="hidden sm:inline">返回商城</span>
+                </button>
 
-            {/* 积分排行榜 — 全角色可见。md 视口只留图标：桌面右侧已有
-                工作台入口 + 铃铛 + 主题 + 积分 + 头像，加满词条会在 768px
-                挤出横向溢出；lg 起补回文字。 */}
-            <button
-              type="button"
-              onClick={() => navigate('/leaderboard')}
-              title="积分排行榜"
-              aria-label="积分排行榜"
-              aria-current={location.pathname.startsWith('/leaderboard') ? 'page' : undefined}
-              className={`hidden md:flex items-center gap-1.5 px-3 py-2 rounded-full cursor-pointer transition-colors border focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)] ${
-                location.pathname.startsWith('/leaderboard')
-                  ? 'bg-[var(--color-primary-tint)] text-[var(--color-primary)] border-[var(--color-primary-tint-strong)]'
-                  : 'bg-[var(--color-surface)] text-[var(--color-text)] border-[var(--color-border)] hover:border-[var(--color-primary-tint-strong)]'
-              }`}
-            >
-              <Trophy className="w-4 h-4" />
-              <span className="hidden lg:inline font-bold text-xs">排行榜</span>
-            </button>
-
-            {/* 我的订单 — 桌面主入口；进行中订单数字角标 */}
-            <button
-              type="button"
-              onClick={() => navigate('/orders')}
-              title="我的订单"
-              aria-label={
-                orderAttentionCount > 0
-                  ? `我的订单，有 ${formatBadgeCount(orderAttentionCount)} 个进行中`
-                  : '我的订单'
-              }
-              aria-current={location.pathname.startsWith('/orders') ? 'page' : undefined}
-              data-testid="nav-orders"
-              className={`hidden md:flex relative items-center gap-1.5 px-3 py-2 rounded-full cursor-pointer transition-colors border focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)] ${
-                location.pathname.startsWith('/orders')
-                  ? 'bg-[var(--color-primary-tint)] text-[var(--color-primary)] border-[var(--color-primary-tint-strong)]'
-                  : 'bg-[var(--color-surface)] text-[var(--color-text)] border-[var(--color-border)] hover:border-[var(--color-primary-tint-strong)]'
-              }`}
-            >
-              <Package className="w-4 h-4" />
-              <span className="hidden lg:inline font-bold text-xs">订单</span>
-              {orderAttentionCount > 0 && (
-                <CountBadge
-                  count={orderAttentionCount}
-                  className="absolute -right-1 -top-1 ring-[var(--color-background)]"
-                  testId="nav-orders-badge"
+                <AnnouncementBellButton
+                  unreadCount={totalBellUnread}
+                  onClick={() => setAnnouncementCenterOpen(true)}
                 />
-              )}
-            </button>
 
-            <AnnouncementBellButton
-              unreadCount={totalBellUnread}
-              onClick={() => setAnnouncementCenterOpen(true)}
-            />
+                <div className="hidden md:block">
+                  <ThemeToggle />
+                </div>
+              </>
+            ) : (
+              <>
+                {/* Merchant Portal entry — depends on user.role × merchant.status */}
+                {user?.role === 'user' && !user.merchant && (
+                  <button
+                    type="button"
+                    className="hidden md:flex items-center gap-1.5 px-3 py-2 bg-[var(--color-primary)]/8 text-[var(--color-primary)] rounded-full cursor-pointer hover:bg-[var(--color-primary)]/12 transition-colors border border-[var(--color-primary)]/20 focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)]"
+                    onClick={() => navigate('/merchant/apply')}
+                    title="申请成为商家"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span className="font-bold text-xs">申请成为商家</span>
+                  </button>
+                )}
+                {user?.role === 'user' && user.merchant?.status === 'pending' && (
+                  <div
+                    className="hidden md:flex items-center gap-1.5 px-3 py-2 bg-[var(--color-text-muted)]/10 text-[var(--color-text-muted)] rounded-full border border-[var(--color-border)]"
+                    title="商家申请审核中"
+                  >
+                    <Clock className="w-4 h-4" />
+                    <span className="font-bold text-xs">商家申请审核中</span>
+                  </div>
+                )}
+                {user?.role === 'user' && user.merchant?.status === 'rejected' && (
+                  <button
+                    type="button"
+                    className="hidden md:flex items-center gap-1.5 px-3 py-2 bg-[var(--color-text-muted)]/10 text-[var(--color-text-muted)] rounded-full cursor-pointer hover:bg-[var(--color-text-muted)]/15 transition-colors border border-[var(--color-border)] focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)]"
+                    onClick={() => navigate('/merchant/apply')}
+                    title="申请被拒绝，可重新申请"
+                  >
+                    <XCircle className="w-4 h-4" />
+                    <span className="font-bold text-xs">申请被拒，重试</span>
+                  </button>
+                )}
+                {user?.role === 'user' && user.merchant?.status === 'suspended' && (
+                  <div
+                    className="hidden md:flex items-center gap-1.5 px-3 py-2 bg-[var(--color-danger)]/10 text-[var(--color-danger)] rounded-full border border-[var(--color-danger)]/20"
+                    title="商家账号已被停用，请联系平台"
+                  >
+                    <AlertTriangle className="w-4 h-4" />
+                    <span className="font-bold text-xs">账号已停用</span>
+                  </div>
+                )}
+                {user?.role === 'merchant' && user.merchant?.status === 'active' && (
+                  <button
+                    type="button"
+                    className="hidden md:flex items-center gap-1.5 px-3 py-2 bg-[var(--color-primary)]/8 text-[var(--color-primary)] rounded-full cursor-pointer hover:bg-[var(--color-primary)]/12 transition-colors border border-[var(--color-primary)]/20 focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)]"
+                    onClick={() => navigate('/merchant')}
+                    title="商家后台"
+                  >
+                    <Store className="w-4 h-4" />
+                    <span className="font-bold text-xs">商家后台</span>
+                  </button>
+                )}
+                {/* Admin Portal */}
+                {user?.role === 'admin' && (
+                  <button
+                    type="button"
+                    className="hidden md:flex items-center gap-1.5 px-3 py-2 bg-[var(--color-primary)]/8 text-[var(--color-primary)] rounded-full cursor-pointer hover:bg-[var(--color-primary)]/12 transition-colors border border-[var(--color-primary)]/20 focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)]"
+                    onClick={() => navigate('/admin')}
+                    title="管理后台"
+                  >
+                    <ShieldCheck className="w-4 h-4" />
+                    <span className="font-bold text-xs">管理后台</span>
+                  </button>
+                )}
 
-            {/* Theme switcher lives in the drawer on small screens:
-                brand + toggle + avatar + hamburger overflow 320-375px
-                viewports and push the drawer trigger off-screen. */}
-            <div className="hidden md:block">
-              <ThemeToggle />
-            </div>
+                {/* 积分排行榜 — 全角色可见。md 视口只留图标：桌面右侧已有
+                    工作台入口 + 铃铛 + 主题 + 积分 + 头像，加满词条会在 768px
+                    挤出横向溢出；lg 起补回文字。 */}
+                <button
+                  type="button"
+                  onClick={() => navigate('/leaderboard')}
+                  title="积分排行榜"
+                  aria-label="积分排行榜"
+                  aria-current={location.pathname.startsWith('/leaderboard') ? 'page' : undefined}
+                  className={`hidden md:flex items-center gap-1.5 px-3 py-2 rounded-full cursor-pointer transition-colors border focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)] ${
+                    location.pathname.startsWith('/leaderboard')
+                      ? 'bg-[var(--color-primary-tint)] text-[var(--color-primary)] border-[var(--color-primary-tint-strong)]'
+                      : 'bg-[var(--color-surface)] text-[var(--color-text)] border-[var(--color-border)] hover:border-[var(--color-primary-tint-strong)]'
+                  }`}
+                >
+                  <Trophy className="w-4 h-4" />
+                  <span className="hidden lg:inline font-bold text-xs">排行榜</span>
+                </button>
 
-            <button
-              type="button"
-              onClick={() => navigate('/recharge')}
-              title="积分充值"
-              aria-label="积分充值"
-              aria-current={location.pathname.startsWith('/recharge') ? 'page' : undefined}
-              data-testid="nav-recharge"
-              className={`hidden md:flex items-center gap-1.5 px-3 py-2 rounded-full cursor-pointer transition-colors border focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)] ${
-                location.pathname.startsWith('/recharge')
-                  ? 'bg-[var(--color-primary-tint)] text-[var(--color-primary)] border-[var(--color-primary-tint-strong)]'
-                  : 'bg-[var(--color-surface)] text-[var(--color-text)] border-[var(--color-border)] hover:border-[var(--color-primary-tint-strong)]'
-              }`}
-            >
-              <Wallet className="w-4 h-4" />
-              <span className="hidden lg:inline font-bold text-xs">充值</span>
-            </button>
+                {/* 我的订单 — 桌面主入口；进行中订单数字角标 */}
+                <button
+                  type="button"
+                  onClick={() => navigate('/orders')}
+                  title="我的订单"
+                  aria-label={
+                    orderAttentionCount > 0
+                      ? `我的订单，有 ${formatBadgeCount(orderAttentionCount)} 个进行中`
+                      : '我的订单'
+                  }
+                  aria-current={location.pathname.startsWith('/orders') ? 'page' : undefined}
+                  data-testid="nav-orders"
+                  className={`hidden md:flex relative items-center gap-1.5 px-3 py-2 rounded-full cursor-pointer transition-colors border focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)] ${
+                    location.pathname.startsWith('/orders')
+                      ? 'bg-[var(--color-primary-tint)] text-[var(--color-primary)] border-[var(--color-primary-tint-strong)]'
+                      : 'bg-[var(--color-surface)] text-[var(--color-text)] border-[var(--color-border)] hover:border-[var(--color-primary-tint-strong)]'
+                  }`}
+                >
+                  <Package className="w-4 h-4" />
+                  <span className="hidden lg:inline font-bold text-xs">订单</span>
+                  {orderAttentionCount > 0 && (
+                    <CountBadge
+                      count={orderAttentionCount}
+                      className="absolute -right-1 -top-1 ring-[var(--color-background)]"
+                      testId="nav-orders-badge"
+                    />
+                  )}
+                </button>
 
-            {/* Points Badge — Coins icon in CTA green to match the buy-currency story */}
-            <div
-              className="hidden md:flex items-center gap-1.5 px-4 py-2 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl cursor-pointer hover:border-[var(--color-primary)]/35 transition-colors group"
-              onClick={() => navigate('/profile')}
-            >
-              <div className="bg-[var(--color-cta)]/10 p-1 rounded-full">
-                <Coins className="w-4 h-4 text-[var(--color-cta)]" />
-              </div>
-              <span className="font-bold text-[15px] text-[var(--color-text)] font-mono">
-                {user?.points ?? '--'}
-              </span>
-            </div>
+                <AnnouncementBellButton
+                  unreadCount={totalBellUnread}
+                  onClick={() => setAnnouncementCenterOpen(true)}
+                />
+
+                {/* Theme switcher lives in the drawer on small screens:
+                    brand + toggle + avatar + hamburger overflow 320-375px
+                    viewports and push the drawer trigger off-screen. */}
+                <div className="hidden md:block">
+                  <ThemeToggle />
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => navigate('/recharge')}
+                  title="积分充值"
+                  aria-label="积分充值"
+                  aria-current={location.pathname.startsWith('/recharge') ? 'page' : undefined}
+                  data-testid="nav-recharge"
+                  className={`hidden md:flex items-center gap-1.5 px-3 py-2 rounded-full cursor-pointer transition-colors border focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)] ${
+                    location.pathname.startsWith('/recharge')
+                      ? 'bg-[var(--color-primary-tint)] text-[var(--color-primary)] border-[var(--color-primary-tint-strong)]'
+                      : 'bg-[var(--color-surface)] text-[var(--color-text)] border-[var(--color-border)] hover:border-[var(--color-primary-tint-strong)]'
+                  }`}
+                >
+                  <Wallet className="w-4 h-4" />
+                  <span className="hidden lg:inline font-bold text-xs">充值</span>
+                </button>
+
+                {/* Points Badge — Coins icon in CTA green to match the buy-currency story */}
+                <div
+                  className="hidden md:flex items-center gap-1.5 px-4 py-2 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl cursor-pointer hover:border-[var(--color-primary)]/35 transition-colors group"
+                  onClick={() => navigate('/profile')}
+                >
+                  <div className="bg-[var(--color-cta)]/10 p-1 rounded-full">
+                    <Coins className="w-4 h-4 text-[var(--color-cta)]" />
+                  </div>
+                  <span className="font-bold text-[15px] text-[var(--color-text)] font-mono">
+                    {user?.points ?? '--'}
+                  </span>
+                </div>
+              </>
+            )}
 
             {/* 灵动岛搜索入口（商城页·移动视口）：点击后 navbar morph 为搜索卡片 */}
             {isMobileViewport && location.pathname === '/' && (
@@ -589,7 +646,9 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           + 呼吸空间），≥md 由 md:pb-8 覆盖回原值。
           P2-2：商品详情页 Tab Bar 不渲染（购买条接管），豁免该预留——
           购买条空间由 ProductDetailPage 根部自行预留，避免双重预留。 */}
-      <main className={`flex-grow max-w-7xl mx-auto w-full px-4 sm:px-6 pt-6 sm:pt-8 ${
+      <main className={`flex-grow ${
+        isAdminPage ? 'max-w-[1600px] px-4 xl:px-6' : 'max-w-7xl px-4 sm:px-6'
+      } mx-auto w-full pt-6 sm:pt-8 ${
         location.pathname.startsWith('/product')
           ? 'max-md:pb-6 md:pb-8'
           : 'pb-[calc(var(--tabbar-h)+var(--safe-bottom)+2rem)] md:pb-8'

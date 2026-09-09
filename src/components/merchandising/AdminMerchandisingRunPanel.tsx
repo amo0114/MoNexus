@@ -121,9 +121,9 @@ export default function AdminMerchandisingRunPanel({
     >
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-lg font-bold text-[var(--color-text)]">自然热卖排名</h2>
+          <h2 className="text-lg font-bold text-[var(--color-text)]">自然热卖计算任务</h2>
           <p className="text-sm text-[var(--color-text-muted)] mt-1">
-            仅展示脱敏配置与运行状态，不展示订单或用户明细
+            仅展示脱敏计算配置与任务执行状态，不展示订单或用户明细。计算参数请在系统配置中调整。
           </p>
         </div>
         <button
@@ -206,7 +206,11 @@ export default function AdminMerchandisingRunPanel({
                         </div>
                       </td>
                       <td className="px-3 py-3 text-[var(--color-text-muted)]">
-                        {`窗口 ${run.windowDays} 天 · 最低 ${run.minSales} 单 · Top ${run.topPercent}%`}
+                        <div>{`窗口 ${run.windowDays} 天 · 最低 ${run.minSales} 单 · Top ${run.topPercent}%`}</div>
+                        <details className="mt-1 text-xs text-[var(--color-text-muted)]">
+                          <summary className="cursor-pointer select-none text-[var(--color-primary)] hover:underline">任务编号</summary>
+                          <code className="font-mono">{run.id}</code>
+                        </details>
                       </td>
                       <td className="px-3 py-3 text-right">{run.snapshotCount}</td>
                       <td className="px-3 py-3 text-[var(--color-text-muted)]">

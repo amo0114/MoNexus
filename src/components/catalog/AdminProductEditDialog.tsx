@@ -104,35 +104,35 @@ export default function AdminProductEditDialog({ product, onClose, onSaved }: Pr
       <DialogContent className="max-w-2xl max-h-[90dvh] overflow-y-auto" data-testid="admin-product-edit-dialog">
         <DialogTitle>编辑商品</DialogTitle>
         <DialogDescription>
-          可改展示信息与默认规格积分价。履约身份、SKU 不在此表单修改。
+          此处修改展示信息和默认规格价格；交付设置在规格管理中调整。
         </DialogDescription>
         <form className="mt-4 space-y-4" onSubmit={submit}>
           <div>
-            <label className="block text-sm font-bold mb-1.5">商品名称 *</label>
-            <input className="input" value={name} onChange={(event) => setName(event.target.value)}
+            <label htmlFor="admin-product-edit-name" className="block text-sm font-bold mb-1.5">商品名称 *</label>
+            <input id="admin-product-edit-name" className="input" value={name} onChange={(event) => setName(event.target.value)}
               data-testid="admin-product-edit-name" disabled={submitting} />
           </div>
           <ProductCategorySelect categories={categories} value={categoryId} onChange={setCategoryId} disabled={submitting} />
           <ProductImageUploader images={images} onChange={setImages} disabled={submitting} />
           <div>
-            <label className="block text-sm font-bold mb-1.5">一句话简介</label>
-            <textarea className="input min-h-20" value={description}
+            <label htmlFor="admin-product-edit-description" className="block text-sm font-bold mb-1.5">一句话简介</label>
+            <textarea id="admin-product-edit-description" className="input min-h-20" value={description}
               onChange={(event) => setDescription(event.target.value)} disabled={submitting} />
           </div>
           <div>
-            <label className="block text-sm font-bold mb-1.5">图文详情</label>
-            <textarea className="input min-h-28 font-mono" value={richDescription}
+            <label htmlFor="admin-product-edit-rich" className="block text-sm font-bold mb-1.5">图文详情</label>
+            <textarea id="admin-product-edit-rich" className="input min-h-28 font-mono" value={richDescription}
               onChange={(event) => setRichDescription(event.target.value)} disabled={submitting} />
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-bold mb-1.5">默认规格售价 *</label>
-              <input className="input font-mono" type="number" min={1} value={price}
+              <label htmlFor="admin-product-edit-price" className="block text-sm font-bold mb-1.5">默认规格售价（积分）*</label>
+              <input id="admin-product-edit-price" className="input font-mono" type="number" min={1} value={price}
                 onChange={(event) => setPrice(event.target.value)} data-testid="admin-product-edit-price" disabled={submitting} />
             </div>
             <div>
-              <label className="block text-sm font-bold mb-1.5">划线价</label>
-              <input className="input font-mono" type="number" min={1} value={originalPrice}
+              <label htmlFor="admin-product-edit-original-price" className="block text-sm font-bold mb-1.5">划线价（积分）</label>
+              <input id="admin-product-edit-original-price" className="input font-mono" type="number" min={1} value={originalPrice}
                 onChange={(event) => setOriginalPrice(event.target.value)} disabled={submitting} />
             </div>
           </div>

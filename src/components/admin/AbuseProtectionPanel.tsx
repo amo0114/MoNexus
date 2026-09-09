@@ -31,6 +31,16 @@ function dateLabel(value: string | null) {
   return value ? new Date(value).toLocaleString() : '—'
 }
 
+const ABUSE_STATE_LABEL: Record<string, string> = {
+  pending_verification: '待验证',
+  held: '待发放（冷静期）',
+  granted: '已发放',
+  voided: '已作废',
+  qualified: '已合格',
+  quota_exhausted: '额度耗尽',
+  legacy: '历史记录',
+}
+
 function StatePill({ state }: { state: string }) {
   const tone = state === 'granted' || state === 'qualified'
     ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
@@ -39,7 +49,7 @@ function StatePill({ state }: { state: string }) {
       : state === 'voided' || state === 'quota_exhausted'
         ? 'bg-rose-500/10 text-rose-700 dark:text-rose-300'
         : 'bg-[var(--color-border)]/60 text-[var(--color-text-muted)]'
-  return <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold whitespace-nowrap ${tone}`}>{state}</span>
+  return <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold whitespace-nowrap ${tone}`}>{ABUSE_STATE_LABEL[state] ?? state}</span>
 }
 
 function Metric({ label, value }: { label: string; value: number }) {
@@ -234,8 +244,11 @@ export default function AbuseProtectionPanel() {
           {Array.from({ length: 8 }).map((_, index) => <div className="h-20 animate-pulse rounded-lg bg-[var(--color-border)]/50" key={index} />)}
         </div>
       ) : overview ? (
-        <div className="space-y-3">
-          <p className="text-xs text-[var(--color-text-muted)]">统计起点：{dateLabel(overview.since)}</p>
+        <section className="space-y-3" aria-label="风控数据概览">
+          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+            <h3 className="font-heading text-lg font-bold text-[var(--color-text)]">风控数据概览</h3>
+            <p className="text-xs text-[var(--color-text-muted)]">统计起点：{dateLabel(overview.since)}（时间窗口仅用于此概览指标，不影响下方列表）</p>
+          </div>
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             <Metric label="注册尝试" value={overview.registrations.attempts} />
             <Metric label="注册接受" value={overview.registrations.accepted} />
@@ -247,17 +260,17 @@ export default function AbuseProtectionPanel() {
             <Metric label="邀请待验证" value={overview.referrals.pendingVerification} />
             <Metric label="邀请已合格" value={overview.referrals.qualified} />
             <Metric label="邀请额度耗尽" value={overview.referrals.quotaExhausted} />
-            <Metric label="奖励 held" value={overview.rewards.held} />
+            <Metric label="待发放奖励（冷静期）" value={overview.rewards.held} />
             <Metric label="奖励已发放" value={overview.rewards.granted} />
           </div>
-        </div>
+        </section>
       ) : null}
 
-      <section className="border-t border-[var(--color-border)] pt-6">
+      <section className="border-t border-[var(--color-border)] pt-6" aria-label="邀请码资格">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h3 className="font-heading text-lg font-bold text-[var(--color-text)]">邀请码资格</h3>
-            <p className="mt-1 text-sm text-[var(--color-text-muted)]">暂停只影响未来资格和待发奖励，不追扣既有积分。</p>
+            <p className="mt-1 text-sm text-[var(--color-text-muted)]">暂停只影响未来资格和待发奖励，不追扣既有积分。“邀请资格已合格”不等于奖励已发放；“额度耗尽”不等于封禁账号。</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <select
@@ -341,11 +354,11 @@ export default function AbuseProtectionPanel() {
         />
       </section>
 
-      <section className="border-t border-[var(--color-border)] pt-6">
+      <section className="border-t border-[var(--color-border)] pt-6" aria-label="奖励记录">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <h3 className="font-heading text-lg font-bold text-[var(--color-text)]">奖励账本</h3>
-            <p className="mt-1 text-sm text-[var(--color-text-muted)]">只可作废待验证或 held 奖励；已发放记录只读。</p>
+            <h3 className="font-heading text-lg font-bold text-[var(--color-text)]">奖励记录</h3>
+            <p className="mt-1 text-sm text-[var(--color-text-muted)]">仅可作废待验证或待发放（冷静期）的奖励；已发放记录只读，不追扣既有积分。</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <select
@@ -356,18 +369,18 @@ export default function AbuseProtectionPanel() {
             >
               <option value="">全部状态</option>
               <option value="pending_verification">待验证</option>
-              <option value="held">held</option>
+              <option value="held">待发放（冷静期）</option>
               <option value="granted">已发放</option>
               <option value="voided">已作废</option>
             </select>
             <input
-              className="input min-h-10 w-32 py-2"
+              className="input min-h-10 w-36 py-2"
               value={rewardUserIdDraft}
               inputMode="numeric"
-              placeholder="收款用户 ID"
+              placeholder="奖励接收人编号"
               onChange={event => setRewardUserIdDraft(event.target.value.replace(/\D/g, ''))}
               onKeyDown={event => { if (event.key === 'Enter') applyRewardUserFilter() }}
-              aria-label="奖励收款用户 ID"
+              aria-label="奖励接收人编号"
             />
             <button type="button" className="btn-secondary min-h-10 px-3 text-sm" onClick={applyRewardUserFilter}>查询</button>
           </div>
@@ -377,16 +390,21 @@ export default function AbuseProtectionPanel() {
           {rewardsLoading && rewards.length === 0 ? <TableSkeleton rows={5} /> : (
             <table className="admin-table table-cards w-full text-sm">
               <thead>
-                <tr><th>奖励</th><th>收款用户</th><th>金额</th><th>状态</th><th>可用时间</th><th>邀请关系</th><th>操作</th></tr>
+                <tr><th>奖励类型</th><th>奖励接收人</th><th>奖励积分</th><th>状态</th><th>最早可发放时间</th><th>邀请关系</th><th>操作</th></tr>
               </thead>
               <tbody>
                 {rewards.map(reward => (
                   <tr key={reward.id}>
-                    <td data-label="奖励">#{reward.id}<div className="text-xs text-[var(--color-text-muted)]">{reward.kind}</div></td>
-                    <td data-label="收款用户">#{reward.recipient.id} · {reward.recipient.email}</td>
-                    <td data-label="金额" className="font-semibold">{reward.amount} 积分</td>
+                    <td data-label="奖励类型">
+                      #{reward.id}
+                      <div className="text-xs text-[var(--color-text-muted)]">
+                        {reward.kind === 'registration' ? '注册奖励' : reward.kind === 'referral' ? '邀请奖励' : reward.kind}
+                      </div>
+                    </td>
+                    <td data-label="奖励接收人">#{reward.recipient.id} · {reward.recipient.email}</td>
+                    <td data-label="奖励积分" className="font-semibold">{reward.amount} 积分</td>
                     <td data-label="状态"><StatePill state={reward.state} /></td>
-                    <td data-label="可用时间" className="text-xs text-[var(--color-text-muted)]">{dateLabel(reward.availableAt)}</td>
+                    <td data-label="最早可发放时间" className="text-xs text-[var(--color-text-muted)]">{dateLabel(reward.availableAt)}</td>
                     <td data-label="邀请关系">
                       {reward.inviteRelation ? <span className="text-xs">#{reward.inviteRelation.id} · <StatePill state={reward.inviteRelation.status} /></span> : '—'}
                     </td>

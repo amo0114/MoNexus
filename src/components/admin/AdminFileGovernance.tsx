@@ -213,13 +213,11 @@ export default function AdminFileGovernance() {
         <table className="admin-table table-cards">
           <thead>
             <tr>
-              <th>ID</th>
-              <th>文件名</th>
+              <th>文件</th>
               <th>大小</th>
-              <th>SHA-256</th>
-              <th>商家</th>
+              <th>归属</th>
               <th>状态</th>
-              <th>引用</th>
+              <th>引用情况</th>
               <th>创建时间</th>
               <th className="text-right">操作</th>
             </tr>
@@ -244,7 +242,7 @@ export default function AdminFileGovernance() {
             ))}
             {!loading && files.length === 0 && (
               <tr>
-                <td colSpan={9}>
+                <td colSpan={7}>
                   <EmptyState compact icon={FolderLock} title="暂无交付文件" description="商家上传的交付文件将出现在这里" />
                 </td>
               </tr>
@@ -271,8 +269,8 @@ export default function AdminFileGovernance() {
             <div className="min-w-0">
               <DialogTitle>吊销文件</DialogTitle>
               <DialogDescription>
-                确认吊销「{revokeTarget?.fileName}」？吊销后买家将无法再获取该文件的下载链接。
-                当前引用：在售规格 {revokeTarget?.refCounts.offers ?? 0} 个 / 交付记录 {revokeTarget?.refCounts.deliveryRecords ?? 0} 条。
+                确认吊销「{revokeTarget?.fileName}」？吊销后将停止后续获取该文件的下载链接（此前已签出且未过期的下载链接在到期前可能仍有效）。
+                当前关联引用：在售规格 {revokeTarget?.refCounts.offers ?? 0} 个 / 交付记录 {revokeTarget?.refCounts.deliveryRecords ?? 0} 条。
               </DialogDescription>
             </div>
           </div>
@@ -339,18 +337,31 @@ function FileRow({
   return (
     <>
       <tr>
-        <td className="text-[var(--color-text-muted)] text-xs" data-label="ID">{file.id}</td>
-        <td data-label="文件名">
-          <div className="font-bold text-[var(--color-text)] text-sm truncate max-w-[200px]" title={file.fileName}>{file.fileName}</div>
-          <div className="text-xs text-[var(--color-text-muted)] mt-0.5">{file.mimeType}</div>
+        <td data-label="文件">
+          <div className="font-bold text-[var(--color-text)] text-sm break-words" title={file.fileName}>{file.fileName}</div>
+          <div className="flex items-center gap-1.5 text-xs text-[var(--color-text-muted)] mt-0.5">
+            <span className="font-mono">#{file.id}</span>
+            <span>·</span>
+            <span>{file.mimeType}</span>
+          </div>
+          {file.sha256 && (
+            <details className="mt-1 text-[11px] text-[var(--color-text-muted)]">
+              <summary className="cursor-pointer hover:text-[var(--color-text)]">文件哈希</summary>
+              <div className="font-mono break-all mt-0.5 select-all p-1 bg-[var(--color-background)] rounded border border-[var(--color-border)] text-[10px]">
+                SHA-256: {file.sha256}
+              </div>
+            </details>
+          )}
         </td>
         <td className="text-sm text-[var(--color-text)] whitespace-nowrap" data-label="大小">{formatFileSize(file.size)}</td>
-        <td className="font-mono text-xs text-[var(--color-text-muted)]" data-label="SHA-256">
-          <span title={file.sha256 || undefined}>{file.sha256 ? `${file.sha256.slice(0, 12)}…` : '—'}</span>
+        <td className="font-medium text-sm text-[var(--color-text)]" data-label="归属">
+          <div>{file.merchant?.name ?? '-'}</div>
+          {file.merchant?.id != null && (
+            <div className="text-xs text-[var(--color-text-muted)] font-mono">商家 #{file.merchant.id}</div>
+          )}
         </td>
-        <td className="font-bold text-sm text-[var(--color-text)]" data-label="商家">{file.merchant?.name ?? '-'}</td>
         <td data-label="状态"><FileStatusPill status={file.status} /></td>
-        <td className="text-xs text-[var(--color-text-muted)] whitespace-nowrap" data-label="引用">
+        <td className="text-xs text-[var(--color-text-muted)] whitespace-nowrap" data-label="引用情况">
           在售规格 {file.refCounts.offers} / 交付记录 {file.refCounts.deliveryRecords}
         </td>
         <td className="text-[var(--color-text-muted)] text-xs whitespace-nowrap" data-label="创建时间">{new Date(file.createdAt).toLocaleString()}</td>
@@ -376,7 +387,7 @@ function FileRow({
       </tr>
       {expanded && (
         <tr>
-          <td colSpan={9} className="bg-[var(--color-background)]" data-label="发放流水">
+          <td colSpan={7} className="bg-[var(--color-background)]" data-label="发放流水">
             <div className="p-3 space-y-2">
               <div className="text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider">发放流水</div>
               {grantsLoading ? (
@@ -393,11 +404,20 @@ function FileRow({
                       <span className="text-[var(--color-text)]">用户 U{g.userId}</span>
                       <span className="text-[var(--color-text-muted)] ml-auto">{new Date(g.createdAt).toLocaleString()}</span>
                     </div>
-                    <div className="mt-1 text-xs text-[var(--color-text-muted)] flex flex-wrap gap-x-3 gap-y-0.5">
-                      <span>IP 哈希：{g.ipHash ? g.ipHash.slice(0, 12) : '-'}</span>
-                      <span className="truncate max-w-[320px]" title={g.userAgent ?? undefined}>UA：{g.userAgent || '-'}</span>
-                      {g.expiresAt && <span>链接有效期至 {new Date(g.expiresAt).toLocaleString()}</span>}
-                    </div>
+                    {g.expiresAt && (
+                      <div className="text-xs text-[var(--color-text-muted)] mt-1">
+                        链接有效期至：{new Date(g.expiresAt).toLocaleString()}
+                      </div>
+                    )}
+                    {(g.ipHash || g.userAgent) && (
+                      <details className="mt-1 text-[11px] text-[var(--color-text-muted)]">
+                        <summary className="cursor-pointer hover:text-[var(--color-text)]">排障详情</summary>
+                        <div className="mt-1 space-y-0.5 pl-2 border-l border-[var(--color-border)] text-xs text-[var(--color-text-muted)]">
+                          {g.ipHash && <div>IP 哈希：<span className="font-mono select-all">{g.ipHash}</span></div>}
+                          {g.userAgent && <div className="break-all">客户端信息（UA）：{g.userAgent}</div>}
+                        </div>
+                      </details>
+                    )}
                   </div>
                 ))
               )}

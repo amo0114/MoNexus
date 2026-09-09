@@ -332,10 +332,12 @@ function CategoryFormDialog({
 
           <div>
             <label htmlFor="cat-form-sort" className="block text-sm font-semibold mb-1">
-              排序值
+              展示顺序
+              <span className="text-[11px] font-normal text-[var(--color-text-muted)] ml-1">（数字越小越靠前；同值按分类编号排序）</span>
             </label>
             <input
               id="cat-form-sort"
+              aria-label="排序值"
               data-testid="category-form-sort"
               className="input"
               type="number"
@@ -1015,7 +1017,7 @@ export default function AdminCategoryManager({ adapter = catalogGovernanceApi }:
                   <th scope="col">编码</th>
                   <th scope="col">名称</th>
                   <th scope="col">状态</th>
-                  <th scope="col">排序</th>
+                  <th scope="col">展示顺序</th>
                   <th scope="col" className="w-56">操作</th>
                 </tr>
               </thead>

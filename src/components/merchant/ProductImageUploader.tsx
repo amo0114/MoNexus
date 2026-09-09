@@ -174,17 +174,23 @@ export default function ProductImageUploader({
 
   return (
     <div data-testid="product-images-uploader">
-      <label className="block text-sm font-semibold text-[var(--color-text)] mb-1">
-        商品图片（最多 {MAX_IMAGES} 张，第一张为封面）
+      <label htmlFor="product-image-url-input" className="block text-sm font-semibold text-[var(--color-text)] mb-1">
+        商品图片（最多 {MAX_IMAGES} 张，首张为 1:1 封面）
       </label>
-      <p className="text-xs text-[var(--color-text-muted)] mb-2 leading-relaxed">
-        <strong className="font-semibold text-[var(--color-text)]">封面</strong>须裁成{' '}
-        <strong className="font-semibold text-[var(--color-text)]">1:1</strong>
-        ，主体约占 80%–85%。辅图可选 1:1 或自由比例。本地上传经裁剪后存为本站图；
-        外链可「裁剪后上传」或「直接添加外链」。导出为静态 JPEG（GIF 将失去动画）。
-      </p>
+      <div className="text-xs text-[var(--color-text-muted)] mb-2">
+        <span>首张须裁成 1:1 封面；保存后导出为静态 JPEG（GIF 将失去动画效果）。</span>
+        <details className="mt-1">
+          <summary className="cursor-pointer select-none text-[var(--color-primary)] hover:underline">图片要求与说明</summary>
+          <div className="mt-1 p-2 rounded bg-[var(--color-surface)] border border-[var(--color-border)] text-xs text-[var(--color-text-muted)] space-y-1">
+            <p>封面主体约占 80%–85%。辅图可选 1:1 或自由比例。</p>
+            <p>本地上传经裁剪后存为本站图；外链可选择裁剪后上传或直接外链引用。</p>
+            <p>支持 PNG、JPEG、WebP、GIF 格式。</p>
+          </div>
+        </details>
+      </div>
       <div className="flex flex-wrap gap-2">
         <input
+          id="product-image-url-input"
           type="text"
           className="input flex-1 min-w-[12rem]"
           placeholder="粘贴图片 URL"

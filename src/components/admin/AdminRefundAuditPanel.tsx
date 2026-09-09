@@ -12,19 +12,20 @@ import EmptyState from '../ui/EmptyState'
 import ErrorState from '../ui/ErrorState'
 import { TableSkeleton } from '../ui/Skeleton'
 import { formatCurrencyAmount, formatPoints } from '../../pages/recharge/money'
-import { providerLabel, orderStatusLabel } from '../../pages/recharge/status'
+import { providerLabel } from '../../pages/recharge/status'
+import { getAdminRechargeStatusConfig } from '../../utils/adminRechargeDisplay'
 
 const PAGE_SIZE = 20
 
 export const REFUND_STATUS_OPTIONS = [
   { value: '', label: '全部状态' },
-  { value: 'requested', label: '已申请 (requested)' },
-  { value: 'points_held', label: '积分已冻结 (points_held)' },
-  { value: 'processing', label: '处理中 (processing)' },
-  { value: 'succeeded', label: '已退款 (succeeded)' },
-  { value: 'failed', label: '退款失败 (failed)' },
-  { value: 'cancelled', label: '已取消 (cancelled)' },
-  { value: 'manual_review', label: '待人工审核 (manual_review)' },
+  { value: 'requested', label: '已申请' },
+  { value: 'points_held', label: '积分已冻结' },
+  { value: 'processing', label: '处理中' },
+  { value: 'succeeded', label: '已退款' },
+  { value: 'failed', label: '退款失败' },
+  { value: 'cancelled', label: '已取消' },
+  { value: 'manual_review', label: '待人工审核' },
 ]
 
 export function renderRefundStatusBadge(status: string) {
@@ -342,12 +343,12 @@ export default function AdminRefundAuditPanel({ active = true }: AdminRefundAudi
         <div className="flex flex-col gap-1">
           <div className="flex items-center gap-2">
             <label htmlFor="admin-refund-order-id-input" className="text-xs font-medium text-[var(--color-text-muted)] shrink-0">
-              订单号:
+              完整充值订单号:
             </label>
             <input
               id="admin-refund-order-id-input"
               type="text"
-              placeholder="输入完整订单号 (UUID)"
+              placeholder="从订单详情复制 36 位完整单号"
               value={inputOrderId}
               maxLength={36}
               pattern="^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
@@ -462,7 +463,7 @@ export default function AdminRefundAuditPanel({ active = true }: AdminRefundAudi
                     </div>
                     {item.rechargeOrder?.status && (
                       <div className="text-[11px] text-[var(--color-text-muted)] font-medium">
-                        {orderStatusLabel(item.rechargeOrder.status)}
+                        {getAdminRechargeStatusConfig(item.rechargeOrder.status).label}
                       </div>
                     )}
                   </td>
@@ -474,7 +475,7 @@ export default function AdminRefundAuditPanel({ active = true }: AdminRefundAudi
                       {formatCurrencyAmount(item.amountMinor, item.rechargeOrder?.currency ?? 'CNY')}
                     </div>
                     <div className="text-xs text-[var(--color-cta)]">
-                      -{formatPoints(item.pointsToReverse)} RP
+                      -{formatPoints(item.pointsToReverse)} 积分
                     </div>
                   </td>
                   <td data-label="支付渠道 / 方式">

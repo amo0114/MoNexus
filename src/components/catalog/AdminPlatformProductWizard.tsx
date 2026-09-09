@@ -157,7 +157,7 @@ export default function AdminPlatformProductWizard({ open, onClose, onCreated }:
                 data-testid="admin-platform-price" disabled={submitting} />
             </div>
             <div>
-              <label htmlFor="admin-platform-original-price" className="block text-sm font-bold mb-1.5">划线原价</label>
+              <label htmlFor="admin-platform-original-price" className="block text-sm font-bold mb-1.5">划线原价（积分）</label>
               <input id="admin-platform-original-price" type="number" min="1" step="1" className="input font-mono"
                 value={form.originalPrice} onChange={(event) => setForm({ ...form, originalPrice: event.target.value })}
                 disabled={submitting} />
@@ -200,7 +200,7 @@ export default function AdminPlatformProductWizard({ open, onClose, onCreated }:
             </div>
           )}
           <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] p-3 text-xs text-[var(--color-text-muted)]">
-            此入口不提供热卖、精选、推广、认证或商家身份字段；这些能力由平台规则和独立运营流程决定。
+            创建后商品处于草稿状态，需在商品列表中配置库存或规格，并通过发布检查后方可正式上架。
           </div>
           <div className="flex justify-end gap-3">
             <button type="button" className="btn-secondary" onClick={onClose} disabled={submitting}>取消</button>

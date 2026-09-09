@@ -332,8 +332,10 @@ test('admin abuse panel renders masked records and requires a ticketed confirmat
   await selectAdminTab(page, 'abuse')
 
   await expect(page.getByRole('heading', { name: '注册与激励风控' })).toBeVisible()
-  await expect(page.getByText('i***@example.test').first()).toBeVisible()
-  await expect(page.getByText('奖励 held')).toBeVisible()
+  const rewardSection = page.locator('section[aria-label="奖励记录"]')
+  const rewardRow = rewardSection.locator('tbody tr', { hasText: 'i***@example.test' })
+  await expect(rewardRow).toBeVisible()
+  await expect(rewardRow.getByText('待发放（冷静期）')).toBeVisible()
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
 
   await page.getByRole('button', { name: '作废奖励' }).click()

@@ -75,7 +75,37 @@ describe('AdminRechargeOrders refund gate', () => {
       items: [order({ supportsRefunds: false })],
     })
     render(<AdminRechargeOrders />)
-    expect(await screen.findByText('已到账')).toBeInTheDocument()
+    expect(await screen.findByText('积分已入账')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '退款' })).not.toBeInTheDocument()
+  })
+
+  it('displays correct points label for credited vs refunded status in detail view', async () => {
+    const { getAdminRechargeOrder } = await import('../../../api/adminRecharge')
+    const { fireEvent, waitFor } = await import('@testing-library/react')
+    const refundedOrder = order({
+      orderId: '22222222-2222-4222-8222-222222222222',
+      status: 'refunded',
+    })
+    listAdminRechargeOrders.mockResolvedValue({
+      page: 1,
+      pageSize: 20,
+      total: 1,
+      items: [refundedOrder],
+    })
+    vi.mocked(getAdminRechargeOrder).mockResolvedValue({
+      ...refundedOrder,
+      order: refundedOrder,
+      paymentIntent: null,
+      refundRecords: [],
+      reconciliationRuns: [],
+    })
+
+    render(<AdminRechargeOrders />)
+    const detailBtn = await screen.findByRole('button', { name: '22222222…' })
+    fireEvent.click(detailBtn)
+
+    await waitFor(() => {
+      expect(screen.getByText('原充值积分')).toBeInTheDocument()
+    })
   })
 })

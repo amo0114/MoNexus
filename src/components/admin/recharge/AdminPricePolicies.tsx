@@ -90,7 +90,7 @@ function activateConfirmCopy(target: AdminPricePolicy, currentActive: AdminPrice
   description: string
 } {
   const preview = previewTenYuanCredit(target)
-  const ratio = formatFenPointRatio(target.pointsNumerator, target.pointsDenominator)
+  const ratio = preview?.ratio ?? formatFenPointRatio(target.pointsNumerator, target.pointsDenominator, target.currency)
   const rate = [ratio, preview?.preview].filter(Boolean).join('；')
   const retire = currentActive
     ? `将退役当前生效政策 ${currentActive.code}。`
@@ -140,6 +140,7 @@ export default function AdminPricePolicies() {
   const [submitting, setSubmitting] = useState(false)
   const [activateTarget, setActivateTarget] = useState<AdminPricePolicy | null>(null)
   const [acting, setActing] = useState(false)
+  const [detailPolicy, setDetailPolicy] = useState<AdminPricePolicy | null>(null)
 
   async function load() {
     setLoading(true)
@@ -174,9 +175,12 @@ export default function AdminPricePolicies() {
   return (
     <div className="space-y-4" data-testid="admin-price-policies">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-[var(--color-text-muted)]">
-          创建只生成草稿。激活会退役同币种生产通道的当前生效政策，不会通过迁移自动生效。
-        </p>
+        <div>
+          <h3 className="text-base font-bold text-[var(--color-text)]">充值金额与积分兑换规则</h3>
+          <p className="text-xs text-[var(--color-text-muted)] mt-0.5">
+            配置不同币种下的充值换算比率与充值限额。创建只生成草稿，激活将替换同币种当前生效政策。
+          </p>
+        </div>
         <button
           type="button"
           className="btn-primary"
@@ -196,10 +200,10 @@ export default function AdminPricePolicies() {
           <table className="admin-table table-cards">
             <thead>
               <tr>
-                <th>代码 / 版本</th>
-                <th>币种</th>
-                <th>积分比例</th>
-                <th>金额范围</th>
+                <th>规则代码 / 版本</th>
+                <th>适用币种</th>
+                <th>兑换规则</th>
+                <th>充值金额范围</th>
                 <th>状态</th>
                 <th className="text-right">操作</th>
               </tr>
@@ -209,22 +213,23 @@ export default function AdminPricePolicies() {
                 const preview = previewTenYuanCredit(item)
                 return (
                 <tr key={item.id} data-testid={`admin-price-policy-row-${item.code}`}>
-                  <td data-label="代码 / 版本">
-                    <div className="font-mono text-sm">{item.code}</div>
+                  <td data-label="规则代码 / 版本">
+                    <div className="font-mono text-sm font-semibold text-[var(--color-text)]">{item.code}</div>
                     <div className="text-xs text-[var(--color-text-muted)]">v{item.version}</div>
                   </td>
-                  <td data-label="币种">{item.currency}</td>
-                  <td data-label="积分比例">
-                    {formatFenPointRatio(item.pointsNumerator, item.pointsDenominator)
-                      ?? `${item.pointsNumerator}/${item.pointsDenominator}`}
+                  <td data-label="适用币种">{item.currency}</td>
+                  <td data-label="兑换规则">
+                    <div className="text-xs font-semibold text-[var(--color-text)]">
+                      {`每 ${item.pointsDenominator} ${item.currency === 'CNY' ? '分人民币' : '美分'}兑换 ${item.pointsNumerator} 积分`}
+                    </div>
                     {preview && (
-                      <div className="text-xs text-[var(--color-text-muted)]">
+                      <div className="text-xs text-[var(--color-cta)] mt-0.5">
                         {preview.preview}
                       </div>
                     )}
                   </td>
-                  <td data-label="金额范围">
-                    <div className="whitespace-nowrap">
+                  <td data-label="充值金额范围">
+                    <div className="whitespace-nowrap font-medium text-[var(--color-text)]">
                       {formatCurrencyAmount(item.minAmountMinor, item.currency)}
                       {' – '}
                       {formatCurrencyAmount(item.maxAmountMinor, item.currency)}
@@ -233,18 +238,32 @@ export default function AdminPricePolicies() {
                       步进 {formatCurrencyAmount(item.amountStepMinor, item.currency)}
                     </div>
                   </td>
-                  <td data-label="状态">{POLICY_STATUS_LABEL[item.status] ?? item.status}</td>
+                  <td data-label="状态">
+                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold border border-[var(--color-border)] bg-[var(--color-background)]">
+                      {POLICY_STATUS_LABEL[item.status] ?? item.status}
+                    </span>
+                  </td>
                   <td className="text-right whitespace-nowrap" data-label="操作">
-                    {item.status === 'draft' && (
+                    <div className="flex items-center justify-end gap-2">
                       <button
                         type="button"
-                        className="text-sm font-bold text-[var(--color-primary)]"
-                        onClick={() => setActivateTarget(item)}
-                        data-testid={`admin-price-policy-activate-${item.code}`}
+                        className="text-sm font-bold text-[var(--color-primary)] hover:underline cursor-pointer"
+                        onClick={() => setDetailPolicy(item)}
+                        data-testid={`admin-price-policy-detail-${item.code}`}
                       >
-                        激活
+                        详情
                       </button>
-                    )}
+                      {item.status === 'draft' && (
+                        <button
+                          type="button"
+                          className="text-sm font-bold text-[var(--color-cta)] hover:underline cursor-pointer"
+                          onClick={() => setActivateTarget(item)}
+                          data-testid={`admin-price-policy-activate-${item.code}`}
+                        >
+                          激活
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
                 )
@@ -259,13 +278,40 @@ export default function AdminPricePolicies() {
         <DialogContent className="max-w-lg">
           <DialogTitle>创建生产价格政策草稿</DialogTitle>
           <DialogDescription className="mt-1 text-sm text-[var(--color-text-muted)]">
-            比例是每 1 个货币最小单位获得的积分，例如 1 PTS / 1 分，不是 1 元 1 积分。创建后仍是草稿，需手动激活。
+            设置充值换算比率与金额额度。创建后生成草稿，确认无误后可在列表手动激活。
           </DialogDescription>
           <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <label className="text-sm font-bold sm:col-span-2">
-              代码
-              <input className="input mt-1 w-full" value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} data-testid="admin-price-policy-code" />
-            </label>
+            {/* 兑换比率：每 N 分人民币兑换 M 积分 */}
+            <div className="sm:col-span-2 p-3 bg-[var(--color-background)] rounded-lg border border-[var(--color-border)]">
+              <div className="text-xs font-bold text-[var(--color-text)] mb-1.5">兑换比率设置</div>
+              <div className="flex flex-wrap items-center gap-2 text-sm text-[var(--color-text)]">
+                <span>每</span>
+                <label htmlFor="admin-price-policy-denominator" className="sr-only">基准充值金额（分）</label>
+                <input
+                  id="admin-price-policy-denominator"
+                  className="input py-1 px-2 w-20 text-center font-bold"
+                  value={form.pointsDenominator}
+                  onChange={(e) => setForm({ ...form, pointsDenominator: e.target.value })}
+                  data-testid="admin-price-policy-denominator"
+                  placeholder="分母"
+                />
+                <span>分{form.currency === 'CNY' ? '人民币' : '货币'}，可兑换</span>
+                <label htmlFor="admin-price-policy-numerator" className="sr-only">对应获得的积分数</label>
+                <input
+                  id="admin-price-policy-numerator"
+                  className="input py-1 px-2 w-24 text-center font-bold"
+                  value={form.pointsNumerator}
+                  onChange={(e) => setForm({ ...form, pointsNumerator: e.target.value })}
+                  data-testid="admin-price-policy-numerator"
+                  placeholder="分子"
+                />
+                <span>积分</span>
+              </div>
+              <div className="text-[11px] text-[var(--color-text-muted)] mt-1.5">
+                以最小货币单位计（1 元 = 100 分）。例如填写每 1 分兑换 1 积分，则充值 10.00 元（1000 分）到账 1000 积分。
+              </div>
+            </div>
+
             <label className="text-sm font-bold">
               最低金额（元）
               <input className="input mt-1 w-full" value={form.minYuan} onChange={(e) => setForm({ ...form, minYuan: e.target.value })} />
@@ -282,22 +328,49 @@ export default function AdminPricePolicies() {
               日限额（元）
               <input className="input mt-1 w-full" value={form.dailyYuan} onChange={(e) => setForm({ ...form, dailyYuan: e.target.value })} />
             </label>
-            <label className="text-sm font-bold">
+            <label className="text-sm font-bold sm:col-span-2">
               月限额（元）
               <input className="input mt-1 w-full" value={form.monthlyYuan} onChange={(e) => setForm({ ...form, monthlyYuan: e.target.value })} />
-            </label>
-            <label className="text-sm font-bold">
-              积分分子
-              <input className="input mt-1 w-full" value={form.pointsNumerator} onChange={(e) => setForm({ ...form, pointsNumerator: e.target.value })} />
-            </label>
-            <label className="text-sm font-bold">
-              积分分母
-              <input className="input mt-1 w-full" value={form.pointsDenominator} onChange={(e) => setForm({ ...form, pointsDenominator: e.target.value })} />
             </label>
             <label className="text-sm font-bold sm:col-span-2">
               推荐金额（元，逗号分隔）
               <input className="input mt-1 w-full" value={form.suggestedYuan} onChange={(e) => setForm({ ...form, suggestedYuan: e.target.value })} data-testid="admin-price-policy-suggested" />
             </label>
+
+            {/* 高级技术参数折叠 */}
+            <details className="sm:col-span-2 rounded-lg border border-[var(--color-border)] p-3 text-xs bg-[var(--color-background)]/50">
+              <summary className="cursor-pointer font-bold text-[var(--color-text)] hover:text-[var(--color-primary)] transition-colors">
+                高级技术参数（规则代号与时区）
+              </summary>
+              <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <label className="text-xs font-bold sm:col-span-2">
+                  规则代号 (Rule Code)
+                  <input
+                    className="input mt-1 w-full font-mono text-xs"
+                    value={form.code}
+                    onChange={(e) => setForm({ ...form, code: e.target.value })}
+                    data-testid="admin-price-policy-code"
+                  />
+                  <span className="font-normal text-[var(--color-text-muted)] mt-0.5 block">系统策略代号，如 rp-cny-vmqfox-v1</span>
+                </label>
+                <label className="text-xs font-bold">
+                  小数位数 (Scale)
+                  <input
+                    className="input mt-1 w-full bg-[var(--color-background)]"
+                    disabled
+                    value="2 位小数（最小单位：分）"
+                  />
+                </label>
+                <label className="text-xs font-bold">
+                  限额统计时区 (Time Zone)
+                  <input
+                    className="input mt-1 w-full font-mono text-xs"
+                    value={form.limitTimeZone}
+                    onChange={(e) => setForm({ ...form, limitTimeZone: e.target.value })}
+                  />
+                </label>
+              </div>
+            </details>
           </div>
           {createPreview && (
             <p className="mt-3 text-sm font-bold text-[var(--color-text)]" data-testid="admin-price-policy-rate-preview">
@@ -306,19 +379,24 @@ export default function AdminPricePolicies() {
           )}
           {createExampleMismatch && (
             <p className="mt-2 text-sm text-[var(--color-danger)]" data-testid="admin-price-policy-rate-mismatch">
-              rp-cny-vmqfox-v1 必须是 1 PTS / 1 分（¥10.00 → 1000 积分），不是 1 元 1 积分。
+              当前兑换比率不符合标准示例设定。示例策略 rp-cny-vmqfox-v1 预设为每 1 分人民币兑换 1 积分（¥10.00 → 1000 积分）。若需配置自定义兑换比例，请展开下方「高级技术参数」修改规则代码标识（使用非示例代码）。
             </p>
           )}
           {formError && <p className="mt-2 text-sm text-[var(--color-danger)]">{formError}</p>}
-          <div className="mt-4 flex flex-wrap justify-end gap-2">
-            <button
-              type="button"
-              className="btn-secondary"
-              onClick={() => { setForm(exampleForm()); setFormError('') }}
-              data-testid="admin-price-policy-fill-example"
-            >
-              填充 VMQFox CNY 示例
-            </button>
+          <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
+            <div className="flex flex-col items-start mr-auto">
+              <button
+                type="button"
+                className="btn-secondary text-xs"
+                onClick={() => { setForm(exampleForm()); setFormError('') }}
+                data-testid="admin-price-policy-fill-example"
+              >
+                填入人民币充值草稿示例
+              </button>
+              <span className="text-[11px] text-[var(--color-text-muted)] mt-0.5">
+                仅填充表单，不保存、不启用
+              </span>
+            </div>
             <button
               type="button"
               className="btn-primary"
@@ -348,6 +426,159 @@ export default function AdminPricePolicies() {
               {submitting ? '创建中…' : '创建草稿'}
             </button>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={detailPolicy != null} onOpenChange={(open) => { if (!open) setDetailPolicy(null) }}>
+        <DialogContent className="max-w-xl min-w-0 break-words max-h-[85vh] overflow-y-auto">
+          <DialogTitle>价格政策详情</DialogTitle>
+          <DialogDescription className="font-mono text-xs text-[var(--color-text-muted)]">
+            规则代码: {detailPolicy?.code} (v{detailPolicy?.version})
+          </DialogDescription>
+          {detailPolicy && (
+            <div className="space-y-4 mt-3 text-xs">
+              <div className="p-3 bg-[var(--color-background)] rounded-lg border border-[var(--color-border)] space-y-2">
+                <div className="font-bold text-[var(--color-text)]">基本信息</div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div>
+                    <span className="text-[var(--color-text-muted)]">规则代号：</span>
+                    <span className="font-mono font-semibold text-[var(--color-text)]">{detailPolicy.code}</span>
+                  </div>
+                  <div>
+                    <span className="text-[var(--color-text-muted)]">版本：</span>
+                    <span className="font-mono">v{detailPolicy.version}</span>
+                  </div>
+                  <div>
+                    <span className="text-[var(--color-text-muted)]">适用币种：</span>
+                    <span className="font-semibold">{detailPolicy.currency}</span>
+                  </div>
+                  <div>
+                    <span className="text-[var(--color-text-muted)]">状态：</span>
+                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-bold border border-[var(--color-border)] bg-[var(--color-surface)]">
+                      {POLICY_STATUS_LABEL[detailPolicy.status] ?? detailPolicy.status}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-[var(--color-text-muted)]">环境：</span>
+                    <span>{detailPolicy.adminSandbox ? '沙箱测试' : '正式生产'}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-3 bg-[var(--color-background)] rounded-lg border border-[var(--color-border)] space-y-2">
+                <div className="font-bold text-[var(--color-text)]">兑换比率与计算规则</div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div className="sm:col-span-2">
+                    <span className="text-[var(--color-text-muted)]">兑换比率：</span>
+                    <span className="font-semibold text-[var(--color-text)]">
+                      {`每 ${detailPolicy.pointsDenominator} ${detailPolicy.currency === 'CNY' ? '分人民币' : '美分'}兑换 ${detailPolicy.pointsNumerator} 积分`}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-[var(--color-text-muted)]">换算试算：</span>
+                    <span className="font-semibold text-[var(--color-cta)]">
+                      {previewTenYuanCredit(detailPolicy)?.preview ?? '—'}
+                    </span>
+                  </div>
+                  <div className="sm:col-span-2">
+                    <span className="text-[var(--color-text-muted)]">取整规则：</span>
+                    <span>
+                      {detailPolicy.roundingMode === 'HALF_EVEN'
+                        ? '取最接近的整数；恰好半积分时取偶数'
+                        : detailPolicy.roundingMode}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-3 bg-[var(--color-background)] rounded-lg border border-[var(--color-border)] space-y-2">
+                <div className="font-bold text-[var(--color-text)]">充值限额与时区控制</div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div>
+                    <span className="text-[var(--color-text-muted)]">单笔限额：</span>
+                    <span className="font-medium text-[var(--color-text)]">
+                      {formatCurrencyAmount(detailPolicy.minAmountMinor, detailPolicy.currency)} – {formatCurrencyAmount(detailPolicy.maxAmountMinor, detailPolicy.currency)}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-[var(--color-text-muted)]">金额步进：</span>
+                    <span>{formatCurrencyAmount(detailPolicy.amountStepMinor, detailPolicy.currency)}</span>
+                  </div>
+                  <div>
+                    <span className="text-[var(--color-text-muted)]">单日限额：</span>
+                    <span className="font-medium">{formatCurrencyAmount(detailPolicy.dailyLimitMinor, detailPolicy.currency)}</span>
+                  </div>
+                  <div>
+                    <span className="text-[var(--color-text-muted)]">单月限额：</span>
+                    <span className="font-medium">{formatCurrencyAmount(detailPolicy.monthlyLimitMinor, detailPolicy.currency)}</span>
+                  </div>
+                  <div className="sm:col-span-2">
+                    <span className="text-[var(--color-text-muted)]">限额重置基准时区：</span>
+                    <span className="font-mono font-medium">{detailPolicy.limitTimeZone}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-3 bg-[var(--color-background)] rounded-lg border border-[var(--color-border)] space-y-2">
+                <div className="font-bold text-[var(--color-text)]">推荐充值金额序列</div>
+                <div className="flex flex-wrap gap-2">
+                  {detailPolicy.suggestedAmounts && detailPolicy.suggestedAmounts.length > 0 ? (
+                    detailPolicy.suggestedAmounts
+                      .slice()
+                      .sort((a, b) => a.sortOrder - b.sortOrder)
+                      .map((sa, idx) => (
+                        <span key={idx} className="px-2 py-1 bg-[var(--color-surface)] border border-[var(--color-border)] rounded text-xs font-mono font-semibold">
+                          {formatCurrencyAmount(sa.amountMinor, detailPolicy.currency)}
+                        </span>
+                      ))
+                  ) : (
+                    <span className="text-[var(--color-text-muted)]">未配置推荐充值金额序列</span>
+                  )}
+                </div>
+              </div>
+
+              <details className="rounded-lg border border-[var(--color-border)] p-3 text-xs bg-[var(--color-background)]/50">
+                <summary className="cursor-pointer font-bold text-[var(--color-text)] hover:text-[var(--color-primary)] transition-colors">
+                  技术参数
+                </summary>
+                <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
+                  <div>
+                    <span className="text-[var(--color-text-muted)]">金额精度 (Scale)：</span>
+                    <span className="font-mono text-[var(--color-text)]">保留 {detailPolicy.currencyScale} 位小数</span>
+                  </div>
+                  <div>
+                    <span className="text-[var(--color-text-muted)]">取整枚举 (Rounding)：</span>
+                    <span className="font-mono text-[var(--color-text)]">{detailPolicy.roundingMode}</span>
+                  </div>
+                </div>
+              </details>
+
+              <div className="p-3 bg-[var(--color-background)] rounded-lg border border-[var(--color-border)] space-y-2">
+                <div className="font-bold text-[var(--color-text)]">生效与生命周期</div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] text-[var(--color-text-muted)]">
+                  <div>
+                    <span>生效时间：</span>
+                    <span className="text-[var(--color-text)]">{detailPolicy.effectiveAt ? `${new Date(detailPolicy.effectiveAt).toLocaleString()}（本地时间）` : '—'}</span>
+                  </div>
+                  <div>
+                    <span>创建时间：</span>
+                    <span className="text-[var(--color-text)]">{detailPolicy.createdAt ? `${new Date(detailPolicy.createdAt).toLocaleString()}（本地时间）` : '—'}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-end pt-2">
+                <button
+                  type="button"
+                  className="btn-secondary px-4 py-1.5 text-xs cursor-pointer"
+                  onClick={() => setDetailPolicy(null)}
+                  data-testid="admin-price-policy-detail-close"
+                >
+                  关闭
+                </button>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
 

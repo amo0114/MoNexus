@@ -81,7 +81,7 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
     title: '商品与交付',
     items: [
       { id: 'products', label: '商品与库存', icon: Package },
-      { id: 'faka', label: 'FakaBridge', icon: Cable },
+      { id: 'faka', label: '自动开通任务', icon: Cable },
       { id: 'merchandising', label: '营销与陈列', icon: ShoppingBag },
       { id: 'catalogGovernance', label: '目录治理', icon: Tags },
     ],
@@ -168,7 +168,7 @@ export default function AdminNav({ activeTab, onTabChange }: AdminNavProps) {
     <>
       {/* Mobile Sticky Trigger Bar and Radix Drawer Sheet (<md) */}
       <DialogPrimitive.Root open={mobileOpen} onOpenChange={setMobileOpen}>
-        <div className="md:hidden sticky top-[calc(var(--navbar-h)+var(--safe-top))] z-20 -mx-4 px-4 py-2 bg-[var(--color-background)]/95 backdrop-blur-md border-b border-[var(--color-border)] mb-4">
+        <div className="xl:hidden sticky top-[calc(var(--navbar-h)+var(--safe-top))] z-20 -mx-4 px-4 py-2 bg-[var(--color-background)]/95 backdrop-blur-md border-b border-[var(--color-border)] mb-4">
           <DialogPrimitive.Trigger asChild>
             <button
               type="button"
@@ -260,10 +260,10 @@ export default function AdminNav({ activeTab, onTabChange }: AdminNavProps) {
         </DialogPrimitive.Portal>
       </DialogPrimitive.Root>
 
-      {/* Desktop Vertical Disclosure Navigation (≥md) */}
+      {/* Desktop Vertical Disclosure Navigation (≥xl: 1280px) */}
       <nav
         aria-label="管理后台导航"
-        className="hidden md:block w-56 lg:w-60 flex-shrink-0 space-y-3"
+        className="hidden xl:block w-56 flex-shrink-0 space-y-3"
       >
         <div className="text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider px-3 mb-2">
           系统管理

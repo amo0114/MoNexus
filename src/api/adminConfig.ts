@@ -1,37 +1,55 @@
 import api from './client'
 
 export type AdminSystemConfigKey =
+  // 注册与邀请 (10)
+  | 'registrationEnabled'
+  | 'registrationInviteOnly'
+  | 'emailVerificationRequiredForValue'
+  | 'referralInviterMinAgeDays'
+  | 'referralDailyQualifiedLimit'
+  | 'referralLifetimeQualifiedLimit'
+  | 'inviteMinTierRank'
+  | 'inviteQuotaUserMonthly'
+  | 'inviteQuotaMerchantMonthly'
+  | 'inviteCodeTtlDays'
+  // 基础奖励 (4)
   | 'registerReward'
   | 'checkinReward'
   | 'inviteReward'
-  | 'refreshTokenMaxAgeDays'
-  | 'defaultPageSize'
-  | 'maxPageSize'
-  | 'lowStockThreshold'
+  | 'growthRewardHoldDays'
+  // 会员等级 (6)
   | 'memberTierSilverThreshold'
   | 'memberTierGoldThreshold'
   | 'memberTierPlatinumThreshold'
   | 'memberTierSilverBonusBps'
   | 'memberTierGoldBonusBps'
   | 'memberTierPlatinumBonusBps'
+  // 交易与交付 (9)
   | 'checkoutVerifyAmountThreshold'
   | 'checkoutVerifyDailyThreshold'
-  // P5 受控文件交付
   | 'fileUrlTtlSeconds'
   | 'fileAccessWindowDays'
   | 'deliveryFileMaxMb'
-  // P5.5 低库存告警冷却
-  | 'lowStockNotifyCooldownHours'
-  // P6a 订单计时 / 订阅提醒
   | 'autoCloseDays'
   | 'fulfillmentSlaDays'
   | 'subscriptionRemindDays'
-  // P7b 自动开通外呼上限
   | 'autoProvisionMaxAttempts'
-  // SPEC-OPS-REGMAIL-001 公开注册总开关（仅 0/1，由 RegistrationControlPanel 渲染）
-  | 'registrationEnabled'
-  // SPEC-INVITE-001 邀请码必填开关（0=可选，1=必填）
-  | 'registrationInviteOnly'
+  // 库存提醒 (2)
+  | 'lowStockThreshold'
+  | 'lowStockNotifyCooldownHours'
+  // 商品运营 (8)
+  | 'hotWindowDays'
+  | 'hotMinSales'
+  | 'hotTopPercent'
+  | 'hotRecomputeMinutes'
+  | 'hotRunTimeoutMinutes'
+  | 'partnerSpendWindowDays'
+  | 'partnerMinPromotionPoints'
+  | 'partnerEntitlementDays'
+  // 高级运维 (3)
+  | 'refreshTokenMaxAgeDays'
+  | 'defaultPageSize'
+  | 'maxPageSize'
 
 export interface AdminSystemConfig {
   key: AdminSystemConfigKey

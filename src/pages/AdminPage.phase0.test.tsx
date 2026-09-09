@@ -165,9 +165,9 @@ describe('AdminPage Phase 0 verification', () => {
     expect(screen.getByText('12')).toBeInTheDocument()
     expect(screen.getByText('今日签到人次')).toBeInTheDocument()
     expect(screen.getByText('34')).toBeInTheDocument()
-    expect(screen.getByText('在售商品数')).toBeInTheDocument()
+    expect(screen.getByText('已发布商品数')).toBeInTheDocument()
     expect(screen.getByText('8')).toBeInTheDocument()
-    expect(screen.getByText('可用卡密库存')).toBeInTheDocument()
+    expect(screen.getByText('可用库存条目')).toBeInTheDocument()
     expect(screen.getByText('156')).toBeInTheDocument()
   })
 
