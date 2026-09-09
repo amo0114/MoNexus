@@ -51,25 +51,15 @@ export function previewTenYuanCredit(input: {
   }
 }
 
-export function isStandardCnyRule(code: string, currency: string = 'CNY'): boolean {
-  const trimmedCode = code.trim()
-  return currency === 'CNY' && (
-    trimmedCode === VMQFOX_CNY_EXAMPLE_CODE
-    || trimmedCode === 'cny_standard'
-    || trimmedCode.startsWith('rp-cny-')
-  )
-}
-
 export function vmqfoxCnyExampleRateMismatch(input: {
   code: string
   currency?: string
   pointsNumerator: string
   pointsDenominator: string
 }): boolean {
-  const currency = input.currency ?? 'CNY'
-  if (!isStandardCnyRule(input.code, currency)) return false
+  if (input.code.trim() !== VMQFOX_CNY_EXAMPLE_CODE) return false
   const preview = previewTenYuanCredit({
-    currency,
+    currency: 'CNY',
     pointsNumerator: input.pointsNumerator,
     pointsDenominator: input.pointsDenominator,
   })
