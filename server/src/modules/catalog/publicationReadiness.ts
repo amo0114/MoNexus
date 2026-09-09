@@ -21,13 +21,22 @@ import {
   READINESS_DETAIL_CODES,
   type ReadinessDetailCode,
 } from './constants.js'
+import { getProductTemplate } from './templates/registry.js'
+import { evaluateTemplateFulfillment } from './templates/fulfillmentStrategy.js'
+import { validateTemplateAttributes } from './templates/validate.js'
+import {
+  TEMPLATE_KEYS,
+  type FulfillmentOfferInput,
+  type TemplateAttributes,
+  type TemplateKey,
+} from './templates/types.js'
 
 type Client = typeof prisma | Prisma.TransactionClient
 
 export interface ReadinessDetail {
   /** Stable machine code (spec §6.1) — clients must key off this. */
   code: ReadinessDetailCode
-  /** Affected logical field: images | category | offers | external. */
+  /** Affected logical field or editor path (e.g. images, /details/purchaseNotes). */
   field: string
   /** Target offer when the issue is offer-scoped, else null. */
   offerId: number | null
@@ -58,6 +67,11 @@ const readinessProductSelect = {
   merchantId: true,
   status: true,
   publishedAt: true,
+  templateKey: true,
+  templateVersion: true,
+  attributes: true,
+  details: true,
+  purchaseForm: true,
   category: { select: { id: true, status: true } },
   offers: {
     select: {
@@ -72,6 +86,9 @@ const readinessProductSelect = {
       autoProvision: true,
       externalIntegration: true,
       externalSku: true,
+      attributes: true,
+      deliveryFields: true,
+      fixedStructuredContent: true,
       _count: { select: { inventory: { where: { status: 'available' } } } },
     },
   },
@@ -93,6 +110,63 @@ function detail(
   reason?: string,
 ): ReadinessDetail {
   return { code, field, offerId, reason }
+}
+
+function isTemplateKey(value: string): value is TemplateKey {
+  return (TEMPLATE_KEYS as readonly string[]).includes(value)
+}
+
+function loadBoundTemplate(
+  templateKey: string | null,
+  templateVersion: number | null,
+) {
+  if (templateKey == null || templateVersion == null || !isTemplateKey(templateKey)) {
+    return null
+  }
+  return getProductTemplate(templateKey, templateVersion)
+}
+
+function asTemplateAttributes(value: unknown): TemplateAttributes {
+  if (value == null || typeof value !== 'object' || Array.isArray(value)) return {}
+  const record: TemplateAttributes = {}
+  for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+    if (
+      typeof entry === 'string'
+      || typeof entry === 'number'
+      || typeof entry === 'boolean'
+      || (Array.isArray(entry) && entry.every(item => typeof item === 'string'))
+    ) {
+      record[key] = entry
+    }
+  }
+  return record
+}
+
+function trimmedDetailField(details: unknown, key: 'purchaseNotes' | 'afterSalesInstructions'): string {
+  if (details == null || typeof details !== 'object' || Array.isArray(details)) return ''
+  const value = (details as Record<string, unknown>)[key]
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+function asPurchaseForm(value: unknown): Array<{ type?: string; required?: boolean }> {
+  return Array.isArray(value) ? value as Array<{ type?: string; required?: boolean }> : []
+}
+
+function toFulfillmentOfferInput(
+  offer: ReadinessProductRow['offers'][number],
+): FulfillmentOfferInput {
+  return {
+    deliveryMode: offer.deliveryMode,
+    stockMode: offer.stockMode,
+    fixedContentType: offer.fixedContentType,
+    fixedContent: offer.fixedContent,
+    fixedFileId: offer.fixedFileId,
+    deliveryFields: offer.deliveryFields,
+    autoProvision: offer.autoProvision,
+    externalIntegration: offer.externalIntegration,
+    externalSku: offer.externalSku,
+    fixedStructuredContent: offer.fixedStructuredContent,
+  }
 }
 
 /**
@@ -305,6 +379,101 @@ export async function checkProductReadiness(
             '该规格当前不可售',
           ),
         )
+      }
+    }
+  }
+
+  // SPEC-PRODUCT-COMMERCE-002 §5.3 / §12.1 — templated products must pass
+  // publish-mode attribute, details, and fulfillmentRules checks. Legacy
+  // products (no templateKey+version) keep the commercial/faka/cover gates
+  // above and are not assigned a guessed template.
+  if (product.templateKey != null && product.templateVersion != null) {
+    const templateKey = product.templateKey
+    const templateVersion = product.templateVersion
+    const template = loadBoundTemplate(templateKey, templateVersion)
+    const productAttributes = validateTemplateAttributes({
+      templateKey,
+      templateVersion,
+      attributes: product.attributes,
+      mode: 'publish',
+      target: 'product',
+      pathPrefix: '/attributes',
+    })
+    if (!productAttributes.ok) {
+      details.push(
+        detail(
+          READINESS_DETAIL_CODES.TEMPLATE_FIELDS_REQUIRED,
+          '/attributes',
+          null,
+          '请先补齐所选商品形态的必填参数',
+        ),
+      )
+    }
+
+    if (trimmedDetailField(product.details, 'purchaseNotes') === '') {
+      details.push(
+        detail(
+          READINESS_DETAIL_CODES.PURCHASE_NOTES_REQUIRED,
+          '/details/purchaseNotes',
+          null,
+          '发布前需要填写购买须知',
+        ),
+      )
+    }
+    if (trimmedDetailField(product.details, 'afterSalesInstructions') === '') {
+      details.push(
+        detail(
+          READINESS_DETAIL_CODES.AFTER_SALES_REQUIRED,
+          '/details/afterSalesInstructions',
+          null,
+          '发布前需要填写售后说明',
+        ),
+      )
+    }
+
+    const resolvedProductAttributes = productAttributes.ok
+      ? productAttributes.value
+      : asTemplateAttributes(product.attributes)
+    const purchaseForm = asPurchaseForm(product.purchaseForm)
+
+    if (template) {
+      for (const offer of activeOffers) {
+        const offerAttributes = validateTemplateAttributes({
+          templateKey,
+          templateVersion,
+          attributes: offer.attributes,
+          mode: 'publish',
+          target: 'offer',
+          pathPrefix: `/offers/${offer.id}/attributes`,
+        })
+        if (!offerAttributes.ok) {
+          details.push(
+            detail(
+              READINESS_DETAIL_CODES.TEMPLATE_FIELDS_REQUIRED,
+              'offers',
+              offer.id,
+              '请先补齐所选商品形态的必填参数',
+            ),
+          )
+        }
+
+        const fulfillment = evaluateTemplateFulfillment({
+          template,
+          productAttributes: resolvedProductAttributes,
+          offer: toFulfillmentOfferInput(offer),
+          mode: 'publish',
+          purchaseForm,
+        })
+        if (!fulfillment.ok) {
+          details.push(
+            detail(
+              READINESS_DETAIL_CODES.FULFILLMENT_CONFIG_INVALID,
+              'offers',
+              offer.id,
+              fulfillment.message,
+            ),
+          )
+        }
       }
     }
   }

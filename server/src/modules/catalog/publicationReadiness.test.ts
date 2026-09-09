@@ -19,6 +19,9 @@ type OfferOverrides = Partial<{
   autoProvision: boolean
   externalIntegration: string | null
   externalSku: string | null
+  attributes: Record<string, unknown>
+  deliveryFields: unknown
+  fixedStructuredContent: unknown
   available: number
 }>
 
@@ -35,6 +38,9 @@ function offer(overrides: OfferOverrides = {}) {
     autoProvision: overrides.autoProvision ?? false,
     externalIntegration: overrides.externalIntegration ?? null,
     externalSku: overrides.externalSku ?? null,
+    attributes: overrides.attributes ?? {},
+    deliveryFields: overrides.deliveryFields ?? null,
+    fixedStructuredContent: overrides.fixedStructuredContent ?? null,
     _count: { inventory: overrides.available ?? 0 },
   }
 }
@@ -48,6 +54,11 @@ type ProductOverrides = Partial<{
   status: string
   publishedAt: Date | null
   categoryStatus: string
+  templateKey: string | null
+  templateVersion: number | null
+  attributes: Record<string, unknown>
+  details: Record<string, unknown>
+  purchaseForm: unknown
   offers: ReturnType<typeof offer>[]
 }>
 
@@ -60,6 +71,17 @@ function product(overrides: ProductOverrides = {}) {
     merchantId: overrides.merchantId ?? null,
     status: overrides.status ?? 'draft',
     publishedAt: overrides.publishedAt ?? null,
+    templateKey: overrides.templateKey ?? null,
+    templateVersion: overrides.templateVersion ?? null,
+    attributes: overrides.attributes ?? {},
+    details: overrides.details ?? {
+      highlights: [],
+      usageInstructions: '',
+      purchaseNotes: '',
+      afterSalesInstructions: '',
+      faq: [],
+    },
+    purchaseForm: overrides.purchaseForm ?? [],
     category: { id: 1, status: overrides.categoryStatus ?? CATEGORY_STATUS.ACTIVE },
     offers: overrides.offers ?? [offer({ available: 3 })],
   }
