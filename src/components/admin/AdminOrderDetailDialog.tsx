@@ -20,6 +20,7 @@ import { formatBookingDay, formatLocalDate } from '../../utils/formatLocalDate'
 import RegistryPill from '../ui/RegistryPill'
 import ProvisionBadge from '../ProvisionBadge'
 import { useAppStore } from '../../stores/appStore'
+import AdminPlatformFulfillmentActions from './AdminPlatformFulfillmentActions'
 
 export interface AdminOrderDetailDialogProps {
   order: AdminOrderDetail | null
@@ -28,6 +29,7 @@ export interface AdminOrderDetailDialogProps {
   error?: string | null
   onRetry?: () => void
   onOpenChange: (open: boolean) => void
+  onFulfillmentSuccess?: () => void
 }
 
 export default function AdminOrderDetailDialog({
@@ -37,6 +39,7 @@ export default function AdminOrderDetailDialog({
   error = null,
   onRetry,
   onOpenChange,
+  onFulfillmentSuccess,
 }: AdminOrderDetailDialogProps) {
   const showToast = useAppStore((s) => s.showToast)
   const [copied, setCopied] = useState(false)
@@ -311,6 +314,11 @@ export default function AdminOrderDetailDialog({
                   </div>
                 </div>
               )}
+
+              <AdminPlatformFulfillmentActions
+                order={order}
+                onSuccess={onFulfillmentSuccess}
+              />
             </div>
           )}
 

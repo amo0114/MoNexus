@@ -479,6 +479,14 @@ export default function AdminOrderTable({ active = true }: Props) {
         loading={detailLoading}
         error={detailError}
         onRetry={selectedOrderId != null ? () => handleOpenDetail(selectedOrderId) : undefined}
+        onFulfillmentSuccess={
+          selectedOrderId != null
+            ? () => {
+                void handleOpenDetail(selectedOrderId)
+                void fetchOrders(page, appliedFiltersRef.current)
+              }
+            : undefined
+        }
         onOpenChange={(open) => {
           setDetailDialogOpen(open)
           if (!open) {
