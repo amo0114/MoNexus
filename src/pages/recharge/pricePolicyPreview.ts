@@ -22,11 +22,12 @@ function halfEvenDiv(numerator: bigint, denominator: bigint): bigint {
   return quotient % 2n === 0n ? quotient : quotient + 1n
 }
 
-export function formatFenPointRatio(pointsNumerator: string, pointsDenominator: string): string | null {
+export function formatFenPointRatio(pointsNumerator: string, pointsDenominator: string, currency: string = 'CNY'): string | null {
   if (parsePositiveDecimal(pointsNumerator) == null || parsePositiveDecimal(pointsDenominator) == null) {
     return null
   }
-  return `${pointsNumerator.trim()} PTS / ${pointsDenominator.trim()} 分`
+  const unit = currency === 'USD' ? '美分' : '分人民币'
+  return `每 ${pointsDenominator.trim()} ${unit}兑换 ${pointsNumerator.trim()} 积分`
 }
 
 export function previewTenYuanCredit(input: {
@@ -41,7 +42,7 @@ export function previewTenYuanCredit(input: {
   const scale = input.currencyScale ?? 2
   const tenYuanMinor = 10n * (10n ** BigInt(scale))
   const tenYuanPoints = halfEvenDiv(tenYuanMinor * numerator, denominator).toString(10)
-  const ratio = formatFenPointRatio(input.pointsNumerator, input.pointsDenominator)
+  const ratio = formatFenPointRatio(input.pointsNumerator, input.pointsDenominator, input.currency)
   if (!ratio) return null
   return {
     ratio,
@@ -50,14 +51,25 @@ export function previewTenYuanCredit(input: {
   }
 }
 
+export function isStandardCnyRule(code: string, currency: string = 'CNY'): boolean {
+  const trimmedCode = code.trim()
+  return currency === 'CNY' && (
+    trimmedCode === VMQFOX_CNY_EXAMPLE_CODE
+    || trimmedCode === 'cny_standard'
+    || trimmedCode.startsWith('rp-cny-')
+  )
+}
+
 export function vmqfoxCnyExampleRateMismatch(input: {
   code: string
+  currency?: string
   pointsNumerator: string
   pointsDenominator: string
 }): boolean {
-  if (input.code.trim() !== VMQFOX_CNY_EXAMPLE_CODE) return false
+  const currency = input.currency ?? 'CNY'
+  if (!isStandardCnyRule(input.code, currency)) return false
   const preview = previewTenYuanCredit({
-    currency: 'CNY',
+    currency,
     pointsNumerator: input.pointsNumerator,
     pointsDenominator: input.pointsDenominator,
   })

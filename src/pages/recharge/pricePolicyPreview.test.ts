@@ -6,14 +6,14 @@ import {
 } from './pricePolicyPreview'
 
 describe('pricePolicyPreview', () => {
-  it('renders 1 PTS per fen and ¥10.00 → 1000 积分', () => {
-    expect(formatFenPointRatio('1', '1')).toBe('1 PTS / 1 分')
+  it('renders standard ratio and ¥10.00 → 1000 积分', () => {
+    expect(formatFenPointRatio('1', '1')).toBe('每 1 分人民币兑换 1 积分')
     expect(previewTenYuanCredit({
       currency: 'CNY',
       pointsNumerator: '1',
       pointsDenominator: '1',
     })).toEqual({
-      ratio: '1 PTS / 1 分',
+      ratio: '每 1 分人民币兑换 1 积分',
       tenYuanPoints: '1000',
       preview: '¥10.00 → 1000 积分',
     })
