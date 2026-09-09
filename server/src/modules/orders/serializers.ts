@@ -178,6 +178,11 @@ function omitPurchaseForm<T extends Record<string, unknown>>(order: T) {
   return rest
 }
 
+function omitProductContentSnapshot<T extends Record<string, unknown>>(order: T) {
+  const { productContentSnapshot: _snapshot, ...rest } = order
+  return rest
+}
+
 /**
  * P7b：自动开通任务的两套投影——绝不整表透传（`leaseToken`/`webhookConfigId`
  * 是内部租约与配置指针，泄露即破坏至少一次语义的安全边界）。
@@ -220,7 +225,9 @@ function withProvisionStatusForBuyer<T extends Record<string, unknown>>(order: T
 
 export function serializeUserOrderList<T extends OrderWithDelivery>(order: T) {
   // P6a：列表行透出 expiresAt/expired 供「已过期」徽标；内容照旧剥离。
-  return omitPurchaseForm(omitDeliveryContent(withDeliveryExpiry(withUserOrderContract(order, false))))
+  return omitProductContentSnapshot(
+    omitPurchaseForm(omitDeliveryContent(withDeliveryExpiry(withUserOrderContract(order, false)))),
+  )
 }
 
 export function serializeUserOrderDetail<T extends OrderWithDelivery>(order: T) {

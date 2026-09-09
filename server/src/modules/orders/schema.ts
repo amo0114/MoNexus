@@ -39,6 +39,17 @@ export const createOrderSchema = z.object({
   // SPEC-VALUE-POLICY-P1-001：结算预览返回的价值政策 ID。
   // off 容忍并忽略；shadow 可选但提供则必须匹配；enforce 必填。
   expectedValuePolicyId: z.string().trim().min(1).max(64).optional(),
+  expectedProductContentVersion: z.number().int().positive().optional(),
+  expectedAssuranceGrantId: z.number().int().positive().nullable().optional(),
+}).superRefine((value, ctx) => {
+  const hasVersion = value.expectedProductContentVersion != null
+  const hasGrant = Object.prototype.hasOwnProperty.call(value, 'expectedAssuranceGrantId')
+  if (hasVersion !== hasGrant) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'expectedProductContentVersion 与 expectedAssuranceGrantId 必须同时提供',
+    })
+  }
 })
 
 // Idempotency-Key 请求头：限定 UUID，避免任意字符串占用唯一索引空间。

@@ -36,6 +36,10 @@ import { calendarDayToUtc } from '../../lib/businessTime.js'
 import { assertCheckoutVerification } from '../checkout/verification.js'
 import { resolvePurchaseOfferChecked } from '../../lib/offers.js'
 import {
+  buildProductContentSnapshot,
+  loadEffectiveAssuranceGrant,
+} from '../catalog/productContentSnapshot.js'
+import {
   parseStoredDeliveryFields,
   parseStoredStructuredContent,
   structuredContentToJson,
@@ -111,6 +115,8 @@ export type CreateOrderOptions = {
   agreementVersions?: Record<string, string>
   // SPEC-VALUE-POLICY-P1-001：结算预览返回的价值政策 ID。
   expectedValuePolicyId?: string
+  expectedProductContentVersion?: number
+  expectedAssuranceGrantId?: number | null
   // 确认证据的网络标识：IP 原样、UA 截断 ≤512，retention cron 到期匿名化。
   ip?: string
   userAgent?: string
@@ -132,6 +138,8 @@ export async function createOrder(
     renewalOfOrderId,
     agreementVersions,
     expectedValuePolicyId,
+    expectedProductContentVersion,
+    expectedAssuranceGrantId,
     ip,
     userAgent,
   } = options
@@ -146,6 +154,9 @@ export async function createOrder(
     renewalOfOrderId,
     agreementVersions,
     expectedValuePolicyId,
+    ...(expectedProductContentVersion != null
+      ? { expectedProductContentVersion, expectedAssuranceGrantId: expectedAssuranceGrantId ?? null }
+      : {}),
   }
 
   // SPEC-LEGAL-001 复审 P1：既有幂等记录的分类（重放 / in-flight）先于协议
@@ -204,6 +215,8 @@ export async function createOrder(
       expectedCheckoutVersion,
       renewalOfOrderId,
       expectedValuePolicyId,
+      expectedProductContentVersion,
+      expectedAssuranceGrantId,
       claimToken,
       consentEvidence,
       ip,
@@ -284,6 +297,8 @@ async function createOrderOnce(
     expectedCheckoutVersion,
     renewalOfOrderId,
     expectedValuePolicyId,
+    expectedProductContentVersion,
+    expectedAssuranceGrantId,
     claimToken,
     consentEvidence,
     ip,
@@ -359,15 +374,36 @@ async function createOrderOnce(
     if (!account) throw notFound('积分账户不存在')
     await assertSpendingNotRestricted(userId, tx)
 
+    await tx.$queryRaw`SELECT "id" FROM "Product" WHERE "id" = ${productId} FOR UPDATE`
     const product = await tx.product.findUnique({ where: { id: productId } })
     if (!product) throw notFound('商品不存在')
     if (product.status !== 'active' || product.archivedAt) throw badRequest('商品已下架')
+    // SPEC-PRODUCT-COMMERCE-002 §3.3：条款判断点取锁后的数据库时钟。
+    const assurance = await loadEffectiveAssuranceGrant(tx, productId)
+    if (expectedProductContentVersion != null) {
+      const currentGrantId = assurance?.grantId ?? null
+      if (
+        expectedProductContentVersion !== product.contentVersion
+        || currentGrantId !== (expectedAssuranceGrantId ?? null)
+      ) {
+        throw new HttpError(409, 'CHECKOUT_CHANGED', '商品信息已变化，请重新确认')
+      }
+    }
     // P4a：价格与履约配置以所选 Offer 为准（单 SKU 未传 offerId 时解析默认）。
     // P4b：结算版本终检在解析内完成（与预检同序：版本先于下架判定）。
     const offer = await resolvePurchaseOfferChecked(tx, productId, offerId, expectedCheckoutVersion)
     if (expectedPrice != null && expectedPrice !== offer.price) {
       throw new HttpError(409, 'PRICE_CHANGED', '商品信息已变化，请重新确认')
     }
+    const productContentSnapshot = buildProductContentSnapshot({
+      contentVersion: product.contentVersion,
+      templateKey: product.templateKey,
+      templateVersion: product.templateVersion,
+      productAttributes: product.attributes,
+      offerAttributes: offer.attributes,
+      details: product.details,
+      assurance,
+    })
 
     // SPEC-VALUE-POLICY-P1-001：政策必须在任何资金/库存副作用之前解析并校验。
     const pricingContext = await resolvePricingForOrder(tx, {
@@ -570,6 +606,7 @@ async function createOrderOnce(
         // 定义与答案一并快照：商家之后改表单不影响本单的展示与履约依据。
         ...(purchaseFormFields.length > 0 ? { purchaseFormSnapshot: purchaseFormFields } : {}),
         ...(purchaseFormAnswers ? { purchaseFormAnswers } : {}),
+        productContentSnapshot: productContentSnapshot as unknown as Prisma.InputJsonValue,
       },
     })
 
