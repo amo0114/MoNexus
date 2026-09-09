@@ -10,13 +10,17 @@ import {
   type VoidInventoryRequest,
 } from '../types/catalog'
 import {
+  buildCreateProductV2Request,
   buildDraftProductRequest,
   catalogApi,
   createCatalogAdapter,
+  mapProductImageToMediaRef,
+  mapProductImagesToMediaRefs,
   getOfferActionLabel,
   getOfferAvailabilityAction,
   getReadinessIssueMessage,
   readinessErrorToIssues,
+  type CreateProductV2Input,
   type DraftProductInput,
 } from './catalog'
 import { createCatalogFixtureTransport, catalogFixtureCategories, catalogFixtureVoidResponse } from './catalog.fixtures'
@@ -356,6 +360,7 @@ describe('catalog adapter (typed, transport-injectable)', () => {
   it('builds the production singleton over the shared axios client', () => {
     expect(catalogApi).toBeTruthy()
     expect(typeof catalogApi.createDraftProduct).toBe('function')
+    expect(typeof catalogApi.createProductV2).toBe('function')
     expect(typeof catalogApi.publishProduct).toBe('function')
     expect(typeof catalogApi.listProductTemplates).toBe('function')
   })
@@ -389,5 +394,128 @@ describe('catalog adapter (typed, transport-injectable)', () => {
     expect(result.templates[0]?.key).toBe(TEMPLATE_KEYS[0])
     expect(result).not.toHaveProperty('examples')
     expect(JSON.stringify(result)).not.toContain('leaked')
+  })
+
+  it('posts editorVersion 2 create through createProductV2', async () => {
+    const payload = buildCreateProductV2Request({
+      templateKey: 'redemption_code',
+      name: 'V2 卡密草稿',
+      categoryId: 3,
+      description: '简介',
+      offers: [{
+        name: '1 个兑换码',
+        price: 100,
+        deliveryMode: 'instant_inventory',
+        stockMode: 'limited',
+        attributes: { unitLabel: '1 个兑换码' },
+      }],
+    })
+    const transport = createCatalogFixtureTransport({
+      post: {
+        '/merchant/products': (body) => ({
+          id: 202,
+          status: PRODUCT_STATUS.DRAFT,
+          contentVersion: 1,
+          offers: [{ id: 9, name: (body as { offers: Array<{ name: string }> }).offers[0].name, isDefault: true }],
+          nextStep: 'availability',
+        }),
+      },
+    })
+    const adapter = createCatalogAdapter(transport)
+    const created = await adapter.createProductV2(payload)
+    expect(created).toMatchObject({ id: 202, nextStep: 'availability', contentVersion: 1 })
+    expect(transport.calls[0].body).toMatchObject({ editorVersion: 2, templateKey: 'redemption_code' })
+  })
+})
+
+describe('buildCreateProductV2Request (SPEC-PRODUCT-COMMERCE-002 §9.1)', () => {
+  const base: CreateProductV2Input = {
+    templateKey: 'redemption_code',
+    name: '节点套餐',
+    categoryId: 1,
+    offers: [{
+      name: '默认规格',
+      price: 100,
+      deliveryMode: 'instant_inventory',
+      stockMode: 'limited',
+    }],
+  }
+
+  it('builds a strict editorVersion 2 payload with at least one offer', () => {
+    const payload = buildCreateProductV2Request(base)
+    expect(payload.editorVersion).toBe(2)
+    expect(payload.templateKey).toBe('redemption_code')
+    expect(payload.templateVersion).toBe(1)
+    expect(payload.visibility).toBe('members_only')
+    expect(payload.descriptionImages).toEqual([])
+    expect(payload.purchaseForm).toEqual([])
+    expect(payload.offers).toHaveLength(1)
+    expect(payload.offers[0]).toMatchObject({
+      name: '默认规格',
+      price: 100,
+      deliveryMode: 'instant_inventory',
+      stockMode: 'limited',
+      originalPrice: null,
+      validityDays: null,
+      fixedContent: null,
+      fixedFileId: null,
+      autoProvision: false,
+    })
+    expect('type' in payload).toBe(false)
+    expect('price' in payload).toBe(false)
+    expect('isHot' in payload).toBe(false)
+    expect('stock' in payload).toBe(false)
+  })
+
+  it('maps /assets paths to static refs and never invents upload keys', () => {
+    expect(mapProductImageToMediaRef('/assets/cover.webp')).toEqual({ kind: 'static', path: '/assets/cover.webp' })
+    expect(mapProductImageToMediaRef('https://cdn.example/cover.webp')).toBeNull()
+    expect(mapProductImageToMediaRef('/uploads/abc.webp')).toBeNull()
+    expect(mapProductImagesToMediaRefs(['/assets/a.webp', 'https://cdn.example/b.webp'])).toEqual([
+      { kind: 'static', path: '/assets/a.webp' },
+    ])
+    const payload = buildCreateProductV2Request({
+      ...base,
+      images: ['/assets/cover.webp', 'https://cdn.example/hotlink.png'],
+    })
+    expect(payload.images).toEqual([{ kind: 'static', path: '/assets/cover.webp' }])
+  })
+
+  it('throws when a legacy type is supplied alongside categoryId', () => {
+    expect(() => buildCreateProductV2Request({ ...base, type: '充值卡密' })).toThrow(
+      CATALOG_ERROR_CODES.LEGACY_TYPE_WITH_CATEGORY_ID,
+    )
+  })
+
+  it('never leaks secret inventory / isHot / stock / unknown keys', () => {
+    const input: CreateProductV2Input = {
+      ...base,
+      isHot: true,
+      stock: 99,
+      inventoryItems: ['secret-content-do-not-leak'],
+      content: 'secret-content-do-not-leak',
+      offers: [{
+        name: '默认规格',
+        price: 100,
+        deliveryMode: 'instant_inventory',
+        stockMode: 'limited',
+        inventoryItems: [{ secretKey: 'inventory-secret-do-not-leak' }],
+        content: 'offer-secret-do-not-leak',
+        isHot: true,
+        stock: 7,
+      }],
+    }
+    const payload = buildCreateProductV2Request(input)
+    const json = JSON.stringify(payload)
+    expect('isHot' in payload).toBe(false)
+    expect('stock' in payload).toBe(false)
+    expect('inventoryItems' in payload).toBe(false)
+    expect(json).not.toContain('secret-content-do-not-leak')
+    expect(json).not.toContain('inventory-secret-do-not-leak')
+    expect(json).not.toContain('offer-secret-do-not-leak')
+  })
+
+  it('requires at least one offer', () => {
+    expect(() => buildCreateProductV2Request({ ...base, offers: [] })).toThrow(/at least one offer/)
   })
 })

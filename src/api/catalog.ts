@@ -13,18 +13,25 @@ import { getApiErrorCode } from './error'
 import type { DeliveryMode, StockMode } from '../types/merchant'
 import {
   CATALOG_ERROR_CODES,
+  EMPTY_PRODUCT_DETAILS,
   READINESS_DETAIL_CODES,
   type AvailabilityOffer,
   type CapacityAdjustRequest,
   type CatalogDraftProduct,
+  type CatalogProductStatus,
   type CategoryRegistryItem,
   type DraftOfferInput,
   type DraftProductCreateRequest,
   type OfferAvailabilityAction,
+  type PlatformMediaRef,
+  type ProductDetails,
+  type ProductVisibility,
   type PublicationReadiness,
   type PublishActionResult,
   type ReadinessDetailCode,
   type ReadinessIssue,
+  type TemplateAttributes,
+  type TemplateKey,
   type VoidInventoryRequest,
   type VoidInventoryResponse,
   type ProductTemplateRegistryDto,
@@ -62,6 +69,8 @@ export interface CatalogAdapter {
   listActiveCategories(): Promise<CategoryRegistryItem[]>
   /** Create a draft Product + Offers; never carries secret inventory (spec §6.2). */
   createDraftProduct(payload: DraftProductCreateRequest): Promise<CatalogDraftProduct>
+  /** Templated editorVersion:2 create (SPEC-PRODUCT-COMMERCE-002 §9.1). */
+  createProductV2(payload: CreateProductV2Request): Promise<CreateProductV2Result>
   /** Reload server-assigned Offer ids after draft creation; local ids are never synthesized. */
   listProductOffers(productId: number): Promise<AvailabilityOffer[]>
   /** Authoritative publish readiness (spec §6.1). */
@@ -109,6 +118,9 @@ export function createCatalogAdapter(transport: CatalogTransport = defaultTransp
     },
     async createDraftProduct(payload) {
       return transport.post<CatalogDraftProduct>('/merchant/products', payload)
+    },
+    async createProductV2(payload) {
+      return transport.post<CreateProductV2Result>('/merchant/products', payload)
     },
     async listProductOffers(productId) {
       return transport.get<AvailabilityOffer[]>(`/merchant/products/${productId}/offers`)
@@ -241,6 +253,206 @@ export function buildDraftProductRequest(input: DraftProductInput): DraftProduct
   if (Array.isArray(input.offers)) payload.offers = input.offers.map(sanitizeDraftOffer)
 
   return payload
+}
+
+/* ------------------------------------------------------------------ *
+ * editorVersion: 2 create — templated DTO (SPEC-PRODUCT-COMMERCE-002 §9.1)
+ * ------------------------------------------------------------------ */
+
+export type CreateProductV2OfferRequest = {
+  name: string
+  price: number
+  originalPrice: number | null
+  attributes: TemplateAttributes
+  deliveryMode: DeliveryMode
+  stockMode: StockMode
+  validityDays: number | null
+  fixedContentType: 'text' | 'url' | 'file'
+  fixedContent: string | null
+  fixedFileId: number | null
+  fixedStructuredContent: unknown | null
+  deliveryFields: unknown | null
+  autoProvision: boolean
+}
+
+export type CreateProductV2Request = {
+  editorVersion: 2
+  templateKey: TemplateKey
+  templateVersion: 1
+  name: string
+  categoryId: number
+  description: string
+  richDescription: string | null
+  descriptionImages: Array<{ src: string; ref: PlatformMediaRef }>
+  images: PlatformMediaRef[]
+  visibility: ProductVisibility
+  attributes: TemplateAttributes
+  details: ProductDetails
+  purchaseForm: unknown[]
+  offers: CreateProductV2OfferRequest[]
+}
+
+export type CreateProductV2Result = {
+  id: number
+  status: CatalogProductStatus
+  contentVersion: number
+  offers: Array<{ id: number; name: string; isDefault: boolean }>
+  nextStep: 'availability'
+}
+
+export type CreateProductV2OfferInput = {
+  name: string
+  price: number
+  originalPrice?: number | null
+  attributes?: TemplateAttributes
+  deliveryMode: DeliveryMode
+  stockMode: StockMode
+  validityDays?: number | null
+  fixedContent?: string | null
+  fixedContentType?: 'text' | 'url' | 'file'
+  autoProvision?: boolean
+  [key: string]: unknown
+}
+
+/**
+ * Form-level input for `buildCreateProductV2Request`. Forbidden keys (type,
+ * isHot, stock, inventoryItems, content) are accepted so they can be stripped.
+ */
+export type CreateProductV2Input = {
+  templateKey: TemplateKey
+  name: string
+  categoryId: number
+  description?: string
+  richDescription?: string | null
+  images?: string[]
+  visibility?: ProductVisibility
+  attributes?: TemplateAttributes
+  details?: ProductDetails
+  offers: CreateProductV2OfferInput[]
+  type?: string
+  isHot?: boolean
+  stock?: number
+  [key: string]: unknown
+}
+
+/**
+ * Map a ProductImageUploader URL/path to a write-side PlatformMediaRef.
+ * Uploader state is `string[]` (display URL only) — never invent objectKey.
+ */
+export function mapProductImageToMediaRef(image: string): PlatformMediaRef | null {
+  const trimmed = image.trim()
+  if (trimmed.startsWith('/assets/')) {
+    return { kind: 'static', path: trimmed as `/assets/${string}` }
+  }
+  return null
+}
+
+export function mapProductImagesToMediaRefs(images: string[]): PlatformMediaRef[] {
+  const refs: PlatformMediaRef[] = []
+  for (const image of images) {
+    const ref = mapProductImageToMediaRef(image)
+    if (ref) refs.push(ref)
+  }
+  return refs
+}
+
+function sanitizeTemplateAttributes(value: unknown): TemplateAttributes {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  const out: TemplateAttributes = {}
+  for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof raw === 'string' || typeof raw === 'number' || typeof raw === 'boolean') {
+      out[key] = raw
+    } else if (Array.isArray(raw) && raw.every((item): item is string => typeof item === 'string')) {
+      out[key] = raw
+    }
+  }
+  return out
+}
+
+function sanitizeProductDetails(value: unknown): ProductDetails {
+  const source = value && typeof value === 'object' ? value as Partial<ProductDetails> : {}
+  return {
+    highlights: Array.isArray(source.highlights)
+      ? source.highlights.filter((item): item is string => typeof item === 'string' && item.length > 0).slice(0, 4)
+      : [],
+    usageInstructions: typeof source.usageInstructions === 'string' ? source.usageInstructions : '',
+    purchaseNotes: typeof source.purchaseNotes === 'string' ? source.purchaseNotes : '',
+    afterSalesInstructions: typeof source.afterSalesInstructions === 'string' ? source.afterSalesInstructions : '',
+    faq: Array.isArray(source.faq)
+      ? source.faq
+        .filter((item): item is { question: string; answer: string } => (
+          Boolean(item)
+          && typeof item.question === 'string'
+          && typeof item.answer === 'string'
+          && item.question.trim() !== ''
+          && item.answer.trim() !== ''
+        ))
+        .slice(0, 8)
+        .map(item => ({ question: item.question, answer: item.answer }))
+      : [],
+  }
+}
+
+function sanitizeV2Offer(offer: CreateProductV2OfferInput): CreateProductV2OfferRequest {
+  const deliveryMode = offer.deliveryMode
+  const stockMode: StockMode = deliveryMode === 'instant_inventory' ? 'limited' : offer.stockMode
+  const fixedContentType = offer.fixedContentType === 'url' || offer.fixedContentType === 'file'
+    ? offer.fixedContentType
+    : 'text'
+  const rawContent = typeof offer.fixedContent === 'string' ? offer.fixedContent.trim() : ''
+  const usesFixedText = deliveryMode === 'instant_fixed' && (fixedContentType === 'text' || fixedContentType === 'url')
+  return {
+    name: offer.name,
+    price: offer.price,
+    originalPrice: typeof offer.originalPrice === 'number' || offer.originalPrice === null
+      ? offer.originalPrice
+      : null,
+    attributes: sanitizeTemplateAttributes(offer.attributes),
+    deliveryMode,
+    stockMode,
+    validityDays: typeof offer.validityDays === 'number' || offer.validityDays === null
+      ? offer.validityDays
+      : null,
+    fixedContentType,
+    fixedContent: usesFixedText && rawContent !== '' ? rawContent : null,
+    fixedFileId: null,
+    fixedStructuredContent: null,
+    deliveryFields: null,
+    autoProvision: offer.autoProvision === true,
+  }
+}
+
+/**
+ * Build the editorVersion:2 create body. Secret inventory, isHot, stock,
+ * legacy type, and unknown keys never reach the wire.
+ */
+export function buildCreateProductV2Request(input: CreateProductV2Input): CreateProductV2Request {
+  if (typeof input.type === 'string' && input.type.trim() !== '') {
+    throw new TypeError(
+      `${CATALOG_ERROR_CODES.LEGACY_TYPE_WITH_CATEGORY_ID}: v2 create must not carry a legacy type; use categoryId`,
+    )
+  }
+  if (!Array.isArray(input.offers) || input.offers.length === 0) {
+    throw new TypeError('v2 create requires at least one offer')
+  }
+
+  const rich = typeof input.richDescription === 'string' ? input.richDescription.trim() : ''
+  return {
+    editorVersion: 2,
+    templateKey: input.templateKey,
+    templateVersion: 1,
+    name: input.name,
+    categoryId: input.categoryId,
+    description: typeof input.description === 'string' ? input.description : '',
+    richDescription: rich === '' ? null : input.richDescription as string,
+    descriptionImages: [],
+    images: Array.isArray(input.images) ? mapProductImagesToMediaRefs(input.images.map(String)) : [],
+    visibility: input.visibility === 'public' ? 'public' : 'members_only',
+    attributes: sanitizeTemplateAttributes(input.attributes),
+    details: input.details ? sanitizeProductDetails(input.details) : { ...EMPTY_PRODUCT_DETAILS },
+    purchaseForm: [],
+    offers: input.offers.map(sanitizeV2Offer),
+  }
 }
 
 /* ------------------------------------------------------------------ *

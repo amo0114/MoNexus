@@ -10,23 +10,81 @@ import {
   createCatalogFixtureTransport,
   type FixtureTransportRouteMap,
 } from '../../api/catalog.fixtures'
-import { PRODUCT_STATUS } from '../../types/catalog'
+import {
+  PRODUCT_STATUS,
+  TEMPLATE_KEYS,
+  type FulfillmentConfiguration,
+  type ProductTemplateDefinition,
+  type ProductTemplateRegistryDto,
+  type TemplateKey,
+} from '../../types/catalog'
 import { useAppStore } from '../../stores/appStore'
 
 /**
- * ProductCreateWizard draft-save wiring (T-CAT-FE-001B).
+ * ProductCreateWizard draft-save wiring (editorVersion: 2).
  *
- * Uses the injectable 001A CatalogAdapter over a fixture transport, so the
- * test asserts the EXACT wire payload the merchant drafts the server with:
- * categoryId-based (no legacy type), no isHot, no stock, no secret inventory,
- * no purchaseForm. Also covers productId retention (availability step is only
- * reachable after the draft is saved) and duplicate-submit idempotency.
+ * Uses the injectable CatalogAdapter over a fixture transport, so the
+ * test asserts the EXACT v2 wire payload: editorVersion 2, registry
+ * templateKey, no legacy type, no isHot, no stock, no secret inventory.
+ * Also covers productId retention and duplicate-submit idempotency.
  */
 const deliveryModes = [
   { value: 'instant_inventory', label: '交付库存' },
   { value: 'instant_fixed', label: '固定内容' },
   { value: 'manual_service', label: '人工服务' },
 ]
+
+function stubTemplate(
+  key: TemplateKey,
+  label: string,
+  configurations: FulfillmentConfiguration[],
+  extra?: Partial<ProductTemplateDefinition>,
+): ProductTemplateDefinition {
+  return {
+    key,
+    version: 1,
+    label,
+    productSchema: { type: 'object', properties: {}, required: [] },
+    offerSchema: { type: 'object', properties: {}, required: [] },
+    ui: { productOrder: [], offerOrder: [], widgets: {} },
+    fulfillmentRules: [{
+      whenProductAttributes: {},
+      configurations,
+      requireStructuredDelivery: 'none',
+      requireRequiredDateField: false,
+    }],
+    ...extra,
+  }
+}
+
+const wizardTemplateRegistry: ProductTemplateRegistryDto = {
+  registryVersion: 1,
+  templates: [
+    stubTemplate('redemption_code', '卡密与兑换码', ['inventory'], {
+      productSchema: {
+        type: 'object',
+        properties: { serviceName: { type: 'string', title: '适用产品' } },
+        required: ['serviceName'],
+      },
+      offerSchema: {
+        type: 'object',
+        properties: { unitLabel: { type: 'string', title: '销售单位' } },
+        required: ['unitLabel'],
+      },
+      ui: {
+        productOrder: ['serviceName'],
+        offerOrder: ['unitLabel'],
+        widgets: { serviceName: 'text', unitLabel: 'text' },
+      },
+    }),
+    stubTemplate('account', '账号商品', ['inventory', 'fixed_text']),
+    stubTemplate('digital_file', '数字文件', ['fixed_file']),
+    stubTemplate('fixed_content', '固定数字内容', ['fixed_text', 'fixed_url']),
+    stubTemplate('subscription', '订阅与开通', ['inventory', 'fixed_text', 'fixed_url', 'manual', 'merchant_webhook', 'faka_bridge']),
+    stubTemplate('manual_service', '人工服务与代办', ['manual', 'merchant_webhook']),
+    stubTemplate('appointment', '预约服务', ['manual']),
+  ],
+}
 
 function seedRegistry() {
   useAppStore.setState({
@@ -41,85 +99,106 @@ function seedRegistry() {
   })
 }
 
-function renderWizard(routes: FixtureTransportRouteMap) {
-  const transport = createCatalogFixtureTransport(routes)
+function v2Created(body: unknown) {
+  const b = body as { name?: string }
+  return {
+    id: 101,
+    name: b.name ?? 'x',
+    status: PRODUCT_STATUS.DRAFT,
+    contentVersion: 1,
+    offers: [{ id: 42, name: '默认规格', isDefault: true }],
+    nextStep: 'availability' as const,
+  }
+}
+
+async function renderWizard(routes: FixtureTransportRouteMap = {}) {
+  const transport = createCatalogFixtureTransport({
+    get: {
+      '/product-templates': wizardTemplateRegistry,
+      '/config/registry': { productCategories: catalogFixtureCategories },
+      ...routes.get,
+    },
+    post: routes.post,
+  })
   render(
     <MemoryRouter>
       <ProductCreateWizard adapter={createCatalogAdapter(transport)} />
     </MemoryRouter>,
   )
+  await waitFor(() => expect(screen.getByTestId('template-redemption_code')).toBeInTheDocument())
   return transport
 }
 
 /** Walk the wizard to the 确认草稿 (step 4) with valid inputs. */
-async function walkToConfirm(routes: FixtureTransportRouteMap) {
-  const transport = renderWizard(routes)
-  // Step 0 — 充值卡密 template (instant_inventory + category preset).
-  fireEvent.click(screen.getByTestId('template-card_key'))
+async function walkToConfirm(routes: FixtureTransportRouteMap = {}) {
+  const transport = await renderWizard(routes)
+  fireEvent.click(screen.getByTestId('template-redemption_code'))
   fireEvent.click(screen.getByTestId('wizard-next'))
-  // Step 1 — name + category (wait for the async category registry).
   fireEvent.change(screen.getByTestId('wizard-name'), { target: { value: '节点套餐' } })
   const categorySelect = screen.getByTestId('product-category-select')
   await waitFor(() => expect(categorySelect).not.toBeDisabled())
   fireEvent.change(categorySelect, { target: { value: '3' } })
   fireEvent.click(screen.getByTestId('wizard-next'))
-  // Step 2 — price (主规格 default, validity left empty = permanent).
   fireEvent.change(screen.getByTestId('wizard-price'), { target: { value: '100' } })
   fireEvent.click(screen.getByTestId('wizard-next'))
-  // Step 3 — delivery mode already instant_inventory (template preset).
   fireEvent.click(screen.getByTestId('wizard-next'))
   return transport
 }
 
-describe('ProductCreateWizard draft flow (T-CAT-FE-001B)', () => {
+describe('ProductCreateWizard draft flow (editorVersion 2)', () => {
   beforeEach(() => {
     seedRegistry()
   })
 
-  it('saves a draft with a categoryId-based whitelist payload and retains productId', async () => {
+  it('lists the seven registry templates and has no blank/legacy presets', async () => {
+    await renderWizard()
+    for (const key of TEMPLATE_KEYS) {
+      expect(screen.getByTestId(`template-${key}`)).toBeInTheDocument()
+    }
+    expect(screen.queryByTestId('template-blank')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('template-card_key')).not.toBeInTheDocument()
+  })
+
+  it('saves a draft with an editorVersion 2 payload and retains productId', async () => {
     const transport = await walkToConfirm({
       get: {
-        '/config/registry': { productCategories: catalogFixtureCategories },
         '/merchant/products/101/offers': catalogFixtureOffers,
       },
       post: {
-        '/merchant/products': (body) => {
-          const b = body as { name: string; categoryId: number }
-          return {
-            id: 101,
-            name: b.name,
-            categoryId: b.categoryId,
-            type: '充值卡密',
-            status: PRODUCT_STATUS.DRAFT,
-            publishedAt: null,
-          }
-        },
+        '/merchant/products': v2Created,
         '/merchant/products/101/inventory/void': catalogFixtureVoidResponse,
       },
     })
 
     fireEvent.click(screen.getByTestId('wizard-save-draft'))
 
-    // Draft saved → productId retained → the availability step becomes usable.
     await waitFor(() => expect(screen.getByTestId('product-availability-step')).toBeInTheDocument())
 
     const createCall = transport.calls.find(c => c.method === 'post' && c.url === '/merchant/products')
     expect(createCall).toBeTruthy()
     const body = createCall!.body as Record<string, unknown>
+    expect(body.editorVersion).toBe(2)
+    expect(body.templateKey).toBe('redemption_code')
+    expect(body.templateVersion).toBe(1)
     expect(body.name).toBe('节点套餐')
     expect(body.categoryId).toBe(3)
-    expect(body.price).toBe(100)
-    expect(body.deliveryMode).toBe('instant_inventory')
-    // Frozen create contract: no legacy type, no isHot, no stock, no secrets.
+    expect(body.visibility).toBe('members_only')
+    expect(body.descriptionImages).toEqual([])
+    expect(body.purchaseForm).toEqual([])
+    expect(Array.isArray(body.offers)).toBe(true)
+    const offers = body.offers as Array<Record<string, unknown>>
+    expect(offers.length).toBeGreaterThanOrEqual(1)
+    expect(offers[0].price).toBe(100)
+    expect(offers[0].deliveryMode).toBe('instant_inventory')
+    expect(offers[0].stockMode).toBe('limited')
     expect('type' in body).toBe(false)
     expect('isHot' in body).toBe(false)
     expect('stock' in body).toBe(false)
     expect('inventoryItems' in body).toBe(false)
     expect('content' in body).toBe(false)
-    expect('purchaseForm' in body).toBe(false)
+    expect('price' in body).toBe(false)
+    expect('deliveryMode' in body).toBe(false)
 
-    // Availability mutations use the server-assigned Offer id, never 1/2/3
-    // synthesized from the form order.
     await waitFor(() => expect(screen.getByTestId('availability-offer-select')).toHaveValue('42'))
     fireEvent.change(screen.getByTestId('availability-void-count'), { target: { value: '1' } })
     fireEvent.change(screen.getByTestId('availability-void-reason'), { target: { value: '过期库存' } })
@@ -132,17 +211,13 @@ describe('ProductCreateWizard draft flow (T-CAT-FE-001B)', () => {
 
   it('is idempotent: re-submitting an already-saved draft never creates a second one', async () => {
     const transport = await walkToConfirm({
-      get: {
-        '/config/registry': { productCategories: catalogFixtureCategories },
-        '/merchant/products/101/offers': catalogFixtureOffers,
-      },
-      post: { '/merchant/products': () => ({ id: 101, name: 'x', categoryId: 3, type: '充值卡密', status: PRODUCT_STATUS.DRAFT, publishedAt: null }) },
+      get: { '/merchant/products/101/offers': catalogFixtureOffers },
+      post: { '/merchant/products': v2Created },
     })
 
     fireEvent.click(screen.getByTestId('wizard-save-draft'))
     await waitFor(() => expect(screen.getByTestId('product-availability-step')).toBeInTheDocument())
 
-    // Go back to 确认草稿 and press 保存草稿并继续 again — idempotent pass-through.
     fireEvent.click(screen.getByRole('button', { name: /上一步/ }))
     expect(screen.getByTestId('wizard-step-confirm')).toBeInTheDocument()
     fireEvent.click(screen.getByTestId('wizard-save-draft'))
@@ -152,30 +227,46 @@ describe('ProductCreateWizard draft flow (T-CAT-FE-001B)', () => {
     expect(creates).toHaveLength(1)
   })
 
-  it('selecting a category never switches the delivery mode (D-CAT-05 orthogonality)', async () => {
-    const transport = renderWizard({
-      get: { '/config/registry': { productCategories: catalogFixtureCategories } },
-      post: { '/merchant/products': () => ({ id: 101, name: 'x', categoryId: 3, type: '充值卡密', status: PRODUCT_STATUS.DRAFT, publishedAt: null }) },
+  it('keeps inputs when draft save fails', async () => {
+    await walkToConfirm({
+      post: {
+        '/merchant/products': () => {
+          throw Object.assign(new Error('fail'), {
+            response: { data: { error: { message: '服务端拒绝' } } },
+          })
+        },
+      },
     })
-    fireEvent.click(screen.getByTestId('template-blank'))
+
+    fireEvent.click(screen.getByTestId('wizard-save-draft'))
+    await waitFor(() => expect(screen.getByTestId('wizard-step-confirm')).toBeInTheDocument())
+    expect(screen.getByTestId('wizard-confirm-name')).toHaveTextContent('节点套餐')
+    expect(screen.getByTestId('wizard-confirm-price')).toHaveTextContent('100')
+    expect(screen.queryByTestId('product-availability-step')).not.toBeInTheDocument()
+  })
+
+  it('selecting a category never switches the delivery mode (D-CAT-05 orthogonality)', async () => {
+    await renderWizard({
+      post: { '/merchant/products': v2Created },
+    })
+    fireEvent.click(screen.getByTestId('template-subscription'))
     fireEvent.click(screen.getByTestId('wizard-next'))
     fireEvent.change(screen.getByTestId('wizard-name'), { target: { value: '自由配置' } })
     const categorySelect = screen.getByTestId('product-category-select')
     await waitFor(() => expect(categorySelect).not.toBeDisabled())
 
-    // 空白模板 keeps instant_inventory; picking 人工服务 category must not change it.
-    fireEvent.change(categorySelect, { target: { value: '2' } }) // 共享账号
+    fireEvent.change(categorySelect, { target: { value: '2' } })
     fireEvent.click(screen.getByTestId('wizard-next'))
     fireEvent.change(screen.getByTestId('wizard-price'), { target: { value: '50' } })
     fireEvent.click(screen.getByTestId('wizard-next'))
 
-    // Delivery step still shows instant_inventory as the checked mode.
     const radios = Array.from(document.querySelectorAll<HTMLInputElement>('input[name="wizardDeliveryMode"]'))
     const checked = radios.find(r => r.checked)
     expect(checked?.value).toBe('instant_inventory')
 
-    // And switching the delivery mode afterwards does not reset the category.
-    fireEvent.change(checked!, { target: { value: 'manual_service' } })
+    const manual = radios.find(r => r.value === 'manual_service')
+    expect(manual).toBeTruthy()
+    fireEvent.click(manual!)
     fireEvent.click(screen.getByTestId('wizard-next'))
     expect(screen.getByTestId('wizard-confirm-category')).toHaveTextContent('共享账号')
   })
