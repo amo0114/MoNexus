@@ -322,7 +322,7 @@ export const CONFIG_METAS: Record<AdminSystemConfigKey, ConfigItemMeta> = {
     max: 5,
     unit: '次',
     label: '自动开通最多尝试次数',
-    description: '卡密/自动交付失败时的最大重试次数（0～5 次）；设为 0 时暂停自动外呼，任务进入待处理状态。',
+    description: '每个自动开通任务最多尝试的总次数，包含首次执行。设为 0 时暂停自动外呼，不重置已有任务状态。',
   },
 
   // e. 库存提醒 (2 项)
@@ -395,7 +395,7 @@ export const CONFIG_METAS: Record<AdminSystemConfigKey, ConfigItemMeta> = {
     max: 1440,
     unit: '分钟',
     label: '计算任务超时回收时间',
-    description: '排名计算任务执行超时判定时间（10～1440 分钟），超时后自动释放或重试。',
+    description: '运行超过该时限的计算任务将被标记为失败；后续计算按现有调度执行。',
   },
   partnerSpendWindowDays: {
     key: 'partnerSpendWindowDays',
