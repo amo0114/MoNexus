@@ -21,6 +21,7 @@ import MerchantDashboardPage from './pages/MerchantDashboardPage'
 import MerchantPromotionPage from './components/merchandising/MerchantPromotionPage'
 import Dashboard from './pages/merchant/Dashboard'
 import ProductCreateWizard from './pages/merchant/ProductCreateWizard'
+import ProductEditPage from './pages/merchant/ProductEditPage'
 import PortableRestoreSetupPage from './pages/PortableRestoreSetupPage'
 import LegalDocumentPage from './pages/legal/LegalDocumentPage'
 import NotificationsPage from './pages/NotificationsPage'
@@ -113,12 +114,28 @@ export default function App() {
                       </RoleGuard>
                     }
                   />
+                  <Route
+                    path="/admin/products/:id/edit"
+                    element={
+                      <RoleGuard allowedRoles={['admin']}>
+                        <ProductEditPage actor="admin" />
+                      </RoleGuard>
+                    }
+                  />
                   <Route path="/merchant/apply" element={<MerchantApplyPage />} />
                   <Route
                     path="/merchant/products/new"
                     element={
                       <RoleGuard allowedRoles={['merchant']} requireActiveMerchant>
                         <ProductCreateWizard />
+                      </RoleGuard>
+                    }
+                  />
+                  <Route
+                    path="/merchant/products/:id/edit"
+                    element={
+                      <RoleGuard allowedRoles={['merchant']} requireActiveMerchant>
+                        <ProductEditPage actor="merchant" />
                       </RoleGuard>
                     }
                   />

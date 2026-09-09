@@ -31,7 +31,6 @@ import AdminFakaImportPreview from '../catalog/AdminFakaImportPreview'
 import AdminProductPublicationDialog, {
   type AdminPublicationTarget,
 } from '../catalog/AdminProductPublicationDialog'
-import AdminProductEditDialog from '../catalog/AdminProductEditDialog'
 import AdminOfferManagerModal from '../catalog/AdminOfferManagerModal'
 import AdminFakaSyncDialog from '../catalog/AdminFakaSyncDialog'
 import AdminSourceDescriptionDialog from '../catalog/AdminSourceDescriptionDialog'
@@ -103,7 +102,6 @@ export default function AdminProductPanel({ active = true }: Props) {
   const [showFakaImport, setShowFakaImport] = useState(false)
   const [publicationTarget, setPublicationTarget] = useState<AdminPublicationTarget | null>(null)
   const [unpublishingProductIds, setUnpublishingProductIds] = useState<Set<number>>(new Set())
-  const [editProduct, setEditProduct] = useState<AdminProductListItem | null>(null)
   const [offerProduct, setOfferProduct] = useState<AdminProductListItem | null>(null)
   const [syncProduct, setSyncProduct] = useState<AdminProductListItem | null>(null)
   const [sourceDescriptionProduct, setSourceDescriptionProduct] = useState<AdminProductListItem | null>(null)
@@ -618,15 +616,14 @@ export default function AdminProductPanel({ active = true }: Props) {
                           </span>
                         ) : null}
                         {isPlatformOwned && (
-                          <button
-                            type="button"
+                          <a
+                            href={`/admin/products/${p.id}/edit`}
                             data-testid={`admin-edit-product-${p.id}`}
-                            className="text-[var(--color-text)] hover:bg-[var(--color-background)] font-semibold text-xs px-3 py-1.5 btn-sm rounded-lg transition-colors border border-[var(--color-border)] cursor-pointer inline-flex items-center gap-1"
-                            onClick={() => setEditProduct(p)}
+                            className="text-[var(--color-text)] hover:bg-[var(--color-background)] font-semibold text-xs px-3 py-1.5 btn-sm rounded-lg transition-colors border border-[var(--color-border)] cursor-pointer inline-flex items-center gap-1 no-underline"
                           >
                             <Pencil className="w-3.5 h-3.5" />
                             编辑
-                          </button>
+                          </a>
                         )}
                         {p.archivedAt ? (
                           <button
@@ -874,11 +871,6 @@ export default function AdminProductPanel({ active = true }: Props) {
         }}
       />
 
-      <AdminProductEditDialog
-        product={editProduct}
-        onClose={() => setEditProduct(null)}
-        onSaved={triggerSafeReload}
-      />
       <AdminOfferManagerModal
         product={offerProduct}
         onClose={() => setOfferProduct(null)}

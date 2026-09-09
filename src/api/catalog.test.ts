@@ -12,16 +12,21 @@ import {
 import {
   buildCreateProductV2Request,
   buildDraftProductRequest,
+  buildPatchProductContentRequest,
   catalogApi,
   createCatalogAdapter,
+  mapEditorImagesToWriteRefs,
   mapProductImageToMediaRef,
   mapProductImagesToMediaRefs,
   getOfferActionLabel,
   getOfferAvailabilityAction,
   getReadinessIssueMessage,
   readinessErrorToIssues,
+  type CatalogTransport,
   type CreateProductV2Input,
   type DraftProductInput,
+  type PatchProductContentRequest,
+  type ProductEditorDto,
 } from './catalog'
 import { createCatalogFixtureTransport, catalogFixtureCategories, catalogFixtureVoidResponse } from './catalog.fixtures'
 
@@ -363,6 +368,8 @@ describe('catalog adapter (typed, transport-injectable)', () => {
     expect(typeof catalogApi.createProductV2).toBe('function')
     expect(typeof catalogApi.publishProduct).toBe('function')
     expect(typeof catalogApi.listProductTemplates).toBe('function')
+    expect(typeof catalogApi.getEditor).toBe('function')
+    expect(typeof catalogApi.patchContent).toBe('function')
   })
 
   it('returns an explicit product-template registry DTO without examples', async () => {
@@ -517,5 +524,176 @@ describe('buildCreateProductV2Request (SPEC-PRODUCT-COMMERCE-002 §9.1)', () => 
 
   it('requires at least one offer', () => {
     expect(() => buildCreateProductV2Request({ ...base, offers: [] })).toThrow(/at least one offer/)
+  })
+})
+
+const editorFixture: ProductEditorDto = {
+  product: {
+    id: 42,
+    status: PRODUCT_STATUS.DRAFT,
+    merchantId: 7,
+    contentVersion: 3,
+    templateKey: 'redemption_code',
+    templateVersion: 1,
+    name: '原名称',
+    categoryId: 3,
+    description: '简介',
+    richDescription: '<p>详情</p>',
+    descriptionImages: [],
+    images: [
+      { url: '/assets/cover.webp', ref: { kind: 'static', path: '/assets/cover.webp' } },
+      { url: 'https://cdn.example/legacy.webp', ref: null },
+    ],
+    visibility: 'members_only',
+    attributes: { serviceName: '节点' },
+    details: {
+      highlights: ['快'],
+      usageInstructions: '',
+      purchaseNotes: '须知',
+      afterSalesInstructions: '售后',
+      faq: [],
+    },
+    purchaseForm: [],
+  },
+  offers: [{
+    id: 9,
+    name: '默认规格',
+    price: 100,
+    originalPrice: null,
+    status: 'active',
+    sortOrder: 0,
+    isDefault: true,
+    deliveryMode: 'instant_inventory',
+    stockMode: 'limited',
+    stock: 0,
+    validityDays: null,
+    fixedContentType: 'text',
+    fixedFileId: null,
+    deliveryFields: null,
+    autoProvision: false,
+    attributes: {},
+  }],
+  capabilities: {
+    editContent: true,
+    manageOffers: true,
+    manageAvailability: true,
+    manageAssurance: true,
+    applyAssurance: true,
+    adoptSourceDescription: false,
+  },
+  sourceDescription: null,
+  publicationIssues: [],
+}
+
+function createEditorTransport(routes: {
+  get?: Record<string, unknown | (() => unknown)>
+  patch?: Record<string, unknown | ((body: unknown) => unknown)>
+}) {
+  const calls: Array<{ method: 'get' | 'post' | 'patch'; url: string; body?: unknown }> = []
+  const transport: CatalogTransport & { calls: typeof calls } = {
+    calls,
+    async get(url) {
+      calls.push({ method: 'get', url })
+      const value = routes.get?.[url]
+      if (value === undefined) throw new Error(`catalog fixture: no route for GET ${url}`)
+      return typeof value === 'function' ? (value as () => unknown)() : value
+    },
+    async post() {
+      throw new Error('catalog fixture: unexpected POST')
+    },
+    async patch(url, body) {
+      calls.push({ method: 'patch', url, body })
+      const value = routes.patch?.[url]
+      if (value === undefined) throw new Error(`catalog fixture: no route for PATCH ${url}`)
+      return typeof value === 'function' ? (value as (b: unknown) => unknown)(body) : value
+    },
+  }
+  return transport
+}
+
+describe('editor DTO + content PATCH (SPEC-PRODUCT-COMMERCE-002 §9.2)', () => {
+  it('loads merchant and admin editor DTOs from actor-scoped GET', async () => {
+    const transport = createEditorTransport({
+      get: {
+        '/merchant/products/42/editor': editorFixture,
+        '/admin/products/42/editor': { ...editorFixture, capabilities: { ...editorFixture.capabilities, adoptSourceDescription: true } },
+      },
+    })
+    const adapter = createCatalogAdapter(transport)
+    await expect(adapter.getEditor('merchant', 42)).resolves.toMatchObject({
+      product: { id: 42, contentVersion: 3, name: '原名称' },
+    })
+    await expect(adapter.getEditor('admin', 42)).resolves.toMatchObject({
+      capabilities: { adoptSourceDescription: true },
+    })
+    expect(transport.calls.map(call => call.url)).toEqual([
+      '/merchant/products/42/editor',
+      '/admin/products/42/editor',
+    ])
+  })
+
+  it('patches content with expectedContentVersion and never leaks offers or secrets', async () => {
+    const transport = createEditorTransport({
+      patch: {
+        '/merchant/products/42/content': (body) => ({
+          id: 42,
+          contentVersion: 4,
+          updatedFields: ['name'],
+        }),
+        '/admin/products/42/content': { id: 42, contentVersion: 4, updatedFields: ['name'] },
+      },
+    })
+    const adapter = createCatalogAdapter(transport)
+    const dirty: PatchProductContentRequest & Record<string, unknown> = {
+      expectedContentVersion: 3,
+      name: '新名称',
+      offers: [{ name: 'should-not-leak' }],
+      inventoryItems: ['secret-content-do-not-leak'],
+      editorVersion: 2,
+      isHot: true,
+      stock: 9,
+    }
+    const result = await adapter.patchContent('merchant', 42, dirty)
+    expect(result).toEqual({ id: 42, contentVersion: 4, updatedFields: ['name'] })
+    const body = transport.calls[0].body as Record<string, unknown>
+    expect(body).toMatchObject({ expectedContentVersion: 3, name: '新名称' })
+    expect('offers' in body).toBe(false)
+    expect('inventoryItems' in body).toBe(false)
+    expect('editorVersion' in body).toBe(false)
+    expect('isHot' in body).toBe(false)
+    expect('stock' in body).toBe(false)
+    expect(JSON.stringify(body)).not.toContain('secret-content-do-not-leak')
+
+    await adapter.patchContent('admin', 42, { expectedContentVersion: 3, name: '管理端改名' })
+    expect(transport.calls[1]).toMatchObject({
+      method: 'patch',
+      url: '/admin/products/42/content',
+    })
+  })
+
+  it('maps editor images: GET refs and /assets paths write; bare http(s) omits images', () => {
+    expect(mapEditorImagesToWriteRefs([
+      { url: '/assets/cover.webp', ref: { kind: 'static', path: '/assets/cover.webp' } },
+      { url: 'https://cdn.example/a.webp', ref: { kind: 'upload', objectKey: 'products/a.webp' } },
+    ])).toEqual([
+      { kind: 'static', path: '/assets/cover.webp' },
+      { kind: 'upload', objectKey: 'products/a.webp' },
+    ])
+    expect(mapEditorImagesToWriteRefs([
+      { url: '/assets/cover.webp' },
+    ])).toEqual([{ kind: 'static', path: '/assets/cover.webp' }])
+    expect(mapEditorImagesToWriteRefs([
+      { url: 'https://cdn.example/legacy.webp', ref: null },
+    ])).toBeUndefined()
+    expect(mapEditorImagesToWriteRefs([])).toEqual([])
+  })
+
+  it('buildPatchProductContentRequest omits images when not provided', () => {
+    const payload = buildPatchProductContentRequest({
+      expectedContentVersion: 3,
+      name: '节点套餐',
+    })
+    expect(payload).toEqual({ expectedContentVersion: 3, name: '节点套餐' })
+    expect('images' in payload).toBe(false)
   })
 })

@@ -10,8 +10,6 @@ import {
   getMerchantOrderDetail,
   getMerchantSettlements,
   getMerchantMe,
-  createMerchantProduct,
-  updateMerchantProduct,
   updateMerchantMe,
   startFulfillment,
   deliverOrder,
@@ -31,7 +29,6 @@ import {
 } from '../types/merchant'
 import { Store, Package, ShoppingBag, DollarSign, Settings, Plus, ChevronLeft, ChevronRight, Loader2, BarChart3, Search, AlertTriangle, CalendarDays, Megaphone, FilePlus2 } from 'lucide-react'
 import { useAppStore } from '../stores/appStore'
-import MerchantProductFormModal from '../components/merchant/MerchantProductFormModal'
 import MerchantWebhookConfigSection from '../components/merchant/MerchantWebhookConfigSection'
 import ProvisionBadge from '../components/ProvisionBadge'
 import MerchantInventoryLogModal from '../components/merchant/MerchantInventoryLogModal'
@@ -278,9 +275,6 @@ export default function MerchantDashboardPage() {
   }
 
   // --- Product Modals State ---
-  const [isProductFormOpen, setIsProductFormOpen] = useState(false)
-  const [editingProduct, setEditingProduct] = useState<MerchantProduct | null>(null)
-
   const [isAvailabilityOpen, setIsAvailabilityOpen] = useState(false)
   const [availabilityProduct, setAvailabilityProduct] = useState<MerchantProduct | null>(null)
 
@@ -312,17 +306,6 @@ export default function MerchantDashboardPage() {
   rejectingOrderRef.current = rejectingOrder
   const [rejectNote, setRejectNote] = useState('')
   const [rejecting, setRejecting] = useState(false)
-
-  async function handleProductSubmit(payload: any) {
-    if (editingProduct) {
-      await updateMerchantProduct(editingProduct.id, payload)
-      showToast('商品更新成功')
-    } else {
-      await createMerchantProduct(payload)
-      showToast('商品创建成功')
-    }
-    loadData()
-  }
 
   async function handleToggleProductStatus(product: MerchantProduct) {
     if (publishingInFlightRef.current.has(product.id)) return
@@ -676,7 +659,7 @@ export default function MerchantDashboardPage() {
                                   可售资源记录
                                 </LinkAction>
                               )}
-                              <LinkAction onClick={() => { setEditingProduct(p); setIsProductFormOpen(true); }}>
+                              <LinkAction onClick={() => navigate(`/merchant/products/${p.id}/edit`)}>
                                 编辑
                               </LinkAction>
                               <LinkAction onClick={() => { setOfferProduct(p); setIsOfferManagerOpen(true); }}>
@@ -985,13 +968,6 @@ export default function MerchantDashboardPage() {
 
         </div>
       </div>
-
-      <MerchantProductFormModal
-        isOpen={isProductFormOpen}
-        onClose={() => setIsProductFormOpen(false)}
-        onSubmit={handleProductSubmit}
-        product={editingProduct}
-      />
 
       <MerchantAvailabilityModal
         isOpen={isAvailabilityOpen}

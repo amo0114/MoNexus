@@ -44,6 +44,7 @@ import {
 export interface CatalogTransport {
   get<T>(url: string, params?: Record<string, unknown>): Promise<T>
   post<T>(url: string, body?: unknown): Promise<T>
+  patch?<T>(url: string, body?: unknown): Promise<T>
 }
 
 /** Production transport: shared axios client (baseURL `/api`). */
@@ -54,6 +55,10 @@ const defaultTransport: CatalogTransport = {
   },
   async post(url, body) {
     const { data } = await api.post(url, body)
+    return data
+  },
+  async patch(url, body) {
+    const { data } = await api.patch(url, body)
     return data
   },
 }
@@ -71,6 +76,14 @@ export interface CatalogAdapter {
   createDraftProduct(payload: DraftProductCreateRequest): Promise<CatalogDraftProduct>
   /** Templated editorVersion:2 create (SPEC-PRODUCT-COMMERCE-002 §9.1). */
   createProductV2(payload: CreateProductV2Request): Promise<CreateProductV2Result>
+  /** Authenticated editor DTO (SPEC-PRODUCT-COMMERCE-002 §9.2). Merchant ownership miss is 404. */
+  getEditor(actor: ProductEditorActor, productId: number): Promise<ProductEditorDto>
+  /** Content PATCH with contentVersion CAS (SPEC-PRODUCT-COMMERCE-002 §9.2). */
+  patchContent(
+    actor: ProductEditorActor,
+    productId: number,
+    payload: PatchProductContentRequest,
+  ): Promise<PatchProductContentResult>
   /** Reload server-assigned Offer ids after draft creation; local ids are never synthesized. */
   listProductOffers(productId: number): Promise<AvailabilityOffer[]>
   /** Authoritative publish readiness (spec §6.1). */
@@ -121,6 +134,19 @@ export function createCatalogAdapter(transport: CatalogTransport = defaultTransp
     },
     async createProductV2(payload) {
       return transport.post<CreateProductV2Result>('/merchant/products', payload)
+    },
+    async getEditor(actor, productId) {
+      return transport.get<ProductEditorDto>(`${actorBasePath(actor)}/products/${productId}/editor`)
+    },
+    async patchContent(actor, productId, payload) {
+      const patch = transport.patch
+      if (!patch) {
+        throw new Error('catalog transport does not support PATCH')
+      }
+      return patch<PatchProductContentResult>(
+        `${actorBasePath(actor)}/products/${productId}/content`,
+        buildPatchProductContentRequest(payload),
+      )
     },
     async listProductOffers(productId) {
       return transport.get<AvailabilityOffer[]>(`/merchant/products/${productId}/offers`)
@@ -300,6 +326,106 @@ export type CreateProductV2Result = {
   nextStep: 'availability'
 }
 
+export type ProductEditorActor = 'merchant' | 'admin'
+
+export type ProductEditorImage = {
+  url: string
+  ref: PlatformMediaRef | null
+}
+
+export type ProductEditorCapabilities = {
+  editContent: boolean
+  manageOffers: boolean
+  manageAvailability: boolean
+  manageAssurance: boolean
+  applyAssurance: boolean
+  adoptSourceDescription: boolean
+}
+
+export type ProductEditorSourceDescription = {
+  checkedAt: string | null
+  changedSinceAccepted: boolean | null
+  hasAcceptedVersion: boolean
+} | null
+
+export type ProductEditorPublicationIssue = {
+  code: string
+  message: string
+  path?: string
+}
+
+export type ProductEditorOffer = {
+  id: number
+  name: string
+  price: number
+  originalPrice: number | null
+  status: string
+  sortOrder: number
+  isDefault: boolean
+  deliveryMode: DeliveryMode
+  stockMode: StockMode
+  stock: number
+  validityDays: number | null
+  fixedContentType: string | null
+  fixedFileId: number | null
+  deliveryFields: unknown
+  autoProvision: boolean
+  attributes: TemplateAttributes
+  checkoutVersion?: number
+  fixedContent?: string | null
+  fixedStructuredContent?: unknown
+}
+
+export type ProductEditorProduct = {
+  id: number
+  status: CatalogProductStatus
+  merchantId: number | null
+  contentVersion: number
+  templateKey: TemplateKey | null
+  templateVersion: number | null
+  name: string
+  categoryId: number | null
+  description: string | null
+  richDescription: string | null
+  descriptionImages: Array<{ src: string; ref: PlatformMediaRef }>
+  images: ProductEditorImage[]
+  visibility: ProductVisibility
+  attributes: TemplateAttributes
+  details: ProductDetails
+  purchaseForm: unknown[]
+}
+
+export type ProductEditorDto = {
+  product: ProductEditorProduct
+  offers: ProductEditorOffer[]
+  capabilities: ProductEditorCapabilities
+  sourceDescription: ProductEditorSourceDescription
+  publicationIssues: ProductEditorPublicationIssue[]
+}
+
+export type PatchProductContentRequest = {
+  expectedContentVersion: number
+  name?: string
+  categoryId?: number
+  description?: string
+  richDescription?: string | null
+  images?: PlatformMediaRef[]
+  visibility?: ProductVisibility
+  attributes?: TemplateAttributes
+  details?: ProductDetails
+  purchaseForm?: unknown[]
+}
+
+export type PatchProductContentResult = {
+  id: number
+  contentVersion: number
+  updatedFields: string[]
+}
+
+function actorBasePath(actor: ProductEditorActor): '/merchant' | '/admin' {
+  return actor === 'admin' ? '/admin' : '/merchant'
+}
+
 export type CreateProductV2OfferInput = {
   name: string
   price: number
@@ -354,6 +480,54 @@ export function mapProductImagesToMediaRefs(images: string[]): PlatformMediaRef[
     if (ref) refs.push(ref)
   }
   return refs
+}
+
+/**
+ * Map editor gallery items to write-side refs.
+ *
+ * GET `ref` is authoritative. `/assets/...` display paths become static refs.
+ * http(s) display URLs without a ref cannot be invented as upload keys — return
+ * `undefined` so the caller omits `images` instead of sending a partial replace.
+ * An empty gallery is a complete representation and returns `[]`.
+ */
+export function mapEditorImagesToWriteRefs(
+  images: Array<{ url: string; ref?: PlatformMediaRef | null }>,
+): PlatformMediaRef[] | undefined {
+  const refs: PlatformMediaRef[] = []
+  for (const image of images) {
+    if (image.ref && (image.ref.kind === 'upload' || image.ref.kind === 'static')) {
+      refs.push(image.ref)
+      continue
+    }
+    const mapped = mapProductImageToMediaRef(image.url)
+    if (!mapped) return undefined
+    refs.push(mapped)
+  }
+  return refs
+}
+
+/**
+ * Whitelist the content PATCH body. Offers, editorVersion, commercial fields,
+ * secret inventory and unknown keys never reach the wire.
+ */
+export function buildPatchProductContentRequest(input: PatchProductContentRequest): PatchProductContentRequest {
+  const payload: PatchProductContentRequest = {
+    expectedContentVersion: input.expectedContentVersion,
+  }
+  if (typeof input.name === 'string') payload.name = input.name
+  if (typeof input.categoryId === 'number') payload.categoryId = input.categoryId
+  if (typeof input.description === 'string') payload.description = input.description
+  if (input.richDescription === null || typeof input.richDescription === 'string') {
+    payload.richDescription = input.richDescription === '' ? null : input.richDescription
+  }
+  if (Array.isArray(input.images)) payload.images = input.images
+  if (input.visibility === 'public' || input.visibility === 'members_only') {
+    payload.visibility = input.visibility
+  }
+  if (input.attributes) payload.attributes = sanitizeTemplateAttributes(input.attributes)
+  if (input.details) payload.details = sanitizeProductDetails(input.details)
+  if (Array.isArray(input.purchaseForm)) payload.purchaseForm = input.purchaseForm
+  return payload
 }
 
 function sanitizeTemplateAttributes(value: unknown): TemplateAttributes {
