@@ -16,6 +16,7 @@ type OfferOverrides = Partial<{
   fixedContent: string | null
   fixedContentType: string
   fixedFileId: number | null
+  fixedFile: { id: number; status: string } | null
   autoProvision: boolean
   externalIntegration: string | null
   externalSku: string | null
@@ -35,6 +36,7 @@ function offer(overrides: OfferOverrides = {}) {
     fixedContent: overrides.fixedContent ?? null,
     fixedContentType: overrides.fixedContentType ?? 'text',
     fixedFileId: overrides.fixedFileId ?? null,
+    fixedFile: overrides.fixedFile ?? null,
     autoProvision: overrides.autoProvision ?? false,
     externalIntegration: overrides.externalIntegration ?? null,
     externalSku: overrides.externalSku ?? null,
@@ -114,7 +116,7 @@ describe('checkProductReadiness — ready', () => {
       offer({ deliveryMode: 'instant_inventory', available: 1 }),
       offer({ deliveryMode: 'instant_fixed', stockMode: 'unlimited', fixedContent: 'x' }),
       offer({ deliveryMode: 'instant_fixed', stockMode: 'limited', stock: 5, fixedContent: 'x' }),
-      offer({ deliveryMode: 'instant_fixed', fixedContentType: 'file', fixedFileId: 9, stockMode: 'unlimited' }),
+      offer({ deliveryMode: 'instant_fixed', fixedContentType: 'file', fixedFileId: 9, fixedFile: { id: 9, status: 'active' }, stockMode: 'unlimited' }),
       offer({ deliveryMode: 'manual_service', stockMode: 'unlimited' }),
       offer({ deliveryMode: 'manual_service', stockMode: 'limited', stock: 2 }),
     ]

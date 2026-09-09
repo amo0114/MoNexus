@@ -83,6 +83,7 @@ const readinessProductSelect = {
       fixedContent: true,
       fixedContentType: true,
       fixedFileId: true,
+      fixedFile: { select: { id: true, status: true } },
       autoProvision: true,
       externalIntegration: true,
       externalSku: true,
@@ -230,19 +231,27 @@ function evaluateActiveOffer(
       }
     }
     case 'instant_fixed': {
-      // fixed content/file must be complete (spec §6.1 #5).
+      // fixed content/file must be complete (spec §6.1 #5). File form is only
+      // sellable while the bound DeliveryFile is still active — a revoked or
+      // deleted pointer must not look publish-ready (checkout already rejects it).
+      const fileFormValid =
+        offer.fixedFileId != null && offer.fixedFile?.status === 'active'
       const contentValid =
         offer.fixedContentType === 'file'
-          ? offer.fixedFileId != null
+          ? fileFormValid
           : Boolean(offer.fixedContent?.trim())
       const configValid = contentValid
       const sellable = configValid && (offer.stockMode === 'unlimited' || offer.stock > 0)
+      const invalidReason =
+        offer.fixedContentType === 'file' && offer.fixedFileId != null
+          ? '固定文件已不可用，请重新绑定'
+          : '固定内容规格缺少交付内容'
       return {
         configValid,
         sellable,
         reason: configValid
           ? sellable ? undefined : '该规格当前可售名额为 0'
-          : '固定内容规格缺少交付内容',
+          : invalidReason,
       }
     }
     case 'manual_service': {

@@ -15,6 +15,7 @@ type OfferOverrides = Partial<{
   fixedContent: string | null
   fixedContentType: string
   fixedFileId: number | null
+  fixedFile: { id: number; status: string } | null
   autoProvision: boolean
   externalIntegration: string | null
   externalSku: string | null
@@ -34,6 +35,7 @@ function offer(overrides: OfferOverrides = {}) {
     fixedContent: overrides.fixedContent ?? null,
     fixedContentType: overrides.fixedContentType ?? 'text',
     fixedFileId: overrides.fixedFileId ?? null,
+    fixedFile: overrides.fixedFile ?? null,
     autoProvision: overrides.autoProvision ?? false,
     externalIntegration: overrides.externalIntegration ?? null,
     externalSku: overrides.externalSku ?? null,
@@ -241,6 +243,67 @@ describe('checkProductReadiness — templated products', () => {
     }))
     const result = await checkProductReadiness(1, db as never)
     expect(result.ready).toBe(true)
+  })
+
+  it('is ready for a digital_file offer bound to an active delivery file', async () => {
+    const db = makeDb(product({
+      templateKey: 'digital_file',
+      templateVersion: 1,
+      attributes: {
+        contentCategory: '文档',
+        formats: ['PDF'],
+        usageLicense: '仅供购买者个人使用，不得转售。',
+      },
+      details: publishDetails,
+      offers: [offer({
+        deliveryMode: 'instant_fixed',
+        stockMode: 'unlimited',
+        fixedContentType: 'file',
+        fixedFileId: 9,
+        fixedFile: { id: 9, status: 'active' },
+        attributes: { releaseVersion: '1.0' },
+      })],
+    }))
+    const result = await checkProductReadiness(1, db as never)
+    expect(result.ready).toBe(true)
+    expect(result.details).toEqual([])
+  })
+
+  it('is not ready after the bound delivery file is revoked or deleted', async () => {
+    const unavailable = [
+      { id: 9, status: 'revoked' },
+      { id: 9, status: 'deleted' },
+      null,
+    ] as const
+    for (const fixedFile of unavailable) {
+      const db = makeDb(product({
+        templateKey: 'digital_file',
+        templateVersion: 1,
+        attributes: {
+          contentCategory: '文档',
+          formats: ['PDF'],
+          usageLicense: '仅供购买者个人使用，不得转售。',
+        },
+        details: publishDetails,
+        offers: [offer({
+          deliveryMode: 'instant_fixed',
+          stockMode: 'unlimited',
+          fixedContentType: 'file',
+          fixedFileId: 9,
+          fixedFile,
+          attributes: { releaseVersion: '1.0' },
+        })],
+      }))
+      const result = await checkProductReadiness(1, db as never)
+      expect(result.ready).toBe(false)
+      expect(codes(result.details)).toContain(READINESS_DETAIL_CODES.OFFER_NOT_SELLABLE)
+      expect(result.details.find(d => d.code === READINESS_DETAIL_CODES.OFFER_NOT_SELLABLE))
+        .toMatchObject({
+          field: 'offers',
+          offerId: 1,
+          reason: '固定文件已不可用，请重新绑定',
+        })
+    }
   })
 })
 
