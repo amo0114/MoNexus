@@ -457,4 +457,3 @@ describe('AdminConfigPanel & B2 Specifications', () => {
     expect(goldInput).toHaveValue(800)
   })
 })
-

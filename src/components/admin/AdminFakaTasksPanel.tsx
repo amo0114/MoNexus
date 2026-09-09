@@ -90,7 +90,7 @@ export default function AdminFakaTasksPanel() {
     try {
       const res = await revokeAdminFakaTask(revokeTargetId)
       if (res.outcome === 'succeeded') {
-        showToast('卡密任务已成功撤销', 'success')
+        showToast('自动开通任务已撤销', 'success')
       } else if (res.outcome === 'failed') {
         showToast('本次撤销未成功，请查看任务详情', 'error')
       } else if (res.outcome === 'skipped') {
