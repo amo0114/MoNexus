@@ -1,8 +1,9 @@
 import { useState, useEffect, useMemo, useRef, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, ChevronLeft, ChevronRight, Coins, FileText, Store, ShieldCheck, Info, Star, ZoomIn } from 'lucide-react'
+import { ArrowLeft, Check, ChevronLeft, ChevronRight, Coins, FileText, Store, ShieldCheck, Info, Star, ZoomIn } from 'lucide-react'
 import api from '../api/client'
+import { catalogApi } from '../api/catalog'
 import { getApiErrorMessage, getApiErrorCode } from '../api/error'
 import { createOrder, type CheckoutPreview } from '../api/orders'
 import { useAppStore } from '../stores/appStore'
@@ -19,9 +20,17 @@ import StarRating from '../components/ui/StarRating'
 import { useIsMobileViewport } from '../hooks/useMediaQuery'
 import RichTextHtml, { sanitizeRichTextHtml } from '../components/catalog/RichTextHtml'
 import ProductSharePanel, { ProductShareButton } from '../components/catalog/ProductSharePanel'
+import ProductSpecSections, {
+  listVisibleSpecSections,
+  mergeProductOfferAttributes,
+  titlesFromTemplate,
+} from '../components/catalog/ProductSpecSections'
 import type { Offer } from '../types/merchant'
 import type { MerchandisingProjection } from '../types/merchandising'
+import type { ProductDetails, ProductTemplateDefinition, TemplateAttributes } from '../types/catalog'
 import { offerPeriodDetailNote, offerPeriodSubtitle } from '../utils/offerPeriodDisplay'
+
+type PublicOffer = Offer & { attributes?: TemplateAttributes }
 
 interface Product {
   id: number
@@ -30,6 +39,11 @@ interface Product {
   richDescription?: string
   type: string
   visibility?: 'public' | 'members_only'
+  templateKey?: string | null
+  templateVersion?: number | null
+  contentVersion?: number
+  attributes?: TemplateAttributes
+  details?: ProductDetails
   icon: string
   imageUrl: string
   images?: string[]
@@ -51,8 +65,10 @@ interface Product {
   /** 单 Faka SKU 时商品级 Xboard 容量摘要。 */
   fakaCapacity?: Offer['fakaCapacity']
   /** SKU 列表(P4a);仅含 active 规格,已剥离 fixedContent。 */
-  offers?: Offer[]
+  offers?: PublicOffer[]
 }
+
+const SECTION_SCROLL_MARGIN = 'scroll-mt-[calc(var(--navbar-h)+var(--safe-top)+3.25rem)]'
 
 export default function ProductDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -93,6 +109,7 @@ export default function ProductDetailPage() {
   const [reviews, setReviews] = useState<ReviewItem[]>([])
   const [reviewTotal, setReviewTotal] = useState(0)
   const [reviewPage, setReviewPage] = useState(1)
+  const [templates, setTemplates] = useState<ProductTemplateDefinition[]>([])
 
   // id 变化时重置评价分页状态（路由同参切换不重挂载组件）
   useEffect(() => {
@@ -113,6 +130,16 @@ export default function ProductDetailPage() {
       .catch(() => {})
     return () => { cancelled = true }
   }, [id, reviewPage, product, loginRequired])
+
+  useEffect(() => {
+    let cancelled = false
+    catalogApi.listProductTemplates()
+      .then((data) => {
+        if (!cancelled) setTemplates(data.templates)
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [])
 
   useEffect(() => {
     async function load() {
@@ -410,6 +437,31 @@ export default function ProductDetailPage() {
         ? '余额不足，去赚积分'
         : '立即兑换'
 
+  const template = templates.find(
+    (item) => item.key === product.templateKey && item.version === (product.templateVersion ?? 1),
+  ) ?? null
+  const highlights = (product.details?.highlights ?? [])
+    .filter((item) => item.trim().length > 0)
+    .slice(0, 4)
+  const specRows = mergeProductOfferAttributes(product.attributes, activeOffer?.attributes, {
+    productOrder: template?.ui.productOrder,
+    offerOrder: template?.ui.offerOrder,
+    titles: titlesFromTemplate(template),
+    enumLabels: template?.ui.enumLabels,
+  })
+  const specNav = listVisibleSpecSections({
+    specRows,
+    details: product.details,
+    assurance: product.assurance,
+  })
+  const hasIntro = Boolean(sanitizeRichTextHtml(product.richDescription))
+  const navSections = [
+    ...(hasIntro ? [{ id: 'product-section-intro', label: '介绍' }] : []),
+    ...specNav,
+    { id: 'product-section-reviews', label: '评价' },
+  ]
+  const showSectionNav = hasIntro || specNav.length > 0
+
   return (
     <div className="max-w-5xl mx-auto max-md:pb-[calc(5rem+var(--safe-bottom))] md:pb-8 fade-in relative">
       <button
@@ -570,6 +622,23 @@ export default function ProductDetailPage() {
               />
             )}
           </div>
+
+          {product.description?.trim() ? (
+            <p className="text-sm md:text-base text-[var(--color-text-muted)] leading-relaxed mb-4">
+              {product.description}
+            </p>
+          ) : null}
+
+          {highlights.length > 0 && (
+            <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-6" data-testid="product-highlights">
+              {highlights.map((item, index) => (
+                <li key={`${item}-${index}`} className="flex items-start gap-2 text-sm text-[var(--color-text)]">
+                  <Check className="w-4 h-4 mt-0.5 shrink-0 text-[var(--color-primary)]" aria-hidden="true" />
+                  <span className="break-words">{item}</span>
+                </li>
+              ))}
+            </ul>
+          )}
 
           {/* SKU 选择器（P4a）：仅多规格时渲染，单 SKU 完全透明 */}
           {isMultiSku && (
@@ -742,22 +811,57 @@ export default function ProductDetailPage() {
             </button>
           </div>
 
+          {showSectionNav && (
+            <nav
+              aria-label="商品章节"
+              data-testid="product-section-nav"
+              className="sticky top-[calc(var(--navbar-h)+var(--safe-top))] z-20 -mx-4 md:-mx-8 mb-6 border-y border-[var(--color-border)] bg-[var(--color-surface)]/95 backdrop-blur-md"
+            >
+              <div className="flex max-md:gap-3 md:gap-6 max-md:px-4 md:px-8 max-md:py-2 md:py-3 overflow-x-auto hide-scrollbar whitespace-nowrap">
+                {navSections.map((section) => (
+                  <a
+                    key={section.id}
+                    href={`#${section.id}`}
+                    className="shrink-0 max-md:text-xs md:text-sm font-medium text-[var(--color-text-muted)] hover:text-[var(--color-primary)] min-h-[44px] inline-flex items-center"
+                  >
+                    {section.label}
+                  </a>
+                ))}
+              </div>
+            </nav>
+          )}
+
           <div className="grid grid-cols-1 lg:grid-cols-3 max-md:gap-6 gap-8">
             <div className="lg:col-span-2 max-md:space-y-8 space-y-12">
-              {sanitizeRichTextHtml(product.richDescription) ? (
-                <div>
+              {hasIntro ? (
+                <section id="product-section-intro" className={SECTION_SCROLL_MARGIN} data-testid="product-section-intro">
                   <h3 className="font-heading text-lg font-bold max-md:mb-3 mb-5 flex items-center gap-2 text-[var(--color-text)] uppercase tracking-wider">
-                    <FileText className="w-5 h-5 text-[var(--color-primary)]" /> 图文介绍
+                    <FileText className="w-5 h-5 text-[var(--color-primary)]" /> 介绍
                   </h3>
                   <RichTextHtml
                     html={product.richDescription}
                     className="rich-text text-[var(--color-text)] leading-loose space-y-4 text-sm md:text-base bg-[var(--color-background)] p-4 sm:p-6 md:p-8 rounded-xl border border-[var(--color-border)]"
                   />
-                </div>
+                </section>
               ) : null}
 
+              <ProductSpecSections
+                productAttributes={product.attributes}
+                offerAttributes={activeOffer?.attributes}
+                details={product.details}
+                assurance={product.assurance}
+                productOrder={template?.ui.productOrder}
+                offerOrder={template?.ui.offerOrder}
+                titles={titlesFromTemplate(template)}
+                enumLabels={template?.ui.enumLabels}
+              />
+
               {/* Reviews */}
-              <div className="max-md:mt-6 mt-8" data-testid="review-list">
+              <div
+                id="product-section-reviews"
+                className={`${SECTION_SCROLL_MARGIN} max-md:mt-6 mt-8`}
+                data-testid="review-list"
+              >
                 <h2 className="font-heading text-lg font-bold text-[var(--color-text)] mb-4">用户评价（{reviewTotal}）</h2>
                 {reviews.length === 0 ? (
                   <EmptyState compact icon={Star} title="暂无评价" description="兑换后即可发表第一条评价" />

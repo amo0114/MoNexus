@@ -2,7 +2,10 @@ import { Prisma } from '@prisma/client'
 import { prisma } from '../../lib/prisma.js'
 import { wrapCache } from '../../lib/cache.js'
 import { badRequest, HttpError, notFound } from '../../lib/httpError.js'
-import { serializePublicOffer } from '../../lib/offers.js'
+import { projectPublicTemplateAttributes, serializePublicOffer } from '../../lib/offers.js'
+import { getProductTemplate } from '../catalog/templates/registry.js'
+import { emptyProductDetails } from '../catalog/templates/productDetails.js'
+import { TEMPLATE_KEYS, type ProductDetails, type TemplateKey } from '../catalog/templates/types.js'
 import {
   getFakaCapacityForPublicRead,
   getCachedFakaCapacityByPlanId,
@@ -58,6 +61,9 @@ const productListSelect = {
   stockMode: true,
   ratingAvg: true,
   ratingCount: true,
+  templateKey: true,
+  templateVersion: true,
+  visibility: true,
   _count: { select: { inventory: { where: { status: 'available' } } } },
   merchant: { select: { id: true, name: true, status: true } },
   category: { select: { id: true, code: true, label: true } },
@@ -93,6 +99,11 @@ const productDetailSelect = {
   status: true,
   archivedAt: true,
   visibility: true,
+  templateKey: true,
+  templateVersion: true,
+  contentVersion: true,
+  attributes: true,
+  details: true,
   deliveryMode: true,
   stockMode: true,
   // 购买前表单定义：买家需在详情/结算时看到并填写，属公开数据（答案才是敏感的）。
@@ -168,6 +179,38 @@ async function countAvailableByOffer(offers: AvailabilityOffer[]): Promise<Map<n
 function publicMerchant(merchant: { id: number; name: string; status?: string } | null | undefined) {
   if (!merchant) return null
   return { id: merchant.id, name: merchant.name }
+}
+
+function resolvePublicTemplate(templateKey: string | null, templateVersion: number | null) {
+  if (templateKey == null || templateVersion == null) return null
+  if (!(TEMPLATE_KEYS as readonly string[]).includes(templateKey)) return null
+  return getProductTemplate(templateKey as TemplateKey, templateVersion)
+}
+
+function toPublicProductDetails(value: Prisma.JsonValue | null | undefined): ProductDetails {
+  const empty = emptyProductDetails()
+  if (value == null || typeof value !== 'object' || Array.isArray(value)) return empty
+  const record = value as Record<string, unknown>
+  const highlights = Array.isArray(record.highlights)
+    ? record.highlights
+        .filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+        .slice(0, 4)
+    : []
+  const faq = Array.isArray(record.faq)
+    ? record.faq.flatMap((item) => {
+        if (item == null || typeof item !== 'object' || Array.isArray(item)) return []
+        const row = item as Record<string, unknown>
+        if (typeof row.question !== 'string' || typeof row.answer !== 'string') return []
+        return [{ question: row.question, answer: row.answer }]
+      }).slice(0, 8)
+    : []
+  return {
+    highlights,
+    usageInstructions: typeof record.usageInstructions === 'string' ? record.usageInstructions : '',
+    purchaseNotes: typeof record.purchaseNotes === 'string' ? record.purchaseNotes : '',
+    afterSalesInstructions: typeof record.afterSalesInstructions === 'string' ? record.afterSalesInstructions : '',
+    faq,
+  }
 }
 
 function serializePublicProductListItem(
@@ -346,14 +389,27 @@ function serializePublicProductDetail(
   offerAvailableCounts: Map<number, number>,
   fakaByOfferId: Map<number, FakaCapacitySnapshot> = new Map()
 ) {
-  const { _count, offers, archivedAt: _archivedAt, merchant, ...publicProduct } = product
+  const {
+    _count,
+    offers,
+    archivedAt: _archivedAt,
+    merchant,
+    attributes: rawAttributes,
+    details: rawDetails,
+    ...publicProduct
+  } = product
   const localAvailability = computePublicAvailability(product, offers, offerAvailableCounts)
   const fakaCaps = [...fakaByOfferId.values()]
   const fakaAvailability = projectFakaAvailability(fakaCaps)
+  const template = resolvePublicTemplate(product.templateKey, product.templateVersion)
+  const productAttributeKeys = template?.ui.productOrder ?? []
+  const offerAttributeKeys = template?.ui.offerOrder ?? []
 
   return {
     ...publicProduct,
     merchant: publicMerchant(merchant),
+    attributes: projectPublicTemplateAttributes(rawAttributes, productAttributeKeys),
+    details: toPublicProductDetails(rawDetails),
     // Faka 商品：用 Xboard 剩余名额投影到 stock/stockMode，详情页「库存」可见。
     // 非 Faka 或 capacity 不可达：保持本地推导。
     ...(fakaAvailability ?? localAvailability),
@@ -362,7 +418,7 @@ function serializePublicProductDetail(
     ratingAvg: Number(product.ratingAvg),
     // 公开 Offer 剥离 fixedContent；即时库存规格的 stock 用实际可用条目数。
     offers: offers.map(offer => {
-      const serialized = serializePublicOffer(offer)
+      const serialized = serializePublicOffer(offer, { attributeKeys: offerAttributeKeys })
       const fakaCapacity = fakaByOfferId.get(offer.id) ?? null
       const withFaka = fakaCapacity
         ? {

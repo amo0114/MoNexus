@@ -245,12 +245,43 @@ export async function resolvePurchaseOfferChecked(
   return actives[0]
 }
 
+export type PublicTemplateAttributes = Record<string, string | number | boolean | string[]>
+
+function isPublicAttributeValue(value: unknown): value is string | number | boolean | string[] {
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return true
+  return Array.isArray(value) && value.every(item => typeof item === 'string')
+}
+
+/**
+ * 公开属性投影：只保留 registry 允许的标量/字符串数组，不发明缺省字段。
+ * allowedKeys 为空（未知模板）时返回 {}。
+ */
+export function projectPublicTemplateAttributes(
+  value: Prisma.JsonValue | null | undefined,
+  allowedKeys: readonly string[],
+): PublicTemplateAttributes {
+  const projected: PublicTemplateAttributes = {}
+  if (value == null || typeof value !== 'object' || Array.isArray(value) || allowedKeys.length === 0) {
+    return projected
+  }
+  const record = value as Record<string, unknown>
+  for (const key of allowedKeys) {
+    const entry = record[key]
+    if (isPublicAttributeValue(entry)) projected[key] = entry
+  }
+  return projected
+}
+
 /**
  * 公开序列化：绝不包含 fixedContent（付费内容）。交付字段模板是公开元数据。
  * P5 file 形态只出 fixedContentType + 文件大小（「文件交付 · 约 X MB」），
  * 文件名/对象键都不出——购前元数据止步于此。
+ * Offer.attributes 只投影 registry offerOrder 中的公开键；未传入键则 {}。
  */
-export function serializePublicOffer(offer: Offer & { fixedFile?: { size: number } | null }) {
+export function serializePublicOffer(
+  offer: Offer & { fixedFile?: { size: number } | null },
+  options?: { attributeKeys?: readonly string[] },
+) {
   return {
     id: offer.id,
     name: offer.name,
@@ -272,6 +303,7 @@ export function serializePublicOffer(offer: Offer & { fixedFile?: { size: number
       offer.externalIntegration === 'faka_bridge' ? ('faka_bridge' as const) : null,
     // P4b：买家购前可见将获得哪些字段；敏感的是字段"值"，不在此处。
     deliveryFields: parseStoredDeliveryFields(offer.deliveryFields),
+    attributes: projectPublicTemplateAttributes(offer.attributes, options?.attributeKeys ?? []),
     ...(offer.fixedContentType === 'file'
       ? { deliveryFileSize: offer.fixedFile?.size ?? null }
       : {}),
