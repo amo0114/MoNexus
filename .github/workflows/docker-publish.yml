@@ -70,6 +70,28 @@ jobs:
         with:
           ref: ${{ github.event.inputs.ref || github.ref }}
 
+      - name: Check package versions and generate build-info
+        env:
+          CHECKOUT_REF: ${{ github.event.inputs.ref || github.ref }}
+        run: |
+          set -euo pipefail
+          node scripts/check-package-versions.mjs
+          VERSION="$(node -p "require('./package.json').version")"
+          echo "PACKAGE_VERSION=${VERSION}" >> "$GITHUB_ENV"
+          COMMIT="$(git rev-parse HEAD)"
+          ARGS=(--output server/build-info.json --commit "${COMMIT}" --environment production)
+          TAG=""
+          case "${CHECKOUT_REF}" in
+            refs/tags/v*) TAG="${CHECKOUT_REF#refs/tags/}" ;;
+            v[0-9]*) TAG="${CHECKOUT_REF}" ;;
+          esac
+          if [ -n "${TAG}" ]; then
+            ARGS+=(--release-tag "${TAG}")
+          elif [ "${CHECKOUT_REF}" != "refs/heads/master" ] && [ "${CHECKOUT_REF}" != "master" ]; then
+            ARGS+=(--dev --run-number "${GITHUB_RUN_NUMBER}" --environment development)
+          fi
+          node scripts/generate-build-info.mjs "${ARGS[@]}"
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -93,6 +115,7 @@ jobs:
             org.opencontainers.image.title=MoNexus Server
             org.opencontainers.image.description=Backend API for MoNexus
             org.opencontainers.image.source=https://github.com/amo0114/MoNexus
+            org.opencontainers.image.version=${{ env.PACKAGE_VERSION }}
             org.opencontainers.image.revision=${{ github.sha }}
           cache-from: type=gha,scope=server-amd64
           cache-to: type=gha,mode=max,scope=server-amd64
@@ -111,6 +134,7 @@ jobs:
             org.opencontainers.image.title=MoNexus Server
             org.opencontainers.image.description=Backend API for MoNexus
             org.opencontainers.image.source=https://github.com/amo0114/MoNexus
+            org.opencontainers.image.version=${{ env.PACKAGE_VERSION }}
             org.opencontainers.image.revision=${{ github.sha }}
           cache-from: type=gha,scope=server-amd64
           cache-to: type=gha,mode=max,scope=server-amd64
@@ -148,6 +172,28 @@ jobs:
         with:
           ref: ${{ github.event.inputs.ref || github.ref }}
 
+      - name: Check package versions and generate build-info
+        env:
+          CHECKOUT_REF: ${{ github.event.inputs.ref || github.ref }}
+        run: |
+          set -euo pipefail
+          node scripts/check-package-versions.mjs
+          VERSION="$(node -p "require('./package.json').version")"
+          echo "PACKAGE_VERSION=${VERSION}" >> "$GITHUB_ENV"
+          COMMIT="$(git rev-parse HEAD)"
+          ARGS=(--output server/build-info.json --commit "${COMMIT}" --environment production)
+          TAG=""
+          case "${CHECKOUT_REF}" in
+            refs/tags/v*) TAG="${CHECKOUT_REF#refs/tags/}" ;;
+            v[0-9]*) TAG="${CHECKOUT_REF}" ;;
+          esac
+          if [ -n "${TAG}" ]; then
+            ARGS+=(--release-tag "${TAG}")
+          elif [ "${CHECKOUT_REF}" != "refs/heads/master" ] && [ "${CHECKOUT_REF}" != "master" ]; then
+            ARGS+=(--dev --run-number "${GITHUB_RUN_NUMBER}" --environment development)
+          fi
+          node scripts/generate-build-info.mjs "${ARGS[@]}"
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -171,6 +217,7 @@ jobs:
             org.opencontainers.image.title=MoNexus Server
             org.opencontainers.image.description=Backend API for MoNexus
             org.opencontainers.image.source=https://github.com/amo0114/MoNexus
+            org.opencontainers.image.version=${{ env.PACKAGE_VERSION }}
             org.opencontainers.image.revision=${{ github.sha }}
           cache-from: type=gha,scope=server-arm64
           cache-to: type=gha,mode=max,scope=server-arm64
@@ -189,6 +236,7 @@ jobs:
             org.opencontainers.image.title=MoNexus Server
             org.opencontainers.image.description=Backend API for MoNexus
             org.opencontainers.image.source=https://github.com/amo0114/MoNexus
+            org.opencontainers.image.version=${{ env.PACKAGE_VERSION }}
             org.opencontainers.image.revision=${{ github.sha }}
           cache-from: type=gha,scope=server-arm64
           cache-to: type=gha,mode=max,scope=server-arm64
@@ -223,6 +271,12 @@ jobs:
         with:
           ref: ${{ github.event.inputs.ref || github.ref }}
 
+      - name: Read package version
+        run: |
+          set -euo pipefail
+          node scripts/check-package-versions.mjs
+          echo "PACKAGE_VERSION=$(node -p "require('./package.json').version")" >> "$GITHUB_ENV"
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -246,6 +300,7 @@ jobs:
             org.opencontainers.image.title=MoNexus Web
             org.opencontainers.image.description=nginx SPA frontend for MoNexus
             org.opencontainers.image.source=https://github.com/amo0114/MoNexus
+            org.opencontainers.image.version=${{ env.PACKAGE_VERSION }}
             org.opencontainers.image.revision=${{ github.sha }}
           cache-from: type=gha,scope=web-amd64
           cache-to: type=gha,mode=max,scope=web-amd64
@@ -266,6 +321,7 @@ jobs:
             org.opencontainers.image.title=MoNexus Web
             org.opencontainers.image.description=nginx SPA frontend for MoNexus
             org.opencontainers.image.source=https://github.com/amo0114/MoNexus
+            org.opencontainers.image.version=${{ env.PACKAGE_VERSION }}
             org.opencontainers.image.revision=${{ github.sha }}
           cache-from: type=gha,scope=web-amd64
           cache-to: type=gha,mode=max,scope=web-amd64
@@ -302,6 +358,12 @@ jobs:
         with:
           ref: ${{ github.event.inputs.ref || github.ref }}
 
+      - name: Read package version
+        run: |
+          set -euo pipefail
+          node scripts/check-package-versions.mjs
+          echo "PACKAGE_VERSION=$(node -p "require('./package.json').version")" >> "$GITHUB_ENV"
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -325,6 +387,7 @@ jobs:
             org.opencontainers.image.title=MoNexus Web
             org.opencontainers.image.description=nginx SPA frontend for MoNexus
             org.opencontainers.image.source=https://github.com/amo0114/MoNexus
+            org.opencontainers.image.version=${{ env.PACKAGE_VERSION }}
             org.opencontainers.image.revision=${{ github.sha }}
           cache-from: type=gha,scope=web-arm64
           cache-to: type=gha,mode=max,scope=web-arm64
@@ -345,6 +408,7 @@ jobs:
             org.opencontainers.image.title=MoNexus Web
             org.opencontainers.image.description=nginx SPA frontend for MoNexus
             org.opencontainers.image.source=https://github.com/amo0114/MoNexus
+            org.opencontainers.image.version=${{ env.PACKAGE_VERSION }}
             org.opencontainers.image.revision=${{ github.sha }}
           cache-from: type=gha,scope=web-arm64
           cache-to: type=gha,mode=max,scope=web-arm64

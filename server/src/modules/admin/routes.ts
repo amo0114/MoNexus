@@ -42,6 +42,7 @@ import { categoryApplicationAdminRoutes } from '../catalog/applicationAdminRoute
 import { adminAssuranceRouter } from '../catalog/assurance/routes.js'
 import { adminSourceDescriptionRouter } from '../catalog/sourceDescriptionRoutes.js'
 import { rechargeAdminRoutes } from '../recharge/adminRoutes.js'
+import { getBuildInfo } from './buildInfo.js'
 import { z } from 'zod'
 
 const router = Router()
@@ -66,6 +67,7 @@ router.use(rechargeAdminRoutes)
 
 router.get('/stats', controller.stats)
 router.get('/config', controller.listConfig)
+router.get('/system/build-info', getBuildInfo)
 router.put('/config/:key', validate({ params: systemConfigKeyParamSchema, body: updateSystemConfigSchema }), controller.updateConfig)
 router.get('/audit', validate({ query: listAdminAuditQuerySchema }), controller.audit)
 // SPEC-RAP-001: this entire router has already passed authenticate → active
