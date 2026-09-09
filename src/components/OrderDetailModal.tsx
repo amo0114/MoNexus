@@ -127,8 +127,9 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
 
   /**
    * P6a：续费下单。复用标准结算契约（expectedPrice / checkoutVersion /
-   * purchaseFormVersion / 幂等键），仅额外携带 renewalOfOrderId 关联原订单；
-   * 交付时服务端按原到期时间顺延或自交付起算。结果码处理与商品页购买一致。
+   * purchaseFormVersion / 内容版本 / 保障授予 / 幂等键），仅额外携带
+   * renewalOfOrderId 关联原订单；交付时服务端按原到期时间顺延或自交付起算。
+   * 结果码处理与商品页购买一致。
    */
   async function handleRenewConfirm(
     preview: CheckoutPreview,
@@ -147,6 +148,8 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
         formAnswers,
         expectedPurchaseFormVersion: preview.purchaseFormVersion,
         expectedCheckoutVersion: preview.checkoutVersion,
+        expectedProductContentVersion: preview.productContentVersion,
+        expectedAssuranceGrantId: preview.assuranceGrantId,
         verificationPassword: verificationPassword || undefined,
         renewalOfOrderId: order.id,
         // SPEC-LEGAL-001：续费同样是新订单；弹窗仅在用户勾选后回传版本。

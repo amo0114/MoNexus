@@ -202,6 +202,8 @@ export default function ProductDetailPage() {
         formAnswers,
         expectedPurchaseFormVersion: preview.purchaseFormVersion,
         expectedCheckoutVersion: preview.checkoutVersion,
+        expectedProductContentVersion: preview.productContentVersion,
+        expectedAssuranceGrantId: preview.assuranceGrantId,
         verificationPassword: verificationPassword || undefined,
         // SPEC-LEGAL-001：弹窗仅在用户勾选后回传版本，服务端据此留证。
         agreementVersions,
