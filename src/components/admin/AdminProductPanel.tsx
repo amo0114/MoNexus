@@ -34,6 +34,7 @@ import AdminProductPublicationDialog, {
 import AdminProductEditDialog from '../catalog/AdminProductEditDialog'
 import AdminOfferManagerModal from '../catalog/AdminOfferManagerModal'
 import AdminFakaSyncDialog from '../catalog/AdminFakaSyncDialog'
+import AdminSourceDescriptionDialog from '../catalog/AdminSourceDescriptionDialog'
 import AdminInventoryImportPreview, {
   type AdminInventoryTarget,
 } from '../catalog/AdminInventoryImportPreview'
@@ -50,6 +51,16 @@ function adminProductStatusLabel(status: string): string {
   if (status === 'active') return '已发布'
   if (status === 'inactive') return '已下架'
   return '状态未知'
+}
+
+function shouldShowSourceDescriptionAction(product: AdminProductListItem): boolean {
+  if (product.fakaCapacity) return true
+  if (product.fakaBridge) return true
+  const offers = product.offers ?? []
+  if (offers.some((offer) => Boolean(offer.externalIntegration) || Boolean(offer.fakaCapacity))) {
+    return true
+  }
+  return product.fakaBridge === undefined && product.fakaCapacity === undefined
 }
 
 export default function AdminProductPanel({ active = true }: Props) {
@@ -95,6 +106,7 @@ export default function AdminProductPanel({ active = true }: Props) {
   const [editProduct, setEditProduct] = useState<AdminProductListItem | null>(null)
   const [offerProduct, setOfferProduct] = useState<AdminProductListItem | null>(null)
   const [syncProduct, setSyncProduct] = useState<AdminProductListItem | null>(null)
+  const [sourceDescriptionProduct, setSourceDescriptionProduct] = useState<AdminProductListItem | null>(null)
 
   // ConfirmDialog states
   const [unpublishTarget, setUnpublishTarget] = useState<AdminProductListItem | null>(null)
@@ -679,6 +691,14 @@ export default function AdminProductPanel({ active = true }: Props) {
                               testId: `admin-faka-sync-${p.id}`,
                             })
                           }
+                          if (shouldShowSourceDescriptionAction(p)) {
+                            menuItems.push({
+                              id: `source-description-${p.id}`,
+                              label: '检查上游介绍',
+                              onClick: () => setSourceDescriptionProduct(p),
+                              testId: `admin-source-description-${p.id}`,
+                            })
+                          }
                           return (
                             <AdminActionMenu
                               items={menuItems}
@@ -868,6 +888,11 @@ export default function AdminProductPanel({ active = true }: Props) {
         product={syncProduct}
         onClose={() => setSyncProduct(null)}
         onSynced={triggerSafeReload}
+      />
+      <AdminSourceDescriptionDialog
+        product={sourceDescriptionProduct}
+        onClose={() => setSourceDescriptionProduct(null)}
+        onApplied={triggerSafeReload}
       />
 
       {/* 商品下架确认弹窗 */}
