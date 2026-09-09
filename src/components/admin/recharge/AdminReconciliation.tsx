@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Scale } from 'lucide-react'
+import { Copy, Scale } from 'lucide-react'
 import { createAdminReconRun, listAdminReconRuns, type AdminReconRun } from '../../../api/adminRecharge'
 import { getApiErrorMessage } from '../../../api/error'
 import { useAppStore } from '../../../stores/appStore'
@@ -9,11 +9,29 @@ import EmptyState from '../../ui/EmptyState'
 import { TableSkeleton } from '../../ui/Skeleton'
 import { formatCurrencyAmount } from '../../../pages/recharge/money'
 import { PAYMENT_PROVIDERS, providerLabel, RECON_STATUS_LABEL } from '../../../pages/recharge/status'
+import { getAdminRechargeStatusConfig } from '../../../utils/adminRechargeDisplay'
 
 const SCOPE_TYPE_LABELS: Record<string, string> = {
   statement: '渠道账单',
   provider_query: '渠道主动查询',
   manual: '人工指定范围',
+}
+
+const RECON_MISMATCH_LABEL: Record<string, string> = {
+  amount_mismatch: '金额不一致',
+  paid_not_credited: '已支付，积分未入账',
+  provider_paid_local_unpaid: '渠道已付，本地未付',
+  local_paid_provider_not_paid: '本地已付，渠道未付',
+  refund_mismatch: '退款状态不一致',
+  currency_mismatch: '币种不一致',
+  duplicate_provider_payment: '渠道重复支付',
+  unknown_provider_transaction: '渠道未知交易',
+}
+
+const RECON_ITEM_STATUS_LABEL: Record<string, string> = {
+  open: '待处理',
+  resolved: '已解决',
+  ignored: '已忽略',
 }
 
 export default function AdminReconciliation() {
@@ -24,6 +42,15 @@ export default function AdminReconciliation() {
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [acting, setActing] = useState(false)
   const [selectedRun, setSelectedRun] = useState<AdminReconRun | null>(null)
+
+  async function handleCopy(text: string, label: string) {
+    try {
+      await navigator.clipboard.writeText(text)
+      showToast(`已复制${label}`, 'success')
+    } catch {
+      showToast(`复制失败，请手动复制${label}`, 'error')
+    }
+  }
 
   async function load() {
     setLoading(true)
@@ -160,7 +187,9 @@ export default function AdminReconciliation() {
                 </div>
                 <div>
                   <span className="text-[var(--color-text-muted)] block">执行环境</span>
-                  <span className="font-semibold text-[var(--color-text)]">{selectedRun.environment === 'sandbox' ? '沙箱环境' : '生产环境'}</span>
+                  <span className="font-semibold text-[var(--color-text)]">
+                    {selectedRun.environment === 'sandbox' ? '沙箱测试' : '正式充值'}
+                  </span>
                 </div>
                 <div>
                   <span className="text-[var(--color-text-muted)] block">检查总数</span>
@@ -180,7 +209,7 @@ export default function AdminReconciliation() {
                 </h4>
                 {selectedRun.items && selectedRun.items.length > 0 ? (
                   <div className="overflow-x-auto rounded-lg border border-[var(--color-border)]">
-                    <table className="admin-table text-xs">
+                    <table className="admin-table table-cards text-xs">
                       <thead>
                         <tr>
                           <th>差异类型</th>
@@ -193,44 +222,74 @@ export default function AdminReconciliation() {
                       <tbody>
                         {selectedRun.items.map((ri) => (
                           <tr key={ri.id}>
-                            <td className="font-bold text-[var(--color-danger)]">
-                              {ri.mismatchType}
+                            <td data-label="差异类型">
+                              <span className="font-bold text-[var(--color-danger)]">
+                                {RECON_MISMATCH_LABEL[ri.mismatchType] ?? ri.mismatchType}
+                              </span>
                             </td>
-                            <td className="font-mono text-[11px] break-all select-all">
-                              <div>凭据: {ri.providerEntryKey}</div>
-                              {ri.rechargeOrderId && (
-                                <div className="text-[var(--color-text-muted)]">
-                                  订单: {ri.rechargeOrderId}
+                            <td data-label="渠道凭据 / 订单号">
+                              <div className="text-right sm:text-left max-w-full space-y-1">
+                                <div className="flex items-start justify-end sm:justify-start gap-1 font-mono text-[11px]">
+                                  <span className="break-all select-all">凭据: {ri.providerEntryKey}</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => void handleCopy(ri.providerEntryKey, '渠道凭据')}
+                                    className="btn-ghost p-1 text-[var(--color-text-muted)] hover:text-[var(--color-text)] shrink-0 cursor-pointer -mt-0.5"
+                                    aria-label="复制渠道凭据"
+                                    title="复制渠道凭据"
+                                  >
+                                    <Copy className="w-3 h-3" />
+                                  </button>
                                 </div>
-                              )}
-                            </td>
-                            <td>
-                              <div>
-                                <span className="text-[var(--color-text-muted)]">平台: </span>
-                                <span className="font-semibold">{ri.localStatus || '—'}</span>
-                              </div>
-                              <div className="mt-0.5">
-                                <span className="text-[var(--color-text-muted)]">渠道: </span>
-                                <span className="font-semibold text-[var(--color-primary)]">{ri.providerStatus || '—'}</span>
-                              </div>
-                            </td>
-                            <td>
-                              <div>
-                                <span className="text-[var(--color-text-muted)]">平台: </span>
-                                <span className="font-semibold">
-                                  {ri.localAmountMinor ? formatCurrencyAmount(ri.localAmountMinor, ri.currency || 'CNY') : '—'}
-                                </span>
-                              </div>
-                              <div className="mt-0.5">
-                                <span className="text-[var(--color-text-muted)]">渠道: </span>
-                                <span className="font-semibold text-[var(--color-primary)]">
-                                  {ri.providerAmountMinor ? formatCurrencyAmount(ri.providerAmountMinor, ri.currency || 'CNY') : '—'}
-                                </span>
+                                {ri.rechargeOrderId && (
+                                  <div className="flex items-start justify-end sm:justify-start gap-1 font-mono text-[11px] text-[var(--color-text-muted)]">
+                                    <span className="break-all select-all">订单: {ri.rechargeOrderId}</span>
+                                    <button
+                                      type="button"
+                                      onClick={() => void handleCopy(ri.rechargeOrderId!, '充值订单号')}
+                                      className="btn-ghost p-1 text-[var(--color-text-muted)] hover:text-[var(--color-text)] shrink-0 cursor-pointer -mt-0.5"
+                                      aria-label="复制充值订单号"
+                                      title="复制充值订单号"
+                                    >
+                                      <Copy className="w-3 h-3" />
+                                    </button>
+                                  </div>
+                                )}
                               </div>
                             </td>
-                            <td>
+                            <td data-label="平台状态 vs 渠道状态">
+                              <div className="text-right sm:text-left">
+                                <div>
+                                  <span className="text-[var(--color-text-muted)]">平台: </span>
+                                  <span className="font-semibold">
+                                    {ri.localStatus ? getAdminRechargeStatusConfig(ri.localStatus).label : '—'}
+                                  </span>
+                                </div>
+                                <div className="mt-0.5">
+                                  <span className="text-[var(--color-text-muted)]">渠道: </span>
+                                  <span className="font-semibold text-[var(--color-primary)]">{ri.providerStatus || '—'}</span>
+                                </div>
+                              </div>
+                            </td>
+                            <td data-label="平台金额 vs 渠道金额">
+                              <div className="text-right sm:text-left">
+                                <div>
+                                  <span className="text-[var(--color-text-muted)]">平台: </span>
+                                  <span className="font-semibold">
+                                    {ri.localAmountMinor ? formatCurrencyAmount(ri.localAmountMinor, ri.currency || 'CNY') : '—'}
+                                  </span>
+                                </div>
+                                <div className="mt-0.5">
+                                  <span className="text-[var(--color-text-muted)]">渠道: </span>
+                                  <span className="font-semibold text-[var(--color-primary)]">
+                                    {ri.providerAmountMinor ? formatCurrencyAmount(ri.providerAmountMinor, ri.currency || 'CNY') : '—'}
+                                  </span>
+                                </div>
+                              </div>
+                            </td>
+                            <td data-label="条目状态">
                               <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-bold border border-[var(--color-border)] bg-[var(--color-background)]">
-                                {ri.status}
+                                {RECON_ITEM_STATUS_LABEL[ri.status] ?? ri.status}
                               </span>
                             </td>
                           </tr>
