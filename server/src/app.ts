@@ -14,6 +14,7 @@ import { errorHandler } from './middlewares/errorHandler.js'
 import healthRoutes from './modules/health/routes.js'
 import { authRoutes } from './modules/auth/routes.js'
 import { productRoutes } from './modules/products/routes.js'
+import { shareLinkRoutes } from './modules/products/shareLinkRoutes.js'
 import { pointRoutes } from './modules/points/routes.js'
 import { orderRoutes } from './modules/orders/routes.js'
 import { checkoutRoutes } from './modules/checkout/routes.js'
@@ -140,6 +141,7 @@ app.use('/api/auth', authRoutes)
 // parse `sponsored`/`editorial` as a product id.
 app.use('/api/products', publicSponsoredRouter)
 app.use('/api/products', publicEditorialRouter)
+app.use('/api/products', shareLinkRoutes)
 app.use('/api/products', productRoutes)
 app.use('/api/points', pointRoutes)
 app.use('/api/leaderboard', leaderboardRoutes)
