@@ -22,6 +22,7 @@ import MerchantPromotionPage from './components/merchandising/MerchantPromotionP
 import Dashboard from './pages/merchant/Dashboard'
 import ProductCreateWizard from './pages/merchant/ProductCreateWizard'
 import ProductEditPage from './pages/merchant/ProductEditPage'
+import ProductCreatePage from './pages/admin/ProductCreatePage'
 import PortableRestoreSetupPage from './pages/PortableRestoreSetupPage'
 import LegalDocumentPage from './pages/legal/LegalDocumentPage'
 import NotificationsPage from './pages/NotificationsPage'
@@ -111,6 +112,14 @@ export default function App() {
                     element={
                       <RoleGuard allowedRoles={['admin']}>
                         <AdminPage />
+                      </RoleGuard>
+                    }
+                  />
+                  <Route
+                    path="/admin/products/new"
+                    element={
+                      <RoleGuard allowedRoles={['admin']}>
+                        <ProductCreatePage />
                       </RoleGuard>
                     }
                   />

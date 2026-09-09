@@ -26,7 +26,6 @@ import { TableSkeleton } from '../ui/Skeleton'
 import EmptyState from '../ui/EmptyState'
 import ConfirmDialog from '../ui/ConfirmDialog'
 import { Dialog, DialogContent, DialogTitle } from '../ui/Dialog'
-import AdminPlatformProductWizard from '../catalog/AdminPlatformProductWizard'
 import AdminFakaImportPreview from '../catalog/AdminFakaImportPreview'
 import AdminProductPublicationDialog, {
   type AdminPublicationTarget,
@@ -90,7 +89,6 @@ export default function AdminProductPanel({ active = true }: Props) {
   })
 
   const [inventoryTarget, setInventoryTarget] = useState<AdminInventoryTarget | null>(null)
-  const [showPlatformProduct, setShowPlatformProduct] = useState(false)
 
   // FakaBridge capacity edit (admin only)
   const [fakaCapProduct, setFakaCapProduct] = useState<AdminProductListItem | null>(null)
@@ -356,14 +354,13 @@ export default function AdminProductPanel({ active = true }: Props) {
         description="管理平台自营与入驻商家商品、定价及交付配置"
         actions={
           <div className="flex gap-2 flex-wrap items-center">
-            <button
-              type="button"
-              className="btn-secondary btn-sm text-xs px-3 py-1.5 cursor-pointer"
+            <a
+              href="/admin/products/new"
+              className="btn-secondary btn-sm text-xs px-3 py-1.5 cursor-pointer no-underline"
               data-testid="admin-platform-product-open"
-              onClick={() => setShowPlatformProduct(true)}
             >
               新建平台商品
-            </button>
+            </a>
             <button
               type="button"
               className="btn-primary btn-sm text-xs px-3 py-1.5 cursor-pointer"
@@ -752,15 +749,6 @@ export default function AdminProductPanel({ active = true }: Props) {
         total={total}
         onPageChange={handlePageChange}
         testId="admin-products-pagination"
-      />
-
-      <AdminPlatformProductWizard
-        open={showPlatformProduct}
-        onClose={() => setShowPlatformProduct(false)}
-        onCreated={() => {
-          setPage(1)
-          triggerSafeReload(1)
-        }}
       />
 
       <AdminInventoryImportPreview

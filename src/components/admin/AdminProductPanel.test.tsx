@@ -16,24 +16,10 @@ vi.mock('../../api/admin', async () => {
   }
 })
 
-vi.mock('../catalog/AdminPlatformProductWizard', () => ({
-  default: ({ open, onCreated }: { open: boolean; onCreated?: () => void }) =>
-    open ? (
-      <div data-testid="mock-platform-wizard">
-        <button type="button" data-testid="mock-wizard-created" onClick={onCreated}>
-          Trigger Created
-        </button>
-      </div>
-    ) : null,
-}))
-
 vi.mock('../catalog/AdminFakaImportPreview', () => ({
   default: () => null,
 }))
 vi.mock('../catalog/AdminProductPublicationDialog', () => ({
-  default: () => null,
-}))
-vi.mock('../catalog/AdminProductEditDialog', () => ({
   default: () => null,
 }))
 vi.mock('../catalog/AdminOfferManagerModal', () => ({
@@ -359,7 +345,7 @@ describe('AdminProductPanel (PR 04)', () => {
     expect(screen.queryByText('OLD_STALE_NAME')).not.toBeInTheDocument()
   })
 
-  it('resets to page 1 on platform product creation', async () => {
+  it('links the create action to /admin/products/new instead of opening a local wizard', async () => {
     vi.mocked(adminApi.getAdminProducts).mockResolvedValue({
       items: sampleProductList,
       total: 2,
@@ -370,18 +356,10 @@ describe('AdminProductPanel (PR 04)', () => {
     render(<AdminProductPanel active={true} />)
     expect(await screen.findByText('Standard VPN Node')).toBeInTheDocument()
 
-    // Open wizard
-    fireEvent.click(screen.getByTestId('admin-platform-product-open'))
-    expect(screen.getByTestId('mock-platform-wizard')).toBeInTheDocument()
-
-    // Trigger created callback
-    fireEvent.click(screen.getByTestId('mock-wizard-created'))
-
-    await waitFor(() => {
-      expect(adminApi.getAdminProducts).toHaveBeenLastCalledWith(
-        expect.objectContaining({ page: 1 }),
-      )
-    })
+    const createLink = screen.getByTestId('admin-platform-product-open')
+    expect(createLink).toHaveAttribute('href', '/admin/products/new')
+    expect(screen.getByTestId('admin-faka-import-open')).toBeInTheDocument()
+    expect(screen.queryByTestId('mock-platform-wizard')).not.toBeInTheDocument()
   })
 
   it('displays filtered empty state and allows clearing filters', async () => {
