@@ -32,11 +32,20 @@ function formatShanghaiDateTime(isoString: string): string {
 export default function AdminPaymentDisputes() {
   const showToast = useAppStore((s) => s.showToast)
   const [items, setItems] = useState<AdminPaymentDispute[]>([])
+  const [loading, setLoading] = useState(true)
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
   const [status, setStatus] = useState('')
-  const [loading, setLoading] = useState(true)
   const [selectedDispute, setSelectedDispute] = useState<AdminPaymentDispute | null>(null)
+
+  async function handleCopy(text: string, label: string) {
+    try {
+      await navigator.clipboard.writeText(text)
+      showToast(`已复制${label}`, 'success')
+    } catch {
+      showToast(`复制失败，请手动复制${label}`, 'error')
+    }
+  }
 
   useEffect(() => {
     setLoading(true)
@@ -191,12 +200,10 @@ export default function AdminPaymentDisputes() {
                     <span>{selectedDispute.providerDisputeId}</span>
                     <button
                       type="button"
-                      onClick={() => {
-                        void navigator.clipboard.writeText(selectedDispute.providerDisputeId)
-                        showToast('已复制渠道争议编号')
-                      }}
+                      onClick={() => void handleCopy(selectedDispute.providerDisputeId, '渠道争议编号')}
                       className="btn-ghost p-1 text-[var(--color-text-muted)] hover:text-[var(--color-text)] shrink-0 cursor-pointer"
-                      title="复制"
+                      aria-label="复制渠道争议编号"
+                      title="复制渠道争议编号"
                     >
                       <Copy className="w-3.5 h-3.5" />
                     </button>
@@ -209,12 +216,10 @@ export default function AdminPaymentDisputes() {
                     <span>{selectedDispute.rechargeOrderId}</span>
                     <button
                       type="button"
-                      onClick={() => {
-                        void navigator.clipboard.writeText(selectedDispute.rechargeOrderId)
-                        showToast('已复制充值订单号')
-                      }}
+                      onClick={() => void handleCopy(selectedDispute.rechargeOrderId, '充值订单号')}
                       className="btn-ghost p-1 text-[var(--color-text-muted)] hover:text-[var(--color-text)] shrink-0 cursor-pointer"
-                      title="复制"
+                      aria-label="复制充值订单号"
+                      title="复制充值订单号"
                     >
                       <Copy className="w-3.5 h-3.5" />
                     </button>
@@ -242,26 +247,31 @@ export default function AdminPaymentDisputes() {
                 </div>
               </div>
 
-              <div className="p-3 bg-[var(--color-background)] rounded-lg border border-[var(--color-border)] text-xs">
-                <div className="font-bold text-[var(--color-text)] mb-1.5">积分追回关联详情</div>
+              <div className="p-3 bg-[var(--color-background)] rounded-lg border border-[var(--color-border)] text-xs space-y-2">
+                <div className="font-bold text-[var(--color-text)]">积分追回关联详情</div>
                 {selectedDispute.recoveryCase ? (
-                  <div className="grid grid-cols-2 gap-2 text-[11px]">
-                    <div>
-                      <span className="text-[var(--color-text-muted)]">追偿状态：</span>
-                      <span className="font-semibold text-[var(--color-text)]">{selectedDispute.recoveryCase.status}</span>
+                  <div className="space-y-2">
+                    <div className="grid grid-cols-3 gap-2 text-[11px]">
+                      <div>
+                        <span className="text-[var(--color-text-muted)] block">应追回积分</span>
+                        <span className="font-bold text-[var(--color-danger)]">{formatPoints(selectedDispute.recoveryCase.pointsToRecover)} 积分</span>
+                      </div>
+                      <div>
+                        <span className="text-[var(--color-text-muted)] block">已冻结积分</span>
+                        <span className="font-semibold text-[var(--color-warning)]">{formatPoints(selectedDispute.recoveryCase.pointsHeld)} 积分</span>
+                      </div>
+                      <div>
+                        <span className="text-[var(--color-text-muted)] block">待追回积分</span>
+                        <span className="font-semibold text-[var(--color-text)]">{formatPoints(selectedDispute.recoveryCase.outstandingPoints)} 积分</span>
+                      </div>
                     </div>
-                    <div>
-                      <span className="text-[var(--color-text-muted)]">应追回积分：</span>
-                      <span className="font-bold text-[var(--color-danger)]">{formatPoints(selectedDispute.recoveryCase.pointsToRecover)} 积分</span>
-                    </div>
-                    <div>
-                      <span className="text-[var(--color-text-muted)]">已冻结积分：</span>
-                      <span className="font-semibold text-[var(--color-warning)]">{formatPoints(selectedDispute.recoveryCase.pointsHeld)} 积分</span>
-                    </div>
-                    <div>
-                      <span className="text-[var(--color-text-muted)]">待追回积分：</span>
-                      <span className="font-semibold text-[var(--color-text)]">{formatPoints(selectedDispute.recoveryCase.outstandingPoints)} 积分</span>
-                    </div>
+                    <details className="text-[11px] text-[var(--color-text-muted)] pt-1.5 border-t border-[var(--color-border)]">
+                      <summary className="cursor-pointer hover:underline text-[var(--color-primary)]">追偿技术参数</summary>
+                      <div className="mt-1.5 space-y-1 font-mono text-[10px]">
+                        <div>案件标识 (ID): <span className="select-all">{selectedDispute.recoveryCase.id}</span></div>
+                        <div>原始状态 (Status): <span>{selectedDispute.recoveryCase.status}</span></div>
+                      </div>
+                    </details>
                   </div>
                 ) : (
                   <div className="text-[11px] text-[var(--color-text-muted)]">暂无关联追偿案件记录</div>

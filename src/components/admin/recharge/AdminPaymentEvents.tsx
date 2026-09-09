@@ -25,6 +25,15 @@ export default function AdminPaymentEvents() {
   const [retryTarget, setRetryTarget] = useState<AdminPaymentEvent | null>(null)
   const [acting, setActing] = useState(false)
 
+  async function handleCopy(text: string, label: string) {
+    try {
+      await navigator.clipboard.writeText(text)
+      showToast(`已复制${label}`, 'success')
+    } catch {
+      showToast(`复制失败，请手动复制${label}`, 'error')
+    }
+  }
+
   async function load() {
     setLoading(true)
     try {
@@ -137,15 +146,11 @@ export default function AdminPaymentEvents() {
                     </button>
                   </td>
                   <td data-label="失败摘要">
-                    {item.status === 'succeeded' ? (
+                    {item.status === 'processed' || !item.lastErrorCode ? (
                       <span className="text-xs text-[var(--color-text-muted)]">—</span>
                     ) : (
                       <div className="text-xs">
-                        {item.lastErrorCode ? (
-                          <span className="text-[var(--color-danger)] font-mono">{item.lastErrorCode}</span>
-                        ) : (
-                          <span className="text-[var(--color-text-muted)]">—</span>
-                        )}
+                        <span className="text-[var(--color-danger)] font-mono">{item.lastErrorCode}</span>
                       </div>
                     )}
                   </td>
@@ -197,7 +202,7 @@ export default function AdminPaymentEvents() {
                   <span className="font-bold text-[var(--color-text)]">{EVENT_STATUS_LABEL[detailTarget.status] ?? detailTarget.status}</span>
                 </div>
                 <div>
-                  <span className="text-[var(--color-text-muted)]">重试次数：</span>
+                  <span className="text-[var(--color-text-muted)]">处理尝试次数（含首次）：</span>
                   <span className="font-mono text-[var(--color-text)]">{detailTarget.attempts}</span>
                 </div>
                 <div className="col-span-2">
@@ -214,12 +219,10 @@ export default function AdminPaymentEvents() {
                     {detailTarget.paymentAttemptId && (
                       <button
                         type="button"
-                        onClick={() => {
-                          void navigator.clipboard.writeText(detailTarget.paymentAttemptId!)
-                          showToast('已复制尝试标识')
-                        }}
+                        onClick={() => void handleCopy(detailTarget.paymentAttemptId!, '尝试标识')}
                         className="btn-ghost p-1 text-[var(--color-text-muted)] hover:text-[var(--color-text)] shrink-0 cursor-pointer"
-                        title="复制"
+                        aria-label="复制尝试标识"
+                        title="复制尝试标识"
                       >
                         <Copy className="w-3.5 h-3.5" />
                       </button>
@@ -234,12 +237,10 @@ export default function AdminPaymentEvents() {
                     {detailTarget.providerPaymentId && (
                       <button
                         type="button"
-                        onClick={() => {
-                          void navigator.clipboard.writeText(detailTarget.providerPaymentId!)
-                          showToast('已复制渠道交易号')
-                        }}
+                        onClick={() => void handleCopy(detailTarget.providerPaymentId!, '渠道交易号')}
                         className="btn-ghost p-1 text-[var(--color-text-muted)] hover:text-[var(--color-text)] shrink-0 cursor-pointer"
-                        title="复制"
+                        aria-label="复制渠道交易号"
+                        title="复制渠道交易号"
                       >
                         <Copy className="w-3.5 h-3.5" />
                       </button>
