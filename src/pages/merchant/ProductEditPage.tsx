@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, Loader2, Package } from 'lucide-react'
+import { ArrowLeft, Loader2, Package, Trash2 } from 'lucide-react'
 import { getApiErrorCode, getApiErrorMessage } from '../../api/error'
 import {
   catalogApi,
@@ -16,6 +16,7 @@ import {
 } from '../../api/catalog'
 import { uploadImage, UploadError } from '../../api/uploads'
 import { updateMerchantOffer, uploadDeliveryFile } from '../../api/merchant'
+import type { DeliveryField, OfferWriteRequest, PurchaseFormField } from '../../types/merchant'
 import type { RichTextInsertedImage } from '../../components/catalog/RichTextEditor'
 import {
   CATALOG_ERROR_CODES,
@@ -27,10 +28,10 @@ import {
   type ProductDetails,
   type ProductTemplateDefinition,
   type ProductVisibility,
+  type FulfillmentRule,
   type TemplateAttributes,
   type TemplateKey,
 } from '../../types/catalog'
-import type { PurchaseFormField } from '../../types/merchant'
 import { useAppStore } from '../../stores/appStore'
 import ProductCategorySelect from '../../components/catalog/ProductCategorySelect'
 import ProductPublicationChecklist from '../../components/catalog/ProductPublicationChecklist'
@@ -49,6 +50,17 @@ const STATUS_LABEL: Record<string, string> = {
   [PRODUCT_STATUS.DRAFT]: '草稿',
   [PRODUCT_STATUS.ACTIVE]: '已发布',
   [PRODUCT_STATUS.INACTIVE]: '已下架',
+}
+
+const DELIVERY_FIELDS_MAX = 8
+const FIELD_KEY_PATTERN = /^[a-zA-Z][a-zA-Z0-9_]{0,31}$/
+
+type StructuredRequirement = FulfillmentRule['requireStructuredDelivery']
+
+type OfferStructuredDraft = {
+  deliveryFields: DeliveryField[]
+  structuredFields: DeliveryField[]
+  structuredValues: Record<string, string>
 }
 
 type EditorForm = {
@@ -88,6 +100,9 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
   const [contentVersion, setContentVersion] = useState(1)
   const [status, setStatus] = useState<string>(PRODUCT_STATUS.DRAFT)
   const [templateKey, setTemplateKey] = useState<TemplateKey | null>(null)
+  const [savedTemplateKey, setSavedTemplateKey] = useState<TemplateKey | null>(null)
+  const [offerDrafts, setOfferDrafts] = useState<Record<number, OfferStructuredDraft>>({})
+  const [offerDraftsBaseline, setOfferDraftsBaseline] = useState('')
   const [capabilities, setCapabilities] = useState<ProductEditorDto['capabilities'] | null>(null)
   const [offers, setOffers] = useState<ProductEditorDto['offers']>([])
   const [publicationIssues, setPublicationIssues] = useState<ProductEditorPublicationIssue[]>([])
@@ -101,11 +116,16 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
   const descriptionImageInputRef = useRef<HTMLInputElement>(null)
 
   const backPath = actor === 'admin' ? '/admin' : '/merchant'
-  const dirty = (baseline !== '' && JSON.stringify(form) !== baseline) || descriptionImagesTouched
+  const offerStructuredDirty = offerDraftsBaseline !== '' && JSON.stringify(offerDrafts) !== offerDraftsBaseline
+  const dirty = (baseline !== '' && JSON.stringify(form) !== baseline)
+    || descriptionImagesTouched
+    || templateKey !== savedTemplateKey
+    || (actor === 'merchant' && offerStructuredDirty)
   const selectedTemplate = useMemo(
     () => templates.find(template => template.key === templateKey) ?? null,
     [templates, templateKey],
   )
+  const templateLocked = savedTemplateKey != null
   const fieldMode = status === PRODUCT_STATUS.ACTIVE ? 'publish' : 'draft'
   const canEdit = capabilities?.editContent !== false
   const unresolvedImages = form.images.some(image => !writableImage(image, imageKeys))
@@ -124,9 +144,14 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
     setDescriptionImagesTouched(false)
     setContentVersion(dto.product.contentVersion)
     setStatus(dto.product.status)
-    setTemplateKey(isTemplateKey(dto.product.templateKey) ? dto.product.templateKey : null)
+    const nextTemplateKey = isTemplateKey(dto.product.templateKey) ? dto.product.templateKey : null
+    setTemplateKey(nextTemplateKey)
+    setSavedTemplateKey(nextTemplateKey)
     setCapabilities(dto.capabilities)
     setOffers(dto.offers)
+    const drafts = draftsFromOffers(dto.offers)
+    setOfferDrafts(drafts)
+    setOfferDraftsBaseline(JSON.stringify(drafts))
     setPublicationIssues(dto.publicationIssues)
     setOfferFileById({})
     setOfferFileLabelById({})
@@ -224,7 +249,12 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
     setBindingOfferId(offer.id)
     try {
       const uploaded = await uploadDeliveryFile(file)
-      await updateMerchantOffer(productId, offer.id, { fixedFileId: uploaded.id })
+      await updateMerchantOffer(productId, offer.id, {
+        fixedFileId: uploaded.id,
+        ...(typeof offer.checkoutVersion === 'string'
+          ? { expectedCheckoutVersion: offer.checkoutVersion }
+          : {}),
+      })
       setOffers(prev => prev.map(item => (
         item.id === offer.id ? { ...item, fixedFileId: uploaded.id } : item
       )))
@@ -261,26 +291,105 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
       showToast(formError, 'error')
       return
     }
+    if (actor === 'merchant' && offerStructuredDirty) {
+      for (const offer of offers) {
+        const draft = offerDrafts[offer.id]
+        if (!draft) continue
+        const requirement = selectedTemplate
+          ? structuredRequirementFor(selectedTemplate, form.attributes, offer.deliveryMode)
+          : 'none'
+        const showDeliveryFields = shouldEditDeliveryFields(offer, requirement)
+        const showStructured = shouldEditStructuredContent(offer, requirement)
+        if (showDeliveryFields) {
+          const fieldsError = validateDeliveryFieldRows(draft.deliveryFields, `规格「${offer.name}」`)
+          if (fieldsError) {
+            showToast(fieldsError, 'error')
+            return
+          }
+        }
+        if (showStructured) {
+          const structuredError = validateStructuredRows(
+            draft.structuredFields,
+            draft.structuredValues,
+            `规格「${offer.name}」`,
+          )
+          if (structuredError) {
+            showToast(structuredError, 'error')
+            return
+          }
+        }
+      }
+    }
 
     savingRef.current = true
     setSaving(true)
     try {
-      const imageRefs = mapEditorImagesToWriteRefs(form.images, imageKeys)
-      const result = await adapter.patchContent(actor, productId, {
-        expectedContentVersion: contentVersion,
-        name: form.name.trim(),
-        categoryId: form.categoryId,
-        description: form.description,
-        richDescription: form.richDescription,
-        visibility: form.visibility,
-        details: form.details,
-        purchaseForm: serializePurchaseFormFields(form.purchaseForm),
-        ...(templateKey ? { attributes: form.attributes } : {}),
-        ...(imageRefs ? { images: imageRefs } : {}),
-        ...(descriptionImagesTouched ? { descriptionImages } : {}),
-      })
-      setContentVersion(result.contentVersion)
-      setBaseline(JSON.stringify(form))
+      const contentDirty = (baseline !== '' && JSON.stringify(form) !== baseline)
+        || descriptionImagesTouched
+        || templateKey !== savedTemplateKey
+      if (contentDirty) {
+        const imageRefs = mapEditorImagesToWriteRefs(form.images, imageKeys)
+        const assigningTemplate = savedTemplateKey == null && templateKey != null
+        const result = await adapter.patchContent(actor, productId, {
+          expectedContentVersion: contentVersion,
+          name: form.name.trim(),
+          categoryId: form.categoryId,
+          description: form.description,
+          richDescription: form.richDescription,
+          visibility: form.visibility,
+          details: form.details,
+          purchaseForm: serializePurchaseFormFields(form.purchaseForm),
+          ...(templateKey ? { attributes: form.attributes } : {}),
+          ...(assigningTemplate && templateKey
+            ? { templateKey, templateVersion: 1 as const }
+            : {}),
+          ...(imageRefs ? { images: imageRefs } : {}),
+          ...(descriptionImagesTouched ? { descriptionImages } : {}),
+        })
+        setContentVersion(result.contentVersion)
+        setBaseline(JSON.stringify(form))
+        setDescriptionImagesTouched(false)
+        if (assigningTemplate) setSavedTemplateKey(templateKey)
+      }
+      if (actor === 'merchant' && offerStructuredDirty) {
+        for (const offer of offers) {
+          const draft = offerDrafts[offer.id]
+          const baselineDraft = offerDraftsBaseline !== ''
+            ? (JSON.parse(offerDraftsBaseline) as Record<number, OfferStructuredDraft>)[offer.id]
+            : undefined
+          if (!draft || JSON.stringify(draft) === JSON.stringify(baselineDraft)) continue
+          const requirement = selectedTemplate
+            ? structuredRequirementFor(selectedTemplate, form.attributes, offer.deliveryMode)
+            : 'none'
+          const payload: OfferWriteRequest & { fixedStructuredContent?: unknown | null } = {}
+          if (shouldEditDeliveryFields(offer, requirement)) {
+            payload.deliveryFields = serializeDeliveryFields(draft.deliveryFields)
+          }
+          if (shouldEditStructuredContent(offer, requirement)) {
+            payload.fixedStructuredContent = serializeStructuredContent(
+              draft.structuredFields,
+              draft.structuredValues,
+            )
+          }
+          if (Object.keys(payload).length === 0) continue
+          if (typeof offer.checkoutVersion === 'string') {
+            payload.expectedCheckoutVersion = offer.checkoutVersion
+          }
+          await updateMerchantOffer(productId, offer.id, payload)
+          setOffers(prev => prev.map(item => (
+            item.id === offer.id
+              ? {
+                  ...item,
+                  deliveryFields: payload.deliveryFields ?? item.deliveryFields,
+                  fixedStructuredContent: 'fixedStructuredContent' in payload
+                    ? payload.fixedStructuredContent
+                    : item.fixedStructuredContent,
+                }
+              : item
+          )))
+        }
+        setOfferDraftsBaseline(JSON.stringify(offerDrafts))
+      }
       showToast('商品内容已保存')
     } catch (err) {
       if (getApiErrorCode(err) === CATALOG_ERROR_CODES.PRODUCT_CONTENT_CHANGED) {
@@ -437,6 +546,33 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
               onChange={(categoryId) => setForm(prev => ({ ...prev, categoryId }))}
               disabled={busy}
             />
+            {templateLocked ? (
+              <p className="text-sm text-[var(--color-text-muted)]" data-testid="product-edit-template-locked">
+                商品形态：{selectedTemplate?.label ?? savedTemplateKey}
+              </p>
+            ) : (
+              <div data-testid="product-edit-template-picker">
+                <FieldLabel>商品形态</FieldLabel>
+                <select
+                  className="input appearance-none cursor-pointer"
+                  value={templateKey ?? ''}
+                  onChange={(event) => {
+                    const next = event.target.value
+                    setTemplateKey(isTemplateKey(next) ? next : null)
+                  }}
+                  disabled={busy}
+                  data-testid="product-edit-template-select"
+                >
+                  <option value="">请选择商品形态</option>
+                  {templates.map(template => (
+                    <option key={template.key} value={template.key}>{template.label}</option>
+                  ))}
+                </select>
+                <p className="mt-1.5 text-xs text-[var(--color-text-muted)]">
+                  历史商品可补选一次形态，选定并保存后不可更改。
+                </p>
+              </div>
+            )}
             {selectedTemplate && (
               <div data-testid="product-edit-attributes">
                 <FieldLabel>商品参数</FieldLabel>
@@ -568,6 +704,48 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
                           )}
                         </div>
                       )}
+                      {(() => {
+                        const draft = offerDrafts[offer.id]
+                        if (!draft) return null
+                        const requirement = selectedTemplate
+                          ? structuredRequirementFor(selectedTemplate, form.attributes, offer.deliveryMode)
+                          : 'none'
+                        const showDeliveryFields = shouldEditDeliveryFields(offer, requirement)
+                        const showStructured = shouldEditStructuredContent(offer, requirement)
+                        if (!showDeliveryFields && !showStructured) return null
+                        const offerBusy = busy || actor !== 'merchant'
+                        return (
+                          <div className="mt-3 space-y-3">
+                            {showDeliveryFields && (
+                              <OfferDeliveryFieldsEditor
+                                fields={draft.deliveryFields}
+                                onChange={(deliveryFields) => setOfferDrafts(prev => ({
+                                  ...prev,
+                                  [offer.id]: { ...(prev[offer.id] ?? draft), deliveryFields },
+                                }))}
+                                disabled={offerBusy}
+                                testIdPrefix={`product-edit-offer-${offer.id}-delivery`}
+                              />
+                            )}
+                            {showStructured && (
+                              <OfferStructuredContentEditor
+                                fields={draft.structuredFields}
+                                values={draft.structuredValues}
+                                onFieldsChange={(structuredFields) => setOfferDrafts(prev => ({
+                                  ...prev,
+                                  [offer.id]: { ...(prev[offer.id] ?? draft), structuredFields },
+                                }))}
+                                onValuesChange={(structuredValues) => setOfferDrafts(prev => ({
+                                  ...prev,
+                                  [offer.id]: { ...(prev[offer.id] ?? draft), structuredValues },
+                                }))}
+                                disabled={offerBusy}
+                                testIdPrefix={`product-edit-offer-${offer.id}-structured`}
+                              />
+                            )}
+                          </div>
+                        )
+                      })()}
                     </li>
                   ))}
                 </ul>
@@ -737,6 +915,319 @@ function pickFileFromInput(input: HTMLInputElement | null): Promise<File | null>
 
 function isTemplateKey(value: string | null | undefined): value is TemplateKey {
   return typeof value === 'string' && (TEMPLATE_KEYS as readonly string[]).includes(value)
+}
+
+function draftsFromOffers(offers: ProductEditorOffer[]): Record<number, OfferStructuredDraft> {
+  const drafts: Record<number, OfferStructuredDraft> = {}
+  for (const offer of offers) {
+    const structured = parseStructuredContent(offer.fixedStructuredContent)
+    drafts[offer.id] = {
+      deliveryFields: parseDeliveryFields(offer.deliveryFields),
+      structuredFields: structured.fields,
+      structuredValues: structured.values,
+    }
+  }
+  return drafts
+}
+
+function parseDeliveryFields(raw: unknown): DeliveryField[] {
+  if (!Array.isArray(raw)) return []
+  const fields: DeliveryField[] = []
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue
+    const record = item as Record<string, unknown>
+    if (typeof record.key !== 'string' || typeof record.label !== 'string') continue
+    fields.push({
+      key: record.key,
+      label: record.label,
+      sensitive: record.sensitive === true,
+      ...(typeof record.placeholder === 'string' ? { placeholder: record.placeholder } : {}),
+    })
+  }
+  return fields
+}
+
+function parseStructuredContent(raw: unknown): { fields: DeliveryField[]; values: Record<string, string> } {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { fields: [], values: {} }
+  const record = raw as { fields?: unknown; values?: unknown }
+  const values: Record<string, string> = {}
+  if (record.values && typeof record.values === 'object' && !Array.isArray(record.values)) {
+    for (const [key, value] of Object.entries(record.values as Record<string, unknown>)) {
+      if (typeof value === 'string') values[key] = value
+    }
+  }
+  return { fields: parseDeliveryFields(record.fields), values }
+}
+
+function serializeDeliveryFields(fields: DeliveryField[]): DeliveryField[] | null {
+  const cleaned = fields
+    .map(field => ({
+      key: field.key.trim(),
+      label: field.label.trim(),
+      sensitive: field.sensitive === true,
+      ...(field.placeholder?.trim() ? { placeholder: field.placeholder.trim() } : {}),
+    }))
+    .filter(field => field.key !== '' && field.label !== '')
+  return cleaned.length > 0 ? cleaned : null
+}
+
+function serializeStructuredContent(
+  fields: DeliveryField[],
+  values: Record<string, string>,
+): { fields: DeliveryField[]; values: Record<string, string> } | null {
+  const cleaned = serializeDeliveryFields(fields)
+  if (!cleaned) return null
+  const nextValues: Record<string, string> = {}
+  for (const field of cleaned) {
+    nextValues[field.key] = (values[field.key] ?? '').trim()
+  }
+  return { fields: cleaned, values: nextValues }
+}
+
+function validateDeliveryFieldRows(fields: DeliveryField[], prefix: string): string | null {
+  if (fields.length === 0) return null
+  if (fields.length > DELIVERY_FIELDS_MAX) return `${prefix}：交付字段最多 ${DELIVERY_FIELDS_MAX} 个`
+  const keys = new Set<string>()
+  for (const [index, field] of fields.entries()) {
+    const label = `${prefix}第 ${index + 1} 个字段`
+    if (!FIELD_KEY_PATTERN.test(field.key)) return `${label}：key 必须是字母开头的标识符（≤32 字符）`
+    if (keys.has(field.key)) return `${label}：key 与其他字段重复`
+    keys.add(field.key)
+    if (!field.label.trim()) return `${label}：名称不能为空`
+  }
+  return null
+}
+
+function validateStructuredRows(
+  fields: DeliveryField[],
+  values: Record<string, string>,
+  prefix: string,
+): string | null {
+  const fieldsError = validateDeliveryFieldRows(fields, prefix)
+  if (fieldsError) return fieldsError
+  if (fields.length === 0) return null
+  for (const [index, field] of fields.entries()) {
+    const value = (values[field.key] ?? '').trim()
+    if (!value) return `${prefix}第 ${index + 1} 个字段：内容不能为空`
+    if (/[\r\n]/.test(value)) return `${prefix}第 ${index + 1} 个字段：内容不能包含换行`
+  }
+  return null
+}
+
+function structuredRequirementFor(
+  template: ProductTemplateDefinition,
+  productAttributes: TemplateAttributes,
+  deliveryMode: ProductEditorOffer['deliveryMode'],
+): StructuredRequirement {
+  const matched = template.fulfillmentRules.find(rule =>
+    Object.entries(rule.whenProductAttributes).every(([key, expected]) => productAttributes[key] === expected),
+  )
+  if (matched) return matched.requireStructuredDelivery
+  for (const rule of template.fulfillmentRules) {
+    if (rule.requireStructuredDelivery === 'none') continue
+    const modes = rule.configurations.flatMap(configuration => {
+      if (configuration === 'inventory') return ['instant_inventory' as const]
+      if (configuration === 'fixed_text' || configuration === 'fixed_url' || configuration === 'fixed_file') {
+        return ['instant_fixed' as const]
+      }
+      return ['manual_service' as const]
+    })
+    if (modes.includes(deliveryMode)) return rule.requireStructuredDelivery
+  }
+  return 'none'
+}
+
+function shouldEditDeliveryFields(offer: ProductEditorOffer, requirement: StructuredRequirement): boolean {
+  if (requirement === 'inventory_fields') return offer.deliveryMode === 'instant_inventory'
+  return parseDeliveryFields(offer.deliveryFields).length > 0
+}
+
+function shouldEditStructuredContent(offer: ProductEditorOffer, requirement: StructuredRequirement): boolean {
+  if (offer.fixedContentType === 'file') return false
+  if (requirement === 'fixed_fields') return offer.deliveryMode === 'instant_fixed'
+  return parseStructuredContent(offer.fixedStructuredContent).fields.length > 0
+}
+
+function OfferDeliveryFieldsEditor({
+  fields,
+  onChange,
+  disabled,
+  testIdPrefix,
+}: {
+  fields: DeliveryField[]
+  onChange: (fields: DeliveryField[]) => void
+  disabled?: boolean
+  testIdPrefix: string
+}) {
+  return (
+    <div className="space-y-2" data-testid={`${testIdPrefix}-fields`}>
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider">交付字段模板</span>
+        <span className="text-xs text-[var(--color-text-muted)]">{fields.length}/{DELIVERY_FIELDS_MAX}</span>
+      </div>
+      {fields.map((field, index) => (
+        <div
+          key={index}
+          className="flex flex-wrap items-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2"
+        >
+          <input
+            className="input flex-1 min-w-[7rem] py-1.5 font-mono"
+            placeholder="key"
+            maxLength={32}
+            value={field.key}
+            onChange={(event) => onChange(fields.map((item, i) => (
+              i === index ? { ...item, key: event.target.value } : item
+            )))}
+            disabled={disabled}
+            data-testid={`${testIdPrefix}-field-key-${index}`}
+          />
+          <input
+            className="input flex-1 min-w-[7rem] py-1.5"
+            placeholder="显示名称"
+            maxLength={30}
+            value={field.label}
+            onChange={(event) => onChange(fields.map((item, i) => (
+              i === index ? { ...item, label: event.target.value } : item
+            )))}
+            disabled={disabled}
+            data-testid={`${testIdPrefix}-field-label-${index}`}
+          />
+          <label className="flex items-center gap-1.5 text-xs text-[var(--color-text-muted)] cursor-pointer whitespace-nowrap">
+            <input
+              type="checkbox"
+              checked={field.sensitive}
+              onChange={(event) => onChange(fields.map((item, i) => (
+                i === index ? { ...item, sensitive: event.target.checked } : item
+              )))}
+              disabled={disabled}
+            />
+            敏感
+          </label>
+          <button
+            type="button"
+            onClick={() => onChange(fields.filter((_, i) => i !== index))}
+            disabled={disabled}
+            className="icon-btn p-1.5 text-[var(--color-text-muted)] hover:text-[var(--color-danger)] cursor-pointer"
+            aria-label="删除字段"
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
+        </div>
+      ))}
+      {fields.length < DELIVERY_FIELDS_MAX && (
+        <button
+          type="button"
+          onClick={() => onChange([...fields, { key: '', label: '', sensitive: false }])}
+          disabled={disabled}
+          className="btn-secondary w-full py-1.5 text-xs"
+          data-testid={`${testIdPrefix}-field-add`}
+        >
+          + 添加交付字段
+        </button>
+      )}
+    </div>
+  )
+}
+
+function OfferStructuredContentEditor({
+  fields,
+  values,
+  onFieldsChange,
+  onValuesChange,
+  disabled,
+  testIdPrefix,
+}: {
+  fields: DeliveryField[]
+  values: Record<string, string>
+  onFieldsChange: (fields: DeliveryField[]) => void
+  onValuesChange: (values: Record<string, string>) => void
+  disabled?: boolean
+  testIdPrefix: string
+}) {
+  function updateField(index: number, patch: Partial<DeliveryField>) {
+    const current = fields[index]
+    if (!current) return
+    onFieldsChange(fields.map((item, i) => (i === index ? { ...item, ...patch } : item)))
+    if (typeof patch.key === 'string' && patch.key !== current.key) {
+      const nextValues = { ...values }
+      nextValues[patch.key] = nextValues[current.key] ?? ''
+      delete nextValues[current.key]
+      onValuesChange(nextValues)
+    }
+  }
+
+  return (
+    <div className="space-y-2" data-testid={`${testIdPrefix}-content`}>
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider">共享固定内容</span>
+        <span className="text-xs text-[var(--color-text-muted)]">{fields.length}/{DELIVERY_FIELDS_MAX}</span>
+      </div>
+      {fields.map((field, index) => (
+        <div
+          key={index}
+          className="space-y-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2"
+        >
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              className="input flex-1 min-w-[7rem] py-1.5 font-mono"
+              placeholder="key"
+              maxLength={32}
+              value={field.key}
+              onChange={(event) => updateField(index, { key: event.target.value })}
+              disabled={disabled}
+              data-testid={`${testIdPrefix}-field-key-${index}`}
+            />
+            <input
+              className="input flex-1 min-w-[7rem] py-1.5"
+              placeholder="显示名称"
+              maxLength={30}
+              value={field.label}
+              onChange={(event) => updateField(index, { label: event.target.value })}
+              disabled={disabled}
+              data-testid={`${testIdPrefix}-field-label-${index}`}
+            />
+            <button
+              type="button"
+              onClick={() => {
+                const removed = fields[index]
+                onFieldsChange(fields.filter((_, i) => i !== index))
+                if (removed) {
+                  const nextValues = { ...values }
+                  delete nextValues[removed.key]
+                  onValuesChange(nextValues)
+                }
+              }}
+              disabled={disabled}
+              className="icon-btn p-1.5 text-[var(--color-text-muted)] hover:text-[var(--color-danger)] cursor-pointer"
+              aria-label="删除字段"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          </div>
+          <input
+            className="input py-1.5 font-mono"
+            placeholder="交付值"
+            maxLength={2000}
+            value={values[field.key] ?? ''}
+            onChange={(event) => onValuesChange({ ...values, [field.key]: event.target.value })}
+            disabled={disabled}
+            data-testid={`${testIdPrefix}-field-value-${index}`}
+          />
+        </div>
+      ))}
+      {fields.length < DELIVERY_FIELDS_MAX && (
+        <button
+          type="button"
+          onClick={() => onFieldsChange([...fields, { key: '', label: '', sensitive: false }])}
+          disabled={disabled}
+          className="btn-secondary w-full py-1.5 text-xs"
+          data-testid={`${testIdPrefix}-field-add`}
+        >
+          + 添加固定字段
+        </button>
+      )}
+    </div>
+  )
 }
 
 function isNotFoundError(error: unknown): boolean {

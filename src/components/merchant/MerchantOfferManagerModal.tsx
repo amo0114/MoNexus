@@ -48,6 +48,7 @@ type EditorForm = {
   deliveryFields: DeliveryField[]
   /** P7b：是否走自动开通(仅 manual_service + 无交付模板 + 商家有 active webhook)。 */
   autoProvision: boolean
+  checkoutVersion?: string
 }
 
 const EMPTY_FORM: EditorForm = {
@@ -66,6 +67,7 @@ const EMPTY_FORM: EditorForm = {
   validityDays: '',
   deliveryFields: [],
   autoProvision: false,
+  checkoutVersion: undefined,
 }
 
 function offerToForm(offer: Offer): EditorForm {
@@ -86,6 +88,7 @@ function offerToForm(offer: Offer): EditorForm {
     // 深拷贝：编辑不能改到列表里的对象
     deliveryFields: (offer.deliveryFields ?? []).map(f => ({ ...f })),
     autoProvision: offer.autoProvision === true,
+    checkoutVersion: offer.checkoutVersion,
   }
 }
 
@@ -233,6 +236,9 @@ export default function MerchantOfferManagerModal({ isOpen, onClose, product, on
         : null,
       // P7b：仅人工服务 + 无交付模板时保留开关值；其余形态强制 false。
       autoProvision: autoProvisionEligible ? form.autoProvision : false,
+      ...(typeof editing === 'number' && form.checkoutVersion
+        ? { expectedCheckoutVersion: form.checkoutVersion }
+        : {}),
     }
     if (!isInstantInventory && form.stockMode === 'limited' && form.stock.trim() !== '') {
       payload.stock = Number(form.stock)

@@ -44,6 +44,8 @@ export interface Offer {
   autoProvision?: boolean
   /** FakaBridge：是否走外部开通。与 autoProvision 互斥。 */
   provisionsExternal?: 'faka_bridge' | null
+  /** Offer 结算版本；编辑保存时作为 expectedCheckoutVersion。 */
+  checkoutVersion?: string
   /** FakaBridge：Xboard 订阅人数容量快照（商品详情/结算预检）。 */
   fakaCapacity?: {
     remaining: number | null
@@ -90,6 +92,10 @@ export interface OfferWriteRequest {
   autoProvision?: boolean
   /** 仅更新时接受;true = 把默认转移到本规格(不能传 false 取消默认)。 */
   isDefault?: boolean
+  attributes?: Record<string, string | number | boolean | string[]>
+  fixedStructuredContent?: unknown | null
+  /** 有值则 CAS；省略则兼容旧客户端 last-write-wins。 */
+  expectedCheckoutVersion?: string
 }
 
 /**

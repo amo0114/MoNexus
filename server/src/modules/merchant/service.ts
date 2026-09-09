@@ -1,4 +1,4 @@
-import { Prisma } from '@prisma/client'
+import { Prisma, type Offer } from '@prisma/client'
 import { randomUUID } from 'node:crypto'
 import { prisma } from '../../lib/prisma.js'
 import { businessRegistry } from '../../lib/businessRegistry.js'
@@ -48,12 +48,36 @@ import {
   getDefaultOffer,
   syncProductProjection,
   serializePublicOffer,
+  computeOfferCheckoutVersion,
 } from '../../lib/offers.js'
+import {
+  canonicalFixedStructuredText,
+  normalizeFixedStructuredContent,
+} from '../catalog/structuredFixedContent.js'
 import {
   normalizeFakaOfferIntegration,
   assertOfferProvisionMutex,
   onFakaOrderRefundedInTx,
 } from '../../lib/fakaBridge/index.js'
+
+function withCheckoutVersion<T extends Offer>(offer: T, extras: Record<string, unknown> = {}) {
+  return { ...offer, ...extras, checkoutVersion: computeOfferCheckoutVersion(offer) }
+}
+
+/** Same mutual-exclusion rules as offerAdmin.resolveStructuredFixedContent. */
+function resolveStructuredFixedContent(
+  structuredInput: unknown,
+  fixedContent: string | null,
+) {
+  if (structuredInput == null) {
+    return { fixedContent, structured: null as ReturnType<typeof normalizeFixedStructuredContent> | null }
+  }
+  if (fixedContent != null) {
+    throw badRequest('结构化固定内容与 fixedContent 不能同时提交')
+  }
+  const structured = normalizeFixedStructuredContent(structuredInput)
+  return { fixedContent: canonicalFixedStructuredText(structured), structured }
+}
 
 // ---- Application ----
 
@@ -184,8 +208,7 @@ function serializeMerchantProduct(product: ProductWithAvailableStock, lowStockTh
     purchaseForm: product.purchaseForm ?? [],
     // P4a：商家端返回完整 Offer 列表（含 fixedContent——商家本就可见自己商品
     // 的交付配置）；公开接口走 serializePublicOffer 剥离。
-    offers: product.offers.map(({ _count, ...offer }) => ({
-      ...offer,
+    offers: product.offers.map(({ _count, ...offer }) => withCheckoutVersion(offer, {
       // Offer-first 工作台必须在背景刷新后仍看到正确的目标 Offer 库存。
       // instant_inventory 不使用原始 Offer.stock；其他模式保持数值名额。
       stock: offer.deliveryMode === 'instant_inventory' ? _count.inventory : offer.stock,
@@ -1457,6 +1480,9 @@ type OfferWriteInput = {
   externalSku?: string | null
   attributes?: Record<string, string | number | boolean | string[]>
   fixedStructuredContent?: unknown
+  // Optional editor CAS (update only). Present → compare with current digest;
+  // omitted → last-write-wins for legacy clients.
+  expectedCheckoutVersion?: string
   // 设为默认规格（仅接受 true，事务内从原默认转移；不接受 false——
   // 取消默认必须通过在另一条上设默认完成，保证不变量恒成立）。
   isDefault?: boolean
@@ -1557,8 +1583,7 @@ export async function listMyOffers(merchantId: number, productId: number) {
 
   // 即时库存的可售量由 InventoryItem(status=available) 唯一决定；Offer.stock
   // 是旧投影，不能直接返回给 Offer-first 工作台，否则导入后仍显示 0。
-  return offers.map(({ _count, ...offer }) => ({
-    ...offer,
+  return offers.map(({ _count, ...offer }) => withCheckoutVersion(offer, {
     stock: offer.deliveryMode === 'instant_inventory' ? _count.inventory : offer.stock,
     availableStock: offer.deliveryMode === 'instant_inventory' ? _count.inventory : undefined,
   }))
@@ -1578,6 +1603,10 @@ async function insertOffer(
   const stockMode = input.stockMode ?? (deliveryMode === 'instant_inventory' ? 'limited' : 'unlimited')
   const fixedContentType = input.fixedContentType ?? 'text'
   const fixedFileId = input.fixedFileId ?? null
+  const structuredWrite = resolveStructuredFixedContent(
+    input.fixedStructuredContent,
+    input.fixedContent ?? null,
+  )
   assertOfferCommercialInput({
     price: input.price,
     originalPrice: input.originalPrice ?? null,
@@ -1585,7 +1614,7 @@ async function insertOffer(
     stockMode,
     incomingStock: input.stock,
     effectiveStock: input.stock,
-    fixedContent: input.fixedContent,
+    fixedContent: structuredWrite.fixedContent,
     fixedContentType,
     fixedFileId,
   })
@@ -1622,7 +1651,7 @@ async function insertOffer(
       deliveryMode,
       stockMode,
       stock: deliveryMode === 'instant_inventory' ? 0 : (input.stock ?? 0),
-      fixedContent: input.fixedContent ?? null,
+      fixedContent: structuredWrite.fixedContent,
       fixedContentType,
       fixedFileId,
       sortOrder: input.sortOrder ?? 0,
@@ -1636,8 +1665,8 @@ async function insertOffer(
       ...('attributes' in input && input.attributes != null
         ? { attributes: input.attributes as Prisma.InputJsonValue }
         : {}),
-      ...('fixedStructuredContent' in input && input.fixedStructuredContent != null
-        ? { fixedStructuredContent: input.fixedStructuredContent as Prisma.InputJsonValue }
+      ...(structuredWrite.structured != null
+        ? { fixedStructuredContent: structuredWrite.structured as unknown as Prisma.InputJsonValue }
         : {}),
     },
   })
@@ -1656,7 +1685,7 @@ export async function createMyOffer(
   })
 
   await invalidateProductPublicCache(productId, { detail: true, list: true })
-  return offer
+  return withCheckoutVersion(offer)
 }
 
 export async function updateMyOffer(
@@ -1670,6 +1699,13 @@ export async function updateMyOffer(
   const updated = await prisma.$transaction(async tx => {
     const offer = await tx.offer.findFirst({ where: { id: offerId, productId } })
     if (!offer) throw notFound('规格不存在')
+
+    // expectedCheckoutVersion present → CAS against current digest; omitted →
+    // last-write-wins for legacy clients (two concurrent editors can both save).
+    if (input.expectedCheckoutVersion != null
+      && input.expectedCheckoutVersion !== computeOfferCheckoutVersion(offer)) {
+      throw new HttpError(409, 'CHECKOUT_CHANGED', '商品信息已变化，请重新确认')
+    }
 
     const deliveryMode = input.deliveryMode ?? offer.deliveryMode
     if (deliveryMode !== offer.deliveryMode) {
@@ -1687,7 +1723,11 @@ export async function updateMyOffer(
         ? (deliveryMode === 'instant_inventory' ? 'limited' : 'unlimited')
         : offer.stockMode)
     const fixedContentType = input.fixedContentType ?? offer.fixedContentType
-    const nextFixedContent = 'fixedContent' in input ? (input.fixedContent ?? null) : offer.fixedContent
+    const incomingFixedContent = 'fixedContent' in input ? (input.fixedContent ?? null) : offer.fixedContent
+    const structuredWrite = 'fixedStructuredContent' in input
+      ? resolveStructuredFixedContent(input.fixedStructuredContent, incomingFixedContent)
+      : { fixedContent: incomingFixedContent, structured: null }
+    const nextFixedContent = structuredWrite.fixedContent
     // P5：合并后的文件挂载必须满足 file 形态不变量（含"切回 text/url 但留文件"）。
     const nextFixedFileId = 'fixedFileId' in input ? (input.fixedFileId ?? null) : offer.fixedFileId
     // P4b：合并后的模板不得出现在 instant_fixed 规格上（含"改模式但留模板"）。
@@ -1769,7 +1809,9 @@ export async function updateMyOffer(
         deliveryMode,
         stockMode,
         ...(input.stock != null ? { stock: input.stock } : {}),
-        ...('fixedContent' in input ? { fixedContent: input.fixedContent ?? null } : {}),
+        ...('fixedContent' in input || ('fixedStructuredContent' in input && structuredWrite.structured != null)
+          ? { fixedContent: nextFixedContent }
+          : {}),
         fixedContentType,
         ...('fixedFileId' in input ? { fixedFileId: input.fixedFileId ?? null } : {}),
         // P6a：改时长只影响新订单（快照冻结）；null = 改回永久。
@@ -1780,6 +1822,16 @@ export async function updateMyOffer(
         // 改模板仅影响后续导入/交付；已导入条目携带自包含快照，不回填。
         ...('deliveryFields' in input
           ? { deliveryFields: input.deliveryFields === null ? Prisma.DbNull : input.deliveryFields }
+          : {}),
+        ...('attributes' in input && input.attributes != null
+          ? { attributes: input.attributes as Prisma.InputJsonValue }
+          : {}),
+        ...('fixedStructuredContent' in input
+          ? {
+              fixedStructuredContent: structuredWrite.structured == null
+                ? Prisma.DbNull
+                : structuredWrite.structured as unknown as Prisma.InputJsonValue,
+            }
           : {}),
         ...(deliveryMode === 'instant_inventory' && offer.deliveryMode !== 'instant_inventory'
           ? { stock: 0 }
@@ -1797,7 +1849,7 @@ export async function updateMyOffer(
   })
 
   await invalidateProductPublicCache(productId, { detail: true, list: true })
-  return updated
+  return withCheckoutVersion(updated)
 }
 
 export async function deleteMyOffer(merchantId: number, productId: number, offerId: number) {

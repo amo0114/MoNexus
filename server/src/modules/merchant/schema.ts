@@ -132,6 +132,9 @@ export const createMerchantOfferSchema = merchantOfferFieldsSchema
 // isDefault 仅在更新时接受（true = 把默认转移到本规格）；新建规格不能直接抢默认。
 export const updateMerchantOfferSchema = merchantOfferFieldsSchema.partial().extend({
   isDefault: z.boolean().optional(),
+  // Optional editor CAS. Present → mismatch with current digest is 409 CHECKOUT_CHANGED.
+  // Omitted → last-write-wins for legacy clients (two concurrent editors can both save).
+  expectedCheckoutVersion: z.string().min(1).max(64).optional(),
 })
 
 // P4a F3：向导原子发布——商品 + 默认规格名 + 额外规格一次事务落库，
