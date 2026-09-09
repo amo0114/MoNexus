@@ -266,6 +266,9 @@ describe('ProductEditPage (spec §9.2 / §10.3)', () => {
     expect(body.expectedContentVersion).toBe(3)
     expect(body.name).toBe('新名称')
     expect('offers' in body).toBe(false)
+    expect('templateKey' in body).toBe(false)
+    expect(screen.getByTestId('product-edit-template-locked')).toBeInTheDocument()
+    expect(screen.queryByTestId('product-edit-template-select')).not.toBeInTheDocument()
     await waitFor(() => expect(screen.getByTestId('product-edit-content-version')).toHaveTextContent('v4'))
   })
 
@@ -442,5 +445,70 @@ describe('ProductEditPage (spec §9.2 / §10.3)', () => {
     expect(screen.getByTestId('product-edit-offer-9')).toBeInTheDocument()
     expect(screen.queryByTestId('product-edit-offer-file-9')).not.toBeInTheDocument()
     expect(merchantMocks.updateMerchantOffer).not.toHaveBeenCalled()
+  })
+
+  it('saves shared-offer structured content via updateMerchantOffer', async () => {
+    merchantMocks.updateMerchantOffer.mockResolvedValue({ id: 9 })
+    const base = editorDto()
+    const transport = createEditTransport({
+      editor: {
+        ...base,
+        offers: [{
+          ...base.offers[0],
+          deliveryMode: 'instant_fixed',
+          stockMode: 'unlimited',
+          fixedStructuredContent: {
+            fields: [{ key: 'user', label: '账号', sensitive: false }],
+            values: { user: 'demo' },
+          },
+        }],
+      },
+    })
+    await renderEditPage(transport)
+
+    expect(screen.getByTestId('product-edit-offer-9-structured-content')).toBeInTheDocument()
+    fireEvent.change(screen.getByTestId('product-edit-offer-9-structured-field-value-0'), {
+      target: { value: 'shared-user' },
+    })
+    fireEvent.click(screen.getByTestId('product-edit-save'))
+
+    await waitFor(() => expect(merchantMocks.updateMerchantOffer).toHaveBeenCalledTimes(1))
+    expect(merchantMocks.updateMerchantOffer).toHaveBeenCalledWith(42, 9, {
+      fixedStructuredContent: {
+        fields: [{ key: 'user', label: '账号', sensitive: false }],
+        values: { user: 'shared-user' },
+      },
+    })
+    expect(transport.calls.some(call => call.method === 'patch')).toBe(false)
+  })
+
+  it('PATCHes templateKey and templateVersion:1 on a legacy editor DTO', async () => {
+    const transport = createEditTransport({
+      editor: editorDto({ templateKey: null, templateVersion: null }),
+      patch: (body) => ({
+        id: 42,
+        contentVersion: 4,
+        updatedFields: ['templateKey'],
+        echoed: body,
+      }),
+    })
+    await renderEditPage(transport)
+
+    expect(screen.getByTestId('product-edit-template-select')).toBeInTheDocument()
+    expect(screen.queryByTestId('product-edit-template-locked')).not.toBeInTheDocument()
+    fireEvent.change(screen.getByTestId('product-edit-template-select'), {
+      target: { value: 'redemption_code' },
+    })
+    fireEvent.click(screen.getByTestId('product-edit-save'))
+
+    await waitFor(() => {
+      expect(transport.calls.some(call => call.method === 'patch')).toBe(true)
+    })
+    const body = transport.calls.find(call => call.method === 'patch')?.body as PatchProductContentRequest
+    expect(body.templateKey).toBe('redemption_code')
+    expect(body.templateVersion).toBe(1)
+    expect(body.expectedContentVersion).toBe(3)
+    await waitFor(() => expect(screen.getByTestId('product-edit-template-locked')).toBeInTheDocument())
+    expect(screen.queryByTestId('product-edit-template-select')).not.toBeInTheDocument()
   })
 })

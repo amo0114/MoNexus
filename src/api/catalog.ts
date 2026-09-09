@@ -15,6 +15,7 @@ import {
   CATALOG_ERROR_CODES,
   EMPTY_PRODUCT_DETAILS,
   READINESS_DETAIL_CODES,
+  TEMPLATE_KEYS,
   type AvailabilityOffer,
   type CapacityAdjustRequest,
   type CatalogDraftProduct,
@@ -376,7 +377,7 @@ export type ProductEditorOffer = {
   deliveryFields: unknown
   autoProvision: boolean
   attributes: TemplateAttributes
-  checkoutVersion?: number
+  checkoutVersion?: string
   fixedContent?: string | null
   fixedStructuredContent?: unknown
 }
@@ -420,6 +421,9 @@ export type PatchProductContentRequest = {
   attributes?: TemplateAttributes
   details?: ProductDetails
   purchaseForm?: unknown[]
+  /** Legacy products may assign a template once; already-set keys must not be sent to change. */
+  templateKey?: TemplateKey
+  templateVersion?: 1
 }
 
 export type PatchProductContentResult = {
@@ -443,6 +447,9 @@ export type CreateProductV2OfferInput = {
   fixedContent?: string | null
   fixedContentType?: 'text' | 'url' | 'file'
   autoProvision?: boolean
+  fixedFileId?: number | null
+  fixedStructuredContent?: unknown | null
+  deliveryFields?: unknown | null
   [key: string]: unknown
 }
 
@@ -577,6 +584,8 @@ export function buildPatchProductContentRequest(input: PatchProductContentReques
   if (input.attributes) payload.attributes = sanitizeTemplateAttributes(input.attributes)
   if (input.details) payload.details = sanitizeProductDetails(input.details)
   if (Array.isArray(input.purchaseForm)) payload.purchaseForm = input.purchaseForm
+  if (isTemplateKey(input.templateKey)) payload.templateKey = input.templateKey
+  if (input.templateVersion === 1) payload.templateVersion = 1
   return payload
 }
 
@@ -617,6 +626,39 @@ function sanitizeProductDetails(value: unknown): ProductDetails {
   }
 }
 
+function isTemplateKey(value: unknown): value is TemplateKey {
+  return typeof value === 'string' && (TEMPLATE_KEYS as readonly string[]).includes(value)
+}
+
+function sanitizeFixedFileId(value: unknown): number | null {
+  return typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : null
+}
+
+function sanitizeDeliveryFields(value: unknown): unknown | null {
+  if (!Array.isArray(value)) return null
+  const fields: Array<{ key: string; label: string; sensitive: boolean; placeholder?: string }> = []
+  for (const item of value) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) continue
+    const record = item as Record<string, unknown>
+    if (typeof record.key !== 'string' || typeof record.label !== 'string') continue
+    const field: { key: string; label: string; sensitive: boolean; placeholder?: string } = {
+      key: record.key,
+      label: record.label,
+      sensitive: record.sensitive === true,
+    }
+    if (typeof record.placeholder === 'string' && record.placeholder.trim() !== '') {
+      field.placeholder = record.placeholder.trim()
+    }
+    fields.push(field)
+  }
+  return fields.length > 0 ? fields : null
+}
+
+function sanitizeFixedStructuredContent(value: unknown): unknown | null {
+  if (value == null || typeof value !== 'object' || Array.isArray(value)) return null
+  return value
+}
+
 function sanitizeV2Offer(offer: CreateProductV2OfferInput): CreateProductV2OfferRequest {
   const deliveryMode = offer.deliveryMode
   const stockMode: StockMode = deliveryMode === 'instant_inventory' ? 'limited' : offer.stockMode
@@ -625,6 +667,7 @@ function sanitizeV2Offer(offer: CreateProductV2OfferInput): CreateProductV2Offer
     : 'text'
   const rawContent = typeof offer.fixedContent === 'string' ? offer.fixedContent.trim() : ''
   const usesFixedText = deliveryMode === 'instant_fixed' && (fixedContentType === 'text' || fixedContentType === 'url')
+  const fixedStructuredContent = sanitizeFixedStructuredContent(offer.fixedStructuredContent)
   return {
     name: offer.name,
     price: offer.price,
@@ -638,10 +681,11 @@ function sanitizeV2Offer(offer: CreateProductV2OfferInput): CreateProductV2Offer
       ? offer.validityDays
       : null,
     fixedContentType,
-    fixedContent: usesFixedText && rawContent !== '' ? rawContent : null,
-    fixedFileId: null,
-    fixedStructuredContent: null,
-    deliveryFields: null,
+    // Structured fixed content and plain fixedContent are mutually exclusive on create.
+    fixedContent: fixedStructuredContent == null && usesFixedText && rawContent !== '' ? rawContent : null,
+    fixedFileId: sanitizeFixedFileId(offer.fixedFileId),
+    fixedStructuredContent,
+    deliveryFields: sanitizeDeliveryFields(offer.deliveryFields),
     autoProvision: offer.autoProvision === true,
   }
 }

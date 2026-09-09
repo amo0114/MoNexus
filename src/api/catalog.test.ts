@@ -467,6 +467,8 @@ describe('buildCreateProductV2Request (SPEC-PRODUCT-COMMERCE-002 §9.1)', () => 
       validityDays: null,
       fixedContent: null,
       fixedFileId: null,
+      fixedStructuredContent: null,
+      deliveryFields: null,
       autoProvision: false,
     })
     expect('type' in payload).toBe(false)
@@ -564,6 +566,36 @@ describe('buildCreateProductV2Request (SPEC-PRODUCT-COMMERCE-002 §9.1)', () => 
     expect(json).not.toContain('secret-content-do-not-leak')
     expect(json).not.toContain('inventory-secret-do-not-leak')
     expect(json).not.toContain('offer-secret-do-not-leak')
+  })
+
+  it('sanitizeV2Offer keeps provided fixedStructuredContent, deliveryFields and fixedFileId', () => {
+    const structured = {
+      fields: [{ key: 'user', label: '账号', sensitive: false }],
+      values: { user: 'demo' },
+    }
+    const deliveryFields = [{ key: 'user', label: '账号', sensitive: true, placeholder: '账号' }]
+    const payload = buildCreateProductV2Request({
+      ...base,
+      offers: [{
+        name: '共享规格',
+        price: 80,
+        deliveryMode: 'instant_fixed',
+        stockMode: 'unlimited',
+        fixedContentType: 'text',
+        fixedContent: 'should-be-dropped-when-structured',
+        fixedStructuredContent: structured,
+        deliveryFields,
+        fixedFileId: 88,
+        inventoryItems: [{ secretKey: 'inventory-secret-do-not-leak' }],
+        content: 'offer-secret-do-not-leak',
+      }],
+    })
+    expect(payload.offers[0].fixedStructuredContent).toEqual(structured)
+    expect(payload.offers[0].deliveryFields).toEqual(deliveryFields)
+    expect(payload.offers[0].fixedFileId).toBe(88)
+    expect(payload.offers[0].fixedContent).toBeNull()
+    expect(JSON.stringify(payload)).not.toContain('inventory-secret-do-not-leak')
+    expect(JSON.stringify(payload)).not.toContain('offer-secret-do-not-leak')
   })
 
   it('requires at least one offer', () => {
@@ -751,6 +783,19 @@ describe('editor DTO + content PATCH (SPEC-PRODUCT-COMMERCE-002 §9.2)', () => {
     expect(payload).toEqual({ expectedContentVersion: 3, name: '节点套餐' })
     expect('images' in payload).toBe(false)
     expect('descriptionImages' in payload).toBe(false)
+  })
+
+  it('buildPatchProductContentRequest forwards templateKey and templateVersion:1', () => {
+    const payload = buildPatchProductContentRequest({
+      expectedContentVersion: 3,
+      templateKey: 'account',
+      templateVersion: 1,
+    })
+    expect(payload).toEqual({
+      expectedContentVersion: 3,
+      templateKey: 'account',
+      templateVersion: 1,
+    })
   })
 
   it('buildPatchProductContentRequest includes descriptionImages when provided', () => {

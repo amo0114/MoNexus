@@ -156,7 +156,35 @@ const wizardTemplateRegistry: ProductTemplateRegistryDto = {
         widgets: { serviceName: 'text', unitLabel: 'text' },
       },
     }),
-    stubTemplate('account', '账号商品', ['inventory', 'fixed_text']),
+    stubTemplate('account', '账号商品', ['inventory', 'fixed_text'], {
+      productSchema: {
+        type: 'object',
+        properties: {
+          accessModel: { type: 'string', title: '账号使用方式', enum: ['exclusive', 'shared'] },
+        },
+        required: ['accessModel'],
+      },
+      ui: {
+        productOrder: ['accessModel'],
+        offerOrder: [],
+        widgets: { accessModel: 'select' },
+        enumLabels: { accessModel: { exclusive: '独享账号', shared: '共享账号' } },
+      },
+      fulfillmentRules: [
+        {
+          whenProductAttributes: { accessModel: 'exclusive' },
+          configurations: ['inventory'],
+          requireStructuredDelivery: 'inventory_fields',
+          requireRequiredDateField: false,
+        },
+        {
+          whenProductAttributes: { accessModel: 'shared' },
+          configurations: ['fixed_text'],
+          requireStructuredDelivery: 'fixed_fields',
+          requireRequiredDateField: false,
+        },
+      ],
+    }),
     stubTemplate('digital_file', '数字文件', ['fixed_file']),
     stubTemplate('fixed_content', '固定数字内容', ['fixed_text', 'fixed_url']),
     stubTemplate('subscription', '订阅与开通', ['inventory', 'fixed_text', 'fixed_url', 'manual', 'merchant_webhook', 'faka_bridge']),
@@ -447,5 +475,72 @@ describe('ProductCreateWizard draft flow (editorVersion 2)', () => {
     fireEvent.click(manual!)
     fireEvent.click(screen.getByTestId('wizard-next'))
     expect(screen.getByTestId('wizard-confirm-category')).toHaveTextContent('共享账号')
+  })
+
+  it('shared-account create body has non-null structured content when filled', async () => {
+    const transport = await renderWizard({
+      get: { '/merchant/products/101/offers': catalogFixtureOffers },
+      post: { '/merchant/products': v2Created },
+    })
+    fireEvent.click(screen.getByTestId('template-account'))
+    fireEvent.click(screen.getByTestId('wizard-next'))
+    fireEvent.change(screen.getByTestId('wizard-name'), { target: { value: '共享账号套餐' } })
+    const categorySelect = screen.getByTestId('product-category-select')
+    await waitFor(() => expect(categorySelect).not.toBeDisabled())
+    fireEvent.change(categorySelect, { target: { value: '3' } })
+    fireEvent.change(screen.getByTestId('template-attr-accessModel-control'), { target: { value: 'shared' } })
+    fireEvent.click(screen.getByTestId('wizard-next'))
+    fireEvent.change(screen.getByTestId('wizard-price'), { target: { value: '80' } })
+    fireEvent.click(screen.getByTestId('wizard-next'))
+
+    expect(screen.getByTestId('wizard-structured-content')).toBeInTheDocument()
+    fireEvent.click(screen.getByTestId('wizard-structured-field-add'))
+    fireEvent.change(screen.getByTestId('wizard-structured-field-key-0'), { target: { value: 'user' } })
+    fireEvent.change(screen.getByTestId('wizard-structured-field-label-0'), { target: { value: '账号' } })
+    fireEvent.change(screen.getByTestId('wizard-structured-field-value-0'), { target: { value: 'demo' } })
+    fireEvent.click(screen.getByTestId('wizard-next'))
+    fireEvent.click(screen.getByTestId('wizard-save-draft'))
+
+    await waitFor(() => expect(screen.getByTestId('product-availability-step')).toBeInTheDocument())
+    const createCall = transport.calls.find(c => c.method === 'post' && c.url === '/merchant/products')
+    expect(createCall).toBeTruthy()
+    const body = createCall!.body as { offers: Array<Record<string, unknown>> }
+    expect(body.offers[0].fixedStructuredContent).toEqual({
+      fields: [{ key: 'user', label: '账号', sensitive: false }],
+      values: { user: 'demo' },
+    })
+    expect(body.offers[0].fixedContent).toBeNull()
+    expect(body.offers[0].deliveryMode).toBe('instant_fixed')
+  })
+
+  it('exclusive-account create body has deliveryFields when filled', async () => {
+    const transport = await renderWizard({
+      get: { '/merchant/products/101/offers': catalogFixtureOffers },
+      post: { '/merchant/products': v2Created },
+    })
+    fireEvent.click(screen.getByTestId('template-account'))
+    fireEvent.click(screen.getByTestId('wizard-next'))
+    fireEvent.change(screen.getByTestId('wizard-name'), { target: { value: '独享账号套餐' } })
+    const categorySelect = screen.getByTestId('product-category-select')
+    await waitFor(() => expect(categorySelect).not.toBeDisabled())
+    fireEvent.change(categorySelect, { target: { value: '3' } })
+    fireEvent.change(screen.getByTestId('template-attr-accessModel-control'), { target: { value: 'exclusive' } })
+    fireEvent.click(screen.getByTestId('wizard-next'))
+    fireEvent.change(screen.getByTestId('wizard-price'), { target: { value: '80' } })
+    fireEvent.click(screen.getByTestId('wizard-next'))
+
+    expect(screen.getByTestId('wizard-delivery-fields')).toBeInTheDocument()
+    fireEvent.click(screen.getByTestId('wizard-delivery-field-add'))
+    fireEvent.change(screen.getByTestId('wizard-delivery-field-key-0'), { target: { value: 'user' } })
+    fireEvent.change(screen.getByTestId('wizard-delivery-field-label-0'), { target: { value: '账号' } })
+    fireEvent.click(screen.getByTestId('wizard-next'))
+    fireEvent.click(screen.getByTestId('wizard-save-draft'))
+
+    await waitFor(() => expect(screen.getByTestId('product-availability-step')).toBeInTheDocument())
+    const createCall = transport.calls.find(c => c.method === 'post' && c.url === '/merchant/products')
+    const body = createCall!.body as { offers: Array<Record<string, unknown>> }
+    expect(body.offers[0].deliveryFields).toEqual([{ key: 'user', label: '账号', sensitive: false }])
+    expect(body.offers[0].deliveryMode).toBe('instant_inventory')
+    expect(body.offers[0].fixedStructuredContent).toBeNull()
   })
 })
