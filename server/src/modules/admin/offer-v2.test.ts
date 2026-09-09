@@ -102,4 +102,32 @@ describe('admin platform offer v2 write (REAL-PG)', () => {
       .expect(400)
     expect(rejected.body.error.message).toContain('自动开通')
   })
+
+  it('patchAdminOffer rejects a stale expectedCheckoutVersion with 409 CHECKOUT_CHANGED', async () => {
+    const { auth } = await adminAuth('offer-v2-cas@test.local')
+    const created = await api.post('/api/admin/products').set(authHeader(auth.accessToken))
+      .send({ name: 'CAS规格', type: '邀请码', price: 50 }).expect(201)
+    const offer = await prisma.offer.findFirstOrThrow({ where: { productId: created.body.id, isDefault: true } })
+
+    const current = await api.patch(`/api/admin/products/${created.body.id}/offers/${offer.id}`)
+      .set(authHeader(auth.accessToken))
+      .send({ name: 'CAS-A' })
+      .expect(200)
+    expect(current.body.checkoutVersion).toMatch(/^[0-9a-f]{16}$/)
+    expect(current.body.name).toBe('CAS-A')
+
+    const stale = await api.patch(`/api/admin/products/${created.body.id}/offers/${offer.id}`)
+      .set(authHeader(auth.accessToken))
+      .send({ name: 'CAS-B', expectedCheckoutVersion: '0'.repeat(16) })
+      .expect(409)
+    expect(stale.body.error.code).toBe('CHECKOUT_CHANGED')
+    const afterStale = await prisma.offer.findUniqueOrThrow({ where: { id: offer.id } })
+    expect(afterStale.name).toBe('CAS-A')
+
+    const matched = await api.patch(`/api/admin/products/${created.body.id}/offers/${offer.id}`)
+      .set(authHeader(auth.accessToken))
+      .send({ name: 'CAS-B', expectedCheckoutVersion: current.body.checkoutVersion })
+      .expect(200)
+    expect(matched.body.name).toBe('CAS-B')
+  })
 })

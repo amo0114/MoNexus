@@ -117,7 +117,14 @@ describe('Xboard preview → idempotent confirm (REAL-PG)', () => {
     expect(replay.body).toMatchObject({ productId: first.body.productId, replayed: true })
 
     const product = await prisma.product.findUniqueOrThrow({ where: { id: first.body.productId } })
-    expect(product).toMatchObject({ status: 'draft', merchantId: null, imageUrl: '/assets/category-default.webp' })
+    expect(product).toMatchObject({
+      status: 'draft',
+      merchantId: null,
+      imageUrl: '/assets/category-default.webp',
+      templateKey: 'subscription',
+      templateVersion: 1,
+      visibility: 'members_only',
+    })
     expect(product.images).toEqual(['/assets/category-default.webp'])
     expect(product.richDescription).not.toContain('script')
     expect(await prisma.offer.count({ where: { productId: product.id } })).toBe(2)

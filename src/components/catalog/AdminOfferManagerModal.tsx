@@ -40,6 +40,7 @@ type EditorForm = {
   validityDays: string
   sortOrder: string
   attributes: Record<string, string | number | boolean | string[]>
+  checkoutVersion?: string
 }
 
 const EMPTY_FORM: EditorForm = {
@@ -89,6 +90,7 @@ function listOfferToForm(offer: AdminProductOffer): EditorForm {
     validityDays: offer.validityDays != null ? String(offer.validityDays) : '',
     sortOrder: String(offer.sortOrder ?? 0),
     attributes: {},
+    checkoutVersion: offer.checkoutVersion,
   }
 }
 
@@ -109,6 +111,7 @@ function editorOfferToForm(offer: ProductEditorOffer): EditorForm {
     validityDays: offer.validityDays != null ? String(offer.validityDays) : '',
     sortOrder: String(offer.sortOrder ?? 0),
     attributes: offer.attributes ?? {},
+    checkoutVersion: offer.checkoutVersion,
   }
 }
 
@@ -258,6 +261,7 @@ export default function AdminOfferManagerModal({ product, onClose, onChanged }: 
           validityDays: nextValidity,
           sortOrder: form.sortOrder.trim() === '' ? undefined : Number(form.sortOrder),
           ...(lockDelivery ? {} : deliverySnapshot),
+          ...(form.checkoutVersion ? { expectedCheckoutVersion: form.checkoutVersion } : {}),
         })
         showToast('规格已更新')
       }

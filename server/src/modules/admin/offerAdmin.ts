@@ -1,7 +1,7 @@
-import { Prisma } from '@prisma/client'
+import { Prisma, type Offer } from '@prisma/client'
 import { prisma } from '../../lib/prisma.js'
 import { badRequest, HttpError, notFound, type ErrorCode } from '../../lib/httpError.js'
-import { syncProductProjection } from '../../lib/offers.js'
+import { computeOfferCheckoutVersion, syncProductProjection } from '../../lib/offers.js'
 import { normalizeFakaOfferIntegration } from '../../lib/fakaBridge/index.js'
 import { assertProductDeliveryConfiguration } from '../../lib/productCommercial.js'
 import { invalidateProductPublicCache } from '../products/cache.js'
@@ -29,6 +29,7 @@ export type AdminOfferPatchInput = {
   validityDays?: number | null
   sortOrder?: number
   attributes?: OfferAttributes
+  expectedCheckoutVersion?: string
   deliveryMode?: DeliveryMode
   stockMode?: StockMode
   fixedContentType?: FixedContentType
@@ -121,6 +122,12 @@ export async function patchAdminOffer(
   const updated = await prisma.$transaction(async tx => {
     const product = await lockProductRow(tx, productId)
     const offer = await loadOffer(tx, productId, offerId)
+    if (
+      input.expectedCheckoutVersion != null
+      && input.expectedCheckoutVersion !== computeOfferCheckoutVersion(offer)
+    ) {
+      throw new HttpError(409, 'CHECKOUT_CHANGED', '商品信息已变化，请重新确认')
+    }
     const nextPrice = input.price ?? offer.price
     const nextOriginal = 'originalPrice' in input ? (input.originalPrice ?? null) : offer.originalPrice
     assertOriginalPrice(nextPrice, nextOriginal)
@@ -536,23 +543,7 @@ async function fetchNormalizedFakaSourceForOffer(externalSku: string | null) {
   return fetchNormalizedFakaSource(Number(link.externalProductId))
 }
 
-function serializeAdminOffer(offer: {
-  id: number
-  productId: number
-  name: string
-  price: number
-  originalPrice: number | null
-  status: string
-  isDefault: boolean
-  sortOrder: number
-  validityDays: number | null
-  deliveryMode: string
-  stockMode: string
-  fixedContentType: string
-  fixedFileId: number | null
-  externalIntegration: string | null
-  externalSku: string | null
-}) {
+function serializeAdminOffer(offer: Offer) {
   return {
     id: offer.id,
     productId: offer.productId,
@@ -569,6 +560,7 @@ function serializeAdminOffer(offer: {
     fixedFileId: offer.fixedFileId,
     externalIntegration: offer.externalIntegration,
     externalSku: offer.externalSku,
+    checkoutVersion: computeOfferCheckoutVersion(offer),
   }
 }
 

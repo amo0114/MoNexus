@@ -2042,6 +2042,9 @@ export async function importAdminFakaPlan(
           status: 'draft',
           merchantId: null,
           purchaseForm: FAKA_PURCHASE_FORM,
+          templateKey: 'subscription',
+          templateVersion: 1,
+          visibility: 'members_only',
         },
       })
       await createDefaultOffer(tx, created.id, {

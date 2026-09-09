@@ -18,6 +18,7 @@ export type PlatformOfferPatchRequest = {
   fixedContent?: string | null
   fixedFileId?: number | null
   fixedStructuredContent?: unknown | null
+  expectedCheckoutVersion?: string
 }
 
 /** Reuses the shared delivery-file upload protocol (admin MFA → merchantId null). */

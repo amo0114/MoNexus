@@ -34,6 +34,8 @@ export interface AdminOrderItem {
   status: string
   price: number
   createdAt: string
+  // 平台自营单为 null；商家单为商家 id。详情履约入口以该字段判定归属。
+  merchantId?: number | null
   // P6c：预约日期（本地零点时刻的 ISO 串）
   bookingDate?: string | null
   // P6a：续费单指向的原订单号
@@ -45,6 +47,8 @@ export interface AdminOrderItem {
   delivery?: { status: string; expiresAt?: string | null; expired?: boolean } | null
   // P7b：自动开通任务的安全投影（脱敏诊断码）；null = 非自动开通单。
   provisionTask?: import('../types/merchant').ProvisionTaskSummary | null
+  // Xboard/Faka 任务投影；有值则禁止平台人工替代履约。
+  fakaBridgeTask?: { id?: number } | null
 }
 
 export interface AdminOrderListQuery {
@@ -77,7 +81,14 @@ export interface AdminOrderDetail extends AdminOrderItem {
     imageUrl?: string | null
     price?: number
     deliveryMode?: string | null
+    fakaBridge?: boolean
   } | null
+  deliveryFieldsSnapshot?: Array<{
+    key: string
+    label: string
+    sensitive?: boolean
+    placeholder?: string
+  }> | null
   purchaseFormSnapshot?: Array<{
     id: string
     label: string
@@ -111,6 +122,53 @@ export async function resolveAdminOrder(
   payload: { result: 'refund' | 'close'; note?: string },
 ): Promise<unknown> {
   const { data } = await api.post(`/admin/orders/${id}/resolve`, payload)
+  return data
+}
+
+export async function startAdminPlatformFulfillment(
+  id: number,
+): Promise<{ id: number; status: string }> {
+  const { data } = await api.post<{ id: number; status: string }>(
+    `/admin/orders/${id}/start-fulfillment`,
+  )
+  return data
+}
+
+export async function postAdminPlatformProgress(
+  id: number,
+  payload: { publicNote: string },
+): Promise<{ id: number; status: string }> {
+  const { data } = await api.post<{ id: number; status: string }>(
+    `/admin/orders/${id}/progress`,
+    payload,
+  )
+  return data
+}
+
+export async function deliverAdminPlatformOrder(
+  id: number,
+  payload: {
+    content?: string
+    structuredValues?: Record<string, string>
+    attachmentFileId?: number
+    publicNote?: string
+  },
+): Promise<{ id: number; status: string }> {
+  const { data } = await api.post<{ id: number; status: string }>(
+    `/admin/orders/${id}/deliver`,
+    payload,
+  )
+  return data
+}
+
+export async function rejectAdminPlatformOrder(
+  id: number,
+  payload: { reason: string },
+): Promise<{ id: number; status: string }> {
+  const { data } = await api.post<{ id: number; status: string }>(
+    `/admin/orders/${id}/reject`,
+    payload,
+  )
   return data
 }
 
@@ -349,6 +407,7 @@ export interface AdminProductOffer {
   originalPrice?: number | null
   validityDays?: number | null
   sortOrder?: number
+  checkoutVersion?: string
   fakaCapacity?: AdminFakaCapacity | null
 }
 
