@@ -19,6 +19,29 @@ function later(days: number) {
   return new Date(Date.now() + days * 86_400_000).toISOString()
 }
 
+function deferred() {
+  let resolve!: () => void
+  const promise = new Promise<void>(done => {
+    resolve = done
+  })
+  return { promise, resolve }
+}
+
+async function waitForLockWaiters(min: number) {
+  for (let attempt = 0; attempt < 250; attempt++) {
+    const rows = await prisma.$queryRaw<Array<{ count: bigint }>>`
+      SELECT COUNT(*)::bigint AS count
+      FROM pg_stat_activity
+      WHERE datname = current_database()
+        AND state = 'active'
+        AND wait_event_type = 'Lock'
+    `
+    if (Number(rows[0]?.count ?? 0) >= min) return
+    await new Promise(resolve => setTimeout(resolve, 20))
+  }
+  throw new Error('barrier: concurrent revoke did not wait on the product row lock')
+}
+
 describe('product assurance applications and grants (SPEC-PRODUCT-COMMERCE-002 §7)', () => {
   it('lets a merchant apply and withdraw, and rejects a second pending row', async () => {
     const { merchant } = await createTestMerchant('as-apply@test.local', 'pass123', {
@@ -201,5 +224,71 @@ describe('product assurance applications and grants (SPEC-PRODUCT-COMMERCE-002 �
       where: { productId: product.id, status: 'expired' },
     })
     expect(expired).toHaveLength(1)
+  })
+
+  it('serializes concurrent revokes onto one audit log and the first closer', async () => {
+    const { merchant } = await createTestMerchant('as-revoke-race@test.local', 'pass123', {
+      role: 'merchant',
+      status: 'active',
+      name: '并发撤销商家',
+    })
+    const product = await createTestProduct('并发撤销商品', 30, 1, ['AS-RACE'], merchant.id)
+    const adminA = await createTestUser('as-revoke-a@test.local', 'admin123', 'admin')
+    const adminB = await createTestUser('as-revoke-b@test.local', 'admin123', 'admin')
+    const { accessToken: tokenA } = await loginAs('as-revoke-a@test.local', 'admin123')
+    const { accessToken: tokenB } = await loginAs('as-revoke-b@test.local', 'admin123')
+
+    const granted = await api
+      .post(`/api/admin/products/${product.id}/assurance/grants`)
+      .set(authHeader(tokenA))
+      .send({ validUntil: later(30), reason: '用于并发撤销竞态的有效保障授权。' })
+      .expect(201)
+
+    const reasonA = '管理员甲撤销该商品后续新单保障。'
+    const reasonB = '管理员乙撤销该商品后续新单保障。'
+    const lockHeld = deferred()
+    const releaseHold = deferred()
+    const holding = prisma.$transaction(async tx => {
+      await tx.$queryRaw`SELECT id FROM "Product" WHERE id = ${product.id} FOR UPDATE`
+      lockHeld.resolve()
+      await releaseHold.promise
+    }, { timeout: 15_000 })
+    await lockHeld.promise
+
+    const pending = Promise.all([
+      api
+        .post(`/api/admin/assurance-grants/${granted.body.id}/revoke`)
+        .set(authHeader(tokenA))
+        .send({ reason: reasonA }),
+      api
+        .post(`/api/admin/assurance-grants/${granted.body.id}/revoke`)
+        .set(authHeader(tokenB))
+        .send({ reason: reasonB }),
+    ])
+    try {
+      await waitForLockWaiters(2)
+    } finally {
+      releaseHold.resolve()
+    }
+    await holding
+    const [resA, resB] = await pending
+
+    expect([resA.status, resB.status].sort()).toEqual([200, 200])
+    expect(resA.body.status).toBe('revoked')
+    expect(resB.body.status).toBe('revoked')
+
+    const stored = await prisma.productAssuranceGrant.findUniqueOrThrow({ where: { id: granted.body.id } })
+    expect(stored.status).toBe('revoked')
+    const logs = await prisma.adminLog.findMany({
+      where: { targetType: 'productAssuranceGrant', targetId: granted.body.id, action: '撤销商品保障' },
+    })
+    expect(logs).toHaveLength(1)
+    expect(stored.revokedByUserId).toBe(logs[0].adminUserId)
+    expect([adminA.user.id, adminB.user.id]).toContain(stored.revokedByUserId)
+    expect(stored.revokeReason).toBe(stored.revokedByUserId === adminA.user.id ? reasonA : reasonB)
+    expect(resA.body.revokedByUserId).toBe(stored.revokedByUserId)
+    expect(resB.body.revokedByUserId).toBe(stored.revokedByUserId)
+    expect(resA.body.revokeReason).toBe(stored.revokeReason)
+    expect(resB.body.revokeReason).toBe(stored.revokeReason)
   })
 })

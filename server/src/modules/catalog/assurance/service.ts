@@ -384,9 +384,14 @@ export async function revokeAssuranceGrant(
   reason: string,
 ) {
   const result = await prisma.$transaction(async tx => {
+    const locator = await tx.productAssuranceGrant.findUnique({
+      where: { id: grantId },
+      select: { productId: true },
+    })
+    if (!locator) throw notFound('授权不存在')
+    await lockProductRow(tx, locator.productId)
     const grant = await tx.productAssuranceGrant.findUnique({ where: { id: grantId } })
     if (!grant) throw notFound('授权不存在')
-    await lockProductRow(tx, grant.productId)
     const now = await clockNow(tx)
     if (grant.status === 'revoked') {
       return { dto: grantDto(grant, 'admin', now), productId: grant.productId, changed: false }
