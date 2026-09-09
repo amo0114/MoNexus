@@ -3,14 +3,24 @@ import { prisma } from '../../lib/prisma.js'
 import { badRequest, HttpError, notFound, type ErrorCode } from '../../lib/httpError.js'
 import { syncProductProjection } from '../../lib/offers.js'
 import { normalizeFakaOfferIntegration } from '../../lib/fakaBridge/index.js'
+import { assertProductDeliveryConfiguration } from '../../lib/productCommercial.js'
 import { invalidateProductPublicCache } from '../products/cache.js'
 import { CATALOG_ERROR_CODES } from '../catalog/constants.js'
 import { fakaCatalogSkuSet, fetchNormalizedFakaSource } from '../catalog/externalCatalog.js'
+import {
+  canonicalFixedStructuredText,
+  normalizeFixedStructuredContent,
+} from '../catalog/structuredFixedContent.js'
 import { lockProductRow } from './productLifecycle.js'
 
 type Tx = Prisma.TransactionClient
 
 const OPEN_FAKA_TASK_STATUS = ['pending', 'needs_reconcile'] as const
+
+type DeliveryMode = 'instant_inventory' | 'instant_fixed' | 'manual_service'
+type StockMode = 'limited' | 'unlimited'
+type FixedContentType = 'text' | 'url' | 'file'
+type OfferAttributes = Record<string, string | number | boolean | string[]>
 
 export type AdminOfferPatchInput = {
   name?: string
@@ -18,6 +28,47 @@ export type AdminOfferPatchInput = {
   originalPrice?: number | null
   validityDays?: number | null
   sortOrder?: number
+  attributes?: OfferAttributes
+  deliveryMode?: DeliveryMode
+  stockMode?: StockMode
+  fixedContentType?: FixedContentType
+  fixedContent?: string | null
+  fixedFileId?: number | null
+  fixedStructuredContent?: unknown
+}
+
+function deliveryFieldsTouched(input: AdminOfferPatchInput) {
+  return (
+    'deliveryMode' in input
+    || 'stockMode' in input
+    || 'fixedContentType' in input
+    || 'fixedContent' in input
+    || 'fixedFileId' in input
+    || 'fixedStructuredContent' in input
+  )
+}
+
+async function assertPlatformDeliveryFile(tx: Tx, fileId: number) {
+  const file = await tx.deliveryFile.findFirst({
+    where: { id: fileId, merchantId: null },
+    select: { status: true },
+  })
+  if (!file) throw notFound('交付文件不存在')
+  if (file.status !== 'active') throw badRequest('交付文件已不可用，请重新上传')
+}
+
+function resolveStructuredFixedContent(
+  structuredInput: unknown,
+  fixedContent: string | null,
+) {
+  if (structuredInput == null) {
+    return { fixedContent, structured: null as ReturnType<typeof normalizeFixedStructuredContent> | null }
+  }
+  if (fixedContent != null) {
+    throw badRequest('结构化固定内容与 fixedContent 不能同时提交')
+  }
+  const structured = normalizeFixedStructuredContent(structuredInput)
+  return { fixedContent: canonicalFixedStructuredText(structured), structured }
 }
 
 async function loadOffer(tx: Tx, productId: number, offerId: number) {
@@ -68,11 +119,60 @@ export async function patchAdminOffer(
   input: AdminOfferPatchInput,
 ) {
   const updated = await prisma.$transaction(async tx => {
-    await lockProductRow(tx, productId)
+    const product = await lockProductRow(tx, productId)
     const offer = await loadOffer(tx, productId, offerId)
     const nextPrice = input.price ?? offer.price
     const nextOriginal = 'originalPrice' in input ? (input.originalPrice ?? null) : offer.originalPrice
     assertOriginalPrice(nextPrice, nextOriginal)
+
+    const touchingDelivery = deliveryFieldsTouched(input)
+    if (touchingDelivery) {
+      if (product.merchantId != null) {
+        throw badRequest('平台套餐履约字段仅用于平台自营商品')
+      }
+      if (offer.externalIntegration != null) {
+        throw badRequest('外部开通规格请使用专用流程，不能改写履约或文件字段')
+      }
+    }
+
+    const nextDeliveryMode = input.deliveryMode ?? offer.deliveryMode
+    if (nextDeliveryMode !== offer.deliveryMode) {
+      const { orderCount, inventoryCount } = await countOfferHistory(tx, offer.id)
+      if (orderCount > 0 || inventoryCount > 0) {
+        throw badRequest('该规格已有库存记录或订单，不能修改履约模式')
+      }
+    }
+    const nextStockMode = input.stockMode
+      ?? (nextDeliveryMode !== offer.deliveryMode
+        ? (nextDeliveryMode === 'instant_inventory' ? 'limited' : 'unlimited')
+        : offer.stockMode)
+    const nextFixedContentType = input.fixedContentType ?? offer.fixedContentType
+    const nextFixedFileId = 'fixedFileId' in input ? (input.fixedFileId ?? null) : offer.fixedFileId
+    const structuredWrite = 'fixedStructuredContent' in input
+      ? resolveStructuredFixedContent(
+        input.fixedStructuredContent,
+        'fixedContent' in input ? (input.fixedContent ?? null) : offer.fixedContent,
+      )
+      : {
+        fixedContent: 'fixedContent' in input ? (input.fixedContent ?? null) : offer.fixedContent,
+        structured: null,
+      }
+    const nextFixedContent = nextDeliveryMode === 'instant_fixed' ? structuredWrite.fixedContent : null
+
+    if (touchingDelivery) {
+      assertProductDeliveryConfiguration({
+        deliveryMode: nextDeliveryMode,
+        stockMode: nextStockMode,
+        effectiveStock: offer.stock,
+        fixedContent: nextDeliveryMode === 'instant_fixed' ? nextFixedContent : undefined,
+        fixedContentType: nextFixedContentType,
+        fixedFileId: nextFixedFileId,
+        allowFileForm: true,
+      })
+      if (nextFixedFileId != null && nextFixedFileId !== offer.fixedFileId) {
+        await assertPlatformDeliveryFile(tx, nextFixedFileId)
+      }
+    }
 
     const next = await tx.offer.update({
       where: { id: offer.id },
@@ -82,6 +182,24 @@ export async function patchAdminOffer(
         ...('originalPrice' in input ? { originalPrice: input.originalPrice ?? null } : {}),
         ...('validityDays' in input ? { validityDays: input.validityDays ?? null } : {}),
         ...(input.sortOrder != null ? { sortOrder: input.sortOrder } : {}),
+        ...(input.attributes != null ? { attributes: input.attributes as Prisma.InputJsonValue } : {}),
+        ...(touchingDelivery ? {
+          deliveryMode: nextDeliveryMode,
+          stockMode: nextStockMode,
+          fixedContentType: nextFixedContentType,
+          fixedContent: nextFixedContent,
+          ...('fixedFileId' in input ? { fixedFileId: input.fixedFileId ?? null } : {}),
+          ...('fixedStructuredContent' in input
+            ? {
+              fixedStructuredContent: structuredWrite.structured == null
+                ? Prisma.DbNull
+                : structuredWrite.structured as unknown as Prisma.InputJsonValue,
+            }
+            : {}),
+          ...(nextDeliveryMode === 'instant_inventory' && offer.deliveryMode !== 'instant_inventory'
+            ? { stock: 0 }
+            : {}),
+        } : {}),
       },
     })
     await syncProductProjection(tx, productId)
@@ -113,10 +231,10 @@ export async function createPlatformOffer(
     price: number
     originalPrice: number | null
     attributes: Record<string, string | number | boolean | string[]>
-    deliveryMode: 'instant_inventory' | 'instant_fixed' | 'manual_service'
-    stockMode: 'limited' | 'unlimited'
+    deliveryMode: DeliveryMode
+    stockMode: StockMode
     validityDays: number | null
-    fixedContentType: 'text' | 'url' | 'file'
+    fixedContentType: FixedContentType
     fixedContent: string | null
     fixedFileId: number | null
     fixedStructuredContent: unknown
@@ -132,6 +250,19 @@ export async function createPlatformOffer(
     if (input.autoProvision) {
       throw badRequest('平台商品不能开启商家自动开通')
     }
+    const structuredWrite = resolveStructuredFixedContent(input.fixedStructuredContent, input.fixedContent)
+    assertProductDeliveryConfiguration({
+      deliveryMode: input.deliveryMode,
+      stockMode: input.stockMode,
+      effectiveStock: 0,
+      fixedContent: structuredWrite.fixedContent,
+      fixedContentType: input.fixedContentType,
+      fixedFileId: input.fixedFileId,
+      allowFileForm: true,
+    })
+    if (input.fixedFileId != null) {
+      await assertPlatformDeliveryFile(tx, input.fixedFileId)
+    }
     const maxSort = await tx.offer.aggregate({ where: { productId }, _max: { sortOrder: true } })
     const offer = await tx.offer.create({
       data: {
@@ -145,12 +276,18 @@ export async function createPlatformOffer(
         deliveryMode: input.deliveryMode,
         stockMode: input.stockMode,
         stock: 0,
-        fixedContent: input.fixedContent,
+        fixedContent: input.deliveryMode === 'instant_fixed' ? structuredWrite.fixedContent : null,
         fixedContentType: input.fixedContentType,
         fixedFileId: input.fixedFileId,
         validityDays: input.validityDays,
         autoProvision: false,
         attributes: input.attributes as Prisma.InputJsonValue,
+        ...(input.deliveryFields != null
+          ? { deliveryFields: input.deliveryFields as Prisma.InputJsonValue }
+          : {}),
+        ...(structuredWrite.structured
+          ? { fixedStructuredContent: structuredWrite.structured as unknown as Prisma.InputJsonValue }
+          : {}),
       },
     })
     await syncProductProjection(tx, productId)
@@ -409,6 +546,10 @@ function serializeAdminOffer(offer: {
   isDefault: boolean
   sortOrder: number
   validityDays: number | null
+  deliveryMode: string
+  stockMode: string
+  fixedContentType: string
+  fixedFileId: number | null
   externalIntegration: string | null
   externalSku: string | null
 }) {
@@ -422,6 +563,10 @@ function serializeAdminOffer(offer: {
     isDefault: offer.isDefault,
     sortOrder: offer.sortOrder,
     validityDays: offer.validityDays,
+    deliveryMode: offer.deliveryMode,
+    stockMode: offer.stockMode,
+    fixedContentType: offer.fixedContentType,
+    fixedFileId: offer.fixedFileId,
     externalIntegration: offer.externalIntegration,
     externalSku: offer.externalSku,
   }
