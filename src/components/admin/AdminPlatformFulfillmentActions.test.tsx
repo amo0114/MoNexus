@@ -81,6 +81,17 @@ describe('AdminPlatformFulfillmentActions', () => {
       />,
     )
     expect(screen.queryByTestId('admin-platform-fulfillment-actions')).not.toBeInTheDocument()
+    expect(screen.queryByText('开始履约')).not.toBeInTheDocument()
+
+    rerender(
+      <AdminPlatformFulfillmentActions
+        order={platformOrder({
+          product: { id: 7, name: 'Xboard 月卡', deliveryMode: 'manual_service', fakaBridge: true },
+        })}
+      />,
+    )
+    expect(screen.queryByTestId('admin-platform-fulfillment-actions')).not.toBeInTheDocument()
+    expect(screen.queryByText('开始履约')).not.toBeInTheDocument()
 
     rerender(
       <AdminPlatformFulfillmentActions

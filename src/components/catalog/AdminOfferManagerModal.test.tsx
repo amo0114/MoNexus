@@ -137,4 +137,23 @@ describe('AdminOfferManagerModal', () => {
       fixedFileId: null,
     }))
   })
+
+  it('patches merchant-owned offers with governance fields only', async () => {
+    const merchantProduct = {
+      ...product,
+      merchantId: 9,
+      offers: [{ id: 1, name: '商家规格', price: 500, status: 'active', isDefault: true, validityDays: 30, sortOrder: 0 }],
+    } as AdminProductListItem
+    render(<AdminOfferManagerModal product={merchantProduct} onClose={() => undefined} onChanged={() => undefined} />)
+    fireEvent.click(screen.getByTestId('admin-offer-edit-1'))
+    await waitFor(() => expect(screen.getByTestId('admin-offer-form-save')).not.toBeDisabled())
+    fireEvent.change(screen.getByTestId('admin-offer-form-name'), { target: { value: '改名' } })
+    fireEvent.click(screen.getByTestId('admin-offer-form-save'))
+    await waitFor(() => expect(mocks.patchPlatformOffer).toHaveBeenCalledTimes(1))
+    const payload = mocks.patchPlatformOffer.mock.calls[0][2] as Record<string, unknown>
+    expect(payload.name).toBe('改名')
+    expect(payload).not.toHaveProperty('deliveryMode')
+    expect(payload).not.toHaveProperty('fixedContent')
+    expect(payload).not.toHaveProperty('fixedFileId')
+  })
 })

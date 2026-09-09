@@ -260,7 +260,7 @@ export default function AdminOfferManagerModal({ product, onClose, onChanged }: 
           originalPrice: nextOriginal,
           validityDays: nextValidity,
           sortOrder: form.sortOrder.trim() === '' ? undefined : Number(form.sortOrder),
-          ...(lockDelivery ? {} : deliverySnapshot),
+          ...(isPlatformOwned && !lockDelivery ? deliverySnapshot : {}),
           ...(form.checkoutVersion ? { expectedCheckoutVersion: form.checkoutVersion } : {}),
         })
         showToast('规格已更新')

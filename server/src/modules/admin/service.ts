@@ -1032,12 +1032,23 @@ export async function getOrderDetail(orderId: number) {
       user: { select: { id: true, email: true } },
       merchant: { select: { id: true, name: true } },
       product: {
-        select: { id: true, name: true, icon: true, type: true, imageUrl: true, price: true },
+        select: {
+          id: true,
+          name: true,
+          icon: true,
+          type: true,
+          imageUrl: true,
+          price: true,
+          // 仅 id：序列化映射为 product.fakaBridge，原始 link 不进 DTO。
+          externalCatalogLink: { select: { id: true } },
+        },
       },
       // P6：详情补订阅到期时刻，供仲裁判断交付是否仍在有效期内。
       delivery: { select: { content: true, status: true, expiresAt: true } },
       // P7b：仲裁上下文透出自动开通任务态 + 脱敏诊断码（安全投影）。
       provisionTask: { select: { status: true, attempts: true, lastError: true, lastHttpStatus: true, nextAttemptAt: true, merchantNotifiedAt: true, updatedAt: true } },
+      // Xboard/Faka：只投影任务 id，供前端隐藏平台人工履约入口。
+      fakaBridgeTask: { select: { id: true } },
     },
   })
   if (!order) throw notFound('订单不存在')
