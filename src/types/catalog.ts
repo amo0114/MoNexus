@@ -103,6 +103,17 @@ export const CATALOG_ERROR_CODES = {
   CATEGORY_CODE_TAKEN: 'CATEGORY_CODE_TAKEN',
   CATEGORY_LABEL_TAKEN: 'CATEGORY_LABEL_TAKEN',
   CATEGORY_REFERENCED: 'CATEGORY_REFERENCED',
+  PRODUCT_TEMPLATE_INVALID: 'PRODUCT_TEMPLATE_INVALID',
+  PRODUCT_EDITOR_UPGRADE_REQUIRED: 'PRODUCT_EDITOR_UPGRADE_REQUIRED',
+  PRODUCT_LOGIN_REQUIRED: 'PRODUCT_LOGIN_REQUIRED',
+  PRODUCT_CONTENT_CHANGED: 'PRODUCT_CONTENT_CHANGED',
+  OFFER_CHANGED: 'OFFER_CHANGED',
+  PRODUCT_TEMPLATE_LOCKED: 'PRODUCT_TEMPLATE_LOCKED',
+  ASSURANCE_ALREADY_PENDING: 'ASSURANCE_ALREADY_PENDING',
+  ASSURANCE_ALREADY_ACTIVE: 'ASSURANCE_ALREADY_ACTIVE',
+  ASSURANCE_APPLICATION_CLOSED: 'ASSURANCE_APPLICATION_CLOSED',
+  SHARE_LINK_CREATING: 'SHARE_LINK_CREATING',
+  SHARE_LINK_UNAVAILABLE: 'SHARE_LINK_UNAVAILABLE',
 } as const
 export type CatalogErrorCode =
   (typeof CATALOG_ERROR_CODES)[keyof typeof CATALOG_ERROR_CODES]
@@ -112,7 +123,93 @@ export const READINESS_DETAIL_CODES = {
   CATEGORY_INACTIVE: 'CATEGORY_INACTIVE',
   OFFER_NOT_SELLABLE: 'OFFER_NOT_SELLABLE',
   EXTERNAL_IDENTITY_INVALID: 'EXTERNAL_IDENTITY_INVALID',
+  TEMPLATE_FIELDS_REQUIRED: 'TEMPLATE_FIELDS_REQUIRED',
+  PURCHASE_NOTES_REQUIRED: 'PURCHASE_NOTES_REQUIRED',
+  AFTER_SALES_REQUIRED: 'AFTER_SALES_REQUIRED',
+  FULFILLMENT_CONFIG_INVALID: 'FULFILLMENT_CONFIG_INVALID',
 } as const
+
+export const PRODUCT_VISIBILITY = {
+  PUBLIC: 'public',
+  MEMBERS_ONLY: 'members_only',
+} as const
+export type ProductVisibility = (typeof PRODUCT_VISIBILITY)[keyof typeof PRODUCT_VISIBILITY]
+
+export const TEMPLATE_KEYS = [
+  'redemption_code',
+  'account',
+  'digital_file',
+  'fixed_content',
+  'subscription',
+  'manual_service',
+  'appointment',
+] as const
+export type TemplateKey = (typeof TEMPLATE_KEYS)[number]
+
+export const TEMPLATE_WIDGETS = [
+  'text',
+  'textarea',
+  'select',
+  'stringList',
+  'integer',
+] as const
+export type TemplateWidget = (typeof TEMPLATE_WIDGETS)[number]
+
+export type TemplateAttributes = Record<string, string | number | boolean | string[]>
+
+export type ProductDetails = {
+  highlights: string[]
+  usageInstructions: string
+  purchaseNotes: string
+  afterSalesInstructions: string
+  faq: Array<{ question: string; answer: string }>
+}
+
+export const EMPTY_PRODUCT_DETAILS: ProductDetails = {
+  highlights: [],
+  usageInstructions: '',
+  purchaseNotes: '',
+  afterSalesInstructions: '',
+  faq: [],
+}
+
+export type FulfillmentConfiguration =
+  | 'inventory'
+  | 'fixed_text'
+  | 'fixed_url'
+  | 'fixed_file'
+  | 'manual'
+  | 'merchant_webhook'
+  | 'faka_bridge'
+
+export type FulfillmentRule = {
+  whenProductAttributes: Record<string, string | number | boolean>
+  configurations: FulfillmentConfiguration[]
+  requireStructuredDelivery: 'none' | 'inventory_fields' | 'fixed_fields'
+  requireRequiredDateField: boolean
+}
+
+export type ProductTemplateUi = {
+  productOrder: string[]
+  offerOrder: string[]
+  widgets: Record<string, TemplateWidget>
+  enumLabels?: Record<string, Record<string, string>>
+}
+
+export type ProductTemplateDefinition = {
+  key: TemplateKey
+  version: number
+  label: string
+  productSchema: Record<string, unknown>
+  offerSchema: Record<string, unknown>
+  ui: ProductTemplateUi
+  fulfillmentRules: FulfillmentRule[]
+}
+
+export type ProductTemplateRegistryDto = {
+  registryVersion: 1
+  templates: ProductTemplateDefinition[]
+}
 export type ReadinessDetailCode =
   (typeof READINESS_DETAIL_CODES)[keyof typeof READINESS_DETAIL_CODES]
 

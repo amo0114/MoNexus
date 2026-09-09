@@ -141,7 +141,34 @@ export async function syncProductProjection(tx: Client, productId: number) {
  * 版本值会在付款前返回给买家——低熵卡密/常见链接可被离线枚举候选值比对裸摘要
  * 猜出。密钥沿用幂等指纹同一 jwtSecret，买家不可自行计算。
  */
+function isNonEmptyJson(value: Prisma.JsonValue | null | undefined): boolean {
+  if (value == null) return false
+  if (Array.isArray(value)) return value.length > 0
+  if (typeof value === 'object') return Object.keys(value).length > 0
+  return true
+}
+
+function stableJson(value: Prisma.JsonValue): Prisma.JsonValue {
+  if (Array.isArray(value)) {
+    return value.map(item => (item == null ? item : stableJson(item)))
+  }
+  if (value != null && typeof value === 'object') {
+    const sorted: Record<string, Prisma.JsonValue> = {}
+    for (const key of Object.keys(value).sort()) {
+      const entry = value[key]
+      if (entry === undefined) continue
+      sorted[key] = entry === null ? null : stableJson(entry)
+    }
+    return sorted
+  }
+  return value
+}
+
 export function computeOfferCheckoutVersion(offer: Offer): string {
+  const commerce = offer as Offer & {
+    attributes?: Prisma.JsonValue
+    fixedStructuredContent?: Prisma.JsonValue | null
+  }
   const canonical = {
     price: offer.price,
     status: offer.status,
@@ -166,6 +193,11 @@ export function computeOfferCheckoutVersion(offer: Offer): string {
           externalIntegration: (offer as { externalIntegration?: string | null }).externalIntegration,
           externalSku: (offer as { externalSku?: string | null }).externalSku ?? null,
         }
+      : {}),
+    // SPEC-PRODUCT-COMMERCE-002：空对象/空值不进 canonical，存量摘要字节不变。
+    ...(isNonEmptyJson(commerce.attributes) ? { attributes: stableJson(commerce.attributes as Prisma.JsonValue) } : {}),
+    ...(isNonEmptyJson(commerce.fixedStructuredContent)
+      ? { fixedStructuredContent: stableJson(commerce.fixedStructuredContent as Prisma.JsonValue) }
       : {}),
   }
   return createHmac('sha256', config.jwtSecret).update(JSON.stringify(canonical)).digest('hex').slice(0, 16)

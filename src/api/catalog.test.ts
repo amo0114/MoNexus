@@ -3,8 +3,10 @@ import {
   CATALOG_ERROR_CODES,
   PRODUCT_STATUS,
   READINESS_DETAIL_CODES,
+  TEMPLATE_KEYS,
   type CapacityAdjustRequest,
   type DraftProductCreateRequest,
+  type ProductTemplateRegistryDto,
   type VoidInventoryRequest,
 } from '../types/catalog'
 import {
@@ -225,6 +227,14 @@ describe('getReadinessIssueMessage (spec §6.1 stable-code → copy)', () => {
     expect(getReadinessIssueMessage(READINESS_DETAIL_CODES.EXTERNAL_IDENTITY_INVALID)).toBe(
       'XBoard 连接或套餐规格当前不可用，请检查平台连接配置',
     )
+    expect(getReadinessIssueMessage(READINESS_DETAIL_CODES.TEMPLATE_FIELDS_REQUIRED)).toBe(
+      '请先补齐所选商品形态的必填参数',
+    )
+    expect(getReadinessIssueMessage(READINESS_DETAIL_CODES.PURCHASE_NOTES_REQUIRED)).toBe('发布前需要填写购买须知')
+    expect(getReadinessIssueMessage(READINESS_DETAIL_CODES.AFTER_SALES_REQUIRED)).toBe('发布前需要填写售后说明')
+    expect(getReadinessIssueMessage(READINESS_DETAIL_CODES.FULFILLMENT_CONFIG_INVALID)).toBe(
+      '当前套餐履约配置与商品形态不匹配',
+    )
   })
 
   it('falls back safely for unknown codes', () => {
@@ -347,5 +357,37 @@ describe('catalog adapter (typed, transport-injectable)', () => {
     expect(catalogApi).toBeTruthy()
     expect(typeof catalogApi.createDraftProduct).toBe('function')
     expect(typeof catalogApi.publishProduct).toBe('function')
+    expect(typeof catalogApi.listProductTemplates).toBe('function')
+  })
+
+  it('returns an explicit product-template registry DTO without examples', async () => {
+    const registry: ProductTemplateRegistryDto = {
+      registryVersion: 1,
+      templates: [
+        {
+          key: 'redemption_code',
+          version: 1,
+          label: '卡密与兑换码',
+          productSchema: { type: 'object' },
+          offerSchema: { type: 'object' },
+          ui: { productOrder: ['serviceName'], offerOrder: ['unitLabel'], widgets: { serviceName: 'text' } },
+          fulfillmentRules: [{
+            whenProductAttributes: {},
+            configurations: ['inventory'],
+            requireStructuredDelivery: 'none',
+            requireRequiredDateField: false,
+          }],
+        },
+      ],
+    }
+    const transport = createCatalogFixtureTransport({
+      get: { '/product-templates': { ...registry, examples: { leaked: true } } },
+    })
+    const adapter = createCatalogAdapter(transport)
+    const result = await adapter.listProductTemplates()
+    expect(result.registryVersion).toBe(1)
+    expect(result.templates[0]?.key).toBe(TEMPLATE_KEYS[0])
+    expect(result).not.toHaveProperty('examples')
+    expect(JSON.stringify(result)).not.toContain('leaked')
   })
 })

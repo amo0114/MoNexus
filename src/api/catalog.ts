@@ -27,6 +27,7 @@ import {
   type ReadinessIssue,
   type VoidInventoryRequest,
   type VoidInventoryResponse,
+  type ProductTemplateRegistryDto,
 } from '../types/catalog'
 
 /* ------------------------------------------------------------------ *
@@ -55,6 +56,8 @@ const defaultTransport: CatalogTransport = {
  * ------------------------------------------------------------------ */
 
 export interface CatalogAdapter {
+  /** Frozen product-template registry (SPEC-PRODUCT-COMMERCE-002 §4.1). */
+  listProductTemplates(): Promise<ProductTemplateRegistryDto>
   /** Active category registry items (spec §7.1 — only active categories). */
   listActiveCategories(): Promise<CategoryRegistryItem[]>
   /** Create a draft Product + Offers; never carries secret inventory (spec §6.2). */
@@ -75,6 +78,31 @@ export interface CatalogAdapter {
 
 export function createCatalogAdapter(transport: CatalogTransport = defaultTransport): CatalogAdapter {
   return {
+    async listProductTemplates() {
+      const data = await transport.get<ProductTemplateRegistryDto>('/product-templates')
+      return {
+        registryVersion: 1,
+        templates: data.templates.map(template => ({
+          key: template.key,
+          version: template.version,
+          label: template.label,
+          productSchema: template.productSchema,
+          offerSchema: template.offerSchema,
+          ui: {
+            productOrder: template.ui.productOrder,
+            offerOrder: template.ui.offerOrder,
+            widgets: template.ui.widgets,
+            ...(template.ui.enumLabels ? { enumLabels: template.ui.enumLabels } : {}),
+          },
+          fulfillmentRules: template.fulfillmentRules.map(rule => ({
+            whenProductAttributes: rule.whenProductAttributes,
+            configurations: rule.configurations,
+            requireStructuredDelivery: rule.requireStructuredDelivery,
+            requireRequiredDateField: rule.requireRequiredDateField,
+          })),
+        })),
+      }
+    },
     async listActiveCategories() {
       const data = await transport.get<{ productCategories?: CategoryRegistryItem[] }>('/config/registry')
       return data.productCategories ?? []
@@ -276,6 +304,14 @@ export function getReadinessIssueMessage(
       return offerName ? `“${offerName}”当前不可售` : '有规格当前不可售'
     case READINESS_DETAIL_CODES.EXTERNAL_IDENTITY_INVALID:
       return 'XBoard 连接或套餐规格当前不可用，请检查平台连接配置'
+    case READINESS_DETAIL_CODES.TEMPLATE_FIELDS_REQUIRED:
+      return '请先补齐所选商品形态的必填参数'
+    case READINESS_DETAIL_CODES.PURCHASE_NOTES_REQUIRED:
+      return '发布前需要填写购买须知'
+    case READINESS_DETAIL_CODES.AFTER_SALES_REQUIRED:
+      return '发布前需要填写售后说明'
+    case READINESS_DETAIL_CODES.FULFILLMENT_CONFIG_INVALID:
+      return '当前套餐履约配置与商品形态不匹配'
     default:
       return '发布条件尚未全部满足'
   }

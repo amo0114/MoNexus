@@ -89,6 +89,10 @@ model User {
   editorialFeaturesRevoked EditorialFeature[]    @relation("EditorialRevokedBy")
   entitlementsGranted      MerchantEntitlement[] @relation("EntitlementGrantedBy")
   entitlementsRevoked      MerchantEntitlement[] @relation("EntitlementRevokedBy")
+  deliveryFilesUploaded              DeliveryFile[]                 @relation("DeliveryFileUploadedBy")
+  assuranceApplicationsReviewed      ProductAssuranceApplication[]  @relation("AssuranceApplicationReviewedBy")
+  assuranceGrantsGranted             ProductAssuranceGrant[]        @relation("AssuranceGrantGrantedBy")
+  assuranceGrantsRevoked             ProductAssuranceGrant[]        @relation("AssuranceGrantRevokedBy")
 
   // SPEC-RECHARGE-PAYMENT-V1.2
   rechargeQuotes                   RechargeQuote[]
@@ -286,6 +290,7 @@ model Merchant {
   categoryApplications CategoryApplication[]
   promotionCampaigns   PromotionCampaign[]
   entitlements         MerchantEntitlement[]
+  assuranceApplications ProductAssuranceApplication[]
 }
 
 // P7b：商家自动开通 webhook 配置（版本化）。轮换/撤销 = 旧行置 revoked +
@@ -522,6 +527,15 @@ model Product {
   archivedByUserId   Int?
   archiveReason      String?
 
+  // SPEC-PRODUCT-COMMERCE-002 §3.1 — versioned template/content. Null template
+  // is legacy unclassified or the limited old-create compatibility window.
+  templateKey     String?
+  templateVersion Int?
+  attributes      Json    @default("{}")
+  details         Json    @default("{\"highlights\":[],\"usageInstructions\":\"\",\"purchaseNotes\":\"\",\"afterSalesInstructions\":\"\",\"faq\":[]}")
+  visibility      String  @default("members_only") // public | members_only
+  contentVersion  Int     @default(1)
+
   merchant      Merchant?       @relation(fields: [merchantId], references: [id])
   reviews       Review[]
   orders        Order[]
@@ -536,11 +550,16 @@ model Product {
   merchandisingSnapshots ProductMerchandisingSnapshot[]
   promotionCampaigns     PromotionCampaign[]
   editorialFeatures      EditorialFeature[]
+  shareLink              ProductShareLink?
+  assuranceApplications  ProductAssuranceApplication[]
+  assuranceGrants        ProductAssuranceGrant[]
 
   @@index([status, isHot, sales, id])
   @@index([categoryId])
   @@index([archivedAt])
   @@index([createdAt, id])
+  @@index([visibility, status])
+  @@index([templateKey, templateVersion])
 }
 
 // SKU/套餐（P4a）：价格、库存与履约配置的真相源（spec §2：Fulfillment 绑定
@@ -593,6 +612,9 @@ model Offer {
   // 与 autoProvision 互斥（迁移 CHECK + 服务端拒绝冲突组合）。
   externalIntegration String? // null | faka_bridge
   externalSku         String? // e.g. aster-basic-monthly — Xboard plugin SKU_MAPPING
+  // SPEC-PRODUCT-COMMERCE-002 §3.2 / §4.4
+  attributes              Json  @default("{}")
+  fixedStructuredContent  Json?
   createdAt           DateTime @default(now())
 
   product        Product         @relation(fields: [productId], references: [id])
@@ -786,6 +808,8 @@ model Order {
   // 审计链的一部分，原订单行不可删。
   renewalOfOrderId        Int?
   createdAt               DateTime  @default(now())
+  // SPEC-PRODUCT-COMMERCE-002 §3.3 — frozen at order creation. Historical rows stay null.
+  productContentSnapshot  Json?
 
   user           User               @relation(fields: [userId], references: [id])
   product        Product            @relation(fields: [productId], references: [id])
@@ -1041,14 +1065,18 @@ model DeliveryFile {
   size              Int
   mimeType          String
   sha256            String
-  merchantId        Int
+  merchantId        Int?
+  // SPEC-PRODUCT-COMMERCE-002 §3.4 — real upload actor from this round onward.
+  // Historical unknown actors stay null; never backfill Merchant.userId.
+  uploadedByUserId  Int?
   status            String    @default("active")
   createdAt         DateTime  @default(now())
   deletedAt         DateTime?
   // SPEC-STORAGE-001：写入时绑定的提供商；null = legacy env 底座
   storageProviderId Int?
 
-  merchant        Merchant               @relation(fields: [merchantId], references: [id])
+  merchant        Merchant?              @relation(fields: [merchantId], references: [id], onDelete: Restrict)
+  uploadedByUser  User?                  @relation("DeliveryFileUploadedBy", fields: [uploadedByUserId], references: [id], onDelete: Restrict)
   offers          Offer[]                @relation("OfferFixedFile")
   deliveryRecords DeliveryRecord[]       @relation("DeliveryRecordFile")
   grants          FileGrantLog[]
@@ -1057,6 +1085,7 @@ model DeliveryFile {
   @@index([merchantId, status])
   @@index([key])
   @@index([storageProviderId])
+  @@index([uploadedByUserId])
 }
 
 // P5：签名发放审计——granted 与 denied 全记，行永不删除。隐私边界：
@@ -1296,6 +1325,12 @@ model ExternalCatalogLink {
   importedByUserId  Int
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
+  // SPEC-PRODUCT-COMMERCE-002 §8.2 — source description observation, not public DTO.
+  latestDescriptionHash   String?
+  latestDescriptionHtml   String?
+  latestDescriptionText   String?
+  descriptionCheckedAt    DateTime?
+  acceptedDescriptionHash String?
 
   product        Product @relation(fields: [productId], references: [id], onDelete: Cascade)
   importedByUser User    @relation(fields: [importedByUserId], references: [id], onDelete: Restrict)
@@ -1320,6 +1355,68 @@ model ExternalCatalogSyncIdempotency {
 
   @@unique([provider, idempotencyKey])
   @@index([productId])
+}
+
+// SPEC-PRODUCT-COMMERCE-002 §6.5 — one canonical short link per product.
+// CHECKs (ready requires url; creating requires lease+attempt) live in SQL.
+model ProductShareLink {
+  productId    Int       @id
+  status       String
+  attemptToken String?   @db.Uuid
+  leaseUntil   DateTime?
+  url          String?
+  targetUrl    String
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+}
+
+// SPEC-PRODUCT-COMMERCE-002 §7.1 — merchant application for platform assurance.
+// Partial unique: one pending row per productId (SQL only).
+model ProductAssuranceApplication {
+  id               Int       @id @default(autoincrement())
+  productId        Int
+  merchantId       Int
+  reason           String
+  status           String
+  reviewReason     String?
+  reviewedByUserId Int?
+  reviewedAt       DateTime?
+  createdAt        DateTime  @default(now())
+
+  product        Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
+  merchant       Merchant @relation(fields: [merchantId], references: [id], onDelete: Restrict)
+  reviewedByUser User?    @relation("AssuranceApplicationReviewedBy", fields: [reviewedByUserId], references: [id], onDelete: Restrict)
+  grant          ProductAssuranceGrant?
+
+  @@index([productId, status])
+  @@index([merchantId, status])
+}
+
+// SPEC-PRODUCT-COMMERCE-002 §7.1 — granted platform assistance. Historical rows
+// are retained; partial unique keeps at most one active grant per product.
+model ProductAssuranceGrant {
+  id              Int       @id @default(autoincrement())
+  productId       Int
+  applicationId   Int?      @unique
+  status          String
+  policyCode      String
+  validFrom       DateTime
+  validUntil      DateTime
+  grantedByUserId Int
+  grantReason     String
+  revokedAt       DateTime?
+  revokedByUserId Int?
+  revokeReason    String?
+  createdAt       DateTime  @default(now())
+
+  product        Product                      @relation(fields: [productId], references: [id], onDelete: Restrict)
+  application    ProductAssuranceApplication? @relation(fields: [applicationId], references: [id], onDelete: Restrict)
+  grantedByUser  User                         @relation("AssuranceGrantGrantedBy", fields: [grantedByUserId], references: [id], onDelete: Restrict)
+  revokedByUser  User?                        @relation("AssuranceGrantRevokedBy", fields: [revokedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([productId, status])
 }
 
 // 自然热卖排名 run（SPEC-MERCH-001 §5.1）。UUID PK；全局 single-running

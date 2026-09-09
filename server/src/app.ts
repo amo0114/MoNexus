@@ -38,6 +38,7 @@ import { merchantPromotionRouter, adminPromotionRouter } from './modules/merchan
 import { merchantEntitlementRouter, adminEntitlementRouter } from './modules/merchandising/entitlements/routes.js'
 import { merchandisingAdminRouter } from './integrations/cmi/merchandisingAdminRoutes.js'
 import { paymentWebhookRoutes } from './modules/payment/webhooks/routes.js'
+import { productTemplateRoutes } from './modules/catalog/templates/routes.js'
 
 const app = express()
 
@@ -164,6 +165,7 @@ app.use('/api/merchant', merchantEntitlementRouter)
 // /delivery-signed/:token。
 app.use('/api/uploads', deliveryFileRoutes)
 app.use('/api/uploads', uploadsRoutes)
+app.use('/api/product-templates', productTemplateRoutes)
 app.use('/api/config', configRoutes)
 app.use('/api/legal', legalRoutes)
 app.use('/api/announcements', announcementRoutes)
