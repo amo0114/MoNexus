@@ -205,6 +205,7 @@ describe('Faka capacity public-read cache', () => {
           price: 100,
           stock: 0,
           status: 'active',
+          visibility: 'public',
           deliveryMode: 'manual_service',
           stockMode: 'unlimited',
         },

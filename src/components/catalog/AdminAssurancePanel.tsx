@@ -29,8 +29,8 @@ export default function AdminAssurancePanel({ productId }: { productId: number |
       listAdminAssuranceApplications({ status: 'pending', pageSize: 20 }),
       productId ? getAdminProductAssurance(productId) : Promise.resolve({ application: null, grant: null }),
     ])
-    setApplications(list.items)
-    setGrant(current.grant)
+    setApplications(Array.isArray(list.items) ? list.items : [])
+    setGrant(current.grant ?? null)
   }
 
   useEffect(() => {
