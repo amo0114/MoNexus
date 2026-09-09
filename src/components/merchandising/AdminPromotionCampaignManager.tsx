@@ -866,14 +866,14 @@ export default function AdminPromotionCampaignManager({
           if (!open) setDetailTarget(null)
         }}
       >
-        <DialogContent className="max-w-xl">
+        <DialogContent className="max-w-xl min-w-0 break-all break-words overflow-hidden">
           <DialogTitle>推广活动详情</DialogTitle>
           <DialogDescription>
             活动 #{detailTarget?.id} 完整快照、时间线与审核信息
           </DialogDescription>
           {detailTarget && (
-            <div className="space-y-4 mt-4 text-xs">
-              <div className="grid grid-cols-2 gap-3 p-3 rounded bg-[var(--color-surface)] border border-[var(--color-border)]">
+            <div className="space-y-4 mt-4 text-xs min-w-0 break-words">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 rounded bg-[var(--color-surface)] border border-[var(--color-border)] min-w-0">
                 <div>
                   <span className="text-[var(--color-text-muted)]">活动 ID：</span>
                   <span className="font-mono font-medium">#{detailTarget.id}</span>
@@ -890,9 +890,9 @@ export default function AdminPromotionCampaignManager({
                   <span className="text-[var(--color-text-muted)]">商品 ID：</span>
                   <span className="font-mono">{detailTarget.productId}</span>
                 </div>
-                <div>
+                <div className="min-w-0">
                   <span className="text-[var(--color-text-muted)]">套餐规格：</span>
-                  <span>{detailTarget.packageCodeSnapshot} (ID {detailTarget.packageId})</span>
+                  <span className="break-all">{detailTarget.packageCodeSnapshot} (ID {detailTarget.packageId})</span>
                 </div>
                 <div>
                   <span className="text-[var(--color-text-muted)]">推广展位：</span>
@@ -916,9 +916,9 @@ export default function AdminPromotionCampaignManager({
                 </div>
               </div>
 
-              <div className="p-3 rounded bg-[var(--color-surface)] border border-[var(--color-border)] space-y-1.5">
+              <div className="p-3 rounded bg-[var(--color-surface)] border border-[var(--color-border)] space-y-1.5 min-w-0">
                 <div className="font-medium text-[var(--color-text)] mb-1">投放与时间线</div>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 min-w-0">
                   <div>
                     <span className="text-[var(--color-text-muted)]">创建时间：</span>
                     <time dateTime={detailTarget.createdAt}>{formatDateTime(detailTarget.createdAt)}</time>
@@ -935,17 +935,17 @@ export default function AdminPromotionCampaignManager({
                     <span className="text-[var(--color-text-muted)]">实际开始：</span>
                     <span>{formatMaybeDate(detailTarget.startsAt)}</span>
                   </div>
-                  <div className="col-span-2">
+                  <div className="sm:col-span-2">
                     <span className="text-[var(--color-text-muted)]">实际结束：</span>
                     <span>{formatMaybeDate(detailTarget.endsAt)}</span>
                   </div>
                 </div>
               </div>
 
-              <div className="p-3 rounded bg-[var(--color-surface)] border border-[var(--color-border)] space-y-2">
+              <div className="p-3 rounded bg-[var(--color-surface)] border border-[var(--color-border)] space-y-2 min-w-0">
                 <div className="font-medium text-[var(--color-text)]">审核与取消追溯</div>
-                <div className="space-y-1.5 border-b border-[var(--color-border)] pb-2">
-                  <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1.5 border-b border-[var(--color-border)] pb-2 min-w-0">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 min-w-0">
                     <div>
                       <span className="text-[var(--color-text-muted)]">审核人 ID：</span>
                       <span className="font-mono">{detailTarget.reviewedByUserId ?? '—'}</span>
@@ -955,21 +955,21 @@ export default function AdminPromotionCampaignManager({
                       <span>{formatMaybeDate(detailTarget.reviewedAt)}</span>
                     </div>
                   </div>
-                  <div>
+                  <div className="min-w-0">
                     <span className="text-[var(--color-text-muted)]">审核意见：</span>
-                    <span>{detailTarget.reviewReason ?? '—'}</span>
+                    <span className="break-all break-words">{detailTarget.reviewReason ?? '—'}</span>
                   </div>
                 </div>
-                <div className="space-y-1.5 pt-1">
-                  <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1.5 pt-1 min-w-0">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 min-w-0">
                     <div>
                       <span className="text-[var(--color-text-muted)]">取消人 ID：</span>
                       <span className="font-mono">{detailTarget.cancelledByUserId ?? '—'}</span>
                     </div>
                   </div>
-                  <div>
+                  <div className="min-w-0">
                     <span className="text-[var(--color-text-muted)]">取消原因：</span>
-                    <span>{detailTarget.cancellationReason ?? '—'}</span>
+                    <span className="break-all break-words">{detailTarget.cancellationReason ?? '—'}</span>
                   </div>
                 </div>
               </div>
