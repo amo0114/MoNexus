@@ -569,6 +569,13 @@ describe('buildCreateProductV2Request (SPEC-PRODUCT-COMMERCE-002 §9.1)', () => 
   it('requires at least one offer', () => {
     expect(() => buildCreateProductV2Request({ ...base, offers: [] })).toThrow(/at least one offer/)
   })
+
+  it('forwards provided purchaseForm and defaults to []', () => {
+    expect(buildCreateProductV2Request(base).purchaseForm).toEqual([])
+    const purchaseForm = [{ key: 'contact', label: '联系方式', type: 'text', required: true }]
+    const payload = buildCreateProductV2Request({ ...base, purchaseForm })
+    expect(payload.purchaseForm).toEqual(purchaseForm)
+  })
 })
 
 const editorFixture: ProductEditorDto = {

@@ -95,6 +95,7 @@ import {
 } from '../../types/catalog'
 import { useAppStore } from '../../stores/appStore'
 import { uploadImage } from '../../api/uploads'
+import { serializePurchaseFormFields } from '../../components/merchant/PurchaseFormFieldsEditor'
 
 const mockedUpload = vi.mocked(uploadImage)
 
@@ -286,6 +287,42 @@ describe('ProductCreateWizard draft flow (editorVersion 2)', () => {
       const voidCall = transport.calls.find(c => c.url === '/merchant/products/101/inventory/void')
       expect(voidCall?.body).toMatchObject({ offerId: 42, count: 1, reason: '过期库存' })
     })
+  })
+
+  it('sends serialized purchaseForm when the merchant added a field', async () => {
+    const transport = await renderWizard({
+      get: { '/merchant/products/101/offers': catalogFixtureOffers },
+      post: { '/merchant/products': v2Created },
+    })
+    fireEvent.click(screen.getByTestId('template-redemption_code'))
+    fireEvent.click(screen.getByTestId('wizard-next'))
+    fireEvent.change(screen.getByTestId('wizard-name'), { target: { value: '节点套餐' } })
+    const categorySelect = screen.getByTestId('product-category-select')
+    await waitFor(() => expect(categorySelect).not.toBeDisabled())
+    fireEvent.change(categorySelect, { target: { value: '3' } })
+
+    expect(screen.getByTestId('wizard-purchase-form')).toBeInTheDocument()
+    fireEvent.click(screen.getByTestId('add-form-field'))
+    fireEvent.change(screen.getByTestId('form-field-label-0'), { target: { value: '联系方式' } })
+    const required = screen.getByTestId('form-field-list').querySelector('input[type="checkbox"]')
+    expect(required).toBeTruthy()
+    fireEvent.click(required!)
+
+    fireEvent.click(screen.getByTestId('wizard-next'))
+    fireEvent.change(screen.getByTestId('wizard-price'), { target: { value: '100' } })
+    fireEvent.click(screen.getByTestId('wizard-next'))
+    fireEvent.click(screen.getByTestId('wizard-next'))
+    fireEvent.click(screen.getByTestId('wizard-save-draft'))
+
+    await waitFor(() => expect(screen.getByTestId('product-availability-step')).toBeInTheDocument())
+    const createCall = transport.calls.find(c => c.method === 'post' && c.url === '/merchant/products')
+    const body = createCall!.body as { purchaseForm: unknown }
+    expect(body.purchaseForm).toEqual(serializePurchaseFormFields([{
+      key: 'field_1',
+      label: '联系方式',
+      type: 'text',
+      required: true,
+    }]))
   })
 
   it('is idempotent: re-submitting an already-saved draft never creates a second one', async () => {

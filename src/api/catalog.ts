@@ -463,6 +463,7 @@ export type CreateProductV2Input = {
   visibility?: ProductVisibility
   attributes?: TemplateAttributes
   details?: ProductDetails
+  purchaseForm?: unknown[]
   offers: CreateProductV2OfferInput[]
   type?: string
   isHot?: boolean
@@ -675,7 +676,7 @@ export function buildCreateProductV2Request(input: CreateProductV2Input): Create
     visibility: input.visibility === 'public' ? 'public' : 'members_only',
     attributes: sanitizeTemplateAttributes(input.attributes),
     details: input.details ? sanitizeProductDetails(input.details) : { ...EMPTY_PRODUCT_DETAILS },
-    purchaseForm: [],
+    purchaseForm: Array.isArray(input.purchaseForm) ? input.purchaseForm : [],
     offers: input.offers.map(sanitizeV2Offer),
   }
 }

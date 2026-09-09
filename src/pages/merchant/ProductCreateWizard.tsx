@@ -11,6 +11,10 @@ import ProductCategorySelect from '../../components/catalog/ProductCategorySelec
 import ProductAvailabilityStep from '../../components/catalog/ProductAvailabilityStep'
 import ProductPublicationChecklist from '../../components/catalog/ProductPublicationChecklist'
 import ProductImageUploader from '../../components/merchant/ProductImageUploader'
+import PurchaseFormFieldsEditor, {
+  serializePurchaseFormFields,
+  validatePurchaseFormFields,
+} from '../../components/merchant/PurchaseFormFieldsEditor'
 import TemplateAttributeFields from '../../components/catalog/TemplateAttributeFields'
 import ProductDetailsFields from '../../components/catalog/ProductDetailsFields'
 import {
@@ -34,7 +38,7 @@ import {
   type TemplateAttributes,
   type TemplateKey,
 } from '../../types/catalog'
-import type { DeliveryMode, StockMode } from '../../types/merchant'
+import type { DeliveryMode, PurchaseFormField, StockMode } from '../../types/merchant'
 
 const RichTextEditor = lazy(() => import('../../components/catalog/RichTextEditor'))
 
@@ -92,8 +96,8 @@ interface DeliverySelection {
  * 步骤拆分（REQ-CAT-F-003）：目录/规格 → 保存草稿 → 可售量 → 发布。
  * 可售量与发布只有在草稿保存（保留 productId）后才可达。
  *
- * 购买前表单不进入 v2 create（purchaseForm 固定 []）；草稿创建后通过
- * 商品编辑流程配置。
+ * 购买前表单在「展示信息」步配置，随 editorVersion:2 create 一并提交；
+ * 草稿允许空表单。
  */
 const STEPS = ['选择模板', '展示信息', '定价', '交付方式', '确认草稿', '可售量', '发布'] as const
 const LAST_STEP = STEPS.length - 1
@@ -141,6 +145,7 @@ export default function ProductCreateWizard({ adapter = catalogApi }: Props) {
   })
   const [productAttributes, setProductAttributes] = useState<TemplateAttributes>({})
   const [productDetails, setProductDetails] = useState<ProductDetails>(EMPTY_PRODUCT_DETAILS)
+  const [purchaseForm, setPurchaseForm] = useState<PurchaseFormField[]>([])
   const [primaryOfferName, setPrimaryOfferName] = useState(DEFAULT_OFFER_NAME)
   const [primaryOfferAttributes, setPrimaryOfferAttributes] = useState<TemplateAttributes>({})
   const [extraOffers, setExtraOffers] = useState<ExtraOffer[]>([])
@@ -242,6 +247,8 @@ export default function ProductCreateWizard({ adapter = catalogApi }: Props) {
     if (current === 1) {
       if (!form.name.trim()) return '商品名称不能为空'
       if (form.categoryId == null) return '请选择商品分类'
+      const formError = validatePurchaseFormFields(purchaseForm)
+      if (formError) return formError
     }
     if (current === 2) {
       const price = Number(form.price)
@@ -358,6 +365,7 @@ export default function ProductCreateWizard({ adapter = catalogApi }: Props) {
         visibility: form.visibility,
         attributes: productAttributes,
         details: productDetails,
+        purchaseForm: serializePurchaseFormFields(purchaseForm),
         offers: [
           buildOfferInput({
             name: primaryOfferName.trim() || DEFAULT_OFFER_NAME,
@@ -647,6 +655,10 @@ export default function ProductCreateWizard({ adapter = catalogApi }: Props) {
               disabled={busy}
               mode="draft"
             />
+            <div data-testid="wizard-purchase-form">
+              <FieldLabel>购买资料</FieldLabel>
+              <PurchaseFormFieldsEditor fields={purchaseForm} onChange={setPurchaseForm} />
+            </div>
           </div>
         )}
 
