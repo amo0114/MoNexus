@@ -8,11 +8,12 @@ import { resolvePlatformPublicImage, type PlatformMediaRef, type ResolvedPlatfor
 import { getProductTemplate } from './templates/registry.js'
 import { evaluateTemplateFulfillment } from './templates/fulfillmentStrategy.js'
 import { validateTemplateAttributes } from './templates/validate.js'
-import { EMPTY_PRODUCT_DETAILS } from './templates/types.js'
+import { EMPTY_PRODUCT_DETAILS, type TemplateKey } from './templates/types.js'
 import type { CreateProductV2Input, PatchProductContentInput } from './productV2Schema.js'
-import { syncProductProjection } from '../../lib/offers.js'
+import { computeOfferCheckoutVersion, syncProductProjection } from '../../lib/offers.js'
 import { invalidateProductPublicCache } from '../products/cache.js'
-import { sanitizeCatalogRichContent } from './contentSanitizer.js'
+import { listPersistedDescriptionImages, sanitizeProductRichContent } from './contentSanitizer.js'
+import { assertOwnedActiveDeliveryFile } from './deliveryFileOwnership.js'
 import { checkProductReadiness } from './publicationReadiness.js'
 import { canonicalFixedStructuredText, normalizeFixedStructuredContent } from './structuredFixedContent.js'
 import { lockProductRow } from '../admin/productLifecycle.js'
@@ -23,6 +24,15 @@ export type ProductWriteActor =
 
 function templateInvalid(message: string, details?: Array<{ field: string; message: string }>): never {
   throw new HttpError(400, CATALOG_ERROR_CODES.PRODUCT_TEMPLATE_INVALID as ErrorCode, message, details)
+}
+
+function templateLocked(message: string): never {
+  throw new HttpError(400, CATALOG_ERROR_CODES.PRODUCT_TEMPLATE_LOCKED as ErrorCode, message)
+}
+
+function resolveWritableTemplate(key: string | null | undefined, version: number | null | undefined) {
+  if (key == null || version == null) return null
+  return getProductTemplate(key as TemplateKey, version)
 }
 
 export async function createProductFromV2(
@@ -61,7 +71,7 @@ export async function createProductFromV2(
         description: input.description,
         richDescription: input.richDescription === ''
           ? null
-          : sanitizeCatalogRichContent(input.richDescription),
+          : sanitizeProductRichContent(input.richDescription, input.descriptionImages),
         categoryId,
         type,
         imageUrl: resolvedImages[0]?.canonicalUrl ?? null,
@@ -145,6 +155,9 @@ export async function createProductFromV2(
       if (structured && offerInput.fixedContent != null) {
         throw new HttpError(400, 'BAD_REQUEST', '结构化固定内容与 fixedContent 不能同时提交')
       }
+      if (offerInput.fixedFileId != null) {
+        await assertOwnedActiveDeliveryFile(tx, actor, offerInput.fixedFileId)
+      }
       await tx.offer.create({
         data: {
           productId: created.id,
@@ -219,7 +232,7 @@ export async function patchProductContent(
   if (Object.prototype.hasOwnProperty.call(input, 'richDescription')) {
     data.richDescription = input.richDescription === ''
       ? null
-      : sanitizeCatalogRichContent(input.richDescription)
+      : sanitizeProductRichContent(input.richDescription, input.descriptionImages ?? [])
     updatedFields.push('richDescription')
   }
   if (input.visibility !== undefined) {
@@ -234,14 +247,36 @@ export async function patchProductContent(
     data.purchaseForm = input.purchaseForm as unknown as Prisma.InputJsonValue
     updatedFields.push('purchaseForm')
   }
+
+  const assigningTemplate = input.templateKey !== undefined || input.templateVersion !== undefined
+  if (assigningTemplate) {
+    if (input.templateKey === undefined || input.templateVersion === undefined) {
+      templateInvalid('templateKey 与 templateVersion 必须同时提供')
+    }
+    if (owned.templateKey != null || owned.templateVersion != null) {
+      templateLocked('商品形态一经设定不可更换')
+    }
+    if (!resolveWritableTemplate(input.templateKey, input.templateVersion)) {
+      templateInvalid('未知的商品模板或版本')
+    }
+    data.templateKey = input.templateKey
+    data.templateVersion = input.templateVersion
+    updatedFields.push('templateKey', 'templateVersion')
+    if (input.attributes === undefined) {
+      data.attributes = {}
+    }
+  }
+
+  const nextTemplateKey = input.templateKey ?? owned.templateKey
+  const nextTemplateVersion = input.templateVersion ?? owned.templateVersion
   if (input.attributes !== undefined) {
-    if (!owned.templateKey || owned.templateVersion == null) {
+    if (!nextTemplateKey || nextTemplateVersion == null) {
       templateInvalid('请先补充商品形态再保存模板参数')
     }
     const mode = owned.status === 'active' ? 'publish' : 'draft'
     const validated = validateTemplateAttributes({
-      templateKey: owned.templateKey,
-      templateVersion: owned.templateVersion,
+      templateKey: nextTemplateKey,
+      templateVersion: nextTemplateVersion,
       attributes: input.attributes,
       mode,
       target: 'product',
@@ -285,10 +320,15 @@ export async function patchProductContent(
     if (current.contentVersion !== input.expectedContentVersion) {
       throw new HttpError(409, CATALOG_ERROR_CODES.PRODUCT_CONTENT_CHANGED as ErrorCode, '商品内容已更新，请刷新后重试')
     }
+    if (assigningTemplate && (current.templateKey != null || current.templateVersion != null)) {
+      templateLocked('商品形态一经设定不可更换')
+    }
     if (current.status === 'active' && input.attributes !== undefined) {
-      const template = current.templateKey && current.templateVersion != null
-        ? getProductTemplate(current.templateKey as 'redemption_code', current.templateVersion)
-        : null
+      const templateKey = (typeof data.templateKey === 'string' ? data.templateKey : current.templateKey)
+      const templateVersion = typeof data.templateVersion === 'number'
+        ? data.templateVersion
+        : current.templateVersion
+      const template = resolveWritableTemplate(templateKey, templateVersion)
       if (template) {
         const publish = validateTemplateAttributes({
           templateKey: template.key,
@@ -372,6 +412,7 @@ export async function getProductEditor(actor: ProductWriteActor, productId: numb
       deliveryFields: offer.deliveryFields,
       autoProvision: offer.autoProvision,
       attributes: offer.attributes,
+      checkoutVersion: computeOfferCheckoutVersion(offer),
       ...secrets,
     }
   })
@@ -388,7 +429,7 @@ export async function getProductEditor(actor: ProductWriteActor, productId: numb
       categoryId: product.categoryId,
       description: product.description,
       richDescription: product.richDescription,
-      descriptionImages: [],
+      descriptionImages: listPersistedDescriptionImages(product.richDescription),
       images: product.images.map(url => ({ url, ref: null })),
       visibility: product.visibility,
       attributes: product.attributes,

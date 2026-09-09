@@ -55,6 +55,7 @@ export const createProductV2Schema = z.object({
 }).strict()
 
 export type CreateProductV2Input = z.infer<typeof createProductV2Schema>
+export type DescriptionImageRef = z.infer<typeof descriptionImageRefSchema>
 
 export const patchProductContentSchema = z.object({
   expectedContentVersion: z.number().int().positive(),
@@ -68,7 +69,18 @@ export const patchProductContentSchema = z.object({
   attributes: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.array(z.string())])).optional(),
   details: productDetailsSchema.optional(),
   purchaseForm: purchaseFormSchema.optional(),
-}).strict()
+  templateKey: z.enum(TEMPLATE_KEYS).optional(),
+  templateVersion: z.literal(1).optional(),
+}).strict().superRefine((value, ctx) => {
+  const hasKey = value.templateKey !== undefined
+  const hasVersion = value.templateVersion !== undefined
+  if (hasKey === hasVersion) return
+  ctx.addIssue({
+    code: z.ZodIssueCode.custom,
+    message: 'templateKey 与 templateVersion 必须同时提供',
+    path: hasKey ? ['templateVersion'] : ['templateKey'],
+  })
+})
 
 export type PatchProductContentInput = z.infer<typeof patchProductContentSchema>
 
