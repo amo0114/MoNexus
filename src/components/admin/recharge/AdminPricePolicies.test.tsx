@@ -71,7 +71,7 @@ describe('AdminPricePolicies', () => {
 
     fireEvent.click(screen.getByTestId('admin-price-policy-create'))
     fireEvent.click(screen.getByTestId('admin-price-policy-fill-example'))
-    expect(screen.getByTestId('admin-price-policy-rate-preview')).toHaveTextContent('1 PTS / 1 分')
+    expect(screen.getByTestId('admin-price-policy-rate-preview')).toHaveTextContent('每 1 分人民币兑换 1 积分')
     expect(screen.getByTestId('admin-price-policy-rate-preview')).toHaveTextContent('¥10.00 → 1000 积分')
     fireEvent.click(screen.getByTestId('admin-price-policy-submit'))
     await waitFor(() => expect(createAdminPricePolicy).toHaveBeenCalledWith(expect.objectContaining({
@@ -82,16 +82,23 @@ describe('AdminPricePolicies', () => {
     expect(screen.getByText('草稿')).toBeInTheDocument()
   })
 
-  it('activates a draft policy after confirmation', async () => {
+  it('activates a draft policy after confirmation and views details', async () => {
     const draft = policy()
     listAdminPricePolicies.mockResolvedValue({ page: 1, pageSize: 50, total: 1, items: [draft] })
     activateAdminPricePolicy.mockResolvedValue({ ...draft, status: 'active' })
     render(<AdminPricePolicies />)
-    expect(await screen.findByText('1 PTS / 1 分')).toBeInTheDocument()
+    expect(await screen.findByText('每 1 分人民币兑换 1 积分')).toBeInTheDocument()
     expect(screen.getByText('¥10.00 → 1000 积分')).toBeInTheDocument()
+
+    // Test detail dialog
+    fireEvent.click(screen.getByTestId('admin-price-policy-detail-rp-cny-vmqfox-v1'))
+    expect(await screen.findByText('价格政策详情')).toBeInTheDocument()
+    expect(screen.getByText('Asia/Shanghai')).toBeInTheDocument()
+    fireEvent.click(screen.getByTestId('admin-price-policy-detail-close'))
+
     fireEvent.click(screen.getByTestId('admin-price-policy-activate-rp-cny-vmqfox-v1'))
     expect(screen.getByText('激活草稿 rp-cny-vmqfox-v1？')).toBeInTheDocument()
-    expect(screen.getByText(/1 PTS \/ 1 分；¥10\.00 → 1000 积分/)).toBeInTheDocument()
+    expect(screen.getByText(/每 1 分人民币兑换 1 积分；¥10\.00 → 1000 积分/)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '确认激活' }))
     await waitFor(() => expect(activateAdminPricePolicy).toHaveBeenCalledWith(draft.id))
   })
