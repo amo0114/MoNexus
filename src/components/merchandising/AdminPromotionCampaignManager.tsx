@@ -866,7 +866,7 @@ export default function AdminPromotionCampaignManager({
           if (!open) setDetailTarget(null)
         }}
       >
-        <DialogContent className="max-w-xl min-w-0 break-all break-words overflow-hidden">
+        <DialogContent className="max-w-xl min-w-0 break-words overflow-y-auto">
           <DialogTitle>推广活动详情</DialogTitle>
           <DialogDescription>
             活动 #{detailTarget?.id} 完整快照、时间线与审核信息
