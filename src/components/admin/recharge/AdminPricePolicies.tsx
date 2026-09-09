@@ -90,7 +90,7 @@ function activateConfirmCopy(target: AdminPricePolicy, currentActive: AdminPrice
   description: string
 } {
   const preview = previewTenYuanCredit(target)
-  const ratio = formatFenPointRatio(target.pointsNumerator, target.pointsDenominator)
+  const ratio = preview?.ratio ?? formatFenPointRatio(target.pointsNumerator, target.pointsDenominator, target.currency)
   const rate = [ratio, preview?.preview].filter(Boolean).join('；')
   const retire = currentActive
     ? `将退役当前生效政策 ${currentActive.code}。`
@@ -379,7 +379,7 @@ export default function AdminPricePolicies() {
           )}
           {createExampleMismatch && (
             <p className="mt-2 text-sm text-[var(--color-danger)]" data-testid="admin-price-policy-rate-mismatch">
-              当前兑换比率不符合标准设定。限制源于人民币标准策略（规则代号为 {form.code} 时要求每 1 分人民币兑换 1 积分，即充值 ¥10.00 兑换 1000 积分）。若需自定义兑换比例，请展开下方「高级技术参数」修改规则代号标识（避免使用标准策略前缀）。
+              当前兑换比率不符合标准示例设定。示例策略 rp-cny-vmqfox-v1 预设为每 1 分人民币兑换 1 积分（¥10.00 → 1000 积分）。若需配置自定义兑换比例，请展开下方「高级技术参数」修改规则代码标识（使用非示例代码）。
             </p>
           )}
           {formError && <p className="mt-2 text-sm text-[var(--color-danger)]">{formError}</p>}
@@ -462,9 +462,9 @@ export default function AdminPricePolicies() {
                     <span className="text-[var(--color-text-muted)]">环境：</span>
                     <span>{detailPolicy.adminSandbox ? '沙箱测试' : '正式生产'}</span>
                   </div>
-                  <div>
-                    <span className="text-[var(--color-text-muted)]">小数位数 (Scale)：</span>
-                    <span>{detailPolicy.currencyScale} 位小数</span>
+                  <div className="sm:col-span-2">
+                    <span className="text-[var(--color-text-muted)]">金额精度：</span>
+                    <span>货币最小单位：分（保留 {detailPolicy.currencyScale} 位小数）</span>
                   </div>
                 </div>
               </div>
@@ -484,9 +484,13 @@ export default function AdminPricePolicies() {
                       {previewTenYuanCredit(detailPolicy)?.preview ?? '—'}
                     </span>
                   </div>
-                  <div>
+                  <div className="sm:col-span-2">
                     <span className="text-[var(--color-text-muted)]">取整模式：</span>
-                    <span className="font-mono">{detailPolicy.roundingMode}</span>
+                    <span>
+                      {detailPolicy.roundingMode === 'HALF_EVEN'
+                        ? '取最接近的整数；恰好半积分时取偶数 (HALF_EVEN)'
+                        : detailPolicy.roundingMode}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -513,7 +517,7 @@ export default function AdminPricePolicies() {
                     <span className="font-medium">{formatCurrencyAmount(detailPolicy.monthlyLimitMinor, detailPolicy.currency)}</span>
                   </div>
                   <div className="sm:col-span-2">
-                    <span className="text-[var(--color-text-muted)]">限额统计时区 (Time Zone)：</span>
+                    <span className="text-[var(--color-text-muted)]">限额重置基准时区：</span>
                     <span className="font-mono font-medium">{detailPolicy.limitTimeZone}</span>
                   </div>
                 </div>
@@ -542,11 +546,11 @@ export default function AdminPricePolicies() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] text-[var(--color-text-muted)]">
                   <div>
                     <span>生效时间：</span>
-                    <span className="text-[var(--color-text)]">{detailPolicy.effectiveAt ? new Date(detailPolicy.effectiveAt).toLocaleString() : '—'}</span>
+                    <span className="text-[var(--color-text)]">{detailPolicy.effectiveAt ? `${new Date(detailPolicy.effectiveAt).toLocaleString()}（本地时间）` : '—'}</span>
                   </div>
                   <div>
                     <span>创建时间：</span>
-                    <span className="text-[var(--color-text)]">{detailPolicy.createdAt ? new Date(detailPolicy.createdAt).toLocaleString() : '—'}</span>
+                    <span className="text-[var(--color-text)]">{detailPolicy.createdAt ? `${new Date(detailPolicy.createdAt).toLocaleString()}（本地时间）` : '—'}</span>
                   </div>
                 </div>
               </div>

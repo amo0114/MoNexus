@@ -94,6 +94,10 @@ describe('AdminPricePolicies', () => {
     fireEvent.click(screen.getByTestId('admin-price-policy-detail-rp-cny-vmqfox-v1'))
     expect(await screen.findByText('价格政策详情')).toBeInTheDocument()
     expect(screen.getByText('Asia/Shanghai')).toBeInTheDocument()
+    expect(screen.getByText('限额重置基准时区：')).toBeInTheDocument()
+    expect(screen.getByText('取最接近的整数；恰好半积分时取偶数 (HALF_EVEN)')).toBeInTheDocument()
+    expect(screen.getByText('货币最小单位：分（保留 2 位小数）')).toBeInTheDocument()
+    expect(screen.getAllByText(/（本地时间）/)).toHaveLength(2)
     fireEvent.click(screen.getByTestId('admin-price-policy-detail-close'))
 
     fireEvent.click(screen.getByTestId('admin-price-policy-activate-rp-cny-vmqfox-v1'))
@@ -101,6 +105,24 @@ describe('AdminPricePolicies', () => {
     expect(screen.getByText(/每 1 分人民币兑换 1 积分；¥10\.00 → 1000 积分/)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '确认激活' }))
     await waitFor(() => expect(activateAdminPricePolicy).toHaveBeenCalledWith(draft.id))
+  })
+
+  it('activates a USD draft policy with correct USD currency labels in confirmation copy', async () => {
+    const usdDraft = policy({
+      id: '33333333-3333-4333-8333-333333333333',
+      code: 'rp-usd-standard-v1',
+      currency: 'USD',
+      pointsNumerator: '3',
+      pointsDenominator: '2',
+      status: 'draft',
+    })
+    listAdminPricePolicies.mockResolvedValue({ page: 1, pageSize: 50, total: 1, items: [usdDraft] })
+    render(<AdminPricePolicies />)
+    expect(await screen.findByText('每 2 美分兑换 3 积分')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByTestId('admin-price-policy-activate-rp-usd-standard-v1'))
+    expect(screen.getByText('激活草稿 rp-usd-standard-v1？')).toBeInTheDocument()
+    expect(screen.getByText(/每 2 美分兑换 3 积分；\$10\.00 → 1500 积分/)).toBeInTheDocument()
   })
 
   it('does not show the draft activate control on retired policies', async () => {

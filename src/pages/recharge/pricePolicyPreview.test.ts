@@ -31,4 +31,17 @@ describe('pricePolicyPreview', () => {
       pointsDenominator: '1',
     })).toBe(true)
   })
+
+  it('allows custom exchange ratios for non-example policy codes', () => {
+    expect(vmqfoxCnyExampleRateMismatch({
+      code: 'rp-cny-custom-v2',
+      pointsNumerator: '2',
+      pointsDenominator: '1',
+    })).toBe(false)
+    expect(vmqfoxCnyExampleRateMismatch({
+      code: 'cny_standard',
+      pointsNumerator: '2',
+      pointsDenominator: '1',
+    })).toBe(false)
+  })
 })
