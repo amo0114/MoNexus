@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import { createPortal } from 'react-dom'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, ChevronLeft, ChevronRight, Coins, FileText, Store, ShieldCheck, Info, Star, ZoomIn } from 'lucide-react'
 import DOMPurify from 'dompurify'
 import api from '../api/client'
@@ -46,14 +46,17 @@ interface Product {
 
 export default function ProductDetailPage() {
   const { id } = useParams<{ id: string }>()
+  const [searchParams] = useSearchParams()
   const navigate = useNavigate()
   const showToast = useAppStore((s) => s.showToast)
+  const isLoggedIn = useAuthStore((s) => s.isLoggedIn)
   const userPoints = useAuthStore((s) => s.user?.points ?? 0)
   // 购买条仅渲染于移动视口（V2-M3）：桌面 DOM 与 develop 完全一致
   const isMobileViewport = useIsMobileViewport()
 
   const [product, setProduct] = useState<Product | null>(null)
   const [loading, setLoading] = useState(true)
+  const [loginRequired, setLoginRequired] = useState(false)
   // 选中的 SKU(P4a)。单 SKU 商品保持 null → 购买链路不传 offerId(透明兼容)。
   const [selectedOfferId, setSelectedOfferId] = useState<number | null>(null)
 
@@ -86,7 +89,7 @@ export default function ProductDetailPage() {
   }, [id])
 
   useEffect(() => {
-    if (!id) return
+    if (!id || !product || loginRequired) return
     let cancelled = false
     getProductReviews(Number(id), reviewPage)
       .then((data) => {
@@ -96,11 +99,14 @@ export default function ProductDetailPage() {
       })
       .catch(() => {})
     return () => { cancelled = true }
-  }, [id, reviewPage])
+  }, [id, reviewPage, product, loginRequired])
 
   useEffect(() => {
     async function load() {
       if (!id) return
+      setLoginRequired(false)
+      setProduct(null)
+      setLoading(true)
       try {
         const { data } = await api.get(`/products/${id}`)
         setProduct(data)
@@ -108,13 +114,28 @@ export default function ProductDetailPage() {
         // 多 SKU：默认选中第一条可购买的规格（后端按 sortOrder→id 排序）；
         // 全部售罄时回退到第一条，让页面照常展示价格与"已被抢光"。
         const offers: Offer[] = data.offers ?? []
+        const requestedOfferId = Number(searchParams.get('offerId'))
         if (offers.length > 1) {
-          const firstAvailable = offers.find(o => o.stockMode === 'unlimited' || o.stock > 0)
-          setSelectedOfferId((firstAvailable ?? offers[0]).id)
+          const requested = Number.isInteger(requestedOfferId) && requestedOfferId > 0
+            ? offers.find(o => o.id === requestedOfferId)
+            : undefined
+          if (requested) {
+            setSelectedOfferId(requested.id)
+          } else {
+            if (Number.isInteger(requestedOfferId) && requestedOfferId > 0) {
+              showToast('套餐已失效，请重新选择', 'info')
+            }
+            const firstAvailable = offers.find(o => o.stockMode === 'unlimited' || o.stock > 0)
+            setSelectedOfferId((firstAvailable ?? offers[0]).id)
+          }
         } else {
           setSelectedOfferId(null)
         }
       } catch (err) {
+        if (getApiErrorCode(err) === 'PRODUCT_LOGIN_REQUIRED') {
+          setLoginRequired(true)
+          return
+        }
         showToast('获取商品详情失败', 'error')
         navigate('/')
       } finally {
@@ -122,7 +143,7 @@ export default function ProductDetailPage() {
       }
     }
     load()
-  }, [id, navigate, showToast])
+  }, [id, navigate, showToast, searchParams, isLoggedIn])
 
   async function handlePurchase(
     preview: CheckoutPreview,
@@ -280,7 +301,11 @@ export default function ProductDetailPage() {
 
   if (loading) {
     return (
-      <div className="max-w-4xl mx-auto pb-8 fade-in relative animate-pulse">
+      <div className="max-w-4xl mx-auto pb-8 fade-in relative animate-pulse" data-testid="product-detail-loading">
+        {!isLoggedIn ? (
+          <div className="h-40 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]" />
+        ) : (
+          <>
         <div className="w-24 h-6 bg-[var(--color-border)] rounded-lg mb-4"></div>
         <div className="w-full h-64 sm:h-80 md:h-96 bg-[var(--color-image-placeholder)] rounded-xl mb-8 border border-[var(--color-border)]"></div>
         <div className="w-full h-32 bg-[var(--color-surface)] rounded-xl mb-8 border border-[var(--color-border)]"></div>
@@ -294,6 +319,25 @@ export default function ProductDetailPage() {
             <div className="w-full h-40 bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)]"></div>
           </div>
         </div>
+          </>
+        )}
+      </div>
+    )
+  }
+
+  if (loginRequired) {
+    const returnTo = `/product/${id}`
+    return (
+      <div className="max-w-md mx-auto px-4 py-16 text-center fade-in" data-testid="product-login-required">
+        <h1 className="font-heading text-2xl font-bold text-[var(--color-text)]">登录后查看商品</h1>
+        <p className="mt-3 text-sm text-[var(--color-text-muted)]">该商品仅登录用户可浏览，登录后即可查看详情与套餐。</p>
+        <button
+          type="button"
+          className="btn-primary mt-6 min-h-[44px] px-6"
+          onClick={() => navigate(`/login?returnTo=${encodeURIComponent(returnTo)}`)}
+        >
+          去登录
+        </button>
       </div>
     )
   }
@@ -337,13 +381,27 @@ export default function ProductDetailPage() {
   const fileDeliverySize = activeOffer?.fixedContentType === 'file' ? activeOffer?.deliveryFileSize ?? null : undefined
 
   // 兑换 CTA 状态机（页内按钮与移动端固定购买条共用，V2-M3 invariant 10）
+  const loginReturnTo = selectedOfferId
+    ? `/product/${id}?offerId=${selectedOfferId}`
+    : `/product/${id}`
   const handleRedeemClick = () => {
+    if (!isLoggedIn) {
+      navigate(`/login?returnTo=${encodeURIComponent(loginReturnTo)}`)
+      return
+    }
     if (isInsufficient) {
       navigate('/')
     } else {
       setShowPurchase(true)
     }
   }
+  const redeemLabel = !isLoggedIn
+    ? '登录后兑换'
+    : isSoldOut
+      ? '已被抢光'
+      : isInsufficient
+        ? '余额不足，去赚积分'
+        : '立即兑换'
 
   return (
     <div className="max-w-5xl mx-auto max-md:pb-[calc(5rem+var(--safe-bottom))] md:pb-8 fade-in relative">
@@ -629,6 +687,7 @@ export default function ProductDetailPage() {
                   <span className="text-[var(--color-text-muted)] font-medium" data-testid="rating-summary">暂无评分</span>
                 )}
               </div>
+              {isLoggedIn && (
               <div className="flex items-center gap-3 text-xs p-2.5 bg-[var(--color-surface)] rounded-lg border border-[var(--color-border)] w-fit">
                 <span className="text-[var(--color-text-muted)] flex items-center gap-1.5">
                   我的余额: <strong className="text-[var(--color-text)] text-sm">{userPoints} 积分</strong>
@@ -639,21 +698,22 @@ export default function ProductDetailPage() {
                   </span>
                 )}
               </div>
+              )}
             </div>
 
             {/* 页内 CTA：≥md 显示；<md 由底部固定购买条接管（V2-M3） */}
             <button
               onClick={handleRedeemClick}
-              disabled={isSoldOut}
+              disabled={isLoggedIn && isSoldOut}
               className={
-                isSoldOut
+                isLoggedIn && isSoldOut
                   ? 'max-md:hidden inline-flex items-center justify-center gap-2 px-10 py-4 md:py-5 rounded-lg text-lg font-bold whitespace-nowrap w-full lg:w-auto opacity-60 cursor-not-allowed bg-[var(--color-border)] text-[var(--color-text-muted)]'
-                  : isInsufficient
+                  : isLoggedIn && isInsufficient
                   ? 'max-md:hidden btn-secondary px-10 py-4 md:py-5 text-lg w-full lg:w-auto whitespace-nowrap'
                   : 'max-md:hidden btn-cta px-10 py-4 md:py-5 text-lg w-full lg:w-auto whitespace-nowrap shadow-lg hover:shadow-xl hover:-translate-y-0.5'
               }
             >
-              {isSoldOut ? '已被抢光' : isInsufficient ? '余额不足，去赚积分' : '立即兑换'}
+              {redeemLabel}
             </button>
           </div>
 
@@ -798,17 +858,17 @@ export default function ProductDetailPage() {
           </div>
           <button
             onClick={handleRedeemClick}
-            disabled={isSoldOut}
+            disabled={isLoggedIn && isSoldOut}
             data-testid="mobile-buy-bar-cta"
             className={
-              isSoldOut
+              isLoggedIn && isSoldOut
                 ? 'flex-1 inline-flex items-center justify-center gap-2 py-3 rounded-xl text-base font-bold whitespace-nowrap opacity-60 cursor-not-allowed bg-[var(--color-border)] text-[var(--color-text-muted)]'
-                : isInsufficient
+                : isLoggedIn && isInsufficient
                 ? 'flex-1 btn-secondary py-3 text-base whitespace-nowrap rounded-xl'
                 : 'flex-1 btn-cta py-3 text-base whitespace-nowrap rounded-xl shadow-lg'
             }
           >
-            {isSoldOut ? '已被抢光' : isInsufficient ? '余额不足，去赚积分' : '立即兑换'}
+            {redeemLabel}
           </button>
         </div>
       </div>,

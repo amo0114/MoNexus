@@ -3,6 +3,12 @@ import { useNavigate } from 'react-router-dom'
 import { Search, SearchX, Coins, Store, Star } from 'lucide-react'
 import api from '../api/client'
 import { useAppStore } from '../stores/appStore'
+import { useAuthStore } from '../stores/authStore'
+import {
+  getStorePageCache,
+  setStorePageCache,
+  type StorePageCache as StoredStorePageCache,
+} from './storePageCache'
 import { Skeleton } from '../components/ui/Skeleton'
 import EmptyState from '../components/ui/EmptyState'
 import Reveal from '../components/ui/Reveal'
@@ -66,14 +72,8 @@ interface FeedDisclosure {
   publicReason?: string | null
 }
 
-interface StorePageCache {
+interface StorePageCache extends Omit<StoredStorePageCache, 'feedItems'> {
   feedItems: FeedOutputItem<Product>[]
-  seenIds: number[]
-  category: string
-  searchQuery: string
-  nextCursor: string | null
-  hasMore: boolean
-  scrollY: number
 }
 
 const PAGE_SIZE = 60
@@ -89,7 +89,15 @@ const GRID_GAP_MOBILE = 12
 const OVERSCAN_ROWS = 8
 const PREFETCH_ROWS = 6
 
-let storePageCache: StorePageCache | null = null
+function currentStoreAudience(): 'guest' | 'member' {
+  return useAuthStore.getState().isLoggedIn ? 'member' : 'guest'
+}
+
+function readMatchingStoreCache(): StorePageCache | null {
+  const cached = getStorePageCache<StorePageCache>()
+  if (!cached || cached.audience !== currentStoreAudience()) return null
+  return cached
+}
 
 function getProductQueryKey(category: string, searchQuery: string) {
   return JSON.stringify({ category, searchQuery })
@@ -252,7 +260,7 @@ export default function StorePage() {
   const showToast = useAppStore((s) => s.showToast)
   const registry = useAppStore((s) => s.registry)
   const navigate = useNavigate()
-  const initialCacheRef = useRef(storePageCache)
+  const initialCacheRef = useRef(readMatchingStoreCache())
   const restoreScrollRef = useRef<number | null>(initialCacheRef.current?.scrollY ?? null)
   const hydratedQueryKeyRef = useRef<string | null>(
     initialCacheRef.current?.feedItems.length
@@ -469,7 +477,7 @@ export default function StorePage() {
   }, [category, registry?.productCategories, searchQuery, maybeComposePage1])
 
   const saveStorePageCache = useCallback((scrollY = window.scrollY) => {
-    storePageCache = {
+    setStorePageCache({
       feedItems,
       seenIds: [...seenRef.current],
       category,
@@ -477,7 +485,8 @@ export default function StorePage() {
       nextCursor,
       hasMore,
       scrollY,
-    }
+      audience: currentStoreAudience(),
+    })
   }, [category, feedItems, hasMore, nextCursor, searchQuery])
 
   useEffect(() => {

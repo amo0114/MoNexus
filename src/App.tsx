@@ -28,7 +28,13 @@ import OrdersPage from './pages/OrdersPage'
 import RechargePage from './pages/RechargePage'
 import RoleGuard from './components/RoleGuard'
 
-function ProtectedRoute({ children }: { children: React.ReactNode }) {
+function SessionLayout({
+  children,
+  requireAuth = false,
+}: {
+  children: React.ReactNode
+  requireAuth?: boolean
+}) {
   const isLoggedIn = useAuthStore((s) => s.isLoggedIn)
   const setUser = useAuthStore((s) => s.setUser)
   const logout = useAuthStore((s) => s.logout)
@@ -46,7 +52,8 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
       })
   }, [isLoggedIn, setUser, logout])
 
-  return isLoggedIn ? <>{children}</> : <Navigate to="/login" />
+  if (requireAuth && !isLoggedIn) return <Navigate to="/login" />
+  return <Layout>{children}</Layout>
 }
 
 export default function App() {
@@ -73,13 +80,26 @@ export default function App() {
         <Route path="/points-rules" element={<LegalDocumentPage slug="points-rules" />} />
         <Route path="/about" element={<LegalDocumentPage slug="about" />} />
         <Route
+          path="/"
+          element={(
+            <SessionLayout>
+              <StorePage />
+            </SessionLayout>
+          )}
+        />
+        <Route
+          path="/product/:id"
+          element={(
+            <SessionLayout>
+              <ProductDetailPage />
+            </SessionLayout>
+          )}
+        />
+        <Route
           path="/*"
           element={
-            <ProtectedRoute>
-              <Layout>
+            <SessionLayout requireAuth>
                 <Routes>
-                  <Route path="/" element={<StorePage />} />
-                  <Route path="/product/:id" element={<ProductDetailPage />} />
                   <Route path="/profile" element={<ProfilePage />} />
                   <Route path="/recharge" element={<RechargePage />} />
                   <Route path="/orders" element={<OrdersPage />} />
@@ -127,8 +147,7 @@ export default function App() {
                     }
                   />
                 </Routes>
-              </Layout>
-            </ProtectedRoute>
+            </SessionLayout>
           }
         />
       </Routes>

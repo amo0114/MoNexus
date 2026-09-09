@@ -16,6 +16,7 @@ async function createProduct(
       type,
       price: 100,
       status: 'active',
+      visibility: 'public',
       isHot: data.isHot ?? false,
       sales: data.sales ?? 0,
       merchantId: data.merchantId,

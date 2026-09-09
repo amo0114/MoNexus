@@ -98,6 +98,7 @@ async function setupFixture(): Promise<Fixture> {
   const product = await prisma.product.create({
     data: {
       name: uniq('商品'), type: '网络节点', price: 100, status: 'active',
+      visibility: 'public',
       categoryId: category.id, merchantId: merchant.id,
     },
   })

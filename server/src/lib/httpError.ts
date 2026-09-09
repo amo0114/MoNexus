@@ -120,6 +120,7 @@ export type ErrorCode =
   | 'REFUND_BALANCE_INSUFFICIENT'
   | 'REFUND_REQUIRES_REVIEW'
   | 'ACCOUNT_SPENDING_RESTRICTED'
+  | 'PRODUCT_LOGIN_REQUIRED'
 
 export interface ErrorDetail {
   field: string

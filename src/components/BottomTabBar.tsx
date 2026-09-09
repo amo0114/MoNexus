@@ -135,8 +135,8 @@ export default function BottomTabBar() {
         ariaLabel: '积分排行榜',
       },
     )
-  } else {
-    // 买家/游客：积分流水是高频自查入口——Tab 直达 Sheet（动作型，无 active 态）
+  } else if (user) {
+    // 买家：积分流水是高频自查入口——Tab 直达 Sheet（动作型，无 active 态）
     tabs.push({
       key: 'points',
       label: '积分',
@@ -163,7 +163,7 @@ export default function BottomTabBar() {
   }
 
   const attention = orderAttentionCount > 0 ? orderAttentionCount : 0
-  tabs.push({
+  tabs.push(user ? {
     key: 'profile',
     label: '我的',
     icon: User,
@@ -174,6 +174,14 @@ export default function BottomTabBar() {
     ariaLabel:
       attention > 0 ? `我的，有 ${attention > 99 ? '99+' : attention} 个进行中的订单` : '我的',
     badgeCount: attention,
+  } : {
+    key: 'login',
+    label: '登录',
+    icon: User,
+    active: pathname.startsWith('/login'),
+    onSelect: () => navigate('/login'),
+    testId: 'tab-bar-login',
+    ariaLabel: '登录',
   })
 
   return (

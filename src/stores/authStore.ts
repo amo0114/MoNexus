@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { AuthUser } from '../types/merchant'
+import { clearStorePageCache } from '../pages/storePageCache'
 
 interface AuthState {
   user: AuthUser | null
@@ -26,8 +27,10 @@ export const useAuthStore = create<AuthState>()(
       login: (user, access) =>
         set({ user, accessToken: access, isLoggedIn: true }),
 
-      logout: () =>
-        set({ user: null, accessToken: null, isLoggedIn: false }),
+      logout: () => {
+        clearStorePageCache()
+        set({ user: null, accessToken: null, isLoggedIn: false })
+      },
 
       updatePoints: (points) =>
         set((state) => ({

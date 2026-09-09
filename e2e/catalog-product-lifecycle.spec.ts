@@ -9,16 +9,16 @@ import { API_BASE, SEED_ACCOUNTS, loginAs, loginAsApi } from './helpers'
  * 2. 点击真实创建动作前监听 POST /api/merchant/products，用类型守卫从 unknown JSON
  *    安全取得正整数 productId；create 响应未内嵌默认 Offer 时，从创建后的真实 UI
  *    （可售量步的规格选择器）读取默认 Offer id —— 全程零写 API；
- * 3. 用只读 HTTP 断言 draft 对公开商品详情与 checkout preview 均不可用
- *    （400 BAD_REQUEST，稳定 code），且 preview 显式携带正确 offerId。
+ * 3. 用只读 HTTP 断言 draft 对公开商品详情（404）与 checkout preview
+ *    （400 BAD_REQUEST）均不可用，且 preview 显式携带正确 offerId。
  *
  * 本卡追加（merch 侧闭合）：发布被拒（422 PRODUCT_NOT_READY）与 offer-scoped 补 capacity、
  * 成功发布（200 active）与公开详情恢复；buyer checkout 已闭合于第 5 个用例（买家经商城搜索
  * 进入单 SKU 详情，拉起可售结算预览，全程零下单）。
  * 第 6 个用例（本卡）已覆盖 Dashboard UI 下架：POST .../unpublish 200 + status=inactive 精确
  * 匹配 + 行状态回退「未上架」。
- * 第 7 个用例（本卡）已覆盖下架后的公开拒绝：公开商品详情 / 商城搜索 / checkout preview 均
- * 拒绝（400 BAD_REQUEST，稳定 code）。
+ * 第 7 个用例（本卡）已覆盖下架后的公开拒绝：公开商品详情 404、商城搜索空态、
+ * checkout preview 400 BAD_REQUEST。
  * 第 8 个用例（本卡）已覆盖 capacity 保留与重发：下架后 offer capacity 不清空（availability modal
  * 内 current stock 仍为 5），商家从 UI 重新上架成功（200 active + toast「商品已上架」+ 行
  * 「上架中」/按钮「下架」）。
@@ -108,8 +108,15 @@ function parseNonNegativeInteger(raw: string, label: string): number {
   return parsed
 }
 
-/** 不可售商品（draft 或下架后 inactive）对 public 入口的拒绝契约：HTTP 400 + 稳定 code BAD_REQUEST。 */
-async function expectPublicUnavailable(response: { status(): number; json(): Promise<unknown> }): Promise<void> {
+/** 不可售商品对公开详情的拒绝契约（SPEC-PRODUCT-COMMERCE-002 §6.2）：HTTP 404。 */
+async function expectPublicProductUnavailable(response: { status(): number; json(): Promise<unknown> }): Promise<void> {
+  expect(response.status()).toBe(404)
+  const body: unknown = await response.json()
+  expect(readErrorCode(body)).toBe('NOT_FOUND')
+}
+
+/** 不可售商品对 checkout preview 的拒绝契约：HTTP 400 + 稳定 code BAD_REQUEST。 */
+async function expectCheckoutUnavailable(response: { status(): number; json(): Promise<unknown> }): Promise<void> {
   expect(response.status()).toBe(400)
   const body: unknown = await response.json()
   expect(readErrorCode(body)).toBe('BAD_REQUEST')
@@ -273,9 +280,9 @@ test.describe.serial('PAR-CMI-001 catalog product lifecycle prelude', () => {
     expect(productId).toBeGreaterThan(0)
     expect(offerId).toBeGreaterThan(0)
 
-    // 公开商品详情（无需登录）：draft → 400 BAD_REQUEST。
+    // 公开商品详情（无需登录）：draft → 404 NOT_FOUND。
     const detail = await request.get(`${API_BASE}/api/products/${productId}`)
-    await expectPublicUnavailable(detail)
+    await expectPublicProductUnavailable(detail)
 
     // checkout preview（需登录用户）：显式携带正确 offerId，draft → 400 BAD_REQUEST。
     const userSession = await loginAsApi(request, SEED_ACCOUNTS.user)
@@ -283,7 +290,7 @@ test.describe.serial('PAR-CMI-001 catalog product lifecycle prelude', () => {
       `${API_BASE}/api/checkout/preview?productId=${productId}&offerId=${offerId}`,
       { headers: { Authorization: `Bearer ${userSession.accessToken}` } },
     )
-    await expectPublicUnavailable(preview)
+    await expectCheckoutUnavailable(preview)
   })
 
   test('publish is refused as not-ready, then capacity is topped up via the offer UI', async ({ page }) => {
@@ -509,9 +516,9 @@ test.describe.serial('PAR-CMI-001 catalog product lifecycle prelude', () => {
     expect(productId).toBeGreaterThan(0)
     expect(offerId).toBeGreaterThan(0)
 
-    // 1. 公开商品详情（无需登录）：下架（inactive）→ 400 BAD_REQUEST。
+    // 1. 公开商品详情（无需登录）：下架（inactive）→ 404 NOT_FOUND。
     const detail = await request.get(`${API_BASE}/api/products/${productId}`)
-    await expectPublicUnavailable(detail)
+    await expectPublicProductUnavailable(detail)
 
     // 2. checkout preview（独立 API 买家会话）：显式携带正确 offerId，下架 → 400 BAD_REQUEST。
     const userSession = await loginAsApi(request, SEED_ACCOUNTS.user)
@@ -519,7 +526,7 @@ test.describe.serial('PAR-CMI-001 catalog product lifecycle prelude', () => {
       `${API_BASE}/api/checkout/preview?productId=${productId}&offerId=${offerId}`,
       { headers: { Authorization: `Bearer ${userSession.accessToken}` } },
     )
-    await expectPublicUnavailable(preview)
+    await expectCheckoutUnavailable(preview)
 
     // 3. 商城 UI（独立买家会话）：真实桌面搜索框填商品名，下架后无结果 → 空态。
     await loginAs(page, SEED_ACCOUNTS.user)
