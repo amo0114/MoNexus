@@ -72,7 +72,7 @@ describe('AdminFakaTasksPanel (R10 - revoke outcome feedback)', () => {
     })
 
     const toasts = useAppStore.getState().toasts
-    expect(toasts.some(t => t.message === '卡密任务已成功撤销' && t.type === 'success')).toBe(true)
+    expect(toasts.some(t => t.message === '自动开通任务已撤销' && t.type === 'success')).toBe(true)
   })
 
   it('shows error toast when outcome is failed', async () => {
