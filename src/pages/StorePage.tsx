@@ -99,8 +99,12 @@ function readMatchingStoreCache(): StorePageCache | null {
   return cached
 }
 
-function getProductQueryKey(category: string, searchQuery: string) {
-  return JSON.stringify({ category, searchQuery })
+function getProductQueryKey(
+  category: string,
+  searchQuery: string,
+  audience: 'guest' | 'member' = currentStoreAudience(),
+) {
+  return JSON.stringify({ category, searchQuery, audience })
 }
 
 function getColumnCount(width: number, isMobile: boolean) {
@@ -260,11 +264,17 @@ export default function StorePage() {
   const showToast = useAppStore((s) => s.showToast)
   const registry = useAppStore((s) => s.registry)
   const navigate = useNavigate()
+  const isLoggedIn = useAuthStore((s) => s.isLoggedIn)
+  const audience: 'guest' | 'member' = isLoggedIn ? 'member' : 'guest'
   const initialCacheRef = useRef(readMatchingStoreCache())
   const restoreScrollRef = useRef<number | null>(initialCacheRef.current?.scrollY ?? null)
   const hydratedQueryKeyRef = useRef<string | null>(
     initialCacheRef.current?.feedItems.length
-      ? getProductQueryKey(initialCacheRef.current.category, initialCacheRef.current.searchQuery)
+      ? getProductQueryKey(
+          initialCacheRef.current.category,
+          initialCacheRef.current.searchQuery,
+          initialCacheRef.current.audience,
+        )
       : null,
   )
 
@@ -308,6 +318,27 @@ export default function StorePage() {
   }>({ sponsored: [], editorial: [] })
   const candidatesSettledRef = useRef(false)
   const composedRef = useRef(Boolean(initialCacheRef.current?.feedItems.length))
+  // Public `/` stays mounted across login/logout. The feed + module cache are
+  // audience-scoped; keep them aligned before paint so a member list cannot
+  // remain on screen or be written back as guest.
+  const [feedAudience, setFeedAudience] = useState(audience)
+  if (feedAudience !== audience) {
+    setFeedAudience(audience)
+    organicEpochRef.current += 1
+    candidateRequestRef.current += 1
+    setFeedItems([])
+    setNextCursor(null)
+    setHasMore(false)
+    setLoading(true)
+    setLoadingMore(false)
+    loadingMoreRef.current = false
+    seenRef.current = new Set()
+    page1OrganicRef.current = null
+    composedRef.current = false
+    candidatesSettledRef.current = false
+    restoreScrollRef.current = null
+    hydratedQueryKeyRef.current = null
+  }
   // A cached pre-Catalog session may still hold a legacy label. Once the
   // dynamic registry is available, migrate that local selection to stable code.
   useEffect(() => {
@@ -474,9 +505,11 @@ export default function StorePage() {
       // async continuations see a stale requestId and never setState.
       candidateRequestRef.current += 1
     }
-  }, [category, registry?.productCategories, searchQuery, maybeComposePage1])
+  }, [audience, category, registry?.productCategories, searchQuery, maybeComposePage1])
 
   const saveStorePageCache = useCallback((scrollY = window.scrollY) => {
+    const liveAudience = currentStoreAudience()
+    if (liveAudience !== feedAudience) return
     setStorePageCache({
       feedItems,
       seenIds: [...seenRef.current],
@@ -485,19 +518,19 @@ export default function StorePage() {
       nextCursor,
       hasMore,
       scrollY,
-      audience: currentStoreAudience(),
+      audience: liveAudience,
     })
-  }, [category, feedItems, hasMore, nextCursor, searchQuery])
+  }, [category, feedAudience, feedItems, hasMore, nextCursor, searchQuery])
 
   useEffect(() => {
-    const queryKey = getProductQueryKey(category, searchQuery)
+    const queryKey = getProductQueryKey(category, searchQuery, audience)
 
     if (hydratedQueryKeyRef.current === queryKey) {
       setLoading(false)
       return
     }
-    // 搜索词 / 分类变化：重置列表、游标与滚动缓存（AC-CAT-017）。递增 epoch
-    // 使任何在途旧列表响应失效（stale-response guard）。
+    // 搜索词 / 分类 / audience 变化：重置列表、游标与滚动缓存（AC-CAT-017）。
+    // 递增 epoch 使任何在途旧列表响应失效（stale-response guard）。
     organicEpochRef.current += 1
     setLoading(true)
     setFeedItems([])
@@ -514,7 +547,7 @@ export default function StorePage() {
     window.scrollTo?.({ top: 0, behavior: 'instant' })
     const timer = setTimeout(() => fetchProducts(null, false, queryKey), 300)
     return () => clearTimeout(timer)
-  }, [category, fetchProducts, searchQuery])
+  }, [audience, category, fetchProducts, searchQuery])
 
   useEffect(() => {
     saveStorePageCache()
