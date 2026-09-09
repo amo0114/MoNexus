@@ -50,6 +50,29 @@ export async function updateProduct(req: Request, res: Response, next: NextFunct
   } catch (err) { next(err) }
 }
 
+export async function patchProductContent(req: Request, res: Response, next: NextFunction) {
+  try {
+    const merchant = await merchantService.getMyMerchant(req.user!.userId)
+    const { patchProductContent } = await import('../catalog/productWrite.js')
+    res.json(await patchProductContent(
+      { kind: 'merchant', merchantId: merchant.id },
+      req.params.id as unknown as number,
+      req.body,
+    ))
+  } catch (err) { next(err) }
+}
+
+export async function getProductEditor(req: Request, res: Response, next: NextFunction) {
+  try {
+    const merchant = await merchantService.getMyMerchant(req.user!.userId)
+    const { getProductEditor } = await import('../catalog/productWrite.js')
+    res.json(await getProductEditor(
+      { kind: 'merchant', merchantId: merchant.id },
+      req.params.id as unknown as number,
+    ))
+  } catch (err) { next(err) }
+}
+
 export async function productReadiness(req: Request, res: Response, next: NextFunction) {
   try {
     const merchant = await merchantService.getMyMerchant(req.user!.userId)

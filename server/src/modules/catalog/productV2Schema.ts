@@ -55,3 +55,22 @@ export const createProductV2Schema = z.object({
 }).strict()
 
 export type CreateProductV2Input = z.infer<typeof createProductV2Schema>
+
+export const patchProductContentSchema = z.object({
+  expectedContentVersion: z.number().int().positive(),
+  name: productNameSchema.optional(),
+  categoryId: z.number().int().positive().optional(),
+  description: productDescriptionSchema.optional(),
+  richDescription: productRichDescriptionSchema.nullable().optional(),
+  descriptionImages: z.array(descriptionImageRefSchema).max(12).optional(),
+  images: z.array(platformMediaRefSchema).max(12).optional(),
+  visibility: z.enum([PRODUCT_VISIBILITY.PUBLIC, PRODUCT_VISIBILITY.MEMBERS_ONLY]).optional(),
+  attributes: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.array(z.string())])).optional(),
+  details: productDetailsSchema.optional(),
+  purchaseForm: purchaseFormSchema.optional(),
+}).strict()
+
+export type PatchProductContentInput = z.infer<typeof patchProductContentSchema>
+
+export const draftOfferV2WriteSchema = draftOfferV2Schema
+export type DraftOfferV2Input = z.infer<typeof draftOfferV2Schema>

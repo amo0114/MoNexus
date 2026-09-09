@@ -1,6 +1,6 @@
 import type { Prisma } from '@prisma/client'
 import { prisma } from '../../lib/prisma.js'
-import { HttpError, type ErrorCode } from '../../lib/httpError.js'
+import { HttpError, notFound, type ErrorCode } from '../../lib/httpError.js'
 import { assertProductDeliveryConfiguration } from '../../lib/productCommercial.js'
 import { resolveProductCategory } from './resolver.js'
 import { CATALOG_ERROR_CODES } from './constants.js'
@@ -9,9 +9,13 @@ import { getProductTemplate } from './templates/registry.js'
 import { evaluateTemplateFulfillment } from './templates/fulfillmentStrategy.js'
 import { validateTemplateAttributes } from './templates/validate.js'
 import { EMPTY_PRODUCT_DETAILS } from './templates/types.js'
-import type { CreateProductV2Input } from './productV2Schema.js'
+import type { CreateProductV2Input, PatchProductContentInput } from './productV2Schema.js'
 import { syncProductProjection } from '../../lib/offers.js'
 import { invalidateProductPublicCache } from '../products/cache.js'
+import { sanitizeCatalogRichContent } from './contentSanitizer.js'
+import { checkProductReadiness } from './publicationReadiness.js'
+import { canonicalFixedStructuredText, normalizeFixedStructuredContent } from './structuredFixedContent.js'
+import { lockProductRow } from '../admin/productLifecycle.js'
 
 export type ProductWriteActor =
   | { kind: 'merchant'; merchantId: number }
@@ -55,7 +59,9 @@ export async function createProductFromV2(
       data: {
         name: input.name,
         description: input.description,
-        richDescription: input.richDescription,
+        richDescription: input.richDescription === ''
+          ? null
+          : sanitizeCatalogRichContent(input.richDescription),
         categoryId,
         type,
         imageUrl: resolvedImages[0]?.canonicalUrl ?? null,
@@ -133,6 +139,12 @@ export async function createProductFromV2(
       if (offerInput.autoProvision && actor.kind !== 'merchant') {
         throw new HttpError(400, 'BAD_REQUEST', '平台商品不能开启商家自动开通')
       }
+      const structured = offerInput.fixedStructuredContent != null
+        ? normalizeFixedStructuredContent(offerInput.fixedStructuredContent)
+        : null
+      if (structured && offerInput.fixedContent != null) {
+        throw new HttpError(400, 'BAD_REQUEST', '结构化固定内容与 fixedContent 不能同时提交')
+      }
       await tx.offer.create({
         data: {
           productId: created.id,
@@ -145,7 +157,7 @@ export async function createProductFromV2(
           deliveryMode: offerInput.deliveryMode,
           stockMode: offerInput.stockMode,
           stock: 0,
-          fixedContent: offerInput.fixedContent,
+          fixedContent: structured ? canonicalFixedStructuredText(structured) : offerInput.fixedContent,
           fixedContentType: offerInput.fixedContentType,
           fixedFileId: offerInput.fixedFileId,
           validityDays: offerInput.validityDays,
@@ -154,8 +166,8 @@ export async function createProductFromV2(
             : {}),
           autoProvision: offerInput.autoProvision,
           attributes: offerAttributes.value as Prisma.InputJsonValue,
-          ...(offerInput.fixedStructuredContent != null
-            ? { fixedStructuredContent: offerInput.fixedStructuredContent as Prisma.InputJsonValue }
+          ...(structured
+            ? { fixedStructuredContent: structured as unknown as Prisma.InputJsonValue }
             : {}),
         },
       })
@@ -174,5 +186,233 @@ export async function createProductFromV2(
     contentVersion: product.contentVersion,
     offers: product.offers.map(offer => ({ id: offer.id, name: offer.name, isDefault: offer.isDefault })),
     nextStep: 'availability' as const,
+  }
+}
+
+async function loadOwnedProduct(actor: ProductWriteActor, productId: number) {
+  const product = await prisma.product.findFirst({
+    where: actor.kind === 'merchant'
+      ? { id: productId, merchantId: actor.merchantId }
+      : { id: productId },
+  })
+  if (!product) throw notFound('商品不存在')
+  return product
+}
+
+export async function patchProductContent(
+  actor: ProductWriteActor,
+  productId: number,
+  input: PatchProductContentInput,
+) {
+  const owned = await loadOwnedProduct(actor, productId)
+  const updatedFields: string[] = []
+  const data: Prisma.ProductUncheckedUpdateInput = {}
+
+  if (input.name !== undefined) {
+    data.name = input.name
+    updatedFields.push('name')
+  }
+  if (input.description !== undefined) {
+    data.description = input.description
+    updatedFields.push('description')
+  }
+  if (Object.prototype.hasOwnProperty.call(input, 'richDescription')) {
+    data.richDescription = input.richDescription === ''
+      ? null
+      : sanitizeCatalogRichContent(input.richDescription)
+    updatedFields.push('richDescription')
+  }
+  if (input.visibility !== undefined) {
+    data.visibility = input.visibility
+    updatedFields.push('visibility')
+  }
+  if (input.details !== undefined) {
+    data.details = input.details as Prisma.InputJsonValue
+    updatedFields.push('details')
+  }
+  if (input.purchaseForm !== undefined) {
+    data.purchaseForm = input.purchaseForm as unknown as Prisma.InputJsonValue
+    updatedFields.push('purchaseForm')
+  }
+  if (input.attributes !== undefined) {
+    if (!owned.templateKey || owned.templateVersion == null) {
+      templateInvalid('请先补充商品形态再保存模板参数')
+    }
+    const mode = owned.status === 'active' ? 'publish' : 'draft'
+    const validated = validateTemplateAttributes({
+      templateKey: owned.templateKey,
+      templateVersion: owned.templateVersion,
+      attributes: input.attributes,
+      mode,
+      target: 'product',
+      pathPrefix: '/attributes',
+    })
+    if (!validated.ok) {
+      templateInvalid('商品参数不合法', validated.errors.map(error => ({
+        field: error.path,
+        message: error.message,
+      })))
+    }
+    data.attributes = validated.value as Prisma.InputJsonValue
+    updatedFields.push('attributes')
+  }
+  if (input.images !== undefined) {
+    const resolvedImages: ResolvedPlatformImage[] = []
+    for (const ref of input.images) {
+      resolvedImages.push(await resolvePlatformPublicImage(ref as PlatformMediaRef))
+    }
+    data.images = resolvedImages.map(image => image.canonicalUrl)
+    data.imageUrl = resolvedImages[0]?.canonicalUrl ?? null
+    updatedFields.push('images')
+  }
+  let categoryId: number | undefined
+  let categoryType: string | undefined
+  if (input.categoryId !== undefined) {
+    const resolved = await resolveProductCategory({ categoryId: input.categoryId })
+    categoryId = resolved.categoryId
+    categoryType = resolved.type
+    updatedFields.push('categoryId')
+  }
+
+  const updated = await prisma.$transaction(async tx => {
+    await lockProductRow(tx, productId)
+    const current = await tx.product.findFirst({
+      where: actor.kind === 'merchant'
+        ? { id: productId, merchantId: actor.merchantId }
+        : { id: productId },
+    })
+    if (!current) throw notFound('商品不存在')
+    if (current.contentVersion !== input.expectedContentVersion) {
+      throw new HttpError(409, CATALOG_ERROR_CODES.PRODUCT_CONTENT_CHANGED as ErrorCode, '商品内容已更新，请刷新后重试')
+    }
+    if (current.status === 'active' && input.attributes !== undefined) {
+      const template = current.templateKey && current.templateVersion != null
+        ? getProductTemplate(current.templateKey as 'redemption_code', current.templateVersion)
+        : null
+      if (template) {
+        const publish = validateTemplateAttributes({
+          templateKey: template.key,
+          templateVersion: template.version,
+          attributes: input.attributes,
+          mode: 'publish',
+          target: 'product',
+          pathPrefix: '/attributes',
+        })
+        if (!publish.ok) {
+          templateInvalid('在售商品保存必须保持模板参数完整', publish.errors.map(error => ({
+            field: error.path,
+            message: error.message,
+          })))
+        }
+      }
+    }
+    return tx.product.update({
+      where: { id: productId },
+      data: {
+        ...data,
+        ...(categoryId != null ? { categoryId, type: categoryType } : {}),
+        contentVersion: { increment: 1 },
+      },
+      select: { id: true, contentVersion: true },
+    })
+  })
+
+  await invalidateProductPublicCache(productId, { detail: true, list: true })
+  return { id: updated.id, contentVersion: updated.contentVersion, updatedFields }
+}
+
+export async function getProductEditor(actor: ProductWriteActor, productId: number) {
+  const product = await prisma.product.findFirst({
+    where: actor.kind === 'merchant'
+      ? { id: productId, merchantId: actor.merchantId }
+      : { id: productId },
+    include: {
+      offers: { orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }] },
+      externalCatalogLink: {
+        select: {
+          descriptionCheckedAt: true,
+          acceptedDescriptionHash: true,
+          latestDescriptionHash: true,
+        },
+      },
+    },
+  })
+  if (!product) throw notFound('商品不存在')
+
+  const ownsOffers = actor.kind === 'merchant' || product.merchantId == null
+  const isXboard = product.externalCatalogLink != null
+  const readiness = await checkProductReadiness(productId)
+  const publicationIssues = readiness.details.map(item => ({
+    code: item.code,
+    message: item.reason ?? item.field,
+    path: item.field.startsWith('/') ? item.field : `/${item.field}`,
+  }))
+
+  const offers = product.offers.map(offer => {
+    const secrets = ownsOffers
+      ? {
+          fixedContent: offer.fixedStructuredContent == null ? offer.fixedContent : null,
+          fixedStructuredContent: offer.fixedStructuredContent,
+        }
+      : { fixedContent: null, fixedStructuredContent: null }
+    return {
+      id: offer.id,
+      name: offer.name,
+      price: offer.price,
+      originalPrice: offer.originalPrice,
+      status: offer.status,
+      sortOrder: offer.sortOrder,
+      isDefault: offer.isDefault,
+      deliveryMode: offer.deliveryMode,
+      stockMode: offer.stockMode,
+      stock: offer.stock,
+      validityDays: offer.validityDays,
+      fixedContentType: offer.fixedContentType,
+      fixedFileId: offer.fixedFileId,
+      deliveryFields: offer.deliveryFields,
+      autoProvision: offer.autoProvision,
+      attributes: offer.attributes,
+      ...secrets,
+    }
+  })
+
+  return {
+    product: {
+      id: product.id,
+      status: product.status,
+      merchantId: product.merchantId,
+      contentVersion: product.contentVersion,
+      templateKey: product.templateKey,
+      templateVersion: product.templateVersion,
+      name: product.name,
+      categoryId: product.categoryId,
+      description: product.description,
+      richDescription: product.richDescription,
+      descriptionImages: [],
+      images: product.images.map(url => ({ url, ref: null })),
+      visibility: product.visibility,
+      attributes: product.attributes,
+      details: product.details,
+      purchaseForm: product.purchaseForm,
+    },
+    offers,
+    capabilities: {
+      editContent: true,
+      manageOffers: ownsOffers,
+      manageAvailability: ownsOffers,
+      manageAssurance: actor.kind === 'admin' || actor.kind === 'merchant',
+      applyAssurance: actor.kind === 'merchant' && product.merchantId != null,
+      adoptSourceDescription: actor.kind === 'admin' && isXboard,
+    },
+    sourceDescription: isXboard
+      ? {
+          checkedAt: product.externalCatalogLink?.descriptionCheckedAt?.toISOString() ?? null,
+          changedSinceAccepted: product.externalCatalogLink?.acceptedDescriptionHash == null
+            ? null
+            : product.externalCatalogLink.acceptedDescriptionHash !== product.externalCatalogLink.latestDescriptionHash,
+          hasAcceptedVersion: product.externalCatalogLink?.acceptedDescriptionHash != null,
+        }
+      : null,
+    publicationIssues,
   }
 }

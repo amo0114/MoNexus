@@ -536,6 +536,7 @@ export async function updateMyProduct(merchantId: number, productId: number, dat
         stockMode,
         // 新建/无业务记录商品切到即时库存时，遗留的额度字段不再代表库存。
         ...(switchedToInstantInventory ? { stock: 0 } : {}),
+        contentVersion: { increment: 1 },
       },
     })
     const defaultOffer = await getDefaultOffer(tx, productId)
@@ -1454,6 +1455,8 @@ type OfferWriteInput = {
   // FakaBridge：null 关闭；'faka_bridge' + externalSku 开通 Xboard。
   externalIntegration?: string | null
   externalSku?: string | null
+  attributes?: Record<string, string | number | boolean | string[]>
+  fixedStructuredContent?: unknown
   // 设为默认规格（仅接受 true，事务内从原默认转移；不接受 false——
   // 取消默认必须通过在另一条上设默认完成，保证不变量恒成立）。
   isDefault?: boolean
@@ -1630,6 +1633,12 @@ async function insertOffer(
       autoProvision: input.autoProvision ?? false,
       externalIntegration: faka.externalIntegration,
       externalSku: faka.externalSku,
+      ...('attributes' in input && input.attributes != null
+        ? { attributes: input.attributes as Prisma.InputJsonValue }
+        : {}),
+      ...('fixedStructuredContent' in input && input.fixedStructuredContent != null
+        ? { fixedStructuredContent: input.fixedStructuredContent as Prisma.InputJsonValue }
+        : {}),
     },
   })
 }

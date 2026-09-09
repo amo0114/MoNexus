@@ -105,6 +105,70 @@ export async function patchAdminOffer(
   return serializeAdminOffer(updated)
 }
 
+export async function createPlatformOffer(
+  adminUserId: number,
+  productId: number,
+  input: {
+    name: string
+    price: number
+    originalPrice: number | null
+    attributes: Record<string, string | number | boolean | string[]>
+    deliveryMode: 'instant_inventory' | 'instant_fixed' | 'manual_service'
+    stockMode: 'limited' | 'unlimited'
+    validityDays: number | null
+    fixedContentType: 'text' | 'url' | 'file'
+    fixedContent: string | null
+    fixedFileId: number | null
+    fixedStructuredContent: unknown
+    deliveryFields: unknown
+    autoProvision: boolean
+  },
+) {
+  const created = await prisma.$transaction(async tx => {
+    const product = await lockProductRow(tx, productId)
+    if (product.merchantId != null) {
+      throw badRequest('平台套餐接口仅用于平台自营商品')
+    }
+    if (input.autoProvision) {
+      throw badRequest('平台商品不能开启商家自动开通')
+    }
+    const maxSort = await tx.offer.aggregate({ where: { productId }, _max: { sortOrder: true } })
+    const offer = await tx.offer.create({
+      data: {
+        productId,
+        name: input.name,
+        price: input.price,
+        originalPrice: input.originalPrice,
+        isDefault: false,
+        sortOrder: (maxSort._max.sortOrder ?? 0) + 1,
+        status: 'active',
+        deliveryMode: input.deliveryMode,
+        stockMode: input.stockMode,
+        stock: 0,
+        fixedContent: input.fixedContent,
+        fixedContentType: input.fixedContentType,
+        fixedFileId: input.fixedFileId,
+        validityDays: input.validityDays,
+        autoProvision: false,
+        attributes: input.attributes as Prisma.InputJsonValue,
+      },
+    })
+    await syncProductProjection(tx, productId)
+    await tx.adminLog.create({
+      data: {
+        adminUserId,
+        action: '创建规格',
+        targetType: 'offer',
+        targetId: offer.id,
+        detail: JSON.stringify({ productId, name: offer.name }),
+      },
+    })
+    return offer
+  })
+  await invalidateProductPublicCache(productId, { list: true, detail: true })
+  return serializeAdminOffer(created)
+}
+
 export async function archiveAdminOffer(
   adminUserId: number,
   productId: number,

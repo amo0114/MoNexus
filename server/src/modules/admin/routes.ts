@@ -24,7 +24,7 @@ import {
   voidAbuseRewardSchema,
 } from './schema.js'
 import { adminReviewsQuerySchema } from '../reviews/schema.js'
-import { createProductV2Schema } from '../catalog/productV2Schema.js'
+import { createProductV2Schema, patchProductContentSchema, draftOfferV2WriteSchema } from '../catalog/productV2Schema.js'
 import * as controller from './controller.js'
 import * as abuseController from './abuseController.js'
 import * as storageController from './storageController.js'
@@ -129,6 +129,8 @@ router.post('/products', (req, res, next) => {
   return validate(schema)(req, res, next)
 }, controller.createProduct)
 router.put('/products/:id', validate({ params: idParamSchema, body: updateProductSchema }), controller.updateProduct)
+router.patch('/products/:id/content', validate({ params: idParamSchema, body: patchProductContentSchema }), controller.patchProductContent)
+router.get('/products/:id/editor', validate({ params: idParamSchema }), controller.getProductEditor)
 router.get('/products/:id/readiness', validate({ params: idParamSchema }), controller.productReadiness)
 router.post('/products/:id/publish', validate({ params: idParamSchema }), controller.publishProduct)
 router.post('/products/:id/unpublish', validate({ params: idParamSchema }), controller.unpublishProduct)
@@ -136,6 +138,20 @@ router.post('/products/:id/archive', validate({ params: idParamSchema, body: arc
 router.post('/products/:id/restore', validate({ params: idParamSchema }), controller.restoreProduct)
 router.delete('/products/:id/purge', validate({ params: idParamSchema }), controller.purgeProduct)
 router.delete('/products/:id', validate({ params: idParamSchema }), controller.deleteProduct)
+router.post('/orders/:id/start-fulfillment', validate({ params: idParamSchema }), controller.startPlatformFulfillment)
+router.post('/orders/:id/progress', validate({ params: idParamSchema, body: z.object({ publicNote: z.string().trim().min(1).max(500) }).strict() }), controller.postPlatformProgress)
+router.post('/orders/:id/deliver', validate({ params: idParamSchema, body: z.object({
+  content: z.string().trim().max(5000).optional(),
+  structuredValues: z.record(z.string().max(2000)).optional(),
+  attachmentFileId: z.number().int().positive().optional(),
+  publicNote: z.string().trim().max(1000).optional(),
+}).strict() }), controller.deliverPlatformOrder)
+router.post('/orders/:id/reject', validate({ params: idParamSchema, body: z.object({ reason: z.string().trim().min(1).max(500) }).strict() }), controller.rejectPlatformOrder)
+router.post(
+  '/products/:id/offers',
+  validate({ params: idParamSchema, body: draftOfferV2WriteSchema }),
+  controller.createPlatformOffer,
+)
 router.patch(
   '/products/:id/offers/:offerId',
   validate({ params: adminOfferParamSchema, body: adminOfferPatchSchema }),

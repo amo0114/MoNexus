@@ -554,6 +554,7 @@ export async function updateProduct(adminUserId: number, id: number, data: Updat
         ...(deliveryMode === 'instant_inventory' && product.deliveryMode !== 'instant_inventory'
           ? { stock: 0 }
           : {}),
+        contentVersion: { increment: 1 },
       },
     })
     // P4a：商品级编辑写透到默认 Offer（真相源），随后投影同步对齐商业列。

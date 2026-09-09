@@ -114,6 +114,8 @@ const merchantOfferFieldsSchema = z.object({
   // P7b：自动开通开关（仅 manual_service 且无模板且已有 active webhook 配置，
   // 服务端校验）。与 FakaBridge 互斥（不可同时 true + faka_bridge）。
   autoProvision: z.boolean().optional(),
+  attributes: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.array(z.string())])).optional(),
+  fixedStructuredContent: z.unknown().nullable().optional(),
   // FakaBridge：null 关闭外部开通；'faka_bridge' 时 externalSku 必填且须 manual_service。
   externalIntegration: z.enum(['faka_bridge']).nullable().optional(),
   externalSku: z

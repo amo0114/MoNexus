@@ -21,7 +21,7 @@ import {
 import * as controller from './controller.js'
 import { categoryApplicationRoutes } from '../catalog/applicationRoutes.js'
 import { z } from 'zod'
-import { createProductV2Schema } from '../catalog/productV2Schema.js'
+import { createProductV2Schema, patchProductContentSchema } from '../catalog/productV2Schema.js'
 
 const offerParamSchema = z.object({
   id: z.coerce.number().int().positive('必须是正整数'),
@@ -45,6 +45,8 @@ router.post('/products', (req, res, next) => {
   return validate(schema)(req, res, next)
 }, controller.createProduct)
 router.put('/products/:id', validate({ params: idParamSchema, body: updateMerchantProductSchema }), controller.updateProduct)
+router.patch('/products/:id/content', validate({ params: idParamSchema, body: patchProductContentSchema }), controller.patchProductContent)
+router.get('/products/:id/editor', validate({ params: idParamSchema }), controller.getProductEditor)
 router.get('/products/:id/readiness', validate({ params: idParamSchema }), controller.productReadiness)
 router.post('/products/:id/publish', validate({ params: idParamSchema }), controller.publishProduct)
 router.post('/products/:id/unpublish', validate({ params: idParamSchema }), controller.unpublishProduct)
