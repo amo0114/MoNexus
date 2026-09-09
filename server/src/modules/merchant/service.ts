@@ -54,6 +54,7 @@ import {
   canonicalFixedStructuredText,
   normalizeFixedStructuredContent,
 } from '../catalog/structuredFixedContent.js'
+import { lockProductRow } from '../admin/productLifecycle.js'
 import {
   normalizeFakaOfferIntegration,
   assertOfferProvisionMutex,
@@ -1697,6 +1698,10 @@ export async function updateMyOffer(
   await assertMyProduct(merchantId, productId)
 
   const updated = await prisma.$transaction(async tx => {
+    // Same lock order as admin patchAdminOffer: Product FOR UPDATE, then load
+    // the offer, then CAS. Without the row lock two transactions can both read
+    // the same digest and both write.
+    await lockProductRow(tx, productId)
     const offer = await tx.offer.findFirst({ where: { id: offerId, productId } })
     if (!offer) throw notFound('规格不存在')
 
@@ -1723,11 +1728,19 @@ export async function updateMyOffer(
         ? (deliveryMode === 'instant_inventory' ? 'limited' : 'unlimited')
         : offer.stockMode)
     const fixedContentType = input.fixedContentType ?? offer.fixedContentType
-    const incomingFixedContent = 'fixedContent' in input ? (input.fixedContent ?? null) : offer.fixedContent
+    // One delivery-content source per write: structured in the payload is truth
+    // (do not default leftover stored canonical text); text-only PUT clears
+    // structured (old modal path); neither leaves both unchanged.
+    const incomingFixedContent = 'fixedContent' in input
+      ? (input.fixedContent ?? null)
+      : ('fixedStructuredContent' in input && input.fixedStructuredContent != null
+        ? null
+        : offer.fixedContent)
     const structuredWrite = 'fixedStructuredContent' in input
       ? resolveStructuredFixedContent(input.fixedStructuredContent, incomingFixedContent)
       : { fixedContent: incomingFixedContent, structured: null }
     const nextFixedContent = structuredWrite.fixedContent
+    const writeDeliveryContent = 'fixedContent' in input || 'fixedStructuredContent' in input
     // P5：合并后的文件挂载必须满足 file 形态不变量（含"切回 text/url 但留文件"）。
     const nextFixedFileId = 'fixedFileId' in input ? (input.fixedFileId ?? null) : offer.fixedFileId
     // P4b：合并后的模板不得出现在 instant_fixed 规格上（含"改模式但留模板"）。
@@ -1809,9 +1822,7 @@ export async function updateMyOffer(
         deliveryMode,
         stockMode,
         ...(input.stock != null ? { stock: input.stock } : {}),
-        ...('fixedContent' in input || ('fixedStructuredContent' in input && structuredWrite.structured != null)
-          ? { fixedContent: nextFixedContent }
-          : {}),
+        ...(writeDeliveryContent ? { fixedContent: nextFixedContent } : {}),
         fixedContentType,
         ...('fixedFileId' in input ? { fixedFileId: input.fixedFileId ?? null } : {}),
         // P6a：改时长只影响新订单（快照冻结）；null = 改回永久。
@@ -1826,7 +1837,7 @@ export async function updateMyOffer(
         ...('attributes' in input && input.attributes != null
           ? { attributes: input.attributes as Prisma.InputJsonValue }
           : {}),
-        ...('fixedStructuredContent' in input
+        ...(writeDeliveryContent
           ? {
               fixedStructuredContent: structuredWrite.structured == null
                 ? Prisma.DbNull
