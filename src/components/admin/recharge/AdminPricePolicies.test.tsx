@@ -95,8 +95,9 @@ describe('AdminPricePolicies', () => {
     expect(await screen.findByText('价格政策详情')).toBeInTheDocument()
     expect(screen.getByText('Asia/Shanghai')).toBeInTheDocument()
     expect(screen.getByText('限额重置基准时区：')).toBeInTheDocument()
-    expect(screen.getByText('取最接近的整数；恰好半积分时取偶数 (HALF_EVEN)')).toBeInTheDocument()
-    expect(screen.getByText('货币最小单位：分（保留 2 位小数）')).toBeInTheDocument()
+    expect(screen.getByText('取最接近的整数；恰好半积分时取偶数')).toBeInTheDocument()
+    expect(screen.getByText('保留 2 位小数')).toBeInTheDocument()
+    expect(screen.getByText('HALF_EVEN')).toBeInTheDocument()
     expect(screen.getAllByText(/（本地时间）/)).toHaveLength(2)
     fireEvent.click(screen.getByTestId('admin-price-policy-detail-close'))
 
