@@ -431,28 +431,26 @@ describe('AdminPromotionCampaignManager (query only)', () => {
 
     expect(within(pendingRow).getByText('首页推广位')).toBeInTheDocument()
     expect(within(pendingRow).getByText('30')).toBeInTheDocument()
-    expect(within(pendingRow).getByText('1200')).toBeInTheDocument()
     expect(within(pendingRow).getByText('待审核')).toBeInTheDocument()
     expect(within(pendingRow).getAllByText('0')).toHaveLength(2) // charged + refunded
-    // pending row has no start/end yet → those date cells plus the two null
-    // reasons render as — (4 dashes); requestedStartAt is a real date
-    expect(within(pendingRow).getAllByText('—')).toHaveLength(4)
+    expect(within(pendingRow).getByRole('button', { name: '详情' })).toBeInTheDocument()
+
+    // open detail dialog for pending row
+    fireEvent.click(within(pendingRow).getByRole('button', { name: '详情' }))
+    const detailDialog = screen.getByRole('dialog', { name: '推广活动详情' })
+    expect(within(detailDialog).getByText('1200 积分')).toBeInTheDocument()
+    expect(within(detailDialog).getAllByText('—').length).toBeGreaterThanOrEqual(4)
+    fireEvent.click(within(detailDialog).getAllByRole('button', { name: '关闭' })[0])
 
     expect(within(activeRow).getByText('分类推广位')).toBeInTheDocument()
     expect(within(activeRow).getByText('7')).toBeInTheDocument()
-    expect(within(activeRow).getByText('300')).toBeInTheDocument()
     expect(within(activeRow).getByText('600')).toBeInTheDocument() // chargedPoints
     expect(within(activeRow).getByText('120')).toBeInTheDocument() // refundedPoints
     expect(within(activeRow).getByText('展示中')).toBeInTheDocument()
-    // active row: review + cancellation reasons are null → exactly two dashes,
-    // while requestedStartAt / startsAt / endsAt are real formatted dates
-    expect(within(activeRow).getAllByText('—')).toHaveLength(2)
 
-    // dates: created / updated render as <time datetime> with the wire values
+    // dates: created renders as <time datetime> in table with the wire values
     expect(table.querySelector('time[datetime="2026-02-10T09:00:00.000Z"]')).not.toBeNull()
-    expect(table.querySelector('time[datetime="2026-02-10T09:30:00.000Z"]')).not.toBeNull()
     expect(table.querySelector('time[datetime="2026-01-18T00:00:00.000Z"]')).not.toBeNull()
-    expect(table.querySelector('time[datetime="2026-01-22T00:00:00.000Z"]')).not.toBeNull()
 
     // no mutation adapter was ever invoked
     expectNoMutations({
@@ -779,7 +777,7 @@ describe('AdminPromotionCampaignManager (query only)', () => {
     })
   })
 
-  it('renders reviewReason/cancellationReason in the admin table but never leaks the sentinel actor ids', async () => {
+  it('renders reviewReason/cancellationReason and audit actor IDs in the detail dialog', async () => {
     const {
       controller,
       approveCampaign,
@@ -799,19 +797,29 @@ describe('AdminPromotionCampaignManager (query only)', () => {
     })
     const table = await screen.findByRole('table', { name: '推广活动列表' })
 
-    // admin-only review / cancellation reasons ARE visible
-    expect(within(table).getByText('资质材料不完整，请补充后重新提交。')).toBeInTheDocument()
-    expect(within(table).getByText('商家主动撤回推广申请。')).toBeInTheDocument()
-
     // sanity: merchant id / product id ARE rendered (they must never be negated)
     expect(within(table).getByText('9004')).toBeInTheDocument()
     expect(within(table).getByText('7004')).toBeInTheDocument()
     expect(within(table).getByText('9005')).toBeInTheDocument()
     expect(within(table).getByText('7005')).toBeInTheDocument()
 
-    // the sentinel audit actor ids must appear nowhere in the document
-    expect(screen.queryByText(/9876543210/)).not.toBeInTheDocument()
-    expect(screen.queryByText(/8765432109/)).not.toBeInTheDocument()
+    // open detail dialog for rejected campaign (504)
+    const rejectedRow = rowFor(table, 504)
+    fireEvent.click(within(rejectedRow).getByRole('button', { name: '详情' }))
+    const rejectedDialog = screen.getByRole('dialog', { name: '推广活动详情' })
+    expect(within(rejectedDialog).getByText('资质材料不完整，请补充后重新提交。')).toBeInTheDocument()
+    // reviewedByUserId is displayed for traceability (R8)
+    expect(within(rejectedDialog).getByText('9876543210')).toBeInTheDocument()
+    fireEvent.click(within(rejectedDialog).getAllByRole('button', { name: '关闭' })[0])
+
+    // open detail dialog for cancelled campaign (505)
+    const cancelledRow = rowFor(table, 505)
+    fireEvent.click(within(cancelledRow).getByRole('button', { name: '详情' }))
+    const cancelledDialog = screen.getByRole('dialog', { name: '推广活动详情' })
+    expect(within(cancelledDialog).getByText('商家主动撤回推广申请。')).toBeInTheDocument()
+    // cancelledByUserId is displayed for traceability (R8)
+    expect(within(cancelledDialog).getByText('8765432109')).toBeInTheDocument()
+    fireEvent.click(within(cancelledDialog).getAllByRole('button', { name: '关闭' })[0])
 
     expectNoMutations({
       approveCampaign,
@@ -895,47 +903,55 @@ describe('AdminPromotionCampaignManager (action visibility + approve/reject)', (
     expect(actionButtonIn(pendingRow, 'approve', 501)).toBeInTheDocument()
     expect(actionButtonIn(pendingRow, 'reject', 501)).toBeInTheDocument()
     expect(actionButtonIn(pendingRow, 'cancel', 501)).toBeInTheDocument()
-    expect(within(pendingRow).getAllByRole('button')).toHaveLength(3)
+    expect(within(operationCell(pendingRow)).getAllByRole('button')).toHaveLength(3)
+    expect(within(pendingRow).getByRole('button', { name: '详情' })).toBeInTheDocument()
 
     // payment_failed → cancel only
     const paymentFailedRow = rowFor(table, 506)
     expect(actionButtonIn(paymentFailedRow, 'cancel', 506)).toBeInTheDocument()
     expect(actionButtonIn(paymentFailedRow, 'approve', 506)).not.toBeInTheDocument()
-    expect(within(paymentFailedRow).getAllByRole('button')).toHaveLength(1)
+    expect(within(operationCell(paymentFailedRow)).getAllByRole('button')).toHaveLength(1)
+    expect(within(paymentFailedRow).getByRole('button', { name: '详情' })).toBeInTheDocument()
 
     // scheduled → cancel only
     const scheduledRow = rowFor(table, 507)
     expect(actionButtonIn(scheduledRow, 'cancel', 507)).toBeInTheDocument()
-    expect(within(scheduledRow).getAllByRole('button')).toHaveLength(1)
+    expect(within(operationCell(scheduledRow)).getAllByRole('button')).toHaveLength(1)
+    expect(within(scheduledRow).getByRole('button', { name: '详情' })).toBeInTheDocument()
 
     // active → pause + cancel + refund-adjustment
     const activeRow = rowFor(table, 502)
     expect(actionButtonIn(activeRow, 'pause', 502)).toBeInTheDocument()
     expect(actionButtonIn(activeRow, 'cancel', 502)).toBeInTheDocument()
     expect(actionButtonIn(activeRow, 'refund-adjustment', 502)).toBeInTheDocument()
-    expect(within(activeRow).getAllByRole('button')).toHaveLength(3)
+    expect(within(operationCell(activeRow)).getAllByRole('button')).toHaveLength(3)
+    expect(within(activeRow).getByRole('button', { name: '详情' })).toBeInTheDocument()
 
     // paused → resume + cancel + refund-adjustment
     const pausedRow = rowFor(table, 503)
     expect(actionButtonIn(pausedRow, 'resume', 503)).toBeInTheDocument()
     expect(actionButtonIn(pausedRow, 'cancel', 503)).toBeInTheDocument()
     expect(actionButtonIn(pausedRow, 'refund-adjustment', 503)).toBeInTheDocument()
-    expect(within(pausedRow).getAllByRole('button')).toHaveLength(3)
+    expect(within(operationCell(pausedRow)).getAllByRole('button')).toHaveLength(3)
+    expect(within(pausedRow).getByRole('button', { name: '详情' })).toBeInTheDocument()
 
     // rejected → cancel only
     const rejectedRow = rowFor(table, 504)
     expect(actionButtonIn(rejectedRow, 'cancel', 504)).toBeInTheDocument()
-    expect(within(rejectedRow).getAllByRole('button')).toHaveLength(1)
+    expect(within(operationCell(rejectedRow)).getAllByRole('button')).toHaveLength(1)
+    expect(within(rejectedRow).getByRole('button', { name: '详情' })).toBeInTheDocument()
 
     // expired → no buttons, the operation cell renders —
     const expiredRow = rowFor(table, 508)
-    expect(within(expiredRow).queryAllByRole('button')).toHaveLength(0)
+    expect(within(operationCell(expiredRow)).queryAllByRole('button')).toHaveLength(0)
     expect(operationCell(expiredRow)).toHaveTextContent('—')
+    expect(within(expiredRow).getByRole('button', { name: '详情' })).toBeInTheDocument()
 
     // cancelled → no buttons, the operation cell renders —
     const cancelledRow = rowFor(table, 505)
-    expect(within(cancelledRow).queryAllByRole('button')).toHaveLength(0)
+    expect(within(operationCell(cancelledRow)).queryAllByRole('button')).toHaveLength(0)
     expect(operationCell(cancelledRow)).toHaveTextContent('—')
+    expect(within(cancelledRow).getByRole('button', { name: '详情' })).toBeInTheDocument()
 
     // the visibility card never opens a dialog or drives a mutation
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()

@@ -531,7 +531,10 @@ export default function AdminEditorialManager({
                     <th className="px-3 py-2">展位</th>
                     <th className="px-3 py-2">状态</th>
                     <th className="px-3 py-2">起止时间</th>
-                    <th className="px-3 py-2">权重</th>
+                    <th className="px-3 py-2">
+                      排序权重
+                      <span className="text-[11px] font-normal text-[var(--color-text-muted)] ml-1">（越大越前）</span>
+                    </th>
                     <th className="px-3 py-2">公开理由</th>
                     <th className="px-3 py-2">内部原因</th>
                     <th className="px-3 py-2">操作</th>
@@ -713,10 +716,14 @@ export default function AdminEditorialManager({
                 htmlFor="editorial-form-sort-weight"
                 className="block text-xs font-bold text-[var(--color-text-muted)] mb-1.5 uppercase tracking-wider"
               >
-                权重
+                排序权重
+                <span className="text-[11px] font-normal text-[var(--color-text-muted)] ml-1">
+                  （数字越大越靠前）
+                </span>
               </label>
               <input
                 id="editorial-form-sort-weight"
+                aria-label="权重"
                 type="number"
                 step="1"
                 min={MIN_SORT_WEIGHT}

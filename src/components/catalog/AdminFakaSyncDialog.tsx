@@ -108,7 +108,7 @@ export default function AdminFakaSyncDialog({ product, onClose, onSynced }: Prop
       <DialogContent className="max-w-2xl max-h-[90dvh] overflow-y-auto" data-testid="admin-faka-sync-dialog">
         <DialogTitle>同步 Xboard 套餐</DialogTitle>
         <DialogDescription>
-          Xboard 管可售性/周期/SKU；MoNexus 管积分价、展示名、分类和封面。同步不会静默覆盖积分价。
+          Xboard 管理上游可售性、周期与规格编号；MoNexus 管理积分售价、展示名称、分类与封面。已存在的关联商品不会重复导入，最终结果以导入结果为准。同步不会静默覆盖积分价。
         </DialogDescription>
         {loading || !preview ? (
           <p className="mt-5 text-sm text-[var(--color-text-muted)]">
@@ -121,13 +121,13 @@ export default function AdminFakaSyncDialog({ product, onClose, onSynced }: Prop
                 商品已归档。确认同步时会先恢复为草稿/下架，不会自动重新上架。
               </p>
             )}
-            <p>远端可售：{preview.plan.showSell ? '是' : '否'} · sourceHash {preview.sourceChanged ? '已变化' : '未变化'}</p>
+            <p>远端可售：{preview.plan.showSell ? '是' : '否'} · {preview.sourceChanged ? '上游商品资料有更新' : '上游资料无变化'}</p>
             {preview.added.length > 0 && (
               <div>
                 <h3 className="font-bold mb-2">新增周期</h3>
                 {preview.added.map((row) => (
                   <label key={row.period} className="flex items-center gap-2 mb-2">
-                    <span>{row.suggestedName} ({row.sku})</span>
+                    <span>{row.suggestedName}（上游商品编号 SKU: {row.sku}）</span>
                     <input className="input font-mono w-28" placeholder="积分价" value={addPrices[row.period] ?? ''}
                       onChange={(event) => setAddPrices((current) => ({ ...current, [row.period]: event.target.value }))}
                       data-testid={`admin-faka-sync-add-price-${row.period}`} />

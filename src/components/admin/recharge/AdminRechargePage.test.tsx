@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 
 const {
   listAdminRechargeOrders,
@@ -152,8 +152,279 @@ describe('AdminRechargePage', () => {
     render(<AdminRechargePage />)
     fireEvent.click(await screen.findByRole('tab', { name: '退款' }))
     expect(await screen.findByTestId(`admin-refund-row-${creditedHeld.orderId}`)).toBeInTheDocument()
-    expect(screen.getByText('积分已冻结')).toBeInTheDocument()
-    expect(screen.getByText('已到账')).toBeInTheDocument()
+    expect(screen.getAllByText('积分已冻结').length).toBeGreaterThanOrEqual(1)
+    expect(screen.getByText('积分已入账')).toBeInTheDocument()
     expect(screen.getByText('申请人: #1')).toBeInTheDocument()
+  })
+
+  it('payment events: hides eventType from failure summary for processed events, copies attempt id, and opens detail dialog', async () => {
+    const writeTextMock = vi.fn().mockResolvedValue(undefined)
+    Object.assign(navigator, {
+      clipboard: {
+        writeText: writeTextMock,
+      },
+    })
+    const succeededEvt = {
+      id: 'evt-succeeded-1',
+      provider: 'simulator',
+      source: 'webhook',
+      eventType: 'payment.success',
+      status: 'processed',
+      providerPaymentId: 'tx-simulator-1234567890',
+      paymentAttemptId: 'att-simulator-1234567890',
+      attempts: 1,
+      lastErrorCode: null,
+      createdAt: '2026-09-01T10:00:00.000Z',
+      processedAt: '2026-09-01T10:00:00.120Z',
+    }
+    const failedEvt = {
+      id: 'evt-failed-1',
+      provider: 'simulator',
+      source: 'webhook',
+      eventType: 'payment.failed',
+      status: 'failed',
+      providerPaymentId: 'tx-simulator-fail-999',
+      paymentAttemptId: 'att-simulator-fail-999',
+      attempts: 2,
+      lastErrorCode: 'INSUFFICIENT_FUNDS',
+      createdAt: '2026-09-01T11:00:00.000Z',
+      processedAt: '2026-09-01T11:00:00.050Z',
+    }
+    listAdminPaymentEvents.mockResolvedValueOnce({
+      page: 1,
+      pageSize: 50,
+      total: 2,
+      items: [succeededEvt, failedEvt],
+    })
+
+    render(<AdminRechargePage />)
+    fireEvent.click(await screen.findByRole('tab', { name: '支付事件' }))
+
+    expect(await screen.findByTestId('admin-payment-events')).toBeInTheDocument()
+    // For failed event, INSUFFICIENT_FUNDS is in table
+    expect(screen.getByText('INSUFFICIENT_FUNDS')).toBeInTheDocument()
+    // For processed event, raw eventType is NOT in the failure column
+    // Open detail dialog
+    const detailBtns = screen.getAllByRole('button', { name: '详情' })
+    fireEvent.click(detailBtns[0])
+
+    // Dialog title
+    expect(await screen.findByText('支付事件详情')).toBeInTheDocument()
+    expect(screen.getByText(/tx-simulator-1234567890/)).toBeInTheDocument()
+    expect(screen.getByText(/att-simulator-1234567890/)).toBeInTheDocument()
+    expect(screen.getByText('payment.success')).toBeInTheDocument()
+    expect(screen.getByText('处理尝试次数（含首次）：')).toBeInTheDocument()
+
+    // Test copy attempt id
+    const copyAttemptBtn = screen.getByRole('button', { name: '复制尝试标识' })
+    fireEvent.click(copyAttemptBtn)
+    expect(writeTextMock).toHaveBeenCalledWith('att-simulator-1234567890')
+  })
+
+  it('disputes: formats evidenceDueAt with Beijing time, structures recovery details, and opens dispute details dialog', async () => {
+    const writeTextMock = vi.fn().mockResolvedValue(undefined)
+    Object.assign(navigator, {
+      clipboard: {
+        writeText: writeTextMock,
+      },
+    })
+    const dispute = {
+      id: 'disp-1',
+      provider: 'simulator',
+      providerDisputeId: 'dp-simulator-88888',
+      rechargeOrderId: 'ord-recharge-77777',
+      amountMinor: '5000',
+      currency: 'CNY',
+      status: 'open',
+      reasonCode: 'fraudulent',
+      evidenceDueAt: '2026-09-15T12:30:00.000Z',
+      openedAt: '2026-09-01T08:00:00.000Z',
+      closedAt: null,
+      recoveryCase: {
+        id: 'rec-1',
+        status: 'held',
+        pointsToRecover: '5000',
+        pointsHeld: '5000',
+        outstandingPoints: '0',
+      },
+    }
+    listAdminPaymentDisputes.mockResolvedValueOnce({
+      page: 1,
+      pageSize: 20,
+      total: 1,
+      items: [dispute],
+    })
+
+    render(<AdminRechargePage />)
+    fireEvent.click(await screen.findByRole('tab', { name: '争议' }))
+
+    expect(await screen.findByTestId('admin-payment-disputes')).toBeInTheDocument()
+    // Check Beijing time in table
+    expect(screen.getByText(/举证截止:.*（北京时间）/)).toBeInTheDocument()
+
+    // Click detail
+    fireEvent.click(screen.getByRole('button', { name: '详情' }))
+    expect(await screen.findByText('支付争议详情')).toBeInTheDocument()
+    expect(screen.getAllByText('dp-simulator-88888').length).toBeGreaterThanOrEqual(1)
+    expect(screen.getByText('ord-recharge-77777')).toBeInTheDocument()
+    expect(screen.getByText('fraudulent')).toBeInTheDocument()
+    expect(screen.getByText('应追回积分')).toBeInTheDocument()
+    expect(screen.getByText('追偿技术参数')).toBeInTheDocument()
+
+    // Test copy dispute id
+    const copyDisputeBtn = screen.getByRole('button', { name: '复制渠道争议编号' })
+    fireEvent.click(copyDisputeBtn)
+    expect(writeTextMock).toHaveBeenCalledWith('dp-simulator-88888')
+  })
+
+  it('reconciliation: displays items mismatch breakdown with Chinese labels and copies keys', async () => {
+    const writeTextMock = vi.fn().mockResolvedValue(undefined)
+    Object.assign(navigator, {
+      clipboard: {
+        writeText: writeTextMock,
+      },
+    })
+    const run = {
+      id: 'run-recon-1',
+      provider: 'simulator',
+      environment: 'live',
+      scopeType: 'statement',
+      scopeKey: 'stmt-2026-09-01',
+      status: 'completed_with_mismatches',
+      itemCount: 20,
+      mismatchCount: 1,
+      startedAt: '2026-09-01T00:00:00.000Z',
+      completedAt: '2026-09-01T00:01:00.000Z',
+      lastErrorCode: null,
+      createdAt: '2026-09-01T00:00:00.000Z',
+      items: [
+        {
+          id: 'item-diff-1',
+          providerEntryKey: 'entry-sim-12345',
+          rechargeOrderId: 'ord-sim-67890',
+          mismatchType: 'amount_mismatch',
+          providerStatus: 'paid',
+          localStatus: 'credited',
+          providerAmountMinor: '2000',
+          localAmountMinor: '1000',
+          quotedAmountMinor: null,
+          currency: 'CNY',
+          status: 'open',
+        },
+      ],
+    }
+    listAdminReconRuns.mockResolvedValueOnce({
+      items: [run],
+    })
+
+    render(<AdminRechargePage />)
+    fireEvent.click(await screen.findByRole('tab', { name: '对账' }))
+
+    expect(await screen.findByTestId('admin-reconciliation')).toBeInTheDocument()
+    expect(screen.getByText('发现差异 1 条')).toBeInTheDocument()
+    expect(screen.getByText('正式充值')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '明细 (1)' }))
+    expect(await screen.findByText('对账差异明细')).toBeInTheDocument()
+    expect(screen.getByText('金额不一致')).toBeInTheDocument()
+    expect(screen.getByText(/entry-sim-12345/)).toBeInTheDocument()
+    expect(screen.getByText('待处理')).toBeInTheDocument()
+
+    // Test scope details and copy scopeKey
+    const dialog = screen.getByRole('dialog', { name: '对账差异明细' })
+    expect(within(dialog).getByText('对账范围与目标')).toBeInTheDocument()
+    expect(within(dialog).getByText('渠道账单')).toBeInTheDocument()
+    expect(within(dialog).getByText('stmt-2026-09-01')).toBeInTheDocument()
+    const copyScopeBtn = within(dialog).getByRole('button', { name: '复制对账范围标识' })
+    fireEvent.click(copyScopeBtn)
+    expect(writeTextMock).toHaveBeenCalledWith('stmt-2026-09-01')
+
+    // Test timeline
+    expect(within(dialog).getByText('执行时间线')).toBeInTheDocument()
+    expect(within(dialog).getAllByText(/（本地时间）/).length).toBe(3)
+
+    // Test copy provider entry key
+    const copyKeyBtn = within(dialog).getByRole('button', { name: '复制渠道凭据' })
+    fireEvent.click(copyKeyBtn)
+    expect(writeTextMock).toHaveBeenCalledWith('entry-sim-12345')
+  })
+
+  it('reconciliation: displays "—" for null startedAt and completedAt timestamps', async () => {
+    const run = {
+      id: 'run-recon-pending',
+      provider: 'simulator',
+      environment: 'sandbox',
+      scopeType: 'manual',
+      scopeKey: 'manual-scope-xyz',
+      status: 'pending',
+      itemCount: 0,
+      mismatchCount: 0,
+      startedAt: null,
+      completedAt: null,
+      lastErrorCode: null,
+      createdAt: '2026-09-01T00:00:00.000Z',
+      items: [],
+    }
+    listAdminReconRuns.mockResolvedValueOnce({
+      items: [run],
+    })
+    render(<AdminRechargePage />)
+    fireEvent.click(await screen.findByRole('tab', { name: '对账' }))
+    fireEvent.click(await screen.findByRole('button', { name: '明细' }))
+
+    const dialog = await screen.findByRole('dialog', { name: '对账差异明细' })
+    expect(within(dialog).getByText('人工指定范围')).toBeInTheDocument()
+    expect(within(dialog).getByText('manual-scope-xyz')).toBeInTheDocument()
+    expect(within(dialog).getAllByText('—').length).toBe(2)
+  })
+
+  it('clipboard handles copy failure gracefully', async () => {
+    const writeTextFailMock = vi.fn().mockRejectedValue(new Error('Clipboard denied'))
+    Object.assign(navigator, {
+      clipboard: {
+        writeText: writeTextFailMock,
+      },
+    })
+    const run = {
+      id: 'run-recon-fail',
+      provider: 'simulator',
+      environment: 'live',
+      scopeType: 'statement',
+      scopeKey: 'stmt-1',
+      status: 'completed_with_mismatches',
+      itemCount: 1,
+      mismatchCount: 1,
+      startedAt: '2026-09-01T00:00:00.000Z',
+      completedAt: '2026-09-01T00:01:00.000Z',
+      lastErrorCode: null,
+      createdAt: '2026-09-01T00:00:00.000Z',
+      items: [
+        {
+          id: 'diff-1',
+          providerEntryKey: 'entry-fail-1',
+          rechargeOrderId: 'ord-fail-1',
+          mismatchType: 'amount_mismatch',
+          providerStatus: 'paid',
+          localStatus: 'credited',
+          providerAmountMinor: '2000',
+          localAmountMinor: '1000',
+          quotedAmountMinor: null,
+          currency: 'CNY',
+          status: 'open',
+        },
+      ],
+    }
+    listAdminReconRuns.mockResolvedValueOnce({
+      items: [run],
+    })
+    render(<AdminRechargePage />)
+    fireEvent.click(await screen.findByRole('tab', { name: '对账' }))
+    fireEvent.click(await screen.findByRole('button', { name: '明细 (1)' }))
+
+    const copyBtn = screen.getByRole('button', { name: '复制渠道凭据' })
+    fireEvent.click(copyBtn)
+    await waitFor(() => {
+      expect(writeTextFailMock).toHaveBeenCalledWith('entry-fail-1')
+    })
   })
 })

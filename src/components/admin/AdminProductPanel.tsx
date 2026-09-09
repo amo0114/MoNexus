@@ -455,7 +455,7 @@ export default function AdminProductPanel({ active = true }: Props) {
               <tr>
                 <th>商品名称</th>
                 <th>状态</th>
-                <th>类型</th>
+                <th>分类</th>
                 <th>售价 (积分)</th>
                 <th>可售资源</th>
                 <th className="text-right">操作</th>
@@ -494,6 +494,9 @@ export default function AdminProductPanel({ active = true }: Props) {
                   <tr key={p.id}>
                     <td data-label="商品名称">
                       <div className="font-bold text-[var(--color-text)]">{p.name}</div>
+                      <div className="text-xs text-[var(--color-text-muted)] mt-0.5">
+                        {isPlatformOwned ? '平台自营' : `商家 #${p.merchantId}`}
+                      </div>
                       {isFaka && (
                         <div className="text-[10px] text-[var(--color-primary)] mt-0.5">
                           FakaBridge · Xboard
@@ -508,7 +511,7 @@ export default function AdminProductPanel({ active = true }: Props) {
                         {p.archivedAt ? '已归档' : adminProductStatusLabel(p.status)}
                       </span>
                     </td>
-                    <td data-label="类型">
+                    <td data-label="分类">
                       <span className="bg-[var(--color-background)] border border-[var(--color-border)] text-[var(--color-text-muted)] px-2 py-1 rounded text-xs font-bold">
                         {p.type}
                       </span>

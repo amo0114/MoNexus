@@ -171,34 +171,36 @@ export default function AdminOfferManagerModal({ product, onClose, onChanged }: 
         ) : (
           <form className="mt-4 space-y-4" onSubmit={(event) => { event.preventDefault(); void save() }}>
             <div>
-              <label className="block text-sm font-bold mb-1.5">规格名称 *</label>
-              <input className="input" value={name} onChange={(event) => setName(event.target.value)}
+              <label htmlFor="admin-offer-form-name" className="block text-sm font-bold mb-1.5">规格名称 *</label>
+              <input id="admin-offer-form-name" className="input" value={name} onChange={(event) => setName(event.target.value)}
                 data-testid="admin-offer-form-name" disabled={submitting} />
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-bold mb-1.5">售价 *</label>
-                <input className="input font-mono" type="number" min={1} value={price}
+                <label htmlFor="admin-offer-form-price" className="block text-sm font-bold mb-1.5">售价（积分）*</label>
+                <input id="admin-offer-form-price" className="input font-mono" type="number" min={1} value={price}
                   onChange={(event) => setPrice(event.target.value)} data-testid="admin-offer-form-price" disabled={submitting} />
               </div>
               <div>
-                <label className="block text-sm font-bold mb-1.5">划线价</label>
-                <input className="input font-mono" type="number" min={0} value={originalPrice}
+                <label htmlFor="admin-offer-form-original-price" className="block text-sm font-bold mb-1.5">划线价（积分）</label>
+                <input id="admin-offer-form-original-price" className="input font-mono" type="number" min={0} value={originalPrice}
                   onChange={(event) => setOriginalPrice(event.target.value)} disabled={submitting} />
               </div>
               <div>
-                <label className="block text-sm font-bold mb-1.5">有效期（天）</label>
-                <input className="input font-mono" type="number" min={1} value={validityDays}
+                <label htmlFor="admin-offer-form-validity" className="block text-sm font-bold mb-1.5">有效期（天）</label>
+                <input id="admin-offer-form-validity" className="input font-mono" type="number" min={1} value={validityDays}
                   onChange={(event) => setValidityDays(event.target.value)} disabled={submitting} />
               </div>
               <div>
-                <label className="block text-sm font-bold mb-1.5">排序</label>
-                <input className="input font-mono" type="number" min={0} value={sortOrder}
+                <label htmlFor="admin-offer-form-sort" className="block text-sm font-bold mb-1.5">展示顺序（越小越前）</label>
+                <input id="admin-offer-form-sort" className="input font-mono" type="number" min={0} value={sortOrder}
                   onChange={(event) => setSortOrder(event.target.value)} disabled={submitting} />
               </div>
             </div>
             {current?.externalSku && (
-              <p className="text-xs text-[var(--color-text-muted)]">SKU {current.externalSku} 不在普通表单中修改。</p>
+              <p className="text-xs text-[var(--color-text-muted)]">
+                上游商品编号（SKU）：{current.externalSku}，此项由自动开通配置决定，不在普通表单中修改。
+              </p>
             )}
             <div className="flex justify-end gap-2">
               <button type="button" className="btn-secondary px-4 py-2" onClick={() => setEditing(null)} disabled={submitting}>取消</button>

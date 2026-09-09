@@ -11,23 +11,28 @@ test('admin config tab shows Chinese groups and saves checkinReward', async ({ p
   await page.goto('/admin')
   await page.getByRole('button', { name: '系统配置' }).click()
 
-  // 5 个中文分组全部出现
-  for (const group of ['奖励发放', '安全', '分页限制', '库存', '会员等级']) {
-    await expect(
-      page.locator(`[data-testid="admin-config-group"][data-group="${group}"]`)
-    ).toBeVisible({ timeout: 10_000 })
+  // 7 个中文分组 Tab 全部出现
+  const groups = ['注册与邀请', '基础奖励', '会员等级', '交易与交付', '库存提醒', '商品运营', '高级运维']
+  for (const group of groups) {
+    await expect(page.getByRole('tab', { name: group })).toBeVisible({ timeout: 10_000 })
   }
 
-  // checkinReward：主标签是中文描述（粗体正文），英文 key 是 mono 小字辅助文本，无裸 key 主标签
-  const rewardGroup = page.locator('[data-testid="admin-config-group"][data-group="奖励发放"]')
-  await expect(rewardGroup.getByText('每日签到奖励积分', { exact: true })).toBeVisible()
-  await expect(rewardGroup.locator('.font-mono', { hasText: 'checkinReward' })).toBeVisible()
-  // 主标签（font-bold 描述行）不应直接是英文 key
-  await expect(rewardGroup.locator('div.font-bold', { hasText: /^checkinReward$/ })).toHaveCount(0)
+  // 切换到「基础奖励」分组
+  await page.getByRole('tab', { name: '基础奖励' }).click()
+  const rewardGroup = page.locator('[data-testid="admin-config-group"][data-group="基础奖励"]')
+  await expect(rewardGroup).toBeVisible()
+
+  // checkinReward：主标签是中文描述「每日签到基础奖励」，技术键默认折叠，主动展开后可见英文 key
+  await expect(rewardGroup.getByText('每日签到基础奖励', { exact: true })).toBeVisible()
+  const keyDetails = rewardGroup.locator('details').filter({ hasText: 'checkinReward' })
+  await expect(keyDetails).toBeVisible()
+  await expect(keyDetails.getByText('checkinReward')).toBeHidden()
+  await keyDetails.locator('summary').click()
+  await expect(keyDetails.getByText('checkinReward')).toBeVisible()
 
   const input = page.getByTestId('admin-config-input-checkinReward')
   const saveButton = page.getByTestId('admin-config-save-checkinReward')
-  const savedToast = page.getByText('「每日签到奖励积分」已保存')
+  const savedToast = page.getByText('「每日签到基础奖励」已保存')
 
   const original = await input.inputValue()
   const modified = String(Number(original) + 1)
