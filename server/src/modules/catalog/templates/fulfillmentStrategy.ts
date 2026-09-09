@@ -123,6 +123,19 @@ export function strategyToConfiguration(strategy: FulfillmentStrategy): Fulfillm
   return strategy.kind
 }
 
+function intendedConfiguration(offer: FulfillmentOfferInput): FulfillmentConfiguration | null {
+  if (offer.externalIntegration === 'faka_bridge') return 'faka_bridge'
+  if (offer.autoProvision) return 'merchant_webhook'
+  if (offer.deliveryMode === 'instant_inventory') return 'inventory'
+  if (offer.deliveryMode === 'instant_fixed') {
+    if (offer.fixedContentType === 'file') return 'fixed_file'
+    if (offer.fixedContentType === 'url') return 'fixed_url'
+    if (offer.fixedContentType === 'text') return 'fixed_text'
+  }
+  if (offer.deliveryMode === 'manual_service') return 'manual'
+  return null
+}
+
 export function evaluateTemplateFulfillment(input: {
   template: ProductTemplateDefinition
   productAttributes: TemplateAttributes
@@ -130,11 +143,18 @@ export function evaluateTemplateFulfillment(input: {
   mode: 'draft' | 'publish'
   purchaseForm?: Array<{ type?: string; required?: boolean }> | null
 }): FulfillmentResolveResult & { rule: FulfillmentRule | null } {
-  const resolved = resolveFulfillmentStrategy(input.offer)
-  if (!resolved.ok) return { ...resolved, rule: matchFulfillmentRule(input.template, input.productAttributes) }
-
   const rule = matchFulfillmentRule(input.template, input.productAttributes)
   const allowed = allowedFulfillmentConfigurations(input.template, input.productAttributes)
+  const resolved = resolveFulfillmentStrategy(input.offer)
+  if (!resolved.ok) {
+    if (input.mode === 'draft') {
+      const intended = intendedConfiguration(input.offer)
+      if (intended && allowed.includes(intended)) {
+        return { ok: true, strategy: { kind: intended }, rule }
+      }
+    }
+    return { ...resolved, rule }
+  }
   const configuration = strategyToConfiguration(resolved.strategy)
 
   if (input.mode === 'draft') {

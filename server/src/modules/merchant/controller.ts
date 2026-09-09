@@ -34,6 +34,11 @@ export async function listProducts(req: Request, res: Response, next: NextFuncti
 export async function createProduct(req: Request, res: Response, next: NextFunction) {
   try {
     const merchant = await merchantService.getMyMerchant(req.user!.userId)
+    if (req.body?.editorVersion === 2) {
+      const { createProductFromV2 } = await import('../catalog/productWrite.js')
+      res.status(201).json(await createProductFromV2({ kind: 'merchant', merchantId: merchant.id }, req.body))
+      return
+    }
     res.status(201).json(await merchantService.createMyProduct(merchant.id, req.body))
   } catch (err) { next(err) }
 }

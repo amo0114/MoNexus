@@ -24,6 +24,7 @@ import {
   voidAbuseRewardSchema,
 } from './schema.js'
 import { adminReviewsQuerySchema } from '../reviews/schema.js'
+import { createProductV2Schema } from '../catalog/productV2Schema.js'
 import * as controller from './controller.js'
 import * as abuseController from './abuseController.js'
 import * as storageController from './storageController.js'
@@ -123,7 +124,10 @@ router.post('/users/:id/adjust', validate({ params: idParamSchema, body: adjustP
 router.put('/users/:id/ban', validate({ params: idParamSchema, body: banUserSchema }), controller.banUser)
 router.put('/users/:id/unban', validate({ params: idParamSchema }), controller.unbanUser)
 router.get('/products', validate({ query: listAdminProductsQuerySchema }), controller.products)
-router.post('/products', validate(createProductSchema), controller.createProduct)
+router.post('/products', (req, res, next) => {
+  const schema = req.body?.editorVersion === 2 ? createProductV2Schema : createProductSchema
+  return validate(schema)(req, res, next)
+}, controller.createProduct)
 router.put('/products/:id', validate({ params: idParamSchema, body: updateProductSchema }), controller.updateProduct)
 router.get('/products/:id/readiness', validate({ params: idParamSchema }), controller.productReadiness)
 router.post('/products/:id/publish', validate({ params: idParamSchema }), controller.publishProduct)

@@ -54,7 +54,14 @@ export async function updateConfig(req: Request, res: Response, next: NextFuncti
 }
 
 export async function createProduct(req: Request, res: Response, next: NextFunction) {
-  try { res.status(201).json(await adminService.createProduct(req.user!.userId, req.body)) } catch (err) { next(err) }
+  try {
+    if (req.body?.editorVersion === 2) {
+      const { createProductFromV2 } = await import('../catalog/productWrite.js')
+      res.status(201).json(await createProductFromV2({ kind: 'admin', adminUserId: req.user!.userId }, req.body))
+      return
+    }
+    res.status(201).json(await adminService.createProduct(req.user!.userId, req.body))
+  } catch (err) { next(err) }
 }
 
 export async function updateProduct(req: Request, res: Response, next: NextFunction) {
