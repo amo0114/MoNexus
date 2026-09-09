@@ -651,7 +651,7 @@ CI 从根包版本、完整 Git SHA、UTC 构建时间生成 `build-info.json`�
 | 403 `PRODUCT_LOGIN_REQUIRED` | 游客读取会员商品/评论/分享 |
 | 409 `PRODUCT_CONTENT_CHANGED` | 内容 CAS 冲突 |
 | 409 `OFFER_CHANGED` | 套餐编辑版本冲突 |
-| 409 `PRODUCT_TEMPLATE_LOCKED` | 不满足模板切换条件 |
+| 400 `PRODUCT_TEMPLATE_LOCKED` | 不满足模板切换条件（在售不可补齐、形态一经设定不可更换） |
 | 409 `ASSURANCE_ALREADY_PENDING` / `ASSURANCE_ALREADY_ACTIVE` | 重复申请/授权 |
 | 409 `ASSURANCE_APPLICATION_CLOSED` | 审核/撤回非 pending |
 | 409 `SHARE_LINK_CREATING` | 正在准备稳定短链 |
