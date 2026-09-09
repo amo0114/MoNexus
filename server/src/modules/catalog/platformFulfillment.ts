@@ -7,12 +7,24 @@ import {
   validateDeliveryValues,
   type StructuredDeliveryContent,
 } from '../../lib/deliveryFields.js'
+import { isFakaBridgeOffer } from '../../lib/fakaBridge/offerIntegration.js'
 import {
   createOrderStatusEvent,
   getProductFulfillmentMode,
   transitionOrderStatus,
 } from '../orders/fulfillment.js'
 import { releaseHeldOrder } from '../orders/accounting.js'
+
+const EXTERNAL_FAKA_MANUAL_OVERRIDE_MESSAGE = '外部开通订单不能由平台人工替代交付'
+
+function isExternalFakaFulfillment(order: {
+  offer: { externalIntegration: string | null } | null
+  fakaBridgeTask: { id: number } | null
+}): boolean {
+  // FakaBridge/Xboard snapshots as manual_service; offer flag, outbox row, or
+  // leftover task after the offer is later unlinked all mean external provision.
+  return isFakaBridgeOffer(order.offer ?? {}) || order.fakaBridgeTask != null
+}
 
 async function assertPlatformOrder(orderId: number, tx: Prisma.TransactionClient) {
   const order = await tx.order.findFirst({
@@ -29,9 +41,14 @@ async function assertPlatformOrder(orderId: number, tx: Prisma.TransactionClient
       productId: true,
       merchantId: true,
       product: { select: { deliveryMode: true, merchantId: true } },
+      offer: { select: { externalIntegration: true } },
+      fakaBridgeTask: { select: { id: true } },
     },
   })
   if (!order) throw notFound('订单不存在')
+  if (isExternalFakaFulfillment(order)) {
+    throw badRequest(EXTERNAL_FAKA_MANUAL_OVERRIDE_MESSAGE)
+  }
   return order
 }
 
