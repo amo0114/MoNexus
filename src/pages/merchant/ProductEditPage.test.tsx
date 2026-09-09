@@ -1,8 +1,18 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import type { Dispatch, SetStateAction } from 'react'
 import ProductEditPage from './ProductEditPage'
+
+const merchantMocks = vi.hoisted(() => ({
+  uploadDeliveryFile: vi.fn(),
+  updateMerchantOffer: vi.fn(),
+}))
+
+vi.mock('../../api/merchant', () => ({
+  uploadDeliveryFile: merchantMocks.uploadDeliveryFile,
+  updateMerchantOffer: merchantMocks.updateMerchantOffer,
+}))
 
 vi.mock('../../components/merchant/ProductImageUploader', () => ({
   default: function MockUploader({
@@ -223,6 +233,11 @@ async function renderEditPage(
 }
 
 describe('ProductEditPage (spec §9.2 / §10.3)', () => {
+  beforeEach(() => {
+    merchantMocks.uploadDeliveryFile.mockReset()
+    merchantMocks.updateMerchantOffer.mockReset()
+  })
+
   it('loads the editor DTO and PATCHes name with expectedContentVersion', async () => {
     const transport = createEditTransport({
       patch: (body) => ({
@@ -370,5 +385,62 @@ describe('ProductEditPage (spec §9.2 / §10.3)', () => {
       { src: 'https://files.example/old.webp', ref: { kind: 'upload', objectKey: 'objects/old.webp' } },
       { src: 'https://files.example/desc.webp', ref: { kind: 'upload', objectKey: 'objects/desc.webp' } },
     ])
+  })
+
+  it('merchant actor uploads a file-form offer file and updates the offer URL with fixedFileId', async () => {
+    merchantMocks.uploadDeliveryFile.mockResolvedValue({
+      id: 88,
+      fileName: 'guide.pdf',
+      size: 12,
+    })
+    let boundFileId: number | null = null
+    merchantMocks.updateMerchantOffer.mockImplementation(async (_productId, _offerId, payload: { fixedFileId?: number | null }) => {
+      boundFileId = payload.fixedFileId ?? null
+      return { id: 11, fixedFileId: boundFileId }
+    })
+
+    const base = editorDto()
+    const fileOffers = () => ([
+      { ...base.offers[0], id: 9, name: '文本规格', fixedContentType: 'text' as const, fixedFileId: null },
+      {
+        ...base.offers[0],
+        id: 11,
+        name: '文件规格',
+        deliveryMode: 'instant_fixed' as const,
+        stockMode: 'unlimited' as const,
+        fixedContentType: 'file' as const,
+        fixedFileId: boundFileId,
+      },
+    ])
+    const transport = createEditTransport({
+      editor: () => ({ ...base, offers: fileOffers() }),
+    })
+    await renderEditPage(transport)
+
+    expect(screen.getByTestId('product-edit-offer-file-11')).toBeInTheDocument()
+    expect(screen.queryByTestId('product-edit-offer-file-9')).not.toBeInTheDocument()
+    expect(screen.getByTestId('product-edit-content-version')).toHaveTextContent('v3')
+
+    fireEvent.change(screen.getByTestId('product-edit-offer-file-11'), {
+      target: { files: [new File(['paid'], 'guide.pdf', { type: 'application/pdf' })] },
+    })
+    fireEvent.click(screen.getByTestId('product-edit-offer-file-bind-11'))
+
+    await waitFor(() => expect(merchantMocks.uploadDeliveryFile).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(merchantMocks.updateMerchantOffer).toHaveBeenCalledTimes(1))
+    expect(merchantMocks.updateMerchantOffer).toHaveBeenCalledWith(42, 11, { fixedFileId: 88 })
+    expect(merchantMocks.uploadDeliveryFile.mock.calls[0]?.[0]).toBeInstanceOf(File)
+    expect(transport.calls.some(call => call.method === 'patch')).toBe(false)
+    expect(screen.getByTestId('product-edit-content-version')).toHaveTextContent('v3')
+    expect(useAppStore.getState().toasts.some(toast => toast.message.includes('已挂载'))).toBe(true)
+  })
+
+  it('does not show a file input on non-file offers', async () => {
+    const transport = createEditTransport({ editor: editorDto() })
+    await renderEditPage(transport)
+
+    expect(screen.getByTestId('product-edit-offer-9')).toBeInTheDocument()
+    expect(screen.queryByTestId('product-edit-offer-file-9')).not.toBeInTheDocument()
+    expect(merchantMocks.updateMerchantOffer).not.toHaveBeenCalled()
   })
 })

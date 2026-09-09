@@ -11,9 +11,11 @@ import {
   type ProductEditorActor,
   type ProductEditorDto,
   type ProductEditorImage,
+  type ProductEditorOffer,
   type ProductEditorPublicationIssue,
 } from '../../api/catalog'
 import { uploadImage, UploadError } from '../../api/uploads'
+import { updateMerchantOffer, uploadDeliveryFile } from '../../api/merchant'
 import type { RichTextInsertedImage } from '../../components/catalog/RichTextEditor'
 import {
   CATALOG_ERROR_CODES,
@@ -78,6 +80,10 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
   const [loadError, setLoadError] = useState(false)
   const [saving, setSaving] = useState(false)
   const savingRef = useRef(false)
+  const bindingRef = useRef(false)
+  const [bindingOfferId, setBindingOfferId] = useState<number | null>(null)
+  const [offerFileById, setOfferFileById] = useState<Record<number, File | null>>({})
+  const [offerFileLabelById, setOfferFileLabelById] = useState<Record<number, string>>({})
 
   const [contentVersion, setContentVersion] = useState(1)
   const [status, setStatus] = useState<string>(PRODUCT_STATUS.DRAFT)
@@ -122,6 +128,9 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
     setCapabilities(dto.capabilities)
     setOffers(dto.offers)
     setPublicationIssues(dto.publicationIssues)
+    setOfferFileById({})
+    setOfferFileLabelById({})
+    setBindingOfferId(null)
   }
 
   async function loadEditor() {
@@ -200,6 +209,40 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
         : getApiErrorMessage(err, '图片上传失败')
       showToast(msg, 'error')
       return null
+    }
+  }
+
+  async function handleBindOfferFile(offer: ProductEditorOffer) {
+    if (actor !== 'merchant' || !validId || !canEdit || bindingRef.current || savingRef.current) return
+    const file = offerFileById[offer.id]
+    if (!file) {
+      showToast('请先选择交付文件', 'error')
+      return
+    }
+
+    bindingRef.current = true
+    setBindingOfferId(offer.id)
+    try {
+      const uploaded = await uploadDeliveryFile(file)
+      await updateMerchantOffer(productId, offer.id, { fixedFileId: uploaded.id })
+      setOffers(prev => prev.map(item => (
+        item.id === offer.id ? { ...item, fixedFileId: uploaded.id } : item
+      )))
+      setOfferFileLabelById(prev => ({ ...prev, [offer.id]: uploaded.fileName }))
+      setOfferFileById(prev => ({ ...prev, [offer.id]: null }))
+      showToast('交付文件已挂载')
+      try {
+        const fresh = await adapter.getEditor(actor, productId)
+        setOffers(fresh.offers)
+        setPublicationIssues(fresh.publicationIssues)
+      } catch {
+        // Bind already succeeded; checklist refresh is best-effort.
+      }
+    } catch (err) {
+      showToast(getApiErrorMessage(err, '挂载交付文件失败'), 'error')
+    } finally {
+      bindingRef.current = false
+      setBindingOfferId(null)
     }
   }
 
@@ -305,7 +348,7 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
     )
   }
 
-  const busy = saving || !canEdit
+  const busy = saving || bindingOfferId != null || !canEdit
 
   return (
     <div className="max-w-[1120px] mx-auto pb-16 fade-in" data-testid="product-edit-page">
@@ -474,7 +517,9 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
             <section className="bg-[var(--color-surface)] rounded-2xl border border-[var(--color-border)] p-5 sm:p-8 space-y-3" data-testid="product-edit-offers">
               <h2 className="font-heading text-lg font-bold text-[var(--color-text)]">套餐</h2>
               <p className="text-sm text-[var(--color-text-muted)]">
-                套餐价格、交付与库存仍使用商品列表中的「规格管理」。本页不改写套餐商业字段。
+                {actor === 'merchant'
+                  ? '套餐价格与库存仍使用商品列表中的「规格管理」。文件交付规格可在本页挂载交付文件。'
+                  : '套餐价格、交付与库存仍使用商品列表中的「规格管理」。本页不改写套餐商业字段。'}
               </p>
               {offers.length > 0 && (
                 <ul className="space-y-2">
@@ -486,6 +531,43 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
                     >
                       <span className="font-bold">{offer.name}</span>
                       <span className="text-[var(--color-text-muted)] ml-2 font-mono">{offer.price} 积分</span>
+                      {offer.fixedContentType === 'file' && (
+                        <div className="mt-2 space-y-1.5">
+                          <p className="text-xs text-[var(--color-text-muted)]">
+                            {offerFileLabelById[offer.id]
+                              ?? (offer.fixedFileId != null ? `文件 #${offer.fixedFileId}` : '尚未绑定交付文件')}
+                          </p>
+                          {actor === 'merchant' ? (
+                            <div className="flex flex-wrap items-center gap-2">
+                              <input
+                                type="file"
+                                className="input text-xs py-1"
+                                disabled={busy}
+                                onChange={(event) => {
+                                  const file = event.target.files?.[0] ?? null
+                                  setOfferFileById(prev => ({ ...prev, [offer.id]: file }))
+                                }}
+                                data-testid={`product-edit-offer-file-${offer.id}`}
+                              />
+                              <button
+                                type="button"
+                                className="btn-secondary px-3 py-1.5 text-xs disabled:opacity-40"
+                                disabled={busy}
+                                onClick={() => void handleBindOfferFile(offer)}
+                                data-testid={`product-edit-offer-file-bind-${offer.id}`}
+                              >
+                                {bindingOfferId === offer.id
+                                  ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                  : (offer.fixedFileId ? '替换文件' : '挂载文件')}
+                              </button>
+                            </div>
+                          ) : (
+                            <p className="text-xs text-[var(--color-text-muted)]">
+                              请在商品列表的「规格管理」中挂载交付文件。
+                            </p>
+                          )}
+                        </div>
+                      )}
                     </li>
                   ))}
                 </ul>
