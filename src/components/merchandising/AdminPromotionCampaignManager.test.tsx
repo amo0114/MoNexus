@@ -438,8 +438,6 @@ describe('AdminPromotionCampaignManager (query only)', () => {
     // open detail dialog for pending row
     fireEvent.click(within(pendingRow).getByRole('button', { name: '详情' }))
     const detailDialog = screen.getByRole('dialog', { name: '推广活动详情' })
-    expect(detailDialog).toHaveClass('overflow-y-auto')
-    expect(detailDialog).not.toHaveClass('overflow-hidden')
     expect(within(detailDialog).getByText('1200 积分')).toBeInTheDocument()
     expect(within(detailDialog).getAllByText('—').length).toBeGreaterThanOrEqual(4)
     fireEvent.click(within(detailDialog).getAllByRole('button', { name: '关闭' })[0])

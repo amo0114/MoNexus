@@ -462,10 +462,6 @@ export default function AdminPricePolicies() {
                     <span className="text-[var(--color-text-muted)]">环境：</span>
                     <span>{detailPolicy.adminSandbox ? '沙箱测试' : '正式生产'}</span>
                   </div>
-                  <div className="sm:col-span-2">
-                    <span className="text-[var(--color-text-muted)]">金额精度：</span>
-                    <span>货币最小单位：分（保留 {detailPolicy.currencyScale} 位小数）</span>
-                  </div>
                 </div>
               </div>
 
@@ -485,10 +481,10 @@ export default function AdminPricePolicies() {
                     </span>
                   </div>
                   <div className="sm:col-span-2">
-                    <span className="text-[var(--color-text-muted)]">取整模式：</span>
+                    <span className="text-[var(--color-text-muted)]">取整规则：</span>
                     <span>
                       {detailPolicy.roundingMode === 'HALF_EVEN'
-                        ? '取最接近的整数；恰好半积分时取偶数 (HALF_EVEN)'
+                        ? '取最接近的整数；恰好半积分时取偶数'
                         : detailPolicy.roundingMode}
                     </span>
                   </div>
@@ -540,6 +536,22 @@ export default function AdminPricePolicies() {
                   )}
                 </div>
               </div>
+
+              <details className="rounded-lg border border-[var(--color-border)] p-3 text-xs bg-[var(--color-background)]/50">
+                <summary className="cursor-pointer font-bold text-[var(--color-text)] hover:text-[var(--color-primary)] transition-colors">
+                  技术参数
+                </summary>
+                <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
+                  <div>
+                    <span className="text-[var(--color-text-muted)]">金额精度 (Scale)：</span>
+                    <span className="font-mono text-[var(--color-text)]">保留 {detailPolicy.currencyScale} 位小数</span>
+                  </div>
+                  <div>
+                    <span className="text-[var(--color-text-muted)]">取整枚举 (Rounding)：</span>
+                    <span className="font-mono text-[var(--color-text)]">{detailPolicy.roundingMode}</span>
+                  </div>
+                </div>
+              </details>
 
               <div className="p-3 bg-[var(--color-background)] rounded-lg border border-[var(--color-border)] space-y-2">
                 <div className="font-bold text-[var(--color-text)]">生效与生命周期</div>
