@@ -183,13 +183,18 @@ test.describe('注册开关面板', () => {
     await mockMailStatus(page, READY_STATUS)
     await openConfigTab(page)
 
-    await expect(page.locator('[data-testid="admin-config-group"][data-group="奖励发放"]')).toBeVisible({
+    // 在默认的「注册与邀请」组中，开关为专用控件，不渲染通用数值输入框与保存按钮
+    await expect(page.getByTestId('registration-toggle')).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByTestId('admin-config-input-registrationEnabled')).toHaveCount(0)
+    await expect(page.getByTestId('admin-config-save-registrationEnabled')).toHaveCount(0)
+
+    // 切换到数值配置组「基础奖励」，布尔 key 同样不渗透进入
+    await page.getByRole('tab', { name: '基础奖励' }).click()
+    await expect(page.locator('[data-testid="admin-config-group"][data-group="基础奖励"]')).toBeVisible({
       timeout: 10_000,
     })
     await expect(page.getByTestId('admin-config-input-registrationEnabled')).toHaveCount(0)
     await expect(page.getByTestId('admin-config-save-registrationEnabled')).toHaveCount(0)
-    // 该分组下只有布尔 key，排除后不应产生空的数字分组
-    await expect(page.locator('[data-testid="admin-config-group"][data-group="账户与注册"]')).toHaveCount(0)
   })
 })
 
@@ -216,6 +221,7 @@ test.describe('邮件投递面板', () => {
     page.on('console', (msg) => consoleText.push(msg.text()))
 
     await openConfigTab(page)
+    await page.getByRole('tab', { name: '高级运维' }).click()
     await expect(page.getByTestId('admin-mail-panel')).toBeVisible({ timeout: 10_000 })
     await expect(page.getByTestId('admin-mail-from')).toHaveText('noreply@example.com')
     await expect(page.getByTestId('admin-mail-auth')).toHaveText('已配置')
@@ -245,6 +251,7 @@ test.describe('邮件投递面板', () => {
       configuredVia: 'environment',
     })
     await openConfigTab(page)
+    await page.getByRole('tab', { name: '高级运维' }).click()
 
     await expect(page.getByTestId('admin-mail-panel')).toBeVisible({ timeout: 10_000 })
     await expect(page.getByTestId('admin-mail-auth')).toHaveText('未配置')
@@ -265,6 +272,7 @@ test.describe('邮件投递面板', () => {
       configuredVia: 'environment',
     })
     await openConfigTab(page)
+    await page.getByRole('tab', { name: '高级运维' }).click()
 
     await expect(page.getByTestId('admin-mail-mode')).toHaveText('未配置真实 SMTP，当前仅记录到服务端日志', {
       timeout: 10_000,
@@ -288,6 +296,7 @@ test.describe('邮件投递面板', () => {
     })
 
     await openConfigTab(page)
+    await page.getByRole('tab', { name: '高级运维' }).click()
     const input = page.getByTestId('admin-mail-test-email')
     const send = page.getByTestId('admin-mail-test-send')
     await expect(send).toBeEnabled({ timeout: 10_000 })
@@ -328,23 +337,30 @@ test.describe('响应式契约', () => {
       await mockMailStatus(page, { ...READY_STATUS, from: LONG_FROM })
       await openConfigTab(page)
 
-      await expect(page.getByTestId('admin-mail-panel')).toBeVisible({ timeout: 10_000 })
-      await expect(page.getByTestId('registration-toggle')).toBeVisible()
+      // 1. 默认在「注册与邀请」分组：检查注册开关与触控尺寸
+      await expect(page.getByTestId('registration-toggle')).toBeVisible({ timeout: 10_000 })
 
-      const overflow = await page.evaluate(() =>
+      const regOverflow = await page.evaluate(() =>
         document.documentElement.scrollWidth - document.documentElement.clientWidth
       )
-      expect(overflow, '文档不应横向溢出').toBeLessThanOrEqual(1)
+      expect(regOverflow, '注册分组文档不应横向溢出').toBeLessThanOrEqual(1)
+
+      const toggleBox = await page.getByTestId('registration-toggle').boundingBox()
+      expect(toggleBox!.height, '开关触控高度').toBeGreaterThanOrEqual(40)
+      expect(toggleBox!.width, '开关触控宽度').toBeGreaterThanOrEqual(40)
+
+      // 2. 切换到「高级运维」分组：检查邮件投递面板与长发件地址
+      await page.getByRole('tab', { name: '高级运维' }).click()
+      await expect(page.getByTestId('admin-mail-panel')).toBeVisible({ timeout: 10_000 })
+
+      const opsOverflow = await page.evaluate(() =>
+        document.documentElement.scrollWidth - document.documentElement.clientWidth
+      )
+      expect(opsOverflow, '高级运维分组文档不应横向溢出').toBeLessThanOrEqual(1)
 
       // 长发件地址必须换行，而不是把卡片撑宽
       const fromBox = await page.getByTestId('admin-mail-from').boundingBox()
       expect(fromBox!.width).toBeLessThanOrEqual(viewport.size.width)
-
-      // 开关按规格 §5.2 无条件 ≥40×40；btn-sm 的发送按钮沿用既有约定，
-      // 只在触控/小视口（max-width:767px）扩到 40px 高。
-      const toggleBox = await page.getByTestId('registration-toggle').boundingBox()
-      expect(toggleBox!.height, '开关触控高度').toBeGreaterThanOrEqual(40)
-      expect(toggleBox!.width, '开关触控宽度').toBeGreaterThanOrEqual(40)
 
       if (viewport.size.width < 768) {
         const sendBox = await page.getByTestId('admin-mail-test-send').boundingBox()
