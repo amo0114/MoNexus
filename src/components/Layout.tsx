@@ -319,24 +319,29 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           {/* Brand mark + Orbitron wordmark. See design-system/monexus/LOGO-BRIEF.md. */}
           {isAdminPage ? (
             <div className="flex items-center gap-2.5">
-              <div
-                className="flex items-center gap-2.5 cursor-pointer group"
+              <button
+                type="button"
+                className="flex items-center gap-2.5 cursor-pointer group focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)] rounded"
                 onClick={() => navigate('/')}
                 title="MoNexus 首页"
+                aria-label="MoNexus 首页"
               >
                 <Logo className="w-8 h-8 text-[var(--color-primary)] transition-transform duration-300 group-hover:scale-105 shrink-0" />
                 <span className="font-heading font-bold text-[var(--color-text)] leading-none text-lg tracking-[0.18em]">
                   MONEXUS
                 </span>
-              </div>
+              </button>
               <span className="hidden sm:inline-flex items-center px-2 py-0.5 rounded-md text-xs font-bold bg-[var(--color-primary)]/10 text-[var(--color-primary)] border border-[var(--color-primary)]/20 whitespace-nowrap">
                 管理后台
               </span>
             </div>
           ) : (
-            <div
-              className="flex items-center gap-2.5 cursor-pointer group"
+            <button
+              type="button"
+              className="flex items-center gap-2.5 cursor-pointer group focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)] rounded text-left"
               onClick={() => navigate('/')}
+              title="MoNexus 首页"
+              aria-label="MoNexus 首页"
             >
               <Logo className="w-8 h-8 text-[var(--color-primary)] transition-transform duration-300 group-hover:scale-105 shrink-0" />
               {/* compact 时压缩字宽,为右侧三个 40px 触控目标留出空间。字号
@@ -348,7 +353,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               >
                 MONEXUS
               </span>
-            </div>
+            </button>
           )}
 
           {/* Right Actions */}
@@ -378,14 +383,15 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               <>
                 {/* Merchant Portal entry — depends on user.role × merchant.status */}
                 {user?.role === 'user' && !user.merchant && (
-                  <div
-                    className="hidden md:flex items-center gap-1.5 px-3 py-2 bg-[var(--color-primary)]/8 text-[var(--color-primary)] rounded-full cursor-pointer hover:bg-[var(--color-primary)]/12 transition-colors border border-[var(--color-primary)]/20"
+                  <button
+                    type="button"
+                    className="hidden md:flex items-center gap-1.5 px-3 py-2 bg-[var(--color-primary)]/8 text-[var(--color-primary)] rounded-full cursor-pointer hover:bg-[var(--color-primary)]/12 transition-colors border border-[var(--color-primary)]/20 focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)]"
                     onClick={() => navigate('/merchant/apply')}
                     title="申请成为商家"
                   >
                     <Plus className="w-4 h-4" />
                     <span className="font-bold text-xs">申请成为商家</span>
-                  </div>
+                  </button>
                 )}
                 {user?.role === 'user' && user.merchant?.status === 'pending' && (
                   <div
@@ -397,14 +403,15 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                   </div>
                 )}
                 {user?.role === 'user' && user.merchant?.status === 'rejected' && (
-                  <div
-                    className="hidden md:flex items-center gap-1.5 px-3 py-2 bg-[var(--color-text-muted)]/10 text-[var(--color-text-muted)] rounded-full cursor-pointer hover:bg-[var(--color-text-muted)]/15 transition-colors border border-[var(--color-border)]"
+                  <button
+                    type="button"
+                    className="hidden md:flex items-center gap-1.5 px-3 py-2 bg-[var(--color-text-muted)]/10 text-[var(--color-text-muted)] rounded-full cursor-pointer hover:bg-[var(--color-text-muted)]/15 transition-colors border border-[var(--color-border)] focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)]"
                     onClick={() => navigate('/merchant/apply')}
                     title="申请被拒绝，可重新申请"
                   >
                     <XCircle className="w-4 h-4" />
                     <span className="font-bold text-xs">申请被拒，重试</span>
-                  </div>
+                  </button>
                 )}
                 {user?.role === 'user' && user.merchant?.status === 'suspended' && (
                   <div
@@ -416,23 +423,27 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                   </div>
                 )}
                 {user?.role === 'merchant' && user.merchant?.status === 'active' && (
-                  <div
-                    className="hidden md:flex items-center gap-1.5 px-3 py-2 bg-[var(--color-primary)]/8 text-[var(--color-primary)] rounded-full cursor-pointer hover:bg-[var(--color-primary)]/12 transition-colors border border-[var(--color-primary)]/20"
+                  <button
+                    type="button"
+                    className="hidden md:flex items-center gap-1.5 px-3 py-2 bg-[var(--color-primary)]/8 text-[var(--color-primary)] rounded-full cursor-pointer hover:bg-[var(--color-primary)]/12 transition-colors border border-[var(--color-primary)]/20 focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)]"
                     onClick={() => navigate('/merchant')}
+                    title="商家后台"
                   >
                     <Store className="w-4 h-4" />
                     <span className="font-bold text-xs">商家后台</span>
-                  </div>
+                  </button>
                 )}
                 {/* Admin Portal */}
                 {user?.role === 'admin' && (
-                  <div
-                    className="hidden md:flex items-center gap-1.5 px-3 py-2 bg-[var(--color-primary)]/8 text-[var(--color-primary)] rounded-full cursor-pointer hover:bg-[var(--color-primary)]/12 transition-colors border border-[var(--color-primary)]/20"
+                  <button
+                    type="button"
+                    className="hidden md:flex items-center gap-1.5 px-3 py-2 bg-[var(--color-primary)]/8 text-[var(--color-primary)] rounded-full cursor-pointer hover:bg-[var(--color-primary)]/12 transition-colors border border-[var(--color-primary)]/20 focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)]"
                     onClick={() => navigate('/admin')}
+                    title="管理后台"
                   >
                     <ShieldCheck className="w-4 h-4" />
                     <span className="font-bold text-xs">管理后台</span>
-                  </div>
+                  </button>
                 )}
 
                 {/* 积分排行榜 — 全角色可见。md 视口只留图标：桌面右侧已有
