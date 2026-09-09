@@ -301,6 +301,11 @@ export type CreateProductV2OfferRequest = {
   autoProvision: boolean
 }
 
+export type DescriptionImageWriteRef = {
+  src: string
+  ref: PlatformMediaRef
+}
+
 export type CreateProductV2Request = {
   editorVersion: 2
   templateKey: TemplateKey
@@ -309,7 +314,7 @@ export type CreateProductV2Request = {
   categoryId: number
   description: string
   richDescription: string | null
-  descriptionImages: Array<{ src: string; ref: PlatformMediaRef }>
+  descriptionImages: DescriptionImageWriteRef[]
   images: PlatformMediaRef[]
   visibility: ProductVisibility
   attributes: TemplateAttributes
@@ -387,7 +392,7 @@ export type ProductEditorProduct = {
   categoryId: number | null
   description: string | null
   richDescription: string | null
-  descriptionImages: Array<{ src: string; ref: PlatformMediaRef }>
+  descriptionImages: DescriptionImageWriteRef[]
   images: ProductEditorImage[]
   visibility: ProductVisibility
   attributes: TemplateAttributes
@@ -409,6 +414,7 @@ export type PatchProductContentRequest = {
   categoryId?: number
   description?: string
   richDescription?: string | null
+  descriptionImages?: DescriptionImageWriteRef[]
   images?: PlatformMediaRef[]
   visibility?: ProductVisibility
   attributes?: TemplateAttributes
@@ -451,6 +457,9 @@ export type CreateProductV2Input = {
   description?: string
   richDescription?: string | null
   images?: string[]
+  /** Display URL → upload objectKey from `/uploads/image` `{key,url}`. */
+  imageKeys?: Record<string, string>
+  descriptionImages?: DescriptionImageWriteRef[]
   visibility?: ProductVisibility
   attributes?: TemplateAttributes
   details?: ProductDetails
@@ -463,9 +472,12 @@ export type CreateProductV2Input = {
 
 /**
  * Map a ProductImageUploader URL/path to a write-side PlatformMediaRef.
- * Uploader state is `string[]` (display URL only) — never invent objectKey.
+ * `objectKey` comes from a successful upload (`{key,url}`) — never invent one
+ * from an http(s) display URL.
  */
-export function mapProductImageToMediaRef(image: string): PlatformMediaRef | null {
+export function mapProductImageToMediaRef(image: string, objectKey?: string): PlatformMediaRef | null {
+  const key = objectKey?.trim()
+  if (key) return { kind: 'upload', objectKey: key }
   const trimmed = image.trim()
   if (trimmed.startsWith('/assets/')) {
     return { kind: 'static', path: trimmed as `/assets/${string}` }
@@ -473,25 +485,61 @@ export function mapProductImageToMediaRef(image: string): PlatformMediaRef | nul
   return null
 }
 
-export function mapProductImagesToMediaRefs(images: string[]): PlatformMediaRef[] {
+export function mapProductImagesToMediaRefs(
+  images: string[],
+  keys?: Record<string, string>,
+): PlatformMediaRef[] {
   const refs: PlatformMediaRef[] = []
   for (const image of images) {
-    const ref = mapProductImageToMediaRef(image)
+    const ref = mapProductImageToMediaRef(image, keys?.[image])
     if (ref) refs.push(ref)
   }
   return refs
 }
 
 /**
+ * Map a rich-text insert (`{src, objectKey}` from the upload API) to a write ref.
+ */
+export function mapInsertedEditorImageToWriteRef(
+  inserted: { src: string; objectKey: string },
+): DescriptionImageWriteRef | null {
+  const src = inserted.src.trim()
+  const objectKey = inserted.objectKey.trim()
+  if (!src || !objectKey) return null
+  return { src, ref: { kind: 'upload', objectKey } }
+}
+
+function sanitizeDescriptionImages(value: unknown): DescriptionImageWriteRef[] {
+  if (!Array.isArray(value)) return []
+  const out: DescriptionImageWriteRef[] = []
+  for (const item of value) {
+    if (!item || typeof item !== 'object') continue
+    const record = item as { src?: unknown; ref?: PlatformMediaRef | null }
+    const src = typeof record.src === 'string' ? record.src.trim() : ''
+    if (!src || !record.ref) continue
+    if (record.ref.kind === 'upload') {
+      const objectKey = record.ref.objectKey.trim()
+      if (!objectKey) continue
+      out.push({ src, ref: { kind: 'upload', objectKey } })
+    } else if (record.ref.kind === 'static' && record.ref.path.startsWith('/assets/')) {
+      out.push({ src, ref: { kind: 'static', path: record.ref.path } })
+    }
+  }
+  return out.slice(0, 12)
+}
+
+/**
  * Map editor gallery items to write-side refs.
  *
- * GET `ref` is authoritative. `/assets/...` display paths become static refs.
- * http(s) display URLs without a ref cannot be invented as upload keys — return
- * `undefined` so the caller omits `images` instead of sending a partial replace.
+ * GET `ref` is authoritative. A tracked upload objectKey becomes an upload ref.
+ * `/assets/...` display paths become static refs.
+ * http(s) display URLs without a ref or key cannot be invented as upload keys —
+ * return `undefined` so the caller omits `images` instead of sending a partial replace.
  * An empty gallery is a complete representation and returns `[]`.
  */
 export function mapEditorImagesToWriteRefs(
   images: Array<{ url: string; ref?: PlatformMediaRef | null }>,
+  keys?: Record<string, string>,
 ): PlatformMediaRef[] | undefined {
   const refs: PlatformMediaRef[] = []
   for (const image of images) {
@@ -499,7 +547,7 @@ export function mapEditorImagesToWriteRefs(
       refs.push(image.ref)
       continue
     }
-    const mapped = mapProductImageToMediaRef(image.url)
+    const mapped = mapProductImageToMediaRef(image.url, keys?.[image.url])
     if (!mapped) return undefined
     refs.push(mapped)
   }
@@ -520,6 +568,7 @@ export function buildPatchProductContentRequest(input: PatchProductContentReques
   if (input.richDescription === null || typeof input.richDescription === 'string') {
     payload.richDescription = input.richDescription === '' ? null : input.richDescription
   }
+  if (Array.isArray(input.descriptionImages)) payload.descriptionImages = sanitizeDescriptionImages(input.descriptionImages)
   if (Array.isArray(input.images)) payload.images = input.images
   if (input.visibility === 'public' || input.visibility === 'members_only') {
     payload.visibility = input.visibility
@@ -619,8 +668,10 @@ export function buildCreateProductV2Request(input: CreateProductV2Input): Create
     categoryId: input.categoryId,
     description: typeof input.description === 'string' ? input.description : '',
     richDescription: rich === '' ? null : input.richDescription as string,
-    descriptionImages: [],
-    images: Array.isArray(input.images) ? mapProductImagesToMediaRefs(input.images.map(String)) : [],
+    descriptionImages: sanitizeDescriptionImages(input.descriptionImages),
+    images: Array.isArray(input.images)
+      ? mapProductImagesToMediaRefs(input.images.map(String), input.imageKeys)
+      : [],
     visibility: input.visibility === 'public' ? 'public' : 'members_only',
     attributes: sanitizeTemplateAttributes(input.attributes),
     details: input.details ? sanitizeProductDetails(input.details) : { ...EMPTY_PRODUCT_DETAILS },

@@ -1,7 +1,82 @@
-import { describe, expect, it, beforeEach } from 'vitest'
+import { describe, expect, it, beforeEach, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
+import type { Dispatch, SetStateAction } from 'react'
 import ProductCreateWizard from './ProductCreateWizard'
+
+vi.mock('../../components/merchant/ProductImageUploader', () => ({
+  default: function MockUploader({
+    onChange,
+    onImageKeysChange,
+    disabled,
+  }: {
+    images: string[]
+    onChange: Dispatch<SetStateAction<string[]>>
+    onImageKeysChange?: Dispatch<SetStateAction<Record<string, string>>>
+    disabled?: boolean
+  }) {
+    return (
+      <div data-testid="product-images-uploader">
+        <button
+          type="button"
+          data-testid="mock-add-upload-image"
+          disabled={disabled}
+          onClick={() => {
+            const url = 'https://files.example/p.webp'
+            onChange(prev => [...prev, url])
+            onImageKeysChange?.(prev => ({ ...prev, [url]: 'objects/p.webp' }))
+          }}
+        >
+          mock upload
+        </button>
+      </div>
+    )
+  },
+}))
+
+vi.mock('../../components/catalog/RichTextEditor', () => ({
+  default: function MockEditor({
+    value,
+    onChange,
+    onInsertImage,
+    disabled,
+  }: {
+    value: string | null
+    onChange: (html: string | null) => void
+    onInsertImage?: () => Promise<{ src: string; objectKey: string } | null>
+    disabled?: boolean
+  }) {
+    return (
+      <div>
+        <textarea
+          data-testid="rich-text-editor"
+          value={value ?? ''}
+          disabled={disabled}
+          onChange={event => onChange(event.target.value)}
+        />
+        {onInsertImage ? (
+          <button
+            type="button"
+            data-testid="rich-text-insert-image"
+            disabled={disabled}
+            onClick={() => { void onInsertImage() }}
+          >
+            插入图片
+          </button>
+        ) : null}
+      </div>
+    )
+  },
+}))
+
+vi.mock('../../api/uploads', () => ({
+  uploadImage: vi.fn(),
+  UploadError: class UploadError extends Error {
+    constructor(message: string, public code: string) {
+      super(message)
+    }
+  },
+}))
 import { createCatalogAdapter } from '../../api/catalog'
 import {
   catalogFixtureCategories,
@@ -19,6 +94,9 @@ import {
   type TemplateKey,
 } from '../../types/catalog'
 import { useAppStore } from '../../stores/appStore'
+import { uploadImage } from '../../api/uploads'
+
+const mockedUpload = vi.mocked(uploadImage)
 
 /**
  * ProductCreateWizard draft-save wiring (editorVersion: 2).
@@ -148,6 +226,7 @@ async function walkToConfirm(routes: FixtureTransportRouteMap = {}) {
 describe('ProductCreateWizard draft flow (editorVersion 2)', () => {
   beforeEach(() => {
     seedRegistry()
+    mockedUpload.mockReset()
   })
 
   it('lists the seven registry templates and has no blank/legacy presets', async () => {
@@ -243,6 +322,68 @@ describe('ProductCreateWizard draft flow (editorVersion 2)', () => {
     expect(screen.getByTestId('wizard-confirm-name')).toHaveTextContent('节点套餐')
     expect(screen.getByTestId('wizard-confirm-price')).toHaveTextContent('100')
     expect(screen.queryByTestId('product-availability-step')).not.toBeInTheDocument()
+  })
+
+  it('includes upload refs in the v2 create payload when image keys are present', async () => {
+    const transport = await renderWizard({
+      get: { '/merchant/products/101/offers': catalogFixtureOffers },
+      post: { '/merchant/products': v2Created },
+    })
+    fireEvent.click(screen.getByTestId('template-redemption_code'))
+    fireEvent.click(screen.getByTestId('wizard-next'))
+    fireEvent.change(screen.getByTestId('wizard-name'), { target: { value: '节点套餐' } })
+    const categorySelect = screen.getByTestId('product-category-select')
+    await waitFor(() => expect(categorySelect).not.toBeDisabled())
+    fireEvent.change(categorySelect, { target: { value: '3' } })
+    fireEvent.click(screen.getByTestId('mock-add-upload-image'))
+    fireEvent.click(screen.getByTestId('wizard-next'))
+    fireEvent.change(screen.getByTestId('wizard-price'), { target: { value: '100' } })
+    fireEvent.click(screen.getByTestId('wizard-next'))
+    fireEvent.click(screen.getByTestId('wizard-next'))
+    fireEvent.click(screen.getByTestId('wizard-save-draft'))
+
+    await waitFor(() => expect(screen.getByTestId('product-availability-step')).toBeInTheDocument())
+    const createCall = transport.calls.find(c => c.method === 'post' && c.url === '/merchant/products')
+    const body = createCall!.body as { images: unknown; descriptionImages: unknown }
+    expect(body.images).toEqual([{ kind: 'upload', objectKey: 'objects/p.webp' }])
+    expect(body.descriptionImages).toEqual([])
+  })
+
+  it('passes descriptionImages when the editor inserts an uploaded image', async () => {
+    mockedUpload.mockResolvedValue({
+      key: 'objects/desc.webp',
+      url: 'https://files.example/desc.webp',
+    })
+    const transport = await renderWizard({
+      get: { '/merchant/products/101/offers': catalogFixtureOffers },
+      post: { '/merchant/products': v2Created },
+    })
+    fireEvent.click(screen.getByTestId('template-redemption_code'))
+    fireEvent.click(screen.getByTestId('wizard-next'))
+    fireEvent.change(screen.getByTestId('wizard-name'), { target: { value: '节点套餐' } })
+    const categorySelect = screen.getByTestId('product-category-select')
+    await waitFor(() => expect(categorySelect).not.toBeDisabled())
+    fireEvent.change(categorySelect, { target: { value: '3' } })
+
+    fireEvent.click(screen.getByTestId('rich-text-insert-image'))
+    fireEvent.change(screen.getByTestId('wizard-description-image-input'), {
+      target: { files: [new File(['x'], 'desc.webp', { type: 'image/webp' })] },
+    })
+    await waitFor(() => expect(mockedUpload).toHaveBeenCalled())
+
+    fireEvent.click(screen.getByTestId('wizard-next'))
+    fireEvent.change(screen.getByTestId('wizard-price'), { target: { value: '100' } })
+    fireEvent.click(screen.getByTestId('wizard-next'))
+    fireEvent.click(screen.getByTestId('wizard-next'))
+    fireEvent.click(screen.getByTestId('wizard-save-draft'))
+
+    await waitFor(() => expect(screen.getByTestId('product-availability-step')).toBeInTheDocument())
+    const createCall = transport.calls.find(c => c.method === 'post' && c.url === '/merchant/products')
+    const body = createCall!.body as { descriptionImages: unknown }
+    expect(body.descriptionImages).toEqual([{
+      src: 'https://files.example/desc.webp',
+      ref: { kind: 'upload', objectKey: 'objects/desc.webp' },
+    }])
   })
 
   it('selecting a category never switches the delivery mode (D-CAT-05 orthogonality)', async () => {

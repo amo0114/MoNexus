@@ -16,6 +16,7 @@ import {
   catalogApi,
   createCatalogAdapter,
   mapEditorImagesToWriteRefs,
+  mapInsertedEditorImageToWriteRef,
   mapProductImageToMediaRef,
   mapProductImagesToMediaRefs,
   getOfferActionLabel,
@@ -488,6 +489,49 @@ describe('buildCreateProductV2Request (SPEC-PRODUCT-COMMERCE-002 §9.1)', () => 
     expect(payload.images).toEqual([{ kind: 'static', path: '/assets/cover.webp' }])
   })
 
+  it('maps a tracked objectKey to an upload ref', () => {
+    expect(mapProductImageToMediaRef('https://files.example/a.webp', 'objects/a.webp')).toEqual({
+      kind: 'upload',
+      objectKey: 'objects/a.webp',
+    })
+    expect(mapProductImageToMediaRef('/assets/cover.webp', 'objects/cover.webp')).toEqual({
+      kind: 'upload',
+      objectKey: 'objects/cover.webp',
+    })
+    expect(mapProductImagesToMediaRefs(
+      ['/assets/a.webp', 'https://files.example/b.webp', 'https://cdn.example/hotlink.webp'],
+      { 'https://files.example/b.webp': 'objects/b.webp' },
+    )).toEqual([
+      { kind: 'static', path: '/assets/a.webp' },
+      { kind: 'upload', objectKey: 'objects/b.webp' },
+    ])
+    const payload = buildCreateProductV2Request({
+      ...base,
+      images: ['https://files.example/cover.webp', 'https://cdn.example/hotlink.png'],
+      imageKeys: { 'https://files.example/cover.webp': 'objects/cover.webp' },
+      descriptionImages: [{
+        src: 'https://files.example/desc.webp',
+        ref: { kind: 'upload', objectKey: 'objects/desc.webp' },
+      }],
+    })
+    expect(payload.images).toEqual([{ kind: 'upload', objectKey: 'objects/cover.webp' }])
+    expect(payload.descriptionImages).toEqual([{
+      src: 'https://files.example/desc.webp',
+      ref: { kind: 'upload', objectKey: 'objects/desc.webp' },
+    }])
+  })
+
+  it('maps an inserted editor image to an upload write ref', () => {
+    expect(mapInsertedEditorImageToWriteRef({
+      src: 'https://files.example/desc.webp',
+      objectKey: 'objects/desc.webp',
+    })).toEqual({
+      src: 'https://files.example/desc.webp',
+      ref: { kind: 'upload', objectKey: 'objects/desc.webp' },
+    })
+    expect(mapInsertedEditorImageToWriteRef({ src: '  ', objectKey: 'objects/x.webp' })).toBeNull()
+  })
+
   it('throws when a legacy type is supplied alongside categoryId', () => {
     expect(() => buildCreateProductV2Request({ ...base, type: '充值卡密' })).toThrow(
       CATALOG_ERROR_CODES.LEGACY_TYPE_WITH_CATEGORY_ID,
@@ -685,6 +729,10 @@ describe('editor DTO + content PATCH (SPEC-PRODUCT-COMMERCE-002 §9.2)', () => {
     expect(mapEditorImagesToWriteRefs([
       { url: 'https://cdn.example/legacy.webp', ref: null },
     ])).toBeUndefined()
+    expect(mapEditorImagesToWriteRefs(
+      [{ url: 'https://files.example/new.webp', ref: null }],
+      { 'https://files.example/new.webp': 'objects/new.webp' },
+    )).toEqual([{ kind: 'upload', objectKey: 'objects/new.webp' }])
     expect(mapEditorImagesToWriteRefs([])).toEqual([])
   })
 
@@ -695,5 +743,20 @@ describe('editor DTO + content PATCH (SPEC-PRODUCT-COMMERCE-002 §9.2)', () => {
     })
     expect(payload).toEqual({ expectedContentVersion: 3, name: '节点套餐' })
     expect('images' in payload).toBe(false)
+    expect('descriptionImages' in payload).toBe(false)
+  })
+
+  it('buildPatchProductContentRequest includes descriptionImages when provided', () => {
+    const payload = buildPatchProductContentRequest({
+      expectedContentVersion: 3,
+      descriptionImages: [{
+        src: 'https://files.example/desc.webp',
+        ref: { kind: 'upload', objectKey: 'objects/desc.webp' },
+      }],
+    })
+    expect(payload.descriptionImages).toEqual([{
+      src: 'https://files.example/desc.webp',
+      ref: { kind: 'upload', objectKey: 'objects/desc.webp' },
+    }])
   })
 })

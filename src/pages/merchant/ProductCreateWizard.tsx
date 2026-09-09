@@ -14,9 +14,12 @@ import ProductImageUploader from '../../components/merchant/ProductImageUploader
 import TemplateAttributeFields from '../../components/catalog/TemplateAttributeFields'
 import ProductDetailsFields from '../../components/catalog/ProductDetailsFields'
 import {
-  buildCreateProductV2Request, catalogApi, readinessErrorToIssues,
+  buildCreateProductV2Request, catalogApi, mapInsertedEditorImageToWriteRef, readinessErrorToIssues,
   type CatalogAdapter,
+  type DescriptionImageWriteRef,
 } from '../../api/catalog'
+import { uploadImage, UploadError } from '../../api/uploads'
+import type { RichTextInsertedImage } from '../../components/catalog/RichTextEditor'
 import {
   EMPTY_PRODUCT_DETAILS,
   PRODUCT_VISIBILITY,
@@ -126,6 +129,9 @@ export default function ProductCreateWizard({ adapter = catalogApi }: Props) {
   const [templatesError, setTemplatesError] = useState(false)
   const [templateKey, setTemplateKey] = useState<TemplateKey | null>(null)
   const [images, setImages] = useState<string[]>([])
+  const [imageKeys, setImageKeys] = useState<Record<string, string>>({})
+  const [descriptionImages, setDescriptionImages] = useState<DescriptionImageWriteRef[]>([])
+  const descriptionImageInputRef = useRef<HTMLInputElement>(null)
   const [categories, setCategories] = useState<CategoryRegistryItem[]>([])
   const [form, setForm] = useState<WizardForm>({
     name: '', categoryId: null, description: '', richDescription: null,
@@ -347,6 +353,8 @@ export default function ProductCreateWizard({ adapter = catalogApi }: Props) {
         description: form.description.trim(),
         richDescription: form.richDescription,
         images,
+        imageKeys,
+        descriptionImages,
         visibility: form.visibility,
         attributes: productAttributes,
         details: productDetails,
@@ -440,6 +448,28 @@ export default function ProductCreateWizard({ adapter = catalogApi }: Props) {
       showToast(getErrorMessage(err, '发布失败，请先解决检查清单中的问题'), 'error')
     } finally {
       setPublishing(false)
+    }
+  }
+
+  async function handleInsertDescriptionImage(): Promise<RichTextInsertedImage | null> {
+    if (descriptionImages.length >= 12) {
+      showToast('图文详情最多插入 12 张图片', 'error')
+      return null
+    }
+    const file = await pickFileFromInput(descriptionImageInputRef.current)
+    if (!file) return null
+    try {
+      const result = await uploadImage(file)
+      const mapped = mapInsertedEditorImageToWriteRef({ src: result.url, objectKey: result.key })
+      if (!mapped) return null
+      setDescriptionImages(prev => [...prev, mapped])
+      return { src: mapped.src, objectKey: result.key }
+    } catch (err) {
+      const msg = err instanceof UploadError
+        ? err.message
+        : getErrorMessage(err, '图片上传失败')
+      showToast(msg, 'error')
+      return null
     }
   }
 
@@ -542,7 +572,13 @@ export default function ProductCreateWizard({ adapter = catalogApi }: Props) {
               onChange={(categoryId) => setForm({ ...form, categoryId })}
               disabled={busy}
             />
-            <ProductImageUploader images={images} onChange={setImages} disabled={busy} />
+            <ProductImageUploader
+              images={images}
+              imageKeys={imageKeys}
+              onChange={setImages}
+              onImageKeysChange={setImageKeys}
+              disabled={busy}
+            />
             <div>
               <FieldLabel>一句话简介</FieldLabel>
               <textarea className="input min-h-[60px] resize-y" placeholder="简明扼要地概括商品亮点..."
@@ -586,6 +622,7 @@ export default function ProductCreateWizard({ adapter = catalogApi }: Props) {
                 <RichTextEditor
                   value={form.richDescription}
                   onChange={(html) => setForm(prev => ({ ...prev, richDescription: html }))}
+                  onInsertImage={handleInsertDescriptionImage}
                   placeholder="详细描述商品特性、使用教程、售后承诺等..."
                   disabled={busy}
                 />
@@ -1021,6 +1058,14 @@ export default function ProductCreateWizard({ adapter = catalogApi }: Props) {
         )}
       </div>
 
+      <input
+        ref={descriptionImageInputRef}
+        type="file"
+        accept="image/png,image/jpeg,image/webp,image/gif"
+        className="hidden"
+        data-testid="wizard-description-image-input"
+      />
+
       <div className="flex justify-between mt-6">
         <button type="button" onClick={() => setStep(s => Math.max(s - 1, 0))} disabled={step === 0 || busy}
           className="btn-secondary px-6 py-2.5 disabled:opacity-40">
@@ -1135,4 +1180,21 @@ function createEmptyExtraOffer(form: Pick<WizardForm, 'deliveryMode' | 'stockMod
     validityDays: '',
     attributes: {},
   }
+}
+
+function pickFileFromInput(input: HTMLInputElement | null): Promise<File | null> {
+  if (!input) return Promise.resolve(null)
+  return new Promise((resolve) => {
+    const done = (file: File | null) => {
+      input.removeEventListener('change', onChange)
+      input.removeEventListener('cancel', onCancel)
+      input.value = ''
+      resolve(file)
+    }
+    const onChange = () => done(input.files?.[0] ?? null)
+    const onCancel = () => done(null)
+    input.addEventListener('change', onChange, { once: true })
+    input.addEventListener('cancel', onCancel, { once: true })
+    input.click()
+  })
 }

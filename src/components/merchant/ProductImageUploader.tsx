@@ -19,17 +19,45 @@ type PendingCrop = {
 
 type ProductImageUploaderProps = {
   images: string[]
+  /** Display URL → upload objectKey for successful local uploads. Never invented for http(s) hotlinks. */
+  imageKeys?: Record<string, string>
   onChange: Dispatch<SetStateAction<string[]>>
+  onImageKeysChange?: Dispatch<SetStateAction<Record<string, string>>>
   disabled?: boolean
+}
+
+function dropUnusedImageKey(
+  keys: Record<string, string>,
+  removedUrl: string | undefined,
+  remaining: string[],
+): Record<string, string> {
+  if (!removedUrl || !(removedUrl in keys) || remaining.includes(removedUrl)) return keys
+  const next = { ...keys }
+  delete next[removedUrl]
+  return next
+}
+
+function rememberImageKey(
+  keys: Record<string, string>,
+  url: string,
+  objectKey: string,
+  removedUrl?: string,
+): Record<string, string> {
+  const next = { ...keys }
+  if (removedUrl && removedUrl !== url) delete next[removedUrl]
+  next[url] = objectKey
+  return next
 }
 
 /**
  * Merchant product images: local upload goes through crop; URL may crop or skip.
  * Cover forces 1:1; secondary allows free aspect.
+ * Display state stays as URLs; objectKey is tracked separately for write-side refs.
  */
 export default function ProductImageUploader({
   images,
   onChange,
+  onImageKeysChange,
   disabled = false,
 }: ProductImageUploaderProps) {
   const showToast = useAppStore((s) => s.showToast)
@@ -75,12 +103,12 @@ export default function ProductImageUploader({
     openFileCrop(first, rest, images.length === 0)
   }
 
-  async function uploadBlob(blob: Blob): Promise<string | null> {
+  async function uploadBlob(blob: Blob): Promise<{ url: string; key: string } | null> {
     const file = new File([blob], `product-${Date.now()}.jpg`, { type: blob.type || 'image/jpeg' })
     setUploading(true)
     try {
       const result = await uploadImage(file)
-      return result.url
+      return { url: result.url, key: result.key }
     } catch (err) {
       const msg =
         err instanceof UploadError
@@ -94,29 +122,37 @@ export default function ProductImageUploader({
     }
   }
 
+  function trackUploadedKey(url: string, objectKey: string, removedUrl?: string) {
+    onImageKeysChange?.((prev) => rememberImageKey(prev, url, objectKey, removedUrl))
+  }
+
   async function handleCropConfirm(blob: Blob) {
     const current = pending
     const queue = current?.queue ?? []
     const replaceIdx = current?.replaceAsCoverFromIndex
-    const url = await uploadBlob(blob)
+    const uploaded = await uploadBlob(blob)
     revokePending(current)
     setPending(null)
     if (fileInputRef.current) fileInputRef.current.value = ''
-    if (!url) {
+    if (!uploaded) {
       if (queue.length > 0) showToast('上传失败，后续文件已取消', 'error')
       return
     }
+    const { url, key } = uploaded
 
     if (typeof replaceIdx === 'number') {
+      const replacedUrl = images[replaceIdx]
       onChange((prev) => {
         const next = prev.filter((_, i) => i !== replaceIdx)
         return [url, ...next].slice(0, MAX_IMAGES)
       })
+      trackUploadedKey(url, key, replacedUrl)
       showToast('封面已更新（1:1）')
       return
     }
 
     onChange((prev) => (prev.length >= MAX_IMAGES ? prev : [...prev, url]))
+    trackUploadedKey(url, key)
     showToast('图片上传成功')
 
     if (queue.length > 0) {
@@ -152,7 +188,10 @@ export default function ProductImageUploader({
   }
 
   function removeImage(index: number) {
+    const removedUrl = images[index]
+    const remaining = images.filter((_, i) => i !== index)
     onChange((prev) => prev.filter((_, i) => i !== index))
+    onImageKeysChange?.((keys) => dropUnusedImageKey(keys, removedUrl, remaining))
   }
 
   function setAsCover(index: number) {

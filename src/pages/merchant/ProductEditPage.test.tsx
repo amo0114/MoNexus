@@ -1,7 +1,49 @@
 import { describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import type { Dispatch, SetStateAction } from 'react'
 import ProductEditPage from './ProductEditPage'
+
+vi.mock('../../components/merchant/ProductImageUploader', () => ({
+  default: function MockUploader({
+    images,
+    onChange,
+    onImageKeysChange,
+    disabled,
+  }: {
+    images: string[]
+    onChange: Dispatch<SetStateAction<string[]>>
+    onImageKeysChange?: Dispatch<SetStateAction<Record<string, string>>>
+    disabled?: boolean
+  }) {
+    return (
+      <div data-testid="product-images-uploader">
+        <span data-testid="mock-image-count">{images.length}</span>
+        <button
+          type="button"
+          data-testid="mock-add-upload-image"
+          disabled={disabled}
+          onClick={() => {
+            const url = 'https://files.example/new.webp'
+            onChange(prev => [...prev, url])
+            onImageKeysChange?.(prev => ({ ...prev, [url]: 'objects/new.webp' }))
+          }}
+        >
+          mock upload
+        </button>
+      </div>
+    )
+  },
+}))
+
+vi.mock('../../api/uploads', () => ({
+  uploadImage: vi.fn(),
+  UploadError: class UploadError extends Error {
+    constructor(message: string, public code: string) {
+      super(message)
+    }
+  },
+}))
 import {
   createCatalogAdapter,
   type CatalogTransport,
@@ -17,23 +59,40 @@ import {
   type ProductTemplateRegistryDto,
 } from '../../types/catalog'
 import { useAppStore } from '../../stores/appStore'
+import { uploadImage } from '../../api/uploads'
+
+const mockedUpload = vi.mocked(uploadImage)
 
 vi.mock('../../components/catalog/RichTextEditor', () => ({
   default: ({
     value,
     onChange,
+    onInsertImage,
     disabled,
   }: {
     value: string | null
     onChange: (html: string | null) => void
+    onInsertImage?: () => Promise<{ src: string; objectKey: string } | null>
     disabled?: boolean
   }) => (
-    <textarea
-      data-testid="rich-text-editor"
-      value={value ?? ''}
-      disabled={disabled}
-      onChange={(event) => onChange(event.target.value)}
-    />
+    <div>
+      <textarea
+        data-testid="rich-text-editor"
+        value={value ?? ''}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.value)}
+      />
+      {onInsertImage ? (
+        <button
+          type="button"
+          data-testid="rich-text-insert-image"
+          disabled={disabled}
+          onClick={() => { void onInsertImage() }}
+        >
+          插入图片
+        </button>
+      ) : null}
+    </div>
   ),
 }))
 
@@ -246,5 +305,70 @@ describe('ProductEditPage (spec §9.2 / §10.3)', () => {
     )
     expect(await screen.findByText('商品不存在')).toBeInTheDocument()
     expect(screen.queryByTestId('product-edit-name')).not.toBeInTheDocument()
+  })
+
+  it('PATCHes a complete images array when a new upload key is present', async () => {
+    const transport = createEditTransport({
+      patch: (body) => ({
+        id: 42,
+        contentVersion: 4,
+        updatedFields: ['images'],
+        echoed: body,
+      }),
+    })
+    await renderEditPage(transport)
+
+    fireEvent.click(screen.getByTestId('mock-add-upload-image'))
+    fireEvent.click(screen.getByTestId('product-edit-save'))
+
+    await waitFor(() => {
+      expect(transport.calls.some(call => call.method === 'patch')).toBe(true)
+    })
+    const body = transport.calls.find(call => call.method === 'patch')?.body as PatchProductContentRequest
+    expect(body.images).toEqual([
+      { kind: 'static', path: '/assets/cover.webp' },
+      { kind: 'upload', objectKey: 'objects/new.webp' },
+    ])
+    expect('descriptionImages' in body).toBe(false)
+  })
+
+  it('sends descriptionImages only after an editor insert', async () => {
+    mockedUpload.mockResolvedValue({
+      key: 'objects/desc.webp',
+      url: 'https://files.example/desc.webp',
+    })
+    const transport = createEditTransport({
+      editor: editorDto({
+        descriptionImages: [{
+          src: 'https://files.example/old.webp',
+          ref: { kind: 'upload', objectKey: 'objects/old.webp' },
+        }],
+      }),
+      patch: (body) => ({
+        id: 42,
+        contentVersion: 4,
+        updatedFields: ['descriptionImages'],
+        echoed: body,
+      }),
+    })
+    await renderEditPage(transport)
+
+    fireEvent.click(screen.getByTestId('rich-text-insert-image'))
+    fireEvent.change(screen.getByTestId('product-edit-description-image-input'), {
+      target: { files: [new File(['x'], 'desc.webp', { type: 'image/webp' })] },
+    })
+    await waitFor(() => expect(mockedUpload).toHaveBeenCalled())
+
+    fireEvent.change(screen.getByTestId('product-edit-name'), { target: { value: '新名称' } })
+    fireEvent.click(screen.getByTestId('product-edit-save'))
+
+    await waitFor(() => {
+      expect(transport.calls.some(call => call.method === 'patch')).toBe(true)
+    })
+    const body = transport.calls.find(call => call.method === 'patch')?.body as PatchProductContentRequest
+    expect(body.descriptionImages).toEqual([
+      { src: 'https://files.example/old.webp', ref: { kind: 'upload', objectKey: 'objects/old.webp' } },
+      { src: 'https://files.example/desc.webp', ref: { kind: 'upload', objectKey: 'objects/desc.webp' } },
+    ])
   })
 })

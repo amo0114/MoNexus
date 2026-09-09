@@ -5,12 +5,16 @@ import { getApiErrorCode, getApiErrorMessage } from '../../api/error'
 import {
   catalogApi,
   mapEditorImagesToWriteRefs,
+  mapInsertedEditorImageToWriteRef,
   type CatalogAdapter,
+  type DescriptionImageWriteRef,
   type ProductEditorActor,
   type ProductEditorDto,
   type ProductEditorImage,
   type ProductEditorPublicationIssue,
 } from '../../api/catalog'
+import { uploadImage, UploadError } from '../../api/uploads'
+import type { RichTextInsertedImage } from '../../components/catalog/RichTextEditor'
 import {
   CATALOG_ERROR_CODES,
   EMPTY_PRODUCT_DETAILS,
@@ -85,16 +89,20 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
   const [categories, setCategories] = useState<CategoryRegistryItem[]>([])
   const [form, setForm] = useState<EditorForm>(emptyForm())
   const [baseline, setBaseline] = useState('')
+  const [imageKeys, setImageKeys] = useState<Record<string, string>>({})
+  const [descriptionImages, setDescriptionImages] = useState<DescriptionImageWriteRef[]>([])
+  const [descriptionImagesTouched, setDescriptionImagesTouched] = useState(false)
+  const descriptionImageInputRef = useRef<HTMLInputElement>(null)
 
   const backPath = actor === 'admin' ? '/admin' : '/merchant'
-  const dirty = baseline !== '' && JSON.stringify(form) !== baseline
+  const dirty = (baseline !== '' && JSON.stringify(form) !== baseline) || descriptionImagesTouched
   const selectedTemplate = useMemo(
     () => templates.find(template => template.key === templateKey) ?? null,
     [templates, templateKey],
   )
   const fieldMode = status === PRODUCT_STATUS.ACTIVE ? 'publish' : 'draft'
   const canEdit = capabilities?.editContent !== false
-  const unresolvedImages = form.images.some(image => !writableImage(image))
+  const unresolvedImages = form.images.some(image => !writableImage(image, imageKeys))
   const checklistIssues = publicationIssues.map(issue => ({
     code: issue.code,
     field: issue.path ?? '',
@@ -105,6 +113,9 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
     const next = formFromEditor(dto)
     setForm(next)
     setBaseline(JSON.stringify(next))
+    setImageKeys({})
+    setDescriptionImages(Array.isArray(dto.product.descriptionImages) ? dto.product.descriptionImages : [])
+    setDescriptionImagesTouched(false)
     setContentVersion(dto.product.contentVersion)
     setStatus(dto.product.status)
     setTemplateKey(isTemplateKey(dto.product.templateKey) ? dto.product.templateKey : null)
@@ -169,6 +180,29 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
     navigate(backPath)
   }
 
+  async function handleInsertDescriptionImage(): Promise<RichTextInsertedImage | null> {
+    if (descriptionImages.length >= 12) {
+      showToast('图文详情最多插入 12 张图片', 'error')
+      return null
+    }
+    const file = await pickFileFromInput(descriptionImageInputRef.current)
+    if (!file) return null
+    try {
+      const result = await uploadImage(file)
+      const mapped = mapInsertedEditorImageToWriteRef({ src: result.url, objectKey: result.key })
+      if (!mapped) return null
+      setDescriptionImages(prev => [...prev, mapped])
+      setDescriptionImagesTouched(true)
+      return { src: mapped.src, objectKey: result.key }
+    } catch (err) {
+      const msg = err instanceof UploadError
+        ? err.message
+        : getApiErrorMessage(err, '图片上传失败')
+      showToast(msg, 'error')
+      return null
+    }
+  }
+
   async function handleSave() {
     if (!validId || savingRef.current || !canEdit) return
     if (!form.name.trim()) {
@@ -188,7 +222,7 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
     savingRef.current = true
     setSaving(true)
     try {
-      const imageRefs = mapEditorImagesToWriteRefs(form.images)
+      const imageRefs = mapEditorImagesToWriteRefs(form.images, imageKeys)
       const result = await adapter.patchContent(actor, productId, {
         expectedContentVersion: contentVersion,
         name: form.name.trim(),
@@ -200,6 +234,7 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
         purchaseForm: serializePurchaseFormFields(form.purchaseForm),
         ...(templateKey ? { attributes: form.attributes } : {}),
         ...(imageRefs ? { images: imageRefs } : {}),
+        ...(descriptionImagesTouched ? { descriptionImages } : {}),
       })
       setContentVersion(result.contentVersion)
       setBaseline(JSON.stringify(form))
@@ -317,12 +352,14 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
             <h2 className="font-heading text-lg font-bold text-[var(--color-text)]">商品信息</h2>
             <ProductImageUploader
               images={form.images.map(image => image.url)}
+              imageKeys={imageKeys}
               onChange={(next) => {
                 setForm(prev => {
                   const urls = typeof next === 'function' ? next(prev.images.map(image => image.url)) : next
-                  return { ...prev, images: bindImageRefs(urls, prev.images) }
+                  return { ...prev, images: bindImageRefs(urls, prev.images, imageKeys) }
                 })
               }}
+              onImageKeysChange={setImageKeys}
               disabled={busy}
             />
             {unresolvedImages && (
@@ -380,6 +417,7 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
                 <RichTextEditor
                   value={form.richDescription}
                   onChange={(html) => setForm(prev => ({ ...prev, richDescription: html }))}
+                  onInsertImage={handleInsertDescriptionImage}
                   disabled={busy}
                 />
               </Suspense>
@@ -468,6 +506,14 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
               上游介绍请在商品列表使用「检查上游介绍」，本页不重复该流程。
             </p>
           )}
+
+          <input
+            ref={descriptionImageInputRef}
+            type="file"
+            accept="image/png,image/jpeg,image/webp,image/gif"
+            className="hidden"
+            data-testid="product-edit-description-image-input"
+          />
 
           <div className="flex justify-end">
             <button
@@ -565,20 +611,46 @@ function parsePurchaseForm(raw: unknown): PurchaseFormField[] {
   return fields
 }
 
-function bindImageRefs(urls: string[], previous: ProductEditorImage[]): ProductEditorImage[] {
+function bindImageRefs(
+  urls: string[],
+  previous: ProductEditorImage[],
+  keys?: Record<string, string>,
+): ProductEditorImage[] {
   const unused = [...previous]
   return urls.map(url => {
     const index = unused.findIndex(image => image.url === url)
+    const objectKey = keys?.[url]
     if (index >= 0) {
       const [found] = unused.splice(index, 1)
+      if (!found.ref && objectKey) {
+        return { url, ref: { kind: 'upload', objectKey } }
+      }
       return found
     }
+    if (objectKey) return { url, ref: { kind: 'upload', objectKey } }
     return { url, ref: null }
   })
 }
 
-function writableImage(image: ProductEditorImage): boolean {
-  return Boolean(image.ref) || image.url.startsWith('/assets/')
+function writableImage(image: ProductEditorImage, keys?: Record<string, string>): boolean {
+  return Boolean(image.ref) || image.url.startsWith('/assets/') || Boolean(keys?.[image.url])
+}
+
+function pickFileFromInput(input: HTMLInputElement | null): Promise<File | null> {
+  if (!input) return Promise.resolve(null)
+  return new Promise((resolve) => {
+    const done = (file: File | null) => {
+      input.removeEventListener('change', onChange)
+      input.removeEventListener('cancel', onCancel)
+      input.value = ''
+      resolve(file)
+    }
+    const onChange = () => done(input.files?.[0] ?? null)
+    const onCancel = () => done(null)
+    input.addEventListener('change', onChange, { once: true })
+    input.addEventListener('cancel', onCancel, { once: true })
+    input.click()
+  })
 }
 
 function isTemplateKey(value: string | null | undefined): value is TemplateKey {
