@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 
 const {
   listAdminRechargeOrders,
@@ -330,10 +330,52 @@ describe('AdminRechargePage', () => {
     expect(screen.getByText(/entry-sim-12345/)).toBeInTheDocument()
     expect(screen.getByText('待处理')).toBeInTheDocument()
 
+    // Test scope details and copy scopeKey
+    const dialog = screen.getByRole('dialog', { name: '对账差异明细' })
+    expect(within(dialog).getByText('对账范围与目标')).toBeInTheDocument()
+    expect(within(dialog).getByText('渠道账单')).toBeInTheDocument()
+    expect(within(dialog).getByText('stmt-2026-09-01')).toBeInTheDocument()
+    const copyScopeBtn = within(dialog).getByRole('button', { name: '复制对账范围标识' })
+    fireEvent.click(copyScopeBtn)
+    expect(writeTextMock).toHaveBeenCalledWith('stmt-2026-09-01')
+
+    // Test timeline
+    expect(within(dialog).getByText('执行时间线')).toBeInTheDocument()
+    expect(within(dialog).getAllByText(/（本地时间）/).length).toBe(3)
+
     // Test copy provider entry key
-    const copyKeyBtn = screen.getByRole('button', { name: '复制渠道凭据' })
+    const copyKeyBtn = within(dialog).getByRole('button', { name: '复制渠道凭据' })
     fireEvent.click(copyKeyBtn)
     expect(writeTextMock).toHaveBeenCalledWith('entry-sim-12345')
+  })
+
+  it('reconciliation: displays "—" for null startedAt and completedAt timestamps', async () => {
+    const run = {
+      id: 'run-recon-pending',
+      provider: 'simulator',
+      environment: 'sandbox',
+      scopeType: 'manual',
+      scopeKey: 'manual-scope-xyz',
+      status: 'pending',
+      itemCount: 0,
+      mismatchCount: 0,
+      startedAt: null,
+      completedAt: null,
+      lastErrorCode: null,
+      createdAt: '2026-09-01T00:00:00.000Z',
+      items: [],
+    }
+    listAdminReconRuns.mockResolvedValueOnce({
+      items: [run],
+    })
+    render(<AdminRechargePage />)
+    fireEvent.click(await screen.findByRole('tab', { name: '对账' }))
+    fireEvent.click(await screen.findByRole('button', { name: '明细' }))
+
+    const dialog = await screen.findByRole('dialog', { name: '对账差异明细' })
+    expect(within(dialog).getByText('人工指定范围')).toBeInTheDocument()
+    expect(within(dialog).getByText('manual-scope-xyz')).toBeInTheDocument()
+    expect(within(dialog).getAllByText('—').length).toBe(2)
   })
 
   it('clipboard handles copy failure gracefully', async () => {

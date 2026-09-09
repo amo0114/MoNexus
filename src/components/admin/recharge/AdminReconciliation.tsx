@@ -203,6 +203,59 @@ export default function AdminReconciliation() {
                 </div>
               </div>
 
+              <div className="p-3 bg-[var(--color-background)] rounded-lg border border-[var(--color-border)] space-y-2">
+                <div className="font-bold text-[var(--color-text)]">对账范围与目标</div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div>
+                    <span className="text-[var(--color-text-muted)]">范围类型：</span>
+                    <span className="font-medium text-[var(--color-text)]">
+                      {SCOPE_TYPE_LABELS[selectedRun.scopeType] ?? selectedRun.scopeType}
+                    </span>
+                  </div>
+                  <div className="sm:col-span-2">
+                    <span className="text-[var(--color-text-muted)] block mb-0.5">对账范围标识 (scopeKey)：</span>
+                    <div className="flex items-start gap-1">
+                      <span className="font-mono text-[11px] break-all select-all font-medium text-[var(--color-text)]">
+                        {selectedRun.scopeKey}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => void handleCopy(selectedRun.scopeKey, '对账范围标识')}
+                        className="btn-ghost p-1 text-[var(--color-text-muted)] hover:text-[var(--color-text)] shrink-0 cursor-pointer -mt-0.5"
+                        aria-label="复制对账范围标识"
+                        title="复制对账范围标识"
+                      >
+                        <Copy className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-3 bg-[var(--color-background)] rounded-lg border border-[var(--color-border)] space-y-2">
+                <div className="font-bold text-[var(--color-text)]">执行时间线</div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  <div>
+                    <span className="text-[var(--color-text-muted)] block">发起时间</span>
+                    <span className="text-[var(--color-text)]">
+                      {selectedRun.createdAt ? `${new Date(selectedRun.createdAt).toLocaleString()}（本地时间）` : '—'}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-[var(--color-text-muted)] block">执行开始</span>
+                    <span className="text-[var(--color-text)]">
+                      {selectedRun.startedAt ? `${new Date(selectedRun.startedAt).toLocaleString()}（本地时间）` : '—'}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-[var(--color-text-muted)] block">执行完成</span>
+                    <span className="text-[var(--color-text)]">
+                      {selectedRun.completedAt ? `${new Date(selectedRun.completedAt).toLocaleString()}（本地时间）` : '—'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
               <div>
                 <h4 className="font-bold text-xs text-[var(--color-text)] mb-2">
                   差异条目明细 ({selectedRun.items?.length || 0})
