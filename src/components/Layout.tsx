@@ -321,7 +321,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             <div className="flex items-center gap-2.5">
               <button
                 type="button"
-                className="flex items-center gap-2.5 cursor-pointer group focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)] rounded"
+                className="min-h-[40px] py-1 flex items-center gap-2.5 cursor-pointer group focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)] rounded"
                 onClick={() => navigate('/')}
                 title="MoNexus 首页"
                 aria-label="MoNexus 首页"
@@ -338,7 +338,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           ) : (
             <button
               type="button"
-              className="flex items-center gap-2.5 cursor-pointer group focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)] rounded text-left"
+              className="min-h-[40px] py-1 flex items-center gap-2.5 cursor-pointer group focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)] rounded text-left"
               onClick={() => navigate('/')}
               title="MoNexus 首页"
               aria-label="MoNexus 首页"
