@@ -3,8 +3,7 @@ import { Check, Copy, ExternalLink, Loader2 } from 'lucide-react'
 import { useAppStore } from '../stores/appStore'
 import { getOrderDetail } from '../api/orders'
 import { Dialog, DialogContent, DialogTitle } from './ui/Dialog'
-import StructuredDeliveryView from './StructuredDeliveryView'
-import FileDeliveryCard from './FileDeliveryCard'
+import DeliveryContent, { type DeliveryProgressEvent } from './DeliveryContent'
 import type { StructuredDeliveryContent } from '../types/merchant'
 
 const POLL_MS = 2000
@@ -81,6 +80,9 @@ export default function SuccessModal({
   const [structuredContent, setStructuredContent] = useState(initialStructured ?? null)
   const [deliveryFile, setDeliveryFile] = useState(initialFile ?? null)
   const [expiresAt, setExpiresAt] = useState<string | null>(null)
+  const [expired, setExpired] = useState(false)
+  const [bookingDate, setBookingDate] = useState<string | null>(null)
+  const [progress, setProgress] = useState<DeliveryProgressEvent[]>([])
   const [pollTimedOut, setPollTimedOut] = useState(false)
   // Only async provision polls. Empty payload on a normal order is NOT "开通中".
   const [awaitingProvision, setAwaitingProvision] = useState(() => Boolean(provisionPending))
@@ -122,6 +124,17 @@ export default function SuccessModal({
               : null
           )
           setExpiresAt(detail.delivery?.expiresAt ?? detail.expiresAt ?? null)
+          setExpired(detail.delivery?.expired === true)
+          setBookingDate(detail.bookingDate ?? null)
+          setProgress(
+            (detail.timeline ?? [])
+              .filter((event) => event.action === 'merchant.progress')
+              .map((event) => ({
+                id: event.id,
+                publicNote: event.publicNote,
+                createdAt: event.createdAt,
+              })),
+          )
           setAwaitingProvision(false)
           return
         }
@@ -171,13 +184,6 @@ export default function SuccessModal({
     showToast('发货信息已复制')
   }
 
-  function formatExpiry(iso: string) {
-    const d = new Date(iso)
-    if (Number.isNaN(d.getTime())) return iso
-    const pad = (n: number) => String(n).padStart(2, '0')
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
-  }
-
   return (
     <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
       <DialogContent className="max-w-md text-center flex flex-col max-h-[90dvh] overflow-hidden">
@@ -197,16 +203,6 @@ export default function SuccessModal({
             : subtitleFromStructured(structuredContent, pendingCopy, headline, awaitingMerchant)}
         </p>
 
-        {!showSpinner && expiresAt && (
-          <div
-            className="mb-4 text-sm rounded-lg border border-[var(--color-primary)]/25 bg-[var(--color-primary)]/8 px-3 py-2 text-[var(--color-text)]"
-            data-testid="success-expires-at"
-          >
-            当前订阅有效期至{' '}
-            <span className="font-bold text-[var(--color-primary)]">{formatExpiry(expiresAt)}</span>
-          </div>
-        )}
-
         {merchantName && (
           <div className="text-sm text-[var(--color-text-muted)] mb-4 bg-[var(--color-primary)]/8 p-2 rounded-lg border border-[var(--color-primary)]/20">
             本商品由商家 <span className="font-bold text-[var(--color-primary)]">{merchantName}</span> 提供
@@ -217,21 +213,7 @@ export default function SuccessModal({
           <p className="text-xs text-[var(--color-text-muted)] mb-2 font-bold uppercase tracking-wider">
             {showSpinner ? '开通状态' : awaitingMerchant || pollTimedOut ? '订单状态' : '开通结果'}
           </p>
-          {deliveryFile && orderId != null ? (
-            <FileDeliveryCard orderId={orderId} fileName={deliveryFile.fileName} size={deliveryFile.size} />
-          ) : structuredContent && structuredContent.fields.length > 0 ? (
-            <StructuredDeliveryView content={structuredContent} />
-          ) : deliveryContentType === 'url' && deliveryContent ? (
-            <a
-              href={deliveryContent}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="font-mono text-sm break-all text-[var(--color-primary)] underline block bg-[var(--color-surface)] p-3 rounded border border-[var(--color-border)] leading-relaxed"
-              data-testid="success-delivery-link"
-            >
-              {deliveryContent}
-            </a>
-          ) : showSpinner ? (
+          {showSpinner ? (
             <div
               className="text-sm text-[var(--color-text-muted)] bg-[var(--color-surface)] p-3 rounded border border-[var(--color-border)] leading-relaxed space-y-2"
               data-testid="success-provision-pending"
@@ -252,9 +234,18 @@ export default function SuccessModal({
                 : '本单无需即时卡密。商家接单/履约后，可在「个人中心 → 我的订单」查看发货内容。'}
             </div>
           ) : (
-            <div className="font-mono text-sm break-all text-[var(--color-text)] select-all bg-[var(--color-surface)] p-3 rounded border border-[var(--color-border)] leading-relaxed whitespace-pre-wrap">
-              {deliveryContent}
-            </div>
+            <DeliveryContent
+              content={deliveryContent}
+              contentType={deliveryContentType}
+              structuredContent={structuredContent}
+              file={deliveryFile}
+              expiresAt={expiresAt}
+              expired={expired}
+              orderId={orderId}
+              progress={progress}
+              bookingDate={bookingDate}
+              urlTestId="success-delivery-link"
+            />
           )}
         </div>
 
