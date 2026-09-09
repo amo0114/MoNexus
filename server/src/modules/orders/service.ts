@@ -39,6 +39,8 @@ import {
   buildProductContentSnapshot,
   loadEffectiveAssuranceGrant,
 } from '../catalog/productContentSnapshot.js'
+import { resolveFulfillmentStrategy } from '../catalog/templates/fulfillmentStrategy.js'
+import type { FulfillmentOfferInput } from '../catalog/templates/types.js'
 import {
   parseStoredDeliveryFields,
   parseStoredStructuredContent,
@@ -84,6 +86,44 @@ export function __setBeforeFakaOfferTaskRecheckHookForTests(
   hook: BeforeFakaOfferTaskRecheckHook | null
 ): void {
   beforeFakaOfferTaskRecheckHookForTests = hook
+}
+
+/** Map a loaded Offer onto the resolver input. Does not invent extra columns. */
+function fulfillmentInputFromOffer(offer: FulfillmentOfferInput): FulfillmentOfferInput {
+  return {
+    deliveryMode: offer.deliveryMode,
+    stockMode: offer.stockMode,
+    fixedContentType: offer.fixedContentType,
+    fixedContent: offer.fixedContent,
+    fixedFileId: offer.fixedFileId,
+    deliveryFields: offer.deliveryFields,
+    autoProvision: offer.autoProvision,
+    externalIntegration: offer.externalIntegration,
+    externalSku: offer.externalSku,
+    fixedStructuredContent: offer.fixedStructuredContent,
+  }
+}
+
+/**
+ * Select the existing delivery write path.
+ * P4b: manual_service may carry deliveryFields as the merchant-fulfillment
+ * template (filled at deliver time). The catalog resolver treats that as
+ * mixed instant config; retry without those fields so the original freeze
+ * path still runs. Other ok:false results stay unpurchasable.
+ */
+function resolveOrderFulfillmentStrategy(offer: FulfillmentOfferInput) {
+  const input = fulfillmentInputFromOffer(offer)
+  const resolved = resolveFulfillmentStrategy(input)
+  if (resolved.ok) return resolved.strategy
+  const isPlainManual =
+    input.deliveryMode === 'manual_service'
+    && !input.autoProvision
+    && (input.externalIntegration == null || input.externalIntegration === '')
+  if (isPlainManual) {
+    const retry = resolveFulfillmentStrategy({ ...input, deliveryFields: null })
+    if (retry.ok && retry.strategy.kind === 'manual') return retry.strategy
+  }
+  throw badRequest('商品暂不可购买，请联系商家')
 }
 
 // manual_service 商家履约 SLA：创建订单后 7 天内需交付，M3-S2 工作台高亮超时
@@ -395,6 +435,10 @@ async function createOrderOnce(
     if (expectedPrice != null && expectedPrice !== offer.price) {
       throw new HttpError(409, 'PRICE_CHANGED', '商品信息已变化，请重新确认')
     }
+    // Dispatch-only (resolveFulfillmentStrategy): pick the existing delivery
+    // write path. Does not persist a strategy column or reorder freeze /
+    // inventory / outbox writes.
+    const strategy = resolveOrderFulfillmentStrategy(offer)
     const productContentSnapshot = buildProductContentSnapshot({
       contentVersion: product.contentVersion,
       templateKey: product.templateKey,
@@ -449,21 +493,22 @@ async function createOrderOnce(
     // P5：file 形态的"内容"是 fixedFileId 指向的文件；text/url 形态仍看 fixedContent。
     // 文件被吊销/清理即停售——新订单在这里被挡下，已成交订单不受影响（读快照）。
     let purchasedFile: { id: number; fileName: string; size: number } | null = null
-    if (deliveryMode === 'instant_fixed') {
-      if (offer.fixedContentType === 'file') {
-        const file = offer.fixedFileId == null
-          ? null
-          : await tx.deliveryFile.findUnique({
-              where: { id: offer.fixedFileId },
-              select: { id: true, fileName: true, size: true, status: true },
-            })
-        if (!file || file.status !== 'active') {
-          throw badRequest('商品暂不可购买，请联系商家')
-        }
-        purchasedFile = { id: file.id, fileName: file.fileName, size: file.size }
-      } else if (!offer.fixedContent) {
+    if (strategy.kind === 'fixed_file') {
+      const file = offer.fixedFileId == null
+        ? null
+        : await tx.deliveryFile.findUnique({
+            where: { id: offer.fixedFileId },
+            select: { id: true, fileName: true, size: true, status: true },
+          })
+      if (!file || file.status !== 'active') {
         throw badRequest('商品暂不可购买，请联系商家')
       }
+      purchasedFile = { id: file.id, fileName: file.fileName, size: file.size }
+    } else if (
+      (strategy.kind === 'fixed_text' || strategy.kind === 'fixed_url')
+      && !offer.fixedContent
+    ) {
+      throw badRequest('商品暂不可购买，请联系商家')
     }
     if (deliveryMode !== 'instant_inventory' && offer.stockMode === 'limited' && offer.stock <= 0) {
       throw badRequest('库存不足，请稍后再试')
@@ -640,12 +685,13 @@ async function createOrderOnce(
     })
 
     // 自动履约 outbox：P7b 与 Faka 互斥——同一订单只创建一条路径。
+    // Kind dispatch via resolveFulfillmentStrategy; write order is unchanged.
     if (fakaBridge && offer.autoProvision) {
       throw badRequest(
         '商品规格配置冲突：不能同时开启商家自动开通与 FakaBridge，请联系商家/管理员'
       )
     }
-    if (fakaBridge && buyerEmail && offer.externalSku) {
+    if (strategy.kind === 'faka_bridge' && buyerEmail && offer.externalSku) {
       // FakaBridge 的 preflight（邮箱证明、容量）必须在事务外执行，但其 SKU 是
       // 不可逆外呼的履约合同。最终在同一订单事务内锁 Offer 并重验，避免管理员
       // 在 resolvePurchaseOfferChecked() 与 outbox create 之间切换 SKU / 集成，
@@ -678,7 +724,7 @@ async function createOrderOnce(
         maxAttempts: config.fakaBridge.maxAttempts,
       })
       fakaBridgeTaskId = task.id
-    } else if (offer.autoProvision) {
+    } else if (strategy.kind === 'merchant_webhook') {
       // P7b：自动开通任务（transactional outbox）——冻结商家当前 active webhook。
       const webhookConfig = merchantId == null
         ? null
@@ -713,7 +759,7 @@ async function createOrderOnce(
       ? await resolveSubscriptionExpiresAt(tx, order, order.validityDaysSnapshot, new Date())
       : null
 
-    if (deliveryMode === 'instant_inventory') {
+    if (strategy.kind === 'inventory') {
       // Claim one row in the database instead of first reading a candidate
       // and then conditionally updating it. SKIP LOCKED lets simultaneous
       // buyers move on to the next available secret rather than all racing
@@ -760,42 +806,48 @@ async function createOrderOnce(
         },
       })
 
-    } else if (deliveryMode === 'instant_fixed') {
-      if (purchasedFile) {
-        // P5：下单事务冻结文件引用——商家换文件只影响后续订单，
-        // 本单下载永远按这份快照授权，绝不回查当前 Offer。
-        deliveryContentType = 'file'
-        await tx.deliveryRecord.create({
-          data: {
-            orderId: order.id,
-            userId,
-            productId,
-            content: null,
-            contentType: 'file',
-            fileId: purchasedFile.id,
-            status: 'delivered',
-            deliveredAt: new Date(),
-            expiresAt: subscriptionExpiresAt,
-          },
-        })
-      } else {
-        deliveryContent = offer.fixedContent!
-        deliveryContentType = offer.fixedContentType
+    } else if (strategy.kind === 'fixed_file') {
+      if (!purchasedFile) throw badRequest('商品暂不可购买，请联系商家')
+      // P5：下单事务冻结文件引用——商家换文件只影响后续订单，
+      // 本单下载永远按这份快照授权，绝不回查当前 Offer。
+      deliveryContentType = 'file'
+      await tx.deliveryRecord.create({
+        data: {
+          orderId: order.id,
+          userId,
+          productId,
+          content: null,
+          contentType: 'file',
+          fileId: purchasedFile.id,
+          status: 'delivered',
+          deliveredAt: new Date(),
+          expiresAt: subscriptionExpiresAt,
+        },
+      })
+    } else if (strategy.kind === 'fixed_text' || strategy.kind === 'fixed_url') {
+      deliveryContent = offer.fixedContent!
+      deliveryContentType = offer.fixedContentType
+      // Shared-account freeze: Offer.fixedStructuredContent → DeliveryRecord.
+      // InventoryItem claim/dedupe above is unchanged.
+      deliveryStructuredContent = parseStoredStructuredContent(offer.fixedStructuredContent)
 
-        await tx.deliveryRecord.create({
-          data: {
-            orderId: order.id,
-            userId,
-            productId,
-            content: offer.fixedContent,
-            contentType: offer.fixedContentType,
-            status: 'delivered',
-            deliveredAt: new Date(),
-            expiresAt: subscriptionExpiresAt,
-          },
-        })
-      }
+      await tx.deliveryRecord.create({
+        data: {
+          orderId: order.id,
+          userId,
+          productId,
+          content: offer.fixedContent,
+          contentType: offer.fixedContentType,
+          structuredContent: deliveryStructuredContent
+            ? structuredContentToJson(deliveryStructuredContent)
+            : undefined,
+          status: 'delivered',
+          deliveredAt: new Date(),
+          expiresAt: subscriptionExpiresAt,
+        },
+      })
     }
+    // manual / merchant_webhook / faka_bridge: freeze path already ran; no instant DeliveryRecord.
 
     await tx.pointLog.create({
       data: {
