@@ -2,7 +2,6 @@ import { useState, useEffect, useMemo, useRef, type KeyboardEvent as ReactKeyboa
 import { createPortal } from 'react-dom'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, ChevronLeft, ChevronRight, Coins, FileText, Store, ShieldCheck, Info, Star, ZoomIn } from 'lucide-react'
-import DOMPurify from 'dompurify'
 import api from '../api/client'
 import { getApiErrorMessage, getApiErrorCode } from '../api/error'
 import { createOrder, type CheckoutPreview } from '../api/orders'
@@ -18,6 +17,8 @@ import ProductImageLightbox from '../components/ProductImageLightbox'
 import { getProductReviews, type ReviewItem } from '../api/reviews'
 import StarRating from '../components/ui/StarRating'
 import { useIsMobileViewport } from '../hooks/useMediaQuery'
+import RichTextHtml, { sanitizeRichTextHtml } from '../components/catalog/RichTextHtml'
+import ProductSharePanel, { ProductShareButton } from '../components/catalog/ProductSharePanel'
 import type { Offer } from '../types/merchant'
 import type { MerchandisingProjection } from '../types/merchandising'
 import { offerPeriodDetailNote, offerPeriodSubtitle } from '../utils/offerPeriodDisplay'
@@ -28,6 +29,7 @@ interface Product {
   description: string
   richDescription?: string
   type: string
+  visibility?: 'public' | 'members_only'
   icon: string
   imageUrl: string
   images?: string[]
@@ -81,6 +83,9 @@ export default function ProductDetailPage() {
   const [provisionPending, setProvisionPending] = useState(false)
   const [activeImage, setActiveImage] = useState(0)
   const [lightboxOpen, setLightboxOpen] = useState(false)
+  const [shareOpen, setShareOpen] = useState(false)
+  const desktopShareRef = useRef<HTMLButtonElement>(null)
+  const mobileShareRef = useRef<HTMLButtonElement>(null)
   const galleryPointerStartRef = useRef<{ x: number; y: number } | null>(null)
   /** Ignore the click that follows a horizontal swipe so swipe ≠ open lightbox. */
   const galleryDidSwipeRef = useRef(false)
@@ -301,12 +306,6 @@ export default function ProductDetailPage() {
     openLightbox()
   }
 
-  const safeRichDescription = useMemo(() => {
-    if (!product) return ''
-    const rawHTML = product.richDescription || product.description || ''
-    return DOMPurify.sanitize(rawHTML, { USE_PROFILES: { html: true } })
-  }, [product])
-
   if (loading) {
     return (
       <div className="max-w-4xl mx-auto pb-8 fade-in relative animate-pulse" data-testid="product-detail-loading">
@@ -466,9 +465,18 @@ export default function ProductDetailPage() {
                     {product.merchant?.name || '平台自营'}
                   </span>
                 </div>
-                <h1 className="hidden md:block font-heading text-3xl md:text-4xl font-bold text-white leading-snug drop-shadow-md tracking-tight">
-                  {product.name}
-                </h1>
+                <div className="hidden md:flex items-start justify-between gap-3">
+                  <h1 className="font-heading text-3xl md:text-4xl font-bold text-white leading-snug drop-shadow-md tracking-tight min-w-0">
+                    {product.name}
+                  </h1>
+                  {!isMobileViewport && (
+                    <ProductShareButton
+                      ref={desktopShareRef}
+                      variant="overlay"
+                      onClick={() => setShareOpen(true)}
+                    />
+                  )}
+                </div>
               </div>
 
               <span className="pointer-events-none absolute left-1/2 top-4 z-20 hidden -translate-x-1/2 items-center gap-1.5 rounded-full border border-white/25 bg-black/45 px-2.5 py-1 text-xs font-medium text-white/90 backdrop-blur-sm sm:inline-flex">
@@ -550,9 +558,18 @@ export default function ProductDetailPage() {
 
         <div className="max-md:p-4 md:p-8">
           {/* <md title — md+ 的 overlay 副本在主图上（与原桌面布局一致） */}
-          <h1 className="md:hidden font-heading text-xl sm:text-2xl font-bold text-[var(--color-text)] leading-snug mb-6">
-            {product.name}
-          </h1>
+          <div className="md:hidden flex items-start justify-between gap-3 mb-6">
+            <h1 className="font-heading text-xl sm:text-2xl font-bold text-[var(--color-text)] leading-snug min-w-0">
+              {product.name}
+            </h1>
+            {isMobileViewport && (
+              <ProductShareButton
+                ref={mobileShareRef}
+                variant="page"
+                onClick={() => setShareOpen(true)}
+              />
+            )}
+          </div>
 
           {/* SKU 选择器（P4a）：仅多规格时渲染，单 SKU 完全透明 */}
           {isMultiSku && (
@@ -727,16 +744,17 @@ export default function ProductDetailPage() {
 
           <div className="grid grid-cols-1 lg:grid-cols-3 max-md:gap-6 gap-8">
             <div className="lg:col-span-2 max-md:space-y-8 space-y-12">
-              {/* Rich description */}
-              <div>
-                <h3 className="font-heading text-lg font-bold max-md:mb-3 mb-5 flex items-center gap-2 text-[var(--color-text)] uppercase tracking-wider">
-                  <FileText className="w-5 h-5 text-[var(--color-primary)]" /> 图文介绍
-                </h3>
-                <div
-                  className="rich-text text-[var(--color-text)] leading-loose space-y-4 text-sm md:text-base bg-[var(--color-background)] p-4 sm:p-6 md:p-8 rounded-xl border border-[var(--color-border)]"
-                  dangerouslySetInnerHTML={{ __html: safeRichDescription }}
-                />
-              </div>
+              {sanitizeRichTextHtml(product.richDescription) ? (
+                <div>
+                  <h3 className="font-heading text-lg font-bold max-md:mb-3 mb-5 flex items-center gap-2 text-[var(--color-text)] uppercase tracking-wider">
+                    <FileText className="w-5 h-5 text-[var(--color-primary)]" /> 图文介绍
+                  </h3>
+                  <RichTextHtml
+                    html={product.richDescription}
+                    className="rich-text text-[var(--color-text)] leading-loose space-y-4 text-sm md:text-base bg-[var(--color-background)] p-4 sm:p-6 md:p-8 rounded-xl border border-[var(--color-border)]"
+                  />
+                </div>
+              ) : null}
 
               {/* Reviews */}
               <div className="max-md:mt-6 mt-8" data-testid="review-list">
@@ -879,6 +897,24 @@ export default function ProductDetailPage() {
       </div>,
       document.body,
       )}
+
+      <ProductSharePanel
+        open={shareOpen}
+        onClose={() => setShareOpen(false)}
+        productId={product.id}
+        copyMode={product.visibility === 'members_only' ? 'members_only' : 'public'}
+        productName={product.name}
+        offerName={
+          selectedOffer?.name
+          ?? (offers.length === 1 ? offers[0]?.name ?? null : null)
+        }
+        points={
+          selectedOffer != null || offers.length === 1
+            ? displayPrice
+            : null
+        }
+        anchorRef={isMobileViewport ? mobileShareRef : desktopShareRef}
+      />
 
       {showPurchase && (
         <PurchaseModal
