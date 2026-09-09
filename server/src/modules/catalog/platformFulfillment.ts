@@ -14,6 +14,7 @@ import {
   transitionOrderStatus,
 } from '../orders/fulfillment.js'
 import { releaseHeldOrder } from '../orders/accounting.js'
+import { applyRefundInventoryPolicy } from '../orders/refundInventory.js'
 
 const EXTERNAL_FAKA_MANUAL_OVERRIDE_MESSAGE = '外部开通订单不能由平台人工替代交付'
 
@@ -163,6 +164,13 @@ export async function rejectPlatformOrder(
       publicNote: reason,
     }, tx)
     await releaseHeldOrder(tx, order, `平台拒单释放冻结积分: #${order.id}`)
+    // Unfilled platform reject (pending or processing, never delivered) uses
+    // fromStatus pending so limited manual_service quota restocks. disputed
+    // is only for post-delivery arbitration. Faka is already forbidden above.
+    await applyRefundInventoryPolicy(tx, order, {
+      fromStatus: 'pending',
+      actorUserId: adminUserId,
+    })
   })
   return { id: orderId, status: 'refunded' }
 }

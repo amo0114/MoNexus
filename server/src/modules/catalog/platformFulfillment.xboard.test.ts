@@ -34,7 +34,13 @@ async function seedPlatformOrder(input: {
   bookingDate?: Date | null
   sku?: string
   name?: string
+  stockMode?: 'limited' | 'unlimited'
+  stock?: number
+  sales?: number
 }) {
+  const stockMode = input.stockMode ?? 'unlimited'
+  const stock = input.stock ?? 0
+  const sales = input.sales ?? 0
   const product = await prisma.product.create({
     data: {
       name: input.name ?? (input.fakaOffer ? 'Xboard 平台开通' : '平台人工服务'),
@@ -43,7 +49,9 @@ async function seedPlatformOrder(input: {
       price: 100,
       status: 'active',
       deliveryMode: 'manual_service',
-      stockMode: 'unlimited',
+      stockMode,
+      stock,
+      sales,
       merchantId: null,
     },
   })
@@ -54,8 +62,9 @@ async function seedPlatformOrder(input: {
       isDefault: true,
       price: 100,
       deliveryMode: 'manual_service',
-      stockMode: 'unlimited',
-      stock: 0,
+      stockMode,
+      stock,
+      sales,
       ...(input.fakaOffer
         ? {
             externalIntegration: 'faka_bridge',
@@ -90,7 +99,7 @@ async function seedPlatformOrder(input: {
       },
     })
   }
-  return { order }
+  return { order, product, offer }
 }
 
 async function expectFakaOverrideRejected(run: () => Promise<unknown>) {
@@ -178,5 +187,44 @@ describe('platform fulfillment vs Xboard/FakaBridge', () => {
     const stored = await prisma.order.findUniqueOrThrow({ where: { id: order.id } })
     expect(stored.status).toBe('pending')
     expect(await prisma.deliveryRecord.count({ where: { orderId: order.id } })).toBe(0)
+  })
+
+  it('restocks limited manual_service quota when admin rejects a pending platform order', async () => {
+    const { admin, buyer, categoryId } = await seedActors()
+    const { order, product, offer } = await seedPlatformOrder({
+      buyerId: buyer.user.id,
+      buyerEmail: buyer.user.email,
+      categoryId,
+      stockMode: 'limited',
+      stock: 0,
+      sales: 1,
+    })
+
+    expect(await prisma.product.findUniqueOrThrow({ where: { id: product.id } })).toMatchObject({
+      stock: 0,
+      sales: 1,
+    })
+    expect(await prisma.offer.findUniqueOrThrow({ where: { id: offer.id } })).toMatchObject({
+      stock: 0,
+      sales: 1,
+    })
+    await prisma.pointAccount.update({
+      where: { userId: buyer.user.id },
+      data: { balance: { decrement: 100 }, frozenBalance: { increment: 100 } },
+    })
+
+    const rejected = await rejectPlatformOrder(admin.user.id, order.id, '平台拒单回补名额')
+    expect(rejected).toEqual({ id: order.id, status: 'refunded' })
+    expect(await prisma.order.findUniqueOrThrow({ where: { id: order.id } })).toMatchObject({
+      status: 'refunded',
+    })
+    expect(await prisma.product.findUniqueOrThrow({ where: { id: product.id } })).toMatchObject({
+      stock: 1,
+      sales: 0,
+    })
+    expect(await prisma.offer.findUniqueOrThrow({ where: { id: offer.id } })).toMatchObject({
+      stock: 1,
+      sales: 0,
+    })
   })
 })
