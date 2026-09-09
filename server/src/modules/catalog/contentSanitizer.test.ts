@@ -39,25 +39,22 @@ describe('catalog rich-content sanitizer', () => {
 
 describe('product rich-content sanitizer', () => {
   const localSrc = '/uploads/catalog-local.webp'
-  const allowlist = [{
-    src: localSrc,
-    ref: { kind: 'upload' as const, objectKey: 'catalog-local.webp' },
-  }]
+  const canonicalSrc = 'http://localhost:3000/uploads/catalog-local.webp'
 
-  it('keeps a local upload img that matches the descriptionImages allowlist', () => {
+  it('keeps a local upload img that matches the canonical src allowlist', () => {
     const sanitized = sanitizeProductRichContent(
       `<p>介绍<img src="${localSrc}" alt="样图" onclick="steal()"></p>`,
-      allowlist,
+      [localSrc],
     )!
     expect(sanitized).toContain(`<img src="${localSrc}" alt="样图"`)
     expect(sanitized.toLowerCase()).not.toContain('onclick')
   })
 
-  it('keeps a static /assets/ img whose ref path is under /assets/', () => {
+  it('keeps a static /assets/ img whose canonical src is allowlisted', () => {
     const src = '/assets/catalog/sample.png'
     const sanitized = sanitizeProductRichContent(
       `<p><img src="${src}" alt=""></p>`,
-      [{ src, ref: { kind: 'static', path: src } }],
+      [src],
     )!
     expect(sanitized).toContain(`<img src="${src}"`)
   })
@@ -65,19 +62,30 @@ describe('product rich-content sanitizer', () => {
   it('strips remote evil img that is not in the allowlist', () => {
     const sanitized = sanitizeProductRichContent(
       `<p>介绍<img src="${localSrc}" alt="样图"><img src="https://evil.test/a.png" onerror="steal()"></p>`,
-      allowlist,
+      [localSrc],
     )!
     expect(sanitized).toContain(`<img src="${localSrc}"`)
     expect(sanitized.toLowerCase()).not.toContain('evil.test')
     expect(sanitized.toLowerCase()).not.toContain('onerror')
   })
 
-  it('drops an img whose src is listed but whose ref is not upload/static', () => {
+  it('does not keep a client src just because it was listed; only canonical allowlist entries survive', () => {
     const sanitized = sanitizeProductRichContent(
-      `<p><img src="${localSrc}"></p>`,
-      [{ src: localSrc, ref: { kind: 'remote', objectKey: 'catalog-local.webp' } }],
+      `<p><img src="https://evil.example/x.png"></p>`,
+      [],
     )
     expect(sanitized ?? '').not.toContain('<img')
+    expect(sanitized ?? '').not.toContain('evil.example')
+  })
+
+  it('rewrites a client img src to the resolved canonical URL before allowlisting', () => {
+    const sanitized = sanitizeProductRichContent(
+      `<p><img src="https://evil.example/x.png" alt="样图"></p>`,
+      [canonicalSrc],
+      new Map([['https://evil.example/x.png', canonicalSrc]]),
+    )!
+    expect(sanitized).toContain(`<img src="${canonicalSrc}" alt="样图"`)
+    expect(sanitized.toLowerCase()).not.toContain('evil.example')
   })
 
   it('rebuilds descriptionImages from persisted local srcs', () => {

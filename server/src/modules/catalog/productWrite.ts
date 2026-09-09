@@ -1,20 +1,25 @@
 import type { Prisma } from '@prisma/client'
 import { prisma } from '../../lib/prisma.js'
-import { HttpError, notFound, type ErrorCode } from '../../lib/httpError.js'
+import { HttpError, notFound, type ErrorCode, type ErrorDetail } from '../../lib/httpError.js'
 import { assertProductDeliveryConfiguration } from '../../lib/productCommercial.js'
 import { resolveProductCategory } from './resolver.js'
 import { CATALOG_ERROR_CODES } from './constants.js'
-import { resolvePlatformPublicImage, type PlatformMediaRef, type ResolvedPlatformImage } from './platformMedia.js'
+import {
+  MediaRefResolutionError,
+  resolvePlatformPublicImage,
+  type PlatformMediaRef,
+  type ResolvedPlatformImage,
+} from './platformMedia.js'
 import { getProductTemplate } from './templates/registry.js'
 import { evaluateTemplateFulfillment } from './templates/fulfillmentStrategy.js'
 import { validateTemplateAttributes } from './templates/validate.js'
-import { EMPTY_PRODUCT_DETAILS, type TemplateKey } from './templates/types.js'
-import type { CreateProductV2Input, PatchProductContentInput } from './productV2Schema.js'
+import { EMPTY_PRODUCT_DETAILS, type FulfillmentOfferInput, type TemplateAttributes, type TemplateKey } from './templates/types.js'
+import type { CreateProductV2Input, DescriptionImageRef, PatchProductContentInput } from './productV2Schema.js'
 import { computeOfferCheckoutVersion, syncProductProjection } from '../../lib/offers.js'
 import { invalidateProductPublicCache } from '../products/cache.js'
 import { listPersistedDescriptionImages, sanitizeProductRichContent } from './contentSanitizer.js'
 import { assertOwnedActiveDeliveryFile } from './deliveryFileOwnership.js'
-import { checkProductReadiness } from './publicationReadiness.js'
+import { checkProductReadiness, type ProductReadinessResult } from './publicationReadiness.js'
 import { canonicalFixedStructuredText, normalizeFixedStructuredContent } from './structuredFixedContent.js'
 import { lockProductRow } from '../admin/productLifecycle.js'
 
@@ -30,9 +35,155 @@ function templateLocked(message: string): never {
   throw new HttpError(400, CATALOG_ERROR_CODES.PRODUCT_TEMPLATE_LOCKED as ErrorCode, message)
 }
 
+function notReadyError(readiness: ProductReadinessResult): never {
+  throw new HttpError(
+    422,
+    CATALOG_ERROR_CODES.PRODUCT_NOT_READY as ErrorCode,
+    '商品尚未满足发布条件',
+    readiness.details as unknown as ErrorDetail[],
+  )
+}
+
 function resolveWritableTemplate(key: string | null | undefined, version: number | null | undefined) {
   if (key == null || version == null) return null
   return getProductTemplate(key as TemplateKey, version)
+}
+
+function asTemplateAttributes(value: unknown): TemplateAttributes {
+  if (value == null || typeof value !== 'object' || Array.isArray(value)) return {}
+  const record: TemplateAttributes = {}
+  for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+    if (
+      typeof entry === 'string'
+      || typeof entry === 'number'
+      || typeof entry === 'boolean'
+      || (Array.isArray(entry) && entry.every(item => typeof item === 'string'))
+    ) {
+      record[key] = entry
+    }
+  }
+  return record
+}
+
+function asPurchaseForm(value: unknown): Array<{ type?: string; required?: boolean }> {
+  return Array.isArray(value) ? value as Array<{ type?: string; required?: boolean }> : []
+}
+
+function offerToFulfillmentInput(offer: {
+  deliveryMode: string
+  stockMode: string
+  fixedContentType: string
+  fixedContent: string | null
+  fixedFileId: number | null
+  deliveryFields: unknown
+  autoProvision: boolean
+  externalIntegration: string | null
+  fixedStructuredContent: unknown
+}): FulfillmentOfferInput {
+  return {
+    deliveryMode: offer.deliveryMode,
+    stockMode: offer.stockMode,
+    fixedContentType: offer.fixedContentType,
+    fixedContent: offer.fixedContent,
+    fixedFileId: offer.fixedFileId,
+    deliveryFields: offer.deliveryFields,
+    autoProvision: offer.autoProvision,
+    externalIntegration: offer.externalIntegration,
+    fixedStructuredContent: offer.fixedStructuredContent,
+  }
+}
+
+async function resolveRichDescription(
+  html: string | null | undefined,
+  images: DescriptionImageRef[] | undefined,
+): Promise<string | null> {
+  if (typeof html !== 'string' || html.trim() === '') return null
+  const allowedCanonicalSrcs: string[] = []
+  const srcRewrites = new Map<string, string>()
+  for (const image of images ?? []) {
+    try {
+      const resolved = await resolvePlatformPublicImage(image.ref as PlatformMediaRef)
+      allowedCanonicalSrcs.push(resolved.canonicalUrl)
+      srcRewrites.set(image.src, resolved.canonicalUrl)
+    } catch (err) {
+      if (err instanceof MediaRefResolutionError) continue
+      throw err
+    }
+  }
+  return sanitizeProductRichContent(html, allowedCanonicalSrcs, srcRewrites)
+}
+
+async function assertTemplateAssignable(
+  tx: Prisma.TransactionClient,
+  productId: number,
+  current: { status: string; purchaseForm: Prisma.JsonValue },
+  template: NonNullable<ReturnType<typeof resolveWritableTemplate>>,
+  productAttributes: TemplateAttributes,
+  purchaseForm: unknown,
+): Promise<void> {
+  if (current.status === 'active') {
+    templateLocked('在售商品不能补齐形态')
+  }
+  if (current.status !== 'draft' && current.status !== 'inactive') {
+    templateLocked('在售商品不能补齐形态')
+  }
+
+  const offers = await tx.offer.findMany({
+    where: { productId },
+    select: {
+      id: true,
+      name: true,
+      deliveryMode: true,
+      stockMode: true,
+      fixedContentType: true,
+      fixedContent: true,
+      fixedFileId: true,
+      deliveryFields: true,
+      autoProvision: true,
+      externalIntegration: true,
+      fixedStructuredContent: true,
+    },
+  })
+  const offerIds = offers.map(offer => offer.id)
+  if (offerIds.length > 0) {
+    const openTasks = await tx.fakaBridgeTask.count({
+      where: {
+        order: { offerId: { in: offerIds } },
+        OR: [
+          { status: { in: ['pending', 'needs_reconcile'] } },
+          { revokeStatus: 'pending' },
+        ],
+      },
+    })
+    if (openTasks > 0) {
+      throw new HttpError(
+        400,
+        CATALOG_ERROR_CODES.FAKA_OPEN_TASK as ErrorCode,
+        '存在未完成的外部开通任务，无法补齐商品形态',
+      )
+    }
+  }
+
+  const nextPurchaseForm = asPurchaseForm(purchaseForm ?? current.purchaseForm)
+  const incompatible: ErrorDetail[] = []
+  for (const offer of offers) {
+    const fulfillment = evaluateTemplateFulfillment({
+      template,
+      productAttributes,
+      offer: offerToFulfillmentInput(offer),
+      mode: 'draft',
+      purchaseForm: nextPurchaseForm,
+    })
+    if (!fulfillment.ok) {
+      incompatible.push({
+        field: `/offers/${offer.id}`,
+        message: `套餐「${offer.name}」与所选形态不相容`,
+      })
+    }
+  }
+  if (incompatible.length > 0) {
+    templateInvalid('现有套餐与所选形态不相容', incompatible)
+  }
 }
 
 export async function createProductFromV2(
@@ -63,15 +214,16 @@ export async function createProductFromV2(
   }
 
   const merchantId = actor.kind === 'merchant' ? actor.merchantId : null
+  const richDescription = input.richDescription === ''
+    ? null
+    : await resolveRichDescription(input.richDescription, input.descriptionImages)
   const product = await prisma.$transaction(async tx => {
     const { categoryId, type } = await resolveProductCategory({ categoryId: input.categoryId }, tx)
     const created = await tx.product.create({
       data: {
         name: input.name,
         description: input.description,
-        richDescription: input.richDescription === ''
-          ? null
-          : sanitizeProductRichContent(input.richDescription, input.descriptionImages),
+        richDescription,
         categoryId,
         type,
         imageUrl: resolvedImages[0]?.canonicalUrl ?? null,
@@ -232,7 +384,7 @@ export async function patchProductContent(
   if (Object.prototype.hasOwnProperty.call(input, 'richDescription')) {
     data.richDescription = input.richDescription === ''
       ? null
-      : sanitizeProductRichContent(input.richDescription, input.descriptionImages ?? [])
+      : await resolveRichDescription(input.richDescription, input.descriptionImages ?? [])
     updatedFields.push('richDescription')
   }
   if (input.visibility !== undefined) {
@@ -249,6 +401,7 @@ export async function patchProductContent(
   }
 
   const assigningTemplate = input.templateKey !== undefined || input.templateVersion !== undefined
+  let assigningTemplateDefinition: ReturnType<typeof resolveWritableTemplate> = null
   if (assigningTemplate) {
     if (input.templateKey === undefined || input.templateVersion === undefined) {
       templateInvalid('templateKey 与 templateVersion 必须同时提供')
@@ -256,7 +409,11 @@ export async function patchProductContent(
     if (owned.templateKey != null || owned.templateVersion != null) {
       templateLocked('商品形态一经设定不可更换')
     }
-    if (!resolveWritableTemplate(input.templateKey, input.templateVersion)) {
+    if (owned.status === 'active') {
+      templateLocked('在售商品不能补齐形态')
+    }
+    assigningTemplateDefinition = resolveWritableTemplate(input.templateKey, input.templateVersion)
+    if (!assigningTemplateDefinition) {
       templateInvalid('未知的商品模板或版本')
     }
     data.templateKey = input.templateKey
@@ -269,6 +426,9 @@ export async function patchProductContent(
 
   const nextTemplateKey = input.templateKey ?? owned.templateKey
   const nextTemplateVersion = input.templateVersion ?? owned.templateVersion
+  let nextProductAttributes = asTemplateAttributes(
+    assigningTemplate && input.attributes === undefined ? {} : owned.attributes,
+  )
   if (input.attributes !== undefined) {
     if (!nextTemplateKey || nextTemplateVersion == null) {
       templateInvalid('请先补充商品形态再保存模板参数')
@@ -289,6 +449,7 @@ export async function patchProductContent(
       })))
     }
     data.attributes = validated.value as Prisma.InputJsonValue
+    nextProductAttributes = validated.value
     updatedFields.push('attributes')
   }
   if (input.images !== undefined) {
@@ -320,8 +481,20 @@ export async function patchProductContent(
     if (current.contentVersion !== input.expectedContentVersion) {
       throw new HttpError(409, CATALOG_ERROR_CODES.PRODUCT_CONTENT_CHANGED as ErrorCode, '商品内容已更新，请刷新后重试')
     }
-    if (assigningTemplate && (current.templateKey != null || current.templateVersion != null)) {
-      templateLocked('商品形态一经设定不可更换')
+    if (assigningTemplate) {
+      if (current.templateKey != null || current.templateVersion != null) {
+        templateLocked('商品形态一经设定不可更换')
+      }
+      const template = assigningTemplateDefinition ?? resolveWritableTemplate(input.templateKey, input.templateVersion)
+      if (!template) templateInvalid('未知的商品模板或版本')
+      await assertTemplateAssignable(
+        tx,
+        productId,
+        current,
+        template,
+        nextProductAttributes,
+        input.purchaseForm ?? current.purchaseForm,
+      )
     }
     if (current.status === 'active' && input.attributes !== undefined) {
       const templateKey = (typeof data.templateKey === 'string' ? data.templateKey : current.templateKey)
@@ -346,7 +519,7 @@ export async function patchProductContent(
         }
       }
     }
-    return tx.product.update({
+    const updatedRow = await tx.product.update({
       where: { id: productId },
       data: {
         ...data,
@@ -355,6 +528,11 @@ export async function patchProductContent(
       },
       select: { id: true, contentVersion: true },
     })
+    if (current.status === 'active') {
+      const readiness = await checkProductReadiness(productId, tx)
+      if (!readiness.ready) notReadyError(readiness)
+    }
+    return updatedRow
   })
 
   await invalidateProductPublicCache(productId, { detail: true, list: true })

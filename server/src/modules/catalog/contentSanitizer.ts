@@ -25,15 +25,6 @@ const RICH_TEXT_OPTIONS: sanitizeHtml.IOptions = {
   nonTextTags: ['style', 'script', 'textarea', 'option', 'noscript'],
 }
 
-export type ProductRichImageAllowlistItem = {
-  src: string
-  ref: {
-    kind: string
-    objectKey?: string
-    path?: string
-  }
-}
-
 export type ProductDescriptionImage = {
   src: string
   ref:
@@ -41,22 +32,10 @@ export type ProductDescriptionImage = {
     | { kind: 'static'; path: string }
 }
 
-function isAllowlistedImageRef(ref: ProductRichImageAllowlistItem['ref']): boolean {
-  if (ref.kind === 'upload') {
-    return typeof ref.objectKey === 'string' && ref.objectKey.length > 0
-  }
-  if (ref.kind === 'static') {
-    return typeof ref.path === 'string' && /^\/assets\//.test(ref.path)
-  }
-  return false
-}
-
-function allowedImageSrcSet(allowedImages: ProductRichImageAllowlistItem[]): Set<string> {
+function allowedImageSrcSet(allowedCanonicalSrcs: readonly string[]): Set<string> {
   const allowed = new Set<string>()
-  for (const image of allowedImages) {
-    if (typeof image.src !== 'string' || image.src.length === 0) continue
-    if (!isAllowlistedImageRef(image.ref)) continue
-    allowed.add(image.src)
+  for (const src of allowedCanonicalSrcs) {
+    if (typeof src === 'string' && src.length > 0) allowed.add(src)
   }
   return allowed
 }
@@ -68,13 +47,15 @@ export function sanitizeCatalogRichContent(input: string | null | undefined): st
 }
 
 /** Local product editor sanitizer: same formatting tags as Xboard, plus img
- * whose src is in the descriptionImages allowlist with an upload/static ref. */
+ * whose src is an already-resolved canonical URL. Callers must resolve
+ * descriptionImages via StoredObject/static resolver before invoking. */
 export function sanitizeProductRichContent(
   input: string | null | undefined,
-  allowedImages: ProductRichImageAllowlistItem[] = [],
+  allowedCanonicalSrcs: readonly string[] = [],
+  srcRewrites: ReadonlyMap<string, string> = new Map(),
 ): string | null {
   if (typeof input !== 'string' || input.trim() === '') return null
-  const allowedSrc = allowedImageSrcSet(allowedImages)
+  const allowedSrc = allowedImageSrcSet(allowedCanonicalSrcs)
   const sanitized = sanitizeHtml(input, {
     allowedTags: [...BASE_ALLOWED_TAGS, 'img'],
     allowedAttributes: { a: ['href', 'rel'], img: ['src', 'alt'] },
@@ -85,7 +66,8 @@ export function sanitizeProductRichContent(
     transformTags: {
       ...LINK_TRANSFORM,
       img: (_tagName, attribs) => {
-        const src = attribs.src
+        const rawSrc = attribs.src
+        const src = rawSrc && srcRewrites.has(rawSrc) ? srcRewrites.get(rawSrc) : rawSrc
         const alt = attribs.alt
         return {
           tagName: 'img',
