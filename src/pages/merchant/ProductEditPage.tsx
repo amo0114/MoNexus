@@ -333,6 +333,11 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
 
     savingRef.current = true
     setSaving(true)
+    let workingOffers = offers
+    let workingDrafts = offerDrafts
+    let workingBaseline: Record<number, OfferStructuredDraft> = offerDraftsBaseline !== ''
+      ? JSON.parse(offerDraftsBaseline) as Record<number, OfferStructuredDraft>
+      : draftsFromOffers(offers)
     try {
       const contentDirty = (baseline !== '' && JSON.stringify(form) !== baseline)
         || descriptionImagesTouched
@@ -363,11 +368,9 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
         if (assigningTemplate) setSavedTemplateKey(templateKey)
       }
       if (actor === 'merchant' && offerStructuredDirty) {
-        for (const offer of offers) {
-          const draft = offerDrafts[offer.id]
-          const baselineDraft = offerDraftsBaseline !== ''
-            ? (JSON.parse(offerDraftsBaseline) as Record<number, OfferStructuredDraft>)[offer.id]
-            : undefined
+        for (const offer of workingOffers) {
+          const draft = workingDrafts[offer.id]
+          const baselineDraft = workingBaseline[offer.id]
           if (!draft || JSON.stringify(draft) === JSON.stringify(baselineDraft)) continue
           const requirement = selectedTemplate
             ? structuredRequirementFor(selectedTemplate, form.attributes, offer.deliveryMode)
@@ -388,47 +391,36 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
             payload.expectedCheckoutVersion = offer.checkoutVersion
           }
           const updated = await updateMerchantOffer(productId, offer.id, payload)
-          setOffers(prev => prev.map(item => (
-            item.id === offer.id
-              ? {
-                  ...item,
-                  deliveryFields: payload.deliveryFields ?? item.deliveryFields,
-                  fixedStructuredContent: 'fixedStructuredContent' in payload
-                    ? payload.fixedStructuredContent
-                    : item.fixedStructuredContent,
-                  ...(typeof updated.checkoutVersion === 'string'
-                    ? { checkoutVersion: updated.checkoutVersion }
-                    : {}),
-                }
-              : item
-          )))
+          const nextOffer: ProductEditorOffer = {
+            ...offer,
+            ...('deliveryFields' in payload ? { deliveryFields: payload.deliveryFields ?? null } : {}),
+            ...('fixedStructuredContent' in payload
+              ? { fixedStructuredContent: payload.fixedStructuredContent }
+              : {}),
+            ...(typeof updated.checkoutVersion === 'string'
+              ? { checkoutVersion: updated.checkoutVersion }
+              : {}),
+          }
+          workingOffers = workingOffers.map(item => (item.id === offer.id ? nextOffer : item))
+          workingBaseline = {
+            ...workingBaseline,
+            [offer.id]: cloneOfferStructuredDraft(draft),
+          }
+          setOffers(workingOffers)
+          setOfferDraftsBaseline(JSON.stringify(workingBaseline))
         }
-        setOfferDraftsBaseline(JSON.stringify(offerDrafts))
+        setOfferDraftsBaseline(JSON.stringify(workingBaseline))
         setOfferConflictLabels([])
       }
       showToast('商品内容已保存')
     } catch (err) {
       const code = getApiErrorCode(err)
-      if (code === CATALOG_ERROR_CODES.PRODUCT_CONTENT_CHANGED) {
-        showToast('商品内容已更新，已刷新版本号，请再次保存', 'error')
-        try {
-          const fresh = await adapter.getEditor(actor, productId)
-          setContentVersion(fresh.product.contentVersion)
-          setStatus(fresh.product.status)
-          setCapabilities(fresh.capabilities)
-          setOffers(fresh.offers)
-          setPublicationIssues(fresh.publicationIssues)
-        } catch {
-          // Keep typed fields even if the version refresh GET fails.
-        }
-        return
-      }
-      if (code === 'CHECKOUT_CHANGED') {
+      if (code === CATALOG_ERROR_CODES.PRODUCT_CONTENT_CHANGED || code === 'CHECKOUT_CHANGED') {
         try {
           const fresh = await adapter.getEditor(actor, productId)
           const reconciled = reconcileOfferDrafts(
-            offerDrafts,
-            offers,
+            workingDrafts,
+            workingOffers,
             fresh.offers,
             selectedTemplate,
             form.attributes,
@@ -443,10 +435,19 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
           const conflictNote = reconciled.conflictLabels.length > 0
             ? `（冲突字段：${reconciled.conflictLabels.join('、')}）`
             : ''
-          showToast(`规格已更新，已保留你输入的内容，请核对后再次保存${conflictNote}`, 'error')
+          showToast(
+            code === 'CHECKOUT_CHANGED'
+              ? `规格已更新，已保留你输入的内容，请核对后再次保存${conflictNote}`
+              : `商品内容已更新，规格草稿已核对，请再次保存${conflictNote}`,
+            'error',
+          )
         } catch {
-          showToast('规格已更新，已保留你输入的内容，请核对后再次保存', 'error')
-          // Keep typed product fields even if the checkout refresh GET fails.
+          showToast(
+            code === 'CHECKOUT_CHANGED'
+              ? '规格已更新，已保留你输入的内容，请核对后再次保存'
+              : '商品内容已更新，已刷新版本号，请再次保存',
+            'error',
+          )
         }
         return
       }
@@ -1064,17 +1065,51 @@ function mergeFieldList(
 ): DeliveryField[] {
   const localByKey = indexFieldsByKey(localFields)
   const baselineByKey = indexFieldsByKey(baselineFields)
-  return serverFields.map(serverField => {
-    const localField = localByKey.get(serverField.key)
-    if (localField == null) return serverField
-    const merged = threeWayMerge(
-      localField,
-      baselineByKey.get(serverField.key),
-      serverField,
-    )
-    if (merged.conflict) rememberConflictLabel(conflictLabels, serverField.label || serverField.key)
-    return merged.value ?? serverField
-  })
+  const serverByKey = indexFieldsByKey(serverFields)
+  const merged: DeliveryField[] = []
+  for (const key of orderedFieldKeys(serverFields, localFields, baselineFields)) {
+    const localField = localByKey.get(key)
+    const baselineField = baselineByKey.get(key)
+    const serverField = serverByKey.get(key)
+    const localPresent = localField != null
+    const baselinePresent = baselineField != null
+    const serverPresent = serverField != null
+    const label = localField?.label || serverField?.label || baselineField?.label || key
+
+    if (localPresent && !baselinePresent && !serverPresent) {
+      merged.push(localField)
+      continue
+    }
+    if (!localPresent && !baselinePresent && serverPresent) {
+      merged.push(serverField)
+      continue
+    }
+    if (localPresent && !baselinePresent && serverPresent) {
+      const result = threeWayMerge(localField, null, serverField)
+      if (result.conflict) rememberConflictLabel(conflictLabels, label)
+      merged.push(result.value ?? serverField)
+      continue
+    }
+    if (!localPresent && baselinePresent && serverPresent) {
+      if (sameJson(serverField, baselineField)) continue
+      rememberConflictLabel(conflictLabels, label)
+      merged.push(serverField)
+      continue
+    }
+    if (localPresent && baselinePresent && !serverPresent) {
+      if (sameJson(localField, baselineField)) continue
+      rememberConflictLabel(conflictLabels, label)
+      merged.push(localField)
+      continue
+    }
+    if (!localPresent && baselinePresent && !serverPresent) continue
+    if (localPresent && baselinePresent && serverPresent) {
+      const result = threeWayMerge(localField, baselineField, serverField)
+      if (result.conflict) rememberConflictLabel(conflictLabels, label)
+      merged.push(result.value ?? serverField)
+    }
+  }
+  return merged
 }
 
 function mergeStructuredValues(
@@ -1084,25 +1119,41 @@ function mergeStructuredValues(
   fields: DeliveryField[],
   conflictLabels: string[],
 ): Record<string, string> {
-  const keys = new Set<string>([
-    ...fields.map(field => field.key),
-    ...Object.keys(serverValues),
-  ])
-  const labels = indexFieldsByKey(fields)
   const merged: Record<string, string> = {}
-  for (const key of keys) {
-    if (!key) continue
+  for (const field of fields) {
+    if (!field.key) continue
     const result = threeWayMerge(
-      localValues[key] ?? '',
-      baselineValues[key] ?? '',
-      serverValues[key] ?? '',
+      localValues[field.key] ?? '',
+      baselineValues[field.key] ?? '',
+      serverValues[field.key] ?? '',
     )
-    merged[key] = result.value
-    if (result.conflict) {
-      rememberConflictLabel(conflictLabels, labels.get(key)?.label || key)
-    }
+    merged[field.key] = result.value
+    if (result.conflict) rememberConflictLabel(conflictLabels, field.label || field.key)
   }
   return merged
+}
+
+function orderedFieldKeys(
+  serverFields: DeliveryField[],
+  localFields: DeliveryField[],
+  baselineFields: DeliveryField[],
+): string[] {
+  const keys: string[] = []
+  const seen = new Set<string>()
+  for (const field of [...serverFields, ...localFields, ...baselineFields]) {
+    if (!field.key || seen.has(field.key)) continue
+    seen.add(field.key)
+    keys.push(field.key)
+  }
+  return keys
+}
+
+function cloneOfferStructuredDraft(draft: OfferStructuredDraft): OfferStructuredDraft {
+  return {
+    deliveryFields: draft.deliveryFields.map(field => ({ ...field })),
+    structuredFields: draft.structuredFields.map(field => ({ ...field })),
+    structuredValues: { ...draft.structuredValues },
+  }
 }
 
 function threeWayMerge<T>(
@@ -1409,6 +1460,7 @@ function OfferStructuredContentEditor({
               disabled={disabled}
               className="icon-btn p-1.5 text-[var(--color-text-muted)] hover:text-[var(--color-danger)] cursor-pointer"
               aria-label="删除字段"
+              data-testid={`${testIdPrefix}-field-remove-${index}`}
             >
               <Trash2 className="w-4 h-4" />
             </button>
