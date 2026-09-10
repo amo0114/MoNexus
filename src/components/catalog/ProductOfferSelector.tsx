@@ -62,12 +62,12 @@ export default function ProductOfferSelector({
               disabled={soldOut || disabled}
               data-testid={`sku-option-${offer.id}`}
               aria-pressed={isSelected}
-              className={`group relative flex items-center justify-between p-3 sm:p-3.5 rounded-xl border text-left transition-all duration-200 outline-none ${
+              className={`group relative flex items-center justify-between p-3 sm:p-3.5 rounded-xl border text-left transition-all duration-200 outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] ${
                 soldOut
-                  ? 'opacity-50 cursor-not-allowed border-[var(--color-border)] bg-[var(--color-background)]/50'
+                  ? 'opacity-50 cursor-not-allowed border-[var(--color-border)] bg-[var(--color-background)]'
                   : isSelected
                   ? 'border-2 border-[var(--color-primary)] bg-[var(--color-primary-tint)] shadow-sm'
-                  : 'border-[var(--color-border)] bg-[var(--color-surface)] hover:border-[var(--color-primary)]/40 hover:bg-[var(--color-background)] cursor-pointer'
+                  : 'border-[var(--color-border)] bg-[var(--color-surface)] hover:border-[var(--color-primary)] hover:bg-[var(--color-background)] cursor-pointer'
               }`}
             >
               <div className="flex-1 min-w-0 pr-3">
@@ -116,8 +116,8 @@ export default function ProductOfferSelector({
                     soldOut
                       ? 'border border-[var(--color-border)] bg-[var(--color-background)]'
                       : isSelected
-                      ? 'bg-[var(--color-primary)] text-white'
-                      : 'border border-[var(--color-border)] group-hover:border-[var(--color-primary)]/50'
+                      ? 'bg-[var(--color-primary)] text-[var(--color-on-primary)]'
+                      : 'border border-[var(--color-border)] group-hover:border-[var(--color-primary)]'
                   }`}
                   aria-hidden="true"
                 >

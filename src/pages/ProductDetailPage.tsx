@@ -29,7 +29,7 @@ import ProductMediaFrame from '../components/ui/ProductMediaFrame'
 import ProductImageLightbox from '../components/ProductImageLightbox'
 import { getProductReviews, type ReviewItem } from '../api/reviews'
 import StarRating from '../components/ui/StarRating'
-import { useIsMobileViewport } from '../hooks/useMediaQuery'
+import { useIsMobileViewport, useIsDesktopViewport } from '../hooks/useMediaQuery'
 import RichTextHtml, { sanitizeRichTextHtml } from '../components/catalog/RichTextHtml'
 import ProductSharePanel, { ProductShareButton } from '../components/catalog/ProductSharePanel'
 import ProductSpecSections, {
@@ -89,6 +89,7 @@ export default function ProductDetailPage() {
   const isLoggedIn = useAuthStore((s) => s.isLoggedIn)
   const userPoints = useAuthStore((s) => s.user?.points ?? 0)
   const isMobileViewport = useIsMobileViewport()
+  const isDesktopViewport = useIsDesktopViewport()
 
   const [product, setProduct] = useState<Product | null>(null)
   const [loading, setLoading] = useState(true)
@@ -117,6 +118,25 @@ export default function ProductDetailPage() {
   const [reviewTotal, setReviewTotal] = useState(0)
   const [reviewPage, setReviewPage] = useState(1)
   const [templates, setTemplates] = useState<ProductTemplateDefinition[]>([])
+  const inflowCardRef = useRef<HTMLDivElement>(null)
+  const [midScreenScrolledPast, setMidScreenScrolledPast] = useState(false)
+
+  useEffect(() => {
+    if (isMobileViewport || isDesktopViewport) {
+      setMidScreenScrolledPast(false)
+      return
+    }
+    const checkScroll = () => {
+      const el = inflowCardRef.current
+      if (!el) return
+      const rect = el.getBoundingClientRect()
+      // Bottom bar only floats on mid-screen after the in-flow card has completely scrolled past the navbar
+      setMidScreenScrolledPast(rect.bottom <= 64)
+    }
+    window.addEventListener('scroll', checkScroll, { passive: true })
+    checkScroll()
+    return () => window.removeEventListener('scroll', checkScroll)
+  }, [isMobileViewport, isDesktopViewport, product])
 
   useEffect(() => {
     setReviews([])
@@ -369,10 +389,11 @@ export default function ProductDetailPage() {
   if (!product) return null
 
   const offers = product.offers ?? []
+  const hasNoOffers = offers.length === 0
   const isMultiSku = offers.length > 1
   const selectedOffer = isMultiSku
     ? offers.find((o) => o.id === selectedOfferId) ?? offers[0]
-    : undefined
+    : offers[0] ?? undefined
   const displayPrice = selectedOffer?.price ?? product.price
   const displayOriginalPrice = selectedOffer ? selectedOffer.originalPrice ?? undefined : product.originalPrice
   const activeOffer = selectedOffer ?? offers[0]
@@ -393,9 +414,10 @@ export default function ProductDetailPage() {
 
   const isInsufficient = userPoints < displayPrice
   const isSoldOut =
-    fakaCapacity?.source === 'xboard'
+    hasNoOffers ||
+    (fakaCapacity?.source === 'xboard'
       ? fakaCapacity.sellable === false || (fakaCapacity.remaining != null && fakaCapacity.remaining <= 0)
-      : displayStockMode !== 'unlimited' && displayStock === 0
+      : displayStockMode !== 'unlimited' && displayStock === 0)
 
   const deliveryTemplate = activeOffer?.deliveryFields ?? []
   const fileDeliverySize = activeOffer?.fixedContentType === 'file' ? activeOffer?.deliveryFileSize ?? null : undefined
@@ -404,6 +426,9 @@ export default function ProductDetailPage() {
   const handleRedeemClick = () => {
     if (!isLoggedIn) {
       navigate(`/login?returnTo=${encodeURIComponent(loginReturnTo)}`)
+      return
+    }
+    if (isSoldOut || hasNoOffers) {
       return
     }
     if (isInsufficient) {
@@ -415,11 +440,15 @@ export default function ProductDetailPage() {
 
   const redeemLabel = !isLoggedIn
     ? '登录后兑换'
-    : isSoldOut
-      ? '已被抢光'
-      : isInsufficient
-        ? '余额不足，去赚积分'
-        : '立即兑换'
+    : hasNoOffers
+      ? '暂无可售套餐'
+      : isSoldOut
+        ? '已被抢光'
+        : isInsufficient
+          ? '余额不足，去赚积分'
+          : '立即兑换'
+
+  const showBottomBar = isMobileViewport || midScreenScrolledPast
 
   const template =
     templates.find(
@@ -478,6 +507,15 @@ export default function ProductDetailPage() {
             <Store className="w-3.5 h-3.5" />
             {product.merchant?.name || '平台自营'}
           </span>
+          {product.ratingCount && product.ratingCount > 0 ? (
+            <span className="text-[var(--color-text-muted)] font-medium flex items-center gap-1" data-testid="rating-summary">
+              <StarRating value={product.ratingAvg ?? 0} />
+              <span className="font-bold text-[var(--color-text)]">{(product.ratingAvg ?? 0).toFixed(1)}</span>
+              （{product.ratingCount} 条评价）
+            </span>
+          ) : (
+            <span className="text-[var(--color-text-muted)] font-medium" data-testid="rating-summary">暂无评分</span>
+          )}
         </div>
 
         <h1 className="font-heading text-2xl sm:text-3xl lg:text-4xl font-bold text-[var(--color-text)] tracking-tight min-w-0">
@@ -498,7 +536,7 @@ export default function ProductDetailPage() {
             data-testid="product-gallery"
             className="rounded-2xl overflow-hidden border border-[var(--color-border)] bg-[var(--color-surface)] shadow-sm"
           >
-            <div className="flex flex-col sm:flex-row gap-3 p-3 sm:p-4 bg-[var(--color-background)]/40">
+            <div className="flex flex-col sm:flex-row gap-3 p-3 sm:p-4 bg-[var(--color-background)]">
               {/* Thumbnails rail if multiple images */}
               {hasMultipleImages && (
                 <div className="flex sm:flex-col gap-2 shrink-0 overflow-x-auto sm:overflow-y-auto max-sm:order-2">
@@ -509,9 +547,9 @@ export default function ProductDetailPage() {
                       onClick={() => showGalleryImage(i)}
                       data-testid={`product-gallery-thumb-${i}`}
                       aria-label={`查看第 ${i + 1} 张图片`}
-                      className={`w-16 h-12 rounded-lg overflow-hidden shrink-0 cursor-pointer border-2 transition-all p-0.5 ${
+                      className={`w-16 h-12 rounded-lg overflow-hidden shrink-0 cursor-pointer border-2 transition-all p-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] ${
                         i === activeImage
-                          ? 'border-[var(--color-primary)] ring-2 ring-[var(--color-primary)]/20 shadow-sm'
+                          ? 'border-[var(--color-primary)] ring-2 ring-[var(--color-primary)] shadow-sm'
                           : 'border-[var(--color-border)] opacity-60 hover:opacity-100 bg-[var(--color-surface)]'
                       }`}
                     >
@@ -556,7 +594,7 @@ export default function ProductDetailPage() {
                     }}
                     onClick={handleGalleryClick}
                     data-testid="product-gallery-stage"
-                    className="absolute inset-0 cursor-zoom-in outline-none"
+                    className="absolute inset-0 cursor-zoom-in outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] focus-visible:ring-inset"
                   >
                     {hasMultipleImages && (
                       <>
@@ -568,7 +606,7 @@ export default function ProductDetailPage() {
                           }}
                           data-testid="product-gallery-prev"
                           aria-label="查看上一张商品图片"
-                          className="absolute left-3 top-1/2 -translate-y-1/2 z-20 inline-flex w-8 h-8 sm:w-9 sm:h-9 items-center justify-center rounded-full border border-[var(--color-border)] bg-[var(--color-surface)]/85 text-[var(--color-text)] shadow-md backdrop-blur-sm transition-colors hover:bg-[var(--color-surface)] focus-visible:outline-none"
+                          className="absolute left-3 top-1/2 -translate-y-1/2 z-20 inline-flex w-8 h-8 sm:w-9 sm:h-9 items-center justify-center rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] shadow-md transition-colors hover:bg-[var(--color-background)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]"
                         >
                           <ChevronLeft className="w-5 h-5" aria-hidden="true" />
                         </button>
@@ -580,7 +618,7 @@ export default function ProductDetailPage() {
                           }}
                           data-testid="product-gallery-next"
                           aria-label="查看下一张商品图片"
-                          className="absolute right-3 top-1/2 -translate-y-1/2 z-20 inline-flex w-8 h-8 sm:w-9 sm:h-9 items-center justify-center rounded-full border border-[var(--color-border)] bg-[var(--color-surface)]/85 text-[var(--color-text)] shadow-md backdrop-blur-sm transition-colors hover:bg-[var(--color-surface)] focus-visible:outline-none"
+                          className="absolute right-3 top-1/2 -translate-y-1/2 z-20 inline-flex w-8 h-8 sm:w-9 sm:h-9 items-center justify-center rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] shadow-md transition-colors hover:bg-[var(--color-background)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]"
                         >
                           <ChevronRight className="w-5 h-5" aria-hidden="true" />
                         </button>
@@ -588,7 +626,7 @@ export default function ProductDetailPage() {
                     )}
 
                     {/* Component-rendered Page Indicator & Lightbox Button */}
-                    <div className="absolute bottom-3 right-3 z-20 px-2.5 py-1 rounded-lg bg-[var(--color-surface)]/90 backdrop-blur border border-[var(--color-border)] text-xs text-[var(--color-text)] flex items-center gap-2 shadow-sm font-mono pointer-events-auto">
+                    <div className="absolute bottom-3 right-3 z-20 px-2.5 py-1 rounded-lg bg-[var(--color-surface)] backdrop-blur border border-[var(--color-border)] text-xs text-[var(--color-text)] flex items-center gap-2 shadow-sm font-mono pointer-events-auto">
                       <span>
                         {activeImage + 1} / {Math.max(1, galleryImages.length)}
                       </span>
@@ -619,7 +657,7 @@ export default function ProductDetailPage() {
             onIndexChange={setActiveImage}
           />
 
-          {/* Mobile / Mid-screen In-Flow Offer Selector (< 1024px) */}
+          {/* Mobile / Mid-screen In-Flow Offer Selector & Disclosures (< 1024px) */}
           <div className="lg:hidden space-y-4">
             {isMultiSku && (
               <ProductOfferSelector
@@ -639,6 +677,123 @@ export default function ProductDetailPage() {
                 <span className="text-[var(--color-text-muted)]">{offerPeriodDetailNote(activeOffer)!.hint}</span>
               </div>
             )}
+
+            {/* Delivery Disclosures (< 1024px) */}
+            {!isDesktopViewport && (
+              <>
+                {fileDeliverySize !== undefined && (
+                  <div className="text-xs text-[var(--color-text-muted)] flex items-center gap-1.5" data-testid="file-delivery-preview">
+                    <span className="font-bold text-[var(--color-text)]">交付形态：</span>
+                    <span>文件交付{fileDeliverySize != null ? ` · 约 ${formatFileSize(fileDeliverySize)}` : ''}</span>
+                  </div>
+                )}
+                {deliveryTemplate.length > 0 && (
+                  <div className="text-xs text-[var(--color-text-muted)] space-y-1.5" data-testid="delivery-template-preview">
+                    <span className="font-bold text-[var(--color-text)] block">包含交付字段：</span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {deliveryTemplate.map((field) => (
+                        <span
+                          key={field.key}
+                          className="px-2 py-0.5 rounded border border-[var(--color-border)] bg-[var(--color-background)] text-[11px] text-[var(--color-text)] font-medium"
+                        >
+                          {field.label}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {activeOffer?.autoProvision && (
+                  <div
+                    className="p-3 rounded-xl border border-[var(--color-primary)]/20 bg-[var(--color-primary-tint)] text-xs space-y-1"
+                    data-testid="auto-provision-disclosure"
+                  >
+                    <div className="font-bold text-[var(--color-primary)] flex items-center gap-1.5">
+                      <Zap className="w-3.5 h-3.5" />
+                      <span>交付方式：商家自动开通</span>
+                    </div>
+                    <p className="text-[11px] text-[var(--color-text-muted)] leading-relaxed">
+                      下单后将自动发起开通，自动开通中请稍候…如有疑问可咨询客服。
+                    </p>
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* In-flow Purchase Module for Mid-screen (768px – 1023px) */}
+            <div
+              ref={inflowCardRef}
+              className="hidden md:block p-4 rounded-xl bg-[var(--color-surface)] border border-[var(--color-border)] shadow-sm space-y-3"
+              data-testid="inflow-buy-card"
+            >
+              <div className="flex items-baseline justify-between">
+                <div>
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-[var(--color-text-muted)] block">
+                    当前已选兑换价
+                  </span>
+                  <div className="flex items-baseline gap-1.5 mt-0.5">
+                    <span className="font-heading text-2xl sm:text-3xl font-bold text-[var(--color-points)] flex items-center gap-1.5">
+                      <Coins className="w-6 h-6" />
+                      <span>{displayPrice}</span>
+                    </span>
+                    <span className="text-xs text-[var(--color-text-muted)] font-medium">积分</span>
+                    {displayOriginalPrice && displayOriginalPrice > displayPrice && (
+                      <span className="text-xs text-[var(--color-text-muted)] line-through ml-1">
+                        {displayOriginalPrice}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {activeOffer?.deliveryMode === 'instant_inventory' && !isSoldOut && (
+                  <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                    现货即发
+                  </span>
+                )}
+              </div>
+
+              <div className="flex items-center justify-between text-xs text-[var(--color-text-muted)]">
+                <span>
+                  {stockTitle}: <strong className="text-[var(--color-text)]">{stockLabel}</strong>
+                </span>
+                <span>
+                  已售: <strong className="text-[var(--color-text)]">{product.sales}</strong>
+                </span>
+                {isLoggedIn && (
+                  <span>
+                    余额: <strong className="text-[var(--color-text)]">{userPoints}</strong>
+                  </span>
+                )}
+              </div>
+
+              {isLoggedIn && isInsufficient && !isSoldOut && (
+                <div className="p-2.5 rounded-xl bg-[var(--color-danger)]/10 text-[var(--color-danger)] border border-[var(--color-danger)]/20 text-xs flex items-center justify-between">
+                  <span>积分余额不足</span>
+                  <button
+                    type="button"
+                    onClick={() => navigate('/')}
+                    className="font-bold underline hover:opacity-80 cursor-pointer"
+                  >
+                    去赚积分
+                  </button>
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={handleRedeemClick}
+                disabled={isLoggedIn && isSoldOut}
+                data-testid="inflow-buy-cta"
+                className={
+                  isLoggedIn && isSoldOut
+                    ? 'w-full py-3 px-4 rounded-xl text-sm font-bold opacity-60 cursor-not-allowed bg-[var(--color-border)] text-[var(--color-text-muted)]'
+                    : isLoggedIn && isInsufficient
+                    ? 'w-full btn-secondary py-3 px-4 rounded-xl text-sm font-bold'
+                    : 'w-full btn-cta py-3 px-4 rounded-xl text-sm font-bold shadow'
+                }
+              >
+                {redeemLabel}
+              </button>
+            </div>
           </div>
 
           {/* Section Navigation Tabs */}
@@ -646,7 +801,7 @@ export default function ProductDetailPage() {
             <nav
               aria-label="商品章节"
               data-testid="product-section-nav"
-              className="sticky top-[calc(var(--navbar-h)+var(--safe-top))] z-20 -mx-4 md:-mx-8 border-y border-[var(--color-border)] bg-[var(--color-surface)]/95 backdrop-blur-md"
+              className="sticky top-[calc(var(--navbar-h)+var(--safe-top))] z-20 -mx-4 md:-mx-8 border-y border-[var(--color-border)] bg-[var(--color-surface)] backdrop-blur-md"
             >
               <div className="flex max-md:gap-3 md:gap-6 px-4 md:px-8 max-md:py-2 md:py-3 overflow-x-auto hide-scrollbar whitespace-nowrap">
                 {navSections.map((section) => (
@@ -752,8 +907,12 @@ export default function ProductDetailPage() {
         </div>
 
         {/* Right Column: Sticky Purchase Sidebar (≥ 1024px, Desktop Only) */}
-        <aside className="hidden lg:block w-[368px] shrink-0 sticky top-[calc(var(--navbar-current-h)+16px)] space-y-4">
-          <div className="p-5 rounded-2xl bg-[var(--color-surface)] border border-[var(--color-border)] shadow-md space-y-4">
+        {/* Right Column: Sticky Purchase Sidebar (≥ 1024px, Desktop Only) */}
+        <aside
+          className="hidden lg:flex flex-col w-[368px] shrink-0 sticky top-[calc(var(--navbar-current-h)+16px)] max-h-[calc(100dvh-var(--navbar-current-h)-2rem)] rounded-2xl bg-[var(--color-surface)] border border-[var(--color-border)] shadow-md p-5 overflow-hidden"
+        >
+          {/* 1. Header (Static top) */}
+          <div className="shrink-0 space-y-3">
             {/* Price Header */}
             <div className="flex items-baseline justify-between border-b border-[var(--color-border)] pb-3">
               <div>
@@ -774,9 +933,11 @@ export default function ProductDetailPage() {
                 </div>
               </div>
 
-              <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
-                现货即发
-              </span>
+              {activeOffer?.deliveryMode === 'instant_inventory' && !isSoldOut && (
+                <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                  现货即发
+                </span>
+              )}
             </div>
 
             {/* Quick Micro-stats: Stock & Sales */}
@@ -807,10 +968,13 @@ export default function ProductDetailPage() {
                 </button>
               </div>
             )}
+          </div>
 
+          {/* 2. Scrollable Middle: Offer Selector & Pre-purchase details */}
+          <div className="overflow-y-auto min-h-0 flex-1 space-y-3 my-3 -mr-2 pr-2">
             {/* SKU / Offer Selector in Desktop Sidebar */}
             {isMultiSku && (
-              <div className="pt-2 border-t border-[var(--color-border)]">
+              <div className="pt-2">
                 <ProductOfferSelector
                   offers={offers}
                   selectedOfferId={selectedOfferId}
@@ -831,45 +995,50 @@ export default function ProductDetailPage() {
               </div>
             )}
 
-            {/* Delivery Formats Preview */}
-            {fileDeliverySize !== undefined && (
-              <div className="text-xs text-[var(--color-text-muted)] flex items-center gap-1.5" data-testid="file-delivery-preview">
-                <span className="font-bold text-[var(--color-text)]">交付形态：</span>
-                <span>文件交付{fileDeliverySize != null ? ` · 约 ${formatFileSize(fileDeliverySize)}` : ''}</span>
-              </div>
+            {/* Delivery Formats Preview (Desktop) */}
+            {isDesktopViewport && (
+              <>
+                {fileDeliverySize !== undefined && (
+                  <div className="text-xs text-[var(--color-text-muted)] flex items-center gap-1.5" data-testid="file-delivery-preview">
+                    <span className="font-bold text-[var(--color-text)]">交付形态：</span>
+                    <span>文件交付{fileDeliverySize != null ? ` · 约 ${formatFileSize(fileDeliverySize)}` : ''}</span>
+                  </div>
+                )}
+                {deliveryTemplate.length > 0 && (
+                  <div className="text-xs text-[var(--color-text-muted)] space-y-1.5" data-testid="delivery-template-preview">
+                    <span className="font-bold text-[var(--color-text)] block">包含交付字段：</span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {deliveryTemplate.map((field) => (
+                        <span
+                          key={field.key}
+                          className="px-2 py-0.5 rounded border border-[var(--color-border)] bg-[var(--color-background)] text-[11px] text-[var(--color-text)] font-medium"
+                        >
+                          {field.label}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {activeOffer?.autoProvision && (
+                  <div
+                    className="p-3 rounded-xl border border-[var(--color-primary)]/20 bg-[var(--color-primary-tint)] text-xs space-y-1"
+                    data-testid="auto-provision-disclosure"
+                  >
+                    <div className="font-bold text-[var(--color-primary)] flex items-center gap-1.5">
+                      <Zap className="w-3.5 h-3.5" />
+                      <span>交付方式：商家自动开通</span>
+                    </div>
+                    <p className="text-[11px] text-[var(--color-text-muted)] leading-relaxed">
+                      下单后将自动发起开通，自动开通中请稍候…如有疑问可咨询客服。
+                    </p>
+                  </div>
+                )}
+              </>
             )}
-            {deliveryTemplate.length > 0 && (
-              <div className="text-xs text-[var(--color-text-muted)] space-y-1.5" data-testid="delivery-template-preview">
-                <span className="font-bold text-[var(--color-text)] block">包含交付字段：</span>
-                <div className="flex flex-wrap gap-1.5">
-                  {deliveryTemplate.map((field) => (
-                    <span
-                      key={field.key}
-                      className="px-2 py-0.5 rounded border border-[var(--color-border)] bg-[var(--color-background)] text-[11px] text-[var(--color-text)] font-medium"
-                    >
-                      {field.label}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
+          </div>
 
-            {/* Auto-provisioning Notice (Truthful, No False Manual Promise) */}
-            {activeOffer?.autoProvision && (
-              <div
-                className="p-3 rounded-xl border border-[var(--color-primary)]/20 bg-[var(--color-primary-tint)] text-xs space-y-1"
-                data-testid="auto-provision-disclosure"
-              >
-                <div className="font-bold text-[var(--color-primary)] flex items-center gap-1.5">
-                  <Zap className="w-3.5 h-3.5" />
-                  <span>交付方式：商家自动开通</span>
-                </div>
-                <p className="text-[11px] text-[var(--color-text-muted)] leading-relaxed">
-                  下单后将自动发起开通，自动开通中请稍候…如有疑问可咨询客服。
-                </p>
-              </div>
-            )}
-
+          {/* 3. Footer (Pinned bottom) */}
+          <div className="shrink-0 pt-3 border-t border-[var(--color-border)] space-y-2">
             {/* Primary Desktop CTA Button */}
             <button
               type="button"
@@ -887,7 +1056,7 @@ export default function ProductDetailPage() {
             </button>
 
             {/* Understated Platform Policy */}
-            <div className="pt-2 border-t border-[var(--color-border)] text-[11px] text-[var(--color-text-muted)] leading-relaxed">
+            <div className="text-[11px] text-[var(--color-text-muted)] leading-relaxed">
               平台协助售后与争议处理，不另作先行垫付承诺。
             </div>
           </div>
@@ -895,17 +1064,17 @@ export default function ProductDetailPage() {
       </div>
 
       {/* Mobile Fixed Bottom Purchase Bar (< 1024px) */}
-      {isMobileViewport &&
+      {showBottomBar &&
         createPortal(
           <div
-            className="lg:hidden fixed bottom-0 inset-x-0 z-30 border-t border-[var(--color-border)] bg-[var(--color-surface)]/95 backdrop-blur-md"
+            className="lg:hidden fixed bottom-0 inset-x-0 z-30 border-t border-[var(--color-border)] bg-[var(--color-surface)] backdrop-blur-md"
             style={{ paddingBottom: 'var(--safe-bottom)' }}
             data-testid="mobile-buy-bar"
           >
             <div className="flex items-center justify-between gap-3 px-4 py-2.5 h-14">
               <div className="flex flex-col min-w-0 shrink-0 pr-2">
                 <span className="text-[11px] leading-tight text-[var(--color-text-muted)] truncate max-w-[150px]">
-                  已选：{activeOffer.name}
+                  {activeOffer?.name ? `已选：${activeOffer.name}` : '暂无可售套餐'}
                 </span>
                 <div className="flex items-center gap-1 text-[var(--color-points)] font-heading font-bold text-lg">
                   <Coins className="w-4 h-4 shrink-0" />

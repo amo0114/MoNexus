@@ -60,12 +60,12 @@ test.describe('mobile layout verification @375px', () => {
     await loginAs(page, SEED_ACCOUNTS.user)
     await page.goto('/product/1')
     await page.waitForTimeout(1200)
-    const h1 = page.getByRole('heading', { level: 1, name: /稳定专线节点订阅/ })
+    const h1 = page.getByRole('heading', { level: 1 })
     await expect(h1).toBeVisible()
     const h1Box = await h1.boundingBox()
     const hero = page.getByTestId('product-gallery-main')
     const heroBox = await hero.boundingBox()
-    expect(h1Box!.y).toBeGreaterThanOrEqual(heroBox!.y + heroBox!.height) // below the image
+    expect(h1Box!.y + h1Box!.height).toBeLessThanOrEqual(heroBox!.y) // Header-First: above the image
     await expectNoHorizontalOverflow(page, 'product')
   })
 

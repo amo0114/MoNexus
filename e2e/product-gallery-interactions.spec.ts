@@ -117,8 +117,8 @@ test('product gallery keeps the full image in a stable frame and supports button
 
   const mainImage = page.getByTestId('product-gallery-main')
   const stage = page.getByTestId('product-gallery-stage')
-  // Ecommerce default: fixed frame + cover on detail hero; full image in lightbox.
-  await expect(mainImage).toHaveCSS('object-fit', 'cover')
+  // Phase 1 redesigned 4:3 gallery with fit contain
+  await expect(mainImage).toHaveCSS('object-fit', 'contain')
   await expect(mainImage).toHaveAttribute('src', images[0])
   await expect(page.getByTestId('product-gallery-next')).toBeVisible()
   await expect(page.getByTestId('product-gallery-prev')).toBeVisible()
@@ -166,7 +166,7 @@ test.describe('mobile product gallery', () => {
 
     const mainImage = page.getByTestId('product-gallery-main')
     const stage = page.getByTestId('product-gallery-stage')
-    await expect(mainImage).toHaveCSS('object-fit', 'cover')
+    await expect(mainImage).toHaveCSS('object-fit', 'contain')
 
     await stage.evaluate((element) => {
       element.dispatchEvent(new PointerEvent('pointerdown', {

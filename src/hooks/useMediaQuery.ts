@@ -25,3 +25,8 @@ export function useMediaQuery(query: string): boolean {
 export function useIsMobileViewport(): boolean {
   return useMediaQuery('(max-width: 767px)')
 }
+
+/** Shared Tailwind lg breakpoint (1024px), desktop = at or above it. */
+export function useIsDesktopViewport(): boolean {
+  return useMediaQuery('(min-width: 1024px)')
+}

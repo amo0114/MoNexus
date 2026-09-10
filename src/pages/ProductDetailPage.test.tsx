@@ -118,7 +118,7 @@ describe('ProductDetailPage createOrder term fields', () => {
     renderPage()
     expect(await screen.findByTestId('product-gallery')).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: '立即兑换' }))
+    fireEvent.click(screen.getAllByRole('button', { name: '立即兑换' })[0])
     await screen.findByTestId('purchase-modal')
     await screen.findByTestId('preview-price')
     fireEvent.click(screen.getByRole('button', { name: '确认支付' }))
@@ -254,6 +254,134 @@ describe('ProductDetailPage createOrder term fields', () => {
 
     // Verify PurchaseModal is now opened
     await screen.findByTestId('purchase-modal')
+  })
+
+  it('handles empty offers without crashing and displays safe non-purchasable state', async () => {
+    const NO_OFFERS_PRODUCT = {
+      id: 44,
+      name: '无套餐商品',
+      description: '测试无套餐情况',
+      type: '虚拟商品',
+      icon: 'box',
+      imageUrl: '',
+      price: 99,
+      stock: 0,
+      stockMode: 'limited',
+      sales: 0,
+      offers: [],
+    }
+    apiGet.mockImplementation((url: string) => {
+      if (url === '/products/44') return Promise.resolve({ data: NO_OFFERS_PRODUCT })
+      if (typeof url === 'string' && url.startsWith('/products/44/reviews')) {
+        return Promise.resolve({ data: { items: [], total: 0, page: 1, pageSize: 20 } })
+      }
+      if (url === '/product-templates') return Promise.resolve({ data: { templates: [] } })
+      return Promise.reject(new Error(`unexpected GET ${url}`))
+    })
+
+    render(
+      <MemoryRouter initialEntries={['/product/44']}>
+        <Routes>
+          <Route path="/product/:id" element={<ProductDetailPage />} />
+        </Routes>
+      </MemoryRouter>
+    )
+
+    // Verify header and page load safely without crashing
+    expect(await screen.findByRole('heading', { level: 1, name: '无套餐商品' })).toBeInTheDocument()
+    // Verify disabled CTA button
+    const buttons = screen.getAllByRole('button', { name: /已被抢光|暂无可售套餐/ })
+    expect(buttons.length).toBeGreaterThan(0)
+    expect(buttons[0]).toBeDisabled()
+  })
+
+  it('renders rating-summary with score and count when ratingCount > 0', async () => {
+    const RATED_PRODUCT = {
+      id: 45,
+      name: '高分商品',
+      description: '测试评价概览',
+      type: '虚拟商品',
+      icon: 'box',
+      imageUrl: '',
+      price: 100,
+      stock: 10,
+      sales: 5,
+      ratingAvg: 4.8,
+      ratingCount: 12,
+      offers: [{ id: 1, name: '默认', price: 100, stock: 10 }],
+    }
+    apiGet.mockImplementation((url: string) => {
+      if (url === '/products/45') return Promise.resolve({ data: RATED_PRODUCT })
+      if (typeof url === 'string' && url.startsWith('/products/45/reviews')) {
+        return Promise.resolve({ data: { items: [], total: 0, page: 1, pageSize: 20 } })
+      }
+      if (url === '/product-templates') return Promise.resolve({ data: { templates: [] } })
+      return Promise.reject(new Error(`unexpected GET ${url}`))
+    })
+
+    render(
+      <MemoryRouter initialEntries={['/product/45']}>
+        <Routes>
+          <Route path="/product/:id" element={<ProductDetailPage />} />
+        </Routes>
+      </MemoryRouter>
+    )
+
+    const summary = await screen.findByTestId('rating-summary')
+    expect(summary).toBeInTheDocument()
+    expect(summary).toHaveTextContent('4.8')
+    expect(summary).toHaveTextContent('12')
+  })
+
+  it('does NOT display 现货即发 for manual service products and renders delivery disclosures', async () => {
+    const MANUAL_PRODUCT = {
+      id: 46,
+      name: '人工商品',
+      description: '人工处理',
+      type: '人工服务',
+      icon: 'user',
+      imageUrl: '',
+      price: 100,
+      stock: 10,
+      sales: 1,
+      offers: [{
+        id: 1,
+        name: '标准版',
+        price: 100,
+        stock: 10,
+        deliveryMode: 'manual_service',
+        fixedContentType: 'file',
+        deliveryFileSize: 1048576,
+        deliveryFields: [{ key: 'email', label: '开通邮箱', type: 'text' }],
+        autoProvision: true,
+      }],
+    }
+    apiGet.mockImplementation((url: string) => {
+      if (url === '/products/46') return Promise.resolve({ data: MANUAL_PRODUCT })
+      if (typeof url === 'string' && url.startsWith('/products/46/reviews')) {
+        return Promise.resolve({ data: { items: [], total: 0, page: 1, pageSize: 20 } })
+      }
+      if (url === '/product-templates') return Promise.resolve({ data: { templates: [] } })
+      return Promise.reject(new Error(`unexpected GET ${url}`))
+    })
+
+    render(
+      <MemoryRouter initialEntries={['/product/46']}>
+        <Routes>
+          <Route path="/product/:id" element={<ProductDetailPage />} />
+        </Routes>
+      </MemoryRouter>
+    )
+
+    await screen.findByRole('heading', { level: 1, name: '人工商品' })
+
+    // "现货即发" should NOT be present
+    expect(screen.queryByText('现货即发')).toBeNull()
+
+    // Pre-purchase disclosures should be rendered
+    expect(screen.getAllByTestId('file-delivery-preview').length).toBeGreaterThan(0)
+    expect(screen.getAllByTestId('delivery-template-preview').length).toBeGreaterThan(0)
+    expect(screen.getAllByTestId('auto-provision-disclosure').length).toBeGreaterThan(0)
   })
 })
 
