@@ -15,8 +15,9 @@
   --color-primary: #6366F1;          /* indigo-500 — interactive accent */
   --color-primary-hover: #4F46E5;    /* indigo-600 */
   --color-secondary: #818CF8;        /* indigo-400 */
-  --color-cta: #22C55E;              /* green-500 */
-  --color-cta-hover: #16A34A;        /* green-600 */
+  --color-cta: #15803D;              /* green-700 — 5.02:1 AA on white */
+  --color-cta-hover: #166534;        /* green-800 */
+  --color-on-cta: #FFFFFF;
   --color-background: #F8FAFC;       /* slate-50 — neutral page bg */
   --color-surface: #FFFFFF;
   --color-text: #1E293B;             /* slate-800 — neutral body text */
@@ -118,6 +119,7 @@
   --color-secondary: #A5B4FC;
   --color-cta: #4ADE80;
   --color-cta-hover: #86EFAC;
+  --color-on-cta: #0A0A14;           /* dark background — 11.30:1 AAA on green-400 */
   --color-background: #0A0A14;       /* near-black with a hint of purple */
   --color-surface: #161629;
   --color-text: #F1F5F9;             /* slate-100 */
@@ -479,10 +481,10 @@ h1, h2, h3, h4 {
 
 .btn-cta {
   @apply inline-flex items-center justify-center gap-2 cursor-pointer
-         bg-[var(--color-cta)] text-white font-semibold text-sm
+         bg-[var(--color-cta)] text-[var(--color-on-cta)] font-semibold text-sm
          px-6 py-3 rounded-lg shadow-md transition-all duration-200
          hover:bg-[var(--color-cta-hover)] hover:-translate-y-px hover:shadow-lg
-         focus-visible:outline-none focus-visible:[box-shadow:0_0_0_3px_rgba(34,197,94,0.25)]
+         focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)]
          active:translate-y-0 active:scale-[0.98] active:shadow-sm
          disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:shadow-md;
 }
@@ -736,8 +738,9 @@ h1, h2, h3, h4 {
   --color-primary: #FF8C42;
   --color-primary-hover: #E67333;
   --color-secondary: #FFB088;
-  --color-cta: #6BBE6B;
-  --color-cta-hover: #5AAA5A;
+  --color-cta: #AD4B35;              /* 暖陶红 — 白字 5.48:1 AA */
+  --color-cta-hover: #963E2B;
+  --color-on-cta: #FFFFFF;
   --color-background: #FFF8EC;
   --color-surface: #FFFEFB;
   --color-text: #5D3A1F;
@@ -805,6 +808,7 @@ h1, h2, h3, h4 {
   --color-secondary: #6B86A8;        /* 淡花青 */
   --color-cta: #3D7257;              /* 松绿 — 白字 5.6:1 */
   --color-cta-hover: #315C46;
+  --color-on-cta: #FFFFFF;
   --color-background: #EEF0EE;       /* 冷白宣纸（微青灰，不带黄） */
   --color-surface: #F8F9F7;          /* 卡纸（比底稍亮，如托裱） */
   --color-text: #22262C;             /* 松烟墨（微青黑，非纯黑） */
