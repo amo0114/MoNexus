@@ -76,12 +76,12 @@ export default function ProductOfferSelector({
                     {offer.name}
                   </span>
                   {soldOut && (
-                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-[var(--color-danger)]/10 text-[var(--color-danger)] border border-[var(--color-danger)]/20">
+                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-[var(--color-danger-bg)] text-[var(--color-danger-text)] border border-[var(--color-danger-border)]">
                       已售罄
                     </span>
                   )}
                   {isLowStock && (
-                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-[var(--color-warning-bg)] text-[var(--color-warning-text)] border border-[var(--color-warning-border)]">
                       仅剩 {offer.stock} 件
                     </span>
                   )}

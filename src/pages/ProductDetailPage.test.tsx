@@ -383,5 +383,75 @@ describe('ProductDetailPage createOrder term fields', () => {
     expect(screen.getAllByTestId('delivery-template-preview').length).toBeGreaterThan(0)
     expect(screen.getAllByTestId('auto-provision-disclosure').length).toBeGreaterThan(0)
   })
+
+  it('updates mid-screen floating purchase bar dynamically on resize event without duplicating CTA', async () => {
+    const RESIZE_PRODUCT = {
+      id: 47,
+      name: '中屏缩放测试商品',
+      description: '测试同一中屏断点缩放时购买栏的响应状态',
+      type: '人工服务',
+      icon: 'box',
+      imageUrl: '',
+      price: 199,
+      stock: 10,
+      stockMode: 'limited',
+      sales: 1,
+      offers: [
+        { id: 1, name: '套餐 1', price: 199, originalPrice: null, status: 'active', deliveryMode: 'manual_service', stockMode: 'limited', stock: 10, sales: 0 },
+        { id: 2, name: '套餐 2', price: 299, originalPrice: null, status: 'active', deliveryMode: 'manual_service', stockMode: 'limited', stock: 5, sales: 0 },
+      ],
+    }
+    apiGet.mockImplementation((url: string) => {
+      if (url === '/products/47') return Promise.resolve({ data: RESIZE_PRODUCT })
+      if (typeof url === 'string' && url.startsWith('/products/47/reviews')) {
+        return Promise.resolve({ data: { items: [], total: 0, page: 1, pageSize: 20 } })
+      }
+      if (url === '/product-templates') return Promise.resolve({ data: { templates: [] } })
+      return Promise.reject(new Error(`unexpected GET ${url}`))
+    })
+
+    render(
+      <MemoryRouter initialEntries={['/product/47']}>
+        <Routes>
+          <Route path="/product/:id" element={<ProductDetailPage />} />
+        </Routes>
+      </MemoryRouter>
+    )
+
+    await screen.findByRole('heading', { level: 1, name: '中屏缩放测试商品' })
+    const inflowCard = screen.getByTestId('inflow-buy-card')
+    expect(inflowCard).toBeInTheDocument()
+
+    // 1. When in-flow card is scrolled past navbar (rect.bottom <= navbar height), bottom bar appears
+    vi.spyOn(inflowCard, 'getBoundingClientRect').mockReturnValue({
+      bottom: 30, // scrolled past 64/73px navbar
+      top: -200,
+      height: 230,
+      width: 700,
+      left: 0,
+      right: 700,
+      x: 0,
+      y: -200,
+      toJSON: () => {},
+    })
+    fireEvent(window, new Event('scroll'))
+    expect(screen.getByTestId('mobile-buy-bar')).toBeInTheDocument()
+
+    // 2. When window resizes within mid-screen breakpoint (e.g. 768 -> 1023) and in-flow card re-enters view:
+    vi.spyOn(inflowCard, 'getBoundingClientRect').mockReturnValue({
+      bottom: 180, // re-entered viewport (> navbar height)
+      top: 20,
+      height: 160,
+      width: 950,
+      left: 0,
+      right: 950,
+      x: 0,
+      y: 20,
+      toJSON: () => {},
+    })
+    fireEvent(window, new Event('resize'))
+    // Floating bottom bar must yield and disappear to maintain strict Single-CTA
+    expect(screen.queryByTestId('mobile-buy-bar')).toBeNull()
+  })
 })
 

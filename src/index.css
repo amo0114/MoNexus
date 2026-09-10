@@ -90,6 +90,15 @@
   --color-success: #22C55E;
   --color-danger: #EF4444;
 
+  /* Semantic badge / banner families (no arbitrary opacity modifier needed) */
+  --color-primary-border-subtle: rgba(99, 102, 241, 0.25);
+  --color-danger-bg: #FEF2F2;
+  --color-danger-border: #FECACA;
+  --color-danger-text: #B91C1C;
+  --color-success-bg: #F0FDF4;
+  --color-success-border: #BBF7D0;
+  --color-success-text: #15803D;
+
   /* Toast 2.0 图标/进度条色阶（文字级，白卡实测 ≥4.5:1）。
      与上方 --color-success 等徽章浅色不同：这组专供 surface 卡上的小图标。 */
   --color-toast-success: #15803D;    /* green-700 — 5.01:1 */
@@ -113,7 +122,8 @@
   --safe-right: env(safe-area-inset-right, 0px);
 }
 
-.dark {
+.dark,
+:root[data-theme="dark"] {
   --color-primary: #818CF8;          /* indigo-400 brightened for dark bg */
   --color-primary-hover: #A5B4FC;
   --color-secondary: #A5B4FC;
@@ -155,6 +165,14 @@
   --color-warning: #FBBF24;
   --color-success: #4ADE80;
   --color-danger: #F87171;
+
+  --color-primary-border-subtle: rgba(129, 140, 248, 0.28);
+  --color-danger-bg: rgba(239, 68, 68, 0.15);
+  --color-danger-border: rgba(248, 113, 113, 0.3);
+  --color-danger-text: #FCA5A5;
+  --color-success-bg: rgba(34, 197, 94, 0.15);
+  --color-success-border: rgba(74, 222, 128, 0.3);
+  --color-success-text: #86EFAC;
 
   /* Toast 色阶（深色卡 #161629 上实测 ≥4.5:1） */
   --color-toast-success: #4ADE80;    /* green-400 — 8.06:1 */
@@ -763,6 +781,14 @@ h1, h2, h3, h4 {
   --color-success: #6BBE6B;
   --color-danger: #FF7B6B;
 
+  --color-primary-border-subtle: rgba(255, 140, 66, 0.28);
+  --color-danger-bg: #FFF0ED;
+  --color-danger-border: #FFD2CA;
+  --color-danger-text: #C53B2B;
+  --color-success-bg: #F0FAF0;
+  --color-success-border: #C8E6C8;
+  --color-success-text: #2D6A2D;
+
   /* Toast 色阶（暖米卡 #FFFEFB 上实测 ≥4.5:1） */
   --color-toast-success: #3F7A3F;    /* 同 --color-points — 5.09:1 */
   --color-toast-error: #B91C1C;      /* red-700 — 5.83:1 */
@@ -830,6 +856,14 @@ h1, h2, h3, h4 {
   --color-warning: #677220;          /* 苔黄（68° 黄绿，警示语义的黄族但不入橘调） */
   --color-success: #3D7257;          /* 松绿 */
   --color-danger: #A62B4D;           /* 胭脂（冷调绯红，非橘红） */
+
+  --color-primary-border-subtle: rgba(52, 80, 122, 0.22);
+  --color-danger-bg: #F7EAEF;
+  --color-danger-border: #E8BCCD;
+  --color-danger-text: #861B3B;
+  --color-success-bg: #EDF4EF;
+  --color-success-border: #BCD4C4;
+  --color-success-text: #244C37;
 
   --color-toast-success: #2F5C46;
   --color-toast-error: #A62B4D;

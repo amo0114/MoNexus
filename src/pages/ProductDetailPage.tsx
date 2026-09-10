@@ -81,6 +81,19 @@ interface Product {
 
 const SECTION_SCROLL_MARGIN = 'scroll-mt-[calc(var(--navbar-h)+var(--safe-top)+3.25rem)]'
 
+function getNavbarHeight(): number {
+  if (typeof window === 'undefined') return 64
+  const navVal = getComputedStyle(document.documentElement).getPropertyValue('--navbar-current-h')
+  const parsed = parseFloat(navVal)
+  if (!isNaN(parsed) && parsed > 0) return parsed
+  const header = document.querySelector('header')
+  if (header) {
+    const h = header.getBoundingClientRect().height
+    if (h > 0) return h
+  }
+  return 64
+}
+
 export default function ProductDetailPage() {
   const { id } = useParams<{ id: string }>()
   const [searchParams] = useSearchParams()
@@ -126,16 +139,41 @@ export default function ProductDetailPage() {
       setMidScreenScrolledPast(false)
       return
     }
-    const checkScroll = () => {
+
+    const checkPosition = () => {
       const el = inflowCardRef.current
       if (!el) return
-      const rect = el.getBoundingClientRect()
-      // Bottom bar only floats on mid-screen after the in-flow card has completely scrolled past the navbar
-      setMidScreenScrolledPast(rect.bottom <= 64)
+      const navHeight = getNavbarHeight()
+      const cardRect = el.getBoundingClientRect()
+      const cta = el.querySelector('[data-testid="inflow-buy-cta"]') as HTMLElement | null
+      const ctaRect = cta && cta.getBoundingClientRect().height > 0 ? cta.getBoundingClientRect() : cardRect
+
+      // The in-flow purchase CTA has completely scrolled past the sticky navbar
+      setMidScreenScrolledPast(ctaRect.bottom <= navHeight)
     }
-    window.addEventListener('scroll', checkScroll, { passive: true })
-    checkScroll()
-    return () => window.removeEventListener('scroll', checkScroll)
+
+    window.addEventListener('scroll', checkPosition, { passive: true })
+    window.addEventListener('resize', checkPosition, { passive: true })
+
+    let observer: ResizeObserver | null = null
+    if (typeof ResizeObserver !== 'undefined') {
+      observer = new ResizeObserver(() => {
+        checkPosition()
+      })
+      if (inflowCardRef.current) {
+        observer.observe(inflowCardRef.current)
+      }
+      if (typeof document !== 'undefined' && document.body) {
+        observer.observe(document.body)
+      }
+    }
+
+    checkPosition()
+    return () => {
+      window.removeEventListener('scroll', checkPosition)
+      window.removeEventListener('resize', checkPosition)
+      observer?.disconnect()
+    }
   }, [isMobileViewport, isDesktopViewport, product])
 
   useEffect(() => {
@@ -448,7 +486,7 @@ export default function ProductDetailPage() {
           ? '余额不足，去赚积分'
           : '立即兑换'
 
-  const showBottomBar = isMobileViewport || midScreenScrolledPast
+  const showBottomBar = !isDesktopViewport && (isMobileViewport || midScreenScrolledPast)
 
   const template =
     templates.find(
@@ -704,7 +742,7 @@ export default function ProductDetailPage() {
                 )}
                 {activeOffer?.autoProvision && (
                   <div
-                    className="p-3 rounded-xl border border-[var(--color-primary)]/20 bg-[var(--color-primary-tint)] text-xs space-y-1"
+                    className="p-3 rounded-xl border border-[var(--color-primary-border-subtle)] bg-[var(--color-primary-tint)] text-xs space-y-1"
                     data-testid="auto-provision-disclosure"
                   >
                     <div className="font-bold text-[var(--color-primary)] flex items-center gap-1.5">
@@ -745,7 +783,7 @@ export default function ProductDetailPage() {
                 </div>
 
                 {activeOffer?.deliveryMode === 'instant_inventory' && !isSoldOut && (
-                  <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                  <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-[var(--color-success-bg)] text-[var(--color-success-text)] border border-[var(--color-success-border)]">
                     现货即发
                   </span>
                 )}
@@ -766,7 +804,7 @@ export default function ProductDetailPage() {
               </div>
 
               {isLoggedIn && isInsufficient && !isSoldOut && (
-                <div className="p-2.5 rounded-xl bg-[var(--color-danger)]/10 text-[var(--color-danger)] border border-[var(--color-danger)]/20 text-xs flex items-center justify-between">
+                <div className="p-2.5 rounded-xl bg-[var(--color-danger-bg)] text-[var(--color-danger-text)] border border-[var(--color-danger-border)] text-xs flex items-center justify-between">
                   <span>积分余额不足</span>
                   <button
                     type="button"
@@ -934,7 +972,7 @@ export default function ProductDetailPage() {
               </div>
 
               {activeOffer?.deliveryMode === 'instant_inventory' && !isSoldOut && (
-                <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-[var(--color-success-bg)] text-[var(--color-success-text)] border border-[var(--color-success-border)]">
                   现货即发
                 </span>
               )}
@@ -957,7 +995,7 @@ export default function ProductDetailPage() {
 
             {/* Balance warning if insufficient */}
             {isLoggedIn && isInsufficient && !isSoldOut && (
-              <div className="p-2.5 rounded-xl bg-[var(--color-danger)]/10 text-[var(--color-danger)] border border-[var(--color-danger)]/20 text-xs flex items-center justify-between">
+              <div className="p-2.5 rounded-xl bg-[var(--color-danger-bg)] text-[var(--color-danger-text)] border border-[var(--color-danger-border)] text-xs flex items-center justify-between">
                 <span>积分余额不足</span>
                 <button
                   type="button"
@@ -1021,7 +1059,7 @@ export default function ProductDetailPage() {
                 )}
                 {activeOffer?.autoProvision && (
                   <div
-                    className="p-3 rounded-xl border border-[var(--color-primary)]/20 bg-[var(--color-primary-tint)] text-xs space-y-1"
+                    className="p-3 rounded-xl border border-[var(--color-primary-border-subtle)] bg-[var(--color-primary-tint)] text-xs space-y-1"
                     data-testid="auto-provision-disclosure"
                   >
                     <div className="font-bold text-[var(--color-primary)] flex items-center gap-1.5">
