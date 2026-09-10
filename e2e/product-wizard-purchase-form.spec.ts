@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { API_BASE, SEED_ACCOUNTS, loginAs, publishMerchantProduct } from './helpers'
+import { API_BASE, SEED_ACCOUNTS, fillWizardOfferAttributes, fillWizardPublicationDetails, loginAs, publishMerchantProduct } from './helpers'
 
 const PRODUCT_NAME = `E2E人工服务表单-${Date.now()}`
 
@@ -31,9 +31,11 @@ test.describe.serial('M-P2 product wizard + purchase form', () => {
     if (!(await category.inputValue())) {
       await category.selectOption({ index: 1 })
     }
+    await fillWizardPublicationDetails(page)
     await page.getByTestId('wizard-next').click()
 
     await page.getByTestId('wizard-price').fill('2')
+    await fillWizardOfferAttributes(page)
     await page.getByTestId('wizard-next').click()
 
     // 模板预设 manual_service，名额默认不限

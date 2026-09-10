@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { API_BASE, SEED_ACCOUNTS, loginAs, loginAsApi } from './helpers'
+import { API_BASE, E2E_PRODUCT_COVER, SEED_ACCOUNTS, fillWizardOfferAttributes, fillWizardPublicationDetails, loginAs, loginAsApi } from './helpers'
 
 /**
  * SPEC-CATALOG-OPS / PAR-CMI-001 — Catalog product lifecycle 前置段（极窄 E2E 卡）。
@@ -28,8 +28,8 @@ import { API_BASE, SEED_ACCOUNTS, loginAs, loginAsApi } from './helpers'
  */
 const PRODUCT_NAME = `E2E目录草稿-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 
-/** 同源封面路径（仓库 public/brand/ledger-knot/mark-light.png 真实存在）。 */
-const COVER_PATH = '/brand/ledger-knot/mark-light.png'
+/** 规范封面：v2 create 仅持久化 /assets/ 静态资源或上传 objectKey。 */
+const COVER_PATH = E2E_PRODUCT_COVER
 
 let productId = 0
 let offerId = 0
@@ -226,7 +226,7 @@ test.describe.serial('PAR-CMI-001 catalog product lifecycle prelude', () => {
     // 步骤 1：展示信息 —— 唯一名称 + 显式分类（分类仅作展示，D-CAT-05）。
     await page.getByTestId('wizard-name').fill(PRODUCT_NAME)
 
-    // 封面：真实 ProductImageUploader 直接外链同源图（零写 API），创建时即有规范封面。
+    // 封面：v2 create 仅持久化 /assets/ 静态资源（零写 API），创建时即有规范封面。
     await page.getByTestId('product-image-url-input').fill(COVER_PATH)
     await page.getByTestId('product-image-url-hotlink').click()
     const coverImg = page.getByTestId('product-images-list').locator('img')
@@ -235,10 +235,12 @@ test.describe.serial('PAR-CMI-001 catalog product lifecycle prelude', () => {
     const categorySelect = page.getByTestId('product-category-select')
     await expect(categorySelect.locator('option:not([value=""])')).not.toHaveCount(0, { timeout: 10_000 })
     await categorySelect.selectOption({ label: '共享账号' })
+    await fillWizardPublicationDetails(page)
     await page.getByTestId('wizard-next').click()
 
     // 步骤 2：定价 —— 主规格名保持默认，售价为正整数。
     await page.getByTestId('wizard-price').fill('2')
+    await fillWizardOfferAttributes(page)
     await page.getByTestId('wizard-next').click()
 
     // 步骤 3：交付方式 —— 模板预选人工服务履约；名额改为限量（有限 capacity）。

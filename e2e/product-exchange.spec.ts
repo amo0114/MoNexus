@@ -24,7 +24,12 @@ async function createPublishedProduct(request: import('@playwright/test').APIReq
       headers: { Authorization: `Bearer ${merchantToken}` },
     })
     expect(editor.ok(), await editor.text()).toBeTruthy()
-    const contentVersion = ((await editor.json()) as { contentVersion: number }).contentVersion
+    const editorBody = (await editor.json()) as { product?: { contentVersion?: number } }
+    const product = editorBody.product
+    if (!product || typeof product.contentVersion !== 'number') {
+      throw new Error('GET /editor 缺少 product.contentVersion')
+    }
+    const contentVersion = product.contentVersion
     const patched = await request.patch(`${API_BASE}/api/merchant/products/${productId}/content`, {
       headers: { Authorization: `Bearer ${merchantToken}` },
       data: { expectedContentVersion: contentVersion, visibility: 'public' },
