@@ -54,14 +54,17 @@ function parseCreatedProduct(body: unknown): { id: number; status: string } {
   return { id: body.id, status: body.status }
 }
 
-/** unknown JSON → create 响应封面字段（imageUrl + images），类型守卫；形状不符返回 null。 */
-function readCoverFields(body: unknown): { imageUrl: string; images: string[] } | null {
-  if (!isRecord(body)) return null
-  if (typeof body.imageUrl !== 'string') return null
-  if (!Array.isArray(body.images) || body.images.length !== 1) return null
-  const first = body.images[0]
-  if (typeof first !== 'string') return null
-  return { imageUrl: body.imageUrl, images: [first] }
+/** unknown JSON → editor 封面（product.images[].url），类型守卫；形状不符返回 null。 */
+function readEditorCoverFields(body: unknown): { imageUrl: string; images: string[] } | null {
+  if (!isRecord(body) || !isRecord(body.product)) return null
+  const images = body.product.images
+  if (!Array.isArray(images) || images.length !== 1) return null
+  const first = images[0]
+  const url = isRecord(first) && typeof first.url === 'string'
+    ? first.url
+    : (typeof first === 'string' ? first : null)
+  if (url == null) return null
+  return { imageUrl: url, images: [url] }
 }
 
 /**
@@ -212,7 +215,7 @@ function parseCheckoutPreview(body: unknown, expectedProductId: number, expected
 }
 
 test.describe.serial('PAR-CMI-001 catalog product lifecycle prelude', () => {
-  test('merchant creates a draft with limited capacity via the wizard', async ({ page }) => {
+  test('merchant creates a draft with limited capacity via the wizard', async ({ page, request }) => {
     await loginAs(page, SEED_ACCOUNTS.merchant)
 
     await page.goto('/merchant/products/new')
@@ -262,8 +265,14 @@ test.describe.serial('PAR-CMI-001 catalog product lifecycle prelude', () => {
     expect(created.status).toBe('draft')
     productId = created.id
 
-    // 类型守卫断言 create 响应携带规范封面：imageUrl === COVER_PATH 且 images 长度 1。
-    expect(readCoverFields(createdBody)).toEqual({ imageUrl: COVER_PATH, images: [COVER_PATH] })
+    // v2 create 响应不含 images/imageUrl；从 editor GET 核对已持久化封面。
+    const merchantSession = await loginAsApi(request, SEED_ACCOUNTS.merchant)
+    const editorRes = await request.get(`${API_BASE}/api/merchant/products/${productId}/editor`, {
+      headers: { Authorization: `Bearer ${merchantSession.accessToken}` },
+    })
+    expect(editorRes.ok(), await editorRes.text()).toBeTruthy()
+    const editorBody: unknown = await editorRes.json()
+    expect(readEditorCoverFields(editorBody)).toEqual({ imageUrl: COVER_PATH, images: [COVER_PATH] })
 
     // create 响应未内嵌默认 Offer → 从创建后的真实 UI（可售量步）读取默认 Offer id。
     const offerIdFromCreate = extractOfferIdFromCreateResponse(createdBody)

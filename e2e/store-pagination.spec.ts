@@ -97,7 +97,7 @@ test('store loads the next cursor page; detail page has gallery and no review se
 
   // 详情页有图集，无评价区（M9 已移除假评价）
   await expect(page.getByTestId('product-gallery')).toBeVisible({ timeout: 10_000 })
-  await expect(page.getByText('图文介绍')).toBeVisible()
+  await expect(page.getByText('介绍', { exact: true })).toBeVisible()
   await expect(page.getByText('买家评价')).toHaveCount(0)
   await expect(page.getByText(/共 \d+ 条评价/)).toHaveCount(0)
 

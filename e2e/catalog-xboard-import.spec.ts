@@ -2351,13 +2351,17 @@ test.describe.serial('Catalog Xboard import', () => {
         await expect(page.getByTestId('admin-publication-dialog')).toBeVisible();
         await expect(page.getByTestId('publication-publish')).toBeDisabled();
 
-        const editorRes = await page.request.get(`${API_BASE}/api/admin/products/${imported.productId}/editor`);
+        const adminSession = await loginAsApi(request, SEED_ACCOUNTS.admin);
+        const editorRes = await request.get(`${API_BASE}/api/admin/products/${imported.productId}/editor`, {
+          headers: { Authorization: `Bearer ${adminSession.accessToken}` },
+        });
         expect(editorRes.ok(), await editorRes.text()).toBeTruthy();
         const editorBody: unknown = await editorRes.json();
         if (!isRecord(editorBody) || !isRecord(editorBody.product) || typeof editorBody.product.contentVersion !== 'number') {
           throw new Error('admin editor DTO missing product.contentVersion');
         }
-        const notesPatch = await page.request.patch(`${API_BASE}/api/admin/products/${imported.productId}/content`, {
+        const notesPatch = await request.patch(`${API_BASE}/api/admin/products/${imported.productId}/content`, {
+          headers: { Authorization: `Bearer ${adminSession.accessToken}` },
           data: {
             expectedContentVersion: editorBody.product.contentVersion,
             details: {
