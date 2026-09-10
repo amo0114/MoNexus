@@ -3,6 +3,7 @@ import { api, authHeader, createTestMerchant, createTestUser, loginAs } from '..
 import { getActiveCategoryIdByLabel } from '../../__tests__/catalogFixture.js'
 import { computeOfferCheckoutVersion } from '../../lib/offers.js'
 import { prisma } from '../../lib/prisma.js'
+import { resolvePlatformPublicImage } from './platformMedia.js'
 import { EMPTY_PRODUCT_DETAILS } from './templates/types.js'
 
 let mediaSerial = 0
@@ -11,15 +12,36 @@ function uniqueObjectKey(prefix: string): string {
   return `${prefix}-${Date.now()}-${mediaSerial}.webp`
 }
 
-async function seedStoredObject(objectKey: string, source = 'upload_image') {
+async function seedStoredObject(objectKey: string, source = 'upload_image', providerConfigId: number | null = null) {
   await prisma.storedObject.create({
     data: {
-      providerConfigId: null,
-      providerRef: 'env',
+      providerConfigId,
+      providerRef: providerConfigId == null ? 'env' : String(providerConfigId),
       bucketRole: 'public',
       objectKey,
       status: 'active',
       source,
+    },
+  })
+}
+
+async function seedCdnProvider(publicUrlBase: string) {
+  return prisma.storageProviderConfig.create({
+    data: {
+      type: 's3_compatible',
+      name: uniqueObjectKey('cdn-provider').replace(/\.webp$/, ''),
+      status: 'active',
+      configVersion: 1,
+      publicConfig: {
+        endpoint: 'https://minio.internal:9000',
+        region: 'us-east-1',
+        publicBucket: 'public-assets',
+        privateBucket: 'private-assets',
+        publicUrlBase,
+        forcePathStyle: true,
+      },
+      credentialsCiphertext: 'test-enc',
+      accessKeyLast4: 'abcd',
     },
   })
 }
@@ -383,6 +405,52 @@ describe('createProduct v2 (SPEC-PRODUCT-COMMERCE-002 §9.1)', () => {
     expect(after.richDescription ?? '').not.toContain('evil.example')
   })
 
+  it('remaps persisted CDN description images on editor GET so a name-only save keeps them', async () => {
+    const token = await merchantToken('v2-rich-cdn@test.local')
+    const categoryId = await getActiveCategoryIdByLabel('充值卡密')
+    const provider = await seedCdnProvider('https://cdn.example.com/public')
+    const objectKey = uniqueObjectKey('v2-rich-cdn')
+    await seedStoredObject(objectKey, 'upload_image', provider.id)
+    const resolved = await resolvePlatformPublicImage({ kind: 'upload', objectKey })
+    expect(resolved.canonicalUrl).toBe(`https://cdn.example.com/public/${objectKey}`)
+
+    const created = await api.post('/api/merchant/products').set(authHeader(token)).send(v2RedemptionBody(categoryId, {
+      name: 'CDN 图文草稿',
+      richDescription: null,
+      descriptionImages: [],
+    })).expect(201)
+
+    await prisma.product.update({
+      where: { id: created.body.id },
+      data: {
+        richDescription: `<p>介绍<img src="${resolved.canonicalUrl}" alt="样图"><img src="https://evil.example/x.png"></p>`,
+      },
+    })
+
+    const editor = await api.get(`/api/merchant/products/${created.body.id}/editor`)
+      .set(authHeader(token))
+      .expect(200)
+    expect(editor.body.product.descriptionImages).toEqual([
+      { src: resolved.canonicalUrl, ref: { kind: 'upload', objectKey } },
+    ])
+    expect(JSON.stringify(editor.body.product.descriptionImages)).not.toContain('evil.example')
+
+    const patched = await api.patch(`/api/merchant/products/${created.body.id}/content`)
+      .set(authHeader(token))
+      .send({
+        expectedContentVersion: editor.body.product.contentVersion,
+        name: '仅改名',
+        richDescription: editor.body.product.richDescription,
+        descriptionImages: editor.body.product.descriptionImages,
+      })
+      .expect(200)
+    expect(patched.body.updatedFields).toEqual(expect.arrayContaining(['name', 'richDescription']))
+    const after = await prisma.product.findUniqueOrThrow({ where: { id: created.body.id } })
+    expect(after.name).toBe('仅改名')
+    expect(after.richDescription).toContain(`<img src="${resolved.canonicalUrl}"`)
+    expect(after.richDescription ?? '').not.toContain('evil.example')
+  })
+
   it('assigns a template on an untemplated draft and then refuses to change it', async () => {
     const token = await merchantToken('v2-template-patch@test.local')
     const categoryId = await getActiveCategoryIdByLabel('充值卡密')
@@ -604,5 +672,70 @@ describe('createProduct v2 (SPEC-PRODUCT-COMMERCE-002 §9.1)', () => {
     expect(after.contentVersion).toBe(before.contentVersion)
     expect(after.details).toEqual(before.details)
     expect(after.status).toBe('active')
+  })
+
+  it('lets an active sold-out templated product save ordinary content but not empty purchaseNotes', async () => {
+    const token = await merchantToken('v2-sold-out-save@test.local')
+    const categoryId = await getActiveCategoryIdByLabel('充值卡密')
+    const coverKey = uniqueObjectKey('v2-sold-out-cover')
+    await seedStoredObject(coverKey)
+    const created = await api.post('/api/merchant/products').set(authHeader(token)).send(v2RedemptionBody(categoryId, {
+      name: '售罄在售商品',
+      attributes: { serviceName: '示例软件', redemptionMethod: '在软件的兑换入口输入卡密。' },
+      details: publishableDetails,
+      images: [{ kind: 'upload', objectKey: coverKey }],
+    })).expect(201)
+    const offer = await prisma.offer.findFirstOrThrow({ where: { productId: created.body.id } })
+    await prisma.inventoryItem.create({
+      data: {
+        productId: created.body.id,
+        offerId: offer.id,
+        content: `code-sold-out-${created.body.id}`,
+        status: 'available',
+      },
+    })
+    await api.post(`/api/merchant/products/${created.body.id}/publish`)
+      .set(authHeader(token))
+      .expect(200)
+
+    await prisma.inventoryItem.updateMany({
+      where: { productId: created.body.id },
+      data: { status: 'sold' },
+    })
+    await prisma.offer.update({
+      where: { id: offer.id },
+      data: { stock: 0 },
+    })
+
+    const renamed = await api.patch(`/api/merchant/products/${created.body.id}/content`)
+      .set(authHeader(token))
+      .send({
+        expectedContentVersion: 1,
+        name: '售罄改名',
+      })
+      .expect(200)
+    expect(renamed.body.contentVersion).toBe(2)
+    expect(renamed.body.updatedFields).toEqual(['name'])
+    const afterName = await prisma.product.findUniqueOrThrow({ where: { id: created.body.id } })
+    expect(afterName.name).toBe('售罄改名')
+    expect(afterName.status).toBe('active')
+
+    const denied = await api.patch(`/api/merchant/products/${created.body.id}/content`)
+      .set(authHeader(token))
+      .send({
+        expectedContentVersion: 2,
+        details: { ...publishableDetails, purchaseNotes: '' },
+      })
+      .expect(422)
+    expect(denied.body.error.code).toBe('PRODUCT_NOT_READY')
+    expect(denied.body.error.details).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'PURCHASE_NOTES_REQUIRED' }),
+    ]))
+    expect(denied.body.error.details).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ reason: '该规格当前不可售' }),
+    ]))
+    const afterNotes = await prisma.product.findUniqueOrThrow({ where: { id: created.body.id } })
+    expect(afterNotes.contentVersion).toBe(2)
+    expect(afterNotes.details).toEqual(publishableDetails)
   })
 })

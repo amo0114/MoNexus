@@ -88,12 +88,17 @@ describe('product rich-content sanitizer', () => {
     expect(sanitized.toLowerCase()).not.toContain('evil.example')
   })
 
-  it('rebuilds descriptionImages from persisted local srcs', () => {
-    expect(listPersistedDescriptionImages(
-      `<p><img src="${localSrc}" alt="样图"><img src="/assets/catalog/sample.png"></p>`,
+  it('rebuilds descriptionImages from persisted /assets/ srcs', async () => {
+    expect(await listPersistedDescriptionImages(
+      `<p><img src="/assets/catalog/sample.png"></p>`,
     )).toEqual([
-      { src: localSrc, ref: { kind: 'upload', objectKey: 'catalog-local.webp' } },
       { src: '/assets/catalog/sample.png', ref: { kind: 'static', path: '/assets/catalog/sample.png' } },
     ])
+  })
+
+  it('does not remap remote evil imgs from persisted HTML', async () => {
+    expect(await listPersistedDescriptionImages(
+      `<p><img src="https://evil.example/x.png"></p>`,
+    )).toEqual([])
   })
 })

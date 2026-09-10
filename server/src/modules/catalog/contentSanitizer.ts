@@ -1,4 +1,10 @@
 import sanitizeHtml from 'sanitize-html'
+import { prisma } from '../../lib/prisma.js'
+import {
+  MediaRefResolutionError,
+  resolveLegacyPlatformImageUrl,
+  type MediaDb,
+} from './platformMedia.js'
 
 /** Server-side allowlist for Xboard rich descriptions. Runtime rendering still
  * applies DOMPurify as a second, independent boundary. */
@@ -88,19 +94,9 @@ export function sanitizeProductRichContent(
   return sanitized || null
 }
 
-function refFromPersistedSrc(src: string): ProductDescriptionImage['ref'] | null {
-  if (src.startsWith('/assets/')) return { kind: 'static', path: src }
-  const upload = src.match(/\/uploads\/([A-Za-z0-9._~+-]+)$/)
-  if (upload) return { kind: 'upload', objectKey: upload[1] }
-  return null
-}
-
-/** Rebuild the write-side descriptionImages mapping from persisted HTML. */
-export function listPersistedDescriptionImages(
-  input: string | null | undefined,
-): ProductDescriptionImage[] {
+function extractPersistedImageSrcs(input: string | null | undefined): string[] {
   if (typeof input !== 'string' || input.trim() === '') return []
-  const images: ProductDescriptionImage[] = []
+  const srcs: string[] = []
   const seen = new Set<string>()
   sanitizeHtml(input, {
     allowedTags: ['img'],
@@ -109,13 +105,43 @@ export function listPersistedDescriptionImages(
       const src = frame.attribs?.src
       if (frame.tag === 'img' && src && !seen.has(src)) {
         seen.add(src)
-        const ref = refFromPersistedSrc(src)
-        if (ref) images.push({ src, ref })
+        srcs.push(src)
       }
       return true
     },
   })
-  return images.slice(0, 12)
+  return srcs.slice(0, 12)
+}
+
+function descriptionImageFromResolved(
+  resolved: Awaited<ReturnType<typeof resolveLegacyPlatformImageUrl>>,
+): ProductDescriptionImage | null {
+  if (resolved.source === 'static_asset') {
+    return { src: resolved.canonicalUrl, ref: { kind: 'static', path: resolved.canonicalUrl } }
+  }
+  if (resolved.source === 'upload_image' && resolved.objectKey) {
+    return { src: resolved.canonicalUrl, ref: { kind: 'upload', objectKey: resolved.objectKey } }
+  }
+  return null
+}
+
+/** Rebuild the write-side descriptionImages mapping from persisted HTML.
+ * Absolute CDN URLs go through the platform resolver; unresolved remotes are dropped. */
+export async function listPersistedDescriptionImages(
+  input: string | null | undefined,
+  db: MediaDb = prisma,
+): Promise<ProductDescriptionImage[]> {
+  const images: ProductDescriptionImage[] = []
+  for (const src of extractPersistedImageSrcs(input)) {
+    try {
+      const mapped = descriptionImageFromResolved(await resolveLegacyPlatformImageUrl(src, db))
+      if (mapped) images.push(mapped)
+    } catch (err) {
+      if (err instanceof MediaRefResolutionError) continue
+      throw err
+    }
+  }
+  return images
 }
 
 export function catalogPlainTextSummary(input: string | null | undefined, maxLength = 500): string {

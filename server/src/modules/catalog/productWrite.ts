@@ -529,7 +529,7 @@ export async function patchProductContent(
       select: { id: true, contentVersion: true },
     })
     if (current.status === 'active') {
-      const readiness = await checkProductReadiness(productId, tx)
+      const readiness = await checkProductReadiness(productId, tx, { requireCurrentlySellable: false })
       if (!readiness.ready) notReadyError(readiness)
     }
     return updatedRow
@@ -607,7 +607,7 @@ export async function getProductEditor(actor: ProductWriteActor, productId: numb
       categoryId: product.categoryId,
       description: product.description,
       richDescription: product.richDescription,
-      descriptionImages: listPersistedDescriptionImages(product.richDescription),
+      descriptionImages: await listPersistedDescriptionImages(product.richDescription),
       images: product.images.map(url => ({ url, ref: null })),
       visibility: product.visibility,
       attributes: product.attributes,
