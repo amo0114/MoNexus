@@ -2,6 +2,8 @@ import { expect, test } from '@playwright/test'
 import { API_BASE, E2E_PRODUCT_COVER, loginAs, loginAsApi, SEED_ACCOUNTS } from './helpers'
 
 const PAGE_SIZE = 60
+const INTRO_PRODUCT_NAME = `E2E介绍商品-${Date.now()}`
+let introProductId = 0
 
 /**
  * M9-A5：商城“加载更多”追加分页 + 商品详情移除评价区。
@@ -9,14 +11,12 @@ const PAGE_SIZE = 60
  * 一次性补齐占位商品，并显式走当前草稿→发布门禁，重复执行不再新建。
  */
 test.beforeAll(async ({ request }) => {
+  const { accessToken } = await loginAsApi(request, SEED_ACCOUNTS.admin)
   const listRes = await request.get(`${API_BASE}/api/products?pageSize=100`)
   expect(listRes.ok()).toBe(true)
   const listBody = await listRes.json()
   const products: unknown[] = listBody.items
   const missing = PAGE_SIZE + 1 - products.length
-  if (missing <= 0) return
-
-  const { accessToken } = await loginAsApi(request, SEED_ACCOUNTS.admin)
 
   for (let i = 0; i < missing; i++) {
     const createRes = await request.post(`${API_BASE}/api/admin/products`, {
@@ -55,6 +55,44 @@ test.beforeAll(async ({ request }) => {
     })
     expect(publishRes.ok(), await publishRes.text()).toBe(true)
   }
+
+  const introCreate = await request.post(`${API_BASE}/api/admin/products`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    data: {
+      name: INTRO_PRODUCT_NAME,
+      description: 'E2E 介绍区目标商品',
+      type: '充值卡密',
+      price: 1,
+      deliveryMode: 'instant_fixed',
+      stockMode: 'unlimited',
+      fixedContent: 'https://example.test/e2e-intro',
+      fixedContentType: 'url',
+      imageUrl: E2E_PRODUCT_COVER,
+      images: [E2E_PRODUCT_COVER],
+    },
+  })
+  expect(introCreate.ok(), await introCreate.text()).toBe(true)
+  const introCreated = await introCreate.json() as { id: number }
+  introProductId = introCreated.id
+  const introEditor = await request.get(`${API_BASE}/api/admin/products/${introProductId}/editor`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+  expect(introEditor.ok(), await introEditor.text()).toBe(true)
+  const introEditorBody = await introEditor.json() as { product: { contentVersion: number } }
+  const introPatch = await request.patch(`${API_BASE}/api/admin/products/${introProductId}/content`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    data: {
+      expectedContentVersion: introEditorBody.product.contentVersion,
+      visibility: 'public',
+      richDescription: '<p>E2E 明确介绍正文</p>',
+      images: [{ kind: 'static', path: E2E_PRODUCT_COVER }],
+    },
+  })
+  expect(introPatch.ok(), await introPatch.text()).toBe(true)
+  const introPublish = await request.post(`${API_BASE}/api/admin/products/${introProductId}/publish`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+  expect(introPublish.ok(), await introPublish.text()).toBe(true)
 })
 
 test('store loads the next cursor page; detail page has gallery and no review section', async ({ page }) => {
@@ -97,7 +135,6 @@ test('store loads the next cursor page; detail page has gallery and no review se
 
   // 详情页有图集，无评价区（M9 已移除假评价）
   await expect(page.getByTestId('product-gallery')).toBeVisible({ timeout: 10_000 })
-  await expect(page.getByText('介绍', { exact: true })).toBeVisible()
   await expect(page.getByText('买家评价')).toHaveCount(0)
   await expect(page.getByText(/共 \d+ 条评价/)).toHaveCount(0)
 
@@ -106,4 +143,9 @@ test('store loads the next cursor page; detail page has gallery and no review se
   await expect
     .poll(async () => page.evaluate(() => window.scrollY), { timeout: 10_000 })
     .toBeGreaterThan(scrollBeforeDetail - 200)
+
+  await page.goto(`/product/${introProductId}`)
+  await expect(page.getByTestId('product-section-intro')).toBeVisible({ timeout: 10_000 })
+  await expect(page.getByText('介绍', { exact: true })).toBeVisible()
+  await expect(page.getByText('E2E 明确介绍正文')).toBeVisible()
 })

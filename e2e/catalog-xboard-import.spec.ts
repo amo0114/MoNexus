@@ -2386,7 +2386,7 @@ test.describe.serial('Catalog Xboard import', () => {
           throw new Error('Xboard draft was not publication-ready after purchase notes were filled');
         }
         await expect(page.getByTestId('admin-publication-dialog')).toBeVisible();
-        await expect(page.getByTestId('admin-publication-dialog')).toContainText('准备发布');
+        await expect(page.getByTestId('admin-publication-dialog')).toContainText('发布「Gold Plan」');
         await expect(page.getByTestId('admin-publication-dialog')).not.toContainText('OFFER_NOT_SELLABLE');
         await expect(page.getByTestId('publication-publish')).toBeEnabled();
 

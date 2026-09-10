@@ -238,6 +238,7 @@ test.describe.serial('PAR-CMI-001 catalog product lifecycle prelude', () => {
     const categorySelect = page.getByTestId('product-category-select')
     await expect(categorySelect.locator('option:not([value=""])')).not.toHaveCount(0, { timeout: 10_000 })
     await categorySelect.selectOption({ label: '共享账号' })
+    await page.getByTestId('wizard-visibility-public').check()
     await fillWizardPublicationDetails(page)
     await page.getByTestId('wizard-next').click()
 
