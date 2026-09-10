@@ -28,6 +28,8 @@ const DELIVERY_LABEL: Record<string, string> = {
   manual_service: '人工服务',
 }
 
+type OfferListItem = Offer & { fixedStructuredContent?: unknown | null }
+
 type EditorForm = {
   name: string
   price: string
@@ -49,6 +51,8 @@ type EditorForm = {
   /** P7b：是否走自动开通(仅 manual_service + 无交付模板 + 商家有 active webhook)。 */
   autoProvision: boolean
   checkoutVersion?: string
+  /** Present on list DTO for shared-account offers; omitted → backend keep-on-matching-text. */
+  fixedStructuredContent: unknown | null
 }
 
 const EMPTY_FORM: EditorForm = {
@@ -68,6 +72,13 @@ const EMPTY_FORM: EditorForm = {
   deliveryFields: [],
   autoProvision: false,
   checkoutVersion: undefined,
+  fixedStructuredContent: null,
+}
+
+function readStructuredContent(offer: Offer): unknown | null {
+  if (!('fixedStructuredContent' in offer)) return null
+  const value = (offer as OfferListItem).fixedStructuredContent
+  return value ?? null
 }
 
 function offerToForm(offer: Offer): EditorForm {
@@ -89,6 +100,7 @@ function offerToForm(offer: Offer): EditorForm {
     deliveryFields: (offer.deliveryFields ?? []).map(f => ({ ...f })),
     autoProvision: offer.autoProvision === true,
     checkoutVersion: offer.checkoutVersion,
+    fixedStructuredContent: readStructuredContent(offer),
   }
 }
 
@@ -221,7 +233,9 @@ export default function MerchantOfferManagerModal({ isOpen, onClose, product, on
       stockMode: isInstantInventory ? 'limited' : form.stockMode,
       // P6a：空 = 永久（显式 null 支持从有期限改回永久）
       validityDays: form.validityDays.trim() === '' ? null : Number(form.validityDays),
-      fixedContent: isFixed && !isFileForm ? form.fixedContent.trim() : null,
+      ...(isFixed && !isFileForm && form.fixedStructuredContent != null
+        ? { fixedStructuredContent: form.fixedStructuredContent, fixedContent: null }
+        : { fixedContent: isFixed && !isFileForm ? form.fixedContent.trim() : null }),
       fixedContentType: form.fixedContentType,
       // P5：file 形态以 fixedFileId 为真相源；非 file 显式清空。
       fixedFileId: isFileForm ? form.fixedFileId : null,

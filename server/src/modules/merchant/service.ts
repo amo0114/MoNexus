@@ -38,6 +38,7 @@ import type { PurchaseFormField } from '../../lib/purchaseForm.js'
 import {
   canonicalDeliveryText,
   parseStoredDeliveryFields,
+  parseStoredStructuredContent,
   structuredContentToJson,
   validateDeliveryValues,
   type DeliveryField,
@@ -65,19 +66,127 @@ function withCheckoutVersion<T extends Offer>(offer: T, extras: Record<string, u
   return { ...offer, ...extras, checkoutVersion: computeOfferCheckoutVersion(offer) }
 }
 
+type StructuredFixedWrite = {
+  fixedContent: string | null
+  structured: StructuredDeliveryContent | null
+}
+
 /** Same mutual-exclusion rules as offerAdmin.resolveStructuredFixedContent. */
 function resolveStructuredFixedContent(
   structuredInput: unknown,
   fixedContent: string | null,
-) {
+): StructuredFixedWrite {
   if (structuredInput == null) {
-    return { fixedContent, structured: null as ReturnType<typeof normalizeFixedStructuredContent> | null }
+    return { fixedContent, structured: null }
   }
   if (fixedContent != null) {
     throw badRequest('结构化固定内容与 fixedContent 不能同时提交')
   }
   const structured = normalizeFixedStructuredContent(structuredInput)
   return { fixedContent: canonicalFixedStructuredText(structured), structured }
+}
+
+type OfferDeliveryContentWrite = StructuredFixedWrite & {
+  writeDeliveryContent: boolean
+  nextFixedFileId: number | null
+  writeFixedFileId: boolean
+  nextFixedContentType: string
+}
+
+/**
+ * Merge offer delivery-content fields for PUT.
+ * Structured in the payload is truth; text-only matching stored/canonical text
+ * is a governance save that keeps structured; switching away from instant_fixed
+ * drops leftover fixed fields unless the request supplies replacements.
+ */
+function resolveOfferDeliveryContentForUpdate(
+  input: OfferWriteInput,
+  offer: Offer,
+  deliveryMode: string,
+): OfferDeliveryContentWrite {
+  const leavingInstantFixed = deliveryMode !== offer.deliveryMode && deliveryMode !== 'instant_fixed'
+  let nextFixedFileId = 'fixedFileId' in input ? (input.fixedFileId ?? null) : offer.fixedFileId
+  let writeFixedFileId = 'fixedFileId' in input
+  let nextFixedContentType = input.fixedContentType ?? offer.fixedContentType
+
+  if (leavingInstantFixed) {
+    if (!('fixedFileId' in input)) {
+      nextFixedFileId = null
+      writeFixedFileId = true
+    }
+    if (!('fixedContentType' in input)) {
+      nextFixedContentType = 'text'
+    }
+    if ('fixedStructuredContent' in input) {
+      const incomingFixedContent = 'fixedContent' in input ? (input.fixedContent ?? null) : null
+      const resolved = resolveStructuredFixedContent(input.fixedStructuredContent, incomingFixedContent)
+      return {
+        ...resolved,
+        writeDeliveryContent: true,
+        nextFixedFileId,
+        writeFixedFileId,
+        nextFixedContentType,
+      }
+    }
+    return {
+      fixedContent: 'fixedContent' in input ? (input.fixedContent ?? null) : null,
+      structured: null,
+      writeDeliveryContent: true,
+      nextFixedFileId,
+      writeFixedFileId,
+      nextFixedContentType,
+    }
+  }
+
+  if ('fixedStructuredContent' in input) {
+    const incomingFixedContent = 'fixedContent' in input
+      ? (input.fixedContent ?? null)
+      : (input.fixedStructuredContent != null ? null : offer.fixedContent)
+    const resolved = resolveStructuredFixedContent(input.fixedStructuredContent, incomingFixedContent)
+    return {
+      ...resolved,
+      writeDeliveryContent: true,
+      nextFixedFileId,
+      writeFixedFileId,
+      nextFixedContentType,
+    }
+  }
+
+  if ('fixedContent' in input) {
+    const incoming = input.fixedContent ?? null
+    const storedStructured = parseStoredStructuredContent(offer.fixedStructuredContent)
+    if (storedStructured) {
+      const canonical = canonicalFixedStructuredText(storedStructured)
+      if (incoming === offer.fixedContent || incoming === canonical) {
+        return {
+          fixedContent: offer.fixedContent,
+          structured: storedStructured,
+          writeDeliveryContent: false,
+          nextFixedFileId,
+          writeFixedFileId,
+          nextFixedContentType,
+        }
+      }
+      throw badRequest('不能用纯文本覆盖已有的结构化固定内容')
+    }
+    return {
+      fixedContent: incoming,
+      structured: null,
+      writeDeliveryContent: true,
+      nextFixedFileId,
+      writeFixedFileId,
+      nextFixedContentType,
+    }
+  }
+
+  return {
+    fixedContent: offer.fixedContent,
+    structured: parseStoredStructuredContent(offer.fixedStructuredContent),
+    writeDeliveryContent: false,
+    nextFixedFileId,
+    writeFixedFileId,
+    nextFixedContentType,
+  }
 }
 
 // ---- Application ----
@@ -1727,22 +1836,15 @@ export async function updateMyOffer(
       ?? (deliveryMode !== offer.deliveryMode
         ? (deliveryMode === 'instant_inventory' ? 'limited' : 'unlimited')
         : offer.stockMode)
-    const fixedContentType = input.fixedContentType ?? offer.fixedContentType
-    // One delivery-content source per write: structured in the payload is truth
-    // (do not default leftover stored canonical text); text-only PUT clears
-    // structured (old modal path); neither leaves both unchanged.
-    const incomingFixedContent = 'fixedContent' in input
-      ? (input.fixedContent ?? null)
-      : ('fixedStructuredContent' in input && input.fixedStructuredContent != null
-        ? null
-        : offer.fixedContent)
-    const structuredWrite = 'fixedStructuredContent' in input
-      ? resolveStructuredFixedContent(input.fixedStructuredContent, incomingFixedContent)
-      : { fixedContent: incomingFixedContent, structured: null }
-    const nextFixedContent = structuredWrite.fixedContent
-    const writeDeliveryContent = 'fixedContent' in input || 'fixedStructuredContent' in input
-    // P5：合并后的文件挂载必须满足 file 形态不变量（含"切回 text/url 但留文件"）。
-    const nextFixedFileId = 'fixedFileId' in input ? (input.fixedFileId ?? null) : offer.fixedFileId
+    const contentWrite = resolveOfferDeliveryContentForUpdate(input, offer, deliveryMode)
+    const nextFixedContent = contentWrite.fixedContent
+    const writeDeliveryContent = contentWrite.writeDeliveryContent
+    const nextFixedFileId = contentWrite.nextFixedFileId
+    const writeFixedFileId = contentWrite.writeFixedFileId
+    const fixedContentType = contentWrite.nextFixedContentType
+    if (deliveryMode !== 'instant_fixed' && contentWrite.structured != null) {
+      throw badRequest('仅固定内容交付支持结构化固定内容')
+    }
     // P4b：合并后的模板不得出现在 instant_fixed 规格上（含"改模式但留模板"）。
     const nextDeliveryFields = 'deliveryFields' in input
       ? input.deliveryFields ?? null
@@ -1760,7 +1862,7 @@ export async function updateMyOffer(
       // 有效容量取合并值供 limited 非负校验。
       incomingStock: input.stock,
       effectiveStock: input.stock ?? offer.stock,
-      fixedContent: deliveryMode === 'instant_fixed' ? nextFixedContent : undefined,
+      fixedContent: nextFixedContent,
       fixedContentType,
       fixedFileId: nextFixedFileId,
     })
@@ -1824,7 +1926,7 @@ export async function updateMyOffer(
         ...(input.stock != null ? { stock: input.stock } : {}),
         ...(writeDeliveryContent ? { fixedContent: nextFixedContent } : {}),
         fixedContentType,
-        ...('fixedFileId' in input ? { fixedFileId: input.fixedFileId ?? null } : {}),
+        ...(writeFixedFileId ? { fixedFileId: nextFixedFileId } : {}),
         // P6a：改时长只影响新订单（快照冻结）；null = 改回永久。
         ...('validityDays' in input ? { validityDays: input.validityDays ?? null } : {}),
         // P7b：开关改动进 checkoutVersion，买家预览后改动会 409 重新确认。
@@ -1839,9 +1941,9 @@ export async function updateMyOffer(
           : {}),
         ...(writeDeliveryContent
           ? {
-              fixedStructuredContent: structuredWrite.structured == null
+              fixedStructuredContent: contentWrite.structured == null
                 ? Prisma.DbNull
-                : structuredWrite.structured as unknown as Prisma.InputJsonValue,
+                : contentWrite.structured as unknown as Prisma.InputJsonValue,
             }
           : {}),
         ...(deliveryMode === 'instant_inventory' && offer.deliveryMode !== 'instant_inventory'

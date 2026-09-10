@@ -138,10 +138,10 @@ describe('merchant offer write v2 (attributes / structured / CAS)', () => {
     expect(listedDefault.fixedContent).toBe('账号: demo')
   })
 
-  it('PUT only fixedContent on a structured offer clears structured and stores the text', async () => {
-    const { accessToken } = await setupMerchant(`offer-v2-text-wins-${Date.now()}@test.local`)
+  it('PUT price + matching canonical fixedContent on a structured offer keeps structured', async () => {
+    const { accessToken } = await setupMerchant(`offer-v2-keep-struct-${Date.now()}@test.local`)
     const product = await api.post('/api/merchant/products').set(authHeader(accessToken)).send({
-      name: '文本覆盖结构化商品',
+      name: '价格保存保留结构化商品',
       type: '邀请码',
       price: 50,
       deliveryMode: 'instant_fixed',
@@ -165,14 +165,53 @@ describe('merchant offer write v2 (attributes / structured / CAS)', () => {
     const patched = await api
       .put(`/api/merchant/products/${product.body.id}/offers/${defaultOffer.id}`)
       .set(authHeader(accessToken))
-      .send({ fixedContent: 'new text' })
+      .send({ price: 80, fixedContent: '账号: demo' })
       .expect(200)
-    expect(patched.body.fixedContent).toBe('new text')
-    expect(patched.body.fixedStructuredContent).toBeNull()
+    expect(patched.body.price).toBe(80)
+    expect(patched.body.fixedContent).toBe('账号: demo')
+    expect(patched.body.fixedStructuredContent).toMatchObject(structuredContent)
 
     const stored = await prisma.offer.findUniqueOrThrow({ where: { id: defaultOffer.id } })
-    expect(stored.fixedContent).toBe('new text')
-    expect(stored.fixedStructuredContent).toBeNull()
+    expect(stored.price).toBe(80)
+    expect(stored.fixedContent).toBe('账号: demo')
+    expect(stored.fixedStructuredContent).toMatchObject(structuredContent)
+  })
+
+  it('PUT differing fixedContent on a structured offer returns 400 and leaves structured', async () => {
+    const { accessToken } = await setupMerchant(`offer-v2-text-blocked-${Date.now()}@test.local`)
+    const product = await api.post('/api/merchant/products').set(authHeader(accessToken)).send({
+      name: '禁止文本覆盖结构化商品',
+      type: '邀请码',
+      price: 50,
+      deliveryMode: 'instant_fixed',
+      stockMode: 'unlimited',
+      fixedContent: 'PLACEHOLDER-FIXED',
+      fixedContentType: 'text',
+    }).expect(201)
+
+    const defaultOffer = await prisma.offer.findFirstOrThrow({
+      where: { productId: product.body.id, isDefault: true },
+    })
+    await api
+      .put(`/api/merchant/products/${product.body.id}/offers/${defaultOffer.id}`)
+      .set(authHeader(accessToken))
+      .send({
+        fixedContent: null,
+        fixedStructuredContent: structuredContent,
+      })
+      .expect(200)
+
+    const patched = await api
+      .put(`/api/merchant/products/${product.body.id}/offers/${defaultOffer.id}`)
+      .set(authHeader(accessToken))
+      .send({ price: 999, fixedContent: 'other' })
+      .expect(400)
+    expect(patched.body.error.message).toContain('结构化固定内容')
+
+    const stored = await prisma.offer.findUniqueOrThrow({ where: { id: defaultOffer.id } })
+    expect(stored.price).toBe(50)
+    expect(stored.fixedContent).toBe('账号: demo')
+    expect(stored.fixedStructuredContent).toMatchObject(structuredContent)
   })
 
   it('PUT only fixedStructuredContent on a text offer stores structured + canonical without 400', async () => {
@@ -204,6 +243,83 @@ describe('merchant offer write v2 (attributes / structured / CAS)', () => {
     const stored = await prisma.offer.findUniqueOrThrow({ where: { id: defaultOffer.id } })
     expect(stored.fixedStructuredContent).toMatchObject(structuredContent)
     expect(stored.fixedContent).toBe('账号: demo')
+  })
+
+  it('PUT only fixedStructuredContent on a structured offer updates structured + canonical without 400', async () => {
+    const { accessToken } = await setupMerchant(`offer-v2-struct-replace-${Date.now()}@test.local`)
+    const product = await api.post('/api/merchant/products').set(authHeader(accessToken)).send({
+      name: '结构化替换商品',
+      type: '邀请码',
+      price: 50,
+      deliveryMode: 'instant_fixed',
+      stockMode: 'unlimited',
+      fixedContent: 'PLACEHOLDER-FIXED',
+      fixedContentType: 'text',
+    }).expect(201)
+
+    const defaultOffer = await prisma.offer.findFirstOrThrow({
+      where: { productId: product.body.id, isDefault: true },
+    })
+    await api
+      .put(`/api/merchant/products/${product.body.id}/offers/${defaultOffer.id}`)
+      .set(authHeader(accessToken))
+      .send({
+        fixedContent: null,
+        fixedStructuredContent: structuredContent,
+      })
+      .expect(200)
+
+    const nextStructured = {
+      fields: [
+        { key: 'user', label: '账号', sensitive: false },
+        { key: 'pass', label: '密码', sensitive: true },
+      ],
+      values: { user: 'alice', pass: 'secret' },
+    }
+    const patched = await api
+      .put(`/api/merchant/products/${product.body.id}/offers/${defaultOffer.id}`)
+      .set(authHeader(accessToken))
+      .send({ fixedStructuredContent: nextStructured })
+      .expect(200)
+    expect(patched.body.fixedStructuredContent).toMatchObject(nextStructured)
+    expect(patched.body.fixedContent).toBe('账号: alice\n密码: secret')
+
+    const stored = await prisma.offer.findUniqueOrThrow({ where: { id: defaultOffer.id } })
+    expect(stored.fixedStructuredContent).toMatchObject(nextStructured)
+    expect(stored.fixedContent).toBe('账号: alice\n密码: secret')
+  })
+
+  it('PUT deliveryMode manual_service on an instant_fixed text offer clears leftover fixed fields', async () => {
+    const { accessToken } = await setupMerchant(`offer-v2-mode-switch-${Date.now()}@test.local`)
+    const product = await api.post('/api/merchant/products').set(authHeader(accessToken)).send({
+      name: '履约切换商品',
+      type: '邀请码',
+      price: 50,
+      deliveryMode: 'instant_fixed',
+      stockMode: 'unlimited',
+      fixedContent: 'hello-fixed-text',
+      fixedContentType: 'text',
+    }).expect(201)
+
+    const defaultOffer = await prisma.offer.findFirstOrThrow({
+      where: { productId: product.body.id, isDefault: true },
+    })
+    expect(defaultOffer.fixedContent).toBe('hello-fixed-text')
+
+    const patched = await api
+      .put(`/api/merchant/products/${product.body.id}/offers/${defaultOffer.id}`)
+      .set(authHeader(accessToken))
+      .send({ deliveryMode: 'manual_service' })
+      .expect(200)
+    expect(patched.body.deliveryMode).toBe('manual_service')
+    expect(patched.body.fixedContent).toBeNull()
+    expect(patched.body.fixedStructuredContent).toBeNull()
+
+    const stored = await prisma.offer.findUniqueOrThrow({ where: { id: defaultOffer.id } })
+    expect(stored.deliveryMode).toBe('manual_service')
+    expect(stored.fixedContent).toBeNull()
+    expect(stored.fixedStructuredContent).toBeNull()
+    expect(stored.fixedFileId).toBeNull()
   })
 
   it('stale expectedCheckoutVersion returns 409; matching version succeeds', async () => {
