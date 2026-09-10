@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { prisma } from '../../lib/prisma.js'
 import { api, authHeader, createTestUser, loginAs } from '../../__tests__/helpers.js'
+import { READINESS_DETAIL_CODES } from './constants.js'
 import { __setExternalCatalogClientOverridesForTests } from './externalCatalog.js'
+import { EMPTY_PRODUCT_DETAILS } from './templates/types.js'
 import type { FakaPlanCatalogItem, FakaTransport } from '../../lib/fakaBridge/types.js'
 
 let catalogPlan: FakaPlanCatalogItem
@@ -125,6 +127,18 @@ describe('Xboard preview → idempotent confirm (REAL-PG)', () => {
       templateVersion: 1,
       visibility: 'members_only',
     })
+    expect(product.details).toEqual(EMPTY_PRODUCT_DETAILS)
+    expect(product.attributes).toMatchObject({
+      serviceName: 'Xboard Gold',
+      serviceScope: expect.any(String),
+    })
+    const readiness = await api.get(`/api/admin/products/${product.id}/readiness`)
+      .set(authHeader(auth.accessToken)).expect(200)
+    expect(readiness.body.ready).toBe(false)
+    expect(readiness.body.issues).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: READINESS_DETAIL_CODES.PURCHASE_NOTES_REQUIRED }),
+      expect.objectContaining({ code: READINESS_DETAIL_CODES.AFTER_SALES_REQUIRED }),
+    ]))
     expect(product.images).toEqual(['/assets/category-default.webp'])
     expect(product.richDescription).not.toContain('script')
     expect(await prisma.offer.count({ where: { productId: product.id } })).toBe(2)

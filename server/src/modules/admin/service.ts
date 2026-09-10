@@ -2070,11 +2070,7 @@ export async function importAdminFakaPlan(
             serviceName: clipCatalogText(transactional.productName, 100),
             serviceScope: clipCatalogText(publicationCopy, 1000),
           } as Prisma.InputJsonValue,
-          details: {
-            ...EMPTY_PRODUCT_DETAILS,
-            purchaseNotes: publicationCopy,
-            afterSalesInstructions: publicationCopy,
-          } as Prisma.InputJsonValue,
+          details: { ...EMPTY_PRODUCT_DETAILS } as Prisma.InputJsonValue,
         },
       })
       const defaultOffer = await createDefaultOffer(tx, created.id, {
