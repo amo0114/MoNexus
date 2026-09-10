@@ -697,7 +697,7 @@ export default function ProductDetailPage() {
 
           {/* Mobile / Mid-screen In-Flow Offer Selector & Disclosures (< 1024px) */}
           <div className="lg:hidden space-y-4">
-            {isMultiSku && (
+            {!isDesktopViewport && isMultiSku && (
               <ProductOfferSelector
                 offers={offers}
                 selectedOfferId={selectedOfferId}
@@ -758,29 +758,29 @@ export default function ProductDetailPage() {
             )}
 
             {/* In-flow Purchase Module for Mid-screen (768px – 1023px) */}
-            <div
-              ref={inflowCardRef}
-              className="hidden md:block p-4 rounded-xl bg-[var(--color-surface)] border border-[var(--color-border)] shadow-sm space-y-3"
-              data-testid="inflow-buy-card"
-            >
-              <div className="flex items-baseline justify-between">
-                <div>
-                  <span className="text-[11px] font-bold uppercase tracking-wider text-[var(--color-text-muted)] block">
-                    当前已选兑换价
-                  </span>
-                  <div className="flex items-baseline gap-1.5 mt-0.5">
-                    <span className="font-heading text-2xl sm:text-3xl font-bold text-[var(--color-points)] flex items-center gap-1.5">
-                      <Coins className="w-6 h-6" />
-                      <span>{displayPrice}</span>
+            {!isDesktopViewport && (
+              <div
+                ref={inflowCardRef}
+                className="hidden md:block p-4 rounded-xl bg-[var(--color-surface)] border border-[var(--color-border)] shadow-sm space-y-3"
+                data-testid="inflow-buy-card"
+              >
+                <div className="flex items-baseline justify-between">
+                  <div>
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-[var(--color-text-muted)] block">
+                      兑换需要
                     </span>
-                    <span className="text-xs text-[var(--color-text-muted)] font-medium">积分</span>
-                    {displayOriginalPrice && displayOriginalPrice > displayPrice && (
-                      <span className="text-xs text-[var(--color-text-muted)] line-through ml-1">
-                        {displayOriginalPrice}
+                    <div className="flex items-baseline gap-1.5 mt-0.5">
+                      <span className="font-heading text-2xl sm:text-3xl font-bold text-[var(--color-points)] flex items-center gap-1.5">
+                        <Coins className="w-6 h-6" />
+                        <span>{displayPrice}</span>
                       </span>
-                    )}
+                      {displayOriginalPrice && displayOriginalPrice > displayPrice && (
+                        <span className="text-xs text-[var(--color-text-muted)] line-through ml-1">
+                          {displayOriginalPrice}
+                        </span>
+                      )}
+                    </div>
                   </div>
-                </div>
 
                 {activeOffer?.deliveryMode === 'instant_inventory' && !isSoldOut && (
                   <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-[var(--color-success-bg)] text-[var(--color-success-text)] border border-[var(--color-success-border)]">
@@ -832,6 +832,7 @@ export default function ProductDetailPage() {
                 {redeemLabel}
               </button>
             </div>
+            )}
           </div>
 
           {/* Section Navigation Tabs */}
@@ -955,14 +956,13 @@ export default function ProductDetailPage() {
             <div className="flex items-baseline justify-between border-b border-[var(--color-border)] pb-3">
               <div>
                 <span className="text-[11px] font-bold uppercase tracking-wider text-[var(--color-text-muted)] block">
-                  当前已选兑换价
+                  兑换需要
                 </span>
                 <div className="flex items-baseline gap-1.5 mt-0.5">
                   <span className="font-heading text-3xl sm:text-4xl font-bold text-[var(--color-points)] flex items-center gap-1.5">
                     <Coins className="w-7 h-7" />
                     <span>{displayPrice}</span>
                   </span>
-                  <span className="text-xs text-[var(--color-text-muted)] font-medium">积分</span>
                   {displayOriginalPrice && displayOriginalPrice > displayPrice && (
                     <span className="text-xs text-[var(--color-text-muted)] line-through ml-1">
                       {displayOriginalPrice}
@@ -1011,7 +1011,7 @@ export default function ProductDetailPage() {
           {/* 2. Scrollable Middle: Offer Selector & Pre-purchase details */}
           <div className="overflow-y-auto min-h-0 flex-1 space-y-3 my-3 -mr-2 pr-2">
             {/* SKU / Offer Selector in Desktop Sidebar */}
-            {isMultiSku && (
+            {isDesktopViewport && isMultiSku && (
               <div className="pt-2">
                 <ProductOfferSelector
                   offers={offers}

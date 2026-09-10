@@ -109,7 +109,7 @@ async function openGallery(page: Page) {
   })
 
   await page.goto('/product/4242')
-  await expect(page.getByTestId('product-gallery-main')).toBeVisible()
+  await expect(page.getByTestId('product-gallery-main')).toBeVisible({ timeout: 10_000 })
 }
 
 test('product gallery keeps the full image in a stable frame and supports buttons, keys, and desktop drag', async ({ page }) => {

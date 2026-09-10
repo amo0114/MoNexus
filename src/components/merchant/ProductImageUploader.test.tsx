@@ -122,4 +122,38 @@ describe('ProductImageUploader objectKey tracking', () => {
     expect(onChange).toHaveBeenCalled()
     expect(onImageKeysChange).not.toHaveBeenCalled()
   })
+
+  it('allows toggling and applying visual presets directly', () => {
+    const onChange: Dispatch<SetStateAction<string[]>> = vi.fn()
+    const onImageKeysChange: Dispatch<SetStateAction<Record<string, string>>> = vi.fn()
+    render(
+      <ProductImageUploader
+        images={[]}
+        imageKeys={{}}
+        onChange={onChange}
+        onImageKeysChange={onImageKeysChange}
+      />,
+    )
+
+    // Initially preset panel is not open
+    expect(screen.queryByTestId('product-image-presets-panel')).not.toBeInTheDocument()
+
+    // Toggle open presets panel
+    const toggleBtn = screen.getByTestId('product-image-presets-toggle')
+    fireEvent.click(toggleBtn)
+    expect(screen.getByTestId('product-image-presets-panel')).toBeInTheDocument()
+
+    // Verify all 4 presets are listed
+    expect(screen.getByTestId('product-preset-ai_token')).toBeInTheDocument()
+    expect(screen.getByTestId('product-preset-cloud_license')).toBeInTheDocument()
+    expect(screen.getByTestId('product-preset-membership_pass')).toBeInTheDocument()
+    expect(screen.getByTestId('product-preset-dev_tools')).toBeInTheDocument()
+
+    // Click on preset
+    fireEvent.click(screen.getByTestId('product-preset-ai_token'))
+
+    // onChange is called to append the static path; onImageKeysChange is not called (static asset)
+    expect(onChange).toHaveBeenCalled()
+    expect(onImageKeysChange).not.toHaveBeenCalled()
+  })
 })

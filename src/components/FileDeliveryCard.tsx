@@ -126,7 +126,7 @@ export default function FileDeliveryCard({
           data-testid="file-delivery-disputed-notice"
         >
           <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-          <span>争议处理中，文件下载已暂停。待争议解决后恢复。</span>
+          <span>订单争议处理中，文件下载已暂停。待争议解决后恢复。</span>
         </div>
       )}
 

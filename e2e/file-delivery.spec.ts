@@ -135,7 +135,7 @@ test.describe.serial('P5 controlled file delivery', () => {
     await expect(orderCard).toBeVisible({ timeout: 10_000 })
     await orderCard.getByRole('button', { name: '查看发货内容' }).click()
     await expect(page.getByTestId('file-delivery-card')).toBeVisible({ timeout: 10_000 })
-    await page.getByTestId('file-delivery-download').click()
+    await expect(page.getByTestId('file-delivery-download')).toBeDisabled()
     await expect(page.getByText('订单争议处理中，文件下载已暂停')).toBeVisible({ timeout: 10_000 })
   })
 })
