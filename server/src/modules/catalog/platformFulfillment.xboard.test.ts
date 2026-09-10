@@ -227,4 +227,51 @@ describe('platform fulfillment vs Xboard/FakaBridge', () => {
       sales: 0,
     })
   })
+
+  it('rejects disputed platform orders with 400 and does not restock', async () => {
+    const { admin, buyer, categoryId } = await seedActors()
+    const { order, product, offer } = await seedPlatformOrder({
+      buyerId: buyer.user.id,
+      buyerEmail: buyer.user.email,
+      categoryId,
+      status: 'disputed',
+      stockMode: 'limited',
+      stock: 0,
+      sales: 1,
+    })
+
+    await expect(rejectPlatformOrder(admin.user.id, order.id, '争议单按未交付拒单')).rejects.toMatchObject({
+      status: 400,
+      message: '争议订单请走仲裁，不能按未交付拒单回补',
+    })
+    expect(await prisma.order.findUniqueOrThrow({ where: { id: order.id } })).toMatchObject({
+      status: 'disputed',
+    })
+    expect(await prisma.product.findUniqueOrThrow({ where: { id: product.id } })).toMatchObject({
+      stock: 0,
+      sales: 1,
+    })
+    expect(await prisma.offer.findUniqueOrThrow({ where: { id: offer.id } })).toMatchObject({
+      stock: 0,
+      sales: 1,
+    })
+  })
+
+  it('rejects processing platform orders with 400', async () => {
+    const { admin, buyer, categoryId } = await seedActors()
+    const { order } = await seedPlatformOrder({
+      buyerId: buyer.user.id,
+      buyerEmail: buyer.user.email,
+      categoryId,
+      status: 'processing',
+    })
+
+    await expect(rejectPlatformOrder(admin.user.id, order.id, '履约中拒单')).rejects.toMatchObject({
+      status: 400,
+      message: '仅待接单订单可拒单',
+    })
+    expect(await prisma.order.findUniqueOrThrow({ where: { id: order.id } })).toMatchObject({
+      status: 'processing',
+    })
+  })
 })

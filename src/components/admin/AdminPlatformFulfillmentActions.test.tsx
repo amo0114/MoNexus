@@ -48,9 +48,12 @@ describe('AdminPlatformFulfillmentActions', () => {
     apiMocks.rejectAdminPlatformOrder.mockResolvedValue({ id: 42, status: 'refunded' })
   })
 
-  it('renders 开始履约 for platform pending manual order', () => {
+  it('renders 开始履约 and 拒单 for platform pending manual order', () => {
     render(<AdminPlatformFulfillmentActions order={platformOrder()} />)
     expect(screen.getByTestId('admin-platform-start-fulfillment')).toHaveTextContent('开始履约')
+    expect(screen.getByTestId('admin-platform-reject')).toHaveTextContent('拒单')
+    expect(screen.queryByTestId('admin-platform-progress')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('admin-platform-deliver')).not.toBeInTheDocument()
   })
 
   it('does not render for merchant order', () => {
@@ -114,9 +117,9 @@ describe('AdminPlatformFulfillmentActions', () => {
   it('shows processing actions and posts progress note', async () => {
     render(<AdminPlatformFulfillmentActions order={platformOrder({ status: 'processing' })} />)
     expect(screen.queryByTestId('admin-platform-start-fulfillment')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('admin-platform-reject')).not.toBeInTheDocument()
     expect(screen.getByTestId('admin-platform-progress')).toHaveTextContent('进度备注')
     expect(screen.getByTestId('admin-platform-deliver')).toHaveTextContent('交付')
-    expect(screen.getByTestId('admin-platform-reject')).toHaveTextContent('拒单')
 
     fireEvent.click(screen.getByTestId('admin-platform-progress'))
     fireEvent.change(screen.getByTestId('admin-platform-progress-note'), {

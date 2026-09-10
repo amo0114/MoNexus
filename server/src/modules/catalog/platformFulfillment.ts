@@ -155,6 +155,12 @@ export async function rejectPlatformOrder(
     if (getProductFulfillmentMode(order.deliveryModeSnapshot) !== 'manual_service') {
       throw badRequest('只有人工服务订单可以拒单')
     }
+    if (order.status === 'disputed') {
+      throw badRequest('争议订单请走仲裁，不能按未交付拒单回补')
+    }
+    if (order.status !== 'pending') {
+      throw badRequest('仅待接单订单可拒单')
+    }
     await transitionOrderStatus({
       orderId,
       toStatus: 'refunded',
@@ -164,9 +170,10 @@ export async function rejectPlatformOrder(
       publicNote: reason,
     }, tx)
     await releaseHeldOrder(tx, order, `平台拒单释放冻结积分: #${order.id}`)
-    // Unfilled platform reject (pending or processing, never delivered) uses
+    // Unfilled platform reject (pending only, never delivered) uses
     // fromStatus pending so limited manual_service quota restocks. disputed
-    // is only for post-delivery arbitration. Faka is already forbidden above.
+    // is post-delivery arbitration and is rejected above. Faka is already
+    // forbidden in assertPlatformOrder.
     await applyRefundInventoryPolicy(tx, order, {
       fromStatus: 'pending',
       actorUserId: adminUserId,

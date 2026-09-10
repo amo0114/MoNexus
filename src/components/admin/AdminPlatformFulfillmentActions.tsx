@@ -90,18 +90,29 @@ export default function AdminPlatformFulfillmentActions({
       <div className="text-xs font-bold text-[var(--color-text)]">平台履约操作</div>
       <div className="flex flex-wrap gap-2">
         {showStart && (
-          <button
-            type="button"
-            className="btn-primary btn-sm text-xs px-2.5 py-1 cursor-pointer inline-flex items-center gap-1"
-            disabled={busy}
-            data-testid="admin-platform-start-fulfillment"
-            onClick={() =>
-              void runAction(() => startAdminPlatformFulfillment(order.id), '已开始履约')
-            }
-          >
-            {busy && panel === null ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
-            开始履约
-          </button>
+          <>
+            <button
+              type="button"
+              className="btn-primary btn-sm text-xs px-2.5 py-1 cursor-pointer inline-flex items-center gap-1"
+              disabled={busy}
+              data-testid="admin-platform-start-fulfillment"
+              onClick={() =>
+                void runAction(() => startAdminPlatformFulfillment(order.id), '已开始履约')
+              }
+            >
+              {busy && panel === null ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+              开始履约
+            </button>
+            <button
+              type="button"
+              className="btn-secondary btn-sm text-xs px-2.5 py-1 cursor-pointer border-[var(--color-danger)] text-[var(--color-danger)]"
+              disabled={busy}
+              data-testid="admin-platform-reject"
+              onClick={() => setPanel((current) => (current === 'reject' ? null : 'reject'))}
+            >
+              拒单
+            </button>
+          </>
         )}
         {showProcessing && (
           <>
@@ -122,15 +133,6 @@ export default function AdminPlatformFulfillmentActions({
               onClick={() => setPanel((current) => (current === 'deliver' ? null : 'deliver'))}
             >
               交付
-            </button>
-            <button
-              type="button"
-              className="btn-secondary btn-sm text-xs px-2.5 py-1 cursor-pointer border-[var(--color-danger)] text-[var(--color-danger)]"
-              disabled={busy}
-              data-testid="admin-platform-reject"
-              onClick={() => setPanel((current) => (current === 'reject' ? null : 'reject'))}
-            >
-              拒单
             </button>
           </>
         )}
