@@ -8,7 +8,7 @@ export const SEED_ACCOUNTS = {
 } as const
 
 export const API_BASE = process.env.E2E_API_URL || 'http://localhost:3000'
-export const E2E_PRODUCT_COVER = '/assets/network.webp'
+export const E2E_PRODUCT_COVER = '/assets/e2e-cover.png'
 
 type SeedAccount = { email: string; password: string }
 

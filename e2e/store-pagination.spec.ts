@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { API_BASE, loginAs, loginAsApi, SEED_ACCOUNTS } from './helpers'
+import { API_BASE, E2E_PRODUCT_COVER, loginAs, loginAsApi, SEED_ACCOUNTS } from './helpers'
 
 const PAGE_SIZE = 60
 
@@ -30,12 +30,26 @@ test.beforeAll(async ({ request }) => {
         stockMode: 'unlimited',
         fixedContent: 'https://example.test/e2e-pagination-placeholder',
         fixedContentType: 'url',
-        imageUrl: '/assets/network.webp',
-        images: ['/assets/network.webp'],
+        imageUrl: E2E_PRODUCT_COVER,
+        images: [E2E_PRODUCT_COVER],
       },
     })
     expect(createRes.ok()).toBe(true)
     const created = await createRes.json() as { id: number }
+    const editorRes = await request.get(`${API_BASE}/api/admin/products/${created.id}/editor`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    })
+    expect(editorRes.ok(), await editorRes.text()).toBe(true)
+    const editorBody = await editorRes.json() as { product: { contentVersion: number } }
+    const visibilityRes = await request.patch(`${API_BASE}/api/admin/products/${created.id}/content`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      data: {
+        expectedContentVersion: editorBody.product.contentVersion,
+        visibility: 'public',
+        images: [{ kind: 'static', path: E2E_PRODUCT_COVER }],
+      },
+    })
+    expect(visibilityRes.ok(), await visibilityRes.text()).toBe(true)
     const publishRes = await request.post(`${API_BASE}/api/admin/products/${created.id}/publish`, {
       headers: { Authorization: `Bearer ${accessToken}` },
     })

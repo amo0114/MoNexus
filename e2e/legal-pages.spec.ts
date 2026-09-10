@@ -1,5 +1,5 @@
 import { expect, test, type APIRequestContext } from '@playwright/test'
-import { API_BASE, SEED_ACCOUNTS, loginAs } from './helpers'
+import { API_BASE, E2E_PRODUCT_COVER, SEED_ACCOUNTS, loginAs } from './helpers'
 
 /**
  * SPEC-LEGAL-001：法律页面与协议同意的端到端验收（独立 e2e 栈，
@@ -125,8 +125,8 @@ test.describe('checkout consent gate', () => {
         fixedContent: 'https://example.com/legal-e2e',
         fixedContentType: 'url',
         stockMode: 'unlimited',
-        imageUrl: '/assets/network.webp',
-        images: ['/assets/network.webp'],
+        imageUrl: E2E_PRODUCT_COVER,
+        images: [E2E_PRODUCT_COVER],
       },
     })
     expect(created.ok(), await created.text()).toBeTruthy()
@@ -176,8 +176,8 @@ test.describe('checkout consent gate', () => {
         fixedContent: 'https://example.com/legal-api',
         fixedContentType: 'url',
         stockMode: 'unlimited',
-        imageUrl: '/assets/network.webp',
-        images: ['/assets/network.webp'],
+        imageUrl: E2E_PRODUCT_COVER,
+        images: [E2E_PRODUCT_COVER],
       },
     })
     expect(created.ok(), await created.text()).toBeTruthy()

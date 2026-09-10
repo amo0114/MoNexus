@@ -2135,7 +2135,7 @@ test.describe.serial('Catalog Xboard import', () => {
       }
     }
   });
-  test('admin previews and confirms a sanitized Xboard draft via the real UI', async ({ page }) => {
+  test('admin previews and confirms a sanitized Xboard draft via the real UI', async ({ page, request }) => {
     await resetXboardFixture();
     await loginAs(page, SEED_ACCOUNTS.admin);
     await page.goto('/admin');
@@ -2344,12 +2344,45 @@ test.describe.serial('Catalog Xboard import', () => {
         const readinessResponse = await readinessResponsePromise;
         expect(readinessResponse.status()).toBe(200);
         const readinessBody: unknown = await readinessResponse.json();
-        if (!isRecord(readinessBody) || readinessBody.ready !== true) {
-          throw new Error('imported Xboard draft was not publication-ready');
+        if (!isRecord(readinessBody) || readinessBody.ready === true) {
+          throw new Error('imported Xboard draft must stay unpublished until purchase notes are filled');
         }
         expect(publishRequestCount).toBe(0);
         await expect(page.getByTestId('admin-publication-dialog')).toBeVisible();
-        await expect(page.getByTestId('admin-publication-dialog')).toContainText('商品已导入，准备发布');
+        await expect(page.getByTestId('publication-publish')).toBeDisabled();
+
+        const editorRes = await page.request.get(`${API_BASE}/api/admin/products/${imported.productId}/editor`);
+        expect(editorRes.ok(), await editorRes.text()).toBeTruthy();
+        const editorBody: unknown = await editorRes.json();
+        if (!isRecord(editorBody) || !isRecord(editorBody.product) || typeof editorBody.product.contentVersion !== 'number') {
+          throw new Error('admin editor DTO missing product.contentVersion');
+        }
+        const notesPatch = await page.request.patch(`${API_BASE}/api/admin/products/${imported.productId}/content`, {
+          data: {
+            expectedContentVersion: editorBody.product.contentVersion,
+            details: {
+              highlights: [],
+              usageInstructions: '',
+              purchaseNotes: 'Xboard 套餐购买须知：兑换后由平台按套餐周期开通。',
+              afterSalesInstructions: 'Xboard 套餐售后：开通异常请提交工单，由平台协助处理。',
+              faq: [],
+            },
+          },
+        });
+        expect(notesPatch.ok(), await notesPatch.text()).toBeTruthy();
+
+        await page.getByTestId('admin-publication-later').click();
+        await expect(page.getByTestId('admin-publication-dialog')).toHaveCount(0);
+        const readinessAfterNotes = page.waitForResponse(isAdminReadinessResponse);
+        await page.getByTestId(`admin-product-publish-${imported.productId}`).click();
+        const readyAgain = await readinessAfterNotes;
+        expect(readyAgain.status()).toBe(200);
+        const readyAgainBody: unknown = await readyAgain.json();
+        if (!isRecord(readyAgainBody) || readyAgainBody.ready !== true) {
+          throw new Error('Xboard draft was not publication-ready after purchase notes were filled');
+        }
+        await expect(page.getByTestId('admin-publication-dialog')).toBeVisible();
+        await expect(page.getByTestId('admin-publication-dialog')).toContainText('准备发布');
         await expect(page.getByTestId('admin-publication-dialog')).not.toContainText('OFFER_NOT_SELLABLE');
         await expect(page.getByTestId('publication-publish')).toBeEnabled();
 
@@ -2370,11 +2403,25 @@ test.describe.serial('Catalog Xboard import', () => {
         await expect(page.getByTestId('admin-publication-dialog')).toHaveCount(0);
         await expect(productRow.getByTestId(`admin-product-status-${imported.productId}`)).toHaveText('已发布');
 
-        const publicDetail = await page.request.get(`${API_BASE}/api/products/${imported.productId}`);
-        expect(publicDetail.status()).toBe(200);
-        const publicBody: unknown = await publicDetail.json();
-        if (!isRecord(publicBody) || publicBody.id !== imported.productId || publicBody.name !== 'Gold Plan') {
-          throw new Error('public product detail did not expose the published Xboard product');
+        const guestDetail = await request.get(`${API_BASE}/api/products/${imported.productId}`);
+        expect(guestDetail.status()).toBe(403);
+        const guestBody: unknown = await guestDetail.json();
+        if (
+          !isRecord(guestBody)
+          || !isRecord(guestBody.error)
+          || guestBody.error.code !== 'PRODUCT_LOGIN_REQUIRED'
+        ) {
+          throw new Error('guest product detail did not require login for the published Xboard product');
+        }
+
+        const memberSession = await loginAsApi(request, SEED_ACCOUNTS.user);
+        const memberDetail = await request.get(`${API_BASE}/api/products/${imported.productId}`, {
+          headers: { Authorization: `Bearer ${memberSession.accessToken}` },
+        });
+        expect(memberDetail.status()).toBe(200);
+        const memberBody: unknown = await memberDetail.json();
+        if (!isRecord(memberBody) || memberBody.id !== imported.productId || memberBody.name !== 'Gold Plan') {
+          throw new Error('member product detail did not expose the published Xboard product');
         }
 
         await page.goto('/');
