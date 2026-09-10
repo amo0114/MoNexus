@@ -38,10 +38,10 @@ MoNexus 现有主题完全由 `src/index.css` 驱动。所有新写或重构的�
 
 | 主题 (`data-theme`) | 页面底色 | 容器卡片 | 主交互色 | 兑换强调色 | 文本主色/辅色 | 视觉与圆角特征 |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Light** (科技白) | `var(--color-background)` (`#F8FAFC`) | `var(--color-surface)` (`#FFFFFF`) | `var(--color-primary)` (`#6366F1`) | `var(--color-cta)` (`#22C55E`) | `#0F172A` / `#64748B` | 标准圆角 (8–16px)，利落现代 |
-| **Dark** (夜空蓝黑) | `var(--color-background)` (`#0A0A14`) | `var(--color-surface)` (`#161629`) | `var(--color-primary)` (`#818CF8`) | `var(--color-cta)` (`#4ADE80`) | `#F1F5F9` / `#94A3B8` | 高对比赛博深邃，光晕阴影 |
-| **Soft** (暖阳治愈) | `var(--color-background)` (`#FFF8EC`) | `var(--color-surface)` (`#FFFEFB`) | `var(--color-primary)` (`#FF8C42`) | `var(--color-cta)` (`#6BBE6B`) | `#5D3A1F` / `#A07050` | 大圆角 (`--radius-xl: 22px`)，柔和暖意 |
-| **Ink** (墨韵默认) | `var(--color-background)` (`#EEF0EE`) | `var(--color-surface)` (`#F8F9F7`) | `var(--color-primary)` (`#34507A`) | `var(--color-cta)` (`#3D7257`) | `#22262C` / `#666E77` | 宣纸冷白、松烟墨、绫绢灰边 |
+| **Light** (科技白) | `var(--color-background)` (`#F8FAFC`) | `var(--color-surface)` (`#FFFFFF`) | `var(--color-primary)` (`#4F46E5`) | `var(--color-cta)` (`#15803D`, 5.02:1) | `#0F172A` / `#64748B` | 标准圆角 (8–16px)，利落现代 |
+| **Dark** (夜空蓝黑) | `var(--color-background)` (`#0A0A14`) | `var(--color-surface)` (`#161629`) | `var(--color-primary)` (`#818CF8`) | `var(--color-cta)` (`#4ADE80`, 10.2:1) | `#F1F5F9` / `#94A3B8` | 高对比赛博深邃，光晕阴影 |
+| **Soft** (暖阳治愈) | `var(--color-background)` (`#FFF8EC`) | `var(--color-surface)` (`#FFFEFB`) | `var(--color-primary)` (`#FF8C42`) | `var(--color-cta)` (`#AD4B35` 暖陶红, 5.48:1) | `#5D3A1F` / `#A07050` | 大圆角 (`--radius-xl: 22px`)，柔和暖意 |
+| **Ink** (墨韵默认) | `var(--color-background)` (`#EEF0EE`) | `var(--color-surface)` (`#F8F9F7`) | `var(--color-primary)` (`#34507A`) | `var(--color-cta)` (`#3D7257`, 5.6:1) | `#22262C` / `#666E77` | 宣纸冷白、松烟墨、绫绢灰边 |
 
 ### 2.2 样式编写规则
 1. **背景与边框**：一律使用 `bg-[var(--color-surface)]`、`bg-[var(--color-background)]`、`border-[var(--color-border)]`；
@@ -121,9 +121,12 @@ graph TD
 
 ### 4.1 桌面端 (≥ 1024px)
 * **容器规格**：最大宽 1200px，居中对齐；外边距 `px-4 lg:px-8`；
+* **信息优先排版 (Header-First Hierarchy)**：
+  * 商品名称、一句话用途（如“按需选择额度，交付后在订单中查看凭据”）与核心通用规格前置于页面顶部，置于画廊与购买卡上方；
+  * SPU 级标题保持通用（如“开发者 API 额度包”），不硬编码特定套餐的“50M”或“90天”；额度、周期等参数归属各 Offer 并在选择时动态更新；
 * **双栏布局**：
-  * 左侧内容区：`flex-1 min-w-0`，容纳画廊、富文本图文介绍、规格属性表、使用说明、FAQ、商家与平台保障说明；
-  * 右侧购买卡：`w-[360px]`（或最大 `w-[380px]`），`sticky top-[calc(var(--navbar-current-h)+16px)]`；
+  * 左侧内容区：`flex-1 min-w-0`，容纳 4:3 原图 contain 画廊（缩略图导轨 + 真实图片预览）、富文本图文介绍、规格属性表、使用说明、FAQ；
+  * 右侧购买卡：`w-[360px]`（或最大 `w-[380px]`），`sticky top-[calc(var(--navbar-current-h)+16px)]`；平台保障说明下沉弱化为卡片底部辅助信息；
 * **滚动与内容自适应**：
   * 当商品拥有较多套餐（最多20个）或包含多项购买资料字段时，购买卡内部支持垂直弹性滚动，**绝不强求所有商品均在首屏无滚动展示**；
   * **单购买入口原则 (Strict Single-CTA Rule)**：桌面端右侧购买卡始终随屏吸附停留，已提供持续可见的购买入口。因此，**桌面端坚决不展示顶部 Mini 购买条**（通过 `lg:hidden` 彻底隐藏），杜绝入口重复与视觉干扰。
@@ -134,12 +137,17 @@ graph TD
 * 若在此视口启用 Mini 购买条，**必须通过监听首屏非 sticky 购买卡占位锚点 (In-flow Sentinel Anchor)**：仅在首屏卡片完全滚出视口后浮现，且在回滚时收起，确保中屏视口任意时刻也仅有 1 个购买入口。
 
 ### 4.3 移动端 (320px – 767px)
-* **首屏沉浸展示**：顶部 1:1 或 4:3 沉浸画廊，返回与分享采用悬浮毛玻璃药丸按钮；
-* **常驻底部兑换栏**：高度 56px + `env(safe-area-inset-bottom)`，左侧展示当前所选套餐及积分，右侧为主 CTA；因已常驻底部，**移动端坚决不展示顶部 Mini 购买条**；
+* **信息优先与首屏展示**：
+  * 顶部轻量级导航（返回、商品详情、分享）；
+  * 商品标题与一句话用途同样排在画廊上方，让用户首屏第一时间掌握商品核心信息；
+  * 紧随其后为 4:3 比例的克制画廊（包含 1/2 指示与放大图标）；
+  * 紧接套餐选择行（带选中外框与打勾标记，展示各套餐专属额度、有效期与积分），下方紧凑展示使用指引与平台保障承诺；
+* **常驻底部兑换栏**：高度 56px + `env(safe-area-inset-bottom)`，左侧动态展示已选套餐名与当前积分，右侧为主 CTA；因已常驻底部，**移动端坚决不展示顶部 Mini 购买条**；
 * **移动端结算呈现（唯一 Dialog 实例）**：
   * 点击规格或点击底部兑换按钮时，直接拉起 `PurchaseModal`；
   * `PurchaseModal` 依赖现有 `DialogContent` 的 `<md` 规则，直接以全宽半屏抽屉滑出展示；
-  * 抽屉内部集成套餐预览、积分余额、开通邮箱验证（如有）、购买表单输入与协议确认，点击确定后直接在同一控制器内完成提交；
+  * 抽屉内部集成套餐预览、积分余额、开通邮箱验证（如有）、购买表单输入与协议确认；
+  * **协议校验时序**：协议未勾选时的警示提示**仅在用户点击提交按钮时触发拦截**，杜绝弹窗刚打开即全屏报红的糟糕体验；
   * 针对软键盘弹出（虚拟键盘唤起），通过 `dvh`（动态视口高度）与内部滚动自适应，保证输入框与提交按钮不被软键盘遮挡。
 
 ---
@@ -160,7 +168,7 @@ graph TD
 | **`order.status`** | `'disputed'` | **争议中**：红色 Badge。显示争议处理说明；**文件下载按钮置灰禁用**（后端拒绝发放 presign URL）；**已交付的历史文本/结构化内容按现有契约保留展示，不擅自新增文本遮蔽**。 |
 | **`order.status`** | `'refunded'` | **已退款**：橙色 Badge。显示积分已全额返还；**文件下载按钮置灰禁用**；已交付文本内容按既有规则保留历史，不擅自做破坏性遮蔽。 |
 | **`order.status`** | `'closed'` | **已关闭**：灰色 Badge。订单已终结。 |
-| **`delivery.expired`** | `boolean`（服务端权威判定） | **有效期到期**：仅当 `expired === true` 时显示“已过期”标签，文案明确标注**“订阅／使用有效期已于 {expiresAt} 到期”**，**严禁使用“超过安全存储期”等暗示平台删除凭证的误导文案**。 |
+| **`delivery.expired`** | `boolean`（服务端权威判定） | **有效期到期**：仅当 `expired === true` 时显示“已过期”标签，文案根据商品形态准确标注**“有效期至 {expiresAt}”**（卡密/账号类）或**“订阅有效期至 {expiresAt}”**（订阅类），**严禁使用“超过安全存储期”等暗示平台删除凭证的误导文案**。 |
 | **`delivery.contentMasked`** | `boolean`（服务端裁决） | **内容已遮蔽**：文本/结构化内容已在服务端脱敏置空，前端如实呈现遮蔽占位符。 |
 | **`delivery.file`** | `{ fileName, size, status }` | **文件交付卡片**：展示文件名与大小格式化，支持订单授权签名下载。**删除虚构的 SHA-256 展示要求（买家 DTO 无此字段）**。 |
 | **`delivery.structuredContent`** | `{ fields, values }` | **结构化凭据**：分行呈现账号、密码等字段。提供敏感字段遮蔽切换（小眼睛图标），支持单项复制与一键全选复制。 |
