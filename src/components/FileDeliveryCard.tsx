@@ -10,13 +10,14 @@ interface Props {
   fileName: string
   size?: number | null
   orderStatus?: string
+  fileStatus?: string | null
   disabled?: boolean
 }
 
 /**
  * P5 / Phase 3：买家侧文件交付卡片。
  * 每次点击都向发放端点重新请求短时签名 URL——链接不落地组件状态/DOM，拿到即跳转下载。
- * 当订单处于争议 (disputed) 或已退款 (refunded) 状态时，下载按钮置灰禁用，并给出清晰文案说明。
+ * 当订单处于争议 (disputed)、已退款 (refunded) 或文件已失效 (revoked/deleted/expired) 状态时，下载按钮置灰禁用，并给出清晰文案说明。
  * 买家 DTO 无 SHA-256 字段，严格不展示虚构哈希。
  */
 export default function FileDeliveryCard({
@@ -24,6 +25,7 @@ export default function FileDeliveryCard({
   fileName,
   size,
   orderStatus,
+  fileStatus,
   disabled = false,
 }: Props) {
   const showToast = useAppStore((s) => s.showToast)
@@ -31,7 +33,16 @@ export default function FileDeliveryCard({
 
   const isDisputed = orderStatus === 'disputed'
   const isRefunded = orderStatus === 'refunded'
-  const isDownloadDisabled = disabled || isDisputed || isRefunded
+  const isFileRevoked = fileStatus === 'revoked'
+  const isFileDeleted = fileStatus === 'deleted'
+  const isFileExpired = fileStatus === 'expired'
+  const isDownloadDisabled =
+    disabled ||
+    isDisputed ||
+    isRefunded ||
+    isFileRevoked ||
+    isFileDeleted ||
+    isFileExpired
 
   async function handleDownload() {
     if (isDownloadDisabled || downloading) return
@@ -59,6 +70,12 @@ export default function FileDeliveryCard({
     actionLabel = '下载已暂停'
   } else if (isRefunded) {
     actionLabel = '下载已关闭'
+  } else if (isFileRevoked) {
+    actionLabel = '下载已作废'
+  } else if (isFileDeleted) {
+    actionLabel = '文件已删除'
+  } else if (isFileExpired) {
+    actionLabel = '下载已过期'
   }
 
   return (
@@ -94,7 +111,7 @@ export default function FileDeliveryCard({
             <Loader2 className="w-3.5 h-3.5 animate-spin" />
           ) : isDisputed ? (
             <AlertCircle className="w-3.5 h-3.5 text-[var(--color-warning)]" />
-          ) : isRefunded ? (
+          ) : isRefunded || isFileRevoked || isFileDeleted || isFileExpired ? (
             <Ban className="w-3.5 h-3.5 text-[var(--color-text-muted)]" />
           ) : (
             <Download className="w-3.5 h-3.5" />
@@ -120,6 +137,36 @@ export default function FileDeliveryCard({
         >
           <Ban className="w-3.5 h-3.5 shrink-0" />
           <span>订单已全额退款，文件下载授权已关闭。</span>
+        </div>
+      )}
+
+      {isFileRevoked && (
+        <div
+          className="text-xs flex items-center gap-1.5 px-3 py-1.5 rounded bg-[var(--color-danger-bg)] border border-[var(--color-danger-border)] text-[var(--color-danger-text)] font-medium"
+          data-testid="file-delivery-revoked-notice"
+        >
+          <Ban className="w-3.5 h-3.5 shrink-0" />
+          <span>文件下载已作废，授权已失效。如有疑问请联系平台处理。</span>
+        </div>
+      )}
+
+      {isFileDeleted && (
+        <div
+          className="text-xs flex items-center gap-1.5 px-3 py-1.5 rounded bg-[var(--color-warning-bg)] border border-[var(--color-warning-border)] text-[var(--color-warning-text)] font-medium"
+          data-testid="file-delivery-deleted-notice"
+        >
+          <Ban className="w-3.5 h-3.5 shrink-0" />
+          <span>文件已从存储节点移除，无法继续下载。如有疑问请联系平台处理。</span>
+        </div>
+      )}
+
+      {isFileExpired && (
+        <div
+          className="text-xs flex items-center gap-1.5 px-3 py-1.5 rounded bg-[var(--color-warning-bg)] border border-[var(--color-warning-border)] text-[var(--color-warning-text)] font-medium"
+          data-testid="file-delivery-expired-notice"
+        >
+          <Ban className="w-3.5 h-3.5 shrink-0" />
+          <span>文件下载有效期已过，无法继续下载。</span>
         </div>
       )}
     </div>

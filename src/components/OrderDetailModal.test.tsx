@@ -251,5 +251,40 @@ describe('OrderDetailModal', () => {
       // Masked placeholder is present
       expect(screen.getByTestId('delivery-masked')).toBeInTheDocument()
     })
+
+    it('distinguishes generic validity from subscription and omits renewal button for generic products with expiresAt', () => {
+      const genericVoucherOrder: UserOrderDetail = {
+        id: 51,
+        price: 80,
+        status: 'delivered',
+        deliveryMode: 'instant_inventory',
+        createdAt: '2026-09-01T00:00:00.000Z',
+        merchant: null,
+        product: {
+          id: 43,
+          name: '月度兑换码卡密',
+          type: '卡密激活码',
+          icon: 'ticket',
+          imageUrl: null,
+          deliveryMode: 'instant_inventory',
+        },
+        delivery: {
+          status: 'delivered',
+          content: 'CARD-PIN-12345',
+          expiresAt: '2026-10-01T00:00:00.000Z',
+          expired: false,
+        },
+        timeline: [],
+      }
+
+      render(<OrderDetailModal order={genericVoucherOrder} onClose={vi.fn()} />)
+
+      // Uses generic validity label, not subscription wording
+      expect(screen.getByTestId('subscription-expiry')).toHaveTextContent(/^有效期至/)
+      expect(screen.queryByText(/订阅有效期/)).not.toBeInTheDocument()
+
+      // Does not show renewal button for non-subscription order
+      expect(screen.queryByTestId('order-renew-button')).not.toBeInTheDocument()
+    })
   })
 })

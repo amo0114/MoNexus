@@ -102,4 +102,44 @@ describe('FileDeliveryCard', () => {
     fireEvent.click(downloadBtn)
     expect(issueOrderFileDownloadUrl).not.toHaveBeenCalled()
   })
+
+  it('disables download button and shows revoked notice when fileStatus is revoked even if orderStatus is delivered', () => {
+    render(
+      <FileDeliveryCard
+        orderId={105}
+        fileName="dataset_2026.zip"
+        size={1048576}
+        orderStatus="delivered"
+        fileStatus="revoked"
+      />,
+    )
+
+    const downloadBtn = screen.getByTestId('file-delivery-download')
+    expect(downloadBtn).toBeDisabled()
+    expect(downloadBtn).toHaveTextContent('下载已作废')
+    expect(screen.getByTestId('file-delivery-revoked-notice')).toHaveTextContent('文件下载已作废，授权已失效。如有疑问请联系平台处理。')
+
+    fireEvent.click(downloadBtn)
+    expect(issueOrderFileDownloadUrl).not.toHaveBeenCalled()
+  })
+
+  it('disables download button and shows deleted notice when fileStatus is deleted', () => {
+    render(
+      <FileDeliveryCard
+        orderId={106}
+        fileName="dataset_2026.zip"
+        size={1048576}
+        orderStatus="delivered"
+        fileStatus="deleted"
+      />,
+    )
+
+    const downloadBtn = screen.getByTestId('file-delivery-download')
+    expect(downloadBtn).toBeDisabled()
+    expect(downloadBtn).toHaveTextContent('文件已删除')
+    expect(screen.getByTestId('file-delivery-deleted-notice')).toHaveTextContent('文件已从存储节点移除，无法继续下载。如有疑问请联系平台处理。')
+
+    fireEvent.click(downloadBtn)
+    expect(issueOrderFileDownloadUrl).not.toHaveBeenCalled()
+  })
 })

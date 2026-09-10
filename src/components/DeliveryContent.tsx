@@ -16,6 +16,7 @@ export interface DeliveryProgressEvent {
 export interface DeliveryFileMeta {
   fileName: string
   size: number
+  status?: string | null
 }
 
 /**
@@ -60,6 +61,17 @@ function remainingDaysFrom(iso: string): number {
   return Math.max(0, Math.ceil((new Date(iso).getTime() - Date.now()) / 86400000))
 }
 
+function getMaskedPlaceholder(isSubscription: boolean, expired: boolean) {
+  if (isSubscription) {
+    return expired
+      ? '订阅已过期。续费将生成新订单，内容在新订单中查看'
+      : '订阅凭据已由系统安全遮蔽'
+  }
+  return expired
+    ? '凭证已到期，敏感交付内容已由系统安全遮蔽'
+    : '敏感交付内容已由系统安全遮蔽'
+}
+
 /**
  * Buyer-facing delivery voucher pass. Reads only the authorized order slice:
  * structured fields → file card → url → text, plus booking / expiry / progress.
@@ -74,7 +86,7 @@ export default function DeliveryContent({
   expired = false,
   orderId,
   orderStatus,
-  isSubscription = true,
+  isSubscription = false,
   contentMasked = false,
   provisionPending = false,
   progress,
@@ -214,7 +226,7 @@ export default function DeliveryContent({
                 className="bg-[var(--color-background)] p-4 rounded-lg border border-dashed border-[var(--color-border)] text-center text-xs text-[var(--color-text-muted)]"
                 data-testid="delivery-masked"
               >
-                订阅已过期。续费将生成新订单，内容在新订单中查看
+                {getMaskedPlaceholder(isSubscription, Boolean(expired))}
               </div>
             )}
 
@@ -226,6 +238,7 @@ export default function DeliveryContent({
                 fileName={file.fileName}
                 size={file.size}
                 orderStatus={orderStatus}
+                fileStatus={file.status}
               />
             )}
 

@@ -184,12 +184,41 @@ describe('DeliveryContent', () => {
     expect(screen.queryByText(/若开通失败/)).not.toBeInTheDocument()
   })
 
-  it('renders masked delivery placeholder when contentMasked is true', () => {
-    render(<DeliveryContent contentMasked={true} />)
+  it('renders masked delivery placeholder with decoupled copy based on isSubscription and expired', () => {
+    // 1. Non-subscription, not expired (default)
+    const { rerender } = render(<DeliveryContent contentMasked={true} />)
+    expect(screen.getByTestId('delivery-masked')).toHaveTextContent('敏感交付内容已由系统安全遮蔽')
 
-    const card = screen.getByTestId('delivery-masked')
-    expect(card).toBeInTheDocument()
-    expect(card).toHaveTextContent('订阅已过期。续费将生成新订单，内容在新订单中查看')
+    // 2. Non-subscription, expired
+    rerender(<DeliveryContent contentMasked={true} isSubscription={false} expired={true} />)
+    expect(screen.getByTestId('delivery-masked')).toHaveTextContent('凭证已到期，敏感交付内容已由系统安全遮蔽')
+
+    // 3. Subscription, not expired
+    rerender(<DeliveryContent contentMasked={true} isSubscription={true} expired={false} />)
+    expect(screen.getByTestId('delivery-masked')).toHaveTextContent('订阅凭据已由系统安全遮蔽')
+
+    // 4. Subscription, expired
+    rerender(<DeliveryContent contentMasked={true} isSubscription={true} expired={true} />)
+    expect(screen.getByTestId('delivery-masked')).toHaveTextContent('订阅已过期。续费将生成新订单，内容在新订单中查看')
+  })
+
+  it('passes file.status to FileDeliveryCard and handles revoked file status in delivered order', () => {
+    render(
+      <DeliveryContent
+        orderId={105}
+        orderStatus="delivered"
+        file={{
+          fileName: 'revoked_package.zip',
+          size: 1048576,
+          status: 'revoked',
+        }}
+      />,
+    )
+
+    const downloadBtn = screen.getByTestId('file-delivery-download')
+    expect(downloadBtn).toBeDisabled()
+    expect(downloadBtn).toHaveTextContent('下载已作废')
+    expect(screen.getByTestId('file-delivery-revoked-notice')).toHaveTextContent('文件下载已作废，授权已失效。如有疑问请联系平台处理。')
   })
 
   it('renders URL delivery as external link card with clipboard copy feedback', async () => {

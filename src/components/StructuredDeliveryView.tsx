@@ -15,12 +15,16 @@ export default function StructuredDeliveryView({ content }: { content: Structure
   const [revealed, setRevealed] = useState<Record<string, boolean>>({})
   const [copiedKey, setCopiedKey] = useState<string | null>(null)
   const [copiedAll, setCopiedAll] = useState(false)
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const singleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const allTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     return () => {
-      if (timerRef.current) {
-        clearTimeout(timerRef.current)
+      if (singleTimerRef.current) {
+        clearTimeout(singleTimerRef.current)
+      }
+      if (allTimerRef.current) {
+        clearTimeout(allTimerRef.current)
       }
     }
   }, [])
@@ -29,9 +33,9 @@ export default function StructuredDeliveryView({ content }: { content: Structure
     if (!value) return
     const success = await copyToClipboard(value)
     if (success) {
-      if (timerRef.current) clearTimeout(timerRef.current)
+      if (singleTimerRef.current) clearTimeout(singleTimerRef.current)
       setCopiedKey(key)
-      timerRef.current = setTimeout(() => {
+      singleTimerRef.current = setTimeout(() => {
         setCopiedKey(null)
       }, 2000)
       showToast(`「${label}」已复制`)
@@ -52,9 +56,9 @@ export default function StructuredDeliveryView({ content }: { content: Structure
 
     const success = await copyToClipboard(lines.join('\n'))
     if (success) {
-      if (timerRef.current) clearTimeout(timerRef.current)
+      if (allTimerRef.current) clearTimeout(allTimerRef.current)
       setCopiedAll(true)
-      timerRef.current = setTimeout(() => {
+      allTimerRef.current = setTimeout(() => {
         setCopiedAll(false)
       }, 2000)
       showToast('已复制全部凭据')

@@ -114,4 +114,39 @@ describe('StructuredDeliveryView', () => {
     expect(screen.getByTestId('structured-copy-account')).toBeInTheDocument()
     expect(screen.queryByTestId('structured-copy-note')).not.toBeInTheDocument()
   })
+
+  it('manages single and copy-all timers independently so alternating copies fade correctly', async () => {
+    vi.useFakeTimers()
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    vi.stubGlobal('navigator', { clipboard: { writeText } })
+
+    render(<StructuredDeliveryView content={SAMPLE_CONTENT} />)
+
+    const copyAccountBtn = screen.getByTestId('structured-copy-account')
+    const copyAllBtn = screen.getByTestId('structured-copy-all')
+
+    // 1. Copy single field
+    await act(async () => {
+      fireEvent.click(copyAccountBtn)
+    })
+    expect(copyAccountBtn).toHaveTextContent('已复制')
+
+    // 2. Immediately copy all
+    await act(async () => {
+      fireEvent.click(copyAllBtn)
+    })
+    expect(copyAllBtn).toHaveTextContent('已复制全部')
+    expect(copyAccountBtn).toHaveTextContent('已复制')
+
+    // 3. Advance time by 2000ms: both timers should fire and reset their respective states
+    await act(async () => {
+      vi.advanceTimersByTime(2100)
+    })
+
+    expect(copyAccountBtn).not.toHaveTextContent('已复制')
+    expect(copyAllBtn).not.toHaveTextContent('已复制全部')
+    expect(copyAllBtn).toHaveTextContent('一键复制全部')
+
+    vi.useRealTimers()
+  })
 })
