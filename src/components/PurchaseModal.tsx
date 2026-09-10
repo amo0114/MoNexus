@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AlertTriangle, Coins, Loader2, ShieldCheck, Info } from 'lucide-react'
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from './ui/Dialog'
 import { getCheckoutPreview, type CheckoutPreview } from '../api/orders'
@@ -197,8 +197,11 @@ export default function PurchaseModal({
     }
   }
 
+  const inFlightRef = useRef(false)
+  const [inFlight, setInFlight] = useState(false)
+
   async function handleConfirm() {
-    if (!preview || submitting) return
+    if (!preview || submitting || inFlightRef.current) return
     // 协议校验时序：仅在用户点击提交按钮时拦截并聚焦协议提示，不在开窗时报红
     if (preview.legalRequirement?.enforcement === 'enforce' && !agreementsChecked) {
       setAgreementAttempted(true)
@@ -209,37 +212,44 @@ export default function PurchaseModal({
       el?.focus()
       return
     }
-    const outcome = await onConfirm(
-      preview,
-      idempotencyKey,
-      answers,
-      verifyPassword,
-      agreementsChecked ? agreementVersionsOf(preview.legalRequirement) : undefined,
-    )
-    if (outcome === 'price_changed') {
-      // 服务端价格已变：换新的结算意图（新幂等键）并重新报价，由用户再次确认。
-      setPriceChanged(true)
-      setIdempotencyKey(newIdempotencyKey())
-      setPreview(null)
-      loadPreview()
-    } else if (outcome === 'agreement_stale') {
-      // SPEC-LEGAL-001：协议版本已更新——换新幂等键重新报价（新版本随预览
-      // 下发），并强制重新勾选：已确认的旧版本不能默示延伸到新文本。
-      setAgreementStale(true)
-      setAgreementsChecked(false)
-      setAgreementAttempted(false)
-      setIdempotencyKey(newIdempotencyKey())
-      setPreview(null)
-      loadPreview()
-    } else if (outcome === 'verification_required') {
-      // 预览后风控条件变化（阈值调整/多标签页累计跨过阈值）：重新报价，
-      // 新 preview 会带 requiresVerification 使密码框出现。同一结算意图
-      // 且请求无副作用，幂等键不轮换，已填答案保留。
-      setPreview(null)
-      loadPreview()
-    } else if (outcome === 'verification_failed') {
-      // 密码错误：同一结算意图（幂等键不轮换），清空密码让用户重输。
-      setVerifyPassword('')
+    inFlightRef.current = true
+    setInFlight(true)
+    try {
+      const outcome = await onConfirm(
+        preview,
+        idempotencyKey,
+        answers,
+        verifyPassword,
+        agreementsChecked ? agreementVersionsOf(preview.legalRequirement) : undefined,
+      )
+      if (outcome === 'price_changed') {
+        // 服务端价格已变：换新的结算意图（新幂等键）并重新报价，由用户再次确认。
+        setPriceChanged(true)
+        setIdempotencyKey(newIdempotencyKey())
+        setPreview(null)
+        loadPreview()
+      } else if (outcome === 'agreement_stale') {
+        // SPEC-LEGAL-001：协议版本已更新——换新幂等键重新报价（新版本随预览
+        // 下发），并强制重新勾选：已确认的旧版本不能默示延伸到新文本。
+        setAgreementStale(true)
+        setAgreementsChecked(false)
+        setAgreementAttempted(false)
+        setIdempotencyKey(newIdempotencyKey())
+        setPreview(null)
+        loadPreview()
+      } else if (outcome === 'verification_required') {
+        // 预览后风控条件变化（阈值调整/多标签页累计跨过阈值）：重新报价，
+        // 新 preview 会带 requiresVerification 使密码框出现。同一结算意图
+        // 且请求无副作用，幂等键不轮换，已填答案保留。
+        setPreview(null)
+        loadPreview()
+      } else if (outcome === 'verification_failed') {
+        // 密码错误：同一结算意图（幂等键不轮换），清空密码让用户重输。
+        setVerifyPassword('')
+      }
+    } finally {
+      inFlightRef.current = false
+      setInFlight(false)
     }
   }
 
@@ -452,10 +462,10 @@ export default function PurchaseModal({
                   </p>
                 )}
                 {provisionHint && !provisionError && (
-                  <p className="text-xs text-[var(--color-text-muted)]">{provisionHint}</p>
+                  <p className="text-xs text-[var(--color-text-muted)]" data-testid="provision-hint">{provisionHint}</p>
                 )}
                 {provisionError && (
-                  <p className="text-xs text-[var(--color-danger-text)]">{provisionError}</p>
+                  <p className="text-xs text-[var(--color-danger-text)]" data-testid="provision-error">{provisionError}</p>
                 )}
               </div>
             )}
@@ -554,7 +564,7 @@ export default function PurchaseModal({
                       </p>
                     )}
                     {provisionHint && !provisionError && (
-                      <p className="text-xs text-[var(--color-text-muted)]">{provisionHint}</p>
+                      <p className="text-xs text-[var(--color-text-muted)]" data-testid="provision-hint">{provisionHint}</p>
                     )}
                     {provisionError && (
                       <p className="text-xs text-[var(--color-danger-text)]" data-testid="provision-error">{provisionError}</p>
@@ -622,7 +632,7 @@ export default function PurchaseModal({
               id="purchase-agreement"
               className={`flex cursor-pointer items-start gap-2 text-xs leading-relaxed text-[var(--color-text-muted)] rounded-lg p-1 transition-colors ${
                 agreementAttempted && missingAgreement
-                  ? 'border border-[var(--color-danger-border)] bg-[var(--color-danger-bg)]/40'
+                  ? 'border border-[var(--color-danger-border)] bg-[var(--color-danger-bg)]'
                   : ''
               }`}
               data-testid="purchase-agreement"
@@ -665,7 +675,7 @@ export default function PurchaseModal({
           <button
             type="button"
             onClick={onClose}
-            disabled={submitting}
+            disabled={submitting || inFlight}
             className="btn-secondary flex-1 px-0"
           >
             再想想
@@ -674,6 +684,7 @@ export default function PurchaseModal({
             type="submit"
             disabled={
               submitting ||
+              inFlight ||
               !preview ||
               !preview.sufficient ||
               !preview.purchasable ||
@@ -684,8 +695,8 @@ export default function PurchaseModal({
             }
             className="btn-cta flex-1 px-0"
           >
-            {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
-            {submitting ? '支付中…' : '确认支付'}
+            {(submitting || inFlight) && <Loader2 className="w-4 h-4 animate-spin" />}
+            {submitting || inFlight ? '支付中…' : '确认支付'}
           </button>
         </div>
         </form>
