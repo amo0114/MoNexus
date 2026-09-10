@@ -405,7 +405,8 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
       }
       showToast('商品内容已保存')
     } catch (err) {
-      if (getApiErrorCode(err) === CATALOG_ERROR_CODES.PRODUCT_CONTENT_CHANGED) {
+      const code = getApiErrorCode(err)
+      if (code === CATALOG_ERROR_CODES.PRODUCT_CONTENT_CHANGED) {
         showToast('商品内容已更新，已刷新版本号，请再次保存', 'error')
         try {
           const fresh = await adapter.getEditor(actor, productId)
@@ -416,6 +417,27 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
           setPublicationIssues(fresh.publicationIssues)
         } catch {
           // Keep typed fields even if the version refresh GET fails.
+        }
+        return
+      }
+      if (code === 'CHECKOUT_CHANGED') {
+        showToast('规格已更新，已保留你输入的内容，请核对后再次保存', 'error')
+        try {
+          const fresh = await adapter.getEditor(actor, productId)
+          setContentVersion(fresh.product.contentVersion)
+          setStatus(fresh.product.status)
+          setCapabilities(fresh.capabilities)
+          setPublicationIssues(fresh.publicationIssues)
+          setOfferDrafts(prev => reconcileOfferDrafts(
+            prev,
+            offers,
+            fresh.offers,
+            selectedTemplate,
+            form.attributes,
+          ))
+          setOffers(fresh.offers)
+        } catch {
+          // Keep typed product fields even if the checkout refresh GET fails.
         }
         return
       }
@@ -941,6 +963,42 @@ function draftsFromOffers(offers: ProductEditorOffer[]): Record<number, OfferStr
     }
   }
   return drafts
+}
+
+function offerStructuredRequirement(
+  offer: ProductEditorOffer,
+  template: ProductTemplateDefinition | null,
+  productAttributes: TemplateAttributes,
+): StructuredRequirement {
+  return template
+    ? structuredRequirementFor(template, productAttributes, offer.deliveryMode)
+    : 'none'
+}
+
+function reconcileOfferDrafts(
+  previousDrafts: Record<number, OfferStructuredDraft>,
+  previousOffers: ProductEditorOffer[],
+  freshOffers: ProductEditorOffer[],
+  template: ProductTemplateDefinition | null,
+  productAttributes: TemplateAttributes,
+): Record<number, OfferStructuredDraft> {
+  const previousById = new Map(previousOffers.map(offer => [offer.id, offer]))
+  const serverDrafts = draftsFromOffers(freshOffers)
+  const next: Record<number, OfferStructuredDraft> = {}
+  for (const offer of freshOffers) {
+    const previousOffer = previousById.get(offer.id)
+    const previousDraft = previousDrafts[offer.id]
+    if (!previousOffer || !previousDraft) {
+      next[offer.id] = serverDrafts[offer.id]
+      continue
+    }
+    const previousRequirement = offerStructuredRequirement(previousOffer, template, productAttributes)
+    const nextRequirement = offerStructuredRequirement(offer, template, productAttributes)
+    next[offer.id] = previousRequirement === nextRequirement
+      ? previousDraft
+      : serverDrafts[offer.id]
+  }
+  return next
 }
 
 function parseDeliveryFields(raw: unknown): DeliveryField[] {

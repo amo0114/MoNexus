@@ -563,6 +563,100 @@ describe('ProductEditPage (spec §9.2 / §10.3)', () => {
     })
   })
 
+  it('refreshes checkoutVersion after CHECKOUT_CHANGED and retries with the new version', async () => {
+    merchantMocks.updateMerchantOffer
+      .mockRejectedValueOnce(Object.assign(new Error('conflict'), {
+        response: {
+          status: 409,
+          data: {
+            error: {
+              code: 'CHECKOUT_CHANGED',
+              message: '商品信息已变化，请重新确认',
+            },
+          },
+        },
+      }))
+      .mockResolvedValueOnce({ id: 9, checkoutVersion: 'fresh-digest' })
+
+    const base = editorDto()
+    const structuredOffer = {
+      ...base.offers[0],
+      deliveryMode: 'instant_fixed' as const,
+      stockMode: 'unlimited' as const,
+      checkoutVersion: 'old-digest',
+      fixedStructuredContent: {
+        fields: [{ key: 'user', label: '账号', sensitive: false }],
+        values: { user: 'demo' },
+      },
+    }
+    const transport = createEditTransport({
+      editor: () => ({
+        ...base,
+        product: {
+          ...base.product,
+          name: '原名称',
+        },
+        offers: [{
+          ...structuredOffer,
+          name: merchantMocks.updateMerchantOffer.mock.calls.length > 0 ? '平台改名规格' : '默认规格',
+          price: merchantMocks.updateMerchantOffer.mock.calls.length > 0 ? 180 : 100,
+          checkoutVersion: merchantMocks.updateMerchantOffer.mock.calls.length > 0
+            ? 'fresh-digest'
+            : 'old-digest',
+        }],
+      }),
+      patch: (body) => ({
+        id: 42,
+        contentVersion: 4,
+        updatedFields: ['name'],
+        echoed: body,
+      }),
+    })
+    await renderEditPage(transport)
+
+    fireEvent.change(screen.getByTestId('product-edit-name'), { target: { value: '冲突后仍保留' } })
+    fireEvent.change(screen.getByTestId('product-edit-offer-9-structured-field-value-0'), {
+      target: { value: 'shared-user' },
+    })
+    fireEvent.click(screen.getByTestId('product-edit-save'))
+
+    await waitFor(() => expect(merchantMocks.updateMerchantOffer).toHaveBeenCalledTimes(1))
+    expect(merchantMocks.updateMerchantOffer).toHaveBeenCalledWith(42, 9, {
+      fixedContent: null,
+      fixedStructuredContent: {
+        fields: [{ key: 'user', label: '账号', sensitive: false }],
+        values: { user: 'shared-user' },
+      },
+      expectedCheckoutVersion: 'old-digest',
+    })
+    await waitFor(() => {
+      expect(transport.calls.filter(call => (
+        call.method === 'get' && call.url === '/merchant/products/42/editor'
+      )).length).toBeGreaterThan(1)
+    })
+    expect(screen.getByTestId('product-edit-name')).toHaveValue('冲突后仍保留')
+    expect(screen.getByTestId('product-edit-offer-9')).toHaveTextContent('平台改名规格')
+    expect(screen.getByTestId('product-edit-offer-9')).toHaveTextContent('180')
+    expect(screen.getByTestId('product-edit-offer-9-structured-field-value-0')).toHaveValue('shared-user')
+    expect(useAppStore.getState().toasts.some(toast =>
+      toast.message === '规格已更新，已保留你输入的内容，请核对后再次保存',
+    )).toBe(true)
+
+    await waitFor(() => expect(screen.getByTestId('product-edit-save')).toHaveTextContent('保存内容'))
+    fireEvent.click(screen.getByTestId('product-edit-save'))
+
+    await waitFor(() => expect(merchantMocks.updateMerchantOffer).toHaveBeenCalledTimes(2))
+    expect(merchantMocks.updateMerchantOffer).toHaveBeenLastCalledWith(42, 9, {
+      fixedContent: null,
+      fixedStructuredContent: {
+        fields: [{ key: 'user', label: '账号', sensitive: false }],
+        values: { user: 'shared-user' },
+      },
+      expectedCheckoutVersion: 'fresh-digest',
+    })
+    expect(screen.getByTestId('product-edit-name')).toHaveValue('冲突后仍保留')
+  })
+
   it('PATCHes templateKey and templateVersion:1 on a legacy editor DTO', async () => {
     const transport = createEditTransport({
       editor: editorDto({ templateKey: null, templateVersion: null }),
