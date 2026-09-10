@@ -543,4 +543,45 @@ describe('ProductCreateWizard draft flow (editorVersion 2)', () => {
     expect(body.offers[0].deliveryMode).toBe('instant_inventory')
     expect(body.offers[0].fixedStructuredContent).toBeNull()
   })
+
+  it('renders 4 visual phases and updates LivePreviewSandbox and tab switcher (Phase 4 / P7)', async () => {
+    await renderWizard({
+      get: { '/merchant/products/101/offers': catalogFixtureOffers },
+      post: { '/merchant/products': v2Created },
+    })
+
+    // 1. Verify 4 visual phase cards are rendered
+    expect(screen.getByTestId('wizard-phase-basic')).toBeInTheDocument()
+    expect(screen.getByTestId('wizard-phase-pricing')).toBeInTheDocument()
+    expect(screen.getByTestId('wizard-phase-fulfillment')).toBeInTheDocument()
+    expect(screen.getByTestId('wizard-phase-publish')).toBeInTheDocument()
+
+    // 2. Verify LivePreviewSandbox is present in the document
+    expect(screen.getByTestId('live-preview-sandbox')).toBeInTheDocument()
+    expect(screen.getByTestId('sandbox-readonly-badge')).toBeInTheDocument()
+
+    // 3. Tab switcher
+    const tabEdit = screen.getByTestId('wizard-tab-edit')
+    const tabPreview = screen.getByTestId('wizard-tab-preview')
+    expect(tabEdit).toBeInTheDocument()
+    expect(tabPreview).toBeInTheDocument()
+    fireEvent.click(tabPreview)
+    fireEvent.click(tabEdit)
+
+    // 4. Select template and advance to Step 1 (still inside Phase 1)
+    fireEvent.click(screen.getByTestId('template-redemption_code'))
+    fireEvent.click(screen.getByTestId('wizard-next'))
+
+    // 5. Typing in name updates LivePreviewSandbox
+    fireEvent.change(screen.getByTestId('wizard-name'), { target: { value: '超值兑换码' } })
+    const categorySelect = screen.getByTestId('product-category-select')
+    await waitFor(() => expect(categorySelect).not.toBeDisabled())
+    fireEvent.change(categorySelect, { target: { value: '3' } })
+    expect(screen.getByTestId('sandbox-product-name')).toHaveTextContent('超值兑换码')
+
+    // 6. Advance to Phase 2 (Pricing)
+    fireEvent.click(screen.getByTestId('wizard-next'))
+    fireEvent.change(screen.getByTestId('wizard-price'), { target: { value: '250' } })
+    expect(screen.getByTestId('sandbox-price')).toHaveTextContent('250')
+  })
 })

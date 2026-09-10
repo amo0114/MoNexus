@@ -1082,4 +1082,26 @@ describe('ProductEditPage (spec §9.2 / §10.3)', () => {
     await waitFor(() => expect(screen.getByTestId('product-edit-template-locked')).toBeInTheDocument())
     expect(screen.queryByTestId('product-edit-template-select')).not.toBeInTheDocument()
   })
+
+  it('renders LivePreviewSandbox and responsive Tab switcher on ProductEditPage (Phase 4 / P7)', async () => {
+    const transport = createEditTransport({
+      editor: editorDto({
+        name: '编辑测试商品',
+      }),
+    })
+    await renderEditPage(transport)
+
+    // 1. LivePreviewSandbox rendered with product info
+    expect(screen.getByTestId('live-preview-sandbox')).toBeInTheDocument()
+    expect(screen.getByTestId('sandbox-readonly-badge')).toBeInTheDocument()
+    expect(screen.getByTestId('sandbox-product-name')).toHaveTextContent('编辑测试商品')
+
+    // 2. Tab switcher rendered for mid-screen/mobile
+    const tabForm = screen.getByTestId('product-edit-tab-form')
+    const tabPreview = screen.getByTestId('product-edit-tab-preview')
+    expect(tabForm).toBeInTheDocument()
+    expect(tabPreview).toBeInTheDocument()
+    fireEvent.click(tabPreview)
+    fireEvent.click(tabForm)
+  })
 })

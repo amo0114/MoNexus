@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  ArrowLeft, ArrowRight, CalendarDays, Check, Coins, CreditCard, FileText, Globe, Loader2,
+  ArrowLeft, ArrowRight, CalendarDays, Check, Coins, CreditCard, Eye, FileText, Globe, Loader2,
   Package, Trash2, UserRound, Wrench,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
@@ -10,6 +10,7 @@ import { useAppStore } from '../../stores/appStore'
 import ProductCategorySelect from '../../components/catalog/ProductCategorySelect'
 import ProductAvailabilityStep from '../../components/catalog/ProductAvailabilityStep'
 import ProductPublicationChecklist from '../../components/catalog/ProductPublicationChecklist'
+import LivePreviewSandbox, { type LivePreviewOffer, type LivePreviewProductData } from '../../components/merchant/LivePreviewSandbox'
 import ProductImageUploader from '../../components/merchant/ProductImageUploader'
 import PurchaseFormFieldsEditor, {
   serializePurchaseFormFields,
@@ -107,6 +108,29 @@ interface DeliverySelection {
  * 购买前表单在「展示信息」步配置，随 editorVersion:2 create 一并提交；
  * 草稿允许空表单。
  */
+export interface WizardPhase {
+  id: string
+  title: string
+  subtitle: string
+  steps: readonly number[]
+  subStepLabels: readonly string[]
+}
+
+/**
+ * P7 / Phase 4: 商家向导分节视觉整合
+ * 将底层 7 步状态机在视觉上整合为 4 个清晰的主阶段向导：
+ * 1. 基础信息（形态选择、展示信息）
+ * 2. 规格价格（定价与参数）
+ * 3. 履约交付（交付方式与配置）
+ * 4. 确认发布（确认草稿、可售量导入、发布检查）
+ */
+export const WIZARD_PHASES: readonly WizardPhase[] = [
+  { id: 'basic', title: '基础信息', subtitle: '形态与图文', steps: [0, 1], subStepLabels: ['选择形态', '展示信息'] },
+  { id: 'pricing', title: '规格价格', subtitle: '套餐与标价', steps: [2], subStepLabels: ['规格定价'] },
+  { id: 'fulfillment', title: '履约交付', subtitle: '交付规则', steps: [3], subStepLabels: ['交付方式'] },
+  { id: 'publish', title: '确认发布', subtitle: '检查与上线', steps: [4, 5, 6], subStepLabels: ['确认草稿', '配置名额', '发布检查'] },
+] as const
+
 const STEPS = ['选择模板', '展示信息', '定价', '交付方式', '确认草稿', '可售量', '发布'] as const
 const LAST_STEP = STEPS.length - 1
 
@@ -169,6 +193,7 @@ export default function ProductCreateWizard({ adapter = catalogApi }: Props) {
   const [readiness, setReadiness] = useState<PublicationReadiness | null>(null)
   const [readinessLoading, setReadinessLoading] = useState(false)
   const [publishing, setPublishing] = useState(false)
+  const [activeViewTab, setActiveViewTab] = useState<'wizard' | 'preview'>('wizard')
 
   function loadTemplates() {
     setTemplatesLoading(true)
@@ -559,36 +584,135 @@ export default function ProductCreateWizard({ adapter = catalogApi }: Props) {
     label: registry?.deliveryModes?.find(mode => mode.value === value)?.label ?? DELIVERY_FALLBACK_LABEL[value],
   }))
 
+  const previewOffers: LivePreviewOffer[] = useMemo(() => {
+    const primary: LivePreviewOffer = {
+      name: primaryOfferName.trim() || DEFAULT_OFFER_NAME,
+      price: form.price || '0',
+      originalPrice: form.originalPrice || null,
+      deliveryMode: form.deliveryMode,
+      stockMode: form.stockMode,
+      validityDays: form.validityDays || null,
+    }
+    const extras: LivePreviewOffer[] = extraOffers.map((o, idx) => ({
+      id: idx + 1,
+      name: o.name.trim() || `附加规格 ${idx + 1}`,
+      price: o.price || '0',
+      originalPrice: o.originalPrice || null,
+      deliveryMode: o.deliveryMode,
+      stockMode: o.stockMode,
+      validityDays: o.validityDays || null,
+    }))
+    return [primary, ...extras]
+  }, [primaryOfferName, form.price, form.originalPrice, form.deliveryMode, form.stockMode, form.validityDays, extraOffers])
+
+  const previewData: LivePreviewProductData = useMemo(() => ({
+    name: form.name,
+    price: form.price,
+    originalPrice: form.originalPrice,
+    description: form.description,
+    richDescription: form.richDescription,
+    images,
+    categoryName: selectedCategory?.label ?? null,
+    templateName: selectedTemplate?.label ?? null,
+    deliveryMode: form.deliveryMode,
+    offers: previewOffers,
+    details: productDetails,
+  }), [form.name, form.price, form.originalPrice, form.description, form.richDescription, images, selectedCategory, selectedTemplate, form.deliveryMode, previewOffers, productDetails])
+
   return (
-    <div className="max-w-3xl mx-auto pb-16 fade-in" data-testid="product-create-wizard">
+    <div className="max-w-[1180px] mx-auto px-4 pb-16 fade-in" data-testid="product-create-wizard">
       <button onClick={() => navigate('/merchant')} className="flex items-center gap-1 text-sm text-[var(--color-text-muted)] hover:text-[var(--color-text)] mb-4 cursor-pointer">
         <ArrowLeft className="w-4 h-4" /> 返回商家中心
       </button>
       <h1 className="font-heading text-2xl font-bold text-[var(--color-text)] mb-1">发布新商品</h1>
       <p className="text-sm text-[var(--color-text-muted)] mb-6">按步骤完成商品配置，保存草稿后可独立补充可售量并发布</p>
 
-      <ol className="flex items-center gap-1 sm:gap-2 mb-8 overflow-x-auto" data-testid="wizard-steps">
-        {STEPS.map((title, i) => (
-          <li key={title} className="flex items-center gap-1 sm:gap-2 shrink-0">
-            <span
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-xs font-bold ${
-                i === step
-                  ? 'bg-[var(--color-primary)] text-white'
-                  : i < step
-                    ? 'bg-[var(--color-primary)]/10 text-[var(--color-primary)]'
-                    : 'bg-[var(--color-background)] text-[var(--color-text-muted)] border border-[var(--color-border)]'
-              }`}
-            >
-              {i < step ? <Check className="w-3.5 h-3.5" /> : <span>{i + 1}</span>}
-              <span className="hidden sm:inline">{title}</span>
-            </span>
-            {i < STEPS.length - 1 && <span className="w-3 sm:w-6 h-px bg-[var(--color-border)]" />}
-          </li>
-        ))}
-      </ol>
+      {/* 4-Phase Visual Stepper (REQ-P7 §4.1) */}
+      <div className="mb-6 sm:mb-8" data-testid="wizard-stepper-container">
+        <ol className="grid grid-cols-2 md:grid-cols-4 gap-2.5 sm:gap-3" data-testid="wizard-steps">
+          {WIZARD_PHASES.map((phase, pIdx) => {
+            const isCurrentPhase = phase.steps.includes(step)
+            const isCompletedPhase = phase.steps.every(s => s < step)
+            const activeSubStepIdx = phase.steps.indexOf(step)
 
-      <div className="bg-[var(--color-surface)] rounded-2xl border border-[var(--color-border)] p-5 sm:p-8">
-        {step === 0 && (
+            return (
+              <li
+                key={phase.id}
+                className={`relative rounded-xl border p-3 transition-all ${
+                  isCurrentPhase
+                    ? 'border-[var(--color-primary)] bg-[var(--color-primary-tint)]/40 shadow-xs ring-1 ring-[var(--color-primary)]/30'
+                    : isCompletedPhase
+                      ? 'border-[var(--color-border)] bg-[var(--color-surface)] opacity-90'
+                      : 'border-[var(--color-border)] bg-[var(--color-background)] opacity-60'
+                }`}
+                data-testid={`wizard-phase-${phase.id}`}
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <span
+                    className={`w-6 h-6 rounded-full text-xs font-bold flex items-center justify-center shrink-0 ${
+                      isCompletedPhase
+                        ? 'bg-[var(--color-primary)] text-white'
+                        : isCurrentPhase
+                          ? 'bg-[var(--color-primary)] text-white'
+                          : 'border border-[var(--color-border)] text-[var(--color-text-muted)] bg-[var(--color-surface)]'
+                    }`}
+                  >
+                    {isCompletedPhase ? <Check className="w-3.5 h-3.5" /> : pIdx + 1}
+                  </span>
+                  <span className={`text-xs font-bold truncate ${isCurrentPhase ? 'text-[var(--color-primary)]' : 'text-[var(--color-text)]'}`}>
+                    {phase.title}
+                  </span>
+                </div>
+
+                <div className="text-[11px] text-[var(--color-text-muted)] truncate pl-8">
+                  {isCurrentPhase && phase.steps.length > 1 ? (
+                    <span className="text-[var(--color-primary)] font-medium">
+                      {phase.subStepLabels[activeSubStepIdx]} ({activeSubStepIdx + 1}/{phase.steps.length})
+                    </span>
+                  ) : (
+                    <span>{phase.subtitle}</span>
+                  )}
+                </div>
+              </li>
+            )
+          })}
+        </ol>
+      </div>
+
+      {/* Mid-Screen & Mobile Tab Switcher (768px - 1023px) (REQ-P7 §4.2) */}
+      <div className="flex lg:hidden mb-6 border-b border-[var(--color-border)] gap-2" data-testid="wizard-view-tabs">
+        <button
+          type="button"
+          onClick={() => setActiveViewTab('wizard')}
+          className={`pb-2.5 px-4 text-sm font-bold border-b-2 transition-colors cursor-pointer ${
+            activeViewTab === 'wizard'
+              ? 'border-[var(--color-primary)] text-[var(--color-primary)]'
+              : 'border-transparent text-[var(--color-text-muted)] hover:text-[var(--color-text)]'
+          }`}
+          data-testid="wizard-tab-edit"
+        >
+          向导配置
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveViewTab('preview')}
+          className={`pb-2.5 px-4 text-sm font-bold border-b-2 transition-colors cursor-pointer flex items-center gap-1.5 ${
+            activeViewTab === 'preview'
+              ? 'border-[var(--color-primary)] text-[var(--color-primary)]'
+              : 'border-transparent text-[var(--color-text-muted)] hover:text-[var(--color-text)]'
+          }`}
+          data-testid="wizard-tab-preview"
+        >
+          <Eye className="w-3.5 h-3.5" /> 买家端预览
+        </button>
+      </div>
+
+      {/* Dual Column Layout (6:4 on >=1024px) */}
+      <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_340px] lg:gap-8 lg:items-start">
+        {/* Left Column: Form & Step Contents */}
+        <div className={activeViewTab === 'preview' ? 'hidden lg:block' : 'block'}>
+          <div className="bg-[var(--color-surface)] rounded-2xl border border-[var(--color-border)] p-5 sm:p-8">
+            {step === 0 && (
           <div>
             <h2 className="font-heading text-lg font-bold text-[var(--color-text)] mb-1">这是什么类型的商品？</h2>
             <p className="text-sm text-[var(--color-text-muted)] mb-5">
@@ -1211,6 +1335,13 @@ export default function ProductCreateWizard({ adapter = catalogApi }: Props) {
         ) : (
           <span data-testid="wizard-publish-slot" />
         )}
+      </div>
+    </div>
+
+        {/* Right Column: Read-Only Buyer Preview Sandbox (REQ-P7 §4.3) */}
+        <aside className={`mt-6 lg:mt-0 lg:sticky lg:top-20 space-y-6 ${activeViewTab === 'wizard' ? 'hidden lg:block' : 'block'}`}>
+          <LivePreviewSandbox product={previewData} />
+        </aside>
       </div>
     </div>
   )

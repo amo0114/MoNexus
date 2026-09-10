@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, Loader2, Package, Trash2 } from 'lucide-react'
+import { ArrowLeft, Eye, Loader2, Package, Trash2 } from 'lucide-react'
 import { getApiErrorCode, getApiErrorMessage } from '../../api/error'
 import {
   catalogApi,
@@ -35,6 +35,7 @@ import {
 import { useAppStore } from '../../stores/appStore'
 import ProductCategorySelect from '../../components/catalog/ProductCategorySelect'
 import ProductPublicationChecklist from '../../components/catalog/ProductPublicationChecklist'
+import LivePreviewSandbox, { type LivePreviewOffer, type LivePreviewProductData } from '../../components/merchant/LivePreviewSandbox'
 import TemplateAttributeFields from '../../components/catalog/TemplateAttributeFields'
 import ProductDetailsFields from '../../components/catalog/ProductDetailsFields'
 import ProductImageUploader from '../../components/merchant/ProductImageUploader'
@@ -135,6 +136,41 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
     field: issue.path ?? '',
     offerId: null as number | null,
   }))
+
+  const [activeViewTab, setActiveViewTab] = useState<'form' | 'preview'>('form')
+
+  const selectedCategory = useMemo(
+    () => categories.find(c => c.id === form.categoryId) ?? null,
+    [categories, form.categoryId],
+  )
+
+  const previewOffers: LivePreviewOffer[] = useMemo(() => {
+    return offers.map(o => ({
+      id: o.id,
+      name: o.name,
+      price: o.price,
+      originalPrice: null,
+      deliveryMode: o.deliveryMode,
+      stockMode: o.stockMode,
+      validityDays: null,
+    }))
+  }, [offers])
+
+  const previewData: LivePreviewProductData = useMemo(() => {
+    const primaryOffer = offers[0]
+    return {
+      name: form.name,
+      price: primaryOffer?.price ?? '0',
+      description: form.description,
+      richDescription: form.richDescription,
+      images: form.images.map(img => img.url),
+      categoryName: selectedCategory?.label ?? null,
+      templateName: selectedTemplate?.label ?? null,
+      deliveryMode: primaryOffer?.deliveryMode,
+      offers: previewOffers,
+      details: form.details,
+    }
+  }, [form.name, form.description, form.richDescription, form.images, selectedCategory, selectedTemplate, offers, previewOffers, form.details])
 
   function applyEditor(dto: ProductEditorDto) {
     const next = formFromEditor(dto)
@@ -506,7 +542,7 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
   const busy = saving || bindingOfferId != null || !canEdit
 
   return (
-    <div className="max-w-[1120px] mx-auto pb-16 fade-in" data-testid="product-edit-page">
+    <div className="max-w-[1180px] mx-auto px-4 pb-16 fade-in" data-testid="product-edit-page">
       <button
         type="button"
         onClick={handleBack}
@@ -544,8 +580,36 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
         </div>
       </div>
 
-      <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_280px] lg:gap-8 lg:items-start">
-        <div className="space-y-6">
+      {/* Mid-Screen & Mobile Tab Switcher (768px - 1023px) (REQ-P7 §4.2) */}
+      <div className="flex lg:hidden mb-6 border-b border-[var(--color-border)] gap-2" data-testid="product-edit-view-tabs">
+        <button
+          type="button"
+          onClick={() => setActiveViewTab('form')}
+          className={`pb-2.5 px-4 text-sm font-bold border-b-2 transition-colors cursor-pointer ${
+            activeViewTab === 'form'
+              ? 'border-[var(--color-primary)] text-[var(--color-primary)]'
+              : 'border-transparent text-[var(--color-text-muted)] hover:text-[var(--color-text)]'
+          }`}
+          data-testid="product-edit-tab-form"
+        >
+          编辑内容
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveViewTab('preview')}
+          className={`pb-2.5 px-4 text-sm font-bold border-b-2 transition-colors cursor-pointer flex items-center gap-1.5 ${
+            activeViewTab === 'preview'
+              ? 'border-[var(--color-primary)] text-[var(--color-primary)]'
+              : 'border-transparent text-[var(--color-text-muted)] hover:text-[var(--color-text)]'
+          }`}
+          data-testid="product-edit-tab-preview"
+        >
+          <Eye className="w-3.5 h-3.5" /> 买家端预览
+        </button>
+      </div>
+
+      <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_340px] lg:gap-8 lg:items-start">
+        <div className={`space-y-6 ${activeViewTab === 'preview' ? 'hidden lg:block' : 'block'}`}>
           <section className="bg-[var(--color-surface)] rounded-2xl border border-[var(--color-border)] p-5 sm:p-8 space-y-5" data-testid="product-edit-info">
             <h2 className="font-heading text-lg font-bold text-[var(--color-text)]">商品信息</h2>
             <ProductImageUploader
@@ -843,7 +907,8 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
           </div>
         </div>
 
-        <aside className="mt-6 lg:mt-0 lg:sticky lg:top-20 space-y-4">
+        <aside className={`mt-6 lg:mt-0 lg:sticky lg:top-20 space-y-6 ${activeViewTab === 'form' ? 'hidden lg:block' : 'block'}`}>
+          <LivePreviewSandbox product={previewData} />
           <ProductPublicationChecklist issues={checklistIssues} ready={checklistIssues.length === 0} />
         </aside>
       </div>
