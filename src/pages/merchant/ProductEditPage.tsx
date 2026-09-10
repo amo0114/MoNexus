@@ -149,10 +149,10 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
       id: o.id,
       name: o.name,
       price: o.price,
-      originalPrice: null,
+      originalPrice: o.originalPrice ?? null,
       deliveryMode: o.deliveryMode,
       stockMode: o.stockMode,
-      validityDays: null,
+      validityDays: o.validityDays ?? null,
     }))
   }, [offers])
 
@@ -161,6 +161,7 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
     return {
       name: form.name,
       price: primaryOffer?.price ?? '0',
+      originalPrice: primaryOffer?.originalPrice ?? null,
       description: form.description,
       richDescription: form.richDescription,
       images: form.images.map(img => img.url),

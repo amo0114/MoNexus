@@ -1083,20 +1083,95 @@ describe('ProductEditPage (spec §9.2 / §10.3)', () => {
     expect(screen.queryByTestId('product-edit-template-select')).not.toBeInTheDocument()
   })
 
-  it('renders LivePreviewSandbox and responsive Tab switcher on ProductEditPage (Phase 4 / P7)', async () => {
+  it('renders LivePreviewSandbox, Header-First meta, real ProductDetails, originalPrice, validityDays and responsive Tab switcher on ProductEditPage (Phase 4 / P7)', async () => {
+    const baseDto = editorDto({
+      name: '编辑测试商品',
+      details: {
+        highlights: ['专线加速', '全天候SLA'],
+        usageInstructions: '使用说明内容测试',
+        purchaseNotes: '购买须知内容测试',
+        afterSalesInstructions: '售后说明内容测试',
+        faq: [{ question: '常见问题1？', answer: '解答1' }],
+      },
+    })
+    const testDto: ProductEditorDto = {
+      ...baseDto,
+      offers: [
+        {
+          id: 101,
+          name: '月度体验版',
+          price: 180,
+          originalPrice: 299,
+          validityDays: 30,
+          status: 'active',
+          sortOrder: 0,
+          isDefault: true,
+          deliveryMode: 'instant_inventory',
+          stockMode: 'limited',
+          stock: 10,
+          fixedContentType: 'text',
+          fixedFileId: null,
+          deliveryFields: null,
+          autoProvision: false,
+          attributes: {},
+        },
+        {
+          id: 102,
+          name: '年度畅享版',
+          price: 1800,
+          originalPrice: 2999,
+          validityDays: 365,
+          status: 'active',
+          sortOrder: 1,
+          isDefault: false,
+          deliveryMode: 'instant_inventory',
+          stockMode: 'limited',
+          stock: 5,
+          fixedContentType: 'text',
+          fixedFileId: null,
+          deliveryFields: null,
+          autoProvision: false,
+          attributes: {},
+        },
+      ],
+    }
+
     const transport = createEditTransport({
-      editor: editorDto({
-        name: '编辑测试商品',
-      }),
+      editor: testDto,
     })
     await renderEditPage(transport)
 
     // 1. LivePreviewSandbox rendered with product info
     expect(screen.getByTestId('live-preview-sandbox')).toBeInTheDocument()
     expect(screen.getByTestId('sandbox-readonly-badge')).toBeInTheDocument()
+
+    // 2. Header-First SPU hierarchy: meta must appear before 4:3 cover in DOM
+    const headerMeta = screen.getByTestId('sandbox-header-meta')
+    const coverFrame = screen.getByTestId('sandbox-cover-frame')
+    expect(headerMeta.compareDocumentPosition(coverFrame) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(screen.getByTestId('sandbox-product-name')).toHaveTextContent('编辑测试商品')
 
-    // 2. Tab switcher rendered for mid-screen/mobile
+    // 3. Pricing, originalPrice and validityDays for initial offer
+    expect(screen.getByTestId('sandbox-price')).toHaveTextContent('180')
+    expect(screen.getByTestId('sandbox-original-price')).toHaveTextContent('299 积分')
+    expect(screen.getByTestId('sandbox-validity-days')).toHaveTextContent('30 天有效')
+
+    // 4. Real ProductDetails sections rendered in sandbox
+    expect(screen.getByTestId('sandbox-highlights')).toBeInTheDocument()
+    expect(screen.getByText('专线加速')).toBeInTheDocument()
+    expect(screen.getByTestId('sandbox-usage-instructions')).toHaveTextContent('使用说明内容测试')
+    expect(screen.getByTestId('sandbox-purchase-notes')).toHaveTextContent('购买须知内容测试')
+    expect(screen.getByTestId('sandbox-after-sales')).toHaveTextContent('售后说明内容测试')
+    expect(screen.getByTestId('sandbox-faq')).toBeInTheDocument()
+    expect(screen.getByText('常见问题1？')).toBeInTheDocument()
+
+    // 5. Switching offer in sandbox updates price, original price and validity days
+    fireEvent.click(screen.getByTestId('sandbox-offer-1'))
+    expect(screen.getByTestId('sandbox-price')).toHaveTextContent('1800')
+    expect(screen.getByTestId('sandbox-original-price')).toHaveTextContent('2999 积分')
+    expect(screen.getByTestId('sandbox-validity-days')).toHaveTextContent('365 天有效')
+
+    // 6. Tab switcher rendered for mid-screen/mobile
     const tabForm = screen.getByTestId('product-edit-tab-form')
     const tabPreview = screen.getByTestId('product-edit-tab-preview')
     expect(tabForm).toBeInTheDocument()
