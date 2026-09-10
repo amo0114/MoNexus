@@ -453,5 +453,78 @@ describe('ProductDetailPage createOrder term fields', () => {
     // Floating bottom bar must yield and disappear to maintain strict Single-CTA
     expect(screen.queryByTestId('mobile-buy-bar')).toBeNull()
   })
+
+  it('recovers from HTTP 409 CHECKOUT_CHANGED: catches error, shows notice, preserves input, and confirms with new checkoutVersion and rotated idempotencyKey', async () => {
+    let callCount = 0
+    const keysPassed: string[] = []
+    createOrder.mockImplementation(async (_productId, options) => {
+      callCount++
+      keysPassed.push(options.idempotencyKey)
+      if (callCount === 1) {
+        const error: any = new Error('结算版本已更新')
+        error.response = {
+          status: 409,
+          data: {
+            error: {
+              code: 'CHECKOUT_CHANGED',
+              message: '商品结算版本已更新，请重新确认',
+            },
+          },
+        }
+        throw error
+      }
+      return {
+        orderId: 1002,
+        productName: '条款商品',
+        price: options.expectedPrice,
+        status: 'delivered',
+        deliveryMode: 'instant_inventory',
+        balanceAfter: 400,
+        merchantId: null,
+        merchantName: null,
+      }
+    })
+
+    getCheckoutPreview
+      .mockResolvedValueOnce(preview({
+        price: 100,
+        checkoutVersion: 'co-v1',
+        purchaseForm: [{ key: 'cluster', label: '节点', type: 'text', required: true }],
+      }))
+      .mockResolvedValueOnce(preview({
+        price: 100,
+        checkoutVersion: 'co-v2',
+        purchaseForm: [{ key: 'cluster', label: '节点', type: 'text', required: true }],
+      }))
+
+    renderPage()
+    expect(await screen.findByTestId('product-gallery')).toBeInTheDocument()
+
+    fireEvent.click(screen.getAllByRole('button', { name: '立即兑换' })[0])
+    await screen.findByTestId('purchase-modal')
+    await screen.findByTestId('preview-price')
+
+    const input = screen.getByTestId('purchase-field-cluster')
+    fireEvent.change(input, { target: { value: 'ap-east-1' } })
+
+    // First submit attempt -> fails with 409 CHECKOUT_CHANGED
+    fireEvent.click(screen.getByRole('button', { name: '确认支付' }))
+
+    // Intercepted and notice shown, preview refreshed, input preserved
+    await screen.findByTestId('price-changed-notice')
+    expect(screen.getByTestId('purchase-field-cluster')).toHaveValue('ap-east-1')
+
+    // Second submit attempt -> re-confirms with co-v2 and rotated idempotencyKey
+    fireEvent.click(screen.getByRole('button', { name: '确认支付' }))
+
+    await waitFor(() => expect(createOrder).toHaveBeenCalledTimes(2))
+    expect(createOrder.mock.calls[0][1].expectedCheckoutVersion).toBe('co-v1')
+    expect(createOrder.mock.calls[1][1].expectedCheckoutVersion).toBe('co-v2')
+    expect(createOrder.mock.calls[1][1].formAnswers).toEqual({ cluster: 'ap-east-1' })
+
+    // Rotated idempotency key
+    expect(keysPassed.length).toBe(2)
+    expect(keysPassed[0]).not.toBe(keysPassed[1])
+  })
 })
 

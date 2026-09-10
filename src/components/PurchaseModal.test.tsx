@@ -372,7 +372,7 @@ describe('PurchaseModal checkout preview terms', () => {
     })
   })
 
-  it('recovers from 409 PRICE_CHANGED and CHECKOUT_CHANGED: refreshes preview, rotates idempotency key, and re-confirms with updated terms', async () => {
+  it('recovers from 409 PRICE_CHANGED: refreshes preview, rotates idempotency key, and re-confirms with updated terms', async () => {
     let callCount = 0
     const keysPassed: string[] = []
     const onConfirm = vi.fn(async (confirmedPreview, idempotencyKey) => {
@@ -430,6 +430,74 @@ describe('PurchaseModal checkout preview terms', () => {
     expect(confirmedSecond.assuranceGrantId).toBe(88)
 
     // Idempotency key must have rotated between attempts
+    expect(keysPassed.length).toBe(2)
+    expect(keysPassed[0]).not.toBe(keysPassed[1])
+  })
+
+  it('recovers from 409 CHECKOUT_CHANGED: refetches preview with updated checkoutVersion, preserves entered form answers, rotates idempotency key, and re-confirms with updated terms', async () => {
+    let callCount = 0
+    const keysPassed: string[] = []
+    const answersPassed: Record<string, string>[] = []
+    const onConfirm = vi.fn(async (confirmedPreview, idempotencyKey, answers) => {
+      callCount++
+      keysPassed.push(idempotencyKey)
+      answersPassed.push({ ...answers })
+      if (callCount === 1) return 'price_changed' as ConfirmOutcome
+      return 'success' as ConfirmOutcome
+    })
+
+    getCheckoutPreview
+      .mockResolvedValueOnce(preview({
+        price: 100,
+        checkoutVersion: 'co-v1',
+        productContentVersion: 1,
+        purchaseForm: [{ key: 'note', label: '备注信息', type: 'text', required: true }],
+      }))
+      .mockResolvedValueOnce(preview({
+        price: 100,
+        checkoutVersion: 'co-v2',
+        productContentVersion: 2,
+        purchaseForm: [{ key: 'note', label: '备注信息', type: 'text', required: true }],
+        assuranceGrantId: 99,
+      }))
+
+    render(
+      <PurchaseModal
+        productId={42}
+        offerId={7}
+        onClose={vi.fn()}
+        onConfirm={onConfirm}
+      />,
+    )
+
+    await screen.findByTestId('preview-price')
+    const noteInput = screen.getByTestId('purchase-field-note')
+    fireEvent.change(noteInput, { target: { value: 'buyer-important-note' } })
+
+    // First attempt -> onConfirm returns price_changed (representing 409 CHECKOUT_CHANGED from API)
+    fireEvent.click(screen.getByRole('button', { name: '确认支付' }))
+    await waitFor(() => expect(onConfirm).toHaveBeenCalledTimes(1))
+    expect(onConfirm.mock.calls[0][0].checkoutVersion).toBe('co-v1')
+    expect(answersPassed[0].note).toBe('buyer-important-note')
+
+    // Price changed / terms notice is displayed, price stays 100, preview reloaded
+    await screen.findByTestId('price-changed-notice')
+    expect(screen.getByTestId('preview-price')).toHaveTextContent('100')
+
+    // Form input value is PRESERVED
+    expect(screen.getByTestId('purchase-field-note')).toHaveValue('buyer-important-note')
+
+    // Confirm second attempt -> sends updated checkoutVersion and rotated idempotency key, retaining input
+    fireEvent.click(screen.getByRole('button', { name: '确认支付' }))
+    await waitFor(() => expect(onConfirm).toHaveBeenCalledTimes(2))
+
+    const [confirmedSecond] = onConfirm.mock.calls[1]
+    expect(confirmedSecond.checkoutVersion).toBe('co-v2')
+    expect(confirmedSecond.productContentVersion).toBe(2)
+    expect(confirmedSecond.assuranceGrantId).toBe(99)
+    expect(answersPassed[1].note).toBe('buyer-important-note')
+
+    // Idempotency key rotated between attempts
     expect(keysPassed.length).toBe(2)
     expect(keysPassed[0]).not.toBe(keysPassed[1])
   })
