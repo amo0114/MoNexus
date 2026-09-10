@@ -589,6 +589,13 @@ describe('ProductEditPage (spec §9.2 / §10.3)', () => {
         values: { user: 'demo' },
       },
     }
+    const refreshedStructuredContent = {
+      fields: [
+        { key: 'user', label: '账号', sensitive: false },
+        { key: 'password', label: '密码', sensitive: false },
+      ],
+      values: { user: 'demo', password: 'remote-pass' },
+    }
     const transport = createEditTransport({
       editor: () => ({
         ...base,
@@ -603,6 +610,9 @@ describe('ProductEditPage (spec §9.2 / §10.3)', () => {
           checkoutVersion: merchantMocks.updateMerchantOffer.mock.calls.length > 0
             ? 'fresh-digest'
             : 'old-digest',
+          ...(merchantMocks.updateMerchantOffer.mock.calls.length > 0
+            ? { fixedStructuredContent: refreshedStructuredContent }
+            : {}),
         }],
       }),
       patch: (body) => ({
@@ -637,7 +647,11 @@ describe('ProductEditPage (spec §9.2 / §10.3)', () => {
     expect(screen.getByTestId('product-edit-name')).toHaveValue('冲突后仍保留')
     expect(screen.getByTestId('product-edit-offer-9')).toHaveTextContent('平台改名规格')
     expect(screen.getByTestId('product-edit-offer-9')).toHaveTextContent('180')
-    expect(screen.getByTestId('product-edit-offer-9-structured-field-value-0')).toHaveValue('shared-user')
+    await waitFor(() => {
+      expect(screen.getByTestId('product-edit-offer-9-structured-field-value-0')).toHaveValue('shared-user')
+      expect(screen.getByTestId('product-edit-offer-9-structured-field-value-1')).toHaveValue('remote-pass')
+    })
+    expect(screen.queryByTestId('product-edit-offer-conflicts')).not.toBeInTheDocument()
     expect(useAppStore.getState().toasts.some(toast =>
       toast.message === '规格已更新，已保留你输入的内容，请核对后再次保存',
     )).toBe(true)
@@ -649,12 +663,96 @@ describe('ProductEditPage (spec §9.2 / §10.3)', () => {
     expect(merchantMocks.updateMerchantOffer).toHaveBeenLastCalledWith(42, 9, {
       fixedContent: null,
       fixedStructuredContent: {
-        fields: [{ key: 'user', label: '账号', sensitive: false }],
-        values: { user: 'shared-user' },
+        fields: [
+          { key: 'user', label: '账号', sensitive: false },
+          { key: 'password', label: '密码', sensitive: false },
+        ],
+        values: { user: 'shared-user', password: 'remote-pass' },
       },
       expectedCheckoutVersion: 'fresh-digest',
     })
     expect(screen.getByTestId('product-edit-name')).toHaveValue('冲突后仍保留')
+  })
+
+  it('takes the server structured value and surfaces a conflict when both sides edited the same field', async () => {
+    merchantMocks.updateMerchantOffer
+      .mockRejectedValueOnce(Object.assign(new Error('conflict'), {
+        response: {
+          status: 409,
+          data: {
+            error: {
+              code: 'CHECKOUT_CHANGED',
+              message: '商品信息已变化，请重新确认',
+            },
+          },
+        },
+      }))
+      .mockResolvedValueOnce({ id: 9, checkoutVersion: 'fresh-digest' })
+
+    const base = editorDto()
+    const structuredOffer = {
+      ...base.offers[0],
+      deliveryMode: 'instant_fixed' as const,
+      stockMode: 'unlimited' as const,
+      checkoutVersion: 'old-digest',
+      fixedStructuredContent: {
+        fields: [{ key: 'user', label: '账号', sensitive: false }],
+        values: { user: 'demo' },
+      },
+    }
+    const transport = createEditTransport({
+      editor: () => ({
+        ...base,
+        offers: [{
+          ...structuredOffer,
+          checkoutVersion: merchantMocks.updateMerchantOffer.mock.calls.length > 0
+            ? 'fresh-digest'
+            : 'old-digest',
+          ...(merchantMocks.updateMerchantOffer.mock.calls.length > 0
+            ? {
+                fixedStructuredContent: {
+                  fields: [{ key: 'user', label: '账号', sensitive: false }],
+                  values: { user: 'platform-user' },
+                },
+              }
+            : {}),
+        }],
+      }),
+      patch: (body) => ({
+        id: 42,
+        contentVersion: 4,
+        updatedFields: ['name'],
+        echoed: body,
+      }),
+    })
+    await renderEditPage(transport)
+
+    fireEvent.change(screen.getByTestId('product-edit-offer-9-structured-field-value-0'), {
+      target: { value: 'shared-user' },
+    })
+    fireEvent.click(screen.getByTestId('product-edit-save'))
+
+    await waitFor(() => expect(merchantMocks.updateMerchantOffer).toHaveBeenCalledTimes(1))
+    await waitFor(() => {
+      expect(screen.getByTestId('product-edit-offer-9-structured-field-value-0')).toHaveValue('platform-user')
+      expect(screen.getByTestId('product-edit-offer-conflicts')).toHaveTextContent('账号')
+    })
+    expect(useAppStore.getState().toasts.some(toast =>
+      toast.message.includes('冲突字段：账号'),
+    )).toBe(true)
+
+    await waitFor(() => expect(screen.getByTestId('product-edit-save')).toHaveTextContent('保存内容'))
+    fireEvent.click(screen.getByTestId('product-edit-save'))
+
+    await waitFor(() => expect(merchantMocks.updateMerchantOffer).toHaveBeenCalledTimes(2))
+    expect(merchantMocks.updateMerchantOffer).toHaveBeenLastCalledWith(42, 9, {
+      fixedContent: null,
+      fixedStructuredContent: {
+        fields: [{ key: 'user', label: '账号', sensitive: false }],
+        values: { user: 'platform-user' },
+      },
+      expectedCheckoutVersion: 'fresh-digest',
+    })
   })
 
   it('PATCHes templateKey and templateVersion:1 on a legacy editor DTO', async () => {

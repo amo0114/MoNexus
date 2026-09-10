@@ -103,6 +103,7 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
   const [savedTemplateKey, setSavedTemplateKey] = useState<TemplateKey | null>(null)
   const [offerDrafts, setOfferDrafts] = useState<Record<number, OfferStructuredDraft>>({})
   const [offerDraftsBaseline, setOfferDraftsBaseline] = useState('')
+  const [offerConflictLabels, setOfferConflictLabels] = useState<string[]>([])
   const [capabilities, setCapabilities] = useState<ProductEditorDto['capabilities'] | null>(null)
   const [offers, setOffers] = useState<ProductEditorDto['offers']>([])
   const [publicationIssues, setPublicationIssues] = useState<ProductEditorPublicationIssue[]>([])
@@ -152,6 +153,7 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
     const drafts = draftsFromOffers(dto.offers)
     setOfferDrafts(drafts)
     setOfferDraftsBaseline(JSON.stringify(drafts))
+    setOfferConflictLabels([])
     setPublicationIssues(dto.publicationIssues)
     setOfferFileById({})
     setOfferFileLabelById({})
@@ -402,6 +404,7 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
           )))
         }
         setOfferDraftsBaseline(JSON.stringify(offerDrafts))
+        setOfferConflictLabels([])
       }
       showToast('商品内容已保存')
     } catch (err) {
@@ -421,22 +424,28 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
         return
       }
       if (code === 'CHECKOUT_CHANGED') {
-        showToast('规格已更新，已保留你输入的内容，请核对后再次保存', 'error')
         try {
           const fresh = await adapter.getEditor(actor, productId)
-          setContentVersion(fresh.product.contentVersion)
-          setStatus(fresh.product.status)
-          setCapabilities(fresh.capabilities)
-          setPublicationIssues(fresh.publicationIssues)
-          setOfferDrafts(prev => reconcileOfferDrafts(
-            prev,
+          const reconciled = reconcileOfferDrafts(
+            offerDrafts,
             offers,
             fresh.offers,
             selectedTemplate,
             form.attributes,
-          ))
+          )
+          setContentVersion(fresh.product.contentVersion)
+          setStatus(fresh.product.status)
+          setCapabilities(fresh.capabilities)
+          setPublicationIssues(fresh.publicationIssues)
+          setOfferDrafts(reconciled.drafts)
+          setOfferConflictLabels(reconciled.conflictLabels)
           setOffers(fresh.offers)
+          const conflictNote = reconciled.conflictLabels.length > 0
+            ? `（冲突字段：${reconciled.conflictLabels.join('、')}）`
+            : ''
+          showToast(`规格已更新，已保留你输入的内容，请核对后再次保存${conflictNote}`, 'error')
         } catch {
+          showToast('规格已更新，已保留你输入的内容，请核对后再次保存', 'error')
           // Keep typed product fields even if the checkout refresh GET fails.
         }
         return
@@ -692,6 +701,14 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
                   ? '套餐价格与库存仍使用商品列表中的「规格管理」。文件交付规格可在本页挂载交付文件。'
                   : '套餐价格、交付与库存仍使用商品列表中的「规格管理」。本页不改写套餐商业字段。'}
               </p>
+              {offerConflictLabels.length > 0 && (
+                <div
+                  className="rounded-lg border border-[var(--color-warning)]/30 bg-[var(--color-warning)]/10 px-3 py-2 text-sm text-[var(--color-text)]"
+                  data-testid="product-edit-offer-conflicts"
+                >
+                  以下字段与其他会话冲突，已采用最新规格内容：{offerConflictLabels.join('、')}
+                </div>
+              )}
               {offers.length > 0 && (
                 <ul className="space-y-2">
                   {offers.map(offer => (
@@ -981,24 +998,145 @@ function reconcileOfferDrafts(
   freshOffers: ProductEditorOffer[],
   template: ProductTemplateDefinition | null,
   productAttributes: TemplateAttributes,
-): Record<number, OfferStructuredDraft> {
+): { drafts: Record<number, OfferStructuredDraft>; conflictLabels: string[] } {
   const previousById = new Map(previousOffers.map(offer => [offer.id, offer]))
+  const baselineDrafts = draftsFromOffers(previousOffers)
   const serverDrafts = draftsFromOffers(freshOffers)
   const next: Record<number, OfferStructuredDraft> = {}
+  const conflictLabels: string[] = []
   for (const offer of freshOffers) {
     const previousOffer = previousById.get(offer.id)
     const previousDraft = previousDrafts[offer.id]
+    const serverDraft = serverDrafts[offer.id]
     if (!previousOffer || !previousDraft) {
-      next[offer.id] = serverDrafts[offer.id]
+      next[offer.id] = serverDraft
       continue
     }
     const previousRequirement = offerStructuredRequirement(previousOffer, template, productAttributes)
     const nextRequirement = offerStructuredRequirement(offer, template, productAttributes)
-    next[offer.id] = previousRequirement === nextRequirement
-      ? previousDraft
-      : serverDrafts[offer.id]
+    if (previousRequirement !== nextRequirement) {
+      next[offer.id] = serverDraft
+      continue
+    }
+    next[offer.id] = mergeOfferStructuredDraft(
+      previousDraft,
+      baselineDrafts[offer.id] ?? serverDraft,
+      serverDraft,
+      conflictLabels,
+    )
   }
-  return next
+  return { drafts: next, conflictLabels }
+}
+
+function mergeOfferStructuredDraft(
+  local: OfferStructuredDraft,
+  baseline: OfferStructuredDraft,
+  server: OfferStructuredDraft,
+  conflictLabels: string[],
+): OfferStructuredDraft {
+  const structuredFields = mergeFieldList(
+    local.structuredFields,
+    baseline.structuredFields,
+    server.structuredFields,
+    conflictLabels,
+  )
+  const deliveryFields = mergeFieldList(
+    local.deliveryFields,
+    baseline.deliveryFields,
+    server.deliveryFields,
+    conflictLabels,
+  )
+  const structuredValues = mergeStructuredValues(
+    local.structuredValues,
+    baseline.structuredValues,
+    server.structuredValues,
+    structuredFields,
+    conflictLabels,
+  )
+  return { deliveryFields, structuredFields, structuredValues }
+}
+
+function mergeFieldList(
+  localFields: DeliveryField[],
+  baselineFields: DeliveryField[],
+  serverFields: DeliveryField[],
+  conflictLabels: string[],
+): DeliveryField[] {
+  const localByKey = indexFieldsByKey(localFields)
+  const baselineByKey = indexFieldsByKey(baselineFields)
+  return serverFields.map(serverField => {
+    const localField = localByKey.get(serverField.key)
+    if (localField == null) return serverField
+    const merged = threeWayMerge(
+      localField,
+      baselineByKey.get(serverField.key),
+      serverField,
+    )
+    if (merged.conflict) rememberConflictLabel(conflictLabels, serverField.label || serverField.key)
+    return merged.value ?? serverField
+  })
+}
+
+function mergeStructuredValues(
+  localValues: Record<string, string>,
+  baselineValues: Record<string, string>,
+  serverValues: Record<string, string>,
+  fields: DeliveryField[],
+  conflictLabels: string[],
+): Record<string, string> {
+  const keys = new Set<string>([
+    ...fields.map(field => field.key),
+    ...Object.keys(serverValues),
+  ])
+  const labels = indexFieldsByKey(fields)
+  const merged: Record<string, string> = {}
+  for (const key of keys) {
+    if (!key) continue
+    const result = threeWayMerge(
+      localValues[key] ?? '',
+      baselineValues[key] ?? '',
+      serverValues[key] ?? '',
+    )
+    merged[key] = result.value
+    if (result.conflict) {
+      rememberConflictLabel(conflictLabels, labels.get(key)?.label || key)
+    }
+  }
+  return merged
+}
+
+function threeWayMerge<T>(
+  local: T,
+  baseline: T,
+  server: T,
+): { value: T; conflict: boolean } {
+  if (sameJson(local, server)) return { value: server, conflict: false }
+  if (!sameJson(local, baseline) && sameJson(server, baseline)) {
+    return { value: local, conflict: false }
+  }
+  if (sameJson(local, baseline) && !sameJson(server, baseline)) {
+    return { value: server, conflict: false }
+  }
+  return { value: server, conflict: true }
+}
+
+function sameJson(left: unknown, right: unknown): boolean {
+  if (left === right) return true
+  return JSON.stringify(left) === JSON.stringify(right)
+}
+
+function indexFieldsByKey(fields: DeliveryField[]): Map<string, DeliveryField> {
+  const byKey = new Map<string, DeliveryField>()
+  for (const field of fields) {
+    if (field.key) byKey.set(field.key, field)
+  }
+  return byKey
+}
+
+function rememberConflictLabel(labels: string[], label: string) {
+  const text = label.trim()
+  if (!text || labels.includes(text)) return
+  labels.push(text)
 }
 
 function parseDeliveryFields(raw: unknown): DeliveryField[] {
