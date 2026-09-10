@@ -252,7 +252,7 @@ describe('OrderDetailModal', () => {
       expect(screen.getByTestId('delivery-masked')).toBeInTheDocument()
     })
 
-    it('distinguishes generic validity from subscription and omits renewal button for generic products with expiresAt', () => {
+    it('distinguishes generic validity from subscription while retaining renewal button for backend precheck adjudication', () => {
       const genericVoucherOrder: UserOrderDetail = {
         id: 51,
         price: 80,
@@ -283,8 +283,8 @@ describe('OrderDetailModal', () => {
       expect(screen.getByTestId('subscription-expiry')).toHaveTextContent(/^有效期至/)
       expect(screen.queryByText(/订阅有效期/)).not.toBeInTheDocument()
 
-      // Does not show renewal button for non-subscription order
-      expect(screen.queryByTestId('order-renew-button')).not.toBeInTheDocument()
+      // Retains renewal entry so backend precheck (expiresAt, status, renewals) adjudicates eligibility
+      expect(screen.getByTestId('order-renew-button')).toBeInTheDocument()
     })
   })
 })

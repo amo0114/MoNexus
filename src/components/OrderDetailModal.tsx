@@ -239,8 +239,7 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
   const contentMasked = order.delivery?.contentMasked === true
   const isSubscription = Boolean(
     order.product?.type?.includes('订阅') ||
-    order.product?.name?.includes('订阅') ||
-    order.hasActiveRenewal
+    order.product?.name?.includes('订阅')
   )
   const deliverySlice = {
     content: contentMasked ? null : order.delivery?.content,
@@ -495,7 +494,7 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
           )}
           {/* P6a：订阅单到期前后均可手动续费（走标准结算，新订单关联本单）；
               已有未退款续费单时隐藏入口——续费须在链尾（最新订单）发起。 */}
-          {isSubscription && subscriptionExpiresAt && (
+          {subscriptionExpiresAt && (
             order.hasActiveRenewal ? (
               <span
                 className="text-xs text-[var(--color-text-muted)] self-center"
