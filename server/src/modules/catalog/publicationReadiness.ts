@@ -57,6 +57,12 @@ export interface CheckProductReadinessOptions {
    * `isFakaBridgeConfigured`. Used by tests to avoid process-global env state.
    */
   isProviderConfigured?: () => boolean
+  /**
+   * When true (default), at least one active offer must currently be sellable.
+   * Active-product content patches pass false so sold-out listings can still
+   * save ordinary fields; config/notes/template/file checks stay in force.
+   */
+  requireCurrentlySellable?: boolean
 }
 
 const readinessProductSelect = {
@@ -287,6 +293,7 @@ export async function checkProductReadiness(
   options: CheckProductReadinessOptions = {},
 ): Promise<ProductReadinessResult> {
   const isProviderConfigured = options.isProviderConfigured ?? isFakaBridgeConfigured
+  const requireCurrentlySellable = options.requireCurrentlySellable ?? true
   const product = await db.product.findUnique({
     where: { id: productId },
     select: readinessProductSelect,
@@ -378,7 +385,9 @@ export async function checkProductReadiness(
     }
 
     // §6.1 #5 — at least one active offer must currently be sellable.
-    if (sellableCount === 0) {
+    // Sold-out (sellableCount === 0 with otherwise valid config) is skipped when
+    // requireCurrentlySellable is false (content patch of an already-active product).
+    if (requireCurrentlySellable && sellableCount === 0) {
       for (const offer of validButEmpty) {
         details.push(
           detail(

@@ -269,6 +269,85 @@ describe('checkProductReadiness — templated products', () => {
     expect(result.details).toEqual([])
   })
 
+  it('is not ready when templated stock is 0, but content-save can skip current sellability', async () => {
+    const soldOut = product({
+      templateKey: 'redemption_code',
+      templateVersion: 1,
+      attributes: {
+        serviceName: '示例软件',
+        redemptionMethod: '在软件的兑换入口输入卡密。',
+      },
+      details: publishDetails,
+      offers: [offer({
+        available: 0,
+        attributes: { unitLabel: '1 个兑换码' },
+      })],
+    })
+    const publish = await checkProductReadiness(1, makeDb(soldOut) as never)
+    expect(publish.ready).toBe(false)
+    expect(codes(publish.details)).toEqual([READINESS_DETAIL_CODES.OFFER_NOT_SELLABLE])
+    expect(publish.details[0]).toMatchObject({
+      field: 'offers',
+      offerId: 1,
+      reason: '该规格当前不可售',
+    })
+
+    const contentSave = await checkProductReadiness(1, makeDb(soldOut) as never, {
+      requireCurrentlySellable: false,
+    })
+    expect(contentSave.ready).toBe(true)
+    expect(contentSave.details).toEqual([])
+  })
+
+  it('still rejects missing notes and revoked files when requireCurrentlySellable is false', async () => {
+    const missingNotes = await checkProductReadiness(1, makeDb(product({
+      templateKey: 'redemption_code',
+      templateVersion: 1,
+      attributes: {
+        serviceName: '示例软件',
+        redemptionMethod: '在软件的兑换入口输入卡密。',
+      },
+      details: EMPTY_PRODUCT_DETAILS,
+      offers: [offer({
+        available: 0,
+        attributes: { unitLabel: '1 个兑换码' },
+      })],
+    })) as never, { requireCurrentlySellable: false })
+    expect(missingNotes.ready).toBe(false)
+    expect(codes(missingNotes.details)).toEqual(expect.arrayContaining([
+      READINESS_DETAIL_CODES.PURCHASE_NOTES_REQUIRED,
+      READINESS_DETAIL_CODES.AFTER_SALES_REQUIRED,
+    ]))
+    expect(missingNotes.details.some(d => d.reason === '该规格当前不可售')).toBe(false)
+
+    const revoked = await checkProductReadiness(1, makeDb(product({
+      templateKey: 'digital_file',
+      templateVersion: 1,
+      attributes: {
+        contentCategory: '文档',
+        formats: ['PDF'],
+        usageLicense: '仅供购买者个人使用，不得转售。',
+      },
+      details: publishDetails,
+      offers: [offer({
+        deliveryMode: 'instant_fixed',
+        stockMode: 'unlimited',
+        fixedContentType: 'file',
+        fixedFileId: 9,
+        fixedFile: { id: 9, status: 'revoked' },
+        attributes: { releaseVersion: '1.0' },
+      })],
+    })) as never, { requireCurrentlySellable: false })
+    expect(revoked.ready).toBe(false)
+    expect(codes(revoked.details)).toContain(READINESS_DETAIL_CODES.OFFER_NOT_SELLABLE)
+    expect(revoked.details.find(d => d.code === READINESS_DETAIL_CODES.OFFER_NOT_SELLABLE))
+      .toMatchObject({
+        field: 'offers',
+        offerId: 1,
+        reason: '固定文件已不可用，请重新绑定',
+      })
+  })
+
   it('is not ready after the bound delivery file is revoked or deleted', async () => {
     const unavailable = [
       { id: 9, status: 'revoked' },
