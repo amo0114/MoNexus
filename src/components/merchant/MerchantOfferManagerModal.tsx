@@ -104,6 +104,36 @@ function offerToForm(offer: Offer): EditorForm {
   }
 }
 
+const CLEARED_FIXED_FIELDS = {
+  fixedContent: '',
+  fixedContentType: 'text' as const,
+  fixedFileId: null,
+  fixedFileName: '',
+  fixedFileSize: null,
+  fixedStructuredContent: null,
+}
+
+/** Drop leftover file/structured fields that the destination mode cannot keep. */
+function applyDeliveryModeChange(form: EditorForm, deliveryMode: DeliveryMode): EditorForm {
+  if (deliveryMode === form.deliveryMode) return form
+
+  if (deliveryMode === 'instant_inventory') {
+    return { ...form, deliveryMode, stockMode: 'limited', ...CLEARED_FIXED_FIELDS }
+  }
+
+  if (deliveryMode === 'manual_service') {
+    return { ...form, deliveryMode, ...CLEARED_FIXED_FIELDS }
+  }
+
+  // Entering instant_fixed from another mode: empty text, no leftover file/template.
+  return {
+    ...form,
+    deliveryMode,
+    ...CLEARED_FIXED_FIELDS,
+    deliveryFields: [],
+  }
+}
+
 const DELIVERY_FIELDS_MAX = 8
 const FIELD_KEY_PATTERN = /^[a-zA-Z][a-zA-Z0-9_]{0,31}$/
 
@@ -157,6 +187,7 @@ export default function MerchantOfferManagerModal({ isOpen, onClose, product, on
   const isInstantInventory = form.deliveryMode === 'instant_inventory'
   const isFixed = form.deliveryMode === 'instant_fixed'
   const isFileForm = isFixed && form.fixedContentType === 'file'
+  const hasStructuredFixedContent = form.fixedStructuredContent != null
   // P7b：自动开通仅适用于人工服务且未启用交付字段模板的规格(与服务端 assertAutoProvisionAllowed 同规则)。
   const isManualService = form.deliveryMode === 'manual_service'
   const autoProvisionEligible = isManualService && form.deliveryFields.length === 0
@@ -174,8 +205,10 @@ export default function MerchantOfferManagerModal({ isOpen, onClose, product, on
       if (!Number.isInteger(days) || days < 1 || days > 3650) return '有效期必须是 1-3650 的整数天数，留空为永久'
     }
     if (isFileForm && !form.fixedFileId) return '文件交付必须先上传交付文件'
-    if (isFixed && !isFileForm && !form.fixedContent.trim()) return '固定内容交付必须填写交付内容'
-    if (isFixed && form.fixedContentType === 'url' && !/^https?:\/\//i.test(form.fixedContent.trim())) {
+    if (isFixed && !isFileForm && !hasStructuredFixedContent && !form.fixedContent.trim()) {
+      return '固定内容交付必须填写交付内容'
+    }
+    if (isFixed && form.fixedContentType === 'url' && !hasStructuredFixedContent && !/^https?:\/\//i.test(form.fixedContent.trim())) {
       return '链接必须以 http(s):// 开头'
     }
     if (autoProvisionEligible && form.autoProvision && !hasWebhook) {
@@ -233,10 +266,11 @@ export default function MerchantOfferManagerModal({ isOpen, onClose, product, on
       stockMode: isInstantInventory ? 'limited' : form.stockMode,
       // P6a：空 = 永久（显式 null 支持从有期限改回永久）
       validityDays: form.validityDays.trim() === '' ? null : Number(form.validityDays),
-      ...(isFixed && !isFileForm && form.fixedStructuredContent != null
+      ...(isFixed && !isFileForm && hasStructuredFixedContent
         ? { fixedStructuredContent: form.fixedStructuredContent, fixedContent: null }
         : { fixedContent: isFixed && !isFileForm ? form.fixedContent.trim() : null }),
-      fixedContentType: form.fixedContentType,
+      // Non-instant_fixed always send text + null file so backend merge drops leftovers.
+      fixedContentType: isFixed ? form.fixedContentType : 'text',
       // P5：file 形态以 fixedFileId 为真相源；非 file 显式清空。
       fixedFileId: isFileForm ? form.fixedFileId : null,
       // 空模板显式传 null 清空（回纯文本交付）
@@ -436,7 +470,7 @@ export default function MerchantOfferManagerModal({ isOpen, onClose, product, on
                 <label className="block text-sm font-bold text-[var(--color-text)] mb-1.5">交付方式</label>
                 <select className="input appearance-none cursor-pointer" value={form.deliveryMode} onChange={(e) => {
                   const deliveryMode = e.target.value as DeliveryMode
-                  setForm(f => ({ ...f, deliveryMode, stockMode: deliveryMode === 'instant_inventory' ? 'limited' : f.stockMode }))
+                  setForm(f => applyDeliveryModeChange(f, deliveryMode))
                 }} disabled={submitting} data-testid="offer-form-delivery-mode">
                   <option value="instant_inventory">交付库存（卡密池）</option>
                   <option value="instant_fixed">固定内容（同一份）</option>
@@ -473,7 +507,23 @@ export default function MerchantOfferManagerModal({ isOpen, onClose, product, on
                   {form.fixedContentType !== 'file' ? (
                     <div className="sm:col-span-2">
                       <label className="block text-sm font-bold text-[var(--color-text)] mb-1.5">固定交付内容 <span className="text-red-500">*</span></label>
-                      <textarea className="input min-h-[80px] resize-y" maxLength={5000} value={form.fixedContent} onChange={(e) => setForm(f => ({ ...f, fixedContent: e.target.value }))} disabled={submitting} data-testid="offer-form-fixed-content" />
+                      <textarea
+                        className="input min-h-[80px] resize-y"
+                        maxLength={5000}
+                        value={form.fixedContent}
+                        onChange={(e) => {
+                          if (hasStructuredFixedContent) return
+                          setForm(f => ({ ...f, fixedContent: e.target.value }))
+                        }}
+                        disabled={submitting}
+                        readOnly={hasStructuredFixedContent}
+                        data-testid="offer-form-fixed-content"
+                      />
+                      {hasStructuredFixedContent && (
+                        <p className="mt-1.5 text-xs text-[var(--color-text-muted)]" data-testid="offer-form-fixed-content-readonly-hint">
+                          账号字段请在商品编辑页的结构化表单中修改
+                        </p>
+                      )}
                     </div>
                   ) : (
                     <div className="sm:col-span-2" data-testid="offer-form-file-zone">

@@ -78,6 +78,24 @@ function textOffer(): Offer {
   }
 }
 
+function fileOffer(): Offer {
+  return {
+    id: 13,
+    name: '文件交付',
+    price: 90,
+    originalPrice: null,
+    status: 'active',
+    deliveryMode: 'instant_fixed',
+    stockMode: 'unlimited',
+    stock: 0,
+    fixedContent: null,
+    fixedContentType: 'file',
+    fixedFileId: 88,
+    fixedFile: { fileName: 'pack.zip', size: 12, status: 'active' },
+    checkoutVersion: 'v1',
+  }
+}
+
 describe('MerchantOfferManagerModal structured content save', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -127,5 +145,60 @@ describe('MerchantOfferManagerModal structured content save', () => {
     const payload = apiMocks.updateMerchantOffer.mock.calls[0][2] as Record<string, unknown>
     expect(payload.fixedContent).toBe('hello-fixed-text')
     expect(payload).not.toHaveProperty('fixedStructuredContent')
+  })
+
+  it('renders structured canonical text as read-only and ignores textarea edits in PUT', async () => {
+    const offer = structuredOffer()
+    apiMocks.getMerchantOffers.mockResolvedValue([offer])
+    render(
+      <MerchantOfferManagerModal isOpen onClose={vi.fn()} product={product} onChanged={vi.fn()} />,
+    )
+
+    await waitFor(() => expect(screen.getByTestId('offer-row-11')).toBeInTheDocument())
+    fireEvent.click(screen.getByTestId('offer-edit-11'))
+    await waitFor(() => expect(screen.getByTestId('offer-form-submit')).toBeInTheDocument())
+
+    const textarea = screen.getByTestId('offer-form-fixed-content')
+    expect(textarea).toHaveProperty('readOnly', true)
+    expect(screen.getByTestId('offer-form-fixed-content-readonly-hint')).toBeInTheDocument()
+
+    fireEvent.change(textarea, { target: { value: 'tampered-canonical-text' } })
+    fireEvent.change(screen.getByTestId('offer-form-price'), { target: { value: '130' } })
+    fireEvent.click(screen.getByTestId('offer-form-submit'))
+
+    await waitFor(() => expect(apiMocks.updateMerchantOffer).toHaveBeenCalledTimes(1))
+    const payload = apiMocks.updateMerchantOffer.mock.calls[0][2] as Record<string, unknown>
+    expect(payload.fixedContent).toBeNull()
+    expect(payload.fixedStructuredContent).toEqual(structured)
+    expect(payload.fixedContent).not.toBe('tampered-canonical-text')
+  })
+})
+
+describe('MerchantOfferManagerModal delivery mode switch', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    apiMocks.getMyWebhookConfig.mockResolvedValue(null)
+    apiMocks.updateMerchantOffer.mockResolvedValue({ id: 13, checkoutVersion: 'v2' })
+  })
+
+  it('resets file type when switching a file offer to 人工服务', async () => {
+    const offer = fileOffer()
+    apiMocks.getMerchantOffers.mockResolvedValue([offer])
+    render(
+      <MerchantOfferManagerModal isOpen onClose={vi.fn()} product={product} onChanged={vi.fn()} />,
+    )
+
+    await waitFor(() => expect(screen.getByTestId('offer-row-13')).toBeInTheDocument())
+    fireEvent.click(screen.getByTestId('offer-edit-13'))
+    await waitFor(() => expect(screen.getByTestId('offer-form-submit')).toBeInTheDocument())
+
+    fireEvent.change(screen.getByTestId('offer-form-delivery-mode'), { target: { value: 'manual_service' } })
+    fireEvent.click(screen.getByTestId('offer-form-submit'))
+
+    await waitFor(() => expect(apiMocks.updateMerchantOffer).toHaveBeenCalledTimes(1))
+    const payload = apiMocks.updateMerchantOffer.mock.calls[0][2] as Record<string, unknown>
+    expect(payload.deliveryMode).toBe('manual_service')
+    expect(payload.fixedContentType).toBe('text')
+    expect(payload.fixedFileId).toBeNull()
   })
 })
