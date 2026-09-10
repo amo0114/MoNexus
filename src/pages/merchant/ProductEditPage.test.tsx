@@ -740,8 +740,12 @@ describe('ProductEditPage (spec §9.2 / §10.3)', () => {
     expect(useAppStore.getState().toasts.some(toast =>
       toast.message.includes('冲突字段：账号'),
     )).toBe(true)
+    await waitFor(() => expect(screen.getByTestId('product-edit-save')).toBeDisabled())
 
-    await waitFor(() => expect(screen.getByTestId('product-edit-save')).toHaveTextContent('保存内容'))
+    fireEvent.change(screen.getByTestId('product-edit-offer-9-structured-field-value-0'), {
+      target: { value: 'demo' },
+    })
+    expect(screen.getByTestId('product-edit-save')).not.toBeDisabled()
     fireEvent.click(screen.getByTestId('product-edit-save'))
 
     await waitFor(() => expect(merchantMocks.updateMerchantOffer).toHaveBeenCalledTimes(2))
@@ -749,7 +753,7 @@ describe('ProductEditPage (spec §9.2 / §10.3)', () => {
       fixedContent: null,
       fixedStructuredContent: {
         fields: [{ key: 'user', label: '账号', sensitive: false }],
-        values: { user: 'platform-user' },
+        values: { user: 'demo' },
       },
       expectedCheckoutVersion: 'fresh-digest',
     })
@@ -877,6 +881,105 @@ describe('ProductEditPage (spec §9.2 / §10.3)', () => {
     })
     expect(screen.queryByDisplayValue('keep-me')).not.toBeInTheDocument()
     expect(screen.queryByTestId('product-edit-offer-conflicts')).not.toBeInTheDocument()
+  })
+
+  it('conflicts when the local password value changed and the server deleted the field', async () => {
+    merchantMocks.updateMerchantOffer.mockRejectedValueOnce(Object.assign(new Error('conflict'), {
+      response: {
+        status: 409,
+        data: { error: { code: 'CHECKOUT_CHANGED', message: '商品信息已变化，请重新确认' } },
+      },
+    }))
+    const base = editorDto()
+    const structuredOffer = {
+      ...base.offers[0],
+      deliveryMode: 'instant_fixed' as const,
+      stockMode: 'unlimited' as const,
+      checkoutVersion: 'old-digest',
+      fixedStructuredContent: {
+        fields: [
+          { key: 'user', label: '账号', sensitive: false },
+          { key: 'password', label: '密码', sensitive: false },
+        ],
+        values: { user: 'demo', password: 'old-pass' },
+      },
+    }
+    const transport = createEditTransport({
+      editor: () => ({
+        ...base,
+        offers: [{
+          ...structuredOffer,
+          checkoutVersion: merchantMocks.updateMerchantOffer.mock.calls.length > 0
+            ? 'fresh-digest'
+            : 'old-digest',
+          ...(merchantMocks.updateMerchantOffer.mock.calls.length > 0
+            ? {
+                fixedStructuredContent: {
+                  fields: [{ key: 'user', label: '账号', sensitive: false }],
+                  values: { user: 'demo' },
+                },
+              }
+            : {}),
+        }],
+      }),
+    })
+    await renderEditPage(transport)
+    fireEvent.change(screen.getByTestId('product-edit-offer-9-structured-field-value-1'), {
+      target: { value: 'local-pass' },
+    })
+    fireEvent.click(screen.getByTestId('product-edit-save'))
+    await waitFor(() => expect(screen.getByTestId('product-edit-offer-conflicts')).toHaveTextContent('密码'))
+    expect(screen.getByTestId('product-edit-offer-9-structured-field-value-1')).toHaveValue('local-pass')
+  })
+
+  it('conflicts when the local password field was deleted and the server changed its value', async () => {
+    merchantMocks.updateMerchantOffer.mockRejectedValueOnce(Object.assign(new Error('conflict'), {
+      response: {
+        status: 409,
+        data: { error: { code: 'CHECKOUT_CHANGED', message: '商品信息已变化，请重新确认' } },
+      },
+    }))
+    const base = editorDto()
+    const structuredOffer = {
+      ...base.offers[0],
+      deliveryMode: 'instant_fixed' as const,
+      stockMode: 'unlimited' as const,
+      checkoutVersion: 'old-digest',
+      fixedStructuredContent: {
+        fields: [
+          { key: 'user', label: '账号', sensitive: false },
+          { key: 'password', label: '密码', sensitive: false },
+        ],
+        values: { user: 'demo', password: 'old-pass' },
+      },
+    }
+    const transport = createEditTransport({
+      editor: () => ({
+        ...base,
+        offers: [{
+          ...structuredOffer,
+          checkoutVersion: merchantMocks.updateMerchantOffer.mock.calls.length > 0
+            ? 'fresh-digest'
+            : 'old-digest',
+          ...(merchantMocks.updateMerchantOffer.mock.calls.length > 0
+            ? {
+                fixedStructuredContent: {
+                  fields: [
+                    { key: 'user', label: '账号', sensitive: false },
+                    { key: 'password', label: '密码', sensitive: false },
+                  ],
+                  values: { user: 'demo', password: 'remote-pass' },
+                },
+              }
+            : {}),
+        }],
+      }),
+    })
+    await renderEditPage(transport)
+    fireEvent.click(screen.getByTestId('product-edit-offer-9-structured-field-remove-1'))
+    fireEvent.click(screen.getByTestId('product-edit-save'))
+    await waitFor(() => expect(screen.getByTestId('product-edit-offer-conflicts')).toHaveTextContent('密码'))
+    expect(screen.getByTestId('product-edit-offer-9-structured-field-value-1')).toHaveValue('remote-pass')
   })
 
   it('retries a reverted offer after a later offer in the same save conflicts', async () => {

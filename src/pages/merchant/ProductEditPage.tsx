@@ -432,6 +432,7 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
           setOfferDrafts(reconciled.drafts)
           setOfferConflictLabels(reconciled.conflictLabels)
           setOffers(fresh.offers)
+          setOfferDraftsBaseline(JSON.stringify(draftsFromOffers(fresh.offers)))
           const conflictNote = reconciled.conflictLabels.length > 0
             ? `（冲突字段：${reconciled.conflictLabels.join('、')}）`
             : ''
@@ -1035,26 +1036,86 @@ function mergeOfferStructuredDraft(
   server: OfferStructuredDraft,
   conflictLabels: string[],
 ): OfferStructuredDraft {
-  const structuredFields = mergeFieldList(
-    local.structuredFields,
-    baseline.structuredFields,
-    server.structuredFields,
-    conflictLabels,
-  )
+  const structured = mergeKeyedStructured(local, baseline, server, conflictLabels)
   const deliveryFields = mergeFieldList(
     local.deliveryFields,
     baseline.deliveryFields,
     server.deliveryFields,
     conflictLabels,
   )
-  const structuredValues = mergeStructuredValues(
-    local.structuredValues,
-    baseline.structuredValues,
-    server.structuredValues,
-    structuredFields,
-    conflictLabels,
-  )
-  return { deliveryFields, structuredFields, structuredValues }
+  return {
+    deliveryFields,
+    structuredFields: structured.fields,
+    structuredValues: structured.values,
+  }
+}
+
+function mergeKeyedStructured(
+  local: OfferStructuredDraft,
+  baseline: OfferStructuredDraft,
+  server: OfferStructuredDraft,
+  conflictLabels: string[],
+): { fields: DeliveryField[]; values: Record<string, string> } {
+  const localByKey = indexFieldsByKey(local.structuredFields)
+  const baselineByKey = indexFieldsByKey(baseline.structuredFields)
+  const serverByKey = indexFieldsByKey(server.structuredFields)
+  const fields: DeliveryField[] = []
+  const values: Record<string, string> = {}
+  for (const key of orderedFieldKeys(server.structuredFields, local.structuredFields, baseline.structuredFields)) {
+    const localField = localByKey.get(key)
+    const baselineField = baselineByKey.get(key)
+    const serverField = serverByKey.get(key)
+    const localVal = local.structuredValues[key] ?? ''
+    const baselineVal = baseline.structuredValues[key] ?? ''
+    const serverVal = server.structuredValues[key] ?? ''
+    const localPresent = localField != null
+    const baselinePresent = baselineField != null
+    const serverPresent = serverField != null
+    const label = localField?.label || serverField?.label || baselineField?.label || key
+    const localChanged = localPresent !== baselinePresent
+      || !sameJson(localField ?? null, baselineField ?? null)
+      || localVal !== baselineVal
+    const serverChanged = serverPresent !== baselinePresent
+      || !sameJson(serverField ?? null, baselineField ?? null)
+      || serverVal !== baselineVal
+
+    if (!localChanged && !serverChanged) {
+      if (serverPresent && serverField) {
+        fields.push(serverField)
+        values[key] = serverVal
+      }
+      continue
+    }
+    if (localChanged && !serverChanged) {
+      if (localPresent && localField) {
+        fields.push(localField)
+        values[key] = localVal
+      }
+      continue
+    }
+    if (!localChanged && serverChanged) {
+      if (serverPresent && serverField) {
+        fields.push(serverField)
+        values[key] = serverVal
+      }
+      continue
+    }
+    if (localPresent && serverPresent && localField && serverField
+      && sameJson(localField, serverField) && localVal === serverVal) {
+      fields.push(serverField)
+      values[key] = serverVal
+      continue
+    }
+    rememberConflictLabel(conflictLabels, label)
+    if (serverPresent && serverField) {
+      fields.push(serverField)
+      values[key] = serverVal
+    } else if (localPresent && localField) {
+      fields.push(localField)
+      values[key] = localVal
+    }
+  }
+  return { fields, values }
 }
 
 function mergeFieldList(
@@ -1108,27 +1169,6 @@ function mergeFieldList(
       if (result.conflict) rememberConflictLabel(conflictLabels, label)
       merged.push(result.value ?? serverField)
     }
-  }
-  return merged
-}
-
-function mergeStructuredValues(
-  localValues: Record<string, string>,
-  baselineValues: Record<string, string>,
-  serverValues: Record<string, string>,
-  fields: DeliveryField[],
-  conflictLabels: string[],
-): Record<string, string> {
-  const merged: Record<string, string> = {}
-  for (const field of fields) {
-    if (!field.key) continue
-    const result = threeWayMerge(
-      localValues[field.key] ?? '',
-      baselineValues[field.key] ?? '',
-      serverValues[field.key] ?? '',
-    )
-    merged[field.key] = result.value
-    if (result.conflict) rememberConflictLabel(conflictLabels, field.label || field.key)
   }
   return merged
 }
