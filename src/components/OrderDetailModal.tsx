@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { Copy, Package, Store, Clock, Coins, Info, Loader2, RefreshCw } from 'lucide-react'
+import { useState, useRef, useEffect } from 'react'
+import { Copy, Check, Package, Store, Clock, Coins, Info, Loader2, RefreshCw } from 'lucide-react'
 import { UserOrderDetail } from '../types/order'
 import { useAppStore } from '../stores/appStore'
 import { useAuthStore } from '../stores/authStore'
@@ -16,6 +16,7 @@ import SuccessModal from './SuccessModal'
 import type { CheckoutPreview } from '../api/orders'
 import type { StructuredDeliveryContent } from '../types/merchant'
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from './ui/Dialog'
+import { copyToClipboard } from '../utils/clipboard'
 
 interface OrderDetailModalProps {
   order: UserOrderDetail
@@ -79,10 +80,27 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
     provisionPending: boolean
   } | null>(null)
 
-  function copyContent() {
-    if (!order.delivery?.content) return
-    navigator.clipboard.writeText(order.delivery.content).catch(() => {})
-    showToast('发货信息已复制')
+  const [copiedContent, setCopiedContent] = useState(false)
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current)
+    }
+  }, [])
+
+  async function copyContent() {
+    const textToCopy = order.delivery?.content?.trim()
+    if (!textToCopy) return
+    const success = await copyToClipboard(textToCopy)
+    if (success) {
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current)
+      setCopiedContent(true)
+      copyTimerRef.current = setTimeout(() => setCopiedContent(false), 2000)
+      showToast('发货信息已复制')
+    } else {
+      showToast('复制失败，请长按或手动选中文本复制', 'error')
+    }
   }
 
   async function executeAction(action: OrderAction) {
@@ -219,6 +237,7 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
   const subscriptionExpiresAt = order.delivery?.expiresAt ?? null
   const subscriptionExpired = order.delivery?.expired === true
   const contentMasked = order.delivery?.contentMasked === true
+  const isSubscription = order.product?.type?.includes('订阅') || Boolean(subscriptionExpiresAt)
   const deliverySlice = {
     content: contentMasked ? null : order.delivery?.content,
     contentType: order.delivery?.contentType,
@@ -226,7 +245,10 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
     file: order.delivery?.file ?? null,
     expiresAt: subscriptionExpiresAt,
     expired: subscriptionExpired,
+    contentMasked,
     orderId: order.id,
+    orderStatus: order.status,
+    isSubscription,
     provisionPending: Boolean(order.provisionPending),
     progress: progressEvents,
     bookingDate: order.bookingDate ?? null,
@@ -254,7 +276,7 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
             </span>
             {subscriptionExpired && (
               <span
-                className="text-xs font-bold text-[var(--color-danger)] bg-[var(--color-danger)]/10 px-2 py-0.5 rounded border border-[var(--color-danger)]/30"
+                className="text-xs font-bold text-[var(--color-danger-text)] bg-[var(--color-danger-bg)] px-2 py-0.5 rounded border border-[var(--color-danger-border)]"
                 data-testid="order-expired-badge"
               >
                 已过期
@@ -262,7 +284,7 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
             )}
             {order.provisionPending && (
               <span
-                className="text-xs font-bold text-[var(--color-primary)] bg-[var(--color-primary)]/10 px-2 py-0.5 rounded border border-[var(--color-primary)]/30"
+                className="text-xs font-bold text-[var(--color-primary)] bg-[var(--color-primary-tint)] px-2 py-0.5 rounded border border-[var(--color-primary-border-subtle)]"
                 data-testid="order-provision-pending-badge"
               >
                 自动开通中
@@ -298,7 +320,7 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
                   )}
                   <RegistryPill value={order.product.type} category="productTypes" />
                   {order.deliveryMode && <RegistryPill value={order.deliveryMode} category="deliveryModes" />}
-                  <span className="text-xs text-[var(--color-primary)] bg-[var(--color-primary)]/10 px-2 py-0.5 rounded border border-[var(--color-primary)]/20 font-medium inline-flex items-center gap-1">
+                  <span className="text-xs text-[var(--color-primary)] bg-[var(--color-primary-tint)] px-2 py-0.5 rounded border border-[var(--color-primary-border-subtle)] font-medium inline-flex items-center gap-1">
                     <Store className="w-3 h-3" />
                     {order.merchant?.name || '平台自营'}
                   </span>
@@ -356,14 +378,6 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
                 ? '开通结果'
                 : '发货内容'}
             </h3>
-            {contentMasked && (
-              <div
-                className="mb-3 bg-[var(--color-surface)] p-4 rounded border border-dashed border-[var(--color-border)] text-center text-xs text-[var(--color-text-muted)]"
-                data-testid="delivery-masked"
-              >
-                订阅已过期。续费将生成新订单，内容在新订单中查看
-              </div>
-            )}
             <DeliveryContent {...deliverySlice} />
             {order.delivery?.publicNote && (
               <div className="mt-2 text-xs text-[var(--color-text-muted)]">
@@ -427,14 +441,25 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
           <button onClick={onClose} className="btn-secondary flex-1 px-0" data-testid="order-detail-close">
             关闭
           </button>
-          <button
-            onClick={copyContent}
-            disabled={!order.delivery?.content}
-            className="btn-primary flex-1 px-0"
-          >
-            <Copy className="w-4 h-4" />
-            复制内容
-          </button>
+          {Boolean(order.delivery?.content?.trim()) && !contentMasked && (
+            <button
+              onClick={copyContent}
+              className="btn-primary flex-1 px-0 flex items-center justify-center gap-1.5"
+              data-testid="order-detail-copy"
+            >
+              {copiedContent ? (
+                <>
+                  <Check className="w-4 h-4 text-[var(--color-on-primary)]" />
+                  已复制
+                </>
+              ) : (
+                <>
+                  <Copy className="w-4 h-4" />
+                  复制内容
+                </>
+              )}
+            </button>
+          )}
           {canDispute && (
             <button
               onClick={() => setConfirmAction('dispute')}

@@ -5,6 +5,7 @@ import { getOrderDetail } from '../api/orders'
 import { Dialog, DialogContent, DialogTitle } from './ui/Dialog'
 import DeliveryContent, { type DeliveryProgressEvent } from './DeliveryContent'
 import type { StructuredDeliveryContent } from '../types/merchant'
+import { copyToClipboard } from '../utils/clipboard'
 
 const POLL_MS = 2000
 const POLL_MAX_MS = 60_000
@@ -175,19 +176,36 @@ export default function SuccessModal({
   const showSpinner = awaitingProvision
   const pendingCopy = awaitingProvision
 
-  function copyContent() {
-    if (!deliveryContent?.trim()) {
+  const [copiedDelivery, setCopiedDelivery] = useState(false)
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current)
+    }
+  }, [])
+
+  async function copyContent() {
+    const text = deliveryContent?.trim()
+    if (!text) {
       showToast('发货信息尚未就绪', 'error')
       return
     }
-    navigator.clipboard.writeText(deliveryContent).catch(() => {})
-    showToast('发货信息已复制')
+    const success = await copyToClipboard(text)
+    if (success) {
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current)
+      setCopiedDelivery(true)
+      copyTimerRef.current = setTimeout(() => setCopiedDelivery(false), 2000)
+      showToast('发货信息已复制')
+    } else {
+      showToast('复制失败，请长按或手动选中文本复制', 'error')
+    }
   }
 
   return (
     <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
       <DialogContent className="max-w-md text-center flex flex-col max-h-[90dvh] overflow-hidden">
-        <div className="w-16 h-16 bg-[var(--color-cta)]/10 border-2 border-[var(--color-cta)] text-[var(--color-cta)] rounded-full flex items-center justify-center mx-auto mb-5">
+        <div className="w-16 h-16 bg-[var(--color-success-bg)] border-2 border-[var(--color-success-border)] text-[var(--color-success-text)] rounded-full flex items-center justify-center mx-auto mb-5">
           {showSpinner ? (
             <Loader2 className="w-8 h-8 text-[var(--color-cta)] animate-spin" data-testid="success-provision-spinner" />
           ) : (
@@ -204,7 +222,7 @@ export default function SuccessModal({
         </p>
 
         {merchantName && (
-          <div className="text-sm text-[var(--color-text-muted)] mb-4 bg-[var(--color-primary)]/8 p-2 rounded-lg border border-[var(--color-primary)]/20">
+          <div className="text-sm text-[var(--color-text-muted)] mb-4 bg-[var(--color-primary-tint)] p-2 rounded-lg border border-[var(--color-primary-border-subtle)]">
             本商品由商家 <span className="font-bold text-[var(--color-primary)]">{merchantName}</span> 提供
           </div>
         )}
@@ -251,8 +269,22 @@ export default function SuccessModal({
 
         <div className="flex flex-col gap-3 shrink-0">
           {!deliveryFile && hasPayload && !showSpinner && (
-            <button onClick={copyContent} className="btn-primary w-full">
-              <Copy className="w-4 h-4" /> 复制发货信息
+            <button
+              onClick={copyContent}
+              className="btn-primary w-full flex items-center justify-center gap-1.5"
+              data-testid="success-copy-content"
+            >
+              {copiedDelivery ? (
+                <>
+                  <Check className="w-4 h-4 text-[var(--color-on-primary)]" />
+                  已复制
+                </>
+              ) : (
+                <>
+                  <Copy className="w-4 h-4" />
+                  复制发货信息
+                </>
+              )}
             </button>
           )}
           {onViewOrders ? (

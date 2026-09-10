@@ -1,9 +1,10 @@
-import { render, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { describe, expect, it, vi, beforeEach } from 'vitest'
 import DeliveryContent, {
   type DeliveryContentProps,
 } from './DeliveryContent'
 import type { StructuredDeliveryContent } from '../types/merchant'
+import { useAppStore } from '../stores/appStore'
 
 const ACCOUNT_FIELDS: StructuredDeliveryContent = {
   fields: [
@@ -17,6 +18,11 @@ const ACCOUNT_FIELDS: StructuredDeliveryContent = {
 }
 
 describe('DeliveryContent', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    useAppStore.setState({ toasts: [] })
+  })
+
   it('lets structured fields win over raw text', () => {
     render(
       <DeliveryContent
@@ -31,10 +37,11 @@ describe('DeliveryContent', () => {
     expect(screen.queryByText('RAW-TEXT-SHOULD-HIDE')).not.toBeInTheDocument()
   })
 
-  it('renders the file card when file metadata is present', () => {
+  it('renders the file card when file metadata is present and passes orderStatus', () => {
     render(
       <DeliveryContent
         orderId={42}
+        orderStatus="delivered"
         file={{ fileName: '交付包.zip', size: 2048 }}
         content="optional-caption"
         contentType="text"
@@ -44,6 +51,31 @@ describe('DeliveryContent', () => {
     const card = screen.getByTestId('file-delivery-card')
     expect(card).toBeInTheDocument()
     expect(card).toHaveTextContent('交付包.zip')
+    expect(screen.getByTestId('file-delivery-download')).toBeEnabled()
+  })
+
+  it('disables file download button when orderStatus is disputed or refunded', () => {
+    const { rerender } = render(
+      <DeliveryContent
+        orderId={42}
+        orderStatus="disputed"
+        file={{ fileName: '交付包.zip', size: 2048 }}
+      />,
+    )
+
+    expect(screen.getByTestId('file-delivery-download')).toBeDisabled()
+    expect(screen.getByTestId('file-delivery-disputed-notice')).toHaveTextContent('争议处理中，文件下载已暂停')
+
+    rerender(
+      <DeliveryContent
+        orderId={42}
+        orderStatus="refunded"
+        file={{ fileName: '交付包.zip', size: 2048 }}
+      />,
+    )
+
+    expect(screen.getByTestId('file-delivery-download')).toBeDisabled()
+    expect(screen.getByTestId('file-delivery-refunded-notice')).toHaveTextContent('订单已全额退款，文件下载授权已关闭')
   })
 
   it('does not accept or render current product attributes', () => {
@@ -83,5 +115,131 @@ describe('DeliveryContent', () => {
 
     expect(screen.queryByTestId('subscription-expiry')).not.toBeInTheDocument()
     expect(screen.queryByText(/有效期/)).not.toBeInTheDocument()
+  })
+
+  it('accurately formats subscription expiry without misleading storage text', () => {
+    const { rerender } = render(
+      <DeliveryContent
+        content="sub-key"
+        expiresAt="2026-12-31T23:59:59.000Z"
+        expired={false}
+        isSubscription={true}
+      />,
+    )
+
+    const expiryRow = screen.getByTestId('subscription-expiry')
+    expect(expiryRow).toHaveTextContent(/订阅有效期至/)
+    expect(screen.queryByText(/超过安全存储期/)).not.toBeInTheDocument()
+
+    // Expired state
+    rerender(
+      <DeliveryContent
+        content="sub-key"
+        expiresAt="2026-12-31T23:59:59.000Z"
+        expired={true}
+        isSubscription={true}
+      />,
+    )
+
+    expect(screen.getByTestId('subscription-expired-badge')).toHaveTextContent('已过期')
+    expect(screen.getByTestId('subscription-expiry')).toHaveTextContent(/订阅已于.*到期/)
+    expect(screen.queryByText(/超过安全存储期/)).not.toBeInTheDocument()
+  })
+
+  it('accurately formats non-subscription expiry (voucher/account) without subscription wording', () => {
+    const { rerender } = render(
+      <DeliveryContent
+        content="card-pin"
+        expiresAt="2026-12-31T23:59:59.000Z"
+        expired={false}
+        isSubscription={false}
+      />,
+    )
+
+    expect(screen.getByTestId('subscription-expiry')).toHaveTextContent(/^有效期至/)
+    expect(screen.queryByText(/订阅有效期/)).not.toBeInTheDocument()
+
+    // Expired state
+    rerender(
+      <DeliveryContent
+        content="card-pin"
+        expiresAt="2026-12-31T23:59:59.000Z"
+        expired={true}
+        isSubscription={false}
+      />,
+    )
+
+    expect(screen.getByTestId('subscription-expired-badge')).toHaveTextContent('已过期')
+    expect(screen.getByTestId('subscription-expiry')).toHaveTextContent(/^已过期已于.*到期/)
+  })
+
+  it('renders provisionPending without unpromised auto-fallback text', () => {
+    render(<DeliveryContent provisionPending={true} />)
+
+    const card = screen.getByTestId('delivery-provision-pending')
+    expect(card).toBeInTheDocument()
+    expect(card).toHaveTextContent('自动开通中，请稍候…')
+    // Strictly must not promise auto fallback to manual
+    expect(screen.queryByText(/失败将自动转为人工交付/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/若开通失败/)).not.toBeInTheDocument()
+  })
+
+  it('renders masked delivery placeholder when contentMasked is true', () => {
+    render(<DeliveryContent contentMasked={true} />)
+
+    const card = screen.getByTestId('delivery-masked')
+    expect(card).toBeInTheDocument()
+    expect(card).toHaveTextContent('订阅已过期。续费将生成新订单，内容在新订单中查看')
+  })
+
+  it('renders URL delivery as external link card with clipboard copy feedback', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    vi.stubGlobal('navigator', { clipboard: { writeText } })
+
+    render(
+      <DeliveryContent
+        content="https://activation.service.local/key/998877"
+        contentType="url"
+        urlTestId="custom-url-test"
+      />,
+    )
+
+    const link = screen.getByTestId('custom-url-test')
+    expect(link).toHaveAttribute('href', 'https://activation.service.local/key/998877')
+    expect(link).toHaveAttribute('target', '_blank')
+    expect(link).toHaveAttribute('rel', 'noopener noreferrer')
+
+    const copyBtn = screen.getByTestId('delivery-copy-url')
+    expect(copyBtn).toHaveTextContent('复制链接')
+
+    fireEvent.click(copyBtn)
+    await waitFor(() => {
+      expect(writeText).toHaveBeenCalledWith('https://activation.service.local/key/998877')
+    })
+    expect(copyBtn).toHaveTextContent('已复制')
+  })
+
+  it('renders text delivery with monospace box and clipboard copy feedback', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    vi.stubGlobal('navigator', { clipboard: { writeText } })
+
+    render(
+      <DeliveryContent
+        content="LICENSE-KEY-ABC-123-XYZ"
+        contentType="text"
+      />,
+    )
+
+    const textBox = screen.getByTestId('delivery-text-content')
+    expect(textBox).toHaveTextContent('LICENSE-KEY-ABC-123-XYZ')
+
+    const copyBtn = screen.getByTestId('delivery-copy-text')
+    expect(copyBtn).toHaveTextContent('复制文本')
+
+    fireEvent.click(copyBtn)
+    await waitFor(() => {
+      expect(writeText).toHaveBeenCalledWith('LICENSE-KEY-ABC-123-XYZ')
+    })
+    expect(copyBtn).toHaveTextContent('已复制')
   })
 })
