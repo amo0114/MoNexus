@@ -156,4 +156,18 @@ describe('AdminOfferManagerModal', () => {
     expect(payload).not.toHaveProperty('fixedContent')
     expect(payload).not.toHaveProperty('fixedFileId')
   })
+
+  it('does not render delivery-mode controls for merchant-owned product edit', async () => {
+    const merchantProduct = {
+      ...product,
+      merchantId: 9,
+      offers: [{ id: 1, name: '商家规格', price: 500, status: 'active', isDefault: true, validityDays: 30, sortOrder: 0 }],
+    } as AdminProductListItem
+    render(<AdminOfferManagerModal product={merchantProduct} onClose={() => undefined} onChanged={() => undefined} />)
+    fireEvent.click(screen.getByTestId('admin-offer-edit-1'))
+    await waitFor(() => expect(screen.getByTestId('admin-offer-form-save')).not.toBeDisabled())
+    expect(screen.queryByTestId('admin-offer-form-delivery-mode')).toBeNull()
+    expect(screen.queryByTestId('admin-offer-form-stock-mode')).toBeNull()
+    expect(screen.queryByTestId('admin-offer-form-fixed-content')).toBeNull()
+  })
 })

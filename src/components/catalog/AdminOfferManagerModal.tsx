@@ -134,6 +134,7 @@ export default function AdminOfferManagerModal({ product, onClose, onChanged }: 
     [offers, editing],
   )
   const lockDelivery = isFakaOffer(current)
+  const canEditFulfillment = isPlatformOwned && !lockDelivery
   const isInstantInventory = form.deliveryMode === 'instant_inventory'
   const isFixed = form.deliveryMode === 'instant_fixed'
   const isFileForm = isFixed && form.fixedContentType === 'file'
@@ -191,7 +192,7 @@ export default function AdminOfferManagerModal({ product, onClose, onChanged }: 
       const days = Number(form.validityDays)
       if (!Number.isInteger(days) || days < 1 || days > 3650) return '有效期必须是 1-3650 的整数天数，留空为永久'
     }
-    if (lockDelivery) return null
+    if (!canEditFulfillment) return null
     if (isFileForm && !form.fixedFileId) return '文件交付必须先上传交付文件'
     if (isFixed && !isFileForm && !form.fixedContent.trim()) return '固定内容交付必须填写交付内容'
     if (isFixed && form.fixedContentType === 'url' && !/^https?:\/\//i.test(form.fixedContent.trim())) {
@@ -260,7 +261,7 @@ export default function AdminOfferManagerModal({ product, onClose, onChanged }: 
           originalPrice: nextOriginal,
           validityDays: nextValidity,
           sortOrder: form.sortOrder.trim() === '' ? undefined : Number(form.sortOrder),
-          ...(isPlatformOwned && !lockDelivery ? deliverySnapshot : {}),
+          ...(canEditFulfillment ? deliverySnapshot : {}),
           ...(form.checkoutVersion ? { expectedCheckoutVersion: form.checkoutVersion } : {}),
         })
         showToast('规格已更新')
@@ -410,7 +411,7 @@ export default function AdminOfferManagerModal({ product, onClose, onChanged }: 
                     onChange={(event) => setForm((currentForm) => ({ ...currentForm, sortOrder: event.target.value }))} disabled={submitting} />
                 </div>
               )}
-              {!lockDelivery && (
+              {canEditFulfillment && (
                 <>
                   <div>
                     <label htmlFor="admin-offer-form-delivery-mode" className="block text-sm font-bold mb-1.5">交付方式</label>
@@ -436,7 +437,7 @@ export default function AdminOfferManagerModal({ product, onClose, onChanged }: 
                 </>
               )}
             </div>
-            {!lockDelivery && isFixed && (
+            {canEditFulfillment && isFixed && (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label htmlFor="admin-offer-form-fixed-content-type" className="block text-sm font-bold mb-1.5">内容类型</label>
