@@ -706,7 +706,7 @@ export default function ProductDetailPage() {
             )}
 
             {/* In-flow Quick Spec Note on Mobile */}
-            {activeOffer && offerPeriodDetailNote(activeOffer) && (
+            {!isDesktopViewport && activeOffer && offerPeriodDetailNote(activeOffer) && (
               <div className="flex flex-wrap items-center gap-2 text-xs" data-testid="validity-days-preview">
                 <span className="text-[var(--color-text-muted)] font-bold">规格说明：</span>
                 <span className="px-2 py-0.5 rounded border border-[var(--color-border)] bg-[var(--color-background)] text-[var(--color-text)] font-medium">
@@ -1022,7 +1022,7 @@ export default function ProductDetailPage() {
             )}
 
             {/* Validity / Special Spec Note */}
-            {activeOffer && offerPeriodDetailNote(activeOffer) && (
+            {isDesktopViewport && activeOffer && offerPeriodDetailNote(activeOffer) && (
               <div className="p-3 rounded-xl bg-[var(--color-background)] border border-[var(--color-border)] text-xs space-y-1" data-testid="validity-days-preview">
                 <span className="font-bold text-[var(--color-text)] block">
                   {offerPeriodDetailNote(activeOffer)!.title}

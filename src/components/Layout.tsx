@@ -245,7 +245,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     })
   }, [announcements, showToast])
   return (
-    <div className="bg-grid-pattern relative min-h-[100dvh] w-full flex flex-col" style={{ backgroundColor: 'var(--color-background)' }}>
+    <div className="bg-grid-pattern relative min-h-[100dvh] w-full flex flex-col overflow-x-clip" style={{ backgroundColor: 'var(--color-background)' }}>
       <NotificationRealtimeBridge />
       {/* Decorative background — soft indigo glow */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none -z-10">
@@ -358,7 +358,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           )}
 
           {/* Right Actions */}
-          <div className="flex items-center gap-2 sm:gap-3">
+          <div className="flex items-center gap-1.5 lg:gap-3">
             {isAdminPage ? (
               <>
                 <button
@@ -393,7 +393,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                     title="申请成为商家"
                   >
                     <Plus className="w-4 h-4" />
-                    <span className="font-bold text-xs">申请成为商家</span>
+                    <span className="hidden lg:inline font-bold text-xs">申请成为商家</span>
                   </button>
                 )}
                 {user?.role === 'user' && user.merchant?.status === 'pending' && (
@@ -402,7 +402,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                     title="商家申请审核中"
                   >
                     <Clock className="w-4 h-4" />
-                    <span className="font-bold text-xs">商家申请审核中</span>
+                    <span className="hidden lg:inline font-bold text-xs">商家申请审核中</span>
                   </div>
                 )}
                 {user?.role === 'user' && user.merchant?.status === 'rejected' && (
@@ -413,7 +413,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                     title="申请被拒绝，可重新申请"
                   >
                     <XCircle className="w-4 h-4" />
-                    <span className="font-bold text-xs">申请被拒，重试</span>
+                    <span className="hidden lg:inline font-bold text-xs">申请被拒，重试</span>
                   </button>
                 )}
                 {user?.role === 'user' && user.merchant?.status === 'suspended' && (
@@ -422,7 +422,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                     title="商家账号已被停用，请联系平台"
                   >
                     <AlertTriangle className="w-4 h-4" />
-                    <span className="font-bold text-xs">账号已停用</span>
+                    <span className="hidden lg:inline font-bold text-xs">账号已停用</span>
                   </div>
                 )}
                 {user?.role === 'merchant' && user.merchant?.status === 'active' && (
@@ -433,7 +433,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                     title="商家后台"
                   >
                     <Store className="w-4 h-4" />
-                    <span className="font-bold text-xs">商家后台</span>
+                    <span className="hidden lg:inline font-bold text-xs">商家后台</span>
                   </button>
                 )}
                 {/* Admin Portal */}
@@ -445,7 +445,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                     title="管理后台"
                   >
                     <ShieldCheck className="w-4 h-4" />
-                    <span className="font-bold text-xs">管理后台</span>
+                    <span className="hidden lg:inline font-bold text-xs">管理后台</span>
                   </button>
                 )}
 
@@ -528,7 +528,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
                 {/* Points Badge — Coins icon in CTA green to match the buy-currency story */}
                 <div
-                  className="hidden md:flex items-center gap-1.5 px-4 py-2 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl cursor-pointer hover:border-[var(--color-primary)]/35 transition-colors group"
+                  className="hidden md:flex items-center gap-1.5 px-2.5 lg:px-4 py-2 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl cursor-pointer hover:border-[var(--color-primary)]/35 transition-colors group"
                   onClick={() => navigate('/profile')}
                 >
                   <div className="bg-[var(--color-cta)]/10 p-1 rounded-full">
