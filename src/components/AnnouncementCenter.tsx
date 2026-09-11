@@ -97,10 +97,9 @@ export default function AnnouncementCenter({
 
   const defaultTab = useMemo<CenterTab>(() => {
     if (forceAnnouncementTab) return 'announcements'
-    if (unreadCount > 0) return 'announcements'
     if (notificationUnreadCount > 0) return 'messages'
     return 'announcements'
-  }, [forceAnnouncementTab, notificationUnreadCount, unreadCount])
+  }, [forceAnnouncementTab, notificationUnreadCount])
 
   useEffect(() => {
     if (!open) return
