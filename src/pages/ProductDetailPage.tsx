@@ -1082,6 +1082,7 @@ export default function ProductDetailPage() {
               type="button"
               onClick={handleRedeemClick}
               disabled={isLoggedIn && isSoldOut}
+              data-testid="desktop-buy-cta"
               className={
                 isLoggedIn && isSoldOut
                   ? 'w-full py-3 px-4 rounded-xl text-sm font-bold opacity-60 cursor-not-allowed bg-[var(--color-border)] text-[var(--color-text-muted)]'

@@ -33,7 +33,7 @@ export default function ThemeToggle() {
       role="radiogroup"
       aria-label="主题切换"
       onKeyDown={onKeyDown}
-      className="inline-flex items-center gap-0.5 lg:gap-1 p-0.5 lg:p-1 rounded-full border border-[var(--color-border)] bg-[var(--color-background)]"
+      className="inline-flex items-center gap-1 p-1 rounded-full border border-[var(--color-border)] bg-[var(--color-background)]"
     >
       {OPTIONS.map(({ value, label, icon: Icon }) => {
         const active = theme === value
@@ -47,7 +47,7 @@ export default function ThemeToggle() {
             title={label}
             aria-label={label}
             onClick={() => setTheme(value)}
-            className={`inline-flex items-center justify-center w-8 h-8 lg:w-10 lg:h-10 rounded-full transition-all duration-200 focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)] ${
+            className={`inline-flex items-center justify-center w-10 h-10 rounded-full transition-all duration-200 focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)] ${
               active
                 ? 'bg-[var(--color-surface)] text-[var(--color-primary)] shadow-sm'
                 : 'text-[var(--color-text-muted)] hover:text-[var(--color-primary)]'

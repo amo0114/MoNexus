@@ -41,6 +41,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const refreshNotificationUnread = useAppStore((s) => s.refreshNotificationUnread)
   const announcements = useAnnouncements()
   const [announcementCenterOpen, setAnnouncementCenterOpen] = useState(false)
+  const [forcedAnnouncementTab, setForcedAnnouncementTab] = useState(false)
   const surfacedRequiredAnnouncements = useRef(new Set<string>())
   const totalBellUnread = announcements.unreadCount + notificationUnreadCount
   const hasPendingRequiredAnnouncement = announcements.items.some(
@@ -238,6 +239,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   }, [user, refreshNotificationUnread])
 
   const openAnnouncement = useCallback((announcement: PublicAnnouncement) => {
+    setForcedAnnouncementTab(true)
     setAnnouncementCenterOpen(true)
     if (announcement.presentation === 'acknowledgement_required' || announcement.readAt) return
     void announcements.markRead(announcement).catch((err) => {
@@ -647,12 +649,15 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       <BottomTabBar />
       <AnnouncementCenter
         open={announcementCenterOpen}
-        onOpenChange={setAnnouncementCenterOpen}
+        onOpenChange={(open) => {
+          setAnnouncementCenterOpen(open)
+          if (!open) setForcedAnnouncementTab(false)
+        }}
         items={announcements.items}
         unreadCount={announcements.unreadCount}
         onMarkRead={announcements.markRead}
         onAcknowledge={announcements.acknowledge}
-        forceAnnouncementTab={hasPendingRequiredAnnouncement}
+        forceAnnouncementTab={hasPendingRequiredAnnouncement || forcedAnnouncementTab}
       />
 
       {/* Content. 注意不要给 main 加 z-index：z-0 会创建 stacking context，

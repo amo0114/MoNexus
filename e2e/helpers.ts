@@ -165,7 +165,17 @@ export async function loginAs(page: Page, account: SeedAccount) {
   await page.addStyleTag({
     content: '*, *::before, *::after { animation: none !important; transition: none !important; }',
   })
-  await page.getByPlaceholder('邮箱地址').fill(account.email)
+  const emailInput = page.getByPlaceholder('邮箱地址')
+  try {
+    await emailInput.waitFor({ state: 'visible', timeout: 5000 })
+  } catch {
+    await page.reload()
+    await page.addStyleTag({
+      content: '*, *::before, *::after { animation: none !important; transition: none !important; }',
+    })
+    await emailInput.waitFor({ state: 'visible', timeout: 10000 })
+  }
+  await emailInput.fill(account.email)
   await page.getByPlaceholder('密码（至少 6 位）').fill(account.password)
   const loginResponse = page.waitForResponse((response) =>
     response.url().includes('/api/auth/login') && response.request().method() === 'POST'
