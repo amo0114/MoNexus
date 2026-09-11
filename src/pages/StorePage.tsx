@@ -3,6 +3,12 @@ import { useNavigate } from 'react-router-dom'
 import { Search, SearchX, Coins, Store, Star } from 'lucide-react'
 import api from '../api/client'
 import { useAppStore } from '../stores/appStore'
+import { useAuthStore } from '../stores/authStore'
+import {
+  getStorePageCache,
+  setStorePageCache,
+  type StorePageCache as StoredStorePageCache,
+} from './storePageCache'
 import { Skeleton } from '../components/ui/Skeleton'
 import EmptyState from '../components/ui/EmptyState'
 import Reveal from '../components/ui/Reveal'
@@ -66,14 +72,8 @@ interface FeedDisclosure {
   publicReason?: string | null
 }
 
-interface StorePageCache {
+interface StorePageCache extends Omit<StoredStorePageCache, 'feedItems'> {
   feedItems: FeedOutputItem<Product>[]
-  seenIds: number[]
-  category: string
-  searchQuery: string
-  nextCursor: string | null
-  hasMore: boolean
-  scrollY: number
 }
 
 const PAGE_SIZE = 60
@@ -89,10 +89,22 @@ const GRID_GAP_MOBILE = 12
 const OVERSCAN_ROWS = 8
 const PREFETCH_ROWS = 6
 
-let storePageCache: StorePageCache | null = null
+function currentStoreAudience(): 'guest' | 'member' {
+  return useAuthStore.getState().isLoggedIn ? 'member' : 'guest'
+}
 
-function getProductQueryKey(category: string, searchQuery: string) {
-  return JSON.stringify({ category, searchQuery })
+function readMatchingStoreCache(): StorePageCache | null {
+  const cached = getStorePageCache<StorePageCache>()
+  if (!cached || cached.audience !== currentStoreAudience()) return null
+  return cached
+}
+
+function getProductQueryKey(
+  category: string,
+  searchQuery: string,
+  audience: 'guest' | 'member' = currentStoreAudience(),
+) {
+  return JSON.stringify({ category, searchQuery, audience })
 }
 
 function getColumnCount(width: number, isMobile: boolean) {
@@ -252,11 +264,17 @@ export default function StorePage() {
   const showToast = useAppStore((s) => s.showToast)
   const registry = useAppStore((s) => s.registry)
   const navigate = useNavigate()
-  const initialCacheRef = useRef(storePageCache)
+  const isLoggedIn = useAuthStore((s) => s.isLoggedIn)
+  const audience: 'guest' | 'member' = isLoggedIn ? 'member' : 'guest'
+  const initialCacheRef = useRef(readMatchingStoreCache())
   const restoreScrollRef = useRef<number | null>(initialCacheRef.current?.scrollY ?? null)
   const hydratedQueryKeyRef = useRef<string | null>(
     initialCacheRef.current?.feedItems.length
-      ? getProductQueryKey(initialCacheRef.current.category, initialCacheRef.current.searchQuery)
+      ? getProductQueryKey(
+          initialCacheRef.current.category,
+          initialCacheRef.current.searchQuery,
+          initialCacheRef.current.audience,
+        )
       : null,
   )
 
@@ -300,6 +318,27 @@ export default function StorePage() {
   }>({ sponsored: [], editorial: [] })
   const candidatesSettledRef = useRef(false)
   const composedRef = useRef(Boolean(initialCacheRef.current?.feedItems.length))
+  // Public `/` stays mounted across login/logout. The feed + module cache are
+  // audience-scoped; keep them aligned before paint so a member list cannot
+  // remain on screen or be written back as guest.
+  const [feedAudience, setFeedAudience] = useState(audience)
+  if (feedAudience !== audience) {
+    setFeedAudience(audience)
+    organicEpochRef.current += 1
+    candidateRequestRef.current += 1
+    setFeedItems([])
+    setNextCursor(null)
+    setHasMore(false)
+    setLoading(true)
+    setLoadingMore(false)
+    loadingMoreRef.current = false
+    seenRef.current = new Set()
+    page1OrganicRef.current = null
+    composedRef.current = false
+    candidatesSettledRef.current = false
+    restoreScrollRef.current = null
+    hydratedQueryKeyRef.current = null
+  }
   // A cached pre-Catalog session may still hold a legacy label. Once the
   // dynamic registry is available, migrate that local selection to stable code.
   useEffect(() => {
@@ -466,10 +505,12 @@ export default function StorePage() {
       // async continuations see a stale requestId and never setState.
       candidateRequestRef.current += 1
     }
-  }, [category, registry?.productCategories, searchQuery, maybeComposePage1])
+  }, [audience, category, registry?.productCategories, searchQuery, maybeComposePage1])
 
   const saveStorePageCache = useCallback((scrollY = window.scrollY) => {
-    storePageCache = {
+    const liveAudience = currentStoreAudience()
+    if (liveAudience !== feedAudience) return
+    setStorePageCache({
       feedItems,
       seenIds: [...seenRef.current],
       category,
@@ -477,18 +518,19 @@ export default function StorePage() {
       nextCursor,
       hasMore,
       scrollY,
-    }
-  }, [category, feedItems, hasMore, nextCursor, searchQuery])
+      audience: liveAudience,
+    })
+  }, [category, feedAudience, feedItems, hasMore, nextCursor, searchQuery])
 
   useEffect(() => {
-    const queryKey = getProductQueryKey(category, searchQuery)
+    const queryKey = getProductQueryKey(category, searchQuery, audience)
 
     if (hydratedQueryKeyRef.current === queryKey) {
       setLoading(false)
       return
     }
-    // 搜索词 / 分类变化：重置列表、游标与滚动缓存（AC-CAT-017）。递增 epoch
-    // 使任何在途旧列表响应失效（stale-response guard）。
+    // 搜索词 / 分类 / audience 变化：重置列表、游标与滚动缓存（AC-CAT-017）。
+    // 递增 epoch 使任何在途旧列表响应失效（stale-response guard）。
     organicEpochRef.current += 1
     setLoading(true)
     setFeedItems([])
@@ -505,7 +547,7 @@ export default function StorePage() {
     window.scrollTo?.({ top: 0, behavior: 'instant' })
     const timer = setTimeout(() => fetchProducts(null, false, queryKey), 300)
     return () => clearTimeout(timer)
-  }, [category, fetchProducts, searchQuery])
+  }, [audience, category, fetchProducts, searchQuery])
 
   useEffect(() => {
     saveStorePageCache()

@@ -141,7 +141,34 @@ export async function syncProductProjection(tx: Client, productId: number) {
  * 版本值会在付款前返回给买家——低熵卡密/常见链接可被离线枚举候选值比对裸摘要
  * 猜出。密钥沿用幂等指纹同一 jwtSecret，买家不可自行计算。
  */
+function isNonEmptyJson(value: Prisma.JsonValue | null | undefined): boolean {
+  if (value == null) return false
+  if (Array.isArray(value)) return value.length > 0
+  if (typeof value === 'object') return Object.keys(value).length > 0
+  return true
+}
+
+function stableJson(value: Prisma.JsonValue): Prisma.JsonValue {
+  if (Array.isArray(value)) {
+    return value.map(item => (item == null ? item : stableJson(item)))
+  }
+  if (value != null && typeof value === 'object') {
+    const sorted: Record<string, Prisma.JsonValue> = {}
+    for (const key of Object.keys(value).sort()) {
+      const entry = value[key]
+      if (entry === undefined) continue
+      sorted[key] = entry === null ? null : stableJson(entry)
+    }
+    return sorted
+  }
+  return value
+}
+
 export function computeOfferCheckoutVersion(offer: Offer): string {
+  const commerce = offer as Offer & {
+    attributes?: Prisma.JsonValue
+    fixedStructuredContent?: Prisma.JsonValue | null
+  }
   const canonical = {
     price: offer.price,
     status: offer.status,
@@ -166,6 +193,11 @@ export function computeOfferCheckoutVersion(offer: Offer): string {
           externalIntegration: (offer as { externalIntegration?: string | null }).externalIntegration,
           externalSku: (offer as { externalSku?: string | null }).externalSku ?? null,
         }
+      : {}),
+    // SPEC-PRODUCT-COMMERCE-002：空对象/空值不进 canonical，存量摘要字节不变。
+    ...(isNonEmptyJson(commerce.attributes) ? { attributes: stableJson(commerce.attributes as Prisma.JsonValue) } : {}),
+    ...(isNonEmptyJson(commerce.fixedStructuredContent)
+      ? { fixedStructuredContent: stableJson(commerce.fixedStructuredContent as Prisma.JsonValue) }
       : {}),
   }
   return createHmac('sha256', config.jwtSecret).update(JSON.stringify(canonical)).digest('hex').slice(0, 16)
@@ -213,12 +245,43 @@ export async function resolvePurchaseOfferChecked(
   return actives[0]
 }
 
+export type PublicTemplateAttributes = Record<string, string | number | boolean | string[]>
+
+function isPublicAttributeValue(value: unknown): value is string | number | boolean | string[] {
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return true
+  return Array.isArray(value) && value.every(item => typeof item === 'string')
+}
+
+/**
+ * 公开属性投影：只保留 registry 允许的标量/字符串数组，不发明缺省字段。
+ * allowedKeys 为空（未知模板）时返回 {}。
+ */
+export function projectPublicTemplateAttributes(
+  value: Prisma.JsonValue | null | undefined,
+  allowedKeys: readonly string[],
+): PublicTemplateAttributes {
+  const projected: PublicTemplateAttributes = {}
+  if (value == null || typeof value !== 'object' || Array.isArray(value) || allowedKeys.length === 0) {
+    return projected
+  }
+  const record = value as Record<string, unknown>
+  for (const key of allowedKeys) {
+    const entry = record[key]
+    if (isPublicAttributeValue(entry)) projected[key] = entry
+  }
+  return projected
+}
+
 /**
  * 公开序列化：绝不包含 fixedContent（付费内容）。交付字段模板是公开元数据。
  * P5 file 形态只出 fixedContentType + 文件大小（「文件交付 · 约 X MB」），
  * 文件名/对象键都不出——购前元数据止步于此。
+ * Offer.attributes 只投影 registry offerOrder 中的公开键；未传入键则 {}。
  */
-export function serializePublicOffer(offer: Offer & { fixedFile?: { size: number } | null }) {
+export function serializePublicOffer(
+  offer: Offer & { fixedFile?: { size: number } | null },
+  options?: { attributeKeys?: readonly string[] },
+) {
   return {
     id: offer.id,
     name: offer.name,
@@ -240,6 +303,7 @@ export function serializePublicOffer(offer: Offer & { fixedFile?: { size: number
       offer.externalIntegration === 'faka_bridge' ? ('faka_bridge' as const) : null,
     // P4b：买家购前可见将获得哪些字段；敏感的是字段"值"，不在此处。
     deliveryFields: parseStoredDeliveryFields(offer.deliveryFields),
+    attributes: projectPublicTemplateAttributes(offer.attributes, options?.attributeKeys ?? []),
     ...(offer.fixedContentType === 'file'
       ? { deliveryFileSize: offer.fixedFile?.size ?? null }
       : {}),

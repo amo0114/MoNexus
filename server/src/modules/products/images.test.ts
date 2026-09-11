@@ -8,7 +8,7 @@ const images = ['https://cdn.test.local/pub-1.png', 'https://cdn.test.local/pub-
 describe('Public products API images serialization', () => {
   it('includes images in product list', async () => {
     await prisma.product.create({
-      data: { name: '公开多图商品', type: '网络节点', price: 100, images, status: 'active', categoryId: await getActiveNetworkNodeCategoryId() },
+      data: { name: '公开多图商品', type: '网络节点', price: 100, images, status: 'active', visibility: 'public', categoryId: await getActiveNetworkNodeCategoryId() },
     })
 
     const res = await api.get('/api/products').expect(200)
@@ -21,9 +21,9 @@ describe('Public products API images serialization', () => {
   it('paginates the no-run product list by id DESC without reading legacy isHot/sales', async () => {
     await prisma.product.createMany({
       data: [
-        { name: '热门高销量', type: '网络节点', price: 100, isHot: true, sales: 10, status: 'active', categoryId: await getActiveNetworkNodeCategoryId() },
-        { name: '热门低销量', type: '网络节点', price: 100, isHot: true, sales: 5, status: 'active', categoryId: await getActiveNetworkNodeCategoryId() },
-        { name: '普通高销量', type: '网络节点', price: 100, isHot: false, sales: 100, status: 'active', categoryId: await getActiveNetworkNodeCategoryId() },
+        { name: '热门高销量', type: '网络节点', price: 100, isHot: true, sales: 10, status: 'active', visibility: 'public', categoryId: await getActiveNetworkNodeCategoryId() },
+        { name: '热门低销量', type: '网络节点', price: 100, isHot: true, sales: 5, status: 'active', visibility: 'public', categoryId: await getActiveNetworkNodeCategoryId() },
+        { name: '普通高销量', type: '网络节点', price: 100, isHot: false, sales: 100, status: 'active', visibility: 'public', categoryId: await getActiveNetworkNodeCategoryId() },
       ],
     })
 
@@ -50,7 +50,7 @@ describe('Public products API images serialization', () => {
 
   it('includes images in product detail', async () => {
     const product = await prisma.product.create({
-      data: { name: '公开详情商品', type: '网络节点', price: 100, images, status: 'active', categoryId: await getActiveNetworkNodeCategoryId() },
+      data: { name: '公开详情商品', type: '网络节点', price: 100, images, status: 'active', visibility: 'public', categoryId: await getActiveNetworkNodeCategoryId() },
     })
 
     const res = await api.get(`/api/products/${product.id}`).expect(200)

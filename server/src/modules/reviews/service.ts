@@ -8,6 +8,7 @@ import {
   invalidateProductPublicCache,
 } from '../products/cache.js'
 import { normalizeOrderStatus } from '../orders/fulfillment.js'
+import { assertPublicProductAccess, type ProductAudience } from '../products/visibility.js'
 
 const EDIT_WINDOW_MS = 7 * 24 * 60 * 60 * 1000
 
@@ -20,16 +21,43 @@ function displayNameFor(user: { nickname: string | null; email: string }) {
 }
 
 // 安全红线：公开接口响应字段白名单，绝不含 email 原文 / userId / orderId。
-export async function listProductReviews(productId: number, page = 1, pageSize = 10) {
-  const cacheKey = await buildProductReviewsCacheKey(productId, page, pageSize)
-  if (!cacheKey) return listProductReviewsFromDb(productId, page, pageSize)
+export async function listProductReviews(
+  productId: number,
+  page = 1,
+  pageSize = 10,
+  audience: ProductAudience = 'guest',
+) {
+  const accessSelect = {
+    status: true,
+    archivedAt: true,
+    visibility: true,
+    merchantId: true,
+    merchant: { select: { status: true } },
+  } as const
+  const product = await prisma.product.findUnique({
+    where: { id: productId },
+    select: accessSelect,
+  })
+  if (!product) throw notFound('商品暂不可用')
+  assertPublicProductAccess(product, audience)
 
-  return wrapCache(
-    'product-reviews',
-    cacheKey,
-    page === 1 ? 30 : 20,
-    () => listProductReviewsFromDb(productId, page, pageSize)
-  )
+  const cacheKey = await buildProductReviewsCacheKey(productId, page, pageSize, audience)
+  const result = cacheKey
+    ? await wrapCache(
+      'product-reviews',
+      cacheKey,
+      page === 1 ? 30 : 20,
+      () => listProductReviewsFromDb(productId, page, pageSize),
+    )
+    : await listProductReviewsFromDb(productId, page, pageSize)
+
+  const live = await prisma.product.findUnique({
+    where: { id: productId },
+    select: accessSelect,
+  })
+  if (!live) throw notFound('商品暂不可用')
+  assertPublicProductAccess(live, audience)
+  return result
 }
 
 async function listProductReviewsFromDb(productId: number, page = 1, pageSize = 10) {

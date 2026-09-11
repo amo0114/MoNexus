@@ -13,6 +13,11 @@ import {
 import { getLegalRequirement, type LegalRequirement } from '../legal/service.js'
 import { quoteOfferPricing, type OrderPricingDto } from '../valuePolicy/service.js'
 import { hasActiveSpendingRestriction } from '../recharge/gates.js'
+import {
+  buildProductContentSnapshot,
+  loadEffectiveAssuranceGrant,
+  type ProductContentSnapshot,
+} from '../catalog/productContentSnapshot.js'
 
 export type CheckoutPreview = {
   productId: number
@@ -71,6 +76,9 @@ export type CheckoutPreview = {
    * a number so existing clients keep working.
    */
   pricing?: OrderPricingDto
+  productContentVersion: number
+  assuranceGrantId: number | null
+  productContentSnapshot: ProductContentSnapshot
 }
 
 /**
@@ -92,6 +100,11 @@ export async function getCheckoutPreview(
       status: true,
       archivedAt: true,
       purchaseForm: true,
+      contentVersion: true,
+      templateKey: true,
+      templateVersion: true,
+      attributes: true,
+      details: true,
       merchant: { select: { status: true } },
     },
   })
@@ -155,6 +168,17 @@ export async function getCheckoutPreview(
     unpurchasableReason = unpurchasableReason ?? '当前账户暂不可消费积分'
   }
 
+  const assurance = await loadEffectiveAssuranceGrant(prisma, product.id)
+  const productContentSnapshot = buildProductContentSnapshot({
+    contentVersion: product.contentVersion,
+    templateKey: product.templateKey,
+    templateVersion: product.templateVersion,
+    productAttributes: product.attributes,
+    offerAttributes: offer.attributes,
+    details: product.details,
+    assurance,
+  })
+
   return {
     productId: product.id,
     productName: product.name,
@@ -186,5 +210,8 @@ export async function getCheckoutPreview(
       : null,
     legalRequirement: getLegalRequirement('order'),
     ...(pricing ? { pricing } : {}),
+    productContentVersion: product.contentVersion,
+    assuranceGrantId: assurance?.grantId ?? null,
+    productContentSnapshot,
   }
 }

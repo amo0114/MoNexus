@@ -6,9 +6,16 @@ import AdminFakaImportPreview from './AdminFakaImportPreview'
 import AdminInventoryImportPreview from './AdminInventoryImportPreview'
 import AdminPlatformProductWizard from './AdminPlatformProductWizard'
 import { useAppStore } from '../../stores/appStore'
+import {
+  TEMPLATE_KEYS,
+  type FulfillmentConfiguration,
+  type ProductTemplateDefinition,
+  type TemplateKey,
+} from '../../types/catalog'
 
 const mocks = vi.hoisted(() => ({
   categories: vi.fn(),
+  templates: vi.fn(),
   adminCategories: vi.fn(),
   createPlatform: vi.fn(),
   getCatalog: vi.fn(),
@@ -19,8 +26,25 @@ const mocks = vi.hoisted(() => ({
   upload: vi.fn(),
 }))
 
-vi.mock('../../api/catalog', () => ({ catalogApi: { listActiveCategories: mocks.categories } }))
+vi.mock('../../api/catalog', async () => {
+  const actual = await vi.importActual<typeof import('../../api/catalog')>('../../api/catalog')
+  return {
+    ...actual,
+    catalogApi: {
+      ...actual.catalogApi,
+      listActiveCategories: mocks.categories,
+      listProductTemplates: mocks.templates,
+    },
+  }
+})
 vi.mock('../../api/catalogGovernance', () => ({ catalogGovernanceApi: { listCategories: mocks.adminCategories } }))
+vi.mock('../../api/adminCatalogV2', async () => {
+  const actual = await vi.importActual<typeof import('../../api/adminCatalogV2')>('../../api/adminCatalogV2')
+  return {
+    ...actual,
+    createAdminPlatformProductV2: mocks.createPlatform,
+  }
+})
 vi.mock('../../api/admin', async () => {
   const actual = await vi.importActual<typeof import('../../api/admin')>('../../api/admin')
   return {
@@ -37,6 +61,40 @@ vi.mock('../../api/uploads', async () => {
   const actual = await vi.importActual<typeof import('../../api/uploads')>('../../api/uploads')
   return { ...actual, uploadImage: mocks.upload }
 })
+
+function stubTemplate(
+  key: TemplateKey,
+  label: string,
+  configurations: FulfillmentConfiguration[],
+): ProductTemplateDefinition {
+  return {
+    key,
+    version: 1,
+    label,
+    productSchema: { type: 'object', properties: {}, required: [] },
+    offerSchema: { type: 'object', properties: {}, required: [] },
+    ui: { productOrder: [], offerOrder: [], widgets: {} },
+    fulfillmentRules: [{
+      whenProductAttributes: {},
+      configurations,
+      requireStructuredDelivery: 'none',
+      requireRequiredDateField: false,
+    }],
+  }
+}
+
+const templateRegistry = {
+  registryVersion: 1 as const,
+  templates: [
+    stubTemplate('redemption_code', '卡密与兑换码', ['inventory']),
+    stubTemplate('account', '账号商品', ['inventory', 'fixed_text']),
+    stubTemplate('digital_file', '数字文件', ['fixed_file']),
+    stubTemplate('fixed_content', '固定数字内容', ['fixed_text', 'fixed_url']),
+    stubTemplate('subscription', '订阅与开通', ['inventory', 'fixed_text', 'fixed_url', 'manual', 'merchant_webhook', 'faka_bridge']),
+    stubTemplate('manual_service', '人工服务与代办', ['manual', 'merchant_webhook']),
+    stubTemplate('appointment', '预约服务', ['manual']),
+  ],
+}
 
 const categories = [{ id: 7, code: 'tools', label: '工具', iconKey: null, sortOrder: 1 }]
 const catalog = {
@@ -69,6 +127,7 @@ describe('Catalog admin workflows (T-CAT-FE-004)', () => {
     vi.clearAllMocks()
     useAppStore.setState({ toasts: [], islandNotice: null })
     mocks.categories.mockResolvedValue(categories)
+    mocks.templates.mockResolvedValue(templateRegistry)
     mocks.adminCategories.mockResolvedValue({
       items: categories.map(c => ({
         ...c,
@@ -86,7 +145,13 @@ describe('Catalog admin workflows (T-CAT-FE-004)', () => {
       pageSize: 100,
     })
     mocks.getCatalog.mockResolvedValue(catalog)
-    mocks.createPlatform.mockResolvedValue({ id: 9, merchantId: null, status: 'draft' })
+    mocks.createPlatform.mockResolvedValue({
+      id: 9,
+      status: 'draft',
+      contentVersion: 1,
+      offers: [{ id: 1, name: '默认规格', isDefault: true }],
+      nextStep: 'availability',
+    })
     mocks.previewInventory.mockResolvedValue({ totalRows: 1, validRows: 1, emptyRows: 0, duplicateRows: 0, existingDuplicateRows: 0, canImport: true })
     mocks.importInventory.mockResolvedValue({ imported: 1 })
     mocks.previewFaka.mockResolvedValue(fakaPreview)
@@ -97,6 +162,7 @@ describe('Catalog admin workflows (T-CAT-FE-004)', () => {
     const onCreated = vi.fn()
     render(<AdminPlatformProductWizard open onClose={vi.fn()} onCreated={onCreated} />)
     await screen.findByRole('option', { name: '工具' })
+    await waitFor(() => expect(screen.getByTestId('admin-platform-template')).toHaveValue('redemption_code'))
 
     fireEvent.change(screen.getByTestId('admin-platform-name'), { target: { value: '平台工具' } })
     fireEvent.change(screen.getByTestId('admin-platform-delivery'), { target: { value: 'manual_service' } })
@@ -106,11 +172,33 @@ describe('Catalog admin workflows (T-CAT-FE-004)', () => {
     fireEvent.click(screen.getByTestId('admin-platform-submit'))
 
     await waitFor(() => expect(mocks.createPlatform).toHaveBeenCalled())
-    const payload = mocks.createPlatform.mock.calls[0][0]
-    expect(payload).toMatchObject({ name: '平台工具', categoryId: 7, price: 100, deliveryMode: 'manual_service', stockMode: 'limited' })
+    const payload = mocks.createPlatform.mock.calls[0][0] as Record<string, unknown>
+    expect(payload.editorVersion).toBe(2)
+    expect(payload.templateKey).toBe('manual_service')
+    expect(payload.templateVersion).toBe(1)
+    expect(payload.name).toBe('平台工具')
+    expect(payload.categoryId).toBe(7)
+    expect(Array.isArray(payload.offers)).toBe(true)
+    const offers = payload.offers as Array<Record<string, unknown>>
+    expect(offers.length).toBeGreaterThanOrEqual(1)
+    expect(offers[0]).toMatchObject({
+      price: 100,
+      deliveryMode: 'manual_service',
+      stockMode: 'limited',
+    })
+    expect(Array.isArray(payload.images)).toBe(true)
+    expect((payload.images as unknown[]).every((image) => {
+      if (!image || typeof image !== 'object') return false
+      const kind = (image as { kind?: unknown }).kind
+      return kind === 'upload' || kind === 'static'
+    })).toBe(true)
+    expect(Array.isArray(payload.purchaseForm)).toBe(true)
     expect(payload).not.toHaveProperty('merchantId')
     expect(payload).not.toHaveProperty('isHot')
     expect(payload).not.toHaveProperty('stock')
+    expect(payload).not.toHaveProperty('price')
+    expect(payload).not.toHaveProperty('deliveryMode')
+    expect(TEMPLATE_KEYS.includes(payload.templateKey as TemplateKey)).toBe(true)
     expect(onCreated).toHaveBeenCalledWith(9)
     expect(screen.queryByText(/认证开关|热卖开关|精选开关/)).not.toBeInTheDocument()
   })

@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express'
 import * as adminService from './service.js'
+import * as offerAdmin from './offerAdmin.js'
 import * as mailOperations from './mailOperations.js'
 import * as reviewService from '../reviews/service.js'
 import type {
@@ -54,13 +55,51 @@ export async function updateConfig(req: Request, res: Response, next: NextFuncti
 }
 
 export async function createProduct(req: Request, res: Response, next: NextFunction) {
-  try { res.status(201).json(await adminService.createProduct(req.user!.userId, req.body)) } catch (err) { next(err) }
+  try {
+    if (req.body?.editorVersion === 2) {
+      const { createProductFromV2 } = await import('../catalog/productWrite.js')
+      res.status(201).json(await createProductFromV2({ kind: 'admin', adminUserId: req.user!.userId }, req.body))
+      return
+    }
+    res.status(201).json(await adminService.createProduct(req.user!.userId, req.body))
+  } catch (err) { next(err) }
 }
 
 export async function updateProduct(req: Request, res: Response, next: NextFunction) {
   try {
     const id = req.params.id as unknown as number
     res.json(await adminService.updateProduct(req.user!.userId, id, req.body))
+  } catch (err) { next(err) }
+}
+
+export async function patchProductContent(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { patchProductContent } = await import('../catalog/productWrite.js')
+    res.json(await patchProductContent(
+      { kind: 'admin', adminUserId: req.user!.userId },
+      req.params.id as unknown as number,
+      req.body,
+    ))
+  } catch (err) { next(err) }
+}
+
+export async function getProductEditor(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { getProductEditor } = await import('../catalog/productWrite.js')
+    res.json(await getProductEditor(
+      { kind: 'admin', adminUserId: req.user!.userId },
+      req.params.id as unknown as number,
+    ))
+  } catch (err) { next(err) }
+}
+
+export async function createPlatformOffer(req: Request, res: Response, next: NextFunction) {
+  try {
+    res.status(201).json(await offerAdmin.createPlatformOffer(
+      req.user!.userId,
+      req.params.id as unknown as number,
+      req.body,
+    ))
   } catch (err) { next(err) }
 }
 
@@ -191,6 +230,34 @@ export async function deleteProduct(req: Request, res: Response, next: NextFunct
   } catch (err) {
     next(err)
   }
+}
+
+export async function startPlatformFulfillment(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { startPlatformFulfillment } = await import('../catalog/platformFulfillment.js')
+    res.json(await startPlatformFulfillment(req.user!.userId, req.params.id as unknown as number))
+  } catch (err) { next(err) }
+}
+
+export async function postPlatformProgress(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { postPlatformProgress } = await import('../catalog/platformFulfillment.js')
+    res.json(await postPlatformProgress(req.user!.userId, req.params.id as unknown as number, req.body.publicNote))
+  } catch (err) { next(err) }
+}
+
+export async function deliverPlatformOrder(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { deliverPlatformOrder } = await import('../catalog/platformFulfillment.js')
+    res.json(await deliverPlatformOrder(req.user!.userId, req.params.id as unknown as number, req.body))
+  } catch (err) { next(err) }
+}
+
+export async function rejectPlatformOrder(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { rejectPlatformOrder } = await import('../catalog/platformFulfillment.js')
+    res.json(await rejectPlatformOrder(req.user!.userId, req.params.id as unknown as number, req.body.reason))
+  } catch (err) { next(err) }
 }
 
 export async function patchOffer(req: Request, res: Response, next: NextFunction) {

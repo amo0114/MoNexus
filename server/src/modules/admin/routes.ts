@@ -24,6 +24,7 @@ import {
   voidAbuseRewardSchema,
 } from './schema.js'
 import { adminReviewsQuerySchema } from '../reviews/schema.js'
+import { createProductV2Schema, patchProductContentSchema, draftOfferV2WriteSchema } from '../catalog/productV2Schema.js'
 import * as controller from './controller.js'
 import * as abuseController from './abuseController.js'
 import * as storageController from './storageController.js'
@@ -38,7 +39,10 @@ import { valuePolicyGovernanceRoutes } from '../valuePolicy/governanceRoutes.js'
 // authenticate→requireActiveUser→requireAdmin→requireAdminMfa 链已覆盖其权限边界。
 import { categoryAdminRoutes } from '../catalog/adminRoutes.js'
 import { categoryApplicationAdminRoutes } from '../catalog/applicationAdminRoutes.js'
+import { adminAssuranceRouter } from '../catalog/assurance/routes.js'
+import { adminSourceDescriptionRouter } from '../catalog/sourceDescriptionRoutes.js'
 import { rechargeAdminRoutes } from '../recharge/adminRoutes.js'
+import { getBuildInfo } from './buildInfo.js'
 import { z } from 'zod'
 
 const router = Router()
@@ -57,10 +61,13 @@ router.use('/value-policies', valuePolicyGovernanceRoutes)
 router.use('/product-categories', categoryAdminRoutes)
 // T-CAT-BE-002 §7.3：管理员分类申请审核（列表/approve/reject，CAS + AdminLog）。
 router.use('/category-applications', categoryApplicationAdminRoutes)
+router.use(adminAssuranceRouter)
+router.use(adminSourceDescriptionRouter)
 router.use(rechargeAdminRoutes)
 
 router.get('/stats', controller.stats)
 router.get('/config', controller.listConfig)
+router.get('/system/build-info', getBuildInfo)
 router.put('/config/:key', validate({ params: systemConfigKeyParamSchema, body: updateSystemConfigSchema }), controller.updateConfig)
 router.get('/audit', validate({ query: listAdminAuditQuerySchema }), controller.audit)
 // SPEC-RAP-001: this entire router has already passed authenticate → active
@@ -123,8 +130,13 @@ router.post('/users/:id/adjust', validate({ params: idParamSchema, body: adjustP
 router.put('/users/:id/ban', validate({ params: idParamSchema, body: banUserSchema }), controller.banUser)
 router.put('/users/:id/unban', validate({ params: idParamSchema }), controller.unbanUser)
 router.get('/products', validate({ query: listAdminProductsQuerySchema }), controller.products)
-router.post('/products', validate(createProductSchema), controller.createProduct)
+router.post('/products', (req, res, next) => {
+  const schema = req.body?.editorVersion === 2 ? createProductV2Schema : createProductSchema
+  return validate(schema)(req, res, next)
+}, controller.createProduct)
 router.put('/products/:id', validate({ params: idParamSchema, body: updateProductSchema }), controller.updateProduct)
+router.patch('/products/:id/content', validate({ params: idParamSchema, body: patchProductContentSchema }), controller.patchProductContent)
+router.get('/products/:id/editor', validate({ params: idParamSchema }), controller.getProductEditor)
 router.get('/products/:id/readiness', validate({ params: idParamSchema }), controller.productReadiness)
 router.post('/products/:id/publish', validate({ params: idParamSchema }), controller.publishProduct)
 router.post('/products/:id/unpublish', validate({ params: idParamSchema }), controller.unpublishProduct)
@@ -132,6 +144,20 @@ router.post('/products/:id/archive', validate({ params: idParamSchema, body: arc
 router.post('/products/:id/restore', validate({ params: idParamSchema }), controller.restoreProduct)
 router.delete('/products/:id/purge', validate({ params: idParamSchema }), controller.purgeProduct)
 router.delete('/products/:id', validate({ params: idParamSchema }), controller.deleteProduct)
+router.post('/orders/:id/start-fulfillment', validate({ params: idParamSchema }), controller.startPlatformFulfillment)
+router.post('/orders/:id/progress', validate({ params: idParamSchema, body: z.object({ publicNote: z.string().trim().min(1).max(500) }).strict() }), controller.postPlatformProgress)
+router.post('/orders/:id/deliver', validate({ params: idParamSchema, body: z.object({
+  content: z.string().trim().max(5000).optional(),
+  structuredValues: z.record(z.string().max(2000)).optional(),
+  attachmentFileId: z.number().int().positive().optional(),
+  publicNote: z.string().trim().max(1000).optional(),
+}).strict() }), controller.deliverPlatformOrder)
+router.post('/orders/:id/reject', validate({ params: idParamSchema, body: z.object({ reason: z.string().trim().min(1).max(500) }).strict() }), controller.rejectPlatformOrder)
+router.post(
+  '/products/:id/offers',
+  validate({ params: idParamSchema, body: draftOfferV2WriteSchema }),
+  controller.createPlatformOffer,
+)
 router.patch(
   '/products/:id/offers/:offerId',
   validate({ params: adminOfferParamSchema, body: adminOfferPatchSchema }),

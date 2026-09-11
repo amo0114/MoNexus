@@ -21,6 +21,8 @@ dist/
 server/dist/
 tsconfig.tsbuildinfo
 **/*.tsbuildinfo
+server/build-info.json
+build-info.json
 
 # Env files (never commit secrets)
 .env

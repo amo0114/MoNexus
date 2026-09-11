@@ -178,6 +178,11 @@ function omitPurchaseForm<T extends Record<string, unknown>>(order: T) {
   return rest
 }
 
+function omitProductContentSnapshot<T extends Record<string, unknown>>(order: T) {
+  const { productContentSnapshot: _snapshot, ...rest } = order
+  return rest
+}
+
 /**
  * P7b：自动开通任务的两套投影——绝不整表透传（`leaseToken`/`webhookConfigId`
  * 是内部租约与配置指针，泄露即破坏至少一次语义的安全边界）。
@@ -218,9 +223,45 @@ function withProvisionStatusForBuyer<T extends Record<string, unknown>>(order: T
   return { ...rest, provisionPending: provisionTask?.status === 'pending' }
 }
 
+/**
+ * Xboard/Faka 管理端投影：任务只保留 id；商品只保留 fakaBridge 布尔。
+ * 禁止透出 skuSnapshot / leaseToken / sourceHash / ExternalCatalogLink 原文。
+ */
+type FakaBridgeTaskShape = { id?: unknown } & Record<string, unknown>
+type ProductWithCatalogLink = {
+  externalCatalogLink?: unknown
+} & Record<string, unknown>
+
+function withFakaBridgeForStaff<T extends Record<string, unknown>>(order: T) {
+  const raw = order as T & {
+    fakaBridgeTask?: FakaBridgeTaskShape | null
+    product?: ProductWithCatalogLink | null
+  }
+  const { fakaBridgeTask, product, ...rest } = raw
+
+  let nextProduct = product
+  if (product) {
+    const { externalCatalogLink, ...productRest } = product
+    nextProduct = { ...productRest, fakaBridge: Boolean(externalCatalogLink) }
+  }
+
+  const projectedTask =
+    fakaBridgeTask == null
+      ? fakaBridgeTask
+      : { id: typeof fakaBridgeTask.id === 'number' ? fakaBridgeTask.id : undefined }
+
+  return {
+    ...rest,
+    ...(product !== undefined ? { product: nextProduct } : {}),
+    ...(fakaBridgeTask !== undefined ? { fakaBridgeTask: projectedTask } : {}),
+  }
+}
+
 export function serializeUserOrderList<T extends OrderWithDelivery>(order: T) {
   // P6a：列表行透出 expiresAt/expired 供「已过期」徽标；内容照旧剥离。
-  return omitPurchaseForm(omitDeliveryContent(withDeliveryExpiry(withUserOrderContract(order, false))))
+  return omitProductContentSnapshot(
+    omitPurchaseForm(omitDeliveryContent(withDeliveryExpiry(withUserOrderContract(order, false)))),
+  )
 }
 
 export function serializeUserOrderDetail<T extends OrderWithDelivery>(order: T) {
@@ -243,5 +284,8 @@ export function serializeAdminOrderList<T extends OrderWithDelivery>(order: T) {
 
 export function serializeAdminOrderDetail<T extends OrderWithDelivery>(order: T) {
   // P7b：仲裁上下文透出任务态（同商家的安全投影，禁止整表透传）。
-  return withProvisionStatusForStaff(withDeliveryExpiry(withProductDisplaySnapshot(normalizeFulfillmentFields(order))))
+  // Xboard/Faka：fakaBridgeTask.id + product.fakaBridge，剥离 link / 任务密钥。
+  return withFakaBridgeForStaff(
+    withProvisionStatusForStaff(withDeliveryExpiry(withProductDisplaySnapshot(normalizeFulfillmentFields(order)))),
+  )
 }

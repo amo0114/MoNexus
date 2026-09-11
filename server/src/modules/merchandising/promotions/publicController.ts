@@ -5,6 +5,7 @@
 import { Request, Response, NextFunction } from 'express'
 import type { SponsoredPlacement } from '../constants.js'
 import { listSponsoredItems, normalizeSponsoredLimit, type SponsoredQueryInput } from './publicSponsored.js'
+import { resolveProductAudience } from '../../products/visibility.js'
 
 export async function listSponsored(req: Request, res: Response, next: NextFunction) {
   try {
@@ -14,9 +15,10 @@ export async function listSponsored(req: Request, res: Response, next: NextFunct
       categoryCode: query.categoryCode ?? undefined,
       limit: normalizeSponsoredLimit(query.limit === undefined ? undefined : Number(query.limit)),
     }
-    const items = await listSponsoredItems(input)
+    const items = await listSponsoredItems(input, undefined, Date.now(), resolveProductAudience(req.user))
     // 响应只有 items（每项含 productId + 强制 disclosure）；无 chargedPoints/
     // reviewer/internalReason/余额（CHK-SEC-001 / CHK-PUBLIC-003）。
+    res.set('Cache-Control', 'private, no-store')
     res.json({ items })
   } catch (err) {
     next(err)

@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { X, Package, Tag, DollarSign, Image as ImageIcon, FileText, ClipboardList } from 'lucide-react'
+import { X, Package, Tag, DollarSign, Image as ImageIcon, FileText, ClipboardList, ShieldCheck } from 'lucide-react'
 import * as DialogPrimitive from '@radix-ui/react-dialog'
 import DOMPurify from 'dompurify'
 import { MerchantProduct, PurchaseFormField } from '../../types/merchant'
@@ -12,6 +12,7 @@ import PurchaseFormFieldsEditor, {
 import ProductImageUploader, { MAX_IMAGES } from './ProductImageUploader'
 import { catalogApi, type CatalogAdapter } from '../../api/catalog'
 import type { CategoryRegistryItem } from '../../types/catalog'
+import MerchantAssuranceSection from '../catalog/MerchantAssuranceSection'
 
 interface Props {
   isOpen: boolean
@@ -541,6 +542,11 @@ export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, pr
                 </p>
               </div>
             </FormSection>
+            {product && (
+              <FormSection title="平台保障" icon={ShieldCheck}>
+                <MerchantAssuranceSection productId={product.id} />
+              </FormSection>
+            )}
           </form>
         </div>
 

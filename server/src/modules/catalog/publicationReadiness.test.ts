@@ -16,9 +16,13 @@ type OfferOverrides = Partial<{
   fixedContent: string | null
   fixedContentType: string
   fixedFileId: number | null
+  fixedFile: { id: number; status: string } | null
   autoProvision: boolean
   externalIntegration: string | null
   externalSku: string | null
+  attributes: Record<string, unknown>
+  deliveryFields: unknown
+  fixedStructuredContent: unknown
   available: number
 }>
 
@@ -32,9 +36,13 @@ function offer(overrides: OfferOverrides = {}) {
     fixedContent: overrides.fixedContent ?? null,
     fixedContentType: overrides.fixedContentType ?? 'text',
     fixedFileId: overrides.fixedFileId ?? null,
+    fixedFile: overrides.fixedFile ?? null,
     autoProvision: overrides.autoProvision ?? false,
     externalIntegration: overrides.externalIntegration ?? null,
     externalSku: overrides.externalSku ?? null,
+    attributes: overrides.attributes ?? {},
+    deliveryFields: overrides.deliveryFields ?? null,
+    fixedStructuredContent: overrides.fixedStructuredContent ?? null,
     _count: { inventory: overrides.available ?? 0 },
   }
 }
@@ -48,6 +56,11 @@ type ProductOverrides = Partial<{
   status: string
   publishedAt: Date | null
   categoryStatus: string
+  templateKey: string | null
+  templateVersion: number | null
+  attributes: Record<string, unknown>
+  details: Record<string, unknown>
+  purchaseForm: unknown
   offers: ReturnType<typeof offer>[]
 }>
 
@@ -60,6 +73,17 @@ function product(overrides: ProductOverrides = {}) {
     merchantId: overrides.merchantId ?? null,
     status: overrides.status ?? 'draft',
     publishedAt: overrides.publishedAt ?? null,
+    templateKey: overrides.templateKey ?? null,
+    templateVersion: overrides.templateVersion ?? null,
+    attributes: overrides.attributes ?? {},
+    details: overrides.details ?? {
+      highlights: [],
+      usageInstructions: '',
+      purchaseNotes: '',
+      afterSalesInstructions: '',
+      faq: [],
+    },
+    purchaseForm: overrides.purchaseForm ?? [],
     category: { id: 1, status: overrides.categoryStatus ?? CATEGORY_STATUS.ACTIVE },
     offers: overrides.offers ?? [offer({ available: 3 })],
   }
@@ -92,7 +116,7 @@ describe('checkProductReadiness — ready', () => {
       offer({ deliveryMode: 'instant_inventory', available: 1 }),
       offer({ deliveryMode: 'instant_fixed', stockMode: 'unlimited', fixedContent: 'x' }),
       offer({ deliveryMode: 'instant_fixed', stockMode: 'limited', stock: 5, fixedContent: 'x' }),
-      offer({ deliveryMode: 'instant_fixed', fixedContentType: 'file', fixedFileId: 9, stockMode: 'unlimited' }),
+      offer({ deliveryMode: 'instant_fixed', fixedContentType: 'file', fixedFileId: 9, fixedFile: { id: 9, status: 'active' }, stockMode: 'unlimited' }),
       offer({ deliveryMode: 'manual_service', stockMode: 'unlimited' }),
       offer({ deliveryMode: 'manual_service', stockMode: 'limited', stock: 2 }),
     ]

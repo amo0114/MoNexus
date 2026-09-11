@@ -77,6 +77,7 @@ async function setupFixture(balance = 10_000): Promise<Fixture> {
       type: '网络节点',
       price: 100,
       status: 'active',
+      visibility: 'public',
       categoryId: category.id,
       merchantId: merchant.id,
     },

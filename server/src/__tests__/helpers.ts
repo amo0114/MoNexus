@@ -139,6 +139,7 @@ export async function createTestProduct(
       status: 'active',
       stock: items.length || stock,
       merchantId,
+      visibility: 'public',
     },
   })
   // P4a：Offer 是价格/履约配置真相源；测试商品同步建一条默认 Offer。

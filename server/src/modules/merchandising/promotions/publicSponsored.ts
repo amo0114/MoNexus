@@ -23,6 +23,10 @@ import { CAMPAIGN_STATUS, SPONSORED_DISCLOSURE, type SponsoredPlacement } from '
 import type { SponsoredShelfItem } from '../contracts.js'
 import { prisma } from '../../../lib/prisma.js'
 import { recordSponsoredItems } from './metrics.js'
+import {
+  isCurrentlyPubliclyVisible,
+  type ProductAudience,
+} from '../../products/visibility.js'
 
 type Db = typeof prisma | Prisma.TransactionClient
 
@@ -85,8 +89,9 @@ export function computeSponsoredCacheKey(
   categoryCode: string | null,
   limit: number,
   bucket: number,
+  audience: ProductAudience = 'guest',
 ): string {
-  return `${placement ?? '*'}|${categoryCode ?? '*'}|${limit}|${bucket}`
+  return `${placement ?? '*'}|${categoryCode ?? '*'}|${limit}|${bucket}|${audience}`
 }
 
 /**
@@ -96,10 +101,34 @@ export function computeSponsoredCacheKey(
  * categoryCode 过滤商品的 category.code）；Merchant.status=active。返回后按 bucket
  * 轮换 key 排序取 limit。命中 60s 缓存直接返回。
  */
+async function filterSponsoredByAudience(
+  items: SponsoredShelfItem[],
+  audience: ProductAudience,
+  db: Db,
+): Promise<SponsoredShelfItem[]> {
+  if (items.length === 0) return items
+  const products = await db.product.findMany({
+    where: { id: { in: items.map(item => item.productId) } },
+    select: {
+      id: true,
+      status: true,
+      archivedAt: true,
+      visibility: true,
+      merchantId: true,
+      merchant: { select: { status: true } },
+    },
+  })
+  const visible = new Set(
+    products.filter(row => isCurrentlyPubliclyVisible(row, audience)).map(row => row.id),
+  )
+  return items.filter(item => visible.has(item.productId))
+}
+
 export async function listSponsoredItems(
   input: SponsoredQueryInput = {},
   db: Db = prisma,
   nowMs = Date.now(),
+  audience: ProductAudience = 'guest',
 ): Promise<SponsoredShelfItem[]> {
   const placement = input.placement ?? null
   const categoryCode = typeof input.categoryCode === 'string' && input.categoryCode.trim().length > 0
@@ -108,10 +137,10 @@ export async function listSponsoredItems(
   const limit = normalizeSponsoredLimit(input.limit)
   const bucket = computeSponsoredBucket(nowMs)
 
-  const cacheKey = computeSponsoredCacheKey(placement, categoryCode, limit, bucket)
+  const cacheKey = computeSponsoredCacheKey(placement, categoryCode, limit, bucket, audience)
   const cached = cache.get(cacheKey)
   if (cached && cached.expiresAt > nowMs) {
-    return cached.items
+    return filterSponsoredByAudience(cached.items, audience, db)
   }
 
   const where: Prisma.PromotionCampaignWhereInput = {
@@ -119,6 +148,8 @@ export async function listSponsoredItems(
     ...(placement ? { placementSnapshot: placement } : {}),
     product: {
       status: 'active',
+      archivedAt: null,
+      ...(audience === 'guest' ? { visibility: 'public' } : {}),
       ...(categoryCode ? { category: { code: categoryCode } } : {}),
     },
     merchant: { status: 'active' },
@@ -143,5 +174,5 @@ export async function listSponsoredItems(
 
   cache.set(cacheKey, { expiresAt: nowMs + SPONSORED_CACHE_TTL_MS, items })
   recordSponsoredItems(placement ?? 'all', items.length)
-  return items
+  return filterSponsoredByAudience(items, audience, db)
 }

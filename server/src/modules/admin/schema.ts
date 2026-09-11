@@ -194,6 +194,14 @@ export const adminOfferPatchSchema = z.object({
   originalPrice: productPriceSchema.nullable().optional(),
   validityDays: z.number().int().min(1).max(3650).nullable().optional(),
   sortOrder: z.number().int().min(0).max(10_000).optional(),
+  attributes: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.array(z.string())])).optional(),
+  expectedCheckoutVersion: z.string().min(1).max(64).optional(),
+  deliveryMode: z.enum(['instant_inventory', 'instant_fixed', 'manual_service']).optional(),
+  stockMode: productStockModeSchema.optional(),
+  fixedContentType: z.enum(['text', 'url', 'file']).optional(),
+  fixedContent: z.string().trim().min(1).max(5000).nullable().optional(),
+  fixedFileId: z.number().int().positive().nullable().optional(),
+  fixedStructuredContent: z.unknown().nullable().optional(),
 }).strict()
 
 // FakaBridge admin (requireAdmin only): set Xboard capacity_limit; null = unlimited.

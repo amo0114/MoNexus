@@ -4,6 +4,40 @@ import AdminOrderDetailDialog from './AdminOrderDetailDialog'
 import { AdminOrderDetail } from '../../api/admin'
 import { useAppStore } from '../../stores/appStore'
 
+const fulfillmentMocks = vi.hoisted(() => ({
+  startAdminPlatformFulfillment: vi.fn(),
+  postAdminPlatformProgress: vi.fn(),
+  deliverAdminPlatformOrder: vi.fn(),
+  rejectAdminPlatformOrder: vi.fn(),
+}))
+
+vi.mock('../../api/admin', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../api/admin')>()
+  return {
+    ...actual,
+    startAdminPlatformFulfillment: fulfillmentMocks.startAdminPlatformFulfillment,
+    postAdminPlatformProgress: fulfillmentMocks.postAdminPlatformProgress,
+    deliverAdminPlatformOrder: fulfillmentMocks.deliverAdminPlatformOrder,
+    rejectAdminPlatformOrder: fulfillmentMocks.rejectAdminPlatformOrder,
+  }
+})
+
+function platformPendingOrder(overrides: Partial<AdminOrderDetail> = {}): AdminOrderDetail {
+  return {
+    id: 1001,
+    status: 'pending',
+    price: 120,
+    createdAt: '2026-03-01T10:00:00.000Z',
+    merchantId: null,
+    merchant: null,
+    user: { id: 1, email: 'buyer@test.local' },
+    product: { id: 9, name: '人工咨询', deliveryMode: 'manual_service' },
+    deliveryModeSnapshot: 'manual_service',
+    delivery: { status: 'pending' },
+    ...overrides,
+  }
+}
+
 describe('AdminOrderDetailDialog Component', () => {
   const sampleDetail: AdminOrderDetail = {
     id: 999,
@@ -34,6 +68,10 @@ describe('AdminOrderDetailDialog Component', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     useAppStore.setState({ toasts: [] })
+    fulfillmentMocks.startAdminPlatformFulfillment.mockResolvedValue({ id: 1001, status: 'processing' })
+    fulfillmentMocks.postAdminPlatformProgress.mockResolvedValue({ id: 1001, status: 'processing' })
+    fulfillmentMocks.deliverAdminPlatformOrder.mockResolvedValue({ id: 1001, status: 'delivered' })
+    fulfillmentMocks.rejectAdminPlatformOrder.mockResolvedValue({ id: 1001, status: 'refunded' })
   })
 
   it('renders nothing when closed', () => {
@@ -166,5 +204,50 @@ describe('AdminOrderDetailDialog Component', () => {
     const closeBtn = screen.getByTestId('admin-order-detail-close-btn')
     fireEvent.click(closeBtn)
     expect(onOpenChange).toHaveBeenCalledWith(false)
+  })
+
+  it('renders 开始履约 for platform pending manual order', () => {
+    render(
+      <AdminOrderDetailDialog
+        order={platformPendingOrder()}
+        open={true}
+        onOpenChange={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByTestId('admin-platform-fulfillment-actions')).toBeInTheDocument()
+    expect(screen.getByTestId('admin-platform-start-fulfillment')).toHaveTextContent('开始履约')
+  })
+
+  it('does not render platform fulfillment actions for merchant order', () => {
+    render(
+      <AdminOrderDetailDialog
+        order={sampleDetail}
+        open={true}
+        onOpenChange={vi.fn()}
+      />,
+    )
+
+    expect(screen.queryByTestId('admin-platform-fulfillment-actions')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('admin-platform-start-fulfillment')).not.toBeInTheDocument()
+  })
+
+  it('calls the admin start-fulfillment API mock on 开始履约 click', async () => {
+    const onFulfillmentSuccess = vi.fn()
+    render(
+      <AdminOrderDetailDialog
+        order={platformPendingOrder()}
+        open={true}
+        onOpenChange={vi.fn()}
+        onFulfillmentSuccess={onFulfillmentSuccess}
+      />,
+    )
+
+    fireEvent.click(screen.getByTestId('admin-platform-start-fulfillment'))
+
+    await waitFor(() => {
+      expect(fulfillmentMocks.startAdminPlatformFulfillment).toHaveBeenCalledWith(1001)
+    })
+    expect(onFulfillmentSuccess).toHaveBeenCalledTimes(1)
   })
 })

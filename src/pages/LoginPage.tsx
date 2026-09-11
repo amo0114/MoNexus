@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
+import { useNavigate, Link, useSearchParams } from 'react-router-dom'
 import { Gift, Wrench } from 'lucide-react'
 import { useAuthStore } from '../stores/authStore'
 import { useAppStore } from '../stores/appStore'
@@ -22,6 +22,7 @@ import RecoveryCodeConfirmation from '../components/auth/RecoveryCodeConfirmatio
 import HumanVerificationWidget from '../components/auth/HumanVerificationWidget'
 import type { HumanVerificationHandle } from '../components/auth/humanVerificationTypes'
 import Logo from '../components/ui/Logo'
+import { parseSafeProductReturnTo } from '../utils/returnTo'
 
 type PendingRecoveryConfirmation = {
   accessToken: string
@@ -66,6 +67,8 @@ function LoginShell({ children }: { children: ReactNode }) {
 
 export default function LoginPage() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const returnTo = parseSafeProductReturnTo(searchParams.get('returnTo')) ?? '/'
   const login = useAuthStore((state) => state.login)
   const showToast = useAppStore((state) => state.showToast)
   const humanVerificationRef = useRef<HumanVerificationHandle>(null)
@@ -158,7 +161,7 @@ export default function LoginPage() {
       clearMfaState()
       setPassword('')
       showToast(successMessage)
-      navigate('/')
+      navigate(returnTo)
       return true
     } catch (error) {
       showToast(getApiErrorMessage(error, '登录状态同步失败，请再试一次'), 'error')

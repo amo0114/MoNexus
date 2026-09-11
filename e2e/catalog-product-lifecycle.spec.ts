@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { API_BASE, SEED_ACCOUNTS, loginAs, loginAsApi } from './helpers'
+import { API_BASE, E2E_PRODUCT_COVER, SEED_ACCOUNTS, fillWizardOfferAttributes, fillWizardPublicationDetails, loginAs, loginAsApi } from './helpers'
 
 /**
  * SPEC-CATALOG-OPS / PAR-CMI-001 — Catalog product lifecycle 前置段（极窄 E2E 卡）。
@@ -9,16 +9,16 @@ import { API_BASE, SEED_ACCOUNTS, loginAs, loginAsApi } from './helpers'
  * 2. 点击真实创建动作前监听 POST /api/merchant/products，用类型守卫从 unknown JSON
  *    安全取得正整数 productId；create 响应未内嵌默认 Offer 时，从创建后的真实 UI
  *    （可售量步的规格选择器）读取默认 Offer id —— 全程零写 API；
- * 3. 用只读 HTTP 断言 draft 对公开商品详情与 checkout preview 均不可用
- *    （400 BAD_REQUEST，稳定 code），且 preview 显式携带正确 offerId。
+ * 3. 用只读 HTTP 断言 draft 对公开商品详情（404）与 checkout preview
+ *    （400 BAD_REQUEST）均不可用，且 preview 显式携带正确 offerId。
  *
  * 本卡追加（merch 侧闭合）：发布被拒（422 PRODUCT_NOT_READY）与 offer-scoped 补 capacity、
  * 成功发布（200 active）与公开详情恢复；buyer checkout 已闭合于第 5 个用例（买家经商城搜索
  * 进入单 SKU 详情，拉起可售结算预览，全程零下单）。
  * 第 6 个用例（本卡）已覆盖 Dashboard UI 下架：POST .../unpublish 200 + status=inactive 精确
  * 匹配 + 行状态回退「未上架」。
- * 第 7 个用例（本卡）已覆盖下架后的公开拒绝：公开商品详情 / 商城搜索 / checkout preview 均
- * 拒绝（400 BAD_REQUEST，稳定 code）。
+ * 第 7 个用例（本卡）已覆盖下架后的公开拒绝：公开商品详情 404、商城搜索空态、
+ * checkout preview 400 BAD_REQUEST。
  * 第 8 个用例（本卡）已覆盖 capacity 保留与重发：下架后 offer capacity 不清空（availability modal
  * 内 current stock 仍为 5），商家从 UI 重新上架成功（200 active + toast「商品已上架」+ 行
  * 「上架中」/按钮「下架」）。
@@ -28,8 +28,8 @@ import { API_BASE, SEED_ACCOUNTS, loginAs, loginAsApi } from './helpers'
  */
 const PRODUCT_NAME = `E2E目录草稿-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 
-/** 同源封面路径（仓库 public/brand/ledger-knot/mark-light.png 真实存在）。 */
-const COVER_PATH = '/brand/ledger-knot/mark-light.png'
+/** 规范封面：v2 create 仅持久化 /assets/ 静态资源或上传 objectKey。 */
+const COVER_PATH = E2E_PRODUCT_COVER
 
 let productId = 0
 let offerId = 0
@@ -54,14 +54,17 @@ function parseCreatedProduct(body: unknown): { id: number; status: string } {
   return { id: body.id, status: body.status }
 }
 
-/** unknown JSON → create 响应封面字段（imageUrl + images），类型守卫；形状不符返回 null。 */
-function readCoverFields(body: unknown): { imageUrl: string; images: string[] } | null {
-  if (!isRecord(body)) return null
-  if (typeof body.imageUrl !== 'string') return null
-  if (!Array.isArray(body.images) || body.images.length !== 1) return null
-  const first = body.images[0]
-  if (typeof first !== 'string') return null
-  return { imageUrl: body.imageUrl, images: [first] }
+/** unknown JSON → editor 封面（product.images[].url），类型守卫；形状不符返回 null。 */
+function readEditorCoverFields(body: unknown): { imageUrl: string; images: string[] } | null {
+  if (!isRecord(body) || !isRecord(body.product)) return null
+  const images = body.product.images
+  if (!Array.isArray(images) || images.length !== 1) return null
+  const first = images[0]
+  const url = isRecord(first) && typeof first.url === 'string'
+    ? first.url
+    : (typeof first === 'string' ? first : null)
+  if (url == null) return null
+  return { imageUrl: url, images: [url] }
 }
 
 /**
@@ -108,8 +111,15 @@ function parseNonNegativeInteger(raw: string, label: string): number {
   return parsed
 }
 
-/** 不可售商品（draft 或下架后 inactive）对 public 入口的拒绝契约：HTTP 400 + 稳定 code BAD_REQUEST。 */
-async function expectPublicUnavailable(response: { status(): number; json(): Promise<unknown> }): Promise<void> {
+/** 不可售商品对公开详情的拒绝契约（SPEC-PRODUCT-COMMERCE-002 §6.2）：HTTP 404。 */
+async function expectPublicProductUnavailable(response: { status(): number; json(): Promise<unknown> }): Promise<void> {
+  expect(response.status()).toBe(404)
+  const body: unknown = await response.json()
+  expect(readErrorCode(body)).toBe('NOT_FOUND')
+}
+
+/** 不可售商品对 checkout preview 的拒绝契约：HTTP 400 + 稳定 code BAD_REQUEST。 */
+async function expectCheckoutUnavailable(response: { status(): number; json(): Promise<unknown> }): Promise<void> {
   expect(response.status()).toBe(400)
   const body: unknown = await response.json()
   expect(readErrorCode(body)).toBe('BAD_REQUEST')
@@ -205,7 +215,7 @@ function parseCheckoutPreview(body: unknown, expectedProductId: number, expected
 }
 
 test.describe.serial('PAR-CMI-001 catalog product lifecycle prelude', () => {
-  test('merchant creates a draft with limited capacity via the wizard', async ({ page }) => {
+  test('merchant creates a draft with limited capacity via the wizard', async ({ page, request }) => {
     await loginAs(page, SEED_ACCOUNTS.merchant)
 
     await page.goto('/merchant/products/new')
@@ -219,7 +229,7 @@ test.describe.serial('PAR-CMI-001 catalog product lifecycle prelude', () => {
     // 步骤 1：展示信息 —— 唯一名称 + 显式分类（分类仅作展示，D-CAT-05）。
     await page.getByTestId('wizard-name').fill(PRODUCT_NAME)
 
-    // 封面：真实 ProductImageUploader 直接外链同源图（零写 API），创建时即有规范封面。
+    // 封面：v2 create 仅持久化 /assets/ 静态资源（零写 API），创建时即有规范封面。
     await page.getByTestId('product-image-url-input').fill(COVER_PATH)
     await page.getByTestId('product-image-url-hotlink').click()
     const coverImg = page.getByTestId('product-images-list').locator('img')
@@ -228,10 +238,13 @@ test.describe.serial('PAR-CMI-001 catalog product lifecycle prelude', () => {
     const categorySelect = page.getByTestId('product-category-select')
     await expect(categorySelect.locator('option:not([value=""])')).not.toHaveCount(0, { timeout: 10_000 })
     await categorySelect.selectOption({ label: '共享账号' })
+    await page.getByTestId('wizard-visibility-public').check()
+    await fillWizardPublicationDetails(page)
     await page.getByTestId('wizard-next').click()
 
     // 步骤 2：定价 —— 主规格名保持默认，售价为正整数。
     await page.getByTestId('wizard-price').fill('2')
+    await fillWizardOfferAttributes(page)
     await page.getByTestId('wizard-next').click()
 
     // 步骤 3：交付方式 —— 模板预选人工服务履约；名额改为限量（有限 capacity）。
@@ -253,8 +266,14 @@ test.describe.serial('PAR-CMI-001 catalog product lifecycle prelude', () => {
     expect(created.status).toBe('draft')
     productId = created.id
 
-    // 类型守卫断言 create 响应携带规范封面：imageUrl === COVER_PATH 且 images 长度 1。
-    expect(readCoverFields(createdBody)).toEqual({ imageUrl: COVER_PATH, images: [COVER_PATH] })
+    // v2 create 响应不含 images/imageUrl；从 editor GET 核对已持久化封面。
+    const merchantSession = await loginAsApi(request, SEED_ACCOUNTS.merchant)
+    const editorRes = await request.get(`${API_BASE}/api/merchant/products/${productId}/editor`, {
+      headers: { Authorization: `Bearer ${merchantSession.accessToken}` },
+    })
+    expect(editorRes.ok(), await editorRes.text()).toBeTruthy()
+    const editorBody: unknown = await editorRes.json()
+    expect(readEditorCoverFields(editorBody)).toEqual({ imageUrl: COVER_PATH, images: [COVER_PATH] })
 
     // create 响应未内嵌默认 Offer → 从创建后的真实 UI（可售量步）读取默认 Offer id。
     const offerIdFromCreate = extractOfferIdFromCreateResponse(createdBody)
@@ -273,9 +292,9 @@ test.describe.serial('PAR-CMI-001 catalog product lifecycle prelude', () => {
     expect(productId).toBeGreaterThan(0)
     expect(offerId).toBeGreaterThan(0)
 
-    // 公开商品详情（无需登录）：draft → 400 BAD_REQUEST。
+    // 公开商品详情（无需登录）：draft → 404 NOT_FOUND。
     const detail = await request.get(`${API_BASE}/api/products/${productId}`)
-    await expectPublicUnavailable(detail)
+    await expectPublicProductUnavailable(detail)
 
     // checkout preview（需登录用户）：显式携带正确 offerId，draft → 400 BAD_REQUEST。
     const userSession = await loginAsApi(request, SEED_ACCOUNTS.user)
@@ -283,7 +302,7 @@ test.describe.serial('PAR-CMI-001 catalog product lifecycle prelude', () => {
       `${API_BASE}/api/checkout/preview?productId=${productId}&offerId=${offerId}`,
       { headers: { Authorization: `Bearer ${userSession.accessToken}` } },
     )
-    await expectPublicUnavailable(preview)
+    await expectCheckoutUnavailable(preview)
   })
 
   test('publish is refused as not-ready, then capacity is topped up via the offer UI', async ({ page }) => {
@@ -509,9 +528,9 @@ test.describe.serial('PAR-CMI-001 catalog product lifecycle prelude', () => {
     expect(productId).toBeGreaterThan(0)
     expect(offerId).toBeGreaterThan(0)
 
-    // 1. 公开商品详情（无需登录）：下架（inactive）→ 400 BAD_REQUEST。
+    // 1. 公开商品详情（无需登录）：下架（inactive）→ 404 NOT_FOUND。
     const detail = await request.get(`${API_BASE}/api/products/${productId}`)
-    await expectPublicUnavailable(detail)
+    await expectPublicProductUnavailable(detail)
 
     // 2. checkout preview（独立 API 买家会话）：显式携带正确 offerId，下架 → 400 BAD_REQUEST。
     const userSession = await loginAsApi(request, SEED_ACCOUNTS.user)
@@ -519,7 +538,7 @@ test.describe.serial('PAR-CMI-001 catalog product lifecycle prelude', () => {
       `${API_BASE}/api/checkout/preview?productId=${productId}&offerId=${offerId}`,
       { headers: { Authorization: `Bearer ${userSession.accessToken}` } },
     )
-    await expectPublicUnavailable(preview)
+    await expectCheckoutUnavailable(preview)
 
     // 3. 商城 UI（独立买家会话）：真实桌面搜索框填商品名，下架后无结果 → 空态。
     await loginAs(page, SEED_ACCOUNTS.user)

@@ -58,6 +58,7 @@ import {
   type NormalizedFakaSource,
 } from '../catalog/externalCatalog.js'
 import { checkProductReadiness } from '../catalog/publicationReadiness.js'
+import { EMPTY_PRODUCT_DETAILS } from '../catalog/templates/types.js'
 import { sanitizeCatalogRichContent } from '../catalog/contentSanitizer.js'
 import { previewAdminFakaSync, confirmAdminFakaSync } from '../catalog/fakaSync.js'
 import {
@@ -554,6 +555,7 @@ export async function updateProduct(adminUserId: number, id: number, data: Updat
         ...(deliveryMode === 'instant_inventory' && product.deliveryMode !== 'instant_inventory'
           ? { stock: 0 }
           : {}),
+        contentVersion: { increment: 1 },
       },
     })
     // P4a：商品级编辑写透到默认 Offer（真相源），随后投影同步对齐商业列。
@@ -1031,12 +1033,23 @@ export async function getOrderDetail(orderId: number) {
       user: { select: { id: true, email: true } },
       merchant: { select: { id: true, name: true } },
       product: {
-        select: { id: true, name: true, icon: true, type: true, imageUrl: true, price: true },
+        select: {
+          id: true,
+          name: true,
+          icon: true,
+          type: true,
+          imageUrl: true,
+          price: true,
+          // 仅 id：序列化映射为 product.fakaBridge，原始 link 不进 DTO。
+          externalCatalogLink: { select: { id: true } },
+        },
       },
       // P6：详情补订阅到期时刻，供仲裁判断交付是否仍在有效期内。
       delivery: { select: { content: true, status: true, expiresAt: true } },
       // P7b：仲裁上下文透出自动开通任务态 + 脱敏诊断码（安全投影）。
       provisionTask: { select: { status: true, attempts: true, lastError: true, lastHttpStatus: true, nextAttemptAt: true, merchantNotifiedAt: true, updatedAt: true } },
+      // Xboard/Faka：只投影任务 id，供前端隐藏平台人工履约入口。
+      fakaBridgeTask: { select: { id: true } },
     },
   })
   if (!order) throw notFound('订单不存在')
@@ -1796,6 +1809,11 @@ const FAKA_PURCHASE_FORM = [
   },
 ]
 
+function clipCatalogText(value: string, max: number): string {
+  const trimmed = value.trim()
+  return trimmed.length > max ? trimmed.slice(0, max) : trimmed
+}
+
 type FakaImportDb = typeof prisma | Prisma.TransactionClient
 
 type FakaImportIssue = { code: string; field: string; message: string; action?: string }
@@ -2023,6 +2041,10 @@ export async function importAdminFakaPlan(
       }
       const { categoryId, type } = await resolveProductCategory({ categoryId: input.categoryId }, tx)
       const defaultRow = transactional.offers[0]!
+      const publicationCopy = clipCatalogText(
+        transactional.plainDescription || `${transactional.productName} · 导入套餐摘要`,
+        2000,
+      )
       const created = await tx.product.create({
         data: {
           name: transactional.productName,
@@ -2041,9 +2063,17 @@ export async function importAdminFakaPlan(
           status: 'draft',
           merchantId: null,
           purchaseForm: FAKA_PURCHASE_FORM,
+          templateKey: 'subscription',
+          templateVersion: 1,
+          visibility: 'members_only',
+          attributes: {
+            serviceName: clipCatalogText(transactional.productName, 100),
+            serviceScope: clipCatalogText(publicationCopy, 1000),
+          } as Prisma.InputJsonValue,
+          details: { ...EMPTY_PRODUCT_DETAILS } as Prisma.InputJsonValue,
         },
       })
-      await createDefaultOffer(tx, created.id, {
+      const defaultOffer = await createDefaultOffer(tx, created.id, {
         price: defaultRow.pricePoints,
         originalPrice: null,
         deliveryMode: 'manual_service',
@@ -2055,6 +2085,14 @@ export async function importAdminFakaPlan(
         externalIntegration: 'faka_bridge',
         externalSku: defaultRow.sku,
       }, defaultRow.offerName)
+      await tx.offer.update({
+        where: { id: defaultOffer.id },
+        data: {
+          attributes: {
+            entitlementSummary: clipCatalogText(`${defaultRow.offerName} · ${publicationCopy}`, 500),
+          } as Prisma.InputJsonValue,
+        },
+      })
       for (let i = 1; i < transactional.offers.length; i++) {
         const row = transactional.offers[i]!
         await tx.offer.create({
@@ -2074,6 +2112,9 @@ export async function importAdminFakaPlan(
             externalSku: row.sku,
             sortOrder: i,
             status: 'active',
+            attributes: {
+              entitlementSummary: clipCatalogText(`${row.offerName} · ${publicationCopy}`, 500),
+            } as Prisma.InputJsonValue,
           },
         })
       }

@@ -1,0 +1,701 @@
+{
+  "specification": "SPEC-PRODUCT-COMMERCE-002",
+  "registryVersion": 1,
+  "description": "冻结设计资产；示例不代表真实商品或种子数据。UI 通过 registry 消费字段定义，验证器不隐式填默认值。",
+  "templates": [
+    {
+      "key": "redemption_code",
+      "version": 1,
+      "label": "卡密与兑换码",
+      "productSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "urn:monexus:product-template:redemption_code:v1:product",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "serviceName": {
+            "type": "string",
+            "title": "适用产品",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "region": {
+            "type": "string",
+            "title": "适用地区",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "redemptionMethod": {
+            "type": "string",
+            "title": "兑换方式",
+            "minLength": 1,
+            "maxLength": 1000
+          }
+        },
+        "required": [
+          "serviceName",
+          "redemptionMethod"
+        ]
+      },
+      "offerSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "urn:monexus:product-template:redemption_code:v1:offer",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "unitLabel": {
+            "type": "string",
+            "title": "销售单位",
+            "minLength": 1,
+            "maxLength": 40
+          },
+          "faceValueLabel": {
+            "type": "string",
+            "title": "面值或授权范围",
+            "minLength": 1,
+            "maxLength": 100
+          }
+        },
+        "required": [
+          "unitLabel"
+        ]
+      },
+      "ui": {
+        "productOrder": [
+          "serviceName",
+          "region",
+          "redemptionMethod"
+        ],
+        "offerOrder": [
+          "unitLabel",
+          "faceValueLabel"
+        ],
+        "widgets": {
+          "serviceName": "text",
+          "region": "text",
+          "redemptionMethod": "textarea",
+          "unitLabel": "text",
+          "faceValueLabel": "text"
+        }
+      },
+      "examples": {
+        "product": {
+          "serviceName": "示例软件",
+          "region": "全球",
+          "redemptionMethod": "在软件的兑换入口输入卡密。"
+        },
+        "offer": {
+          "unitLabel": "1 个兑换码",
+          "faceValueLabel": "个人版授权"
+        }
+      },
+      "fulfillmentRules": [
+        {
+          "whenProductAttributes": {},
+          "configurations": [
+            "inventory"
+          ],
+          "requireStructuredDelivery": "none",
+          "requireRequiredDateField": false
+        }
+      ]
+    },
+    {
+      "key": "account",
+      "version": 1,
+      "label": "账号商品",
+      "productSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "urn:monexus:product-template:account:v1:product",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "serviceName": {
+            "type": "string",
+            "title": "适用服务",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "accessModel": {
+            "type": "string",
+            "title": "账号使用方式",
+            "enum": [
+              "exclusive",
+              "shared"
+            ]
+          },
+          "usageRestrictions": {
+            "type": "string",
+            "title": "使用限制",
+            "minLength": 1,
+            "maxLength": 1000
+          }
+        },
+        "required": [
+          "serviceName",
+          "accessModel",
+          "usageRestrictions"
+        ]
+      },
+      "offerSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "urn:monexus:product-template:account:v1:offer",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "accountTier": {
+            "type": "string",
+            "title": "账号权益",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "required": [
+          "accountTier"
+        ]
+      },
+      "ui": {
+        "productOrder": [
+          "serviceName",
+          "accessModel",
+          "usageRestrictions"
+        ],
+        "offerOrder": [
+          "accountTier"
+        ],
+        "widgets": {
+          "serviceName": "text",
+          "accessModel": "select",
+          "usageRestrictions": "textarea",
+          "accountTier": "text"
+        },
+        "enumLabels": {
+          "accessModel": {
+            "exclusive": "独享账号",
+            "shared": "共享账号"
+          }
+        }
+      },
+      "examples": {
+        "product": {
+          "serviceName": "示例服务",
+          "accessModel": "shared",
+          "usageRestrictions": "按商家约定使用，请勿修改账号资料。"
+        },
+        "offer": {
+          "accountTier": "基础功能"
+        }
+      },
+      "fulfillmentRules": [
+        {
+          "whenProductAttributes": {
+            "accessModel": "exclusive"
+          },
+          "configurations": [
+            "inventory"
+          ],
+          "requireStructuredDelivery": "inventory_fields",
+          "requireRequiredDateField": false
+        },
+        {
+          "whenProductAttributes": {
+            "accessModel": "shared"
+          },
+          "configurations": [
+            "fixed_text"
+          ],
+          "requireStructuredDelivery": "fixed_fields",
+          "requireRequiredDateField": false
+        }
+      ]
+    },
+    {
+      "key": "digital_file",
+      "version": 1,
+      "label": "数字文件",
+      "productSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "urn:monexus:product-template:digital_file:v1:product",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "contentCategory": {
+            "type": "string",
+            "title": "文件内容类型",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "formats": {
+            "type": "array",
+            "title": "文件格式",
+            "minItems": 1,
+            "maxItems": 8,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 40
+            }
+          },
+          "compatibility": {
+            "type": "string",
+            "title": "适用环境",
+            "minLength": 1,
+            "maxLength": 500
+          },
+          "usageLicense": {
+            "type": "string",
+            "title": "使用授权说明",
+            "minLength": 1,
+            "maxLength": 1000
+          }
+        },
+        "required": [
+          "contentCategory",
+          "formats",
+          "usageLicense"
+        ]
+      },
+      "offerSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "urn:monexus:product-template:digital_file:v1:offer",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "releaseVersion": {
+            "type": "string",
+            "title": "内容版本",
+            "minLength": 1,
+            "maxLength": 80
+          }
+        },
+        "required": [
+          "releaseVersion"
+        ]
+      },
+      "ui": {
+        "productOrder": [
+          "contentCategory",
+          "formats",
+          "compatibility",
+          "usageLicense"
+        ],
+        "offerOrder": [
+          "releaseVersion"
+        ],
+        "widgets": {
+          "contentCategory": "text",
+          "formats": "stringList",
+          "compatibility": "textarea",
+          "usageLicense": "textarea",
+          "releaseVersion": "text"
+        }
+      },
+      "examples": {
+        "product": {
+          "contentCategory": "设计素材",
+          "formats": [
+            "SVG",
+            "PNG"
+          ],
+          "compatibility": "支持标准图片格式的软件",
+          "usageLicense": "仅供购买者用于自己的作品，不得转售素材原文件。"
+        },
+        "offer": {
+          "releaseVersion": "2026 年 9 月版"
+        }
+      },
+      "fulfillmentRules": [
+        {
+          "whenProductAttributes": {},
+          "configurations": [
+            "fixed_file"
+          ],
+          "requireStructuredDelivery": "none",
+          "requireRequiredDateField": false
+        }
+      ]
+    },
+    {
+      "key": "fixed_content",
+      "version": 1,
+      "label": "固定数字内容",
+      "productSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "urn:monexus:product-template:fixed_content:v1:product",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "contentCategory": {
+            "type": "string",
+            "title": "内容类型",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "applicableScope": {
+            "type": "string",
+            "title": "适用范围",
+            "minLength": 1,
+            "maxLength": 500
+          }
+        },
+        "required": [
+          "contentCategory",
+          "applicableScope"
+        ]
+      },
+      "offerSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "urn:monexus:product-template:fixed_content:v1:offer",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "contentScope": {
+            "type": "string",
+            "title": "本套餐包含内容",
+            "minLength": 1,
+            "maxLength": 500
+          }
+        },
+        "required": [
+          "contentScope"
+        ]
+      },
+      "ui": {
+        "productOrder": [
+          "contentCategory",
+          "applicableScope"
+        ],
+        "offerOrder": [
+          "contentScope"
+        ],
+        "widgets": {
+          "contentCategory": "text",
+          "applicableScope": "textarea",
+          "contentScope": "textarea"
+        }
+      },
+      "examples": {
+        "product": {
+          "contentCategory": "学习指引",
+          "applicableScope": "入门学习"
+        },
+        "offer": {
+          "contentScope": "完整文字指引及资源入口"
+        }
+      },
+      "fulfillmentRules": [
+        {
+          "whenProductAttributes": {},
+          "configurations": [
+            "fixed_text",
+            "fixed_url"
+          ],
+          "requireStructuredDelivery": "none",
+          "requireRequiredDateField": false
+        }
+      ]
+    },
+    {
+      "key": "subscription",
+      "version": 1,
+      "label": "订阅与开通",
+      "productSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "urn:monexus:product-template:subscription:v1:product",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "serviceName": {
+            "type": "string",
+            "title": "服务名称",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "serviceScope": {
+            "type": "string",
+            "title": "服务范围",
+            "minLength": 1,
+            "maxLength": 1000
+          }
+        },
+        "required": [
+          "serviceName",
+          "serviceScope"
+        ]
+      },
+      "offerSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "urn:monexus:product-template:subscription:v1:offer",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "entitlementSummary": {
+            "type": "string",
+            "title": "套餐权益",
+            "minLength": 1,
+            "maxLength": 500
+          },
+          "quotaText": {
+            "type": "string",
+            "title": "额度说明",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "regionText": {
+            "type": "string",
+            "title": "地区或线路说明",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "required": [
+          "entitlementSummary"
+        ]
+      },
+      "ui": {
+        "productOrder": [
+          "serviceName",
+          "serviceScope"
+        ],
+        "offerOrder": [
+          "entitlementSummary",
+          "quotaText",
+          "regionText"
+        ],
+        "widgets": {
+          "serviceName": "text",
+          "serviceScope": "textarea",
+          "entitlementSummary": "textarea",
+          "quotaText": "text",
+          "regionText": "text"
+        }
+      },
+      "examples": {
+        "product": {
+          "serviceName": "示例订阅",
+          "serviceScope": "按所选套餐提供订阅服务。"
+        },
+        "offer": {
+          "entitlementSummary": "月度基础套餐"
+        }
+      },
+      "fulfillmentRules": [
+        {
+          "whenProductAttributes": {},
+          "configurations": [
+            "inventory",
+            "fixed_text",
+            "fixed_url",
+            "manual",
+            "merchant_webhook",
+            "faka_bridge"
+          ],
+          "requireStructuredDelivery": "none",
+          "requireRequiredDateField": false
+        }
+      ]
+    },
+    {
+      "key": "manual_service",
+      "version": 1,
+      "label": "人工服务与代办",
+      "productSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "urn:monexus:product-template:manual_service:v1:product",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "serviceScope": {
+            "type": "string",
+            "title": "服务范围",
+            "minLength": 1,
+            "maxLength": 1000
+          },
+          "deliverables": {
+            "type": "string",
+            "title": "交付成果",
+            "minLength": 1,
+            "maxLength": 1000
+          },
+          "preparation": {
+            "type": "string",
+            "title": "需要准备的资料",
+            "minLength": 1,
+            "maxLength": 1000
+          }
+        },
+        "required": [
+          "serviceScope",
+          "deliverables"
+        ]
+      },
+      "offerSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "urn:monexus:product-template:manual_service:v1:offer",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "servicePackage": {
+            "type": "string",
+            "title": "套餐包含服务",
+            "minLength": 1,
+            "maxLength": 500
+          }
+        },
+        "required": [
+          "servicePackage"
+        ]
+      },
+      "ui": {
+        "productOrder": [
+          "serviceScope",
+          "deliverables",
+          "preparation"
+        ],
+        "offerOrder": [
+          "servicePackage"
+        ],
+        "widgets": {
+          "serviceScope": "textarea",
+          "deliverables": "textarea",
+          "preparation": "textarea",
+          "servicePackage": "textarea"
+        }
+      },
+      "examples": {
+        "product": {
+          "serviceScope": "文档排版",
+          "deliverables": "完成排版的文件",
+          "preparation": "通过购买表单说明页数与要求，不填写账号密码。"
+        },
+        "offer": {
+          "servicePackage": "基础排版服务"
+        }
+      },
+      "fulfillmentRules": [
+        {
+          "whenProductAttributes": {},
+          "configurations": [
+            "manual",
+            "merchant_webhook"
+          ],
+          "requireStructuredDelivery": "none",
+          "requireRequiredDateField": false
+        }
+      ]
+    },
+    {
+      "key": "appointment",
+      "version": 1,
+      "label": "预约服务",
+      "productSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "urn:monexus:product-template:appointment:v1:product",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "deliveryChannel": {
+            "type": "string",
+            "title": "服务形式",
+            "enum": [
+              "text",
+              "voice",
+              "video"
+            ]
+          },
+          "timeZone": {
+            "type": "string",
+            "title": "预约日期时区",
+            "enum": [
+              "Asia/Shanghai"
+            ]
+          },
+          "preparation": {
+            "type": "string",
+            "title": "预约准备事项",
+            "minLength": 1,
+            "maxLength": 1000
+          }
+        },
+        "required": [
+          "deliveryChannel",
+          "timeZone"
+        ]
+      },
+      "offerSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "urn:monexus:product-template:appointment:v1:offer",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "servicePackage": {
+            "type": "string",
+            "title": "套餐包含服务",
+            "minLength": 1,
+            "maxLength": 500
+          },
+          "estimatedMinutes": {
+            "type": "integer",
+            "title": "预计服务时长（分钟）",
+            "minimum": 1,
+            "maximum": 1440,
+            "description": "仅说明预计时长，不代表已锁定时间槽。"
+          }
+        },
+        "required": [
+          "servicePackage"
+        ]
+      },
+      "ui": {
+        "productOrder": [
+          "deliveryChannel",
+          "timeZone",
+          "preparation"
+        ],
+        "offerOrder": [
+          "servicePackage",
+          "estimatedMinutes"
+        ],
+        "widgets": {
+          "deliveryChannel": "select",
+          "timeZone": "select",
+          "preparation": "textarea",
+          "servicePackage": "textarea",
+          "estimatedMinutes": "integer"
+        },
+        "enumLabels": {
+          "deliveryChannel": {
+            "text": "文字",
+            "voice": "语音",
+            "video": "视频"
+          },
+          "timeZone": {
+            "Asia/Shanghai": "北京时间（UTC+8）"
+          }
+        }
+      },
+      "examples": {
+        "product": {
+          "deliveryChannel": "video",
+          "timeZone": "Asia/Shanghai",
+          "preparation": "提交期望日期后由商家确认安排。"
+        },
+        "offer": {
+          "servicePackage": "一次在线咨询",
+          "estimatedMinutes": 30
+        }
+      },
+      "fulfillmentRules": [
+        {
+          "whenProductAttributes": {},
+          "configurations": [
+            "manual"
+          ],
+          "requireStructuredDelivery": "none",
+          "requireRequiredDateField": true
+        }
+      ]
+    }
+  ]
+}

@@ -1,9 +1,22 @@
 import { useState, useEffect, useMemo, useRef, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import { createPortal } from 'react-dom'
-import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, ChevronLeft, ChevronRight, Coins, FileText, Store, ShieldCheck, Info, Star, ZoomIn } from 'lucide-react'
-import DOMPurify from 'dompurify'
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
+import {
+  ArrowLeft,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  Coins,
+  FileText,
+  Store,
+  ShieldCheck,
+  Info,
+  Star,
+  ZoomIn,
+  Zap,
+} from 'lucide-react'
 import api from '../api/client'
+import { catalogApi } from '../api/catalog'
 import { getApiErrorMessage, getApiErrorCode } from '../api/error'
 import { createOrder, type CheckoutPreview } from '../api/orders'
 import { useAppStore } from '../stores/appStore'
@@ -12,14 +25,25 @@ import PurchaseModal, { type ConfirmOutcome } from '../components/PurchaseModal'
 import SuccessModal from '../components/SuccessModal'
 import { formatFileSize } from '../utils/formatFileSize'
 import EmptyState from '../components/ui/EmptyState'
-import SafeImage from '../components/ui/SafeImage'
 import ProductMediaFrame from '../components/ui/ProductMediaFrame'
 import ProductImageLightbox from '../components/ProductImageLightbox'
 import { getProductReviews, type ReviewItem } from '../api/reviews'
 import StarRating from '../components/ui/StarRating'
-import { useIsMobileViewport } from '../hooks/useMediaQuery'
+import { useIsMobileViewport, useIsDesktopViewport } from '../hooks/useMediaQuery'
+import RichTextHtml, { sanitizeRichTextHtml } from '../components/catalog/RichTextHtml'
+import ProductSharePanel, { ProductShareButton } from '../components/catalog/ProductSharePanel'
+import ProductSpecSections, {
+  listVisibleSpecSections,
+  mergeProductOfferAttributes,
+  titlesFromTemplate,
+} from '../components/catalog/ProductSpecSections'
+import ProductOfferSelector from '../components/catalog/ProductOfferSelector'
 import type { Offer } from '../types/merchant'
-import { offerPeriodDetailNote, offerPeriodSubtitle } from '../utils/offerPeriodDisplay'
+import type { MerchandisingProjection } from '../types/merchandising'
+import type { ProductDetails, ProductTemplateDefinition, TemplateAttributes } from '../types/catalog'
+import { offerPeriodDetailNote } from '../utils/offerPeriodDisplay'
+
+type PublicOffer = Offer & { attributes?: TemplateAttributes }
 
 interface Product {
   id: number
@@ -27,6 +51,12 @@ interface Product {
   description: string
   richDescription?: string
   type: string
+  visibility?: 'public' | 'members_only'
+  templateKey?: string | null
+  templateVersion?: number | null
+  contentVersion?: number
+  attributes?: TemplateAttributes
+  details?: ProductDetails
   icon: string
   imageUrl: string
   images?: string[]
@@ -38,23 +68,45 @@ interface Product {
   ratingAvg?: number
   ratingCount?: number
   merchant?: { id: number; name: string } | null
-  /** 单 Faka SKU 时商品级 Xboard 容量摘要。 */
+  merchandising?: MerchandisingProjection | null
+  assurance?: null | {
+    label: string
+    policyCode: string
+    policyText: string
+    validUntil: string
+  }
   fakaCapacity?: Offer['fakaCapacity']
-  /** SKU 列表(P4a);仅含 active 规格,已剥离 fixedContent。 */
-  offers?: Offer[]
+  offers?: PublicOffer[]
+}
+
+const SECTION_SCROLL_MARGIN = 'scroll-mt-[calc(var(--navbar-h)+var(--safe-top)+3.25rem)]'
+
+function getNavbarHeight(): number {
+  if (typeof window === 'undefined') return 64
+  const navVal = getComputedStyle(document.documentElement).getPropertyValue('--navbar-current-h')
+  const parsed = parseFloat(navVal)
+  if (!isNaN(parsed) && parsed > 0) return parsed
+  const header = document.querySelector('header')
+  if (header) {
+    const h = header.getBoundingClientRect().height
+    if (h > 0) return h
+  }
+  return 64
 }
 
 export default function ProductDetailPage() {
   const { id } = useParams<{ id: string }>()
+  const [searchParams] = useSearchParams()
   const navigate = useNavigate()
   const showToast = useAppStore((s) => s.showToast)
+  const isLoggedIn = useAuthStore((s) => s.isLoggedIn)
   const userPoints = useAuthStore((s) => s.user?.points ?? 0)
-  // 购买条仅渲染于移动视口（V2-M3）：桌面 DOM 与 develop 完全一致
   const isMobileViewport = useIsMobileViewport()
+  const isDesktopViewport = useIsDesktopViewport()
 
   const [product, setProduct] = useState<Product | null>(null)
   const [loading, setLoading] = useState(true)
-  // 选中的 SKU(P4a)。单 SKU 商品保持 null → 购买链路不传 offerId(透明兼容)。
+  const [loginRequired, setLoginRequired] = useState(false)
   const [selectedOfferId, setSelectedOfferId] = useState<number | null>(null)
 
   const [showPurchase, setShowPurchase] = useState(false)
@@ -63,22 +115,67 @@ export default function ProductDetailPage() {
   const [deliveryContent, setDeliveryContent] = useState('')
   const [deliveryContentType, setDeliveryContentType] = useState<string | undefined>(undefined)
   const [deliveryStructured, setDeliveryStructured] = useState<import('../types/merchant').StructuredDeliveryContent | null>(null)
-  // P5：文件交付元数据 + 订单号(下载卡片经发放端点取短时签名链接)。
   const [deliveryFile, setDeliveryFile] = useState<{ fileName: string; size: number } | null>(null)
   const [successOrderId, setSuccessOrderId] = useState<number | null>(null)
   const [merchantName, setMerchantName] = useState('')
   const [provisionPending, setProvisionPending] = useState(false)
   const [activeImage, setActiveImage] = useState(0)
   const [lightboxOpen, setLightboxOpen] = useState(false)
+  const [shareOpen, setShareOpen] = useState(false)
+  const desktopShareRef = useRef<HTMLButtonElement>(null)
+  const mobileShareRef = useRef<HTMLButtonElement>(null)
   const galleryPointerStartRef = useRef<{ x: number; y: number } | null>(null)
-  /** Ignore the click that follows a horizontal swipe so swipe ≠ open lightbox. */
   const galleryDidSwipeRef = useRef(false)
 
   const [reviews, setReviews] = useState<ReviewItem[]>([])
   const [reviewTotal, setReviewTotal] = useState(0)
   const [reviewPage, setReviewPage] = useState(1)
+  const [templates, setTemplates] = useState<ProductTemplateDefinition[]>([])
+  const inflowCardRef = useRef<HTMLDivElement>(null)
+  const [midScreenScrolledPast, setMidScreenScrolledPast] = useState(false)
 
-  // id 变化时重置评价分页状态（路由同参切换不重挂载组件）
+  useEffect(() => {
+    if (isMobileViewport || isDesktopViewport) {
+      setMidScreenScrolledPast(false)
+      return
+    }
+
+    const checkPosition = () => {
+      const el = inflowCardRef.current
+      if (!el) return
+      const navHeight = getNavbarHeight()
+      const cardRect = el.getBoundingClientRect()
+      const cta = el.querySelector('[data-testid="inflow-buy-cta"]') as HTMLElement | null
+      const ctaRect = cta && cta.getBoundingClientRect().height > 0 ? cta.getBoundingClientRect() : cardRect
+
+      // The in-flow purchase CTA has completely scrolled past the sticky navbar
+      setMidScreenScrolledPast(ctaRect.bottom <= navHeight)
+    }
+
+    window.addEventListener('scroll', checkPosition, { passive: true })
+    window.addEventListener('resize', checkPosition, { passive: true })
+
+    let observer: ResizeObserver | null = null
+    if (typeof ResizeObserver !== 'undefined') {
+      observer = new ResizeObserver(() => {
+        checkPosition()
+      })
+      if (inflowCardRef.current) {
+        observer.observe(inflowCardRef.current)
+      }
+      if (typeof document !== 'undefined' && document.body) {
+        observer.observe(document.body)
+      }
+    }
+
+    checkPosition()
+    return () => {
+      window.removeEventListener('scroll', checkPosition)
+      window.removeEventListener('resize', checkPosition)
+      observer?.disconnect()
+    }
+  }, [isMobileViewport, isDesktopViewport, product])
+
   useEffect(() => {
     setReviews([])
     setReviewTotal(0)
@@ -86,35 +183,67 @@ export default function ProductDetailPage() {
   }, [id])
 
   useEffect(() => {
-    if (!id) return
+    if (!id || !product || loginRequired) return
     let cancelled = false
     getProductReviews(Number(id), reviewPage)
       .then((data) => {
         if (cancelled) return
         setReviewTotal(data.total)
-        setReviews((prev) => reviewPage === 1 ? data.items : [...prev, ...data.items])
+        setReviews((prev) => (reviewPage === 1 ? data.items : [...prev, ...data.items]))
       })
       .catch(() => {})
-    return () => { cancelled = true }
-  }, [id, reviewPage])
+    return () => {
+      cancelled = true
+    }
+  }, [id, reviewPage, product, loginRequired])
+
+  useEffect(() => {
+    let cancelled = false
+    catalogApi
+      .listProductTemplates()
+      .then((data) => {
+        if (!cancelled) setTemplates(data.templates)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   useEffect(() => {
     async function load() {
       if (!id) return
+      setLoginRequired(false)
+      setProduct(null)
+      setLoading(true)
       try {
         const { data } = await api.get(`/products/${id}`)
         setProduct(data)
         setActiveImage(0)
-        // 多 SKU：默认选中第一条可购买的规格（后端按 sortOrder→id 排序）；
-        // 全部售罄时回退到第一条，让页面照常展示价格与"已被抢光"。
         const offers: Offer[] = data.offers ?? []
+        const requestedOfferId = Number(searchParams.get('offerId'))
         if (offers.length > 1) {
-          const firstAvailable = offers.find(o => o.stockMode === 'unlimited' || o.stock > 0)
-          setSelectedOfferId((firstAvailable ?? offers[0]).id)
+          const requested =
+            Number.isInteger(requestedOfferId) && requestedOfferId > 0
+              ? offers.find((o) => o.id === requestedOfferId)
+              : undefined
+          if (requested) {
+            setSelectedOfferId(requested.id)
+          } else {
+            if (Number.isInteger(requestedOfferId) && requestedOfferId > 0) {
+              showToast('套餐已失效，请重新选择', 'info')
+            }
+            const firstAvailable = offers.find((o) => o.stockMode === 'unlimited' || o.stock > 0)
+            setSelectedOfferId((firstAvailable ?? offers[0]).id)
+          }
         } else {
           setSelectedOfferId(null)
         }
       } catch (err) {
+        if (getApiErrorCode(err) === 'PRODUCT_LOGIN_REQUIRED') {
+          setLoginRequired(true)
+          return
+        }
         showToast('获取商品详情失败', 'error')
         navigate('/')
       } finally {
@@ -122,7 +251,7 @@ export default function ProductDetailPage() {
       }
     }
     load()
-  }, [id, navigate, showToast])
+  }, [id, navigate, showToast, searchParams, isLoggedIn])
 
   async function handlePurchase(
     preview: CheckoutPreview,
@@ -141,13 +270,12 @@ export default function ProductDetailPage() {
         formAnswers,
         expectedPurchaseFormVersion: preview.purchaseFormVersion,
         expectedCheckoutVersion: preview.checkoutVersion,
+        expectedProductContentVersion: preview.productContentVersion,
+        expectedAssuranceGrantId: preview.assuranceGrantId,
         verificationPassword: verificationPassword || undefined,
-        // SPEC-LEGAL-001：弹窗仅在用户勾选后回传版本，服务端据此留证。
         agreementVersions,
       })
       useAuthStore.getState().updatePoints(data.balanceAfter)
-      // PR-3：下单成功即刷新「进行中」角标。即时已交付订单不会被计入
-      // （权威计数只统计 pending/processing/disputed），人工/异步履约 +1。
       void useAppStore.getState().refreshOrderAttention()
       setDeliveryContent(data.deliveryContent ?? '')
       setDeliveryContentType(data.deliveryContentType ?? '')
@@ -158,42 +286,32 @@ export default function ProductDetailPage() {
       setProvisionPending(Boolean(data.provisionPending))
       setShowPurchase(false)
       setShowSuccess(true)
-      // 本地乐观更新：库存与销量按选中 SKU 递减(单 SKU 落到商品级投影)。
-      setProduct(prev => {
+      setProduct((prev) => {
         if (!prev) return prev
-        const nextOffers = prev.offers?.map(o =>
+        const nextOffers = prev.offers?.map((o) =>
           o.id === selectedOfferId ? { ...o, stock: Math.max(0, o.stock - 1), sales: (o.sales ?? 0) + 1 } : o
         )
         return { ...prev, stock: Math.max(0, prev.stock - 1), sales: prev.sales + 1, offers: nextOffers }
       })
-      // 成功反馈由 SuccessModal 承载（含交付明细），不再叠加 toast——
-      // 模态期间 toast 会被降级为顶部横幅，看起来像凭空多出的悬浮弹窗。
       return 'success'
     } catch (err: any) {
       const code = getApiErrorCode(err)
       if (code === 'PRICE_CHANGED' || code === 'CHECKOUT_CHANGED') {
-        // 弹窗保持打开，由 PurchaseModal 重新报价（含新表单）并让用户再次确认。
         showToast('商品信息已变化，请重新确认', 'error')
         return 'price_changed'
       }
       if (code === 'LEGAL_AGREEMENT_STALE') {
-        // 协议版本已更新：弹窗重新报价拿新版本清单并强制重新勾选。
         showToast('协议已更新，请重新阅读并同意', 'error')
         return 'agreement_stale'
       }
       if (code === 'VERIFICATION_REQUIRED') {
-        // 预览后风控条件变化（阈值调整/改价跨过阈值）：弹窗重新报价并渲染
-        // 密码框。请求无副作用，幂等键不轮换。
         showToast('本单需输入登录密码确认', 'error')
         return 'verification_required'
       }
       if (code === 'VERIFICATION_FAILED') {
-        // 密码错误：同一结算意图，幂等键不轮换；弹窗清空密码让用户重输。
         showToast(getApiErrorMessage(err, '密码错误，请重新输入'), 'error')
         return 'verification_failed'
       }
-      // 其他失败（含网络错误、验证限流 429）也保持弹窗打开：用户重试会复用
-      // 同一幂等键，服务端保证同一结算意图只产生一笔订单。
       showToast(getApiErrorMessage(err, '兑换失败'), 'error')
       return 'failed'
     } finally {
@@ -255,7 +373,6 @@ export default function ProductDetailPage() {
     const deltaX = event.clientX - start.x
     const deltaY = event.clientY - start.y
 
-    // Horizontal swipe → next/prev; do not open lightbox on the trailing click.
     if (hasMultipleImages && Math.abs(deltaX) >= 48 && Math.abs(deltaX) > Math.abs(deltaY)) {
       galleryDidSwipeRef.current = true
       moveGallery(deltaX > 0 ? -1 : 1)
@@ -263,7 +380,6 @@ export default function ProductDetailPage() {
   }
 
   function handleGalleryClick(event: React.MouseEvent<HTMLDivElement>) {
-    // Prev/next controls stopPropagation; remaining clicks open full-view lightbox.
     if (galleryDidSwipeRef.current) {
       galleryDidSwipeRef.current = false
       return
@@ -272,47 +388,57 @@ export default function ProductDetailPage() {
     openLightbox()
   }
 
-  const safeRichDescription = useMemo(() => {
-    if (!product) return ''
-    const rawHTML = product.richDescription || product.description || ''
-    return DOMPurify.sanitize(rawHTML, { USE_PROFILES: { html: true } })
-  }, [product])
-
   if (loading) {
     return (
-      <div className="max-w-4xl mx-auto pb-8 fade-in relative animate-pulse">
-        <div className="w-24 h-6 bg-[var(--color-border)] rounded-lg mb-4"></div>
-        <div className="w-full h-64 sm:h-80 md:h-96 bg-[var(--color-image-placeholder)] rounded-xl mb-8 border border-[var(--color-border)]"></div>
-        <div className="w-full h-32 bg-[var(--color-surface)] rounded-xl mb-8 border border-[var(--color-border)]"></div>
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          <div className="lg:col-span-2 space-y-4">
-            <div className="w-32 h-6 bg-[var(--color-border)] rounded-lg mb-4"></div>
-            <div className="w-full h-40 bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)]"></div>
+      <div className="max-w-6xl mx-auto px-4 lg:px-8 py-6 pb-8 fade-in relative animate-pulse" data-testid="product-detail-loading">
+        {!isLoggedIn ? (
+          <div className="h-40 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]" />
+        ) : (
+          <div className="space-y-6">
+            <div className="w-24 h-6 bg-[var(--color-border)] rounded-lg"></div>
+            <div className="w-64 h-8 bg-[var(--color-border)] rounded-lg"></div>
+            <div className="flex flex-col lg:flex-row gap-8 items-start">
+              <div className="flex-1 w-full aspect-[4/3] bg-[var(--color-image-placeholder)] rounded-2xl border border-[var(--color-border)]"></div>
+              <div className="w-full lg:w-[368px] h-96 bg-[var(--color-surface)] rounded-2xl border border-[var(--color-border)]"></div>
+            </div>
           </div>
-          <div className="lg:col-span-1 space-y-6">
-            <div className="w-full h-48 bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)]"></div>
-            <div className="w-full h-40 bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)]"></div>
-          </div>
-        </div>
+        )}
+      </div>
+    )
+  }
+
+  if (loginRequired) {
+    const returnTo = `/product/${id}`
+    return (
+      <div className="max-w-md mx-auto px-4 py-16 text-center fade-in" data-testid="product-login-required">
+        <h1 className="font-heading text-2xl font-bold text-[var(--color-text)]">登录后查看商品</h1>
+        <p className="mt-3 text-sm text-[var(--color-text-muted)]">该商品仅登录用户可浏览，登录后即可查看详情与套餐。</p>
+        <button
+          type="button"
+          className="btn-primary mt-6 min-h-[44px] px-6"
+          onClick={() => navigate(`/login?returnTo=${encodeURIComponent(returnTo)}`)}
+        >
+          去登录
+        </button>
       </div>
     )
   }
 
   if (!product) return null
 
-  // P4a：多 SKU 时价格/库存以选中规格为准;单 SKU 回退到商品级投影(透明)。
   const offers = product.offers ?? []
+  const hasNoOffers = offers.length === 0
   const isMultiSku = offers.length > 1
   const selectedOffer = isMultiSku
-    ? offers.find(o => o.id === selectedOfferId) ?? offers[0]
-    : undefined
+    ? offers.find((o) => o.id === selectedOfferId) ?? offers[0]
+    : offers[0] ?? undefined
   const displayPrice = selectedOffer?.price ?? product.price
   const displayOriginalPrice = selectedOffer ? selectedOffer.originalPrice ?? undefined : product.originalPrice
   const activeOffer = selectedOffer ?? offers[0]
   const fakaCapacity = activeOffer?.fakaCapacity ?? product.fakaCapacity ?? null
   const displayStockMode = activeOffer?.stockMode ?? product.stockMode
   const displayStock = activeOffer?.stock ?? product.stock
-  // Faka：库存展示用 Xboard 剩余名额；普通商品仍用本地 stock。
+
   const stockLabel =
     fakaCapacity?.source === 'xboard'
       ? fakaCapacity.remaining == null
@@ -321,23 +447,28 @@ export default function ProductDetailPage() {
       : displayStockMode === 'unlimited'
         ? '不限'
         : String(displayStock)
-  const stockTitle =
-    fakaCapacity?.source === 'xboard'
-      ? '剩余名额'
-      : '库存'
+
+  const stockTitle = fakaCapacity?.source === 'xboard' ? '剩余名额' : '库存'
 
   const isInsufficient = userPoints < displayPrice
   const isSoldOut =
-    fakaCapacity?.source === 'xboard'
+    hasNoOffers ||
+    (fakaCapacity?.source === 'xboard'
       ? fakaCapacity.sellable === false || (fakaCapacity.remaining != null && fakaCapacity.remaining <= 0)
-      : displayStockMode !== 'unlimited' && displayStock === 0
-  // P4b：购前可见将获得的交付字段（模板公开，字段"值"购买后才可见）
+      : displayStockMode !== 'unlimited' && displayStock === 0)
+
   const deliveryTemplate = activeOffer?.deliveryFields ?? []
-  // P5：file 形态规格的购前提示——只展示形态与大小,文件名/链接购前不可见。
   const fileDeliverySize = activeOffer?.fixedContentType === 'file' ? activeOffer?.deliveryFileSize ?? null : undefined
 
-  // 兑换 CTA 状态机（页内按钮与移动端固定购买条共用，V2-M3 invariant 10）
+  const loginReturnTo = selectedOfferId ? `/product/${id}?offerId=${selectedOfferId}` : `/product/${id}`
   const handleRedeemClick = () => {
+    if (!isLoggedIn) {
+      navigate(`/login?returnTo=${encodeURIComponent(loginReturnTo)}`)
+      return
+    }
+    if (isSoldOut || hasNoOffers) {
+      return
+    }
     if (isInsufficient) {
       navigate('/')
     } else {
@@ -345,105 +476,215 @@ export default function ProductDetailPage() {
     }
   }
 
+  const redeemLabel = !isLoggedIn
+    ? '登录后兑换'
+    : hasNoOffers
+      ? '暂无可售套餐'
+      : isSoldOut
+        ? '已被抢光'
+        : isInsufficient
+          ? '余额不足，去赚积分'
+          : '立即兑换'
+
+  const showBottomBar = !isDesktopViewport && (isMobileViewport || midScreenScrolledPast)
+
+  const template =
+    templates.find(
+      (item) => item.key === product.templateKey && item.version === (product.templateVersion ?? 1)
+    ) ?? null
+
+  const highlights = (product.details?.highlights ?? []).filter((item) => item.trim().length > 0).slice(0, 4)
+
+  const specRows = mergeProductOfferAttributes(product.attributes, activeOffer?.attributes, {
+    productOrder: template?.ui.productOrder,
+    offerOrder: template?.ui.offerOrder,
+    titles: titlesFromTemplate(template),
+    enumLabels: template?.ui.enumLabels,
+  })
+
+  const specNav = listVisibleSpecSections({
+    specRows,
+    details: product.details,
+    assurance: product.assurance,
+  })
+
+  const hasIntro = Boolean(sanitizeRichTextHtml(product.richDescription))
+  const navSections = [
+    ...(hasIntro ? [{ id: 'product-section-intro', label: '介绍' }] : []),
+    ...specNav,
+    { id: 'product-section-reviews', label: '评价' },
+  ]
+  const showSectionNav = hasIntro || specNav.length > 0
+
   return (
-    <div className="max-w-5xl mx-auto max-md:pb-[calc(5rem+var(--safe-bottom))] md:pb-8 fade-in relative">
-      <button
-        onClick={() => navigate(-1)}
-        className="mb-4 flex items-center gap-2 text-[var(--color-text-muted)] hover:text-[var(--color-text)] transition-colors font-medium cursor-pointer"
-      >
-        <ArrowLeft className="w-5 h-5" /> 返回商店
-      </button>
+    <div className="max-w-6xl mx-auto px-4 lg:px-8 py-4 max-lg:pb-[calc(5rem+var(--safe-bottom))] lg:pb-12 fade-in relative">
+      {/* Top Bar: Back & Share */}
+      <div className="flex items-center justify-between mb-4">
+        <button
+          type="button"
+          onClick={() => navigate(-1)}
+          className="flex items-center gap-1.5 text-xs sm:text-sm text-[var(--color-text-muted)] hover:text-[var(--color-text)] transition-colors font-medium cursor-pointer"
+        >
+          <ArrowLeft className="w-4 h-4" /> 返回商店
+        </button>
 
-      <div className="rounded-xl overflow-hidden bg-[var(--color-surface)] border border-[var(--color-border)] shadow-md mb-8">
-        <div data-testid="product-gallery">
-          {/* 电商惯例：固定 1:1 主图画布 + cover 铺满（列表/详情整齐无信箱条）。
-              完整原图点进灯箱 object-contain 查看。限高避免超大屏过高。 */}
-          <ProductMediaFrame
-            src={galleryImages.length > 0 ? (galleryImages[activeImage] ?? galleryImages[0]) : undefined}
-            alt={product.name}
-            frameClassName="aspect-square max-h-[min(70dvh,36rem)] mx-auto"
-            className="shrink-0 touch-pan-y select-none"
-            fit="cover"
-            imageProps={{
-              'data-testid': 'product-gallery-main',
-              draggable: false,
-            }}
+        <ProductShareButton
+          ref={isMobileViewport ? mobileShareRef : desktopShareRef}
+          variant="page"
+          onClick={() => setShareOpen(true)}
+        />
+      </div>
+
+      {/* Header-First SPU Hierarchy: Placed ABOVE gallery and checkout sidebar on all viewports */}
+      <header className="mb-6 space-y-2 border-b border-[var(--color-border)] pb-4">
+        <div className="flex items-center gap-2 flex-wrap text-xs">
+          <span className="font-bold px-2.5 py-0.5 rounded-full bg-[var(--color-primary-tint)] text-[var(--color-primary)]">
+            {product.type}
+          </span>
+          <span className="text-[var(--color-text-muted)] font-medium flex items-center gap-1">
+            <Store className="w-3.5 h-3.5" />
+            {product.merchant?.name || '平台自营'}
+          </span>
+          {product.ratingCount && product.ratingCount > 0 ? (
+            <span className="text-[var(--color-text-muted)] font-medium flex items-center gap-1" data-testid="rating-summary">
+              <StarRating value={product.ratingAvg ?? 0} />
+              <span className="font-bold text-[var(--color-text)]">{(product.ratingAvg ?? 0).toFixed(1)}</span>
+              （{product.ratingCount} 条评价）
+            </span>
+          ) : (
+            <span className="text-[var(--color-text-muted)] font-medium" data-testid="rating-summary">暂无评分</span>
+          )}
+        </div>
+
+        <h1 className="font-heading text-2xl sm:text-3xl lg:text-4xl font-bold text-[var(--color-text)] tracking-tight min-w-0">
+          {product.name}
+        </h1>
+
+        <p className="text-sm sm:text-base text-[var(--color-text-muted)] leading-relaxed max-w-3xl">
+          {product.description?.trim() || '按需选择额度，交付后在订单中查看凭据。'}
+        </p>
+      </header>
+
+      {/* Main Dual-Column Content Grid */}
+      <div className="flex flex-col lg:flex-row gap-8 items-start">
+        {/* Left Column: 4:3 Gallery & Rich Content Area */}
+        <div className="flex-1 min-w-0 w-full space-y-8">
+          {/* 4:3 Gallery with Pure Component-Rendered Overlays */}
+          <div
+            data-testid="product-gallery"
+            className="rounded-2xl overflow-hidden border border-[var(--color-border)] bg-[var(--color-surface)] shadow-sm"
           >
-            <div
-              role="button"
-              aria-label={
-                hasMultipleImages
-                  ? `商品图片，当前第 ${activeImage + 1} 张，共 ${galleryImages.length} 张。点击查看全图；可左右拖动或使用方向键切换。`
-                  : '商品图片，点击查看全图'
-              }
-              tabIndex={0}
-              onKeyDown={handleGalleryKeyDown}
-              onPointerDown={handleGalleryPointerDown}
-              onPointerUp={handleGalleryPointerEnd}
-              onPointerCancel={() => { galleryPointerStartRef.current = null }}
-              onClick={handleGalleryClick}
-              data-testid="product-gallery-stage"
-              className="absolute inset-0 cursor-zoom-in outline-none"
-            >
-              <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/10 to-transparent pointer-events-none" />
-
-              {/* Chips stay overlaid at every size; the title only overlays on
-                  md+（P2-4：切换点必须是 md——lg 会把 768–1023px 的桌面布局
-                  也改掉，违反「≥768px 桌面不变」约束）；<md 标题在内容流。 */}
-              <div className="absolute bottom-6 left-6 right-6 flex flex-col gap-4 z-10 pointer-events-none">
-                <div className="flex gap-2 flex-wrap">
-                  <span className="text-xs font-bold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5 bg-black/25 backdrop-blur-md border border-white/20">
-                    {product.type}
-                  </span>
-                  <span className="text-xs font-bold px-3 py-1.5 rounded-lg text-white flex items-center gap-1.5 bg-black/25 backdrop-blur-md border border-white/20">
-                    <Store className="w-3 h-3" />
-                    {product.merchant?.name || '平台自营'}
-                  </span>
-                </div>
-                <h1 className="hidden md:block font-heading text-3xl md:text-4xl font-bold text-white leading-snug drop-shadow-md tracking-tight">
-                  {product.name}
-                </h1>
-              </div>
-
-              <span className="pointer-events-none absolute left-1/2 top-4 z-20 hidden -translate-x-1/2 items-center gap-1.5 rounded-full border border-white/25 bg-black/45 px-2.5 py-1 text-xs font-medium text-white/90 backdrop-blur-sm sm:inline-flex">
-                <ZoomIn className="h-3.5 w-3.5" aria-hidden="true" />
-                点击查看全图
-              </span>
-
+            <div className="flex flex-col sm:flex-row gap-3 p-3 sm:p-4 bg-[var(--color-background)]">
+              {/* Thumbnails rail if multiple images */}
               {hasMultipleImages && (
-                <>
-                  <button
-                    type="button"
-                    onClick={(event) => {
-                      event.stopPropagation()
-                      moveGallery(-1)
-                    }}
-                    data-testid="product-gallery-prev"
-                    aria-label="查看上一张商品图片"
-                    className="absolute left-3 top-1/2 -translate-y-1/2 z-20 inline-flex w-11 h-11 items-center justify-center rounded-full border border-white/30 bg-black/50 text-white shadow-md backdrop-blur-sm transition-colors hover:bg-black/70 focus-visible:outline-none focus-visible:[box-shadow:0_0_0_3px_rgba(255,255,255,0.65)]"
-                  >
-                    <ChevronLeft className="w-5 h-5" aria-hidden="true" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={(event) => {
-                      event.stopPropagation()
-                      moveGallery(1)
-                    }}
-                    data-testid="product-gallery-next"
-                    aria-label="查看下一张商品图片"
-                    className="absolute right-3 top-1/2 -translate-y-1/2 z-20 inline-flex w-11 h-11 items-center justify-center rounded-full border border-white/30 bg-black/50 text-white shadow-md backdrop-blur-sm transition-colors hover:bg-black/70 focus-visible:outline-none focus-visible:[box-shadow:0_0_0_3px_rgba(255,255,255,0.65)]"
-                  >
-                    <ChevronRight className="w-5 h-5" aria-hidden="true" />
-                  </button>
-                  <span className="absolute right-4 top-4 z-20 rounded-full border border-white/25 bg-black/45 px-2.5 py-1 text-xs font-semibold tabular-nums text-white backdrop-blur-sm" aria-hidden="true">
-                    {activeImage + 1} / {galleryImages.length}
-                  </span>
-                  <span className="sr-only" aria-live="polite">当前第 {activeImage + 1} 张，共 {galleryImages.length} 张</span>
-                </>
+                <div className="flex sm:flex-col gap-2 shrink-0 overflow-x-auto sm:overflow-y-auto max-sm:order-2">
+                  {galleryImages.map((img, i) => (
+                    <button
+                      key={`${img}-${i}`}
+                      type="button"
+                      onClick={() => showGalleryImage(i)}
+                      data-testid={`product-gallery-thumb-${i}`}
+                      aria-label={`查看第 ${i + 1} 张图片`}
+                      className={`w-16 h-12 rounded-lg overflow-hidden shrink-0 cursor-pointer border-2 transition-all p-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] ${
+                        i === activeImage
+                          ? 'border-[var(--color-primary)] ring-2 ring-[var(--color-primary)] shadow-sm'
+                          : 'border-[var(--color-border)] opacity-60 hover:opacity-100 bg-[var(--color-surface)]'
+                      }`}
+                    >
+                      <img
+                        src={img}
+                        alt={`${product.name} 图 ${i + 1}`}
+                        className="w-full h-full object-cover rounded"
+                        loading="lazy"
+                      />
+                    </button>
+                  ))}
+                </div>
               )}
+
+              {/* 4:3 Aspect Container for Contain Frame */}
+              <div className="flex-1 aspect-[4/3] rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] overflow-hidden relative shadow-inner select-none">
+                <ProductMediaFrame
+                  src={galleryImages.length > 0 ? (galleryImages[activeImage] ?? galleryImages[0]) : undefined}
+                  alt={product.name}
+                  frameClassName="w-full h-full aspect-[4/3]"
+                  className="shrink-0 touch-pan-y select-none w-full h-full"
+                  fit="contain"
+                  imageProps={{
+                    'data-testid': 'product-gallery-main',
+                    draggable: false,
+                    className: 'w-full h-full object-contain',
+                  }}
+                >
+                  <div
+                    role="button"
+                    aria-label={
+                      hasMultipleImages
+                        ? `商品图片，当前第 ${activeImage + 1} 张，共 ${galleryImages.length} 张。点击查看全图；可左右拖动或使用方向键切换。`
+                        : '商品图片，点击查看全图'
+                    }
+                    tabIndex={0}
+                    onKeyDown={handleGalleryKeyDown}
+                    onPointerDown={handleGalleryPointerDown}
+                    onPointerUp={handleGalleryPointerEnd}
+                    onPointerCancel={() => {
+                      galleryPointerStartRef.current = null
+                    }}
+                    onClick={handleGalleryClick}
+                    data-testid="product-gallery-stage"
+                    className="absolute inset-0 cursor-zoom-in outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] focus-visible:ring-inset"
+                  >
+                    {hasMultipleImages && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            moveGallery(-1)
+                          }}
+                          data-testid="product-gallery-prev"
+                          aria-label="查看上一张商品图片"
+                          className="absolute left-3 top-1/2 -translate-y-1/2 z-20 inline-flex w-8 h-8 sm:w-9 sm:h-9 items-center justify-center rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] shadow-md transition-colors hover:bg-[var(--color-background)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]"
+                        >
+                          <ChevronLeft className="w-5 h-5" aria-hidden="true" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            moveGallery(1)
+                          }}
+                          data-testid="product-gallery-next"
+                          aria-label="查看下一张商品图片"
+                          className="absolute right-3 top-1/2 -translate-y-1/2 z-20 inline-flex w-8 h-8 sm:w-9 sm:h-9 items-center justify-center rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] shadow-md transition-colors hover:bg-[var(--color-background)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]"
+                        >
+                          <ChevronRight className="w-5 h-5" aria-hidden="true" />
+                        </button>
+                      </>
+                    )}
+
+                    {/* Component-rendered Page Indicator & Lightbox Button */}
+                    <div className="absolute bottom-3 right-3 z-20 px-2.5 py-1 rounded-lg bg-[var(--color-surface)] backdrop-blur border border-[var(--color-border)] text-xs text-[var(--color-text)] flex items-center gap-2 shadow-sm font-mono pointer-events-auto">
+                      <span>
+                        {activeImage + 1} / {Math.max(1, galleryImages.length)}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          openLightbox()
+                        }}
+                        aria-label="全屏查看图片"
+                        className="text-[var(--color-text-muted)] hover:text-[var(--color-text)] transition-colors cursor-pointer"
+                      >
+                        <ZoomIn className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                </ProductMediaFrame>
+              </div>
             </div>
-          </ProductMediaFrame>
+          </div>
 
           <ProductImageLightbox
             open={lightboxOpen}
@@ -454,367 +695,466 @@ export default function ProductDetailPage() {
             onIndexChange={setActiveImage}
           />
 
-          {galleryImages.length > 1 && (
-            <div className="flex gap-2.5 px-4 py-3 overflow-x-auto hide-scrollbar bg-[var(--color-background)] border-b border-[var(--color-border)]">
-              {galleryImages.map((img, i) => (
-                <button
-                  key={`${img}-${i}`}
-                  type="button"
-                  onClick={() => showGalleryImage(i)}
-                  data-testid={`product-gallery-thumb-${i}`}
-                  aria-label={`查看第 ${i + 1} 张图片`}
-                  className={`w-16 h-16 rounded-lg overflow-hidden shrink-0 cursor-pointer border-2 transition-colors ${
-                    i === activeImage
-                      ? 'border-[var(--color-primary)]'
-                      : 'border-transparent opacity-70 hover:opacity-100'
-                  }`}
-                >
-                  <ProductMediaFrame
-                    src={img}
-                    alt={`${product.name} 图 ${i + 1}`}
-                    frameClassName="h-full w-full"
-                    fit="cover"
-                    imageProps={{ loading: 'lazy' }}
-                  />
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
+          {/* Mobile / Mid-screen In-Flow Offer Selector & Disclosures (< 1024px) */}
+          <div className="lg:hidden space-y-4">
+            {!isDesktopViewport && isMultiSku && (
+              <ProductOfferSelector
+                offers={offers}
+                selectedOfferId={selectedOfferId}
+                onSelectOffer={(offerId) => setSelectedOfferId(offerId)}
+              />
+            )}
 
-        <div className="max-md:p-4 md:p-8">
-          {/* <md title — md+ 的 overlay 副本在主图上（与原桌面布局一致） */}
-          <h1 className="md:hidden font-heading text-xl sm:text-2xl font-bold text-[var(--color-text)] leading-snug mb-6">
-            {product.name}
-          </h1>
-
-          {/* SKU 选择器（P4a）：仅多规格时渲染，单 SKU 完全透明 */}
-          {isMultiSku && (
-            <div className="max-md:mb-6 mb-8" data-testid="sku-selector">
-              <span className="text-xs text-[var(--color-text-muted)] font-bold uppercase tracking-wider mb-3 block">选择规格</span>
-              <div className="flex flex-wrap gap-3">
-                {offers.map(offer => {
-                  const offerSoldOut = offer.stockMode !== 'unlimited' && offer.stock === 0
-                  const active = offer.id === (selectedOffer?.id ?? selectedOfferId)
-                  return (
-                    <button
-                      key={offer.id}
-                      type="button"
-                      onClick={() => setSelectedOfferId(offer.id)}
-                      disabled={offerSoldOut}
-                      data-testid={`sku-option-${offer.id}`}
-                      aria-pressed={active}
-                      className={`flex flex-col items-start gap-1 px-4 py-3 rounded-xl border-2 transition-all text-left min-w-[8rem] ${
-                        offerSoldOut
-                          ? 'opacity-50 cursor-not-allowed border-[var(--color-border)] bg-[var(--color-background)]'
-                          : active
-                          ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 shadow-sm cursor-pointer'
-                          : 'border-[var(--color-border)] bg-[var(--color-background)] hover:border-[var(--color-primary)]/50 cursor-pointer'
-                      }`}
-                    >
-                      <span className="font-bold text-sm text-[var(--color-text)] line-clamp-1">{offer.name}</span>
-                      <span className="font-heading font-bold text-[var(--color-cta)] flex items-center gap-1">
-                        <Coins className="w-3.5 h-3.5" />{offer.price}
-                        {offer.originalPrice && offer.originalPrice > offer.price && (
-                          <span className="text-xs text-[var(--color-text-muted)] line-through font-normal">{offer.originalPrice}</span>
-                        )}
-                      </span>
-                      {offerPeriodSubtitle(offer) && (
-                        <span
-                          className="text-[10px] text-[var(--color-text-muted)] font-medium leading-snug max-w-[11rem]"
-                          data-testid={`sku-validity-${offer.id}`}
-                        >
-                          {offerPeriodSubtitle(offer)}
-                        </span>
-                      )}
-                      {offerSoldOut && <span className="text-[10px] text-[var(--color-danger)] font-bold">已售罄</span>}
-                    </button>
-                  )
-                })}
+            {/* In-flow Quick Spec Note on Mobile */}
+            {!isDesktopViewport && activeOffer && offerPeriodDetailNote(activeOffer) && (
+              <div className="flex flex-wrap items-center gap-2 text-xs" data-testid="validity-days-preview">
+                <span className="text-[var(--color-text-muted)] font-bold">规格说明：</span>
+                <span className="px-2 py-0.5 rounded border border-[var(--color-border)] bg-[var(--color-background)] text-[var(--color-text)] font-medium">
+                  {offerPeriodDetailNote(activeOffer)!.title}
+                </span>
+                <span className="text-[var(--color-text-muted)]">{offerPeriodDetailNote(activeOffer)!.hint}</span>
               </div>
-            </div>
-          )}
+            )}
 
-          {/* 订阅时长 / 特殊规格说明（一次性 vs 流量重置 vs 按天） */}
-          {activeOffer && offerPeriodDetailNote(activeOffer) && (
-            <div className="mb-8 flex flex-wrap items-center gap-2 text-xs" data-testid="validity-days-preview">
-              <span className="text-[var(--color-text-muted)] font-bold">规格说明：</span>
-              <span className="px-2 py-0.5 rounded border border-[var(--color-border)] bg-[var(--color-background)] text-[var(--color-text)] font-medium">
-                {offerPeriodDetailNote(activeOffer)!.title}
-              </span>
-              <span className="text-[var(--color-text-muted)]">
-                {offerPeriodDetailNote(activeOffer)!.hint}
-              </span>
-            </div>
-          )}
-
-          {/* P4b：交付字段预告（选中规格的模板；纯文本交付不渲染） */}
-          {fileDeliverySize !== undefined && (
-            <div className="mb-8 flex flex-wrap items-center gap-2 text-xs" data-testid="file-delivery-preview">
-              <span className="text-[var(--color-text-muted)] font-bold">购买后您将获得：</span>
-              <span className="px-2 py-0.5 rounded border border-[var(--color-border)] bg-[var(--color-background)] text-[var(--color-text)] font-medium">
-                文件交付{fileDeliverySize != null ? ` · 约 ${formatFileSize(fileDeliverySize)}` : ''}
-              </span>
-              <span className="text-[var(--color-text-muted)]">支付后通过短时签名链接下载</span>
-            </div>
-          )}
-          {deliveryTemplate.length > 0 && (
-            <div className="mb-8 flex flex-wrap items-center gap-2 text-xs" data-testid="delivery-template-preview">
-              <span className="text-[var(--color-text-muted)] font-bold">购买后您将获得：</span>
-              {deliveryTemplate.map(field => (
-                <span
-                  key={field.key}
-                  className="px-2 py-0.5 rounded border border-[var(--color-border)] bg-[var(--color-background)] text-[var(--color-text)] font-medium"
-                >
-                  {field.label}
-                </span>
-              ))}
-            </div>
-          )}
-
-          {/* P7b：自动开通预告（选中规格 autoProvision 时渲染）——购前明示数据外发（硬验收 ⑤） */}
-          {activeOffer?.autoProvision && (
-            <div className="mb-8 flex flex-wrap items-center gap-2 text-xs" data-testid="auto-provision-disclosure">
-              <span className="text-[var(--color-text-muted)] font-bold">交付方式：</span>
-              <span className="px-2 py-0.5 rounded border border-[var(--color-primary)]/30 bg-[var(--color-primary)]/5 text-[var(--color-primary)] font-medium">
-                商家自动开通
-              </span>
-              <span className="text-[var(--color-text-muted)]">下单后订单与你填写的信息将发送至商家的开通服务，失败自动转人工</span>
-            </div>
-          )}
-
-          {/* Price / action bar */}
-          <div className="bg-[var(--color-background)] rounded-xl max-md:p-4 md:p-8 max-md:mb-6 mb-8 flex flex-col lg:flex-row justify-between items-start lg:items-center border border-[var(--color-border)] max-md:gap-4 gap-6">
-            <div className="flex flex-col min-w-0">
-              <span className="text-xs text-[var(--color-text-muted)] font-bold uppercase tracking-wider mb-2">兑换需要</span>
-              <div className="flex flex-wrap items-end gap-2">
-                <span className="font-heading text-3xl sm:text-4xl md:text-5xl font-bold text-[var(--color-cta)] flex items-center gap-2">
-                  <Coins className="w-8 h-8 md:w-10 md:h-10" />{displayPrice}
-                </span>
-                {displayOriginalPrice && displayOriginalPrice > displayPrice && (
-                  <span className="text-base text-[var(--color-text-muted)] line-through mb-1.5 md:mb-2">
-                    {displayOriginalPrice}
-                  </span>
-                )}
-              </div>
-            </div>
-
-            <div className="w-full h-px lg:w-px lg:h-16 bg-[var(--color-border)] my-2 lg:my-0 lg:mx-4" />
-
-            <div className="flex flex-col gap-3 w-full lg:flex-1">
-              <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
-                <span className="text-[var(--color-text-muted)] font-medium flex items-center gap-1.5">
-                  <Store className="w-4 h-4 text-[var(--color-primary)]" />
-                  来源: <span className="text-[var(--color-text)] font-bold">{product.merchant?.name || '平台自营'}</span>
-                </span>
-                <span className="text-[var(--color-text-muted)] font-medium">
-                  已售: <span className="text-[var(--color-text)] font-bold">{product.sales}</span>
-                </span>
-                <span className="text-[var(--color-text-muted)] font-medium" data-testid="product-stock">
-                  {stockTitle}:{' '}
-                  <span className="text-[var(--color-text)] font-bold">{stockLabel}</span>
-                  {fakaCapacity?.source === 'xboard' && fakaCapacity.capacityLimit != null && (
-                    <span className="text-[var(--color-text-muted)] font-normal">
-                      {' '}/ {fakaCapacity.capacityLimit}
-                    </span>
-                  )}
-                </span>
-                {product.ratingCount && product.ratingCount > 0 ? (
-                  <span className="text-[var(--color-text-muted)] font-medium flex items-center gap-1" data-testid="rating-summary">
-                    <StarRating value={product.ratingAvg ?? 0} />
-                    <span className="font-bold text-[var(--color-text)]">{(product.ratingAvg ?? 0).toFixed(1)}</span>
-                    （{product.ratingCount} 条评价）
-                  </span>
-                ) : (
-                  <span className="text-[var(--color-text-muted)] font-medium" data-testid="rating-summary">暂无评分</span>
-                )}
-              </div>
-              <div className="flex items-center gap-3 text-xs p-2.5 bg-[var(--color-surface)] rounded-lg border border-[var(--color-border)] w-fit">
-                <span className="text-[var(--color-text-muted)] flex items-center gap-1.5">
-                  我的余额: <strong className="text-[var(--color-text)] text-sm">{userPoints} 积分</strong>
-                </span>
-                {isInsufficient && !isSoldOut && (
-                  <span className="text-[var(--color-danger)] font-bold bg-[var(--color-danger)]/10 px-2 py-0.5 rounded border border-[var(--color-danger)]/30">
-                    余额不足
-                  </span>
-                )}
-              </div>
-            </div>
-
-            {/* 页内 CTA：≥md 显示；<md 由底部固定购买条接管（V2-M3） */}
-            <button
-              onClick={handleRedeemClick}
-              disabled={isSoldOut}
-              className={
-                isSoldOut
-                  ? 'max-md:hidden inline-flex items-center justify-center gap-2 px-10 py-4 md:py-5 rounded-lg text-lg font-bold whitespace-nowrap w-full lg:w-auto opacity-60 cursor-not-allowed bg-[var(--color-border)] text-[var(--color-text-muted)]'
-                  : isInsufficient
-                  ? 'max-md:hidden btn-secondary px-10 py-4 md:py-5 text-lg w-full lg:w-auto whitespace-nowrap'
-                  : 'max-md:hidden btn-cta px-10 py-4 md:py-5 text-lg w-full lg:w-auto whitespace-nowrap shadow-lg hover:shadow-xl hover:-translate-y-0.5'
-              }
-            >
-              {isSoldOut ? '已被抢光' : isInsufficient ? '余额不足，去赚积分' : '立即兑换'}
-            </button>
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-3 max-md:gap-6 gap-8">
-            <div className="lg:col-span-2 max-md:space-y-8 space-y-12">
-              {/* Rich description */}
-              <div>
-                <h3 className="font-heading text-lg font-bold max-md:mb-3 mb-5 flex items-center gap-2 text-[var(--color-text)] uppercase tracking-wider">
-                  <FileText className="w-5 h-5 text-[var(--color-primary)]" /> 图文介绍
-                </h3>
-                <div
-                  className="rich-text text-[var(--color-text)] leading-loose space-y-4 text-sm md:text-base bg-[var(--color-background)] p-4 sm:p-6 md:p-8 rounded-xl border border-[var(--color-border)]"
-                  dangerouslySetInnerHTML={{ __html: safeRichDescription }}
-                />
-              </div>
-
-              {/* Reviews */}
-              <div className="max-md:mt-6 mt-8" data-testid="review-list">
-                <h2 className="font-heading text-lg font-bold text-[var(--color-text)] mb-4">用户评价（{reviewTotal}）</h2>
-                {reviews.length === 0 ? (
-                  <EmptyState compact icon={Star} title="暂无评价" description="兑换后即可发表第一条评价" />
-                ) : (
-                  <div className="space-y-4">
-                    {reviews.map((r) => (
-                      <div key={r.id} className="bg-[var(--color-background)] rounded-lg p-4 border border-[var(--color-border)]">
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-bold text-[var(--color-text)]">{r.displayName}</span>
-                          <StarRating value={r.rating} />
-                        </div>
-                        {r.comment && <p className="mt-2 text-xs text-[var(--color-text)] whitespace-pre-wrap">{r.comment}</p>}
-                        <div className="mt-2 text-xs text-[var(--color-text-muted)]">
-                          {new Date(r.createdAt).toLocaleDateString()}{r.editedAt ? '（已修改）' : ''}
-                        </div>
-                      </div>
-                    ))}
-                    {reviews.length < reviewTotal && (
-                      <button type="button" onClick={() => setReviewPage((p) => p + 1)} className="btn-secondary w-full py-2 text-sm">
-                        加载更多
-                      </button>
-                    )}
+            {/* Delivery Disclosures (< 1024px) */}
+            {!isDesktopViewport && (
+              <>
+                {fileDeliverySize !== undefined && (
+                  <div className="text-xs text-[var(--color-text-muted)] flex items-center gap-1.5" data-testid="file-delivery-preview">
+                    <span className="font-bold text-[var(--color-text)]">交付形态：</span>
+                    <span>文件交付{fileDeliverySize != null ? ` · 约 ${formatFileSize(fileDeliverySize)}` : ''}</span>
                   </div>
                 )}
+                {deliveryTemplate.length > 0 && (
+                  <div className="text-xs text-[var(--color-text-muted)] space-y-1.5" data-testid="delivery-template-preview">
+                    <span className="font-bold text-[var(--color-text)] block">包含交付字段：</span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {deliveryTemplate.map((field) => (
+                        <span
+                          key={field.key}
+                          className="px-2 py-0.5 rounded border border-[var(--color-border)] bg-[var(--color-background)] text-[11px] text-[var(--color-text)] font-medium"
+                        >
+                          {field.label}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {activeOffer?.autoProvision && (
+                  <div
+                    className="p-3 rounded-xl border border-[var(--color-primary-border-subtle)] bg-[var(--color-primary-tint)] text-xs space-y-1"
+                    data-testid="auto-provision-disclosure"
+                  >
+                    <div className="font-bold text-[var(--color-primary)] flex items-center gap-1.5">
+                      <Zap className="w-3.5 h-3.5" />
+                      <span>交付方式：商家自动开通</span>
+                    </div>
+                    <p className="text-[11px] text-[var(--color-text-muted)] leading-relaxed">
+                      下单后将自动发起开通，自动开通中请稍候…如有疑问可咨询客服。
+                    </p>
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* In-flow Purchase Module for Mid-screen (768px – 1023px) */}
+            {!isDesktopViewport && (
+              <div
+                ref={inflowCardRef}
+                className="hidden md:block p-4 rounded-xl bg-[var(--color-surface)] border border-[var(--color-border)] shadow-sm space-y-3"
+                data-testid="inflow-buy-card"
+              >
+                <div className="flex items-baseline justify-between">
+                  <div>
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-[var(--color-text-muted)] block">
+                      兑换需要
+                    </span>
+                    <div className="flex items-baseline gap-1.5 mt-0.5">
+                      <span className="font-heading text-2xl sm:text-3xl font-bold text-[var(--color-points)] flex items-center gap-1.5">
+                        <Coins className="w-6 h-6" />
+                        <span>{displayPrice}</span>
+                      </span>
+                      {displayOriginalPrice && displayOriginalPrice > displayPrice && (
+                        <span className="text-xs text-[var(--color-text-muted)] line-through ml-1">
+                          {displayOriginalPrice}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                {activeOffer?.deliveryMode === 'instant_inventory' && !isSoldOut && (
+                  <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-[var(--color-success-bg)] text-[var(--color-success-text)] border border-[var(--color-success-border)]">
+                    现货即发
+                  </span>
+                )}
+              </div>
+
+              <div className="flex items-center justify-between text-xs text-[var(--color-text-muted)]">
+                <span>
+                  {stockTitle}: <strong className="text-[var(--color-text)]">{stockLabel}</strong>
+                </span>
+                <span>
+                  已售: <strong className="text-[var(--color-text)]">{product.sales}</strong>
+                </span>
+                {isLoggedIn && (
+                  <span>
+                    余额: <strong className="text-[var(--color-text)]">{userPoints}</strong>
+                  </span>
+                )}
+              </div>
+
+              {isLoggedIn && isInsufficient && !isSoldOut && (
+                <div className="p-2.5 rounded-xl bg-[var(--color-danger-bg)] text-[var(--color-danger-text)] border border-[var(--color-danger-border)] text-xs flex items-center justify-between">
+                  <span>积分余额不足</span>
+                  <button
+                    type="button"
+                    onClick={() => navigate('/')}
+                    className="font-bold underline hover:opacity-80 cursor-pointer"
+                  >
+                    去赚积分
+                  </button>
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={handleRedeemClick}
+                disabled={isLoggedIn && isSoldOut}
+                data-testid="inflow-buy-cta"
+                className={
+                  isLoggedIn && isSoldOut
+                    ? 'w-full py-3 px-4 rounded-xl text-sm font-bold opacity-60 cursor-not-allowed bg-[var(--color-border)] text-[var(--color-text-muted)]'
+                    : isLoggedIn && isInsufficient
+                    ? 'w-full btn-secondary py-3 px-4 rounded-xl text-sm font-bold'
+                    : 'w-full btn-cta py-3 px-4 rounded-xl text-sm font-bold shadow'
+                }
+              >
+                {redeemLabel}
+              </button>
+            </div>
+            )}
+          </div>
+
+          {/* Section Navigation Tabs */}
+          {showSectionNav && (
+            <nav
+              aria-label="商品章节"
+              data-testid="product-section-nav"
+              className="sticky top-[calc(var(--navbar-h)+var(--safe-top))] z-20 -mx-4 md:-mx-8 border-y border-[var(--color-border)] bg-[var(--color-surface)] backdrop-blur-md"
+            >
+              <div className="flex max-md:gap-3 md:gap-6 px-4 md:px-8 max-md:py-2 md:py-3 overflow-x-auto hide-scrollbar whitespace-nowrap">
+                {navSections.map((section) => (
+                  <a
+                    key={section.id}
+                    href={`#${section.id}`}
+                    className="shrink-0 text-xs md:text-sm font-medium text-[var(--color-text-muted)] hover:text-[var(--color-primary)] min-h-[40px] inline-flex items-center"
+                  >
+                    {section.label}
+                  </a>
+                ))}
+              </div>
+            </nav>
+          )}
+
+          {/* Highlights List */}
+          {highlights.length > 0 && (
+            <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 p-4 rounded-xl bg-[var(--color-surface)] border border-[var(--color-border)]" data-testid="product-highlights">
+              {highlights.map((item, index) => (
+                <li key={`${item}-${index}`} className="flex items-start gap-2 text-xs sm:text-sm text-[var(--color-text)]">
+                  <Check className="w-4 h-4 mt-0.5 shrink-0 text-[var(--color-primary)]" aria-hidden="true" />
+                  <span className="break-words font-medium">{item}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {/* Rich Intro Description */}
+          {hasIntro ? (
+            <section id="product-section-intro" className={SECTION_SCROLL_MARGIN} data-testid="product-section-intro">
+              <h3 className="font-heading text-base sm:text-lg font-bold mb-4 flex items-center gap-2 text-[var(--color-text)] uppercase tracking-wider">
+                <FileText className="w-5 h-5 text-[var(--color-primary)]" /> 介绍
+              </h3>
+              <RichTextHtml
+                html={product.richDescription}
+                className="rich-text text-[var(--color-text)] leading-loose space-y-4 text-sm md:text-base bg-[var(--color-surface)] p-4 sm:p-6 md:p-8 rounded-2xl border border-[var(--color-border)] shadow-sm"
+              />
+            </section>
+          ) : null}
+
+          {/* Specifications Table */}
+          <ProductSpecSections
+            productAttributes={product.attributes}
+            offerAttributes={activeOffer?.attributes}
+            details={product.details}
+            assurance={product.assurance}
+            productOrder={template?.ui.productOrder}
+            offerOrder={template?.ui.offerOrder}
+            titles={titlesFromTemplate(template)}
+            enumLabels={template?.ui.enumLabels}
+          />
+
+          {/* Customer Reviews Section */}
+          <div id="product-section-reviews" className={`${SECTION_SCROLL_MARGIN} space-y-4`} data-testid="review-list">
+            <h2 className="font-heading text-base sm:text-lg font-bold text-[var(--color-text)]">
+              用户评价（{reviewTotal}）
+            </h2>
+            {reviews.length === 0 ? (
+              <EmptyState compact icon={Star} title="暂无评价" description="兑换后即可发表第一条评价" />
+            ) : (
+              <div className="space-y-3">
+                {reviews.map((r) => (
+                  <div key={r.id} className="bg-[var(--color-surface)] rounded-xl p-4 border border-[var(--color-border)] shadow-sm">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-[var(--color-text)]">{r.displayName}</span>
+                      <StarRating value={r.rating} />
+                    </div>
+                    {r.comment && <p className="mt-2 text-xs sm:text-sm text-[var(--color-text)] whitespace-pre-wrap">{r.comment}</p>}
+                    <div className="mt-2 text-[11px] text-[var(--color-text-muted)]">
+                      {new Date(r.createdAt).toLocaleDateString()}
+                      {r.editedAt ? '（已修改）' : ''}
+                    </div>
+                  </div>
+                ))}
+                {reviews.length < reviewTotal && (
+                  <button
+                    type="button"
+                    onClick={() => setReviewPage((p) => p + 1)}
+                    className="btn-secondary w-full py-2.5 text-xs sm:text-sm rounded-xl"
+                  >
+                    加载更多
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Provider and Policy Info on Mobile / Mid-screens */}
+          <div className="lg:hidden space-y-4 pt-4 border-t border-[var(--color-border)]">
+            <div className="p-4 rounded-xl bg-[var(--color-surface)] border border-[var(--color-border)] space-y-3 text-xs text-[var(--color-text-muted)]">
+              <div className="flex items-center gap-2 font-bold text-[var(--color-text)]">
+                <Store className="w-4 h-4 text-[var(--color-primary)]" />
+                <span>提供方：{product.merchant?.name || 'MoNexus 自营'}</span>
+              </div>
+              <p className="leading-relaxed">
+                发货方式：数字资产/虚拟商品，兑换后立即在页面显示卡密或凭据，也可随时在「个人中心」查看。
+              </p>
+              <div className="pt-2 border-t border-[var(--color-border)] text-[11px]">
+                平台协助售后与争议处理，不另作先行垫付承诺。
               </div>
             </div>
+          </div>
+        </div>
 
-            {/* Right column: merchant card + policy card */}
-            <div className="lg:col-span-1 space-y-6">
-              <div className="bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)] shadow-sm overflow-hidden">
-                <div className="bg-[var(--color-background)] px-5 py-3 border-b border-[var(--color-border)]">
-                  <h4 className="font-heading text-sm font-bold text-[var(--color-text)] flex items-center gap-2">
-                    <Store className="w-4 h-4 text-[var(--color-primary)]" /> 商家名片
-                  </h4>
-                </div>
-                <div className="p-5">
-                  {product.merchant ? (
-                    <>
-                      <div className="flex items-center gap-4 mb-4">
-                        <div
-                          className="w-12 h-12 rounded-xl flex items-center justify-center text-white font-heading font-bold text-xl shrink-0"
-                          style={{
-                            background:
-                              'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-hover) 100%)',
-                          }}
-                        >
-                          {product.merchant.name.charAt(0).toUpperCase()}
-                        </div>
-                        <div>
-                          <div className="font-bold text-[var(--color-text)] text-base">{product.merchant.name}</div>
-                          <div className="text-xs text-[var(--color-primary)] bg-[var(--color-primary)]/10 px-2 py-0.5 rounded inline-flex items-center gap-1 mt-1 border border-[var(--color-primary)]/25 font-medium">
-                            <ShieldCheck className="w-3 h-3" /> 平台认证商家
-                          </div>
-                        </div>
-                      </div>
-                      <div className="text-xs text-[var(--color-text-muted)] space-y-2.5 mt-4 pt-4 border-t border-[var(--color-border)]">
-                        <p className="flex items-start gap-1.5 leading-relaxed">
-                          <ShieldCheck className="w-4 h-4 text-[var(--color-cta)] shrink-0" />
-                          本商品由该商家提供，平台记录交易与发货信息。
-                        </p>
-                      </div>
-                    </>
-                  ) : (
-                    <div className="flex items-center gap-4">
-                      <div
-                        className="w-12 h-12 rounded-xl flex items-center justify-center text-white font-heading font-bold text-xl shrink-0"
-                        style={{
-                          background:
-                            'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-hover) 100%)',
-                        }}
-                      >
-                        Mo
-                      </div>
-                      <div>
-                        <div className="font-bold text-[var(--color-text)] text-base">MoNexus 自营</div>
-                        <div className="text-xs text-[var(--color-primary)] bg-[var(--color-primary)]/10 px-2 py-0.5 rounded inline-flex items-center gap-1 mt-1 border border-[var(--color-primary)]/25 font-medium">
-                          <ShieldCheck className="w-3 h-3" /> 官方直营保障
-                        </div>
-                      </div>
-                    </div>
+        {/* Right Column: Sticky Purchase Sidebar (≥ 1024px, Desktop Only) */}
+        {/* Right Column: Sticky Purchase Sidebar (≥ 1024px, Desktop Only) */}
+        <aside
+          className="hidden lg:flex flex-col w-[368px] shrink-0 sticky top-[calc(var(--navbar-current-h)+16px)] max-h-[calc(100dvh-var(--navbar-current-h)-2rem)] rounded-2xl bg-[var(--color-surface)] border border-[var(--color-border)] shadow-md p-5 overflow-hidden"
+        >
+          {/* 1. Header (Static top) */}
+          <div className="shrink-0 space-y-3">
+            {/* Price Header */}
+            <div className="flex items-baseline justify-between border-b border-[var(--color-border)] pb-3">
+              <div>
+                <span className="text-[11px] font-bold uppercase tracking-wider text-[var(--color-text-muted)] block">
+                  兑换需要
+                </span>
+                <div className="flex items-baseline gap-1.5 mt-0.5">
+                  <span className="font-heading text-3xl sm:text-4xl font-bold text-[var(--color-points)] flex items-center gap-1.5">
+                    <Coins className="w-7 h-7" />
+                    <span>{displayPrice}</span>
+                  </span>
+                  {displayOriginalPrice && displayOriginalPrice > displayPrice && (
+                    <span className="text-xs text-[var(--color-text-muted)] line-through ml-1">
+                      {displayOriginalPrice}
+                    </span>
                   )}
                 </div>
               </div>
 
-              <div className="bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)] shadow-sm overflow-hidden">
-                <div className="bg-[var(--color-background)] px-5 py-3 border-b border-[var(--color-border)]">
-                  <h4 className="font-heading text-sm font-bold text-[var(--color-text)] flex items-center gap-2">
-                    <Info className="w-4 h-4 text-[var(--color-primary)]" /> 兑换须知
-                  </h4>
-                </div>
-                <div className="p-5 text-xs text-[var(--color-text-muted)] space-y-3.5 leading-relaxed">
-                  <p><strong className="text-[var(--color-text)]">发货方式：</strong>数字资产/虚拟商品，兑换后立即在页面显示卡密或订阅链接，也可随时在您的「个人中心」查看。</p>
-                  <p><strong className="text-[var(--color-text)]">退换政策：</strong>卡密类商品一旦发货即视为使用，如无有效性问题，不支持无理由退回积分，请确认需求后再兑换。</p>
-                  <p><strong className="text-[var(--color-text)]">库存说明：</strong>若商品显示售罄，请等待补货。限量商品不定期上架，先到先得。</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* 移动端固定购买条（V2-M3）：价格 + CTA 永不离场；此页 Tab Bar 让位隐藏。
-          高度约 64px + safe-area，页面根部已预留对应 padding-bottom。
-          必须 Portal 到 body：页面根的 .fade-in 动画持有 transform，
-          会把 fixed 后代的包含块改写成自身（fixed 失效）。
-          且仅在移动视口渲染——桌面 DOM 不含此条（零回归面）。 */}
-      {isMobileViewport && createPortal(
-      <div
-        className="md:hidden fixed bottom-0 inset-x-0 z-30 border-t border-[var(--color-border)] bg-[var(--color-surface)]/95 backdrop-blur-md"
-        style={{ paddingBottom: 'var(--safe-bottom)' }}
-        data-testid="mobile-buy-bar"
-      >
-        <div className="flex items-center gap-3 px-4 py-2.5">
-          <div className="flex flex-col min-w-0 shrink-0">
-            <span className="text-[10px] leading-tight text-[var(--color-text-muted)] font-bold uppercase tracking-wider">兑换需要</span>
-            <div className="flex items-baseline gap-1.5">
-              <span className="flex items-center gap-1 text-[var(--color-cta)] font-bold text-xl font-heading tracking-tight">
-                <Coins className="w-4 h-4 shrink-0" />{displayPrice}
-              </span>
-              {displayOriginalPrice && displayOriginalPrice > displayPrice && (
-                <span className="text-xs text-[var(--color-text-muted)] line-through">{displayOriginalPrice}</span>
+              {activeOffer?.deliveryMode === 'instant_inventory' && !isSoldOut && (
+                <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-[var(--color-success-bg)] text-[var(--color-success-text)] border border-[var(--color-success-border)]">
+                  现货即发
+                </span>
               )}
             </div>
-          </div>
-          <button
-            onClick={handleRedeemClick}
-            disabled={isSoldOut}
-            data-testid="mobile-buy-bar-cta"
-            className={
-              isSoldOut
-                ? 'flex-1 inline-flex items-center justify-center gap-2 py-3 rounded-xl text-base font-bold whitespace-nowrap opacity-60 cursor-not-allowed bg-[var(--color-border)] text-[var(--color-text-muted)]'
-                : isInsufficient
-                ? 'flex-1 btn-secondary py-3 text-base whitespace-nowrap rounded-xl'
-                : 'flex-1 btn-cta py-3 text-base whitespace-nowrap rounded-xl shadow-lg'
-            }
-          >
-            {isSoldOut ? '已被抢光' : isInsufficient ? '余额不足，去赚积分' : '立即兑换'}
-          </button>
-        </div>
-      </div>,
-      document.body,
-      )}
 
+            {/* Quick Micro-stats: Stock & Sales */}
+            <div className="flex items-center justify-between text-xs text-[var(--color-text-muted)]">
+              <span data-testid="product-stock">
+                {stockTitle}: <strong className="text-[var(--color-text)]">{stockLabel}</strong>
+              </span>
+              <span>
+                已售: <strong className="text-[var(--color-text)]">{product.sales}</strong>
+              </span>
+              {isLoggedIn && (
+                <span>
+                  余额: <strong className="text-[var(--color-text)]">{userPoints}</strong>
+                </span>
+              )}
+            </div>
+
+            {/* Balance warning if insufficient */}
+            {isLoggedIn && isInsufficient && !isSoldOut && (
+              <div className="p-2.5 rounded-xl bg-[var(--color-danger-bg)] text-[var(--color-danger-text)] border border-[var(--color-danger-border)] text-xs flex items-center justify-between">
+                <span>积分余额不足</span>
+                <button
+                  type="button"
+                  onClick={() => navigate('/')}
+                  className="font-bold underline hover:opacity-80 cursor-pointer"
+                >
+                  去赚积分
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* 2. Scrollable Middle: Offer Selector & Pre-purchase details */}
+          <div className="overflow-y-auto min-h-0 flex-1 space-y-3 my-3 -mr-2 pr-2">
+            {/* SKU / Offer Selector in Desktop Sidebar */}
+            {isDesktopViewport && isMultiSku && (
+              <div className="pt-2">
+                <ProductOfferSelector
+                  offers={offers}
+                  selectedOfferId={selectedOfferId}
+                  onSelectOffer={(offerId) => setSelectedOfferId(offerId)}
+                />
+              </div>
+            )}
+
+            {/* Validity / Special Spec Note */}
+            {isDesktopViewport && activeOffer && offerPeriodDetailNote(activeOffer) && (
+              <div className="p-3 rounded-xl bg-[var(--color-background)] border border-[var(--color-border)] text-xs space-y-1" data-testid="validity-days-preview">
+                <span className="font-bold text-[var(--color-text)] block">
+                  {offerPeriodDetailNote(activeOffer)!.title}
+                </span>
+                <p className="text-[11px] text-[var(--color-text-muted)] leading-relaxed">
+                  {offerPeriodDetailNote(activeOffer)!.hint}
+                </p>
+              </div>
+            )}
+
+            {/* Delivery Formats Preview (Desktop) */}
+            {isDesktopViewport && (
+              <>
+                {fileDeliverySize !== undefined && (
+                  <div className="text-xs text-[var(--color-text-muted)] flex items-center gap-1.5" data-testid="file-delivery-preview">
+                    <span className="font-bold text-[var(--color-text)]">交付形态：</span>
+                    <span>文件交付{fileDeliverySize != null ? ` · 约 ${formatFileSize(fileDeliverySize)}` : ''}</span>
+                  </div>
+                )}
+                {deliveryTemplate.length > 0 && (
+                  <div className="text-xs text-[var(--color-text-muted)] space-y-1.5" data-testid="delivery-template-preview">
+                    <span className="font-bold text-[var(--color-text)] block">包含交付字段：</span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {deliveryTemplate.map((field) => (
+                        <span
+                          key={field.key}
+                          className="px-2 py-0.5 rounded border border-[var(--color-border)] bg-[var(--color-background)] text-[11px] text-[var(--color-text)] font-medium"
+                        >
+                          {field.label}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {activeOffer?.autoProvision && (
+                  <div
+                    className="p-3 rounded-xl border border-[var(--color-primary-border-subtle)] bg-[var(--color-primary-tint)] text-xs space-y-1"
+                    data-testid="auto-provision-disclosure"
+                  >
+                    <div className="font-bold text-[var(--color-primary)] flex items-center gap-1.5">
+                      <Zap className="w-3.5 h-3.5" />
+                      <span>交付方式：商家自动开通</span>
+                    </div>
+                    <p className="text-[11px] text-[var(--color-text-muted)] leading-relaxed">
+                      下单后将自动发起开通，自动开通中请稍候…如有疑问可咨询客服。
+                    </p>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+
+          {/* 3. Footer (Pinned bottom) */}
+          <div className="shrink-0 pt-3 border-t border-[var(--color-border)] space-y-2">
+            {/* Primary Desktop CTA Button */}
+            <button
+              type="button"
+              onClick={handleRedeemClick}
+              disabled={isLoggedIn && isSoldOut}
+              data-testid="desktop-buy-cta"
+              className={
+                isLoggedIn && isSoldOut
+                  ? 'w-full py-3 px-4 rounded-xl text-sm font-bold opacity-60 cursor-not-allowed bg-[var(--color-border)] text-[var(--color-text-muted)]'
+                  : isLoggedIn && isInsufficient
+                  ? 'w-full btn-secondary py-3 px-4 rounded-xl text-sm font-bold shadow-sm'
+                  : 'w-full btn-cta py-3.5 px-4 rounded-xl text-base font-bold shadow-md hover:shadow-lg transition-all'
+              }
+            >
+              {redeemLabel}
+            </button>
+
+            {/* Understated Platform Policy */}
+            <div className="text-[11px] text-[var(--color-text-muted)] leading-relaxed">
+              平台协助售后与争议处理，不另作先行垫付承诺。
+            </div>
+          </div>
+        </aside>
+      </div>
+
+      {/* Mobile Fixed Bottom Purchase Bar (< 1024px) */}
+      {showBottomBar &&
+        createPortal(
+          <div
+            className="lg:hidden fixed bottom-0 inset-x-0 z-30 border-t border-[var(--color-border)] bg-[var(--color-surface)] backdrop-blur-md"
+            style={{ paddingBottom: 'var(--safe-bottom)' }}
+            data-testid="mobile-buy-bar"
+          >
+            <div className="flex items-center justify-between gap-3 px-4 py-2.5 h-14">
+              <div className="flex flex-col min-w-0 shrink-0 pr-2">
+                <span className="text-[11px] leading-tight text-[var(--color-text-muted)] truncate max-w-[150px]">
+                  {activeOffer?.name ? `已选：${activeOffer.name}` : '暂无可售套餐'}
+                </span>
+                <div className="flex items-center gap-1 text-[var(--color-points)] font-heading font-bold text-lg">
+                  <Coins className="w-4 h-4 shrink-0" />
+                  <span>{displayPrice}</span>
+                  <span className="text-xs font-normal text-[var(--color-text-muted)] ml-0.5">积分</span>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleRedeemClick}
+                disabled={isLoggedIn && isSoldOut}
+                data-testid="mobile-buy-bar-cta"
+                className={
+                  isLoggedIn && isSoldOut
+                    ? 'flex-1 py-2.5 px-4 rounded-xl text-sm font-bold opacity-60 cursor-not-allowed bg-[var(--color-border)] text-[var(--color-text-muted)]'
+                    : isLoggedIn && isInsufficient
+                    ? 'flex-1 btn-secondary py-2.5 px-4 rounded-xl text-sm font-bold'
+                    : 'flex-1 btn-cta py-2.5 px-4 rounded-xl text-sm font-bold shadow'
+                }
+              >
+                {redeemLabel}
+              </button>
+            </div>
+          </div>,
+          document.body
+        )}
+
+      {/* Share Modal */}
+      <ProductSharePanel
+        open={shareOpen}
+        onClose={() => setShareOpen(false)}
+        productId={product.id}
+        copyMode={product.visibility === 'members_only' ? 'members_only' : 'public'}
+        productName={product.name}
+        offerName={selectedOffer?.name ?? (offers.length === 1 ? offers[0]?.name ?? null : null)}
+        points={selectedOffer != null || offers.length === 1 ? displayPrice : null}
+        anchorRef={isMobileViewport ? mobileShareRef : desktopShareRef}
+      />
+
+      {/* Sole Purchase Modal / Drawer */}
       {showPurchase && (
         <PurchaseModal
           productId={product.id}
@@ -826,6 +1166,7 @@ export default function ProductDetailPage() {
         />
       )}
 
+      {/* Success Modal */}
       {showSuccess && (
         <SuccessModal
           structuredContent={deliveryStructured}

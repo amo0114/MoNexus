@@ -593,3 +593,29 @@ describe('P5 T2 — checkoutVersion covers fixedFileId', () => {
     expect(vNull).toBe(legacy)
   })
 })
+
+describe('SPEC-PRODUCT-COMMERCE-002 checkoutVersion attributes', () => {
+  it('keeps empty attributes out of the digest and includes non-empty attributes', async () => {
+    const { computeOfferCheckoutVersion } = await import('../lib/offers.js')
+    const base = {
+      id: 1, productId: 1, name: '默认规格', price: 100, originalPrice: null,
+      status: 'active', deliveryMode: 'instant_inventory', stockMode: 'limited',
+      stock: 0, fixedContent: null, fixedContentType: 'text', deliveryFields: null,
+      sales: 0, sortOrder: 0, isDefault: true, createdAt: new Date(0),
+      fixedFileId: null, validityDays: null, autoProvision: false,
+    }
+    const legacy = computeOfferCheckoutVersion(base as any)
+    const empty = computeOfferCheckoutVersion({ ...base, attributes: {} } as any)
+    const filled = computeOfferCheckoutVersion({ ...base, attributes: { unitLabel: '1 个兑换码' } } as any)
+    const structured = computeOfferCheckoutVersion({
+      ...base,
+      deliveryMode: 'instant_fixed',
+      stockMode: 'unlimited',
+      fixedContent: 'user: demo',
+      fixedStructuredContent: { fields: [{ key: 'user', label: '账号', sensitive: false }], values: { user: 'demo' } },
+    } as any)
+    expect(empty).toBe(legacy)
+    expect(filled).not.toBe(legacy)
+    expect(structured).not.toBe(legacy)
+  })
+})

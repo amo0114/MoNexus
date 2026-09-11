@@ -20,7 +20,9 @@ import {
 } from './schema.js'
 import * as controller from './controller.js'
 import { categoryApplicationRoutes } from '../catalog/applicationRoutes.js'
+import { merchantAssuranceRouter } from '../catalog/assurance/routes.js'
 import { z } from 'zod'
+import { createProductV2Schema, patchProductContentSchema } from '../catalog/productV2Schema.js'
 
 const offerParamSchema = z.object({
   id: z.coerce.number().int().positive('必须是正整数'),
@@ -39,8 +41,13 @@ router.get('/me', controller.me)
 router.put('/me', validate(updateMerchantSchema), controller.updateMe)
 
 router.get('/products', validate({ query: merchantProductListQuerySchema }), controller.listProducts)
-router.post('/products', validate(createMerchantProductSchema), controller.createProduct)
+router.post('/products', (req, res, next) => {
+  const schema = req.body?.editorVersion === 2 ? createProductV2Schema : createMerchantProductSchema
+  return validate(schema)(req, res, next)
+}, controller.createProduct)
 router.put('/products/:id', validate({ params: idParamSchema, body: updateMerchantProductSchema }), controller.updateProduct)
+router.patch('/products/:id/content', validate({ params: idParamSchema, body: patchProductContentSchema }), controller.patchProductContent)
+router.get('/products/:id/editor', validate({ params: idParamSchema }), controller.getProductEditor)
 router.get('/products/:id/readiness', validate({ params: idParamSchema }), controller.productReadiness)
 router.post('/products/:id/publish', validate({ params: idParamSchema }), controller.publishProduct)
 router.post('/products/:id/unpublish', validate({ params: idParamSchema }), controller.unpublishProduct)
@@ -82,5 +89,6 @@ router.post('/webhook-config/test', controller.testWebhookConfig)
 
 // T-CAT-BE-002 §7.3：商家分类申请（列表/创建/撤回，强制 ownership）。
 router.use('/category-applications', categoryApplicationRoutes)
+router.use(merchantAssuranceRouter)
 
 export { router as merchantRoutes }

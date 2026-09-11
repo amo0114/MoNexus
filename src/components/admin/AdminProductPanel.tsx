@@ -26,19 +26,19 @@ import { TableSkeleton } from '../ui/Skeleton'
 import EmptyState from '../ui/EmptyState'
 import ConfirmDialog from '../ui/ConfirmDialog'
 import { Dialog, DialogContent, DialogTitle } from '../ui/Dialog'
-import AdminPlatformProductWizard from '../catalog/AdminPlatformProductWizard'
 import AdminFakaImportPreview from '../catalog/AdminFakaImportPreview'
 import AdminProductPublicationDialog, {
   type AdminPublicationTarget,
 } from '../catalog/AdminProductPublicationDialog'
-import AdminProductEditDialog from '../catalog/AdminProductEditDialog'
 import AdminOfferManagerModal from '../catalog/AdminOfferManagerModal'
 import AdminFakaSyncDialog from '../catalog/AdminFakaSyncDialog'
+import AdminSourceDescriptionDialog from '../catalog/AdminSourceDescriptionDialog'
 import AdminInventoryImportPreview, {
   type AdminInventoryTarget,
 } from '../catalog/AdminInventoryImportPreview'
 import AdminPanelHeader from './AdminPanelHeader'
 import AdminActionMenu, { type AdminActionMenuItem } from './AdminActionMenu'
+import AdminAssurancePanel from '../catalog/AdminAssurancePanel'
 
 interface Props {
   active?: boolean
@@ -51,6 +51,16 @@ function adminProductStatusLabel(status: string): string {
   return '状态未知'
 }
 
+function shouldShowSourceDescriptionAction(product: AdminProductListItem): boolean {
+  if (product.fakaCapacity) return true
+  if (product.fakaBridge) return true
+  const offers = product.offers ?? []
+  if (offers.some((offer) => Boolean(offer.externalIntegration) || Boolean(offer.fakaCapacity))) {
+    return true
+  }
+  return product.fakaBridge === undefined && product.fakaCapacity === undefined
+}
+
 export default function AdminProductPanel({ active = true }: Props) {
   const showToast = useAppStore((s) => s.showToast)
   const [products, setProducts] = useState<AdminProductListItem[]>([])
@@ -58,6 +68,7 @@ export default function AdminProductPanel({ active = true }: Props) {
   const [page, setPage] = useState(1)
   const pageSize = 20
   const [loading, setLoading] = useState(true)
+  const [assuranceProductId, setAssuranceProductId] = useState<number | null>(null)
   const [productsRefreshError, setProductsRefreshError] = useState(false)
   const [productsReloading, setProductsReloading] = useState(false)
 
@@ -78,7 +89,6 @@ export default function AdminProductPanel({ active = true }: Props) {
   })
 
   const [inventoryTarget, setInventoryTarget] = useState<AdminInventoryTarget | null>(null)
-  const [showPlatformProduct, setShowPlatformProduct] = useState(false)
 
   // FakaBridge capacity edit (admin only)
   const [fakaCapProduct, setFakaCapProduct] = useState<AdminProductListItem | null>(null)
@@ -90,9 +100,9 @@ export default function AdminProductPanel({ active = true }: Props) {
   const [showFakaImport, setShowFakaImport] = useState(false)
   const [publicationTarget, setPublicationTarget] = useState<AdminPublicationTarget | null>(null)
   const [unpublishingProductIds, setUnpublishingProductIds] = useState<Set<number>>(new Set())
-  const [editProduct, setEditProduct] = useState<AdminProductListItem | null>(null)
   const [offerProduct, setOfferProduct] = useState<AdminProductListItem | null>(null)
   const [syncProduct, setSyncProduct] = useState<AdminProductListItem | null>(null)
+  const [sourceDescriptionProduct, setSourceDescriptionProduct] = useState<AdminProductListItem | null>(null)
 
   // ConfirmDialog states
   const [unpublishTarget, setUnpublishTarget] = useState<AdminProductListItem | null>(null)
@@ -344,14 +354,13 @@ export default function AdminProductPanel({ active = true }: Props) {
         description="管理平台自营与入驻商家商品、定价及交付配置"
         actions={
           <div className="flex gap-2 flex-wrap items-center">
-            <button
-              type="button"
-              className="btn-secondary btn-sm text-xs px-3 py-1.5 cursor-pointer"
+            <a
+              href="/admin/products/new"
+              className="btn-secondary btn-sm text-xs px-3 py-1.5 cursor-pointer no-underline"
               data-testid="admin-platform-product-open"
-              onClick={() => setShowPlatformProduct(true)}
             >
               新建平台商品
-            </button>
+            </a>
             <button
               type="button"
               className="btn-primary btn-sm text-xs px-3 py-1.5 cursor-pointer"
@@ -446,6 +455,7 @@ export default function AdminProductPanel({ active = true }: Props) {
           </button>
         </div>
       </form>
+      <AdminAssurancePanel productId={assuranceProductId} />
       <div className="overflow-x-auto">
         {loading && products.length === 0 ? (
           <TableSkeleton />
@@ -603,15 +613,14 @@ export default function AdminProductPanel({ active = true }: Props) {
                           </span>
                         ) : null}
                         {isPlatformOwned && (
-                          <button
-                            type="button"
+                          <a
+                            href={`/admin/products/${p.id}/edit`}
                             data-testid={`admin-edit-product-${p.id}`}
-                            className="text-[var(--color-text)] hover:bg-[var(--color-background)] font-semibold text-xs px-3 py-1.5 btn-sm rounded-lg transition-colors border border-[var(--color-border)] cursor-pointer inline-flex items-center gap-1"
-                            onClick={() => setEditProduct(p)}
+                            className="text-[var(--color-text)] hover:bg-[var(--color-background)] font-semibold text-xs px-3 py-1.5 btn-sm rounded-lg transition-colors border border-[var(--color-border)] cursor-pointer inline-flex items-center gap-1 no-underline"
                           >
                             <Pencil className="w-3.5 h-3.5" />
                             编辑
-                          </button>
+                          </a>
                         )}
                         {p.archivedAt ? (
                           <button
@@ -643,6 +652,12 @@ export default function AdminProductPanel({ active = true }: Props) {
                         )}
                         {(() => {
                           const menuItems: AdminActionMenuItem[] = []
+                          menuItems.push({
+                            id: `assurance-${p.id}`,
+                            label: '保障管理',
+                            onClick: () => setAssuranceProductId(p.id),
+                            testId: `admin-assurance-${p.id}`,
+                          })
                           if (isPlatformOwned) {
                             menuItems.push({
                               id: `offers-${p.id}`,
@@ -670,7 +685,14 @@ export default function AdminProductPanel({ active = true }: Props) {
                               testId: `admin-faka-sync-${p.id}`,
                             })
                           }
-                          if (menuItems.length === 0) return null
+                          if (shouldShowSourceDescriptionAction(p)) {
+                            menuItems.push({
+                              id: `source-description-${p.id}`,
+                              label: '检查上游介绍',
+                              onClick: () => setSourceDescriptionProduct(p),
+                              testId: `admin-source-description-${p.id}`,
+                            })
+                          }
                           return (
                             <AdminActionMenu
                               items={menuItems}
@@ -727,15 +749,6 @@ export default function AdminProductPanel({ active = true }: Props) {
         total={total}
         onPageChange={handlePageChange}
         testId="admin-products-pagination"
-      />
-
-      <AdminPlatformProductWizard
-        open={showPlatformProduct}
-        onClose={() => setShowPlatformProduct(false)}
-        onCreated={() => {
-          setPage(1)
-          triggerSafeReload(1)
-        }}
       />
 
       <AdminInventoryImportPreview
@@ -846,11 +859,6 @@ export default function AdminProductPanel({ active = true }: Props) {
         }}
       />
 
-      <AdminProductEditDialog
-        product={editProduct}
-        onClose={() => setEditProduct(null)}
-        onSaved={triggerSafeReload}
-      />
       <AdminOfferManagerModal
         product={offerProduct}
         onClose={() => setOfferProduct(null)}
@@ -860,6 +868,11 @@ export default function AdminProductPanel({ active = true }: Props) {
         product={syncProduct}
         onClose={() => setSyncProduct(null)}
         onSynced={triggerSafeReload}
+      />
+      <AdminSourceDescriptionDialog
+        product={sourceDescriptionProduct}
+        onClose={() => setSourceDescriptionProduct(null)}
+        onApplied={triggerSafeReload}
       />
 
       {/* 商品下架确认弹窗 */}

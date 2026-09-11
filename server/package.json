@@ -37,6 +37,7 @@
     "@aws-sdk/s3-request-presigner": "^3.1095.0",
     "@prisma/client": "^6.2.0",
     "@sentry/node": "^10.53.0",
+    "ajv": "8.17.1",
     "alipay-sdk": "^4.14.0",
     "altcha-lib": "^2.4.0",
     "bcryptjs": "^2.4.3",

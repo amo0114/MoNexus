@@ -15,8 +15,9 @@
   --color-primary: #6366F1;          /* indigo-500 — interactive accent */
   --color-primary-hover: #4F46E5;    /* indigo-600 */
   --color-secondary: #818CF8;        /* indigo-400 */
-  --color-cta: #22C55E;              /* green-500 */
-  --color-cta-hover: #16A34A;        /* green-600 */
+  --color-cta: #15803D;              /* green-700 — 5.02:1 AA on white */
+  --color-cta-hover: #166534;        /* green-800 */
+  --color-on-cta: #FFFFFF;
   --color-background: #F8FAFC;       /* slate-50 — neutral page bg */
   --color-surface: #FFFFFF;
   --color-text: #1E293B;             /* slate-800 — neutral body text */
@@ -89,6 +90,15 @@
   --color-success: #22C55E;
   --color-danger: #EF4444;
 
+  /* Semantic badge / banner families (no arbitrary opacity modifier needed) */
+  --color-primary-border-subtle: rgba(99, 102, 241, 0.25);
+  --color-danger-bg: #FEF2F2;
+  --color-danger-border: #FECACA;
+  --color-danger-text: #B91C1C;
+  --color-success-bg: #F0FDF4;
+  --color-success-border: #BBF7D0;
+  --color-success-text: #15803D;
+
   /* Toast 2.0 图标/进度条色阶（文字级，白卡实测 ≥4.5:1）。
      与上方 --color-success 等徽章浅色不同：这组专供 surface 卡上的小图标。 */
   --color-toast-success: #15803D;    /* green-700 — 5.01:1 */
@@ -112,12 +122,14 @@
   --safe-right: env(safe-area-inset-right, 0px);
 }
 
-.dark {
+.dark,
+:root[data-theme="dark"] {
   --color-primary: #818CF8;          /* indigo-400 brightened for dark bg */
   --color-primary-hover: #A5B4FC;
   --color-secondary: #A5B4FC;
   --color-cta: #4ADE80;
   --color-cta-hover: #86EFAC;
+  --color-on-cta: #0A0A14;           /* dark background — 11.30:1 AAA on green-400 */
   --color-background: #0A0A14;       /* near-black with a hint of purple */
   --color-surface: #161629;
   --color-text: #F1F5F9;             /* slate-100 */
@@ -153,6 +165,14 @@
   --color-warning: #FBBF24;
   --color-success: #4ADE80;
   --color-danger: #F87171;
+
+  --color-primary-border-subtle: rgba(129, 140, 248, 0.28);
+  --color-danger-bg: rgba(239, 68, 68, 0.15);
+  --color-danger-border: rgba(248, 113, 113, 0.3);
+  --color-danger-text: #FCA5A5;
+  --color-success-bg: rgba(34, 197, 94, 0.15);
+  --color-success-border: rgba(74, 222, 128, 0.3);
+  --color-success-text: #86EFAC;
 
   /* Toast 色阶（深色卡 #161629 上实测 ≥4.5:1） */
   --color-toast-success: #4ADE80;    /* green-400 — 8.06:1 */
@@ -479,10 +499,10 @@ h1, h2, h3, h4 {
 
 .btn-cta {
   @apply inline-flex items-center justify-center gap-2 cursor-pointer
-         bg-[var(--color-cta)] text-white font-semibold text-sm
+         bg-[var(--color-cta)] text-[var(--color-on-cta)] font-semibold text-sm
          px-6 py-3 rounded-lg shadow-md transition-all duration-200
          hover:bg-[var(--color-cta-hover)] hover:-translate-y-px hover:shadow-lg
-         focus-visible:outline-none focus-visible:[box-shadow:0_0_0_3px_rgba(34,197,94,0.25)]
+         focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)]
          active:translate-y-0 active:scale-[0.98] active:shadow-sm
          disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:shadow-md;
 }
@@ -736,8 +756,9 @@ h1, h2, h3, h4 {
   --color-primary: #FF8C42;
   --color-primary-hover: #E67333;
   --color-secondary: #FFB088;
-  --color-cta: #6BBE6B;
-  --color-cta-hover: #5AAA5A;
+  --color-cta: #AD4B35;              /* 暖陶红 — 白字 5.48:1 AA */
+  --color-cta-hover: #963E2B;
+  --color-on-cta: #FFFFFF;
   --color-background: #FFF8EC;
   --color-surface: #FFFEFB;
   --color-text: #5D3A1F;
@@ -759,6 +780,14 @@ h1, h2, h3, h4 {
   --color-warning: #F5A340;
   --color-success: #6BBE6B;
   --color-danger: #FF7B6B;
+
+  --color-primary-border-subtle: rgba(255, 140, 66, 0.28);
+  --color-danger-bg: #FFF0ED;
+  --color-danger-border: #FFD2CA;
+  --color-danger-text: #C53B2B;
+  --color-success-bg: #F0FAF0;
+  --color-success-border: #C8E6C8;
+  --color-success-text: #2D6A2D;
 
   /* Toast 色阶（暖米卡 #FFFEFB 上实测 ≥4.5:1） */
   --color-toast-success: #3F7A3F;    /* 同 --color-points — 5.09:1 */
@@ -805,6 +834,7 @@ h1, h2, h3, h4 {
   --color-secondary: #6B86A8;        /* 淡花青 */
   --color-cta: #3D7257;              /* 松绿 — 白字 5.6:1 */
   --color-cta-hover: #315C46;
+  --color-on-cta: #FFFFFF;
   --color-background: #EEF0EE;       /* 冷白宣纸（微青灰，不带黄） */
   --color-surface: #F8F9F7;          /* 卡纸（比底稍亮，如托裱） */
   --color-text: #22262C;             /* 松烟墨（微青黑，非纯黑） */
@@ -826,6 +856,14 @@ h1, h2, h3, h4 {
   --color-warning: #677220;          /* 苔黄（68° 黄绿，警示语义的黄族但不入橘调） */
   --color-success: #3D7257;          /* 松绿 */
   --color-danger: #A62B4D;           /* 胭脂（冷调绯红，非橘红） */
+
+  --color-primary-border-subtle: rgba(52, 80, 122, 0.22);
+  --color-danger-bg: #F7EAEF;
+  --color-danger-border: #E8BCCD;
+  --color-danger-text: #861B3B;
+  --color-success-bg: #EDF4EF;
+  --color-success-border: #BCD4C4;
+  --color-success-text: #244C37;
 
   --color-toast-success: #2F5C46;
   --color-toast-error: #A62B4D;

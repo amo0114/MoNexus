@@ -2,12 +2,17 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import AdminConfigPanel from './AdminConfigPanel'
 import * as adminConfigApi from '../../api/adminConfig'
+import * as adminBuildInfoApi from '../../api/adminBuildInfo'
 import { bpsToPercentString, percentStringToBps } from './adminConfigMeta'
 
 // Mock adminConfig API
 vi.mock('../../api/adminConfig', () => ({
   getAdminConfig: vi.fn(),
   updateAdminConfig: vi.fn(),
+}))
+
+vi.mock('../../api/adminBuildInfo', () => ({
+  getAdminBuildInfo: vi.fn(),
 }))
 
 const MOCK_CONFIGS: adminConfigApi.AdminSystemConfig[] = [
@@ -242,6 +247,14 @@ describe('AdminConfigPanel & B2 Specifications', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.mocked(adminConfigApi.getAdminConfig).mockResolvedValue(MOCK_CONFIGS)
+    vi.mocked(adminBuildInfoApi.getAdminBuildInfo).mockResolvedValue({
+      version: null,
+      commit: null,
+      builtAt: null,
+      environment: 'test',
+      releaseTag: null,
+      source: 'unavailable',
+    })
   })
 
   it('accurately converts between percentage strings and integer basis points', () => {
@@ -258,7 +271,7 @@ describe('AdminConfigPanel & B2 Specifications', () => {
     expect(percentStringToBps('-1').error).toBe('百分比最多支持两位小数')
   })
 
-  it('renders all 7 group tabs and loads configs from single source', async () => {
+  it('renders all group tabs and loads configs from single source', async () => {
     render(<AdminConfigPanel />)
     expect(screen.getByText('加载中...')).toBeInTheDocument()
 
@@ -274,11 +287,23 @@ describe('AdminConfigPanel & B2 Specifications', () => {
       '库存提醒',
       '商品运营',
       '高级运维',
+      '系统信息',
     ]
 
     for (const title of groupTitles) {
       expect(screen.getByRole('tab', { name: title })).toBeInTheDocument()
     }
+  })
+
+  it('shows system info inside the config panel without filling a missing artifact', async () => {
+    render(<AdminConfigPanel />)
+    await waitFor(() => {
+      expect(screen.getByRole('tab', { name: '系统信息' })).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByRole('tab', { name: '系统信息' }))
+    expect(await screen.findByTestId('admin-system-info-panel')).toBeInTheDocument()
+    expect(screen.getByTestId('admin-system-info-unavailable')).toHaveTextContent('构建信息未提供')
   })
 
   it('switches between group tabs while preserving draft inputs in memory', async () => {
