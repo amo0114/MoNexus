@@ -49,6 +49,9 @@ RUN --mount=type=bind,source=.,target=/src \
     fi
 
 USER app
+# Import the compiled registry from the final image as the runtime user. This
+# catches missing JSON assets before an image can be published or deployed.
+RUN npm run check:build
 EXPOSE 3000
 
 # Tini reaps zombies properly (Node.js doesn't by default in PID 1).
