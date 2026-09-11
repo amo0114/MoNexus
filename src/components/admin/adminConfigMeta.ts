@@ -8,6 +8,7 @@ export type ConfigGroupId =
   | 'inventory' // 库存提醒 (2)
   | 'merchandising' // 商品运营 (8)
   | 'ops' // 高级运维 (3)
+  | 'system' // 系统信息 (build artifact)
 
 export interface ConfigGroupDef {
   id: ConfigGroupId
@@ -24,6 +25,7 @@ export const CONFIG_GROUPS: ConfigGroupDef[] = [
   { id: 'inventory', title: '库存提醒', description: '商品可用库存低位阈值与重发告警冷却', legacyGroup: '库存' },
   { id: 'merchandising', title: '商品运营', description: '自然热卖与合作伙伴权益自动计算参数' },
   { id: 'ops', title: '高级运维', description: '凭证有效期限、列表分页上限与邮件投递服务', legacyGroup: '分页限制' },
+  { id: 'system', title: '系统信息', description: '当前 API 镜像的运行版本与构建元数据，仅管理员可见' },
 ]
 
 export type ConfigFieldType = 'integer' | 'switch' | 'select' | 'percentage'

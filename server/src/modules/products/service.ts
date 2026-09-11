@@ -2,7 +2,10 @@ import { Prisma } from '@prisma/client'
 import { prisma } from '../../lib/prisma.js'
 import { wrapCache } from '../../lib/cache.js'
 import { badRequest, HttpError, notFound } from '../../lib/httpError.js'
-import { serializePublicOffer } from '../../lib/offers.js'
+import { projectPublicTemplateAttributes, serializePublicOffer } from '../../lib/offers.js'
+import { getProductTemplate } from '../catalog/templates/registry.js'
+import { emptyProductDetails } from '../catalog/templates/productDetails.js'
+import { TEMPLATE_KEYS, type ProductDetails, type TemplateKey } from '../catalog/templates/types.js'
 import {
   getFakaCapacityForPublicRead,
   getCachedFakaCapacityByPlanId,
@@ -13,6 +16,13 @@ import {
   buildProductListCacheKey,
 } from './cache.js'
 import {
+  assertPublicProductAccess,
+  guestVisibilitySql,
+  isCurrentlyPubliclyVisible,
+  merchantVisibleSql,
+  type ProductAudience,
+} from './visibility.js'
+import {
   assertCursorFilterMatches,
   computeFilterHash,
   decodeOrganicCursor,
@@ -22,6 +32,7 @@ import {
   type OrganicCursorPayload,
   type ProjectionRun,
 } from '../merchandising/publicProjection.js'
+import { loadPublicAssuranceByProductIds } from '../catalog/assurance/service.js'
 
 interface ProductListParams {
   query?: string
@@ -30,6 +41,7 @@ interface ProductListParams {
   cursor?: string
   page?: number
   pageSize?: number
+  audience?: import('./visibility.js').ProductAudience
 }
 
 const productListSelect = {
@@ -49,8 +61,11 @@ const productListSelect = {
   stockMode: true,
   ratingAvg: true,
   ratingCount: true,
+  templateKey: true,
+  templateVersion: true,
+  visibility: true,
   _count: { select: { inventory: { where: { status: 'available' } } } },
-  merchant: { select: { id: true, name: true } },
+  merchant: { select: { id: true, name: true, status: true } },
   category: { select: { id: true, code: true, label: true } },
   // P4a：公开可售状态从 active 规格集合推导，不再信任 Product 投影——
   // stockMode 投影取自默认规格（可能已下架），混合规格商品会误报售罄/不限。
@@ -83,6 +98,12 @@ const productDetailSelect = {
   sales: true,
   status: true,
   archivedAt: true,
+  visibility: true,
+  templateKey: true,
+  templateVersion: true,
+  contentVersion: true,
+  attributes: true,
+  details: true,
   deliveryMode: true,
   stockMode: true,
   // 购买前表单定义：买家需在详情/结算时看到并填写，属公开数据（答案才是敏感的）。
@@ -97,7 +118,7 @@ const productDetailSelect = {
     include: { fixedFile: { select: { size: true } } },
   },
   _count: { select: { inventory: { where: { status: 'available' } } } },
-  merchant: { select: { id: true, name: true } },
+  merchant: { select: { id: true, name: true, status: true } },
   category: { select: { id: true, code: true, label: true } },
 } satisfies Prisma.ProductSelect
 
@@ -155,12 +176,49 @@ async function countAvailableByOffer(offers: AvailabilityOffer[]): Promise<Map<n
   return counts
 }
 
+function publicMerchant(merchant: { id: number; name: string; status?: string } | null | undefined) {
+  if (!merchant) return null
+  return { id: merchant.id, name: merchant.name }
+}
+
+function resolvePublicTemplate(templateKey: string | null, templateVersion: number | null) {
+  if (templateKey == null || templateVersion == null) return null
+  if (!(TEMPLATE_KEYS as readonly string[]).includes(templateKey)) return null
+  return getProductTemplate(templateKey as TemplateKey, templateVersion)
+}
+
+function toPublicProductDetails(value: Prisma.JsonValue | null | undefined): ProductDetails {
+  const empty = emptyProductDetails()
+  if (value == null || typeof value !== 'object' || Array.isArray(value)) return empty
+  const record = value as Record<string, unknown>
+  const highlights = Array.isArray(record.highlights)
+    ? record.highlights
+        .filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+        .slice(0, 4)
+    : []
+  const faq = Array.isArray(record.faq)
+    ? record.faq.flatMap((item) => {
+        if (item == null || typeof item !== 'object' || Array.isArray(item)) return []
+        const row = item as Record<string, unknown>
+        if (typeof row.question !== 'string' || typeof row.answer !== 'string') return []
+        return [{ question: row.question, answer: row.answer }]
+      }).slice(0, 8)
+    : []
+  return {
+    highlights,
+    usageInstructions: typeof record.usageInstructions === 'string' ? record.usageInstructions : '',
+    purchaseNotes: typeof record.purchaseNotes === 'string' ? record.purchaseNotes : '',
+    afterSalesInstructions: typeof record.afterSalesInstructions === 'string' ? record.afterSalesInstructions : '',
+    faq,
+  }
+}
+
 function serializePublicProductListItem(
   product: ProductListItem,
   offerAvailableCounts: Map<number, number>,
   fakaBySku: Map<string, FakaCapacitySnapshot> = new Map()
 ) {
-  const { _count, offers, ...publicProduct } = product
+  const { _count, offers, merchant, ...publicProduct } = product
   const localAvailability = computePublicAvailability(product, offers, offerAvailableCounts)
 
   const fakaCaps: FakaCapacitySnapshot[] = []
@@ -179,6 +237,7 @@ function serializePublicProductListItem(
 
   return {
     ...publicProduct,
+    merchant: publicMerchant(merchant),
     // 可售状态：Faka 用 Xboard 名额，否则本地规格推导。列表不携带 offers 数组。
     ...(fakaAvailability ?? localAvailability),
     fakaCapacity,
@@ -330,13 +389,27 @@ function serializePublicProductDetail(
   offerAvailableCounts: Map<number, number>,
   fakaByOfferId: Map<number, FakaCapacitySnapshot> = new Map()
 ) {
-  const { _count, offers, archivedAt: _archivedAt, ...publicProduct } = product
+  const {
+    _count,
+    offers,
+    archivedAt: _archivedAt,
+    merchant,
+    attributes: rawAttributes,
+    details: rawDetails,
+    ...publicProduct
+  } = product
   const localAvailability = computePublicAvailability(product, offers, offerAvailableCounts)
   const fakaCaps = [...fakaByOfferId.values()]
   const fakaAvailability = projectFakaAvailability(fakaCaps)
+  const template = resolvePublicTemplate(product.templateKey, product.templateVersion)
+  const productAttributeKeys = template?.ui.productOrder ?? []
+  const offerAttributeKeys = template?.ui.offerOrder ?? []
 
   return {
     ...publicProduct,
+    merchant: publicMerchant(merchant),
+    attributes: projectPublicTemplateAttributes(rawAttributes, productAttributeKeys),
+    details: toPublicProductDetails(rawDetails),
     // Faka 商品：用 Xboard 剩余名额投影到 stock/stockMode，详情页「库存」可见。
     // 非 Faka 或 capacity 不可达：保持本地推导。
     ...(fakaAvailability ?? localAvailability),
@@ -345,7 +418,7 @@ function serializePublicProductDetail(
     ratingAvg: Number(product.ratingAvg),
     // 公开 Offer 剥离 fixedContent；即时库存规格的 stock 用实际可用条目数。
     offers: offers.map(offer => {
-      const serialized = serializePublicOffer(offer)
+      const serialized = serializePublicOffer(offer, { attributeKeys: offerAttributeKeys })
       const fakaCapacity = fakaByOfferId.get(offer.id) ?? null
       const withFaka = fakaCapacity
         ? {
@@ -395,11 +468,15 @@ function normalizeProductFilters(params: ProductListParams): NormalizedProductFi
   }
 }
 
-function productFilterHashInput(filters: NormalizedProductFilters): Record<string, unknown> {
+function productFilterHashInput(
+  filters: NormalizedProductFilters,
+  audience: ProductAudience = 'guest',
+): Record<string, unknown> {
   return {
     query: filters.query,
     categoryCode: filters.categoryCode,
     legacyCategory: filters.legacyCategory,
+    audience,
   }
 }
 
@@ -409,7 +486,11 @@ async function listRankedProductRows(
 ): Promise<RankedProductRow[]> {
   const { page = 1, pageSize = 20 } = params
   const { filters, cursor, run } = context
-  const where: Prisma.Sql[] = [Prisma.sql`p."status" = 'active' AND p."archivedAt" IS NULL`]
+  const where: Prisma.Sql[] = [
+    Prisma.sql`p."status" = 'active' AND p."archivedAt" IS NULL`,
+    merchantVisibleSql(),
+  ]
+  if (params.audience === 'guest') where.push(guestVisibilitySql())
 
   if (filters.categoryCode) {
     where.push(Prisma.sql`c."code" = ${filters.categoryCode} AND c."status" = 'active'`)
@@ -476,8 +557,9 @@ async function attachListMerchandising<
 
 export async function listProducts(params: ProductListParams = {}) {
   const filters = normalizeProductFilters(params)
+  const audience = params.audience ?? 'guest'
   const cursor = params.cursor ? decodeOrganicCursor(params.cursor) : null
-  if (cursor) assertCursorFilterMatches(cursor, productFilterHashInput(filters))
+  if (cursor) assertCursorFilterMatches(cursor, productFilterHashInput(filters, audience))
   const pinned = await resolveCursorForRequest(cursor)
   const run = pinned.mode === 'run' ? pinned.run : null
   const context: ProductListContext = { filters, cursor, run }
@@ -486,6 +568,7 @@ export async function listProducts(params: ProductListParams = {}) {
     categoryCode: filters.categoryCode ?? undefined,
     category: filters.legacyCategory ?? undefined,
     rankingRunId: run?.id ?? null,
+    audience,
   })
 
   const load = () => listProductsFromDb(params, context)
@@ -500,7 +583,33 @@ export async function listProducts(params: ProductListParams = {}) {
 
   // Merch identity/entitlement is decorated after the Catalog cache, so expiry,
   // revocation and editorial changes never get frozen inside a product cache entry.
-  return attachListMerchandising(baseResult, run)
+  const live = await prisma.product.findMany({
+    where: { id: { in: baseResult.items.map(item => item.id) } },
+    select: {
+      id: true,
+      status: true,
+      archivedAt: true,
+      visibility: true,
+      merchantId: true,
+      merchant: { select: { status: true } },
+    },
+  })
+  const visible = new Set(
+    live.filter(row => isCurrentlyPubliclyVisible(row, audience)).map(row => row.id),
+  )
+  const visibleItems = baseResult.items.filter(item => visible.has(item.id))
+  const decorated = await attachListMerchandising({
+    ...baseResult,
+    items: visibleItems,
+  }, run)
+  const assuranceById = await loadPublicAssuranceByProductIds(decorated.items.map(item => item.id))
+  return {
+    ...decorated,
+    items: decorated.items.map(item => ({
+      ...item,
+      assurance: assuranceById.get(item.id) ?? null,
+    })),
+  }
 }
 
 async function listProductsFromDb(params: ProductListParams, context: ProductListContext) {
@@ -508,7 +617,13 @@ async function listProductsFromDb(params: ProductListParams, context: ProductLis
   const ranked = await listRankedProductRows(params, context)
   const pageRows = ranked.slice(0, pageSize)
   const products = await prisma.product.findMany({
-    where: { id: { in: pageRows.map(row => row.id) }, status: 'active', archivedAt: null },
+    where: {
+      id: { in: pageRows.map(row => row.id) },
+      status: 'active',
+      archivedAt: null,
+      OR: [{ merchantId: null }, { merchant: { status: 'active' } }],
+      ...(params.audience === 'guest' ? { visibility: 'public' } : {}),
+    },
     select: productListSelect,
   })
   const productById = new Map(products.map(product => [product.id, product]))
@@ -524,7 +639,7 @@ async function listProductsFromDb(params: ProductListParams, context: ProductLis
   )
   const lastRow = pageRows.at(-1)
   const hasMore = ranked.length > pageSize
-  const filterHash = computeFilterHash(productFilterHashInput(context.filters))
+  const filterHash = computeFilterHash(productFilterHashInput(context.filters, params.audience ?? 'guest'))
 
   return {
     items: items.map(item => serializePublicProductListItem(item, offerAvailableCounts, fakaBySku)),
@@ -542,10 +657,10 @@ async function listProductsFromDb(params: ProductListParams, context: ProductLis
   }
 }
 
-export async function getProductDetail(id: number) {
-  const cacheKey = await buildProductDetailCacheKey(id)
+export async function getProductDetail(id: number, audience: ProductAudience = 'guest') {
+  const cacheKey = await buildProductDetailCacheKey(id, audience)
   const baseProduct = cacheKey
-    ? await wrapCache('product-detail', cacheKey, 60, () => getProductDetailFromDb(id), {
+    ? await wrapCache('product-detail', cacheKey, 60, () => getProductDetailFromDb(id, audience), {
         negativeTtlSec: 20,
         negativeErrorPredicate: err => err instanceof HttpError && err.status === 404,
         // Same rule as the list: Redis may cache a known capacity/stale snapshot,
@@ -556,7 +671,20 @@ export async function getProductDetail(id: number) {
             offer => !('fakaCapacity' in offer) || !isUnavailableFakaCapacity(offer.fakaCapacity)
           ),
       })
-    : await getProductDetailFromDb(id)
+    : await getProductDetailFromDb(id, audience)
+
+  const live = await prisma.product.findUnique({
+    where: { id },
+    select: {
+      status: true,
+      archivedAt: true,
+      visibility: true,
+      merchantId: true,
+      merchant: { select: { status: true } },
+    },
+  })
+  if (!live) throw notFound('商品暂不可用')
+  assertPublicProductAccess(live, audience)
 
   const pinned = await resolveCursorForRequest(null)
   const run = pinned.mode === 'run' ? pinned.run : null
@@ -564,16 +692,21 @@ export async function getProductDetail(id: number) {
     [{ id: baseProduct.id, merchantId: baseProduct.merchant?.id ?? null }],
     run,
   )
-  return { ...baseProduct, merchandising: decorated.merchandising }
+  const assuranceById = await loadPublicAssuranceByProductIds([baseProduct.id])
+  return {
+    ...baseProduct,
+    merchandising: decorated.merchandising,
+    assurance: assuranceById.get(baseProduct.id) ?? null,
+  }
 }
 
-async function getProductDetailFromDb(id: number) {
+async function getProductDetailFromDb(id: number, audience: ProductAudience = 'guest') {
   const product = await prisma.product.findUnique({
     where: { id },
     select: productDetailSelect,
   })
-  if (!product) throw notFound('商品不存在')
-  if (product.status !== 'active' || product.archivedAt) throw badRequest('商品已下架')
+  if (!product) throw notFound('商品暂不可用')
+  assertPublicProductAccess(product, audience)
 
   const offerAvailableCounts = await countAvailableByOffer(product.offers)
 

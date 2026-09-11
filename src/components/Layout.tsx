@@ -41,6 +41,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const refreshNotificationUnread = useAppStore((s) => s.refreshNotificationUnread)
   const announcements = useAnnouncements()
   const [announcementCenterOpen, setAnnouncementCenterOpen] = useState(false)
+  const [forcedAnnouncementTab, setForcedAnnouncementTab] = useState(false)
   const surfacedRequiredAnnouncements = useRef(new Set<string>())
   const totalBellUnread = announcements.unreadCount + notificationUnreadCount
   const hasPendingRequiredAnnouncement = announcements.items.some(
@@ -52,6 +53,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   // 首次挂载只会发出一笔订单计数请求——stream ready 的补拉由
   // refreshOrderAttentionIfStale 的 1s 间隔合并。
   useEffect(() => {
+    if (!user) return
     void refreshOrderAttention()
     void refreshNotificationUnread()
   }, [user?.id, refreshOrderAttention, refreshNotificationUnread])
@@ -237,6 +239,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   }, [user, refreshNotificationUnread])
 
   const openAnnouncement = useCallback((announcement: PublicAnnouncement) => {
+    setForcedAnnouncementTab(true)
     setAnnouncementCenterOpen(true)
     if (announcement.presentation === 'acknowledgement_required' || announcement.readAt) return
     void announcements.markRead(announcement).catch((err) => {
@@ -244,7 +247,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     })
   }, [announcements, showToast])
   return (
-    <div className="bg-grid-pattern relative min-h-[100dvh] w-full flex flex-col" style={{ backgroundColor: 'var(--color-background)' }}>
+    <div className="bg-grid-pattern relative min-h-[100dvh] w-full flex flex-col overflow-x-clip" style={{ backgroundColor: 'var(--color-background)' }}>
       <NotificationRealtimeBridge />
       {/* Decorative background — soft indigo glow */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none -z-10">
@@ -357,7 +360,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           )}
 
           {/* Right Actions */}
-          <div className="flex items-center gap-2 sm:gap-3">
+          <div className="flex items-center gap-1.5 lg:gap-3">
             {isAdminPage ? (
               <>
                 <button
@@ -381,8 +384,10 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               </>
             ) : (
               <>
+                {user ? (
+                <>
                 {/* Merchant Portal entry — depends on user.role × merchant.status */}
-                {user?.role === 'user' && !user.merchant && (
+                {user.role === 'user' && !user.merchant && (
                   <button
                     type="button"
                     className="hidden md:flex items-center gap-1.5 px-3 py-2 bg-[var(--color-primary)]/8 text-[var(--color-primary)] rounded-full cursor-pointer hover:bg-[var(--color-primary)]/12 transition-colors border border-[var(--color-primary)]/20 focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)]"
@@ -390,7 +395,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                     title="申请成为商家"
                   >
                     <Plus className="w-4 h-4" />
-                    <span className="font-bold text-xs">申请成为商家</span>
+                    <span className="hidden lg:inline font-bold text-xs">申请成为商家</span>
                   </button>
                 )}
                 {user?.role === 'user' && user.merchant?.status === 'pending' && (
@@ -399,7 +404,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                     title="商家申请审核中"
                   >
                     <Clock className="w-4 h-4" />
-                    <span className="font-bold text-xs">商家申请审核中</span>
+                    <span className="hidden lg:inline font-bold text-xs">商家申请审核中</span>
                   </div>
                 )}
                 {user?.role === 'user' && user.merchant?.status === 'rejected' && (
@@ -410,7 +415,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                     title="申请被拒绝，可重新申请"
                   >
                     <XCircle className="w-4 h-4" />
-                    <span className="font-bold text-xs">申请被拒，重试</span>
+                    <span className="hidden lg:inline font-bold text-xs">申请被拒，重试</span>
                   </button>
                 )}
                 {user?.role === 'user' && user.merchant?.status === 'suspended' && (
@@ -419,7 +424,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                     title="商家账号已被停用，请联系平台"
                   >
                     <AlertTriangle className="w-4 h-4" />
-                    <span className="font-bold text-xs">账号已停用</span>
+                    <span className="hidden lg:inline font-bold text-xs">账号已停用</span>
                   </div>
                 )}
                 {user?.role === 'merchant' && user.merchant?.status === 'active' && (
@@ -430,7 +435,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                     title="商家后台"
                   >
                     <Store className="w-4 h-4" />
-                    <span className="font-bold text-xs">商家后台</span>
+                    <span className="hidden lg:inline font-bold text-xs">商家后台</span>
                   </button>
                 )}
                 {/* Admin Portal */}
@@ -442,7 +447,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                     title="管理后台"
                   >
                     <ShieldCheck className="w-4 h-4" />
-                    <span className="font-bold text-xs">管理后台</span>
+                    <span className="hidden lg:inline font-bold text-xs">管理后台</span>
                   </button>
                 )}
 
@@ -525,16 +530,27 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
                 {/* Points Badge — Coins icon in CTA green to match the buy-currency story */}
                 <div
-                  className="hidden md:flex items-center gap-1.5 px-4 py-2 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl cursor-pointer hover:border-[var(--color-primary)]/35 transition-colors group"
+                  className="hidden md:flex items-center gap-1.5 px-2.5 lg:px-4 py-2 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl cursor-pointer hover:border-[var(--color-primary)]/35 transition-colors group"
                   onClick={() => navigate('/profile')}
                 >
                   <div className="bg-[var(--color-cta)]/10 p-1 rounded-full">
                     <Coins className="w-4 h-4 text-[var(--color-cta)]" />
                   </div>
                   <span className="font-bold text-[15px] text-[var(--color-text)] font-mono">
-                    {user?.points ?? '--'}
+                    {user.points ?? '--'}
                   </span>
                 </div>
+                </>
+                ) : (
+                <button
+                  type="button"
+                  onClick={() => navigate('/login')}
+                  data-testid="nav-login"
+                  className="hidden md:inline-flex items-center px-4 py-2 rounded-full text-sm font-bold border border-[var(--color-primary)]/20 bg-[var(--color-primary)]/8 text-[var(--color-primary)] hover:bg-[var(--color-primary)]/12 transition-colors cursor-pointer focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)]"
+                >
+                  登录
+                </button>
+                )}
               </>
             )}
 
@@ -572,6 +588,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             </button>
 
             {/* Avatar — 移动端入口由 Tab Bar「我的」承担（V3 去重），≥md 保留 */}
+            {user && (
             <button
               onClick={() => navigate('/profile')}
               className="hidden md:flex items-center gap-2 ml-1 relative group cursor-pointer"
@@ -587,6 +604,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                 <User className="w-5 h-5" />
               </div>
             </button>
+            )}
 
             {/* Mobile hamburger — drawer carries the entries hidden below md */}
             <MobileNavDrawer />
@@ -631,12 +649,15 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       <BottomTabBar />
       <AnnouncementCenter
         open={announcementCenterOpen}
-        onOpenChange={setAnnouncementCenterOpen}
+        onOpenChange={(open) => {
+          setAnnouncementCenterOpen(open)
+          if (!open) setForcedAnnouncementTab(false)
+        }}
         items={announcements.items}
         unreadCount={announcements.unreadCount}
         onMarkRead={announcements.markRead}
         onAcknowledge={announcements.acknowledge}
-        forceAnnouncementTab={hasPendingRequiredAnnouncement}
+        forceAnnouncementTab={hasPendingRequiredAnnouncement || forcedAnnouncementTab}
       />
 
       {/* Content. 注意不要给 main 加 z-index：z-0 会创建 stacking context，

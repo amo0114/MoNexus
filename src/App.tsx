@@ -21,6 +21,8 @@ import MerchantDashboardPage from './pages/MerchantDashboardPage'
 import MerchantPromotionPage from './components/merchandising/MerchantPromotionPage'
 import Dashboard from './pages/merchant/Dashboard'
 import ProductCreateWizard from './pages/merchant/ProductCreateWizard'
+import ProductEditPage from './pages/merchant/ProductEditPage'
+import ProductCreatePage from './pages/admin/ProductCreatePage'
 import PortableRestoreSetupPage from './pages/PortableRestoreSetupPage'
 import LegalDocumentPage from './pages/legal/LegalDocumentPage'
 import NotificationsPage from './pages/NotificationsPage'
@@ -28,7 +30,13 @@ import OrdersPage from './pages/OrdersPage'
 import RechargePage from './pages/RechargePage'
 import RoleGuard from './components/RoleGuard'
 
-function ProtectedRoute({ children }: { children: React.ReactNode }) {
+function SessionLayout({
+  children,
+  requireAuth = false,
+}: {
+  children: React.ReactNode
+  requireAuth?: boolean
+}) {
   const isLoggedIn = useAuthStore((s) => s.isLoggedIn)
   const setUser = useAuthStore((s) => s.setUser)
   const logout = useAuthStore((s) => s.logout)
@@ -46,7 +54,8 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
       })
   }, [isLoggedIn, setUser, logout])
 
-  return isLoggedIn ? <>{children}</> : <Navigate to="/login" />
+  if (requireAuth && !isLoggedIn) return <Navigate to="/login" />
+  return <Layout>{children}</Layout>
 }
 
 export default function App() {
@@ -73,13 +82,26 @@ export default function App() {
         <Route path="/points-rules" element={<LegalDocumentPage slug="points-rules" />} />
         <Route path="/about" element={<LegalDocumentPage slug="about" />} />
         <Route
+          path="/"
+          element={(
+            <SessionLayout>
+              <StorePage />
+            </SessionLayout>
+          )}
+        />
+        <Route
+          path="/product/:id"
+          element={(
+            <SessionLayout>
+              <ProductDetailPage />
+            </SessionLayout>
+          )}
+        />
+        <Route
           path="/*"
           element={
-            <ProtectedRoute>
-              <Layout>
+            <SessionLayout requireAuth>
                 <Routes>
-                  <Route path="/" element={<StorePage />} />
-                  <Route path="/product/:id" element={<ProductDetailPage />} />
                   <Route path="/profile" element={<ProfilePage />} />
                   <Route path="/recharge" element={<RechargePage />} />
                   <Route path="/orders" element={<OrdersPage />} />
@@ -93,12 +115,36 @@ export default function App() {
                       </RoleGuard>
                     }
                   />
+                  <Route
+                    path="/admin/products/new"
+                    element={
+                      <RoleGuard allowedRoles={['admin']}>
+                        <ProductCreatePage />
+                      </RoleGuard>
+                    }
+                  />
+                  <Route
+                    path="/admin/products/:id/edit"
+                    element={
+                      <RoleGuard allowedRoles={['admin']}>
+                        <ProductEditPage actor="admin" />
+                      </RoleGuard>
+                    }
+                  />
                   <Route path="/merchant/apply" element={<MerchantApplyPage />} />
                   <Route
                     path="/merchant/products/new"
                     element={
                       <RoleGuard allowedRoles={['merchant']} requireActiveMerchant>
                         <ProductCreateWizard />
+                      </RoleGuard>
+                    }
+                  />
+                  <Route
+                    path="/merchant/products/:id/edit"
+                    element={
+                      <RoleGuard allowedRoles={['merchant']} requireActiveMerchant>
+                        <ProductEditPage actor="merchant" />
                       </RoleGuard>
                     }
                   />
@@ -127,8 +173,7 @@ export default function App() {
                     }
                   />
                 </Routes>
-              </Layout>
-            </ProtectedRoute>
+            </SessionLayout>
           }
         />
       </Routes>

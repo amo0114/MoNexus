@@ -1,5 +1,6 @@
 import type { Request, Response, NextFunction } from 'express'
 import * as reviewService from './service.js'
+import { resolveProductAudience } from '../products/visibility.js'
 
 export async function createForOrder(req: Request, res: Response, next: NextFunction) {
   try {
@@ -25,7 +26,13 @@ export async function listForProduct(req: Request, res: Response, next: NextFunc
   try {
     const productId = req.params.id as unknown as number
     const { page, pageSize } = req.query as unknown as { page: number; pageSize: number }
-    res.json(await reviewService.listProductReviews(productId, page, pageSize))
+    res.set('Cache-Control', 'private, no-store')
+    res.json(await reviewService.listProductReviews(
+      productId,
+      page,
+      pageSize,
+      resolveProductAudience(req.user),
+    ))
   } catch (err) {
     next(err)
   }

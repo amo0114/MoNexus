@@ -114,6 +114,8 @@ const merchantOfferFieldsSchema = z.object({
   // P7b：自动开通开关（仅 manual_service 且无模板且已有 active webhook 配置，
   // 服务端校验）。与 FakaBridge 互斥（不可同时 true + faka_bridge）。
   autoProvision: z.boolean().optional(),
+  attributes: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.array(z.string())])).optional(),
+  fixedStructuredContent: z.unknown().nullable().optional(),
   // FakaBridge：null 关闭外部开通；'faka_bridge' 时 externalSku 必填且须 manual_service。
   externalIntegration: z.enum(['faka_bridge']).nullable().optional(),
   externalSku: z
@@ -130,6 +132,9 @@ export const createMerchantOfferSchema = merchantOfferFieldsSchema
 // isDefault 仅在更新时接受（true = 把默认转移到本规格）；新建规格不能直接抢默认。
 export const updateMerchantOfferSchema = merchantOfferFieldsSchema.partial().extend({
   isDefault: z.boolean().optional(),
+  // Optional editor CAS. Present → mismatch with current digest is 409 CHECKOUT_CHANGED.
+  // Omitted → last-write-wins for legacy clients (two concurrent editors can both save).
+  expectedCheckoutVersion: z.string().min(1).max(64).optional(),
 })
 
 // P4a F3：向导原子发布——商品 + 默认规格名 + 额外规格一次事务落库，

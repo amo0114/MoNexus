@@ -36,6 +36,10 @@ export interface CheckoutPreview {
   } | null
   /** SPEC-LEGAL-001：下单必须确认的协议版本（法律页面关闭 = null，隐藏勾选区）。 */
   legalRequirement?: LegalRequirement | null
+  /** 商品内容版本；下单必须携带 expectedProductContentVersion。 */
+  productContentVersion: number
+  /** 当前生效的保障授予 id；无保障为 null。下单必须携带 expectedAssuranceGrantId。 */
+  assuranceGrantId: number | null
 }
 
 export async function getCheckoutPreview(productId: number, offerId?: number): Promise<CheckoutPreview> {
@@ -75,6 +79,10 @@ export async function createOrder(
     expectedPurchaseFormVersion?: string
     /** P4b：预览返回的 Offer 结算版本;配置变化 → 409 CHECKOUT_CHANGED。 */
     expectedCheckoutVersion?: string
+    /** 预览返回的商品内容版本；须与 expectedAssuranceGrantId 同时携带。 */
+    expectedProductContentVersion: number
+    /** 预览返回的保障授予 id；无保障为 null。须与 expectedProductContentVersion 同时携带。 */
+    expectedAssuranceGrantId: number | null
     verificationPassword?: string
     /** P6a：续费下单时关联的原订单;服务端校验合法性并顺延到期时间。 */
     renewalOfOrderId?: number
@@ -94,6 +102,8 @@ export async function createOrder(
       ...(options.expectedCheckoutVersion
         ? { expectedCheckoutVersion: options.expectedCheckoutVersion }
         : {}),
+      expectedProductContentVersion: options.expectedProductContentVersion,
+      expectedAssuranceGrantId: options.expectedAssuranceGrantId,
       ...(options.formAnswers && Object.keys(options.formAnswers).length > 0
         ? { formAnswers: options.formAnswers }
         : {}),

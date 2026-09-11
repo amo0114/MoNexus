@@ -7,9 +7,16 @@
 
 import { Router } from 'express'
 import { validate } from '../../../middlewares/validate.js'
+import { authenticateIfPresent, requireActiveUserIfPresent } from '../../../middlewares/auth.js'
 import * as controller from './publicController.js'
 import { sponsoredQuerySchema } from './schema.js'
 
 export const publicSponsoredRouter = Router()
 
-publicSponsoredRouter.get('/sponsored', validate({ query: sponsoredQuerySchema }), controller.listSponsored)
+publicSponsoredRouter.get(
+  '/sponsored',
+  authenticateIfPresent,
+  requireActiveUserIfPresent,
+  validate({ query: sponsoredQuerySchema }),
+  controller.listSponsored,
+)

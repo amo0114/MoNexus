@@ -14,6 +14,7 @@ type ProductListCacheParams = {
   page?: number
   pageSize?: number
   rankingRunId?: string | null
+  audience?: 'guest' | 'member'
 }
 
 type ProductPublicInvalidationScope = {
@@ -64,6 +65,7 @@ function normalizeProductListParams(params: ProductListCacheParams) {
 
   const normalized: Record<string, unknown> = {
     status: 'active',
+    audience: params.audience ?? 'guest',
     rankingRunId: params.rankingRunId ?? null,
     orderBy: params.rankingRunId
       ? ['snapshot.isHot:desc', 'snapshot.effectiveOrderCount:desc', 'id:desc']
@@ -99,16 +101,21 @@ export async function buildProductListCacheKey(params: ProductListCacheParams) {
   return makeCacheKey('product-list', version, hashParams(normalized))
 }
 
-export async function buildProductDetailCacheKey(productId: number) {
+export async function buildProductDetailCacheKey(productId: number, audience: 'guest' | 'member' = 'guest') {
   const version = await getCacheVersion({ name: 'product-detail', productId })
   if (version == null) return null
-  return makeCacheKey('product-detail', productId, version)
+  return makeCacheKey('product-detail', productId, version, audience)
 }
 
-export async function buildProductReviewsCacheKey(productId: number, page: number, pageSize: number) {
+export async function buildProductReviewsCacheKey(
+  productId: number,
+  page: number,
+  pageSize: number,
+  audience: 'guest' | 'member' = 'guest',
+) {
   const version = await getCacheVersion({ name: 'product-reviews', productId })
   if (version == null) return null
-  return makeCacheKey('product-reviews', productId, version, 'p', page, 's', pageSize)
+  return makeCacheKey('product-reviews', productId, version, audience, 'p', page, 's', pageSize)
 }
 
 export async function invalidateProductPublicCache(

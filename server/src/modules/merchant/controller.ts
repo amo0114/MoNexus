@@ -34,6 +34,11 @@ export async function listProducts(req: Request, res: Response, next: NextFuncti
 export async function createProduct(req: Request, res: Response, next: NextFunction) {
   try {
     const merchant = await merchantService.getMyMerchant(req.user!.userId)
+    if (req.body?.editorVersion === 2) {
+      const { createProductFromV2 } = await import('../catalog/productWrite.js')
+      res.status(201).json(await createProductFromV2({ kind: 'merchant', merchantId: merchant.id }, req.body))
+      return
+    }
     res.status(201).json(await merchantService.createMyProduct(merchant.id, req.body))
   } catch (err) { next(err) }
 }
@@ -42,6 +47,29 @@ export async function updateProduct(req: Request, res: Response, next: NextFunct
   try {
     const merchant = await merchantService.getMyMerchant(req.user!.userId)
     res.json(await merchantService.updateMyProduct(merchant.id, req.params.id as unknown as number, req.body))
+  } catch (err) { next(err) }
+}
+
+export async function patchProductContent(req: Request, res: Response, next: NextFunction) {
+  try {
+    const merchant = await merchantService.getMyMerchant(req.user!.userId)
+    const { patchProductContent } = await import('../catalog/productWrite.js')
+    res.json(await patchProductContent(
+      { kind: 'merchant', merchantId: merchant.id },
+      req.params.id as unknown as number,
+      req.body,
+    ))
+  } catch (err) { next(err) }
+}
+
+export async function getProductEditor(req: Request, res: Response, next: NextFunction) {
+  try {
+    const merchant = await merchantService.getMyMerchant(req.user!.userId)
+    const { getProductEditor } = await import('../catalog/productWrite.js')
+    res.json(await getProductEditor(
+      { kind: 'merchant', merchantId: merchant.id },
+      req.params.id as unknown as number,
+    ))
   } catch (err) { next(err) }
 }
 

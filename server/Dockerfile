@@ -38,6 +38,16 @@ COPY --from=builder --chown=app:app /app/dist ./dist
 COPY --from=builder --chown=app:app /app/prisma ./prisma
 COPY --chown=app:app package.json package-lock.json ./
 
+# Optional CI artifact at /app/build-info.json (non-public). A missing file
+# must not fail the image; runtime reports source=unavailable.
+ARG BUILD_INFO_FILE=build-info.json
+ENV BUILD_INFO_PATH=/app/build-info.json
+RUN --mount=type=bind,source=.,target=/src \
+    if [ -f "/src/${BUILD_INFO_FILE}" ]; then \
+      cp "/src/${BUILD_INFO_FILE}" /app/build-info.json && \
+      chown app:app /app/build-info.json; \
+    fi
+
 USER app
 EXPOSE 3000
 

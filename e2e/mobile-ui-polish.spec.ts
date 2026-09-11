@@ -60,12 +60,12 @@ test.describe('mobile layout verification @375px', () => {
     await loginAs(page, SEED_ACCOUNTS.user)
     await page.goto('/product/1')
     await page.waitForTimeout(1200)
-    const h1 = page.getByRole('heading', { level: 1, name: /稳定专线节点订阅/ })
+    const h1 = page.getByRole('heading', { level: 1 })
     await expect(h1).toBeVisible()
     const h1Box = await h1.boundingBox()
     const hero = page.getByTestId('product-gallery-main')
     const heroBox = await hero.boundingBox()
-    expect(h1Box!.y).toBeGreaterThanOrEqual(heroBox!.y + heroBox!.height) // below the image
+    expect(h1Box!.y + h1Box!.height).toBeLessThanOrEqual(heroBox!.y) // Header-First: above the image
     await expectNoHorizontalOverflow(page, 'product')
   })
 
@@ -255,12 +255,17 @@ test.describe('review fixes @375px', () => {
 test.describe('P2-4: tablet 768-1023px keeps desktop layout', () => {
   test.use({ viewport: { width: 800, height: 900 } })
 
-  test('product title overlays hero at 800px (no mobile in-flow title)', async ({ page }) => {
+  test('product title follows Header-First layout at 800px (single h1 above gallery)', async ({ page }) => {
     await loginAs(page, SEED_ACCOUNTS.user)
     await page.goto('/product/1')
     await page.waitForTimeout(1200)
-    // overlay 标题（hero 内）可见；可见 h1 唯一（内容流副本 md:hidden）
-    await expect(page.locator('[data-testid="product-gallery"] h1')).toBeVisible()
-    await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1)
+    // Header-First: 页面标题在画廊上方，可见 h1 全局唯一
+    const h1 = page.getByRole('heading', { level: 1 })
+    await expect(h1).toBeVisible()
+    await expect(h1).toHaveCount(1)
+    const h1Box = await h1.boundingBox()
+    const gallery = page.getByTestId('product-gallery')
+    const galleryBox = await gallery.boundingBox()
+    expect(h1Box!.y + h1Box!.height).toBeLessThanOrEqual(galleryBox!.y)
   })
 })

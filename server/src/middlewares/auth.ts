@@ -63,6 +63,19 @@ export function authenticateIfPresent(req: Request, res: Response, next: NextFun
   authenticate(req, res, next)
 }
 
+/**
+ * When a bearer token was accepted, require the current user to still be
+ * active. Banned/missing accounts keep the original auth error instead of
+ * silently falling through as a guest audience.
+ */
+export async function requireActiveUserIfPresent(req: Request, res: Response, next: NextFunction) {
+  if (!req.user) {
+    next()
+    return
+  }
+  await requireActiveUser(req, res, next)
+}
+
 export function requireAdmin(req: Request, _res: Response, next: NextFunction) {
   if (!req.user || req.user.role !== 'admin') {
     next(forbidden('需要管理员权限'))

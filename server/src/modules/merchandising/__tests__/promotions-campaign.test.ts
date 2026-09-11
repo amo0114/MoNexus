@@ -87,7 +87,7 @@ async function makeProduct(merchantId: number, status: string): Promise<{ id: nu
     },
   })
   return prisma.product.create({
-    data: { name: uniq('商品'), type: '网络节点', price: 100, status, categoryId: category.id, merchantId },
+    data: { name: uniq('商品'), type: '网络节点', price: 100, status, visibility: status === 'active' ? 'public' : 'members_only', categoryId: category.id, merchantId },
     select: { id: true },
   })
 }

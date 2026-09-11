@@ -69,10 +69,10 @@ export default function MobileNavDrawer() {
             </DialogPrimitive.Close>
           </div>
 
-          {/* User identity → profile */}
+          {/* User identity → profile / login */}
           <div className="px-3 mt-4 shrink-0">
             <button
-              onClick={() => go('/profile')}
+              onClick={() => go(user ? '/profile' : '/login')}
               className="w-full flex items-center gap-3 p-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-background)] hover:border-[var(--color-primary)]/35 transition-colors cursor-pointer text-left"
             >
               <div
@@ -86,11 +86,11 @@ export default function MobileNavDrawer() {
               </div>
               <div className="min-w-0">
                 <div className="font-bold text-sm text-[var(--color-text)] truncate">{displayName}</div>
-                <div className="text-xs text-[var(--color-text-muted)]">查看个人中心</div>
+                <div className="text-xs text-[var(--color-text-muted)]">{user ? '查看个人中心' : '登录后查看积分与订单'}</div>
               </div>
             </button>
 
-            {/* Points balance → profile */}
+            {user && (
             <button
               onClick={() => go('/profile')}
               className={`${ROW} mt-2 text-[var(--color-text)] hover:bg-[var(--color-primary)]/8 active:bg-[var(--color-primary)]/12`}
@@ -100,9 +100,10 @@ export default function MobileNavDrawer() {
               </span>
               积分余额
               <span className="ml-auto font-bold font-mono text-[var(--color-text)]">
-                {user?.points ?? '--'}
+                {user.points ?? '--'}
               </span>
             </button>
+            )}
           </div>
 
           {/* Primary nav */}
@@ -114,6 +115,7 @@ export default function MobileNavDrawer() {
               <Home className="w-4 h-4 text-[var(--color-text-muted)]" />
               商城首页
             </button>
+            {user && (
             <button
               className={`${ROW} text-[var(--color-text)] hover:bg-[var(--color-primary)]/8 active:bg-[var(--color-primary)]/12`}
               onClick={() => go('/recharge')}
@@ -122,6 +124,8 @@ export default function MobileNavDrawer() {
               <Wallet className="w-4 h-4 text-[var(--color-text-muted)]" />
               积分充值
             </button>
+            )}
+            {user && (
             <button
               className={`${ROW} text-[var(--color-text)] hover:bg-[var(--color-primary)]/8 active:bg-[var(--color-primary)]/12`}
               onClick={() => go('/leaderboard')}
@@ -129,6 +133,8 @@ export default function MobileNavDrawer() {
               <Trophy className="w-4 h-4 text-[var(--color-text-muted)]" />
               积分排行榜
             </button>
+            )}
+            {user && (
             <button
               className={`${ROW} text-[var(--color-text)] hover:bg-[var(--color-primary)]/8 active:bg-[var(--color-primary)]/12 relative`}
               onClick={() => go('/orders')}
@@ -142,6 +148,8 @@ export default function MobileNavDrawer() {
                 </span>
               )}
             </button>
+            )}
+            {user ? (
             <button
               className={`${ROW} text-[var(--color-text)] hover:bg-[var(--color-primary)]/8 active:bg-[var(--color-primary)]/12`}
               onClick={() => go('/profile')}
@@ -149,6 +157,16 @@ export default function MobileNavDrawer() {
               <User className="w-4 h-4 text-[var(--color-text-muted)]" />
               个人中心
             </button>
+            ) : (
+            <button
+              className={`${ROW} ${TONES.primary}`}
+              onClick={() => go('/login')}
+              data-testid="drawer-login"
+            >
+              <User className="w-4 h-4" />
+              登录
+            </button>
+            )}
           </nav>
 
           {/* Theme switcher — moved out of the cramped mobile navbar */}

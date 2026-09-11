@@ -37,7 +37,15 @@ describe('purchase form definitions (merchant API)', () => {
       .expect(200)
     expect(user).toBeDefined()
 
-    const detail = await api.get(`/api/products/${res.body.id}`).expect(200)
+    const guest = await api.get(`/api/products/${res.body.id}`).expect(403)
+    expect(guest.body.error.code).toBe('PRODUCT_LOGIN_REQUIRED')
+
+    await createTestUser('pf-member@test.local', 'pass123', 'user', 0)
+    const member = await loginAs('pf-member@test.local', 'pass123')
+    const detail = await api
+      .get(`/api/products/${res.body.id}`)
+      .set(authHeader(member.accessToken))
+      .expect(200)
     expect(detail.body.purchaseForm).toHaveLength(2)
     expect(detail.body.purchaseForm[0]).toMatchObject({ key: 'contact', required: true })
   })

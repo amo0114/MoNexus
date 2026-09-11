@@ -1,6 +1,6 @@
 import { expect, test, type Locator } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
-import { API_BASE, SEED_ACCOUNTS, loginAs, loginAsApi } from './helpers'
+import { API_BASE, E2E_PRODUCT_COVER, SEED_ACCOUNTS, loginAs, loginAsApi } from './helpers'
 
 /**
  * SPEC-MERCH-001 / PAR-CMI-001 — Merchandising smoke (T-MERCH-QA-003, AMD-CMI-012 §3.5).
@@ -159,6 +159,25 @@ test.describe.serial('T-MERCH-QA-003 merchandising smoke', () => {
     expect(listProducts.status(), '商家商品列表响应状态').toBe(200)
     productId = findMerchantProduct(await listProducts.json())
     expect(productId).toBeGreaterThan(0)
+
+    // 游客 sponsored 投影只包含 visibility=public 的商品。
+    const editor = await request.get(`${API_BASE}/api/merchant/products/${productId}/editor`, {
+      headers: merchantHeaders,
+    })
+    expect(editor.ok(), await editor.text()).toBeTruthy()
+    const editorBody: unknown = await editor.json()
+    if (!isRecord(editorBody) || !isRecord(editorBody.product) || typeof editorBody.product.contentVersion !== 'number') {
+      throw new Error('editor 响应缺少 product.contentVersion')
+    }
+    const visibilityPatch = await request.patch(`${API_BASE}/api/merchant/products/${productId}/content`, {
+      headers: merchantHeaders,
+      data: {
+        expectedContentVersion: editorBody.product.contentVersion,
+        visibility: 'public',
+        images: [{ kind: 'static', path: E2E_PRODUCT_COVER }],
+      },
+    })
+    expect(visibilityPatch.ok(), await visibilityPatch.text()).toBeTruthy()
 
     // 3. merchant 为自己的 active 商品申请推广（requestedStartAt=null → 尽快开始）。
     const createCampaign = await request.post(`${API_BASE}/api/merchant/promotion-campaigns`, {

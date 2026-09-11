@@ -14,6 +14,7 @@ import {
   type NormalizedFakaSource,
 } from './externalCatalog.js'
 import { CATALOG_ERROR_CODES, EXTERNAL_CATALOG_PROVIDER, PRODUCT_STATUS } from './constants.js'
+import { sourceDescriptionObservation } from './sourceDescription.js'
 
 const PERIOD_OFFER_LABELS: Record<string, string> = {
   monthly: '月付',
@@ -527,6 +528,8 @@ export async function confirmAdminFakaSync(
       data: {
         sourceHash: source.sourceHash,
         sourceSnapshot: source.sourceSnapshot as Prisma.InputJsonValue,
+        // SPEC §8.2: refresh observation only. Never Product copy or accepted hash.
+        ...sourceDescriptionObservation(source),
       },
     })
     await syncProductProjection(tx, productId)

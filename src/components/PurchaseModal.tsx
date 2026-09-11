@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AlertTriangle, Coins, Loader2, ShieldCheck, Info } from 'lucide-react'
-import { Dialog, DialogContent, DialogTitle } from './ui/Dialog'
+import { Dialog, DialogContent, DialogTitle, DialogDescription } from './ui/Dialog'
 import { getCheckoutPreview, type CheckoutPreview } from '../api/orders'
 import { agreementVersionsOf, LEGAL_PAGE_PATHS } from '../api/legal'
 import {
@@ -84,6 +84,7 @@ export default function PurchaseModal({
   // SPEC-LEGAL-001：协议勾选默认不勾（明示同意）；STALE 重试时强制重勾。
   const [agreementsChecked, setAgreementsChecked] = useState(false)
   const [agreementStale, setAgreementStale] = useState(false)
+  const [agreementAttempted, setAgreementAttempted] = useState(false)
 
   // FakaBridge 开通邮箱归属
   const [provisionTrusted, setProvisionTrusted] = useState(false)
@@ -196,40 +197,59 @@ export default function PurchaseModal({
     }
   }
 
+  const inFlightRef = useRef(false)
+  const [inFlight, setInFlight] = useState(false)
+
   async function handleConfirm() {
-    if (!preview || submitting) return
-    // 双保险：按钮已按 missingAgreement 禁用，键盘/脚本路径仍拦下。
-    if (preview.legalRequirement?.enforcement === 'enforce' && !agreementsChecked) return
-    const outcome = await onConfirm(
-      preview,
-      idempotencyKey,
-      answers,
-      verifyPassword,
-      agreementsChecked ? agreementVersionsOf(preview.legalRequirement) : undefined,
-    )
-    if (outcome === 'price_changed') {
-      // 服务端价格已变：换新的结算意图（新幂等键）并重新报价，由用户再次确认。
-      setPriceChanged(true)
-      setIdempotencyKey(newIdempotencyKey())
-      setPreview(null)
-      loadPreview()
-    } else if (outcome === 'agreement_stale') {
-      // SPEC-LEGAL-001：协议版本已更新——换新幂等键重新报价（新版本随预览
-      // 下发），并强制重新勾选：已确认的旧版本不能默示延伸到新文本。
-      setAgreementStale(true)
-      setAgreementsChecked(false)
-      setIdempotencyKey(newIdempotencyKey())
-      setPreview(null)
-      loadPreview()
-    } else if (outcome === 'verification_required') {
-      // 预览后风控条件变化（阈值调整/多标签页累计跨过阈值）：重新报价，
-      // 新 preview 会带 requiresVerification 使密码框出现。同一结算意图
-      // 且请求无副作用，幂等键不轮换，已填答案保留。
-      setPreview(null)
-      loadPreview()
-    } else if (outcome === 'verification_failed') {
-      // 密码错误：同一结算意图（幂等键不轮换），清空密码让用户重输。
-      setVerifyPassword('')
+    if (!preview || submitting || inFlightRef.current) return
+    // 协议校验时序：仅在用户点击提交按钮时拦截并聚焦协议提示，不在开窗时报红
+    if (preview.legalRequirement?.enforcement === 'enforce' && !agreementsChecked) {
+      setAgreementAttempted(true)
+      const el = document.getElementById('purchase-agreement-checkbox')
+      if (typeof el?.scrollIntoView === 'function') {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      }
+      el?.focus()
+      return
+    }
+    inFlightRef.current = true
+    setInFlight(true)
+    try {
+      const outcome = await onConfirm(
+        preview,
+        idempotencyKey,
+        answers,
+        verifyPassword,
+        agreementsChecked ? agreementVersionsOf(preview.legalRequirement) : undefined,
+      )
+      if (outcome === 'price_changed') {
+        // 服务端价格已变：换新的结算意图（新幂等键）并重新报价，由用户再次确认。
+        setPriceChanged(true)
+        setIdempotencyKey(newIdempotencyKey())
+        setPreview(null)
+        loadPreview()
+      } else if (outcome === 'agreement_stale') {
+        // SPEC-LEGAL-001：协议版本已更新——换新幂等键重新报价（新版本随预览
+        // 下发），并强制重新勾选：已确认的旧版本不能默示延伸到新文本。
+        setAgreementStale(true)
+        setAgreementsChecked(false)
+        setAgreementAttempted(false)
+        setIdempotencyKey(newIdempotencyKey())
+        setPreview(null)
+        loadPreview()
+      } else if (outcome === 'verification_required') {
+        // 预览后风控条件变化（阈值调整/多标签页累计跨过阈值）：重新报价，
+        // 新 preview 会带 requiresVerification 使密码框出现。同一结算意图
+        // 且请求无副作用，幂等键不轮换，已填答案保留。
+        setPreview(null)
+        loadPreview()
+      } else if (outcome === 'verification_failed') {
+        // 密码错误：同一结算意图（幂等键不轮换），清空密码让用户重输。
+        setVerifyPassword('')
+      }
+    } finally {
+      inFlightRef.current = false
+      setInFlight(false)
     }
   }
 
@@ -254,28 +274,29 @@ export default function PurchaseModal({
     <Dialog open onOpenChange={(o) => { if (!o && !submitting) onClose() }}>
       <DialogContent className="max-w-sm" data-testid="purchase-modal">
         <DialogTitle className="text-xl mb-2">{renewMode ? '确认续费' : '确认兑换'}</DialogTitle>
-        <p className="text-[var(--color-text-muted)] mb-6 text-sm">
+        <DialogDescription className="text-[var(--color-text-muted)] mb-6 text-sm">
           {renewMode
             ? '您即将消耗积分续费以下规格，成功后将顺延订阅时长：'
             : '您即将消耗积分兑换以下商品：'}
-        </p>
+        </DialogDescription>
 
+        <form onSubmit={(e) => { e.preventDefault(); handleConfirm(); }}>
         {priceChanged && (
           <div
-            className="flex items-start gap-2 text-sm rounded-lg border border-amber-500/60 bg-amber-500/10 text-[var(--color-text)] p-3 mb-4"
+            className="flex items-start gap-2 text-sm rounded-lg border border-[var(--color-warning-border)] bg-[var(--color-warning-bg)] text-[var(--color-warning-text)] p-3 mb-4"
             data-testid="price-changed-notice"
           >
-            <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0 text-amber-500" />
+            <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0 text-[var(--color-warning-text)]" />
             <span>商品信息已变化，请核对最新内容后重新确认。</span>
           </div>
         )}
 
         {agreementStale && (
           <div
-            className="flex items-start gap-2 text-sm rounded-lg border border-amber-500/60 bg-amber-500/10 text-[var(--color-text)] p-3 mb-4"
+            className="flex items-start gap-2 text-sm rounded-lg border border-[var(--color-warning-border)] bg-[var(--color-warning-bg)] text-[var(--color-warning-text)] p-3 mb-4"
             data-testid="agreement-stale-notice"
           >
-            <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0 text-amber-500" />
+            <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0 text-[var(--color-warning-text)]" />
             <span>协议已更新，请重新阅读并同意后再支付。</span>
           </div>
         )}
@@ -283,7 +304,7 @@ export default function PurchaseModal({
         {loadError ? (
           <div className="bg-[var(--color-background)] rounded-lg p-4 mb-6 border border-[var(--color-border)] text-sm text-[var(--color-text-muted)]">
             {loadError}
-            <button onClick={loadPreview} className="ml-2 underline text-[var(--color-text)]">重试</button>
+            <button type="button" onClick={loadPreview} className="ml-2 underline text-[var(--color-text)]">重试</button>
           </div>
         ) : !preview ? (
           <div className="bg-[var(--color-background)] rounded-lg p-4 mb-6 border border-[var(--color-border)] animate-pulse space-y-3">
@@ -298,7 +319,7 @@ export default function PurchaseModal({
             </div>
             {preview.offerName && preview.offerName !== '默认规格' && (
               <div
-                className="inline-flex items-center text-xs font-bold text-[var(--color-primary)] bg-[var(--color-primary)]/10 border border-[var(--color-primary)]/25 rounded px-2 py-0.5 mb-1"
+                className="inline-flex items-center text-xs font-bold text-[var(--color-primary)] bg-[var(--color-primary-tint)] border border-[var(--color-primary-border-subtle)] rounded px-2 py-0.5 mb-1"
                 data-testid="preview-offer-name"
               >
                 {preview.offerName}
@@ -343,7 +364,7 @@ export default function PurchaseModal({
             </div>
             <div className="flex justify-between items-center text-sm mt-1" data-testid="balance-after">
               <span className="text-[var(--color-text-muted)]">支付后可用余额</span>
-              <span className={preview.sufficient ? 'text-[var(--color-text)]' : 'text-red-500'}>
+              <span className={preview.sufficient ? 'text-[var(--color-text)]' : 'text-[var(--color-danger-text)] font-medium'}>
                 {preview.balanceAfter}
               </span>
             </div>
@@ -358,12 +379,12 @@ export default function PurchaseModal({
               </p>
             )}
             {!preview.purchasable && (
-              <p className="text-xs text-red-500 mt-2" data-testid="unpurchasable-notice">
+              <p className="text-xs text-[var(--color-danger-text)] mt-2" data-testid="unpurchasable-notice">
                 {preview.unpurchasableReason ?? '商品暂不可购买'}
               </p>
             )}
             {!preview.sufficient && (
-              <p className="text-xs text-red-500 mt-2" data-testid="insufficient-notice">
+              <p className="text-xs text-[var(--color-danger-text)] mt-2" data-testid="insufficient-notice">
                 积分不足，还差 {preview.price - preview.balanceBefore} 积分。
               </p>
             )}
@@ -372,7 +393,7 @@ export default function PurchaseModal({
 
         {preview?.autoProvision && !preview?.requiresProvisionEmailProof && (
           <div
-            className="flex items-start gap-2 text-sm rounded-lg border border-[var(--color-primary)]/40 bg-[var(--color-primary)]/5 text-[var(--color-text)] p-3 mb-6"
+            className="flex items-start gap-2 text-sm rounded-lg border border-[var(--color-primary-border-subtle)] bg-[var(--color-primary-tint)] text-[var(--color-text)] p-3 mb-6"
             data-testid="auto-provision-disclosure"
           >
             <Info className="w-4 h-4 mt-0.5 shrink-0 text-[var(--color-primary)]" />
@@ -402,7 +423,7 @@ export default function PurchaseModal({
                   <div className="flex gap-2">
                     <button
                       type="button"
-                      className="btn-secondary btn-sm text-xs px-3 py-1.5"
+                      className="btn-secondary btn-sm text-xs px-3 py-2 min-h-[38px] flex items-center justify-center"
                       disabled={provisionBusy || !provisionEmailValue.includes('@')}
                       onClick={handleSendProvisionCode}
                       data-testid="provision-send-code"
@@ -426,7 +447,7 @@ export default function PurchaseModal({
                     />
                     <button
                       type="button"
-                      className="btn-primary btn-sm text-xs px-3 py-1.5"
+                      className="btn-primary btn-sm text-xs px-3 py-2 min-h-[38px] flex items-center justify-center"
                       disabled={provisionBusy || provisionCode.length !== 6}
                       onClick={handleConfirmProvisionCode}
                       data-testid="provision-confirm-code"
@@ -436,15 +457,15 @@ export default function PurchaseModal({
                   </div>
                 )}
                 {provisionTrusted && (
-                  <p className="text-xs text-emerald-600" data-testid="provision-trusted">
+                  <p className="text-xs text-[var(--color-success-text)] font-medium" data-testid="provision-trusted">
                     开通邮箱已验证
                   </p>
                 )}
                 {provisionHint && !provisionError && (
-                  <p className="text-xs text-[var(--color-text-muted)]">{provisionHint}</p>
+                  <p className="text-xs text-[var(--color-text-muted)]" data-testid="provision-hint">{provisionHint}</p>
                 )}
                 {provisionError && (
-                  <p className="text-xs text-red-500">{provisionError}</p>
+                  <p className="text-xs text-[var(--color-danger-text)]" data-testid="provision-error">{provisionError}</p>
                 )}
               </div>
             )}
@@ -457,7 +478,7 @@ export default function PurchaseModal({
               <div key={field.key}>
                 <label className="block text-xs font-bold text-[var(--color-text-muted)] mb-1.5">
                   {field.label}
-                  {field.required && <span className="text-red-500 ml-0.5">*</span>}
+                  {field.required && <span className="text-[var(--color-danger-text)] ml-0.5">*</span>}
                 </label>
                 {field.type === 'text' ? (
                   <input
@@ -504,7 +525,7 @@ export default function PurchaseModal({
                       <div className="flex gap-2">
                         <button
                           type="button"
-                          className="btn-secondary btn-sm text-xs px-3 py-1.5"
+                          className="btn-secondary btn-sm text-xs px-3 py-2 min-h-[38px] flex items-center justify-center"
                           disabled={provisionBusy || !provisionEmailValue.includes('@')}
                           onClick={handleSendProvisionCode}
                           data-testid="provision-send-code"
@@ -528,7 +549,7 @@ export default function PurchaseModal({
                         />
                         <button
                           type="button"
-                          className="btn-primary btn-sm text-xs px-3 py-1.5 whitespace-nowrap"
+                          className="btn-primary btn-sm text-xs px-3 py-2 min-h-[38px] flex items-center justify-center whitespace-nowrap"
                           disabled={provisionBusy || provisionCode.length !== 6}
                           onClick={handleConfirmProvisionCode}
                           data-testid="provision-confirm-code"
@@ -538,15 +559,15 @@ export default function PurchaseModal({
                       </div>
                     )}
                     {provisionTrusted && (
-                      <p className="text-xs text-emerald-600" data-testid="provision-trusted">
+                      <p className="text-xs text-[var(--color-success-text)] font-medium" data-testid="provision-trusted">
                         ✓ 已绑定本账号，无需重复验证
                       </p>
                     )}
                     {provisionHint && !provisionError && (
-                      <p className="text-xs text-[var(--color-text-muted)]">{provisionHint}</p>
+                      <p className="text-xs text-[var(--color-text-muted)]" data-testid="provision-hint">{provisionHint}</p>
                     )}
                     {provisionError && (
-                      <p className="text-xs text-red-500" data-testid="provision-error">{provisionError}</p>
+                      <p className="text-xs text-[var(--color-danger-text)]" data-testid="provision-error">{provisionError}</p>
                     )}
                   </div>
                 )}
@@ -560,7 +581,7 @@ export default function PurchaseModal({
             <label className="flex items-center gap-1.5 text-xs font-bold text-[var(--color-text-muted)] mb-1.5">
               <ShieldCheck className="w-3.5 h-3.5 text-[var(--color-primary)]" />
               本单金额较大，请输入登录密码确认
-              <span className="text-red-500">*</span>
+              <span className="text-[var(--color-danger-text)] ml-0.5">*</span>
             </label>
             <input
               type="password"
@@ -596,14 +617,34 @@ export default function PurchaseModal({
                 。
               </span>
             </div>
+
+            {agreementAttempted && missingAgreement && (
+              <div
+                className="p-2.5 rounded-lg border border-[var(--color-danger-border)] bg-[var(--color-danger-bg)] text-[var(--color-danger-text)] text-xs flex items-center gap-1.5 font-medium"
+                data-testid="agreement-warning"
+              >
+                <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                <span>请先阅读并勾选同意相关协议后再支付</span>
+              </div>
+            )}
+
             <label
-              className="flex cursor-pointer items-start gap-2 text-xs leading-relaxed text-[var(--color-text-muted)]"
+              id="purchase-agreement"
+              className={`flex cursor-pointer items-start gap-2 text-xs leading-relaxed text-[var(--color-text-muted)] rounded-lg p-1 transition-colors ${
+                agreementAttempted && missingAgreement
+                  ? 'border border-[var(--color-danger-border)] bg-[var(--color-danger-bg)]'
+                  : ''
+              }`}
               data-testid="purchase-agreement"
             >
               <input
+                id="purchase-agreement-checkbox"
                 type="checkbox"
                 checked={agreementsChecked}
-                onChange={(event) => setAgreementsChecked(event.target.checked)}
+                onChange={(event) => {
+                  setAgreementsChecked(event.target.checked)
+                  if (event.target.checked) setAgreementAttempted(false)
+                }}
                 disabled={submitting}
                 className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer accent-[var(--color-primary)]"
                 aria-label="我已阅读并同意相关协议"
@@ -630,33 +671,35 @@ export default function PurchaseModal({
           </div>
         )}
 
-        <div className="flex gap-3">
+        <div className="flex gap-3 pt-2">
           <button
+            type="button"
             onClick={onClose}
-            disabled={submitting}
+            disabled={submitting || inFlight}
             className="btn-secondary flex-1 px-0"
           >
             再想想
           </button>
           <button
-            onClick={handleConfirm}
+            type="submit"
             disabled={
               submitting ||
+              inFlight ||
               !preview ||
               !preview.sufficient ||
               !preview.purchasable ||
               missingRequired ||
               missingVerification ||
               missingProvisionProof ||
-              missingAgreement ||
               provisionBusy
             }
             className="btn-cta flex-1 px-0"
           >
-            {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
-            {submitting ? '支付中…' : '确认支付'}
+            {(submitting || inFlight) && <Loader2 className="w-4 h-4 animate-spin" />}
+            {submitting || inFlight ? '支付中…' : '确认支付'}
           </button>
         </div>
+        </form>
       </DialogContent>
     </Dialog>
   )

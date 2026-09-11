@@ -103,6 +103,10 @@ test.describe('M3-S3 announcements', () => {
 
   test('mobile announcement entry has a red dot and important notices persist as read after opening details', async ({ page, request }) => {
     await page.setViewportSize({ width: 320, height: 700 })
+    const { accessToken: userToken } = await loginAsApi(request, SEED_ACCOUNTS.user)
+    await request.post(`${API_BASE}/api/notifications/read-all`, {
+      headers: { Authorization: `Bearer ${userToken}` },
+    })
     await loginAs(page, SEED_ACCOUNTS.user)
 
     const { accessToken: adminToken } = await loginAsApi(request, SEED_ACCOUNTS.admin)

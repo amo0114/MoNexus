@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { API_BASE, SEED_ACCOUNTS, loginAs, publishMerchantProduct } from './helpers'
+import { API_BASE, E2E_PRODUCT_COVER, SEED_ACCOUNTS, fillWizardOfferAttributes, fillWizardPublicationDetails, loginAs, loginAsApi, publishMerchantProduct } from './helpers'
 
 const PRODUCT_NAME = `E2E人工服务表单-${Date.now()}`
 
@@ -25,15 +25,19 @@ test.describe.serial('M-P2 product wizard + purchase form', () => {
     await page.getByTestId('wizard-next').click()
 
     await page.getByTestId('wizard-name').fill(PRODUCT_NAME)
-    await page.getByTestId('product-image-url-input').fill('/assets/network.webp')
+    await page.getByTestId('product-image-url-input').fill(E2E_PRODUCT_COVER)
     await page.getByTestId('product-image-url-hotlink').click()
+    const coverImg = page.getByTestId('product-images-list').locator('img')
+    await expect(coverImg).toHaveCount(1, { timeout: 10_000 })
     const category = page.getByTestId('product-category-select')
     if (!(await category.inputValue())) {
       await category.selectOption({ index: 1 })
     }
+    await fillWizardPublicationDetails(page)
     await page.getByTestId('wizard-next').click()
 
     await page.getByTestId('wizard-price').fill('2')
+    await fillWizardOfferAttributes(page)
     await page.getByTestId('wizard-next').click()
 
     // 模板预设 manual_service，名额默认不限
@@ -47,14 +51,15 @@ test.describe.serial('M-P2 product wizard + purchase form', () => {
     await page.getByTestId('publication-publish').click()
     await expect(page).toHaveURL(/\/merchant(?:\/|$)/, { timeout: 10_000 })
 
-    // 购买前表单属于草稿保存后的编辑契约；通过真实编辑弹窗配置，
+    // 购买前表单属于草稿保存后的编辑契约；经独立编辑页配置，
     // 再由后续买家/商家步骤验证其订单快照。
     await page.getByRole('button', { name: '商品管理' }).click()
     await page.getByTestId('merchant-product-search').fill(PRODUCT_NAME)
     const row = page.locator('tbody tr').filter({ hasText: PRODUCT_NAME }).first()
     await expect(row).toBeVisible({ timeout: 10_000 })
     await row.getByRole('button', { name: '编辑' }).click()
-    const section = page.getByTestId('edit-purchase-form-section')
+    await expect(page).toHaveURL(/\/merchant\/products\/\d+\/edit/, { timeout: 10_000 })
+    const section = page.getByTestId('product-edit-purchase-form')
     await expect(section).toBeVisible({ timeout: 10_000 })
     await section.getByTestId('add-form-field').click()
     await section.getByTestId('add-form-field').click()
@@ -63,8 +68,8 @@ test.describe.serial('M-P2 product wizard + purchase form', () => {
     await fields.getByTestId('form-field-label-1').fill('需求说明')
     await fields.locator('input[type=checkbox]').nth(0).check()
     await fields.locator('input[type=checkbox]').nth(1).check()
-    await page.getByRole('button', { name: '确认保存' }).click()
-    await expect(section).toBeHidden({ timeout: 10_000 })
+    await page.getByTestId('product-edit-save').click()
+    await expect(page.locator('[data-toast-card]').filter({ hasText: '商品内容已保存' })).toBeVisible({ timeout: 10_000 })
   })
 
   test('buyer must fill the required field before confirming', async ({ page, request }) => {
@@ -133,8 +138,8 @@ test.describe.serial('M-P2 product wizard + purchase form', () => {
   })
 })
 
-test.describe('M-P2.1 edit modal purchase form', () => {
-  test('merchant adds a required field to an existing product via the edit modal', async ({ page, request }) => {
+test.describe('M-P2.1 edit page purchase form', () => {
+  test('merchant adds a required field to an existing product via the edit page', async ({ page, request }) => {
     const name = `E2E编辑表单-${Date.now()}`
     const login = await request.post(`${API_BASE}/api/auth/login`, { data: SEED_ACCOUNTS.merchant })
     const token = (await login.json()).accessToken as string
@@ -151,19 +156,26 @@ test.describe('M-P2.1 edit modal purchase form', () => {
     const row = page.locator('tbody tr').filter({ hasText: name }).first()
     await expect(row).toBeVisible({ timeout: 15_000 })
     await row.getByRole('button', { name: '编辑' }).click()
+    await expect(page).toHaveURL(new RegExp(`/merchant/products/${productId}/edit`), { timeout: 10_000 })
 
-    // 编辑弹窗现在带购买前表单配置区
-    const section = page.getByTestId('edit-purchase-form-section')
+    const section = page.getByTestId('product-edit-purchase-form')
     await expect(section).toBeVisible({ timeout: 10_000 })
     await section.getByTestId('add-form-field').click()
     await section.getByTestId('form-field-label-0').fill('联系方式')
     await section.getByTestId('form-field-list').locator('input[type=checkbox]').first().check()
-    await page.getByRole('button', { name: '确认保存' }).click()
-    await expect(page.getByTestId('edit-purchase-form-section')).toBeHidden({ timeout: 10_000 })
+    await page.getByTestId('product-edit-save').click()
+    await expect(page.locator('[data-toast-card]').filter({ hasText: '商品内容已保存' })).toBeVisible({ timeout: 10_000 })
     await publishMerchantProduct(request, token, productId)
 
-    // 公开商品详情返回更新后的定义
-    const detail = await request.get(`${API_BASE}/api/products/${productId}`)
+    const guestDetail = await request.get(`${API_BASE}/api/products/${productId}`)
+    expect(guestDetail.status()).toBe(403)
+    expect((await guestDetail.json()).error.code).toBe('PRODUCT_LOGIN_REQUIRED')
+
+    const { accessToken: userToken } = await loginAsApi(request, SEED_ACCOUNTS.user)
+    const detail = await request.get(`${API_BASE}/api/products/${productId}`, {
+      headers: { Authorization: `Bearer ${userToken}` },
+    })
+    expect(detail.status()).toBe(200)
     const body = (await detail.json()) as { purchaseForm: Array<{ label: string; required: boolean }> }
     expect(body.purchaseForm).toHaveLength(1)
     expect(body.purchaseForm[0]).toMatchObject({ label: '联系方式', required: true })
@@ -179,10 +191,13 @@ test.describe('M-P2 wizard mobile smoke', () => {
     await expect(page.getByTestId('product-create-wizard')).toBeVisible({ timeout: 10_000 })
 
     // 模板卡片可点、步骤条不阻塞视口、下一步/上一步可达
-    await page.getByTestId('template-card_key').tap()
+    await page.getByTestId('template-manual_service').tap()
     await page.getByTestId('wizard-next').tap()
     await expect(page.getByTestId('wizard-name')).toBeVisible()
     await page.getByTestId('wizard-name').fill('移动端冒烟商品')
+    const category = page.getByTestId('product-category-select')
+    await expect(category.locator('option:not([value=""])')).not.toHaveCount(0, { timeout: 10_000 })
+    await category.selectOption({ index: 1 })
     await page.getByTestId('wizard-next').tap()
     await expect(page.getByTestId('wizard-price')).toBeVisible()
     await page.getByRole('button', { name: '上一步' }).tap()

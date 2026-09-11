@@ -1,0 +1,764 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MoNexus 商品改造 · 设计原型</title>
+  <style>
+    :root{font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;color:#1e293b;background:#e8edf4;font-synthesis:none;font-size:15px}
+    *{box-sizing:border-box}body{margin:0}button,input,select,textarea{font:inherit}button{cursor:pointer}button:disabled{cursor:not-allowed;opacity:.55}a{color:#4f46e5;text-decoration:none}button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,[contenteditable]:focus-visible{outline:3px solid #818cf8;outline-offset:3px}button,input,select,textarea{border-radius:9px;border:1px solid #d7dee9}button{min-height:44px;padding:10px 16px;background:#fff;color:#334155;font-weight:600}button:hover{background:#f1f5f9}input,select,textarea{padding:11px;background:#fff;color:#1e293b;max-width:100%}input,textarea{width:100%}textarea{resize:vertical;min-height:90px;line-height:1.7}small{line-height:1.7}p{line-height:1.75}h1,h2,h3,p{margin-top:0}h1{font-size:30px;letter-spacing:-.7px;line-height:1.3;margin-bottom:12px}h2{font-size:20px;letter-spacing:-.3px;margin-bottom:20px}h3{font-size:15px;margin-bottom:10px}.muted{color:#64748b}.label{font-size:12px;text-transform:uppercase;letter-spacing:.12em;color:#64748b}.toolbar{background:#14203a;color:#fff;padding:18px 24px;position:relative;z-index:30;box-shadow:0 3px 20px #10203a25}.toolbar-top{display:flex;align-items:center;justify-content:space-between;gap:14px}.toolbar strong{font-size:16px}.toolbar p{font-size:12px;color:#aebcd2;margin:7px 0 14px}.controls{display:flex;gap:10px;flex-wrap:wrap;align-items:center}.controls label{display:flex;gap:8px;align-items:center;font-size:12px;color:#ced9ec}.controls select,.controls button{font-size:13px;min-height:38px;padding:8px 10px}.controls input[type=checkbox]{width:auto}.note{background:#e7edf7;color:#465875;padding:11px 24px;font-size:12px;line-height:1.6}.stage{padding:24px 16px 50px}.frame{background:var(--bg);color:var(--text);--bg:#f8fafc;--surface:#fff;--text:#1e293b;--muted:#64748b;--border:#e2e8f0;--tint:#eef2ff;--primary:#4f46e5;--green:#15803d;max-width:1440px;width:100%;min-width:280px;margin:auto;border:1px solid #cfd8e5;box-shadow:0 14px 60px #182c4914;border-radius:16px;overflow:hidden;container-type:inline-size;transform:translateZ(0)}#screen{max-height:min(900px,65vh);overflow-y:auto;overflow-x:hidden;scrollbar-gutter:stable}.frame.mobile{width:390px;max-width:100%}.frame.dark{--bg:#101522;--surface:#192234;--text:#edf1f8;--muted:#a0aec3;--border:#2d3a4e;--tint:#242a50;--primary:#a5b4fc;--green:#86efac}.frame .muted{color:var(--muted)}.frame button,.frame input,.frame select,.frame textarea{background:var(--surface);color:var(--text);border-color:var(--border)}.frame button:hover{background:var(--tint)}.sitebar{display:flex;align-items:center;justify-content:space-between;padding:20px 36px;background:var(--surface);border-bottom:1px solid var(--border);gap:14px}.brand{font-size:20px;letter-spacing:-.8px;font-weight:800;display:flex;align-items:center;gap:9px}.brandmark{width:26px;height:26px;background:#6366f1;border-radius:8px;position:relative;transform:rotate(-8deg)}.brandmark:after{content:"";position:absolute;inset:7px;border:2px solid white;border-radius:2px}.site-links{display:flex;gap:26px;align-items:center;font-size:14px}.site-links span:first-child{color:var(--primary)}.pill{padding:6px 10px;border-radius:99px;background:var(--tint);font-size:12px;color:var(--primary);display:inline-flex;align-items:center;gap:6px}.balance{font-size:13px;color:var(--green);font-weight:700}.content{max-width:1200px;margin:auto;padding:26px 36px 48px}.breadcrumbs{font-size:12px;color:var(--muted);margin-bottom:24px}.product-grid{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:32px;align-items:start}.hero{aspect-ratio:16/9;border-radius:16px;overflow:hidden;background:linear-gradient(125deg,#273456,#4443a0);position:relative;color:#fff;display:flex;align-items:center;padding:36px;margin-bottom:26px}.hero-copy{position:relative;z-index:2;max-width:65%}.hero-copy .label{color:#a5b4fc;letter-spacing:.2em}.hero-copy h2{font-size:32px;margin:12px 0}.hero-copy p{font-size:13px;color:#dce3fc;margin-bottom:0}.orbit{position:absolute;right:-6%;top:10%;width:46%;aspect-ratio:1;border:1px solid #ffffff40;border-radius:50%;box-shadow:0 0 0 24px #ffffff06,0 0 0 48px #ffffff06,0 0 0 72px #ffffff06}.orbit:after{content:"";position:absolute;inset:28%;background:linear-gradient(125deg,#a5b4fc,#727be3);border-radius:20%;transform:rotate(22deg);box-shadow:20px 15px 70px #151c5970}.intro-head{display:flex;gap:12px;align-items:start;justify-content:space-between}.share{flex-shrink:0;font-size:13px}.eyebrow{margin-bottom:12px;display:flex;gap:8px;flex-wrap:wrap}.lead{font-size:15px;color:var(--muted);margin-bottom:20px}.highlights{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:0 0 26px;padding:0;list-style:none;font-size:13px}.highlights li{display:flex;gap:8px;align-items:start}.highlights li:before{content:"✓";color:var(--primary);font-weight:700}.card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:24px}.purchase{position:sticky;top:18px}.purchase .label{margin-bottom:12px}.offer-stack{display:grid;gap:10px;margin-bottom:22px}.offer{display:flex;align-items:center;justify-content:space-between;text-align:left;width:100%;padding:14px}.offer.selected{border:2px solid #6366f1;padding:13px;background:var(--tint)}.offer small{display:block;font-size:11px;color:var(--muted);font-weight:400;margin-top:4px}.offer b{font-size:13px;color:var(--green)}.price{font-size:36px;font-weight:750;color:var(--green);letter-spacing:-1px}.price span{font-size:13px;font-weight:500;letter-spacing:0;margin-left:5px}.purchase dl,.params{display:grid;grid-template-columns:1fr auto;gap:12px;font-size:13px;line-height:1.5}.purchase dt,.params dt{color:var(--muted)}.purchase dd,.params dd{margin:0;text-align:right;overflow-wrap:anywhere}.primary{background:#4f46e5!important;color:white!important;border-color:#4f46e5!important}.buy{width:100%;margin-top:20px}.footnote{font-size:12px;color:var(--muted);margin:12px 0 0;line-height:1.7}.provider{display:flex;gap:12px;align-items:center;border-top:1px solid var(--border);padding-top:20px;margin-top:24px}.avatar{height:40px;width:40px;display:grid;place-items:center;background:var(--tint);color:var(--primary);border-radius:12px;font-weight:800;flex-shrink:0}.provider strong{font-size:14px}.provider small{display:block;font-size:11px;color:var(--muted);margin-top:3px}.anchors{display:flex;gap:22px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);padding:18px 0;overflow:auto;white-space:nowrap;margin:18px 0 28px;font-size:13px}.anchors a{color:var(--muted)}.anchors a:first-child{color:var(--primary);font-weight:700}.section{padding:0 0 28px;scroll-margin-top:20px}.section p{font-size:14px}.parambox{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:6px 20px}.params{grid-template-columns:140px minmax(0,1fr)}.params dd{text-align:left}.policy{padding:20px;background:var(--tint);border-radius:12px}.policy strong{font-size:14px;color:var(--primary)}.policy p{margin:8px 0 0;font-size:13px}.section details{border-top:1px solid var(--border);padding:16px 0}.section summary{cursor:pointer;font-size:14px;line-height:1.6}.section details p{color:var(--muted);font-size:13px;margin:12px 0 0}.mobile-buy{display:none}.locked{text-align:center;padding:90px 22px 110px}.lock-symbol{width:64px;height:64px;border-radius:20px;display:grid;place-items:center;background:var(--tint);color:var(--primary);font-size:24px;font-weight:700;margin:0 auto 24px}.locked h1{font-size:25px}.locked p{font-size:14px;color:var(--muted);max-width:360px;margin:0 auto 24px}.editor-head{display:flex;justify-content:space-between;gap:20px;align-items:start;margin-bottom:24px}.editor-head h1{font-size:26px}.editor-actions{display:flex;gap:10px;flex-shrink:0}.steps{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 25px;font-size:12px;color:var(--muted)}.steps span{padding:8px 11px;border-radius:8px}.steps .current{background:var(--tint);color:var(--primary);font-weight:700}.editor-grid{display:grid;grid-template-columns:minmax(0,1fr) 280px;gap:25px;align-items:start}.edit-main{display:grid;gap:20px}.edit-main .card{padding:26px}.fields{display:grid;grid-template-columns:1fr 1fr;gap:18px}.field{display:block;min-width:0}.field.wide{grid-column:1/-1}.field>span{display:block;font-size:13px;font-weight:600;margin-bottom:8px}.field small{display:block;color:var(--muted);font-size:11px;margin-top:7px}.req{color:#dc2626;margin-left:3px}.cover-upload{background:var(--tint);border:1px dashed #a5b4fc;border-radius:10px;padding:20px;margin-bottom:20px;display:flex;gap:15px;align-items:center}.cover-mini{width:64px;height:52px;border-radius:8px;background:linear-gradient(125deg,#354a76,#818cf8);flex-shrink:0}.cover-upload strong{font-size:13px}.cover-upload small{display:block;font-size:11px;color:var(--muted);margin-top:5px}.rich-tools{display:flex;gap:3px;flex-wrap:wrap;border:1px solid var(--border);border-radius:9px 9px 0 0;padding:6px}.rich-tools button{font-size:12px;min-height:36px;padding:6px 10px;border:0}.rich-edit{padding:20px;border:1px solid var(--border);border-top:0;border-radius:0 0 9px 9px;min-height:145px;font-size:14px;line-height:1.8}.checklist{padding:0;list-style:none;display:grid;gap:18px;font-size:13px}.checklist li{display:flex;gap:10px;color:var(--muted)}.checklist .done{color:var(--text)}.checklist .done:before{content:"✓";color:var(--green)}.checklist .todo:before{content:"○";color:var(--muted)}.context-note{border-top:1px solid var(--border);padding-top:16px;margin-top:22px;font-size:12px;color:var(--muted);line-height:1.8}.radio-line{display:flex;gap:10px;align-items:start;margin:12px 0;font-size:13px;line-height:1.7}.radio-line input{width:auto;margin-top:4px}.source{background:var(--tint);padding:16px;border-radius:10px;font-size:13px;line-height:1.8;display:flex;justify-content:space-between;align-items:center;gap:12px}.source button{font-size:12px;flex-shrink:0}.admin-grid{display:grid;grid-template-columns:190px 1fr;gap:26px}.admin-nav{display:grid;gap:6px;align-content:start}.admin-nav span{padding:13px;border-radius:9px;font-size:14px}.admin-nav .active{background:var(--tint);color:var(--primary)}.version-number{font-size:40px;font-weight:750;letter-spacing:-1px;margin:18px 0;color:var(--primary)}.info-table{display:grid;grid-template-columns:140px 1fr;gap:22px;font-size:14px;border-top:1px solid var(--border);padding-top:25px;margin-top:25px}.info-table>span:nth-child(odd){color:var(--muted)}.info-table>span{overflow-wrap:anywhere}.modal-backdrop{position:fixed;inset:0;background:#0f172a80;display:grid;place-items:center;padding:16px;z-index:100}.modal{max-width:460px;width:100%;background:white;color:#1e293b;padding:28px;border-radius:18px;box-shadow:0 20px 70px #0f172a55}.modal h2{margin-bottom:10px}.modal p{font-size:13px;color:#64748b}.modal textarea{font-size:13px;min-height:120px;background:#f8fafc}.modal-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}.modal-actions button{flex:1}.toast{position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:#14203a;color:white;padding:14px 22px;border-radius:12px;z-index:120;font-size:13px;max-width:90vw;text-align:center}
+    @container(max-width:1023px){.sitebar{padding:17px 20px}.site-links{gap:13px;font-size:12px}.site-links .optional{display:none}.content{padding:22px 20px 32px}.product-grid,.editor-grid{grid-template-columns:1fr}.purchase{position:static}.product-grid>.purchase{grid-row:2}.product-grid>.main-product{display:contents}.hero{grid-row:1;margin-bottom:0}.intro-wrap{grid-row:2}.product-grid>.purchase{grid-row:3}.body-sections{grid-row:4}.hero-copy h2{font-size:27px}.hero{padding:27px}.editor-head{display:block}.editor-actions{margin-top:15px}.editor-grid>aside{display:none}.admin-grid{grid-template-columns:1fr}.admin-nav{display:flex;overflow:auto;white-space:nowrap}.version-number{font-size:34px}}
+    @container(max-width:767px){h1{font-size:24px}.brand{font-size:18px}.sitebar{padding:16px}.site-links{display:none}.balance{font-size:12px}.content{padding:18px 16px 110px}.breadcrumbs{margin-bottom:18px;font-size:11px}.product-grid{gap:20px}.hero{aspect-ratio:16/10;padding:22px;border-radius:12px}.hero-copy h2{font-size:24px}.hero-copy p{font-size:11px}.hero-copy .label{font-size:10px}.share{min-width:44px;padding:8px 12px}.lead{font-size:14px}.highlights{font-size:12px;gap:12px;margin-bottom:2px}.purchase.card{padding:20px}.price{font-size:32px}.purchase .buy,.purchase .footnote{display:none}.purchase .provider{margin-top:18px;padding-top:18px}.card{padding:20px}.anchors{gap:20px;margin-top:4px;font-size:12px}.params{grid-template-columns:90px 1fr;font-size:12px;gap:12px}.section h2{font-size:18px}.section p{font-size:14px}.section{padding-bottom:22px}.mobile-buy{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:8;justify-content:space-between;align-items:center;background:var(--surface);border-top:1px solid var(--border);padding:12px 16px calc(12px + env(safe-area-inset-bottom));gap:16px}.mobile-buy .price{font-size:25px}.mobile-buy button{min-width:140px}.fields{grid-template-columns:1fr}.field.wide{grid-column:auto}.edit-main .card{padding:20px}.editor-head h1{font-size:23px}.steps{font-size:11px;gap:2px}.steps span{padding:7px 8px}.source{display:block}.source>span{display:block}.source button{margin-top:12px}.editor-actions button{flex:1}.info-table{grid-template-columns:100px 1fr;font-size:12px;gap:18px}.locked{padding:65px 5px 100px}.toolbar-top{display:block}}
+    @media(max-width:520px){.toolbar{padding:16px}.toolbar-top{display:block}.toolbar-top strong{display:block}.toolbar-top a{display:inline-block;margin-top:8px}.note{padding:10px 16px}.stage{padding:14px 6px 24px}.controls{gap:8px}.frame{border-radius:12px}}@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
+  </style>
+</head>
+<body>
+  <header class="toolbar">
+    <div class="toolbar-top"><strong>MoNexus · 商品体验设计</strong><a href="spec.md" style="color:#c7d2fe;font-size:12px">阅读完整规格 ↗</a></div>
+    <p>交互线框 · 示例数据 · 未连接后端。用于审阅信息顺序、编辑选项和响应式布局。</p>
+    <div class="controls">
+      <label>页面 <select id="view"><option value="detail">商品详情</option><option value="editor">商品编辑</option><option value="admin">管理员系统信息</option></select></label>
+      <label>形态 <select id="template"></select></label>
+      <button id="width" type="button">切换手机 390px</button>
+      <button id="theme" type="button">切换深色</button>
+      <label>可见性 <select id="visibility"><option value="members_only">仅登录可见</option><option value="public">游客可见</option></select></label><label><input id="locked" type="checkbox">游客视角</label>
+    </div>
+  </header>
+  <div class="note">这里的示例版本、套餐与图片只用于布局。图文、保障、价格和交付承诺以 spec.md 的服务端契约为准。</div>
+  <main class="stage"><div id="frame" class="frame"><div id="screen"></div></div></main>
+  <div id="overlay"></div><div id="toast" role="status" aria-live="polite"></div>
+  <script id="registry" type="application/json">
+{
+  "specification": "SPEC-PRODUCT-COMMERCE-002",
+  "registryVersion": 1,
+  "description": "冻结设计资产；示例不代表真实商品或种子数据。UI 通过 registry 消费字段定义，验证器不隐式填默认值。",
+  "templates": [
+    {
+      "key": "redemption_code",
+      "version": 1,
+      "label": "卡密与兑换码",
+      "productSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "urn:monexus:product-template:redemption_code:v1:product",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "serviceName": {
+            "type": "string",
+            "title": "适用产品",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "region": {
+            "type": "string",
+            "title": "适用地区",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "redemptionMethod": {
+            "type": "string",
+            "title": "兑换方式",
+            "minLength": 1,
+            "maxLength": 1000
+          }
+        },
+        "required": [
+          "serviceName",
+          "redemptionMethod"
+        ]
+      },
+      "offerSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "urn:monexus:product-template:redemption_code:v1:offer",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "unitLabel": {
+            "type": "string",
+            "title": "销售单位",
+            "minLength": 1,
+            "maxLength": 40
+          },
+          "faceValueLabel": {
+            "type": "string",
+            "title": "面值或授权范围",
+            "minLength": 1,
+            "maxLength": 100
+          }
+        },
+        "required": [
+          "unitLabel"
+        ]
+      },
+      "ui": {
+        "productOrder": [
+          "serviceName",
+          "region",
+          "redemptionMethod"
+        ],
+        "offerOrder": [
+          "unitLabel",
+          "faceValueLabel"
+        ],
+        "widgets": {
+          "serviceName": "text",
+          "region": "text",
+          "redemptionMethod": "textarea",
+          "unitLabel": "text",
+          "faceValueLabel": "text"
+        }
+      },
+      "examples": {
+        "product": {
+          "serviceName": "示例软件",
+          "region": "全球",
+          "redemptionMethod": "在软件的兑换入口输入卡密。"
+        },
+        "offer": {
+          "unitLabel": "1 个兑换码",
+          "faceValueLabel": "个人版授权"
+        }
+      },
+      "fulfillmentRules": [
+        {
+          "whenProductAttributes": {},
+          "configurations": [
+            "inventory"
+          ],
+          "requireStructuredDelivery": "none",
+          "requireRequiredDateField": false
+        }
+      ]
+    },
+    {
+      "key": "account",
+      "version": 1,
+      "label": "账号商品",
+      "productSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "urn:monexus:product-template:account:v1:product",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "serviceName": {
+            "type": "string",
+            "title": "适用服务",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "accessModel": {
+            "type": "string",
+            "title": "账号使用方式",
+            "enum": [
+              "exclusive",
+              "shared"
+            ]
+          },
+          "usageRestrictions": {
+            "type": "string",
+            "title": "使用限制",
+            "minLength": 1,
+            "maxLength": 1000
+          }
+        },
+        "required": [
+          "serviceName",
+          "accessModel",
+          "usageRestrictions"
+        ]
+      },
+      "offerSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "urn:monexus:product-template:account:v1:offer",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "accountTier": {
+            "type": "string",
+            "title": "账号权益",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "required": [
+          "accountTier"
+        ]
+      },
+      "ui": {
+        "productOrder": [
+          "serviceName",
+          "accessModel",
+          "usageRestrictions"
+        ],
+        "offerOrder": [
+          "accountTier"
+        ],
+        "widgets": {
+          "serviceName": "text",
+          "accessModel": "select",
+          "usageRestrictions": "textarea",
+          "accountTier": "text"
+        },
+        "enumLabels": {
+          "accessModel": {
+            "exclusive": "独享账号",
+            "shared": "共享账号"
+          }
+        }
+      },
+      "examples": {
+        "product": {
+          "serviceName": "示例服务",
+          "accessModel": "shared",
+          "usageRestrictions": "按商家约定使用，请勿修改账号资料。"
+        },
+        "offer": {
+          "accountTier": "基础功能"
+        }
+      },
+      "fulfillmentRules": [
+        {
+          "whenProductAttributes": {
+            "accessModel": "exclusive"
+          },
+          "configurations": [
+            "inventory"
+          ],
+          "requireStructuredDelivery": "inventory_fields",
+          "requireRequiredDateField": false
+        },
+        {
+          "whenProductAttributes": {
+            "accessModel": "shared"
+          },
+          "configurations": [
+            "fixed_text"
+          ],
+          "requireStructuredDelivery": "fixed_fields",
+          "requireRequiredDateField": false
+        }
+      ]
+    },
+    {
+      "key": "digital_file",
+      "version": 1,
+      "label": "数字文件",
+      "productSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "urn:monexus:product-template:digital_file:v1:product",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "contentCategory": {
+            "type": "string",
+            "title": "文件内容类型",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "formats": {
+            "type": "array",
+            "title": "文件格式",
+            "minItems": 1,
+            "maxItems": 8,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 40
+            }
+          },
+          "compatibility": {
+            "type": "string",
+            "title": "适用环境",
+            "minLength": 1,
+            "maxLength": 500
+          },
+          "usageLicense": {
+            "type": "string",
+            "title": "使用授权说明",
+            "minLength": 1,
+            "maxLength": 1000
+          }
+        },
+        "required": [
+          "contentCategory",
+          "formats",
+          "usageLicense"
+        ]
+      },
+      "offerSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "urn:monexus:product-template:digital_file:v1:offer",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "releaseVersion": {
+            "type": "string",
+            "title": "内容版本",
+            "minLength": 1,
+            "maxLength": 80
+          }
+        },
+        "required": [
+          "releaseVersion"
+        ]
+      },
+      "ui": {
+        "productOrder": [
+          "contentCategory",
+          "formats",
+          "compatibility",
+          "usageLicense"
+        ],
+        "offerOrder": [
+          "releaseVersion"
+        ],
+        "widgets": {
+          "contentCategory": "text",
+          "formats": "stringList",
+          "compatibility": "textarea",
+          "usageLicense": "textarea",
+          "releaseVersion": "text"
+        }
+      },
+      "examples": {
+        "product": {
+          "contentCategory": "设计素材",
+          "formats": [
+            "SVG",
+            "PNG"
+          ],
+          "compatibility": "支持标准图片格式的软件",
+          "usageLicense": "仅供购买者用于自己的作品，不得转售素材原文件。"
+        },
+        "offer": {
+          "releaseVersion": "2026 年 9 月版"
+        }
+      },
+      "fulfillmentRules": [
+        {
+          "whenProductAttributes": {},
+          "configurations": [
+            "fixed_file"
+          ],
+          "requireStructuredDelivery": "none",
+          "requireRequiredDateField": false
+        }
+      ]
+    },
+    {
+      "key": "fixed_content",
+      "version": 1,
+      "label": "固定数字内容",
+      "productSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "urn:monexus:product-template:fixed_content:v1:product",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "contentCategory": {
+            "type": "string",
+            "title": "内容类型",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "applicableScope": {
+            "type": "string",
+            "title": "适用范围",
+            "minLength": 1,
+            "maxLength": 500
+          }
+        },
+        "required": [
+          "contentCategory",
+          "applicableScope"
+        ]
+      },
+      "offerSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "urn:monexus:product-template:fixed_content:v1:offer",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "contentScope": {
+            "type": "string",
+            "title": "本套餐包含内容",
+            "minLength": 1,
+            "maxLength": 500
+          }
+        },
+        "required": [
+          "contentScope"
+        ]
+      },
+      "ui": {
+        "productOrder": [
+          "contentCategory",
+          "applicableScope"
+        ],
+        "offerOrder": [
+          "contentScope"
+        ],
+        "widgets": {
+          "contentCategory": "text",
+          "applicableScope": "textarea",
+          "contentScope": "textarea"
+        }
+      },
+      "examples": {
+        "product": {
+          "contentCategory": "学习指引",
+          "applicableScope": "入门学习"
+        },
+        "offer": {
+          "contentScope": "完整文字指引及资源入口"
+        }
+      },
+      "fulfillmentRules": [
+        {
+          "whenProductAttributes": {},
+          "configurations": [
+            "fixed_text",
+            "fixed_url"
+          ],
+          "requireStructuredDelivery": "none",
+          "requireRequiredDateField": false
+        }
+      ]
+    },
+    {
+      "key": "subscription",
+      "version": 1,
+      "label": "订阅与开通",
+      "productSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "urn:monexus:product-template:subscription:v1:product",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "serviceName": {
+            "type": "string",
+            "title": "服务名称",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "serviceScope": {
+            "type": "string",
+            "title": "服务范围",
+            "minLength": 1,
+            "maxLength": 1000
+          }
+        },
+        "required": [
+          "serviceName",
+          "serviceScope"
+        ]
+      },
+      "offerSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "urn:monexus:product-template:subscription:v1:offer",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "entitlementSummary": {
+            "type": "string",
+            "title": "套餐权益",
+            "minLength": 1,
+            "maxLength": 500
+          },
+          "quotaText": {
+            "type": "string",
+            "title": "额度说明",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "regionText": {
+            "type": "string",
+            "title": "地区或线路说明",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "required": [
+          "entitlementSummary"
+        ]
+      },
+      "ui": {
+        "productOrder": [
+          "serviceName",
+          "serviceScope"
+        ],
+        "offerOrder": [
+          "entitlementSummary",
+          "quotaText",
+          "regionText"
+        ],
+        "widgets": {
+          "serviceName": "text",
+          "serviceScope": "textarea",
+          "entitlementSummary": "textarea",
+          "quotaText": "text",
+          "regionText": "text"
+        }
+      },
+      "examples": {
+        "product": {
+          "serviceName": "示例订阅",
+          "serviceScope": "按所选套餐提供订阅服务。"
+        },
+        "offer": {
+          "entitlementSummary": "月度基础套餐"
+        }
+      },
+      "fulfillmentRules": [
+        {
+          "whenProductAttributes": {},
+          "configurations": [
+            "inventory",
+            "fixed_text",
+            "fixed_url",
+            "manual",
+            "merchant_webhook",
+            "faka_bridge"
+          ],
+          "requireStructuredDelivery": "none",
+          "requireRequiredDateField": false
+        }
+      ]
+    },
+    {
+      "key": "manual_service",
+      "version": 1,
+      "label": "人工服务与代办",
+      "productSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "urn:monexus:product-template:manual_service:v1:product",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "serviceScope": {
+            "type": "string",
+            "title": "服务范围",
+            "minLength": 1,
+            "maxLength": 1000
+          },
+          "deliverables": {
+            "type": "string",
+            "title": "交付成果",
+            "minLength": 1,
+            "maxLength": 1000
+          },
+          "preparation": {
+            "type": "string",
+            "title": "需要准备的资料",
+            "minLength": 1,
+            "maxLength": 1000
+          }
+        },
+        "required": [
+          "serviceScope",
+          "deliverables"
+        ]
+      },
+      "offerSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "urn:monexus:product-template:manual_service:v1:offer",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "servicePackage": {
+            "type": "string",
+            "title": "套餐包含服务",
+            "minLength": 1,
+            "maxLength": 500
+          }
+        },
+        "required": [
+          "servicePackage"
+        ]
+      },
+      "ui": {
+        "productOrder": [
+          "serviceScope",
+          "deliverables",
+          "preparation"
+        ],
+        "offerOrder": [
+          "servicePackage"
+        ],
+        "widgets": {
+          "serviceScope": "textarea",
+          "deliverables": "textarea",
+          "preparation": "textarea",
+          "servicePackage": "textarea"
+        }
+      },
+      "examples": {
+        "product": {
+          "serviceScope": "文档排版",
+          "deliverables": "完成排版的文件",
+          "preparation": "通过购买表单说明页数与要求，不填写账号密码。"
+        },
+        "offer": {
+          "servicePackage": "基础排版服务"
+        }
+      },
+      "fulfillmentRules": [
+        {
+          "whenProductAttributes": {},
+          "configurations": [
+            "manual",
+            "merchant_webhook"
+          ],
+          "requireStructuredDelivery": "none",
+          "requireRequiredDateField": false
+        }
+      ]
+    },
+    {
+      "key": "appointment",
+      "version": 1,
+      "label": "预约服务",
+      "productSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "urn:monexus:product-template:appointment:v1:product",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "deliveryChannel": {
+            "type": "string",
+            "title": "服务形式",
+            "enum": [
+              "text",
+              "voice",
+              "video"
+            ]
+          },
+          "timeZone": {
+            "type": "string",
+            "title": "预约日期时区",
+            "enum": [
+              "Asia/Shanghai"
+            ]
+          },
+          "preparation": {
+            "type": "string",
+            "title": "预约准备事项",
+            "minLength": 1,
+            "maxLength": 1000
+          }
+        },
+        "required": [
+          "deliveryChannel",
+          "timeZone"
+        ]
+      },
+      "offerSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "urn:monexus:product-template:appointment:v1:offer",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "servicePackage": {
+            "type": "string",
+            "title": "套餐包含服务",
+            "minLength": 1,
+            "maxLength": 500
+          },
+          "estimatedMinutes": {
+            "type": "integer",
+            "title": "预计服务时长（分钟）",
+            "minimum": 1,
+            "maximum": 1440,
+            "description": "仅说明预计时长，不代表已锁定时间槽。"
+          }
+        },
+        "required": [
+          "servicePackage"
+        ]
+      },
+      "ui": {
+        "productOrder": [
+          "deliveryChannel",
+          "timeZone",
+          "preparation"
+        ],
+        "offerOrder": [
+          "servicePackage",
+          "estimatedMinutes"
+        ],
+        "widgets": {
+          "deliveryChannel": "select",
+          "timeZone": "select",
+          "preparation": "textarea",
+          "servicePackage": "textarea",
+          "estimatedMinutes": "integer"
+        },
+        "enumLabels": {
+          "deliveryChannel": {
+            "text": "文字",
+            "voice": "语音",
+            "video": "视频"
+          },
+          "timeZone": {
+            "Asia/Shanghai": "北京时间（UTC+8）"
+          }
+        }
+      },
+      "examples": {
+        "product": {
+          "deliveryChannel": "video",
+          "timeZone": "Asia/Shanghai",
+          "preparation": "提交期望日期后由商家确认安排。"
+        },
+        "offer": {
+          "servicePackage": "一次在线咨询",
+          "estimatedMinutes": 30
+        }
+      },
+      "fulfillmentRules": [
+        {
+          "whenProductAttributes": {},
+          "configurations": [
+            "manual"
+          ],
+          "requireStructuredDelivery": "none",
+          "requireRequiredDateField": true
+        }
+      ]
+    }
+  ]
+}
+</script>
+  <script>
+    const registry=JSON.parse(document.getElementById('registry').textContent);
+    const templates=registry.templates;const $=id=>document.getElementById(id);
+    const escapeHtml=v=>String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    let selectedOffer=0;let mobile=false;let dark=false;
+    const profiles={
+      redemption_code:{name:'数字创作工具 · 兑换码',hero:'让创作更进一步',sub:'适用范围、兑换方式与交付内容，一目了然。',delivery:'库存自动交付',period:'查看兑换说明'},
+      account:{name:'创作工具 · 共享账号',hero:'创作所需，清晰交付',sub:'购买前了解使用范围，交付后逐项查看账号信息。',delivery:'固定账号信息',period:'30 天'},
+      digital_file:{name:'轻量设计素材 · 图形合集',hero:'为下一次创作准备',sub:'格式、授权和内容版本清楚可查。',delivery:'受控文件下载',period:'查看下载规则'},
+      fixed_content:{name:'入门学习 · 资源与指引',hero:'从这里开始学习',sub:'按说明获取完整内容与资源入口。',delivery:'固定内容直发',period:'查看使用说明'},
+      subscription:{name:'轻量订阅 · 月度基础套餐',hero:'日常所需，按月选择',sub:'选择合适的权益，开通后在订单中查看服务信息。',delivery:'自动开通',period:'以实际开通结果为准'},
+      manual_service:{name:'文档排版 · 专业整理服务',hero:'把内容整理得更清楚',sub:'先说明需求，再跟进处理进度与交付结果。',delivery:'人工处理与验收',period:'交付后验收'},
+      appointment:{name:'一对一 · 在线咨询预约',hero:'为一次交流做好准备',sub:'提交期望日期，由商家确认安排。',delivery:'预约申请与确认',period:'按确认日期提供服务'}
+    };
+    $('template').innerHTML=templates.map(t=>`<option value="${t.key}">${t.label}</option>`).join('');$('template').value='subscription';
+    function toast(message){$('toast').className='toast';$('toast').textContent=message;clearTimeout(window.toastTimer);window.toastTimer=setTimeout(()=>{$('toast').className='';$('toast').textContent=''},2800)}
+    function header(){return `<div class="sitebar"><div class="brand"><span class="brandmark" aria-hidden="true"></span>MoNexus</div><nav class="site-links" aria-label="站点导航"><span>商品商城</span><span>我的订单</span><span class="optional">积分记录</span></nav><div class="balance">${$('locked').checked?'登录 / 注册':'1,280 积分'}</div></div>`}
+    let modalTrigger=null;function closeModal(){const trigger=modalTrigger;$('overlay').innerHTML='';$('frame').inert=false;document.querySelector('.toolbar').inert=false;trigger?.focus()}
+    function modal(title,body,buttons){modalTrigger=document.activeElement;$('frame').inert=true;document.querySelector('.toolbar').inert=true;$('overlay').innerHTML=`<div class="modal-backdrop"><section class="modal" role="dialog" aria-modal="true" aria-label="${title}"><h2>${title}</h2>${body}<div class="modal-actions">${buttons}<button data-close type="button">关闭</button></div></section></div>`;$('overlay').querySelector('button:not(:disabled)').focus();$('overlay').querySelector('[data-close]').onclick=closeModal;}
+    function share(){const p=profiles[$('template').value];const text=$('visibility').value==='members_only'?'与你分享一件 MoNexus 商品，登录后查看详情。\nhttps://s.example/Ab3x9':`在 MoNexus 看看「${p.name}」\n${selectedOffer?'进阶套餐 · 360':'基础套餐 · 120'} 积分\nhttps://s.example/Ab3x9`;modal('分享商品','<p>以下为文案与复制位置示例，域名尚未配置。</p><textarea readonly aria-label="分享文案">'+escapeHtml(text)+'</textarea>','<button class="primary" id="copy-link" type="button">复制链接</button><button id="copy-text" type="button">复制文案</button>');async function copy(v){try{await navigator.clipboard.writeText(v);toast('示例文字已复制')}catch{const el=$('overlay').querySelector('textarea');el.focus();el.select();toast('请选中后手动复制')}}$('copy-link').onclick=()=>copy('https://s.example/Ab3x9');$('copy-text').onclick=()=>copy(text)}
+    function details(t){const p=profiles[t.key];const price=selectedOffer?360:120;const rows=[...Object.entries(t.productSchema.properties).map(([key,schema])=>[schema.title,t.ui.enumLabels?.[key]?.[t.examples.product[key]]??t.examples.product[key]??'未提供']),...Object.entries(t.offerSchema.properties).map(([key,schema])=>[schema.title,t.examples.offer[key]??'未提供'])];
+      if($('locked').checked&&$('visibility').value==='members_only')return header()+`<div class="content"><div class="breadcrumbs">MoNexus / 商品</div><section class="locked"><div class="lock-symbol" aria-hidden="true">M</div><h1>登录后查看商品</h1><p>登录 MoNexus 后，即可查看这件商品的详细介绍与可选套餐。</p><button class="primary" data-login type="button">登录后继续</button><p style="margin-top:18px">登录后将回到此页面</p></section></div>`;
+      return header()+`<div class="content"><div class="breadcrumbs">商品商城 / ${t.label}</div><div class="product-grid"><div class="main-product"><div class="hero" role="img" aria-label="商品封面布局示意"><div class="hero-copy"><div class="label">MONEXUS / DIGITAL GOODS</div><h2>${p.hero}</h2><p>示例封面 · 商品图片由发布者提供</p></div><div class="orbit" aria-hidden="true"></div></div><div class="intro-wrap"><div class="eyebrow"><span class="pill">${t.label}</span><span class="pill">平台自营</span></div><div class="intro-head"><h1>${p.name}</h1><button class="share" id="share" type="button">分享 ↗</button></div><p class="lead">${p.sub}</p><ul class="highlights"><li>商品参数清晰可查</li><li>订单内查看交付结果</li><li>使用说明随时可读</li><li>支持订单售后处理</li></ul></div><div class="body-sections"><nav class="anchors" aria-label="商品章节"><a href="#description">商品介绍</a><a href="#parameters">商品参数</a><a href="#notes">购买须知</a><a href="#support">售后说明</a></nav><section class="section" id="description"><div class="label">Overview</div><h2 style="margin-top:9px">先了解，再选择</h2><p>${p.sub} 在这里集中说明商品适用范围、交付内容与使用方式，让重要信息不再藏在长篇介绍中。</p><p class="muted">图文区域只承载说明内容。所选套餐的价格、库存与交付方式始终从套餐数据读取。</p></section><section class="section" id="parameters"><h2>商品与套餐参数</h2><div class="parambox"><dl class="params">${rows.map(([label,value])=>`<dt>${escapeHtml(label)}</dt><dd>${escapeHtml(Array.isArray(value)?value.join('、'):value)}</dd>`).join('')}</dl></div></section><section class="section" id="notes"><h2>购买须知</h2><p>${t.key==='appointment'?'提交的日期为期望服务日期，需要商家接单确认；当前不代表已锁定具体时间段。':t.key==='account'?'共享账号将按商家约定提供固定账号信息，不代表平台能够控制同时在线人数或自动更新密码。':'请先确认适用范围与所选套餐。兑换后，请在订单详情中查看交付结果与使用说明。'}</p><details><summary>如何查看交付内容？</summary><p>交付成功后，在“我的订单”中打开对应订单查看。具体可用操作根据订单状态和交付类型展示。</p></details><details><summary>遇到问题如何处理？</summary><p>通过订单中的售后入口提交问题，平台可协助沟通和处理争议。</p></details></section><section class="section" id="support"><h2>售后与平台保障</h2><div class="policy"><strong>平台保障 · 示例为已获授权状态</strong><p>平台协助售后与争议处理，不另作先行垫付承诺。</p></div><p class="muted" style="font-size:12px;margin-top:15px">商家售后说明与平台规则分别展示。没有有效授权时，此保障区域不出现。</p></section><section class="section"><h2>用户评价</h2><p class="muted">暂无评价，兑换后可分享使用体验。</p></section></div></div><aside class="purchase card"><div class="label">选择套餐</div><div class="offer-stack">${['基础套餐','进阶套餐'].map((n,i)=>`<button type="button" class="offer ${selectedOffer===i?'selected':''}" data-offer="${i}" aria-pressed="${selectedOffer===i}"><span>${n}<small>${i?'更多服务内容':'满足基础需要'}</small></span><b>${i?360:120} 积分</b></button>`).join('')}</div><div class="price">${price}<span>积分</span></div><dl><dt>交付方式</dt><dd>${p.delivery}</dd><dt>有效期</dt><dd>${p.period}</dd><dt>购买数量</dt><dd>1 个套餐单位</dd></dl><button type="button" class="primary buy" data-buy>${$('locked').checked?'登录后兑换':'立即兑换'}</button><p class="footnote">确认时将再次核对套餐、价格与购买条款。</p><div class="provider"><div class="avatar">M</div><div><strong>MoNexus 自营</strong><small>平台提供商品与服务</small></div></div></aside></div></div><div class="mobile-buy"><div class="price">${price}<span>积分</span></div><button type="button" class="primary" data-buy>${$('locked').checked?'登录后兑换':'立即兑换'}</button></div>`;
+    }
+    function attributeFields(t){return Object.entries(t.productSchema.properties).map(([key,s])=>{const v=t.examples.product[key]??'';const required=t.productSchema.required.includes(key);const input=s.enum?`<select aria-label="${escapeHtml(s.title)}">${s.enum.map(x=>`<option ${x===v?'selected':''}>${escapeHtml(t.ui.enumLabels?.[key]?.[x]??x)}</option>`).join('')}</select>`:s.maxLength>=500?`<textarea aria-label="${escapeHtml(s.title)}">${escapeHtml(v)}</textarea>`:`<input aria-label="${escapeHtml(s.title)}" value="${escapeHtml(Array.isArray(v)?v.join('、'):v)}">`;return `<label class="field ${s.maxLength>=500?'wide':''}"><span>${escapeHtml(s.title)}${required?'<b class="req">*</b>':''}</span>${input}</label>`}).join('')}
+    function editor(t){const p=profiles[t.key];return header()+`<div class="content"><div class="breadcrumbs">商品管理 / 编辑商品</div><div class="editor-head"><div><h1>把商品说明清楚</h1><p class="muted" style="font-size:13px;margin:0">草稿 · ${t.label} · 本页为编辑选项示例</p></div><div class="editor-actions"><button type="button" data-preview>预览商品</button><button class="primary" type="button" data-save>保存草稿</button></div></div><div class="steps"><span>1 商品形态</span><span class="current">2 展示信息</span><span>3 套餐与交付</span><span>4 购买资料</span><span>5 可售资源</span><span>6 发布检查</span></div><div class="editor-grid"><div class="edit-main"><section class="card"><h2>基本信息</h2><div class="cover-upload"><div class="cover-mini"></div><div><strong>商品封面与图集</strong><small>上传、替换与排序 · 使用平台托管图片</small></div></div><div class="fields"><label class="field wide"><span>商品名称 <b class="req">*</b></span><input value="${p.name}"></label><label class="field wide"><span>一句话简介 <b class="req">*</b></span><textarea>${p.sub}</textarea><small>建议 40–140 字，说明适合谁、能获得什么。</small></label></div></section><section class="card"><h2>${t.label}参数</h2><div class="fields">${attributeFields(t)}</div></section><section class="card"><h2>图文介绍</h2>${t.key==='subscription'?'<div class="source" style="margin-bottom:18px"><span><strong>Xboard 来源介绍</strong><br>本地编辑独立保存，上游变化由你预览后采纳。</span><button type="button" data-source>检查上游介绍</button></div>':''}<div class="rich-tools" role="toolbar" aria-label="编辑器工具栏">${['撤销','重做','段落 ▾','B','I','列表','引用','链接','图片','清除格式'].map(s=>`<button type="button" data-tool>${s}</button>`).join('')}</div><div class="rich-edit" contenteditable="true" role="textbox" aria-label="图文正文" aria-multiline="true"><strong>适用范围与使用方式</strong><p>在这里补充商品的详细说明。套餐价格、有效期和交付内容在各自区域维护。</p></div></section><section class="card"><h2>购买须知与售后</h2><div class="fields"><label class="field wide"><span>购买须知 <b class="req">*</b></span><textarea placeholder="例如适用地区、使用条件和兑换前需要了解的限制"></textarea></label><label class="field wide"><span>商家售后说明 <b class="req">*</b></span><textarea placeholder="说明遇到问题时的处理方式，不覆盖平台退款规则"></textarea></label></div></section><section class="card"><h2>谁可以浏览这件商品</h2><label class="radio-line"><input type="radio" name="visibility" checked><span><strong>仅登录后可浏览</strong><br><small class="muted">游客打开分享链接后，需要先登录。</small></span></label><label class="radio-line"><input type="radio" name="visibility"><span><strong>游客可浏览商品信息</strong><br><small class="muted">兑换仍需要登录。</small></span></label></section><section class="card"><h2>平台保障</h2><p class="muted" style="font-size:13px">提交申请后由管理员审核。平台协助售后与争议处理，不另作先行垫付承诺。</p><button type="button" data-assurance>查看申请条件</button></section></div><aside class="card"><h3>发布前检查</h3><ul class="checklist"><li class="done">已选择商品形态</li><li class="done">已填写基本信息</li><li class="todo">补充购买须知与售后</li><li class="todo">完成套餐与交付配置</li><li class="todo">准备可售资源</li></ul><p class="context-note">保存草稿不会自动发布。发布前将由服务端检查商品与套餐是否准备就绪。</p><button type="button" disabled style="width:100%">发布到商城</button></aside></div></div>`}
+    function admin(){return header()+`<div class="content"><div class="breadcrumbs">管理后台 / 系统设置</div><div class="admin-grid"><nav class="admin-nav" aria-label="管理设置"><span>基础设置</span><span>注册与安全</span><span>存储与交付</span><span class="active">系统信息</span></nav><section><h1 style="font-size:26px">系统信息</h1><p class="muted" style="font-size:14px">查看当前运行的 API 构建信息。</p><div class="card"><span class="pill">生产环境 · 原型示例</span><div class="version-number">v1.2.3</div><p class="muted" style="font-size:13px">版本来自构建产物，不能在后台手动修改。</p><div class="info-table"><span>完整提交</span><span>0123456789abcdef0123456789abcdef01234567</span><span>构建时间</span><span>2026-09-09 16:00（UTC+8）</span><span>发行标签</span><span>v1.2.3</span><span>信息来源</span><span>运行镜像的构建产物</span></div></div><p class="muted" style="font-size:12px;margin-top:16px">此页仅管理员可访问。未提供构建产物时显示缺失状态，不用固定版本号代替。</p></section></div></div>`}
+    function render(){const t=templates.find(t=>t.key===$('template').value);$('screen').innerHTML=$('view').value==='detail'?details(t):$('view').value==='editor'?editor(t):admin();if($('share'))$('share').onclick=share;document.querySelectorAll('[data-offer]').forEach(el=>el.onclick=()=>{selectedOffer=Number(el.dataset.offer);render()});document.querySelectorAll('[data-buy]').forEach(el=>el.onclick=()=>toast('原型演示：此处进入既有结算确认流程'));document.querySelectorAll('[data-save]').forEach(el=>el.onclick=()=>toast('原型未连接后端，没有保存数据'));document.querySelectorAll('[data-preview]').forEach(el=>el.onclick=()=>{$('view').value='detail';render()});document.querySelectorAll('[data-login]').forEach(el=>el.onclick=()=>toast('原型演示：登录后安全返回原商品'));document.querySelectorAll('[data-tool]').forEach(el=>el.onclick=()=>toast('工具栏位置示意；实现使用统一可视化编辑器'));document.querySelectorAll('[data-assurance]').forEach(el=>el.onclick=()=>toast('已发布且正常经营的商品可申请，由管理员审核'));document.querySelectorAll('[data-source]').forEach(el=>el.onclick=()=>modal('预览上游介绍','<p>这里对比当前已保存内容与最新上游介绍。按字段选择采纳，普通同步不会覆盖本地编辑。</p><label class="radio-line"><input type="checkbox">采纳上游简介</label><label class="radio-line"><input type="checkbox">采纳上游正文</label><p>示意：提交时重验源内容与本地版本。</p>','<button type="button" disabled>替换已选内容</button>'))}
+    $('view').onchange=render;$('template').onchange=()=>{selectedOffer=0;render()};$('locked').onchange=render;$('visibility').onchange=render;$('width').onclick=()=>{mobile=!mobile;$('frame').classList.toggle('mobile',mobile);$('width').textContent=mobile?'切换桌面':'切换手机 390px'};$('theme').onclick=()=>{dark=!dark;$('frame').classList.toggle('dark',dark);$('theme').textContent=dark?'切换浅色':'切换深色'};document.addEventListener('keydown',e=>{if(!$('overlay').firstElementChild)return;if(e.key==='Escape')closeModal();if(e.key==='Tab'){const items=[...$('overlay').querySelectorAll('button:not(:disabled),textarea,input')];const first=items[0],last=items.at(-1);if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus()}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus()}}});render();
+  </script>
+</body>
+</html>

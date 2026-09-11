@@ -3,6 +3,7 @@ import { getAdminConfig, updateAdminConfig, AdminSystemConfig, AdminSystemConfig
 import { getApiErrorMessage } from '../../api/error'
 import { useAppStore } from '../../stores/appStore'
 import AdminMailPanel from './AdminMailPanel'
+import AdminSystemInfoPanel from './AdminSystemInfoPanel'
 import MemberTierConfigPanel from './MemberTierConfigPanel'
 import RegistrationControlPanel from './RegistrationControlPanel'
 import {
@@ -216,7 +217,7 @@ export default function AdminConfigPanel() {
         </p>
       </div>
 
-      {/* 7 个分组的切换标签导航 */}
+      {/* 配置分组切换标签导航 */}
       <div
         role="tablist"
         aria-label="系统配置分组"
@@ -263,7 +264,9 @@ export default function AdminConfigPanel() {
 
         {/* 组内主体 */}
         <div className="p-4 sm:p-6">
-          {activeGroup === 'registration' ? (
+          {activeGroup === 'system' ? (
+            <AdminSystemInfoPanel />
+          ) : activeGroup === 'registration' ? (
             <RegistrationControlPanel
               items={configs}
               drafts={drafts}

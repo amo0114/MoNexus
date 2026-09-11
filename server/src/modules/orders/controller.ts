@@ -24,6 +24,8 @@ export async function create(req: Request, res: Response, next: NextFunction) {
       renewalOfOrderId: req.body.renewalOfOrderId,
       agreementVersions: req.body.agreementVersions,
       expectedValuePolicyId: req.body.expectedValuePolicyId,
+      expectedProductContentVersion: req.body.expectedProductContentVersion,
+      expectedAssuranceGrantId: req.body.expectedAssuranceGrantId,
       idempotencyKey,
       // SPEC-LEGAL-001：订单确认证据的网络标识（同 fileAccess 的采集先例）。
       ip: req.ip,

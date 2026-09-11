@@ -8,7 +8,7 @@ export const SEED_ACCOUNTS = {
 } as const
 
 export const API_BASE = process.env.E2E_API_URL || 'http://localhost:3000'
-export const E2E_PRODUCT_COVER = '/assets/network.webp'
+export const E2E_PRODUCT_COVER = '/assets/e2e-cover.png'
 
 type SeedAccount = { email: string; password: string }
 
@@ -165,7 +165,17 @@ export async function loginAs(page: Page, account: SeedAccount) {
   await page.addStyleTag({
     content: '*, *::before, *::after { animation: none !important; transition: none !important; }',
   })
-  await page.getByPlaceholder('邮箱地址').fill(account.email)
+  const emailInput = page.getByPlaceholder('邮箱地址')
+  try {
+    await emailInput.waitFor({ state: 'visible', timeout: 5000 })
+  } catch {
+    await page.reload()
+    await page.addStyleTag({
+      content: '*, *::before, *::after { animation: none !important; transition: none !important; }',
+    })
+    await emailInput.waitFor({ state: 'visible', timeout: 10000 })
+  }
+  await emailInput.fill(account.email)
   await page.getByPlaceholder('密码（至少 6 位）').fill(account.password)
   const loginResponse = page.waitForResponse((response) =>
     response.url().includes('/api/auth/login') && response.request().method() === 'POST'
@@ -196,6 +206,35 @@ export async function selectAdminTab(page: Page, tabId: string) {
   await item.click()
 }
 
+const E2E_PURCHASE_NOTES = 'E2E购买须知：兑换前请确认适用条件。'
+const E2E_AFTER_SALES = 'E2E售后说明：订单问题请提交售后工单。'
+
+/** Fill currently visible template-attribute controls that are still empty. */
+export async function fillVisibleTemplateAttributeControls(page: Page, sample = 'E2E模板参数') {
+  const controls = page.getByTestId('template-attribute-fields').locator('[data-testid$="-control"]')
+  const count = await controls.count()
+  for (let i = 0; i < count; i++) {
+    const control = controls.nth(i)
+    if ((await control.inputValue()).trim() === '') {
+      await control.fill(sample)
+    }
+  }
+}
+
+/**
+ * 展示信息步：补齐 v2 首次发布必填的购买须知 / 售后说明，以及当前模板的商品参数。
+ */
+export async function fillWizardPublicationDetails(page: Page) {
+  await fillVisibleTemplateAttributeControls(page)
+  await page.getByTestId('product-details-purchaseNotes').fill(E2E_PURCHASE_NOTES)
+  await page.getByTestId('product-details-afterSalesInstructions').fill(E2E_AFTER_SALES)
+}
+
+/** 定价步：补齐当前模板主规格必填参数（发布门禁会校验 offer attributes）。 */
+export async function fillWizardOfferAttributes(page: Page) {
+  await fillVisibleTemplateAttributeControls(page, 'E2E套餐包含内容')
+}
+
 /**
  * 走分步创建页发布一个「固定内容直发 · 外部链接」商品。
  * P2 起商品创建不再走弹窗，统一使用 /merchant/products/new 向导。
@@ -207,7 +246,7 @@ export async function createInstantFixedProductViaWizard(
   await page.goto('/merchant/products/new')
   await expect(page.getByTestId('product-create-wizard')).toBeVisible({ timeout: 10_000 })
 
-  await page.getByTestId('template-digital_content').click()
+  await page.getByTestId('template-fixed_content').click()
   await page.getByTestId('wizard-next').click()
 
   await page.getByTestId('wizard-name').fill(options.name)
@@ -217,9 +256,11 @@ export async function createInstantFixedProductViaWizard(
   if (!(await category.inputValue())) {
     await category.selectOption({ index: 1 })
   }
+  await fillWizardPublicationDetails(page)
   await page.getByTestId('wizard-next').click()
 
   await page.getByTestId('wizard-price').fill(options.price ?? '1')
+  await fillWizardOfferAttributes(page)
   await page.getByTestId('wizard-next').click()
 
   await page.getByRole('radio', { name: '外部链接' }).check()

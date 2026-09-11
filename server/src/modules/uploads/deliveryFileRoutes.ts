@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto'
 import path from 'node:path'
-import { Router, type Request } from 'express'
+import { Router, type NextFunction, type Request, type Response } from 'express'
 import busboy from 'busboy'
-import { authenticate, requireActiveUser, requireMerchant, requireVerifiedEmail } from '../../middlewares/auth.js'
+import { authenticate, requireActiveUser, requireAdminMfa, requireMerchant, requireVerifiedEmail } from '../../middlewares/auth.js'
 import { badRequest, HttpError } from '../../lib/httpError.js'
 import { prisma } from '../../lib/prisma.js'
 import { getDeliveryStorage, getDeliveryStorageForWrite } from '../../lib/storage/delivery.js'
@@ -40,7 +40,42 @@ async function myMerchantId(req: Request): Promise<number> {
  */
 // Authorization precedes busboy so failed qualification cannot consume a
 // stream, allocate a temporary key, or touch object storage.
-router.post('/delivery-file', authenticate, requireActiveUser, requireMerchant, requireVerifiedEmail, async (req, res, next) => {
+router.post('/delivery-file', authenticate, requireActiveUser, requireVerifiedEmail, (req, res, next) => {
+  if (req.user?.role === 'admin') {
+    requireAdminMfa(req, res, err => {
+      if (err) {
+        next(err)
+        return
+      }
+      void handleDeliveryFileUpload(req, res, next, { merchantId: null, uploadedByUserId: req.user!.userId })
+    })
+    return
+  }
+  requireMerchant(req, res, err => {
+    if (err) {
+      next(err)
+      return
+    }
+    void (async () => {
+      try {
+        const merchantId = await myMerchantId(req)
+        await handleDeliveryFileUpload(req, res, next, {
+          merchantId,
+          uploadedByUserId: req.user!.userId,
+        })
+      } catch (error) {
+        next(error)
+      }
+    })()
+  })
+})
+
+async function handleDeliveryFileUpload(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+  owner: { merchantId: number | null; uploadedByUserId: number },
+) {
   let settled = false
   const fail = (err: unknown) => {
     if (settled) return
@@ -54,7 +89,7 @@ router.post('/delivery-file', authenticate, requireActiveUser, requireMerchant, 
     const maxMb = await getSystemConfigValue('deliveryFileMaxMb')
     const maxBytes = maxMb * 1024 * 1024
     const { adapter: storage, providerConfigId } = await getDeliveryStorageForWrite()
-    const merchantId = await myMerchantId(req)
+    const merchantId = owner.merchantId
 
     const bb = busboy({
       headers: req.headers,
@@ -95,7 +130,8 @@ router.post('/delivery-file', authenticate, requireActiveUser, requireMerchant, 
                 // busboy 报告的 MIME 来自客户端，仅记录不信任。
                 mimeType: info.mimeType || 'application/octet-stream',
                 sha256,
-                merchantId,
+                merchantId: owner.merchantId,
+                uploadedByUserId: owner.uploadedByUserId,
                 storageProviderId: providerConfigId,
               },
               select: { id: true, fileName: true, size: true, createdAt: true },
@@ -135,7 +171,7 @@ router.post('/delivery-file', authenticate, requireActiveUser, requireMerchant, 
   } catch (err) {
     fail(err)
   }
-})
+}
 
 /**
  * memory 适配器的"签名下载"透传：HMAC token 校验（篡改/过期 → 403，与

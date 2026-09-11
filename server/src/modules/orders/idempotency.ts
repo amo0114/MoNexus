@@ -53,6 +53,10 @@ export type IdempotencyFingerprint = {
   agreementVersions?: Record<string, string>
   // SPEC-VALUE-POLICY-P1-001：未传不写入 canonical，旧客户端 digest 不变。
   expectedValuePolicyId?: string
+  // SPEC-PRODUCT-COMMERCE-002 §3.3：两个新字段必须同时出现才进入 canonical；
+  // 同时省略时旧请求摘要字节保持不变。
+  expectedProductContentVersion?: number
+  expectedAssuranceGrantId?: number | null
 }
 
 /**
@@ -88,6 +92,12 @@ export function computeRequestDigest(fingerprint: IdempotencyFingerprint): strin
     ...(canonicalAgreements.length > 0 ? { agreementVersions: canonicalAgreements } : {}),
     ...(fingerprint.expectedValuePolicyId != null
       ? { expectedValuePolicyId: fingerprint.expectedValuePolicyId }
+      : {}),
+    ...(fingerprint.expectedProductContentVersion != null
+      ? {
+          expectedProductContentVersion: fingerprint.expectedProductContentVersion,
+          expectedAssuranceGrantId: fingerprint.expectedAssuranceGrantId ?? null,
+        }
       : {}),
     answers: canonicalAnswers,
   })

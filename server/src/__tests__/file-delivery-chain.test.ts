@@ -99,7 +99,14 @@ describe('public serialization for file offers', () => {
     const { accessToken, fileId } = await setupMerchantWithFile('file-public@test.local')
     const { productId } = await createFileProduct(accessToken, fileId, '公开文件商品')
 
-    const detail = await api.get(`/api/products/${productId}`).expect(200)
+    await api.get(`/api/products/${productId}`).expect(403)
+
+    await createTestUser('file-public-member@test.local', 'pass123', 'user', 0)
+    const member = await loginAs('file-public-member@test.local', 'pass123')
+    const detail = await api
+      .get(`/api/products/${productId}`)
+      .set(authHeader(member.accessToken))
+      .expect(200)
     const fileOffer = detail.body.offers.find((o: any) => o.fixedContentType === 'file')
     expect(fileOffer).toBeTruthy()
     expect(fileOffer.deliveryFileSize).toBeGreaterThan(0)

@@ -33,7 +33,7 @@ describe('admin product archive lifecycle (REAL-PG)', () => {
 
     const publicAfter = await api.get('/api/products').expect(200)
     expect(publicAfter.body.items.some((item: { id: number }) => item.id === product.id)).toBe(false)
-    await api.get(`/api/products/${product.id}`).expect(400)
+    await api.get(`/api/products/${product.id}`).expect(404)
 
     const order = await api.get(`/api/orders/${created.body.orderId}`).set(authHeader(buyerAuth.accessToken)).expect(200)
     expect(order.body.id ?? order.body.orderId ?? created.body.orderId).toBeTruthy()

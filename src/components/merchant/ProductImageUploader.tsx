@@ -1,5 +1,5 @@
 import { useRef, useState, type Dispatch, type SetStateAction } from 'react'
-import { Loader2, Star, Trash2, Upload } from 'lucide-react'
+import { Loader2, Sparkles, Star, Trash2, Upload } from 'lucide-react'
 import { uploadImage, UploadError } from '../../api/uploads'
 import { useAppStore } from '../../stores/appStore'
 import { fileToObjectUrl } from '../../utils/cropImage'
@@ -7,6 +7,33 @@ import ImageCropDialog from '../ui/ImageCropDialog'
 import SafeImage from '../ui/SafeImage'
 
 const MAX_IMAGES = 6
+
+export const PRODUCT_IMAGE_PRESETS = [
+  {
+    id: 'ai_token',
+    label: 'AI 算力与模型',
+    url: '/assets/presets/preset_ai_token.webp',
+    description: 'AI 模型调用与算力抽象科技背景',
+  },
+  {
+    id: 'cloud_license',
+    label: '云原生与架构',
+    url: '/assets/presets/preset_cloud_license.webp',
+    description: '云原生部署与软件架构概念背景',
+  },
+  {
+    id: 'membership_pass',
+    label: '数字会员与权益',
+    url: '/assets/presets/preset_membership_pass.webp',
+    description: '数字会员与社群权益概念背景',
+  },
+  {
+    id: 'dev_tools',
+    label: '开发者与工具箱',
+    url: '/assets/presets/preset_dev_tools.webp',
+    description: '开发者代码与工具箱概念背景',
+  },
+] as const
 
 type PendingCrop = {
   src: string
@@ -19,17 +46,45 @@ type PendingCrop = {
 
 type ProductImageUploaderProps = {
   images: string[]
+  /** Display URL → upload objectKey for successful local uploads. Never invented for http(s) hotlinks. */
+  imageKeys?: Record<string, string>
   onChange: Dispatch<SetStateAction<string[]>>
+  onImageKeysChange?: Dispatch<SetStateAction<Record<string, string>>>
   disabled?: boolean
+}
+
+function dropUnusedImageKey(
+  keys: Record<string, string>,
+  removedUrl: string | undefined,
+  remaining: string[],
+): Record<string, string> {
+  if (!removedUrl || !(removedUrl in keys) || remaining.includes(removedUrl)) return keys
+  const next = { ...keys }
+  delete next[removedUrl]
+  return next
+}
+
+function rememberImageKey(
+  keys: Record<string, string>,
+  url: string,
+  objectKey: string,
+  removedUrl?: string,
+): Record<string, string> {
+  const next = { ...keys }
+  if (removedUrl && removedUrl !== url) delete next[removedUrl]
+  next[url] = objectKey
+  return next
 }
 
 /**
  * Merchant product images: local upload goes through crop; URL may crop or skip.
  * Cover forces 1:1; secondary allows free aspect.
+ * Display state stays as URLs; objectKey is tracked separately for write-side refs.
  */
 export default function ProductImageUploader({
   images,
   onChange,
+  onImageKeysChange,
   disabled = false,
 }: ProductImageUploaderProps) {
   const showToast = useAppStore((s) => s.showToast)
@@ -37,6 +92,17 @@ export default function ProductImageUploader({
   const [imageUrlInput, setImageUrlInput] = useState('')
   const [uploading, setUploading] = useState(false)
   const [pending, setPending] = useState<PendingCrop | null>(null)
+  const [showPresets, setShowPresets] = useState(false)
+
+  function applyPreset(preset: typeof PRODUCT_IMAGE_PRESETS[number]) {
+    if (disabled || uploading) return
+    if (images.length >= MAX_IMAGES) {
+      showToast(`最多上传 ${MAX_IMAGES} 张图片`, 'error')
+      return
+    }
+    onChange((prev) => (prev.length >= MAX_IMAGES ? prev : [...prev, preset.url]))
+    showToast(`已选用预设：${preset.label}`)
+  }
 
   function revokePending(p: PendingCrop | null = pending) {
     if (p?.revokeUrl) URL.revokeObjectURL(p.revokeUrl)
@@ -75,12 +141,12 @@ export default function ProductImageUploader({
     openFileCrop(first, rest, images.length === 0)
   }
 
-  async function uploadBlob(blob: Blob): Promise<string | null> {
+  async function uploadBlob(blob: Blob): Promise<{ url: string; key: string } | null> {
     const file = new File([blob], `product-${Date.now()}.jpg`, { type: blob.type || 'image/jpeg' })
     setUploading(true)
     try {
       const result = await uploadImage(file)
-      return result.url
+      return { url: result.url, key: result.key }
     } catch (err) {
       const msg =
         err instanceof UploadError
@@ -94,29 +160,37 @@ export default function ProductImageUploader({
     }
   }
 
+  function trackUploadedKey(url: string, objectKey: string, removedUrl?: string) {
+    onImageKeysChange?.((prev) => rememberImageKey(prev, url, objectKey, removedUrl))
+  }
+
   async function handleCropConfirm(blob: Blob) {
     const current = pending
     const queue = current?.queue ?? []
     const replaceIdx = current?.replaceAsCoverFromIndex
-    const url = await uploadBlob(blob)
+    const uploaded = await uploadBlob(blob)
     revokePending(current)
     setPending(null)
     if (fileInputRef.current) fileInputRef.current.value = ''
-    if (!url) {
+    if (!uploaded) {
       if (queue.length > 0) showToast('上传失败，后续文件已取消', 'error')
       return
     }
+    const { url, key } = uploaded
 
     if (typeof replaceIdx === 'number') {
+      const replacedUrl = images[replaceIdx]
       onChange((prev) => {
         const next = prev.filter((_, i) => i !== replaceIdx)
         return [url, ...next].slice(0, MAX_IMAGES)
       })
+      trackUploadedKey(url, key, replacedUrl)
       showToast('封面已更新（1:1）')
       return
     }
 
     onChange((prev) => (prev.length >= MAX_IMAGES ? prev : [...prev, url]))
+    trackUploadedKey(url, key)
     showToast('图片上传成功')
 
     if (queue.length > 0) {
@@ -152,7 +226,10 @@ export default function ProductImageUploader({
   }
 
   function removeImage(index: number) {
+    const removedUrl = images[index]
+    const remaining = images.filter((_, i) => i !== index)
     onChange((prev) => prev.filter((_, i) => i !== index))
+    onImageKeysChange?.((keys) => dropUnusedImageKey(keys, removedUrl, remaining))
   }
 
   function setAsCover(index: number) {
@@ -242,6 +319,20 @@ export default function ProductImageUploader({
             </>
           )}
         </button>
+        <button
+          type="button"
+          onClick={() => setShowPresets((v) => !v)}
+          disabled={busy || images.length >= MAX_IMAGES}
+          className={`btn-secondary px-3 py-2 text-sm whitespace-nowrap flex items-center gap-1.5 cursor-pointer ${
+            showPresets
+              ? 'border-[var(--color-primary)] text-[var(--color-primary)] bg-[var(--color-primary-tint)] font-bold'
+              : ''
+          }`}
+          data-testid="product-image-presets-toggle"
+          title="选择官方推荐的 4:3 概念背景素材"
+        >
+          <Sparkles className="w-4 h-4 text-[var(--color-primary)]" /> 推荐预设
+        </button>
         <input
           ref={fileInputRef}
           type="file"
@@ -251,6 +342,46 @@ export default function ProductImageUploader({
           onChange={(e) => handleFilesSelected(e.target.files)}
         />
       </div>
+
+      {showPresets && (
+        <div
+          className="mt-3 p-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] space-y-2.5"
+          data-testid="product-image-presets-panel"
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-[var(--color-text)] flex items-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5 text-[var(--color-primary)]" />
+              推荐视觉预设（点击直接选用为商品图片）
+            </span>
+            <span className="text-[10px] text-[var(--color-text-muted)] font-mono">
+              4:3 WebP · &lt;150KB
+            </span>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+            {PRODUCT_IMAGE_PRESETS.map((preset) => (
+              <button
+                key={preset.id}
+                type="button"
+                onClick={() => applyPreset(preset)}
+                disabled={busy || images.length >= MAX_IMAGES}
+                className="group p-1.5 rounded-xl border border-[var(--color-border)] bg-[var(--color-background)] hover:border-[var(--color-primary)] transition-all text-left flex flex-col cursor-pointer focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]"
+                data-testid={`product-preset-${preset.id}`}
+              >
+                <div className="aspect-[4/3] w-full rounded-lg overflow-hidden relative bg-[var(--color-surface)] mb-1.5 border border-[var(--color-border)]">
+                  <img
+                    src={preset.url}
+                    alt={preset.label}
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+                    loading="lazy"
+                  />
+                </div>
+                <div className="font-bold text-xs text-[var(--color-text)] truncate">{preset.label}</div>
+                <div className="text-[10px] text-[var(--color-text-muted)] truncate">{preset.description}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {images.length > 0 && (
         <div className="mt-3 grid grid-cols-3 gap-3" data-testid="product-images-list">

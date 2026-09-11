@@ -13,20 +13,29 @@ import { getApiErrorCode } from './error'
 import type { DeliveryMode, StockMode } from '../types/merchant'
 import {
   CATALOG_ERROR_CODES,
+  EMPTY_PRODUCT_DETAILS,
   READINESS_DETAIL_CODES,
+  TEMPLATE_KEYS,
   type AvailabilityOffer,
   type CapacityAdjustRequest,
   type CatalogDraftProduct,
+  type CatalogProductStatus,
   type CategoryRegistryItem,
   type DraftOfferInput,
   type DraftProductCreateRequest,
   type OfferAvailabilityAction,
+  type PlatformMediaRef,
+  type ProductDetails,
+  type ProductVisibility,
   type PublicationReadiness,
   type PublishActionResult,
   type ReadinessDetailCode,
   type ReadinessIssue,
+  type TemplateAttributes,
+  type TemplateKey,
   type VoidInventoryRequest,
   type VoidInventoryResponse,
+  type ProductTemplateRegistryDto,
 } from '../types/catalog'
 
 /* ------------------------------------------------------------------ *
@@ -36,6 +45,7 @@ import {
 export interface CatalogTransport {
   get<T>(url: string, params?: Record<string, unknown>): Promise<T>
   post<T>(url: string, body?: unknown): Promise<T>
+  patch?<T>(url: string, body?: unknown): Promise<T>
 }
 
 /** Production transport: shared axios client (baseURL `/api`). */
@@ -48,6 +58,10 @@ const defaultTransport: CatalogTransport = {
     const { data } = await api.post(url, body)
     return data
   },
+  async patch(url, body) {
+    const { data } = await api.patch(url, body)
+    return data
+  },
 }
 
 /* ------------------------------------------------------------------ *
@@ -55,10 +69,22 @@ const defaultTransport: CatalogTransport = {
  * ------------------------------------------------------------------ */
 
 export interface CatalogAdapter {
+  /** Frozen product-template registry (SPEC-PRODUCT-COMMERCE-002 §4.1). */
+  listProductTemplates(): Promise<ProductTemplateRegistryDto>
   /** Active category registry items (spec §7.1 — only active categories). */
   listActiveCategories(): Promise<CategoryRegistryItem[]>
   /** Create a draft Product + Offers; never carries secret inventory (spec §6.2). */
   createDraftProduct(payload: DraftProductCreateRequest): Promise<CatalogDraftProduct>
+  /** Templated editorVersion:2 create (SPEC-PRODUCT-COMMERCE-002 §9.1). */
+  createProductV2(payload: CreateProductV2Request): Promise<CreateProductV2Result>
+  /** Authenticated editor DTO (SPEC-PRODUCT-COMMERCE-002 §9.2). Merchant ownership miss is 404. */
+  getEditor(actor: ProductEditorActor, productId: number): Promise<ProductEditorDto>
+  /** Content PATCH with contentVersion CAS (SPEC-PRODUCT-COMMERCE-002 §9.2). */
+  patchContent(
+    actor: ProductEditorActor,
+    productId: number,
+    payload: PatchProductContentRequest,
+  ): Promise<PatchProductContentResult>
   /** Reload server-assigned Offer ids after draft creation; local ids are never synthesized. */
   listProductOffers(productId: number): Promise<AvailabilityOffer[]>
   /** Authoritative publish readiness (spec §6.1). */
@@ -75,12 +101,53 @@ export interface CatalogAdapter {
 
 export function createCatalogAdapter(transport: CatalogTransport = defaultTransport): CatalogAdapter {
   return {
+    async listProductTemplates() {
+      const data = await transport.get<ProductTemplateRegistryDto>('/product-templates')
+      return {
+        registryVersion: 1,
+        templates: data.templates.map(template => ({
+          key: template.key,
+          version: template.version,
+          label: template.label,
+          productSchema: template.productSchema,
+          offerSchema: template.offerSchema,
+          ui: {
+            productOrder: template.ui.productOrder,
+            offerOrder: template.ui.offerOrder,
+            widgets: template.ui.widgets,
+            ...(template.ui.enumLabels ? { enumLabels: template.ui.enumLabels } : {}),
+          },
+          fulfillmentRules: template.fulfillmentRules.map(rule => ({
+            whenProductAttributes: rule.whenProductAttributes,
+            configurations: rule.configurations,
+            requireStructuredDelivery: rule.requireStructuredDelivery,
+            requireRequiredDateField: rule.requireRequiredDateField,
+          })),
+        })),
+      }
+    },
     async listActiveCategories() {
       const data = await transport.get<{ productCategories?: CategoryRegistryItem[] }>('/config/registry')
       return data.productCategories ?? []
     },
     async createDraftProduct(payload) {
       return transport.post<CatalogDraftProduct>('/merchant/products', payload)
+    },
+    async createProductV2(payload) {
+      return transport.post<CreateProductV2Result>('/merchant/products', payload)
+    },
+    async getEditor(actor, productId) {
+      return transport.get<ProductEditorDto>(`${actorBasePath(actor)}/products/${productId}/editor`)
+    },
+    async patchContent(actor, productId, payload) {
+      const patch = transport.patch
+      if (!patch) {
+        throw new Error('catalog transport does not support PATCH')
+      }
+      return patch<PatchProductContentResult>(
+        `${actorBasePath(actor)}/products/${productId}/content`,
+        buildPatchProductContentRequest(payload),
+      )
     },
     async listProductOffers(productId) {
       return transport.get<AvailabilityOffer[]>(`/merchant/products/${productId}/offers`)
@@ -216,6 +283,449 @@ export function buildDraftProductRequest(input: DraftProductInput): DraftProduct
 }
 
 /* ------------------------------------------------------------------ *
+ * editorVersion: 2 create — templated DTO (SPEC-PRODUCT-COMMERCE-002 §9.1)
+ * ------------------------------------------------------------------ */
+
+export type CreateProductV2OfferRequest = {
+  name: string
+  price: number
+  originalPrice: number | null
+  attributes: TemplateAttributes
+  deliveryMode: DeliveryMode
+  stockMode: StockMode
+  validityDays: number | null
+  fixedContentType: 'text' | 'url' | 'file'
+  fixedContent: string | null
+  fixedFileId: number | null
+  fixedStructuredContent: unknown | null
+  deliveryFields: unknown | null
+  autoProvision: boolean
+}
+
+export type DescriptionImageWriteRef = {
+  src: string
+  ref: PlatformMediaRef
+}
+
+export type CreateProductV2Request = {
+  editorVersion: 2
+  templateKey: TemplateKey
+  templateVersion: 1
+  name: string
+  categoryId: number
+  description: string
+  richDescription: string | null
+  descriptionImages: DescriptionImageWriteRef[]
+  images: PlatformMediaRef[]
+  visibility: ProductVisibility
+  attributes: TemplateAttributes
+  details: ProductDetails
+  purchaseForm: unknown[]
+  offers: CreateProductV2OfferRequest[]
+}
+
+export type CreateProductV2Result = {
+  id: number
+  status: CatalogProductStatus
+  contentVersion: number
+  offers: Array<{ id: number; name: string; isDefault: boolean }>
+  nextStep: 'availability'
+}
+
+export type ProductEditorActor = 'merchant' | 'admin'
+
+export type ProductEditorImage = {
+  url: string
+  ref: PlatformMediaRef | null
+}
+
+export type ProductEditorCapabilities = {
+  editContent: boolean
+  manageOffers: boolean
+  manageAvailability: boolean
+  manageAssurance: boolean
+  applyAssurance: boolean
+  adoptSourceDescription: boolean
+}
+
+export type ProductEditorSourceDescription = {
+  checkedAt: string | null
+  changedSinceAccepted: boolean | null
+  hasAcceptedVersion: boolean
+} | null
+
+export type ProductEditorPublicationIssue = {
+  code: string
+  message: string
+  path?: string
+}
+
+export type ProductEditorOffer = {
+  id: number
+  name: string
+  price: number
+  originalPrice: number | null
+  status: string
+  sortOrder: number
+  isDefault: boolean
+  deliveryMode: DeliveryMode
+  stockMode: StockMode
+  stock: number
+  validityDays: number | null
+  fixedContentType: string | null
+  fixedFileId: number | null
+  deliveryFields: unknown
+  autoProvision: boolean
+  attributes: TemplateAttributes
+  checkoutVersion?: string
+  fixedContent?: string | null
+  fixedStructuredContent?: unknown
+}
+
+export type ProductEditorProduct = {
+  id: number
+  status: CatalogProductStatus
+  merchantId: number | null
+  contentVersion: number
+  templateKey: TemplateKey | null
+  templateVersion: number | null
+  name: string
+  categoryId: number | null
+  description: string | null
+  richDescription: string | null
+  descriptionImages: DescriptionImageWriteRef[]
+  images: ProductEditorImage[]
+  visibility: ProductVisibility
+  attributes: TemplateAttributes
+  details: ProductDetails
+  purchaseForm: unknown[]
+}
+
+export type ProductEditorDto = {
+  product: ProductEditorProduct
+  offers: ProductEditorOffer[]
+  capabilities: ProductEditorCapabilities
+  sourceDescription: ProductEditorSourceDescription
+  publicationIssues: ProductEditorPublicationIssue[]
+}
+
+export type PatchProductContentRequest = {
+  expectedContentVersion: number
+  name?: string
+  categoryId?: number
+  description?: string
+  richDescription?: string | null
+  descriptionImages?: DescriptionImageWriteRef[]
+  images?: PlatformMediaRef[]
+  visibility?: ProductVisibility
+  attributes?: TemplateAttributes
+  details?: ProductDetails
+  purchaseForm?: unknown[]
+  /** Legacy products may assign a template once; already-set keys must not be sent to change. */
+  templateKey?: TemplateKey
+  templateVersion?: 1
+}
+
+export type PatchProductContentResult = {
+  id: number
+  contentVersion: number
+  updatedFields: string[]
+}
+
+function actorBasePath(actor: ProductEditorActor): '/merchant' | '/admin' {
+  return actor === 'admin' ? '/admin' : '/merchant'
+}
+
+export type CreateProductV2OfferInput = {
+  name: string
+  price: number
+  originalPrice?: number | null
+  attributes?: TemplateAttributes
+  deliveryMode: DeliveryMode
+  stockMode: StockMode
+  validityDays?: number | null
+  fixedContent?: string | null
+  fixedContentType?: 'text' | 'url' | 'file'
+  autoProvision?: boolean
+  fixedFileId?: number | null
+  fixedStructuredContent?: unknown | null
+  deliveryFields?: unknown | null
+  [key: string]: unknown
+}
+
+/**
+ * Form-level input for `buildCreateProductV2Request`. Forbidden keys (type,
+ * isHot, stock, inventoryItems, content) are accepted so they can be stripped.
+ */
+export type CreateProductV2Input = {
+  templateKey: TemplateKey
+  name: string
+  categoryId: number
+  description?: string
+  richDescription?: string | null
+  images?: string[]
+  /** Display URL → upload objectKey from `/uploads/image` `{key,url}`. */
+  imageKeys?: Record<string, string>
+  descriptionImages?: DescriptionImageWriteRef[]
+  visibility?: ProductVisibility
+  attributes?: TemplateAttributes
+  details?: ProductDetails
+  purchaseForm?: unknown[]
+  offers: CreateProductV2OfferInput[]
+  type?: string
+  isHot?: boolean
+  stock?: number
+  [key: string]: unknown
+}
+
+/**
+ * Map a ProductImageUploader URL/path to a write-side PlatformMediaRef.
+ * `objectKey` comes from a successful upload (`{key,url}`) — never invent one
+ * from an http(s) display URL.
+ */
+export function mapProductImageToMediaRef(image: string, objectKey?: string): PlatformMediaRef | null {
+  const key = objectKey?.trim()
+  if (key) return { kind: 'upload', objectKey: key }
+  const trimmed = image.trim()
+  if (trimmed.startsWith('/assets/')) {
+    return { kind: 'static', path: trimmed as `/assets/${string}` }
+  }
+  return null
+}
+
+export function mapProductImagesToMediaRefs(
+  images: string[],
+  keys?: Record<string, string>,
+): PlatformMediaRef[] {
+  const refs: PlatformMediaRef[] = []
+  for (const image of images) {
+    const ref = mapProductImageToMediaRef(image, keys?.[image])
+    if (ref) refs.push(ref)
+  }
+  return refs
+}
+
+/**
+ * Map a rich-text insert (`{src, objectKey}` from the upload API) to a write ref.
+ */
+export function mapInsertedEditorImageToWriteRef(
+  inserted: { src: string; objectKey: string },
+): DescriptionImageWriteRef | null {
+  const src = inserted.src.trim()
+  const objectKey = inserted.objectKey.trim()
+  if (!src || !objectKey) return null
+  return { src, ref: { kind: 'upload', objectKey } }
+}
+
+function sanitizeDescriptionImages(value: unknown): DescriptionImageWriteRef[] {
+  if (!Array.isArray(value)) return []
+  const out: DescriptionImageWriteRef[] = []
+  for (const item of value) {
+    if (!item || typeof item !== 'object') continue
+    const record = item as { src?: unknown; ref?: PlatformMediaRef | null }
+    const src = typeof record.src === 'string' ? record.src.trim() : ''
+    if (!src || !record.ref) continue
+    if (record.ref.kind === 'upload') {
+      const objectKey = record.ref.objectKey.trim()
+      if (!objectKey) continue
+      out.push({ src, ref: { kind: 'upload', objectKey } })
+    } else if (record.ref.kind === 'static' && record.ref.path.startsWith('/assets/')) {
+      out.push({ src, ref: { kind: 'static', path: record.ref.path } })
+    }
+  }
+  return out.slice(0, 12)
+}
+
+/**
+ * Map editor gallery items to write-side refs.
+ *
+ * GET `ref` is authoritative. A tracked upload objectKey becomes an upload ref.
+ * `/assets/...` display paths become static refs.
+ * http(s) display URLs without a ref or key cannot be invented as upload keys —
+ * return `undefined` so the caller omits `images` instead of sending a partial replace.
+ * An empty gallery is a complete representation and returns `[]`.
+ */
+export function mapEditorImagesToWriteRefs(
+  images: Array<{ url: string; ref?: PlatformMediaRef | null }>,
+  keys?: Record<string, string>,
+): PlatformMediaRef[] | undefined {
+  const refs: PlatformMediaRef[] = []
+  for (const image of images) {
+    if (image.ref && (image.ref.kind === 'upload' || image.ref.kind === 'static')) {
+      refs.push(image.ref)
+      continue
+    }
+    const mapped = mapProductImageToMediaRef(image.url, keys?.[image.url])
+    if (!mapped) return undefined
+    refs.push(mapped)
+  }
+  return refs
+}
+
+/**
+ * Whitelist the content PATCH body. Offers, editorVersion, commercial fields,
+ * secret inventory and unknown keys never reach the wire.
+ */
+export function buildPatchProductContentRequest(input: PatchProductContentRequest): PatchProductContentRequest {
+  const payload: PatchProductContentRequest = {
+    expectedContentVersion: input.expectedContentVersion,
+  }
+  if (typeof input.name === 'string') payload.name = input.name
+  if (typeof input.categoryId === 'number') payload.categoryId = input.categoryId
+  if (typeof input.description === 'string') payload.description = input.description
+  if (input.richDescription === null || typeof input.richDescription === 'string') {
+    payload.richDescription = input.richDescription === '' ? null : input.richDescription
+  }
+  if (Array.isArray(input.descriptionImages)) payload.descriptionImages = sanitizeDescriptionImages(input.descriptionImages)
+  if (Array.isArray(input.images)) payload.images = input.images
+  if (input.visibility === 'public' || input.visibility === 'members_only') {
+    payload.visibility = input.visibility
+  }
+  if (input.attributes) payload.attributes = sanitizeTemplateAttributes(input.attributes)
+  if (input.details) payload.details = sanitizeProductDetails(input.details)
+  if (Array.isArray(input.purchaseForm)) payload.purchaseForm = input.purchaseForm
+  if (isTemplateKey(input.templateKey)) payload.templateKey = input.templateKey
+  if (input.templateVersion === 1) payload.templateVersion = 1
+  return payload
+}
+
+function sanitizeTemplateAttributes(value: unknown): TemplateAttributes {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  const out: TemplateAttributes = {}
+  for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof raw === 'string' || typeof raw === 'number' || typeof raw === 'boolean') {
+      out[key] = raw
+    } else if (Array.isArray(raw) && raw.every((item): item is string => typeof item === 'string')) {
+      out[key] = raw
+    }
+  }
+  return out
+}
+
+function sanitizeProductDetails(value: unknown): ProductDetails {
+  const source = value && typeof value === 'object' ? value as Partial<ProductDetails> : {}
+  return {
+    highlights: Array.isArray(source.highlights)
+      ? source.highlights.filter((item): item is string => typeof item === 'string' && item.length > 0).slice(0, 4)
+      : [],
+    usageInstructions: typeof source.usageInstructions === 'string' ? source.usageInstructions : '',
+    purchaseNotes: typeof source.purchaseNotes === 'string' ? source.purchaseNotes : '',
+    afterSalesInstructions: typeof source.afterSalesInstructions === 'string' ? source.afterSalesInstructions : '',
+    faq: Array.isArray(source.faq)
+      ? source.faq
+        .filter((item): item is { question: string; answer: string } => (
+          Boolean(item)
+          && typeof item.question === 'string'
+          && typeof item.answer === 'string'
+          && item.question.trim() !== ''
+          && item.answer.trim() !== ''
+        ))
+        .slice(0, 8)
+        .map(item => ({ question: item.question, answer: item.answer }))
+      : [],
+  }
+}
+
+function isTemplateKey(value: unknown): value is TemplateKey {
+  return typeof value === 'string' && (TEMPLATE_KEYS as readonly string[]).includes(value)
+}
+
+function sanitizeFixedFileId(value: unknown): number | null {
+  return typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : null
+}
+
+function sanitizeDeliveryFields(value: unknown): unknown | null {
+  if (!Array.isArray(value)) return null
+  const fields: Array<{ key: string; label: string; sensitive: boolean; placeholder?: string }> = []
+  for (const item of value) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) continue
+    const record = item as Record<string, unknown>
+    if (typeof record.key !== 'string' || typeof record.label !== 'string') continue
+    const field: { key: string; label: string; sensitive: boolean; placeholder?: string } = {
+      key: record.key,
+      label: record.label,
+      sensitive: record.sensitive === true,
+    }
+    if (typeof record.placeholder === 'string' && record.placeholder.trim() !== '') {
+      field.placeholder = record.placeholder.trim()
+    }
+    fields.push(field)
+  }
+  return fields.length > 0 ? fields : null
+}
+
+function sanitizeFixedStructuredContent(value: unknown): unknown | null {
+  if (value == null || typeof value !== 'object' || Array.isArray(value)) return null
+  return value
+}
+
+function sanitizeV2Offer(offer: CreateProductV2OfferInput): CreateProductV2OfferRequest {
+  const deliveryMode = offer.deliveryMode
+  const stockMode: StockMode = deliveryMode === 'instant_inventory' ? 'limited' : offer.stockMode
+  const fixedContentType = offer.fixedContentType === 'url' || offer.fixedContentType === 'file'
+    ? offer.fixedContentType
+    : 'text'
+  const rawContent = typeof offer.fixedContent === 'string' ? offer.fixedContent.trim() : ''
+  const usesFixedText = deliveryMode === 'instant_fixed' && (fixedContentType === 'text' || fixedContentType === 'url')
+  const fixedStructuredContent = sanitizeFixedStructuredContent(offer.fixedStructuredContent)
+  return {
+    name: offer.name,
+    price: offer.price,
+    originalPrice: typeof offer.originalPrice === 'number' || offer.originalPrice === null
+      ? offer.originalPrice
+      : null,
+    attributes: sanitizeTemplateAttributes(offer.attributes),
+    deliveryMode,
+    stockMode,
+    validityDays: typeof offer.validityDays === 'number' || offer.validityDays === null
+      ? offer.validityDays
+      : null,
+    fixedContentType,
+    // Structured fixed content and plain fixedContent are mutually exclusive on create.
+    fixedContent: fixedStructuredContent == null && usesFixedText && rawContent !== '' ? rawContent : null,
+    fixedFileId: sanitizeFixedFileId(offer.fixedFileId),
+    fixedStructuredContent,
+    deliveryFields: sanitizeDeliveryFields(offer.deliveryFields),
+    autoProvision: offer.autoProvision === true,
+  }
+}
+
+/**
+ * Build the editorVersion:2 create body. Secret inventory, isHot, stock,
+ * legacy type, and unknown keys never reach the wire.
+ */
+export function buildCreateProductV2Request(input: CreateProductV2Input): CreateProductV2Request {
+  if (typeof input.type === 'string' && input.type.trim() !== '') {
+    throw new TypeError(
+      `${CATALOG_ERROR_CODES.LEGACY_TYPE_WITH_CATEGORY_ID}: v2 create must not carry a legacy type; use categoryId`,
+    )
+  }
+  if (!Array.isArray(input.offers) || input.offers.length === 0) {
+    throw new TypeError('v2 create requires at least one offer')
+  }
+
+  const rich = typeof input.richDescription === 'string' ? input.richDescription.trim() : ''
+  return {
+    editorVersion: 2,
+    templateKey: input.templateKey,
+    templateVersion: 1,
+    name: input.name,
+    categoryId: input.categoryId,
+    description: typeof input.description === 'string' ? input.description : '',
+    richDescription: rich === '' ? null : input.richDescription as string,
+    descriptionImages: sanitizeDescriptionImages(input.descriptionImages),
+    images: Array.isArray(input.images)
+      ? mapProductImagesToMediaRefs(input.images.map(String), input.imageKeys)
+      : [],
+    visibility: input.visibility === 'public' ? 'public' : 'members_only',
+    attributes: sanitizeTemplateAttributes(input.attributes),
+    details: input.details ? sanitizeProductDetails(input.details) : { ...EMPTY_PRODUCT_DETAILS },
+    purchaseForm: Array.isArray(input.purchaseForm) ? input.purchaseForm : [],
+    offers: input.offers.map(sanitizeV2Offer),
+  }
+}
+
+/* ------------------------------------------------------------------ *
  * Readiness error → stable issues (spec §6.1).
  * ------------------------------------------------------------------ */
 
@@ -276,6 +786,14 @@ export function getReadinessIssueMessage(
       return offerName ? `“${offerName}”当前不可售` : '有规格当前不可售'
     case READINESS_DETAIL_CODES.EXTERNAL_IDENTITY_INVALID:
       return 'XBoard 连接或套餐规格当前不可用，请检查平台连接配置'
+    case READINESS_DETAIL_CODES.TEMPLATE_FIELDS_REQUIRED:
+      return '请先补齐所选商品形态的必填参数'
+    case READINESS_DETAIL_CODES.PURCHASE_NOTES_REQUIRED:
+      return '发布前需要填写购买须知'
+    case READINESS_DETAIL_CODES.AFTER_SALES_REQUIRED:
+      return '发布前需要填写售后说明'
+    case READINESS_DETAIL_CODES.FULFILLMENT_CONFIG_INVALID:
+      return '当前套餐履约配置与商品形态不匹配'
     default:
       return '发布条件尚未全部满足'
   }

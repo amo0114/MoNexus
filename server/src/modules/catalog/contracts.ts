@@ -69,3 +69,19 @@ export interface LegacyProductTypeCompat {
   label: string
   deprecated: true
 }
+
+export type {
+  AttributeFieldError,
+  FulfillmentConfiguration,
+  FulfillmentRule,
+  FulfillmentStrategy,
+  ProductDetails,
+  ProductTemplateDefinition,
+  ProductTemplateRegistryDto,
+  ProductTemplateUi,
+  TemplateAttributes,
+  TemplateKey,
+  TemplateWidget,
+} from './templates/types.js'
+
+export { EMPTY_PRODUCT_DETAILS, TEMPLATE_KEYS, TEMPLATE_WIDGETS } from './templates/types.js'

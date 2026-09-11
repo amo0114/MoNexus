@@ -268,6 +268,14 @@ const envSchema = z.object({
   // Defaults to FRONTEND_ORIGIN if not set explicitly.
   APP_BASE_URL: optionalUrlEnvSchema,
 
+  // --- Product share short links (SPEC-PRODUCT-COMMERCE-002 §6.6).
+  // All optional: missing SHORTLINK_API_BASE_URL means sharing is disabled.
+  SHORTLINK_API_BASE_URL: optionalUrlEnvSchema,
+  SHORTLINK_PUBLIC_ORIGIN: optionalUrlEnvSchema,
+  SHORTLINK_USERNAME: optionalStringEnvSchema,
+  SHORTLINK_PASSWORD: optionalStringEnvSchema,
+  SHORTLINK_GROUP_ID: optionalStringEnvSchema,
+
   // --- Observability. SENTRY_DSN is optional so local/dev/test runs stay quiet.
   SENTRY_DSN: optionalUrlEnvSchema,
   LOG_LEVEL: logLevelEnvSchema,
@@ -799,6 +807,50 @@ if (env.NODE_ENV === 'production') {
 
 const fakaBridgeEnabled = Boolean(fakaUrl && fakaSecret)
 
+/**
+ * HTTPS origin only: no path, query, hash, or userinfo.
+ * Used for SHORTLINK_API_BASE_URL / SHORTLINK_PUBLIC_ORIGIN.
+ */
+function parseHttpsOriginEnv(raw: string | undefined, label: string): string | undefined {
+  if (!raw) return undefined
+  try {
+    const parsed = new URL(raw)
+    if (
+      parsed.protocol !== 'https:'
+      || parsed.username
+      || parsed.password
+      || parsed.search
+      || parsed.hash
+      || (parsed.pathname !== '/' && parsed.pathname !== '')
+    ) {
+      console.error(`[Config] ${label} must be an https origin without path, query, hash, or userinfo`)
+      process.exit(1)
+    }
+    return parsed.origin
+  } catch {
+    console.error(`[Config] ${label} is not a valid URL`)
+    process.exit(1)
+  }
+}
+
+const shortlinkApiBaseUrl = parseHttpsOriginEnv(env.SHORTLINK_API_BASE_URL, 'SHORTLINK_API_BASE_URL')
+const shortlinkPublicOrigin = parseHttpsOriginEnv(env.SHORTLINK_PUBLIC_ORIGIN, 'SHORTLINK_PUBLIC_ORIGIN')
+const shortlinkUsername = env.SHORTLINK_USERNAME
+const shortlinkPassword = env.SHORTLINK_PASSWORD
+const shortlinkGroupId = env.SHORTLINK_GROUP_ID
+const shortlinkAny = Boolean(
+  shortlinkApiBaseUrl || shortlinkPublicOrigin || shortlinkUsername || shortlinkPassword || shortlinkGroupId,
+)
+const shortlinkEnabled = Boolean(
+  shortlinkApiBaseUrl && shortlinkPublicOrigin && shortlinkUsername && shortlinkPassword && shortlinkGroupId,
+)
+if (shortlinkAny && !shortlinkEnabled) {
+  console.error(
+    '[Config] SHORTLINK_API_BASE_URL, SHORTLINK_PUBLIC_ORIGIN, SHORTLINK_USERNAME, SHORTLINK_PASSWORD, and SHORTLINK_GROUP_ID must all be set or all be unset',
+  )
+  process.exit(1)
+}
+
 export const config = {
   nodeEnv: env.NODE_ENV,
   isProduction: env.NODE_ENV === 'production',
@@ -883,6 +935,23 @@ export const config = {
     allowedHostnames: turnstileAllowedHostnames ?? [],
   },
   appBaseUrl: env.APP_BASE_URL ?? env.FRONTEND_ORIGIN,
+  shortlink: shortlinkEnabled
+    ? {
+        enabled: true as const,
+        apiBaseUrl: shortlinkApiBaseUrl!,
+        publicOrigin: shortlinkPublicOrigin!,
+        username: shortlinkUsername!,
+        password: shortlinkPassword!,
+        groupId: shortlinkGroupId!,
+      }
+    : {
+        enabled: false as const,
+        apiBaseUrl: undefined,
+        publicOrigin: undefined,
+        username: undefined,
+        password: undefined,
+        groupId: undefined,
+      },
   sentryDsn: env.SENTRY_DSN,
   logLevel: env.LOG_LEVEL,
   metricsToken: env.METRICS_TOKEN,

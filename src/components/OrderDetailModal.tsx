@@ -1,6 +1,5 @@
-import { useState } from 'react'
-import { formatBookingDay } from '../utils/formatLocalDate'
-import { Copy, Package, Store, Clock, Coins, Info, Loader2, RefreshCw } from 'lucide-react'
+import { useState, useRef, useEffect } from 'react'
+import { Copy, Check, Package, Store, Clock, Coins, Info, Loader2, RefreshCw } from 'lucide-react'
 import { UserOrderDetail } from '../types/order'
 import { useAppStore } from '../stores/appStore'
 import { useAuthStore } from '../stores/authStore'
@@ -8,8 +7,7 @@ import { disputeOrder, closeOrder, createOrder, renewOrder, type RenewPrecheck }
 import { getApiErrorCode, getApiErrorMessage } from '../api/error'
 import { OwnReview } from '../api/reviews'
 import RegistryPill from './ui/RegistryPill'
-import StructuredDeliveryView from './StructuredDeliveryView'
-import FileDeliveryCard from './FileDeliveryCard'
+import DeliveryContent from './DeliveryContent'
 import SafeImage from './ui/SafeImage'
 import StarRating from './ui/StarRating'
 import ReviewDialog from './ReviewDialog'
@@ -18,6 +16,7 @@ import SuccessModal from './SuccessModal'
 import type { CheckoutPreview } from '../api/orders'
 import type { StructuredDeliveryContent } from '../types/merchant'
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from './ui/Dialog'
+import { copyToClipboard } from '../utils/clipboard'
 
 interface OrderDetailModalProps {
   order: UserOrderDetail
@@ -58,13 +57,6 @@ const ACCEPTANCE_ACTION_COPY: Record<OrderAction, { title: string; description: 
   },
 }
 
-/** P6a：到期时刻按「YYYY-MM-DD HH:mm」展示。 */
-function formatExpiry(iso: string) {
-  const d = new Date(iso)
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
-}
-
 export default function OrderDetailModal({ order: initialOrder, onClose, onUpdated }: OrderDetailModalProps) {
   const showToast = useAppStore((s) => s.showToast)
   // The parent replaces this authoritative REST projection after realtime or
@@ -88,10 +80,27 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
     provisionPending: boolean
   } | null>(null)
 
-  function copyContent() {
-    if (!order.delivery?.content) return
-    navigator.clipboard.writeText(order.delivery.content).catch(() => {})
-    showToast('发货信息已复制')
+  const [copiedContent, setCopiedContent] = useState(false)
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current)
+    }
+  }, [])
+
+  async function copyContent() {
+    const textToCopy = order.delivery?.content?.trim()
+    if (!textToCopy) return
+    const success = await copyToClipboard(textToCopy)
+    if (success) {
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current)
+      setCopiedContent(true)
+      copyTimerRef.current = setTimeout(() => setCopiedContent(false), 2000)
+      showToast('发货信息已复制')
+    } else {
+      showToast('复制失败，请长按或手动选中文本复制', 'error')
+    }
   }
 
   async function executeAction(action: OrderAction) {
@@ -136,8 +145,9 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
 
   /**
    * P6a：续费下单。复用标准结算契约（expectedPrice / checkoutVersion /
-   * purchaseFormVersion / 幂等键），仅额外携带 renewalOfOrderId 关联原订单；
-   * 交付时服务端按原到期时间顺延或自交付起算。结果码处理与商品页购买一致。
+   * purchaseFormVersion / 内容版本 / 保障授予 / 幂等键），仅额外携带
+   * renewalOfOrderId 关联原订单；交付时服务端按原到期时间顺延或自交付起算。
+   * 结果码处理与商品页购买一致。
    */
   async function handleRenewConfirm(
     preview: CheckoutPreview,
@@ -156,6 +166,8 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
         formAnswers,
         expectedPurchaseFormVersion: preview.purchaseFormVersion,
         expectedCheckoutVersion: preview.checkoutVersion,
+        expectedProductContentVersion: preview.productContentVersion,
+        expectedAssuranceGrantId: preview.assuranceGrantId,
         verificationPassword: verificationPassword || undefined,
         renewalOfOrderId: order.id,
         // SPEC-LEGAL-001：续费同样是新订单；弹窗仅在用户勾选后回传版本。
@@ -225,9 +237,30 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
   const subscriptionExpiresAt = order.delivery?.expiresAt ?? null
   const subscriptionExpired = order.delivery?.expired === true
   const contentMasked = order.delivery?.contentMasked === true
-  const remainingDays = subscriptionExpiresAt
-    ? Math.max(0, Math.ceil((new Date(subscriptionExpiresAt).getTime() - Date.now()) / 86400000))
-    : 0
+  const isSubscription = Boolean(
+    order.product?.type?.includes('订阅') ||
+    order.product?.name?.includes('订阅')
+  )
+  const deliverySlice = {
+    content: contentMasked ? null : order.delivery?.content,
+    contentType: order.delivery?.contentType,
+    structuredContent: contentMasked ? null : order.delivery?.structuredContent,
+    file: order.delivery?.file ?? null,
+    expiresAt: subscriptionExpiresAt,
+    expired: subscriptionExpired,
+    contentMasked,
+    orderId: order.id,
+    orderStatus: order.status,
+    isSubscription,
+    provisionPending: Boolean(order.provisionPending),
+    progress: progressEvents,
+    bookingDate: order.bookingDate ?? null,
+    emptyLabel: contentMasked
+      ? null
+      : order.deliveryMode === 'manual_service'
+        ? '履约中 / 待商家发货'
+        : '暂无发货内容，请联系平台处理',
+  }
   const showHolding =
     typeof order.holdingPoints === 'number' &&
     order.holdingPoints > 0 &&
@@ -246,7 +279,7 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
             </span>
             {subscriptionExpired && (
               <span
-                className="text-xs font-bold text-[var(--color-danger)] bg-[var(--color-danger)]/10 px-2 py-0.5 rounded border border-[var(--color-danger)]/30"
+                className="text-xs font-bold text-[var(--color-danger-text)] bg-[var(--color-danger-bg)] px-2 py-0.5 rounded border border-[var(--color-danger-border)]"
                 data-testid="order-expired-badge"
               >
                 已过期
@@ -254,7 +287,7 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
             )}
             {order.provisionPending && (
               <span
-                className="text-xs font-bold text-[var(--color-primary)] bg-[var(--color-primary)]/10 px-2 py-0.5 rounded border border-[var(--color-primary)]/30"
+                className="text-xs font-bold text-[var(--color-primary)] bg-[var(--color-primary-tint)] px-2 py-0.5 rounded border border-[var(--color-primary-border-subtle)]"
                 data-testid="order-provision-pending-badge"
               >
                 自动开通中
@@ -279,12 +312,6 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
               )}
               <div className="flex flex-col gap-1">
                 <span className="font-bold text-[var(--color-text)] text-sm">{order.product.name}</span>
-                {/* P6c：预约单展示预约日期（date 表单答案的服务端投影） */}
-                {order.bookingDate && (
-                  <span className="text-xs text-[var(--color-primary)] font-medium" data-testid="order-booking-date">
-                    预约日期 {formatBookingDay(order.bookingDate)}
-                  </span>
-                )}
                 <div className="flex items-center gap-2 mt-1 flex-wrap">
                   {order.offerNameSnapshot && order.offerNameSnapshot !== '默认规格' && (
                     <span
@@ -296,7 +323,7 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
                   )}
                   <RegistryPill value={order.product.type} category="productTypes" />
                   {order.deliveryMode && <RegistryPill value={order.deliveryMode} category="deliveryModes" />}
-                  <span className="text-xs text-[var(--color-primary)] bg-[var(--color-primary)]/10 px-2 py-0.5 rounded border border-[var(--color-primary)]/20 font-medium inline-flex items-center gap-1">
+                  <span className="text-xs text-[var(--color-primary)] bg-[var(--color-primary-tint)] px-2 py-0.5 rounded border border-[var(--color-primary-border-subtle)] font-medium inline-flex items-center gap-1">
                     <Store className="w-3 h-3" />
                     {order.merchant?.name || '平台自营'}
                   </span>
@@ -354,69 +381,7 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
                 ? '开通结果'
                 : '发货内容'}
             </h3>
-            {/* P6a：订阅有效期展示（到期时刻/剩余天数；过期显示徽标） */}
-            {subscriptionExpiresAt && (
-              <div className="mb-3 text-xs flex items-center gap-2 flex-wrap" data-testid="subscription-expiry">
-                {subscriptionExpired ? (
-                  <>
-                    <span className="text-xs font-bold text-[var(--color-danger)] bg-[var(--color-danger)]/10 px-2 py-0.5 rounded border border-[var(--color-danger)]/30">
-                      已过期
-                    </span>
-                    <span className="text-[var(--color-text-muted)]">
-                      订阅已于 {formatExpiry(subscriptionExpiresAt)} 到期
-                    </span>
-                  </>
-                ) : (
-                  <span className="text-[var(--color-text-muted)]">
-                    订阅有效期至 {formatExpiry(subscriptionExpiresAt)}（剩余 {remainingDays} 天）
-                  </span>
-                )}
-              </div>
-            )}
-            {order.delivery?.file && (
-              /* P5：文件交付/交付附件——每次点击经发放端点取短时签名链接 */
-              <div className={order.delivery.content || order.delivery.structuredContent ? 'mb-3' : ''}>
-                <FileDeliveryCard orderId={order.id} fileName={order.delivery.file.fileName} size={order.delivery.file.size} />
-              </div>
-            )}
-            {contentMasked ? (
-              /* P6a：过期遮蔽——文本/结构化内容不再回显；续费生成新订单，本单遮蔽不恢复；文件卡片保留（下载由服务端拒绝） */
-              <div
-                className="bg-[var(--color-surface)] p-4 rounded border border-dashed border-[var(--color-border)] text-center text-xs text-[var(--color-text-muted)]"
-                data-testid="delivery-masked"
-              >
-                订阅已过期。续费将生成新订单，内容在新订单中查看
-              </div>
-            ) : order.delivery?.structuredContent && order.delivery.structuredContent.fields.length > 0 ? (
-              /* P4b：结构化交付按字段展示（逐字段复制、敏感默认遮蔽） */
-              <StructuredDeliveryView content={order.delivery.structuredContent} />
-            ) : order.delivery?.content ? (
-              order.delivery.contentType === 'url' ? (
-                <div className="bg-[var(--color-surface)] p-3 rounded border border-[var(--color-border)] text-xs leading-relaxed break-all">
-                  <a
-                    href={order.delivery.content}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-[var(--color-primary)] underline font-mono"
-                    data-testid="delivery-link"
-                  >
-                    {order.delivery.content}
-                  </a>
-                </div>
-              ) : (
-                <div className="bg-[var(--color-surface)] p-3 rounded border border-[var(--color-border)] font-mono text-xs text-[var(--color-text)] leading-relaxed break-all whitespace-pre-wrap select-all max-h-48 overflow-y-auto">
-                  {order.delivery.content}
-                </div>
-              )
-            ) : order.delivery?.file ? null : order.deliveryMode === 'manual_service' ? (
-              <div className="bg-[var(--color-surface)] p-4 rounded border border-dashed border-[var(--color-border)] text-center text-xs text-[var(--color-text-muted)]">
-                {order.provisionPending ? '自动开通中，请稍候…（若开通失败将自动转为人工交付）' : '履约中 / 待商家发货'}
-              </div>
-            ) : (
-              <div className="bg-[var(--color-surface)] p-4 rounded border border-dashed border-[var(--color-border)] text-center text-xs text-[var(--color-text-muted)]">
-                暂无发货内容，请联系平台处理
-              </div>
-            )}
+            <DeliveryContent {...deliverySlice} />
             {order.delivery?.publicNote && (
               <div className="mt-2 text-xs text-[var(--color-text-muted)]">
                 <span className="font-bold">附言：</span>{order.delivery.publicNote}
@@ -446,30 +411,6 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
                   )}
                 </>
               )}
-            </div>
-          )}
-
-          {/* P6b：履约动态——商家发布的进度说明，倒序（最新在前） */}
-          {progressEvents.length > 0 && (
-            <div className="bg-[var(--color-background)] rounded-lg p-5 border border-[var(--color-border)]">
-              <h3 className="font-heading text-sm font-bold text-[var(--color-text)] mb-3 flex items-center gap-2">
-                <Clock className="w-4 h-4 text-[var(--color-text-muted)]" /> 履约动态
-              </h3>
-              <div className="space-y-4" data-testid="order-progress-timeline">
-                {[...progressEvents].reverse().map((event, idx) => (
-                  <div key={event.id ?? idx} className="relative pl-4 border-l-2 border-[var(--color-border)]">
-                    <div className="absolute -left-1.5 top-0.5 w-2.5 h-2.5 rounded-full bg-[var(--color-primary)] ring-4 ring-[var(--color-background)]" />
-                    <div className="text-xs text-[var(--color-text-muted)]">
-                      {event.createdAt ? new Date(event.createdAt).toLocaleString() : ''}
-                    </div>
-                    {event.publicNote && (
-                      <div className="mt-1 text-xs text-[var(--color-text)] bg-[var(--color-surface)] p-2 rounded border border-[var(--color-border)]">
-                        {event.publicNote}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
             </div>
           )}
 
@@ -503,14 +444,25 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
           <button onClick={onClose} className="btn-secondary flex-1 px-0" data-testid="order-detail-close">
             关闭
           </button>
-          <button
-            onClick={copyContent}
-            disabled={!order.delivery?.content}
-            className="btn-primary flex-1 px-0"
-          >
-            <Copy className="w-4 h-4" />
-            复制内容
-          </button>
+          {Boolean(order.delivery?.content?.trim()) && !contentMasked && (
+            <button
+              onClick={copyContent}
+              className="btn-primary flex-1 px-0 flex items-center justify-center gap-1.5"
+              data-testid="order-detail-copy"
+            >
+              {copiedContent ? (
+                <>
+                  <Check className="w-4 h-4 text-[var(--color-on-primary)]" />
+                  已复制
+                </>
+              ) : (
+                <>
+                  <Copy className="w-4 h-4" />
+                  复制内容
+                </>
+              )}
+            </button>
+          )}
           {canDispute && (
             <button
               onClick={() => setConfirmAction('dispute')}
