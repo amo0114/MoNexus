@@ -13,6 +13,8 @@
     "dev": "tsx watch src/main.ts",
     "prebuild": "npm run check:runtime",
     "build": "tsc",
+    "postbuild": "npm run check:build",
+    "check:build": "node --input-type=module -e \"await import('./dist/modules/catalog/templates/registry.js')\"",
     "prestart": "npm run check:runtime",
     "start": "node dist/main.js",
     "db:generate": "prisma generate",
