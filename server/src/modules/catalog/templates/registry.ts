@@ -1,6 +1,4 @@
-import { readFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import frozenRegistry from './definitions.json' with { type: 'json' }
 import {
   FULFILLMENT_CONFIGURATIONS,
   STRUCTURED_DELIVERY_REQUIREMENTS,
@@ -16,10 +14,6 @@ import {
   type TemplateWidget,
 } from './types.js'
 import { compileTemplateValidators } from './validate.js'
-
-const frozenRegistry = JSON.parse(
-  readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'definitions.json'), 'utf8'),
-) as unknown
 
 export const PRODUCT_TEMPLATE_REGISTRY_VERSION = 1 as const
 
