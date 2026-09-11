@@ -543,7 +543,7 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
   const busy = saving || bindingOfferId != null || !canEdit
 
   return (
-    <div className="max-w-[1180px] mx-auto px-4 pb-16 fade-in" data-testid="product-edit-page">
+    <div className="max-w-[1180px] mx-auto px-4 pb-24 sm:pb-16 fade-in" data-testid="product-edit-page">
       <button
         type="button"
         onClick={handleBack}
@@ -894,10 +894,10 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
             data-testid="product-edit-description-image-input"
           />
 
-          <div className="flex justify-end">
+          <div className="flex justify-end scroll-mb-24">
             <button
               type="button"
-              className="btn-primary px-6 py-2.5 disabled:opacity-40"
+              className="btn-primary px-6 py-2.5 disabled:opacity-40 scroll-mb-24"
               onClick={() => void handleSave()}
               disabled={busy || !dirty}
               data-testid="product-edit-save"

@@ -620,7 +620,7 @@ export default function ProductCreateWizard({ adapter = catalogApi }: Props) {
   }), [form.name, form.price, form.originalPrice, form.description, form.richDescription, images, selectedCategory, selectedTemplate, form.deliveryMode, previewOffers, productDetails])
 
   return (
-    <div className="max-w-[1180px] mx-auto px-4 pb-16 fade-in" data-testid="product-create-wizard">
+    <div className="max-w-[1180px] mx-auto px-4 pb-24 sm:pb-16 fade-in" data-testid="product-create-wizard">
       <button onClick={() => navigate('/merchant')} className="flex items-center gap-1 text-sm text-[var(--color-text-muted)] hover:text-[var(--color-text)] mb-4 cursor-pointer">
         <ArrowLeft className="w-4 h-4" /> 返回商家中心
       </button>
@@ -1314,7 +1314,7 @@ export default function ProductCreateWizard({ adapter = catalogApi }: Props) {
         data-testid="wizard-description-image-input"
       />
 
-      <div className="flex justify-between mt-6">
+      <div className="flex justify-between mt-6 scroll-mb-24">
         <button type="button" onClick={() => setStep(s => Math.max(s - 1, 0))} disabled={step === 0 || busy}
           className="btn-secondary px-6 py-2.5 disabled:opacity-40">
           <ArrowLeft className="w-4 h-4" /> 上一步
@@ -1322,13 +1322,13 @@ export default function ProductCreateWizard({ adapter = catalogApi }: Props) {
         {step < LAST_STEP ? (
           step === 4 ? (
             <button type="button" onClick={goNext} disabled={busy}
-              className="btn-primary px-6 py-2.5 disabled:opacity-40" data-testid="wizard-save-draft">
+              className="btn-primary px-6 py-2.5 disabled:opacity-40 scroll-mb-24" data-testid="wizard-save-draft">
               {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
               {saving ? '保存中…' : '保存草稿并继续'} <ArrowRight className="w-4 h-4" />
             </button>
           ) : (
             <button type="button" onClick={goNext} disabled={step === 0 && templateKey == null}
-              className="btn-primary px-6 py-2.5 disabled:opacity-40" data-testid="wizard-next">
+              className="btn-primary px-6 py-2.5 disabled:opacity-40 scroll-mb-24" data-testid="wizard-next">
               下一步 <ArrowRight className="w-4 h-4" />
             </button>
           )
