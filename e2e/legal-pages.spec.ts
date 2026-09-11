@@ -7,7 +7,7 @@ import { API_BASE, E2E_PRODUCT_COVER, SEED_ACCOUNTS, loginAs } from './helpers'
  * 1. 五份文档未登录直接访问 + 刷新后内容仍在
  * 2. 登录后 footer 分组链接可见且可跳转
  * 3. 注册勾选门控（未勾选禁用提交，勾选后可注册）
- * 4. 下单勾选门控 + 退款披露（未勾选禁用支付，勾选后成交）
+ * 4. 下单勾选门控 + 退款披露（未勾选提交时拦截，勾选后成交）
  * 5. enforce 模式下 API 层的 LEGAL_AGREEMENT_REQUIRED 契约
  */
 
@@ -113,7 +113,7 @@ test.describe('checkout consent gate', () => {
     return (await login.json()).accessToken as string
   }
 
-  test('pay button stays disabled until agreements are checked; purchase then succeeds with refund disclosure', async ({ page, request }) => {
+  test('unchecked checkout submission is blocked; consent then allows purchase with refund disclosure', async ({ page, request }) => {
     const token = await merchantToken(request)
     const created = await request.post(`${API_BASE}/api/merchant/products`, {
       headers: { Authorization: `Bearer ${token}` },
@@ -146,13 +146,36 @@ test.describe('checkout consent gate', () => {
     await expect(agreement.getByRole('link', { name: '《服务协议》' })).toBeVisible()
     await expect(agreement.getByRole('link', { name: '《退款政策》' })).toBeVisible()
 
-    const payButton = page.getByRole('button', { name: '确认支付' })
-    await expect(payButton).toBeDisabled()
+    const orderRequests: Array<Record<string, unknown>> = []
+    page.on('request', (req) => {
+      if (new URL(req.url()).pathname === '/api/orders' && req.method() === 'POST') {
+        orderRequests.push(req.postDataJSON())
+      }
+    })
+    const payButton = modal.getByRole('button', { name: '确认支付' })
+    const warning = modal.getByTestId('agreement-warning')
+    await expect(warning).toBeHidden()
+    await expect(agreement.getByRole('checkbox')).not.toBeChecked()
+    await payButton.click()
+    await expect(warning).toBeVisible()
+    await expect(agreement.getByRole('checkbox')).toBeFocused()
+    expect(orderRequests).toHaveLength(0)
+    await expect(modal).toBeVisible()
 
     await agreement.getByRole('checkbox').check()
+    await expect(warning).toBeHidden()
     await expect(payButton).toBeEnabled()
 
+    const orderResponse = page.waitForResponse((response) =>
+      new URL(response.url()).pathname === '/api/orders' && response.request().method() === 'POST'
+    )
     await payButton.click()
+    expect((await orderResponse).status()).toBe(201)
+    expect(orderRequests).toHaveLength(1)
+    expect(orderRequests[0].agreementVersions).toEqual({
+      terms: expect.any(String),
+      refund: expect.any(String),
+    })
     await expect(page.getByTestId('success-delivery-link')).toBeVisible({ timeout: 10_000 })
   })
 
