@@ -9,6 +9,7 @@ import { useAuthStore } from '../stores/authStore'
 import { useAppStore } from '../stores/appStore'
 import ThemeToggle from './ThemeToggle'
 import { DialogOverlay } from './ui/Dialog'
+import UserAvatar from './ui/UserAvatar'
 
 const ROW =
   'w-full flex items-center gap-3 px-3 min-h-[44px] rounded-lg text-sm font-medium transition-colors cursor-pointer text-left'
@@ -75,15 +76,7 @@ export default function MobileNavDrawer() {
               onClick={() => go(user ? '/profile' : '/login')}
               className="w-full flex items-center gap-3 p-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-background)] hover:border-[var(--color-primary)]/35 transition-colors cursor-pointer text-left"
             >
-              <div
-                className="w-10 h-10 rounded-full flex items-center justify-center text-white shadow-md shrink-0"
-                style={{
-                  background:
-                    'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-hover) 100%)',
-                }}
-              >
-                <User className="w-5 h-5" />
-              </div>
+              <UserAvatar url={user?.avatarUrl} name={displayName} size={40} className="shadow-md" />
               <div className="min-w-0">
                 <div className="font-bold text-sm text-[var(--color-text)] truncate">{displayName}</div>
                 <div className="text-xs text-[var(--color-text-muted)]">{user ? '查看个人中心' : '登录后查看积分与订单'}</div>

@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { isPresetAvatarUrl } from './avatarPresets.js'
 import { HUMAN_VERIFICATION_PAYLOAD_MAX_BYTES } from './humanVerification/types.js'
 
 const normalizedEmailSchema = z.string()
@@ -93,7 +94,9 @@ export const passwordChangeSchema = z.object({
 
 export const updateMeSchema = z.object({
   nickname: z.string().trim().min(1, '昵称不能为空').max(20, '昵称最多 20 字').optional(),
-  avatarUrl: z.string().url('头像 URL 无效').max(2048, '头像 URL 过长').nullable().optional(),
+  avatarUrl: z.string().max(2048, '头像 URL 过长')
+    .refine((value) => isPresetAvatarUrl(value) || z.string().url().safeParse(value).success, '头像 URL 无效')
+    .nullable().optional(),
 }).strict()
 
 export const sessionIdParamSchema = z.object({
