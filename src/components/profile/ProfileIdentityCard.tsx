@@ -129,17 +129,26 @@ export default function ProfileIdentityCard() {
           <p className="text-sm text-[var(--color-text-muted)] leading-relaxed">
             选择喜欢的三国头像，或上传自己的图片，让个人资料更有个性。
           </p>
-          <button type="button" onClick={() => setChoosingAvatar(true)} disabled={uploading || savingNick} className="mt-2 text-sm text-[var(--color-primary)] underline cursor-pointer disabled:opacity-60">选择头像</button>
-          {user?.avatarUrl && (
+          <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
             <button
               type="button"
-              onClick={() => void handleClearAvatar()}
+              onClick={() => setChoosingAvatar(true)}
               disabled={uploading || savingNick}
-              className="ml-4 mt-2 text-xs text-[var(--color-text-muted)] hover:text-[var(--color-danger)] underline cursor-pointer"
+              className="inline-flex min-h-11 min-w-11 items-center rounded-md px-2 text-sm text-[var(--color-primary)] underline cursor-pointer disabled:opacity-60 focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)]"
             >
-              清除头像
+              选择头像
             </button>
-          )}
+            {user?.avatarUrl && (
+              <button
+                type="button"
+                onClick={() => void handleClearAvatar()}
+                disabled={uploading || savingNick}
+                className="inline-flex min-h-11 min-w-11 items-center rounded-md px-2 text-xs text-[var(--color-text-muted)] hover:text-[var(--color-danger)] underline cursor-pointer focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)]"
+              >
+                清除头像
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
