@@ -1,0 +1,653 @@
+{
+  "version": "2.3",
+  "avatars": [
+    {
+      "id": "wei-cao-cao",
+      "name": "曹操",
+      "faction": "wei",
+      "source": "design-system/monexus/generated/three-kingdoms-24-v2.2/avatars/wei/01-cao-cao.png",
+      "sourceSha256": "c7f73c7e3c47660a3a242ba4d9acd362090f0b13d51eea089ef737b6da099a0b",
+      "assets": [
+        {
+          "url": "/assets/avatars/three-kingdoms/v2.3/wei-cao-cao.webp",
+          "width": 443,
+          "sha256": "b2fd5a7e1f64400e61a6b3508692a4821ab28e5d8e2943e16576452969ab279b",
+          "bytes": 195332
+        },
+        {
+          "url": "/assets/avatars/three-kingdoms/v2.3/96/wei-cao-cao.webp",
+          "width": 96,
+          "sha256": "175c9184c51f8ad25efe73cc28402edfd4fe84e346bd33fcd93af12291eaec49",
+          "bytes": 13550
+        },
+        {
+          "url": "/assets/avatars/three-kingdoms/v2.3/48/wei-cao-cao.webp",
+          "width": 48,
+          "sha256": "74f233bacc3e4751e4f4b476b1fc98bdd1cec07bf14907bc6c48f21feb9dd7ac",
+          "bytes": 4228
+        }
+      ]
+    },
+    {
+      "id": "wei-xun-yu",
+      "name": "荀彧",
+      "faction": "wei",
+      "source": "design-system/monexus/generated/three-kingdoms-24-v2.2/avatars/wei/02-xun-yu.png",
+      "sourceSha256": "7a9ad5c98d538908f9fc4d724eccfce04393bc618a90d8e33c79abdb7be397b3",
+      "assets": [
+        {
+          "url": "/assets/avatars/three-kingdoms/v2.3/wei-xun-yu.webp",
+          "width": 443,
+          "sha256": "7a90337c3fac3bbce7110c9809dc40b67e1bb037bf8f887069515e86bc876980",
+          "bytes": 175880
+        },
+        {
+          "url": "/assets/avatars/three-kingdoms/v2.3/96/wei-xun-yu.webp",
+          "width": 96,
+          "sha256": "51552614567c9ab7196e618fc934a529c5088473f8bce8ea8f90e5e35524bfff",
+          "bytes": 11692
+        },
+        {
+          "url": "/assets/avatars/three-kingdoms/v2.3/48/wei-xun-yu.webp",
+          "width": 48,
+          "sha256": "1a16192647e2831594ac5c39f9b159ad75a93dff519e5ec4b1f9f6d3dfaaa6cf",
+          "bytes": 3602
+        }
+      ]
+    },
+    {
+      "id": "wei-sima-yi",
+      "name": "司马懿",
+      "faction": "wei",
+      "source": "design-system/monexus/generated/three-kingdoms-5-v2.3/avatars/443/wei-sima-yi.png",
+      "sourceSha256": "0cada2ef84b94f043a8212db236c971a19c4f6d89032a1cc06b68478fcd49868",
+      "assets": [
+        {
+          "url": "/assets/avatars/three-kingdoms/v2.3/wei-sima-yi.webp",
+          "width": 443,
+          "sha256": "49344c1071dee78120b4f3dca98114986001ab887e1af220485ecfb2998b05d5",
+          "bytes": 193312
+        },
+        {
+          "url": "/assets/avatars/three-kingdoms/v2.3/96/wei-sima-yi.webp",
+          "width": 96,
+          "sha256": "dc199d259fd37eb9e9589be2a106b97fe85b469c2788d64a0136ee6066bbefc4",
+          "bytes": 12392
+        },
+        {
+          "url": "/assets/avatars/three-kingdoms/v2.3/48/wei-sima-yi.webp",
+          "width": 48,
+          "sha256": "9c89453ee46e4e4f35cb523c3fed6020a1bb1d1835e3e843700075f7d393f29d",
+          "bytes": 3706
+        }
+      ]
+    },
+    {
+      "id": "wei-xiahou-dun",
+      "name": "夏侯惇",
+      "faction": "wei",
+      "source": "design-system/monexus/generated/three-kingdoms-24-v2.2/avatars/wei/04-xiahou-dun.png",
+      "sourceSha256": "ffe306e2e6b082a5b50b67e9268dd94c2d6899990d09dcd14f993283afba7202",
+      "assets": [
+        {
+          "url": "/assets/avatars/three-kingdoms/v2.3/wei-xiahou-dun.webp",
+          "width": 443,
+          "sha256": "4807e213b6f98cf5b59eab82cda49b08f1157fe524cf370f7b7f8d4482afb057",
+          "bytes": 195522
+        },
+        {
+          "url": "/assets/avatars/three-kingdoms/v2.3/96/wei-xiahou-dun.webp",
+          "width": 96,
+          "sha256": "e435ced8ff83eed5ab7b645ea23b26ae2a7b063376964865c5956820bd7be726",
+          "bytes": 13950
+        },
+        {
+          "url": "/assets/avatars/three-kingdoms/v2.3/48/wei-xiahou-dun.webp",
+          "width": 48,
+          "sha256": "4cf3bfe4f700ee2dbc79304aba61f3185be45b887556f82581174a4f1f62da3b",
+          "bytes": 4206
+        }
+      ]
+    },
+    {
+      "id": "wei-zhang-liao",
+      "name": "张辽",
+      "faction": "wei",
+      "source": "design-system/monexus/generated/three-kingdoms-24-v2.2/avatars/wei/05-zhang-liao.png",
+      "sourceSha256": "f11ff0acc96270a184d472ab4fe81fcdada354087eeaa1198a3dfa61073f7c4b",
+      "assets": [
+        {
+          "url": "/assets/avatars/three-kingdoms/v2.3/wei-zhang-liao.webp",
+          "width": 443,
+          "sha256": "3ff8e74690576248f23bf5db663bddf287c4a599d5e2b21cd998467ea5db12e7",
+          "bytes": 205312
+        },
+        {
+          "url": "/assets/avatars/three-kingdoms/v2.3/96/wei-zhang-liao.webp",
+          "width": 96,
+          "sha256": "f90e6ff8e543a6a1d870375033eaac7d2fae5ba2613d3bac8e52f44d73320d0c",
+          "bytes": 13800
+        },
+        {
+          "url": "/assets/avatars/three-kingdoms/v2.3/48/wei-zhang-liao.webp",
+          "width": 48,
+          "sha256": "f2959bf325a088e439f766ab05ff91d74f5903dd9a0805db0c73ff3d14250211",
+          "bytes": 4126
+        }
+      ]
+    },
+    {
+      "id": "wei-xu-chu",
+      "name": "许褚",
+      "faction": "wei",
+      "source": "design-system/monexus/generated/three-kingdoms-24-v2.2/avatars/wei/06-xu-chu.png",
+      "sourceSha256": "643815b14748bc059492e90b618167f70dcbc9260ddfa78963fae4b0617a4c5f",
+      "assets": [
+        {
+          "url": "/assets/avatars/three-kingdoms/v2.3/wei-xu-chu.webp",
+          "width": 443,
+          "sha256": "3f47988f6327f24e59cc6396f6f4121f6d3705cf278aef47b81e419cca3ad6e4",
+          "bytes": 200212
+        },
+        {
+          "url": "/assets/avatars/three-kingdoms/v2.3/96/wei-xu-chu.webp",
+          "width": 96,
+          "sha256": "f6f4398b7b2a21efc858480eace58eecd051b79ee3f38351e703f6689997d110",
+          "bytes": 14748
+        },
+        {
+          "url": "/assets/avatars/three-kingdoms/v2.3/48/wei-xu-chu.webp",
+          "width": 48,
+          "sha256": "488b498d6085f01fb087afb444cdc068cc8e59984205553b530dfe4fb230f328",
+          "bytes": 4378
+        }
+      ]
+    },
+    {
+      "id": "wei-dian-wei",
+      "name": "典韦",
+      "faction": "wei",
+      "source": "design-system/monexus/generated/three-kingdoms-5-v2.3/avatars/443/wei-dian-wei.png",
+      "sourceSha256": "f5a5e9a03160f0ad0dc7f2311c82fc75d43df09b9712c691596226162a3da25f",
+      "assets": [
+        {
+          "url": "/assets/avatars/three-kingdoms/v2.3/wei-dian-wei.webp",
+          "width": 443,
+          "sha256": "e611c1f8df7efd09de8b8f40ed75ef3f52405a4b063a3726326ef8014766822f",
+          "bytes": 217710
+        },
+        {
+          "url": "/assets/avatars/three-kingdoms/v2.3/96/wei-dian-wei.webp",
+          "width": 96,
+          "sha256": "98020a9fd6a0636c55c820e9e4719d064b516795134f71207dd0868a059a8295",
+          "bytes": 14156
+        },
+        {
+          "url": "/assets/avatars/three-kingdoms/v2.3/48/wei-dian-wei.webp",
+          "width": 48,
+          "sha256": "4f43a257ecf403f36a12ef4cdf62ae2965016138121dda6cc91e2a31125ecca0",
+          "bytes": 4206
+        }
+      ]
+    },
+    {
+      "id": "wei-guo-jia",
+      "name": "郭嘉",
+      "faction": "wei",
+      "source": "design-system/monexus/generated/three-kingdoms-5-v2.3/avatars/443/wei-guo-jia.png",
+      "sourceSha256": "acc246d84c518205b710b41094ec0b6d1c82bab8b4adab13900787486483e803",
+      "assets": [
+        {
+          "url": "/assets/avatars/three-kingdoms/v2.3/wei-guo-jia.webp",
+          "width": 443,
+          "sha256": "a31fe9e53334c83cc44c6f5af4c357f25c5d9b1954b9d91db068d8c66856dc47",
+          "bytes": 196148
+        },
+        {
+          "url": "/assets/avatars/three-kingdoms/v2.3/96/wei-guo-jia.webp",
+          "width": 96,
+          "sha256": "897fb4c810f76b2f0ee23fb06e453ac9ce5688484156036f551eeedc0347d743",
+          "bytes": 13516
+        },
+        {
+          "url": "/assets/avatars/three-kingdoms/v2.3/48/wei-guo-jia.webp",
+          "width": 48,
+          "sha256": "26fc157546c805a6ab3730f6813f90591b996708bbebff4ed4addfa3e805f75a",
+          "bytes": 4122
+        }
+      ]
+    },
+    {
+      "id": "shu-liu-bei",
+      "name": "刘备",
+      "faction": "shu",
+      "source": "design-system/monexus/generated/three-kingdoms-24-v2.2/avatars/shu/01-liu-bei.png",
+      "sourceSha256": "b5585243090b463b0b611dda345f40bdb1ffcca42ba7a2b5662f81e81335e8eb",
+      "assets": [
+        {
+          "url": "/assets/avatars/three-kingdoms/v2.3/shu-liu-bei.webp",
+          "width": 443,
+          "sha256": "7c7cc1b0514b601776db2d90508851267621ee62221a839c73a1332ad9300e4d",
+          "bytes": 170666
+        },
+        {
+          "url": "/assets/avatars/three-kingdoms/v2.3/96/shu-liu-bei.webp",
+          "width": 96,
+          "sha256": "f7e82ee6d1ee116c5db9b34a6b4a88411fc68a7e9eb8f4b68fa9cf39e4bb3cc0",
+          "bytes": 12800
+        },
+        {
+          "url": "/assets/avatars/three-kingdoms/v2.3/48/shu-liu-bei.webp",
+          "width": 48,
+          "sha256": "cfed9d8a48dea24b0f450e43078a3c98d9617a13e614d0d5d8faea55dec3cf5d",
+          "bytes": 3974
+        }
+      ]
+    },
+    {
+      "id": "shu-guan-yu",
+      "name": "关羽",
+      "faction": "shu",
+      "source": "design-system/monexus/generated/three-kingdoms-24-v2.2/avatars/shu/02-guan-yu.png",
+      "sourceSha256": "6e109c32956f4c64c15a23c94545d468aeee8f0a062029a6e516161921a9d7e8",
+      "assets": [
+        {
+          "url": "/assets/avatars/three-kingdoms/v2.3/shu-guan-yu.webp",
+          "width": 443,
+          "sha256": "e7a5c1dc33282bbde92e8885d9df9fb529aaf4d37f17eb2505ca2145ada87d16",
+          "bytes": 177016
+        },
+        {
+          "url": "/assets/avatars/three-kingdoms/v2.3/96/shu-guan-yu.webp",
+          "width": 96,
+          "sha256": "01ba07b5766266da2ea624f00538add46926ea75633489a1ff51d93206665b5a",
+          "bytes": 13380
+        },
+        {
+          "url": "/assets/avatars/three-kingdoms/v2.3/48/shu-guan-yu.webp",
+          "width": 48,
+          "sha256": "f00c720bde4b63692e64e3bd822919bdd61ce42eb3caf07f555a07431d60cb62",
+          "bytes": 3986
+        }
+      ]
+    },
+    {
+      "id": "shu-zhang-fei",
+      "name": "张飞",
+      "faction": "shu",
+      "source": "design-system/monexus/generated/three-kingdoms-24-v2.2/avatars/shu/03-zhang-fei.png",
+      "sourceSha256": "4d9918fb69d2febee43517007d7714029570f9da8eb81b54421a59df819d01ce",
+      "assets": [
+        {
+          "url": "/assets/avatars/three-kingdoms/v2.3/shu-zhang-fei.webp",
+          "width": 443,
+          "sha256": "b6406615cddf6e6571812a93fb006b8925706ee6db0907667f3b6d814a3e3148",
+          "bytes": 190536
+        },
+        {
+          "url": "/assets/avatars/three-kingdoms/v2.3/96/shu-zhang-fei.webp",
+          "width": 96,
+          "sha256": "c7c6a2758d552ffe216f39041515a9d158342834c257fbd05af76cd8fdfb2a64",
+          "bytes": 14270
+        },
+        {
+          "url": "/assets/avatars/three-kingdoms/v2.3/48/shu-zhang-fei.webp",
+          "width": 48,
+          "sha256": "8f44c76919fdd64b0e5307c8fbf3d2e1d804a01bd452799e018928185dd744f8",
+          "bytes": 4322
+        }
+      ]
+    },
+    {
+      "id": "shu-zhuge-liang",
+      "name": "诸葛亮",
+      "faction": "shu",
+      "source": "design-system/monexus/generated/three-kingdoms-24-v2.2/avatars/shu/04-zhuge-liang.png",
+      "sourceSha256": "14a0458be876f54dda4398f3f24bc18bef08a5718ba1b73db6659aa435aea4ff",
+      "assets": [
+        {
+          "url": "/assets/avatars/three-kingdoms/v2.3/shu-zhuge-liang.webp",
+          "width": 443,
+          "sha256": "38d28b2d66e9e3fad4194d3a66bf6e2f93a76c85c672d0289c92574e71dd6d13",
+          "bytes": 178706
+        },
+        {
+          "url": "/assets/avatars/three-kingdoms/v2.3/96/shu-zhuge-liang.webp",
+          "width": 96,
+          "sha256": "f0997d7d1b8ff2ba9f2461f111719e7f34bedc2213972a74eda2fe6ab0a74299",
+          "bytes": 13640
+        },
+        {
+          "url": "/assets/avatars/three-kingdoms/v2.3/48/shu-zhuge-liang.webp",
+          "width": 48,
+          "sha256": "86b0776dd4977999a7d37cc47bb307168c694f7f0d617d6510f843194c2fa7be",
+          "bytes": 4168
+        }
+      ]
+    },
+    {
+      "id": "shu-zhao-yun",
+      "name": "赵云",
+      "faction": "shu",
+      "source": "design-system/monexus/generated/three-kingdoms-5-v2.3/avatars/443/shu-zhao-yun.png",
+      "sourceSha256": "42c7040c5b392ada4ef21509f1033d228459ad7a984a20110ce6e19015df7fa9",
+      "assets": [
+        {
+          "url": "/assets/avatars/three-kingdoms/v2.3/shu-zhao-yun.webp",
+          "width": 443,
+          "sha256": "1c5642cf548b6c37c341dac01e5654a6de094ed0d1ecf6b6221dc2a06a57f492",
+          "bytes": 244686
+        },
+        {
+          "url": "/assets/avatars/three-kingdoms/v2.3/96/shu-zhao-yun.webp",
+          "width": 96,
+          "sha256": "526d033cf5132ae0ae16d80af595307d368f3364d44b6c63b3769cb5de7636e1",
+          "bytes": 15940
+        },
+        {
+          "url": "/assets/avatars/three-kingdoms/v2.3/48/shu-zhao-yun.webp",
+          "width": 48,
+          "sha256": "d8845d858c7a8765b0619c52fd376365e14c77bb06b69b4ea9d3cb36ff401e14",
+          "bytes": 4570
+        }
+      ]
+    },
+    {
+      "id": "shu-ma-chao",
+      "name": "马超",
+      "faction": "shu",
+      "source": "design-system/monexus/generated/three-kingdoms-24-v2.2/avatars/shu/06-ma-chao.png",
+      "sourceSha256": "99df2bc7ae987607a68c766104725aa723b5e21515fcb5760a357f2f55f62fdc",
+      "assets": [
+        {
+          "url": "/assets/avatars/three-kingdoms/v2.3/shu-ma-chao.webp",
+          "width": 443,
+          "sha256": "37521a986849399da12c355431394ce13c3442bceffc86cc054344eba8b84a49",
+          "bytes": 220968
+        },
+        {
+          "url": "/assets/avatars/three-kingdoms/v2.3/96/shu-ma-chao.webp",
+          "width": 96,
+          "sha256": "362a21416c582b2ba3f98ad7e9e95c55caccf31f1b28c43f8ad5c6063773207b",
+          "bytes": 14966
+        },
+        {
+          "url": "/assets/avatars/three-kingdoms/v2.3/48/shu-ma-chao.webp",
+          "width": 48,
+          "sha256": "2aa17cacc5654ae63460d75651660070a245260f8ccb543da00457172984c50a",
+          "bytes": 4382
+        }
+      ]
+    },
+    {
+      "id": "shu-huang-zhong",
+      "name": "黄忠",
+      "faction": "shu",
+      "source": "design-system/monexus/generated/three-kingdoms-24-v2.2/avatars/shu/07-huang-zhong.png",
+      "sourceSha256": "3156f83a836f304a309a097fafecb125bf911067f9ab040df42b7aa8bf647e2f",
+      "assets": [
+        {
+          "url": "/assets/avatars/three-kingdoms/v2.3/shu-huang-zhong.webp",
+          "width": 443,
+          "sha256": "be5938ee684e8e08a90936103b0d875a92b141df542a1cbc70219f5b101c015b",
+          "bytes": 221576
+        },
+        {
+          "url": "/assets/avatars/three-kingdoms/v2.3/96/shu-huang-zhong.webp",
+          "width": 96,
+          "sha256": "840822271aa40cda2d8043d5b0baafd0db0db09762e5b9d48f550da462e7f195",
+          "bytes": 14968
+        },
+        {
+          "url": "/assets/avatars/three-kingdoms/v2.3/48/shu-huang-zhong.webp",
+          "width": 48,
+          "sha256": "37d3073d47eadae6b8b696bb856c2415699e25ef3c07d45922322e9d526785f8",
+          "bytes": 4400
+        }
+      ]
+    },
+    {
+      "id": "shu-pang-tong",
+      "name": "庞统",
+      "faction": "shu",
+      "source": "design-system/monexus/generated/three-kingdoms-5-v2.3/avatars/443/shu-pang-tong.png",
+      "sourceSha256": "9aa9c19d8538b4d96c7691ef9df1d342999fb7e11e48bde0db23a7829c1bc580",
+      "assets": [
+        {
+          "url": "/assets/avatars/three-kingdoms/v2.3/shu-pang-tong.webp",
+          "width": 443,
+          "sha256": "dca49cfb0f7dd8ef3dfd0285a113ef911f1d9d56acebb76f698dc774b9f6ea23",
+          "bytes": 192352
+        },
+        {
+          "url": "/assets/avatars/three-kingdoms/v2.3/96/shu-pang-tong.webp",
+          "width": 96,
+          "sha256": "8ff880a73e4acdc38c993b1f40325f8f9c34bc7bc0f505108a57359fdca47564",
+          "bytes": 12962
+        },
+        {
+          "url": "/assets/avatars/three-kingdoms/v2.3/48/shu-pang-tong.webp",
+          "width": 48,
+          "sha256": "03c6d31aa241bf02e731c49b2f553fa1387fe5d31cd1658c0fe591a798c4ab6c",
+          "bytes": 3950
+        }
+      ]
+    },
+    {
+      "id": "wu-zhou-tai",
+      "name": "周泰",
+      "faction": "wu",
+      "source": "design-system/monexus/generated/three-kingdoms-24-v2.2/avatars/wu/01-zhou-tai.png",
+      "sourceSha256": "abbc61e859816c4ff991e464d4cd166ee2e8dc72801e83febac49743bdb247ba",
+      "assets": [
+        {
+          "url": "/assets/avatars/three-kingdoms/v2.3/wu-zhou-tai.webp",
+          "width": 443,
+          "sha256": "ab568426f5c4884a395a82c14ad95e2341408018cf0d39c49d6486baa8f835fd",
+          "bytes": 208142
+        },
+        {
+          "url": "/assets/avatars/three-kingdoms/v2.3/96/wu-zhou-tai.webp",
+          "width": 96,
+          "sha256": "4165e156c50b9d0b42c54d84e77e65a1edbd5b90c131d83261358c9032a65148",
+          "bytes": 14324
+        },
+        {
+          "url": "/assets/avatars/three-kingdoms/v2.3/48/wu-zhou-tai.webp",
+          "width": 48,
+          "sha256": "0aa6b48a75b86d4040e0f89bc1d433564dd78a754da3c74a9ee40c823c7150c2",
+          "bytes": 4246
+        }
+      ]
+    },
+    {
+      "id": "wu-sun-ce",
+      "name": "孙策",
+      "faction": "wu",
+      "source": "design-system/monexus/generated/three-kingdoms-24-v2.2/avatars/wu/02-sun-ce.png",
+      "sourceSha256": "b15fe106116b8d915e43527d55eb7081e41213fcfcff6a1f37e5d85a3fdcc5d7",
+      "assets": [
+        {
+          "url": "/assets/avatars/three-kingdoms/v2.3/wu-sun-ce.webp",
+          "width": 443,
+          "sha256": "e701986f1f5cbd8e09e2885c6bbf1f35eb6249ee0c208f089910a63220cf11a4",
+          "bytes": 211988
+        },
+        {
+          "url": "/assets/avatars/three-kingdoms/v2.3/96/wu-sun-ce.webp",
+          "width": 96,
+          "sha256": "5688278d99c5737025d351efc45239e7db04532d27d636f0f72f47cc94396c53",
+          "bytes": 14812
+        },
+        {
+          "url": "/assets/avatars/three-kingdoms/v2.3/48/wu-sun-ce.webp",
+          "width": 48,
+          "sha256": "a7ec8133d1d91e1435e551946049a28a748082c0b68ea7fe94a4ac286f34d9e2",
+          "bytes": 4306
+        }
+      ]
+    },
+    {
+      "id": "wu-sun-quan",
+      "name": "孙权",
+      "faction": "wu",
+      "source": "design-system/monexus/generated/three-kingdoms-24-v2.2/avatars/wu/03-sun-quan.png",
+      "sourceSha256": "51225fc8d062db72e2d04f2c63baae9cde03621b62355e9f69a2f122b9239bc2",
+      "assets": [
+        {
+          "url": "/assets/avatars/three-kingdoms/v2.3/wu-sun-quan.webp",
+          "width": 443,
+          "sha256": "9a5215ab539d6ebd5c48bfa202803edec1af6286c1c98335cf4eef4dd786b3e7",
+          "bytes": 189656
+        },
+        {
+          "url": "/assets/avatars/three-kingdoms/v2.3/96/wu-sun-quan.webp",
+          "width": 96,
+          "sha256": "1962caf9ec57701e1416024a73909bb4fe020795fd780a36dc8ae4f7a3fae29d",
+          "bytes": 13024
+        },
+        {
+          "url": "/assets/avatars/three-kingdoms/v2.3/48/wu-sun-quan.webp",
+          "width": 48,
+          "sha256": "1465ae9eadf48b50876ca66c3f3a5ccc0281c7410d8ea3d3700eaf70cec6e384",
+          "bytes": 3836
+        }
+      ]
+    },
+    {
+      "id": "wu-zhou-yu",
+      "name": "周瑜",
+      "faction": "wu",
+      "source": "design-system/monexus/generated/three-kingdoms-24-v2.2/avatars/wu/04-zhou-yu.png",
+      "sourceSha256": "8b45af02b128e725c225d440d7739e91be3c906b8c8c60aef3f1892765f51185",
+      "assets": [
+        {
+          "url": "/assets/avatars/three-kingdoms/v2.3/wu-zhou-yu.webp",
+          "width": 443,
+          "sha256": "2246222c0a3b03014d1ac6f81af51aa58805a769d1903c9f0d62ca65ba5815f9",
+          "bytes": 192314
+        },
+        {
+          "url": "/assets/avatars/three-kingdoms/v2.3/96/wu-zhou-yu.webp",
+          "width": 96,
+          "sha256": "5fe28806bacd7406d80e235f76a1d6231b4189eb17af826aac1fca0b6258aa2d",
+          "bytes": 13376
+        },
+        {
+          "url": "/assets/avatars/three-kingdoms/v2.3/48/wu-zhou-yu.webp",
+          "width": 48,
+          "sha256": "ec513f70e27889c750bf02528e680a4d5635e7cf53c8730609f01d923f8594c1",
+          "bytes": 3842
+        }
+      ]
+    },
+    {
+      "id": "wu-lu-su",
+      "name": "鲁肃",
+      "faction": "wu",
+      "source": "design-system/monexus/generated/three-kingdoms-24-v2.2/avatars/wu/05-lu-su.png",
+      "sourceSha256": "6febe24b96361e70be3f4072c6b6c4f7dd5c93bd0f881977ab0da195e241337a",
+      "assets": [
+        {
+          "url": "/assets/avatars/three-kingdoms/v2.3/wu-lu-su.webp",
+          "width": 443,
+          "sha256": "e89b112d3f3e6d5193e63813260df34e50d05f25399c727228b653373bd09aea",
+          "bytes": 202384
+        },
+        {
+          "url": "/assets/avatars/three-kingdoms/v2.3/96/wu-lu-su.webp",
+          "width": 96,
+          "sha256": "269665283590e0bb5217d932ed2c12d3cbe10231ff66ebe44f3d42c7c1308277",
+          "bytes": 13964
+        },
+        {
+          "url": "/assets/avatars/three-kingdoms/v2.3/48/wu-lu-su.webp",
+          "width": 48,
+          "sha256": "dc55bf44ac44074f898cdc6cc03467e5bd9a9fc04e1918bf4d0933f13d2ae00a",
+          "bytes": 4132
+        }
+      ]
+    },
+    {
+      "id": "wu-lu-meng",
+      "name": "吕蒙",
+      "faction": "wu",
+      "source": "design-system/monexus/generated/three-kingdoms-24-v2.2/avatars/wu/06-lu-meng.png",
+      "sourceSha256": "3488f2525c59682d3a788f27104b23c45fb63ce5d1b412c9bd0e1100e6da49ff",
+      "assets": [
+        {
+          "url": "/assets/avatars/three-kingdoms/v2.3/wu-lu-meng.webp",
+          "width": 443,
+          "sha256": "8036b7f9e14940ce712fe2a34e4a50cd9287784bd7adf16359117f652b32977c",
+          "bytes": 204080
+        },
+        {
+          "url": "/assets/avatars/three-kingdoms/v2.3/96/wu-lu-meng.webp",
+          "width": 96,
+          "sha256": "b83a8efae6e6911073f98ef46f37c08250279b81ae505460856b9c8e3fcbae65",
+          "bytes": 13624
+        },
+        {
+          "url": "/assets/avatars/three-kingdoms/v2.3/48/wu-lu-meng.webp",
+          "width": 48,
+          "sha256": "5531737cbeca7cffe49390740bf156cb282e85298401c64be67f3036eca58a47",
+          "bytes": 4008
+        }
+      ]
+    },
+    {
+      "id": "wu-lu-xun",
+      "name": "陆逊",
+      "faction": "wu",
+      "source": "design-system/monexus/generated/three-kingdoms-24-v2.2/avatars/wu/07-lu-xun.png",
+      "sourceSha256": "722f276df654d4b602f76355fedec51f8a65dd29fd0c3632f67e237489a4479a",
+      "assets": [
+        {
+          "url": "/assets/avatars/three-kingdoms/v2.3/wu-lu-xun.webp",
+          "width": 443,
+          "sha256": "241ffdde547ce9436770e4bd00ba57bcb73a277fed41628fca6969efba880135",
+          "bytes": 171270
+        },
+        {
+          "url": "/assets/avatars/three-kingdoms/v2.3/96/wu-lu-xun.webp",
+          "width": 96,
+          "sha256": "b9f738cae3fb7047579d61acdbb275a4c97106abfdb522229f56774aa45e8009",
+          "bytes": 11684
+        },
+        {
+          "url": "/assets/avatars/three-kingdoms/v2.3/48/wu-lu-xun.webp",
+          "width": 48,
+          "sha256": "0f4b766b665f4818807dc26ff7e494197084550beb465423a081a1dd8c48b9bd",
+          "bytes": 3512
+        }
+      ]
+    },
+    {
+      "id": "wu-gan-ning",
+      "name": "甘宁",
+      "faction": "wu",
+      "source": "design-system/monexus/generated/three-kingdoms-24-v2.2/avatars/wu/08-gan-ning.png",
+      "sourceSha256": "8c5ba022400e2468add523f20cbc7f0423fbef957ac1b5b24e5ef43cd5c5397b",
+      "assets": [
+        {
+          "url": "/assets/avatars/three-kingdoms/v2.3/wu-gan-ning.webp",
+          "width": 443,
+          "sha256": "4a2c1ae4f17d9acf5f69b536ba7ae4ff84a699367869a5f99c6c88ad2f1f07ee",
+          "bytes": 230922
+        },
+        {
+          "url": "/assets/avatars/three-kingdoms/v2.3/96/wu-gan-ning.webp",
+          "width": 96,
+          "sha256": "fe6030e166800db7192b47101d6d2c42dd00bf837cfd8fa85f54790dba27c74d",
+          "bytes": 15944
+        },
+        {
+          "url": "/assets/avatars/three-kingdoms/v2.3/48/wu-gan-ning.webp",
+          "width": 48,
+          "sha256": "d4773b226138407200605bc8db1b35051c75596ed434aa0071f97660925dbc89",
+          "bytes": 4644
+        }
+      ]
+    }
+  ]
+}

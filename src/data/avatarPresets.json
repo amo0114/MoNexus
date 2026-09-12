@@ -1,0 +1,194 @@
+[
+  {
+    "id": "wei-cao-cao",
+    "name": "曹操",
+    "faction": "wei",
+    "url": "/assets/avatars/three-kingdoms/v2.3/wei-cao-cao.webp",
+    "thumbnailUrl": "/assets/avatars/three-kingdoms/v2.3/96/wei-cao-cao.webp",
+    "smallUrl": "/assets/avatars/three-kingdoms/v2.3/48/wei-cao-cao.webp"
+  },
+  {
+    "id": "wei-xun-yu",
+    "name": "荀彧",
+    "faction": "wei",
+    "url": "/assets/avatars/three-kingdoms/v2.3/wei-xun-yu.webp",
+    "thumbnailUrl": "/assets/avatars/three-kingdoms/v2.3/96/wei-xun-yu.webp",
+    "smallUrl": "/assets/avatars/three-kingdoms/v2.3/48/wei-xun-yu.webp"
+  },
+  {
+    "id": "wei-sima-yi",
+    "name": "司马懿",
+    "faction": "wei",
+    "url": "/assets/avatars/three-kingdoms/v2.3/wei-sima-yi.webp",
+    "thumbnailUrl": "/assets/avatars/three-kingdoms/v2.3/96/wei-sima-yi.webp",
+    "smallUrl": "/assets/avatars/three-kingdoms/v2.3/48/wei-sima-yi.webp"
+  },
+  {
+    "id": "wei-xiahou-dun",
+    "name": "夏侯惇",
+    "faction": "wei",
+    "url": "/assets/avatars/three-kingdoms/v2.3/wei-xiahou-dun.webp",
+    "thumbnailUrl": "/assets/avatars/three-kingdoms/v2.3/96/wei-xiahou-dun.webp",
+    "smallUrl": "/assets/avatars/three-kingdoms/v2.3/48/wei-xiahou-dun.webp"
+  },
+  {
+    "id": "wei-zhang-liao",
+    "name": "张辽",
+    "faction": "wei",
+    "url": "/assets/avatars/three-kingdoms/v2.3/wei-zhang-liao.webp",
+    "thumbnailUrl": "/assets/avatars/three-kingdoms/v2.3/96/wei-zhang-liao.webp",
+    "smallUrl": "/assets/avatars/three-kingdoms/v2.3/48/wei-zhang-liao.webp"
+  },
+  {
+    "id": "wei-xu-chu",
+    "name": "许褚",
+    "faction": "wei",
+    "url": "/assets/avatars/three-kingdoms/v2.3/wei-xu-chu.webp",
+    "thumbnailUrl": "/assets/avatars/three-kingdoms/v2.3/96/wei-xu-chu.webp",
+    "smallUrl": "/assets/avatars/three-kingdoms/v2.3/48/wei-xu-chu.webp"
+  },
+  {
+    "id": "wei-dian-wei",
+    "name": "典韦",
+    "faction": "wei",
+    "url": "/assets/avatars/three-kingdoms/v2.3/wei-dian-wei.webp",
+    "thumbnailUrl": "/assets/avatars/three-kingdoms/v2.3/96/wei-dian-wei.webp",
+    "smallUrl": "/assets/avatars/three-kingdoms/v2.3/48/wei-dian-wei.webp"
+  },
+  {
+    "id": "wei-guo-jia",
+    "name": "郭嘉",
+    "faction": "wei",
+    "url": "/assets/avatars/three-kingdoms/v2.3/wei-guo-jia.webp",
+    "thumbnailUrl": "/assets/avatars/three-kingdoms/v2.3/96/wei-guo-jia.webp",
+    "smallUrl": "/assets/avatars/three-kingdoms/v2.3/48/wei-guo-jia.webp"
+  },
+  {
+    "id": "shu-liu-bei",
+    "name": "刘备",
+    "faction": "shu",
+    "url": "/assets/avatars/three-kingdoms/v2.3/shu-liu-bei.webp",
+    "thumbnailUrl": "/assets/avatars/three-kingdoms/v2.3/96/shu-liu-bei.webp",
+    "smallUrl": "/assets/avatars/three-kingdoms/v2.3/48/shu-liu-bei.webp"
+  },
+  {
+    "id": "shu-guan-yu",
+    "name": "关羽",
+    "faction": "shu",
+    "url": "/assets/avatars/three-kingdoms/v2.3/shu-guan-yu.webp",
+    "thumbnailUrl": "/assets/avatars/three-kingdoms/v2.3/96/shu-guan-yu.webp",
+    "smallUrl": "/assets/avatars/three-kingdoms/v2.3/48/shu-guan-yu.webp"
+  },
+  {
+    "id": "shu-zhang-fei",
+    "name": "张飞",
+    "faction": "shu",
+    "url": "/assets/avatars/three-kingdoms/v2.3/shu-zhang-fei.webp",
+    "thumbnailUrl": "/assets/avatars/three-kingdoms/v2.3/96/shu-zhang-fei.webp",
+    "smallUrl": "/assets/avatars/three-kingdoms/v2.3/48/shu-zhang-fei.webp"
+  },
+  {
+    "id": "shu-zhuge-liang",
+    "name": "诸葛亮",
+    "faction": "shu",
+    "url": "/assets/avatars/three-kingdoms/v2.3/shu-zhuge-liang.webp",
+    "thumbnailUrl": "/assets/avatars/three-kingdoms/v2.3/96/shu-zhuge-liang.webp",
+    "smallUrl": "/assets/avatars/three-kingdoms/v2.3/48/shu-zhuge-liang.webp"
+  },
+  {
+    "id": "shu-zhao-yun",
+    "name": "赵云",
+    "faction": "shu",
+    "url": "/assets/avatars/three-kingdoms/v2.3/shu-zhao-yun.webp",
+    "thumbnailUrl": "/assets/avatars/three-kingdoms/v2.3/96/shu-zhao-yun.webp",
+    "smallUrl": "/assets/avatars/three-kingdoms/v2.3/48/shu-zhao-yun.webp"
+  },
+  {
+    "id": "shu-ma-chao",
+    "name": "马超",
+    "faction": "shu",
+    "url": "/assets/avatars/three-kingdoms/v2.3/shu-ma-chao.webp",
+    "thumbnailUrl": "/assets/avatars/three-kingdoms/v2.3/96/shu-ma-chao.webp",
+    "smallUrl": "/assets/avatars/three-kingdoms/v2.3/48/shu-ma-chao.webp"
+  },
+  {
+    "id": "shu-huang-zhong",
+    "name": "黄忠",
+    "faction": "shu",
+    "url": "/assets/avatars/three-kingdoms/v2.3/shu-huang-zhong.webp",
+    "thumbnailUrl": "/assets/avatars/three-kingdoms/v2.3/96/shu-huang-zhong.webp",
+    "smallUrl": "/assets/avatars/three-kingdoms/v2.3/48/shu-huang-zhong.webp"
+  },
+  {
+    "id": "shu-pang-tong",
+    "name": "庞统",
+    "faction": "shu",
+    "url": "/assets/avatars/three-kingdoms/v2.3/shu-pang-tong.webp",
+    "thumbnailUrl": "/assets/avatars/three-kingdoms/v2.3/96/shu-pang-tong.webp",
+    "smallUrl": "/assets/avatars/three-kingdoms/v2.3/48/shu-pang-tong.webp"
+  },
+  {
+    "id": "wu-zhou-tai",
+    "name": "周泰",
+    "faction": "wu",
+    "url": "/assets/avatars/three-kingdoms/v2.3/wu-zhou-tai.webp",
+    "thumbnailUrl": "/assets/avatars/three-kingdoms/v2.3/96/wu-zhou-tai.webp",
+    "smallUrl": "/assets/avatars/three-kingdoms/v2.3/48/wu-zhou-tai.webp"
+  },
+  {
+    "id": "wu-sun-ce",
+    "name": "孙策",
+    "faction": "wu",
+    "url": "/assets/avatars/three-kingdoms/v2.3/wu-sun-ce.webp",
+    "thumbnailUrl": "/assets/avatars/three-kingdoms/v2.3/96/wu-sun-ce.webp",
+    "smallUrl": "/assets/avatars/three-kingdoms/v2.3/48/wu-sun-ce.webp"
+  },
+  {
+    "id": "wu-sun-quan",
+    "name": "孙权",
+    "faction": "wu",
+    "url": "/assets/avatars/three-kingdoms/v2.3/wu-sun-quan.webp",
+    "thumbnailUrl": "/assets/avatars/three-kingdoms/v2.3/96/wu-sun-quan.webp",
+    "smallUrl": "/assets/avatars/three-kingdoms/v2.3/48/wu-sun-quan.webp"
+  },
+  {
+    "id": "wu-zhou-yu",
+    "name": "周瑜",
+    "faction": "wu",
+    "url": "/assets/avatars/three-kingdoms/v2.3/wu-zhou-yu.webp",
+    "thumbnailUrl": "/assets/avatars/three-kingdoms/v2.3/96/wu-zhou-yu.webp",
+    "smallUrl": "/assets/avatars/three-kingdoms/v2.3/48/wu-zhou-yu.webp"
+  },
+  {
+    "id": "wu-lu-su",
+    "name": "鲁肃",
+    "faction": "wu",
+    "url": "/assets/avatars/three-kingdoms/v2.3/wu-lu-su.webp",
+    "thumbnailUrl": "/assets/avatars/three-kingdoms/v2.3/96/wu-lu-su.webp",
+    "smallUrl": "/assets/avatars/three-kingdoms/v2.3/48/wu-lu-su.webp"
+  },
+  {
+    "id": "wu-lu-meng",
+    "name": "吕蒙",
+    "faction": "wu",
+    "url": "/assets/avatars/three-kingdoms/v2.3/wu-lu-meng.webp",
+    "thumbnailUrl": "/assets/avatars/three-kingdoms/v2.3/96/wu-lu-meng.webp",
+    "smallUrl": "/assets/avatars/three-kingdoms/v2.3/48/wu-lu-meng.webp"
+  },
+  {
+    "id": "wu-lu-xun",
+    "name": "陆逊",
+    "faction": "wu",
+    "url": "/assets/avatars/three-kingdoms/v2.3/wu-lu-xun.webp",
+    "thumbnailUrl": "/assets/avatars/three-kingdoms/v2.3/96/wu-lu-xun.webp",
+    "smallUrl": "/assets/avatars/three-kingdoms/v2.3/48/wu-lu-xun.webp"
+  },
+  {
+    "id": "wu-gan-ning",
+    "name": "甘宁",
+    "faction": "wu",
+    "url": "/assets/avatars/three-kingdoms/v2.3/wu-gan-ning.webp",
+    "thumbnailUrl": "/assets/avatars/three-kingdoms/v2.3/96/wu-gan-ning.webp",
+    "smallUrl": "/assets/avatars/three-kingdoms/v2.3/48/wu-gan-ning.webp"
+  }
+]

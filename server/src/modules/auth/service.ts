@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken'
 import crypto from 'crypto'
 import { Prisma } from '@prisma/client'
 import { config } from '../../config/index.js'
+import { isPresetAvatarUrl } from './avatarPresets.js'
 import { prisma } from '../../lib/prisma.js'
 import {
   abuseProtectionUnavailable,
@@ -1207,11 +1208,11 @@ export async function updateUserProfile(userId: number, data: { nickname?: strin
     update.nickname = normalized
   }
   if (data.avatarUrl !== undefined) {
-    // 产品决策:头像仅限平台图床(上传接口 /uploads/image 返回的 URL)。
+    // 头像仅限已发布预设的精确路径或平台图床上传地址。
     // - S3 模式:URL 必须以配置的 STORAGE_PUBLIC_URL_BASE 为前缀;
     // - 内存/开发模式:URL 的路径必须以 /uploads/ 开头(本平台上传路径)。
     // 禁止任意外部 URL,防止外部图片追踪与隐私泄露。
-    if (data.avatarUrl !== null) {
+    if (data.avatarUrl !== null && !isPresetAvatarUrl(data.avatarUrl)) {
       let allowed = false
       if (config.storage.kind === 's3' && config.storage.publicUrlBase) {
         allowed = data.avatarUrl.startsWith(config.storage.publicUrlBase.replace(/\/$/, ''))
@@ -1223,7 +1224,7 @@ export async function updateUserProfile(userId: number, data: { nickname?: strin
           allowed = false
         }
       }
-      if (!allowed) throw badRequest('头像必须使用平台图床的图片 URL')
+      if (!allowed) throw badRequest('请选择预设头像或使用平台上传的图片')
     }
     update.avatarUrl = data.avatarUrl
   }

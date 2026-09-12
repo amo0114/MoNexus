@@ -392,6 +392,9 @@
             "nullable": true,
             "maxLength": 20
           },
+          "avatarUrl": {
+            "$ref": "#/components/schemas/AvatarUrl"
+          },
           "emailVerified": {
             "type": "string",
             "format": "date-time",
@@ -411,6 +414,13 @@
             ]
           }
         }
+      },
+      "AvatarUrl": {
+        "type": "string",
+        "nullable": true,
+        "maxLength": 2048,
+        "description": "平台上传的绝对图片 URL，或已发布头像清单中的精确根相对路径；null 恢复默认头像。预设仅接受正式443px路径，不接受任意/assets/路径、查询串或外部地址。",
+        "example": "/assets/avatars/three-kingdoms/v2.3/shu-zhao-yun.webp"
       },
       "RegisterRequest": {
         "type": "object",
@@ -626,15 +636,16 @@
       },
       "UpdateMeRequest": {
         "type": "object",
-        "required": [
-          "nickname"
-        ],
+        "minProperties": 1,
         "additionalProperties": false,
         "properties": {
           "nickname": {
             "type": "string",
             "minLength": 1,
             "maxLength": 20
+          },
+          "avatarUrl": {
+            "$ref": "#/components/schemas/AvatarUrl"
           }
         }
       },
@@ -4210,7 +4221,7 @@
         "tags": [
           "Auth"
         ],
-        "summary": "更新当前用户昵称",
+        "summary": "更新当前用户昵称或头像",
         "security": [
           {
             "bearerAuth": []
