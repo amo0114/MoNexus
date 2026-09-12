@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { api, createTestUser, createTestMerchant, loginAs } from './helpers.js'
 import { loginUser, refreshAccessToken } from '../modules/auth/service.js'
 import { prisma } from '../lib/prisma.js'
+import avatarPresetUrls from '../modules/auth/avatarPresetUrls.json' with { type: 'json' }
 
 describe('POST /api/auth/register', () => {
   it('should register a new user and return access token + user', async () => {
@@ -192,6 +193,39 @@ describe('GET /api/auth/me', () => {
 })
 
 describe('PATCH /api/auth/me', () => {
+  it('persists every published preset and returns it after reloading the profile', async () => {
+    await createTestUser('preset-avatar@test.local', 'pass123')
+    const { accessToken } = await loginAs('preset-avatar@test.local', 'pass123')
+    expect(avatarPresetUrls).toHaveLength(24)
+    for (const avatarUrl of avatarPresetUrls) {
+      const saved = await api.patch('/api/auth/me').set('Authorization', `Bearer ${accessToken}`).send({ avatarUrl }).expect(200)
+      expect(saved.body.avatarUrl).toBe(avatarUrl)
+    }
+    const reloaded = await api.get('/api/auth/me').set('Authorization', `Bearer ${accessToken}`).expect(200)
+    expect(reloaded.body.avatarUrl).toBe(avatarPresetUrls.at(-1))
+    await api.patch('/api/auth/me').set('Authorization', `Bearer ${accessToken}`).send({ avatarUrl: null }).expect(200)
+    const cleared = await api.get('/api/auth/me').set('Authorization', `Bearer ${accessToken}`).expect(200)
+    expect(cleared.body.avatarUrl).toBeNull()
+  })
+
+  it('rejects forged preset paths without changing the stored avatar', async () => {
+    await createTestUser('invalid-preset-avatar@test.local', 'pass123')
+    const { accessToken } = await loginAs('invalid-preset-avatar@test.local', 'pass123')
+    const valid = avatarPresetUrls[0]
+    await api.patch('/api/auth/me').set('Authorization', `Bearer ${accessToken}`).send({ avatarUrl: valid }).expect(200)
+    for (const avatarUrl of [
+      '/assets/avatars/three-kingdoms/v2.3/unknown.webp',
+      '/assets/avatars/three-kingdoms/v2.3/wei-cao-pi.webp',
+      valid.replace('/v2.3/', '/v999/'), `${valid}?redirect=1`, `${valid}#fragment`,
+      `${valid}/../evil.webp`, `https://evil.example${valid}`, `//evil.example${valid}`, '/assets/other.webp',
+      valid.replace('wei-cao-cao', '%77ei-cao-cao'),
+    ]) {
+      await api.patch('/api/auth/me').set('Authorization', `Bearer ${accessToken}`).send({ avatarUrl }).expect(400)
+    }
+    const reloaded = await api.get('/api/auth/me').set('Authorization', `Bearer ${accessToken}`).expect(200)
+    expect(reloaded.body.avatarUrl).toBe(valid)
+  })
+
   it('updates nickname and avatarUrl', async () => {
     await createTestUser('patch-me@test.local', 'pass123')
     const { accessToken } = await loginAs('patch-me@test.local', 'pass123')

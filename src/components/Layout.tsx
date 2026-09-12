@@ -10,6 +10,7 @@ import VerifiedActionGate from './VerifiedActionGate'
 import AnnouncementBanner from './AnnouncementBanner'
 import AnnouncementCenter, { AnnouncementBellButton } from './AnnouncementCenter'
 import Logo from './ui/Logo'
+import UserAvatar from './ui/UserAvatar'
 import ThemeToggle from './ThemeToggle'
 import MobileNavDrawer from './MobileNavDrawer'
 import BottomTabBar from './BottomTabBar'
@@ -594,15 +595,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               className="hidden md:flex items-center gap-2 ml-1 relative group cursor-pointer"
               aria-label="个人中心"
             >
-              <div
-                className="w-11 h-11 rounded-full flex items-center justify-center text-white shadow-md border-2 border-[var(--color-background)] relative z-10 transition-shadow duration-300 group-hover:shadow-lg"
-                style={{
-                  background:
-                    'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-hover) 100%)',
-                }}
-              >
-                <User className="w-5 h-5" />
-              </div>
+              <UserAvatar url={user.avatarUrl} name={user.nickname || user.email} size={44} className="shadow-md border-2 border-[var(--color-background)] relative z-10 transition-shadow duration-300 group-hover:shadow-lg" />
             </button>
             )}
 

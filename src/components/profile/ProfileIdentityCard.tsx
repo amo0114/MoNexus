@@ -5,9 +5,11 @@ import { useAppStore } from '../../stores/appStore'
 import { updateMe } from '../../api/auth'
 import { uploadImage, UploadError } from '../../api/uploads'
 import { getApiErrorMessage } from '../../api/error'
+import AvatarPresetDialog from './AvatarPresetDialog'
+import UserAvatar from '../ui/UserAvatar'
 
 /**
- * 标准个人资料卡:头像(OSS 上传)+ 昵称。
+ * 标准个人资料卡：预设/上传头像 + 昵称。
  * 替代原先「仅评价用」的孤立昵称卡,作为个性化主入口。
  */
 export default function ProfileIdentityCard() {
@@ -20,6 +22,22 @@ export default function ProfileIdentityCard() {
   const [nickname, setNickname] = useState(user?.nickname ?? '')
   const [savingNick, setSavingNick] = useState(false)
   const [uploading, setUploading] = useState(false)
+  const [choosingAvatar, setChoosingAvatar] = useState(false)
+
+  async function handleSavePreset(avatarUrl: string) {
+    if (!user || uploading) return
+    setUploading(true)
+    try {
+      const me = await updateMe({ avatarUrl })
+      setUser({ ...user, ...me, merchant: me.merchant ?? user.merchant ?? null })
+      setChoosingAvatar(false)
+      showToast('头像已更新')
+    } catch (err: unknown) {
+      showToast(getApiErrorMessage(err, '头像保存失败，请重试'), 'error')
+    } finally {
+      setUploading(false)
+    }
+  }
 
   async function handleSaveNickname() {
     const value = nickname.trim()
@@ -75,7 +93,6 @@ export default function ProfileIdentityCard() {
   }
 
   const displayName = user?.nickname || user?.email || '用户'
-  const initial = displayName.trim().charAt(0).toUpperCase() || '?'
 
   return (
     <div className="card flex flex-col gap-4" data-testid="nickname-card">
@@ -83,25 +100,13 @@ export default function ProfileIdentityCard() {
         <div className="relative shrink-0">
           <button
             type="button"
-            onClick={() => fileRef.current?.click()}
-            disabled={uploading}
+            onClick={() => setChoosingAvatar(true)}
+            disabled={uploading || savingNick}
             className="group relative w-16 h-16 rounded-full overflow-hidden border-2 border-[var(--color-border)] focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)] cursor-pointer disabled:opacity-60"
             aria-label="更换头像"
             data-testid="avatar-edit"
           >
-            {user?.avatarUrl ? (
-              <img src={user.avatarUrl} alt="" className="w-full h-full object-cover" />
-            ) : (
-              <div
-                className="w-full h-full flex items-center justify-center text-white text-xl font-bold"
-                style={{
-                  background:
-                    'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-hover) 100%)',
-                }}
-              >
-                {initial}
-              </div>
-            )}
+            <UserAvatar url={user?.avatarUrl} name={displayName} size={60} className="text-xl" />
             <span className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
               {uploading ? (
                 <Loader2 className="w-5 h-5 text-white animate-spin" />
@@ -122,21 +127,38 @@ export default function ProfileIdentityCard() {
         <div className="min-w-0 flex-1">
           <h4 className="font-heading font-bold text-[var(--color-text)] mb-0.5">个人资料</h4>
           <p className="text-sm text-[var(--color-text-muted)] leading-relaxed">
-            昵称与头像用于评价、排行榜等展示。注册未填昵称时会分配类似{' '}
-            <code className="text-xs">mn_XXXXXXXX</code> 的默认昵称。
+            选择喜欢的三国头像，或上传自己的图片，让个人资料更有个性。
           </p>
-          {user?.avatarUrl && (
+          <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
             <button
               type="button"
-              onClick={() => void handleClearAvatar()}
-              disabled={uploading}
-              className="mt-2 text-xs text-[var(--color-text-muted)] hover:text-[var(--color-danger)] underline cursor-pointer"
+              onClick={() => setChoosingAvatar(true)}
+              disabled={uploading || savingNick}
+              className="inline-flex min-h-11 min-w-11 items-center rounded-md px-2 text-sm text-[var(--color-primary)] underline cursor-pointer disabled:opacity-60 focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)]"
             >
-              清除头像
+              选择头像
             </button>
-          )}
+            {user?.avatarUrl && (
+              <button
+                type="button"
+                onClick={() => void handleClearAvatar()}
+                disabled={uploading || savingNick}
+                className="inline-flex min-h-11 min-w-11 items-center rounded-md px-2 text-xs text-[var(--color-text-muted)] hover:text-[var(--color-danger)] underline cursor-pointer focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)]"
+              >
+                清除头像
+              </button>
+            )}
+          </div>
         </div>
       </div>
+
+      {choosingAvatar && (
+        <AvatarPresetDialog
+          currentUrl={user?.avatarUrl} busy={uploading}
+          onClose={() => setChoosingAvatar(false)} onSave={handleSavePreset}
+          onUpload={() => { setChoosingAvatar(false); fileRef.current?.click() }}
+        />
+      )}
 
       <div className="border-t border-[var(--color-border)] pt-4">
         {editing ? (
@@ -146,14 +168,14 @@ export default function ProfileIdentityCard() {
               maxLength={20}
               value={nickname}
               onChange={(e) => setNickname(e.target.value)}
-              disabled={savingNick}
+              disabled={savingNick || uploading}
               placeholder="1–20 个字符"
               data-testid="nickname-input"
             />
             <button
               type="button"
               onClick={() => void handleSaveNickname()}
-              disabled={savingNick}
+              disabled={savingNick || uploading}
               className="btn-primary w-full shrink-0 px-4 py-2 text-sm sm:w-auto"
               data-testid="nickname-save"
             >
@@ -162,7 +184,7 @@ export default function ProfileIdentityCard() {
             <button
               type="button"
               onClick={() => setEditing(false)}
-              disabled={savingNick}
+              disabled={savingNick || uploading}
               className="btn-secondary w-full shrink-0 px-4 py-2 text-sm sm:w-auto"
             >
               取消
@@ -184,6 +206,7 @@ export default function ProfileIdentityCard() {
               }}
               className="btn-secondary shrink-0 self-start px-4 py-1.5 text-xs btn-sm sm:self-auto"
               data-testid="nickname-edit"
+              disabled={uploading}
             >
               编辑昵称
             </button>
