@@ -18,10 +18,16 @@ async function upsertUser(opts: {
   const { email, password, role, extraUpdate = {} } = opts
   const existing = await prisma.user.findUnique({ where: { email } })
   const hashed = await bcrypt.hash(password, 10)
+  // Local smoke/demo: seed accounts are pre-verified; production verification gates stay unchanged.
+  const verifiedAt = existing?.emailVerified ?? new Date()
 
   if (existing) {
     // 默认不覆盖密码，--force-reset 时才重置
-    const updateData: Record<string, unknown> = { role, ...extraUpdate }
+    const updateData: Record<string, unknown> = {
+      role,
+      emailVerified: verifiedAt,
+      ...extraUpdate,
+    }
     if (FORCE_RESET) {
       updateData.password = hashed
       console.log(`  ↻ ${email} — 密码已重置`)
@@ -33,7 +39,7 @@ async function upsertUser(opts: {
 
   console.log(`  + ${email} — 已创建`)
   return prisma.user.create({
-    data: { email, password: hashed, role },
+    data: { email, password: hashed, role, emailVerified: verifiedAt, ...extraUpdate },
   })
 }
 
