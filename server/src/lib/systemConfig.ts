@@ -349,10 +349,59 @@ const BOOLEAN_CONFIG_KEYS = [
   'registrationInviteOnly',
 ] as const
 
-/** 整数区间配置项：`min` 缺省时下界恒为 0（由非负整数守卫保证）。 */
+/** 整数区间配置项。`min` 缺省为 0；每个键都必须有显式 `max`。 */
 type RangeConfigEntry = { min?: number; max: number; message: string }
 
+/**
+ * 奖励/门槛类积分配置的上限。PointAccount 硬顶是 2_000_000_000（见
+ * points/checkedMutation.ts）；单次奖励远小于硬顶才不会让少数账户几次签到就
+ * 触顶、并把排行榜/会员等级统计撑爆。审计（2026-09）实测 checkinReward 曾可
+ * 写入 999999999，因此这里给出显式常量而不是沿用「非负整数」。
+ */
+export const MAX_REWARD_POINTS = 1_000_000
+const MAX_THRESHOLD_POINTS = 2_000_000_000
+
+/**
+ * 全部整数配置项的取值区间：写入侧 assertSystemConfigValue 逐键校验，读取侧
+ * 通过 GET /admin/config 的 min/max 字段下发给管理端表单，前后端共用同一张表。
+ * 布尔开关（BOOLEAN_CONFIG_KEYS）固定为 0..1。
+ */
 const RANGE_CONFIG_KEYS = {
+  registerReward: { max: MAX_REWARD_POINTS, message: `注册奖励必须在 0..${MAX_REWARD_POINTS} 积分之间` },
+  checkinReward: { max: MAX_REWARD_POINTS, message: `签到奖励必须在 0..${MAX_REWARD_POINTS} 积分之间` },
+  inviteReward: { max: MAX_REWARD_POINTS, message: `邀请奖励必须在 0..${MAX_REWARD_POINTS} 积分之间` },
+  // 0 = 回退到环境默认（getRefreshTokenMaxAgeMs）。
+  refreshTokenMaxAgeDays: { max: 365, message: 'Refresh Token 有效天数必须在 0..365 之间（0 = 使用默认）' },
+  // 0 = 回退到 businessRegistry 内置值（resolvePagination）。
+  defaultPageSize: { max: 500, message: '列表默认分页大小必须在 0..500 之间（0 = 使用内置默认）' },
+  maxPageSize: { max: 500, message: '列表最大分页大小必须在 0..500 之间（0 = 使用内置上限）' },
+  lowStockThreshold: { max: 1_000_000, message: '低库存提醒阈值必须在 0..1000000 之间' },
+  memberTierSilverThreshold: { max: MAX_THRESHOLD_POINTS, message: `会员等级门槛必须在 0..${MAX_THRESHOLD_POINTS} 积分之间` },
+  memberTierGoldThreshold: { max: MAX_THRESHOLD_POINTS, message: `会员等级门槛必须在 0..${MAX_THRESHOLD_POINTS} 积分之间` },
+  memberTierPlatinumThreshold: { max: MAX_THRESHOLD_POINTS, message: `会员等级门槛必须在 0..${MAX_THRESHOLD_POINTS} 积分之间` },
+  memberTierSilverBonusBps: { max: 10_000, message: '银卡加成基点必须是 0..10000 之间的整数' },
+  memberTierGoldBonusBps: { max: 10_000, message: '金卡加成基点必须是 0..10000 之间的整数' },
+  memberTierPlatinumBonusBps: { max: 10_000, message: '铂金加成基点必须是 0..10000 之间的整数' },
+  // 0 = 关闭该维度；上限 = 积分硬顶（阈值再大等于关闭）。
+  checkoutVerifyAmountThreshold: { max: MAX_THRESHOLD_POINTS, message: `单笔兑换密码确认阈值必须在 0..${MAX_THRESHOLD_POINTS} 之间（0 = 关闭）` },
+  checkoutVerifyDailyThreshold: { max: MAX_THRESHOLD_POINTS, message: `当日累计兑换密码确认阈值必须在 0..${MAX_THRESHOLD_POINTS} 之间（0 = 关闭）` },
+  // P5：签名有效期设上限——presigned URL 一经签出无法撤销，长 TTL 直接
+  // 放大"链接被转发"的暴露窗口；0/负值也无意义。
+  fileUrlTtlSeconds: { min: 30, max: 3600, message: '签名链接有效期必须在 30–3600 秒之间' },
+  // 0 = 不限窗口。
+  fileAccessWindowDays: { max: 365, message: '买家下载窗口必须在 0..365 天之间（0 = 不限）' },
+  // 上限锁死 100：Nginx 对上传路由的 client_max_body_size 固定 100m，
+  // 后台放开更大值只会让请求在反代处 413（评审 P1）。要提额必须同时改
+  // Nginx 与此处（见 nginx.conf 上传 location 的注释）。
+  deliveryFileMaxMb: { min: 1, max: 100, message: '交付文件大小上限必须在 1–100 MB 之间（Nginx 上传路由限制为 100MB）' },
+  // P5.5：冷却上限 30 天——更长等于事实上关闭重发，直接填 0 表达该意图。
+  lowStockNotifyCooldownHours: { max: 720, message: '低库存邮件重发冷却必须在 0–720 小时之间（0 = 不重发）' },
+  // P6a：0/负值会立即关单或立即超时，超长等于关闭机制——都拒绝。
+  autoCloseDays: { min: 1, max: 90, message: '订单计时配置必须在 1–90 天之间' },
+  fulfillmentSlaDays: { min: 1, max: 90, message: '订单计时配置必须在 1–90 天之间' },
+  subscriptionRemindDays: { max: 30, message: '订阅到期提醒提前天数必须在 0–30 之间（0 = 关闭到期前提醒）' },
+  // P7b：退避表只有五档，放开更大值只会让任务在最后一档上打转（硬验收 ⑥）。
+  autoProvisionMaxAttempts: { max: 5, message: '自动开通尝试次数必须在 0–5 之间（0 = 暂停外呼）' },
   growthRewardHoldDays: {
     max: 30,
     message: '奖励冷静期必须在 0..30 天之间',
@@ -381,6 +430,8 @@ const RANGE_CONFIG_KEYS = {
     max: 1_000,
     message: '商家每月邀请名额必须在 0..1000 枚之间（0 = 暂停发码）',
   },
+  // SPEC-INVITE-001 IV-11：0/负值等于生成即失效，超长有效期抵消一次性收敛。
+  inviteCodeTtlDays: { min: 1, max: 90, message: '邀请码有效期必须在 1–90 天之间' },
   // SPEC-MERCH-001 §12（F0）：整数范围与 DB CHECK 完全一致。
   hotWindowDays: { min: 1, max: 365, message: '自然热卖统计窗口必须在 1..365 天之间' },
   hotMinSales: { min: 1, max: 100_000, message: '自然热卖最低销量门槛必须在 1..100000 之间' },
@@ -391,6 +442,26 @@ const RANGE_CONFIG_KEYS = {
   partnerMinPromotionPoints: { min: 1, max: 2_000_000_000, message: '合作伙伴净推广消费积分阈值必须在 1..2000000000 之间' },
   partnerEntitlementDays: { min: 1, max: 365, message: '合作伙伴权益授予天数必须在 1..365 天之间' },
 } as const satisfies Partial<Record<SystemConfigKey, RangeConfigEntry>>
+
+type RangedConfigKey = keyof typeof RANGE_CONFIG_KEYS
+type BooleanConfigKey = typeof BOOLEAN_CONFIG_KEYS[number]
+
+// 编译期保证：每个配置键要么在区间表里，要么是布尔开关——新增键漏配上限
+// 会直接编译失败，而不是像审计前那样静默接受任意大整数。
+type UnboundedKey = Exclude<SystemConfigKey, RangedConfigKey | BooleanConfigKey>
+const _everyKeyIsBounded: UnboundedKey extends never ? true : never = true
+void _everyKeyIsBounded
+
+export type SystemConfigBounds = { min: number; max: number }
+
+/** 每个配置键的取值区间（含布尔开关的 0..1），供管理端表单与测试对齐。 */
+export const systemConfigBounds: Record<SystemConfigKey, SystemConfigBounds> = Object.fromEntries(
+  systemConfigKeys.map(key => {
+    if ((BOOLEAN_CONFIG_KEYS as readonly string[]).includes(key)) return [key, { min: 0, max: 1 }]
+    const range: RangeConfigEntry = RANGE_CONFIG_KEYS[key as RangedConfigKey]
+    return [key, { min: range.min ?? 0, max: range.max }]
+  }),
+) as Record<SystemConfigKey, SystemConfigBounds>
 
 function isBooleanConfigKey(key: SystemConfigKey): boolean {
   return (BOOLEAN_CONFIG_KEYS as readonly string[]).includes(key)
@@ -518,6 +589,8 @@ function formatSystemConfig(key: SystemConfigKey, row?: SystemConfigRow | null) 
     group: systemConfigGroups[key],
     unit: systemConfigUnits[key] ?? null,
     hint: systemConfigHints[key] ?? null,
+    min: systemConfigBounds[key].min,
+    max: systemConfigBounds[key].max,
     updatedAt: row?.updatedAt ?? null,
     updatedBy: row?.updatedBy ?? null,
   }
@@ -561,37 +634,6 @@ export async function updateSystemConfig(
 ) {
   assertSystemConfigKey(key)
   assertSystemConfigValue(key, value)
-
-  // P5：签名有效期设上限——presigned URL 一经签出无法撤销，长 TTL 直接
-  // 放大"链接被转发"的暴露窗口；0/负值也无意义。
-  if (key === 'fileUrlTtlSeconds' && (value < 30 || value > 3600)) {
-    throw badRequest('签名链接有效期必须在 30–3600 秒之间')
-  }
-  // 上限锁死 100：Nginx 对上传路由的 client_max_body_size 固定 100m，
-  // 后台放开更大值只会让请求在反代处 413（评审 P1）。要提额必须同时改
-  // Nginx 与此处（见 nginx.conf 上传 location 的注释）。
-  if (key === 'deliveryFileMaxMb' && (value < 1 || value > 100)) {
-    throw badRequest('交付文件大小上限必须在 1–100 MB 之间（Nginx 上传路由限制为 100MB）')
-  }
-  // P5.5：冷却上限 30 天——更长等于事实上关闭重发，直接填 0 表达该意图。
-  if (key === 'lowStockNotifyCooldownHours' && value > 720) {
-    throw badRequest('低库存邮件重发冷却必须在 0–720 小时之间（0 = 不重发）')
-  }
-  // P6a：0/负值会立即关单或立即超时，超长等于关闭机制——都拒绝。
-  if ((key === 'autoCloseDays' || key === 'fulfillmentSlaDays') && (value < 1 || value > 90)) {
-    throw badRequest('订单计时配置必须在 1–90 天之间')
-  }
-  if (key === 'subscriptionRemindDays' && value > 30) {
-    throw badRequest('订阅到期提醒提前天数必须在 0–30 之间（0 = 关闭到期前提醒）')
-  }
-  // P7b：退避表只有五档，放开更大值只会让任务在最后一档上打转（硬验收 ⑥）。
-  if (key === 'autoProvisionMaxAttempts' && value > 5) {
-    throw badRequest('自动开通尝试次数必须在 0–5 之间（0 = 暂停外呼）')
-  }
-  // SPEC-INVITE-001 IV-11：0/负值等于生成即失效，超长有效期抵消一次性收敛。
-  if (key === 'inviteCodeTtlDays' && (value < 1 || value > 90)) {
-    throw badRequest('邀请码有效期必须在 1–90 天之间')
-  }
 
   return prisma.$transaction(async tx => {
     if (isTierKey(key)) {

@@ -5,6 +5,7 @@ import { badRequest } from '../../lib/httpError.js'
 import { logger } from '../../lib/logger.js'
 import { getStorageForWrite, getStorageForObjectKey } from '../../lib/storage/index.js'
 import { registerStoredObject } from '../../lib/storage/storedObjectRegistry.js'
+import { validateImageStructure } from '../../lib/imageStructure.js'
 
 const router = Router()
 
@@ -91,6 +92,12 @@ router.post('/image', authenticate, requireActiveUser, requireVerifiedEmail, att
     const detectedMime = detectImageMime(req.file.buffer)
     if (!detectedMime || detectedMime !== req.file.mimetype) {
       return next(badRequest('文件内容与图片格式不匹配', 'UNSUPPORTED_MEDIA_TYPE'))
+    }
+    // Magic bytes only prove the prefix. Walk the container to its terminator
+    // and require the file to end exactly there, so a valid image with a
+    // script/archive appended (polyglot) is rejected instead of stored as-is.
+    if (!validateImageStructure(req.file.buffer, detectedMime)) {
+      return next(badRequest('图片文件结构无效或包含多余数据', 'UNSUPPORTED_MEDIA_TYPE'))
     }
     const ext = extensionByMime[detectedMime]
     const { adapter: storage, providerConfigId } = await getStorageForWrite()
