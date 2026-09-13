@@ -5,8 +5,8 @@ import { api, createTestUser, loginAs, authHeader } from './helpers.js'
 // file from disk and works on every CI image regardless of cwd.
 const TINY_PNG = Buffer.from(
   '89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000' +
-    '000d4944415478da6300010000050001' +
-    '0d0a2db40000000049454e44ae426082',
+    '000d4944415478da63606060600000000500017aa85750' +
+    '0000000049454e44ae426082',
   'hex'
 )
 
@@ -117,5 +117,34 @@ describe('POST /api/uploads/image', () => {
     expect(fetched.headers['content-type']).toMatch(/^image\/png/)
     expect(fetched.headers['x-content-type-options']).toBe('nosniff')
     expect(fetched.body).toEqual(TINY_PNG)
+  })
+
+  // 审计低危项（2026-09）：合法图片头 + 附加脚本内容可通过校验并原样存储。
+  // 现在按格式做结构校验：文件必须在图片终止标记处恰好结束，尾随字节拒绝。
+  it('should reject a polyglot image that carries a payload after its terminator', async () => {
+    await createTestUser('upload-polyglot@test.local')
+    const { accessToken } = await loginAs('upload-polyglot@test.local', 'testpass123')
+    const polyglot = Buffer.concat([TINY_PNG, Buffer.from('<script>alert(1)</script>')])
+
+    const res = await api
+      .post('/api/uploads/image')
+      .set(authHeader(accessToken))
+      .attach('file', polyglot, { filename: 'polyglot.png', contentType: 'image/png' })
+      .expect(400)
+
+    expect(res.body.error.code).toBe('UNSUPPORTED_MEDIA_TYPE')
+  })
+
+  it('should reject a truncated image', async () => {
+    await createTestUser('upload-truncated@test.local')
+    const { accessToken } = await loginAs('upload-truncated@test.local', 'testpass123')
+
+    const res = await api
+      .post('/api/uploads/image')
+      .set(authHeader(accessToken))
+      .attach('file', TINY_PNG.subarray(0, TINY_PNG.length - 4), { filename: 'cut.png', contentType: 'image/png' })
+      .expect(400)
+
+    expect(res.body.error.code).toBe('UNSUPPORTED_MEDIA_TYPE')
   })
 })

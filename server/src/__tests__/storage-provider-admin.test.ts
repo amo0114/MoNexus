@@ -6,8 +6,8 @@ import { invalidateStorageRuntimeCache } from '../lib/storage/runtime.js'
 
 const TINY_PNG = Buffer.from(
   '89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000' +
-    '000d4944415478da6300010000050001' +
-    '0d0a2db40000000049454e44ae426082',
+    '000d4944415478da63606060600000000500017aa85750' +
+    '0000000049454e44ae426082',
   'hex',
 )
 
@@ -28,6 +28,59 @@ describe('admin storage console APIs (SPEC-STORAGE-001)', () => {
       update: { activeConfigId: null, configVersion: 0 },
     })
     invalidateStorageRuntimeCache()
+  })
+
+  // 审计中危项（2026-09）：生产 /admin/storage/status 报告
+  // credentialsEncKeyConfigured=false。写路径本就在生产 fail-closed（下方用例），
+  // 缺的是部署链路把密钥送进容器 + 状态接口把「密钥缺失」说清楚。
+  it('status flags a missing production encryption key as unhealthy with an actionable detail', async () => {
+    const { config } = await import('../config/index.js')
+    const original = { isProduction: config.isProduction, key: config.storageCredentialsEncKey }
+    config.isProduction = true
+    config.storageCredentialsEncKey = null
+    try {
+      const res = await api
+        .get('/api/admin/storage/status')
+        .set(authHeader(adminToken))
+        .expect(200)
+      expect(res.body.credentialsEncKeyConfigured).toBe(false)
+      expect(res.body.credentialsEncKeyDetail).toContain('STORAGE_CREDENTIALS_ENC_KEY')
+      expect(res.body.runtime.uiWriteBlocked).toBe(true)
+    } finally {
+      config.isProduction = original.isProduction
+      config.storageCredentialsEncKey = original.key
+    }
+  })
+
+  it('refuses to store provider credentials in production without the encryption key', async () => {
+    const { config } = await import('../config/index.js')
+    const original = { isProduction: config.isProduction, key: config.storageCredentialsEncKey }
+    config.isProduction = true
+    config.storageCredentialsEncKey = null
+    try {
+      const res = await api
+        .post('/api/admin/storage/providers')
+        .set(authHeader(adminToken))
+        .send({
+          type: 's3_compatible',
+          name: 'no key',
+          accessKey: 'AKNOKEY',
+          secretKey: 'sk-must-not-persist',
+          publicConfig: {
+            endpoint: 'https://s3.amazonaws.com',
+            region: 'us-east-1',
+            publicBucket: 'pub-bucket',
+            privateBucket: 'priv-bucket',
+            forcePathStyle: true,
+          },
+        })
+        .expect(403)
+      expect(res.body.error.message).toContain('STORAGE_CREDENTIALS_ENC_KEY')
+      expect(await prisma.storageProviderConfig.count()).toBe(0)
+    } finally {
+      config.isProduction = original.isProduction
+      config.storageCredentialsEncKey = original.key
+    }
   })
 
   it('GET /admin/storage/status returns bootstrap diagnostics without secrets', async () => {

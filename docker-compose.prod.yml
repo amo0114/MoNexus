@@ -146,6 +146,18 @@ services:
       # server config also enforces this key in production; list it here so a
       # value in Compose's .env actually reaches the container.
       WEBHOOK_SECRET_ENC_KEY: ${WEBHOOK_SECRET_ENC_KEY:?WEBHOOK_SECRET_ENC_KEY is required (64 hex chars)}
+      # SPEC-STORAGE-001: object-storage console credentials (AK/SK entered in
+      # the admin UI) are AES-256-GCM encrypted at rest with this key. The
+      # server fail-closes every UI write in production without it, and
+      # /admin/storage/status reported credentialsEncKeyConfigured=false in
+      # the 2026-09 audit because the key was never passed through Compose.
+      STORAGE_CREDENTIALS_ENC_KEY: ${STORAGE_CREDENTIALS_ENC_KEY:?STORAGE_CREDENTIALS_ENC_KEY is required (64 hex chars; openssl rand -hex 32)}
+      STORAGE_CREDENTIALS_ENC_KEY_VERSION: ${STORAGE_CREDENTIALS_ENC_KEY_VERSION:-1}
+      STORAGE_CREDENTIALS_ENC_KEY_PREVIOUS: ${STORAGE_CREDENTIALS_ENC_KEY_PREVIOUS:-}
+      STORAGE_CREDENTIALS_ENC_KEY_PREVIOUS_VERSION: ${STORAGE_CREDENTIALS_ENC_KEY_PREVIOUS_VERSION:-}
+      STORAGE_UI_CONFIG_ENABLED: ${STORAGE_UI_CONFIG_ENABLED:-true}
+      STORAGE_CONFIG_SOURCE: ${STORAGE_CONFIG_SOURCE:-database}
+      STORAGE_ENDPOINT_ALLOWLIST: ${STORAGE_ENDPOINT_ALLOWLIST:-}
       AUTO_PROVISION_ALLOW_INSECURE_TARGETS: ${AUTO_PROVISION_ALLOW_INSECURE_TARGETS:-false}
       # Optional platform FakaBridge/Xboard integration. Keep all unset until
       # it is enabled; URL and secret are validated as an all-or-nothing pair.

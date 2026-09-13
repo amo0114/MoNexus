@@ -557,3 +557,59 @@ describe('SPEC-RAP-001 system config registry and validation', () => {
     expect(res.body.error.message).toContain('不得超过生命周期上限')
   })
 })
+
+/**
+ * 审计中危项（2026-09）：配置项无上限校验。checkinReward 曾可被设为
+ * 999999999。所有整数配置项现在都有显式上限（与前端 adminConfigMeta 对齐），
+ * 奖励类上限来自积分硬顶的安全分量，任何键都不再接受任意大整数。
+ */
+describe('every system config key has an upper bound', () => {
+  beforeEach(async () => {
+    await clearSystemConfig()
+  })
+
+  afterEach(async () => {
+    await clearSystemConfig()
+  })
+
+  it('rejects an absurd checkinReward and keeps the previous value', async () => {
+    const { accessToken } = await loginAdmin('cfg-bound-checkin@test.local')
+
+    await updateConfig(accessToken, 'checkinReward', 5).expect(200)
+    const res = await updateConfig(accessToken, 'checkinReward', 999_999_999).expect(400)
+    expect(res.body.error.message).toContain('1000000')
+
+    const row = await prisma.systemConfig.findUniqueOrThrow({ where: { key: 'checkinReward' } })
+    expect(row.value).toBe(5)
+  })
+
+  it('rejects 2^31-1 on every key and accepts each key at its documented maximum', async () => {
+    const { accessToken } = await loginAdmin('cfg-bound-all@test.local')
+    const { systemConfigKeys, systemConfigBounds } = await import('../lib/systemConfig.js')
+
+    for (const key of systemConfigKeys) {
+      const bounds = systemConfigBounds[key]
+      expect(bounds, `${key} must declare bounds`).toBeDefined()
+      expect(bounds.max).toBeLessThan(2_147_483_647)
+
+      const rejected = await updateConfig(accessToken, key, 2_147_483_647)
+      expect(rejected.status, `${key} must reject INT_MAX`).toBe(400)
+      expect(await prisma.systemConfig.findUnique({ where: { key } })).toBeNull()
+    }
+
+    // 上限本身必须可写（除 tier 三元组/邀请配额受跨字段约束，单独覆盖）。
+    for (const key of ['checkinReward', 'registerReward', 'inviteReward', 'lowStockThreshold', 'maxPageSize', 'refreshTokenMaxAgeDays', 'fileAccessWindowDays', 'checkoutVerifyAmountThreshold'] as const) {
+      const bounds = systemConfigBounds[key]
+      await updateConfig(accessToken, key, bounds.max).expect(200)
+    }
+  })
+
+  it('exposes min/max in the admin config listing', async () => {
+    const { accessToken } = await loginAdmin('cfg-bound-list@test.local')
+    const res = await api.get('/api/admin/config').set(authHeader(accessToken)).expect(200)
+    const checkin = res.body.find((item: { key: string }) => item.key === 'checkinReward')
+    expect(checkin).toMatchObject({ min: 0, max: 1_000_000 })
+    const autoClose = res.body.find((item: { key: string }) => item.key === 'autoCloseDays')
+    expect(autoClose).toMatchObject({ min: 1, max: 90 })
+  })
+})

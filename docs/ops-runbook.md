@@ -64,6 +64,7 @@
 
 - 双桶：`STORAGE_BUCKET`（公开图片，anonymous download）与 `DELIVERY_STORAGE_BUCKET`（私有交付，绝不 anonymous；同名拒启）。生产必配 `DELIVERY_STORAGE_PUBLIC_ENDPOINT`（https 强制，config 层拒启）。
 - **P7b webhook 密钥**:`WEBHOOK_SECRET_ENC_KEY`(64 位十六进制 = 32 字节,`openssl rand -hex 32`)加密商家 webhook 密钥(AES-256-GCM);**生产必配**,缺失则 config 层拒启、`scripts/check-prod-env.sh` 预检失败。轮换此 key 会使所有已存密文无法解密——需重置商家 webhook 配置。`AUTO_PROVISION_ALLOW_INSECURE_TARGETS` 是仅开发用的逃生阀(放开 https/IP 钉扎的 SSRF 防线),**生产置 true 直接拒启**。
+- **存储控制台凭证主密钥**：`STORAGE_CREDENTIALS_ENC_KEY`（64 位十六进制 = 32 字节，`openssl rand -hex 32`）加密后台录入的对象存储 AK/SK（AES-256-GCM）；**生产必配**，缺失时服务端拒绝一切控制台写操作（403），`/admin/storage/status` 返回 `credentialsEncKeyConfigured=false` 并在 `credentialsEncKeyDetail` 指明原因；`docker-compose.prod.yml` 透传该变量族（`*_VERSION` / `*_PREVIOUS` / `*_PREVIOUS_VERSION`），`scripts/check-prod-env.sh` 预检校验格式。轮换：新 key 写入主变量并递增 `_VERSION`，旧 key 移入 `_PREVIOUS`（附其版本号）以解密存量密文；仅用环境变量配置存储时该密钥只影响控制台写路径。
 - Nginx：`/${DELIVERY_STORAGE_BUCKET}/` 原样透传且 `proxy_set_header Host $http_host`（`$host` 去端口会毁 SigV4）；上传路由单独放宽 100m。
 - 备份：`scripts/backup.sh` 双桶快照（/backup/uploads + /backup/delivery）；恢复演练 `scripts/restore-objects-check.sh`；可移植备份 v2 含私有桶（旧版服务器遇 v2 响亮失败）。运营状态表（LowStockNotice/SubscriptionReminder/SlaReminder/BookingReminder）随 pg_dump 自然覆盖，丢失仅导致重复提醒，不致数据损坏。
 

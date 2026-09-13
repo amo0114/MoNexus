@@ -66,6 +66,10 @@ export default function AdminConfigPanel() {
   async function handleSave(key: AdminSystemConfigKey, raw: string): Promise<void> {
     const meta = CONFIG_METAS[key]
     if (!meta) return
+    // 服务端下发的区间是写入侧同表校验的权威值；本地 meta 仅作旧后端兜底。
+    const serverBounds = configs.find((c) => c.key === key)
+    const minBound = serverBounds?.min ?? meta.min
+    const maxBound = serverBounds?.max ?? meta.max
 
     let valueToSave: number
 
@@ -95,14 +99,14 @@ export default function AdminConfigPanel() {
         showToast(msg, 'error')
         return
       }
-      if (meta.min !== undefined && n < meta.min) {
-        const msg = `配置值不能小于 ${meta.min}`
+      if (minBound !== undefined && n < minBound) {
+        const msg = `配置值不能小于 ${minBound}`
         setErrors((prev) => ({ ...prev, [key]: msg }))
         showToast(msg, 'error')
         return
       }
-      if (meta.max !== undefined && n > meta.max) {
-        const msg = `配置值不能大于 ${meta.max}`
+      if (maxBound !== undefined && n > maxBound) {
+        const msg = `配置值不能大于 ${maxBound}`
         setErrors((prev) => ({ ...prev, [key]: msg }))
         showToast(msg, 'error')
         return
@@ -325,8 +329,8 @@ export default function AdminConfigPanel() {
                         <input
                           id={`admin-config-input-${c.key}`}
                           type="number"
-                          min={meta.min ?? 0}
-                          max={meta.max}
+                          min={c.min ?? meta.min ?? 0}
+                          max={c.max ?? meta.max}
                           step="1"
                           value={rawVal}
                           onChange={(e) => handleChange(c.key, e.target.value)}

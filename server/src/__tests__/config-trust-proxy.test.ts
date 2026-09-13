@@ -174,6 +174,7 @@ describe('check-prod-env.sh trusted proxy topology', () => {
       SMTP_FROM: 'ops@example.com',
       ALERT_EMAIL_TO: 'alerts@example.com',
       WEBHOOK_SECRET_ENC_KEY: 'a'.repeat(64),
+      STORAGE_CREDENTIALS_ENC_KEY: 'b'.repeat(64),
       METRICS_TOKEN: 'metrics-token-for-preflight-at-least-32',
       POINT_VALUE_POLICY_MODE: 'off',
       DEPLOY_TOPOLOGY: 'nginx',
