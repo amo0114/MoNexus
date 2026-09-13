@@ -267,11 +267,30 @@ export default function AdminStoragePanel() {
                   {' · '}
                   <span>后台写操作：{status.uiConfigEnabled ? '开启' : '关闭'}</span>
                   {' · '}
-                  <span>凭证主密钥：{status.credentialsEncKeyConfigured ? '已配置' : '未配置'}</span>
+                  <span
+                    title={status.credentialsEncKeyDetail}
+                    className={status.credentialsEncKeyConfigured ? undefined : 'text-[var(--color-danger)] font-semibold'}
+                  >
+                    凭证主密钥：{status.credentialsEncKeyConfigured ? '已配置' : '未配置'}
+                  </span>
                 </div>
               </div>
             </div>
           </section>
+
+          {!status.credentialsEncKeyConfigured && (
+            <div className="flex gap-2 items-start rounded-lg border border-[var(--color-danger)]/30 bg-[var(--color-danger)]/10 px-3 py-2 text-sm text-[var(--color-danger)]">
+              <ShieldAlert className="w-4 h-4 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-semibold">生产环境未配置凭证主密钥，后台无法保存云存储凭证。</p>
+                <p className="mt-1">
+                  请在部署环境设置 <code className="font-mono">STORAGE_CREDENTIALS_ENC_KEY</code>
+                  （64 位十六进制，<code className="font-mono">openssl rand -hex 32</code>）后重启服务。
+                  {status.credentialsEncKeyDetail ? ` 服务端诊断：${status.credentialsEncKeyDetail}` : ''}
+                </p>
+              </div>
+            </div>
+          )}
 
           {(!status.uiConfigEnabled || status.configSource === 'env') && (
             <div className="flex gap-2 items-start rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-200">

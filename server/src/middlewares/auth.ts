@@ -45,8 +45,15 @@ export function authenticate(req: Request, _res: Response, next: NextFunction) {
     const payload = jwt.verify(token, config.jwtSecret) as AuthPayload
     req.user = payload
     next()
-  } catch {
-    next(unauthenticated('Token 已过期，请重新登录'))
+  } catch (err) {
+    // Same status/code either way (the client refresh path keys off 401),
+    // but say what actually happened: only a genuinely expired token is
+    // "expired"; tampered / malformed / wrong-key tokens are "invalid".
+    if (err instanceof jwt.TokenExpiredError) {
+      next(unauthenticated('Token 已过期，请重新登录'))
+      return
+    }
+    next(unauthenticated('登录凭证无效，请重新登录'))
   }
 }
 

@@ -12,6 +12,8 @@ export interface StorageStatus {
   uiConfigEnabled: boolean
   configSource: 'env' | 'database'
   credentialsEncKeyConfigured: boolean
+  /** 主密钥状态说明（缺失时指明 STORAGE_CREDENTIALS_ENC_KEY）；旧后端可能缺省。 */
+  credentialsEncKeyDetail?: string
   bootstrap: {
     kind: 's3' | 'memory'
     providerLabel: string
@@ -28,6 +30,8 @@ export interface StorageStatus {
     activeConfigId: number | null
     configVersion: number
     writeTarget: 'bootstrap' | 'provider'
+    /** 生产缺主密钥或后台写关闭时为 true：所有控制台写操作会被服务端拒绝。 */
+    uiWriteBlocked?: boolean
     activeCredentialsDecryptOk: boolean | null
   }
   presets: StoragePreset[]

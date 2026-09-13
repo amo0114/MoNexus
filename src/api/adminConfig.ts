@@ -63,6 +63,9 @@ export interface AdminSystemConfig {
   unit: string | null
   /** 可选填写提示，如万分比换算说明 */
   hint: string | null
+  /** 服务端权威取值区间（写入侧同表校验）；旧后端可能缺省。 */
+  min?: number
+  max?: number
   updatedAt: string | null
   updatedBy: number | null
 }
