@@ -509,6 +509,29 @@ describe('production Compose legal configuration boundary', () => {
   })
 })
 
+/**
+ * 审计中危项（2026-09）：生产 storage status 报告 credentialsEncKeyConfigured=false。
+ * 根因是 Compose 从未把 STORAGE_CREDENTIALS_ENC_KEY* 传进容器，.env 里配了也
+ * 到不了进程。Compose 必须透传全部四个键，preflight 必须校验主密钥格式。
+ */
+describe('production Compose storage credential encryption key wiring', () => {
+  it('passes STORAGE_CREDENTIALS_ENC_KEY* into the server and preflight validates it', async () => {
+    const { readFile } = await import('node:fs/promises')
+    const compose = await readFile(path.resolve(SERVER_ROOT, '..', 'docker-compose.prod.yml'), 'utf8')
+    const server = compose.slice(compose.indexOf('  server:'), compose.indexOf('  redis:'))
+    const preflight = await readFile(path.resolve(SERVER_ROOT, '..', 'scripts', 'check-prod-env.sh'), 'utf8')
+
+    expect(server).toContain('STORAGE_CREDENTIALS_ENC_KEY: ${STORAGE_CREDENTIALS_ENC_KEY:?')
+    expect(server).toContain('STORAGE_CREDENTIALS_ENC_KEY_VERSION: ${STORAGE_CREDENTIALS_ENC_KEY_VERSION:-1}')
+    expect(server).toContain('STORAGE_CREDENTIALS_ENC_KEY_PREVIOUS: ${STORAGE_CREDENTIALS_ENC_KEY_PREVIOUS:-}')
+    expect(server).toContain('STORAGE_CREDENTIALS_ENC_KEY_PREVIOUS_VERSION: ${STORAGE_CREDENTIALS_ENC_KEY_PREVIOUS_VERSION:-}')
+    expect(server).toContain('STORAGE_UI_CONFIG_ENABLED: ${STORAGE_UI_CONFIG_ENABLED:-true}')
+    expect(server).toContain('STORAGE_CONFIG_SOURCE: ${STORAGE_CONFIG_SOURCE:-database}')
+    expect(preflight).toContain('require_hex_32 STORAGE_CREDENTIALS_ENC_KEY')
+    expect(preflight).toContain('require_hex_32 WEBHOOK_SECRET_ENC_KEY')
+  })
+})
+
 describe('ops scripts cover both buckets (P1 regression)', () => {
   it('backup.sh mirrors the delivery bucket and restore-objects-check.sh restores it', async () => {
     const { readFile } = await import('node:fs/promises')
@@ -582,6 +605,7 @@ describe('check-prod-env.sh POINT_VALUE_POLICY_MODE', () => {
       'SMTP_FROM=ops@example.com',
       'ALERT_EMAIL_TO=alerts@example.com',
       `WEBHOOK_SECRET_ENC_KEY=${'a'.repeat(64)}`,
+      `STORAGE_CREDENTIALS_ENC_KEY=${'b'.repeat(64)}`,
       'METRICS_TOKEN=metrics-token-for-preflight-at-least-32',
       'DEPLOY_TOPOLOGY=nginx',
       'TRUST_PROXY=1',
@@ -805,6 +829,7 @@ function writeComposeEnv(extras: Record<string, string> = {}) {
     DELIVERY_STORAGE_BUCKET: 'monexus-files',
     DELIVERY_STORAGE_PUBLIC_ENDPOINT: 'https://files.example.com',
     WEBHOOK_SECRET_ENC_KEY: 'a'.repeat(64),
+    STORAGE_CREDENTIALS_ENC_KEY: 'b'.repeat(64),
     REDIS_PASSWORD: 'redis-password-for-compose',
     POINT_VALUE_POLICY_MODE: 'shadow',
     ...extras,

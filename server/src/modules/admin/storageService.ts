@@ -135,10 +135,23 @@ export async function getStorageStatus() {
         ? 'provider'
         : 'bootstrap'
 
+  // Production requires an explicit key (assertUiWritable fail-closes every
+  // write); dev/test derive one from JWT_SECRET. Report the exact reason so
+  // an operator seeing "未配置" knows which env var to set.
+  const encKeyConfigured = Boolean(config.storageCredentialsEncKey)
+  const credentialsEncKeyConfigured = encKeyConfigured || !config.isProduction
+  const credentialsEncKeyDetail = encKeyConfigured
+    ? 'STORAGE_CREDENTIALS_ENC_KEY configured'
+    : config.isProduction
+      ? 'STORAGE_CREDENTIALS_ENC_KEY is not set: provider credential writes are blocked in production'
+      : 'STORAGE_CREDENTIALS_ENC_KEY not set: using a key derived from JWT_SECRET (non-production only)'
+  const uiWriteBlocked = !config.storageUiConfigEnabled || (config.isProduction && !encKeyConfigured)
+
   return {
     uiConfigEnabled: config.storageUiConfigEnabled,
     configSource: config.storageConfigSource,
-    credentialsEncKeyConfigured: Boolean(config.storageCredentialsEncKey) || !config.isProduction,
+    credentialsEncKeyConfigured,
+    credentialsEncKeyDetail,
     bootstrap: {
       ...bootstrap,
       healthy,
@@ -148,6 +161,7 @@ export async function getStorageStatus() {
       activeConfigId: runtime?.activeConfigId ?? null,
       configVersion: runtime?.configVersion ?? 0,
       writeTarget,
+      uiWriteBlocked,
       activeCredentialsDecryptOk: decryptOk,
     },
     presets: PROVIDER_PRESETS,

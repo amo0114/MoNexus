@@ -220,7 +220,7 @@ describe('P5 T5 — download-url issuance: authz matrix, anti-enumeration, audit
     await api.post('/api/orders/999999/files/download-url').set(authHeader(buyer.accessToken)).expect(404)
   })
 
-  it('404s an order that has no file delivery (no distinguishable probe)', async () => {
+  it('404s an order that has no file delivery, with an accurate message for its own buyer', async () => {
     await createTestUser('t5-nofile-b@test.local', 'pass123', 'user', 1000)
     const buyer = await loginAs('t5-nofile-b@test.local', 'pass123')
     const { createTestProduct } = await import('./helpers.js')
@@ -230,7 +230,18 @@ describe('P5 T5 — download-url issuance: authz matrix, anti-enumeration, audit
       .set(authHeader(buyer.accessToken))
       .send({ productId: product.id })
       .expect(201)
-    await api.post(`/api/orders/${order.body.orderId}/files/download-url`).set(authHeader(buyer.accessToken)).expect(404)
+    // 审计低危项：归属已确认的请求者拿到准确文案；状态码与错误码不变，
+    // 陌生人/不存在订单仍是同一 404 + 「订单不存在」，无新的枚举信号。
+    const own = await api.post(`/api/orders/${order.body.orderId}/files/download-url`).set(authHeader(buyer.accessToken)).expect(404)
+    expect(own.body.error.code).toBe('NOT_FOUND')
+    expect(own.body.error.message).toBe('该订单没有可下载的交付文件')
+
+    await createTestUser('t5-nofile-stranger@test.local', 'pass123', 'user', 1000)
+    const stranger = await loginAs('t5-nofile-stranger@test.local', 'pass123')
+    const foreign = await api.post(`/api/orders/${order.body.orderId}/files/download-url`).set(authHeader(stranger.accessToken)).expect(404)
+    expect(foreign.body.error).toMatchObject({ code: 'NOT_FOUND', message: '订单不存在' })
+    const missing = await api.post('/api/orders/999999/files/download-url').set(authHeader(stranger.accessToken)).expect(404)
+    expect(missing.body.error).toMatchObject({ code: 'NOT_FOUND', message: '订单不存在' })
   })
 
   it('suspends the buyer during dispute while the merchant keeps evidence access; refund revokes permanently', async () => {

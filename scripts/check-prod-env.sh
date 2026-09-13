@@ -229,6 +229,24 @@ require_canonical_base64_32() {
   fi
 }
 
+# 32-byte hex key (64 hex chars) used for AES-256-GCM at-rest encryption.
+# Required in production; placeholders only tolerated with ALLOW_PLACEHOLDERS.
+require_hex_32() {
+  local key="$1"
+  local why="$2"
+  local value
+  value="$(get "$key")"
+  if [[ "$ALLOW_PLACEHOLDERS" == "true" ]] && is_placeholder_literal "$value"; then
+    warn "$key is still a placeholder; replace it before a real deploy"
+  elif [[ -n "$value" ]]; then
+    if [[ ! "$value" =~ ^[0-9a-fA-F]{64}$ ]]; then
+      fail "$key must be 64 hex characters (32 bytes) — generate with: openssl rand -hex 32"
+    fi
+  elif [[ "$MODE" == "production" ]]; then
+    fail "$key is required in production ($why)"
+  fi
+}
+
 require_turnstile_allowed_hostnames() {
   local key="TURNSTILE_ALLOWED_HOSTNAMES"
   local value
@@ -475,15 +493,22 @@ fi
 # Without the key the server cannot decrypt stored secrets to sign outbound calls;
 # the config layer already refuses to boot in production without it — mirror that here
 # so the failure surfaces before compose start.
-webhook_enc_key="$(get WEBHOOK_SECRET_ENC_KEY)"
-if [[ "$ALLOW_PLACEHOLDERS" == "true" ]] && is_placeholder_literal "$webhook_enc_key"; then
-  warn "WEBHOOK_SECRET_ENC_KEY is still a placeholder; replace it before a real deploy"
-elif [[ -n "$webhook_enc_key" ]]; then
-  if [[ ! "$webhook_enc_key" =~ ^[0-9a-fA-F]{64}$ ]]; then
-    fail "WEBHOOK_SECRET_ENC_KEY must be 64 hex characters (32 bytes) — generate with: openssl rand -hex 32"
+require_hex_32 WEBHOOK_SECRET_ENC_KEY "merchant webhook secrets are encrypted at rest"
+
+# SPEC-STORAGE-001: object-storage console credentials (AK/SK entered in the
+# admin UI) are encrypted at rest with this key. The server fail-closes every
+# console write in production without it; Compose now passes it through, so
+# a missing value must stop the deploy here rather than surface as
+# credentialsEncKeyConfigured=false in /admin/storage/status.
+require_hex_32 STORAGE_CREDENTIALS_ENC_KEY "object-storage console credentials are encrypted at rest"
+storage_enc_prev="$(get STORAGE_CREDENTIALS_ENC_KEY_PREVIOUS)"
+if [[ -n "$storage_enc_prev" ]]; then
+  if [[ ! "$storage_enc_prev" =~ ^[0-9a-fA-F]{64}$ ]]; then
+    fail "STORAGE_CREDENTIALS_ENC_KEY_PREVIOUS must be 64 hex characters (32 bytes) when set"
   fi
-elif [[ "$MODE" == "production" ]]; then
-  fail "WEBHOOK_SECRET_ENC_KEY is required in production (merchant webhook secrets are encrypted at rest)"
+  if [[ ! "$(get STORAGE_CREDENTIALS_ENC_KEY_PREVIOUS_VERSION)" =~ ^[1-9][0-9]*$ ]]; then
+    fail "STORAGE_CREDENTIALS_ENC_KEY_PREVIOUS_VERSION is required (positive integer) when PREVIOUS key is set"
+  fi
 fi
 
 # AUTO_PROVISION_ALLOW_INSECURE_TARGETS is a dev-only escape hatch that disables the
