@@ -28,6 +28,10 @@ import {
   type ProvisionOtpVars,
 } from './kinds/provisionOtp.js'
 import {
+  renderChatBindOtp,
+  type ChatBindOtpVars,
+} from './kinds/chatBindOtp.js'
+import {
   renderSlaOverdue,
   type SlaOverdueVars,
 } from './kinds/slaOverdue.js'
@@ -48,6 +52,7 @@ export type MailTemplateKind =
   | 'subscription_expiring'
   | 'subscription_expired'
   | 'provision_degraded'
+  | 'chat_bind_otp'
 
 export type MailTemplateVarsMap = {
   email_verification: EmailVerificationVars
@@ -60,6 +65,7 @@ export type MailTemplateVarsMap = {
   subscription_expiring: SubscriptionMailVars
   subscription_expired: SubscriptionMailVars
   provision_degraded: ProvisionDegradedVars
+  chat_bind_otp: ChatBindOtpVars
 }
 
 /**
@@ -91,6 +97,8 @@ export function renderMail<K extends MailTemplateKind>(
       return renderSubscriptionExpired(vars as SubscriptionMailVars)
     case 'provision_degraded':
       return renderProvisionDegraded(vars as ProvisionDegradedVars)
+    case 'chat_bind_otp':
+      return renderChatBindOtp(vars as ChatBindOtpVars)
     default: {
       const _exhaustive: never = kind
       throw new Error(`Unknown mail template kind: ${String(_exhaustive)}`)
