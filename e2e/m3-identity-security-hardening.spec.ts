@@ -83,6 +83,14 @@ async function mockProfileBackgroundRequests(page: Page) {
   await page.route(apiRoute('/points/history'), route => route.fulfill({ json: [] }))
   await page.route(apiRoute('/points/checkin/status'), route => route.fulfill({ json: { hasCheckedIn: false } }))
   await page.route(apiRoute('/points/tier'), route => route.fulfill({ json: memberTier }))
+  // SPEC-CHAT-BOT-001: ProfilePage mounts ChatBindCard, which reads its chat
+  // binding status on mount. Without this stub the intentionally unsigned
+  // UI-only token reaches the real backend, gets a 401, triggers the refresh
+  // path, and terminal-logs the fixture session out — which surfaced as
+  // "expected /profile but got /login" flakes in this spec.
+  await page.route(apiRoute('/points/chat-bind/status'), route => route.fulfill({
+    json: { bound: false, platform: null, platformId: null, boundAt: null },
+  }))
   await page.route(apiRoute('/config/registry'), route => route.fulfill({ json: configRegistry }))
 }
 
