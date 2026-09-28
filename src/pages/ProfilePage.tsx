@@ -22,6 +22,7 @@ import { MemberTierBadge } from '../components/MemberTierBadge'
 import SessionManager from '../components/auth/SessionManager'
 import { getMyInvites, createInviteCode, type MyInvitesResponse } from '../api/invites'
 import ProfileIdentityCard from '../components/profile/ProfileIdentityCard'
+import ChatBindCard from '../components/ChatBindCard'
 
 
 function PasswordChangeCard() {
@@ -553,8 +554,9 @@ export default function ProfilePage() {
             </div>
           </div>
         </div>
-        <div className="lg:col-span-5">
+        <div className="lg:col-span-5 space-y-5">
           <MemberTierCard />
+          <ChatBindCard />
         </div>
       </div>
 

@@ -1,0 +1,11 @@
+{
+  "name": "astrbot_plugin_monexus_checkin",
+  "display_name": "MoNexus 签到",
+  "desc": "MoNexus 积分平台签到：账号绑定、群/私聊签到、积分等级查询、定时催签",
+  "version": "1.0.0",
+  "author": "MoNexus",
+  "repo": "",
+  "main": "main.py",
+  "dependencies": [],
+  "astrbot_version": ">=3.5.0"
+}
