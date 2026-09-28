@@ -62,6 +62,8 @@ model User {
   userAgreementConsents        UserAgreementConsent[]
   orderAgreementAcceptances    OrderAgreementAcceptance[]
   notifications                Notification[]
+  chatBindings                 ChatBinding[]
+  chatBindCodes                ChatBindCode[]
 
   // SPEC-VALUE-POLICY-ACTIVATION-CONTROLS-001: immutable governance actors.
   valuePoliciesCreated   ValuePolicy[]                  @relation("ValuePolicyCreatedBy")
@@ -953,10 +955,56 @@ model CheckinRecord {
   userId    Int
   date      String // YYYY-MM-DD
   createdAt DateTime @default(now())
+  source    String   @default("web") // web | qq — 入口来源，仅用于统计，不参与幂等
 
   user User @relation(fields: [userId], references: [id])
 
   @@unique([userId, date])
+  @@index([date]) // 机器人定时催签：按日期批量捞「今日未签」
+}
+
+// ── SPEC-CHAT-BOT-001：QQ/Telegram 机器人账号绑定 ──────────────────────────
+// 绑定是机器人侧一切能力的前提：群消息只带 platformId，必须能换算成 userId。
+// `platformId` 与 `userId` 都是唯一：一个 QQ 只能绑一个站内账号，一个站内
+// 账号也只能绑一个 QQ，避免多账号叠加签到刷分。
+model ChatBinding {
+  id         Int      @id @default(autoincrement())
+  platform   String   @default("qq") // qq | telegram
+  platformId String // QQ 号等平台侧唯一标识
+  userId     Int
+  createdAt  DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([platform, platformId])
+  @@unique([platform, userId])
+  @@index([userId])
+}
+
+// ── SPEC-CHAT-BOT-001：机器人绑定邮箱验证码 ────────────────────────────────
+// 群/私聊发送 `/绑定 <邮箱>` → 后端向该邮箱发 6 位码 → `/确认 <码>` 完成绑定。
+//
+// 为什么不用「网站生成绑定码」：那要求用户先打开网站，而这套机器人的目的
+// 恰恰是服务「不来网站」的用户，属于循环依赖。邮箱则不同——签到强制
+// requireVerifiedEmail，能签到的人邮箱必然已验证，这是一条既成的信任链。
+//
+// codeHash 存 sha256 而非明文：即便库被读，也无法反推出可用的验证码。
+// failedAttempts 用于限次，防止 6 位码被暴力枚举（10^6 空间必须限次）。
+model ChatBindCode {
+  id             Int       @id @default(autoincrement())
+  codeHash       String    @unique
+  platform       String    @default("qq")
+  platformId     String // 发起绑定的平台账号
+  userId         Int
+  expiresAt      DateTime
+  consumedAt     DateTime?
+  failedAttempts Int       @default(0)
+  createdAt      DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([platform, platformId])
+  @@index([expiresAt])
 }
 
 model InviteRelation {

@@ -71,3 +71,11 @@ artifacts/value-policy-d02-backtest/
 # Python helper bytecode (F0 dbguard harness)
 __pycache__/
 *.pyc
+
+# Design-system generation output (local-only; never commit)
+# All of generated/ stays out of version control, including the v3 design-review draft.
+design-system/monexus/generated/
+
+# AstrBot 签到插件（独立分发件，不属于 MoNexus 代码库）
+# 通过 zip 单独交付，版本节奏与后端解耦，避免插件代码混进主仓库的 PR。
+docs/integrations/

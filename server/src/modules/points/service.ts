@@ -13,7 +13,16 @@ function getShanghaiDateString() {
   return `${yyyy}-${mm}-${dd}`
 }
 
-export async function checkin(userId: number) {
+/**
+ * 签到来源，仅用于统计，不参与幂等判定。
+ *
+ * 用开放的 string 而非 'web' | 'qq' 联合类型：机器人可接入的平台是开放的
+ * （qq / telegram / discord ...），每支持一个平台就改一次类型是没必要的耦合。
+ * 真正的幂等保证来自 CheckinRecord 的 @@unique([userId, date])。
+ */
+export type CheckinSource = string
+
+export async function checkin(userId: number, source: CheckinSource = 'web') {
   const dateStr = getShanghaiDateString()
 
   try {
@@ -21,7 +30,11 @@ export async function checkin(userId: number) {
       // The unique record is the single, database-backed claim for a daily
       // check-in. Claim it before changing the balance, so a concurrent
       // request rolls back cleanly instead of leaking Prisma P2002 as HTTP 500.
-      await tx.checkinRecord.create({ data: { userId, date: dateStr } })
+      //
+      // SPEC-CHAT-BOT-001: the bot path shares this exact claim. `source` is
+      // statistics-only and deliberately NOT part of the uniqueness key, so a
+      // web check-in and a bot check-in on the same day still collide.
+      await tx.checkinRecord.create({ data: { userId, date: dateStr, source } })
 
       const baseReward = await getSystemConfigValue('checkinReward', tx)
       const account = await tx.pointAccount.findUnique({ where: { userId } })
@@ -97,4 +110,20 @@ export async function getTier(userId: number) {
   ])
   const tier = resolveTier(lifetime, config.thresholds)
   return formatTierResponse(userId, lifetime, tier, config)
+}
+
+/**
+ * SPEC-CHAT-BOT-001: the bot needs balance + tier in one round trip so a
+ * 「我的积分」 query is a single HTTP call, not three.
+ */
+export async function getAccountSummary(userId: number) {
+  const [account, tierInfo] = await Promise.all([
+    prisma.pointAccount.findUnique({ where: { userId } }),
+    getTier(userId),
+  ])
+  return {
+    balance: account?.balance ?? 0,
+    frozenBalance: account?.frozenBalance ?? 0,
+    tier: tierInfo,
+  }
 }

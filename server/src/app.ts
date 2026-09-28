@@ -40,6 +40,7 @@ import { merchantEntitlementRouter, adminEntitlementRouter } from './modules/mer
 import { merchandisingAdminRouter } from './integrations/cmi/merchandisingAdminRoutes.js'
 import { paymentWebhookRoutes } from './modules/payment/webhooks/routes.js'
 import { productTemplateRoutes } from './modules/catalog/templates/routes.js'
+import { chatBotRoutes } from './modules/chatbot/routes.js'
 
 const app = express()
 
@@ -151,6 +152,9 @@ app.use('/api/checkout', checkoutRoutes)
 app.use('/api/value-policy', valuePolicyRoutes)
 app.use('/api/recharge', rechargeRoutes)
 app.use('/api/faka-bridge', fakaBridgeRoutes)
+// SPEC-CHAT-BOT-001: bot channel authenticates with HMAC, not user JWT, so it
+// mounts outside the authenticated user chain.
+app.use('/api/bot', chatBotRoutes)
 app.use('/api/admin', adminPromotionRouter)
 app.use('/api/admin', adminEditorialRouter)
 app.use('/api/admin', adminEntitlementRouter)

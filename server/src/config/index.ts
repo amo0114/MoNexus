@@ -363,6 +363,13 @@ const envSchema = z.object({
   FAKA_BRIDGE_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(10).default(3),
   // User-facing panel URL in delivery content (not the plugin webhook base).
   FAKA_BRIDGE_PANEL_URL: optionalUrlEnvSchema,
+
+  // --- SPEC-CHAT-BOT-001: QQ/Telegram bot channel (AstrBot plugin). ---------
+  // Optional: when unset, /api/bot/* answers 503 and the site keeps working.
+  // The bot signs requests with HMAC-SHA256 instead of holding a user JWT.
+  BOT_SHARED_SECRET: optionalStringEnvSchema,
+  /** 定时催签默认启用；插件侧另有开关，这里是服务端总闸。 */
+  BOT_REMINDER_ENABLED: z.coerce.boolean().default(true),
   // Test-only escape hatch. Production boot refuses true.
   FAKA_BRIDGE_ALLOW_INSECURE_TARGETS: booleanEnvSchema.default(false),
 
@@ -1012,6 +1019,14 @@ export const config = {
     connectRateLimitMax: env.NOTIFICATION_REALTIME_CONNECT_RATE_LIMIT_MAX,
     shutdownGraceMs: env.NOTIFICATION_REALTIME_SHUTDOWN_GRACE_MS,
   },
+  // SPEC-CHAT-BOT-001: undefined secret ⇒ bot channel disabled (503).
+  chatBot: env.BOT_SHARED_SECRET
+    ? {
+        enabled: true as const,
+        secret: env.BOT_SHARED_SECRET,
+        reminderEnabled: env.BOT_REMINDER_ENABLED,
+      }
+    : ({ enabled: false as const, reminderEnabled: false } as const),
   fakaBridge: fakaBridgeEnabled
     ? {
         enabled: true as const,
