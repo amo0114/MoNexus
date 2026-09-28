@@ -69,6 +69,12 @@ test('mobile chrome morphs into an island and keeps banners attached', async ({ 
       return route.fulfill({ json: { eligible: false, reason: 'not_verified', quota: null, codes: [] } })
     }
     if (pathname === '/api/auth/sessions') return route.fulfill({ json: { items: [] } })
+    // SPEC-CHAT-BOT-001: ProfilePage mounts ChatBindCard, which reads its
+    // binding status on mount. Stub it so this fixture stays self-contained
+    // instead of falling through to the catch-all 404 below.
+    if (pathname === '/api/points/chat-bind/status') {
+      return route.fulfill({ json: { bound: false, platform: null, platformId: null, boundAt: null } })
+    }
 
     return route.fulfill({ status: 404, json: { error: { message: 'not mocked' } } })
   })
