@@ -158,6 +158,14 @@ services:
       STORAGE_UI_CONFIG_ENABLED: ${STORAGE_UI_CONFIG_ENABLED:-true}
       STORAGE_CONFIG_SOURCE: ${STORAGE_CONFIG_SOURCE:-database}
       STORAGE_ENDPOINT_ALLOWLIST: ${STORAGE_ENDPOINT_ALLOWLIST:-}
+
+      # SPEC-CHAT-BOT-001: QQ/Telegram 签到机器人通道的共享密钥。
+      # 故意用 `:-` 而非 `:?`：留空时 /api/bot/* 返回 503，机器人不可用，
+      # 但网站与签到本身完全不受影响，不应该因为没配机器人而拒绝启动整个服务。
+      # 该密钥可伪造任意用户的签到请求，泄露即等同任意账号签到权限，
+      # 因此只注入到后端容器，且绝不带 VITE_ 前缀（那会打进前端包）。
+      BOT_SHARED_SECRET: ${BOT_SHARED_SECRET:-}
+      BOT_REMINDER_ENABLED: ${BOT_REMINDER_ENABLED:-true}
       AUTO_PROVISION_ALLOW_INSECURE_TARGETS: ${AUTO_PROVISION_ALLOW_INSECURE_TARGETS:-false}
       # Optional platform FakaBridge/Xboard integration. Keep all unset until
       # it is enabled; URL and secret are validated as an all-or-nothing pair.
