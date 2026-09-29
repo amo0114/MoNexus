@@ -117,8 +117,19 @@ export interface BotSearchResult {
 }
 
 /**
- * 关键词搜索。空关键词返回默认列表（与网站首页口径一致），让用户在不
+ * 关键词搜索。空关键词返回默认列表，让用户在不
  * 知道买什么时也有东西可看。
+ *
+ * ⚠️ audience 必须是 'member' 而非 'guest'。
+ *
+ * 平台上绝大多数商品的 visibility 是默认值 `members_only`（实测 830 个
+ * active 商品里有 759 个），而 `publicVisibilityWhere('guest')` 会加上
+ * `visibility: 'public'` 过滤——等于滤掉 91% 的商品，用户搜索时几乎
+ * 什么都看不到。
+ *
+ * 用 'member' 是合理的：调用方在路由层已通过 HMAC 校验，且这些命令面向
+ * 已绑定站内账号的用户；商品本身对登录用户可见，机器人代其查询与网站在
+ * 登录态下浏览的口径一致。
  */
 export async function searchProducts(params: {
   keyword?: unknown
@@ -132,7 +143,7 @@ export async function searchProducts(params: {
     query: keyword || undefined,
     page,
     pageSize: PAGE_SIZE,
-    audience: 'guest',
+    audience: 'member',
   })
 
   const items = (result.items as unknown as SerializedListItem[]).map(item =>
@@ -146,7 +157,7 @@ export async function searchProducts(params: {
   }
 }
 
-/** 商品详情。使用 guest 视角，与网站未登录访问一致。 */
+/** 商品详情。同 searchProducts，用 'member' 视角以覆盖 members_only 商品。 */
 export async function productDetail(params: {
   id: unknown
   baseUrl: string
@@ -154,7 +165,7 @@ export async function productDetail(params: {
   const id = Number(params.id)
   if (!Number.isInteger(id) || id < 1) throw badRequest('商品编号不合法')
 
-  const detail = (await getProductDetail(id, 'guest')) as unknown as
+  const detail = (await getProductDetail(id, 'member')) as unknown as
     | (SerializedListItem & {
         description?: string | null
         images?: string[] | null
