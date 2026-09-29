@@ -256,9 +256,15 @@ describe('POST /api/admin/mail/test', () => {
       .expect(500)
 
     expect(res.body.error.message).toContain('EAUTH')
-    const serialized = JSON.stringify(res.body)
+    // 只检查会承载 provider 原文的字段。
+    //
+    // 不能用 JSON.stringify(res.body) 整串匹配：响应体里的 requestId 是随机
+    // UUID（32 位十六进制），而 '535' 是纯数字的 hex 子串——UUID 恰含 '535'
+    // 时断言会误报（实测发生过一次，概率约 0.7%，即每 ~140 次运行一次）。
+    // 那属于 flaky，不是真实泄露：requestId 与 SMTP 错误无关。
+    const errorPayload = JSON.stringify(res.body.error ?? {})
     for (const canary of [CANARY_USER, CANARY_PASS, '535', 'auth failed']) {
-      expect(serialized).not.toContain(canary)
+      expect(errorPayload).not.toContain(canary)
     }
 
     const logs = await mailTestLogs(admin.id)
@@ -266,9 +272,15 @@ describe('POST /api/admin/mail/test', () => {
     expect(details.map(d => d.phase)).toEqual(['attempt', 'failed'])
     expect(details[1].failure).toBe('EAUTH')
     for (const log of logs) {
+      // 同上：detail 里含随机 UUID 的 correlationId，整串匹配 '535' 会 flaky。
+      // 剥掉 correlationId 后，其余字段（phase/recipient/failure）仍需通过
+      // 全部 canary 检查——检测能力没有削弱，只是不再随机误报。
+      const { correlationId: _correlationId, ...auditable } = JSON.parse(log.detail ?? '{}')
       for (const canary of [CANARY_USER, CANARY_PASS, 'ops@test.local', '535']) {
-        expect(log.detail).not.toContain(canary)
+        expect(JSON.stringify(auditable)).not.toContain(canary)
       }
+      // correlationId 本身必须是 UUID 形态，且不等于任何 canary 值。
+      expect(String(_correlationId)).toMatch(/^[0-9a-f-]{36}$/i)
     }
   })
 
