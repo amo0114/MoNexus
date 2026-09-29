@@ -70,6 +70,10 @@ export type ErrorCode =
   // 同上：当前进程只有 console 兜底 mailer，测试发送必须明确拒绝而不是
   // 假装"已发送"（MAIL-03）。
   | 'MAILER_NOT_CONFIGURED'
+  // SPEC-CHAT-BOT-001：与上面区分——那是"没配 mailer"，这是"配了但投递失败"
+  // （SMTP 断连、证书过期、被拒信）。机器人绑定需要它来把 500 变成用户
+  // 能看懂、且运维能识别为邮件故障的 503。
+  | 'MAIL_DELIVERY_FAILED'
   // SPEC-RAP-001：高价值写操作要求当前数据库中的邮箱已验证；注册和
   // 邮件防滥用路径则区分缺 challenge、challenge 失败和依赖不可用。
   | 'EMAIL_VERIFICATION_REQUIRED'

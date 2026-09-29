@@ -3,6 +3,9 @@ import { requireBotSignature } from './middleware.js'
 import * as botService from './service.js'
 import * as pointService from '../points/service.js'
 import { checkinForBot } from './checkinBridge.js'
+import { searchProducts, productDetail } from './catalog.js'
+import { config } from '../../config/index.js'
+import { HttpError } from '../../lib/httpError.js'
 
 /**
  * SPEC-CHAT-BOT-001 — 机器人专用接口。
@@ -124,6 +127,52 @@ router.post('/unchecked', async (req, res, next) => {
       })),
     })
   } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * 商品搜索（只读）。关键词为空时返回默认列表，与网站首页口径一致。
+ *
+ * 该接口不需要绑定，任何人都能查——商品本身对访客可见，加绑定门槛只会
+ * 让「先看看有什么」的新用户卡在第一步。
+ */
+router.post('/products/search', async (req, res, next) => {
+  try {
+    const { keyword, page } = req.body ?? {}
+    const result = await searchProducts({
+      keyword,
+      page,
+      baseUrl: config.appBaseUrl,
+    })
+    res.json(result)
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * 商品详情（只读，guest 视角）。
+ *
+ * 注意 `getProductDetail` 对不存在/不可见的商品**抛 404**（不是返回 null），
+ * 这是它与 listProducts 的契约差异。机器人需要的是「查无此物」这种可预期
+ * 结果而非异常——用户手抖打错编号不该收到「服务异常」。这里把 404 收敛成
+ * `found: false`，其余错误照常上抛。
+ */
+router.post('/products/detail', async (req, res, next) => {
+  try {
+    const { productId } = req.body ?? {}
+    const result = await productDetail({ id: productId, baseUrl: config.appBaseUrl })
+    if (!result) {
+      res.json({ found: false })
+      return
+    }
+    res.json({ found: true, product: result })
+  } catch (err) {
+    if (err instanceof HttpError && err.status === 404) {
+      res.json({ found: false })
+      return
+    }
     next(err)
   }
 })
