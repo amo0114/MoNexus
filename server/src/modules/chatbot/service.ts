@@ -338,6 +338,17 @@ export async function resolveUserByPlatformId(platform: string, platformId: unkn
  * 定时催签：返回「已绑定该平台 且 今天未签到」的正常状态用户。
  * 只查已绑定用户——未绑定的人机器人根本没法私聊。
  */
+/**
+ * 定时催签名单：返回「已绑定该平台 且 今天未签到」的正常状态用户。
+ *
+ * ⚠️ 只返回 platformId（数据最小化）。
+ *
+ * 催签只需要「把提醒发给谁」，不需要知道对方是哪个站内账号、叫什么昵称。
+ * 早先的版本还返回 userId 与 nickname，等于把「QQ号 ↔ 账号ID ↔ 昵称」的
+ * 完整对应表暴露在这个批量接口上——而它只靠 HMAC 保护，任何拿到
+ * BOT_SHARED_SECRET 的一方都能一次拉走全量。键值对本身是敏感数据，
+ * 且对催签功能毫无必要，故收窄。
+ */
 export async function listUncheckedBoundUsers(platform: string, dateStr: string) {
   const p = normalizePlatform(platform)
   return prisma.chatBinding.findMany({
@@ -348,11 +359,7 @@ export async function listUncheckedBoundUsers(platform: string, dateStr: string)
         checkins: { none: { date: dateStr } },
       },
     },
-    select: {
-      platformId: true,
-      userId: true,
-      user: { select: { nickname: true } },
-    },
+    select: { platformId: true },
   })
 }
 

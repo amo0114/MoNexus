@@ -48,6 +48,21 @@ export const CHAT_BIND_CONFIRM_BUCKETS = [
   { flow: 'chat-confirm', dimension: 'platform', limit: 50, windowMs: DAY_MS },
 ] as const satisfies readonly AbuseLimiterBucket[]
 
+/**
+ * 催签名单拉取的限流。
+ *
+ * 该接口返回全量未签到用户的 platformId，是本通道里唯一的批量数据出口。
+ * 正常情况下每天只需调用一两次（定时任务）；给一个宽松但有限的上限，
+ * 既不干扰正常调度，也让密钥泄露后的批量爬取变得低效。
+ *
+ * 这里没有可用的「调用者」标识（服务端不知道是哪台机器人），因此按平台
+ * 维度计数——同一平台的所有拉取共享一个配额。
+ */
+export const CHAT_UNCHECKED_BUCKETS = [
+  { flow: 'chat-unchecked', dimension: 'platform', limit: 6, windowMs: HOUR_MS },
+  { flow: 'chat-unchecked', dimension: 'platform', limit: 24, windowMs: DAY_MS },
+] as const satisfies readonly AbuseLimiterBucket[]
+
 function withSubject(
   buckets: readonly AbuseLimiterBucket[],
   subject: string | number,
@@ -79,6 +94,17 @@ export function consumeChatBindConfirm(
 ): Promise<AbuseLimiterResult> {
   return consumeAbusePolicy(
     withSubject(CHAT_BIND_CONFIRM_BUCKETS, platformSubject(input.platform, input.platformId)),
+    limiter,
+  )
+}
+
+/** 催签名单拉取。按平台计数——调用者身份对服务端不可见。 */
+export function consumeChatUnchecked(
+  input: { platform: string },
+  limiter?: AbuseLimiter,
+): Promise<AbuseLimiterResult> {
+  return consumeAbusePolicy(
+    withSubject(CHAT_UNCHECKED_BUCKETS, `${input.platform}:unchecked`),
     limiter,
   )
 }

@@ -6,6 +6,7 @@ import { checkinForBot } from './checkinBridge.js'
 import { searchProducts, productDetail } from './catalog.js'
 import { config } from '../../config/index.js'
 import { HttpError } from '../../lib/httpError.js'
+import { consumeChatUnchecked } from './abusePolicy.js'
 
 /**
  * SPEC-CHAT-BOT-001 — 机器人专用接口。
@@ -109,6 +110,9 @@ router.post('/profile', async (req, res, next) => {
 /**
  * 定时催签名单：返回今天未签到的已绑定用户。
  * 机器人侧按返回的 platformId 逐个私聊，不在这里发送（服务端不直连 QQ）。
+ *
+ * ⚠️ 只返回 platformId。催签只需要「发给谁」；userId / nickname 对该功能
+ * 无用，却会把 QQ号↔账号ID↔昵称 的对应表暴露在批量接口上，故已收窄。
  */
 router.post('/unchecked', async (req, res, next) => {
   try {
@@ -116,15 +120,21 @@ router.post('/unchecked', async (req, res, next) => {
     const dateStr = typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date)
       ? date
       : shanghaiToday()
+    // 限流：该接口是本通道唯一的批量数据出口，正常调度每天只调一两次。
+    // 被拒时回 429（而非静默）——调用方是受信机器人，不是攻击者的探测请求，
+    // 它能看懂这个信号并说明原因，不需要对它隐藏什么。
+    const gate = await consumeChatUnchecked({ platform })
+    if (!gate.allowed) {
+      res.status(429).json({
+        error: { code: 'RATE_LIMITED', message: `拉取过于频繁，请 ${gate.retryAfterSeconds}s 后重试` },
+      })
+      return
+    }
     const rows = await botService.listUncheckedBoundUsers(platform, dateStr)
     res.json({
       date: dateStr,
       count: rows.length,
-      users: rows.map(r => ({
-        platformId: r.platformId,
-        userId: r.userId,
-        nickname: r.user.nickname,
-      })),
+      users: rows.map(r => ({ platformId: r.platformId })),
     })
   } catch (err) {
     next(err)
