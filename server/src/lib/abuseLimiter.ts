@@ -14,7 +14,7 @@ local ttl = redis.call('PTTL', KEYS[1])
 return { count, ttl }
 `
 
-export const ABUSE_LIMITER_IDENTIFIER_DIMENSIONS = ['ip', 'email', 'user', 'inviter'] as const
+export const ABUSE_LIMITER_IDENTIFIER_DIMENSIONS = ['ip', 'email', 'user', 'inviter', 'platform'] as const
 export type AbuseLimiterIdentifierDimension = typeof ABUSE_LIMITER_IDENTIFIER_DIMENSIONS[number]
 
 export type AbuseLimiterBucket = {
@@ -90,7 +90,14 @@ function normalizeSubject(dimension: AbuseLimiterIdentifierDimension, subject: s
   }
 
   if (typeof subject !== 'string') unavailable()
-  const normalized = dimension === 'email' ? subject.trim().toLowerCase() : subject.trim()
+  // 'platform' 是复合标识 `<platform>:<platformId>`（如 `qq:430386193`）。
+  // 机器人侧所有请求都来自同一台 AstrBot 主机，IP 维度对它们毫无区分度，
+  // 因此刷绑定必须按「哪个平台账号在刷」计数。
+  const normalized = dimension === 'email'
+    ? subject.trim().toLowerCase()
+    : dimension === 'platform'
+      ? subject.trim().toLowerCase()
+      : subject.trim()
   const maxLength = dimension === 'email' ? MAX_EMAIL_LENGTH : MAX_IP_LENGTH
   if (!normalized || normalized.length > maxLength) unavailable()
   return normalized
@@ -123,7 +130,11 @@ export function buildAbuseLimiterKey(
   if (!cacheKeyPrefix) unavailable()
 
   const normalizedSubject = normalizeSubject(bucket.dimension, subject)
-  const keySubject = bucket.dimension === 'ip' || bucket.dimension === 'email'
+  // 会把原始标识写进 Redis 键的维度一律走独立 HMAC 命名空间：email 与 platform
+  // 都属个人信息（platform 是 QQ 号 / TG user id），不能以明文出现在键名里。
+  const keySubject = bucket.dimension === 'ip'
+    || bucket.dimension === 'email'
+    || bucket.dimension === 'platform'
     ? hashIdentifier(normalizedSubject, getHashKey(options.hashKey ?? config.abuseHashKey))
     : normalizedSubject
   const window = bucket.windowKey ?? String(bucket.windowMs)

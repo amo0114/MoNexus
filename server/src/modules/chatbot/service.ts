@@ -1,9 +1,10 @@
 import { createHash, createHmac, randomInt, timingSafeEqual } from 'node:crypto'
 import { prisma } from '../../lib/prisma.js'
-import { badRequest, conflict, notFound } from '../../lib/httpError.js'
+import { badRequest, conflict, notFound, HttpError } from '../../lib/httpError.js'
 import { getMailer } from '../../lib/mailer/index.js'
 import { renderMail } from '../../lib/mailer/templates/render.js'
 import { config } from '../../config/index.js'
+import { consumeChatBindRequest, consumeChatBindConfirm } from './abusePolicy.js'
 
 /**
  * SPEC-CHAT-BOT-001 —— 聊天机器人（QQ / Telegram）绑定与查询服务。
@@ -58,8 +59,18 @@ function normalizeEmail(email: unknown): string {
 /**
  * 发起绑定：向指定邮箱发送验证码。
  *
- * 重要安全考量：无论邮箱是否存在，对外都返回同一句「若该邮箱已注册，验证码
- * 已发送」。否则这个接口会变成账号枚举器——攻击者可批量探测哪些邮箱注册过。
+ * 安全设计的核心是**对外响应必须逐字节一致**：调用方（机器人）拿到的
+ * `{ sent: true }` 在下列所有情况下完全相同，攻击者无法据响应差异推断
+ * 任何信息：
+ *
+ *   邮箱不存在 / 未验证 / 被封禁      → 不发信
+ *   邮箱已绑给别的平台账号            → 不发信（关键：防撞库）
+ *   邮箱已绑给当前平台账号            → 发信（用户自己重发）
+ *   邮箱可用但触发限流                → 不发信
+ *
+ * 为什么「已绑给他人」必须静默而非报错：若返回「该邮箱已绑定」，攻击者就能
+ * 用它批量验证哪些邮箱是本平台用户（撞库）。用户侧的感受也不该有差别——
+ * 那本来就是别人的邮箱，他不该收到任何关于它的提示。
  */
 export async function requestBind(params: {
   platform: string
@@ -70,7 +81,11 @@ export async function requestBind(params: {
   const platformId = normalizePlatformId(params.platformId)
   const email = normalizeEmail(params.email)
 
-  // 该平台号已绑定时直接拒绝：避免用户误以为是换绑入口。
+  // 统一的「已受理」响应。所有不发信的路径都返回它，保证外部不可区分。
+  const accepted = { sent: true, ttlMs: BIND_CODE_TTL_MS, expiresAt: null as Date | null }
+
+  // 该平台号已绑定时直接拒绝：这不是泄露——用户本来就知道自己绑过什么，
+  // 且必须明确告知「先解绑」，否则他会困惑为什么发码没反应。
   const alreadyBound = await prisma.chatBinding.findUnique({
     where: { platform_platformId: { platform, platformId } },
   })
@@ -82,9 +97,22 @@ export async function requestBind(params: {
   })
 
   // 邮箱不存在 / 未验证 / 被封禁：静默返回，不泄露账号状态。
-  if (!user || user.status !== '正常') {
-    return { sent: true, ttlMs: BIND_CODE_TTL_MS, expiresAt: null as Date | null }
-  }
+  if (!user || user.status !== '正常') return accepted
+
+  // 反向检查（防撞库）：该邮箱若已绑给别的平台账号，这里必须停下。
+  // 缺少这一步时，任何人都能对「已知的、属于他人的邮箱」反复触发发信——
+  // 既骚扰用户，也消耗 SMTP 配额并损害发件域信誉。
+  const emailBinding = await prisma.chatBinding.findUnique({
+    where: { platform_userId: { platform, userId: user.id } },
+    select: { platformId: true },
+  })
+  if (emailBinding && emailBinding.platformId !== platformId) return accepted
+
+  // 限流：放在所有「已确认会真发信」的前置判定之后、任何写库与发信之前。
+  // 被限流时同样返回 accepted——若这里回「请求过于频繁」，攻击者反而能借
+  // 「是否被限流」反推该邮箱真实存在（因为他只对真实邮箱狂点才会触发限流）。
+  const gate = await consumeChatBindRequest({ platform, platformId, email })
+  if (!gate.allowed) return accepted
 
   const code = generateBindCode()
   const expiresAt = new Date(Date.now() + BIND_CODE_TTL_MS)
@@ -103,14 +131,25 @@ export async function requestBind(params: {
     })
   })
 
-  const mailer = await getMailer()
-  await mailer.send(
-    renderMail('chat_bind_otp', {
-      to: user.email,
-      code,
-      expiresMinutes: Math.round(BIND_CODE_TTL_MS / 60000),
-    })
-  )
+  // 邮件发送失败必须清理刚写入的验证码：否则会留下「码在库里、用户收不到」
+  // 的脏数据，用户拿不到码却看到 500，无从判断该重试还是该找客服。
+  // 与既有密码重置流程（auth/service.ts）的处理方式保持一致。
+  try {
+    const mailer = await getMailer()
+    await mailer.send(
+      renderMail('chat_bind_otp', {
+        to: user.email,
+        code,
+        expiresMinutes: Math.round(BIND_CODE_TTL_MS / 60000),
+      })
+    )
+  } catch (err) {
+    await prisma.chatBindCode
+      .deleteMany({ where: { platform, platformId } })
+      .catch(() => {})
+    // 不让 SMTP 的原始错误冒泡成 500：对用户是无意义的，且可能泄露内部细节。
+    throw new HttpError(503, 'MAIL_DELIVERY_FAILED', '验证码邮件发送失败，请稍后重试')
+  }
 
   return { sent: true, ttlMs: BIND_CODE_TTL_MS, expiresAt }
 }
@@ -156,6 +195,11 @@ export async function confirmBind(params: {
       platformId: already.platformId,
     }
   }
+
+  // 限流：6 位码只有 10^6 空间，行上的 failedAttempts 是第一道闸（每枚码 5 次），
+  // 这里是第二道——防止攻击者通过反复「发码 → 试 5 次 → 再发码」无限提高命中率。
+  const gate = await consumeChatBindConfirm({ platform, platformId })
+  if (!gate.allowed) throw badRequest('尝试次数过多，请稍后再试')
 
   type Outcome =
     | { kind: 'no_challenge' }
