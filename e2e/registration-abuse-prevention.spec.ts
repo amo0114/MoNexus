@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import { selectAdminTab } from './helpers'
+import { createMockAccessToken } from './auth-fixtures'
 
 const profile = {
   id: 991,
@@ -19,6 +20,9 @@ const adminProfile = {
   role: 'admin',
   emailVerified: '2026-08-01T00:00:00.000Z',
 }
+
+const userAccessToken = createMockAccessToken(profile)
+const adminAccessToken = createMockAccessToken(adminProfile)
 
 const registry = {
   productTypes: [],
@@ -78,7 +82,7 @@ test('prepares a one-time in-memory Turnstile proof before registration submissi
   }))
   await page.route(apiRoute('/auth/register'), async route => {
     registerPayload = JSON.parse(route.request().postData() ?? '{}') as Record<string, unknown>
-    await route.fulfill({ json: { user: profile, accessToken: 'registration-ui-access-token' } })
+    await route.fulfill({ json: { user: profile, accessToken: userAccessToken } })
   })
   await page.route(apiRoute('/auth/me'), route => route.fulfill({ json: profile }))
 
@@ -185,16 +189,16 @@ test('strips a fragment token and claims it once through the authenticated POST'
   const verificationToken = 'fragment-token-must-not-persist'
   let verifyRequests = 0
 
-  await page.addInitScript((authenticatedProfile) => {
+  await page.addInitScript(({ authenticatedProfile, accessToken }) => {
     localStorage.setItem('monexus-auth', JSON.stringify({
       state: {
         user: authenticatedProfile,
-        accessToken: 'verification-ui-access-token',
+        accessToken,
         isLoggedIn: true,
       },
       version: 0,
     }))
-  }, profile)
+  }, { authenticatedProfile: profile, accessToken: userAccessToken })
   await mockRegistry(page)
   await page.route(apiRoute('/auth/verify-email'), async route => {
     verifyRequests += 1
@@ -235,26 +239,23 @@ test('admin abuse panel renders masked records and requires a ticketed confirmat
 
   await page.setViewportSize({ width: 375, height: 800 })
 
-  await page.addInitScript((authenticatedProfile) => {
+  await page.addInitScript(({ authenticatedProfile, accessToken }) => {
     localStorage.setItem('monexus-auth', JSON.stringify({
       state: {
         user: authenticatedProfile,
-        // `fetchMeWithRoleHealing` decodes the role before deciding whether
-        // to refresh. A minimally shaped, non-secret test JWT keeps this
-        // browser-only mock on the intended MFA-admin path.
-        accessToken: 'e30.eyJyb2xlIjoiYWRtaW4ifQ.signature',
+        accessToken,
         isLoggedIn: true,
       },
       version: 0,
     }))
-  }, adminProfile)
+  }, { authenticatedProfile: adminProfile, accessToken: adminAccessToken })
   await mockRegistry(page)
   await page.route(apiRoute('/auth/me'), route => route.fulfill({ json: adminProfile }))
   // Keep the browser fixture independent of a real refresh cookie. The
   // production API itself has separate MFA coverage; this test asserts the
   // panel's masked rendering and confirmation contract.
   await page.route(apiRoute('/auth/refresh'), route => route.fulfill({
-    json: { accessToken: 'e30.eyJyb2xlIjoiYWRtaW4ifQ.signature' },
+    json: { accessToken: adminAccessToken },
   }))
   // Layout polls notification unread after login; keep unsigned fixture token local.
   await page.route(apiRoute('/notifications/unread-count'), route => route.fulfill({ json: { count: 0 } }))
